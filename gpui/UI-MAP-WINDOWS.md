@@ -11,7 +11,7 @@
 | --- | --- |
 | **规格来源** | **Windows 前端源码** `windows/tauri/src/`（Tauri v2 + React + TypeScript + Tailwind v4 CSS-first + shadcn 结构 + Base UI 原语）。**不是截图，不是 macOS** |
 | **实现框架** | **gpui-kit 0.6.6**，源码根 `D:\ProgramData\rust\cargo\registry\src\rsproxy.cn-e3de039b2554c837\gpui-{kit,component,base}-0.6.6\src\`。**只以已发布源码为准**（在线文档描述的是未发布的 0.7.0） |
-| **`UI-MAP-macos.md`** | **只作行为/功能对照**（查"这个交互原本怎么工作"），**不作尺寸来源** |
+| **`docs/archive/ui-map-macos.md`** | **只作行为/功能对照**（查"这个交互原本怎么工作"），**不作尺寸来源** |
 | **硬规则** | 沿用 `gpui/UI-MAP.md` §1（单位、token、行高、浮层挂层、DPI 口径…），本文不重复，只在相关处标注"见 §1.x" |
 | **调研文档** | `gpui/research/windows/01-shell.md`、`02-editor-sidebar.md`、`03-git-and-bottom.md`、`04-theme-and-components.md`、`05-terminal-run-debug.md`、`06-database-ai-search.md` |
 

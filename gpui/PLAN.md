@@ -4,11 +4,11 @@
 >
 > - **实现框架不变：继续用 GPUI Kit**（本目录 `gpui/`，`gpui-kit = "=0.6.6"`）。
 > - **界面规格来源改为 Windows 前端**：`windows/tauri/src/features/*`（Tauri v2 + React + Tailwind + shadcn）。
->   **不再以 macOS SwiftUI 作为视觉/布局规格**；macOS 那份调研已拆到 **`gpui/UI-MAP-macos.md`**
+>   **不再以 macOS SwiftUI 作为视觉/布局规格**；macOS 那份调研已拆到 **`gpui/docs/archive/ui-map-macos.md`**
 >   （原始调研材料已在 2026-09-25 清理），降级为**行为/功能对照**（它功能最全，用来查"这个交互原本怎么工作"），
 >   **尺寸、结构、观感一律看 Windows**。
 > - **规格文档布局**：`UI-MAP.md` = §1 硬规则 + gpui-kit 实现规则（仍然有效）；`UI-MAP-WINDOWS.md` = 逐区域对应表（待产出，
->   汇总自 `gpui/research/windows/01..06-*.md`）；`UI-MAP-macos.md` = macOS 对照。
+>   汇总自 `gpui/research/windows/01..06-*.md`）；`docs/archive/ui-map-macos.md` = macOS 对照。
 > - 执行提示词：`docs/development/gpui-ui-windows-rewrite-prompt.md`；决策记录见
 >   `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md` 顶部的状态变更。
 > - 因此 `UI-MAP.md` 需要**重新以 Windows 为源做一份对应表**（提示词里列为第 1 步交付物）。
@@ -452,7 +452,7 @@ Command::new(&state).searchable(true).group(CommandGroup::new().label(..).items(
 
 ### 5.2 本轮已经落地的工程决定
 
-1. **代码基线**：工作区里 `gpui/` 的 `Cargo.toml`、`Cargo.lock`、`shell/Cargo.toml`、`shell/src/main.rs` 被上一轮"清空"误删（计划只要求清空 `shell_probe/` 下的实现），已从 `HEAD` 恢复；`gpui/UI-MAP-macos.md` 同样被误删，已恢复（计划里它是配套的行为对照文档）。
+1. **代码基线**：工作区里 `gpui/` 的 `Cargo.toml`、`Cargo.lock`、`shell/Cargo.toml`、`shell/src/main.rs` 被上一轮"清空"误删（计划只要求清空 `shell_probe/` 下的实现），已从 `HEAD` 恢复；`gpui/docs/archive/ui-map-macos.md` 同样被误删，已恢复（计划里它是配套的行为对照文档）。
 2. **模块布局**：外壳按区域拆成 `shell_probe/shell/{mod,title_bar,project_tabs,activity_bar,status_bar}.rs`，每个区域是一个**无状态渲染函数**（`-> impl IntoElement`），状态集中在 `workspace.rs` 的 `ShellWorkspace` —— 这样区域之间不会因为共享 `Entity` 互相打架。
 3. **编辑区/底部窗的 Dock 口径**：Windows 默认 `terminalWidthMode === "editor"`，底部窗**嵌在中央编辑器列内**（不是横跨工作台）。gpui-kit 的 `DockPlacement::Bottom` **本来就只横跨 center 列**，所以这一版用真 Bottom dock（旧实现"放进 center 的 `v_split` 以横跨左栏+编辑区"是 macOS 口径，已作废）。
 4. **重试上限从 5 次改成 3 次**，超限一律登记到新增的 **`gpui/BLOCKERS.md`**，不再原地打转。

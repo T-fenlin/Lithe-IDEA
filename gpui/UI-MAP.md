@@ -28,13 +28,13 @@
 | 本文 `UI-MAP.md` | **§1 硬规则 + gpui-kit 实现规则**（仍然有效的部分）+ §2 指向 Windows 规格 + §3 验收清单 |
 | `research/windows/01..06-*.md` | **Windows 界面调研（规格真源，6 份）**：外壳 / 编辑区+侧栏 / Git+底部窗 / 主题+组件 / 终端+运行调试 / 数据库+AI+搜索 |
 | `research/gpui-kit-overlay-howto.md` | gpui-kit 浮层（Dialog/Sheet/Notification）怎么用的完整调研 |
-| `UI-MAP-macos.md` | macOS 界面调研，**只作行为/功能对照**（不是视觉规格） |
+| `docs/archive/ui-map-macos.md` | macOS 界面调研，**只作行为/功能对照**（不是视觉规格） |
 | `docs/development/gpui-ui-windows-rewrite-prompt.md` | 交给新对话的**重写提示词**（决策 + 坑清单 + 分阶段 + 验收） |
 | `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md` | 为什么这样做的决策记录 |
 
 > 清理说明（2026-09-25）：早期调试期的截图证据（`.artifacts/p1/*`）与 macOS 原始区域调研（`.artifacts/ui-map/01..08`）
 > 已删除 —— 前者里有**坏截图工具产出的误导性画面**（例如 `startup-max.png` 把"内容只占 78%"拍成"已铺满"），
-> 后者已被 `UI-MAP-macos.md` 汇总。本文的结论都以**文字 + 源码行号**写清，需要复现时按文中命令重跑即可。
+> 后者已被 `docs/archive/ui-map-macos.md` 汇总。本文的结论都以**文字 + 源码行号**写清，需要复现时按文中命令重跑即可。
 
 ---
 
@@ -171,7 +171,7 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 > `03-git-and-bottom.md`（Git 工具窗/底部窗）、`04-theme-and-components.md`（token + 组件映射）、
 > `05-terminal-run-debug.md`（终端/运行/调试）、`06-database-ai-search.md`（数据库/AI/搜索）。
 >
-> macOS 那份逐区域调研已移到 **`UI-MAP-macos.md`**，**只作行为/功能对照**，不要当尺寸来源。
+> macOS 那份逐区域调研已移到 **`docs/archive/ui-map-macos.md`**，**只作行为/功能对照**，不要当尺寸来源。
 
 ---
 ## 3. 验收清单（复刻完成时逐条过）

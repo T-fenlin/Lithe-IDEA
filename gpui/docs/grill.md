@@ -31,7 +31,7 @@ git status --porcelain（2026-09-24 20:31:40 实测）
 ?? gpui/shell/src/bin/shell_probe/shell/
 ```
 
-四个 build 文件与 `gpui/UI-MAP-macos.md` 都已在工作区里（`gpui/Cargo.toml`、`gpui/Cargo.lock`、`gpui/shell/Cargo.toml`、`gpui/shell/src/main.rs`、`gpui/UI-MAP-macos.md` 用 `Get-ChildItem` 全部命中）。`gpui/BLOCKERS.md` 的 B2 条目自己写着"已从 HEAD 恢复"（`gpui/BLOCKERS.md` B2 行）。**并发写者已经把这些坑填了，任务书没跟上。**
+四个 build 文件与 `gpui/docs/archive/ui-map-macos.md` 都已在工作区里（`gpui/Cargo.toml`、`gpui/Cargo.lock`、`gpui/shell/Cargo.toml`、`gpui/shell/src/main.rs`、`gpui/docs/archive/ui-map-macos.md` 用 `Get-ChildItem` 全部命中）。`gpui/BLOCKERS.md` 的 B2 条目自己写着"已从 HEAD 恢复"（`gpui/BLOCKERS.md` B2 行）。**并发写者已经把这些坑填了，任务书没跟上。**
 
 ### 0.2 提示词已经被"局部超越"了：`PLAN.md` 多出一节 §5，与提示词并列但口径不同
 
@@ -479,7 +479,7 @@ ROOT  R0  清空重写这条路线本身                            [F]
 - `gpui/UI-MAP-WINDOWS.md`：**不存在**。`git ls-tree -r HEAD` 里没有它，工作区没有它。而 `UI-MAP.md:11` 与 `PLAN.md:10-11` 都把它当"逐区域对应表"引用，`PLAN.md:14` 还把它写成"提示词里列为第 1 步交付物"。
 - `gpui/research/gpui-kit-0.6.6-api.md`：**不存在**（`PLAN.md:457` 声称由子代理产出中）。
 - 提示词路径漂移：已修（`PLAN.md:12` 与 `UI-MAP.md:11` 现在都写 `…-rewrite-prompt.md`，mtime 20:25–20:26）。
-- `gpui/UI-MAP-macos.md`：已从 git 历史恢复（`BLOCKERS.md` B2）。
+- `gpui/docs/archive/ui-map-macos.md`：已从 git 历史恢复（`BLOCKERS.md` B2）。
 
 **推荐**：把 `UI-MAP-WINDOWS.md` 明确定义为**验收表的载体**（D1 要的"逐项对照表"就是它），内容以"区域 → Windows 出处行号 → px 值 → gpui-kit 实现 → 状态（未做/已做/差异）"为列。**不要**再写一份"六份调研的摘要"——六份调研（约 68 万字符）已经在仓库里，重复摘要是漂移的来源。`gpui-kit-0.6.6-api.md` 建议**不产出**：`gpui/README.md:40-109` 与 `UI-MAP.md:53-63` 已经承担了这个角色，再写第三份必然三处不一致（`gpui/README.md` 自己的第一句话就是"只讲怎么跑、已经验证过的接口事实和硬约束"）。
 
