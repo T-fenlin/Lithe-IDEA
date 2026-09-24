@@ -2,43 +2,58 @@
 //!
 //! 从 `shell_probe/terminal.rs` 的「文案」「度量」两节原样拆出（逐字搬迁，只把 `const` 放宽到
 //! `pub(crate)`，让本 crate 的兄弟模块共享同一份字面量）。所有数值的来源注释都保留在每一条上。
+//!
+//! ⚠️ **文案一律走函数，不再用 `&str` 常量**：`lithe_gpui_shared::tr` 必须在运行时读当前
+//! locale，`const` 装不下 `SharedString`。所以下面每个 `*_KEY` 常量只保留**翻译键**，
+//! 取文案的函数返回 `SharedString`；调用点写 `foo()`。键与原文的对应关系逐条登记在注释里
+//! （locale 真源是 `windows/tauri/src/i18n/locale.ts`，经 `gpui/tools/extract-locale.mjs` 生成）。
 
 use std::time::Duration;
 
-// 文案（除 [`CAPABILITY_NOTICE`] 外全部逐字取 `windows/tauri/src/i18n/locale.ts`）
+use gpui_kit::SharedString;
+use lithe_gpui_shared::tr;
+
+// ---------------------------------------------------------------------------
+// 文案键
 // ---------------------------------------------------------------------------
 
 /// `terminal.noTerminals` → 「没有终端」（`locale.ts:7544`）：空态条与空态页。
-pub(crate) const NO_TERMINALS: &str = "没有终端";
-/// `terminal.newTerminal` → 「新建终端」（`locale.ts:7531`）：新建按钮的提示与无障碍名。
+pub(crate) const NO_TERMINALS_KEY: &str = "lithe.terminal.noTerminals";
 /// `terminal.chooseTerminalProfile` → 「选择终端配置文件」（`locale.ts:7543`）：配置文件下拉。
-pub(crate) const CHOOSE_PROFILE: &str = "选择终端配置文件";
+pub(crate) const CHOOSE_PROFILE_KEY: &str = "lithe.terminal.chooseTerminalProfile";
 /// `terminal.contextClear` → 「清除终端」（`locale.ts:7510`）：真机在页签右键菜单里，本模块做成图标按钮。
-pub(crate) const CLEAR_TERMINAL: &str = "清除终端";
+pub(crate) const CLEAR_TERMINAL_KEY: &str = "lithe.terminal.contextClear";
 /// `terminal.errorTitle` → 「终端错误」（`locale.ts:7549`）。
-pub(crate) const ERROR_TITLE: &str = "终端错误";
+pub(crate) const ERROR_TITLE_KEY: &str = "lithe.terminal.errorTitle";
 /// `terminal.errorFallback` → 「无法初始化终端」（`locale.ts:7550`）。
-pub(crate) const ERROR_FALLBACK: &str = "无法初始化终端";
+pub(crate) const ERROR_FALLBACK_KEY: &str = "lithe.terminal.errorFallback";
 /// `terminal.retry` → 「重试」（`locale.ts:7551`）：失败/已退出后的重新拉起。
-pub(crate) const RETRY: &str = "重试";
+pub(crate) const RETRY_KEY: &str = "lithe.terminal.retry";
 /// `run.running` → 「运行中」（`locale.ts:5930`）。
-pub(crate) const RUNNING: &str = "运行中";
+pub(crate) const RUNNING_KEY: &str = "lithe.run.running";
 /// `run.succeeded` → 「成功」（`locale.ts:5931`）。
-pub(crate) const SUCCEEDED: &str = "成功";
+pub(crate) const SUCCEEDED_KEY: &str = "lithe.run.succeeded";
 /// `run.failed` → 「失败」（`locale.ts:5932`）。
-pub(crate) const FAILED: &str = "失败";
+pub(crate) const FAILED_KEY: &str = "lithe.run.failed";
 /// `git.console.exit` → 「退出码」（`locale.ts:4568`）：真机在 Git 控制台里这样拼
 /// `退出码 {code}`（`features/git/components/log/git-console-entry.tsx:82-84`）。
-pub(crate) const EXIT_CODE: &str = "退出码";
+pub(crate) const EXIT_CODE_KEY: &str = "lithe.git.console.exit";
 /// `commandPalette.placeholder` → 「输入命令...」（`locale.ts:7905`）：命令输入框的占位。
 ///
 /// 终端真机没有"输入行"（直接打进 xterm，`use-terminal-connection.ts:145-146`），
 /// 所以这一条借的是命令面板的原文，而不是终端自己的键。
-pub(crate) const INPUT_PLACEHOLDER: &str = "输入命令...";
+pub(crate) const INPUT_PLACEHOLDER_KEY: &str = "lithe.commandPalette.placeholder";
 /// `git.console.scrollToEnd` → 「滚动到底部」（`locale.ts:4494`）：输出区"跳回最新"的提示。
-pub(crate) const SCROLL_TO_END: &str = "滚动到底部";
+pub(crate) const SCROLL_TO_END_KEY: &str = "lithe.git.console.scrollToEnd";
 /// `terminal.terminals` → 「终端」（`locale.ts:7558`）：输出区的无障碍标签。
-pub(crate) const TERMINALS_ARIA: &str = "终端";
+///
+/// 取 `terminal.terminals` 而不是 `workbench.terminal`（两者 zh-CN 同值「终端」）：
+/// 调用点是终端 Feature 自己的 a11y 名，按 feature 命名空间归属。
+pub(crate) const TERMINALS_ARIA_KEY: &str = "lithe.terminal.terminals";
+
+// ---------------------------------------------------------------------------
+// 取文案
+// ---------------------------------------------------------------------------
 
 /// 能力边界声明（**常驻显示**，不是可选提示）。
 ///
@@ -47,7 +62,73 @@ pub(crate) const TERMINALS_ARIA: &str = "终端";
 ///
 /// ⚠️ `locale.ts` 的 `terminal.*` 全量（`:7503-7558`）里**没有**描述这两条限制的键，
 /// 所以这一句是本模块唯一**不是**逐字取自 locale 的文案；原因与取舍见文件末尾未实现清单第 1 条。
+/// 它因此也**故意不接 i18n**（保留 `&str` 常量）：接了也没有 key 可用。
 pub(crate) const CAPABILITY_NOTICE: &str = "能力边界：不能运行 vim/top 等全屏程序；Ctrl+C 不可用";
+
+/// `terminal.noTerminals` → 「没有终端」。
+pub(crate) fn no_terminals() -> SharedString {
+    tr(NO_TERMINALS_KEY)
+}
+
+/// `terminal.chooseTerminalProfile` → 「选择终端配置文件」。
+pub(crate) fn choose_profile() -> SharedString {
+    tr(CHOOSE_PROFILE_KEY)
+}
+
+/// `terminal.contextClear` → 「清除终端」。
+pub(crate) fn clear_terminal() -> SharedString {
+    tr(CLEAR_TERMINAL_KEY)
+}
+
+/// `terminal.errorTitle` → 「终端错误」。
+pub(crate) fn error_title() -> SharedString {
+    tr(ERROR_TITLE_KEY)
+}
+
+/// `terminal.errorFallback` → 「无法初始化终端」。
+pub(crate) fn error_fallback() -> SharedString {
+    tr(ERROR_FALLBACK_KEY)
+}
+
+/// `terminal.retry` → 「重试」。
+pub(crate) fn retry() -> SharedString {
+    tr(RETRY_KEY)
+}
+
+/// `run.running` → 「运行中」。
+pub(crate) fn running() -> SharedString {
+    tr(RUNNING_KEY)
+}
+
+/// `run.succeeded` → 「成功」。
+pub(crate) fn succeeded() -> SharedString {
+    tr(SUCCEEDED_KEY)
+}
+
+/// `run.failed` → 「失败」。
+pub(crate) fn failed() -> SharedString {
+    tr(FAILED_KEY)
+}
+
+/// `git.console.exit` → 「退出码」。
+pub(crate) fn exit_code() -> SharedString {
+    tr(EXIT_CODE_KEY)
+}
+
+/// `commandPalette.placeholder` → 「输入命令...」。
+pub(crate) fn input_placeholder() -> SharedString {
+    tr(INPUT_PLACEHOLDER_KEY)
+}
+
+/// `git.console.scrollToEnd` → 「滚动到底部」。
+pub(crate) fn scroll_to_end() -> SharedString {
+    tr(SCROLL_TO_END_KEY)
+}
+
+/// `terminal.terminals` → 「终端」。
+pub(crate) fn terminals_aria() -> SharedString {
+    tr(TERMINALS_ARIA_KEY)
+}
 
 // ---------------------------------------------------------------------------
 // 度量
@@ -94,7 +175,7 @@ pub(crate) const TERMINAL_LINE_HEIGHT: f32 = 1.;
 ///
 /// 16 在 rem 档位上（样式调用点用 `pl_4()` / `pr_4()`）；常量保留是因为输出行的行样式直接改
 /// `StyleRefinement`（见 `output_row_style`），那里没有 `Styled` 的 helper 可用，
-/// 只能写 `rems(TERMINAL_PADDING_INLINE / 4.)`。
+/// 只能写 `rems(TERMINAL_PADDING_INLINE / 16.)`。
 pub(crate) const TERMINAL_PADDING_INLINE: f32 = 16.;
 /// 输出保留上限 10000 行（真机默认 `terminalScrollback: 10000`，`config/default-settings.ts:79`）。
 pub(crate) const MAX_LINES: usize = 10_000;
@@ -115,7 +196,7 @@ pub(crate) const NEW_TERMINAL_KEY: &str = "lithe.terminal.newTerminal";
 ///
 /// 这是 `lithe_gpui_shared::{tr, tr_args}` 在终端 Feature 里的**真实调用点**：
 /// locale 的 `lithe.terminal.newTerminal` 在 zh-CN 下就是「新建终端」，与原来写死的字面量
-/// 逐字相同，所以换成翻译键之后界面文案不变。其余文案的大规模改写不在本轮范围。
-pub(crate) fn new_terminal_label() -> gpui_kit::SharedString {
+/// 逐字相同，所以换成翻译键之后界面文案不变。
+pub(crate) fn new_terminal_label() -> SharedString {
     lithe_gpui_shared::tr(NEW_TERMINAL_KEY)
 }

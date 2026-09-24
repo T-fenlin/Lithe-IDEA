@@ -19,6 +19,7 @@ use gpui_kit::{
     ParentElement as _, Render, ScrollWheelEvent, SharedString, Styled as _, Window, div, point,
     px, relative,
 };
+use lithe_gpui_shared::tr;
 
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -209,14 +210,14 @@ impl EditorPane {
             .child(Self::nav_button(
                 "editor-nav-back",
                 IconName::ArrowLeft,
-                "后退",
-                "后退到上一个位置",
+                tr("lithe.tabs.goBackShort"),
+                tr("lithe.tabs.goBack"),
             ))
             .child(Self::nav_button(
                 "editor-nav-forward",
                 IconName::ArrowRight,
-                "前进",
-                "前进到下一个位置",
+                tr("lithe.tabs.goForwardShort"),
+                tr("lithe.tabs.goForward"),
             ))
     }
 
@@ -237,8 +238,8 @@ impl EditorPane {
     fn nav_button(
         id: &'static str,
         icon: IconName,
-        tooltip: &'static str,
-        label: &'static str,
+        tooltip: SharedString,
+        label: SharedString,
     ) -> Button {
         Button::new(id)
             .icon(icon)
@@ -363,8 +364,8 @@ impl EditorPane {
             .ghost()
             .small()
             .tab_stop(false)
-            .tooltip("关闭")
-            .accessibility_label("关闭")
+            .tooltip(tr("lithe.tabs.close"))
+            .accessibility_label(tr("lithe.tabs.close"))
             .on_click(cx.listener(move |pane, _event, _window, cx| {
                 pane.close(index);
                 cx.notify();
@@ -448,7 +449,7 @@ impl EditorPane {
             .flex_1()
             .min_h_0()
             .context_menu(|menu, _window, _cx| {
-                menu.item(PopupMenuItem::new("此处无任何内容").disabled(true))
+                menu.item(PopupMenuItem::new(tr("lithe.ui.noActionsHere")).disabled(true))
             })
             .child(
                 Empty::new()
@@ -492,11 +493,15 @@ impl EditorPane {
                             // 按《编码指南》用 `text_sm()`（14px，经维护者确认的有意改动；
                             // 正好等于组件默认值，写出来是为了标明"这就是规格值"）。
                             // 颜色用组件默认：标题 `foreground`、说明 `muted_foreground`（`empty.rs:264-324`）。
-                            .title(EmptyTitle::new().text_sm().child("选择文件以查看"))
+                            .title(
+                                EmptyTitle::new()
+                                    .text_sm()
+                                    .child(tr("lithe.workbench.emptyEditorTitle")),
+                            )
                             .description(
                                 EmptyDescription::new()
                                     .text_sm()
-                                    .child("外部工具产生的更改会自动显示。"),
+                                    .child(tr("lithe.workbench.emptyEditorDescription")),
                             ),
                     ),
             )

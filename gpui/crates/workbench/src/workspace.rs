@@ -40,6 +40,7 @@ use gpui_kit::{
 use lithe_gpui_editor::EditorPane;
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::BottomPane;
+use lithe_gpui_shared::tr;
 use lithe_gpui_terminal::TerminalPane;
 
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
@@ -492,17 +493,17 @@ fn activity_items() -> Vec<ActivityItem> {
     // 底部组：`features/layout/config/item-order.ts:12-19` 的
     // `SIDEBAR_BOTTOM_ACTIVITY_ITEM_IDS = [maven, run, terminal, diagnostics, gitLog, settings]`。
     vec![
-        ActivityItem::new(IconName::FolderOpen, "项目"),
+        ActivityItem::new(IconName::FolderOpen, tr("lithe.workbench.project")),
         // 真实字形 `git-branch`（`icons/git-branch.svg`）。
-        ActivityItem::new(IconName::GitBranch, "更改"),
-        ActivityItem::new(IconName::Search, "搜索"),
+        ActivityItem::new(IconName::GitBranch, tr("lithe.workbench.changes")),
+        ActivityItem::new(IconName::Search, tr("lithe.workbench.search")),
         // Lucide 没有 Maven 字形，取"包 / 构建产物"语义的 `package`（`icons/package.svg`）。
         ActivityItem::new(IconName::Package, "Maven").bottom(true),
-        ActivityItem::new(IconName::Play, "运行").bottom(true),
-        ActivityItem::new(IconName::SquareTerminal, "终端").bottom(true),
-        ActivityItem::new(IconName::TriangleAlert, "诊断").bottom(true),
+        ActivityItem::new(IconName::Play, tr("lithe.workbench.run")).bottom(true),
+        ActivityItem::new(IconName::SquareTerminal, tr("lithe.workbench.terminal")).bottom(true),
+        ActivityItem::new(IconName::TriangleAlert, tr("lithe.workbench.diagnostics")).bottom(true),
         // 真实字形 `git-graph`（`icons/git-graph.svg`）。
-        ActivityItem::new(IconName::GitGraph, "提交记录").bottom(true),
-        ActivityItem::new(IconName::Settings, "设置").bottom(true),
+        ActivityItem::new(IconName::GitGraph, tr("lithe.workbench.gitLog")).bottom(true),
+        ActivityItem::new(IconName::Settings, tr("lithe.workbench.settings")).bottom(true),
     ]
 }

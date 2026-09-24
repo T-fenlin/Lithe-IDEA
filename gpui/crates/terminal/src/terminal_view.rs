@@ -49,9 +49,9 @@ use gpui_kit::{
 
 use crate::constants::new_terminal_label;
 use crate::constants::{
-    CAPABILITY_NOTICE, CHOOSE_PROFILE, CHROME_RADIUS, CLEAR_TERMINAL, ERROR_FALLBACK, ERROR_TITLE,
-    EXIT_CODE, FAILED, NO_TERMINALS, RETRY, RUNNING, SCROLL_TO_END, STATUS_LINE_HEIGHT, SUCCEEDED,
-    TAB_MAX_WIDTH, TERMINAL_LINE_HEIGHT, TERMINAL_PADDING_INLINE, TERMINALS_ARIA,
+    CAPABILITY_NOTICE, CHROME_RADIUS, STATUS_LINE_HEIGHT, TAB_MAX_WIDTH, TERMINAL_LINE_HEIGHT,
+    TERMINAL_PADDING_INLINE, choose_profile, clear_terminal, error_fallback, error_title,
+    exit_code, failed, no_terminals, retry, running, scroll_to_end, succeeded, terminals_aria,
 };
 use crate::profile::TerminalProfile;
 use crate::session::{Session, SessionState};
@@ -137,7 +137,7 @@ impl TerminalPane {
                         .truncate()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child(SharedString::from(NO_TERMINALS)),
+                        .child(no_terminals()),
                 )
                 .child(self.new_tab_button(shell))
                 .into_any_element();
@@ -151,7 +151,10 @@ impl TerminalPane {
                 let name = tab.title.clone();
                 let close_shell = shell.clone();
                 // 「关闭 {name}」：`terminal.tabClose`，`locale.ts:7519`。
-                let close_label = SharedString::from(format!("关闭 {name}"));
+                let close_label = lithe_gpui_shared::tr_args(
+                    "lithe.terminal.tabClose",
+                    &[("name", name.as_ref())],
+                );
                 let close = Button::new(SharedString::from(format!("terminal-tab-close-{id}")))
                     .ghost()
                     .icon(IconName::Close)
@@ -239,18 +242,18 @@ impl TerminalPane {
             SessionState::Running => {
                 // 读线程报过 IO 错误就显示出来（正常管道不会走到这里）。
                 let label = match &tab.session.io_error {
-                    Some(error) => SharedString::from(format!("{RUNNING} · {error}")),
-                    None => SharedString::from(RUNNING),
+                    Some(error) => SharedString::from(format!("{} · {error}", running())),
+                    None => running(),
                 };
                 (label, cx.theme().success)
             }
-            SessionState::Exited(0) => (SharedString::from(SUCCEEDED), cx.theme().success),
+            SessionState::Exited(0) => (succeeded(), cx.theme().success),
             SessionState::Exited(code) => (
-                SharedString::from(format!("{FAILED} · {EXIT_CODE} {code}")),
+                SharedString::from(format!("{} · {} {code}", failed(), exit_code())),
                 cx.theme().danger,
             ),
             SessionState::Failed(message) => (
-                SharedString::from(format!("{ERROR_TITLE}：{message}")),
+                SharedString::from(format!("{}：{message}", error_title())),
                 cx.theme().danger,
             ),
         };
@@ -281,7 +284,7 @@ impl TerminalPane {
                 Button::new(SharedString::from(format!("terminal-retry-{id}")))
                     .ghost()
                     .icon(IconName::Play)
-                    .label(RETRY)
+                    .label(retry())
                     .tab_stop(false)
                     // 24 − 4 = 20（让出状态行的上下内边距）：运行时算术，没有档位 helper 可套。
                     .h(px(STATUS_LINE_HEIGHT - 4.))
@@ -349,7 +352,7 @@ impl TerminalPane {
         )
         .scrollbar(true)
         .jump_button(true)
-        .with_jump_button_label(SCROLL_TO_END)
+        .with_jump_button_label(scroll_to_end())
         .with_row_style(output_row_style());
 
         // 未完成行贴在列表**下面**：进度条（`\r` 反复覆盖同一行）与提示符都停在底部，
@@ -374,7 +377,7 @@ impl TerminalPane {
                     .min_h_0()
                     .w_full()
                     .role(Role::Log)
-                    .aria_label(TERMINALS_ARIA)
+                    .aria_label(terminals_aria())
                     // `MessageScroller` 的根是 `size_full()`，所以外面这层必须给出确定高度。
                     .child(div().size_full().child(scroller)),
             )
@@ -407,11 +410,7 @@ impl TerminalPane {
                                 gpui_kit::component::empty::EmptyMedia::new()
                                     .child(Icon::new(IconName::SquareTerminal).size_8()),
                             )
-                            .title(
-                                EmptyTitle::new()
-                                    .text_sm()
-                                    .child(SharedString::from(NO_TERMINALS)),
-                            ),
+                            .title(EmptyTitle::new().text_sm().child(no_terminals())),
                     )
                     .content(
                         EmptyContent::new().child(
@@ -450,11 +449,7 @@ impl TerminalPane {
                             gpui_kit::component::empty::EmptyMedia::new()
                                 .child(Icon::new(IconName::SquareTerminal).size_8()),
                         )
-                        .title(
-                            EmptyTitle::new()
-                                .text_sm()
-                                .child(SharedString::from(ERROR_TITLE)),
-                        )
+                        .title(EmptyTitle::new().text_sm().child(error_title()))
                         .description(
                             EmptyDescription::new()
                                 .text_xs()
@@ -464,7 +459,7 @@ impl TerminalPane {
                 .content(EmptyContent::new().child(
                     Button::new("terminal-failed-retry")
                         .icon(IconName::Play)
-                        .label(RETRY)
+                        .label(retry())
                         .h_6()
                         .px_2()
                         .rounded(px(CHROME_RADIUS))
@@ -542,8 +537,8 @@ impl TerminalPane {
             .tab_stop(false)
             .size_6()
             .rounded(px(CHROME_RADIUS))
-            .tooltip(CLEAR_TERMINAL)
-            .accessibility_label(CLEAR_TERMINAL)
+            .tooltip(clear_terminal())
+            .accessibility_label(clear_terminal())
             .disabled(self.tabs.is_empty())
             .on_click(
                 move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
@@ -571,15 +566,15 @@ impl TerminalPane {
             .tab_stop(false)
             .size_6()
             .rounded(px(CHROME_RADIUS))
-            .tooltip(CHOOSE_PROFILE)
-            .accessibility_label(CHOOSE_PROFILE)
+            .tooltip(choose_profile())
+            .accessibility_label(choose_profile())
             // `DropdownMenu`（`gpui-component-0.6.6/src/menu/dropdown_menu.rs:14-19`）；
             // 菜单项用 `PopupMenuItem::new(label).checked(..).on_click(..)`
             // （`menu/popup_menu.rs:71,180,196`）。
             .dropdown_menu(move |mut menu, _window, _cx| {
                 menu = menu.scrollable(true);
                 if profiles.is_empty() {
-                    menu = menu.item(PopupMenuItem::new(ERROR_FALLBACK).disabled(true));
+                    menu = menu.item(PopupMenuItem::new(error_fallback()).disabled(true));
                     return menu;
                 }
                 for (index, name) in profiles.iter().enumerate() {
@@ -640,8 +635,8 @@ impl Drop for TerminalPane {
 fn output_row_style() -> StyleRefinement {
     let mut style = StyleRefinement::default();
     // `StyleRefinement` 是裸样式表，没有 `Styled` 的档位 helper 可用，所以直接写单位构造函数：
-    // 16 / 4 = `rems(4.)`（与 `pl_4()` 同值）、0 → `rems(0.)`。
-    let inline = rems(TERMINAL_PADDING_INLINE / 4.);
+    // 16 / 16 = `rems(1.)` = 1rem（与 `pl_4()` 同值）、0 → `rems(0.)`。
+    let inline = rems(TERMINAL_PADDING_INLINE / 16.);
     let zero = rems(0.);
     style.padding.left = Some(inline.into());
     style.padding.right = Some(inline.into());

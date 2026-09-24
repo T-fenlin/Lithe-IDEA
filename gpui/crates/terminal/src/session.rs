@@ -26,8 +26,8 @@ use gpui_kit::{AppContext as _, Context, SharedString, Window};
 
 use crate::ansi::TerminalText;
 use crate::constants::{
-    ERROR_FALLBACK, EXIT_POLL_ATTEMPTS, EXIT_POLL_INTERVAL, INPUT_PLACEHOLDER, MAX_LINES,
-    READ_BUFFER,
+    EXIT_POLL_ATTEMPTS, EXIT_POLL_INTERVAL, MAX_LINES, READ_BUFFER, error_fallback,
+    input_placeholder,
 };
 use crate::profile::{TerminalProfile, default_profile, profiles};
 use crate::terminal_view::{TabSession, TerminalPane};
@@ -258,13 +258,13 @@ pub(crate) fn blocking_recv(receiver: &Arc<Mutex<Receiver<SessionEvent>>>) -> Op
 impl TerminalPane {
     /// 起一个默认 shell（Windows 优先 `powershell`，回退 `cmd`）的终端面板，并开第一个页签。
     ///
-    /// 探测不到任何 shell 时也会建一个页签，但它是失败态并显示 [`ERROR_FALLBACK`] +
+    /// 探测不到任何 shell 时也会建一个页签，但它是失败态并显示 [`error_fallback`] +
     /// 「重试」（真机的失败态文案见 `i18n/locale.ts:7549-7551`）。
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let profiles = profiles();
         let input = cx.new(|cx| InputState::new(window, cx));
         input.update(cx, |state, cx| {
-            state.set_placeholder(INPUT_PLACEHOLDER, window, cx);
+            state.set_placeholder(input_placeholder(), window, cx);
         });
 
         // `subscribe_in`（而不是 `subscribe`）：发送之后要用 `window` 清空输入框，
@@ -353,9 +353,9 @@ impl TerminalPane {
             .get(self.active_profile)
             .cloned()
             .or_else(default_profile);
-        let title = match &profile {
+        let title: SharedString = match &profile {
             Some(profile) => profile.name().clone(),
-            None => SharedString::from(ERROR_FALLBACK),
+            None => error_fallback(),
         };
 
         let id = self.next_id;
@@ -375,7 +375,7 @@ impl TerminalPane {
             None => {
                 println!("S1_TERMINAL_FAILED tab={id} error=no-shell-detected");
                 (
-                    Session::failed(ERROR_FALLBACK.to_string()),
+                    Session::failed(error_fallback().to_string()),
                     mpsc::channel::<SessionEvent>().1,
                 )
             }

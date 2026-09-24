@@ -12,18 +12,14 @@ use std::path::Path;
 use gpui_kit::SharedString;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::tree::TreeItem;
-use lithe_gpui_shared::core_json;
+use lithe_gpui_shared::{core_json, tr};
 // [`core_json`] 的 payload 需要一个 `serde_json::Value`：直接依赖 `serde_json`
 // （与 `gpui/crates/git` 同一口径），不借 gpui 的内部重导出。
 use serde_json::json;
 
 // ---------------------------------------------------------------------------
-// 常量：文案与上限（界面文案与度量在 explorer_view.rs）
+// 常量：上限（界面文案与度量在 explorer_view.rs）
 // ---------------------------------------------------------------------------
-
-/// `fileExplorer.folderIsEmpty` → 「文件夹为空」（`locale.ts:7461`）。
-/// 真机只在"整棵树为空"时用它；本项目还给**空目录**挂一条禁用占位行（原因见 [`empty_placeholder`]）。
-pub(crate) const FOLDER_IS_EMPTY: &str = "文件夹为空";
 
 /// 项目树最多渲染多少个文件路径。
 ///
@@ -107,11 +103,12 @@ impl RowKind {
 /// （`gpui-base-0.6.6/src/tree.rs:131-134`），不是文件系统概念 —— 一个没有可见子项的目录会被
 /// 整棵树当作**文件行**处理：单击不会展开，而且我们的点击回调会拿它的路径去调 `on_open`
 /// （等于把目录当文件打开）。挂一条禁用的子项同时解决两件事：这一行重新成为可展开的目录行，
-/// 展开后显示真机已有的文案「文件夹为空」（`locale.ts:7461`）。
+/// 展开后显示真机已有的文案「文件夹为空」（`locale.ts:7461`，走
+/// `lithe.fileExplorer.folderIsEmpty`）。
 pub(crate) fn empty_placeholder(path: &str) -> TreeItem {
     TreeItem::new(
         SharedString::from(format!("empty:{path}")),
-        SharedString::from(FOLDER_IS_EMPTY),
+        tr("lithe.fileExplorer.folderIsEmpty"),
     )
     .disabled(true)
 }

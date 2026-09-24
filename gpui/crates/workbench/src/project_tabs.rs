@@ -117,6 +117,8 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 
+use lithe_gpui_shared::tr_args;
+
 // ---------------------------------------------------------------------------
 // 度量常量（全部来自 project-tab-bar.tsx，见模块头表格）
 // ---------------------------------------------------------------------------
@@ -382,7 +384,10 @@ pub fn project_tabs(
                                 .with_size(CLOSE_BUTTON_SIZE)
                                 // 文案逐字取下 Windows 中文包：`titleProject.closeProject`
                                 // = "关闭项目 {name}"（`windows/tauri/src/i18n/locale.ts:6188`）。
-                                .tooltip(format!("关闭项目 {tooltip}"))
+                                .tooltip(tr_args(
+                                    "lithe.titleProject.closeProject",
+                                    &[("name", tooltip.as_ref())],
+                                ))
                                 .on_click(move |_, window, cx| {
                                     close(index, window, cx);
                                 }),

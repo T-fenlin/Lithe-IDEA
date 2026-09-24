@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::EditorState;
 use gpui_kit::{Entity, SharedString};
+use lithe_gpui_shared::tr_args;
 
 /// 编辑器一次读入的字节上限：2 MiB。
 ///
@@ -76,13 +77,19 @@ pub(crate) fn icon_for_file(name: &str) -> IconName {
 ///   `editor.largeFileServicesDisabled`（`:8408`）说的是"关了语言服务"而不是"不打开"。
 pub(crate) fn read_body(path: &Path, name: &str) -> String {
     match std::fs::metadata(path) {
-        Err(error) => notice(&[format!("无法打开 {name}"), error.to_string()]),
+        Err(error) => notice(&[
+            tr_args("lithe.files.openFailed", &[("name", name)]).to_string(),
+            error.to_string(),
+        ]),
         Ok(metadata) if metadata.len() > MAX_EDITOR_BYTES => notice(&[format!(
             "文件超过 {} MiB，暂不在编辑器中打开。",
             MAX_EDITOR_BYTES / (1024 * 1024)
         )]),
         Ok(_) => match std::fs::read(path) {
-            Err(error) => notice(&[format!("无法打开 {name}"), error.to_string()]),
+            Err(error) => notice(&[
+                tr_args("lithe.files.openFailed", &[("name", name)]).to_string(),
+                error.to_string(),
+            ]),
             Ok(bytes) if bytes.contains(&0) => {
                 notice(&["二进制文件不在编辑器中打开。".to_string()])
             }

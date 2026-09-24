@@ -24,34 +24,38 @@ use gpui_kit::{
     Styled as _, Subscription, WeakEntity, Window, div, px, relative, rems,
 };
 
+use lithe_gpui_shared::tr;
+
 use crate::model::{
-    FOLDER_IS_EMPTY, RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot,
+    RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot,
 };
 
 // ---------------------------------------------------------------------------
-// 文案（全部逐字取 `windows/tauri/src/i18n/locale.ts`，不自己编中文）
+// 文案：全部走 `lithe_gpui_shared::tr`（key 逐字取 `windows/tauri/src/i18n/locale.ts`
+// 生成的 locale，不自己编中文）。下面每一条注释保留原文与成 key 的对应关系。
 // ---------------------------------------------------------------------------
 
 /// `workbench.project` → 「项目」（`locale.ts:4605`）：文件树头部标题。
-const TITLE: &str = "项目";
+const TITLE_KEY: &str = "lithe.workbench.project";
 /// `fileExplorer.searchFiles` → 「搜索文件」（`locale.ts:7446`）：搜索按钮的提示 + 输入框占位。
-const SEARCH_FILES: &str = "搜索文件";
+const SEARCH_FILES_KEY: &str = "lithe.fileExplorer.searchFiles";
 /// `search.clear` → 「清除搜索」（`locale.ts:5895`）。
-const CLEAR_SEARCH: &str = "清除搜索";
+const CLEAR_SEARCH_KEY: &str = "lithe.search.clear";
 /// `fileExplorer.preferences` → 「文件资源管理器偏好设置」（`locale.ts:7445`）。
-const PREFERENCES: &str = "文件资源管理器偏好设置";
+const PREFERENCES_KEY: &str = "lithe.fileExplorer.preferences";
 /// `fileExplorer.ariaLabel` → 「文件资源管理器」（`locale.ts:7447`；调研文档 §5.4 漏了这一条）。
-const TREE_ARIA_LABEL: &str = "文件资源管理器";
+const TREE_ARIA_LABEL_KEY: &str = "lithe.fileExplorer.ariaLabel";
 /// `quickOpen.loadingFiles` → 「正在加载文件」（`locale.ts:7835`）。
-const LOADING_FILES: &str = "正在加载文件";
+const LOADING_FILES_KEY: &str = "lithe.quickOpen.loadingFiles";
 /// `ui.retry` → 「重试」（`locale.ts:4628`）。
-const RETRY: &str = "重试";
+const RETRY_KEY: &str = "lithe.ui.retry";
 /// `fileExplorer.noFolderOpen` → 「未打开文件夹」（`locale.ts:7458`）。
-const NO_FOLDER_OPEN: &str = "未打开文件夹";
-/// `welcome.openFolder` → 「打开文件夹」（`locale.ts:8740`）。
-const OPEN_FOLDER: &str = "打开文件夹";
+const NO_FOLDER_OPEN_KEY: &str = "lithe.fileExplorer.noFolderOpen";
+/// `titleProject.openFolder` → 「打开文件夹」（`locale.ts:8740` 所属的
+/// `welcome.openFolder` 同值；这里取标题栏项目菜单里的那一条）。
+const OPEN_FOLDER_KEY: &str = "lithe.titleProject.openFolder";
 /// `fileExplorer.noMatchingFiles` → 「没有匹配的文件」（`locale.ts:7460`）。
-const NO_MATCHING_FILES: &str = "没有匹配的文件";
+const NO_MATCHING_FILES_KEY: &str = "lithe.fileExplorer.noMatchingFiles";
 
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -78,7 +82,7 @@ const NO_MATCHING_FILES: &str = "没有匹配的文件";
 // 上，按《编码指南》用 **`text_sm()`（14px）**——13 → 14 是经维护者确认的**有意**视觉改动。
 //
 // ⚠️ `line_height` 没有 rem 档位 helper（`gpui-pre-0.3.6/src/styled.rs:740` 只有取值形式），
-// 所以这一项用 helper 底层的 `rems()` 表达（`rems(16. / 4.)` = 原来的 `px(16.)`）。
+// 所以这一项用 helper 底层的 `rems()` 表达（`rems(16. / 16.)` = 1rem = 原来的 `px(16.)`）。
 
 /// 头部图标按钮圆角 6.4px（`ui/button.tsx:9` 的 `rounded-md` → `--radius-md = --radius × 0.8`，
 /// `theme.css:7,134`）。
@@ -90,7 +94,7 @@ const HEADER_BUTTON_RADIUS: f32 = 6.4;
 /// 头部标题行高 16px（`file-explorer/styles/file-explorer-tree.css:151-156`：
 /// `font-size: var(--ui-text-chrome)` / `font-weight: 600` / `line-height: var(--lithe-chrome-line-height)`，
 /// 后者的值 1rem 见 `theme.css:128`）。16 在 rem 档位上，但 `line_height` 没有档位 helper，
-/// 所以调用点写 `rems(TITLE_LINE_HEIGHT / 4.)`。
+/// 所以调用点写 `rems(TITLE_LINE_HEIGHT / 16.)`。
 const TITLE_LINE_HEIGHT: f32 = 16.;
 /// 搜索输入框圆角 8px（`rounded-lg` = `--radius × 1`，`theme.css:8,134`）。
 ///
@@ -200,7 +204,7 @@ impl Explorer {
         let tree = cx.new(|cx| TreeState::new(cx));
         let search = cx.new(|cx| InputState::new(window, cx));
         search.update(cx, |state, cx| {
-            state.set_placeholder(SEARCH_FILES, window, cx);
+            state.set_placeholder(tr(SEARCH_FILES_KEY), window, cx);
         });
 
         // 攒展开状态。`TreeEvent` 只有 `Expanded` / `Collapsed` 两个变体
@@ -399,14 +403,14 @@ impl Explorer {
                     .text_sm()
                     .font_semibold()
                     // `line_height` 没有 rem 档位 helper，用 helper 底层的 `rems()`（原 16px）。
-                    .line_height(rems(TITLE_LINE_HEIGHT / 4.))
+                    .line_height(rems(TITLE_LINE_HEIGHT / 16.))
                     .text_color(cx.theme().foreground)
-                    .child(SharedString::from(TITLE)),
+                    .child(tr(TITLE_KEY)),
             )
             .child(header_button(
                 "explorer-search",
                 IconName::Search,
-                SEARCH_FILES,
+                tr(SEARCH_FILES_KEY),
                 Some(Box::new(cx.listener(
                     |this: &mut Self,
                      _event: &ClickEvent,
@@ -421,7 +425,7 @@ impl Explorer {
             header = header.child(header_button(
                 "explorer-search-clear",
                 IconName::X,
-                CLEAR_SEARCH,
+                tr(CLEAR_SEARCH_KEY),
                 Some(Box::new(cx.listener(
                     |this: &mut Self,
                      _event: &ClickEvent,
@@ -441,7 +445,7 @@ impl Explorer {
             .child(header_button(
                 "explorer-preferences",
                 IconName::Settings,
-                PREFERENCES,
+                tr(PREFERENCES_KEY),
                 None,
             ))
             .into_any_element()
@@ -536,7 +540,7 @@ impl Explorer {
                                 // → 16px（`gpui-component-0.6.6/src/spinner.rs:22`、`icon.rs:185`），
                                 // 自带 `with_animation` 常转（`spinner.rs:60-74`）。
                                 .child(Spinner::new().color(cx.theme().muted_foreground))
-                                .child(SharedString::from(LOADING_FILES)),
+                                .child(tr(LOADING_FILES_KEY)),
                         ),
                 )
             })
@@ -693,7 +697,7 @@ impl Explorer {
             .w_full()
             .px_1p5()
             .role(Role::Tree)
-            .aria_label(TREE_ARIA_LABEL)
+            .aria_label(tr(TREE_ARIA_LABEL_KEY))
             .child(tree)
             .into_any_element()
     }
@@ -706,23 +710,23 @@ impl Explorer {
             // 打开目录需要一个系统目录选择器、而且换工作区根要重建整个外壳布局，
             // 本模块拿不到这条通路，所以按"宁可禁用也不画假按钮"的约定渲染成**禁用态**并登记。
             return self.empty(
-                SharedString::from(NO_FOLDER_OPEN),
-                Some((OPEN_FOLDER, true)),
+                tr(NO_FOLDER_OPEN_KEY),
+                Some((tr(OPEN_FOLDER_KEY), true)),
                 cx,
             );
         }
 
         let message = if self.query.is_empty() {
-            FOLDER_IS_EMPTY
+            tr("lithe.fileExplorer.folderIsEmpty")
         } else {
-            NO_MATCHING_FILES
+            tr(NO_MATCHING_FILES_KEY)
         };
-        self.empty(SharedString::from(message), None, cx)
+        self.empty(message, None, cx)
     }
 
     /// 加载失败：显示 Core 错误码 + 「重试」（真的会重新取快照）。
     fn empty_failed(&self, error: String, cx: &mut Context<Self>) -> AnyElement {
-        self.empty(SharedString::from(error), Some((RETRY, false)), cx)
+        self.empty(SharedString::from(error), Some((tr(RETRY_KEY), false)), cx)
     }
 
     /// 空态的公共骨架，照 `ui/empty.tsx:111-130` 的 `EmptyState`：
@@ -731,7 +735,7 @@ impl Explorer {
     fn empty(
         &self,
         message: SharedString,
-        action: Option<(&'static str, bool)>,
+        action: Option<(SharedString, bool)>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mut empty = Empty::new().header(
@@ -773,7 +777,7 @@ impl Explorer {
 fn header_button(
     id: &'static str,
     icon: IconName,
-    label: &'static str,
+    label: SharedString,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
 ) -> Button {
     let button = Button::new(id)
@@ -782,7 +786,7 @@ fn header_button(
         .tab_stop(false)
         .size_6()
         .rounded(px(HEADER_BUTTON_RADIUS))
-        .tooltip(label)
+        .tooltip(label.clone())
         .accessibility_label(label);
 
     match on_click {

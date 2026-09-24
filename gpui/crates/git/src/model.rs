@@ -14,7 +14,7 @@ use std::path::Path;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{App, ClickEvent, Hsla, SharedString, Window};
 
-use lithe_gpui_shared::{CoreClient, CoreRequest};
+use lithe_gpui_shared::{CoreClient, CoreRequest, tr, tr_args};
 
 // ---------------------------------------------------------------------------
 // 度量
@@ -224,18 +224,25 @@ pub(crate) enum FilterScope {
 }
 
 impl FilterScope {
-    /// 文案逐字取自 `i18n/locale.ts:7279-7281`。
+    /// 字段名对应的文案 key，逐字取自 `i18n/locale.ts:7279-7281`。
+    fn label_key(self) -> &'static str {
+        match self {
+            FilterScope::Text => "lithe.git.log.filterText",
+            FilterScope::Author => "lithe.git.log.filterAuthor",
+            FilterScope::Branch => "lithe.git.log.filterBranch",
+        }
+    }
+
     pub(crate) fn label(self) -> SharedString {
-        SharedString::from(match self {
-            FilterScope::Text => "文本",
-            FilterScope::Author => "作者",
-            FilterScope::Branch => "分支",
-        })
+        tr(self.label_key())
     }
 
     /// 占位文案 `{field} 筛选`（`git.log.filterPlaceholder`，`locale.ts:7282`）。
     pub(crate) fn placeholder(self) -> SharedString {
-        SharedString::from(format!("{} 筛选", self.label()))
+        tr_args(
+            "lithe.git.log.filterPlaceholder",
+            &[("field", self.label().as_ref())],
+        )
     }
 
     pub(crate) fn all() -> [FilterScope; 3] {
@@ -271,10 +278,10 @@ impl RefKind {
 
     /// 分区标题文案逐字取自 `i18n/locale.ts:7252-7254`。
     pub(crate) fn title(self) -> SharedString {
-        SharedString::from(match self {
-            RefKind::Local => "本地",
-            RefKind::Remote => "远程",
-            RefKind::Tag => "标签",
+        tr(match self {
+            RefKind::Local => "lithe.git.log.local",
+            RefKind::Remote => "lithe.git.log.remote",
+            RefKind::Tag => "lithe.git.log.tags",
         })
     }
 

@@ -25,6 +25,8 @@ use gpui_kit::{
     relative, rems,
 };
 
+use lithe_gpui_shared::{tr, tr_args};
+
 use crate::model::{
     AUTHOR_COLUMN_WIDTH, ButtonHandler, COMMIT_CONTENT_MIN_WIDTH, COMMIT_FILE_INDENT_BASE,
     COMMIT_FILE_INDENT_STEP, COMMIT_FILE_STATUS_FONT_SIZE, COMMIT_PANE_FRACTION, COMMIT_ROW_HEIGHT,
@@ -424,7 +426,7 @@ impl BottomPane {
     fn icon_button(
         id: (&'static str, usize),
         icon: IconName,
-        label: &'static str,
+        label: SharedString,
         enabled: bool,
         handler: ButtonHandler,
         cx: &App,
@@ -456,7 +458,7 @@ impl BottomPane {
     fn toolbar_button(
         id: (&'static str, usize),
         icon: IconName,
-        label: &'static str,
+        label: SharedString,
         enabled: bool,
         handler: ButtonHandler,
         cx: &App,
@@ -492,9 +494,12 @@ impl BottomPane {
             .and_then(|index| self.references.get(index))
             .map(|reference| reference.short_name.clone())
             .or_else(|| self.branch.clone())
-            .unwrap_or_else(|| SharedString::from("全部"));
+            .unwrap_or_else(|| tr("lithe.git.log.all"));
         // `日志：{name}`（`git.log.logLabel`，`locale.ts:7189`）。
-        let pill_label = SharedString::from(format!("日志：{reference_name}"));
+        let pill_label = tr_args(
+            "lithe.git.log.logLabel",
+            &[("name", reference_name.as_ref())],
+        );
 
         let show_all: ButtonHandler = {
             let this = this.clone();
@@ -534,7 +539,11 @@ impl BottomPane {
                     .text_color(cx.theme().muted_foreground),
             )
             // `workbench.gitLog` = 提交记录（`locale.ts:5910`）。
-            .child(div().font_weight(FontWeight::MEDIUM).child("提交记录"))
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(tr("lithe.workbench.gitLog")),
+            )
             // 「引用名」胶囊：点击 = 显示全部引用（`git.log.showAll`，`locale.ts:7190`）。
             .child(
                 div()
@@ -551,7 +560,7 @@ impl BottomPane {
                     .bg(cx.theme().background)
                     .font_weight(FontWeight::MEDIUM)
                     .hover(|style| style.bg(cx.theme().accent))
-                    .aria_label("显示全部引用")
+                    .aria_label(tr("lithe.git.log.showAll"))
                     .on_click(move |event, window, cx| show_all(event, window, cx))
                     .child(div().min_w_0().text_ellipsis().child(pill_label)),
             )
@@ -559,7 +568,7 @@ impl BottomPane {
             .child(Self::icon_button(
                 ("bottom-git-refresh", 0),
                 IconName::RotateCw,
-                "刷新 Git 日志",
+                tr("lithe.git.log.refresh"),
                 self.load_state != LoadState::Loading,
                 refresh,
                 cx,
@@ -568,7 +577,7 @@ impl BottomPane {
             .child(Self::icon_button(
                 ("bottom-git-settings", 0),
                 IconName::Settings,
-                "打开 Git 日志设置",
+                tr("lithe.git.log.settings"),
                 false,
                 settings,
                 cx,
@@ -579,13 +588,13 @@ impl BottomPane {
                 div()
                     .flex_shrink_0()
                     .text_color(cx.theme().muted_foreground)
-                    .child("只读"),
+                    .child(tr("lithe.footer.readOnly")),
             )
             // 隐藏（`git.log.hide`，`locale.ts:7192`）。
             .child(Self::icon_button(
                 ("bottom-git-hide", 0),
                 IconName::Minus,
-                "隐藏提交记录",
+                tr("lithe.git.log.hide"),
                 true,
                 hide,
                 cx,
@@ -607,8 +616,8 @@ impl BottomPane {
 
         // `git.console.log` = 日志（`locale.ts:4556`）、`git.console.title` = 控制台（`locale.ts:4555`）。
         for (index, (panel, label)) in [
-            (Panel::Log, SharedString::from("日志")),
-            (Panel::Console, SharedString::from("控制台")),
+            (Panel::Log, tr("lithe.git.console.log")),
+            (Panel::Console, tr("lithe.git.console.title")),
         ]
         .into_iter()
         .enumerate()
@@ -728,9 +737,9 @@ impl BottomPane {
                     IconName::EyeOff
                 },
                 if self.show_decorations {
-                    "隐藏分支和标签"
+                    tr("lithe.git.log.hideDecorations")
                 } else {
-                    "显示分支和标签"
+                    tr("lithe.git.log.showDecorations")
                 },
                 true,
                 toggle_decorations,
@@ -760,14 +769,20 @@ impl BottomPane {
             // `git.log.commit` / `author` / `date`（`locale.ts:7285-7287`）。
             // 表头「提交」只占 `flex-1`，**没有**预留泳道图宽度（源码就是不对齐的，
             // 见 `research/windows/03-git-and-bottom.md` §2.3 的注）。
-            .child(div().min_w_0().flex_1().child("提交"))
+            .child(div().min_w_0().flex_1().child(tr("lithe.git.log.commit")))
             .child(
                 div()
                     .w(px(AUTHOR_COLUMN_WIDTH))
                     .flex_shrink_0()
-                    .child("作者"),
+                    .child(tr("lithe.git.log.author")),
             )
-            .child(h_flex().w_32().flex_shrink_0().justify_end().child("日期"))
+            .child(
+                h_flex()
+                    .w_32()
+                    .flex_shrink_0()
+                    .justify_end()
+                    .child(tr("lithe.git.log.date")),
+            )
     }
 
     /// 泳道图单元格（简化版，偏差 2）。
@@ -956,10 +971,10 @@ impl BottomPane {
         if visible.is_empty() {
             let message = if total == 0 {
                 // `git.log.noCommits` = 此视图中没有提交（`locale.ts:7289`）。
-                SharedString::from("此视图中没有提交")
+                tr("lithe.git.log.noCommits")
             } else {
                 // `git.log.noMatch` = 没有符合筛选条件的提交（`locale.ts:7288`）。
-                SharedString::from("没有符合筛选条件的提交")
+                tr("lithe.git.log.noMatch")
             };
             list = list.child(
                 h_flex()
@@ -1012,10 +1027,10 @@ impl BottomPane {
                             .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
                             .label(if self.loading_more {
                                 // `git.log.loadingCommits` = 正在加载提交…（`locale.ts:7294`）。
-                                SharedString::from("正在加载提交…")
+                                tr("lithe.git.log.loadingCommits")
                             } else {
                                 // `git.log.loadMore` = 加载更多提交（`locale.ts:7295`）。
-                                SharedString::from("加载更多提交")
+                                tr("lithe.git.log.loadMore")
                             })
                             .disabled(self.loading_more)
                             .on_click(move |_event, _window, cx: &mut App| {
@@ -1109,7 +1124,7 @@ impl BottomPane {
             .child(Self::toolbar_button(
                 ("bottom-git-ref-expand", 0),
                 IconName::UnfoldVertical,
-                "全部展开",
+                tr("lithe.git.expandAll"),
                 has_references,
                 expand,
                 cx,
@@ -1117,7 +1132,7 @@ impl BottomPane {
             .child(Self::toolbar_button(
                 ("bottom-git-ref-collapse", 0),
                 IconName::FoldVertical,
-                "全部折叠",
+                tr("lithe.git.collapseAll"),
                 has_references,
                 collapse,
                 cx,
@@ -1134,9 +1149,9 @@ impl BottomPane {
                 ("bottom-git-ref-mine", 0),
                 IconName::ListFilter,
                 if show_my_branches_only {
-                    "显示全部分支"
+                    tr("lithe.git.log.toolbar.showAllBranches")
                 } else {
-                    "显示我的分支"
+                    tr("lithe.git.log.toolbar.showMyBranches")
                 },
                 has_my_branches || show_my_branches_only,
                 toggle_mine,
@@ -1147,7 +1162,7 @@ impl BottomPane {
             .child(Self::toolbar_button(
                 ("bottom-git-ref-create", 0),
                 IconName::Plus,
-                "新建分支",
+                tr("lithe.git.log.toolbar.newBranch"),
                 false,
                 create_branch,
                 cx,
@@ -1254,7 +1269,7 @@ impl BottomPane {
                     .text_size(px(REFERENCE_BADGE_FONT_SIZE))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(cx.theme().yellow_light)
-                    .child("当前"),
+                    .child(tr("lithe.git.current")),
             );
         }
 
@@ -1303,7 +1318,12 @@ impl BottomPane {
                 })
                 .child(div().text_color(cx.theme().primary).child("→"))
                 // `git.log.headCurrentBranch` = HEAD（当前分支）（`locale.ts:7220`）。
-                .child(div().min_w_0().text_ellipsis().child("HEAD（当前分支）"))
+                .child(
+                    div()
+                        .min_w_0()
+                        .text_ellipsis()
+                        .child(tr("lithe.git.log.headCurrentBranch")),
+                )
                 .when_some(current, |row, reference| {
                     row.child(
                         div()
@@ -1375,10 +1395,10 @@ impl BottomPane {
                             .h_6()
                             .pl_8()
                             // 行高 = 24（`h-6`）：`line_height` 没有档位 helper，
-                            // 用 helper 底层的 `rems()`，`rems(6.)` 与 `h_6()` 同值。
-                            .line_height(rems(6.))
+                            // 用 helper 底层的 `rems()`，`rems(1.5)` = 24px，与 `h_6()` 同值。
+                            .line_height(rems(1.5))
                             .text_color(cx.theme().muted_foreground)
-                            .child("无"),
+                            .child(tr("lithe.git.log.none")),
                     );
                 } else {
                     for row in rows {
@@ -1509,7 +1529,7 @@ impl BottomPane {
                             .border_b_1()
                             .border_color(cx.theme().border)
                             .text_color(cx.theme().muted_foreground)
-                            .child("引用")
+                            .child(tr("lithe.git.log.references"))
                             .child(div().flex_1())
                             .when_some(reference_label, |row, label| {
                                 row.child(div().min_w_0().text_ellipsis().child(label))
@@ -1557,20 +1577,23 @@ impl BottomPane {
                             .bg(cx.theme().tab_bar)
                             .text_color(cx.theme().muted_foreground)
                             // `git.log.commitFiles` = 提交文件（`locale.ts:7296`）。
-                            .child("提交文件")
+                            .child(tr("lithe.git.log.commitFiles"))
                             .child(div().flex_1())
                             .child(if self.files_state == FilesState::Loading {
                                 // `git.log.loadingShort` = 加载中…（`locale.ts:7303`）。
-                                SharedString::from("加载中…")
+                                tr("lithe.git.log.loadingShort")
                             } else {
                                 // `git.log.filesCount` = {count} 个文件（`locale.ts:7297`）。
-                                SharedString::from(format!("{file_count} 个文件"))
+                                tr_args(
+                                    "lithe.git.log.filesCount",
+                                    &[("count", &file_count.to_string())],
+                                )
                             })
                             // 「打开提交差异」要 `git.diff`（不在 6 条命令里）→ 禁用。
                             .child(Self::icon_button(
                                 ("bottom-git-open-diff", 0),
                                 IconName::GitCompare,
-                                "打开提交差异",
+                                tr("lithe.git.log.openCommitDiff"),
                                 false,
                                 handler(|_event, _window, _cx| {}),
                                 cx,
@@ -1612,21 +1635,21 @@ impl BottomPane {
         match self.files_state {
             // `git.log.selectCommit` = 选择一个提交（`locale.ts:7298`）。
             FilesState::Idle => centered(
-                SharedString::from("选择一个提交"),
+                tr("lithe.git.log.selectCommit"),
                 cx.theme().muted_foreground,
             ),
             // `git.log.loadingChangedFiles` = 正在加载更改的文件…（`locale.ts:7299`）。
             FilesState::Loading => centered(
-                SharedString::from("正在加载更改的文件…"),
+                tr("lithe.git.log.loadingChangedFiles"),
                 cx.theme().muted_foreground,
             ),
             // `git.log.unableToLoadFiles` = 无法加载更改的文件（`locale.ts:7300`）。
             FilesState::Failed => {
-                centered(SharedString::from("无法加载更改的文件"), cx.theme().danger)
+                centered(tr("lithe.git.log.unableToLoadFiles"), cx.theme().danger)
             }
             // `git.log.noChangedFiles` = 没有更改的文件（`locale.ts:7301`）。
             FilesState::Ready if self.files.is_empty() => centered(
-                SharedString::from("没有更改的文件"),
+                tr("lithe.git.log.noChangedFiles"),
                 cx.theme().muted_foreground,
             ),
             FilesState::Ready => {
@@ -1688,7 +1711,10 @@ impl BottomPane {
                         .flex_shrink_0()
                         .text_size(px(COMMIT_FILE_STATUS_FONT_SIZE))
                         .text_color(cx.theme().muted_foreground)
-                        .child(SharedString::from(format!("{} 个文件", row.file_count))),
+                        .child(tr_args(
+                            "lithe.git.log.filesCount",
+                            &[("count", &row.file_count.to_string())],
+                        )),
                 )
         } else {
             row_element
@@ -1725,7 +1751,7 @@ impl BottomPane {
                 .items_center()
                 .justify_center()
                 .text_color(cx.theme().muted_foreground)
-                .child("提交详情")
+                .child(tr("lithe.git.log.commitDetails"))
                 .into_any_element();
         };
 
@@ -1794,12 +1820,12 @@ impl BottomPane {
         // 文案逐字取自 `git.console.find/wrap/scrollToEnd/cancel/clear/copy`
         // （`locale.ts:4473,4493,4494,4557,4558,4559`）。
         for (index, (icon, label)) in [
-            (IconName::Search, "在 Git 控制台中查找"),
-            (IconName::TextWrap, "自动换行"),
-            (IconName::ArrowDown, "滚动到底部"),
-            (IconName::CircleSlash, "取消正在运行的操作"),
-            (IconName::Trash, "清空"),
-            (IconName::Copy, "复制输出"),
+            (IconName::Search, tr("lithe.git.console.find")),
+            (IconName::TextWrap, tr("lithe.git.console.wrap")),
+            (IconName::ArrowDown, tr("lithe.git.console.scrollToEnd")),
+            (IconName::CircleSlash, tr("lithe.git.console.cancel")),
+            (IconName::Trash, tr("lithe.git.console.clear")),
+            (IconName::Copy, tr("lithe.git.console.copy")),
         ]
         .into_iter()
         .enumerate()
@@ -1829,7 +1855,7 @@ impl BottomPane {
                     .p_3()
                     .text_color(cx.theme().muted_foreground)
                     // `git.console.empty` = Git 命令及其输出将显示在这里。（`locale.ts:4560`）。
-                    .child("Git 命令及其输出将显示在这里。"),
+                    .child(tr("lithe.git.console.empty")),
             )
     }
 
@@ -1890,7 +1916,7 @@ impl BottomPane {
                 Button::new("bottom-git-retry")
                     .ghost()
                     .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
-                    .label("重试")
+                    .label(tr("lithe.git.log.retry"))
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| pane.refresh(cx));
                     }),
@@ -1924,7 +1950,7 @@ impl BottomPane {
                 Button::new("bottom-git-empty-retry")
                     .ghost()
                     .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
-                    .label("重试")
+                    .label(tr("lithe.git.log.retry"))
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| pane.refresh(cx));
                     }),
@@ -1971,29 +1997,25 @@ impl Render for BottomPane {
             // 错误横幅 + 三栏（`git-log-tool-window.tsx:589-621`）。
             LoadState::Stale => {
                 // `git.log.unableToRefresh` = 无法刷新 Git 日志。（`locale.ts:7196`）。
-                root = root.child(Self::banner(
-                    SharedString::from("无法刷新 Git 日志。"),
-                    &this,
-                    cx,
-                ));
+                root = root.child(Self::banner(tr("lithe.git.log.unableToRefresh"), &this, cx));
                 root.child(self.log_body(&this, cx))
             }
             // `git.log.noRepository` / `git.log.openWorkspace`（`locale.ts:7198-7199`）。
             LoadState::NoRepository => root.child(Self::centered_notice(
-                SharedString::from("未打开仓库"),
-                Some(SharedString::from("打开一个 Git 工作区以查看提交记录。")),
+                tr("lithe.git.noRepositoryOpen"),
+                Some(tr("lithe.git.log.openWorkspace")),
                 None,
                 cx,
             )),
             // `git.log.loading` = 正在加载 Git 日志…（`locale.ts:7200`）。
             LoadState::Loading => root.child(Self::centered_notice(
-                SharedString::from("正在加载 Git 日志…"),
+                tr("lithe.git.log.loading"),
                 None,
                 None,
                 cx,
             )),
             LoadState::Failed => root.child(Self::centered_notice(
-                SharedString::from("无法刷新 Git 日志。"),
+                tr("lithe.git.log.unableToRefresh"),
                 None,
                 Some(&this),
                 cx,
