@@ -22,43 +22,25 @@ use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, px,
-    relative,
+    relative, rems,
 };
 
 use crate::model::{
-    AUTHOR_COLUMN_PADDING_X, AUTHOR_COLUMN_WIDTH, BANNER_GAP, BANNER_HEIGHT, BANNER_PADDING_X,
-    ButtonHandler, COMMIT_CONTENT_MIN_WIDTH, COMMIT_FILE_INDENT_BASE, COMMIT_FILE_INDENT_STEP,
-    COMMIT_FILE_ROW_HEIGHT, COMMIT_FILE_STATUS_FONT_SIZE, COMMIT_FILE_TREE_PADDING,
-    COMMIT_FONT_SIZE, COMMIT_HEADER_HEIGHT, COMMIT_PANE_FRACTION, COMMIT_PANE_MIN_WIDTH,
-    COMMIT_ROW_HEIGHT, COMMIT_ROW_PADDING_X, CONSOLE_FONT_SIZE, CONSOLE_OUTPUT_PADDING,
-    CONSOLE_TOOLBAR_GAP, CONSOLE_TOOLBAR_PADDING_Y, CONSOLE_TOOLBAR_WIDTH, Commit, CommitFileRow,
-    DATE_COLUMN_WIDTH, DATE_FONT_SIZE, Detail, FIELD_SELECT_PADDING_X, FILTER_INPUT_MAX_WIDTH,
-    FILTER_INPUT_MIN_WIDTH, FILTER_ROW_GAP, FILTER_ROW_HEIGHT, FILTER_ROW_PADDING_X, FilesState,
-    FilterScope, FirstLoad, GRAPH_LANE_GAP, GRAPH_LINE_WIDTH, GRAPH_MIN_WIDTH, GRAPH_NODE_RADIUS,
-    GRAPH_NODE_STROKE, GRAPH_PADDING, GraphRow, HistoryCursor, ICON_BUTTON_ICON_SIZE,
-    ICON_BUTTON_RADIUS, ICON_BUTTON_SIZE, INSPECTOR_DETAIL_GAP, INSPECTOR_DETAIL_PADDING,
-    INSPECTOR_DETAILS_FRACTION, INSPECTOR_DETAILS_MIN_HEIGHT, INSPECTOR_FILES_FRACTION,
-    INSPECTOR_FILES_MIN_HEIGHT, INSPECTOR_HASH_FONT_SIZE, INSPECTOR_HEADER_GAP,
-    INSPECTOR_HEADER_HEIGHT, INSPECTOR_HEADER_PADDING_X, INSPECTOR_MONO_FONT_SIZE,
-    INSPECTOR_PANE_FRACTION, INSPECTOR_PANE_MIN_WIDTH, LABEL_FONT_SIZE, LABEL_GAP, LABEL_MAX_WIDTH,
-    LABEL_PADDING_X, LABEL_PADDING_Y, LABEL_RADIUS, LOAD_MORE_BUTTON_HEIGHT, LOAD_MORE_HEIGHT,
-    Label, LoadState, MoreLoad, Panel, REFERENCE_BADGE_FONT_SIZE, REFERENCE_BADGE_PADDING_X,
-    REFERENCE_DISCLOSURE_SIZE, REFERENCE_EMPTY_HEIGHT, REFERENCE_EMPTY_PADDING_LEFT,
-    REFERENCE_HEAD_ROW_GAP, REFERENCE_HEAD_ROW_HEIGHT, REFERENCE_HEAD_ROW_MARGIN_BOTTOM,
-    REFERENCE_HEAD_ROW_PADDING_X, REFERENCE_HEAD_ROW_RADIUS, REFERENCE_HEADER_HEIGHT,
-    REFERENCE_ICON_SIZE, REFERENCE_INDENT_BASE, REFERENCE_INDENT_STEP, REFERENCE_LIST_PADDING,
-    REFERENCE_PANE_FRACTION, REFERENCE_PANE_MIN_WIDTH, REFERENCE_PILL_HEIGHT,
-    REFERENCE_PILL_MAX_WIDTH, REFERENCE_PILL_PADDING_X, REFERENCE_PILL_RADIUS, REFERENCE_ROW_GAP,
-    REFERENCE_ROW_HEIGHT, REFERENCE_ROW_RADIUS, REFERENCE_SECTION_MARGIN_BOTTOM,
-    REFERENCE_SECTION_PADDING_X, REFERENCE_SECTION_RADIUS, REFERENCE_SECTION_ROW_HEIGHT,
-    REFERENCE_TOOLBAR_BUTTON_RADIUS, REFERENCE_TOOLBAR_BUTTON_SIZE, REFERENCE_TOOLBAR_GAP,
-    REFERENCE_TOOLBAR_ICON_SIZE, REFERENCE_TOOLBAR_PADDING_Y, REFERENCE_TOOLBAR_SEPARATOR_HEIGHT,
-    REFERENCE_TOOLBAR_SEPARATOR_MARGIN_Y, REFERENCE_TOOLBAR_SEPARATOR_WIDTH,
-    REFERENCE_TOOLBAR_WIDTH, RefKind, Reference, TAB_ROW_FONT_SIZE, TAB_ROW_GAP, TAB_ROW_HEIGHT,
-    TAB_ROW_PADDING_X, TITLE_BAR_GAP, TITLE_BAR_HEIGHT, TITLE_BAR_PADDING_X, TITLE_FONT_SIZE,
-    TITLE_ICON_SIZE, TRACKING_COUNT_FONT_SIZE, TRACKING_COUNT_GAP, build_commit_files,
-    build_reference_rows, handler, label_color, lane_color, layout_graph, load_commit_files,
-    load_first, load_more, matches_filter, tracking_count,
+    AUTHOR_COLUMN_WIDTH, ButtonHandler, COMMIT_CONTENT_MIN_WIDTH, COMMIT_FILE_INDENT_BASE,
+    COMMIT_FILE_INDENT_STEP, COMMIT_FILE_STATUS_FONT_SIZE, COMMIT_PANE_FRACTION, COMMIT_ROW_HEIGHT,
+    Commit, CommitFileRow, DATE_FONT_SIZE, Detail, FILTER_INPUT_MAX_WIDTH, FILTER_INPUT_MIN_WIDTH,
+    FilesState, FilterScope, FirstLoad, GRAPH_LANE_GAP, GRAPH_LINE_WIDTH, GRAPH_MIN_WIDTH,
+    GRAPH_NODE_RADIUS, GraphRow, HistoryCursor, ICON_BUTTON_RADIUS, ICON_BUTTON_SIZE,
+    INSPECTOR_DETAILS_FRACTION, INSPECTOR_FILES_FRACTION, INSPECTOR_FILES_MIN_HEIGHT,
+    INSPECTOR_HASH_FONT_SIZE, INSPECTOR_MONO_FONT_SIZE, INSPECTOR_PANE_FRACTION,
+    INSPECTOR_PANE_MIN_WIDTH, LABEL_FONT_SIZE, LABEL_MAX_WIDTH, LABEL_PADDING_Y, LABEL_RADIUS,
+    LOAD_MORE_BUTTON_HEIGHT, Label, LoadState, MoreLoad, Panel, REFERENCE_BADGE_FONT_SIZE,
+    REFERENCE_HEAD_ROW_RADIUS, REFERENCE_INDENT_BASE, REFERENCE_INDENT_STEP,
+    REFERENCE_PANE_FRACTION, REFERENCE_PANE_MIN_WIDTH, REFERENCE_PILL_MAX_WIDTH,
+    REFERENCE_PILL_RADIUS, REFERENCE_ROW_RADIUS, REFERENCE_SECTION_RADIUS,
+    REFERENCE_TOOLBAR_BUTTON_RADIUS, RefKind, Reference, TRACKING_COUNT_FONT_SIZE,
+    build_commit_files, build_reference_rows, handler, label_color, lane_color, layout_graph,
+    load_commit_files, load_first, load_more, matches_filter, tracking_count,
 };
 // 面板
 // ---------------------------------------------------------------------------
@@ -459,7 +441,7 @@ impl BottomPane {
             .flex_shrink_0()
             .items_center()
             .justify_center()
-            .size(px(ICON_BUTTON_SIZE))
+            .size_6()
             .rounded(px(ICON_BUTTON_RADIUS))
             .aria_label(label)
             .when(enabled, |this| {
@@ -467,11 +449,7 @@ impl BottomPane {
                     .on_click(move |event, window, cx| handler(event, window, cx))
             })
             .when(!enabled, |this| this.opacity(0.4))
-            .child(
-                Icon::new(icon)
-                    .size(px(ICON_BUTTON_ICON_SIZE))
-                    .text_color(color),
-            )
+            .child(Icon::new(icon).size_3p5().text_color(color))
     }
 
     /// 引用树工具栏按钮：32×32、图标 16、圆角 4.8（`git-reference-tree.tsx:146`）。
@@ -494,7 +472,7 @@ impl BottomPane {
             .flex_shrink_0()
             .items_center()
             .justify_center()
-            .size(px(REFERENCE_TOOLBAR_BUTTON_SIZE))
+            .size_8()
             .rounded(px(REFERENCE_TOOLBAR_BUTTON_RADIUS))
             .aria_label(label)
             .when(enabled, |this| {
@@ -502,11 +480,7 @@ impl BottomPane {
                     .on_click(move |event, window, cx| handler(event, window, cx))
             })
             .when(!enabled, |this| this.opacity(0.3))
-            .child(
-                Icon::new(icon)
-                    .size(px(REFERENCE_TOOLBAR_ICON_SIZE))
-                    .text_color(color),
-            )
+            .child(Icon::new(icon).size_4().text_color(color))
     }
 
     /// 标题栏。`git-log-title-bar.tsx:28-72`。
@@ -545,18 +519,18 @@ impl BottomPane {
         h_flex()
             .w_full()
             .flex_shrink_0()
-            .h(px(TITLE_BAR_HEIGHT))
+            .h_8()
             .items_center()
-            .gap(px(TITLE_BAR_GAP))
-            .px(px(TITLE_BAR_PADDING_X))
+            .gap_2()
+            .px_2()
             .border_b_1()
             .border_color(cx.theme().border)
             // 底色 `bg-surface`（`git-log-title-bar.tsx:28`）；主题里最接近的是 `tab_bar`。
             .bg(cx.theme().tab_bar)
-            .text_size(px(TITLE_FONT_SIZE))
+            .text_sm()
             .child(
                 Icon::new(IconName::GitBranch)
-                    .size(px(TITLE_ICON_SIZE))
+                    .size_3p5()
                     .text_color(cx.theme().muted_foreground),
             )
             // `workbench.gitLog` = 提交记录（`locale.ts:5910`）。
@@ -568,9 +542,9 @@ impl BottomPane {
                     .flex()
                     .flex_shrink_0()
                     .items_center()
-                    .h(px(REFERENCE_PILL_HEIGHT))
+                    .h_6()
                     .max_w(px(REFERENCE_PILL_MAX_WIDTH))
-                    .px(px(REFERENCE_PILL_PADDING_X))
+                    .px_2()
                     .rounded(px(REFERENCE_PILL_RADIUS))
                     .border_1()
                     .border_color(cx.theme().border)
@@ -623,13 +597,13 @@ impl BottomPane {
         let mut row = h_flex()
             .w_full()
             .flex_shrink_0()
-            .h(px(TAB_ROW_HEIGHT))
+            .h_6()
             .items_center()
-            .gap(px(TAB_ROW_GAP))
-            .px(px(TAB_ROW_PADDING_X))
+            .gap_4()
+            .px_3()
             .border_b_1()
             .border_color(cx.theme().border)
-            .text_size(px(TAB_ROW_FONT_SIZE));
+            .text_xs();
 
         // `git.console.log` = 日志（`locale.ts:4556`）、`git.console.title` = 控制台（`locale.ts:4555`）。
         for (index, (panel, label)) in [
@@ -678,8 +652,8 @@ impl BottomPane {
         Button::new("bottom-git-filter-field")
             .ghost()
             .with_size(px(ICON_BUTTON_SIZE))
-            .h(px(ICON_BUTTON_SIZE))
-            .px(px(FIELD_SELECT_PADDING_X))
+            .h_6()
+            .px_1p5()
             .label(current.label())
             .tooltip("Git 日志筛选字段")
             .dropdown_menu(move |menu, _window, _cx| {
@@ -725,10 +699,10 @@ impl BottomPane {
         h_flex()
             .w_full()
             .flex_shrink_0()
-            .h(px(FILTER_ROW_HEIGHT))
+            .h_8()
             .items_center()
-            .gap(px(FILTER_ROW_GAP))
-            .px(px(FILTER_ROW_PADDING_X))
+            .gap_2()
+            .px_2()
             .border_b_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().tab_bar)
@@ -741,7 +715,7 @@ impl BottomPane {
                     .max_w(px(FILTER_INPUT_MAX_WIDTH))
                     .prefix(
                         Icon::new(IconName::Search)
-                            .size(px(ICON_BUTTON_ICON_SIZE))
+                            .size_3p5()
                             .text_color(cx.theme().muted_foreground),
                     ),
             )
@@ -775,13 +749,13 @@ impl BottomPane {
         h_flex()
             .w_full()
             .flex_shrink_0()
-            .h(px(COMMIT_HEADER_HEIGHT))
+            .h_6()
             .items_center()
-            .px(px(FILTER_ROW_PADDING_X))
+            .px_2()
             .border_b_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().tab_bar)
-            .text_size(px(COMMIT_FONT_SIZE))
+            .text_sm()
             .text_color(cx.theme().muted_foreground)
             // `git.log.commit` / `author` / `date`（`locale.ts:7285-7287`）。
             // 表头「提交」只占 `flex-1`，**没有**预留泳道图宽度（源码就是不对齐的，
@@ -793,13 +767,7 @@ impl BottomPane {
                     .flex_shrink_0()
                     .child("作者"),
             )
-            .child(
-                h_flex()
-                    .w(px(DATE_COLUMN_WIDTH))
-                    .flex_shrink_0()
-                    .justify_end()
-                    .child("日期"),
-            )
+            .child(h_flex().w_32().flex_shrink_0().justify_end().child("日期"))
     }
 
     /// 泳道图单元格（简化版，偏差 2）。
@@ -810,8 +778,8 @@ impl BottomPane {
             .h_full()
             .flex_shrink_0()
             .min_w(px(GRAPH_MIN_WIDTH))
-            .pl(px(GRAPH_PADDING))
-            .pr(px(GRAPH_PADDING))
+            .pl_2()
+            .pr_2()
             .children(row.lanes.iter().enumerate().map(move |(lane, color)| {
                 let lane_width = px(GRAPH_LANE_GAP);
                 let line_width = px(GRAPH_LINE_WIDTH);
@@ -835,7 +803,7 @@ impl BottomPane {
                                 .flex_shrink_0()
                                 .rounded_full()
                                 .bg(cx.theme().background)
-                                .border(px(GRAPH_NODE_STROKE))
+                                .border_2()
                                 .border_color(lane_color(row.node_color, cx)),
                         )
                         .child(
@@ -882,7 +850,7 @@ impl BottomPane {
             .max_w(px(LABEL_MAX_WIDTH))
             .flex_shrink_0()
             .items_center()
-            .px(px(LABEL_PADDING_X))
+            .px_1p5()
             .rounded(px(LABEL_RADIUS))
             .border_1()
             .border_color(color.opacity(0.45))
@@ -919,7 +887,7 @@ impl BottomPane {
             .min_w(px(COMMIT_CONTENT_MIN_WIDTH))
             .min_h(px(COMMIT_ROW_HEIGHT))
             .items_center()
-            .px(px(COMMIT_ROW_PADDING_X))
+            .px_1()
             .border_b_1()
             .border_color(cx.theme().border.opacity(0.5))
             .whitespace_nowrap()
@@ -935,7 +903,7 @@ impl BottomPane {
                     .flex_1()
                     .min_w_0()
                     .items_center()
-                    .gap(px(LABEL_GAP))
+                    .gap_1p5()
                     .when(self.show_decorations, |labels| {
                         labels.children(
                             commit
@@ -950,7 +918,7 @@ impl BottomPane {
                             .min_w_0()
                             .text_ellipsis()
                             .min_h(px(COMMIT_ROW_HEIGHT))
-                            .text_size(px(COMMIT_FONT_SIZE))
+                            .text_sm()
                             .line_height(px(COMMIT_ROW_HEIGHT))
                             .child(commit.subject.clone()),
                     ),
@@ -959,15 +927,15 @@ impl BottomPane {
                 div()
                     .w(px(AUTHOR_COLUMN_WIDTH))
                     .flex_shrink_0()
-                    .px(px(AUTHOR_COLUMN_PADDING_X))
+                    .px_2()
                     .text_ellipsis()
-                    .text_size(px(COMMIT_FONT_SIZE))
+                    .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(commit.author.clone()),
             )
             .child(
                 h_flex()
-                    .w(px(DATE_COLUMN_WIDTH))
+                    .w_32()
                     .flex_shrink_0()
                     .justify_end()
                     .text_size(px(DATE_FONT_SIZE))
@@ -1032,7 +1000,7 @@ impl BottomPane {
                 h_flex()
                     .w_full()
                     .min_w(px(COMMIT_CONTENT_MIN_WIDTH))
-                    .h(px(LOAD_MORE_HEIGHT))
+                    .h_9()
                     .flex_shrink_0()
                     .items_center()
                     .justify_center()
@@ -1060,7 +1028,7 @@ impl BottomPane {
         v_flex()
             .size_full()
             .bg(cx.theme().background)
-            .text_size(px(COMMIT_FONT_SIZE))
+            .text_sm()
             .child(self.filter_row(this, cx))
             .child(Self::commit_header(cx))
             .child(
@@ -1070,7 +1038,7 @@ impl BottomPane {
                 div()
                     .id("bottom-git-commit-scroll")
                     .flex_1()
-                    .min_h(px(0.))
+                    .min_h_0()
                     .w_full()
                     .overflow_y_scroll()
                     .child(list),
@@ -1129,12 +1097,12 @@ impl BottomPane {
         let create_branch: ButtonHandler = handler(|_event, _window, _cx| {});
 
         v_flex()
-            .w(px(REFERENCE_TOOLBAR_WIDTH))
+            .w_9()
             .h_full()
             .flex_shrink_0()
             .items_center()
-            .gap(px(REFERENCE_TOOLBAR_GAP))
-            .py(px(REFERENCE_TOOLBAR_PADDING_Y))
+            .gap_1()
+            .py_1()
             .border_r_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().tab_bar.opacity(0.6))
@@ -1156,10 +1124,10 @@ impl BottomPane {
             ))
             .child(
                 div()
-                    .w(px(REFERENCE_TOOLBAR_SEPARATOR_WIDTH))
-                    .h(px(REFERENCE_TOOLBAR_SEPARATOR_HEIGHT))
+                    .w_5()
+                    .h_px()
                     .flex_shrink_0()
-                    .my(px(REFERENCE_TOOLBAR_SEPARATOR_MARGIN_Y))
+                    .my_1()
                     .bg(cx.theme().border),
             )
             .child(Self::toolbar_button(
@@ -1209,9 +1177,9 @@ impl BottomPane {
             .id(SharedString::from(format!("bottom-git-ref-row:{row_id}")))
             .w_full()
             .min_w_0()
-            .h(px(REFERENCE_ROW_HEIGHT))
+            .h_6()
             .items_center()
-            .gap(px(REFERENCE_ROW_GAP))
+            .gap_1p5()
             .pl(px(
                 REFERENCE_INDENT_BASE + depth as f32 * REFERENCE_INDENT_STEP
             ))
@@ -1230,20 +1198,18 @@ impl BottomPane {
 
         let row = match disclosure {
             Some(disclosure) => row.child(disclosure),
-            None => row.child(div().size(px(REFERENCE_DISCLOSURE_SIZE)).flex_shrink_0()),
+            None => row.child(div().size_3p5().flex_shrink_0()),
         };
 
         let row = match icon {
-            Some(icon) => row.child(Icon::new(icon).size(px(REFERENCE_ICON_SIZE)).text_color(
-                if is_current {
-                    cx.theme().yellow_light
-                } else {
-                    cx.theme().muted_foreground
-                },
-            )),
+            Some(icon) => row.child(Icon::new(icon).size_3p5().text_color(if is_current {
+                cx.theme().yellow_light
+            } else {
+                cx.theme().muted_foreground
+            })),
             None if is_group => row.child(
                 Icon::new(IconName::Folder)
-                    .size(px(REFERENCE_ICON_SIZE))
+                    .size_3p5()
                     .text_color(cx.theme().muted_foreground),
             ),
             None => row,
@@ -1258,7 +1224,7 @@ impl BottomPane {
             let mut counts = h_flex()
                 .flex_shrink_0()
                 .items_center()
-                .gap(px(TRACKING_COUNT_GAP))
+                .gap_1()
                 .text_size(px(TRACKING_COUNT_FONT_SIZE));
             if behind > 0 {
                 counts = counts.child(
@@ -1282,7 +1248,7 @@ impl BottomPane {
             row = row.child(
                 h_flex()
                     .flex_shrink_0()
-                    .px(px(REFERENCE_BADGE_PADDING_X))
+                    .px_1()
                     .rounded(px(REFERENCE_SECTION_RADIUS))
                     .bg(cx.theme().yellow_light.opacity(0.12))
                     .text_size(px(REFERENCE_BADGE_FONT_SIZE))
@@ -1309,7 +1275,7 @@ impl BottomPane {
             .filter(|(index, _)| self.visible_reference(*index))
             .count();
 
-        let mut body = v_flex().w_full().gap(px(REFERENCE_SECTION_MARGIN_BOTTOM));
+        let mut body = v_flex().w_full().gap_1();
 
         // HEAD 行（`git-reference-tree.tsx:849-865`）。
         let current_index = self
@@ -1323,11 +1289,11 @@ impl BottomPane {
             h_flex()
                 .id("bottom-git-head-row")
                 .w_full()
-                .h(px(REFERENCE_HEAD_ROW_HEIGHT))
-                .mb(px(REFERENCE_HEAD_ROW_MARGIN_BOTTOM))
+                .h_7()
+                .mb_1()
                 .items_center()
-                .gap(px(REFERENCE_HEAD_ROW_GAP))
-                .px(px(REFERENCE_HEAD_ROW_PADDING_X))
+                .gap_2()
+                .px_2()
                 .rounded(px(REFERENCE_HEAD_ROW_RADIUS))
                 .font_weight(FontWeight::MEDIUM)
                 .when(head_selected, |row| row.bg(cx.theme().accent))
@@ -1362,10 +1328,10 @@ impl BottomPane {
                 h_flex()
                     .id(("bottom-git-ref-section", kind as usize))
                     .w_full()
-                    .h(px(REFERENCE_SECTION_ROW_HEIGHT))
+                    .h_6()
                     .items_center()
-                    .gap(px(REFERENCE_ROW_GAP))
-                    .px(px(REFERENCE_SECTION_PADDING_X))
+                    .gap_1p5()
+                    .px_1p5()
                     .rounded(px(REFERENCE_SECTION_RADIUS))
                     .font_weight(FontWeight::MEDIUM)
                     .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
@@ -1378,7 +1344,7 @@ impl BottomPane {
                         } else {
                             IconName::ChevronDown
                         })
-                        .size(px(12.))
+                        .size_3()
                         .text_color(cx.theme().muted_foreground),
                     )
                     .child(kind.title())
@@ -1406,9 +1372,11 @@ impl BottomPane {
                     // `git.log.none` = 无（`locale.ts:7255`）。
                     section = section.child(
                         div()
-                            .h(px(REFERENCE_EMPTY_HEIGHT))
-                            .pl(px(REFERENCE_EMPTY_PADDING_LEFT))
-                            .line_height(px(REFERENCE_EMPTY_HEIGHT))
+                            .h_6()
+                            .pl_8()
+                            // 行高 = 24（`h-6`）：`line_height` 没有档位 helper，
+                            // 用 helper 底层的 `rems()`，`rems(6.)` 与 `h_6()` 同值。
+                            .line_height(rems(6.))
                             .text_color(cx.theme().muted_foreground)
                             .child("无"),
                     );
@@ -1434,7 +1402,7 @@ impl BottomPane {
                             Some(
                                 div()
                                     .id(SharedString::from(format!("bottom-git-ref-group:{id}")))
-                                    .size(px(REFERENCE_DISCLOSURE_SIZE))
+                                    .size_3p5()
                                     .flex_shrink_0()
                                     .flex()
                                     .items_center()
@@ -1450,7 +1418,7 @@ impl BottomPane {
                                         } else {
                                             IconName::ChevronDown
                                         })
-                                        .size(px(12.))
+                                        .size_3()
                                         .text_color(cx.theme().muted_foreground),
                                     )
                                     .into_any_element(),
@@ -1523,7 +1491,7 @@ impl BottomPane {
         h_flex()
             .size_full()
             .bg(cx.theme().tab_bar.opacity(0.45))
-            .text_size(px(COMMIT_FONT_SIZE))
+            .text_sm()
             .child(Self::reference_toolbar(self, this, cx))
             .child(
                 v_flex()
@@ -1535,9 +1503,9 @@ impl BottomPane {
                         h_flex()
                             .w_full()
                             .flex_shrink_0()
-                            .h(px(REFERENCE_HEADER_HEIGHT))
+                            .h_8()
                             .items_center()
-                            .px(px(FILTER_ROW_PADDING_X))
+                            .px_2()
                             .border_b_1()
                             .border_color(cx.theme().border)
                             .text_color(cx.theme().muted_foreground)
@@ -1552,10 +1520,10 @@ impl BottomPane {
                         div()
                             .id("bottom-git-reference-scroll")
                             .flex_1()
-                            .min_h(px(0.))
+                            .min_h_0()
                             .w_full()
                             .overflow_y_scroll()
-                            .p(px(REFERENCE_LIST_PADDING))
+                            .p_1p5()
                             .child(body),
                     ),
             )
@@ -1568,7 +1536,7 @@ impl BottomPane {
         v_flex()
             .size_full()
             .bg(cx.theme().tab_bar.opacity(0.35))
-            .text_size(px(COMMIT_FONT_SIZE))
+            .text_sm()
             .child(
                 v_flex()
                     .w_full()
@@ -1580,10 +1548,10 @@ impl BottomPane {
                         h_flex()
                             .w_full()
                             .flex_shrink_0()
-                            .h(px(INSPECTOR_HEADER_HEIGHT))
+                            .h_8()
                             .items_center()
-                            .gap(px(INSPECTOR_HEADER_GAP))
-                            .px(px(INSPECTOR_HEADER_PADDING_X))
+                            .gap_2()
+                            .px_2()
                             .border_b_1()
                             .border_color(cx.theme().border)
                             .bg(cx.theme().tab_bar)
@@ -1615,14 +1583,14 @@ impl BottomPane {
                     .id("bottom-git-detail-scroll")
                     .w_full()
                     .h(relative(INSPECTOR_DETAILS_FRACTION))
-                    .min_h(px(INSPECTOR_DETAILS_MIN_HEIGHT))
+                    .min_h_20()
                     .min_w_0()
                     .overflow_y_scroll()
                     .border_t_1()
                     .border_color(cx.theme().border)
                     .bg(cx.theme().background)
-                    .p(px(INSPECTOR_DETAIL_PADDING))
-                    .gap(px(INSPECTOR_DETAIL_GAP))
+                    .p_3()
+                    .gap_2()
                     .child(self.commit_detail_body(cx)),
             )
     }
@@ -1633,7 +1601,7 @@ impl BottomPane {
             h_flex()
                 .w_full()
                 .flex_1()
-                .min_h(px(0.))
+                .min_h_0()
                 .items_center()
                 .justify_center()
                 .text_color(color)
@@ -1669,10 +1637,10 @@ impl BottomPane {
                 div()
                     .id("bottom-git-files-scroll")
                     .flex_1()
-                    .min_h(px(0.))
+                    .min_h_0()
                     .w_full()
                     .overflow_y_scroll()
-                    .p(px(COMMIT_FILE_TREE_PADDING))
+                    .p_1p5()
                     .child(tree)
                     .into_any_element()
             }
@@ -1692,20 +1660,20 @@ impl BottomPane {
         let row_element = h_flex()
             .w_full()
             .min_w_0()
-            .h(px(COMMIT_FILE_ROW_HEIGHT))
+            .h_6()
             .items_center()
-            .gap(px(REFERENCE_ROW_GAP))
+            .gap_1p5()
             .pl(px(
                 COMMIT_FILE_INDENT_BASE + row.depth as f32 * COMMIT_FILE_INDENT_STEP
             ))
-            .pr(px(COMMIT_FILE_TREE_PADDING))
+            .pr_1p5()
             .whitespace_nowrap();
 
         if row.is_folder {
             row_element
                 .child(
                     Icon::new(IconName::Folder)
-                        .size(px(REFERENCE_ICON_SIZE))
+                        .size_3p5()
                         .text_color(cx.theme().muted_foreground),
                 )
                 .child(
@@ -1763,7 +1731,7 @@ impl BottomPane {
 
         v_flex()
             .w_full()
-            .gap(px(INSPECTOR_DETAIL_GAP))
+            .gap_2()
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)
@@ -1814,12 +1782,12 @@ impl BottomPane {
     /// 所以左栏按钮全部禁用、正文只画空态。
     fn console_pane(cx: &App) -> impl IntoElement {
         let mut toolbar = v_flex()
-            .w(px(CONSOLE_TOOLBAR_WIDTH))
+            .w_8()
             .h_full()
             .flex_shrink_0()
             .items_center()
-            .gap(px(CONSOLE_TOOLBAR_GAP))
-            .py(px(CONSOLE_TOOLBAR_PADDING_Y))
+            .gap_1()
+            .py_1()
             .border_r_1()
             .border_color(cx.theme().border);
 
@@ -1849,7 +1817,7 @@ impl BottomPane {
         h_flex()
             .size_full()
             .font_family(cx.theme().mono_font_family.clone())
-            .text_size(px(CONSOLE_FONT_SIZE))
+            .text_xs()
             .child(toolbar)
             .child(
                 h_flex()
@@ -1858,7 +1826,7 @@ impl BottomPane {
                     .h_full()
                     .items_center()
                     .justify_center()
-                    .p(px(CONSOLE_OUTPUT_PADDING))
+                    .p_3()
                     .text_color(cx.theme().muted_foreground)
                     // `git.console.empty` = Git 命令及其输出将显示在这里。（`locale.ts:4560`）。
                     .child("Git 命令及其输出将显示在这里。"),
@@ -1872,43 +1840,31 @@ impl BottomPane {
         h_flex()
             .w_full()
             .flex_1()
-            .min_h(px(0.))
+            .min_h_0()
             .child(
                 div()
                     .w(relative(REFERENCE_PANE_FRACTION))
                     .min_w(px(REFERENCE_PANE_MIN_WIDTH))
                     .h_full()
-                    .min_h(px(0.))
+                    .min_h_0()
                     .child(self.reference_pane(this, cx)),
             )
-            .child(
-                div()
-                    .w(px(1.))
-                    .h_full()
-                    .flex_shrink_0()
-                    .bg(cx.theme().border),
-            )
+            .child(div().w_px().h_full().flex_shrink_0().bg(cx.theme().border))
             .child(
                 div()
                     .w(relative(COMMIT_PANE_FRACTION))
-                    .min_w(px(COMMIT_PANE_MIN_WIDTH))
+                    .min_w_80()
                     .h_full()
-                    .min_h(px(0.))
+                    .min_h_0()
                     .child(self.commit_pane(this, cx)),
             )
-            .child(
-                div()
-                    .w(px(1.))
-                    .h_full()
-                    .flex_shrink_0()
-                    .bg(cx.theme().border),
-            )
+            .child(div().w_px().h_full().flex_shrink_0().bg(cx.theme().border))
             .child(
                 div()
                     .w(relative(INSPECTOR_PANE_FRACTION))
                     .min_w(px(INSPECTOR_PANE_MIN_WIDTH))
                     .h_full()
-                    .min_h(px(0.))
+                    .min_h_0()
                     .child(self.inspector_pane(cx)),
             )
     }
@@ -1919,14 +1875,14 @@ impl BottomPane {
         h_flex()
             .w_full()
             .flex_shrink_0()
-            .h(px(BANNER_HEIGHT))
+            .h_7()
             .items_center()
-            .gap(px(BANNER_GAP))
-            .px(px(BANNER_PADDING_X))
+            .gap_2()
+            .px_2()
             .border_b_1()
             .border_color(cx.theme().danger.opacity(0.3))
             .bg(cx.theme().danger.opacity(0.1))
-            .text_size(px(COMMIT_FONT_SIZE))
+            .text_sm()
             .text_color(cx.theme().danger)
             .child(div().min_w_0().flex_1().text_ellipsis().child(text))
             // `git.log.retry` = 重试（`locale.ts:7197`）。
@@ -1951,10 +1907,10 @@ impl BottomPane {
         let mut block = v_flex()
             .w_full()
             .flex_1()
-            .min_h(px(0.))
+            .min_h_0()
             .items_center()
             .justify_center()
-            .gap(px(BANNER_GAP))
+            .gap_2()
             .text_color(cx.theme().muted_foreground)
             .child(div().text_color(cx.theme().foreground).child(title));
 

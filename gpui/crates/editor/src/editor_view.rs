@@ -20,78 +20,47 @@ use gpui_kit::{
     px, relative,
 };
 
-/// 标签栏高度 36px：`--lithe-tab-bar-height`（=`--lithe-pane-header-height`=2.25rem，
-/// `windows/tauri/src/styles/theme.css:120-121`，用在 `windows/tauri/src/ui/tab-bar.tsx:248`
-/// 的 `h-(--lithe-tab-bar-height)`）。
-const TAB_BAR_HEIGHT: f32 = 36.;
-
-/// 标签栏左右内边距 8px：`--lithe-chrome-padding-inline`（`windows/tauri/src/styles/theme.css:132`，
-/// 用在 `windows/tauri/src/ui/tab-bar.tsx:248` 的 `px-(--lithe-chrome-padding-inline)`）。
-const TAB_BAR_PADDING_INLINE: f32 = 8.;
-
-/// 标签栏段间距 4px：`--lithe-chrome-gap`（`windows/tauri/src/styles/theme.css:130`，用在 `windows/tauri/src/ui/tab-bar.tsx:248`）。
-///
-/// `TabBar` 的 `Underline` 变体不给外层容器设 gap（`tab/tab_bar.rs:393-403` 返回的 gap
-/// 只用在 `tabs-inner` 上），所以这里把 4px 挂在左侧导航组的右外边距上。
-const TAB_BAR_GAP: f32 = 4.;
+// ---------------------------------------------------------------------------
+// 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
+// ---------------------------------------------------------------------------
+//
+// rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等：
+//
+// | 规格（Windows 真源） | 值 | 用到的 helper |
+// | --- | --- | --- |
+// | 标签栏高 `--lithe-tab-bar-height: 2.25rem`（`styles/theme.css:120-121`、`ui/tab-bar.tsx:248`） | 36 | `h_9()` |
+// | 标签栏左右内边距 `--lithe-chrome-padding-inline`（`theme.css:132`） | 8 | `px_2()` |
+// | 标签栏段间距 `--lithe-chrome-gap`（`theme.css:130`） | 4 | `mr_1()` |
+// | 标签 `pl-2` / `pr-6`（`ui/tab-bar.tsx:260`） | 8 / 24 | `pl_2()` / `pr_6()` |
+// | 标签图标↔文字间距 `--lithe-chrome-gap-loose`（`theme.css:131`） | 6 | `gap_1p5()` |
+// | 标签图标槽 `size-3`（`tab-bar-item.tsx:183`） | 12 | `size_3()` |
+// | 导航组 `gap-0.5`（`tab-bar.tsx:633`） | 2 | `gap_0p5()` |
+// | 关闭按钮 `absolute right-1`（`tab-bar-item.tsx:164-166`） | 4 | `right_1()` |
+// | 脏标记圆点 `size-2`（`tab-bar-item.tsx:284-291`） | 8 | `size_2()` |
+// | 空状态 `px-6 py-8` / `gap-3`（`empty-editor-state.tsx:15-16`） | 24 / 32 / 12 | `px_6()` / `py_8()` / `gap_3()` |
+// | 空状态内容块 `max-w-md`（`empty-editor-state.tsx:16`） | 448 | `max_w_112()` |
+// | 图标块 `size-12` / 主图标 `size-10` / 放大镜 `size-5`（`empty-editor-state.tsx:17-22`） | 48 / 40 / 20 | `size_12()` / `size_10()` / `size_5()` |
+//
+// 字号：`--ui-text-base` / `--ui-text-sm` 在这里都是 **13px**（`theme.css:116-117`），不在 gpui 的
+// 档位（`text_xs()`=12 / `text_sm()`=14）上，按《编码指南》用 **`text_sm()`（14px）**——
+// 13 → 14 是经维护者确认的**有意**视觉改动。
 
 /// 单个标签宽度上限 200px：`--lithe-tab-max-width`（12.5rem，`windows/tauri/src/styles/theme.css:123`，
 /// 用在 `windows/tauri/src/ui/tab-bar.tsx:260`）。**这是标签文字能截断的前提**。
-const TAB_MAX_WIDTH: f32 = 200.;
-
-/// 标签左内边距 8px（`pl-2`）与右内边距 24px（`pr-6`，给关闭按钮留位）：
-/// `windows/tauri/src/ui/tab-bar.tsx:260`。
 ///
-/// 右边的 24px 是**常驻**的（真机也一样：关闭按钮绝对定位在这块留白上），
-/// 所以切换标签时标签宽度不会跳。
-const TAB_PADDING_LEFT: f32 = 8.;
-const TAB_PADDING_RIGHT: f32 = 24.;
-
-/// 标签内图标↔文字间距 6px：`--lithe-chrome-gap-loose`（`windows/tauri/src/styles/theme.css:131`，
-/// 用在 `windows/tauri/src/ui/tab-bar.tsx:170` 的 `gap-(--lithe-chrome-gap-loose)`）。
-const TAB_ICON_GAP: f32 = 6.;
-
-/// 标签图标槽 12×12px（`grid size-3`）：`windows/tauri/src/features/tabs/components/tab-bar-item.tsx:183`。
-const TAB_ICON_SIZE: f32 = 12.;
-
-/// 标签栏左侧导航组内间距 2px（`gap-0.5`）：`windows/tauri/src/features/tabs/components/tab-bar.tsx:633`。
-const NAV_GAP: f32 = 2.;
-
-/// 关闭按钮距标签右边缘 4px（`absolute right-1`）：
-/// `windows/tauri/src/features/tabs/components/tab-bar-item.tsx:164-166`。
-/// 按钮自身是 24×24（真机的 Button `icon-xs` = `size-6`，
-/// `windows/tauri/src/ui/button.tsx:27`），gpui-kit 侧用 `Sizable::small()`
-/// 才是这个尺寸（`xsmall()` 给图标按钮只有 20×20，`button/button.rs:618-623`）。
-const TAB_CLOSE_INSET: f32 = 4.;
-
-/// 脏标记圆点 8×8px（`size-2 rounded-full bg-primary`）：
-/// `windows/tauri/src/features/tabs/components/tab-bar-item.tsx:284-291`。
-const DIRTY_DOT_SIZE: f32 = 8.;
-
-/// 空状态容器内边距 24px / 32px（`px-6 py-8`）与内容块间距 12px（`gap-3`）：
-/// `windows/tauri/src/features/panes/components/empty-editor-state.tsx:15-16`。
-const EMPTY_PADDING_X: f32 = 24.;
-const EMPTY_PADDING_Y: f32 = 32.;
-const EMPTY_GAP: f32 = 12.;
-
-/// 空状态内容块宽度上限 448px（`max-w-md`）：`windows/tauri/src/features/panes/components/empty-editor-state.tsx:16`。
-const EMPTY_CONTENT_MAX_WIDTH: f32 = 448.;
-
-/// 空状态图标块 48×48（`size-12`）、主图标 40×40（`size-10`）、
-/// 右下角放大镜 20×20（`size-5`）：`windows/tauri/src/features/panes/components/empty-editor-state.tsx:17-22`。
-const EMPTY_MEDIA_BOX: f32 = 48.;
-const EMPTY_MEDIA_ICON: f32 = 40.;
-const EMPTY_MEDIA_BADGE: f32 = 20.;
-
-/// 空状态标题/说明字号 13px：`--ui-text-base` 与 `--ui-text-sm`
-/// （`windows/tauri/src/styles/theme.css:116-117`，`windows/tauri/src/features/panes/components/empty-editor-state.tsx:24,27` 的 `ui-text-base` / `ui-text-sm`）。
-const EMPTY_TEXT_SIZE: f32 = 13.;
+/// ⚠️ **保留 `px(...)`**：200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1039-1047`），没有 `max_w_50()`。
+const TAB_MAX_WIDTH: f32 = 200.;
 
 /// 滚轮增量换算用的行高兜底值：真机默认行高就是 **20**
 /// （`windows/tauri/src/features/editor/config/constants.ts:5` 的 `DEFAULT_LINE_HEIGHT: 20`；
 /// 算法是 `ceil(fontSize × 1.4)`，`windows/tauri/src/features/editor/utils/lines.ts:8-15`）。
 /// 编辑器还没完成首次布局时 `line_height()` 是 `None`，用这个值兜底，
 /// 否则 `ScrollDelta::Lines` 换算出 0，整段滚不动。
+///
+/// 它是滚轮增量换算里的 `Pixels`（与 `line_height()` 的返回值同类型做算术：
+/// `event.delta.pixel_delta(line_height)`、`if delta == px(0.)`），不是布局样式槽，
+/// 套不了 `Styled` 的 `line_height` 系列 helper，所以保留 `px(...)`。
 const FALLBACK_LINE_HEIGHT: f32 = 20.;
 
 /// 编辑区视图：标签栏 + 正文（正文没有活动 buffer 时是空状态）。
@@ -188,8 +157,8 @@ impl EditorPane {
     ///   `border_b_1()` + `theme.border`），正好是 Windows 的 `border-b border-border`；
     /// - Underline 变体的条底色是**透明**、外层 padding 是 0
     ///   （`tab/tab_bar.rs:393-403`），所以这里显式补 `.bg(theme.tab_bar)` 与
-    ///   `.px(8.)`，把 Windows 的 `bg-tab-bar` + `px-(--lithe-chrome-padding-inline)` 找回来；
-    /// - `.h(36.)` 是**必须**的：标签条自身没有高度，没有标签时会被压成 0；
+    ///   `.px_2()`（8px），把 Windows 的 `bg-tab-bar` + `px-(--lithe-chrome-padding-inline)` 找回来；
+    /// - `.h_9()`（36px）是**必须**的：标签条自身没有高度，没有标签时会被压成 0；
     ///   真机里没有活动 buffer 时标签栏也照常占着 36px（`windows/tauri/src/features/panes/components/pane-container.tsx:1094-1100`）。
     fn render_tab_bar(&self, cx: &mut Context<Self>) -> AnyElement {
         let names = display_names(&self.buffers);
@@ -197,11 +166,11 @@ impl EditorPane {
         let mut bar = TabBar::new("editor-tab-bar")
             .with_variant(TabVariant::Underline)
             .bg(cx.theme().tab_bar)
-            .h(px(TAB_BAR_HEIGHT))
-            .px(px(TAB_BAR_PADDING_INLINE))
+            .h_9()
+            .px_2()
             // `max_width` 让**标签文字**在空间不够时让位（图标与关闭按钮保持原尺寸），
             // 也就是真机那种 `OrderChargeService.j…` 的截断。
-            .max_width(px(TAB_MAX_WIDTH))
+            .max_width(TAB_MAX_WIDTH)
             .prefix(Self::render_nav_group())
             .on_click(cx.listener(|pane, index: &usize, _window, cx| {
                 // `TabBar::on_click` 给的是被点标签的下标
@@ -231,8 +200,8 @@ impl EditorPane {
     fn render_nav_group() -> impl IntoElement {
         h_flex()
             .items_center()
-            .gap(px(NAV_GAP))
-            .mr(px(TAB_BAR_GAP))
+            .gap_0p5()
+            .mr_1()
             // 文案取中文 i18n 原文：tooltip = `tabs.goBackShort` / `tabs.goForwardShort`
             // （"后退" / "前进"，`windows/tauri/src/i18n/locale.ts:7854-7855`），
             // 无障碍名 = `tabs.goBack` / `tabs.goForward`
@@ -325,8 +294,7 @@ impl EditorPane {
         let dirty_dot = buffer.is_dirty.then(|| {
             div()
                 .flex_shrink_0()
-                .w(px(DIRTY_DOT_SIZE))
-                .h(px(DIRTY_DOT_SIZE))
+                .size_2()
                 .rounded_full()
                 .bg(cx.theme().primary)
         });
@@ -345,7 +313,7 @@ impl EditorPane {
                 .absolute()
                 .top_0()
                 .bottom_0()
-                .right(px(TAB_CLOSE_INSET))
+                .right_1()
                 .flex()
                 .items_center()
                 .child(Self::close_button(index, cx))
@@ -353,9 +321,9 @@ impl EditorPane {
 
         let content = h_flex()
             .items_center()
-            .pl(px(TAB_PADDING_LEFT))
-            .pr(px(TAB_PADDING_RIGHT))
-            .gap(px(TAB_ICON_GAP))
+            .pl_2()
+            .pr_6()
+            .gap_1p5()
             // 没有 `min_w_0` 的话 flex 项的最小尺寸会按内容算，文字截断不了。
             .min_w_0()
             .child(
@@ -363,8 +331,7 @@ impl EditorPane {
                 // 的 `#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, IntoElement)]`），
                 // 从借用里直接取出即可。
                 Icon::new(buffer.icon)
-                    .w(px(TAB_ICON_SIZE))
-                    .h(px(TAB_ICON_SIZE))
+                    .size_3()
                     .text_color(cx.theme().muted_foreground),
             )
             .child(
@@ -431,6 +398,7 @@ impl EditorPane {
                     let line_height = scroll_editor
                         .read(cx)
                         .line_height()
+                        // 兜底行高 20：滚轮增量换算里的 `Pixels`（不是样式槽），见常量注释。
                         .unwrap_or(px(FALLBACK_LINE_HEIGHT));
                     let delta = event.delta.pixel_delta(line_height).y;
                     if delta == px(0.) {
@@ -489,13 +457,13 @@ impl EditorPane {
                     // （`gpui-component-0.6.6/src/empty.rs:74-75`），
                     // 所以把边框色改成透明来关掉那圈虚线。
                     .border_color(cx.theme().transparent)
-                    .gap(px(EMPTY_GAP))
-                    .px(px(EMPTY_PADDING_X))
-                    .py(px(EMPTY_PADDING_Y))
+                    .gap_3()
+                    .px_6()
+                    .py_8()
                     .header(
                         EmptyHeader::new()
-                            .max_w(px(EMPTY_CONTENT_MAX_WIDTH))
-                            .gap(px(EMPTY_GAP))
+                            .max_w_112()
+                            .gap_3()
                             .media(
                                 EmptyMedia::new().child(
                                     div()
@@ -503,12 +471,10 @@ impl EditorPane {
                                         .flex()
                                         .items_center()
                                         .justify_center()
-                                        .w(px(EMPTY_MEDIA_BOX))
-                                        .h(px(EMPTY_MEDIA_BOX))
+                                        .size_12()
                                         .child(
                                             Icon::new(IconName::FileText)
-                                                .w(px(EMPTY_MEDIA_ICON))
-                                                .h(px(EMPTY_MEDIA_ICON))
+                                                .size_10()
                                                 .text_color(cx.theme().muted_foreground),
                                         )
                                         .child(
@@ -516,24 +482,20 @@ impl EditorPane {
                                                 .absolute()
                                                 .right_0()
                                                 .bottom_0()
-                                                .w(px(EMPTY_MEDIA_BADGE))
-                                                .h(px(EMPTY_MEDIA_BADGE))
+                                                .size_5()
                                                 .text_color(cx.theme().muted_foreground),
                                         ),
                                 ),
                             )
-                            // 字号 13px：`ui-text-base` / `ui-text-sm`
-                            // （`windows/tauri/src/styles/theme.css:116-117`）；组件默认的 `text_sm` 是 14px，
-                            // 所以显式覆盖成规格值。颜色用组件默认：
-                            // 标题 `foreground`、说明 `muted_foreground`（`empty.rs:264-324`）。
-                            .title(
-                                EmptyTitle::new()
-                                    .text_size(px(EMPTY_TEXT_SIZE))
-                                    .child("选择文件以查看"),
-                            )
+                            // 字号：Windows 的 `ui-text-base` / `ui-text-sm` 都是 13px
+                            // （`windows/tauri/src/styles/theme.css:116-117`），不在 gpui 的档位上，
+                            // 按《编码指南》用 `text_sm()`（14px，经维护者确认的有意改动；
+                            // 正好等于组件默认值，写出来是为了标明"这就是规格值"）。
+                            // 颜色用组件默认：标题 `foreground`、说明 `muted_foreground`（`empty.rs:264-324`）。
+                            .title(EmptyTitle::new().text_sm().child("选择文件以查看"))
                             .description(
                                 EmptyDescription::new()
-                                    .text_size(px(EMPTY_TEXT_SIZE))
+                                    .text_sm()
                                     .child("外部工具产生的更改会自动显示。"),
                             ),
                     ),

@@ -36,27 +36,36 @@ use gpui_kit::{
     SharedString, Styled as _, Window, WindowControlArea, div, px,
 };
 
-/// 标题栏高度：`--lithe-title-bar-height: 2.5rem` = 40px
-/// （`windows/tauri/src/styles/theme.css:118`）。
-///
-/// ⚠️ gpui-kit 的 `TitleBar` 默认高度是硬编码的 34px
-/// （`gpui-component-0.6.6/src/title_bar.rs:15` `TITLE_BAR_HEIGHT`），必须显式覆盖。
-const TITLE_BAR_HEIGHT: Pixels = px(40.);
-
-/// 标题栏左右内边距：`--lithe-chrome-padding-inline: 8px`
-/// （`windows/tauri/src/styles/theme.css:132`）。
-const TITLE_BAR_PADDING_INLINE: Pixels = px(8.);
-
-/// 标题栏内元素间距：`--lithe-chrome-gap: 4px`
-/// （`windows/tauri/src/styles/theme.css:130`）。
-const CHROME_GAP: Pixels = px(4.);
-
-/// 标题栏字号：`--ui-text-chrome: 13px`
-/// （`windows/tauri/src/styles/theme.css:115`）。
-const CHROME_TEXT_SIZE: Pixels = px(13.);
+// ---------------------------------------------------------------------------
+// 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
+// ---------------------------------------------------------------------------
+//
+// rem base = 主题字号 16px（`gpui/themes/*.json` 的 `font.size` + `root.rs:582` 的
+// `set_rem_size`），所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等：
+//
+// | 规格（Windows 真源） | 值 | 用到的 helper |
+// | --- | --- | --- |
+// | `--lithe-title-bar-height: 2.5rem`（`styles/theme.css:118`） | 40 | `h_10()` |
+// | `--lithe-chrome-padding-inline: 8px`（`styles/theme.css:132`） | 8 | `px_2()` |
+// | `--lithe-chrome-gap: 4px`（`styles/theme.css:130`） | 4 | `gap_1()` |
+// | `--ui-text-chrome: 13px`（`styles/theme.css:115`） | 13 | `text_sm()`（14px，见下） |
+//
+// ⚠️ 不在此表的 `w-14` = **56** 见下方常量：56 不在 gpui 的 rem 档位上。
+//
+// 字号：`--ui-text-chrome` 是 **13px**，gpui 的档位只有 `text_xs()`(12) 与 `text_sm()`(14)，
+// 13 不在档位上。按《编码指南》这里用 **`text_sm()`（14px）**——Lithe 原基准是 13px，
+// 13 → 14 是经维护者确认的**有意**视觉改动（应用里所有 chrome 文字同步 +1px），不是等价换算。
+//
+// ⚠️ gpui-kit 的 `TitleBar` 默认高度是硬编码的 34px
+// （`gpui-component-0.6.6/src/title_bar.rs:15` `TITLE_BAR_HEIGHT`），所以这里必须显式
+// `h_10()` 覆盖掉它。
 
 /// 单个窗口控件的宽度：`w-14` = 56px
 /// （`windows/tauri/src/features/window/components/title-bar/window-controls.tsx:59,71,85`）。
+///
+/// ⚠️ **保留 `px(...)`**：56 不在 gpui 的固定 rem 档位上（档位后缀是 `…_11()`=44、`_12()`=48、
+/// `_16()`=64，`gpui-pre-macros-0.3.6/src/styles.rs:1003-1017`；没有 `_14()`）。
+/// Tailwind 的 `w-14` 是任意档位，gpui 的档位表里没有对应项，不能自己发明 helper。
 const WINDOW_CONTROL_WIDTH: Pixels = px(56.);
 
 /// 标题栏（无状态）：只依赖传入的项目名与当前主题，不持有 `Entity`。
@@ -71,15 +80,15 @@ pub fn title_bar(project_name: &str, window: &Window, cx: &App) -> impl IntoElem
         // ChromeBar 基线带 `shrink-0`（`windows/tauri/src/ui/chrome.tsx:6`），标题栏不参与压缩。
         .flex_shrink_0()
         .w_full()
-        .h(TITLE_BAR_HEIGHT)
+        .h_10()
         .justify_between()
-        .gap(CHROME_GAP)
-        .px(TITLE_BAR_PADDING_INLINE)
+        .gap_1()
+        .px_2()
         // `bg-surface`（`title-bar.tsx:337`）：gpui-kit 的 `ThemeColor` **没有** `surface`
         // 这一项，语义上最贴近「标题栏专用底色」的是主题自己的 `title_bar`
         // （`gpui-component-0.6.6/src/theme/theme_color.rs:293`）。
         .bg(cx.theme().title_bar)
-        .text_size(CHROME_TEXT_SIZE)
+        .text_sm()
         // `text-muted-foreground`（`title-bar.tsx:337`）→ `theme.muted_foreground`
         // （`gpui-component-0.6.6/src/theme/theme_color.rs:195`）。
         .text_color(cx.theme().muted_foreground)

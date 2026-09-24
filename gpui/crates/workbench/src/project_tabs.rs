@@ -121,56 +121,61 @@ use gpui_kit::{
 // 度量常量（全部来自 project-tab-bar.tsx，见模块头表格）
 // ---------------------------------------------------------------------------
 
-/// 标签条容器高度：`h-8` = 32px（`project-tab-bar.tsx:41`）。
-/// ⚠️ 不是旧文档写的 38px。
-const BAR_HEIGHT: Pixels = px(32.);
-
-/// 容器左右内边距：`px-1.5` = 6px（`project-tab-bar.tsx:41`）。
-const BAR_PADDING_INLINE: Pixels = px(6.);
-
-/// 标签之间的间距：`gap-1` = 4px（`project-tab-bar.tsx:46`）。
-const TAB_GAP: Pixels = px(4.);
-
-/// 标签本体高度：`h-7` = 28px（`project-tab-bar.tsx:64`）。
-const TAB_HEIGHT: Pixels = px(28.);
+// ---------------------------------------------------------------------------
+// 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
+// ---------------------------------------------------------------------------
+//
+// rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等
+// （规格全部来自 `project-tab-bar.tsx`，见模块头表格）：
+//
+// | 规格 | 值 | 用到的 helper | 出处 |
+// | --- | --- | --- | --- |
+// | `h-8` 容器高 | 32 | `h_8()` | `:41` |
+// | `px-1.5` 容器内边距 | 6 | `px_1p5()` | `:41` |
+// | `gap-1` 标签间距 | 4 | `gap_1()` | `:46` |
+// | `h-7` 标签高 | 28 | `h_7()` | `:64` |
+// | `pl-2.5` 标签左内边距 | 10 | `pl_2p5()` | `:64` |
+// | `pr-8` 标签右内边距 | 32 | `pr_8()` | `:64` |
+// | `gap-1.5` 标签内间距 | 6 | `gap_1p5()` | `:64` |
+// | `size-3.5` 文件夹图标 | 14 | `size_3p5()` | `:70` |
+// | `h-0.5` / `inset-x-1.5` 下划线 | 2 / 6 | `h_0p5()` / `left_1p5()` / `right_1p5()` | `:81` |
+// | `right-1` 关闭按钮容器 | 4 | `right_1()` | `:87` |
+//
+// 字号：`--ui-text-chrome` 是 **13px**，gpui 的档位只有 `text_xs()`(12) / `text_sm()`(14)，
+// 13 不在档位上。按《编码指南》用 **`text_sm()`（14px）**——13 → 14 是经维护者确认的
+// **有意**视觉改动，不是等价换算。
 
 /// 标签最小宽度：`min-w-36` = 144px（`project-tab-bar.tsx:64`）。
+///
+/// ⚠️ **保留 `px(...)`**：144 不在 gpui 的固定 rem 档位上（档位后缀是 `…_8()`=32、`_9()`=36、
+/// `_10()`=40 → `min_w_32()`=128 / `min_w_40()`=160；没有 `min_w_36()`）。
 const TAB_MIN_WIDTH: Pixels = px(144.);
 
 /// 标签最大宽度：`max-w-60` = 240px（`project-tab-bar.tsx:64`）。
+///
+/// ⚠️ **保留 `px(...)`**：240 不在 gpui 的固定 rem 档位上（档位里 56 → 224、64 → 256，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1043-1052`）。Tailwind v4 的任意整数档
+/// （`max-w-60`）在 gpui 里没有对应 helper，不能自己发明一个。
 const TAB_MAX_WIDTH: Pixels = px(240.);
-
-/// 标签左内边距：`pl-2.5` = 10px（`project-tab-bar.tsx:64`）。
-const TAB_PADDING_LEFT: Pixels = px(10.);
-
-/// 标签右内边距：`pr-8` = 32px —— 给绝对定位的关闭按钮预留（`project-tab-bar.tsx:64`）。
-const TAB_PADDING_RIGHT: Pixels = px(32.);
-
-/// 标签内部横向间距：`gap-1.5` = 6px（`project-tab-bar.tsx:64`）。
-const TAB_INNER_GAP: Pixels = px(6.);
-
-/// 标签字号：`--ui-text-chrome: 13px`（`styles/theme.css:115`）。
-const TAB_FONT_SIZE: Pixels = px(13.);
 
 /// 标签圆角：`rounded-sm` = `calc(var(--radius) * 0.6)` = `8px × 0.6` = **4.8px**
 /// （`styles/theme.css:6`、`:134`）。
+///
+/// ⚠️ **保留 `px(...)`**，两条理由都可核对：
+/// 1. 4.8 **不是** gpui 的 rem 档位（gpui 的 `rounded_sm()` 是 4px，`styles.rs:1240-1244`）；
+/// 2. 也不能从主题读：`ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
+///    装不下 4.8 / 6.4；而把主题半径调成 8 会让**所有** gpui-kit 组件的圆角从 6 变成 8，
+///    离 Lithe 的 `rounded-md`(6.4) 反而更远。
+///
+/// 所以 Lithe 的圆角阶梯只能作为应用层命名常量，见模块头「圆角换算」。
 const TAB_RADIUS: Pixels = px(4.8);
 
-/// 文件夹图标尺寸：`size-3.5` = 14px（`project-tab-bar.tsx:70`）。
-const FOLDER_ICON_SIZE: Pixels = px(14.);
-
-/// 选中下划线高度：`h-0.5` = 2px（`project-tab-bar.tsx:81`）。
-const UNDERLINE_HEIGHT: Pixels = px(2.);
-
-/// 选中下划线左右内缩：`inset-x-1.5` = 6px（`project-tab-bar.tsx:81`）。
-const UNDERLINE_INSET: Pixels = px(6.);
-
-/// 关闭按钮容器距标签右边缘：`right-1` = 4px（`project-tab-bar.tsx:87`）。
-const CLOSE_INSET_RIGHT: Pixels = px(4.);
-
-/// 关闭按钮尺寸：Windows 用 `size=icon-xs`（`project-tab-bar.tsx:95`），`01-shell.md:222`
-/// 记为 24×24。gpui-kit 的 `Size::XSmall` 图标按钮默认只有 20×20
-/// （`gpui-component-0.6.6/src/button/button.rs:620`），所以显式传 24。
+/// 关闭按钮尺寸：24（`project-tab-bar.tsx:95` 的 `size=icon-xs`；gpui-kit 的 `Size::XSmall`
+/// 图标按钮默认只有 20×20，`gpui-component-0.6.6/src/button/button.rs:620`，所以显式传值）。
+///
+/// ⚠️ **保留 `px(...)`**：这里走 `Sizable::with_size(impl Into<Size>)`，`Size` 只有
+/// `From<Pixels>`（`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`；
+/// 换成 `Size::XSmall` 会连带改掉内边距与图标尺寸，不是逐像素等价。
 const CLOSE_BUTTON_SIZE: Pixels = px(24.);
 
 /// 悬停底色透明度：Lithe 写 `hover:bg-accent/70`（`project-tab-bar.tsx:67`）。
@@ -247,11 +252,11 @@ pub fn project_tabs(
     let primary = cx.theme().primary;
 
     h_flex()
-        .h(BAR_HEIGHT)
+        .h_8()
         .flex_shrink_0()
         .items_center()
-        .gap(TAB_GAP)
-        .px(BAR_PADDING_INLINE)
+        .gap_1()
+        .px_1p5()
         .bg(surface)
         .border_b_1()
         .border_color(border)
@@ -272,15 +277,15 @@ pub fn project_tabs(
                 .child({
                     let mut label = h_flex()
                         .id(("project-tab", index))
-                        .h(TAB_HEIGHT)
+                        .h_7()
                         .min_w(TAB_MIN_WIDTH)
                         .max_w(TAB_MAX_WIDTH)
                         .items_center()
-                        .gap(TAB_INNER_GAP)
-                        .pl(TAB_PADDING_LEFT)
-                        .pr(TAB_PADDING_RIGHT)
+                        .gap_1p5()
+                        .pl_2p5()
+                        .pr_8()
                         .rounded(TAB_RADIUS)
-                        .text_size(TAB_FONT_SIZE)
+                        .text_sm()
                         .overflow_hidden()
                         .whitespace_nowrap()
                         .text_ellipsis()
@@ -303,9 +308,10 @@ pub fn project_tabs(
                                 } else {
                                     subtle_foreground
                                 })
-                                // `Icon` 的 `Size::Size(px)` 分支会把 svg 直接 `size(px)`
-                                // （`gpui-component-0.6.6/src/icon.rs:181-187`）。
-                                .with_size(FOLDER_ICON_SIZE),
+                                // 图标 14：`size_3p5()`（= `rems(0.875)` = 14px）与原来的
+                                // `Size::Size(px(14.))` 分支（`gpui-component-0.6.6/src/icon.rs:181-187`）
+                                // 渲染出的 svg 盒完全一样，只是走 `Styled` 而不是 `Sizable`。
+                                .size_3p5(),
                         )
                         .child(
                             // 文案容器：`min-w-0 truncate`（`project-tab-bar.tsx:77`）。
@@ -338,9 +344,9 @@ pub fn project_tabs(
                             div()
                                 .absolute()
                                 .bottom_0()
-                                .left(UNDERLINE_INSET)
-                                .right(UNDERLINE_INSET)
-                                .h(UNDERLINE_HEIGHT)
+                                .left_1p5()
+                                .right_1p5()
+                                .h_0p5()
                                 .rounded_t(TAB_RADIUS)
                                 .bg(primary),
                         );
@@ -356,7 +362,7 @@ pub fn project_tabs(
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .right(CLOSE_INSET_RIGHT)
+                        .right_1()
                         // 源码是 `z-10`，但 gpui **没有 z-index**（元素按绘制顺序决定叠放，
                         // `gpui-pre-0.3.6/src/styled.rs` 里没有 `z_*` 方法）。关闭按钮是本行的
                         // 后一个 child，天然画在上层，所以这里直接省略。
@@ -371,8 +377,8 @@ pub fn project_tabs(
                                 .icon(IconName::X)
                                 .ghost()
                                 // `Sizable::with_size(impl Into<Size>)`；`Pixels` 经
-                                // `From<Pixels> for Size` 变成 `Size::Size(24)`
-                                // （`gpui-component-0.6.6/src/sizing.rs:169-173`）。
+                                // `From<Pixels> for Size` 变成 `Size::Size(24)`。`Size` 没有
+                                // `From<Rems>`，所以这一处保留 `px(...)`（见常量注释）。
                                 .with_size(CLOSE_BUTTON_SIZE)
                                 // 文案逐字取下 Windows 中文包：`titleProject.closeProject`
                                 // = "关闭项目 {name}"（`windows/tauri/src/i18n/locale.ts:6188`）。

@@ -19,30 +19,40 @@
 //! 持有并通过参数传入；需要独立生命周期的内容（项目树 / 编辑区 / Git / 终端）各自是 Feature
 //! crate 里的 `Entity`。
 //!
-//! ## ⚠️ 有意的偏离：区域度量用 `px(...)` 而不是 rem helper
+//! ## 区域度量：用 GPUI 的 rem-based helper，不写裸 `px(...)`
 //!
 //! 《编码指南》「主题与样式」要求应用布局用 GPUI 的 rem-based helper（`p_2()` / `gap_3()` /
-//! `text_sm()`），而不是直接写 `px(...)`；「基础字号控制应用缩放」还解释了这样做的收益
-//! （type、whitespace、control、icon 一起随 base font 缩放）。
+//! `text_sm()`）而不是直接写 `px(...)`；「基础字号控制应用缩放」解释了收益（type、whitespace、
+//! control、icon 一起随 base font 缩放）。**本 crate 的区域度量按这条执行**，换算规则与例外如下。
 //!
-//! **本 crate 的区域度量有意不遵守这一条**，理由有三条，都是可核对的：
+//! **换算规则**：helper 后缀 `N` = `N × 0.25rem` = `N × 4px`（rem base = 主题字号 16px，
+//! `gpui/themes/*.json` 的 `font.size` + `gpui-component-0.6.6/src/root.rs:582` 的
+//! `window.set_rem_size(cx.theme().font_size)`）。规格值来自 Windows 前端源码
+//! （`windows/tauri/src/styles/theme.css` 的 `--lithe-*` 令牌与各组件里的 Tailwind 值），
+//! 逐值搬过来才能与真机并排核对：标题栏 **40**（`h_10()`）、项目标签条 **32**（`h_8()`）、
+//! 活动栏 **38**（不在档位上，保留 `px(...)`）、状态栏 **24**（`h_6()`）、左栏 **320**（`w_80()`）、
+//! 右工具窗 **400**（不在档位上）、工作区间隔 **4**（`gap_1()`）、底部窗 **320**（`h_80()`）。
+//! 每个值的出处写在使用点或 `crates/*/src/*.rs` 顶部的度量映射表里。
 //!
-//! 1. **规格真源给的就是 px**。本项目的界面规格来自 Windows 前端源码
-//!    （`windows/tauri/src/styles/theme.css` 的 `--lithe-*` 令牌与各组件里的 Tailwind 值），
-//!    逐值搬过来才能与真机并排核对；例如标题栏 **40**（`--lithe-title-bar-height: 2.5rem`）、
-//!    项目标签条 **32**、活动栏 **38**、状态栏 **24**（`--lithe-footer-height: 1.5rem`）、
-//!    左栏 **320**（`settings.sidebarWidth`）、右工具窗 **400**、工作区间隔 **4**
-//!    （`--lithe-workbench-gap`）、编辑器岛圆角 **11.2**（`--radius * 1.4`）、
-//!    底部窗 **320**。这些数字每一个都能在源码里指到出处。
-//! 2. **改 rem 会破坏"逐值搬"的可核对性**。`p_2()` 之类的值取决于 theme base font，
-//!    换算之后规格文档里的 `40` / `24` / `320` 就对不上了，评审时无法一眼验证；
-//!    而 `UI-MAP-WINDOWS.md` 的逐区域对照表正是按这些 px 值写的。
-//! 3. **本项目的缩放策略还没定**。指南描述的是"以 base font 为应用缩放基准"的模型；
-//!    在决定 Lithe 是否要用这套缩放之前，把度量改成 rem 会提前锁死一个未评审的设计选择。
+//! **三类仍写 `px(...)` 的值**（每处都有注释说明，不是漏改）：
 //!
-//! 因此：**保留 px，但把它当作一条已登记的偏离**，而不是"忘了按指南做"。
-//! 区域文件里每个 `const` 都带出处注释；将来若确定采用 rem 缩放，应按区域整体换算并在
-//! `UI-MAP-WINDOWS.md` 里同步更新对照表，而不是零散改几个值。
+//! 1. **不在 gpui 固定档位上的长度**：gpui 的档位表是编译期生成的固定列表
+//!    （`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），例如 38 / 42 / 56 / 144 / 200 /
+//!    240 / 400 …Tailwind v4 的任意整数档在 gpui 里没有对应 helper，不能自己发明一个；
+//! 2. **圆角**：Lithe 的圆角阶梯是 `--radius: 8px` 派生的 `calc(--radius × k)`
+//!    （`theme.css:6-12`：`sm` = 4.8、`md` = 6.4、`lg` = 8、`xl` = 11.2），**不在** 4px 网格上。
+//!    也不能改成读主题 —— `ThemeConfig.radius` 是 `usize`
+//!    （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 4.8 / 6.4；而把主题半径设成 8
+//!    会让**所有** gpui-kit 组件的圆角从 6 变成 8，反而离 Lithe 的 `rounded-md`(6.4) 更远。
+//!    所以圆角一律走应用层具名常量（`TAB_RADIUS` / `CHIP_RADIUS` / `ISLAND_RADIUS` / …），值不变；
+//! 3. **运行时算术**（例如活动栏的 `38 + 4 = 42`、树行的 `10 + depth × 16`）：没有固定的档位
+//!    helper 可套；其中档位内的部分写成 helper 底层的 `rems(N / 4.)`，值随主题基准字号缩放。
+//!
+//! **字号**：Lithe 的 UI 基准是 13px（`--app-ui-font-size` / `--ui-text-chrome` = 13px，
+//! `theme.css:112,115`），gpui 的字号档位只有 `text_xs()`=12 与 `text_sm()`=14，13 不在档位上。
+//! 按《编码指南》统一用 **`text_sm()`（14px）**——13 → 14 是经维护者确认的**有意**视觉改动
+//! （所有 chrome 文字 +1px），不是等价换算；档位内等价换算的是 12 → `text_xs()`、
+//! 16 → `text_base()`；10 / 11（徽章、日期列、等宽字号）不在档位上，保留 `px(...)`。
 //!
 //! 颜色仍然一律走 `cx.theme()`（不写裸色值），这条没有偏离。
 //!

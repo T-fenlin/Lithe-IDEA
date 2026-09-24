@@ -44,17 +44,14 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
-    StyleRefinement, Styled as _, Subscription, WeakEntity, Window, div, px, relative,
+    StyleRefinement, Styled as _, Subscription, WeakEntity, Window, div, px, relative, rems,
 };
 
 use crate::constants::new_terminal_label;
 use crate::constants::{
     CAPABILITY_NOTICE, CHOOSE_PROFILE, CHROME_RADIUS, CLEAR_TERMINAL, ERROR_FALLBACK, ERROR_TITLE,
-    EXIT_CODE, FAILED, INPUT_GAP, INPUT_HEIGHT, INPUT_ROW_PADDING_BLOCK, INPUT_ROW_PADDING_INLINE,
-    INPUT_TEXT_SIZE, NO_TERMINALS, NOTICE_TEXT_SIZE, RETRY, RUNNING, SCROLL_TO_END,
-    STATUS_LINE_HEIGHT, SUCCEEDED, TAB_BAR_HEIGHT, TAB_CLOSE_BUTTON_SIZE, TAB_MAX_WIDTH,
-    TAB_MIN_WIDTH, TAB_TEXT_SIZE, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT,
-    TERMINAL_PADDING_INLINE, TERMINALS_ARIA,
+    EXIT_CODE, FAILED, NO_TERMINALS, RETRY, RUNNING, SCROLL_TO_END, STATUS_LINE_HEIGHT, SUCCEEDED,
+    TAB_MAX_WIDTH, TERMINAL_LINE_HEIGHT, TERMINAL_PADDING_INLINE, TERMINALS_ARIA,
 };
 use crate::profile::TerminalProfile;
 use crate::session::{Session, SessionState};
@@ -122,16 +119,15 @@ impl TerminalPane {
             return h_flex()
                 .w_full()
                 .flex_shrink_0()
-                .h(px(TAB_BAR_HEIGHT))
-                .gap(px(INPUT_GAP))
-                .px(px(8.))
+                .h_9()
+                .gap_1p5()
+                .px_2()
                 .bg(cx.theme().tab_bar)
                 .border_b_1()
                 .border_color(cx.theme().border)
                 .child(
                     Icon::new(IconName::SquareTerminal)
-                        .w(px(16.))
-                        .h(px(16.))
+                        .size_4()
                         .text_color(cx.theme().muted_foreground),
                 )
                 .child(
@@ -139,7 +135,7 @@ impl TerminalPane {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(TAB_TEXT_SIZE))
+                        .text_sm()
                         .text_color(cx.theme().muted_foreground)
                         .child(SharedString::from(NO_TERMINALS)),
                 )
@@ -160,8 +156,7 @@ impl TerminalPane {
                     .ghost()
                     .icon(IconName::Close)
                     .tab_stop(false)
-                    .w(px(TAB_CLOSE_BUTTON_SIZE))
-                    .h(px(TAB_CLOSE_BUTTON_SIZE))
+                    .size_6()
                     .rounded(px(CHROME_RADIUS))
                     .tooltip(close_label.clone())
                     .accessibility_label(close_label)
@@ -177,19 +172,12 @@ impl TerminalPane {
 
                 // 用 `child` 而不是 `label`：`Tab` 会在自己的根上写 `text_sm()`
                 // （14px，`gpui-component-0.6.6/src/tab/tab.rs:803-807`），而用户样式在它之前
-                // 写入、会被覆盖；把文字放进自己的 div 才能拿到真机的 13px
-                // （`ui/tab-bar.tsx:170` 的 `ui-text-chrome`）。
+                // 写入、会被覆盖；把文字放进自己的 div 才能拿到规格值
+                // （`ui/tab-bar.tsx:170` 的 `ui-text-chrome` = 13px → `text_sm()`，见 `constants.rs`）。
                 Tab::new()
                     .aria_label(name.clone())
-                    .min_w(px(TAB_MIN_WIDTH))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(TAB_TEXT_SIZE))
-                            .child(name),
-                    )
+                    .min_w_20()
+                    .child(div().flex_1().min_w_0().truncate().text_sm().child(name))
                     .suffix(close)
             })
             .collect();
@@ -204,13 +192,13 @@ impl TerminalPane {
             // 表里能选的是 Small+Underline=**30** 与 Medium+Underline=36，取更接近的 30。
             .with_size(Size::Small)
             .selected_index(self.active)
-            .max_width(px(TAB_MAX_WIDTH))
+            .max_width(TAB_MAX_WIDTH)
             .children(tabs)
             .suffix(
                 h_flex()
                     .flex_shrink_0()
                     .items_center()
-                    .gap(px(2.))
+                    .gap_0p5()
                     .child(self.clear_button(shell.clone()))
                     .child(self.new_tab_button(shell.clone()))
                     .child(self.profile_menu_button(cx)),
@@ -230,7 +218,7 @@ impl TerminalPane {
         v_flex()
             .w_full()
             .flex_shrink_0()
-            .h(px(TAB_BAR_HEIGHT))
+            .h_9()
             .bg(cx.theme().tab_bar)
             .border_b_1()
             .border_color(cx.theme().border)
@@ -273,17 +261,17 @@ impl TerminalPane {
         let mut line = h_flex()
             .w_full()
             .flex_shrink_0()
-            .h(px(STATUS_LINE_HEIGHT))
-            .gap(px(INPUT_GAP))
-            .px(px(INPUT_ROW_PADDING_INLINE))
+            .h_6()
+            .gap_1p5()
+            .px_3()
             .bg(cx.theme().muted)
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
                 div()
-                    .max_w(px(320.))
+                    .max_w_80()
                     .truncate()
-                    .text_size(px(NOTICE_TEXT_SIZE))
+                    .text_xs()
                     .text_color(color)
                     .child(label),
             );
@@ -295,6 +283,7 @@ impl TerminalPane {
                     .icon(IconName::Play)
                     .label(RETRY)
                     .tab_stop(false)
+                    // 24 − 4 = 20（让出状态行的上下内边距）：运行时算术，没有档位 helper 可套。
                     .h(px(STATUS_LINE_HEIGHT - 4.))
                     .rounded(px(CHROME_RADIUS))
                     .on_click(cx.listener(
@@ -313,7 +302,7 @@ impl TerminalPane {
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(NOTICE_TEXT_SIZE))
+                .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(SharedString::from(CAPABILITY_NOTICE)),
         )
@@ -352,7 +341,7 @@ impl TerminalPane {
                     .w_full()
                     .min_w_0()
                     .font_family(row_mono.clone())
-                    .text_size(px(TERMINAL_FONT_SIZE))
+                    .text_sm()
                     .line_height(relative(TERMINAL_LINE_HEIGHT))
                     .text_color(cx.theme().foreground)
                     .child(text)
@@ -394,10 +383,10 @@ impl TerminalPane {
                     h_flex()
                         .w_full()
                         .flex_shrink_0()
-                        .pl(px(TERMINAL_PADDING_INLINE))
-                        .pr(px(TERMINAL_PADDING_INLINE))
+                        .pl_4()
+                        .pr_4()
                         .font_family(mono.clone())
-                        .text_size(px(TERMINAL_FONT_SIZE))
+                        .text_sm()
                         .line_height(relative(TERMINAL_LINE_HEIGHT))
                         .text_color(foreground)
                         .child(line),
@@ -415,13 +404,12 @@ impl TerminalPane {
                     .header(
                         EmptyHeader::new()
                             .media(
-                                gpui_kit::component::empty::EmptyMedia::new().child(
-                                    Icon::new(IconName::SquareTerminal).w(px(32.)).h(px(32.)),
-                                ),
+                                gpui_kit::component::empty::EmptyMedia::new()
+                                    .child(Icon::new(IconName::SquareTerminal).size_8()),
                             )
                             .title(
                                 EmptyTitle::new()
-                                    .text_size(px(TAB_TEXT_SIZE))
+                                    .text_sm()
                                     .child(SharedString::from(NO_TERMINALS)),
                             ),
                     )
@@ -430,8 +418,8 @@ impl TerminalPane {
                             Button::new("terminal-empty-new")
                                 .icon(IconName::Plus)
                                 .label(new_terminal_label())
-                                .h(px(TAB_CLOSE_BUTTON_SIZE))
-                                .px(px(8.))
+                                .h_6()
+                                .px_2()
                                 .rounded(px(CHROME_RADIUS))
                                 .on_click(cx.listener(
                                     |this: &mut Self,
@@ -460,16 +448,16 @@ impl TerminalPane {
                     EmptyHeader::new()
                         .media(
                             gpui_kit::component::empty::EmptyMedia::new()
-                                .child(Icon::new(IconName::SquareTerminal).w(px(32.)).h(px(32.))),
+                                .child(Icon::new(IconName::SquareTerminal).size_8()),
                         )
                         .title(
                             EmptyTitle::new()
-                                .text_size(px(TAB_TEXT_SIZE))
+                                .text_sm()
                                 .child(SharedString::from(ERROR_TITLE)),
                         )
                         .description(
                             EmptyDescription::new()
-                                .text_size(px(NOTICE_TEXT_SIZE))
+                                .text_xs()
                                 .child(SharedString::from(message)),
                         ),
                 )
@@ -477,8 +465,8 @@ impl TerminalPane {
                     Button::new("terminal-failed-retry")
                         .icon(IconName::Play)
                         .label(RETRY)
-                        .h(px(TAB_CLOSE_BUTTON_SIZE))
-                        .px(px(8.))
+                        .h_6()
+                        .px_2()
                         .rounded(px(CHROME_RADIUS))
                         .on_click(cx.listener(
                             move |this: &mut Self, _event: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>| {
@@ -502,20 +490,20 @@ impl TerminalPane {
         // 生效（`gpui-component-0.6.6/src/input/input.rs:256-260`）；单行输入的实际高度来自
         // `input_h(size)` = 32px。全限定调用写的是样式表，而 `refine_style` 在 `input_h` 之后
         // 执行（`input.rs:703,719`），能覆写成真机 stdin 输入框的 28px。
-        let input = gpui_kit::Styled::h(Input::new(&self.input), px(INPUT_HEIGHT))
+        let input = gpui_kit::Styled::h_7(Input::new(&self.input))
             .w_full()
             .min_w_0()
             .rounded(px(CHROME_RADIUS))
             .font_family(cx.theme().mono_font_family.clone())
-            .text_size(px(INPUT_TEXT_SIZE));
+            .text_xs();
 
         Some(
             h_flex()
                 .w_full()
                 .flex_shrink_0()
-                .gap(px(INPUT_GAP))
-                .px(px(INPUT_ROW_PADDING_INLINE))
-                .py(px(INPUT_ROW_PADDING_BLOCK))
+                .gap_1p5()
+                .px_3()
+                .py_1p5()
                 .bg(cx.theme().background)
                 .border_t_1()
                 .border_color(cx.theme().border)
@@ -530,8 +518,7 @@ impl TerminalPane {
             .ghost()
             .icon(IconName::Plus)
             .tab_stop(false)
-            .w(px(TAB_CLOSE_BUTTON_SIZE))
-            .h(px(TAB_CLOSE_BUTTON_SIZE))
+            .size_6()
             .rounded(px(CHROME_RADIUS))
             .tooltip(new_terminal_label())
             .accessibility_label(new_terminal_label())
@@ -553,8 +540,7 @@ impl TerminalPane {
             .ghost()
             .icon(IconName::Trash)
             .tab_stop(false)
-            .w(px(TAB_CLOSE_BUTTON_SIZE))
-            .h(px(TAB_CLOSE_BUTTON_SIZE))
+            .size_6()
             .rounded(px(CHROME_RADIUS))
             .tooltip(CLEAR_TERMINAL)
             .accessibility_label(CLEAR_TERMINAL)
@@ -583,8 +569,7 @@ impl TerminalPane {
             .ghost()
             .icon(IconName::ChevronDown)
             .tab_stop(false)
-            .w(px(TAB_CLOSE_BUTTON_SIZE))
-            .h(px(TAB_CLOSE_BUTTON_SIZE))
+            .size_6()
             .rounded(px(CHROME_RADIUS))
             .tooltip(CHOOSE_PROFILE)
             .accessibility_label(CHOOSE_PROFILE)
@@ -654,8 +639,10 @@ impl Drop for TerminalPane {
 /// 左右 16 = 真机终端内容左内边距（`pl-4`，`terminal.tsx:870`）；上下 0 = 终端行必须贴行显示。
 fn output_row_style() -> StyleRefinement {
     let mut style = StyleRefinement::default();
-    let inline = px(TERMINAL_PADDING_INLINE);
-    let zero = px(0.);
+    // `StyleRefinement` 是裸样式表，没有 `Styled` 的档位 helper 可用，所以直接写单位构造函数：
+    // 16 / 4 = `rems(4.)`（与 `pl_4()` 同值）、0 → `rems(0.)`。
+    let inline = rems(TERMINAL_PADDING_INLINE / 4.);
+    let zero = rems(0.);
     style.padding.left = Some(inline.into());
     style.padding.right = Some(inline.into());
     style.padding.top = Some(zero.into());

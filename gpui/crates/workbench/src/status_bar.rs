@@ -97,26 +97,38 @@ use gpui_kit::{
     Styled as _, Window, prelude::FluentBuilder as _, px,
 };
 
-/// 状态栏总高：`--lithe-footer-height: 1.5rem`（`styles/theme.css:119`）。
-const BAR_HEIGHT: Pixels = px(24.);
-/// 容器左右内边距：`--lithe-chrome-padding-inline: 8px`（`styles/theme.css:132`）。
-const BAR_PADDING_INLINE: Pixels = px(8.);
-/// 前导组与尾随组之间的间距：`gap-2`（`footer/footer.tsx:47`）。
-const BAR_GAP: Pixels = px(8.);
-/// 组内条目间距：`--lithe-chrome-gap-tight: 2px`（`styles/theme.css:129`、`footer.tsx:50,70` 的 `gap="tight"`）。
-const GROUP_GAP: Pixels = px(2.);
-/// 条目高：`--lithe-chrome-control-height: 1.5rem`（`styles/theme.css:126`、`footer-status-chip.tsx:5`）。
-const CHIP_HEIGHT: Pixels = px(24.);
+// ---------------------------------------------------------------------------
+// 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
+// ---------------------------------------------------------------------------
+//
+// rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等：
+//
+// | 规格（Windows 真源） | 值 | 用到的 helper |
+// | --- | --- | --- |
+// | `--lithe-footer-height: 1.5rem`（`styles/theme.css:119`） | 24 | `h_6()` |
+// | `--lithe-chrome-padding-inline: 8px`（`styles/theme.css:132`） | 8 | `px_2()` |
+// | `gap-2`（`footer/footer.tsx:47`） | 8 | `gap_2()` |
+// | `--lithe-chrome-gap-tight: 2px`（`styles/theme.css:129`） | 2 | `gap_0p5()` |
+// | `--lithe-chrome-control-height: 1.5rem`（`styles/theme.css:126`） | 24 | `h_6()` |
+// | `gap-1` / `px-1.5`（`footer-status-chip.tsx:5`） | 4 / 6 | `gap_1()` / `px_1p5()` |
+//
+// 字号：`--ui-text-chrome` 是 **13px**（`styles/theme.css:115`、`ui/chrome.tsx:6`），gpui 的档位
+// 只有 `text_xs()`(12) / `text_sm()`(14)，13 不在档位上。按《编码指南》用 **`text_sm()`（14px）**
+// ——13 → 14 是经维护者确认的**有意**视觉改动，不是等价换算。
+
 /// 条目最大宽：`max-w-50` = 200px（`footer-status-chip.tsx:5`）。
+///
+/// ⚠️ **保留 `px(...)`**：200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1039-1047`）；Tailwind v4 的任意整数档 `max-w-50`
+/// 在 gpui 里没有对应 helper，不能自己发明一个。
 const CHIP_MAX_WIDTH: Pixels = px(200.);
-/// 条目内图标与文字的间距：`gap-1` = 4px（`footer-status-chip.tsx:5`）。
-const CHIP_GAP: Pixels = px(4.);
-/// 条目左右内边距：`px-1.5` = 6px（`footer-status-chip.tsx:5`）。
-const CHIP_PADDING_INLINE: Pixels = px(6.);
+
 /// 条目圆角：`rounded-md` = `--radius-md` = `calc(8px * 0.8)` = 6.4px（`styles/theme.css:7,134`）。
+///
+/// ⚠️ **保留 `px(...)`**：6.4 **不是** gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1245-1249`）；也不能从主题读 —— `ThemeConfig.radius`
+/// 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 6.4。
 const CHIP_RADIUS: Pixels = px(6.4);
-/// 状态栏字号：`--ui-text-chrome: 13px`（`styles/theme.css:115`、`ui/chrome.tsx:6`）。
-const CHROME_TEXT_SIZE: Pixels = px(13.);
 
 /// 状态栏里的一个条目。
 ///
@@ -158,20 +170,20 @@ pub fn status_bar(
 ) -> impl IntoElement {
     StatusBar::new()
         // 高度 24：覆盖组件默认的 `py_1`（`status_bar.rs:89`）撑出来的高度。
-        .h(BAR_HEIGHT)
+        .h_6()
         // 清掉默认 `py_1`：条目自己就是 24 高，再留上下 4px 会让条目溢出内容盒。
         .py_0()
         // 清掉默认 `border_t_1`（`status_bar.rs:91`）：Windows 页脚**无上边框**。
         .border_0()
-        .px(BAR_PADDING_INLINE)
+        .px_2()
         // 底色 = Windows 的 `--surface`（`footer.tsx:47` `bg-surface`）。用状态栏专用 token
         // （组件自身也用它，`status_bar.rs:93`），不写裸色值。
         // ⚠️ 值必须由项目主题配置给到：gpui-kit 默认深色的 `status_bar.background` 是
         // `#171717`（`theme/default-theme.json:293`），而 Lithe 的深色 `--surface` 是
         // `#2b2d30`（`01-shell.md:311`）—— 要一致就得在这个 token（或 `background`）上配。
         .bg(cx.theme().tokens.status_bar)
-        // 字号 13，覆盖组件默认的 `text_xs()`（12px，`status_bar.rs:94`）。
-        .text_size(CHROME_TEXT_SIZE)
+        // 字号：`text_sm()`（14px，原 Lithe 基准 13px，见上方映射表说明）。
+        .text_sm()
         // 文字色 = `--subtle-foreground`（`ui/chrome.tsx:6`）→ `muted_foreground`（`status_bar.rs:95`）。
         .text_color(cx.theme().muted_foreground)
         .child(status_row(left, right, cx))
@@ -187,7 +199,7 @@ fn status_row(left: &[StatusEntry], right: &[StatusEntry], cx: &App) -> impl Int
         .w_full()
         .items_center()
         .justify_between()
-        .gap(BAR_GAP)
+        .gap_2()
         .child(entry_group(left, "status-bar-leading", true, cx))
         .child(entry_group(right, "status-bar-trailing", false, cx))
 }
@@ -205,7 +217,7 @@ fn entry_group(
 ) -> impl IntoElement {
     h_flex()
         .items_center()
-        .gap(GROUP_GAP)
+        .gap_0p5()
         .when(leading, |this| this.flex_1().min_w_0().overflow_hidden())
         .when(!leading, |this| this.flex_shrink_0())
         .children(
@@ -227,13 +239,13 @@ fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
 
     h_flex()
         .id(id)
-        .h(CHIP_HEIGHT)
+        .h_6()
         .max_w(CHIP_MAX_WIDTH)
         .flex_shrink_0()
         .items_center()
-        .gap(CHIP_GAP)
+        .gap_1()
         .rounded(CHIP_RADIUS)
-        .px(CHIP_PADDING_INLINE)
+        .px_1p5()
         .whitespace_nowrap()
         // `hover:bg-accent hover:text-foreground`（`footer-status-chip.tsx:5`）。
         // UI-MAP §1.2：gpui 的 `accent` 语义就是"悬停底色"。

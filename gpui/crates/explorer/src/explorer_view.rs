@@ -21,7 +21,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, WeakEntity, Window, div, px, relative,
+    Styled as _, Subscription, WeakEntity, Window, div, px, relative, rems,
 };
 
 use crate::model::{
@@ -54,76 +54,71 @@ const OPEN_FOLDER: &str = "打开文件夹";
 const NO_MATCHING_FILES: &str = "没有匹配的文件";
 
 // ---------------------------------------------------------------------------
-// 度量（全部取 Windows 源码；`px()` 直搬，`gpui/UI-MAP.md` §1.1 第 1 条）
+// 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
 // ---------------------------------------------------------------------------
+//
+// 全部取自 Windows 源码（规格真源）。rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`，
+// 与规格逐像素相等：
+//
+// | 规格 | 值 | 用到的 helper | 出处 |
+// | --- | --- | --- | --- |
+// | 头部高 `--lithe-sidebar-header-height: 2rem` | 32 | `h_8()` | `styles/theme.css:124` |
+// | 头部 `px-2` / `py-1` | 8 / 4 | `px_2()` / `py_1()` | `file-explorer-tree.tsx:1310`、`ui/sidebar.tsx:93` |
+// | 头部图标按钮 `icon-xs` | 24 | `size_6()` | `ui/button.tsx:27` |
+// | 搜索框高 `h-7` | 28 | `h_7()` | `global-search-toolbar.tsx:101-102` |
+// | 搜索行 `px-2 py-2` | 8 | `px_2()` / `py_2()` | `global-search-toolbar.tsx:93` |
+// | 树行高 | 24 | `h_6()` | 见下方 `BASE_INDENT` 注释 |
+// | 行水平内缩 / 右内边距 `px-1.5` | 6 | `px_1p5()` / `pr_1p5()` | `file-explorer-tree.css:6`、`sidebar-tree.tsx:241` |
+// | 行内列间距 `--lithe-chrome-gap` | 4 | `gap_1()` | `theme.css:130` |
+// | 展开箭头槽 `size-4` / 右侧 `mr-0.5` | 16 / 2 | `size_4()` / `mr_0p5()` | `sidebar-tree.tsx:301` |
+// | 箭头字形 / 文件图标 | 12 / 16 | `size_3()` / `size_4()` | `file-explorer-tree.css:121-124,126-131` |
+// | 加载胶囊 `p-3` / `px-3 py-1.5` / `gap-2` | 12 / 12 / 6 / 8 | `top_3()` / `px_3()` / `py_1p5()` / `gap_2()` | `file-explorer-pane.tsx:55-56`、`ui/spinner.tsx:44` |
+//
+// 字号：`--ui-text-sm` = 13px（`theme.css:116`）不在 gpui 的档位（`text_xs()`=12 / `text_sm()`=14）
+// 上，按《编码指南》用 **`text_sm()`（14px）**——13 → 14 是经维护者确认的**有意**视觉改动。
+//
+// ⚠️ `line_height` 没有 rem 档位 helper（`gpui-pre-0.3.6/src/styled.rs:740` 只有取值形式），
+// 所以这一项用 helper 底层的 `rems()` 表达（`rems(16. / 4.)` = 原来的 `px(16.)`）。
 
-/// 侧栏头部高度 32px（`styles/theme.css:124` `--lithe-sidebar-header-height: 2rem`）。
-const HEADER_HEIGHT: f32 = 32.;
-/// 头部水平内边距 8px（`file-explorer-tree.tsx:1310` 的 `px-2`）。
-const HEADER_PADDING_INLINE: f32 = 8.;
-/// 头部纵向内边距 4px（`ui/sidebar.tsx:93` 的 `py-1`）。
-const HEADER_PADDING_BLOCK: f32 = 4.;
-/// 头部图标按钮 24×24（`ui/button.tsx:27` `"icon-xs": "size-6 p-0"`）。
-const HEADER_BUTTON_SIZE: f32 = 24.;
 /// 头部图标按钮圆角 6.4px（`ui/button.tsx:9` 的 `rounded-md` → `--radius-md = --radius × 0.8`，
 /// `theme.css:7,134`）。
+///
+/// ⚠️ **保留 `px(...)`**：6.4 不是 gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px）；也不能从
+/// 主题读 —— `ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
+/// 装不下 Lithe 的 `--radius × k` 阶梯（4.8 / 6.4 / 11.2）。
 const HEADER_BUTTON_RADIUS: f32 = 6.4;
 /// 头部标题行高 16px（`file-explorer/styles/file-explorer-tree.css:151-156`：
 /// `font-size: var(--ui-text-chrome)` / `font-weight: 600` / `line-height: var(--lithe-chrome-line-height)`，
-/// 后者的值 1rem 见 `theme.css:128`）。
+/// 后者的值 1rem 见 `theme.css:128`）。16 在 rem 档位上，但 `line_height` 没有档位 helper，
+/// 所以调用点写 `rems(TITLE_LINE_HEIGHT / 4.)`。
 const TITLE_LINE_HEIGHT: f32 = 16.;
-/// 搜索输入框高 28px（`h-7`；树内搜索框与全局搜索工具栏是同一套 Chrome 控件，
-/// `global-search-toolbar.tsx:101-102`）+ 圆角 8px（`rounded-lg`）。
-const SEARCH_INPUT_HEIGHT: f32 = 28.;
+/// 搜索输入框圆角 8px（`rounded-lg` = `--radius × 1`，`theme.css:8,134`）。
+///
+/// ⚠️ **保留 `px(...)`**：Lithe 的圆角阶梯一律走应用层具名常量，理由见 [`HEADER_BUTTON_RADIUS`]。
 const SEARCH_INPUT_RADIUS: f32 = 8.;
-/// 搜索行内边距 8px（`global-search-toolbar.tsx:93` 的 `py-2`、compact `px-2`）。
-const SEARCH_ROW_PADDING: f32 = 8.;
-
 /// 树行高 24px。
 ///
 /// 真机公式 `max(24, uiFontSize × 1.35 + 6)`，`uiFontSize = 13` → `max(24, 23.55) = 24`
-/// （`file-explorer/lib/file-tree-row.ts:1-14`；13px 见 `theme.css:112`）。
+/// （`file-explorer/lib/file-tree-row.ts:1-14`；13px 见 `theme.css:112`）。调用点直接 `h_6()`。
 ///
 /// 表体是 `uniform_list`，**行高只取第 0 行的测量值**再按固定值铺满
 /// （`gpui-pre-0.3.6/src/elements/uniform_list.rs:658-680,371,397`），所以行内容必须正好是这个高度，
 /// 行内纵向内边距一律清零（`ListItem` 默认 `py_1`，见 `gpui-component-0.6.6/src/list/list_item.rs:186`）。
-const ROW_HEIGHT: f32 = 24.;
-/// 行基准缩进 10px（`file-explorer/lib/file-tree-row.ts:1` `FILE_TREE_BASE_INDENT = 10`）。
-const BASE_INDENT: f32 = 10.;
-/// 缩进步长 16px（默认 `fileTreeIndentSize: 16`，`features/settings/config/default-settings.ts:182`；
-/// 可选 12/16/20/24 见 `file-explorer-tree.tsx:1482-1493`）。
-const INDENT_STEP: f32 = 16.;
-/// 树体水平内缩 6px（`file-explorer/styles/file-explorer-tree.css:6,36` `--file-tree-row-inline-inset`）。
 ///
-/// 真机给每一行（`.file-tree-virtual-row`）加 `padding-inline`，于是行底色左右各缩 6px。
-/// `uniform_list` 的行没法加外边距，等价做法是把整棵树套一层 `px(6.)`（见 [`Explorer::render_tree`]）。
-const ROW_INLINE_INSET: f32 = 6.;
-/// 行内水平内边距 6px（`features/sidebar/components/sidebar-tree.tsx:241` 的 `px-1.5`）。
-/// 左内边距被行内样式覆写成 `10 + depth × 16`（`sidebar-tree.tsx:246`），右内边距保持 6。
-const ROW_PADDING_INLINE: f32 = 6.;
-/// 行内列间距 4px（`file-explorer-tree.css:56` `column-gap: var(--lithe-chrome-gap) !important`，
-/// `--lithe-chrome-gap: 4px` 见 `theme.css:130`）。
-const ROW_GAP: f32 = 4.;
-/// 展开箭头槽 16×16（`sidebar-tree.tsx:301` 的 `size-4`），右侧另加 2px（同行 `mr-0.5`）。
-const DISCLOSURE_SIZE: f32 = 16.;
-const DISCLOSURE_MARGIN: f32 = 2.;
-/// 箭头字形 12×12（`file-explorer-tree.css:121-124` 的 `svg { width: 12px; height: 12px }`）。
-const CARET_SIZE: f32 = 12.;
-/// 文件/目录图标 16×16（`file-explorer-tree.css:5,126-131` `--file-tree-icon-size: 16px`）。
-const ICON_SIZE: f32 = 16.;
+/// 行基准缩进 10px（`file-explorer/lib/file-tree-row.ts:1` `FILE_TREE_BASE_INDENT = 10`）与
+/// 缩进步长 16px（默认 `fileTreeIndentSize: 16`，`features/settings/config/default-settings.ts:182`；
+/// 可选 12/16/20/24 见 `file-explorer-tree.tsx:1482-1493`）参与逐层缩进的算术
+/// （`pl(px(BASE_INDENT + depth × INDENT_STEP))`）：10 不在 rem 档位上（档位里 8 / 12），
+/// 且它是运行时算出来的缩进量，没有固定的档位 helper 可套，所以保留 `px(...)`。
+const BASE_INDENT: f32 = 10.;
+const INDENT_STEP: f32 = 16.;
 /// 行圆角 4px（`file-explorer-tree.css:7` `--file-tree-row-radius: 4px`）。
+///
+/// ⚠️ **保留 `px(...)`**：Lithe 的圆角阶梯一律走应用层具名常量，理由见 [`HEADER_BUTTON_RADIUS`]。
 const ROW_RADIUS: f32 = 4.;
-/// 树行字号 13px（`file-explorer-tree.css:100` `font-size: var(--ui-text-sm)`；
-/// `--ui-text-sm = --app-ui-font-size = 13px`，`theme.css:112,116`）。
-const ROW_TEXT_SIZE: f32 = 13.;
-/// 行高倍数 1.35（`theme.css:4` `--leading-row: 1.35`；`sidebar-tree.tsx:241` 的 `leading-row`）。
+/// 行高倍数 1.35（`theme.css:4` `--leading-row: 1.35`；`sidebar-tree.tsx:241` 的 `leading-row`）——
+/// 是倍数不是长度，`line_height(relative(..))` 原样保留。
 const ROW_LINE_HEIGHT: f32 = 1.35;
-/// 加载胶囊：`p-3`(12) 定位、`px-3 py-1.5`(12/6)、`rounded-full`
-/// （`file-explorer-pane.tsx:55-56`）；间距 8 与 13px 字号取 `ui/spinner.tsx:44` 的 `gap-2 … ui-text-sm`。
-const LOADING_PILL_OFFSET: f32 = 12.;
-const LOADING_PILL_PADDING_INLINE: f32 = 12.;
-const LOADING_PILL_PADDING_BLOCK: f32 = 6.;
-const LOADING_PILL_GAP: f32 = 8.;
 
 // ---------------------------------------------------------------------------
 // 状态：树体的加载状态（本 Entity 自己保留）
@@ -386,10 +381,10 @@ impl Explorer {
         let mut header = h_flex()
             .w_full()
             .flex_shrink_0()
-            .h(px(HEADER_HEIGHT))
-            .gap(px(ROW_GAP))
-            .px(px(HEADER_PADDING_INLINE))
-            .py(px(HEADER_PADDING_BLOCK))
+            .h_8()
+            .gap_1()
+            .px_2()
+            .py_1()
             .bg(cx.theme().background)
             .border_b_1()
             // 真机是 `color-mix(var(--border) 72%, transparent)`（`file-explorer-tree.css:146`）。
@@ -401,9 +396,10 @@ impl Explorer {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(ROW_TEXT_SIZE))
+                    .text_sm()
                     .font_semibold()
-                    .line_height(px(TITLE_LINE_HEIGHT))
+                    // `line_height` 没有 rem 档位 helper，用 helper 底层的 `rems()`（原 16px）。
+                    .line_height(rems(TITLE_LINE_HEIGHT / 4.))
                     .text_color(cx.theme().foreground)
                     .child(SharedString::from(TITLE)),
             )
@@ -472,17 +468,17 @@ impl Explorer {
         // （`input.rs:703`、`sizing.rs:261-269`）。方法调用语法会优先挑固有方法，所以这里
         // 走 `Styled::h(...)` 直接给样式表写高 28px（`refine_style` 在 `input_h` 之后执行，
         // `input.rs:703,719`，能覆写掉它）。
-        let input = gpui_kit::Styled::h(Input::new(&self.search), px(SEARCH_INPUT_HEIGHT))
+        let input = gpui_kit::Styled::h_7(Input::new(&self.search))
             .w_full()
             .rounded(px(SEARCH_INPUT_RADIUS))
-            .text_size(px(ROW_TEXT_SIZE));
+            .text_sm();
 
         Some(
             h_flex()
                 .w_full()
                 .flex_shrink_0()
-                .px(px(SEARCH_ROW_PADDING))
-                .py(px(SEARCH_ROW_PADDING))
+                .px_2()
+                .py_2()
                 .bg(cx.theme().muted)
                 .border_b_1()
                 .border_color(cx.theme().border)
@@ -515,7 +511,7 @@ impl Explorer {
                 this.child(
                     h_flex()
                         .absolute()
-                        .top(px(LOADING_PILL_OFFSET))
+                        .top_3()
                         .left_0()
                         .right_0()
                         .justify_center()
@@ -526,17 +522,17 @@ impl Explorer {
                             // （`--surface` → `muted`）；阴影与背景模糊没有对应 token，不画
                             // （登记在未实现清单里）。
                             h_flex()
-                                .gap(px(LOADING_PILL_GAP))
-                                .px(px(LOADING_PILL_PADDING_INLINE))
-                                .py(px(LOADING_PILL_PADDING_BLOCK))
+                                .gap_2()
+                                .px_3()
+                                .py_1p5()
                                 .rounded_full()
                                 .bg(cx.theme().muted)
                                 .border_1()
                                 .border_color(cx.theme().border)
-                                .text_size(px(ROW_TEXT_SIZE))
+                                .text_sm()
                                 .text_color(cx.theme().muted_foreground)
-                                // 转圈图标 16 + 文案 13 + 间距 8：`ui/spinner.tsx:20-51` 的
-                                // `size-4` / `ui-text-sm` / `gap-2`。`Spinner` 默认 `Size::Medium`
+                                // 转圈图标 16 + 文案 13（→ `text_sm()` 14）+ 间距 8：
+                                // `ui/spinner.tsx:20-51` 的 `size-4` / `ui-text-sm` / `gap-2`。`Spinner` 默认 `Size::Medium`
                                 // → 16px（`gpui-component-0.6.6/src/spinner.rs:22`、`icon.rs:185`），
                                 // 自带 `with_animation` 常转（`spinner.rs:60-74`）。
                                 .child(Spinner::new().color(cx.theme().muted_foreground))
@@ -580,9 +576,8 @@ impl Explorer {
             // （真机的 `reserveDisclosureSpace`，`file-explorer-tree-item.tsx:211-213`）。
             let caret: AnyElement = if is_folder {
                 h_flex()
-                    .w(px(DISCLOSURE_SIZE))
-                    .h(px(DISCLOSURE_SIZE))
-                    .mr(px(DISCLOSURE_MARGIN))
+                    .size_4()
+                    .mr_0p5()
                     .flex_shrink_0()
                     .justify_center()
                     .child(
@@ -591,18 +586,12 @@ impl Explorer {
                         } else {
                             IconName::ChevronRight
                         })
-                        .w(px(CARET_SIZE))
-                        .h(px(CARET_SIZE))
+                        .size_3()
                         .text_color(cx.theme().muted_foreground),
                     )
                     .into_any_element()
             } else {
-                div()
-                    .w(px(DISCLOSURE_SIZE))
-                    .h(px(DISCLOSURE_SIZE))
-                    .mr(px(DISCLOSURE_MARGIN))
-                    .flex_shrink_0()
-                    .into_any_element()
+                div().size_4().mr_0p5().flex_shrink_0().into_any_element()
             };
 
             let icon = match kind {
@@ -628,16 +617,17 @@ impl Explorer {
 
             let row = h_flex()
                 .w_full()
-                .h(px(ROW_HEIGHT))
-                .gap(px(ROW_GAP))
+                .h_6()
+                .gap_1()
+                // 逐层缩进 = 10 + depth × 16：运行时算出来的值，且 10 不在 rem 档位上，
+                // 没有固定的档位 helper 可套，保留 `px(...)`。
                 .pl(px(BASE_INDENT + entry.depth() as f32 * INDENT_STEP))
-                .pr(px(ROW_PADDING_INLINE))
+                .pr_1p5()
                 .rounded(px(ROW_RADIUS))
                 .child(caret)
                 .child(
                     Icon::new(icon)
-                        .w(px(ICON_SIZE))
-                        .h(px(ICON_SIZE))
+                        .size_4()
                         .text_color(cx.theme().muted_foreground),
                 )
                 .child(label_el)
@@ -668,8 +658,8 @@ impl Explorer {
                 // （`gpui-component-0.6.6/src/list/list_item.rs:186-187`），纵向内边距会让
                 // 24px 的行装不下内容（`gpui/UI-MAP.md` §1.3 第一条）。
                 .p_0()
-                .h(px(ROW_HEIGHT))
-                .text_size(px(ROW_TEXT_SIZE))
+                .h_6()
+                .text_sm()
                 .line_height(relative(ROW_LINE_HEIGHT))
                 .whitespace_nowrap()
                 .overflow_hidden()
@@ -701,7 +691,7 @@ impl Explorer {
             .flex_1()
             .min_h_0()
             .w_full()
-            .px(px(ROW_INLINE_INSET))
+            .px_1p5()
             .role(Role::Tree)
             .aria_label(TREE_ARIA_LABEL)
             .child(tree)
@@ -745,18 +735,14 @@ impl Explorer {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mut empty = Empty::new().header(
-            EmptyHeader::new().description(
-                EmptyDescription::new()
-                    .text_size(px(ROW_TEXT_SIZE))
-                    .child(message),
-            ),
+            EmptyHeader::new().description(EmptyDescription::new().text_sm().child(message)),
         );
 
         if let Some((label, disabled)) = action {
             let button = Button::new("explorer-empty-action")
                 .label(label)
-                .h(px(HEADER_BUTTON_SIZE))
-                .px(px(6.));
+                .h_6()
+                .px_1p5();
             let button = if disabled {
                 button.disabled(true)
             } else {
@@ -794,8 +780,7 @@ fn header_button(
         .ghost()
         .icon(icon)
         .tab_stop(false)
-        .w(px(HEADER_BUTTON_SIZE))
-        .h(px(HEADER_BUTTON_SIZE))
+        .size_6()
         .rounded(px(HEADER_BUTTON_RADIUS))
         .tooltip(label)
         .accessibility_label(label);

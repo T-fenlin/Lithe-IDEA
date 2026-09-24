@@ -50,38 +50,52 @@ pub(crate) const TERMINALS_ARIA: &str = "终端";
 pub(crate) const CAPABILITY_NOTICE: &str = "能力边界：不能运行 vim/top 等全屏程序；Ctrl+C 不可用";
 
 // ---------------------------------------------------------------------------
-// 度量（全部有出处；`px()` 直搬，`gpui/UI-MAP.md` §1.1 第 1 条）
+// 度量
 // ---------------------------------------------------------------------------
+//
+// 布局度量一律用 gpui 的 rem-based helper，不再直接写 `px(...)`。rem base = 主题字号 16px，
+// 所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等：
+//
+// | 规格 | 值 | 用到的 helper | 出处 |
+// | --- | --- | --- | --- |
+// | 页签条高 36 | 36 | `h_9()` | `UI-MAP-WINDOWS.md` §1.6、`ui/tab-bar.tsx:244-255` |
+// | 单页签最小宽 80 | 80 | `min_w_20()` | `ui/tab-bar.tsx:257-267` |
+// | 页签关闭按钮 24×24 | 24 | `size_6()` | `ui/button.tsx:27` 的 `icon-xs` |
+// | 状态/边界提示行高 `--lithe-chrome-control-height` | 24 | `h_6()` | `styles/theme.css:126` |
+// | 终端内容左右内边距 `pl-4` | 16 | `pl_4()` / `pr_4()` | `features/terminal/components/terminal.tsx:870` |
+// | 输入行外框上下 6 / 左右 12、行内间距 6、输入框高 28 | 6 / 12 / 6 / 28 | `py_1p5()` / `px_3()` / `gap_1p5()` / `h_7()` | `features/run/components/run-pane.tsx:454,462` |
+//
+// 字号：`ui-text-sm` 是 **13px**、`--ui-text-caption` 是 **12px**（`styles/theme.css:114-116`），
+// gpui 的档位是 `text_xs()`=12 / `text_sm()`=14：12 → `text_xs()`（等价）、
+// 13 → `text_sm()`（14px，经维护者确认的**有意**视觉改动）、终端字号 14 → `text_sm()`（等价）。
 
-/// 页签条高 36（`UI-MAP-WINDOWS.md` §1.6；`ui/tab-bar.tsx:244-255`）。
-pub(crate) const TAB_BAR_HEIGHT: f32 = 36.;
-/// 单个页签最小宽 80 / 最大宽 200（同上，`ui/tab-bar.tsx:257-267`）。
-pub(crate) const TAB_MIN_WIDTH: f32 = 80.;
+/// 单个页签最大宽 200（`ui/tab-bar.tsx:257-267`）。
+///
+/// ⚠️ **保留 `px(...)` 调用点**：200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224），
+/// 没有 `max_w_50()`。
 pub(crate) const TAB_MAX_WIDTH: f32 = 200.;
-/// 页签文字 13px（`ui/tab-bar.tsx:170` 的 `ui-text-chrome`）。
-pub(crate) const TAB_TEXT_SIZE: f32 = 13.;
-/// 页签关闭按钮 24×24（`ui/button.tsx:27` 的 `icon-xs`）。
-pub(crate) const TAB_CLOSE_BUTTON_SIZE: f32 = 24.;
 /// chrome 圆角 4px（`styles/theme.css:133` 的 `--lithe-chrome-radius: 4px`）。
+///
+/// ⚠️ **保留 `px(...)` 调用点**：Lithe 的圆角阶梯（`--radius × k`）一律走应用层具名常量，
+/// 不套 gpui 的 `rounded_sm()`/`rounded_md()`（语义不同：Lithe 的 `sm` 是 4.8、`md` 是 6.4），
+/// 也不能从主题读 —— `ThemeConfig.radius` 是 `usize`
+/// （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 4.8 / 6.4。
 pub(crate) const CHROME_RADIUS: f32 = 4.;
 /// 状态/边界提示行高 24px（`styles/theme.css:126` 的 `--lithe-chrome-control-height: 1.5rem`）。
+///
+/// 行高本身用 `h_6()`；常量保留是因为「重试」按钮的高度是运行时算术 `24 − 4`
+/// （让出状态行自己的上下内边距，见 [`crate::terminal_view`] 的 `render_status_line`），
+/// 那个表达式没有固定的档位 helper 可套。
 pub(crate) const STATUS_LINE_HEIGHT: f32 = 24.;
-/// 提示文字 12px（`styles/theme.css:114` 的 `--ui-text-caption: 12px`）。
-pub(crate) const NOTICE_TEXT_SIZE: f32 = 12.;
-/// 终端字号 14（`config/default-settings.ts:76` + `config/typography-defaults.ts:13`）。
-pub(crate) const TERMINAL_FONT_SIZE: f32 = 14.;
-/// 终端行高倍数 1（`config/default-settings.ts:77` 的 `terminalLineHeight: 1`）。
+/// 终端行高倍数 1（`config/default-settings.ts:77` 的 `terminalLineHeight: 1`）——
+/// 是倍数不是长度，`line_height(relative(..))` 原样保留。
 pub(crate) const TERMINAL_LINE_HEIGHT: f32 = 1.;
 /// 终端内容左右内边距 16（`pl-4`，`features/terminal/components/terminal.tsx:870`）。
+///
+/// 16 在 rem 档位上（样式调用点用 `pl_4()` / `pr_4()`）；常量保留是因为输出行的行样式直接改
+/// `StyleRefinement`（见 `output_row_style`），那里没有 `Styled` 的 helper 可用，
+/// 只能写 `rems(TERMINAL_PADDING_INLINE / 4.)`。
 pub(crate) const TERMINAL_PADDING_INLINE: f32 = 16.;
-/// 输入行：外框上下 6 / 左右 12、行内间距 6、输入框高 28、输入字号 12
-/// （运行面板 stdin 行 `flex items-center gap-1.5 border-t px-3 py-1.5` + `h-7 font-mono text-[12px]`，
-/// `features/run/components/run-pane.tsx:454,462`；`UI-MAP-WINDOWS.md` §3.5）。
-pub(crate) const INPUT_ROW_PADDING_INLINE: f32 = 12.;
-pub(crate) const INPUT_ROW_PADDING_BLOCK: f32 = 6.;
-pub(crate) const INPUT_GAP: f32 = 6.;
-pub(crate) const INPUT_HEIGHT: f32 = 28.;
-pub(crate) const INPUT_TEXT_SIZE: f32 = 12.;
 /// 输出保留上限 10000 行（真机默认 `terminalScrollback: 10000`，`config/default-settings.ts:79`）。
 pub(crate) const MAX_LINES: usize = 10_000;
 /// 管道单次读取缓冲 4 KiB（与真机 host 的读缓冲同量级：`crates/terminal/src/connection.rs:453-512`

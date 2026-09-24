@@ -33,8 +33,8 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::{ActiveTheme as _, Root};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Pixels,
-    Render, SharedString, Styled as _, Window, div, px,
+    AnyElement, App, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _,
+    Pixels, Render, SharedString, Styled as _, Window, div, px,
 };
 
 use lithe_gpui_editor::EditorPane;
@@ -47,18 +47,36 @@ use crate::project_tabs::{ProjectTab, project_tabs};
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
 
-/// 左侧栏宽度。真源 `features/settings/config/default-settings.ts:138`（`sidebarWidth: 320`）。
-const SIDEBAR_WIDTH: Pixels = px(320.);
+// ---------------------------------------------------------------------------
+// 度量：应用布局一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
+// ---------------------------------------------------------------------------
+//
+// rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等：
+//
+// | 规格（Windows 真源） | 值 | 用到的 helper |
+// | --- | --- | --- |
+// | `sidebarWidth: 320`（`features/settings/config/default-settings.ts:138`） | 320 | `w_80()` |
+// | `--lithe-workbench-gap: 4px`（`styles/theme.css:125`） | 4 | `gap_1()` / `pr_1()` / `h_1()` |
+// | 底部工具窗默认高 320（`bottom-pane/bottom-pane.tsx:47`） | 320 | `h_80()` |
+// | 区域占位块内边距 8 | 8 | `p_2()` |
+// | 占位块字号 13（`--ui-text-chrome`） | 13 | `text_sm()`（14px，见下） |
+//
+// 字号：13 不在 gpui 的档位（`text_xs()`=12 / `text_sm()`=14）上，按《编码指南》用
+// `text_sm()`（14px）——13 → 14 是经维护者确认的**有意**视觉改动，不是等价换算。
+
 /// 右侧工具窗宽度。真源 `default-settings.ts:139`（`rightToolWindowWidth: 400`）。
+///
+/// ⚠️ **保留 `px(...)`**：400 不在 gpui 的固定 rem 档位上（档位里 96 → 384、112 → 448，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1063-1077`），不能自己发明一个 `w_100()`。
 const RIGHT_TOOL_WINDOW_WIDTH: Pixels = px(400.);
-/// 工作区间隔。真源 `styles/theme.css:125`（`--lithe-workbench-gap: 4px`）。
-const WORKBENCH_GAP: Pixels = px(4.);
-/// 编辑器岛圆角。真源 `theme.css:9,134`：`rounded-xl = calc(--radius * 1.4) = 11.2`。
+
+/// 编辑器岛 / 侧栏外壳圆角。真源 `theme.css:9,134`：`rounded-xl = calc(--radius * 1.4) = 11.2`。
+///
+/// ⚠️ **保留 `px(...)`**：11.2 **不是** gpui 的 rem 档位（gpui 的 `rounded_xl()` 是 12px，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1255-1259`）；也不能从主题读 —— `ThemeConfig.radius`
+/// 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 Lithe 的
+/// `--radius × k` 阶梯（4.8 / 6.4 / 11.2），而把主题半径改大又会连带改掉所有 gpui-kit 组件。
 const ISLAND_RADIUS: Pixels = px(11.2);
-/// 底部工具窗默认高度。真源 `layout/components/bottom-pane/bottom-pane.tsx:47`（`useState(320)`）。
-const BOTTOM_PANE_HEIGHT: Pixels = px(320.);
-/// 区域占位块的内边距。
-const PLACEHOLDER_PADDING: Pixels = px(8.);
 
 /// 底部工具窗当前显示哪一个内容。
 ///
@@ -346,23 +364,27 @@ impl Render for ShellWorkspace {
                 h_flex()
                     .w_full()
                     .flex_1()
-                    .min_h(px(0.))
-                    .gap(WORKBENCH_GAP)
+                    .min_h_0()
+                    .gap_1()
                     // `main-layout.tsx:299` 的 `pr-(--lithe-workbench-gap)`：右端再留 4，
                     // 否则右活动栏会贴到窗口边缘。
-                    .pr(WORKBENCH_GAP)
+                    .pr_1()
                     .child(left_rail)
-                    .child(side_pane(SIDEBAR_WIDTH, explorer, cx))
+                    .child(side_pane(div().w_80(), explorer, cx))
                     .child(
                         // 中央列 = 编辑器岛 + 底部工具窗（默认口径：嵌在中央列内）。
                         v_flex()
                             .flex_1()
                             .h_full()
-                            .min_w(px(0.))
+                            .min_w_0()
                             .child(editor_island(editor, cx))
                             .children(bottom),
                     )
-                    .child(side_pane(RIGHT_TOOL_WINDOW_WIDTH, right_tool_window, cx))
+                    .child(side_pane(
+                        div().w(RIGHT_TOOL_WINDOW_WIDTH),
+                        right_tool_window,
+                        cx,
+                    ))
                     .child(right_rail),
             )
             // ④ 状态栏 24。
@@ -383,9 +405,11 @@ impl Render for ShellWorkspace {
 ///
 /// Windows 的左右面板是 `lithe-glass-island rounded-xl border-border`（`resizable-pane.tsx:203-206`）。
 /// **拖拽改宽还没接**（`ResizablePane` 的 4px 热区）。
-fn side_pane(width: Pixels, content: impl IntoElement, cx: &App) -> impl IntoElement {
-    div()
-        .w(width)
+///
+/// `outer` 由调用方给：宽度是布局度量，调用点用 gpui 的 rem 档位 helper（`w_80()`）或
+/// 档位外的 `px(...)` 各自表达，这里只负责外壳剩下的部分。
+fn side_pane(outer: Div, content: impl IntoElement, cx: &App) -> impl IntoElement {
+    outer
         .h_full()
         .flex_shrink_0()
         .rounded(ISLAND_RADIUS)
@@ -400,7 +424,7 @@ fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
     div()
         .w_full()
         .flex_1()
-        .min_h(px(0.))
+        .min_h_0()
         .rounded(ISLAND_RADIUS)
         .border_1()
         .border_color(cx.theme().border)
@@ -419,12 +443,12 @@ fn bottom_pane(content: AnyElement, cx: &App) -> impl IntoElement {
         .flex_shrink_0()
         .child(
             // 拖拽热区：4px，悬停时中间那条 1px 主色线（`bottom-pane.tsx:226-231`）。
-            div().w_full().h(WORKBENCH_GAP),
+            div().w_full().h_1(),
         )
         .child(
             div()
                 .w_full()
-                .h(BOTTOM_PANE_HEIGHT)
+                .h_80()
                 .rounded(ISLAND_RADIUS)
                 .border_1()
                 .border_color(cx.theme().border)
@@ -440,8 +464,10 @@ fn bottom_pane(content: AnyElement, cx: &App) -> impl IntoElement {
 /// `E0716 temporary value dropped while borrowed`。
 fn placeholder(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
     div()
-        .p(PLACEHOLDER_PADDING)
-        .text_size(px(13.))
+        .p_2()
+        // 字号 `--ui-text-chrome` 原来是 13px，不在 gpui 的档位（12 / 14）上；
+        // 按《编码指南》用 `text_sm()`（14px）——13 → 14 是经维护者确认的有意改动。
+        .text_sm()
         .text_color(cx.theme().muted_foreground)
         .child(text.into())
 }
