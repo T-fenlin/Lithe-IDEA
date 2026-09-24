@@ -10,10 +10,20 @@
 //!
 //! ## 公开边界
 //!
-//! 只有 [`TerminalPane`]（面板实体）与 [`TerminalProfile`]（配置文件）是公开 API，
-//! 由 `lib.rs` 明确 re-export。`constants` / `ansi` / `session` / `terminal_view` 这些实现路径
-//! **不**出现在 import 路径里，符合《编码指南》「内部重组时保持 public module path」的反面用法：
-//! 新建 crate 直接发布 `pub use`，不把内部 folder 结构变成契约。
+//! 只有 [`TerminalPane`]（面板实体）、[`TerminalPaneEvent`]（面板事件）与 [`TerminalProfile`]
+//! （配置文件）是公开 API，由 `lib.rs` 明确 re-export。`constants` / `ansi` / `session` /
+//! `terminal_view` 这些实现路径**不**出现在 import 路径里，符合《编码指南》「内部重组时保持
+//! public module path」的反面用法：新建 crate 直接发布 `pub use`，不把内部 folder 结构变成契约。
+//!
+//! ## ⚠️ 会话是**懒创建**的
+//!
+//! [`TerminalPane::new`] **不 spawn shell** —— 底部工具窗默认隐藏
+//! （`features/window/stores/workspace-ui-defaults.ts:5` 的 `isBottomPaneVisible: false`），
+//! 真机也是面板第一次可见时才建会话（`bottom-pane/bottom-pane.tsx:63-106` +
+//! `terminal-container.tsx:212-219`）。宿主在第一次显示时调
+//! [`TerminalPane::ensure_session`]（幂等，顺带把焦点交给输入行）；关掉**最后一个**页签时
+//! 面板发 [`TerminalPaneEvent::LastTabClosed`]，宿主据此收起底部工具窗
+//! （真机 `features/terminal/utils/terminal-pane-visibility.ts:14-26`）。
 //!
 //! ## ⚠️ 能力边界（**必须让用户看得见**，也在界面上以 `CAPABILITY_NOTICE` 常驻显示）
 //!
@@ -54,4 +64,5 @@ mod session;
 mod terminal_view;
 
 pub use profile::TerminalProfile;
+pub use session::TerminalPaneEvent;
 pub use terminal_view::TerminalPane;

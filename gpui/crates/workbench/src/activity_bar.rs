@@ -51,8 +51,16 @@
 //! 展开态（140–320 拖拽、`layout.resizeActivityRail`）、项目圆点与横向轮播
 //! （`sidebar-projects.tsx` / `handleProjectWheel`）、rail 右键菜单（`main-sidebar.tsx:710-762`）、
 //! 项的禁用态（Windows 里终端在后端不可用时 `disabled:opacity-50`）、右 rail 通知的未读徽标
-//! （`notifications-trigger.tsx:45`）—— 都没有画；`active` 也只能标一项，没有"侧栏是否可见"的
-//! 二级选中逻辑（`sidebar-pane-selector.tsx:108-111`）。
+//! （`notifications-trigger.tsx:45`）—— 都没有画；「顶部组视图」与「侧栏是否可见」的二级拆分
+//! （`sidebar-pane-selector.tsx:108-111`）由调用方决定，本条栏只按 `is_active` 逐项标底色。
+//!
+//! ## 选中契约：**同时可以亮多项**
+//!
+//! [`activity_bar`] 收的是 `is_active: impl Fn(usize) -> bool`（`items` 的下标），不是单个
+//! `Option<usize>`。真机就是这么工作的：左栏**顶部组**的选中来自 `activeSidebarView`，
+//! **底部组**的选中来自 `isBottomPaneVisible && bottomPaneActiveTab === "<该项>"`
+//! （`main-sidebar.tsx:635-652`），两组互不影响，所以「项目」亮着的同时终端也可以亮着。
+//! 单一 `Option<usize>` 表达不了这个状态，会让点终端时「项目」的高亮被顶掉。
 
 use std::rc::Rc;
 
@@ -153,19 +161,24 @@ impl ActivityItem {
 ///
 /// - `items` 按 Windows `SIDEBAR_ACTIVITY_ITEM_IDS` 的顺序传；`bottom` 的项自动落到底部组
 ///   （组内保持传入顺序）。
-/// - `active` 是 **`items` 的下标**（不是底部组的下标）。
+/// - `is_active(index)` 决定第 `index` 项（**`items` 的下标**，不是底部组的下标）是否画选中底色。
+///   它是个**谓词而不是单个下标**：顶部组与底部组各自有自己的选中来源，可以同时亮多项
+///   （见模块文档「选中契约」）。传 `|_| false` 就是"一项都不选中"。
 /// - `on_select(index, window, cx)` 在点击时回调，`index` 同样是 `items` 的下标。
 ///
 /// `window` 按契约保留（当前实现不需要：tooltip / 焦点环都由 `Button` 内部处理）。
 pub fn activity_bar(
     side: ActivitySide,
     items: &[ActivityItem],
-    active: Option<usize>,
+    is_active: impl Fn(usize) -> bool + 'static,
     on_select: impl Fn(usize, &mut Window, &mut App) + 'static,
     _window: &Window,
     cx: &App,
 ) -> impl IntoElement {
     let on_select: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(on_select);
+    // `is_active` 被每个项借用一次，而每个 `item_button` 只读借用，所以包一层 `Rc` 共享
+    // （`Rc<dyn Fn>` 而不是 `&dyn Fn`：同一份谓词要在两个组里各用一遍）。
+    let is_active: Rc<dyn Fn(usize) -> bool> = Rc::new(is_active);
 
     // 两个组各自保持 `items` 里的相对顺序。`cx` 只被 `item_button` 只读借用（取主题色）。
     let top_items: Vec<AnyElement> = items
@@ -173,7 +186,7 @@ pub fn activity_bar(
         .enumerate()
         .filter(|(_, item)| !item.bottom)
         .map(|(index, item)| {
-            item_button(side, index, item, active, on_select.clone(), cx).into_any_element()
+            item_button(side, index, item, &*is_active, on_select.clone(), cx).into_any_element()
         })
         .collect();
     let bottom_items: Vec<AnyElement> = items
@@ -181,7 +194,7 @@ pub fn activity_bar(
         .enumerate()
         .filter(|(_, item)| item.bottom)
         .map(|(index, item)| {
-            item_button(side, index, item, active, on_select.clone(), cx).into_any_element()
+            item_button(side, index, item, &*is_active, on_select.clone(), cx).into_any_element()
         })
         .collect();
     let has_bottom_group = !bottom_items.is_empty();
@@ -277,7 +290,7 @@ fn item_button(
     side: ActivitySide,
     index: usize,
     item: &ActivityItem,
-    active: Option<usize>,
+    is_active: &dyn Fn(usize) -> bool,
     on_select: Rc<dyn Fn(usize, &mut Window, &mut App)>,
     cx: &App,
 ) -> Button {
@@ -313,7 +326,7 @@ fn item_button(
             ),
         };
 
-    let is_active = active == Some(index);
+    let is_active = is_active(index);
     Button::new(ElementId::named_usize(id_name, index))
         .custom(
             ButtonCustomVariant::new(cx)

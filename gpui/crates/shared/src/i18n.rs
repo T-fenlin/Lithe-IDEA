@@ -66,9 +66,10 @@
 //!    这些要么需要前端补键（已登记），要么属于第 1 类。
 //! 3. **占位文案（阶段 6/7 未实现区域）**：`workbench` 的「右侧工具窗（阶段 6）· 工作区：{}」
 //!    与「{label} 工具窗（未实现）」。它们是临时脚手架，落地的真实界面会用真键；
-//!    现在接键只会把 `CONFIGURATION` 这类代码名翻成中文，反而更难认。同理还有
-//!    `Pending("Maven")` / `Pending("运行")` / `Pending("诊断")`：它们是 `BottomPaneKind`
-//!    内部的**代码名**，拼进那句占位文案，不是独立的界面文案。
+//!    现在接键只会把 `CONFIGURATION` 这类代码名翻成中文，反而更难认。⚠️ 例外：那句里的
+//!    `{label}` 已经接了键 —— `BottomPaneKind::label()` 用
+//!    `lithe.workbench.maven` / `.run` / `.diagnostics`（都在 WIRED 表里），
+//!    所以剩下的中文字面量只是那句话的固定部分。
 //! 4. **不是界面文案**：CLI 用法提示（`app/src/main.rs` 的「用法：Lithe <workspace-root>」）、
 //!    单元测试夹具（`terminal/src/ansi.rs` 的 `"终"` 是 ansi-cleaner 的字节夹具）。
 //!

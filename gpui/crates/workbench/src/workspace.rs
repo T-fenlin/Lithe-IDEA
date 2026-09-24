@@ -26,6 +26,18 @@
 //!
 //! 三个区域模块（[`super::shell`]）是**无状态渲染函数**；需要持有 `Entity` 的区域
 //! （项目树 / 编辑区）各自是一个 `Entity`。状态归属只有两个：本结构体（外壳）+ 各区域自己。
+//!
+//! ## 活动栏选中态：**两组独立，可同时高亮**
+//!
+//! 真机把「顶部组选中哪个视图」与「底部工具窗显示什么」当成**两个独立状态**
+//! （`features/window/stores/workspace-ui-defaults.ts:3-9`：`activeSidebarView` 与
+//! `isBottomPaneVisible` + `bottomPaneActiveTab`），高亮分别在
+//! `features/layout/components/sidebar/main-sidebar.tsx:635-652` 算：
+//! 顶部组看 `activeSidebarView`，底部组看 `isBottomPaneVisible && bottomPaneActiveTab === 该项`。
+//! 所以本结构体也**不**共用一条 `Option<usize>`（那会让点终端时「项目」的高亮被顶掉），
+//! 而是 [`ShellWorkspace::top_activity_view`] + [`ShellWorkspace::bottom_visible`] /
+//! [`ShellWorkspace::bottom_kind`] 三个字段，再由
+//! [`ShellWorkspace::is_activity_active`] 合成逐项谓词交给 [`crate::activity_bar`]。
 
 use std::path::PathBuf;
 
@@ -41,14 +53,14 @@ use lithe_gpui_editor::EditorPane;
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::BottomPane;
 use lithe_gpui_shared::tr;
-use lithe_gpui_terminal::TerminalPane;
+use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 use crate::project_tabs::{ProjectTab, project_tabs};
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
 
 // ---------------------------------------------------------------------------
-// 设置入口的下标
+// 活动栏下标
 // ---------------------------------------------------------------------------
 
 /// 左侧活动栏「设置」项的下标（[`activity_items`] 的第 9 项、0 起第 8）。
@@ -57,6 +69,17 @@ use crate::title_bar::title_bar;
 /// §1.1），所以它既不在 [`bottom_pane_for`] 里，也不改活动栏的选中态：点它只把对话框打开。
 const SETTINGS_ACTIVITY_IX: usize = 8;
 
+/// 左侧活动栏「顶部组」的下标范围（0 起、含首含尾）：项目 0 / 更改 1 / 搜索 2。
+///
+/// 真源 `features/layout/components/sidebar/sidebar-pane-selector.tsx:311-319`
+/// （`files` / `git` / `search`）；底部组从 3 开始（`features/layout/config/item-order.ts:12-19`）。
+const TOP_ACTIVITY_ITEMS: std::ops::RangeInclusive<usize> = 0..=2;
+
+/// 默认选中的顶部组视图：第 0 项「项目」。
+///
+/// 真源 `features/window/stores/workspace-ui-defaults.ts:7` 的 `activeSidebarView: "files"`
+/// —— 启动时左活动栏顶部第一项就是选中态。
+const DEFAULT_TOP_ACTIVITY: usize = 0;
 
 // ---------------------------------------------------------------------------
 // 度量：应用布局一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -91,17 +114,43 @@ const ISLAND_RADIUS: Pixels = px(11.2);
 
 /// 底部工具窗当前显示哪一个内容。
 ///
-/// Windows 的底部窗**没有自己的标签条**，由活动栏 / 命令面板切换一个单值
+/// Windows 的底部窗**没有自己的标签条**，由活动栏 / 命令面板带一个单值
 /// `bottomPaneActiveTab`（默认 `"terminal"`，
 /// `features/window/stores/workspace-ui-defaults.ts:6`、`stores/ui-state/panel-slice.ts:31`）。
+///
+/// ⚠️ **可见性不在这个类型里**：`isBottomPaneVisible` 是独立字段（默认 `false`，
+/// 同文件 `:5`），所以 `bottom_kind` 在面板隐藏时**保留最后显示过的页签** —— 这正是真机的行为：
+/// 隐藏终端再做点别的、回来时 `bottomPaneActiveTab` 还是 `"terminal"`。
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BottomPaneKind {
     /// 终端（阶段 5）。
     Terminal,
     /// Git 提交记录（阶段 4）。
     Git,
-    /// 这一组活动栏项还没有内容（Maven / 运行 / 诊断）。
-    Pending(&'static str),
+    /// Maven 工具窗（阶段 6 前用占位内容）。
+    Maven,
+    /// 运行工具窗（阶段 6 前用占位内容）。
+    Run,
+    /// 诊断工具窗（阶段 6 前用占位内容）。
+    Diagnostics,
+}
+
+impl BottomPaneKind {
+    /// 工具窗标题里的名字，用于占位内容那句「{label} 工具窗（未实现）」。
+    ///
+    /// 走 `lithe_gpui_shared::tr`（界面不许出现中英文字面量）。真源键与原文：
+    /// `lithe.workbench.maven` = 「Maven」（`i18n/locale.ts`）、
+    /// `lithe.workbench.run` = 「运行」、`lithe.workbench.diagnostics` = 「诊断」。
+    fn label(self) -> SharedString {
+        match self {
+            Self::Maven => tr("lithe.workbench.maven"),
+            Self::Run => tr("lithe.workbench.run"),
+            Self::Diagnostics => tr("lithe.workbench.diagnostics"),
+            // 终端与提交记录有自己的界面，永远不会走到占位分支；给同一个键只为不必返回 `Option`。
+            Self::Terminal => tr("lithe.workbench.terminal"),
+            Self::Git => tr("lithe.workbench.gitLog"),
+        }
+    }
 }
 
 /// 活动栏第 `index` 项对应的底部窗内容；`None` = 该项不换底部窗。
@@ -111,10 +160,10 @@ enum BottomPaneKind {
 /// 不是底部窗，所以这里是 `None`。
 fn bottom_pane_for(index: usize) -> Option<BottomPaneKind> {
     match index {
-        3 => Some(BottomPaneKind::Pending("Maven")),
-        4 => Some(BottomPaneKind::Pending("运行")),
+        3 => Some(BottomPaneKind::Maven),
+        4 => Some(BottomPaneKind::Run),
         5 => Some(BottomPaneKind::Terminal),
-        6 => Some(BottomPaneKind::Pending("诊断")),
+        6 => Some(BottomPaneKind::Diagnostics),
         7 => Some(BottomPaneKind::Git),
         _ => None,
     }
@@ -134,8 +183,12 @@ pub struct ShellWorkspace {
     ///
     /// 两条栏是**各自独立**的视图集合，不能共用一份列表：共用会让右栏变成左栏的镜像。
     right_activity_items: Vec<ActivityItem>,
-    /// 当前选中的活动栏项（`items` 的下标）。
-    active_activity: Option<usize>,
+    /// 左活动栏**顶部组**当前选中的视图（[`activity_items`] 的下标，默认第 0 项「项目」）。
+    ///
+    /// 与底部工具窗的状态**完全独立**：顶部组的选中来自真机的 `activeSidebarView`
+    /// （`workspace-ui-defaults.ts:7`），底部组来自 `isBottomPaneVisible` + `bottomPaneActiveTab`
+    /// （同文件 `:5-6`）。两者可以同时高亮。
+    top_activity_view: Option<usize>,
     /// 状态栏左组（前导项）。
     footer_left: Vec<StatusEntry>,
     /// 状态栏右组（尾随项）。
@@ -144,19 +197,29 @@ pub struct ShellWorkspace {
     explorer: Entity<Explorer>,
     /// 中央列内容：编辑区（标签栏 + 正文 / 空状态）。
     editor: Entity<EditorPane>,
-    /// 底部窗里的终端（真机默认显示的就是它）。
+    /// 底部窗里的终端。**构造期不建会话**，第一次可见时由
+    /// [`TerminalPane::ensure_session`] 懒创建。
     terminal: Entity<TerminalPane>,
     /// 底部窗里的 Git 提交记录。
     bottom_git: Entity<BottomPane>,
-    /// 底部窗当前显示的内容。
+    /// 底部窗当前显示的内容。**与可见性分开**：隐藏时保留最后显示过的页签。
     bottom_kind: BottomPaneKind,
-    /// 底部窗是否展开（再点一次当前活动栏项可以收起）。
+    /// 底部窗是否展开。**默认 `false`（隐藏）**：真源
+    /// `features/window/stores/workspace-ui-defaults.ts:5` 的 `isBottomPaneVisible: false`；
+    /// 同文件 `:6` 的 `bottomPaneActiveTab: "terminal"` 说的是**默认页签**是终端，
+    /// 不是"启动就显示"（维护者 2026-09-25 实测反馈：终端默认应隐藏）。
     bottom_visible: bool,
     /// 订阅 `SettingsStore`：设置一变就重绘（状态栏的显示/隐藏就靠它）。
     ///
     /// 订阅必须**被持有**：`Subscription` 一 drop 就取消（gpui 的 RAII 语义），
     /// 所以放在结构体里而不是丢在 `new()` 的局部变量里。
     _settings_subscription: Option<gpui_kit::Subscription>,
+    /// 订阅终端面板的 [`TerminalPaneEvent::LastTabClosed`]：关掉最后一个终端页签时自动收起
+    /// 底部工具窗（真机 `features/terminal/utils/terminal-pane-visibility.ts:14-26`）。
+    ///
+    /// 与上面同理，必须持有；字段声明在 `terminal` **之后**，所以 drop 顺序是
+    /// 先取消订阅、再销毁终端面板（先取消再被通知才不会被拆到一半的实体回调）。
+    _terminal_subscription: Option<gpui_kit::Subscription>,
 }
 
 impl ShellWorkspace {
@@ -193,6 +256,21 @@ impl ShellWorkspace {
         let settings_subscription = lithe_gpui_settings::try_store(cx)
             .map(|store| cx.observe(&store, |_, _, cx| cx.notify()));
 
+        // 关掉最后一个终端页签 → 收起底部工具窗（真机
+        // `features/terminal/utils/terminal-pane-visibility.ts:14-26`）。
+        // 终端面板只知道"我还有几个页签"，可见性归本结构体，所以走事件而不是让
+        // `TerminalPane` 直接改宿主的布局状态。
+        let terminal_subscription = Some(cx.subscribe_in(
+            &terminal,
+            window,
+            |this: &mut Self, _pane, event: &TerminalPaneEvent, _window, cx| {
+                if matches!(event, TerminalPaneEvent::LastTabClosed) {
+                    this.bottom_visible = false;
+                    cx.notify();
+                }
+            },
+        ));
+
         let project_name: SharedString = root
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
@@ -209,7 +287,8 @@ impl ShellWorkspace {
             active_project: Some(0),
             activity_items: activity_items(),
             right_activity_items: right_activity_items(),
-            active_activity: None,
+            // 默认选中顶部第 0 项「项目」（`workspace-ui-defaults.ts:7` 的 `activeSidebarView: "files"`）。
+            top_activity_view: Some(DEFAULT_TOP_ACTIVITY),
             footer_left: vec![
                 // 前导项顺序真源：`features/layout/config/item-order.ts:20-32`
                 // `FOOTER_LEADING_ITEM_IDS = ["filePath", "branch"]`。
@@ -236,10 +315,33 @@ impl ShellWorkspace {
             editor,
             terminal,
             bottom_git,
-            // 真机默认就是终端（`workspace-ui-defaults.ts:6`）。
+            // 默认页签是终端（`workspace-ui-defaults.ts:6` 的 `bottomPaneActiveTab: "terminal"`），
+            // 但默认**不显示**（同文件 `:5` 的 `isBottomPaneVisible: false`）。
             bottom_kind: BottomPaneKind::Terminal,
-            bottom_visible: true,
+            bottom_visible: false,
             _settings_subscription: settings_subscription,
+            _terminal_subscription: terminal_subscription,
+        }
+    }
+
+    /// 左活动栏第 `index` 项是否画选中底色。
+    ///
+    /// 两组独立（契约见 [`crate::activity_bar`] 的模块文档「选中契约：同时可以亮多项」）：
+    ///
+    /// - **顶部组**（0..=2）：选中态是 [`ShellWorkspace::top_activity_view`] 那一个，
+    ///   与真机 `activeSidebarView`（`sidebar-pane-selector.tsx:234-247,311-319`）对应；
+    /// - **底部组**（3..=7）：选中态是 `bottom_visible && bottom_kind == 该项的 kind`，
+    ///   与真机 `isBottomPaneVisible && bottomPaneActiveTab === "<该项>"`
+    ///   （`main-sidebar.tsx:643-652`）逐条对应。**判据不是活动栏的选中项**，所以隐藏底部窗后
+    ///   底部组一项都不亮，而顶部组不受影响；
+    /// - 「设置」（8）：不是视图，永远不亮（点它开对话框，见 [`SETTINGS_ACTIVITY_IX`]）。
+    fn is_activity_active(&self, index: usize) -> bool {
+        if TOP_ACTIVITY_ITEMS.contains(&index) {
+            return self.top_activity_view == Some(index);
+        }
+        match bottom_pane_for(index) {
+            Some(kind) => self.bottom_visible && self.bottom_kind == kind,
+            None => false,
         }
     }
 
@@ -303,33 +405,37 @@ impl Render for ShellWorkspace {
                     lithe_gpui_settings::open_settings_dialog(window, cx);
                     return;
                 }
-                // 用 `update` 的返回值带出判断，避免在闭包里捕获 `bool`：`activity_bar` 要求
-                // 收 `Fn`，捕获一个可变的局部量会让闭包退化成 `FnMut`。
-                let shows_terminal = handle.update(cx, |this, cx| {
+                // 终端会话的懒创建：只有"这一次点完底部窗显示终端"才去建会话。判据与
+                // `is_activity_active` 完全一致（可见 && 当前页签 == 该项的 kind）。
+                let ensure_terminal = handle.update(cx, |this, cx| {
                     match bottom_pane_for(index) {
-                        // 底部组：切底部窗内容；已经是它且可见 → 再点一次收起。
+                        // 底部组：切底部窗内容；已经是它**且可见** → 再点一次收起。
+                        //
+                        // ⚠️ 判据是 `bottom_visible && bottom_kind == kind`，**不是**
+                        // "活动栏这一项之前是不是选中项"：活动栏底部组的高亮本来就由这个表达式
+                        // 算出来，两者必须同源（真机 `view-command-actions.ts:45-55`、
+                        // `main-sidebar.tsx:643-652`）。
                         Some(kind) => {
-                            if this.active_activity == Some(index) && this.bottom_visible {
+                            if this.bottom_visible && this.bottom_kind == kind {
                                 this.bottom_visible = false;
                             } else {
-                                this.bottom_visible = true;
                                 this.bottom_kind = kind;
+                                this.bottom_visible = true;
                             }
-                            this.active_activity = Some(index);
                         }
-                        // 顶部组（项目 / 更改 / 搜索）与「设置」不换底部窗，只切选中态。
-                        None => {
-                            this.active_activity =
-                                (this.active_activity != Some(index)).then_some(index);
-                        }
+                        // 顶部组（项目 / 更改 / 搜索）不换底部窗，也不碰它的可见性：只记下
+                        // 「顶部组选中谁」。底部高亮由 `bottom_visible` / `bottom_kind` 自己决定，
+                        // 所以两组可以同时亮（真机 `activeSidebarView` 与 `isBottomPaneVisible`
+                        // 就是两个独立状态，`workspace-ui-defaults.ts:5-7`）。
+                        None => this.top_activity_view = Some(index),
                     }
                     cx.notify();
                     this.bottom_visible && this.bottom_kind == BottomPaneKind::Terminal
                 });
-                // 终端输入行只能在**首次渲染之后**才拿得到焦点（构造期窗口根还不是 `Root`），
-                // 所以在这里补一次。
-                if shows_terminal {
-                    let _ = terminal_handle.update(cx, |pane, cx| pane.focus_input(window, cx));
+                if ensure_terminal {
+                    // 幂等：会话已存在就什么都不做（所以"再点一次隐藏、再点回来"不会重开 shell）。
+                    // 首次创建时由它自己把焦点延到帧末交给输入行。
+                    let _ = terminal_handle.update(cx, |pane, cx| pane.ensure_session(window, cx));
                 }
             }
         };
@@ -347,9 +453,9 @@ impl Render for ShellWorkspace {
                 handle.update(cx, |this, cx| {
                     // 再点一次收起，与左栏底部组的手感一致。
                     let showing_maven =
-                        this.bottom_visible && this.bottom_kind == BottomPaneKind::Pending("Maven");
+                        this.bottom_visible && this.bottom_kind == BottomPaneKind::Maven;
                     this.bottom_visible = !showing_maven;
-                    this.bottom_kind = BottomPaneKind::Pending("Maven");
+                    this.bottom_kind = BottomPaneKind::Maven;
                     cx.notify();
                 });
             }
@@ -361,10 +467,18 @@ impl Render for ShellWorkspace {
             .map(|tab| tab.name().clone())
             .unwrap_or_else(|| SharedString::from("Lithe"));
 
+        // 选中态先算成一份**不借用 `self`** 的小表：`activity_bar` 要求 `is_active` 是 `'static`，
+        // 闭包直接捕获 `self` 会被判成 `E0521 borrowed data escapes outside of method`。
+        // 9 个 bool 的一次克隆换来闭包只捕获自己那份 Vec，读数与判据仍只有一个来源。
+        let activity_flags: Vec<bool> = (0..self.activity_items.len())
+            .map(|index| self.is_activity_active(index))
+            .collect();
+
         let left_rail = activity_bar(
             ActivitySide::Left,
             &self.activity_items,
-            self.active_activity,
+            // 逐项谓词：顶部组与底部组各自独立，可以同时亮（契约见 `activity_bar` 模块文档）。
+            move |index| activity_flags.get(index).copied().unwrap_or(false),
             on_select_activity,
             window,
             cx,
@@ -373,8 +487,8 @@ impl Render for ShellWorkspace {
             ActivitySide::Right,
             &self.right_activity_items,
             // 右栏的选中态来自「扩展缓冲区是否激活 / 右侧栏是否停在 Maven」
-            // （`plugin-activity-rail.tsx:14-26`），这两个状态要到阶段 6 才有。
-            None,
+            // （`plugin-activity-rail.tsx:14-26`），这两个状态要到阶段 6 才有 → 一项都不亮。
+            |_| false,
             on_select_right_activity,
             window,
             cx,
@@ -394,8 +508,12 @@ impl Render for ShellWorkspace {
             let content: AnyElement = match self.bottom_kind {
                 BottomPaneKind::Terminal => self.terminal.clone().into_any_element(),
                 BottomPaneKind::Git => self.bottom_git.clone().into_any_element(),
-                BottomPaneKind::Pending(label) => {
-                    placeholder(format!("{label} 工具窗（未实现）"), cx).into_any_element()
+                kind @ (BottomPaneKind::Maven
+                | BottomPaneKind::Run
+                | BottomPaneKind::Diagnostics) => {
+                    // 占位文案是临时脚手架（阶段 6 会换成真界面）；里面的 {label} 是活动栏
+                    // 项的名字，走 i18n（`lithe.workbench.maven` / `.run` / `.diagnostics`）。
+                    placeholder(format!("{} 工具窗（未实现）", kind.label()), cx).into_any_element()
                 }
             };
             bottom_pane(content, cx)
@@ -558,7 +676,7 @@ fn activity_items() -> Vec<ActivityItem> {
         ActivityItem::new(IconName::GitBranch, tr("lithe.workbench.changes")),
         ActivityItem::new(IconName::Search, tr("lithe.workbench.search")),
         // Lucide 没有 Maven 字形，取"包 / 构建产物"语义的 `package`（`icons/package.svg`）。
-        ActivityItem::new(IconName::Package, "Maven").bottom(true),
+        ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")).bottom(true),
         ActivityItem::new(IconName::Play, tr("lithe.workbench.run")).bottom(true),
         ActivityItem::new(IconName::SquareTerminal, tr("lithe.workbench.terminal")).bottom(true),
         ActivityItem::new(IconName::TriangleAlert, tr("lithe.workbench.diagnostics")).bottom(true),

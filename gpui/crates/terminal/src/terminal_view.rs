@@ -3,8 +3,8 @@
 //! 从 `shell_probe/terminal.rs` 的「组件」一节起原样拆出（逐字搬迁，只调整可见性）。
 //! 本文件只负责画；进程生命周期与 ANSI 清洗分别在 `session.rs` 与 `ansi.rs`。
 //!
-//! 对外公开的是 `TerminalPane`（`new` / `new_tab` / `focus_input` / `replace_profiles` /
-//! `add_profile`，以及 `profiles`），字段全部私有。
+//! 对外公开的是 `TerminalPane`（`new` / `ensure_session` / `new_tab` / `replace_profiles` /
+//! `add_profile`，以及 `profiles`）与事件 `TerminalPaneEvent`，字段全部私有。
 //!
 //! 规格出处（每个数值/文案都能查到来源）：
 //!
@@ -690,10 +690,13 @@ fn output_row_style() -> StyleRefinement {
 // 9. **搜索（`terminal.find`）、复制/粘贴、字号缩放、OSC 标题/目录跟随、导出输出**：未做。
 //    真机的这些能力分别依赖 xterm 的 selection / addon 与 OSC 流解析
 //    （`terminal-osc-stream.ts:93-104`），没有 VT 就没有落点。
-// 10. **构造期不抢焦点**：[`TerminalPane::focus_input`] 要宿主在首次渲染后调一次
-//    （原因见该方法的注释）。此外没有 ⌘/Ctrl 级快捷键（`terminal.new` = `cmd+t`、
-//    `terminal.close` = `cmd+w`，`default-keymaps.ts:122-139`）—— 快捷键要挂在有焦点的根元素上，
-//    属于外壳的接线，不在本模块。
+// 10. **焦点**：[`TerminalPane::ensure_session`] 在首次显示时把焦点交给输入行，且必须延到帧末
+//    （原因见该方法：输入行要等会话起来的那一帧渲染完才上树）。此外没有 ⌘/Ctrl 级快捷键
+//    （`terminal.new` = `cmd+t`、`terminal.close` = `cmd+w`，`default-keymaps.ts:122-139`）
+//    —— 快捷键要挂在有焦点的根元素上，属于外壳的接线，不在本模块。
+// 11. **会话是懒创建的**：构造期不 spawn shell（`terminal_view.rs` 的模块文档与
+//    [`TerminalPane::new`] 都写了理由）。所以"页面一打开就有终端在跑"这件事**不该**再出现；
+//    若在启动日志里看见 `S1_TERMINAL_TAB` 而没有点过终端按钮，那就是接线退化了。
 //
 // 实测记录（本文件里"不做本地回显""按 CRLF 断行"两条结论的依据，2026-09-25，Windows 10 19045）：
 //

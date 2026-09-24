@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::message_scroller::MessageScrollerState;
-use gpui_kit::{AppContext as _, Context, SharedString, Window};
+use gpui_kit::{AppContext as _, Context, SharedString, WeakEntity, Window};
 
 use crate::ansi::TerminalText;
 use crate::constants::{
@@ -58,6 +58,19 @@ pub(crate) enum PumpStep {
     StreamsClosed,
     /// 实体已经没了 → 收工。
     Stop,
+}
+
+/// [`TerminalPane`] 向宿主播报的会话生命周期事件。
+///
+/// 宿主拿它做**与面板内容无关的布局反应**：本 crate 只知道自己有几个页签，不知道底部工具窗
+/// 是否可见、是不是显示终端 —— 那是外壳的状态（`ShellWorkspace`）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerminalPaneEvent {
+    /// 最后一个终端页签被关掉，面板现在一个会话都没有。
+    ///
+    /// 真机在 `features/terminal/utils/terminal-pane-visibility.ts:14-26` 里做同一件事：
+    /// 页签数掉到 0 就把底部工具窗收起来，不留一个空面板。
+    LastTabClosed,
 }
 
 /// 一条终端会话：子进程 + 写线程句柄 + 已清洗的输出文本。
@@ -253,13 +266,17 @@ pub(crate) fn blocking_recv(receiver: &Arc<Mutex<Receiver<SessionEvent>>>) -> Op
 // 组件
 // ---------------------------------------------------------------------------
 
-/// 一个页签：标题 + 会话 + 输出区状态。
+impl gpui_kit::EventEmitter<TerminalPaneEvent> for TerminalPane {}
 
 impl TerminalPane {
-    /// 起一个默认 shell（Windows 优先 `powershell`，回退 `cmd`）的终端面板，并开第一个页签。
+    /// 建一个**还没有会话**的终端面板。
     ///
-    /// 探测不到任何 shell 时也会建一个页签，但它是失败态并显示 [`error_fallback`] +
-    /// 「重试」（真机的失败态文案见 `i18n/locale.ts:7549-7551`）。
+    /// ⚠️ **构造期不 spawn shell**：底部工具窗默认是隐藏的（真源
+    /// `features/window/stores/workspace-ui-defaults.ts:5` 的 `isBottomPaneVisible: false`），
+    /// 而真机的终端会话是在**面板第一次可见时**才建（`bottom-pane/bottom-pane.tsx:63-106` 的
+    /// 懒创建 + `terminal-container.tsx:212-219` 的 `terminal-ensure-session` 事件）。
+    /// 所以这里空的页签表是**正确状态**，不是"还没准备好"：宿主在第一次显示时调
+    /// [`TerminalPane::ensure_session`] 即可。
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let profiles = profiles();
         let input = cx.new(|cx| InputState::new(window, cx));
@@ -283,7 +300,7 @@ impl TerminalPane {
             },
         );
 
-        let mut pane = Self {
+        Self {
             tabs: Vec::new(),
             active: 0,
             next_id: 1,
@@ -292,9 +309,33 @@ impl TerminalPane {
             active_profile: 0,
             input,
             _input_events: input_events,
-        };
-        pane.open_tab(cx);
-        pane
+        }
+    }
+
+    /// **第一次可见时**才建第一个终端会话，并把焦点交给命令输入行。
+    ///
+    /// 真源是懒创建：`bottom-pane.tsx:63-106` 在面板第一次可见时才挂 `TerminalContainer`，
+    /// 容器再在 `terminal-ensure-session` 时建会话（`terminal-container.tsx:212-219,593-601`）。
+    /// 对应的切换判据见 `features/keymaps/commands/view-command-actions.ts:45-55`
+    /// （`toggleTerminalPane` 里那句 `dispatchEvent("terminal-ensure-session")`）。
+    ///
+    /// **幂等**：已经有页签时什么都不做（会话复用）。会话复用就是"再点一次隐藏、再点回来还有内容"
+    /// 的前提 —— 隐藏不该杀掉 shell。
+    ///
+    /// 焦点**必须延到当前 effect 周期末尾**：`open_tab` 在调用栈里同步建好会话，但输入行
+    /// （`render_input_row` 只在 `session.is_running()` 时才画）要等这一帧渲染完才上树，
+    /// 此刻直接 `focus` 会落到一个还没布局的节点上。`Window::defer`
+    /// （`gpui-pre-0.3.6/src/window.rs:2505-2512`）正好是"当前 effect 周期末尾"这个时机。
+    pub fn ensure_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.tabs.is_empty() {
+            return;
+        }
+        self.open_tab(cx);
+
+        let shell: WeakEntity<Self> = cx.entity().downgrade();
+        window.defer(cx, move |window, cx| {
+            let _ = shell.update(cx, |this, cx| this.focus_input(window, cx));
+        });
     }
 
     /// 新开一个页签（默认配置文件）。
@@ -310,10 +351,11 @@ impl TerminalPane {
 
     /// 让命令输入行拿焦点。
     ///
-    /// **刻意不在构造期调用**：`new` 里窗口根视图还不是 `Root`、输入框也还没上树，
+    /// **不在构造期调用**：`new` 里窗口根视图还不是 `Root`、输入框也还没上树，
     /// 那时抢焦点容易变成空焦点（`gpui/UI-MAP.md` §1.3 记过构造期碰焦点/浮层的坑）。
-    /// 宿主在首次渲染之后调一次即可。
-    pub fn focus_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+    /// 首次显示时由 [`TerminalPane::ensure_session`] 在帧末调一次；用户点 `+` 新建页签时
+    /// 输入行早就在树上，可以直接调。
+    fn focus_input(&self, window: &mut Window, cx: &mut Context<Self>) {
         let input = self.input.clone();
         input.update(cx, |state, cx| state.focus(window, cx));
     }
@@ -416,6 +458,9 @@ impl TerminalPane {
 
         if self.tabs.is_empty() {
             self.active = 0;
+            // 从 1 个变 0 个：本面板的会话全没了。宿主据此收起底部工具窗
+            // （真机 `terminal-pane-visibility.ts:14-26`）。
+            cx.emit(TerminalPaneEvent::LastTabClosed);
         } else if index < self.active {
             self.active -= 1;
         } else if self.active >= self.tabs.len() {

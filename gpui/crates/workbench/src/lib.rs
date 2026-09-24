@@ -24,6 +24,13 @@
 //!    也不换底部窗）；
 //! 2. 状态栏按 `Settings::show_status_bar` 条件渲染，订阅 `SettingsStore` 后自动跟随。
 //!
+//! 活动栏的选中态是**两组独立的**：顶部组看 `ShellWorkspace` 的 `top_activity_view`（默认第 0 项
+//! 「项目」），底部组看 `bottom_visible` + `bottom_kind`，两组可以同时高亮（真机
+//! `features/window/stores/workspace-ui-defaults.ts:5-7` 与
+//! `features/layout/components/sidebar/main-sidebar.tsx:643-652`）。底部工具窗**默认隐藏**
+//! （`workspace-ui-defaults.ts:5` 的 `isBottomPaneVisible: false`），终端会话在第一次可见时
+//! 才由 `TerminalPane::ensure_session` 懒创建。
+//!
 //! 四个区域文件都是**无状态渲染函数**（`-> impl IntoElement`），状态由 [`workspace::ShellWorkspace`]
 //! 持有并通过参数传入；需要独立生命周期的内容（项目树 / 编辑区 / Git / 终端）各自是 Feature
 //! crate 里的 `Entity`。
