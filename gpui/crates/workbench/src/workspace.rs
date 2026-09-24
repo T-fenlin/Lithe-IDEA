@@ -96,7 +96,7 @@ enum BottomPaneKind {
 
 /// 活动栏第 `index` 项对应的底部窗内容；`None` = 该项不换底部窗。
 ///
-/// ⚠️ 下标必须与 [`activity_items`] 的顺序一致（0 项目 / 1 更改 / 2 搜索 / 3 Maven /
+/// ⚠️ 下标必须与**左栏** [`activity_items`] 的顺序一致（0 项目 / 1 更改 / 2 搜索 / 3 Maven /
 /// 4 运行 / 5 终端 / 6 诊断 / 7 提交记录 / 8 设置）。「设置」在真机是对话框，
 /// 不是底部窗，所以这里是 `None`。
 fn bottom_pane_for(index: usize) -> Option<BottomPaneKind> {
@@ -118,8 +118,12 @@ pub struct ShellWorkspace {
     projects: Vec<ProjectTab>,
     /// 当前选中的项目标签（`None` = 一个都没选中）。
     active_project: Option<usize>,
-    /// 两条活动栏共用的图标项。
+    /// **左侧**活动栏的图标项（Windows `SidebarActivityRail`：顶部 3 + 底部 6 共 9 项）。
     activity_items: Vec<ActivityItem>,
+    /// **右侧**活动栏的图标项（Windows `PluginActivityRail`：扩展 / 通知 / Maven 共 3 项）。
+    ///
+    /// 两条栏是**各自独立**的视图集合，不能共用一份列表：共用会让右栏变成左栏的镜像。
+    right_activity_items: Vec<ActivityItem>,
     /// 当前选中的活动栏项（`items` 的下标）。
     active_activity: Option<usize>,
     /// 状态栏左组（前导项）。
@@ -183,6 +187,7 @@ impl ShellWorkspace {
             // 阶段 1 只有一个项目，仍然把 `Some(0)` 选中，方便验收外观。
             active_project: Some(0),
             activity_items: activity_items(),
+            right_activity_items: right_activity_items(),
             active_activity: None,
             footer_left: vec![
                 // 前导项顺序真源：`features/layout/config/item-order.ts:20-32`
@@ -264,8 +269,8 @@ impl Render for ShellWorkspace {
         let on_select_activity = {
             let handle = handle.clone();
             move |index: usize, window: &mut Window, cx: &mut App| {
-                // 用 `update` 的返回值带出判断，避免在闭包里捕获 `bool`：这个闭包要同时
-                // 给左右两条活动栏用（`Fn`），捕获可变的局部量会让它退化成 `FnMut`。
+                // 用 `update` 的返回值带出判断，避免在闭包里捕获 `bool`：`activity_bar` 要求
+                // 收 `Fn`，捕获一个可变的局部量会让闭包退化成 `FnMut`。
                 let shows_terminal = handle.update(cx, |this, cx| {
                     match bottom_pane_for(index) {
                         // 底部组：切底部窗内容；已经是它且可见 → 再点一次收起。
@@ -295,6 +300,27 @@ impl Render for ShellWorkspace {
             }
         };
 
+        // 右活动栏的点击处理：**不能**复用左栏那个闭包，因为它的 `index` 是左栏的下标
+        // （右栏第 0 项不是「项目」）。三项里目前只有 Maven 有落点：Windows 的 Maven 开关切的是
+        // **右侧栏**的 Maven 视图（`plugin-activity-rail.tsx:24-25`），右侧栏到阶段 6 才有内容，
+        // 所以这里先落到已有的底部 Maven 工具窗；扩展 / 通知的界面同样在阶段 6/7。
+        let on_select_right_activity = {
+            let handle = handle.clone();
+            move |index: usize, _window: &mut Window, cx: &mut App| {
+                if index != RIGHT_MAVEN_IX {
+                    return;
+                }
+                handle.update(cx, |this, cx| {
+                    // 再点一次收起，与左栏底部组的手感一致。
+                    let showing_maven =
+                        this.bottom_visible && this.bottom_kind == BottomPaneKind::Pending("Maven");
+                    this.bottom_visible = !showing_maven;
+                    this.bottom_kind = BottomPaneKind::Pending("Maven");
+                    cx.notify();
+                });
+            }
+        };
+
         let project_name: SharedString = self
             .projects
             .first()
@@ -305,15 +331,17 @@ impl Render for ShellWorkspace {
             ActivitySide::Left,
             &self.activity_items,
             self.active_activity,
-            on_select_activity.clone(),
+            on_select_activity,
             window,
             cx,
         );
         let right_rail = activity_bar(
             ActivitySide::Right,
-            &self.activity_items,
+            &self.right_activity_items,
+            // 右栏的选中态来自「扩展缓冲区是否激活 / 右侧栏是否停在 Maven」
+            // （`plugin-activity-rail.tsx:14-26`），这两个状态要到阶段 6 才有。
             None,
-            on_select_activity,
+            on_select_right_activity,
             window,
             cx,
         );
@@ -483,7 +511,7 @@ fn read_branch(root: &std::path::Path) -> Option<String> {
     head.strip_prefix("ref: refs/heads/").map(str::to_string)
 }
 
-/// 两条活动栏的图标项。
+/// 左侧活动栏的图标项。
 ///
 /// 图标类型是全量目录的 `gpui_kit::assets::IconName`（1830 个 Lucide 字形，应用已注册
 /// `AllAssets`），所以 git / 提交图 / Maven 这些位置都用**真实字形**，没有替代。
@@ -505,5 +533,26 @@ fn activity_items() -> Vec<ActivityItem> {
         // 真实字形 `git-graph`（`icons/git-graph.svg`）。
         ActivityItem::new(IconName::GitGraph, tr("lithe.workbench.gitLog")).bottom(true),
         ActivityItem::new(IconName::Settings, tr("lithe.workbench.settings")).bottom(true),
+    ]
+}
+
+/// 右活动栏里 Maven 的下标（Windows `PluginActivityRail:36-66` 的顺序：扩展 0 / 通知 1 / Maven 2）。
+const RIGHT_MAVEN_IX: usize = 2;
+
+/// 右侧活动栏的图标项。
+///
+/// 真源：`features/layout/components/plugin-activity-rail.tsx:31-67`。右栏与左栏是**两套不同**的
+/// 视图集合——左栏是 `SIDEBAR_ACTIVITY_ITEM_IDS`（项目 / 更改 / 搜索 / Maven / 运行 / 终端 /
+/// 诊断 / 提交记录 / 设置），右栏只有三个：扩展（`PuzzlePieceIcon`，全量目录里对应的字形是
+/// `puzzle`）、通知（`NotificationsTrigger` 的铃铛，带未读徽标）、Maven（`MavenIcon`）。
+///
+/// Windows 只在探测到 Maven 项目时才渲染 Maven 按钮（`isMavenAvailable`），我们还没有 Maven
+/// 项目探测，先固定渲染三项。右栏三项都没有 `bottom` 分组（Windows 的右栏是单列）。
+fn right_activity_items() -> Vec<ActivityItem> {
+    vec![
+        ActivityItem::new(IconName::Puzzle, tr("lithe.extensions.title")),
+        ActivityItem::new(IconName::Bell, tr("lithe.notifications.title")),
+        // Lucide 没有 Maven 字形，与左栏同一取舍：取「包 / 构建产物」语义的 `package`。
+        ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
     ]
 }
