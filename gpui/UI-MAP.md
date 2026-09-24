@@ -8,7 +8,7 @@
 > 因此本文件分两部分使用：
 > - **§1 硬规则与 gpui-kit 实现规则**：**继续有效**（单位、token 映射、行高、编辑器高度、滚动条、浮层挂层、DPI 与截图口径…都是真机踩出来的）；
 > - **§2 逐区域对应**：目前是以 **macOS** 为源写的，**降级为"行为/功能对照"**（查"这个交互原本怎么工作"）。
->   视觉与布局要改看 Windows —— 新的对应表落在 **`gpui/UI-MAP-WINDOWS.md`**（提示词：`docs/development/gpui-ui-windows-prompt.md`）。
+>   视觉与布局要改看 Windows —— 新的对应表落在 **`gpui/UI-MAP-WINDOWS.md`**（提示词：`docs/development/gpui-ui-windows-rewrite-prompt.md`）。
 >
 > `gpui/PLAN.md` 顶部的横幅与 `.agents/notes/.../2026-09-23-...roadmap.md` 的状态变更是同一件事的记录。
 
@@ -45,7 +45,8 @@
 1. **单位可以原样搬**：macOS 的 1pt = 1 逻辑像素 = gpui 的 `px(1.)`。macOS 写 `40`、`14`、`size-3`，gpui 就写 `px(40.)`、`px(14.)`、`size_3()`。`window.scale_factor()` 只和物理像素有关，不影响这套数值。
 2. **颜色与字号一律走主题 token**（`cx.theme()` / `cx.theme().tokens`），不写裸色值；映射见 §1.2。
 3. **文案取 macOS 的本地化原文**（`macos/Resources/zh-Hans.lproj`），不要自己编中文。
-4. **图标只能在默认图标集里选**：应用注册的是 `gpui_kit::assets::Assets`，只嵌入 `gpui-kit-assets-0.6.6/default-icons.txt` 里的 101 个字形；不在清单里的 `IconName` 运行时画空白。缺字形时用最接近的代替，并在 `docs/DESIGN.md` 的图标映射里登记。
+4. **图标**：⚠️ **本条已过时（2026-09-25 更正）**。应用现在注册的是**全量** `gpui_kit::assets::AllAssets`（`gpui-kit-assets-0.6.6/src/lib.rs:36`、`native_assets.rs:9-11`），嵌入 `assets/icons/` 下的 **1830 个 Lucide 字形**（含 18 个 `git*.svg`）—— 所以**没有"缺字形"这回事**了，也不需要近似替代。
+   仍然要记住的两点：① 有**两个** `IconName` —— `gpui_kit::component::IconName` 是只有 **101** 个变体的兼容子集（`gpui-component-0.6.6/src/icon.rs:18`，由 `build.rs` 按 `default-icons.txt` 过滤生成），要用真字形就得用 `gpui_kit::assets::IconName`（1830 个）；② `Icon::new` / `Button::icon` 收 `impl Into<Icon>`，`impl<T: IconNamed> From<T> for Icon`（`gpui-component-0.6.6/src/icon.rs:59`）对两者都成立，所以换类型即可、不用改写法。变体名 = svg 文件名的 PascalCase（`build.rs:20-51`）；`trash-2.svg` 不存在，所以没有 `Trash2`，用 `Trash`。
 5. **不写平台业务分支**：不给 macOS/Windows 写 `#[cfg]` 业务代码。平台差异（macOS 红绿灯留白 76pt、Windows 最小化/最大化/关闭按钮位置）由 gpui 平台层与 `TitleBar` 自身处理，界面结构三端统一。
 6. **一个区域一个模块**：外壳按区域拆分（`gpui/shell/src/bin/shell_probe/` 下每区域一个文件），便于并行与替换。
 7. **缺 API 先读源码**：`D:\ProgramData\rust\cargo\registry\src\rsproxy.cn-e3de039b2554c837\gpui-{kit,component,base}-0.6.6\src\`。
@@ -57,7 +58,9 @@
 | 结论 | API | 依据 |
 | --- | --- | --- |
 | 0.6.6 **没有** | `gpui_kit::open_window` / `Window::open_window` | `open_window` 只在 `App`（`gpui-pre-0.3.6/src/app.rs:1347`）与 `AsyncApp` 上 |
-| 0.6.6 **没有** | `.overflow_y_scrollbar()`、`Task::then`、`Theme::tab_active_bg` | 源码内无此方法 |
+| 0.6.6 **没有** | `Task::then`、`Theme::tab_active_bg` | 源码内无此方法 |
+| ⚠️ **本条曾经写错，已更正** | `.overflow_y_scrollbar()` **是存在的** | 在 `gpui-component-0.6.6/src/scroll/scrollable.rs:60`（`fn overflow_y_scrollbar(self) -> Scrollable<Self>`）。早先写的"0.6.6 没有它"是错的；只设 `overflow = Scroll`、要自己挂 `ScrollHandle` 的那个是 gpui `InteractiveElement::overflow_y_scroll`（`gpui-pre-0.3.6/src/elements/div.rs:1529`，**必须 `use ... as _`**） |
+| 0.6.6 **没有** | z-index（`.z_10()` 之类） | `gpui-pre-0.3.6/src/styled.rs` 内无 `z_*`；叠放由**绘制顺序**决定 |
 | **存在，但在 trait 上**，必须 `use ... as _` | `Button::{ghost, selected, disabled, xsmall}` | `ButtonVariants` / `Selectable` / `Disableable` / `Sizable`；`button/button.rs:44-96,539`、`sizing.rs:178-202` |
 | **存在，但在 trait 上** | `Icon::small()` / `size_3()` / `size_4()` | `Sizable`；组件自己就在用（`list/list_item.rs:227`） |
 | 自查方式 | `rg 'fn <名字>' <crate>/src`；或直接 `cargo check`（报错会说"trait 未在作用域内"） | — |

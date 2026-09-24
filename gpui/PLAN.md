@@ -9,7 +9,7 @@
 >   **尺寸、结构、观感一律看 Windows**。
 > - **规格文档布局**：`UI-MAP.md` = §1 硬规则 + gpui-kit 实现规则（仍然有效）；`UI-MAP-WINDOWS.md` = 逐区域对应表（待产出，
 >   汇总自 `gpui/research/windows/01..06-*.md`）；`UI-MAP-macos.md` = macOS 对照。
-> - 执行提示词：`docs/development/gpui-ui-windows-prompt.md`；决策记录见
+> - 执行提示词：`docs/development/gpui-ui-windows-rewrite-prompt.md`；决策记录见
 >   `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md` 顶部的状态变更。
 > - 因此 `UI-MAP.md` 需要**重新以 Windows 为源做一份对应表**（提示词里列为第 1 步交付物）。
 
@@ -429,6 +429,163 @@ Command::new(&state).searchable(true).group(CommandGroup::new().label(..).items(
    - 我此前那条"`size_full()` 会大 1.25 倍"的结论是**错的**，来源正是第 1 条的坏截图工具（内容被裁掉后看起来像溢出）。已在 `UI-MAP.md` §1.3 更正。
 3. **窗口口径**：保持与 Dodona 同构（可见区 94%、居中、普通窗口）。整屏证据 `.artifacts/p1/fixed-screen.png`（1920×1080，窗口居中占 94%）与 `.artifacts/p1/fixed-window.png`（1823×1024，内容铺满）。
 4. **本轮改动**：`gpui/capture-screenshot.ps1`（DPI 感知 + 整屏模式）、`gpui/shell/src/bin/shell_probe/workspace.rs`（根视图改回 `.size_full()`，诊断输出改为打印 viewport + scale）、`gpui/shell/src/bin/shell_probe/mod.rs`（窗口策略与 Dodona 同构），以及 `UI-MAP.md` §1.3 的更正。
+
+---
+
+## 5. 本轮进行中（2026-09-25：规格来源改回 Windows + 清空重写第 1 轮）
+
+> 这一节是新口径的施工记录，**旧的 §1–§4 是 macOS 口径的历史**，保留只作"这个交互原本怎么工作"的参考。
+> **规格真源 = Windows 前端**（`windows/tauri/src/`），执行提示词 = `docs/development/gpui-ui-windows-rewrite-prompt.md`。
+
+### 5.1 新口径的分阶段（取代 §2 的旧表）
+
+| 阶段 | 做什么 | 状态 |
+| --- | --- | --- |
+| 0 | 清空 `shell_probe/` 旧实现（保留 `Cargo.toml` 与 bin 名），搭最小骨架，`cargo check` 可跑 | ⏳ |
+| 1 | 外壳：标题栏（40px、自绘三键 56×40）+ 项目标签条（32px）+ 左右活动栏（38px）+ 状态栏（24px）+ Dock 三栏与 4px 间隔 | ⏳ |
+| 2 | 侧栏项目树（行高/缩进/图标/选中/悬停/右键菜单）+ 全局面包屑 | ⏳ |
+| 3 | 编辑区（内部标签栏、`← →`、文件类型图标、脏标记、空状态、真实文件内容） | ⏳ |
+| 4 | 底部 Git 工具窗（标题栏 + 页签 + 三栏 + 提交表 + 引用树 + 筛选条），接真实 `git.*` | ⏳ |
+| 5 | 终端外壳（页签 + 输出流 + 发送命令行；宿主 spawn `cmd`/`powershell`，不做 VT 模拟） | ⏳ |
+| 6 | 右侧工具窗 + 浮层（命令面板 `Command` + `window.open_dialog`） | ⏳ |
+| 7 | 调试界面骨架 + 逐区域与 Windows 真机并排复核 | ⏳ |
+
+### 5.2 本轮已经落地的工程决定
+
+1. **代码基线**：工作区里 `gpui/` 的 `Cargo.toml`、`Cargo.lock`、`shell/Cargo.toml`、`shell/src/main.rs` 被上一轮"清空"误删（计划只要求清空 `shell_probe/` 下的实现），已从 `HEAD` 恢复；`gpui/UI-MAP-macos.md` 同样被误删，已恢复（计划里它是配套的行为对照文档）。
+2. **模块布局**：外壳按区域拆成 `shell_probe/shell/{mod,title_bar,project_tabs,activity_bar,status_bar}.rs`，每个区域是一个**无状态渲染函数**（`-> impl IntoElement`），状态集中在 `workspace.rs` 的 `ShellWorkspace` —— 这样区域之间不会因为共享 `Entity` 互相打架。
+3. **编辑区/底部窗的 Dock 口径**：Windows 默认 `terminalWidthMode === "editor"`，底部窗**嵌在中央编辑器列内**（不是横跨工作台）。gpui-kit 的 `DockPlacement::Bottom` **本来就只横跨 center 列**，所以这一版用真 Bottom dock（旧实现"放进 center 的 `v_split` 以横跨左栏+编辑区"是 macOS 口径，已作废）。
+4. **重试上限从 5 次改成 3 次**，超限一律登记到新增的 **`gpui/BLOCKERS.md`**，不再原地打转。
+5. **构建串行化**：`cargo check` 独占 `gpui/target` 锁，所以**只有主代理跑构建**，区域子代理只写代码、每个 API 都必须先在 gpui-kit 0.6.6 的 registry 源码里 `rg` 到定义。
+6. **新增规格文档**：`gpui/UI-MAP-WINDOWS.md`（逐区域对应表，原先被引用但不存在）与 `gpui/research/gpui-kit-0.6.6-api.md`（0.6.6 真实 API 清单）由并行子代理产出。
+
+### 5.3 维护者拍板（2026-09-25，"按推荐"）
+
+`gpui/GRILL.md` 的 12 条 frontier **全部按推荐执行**：① 代码基线改为"恢复 + 按 Windows 口径削减"（已执行：恢复了被误删的 5 个文件）；② 分支从当前 `main` 开本地分支、不做 `gh` 尝试；③ 冲突时以重写提示词为准；④ `windows/tauri/src/` **只认呈现层**（buffer/store 是前端 zustand 的，不重写）；⑤ 玻璃层本轮不做；⑥ 底部窗用"中央列内的分栏"（**比 DockPlacement::Bottom 更贴 Windows**：`MainLayout` 本身就是 flex + `ResizablePane`，没有 dock 系统）；⑦ "一次"= 一个根因的一次修复，不是一次 `cargo check`；⑧ `0 error` 硬、`0 code warning`（`linker_messages` 见 `BLOCKERS.md` B6）；⑨ 命令白名单 6 条；⑩ 终端 = 输出查看器 + 最小 ANSI 清洗，显式声明能力边界；⑪ 资产源用 `AllAssets`；⑫ api.md 已产出并定为唯一 API 真源。
+
+### 5.4 阶段 1-3 完成情况（验证过的）
+
+| 阶段 | 内容 | 证据 |
+| --- | --- | --- |
+| 1 | 外壳：标题栏 40（自绘三键 56×40）+ 项目标签条 32 + 左右活动栏 + 状态栏 24 + 三栏与 4px 间隔 | `.artifacts/p1/stage1-window.png`（逐像素：50/1.25=**40**、40/1.25=**32**、31/1.25=**24.8**） |
+| 2 | 侧栏项目树：**真递归任意深度 + 真实 `workspace.snapshot`**（`S1_EXPLORER rendered=4865`）、行高 24/缩进 10+16×depth、图标、活动文件高亮、真过滤搜索 | `.artifacts/p1/stage2b-window.png` |
+| 3 | 编辑区：内部标签栏（`← →` + 类型图标 + 文件名 + 关闭）+ `Editor`（真实内容 + 行号，`.bordered(false)` + `h(relative(1.))` + 滚轮接线）+ 空状态 + 多标签 + `path-shortener` 同名区分 | 同上（`CLAUDE.md` 标签 + 真实正文；被打开的文件来自维护者点击） |
+| 3.5 | 底部窗**嵌在中央列内**（默认 320 + 4px 热区）—— Windows 默认口径 | 同上（`底部 Git 工具窗（阶段 4）` 占位在编辑岛下方、**不横跨工作台**） |
+
+**编译**：`cargo check --bin shell-probe` **0 error / 0 code warning**（`cargo clean -p` 后全量验证）。
+**关键接口纪律（本 crate 是 edition 2024）**：只读渲染函数必须收 `&Window` / `&App` —— 收 `&mut` 会让 `-> impl IntoElement` 的可变借用被捕获，同一表达式连续调用两次就报 E0499（本项目第一次构建一次报了 12 个）。详见 `shell/mod.rs` 的模块文档。
+
+### 5.5 还欠的（下一步输入）
+
+1. **阶段 4**（底部 Git 工具窗：6 条 `git.*` + 游标释放）与**阶段 5**（终端：spawn `powershell`/`cmd` + 最小 ANSI 清洗）子代理运行中。
+2. **把代替字形换成真字形**：资产源已是 `AllAssets`（1830 个 Lucide 字形，含 18 个 `git*.svg`），但 `activity_bar` / `status_bar` / `explorer` / `editor` 仍在用 101 项的 `component::IconName` 与代替字形。换成 `gpui_kit::assets::IconName`（`GitBranch` / `GitGraph` / `X` / `Lock` / `Image` / `FileCode` …）即可。
+3. **侧栏/右栏的拖拽改宽**（`ResizablePane` 的 4px 热区）、**项目标签条的横向滚动**、**编辑区 `TabVariant` 的 28px 标签高**（组件在 render 里最后写死 `.h(36).text_sm().gap(16)`，外层覆盖不掉；要么接受、要么自绘标签条、要么给上游加覆盖点 —— 已登记）。
+4. 阶段 6（右侧工具窗 + 命令面板浮层）、阶段 7（调试骨架 + 与真机并排复核）、`verify-agent-notes.mjs`。
+
+### 5.6 与 Windows 真机并排复核（2026-09-25，证据 `.artifacts/p1/ref-windows-window.png`）
+
+真机（`D:\Programs\Lithe\lithe-windows.exe`，维护者当时开着设置对话框、活动栏处于**展开**态）与我的外壳逐项对照：
+
+| # | 项 | 真机 | 我的实现 | 判定 |
+| --- | --- | --- | --- | --- |
+| 1 | 标题栏左端 | 项目芯片（logo + `jwg`）+ 分支 `main` | 项目名 + 分支 | ✅ 结构一致（我的还缺 logo 与项目下拉触发器） |
+| 2 | 标题栏右端 | 搜索 /「有可用更新」/ 最小化 / 最大化 / 关闭 | 只有自绘三键 | ⚠️ 缺搜索按钮与更新控件（`title-bar.tsx:242-254,347`） |
+| 3 | 项目标签条 | **不可见**（单项目时 `shouldShowProjectTabBar` 判为隐藏） | **恒显示** | ❌ **要改**：`projects.len() > 1` 才显示 |
+| 4 | 状态栏右端 | `总计 295.1 MB · Lithe 10.8 MB`、`6 个更改` | `总计 0.0 MB · Lithe 0.0 MB`、无更改勾 | ⚠️ 文案与顺序一致，数值待接真实内存 / `git.status` |
+| 5 | 左活动栏 | 维护者把它**展开**成了「图标 + 标签」竖列表（`activityRailExpanded`）；默认仍是 38px 折叠 | 默认 38px 折叠图标条 | ✅ 默认态一致 |
+| 6 | 左侧栏内容 | 此刻是 **Git 源代码管理视图**（更改 / 查看差异 / 历史记录 + 文件树 + 底部「提交说明」框与提交按钮） | **恒是项目树** | ❌ **真缺口**：左侧栏内容要跟着活动栏切换（我目前只切了底部窗） |
+| 7 | 编辑区 | 被对话框遮挡，只见空态 | 标签栏 + 正文 / 空态 | — |
+| 8 | 右侧工具窗 | 提交文件 `0 个文件` + 日期列表 + `没有更改的文件` + 提交详情（`Merge remote-tracking branch 'main/main'`、作者、日期） | 阶段 4 的第三栏（提交文件 / 提交详情） | ✅ 结构对得上 |
+| 9 | 窗口尺寸 | 1938×1098（接近满屏、可最大化） | 1823×1024（Dodona 口径：可见区 94%、居中、普通窗口） | ✅ **按决策 #2 有意不同**，不是缺陷 |
+
+**结论**：#3 与 #6 是这一轮新发现的两个真差异，要修；#2/#4 是"还没接线的元素"，已在缺口清单里。
+另外确认一条：真机**没有**把 `toggle_menu_bar` / `uses_native_window_chrome` 画出来，与提示词"不做"的判断一致。
+
+---
+
+## 6. 本轮（2026-09-25 下半场）：按官方文档对齐 + i18n + 主题系统
+
+### 6.1 依赖口径改成官方文档的写法（并纠正一条被传错的结论）
+
+官方文档（默认版与 `versions/main` 都）写 `gpui-kit = "0.6"`。原先的 `=0.6.6` 已改成 `"0.6"`，锁文件仍解析到 **0.6.6**（最新已发布；本机 `cargo` 连不上 registry，只能用它）。同时加了 `rust-i18n = "4.2"`（解析到 4.2.2，本来就在依赖树里）。
+
+**⚠️ 纠正一条长期传错的结论**：`UI-MAP.md` / `PLAN.md` 过去写"在线文档描述的是未发布的 0.7.0、一律不可信"。
+核对结果：**默认版文档描述的确实就是已发布的 0.6**（用 `cx.open_window` + `Root::new`，与 0.6.6 一致）；
+只有 **`versions/main`** 才描述未发布 API。两处文档都写 `gpui-kit = "0.6"`。
+已把 `UI-MAP.md` 里那条硬规则改掉，并在新增的 `gpui/docs/README.md` 里写清两套文档的差别与证据。
+
+**为什么不能真按 `versions/main` 写**：它用的是 `gpui_kit::open_window(...)`（由它自己包 `Root`），
+而 0.6.6 里**没有这个函数** —— `gpui-kit-0.6.6/src` grep `pub fn open_window` 零命中，
+它自己的文档注释（`lib.rs:37,132`）用的就是 `cx.open_window`；0.6.6 里也没有应用层的 `WindowExt`。
+想按 main 写就必须把依赖换成 gpui-kit 的 git main，而**本机 TLS 坏了**
+（`schannel: SEC_E_NO_CREDENTIALS`），`D:\ProgramData\rust\cargo\config.toml` 里注释掉的本地代理
+`127.0.0.1:31180/31181` **没有在跑**（端口关闭）。→ 结论：规格以**默认版文档 + 本地 0.6.6 源码**为准，
+`versions/main` 当**前瞻**读。等上游正式发版后再整体迁移新 API（维护者已确认这个顺序）。
+
+### 6.2 文档本地镜像（因为 shell 没有 TLS，子代理读不到在线文档）
+
+`gpui/docs/gpui-kit/versions-main/` —— **160 个 zh-CN 页面**，用
+`obscura.exe`（`C:\Program Files\obscura-x86_64-windows`，headless 浏览器 v0.2.3）
+的 `fetch <url> --dump original` 抓raw markdown。页面清单来自 `versions/main/llms.txt`。
+坐标、重抓脚本、两个踩过的坑都写在 `gpui/docs/README.md`。
+⚠️ **踩坑记录**：`llms.txt` 里的链接**已经带版本前缀**（`/versions/main/zh-CN/...`），
+第一版脚本又拼了一次前缀 → 全部 404；而且"失败就 `Remove-Item`"让现象看起来像"下完又删了"。
+判据必须用内容（正文以 `---` 开头 + 长度 > 500B），失败要保留现场。
+
+### 6.3 i18n（新增）
+
+| 项 | 位置 / 做法 |
+| --- | --- |
+| 资源 | `gpui/shell/locales/lithe.{zh-CN,en}.yml`，`_version: 2`，各 **4317 条 `lithe.*` + 2 条 `gpui_component.*`** |
+| 生成器 | `gpui/tools/extract-locale.mjs`（读 `windows/tauri/src/i18n/locale.ts`，`--check` 可校验） |
+| 初始化 | `shell-probe.rs`（bin crate 根）里 `rust_i18n::i18n!("locales", fallback = "en");` |
+| 语言 | `mod.rs` 里 `gpui_kit::component::set_locale("zh-CN")`（gpui-kit 组件自带 zh-CN） |
+| 覆盖组件文案 | **本轮不做 `extend!`**，理由见下 |
+
+**两个必须记住的坑**：
+1. **`rust_i18n::t!` 只替换 `%{name}`，不认 `{name}`**（`rust-i18n-4.2.2/src/lib.rs:45-91`）。
+   locale.ts 用的是 `{count}` 这种写法，数据里按原样保留，所以**调用处必须自己再套一层 `{name}` 替换**，
+   否则界面上会直接显示 `{count}`。
+2. **`extend!(gpui_component)` 与"只依赖 gpui-kit 一个 crate"的编码规范冲突**：该宏收的是
+   **ident**，展开成 `gpui_component::_rust_i18n_extend(..)` 且用 `stringify!` 当 namespace
+   （`rust-i18n-4.2.2/src/lib.rs:214-219`），所以必须把 `gpui-component` 加为**直接依赖**。
+   本轮以编码规范为准不启用它；`gpui_component.*` 那 2 条覆盖项先留在 YAML 里，等规则放宽再启用。
+3. **尚未消费**：界面模块目前仍直接写中文（那是上一轮"逐字采用 locale.ts"的要求）。
+   把 4317 条搬进 `t!("lithe.…")` 调用是下一步的机械改造 —— **i18n 现在是"已就绪"而不是"已使用"**。
+
+### 6.4 主题系统（新增，已运行期验证）
+
+| 项 | 内容 |
+| --- | --- |
+| 数据 | `gpui/themes/lithe-{dark,light}.json`，各 **60 个 colors key**；`gpui/themes/README.md` 有逐值对照表 |
+| 接线 | `mod.rs::apply_lithe_theme` → `ThemeRegistry::watch_dir(<CARGO_MANIFEST_DIR>/../themes, cx, on_load)`，回调里 `Theme::global_mut(cx).apply_config(&theme)` |
+| 运行期证据 | 启动日志 `S1_THEME applied=Lithe Dark`；截图 `.artifacts/p1/stage-theme.png` 采样点全部变成 Lithe 的 `#1E1F22`（原来是 gpui-kit 默认的 `#0A0A0A`） |
+| 额外好处 | `watch_dir` 是**监听目录**，所以改 JSON 不用重编译；主题文件是运行时读盘 |
+
+**⚠️ 三个 schema 坑（都核对过源码）**：
+1. 文件根是 **`ThemeSet`**（`{name, author?, url?, themes:[ThemeConfig]}`），**不是 `ThemeConfig`**；
+   官方文档里的 `{"colors": {…}}` 只是 colors 片段，当整份文件写会得到空 `themes`、一个主题都载不进
+   （`theme/schema.rs:22-34`，加载 `registry.rs:98,152`）。
+2. **解析失败的文件被整份静默忽略**（`registry.rs:252-258`）→ 格式写错只表现为"主题没生效"，不报错。
+3. **`title_bar` 与 `status_bar` 必须是 `--surface` 而不是 `--background`**：真机标题栏
+   （`title-bar.tsx:337`）与页脚（`footer.tsx:47`）都是 `bg-surface`（深色 `#2b2d30`）。
+   另注意 `status_bar` 缺省会**回落到 `title_bar`**（`schema.rs:1014`），但两个都显式写了。
+   （这条是并排截图时发现标题栏与编辑区同色才查出来的。）
+
+### 6.5 本轮顺带修掉的差异
+
+1. **单项目时项目标签条整条隐藏**（真机 `shouldShowProjectTabBar`）——已改，截图里标签条不再出现。
+2. **底部窗可见性改成以 Git 窗格自己的「隐藏」按钮为准**（原先 ShellWorkspace 与 BottomPane 各持一份状态，会出现"外框还在、内容空了"）。
+3. **图标全部换成真字形**（全仓不再有 `component::IconName`）：`GitBranch` / `GitGraph` / `Package` / `Lock` / `X` / `Image` / `FileCode` / `FileBraces` …
+   （`file-json.svg` 实测不存在，JSON 用 `FileBraces`；`trash-2.svg` 不存在，用 `Trash`。）
+
+### 6.6 已知问题（新登记）
+
+| # | 问题 | 现象 / 根因 | 下一步 |
+| --- | --- | --- | --- |
+| B7 | **终端里 GBK 中文变 `�`** | PowerShell / cmd 在管道下按系统 ANSI 代码页（CP936）输出，我们按 UTF-8 `from_utf8_lossy` 兜底 → 截图 `stage-theme.png` 里 `版权所有`→`��Ȩ����`。真机 host 做了代码页检测（`windows/tauri/src-tauri/src/run.rs:1864-1903`）。 | 按代码页解码（引 `encoding_rs`）或起进程时强制 UTF-8（`chcp 65001` / `$OutputEncoding`）。**目前是可见缺陷**。 |
+| B8 | **项目树渲染上限 5000 被顶到** | 日志 `S1_EXPLORER rendered=5000 limit=5000`（本轮新增了 160 篇文档 + 4317×2 条 locale，仓库文件数过 5000）。 | 提高上限，或改成虚拟列表（`Tree` 本身就是 `uniform_list`，应该能承载）。 |
+| B9 | **`UI-MAP-WINDOWS.md` §2④ 与 §1.5 自相矛盾**（提交表行高能否一比一） | 子代理核对时发现，建议按"`DataTable` 行高受首行内容影响"那一版为准。 | 改文档。 |
 
 
 
