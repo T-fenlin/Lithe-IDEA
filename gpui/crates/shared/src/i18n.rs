@@ -41,7 +41,7 @@
 //!
 //! | 位置 | 键 |
 //! | --- | --- |
-//! | `editor`（标签栏导航 / 关闭 / 空状态 / 打不开文件） | `lithe.tabs.*`、`lithe.workbench.emptyEditor*`、`lithe.ui.noActionsHere`、`lithe.files.openFailed` |
+//! | `editor`（标签栏导航 / 关闭 / 空状态 / 打不开文件 / 保存与自动保存失败 / 关闭未保存确认） | `lithe.tabs.*`、`lithe.workbench.emptyEditor*`、`lithe.ui.noActionsHere`、`lithe.files.openFailed`、`lithe.editor.saveFailed`、`lithe.editor.autoSaveFailed`、`lithe.editor.gpui.*`、`lithe.unsavedChanges.title`、`lithe.ui.save` |
 //! | `explorer`（头部 / 空态 / 加载 / 树 a11y） | `lithe.workbench.project`、`lithe.fileExplorer.*`、`lithe.quickOpen.loadingFiles`、`lithe.search.clear`、`lithe.ui.retry`、`lithe.titleProject.openFolder` |
 //! | `git`（标题栏 / 筛选 / 提交表 / 引用树 / Inspector / 控制台 / 占位） | `lithe.git.*`、`lithe.workbench.gitLog`、`lithe.footer.readOnly` |
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
@@ -297,6 +297,22 @@ mod tests {
             ("lithe.settings.gpui.restoreDefaultsOpen", "恢复默认设置…"),
             ("lithe.settings.gpui.restoreDefaultsTitle", "恢复默认设置？"),
             ("lithe.settings.gpui.restoreDefaultsBody", "所有设置都会回到默认值。"),
+            // 阶段 9 的编辑器侧（2 条，同样由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里）。
+            ("lithe.editor.gpui.discardChanges", "放弃修改"),
+            (
+                "lithe.editor.gpui.unsavedChangesBody",
+                "对“{name}”的修改尚未保存。",
+            ),
+            // 阶段 9 的编辑器侧复用的**真源既有**键：保存失败的两句反馈，以及
+            // 关闭未保存文件时确认对话框的标题与两个按钮
+            // （`windows/tauri/src/i18n/locale.ts:4637-4638`、`:7872`、`:4617`、`:436`）。
+            ("lithe.editor.saveFailed", "无法保存“{name}”。请检查文件是否可写，然后重试。"),
+            (
+                "lithe.editor.autoSaveFailed",
+                "无法自动保存“{name}”。更改仍保留在编辑器中。",
+            ),
+            ("lithe.unsavedChanges.title", "未保存的更改"),
+            ("lithe.ui.save", "保存"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

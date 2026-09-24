@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 6 条 settings.gpui.* 真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 8 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8655,6 +8655,10 @@ lithe:
     zh-CN: "恢复默认设置？"
   settings.gpui.restoreDefaultsBody:
     zh-CN: "所有设置都会回到默认值。"
+  editor.gpui.discardChanges:
+    zh-CN: "放弃修改"
+  editor.gpui.unsavedChangesBody:
+    zh-CN: "对“{name}”的修改尚未保存。"
 
 gpui_component:
   Dialog.ok:

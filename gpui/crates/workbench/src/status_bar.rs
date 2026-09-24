@@ -162,12 +162,18 @@ impl StatusEntry {
 /// 渲染状态栏：`left` 贴左并可被压缩（文件路径在这里截断），`right` 贴右且 `shrink-0`。
 ///
 /// `window` 当前未使用（契约要求保留该参数，后续接点击/焦点时才会用到），故以 `_window` 命名。
+///
+/// ⚠️ 返回类型带 **`use<>`**（不捕获任何入参生命周期）：调用方 `ShellWorkspace::render`
+/// 的尾随组是**当帧算出来的临时 `Vec`**（光标位置每次重绘都可能不同，
+/// 见 `ShellWorkspace::footer_right`）。没有 `use<>` 时 edition 2024 的 RPIT 会把
+/// `&[StatusEntry]` 的生命周期捕获进返回类型，临时值活不过返回的元素（E0515）。
+/// 本条链路上的元素本来就只持有 `SharedString` / `IconName` 的**拷贝**，不借入参。
 pub fn status_bar(
     left: &[StatusEntry],
     right: &[StatusEntry],
     _window: &Window,
     cx: &App,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     StatusBar::new()
         // 高度 24：覆盖组件默认的 `py_1`（`status_bar.rs:89`）撑出来的高度。
         .h_6()

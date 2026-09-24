@@ -2,13 +2,13 @@
 //!
 //! 从 `shell_probe/editor.rs` 原样拆出（逐字搬迁，只调整可见性与 import）。
 //! 读盘与降级文案在 `read_body` / `notice`，标签显示名的同名区分在 `display_names`；
-//! 界面与 `EditorPane` 的打开 / 切换 / 关闭在 `editor_view.rs`。
+//! 界面与 `EditorPane` 的打开 / 切换 / 关闭 / 保存 / 自动保存在 `editor_view.rs`。
 
 use std::path::{Path, PathBuf};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::EditorState;
-use gpui_kit::{Entity, SharedString};
+use gpui_kit::{Entity, SharedString, Subscription, Task};
 use lithe_gpui_shared::tr_args;
 
 /// 编辑器一次读入的字节上限：2 MiB。
@@ -63,6 +63,18 @@ pub(crate) fn icon_for_file(name: &str) -> IconName {
     }
 }
 
+/// 读盘结果：正文 + **这份正文是不是文件的忠实副本**。
+///
+/// 第二个字段是"能不能写回去"的判据（[`Buffer::writable`]）：读不到 / 超大 / 二进制 /
+/// 非 UTF-8 这四种情况给出的都是**宿主补的说明或替换字符**，把它们写回磁盘会毁掉原文件，
+/// 所以这些 buffer 一律标成不可写、编辑器也只读。
+pub(crate) struct Body {
+    /// 交给编辑器的正文。
+    pub(crate) text: String,
+    /// `true` = 正文就是文件内容（可以保存）；`false` = 正文是说明/有损转换的替代文本。
+    pub(crate) writable: bool,
+}
+
 /// 读盘并按三种"不把内容交给编辑器"的情况给出正文说明。
 ///
 /// 与真机的差别：真机会把文件读进来再降级（大文件关语言服务、
@@ -75,27 +87,47 @@ pub(crate) fn icon_for_file(name: &str) -> IconName {
 ///   （git HEAD `gpui/shell/src/bin/shell_probe/panels.rs::open_document`，
 ///   该实现已删除，只在 git 历史里），因为 `locale.ts` 里没有对应文案：
 ///   `editor.largeFileServicesDisabled`（`:8408`）说的是"关了语言服务"而不是"不打开"。
-pub(crate) fn read_body(path: &Path, name: &str) -> String {
+pub(crate) fn read_body(path: &Path, name: &str) -> Body {
+    /// 说明性正文：不可写（写回去会覆盖真实文件）。
+    fn notice_body(lines: &[String]) -> Body {
+        Body {
+            text: notice(lines),
+            writable: false,
+        }
+    }
+
     match std::fs::metadata(path) {
-        Err(error) => notice(&[
+        Err(error) => notice_body(&[
             tr_args("lithe.files.openFailed", &[("name", name)]).to_string(),
             error.to_string(),
         ]),
-        Ok(metadata) if metadata.len() > MAX_EDITOR_BYTES => notice(&[format!(
+        Ok(metadata) if metadata.len() > MAX_EDITOR_BYTES => notice_body(&[format!(
             "文件超过 {} MiB，暂不在编辑器中打开。",
             MAX_EDITOR_BYTES / (1024 * 1024)
         )]),
         Ok(_) => match std::fs::read(path) {
-            Err(error) => notice(&[
+            Err(error) => notice_body(&[
                 tr_args("lithe.files.openFailed", &[("name", name)]).to_string(),
                 error.to_string(),
             ]),
             Ok(bytes) if bytes.contains(&0) => {
-                notice(&["二进制文件不在编辑器中打开。".to_string()])
+                notice_body(&["二进制文件不在编辑器中打开。".to_string()])
             }
-            // 非 UTF-8 的文本用有损转换：编辑器只接受 `SharedString`，
-            // 真机 Monaco 也会把非法字节显示成替换字符。
-            Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+            Ok(bytes) => match std::str::from_utf8(&bytes) {
+                Ok(text) => Body {
+                    text: text.to_string(),
+                    writable: true,
+                },
+                // 非 UTF-8 的文本用有损转换：编辑器只接受 `SharedString`，
+                // 真机 Monaco 也会把非法字节显示成替换字符。
+                // ⚠️ 但这份正文**不是**文件字节的忠实副本（非法字节已经变成 U+FFFD），
+                // 写回去会改坏文件 —— 所以标成不可写。真机的编码探测与"按编码保存"
+                // 还没有（阶段 9 范围外，与"外部修改冲突"同批后置）。
+                Err(_) => Body {
+                    text: String::from_utf8_lossy(&bytes).to_string(),
+                    writable: false,
+                },
+            },
         },
     }
 }
@@ -231,7 +263,7 @@ fn labelled(name: &SharedString, segment: &str) -> SharedString {
 /// 这里对应"一个标签一个 `EditorState`"，所以切标签只是换渲染哪个编辑器，
 /// 不需要把正文倒来倒去，撤销栈与滚动位置各自独立。
 pub(crate) struct Buffer {
-    /// 打开时用的路径，去重键（同一路径重复打开只切标签、不读盘）。
+    /// 打开时用的路径，去重键（同一路径重复打开只切标签、不读盘），也是保存的写入目标。
     pub(crate) path: PathBuf,
     /// 文件名，也是 [`display_names`] 分组的键。
     pub(crate) name: SharedString,
@@ -239,22 +271,47 @@ pub(crate) struct Buffer {
     pub(crate) icon: IconName,
     /// 正文状态：文件内容，读不到时是说明文案。
     pub(crate) editor: Entity<EditorState>,
-    /// 未保存圆点。
+    /// 未保存圆点的真实值：`InputEvent::Change` 置 `true`，**写盘成功**置 `false`。
     ///
-    /// **本轮恒为 `false`**：没有订阅编辑事件，不去编造脏状态
-    /// （`gpui/UI-MAP.md` §1「状态齐全」要求的是真实状态，不是假圆点）。
-    /// 圆点的位置/尺寸/颜色已经按规格写在 [`EditorPane::render_tab`]，
-    /// 接上 `InputEvent` 后把这里改成真实值即可。
+    /// 判据照真机的文档生命周期而不是"正文 == 磁盘内容"：
+    /// `buffer.isDirty = documentLifecycle.status !== "clean"`
+    /// （`windows/tauri/src/features/editor/stores/buffer.store.ts:307,1569`），
+    /// 所以"改回原样"仍然算脏 —— 不做每次按键都物化整篇正文的内容比较。
     pub(crate) is_dirty: bool,
+    /// 这份正文能不能写回磁盘。
+    ///
+    /// `false` = 正文是宿主补的说明（读不到 / 超过 [`MAX_EDITOR_BYTES`] / 二进制）
+    /// 或非 UTF-8 的有损替代文本（见 [`Body`]）。这种 buffer 的编辑器被设成只读，
+    /// 不参与脏标记、`Ctrl+S` 与自动保存 —— 否则会把说明文案写进用户的真实文件。
+    pub(crate) writable: bool,
+    /// 防抖自动保存的版本号：**每改动一次 +1**。
+    ///
+    /// 它是 Windows stale-content 守卫的等价物：旧定时器醒来时发现版本已经变了就不写
+    /// （`windows/tauri/src/features/editor/stores/editor-app.store.ts:518-529` 比的是
+    /// 正文内容，内容变一次版本必然也变一次，判据等价，且不必为每次按键物化整篇正文）。
+    pub(crate) save_generation: u64,
+    /// 待执行的防抖自动保存任务。
+    ///
+    /// gpui 的 `Task` **一 drop 就取消**，所以"换掉上一个"就是 Windows 的 `clearTimeout`
+    /// （`editor-app.store.ts:505-509`）：连续输入只会留下最后一次。
+    pub(crate) auto_save_task: Option<Task<()>>,
+    /// 对这个 `EditorState` 的订阅（`InputEvent` + 通知）。
+    ///
+    /// 必须**被持有**：`Subscription` 一 drop 就取消（gpui 的 RAII 语义），
+    /// 丢在局部变量里等于没订阅。带 `_` 前缀是因为除了"持有"之外没人读它
+    /// （与 `ShellWorkspace::_settings_subscription` 同一约定）。
+    pub(crate) _subscriptions: Vec<Subscription>,
 }
 
 impl Buffer {
-    /// 新建一个 buffer：`is_dirty` 恒为 `false`（理由见字段自己的注释）。
+    /// 新建一个 buffer：刚读进来，所以干净（`is_dirty = false`）。
     pub(crate) fn new(
         path: PathBuf,
         name: SharedString,
         icon: IconName,
         editor: Entity<EditorState>,
+        writable: bool,
+        subscriptions: Vec<Subscription>,
     ) -> Self {
         Self {
             path,
@@ -262,6 +319,122 @@ impl Buffer {
             icon,
             editor,
             is_dirty: false,
+            writable,
+            save_generation: 0,
+            auto_save_task: None,
+            _subscriptions: subscriptions,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// 一个"进程内唯一、用后即删"的临时目录。
+    ///
+    /// 名字用「用例名 + 进程 id」而不是时钟/随机数：测试要确定性，而同名冲突只可能来自
+    /// 同一个进程里的不同用例 —— 它们各自用不同的 `case`。
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(case: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "lithe-editor-read-body-{case}-{}",
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).expect("建临时目录");
+            Self(dir)
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    // `read_body` 的分类结果是**保存路径的安全闸门**：只有"正文就是文件字节的忠实副本"
+    // （`writable == true`）才允许写回磁盘。下面几条守的都是"不可写"的情形 —— 它们一旦回归，
+    // `Ctrl+S` 与防抖自动保存就会把宿主补的说明文案，或带 U+FFFD 的有损文本，写进用户的真实文件。
+
+    #[test]
+    fn utf8_text_is_writable_and_exact() {
+        let dir = TempDir::new("utf8");
+        let path = dir.path("Hello.java");
+        fs::write(&path, "class Hello {}\n").expect("写样本");
+
+        let body = read_body(&path, "Hello.java");
+
+        assert!(body.writable, "合法 UTF-8 正文必须可写");
+        assert_eq!(body.text, "class Hello {}\n", "正文应与文件逐字相同");
+    }
+
+    #[test]
+    fn lossy_conversion_is_not_writable() {
+        let dir = TempDir::new("lossy");
+        let path = dir.path("gbk.txt");
+        // 0xFF 0xFE 不是合法 UTF-8 序列 —— 真机上 GBK/CP936 文件走到的就是这个分支。
+        fs::write(&path, [0x66u8, 0xFF, 0xFE, 0x0A]).expect("写样本");
+
+        let body = read_body(&path, "gbk.txt");
+
+        assert!(
+            !body.writable,
+            "有损转换后的正文不是文件字节的忠实副本，写回会改坏文件"
+        );
+        assert!(
+            body.text.contains('\u{FFFD}'),
+            "非法字节应显示为替换字符：{:?}",
+            body.text
+        );
+    }
+
+    #[test]
+    fn binary_file_is_not_writable() {
+        let dir = TempDir::new("binary");
+        let path = dir.path("app.bin");
+        fs::write(&path, [0x7Fu8, b'E', b'L', b'F', 0x00, 0x01]).expect("写样本");
+
+        let body = read_body(&path, "app.bin");
+
+        assert!(!body.writable, "二进制文件给出的是说明文案，写回会毁掉原文件");
+        assert!(
+            body.text.contains("二进制"),
+            "应是二进制说明：{:?}",
+            body.text
+        );
+    }
+
+    #[test]
+    fn missing_file_is_not_writable() {
+        let dir = TempDir::new("missing");
+        let path = dir.path("nope.txt");
+
+        let body = read_body(&path, "nope.txt");
+
+        assert!(!body.writable, "读不到时给出的是失败说明，不可写");
+        assert!(!body.text.is_empty(), "说明文案不应为空");
+    }
+
+    #[test]
+    fn oversized_file_is_not_writable() {
+        let dir = TempDir::new("oversized");
+        let path = dir.path("huge.txt");
+        // 用 `set_len` 造稀疏文件，避免真的写 2 MiB 进磁盘。
+        let file = fs::File::create(&path).expect("建文件");
+        file.set_len(MAX_EDITOR_BYTES + 1).expect("set_len");
+        drop(file);
+
+        let body = read_body(&path, "huge.txt");
+
+        assert!(!body.writable, "超限文件不打开，给出的是说明");
+        assert!(body.text.contains("MiB"), "应是超限说明：{:?}", body.text);
     }
 }

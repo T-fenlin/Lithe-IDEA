@@ -45,11 +45,11 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::{ActiveTheme as _, Root};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _,
-    Pixels, Render, SharedString, Styled as _, Window, div, px,
+    AnyElement, App, AppContext as _, Context, Div, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, Render, SharedString, Styled as _, Window, div, px,
 };
 
-use lithe_gpui_editor::EditorPane;
+use lithe_gpui_editor::{EditorPane, SaveBuffer};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::BottomPane;
 use lithe_gpui_shared::tr;
@@ -191,8 +191,6 @@ pub struct ShellWorkspace {
     top_activity_view: Option<usize>,
     /// 状态栏左组（前导项）。
     footer_left: Vec<StatusEntry>,
-    /// 状态栏右组（尾随项）。
-    footer_right: Vec<StatusEntry>,
     /// 左侧栏内容：项目树（真实 `workspace.snapshot` 数据）。
     explorer: Entity<Explorer>,
     /// 中央列内容：编辑区（标签栏 + 正文 / 空状态）。
@@ -220,6 +218,12 @@ pub struct ShellWorkspace {
     /// 与上面同理，必须持有；字段声明在 `terminal` **之后**，所以 drop 顺序是
     /// 先取消订阅、再销毁终端面板（先取消再被通知才不会被拆到一半的实体回调）。
     _terminal_subscription: Option<gpui_kit::Subscription>,
+    /// 观察编辑区：光标位置变了就重绘（状态栏的 `行:列` 是它的下游）。
+    ///
+    /// 光标信息归编辑区所有，外壳只读；`EditorPane` 只在位置**真的变了**时
+    /// `cx.notify()`，所以这里不会跟着编辑器的每一次重绘空转。
+    /// 同样是 RAII，必须持有。
+    _editor_subscription: Option<gpui_kit::Subscription>,
 }
 
 impl ShellWorkspace {
@@ -227,6 +231,13 @@ impl ShellWorkspace {
     ///
     /// `Root::new` 之前不得打开任何浮层（那时窗口根还不是 `Root`，`window.open_dialog` 会 panic）。
     pub fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // 编辑区的应用级快捷键（`Ctrl+S`）在这里登记：编辑区没有自己的启动入口，
+        // 而 workspace 是外壳的组合点。与 `lithe_gpui_settings::install_actions` 同一口径：
+        // 绑定是应用级、只登记内容；真正的处理在本视图根元素的 `SaveBuffer` 处理器上。
+        // `Ctrl+F` / `Ctrl+H` 不在这里 —— 它们归编辑器组件自己的 `Input` 上下文绑定
+        // （见 `lithe_gpui_editor::install_actions` 的说明）。
+        lithe_gpui_editor::install_actions(cx);
+
         // 先建编辑区，再把它的弱引用交给项目树：点文件 → 打开到编辑区。
         let editor = cx.new(|cx| EditorPane::new(window, cx));
         let editor_handle = editor.downgrade();
@@ -271,6 +282,9 @@ impl ShellWorkspace {
             },
         ));
 
+        // 编辑区 → 外壳：光标位置变了就重绘，状态栏的 `行:列` 才跟着走。
+        let editor_subscription = Some(cx.observe(&editor, |_, _, cx| cx.notify()));
+
         let project_name: SharedString = root
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
@@ -296,21 +310,6 @@ impl ShellWorkspace {
                 // 真实字形 `git-branch`（`icons/git-branch.svg`，全量目录 `AllAssets` 已注册）。
                 StatusEntry::new(SharedString::from(branch)).with_icon(IconName::GitBranch),
             ],
-            footer_right: vec![
-                // 尾随项顺序真源：`["cursor", "encoding", "indent", "readOnly", "memory", "gitChanges"]`。
-                StatusEntry::new(SharedString::from("1:1")),
-                StatusEntry::new(SharedString::from("UTF-8")),
-                // 文案形如 `{count} 个空格`（`i18n/locale.ts` 的 `footer.spaces`），默认 2。
-                StatusEntry::new(lithe_gpui_shared::tr_args(
-                    "lithe.footer.spaces",
-                    &[("count", "2")],
-                )),
-                // 只读态的真实锁字形（`icons/lock.svg`）；可写态同契约里的 `LockOpen`。
-                StatusEntry::new(SharedString::from("")).with_icon(IconName::Lock),
-                StatusEntry::new(SharedString::from("总计 0.0 MB · Lithe 0.0 MB"))
-                    .with_icon(IconName::HardDrive),
-                StatusEntry::new(SharedString::from("")).with_icon(IconName::CircleCheck),
-            ],
             explorer,
             editor,
             terminal,
@@ -321,7 +320,59 @@ impl ShellWorkspace {
             bottom_visible: false,
             _settings_subscription: settings_subscription,
             _terminal_subscription: terminal_subscription,
+            _editor_subscription: editor_subscription,
         }
+    }
+
+    /// 状态栏右组（尾随项）：顺序与内容都照真机，**每次重绘时按当前状态算**。
+    ///
+    /// 顺序真源：`features/layout/config/item-order.ts:20-32` 的
+    /// `FOOTER_TRAILING_ITEM_IDS = ["cursor", "encoding", "indent", "readOnly", "memory", "gitChanges"]`。
+    ///
+    /// 与上一轮的差别：光标位置原来是写死的 `"1:1"`，现在是**真实值**
+    /// （[`EditorPane::cursor_position`]）；编码与缩进这两格按当前编辑器/读盘口径核过，
+    /// 写出来的就是真值（理由见下面各自的注释），不再是"随手填的占位"。
+    /// 其余四项（只读态 / 内存 / 更改数）仍是占位值，理由各自写在旁边。
+    fn footer_right(&self, cx: &App) -> Vec<StatusEntry> {
+        // 没有任何 buffer 时编辑区给 `1:1`（真机同样：拿不到位置时用
+        // `INITIAL_CURSOR_POSITION = {0,0}`，显示成 `1:1`）。
+        let cursor = self.editor.read(cx).cursor_position(cx);
+
+        vec![
+            // 光标位置 chip。真机这一颗是**可点**的（点开变成输入框、回车跳行，
+            // `features/editor/components/toolbar/editor-status-actions.tsx:29-93`），
+            // 需要 `on_click` + 编辑态，见 `status_bar.rs` 的「未实现」清单第 3 条。
+            StatusEntry::new(SharedString::from(format!(
+                "{}:{}",
+                cursor.line, cursor.column
+            ))),
+            // 编码：**真实值**就是 UTF-8 —— 编辑区读盘时把所有内容读成 UTF-8 字符串
+            // （`buffer.rs::read_body`），保存也按 UTF-8 写回。`UTF-8` 是编码名而不是界面
+            // 文案（真机这一格同样直接显示编码名，`footer-editor-status.tsx`），所以不走 i18n。
+            // ⚠️ 非 UTF-8 的文件本轮**不打开成可写**（`read_body` 标成只读），所以不会出现
+            // "显示 UTF-8 但保存时按别的编码写回"的不一致。
+            StatusEntry::new(SharedString::from("UTF-8")),
+            // 缩进：编辑器的制表宽度**固定 2**。真机取的是编辑器的 `tabSize`
+            // （默认 2，`features/settings/config/default-settings.ts` 的 editor.tabSize），
+            // 而 gpui-kit 的 `EditorState` 不暴露 `tab_size` 读接口（`TabSize` 只有写动作），
+            // 本轮也没有"按语言取缩进"的语言配置，所以这里就是它真实的取值。
+            // 文案形如 `{count} 个空格`（`i18n/locale.ts` 的 `footer.spaces`），默认 2。
+            StatusEntry::new(lithe_gpui_shared::tr_args(
+                "lithe.footer.spaces",
+                &[("count", "2")],
+            )),
+            // ⚠️ 只读态：本轮所有可写 buffer 都是可编辑的，占位值仍是"只读"语义的
+            // 闭锁字形。要变成真实值需要 `EditorState::is_readonly()` 接进来
+            // （真源 `footer-editor-status.tsx:102` 用 `LockIcon` / `LockOpenIcon` 区分），
+            // 属于阶段 9 范围外的状态栏打磨。
+            StatusEntry::new(SharedString::from("")).with_icon(IconName::Lock),
+            // ⚠️ 内存条目：真值来自 10s 轮询的原生命令 `get_application_memory_usage`
+            // （`footer-editor-status.tsx:24,45-67`），属数据层，本阶段不做。
+            StatusEntry::new(SharedString::from("总计 0.0 MB · Lithe 0.0 MB"))
+                .with_icon(IconName::HardDrive),
+            // ⚠️ Git 更改数：要等 `git.*` 提供工作区状态，本轮仍是空占位（只有图标）。
+            StatusEntry::new(SharedString::from("")).with_icon(IconName::CircleCheck),
+        ]
     }
 
     /// 左活动栏第 `index` 项是否画选中底色。
@@ -523,6 +574,17 @@ impl Render for ShellWorkspace {
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
+            // `Ctrl+S`：绑定登记在 `lithe_gpui_editor::install_actions`，动作转发给编辑区。
+            // 放在**外壳根元素**而不是编辑区根元素：焦点落在资源管理器 / 终端 / 标签栏时
+            // `Ctrl+S` 也应该保存当前文件，而它们在元素树里都是这个根元素的后代
+            // （gpui 的 action 冒泡沿"焦点节点 → 祖先"走，`gpui-pre-0.3.6/src/window.rs:6333`）。
+            // 唯一够不到的情形是"窗口里一个焦点元素都没有"（启动后没点过任何地方），
+            // 那时也没有可保存的内容。
+            .on_action(cx.listener(|this, _: &SaveBuffer, window, cx| {
+                let _ = this
+                    .editor
+                    .update(cx, |pane, cx| pane.save_active(window, cx));
+            }))
             // ① 标题栏 40（含自绘窗口三键 56×40）。
             .child(title_bar(&project_name, window, cx))
             // ② 项目标签条 32 —— **只有一个项目时整条隐藏**。
@@ -570,8 +632,10 @@ impl Render for ShellWorkspace {
             )
             // ④ 状态栏 24 —— 设置里的「显示状态栏」关掉时整条不渲染（真机是根元素上的
             // `data-status-bar` + CSS，见 `07-settings-ui.md` §4.5 的 `lib/ui-preferences.ts:5-11`）。
+            // 尾随组每次重绘都按当前光标/活动 buffer 重算，所以用局部变量接一下返回值。
             .children(show_status_bar.then(|| {
-                status_bar(&self.footer_left, &self.footer_right, window, cx)
+                let right = self.footer_right(cx);
+                status_bar(&self.footer_left, &right, window, cx)
             }))
             // 浮层三层必须挂在最外层视图上，否则对话框 / 抽屉 / 通知静默不显示。
             .children(dialog_layer)

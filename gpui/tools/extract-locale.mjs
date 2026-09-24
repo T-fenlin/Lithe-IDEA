@@ -114,6 +114,20 @@ const GPUI_ONLY_KEYS = [
     en: "Every setting returns to its default value.",
     reason: "同上：正文只补充作用范围与后果，不重复标题的提问。",
   },
+  {
+    key: "editor.gpui.discardChanges",
+    zh: "放弃修改",
+    en: "Discard changes",
+    reason:
+      "关闭未保存 buffer 的确认对话框（阶段 9 的 E）。真源的字是「不保存」（unsavedChanges.doNotSave，windows/tauri/src/i18n/locale.ts:7873），但 gpui/docs/gpui-kit/0.6.6/zh-CN/docs/design-guides.md:421 对「未保存修改」这一档明确推荐「放弃修改」（『不保存』看不出放弃了什么），按指南改写；这与 settings.gpui.restoreDefaults* 同一类有意偏离。",
+  },
+  {
+    key: "editor.gpui.unsavedChangesBody",
+    zh: "对“{name}”的修改尚未保存。",
+    en: 'Your changes to "{name}" are not saved yet.',
+    reason:
+      "同一个对话框的正文。真源只有拆成三段拼接的 unsavedChanges.messagePrefix/messageSuffix（「是否要保存对」+ 文件名 +「 所做的更改？」，locale.ts:7874-7875），是 design-guides.md:427-434 点名的『您确定要……吗』式提问；按指南改成『正文只补充作用范围与后果』，文件名仍是唯一新增信息。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);
@@ -214,7 +228,7 @@ function renderFile({ yamlLocale, entries, overrides, sourceLabel }) {
   const lines = [
     "# 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。",
     `# 真源：${sourceLabel}`,
-    `# 另有 ${GPUI_ONLY_KEYS.length} 条 settings.gpui.* 真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
+    `# 另有 ${GPUI_ONLY_KEYS.length} 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
     "# 重新生成：node gpui/tools/extract-locale.mjs",
     "#",
     `# rust-i18n 4.2 约定：_version: ${FILE_VERSION}（key 在前、locale 在后）。`,
