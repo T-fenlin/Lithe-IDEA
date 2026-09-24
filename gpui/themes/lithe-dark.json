@@ -6,6 +6,9 @@
     {
       "name": "Lithe Dark",
       "mode": "dark",
+      "font.size": 16.0,
+      "radius": 6,
+      "radius.lg": 8,
       "colors": {
         "background": "#1e1f22",
         "foreground": "#dfe1e5",

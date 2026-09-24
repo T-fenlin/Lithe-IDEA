@@ -6,6 +6,9 @@
     {
       "name": "Lithe Light",
       "mode": "light",
+      "font.size": 16.0,
+      "radius": 6,
+      "radius.lg": 8,
       "colors": {
         "background": "#ffffff",
         "foreground": "#1f2328",
