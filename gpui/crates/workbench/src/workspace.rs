@@ -42,11 +42,21 @@ use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::BottomPane;
 use lithe_gpui_shared::tr;
 use lithe_gpui_terminal::TerminalPane;
-
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 use crate::project_tabs::{ProjectTab, project_tabs};
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
+
+// ---------------------------------------------------------------------------
+// 设置入口的下标
+// ---------------------------------------------------------------------------
+
+/// 左侧活动栏「设置」项的下标（[`activity_items`] 的第 9 项、0 起第 8）。
+///
+/// 真机里「设置」打开的是**模态对话框**，不是底部工具窗（`gpui/research/windows/07-settings-ui.md`
+/// §1.1），所以它既不在 [`bottom_pane_for`] 里，也不改活动栏的选中态：点它只把对话框打开。
+const SETTINGS_ACTIVITY_IX: usize = 8;
+
 
 // ---------------------------------------------------------------------------
 // 度量：应用布局一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -142,6 +152,11 @@ pub struct ShellWorkspace {
     bottom_kind: BottomPaneKind,
     /// 底部窗是否展开（再点一次当前活动栏项可以收起）。
     bottom_visible: bool,
+    /// 订阅 `SettingsStore`：设置一变就重绘（状态栏的显示/隐藏就靠它）。
+    ///
+    /// 订阅必须**被持有**：`Subscription` 一 drop 就取消（gpui 的 RAII 语义），
+    /// 所以放在结构体里而不是丢在 `new()` 的局部变量里。
+    _settings_subscription: Option<gpui_kit::Subscription>,
 }
 
 impl ShellWorkspace {
@@ -171,6 +186,12 @@ impl ShellWorkspace {
 
         let terminal = cx.new(|cx| TerminalPane::new(window, cx));
         let bottom_git = cx.new(|cx| BottomPane::new(root.clone(), window, cx));
+
+        // 设置变了要重绘（「显示状态栏」立即生效）。`try_store` 而不是 `store`：
+        // 工作台在测试或将来别的宿主里可能没有设置状态，那时回落"默认显示状态栏"，
+        // 而不是 panic。
+        let settings_subscription = lithe_gpui_settings::try_store(cx)
+            .map(|store| cx.observe(&store, |_, _, cx| cx.notify()));
 
         let project_name: SharedString = root
             .file_name()
@@ -218,6 +239,7 @@ impl ShellWorkspace {
             // 真机默认就是终端（`workspace-ui-defaults.ts:6`）。
             bottom_kind: BottomPaneKind::Terminal,
             bottom_visible: true,
+            _settings_subscription: settings_subscription,
         }
     }
 
@@ -240,6 +262,12 @@ impl Render for ShellWorkspace {
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let sheet_layer = Root::render_sheet_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
+
+        // 设置项「显示状态栏」。没有设置状态时按默认值（显示）处理：工作台不应该因为
+        // 宿主没装设置而少一块 UI。
+        let show_status_bar = lithe_gpui_settings::try_store(cx)
+            .map(|store| store.read(cx).settings().show_status_bar)
+            .unwrap_or(true);
 
         // 回调不能借用 `self`（它们要 `'static`），所以通过实体句柄改自己的状态。
         let handle = cx.entity();
@@ -269,6 +297,12 @@ impl Render for ShellWorkspace {
         let on_select_activity = {
             let handle = handle.clone();
             move |index: usize, window: &mut Window, cx: &mut App| {
+                // 「设置」打开的是模态对话框（真机如此），**不改**活动栏选中态、
+                // 也不换底部窗：点它只是把对话框打开。
+                if index == SETTINGS_ACTIVITY_IX {
+                    lithe_gpui_settings::open_settings_dialog(window, cx);
+                    return;
+                }
                 // 用 `update` 的返回值带出判断，避免在闭包里捕获 `bool`：`activity_bar` 要求
                 // 收 `Fn`，捕获一个可变的局部量会让闭包退化成 `FnMut`。
                 let shows_terminal = handle.update(cx, |this, cx| {
@@ -416,13 +450,11 @@ impl Render for ShellWorkspace {
                     ))
                     .child(right_rail),
             )
-            // ④ 状态栏 24。
-            .child(status_bar(
-                &self.footer_left,
-                &self.footer_right,
-                window,
-                cx,
-            ))
+            // ④ 状态栏 24 —— 设置里的「显示状态栏」关掉时整条不渲染（真机是根元素上的
+            // `data-status-bar` + CSS，见 `07-settings-ui.md` §4.5 的 `lib/ui-preferences.ts:5-11`）。
+            .children(show_status_bar.then(|| {
+                status_bar(&self.footer_left, &self.footer_right, window, cx)
+            }))
             // 浮层三层必须挂在最外层视图上，否则对话框 / 抽屉 / 通知静默不显示。
             .children(dialog_layer)
             .children(sheet_layer)

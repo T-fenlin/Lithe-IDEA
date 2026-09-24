@@ -15,6 +15,15 @@
 //! - [`activity_bar`]：左右活动栏（38px）；
 //! - [`status_bar`]：状态栏（24px）。
 //!
+//! ## 设置（阶段 8）
+//!
+//! 本 crate 只做设置的两个**消费点**，设置本身（模型 / 持久化 / 主题应用 / 对话框）在
+//! `lithe-gpui-settings`：
+//!
+//! 1. 活动栏「设置」项 → `open_settings_dialog`（真机是模态对话框，所以它不改选中态、
+//!    也不换底部窗）；
+//! 2. 状态栏按 `Settings::show_status_bar` 条件渲染，订阅 `SettingsStore` 后自动跟随。
+//!
 //! 四个区域文件都是**无状态渲染函数**（`-> impl IntoElement`），状态由 [`workspace::ShellWorkspace`]
 //! 持有并通过参数传入；需要独立生命周期的内容（项目树 / 编辑区 / Git / 终端）各自是 Feature
 //! crate 里的 `Entity`。

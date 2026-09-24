@@ -28,6 +28,10 @@ embed-resource = "3"
 # （`gpui-kit-0.6.6/src` 里 grep `pub fn open_window` 零命中，它自己的文档注释用的是
 # `cx.open_window`）。细节见 `gpui/docs/README.md`。
 gpui-kit = "0.6"
+# 设置（阶段 8）：App Shell 负责"何时读 / 何时应用"，设置本身的模型、持久化、主题应用
+# 与对话框都在这个 crate 里。依赖方向是 app → settings → (gpui-kit, shared)，
+# **不会**反向：settings 不依赖 app / workbench（理由见其 `lib.rs` 的模块文档）。
+lithe-gpui-settings = { path = "../settings" }
 lithe-gpui-shared = { path = "../shared" }
 lithe-gpui-workbench = { path = "../workbench" }
 # 注意：本 crate **不**声明 `rust-i18n`。`rust_i18n::i18n!` 必须出现在持有 `locales/` 的那个

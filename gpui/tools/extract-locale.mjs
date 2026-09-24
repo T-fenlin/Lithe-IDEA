@@ -7,8 +7,8 @@
  *   windows/tauri/src/i18n/ai-commit.ts（locale.ts 通过 `...aiCommitEnglish` / `...aiCommitChinese` 展开）
  *
  * 产物：
- *   gpui/shell/locales/lithe.en.yml
- *   gpui/shell/locales/lithe.zh-CN.yml
+ *   gpui/crates/shared/locales/lithe.en.yml
+ *   gpui/crates/shared/locales/lithe.zh-CN.yml
  *
  * 用法：
  *   node gpui/tools/extract-locale.mjs          # 重新生成两个 YAML
@@ -21,6 +21,8 @@
  *      本脚本会跳过该 key、打印清单并以退出码 1 结束（宁可缺也不写错）。
  *   2. key 顺序保持真源顺序，便于逐行 review diff。
  *   3. 文件使用 UTF-8、LF、无 BOM。
+ *   4. 真源里没有、但 GPUI 侧确实需要的文案放 `GPUI_ONLY_KEYS`（见下），
+ *      仍然由本脚本写进产物，所以 `--check` 依然能守住"产物可重现"。
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -31,7 +33,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..");
 const LOCALE_TS = resolve(REPO_ROOT, "windows/tauri/src/i18n/locale.ts");
 const AI_COMMIT_TS = resolve(REPO_ROOT, "windows/tauri/src/i18n/ai-commit.ts");
-const OUT_DIR = resolve(REPO_ROOT, "gpui/shell/locales");
+// 持有 `locales/` 的 crate 是 `crates/shared`（`rust_i18n::i18n!` 必须在那个 crate 的根，
+// 见 `gpui/crates/shared/src/i18n.rs`）；早期版本的脚本写的是 `gpui/shell/locales`，
+// 那个目录在 workspace 重组后已经不存在，会把产物写到错的地方。
+const OUT_DIR = resolve(REPO_ROOT, "gpui/crates/shared/locales");
 
 /** rust-i18n 的 locale 名（YAML 里的语言 key）→ 真源 catalog 的键。 */
 const CATALOG_LOCALES = [
@@ -54,6 +59,61 @@ const FILE_VERSION = 2;
 const GPUI_COMPONENT_OVERRIDES = [
   { target: "Dialog.ok", source: "ui.ok" },
   { target: "Dialog.cancel", source: "ui.cancel" },
+];
+
+/**
+ * 真源里**没有**、但 GPUI 侧确实需要的文案（`settings.gpui.*`）。
+ *
+ * 允许出现的只有两类，别的一律加进真源：
+ *   1. Windows 把文案**硬编码**在 TSX 里、没进 catalog（下拉选项名之类）；
+ *   2. Windows 的文案在 GPUI 侧**不成立**（例如"语言会立即生效"，而 gpui 只能重启后生效），
+ *      或有意的设计偏离（按 `gpui/docs/gpui-kit/0.6.6/zh-CN/docs/design-guides.md` 的
+ *      「界面用词」改写确认对话框）。
+ *
+ * `reason` 只写给读脚本的人，不进产物；`zh` / `en` 两侧都要写，`--check` 会守住它们
+ * 与两个 YAML 一致。
+ */
+const GPUI_ONLY_KEYS = [
+  {
+    key: "settings.gpui.languageEnglish",
+    zh: "英语",
+    en: "English",
+    reason:
+      "Windows 把语言下拉的选项名硬编码在 macos-settings-panels.tsx:187-188（English / 简体中文），不在 catalog；中文取死代码页签 tabs/general-settings.tsx 的「英语」。",
+  },
+  {
+    key: "settings.gpui.languageChinese",
+    zh: "简体中文",
+    en: "Simplified Chinese",
+    reason: "同上；Windows 的英文侧没有对应条目。",
+  },
+  {
+    key: "settings.gpui.languageRestartDescription",
+    zh: "切换语言会立即重启 Lithe。",
+    en: "Switching the language restarts Lithe immediately.",
+    reason:
+      "Windows 的 settings.mac.languageDescription 写的是「界面语言会立即生效」，而 gpui 侧 set_locale 只在启动早期调用一次（crates/app/src/main.rs），运行中换语言会一半新一半旧。本侧的做法是改完语言立刻用相同参数重启自己（settings/src/restart.rs），所以描述如实写「会重启」。",
+  },
+  {
+    key: "settings.gpui.restoreDefaultsOpen",
+    zh: "恢复默认设置…",
+    en: "Restore default settings…",
+    reason:
+      "Windows 的 settings.mac.restoreDefaults 是「恢复默认设置」且不带省略号；本命令会先打开确认对话框，按 design-guides.md:444 补单个省略号。",
+  },
+  {
+    key: "settings.gpui.restoreDefaultsTitle",
+    zh: "恢复默认设置？",
+    en: "Restore default settings?",
+    reason:
+      "Windows 的 settings.mac.restoreDefaultsConfirm（「⚠️确认恢复所有配置吗？」）是 design-guides.md:434 点名的反例；按指南改成「标题写决策 + 正文写后果 + 按钮用结果词」。",
+  },
+  {
+    key: "settings.gpui.restoreDefaultsBody",
+    zh: "所有设置都会回到默认值。",
+    en: "Every setting returns to its default value.",
+    reason: "同上：正文只补充作用范围与后果，不重复标题的提问。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);
@@ -154,6 +214,7 @@ function renderFile({ yamlLocale, entries, overrides, sourceLabel }) {
   const lines = [
     "# 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。",
     `# 真源：${sourceLabel}`,
+    `# 另有 ${GPUI_ONLY_KEYS.length} 条 settings.gpui.* 真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
     "# 重新生成：node gpui/tools/extract-locale.mjs",
     "#",
     `# rust-i18n 4.2 约定：_version: ${FILE_VERSION}（key 在前、locale 在后）。`,
@@ -211,6 +272,14 @@ function main() {
         continue;
       }
       entries.push({ key, value });
+    }
+
+    // GPUI 侧自有文案追加在真源 key 之后，顺序稳定（数组顺序）。
+    for (const extra of GPUI_ONLY_KEYS) {
+      entries.push({
+        key: extra.key,
+        value: locale.yamlLocale === "en" ? extra.en : extra.zh,
+      });
     }
 
     const overrides = GPUI_COMPONENT_OVERRIDES.map(({ target, source }) => {

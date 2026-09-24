@@ -14,10 +14,18 @@
 ```powershell
 cd gpui
 cargo build --bin Lithe
-# 参数 = 工作区根；--theme / --locale 是设置界面做好之前的临时开关（见 crates/app/src/main.rs）
+# 参数 = 工作区根
 .\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA
+```
+
+`--theme` / `--locale` 是**显式覆盖**（只作用于这一次启动、**不写回设置文件**，供 `.artifacts/` 的
+4 配置视觉验证与诊断用）；`--open-settings` 启动后自动打开设置对话框（验证/诊断用）。
+主题与界面语言的常规来源是**设置文件**（见下）：
+
+```powershell
 .\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --theme "Lithe Light"
 .\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --locale en
+.\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --open-settings
 ```
 
 - 窗口尺寸从主显示器的可见区域算（`startup_window_bounds`），**不写死机器路径**；
@@ -28,6 +36,32 @@ cargo build --bin Lithe
   pwsh -File gpui\capture-screenshot.ps1 -OutputPath .artifacts\p1\shot.png -ProcessName Lithe
   ```
 
+## 设置（`crates/settings`）
+
+设置文件位置（`paths.rs`；gpui / gpui-kit 都**没有**数据目录 helper，所以平台分支集中在那个模块）：
+
+| 平台 | 路径 |
+| --- | --- |
+| Windows | `%APPDATA%\Lithe\settings.json` |
+| macOS | `~/Library/Application Support/Lithe/settings.json` |
+| Linux | `$XDG_CONFIG_HOME/lithe/settings.json`（回落 `~/.config/lithe/settings.json`） |
+
+- **`LITHE_GPUI_SETTINGS_FILE`**（完整文件路径）优先于一切平台推导 —— 测试与机器验证用它把设置文件
+  指到临时文件，不污染真实用户目录：
+
+  ```powershell
+  $env:LITHE_GPUI_SETTINGS_FILE = "$env:TEMP\lithe.json"
+  Set-Content $env:LITHE_GPUI_SETTINGS_FILE '{"theme": "Lithe Light"}'
+  .\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA
+  # stdout: S1_THEME applied=Lithe Light dark=false  ← 设置文件 → 主题这条链生效的证据
+  ```
+
+- 文件不存在时**不创建**（改动才写）；解析失败/某个键坏了只回落默认值并打 `S1_SETTINGS …` 诊断；
+  写入是**原子写 + 300ms 防抖**（重置/恢复默认立即写）。
+- 入口：左侧活动栏第 9 项「设置」或 `Ctrl+,`；`--open-settings` 供机器验证。
+- v1 只有「常规」（语言，**重启后生效**）与「外观」（配色主题 / 外观模式 / 界面字号 / 显示状态栏，
+  全部立即生效）两页；其余 10 个分类的取舍与前置条件见 [`PLAN.md`](./PLAN.md) §8。
+
 ## 目录结构
 
 按 gpui-kit《编码指南》"**按业务能力组织 crate、依赖只向下**"分层
@@ -35,16 +69,19 @@ cargo build --bin Lithe
 
 ```text
 app → workbench → {editor, explorer, git, terminal} → shared
+app → settings → {shared}
+workbench → settings
 ```
 
 | crate | 职责 |
 | --- | --- |
-| `crates/app/` | **App Shell**：只组合窗口与 Feature —— 命令行参数、窗口尺寸、启动顺序、主题加载。bin 名仍是 `Lithe` |
+| `crates/app/` | **App Shell**：只组合窗口与 Feature —— 命令行参数、窗口尺寸、启动顺序、设置加载与主题应用。bin 名仍是 `Lithe` |
 | `crates/workbench/` | 工作台外壳：标题栏 / 项目标签条 / 活动栏 / 状态栏 + 中央列组装（`ShellWorkspace`） |
 | `crates/explorer/` | 左侧栏「项目」：真实 `workspace.snapshot` 的多层树（`model.rs` + `explorer_view.rs`） |
 | `crates/editor/` | 编辑区：标签栏 + 正文 / 空状态（`buffer.rs` + `editor_view.rs`） |
 | `crates/git/` | 底部工具窗「提交记录」：引用 / 提交 / 详情三栏（`model.rs` + `log_view.rs`） |
 | `crates/terminal/` | 终端：页签 + 流式输出 + 输入行 + 最小 ANSI 清洗（`profile` / `ansi` / `session` / `terminal_view`） |
+| `crates/settings/` | 设置：模型（`schema`）/ 路径（`paths`）/ 持久化（`persistence`）/ 主题应用（`theme`）/ 状态与副作用（`store`）/ 行与分组（`row`）/ 对话框（`dialog`）。**只向下依赖** `gpui-kit` + `shared` + serde |
 | `crates/shared/` | 跨 Feature 的稳定能力：Core 信封层（`core_client`）+ i18n 包装（`i18n`），`locales/` 也在这里 |
 
 `gpui/` 根下还有：`themes/`（运行时按目录加载并监听的 Lithe 主题）、`tools/extract-locale.mjs`
@@ -62,15 +99,25 @@ gpui_kit::application().with_assets(gpui_kit::assets::AllAssets).run(move |cx| {
     gpui_kit::component::set_locale("zh-CN");   // 组件文案用它自带的 zh-CN
     gpui_kit::init(cx);
     Theme::change(ThemeMode::Dark, None, cx);   // Lithe 默认深色；init 默认浅色
-    apply_lithe_theme(cx);                      // ThemeRegistry::watch_dir + apply_config
+    // 设置：读到的值决定主题与语言；主题目录在这里装载并监听。
+    lithe_gpui_settings::init_store(cx, Init { loaded, theme_override });
+    lithe_gpui_settings::watch_lithe_themes(cx);        // ThemeRegistry::watch_dir + apply_config
+    lithe_gpui_settings::install_actions(cx);           // Ctrl+, → 打开设置对话框
     cx.spawn(async move |cx| {
         cx.open_window(WindowOptions { ..TitleBar::window_options() }, move |window, cx| {
-            let view = cx.new(|cx| AppView::new(window, cx));
+            let view = cx.new(|cx| ShellWorkspace::new(root, window, cx));
+            if let Some(store) = lithe_gpui_settings::try_store(cx) {
+                store.update(cx, |store, cx| store.attach_window(window, cx));  // 系统外观监听
+            }
             cx.new(|cx| Root::new(view, window, cx))    // Root 必须在最外层
         }).expect("failed to open window");
     }).detach();
 });
 ```
+
+⚠️ 浮层**只能在事件回调或任务里打开**：`Root::new` 之前窗口根还不是 `Root`，而 `render` 阶段调
+`window.open_dialog` 会 panic（`shell/overlays.md:203-213`）。`--open-settings` 用的是
+`window.on_next_frame`（首帧之后）。
 
 `gpui_kit::open_window`（技能文档里的 0.7.0 写法）**不存在**；`Registry` 里没有。`Application::with_assets` 存在（`gpui-pre-0.3.6/src/app.rs:199`）。
 

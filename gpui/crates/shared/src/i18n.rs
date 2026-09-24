@@ -46,6 +46,7 @@
 //! | `git`（标题栏 / 筛选 / 提交表 / 引用树 / Inspector / 控制台 / 占位） | `lithe.git.*`、`lithe.workbench.gitLog`、`lithe.footer.readOnly` |
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
 //! | `workbench`（活动栏 / 状态栏 / 项目标签条） | `lithe.workbench.*`、`lithe.footer.spaces`、`lithe.titleProject.closeProject` |
+//! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 6 条 `lithe.settings.gpui.*` 自有文案）、`lithe.ui.cancel` |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
 //! **任何键拼错都会让测试失败**（缺键时 `rust-i18n` 原样回显键名，所以断言 `tr(key) != key`）。
@@ -143,8 +144,7 @@ mod tests {
     /// 判据。测试同时钉住 zh-CN 的**原文**：接线的前提是 `locale[key].zh-CN` 与被替换掉的
     /// 中文字面量逐字相同（否则中文界面会悄悄变样），这一列就是那句话的机器可校验版本。
     ///
-    /// 表里的键 = 当前所有 `tr(..)` / `tr_args(..)` 调用点用到的键（去重后 99 条），
-    /// 外加两条本轮之前就已在用的（`lithe.footer.spaces`、`lithe.terminal.newTerminal`）。
+    /// 表里的键 = 当前所有 `tr(..)` / `tr_args(..)` 调用点用到的键。
     /// **新增接线时把键补进这张表**：漏补不会失败（测试只覆盖表内的键），但把键写错、
     /// 或 locale 生成脚本把某条键删掉，这里会立刻红。
     #[test]
@@ -259,6 +259,43 @@ mod tests {
             ("lithe.git.log.filterPlaceholder", "{field} 筛选"),
             ("lithe.git.log.logLabel", "日志：{name}"),
             ("lithe.titleProject.closeProject", "关闭项目 {name}"),
+            // settings（`gpui/crates/settings`，阶段 8）。
+            ("lithe.settings.tabs.general", "常规"),
+            ("lithe.settings.tabs.appearance", "外观"),
+            ("lithe.settings.mac.language", "语言"),
+            ("lithe.settings.mac.categories", "设置分类"),
+            ("lithe.settings.mac.appearanceMode", "外观模式"),
+            (
+                "lithe.settings.mac.appearanceDescription",
+                "选择配色主题，并设置是否跟随系统外观。",
+            ),
+            ("lithe.settings.mac.followSystem", "跟随系统"),
+            ("lithe.settings.mac.light", "浅色"),
+            ("lithe.settings.mac.dark", "深色"),
+            ("lithe.settings.mac.done", "完成"),
+            ("lithe.settings.mac.restoreDefaults", "恢复默认设置"),
+            ("lithe.settings.appearance.theme", "主题"),
+            ("lithe.settings.appearance.colorTheme", "颜色主题"),
+            ("lithe.settings.appearance.typography", "字体排印"),
+            ("lithe.settings.appearance.interface", "界面"),
+            ("lithe.settings.appearance.uiFontSize", "界面字体大小"),
+            (
+                "lithe.settings.appearance.uiFontSizeDescription",
+                "以 0.5 像素为单位调整界面文本和图标缩放",
+            ),
+            ("lithe.settings.appearance.showStatusBar", "显示状态栏"),
+            ("lithe.ui.cancel", "取消"),
+            // 下面 6 条真源（`windows/tauri/src/i18n/locale.ts`）里没有，由
+            // `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 提供（每条都写了理由）。
+            ("lithe.settings.gpui.languageEnglish", "英语"),
+            ("lithe.settings.gpui.languageChinese", "简体中文"),
+            (
+                "lithe.settings.gpui.languageRestartDescription",
+                "切换语言会立即重启 Lithe。",
+            ),
+            ("lithe.settings.gpui.restoreDefaultsOpen", "恢复默认设置…"),
+            ("lithe.settings.gpui.restoreDefaultsTitle", "恢复默认设置？"),
+            ("lithe.settings.gpui.restoreDefaultsBody", "所有设置都会回到默认值。"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。
@@ -302,6 +339,9 @@ mod tests {
                 *key,
                 "en 缺键（rust-i18n 回显了键名）：{key}"
             );
+            if SAME_IN_BOTH_LOCALES.contains(key) {
+                continue;
+            }
             assert_ne!(
                 actual.as_ref(),
                 *zh,
@@ -309,4 +349,15 @@ mod tests {
             );
         }
     }
+
+    /// en 与 zh-CN **本来就该逐字相同**的键：专有名词 / 产品名，没有可翻译的内容。
+    ///
+    /// `rust-i18n` 缺键时会回显键名，所以"键存在"由 `tr(key) != key` 守住；而"en 不能等于中文"
+    /// 这条对 `Maven` 这种名字不成立。这是一张**例外清单**，不是白名单：往里加键等于声明
+    /// "这条英文与中文本来一样"，必须在 review 里给出理由。
+    ///
+    /// ⚠️ 现状：locale 里共有 68 条中英逐字相同的键（`settings.mac.shell`、`git.url`、
+    /// `commandPalette.categories.AI` 这类），**只有进了 WIRED 才会被断言到**；目前 WIRED 里
+    /// 唯一的例外就是 `lithe.workbench.maven`。
+    const SAME_IN_BOTH_LOCALES: &[&str] = &["lithe.workbench.maven"];
 }

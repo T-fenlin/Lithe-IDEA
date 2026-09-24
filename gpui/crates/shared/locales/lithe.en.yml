@@ -1,5 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
+# 另有 6 条 settings.gpui.* 真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8642,6 +8643,18 @@ lithe:
     en: "No project starters match \"{query}\"."
   welcome.backToProjects:
     en: "Back to projects"
+  settings.gpui.languageEnglish:
+    en: "English"
+  settings.gpui.languageChinese:
+    en: "Simplified Chinese"
+  settings.gpui.languageRestartDescription:
+    en: "Switching the language restarts Lithe immediately."
+  settings.gpui.restoreDefaultsOpen:
+    en: "Restore default settings…"
+  settings.gpui.restoreDefaultsTitle:
+    en: "Restore default settings?"
+  settings.gpui.restoreDefaultsBody:
+    en: "Every setting returns to its default value."
 
 gpui_component:
   Dialog.ok:

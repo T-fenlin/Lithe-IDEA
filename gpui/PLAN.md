@@ -681,6 +681,141 @@ explorer / workbench / app，按依赖顺序）→ 随后：度量 rem 迁移、
 ⚠️ 这 7 个提交按**路径**切分、按**依赖**排序，但**只有最后一个 tip 是绿的** —— 中间状态缺 `app`
 这个 bin，无法单独编译。评审请以 tip 为准。
 
+## 8. 阶段 8：设置界面（2026-09-25，本轮）
+
+规格：`research/windows/07-settings-ui.md`（逐节引用，尤其是 §0 结论速览、§1.3 度量、§1.5 行/分组契约、
+§2 页签清单、§4 持久化、§7.3「哪些键能立刻生效」、§9 gpui-kit 组件选型）。
+组件与设计口径：`docs/gpui-kit/0.6.6/zh-CN/**`（`component/{dialog,settings,switch,select,number-input,button,icon,theme}.md`、
+`shell/overlays.md`、`docs/{coding-guides,design-guides}.md`）。
+
+### 8.1 新 crate：`gpui/crates/settings`（package `lithe-gpui-settings`）
+
+依赖只向下：`gpui-kit` + `lithe-gpui-shared` + `serde`/`serde_json`（后两者 gpui-kit 不重导出）。
+**不依赖** `workbench` / `app`。文件分工与启动顺序写在 `crates/settings/src/lib.rs` 的模块文档里：
+
+| 文件 | 职责 |
+| --- | --- |
+| `schema.rs` | `Settings` + 逐键默认值 + 纯规范化（无 GPUI） |
+| `paths.rs` | 设置文件路径（唯一出现 `#[cfg(target_os)]` 的地方）+ `LITHE_GPUI_SETTINGS_FILE` |
+| `persistence.rs` | 容错读、原子写、300ms 防抖状态机（无 GPUI） |
+| `theme.rs` | 主题目录装载/监听、「按名字应用主题」、UI 字号 → rem 基准 |
+| `store.rs` | `SettingsStore`（Entity + Global 句柄）：改设置 → 立即生效 → 防抖落盘 |
+| `row.rs` | `SettingsGroup` / `SettingsRow` / 控件宽度档 |
+| `dialog.rs` | 820×620 模态对话框：头部 / 分类栏 / 内容页 / 底部 + 确认子对话框 |
+
+`main.rs` 原来的 `apply_lithe_theme` 被拆成 `theme::watch_lithe_themes`（装载 + 监听 + 重载后复原）
+与 `theme::apply_theme_by_name`（真正应用一个主题）：**启动与设置里切主题现在是同一条路**。
+
+### 8.2 v1 只做两页（其余 10 个分类为什么不做）
+
+Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`）。v1 只渲染前两项：
+
+| 分类 | 页面里的项 | 能立刻生效吗 | 怎么验证 |
+| --- | --- | --- | --- |
+| **常规** | `displayLanguage`（语言下拉：简体中文 / 英语） | ❌ **重启后生效**（gpui 的 `set_locale` 只在启动早期调一次；描述里逐字写明） | 改完看设置文件里的 `displayLanguage`；重启后界面语言变化 |
+| **外观** | `theme`（配色主题下拉，候选 = `ThemeRegistry` 已加载的主题） | ✅ 立即 | `.artifacts/p1/theme-from-settings.png` + stdout `S1_THEME applied=… dark=false` |
+| | `uiFontSize`（数字输入，10–24 / 0.5 步长） | ✅ 立即（写 `Theme.font_size`，`Root::render` 每帧 `window.set_rem_size`） | stdout `S1_THEME font_size=…`；另有 rem 基准不变量兜底 |
+| | `showStatusBar`（开关） | ✅ 立即（`ShellWorkspace::render` 条件渲染 + 订阅 `SettingsStore` 重绘） | 关掉后状态栏整条消失 |
+| | 外观模式（`syncSystemTheme` + `autoThemeLight/Dark`） | ✅ 立即 | `Window::appearance()` 存在（`gpui-pre-0.3.6/src/window.rs:2765`），并注册了 `observe_window_appearance`，运行中系统明暗切换也会跟随 |
+
+**其余 10 个分类不做，理由只有一个：对应子系统在 gpui 侧不存在，做了就是空壳**（逐项依据 `07-settings-ui.md` §7.1–7.2）：
+
+| 分类 | 前置条件（阶段 B/C） |
+| --- | --- |
+| `editor`（4 项） | `EditorPane` 接上设置（字号 / 行高 / 缩进 / 换行 / 行号）——**阶段 B**，只差接线 |
+| `file-tree`（13 项，死代码页签） | explorer 接上排序 / 缩进 / 图标 / 过滤——**阶段 B**，子系统已有 |
+| `terminal`（1 项） | shell **发现**（现在是硬编码常量）+ 终端重建路径——**阶段 B** |
+| `project` / `run` | JDK/Maven 发现（`BottomPaneKind` 里现在是 `Pending("Maven")`）——**阶段 B** |
+| `keyboard` / `lsp` / `ai` / `ai-commit` / `logs` / `updates` | 子系统**完全不存在**（键位系统 / 语言服务 / AI / 日志 / 更新器）——**阶段 C** |
+| `git`（11 项） | 11 项里 9 项作用于**不存在的 Git 变更面板**；先做变更面板再回来做设置——**阶段 C** |
+| `advanced`（`coreFeatures.*`） | gpui 侧没有任何读取方——**阶段 C** |
+
+`appearance` 页里没做的项：`iconTheme`（gpui 只有一套图标资产，没有图标主题系统）、
+`windowTransparency` / `nativeMenuBar` / `compactMenuBar`（无对应原生能力）、
+`uiFontFamily`（要先解决"枚举系统字体 + 写 `Theme.font_family` + `sync_base`"）、
+`reduceMotion`（`App::reduce_motion` 是应用级开关，改它要评估全部动效）、
+布局尺寸类（`activityRailWidth` / `sidebarWidth` 等，属于"可调整面板"，要先把拖拽接上才不是空壳）。
+`askWhereToOpenProjects` / `hiddenFilePatterns` 等**没有读方**，按 §7.3-C 也不进 v1。
+
+### 8.3 组件选型：**不用** `component::setting::Settings`，自绘行
+
+`07-settings-ui.md` §9.3 建议优先用 `setting::{Settings, SettingPage, …}`，读完 0.6.6 实现后**判定换不出目标布局**，三条硬证据（写进了 `dialog.rs` 的模块文档）：
+
+1. **它自带搜索框且无法关闭**（`setting/settings.rs:148-153` 永远塞一个 `Input`），
+   而 Windows 真源**没有搜索框**（§1.4）；
+2. **它的左栏是 `h_resizable` 可拖拽分栏、默认 250（160–360）**（同文件 `:416-422`），
+   Windows 是**固定 190、无把手**；
+3. **页面外壳不同**：它页头 `p_4 + border_b`（`setting/page.rs:180-186`），
+   Windows 是 `p-6` + 无下边框 + `text-xl font-semibold`。
+
+所以复用它的**行内控件**（`Switch` / `NumberInput` / `Button`，以及它自己的下拉实现方式
+`Button + dropdown_menu_with_anchor + PopupMenuItem`，见 `setting/fields/dropdown.rs:60-87`）与
+`Dialog` 容器，自绘左栏与行。代价：没有"白送"的搜索过滤（真源也没有）。
+
+### 8.4 持久化语义（照 §4）
+
+| 语义 | 实现 | 真源 |
+| --- | --- | --- |
+| 路径 | Windows `%APPDATA%\Lithe\settings.json`；macOS `~/Library/Application Support/Lithe/`；Linux `$XDG_CONFIG_HOME/lithe/` | 任务书；gpui 侧**没有**数据目录 helper（五个 crate `grep` 零命中），所以平台分支集中在 `paths.rs` |
+| 覆盖 | `LITHE_GPUI_SETTINGS_FILE`（完整文件路径）优先于一切推导 | 供测试与两轮机器验证 |
+| 读取 | 文件不存在 → 全默认值、**不创建文件**；不是 JSON / 不是对象 → 全默认值 + 一条诊断；**某个键坏了只回落该键**；未知键忽略 | `lib/settings-persistence.ts:18-43,73-79` |
+| 写入 | **原子写**（`settings.json.tmp` + rename）；普通改动 **300ms 防抖**；「恢复默认设置」**立即写**；关对话框补一次 flush | `lib/settings-persistence.ts:96-112`、`stores/settings.store.ts:88-97` |
+| 去重 | 值没变就不应用、不落盘（也挡住"打开对话框时数字框发一次值不变的 Change 就写盘"的噪音） | `lib/settings-persistence.ts:34` 的 `!isEqual` |
+| 规范化 | `uiFontSize` 10–24 / 0.5 步长；`displayLanguage` 白名单；空主题名回落默认；**主题名必须在注册表里**（在主题装载回调里校验，不写回文件） | `lib/ui-font-size.ts:10-19`、`settings-normalization.ts:480,499-519` |
+
+§4.3 里的数组类条目（隐藏路径 trim / 去空行、四个"项目顺序"数组）**v1 不适用**（没有数组键），
+规则先落在 `persistence::normalize_pattern_lines` 并带测试，等 explorer 接过滤时直接用。
+
+### 8.5 接线
+
+- **启动**：读设置文件 → 语言（`--locale` 优先）→ `set_locale` → `gpui_kit::init` → `init_store` →
+  `watch_lithe_themes`（主题在这里应用）→ `install_actions`（`Ctrl+,`）→ 开窗 → `attach_window`
+  （系统外观监听）。
+- `--theme` / `--locale` 从"设置界面做好之前的临时开关"改成**显式覆盖（验证/诊断用、不写回设置文件）**
+  —— `.artifacts/` 的 4 配置视觉验证依赖它们。
+- **入口**：① 左侧活动栏第 9 项「设置」（`SETTINGS_ACTIVITY_IX = 8`）→ 打开对话框（**不改**活动栏选中态，
+  因为真机是模态对话框而不是侧栏视图）；② `Ctrl+,` 走 `actions!` + **`App::on_action` 全局处理器**
+  （挂在 `ShellWorkspace` 根元素上会有"没点过任何地方时不响应"的死角：无焦点时按键只派发到窗口根节点，
+  `gpui-pre-0.3.6/src/window.rs:5815`）。
+- **诊断开关**：`--open-settings`（首帧之后用 `window.on_next_frame` 打开，非 render 阶段）。
+
+### 8.6 与 Windows / 设计指南的有意偏离（都在代码注释里写了理由）
+
+| 偏离 | 理由 |
+| --- | --- |
+| 确认对话框文案不照抄 Windows 的「⚠️确认恢复所有配置吗？」 | `docs/design-guides.md:434` 明确点名这种"您确定要……吗"是反例；改成"标题=决策（恢复默认设置？）+ 正文=后果（所有设置都会回到默认值。）+ 按钮=结果词（恢复默认设置）"。原句与出处写在 `dialog.rs` 的注释里 |
+| 「恢复默认设置」按钮加省略号（`…`） | 会先打开确认对话框（`design-guides.md:444`） |
+| 左栏选中态用 `primary/65` + `primary_foreground` + **字重**（不是 Windows 的 `text-white`） | 不许写裸色值；`theme.primary_foreground` 才是组件体系用的前景 token。另加字重作为**颜色之外**的选中信号（无障碍检查表） |
+| 「配色主题」在跟随系统时显示**当前生效**的主题 | Windows 在该模式下显示的是 `settings.theme`（并非生效值，`macos-settings-panels.tsx:141` vs `:122`）；显示生效值更不容易骗人 |
+| 语言下拉的两个选项名走新键（`settings.gpui.language*`） | Windows 把 `English` / `简体中文` **硬编码在 TSX 里**、不在 catalog；界面上不许出现字面量 |
+| 遮罩比 Windows 浅：gpui-kit `Dialog` 默认 **20% 黑**，Windows 覆写成 `bg-black/55` | `Dialog` 只暴露 `overlay(bool)`、没有遮罩色入口。实测压暗系数 k≈0.798（= 20%，与组件默认一致）。为不改组件、也不自绘遮罩（那会丢掉焦点陷阱与 Esc 语义）而保留默认 |
+
+### 8.7 验证（本轮实际跑过）
+
+1. `cargo build --bin Lithe`：0 error；warning 只有既有的两条 `linker_messages`。
+2. `cargo test -p lithe-gpui-settings` = 30 通过；`cargo test -p lithe-gpui-shared` = 4 通过。
+3. **设置文件 → 主题**：临时文件写 `{"theme":"Lithe Light"}` → stdout
+   `S1_SETTINGS loaded … theme=Lithe Light` + `S1_THEME applied=Lithe Light dark=false`，
+   截图 `.artifacts/p1/theme-from-settings.png` 工作区底色 `#FFFFFF`。
+4. **对话框**：`--open-settings` → stdout `S1_SETTINGS dialog_opened`、stderr 空、进程正常退出；
+   截图 `.artifacts/p1/settings-dialog.png` 量得对话框 **1023×773 物理像素**（缩放 1.247 →
+   820×620 逻辑，宽高比 1.3234 vs 规格 1.3226），左栏右边界落在离左沿 **189** 逻辑像素处（规格 190）。
+
+### 8.8 本轮未能确认 / 还欠的
+
+1. `Ctrl+,` 与活动栏入口**没有被机器验证过**：都需要真实输入事件（本轮只验了 `--open-settings` 这条
+   同为"事件/任务里打开浮层"的路径）。顺带记录一个环境现象：物理鼠标停在工作区某处时会有一次
+   杂散点击落到窗口上（曾误触活动栏「设置」并打开对话框），排查方法见本轮记录——改变光标位置后现象消失，
+   与代码无关。
+2. `syncSystemTheme` 的**运行中跟随**只做了实现（`observe_window_appearance`），没有在真机上切换系统主题验证。
+3. 行的"点整行即激活主控件"只对**开关行**做了；下拉行与数字行没做（`Button::dropdown_menu` 没有
+   以编程方式展开的入口），这是有意取舍，不是遗漏。
+4. `cargo fmt` 跑不了（`rustfmt` 组件在本机镜像 404，见 §7.2）：本轮代码按现有格式手写，
+   未做机器格式化。
+5. 主题热重载后 `uiFontSize` 的 rem 基准靠"不变量观察者"兜底（`ThemeRegistry` 的全局观察者会在
+   重载时把 `Theme.font_size` 写回主题文件的 16），这条路径没有单独截图验证。
+
+
 
 
 

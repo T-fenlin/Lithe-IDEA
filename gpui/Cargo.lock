@@ -3877,6 +3877,7 @@ version = "0.0.1"
 dependencies = [
  "embed-resource",
  "gpui-kit",
+ "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-workbench",
 ]
@@ -3908,6 +3909,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lithe-gpui-settings"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lithe-gpui-shared",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lithe-gpui-shared"
 version = "0.0.1"
 dependencies = [
@@ -3933,6 +3944,7 @@ dependencies = [
  "lithe-gpui-editor",
  "lithe-gpui-explorer",
  "lithe-gpui-git",
+ "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-terminal",
 ]
