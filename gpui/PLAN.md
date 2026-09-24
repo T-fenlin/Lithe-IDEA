@@ -816,6 +816,67 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 5. 主题热重载后 `uiFontSize` 的 rem 基准靠"不变量观察者"兜底（`ThemeRegistry` 的全局观察者会在
    重载时把 `Theme.font_size` 写回主题文件的 16），这条路径没有单独截图验证。
 
+---
+
+## 9. 阶段 9：编辑器完善（A+B+C+E，维护者定稿）
+
+**先读这三条前提事实，避免重复判断**：
+- `crates/editor` 用的**已经是**真 `gpui_kit::component::input::Editor`（可编辑 + 语法高亮 + 行号/折叠）；
+  它模块文档里"本轮明确没做"的三件事（脏标记恒为干净、`← →` 恒禁用、状态栏项写死）就是本阶段要补的。
+- Editor 组件**自带查找替换**（`open_search` / `replace_all_search_matches`，
+  `gpui/docs/gpui-kit/0.6.6/zh-CN/component/editor.md:128-204`）与 `InputEvent::Change/Focus/Blur`
+  （同文件 `:215-226`）—— 脏标记、保存、查找替换全是**接线**，不是自研。
+- Windows 的 `autoSave` 默认 **true**，语义是"编辑时**防抖**自动保存"
+  （`windows/tauri/src/features/editor/stores/editor-app.store.ts:503-570` 的 `autoSaveTasks` +
+  stale-content 守卫）；脏标记仍然存在，手动保存是独立路径。
+
+| 项 | 内容 |
+| --- | --- |
+| A | 脏标记（订阅 `InputEvent::Change`）+ `Ctrl+S` 保存 + 照 Windows 的**防抖自动保存**（含 stale-content 守卫） |
+| B | 状态栏 `1:1` / `UTF-8` 从写死改为真实值（光标行列随光标更新） |
+| C | `Ctrl+F` 查找替换（组件自带；开启 + 把 `Search` action 接到当前编辑器） |
+| E | 关闭未保存文件时**确认**（维护者后来明确加回） |
+
+**不做**：D（`← →` 文件跳转历史）挪到阶段 10（跳转必须有回退）；大文件降级与"外部修改冲突横幅"后置。
+
+## 10. 阶段 10：Java 代码跳转（两批，维护者定稿）
+
+**Core 里已经有整套能力，不要自己造索引**（`develop-lithe` 的第一条硬规则就是复用成熟上游能力）：
+- 轻量（**不启 JDTLS**）：`lsp.builtinNavigation`（当前文件内定义/引用）、`java.sourceDefinition`。
+- 完整：`lsp.startServer`（**Rust 拥有进程/会话**）、`lsp.syncDocument`、`lsp.request`
+  （`textDocument/definition` 等语义请求 + operationId）、`lsp.pollEvents`、`java.workspacePolicy`、
+  `java.navigationMarkers`、`java.resolveNavigation`，以及 JDT 工作区索引缓存三件套
+  `lsp.jdtWorkspaceKey` / `java.jdtWorkspaceFingerprint` / `java.jdtCacheRetention`
+  （命令面见 `shared/contracts/rust-core-api.md:131-159`，LSP 章节见该文件 §LSP）。
+- 用户描述的"打开项目生成索引、后续重开不用管"= 就是 `cacheDirectory/jdtls/<workspaceKey>` +
+  workspace 指纹 + 过期回收（`rust-core-api.md:1241-1301`），**不是**新造一套索引。
+
+| 批次 | 内容 |
+| --- | --- |
+| 第一批 | `F12` / `Ctrl+单击` → Core 轻量导航 → **编辑器寻址**（跳到目标文件/行并把光标放过去）+ `← →` 回退（即阶段 9 未做的 D）。不启 JDTLS，**立刻可验证** |
+| 第二批 | JDTLS：跨文件 / 跨模块 / JDK 与依赖库源码（`jdt://`）跳转；打开项目时生成索引缓存、重开复用。host 侧要移植 `windows/tauri/src-tauri/src/lsp.rs` 的 jdtls 解析（~1000 行：可执行文件 / 启动资源 / 内嵌 JDK / workspace 指纹 / 缓存目录） |
+
+**触发器只有 `F12` 与 `Ctrl+单击`**（维护者选定：不做 `Ctrl+B`、不做右键菜单）。
+
+环境结论（本机实测）：TLS 可用（`download.eclipse.org` 200 OK）；有 JDK 21 / 25；但 **jdtls 载荷尚未
+下载**（`third_party/jdtls/` 只有 `manifest.json`，`.artifacts/jdtls` 不存在）——第二批开工前先跑
+`scripts/prepare-jdtls.ps1`（jdtls 1.61.0 + lombok + java-debug + java-test，带 sha256 校验）。
+
+## 11. 协作纪律（每轮都适用）
+
+- **cargo 只跑改动范围**（维护者多次强调，全量测试会拖很久）：`cargo build --bin Lithe`；
+  测试用 `cargo test -p <只动过的那个 crate>`，能按测试名过滤就再加过滤
+  （例：`cargo test -p lithe-gpui-shared every_wired_key_resolves_in_both_locales`，实测 2.6s）。
+  **不要** `-p a -p b` 连带，更不要跑 workspace 全量。
+- **同一时刻只有一个 cargo 写者**（`gpui/target` 是排他锁）：代理之间**严格串行**。阶段 9 与阶段 10
+  第一批都动 `crates/editor` 与 `shared/locales`，所以必须一前一后，不并行。
+- **验证要到交互级**，不只是静态截图：`.artifacts/ui-click.ps1`（真实鼠标注入，**客户区坐标**，
+  `-Probe` 只报几何用于标定）、`gpui/capture-screenshot.ps1`（按 pid 选窗口、排除控制台窗口）。
+  本机 **125% DPI，截图是物理像素**（逻辑值 × 1.25 = 截图像素值）；会话里存在**"杂散点击"**
+  （光标停着时会落到窗口上），测试前先把光标挪离活动栏 —— 但也要注意**维护者可能同时在手动操作**。
+- 界面验收要对照 `docs/gpui-kit/0.6.6/zh-CN/docs/design-guides.md` 的 **Design review checklist**
+  与**无障碍检查表**逐条自检。
+
 
 
 
