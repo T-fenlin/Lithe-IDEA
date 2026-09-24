@@ -587,6 +587,100 @@ Command::new(&state).searchable(true).group(CommandGroup::new().label(..).items(
 | B8 | **项目树渲染上限 5000 被顶到** | 日志 `S1_EXPLORER rendered=5000 limit=5000`（本轮新增了 160 篇文档 + 4317×2 条 locale，仓库文件数过 5000）。 | 提高上限，或改成虚拟列表（`Tree` 本身就是 `uniform_list`，应该能承载）。 |
 | B9 | **`UI-MAP-WINDOWS.md` §2④ 与 §1.5 自相矛盾**（提交表行高能否一比一） | 子代理核对时发现，建议按"`DataTable` 行高受首行内容影响"那一版为准。 | 改文档。 |
 
+---
+
+## 7. 本轮（2026-09-25 晚场）：按《编码指南》重新分层 + rustfmt + 度量迁 rem
+
+### 7.1 代码按"业务能力"重新分层（`gpui/crates/*`）
+
+依据：`gpui/docs/gpui-kit/0.6.6/zh-CN/docs/coding-guides.md`（维护者指定的 0.6.6 在线文档，
+已镜像到 `gpui/docs/gpui-kit/0.6.6/`）。指南的硬要求是"**按业务能力组织 crate、依赖只向下、
+不要全局 `views/`·`models/`·`modals/` 目录**"，所以把原来的**单个 bin crate + 扁平目录**拆成 7 个 crate：
+
+```text
+app → workbench → {editor, explorer, git, terminal} → shared
+```
+
+| crate | 从哪来 | 公开边界 |
+| --- | --- | --- |
+| `shared` | 新增（把散在 explorer / bottom_panel 里各写一遍的 Core 信封层收敛）+ i18n 包装 + `locales/` | `CoreClient` `CoreError` `CoreRequest` `DEFAULT_TIMEOUT_MILLIS` `core_json` `tr` `tr_args` |
+| `terminal` | 原 `terminal.rs` 1753 行 → `profile` / `ansi` / `session` / `terminal_view` / `constants` | `TerminalPane` `TerminalProfile` |
+| `git` | 原 `bottom_panel.rs` 3240 行 → `model` / `log_view` | `BottomPane` |
+| `editor` | 原 `editor.rs` 833 行 → `buffer` / `editor_view` | `EditorPane` |
+| `explorer` | 原 `explorer.rs` 1192 行 → `model` / `explorer_view` | `Explorer` |
+| `workbench` | 原 `workspace.rs` + `shell/` 四区域 | `ShellWorkspace` + 四个区域模块 |
+| `app` | 原 `shell/src/bin/shell_probe/mod.rs` | bin `shell-probe`（无 lib） |
+
+顺带：**删除 `shell/src/main.rs`**（旧的 P1 冒烟宿主 `lithe-gpui-shell`）—— 职责已被 `app` 覆盖，
+指南也要求"App Shell 只组合窗口与 Feature、一个应用一个 shell"。旧 `gpui/shell/` 整体消失。
+
+**公开 API 按指南收敛**（跨 crate 后原来的 `pub` 就是真 API）：`ActivityItem` / `StatusEntry` /
+`ProjectTab` / `TerminalProfile` 加 `#[non_exhaustive]`、字段改私有、补构造函数
+（`ActivityItem::new(..).bottom(true)`、`StatusEntry::new(t).with_icon(i)`、`ProjectTab::new(n)`、
+`TerminalProfile::new(p).with_args(..)`）；`Buffer` 改 `pub(crate)` + `Buffer::new(..)`。
+feature 的 `lib.rs` 只做明确 `pub use`，`model` / `ansi` / `session` / `*_view` 不成为 import 路径。
+
+**验证"这是纯结构重构"**：同一渲染器复截 + 逐区域像素比对（基准 `.artifacts/p1/stage-refactor.png`
+vs `.artifacts/p1/stage-theme2.png`）：标题栏 / 标签条 / 右活动栏 **0% 差异**，
+其余差异全部是**数据** —— 项目树内容（本轮删/移了文档、搬了源文件）与状态栏分支名
+（`main` → `feat/gpui-shell-rewrite`）。另：`cargo check --bin shell-probe` = 0 error / 0 warning，
+`cargo test --workspace` = shared 3 + terminal 5 全通过。
+
+### 7.2 rustfmt（活跃工具链装不上，改用 1.95.0 自带的那份）
+
+指南要求"使用 `rustfmt` 并满足 workspace Clippy"。实际遇到的阻碍与结论：
+
+1. `rustup component add rustfmt` 失败在**打开下载文件**：`D:\ProgramData\rust\rustup\{downloads,tmp,update-hashes}`
+   **存在但不可写**（已实测写入失败）。
+2. 放宽文件权限后暴露真因：rustup 走**清华 TUNA 镜像**，而它对该组件 **404**
+   （`mirrors.tuna.tsinghua.edu.cn/rustup/dist/2026-07-09/rustfmt-1.97.0-…tar.xz`）。
+3. 指定 `RUSTUP_DIST_SERVER=https://static.rust-lang.org`（PowerShell 与 `cmd` 都试）**仍走 TUNA**；
+   `settings.toml`（`RUSTUP_HOME` 与 `~/.rustup`）里都没有 `[dist-server]`，机器/用户级环境变量也没有
+   —— 这个镜像应该是预置在 rustup 里的，找不到可改入口。
+4. **结论：不装**。`D:\ProgramData\rust\rustup\toolchains\1.95.0-x86_64-pc-windows-msvc\bin\rustfmt.exe`
+   是现成可用的 **rustfmt 1.9.0**，直接调它格式化；`cargo fmt` 用不了（`cargo-fmt` 只属于活跃的 1.97）。
+   本文写作时 `rustfmt --edition 2024 --check` 已通过。
+
+### 7.3 度量迁移到 rem helper（指南的"每个裸 `px(...)` 都是 review finding"）
+
+**rem base = 16px**，三条证据：
+1. `gpui-component-0.6.6/src/theme/mod.rs:665` 默认 `font_size: px(16.)`，而我们的主题当时没有覆盖它；
+2. `gpui-component-0.6.6/src/root.rs:582` 是 `window.set_rem_size(cx.theme().font_size)`
+   —— rem base 就是主题字号；
+3. Windows 前端（`windows/tauri/src/styles/theme.css`）**没有**给 `:root`/`html` 设 `font-size`
+   → 浏览器默认 16px → 它的 Tailwind `2.5rem` 就是 40px，与调研文档的换算一致。
+
+因为本项目所有度量都是从 Windows 的 Tailwind class **逐值搬来的**，映射规则就是**同名数字**：
+`h-10`(40px) → `h_10()`、`h-8`(32px) → `h_8()`、`gap-1`(4px) → `gap_1()`、`px-2`(8px) → `px_2()`、
+`max-w-50`(200px) → `max_w_50()`。**换算后渲染值必须逐像素等价**（用同一渲染器复截比对验证）。
+
+**三类必须保留 `px(...)` 的例外**（每处都在代码里写了理由）：
+1. **字号**：Lithe 的 UI 基准是 **13px**（`theme.css:112,115`），而 gpui 只有 `text_xs()`=12 与
+   `text_sm()`=14 —— 改成 14 会改变设计，不是本轮该做的视觉改动。能精确对上的（12/14/16/18）换掉。
+2. **圆角阶梯**：Windows 的圆角是 `--radius: 8px` 派生的 `calc(× 0.6/0.8/1/1.4)`
+   = **4.8 / 6.4 / 8 / 11.2**（`theme.css:6-12`），**不在 4px 网格上**。
+   ⚠️ 而且**不能**改用 `cx.theme().radius`：`ThemeConfig.radius` 是 **`usize`**
+   （`theme/schema.rs:67-68`），装不下 6.4/4.8；把主题值设成 8 会让**所有 gpui-kit 组件**的圆角
+   从 6 变成 8（那是 shadcn 默认，比 Lithe 的 `rounded-md` = 6.4 更不准）。所以这四级圆角作为
+   **应用层具名常量**留在 `workbench`，并登记为对指南的有意偏离。
+3. **非长度值**：`line_height(1.35)`、opacity、alpha 等系数保持原样。
+
+### 7.4 主题文件新增三个字段（`themes/lithe-{dark,light}.json`）
+
+| 字段 | 值 | 理由 |
+| --- | --- | --- |
+| `font.size` | `16.0` | **把 rem base 显式钉住**。默认恰好也是 16，所以不影响现状；但 rem helper 的正确性依赖它，不能靠"上游默认没变" |
+| `radius` | `6` | 显式钉成 gpui-kit 的默认值（`mod.rs:665`）。Lithe 的 `rounded-md` 是 6.4，而该字段是 `usize` 只能取整 —— **6 比 8 更接近**，所以不取 `--radius` 的 8 |
+| `radius.lg` | `8` | Lithe 的 `--radius-lg` = `--radius` = 8，与 gpui-kit 默认一致 |
+
+### 7.5 本轮提交（`gpui/`）
+
+`docs(gpui): 文档分层与过期文档清理` → `refactor(gpui)` ×7（shared / terminal / git / editor /
+explorer / workbench / app，按依赖顺序）→ 随后：度量 rem 迁移、README/PLAN 同步。
+
+⚠️ 这 7 个提交按**路径**切分、按**依赖**排序，但**只有最后一个 tip 是绿的** —— 中间状态缺 `app`
+这个 bin，无法单独编译。评审请以 tip 为准。
+
 
 
 

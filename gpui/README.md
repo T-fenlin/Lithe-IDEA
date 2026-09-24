@@ -27,15 +27,26 @@ cargo build --bin shell-probe
 
 ## 目录结构
 
-| 文件 | 职责 |
+按 gpui-kit《编码指南》"**按业务能力组织 crate、依赖只向下**"分层
+（`gpui/docs/gpui-kit/0.6.6/zh-CN/docs/coding-guides.md`）。依赖图：
+
+```text
+app → workbench → {editor, explorer, git, terminal} → shared
+```
+
+| crate | 职责 |
 | --- | --- |
-| `shell/src/bin/shell-probe.rs` | crate 根：`mod shell_probe; pub use shell_probe::main;` |
-| `shell_probe/mod.rs` | 入口：参数、首窗口尺寸、启动顺序、主题（深色） |
-| `shell_probe/workspace.rs` | 工作台骨架：标题栏 + 项目标签条 + 活动栏 + Dock 组装 + 状态栏 |
-| `shell_probe/panels.rs` | `ShellPanel`（文件树 / 编辑区 / 大纲 / 统计 / 命令面板）与 `PanelKind` |
-| `shell_probe/bottom_panel.rs` | 底部 Git 工具窗（`提交记录`），自带头部与页签行 |
-| `shell_probe/files.rs` | 文件域：`workspace.snapshot` 调用 + 两层树构建 |
-| `shell_probe/stats.rs` | 右侧统计表（`StatRow` / `StatsDelegate`） |
+| `crates/app/` | **App Shell**：只组合窗口与 Feature —— 命令行参数、窗口尺寸、启动顺序、主题加载。bin 名仍是 `shell-probe` |
+| `crates/workbench/` | 工作台外壳：标题栏 / 项目标签条 / 活动栏 / 状态栏 + 中央列组装（`ShellWorkspace`） |
+| `crates/explorer/` | 左侧栏「项目」：真实 `workspace.snapshot` 的多层树（`model.rs` + `explorer_view.rs`） |
+| `crates/editor/` | 编辑区：标签栏 + 正文 / 空状态（`buffer.rs` + `editor_view.rs`） |
+| `crates/git/` | 底部工具窗「提交记录」：引用 / 提交 / 详情三栏（`model.rs` + `log_view.rs`） |
+| `crates/terminal/` | 终端：页签 + 流式输出 + 输入行 + 最小 ANSI 清洗（`profile` / `ansi` / `session` / `terminal_view`） |
+| `crates/shared/` | 跨 Feature 的稳定能力：Core 信封层（`core_client`）+ i18n 包装（`i18n`），`locales/` 也在这里 |
+
+`gpui/` 根下还有：`themes/`（运行时按目录加载并监听的 Lithe 主题）、`tools/extract-locale.mjs`
+（从 `windows/tauri/src/i18n/locale.ts` 提取 locale 的脚本）、`docs/`（文档索引 + 上游 0.6.6 文档镜像）、
+`research/`（Windows 调研原文）、`capture-screenshot.ps1`（DPI 感知截图）。
 
 ## 已经验证过的接口事实（0.6.6）
 
@@ -44,9 +55,11 @@ cargo build --bin shell-probe
 ### 启动顺序（0.6.6 只有这一种写法）
 
 ```rust
-gpui_kit::application().with_assets(gpui_kit::assets::Assets).run(move |cx| {
+gpui_kit::application().with_assets(gpui_kit::assets::AllAssets).run(move |cx| {
+    gpui_kit::component::set_locale("zh-CN");   // 组件文案用它自带的 zh-CN
     gpui_kit::init(cx);
-    Theme::change(ThemeMode::Dark, None, cx);          // 真机默认深色；init 默认浅色
+    Theme::change(ThemeMode::Dark, None, cx);   // Lithe 默认深色；init 默认浅色
+    apply_lithe_theme(cx);                      // ThemeRegistry::watch_dir + apply_config
     cx.spawn(async move |cx| {
         cx.open_window(WindowOptions { ..TitleBar::window_options() }, move |window, cx| {
             let view = cx.new(|cx| AppView::new(window, cx));
