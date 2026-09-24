@@ -11,7 +11,7 @@
 //! │  ├─ 左活动栏 38+4      main-sidebar.tsx:97,588   折叠态图标竖条
 //! │  ├─ 左侧栏 320        default-settings.ts:138   settings.sidebarWidth
 //! │  ├─ 中央列 flex-1      main-layout.tsx:312       v_flex[ 编辑器岛, 底部工具窗 ]
-//! │  ├─ 右侧工具窗 400    default-settings.ts:139   settings.rightToolWindowWidth
+//! │  ├─ 右侧工具窗 400    default-settings.ts:139   settings.rightToolWindowWidth（**可收起**）
 //! │  └─ 右活动栏 38+4     plugin-activity-rail.tsx:34
 //! └─ 状态栏 24            footer.tsx:45-49          24 = --lithe-footer-height（theme.css:119）
 //! ```
@@ -27,7 +27,7 @@
 //! 三个区域模块（[`super::shell`]）是**无状态渲染函数**；需要持有 `Entity` 的区域
 //! （项目树 / 编辑区）各自是一个 `Entity`。状态归属只有两个：本结构体（外壳）+ 各区域自己。
 //!
-//! ## 活动栏选中态：**两组独立，可同时高亮**
+//! ## 活动栏选中态：**左栏两组独立可同时高亮；右栏一组，面板收起时全灭**
 //!
 //! 真机把「顶部组选中哪个视图」与「底部工具窗显示什么」当成**两个独立状态**
 //! （`features/window/stores/workspace-ui-defaults.ts:3-9`：`activeSidebarView` 与
@@ -38,6 +38,12 @@
 //! 而是 [`ShellWorkspace::top_activity_view`] + [`ShellWorkspace::bottom_visible`] /
 //! [`ShellWorkspace::bottom_kind`] 三个字段，再由
 //! [`ShellWorkspace::is_activity_active`] 合成逐项谓词交给 [`crate::activity_bar`]。
+//!
+//! **右活动栏**是第三条、也是独立的一条：高亮 = `isRightSidebarVisible &&
+//! activeRightSidebarView === 该项`（`plugin-activity-rail.tsx:24-26`、
+//! `notifications-trigger.tsx:18-21`），所以右工具窗**收起时三项都不亮**，与左栏的
+//! 「顶部组照常亮」互不影响（两边本来就是两套状态）。判据见
+//! [`ShellWorkspace::is_right_activity_active`]。
 
 use std::path::PathBuf;
 
@@ -45,8 +51,9 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::{ActiveTheme as _, Root};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Render, SharedString, Styled as _, Window, div, px,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, InteractiveElement as _,
+    IntoElement, ParentElement as _, Pixels, Render, SharedString, Styled as _, Window, div, px,
+    rems,
 };
 
 use lithe_gpui_editor::{EditorPane, SaveBuffer};
@@ -56,6 +63,10 @@ use lithe_gpui_shared::tr;
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 use crate::project_tabs::{ProjectTab, project_tabs};
+use crate::right_tool_window::{
+    RightToolWindowView, diagnose as diagnose_right_panel, resolve_click as resolve_right_click,
+    right_tool_window,
+};
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
 
@@ -63,11 +74,14 @@ use crate::title_bar::title_bar;
 // 活动栏下标
 // ---------------------------------------------------------------------------
 
-/// 左侧活动栏「设置」项的下标（[`activity_items`] 的第 9 项、0 起第 8）。
+/// 左侧活动栏「设置」项的下标（[`activity_items`] 的第 8 项、0 起第 7）。
 ///
 /// 真机里「设置」打开的是**模态对话框**，不是底部工具窗（`gpui/research/windows/07-settings-ui.md`
 /// §1.1），所以它既不在 [`bottom_pane_for`] 里，也不改活动栏的选中态：点它只把对话框打开。
-const SETTINGS_ACTIVITY_IX: usize = 8;
+///
+/// ⚠️ 本项下标是 **7**（不是 8）：阶段 6 第一半把左栏的 Maven 项拿掉了（Maven 归右栏，
+/// 见 [`activity_items`]），底部组从 6 项变成 5 项。
+const SETTINGS_ACTIVITY_IX: usize = 7;
 
 /// 左侧活动栏「顶部组」的下标范围（0 起、含首含尾）：项目 0 / 更改 1 / 搜索 2。
 ///
@@ -98,11 +112,14 @@ const DEFAULT_TOP_ACTIVITY: usize = 0;
 // 字号：13 不在 gpui 的档位（`text_xs()`=12 / `text_sm()`=14）上，按《编码指南》用
 // `text_sm()`（14px）——13 → 14 是经维护者确认的**有意**视觉改动，不是等价换算。
 
-/// 右侧工具窗宽度。真源 `default-settings.ts:139`（`rightToolWindowWidth: 400`）。
+/// 右侧工具窗宽度 400。真源 `default-settings.ts:139`（`rightToolWindowWidth: 400`），
+/// 取值区间 140–600（`features/settings/lib/settings-normalization.ts:114-115`）。
 ///
-/// ⚠️ **保留 `px(...)`**：400 不在 gpui 的固定 rem 档位上（档位里 96 → 384、112 → 448，
-/// `gpui-pre-macros-0.3.6/src/styles.rs:1063-1077`），不能自己发明一个 `w_100()`。
-const RIGHT_TOOL_WINDOW_WIDTH: Pixels = px(400.);
+/// ⚠️ **不用 `px(...)`**：400 不在 gpui 的 rem 档位上（档位里 96 → 384、112 → 448，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1063-1077`），也不能自己发明一个 `w_100()`。
+/// 按《编码指南》"档位外的值用 helper 底层的 `rems(P / 16.)`"写成 rem：基准 16px 时
+/// `rems(400. / 16.)` 与 `px(400.)` 逐像素相等（25rem × 16 = 400），但会随主题字号缩放。
+const RIGHT_TOOL_WINDOW_WIDTH: f32 = 400.;
 
 /// 编辑器岛 / 侧栏外壳圆角。真源 `theme.css:9,134`：`rounded-xl = calc(--radius * 1.4) = 11.2`。
 ///
@@ -121,14 +138,18 @@ const ISLAND_RADIUS: Pixels = px(11.2);
 /// ⚠️ **可见性不在这个类型里**：`isBottomPaneVisible` 是独立字段（默认 `false`，
 /// 同文件 `:5`），所以 `bottom_kind` 在面板隐藏时**保留最后显示过的页签** —— 这正是真机的行为：
 /// 隐藏终端再做点别的、回来时 `bottomPaneActiveTab` 还是 `"terminal"`。
+///
+/// ⚠️ **没有 `Maven`**（阶段 6 第一半改）：真机的 Maven 工具窗开在**右侧栏**
+/// （`features/maven/actions/maven-tool-window-actions.ts:58` 的 `toggleMavenToolWindow`
+/// 走 `applyRightToolWindowIntent`，`main-layout.tsx:336-340` 把它画在右 `ResizablePane` 里），
+/// 上一轮临时落到这里的那一项是错位的，已删除 —— 现在 Maven 只有右栏一处入口
+/// （[`RightToolWindowView::Maven`]）。
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BottomPaneKind {
     /// 终端（阶段 5）。
     Terminal,
     /// Git 提交记录（阶段 4）。
     Git,
-    /// Maven 工具窗（阶段 6 前用占位内容）。
-    Maven,
     /// 运行工具窗（阶段 6 前用占位内容）。
     Run,
     /// 诊断工具窗（阶段 6 前用占位内容）。
@@ -139,11 +160,9 @@ impl BottomPaneKind {
     /// 工具窗标题里的名字，用于占位内容那句「{label} 工具窗（未实现）」。
     ///
     /// 走 `lithe_gpui_shared::tr`（界面不许出现中英文字面量）。真源键与原文：
-    /// `lithe.workbench.maven` = 「Maven」（`i18n/locale.ts`）、
     /// `lithe.workbench.run` = 「运行」、`lithe.workbench.diagnostics` = 「诊断」。
     fn label(self) -> SharedString {
         match self {
-            Self::Maven => tr("lithe.workbench.maven"),
             Self::Run => tr("lithe.workbench.run"),
             Self::Diagnostics => tr("lithe.workbench.diagnostics"),
             // 终端与提交记录有自己的界面，永远不会走到占位分支；给同一个键只为不必返回 `Option`。
@@ -155,29 +174,29 @@ impl BottomPaneKind {
 
 /// 活动栏第 `index` 项对应的底部窗内容；`None` = 该项不换底部窗。
 ///
-/// ⚠️ 下标必须与**左栏** [`activity_items`] 的顺序一致（0 项目 / 1 更改 / 2 搜索 / 3 Maven /
-/// 4 运行 / 5 终端 / 6 诊断 / 7 提交记录 / 8 设置）。「设置」在真机是对话框，
-/// 不是底部窗，所以这里是 `None`。
+/// ⚠️ 下标必须与**左栏** [`activity_items`] 的顺序一致（0 项目 / 1 更改 / 2 搜索 / 3 运行 /
+/// 4 终端 / 5 诊断 / 6 提交记录 / 7 设置）。「设置」在真机是对话框，不是底部窗，所以这里是 `None`。
+/// **Maven 不在表里**：它归右活动栏（[`RightToolWindowView::Maven`]）。
 fn bottom_pane_for(index: usize) -> Option<BottomPaneKind> {
     match index {
-        3 => Some(BottomPaneKind::Maven),
-        4 => Some(BottomPaneKind::Run),
-        5 => Some(BottomPaneKind::Terminal),
-        6 => Some(BottomPaneKind::Diagnostics),
-        7 => Some(BottomPaneKind::Git),
+        3 => Some(BottomPaneKind::Run),
+        4 => Some(BottomPaneKind::Terminal),
+        5 => Some(BottomPaneKind::Diagnostics),
+        6 => Some(BottomPaneKind::Git),
         _ => None,
     }
 }
 
 /// 工作台根视图。
 pub struct ShellWorkspace {
-    /// 工作区根目录，来自命令行参数（阶段 4 的 `git.*` 与后面的设置都要用）。
-    root: PathBuf,
     /// 项目标签条的数据。
     projects: Vec<ProjectTab>,
     /// 当前选中的项目标签（`None` = 一个都没选中）。
     active_project: Option<usize>,
-    /// **左侧**活动栏的图标项（Windows `SidebarActivityRail`：顶部 3 + 底部 6 共 9 项）。
+    /// **左侧**活动栏的图标项（Windows `SidebarActivityRail`：顶部 3 + 底部 5 共 8 项）。
+    ///
+    /// ⚠️ 真机的左栏底部组是 6 项（含 maven），本侧是 5 项 —— Maven 只归右栏，
+    /// 理由见 [`activity_items`]。
     activity_items: Vec<ActivityItem>,
     /// **右侧**活动栏的图标项（Windows `PluginActivityRail`：扩展 / 通知 / Maven 共 3 项）。
     ///
@@ -189,6 +208,22 @@ pub struct ShellWorkspace {
     /// （`workspace-ui-defaults.ts:7`），底部组来自 `isBottomPaneVisible` + `bottomPaneActiveTab`
     /// （同文件 `:5-6`）。两者可以同时高亮。
     top_activity_view: Option<usize>,
+    /// **右侧**工具窗当前显示的视图（真机 `activeRightSidebarView`，
+    /// `stores/ui-state/view-slice.ts:12,26`）。
+    ///
+    /// 默认 [`RightToolWindowView::Maven`]：真机的默认值是 `"outline"`
+    /// （同文件 `:26`），而右活动栏里没有 outline 这一项（本侧只有三项），所以这里取
+    /// 「三个视图里唯一在真机真的开在右栏的那个」（`main-layout.tsx:104,336-340`，
+    /// outline 是左栏视图）。面板默认隐藏（[`ShellWorkspace::right_visible`]），
+    /// 所以这个取值在界面上不可见，只决定"第一次点别的项之前面板里是什么"。
+    right_view: RightToolWindowView,
+    /// 右侧工具窗是否展开。**默认 `false`（隐藏）**：真源
+    /// `features/window/stores/ui-state/panel-slice.ts:28` 的 `isRightSidebarVisible: false`；
+    /// `main-layout.tsx:101-105` 因此默认不渲染右工具窗。
+    ///
+    /// 与 [`ShellWorkspace::right_view`] 分开的理由同底部窗：收起时保留最后显示过的视图
+    /// （`right-tool-window-actions.ts:26-31` 的 toggle 分支不改 `activeRightSidebarView`）。
+    right_visible: bool,
     /// 状态栏左组（前导项）。
     footer_left: Vec<StatusEntry>,
     /// 左侧栏内容：项目树（真实 `workspace.snapshot` 数据）。
@@ -297,8 +332,7 @@ impl ShellWorkspace {
 
         let branch = read_branch(&root).unwrap_or_else(|| "—".to_string());
 
-        Self {
-            root,
+        let workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             // 单项目时 Windows 会隐藏整条标签条（`project-tab-bar-model.ts:12-13`）；
             // 阶段 1 只有一个项目，仍然把 `Some(0)` 选中，方便验收外观。
@@ -307,6 +341,10 @@ impl ShellWorkspace {
             right_activity_items: right_activity_items(),
             // 默认选中顶部第 0 项「项目」（`workspace-ui-defaults.ts:7` 的 `activeSidebarView: "files"`）。
             top_activity_view: Some(DEFAULT_TOP_ACTIVITY),
+            // 右工具窗默认**隐藏**（`panel-slice.ts:28` 的 `isRightSidebarVisible: false`），
+            // 视图字段的默认值理由见字段文档。
+            right_view: RightToolWindowView::Maven,
+            right_visible: false,
             footer_left: vec![
                 // 前导项顺序真源：`features/layout/config/item-order.ts:20-32`
                 // `FOOTER_LEADING_ITEM_IDS = ["filePath", "branch"]`。
@@ -325,7 +363,11 @@ impl ShellWorkspace {
             _settings_subscription: settings_subscription,
             _terminal_subscription: terminal_subscription,
             _editor_subscription: editor_subscription,
-        }
+        };
+        // 启动期也留一行状态证据：右工具窗**默认隐藏**这件事要能被机器验证，
+        // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。
+        diagnose_right_panel(workspace.right_view, workspace.right_visible);
+        workspace
     }
 
     /// 状态栏右组（尾随项）：顺序与内容都照真机，**每次重绘时按当前状态算**。
@@ -385,11 +427,14 @@ impl ShellWorkspace {
     ///
     /// - **顶部组**（0..=2）：选中态是 [`ShellWorkspace::top_activity_view`] 那一个，
     ///   与真机 `activeSidebarView`（`sidebar-pane-selector.tsx:234-247,311-319`）对应；
-    /// - **底部组**（3..=7）：选中态是 `bottom_visible && bottom_kind == 该项的 kind`，
+    /// - **底部组**（3..=6）：选中态是 `bottom_visible && bottom_kind == 该项的 kind`，
     ///   与真机 `isBottomPaneVisible && bottomPaneActiveTab === "<该项>"`
     ///   （`main-sidebar.tsx:643-652`）逐条对应。**判据不是活动栏的选中项**，所以隐藏底部窗后
     ///   底部组一项都不亮，而顶部组不受影响；
-    /// - 「设置」（8）：不是视图，永远不亮（点它开对话框，见 [`SETTINGS_ACTIVITY_IX`]）。
+    /// - 「设置」（7）：不是视图，永远不亮（点它开对话框，见 [`SETTINGS_ACTIVITY_IX`]）。
+    ///
+    /// 右活动栏的选中态**不在这个函数里**：它由 [`ShellWorkspace::is_right_activity_active`]
+    /// 单独算（两套栏、两套视图集合）。
     fn is_activity_active(&self, index: usize) -> bool {
         if TOP_ACTIVITY_ITEMS.contains(&index) {
             return self.top_activity_view == Some(index);
@@ -400,15 +445,20 @@ impl ShellWorkspace {
         }
     }
 
-    /// 右侧工具窗占位内容（阶段 6 换成真实工具窗）。
+    /// 右活动栏第 `index` 项是否画选中底色。
     ///
-    /// 顺带把工作区根打出来：这既是"命令行参数确实传进来了"的现场证据，也让 `root`
-    /// 在阶段 4 的 `git.*` 接手之前不至于是个死字段。
-    fn right_tool_window_placeholder(&self, cx: &App) -> impl IntoElement {
-        placeholder(
-            format!("右侧工具窗（阶段 6）· 工作区：{}", self.root.display()),
-            cx,
-        )
+    /// 判据照真机 `plugin-activity-rail.tsx:24-26`（Maven）与
+    /// `notifications-trigger.tsx:18-21`（通知）：
+    /// `isRightSidebarVisible && activeRightSidebarView === "<该项>"`。
+    /// 扩展项的真机判据是「扩展缓冲区是不是当前 buffer」（`plugin-activity-rail.tsx:14-20`），
+    /// 本侧按本轮口径换成同一条右栏判据（见 [`crate::right_tool_window`] 的偏离说明）。
+    ///
+    /// 推论（都是有意行为）：**面板收起时三项都不亮**；点另一项时旧项立刻灭、新项亮。
+    fn is_right_activity_active(&self, index: usize) -> bool {
+        match RightToolWindowView::from_rail_index(index) {
+            Some(view) => self.right_visible && self.right_view == view,
+            None => false,
+        }
     }
 }
 
@@ -496,21 +546,37 @@ impl Render for ShellWorkspace {
         };
 
         // 右活动栏的点击处理：**不能**复用左栏那个闭包，因为它的 `index` 是左栏的下标
-        // （右栏第 0 项不是「项目」）。三项里目前只有 Maven 有落点：Windows 的 Maven 开关切的是
-        // **右侧栏**的 Maven 视图（`plugin-activity-rail.tsx:24-25`），右侧栏到阶段 6 才有内容，
-        // 所以这里先落到已有的底部 Maven 工具窗；扩展 / 通知的界面同样在阶段 6/7。
+        // （右栏第 0 项不是「项目」）。三项都落到**右侧工具窗**：真机三项里通知与 Maven
+        // 本来就是右栏视图（`plugin-activity-rail.tsx:24-26`、`notifications-trigger.tsx:18-21`），
+        // 扩展的真机行为是开编辑器缓冲区（`:46`），本侧按本轮口径统一走右栏（偏离说明见
+        // `right_tool_window` 模块文档）。
         let on_select_right_activity = {
             let handle = handle.clone();
             move |index: usize, _window: &mut Window, cx: &mut App| {
-                if index != RIGHT_MAVEN_IX {
+                // 越界下标什么也不做：右栏只有三项，多出来的下标不该静默落到某一项上。
+                let Some(clicked) = RightToolWindowView::from_rail_index(index) else {
                     return;
-                }
+                };
                 handle.update(cx, |this, cx| {
-                    // 再点一次收起，与左栏底部组的手感一致。
-                    let showing_maven =
-                        this.bottom_visible && this.bottom_kind == BottomPaneKind::Maven;
-                    this.bottom_visible = !showing_maven;
-                    this.bottom_kind = BottomPaneKind::Maven;
+                    // 状态迁移是纯函数（[`resolve_right_click`]），与真机
+                    // `resolveRightToolWindowUpdate` 逐条对应，单测直接覆盖它。
+                    let (view, visible) =
+                        resolve_right_click(clicked, this.right_view, this.right_visible);
+                    this.right_view = view;
+                    this.right_visible = visible;
+                    diagnose_right_panel(view, visible);
+                    cx.notify();
+                });
+            }
+        };
+
+        // 面板头部的关闭按钮：只关可见性，**不动** `right_view`（真机 toggle 分支同理）。
+        let on_close_right_activity = {
+            let handle = handle.clone();
+            move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                handle.update(cx, |this, cx| {
+                    this.right_visible = false;
+                    diagnose_right_panel(this.right_view, false);
                     cx.notify();
                 });
             }
@@ -524,9 +590,12 @@ impl Render for ShellWorkspace {
 
         // 选中态先算成一份**不借用 `self`** 的小表：`activity_bar` 要求 `is_active` 是 `'static`，
         // 闭包直接捕获 `self` 会被判成 `E0521 borrowed data escapes outside of method`。
-        // 9 个 bool 的一次克隆换来闭包只捕获自己那份 Vec，读数与判据仍只有一个来源。
+        // 每次重绘克隆一份 bool 换来闭包只捕获自己那份 Vec，读数与判据仍只有一个来源。
         let activity_flags: Vec<bool> = (0..self.activity_items.len())
             .map(|index| self.is_activity_active(index))
+            .collect();
+        let right_activity_flags: Vec<bool> = (0..self.right_activity_items.len())
+            .map(|index| self.is_right_activity_active(index))
             .collect();
 
         let left_rail = activity_bar(
@@ -541,9 +610,8 @@ impl Render for ShellWorkspace {
         let right_rail = activity_bar(
             ActivitySide::Right,
             &self.right_activity_items,
-            // 右栏的选中态来自「扩展缓冲区是否激活 / 右侧栏是否停在 Maven」
-            // （`plugin-activity-rail.tsx:14-26`），这两个状态要到阶段 6 才有 → 一项都不亮。
-            |_| false,
+            // 右栏选中态 = `right_visible && right_view == 该项`，所以收起时三项全灭。
+            move |index| right_activity_flags.get(index).copied().unwrap_or(false),
             on_select_right_activity,
             window,
             cx,
@@ -551,7 +619,8 @@ impl Render for ShellWorkspace {
 
         let explorer = self.explorer.clone();
         let editor = self.editor.clone();
-        let right_tool_window = self.right_tool_window_placeholder(cx);
+        let right_tool_window = right_tool_window(self.right_view, on_close_right_activity, cx);
+        let right_tool_window_visible = self.right_visible;
 
         // 底部工具窗的内容由活动栏 / 命令面板切换的单值 `bottomPaneActiveTab` 决定。
         //
@@ -563,11 +632,9 @@ impl Render for ShellWorkspace {
             let content: AnyElement = match self.bottom_kind {
                 BottomPaneKind::Terminal => self.terminal.clone().into_any_element(),
                 BottomPaneKind::Git => self.bottom_git.clone().into_any_element(),
-                kind @ (BottomPaneKind::Maven
-                | BottomPaneKind::Run
-                | BottomPaneKind::Diagnostics) => {
-                    // 占位文案是临时脚手架（阶段 6 会换成真界面）；里面的 {label} 是活动栏
-                    // 项的名字，走 i18n（`lithe.workbench.maven` / `.run` / `.diagnostics`）。
+                kind @ (BottomPaneKind::Run | BottomPaneKind::Diagnostics) => {
+                    // 占位文案是临时脚手架（阶段 6 第二半会换成真界面）；里面的 {label} 是活动栏
+                    // 项的名字，走 i18n（`lithe.workbench.run` / `.diagnostics`）。
                     placeholder(format!("{} 工具窗（未实现）", kind.label()), cx).into_any_element()
                 }
             };
@@ -627,11 +694,16 @@ impl Render for ShellWorkspace {
                             .child(editor_island(editor, cx))
                             .children(bottom),
                     )
-                    .child(side_pane(
-                        div().w(RIGHT_TOOL_WINDOW_WIDTH),
-                        right_tool_window,
-                        cx,
-                    ))
+                    // 右工具窗 400 —— **可收起**：真机整块 `ResizablePane` 的 `hidden` 由
+                    // `isRightToolWindowVisible`（= 通知或 Maven 可见）决定，
+                    // 收起时这一栏完全不占位（`main-layout.tsx:101-105,328`）。
+                    .children(right_tool_window_visible.then(|| {
+                        side_pane(
+                            div().w(rems(RIGHT_TOOL_WINDOW_WIDTH / 16.)),
+                            right_tool_window,
+                            cx,
+                        )
+                    }))
                     .child(right_rail),
             )
             // ④ 状态栏 24 —— 设置里的「显示状态栏」关掉时整条不渲染（真机是根元素上的
@@ -654,7 +726,7 @@ impl Render for ShellWorkspace {
 /// **拖拽改宽还没接**（`ResizablePane` 的 4px 热区）。
 ///
 /// `outer` 由调用方给：宽度是布局度量，调用点用 gpui 的 rem 档位 helper（`w_80()`）或
-/// 档位外的 `px(...)` 各自表达，这里只负责外壳剩下的部分。
+/// 档位外的 `rems(P / 16.)` 各自表达，这里只负责外壳剩下的部分。
 fn side_pane(outer: Div, content: impl IntoElement, cx: &App) -> impl IntoElement {
     outer
         .h_full()
@@ -732,19 +804,25 @@ fn read_branch(root: &std::path::Path) -> Option<String> {
 /// 左侧活动栏的图标项。
 ///
 /// 图标类型是全量目录的 `gpui_kit::assets::IconName`（1830 个 Lucide 字形，应用已注册
-/// `AllAssets`），所以 git / 提交图 / Maven 这些位置都用**真实字形**，没有替代。
+/// `AllAssets`），所以 git / 提交图这些位置都用**真实字形**，没有替代。
 /// 逐项对照表见 `activity_bar.rs` 的模块文档「图标」一节。
+///
+/// ⚠️ **左栏没有 Maven 项**（阶段 6 第一半改）：真机的左栏底部组第一项是 maven
+/// （`features/layout/config/item-order.ts:12-19` 的
+/// `SIDEBAR_BOTTOM_ACTIVITY_ITEM_IDS = [maven, run, terminal, diagnostics, gitLog, settings]`），
+/// 但它点下去切的是**右侧栏**（`sidebar` 的 `toggleMavenPane` →
+/// `features/maven/actions/maven-tool-window-actions.ts:58` → `applyRightToolWindowIntent`）。
+/// 本侧已经有一个右栏 Maven 入口（[`right_activity_items`]），再留一个就是"两处都能开 Maven"，
+/// 所以按阶段 6 的口径把左栏那一项删掉，Maven 只归右栏。底部组因此从 6 项变成 5 项，
+/// 相关下标（[`bottom_pane_for`] / [`SETTINGS_ACTIVITY_IX`]）同步下移。
 fn activity_items() -> Vec<ActivityItem> {
     // 顶部组：`sidebar-pane-selector.tsx:311-319` 的 files / git / search。
-    // 底部组：`features/layout/config/item-order.ts:12-19` 的
-    // `SIDEBAR_BOTTOM_ACTIVITY_ITEM_IDS = [maven, run, terminal, diagnostics, gitLog, settings]`。
+    // 底部组：上面的 `SIDEBAR_BOTTOM_ACTIVITY_ITEM_IDS` 去掉 maven。
     vec![
         ActivityItem::new(IconName::FolderOpen, tr("lithe.workbench.project")),
         // 真实字形 `git-branch`（`icons/git-branch.svg`）。
         ActivityItem::new(IconName::GitBranch, tr("lithe.workbench.changes")),
         ActivityItem::new(IconName::Search, tr("lithe.workbench.search")),
-        // Lucide 没有 Maven 字形，取"包 / 构建产物"语义的 `package`（`icons/package.svg`）。
-        ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")).bottom(true),
         ActivityItem::new(IconName::Play, tr("lithe.workbench.run")).bottom(true),
         ActivityItem::new(IconName::SquareTerminal, tr("lithe.workbench.terminal")).bottom(true),
         ActivityItem::new(IconName::TriangleAlert, tr("lithe.workbench.diagnostics")).bottom(true),
@@ -754,23 +832,25 @@ fn activity_items() -> Vec<ActivityItem> {
     ]
 }
 
-/// 右活动栏里 Maven 的下标（Windows `PluginActivityRail:36-66` 的顺序：扩展 0 / 通知 1 / Maven 2）。
-const RIGHT_MAVEN_IX: usize = 2;
-
 /// 右侧活动栏的图标项。
 ///
 /// 真源：`features/layout/components/plugin-activity-rail.tsx:31-67`。右栏与左栏是**两套不同**的
-/// 视图集合——左栏是 `SIDEBAR_ACTIVITY_ITEM_IDS`（项目 / 更改 / 搜索 / Maven / 运行 / 终端 /
+/// 视图集合——左栏是 `SIDEBAR_ACTIVITY_ITEM_IDS`（项目 / 更改 / 搜索 / 运行 / 终端 /
 /// 诊断 / 提交记录 / 设置），右栏只有三个：扩展（`PuzzlePieceIcon`，全量目录里对应的字形是
 /// `puzzle`）、通知（`NotificationsTrigger` 的铃铛，带未读徽标）、Maven（`MavenIcon`）。
 ///
-/// Windows 只在探测到 Maven 项目时才渲染 Maven 按钮（`isMavenAvailable`），我们还没有 Maven
-/// 项目探测，先固定渲染三项。右栏三项都没有 `bottom` 分组（Windows 的右栏是单列）。
+/// 顺序必须与 [`RightToolWindowView::from_rail_index`] 的下标一致（0 扩展 / 1 通知 / 2 Maven）。
+///
+/// Windows 只在探测到 Maven 项目时才渲染 Maven 按钮（`plugin-activity-rail.tsx:21-23,51` 的
+/// `isMavenAvailable`），我们还没有 Maven 项目探测，先固定渲染三项；Maven 视图的空态
+/// 如实写"未检测到 Maven 项目"（`lithe.maven.notDetected`）。
+/// 右栏三项都没有 `bottom` 分组（Windows 的右栏是单列）。
 fn right_activity_items() -> Vec<ActivityItem> {
     vec![
         ActivityItem::new(IconName::Puzzle, tr("lithe.extensions.title")),
         ActivityItem::new(IconName::Bell, tr("lithe.notifications.title")),
-        // Lucide 没有 Maven 字形，与左栏同一取舍：取「包 / 构建产物」语义的 `package`。
+        // Lucide 没有 Maven 字形，与 `activity_bar.rs` 的对照表同一取舍：取「包 / 构建产物」
+        // 语义的 `package`。
         ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
     ]
 }

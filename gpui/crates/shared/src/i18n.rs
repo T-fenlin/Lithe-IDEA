@@ -45,7 +45,7 @@
 //! | `explorer`（头部 / 空态 / 加载 / 树 a11y） | `lithe.workbench.project`、`lithe.fileExplorer.*`、`lithe.quickOpen.loadingFiles`、`lithe.search.clear`、`lithe.ui.retry`、`lithe.titleProject.openFolder` |
 //! | `git`（标题栏 / 筛选 / 提交表 / 引用树 / Inspector / 控制台 / 占位） | `lithe.git.*`、`lithe.workbench.gitLog`、`lithe.footer.readOnly` |
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
-//! | `workbench`（活动栏 / 状态栏 / 项目标签条） | `lithe.workbench.*`、`lithe.footer.spaces`、`lithe.titleProject.closeProject` |
+//! | `workbench`（活动栏 / 状态栏 / 项目标签条 / 右工具窗） | `lithe.workbench.*`、`lithe.footer.spaces`、`lithe.titleProject.closeProject`、`lithe.maven.title`、`lithe.maven.notDetected`、`lithe.notifications.empty`、`lithe.extensions.noneFound`、`lithe.commandPalette.close` |
 //! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 6 条 `lithe.settings.gpui.*` 自有文案）、`lithe.ui.cancel` |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
@@ -64,12 +64,14 @@
 //!    （`editor.largeFileServicesDisabled` 说的是"关了语言服务"，语义不同）、
 //!    `core_client` 的「{command} 的响应缺少 data」、`workbench` 的状态栏内存项。
 //!    这些要么需要前端补键（已登记），要么属于第 1 类。
-//! 3. **占位文案（阶段 6/7 未实现区域）**：`workbench` 的「右侧工具窗（阶段 6）· 工作区：{}」
-//!    与「{label} 工具窗（未实现）」。它们是临时脚手架，落地的真实界面会用真键；
+//! 3. **占位文案（阶段 6 第二半未实现区域）**：`workbench` 的「{label} 工具窗（未实现）」
+//!    （底部工具窗里仅剩的「运行 / 诊断」两项）。它是临时脚手架，落地的真实界面会用真键；
 //!    现在接键只会把 `CONFIGURATION` 这类代码名翻成中文，反而更难认。⚠️ 例外：那句里的
 //!    `{label}` 已经接了键 —— `BottomPaneKind::label()` 用
-//!    `lithe.workbench.maven` / `.run` / `.diagnostics`（都在 WIRED 表里），
+//!    `lithe.workbench.run` / `.diagnostics`（都在 WIRED 表里），
 //!    所以剩下的中文字面量只是那句话的固定部分。
+//!    （阶段 6 第一半之前这里还有一句「右侧工具窗（阶段 6）· 工作区：{}」，右工具窗做成真实
+//!    区域后已删除，它的位置现在是 `lithe.maven.title` 等真键。）
 //! 4. **不是界面文案**：CLI 用法提示（`app/src/main.rs` 的「用法：Lithe <workspace-root>」）、
 //!    单元测试夹具（`terminal/src/ansi.rs` 的 `"终"` 是 ansi-cleaner 的字节夹具）。
 //!
@@ -318,6 +320,19 @@ mod tests {
             // （`windows/tauri/src/i18n/locale.ts:8435,8439`；英文侧同键 `:4137,4141`）。
             ("lithe.navigation.definition", "定义"),
             ("lithe.navigation.noTargetFound", "未找到{target}。"),
+            // 阶段 6 第一半（右侧工具窗）：三个视图的头部标题 + 各自空态，以及面板关闭按钮的
+            // 无障碍名 / tooltip。全部是**真源既有**键：
+            // `maven.title`（`maven-pane.tsx:602`；`locale.ts:6043` / en `:1623`）、
+            // `maven.notDetected`（`maven-pane.tsx:806`；`locale.ts:6102` / en `:1686`）、
+            // `notifications.empty`（`notifications-tool-window.tsx:399`；`locale.ts:7324` / en `:2998`）、
+            // `extensions.noneFound`（`locale.ts:7620` / en `:3300`）、
+            // `commandPalette.close`（两个工具窗的关闭按钮都用它，`maven-pane.tsx:606`、
+            // `notifications-tool-window.tsx:355`；`locale.ts:7938` / en `:3619`）。
+            ("lithe.maven.title", "Maven"),
+            ("lithe.maven.notDetected", "未检测到 Maven 项目"),
+            ("lithe.notifications.empty", "暂无通知。"),
+            ("lithe.extensions.noneFound", "未找到扩展。"),
+            ("lithe.commandPalette.close", "关闭命令面板"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。
@@ -379,7 +394,9 @@ mod tests {
     /// "这条英文与中文本来一样"，必须在 review 里给出理由。
     ///
     /// ⚠️ 现状：locale 里共有 68 条中英逐字相同的键（`settings.mac.shell`、`git.url`、
-    /// `commandPalette.categories.AI` 这类），**只有进了 WIRED 才会被断言到**；目前 WIRED 里
-    /// 唯一的例外就是 `lithe.workbench.maven`。
-    const SAME_IN_BOTH_LOCALES: &[&str] = &["lithe.workbench.maven"];
+    /// `commandPalette.categories.AI` 这类），**只有进了 WIRED 才会被断言到**；目前 WIRED 里的
+    /// 例外是 `lithe.workbench.maven`（**右**活动栏的 Maven 项，阶段 6 第一半后
+    /// Maven 只归右栏）与 `lithe.maven.title`（右工具窗 Maven 视图的标题）—— 都是产品名，
+    /// 没有可翻译的内容。
+    const SAME_IN_BOTH_LOCALES: &[&str] = &["lithe.workbench.maven", "lithe.maven.title"];
 }

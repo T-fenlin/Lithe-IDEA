@@ -447,7 +447,7 @@ Command::new(&state).searchable(true).group(CommandGroup::new().label(..).items(
 | 3 | 编辑区（内部标签栏、`← →`、文件类型图标、脏标记、空状态、真实文件内容） | ⏳ |
 | 4 | 底部 Git 工具窗（标题栏 + 页签 + 三栏 + 提交表 + 引用树 + 筛选条），接真实 `git.*` | ⏳ |
 | 5 | 终端外壳（页签 + 输出流 + 发送命令行；宿主 spawn `cmd`/`powershell`，不做 VT 模拟） | ⏳ |
-| 6 | 右侧工具窗 + 浮层（命令面板 `Command` + `window.open_dialog`） | ⏳ |
+| 6 | 右侧工具窗（✅ **第一半完成**，见 §11）+ 浮层（命令面板 `Command` + `window.open_dialog`，⏳ 下一轮） | ⏳ |
 | 7 | 调试界面骨架 + 逐区域与 Windows 真机并排复核 | ⏳ |
 
 ### 5.2 本轮已经落地的工程决定
@@ -725,7 +725,7 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 | `editor`（4 项） | `EditorPane` 接上设置（字号 / 行高 / 缩进 / 换行 / 行号）——**阶段 B**，只差接线 |
 | `file-tree`（13 项，死代码页签） | explorer 接上排序 / 缩进 / 图标 / 过滤——**阶段 B**，子系统已有 |
 | `terminal`（1 项） | shell **发现**（现在是硬编码常量）+ 终端重建路径——**阶段 B** |
-| `project` / `run` | JDK/Maven 发现（`BottomPaneKind` 里现在是 `Pending("Maven")`）——**阶段 B** |
+| `project` / `run` | JDK/Maven 发现（Maven 工具窗现在**在右栏**，见 §11；但项目探测与 `maven.*` 数据源还没有）——**阶段 B** |
 | `keyboard` / `lsp` / `ai` / `ai-commit` / `logs` / `updates` | 子系统**完全不存在**（键位系统 / 语言服务 / AI / 日志 / 更新器）——**阶段 C** |
 | `git`（11 项） | 11 项里 9 项作用于**不存在的 Git 变更面板**；先做变更面板再回来做设置——**阶段 C** |
 | `advanced`（`coreFeatures.*`） | gpui 侧没有任何读取方——**阶段 C** |
@@ -1037,7 +1037,111 @@ S1_JAVA_UNAVAILABLE reason=… fallback=builtin
 `.artifacts/p2/NOTES-BATCH2.md`（日志原文 + 截图 + 踩坑）、
 `jdt-04-f12.png`（跨文件跳转）/ `jdt-07-virtual.png`（`jdt://` 只读标签）。
 
-## 11. 协作纪律（每轮都适用）
+## 11. 阶段 6 第一半：右侧工具窗（2026-09-25，本轮）
+
+阶段 6 的另一半（**命令面板浮层**：`Command` + `window.open_dialog`）**不在本轮**，留给下一轮。
+本轮只做一件事：把右侧工具窗（截图 x≈1250..1750）从一行占位文本做成**真实区域**，
+并把 Maven 从错位的底部工具窗搬回右栏。
+
+### 11.1 状态模型：可见性 + 当前视图，都归 `ShellWorkspace`
+
+| 字段 | 真源 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `right_visible: bool` | `features/window/stores/ui-state/panel-slice.ts:28` 的 `isRightSidebarVisible` | **`false`（隐藏）** | `features/layout/components/main-layout.tsx:101-105,328` 用它决定整块右 `ResizablePane` 的 `hidden` |
+| `right_view: RightToolWindowView` | `stores/ui-state/view-slice.ts:12,26` 的 `activeRightSidebarView` | `Maven` | 真机初值是 `"outline"`（`:26`），那是**左栏**视图、右栏三项里没有它；面板默认隐藏，所以这个初值在界面上不可见，只决定"第一次点别的项之前面板里是什么" |
+
+两个字段分开的理由与底部窗完全一致：真机 toggle 收起时**不改** `activeRightSidebarView`
+（`features/layout/actions/right-tool-window-actions.ts:26-31`），收起再打开还是原来那个视图。
+
+宽度 `RIGHT_TOOL_WINDOW_WIDTH = 400`（`features/settings/config/default-settings.ts:139`，
+取值区间 140–600 见 `features/settings/lib/settings-normalization.ts:114-115,532-537`）。
+本轮把上一轮的 `px(400.)` 改成 **`rems(400. / 16.)`**：400 不在 gpui 的固定档位上，
+按《编码指南》"档位外的值用 helper 底层的 rem"表达（基准 16px 时逐像素相等）。
+
+### 11.2 右活动栏三项的联动规则
+
+判据与迁移全部照真机（`plugin-activity-rail.tsx:24-26`、`notifications-trigger.tsx:18-21`、
+`right-tool-window-actions.ts:11-37`）：
+
+| 当前状态 | 点的项 | 结果 | 右栏高亮 |
+| --- | --- | --- | --- |
+| 可见且就是这一项 | 同一项 | **收起**（视图保持不变） | 三项全灭 |
+| 可见但是别的项 | 另一项 | 切到该视图，**保持可见** | 新项亮、旧项灭 |
+| 不可见 | 任意项 | 切到该视图并显示 | 该项亮 |
+
+`is_right_activity_active(index) = right_visible && right_view == 该项` —— **面板收起时三项都不亮**，
+与左栏顶部组的"照常亮"互不影响（两边是两套独立状态）。
+三条迁移写成纯函数 `right_tool_window::resolve_click`，单测照真源
+`right-tool-window-actions.test.ts` 的用例逐条覆盖。
+
+**收起有三条出路**：① 再点右栏同一项；② 面板头部的关闭按钮（真机两个工具窗都自带：
+`maven-pane.tsx:606-616`、`notifications-tool-window.tsx:350-360`）；③ 点另一项只换视图、不收起。
+
+### 11.3 右栏视图清单与各自完成度
+
+| 视图 | 本轮做到哪 | 复用的 gpui-kit 能力 | 还欠什么 |
+| --- | --- | --- | --- |
+| **Maven** | 头部（`package` 字形 + `maven.title`「Maven」+ 关闭按钮）+ 空态 `maven.notDetected`「未检测到 Maven 项目」 | `component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle}`（`docs/gpui-kit/0.6.6/zh-CN/component/empty.md`）、`component::button::Button`（`ghost` + `size_6`）、`component::Icon` | 工具栏 / 模块树 / 生命周期 / 依赖树 / Profiles / 构建输出 —— 要 Maven 项目探测与 `maven.*` 数据源（阶段 B）。空态是**如实**的：真机也只探测到 Maven 项目才渲染右栏那一项（`plugin-activity-rail.tsx:21-23,51`） |
+| **通知** | 头部（`bell` + `notifications.title`「通知」+ 关闭）+ 空态 `notifications.empty`「暂无通知。」 | 同上 | 搜索 / 过滤 / 分组 / 详情（`notifications-tool-window.tsx:340-475`）—— 没有通知数据源 |
+| **扩展** | 头部（`puzzle` + `extensions.title`「扩展」+ 关闭）+ 空态 `extensions.noneFound`「未找到扩展。」 | 同上 | ⚠️ **本轮有意偏离真源**：真机那个按钮调 `openExtensionsBuffer`，扩展是**编辑器缓冲区**、不是右栏视图（`plugin-activity-rail.tsx:13,46`）。按本轮任务口径统一走右栏；若将来收敛成缓冲区，删 `RightToolWindowView::Extensions` + `right_activity_items()[0]` 即可回到真机的两项 |
+
+`TabBar` **没有垂直方向**（`docs/gpui-kit/0.6.6/zh-CN/component/tabs.md`），所以视图切换不走页签组件 ——
+真机的右工具窗本来也没有页签条（`main-layout.tsx:332-340` 是同层叠放 + `hidden`），
+本轮沿用"无状态渲染函数按当前视图画内容"的口径（与 `activity_bar` / `status_bar` 一致）。
+
+### 11.4 底部工具窗不再有 Maven
+
+- `BottomPaneKind::Maven` **删掉**；`bottom_pane_for` 变成 3 运行 / 4 终端 / 5 诊断 / 6 提交记录；
+- **左活动栏的 Maven 项也删掉**：真机左栏底部组第一项确实是 maven（`item-order.ts:12-19`），
+  但它点下去切的也是**右栏**（`maven-tool-window-actions.ts:58` → `applyRightToolWindowIntent`）。
+  本侧已经有右栏入口，再留一个就是"两处都能开 Maven"，所以只留右栏一处（有意偏离真机的图标集合）；
+- 连带下标下移：底部组从 6 项变 5 项，`SETTINGS_ACTIVITY_IX` 由 8 改为 7；
+- 左栏**原** Maven 位置（截图 y=788）现在是**空槽** —— 底部组贴着栏底排，少一项就整体下移
+  28 逻辑（= 35 物理），点它没有任何反应（实测：无 `S1_RIGHT_PANEL`、`S1_TERMINAL_TAB` 不变、
+  底部窗墨迹 180 → 180、右栏附近与隐藏对照帧逐像素无差异）。
+
+### 11.5 诊断与 i18n
+
+- 新增可 grep 的诊断行 `S1_RIGHT_PANEL view=<extensions|notifications|maven> visible=<true|false>`：
+  构造期打一行（"默认隐藏"这件事本身有日志证据）、每次状态迁移打一行；
+- 新接线 **5 条键，全部是真源既有键**（所以 `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`
+  没动、两个 yml 无需重新生成）：`lithe.maven.title`、`lithe.maven.notDetected`、
+  `lithe.notifications.empty`、`lithe.extensions.noneFound`、
+  `lithe.commandPalette.close`（真源两个工具窗的关闭按钮都用它，文案是「关闭命令面板」
+  = `locale.ts:7938` —— 真源自身的键复用，本侧照抄、不改写成新键）；
+- 5 条都已补进 `crates/shared/src/i18n.rs` 的 `WIRED` 清单（`lithe.maven.title` 另进
+  `SAME_IN_BOTH_LOCALES`：中英都是 `Maven`）；界面里没有中英文字面量，颜色全走 `cx.theme()`，
+  间距/字号走 rem 档位 helper，圆角与 400 宽度按仓库既有约定处理并逐处写了理由。
+
+### 11.6 验证（本轮实际跑过）
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo build --bin Lithe` | 0 error；`lithe-gpui-workbench` 0 warning（顺手删掉了因占位文本移除而变成死字段的 `ShellWorkspace::root`） |
+| `cargo test -p lithe-gpui-workbench` | 5 passed（`resolve_click` 四条迁移 + 右栏下标映射 + 视图 id） |
+| `cargo test -p lithe-gpui-shared every_wired_key_resolves_in_both_locales` | passed（新增 5 条键在 zh-CN/en 下都命中） |
+| `.artifacts/right-panel/verify-right-panel.ps1` | **16/16 判定全过**，见下表 |
+
+端到端证据（**注入方式：PostMessage**；本机仍锁屏，`SetForegroundWindow` 被拒，
+强度比真实注入弱一档，理由见 `.artifacts/p2/NOTES.md` §1；截图坐标 = 客户区坐标 + (9,0)）：
+
+| 步骤 | 判定 | 截图 |
+| --- | --- | --- |
+| 1 默认隐藏 | `S1_RIGHT_PANEL view=maven visible=false`；右栏三项静止态（14.4/9.3/16%） | `rp-00-default.png` |
+| 2 点 Maven | `S1_RIGHT_PANEL view=maven visible=true`；只有 Maven 项亮（70.4%） | `rp-01-maven.png` |
+| 2b 宽度 | 头部下边框那条线长 **500 物理像素 = 400 逻辑像素**，与真机 `rightToolWindowWidth: 400` 逐像素相等 | `rp-01-maven.png` |
+| 3 再点收起 | `S1_RIGHT_PANEL view=maven visible=false`；三项回到静止态；与默认帧在右栏附近**逐像素无差异** | `rp-02-hidden-again.png` |
+| 4a 切通知 | `view=notifications visible=true`；高亮从 Maven 移到通知（70.4% / Maven 16%）；面板内容与 Maven 视图帧有 521px 宽的差异 | `rp-03-notifications.png` |
+| 4b 切扩展 | `view=extensions visible=true`（**可见时切视图不收起**）；高亮移到扩展（70.4% / 通知 9.3%） | `rp-04-extensions.png` |
+| 5 左栏原 Maven 位置 | 新增 `S1_RIGHT_PANEL` 行数 0；`S1_TERMINAL_TAB` 0 → 0；底部窗墨迹 180 → 180；右栏附近与隐藏对照帧无差异 | `rp-05a/05b` |
+| 6 面板关闭按钮 | `view=maven visible=false`；三项全灭 | `rp-06/07` |
+
+⚠️ 一处测量坑（已写进脚本注释）：右活动栏图标在**悬停**与**选中**下都是 `bg-accent` 底色，
+点击后指针仍停在按钮上，截出来的高亮分不清 hover 与 selected。脚本于是给
+`.artifacts/right-panel/inject.ps1` 加了 `-Mode move`（只投 `WM_MOUSEMOVE` 不按键），
+**每次截图前把指针挪到编辑区**，上表的高亮占比都是"指针不在栏上"的干净读数。
+
+## 12. 协作纪律（每轮都适用）
 
 - **cargo 只跑改动范围**（维护者多次强调，全量测试会拖很久）：`cargo build --bin Lithe`；
   测试用 `cargo test -p <只动过的那个 crate>`，能按测试名过滤就再加过滤

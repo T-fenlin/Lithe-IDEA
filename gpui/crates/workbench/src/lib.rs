@@ -9,10 +9,11 @@
 //!
 //! ## 文件分工
 //!
-//! - [`workspace`]：`ShellWorkspace` 组装（三栏 + 底部窗 + 状态栏）与 `Render`；
+//! - [`workspace`]：`ShellWorkspace` 组装（三栏 + 底部窗 + 右工具窗 + 状态栏）与 `Render`；
 //! - [`title_bar`]：标题栏（40px）+ 自绘窗口三键；
 //! - [`project_tabs`]：项目标签条；
 //! - [`activity_bar`]：左右活动栏（38px）；
+//! - [`right_tool_window`]：右侧工具窗（400px，可收起；Maven / 通知 / 扩展三个视图）；
 //! - [`status_bar`]：状态栏（24px）。
 //!
 //! ## 设置（阶段 8）
@@ -24,16 +25,20 @@
 //!    也不换底部窗）；
 //! 2. 状态栏按 `Settings::show_status_bar` 条件渲染，订阅 `SettingsStore` 后自动跟随。
 //!
-//! 活动栏的选中态是**两组独立的**：顶部组看 `ShellWorkspace` 的 `top_activity_view`（默认第 0 项
-//! 「项目」），底部组看 `bottom_visible` + `bottom_kind`，两组可以同时高亮（真机
+//! 活动栏的选中态是**三组独立的**（左栏两组 + 右栏一组）：左栏顶部组看 `ShellWorkspace` 的
+//! `top_activity_view`（默认第 0 项「项目」），左栏底部组看 `bottom_visible` + `bottom_kind`，
+//! 右栏看 `right_visible` + `right_view`；左栏两组可以同时高亮（真机
 //! `features/window/stores/workspace-ui-defaults.ts:5-7` 与
-//! `features/layout/components/sidebar/main-sidebar.tsx:643-652`）。底部工具窗**默认隐藏**
-//! （`workspace-ui-defaults.ts:5` 的 `isBottomPaneVisible: false`），终端会话在第一次可见时
-//! 才由 `TerminalPane::ensure_session` 懒创建。
+//! `features/layout/components/sidebar/main-sidebar.tsx:643-652`），右栏是第三套状态
+//! （`plugin-activity-rail.tsx:24-26`）。两个工具窗都**默认隐藏**：底部窗
+//! `workspace-ui-defaults.ts:5` 的 `isBottomPaneVisible: false`、右工具窗
+//! `stores/ui-state/panel-slice.ts:28` 的 `isRightSidebarVisible: false`；终端会话在第一次
+//! 可见时才由 `TerminalPane::ensure_session` 懒创建。
 //!
 //! 四个区域文件都是**无状态渲染函数**（`-> impl IntoElement`），状态由 [`workspace::ShellWorkspace`]
 //! 持有并通过参数传入；需要独立生命周期的内容（项目树 / 编辑区 / Git / 终端）各自是 Feature
-//! crate 里的 `Entity`。
+//! crate 里的 `Entity`。右工具窗的三个视图本轮都只有头部 + 空态，所以是纯渲染函数，
+//! 没有单独的 `Entity`。
 //!
 //! ## 区域度量：用 GPUI 的 rem-based helper，不写裸 `px(...)`
 //!
@@ -46,23 +51,27 @@
 //! `window.set_rem_size(cx.theme().font_size)`）。规格值来自 Windows 前端源码
 //! （`windows/tauri/src/styles/theme.css` 的 `--lithe-*` 令牌与各组件里的 Tailwind 值），
 //! 逐值搬过来才能与真机并排核对：标题栏 **40**（`h_10()`）、项目标签条 **32**（`h_8()`）、
-//! 活动栏 **38**（不在位位上，保留 `px(...)`）、状态栏 **24**（`h_6()`）、左栏 **320**（`w_80()`）、
-//! 右工具窗 **400**（不在位位上）、工作区间隔 **4**（`gap_1()`）、底部窗 **320**（`h_80()`）。
+//! 活动栏 **38**（不在档位上，保留 `px(...)`）、状态栏 **24**（`h_6()`）、左栏 **320**（`w_80()`）、
+//! 右工具窗 **400**（`rems(400. / 16.)`，档位外但可换算成 rem）、工作区间隔 **4**（`gap_1()`）、
+//! 底部窗 **320**（`h_80()`）。
 //! 每个值的出处写在使用点或 `crates/*/src/*.rs` 顶部的度量映射表里。
 //!
 //! **三类仍写 `px(...)` 的值**（每处都有注释说明，不是漏改）：
 //!
-//! 1. **不在 gpui 固定位位上的长度**：gpui 的位位表是编译期生成的固定列表
+//! 1. **不在 gpui 固定档位上的长度**：gpui 的档位表是编译期生成的固定列表
 //!    （`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），例如 38 / 42 / 56 / 144 / 200 /
-//!    240 / 400 …Tailwind v4 的任意整数位在 gpui 里没有对应 helper，不能自己发明一个；
+//!    240 / 400 …Tailwind v4 的任意整数档在 gpui 里没有对应 helper，不能自己发明一个；
+//!    这类值按《编码指南》写成 helper 底层的 `rems(P / 16.)`（400 = `rems(25.)`），
+//!    rem base 16px 时与 `px(P)` 逐像素相等，同时随主题字号缩放；
 //! 2. **圆角**：Lithe 的圆角阶梯是 `--radius: 8px` 派生的 `calc(--radius × k)`
 //!    （`theme.css:6-12`：`sm` = 4.8、`md` = 6.4、`lg` = 8、`xl` = 11.2），**不在** 4px 网格上。
 //!    也不能改成读主题 —— `ThemeConfig.radius` 是 `usize`
 //!    （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 4.8 / 6.4；而把主题半径设成 8
 //!    会让**所有** gpui-kit 组件的圆角从 6 变成 8，反而离 Lithe 的 `rounded-md`(6.4) 更远。
 //!    所以圆角一律走应用层具名常量（`TAB_RADIUS` / `CHIP_RADIUS` / `ISLAND_RADIUS` / …），值不变；
-//! 3. **运行时算术**（例如活动栏的 `38 + 4 = 42`、树行的 `10 + depth × 16`）：没有固定的位位
-//!    helper 可套；其中位位内的部分写成 helper 底层的 `rems(N / 4.)`，值随主题基准字号缩放。
+//! 3. **运行时算术**（例如活动栏的 `38 + 4 = 42`、树行的 `10 + depth × 16`）：没有固定的档位
+//!    helper 可套；其中档位内的部分写成 helper 底层的 `rems(N / 16.)`（不是 `/ 4.`：
+//!    rem base = 16px，所以 `rems(8. / 16.)` = 8px，值随主题基准字号缩放）。
 //!
 //! **字号**：Lithe 的 UI 基准是 13px（`--app-ui-font-size` / `--ui-text-chrome` = 13px，
 //! `theme.css:112,115`），gpui 的字号位位只有 `text_xs()`=12 与 `text_sm()`=14，13 不在位位上。
@@ -74,7 +83,9 @@
 //!
 //! ## 公开边界
 //!
-//! 只有 [`ShellWorkspace`]（工作台根视图）是公开 API；四个区域模块对外只暴露它们的渲染函数。
+//! 只有 [`ShellWorkspace`]（工作台根视图）是公开 API；区域模块对外只暴露它们的渲染函数
+//! （右工具窗另外暴露 [`right_tool_window::RightToolWindowView`]：它是"当前视图"的类型，
+//! 与真机 `activeRightSidebarView` 同物）。
 //!
 //! ## ⚠️ 区域渲染函数必须收 `&Window` / `&App`，不要收 `&mut`
 //!
@@ -91,6 +102,7 @@
 
 pub mod activity_bar;
 pub mod project_tabs;
+pub mod right_tool_window;
 pub mod status_bar;
 pub mod title_bar;
 pub mod workspace;
