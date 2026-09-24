@@ -44,11 +44,9 @@ use lithe_gpui_workbench::ShellWorkspace;
 /// （`gpui-component-0.6.6/src/theme/schema.rs:22-34`；加载入口 `theme/registry.rs:98,152`）。
 /// 更坑的是：**解析失败的文件会被整份静默忽略**（`registry.rs:252-258`），
 /// 所以格式写错的表现只是"主题没生效"，不会有任何报错。
-fn apply_lithe_theme(cx: &mut App) {
-    // `gpui/themes/lithe-dark.json` 里 `themes[].name` 的值。主题按 name 去重，
-    // 名字全局唯一，不能与内置的 `Default Light` / `Default Dark` 同名。
-    let theme_name: SharedString = "Lithe Dark".into();
-
+/// `theme_name` 是 `themes/*.json` 里 `themes[].name` 的值（主题按 name 去重、名字全局唯一，
+/// 不能与内置的 `Default Light` / `Default Dark` 同名）。
+fn apply_lithe_theme(cx: &mut App, theme_name: SharedString) {
     // 用 `CARGO_MANIFEST_DIR`（= `gpui/crates/app`）拼路径，不依赖进程的工作目录：
     // `watch_dir` 收的是真实路径，而"从哪个目录启动 exe"是会变的。
     let themes_dir = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../themes"));
@@ -63,8 +61,15 @@ fn apply_lithe_theme(cx: &mut App) {
             .cloned();
         match theme {
             Some(theme) => {
+                // ⚠️ **必须先切 `ThemeMode` 再 `apply_config`**：`apply_config` 只把配置写进
+                // `light_theme` / `dark_theme` 两个槽里**按 `config.mode` 对应的那一个**
+                // （`theme/schema.rs:1060-1065`），而实际渲染用的是**当前 `ThemeMode`** 对应的槽。
+                // 所以不切 mode 的话，加载一个 `"mode": "light"` 的主题会**完全没有效果** ——
+                // 这是"主题看起来没生效"的第二个原因（第一个是文件解析失败被整份静默忽略）。
+                let mode = theme.mode;
+                gpui_kit::component::Theme::change(mode, None, cx);
                 gpui_kit::component::Theme::global_mut(cx).apply_config(&theme);
-                println!("S1_THEME applied={theme_name}");
+                println!("S1_THEME applied={theme_name} dark={}", mode.is_dark());
             }
             None => eprintln!(
                 "S1_THEME missing name={theme_name} dir={}",
@@ -115,17 +120,56 @@ fn startup_window_bounds(cx: &App) -> WindowBounds {
     WindowBounds::Windowed(Bounds::new(origin, size))
 }
 
-/// 工作区根：来自命令行第一个参数（不硬编码任何机器路径）。
-fn workspace_root() -> Result<PathBuf, String> {
+/// 命令行参数。
+///
+/// ⚠️ `--theme` / `--locale` 是**设置界面做好之前的临时开关**：Lithe 的产品设置里本来就有
+/// 「配色主题」与「界面语言」两项（Windows 侧对应 `settings.theme_choice` 与语言设置）。
+/// 这两个开关的唯一目的是让"主题与语言能在一个进程里被复现地切换"，好把视觉证据跑出来；
+/// 设置界面（阶段 6）做好后应由设置接管，届时删掉它们。
+struct Options {
+    /// 工作区根，传给 `workspace.snapshot` 与 `git.*`。
+    root: PathBuf,
+    /// 要应用的主题名（`themes/*.json` 里 `themes[].name`）。
+    theme: SharedString,
+    /// 界面语言。gpui-kit 组件自带 `en` / `zh-CN` / `zh-HK`。
+    locale: String,
+}
+
+/// 解析 `<workspace-root> [--theme <名>] [--locale <tag>]`。
+fn parse_options() -> Result<Options, String> {
+    const USAGE: &str = "用法：shell-probe <workspace-root> [--theme <主题名>] [--locale <语言>]";
     let mut args = std::env::args().skip(1);
-    let first = args.next().ok_or("用法：shell-probe <workspace-root>")?;
-    Ok(PathBuf::from(first))
+    let mut root: Option<PathBuf> = None;
+    let mut theme: Option<SharedString> = None;
+    let mut locale: Option<String> = None;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--theme" => theme = Some(args.next().ok_or("--theme 缺少值")?.into()),
+            "--locale" => locale = Some(args.next().ok_or("--locale 缺少值")?),
+            "-h" | "--help" => return Err(USAGE.to_string()),
+            other if root.is_none() && !other.starts_with("--") => {
+                root = Some(PathBuf::from(other));
+            }
+            other => return Err(format!("未知参数 {other}\n\n{USAGE}")),
+        }
+    }
+
+    Ok(Options {
+        root: root.ok_or_else(|| USAGE.to_string())?,
+        theme: theme.unwrap_or_else(|| "Lithe Dark".into()),
+        locale: locale.unwrap_or_else(|| "zh-CN".to_string()),
+    })
 }
 
 /// bin 目标的入口点。
 fn main() {
-    let root = match workspace_root() {
-        Ok(root) => root,
+    let Options {
+        root,
+        theme,
+        locale,
+    } = match parse_options() {
+        Ok(options) => options,
         Err(message) => {
             eprintln!("{message}");
             std::process::exit(2);
@@ -149,15 +193,16 @@ fn main() {
             // 并用 `stringify!($target)` 当 namespace，见 `rust-i18n-4.2.2/src/lib.rs:214-219`），
             // 而 gpui-kit 的编码规范要求"应用只依赖 gpui-kit 一个 crate"。两者冲突以规范为准；
             // 我们自己的文案走 `lithe_gpui_shared::{tr, tr_args}`。
-            gpui_kit::component::set_locale("zh-CN");
+            gpui_kit::component::set_locale(&locale);
             gpui_kit::init(cx);
             // `gpui_kit::init` 默认给**浅色**主题，而 Lithe 产品默认是深色，所以显式切一次。
             Theme::change(ThemeMode::Dark, None, cx);
             // **滚动条常显**：gpui-kit 默认是 `ScrollbarMode::Scrolling`（滚动时才出现、
             // 停下就淡出，`gpui-base/src/scrollbar.rs:48-56`），而 IDE 的观感是常显细条 + 可拖。
             Theme::set_scrollbar_mode(gpui_kit::component::scroll::ScrollbarMode::Always, cx);
-            // 主题系统：加载 + 监听 `gpui/themes/`，把 `Lithe Dark` 应用上去。
-            apply_lithe_theme(cx);
+            // 主题系统：加载 + 监听 `gpui/themes/`，把 `--theme` 指定的主题应用上去
+            // （默认 `Lithe Dark`）；主题文件里的 `mode` 会一并决定明/暗。
+            apply_lithe_theme(cx, theme);
             let bounds = startup_window_bounds(cx);
 
             cx.spawn(async move |cx| {
