@@ -7,7 +7,7 @@
 //! 这段拼装被**逐字复制了两份**：
 //!
 //! - `explorer`（`workspace.snapshot`，`id` 固定 `shell-explorer-snapshot`）；
-//! - `git`（6 条 `git.*`，`id` 是 `shell-probe-<command>-<n>` 自增序号）。
+//! - `git`（6 条 `git.*`，`id` 是 `lithe-gpui-<command>-<n>` 自增序号）。
 //!
 //! 这正是《编码指南》「只有一项能力已有清晰名称和两个以上真实使用方时，才提取共享 crate」
 //! 描述的正面案例：有名字（信封 / 信封层）、有两个真实使用方、且两边**已经漂移**

@@ -1,4 +1,4 @@
-//! `shell-probe` bin 目标的 crate 根，也是 **App Shell**（应用外壳）。
+//! `Lithe` bin 目标的 crate 根，也是 **App Shell**（应用外壳）。
 //!
 //! ## 职责（《编码指南》「架构总览」）
 //!
@@ -25,7 +25,7 @@
 //! `windows/tauri/src/i18n/locale.ts` 生成）。**不要在这里再调一次 `i18n!`** —— 那会生成
 //! 第二份 backend，变成两个真相源。
 //!
-//! 运行：`cargo run --bin shell-probe -- <workspace-root>`
+//! 运行：`cargo run --bin Lithe -- <workspace-root>`
 
 use std::path::PathBuf;
 
@@ -137,7 +137,7 @@ struct Options {
 
 /// 解析 `<workspace-root> [--theme <名>] [--locale <tag>]`。
 fn parse_options() -> Result<Options, String> {
-    const USAGE: &str = "用法：shell-probe <workspace-root> [--theme <主题名>] [--locale <语言>]";
+    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题名>] [--locale <语言>]";
     let mut args = std::env::args().skip(1);
     let mut root: Option<PathBuf> = None;
     let mut theme: Option<SharedString> = None;

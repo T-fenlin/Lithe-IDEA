@@ -68,7 +68,7 @@
 //!    现在接键只会把 `CONFIGURATION` 这类代码名翻成中文，反而更难认。同理还有
 //!    `Pending("Maven")` / `Pending("运行")` / `Pending("诊断")`：它们是 `BottomPaneKind`
 //!    内部的**代码名**，拼进那句占位文案，不是独立的界面文案。
-//! 4. **不是界面文案**：CLI 用法提示（`app/src/main.rs` 的「用法：shell-probe <workspace-root>」）、
+//! 4. **不是界面文案**：CLI 用法提示（`app/src/main.rs` 的「用法：Lithe <workspace-root>」）、
 //!    单元测试夹具（`terminal/src/ansi.rs` 的 `"终"` 是 ansi-cleaner 的字节夹具）。
 //!
 //! `tr_args` 的**占位符名以 locale 值为准**，不是以调用点原来的 `format!` 位置为准：

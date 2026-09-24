@@ -13,11 +13,11 @@
 
 ```powershell
 cd gpui
-cargo build --bin shell-probe
+cargo build --bin Lithe
 # 参数 = 工作区根；--theme / --locale 是设置界面做好之前的临时开关（见 crates/app/src/main.rs）
-.\target\debug\shell-probe.exe D:\developmentProjects\rust\Lithe-IDEA
-.\target\debug\shell-probe.exe D:\developmentProjects\rust\Lithe-IDEA --theme "Lithe Light"
-.\target\debug\shell-probe.exe D:\developmentProjects\rust\Lithe-IDEA --locale en
+.\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA
+.\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --theme "Lithe Light"
+.\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --locale en
 ```
 
 - 窗口尺寸从主显示器的可见区域算（`startup_window_bounds`），**不写死机器路径**；
@@ -25,7 +25,7 @@ cargo build --bin shell-probe
 - 截图证据（只抓目标窗口，不抓整个桌面）：
 
   ```powershell
-  pwsh -File gpui\capture-screenshot.ps1 -OutputPath .artifacts\p1\shot.png -ProcessName shell-probe
+  pwsh -File gpui\capture-screenshot.ps1 -OutputPath .artifacts\p1\shot.png -ProcessName Lithe
   ```
 
 ## 目录结构
@@ -39,7 +39,7 @@ app → workbench → {editor, explorer, git, terminal} → shared
 
 | crate | 职责 |
 | --- | --- |
-| `crates/app/` | **App Shell**：只组合窗口与 Feature —— 命令行参数、窗口尺寸、启动顺序、主题加载。bin 名仍是 `shell-probe` |
+| `crates/app/` | **App Shell**：只组合窗口与 Feature —— 命令行参数、窗口尺寸、启动顺序、主题加载。bin 名仍是 `Lithe` |
 | `crates/workbench/` | 工作台外壳：标题栏 / 项目标签条 / 活动栏 / 状态栏 + 中央列组装（`ShellWorkspace`） |
 | `crates/explorer/` | 左侧栏「项目」：真实 `workspace.snapshot` 的多层树（`model.rs` + `explorer_view.rs`） |
 | `crates/editor/` | 编辑区：标签栏 + 正文 / 空状态（`buffer.rs` + `editor_view.rs`） |

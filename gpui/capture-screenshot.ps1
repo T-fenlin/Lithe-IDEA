@@ -13,12 +13,12 @@
     因此这里在创建任何窗口之前先调 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)`。
 
 .EXAMPLE
-    pwsh -File capture-screenshot.ps1 -OutputPath ..\.artifacts\p1\window.png -ProcessName shell-probe
-    pwsh -File capture-screenshot.ps1 -OutputPath ..\.artifacts\p1\screen.png -ProcessName shell-probe -WholeScreen
+    pwsh -File capture-screenshot.ps1 -OutputPath ..\.artifacts\p1\window.png -ProcessName Lithe
+    pwsh -File capture-screenshot.ps1 -OutputPath ..\.artifacts\p1\screen.png -ProcessName Lithe -WholeScreen
 #>
 param(
     [Parameter(Mandatory = $true)][string]$OutputPath,
-    [string]$ProcessName = "shell-probe",
+    [string]$ProcessName = "Lithe",
     [int]$TimeoutSeconds = 20,
     # 抓整个虚拟屏幕（验证窗口在屏幕上的大小/位置），而不是只抓窗口。
     [switch]$WholeScreen
