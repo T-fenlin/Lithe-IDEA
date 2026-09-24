@@ -116,3 +116,144 @@ $pairs | ForEach-Object {
 
 删除前建议把第 1 节的 sha256 与真源再比对一次（第 5 节命令），确认本目录就是最新美术，
 再处理第 2 节里按需保留的部分（尤其 `Square*.png` / `StoreLogo.png`，如果届时 gpui 决定要 MSIX 打包）。
+
+---
+
+# 7. 图标资源批量提取（`ui-icons/` 与 `icon-themes/`）
+
+第 1–6 节处理的是**应用图标 / logo**（8 个位图）。本节是同一件事的**第二批**：把 Windows 前端
+界面里真正用来画图标的 **SVG 资源**搬到 gpui 名下。做法与第 1 节一致——**只读复制，不改名、不转码、
+不重压缩、不改 `viewBox`**；真源 `windows/tauri/**` 未做任何修改。
+
+## 7.1 已复制文件
+
+| 来源（Windows 前端） | 目标（gpui） | 文件数 | 其中 SVG | 字节数 |
+| --- | --- | --- | --- | --- |
+| `windows/tauri/src/ui/icons/**` | `gpui/assets/ui-icons/**` | 158 | 157 | 150 309 |
+| `windows/tauri/src/extensions/bundled/icon-themes/lithe/**` | `gpui/assets/icon-themes/lithe/**` | 459 | 456 | 703 513 |
+| `windows/tauri/src/extensions/bundled/icon-themes/symbols/**` | `gpui/assets/icon-themes/symbols/**` | 325 | 322 | 4 511 394 |
+| `windows/tauri/src/extensions/bundled/icon-themes/pierre/**` | `gpui/assets/icon-themes/pierre/**` | 149 | 146 | 122 415 |
+| `windows/tauri/src/extensions/bundled/icon-themes/idea/**` | `gpui/assets/icon-themes/idea/**` | 104 | 103 | 144 097 |
+| **合计** | | **1 195** | **1 184** | **5 631 728** |
+
+四套图标包小计 **1 037 个文件 / 1 027 个 SVG / 5 481 419 字节**。
+
+两个来源目录的相对结构**原样保留**（只加了 `ui-icons/`、`icon-themes/<包名>/` 这一层前缀）：
+
+- `gpui/assets/ui-icons/` 下是 `idea-assets.generated.ts` + `idea/{expui/{actions,bookmarks,fileTypes,general,ide,image,javaee,nodes,run,toolwindows,vcs},fileTypes,vcs}/`。
+  `expui/general/` 一个目录就占 98 个文件；157 个 SVG 全部被 `idea-assets.generated.ts` 引用（无孤儿文件）。
+- `gpui/assets/icon-themes/lithe/` 含浅色变体 `icons/light/{files,folders}/`（各 186 / 42 个，与深色目录一一对应），
+  另有 `extension.json`、`generate-icons.ts`、`preview.html`。
+- `symbols/`、`pierre/` 各带 `LICENSE`；`pierre/` 另有 `UPSTREAM.md`；三套包都带各自的 `extension.json`
+  （文件类型/目录 → SVG 的映射表）。**这些非 SVG 文件一并复制**，因为 `extension.json` 就是图标查找的真源。
+
+`ui-icons/` 里的 `idea-assets.generated.ts`（19 373 B）是 Windows 侧的生成物（Vite `?url` 导入清单，
+95 个显示名 → 明/暗两个 SVG 路径，共 188 条 import）。gpui 侧没有任何 TS 工具链会编译 `gpui/assets/`
+（`gpui/` 下无 `package.json` / `tsconfig.json`），所以它在这里只是**只读的映射参考数据**，不是可执行代码。
+
+## 7.2 完整性证据
+
+全量 1 195 个文件都已用 `Get-FileHash -Algorithm SHA256` 与真源**逐文件比对**（源/目标各算一次哈希，
+再比字符串）：**1195/1195 全部命中，0 个缺失、0 个哈希不同、0 个多余文件**。
+
+抽样（每组至少 1 个，`ui-icons` 取 5 个）的 sha256 如下，可单独复核：
+
+| 来源 | 字节 | SHA256 |
+| --- | --- | --- |
+| `ui/icons/idea/expui/general/search.svg` | 364 | `81E8241E7B38407420C573DFA264CD6DF5DEAC0E8D59B935CE4C02B607BBE342` |
+| `ui/icons/idea/expui/general/search_dark.svg` | 364 | `AA3C118BE2522E16522422AAA2FC2453DFA1016156D5E6A0E1B3484FFAC15D14` |
+| `ui/icons/idea/expui/nodes/folder.svg` | 549 | `E78B061F701E39613936BC68751ED51E6CB2B1451DBA322CD98FFDFD1A105065` |
+| `ui/icons/idea/expui/actions/newFolder.svg` | 1 187 | `34B1350D9580A132B85454AA57D8E42C8F9602402C589DDF0240FB96C4706120` |
+| `ui/icons/idea-assets.generated.ts` | 19 373 | `1A3F0C92613843215AB7E95AF80E1679611E77BB5EBDA95F994FBC9BD2FC3A4C` |
+| `icon-themes/lithe/icons/files/typescript.svg` | 1 089 | `F41CBA0789D95ED06D0A0CB4F8A1275011EF9BFA67BBB533C0A6C031C9954287` |
+| `icon-themes/lithe/icons/light/files/typescript.svg` | 1 089 | `687B9F49F1CBB525E0565025B775ABE9BF90629E21D48A6812CBA2B0B58EFF54` |
+| `icon-themes/lithe/icons/folders/folder.svg` | 848 | `D3C5877A3DE5A11585E76AAA672AC5382B0C206C14414F90C806EBF8537A6A89` |
+| `icon-themes/symbols/icons/files/rust.svg` | 9 930 | `06F608E10EADB776373C33812C47EBEDFE43D3DB5CEEA91DC3080ECDCE74B867` |
+| `icon-themes/pierre/icons/astro-color.svg` | 601 | `CFEEA578858C1336DBF817675D08D1F4AE6B80A8380090501A1E078A35CEFBB7` |
+| `icon-themes/idea/icons/expui/fileTypes/c.svg` | 920 | `BA02BFB94E13C0D8F9688A53276A3C0DF09BBF95848596F1CA93AF5C2EFA3672` |
+
+抽样里 `lithe/icons/files/typescript.svg` 与 `lithe/icons/light/files/typescript.svg` **长度相同但哈希不同**
+（1 089 B / `F41C…` vs `687B…`），可以确认浅色变体确实是**另一份美术**而不是深色文件的复制品，
+第 7.1 节说的"含 `icons/light/`"不是空话。
+
+### 复核对全量的方式
+
+下面的脚本对**每一组**做源/目标全量 SHA256 比对，并同时报告「源里有而目标里没有」「目标里有而源里没有」
+「两边都有但哈希不同」三类差异（只读，不改任何文件）。它比第 5 节的逐对写法更适合上千个文件：
+
+⚠️ 必须先从**相对路径**拿到绝对路径再切前缀：`Get-ChildItem` 返回的 `FullName` 是绝对路径，
+用相对的 `$g.s.Length` 去 `Substring` 会切错位置，结果会误报成"1195 个全部缺失"。
+
+```powershell
+$groups = @(
+  @{n='ui-icons'; s='windows\tauri\src\ui\icons';                               d='gpui\assets\ui-icons'},
+  @{n='lithe';    s='windows\tauri\src\extensions\bundled\icon-themes\lithe';   d='gpui\assets\icon-themes\lithe'},
+  @{n='symbols';  s='windows\tauri\src\extensions\bundled\icon-themes\symbols'; d='gpui\assets\icon-themes\symbols'},
+  @{n='pierre';   s='windows\tauri\src\extensions\bundled\icon-themes\pierre';  d='gpui\assets\icon-themes\pierre'},
+  @{n='idea';     s='windows\tauri\src\extensions\bundled\icon-themes\idea';    d='gpui\assets\icon-themes\idea'}
+)
+$gt = 0; $gb = 0; $ge = 0
+foreach ($g in $groups) {
+  $s = (Resolve-Path $g.s).Path
+  $d = (Resolve-Path $g.d).Path
+  $sf = Get-ChildItem $s -Recurse -File
+  $df = Get-ChildItem $d -Recurse -File
+  $bad = 0
+  foreach ($f in $sf) {
+    $t = Join-Path $d $f.FullName.Substring($s.Length)
+    if (-not (Test-Path -LiteralPath $t)) { $bad++; continue }
+    if ((Get-FileHash $f.FullName -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath $t -Algorithm SHA256).Hash) { $bad++ }
+  }
+  $extra = ($df | Where-Object {
+    -not (Test-Path -LiteralPath (Join-Path $s $_.FullName.Substring($d.Length)))
+  }).Count
+  "{0,-9} src={1,-5} dst={2,-5} bad={3} extra={4}" -f $g.n, $sf.Count, $df.Count, $bad, $extra
+  $gt += $sf.Count; $gb += $bad; $ge += $extra
+}
+"TOTAL src=$gt bad=$gb extra=$ge"
+```
+
+预期输出（本次实测即为此值）：
+
+```
+ui-icons  src=158   dst=158   bad=0 extra=0
+lithe     src=459   dst=459   bad=0 extra=0
+symbols   src=325   dst=325   bad=0 extra=0
+pierre    src=149   dst=149   bad=0 extra=0
+idea      src=104   dst=104   bad=0 extra=0
+TOTAL src=1195 bad=0 extra=0
+```
+
+## 7.3 跳过了什么、为什么
+
+真源 `icon-themes/` 下有 **6 个**目录，本次只搬了 **4 个**（任务指定的那 4 个）：
+
+| 跳过对象 | 数量 / 体积 | 理由 |
+| --- | --- | --- |
+| `icon-themes/material/**` | 2 个文件 / 527 307 B（`extension.json` 526 237 B + `LICENSE` 1 070 B） | **它一个 `.svg` 文件都没有**：全部图标美术是内联在 `extension.json` 的 `iconDefinitions` 里的 SVG 字符串（`"folder": "<svg …><path fill=\"#fbc02d\" …/></svg>"`）。任务指定的是 lithe / symbols / pierre / idea 四套，material 不在其中；且它不是"SVG 文件树"，照搬进来的话要和 JSON 解析一起设计，属独立议题。⚠️ 注意 material **是** Windows 已注册的内置图标主题（`bundled-icon-theme-assets.ts` 的 glob 里就有 `material`），将来 gpui 若要支持它，得从这份 `extension.json` 里抽字符串，而不是复制文件。 |
+| `icon-themes/minimal/**` | 3 个 SVG / 947 B（`file.svg`、`folder.svg`、`folder-open.svg`） | **全仓无任何引用**：`bundled-icon-theme-assets.ts` 的 glob 是 `{idea,material,pierre,symbols}`，`bundled-extension-manifests.ts` 也只 import 这 4 个 `extension.json`；对 `minimal` 的检索只命中无关上下文（如 `features/git/types/ai-commit.ts` 的文案枚举）。属未接线的死资源。 |
+| `windows/tauri/src/extensions/icon-themes/**` | 15 个 TS/TSX（约 30 KB） | 不是资源，是**实现代码**（`icon-theme-registry.ts`、`themed-file-icon.tsx`、`use-java-file-icon-kind.ts` 等）。本次只搬资源，且硬约束禁止改/搬 TS 源码逻辑。 |
+| `lucide-react` 字形 | 不可枚举（npm 包） | Windows 前端的**大部分**界面图标其实不是仓库里的文件，而是 `windows/tauri/src/ui/icons.tsx:108-118` 的 `Nucleo` 代理在运行时从 `lucide-react`（`package.json` 里 `^0.468.0`）取的字形。`windows/node_modules/` 在工作区里**不存在**（`Test-Path` 为 false），所以这批字形**没有可复制的文件对象**；gpui 侧已经自带同一套 Lucide（`gpui-kit-assets-0.6.6/assets/icons/`，1830 个字形），不需要也不应该从 Windows 侧取。详见 `gpui/research/icon-asset-inventory.md` 第 2 节。 |
+| `windows/tauri/src-tauri/icons/**`、`public/**` | 见第 2 节 | 应用图标 / logo，已在第 1–6 节处理过，本轮**没有重做**，`gpui/assets/icons/**` 与 `gpui/assets/images/logo.png` 未被本次改动触碰。 |
+
+已搬入的 4 套里的非 SVG 文件（各包 `extension.json`、`lithe/generate-icons.ts`、`lithe/preview.html`、
+`symbols/LICENSE`、`pierre/LICENSE`、`pierre/UPSTREAM.md`）**没有**被当成"非资源"跳过——它们是图标查找与
+许可归属的一部分，随目录一起复制。
+
+## 7.4 归属提醒（删除 `windows/` 前必读）
+
+**`gpui/assets/ui-icons/**` 与 `gpui/assets/icon-themes/**` 现在归 gpui 前端所有。**
+将来删掉 `windows/` / `macos/` 两个旧前端时，**不能连带丢失**本目录：
+
+- `gpui/assets/ui-icons/**` 是 IntelliJ `expui` 那套 UI 图标的**唯一一份**副本（157 个 SVG）；
+  `idea-assets.generated.ts` 是它唯一的映射清单。
+- `gpui/assets/icon-themes/{lithe,symbols,pierre,idea}/**` 是文件类型/目录图标的**唯一一份**副本
+  （1 027 个 SVG + 各包的 `extension.json`）。其中 `symbols/icons/files/cursor.svg`（1 576 205 B）与
+  `symbols/icons/folders/folder-cursor.svg`（1 576 419 B）单文件就 1.5 MB，是内嵌位图的 SVG，
+  丢了没有第二处可取。
+- 真源里**没有**对应文件的那些字形（Lucide 字形与内联 React 组件）不在此列，
+  见 `gpui/research/icon-asset-inventory.md` 第 4 节。
+
+删除前建议跑一次第 7.2 节的全量比对脚本，确认本目录就是最新一份，再处理第 7.3 节按需保留的部分
+（尤其 `material/extension.json`，如果届时 gpui 决定支持 Material 图标主题）。
