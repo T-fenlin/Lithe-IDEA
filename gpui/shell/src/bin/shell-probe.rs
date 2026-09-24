@@ -1,12 +1,18 @@
-//! `shell-probe` 二进制目标的根文件，只负责把模块树挂到 crate 根上。
+//! `shell-probe` bin 目标的 crate 根。
 //!
-//! 原先约 700 行的单文件外壳已按"界面区域"拆成 `shell_probe/` 下的子模块，
-//! 好让多个改动能并行落在不同文件里。真正的入口（`main`、`startup_window_bounds`、
-//! 应用启动顺序）在 [`shell_probe`] 的 `mod.rs`；这里把它再导出到 crate 根，
-//! 因为 bin 目标的入口点必须解析自 crate 根。
-//!
-//! 运行：`cargo run --bin shell-probe -- <workspace-root>`
+//! Rust 2018+ 规则：`shell-probe.rs` 的子模块放在同名的 `shell_probe/` 目录里。
+//! bin 目标的入口点必须能从 crate 根解析，所以这里再导出 `main`。
+//! `shell_probe::main` 因此必须是 `pub fn`，否则报 `E0603` + `E0601`。
 
 mod shell_probe;
 
 pub use shell_probe::main;
+
+// 国际化：`i18n!` 必须出现在本 crate 的**根**（bin 目标的根就是这个文件）——
+// `rust_i18n::t!` 在哪个 crate 里展开，就找那个 crate 的 loader。
+//
+// 目录 `locales/` 相对 `CARGO_MANIFEST_DIR`（= `gpui/shell`），文件是
+// `lithe.zh-CN.yml` / `lithe.en.yml`（`_version: 2`），由
+// `gpui/tools/extract-locale.mjs` 从 `windows/tauri/src/i18n/locale.ts` 生成。
+// 详见 `gpui/shell/locales/README.md` 与官方文档 `https://gpui-kit.com/zh-CN/docs/i18n.md`。
+rust_i18n::i18n!("locales", fallback = "en");

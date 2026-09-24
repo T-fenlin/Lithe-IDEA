@@ -1,1007 +1,544 @@
-//! 底部工具窗：macOS 的 `GitLogView`（Log / Worktrees / Console 三页签）。
+//! 底部工具窗「提交记录」（Windows 的 `GitLogToolWindow`）。
 //!
-//! 规格真源：`.artifacts/ui-map/05-git.md`（下称「规格」），实现真源
-//! `macos/Sources/Lithe/Views/Git/`。本文件此前照 **Windows 端**
-//! （`windows/tauri/src/features/git/components/log/git-log-tool-window.tsx`）做的是
-//! `提交记录` 工具窗；本轮改为 macOS 口径，行号证据写在每处实现旁。
+//! 规格真源：`windows/tauri/src/features/git/components/log/*`（Windows 前端 = 视觉与布局唯一真源），
+//! 度量速查表 `gpui/UI-MAP-WINDOWS.md` §1.5 与 §2④，调研原文
+//! `gpui/research/windows/03-git-and-bottom.md`。挂钩位置见该文 §1.1：默认
+//! `terminalWidthMode === "editor"`（`features/terminal/stores/terminal.store.ts:29`）时底部窗
+//! **嵌在中央编辑器列内**，是本面板的下一个 flex 兄弟（`features/layout/components/main-layout.tsx:318-322`），
+//! 横向**不**跨整个工作台，且**没有自己的标签条**（页签由活动栏 / 命令面板切换单值
+//! `bottomPaneActiveTab`）。本文件只负责画面板内容：外框圆角 / 边框 / 可拖高由父级（中央列的竖向分栏）负责。
 //!
-//! ## 与 macOS 的对应关系
+//! ## 元素 → 出处
 //!
-//! | 元素 | macOS 出处 | 实现 |
+//! | 元素 | 出处（`windows/tauri/src/`） | 度量（px） |
 //! |---|---|---|
-//! | 标题栏：icon 14 + `Git` 13.5 semibold + 页签 + 菜单 + 隐藏，高 32，左右内边距 12 / 7 | `GitLogView.swift:380-461` | [`BottomPanel::render_header`] |
-//! | 页签：高 27、圆角 5、选中 `subtleSelection` 底 + 1px `inputFocusBorder`（**不是**彩色下划线） | `GitLogView.swift:463-519` | [`BottomPanel::tab_button`] |
-//! | Log 页签标题 `日志：<引用>`（没选中引用时是 `日志：<当前分支>`，两者都没有才 `日志：所有引用`） | `GitLogView.swift:394-397`、zh-Hans `"Log: %@"` | [`BottomPanel::render_header`] |
-//! | Worktrees 页签的 `· <仓库根>` 补充信息 | `GitLogView.swift:398-402 / :479-485` | [`BottomPanel::tab_button`] |
-//! | 三栏：引用 220 / min 180，提交 弹性 / min 340，提交文件 350 / min 250 | `GitLogView.swift:2832-2904` | [`BottomPanel::render_log`] |
-//! | 栏间分隔条可见 5 | `Views/Workbench/SplitHandleView.swift:13` | [`split_handle_appearance`] |
-//! | 详情栏上下再分：文件栏 min 90、提交详情默认 156 / min 110 | `GitLogView.swift:1096-1108` | [`BottomPanel::render_detail_pane`] |
-//! | 提交行 22、作者列 104 左对齐、日期列 110 右对齐等宽 | `GitGraphGeometry.swift:8`、`GitGraphView.swift:559-577` | [`commit_row`] |
-//! | 引用徽标：高 16、圆角 4、水平间距 5、从右往左堆叠 | `GitGraphView.swift:578-580 / :612-626` | [`commit_row`]、[`decoration_badge`] |
-//! | 引用树行 / 分组行 28、缩进 `depth*16`、left 8 / right 8、图标槽 16 | `GitLogView.swift:74 / :2674-2732` | [`reference_row`] |
-//! | 提交文件树行 28 | `GitCommitFileTreeView.swift:120-121` | [`commit_file_row`] |
-//! | 空态 / 提示文案 | `macos/Resources/zh-Hans.lproj/Localizable.strings` | 全文 |
+//! | 标题栏容器 / 行 | `features/git/components/log/git-log-title-bar.tsx:28-29` | 高 32、pad 8、gap 8、13px、bg surface、下边框 1 |
+//! | 标题分支图标 | 同上 `:30` | 14，`text-subtle-foreground` |
+//! | 标题文案 `提交记录` | 同上 `:31`；文案 `i18n/locale.ts:5910` | 13 medium |
+//! | 「引用名」胶囊 | 同上 `:32-39` | 高 24、max-w 240、圆角 6.4、px 8、border-strong/60、bg background |
+//! | 图标按钮 ×3（刷新 / 设置 / 最小化） | 同上 `:40-71`、`ui/button.tsx:9,27` | 24×24，图标 14 |
+//! | 右侧 `只读` | 同上 `:61`；文案 `locale.ts:7309` | `text-subtle-foreground` |
+//! | 页签行 | `features/git/components/log/git-log-tool-window.tsx:582-587` | 高 24（py 4 + 行高 16）、gap 16、px 12、**12px** |
+//! | 刷新失败横幅 | 同上 `:589-600` | 高 28、pad 8、gap 8、bg destructive/10、下边框、13px |
+//! | 无仓库 / 加载中 / 失败占位 | 同上 `:602-612` | 居中；文案 `locale.ts:7198-7200` |
+//! | 三栏比例 `19 / 57 / 24` | `features/git/stores/git-log-preferences.store.ts:43-47` | — |
+//! | 三栏最小宽 `140 / 320 / 220` | `git-log-tool-window.tsx:622,648,684` | — |
+//! | 引用栏左侧竖排工具栏 | `git-reference-tree.tsx:357,371`；按钮 `:146` | 宽 36、按钮 32×32、图标 16、圆角 4.8 |
+//! | 引用栏列表头 / 滚动区 | `git-reference-tree.tsx:840,847` | 高 32、px 8 / p 6 |
+//! | HEAD 行 | `git-reference-tree.tsx:853-864` | 高 28、mb 4、圆角 6.4、px 8、gap 8、分支名 max-w 96 |
+//! | 分区头 / 引用行 | `git-reference-tree.tsx:876,599` | 高 24、gap 6、圆角 6.4 px 6 / 圆角 4.8 |
+//! | 引用行缩进 | `git-reference-tree.tsx:594,603` | `10 + depth × 14` |
+//! | disclosure / 占位 / 引用图标 | `git-reference-tree.tsx:611,618,630` | 14 |
+//! | 「当前」徽章 | `git-reference-tree.tsx:652` | 10、圆角 6.4、px 4 |
+//! | ahead / behind 计数 | `features/git/components/git-tracking-counts.tsx:3,36-53` | 10、gap 4、上限 99 → `99+` |
+//! | 提交表工具行（筛选条） | `git-commit-table.tsx:200` | 高 32、gap 8、px 8 |
+//! | 筛选输入框 | `git-commit-table.tsx:201-227` | 高 24、min-w 144、max-w 288、gap 6、圆角 6.4、px 8、图标 14 |
+//! | 字段下拉 | `git-commit-table.tsx:229-238` | 高 24、圆角 6.4、px 6 |
+//! | 装饰开关 | `git-commit-table.tsx:239-249` | 24×24，图标 14 |
+//! | 计数 `可见/总数` | `git-commit-table.tsx:250-252` | `tabular-nums` |
+//! | 表头行 `提交 / 作者 / 日期` | `git-commit-table.tsx:255-259` | 高 24、px 8、作者 112、日期 128 右对齐 |
+//! | 提交行 | `git-commit-table.tsx:301-326` | 高 **30**、下边框 1、px 4、作者 112 px 8、日期 128 右对齐 11 等宽 |
+//! | 提交行选中 / 悬停 | `git-commit-table.tsx:302-303` | 选中 `primary/22`（悬停 `/28`）、否则 `accent/70` |
+//! | 提交行内容最小宽 | `git-commit-table.tsx:276` | 520（`min-w-130`） |
+//! | 「加载更多提交」行 | `git-commit-table.tsx:428-443` | 高 36、min-w 520、按钮高 24 |
+//! | 泳道图常量 | `features/git/components/log/git-graph-row.tsx:4-6,27,69-78` | 行高 30、`LANE_GAP 13`、`GRAPH_PADDING 8`、svg 宽 `max(30, laneCount×13+16)`、线宽 1.6、节点 r 4.3 描边 2 |
+//! | 标签徽章 | `git-graph-row.tsx:87-88` | max-w 112、10px、px 6 py 2、圆角 6.4 |
+//! | 标签四档配色 | `git-graph-row.tsx:16-22` | head sky / remote indigo / tag amber / branch emerald |
+//! | Inspector 文件区 | `git-commit-inspector.tsx:104-130` | 62%、min 90；表头 32、px 8、gap 8 |
+//! | Inspector 空/加载/失败态 | `git-commit-inspector.tsx:131-146` | 文案 `locale.ts:7298-7301` |
+//! | Inspector 详情区 | `git-commit-inspector.tsx:164-185` | 38%、min 80；p 12、项间距 8；11 等宽、完整哈希 10 |
+//! | 提交文件树 | `features/git/components/log/git-commit-file-tree.tsx:181-184,127` | p 6、行高 `max(24, 13×1.35+6)=24`、缩进 10+14·depth、状态字 10 等宽 |
+//! | 控制台 | `git-execution-console.tsx:68-111`、`git-console-entry.tsx:50` | 12 等宽、左栏 32、按钮 24×24、输出区 p 12 |
 //!
-//! ## 提交行为什么是自绘行（本项目实测的坑）
+//! 文案一律逐字取自 `i18n/locale.ts`（中文资源段），行号写在每处字符串旁。
 //!
-//! 22 行高的提交行走的是**自绘行 + 手铺 `v_flex()`**，不是 `DataTable`：
+//! ## 数据：Core 命令（`rust/lithe-core/src/`）
 //!
-//! 1. `DataTable` 的表体是 `uniform_list`，**行高取第 0 行内容的测量高度**；表级
-//!    `with_size(Size::Size(px(22.)))` 压不住它 —— 带 `border_1` 的徽标自然高度 30，
-//!    实测得到「行高 18 / 内容 30」，相邻行互相覆盖（`.artifacts/p1/git-table-22.png`）。
-//! 2. macOS 的提交表**没有表头**，列宽是「从右边缘往回量」的偏移
-//!    （作者 `maxX-222` 宽 104、日期 `maxX-118` 宽 110，`GitGraphView.swift:565-577`）；
-//!    `DataTable` 自带表头、且只接受固定像素列宽，无法一比一。
+//! | 用途 | 命令 | payload | 响应 |
+//! |---|---|---|---|
+//! | 工作区探测（一级目录，用来兜底找仓库） | `workspace.snapshot` | `{ root }`（`project/files.rs:39-45`，另两个字段有 `#[serde(default)]`） | `{ root: WorkspaceNode, files[] }`（`protocol/contracts.rs:72-75`）；节点 `path` 是**工作区相对路径**（`project/files.rs:576`） |
+//! | 仓库根 / 当前分支 | `git.status` | `{ root }`（`git/mod.rs:94-96`） | `{ repositoryRoot, branch, ahead, behind, changes[] }`（`protocol/contracts.rs:532-538`）；非仓库是 `ok:true` + `repositoryRoot: null`（`git/mod.rs:6535-6544`） |
+//! | 引用树 | `git.references` | `{ root }`（`git/history.rs:49-51`） | `{ references[], recentReferences[], userName, userEmail }`（`contracts.rs:629-635`；条目 `:583-597`） |
+//! | 提交分页 | `git.historyPage` | `{ root, reference, order, cursor, limit }`（`git/history.rs:56-71`） | `{ commits[], nextCursor, hasMore }`（`contracts.rs:640-649`；条目 `:602-611`） |
+//! | 释放分页游标 | `git.historyCursorClose` | `{ root, cursor }`（`git/history.rs:96-99`） | `{ closed }`（`contracts.rs:654-657`） |
+//! | 提交文件 | `git.commitFiles` | `{ root, commit }`（`git/mod.rs:650-653`） | `{ files[] { status, path } }`（`contracts.rs:703-714`） |
 //!
-//! 自绘行的两条硬约束（改这个文件时不要破坏）：
-//! - 行高显式 `min_h(px(22.))`（[`COMMIT_ROW_HEIGHT`]）；
-//! - 单元格内容的**自然高度必须 ≤ 22**：徽标 `h(px(16.))` 且不带 `border_1`、文字
-//!   `text_size(px(11.))` / `px(12.5)`、不加纵向 `py`。否则内容会溢出到相邻行。
+//! 三个硬约束（都在真源里核对过）：
 //!
-//! ### 提交信息「字顶被切」的结论（本轮定案）
+//! 1. **`git.status.repositoryRoot` 可能是相对工作区根的路径**（`relative_or_absolute`，`git/mod.rs:6574`）：
+//!    直接当 `root` 用会按**进程 CWD** 解析，必须先与工作区根拼成绝对路径（[`resolve_repository_root`]）。
+//! 2. **「非仓库」没有专用错误码**：`git.status` 返回 `ok:true` + `repositoryRoot: null`，其余 `git.*`
+//!    返回 `ok:false` + `process_failed`。所以**先探 `git.status`**，不是仓库就不再白跑后面三条。
+//! 3. **`nextCursor` 背后是一个活着的 `git log` 子进程**（`git/history.rs:242-257` 把 session 存回注册表；
+//!    `:25-29` 空闲 120 s 才回收、每根最多 8 条）。本面板实现了「加载更多提交」，所以**持有**游标，
+//!    并在三处归还：换引用 / 刷新时（交给后台任务先关）、面板 `Drop` 时。
 //!
-//! **选方向 ②：去掉提交信息单元格的 `overflow_hidden`（只留 `text_ellipsis()`），
-//! 并把该单元格的高度下限钉成 `min_h(px(22.))`**。`line_height(22)` 保留。
+//! 调用形态照同目录既有实现：拼 `{id, operationId, timeoutMilliseconds, command, payload}` →
+//! `lithe_core::execute_json` → 判 `ok` 取 `data`（[`execute_core`]），整段放 `cx.background_spawn`。
 //!
-//! 为什么：
+//! ## 与 Windows 源码的刻意偏差（都写在这里，不藏在代码里）
 //!
-//! - gpui 的裁剪发生在**元素盒**上（`overflow_hidden` → 绘制时套 content mask），所以
-//!   只要留着它，字形只要有一个像素画到盒外就会被切掉 —— 而字形画在哪里由
-//!   `padding_top = (line_height - ascent - descent) / 2` 决定
-//!   （`gpui-pre-0.3.6/src/text_system.rs:518-528`、`text_system/line.rs:547-548`）。
-//!   去掉裁剪后，**任何**「盒高 / 行盒 / 字体度量」的出入都不会再切字顶。
-//! - `min_h(px(22.))` 补掉「盒比行盒矮」这条路径：盒高与行盒同为 22 时，基线落在
-//!   `padding_top + ascent`，字形整个在盒内；这也是「行盒 ≧ 字形」之外唯一还需要钉住的事。
-//! - 方向 ①（把 `line_height` 给到 26–28）**不采用**：`min_h(22)` 的行会跟着内容长高到
-//!   26–28，直接破坏 macOS 的 22pt 行高与 22 的行间距（`GitGraphGeometry.swift:8`）；
-//!   若同时把行高写死成 `h(22)`，26 的行盒又会被 22 的盒裁掉，等于把问题搬回来。
-//! - 水平方向不受影响：`text_ellipsis()` 是在**排版阶段**把文本截断成 `…` 的
-//!   （`elements/text.rs:697-735` 把截断后的串交给 shaping），不依赖 `overflow_hidden`。
-//!
-//! ## 数据：Core 命令（本轮接线）
-//!
-//! `new` 时在后台跑一遍下面三条读命令；失败就**保留占位数据 + 显示一行提示**
-//! （不空白、不 panic）。所有字段名都在源码里核对过，不猜：
-//!
-//! | 界面 | 命令 | 请求 payload | 响应（`data` 下） | 出处 |
-//! |---|---|---|---|---|
-//! | 引用树 | `git.references` | `{ root }` | `references[] { fullName, shortName, kind, isCurrent, upstreamShortName, ahead, behind }`、`recentReferences`、`userName`、`userEmail` | 请求 `rust/lithe-core/src/git/history.rs:49-51`；响应 `rust/lithe-core/src/protocol/contracts.rs:583-597 / :629-635`；种类判定 `git/mod.rs:5896-5902` |
-//! | 提交列表 | `git.historyPage` | `{ root, order, limit }`（`order: "date"`、`limit: 100`） | `commits[] { hash, shortHash, parentHashes, authorName, authorEmail, date, subject, decorations }`、`nextCursor`、`hasMore` | 请求 `git/history.rs:56-71`；响应 `contracts.rs:602-611 / :640-649`；macOS 传 `order: "date"` + 页大小 100（`RustGitOperations.swift:594-601`、`GitFeatureModel.swift:298`）；`%D` 装饰与 `%ad` 日期格式 `git/history.rs:301-302` |
-//! | 头部分支 / 仓库根 | `git.status` | `{ root }` | `repositoryRoot`（非仓库为 `null`）、`branch`、`ahead`、`behind`、`changes[]` | 请求 `git/mod.rs:94-96`；响应 `contracts.rs:518-538`；非仓库返回 `repositoryRoot: null` 见 `git/mod.rs:6535-6544` |
-//! | 提交文件 | `git.commitFiles` | `{ root, commit }` | `files[] { status, path }` | 请求 `git/mod.rs:650-653`；响应 `contracts.rs:703-714`；实现 `git/mod.rs:2013-2038` |
-//! | 关分页游标 | `git.historyCursorClose` | `{ root, cursor }` | `closed` | 请求 `git/history.rs:96-99`；契约要求放弃未读完的流时关掉游标（`shared/contracts/rust-core-api.md:894-895`） |
-//!
-//! 调用方式照 `shell_probe/files.rs:64-100`：拼 `{id, operationId, timeoutMilliseconds,
-//! command, payload}` → `lithe_core::execute_json` → 判 `ok` → 取 `data`；整段放进
-//! `cx.background_spawn(...)`，回前台写状态再 `cx.notify()`。
-//!
-//! 工作区根：本轮**不改 `BottomPanel::new` 的签名**（只允许改本文件，接线点是
-//! `workspace.rs` 里的 `BottomPanel::new(window, cx)`，不归本步），用 [`workspace_root`]
-//! 的 `std::env::current_dir()` 兜底。
-//!
-//! 真实可用的交互：页签切换（Console 选中后还能用 `xmark` 回到 Log）、引用行选中、
-//! **提交行单击选中（加载该提交的文件 + 填写详情）**、提交栏刷新按钮、装饰开关
-//! （macOS `showCommitDecorations`，`GitLogView.swift:1008-1012`）与搜索框
-//! （引用栏的放大镜会清空它，但它本身只接收输入、不参与过滤）。
-//!
-//! ## 缺口（必须自研或后续步骤，本步未做）
-//!
-//! 1. **提交图泳道**（节点 / 箭头 / 虚线 lane）：gpui-kit 没有对应能力（规格 §5.6.1），
-//!    需自定义 `Element` + `canvas`，移植 `GitGraphGeometry.swift:5-45` 与
-//!    `GitGraphView.swift:871-917`。
-//! 2. **并排 diff / 行内 diff**（规格 §5.6.2）：kit 里没有任何 diff 组件，是最大的一块。
-//! 3. **提交行多选**（Cmd / Shift 区间 + 多选集合）：`TableState` / `ListState` 都只有单选
-//!    （规格 §5.6.3）。连带未做：**悬停**背景（`toolHeader.opacity(0.55)`，`:555-558`；
-//!    选中背景已做，见 [`commit_row`]）、120 ms 防抖（`:1243-1253`，本轮是立即加载）、
-//!    ↑/↓ 键盘移动（`:1070-1079`）、行右键菜单（`:25-42`）、`Load more commits` 行
-//!    （高 32，`:1045-1063`，本轮只取第一页并在 `hasMore` 时关游标）。
-//! 4. **`primaryActionBar`**（高 38：Fetch / Fetch Options… / Compare │ Checkout / Cherry-pick
-//!    + 右侧比较描述，`:526-594`）与提交栏的 `gitLogFilterBar`（Branch / User / Date / Path，
-//!    `:1408-1546`）都没做。
-//! 5. **栏宽的动态百分比上限**（引用栏 `avail*0.35`、详情栏 `avail*0.5`，`:2856-2880`）：
-//!    需要按容器宽在 layout 回调里夹取，当前只声明了最小宽（规格 §5.1 也标为「需自行组合」）。
-//! 6. **引用行右键菜单**（`:2733-2818`，完整项与顺序见规格 §3.4）与删除引用后的可恢复横幅
-//!    （`:598-636`）；**选中引用后按该引用重查历史**（macOS `historyReference`，
-//!    `GitFeatureModel.swift:1740-1746`）也没接，本轮只把引用树点亮。
-//! 7. **提交文件树**：根标题行（仓库路径末两段 + `N files`，`:1671-1676`）、目录折叠
-//!    （`:1171-1178`）、以及自绘 `NSView` 的全部命中逻辑（`GitCommitFileTreeView.swift:448-679`）；
-//!    本轮已按真实 `status` + `path` 建出**多层目录树**（[`build_commit_files`]），
-//!    状态字也按 macOS 的 `30 + max(depth-1,0)*16` 排（`GitCommitFileTreeView.swift:362`），
-//!    但文件名的基线仍是「状态字 + 12」固定间距，没搬 macOS 由 `RowPresentation`
-//!    按层级算出的 `textX`（`:364-368`）。
-//! 8. **控制台**：`git.consolePresentation` 的折叠片段 / 匹配定位 / 清空 / 复制输出
-//!    （`GitConsoleView.swift`）。
-//! 9. **Worktrees 页签**：左列表默认 360、快速信息栏 282（`GitWorktreesView.swift:15-25 / :120-137`）。
-//! 10. **滚动条**：提交栏与提交文件栏手铺 `v_flex()`（`uniform_list` 在这个容器里视口高为 0，
-//!     见 [`BottomPanel::render_commit_list`]），没接 `ScrollableMask`，能滚但看不到滚动条
-//!     （引用树由 `Tree` 自带）。
-//! 11. **Git 专属字形**：默认图标集（`gpui-kit-assets-0.6.6/default-icons.txt` 的 101 个）没有
-//!     分支 / cloud / tag 字形，替代关系写在 [`reference_icon`] 与 [`decoration_badge`] 旁。
+//! 1. **三栏用 flex 百分比而不是 `h_resizable`**：Windows 的 `19 / 57 / 24` 是**比例**，
+//!    而 `ResizablePanel::size` 只吃 `Pixels`，且首帧之后会被 `ResizableState` 钉死
+//!    （`gpui-base-0.6.6/src/resizable/panel.rs:350-353`、`mod.rs:200-218`），
+//!    想在首帧按容器宽换算成像素必须先在 `render` 外测量再 `reset_panel` 重排，成本与风险都高。
+//!    这里用 `.w(relative(0.19))` / `.w(relative(0.57))` / `.w(relative(0.24))` + `min_w` 精确复现比例，
+//!    **代价是栏间不可拖拽**（Windows 的 `ResizableHandle` 没做）。
+//! 2. **泳道图是简化版**：`git-graph-row.tsx` 用 SVG 画贝塞尔曲线 + 虚线；gpui 侧没有可用的 SVG 路径元素，
+//!    这里用「每泳道一根 1.6px 竖线 + 节点圆圈」表达，**跨泳道的父边画成目标泳道的竖直段**（没有弧度），
+//!    缺失父提交用 `opacity(0.7)` 代替 `strokeDasharray="3 2"`。线性历史（单泳道）与真机一致。
+//! 3. **颜色映射到主题 token**：Windows 的泳道 6 色与标签 4 档（sky/indigo/amber/emerald）是裸色值，
+//!    本仓库要求「颜色一律 `cx.theme()`」：泳道 6 色→`success / blue_light / magenta_light / warning /
+//!    danger / cyan_light`；标签 4 档→head `cyan_light`、remote `blue_light`、tag `yellow_light`、
+//!    branch `green_light`。
+//! 4. **页签选中态加了前景色区分**：Windows 只用 `aria-selected`、**没有任何选中视觉**
+//!    （`git-log-tool-window.tsx:582-587`），照搬会让「当前在哪个页签」不可见。这里保持
+//!    「无底色 / 无下划线」，只把选中项文字用 `foreground`、未选中用 `muted_foreground`。
+//! 5. **图标按钮自绘**，不用 `Button`：`Button::ghost().with_size(px(24.))` 的图标会被算成
+//!    `24 × 0.75 = 18px`（`gpui-component-0.6.6/src/button/button.rs:580-583`），而规格是 14。
+//!    自绘 div 拿到 24×24 命中区 + 14px 图标 + `accent` 悬停；代价是**没有悬停 tooltip**
+//!    （改用 `aria_label`，与 Windows 的 `aria-label` 同源）。
+//! 6. **控制台只有外壳**：Windows 的输出来自 Git 执行事件通道 + `git.consolePresentation`
+//!    （`git-execution-console.tsx:31-36`），不在本步拍板的 6 条命令里 → 左栏按钮全部 disabled、
+//!    正文只画空态文案（`locale.ts:4560`）。
+//! 7. **`git.historyPage` 的提交没有正文**：Core 的格式串是 `%s`（只有主题行，`git/history.rs:302`），
+//!    所以 Inspector 里 Windows 的 `commit.description` 那一段没有数据源，整段不画。
+//! 8. **引用栏工具栏只保留纯 UI 的三个动作**：Windows 的 10 个动作里其余都要
+//!    `git.write` / 远程管理（`git-reference-tree.tsx:209-311`），不在 6 条命令里。
+//! 9. 未做：多选（Windows 的 `Set<string>` + Ctrl/Shift 区间）、行右键菜单（14 项写操作）、
+//!    双击打开提交差异（要 `git.diff`）、引用树右键动作菜单、提交文件目录折叠、
+//!    `git.consolePresentation` 的折叠与查找、栏宽持久化（`git-log-preferences`）。
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use gpui_kit::base::{
-    ResizeHandleContext, ResizeHandleRenderer, TreeEntry, TreeItem, TreeState, h_resizable,
-    resizable_panel, v_resizable,
-};
-use gpui_kit::component::button::Button;
-use gpui_kit::component::dock::{BasePanel, Panel, PanelEvent};
-use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::list::ListItem;
-use gpui_kit::component::tree::Tree;
-use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
+use gpui_kit::assets::IconName;
+use gpui_kit::base::{h_flex, v_flex};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, AppContext as _, Axis, Context, Div, Entity, EventEmitter, FocusHandle, Focusable,
-    FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, WeakEntity, Window, div, px,
-    uniform_list,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, FontWeight, Hsla,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, px,
+    relative,
 };
 
-/// 工具窗标题栏高度。出处：`GitLogView.swift:456`。
-const HEADER_HEIGHT: f32 = 32.;
-/// 标题栏左 / 右内边距。出处：`GitLogView.swift:454-455`。
-const HEADER_PADDING_LEADING: f32 = 12.;
-const HEADER_PADDING_TRAILING: f32 = 7.;
-/// 标题栏内间距（`HStack(spacing: 4)`）。出处：`GitLogView.swift:381`。
-/// 引用栏工具行也是 `spacing: 4`（`:640`），所以两处共用。
-const HEADER_GAP: f32 = 4.;
-/// 页签高度 / 圆角 / 左右内边距 / 内容间距。出处：`GitLogView.swift:477 / :490-492 / :514`。
-const TAB_HEIGHT: f32 = 27.;
-const TAB_RADIUS: f32 = 5.;
-const TAB_PADDING: f32 = 9.;
-const TAB_GAP: f32 = 5.;
-/// 页签在选中态（且是 Console）时的右内边距 —— 关闭按钮占位后收紧到 4。
-/// 出处：`GitLogView.swift:491`。
-const TAB_PADDING_WITH_CLOSE: f32 = 4.;
-/// 页签关闭按钮宽 20 × 高 27。出处：`GitLogView.swift:502-505`。
-const TAB_CLOSE_WIDTH: f32 = 20.;
-/// 工具行统一高度（`GitVisual.toolbarHeight`）。出处：`GitLogView.swift:75`。
-const TOOLBAR_HEIGHT: f32 = 38.;
-/// 栏间分隔条厚度（`SplitHandleView.thickness`）。出处：`Views/Workbench/SplitHandleView.swift:13`。
-const SPLIT_HANDLE_THICKNESS: f32 = 5.;
-/// 三栏默认宽。出处：`GitLogView.swift:2886（引用 220）/ :2895（详情 350）`。
-const REFERENCE_PANE_DEFAULT_WIDTH: f32 = 220.;
-const DETAIL_PANE_DEFAULT_WIDTH: f32 = 350.;
-/// 三栏最小宽（`GitLogThreePaneMetrics`）。出处：`GitLogView.swift:2833-2835`。
-const REFERENCE_PANE_MIN_WIDTH: f32 = 180.;
-const COMMIT_PANE_MIN_WIDTH: f32 = 340.;
-const DETAIL_PANE_MIN_WIDTH: f32 = 250.;
-/// 详情栏上下再分：文件栏最小高 90、提交详情默认高 156（= 容器高 − 5 − 文件栏）、最小高 110。
-/// 出处：`GitLogView.swift:1096-1108`。
-const COMMIT_FILES_MIN_HEIGHT: f32 = 90.;
-const COMMIT_DETAIL_DEFAULT_HEIGHT: f32 = 156.;
-const COMMIT_DETAIL_MIN_HEIGHT: f32 = 110.;
-/// 提交行高（`GitGraphGeometry.rowHeight`，对齐 IntelliJ 原生 22pt）。出处：`GitGraphGeometry.swift:8`。
-const COMMIT_ROW_HEIGHT: f32 = 22.;
-/// 提交行行尾内边距。出处：`GitGraphView.swift:737`。
-const COMMIT_ROW_TRAILING_PADDING: f32 = 8.;
-/// 提交行作者列宽 104（左对齐）与日期列宽 110（右对齐）。出处：`GitGraphView.swift:565-577`。
-const COMMIT_AUTHOR_WIDTH: f32 = 104.;
-const COMMIT_DATE_WIDTH: f32 = 110.;
-/// 提交表字号：正文 12.5 / 元数据 11.5 / 等宽元数据 11.5。出处：`GitGraphView.swift:657-660`。
-const COMMIT_BODY_FONT_SIZE: f32 = 12.5;
-const COMMIT_META_FONT_SIZE: f32 = 11.5;
-/// 引用徽标：高 16、圆角 4、水平间距 5、上限宽 130、文字 11、文字左内边距 7。
-/// 出处：`GitGraphView.swift:612-626`，文字字号 `:764`。
-const DECORATION_BADGE_HEIGHT: f32 = 16.;
-const DECORATION_BADGE_RADIUS: f32 = 4.;
-const DECORATION_BADGE_GAP: f32 = 5.;
-const DECORATION_BADGE_MAX_WIDTH: f32 = 130.;
-const DECORATION_BADGE_FONT_SIZE: f32 = 11.;
-const DECORATION_BADGE_LEADING_PADDING: f32 = 7.;
-/// 引用树 / 引用分组行高（`GitVisual.treeRowHeight`）。出处：`GitLogView.swift:74`，
-/// 行上的 `minHeight: 28` 在 `:2693 / :2722`。
-const REFERENCE_ROW_HEIGHT: f32 = 28.;
-/// 引用行缩进步长与左右内边距。出处：`GitLogView.swift:2691-2692 / :2720-2721`。
-const REFERENCE_INDENT_STEP: f32 = 16.;
-const REFERENCE_ROW_PADDING: f32 = 8.;
-/// 引用行内间距（`HStack(spacing: 7)`）与图标槽宽（`frame(width: 16)`）。
-/// 出处：`GitLogView.swift:2678-2681 / :2705-2708`。
-const REFERENCE_GAP: f32 = 7.;
-const REFERENCE_ICON_SLOT_WIDTH: f32 = 16.;
-/// 引用栏工具行左右内边距 6。出处：`GitLogView.swift:659`。
-const REFERENCE_TOOLBAR_PADDING: f32 = 6.;
-/// 引用树容器的左右 8 / 上下 9 内边距。出处：`GitLogView.swift:691-692`。
-const REFERENCE_TREE_PADDING_X: f32 = 8.;
-const REFERENCE_TREE_PADDING_Y: f32 = 9.;
-/// 提交栏工具行：左右内边距 10、行内间距 8、右侧按钮组内间距 2。
-/// 出处：`GitLogView.swift:1024 / :965 / :997`。
-const COMMIT_TOOLBAR_PADDING: f32 = 10.;
-const COMMIT_TOOLBAR_GAP: f32 = 8.;
-const COMMIT_TOOLBAR_BUTTON_GAP: f32 = 2.;
-/// 提交栏搜索框 236 × 29、圆角 5、内边距 8。出处：`GitLogView.swift:966-991`。
-const LOG_SEARCH_WIDTH: f32 = 236.;
-const LOG_SEARCH_HEIGHT: f32 = 29.;
-const LOG_SEARCH_RADIUS: f32 = 5.;
-const LOG_SEARCH_PADDING: f32 = 8.;
-/// 提交文件栏工具行内间距 5。出处：`GitLogView.swift:1120`。
-const COMMIT_FILES_TOOLBAR_GAP: f32 = 5.;
-/// 提交文件树行高 28。出处：`GitCommitFileTreeView.swift:120-121`。
-const COMMIT_FILE_ROW_HEIGHT: f32 = 28.;
-/// 提交文件行的状态字左起 30（macOS `x = 30`）。出处：`GitCommitFileTreeView.swift:362`。
-const COMMIT_FILE_STATUS_X: f32 = 30.;
-/// 提交详情内边距 11、行间距 9。出处：`GitLogView.swift:1190 / :1210`。
-const COMMIT_DETAIL_PADDING: f32 = 11.;
-const COMMIT_DETAIL_GAP: f32 = 9.;
-/// `git.historyPage` 的页大小（macOS `GitFeatureModel.gitHistoryPageSize`）。出处：`GitFeatureModel.swift:298`。
+// ---------------------------------------------------------------------------
+// 度量（出处见模块文档的表格，行号一一对应）
+// ---------------------------------------------------------------------------
+
+/// 标题栏行高。出处：`git-log-title-bar.tsx:29`（`h-8`）。
+const TITLE_BAR_HEIGHT: f32 = 32.;
+const TITLE_BAR_PADDING_X: f32 = 8.;
+const TITLE_BAR_GAP: f32 = 8.;
+/// 标题栏图标 / 文案字号。出处：`:30`（`size-3.5`）、`:31`（`ui-text-sm` = 13）。
+const TITLE_ICON_SIZE: f32 = 14.;
+const TITLE_FONT_SIZE: f32 = 13.;
+/// 「引用名」胶囊。出处：`:32-39`（`h-6 max-w-60 rounded px-2 border-border-strong/60`）。
+const REFERENCE_PILL_HEIGHT: f32 = 24.;
+const REFERENCE_PILL_MAX_WIDTH: f32 = 240.;
+const REFERENCE_PILL_RADIUS: f32 = 6.4;
+const REFERENCE_PILL_PADDING_X: f32 = 8.;
+/// 图标按钮 24×24 / 图标 14。出处：`git-log-title-bar.tsx:40-71`、`ui/button.tsx:9,27`。
+const ICON_BUTTON_SIZE: f32 = 24.;
+const ICON_BUTTON_RADIUS: f32 = 6.4;
+const ICON_BUTTON_ICON_SIZE: f32 = 14.;
+
+/// 页签行：行高 16 + 上下 4 = 24，p x 12、gap 16、字号 12。出处：`git-log-tool-window.tsx:582`。
+const TAB_ROW_HEIGHT: f32 = 24.;
+const TAB_ROW_PADDING_X: f32 = 12.;
+const TAB_ROW_GAP: f32 = 16.;
+const TAB_ROW_FONT_SIZE: f32 = 12.;
+
+/// 刷新失败横幅。出处：`git-log-tool-window.tsx:590`（`h-7 px-2`、13px）。
+const BANNER_HEIGHT: f32 = 28.;
+const BANNER_PADDING_X: f32 = 8.;
+const BANNER_GAP: f32 = 8.;
+
+/// 筛选条工具行。出处：`git-commit-table.tsx:200`（`h-8 gap-2 px-2`）。
+const FILTER_ROW_HEIGHT: f32 = 32.;
+const FILTER_ROW_PADDING_X: f32 = 8.;
+const FILTER_ROW_GAP: f32 = 8.;
+/// 筛选输入框。出处：`:201`（`h-6 min-w-36 max-w-72 gap-1.5 px-2`）。
+const FILTER_INPUT_MIN_WIDTH: f32 = 144.;
+const FILTER_INPUT_MAX_WIDTH: f32 = 288.;
+/// 字段下拉。出处：`:232`（`h-6 rounded px-1.5`）。
+const FIELD_SELECT_PADDING_X: f32 = 6.;
+/// 提交表字号。出处：`git-commit-table.tsx:199`（`ui-text-sm` = 13）。
+const COMMIT_FONT_SIZE: f32 = 13.;
+/// 表头行。出处：`:255`（`h-6 px-2`）。
+const COMMIT_HEADER_HEIGHT: f32 = 24.;
+/// 提交行高。出处：`:43`（`const ROW_HEIGHT = 30`）。
+const COMMIT_ROW_HEIGHT: f32 = 30.;
+/// 提交行左右内边距。出处：`:302`（`px-1`）。
+const COMMIT_ROW_PADDING_X: f32 = 4.;
+/// 作者列 112 / 内边距 8。出处：`:321`（`w-28 px-2`）。
+const AUTHOR_COLUMN_WIDTH: f32 = 112.;
+const AUTHOR_COLUMN_PADDING_X: f32 = 8.;
+/// 日期列 128、字号 11、右对齐、等宽。出处：`:324`。
+const DATE_COLUMN_WIDTH: f32 = 128.;
+const DATE_FONT_SIZE: f32 = 11.;
+/// 提交行内容最小宽。出处：`:276`（`min-w-130`）。
+const COMMIT_CONTENT_MIN_WIDTH: f32 = 520.;
+/// 「加载更多提交」行。出处：`:431`（`h-9 min-w-130`）、`:434`（按钮 `size="xs"` = 24）。
+const LOAD_MORE_HEIGHT: f32 = 36.;
+const LOAD_MORE_BUTTON_HEIGHT: f32 = 24.;
+
+/// 泳道图常量。出处：`git-graph-row.tsx:4-6,27`。
+const GRAPH_LANE_GAP: f32 = 13.;
+const GRAPH_PADDING: f32 = 8.;
+const GRAPH_MIN_WIDTH: f32 = 30.;
+const GRAPH_LINE_WIDTH: f32 = 1.6;
+const GRAPH_NODE_RADIUS: f32 = 4.3;
+const GRAPH_NODE_STROKE: f32 = 2.;
+/// 标签徽章。出处：`git-graph-row.tsx:87-88`。
+const LABEL_MAX_WIDTH: f32 = 112.;
+const LABEL_FONT_SIZE: f32 = 10.;
+const LABEL_RADIUS: f32 = 6.4;
+const LABEL_PADDING_X: f32 = 6.;
+const LABEL_PADDING_Y: f32 = 2.;
+const LABEL_GAP: f32 = 6.;
+
+/// 三栏比例与最小宽。出处：`git-log-preferences.store.ts:43-47`、`git-log-tool-window.tsx:622,648,684`。
+const REFERENCE_PANE_FRACTION: f32 = 0.19;
+const COMMIT_PANE_FRACTION: f32 = 0.57;
+const INSPECTOR_PANE_FRACTION: f32 = 0.24;
+const REFERENCE_PANE_MIN_WIDTH: f32 = 140.;
+const COMMIT_PANE_MIN_WIDTH: f32 = 320.;
+const INSPECTOR_PANE_MIN_WIDTH: f32 = 220.;
+
+/// 引用栏左侧竖排工具栏。出处：`git-reference-tree.tsx:357,371,146`。
+const REFERENCE_TOOLBAR_WIDTH: f32 = 36.;
+const REFERENCE_TOOLBAR_PADDING_Y: f32 = 4.;
+const REFERENCE_TOOLBAR_BUTTON_SIZE: f32 = 32.;
+const REFERENCE_TOOLBAR_BUTTON_RADIUS: f32 = 4.8;
+const REFERENCE_TOOLBAR_ICON_SIZE: f32 = 16.;
+const REFERENCE_TOOLBAR_GAP: f32 = 4.;
+const REFERENCE_TOOLBAR_SEPARATOR_WIDTH: f32 = 20.;
+const REFERENCE_TOOLBAR_SEPARATOR_HEIGHT: f32 = 1.;
+const REFERENCE_TOOLBAR_SEPARATOR_MARGIN_Y: f32 = 4.;
+/// 引用栏列表头 / 滚动区。出处：`git-reference-tree.tsx:840,847`。
+const REFERENCE_HEADER_HEIGHT: f32 = 32.;
+const REFERENCE_LIST_PADDING: f32 = 6.;
+/// HEAD 行。出处：`git-reference-tree.tsx:853`。
+const REFERENCE_HEAD_ROW_HEIGHT: f32 = 28.;
+const REFERENCE_HEAD_ROW_RADIUS: f32 = 6.4;
+const REFERENCE_HEAD_ROW_PADDING_X: f32 = 8.;
+const REFERENCE_HEAD_ROW_GAP: f32 = 8.;
+const REFERENCE_HEAD_ROW_MARGIN_BOTTOM: f32 = 4.;
+/// 分区头 / 引用行 / 缩进。出处：`git-reference-tree.tsx:876,599,594`。
+const REFERENCE_SECTION_ROW_HEIGHT: f32 = 24.;
+const REFERENCE_SECTION_RADIUS: f32 = 6.4;
+const REFERENCE_SECTION_PADDING_X: f32 = 6.;
+const REFERENCE_ROW_HEIGHT: f32 = 24.;
+const REFERENCE_ROW_RADIUS: f32 = 4.8;
+const REFERENCE_ROW_GAP: f32 = 6.;
+const REFERENCE_INDENT_BASE: f32 = 10.;
+const REFERENCE_INDENT_STEP: f32 = 14.;
+const REFERENCE_DISCLOSURE_SIZE: f32 = 14.;
+const REFERENCE_ICON_SIZE: f32 = 14.;
+const REFERENCE_SECTION_MARGIN_BOTTOM: f32 = 4.;
+/// 「当前」徽章 / ahead-behind。出处：`git-reference-tree.tsx:652`、`git-tracking-counts.tsx:36-53`。
+const REFERENCE_BADGE_FONT_SIZE: f32 = 10.;
+const REFERENCE_BADGE_PADDING_X: f32 = 4.;
+const TRACKING_COUNT_FONT_SIZE: f32 = 10.;
+const TRACKING_COUNT_GAP: f32 = 4.;
+const TRACKING_COUNT_MAX: usize = 99;
+/// 空分区占位。出处：`git-reference-tree.tsx:919`（`h-6 pl-8`）。
+const REFERENCE_EMPTY_HEIGHT: f32 = 24.;
+const REFERENCE_EMPTY_PADDING_LEFT: f32 = 32.;
+
+/// Inspector。出处：`git-commit-inspector.tsx:96-185`、`git-log-preferences.store.ts:49-52`。
+const INSPECTOR_FILES_FRACTION: f32 = 0.62;
+const INSPECTOR_DETAILS_FRACTION: f32 = 0.38;
+const INSPECTOR_FILES_MIN_HEIGHT: f32 = 90.;
+const INSPECTOR_DETAILS_MIN_HEIGHT: f32 = 80.;
+const INSPECTOR_HEADER_HEIGHT: f32 = 32.;
+const INSPECTOR_HEADER_PADDING_X: f32 = 8.;
+const INSPECTOR_HEADER_GAP: f32 = 8.;
+const INSPECTOR_DETAIL_PADDING: f32 = 12.;
+const INSPECTOR_DETAIL_GAP: f32 = 8.;
+const INSPECTOR_MONO_FONT_SIZE: f32 = 11.;
+const INSPECTOR_HASH_FONT_SIZE: f32 = 10.;
+/// 提交文件树。出处：`git-commit-file-tree.tsx:181-184,127`、`file-explorer/lib/file-tree-row.ts:1-13`。
+const COMMIT_FILE_TREE_PADDING: f32 = 6.;
+const COMMIT_FILE_ROW_HEIGHT: f32 = 24.;
+const COMMIT_FILE_INDENT_BASE: f32 = 10.;
+const COMMIT_FILE_INDENT_STEP: f32 = 14.;
+const COMMIT_FILE_STATUS_FONT_SIZE: f32 = 10.;
+
+/// 控制台。出处：`git-execution-console.tsx:68-103`。
+const CONSOLE_FONT_SIZE: f32 = 12.;
+const CONSOLE_TOOLBAR_WIDTH: f32 = 32.;
+const CONSOLE_TOOLBAR_PADDING_Y: f32 = 4.;
+const CONSOLE_TOOLBAR_GAP: f32 = 4.;
+const CONSOLE_OUTPUT_PADDING: f32 = 12.;
+
+/// `git.historyPage` 的页大小。Core 默认 300（`git/history.rs:20`），上一轮实现与 macOS
+/// 口径都用 100（`GitFeatureModel.swift:298`）；这里取 100：提交行是自绘的（见模块文档），
+/// 一页 100 行在首帧的布局量可控。
 const HISTORY_PAGE_LIMIT: usize = 100;
-/// 调用 Core 时递增的 `operationId` 序列（每次调用取新值，见 [`execute_core`]）。
+/// 不是仓库时，最多向上层目录探测多少个一级子目录（[`discover_repository_root`]）。
+const REPOSITORY_PROBE_LIMIT: usize = 6;
+
+/// 每次 Core 调用递增的 `operationId` 序列。
 static NEXT_OPERATION_ID: AtomicUsize = AtomicUsize::new(1);
-/// Git 读命令的超时（毫秒）。口径照 `shell_probe/files.rs:71` 的 `workspace.snapshot`（120 s），
-/// 这里取 60 s：`git.historyPage` 只读第一页 100 条，正常远快于此。
+/// Git 读命令超时（毫秒）。照 `shell_probe/files.rs` 的 `workspace.snapshot` 口径取 60 s。
 const GIT_TIMEOUT_MILLIS: u32 = 60_000;
-/// Core 读取失败 / 非仓库时那行提示的高度与字号（**自定，macOS 规格里没有这一行**）。
-const NOTICE_HEIGHT: f32 = 20.;
-const NOTICE_FONT_SIZE: f32 = 11.5;
 
-/// 三栏 / 两栏之间的分隔条外观。
-///
-/// macOS 的分隔条是**可见 5pt 的实心条**（`Views/Workbench/SplitHandleView.swift:13`），
-/// 而 gpui-kit 内建的分隔条只有 1px 线（`gpui-base/src/resizable/resize_handle.rs:12`
-/// 的 `HANDLE_SIZE = px(1.)`）。用 `ResizablePanelGroup::with_handle_appearance`
-/// （`gpui-base/src/resizable/panel.rs:59`）只换掉**画出来的部分**：
-/// 命中区域、光标与拖拽仍由 kit 自己的 handle 负责。
-fn split_handle_appearance() -> ResizeHandleRenderer {
-    Rc::new(
-        |handle: &ResizeHandleContext, _window: &mut Window, cx: &mut App| {
-            let color = if handle.is_active() {
-                cx.theme().primary
-            } else {
-                cx.theme().border
-            };
+// ---------------------------------------------------------------------------
+// 数据模型
+// ---------------------------------------------------------------------------
 
-            Some(match handle.axis() {
-                // 横向 resizable = 竖着的分隔条。
-                Axis::Horizontal => div()
-                    .flex_none()
-                    .w(px(SPLIT_HANDLE_THICKNESS))
-                    .h_full()
-                    .bg(color)
-                    .into_any_element(),
-                Axis::Vertical => div()
-                    .flex_none()
-                    .w_full()
-                    .h(px(SPLIT_HANDLE_THICKNESS))
-                    .bg(color)
-                    .into_any_element(),
-            })
-        },
-    )
-}
-
-/// 底部工具窗的页签。对应 macOS `GitToolTab`（`GitLogView.swift:81-85`）。
+/// 面板内的两个页签。Windows 是局部 `useState<"log" | "console">("log")`
+/// （`git-log-tool-window.tsx:80`）。
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum BottomTab {
-    /// `日志：<引用>`：引用栏 + 提交栏 + 提交文件栏（macOS `logTabContent`，`:297-335`）。
+enum Panel {
     Log,
-    /// `工作树`（macOS `GitWorktreesView`，`:290-291`）。
-    Worktrees,
-    /// `控制台`（macOS `GitConsoleView`，`:292-293`）。
     Console,
 }
 
-/// 提交表的一行。
-///
-/// 字段对应 Core 的 `GitCommitResponse`（`rust/lithe-core/src/protocol/contracts.rs:602-611`，
-/// UI 侧模型 `macos/Sources/LitheGitModule/Models/GitModels.swift:263-275`）：
-/// `hash` / `shortHash` / `subject` / `authorName` / `authorEmail` / `date` / `decorations`。
-/// 数据来自 `git.historyPage`，失败时退回 [`placeholder_commits`]。
+/// 仓库数据的加载状态。对应 `git-log-tool-window.tsx:602-612` 的分支：
+/// 无仓库 / 加载中 / 失败且无数据 / （有数据时的）刷新失败横幅。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LoadState {
+    /// 首屏还没回来（`git-log-tool-window.tsx:607-610`）。
+    Loading,
+    /// 有数据。
+    Ready,
+    /// **有**数据但最近一次刷新失败 → 画横幅（`:589-600`）。
+    Stale,
+    /// 失败且没有数据 → 居中错误 + 重试。
+    Failed,
+    /// `git.status` 说这不是 Git 仓库（`:602-606`）。
+    NoRepository,
+}
+
+/// 筛选字段。对应 `git-log-preferences.store.ts:8` 的 `"text" | "author" | "branch"`。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FilterScope {
+    Text,
+    Author,
+    Branch,
+}
+
+impl FilterScope {
+    /// 文案逐字取自 `i18n/locale.ts:7279-7281`。
+    fn label(self) -> SharedString {
+        SharedString::from(match self {
+            FilterScope::Text => "文本",
+            FilterScope::Author => "作者",
+            FilterScope::Branch => "分支",
+        })
+    }
+
+    /// 占位文案 `{field} 筛选`（`git.log.filterPlaceholder`，`locale.ts:7282`）。
+    fn placeholder(self) -> SharedString {
+        SharedString::from(format!("{} 筛选", self.label()))
+    }
+
+    fn all() -> [FilterScope; 3] {
+        [FilterScope::Text, FilterScope::Author, FilterScope::Branch]
+    }
+}
+
+/// 引用种类。Core 的 `kind` 字段（`git/mod.rs:5896-5902`）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RefKind {
+    Local,
+    Remote,
+    Tag,
+}
+
+impl RefKind {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "local" => Some(RefKind::Local),
+            "remote" => Some(RefKind::Remote),
+            "tag" => Some(RefKind::Tag),
+            _ => None,
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            RefKind::Local => "local",
+            RefKind::Remote => "remote",
+            RefKind::Tag => "tag",
+        }
+    }
+
+    /// 分区标题文案逐字取自 `i18n/locale.ts:7252-7254`。
+    fn title(self) -> SharedString {
+        SharedString::from(match self {
+            RefKind::Local => "本地",
+            RefKind::Remote => "远程",
+            RefKind::Tag => "标签",
+        })
+    }
+
+    fn sections() -> [RefKind; 3] {
+        [RefKind::Local, RefKind::Remote, RefKind::Tag]
+    }
+}
+
+/// 一条引用（Core `GitReferenceResponse`，`protocol/contracts.rs:583-597`）。
 #[derive(Clone)]
-struct CommitRow {
-    /// `commit.hash`：单击选中后拿它去查 `git.commitFiles`。
-    hash: SharedString,
-    /// `commit.shortHash`：提交详情里的短 hash。
-    short_hash: SharedString,
-    /// 引用装饰（`commit.decorations`，`%D` 字符串已按 [`parse_decorations`] 拆成徽标），
-    /// **从右往左**堆叠渲染。
-    decorations: Vec<Decoration>,
-    /// 提交说明（`commit.subject`）。
-    subject: SharedString,
-    /// 作者（`commit.authorName`）。
-    author: SharedString,
-    /// 作者邮箱（`commit.authorEmail`，提交详情用）。
-    author_email: SharedString,
-    /// 日期（`commit.date`，Core 用 `--date=format:%Y/%m/%d %H:%M` 格式化好，UI 不再加工：
-    /// `rust/lithe-core/src/git/history.rs:301`）。
-    date: SharedString,
-}
-
-/// 提交文件树的一行。
-///
-/// 度量出处：`GitCommitFileTreeView.swift:120-121`（行高 28）、`:338 / :362 / :441`（缩进与状态字）。
-/// 行数据来自 `git.commitFiles` 的 `files[] { status, path }`
-/// （`contracts.rs:703-714`），由 [`build_commit_files`] 按路径聚成目录树；
-/// 失败时退回 [`placeholder_commit_files`]。
-struct CommitFileRow {
-    /// 层级：根下的目录 / 文件为 0，逐层 +1。缩进步长 16。
-    depth: usize,
-    /// 名称（目录名或文件名，已按 `/` 拆开，只留自己那一段）。
-    name: SharedString,
-    /// 目录行：画文件夹图标 + 右侧 `N 个文件`。
-    is_folder: bool,
-    /// 文件行的状态字（Core 的 `status`，如 `M` / `A` / `D` / `R100`），目录行忽略。
-    status: char,
-    /// 目录行的文件数（含子目录里的文件，递归计数）。
-    file_count: usize,
-}
-
-/// 提交详情（详情栏的下半部分）。出处：`GitLogView.swift:1187-1220`。
-/// 内容来自选中的那一行 [`CommitRow`]（macOS `feature.selectedGitCommit`，
-/// `GitFeatureModel.swift:1776-1782`），没有选中时是 [`placeholder_commit_detail`]。
-struct CommitDetail {
-    subject: SharedString,
-    short_hash: SharedString,
-    author_name: SharedString,
-    author_email: SharedString,
-    date: SharedString,
-    decorations: SharedString,
-}
-
-/// 一条引用（Core `GitReferenceResponse`，`contracts.rs:583-597`）。
-///
-/// 引用树的输入；分组顺序与文案照 macOS（`GitLogView.swift:664-697`）。
-struct RefEntry {
-    /// `fullName`（`refs/heads/main` / `refs/remotes/origin/main` / `refs/tags/v1.0.0`）：
-    /// 引用节点的稳定 id 与后续按引用查历史时的入参。
-    full_name: String,
-    /// `shortName`：引用行的标题（macOS `GitLogView.swift:2456`）。
-    short_name: String,
-    /// `kind`：`local` / `remote` / `tag`（`git/mod.rs:5896-5902`）。
-    kind: String,
-    /// `isCurrent`：当前分支（绿勾 + 空选中时点亮，`GitLogView.swift:758-764 / :2713-2717`）。
+struct Reference {
+    full_name: SharedString,
+    short_name: SharedString,
+    kind: RefKind,
     is_current: bool,
-    /// `upstreamShortName`：有 upstream 才画 ahead/behind。
-    upstream_short_name: Option<String>,
-    /// `ahead` / `behind`：相对 upstream 的领先 / 落后提交数。
+    upstream_short_name: Option<SharedString>,
     ahead: usize,
     behind: usize,
 }
 
-/// 提交文件树的中间节点：按路径把 `files[]` 聚成多层目录。
-///
-/// macOS 侧是 `GitCommitFileTreeNode.build(from:rootName:)`（`GitModels.swift:285-323`），
-/// 这里只保留建树需要的部分：子目录（`BTreeMap` 保证同名目录只有一份、顺序稳定）
-/// 与自己的文件列表。
-#[derive(Default)]
-struct CommitFileNode {
-    dirs: std::collections::BTreeMap<String, CommitFileNode>,
-    /// `(文件名, 状态字)`。
-    files: Vec<(String, String)>,
-}
-
-impl CommitFileNode {
-    /// 把一条仓库相对路径插进树：中间的目录按需建节点，最后一段是文件名。
-    fn insert(&mut self, path: &str, status: &str) {
-        let segments: Vec<&str> = path.split('/').collect();
-        let Some((name, directories)) = segments.split_last() else {
-            return;
-        };
-
-        let mut node = self;
-        for directory in directories {
-            node = node.dirs.entry((*directory).to_string()).or_default();
-        }
-        node.files.push(((*name).to_string(), status.to_string()));
-    }
-
-    /// 该节点下的文件总数（含子目录，递归）。
-    fn file_count(&self) -> usize {
-        self.files.len() + self.dirs.values().map(CommitFileNode::file_count).sum::<usize>()
-    }
-
-    /// 深度优先摊平成行：目录在前、文件在后，`depth` 从 0 起。
-    ///
-    /// macOS 的行序来自 `GitCommitFileTreeNode.build`（`GitModels.swift:285-323`），
-    /// 同样是「目录 → 子目录 → 文件」的稳定顺序。
-    fn flatten(&self, depth: usize, rows: &mut Vec<CommitFileRow>) {
-        for (name, child) in &self.dirs {
-            rows.push(CommitFileRow {
-                depth,
-                name: SharedString::from(name.clone()),
-                is_folder: true,
-                status: ' ',
-                file_count: child.file_count(),
-            });
-            child.flatten(depth + 1, rows);
-        }
-
-        for (name, status) in &self.files {
-            rows.push(CommitFileRow {
-                depth,
-                name: SharedString::from(name.clone()),
-                is_folder: false,
-                // Core 的 `status` 是 name-status 码（可能是 `R100` 这样的多字符），
-                // macOS 的 `statusColor` 只看首字母（`GitCommitFileTreeView.swift:459-464`）。
-                status: status.chars().next().unwrap_or(' '),
-                file_count: 0,
-            });
-        }
-    }
-}
-
-/// 提交文件栏的四种状态（macOS `commitFilesPane` 的空 / 加载 / 失败三态 + 本轮的占位态，
-/// `GitLogView.swift:1118-1185`）。
-enum CommitFilesState {
-    /// 还没选中提交（或历史没接上）：画占位文件 + 未接入提示。
-    Placeholder,
-    /// 正在加载，文案 `正在加载更改的文件…`（zh-Hans `Localizable.strings:1748`）。
-    Loading,
-    /// 已加载（可能是 0 个文件）。
-    Loaded,
-    /// 加载失败，文案 `无法加载更改的文件`（`Localizable.strings:1749`），文件列表退回占位。
-    Failed,
-}
-
-/// 一次 Core 读取的结果：`git.status` + `git.references` + `git.historyPage` 第一页。
-///
-/// 三个命令在**同一个后台任务**里顺序跑（都要用同一个 `root`，且引用与历史在
-/// 真机上也几乎是同时刷新的：`GitFeatureModel.swift:1736-1750`）。它必须能跨线程
-/// 送回前台，所以只装 `String` / `SharedString` 这些 `Send` 数据 ——
-/// **不能装 `TreeItem`**：`TreeItem` 内部有 `Rc<RefCell<..>>`
-/// （`gpui-base-0.6.6/src/tree.rs:41-46`），不是 `Send`，引用树因此在
-/// `apply_snapshot`（前台）里用 [`build_reference_tree`] 现拼。
-struct GitSnapshot {
-    /// `git.status.repositoryRoot` 是否存在 → 是否 Git 仓库（非仓库时 Core 返回 `null`，
-    /// `git/mod.rs:6535-6544`）。
-    is_repository: bool,
-    /// `git.status.branch`：标题栏 `日志：<当前分支>` 的兜底（`GitLogView.swift:396`）。
-    branch: Option<SharedString>,
-    /// 解析成绝对路径的仓库根：`git.commitFiles` 用它当 `root`（`relative_or_absolute`
-    /// 可能给出相对路径，`git/mod.rs:6574`）。
-    repository_root: Option<String>,
-    /// `git.references` 的结果（还没拼成树）。
-    references: Option<Vec<RefEntry>>,
-    /// `git.historyPage` 第一页的提交行。
-    commits: Option<Vec<CommitRow>>,
-    /// 失败的命令与错误码，拼成提示行；空表示全部成功。
-    failures: Vec<String>,
-}
-
-/// 引用装饰的种类。macOS 用它决定徽标强调色（`GitGraphView.swift:775-782`）。
+/// 提交标签的种类。Windows 的 `GitGraphLabel.kind`（`git-graph-row.tsx:13-24`）。
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum DecorationKind {
-    /// `.head` → `LitheTheme.accent`。
+enum LabelKind {
+    /// `HEAD`（或 `HEAD -> x` 里的 HEAD 那一段）。
     Head,
-    /// `.branch` → `LitheTheme.success`。
-    Local,
-    /// `.remote` → `rgb(0.55,0.70,0.96)`。
+    /// 远端分支（名字里含 `/`）。
     Remote,
-    /// `.tag` → `LitheTheme.warning`。
+    /// `tag: x`。
     Tag,
+    /// 本地分支。
+    Branch,
 }
 
-/// 一个引用装饰（提交行右侧的徽标）。
-///
-/// `kind` 在真机上来自 `GitGraphView.swift:775-782` 的 `kind` 枚举；这里由
-/// [`parse_decorations`] 从 Core 的 `%D` 字符串（`commit.decorations` 字段）判定并**显式带上**，
-/// 不再靠名字形状猜（占位数据才走 [`decoration_kind`]）。
+/// 一个标签徽章。
 #[derive(Clone)]
-struct Decoration {
-    name: SharedString,
-    kind: DecorationKind,
+struct Label {
+    title: SharedString,
+    kind: LabelKind,
 }
 
-/// 装饰名的种类判定（**只有占位数据用**）。
-///
-/// 真机上每种装饰有明确的种类（`GitGraphView.swift:775-782`），真数据的种类由
-/// [`parse_decorations`] 按 `%D` 的写法判定（`HEAD -> x` / `tag: x` / 含 `/` 的是远端）；
-/// 这个函数只服务于 [`placeholder_commits`] 的假装饰名。
-fn decoration_kind(name: &str) -> DecorationKind {
-    if name == "HEAD" {
-        DecorationKind::Head
-    } else if name.contains('/') {
-        DecorationKind::Remote
-    } else if name.starts_with('v') && name[1..].starts_with(|c: char| c.is_ascii_digit()) {
-        DecorationKind::Tag
-    } else {
-        DecorationKind::Local
-    }
+/// 一行提交（Core `GitCommitResponse`，`protocol/contracts.rs:602-611`）。
+#[derive(Clone)]
+struct Commit {
+    hash: SharedString,
+    short_hash: SharedString,
+    parent_hashes: Vec<SharedString>,
+    /// Core 只给 `%s`（主题行，`git/history.rs:302`），没有正文。
+    subject: SharedString,
+    author: SharedString,
+    email: SharedString,
+    date: SharedString,
+    labels: Vec<Label>,
 }
 
-/// 提交行里的引用徽标。
-///
-/// 度量按 macOS 自绘版（`GitGraphView.swift:612-626`）：高 16、圆角 4、上限宽
-/// `min(130, max(28, 文字宽 + 14))`、文字 11、文字左内边距 7、背景 `toolHeader`、
-/// 文字 `primaryText`。
-///
-/// 两处刻意偏差（已登记）：
-/// - **宽度不做测量**：macOS 用文字宽度算 `min(130, max(28, 宽 + 14))`，gpui 侧拿不到
-///   文字测量值，这里用「`pl(7)` + `max_w(130)`」等价近似。
-/// - **种类色落在文字上**：macOS 的种类强调色画在徽标里的 12×12 图标上（`:761-762`），
-///   而默认图标集没有 Git 字形（见模块注释缺口 11），所以把种类色落到文字，
-///   否则 head / branch / remote / tag 四类引用在视觉上无法区分。
-fn decoration_badge(decoration: &Decoration, cx: &App) -> impl IntoElement {
-    // 种类 → 强调色。remote 的真机值是硬编码 `rgb(0.55,0.70,0.96)`（`GitGraphView.swift:779`），
-    // 规格要求颜色一律走 `cx.theme()`，这里取最接近的主题 token `blue_light`。
-    let foreground = match decoration.kind {
-        DecorationKind::Head => cx.theme().primary,
-        DecorationKind::Local => cx.theme().success,
-        DecorationKind::Remote => cx.theme().blue_light,
-        DecorationKind::Tag => cx.theme().warning,
-    };
-
-    h_flex()
-        .h(px(DECORATION_BADGE_HEIGHT))
-        .max_w(px(DECORATION_BADGE_MAX_WIDTH))
-        .pl(px(DECORATION_BADGE_LEADING_PADDING))
-        .pr(px(3.))
-        .rounded(px(DECORATION_BADGE_RADIUS))
-        // macOS 自绘版徽标底色是 `toolHeader`（`:614-620`），等价于标题栏底色。
-        .bg(cx.theme().tab_bar)
-        .text_size(px(DECORATION_BADGE_FONT_SIZE))
-        .text_color(foreground)
-        .whitespace_nowrap()
-        .overflow_hidden()
-        .child(decoration.name.clone())
-}
-
-/// 提交表的一行（**自绘**，理由见模块注释）。
-///
-/// 列布局对齐 macOS 自绘版（`GitGraphView.swift:541-584`）：
-/// `[提交图（未做）][提交信息 弹性][引用徽标 从右往左][间隙 8][作者 104 左对齐][日期 110 右对齐]`，
-/// 行尾再留 8pt（`:737`）；行底部 1px `divider`（`:581-582`）。
-///
-/// `selected` 是选中背景：macOS 是整行 `accent.withAlphaComponent(0.16)`
-/// （`GitGraphView.swift:552-554`），这里用主题 `primary` 压低透明度近似
-/// （`accent` 在 gpui 里是悬停底色，见 `gpui/UI-MAP.md` §1.2 的 token 映射）。
-/// 行的 `id` 与点击由 [`BottomPanel::render_commit_list`] 挂（那里拿得到 `cx`）。
-fn commit_row(row: &CommitRow, show_decorations: bool, selected: bool, cx: &App) -> Div {
-    let mut element = h_flex()
-        // `min_h` 而不是 `h`：macOS 的行高是 22pt（`GitGraphGeometry.swift:8`），
-        // 但内容（徽标 16 + 文字行盒）自然高度可能略高，写死高度就会裁内容。
-        // `min_h(22)` 让它至少 22、内容更高时自然撑开，先保证不裁字。
-        .min_h(px(COMMIT_ROW_HEIGHT))
-        .w_full()
-        .min_w_0()
-        .items_center()
-        .pr(px(COMMIT_ROW_TRAILING_PADDING))
-        .whitespace_nowrap()
-        .border_b_1()
-        .border_color(cx.theme().border)
-        // 提交信息列：左对齐、尾部截断。macOS 的宽度是 `rect.width - textStart - 230`，
-        // 这里让它吃掉「提交图 + 徽标 + 作者 + 日期」之外的全部剩余宽度 —— 提交图未做，
-        // 所以当前就等于全部剩余宽度（缺口 1）。
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                // ⚠️ **不要在这里加 `overflow_hidden`**（本轮定案，理由见模块注释
-                // 「提交信息『字顶被切』的结论」）：gpui 的裁剪套在元素盒上，只要盒与
-                // 字形度量有一点出入，字顶就会被切掉约 1/4 行高
-                // （实测证据 `.artifacts/p1/zoom-commit-final.png`）。
-                // 水平方向不需要它：`text_ellipsis()` 在排版阶段就把文本截断成 `…`
-                // （`gpui-pre-0.3.6/src/elements/text.rs:697-735`）。
-                .text_ellipsis()
-                // 行盒下限钉成行高：盒高 22 = 行盒 22 时，基线落在
-                // `padding_top + ascent`、字形整个在盒内；盒若被压到字体自然行高
-                // （约 1.3em）就会把字形往盒外推。
-                .min_h(px(COMMIT_ROW_HEIGHT))
-                .text_size(px(COMMIT_BODY_FONT_SIZE))
-                // 显式给行高：gpui 用 `padding_top = (line_height - ascent - descent) / 2`
-                // 算基线（`src/text_system.rs:518-528`），行盒 22 时 12.5pt 的字形在
-                // 22pt 的行里垂直居中；不给就落到默认 `phi() = 1.618 × 字号`
-                // （`src/geometry.rs:3722`、`src/style.rs:485-494`），与行高对不上。
-                .line_height(px(COMMIT_ROW_HEIGHT))
-                .child(row.subject.clone()),
-        );
-
-    // 选中背景：macOS 是整行 `accent.withAlphaComponent(0.16)`（`GitGraphView.swift:552-554`），
-    // 这里用主题 `primary` 压低透明度近似（`accent` 在 gpui 主题里是悬停底色，
-    // 见 `gpui/UI-MAP.md` §1.2 的 token 映射）。未选中时不画底色。
-    if selected {
-        element = element.bg(cx.theme().primary.opacity(0.16));
-    }
-
-    // 引用徽标：macOS 从 `maxX - 230` 起**从右向左**排布（`GitGraphView.swift:578-580`），
-    // 即数组第 0 项在最右边；所以倒序渲染，再补 8pt 间隙接作者列（`:565` 的 `maxX-222`）。
-    // 开关本身是 macOS 的 `showCommitDecorations`（`GitLogView.swift:1008-1012`）。
-    if show_decorations {
-        element = element.child(
-            h_flex()
-                .flex_shrink_0()
-                .gap(px(DECORATION_BADGE_GAP))
-                .pr(px(COMMIT_ROW_TRAILING_PADDING))
-                .children(
-                    row.decorations
-                        .iter()
-                        .rev()
-                        .map(|decoration| decoration_badge(decoration, cx)),
-                ),
-        );
-    }
-
-    element
-        // 作者列：宽 104、左对齐、`secondaryText`（`GitGraphView.swift:565-570`）。
-        .child(
-            div()
-                .w(px(COMMIT_AUTHOR_WIDTH))
-                .flex_shrink_0()
-                .overflow_hidden()
-                .text_ellipsis()
-                .text_size(px(COMMIT_META_FONT_SIZE))
-                .text_color(cx.theme().muted_foreground)
-                .child(row.author.clone()),
-        )
-        // 日期列：宽 110、右对齐、等宽 11.5（`GitGraphView.swift:571-577 / :635-640`）。
-        .child(
-            h_flex()
-                .w(px(COMMIT_DATE_WIDTH))
-                .flex_shrink_0()
-                .justify_end()
-                .overflow_hidden()
-                .text_ellipsis()
-                .font_family(cx.theme().mono_font_family.clone())
-                .text_size(px(COMMIT_META_FONT_SIZE))
-                .text_color(cx.theme().muted_foreground)
-                .child(row.date.clone()),
-        )
+/// 提交行左侧的泳道图（简化版，见模块文档偏差 2）。
+struct GraphRow {
+    /// 每条泳道的线色下标；`None` = 这条泳道本行上半部分没有线。
+    lanes: Vec<Option<usize>>,
+    /// 本提交所在的泳道。
+    lane: usize,
+    /// 本行的节点颜色下标。
+    node_color: usize,
+    /// 往下连的边：`(泳道, 颜色下标, 父提交不在本页)`。
+    edges: Vec<(usize, usize, bool)>,
 }
 
 /// 提交文件树的一行。
-///
-/// macOS 度量（`GitCommitFileTreeView.swift`）：行高 28、目录行缩进 `8 + depth*16`、
-/// 文件行状态字左起 `30 + max(depth-1,0)*16`（`:362`）、状态字等宽 11 bold、正文 13；
-/// 状态色 `A`→success、`D`→error、`R`→accent、其余→warning（`:459-464`）。
-///
-/// **偏差**：目录行只按 `8 + depth*16` 排、文件行名字紧随状态字，没有搬 macOS 的
-/// `presentation.textX`（`:364-368`，由 `RowPresentation` 按层级算出的名字基线），
-/// 因为 `GitCommitFileTreeView` 是 498 行的自绘 NSView，完整对齐属于缺口 7。
-fn commit_file_row(row: &CommitFileRow, cx: &App) -> Div {
-    let status_color = match row.status {
-        'A' => cx.theme().success,
-        'D' => cx.theme().danger,
-        'R' => cx.theme().primary,
-        _ => cx.theme().warning,
-    };
-
-    let mut element = h_flex()
-        .h(px(COMMIT_FILE_ROW_HEIGHT))
-        .w_full()
-        .items_center()
-        .pr(px(REFERENCE_ROW_PADDING))
-        .whitespace_nowrap()
-        .text_ellipsis();
-
-    if row.is_folder {
-        element = element
-            .gap(px(REFERENCE_GAP))
-            .pl(px(REFERENCE_ROW_PADDING + row.depth as f32 * REFERENCE_INDENT_STEP))
-            .child(
-                Icon::new(IconName::FolderOpen)
-                    .size(px(14.))
-                    .text_color(cx.theme().muted_foreground),
-            )
-            .child(
-                div()
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(row.name.clone()),
-            )
-            .child(div().flex_1())
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(cx.theme().muted_foreground)
-                    .child(SharedString::from(format!("{} 个文件", row.file_count))),
-            );
-    } else {
-        element = element
-            // 文件行状态字左起 `30 + max(depth-1,0)*16`：macOS `GitCommitFileTreeView.swift:362`。
-            .pl(px(
-                COMMIT_FILE_STATUS_X + row.depth.saturating_sub(1) as f32 * REFERENCE_INDENT_STEP
-            ))
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .font_weight(FontWeight::BOLD)
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .text_color(status_color)
-                    .child(SharedString::from(row.status.to_string())),
-            )
-            .child(div().w(px(12.)).flex_shrink_0())
-            .child(div().text_size(px(13.)).child(row.name.clone()))
-            .child(div().flex_1());
-    }
-
-    element
+#[derive(Clone)]
+struct CommitFileRow {
+    depth: usize,
+    name: SharedString,
+    is_folder: bool,
+    /// 目录行的文件数（含子目录，递归）。
+    file_count: usize,
+    /// 文件行的 name-status 码（Core `GitFileResponse.status`，`contracts.rs:703-707`）。
+    status: SharedString,
 }
 
-/// 引用行的种类：从树节点 id 反解（本文件自己拼的 id，形状固定为
-/// `ref:local:<fullName>` / `ref:remote:<fullName>` / `ref:tag:<fullName>` /
-/// `ref:group:<kind>` / `ref:HEAD`，见 [`build_reference_tree`] 与 [`placeholder_references`]）。
-///
-/// 种类本身来自 Core 的 `kind` 字段（`local` / `remote` / `tag`，
-/// `rust/lithe-core/src/git/mod.rs:5896-5902`），**不再靠名字里是否含 `tag` 猜**。
-fn reference_kind(id: &str) -> &str {
-    let rest = id.strip_prefix("ref:").unwrap_or(id);
-    let rest = rest.strip_prefix("group:").unwrap_or(rest);
-    match rest.split_once(':') {
-        Some((kind, _)) => kind,
-        None => "head",
-    }
+/// 文件列表的加载状态。对应 `git-commit-inspector.tsx:19` 的
+/// `"idle" | "loading" | "ready" | "failed"`。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FilesState {
+    /// 还没选中提交。
+    Idle,
+    Loading,
+    Ready,
+    Failed,
 }
 
-/// 引用行 / 引用分组行的图标。
-///
-/// macOS 用 SF Symbols（`GitLogView.swift:2679-2686 / :2706 / :2821-2827`）：
-/// 分组 `folder` / `network` / `tag`，引用 `point.3.connected.trianglepath.dotted` / `cloud` / `tag`，
-/// `HEAD (Current Branch)` 行是 `arrow.right`（`:668`，本文件用 `ref:HEAD` 这个 id 表示）。
-/// `gpui_kit::component::IconName`（0.6.6）只有默认图标集里的 101 个字形
-/// （`gpui-kit-assets-0.6.6/default-icons.txt`），没有 Git 专属字形，对应关系：
-///
-/// | macOS | 这里 | 说明 |
-/// |---|---|---|
-/// | `folder`（本地分组） | `Folder` | 一致 |
-/// | `network`（远端分组） | `Network` | 一致 |
-/// | `tag`（标签分组 / 标签引用） | `Star` | 默认集没有 tag 字形 |
-/// | `point.3.connected.trianglepath.dotted`（本地分支） | `ArrowRight` | 默认集没有分支字形 |
-/// | `cloud`（远端引用） | `Globe` | 默认集没有 cloud 字形 |
-/// | `arrow.right`（HEAD 行） | `ArrowRight` | 一致 |
-///
-/// `kind` 取 [`reference_kind`] 的结果：`local` / `remote` / `tag` / `HEAD` 行是 `head`。
-fn reference_icon(kind: &str, is_group: bool) -> IconName {
-    match (is_group, kind) {
-        (_, "tag") => IconName::Star,
-        (true, "remote") => IconName::Network,
-        (true, _) => IconName::Folder,
-        (false, "remote") => IconName::Globe,
-        // 本地分支与 `HEAD（当前分支）` 行：默认集没有分支字形，统一用 `ArrowRight`。
-        (false, _) => IconName::ArrowRight,
-    }
+/// Inspector 下半部分的提交详情。取选中的那一行的字段（Windows 也是同一个 `GitCommit`）。
+struct Detail {
+    subject: SharedString,
+    short_hash: SharedString,
+    author: SharedString,
+    email: SharedString,
+    date: SharedString,
+    /// 装饰拼回一行文本（Windows 直接渲染 `commit.decorations`，`git-commit-inspector.tsx:180`）。
+    decorations: SharedString,
+    hash: SharedString,
 }
 
-/// 某个节点是不是「当前分支」：`HEAD（当前分支）` 行与当前分支那一行都算
-/// （macOS 两行用的是同一份判定，`GitLogView.swift:758-764 / :839`）。
-fn is_current_reference(id: &str, current: Option<&SharedString>) -> bool {
-    id == "ref:HEAD" || current.is_some_and(|current| current.as_ref() == id)
+/// 交给后台任务的游标句柄：`git.historyCursorClose` 需要 `root` 与 `cursor` 成对
+/// （`git/history.rs:344` 会校验游标属于哪个 root）。
+struct HistoryCursor {
+    root: String,
+    cursor: String,
 }
 
-/// 引用树的一行（分组行与引用行**同高**）。
-///
-/// macOS：分组行与引用行都是 `minHeight: 28`、缩进 `depth * 16`、left 8 / right 8、
-/// 圆角 4、内间距 7、图标槽 16（`GitLogView.swift:2674-2732`）；
-/// 分组标题 13 medium，引用名 13，当前分支多一个 9 bold 的 `checkmark`（`:2713-2717`）；
-/// `HEAD（当前分支）` 行是同一度量的另一份实现（`:818-833`）。
-/// 行高统一取 `GitVisual.treeRowHeight = 28`（`:74`）。
-///
-/// `Tree` 内部是 `uniform_list`（`gpui-base/src/tree.rs:423`），一套树只能有一个行高；
-/// macOS 的行间距（组内 1 / 组间 2，`GitLogView.swift:666 / :711`）在这里无法表达，
-/// 行与行贴合 —— 偏差已登记在模块注释。
-///
-/// `highlight_current`：macOS 在「没有显式选中引用」时把当前分支行点亮
-/// （`isReferenceRowSelected`，`:758-764`）；`current` 是当前分支节点的 id（`None` = detached）。
-fn reference_row(
-    index: usize,
-    entry: &TreeEntry,
-    selected: bool,
-    highlight_current: bool,
-    current: Option<&SharedString>,
-    cx: &mut App,
-) -> ListItem {
-    let id = entry.item().id.as_ref();
-    let is_group = entry.is_folder();
-    // 种类来自本文件拼的 id（真数据的种类来自 Core 的 `GitReference.kind`，
-    // `rust/lithe-core/src/git/mod.rs:5896-5902`）。
-    let kind = reference_kind(id);
-    let is_tag = kind == "tag";
-    let is_current_branch = is_current_reference(id, current);
-    let active = selected || (highlight_current && is_current_branch);
-
-    let icon_color = if is_tag {
-        cx.theme().warning
-    } else {
-        cx.theme().muted_foreground
-    };
-
-    // 分组行：chevron（8 bold，占 10 宽）+ 图标 + 13 medium 标题。
-    // 引用行：16 宽的图标槽 + 13 标题 + （当前分支的）9 bold checkmark。
-    let row = ListItem::new(SharedString::from(format!("ref-node-{index}")))
-        .selected(active)
-        .h(px(REFERENCE_ROW_HEIGHT))
-        // `ListItem` 默认 `py_1() px_3()`（`list_item.rs:185-188`），紧凑行必须清掉，
-        // 否则自然高度 32 > 28，会溢出到相邻行。
-        .py_0()
-        .px_0()
-        .pl(px(entry.depth() as f32 * REFERENCE_INDENT_STEP))
-        .pr(px(REFERENCE_ROW_PADDING))
-        .rounded(px(4.))
-        .text_size(px(13.))
-        .whitespace_nowrap()
-        .overflow_hidden();
-
-    // **必须自己套一层 `h_flex()`**：`ListItem` 内部装 children 的是普通块级 `div()`，
-    // 多个 child 直接挂上去会竖着排（图标 / 名字 / 对勾各占一行），行高随之失控。
-    let mut content = h_flex().w_full().items_center().gap(px(REFERENCE_GAP));
-
-    if is_group {
-        content = content.child(
-            Icon::new(if entry.is_expanded() {
-                IconName::ChevronDown
-            } else {
-                IconName::ChevronRight
-            })
-            .size(px(8.))
-            .text_color(cx.theme().muted_foreground),
+impl HistoryCursor {
+    /// 把游标还给 Core（同步、很快：只是摘掉注册表项并停掉子进程）。
+    fn close(self) {
+        let _ = execute_core(
+            "git.historyCursorClose",
+            serde_json::json!({ "root": self.root, "cursor": self.cursor }),
         );
     }
-
-    content = content.child(
-        h_flex()
-            .w(px(REFERENCE_ICON_SLOT_WIDTH))
-            .flex_shrink_0()
-            .justify_center()
-            .child(Icon::new(reference_icon(kind, is_group)).size(px(14.)).text_color(icon_color)),
-    );
-
-    if is_group {
-        content = content.child(
-            div()
-                .text_size(px(13.))
-                .font_weight(FontWeight::MEDIUM)
-                .child(entry.item().label.clone()),
-        );
-    } else {
-        content = content.child(entry.item().label.clone());
-    }
-
-    if is_current_branch {
-        content = content.child(
-            Icon::new(IconName::Check)
-                .size(px(9.))
-                .text_color(cx.theme().primary),
-        );
-    }
-
-    // macOS 的 `Spacer(minLength: 8)`：把剩余宽度吃掉，保证标题左对齐。
-    content = content.child(div().flex_1());
-
-    row.child(content)
 }
 
-/// 占位引用树：`git.references` 没接上（命令失败 / 不是 Git 仓库）时画它。
+/// 一次「首屏」读取的结果（工作区探测 → `git.status` → `git.references` → `git.historyPage`）。
 ///
-/// 结构照 macOS（`GitLogView.swift:664-697`）：`HEAD（当前分支）` 单独一行，下面是
-/// `本地 / 远程 / 标签` 三个分组，分组内的引用缩进一级。
-///
-/// 节点 id 必须与 [`build_reference_tree`] 拼出来的形状一致（`ref:<kind>:<name>` /
-/// `ref:group:<kind>` / `ref:HEAD`），否则 [`reference_icon`] / [`is_current_reference`]
-/// 认不出种类与当前分支。
-///
-/// 标签分组放一个 `v1.0.0`：`TreeItem::is_folder()` 以「有子项」判定分组，
-/// 空分组会退化成引用行；macOS 的空分组就是不画任何行（`:750-756`）。
-fn placeholder_references() -> Vec<TreeItem> {
-    vec![
-        TreeItem::new("ref:HEAD", "HEAD（当前分支）"),
-        TreeItem::new("ref:group:local", "本地")
-            .expanded(true)
-            .child(TreeItem::new("ref:local:refs/heads/main", "main")),
-        TreeItem::new("ref:group:remote", "远程")
-            .expanded(true)
-            .child(TreeItem::new(
-                "ref:remote:refs/remotes/origin/main",
-                "origin/main",
-            ))
-            .child(TreeItem::new(
-                "ref:remote:refs/remotes/origin/HEAD",
-                "origin/HEAD",
-            )),
-        TreeItem::new("ref:group:tag", "标签")
-            .expanded(true)
-            .child(TreeItem::new("ref:tag:refs/tags/v1.0.0", "v1.0.0")),
-    ]
+/// 必须在后台线程上构造再送回前台，所以只装 `String` / `SharedString` 这些 `Send` 数据。
+struct FirstLoad {
+    /// 解析成绝对路径的仓库根；`None` = 不是 Git 仓库。
+    repository_root: Option<String>,
+    branch: Option<SharedString>,
+    references: Vec<Reference>,
+    commits: Vec<Commit>,
+    next_cursor: Option<String>,
+    has_more: bool,
+    /// 失败的命令（空 = 全部成功）。
+    failures: Vec<String>,
 }
 
-/// 占位提交行：`git.historyPage` 没接上时画它（真实数据由 [`parse_commits`] 填）：
-///
-/// - `hash` / `short_hash` 是**占位 hash**，点这些行时 `git.commitFiles` 会失败，
-///   面板会退回占位文件列表并显示失败提示（不 panic）；
-/// - 日期字符串格式照 Core 的 `--date=format:%Y/%m/%d %H:%M`
-///   （`rust/lithe-core/src/git/history.rs:301`），免得接线前后列宽表现不一致
-///   （日期列宽 110，出处 `GitGraphView.swift:571-577`）。
-fn placeholder_commits() -> Vec<CommitRow> {
-    let row = |decorations: &[&str], subject: &str, author: &str, date: &str| CommitRow {
-        hash: SharedString::from(format!("placeholder-{}", subject.len())),
-        short_hash: SharedString::from("0000000"),
-        decorations: decorations
-            .iter()
-            .map(|name| Decoration {
-                name: SharedString::from(*name),
-                kind: decoration_kind(name),
-            })
-            .collect(),
-        subject: SharedString::from(subject),
-        author: SharedString::from(author),
-        author_email: SharedString::from(format!("{author}@lithe.dev")),
-        date: SharedString::from(date),
-    };
-
-    vec![
-        row(
-            &["HEAD", "main", "origin/main", "v1.0.0"],
-            "门急诊就诊记录查询接口",
-            "fuchen",
-            "2026/09/20 19:08",
-        ),
-        row(&[], "优化消息通知", "fuchen", "2026/09/19 16:42"),
-        row(&[], "接口日志补充耗时字段", "fuchen", "2026/09/18 11:05"),
-        row(&[], "HTTP 服务超时改成可配置", "lizhen", "2026/09/17 09:31"),
-        row(
-            &["origin/fix/order"],
-            "修正订单查询空指针",
-            "lizhen",
-            "2026/09/16 20:14",
-        ),
-        row(&[], "同步数据库脚本", "wangqi", "2026/09/15 15:02"),
-    ]
+/// 追加一页的结果。
+struct MoreLoad {
+    commits: Vec<Commit>,
+    next_cursor: Option<String>,
+    has_more: bool,
+    failure: Option<String>,
 }
 
-/// 占位提交文件树：`git.commitFiles` 没接上（或失败）时画它。
-///
-/// 真实数据由 [`load_commit_files`] + [`build_commit_files`] 生成：用 Core 的
-/// `files[] { status, path }`（`contracts.rs:703-714`）按路径建多层目录树
-/// （macOS 是 `GitCommitFileTreeNode.build(from:rootName:)`，`GitModels.swift:285-323`）。
-fn placeholder_commit_files() -> Vec<CommitFileRow> {
-    let folder = |depth: usize, name: &str, file_count: usize| CommitFileRow {
-        depth,
-        name: SharedString::from(name),
-        is_folder: true,
-        status: ' ',
-        file_count,
-    };
-    let file = |depth: usize, name: &str, status: char| CommitFileRow {
-        depth,
-        name: SharedString::from(name),
-        is_folder: false,
-        status,
-        file_count: 0,
-    };
+/// 一个 Icon 按钮的点击回调。
+type ButtonHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-    vec![
-        folder(0, "src", 3),
-        file(1, "main.rs", 'M'),
-        file(1, "protocol.rs", 'A'),
-        file(1, "settings.rs", 'M'),
-        file(0, "README.md", 'D'),
-    ]
+/// 把闭包包成 [`ButtonHandler`]。
+///
+/// 走一层泛型函数而不是直接 `Box::new(..)`：闭包的参数类型由 `Fn(&ClickEvent, &mut Window,
+/// &mut App)` 这个 bound 推出来，不必在每个调用点手写三处参数类型。
+fn handler(f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> ButtonHandler {
+    Box::new(f)
 }
 
-/// 占位提交详情：还没选中提交（或历史没接上）时画它。
-///
-/// 真数据由 [`BottomPanel::select_commit`] 从选中的 [`CommitRow`] 填
-/// （macOS `feature.selectedGitCommit`，`GitFeatureModel.swift:1776-1782`；
-/// 版面 `GitLogView.swift:1187-1220`）。
-fn placeholder_commit_detail() -> CommitDetail {
-    CommitDetail {
-        subject: SharedString::from("门急诊就诊记录查询接口"),
-        short_hash: SharedString::from("0000000"),
-        author_name: SharedString::from("fuchen"),
-        author_email: SharedString::from("fuchen@lithe.dev"),
-        date: SharedString::from("2026/09/20 19:08"),
-        decorations: SharedString::from("HEAD -> main, origin/main, tag: v1.0.0"),
-    }
-}
+// ---------------------------------------------------------------------------
+// Core 调用与解析
+// ---------------------------------------------------------------------------
 
-/// 面板要用的工作区根由 `workspace.rs` 通过 [`BottomPanel::new`] 的参数传入，
-/// 不再用 `std::env::current_dir()` 兜底（那会随启动目录漂移）。
+/// 调一次 Core 命令：拼请求、判 `ok`、取 `data`。
 ///
-/// 语义与 `workspace.snapshot` 的 `root` 一致：可以是仓库里的子目录，
-/// `git.*` 命令会自己解析出真正的仓库根（`git.status` 的 `repositoryRoot`，
-/// 见 [`load_git_snapshot`]）。
-
-/// 执行一条 Core 命令并返回响应里的 `data`。
-///
-/// 请求信封照 `shell_probe/files.rs:68-75`：`{id, operationId, timeoutMilliseconds,
-/// command, payload}`；响应是 `CoreResponse`（`rust/lithe-core/src/protocol/contracts.rs:7-21`）：
-/// `ok: bool` + 成功时 `data` / 失败时 `error { code, … }`。
-///
-/// `operationId` 每次调用都取新值（[`NEXT_OPERATION_ID`]）：契约要求按
-/// 「repository / reference / 归属的 operationId」判过期页并关掉
-/// （`shared/contracts/rust-core-api.md:894-897`），所以刷新时不能沿用上一次的 id。
-///
-/// 返回 `Err(code)` 时只带 Core 的错误码（不是完整消息）：面板只把它拼进一行提示，
-/// 不弹窗、不 panic。
+/// 形态与 `shell_probe/files.rs` 一致：`id` / `operationId` / `timeoutMilliseconds` / `command` /
+/// `payload`。失败返回错误码字符串（`/error/code`）；非仓库那种「`ok:true` + 字段为 null」
+/// 由调用方判字段。
 fn execute_core(command: &str, payload: serde_json::Value) -> Result<serde_json::Value, String> {
     let call = NEXT_OPERATION_ID.fetch_add(1, Ordering::Relaxed);
     let operation_id = format!("shell-probe-{command}-{call}");
@@ -1034,9 +571,8 @@ fn execute_core(command: &str, payload: serde_json::Value) -> Result<serde_json:
 
 /// 把 `git.status.repositoryRoot` 变成可用的绝对根。
 ///
-/// Core 给的是 `relative_or_absolute(&repository_root, &root)`
-/// （`rust/lithe-core/src/git/mod.rs:6574`）：仓库根就在工作区里时会返回相对路径，
-/// 直接拿去当 `git.commitFiles` 的 `root` 会按**进程工作目录**解析，可能指错地方。
+/// Core 给的是 `relative_or_absolute(&repository_root, &root)`（`rust/lithe-core/src/git/mod.rs:6574`）：
+/// 仓库根就在工作区里时会返回**相对路径**，直接拿去当后面几条命令的 `root` 会按进程工作目录解析。
 fn resolve_repository_root(root: &Path, repository_root: &str) -> String {
     let path = Path::new(repository_root);
     if path.is_absolute() {
@@ -1046,18 +582,69 @@ fn resolve_repository_root(root: &Path, repository_root: &str) -> String {
     }
 }
 
+/// `git.status` 的 `repositoryRoot`（`contracts.rs:533`；非仓库为 `null`）。
+fn repository_root_of(data: &serde_json::Value) -> Option<String> {
+    data.get("repositoryRoot")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+/// 读 `git.status`，返回 `(仓库根, 分支)`；仓库根为 `None` 表示不是仓库。
+fn read_status(root: &str) -> Result<(Option<String>, Option<SharedString>), String> {
+    let data = execute_core("git.status", serde_json::json!({ "root": root }))?;
+    let branch = data
+        .get("branch")
+        .and_then(serde_json::Value::as_str)
+        .map(SharedString::from);
+    Ok((repository_root_of(&data), branch))
+}
+
+/// 工作区根不是仓库时的兜底：用 `workspace.snapshot` 拿一级子目录，逐个探 `git.status`。
+///
+/// Windows 用 `git_discover_workspace_repos` 找子目录里的仓库，那不在本步拍板的 6 条命令里；
+/// 这里用 `workspace.snapshot`（`project/files.rs:160-167`）+ `git.status` 复现同一件事，
+/// 探测**有上限**（[`REPOSITORY_PROBE_LIMIT`]），且只探一级目录：`.git` 本身被
+/// `BUILT_IN_HIDDEN_DIRECTORIES` 过滤掉（`files.rs:15-30`），所以看的是「哪个子目录是仓库」。
+fn discover_repository_root(root: &Path) -> Option<String> {
+    let data = execute_core(
+        "workspace.snapshot",
+        serde_json::json!({ "root": root.to_string_lossy() }),
+    )
+    .ok()?;
+
+    let children = data.pointer("/root/children")?.as_array()?;
+    let directories = children.iter().filter_map(|child| {
+        let is_directory = child
+            .get("isDirectory")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let path = child.get("path").and_then(serde_json::Value::as_str)?;
+        is_directory.then(|| root.join(path).to_string_lossy().to_string())
+    });
+
+    for candidate in directories.take(REPOSITORY_PROBE_LIMIT) {
+        if let Ok(data) = execute_core("git.status", serde_json::json!({ "root": candidate })) {
+            if let Some(found) = repository_root_of(&data) {
+                return Some(resolve_repository_root(root, &found));
+            }
+        }
+    }
+
+    None
+}
+
 /// 解析 `git.references` 的 `references[]`（`contracts.rs:583-597`）。
-fn parse_references(data: &serde_json::Value) -> Vec<RefEntry> {
+fn parse_references(data: &serde_json::Value) -> Vec<Reference> {
     data.get("references")
         .and_then(serde_json::Value::as_array)
         .map(|references| {
             references
                 .iter()
                 .filter_map(|reference| {
-                    Some(RefEntry {
-                        full_name: reference.get("fullName")?.as_str()?.to_string(),
-                        short_name: reference.get("shortName")?.as_str()?.to_string(),
-                        kind: reference.get("kind")?.as_str()?.to_string(),
+                    Some(Reference {
+                        full_name: SharedString::from(reference.get("fullName")?.as_str()?),
+                        short_name: SharedString::from(reference.get("shortName")?.as_str()?),
+                        kind: RefKind::parse(reference.get("kind")?.as_str()?)?,
                         is_current: reference
                             .get("isCurrent")
                             .and_then(serde_json::Value::as_bool)
@@ -1065,7 +652,7 @@ fn parse_references(data: &serde_json::Value) -> Vec<RefEntry> {
                         upstream_short_name: reference
                             .get("upstreamShortName")
                             .and_then(serde_json::Value::as_str)
-                            .map(str::to_string),
+                            .map(SharedString::from),
                         ahead: reference
                             .get("ahead")
                             .and_then(serde_json::Value::as_u64)
@@ -1081,137 +668,68 @@ fn parse_references(data: &serde_json::Value) -> Vec<RefEntry> {
         .unwrap_or_default()
 }
 
-/// 引用行的标题：`shortName`（macOS `GitLogView.swift:2456`）。
+/// 解析 `%D` 装饰串（`commit.decorations`，`contracts.rs:610`）。
 ///
-/// **偏差**：本地分支有 upstream 且领先/落后时这里追加 ` ↑ahead ↓behind`。
-/// macOS 的引用行**不显示** ahead/behind（只在 Update 确认框里显示，
-/// `GitLogView.swift:2348`），本步按任务要求把它补进引用树，颜色仍是主题色
-/// （`reference_row` 里用 `muted_foreground` 画整行标题）。
-fn reference_label(entry: &RefEntry) -> SharedString {
-    if entry.kind == "local"
-        && entry.upstream_short_name.is_some()
-        && (entry.ahead > 0 || entry.behind > 0)
+/// Core 用 `--pretty=…%x1f%D`（`git/history.rs:302`），`%D` 是逗号分隔的引用名，例如
+/// `HEAD -> main, origin/main, tag: v1.0.0`。种类判定同 Windows 的四档
+/// （`git-graph-row.tsx:13-24`）：`HEAD -> x` → head + branch；`tag: x` → tag；
+/// 含 `/` → remote；其余 → branch。
+///
+/// **偏差（已登记）**：`%D` 不带种类信息，名字里含 `/` 的**本地**分支（如 `fix/order`）会被判成
+/// remote；要判准得把 `git.references` 的远端名单一起传进来。
+fn parse_decorations(value: &str) -> Vec<Label> {
+    let mut labels = Vec::new();
+
+    for part in value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
     {
-        SharedString::from(format!(
-            "{} ↑{} ↓{}",
-            entry.short_name, entry.ahead, entry.behind
-        ))
-    } else {
-        SharedString::from(entry.short_name.clone())
-    }
-}
-
-/// 把引用列表拼成 macOS 的引用树（`GitLogView.swift:664-697`）。
-///
-/// 结构：`HEAD（当前分支）`（只有存在当前引用时才画，detached 时不画）→
-/// `本地` / `远程` / `标签` 三个分组（**空分组不画**，`:750-756`）→ 组内引用。
-/// 返回 `(items, 当前分支节点 id)`：后者给 [`reference_row`] 画绿勾与点亮用。
-///
-/// 节点 id 形状（[`reference_kind`] 依赖它）：`ref:HEAD`、`ref:group:<kind>`、
-/// `ref:<kind>:<fullName>`。
-fn build_reference_tree(entries: &[RefEntry]) -> (Vec<TreeItem>, Option<SharedString>) {
-    let current = entries
-        .iter()
-        .find(|entry| entry.is_current)
-        .map(|entry| SharedString::from(format!("ref:{}:{}", entry.kind, entry.full_name)));
-
-    let mut items: Vec<TreeItem> = Vec::new();
-    if current.is_some() {
-        // `HEAD（当前分支）` 单独一行（zh-Hans `Localizable.strings:1742`），
-        // 指向的就是当前引用本身（macOS `GitLogView.swift:667-670`）。
-        items.push(TreeItem::new("ref:HEAD", "HEAD（当前分支）"));
-    }
-
-    // 分组顺序固定：本地 → 远程 → 标签（`:672-689`）；文案取 zh-Hans
-    // `Localizable.strings:364-366`。
-    for (kind, title) in [("local", "本地"), ("remote", "远程"), ("tag", "标签")] {
-        let children: Vec<TreeItem> = entries
-            .iter()
-            .filter(|entry| entry.kind == kind)
-            .map(|entry| {
-                TreeItem::new(
-                    SharedString::from(format!("ref:{}:{}", entry.kind, entry.full_name)),
-                    reference_label(entry),
-                )
-            })
-            .collect();
-        if children.is_empty() {
-            continue;
-        }
-        items.push(
-            // 三个分组都默认展开（macOS `localExpanded / remoteExpanded / tagsExpanded`，`:23-25`）。
-            TreeItem::new(SharedString::from(format!("ref:group:{kind}")), title)
-                .expanded(true)
-                .children(children),
-        );
-    }
-
-    (items, current)
-}
-
-/// 解析 Core 的 `%D` 装饰串（`commit.decorations`，`contracts.rs:610`）。
-///
-/// Core 用 `--pretty=format:…%x1f%D`（`rust/lithe-core/src/git/history.rs:302`），
-/// `%D` 的形状是逗号分隔的引用名，例如
-/// `HEAD -> main, origin/main, tag: v1.0.0`。这里按 macOS 的种类规则拆分
-/// （`GitGraphView.swift:775-782` 的 `.head` / `.branch` / `.remote` / `.tag`）：
-/// `HEAD -> x` → HEAD 徽标 + 本地徽标 `x`；`tag: x` → 标签徽标 `x`；
-/// 含 `/` → 远端；其余 → 本地。
-///
-/// **偏差（已登记）**：`%D` 不带种类信息，含 `/` 就判远端；名字里带 `/` 的**本地**分支
-/// （如 `fix/order`）会被画成远端色。真机是拿 `GitReference.kind` 判定的
-/// （`GitModels.swift:204-238`），要接准就得把 `git.references` 的 remote 名单一起传进来，
-/// 本轮没做。
-fn parse_decorations(value: &str) -> Vec<Decoration> {
-    let mut decorations = Vec::new();
-
-    for part in value.split(',').map(str::trim).filter(|part| !part.is_empty()) {
-        // `HEAD -> main`：HEAD 自己是一个 `.head` 徽标，箭头后面那个是本地分支徽标。
         if let Some(branch) = part.strip_prefix("HEAD -> ") {
-            decorations.push(Decoration {
-                name: SharedString::from("HEAD"),
-                kind: DecorationKind::Head,
+            labels.push(Label {
+                title: SharedString::from("HEAD"),
+                kind: LabelKind::Head,
             });
-            decorations.push(Decoration {
-                name: SharedString::from(branch.to_string()),
-                kind: DecorationKind::Local,
+            labels.push(Label {
+                title: SharedString::from(branch.to_string()),
+                kind: LabelKind::Branch,
             });
             continue;
         }
 
         if let Some(tag) = part.strip_prefix("tag: ") {
-            decorations.push(Decoration {
-                name: SharedString::from(tag.to_string()),
-                kind: DecorationKind::Tag,
+            labels.push(Label {
+                title: SharedString::from(tag.to_string()),
+                kind: LabelKind::Tag,
             });
             continue;
         }
 
-        let (name, kind) = if part.contains('/') {
-            (part, DecorationKind::Remote)
-        } else if part == "HEAD" {
-            (part, DecorationKind::Head)
+        let (title, kind) = if part == "HEAD" {
+            (part, LabelKind::Head)
+        } else if part.contains('/') {
+            (part, LabelKind::Remote)
         } else {
-            (part, DecorationKind::Local)
+            (part, LabelKind::Branch)
         };
-        decorations.push(Decoration {
-            name: SharedString::from(name.to_string()),
+        labels.push(Label {
+            title: SharedString::from(title.to_string()),
             kind,
         });
     }
 
-    decorations
+    labels
 }
 
-/// 解析 `git.historyPage` 的 `commits[]`（`contracts.rs:602-611 / :640-649`）。
-fn parse_commits(data: &serde_json::Value) -> Vec<CommitRow> {
+/// 解析 `git.historyPage` 的 `commits[]`（`contracts.rs:602-611`）。
+fn parse_commits(data: &serde_json::Value) -> Vec<Commit> {
     data.get("commits")
         .and_then(serde_json::Value::as_array)
         .map(|commits| {
             commits
                 .iter()
                 .filter_map(|commit| {
-                    Some(CommitRow {
+                    Some(Commit {
                         hash: SharedString::from(commit.get("hash")?.as_str()?),
                         short_hash: SharedString::from(
                             commit
@@ -1219,12 +737,17 @@ fn parse_commits(data: &serde_json::Value) -> Vec<CommitRow> {
                                 .and_then(serde_json::Value::as_str)
                                 .unwrap_or_default(),
                         ),
-                        decorations: parse_decorations(
-                            commit
-                                .get("decorations")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or_default(),
-                        ),
+                        parent_hashes: commit
+                            .get("parentHashes")
+                            .and_then(serde_json::Value::as_array)
+                            .map(|parents| {
+                                parents
+                                    .iter()
+                                    .filter_map(serde_json::Value::as_str)
+                                    .map(SharedString::from)
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                         subject: SharedString::from(
                             commit
                                 .get("subject")
@@ -1237,7 +760,7 @@ fn parse_commits(data: &serde_json::Value) -> Vec<CommitRow> {
                                 .and_then(serde_json::Value::as_str)
                                 .unwrap_or_default(),
                         ),
-                        author_email: SharedString::from(
+                        email: SharedString::from(
                             commit
                                 .get("authorEmail")
                                 .and_then(serde_json::Value::as_str)
@@ -1249,6 +772,12 @@ fn parse_commits(data: &serde_json::Value) -> Vec<CommitRow> {
                                 .and_then(serde_json::Value::as_str)
                                 .unwrap_or_default(),
                         ),
+                        labels: parse_decorations(
+                            commit
+                                .get("decorations")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default(),
+                        ),
                     })
                 })
                 .collect()
@@ -1256,25 +785,134 @@ fn parse_commits(data: &serde_json::Value) -> Vec<CommitRow> {
         .unwrap_or_default()
 }
 
-/// 把 `git.commitFiles` 的 `files[] { status, path }` 聚成多层目录树
-/// （`contracts.rs:703-714`；macOS 的 `GitCommitFileTreeNode.build`，`GitModels.swift:285-323`）。
-fn build_commit_files(files: &[(String, String)]) -> Vec<CommitFileRow> {
-    let mut root = CommitFileNode::default();
-    for (status, path) in files {
-        root.insert(path, status);
-    }
-
-    let mut rows = Vec::new();
-    root.flatten(0, &mut rows);
-    rows
+/// 一页历史的公共解析：`(commits, nextCursor, hasMore)`。
+fn parse_history_page(data: &serde_json::Value) -> (Vec<Commit>, Option<String>, bool) {
+    let commits = parse_commits(data);
+    let next_cursor = data
+        .get("nextCursor")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let has_more = data
+        .get("hasMore")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(next_cursor.is_some());
+    (commits, next_cursor, has_more)
 }
 
-/// 读一个提交的文件列表：`git.commitFiles { root, commit }`
-/// （请求 `git/mod.rs:650-653`，实现 `git/mod.rs:2013-2038`）。
+/// 读一页提交：`git.historyPage { root, reference, order, cursor, limit }`。
 ///
-/// 失败返回 Core 的错误码字符串，由 [`BottomPanel::apply_commit_files`] 换成
-/// 「无法加载更改的文件」+ 占位数据。
-fn load_commit_files(root: &str, commit: &str) -> Result<Vec<CommitFileRow>, String> {
+/// `order: "date"`（`git/history.rs:80-82` 的 `HistoryOrder::Date`，IDEA 的 Normal 排序）；
+/// `reference` / `order` 必须与创建 session 时一致，否则 Core 返回 `invalidCursor`
+/// （`git/history.rs:228-235`）。
+fn read_history_page(
+    root: &str,
+    reference: Option<&str>,
+    cursor: Option<&str>,
+) -> Result<(Vec<Commit>, Option<String>, bool), String> {
+    let data = execute_core(
+        "git.historyPage",
+        serde_json::json!({
+            "root": root,
+            "reference": reference,
+            "order": "date",
+            "cursor": cursor,
+            "limit": HISTORY_PAGE_LIMIT,
+        }),
+    )?;
+    Ok(parse_history_page(&data))
+}
+
+/// 首屏读取：工作区探测 → `git.status` → `git.references` → `git.historyPage`。
+///
+/// 非仓库时**不再白跑**后面三条（约束 2）。`old_cursor` 是上一次持有的游标，进函数第一件事就是
+/// 把它还回去，免得新 session 建起来后旧 `git log` 进程还挂着。
+fn load_first(
+    root: &Path,
+    reference: Option<String>,
+    old_cursor: Option<HistoryCursor>,
+) -> FirstLoad {
+    if let Some(cursor) = old_cursor {
+        cursor.close();
+    }
+
+    let mut load = FirstLoad {
+        repository_root: None,
+        branch: None,
+        references: Vec::new(),
+        commits: Vec::new(),
+        next_cursor: None,
+        has_more: false,
+        failures: Vec::new(),
+    };
+
+    let root_text = root.to_string_lossy().to_string();
+
+    // 1) git.status：仓库根 + 当前分支。
+    match read_status(&root_text) {
+        Ok((repository_root, branch)) => {
+            load.repository_root =
+                repository_root.map(|found| resolve_repository_root(root, &found));
+            load.branch = branch;
+        }
+        Err(code) => load.failures.push(format!("git.status（{code}）")),
+    }
+
+    if load.repository_root.is_none() {
+        // 不是仓库：用工作区快照的一级目录再找一次（有上限），仍找不到就走「未打开仓库」。
+        load.repository_root = discover_repository_root(root);
+    }
+
+    let Some(repository_root) = load.repository_root.clone() else {
+        return load;
+    };
+
+    // 2) git.references：引用树。
+    match execute_core(
+        "git.references",
+        serde_json::json!({ "root": repository_root.clone() }),
+    ) {
+        Ok(data) => load.references = parse_references(&data),
+        Err(code) => load.failures.push(format!("git.references（{code}）")),
+    }
+
+    // 3) git.historyPage：第一页。
+    match read_history_page(&repository_root, reference.as_deref(), None) {
+        Ok((commits, next_cursor, has_more)) => {
+            load.commits = commits;
+            load.next_cursor = next_cursor;
+            load.has_more = has_more;
+        }
+        Err(code) => load.failures.push(format!("git.historyPage（{code}）")),
+    }
+
+    load
+}
+
+/// 追加一页：`git.historyPage` 带上游标继续读同一个 `git log` 流。
+///
+/// 成功时**不关游标**（session 还在，`nextCursor` 与传入的游标是同一个串，`git/history.rs:244`）；
+/// 失败时 Core 已经 `session.stop()`（`:258-261`），游标作废。
+fn load_more(root: &str, reference: Option<String>, cursor: &str) -> MoreLoad {
+    match read_history_page(root, reference.as_deref(), Some(cursor)) {
+        Ok((commits, next_cursor, has_more)) => MoreLoad {
+            commits,
+            next_cursor,
+            has_more,
+            failure: None,
+        },
+        Err(code) => MoreLoad {
+            commits: Vec::new(),
+            next_cursor: None,
+            has_more: false,
+            failure: Some(code),
+        },
+    }
+}
+
+/// 读一个提交的文件列表：`git.commitFiles { root, commit }`（`git/mod.rs:2013-2038`）。
+///
+/// 返回 `(status, path)` 对，由 [`build_commit_files`] 聚成多层目录树。
+fn load_commit_files(root: &str, commit: &str) -> Result<Vec<(String, String)>, String> {
     let data = execute_core(
         "git.commitFiles",
         serde_json::json!({ "root": root, "commit": commit }),
@@ -1285,7 +923,7 @@ fn load_commit_files(root: &str, commit: &str) -> Result<Vec<CommitFileRow>, Str
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| "响应缺少 files".to_string())?;
 
-    let files: Vec<(String, String)> = files
+    Ok(files
         .iter()
         .filter_map(|file| {
             let path = file.get("path")?.as_str()?;
@@ -1295,1090 +933,2308 @@ fn load_commit_files(root: &str, commit: &str) -> Result<Vec<CommitFileRow>, Str
                 .unwrap_or("M");
             (!path.is_empty()).then(|| (status.to_string(), path.to_string()))
         })
-        .collect();
-
-    Ok(build_commit_files(&files))
+        .collect())
 }
 
-/// 跑一遍 `git.status` → `git.references` → `git.historyPage`（第一页）。
-///
-/// **同步**函数，由 [`BottomPanel::spawn_git_load`] 放进 `cx.background_spawn(...)`：
-/// 三个命令都要用同一个根，且引用与历史在真机上也是同时刷新的
-/// （`GitFeatureModel.swift:1736-1750`）。
-///
-/// 失败/非仓库的处理（对应「不要空白、不要 panic」）：
-/// - `git.status` 成功但 `repositoryRoot == null` → **不是 Git 仓库**
-///   （`git/mod.rs:6535-6544`），不再白跑另外两条命令，只记一条 macOS 原文
-///   「当前项目不是 Git 仓库」（`Localizable.strings:698`）；
-/// - 某条命令失败 → 记 `命令（错误码）`，它的数据留 `None`，面板**保留占位数据**；
-/// - `git.historyPage` 有 `nextCursor` → 本步只取第一页，按契约立刻
-///   `git.historyCursorClose` 释放 Core 的 `git log` 流
-///   （`shared/contracts/rust-core-api.md:894-895`）。
-fn load_git_snapshot(root: &Path) -> GitSnapshot {
-    let mut snapshot = GitSnapshot {
-        is_repository: false,
-        branch: None,
-        repository_root: None,
-        references: None,
-        commits: None,
-        failures: Vec::new(),
-    };
+// ---------------------------------------------------------------------------
+// 纯函数：泳道布局 / 引用树 / 文件树 / 过滤
+// ---------------------------------------------------------------------------
 
-    let root_text = root.to_string_lossy().to_string();
+/// 泳道颜色下标 → 主题色（偏差 3）。
+fn lane_color(index: usize, cx: &App) -> Hsla {
+    let theme = cx.theme();
+    match index % 6 {
+        0 => theme.success,
+        1 => theme.blue_light,
+        2 => theme.magenta_light,
+        3 => theme.warning,
+        4 => theme.danger,
+        _ => theme.cyan_light,
+    }
+}
 
-    // 1) git.status：仓库根 + 当前分支。
-    let mut repository_root_text = root_text.clone();
-    match execute_core(
-        "git.status",
-        serde_json::json!({ "root": root_text.as_str() }),
-    ) {
-        Ok(data) => {
-            snapshot.is_repository = data
-                .get("repositoryRoot")
-                .is_some_and(|value| !value.is_null());
-            snapshot.branch = data
-                .get("branch")
-                .and_then(serde_json::Value::as_str)
-                .map(SharedString::from);
-            if let Some(repository_root) = data
-                .get("repositoryRoot")
-                .and_then(serde_json::Value::as_str)
+/// 标签四档的颜色（偏差 3）。
+fn label_color(kind: LabelKind, cx: &App) -> Hsla {
+    let theme = cx.theme();
+    match kind {
+        LabelKind::Head => theme.cyan_light,
+        LabelKind::Remote => theme.blue_light,
+        LabelKind::Tag => theme.yellow_light,
+        LabelKind::Branch => theme.green_light,
+    }
+}
+
+/// 简化泳道布局（模块文档偏差 2）。
+///
+/// 规则与 `git-graph-layout.ts` 同构：每条泳道记住「在等哪个提交」；本提交进到自己那条泳道，
+/// 第一父提交留在原泳道，其余父提交塞进空泳道（没有空位就新开一条）；行尾回收尾部空泳道。
+/// 颜色按泳道下标取 6 色循环，跨泳道父边只画目标泳道的竖直段。
+fn layout_graph(commits: &[Commit]) -> Vec<GraphRow> {
+    let known: BTreeSet<&SharedString> = commits.iter().map(|commit| &commit.hash).collect();
+    let mut lanes: Vec<Option<SharedString>> = Vec::new();
+    let mut rows = Vec::with_capacity(commits.len());
+
+    for commit in commits {
+        // 本提交在哪条泳道：等它的那条；没有就是新开一条。
+        let lane = match lanes
+            .iter()
+            .position(|expected| expected.as_ref() == Some(&commit.hash))
+        {
+            Some(lane) => lane,
+            None => {
+                lanes.push(None);
+                lanes.len() - 1
+            }
+        };
+
+        // 入线：本行上半部分经过的泳道。
+        let mut lane_colors: Vec<Option<usize>> = lanes
+            .iter()
+            .enumerate()
+            .map(|(index, expected)| expected.as_ref().map(|_| index % 6))
+            .collect();
+        let node_color = lane_colors.get(lane).copied().flatten().unwrap_or(lane % 6);
+
+        // 出线：把父提交排进泳道，再按结果画下半段。
+        let mut edges: Vec<(usize, usize, bool)> = Vec::new();
+        for (position, parent) in commit.parent_hashes.iter().enumerate() {
+            let target = if position == 0 {
+                lane
+            } else if let Some(existing) = lanes
+                .iter()
+                .position(|expected| expected.as_ref() == Some(parent))
             {
-                repository_root_text = resolve_repository_root(root, repository_root);
-                snapshot.repository_root = Some(repository_root_text.clone());
+                existing
+            } else if let Some(free) = lanes.iter().position(Option::is_none) {
+                free
+            } else {
+                lanes.push(None);
+                lanes.len() - 1
+            };
+
+            let missing = !known.contains(parent);
+            edges.push((target, target % 6, missing));
+            lanes[target] = Some(parent.clone());
+            while lane_colors.len() <= target {
+                lane_colors.push(None);
             }
         }
-        Err(code) => snapshot.failures.push(format!("git.status（{code}）")),
-    }
-
-    if !snapshot.is_repository {
-        // 非仓库（或工作区不存在）：Core 的 `git.references` / `git.historyPage` 只会
-        // 再失败一次，这里直接返回，让面板走「保留占位 + 提示」。
-        if snapshot.failures.is_empty() {
-            snapshot
-                .failures
-                .push("当前项目不是 Git 仓库".to_string());
+        if commit.parent_hashes.is_empty() {
+            lanes[lane] = None;
         }
-        return snapshot;
-    }
 
-    // 2) git.references：引用树。
-    match execute_core(
-        "git.references",
-        serde_json::json!({ "root": repository_root_text.as_str() }),
-    ) {
-        Ok(data) => {
-            snapshot.references = Some(parse_references(&data));
-        }
-        Err(code) => snapshot
-            .failures
-            .push(format!("git.references（{code}）")),
-    }
-
-    // 3) git.historyPage：第一页提交（macOS 传 order: "date"、limit 100，
-    //    `RustGitOperations.swift:594-601`、`GitFeatureModel.swift:298`）。
-    match execute_core(
-        "git.historyPage",
-        serde_json::json!({
-            "root": repository_root_text.as_str(),
-            "order": "date",
-            "limit": HISTORY_PAGE_LIMIT,
-        }),
-    ) {
-        Ok(data) => {
-            let next_cursor = data
-                .get("nextCursor")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_string);
-            snapshot.commits = Some(parse_commits(&data));
-            if let Some(cursor) = next_cursor {
-                // 「加载更多」没做（缺口 3），所以把游标还回去，别占住 Core 的
-                // 增量 `git log` 流（每根最多 8 条，空闲 120 s 才回收：
-                // `rust/lithe-core/src/git/history.rs:25-29`）。
-                let _ = execute_core(
-                    "git.historyCursorClose",
-                    serde_json::json!({
-                        "root": repository_root_text.as_str(),
-                        "cursor": cursor,
-                    }),
-                );
+        // 跨泳道父边要在目标泳道的下半部分补一段线，所以泳道数要覆盖到最远的边。
+        if let Some((widest, _, _)) = edges.iter().max_by_key(|(lane, _, _)| *lane) {
+            while lane_colors.len() <= *widest {
+                lane_colors.push(None);
             }
         }
-        Err(code) => snapshot
-            .failures
-            .push(format!("git.historyPage（{code}）")),
+
+        rows.push(GraphRow {
+            lanes: lane_colors,
+            lane,
+            node_color,
+            edges,
+        });
+
+        while lanes.last().is_some_and(|lane| lane.is_none()) {
+            lanes.pop();
+        }
     }
 
-    snapshot
+    rows
 }
 
-/// 底部工具窗面板。
+/// 引用树的一个节点（Windows `buildGitReferenceTree` 的目录分组）。
+struct RefNode {
+    /// 这一段的名字（目录名或引用短名）。
+    name: SharedString,
+    /// 分组 id（`"<kind>/<path>"`），用于折叠状态。
+    id: String,
+    /// 叶子节点指向 `BottomPane::references` 的下标。
+    reference: Option<usize>,
+    children: Vec<RefNode>,
+}
+
+/// 摊平后的一行。
+struct RefRow {
+    depth: usize,
+    name: SharedString,
+    id: String,
+    reference: Option<usize>,
+}
+
+/// 把一类引用按 `/` 分组（顺序保持 Core 给的顺序，Core 已保证确定性）。
+fn build_reference_rows(references: &[Reference], kind: RefKind) -> Vec<RefRow> {
+    let mut roots: Vec<RefNode> = Vec::new();
+
+    for (index, reference) in references.iter().enumerate() {
+        if reference.kind != kind {
+            continue;
+        }
+
+        let segments: Vec<&str> = reference
+            .short_name
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        let Some((leaf, directories)) = segments.split_last() else {
+            continue;
+        };
+
+        let mut path = String::new();
+        let mut level = &mut roots;
+        for directory in directories {
+            if !path.is_empty() {
+                path.push('/');
+            }
+            path.push_str(directory);
+            let id = format!("{}/{}", kind.id(), path);
+            let position = match level.iter().position(|node| node.id == id) {
+                Some(position) => position,
+                None => {
+                    level.push(RefNode {
+                        name: SharedString::from((*directory).to_string()),
+                        id: id.clone(),
+                        reference: None,
+                        children: Vec::new(),
+                    });
+                    level.len() - 1
+                }
+            };
+            level = &mut level[position].children;
+        }
+
+        let mut leaf_path = path.clone();
+        if !leaf_path.is_empty() {
+            leaf_path.push('/');
+        }
+        leaf_path.push_str(leaf);
+        level.push(RefNode {
+            name: SharedString::from((*leaf).to_string()),
+            id: format!("{}/{}", kind.id(), leaf_path),
+            reference: Some(index),
+            children: Vec::new(),
+        });
+    }
+
+    let mut rows = Vec::new();
+    flatten_reference_nodes(&roots, 0, &mut rows);
+    rows
+}
+
+fn flatten_reference_nodes(nodes: &[RefNode], depth: usize, rows: &mut Vec<RefRow>) {
+    for node in nodes {
+        rows.push(RefRow {
+            depth,
+            name: node.name.clone(),
+            id: node.id.clone(),
+            reference: node.reference,
+        });
+        flatten_reference_nodes(&node.children, depth + 1, rows);
+    }
+}
+
+/// 提交文件树的中间节点（Windows `GitCommitFileTreeNode.build`）。
+#[derive(Default)]
+struct FileNode {
+    dirs: Vec<(String, FileNode)>,
+    files: Vec<(String, String)>,
+}
+
+impl FileNode {
+    fn insert(&mut self, path: &str, status: &str) {
+        let segments: Vec<&str> = path.split('/').collect();
+        let Some((name, directories)) = segments.split_last() else {
+            return;
+        };
+
+        let mut node = self;
+        for directory in directories {
+            let position = match node.dirs.iter().position(|(key, _)| key == directory) {
+                Some(position) => position,
+                None => {
+                    node.dirs
+                        .push(((*directory).to_string(), FileNode::default()));
+                    node.dirs.len() - 1
+                }
+            };
+            node = &mut node.dirs[position].1;
+        }
+        node.files.push(((*name).to_string(), status.to_string()));
+    }
+
+    fn file_count(&self) -> usize {
+        self.files.len() + self.dirs.iter().map(|(_, child)| child.file_count()).sum::<usize>()
+    }
+
+    fn flatten(&self, depth: usize, rows: &mut Vec<CommitFileRow>) {
+        for (name, child) in &self.dirs {
+            rows.push(CommitFileRow {
+                depth,
+                name: SharedString::from(name.clone()),
+                is_folder: true,
+                file_count: child.file_count(),
+                status: SharedString::from(""),
+            });
+            child.flatten(depth + 1, rows);
+        }
+
+        for (name, status) in &self.files {
+            rows.push(CommitFileRow {
+                depth,
+                name: SharedString::from(name.clone()),
+                is_folder: false,
+                file_count: 0,
+                status: SharedString::from(status.clone()),
+            });
+        }
+    }
+}
+
+/// 把 `git.commitFiles` 的 `(status, path)` 聚成多层目录树。
+fn build_commit_files(files: &[(String, String)]) -> Vec<CommitFileRow> {
+    let mut root = FileNode::default();
+    for (status, path) in files {
+        root.insert(path, status);
+    }
+
+    let mut rows = Vec::new();
+    root.flatten(0, &mut rows);
+    rows
+}
+
+/// 提交过滤。逐字照 `features/git/utils/git-log-filter.ts:4-19`。
+fn matches_filter(commit: &Commit, query: &str, scope: FilterScope) -> bool {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+
+    match scope {
+        FilterScope::Author => {
+            contains(&commit.author, &query) || contains(&commit.email, &query)
+        }
+        FilterScope::Branch => commit.labels.iter().any(|label| contains(&label.title, &query)),
+        FilterScope::Text => {
+            contains(&commit.subject, &query)
+                || contains(&commit.hash, &query)
+                || contains(&commit.short_hash, &query)
+        }
+    }
+}
+
+fn contains(value: &SharedString, query: &str) -> bool {
+    value.to_lowercase().contains(query)
+}
+
+/// ahead / behind 计数，上限 [`TRACKING_COUNT_MAX`] → `99+`
+/// （`git-tracking-counts.tsx:9-14`）。
+fn tracking_count(value: usize) -> SharedString {
+    if value > TRACKING_COUNT_MAX {
+        SharedString::from(format!("{TRACKING_COUNT_MAX}+"))
+    } else {
+        SharedString::from(value.to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 面板
+// ---------------------------------------------------------------------------
+
+/// 底部工具窗「提交记录」。
 ///
-/// 它自带头部与页签，所以不复用 `panels.rs` 的 `ShellPanel`：那种面板靠
-/// `PanelKind` 分支渲染，而这里需要一条完全不同的 chrome，独立成类型才不会
-/// 和其他区域互相牵动。
-pub(super) struct BottomPanel {
-    /// 稳定名字，用于布局持久化与恢复注册。
-    name: &'static str,
-    /// 工作区根（本轮是 [`workspace_root`] 的兜底值，`new` 的签名没变）。
+/// 对外只暴露 [`BottomPane::new`] 与 [`BottomPane::refresh`] / [`BottomPane::set_visible`] /
+/// [`BottomPane::visible`]；字段全部私有。本面板不开浮层（对话框 / 抽屉 / 通知的挂层由窗口
+/// 根视图负责）。
+pub struct BottomPane {
+    /// 工作区根，来自命令行参数（`git.*` 命令都要求带 `root`）。
     root: PathBuf,
-    /// `git.status.repositoryRoot` 解析成绝对路径后的仓库根：`git.commitFiles` 用它当 `root`
-    /// （相对路径的来源见 [`resolve_repository_root`]）；`None` = 还没接上 / 不是仓库。
+    /// `git.status.repositoryRoot` 解析成绝对路径后的仓库根（见 [`resolve_repository_root`]）。
     repository_root: Option<String>,
-    /// `git.status.branch`：标题栏 `日志：<当前分支>` 的兜底（`GitLogView.swift:396`）。
+    /// `git.status.branch`：没有选中引用时标题栏的兜底。
     branch: Option<SharedString>,
-    /// 引用树里「当前分支」节点的 id（画绿勾 + 空选中时点亮，`:758-764 / :2713-2717`）。
-    current_reference: Option<SharedString>,
-    /// 当前页签（macOS `selectedGitToolTab`，`GitLogView.swift:42`）。
-    tab: BottomTab,
-    /// 引用树（macOS `GitReferenceRowsBuilder` 的扁平化结果，`GitReferenceRows.swift`）。
-    /// 真数据来自 `git.references`，失败时是 [`placeholder_references`]。
-    references: Entity<TreeState>,
-    /// 提交行。真数据来自 `git.historyPage` 第一页，失败时是 [`placeholder_commits`]。
-    commits: Rc<Vec<CommitRow>>,
-    /// 选中的提交在 [`Self::commits`] 里的下标（macOS `selectedGitCommit`，
-    /// `GitLogView.swift:1286-1290`）。`None` = 没有选中。
+    load_state: LoadState,
+    /// 当前页签（局部状态，`git-log-tool-window.tsx:80`）。
+    panel: Panel,
+    /// 引用（`git.references`）。
+    references: Vec<Reference>,
+    /// 提交（`git.historyPage`，可能有多页）。
+    commits: Vec<Commit>,
+    /// 持有的分页游标；`None` = 读完了 / 没在读。
+    cursor: Option<HistoryCursor>,
+    has_more: bool,
+    loading_more: bool,
+    /// 选中的引用（[`Self::references`] 的下标）。
+    selected_reference: Option<usize>,
+    /// 选中的提交（[`Self::commits`] 的下标）。
     selected_commit: Option<usize>,
-    /// 提交文件树的行。真数据来自 `git.commitFiles`，失败 / 未选中时是
-    /// [`placeholder_commit_files`]。
-    commit_files: Rc<Vec<CommitFileRow>>,
-    /// 提交文件栏的状态（占位 / 加载中 / 已加载 / 失败）。
-    commit_files_state: CommitFilesState,
-    /// 提交详情。选中提交后从那一行 [`CommitRow`] 填，否则是 [`placeholder_commit_detail`]。
-    commit_detail: CommitDetail,
-    /// Core 读取失败 / 非仓库时的一行提示（`None` = 全部成功，不画这一行）。
-    notice: Option<SharedString>,
-    /// 是否画引用装饰（macOS `showCommitDecorations`，`GitLogView.swift:1008-1012`）。
+    /// 折叠的分区（`local / remote / tag`）。
+    collapsed_sections: BTreeSet<&'static str>,
+    /// 折叠的引用分组 id。
+    collapsed_groups: BTreeSet<String>,
+    /// 「只显示我的分支」（`git-log-preferences.store.ts:64`）。
+    show_my_branches_only: bool,
+    /// 引用树是否画装饰（`git-log-preferences.store.ts:63`，默认 true）。
     show_decorations: bool,
-    /// 提交栏的日志搜索框。当前只接收输入、不参与过滤（未接 `GitLogQuery`，`:1383-1391`）。
-    search: Entity<InputState>,
-    focus_handle: FocusHandle,
+    /// 提交文件列表状态。
+    files_state: FilesState,
+    files: Vec<CommitFileRow>,
+    /// 提交详情（选中提交后填）。
+    detail: Option<Detail>,
+    /// 筛选输入框（`git-commit-table.tsx:201` 的 `<input>`）。
+    filter: Entity<InputState>,
+    filter_query: SharedString,
+    filter_scope: FilterScope,
+    /// 输入事件订阅：不存下来会被立刻丢掉，输入框就不再触发重绘。
+    _filter_subscription: Subscription,
+    /// 可见性（Windows 由外部 `setIsBottomPaneVisible` 控制；这里给父级一个钩子）。
+    visible: bool,
+    /// 请求代次：晚到的旧回包直接丢掉。
+    request_serial: u64,
 }
 
-impl BottomPanel {
-    /// `root` 是工作区根，由 `workspace.rs` 传入（`Core` 的 `git.*` 命令都要求请求里带
-    /// `root`；之前用 `std::env::current_dir()` 兜底，会随启动目录漂移）。
-    pub(super) fn new(window: &mut Window, cx: &mut Context<Self>, root: PathBuf) -> Self {
-        // `new` 里也能拿实体弱引用（`workspace.rs:200` 同一写法），初载就不用等第一帧。
-        let this = cx.entity().downgrade();
+impl BottomPane {
+    /// 建立面板并立刻在后台跑一遍首屏读取。
+    ///
+    /// `root` 是工作区根；`git.status` 会在它下面解析出真正的仓库根。
+    pub fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let filter_scope = FilterScope::Text;
+        let placeholder = filter_scope.placeholder();
+        let filter = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
 
-        let panel = Self {
-            name: "BottomToolWindow",
+        let filter_subscription = cx.subscribe_in(
+            &filter,
+            window,
+            |pane: &mut Self, state: &Entity<InputState>, event: &InputEvent, _window, cx| {
+                if matches!(event, InputEvent::Change) {
+                    pane.filter_query = state.read(cx).value();
+                    cx.notify();
+                }
+            },
+        );
+
+        let mut pane = Self {
             root: root.clone(),
             repository_root: None,
             branch: None,
-            current_reference: None,
-            tab: BottomTab::Log,
-            // 三个分组都默认展开（macOS `localExpanded / remoteExpanded / tagsExpanded`，`:23-25`）；
-            // 初值是占位树，`git.references` 回来后在 `apply_snapshot` 里整棵换掉。
-            references: cx.new(|cx| TreeState::new(cx).items(placeholder_references())),
-            commits: Rc::new(placeholder_commits()),
+            load_state: LoadState::Loading,
+            panel: Panel::Log,
+            references: Vec::new(),
+            commits: Vec::new(),
+            cursor: None,
+            has_more: false,
+            loading_more: false,
+            selected_reference: None,
             selected_commit: None,
-            commit_files: Rc::new(placeholder_commit_files()),
-            commit_files_state: CommitFilesState::Placeholder,
-            commit_detail: placeholder_commit_detail(),
-            notice: None,
+            collapsed_sections: BTreeSet::new(),
+            collapsed_groups: BTreeSet::new(),
+            show_my_branches_only: false,
             show_decorations: true,
-            // macOS 的 placeholder：`Text, me, author:, branch:, path:`（中文资源同键，
-            // `GitLogView.swift:969`）。
-            search: cx.new(|cx| {
-                InputState::new(window, cx).placeholder("搜索文本，或使用 me、author:、branch:、path:")
-            }),
-            focus_handle: cx.focus_handle(),
+            files_state: FilesState::Idle,
+            files: Vec::new(),
+            detail: None,
+            filter,
+            filter_query: SharedString::from(""),
+            filter_scope,
+            _filter_subscription: filter_subscription,
+            visible: true,
+            request_serial: 0,
         };
 
-        Self::spawn_git_load(this, root, cx);
-
-        panel
+        pane.spawn_first_load(cx);
+        pane
     }
 
-    /// 后台跑 [`load_git_snapshot`]，回前台写状态。
-    ///
-    /// 写法照 `workspace.rs:199-231`（`ShellWorkspace::new` 里的初载）：`cx.spawn` + `cx.background_spawn`（同步 Core 调用
-    /// 不能阻塞 UI 线程）+ `WeakEntity::update`（面板可能已经不在布局里）。
-    fn spawn_git_load(this: WeakEntity<Self>, root: PathBuf, cx: &mut Context<Self>) {
+    /// 可见性钩子（Windows 的 `setIsBottomPaneVisible(false)`，`git-log-tool-window.tsx:579`）。
+    /// 父级在布局里应先问 [`Self::visible`]，否则隐藏后只会留一块空白。
+    pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        if self.visible != visible {
+            self.visible = visible;
+            cx.notify();
+        }
+    }
+
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
+
+    /// 重新跑一遍首屏读取（标题栏刷新按钮 / 引用选中变化都走这里）。
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.spawn_first_load(cx);
+    }
+
+    /// 起一次首屏读取：把当前游标交给后台任务去归还，重排状态，再 spawn。
+    fn spawn_first_load(&mut self, cx: &mut Context<Self>) {
+        let root = self.root.clone();
+        let reference = self.selected_reference_full_name();
+        let cursor = self.cursor.take();
+        self.has_more = false;
+        self.loading_more = false;
+        // 已有数据时保持原状态（失败会切到 `Stale`，画横幅而不是把列表清空）。
+        if self.commits.is_empty() {
+            self.load_state = LoadState::Loading;
+        }
+        self.request_serial = self.request_serial.wrapping_add(1);
+        let serial = self.request_serial;
+        let this = cx.entity().downgrade();
+        cx.notify();
+
         cx.spawn(async move |_this, cx| {
-            let snapshot = cx
-                .background_spawn(async move { load_git_snapshot(&root) })
+            let load = cx
+                .background_spawn(async move { load_first(&root, reference, cursor) })
                 .await;
-            let _ = this.update(cx, |panel, cx| panel.apply_snapshot(snapshot, cx));
+            let _ = this.update(cx, |pane, cx| pane.apply_first(serial, load, cx));
         })
         .detach();
     }
 
-    /// 把一次 Core 读取的结果写进面板状态。
-    ///
-    /// 分数据源处理，**失败的那一块保持原样（占位）**，只把失败拼成一行提示：
-    /// - 引用树：`git.references` 成功才换树（失败时保留占位树，选中状态也不动）；
-    /// - 提交行：`git.historyPage` 成功才换（失败时保留上一次的列表 / 占位列表）；
-    /// - 分支 / 仓库根：只在成功时有值，失败时保留上一次的值（不会把已知分支擦掉）。
-    ///
-    /// 历史页回来后会选中第一条提交并加载它的文件（macOS 同样这么做：
-    /// `GitFeatureModel.swift:1773-1782` 的 `historyPage.commits.first`）。
-    fn apply_snapshot(&mut self, snapshot: GitSnapshot, cx: &mut Context<Self>) {
-        let loaded_commits = snapshot.commits.is_some();
-
-        // 引用树在前台拼（`TreeItem` 不是 `Send`，见 [`GitSnapshot`]）。
-        if let Some(entries) = snapshot.references {
-            let (items, current) = build_reference_tree(&entries);
-            self.references
-                .update(cx, |state, cx| state.set_items(items, cx));
-            self.current_reference = current;
+    /// 把首屏结果写进面板。
+    fn apply_first(&mut self, serial: u64, load: FirstLoad, cx: &mut Context<Self>) {
+        if serial != self.request_serial {
+            return;
         }
 
-        if let Some(commits) = snapshot.commits {
-            self.commits = Rc::new(commits);
+        self.references = load.references;
+        if let Some(repository_root) = load.repository_root {
+            self.repository_root = Some(repository_root);
+        }
+        if load.branch.is_some() {
+            self.branch = load.branch;
+        }
+
+        if self.repository_root.is_none() {
+            self.load_state = LoadState::NoRepository;
+            self.commits = Vec::new();
+            self.has_more = false;
+            self.cursor = None;
             self.selected_commit = None;
+            self.selected_reference = None;
+            self.detail = None;
+            self.files = Vec::new();
+            self.files_state = FilesState::Idle;
+            cx.notify();
+            return;
         }
 
-        // 分支 / 仓库根只在成功时有值：失败时保留上一次的值，不把已知信息擦掉。
-        if snapshot.repository_root.is_some() {
-            self.repository_root = snapshot.repository_root;
-        }
-        if snapshot.branch.is_some() {
-            self.branch = snapshot.branch;
+        let cursor_root = self.repository_root.clone().unwrap_or_default();
+        if load.failures.is_empty() {
+            self.commits = load.commits;
+            self.cursor = load.next_cursor.map(|cursor| HistoryCursor {
+                root: cursor_root,
+                cursor,
+            });
+            self.has_more = load.has_more;
+            self.load_state = LoadState::Ready;
+        } else if self.commits.is_empty() {
+            self.load_state = LoadState::Failed;
+            self.has_more = false;
+            self.cursor = None;
+        } else {
+            // 有旧数据 → 横幅（`git-log-tool-window.tsx:589-600`），列表保持不动。
+            self.load_state = LoadState::Stale;
+            self.has_more = false;
+            self.cursor = None;
         }
 
-        self.notice = (!snapshot.failures.is_empty()).then(|| {
-            SharedString::from(format!(
-                "Git 数据未接入：{}（下方为占位数据）",
-                snapshot.failures.join("；")
-            ))
-        });
+        // 换仓库 / 换引用后旧的选中下标可能越界，统一清掉再选第一条。
+        self.selected_commit = None;
+        self.selected_reference = self
+            .selected_reference
+            .filter(|index| *index < self.references.len());
         cx.notify();
 
-        if loaded_commits && self.selected_commit.is_none() && !self.commits.is_empty() {
+        if !self.commits.is_empty() {
             self.select_commit(0, cx);
         }
     }
 
-    /// 选中一行提交：填提交详情 + 后台加载该提交的文件（macOS `selectGitCommit` →
-    /// `loadGitCommitFiles`，`GitFeatureModel.swift:1776-1782`）。
-    ///
-    /// 详情直接取选中行自己的字段（同一个 `GitCommitResponse`），不再多发一条
-    /// `git.commit`（macOS 也只在按需刷新单条时才查 `git.commit`）。
-    ///
-    /// **偏差**：macOS 选中后有 120 ms 防抖（`GitLogView.swift:1243-1253`），本轮立即加载。
+    /// 追加一页（「加载更多提交」）。
+    fn load_more(&mut self, cx: &mut Context<Self>) {
+        let Some(cursor_text) = self.cursor.as_ref().map(|cursor| cursor.cursor.clone()) else {
+            return;
+        };
+        let Some(root) = self.repository_root.clone() else {
+            return;
+        };
+        if self.loading_more {
+            return;
+        }
+
+        let reference = self.selected_reference_full_name();
+        self.loading_more = true;
+        let this = cx.entity().downgrade();
+        cx.notify();
+
+        cx.spawn(async move |_this, cx| {
+            let more = cx
+                .background_spawn(async move { load_more(&root, reference, &cursor_text) })
+                .await;
+            let _ = this.update(cx, |pane, cx| pane.apply_more(more, cx));
+        })
+        .detach();
+    }
+
+    fn apply_more(&mut self, more: MoreLoad, cx: &mut Context<Self>) {
+        self.loading_more = false;
+        match more.failure {
+            // 失败时 Core 已经停掉 session（`git/history.rs:258-261`），游标作废。
+            Some(_) => {
+                self.has_more = false;
+                self.cursor = None;
+            }
+            None => {
+                let cursor_root = self.repository_root.clone().unwrap_or_default();
+                self.commits.extend(more.commits);
+                self.cursor = more.next_cursor.map(|cursor| HistoryCursor {
+                    root: cursor_root,
+                    cursor,
+                });
+                self.has_more = more.has_more;
+            }
+        }
+        cx.notify();
+    }
+
+    /// 选中一行提交：填详情 + 后台读 `git.commitFiles`。
+    /// Windows 的选中会同时驱动 Inspector（`git-log-tool-window.tsx:685-704`）。
     fn select_commit(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(row) = self.commits.get(index).cloned() else {
+        let Some(commit) = self.commits.get(index).cloned() else {
             return;
         };
 
         self.selected_commit = Some(index);
-        self.commit_detail = CommitDetail {
-            subject: row.subject.clone(),
-            short_hash: row.short_hash.clone(),
-            author_name: row.author.clone(),
-            author_email: row.author_email.clone(),
-            date: row.date.clone(),
-            // 详情里的装饰是**一行文本**（macOS `Text(commit.decorations)`，
-            // `GitLogView.swift:1213-1218`），所以把徽标名拼回 `, ` 分隔。
+        self.detail = Some(Detail {
+            subject: commit.subject.clone(),
+            short_hash: commit.short_hash.clone(),
+            author: commit.author.clone(),
+            email: commit.email.clone(),
+            date: commit.date.clone(),
             decorations: SharedString::from(
-                row.decorations
+                commit
+                    .labels
                     .iter()
-                    .map(|decoration| decoration.name.to_string())
+                    .map(|label| label.title.to_string())
                     .collect::<Vec<String>>()
                     .join(", "),
             ),
-        };
-        // 文件列表先进加载态：清空旧行，免得显示上一个提交的文件。
-        self.commit_files = Rc::new(Vec::new());
-        self.commit_files_state = CommitFilesState::Loading;
+            hash: commit.hash.clone(),
+        });
+        self.files = Vec::new();
+        self.files_state = FilesState::Loading;
         cx.notify();
 
         let root = self
             .repository_root
             .clone()
             .unwrap_or_else(|| self.root.to_string_lossy().to_string());
-        let commit = row.hash.to_string();
+        let hash = commit.hash.to_string();
         let this = cx.entity().downgrade();
 
         cx.spawn(async move |_this, cx| {
             let loaded = cx
-                .background_spawn(async move { load_commit_files(&root, &commit) })
+                .background_spawn(async move { load_commit_files(&root, &hash) })
                 .await;
-            let _ = this.update(cx, |panel, cx| panel.apply_commit_files(loaded, cx));
+            let _ = this.update(cx, |pane, cx| pane.apply_commit_files(loaded, cx));
         })
         .detach();
     }
 
-    /// 把 `git.commitFiles` 的结果写进面板。
-    ///
-    /// 失败时**回到占位文件列表**（不空白）并把失败原因写进 [`Self::notice`]
-    /// （这一行会覆盖更早的提示：最近一次失败更值得看）。
     fn apply_commit_files(
         &mut self,
-        loaded: Result<Vec<CommitFileRow>, String>,
+        loaded: Result<Vec<(String, String)>, String>,
         cx: &mut Context<Self>,
     ) {
         match loaded {
-            Ok(rows) => {
-                self.commit_files = Rc::new(rows);
-                self.commit_files_state = CommitFilesState::Loaded;
+            Ok(files) => {
+                self.files = build_commit_files(&files);
+                self.files_state = FilesState::Ready;
             }
-            Err(code) => {
-                self.commit_files = Rc::new(placeholder_commit_files());
-                self.commit_files_state = CommitFilesState::Failed;
-                self.notice = Some(SharedString::from(format!(
-                    "无法加载更改的文件（git.commitFiles：{code}），下方为占位数据"
-                )));
+            Err(_) => {
+                self.files = Vec::new();
+                self.files_state = FilesState::Failed;
             }
         }
         cx.notify();
     }
 
-    /// 重新跑一遍三个 Core 读命令（提交栏工具行的刷新按钮，macOS `:997-1022`）。
-    fn reload(&mut self, cx: &mut Context<Self>) {
-        let root = self.root.clone();
-        let this = cx.entity().downgrade();
-        Self::spawn_git_load(this, root, cx);
-    }
-
-    /// 当前选中的引用名；没有选中就是 `None`（= macOS 的 `isShowingAllGitReferences`）。
-    ///
-    /// 分组行被选中不算选中引用（macOS 的引用行与分组行是两类行，`:2666-2672`）。
-    fn selected_reference_label(&self, cx: &App) -> Option<SharedString> {
-        self.references
-            .read(cx)
-            .selected_entry()
-            .filter(|entry| !entry.is_folder())
-            .map(|entry| entry.item().label.clone())
-    }
-
-    /// 标题栏。macOS `toolWindowHeader`（`GitLogView.swift:380-461`）：
-    /// `[VCS 图标 14][Git 13.5 semibold][Log 页签][Worktrees 页签][Console 页签]
-    ///  [＋（仅选中引用时）][⋯ 菜单 28×28] …… [− 隐藏]`，
-    /// 高 32、左右内边距 12 / 7、间距 4、底色 `toolHeader`、底部 1px `divider`。
-    fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let selected_reference = self.selected_reference_label(cx);
-        // Log 页签标题：`Log: <短名>`（`GitLogView.swift:394-397`）。没有显式选中引用时
-        // macOS 用的是**当前分支名**（`feature.currentBranch`，`:396`），分支名来自
-        // `git.status.branch`；两者都没有才退回 `All References`
-        // （zh-Hans `Localizable.strings:1817` → 所有引用）。
-        let log_tab_label = match selected_reference.clone() {
-            Some(name) => SharedString::from(format!("日志：{name}")),
-            None => match self.branch.clone() {
-                Some(branch) => SharedString::from(format!("日志：{branch}")),
-                None => SharedString::from("日志：所有引用"),
-            },
-        };
-
-        let mut header = h_flex()
-            .h(px(HEADER_HEIGHT))
-            .pl(px(HEADER_PADDING_LEADING))
-            .pr(px(HEADER_PADDING_TRAILING))
-            .gap(px(HEADER_GAP))
-            .bg(cx.theme().tab_bar)
-            .border_b_1()
-            .border_color(cx.theme().border)
-            // macOS 是 `toolwindows/toolWindowVcs.svg`（14pt，`:382-387`）；默认图标集没有
-            // VCS 字形（`gpui-kit-assets-0.6.6/default-icons.txt`），用 `BookOpen` 代替。
-            .child(
-                Icon::new(IconName::BookOpen)
-                    .size(px(14.))
-                    .text_color(cx.theme().muted_foreground),
-            )
-            .child(
-                div()
-                    .pr(px(4.))
-                    .text_size(px(13.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(cx.theme().foreground)
-                    .child(SharedString::from("Git")),
-            )
-            .child(self.tab_button(BottomTab::Log, log_tab_label, None, cx))
-            // `Worktrees · <repoPath>`：detail 是**仓库根路径**（`gitRepositoryRoot?.path`，
-            // `GitLogView.swift:398-402`，`gitToolTabButton` 的 `detail` 分支在 `:479-485`：
-            // `·` 用 `tertiaryText`、路径用 `secondaryText`、`truncationMode(.middle)`）。
-            // 仓库根来自 `git.status.repositoryRoot`；拿不到时只画页签名。
-            .child(self.tab_button(
-                BottomTab::Worktrees,
-                SharedString::from("工作树"),
-                self.repository_root.clone().map(SharedString::from),
-                cx,
-            ))
-            .child(self.tab_button(
-                BottomTab::Console,
-                SharedString::from("控制台"),
-                None,
-                cx,
-            ));
-
-        // `＋` 只在「选中了某个引用」时出现，作用是回到显示全部引用
-        // （`GitLogView.swift:405-414`）。这里把「清空树的选中」当作等价动作。
-        if selected_reference.is_some() {
-            header = header.child(
-                Button::new("bottom-show-all-refs")
-                    .compact()
-                    .icon(IconName::Plus)
-                    .tooltip("显示所有引用")
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.references
-                            .update(cx, |state, cx| state.set_selected_index(None, cx));
-                        cx.notify();
-                    })),
-            );
+    /// 选中/清空引用。选中后按该引用重查历史（Windows `selectReference` + 刷新）。
+    fn select_reference(&mut self, index: Option<usize>, cx: &mut Context<Self>) {
+        if self.selected_reference == index {
+            return;
         }
-
-        header
-            // 菜单（macOS 是 28×28 的 `⋯`：Fetch All Remotes / Fetch Options… /
-            // Update Current Branch / Refresh Log / Show Changes，`:416-442`）。
-            // 菜单项属于缺口 4，这里只落按钮与提示。
-            .child(
-                Button::new("bottom-git-actions")
-                    .compact()
-                    .icon(IconName::Ellipsis)
-                    .tooltip("Git 工具窗口操作"),
-            )
-            .child(div().flex_1().min_w(px(12.)))
-            // `−` = 隐藏工具窗（`:446-452`）。
-            .child(
-                Button::new("bottom-hide")
-                    .compact()
-                    .icon(IconName::Minus)
-                    .tooltip("隐藏 Git 工具窗口"),
-            )
+        self.selected_reference = index;
+        self.selected_commit = None;
+        self.detail = None;
+        self.files = Vec::new();
+        self.files_state = FilesState::Idle;
+        self.spawn_first_load(cx);
     }
 
-    /// 一个页签。macOS `gitToolTabButton`（`GitLogView.swift:463-519`）：
-    /// 高 27、圆角 5、左右内边距 9（选中 Console 时右内边距收紧到 4 以容纳关闭按钮）、
-    /// 底色选中为 `subtleSelection`、描边选中为 `inputFocusBorder.opacity(0.72)` 1px，
-    /// **没有彩色下划线**；文字 `GitVisual.toolbar` 12.5，选中 `primaryText`、未选中 `secondaryText`；
-    /// 选中 Console 时右侧多一个 20×27 的 `xmark`（8.5 semibold）回到 Log。
-    ///
-    /// `detail`：页签的补充信息（只有 Worktrees 用，值是仓库根路径）。macOS 是
-    /// `HStack(spacing: 5)` 里的 `·`（`tertiaryText`）+ 内容（`secondaryText`）+ 中间截断
-    /// （`:479-485`）；这里用同一个间距与两个色的近似 token（`muted_foreground`），
-    /// 截断交给 `text_ellipsis_middle`（gpui 侧不需要 `overflow_hidden`，见模块注释）。
-    fn tab_button(
-        &self,
-        tab: BottomTab,
-        label: SharedString,
-        detail: Option<SharedString>,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let selected = self.tab == tab;
-        let shows_close = selected && tab == BottomTab::Console;
+    fn selected_reference_full_name(&self) -> Option<String> {
+        self.selected_reference
+            .and_then(|index| self.references.get(index))
+            .map(|reference| reference.full_name.to_string())
+    }
 
-        // `subtleSelection` 在 gpui 主题里取 `secondary`；`inputFocusBorder` 取 `primary`。
-        let background = if selected {
-            cx.theme().secondary
-        } else {
-            cx.theme().secondary.opacity(0.0)
-        };
-        let stroke = if selected {
-            cx.theme().primary.opacity(0.72)
-        } else {
-            cx.theme().primary.opacity(0.0)
-        };
-        let text_color = if selected {
+    fn toggle_section(&mut self, kind: RefKind, cx: &mut Context<Self>) {
+        if !self.collapsed_sections.remove(kind.id()) {
+            self.collapsed_sections.insert(kind.id());
+        }
+        cx.notify();
+    }
+
+    fn toggle_group(&mut self, id: &str, cx: &mut Context<Self>) {
+        if !self.collapsed_groups.remove(id) {
+            self.collapsed_groups.insert(id.to_string());
+        }
+        cx.notify();
+    }
+
+    /// 可见的提交下标（筛选之后）。Windows 的 `visibleRows`（`git-commit-table.tsx:105-108`）。
+    fn visible_commits(&self) -> Vec<usize> {
+        self.commits
+            .iter()
+            .enumerate()
+            .filter(|(_, commit)| matches_filter(commit, &self.filter_query, self.filter_scope))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// 可见引用：`showMyBranchesOnly` 只保留当前分支，其余原样
+    /// （`filterGitLogReferences`，`git-reference-tree.tsx:756-762`）。
+    fn visible_reference(&self, index: usize) -> bool {
+        if !self.show_my_branches_only {
+            return true;
+        }
+        self.references
+            .get(index)
+            .is_some_and(|reference| reference.kind == RefKind::Local && reference.is_current)
+    }
+
+    // -----------------------------------------------------------------------
+    // 自绘基元
+    // -----------------------------------------------------------------------
+
+    /// 一个自绘图标按钮：24×24 命中区、14px 图标、悬停 `accent` 底。
+    /// 偏差 5：不用 `Button`（它的图标会被算成 18px），因此也没有悬停 tooltip，只有 `aria_label`。
+    fn icon_button(
+        id: (&'static str, usize),
+        icon: IconName,
+        label: &'static str,
+        enabled: bool,
+        handler: ButtonHandler,
+        cx: &App,
+    ) -> impl IntoElement {
+        let color = if enabled {
             cx.theme().foreground
         } else {
             cx.theme().muted_foreground
         };
 
-        let mut button = h_flex()
-            .id(("bottom-tab", tab as usize))
-            .h(px(TAB_HEIGHT))
-            .gap(px(TAB_GAP))
-            .pl(px(TAB_PADDING))
-            .pr(px(if shows_close {
-                TAB_PADDING_WITH_CLOSE
-            } else {
-                TAB_PADDING
-            }))
-            .rounded(px(TAB_RADIUS))
-            .border_1()
-            .border_color(stroke)
-            .bg(background)
-            .text_size(px(12.5))
-            .text_color(text_color)
-            .whitespace_nowrap()
-            .child(label.clone());
-
-        if let Some(detail) = detail {
-            button = button
-                .child(
-                    div()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(SharedString::from("·")),
-                )
-                .child(
-                    div()
-                        // 路径可能很长：macOS 用 `.truncationMode(.middle)`，
-                        // gpui 的等价物是 `text_ellipsis_middle()`（排版阶段截断）。
-                        .max_w(px(220.))
-                        .text_ellipsis_middle()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(detail),
-                );
-        }
-
-        let mut button = button.on_click(cx.listener(move |this, _event, _window, cx| {
-            this.tab = tab;
-            cx.notify();
-        }));
-
-        if shows_close {
-            button = button.child(
-                h_flex()
-                    .id(("bottom-tab-close", tab as usize))
-                    .w(px(TAB_CLOSE_WIDTH))
-                    .h(px(TAB_HEIGHT))
-                    .justify_center()
-                    .child(
-                        Icon::new(IconName::Close)
-                            .size(px(9.))
-                            .text_color(cx.theme().muted_foreground),
-                    )
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.tab = BottomTab::Log;
-                        cx.notify();
-                    })),
-            );
-        }
-
-        button
-    }
-
-    /// `Log` 页签的内容：macOS `logTabContent` 的三栏
-    /// （`GitLogView.swift:2838-2904` 的 `GitLogThreePaneLayout`）。
-    ///
-    /// macOS 是两处嵌套（外层 `leading` 固定引用栏、`flexible` 是「提交栏 + 详情栏」，
-    /// 内层 `trailing` 固定详情栏），gpui-kit 的一个 `ResizablePanelGroup` 里
-    /// 三个 panel 互相让位就能表达同一件事，所以这里不嵌套。
-    fn render_log(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        h_resizable("bottom-git-panes")
-            .with_handle_appearance(split_handle_appearance())
+        div()
+            .id(id)
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .justify_center()
+            .size(px(ICON_BUTTON_SIZE))
+            .rounded(px(ICON_BUTTON_RADIUS))
+            .aria_label(label)
+            .when(enabled, |this| {
+                this.hover(|style| style.bg(cx.theme().accent))
+                    .on_click(move |event, window, cx| handler(event, window, cx))
+            })
+            .when(!enabled, |this| this.opacity(0.4))
             .child(
-                resizable_panel()
-                    .size(px(REFERENCE_PANE_DEFAULT_WIDTH))
-                    // 上限：真机是按容器宽算的 35%（`:2856-2867`），当前只声明最小宽，
-                    // 动态上限属于缺口 5。
-                    .size_range(px(REFERENCE_PANE_MIN_WIDTH)..Pixels::MAX)
-                    .flex_none()
-                    .child(self.render_reference_pane(cx)),
-            )
-            .child(
-                resizable_panel()
-                    .size_range(px(COMMIT_PANE_MIN_WIDTH)..Pixels::MAX)
-                    .child(self.render_commit_pane(cx)),
-            )
-            .child(
-                resizable_panel()
-                    .size(px(DETAIL_PANE_DEFAULT_WIDTH))
-                    // 上限：真机是 50%（`:2869-2880`），同上属于缺口 5。
-                    .size_range(px(DETAIL_PANE_MIN_WIDTH)..Pixels::MAX)
-                    .flex_none()
-                    .child(self.render_detail_pane(cx)),
+                Icon::new(icon)
+                    .size(px(ICON_BUTTON_ICON_SIZE))
+                    .text_color(color),
             )
     }
 
-    /// 引用栏。macOS `referencePane`（`GitLogView.swift:638-703`）：
-    /// 工具行 38（`⌃` 返回所有引用 + 放大镜清除日志搜索，左右内边距 6）→ 1px divider →
-    /// 引用树（容器左右 8 / 上下 9）。
-    fn render_reference_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        // 没有显式选中引用时，当前分支行被点亮（`GitLogView.swift:758-764`）。
-        let highlight_current = self.references.read(cx).selected_index().is_none();
-        // 当前分支节点 id 来自 `git.references` 的 `isCurrent`（`build_reference_tree`）；
-        // 它是 `None`（detached / 没接上）时 `HEAD（当前分支）` 行也画绿勾（macOS 同款判定）。
-        let current = self.current_reference.clone();
-
-        v_flex()
-            .size_full()
-            .min_h_0()
-            .child(
-                h_flex()
-                    .h(px(TOOLBAR_HEIGHT))
-                    .px(px(REFERENCE_TOOLBAR_PADDING))
-                    .gap(px(HEADER_GAP))
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .child(
-                        Button::new("git-ref-back")
-                            .compact()
-                            .icon(IconName::ChevronLeft)
-                            .tooltip("返回所有引用")
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.references
-                                    .update(cx, |state, cx| state.set_selected_index(None, cx));
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        // macOS 的放大镜 = 清空日志搜索（`:649-655`），这里接到搜索框上，是真的能用。
-                        Button::new("git-ref-clear-search")
-                            .compact()
-                            .icon(IconName::Search)
-                            .tooltip("清除日志搜索")
-                            .on_click(cx.listener(|this, _event, window, cx| {
-                                this.search.update(cx, |state, cx| state.set_value("", window, cx));
-                                cx.notify();
-                            })),
-                    )
-                    .child(div().flex_1()),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .px(px(REFERENCE_TREE_PADDING_X))
-                    .py(px(REFERENCE_TREE_PADDING_Y))
-                    // 树根元素自己不裁剪：不套一层 `overflow_hidden` 的话，
-                    // 过长的引用名会横向画到中间的提交栏上。
-                    .overflow_hidden()
-                    .child(Tree::new(
-                        &self.references,
-                        move |index, entry, selected, _window, cx| {
-                            reference_row(index, entry, selected, highlight_current, current.as_ref(), cx)
-                        },
-                    )),
-            )
-    }
-
-    /// 提交栏。macOS `commitPane`（`GitLogView.swift:963-1092`）：
-    /// 工具行 38（搜索框 236×29 + 过滤器条 + 右侧 6 个工具图标，左右内边距 10、间距 8）
-    /// → 1px divider → 提交列表。
-    ///
-    /// 过滤器条（Branch / User / Date / Path）与其中 4 个图标属于缺口 4；装饰开关是真的能用。
-    fn render_commit_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let show_decorations = self.show_decorations;
-
-        v_flex()
-            .size_full()
-            .min_h_0()
-            .child(
-                h_flex()
-                    .h(px(TOOLBAR_HEIGHT))
-                    .px(px(COMMIT_TOOLBAR_PADDING))
-                    .gap(px(COMMIT_TOOLBAR_GAP))
-                    .bg(cx.theme().tab_bar)
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .child(
-                        // 搜索框：`frame(width: 236, height: 29)`、圆角 5、
-                        // `inputBackground` 底 + `inputBorder` 1px 描边（`:966-991`）。
-                        h_flex()
-                            .w(px(LOG_SEARCH_WIDTH))
-                            .h(px(LOG_SEARCH_HEIGHT))
-                            .flex_shrink_0()
-                            .gap(px(6.))
-                            .px(px(LOG_SEARCH_PADDING))
-                            .rounded(px(LOG_SEARCH_RADIUS))
-                            .border_1()
-                            .border_color(cx.theme().border)
-                            .bg(cx.theme().background)
-                            .child(
-                                Icon::new(IconName::Search)
-                                    .size(px(14.))
-                                    .text_color(cx.theme().muted_foreground),
-                            )
-                            .child(
-                                div().flex_1().min_w_0().child(
-                                    // `appearance(false)`：box 的底与描边由外面这层画，
-                                    // 免得和 kit 的输入框 chrome 叠成双层边框。
-                                    // `xsmall()`：单行 `Input` 的高度由 `Size` 决定
-                                    // （`input.rs:703` 的 `input_h`，Medium 是 32 > 搜索框内容高 27），
-                                    // XSmall 是 20 高 / 12pt 字，与 macOS 的 12.5pt 最接近。
-                                    Input::new(&self.search)
-                                        .appearance(false)
-                                        .cleanable(true)
-                                        .xsmall(),
-                                ),
-                            ),
-                    )
-                    .child(div().flex_1())
-                    // 右侧按钮组：组内间距 2、与搜索框之间仍是 8（`HStack(spacing: 2)`，`:997-1022`）。
-                    .child(
-                        h_flex()
-                            .gap(px(COMMIT_TOOLBAR_BUTTON_GAP))
-                            .child(
-                                Button::new("git-log-compare")
-                                    .compact()
-                                    .icon(IconName::Replace)
-                                    .tooltip("比较当前分支与工作区"),
-                            )
-                            .child(
-                                // macOS 的这个按钮本身没有 action
-                                // （`gitToolbarIcon`，`:1003`，规格 §6.1.7）。
-                                Button::new("git-log-details")
-                                    .compact()
-                                    .icon(IconName::Calendar)
-                                    .tooltip("显示提交详情"),
-                            )
-                            .child(
-                                Button::new("git-log-refresh")
-                                    .compact()
-                                    .icon(IconName::RotateCw)
-                                    .tooltip("刷新 Git 日志")
-                                    // macOS 的 Refresh Log（`:416-442` 菜单里的同一动作，
-                                    // 工具行第 3 个图标 `:1008-1012`）：重跑三个读命令。
-                                    .on_click(cx.listener(|this, _event, _window, cx| {
-                                        this.reload(cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("git-log-decorations")
-                                    .compact()
-                                    .icon(if show_decorations {
-                                        IconName::Eye
-                                    } else {
-                                        IconName::EyeOff
-                                    })
-                                    .tooltip(if show_decorations {
-                                        "隐藏提交装饰"
-                                    } else {
-                                        "显示提交装饰"
-                                    })
-                                    .on_click(cx.listener(|this, _event, _window, cx| {
-                                        this.show_decorations = !this.show_decorations;
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                Button::new("git-log-find")
-                                    .compact()
-                                    .icon(IconName::Search)
-                                    .tooltip("在日志中查找"),
-                            )
-                            .child(
-                                Button::new("git-log-long-edges")
-                                    .compact()
-                                    .icon(IconName::Frame)
-                                    .tooltip("显示完整长连线"),
-                            ),
-                    ),
-            )
-            // Core 读取失败 / 非仓库的一行提示（macOS 没有这一行，是本项目为「不空白、
-            // 不 panic」加的）：提示行不占列表的高度预算（`flex_shrink_0`）。
-            .children(self.notice.clone().map(|notice| {
-                div()
-                    .flex_shrink_0()
-                    .h(px(NOTICE_HEIGHT))
-                    .px(px(COMMIT_TOOLBAR_PADDING))
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .text_size(px(NOTICE_FONT_SIZE))
-                    .text_color(cx.theme().warning)
-                    .child(notice)
-            }))
-            .child(div().flex_1().min_h_0().child(self.render_commit_list(cx)))
-    }
-
-    /// 提交列表。自绘行 + 手铺 `v_flex()` 的理由见模块注释。
-    ///
-    /// ⚠️ **这里不能用 `uniform_list`**（2026-09-24 实测）：把它放进
-    /// `h_resizable` 的中间栏后，列表拿到的视口高度是 0（诊断输出显示闭包被调用时
-    /// `visible_range` 是 `0..0`/`0..1`，屏幕上一个像素都不画）。改用固定行高的
-    /// `v_flex()` 直接铺行；等容器高度问题解决、数据量大到需要虚拟化时再回来换
-    /// （届时也可以考虑 `DataTable`，它自带 `ListSizingBehavior::Auto` 的处理，
-    /// 见 `table/state.rs:2508`）。
-    ///
-    /// 行是可点的：macOS 单击选中 + 加载该提交的文件（`GitLogView.swift:1286-1290`），
-    /// 判定在 [`BottomPanel::select_commit`]。行的 `id` 用下标（列表每次整批替换，
-    /// 下标在同一批数据里稳定）。
-    fn render_commit_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let show_decorations = self.show_decorations;
-        let selected_commit = self.selected_commit;
-
-        let mut list = v_flex().w_full();
-
-        for (index, row) in self.commits.iter().enumerate() {
-            list = list.child(
-                commit_row(row, show_decorations, selected_commit == Some(index), cx)
-                    .id(("bottom-commit-row", index))
-                    .on_click(cx.listener(move |this, _event, _window, cx| {
-                        this.select_commit(index, cx);
-                    })),
-            );
-        }
-
-        list
-    }
-
-    /// 详情栏（第三栏）。macOS `detailPane`（`GitLogView.swift:1094-1116`）：
-    /// 上半是提交文件栏（默认高 = 容器高 − 5 − 156、最小 90），下半是提交详情（最小 110），
-    /// 中间同样是 5pt 分隔条。这里把提交详情固定成默认的 156，文件栏吃掉剩余高度。
-    fn render_detail_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        v_resizable("bottom-git-detail-split")
-            .with_handle_appearance(split_handle_appearance())
-            .child(
-                resizable_panel()
-                    .size_range(px(COMMIT_FILES_MIN_HEIGHT)..Pixels::MAX)
-                    .child(self.render_commit_files(cx)),
-            )
-            .child(
-                resizable_panel()
-                    .size(px(COMMIT_DETAIL_DEFAULT_HEIGHT))
-                    .size_range(px(COMMIT_DETAIL_MIN_HEIGHT)..Pixels::MAX)
-                    .flex_none()
-                    .child(self.render_commit_detail(cx)),
-            )
-    }
-
-    /// 提交文件栏。macOS `commitFilesPane`（`GitLogView.swift:1118-1185`）：
-    /// 工具行 38（比较更改 / 显示文件历史 / 切换预览 + 右对齐的 `N files`，
-    /// 左右内边距 10、间距 5）→ 1px divider → 文件树。
-    ///
-    /// 四个状态按 macOS 的 `selectedGitCommitFilesLoadState`（`:1135-1183`）落：
-    ///
-    /// | 状态 | macOS | 这里 |
-    /// |---|---|---|
-    /// | `.idle`（没选中提交） | 居中 `Select a commit` | 画占位文件行（本步要求「不要空白」，偏差已登记） |
-    /// | `.loading` | 转圈 + `Loading changed files…` | 顶部一行 `正在加载更改的文件…`（没搬转圈，见缺口 7） |
-    /// | `.failed` | 居中 `Could not load changed files` + `Retry` | 顶部一行 `无法加载更改的文件` + **保留占位文件行**（`Retry` 没做，缺口 7） |
-    /// | `.ready` 且空 | 居中 `No changed files` | 同左（居中一行） |
-    /// | `.ready` | 文件树 | 真实 `status` + `path` 建出的多层目录树 |
-    ///
-    /// `N 个文件` 数的是**文件行**（macOS 数 `selectedGitCommitFiles.count`，`:1125`），
-    /// 所以目录行不计入。
-    fn render_commit_files(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let files = self.commit_files.clone();
-        // 目录行不算文件数（macOS `selectedGitCommitFiles` 里只有文件）。
-        let file_count = files.iter().filter(|row| !row.is_folder).count();
-
-        // 状态行（加载中 / 失败）+ 列表。两者可以同时出现：失败时列表是**占位数据**。
-        let status: Option<SharedString> = match self.commit_files_state {
-            CommitFilesState::Placeholder | CommitFilesState::Loaded => None,
-            CommitFilesState::Loading => Some(SharedString::from("正在加载更改的文件…")),
-            CommitFilesState::Failed => Some(SharedString::from("无法加载更改的文件")),
+    /// 引用树工具栏按钮：32×32、图标 16、圆角 4.8（`git-reference-tree.tsx:146`）。
+    fn toolbar_button(
+        id: (&'static str, usize),
+        icon: IconName,
+        label: &'static str,
+        enabled: bool,
+        handler: ButtonHandler,
+        cx: &App,
+    ) -> impl IntoElement {
+        let color = if enabled {
+            cx.theme().foreground
+        } else {
+            cx.theme().muted_foreground
         };
-        // `.ready` 且没有任何更改：macOS 居中画 `No changed files`（zh-Hans
-        // `Localizable.strings:856`）。
-        let empty_ready =
-            matches!(self.commit_files_state, CommitFilesState::Loaded) && file_count == 0;
-
-        v_flex()
-            .size_full()
-            .min_h_0()
-            .bg(cx.theme().background)
+        div()
+            .id(id)
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .justify_center()
+            .size(px(REFERENCE_TOOLBAR_BUTTON_SIZE))
+            .rounded(px(REFERENCE_TOOLBAR_BUTTON_RADIUS))
+            .aria_label(label)
+            .when(enabled, |this| {
+                this.hover(|style| style.bg(cx.theme().accent))
+                    .on_click(move |event, window, cx| handler(event, window, cx))
+            })
+            .when(!enabled, |this| this.opacity(0.3))
             .child(
-                h_flex()
-                    .h(px(TOOLBAR_HEIGHT))
-                    .px(px(COMMIT_TOOLBAR_PADDING))
-                    .gap(px(COMMIT_FILES_TOOLBAR_GAP))
-                    .bg(cx.theme().tab_bar)
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .child(
-                        Button::new("git-files-compare")
-                            .compact()
-                            .icon(IconName::Replace)
-                            .tooltip("比较更改"),
-                    )
-                    .child(
-                        Button::new("git-files-history")
-                            .compact()
-                            .icon(IconName::Calendar)
-                            .tooltip("显示文件历史"),
-                    )
-                    .child(
-                        Button::new("git-files-preview")
-                            .compact()
-                            .icon(IconName::Eye)
-                            .tooltip("切换预览"),
-                    )
-                    .child(div().flex_1())
-                    // `Text("\(count) files")`，中文资源 `"files" = "个文件"`（`:1125`）。
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(cx.theme().muted_foreground)
-                            .child(SharedString::from(format!("{file_count} 个文件"))),
-                    ),
+                Icon::new(icon)
+                    .size(px(REFERENCE_TOOLBAR_ICON_SIZE))
+                    .text_color(color),
             )
-            .children(status.map(|status| {
+    }
+
+    /// 标题栏。`git-log-title-bar.tsx:28-72`。
+    fn title_bar(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
+        // 引用名：选中引用 → 该引用短名；没有选中但 `git.status` 给了分支 → 分支名；
+        // 两者都没有才是 `全部`（`git.log.all`，`locale.ts:7188`）。
+        let reference_name = self
+            .selected_reference
+            .and_then(|index| self.references.get(index))
+            .map(|reference| reference.short_name.clone())
+            .or_else(|| self.branch.clone())
+            .unwrap_or_else(|| SharedString::from("全部"));
+        // `日志：{name}`（`git.log.logLabel`，`locale.ts:7189`）。
+        let pill_label = SharedString::from(format!("日志：{reference_name}"));
+
+        let show_all: ButtonHandler = {
+            let this = this.clone();
+            handler(move |_event, _window, cx| {
+                let _ = this.update(cx, |pane, cx| pane.select_reference(None, cx));
+            })
+        };
+        let refresh: ButtonHandler = {
+            let this = this.clone();
+            handler(move |_event, _window, cx| {
+                let _ = this.update(cx, |pane, cx| pane.refresh(cx));
+            })
+        };
+        let hide: ButtonHandler = {
+            let this = this.clone();
+            handler(move |_event, _window, cx| {
+                let _ = this.update(cx, |pane, cx| pane.set_visible(false, cx));
+            })
+        };
+        let settings: ButtonHandler = handler(|_event, _window, _cx| {});
+
+        h_flex()
+            .w_full()
+            .flex_shrink_0()
+            .h(px(TITLE_BAR_HEIGHT))
+            .items_center()
+            .gap(px(TITLE_BAR_GAP))
+            .px(px(TITLE_BAR_PADDING_X))
+            .border_b_1()
+            .border_color(cx.theme().border)
+            // 底色 `bg-surface`（`git-log-title-bar.tsx:28`）；主题里最接近的是 `tab_bar`。
+            .bg(cx.theme().tab_bar)
+            .text_size(px(TITLE_FONT_SIZE))
+            .child(
+                Icon::new(IconName::GitBranch)
+                    .size(px(TITLE_ICON_SIZE))
+                    .text_color(cx.theme().muted_foreground),
+            )
+            // `workbench.gitLog` = 提交记录（`locale.ts:5910`）。
+            .child(div().font_weight(FontWeight::MEDIUM).child("提交记录"))
+            // 「引用名」胶囊：点击 = 显示全部引用（`git.log.showAll`，`locale.ts:7190`）。
+            .child(
+                div()
+                    .id("bottom-git-reference-pill")
+                    .flex()
+                    .flex_shrink_0()
+                    .items_center()
+                    .h(px(REFERENCE_PILL_HEIGHT))
+                    .max_w(px(REFERENCE_PILL_MAX_WIDTH))
+                    .px(px(REFERENCE_PILL_PADDING_X))
+                    .rounded(px(REFERENCE_PILL_RADIUS))
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().background)
+                    .font_weight(FontWeight::MEDIUM)
+                    .hover(|style| style.bg(cx.theme().accent))
+                    .aria_label("显示全部引用")
+                    .on_click(move |event, window, cx| show_all(event, window, cx))
+                    .child(div().min_w_0().text_ellipsis().child(pill_label)),
+            )
+            // 刷新（`git.log.refresh`，`locale.ts:7191`）。
+            .child(Self::icon_button(
+                ("bottom-git-refresh", 0),
+                IconName::RotateCw,
+                "刷新 Git 日志",
+                self.load_state != LoadState::Loading,
+                refresh,
+                cx,
+            ))
+            // 设置（`git.log.settings`，`locale.ts:7219`）：设置面板不属本步范围 → 禁用。
+            .child(Self::icon_button(
+                ("bottom-git-settings", 0),
+                IconName::Settings,
+                "打开 Git 日志设置",
+                false,
+                settings,
+                cx,
+            ))
+            .child(div().flex_1())
+            // `footer.readOnly` = 只读（`locale.ts:7309`）。
+            .child(
                 div()
                     .flex_shrink_0()
-                    .px(px(COMMIT_TOOLBAR_PADDING))
-                    .py(px(4.))
-                    .text_size(px(12.))
                     .text_color(cx.theme().muted_foreground)
-                    .child(status)
-            }))
-            .child(if empty_ready {
+                    .child("只读"),
+            )
+            // 隐藏（`git.log.hide`，`locale.ts:7192`）。
+            .child(Self::icon_button(
+                ("bottom-git-hide", 0),
+                IconName::Minus,
+                "隐藏提交记录",
+                true,
+                hide,
+                cx,
+            ))
+    }
+
+    /// 页签行。`git-log-tool-window.tsx:582-587`（12px、gap 16、px 12、py 4，**没有**选中底色）。
+    fn tab_row(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
+        let mut row = h_flex()
+            .w_full()
+            .flex_shrink_0()
+            .h(px(TAB_ROW_HEIGHT))
+            .items_center()
+            .gap(px(TAB_ROW_GAP))
+            .px(px(TAB_ROW_PADDING_X))
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .text_size(px(TAB_ROW_FONT_SIZE));
+
+        // `git.console.log` = 日志（`locale.ts:4556`）、`git.console.title` = 控制台（`locale.ts:4555`）。
+        for (index, (panel, label)) in [
+            (Panel::Log, SharedString::from("日志")),
+            (Panel::Console, SharedString::from("控制台")),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let selected = self.panel == panel;
+            let this = this.clone();
+            row = row.child(
                 div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_size(px(13.))
-                    .text_color(cx.theme().muted_foreground)
-                    .child(SharedString::from("没有更改的文件"))
-                    .into_any_element()
-            } else {
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .child(
-                        uniform_list(
-                            "bottom-git-commit-files",
-                            files.len(),
-                            move |range, _window, cx| {
-                                range
-                                    .filter_map(|ix| {
-                                        files.get(ix).map(|row| commit_file_row(row, cx))
-                                    })
-                                    .collect()
-                            },
-                        )
-                        .size_full(),
-                    )
-                    .into_any_element()
+                    .id(("bottom-git-tab", index))
+                    .flex_shrink_0()
+                    .aria_selected(selected)
+                    // 偏差 4：源码没有选中视觉，这里只补前景色区分。
+                    .text_color(if selected {
+                        cx.theme().foreground
+                    } else {
+                        cx.theme().muted_foreground
+                    })
+                    .hover(|style| style.text_color(cx.theme().foreground))
+                    .on_click(move |_event, _window, cx: &mut App| {
+                        let _ = this.update(cx, |pane, cx| {
+                            if pane.panel != panel {
+                                pane.panel = panel;
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .child(label),
+            );
+        }
+
+        row
+    }
+
+    /// 字段下拉按钮。`git-commit-table.tsx:229-238`（h 24、圆角 6.4、px 6）。
+    ///
+    /// 不用 `cx`：外观全部来自 `Button` 自己的主题样式（所以这里收不到 `&App`）。
+    fn scope_button(&self, this: &WeakEntity<Self>) -> impl IntoElement {
+        let current = self.filter_scope;
+        let this = this.clone();
+
+        Button::new("bottom-git-filter-field")
+            .ghost()
+            .with_size(px(ICON_BUTTON_SIZE))
+            .h(px(ICON_BUTTON_SIZE))
+            .px(px(FIELD_SELECT_PADDING_X))
+            .label(current.label())
+            .tooltip("Git 日志筛选字段")
+            .dropdown_menu(move |menu, _window, _cx| {
+                let mut menu = menu;
+                for scope in FilterScope::all() {
+                    let this = this.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(scope.label())
+                            .checked(scope == current)
+                            .on_click(move |_event, window: &mut Window, cx: &mut App| {
+                                let _ = this.update(cx, |pane, cx| {
+                                    pane.filter_scope = scope;
+                                    // 占位文案跟着字段变（`git.log.filterPlaceholder`，`locale.ts:7282`）。
+                                    let placeholder = scope.placeholder();
+                                    pane.filter.update(cx, |state, cx| {
+                                        state.set_placeholder(placeholder, window, cx)
+                                    });
+                                    cx.notify();
+                                });
+                            }),
+                    );
+                }
+                menu
             })
     }
 
-    /// 提交详情。macOS `commitDetail`（`GitLogView.swift:1187-1220`）：
-    /// 内边距 11、行间距 9，依次是 subject 13.5 semibold、`短 hash  作者 <邮箱>` 12、
-    /// 日期等宽 12、装饰 `accent` 12。
-    fn render_commit_detail(&self, cx: &App) -> impl IntoElement {
-        let detail = &self.commit_detail;
+    /// 筛选条。`git-commit-table.tsx:200-253`。
+    fn filter_row(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
+        let visible = self.visible_commits().len();
+        let total = self.commits.len();
+
+        // 装饰开关（`git.log.showDecorations` / `hideDecorations`，`locale.ts:7283-7284`）。
+        let toggle_decorations: ButtonHandler = {
+            let this = this.clone();
+            handler(move |_event, _window, cx| {
+                let _ = this.update(cx, |pane, cx| {
+                    pane.show_decorations = !pane.show_decorations;
+                    cx.notify();
+                });
+            })
+        };
+
+        h_flex()
+            .w_full()
+            .flex_shrink_0()
+            .h(px(FILTER_ROW_HEIGHT))
+            .items_center()
+            .gap(px(FILTER_ROW_GAP))
+            .px(px(FILTER_ROW_PADDING_X))
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().tab_bar)
+            .child(
+                Input::new(&self.filter)
+                    .cleanable(true)
+                    .small()
+                    .flex_1()
+                    .min_w(px(FILTER_INPUT_MIN_WIDTH))
+                    .max_w(px(FILTER_INPUT_MAX_WIDTH))
+                    .prefix(
+                        Icon::new(IconName::Search)
+                            .size(px(ICON_BUTTON_ICON_SIZE))
+                            .text_color(cx.theme().muted_foreground),
+                    ),
+            )
+            .child(self.scope_button(this))
+            .child(Self::icon_button(
+                ("bottom-git-decorations", 0),
+                if self.show_decorations {
+                    IconName::Eye
+                } else {
+                    IconName::EyeOff
+                },
+                if self.show_decorations {
+                    "隐藏分支和标签"
+                } else {
+                    "显示分支和标签"
+                },
+                true,
+                toggle_decorations,
+                cx,
+            ))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(SharedString::from(format!("{visible}/{total}"))),
+            )
+    }
+
+    /// 表头行：`提交 / 作者 / 日期`。出处：`git-commit-table.tsx:255-259`。
+    fn commit_header(cx: &App) -> Div {
+        h_flex()
+            .w_full()
+            .flex_shrink_0()
+            .h(px(COMMIT_HEADER_HEIGHT))
+            .items_center()
+            .px(px(FILTER_ROW_PADDING_X))
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().tab_bar)
+            .text_size(px(COMMIT_FONT_SIZE))
+            .text_color(cx.theme().muted_foreground)
+            // `git.log.commit` / `author` / `date`（`locale.ts:7285-7287`）。
+            // 表头「提交」只占 `flex-1`，**没有**预留泳道图宽度（源码就是不对齐的，
+            // 见 `research/windows/03-git-and-bottom.md` §2.3 的注）。
+            .child(div().min_w_0().flex_1().child("提交"))
+            .child(div().w(px(AUTHOR_COLUMN_WIDTH)).flex_shrink_0().child("作者"))
+            .child(
+                h_flex()
+                    .w(px(DATE_COLUMN_WIDTH))
+                    .flex_shrink_0()
+                    .justify_end()
+                    .child("日期"),
+            )
+    }
+
+    /// 泳道图单元格（简化版，偏差 2）。
+    fn graph_cell(row: &GraphRow, cx: &App) -> Div {
+        let half = COMMIT_ROW_HEIGHT / 2.;
+
+        h_flex()
+            .h_full()
+            .flex_shrink_0()
+            .min_w(px(GRAPH_MIN_WIDTH))
+            .pl(px(GRAPH_PADDING))
+            .pr(px(GRAPH_PADDING))
+            .children(row.lanes.iter().enumerate().map(move |(lane, color)| {
+                let lane_width = px(GRAPH_LANE_GAP);
+                let line_width = px(GRAPH_LINE_WIDTH);
+                let edge_here = row.edges.iter().find(|(target, _, _)| *target == lane);
+
+                match (lane == row.lane, color) {
+                    // 本提交所在泳道：上半段线 + 节点 + 下半段线。
+                    (true, _) => v_flex()
+                        .w(lane_width)
+                        .h_full()
+                        .items_center()
+                        .child(
+                            div()
+                                .w(line_width)
+                                .h(px(half - GRAPH_NODE_RADIUS))
+                                .bg(lane_color(row.node_color, cx)),
+                        )
+                        .child(
+                            div()
+                                .size(px(GRAPH_NODE_RADIUS * 2.))
+                                .flex_shrink_0()
+                                .rounded_full()
+                                .bg(cx.theme().background)
+                                .border(px(GRAPH_NODE_STROKE))
+                                .border_color(lane_color(row.node_color, cx)),
+                        )
+                        .child(
+                            div()
+                                .w(line_width)
+                                .flex_1()
+                                .when(!row.edges.is_empty(), |this| {
+                                    this.bg(lane_color(row.node_color, cx))
+                                }),
+                        )
+                        .into_any_element(),
+                    // 过路线：整条竖线。
+                    (false, Some(index)) => v_flex()
+                        .w(lane_width)
+                        .h_full()
+                        .items_center()
+                        .child(div().w(line_width).h_full().bg(lane_color(*index, cx)))
+                        .into_any_element(),
+                    // 只被父边指到、本行上半没有线的泳道：补下半段。
+                    (false, None) => v_flex()
+                        .w(lane_width)
+                        .h_full()
+                        .items_center()
+                        .child(div().flex_1())
+                        .when_some(edge_here, |this, (_, index, missing)| {
+                            this.child(
+                                div()
+                                    .w(line_width)
+                                    .h(px(half))
+                                    .opacity(if *missing { 0.7 } else { 1.0 })
+                                    .bg(lane_color(*index, cx)),
+                            )
+                        })
+                        .into_any_element(),
+                }
+            }))
+    }
+
+    /// 一个标签徽章（`git-graph-row.tsx:87-88`）。
+    fn label_badge(label: &Label, cx: &App) -> Div {
+        let color = label_color(label.kind, cx);
+        h_flex()
+            .h(px(LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.))
+            .max_w(px(LABEL_MAX_WIDTH))
+            .flex_shrink_0()
+            .items_center()
+            .px(px(LABEL_PADDING_X))
+            .rounded(px(LABEL_RADIUS))
+            .border_1()
+            .border_color(color.opacity(0.45))
+            .bg(color.opacity(0.2))
+            .text_size(px(LABEL_FONT_SIZE))
+            .text_color(color)
+            .whitespace_nowrap()
+            .child(div().min_w_0().text_ellipsis().child(label.title.clone()))
+    }
+
+    /// 一行提交（自绘，`git-commit-table.tsx:301-326`）。
+    ///
+    /// ⚠️ **不要给提交信息加 `overflow_hidden`**（`gpui/BLOCKERS.md` B4：提交信息文字顶部被切掉约
+    /// 1/4 行高）。这里只用 `text_ellipsis()` + `min_h`，与上一轮实现的定案一致。
+    fn commit_row(
+        &self,
+        index: usize,
+        graph: &GraphRow,
+        commit: &Commit,
+        selected: bool,
+        this: &WeakEntity<Self>,
+        cx: &App,
+    ) -> impl IntoElement {
+        let hover_bg = if selected {
+            cx.theme().primary.opacity(0.28)
+        } else {
+            cx.theme().accent.opacity(0.7)
+        };
+        let this = this.clone();
+
+        h_flex()
+            .id(("bottom-git-commit", index))
+            .w_full()
+            .min_w(px(COMMIT_CONTENT_MIN_WIDTH))
+            .min_h(px(COMMIT_ROW_HEIGHT))
+            .items_center()
+            .px(px(COMMIT_ROW_PADDING_X))
+            .border_b_1()
+            .border_color(cx.theme().border.opacity(0.5))
+            .whitespace_nowrap()
+            .when(selected, |row| row.bg(cx.theme().primary.opacity(0.22)))
+            .hover(move |style| style.bg(hover_bg))
+            .on_click(move |_event, _window, cx: &mut App| {
+                let _ = this.update(cx, |pane, cx| pane.select_commit(index, cx));
+            })
+            .child(Self::graph_cell(graph, cx))
+            // 标签 + 提交说明：`flex min-w-0 flex-1 items-center gap-1.5`。
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .gap(px(LABEL_GAP))
+                    .when(self.show_decorations, |labels| {
+                        labels.children(
+                            commit
+                                .labels
+                                .iter()
+                                .map(|label| Self::label_badge(label, cx)),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_ellipsis()
+                            .min_h(px(COMMIT_ROW_HEIGHT))
+                            .text_size(px(COMMIT_FONT_SIZE))
+                            .line_height(px(COMMIT_ROW_HEIGHT))
+                            .child(commit.subject.clone()),
+                    ),
+            )
+            .child(
+                div()
+                    .w(px(AUTHOR_COLUMN_WIDTH))
+                    .flex_shrink_0()
+                    .px(px(AUTHOR_COLUMN_PADDING_X))
+                    .text_ellipsis()
+                    .text_size(px(COMMIT_FONT_SIZE))
+                    .text_color(cx.theme().muted_foreground)
+                    .child(commit.author.clone()),
+            )
+            .child(
+                h_flex()
+                    .w(px(DATE_COLUMN_WIDTH))
+                    .flex_shrink_0()
+                    .justify_end()
+                    .text_size(px(DATE_FONT_SIZE))
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .text_color(cx.theme().muted_foreground)
+                    .child(commit.date.clone()),
+            )
+    }
+
+    /// 提交栏。`git-commit-table.tsx:198-446`。
+    fn commit_pane(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
+        let visible = self.visible_commits();
+        let total = self.commits.len();
+        let graphs = layout_graph(&self.commits);
+
+        let mut list = v_flex().w_full().min_w(px(COMMIT_CONTENT_MIN_WIDTH));
+
+        if visible.is_empty() {
+            let message = if total == 0 {
+                // `git.log.noCommits` = 此视图中没有提交（`locale.ts:7289`）。
+                SharedString::from("此视图中没有提交")
+            } else {
+                // `git.log.noMatch` = 没有符合筛选条件的提交（`locale.ts:7288`）。
+                SharedString::from("没有符合筛选条件的提交")
+            };
+            list = list.child(
+                h_flex()
+                    .w_full()
+                    .min_h(px(COMMIT_ROW_HEIGHT * 4.))
+                    .items_center()
+                    .justify_center()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(message),
+            );
+        } else {
+            let empty_graph = GraphRow {
+                lanes: Vec::new(),
+                lane: 0,
+                node_color: 0,
+                edges: Vec::new(),
+            };
+            for index in visible {
+                let Some(commit) = self.commits.get(index) else {
+                    continue;
+                };
+                let graph = graphs.get(index).unwrap_or(&empty_graph);
+                list = list.child(self.commit_row(
+                    index,
+                    graph,
+                    commit,
+                    self.selected_commit == Some(index),
+                    this,
+                    cx,
+                ));
+            }
+        }
+
+        // 「加载更多提交」行（`git-commit-table.tsx:428-443`）。
+        if self.has_more {
+            let this = this.clone();
+            list = list.child(
+                h_flex()
+                    .w_full()
+                    .min_w(px(COMMIT_CONTENT_MIN_WIDTH))
+                    .h(px(LOAD_MORE_HEIGHT))
+                    .flex_shrink_0()
+                    .items_center()
+                    .justify_center()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
+                    .child(
+                        Button::new("bottom-git-load-more")
+                            .ghost()
+                            .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
+                            .label(if self.loading_more {
+                                // `git.log.loadingCommits` = 正在加载提交…（`locale.ts:7294`）。
+                                SharedString::from("正在加载提交…")
+                            } else {
+                                // `git.log.loadMore` = 加载更多提交（`locale.ts:7295`）。
+                                SharedString::from("加载更多提交")
+                            })
+                            .disabled(self.loading_more)
+                            .on_click(move |_event, _window, cx: &mut App| {
+                                let _ = this.update(cx, |pane, cx| pane.load_more(cx));
+                            }),
+                    ),
+            );
+        }
 
         v_flex()
             .size_full()
-            .min_h_0()
-            .p(px(COMMIT_DETAIL_PADDING))
-            .gap(px(COMMIT_DETAIL_GAP))
             .bg(cx.theme().background)
+            .text_size(px(COMMIT_FONT_SIZE))
+            .child(self.filter_row(this, cx))
+            .child(Self::commit_header(cx))
+            .child(
+                // 滚动容器必须有 `id`：`overflow_y_scroll` 是 `StatefulInteractiveElement` 的方法
+                // （`gpui-pre-0.3.6/src/elements/div.rs:1300,1529`），而 `StatefulInteractiveElement`
+                // 只对 `Stateful<Div>` 实现（`:4074`）；`id` 同时让滚动偏移跨帧保留。
+                div()
+                    .id("bottom-git-commit-scroll")
+                    .flex_1()
+                    .min_h(px(0.))
+                    .w_full()
+                    .overflow_y_scroll()
+                    .child(list),
+            )
+    }
+
+    /// 引用树左侧竖排工具栏。`git-reference-tree.tsx:118-361`。
+    ///
+    /// 偏差 8：Windows 的 10 个动作里只有「全部展开 / 全部折叠 / 只显示我的分支」是纯 UI，
+    /// 这里只画这三个（另一个「新建分支」按禁用态保留位置）。
+    fn reference_toolbar(
+        pane: &Self,
+        this: &WeakEntity<Self>,
+        cx: &App,
+    ) -> impl IntoElement {
+        let has_references = !pane.references.is_empty();
+        let has_my_branches = pane
+            .references
+            .iter()
+            .any(|reference| reference.kind == RefKind::Local && reference.is_current);
+        let show_my_branches_only = pane.show_my_branches_only;
+
+        let expand: ButtonHandler = {
+            let this = this.clone();
+            handler(move |_event, _window, cx| {
+                let _ = this.update(cx, |pane, cx| {
+                    pane.collapsed_sections.clear();
+                    pane.collapsed_groups.clear();
+                    cx.notify();
+                });
+            })
+        };
+        let collapse: ButtonHandler = {
+            let this = this.clone();
+            handler(move |_event, _window, cx| {
+                let _ = this.update(cx, |pane, cx| {
+                    let mut groups = Vec::new();
+                    for kind in RefKind::sections() {
+                        pane.collapsed_sections.insert(kind.id());
+                        for row in build_reference_rows(&pane.references, kind) {
+                            if row.reference.is_none() {
+                                groups.push(row.id);
+                            }
+                        }
+                    }
+                    pane.collapsed_groups.extend(groups);
+                    cx.notify();
+                });
+            })
+        };
+        let toggle_mine: ButtonHandler = {
+            let this = this.clone();
+            handler(move |_event, _window, cx| {
+                let _ = this.update(cx, |pane, cx| {
+                    pane.show_my_branches_only = !pane.show_my_branches_only;
+                    cx.notify();
+                });
+            })
+        };
+        let create_branch: ButtonHandler = handler(|_event, _window, _cx| {});
+
+        v_flex()
+            .w(px(REFERENCE_TOOLBAR_WIDTH))
+            .h_full()
+            .flex_shrink_0()
+            .items_center()
+            .gap(px(REFERENCE_TOOLBAR_GAP))
+            .py(px(REFERENCE_TOOLBAR_PADDING_Y))
+            .border_r_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().tab_bar.opacity(0.6))
+            .child(Self::toolbar_button(
+                ("bottom-git-ref-expand", 0),
+                IconName::UnfoldVertical,
+                "全部展开",
+                has_references,
+                expand,
+                cx,
+            ))
+            .child(Self::toolbar_button(
+                ("bottom-git-ref-collapse", 0),
+                IconName::FoldVertical,
+                "全部折叠",
+                has_references,
+                collapse,
+                cx,
+            ))
             .child(
                 div()
-                    .text_size(px(13.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(cx.theme().foreground)
+                    .w(px(REFERENCE_TOOLBAR_SEPARATOR_WIDTH))
+                    .h(px(REFERENCE_TOOLBAR_SEPARATOR_HEIGHT))
+                    .flex_shrink_0()
+                    .my(px(REFERENCE_TOOLBAR_SEPARATOR_MARGIN_Y))
+                    .bg(cx.theme().border),
+            )
+            .child(Self::toolbar_button(
+                ("bottom-git-ref-mine", 0),
+                IconName::ListFilter,
+                if show_my_branches_only {
+                    "显示全部分支"
+                } else {
+                    "显示我的分支"
+                },
+                has_my_branches || show_my_branches_only,
+                toggle_mine,
+                cx,
+            ))
+            .child(div().flex_1())
+            // 新建分支要 `git.write`（不在 6 条命令里）→ 禁用占位。
+            .child(Self::toolbar_button(
+                ("bottom-git-ref-create", 0),
+                IconName::Plus,
+                "新建分支",
+                false,
+                create_branch,
+                cx,
+            ))
+    }
+
+    /// 引用树的一行（`git-reference-tree.tsx:596-660`）。
+    #[allow(clippy::too_many_arguments)]
+    fn reference_row(
+        row_id: String,
+        depth: usize,
+        name: SharedString,
+        is_group: bool,
+        selected: bool,
+        disclosure: Option<AnyElement>,
+        icon: Option<IconName>,
+        reference: Option<(usize, Option<(usize, usize)>, bool)>,
+        this: &WeakEntity<Self>,
+        cx: &App,
+    ) -> impl IntoElement {
+        let this = this.clone();
+        let index = reference.map(|(index, _, _)| index);
+        let tracking = reference.and_then(|(_, tracking, _)| tracking);
+        let is_current = reference.is_some_and(|(_, _, current)| current);
+
+        let row = h_flex()
+            .id(SharedString::from(format!("bottom-git-ref-row:{row_id}")))
+            .w_full()
+            .min_w_0()
+            .h(px(REFERENCE_ROW_HEIGHT))
+            .items_center()
+            .gap(px(REFERENCE_ROW_GAP))
+            .pl(px(REFERENCE_INDENT_BASE + depth as f32 * REFERENCE_INDENT_STEP))
+            .rounded(px(REFERENCE_ROW_RADIUS))
+            .when(selected, |row| row.bg(cx.theme().accent))
+            .when(is_current, |row| {
+                row.font_weight(FontWeight::SEMIBOLD)
+                    .text_color(cx.theme().yellow_light)
+            })
+            .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
+            .when_some(index, |row, index| {
+                row.on_click(move |_event, _window, cx: &mut App| {
+                    let _ = this.update(cx, |pane, cx| pane.select_reference(Some(index), cx));
+                })
+            });
+
+        let row = match disclosure {
+            Some(disclosure) => row.child(disclosure),
+            None => row.child(div().size(px(REFERENCE_DISCLOSURE_SIZE)).flex_shrink_0()),
+        };
+
+        let row = match icon {
+            Some(icon) => row.child(
+                Icon::new(icon)
+                    .size(px(REFERENCE_ICON_SIZE))
+                    .text_color(if is_current {
+                        cx.theme().yellow_light
+                    } else {
+                        cx.theme().muted_foreground
+                    }),
+            ),
+            None if is_group => row.child(
+                Icon::new(IconName::Folder)
+                    .size(px(REFERENCE_ICON_SIZE))
+                    .text_color(cx.theme().muted_foreground),
+            ),
+            None => row,
+        };
+
+        let mut row = row
+            .child(div().min_w_0().text_ellipsis().child(name))
+            .child(div().flex_1());
+
+        // ahead / behind 计数（`git-reference-tree.tsx:641-650`、`git-tracking-counts.tsx:36-53`）。
+        if let Some((ahead, behind)) = tracking {
+            let mut counts = h_flex()
+                .flex_shrink_0()
+                .items_center()
+                .gap(px(TRACKING_COUNT_GAP))
+                .text_size(px(TRACKING_COUNT_FONT_SIZE));
+            if behind > 0 {
+                counts = counts.child(
+                    div()
+                        .text_color(cx.theme().info)
+                        .child(SharedString::from(format!("↙{}", tracking_count(behind)))),
+                );
+            }
+            if ahead > 0 {
+                counts = counts.child(
+                    div()
+                        .text_color(cx.theme().success)
+                        .child(SharedString::from(format!("↗{}", tracking_count(ahead)))),
+                );
+            }
+            row = row.child(counts);
+        }
+
+        if is_current {
+            // `git.current` = 当前（`locale.ts:6948`）。
+            row = row.child(
+                h_flex()
+                    .flex_shrink_0()
+                    .px(px(REFERENCE_BADGE_PADDING_X))
+                    .rounded(px(REFERENCE_SECTION_RADIUS))
+                    .bg(cx.theme().yellow_light.opacity(0.12))
+                    .text_size(px(REFERENCE_BADGE_FONT_SIZE))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().yellow_light)
+                    .child("当前"),
+            );
+        }
+
+        row
+    }
+
+    /// 引用栏。`git-reference-tree.tsx:803-928`。
+    fn reference_pane(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
+        let current = self
+            .references
+            .iter()
+            .find(|reference| reference.is_current)
+            .cloned();
+        let visible_count = self
+            .references
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| self.visible_reference(*index))
+            .count();
+
+        let mut body = v_flex().w_full().gap(px(REFERENCE_SECTION_MARGIN_BOTTOM));
+
+        // HEAD 行（`git-reference-tree.tsx:849-865`）。
+        let current_index = self
+            .references
+            .iter()
+            .position(|reference| reference.is_current);
+        let head_selected = self.selected_reference.is_some() && self.selected_reference == current_index;
+        let head = {
+            let this = this.clone();
+            h_flex()
+                .id("bottom-git-head-row")
+                .w_full()
+                .h(px(REFERENCE_HEAD_ROW_HEIGHT))
+                .mb(px(REFERENCE_HEAD_ROW_MARGIN_BOTTOM))
+                .items_center()
+                .gap(px(REFERENCE_HEAD_ROW_GAP))
+                .px(px(REFERENCE_HEAD_ROW_PADDING_X))
+                .rounded(px(REFERENCE_HEAD_ROW_RADIUS))
+                .font_weight(FontWeight::MEDIUM)
+                .when(head_selected, |row| row.bg(cx.theme().accent))
+                .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
+                .on_click(move |_event, _window, cx: &mut App| {
+                    let _ = this.update(cx, |pane, cx| pane.select_reference(current_index, cx));
+                })
+                .child(div().text_color(cx.theme().primary).child("→"))
+                // `git.log.headCurrentBranch` = HEAD（当前分支）（`locale.ts:7220`）。
+                .child(div().min_w_0().text_ellipsis().child("HEAD（当前分支）"))
+                .when_some(current, |row, reference| {
+                    row.child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_ellipsis()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(reference.short_name),
+                    )
+                })
+        };
+        body = body.child(head);
+
+        // 三个分区（本地 / 远程 / 标签）。
+        for kind in RefKind::sections() {
+            let collapsed = self.collapsed_sections.contains(kind.id());
+            let rows = build_reference_rows(&self.references, kind);
+
+            let mut section = v_flex().w_full();
+            let header = {
+                let this = this.clone();
+                h_flex()
+                    .id(("bottom-git-ref-section", kind as usize))
+                    .w_full()
+                    .h(px(REFERENCE_SECTION_ROW_HEIGHT))
+                    .items_center()
+                    .gap(px(REFERENCE_ROW_GAP))
+                    .px(px(REFERENCE_SECTION_PADDING_X))
+                    .rounded(px(REFERENCE_SECTION_RADIUS))
+                    .font_weight(FontWeight::MEDIUM)
+                    .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
+                    .on_click(move |_event, _window, cx: &mut App| {
+                        let _ = this.update(cx, |pane, cx| pane.toggle_section(kind, cx));
+                    })
+                    .child(
+                        Icon::new(if collapsed {
+                            IconName::ChevronRight
+                        } else {
+                            IconName::ChevronDown
+                        })
+                        .size(px(12.))
+                        .text_color(cx.theme().muted_foreground),
+                    )
+                    .child(kind.title())
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(SharedString::from(
+                                self.references
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(index, reference)| {
+                                        reference.kind == kind && self.visible_reference(*index)
+                                    })
+                                    .count()
+                                    .to_string(),
+                            )),
+                    )
+            };
+            section = section.child(header);
+
+            if !collapsed {
+                if rows.is_empty() {
+                    // `git.log.none` = 无（`locale.ts:7255`）。
+                    section = section.child(
+                        div()
+                            .h(px(REFERENCE_EMPTY_HEIGHT))
+                            .pl(px(REFERENCE_EMPTY_PADDING_LEFT))
+                            .line_height(px(REFERENCE_EMPTY_HEIGHT))
+                            .text_color(cx.theme().muted_foreground)
+                            .child("无"),
+                    );
+                } else {
+                    for row in rows {
+                        if let Some(index) = row.reference {
+                            if !self.visible_reference(index) {
+                                continue;
+                            }
+                        }
+                        let is_group = row.reference.is_none();
+                        let selected =
+                            row.reference.is_some() && row.reference == self.selected_reference;
+                        let reference = row
+                            .reference
+                            .and_then(|index| self.references.get(index))
+                            .cloned();
+                        let collapsed_group = self.collapsed_groups.contains(&row.id);
+
+                        let disclosure = if is_group {
+                            let this = this.clone();
+                            let id = row.id.clone();
+                            Some(
+                                div()
+                                    .id(SharedString::from(format!(
+                                        "bottom-git-ref-group:{id}"
+                                    )))
+                                    .size(px(REFERENCE_DISCLOSURE_SIZE))
+                                    .flex_shrink_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .on_click(move |_event, _window, cx: &mut App| {
+                                        let id = id.clone();
+                                        let _ = this
+                                            .update(cx, |pane, cx| pane.toggle_group(&id, cx));
+                                    })
+                                    .child(
+                                        Icon::new(if collapsed_group {
+                                            IconName::ChevronRight
+                                        } else {
+                                            IconName::ChevronDown
+                                        })
+                                        .size(px(12.))
+                                        .text_color(cx.theme().muted_foreground),
+                                    )
+                                    .into_any_element(),
+                            )
+                        } else {
+                            None
+                        };
+
+                        if is_group && collapsed_group {
+                            section = section.child(Self::reference_row(
+                                row.id,
+                                row.depth,
+                                row.name,
+                                true,
+                                selected,
+                                disclosure,
+                                None,
+                                None,
+                                this,
+                                cx,
+                            ));
+                            continue;
+                        }
+                        if is_group {
+                            section = section.child(Self::reference_row(
+                                row.id,
+                                row.depth,
+                                row.name,
+                                true,
+                                selected,
+                                disclosure,
+                                None,
+                                None,
+                                this,
+                                cx,
+                            ));
+                            continue;
+                        }
+
+                        let reference_index = row.reference;
+                        let is_current =
+                            reference.as_ref().is_some_and(|reference| reference.is_current);
+                        let tracking = reference.as_ref().and_then(|reference| {
+                            reference
+                                .upstream_short_name
+                                .as_ref()
+                                .map(|_| (reference.ahead, reference.behind))
+                        });
+                        let icon = if is_current {
+                            IconName::Check
+                        } else if let Some(reference) = reference.as_ref() {
+                            match reference.kind {
+                                RefKind::Tag => IconName::Tag,
+                                RefKind::Remote => IconName::Network,
+                                RefKind::Local => IconName::GitBranch,
+                            }
+                        } else {
+                            IconName::GitBranch
+                        };
+
+                        section = section.child(Self::reference_row(
+                            row.id,
+                            row.depth,
+                            row.name,
+                            false,
+                            selected,
+                            None,
+                            Some(icon),
+                            reference_index.map(|index| (index, tracking, is_current)),
+                            this,
+                            cx,
+                        ));
+                    }
+                }
+            }
+
+            body = body.child(section);
+        }
+
+        let reference_label = self
+            .selected_reference
+            .and_then(|index| self.references.get(index))
+            .map(|reference| reference.short_name.clone());
+
+        h_flex()
+            .size_full()
+            .bg(cx.theme().tab_bar.opacity(0.45))
+            .text_size(px(COMMIT_FONT_SIZE))
+            .child(Self::reference_toolbar(self, this, cx))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    // 列表头：`git.log.references` = 引用（`locale.ts:7207`）。
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .flex_shrink_0()
+                            .h(px(REFERENCE_HEADER_HEIGHT))
+                            .items_center()
+                            .px(px(FILTER_ROW_PADDING_X))
+                            .border_b_1()
+                            .border_color(cx.theme().border)
+                            .text_color(cx.theme().muted_foreground)
+                            .child("引用")
+                            .child(div().flex_1())
+                            .when_some(reference_label, |row, label| {
+                                row.child(div().min_w_0().text_ellipsis().child(label))
+                            })
+                            .child(SharedString::from(visible_count.to_string())),
+                    )
+                    .child(
+                        div()
+                            .id("bottom-git-reference-scroll")
+                            .flex_1()
+                            .min_h(px(0.))
+                            .w_full()
+                            .overflow_y_scroll()
+                            .p(px(REFERENCE_LIST_PADDING))
+                            .child(body),
+                    ),
+            )
+    }
+
+    /// Inspector。`git-commit-inspector.tsx:95-195`（上 62% 文件 / 下 38% 详情）。
+    fn inspector_pane(&self, cx: &App) -> impl IntoElement {
+        let file_count = self.files.iter().filter(|row| !row.is_folder).count();
+
+        v_flex()
+            .size_full()
+            .bg(cx.theme().tab_bar.opacity(0.35))
+            .text_size(px(COMMIT_FONT_SIZE))
+            .child(
+                v_flex()
+                    .w_full()
+                    .h(relative(INSPECTOR_FILES_FRACTION))
+                    .min_h(px(INSPECTOR_FILES_MIN_HEIGHT))
+                    .min_w_0()
+                    // 文件区表头（`git-commit-inspector.tsx:106-130`）。
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .flex_shrink_0()
+                            .h(px(INSPECTOR_HEADER_HEIGHT))
+                            .items_center()
+                            .gap(px(INSPECTOR_HEADER_GAP))
+                            .px(px(INSPECTOR_HEADER_PADDING_X))
+                            .border_b_1()
+                            .border_color(cx.theme().border)
+                            .bg(cx.theme().tab_bar)
+                            .text_color(cx.theme().muted_foreground)
+                            // `git.log.commitFiles` = 提交文件（`locale.ts:7296`）。
+                            .child("提交文件")
+                            .child(div().flex_1())
+                            .child(if self.files_state == FilesState::Loading {
+                                // `git.log.loadingShort` = 加载中…（`locale.ts:7303`）。
+                                SharedString::from("加载中…")
+                            } else {
+                                // `git.log.filesCount` = {count} 个文件（`locale.ts:7297`）。
+                                SharedString::from(format!("{file_count} 个文件"))
+                            })
+                            // 「打开提交差异」要 `git.diff`（不在 6 条命令里）→ 禁用。
+                            .child(Self::icon_button(
+                                ("bottom-git-open-diff", 0),
+                                IconName::GitCompare,
+                                "打开提交差异",
+                                false,
+                                handler(|_event, _window, _cx| {}),
+                                cx,
+                            )),
+                    )
+                    .child(self.commit_files_body(cx)),
+            )
+            .child(
+                v_flex()
+                    .id("bottom-git-detail-scroll")
+                    .w_full()
+                    .h(relative(INSPECTOR_DETAILS_FRACTION))
+                    .min_h(px(INSPECTOR_DETAILS_MIN_HEIGHT))
+                    .min_w_0()
+                    .overflow_y_scroll()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().background)
+                    .p(px(INSPECTOR_DETAIL_PADDING))
+                    .gap(px(INSPECTOR_DETAIL_GAP))
+                    .child(self.commit_detail_body(cx)),
+            )
+    }
+
+    /// 提交文件区正文（空 / 加载 / 失败 / 无文件 / 文件树）。`git-commit-inspector.tsx:131-160`。
+    fn commit_files_body(&self, cx: &App) -> impl IntoElement {
+        let centered = |message: SharedString, color: Hsla| {
+            h_flex()
+                .w_full()
+                .flex_1()
+                .min_h(px(0.))
+                .items_center()
+                .justify_center()
+                .text_color(color)
+                .child(message)
+                .into_any_element()
+        };
+
+        match self.files_state {
+            // `git.log.selectCommit` = 选择一个提交（`locale.ts:7298`）。
+            FilesState::Idle => centered(
+                SharedString::from("选择一个提交"),
+                cx.theme().muted_foreground,
+            ),
+            // `git.log.loadingChangedFiles` = 正在加载更改的文件…（`locale.ts:7299`）。
+            FilesState::Loading => centered(
+                SharedString::from("正在加载更改的文件…"),
+                cx.theme().muted_foreground,
+            ),
+            // `git.log.unableToLoadFiles` = 无法加载更改的文件（`locale.ts:7300`）。
+            FilesState::Failed => {
+                centered(SharedString::from("无法加载更改的文件"), cx.theme().danger)
+            }
+            // `git.log.noChangedFiles` = 没有更改的文件（`locale.ts:7301`）。
+            FilesState::Ready if self.files.is_empty() => centered(
+                SharedString::from("没有更改的文件"),
+                cx.theme().muted_foreground,
+            ),
+            FilesState::Ready => {
+                let mut tree = v_flex().w_full();
+                for row in &self.files {
+                    tree = tree.child(Self::commit_file_row(row, cx));
+                }
+                div()
+                    .id("bottom-git-files-scroll")
+                    .flex_1()
+                    .min_h(px(0.))
+                    .w_full()
+                    .overflow_y_scroll()
+                    .p(px(COMMIT_FILE_TREE_PADDING))
+                    .child(tree)
+                    .into_any_element()
+            }
+        }
+    }
+
+    /// 提交文件树的一行。`git-commit-file-tree.tsx:120-134,77,127`。
+    fn commit_file_row(row: &CommitFileRow, cx: &App) -> Div {
+        let status = row.status.chars().next().unwrap_or(' ');
+        let status_color = match status {
+            'A' => cx.theme().success,
+            'D' => cx.theme().danger,
+            'R' => cx.theme().primary,
+            _ => cx.theme().warning,
+        };
+
+        let row_element = h_flex()
+            .w_full()
+            .min_w_0()
+            .h(px(COMMIT_FILE_ROW_HEIGHT))
+            .items_center()
+            .gap(px(REFERENCE_ROW_GAP))
+            .pl(px(COMMIT_FILE_INDENT_BASE + row.depth as f32 * COMMIT_FILE_INDENT_STEP))
+            .pr(px(COMMIT_FILE_TREE_PADDING))
+            .whitespace_nowrap();
+
+        if row.is_folder {
+            row_element
+                .child(
+                    Icon::new(IconName::Folder)
+                        .size(px(REFERENCE_ICON_SIZE))
+                        .text_color(cx.theme().muted_foreground),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .text_ellipsis()
+                        .child(row.name.clone()),
+                )
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .text_size(px(COMMIT_FILE_STATUS_FONT_SIZE))
+                        .text_color(cx.theme().muted_foreground)
+                        .child(SharedString::from(format!("{} 个文件", row.file_count))),
+                )
+        } else {
+            row_element
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .text_ellipsis()
+                        .child(row.name.clone()),
+                )
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .font_family(cx.theme().mono_font_family.clone())
+                        .text_size(px(COMMIT_FILE_STATUS_FONT_SIZE))
+                        .text_color(status_color)
+                        // Core 的 `status` 是 name-status 码（可能是 `R100`），Windows 原样渲染
+                        // （`git-commit-file-tree.tsx:127`）；这里取首字母，与 macOS 的
+                        // `statusColor` 同一口径（`GitCommitFileTreeView.swift:459-464`）。
+                        .child(SharedString::from(status.to_string())),
+                )
+        }
+    }
+
+    /// 提交详情区正文。`git-commit-inspector.tsx:165-190`。
+    fn commit_detail_body(&self, cx: &App) -> impl IntoElement {
+        let mono = cx.theme().mono_font_family.clone();
+
+        let Some(detail) = self.detail.as_ref() else {
+            // `git.log.commitDetails` = 提交详情（`locale.ts:7302`）。
+            return h_flex()
+                .w_full()
+                .flex_1()
+                .items_center()
+                .justify_center()
+                .text_color(cx.theme().muted_foreground)
+                .child("提交详情")
+                .into_any_element();
+        };
+
+        v_flex()
+            .w_full()
+            .gap(px(INSPECTOR_DETAIL_GAP))
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
                     .child(detail.subject.clone()),
             )
             .child(
                 div()
-                    .text_size(px(12.))
+                    .font_family(mono.clone())
+                    .text_size(px(INSPECTOR_MONO_FONT_SIZE))
                     .text_color(cx.theme().muted_foreground)
-                    .child(SharedString::from(format!(
-                        "{}  {} <{}>",
-                        detail.short_hash, detail.author_name, detail.author_email
-                    ))),
+                    .child(SharedString::from(if detail.email.is_empty() {
+                        format!("{} · {}", detail.short_hash, detail.author)
+                    } else {
+                        format!(
+                            "{} · {} <{}>",
+                            detail.short_hash, detail.author, detail.email
+                        )
+                    })),
             )
             .child(
                 div()
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .text_size(px(12.))
+                    .font_family(mono.clone())
+                    .text_size(px(INSPECTOR_MONO_FONT_SIZE))
                     .text_color(cx.theme().muted_foreground)
                     .child(detail.date.clone()),
             )
+            .when(!detail.decorations.is_empty(), |this| {
+                this.child(
+                    div()
+                        .text_color(cx.theme().primary)
+                        .child(detail.decorations.clone()),
+                )
+            })
+            // 完整哈希：Windows 是 `break-all`，gpui 没有这个属性，这里让它自然换行。
             .child(
                 div()
-                    .text_size(px(12.))
-                    .text_color(cx.theme().primary)
-                    .child(detail.decorations.clone()),
+                    .font_family(mono)
+                    .text_size(px(INSPECTOR_HASH_FONT_SIZE))
+                    .text_color(cx.theme().muted_foreground)
+                    .child(detail.hash.clone()),
+            )
+            .into_any_element()
+    }
+
+    /// 控制台。`git-execution-console.tsx:68-111`。
+    ///
+    /// 偏差 6：输出数据源（Git 执行事件 + `git.consolePresentation`）不在本步的 6 条命令里，
+    /// 所以左栏按钮全部禁用、正文只画空态。
+    fn console_pane(cx: &App) -> impl IntoElement {
+        let mut toolbar = v_flex()
+            .w(px(CONSOLE_TOOLBAR_WIDTH))
+            .h_full()
+            .flex_shrink_0()
+            .items_center()
+            .gap(px(CONSOLE_TOOLBAR_GAP))
+            .py(px(CONSOLE_TOOLBAR_PADDING_Y))
+            .border_r_1()
+            .border_color(cx.theme().border);
+
+        // 文案逐字取自 `git.console.find/wrap/scrollToEnd/cancel/clear/copy`
+        // （`locale.ts:4473,4493,4494,4557,4558,4559`）。
+        for (index, (icon, label)) in [
+            (IconName::Search, "在 Git 控制台中查找"),
+            (IconName::TextWrap, "自动换行"),
+            (IconName::ArrowDown, "滚动到底部"),
+            (IconName::CircleSlash, "取消正在运行的操作"),
+            (IconName::Trash, "清空"),
+            (IconName::Copy, "复制输出"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            toolbar = toolbar.child(Self::icon_button(
+                ("bottom-git-console-action", index),
+                icon,
+                label,
+                false,
+                handler(|_event, _window, _cx| {}),
+                cx,
+            ));
+        }
+
+        h_flex()
+            .size_full()
+            .font_family(cx.theme().mono_font_family.clone())
+            .text_size(px(CONSOLE_FONT_SIZE))
+            .child(toolbar)
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .items_center()
+                    .justify_center()
+                    .p(px(CONSOLE_OUTPUT_PADDING))
+                    .text_color(cx.theme().muted_foreground)
+                    // `git.console.empty` = Git 命令及其输出将显示在这里。（`locale.ts:4560`）。
+                    .child("Git 命令及其输出将显示在这里。"),
             )
     }
 
-    /// `Worktrees` 页签的内容。
+    /// 三栏（引用 / 提交 / 提交详情）。比例与最小宽见模块文档的表格。
     ///
-    /// **占位空态**：文案取 macOS 的 `No worktrees` / `Create a checkout to get started.`；
-    /// 真正的 `GitWorktreesView`（左列表默认 360、快速信息栏 282，`GitWorktreesView.swift:15-25`）
-    /// 属于缺口 9，数据待 `git.worktrees` 接线（`RustCoreBridge.swift:3060`）。
-    fn render_worktrees(cx: &App) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .min_h_0()
+    /// 偏差 1：用 `relative()` 百分比而不是 `h_resizable`（理由见模块文档），所以栏间不可拖拽。
+    fn log_body(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
+        h_flex()
+            .w_full()
+            .flex_1()
+            .min_h(px(0.))
+            .child(
+                div()
+                    .w(relative(REFERENCE_PANE_FRACTION))
+                    .min_w(px(REFERENCE_PANE_MIN_WIDTH))
+                    .h_full()
+                    .min_h(px(0.))
+                    .child(self.reference_pane(this, cx)),
+            )
+            .child(
+                div()
+                    .w(px(1.))
+                    .h_full()
+                    .flex_shrink_0()
+                    .bg(cx.theme().border),
+            )
+            .child(
+                div()
+                    .w(relative(COMMIT_PANE_FRACTION))
+                    .min_w(px(COMMIT_PANE_MIN_WIDTH))
+                    .h_full()
+                    .min_h(px(0.))
+                    .child(self.commit_pane(this, cx)),
+            )
+            .child(
+                div()
+                    .w(px(1.))
+                    .h_full()
+                    .flex_shrink_0()
+                    .bg(cx.theme().border),
+            )
+            .child(
+                div()
+                    .w(relative(INSPECTOR_PANE_FRACTION))
+                    .min_w(px(INSPECTOR_PANE_MIN_WIDTH))
+                    .h_full()
+                    .min_h(px(0.))
+                    .child(self.inspector_pane(cx)),
+            )
+    }
+
+    /// 刷新失败横幅。`git-log-tool-window.tsx:589-600`。
+    fn banner(text: SharedString, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
+        let this = this.clone();
+        h_flex()
+            .w_full()
+            .flex_shrink_0()
+            .h(px(BANNER_HEIGHT))
+            .items_center()
+            .gap(px(BANNER_GAP))
+            .px(px(BANNER_PADDING_X))
+            .border_b_1()
+            .border_color(cx.theme().danger.opacity(0.3))
+            .bg(cx.theme().danger.opacity(0.1))
+            .text_size(px(COMMIT_FONT_SIZE))
+            .text_color(cx.theme().danger)
+            .child(div().min_w_0().flex_1().text_ellipsis().child(text))
+            // `git.log.retry` = 重试（`locale.ts:7197`）。
+            .child(
+                Button::new("bottom-git-retry")
+                    .ghost()
+                    .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
+                    .label("重试")
+                    .on_click(move |_event, _window, cx: &mut App| {
+                        let _ = this.update(cx, |pane, cx| pane.refresh(cx));
+                    }),
+            )
+    }
+
+    /// 居中占位（无仓库 / 加载中 / 失败，`git-log-tool-window.tsx:602-612`）。
+    fn centered_notice(
+        title: SharedString,
+        detail: Option<SharedString>,
+        retry: Option<&WeakEntity<Self>>,
+        cx: &App,
+    ) -> Div {
+        let mut block = v_flex()
+            .w_full()
+            .flex_1()
+            .min_h(px(0.))
             .items_center()
             .justify_center()
-            .gap(px(9.))
-            .bg(cx.theme().background)
-            .child(
-                Icon::new(IconName::Folder)
-                    .size(px(30.))
-                    .text_color(cx.theme().muted_foreground),
-            )
-            .child(
-                div()
-                    .text_size(px(13.))
-                    .text_color(cx.theme().foreground)
-                    .child(SharedString::from("没有工作树")),
-            )
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(cx.theme().muted_foreground)
-                    .child(SharedString::from("新建一个检出目录以开始使用。")),
-            )
-    }
-
-    /// `Console` 页签的内容。macOS 的 `GitConsoleView` 空态文案是
-    /// `Git command output will appear here.`（中文资源同键）。
-    /// 折叠片段 / 匹配定位 / 清空 / 复制属于缺口 8，数据待 `git.consolePresentation` 接线。
-    fn render_console(cx: &App) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .min_h_0()
-            .p(px(12.))
-            .gap(px(4.))
-            .text_size(px(13.))
-            .font_family(cx.theme().mono_font_family.clone())
+            .gap(px(BANNER_GAP))
             .text_color(cx.theme().muted_foreground)
-            .bg(cx.theme().background)
-            .child(SharedString::from("Git 命令输出将显示在这里。"))
-            .child(SharedString::from(
-                "（占位：控制台的执行记录、清空 / 复制输出 / 折叠片段 / 搜索都还没做）",
-            ))
+            .child(div().text_color(cx.theme().foreground).child(title));
+
+        if let Some(detail) = detail {
+            block = block.child(div().child(detail));
+        }
+
+        if let Some(this) = retry {
+            let this = this.clone();
+            block = block.child(
+                Button::new("bottom-git-empty-retry")
+                    .ghost()
+                    .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
+                    .label("重试")
+                    .on_click(move |_event, _window, cx: &mut App| {
+                        let _ = this.update(cx, |pane, cx| pane.refresh(cx));
+                    }),
+            );
+        }
+
+        block
     }
 }
 
-impl EventEmitter<PanelEvent> for BottomPanel {}
-
-impl Focusable for BottomPanel {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.focus_handle.clone()
+impl Drop for BottomPane {
+    fn drop(&mut self) {
+        // 面板销毁（底部窗被拆掉 / 应用退出）时把游标还给 Core，别让 `git log` 子进程一直挂着
+        // （`rust/lithe-core/src/git/history.rs:25-29`：空闲 120 s 才回收、每根最多 8 条）。
+        if let Some(cursor) = self.cursor.take() {
+            cursor.close();
+        }
     }
 }
 
-impl BasePanel for BottomPanel {
-    fn panel_name(&self) -> &'static str {
-        self.name
-    }
-
-    /// 工具窗是常驻区域；macOS 只有「隐藏」按钮（`GitLogView.swift:446-452`），没有关闭。
-    fn closable(&self, _: &App) -> bool {
-        false
-    }
-}
-
-impl Panel for BottomPanel {
-    fn tab_name(&self, _: &App) -> Option<SharedString> {
-        // 工具窗名是 `Git`（`GitLogView.swift:389`）。
-        Some(SharedString::from("Git"))
-    }
-
-    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        // 只有标签组里出现多个面板时 Dock 才会画这条标题栏（见 `title_bar`）。
-        SharedString::from("Git")
-    }
-
-    /// `false`：面板自己画标题栏与页签，Dock 不要再画一条。
-    fn title_bar(&self, _: &App) -> bool {
-        false
-    }
-
-    /// `false`：面板自己控制内边距，Dock 不要在内容上方再加留白。
-    fn inner_padding(&self, _: &App) -> bool {
-        false
-    }
-}
-
-impl Render for BottomPanel {
+impl Render for BottomPane {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+        let mut root = v_flex()
             .size_full()
-            .min_h_0()
+            .overflow_hidden()
             .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
-            // macOS 把页签放进 32 高的标题栏里（不是 Windows 那条独立的标签行）。
-            .child(self.render_header(cx))
-            .child(match self.tab {
-                BottomTab::Log => self.render_log(cx).into_any_element(),
-                BottomTab::Worktrees => Self::render_worktrees(cx).into_any_element(),
-                BottomTab::Console => Self::render_console(cx).into_any_element(),
-            })
+            .text_color(cx.theme().foreground);
+
+        if !self.visible {
+            return root;
+        }
+
+        let this = cx.entity().downgrade();
+
+        root = root
+            .child(self.title_bar(&this, cx))
+            .child(self.tab_row(&this, cx));
+
+        if self.panel == Panel::Console {
+            return root.child(Self::console_pane(cx));
+        }
+
+        match self.load_state {
+            // 错误横幅 + 三栏（`git-log-tool-window.tsx:589-621`）。
+            LoadState::Stale => {
+                // `git.log.unableToRefresh` = 无法刷新 Git 日志。（`locale.ts:7196`）。
+                root = root.child(Self::banner(
+                    SharedString::from("无法刷新 Git 日志。"),
+                    &this,
+                    cx,
+                ));
+                root.child(self.log_body(&this, cx))
+            }
+            // `git.log.noRepository` / `git.log.openWorkspace`（`locale.ts:7198-7199`）。
+            LoadState::NoRepository => root.child(Self::centered_notice(
+                SharedString::from("未打开仓库"),
+                Some(SharedString::from("打开一个 Git 工作区以查看提交记录。")),
+                None,
+                cx,
+            )),
+            // `git.log.loading` = 正在加载 Git 日志…（`locale.ts:7200`）。
+            LoadState::Loading => root.child(Self::centered_notice(
+                SharedString::from("正在加载 Git 日志…"),
+                None,
+                None,
+                cx,
+            )),
+            LoadState::Failed => root.child(Self::centered_notice(
+                SharedString::from("无法刷新 Git 日志。"),
+                None,
+                Some(&this),
+                cx,
+            )),
+            LoadState::Ready => root.child(self.log_body(&this, cx)),
+        }
     }
 }
