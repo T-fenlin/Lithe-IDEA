@@ -47,7 +47,8 @@
 | 落点 | **在原 `gpui/` 工程里清空重写**：保留 Cargo workspace 与 bin 名 `shell-probe`；旧文件删除（要回看就查 git 历史） |
 | 精度 | **混合**：布局与关键尺寸**逐值搬**（Tailwind→px、CSS 变量→`px()`）；组件内部（按钮/输入框高度）用 gpui-kit 的 `Size` 档位，不硬压数值 |
 | 第一版范围 | 外壳 + **最小真实数据**（`workspace.snapshot`、`git.status`、`git.historyPage`）**+ 终端外壳**（见下）；拖拽分栏/右键菜单/命令面板等交互按区域顺次做 |
-| 终端 | **直接调本地 `cmd` 与 `powershell`**（Rust 宿主 spawn 进程），**第一版只做外壳**：工具窗页签（新建/关闭/标题）+ 流式显示 stdout/stderr + 一个发送命令的输入行；**不做完整 VT 模拟**（不做 ANSI 全量渲染/光标定位/选区）。要预留"自定义 shell"（配置 shell 路径/参数）的位置 |
+| 终端 | **直接调本地 `cmd` 与 `powershell`**（Rust 宿主 spawn 进程），**第一版只做外壳**：工具窗页签（新建/关闭/标题）+ 流式显示 stdout/stderr + 一个发送命令的输入行；**不做完整 VT 模拟**（不做 ANSI 全量渲染/光标定位/选区）。要预留"自定义 shell"（配置 shell 路径/参数）的位置。参考实现：Windows 侧已有 `windows/tauri/crates/terminal`（`portable-pty`/ConPTY）+ `src-tauri/src/terminal.rs`（`ipc::Channel` 字节流 + 四个 command），协议与交互照它，但**不要**照抄 xterm.js 的全部行为 |
+| **底部窗布局** | ⚠️ Windows 默认**不横跨工作台**：`terminalWidthMode === "editor"`（默认）时底部窗嵌在中央编辑器列内，只有 `"full"` 才跨全工作台、左右各留 4px；底部窗**没有自己的标签条**，由活动栏/命令面板切换单值 `bottomPaneActiveTab`（`research/windows/03-git-and-bottom.md` §1）。**上一版实现成"横跨整个工作台"是错的，要按 Windows 默认改回来** |
 | 调试 | 同终端口径：**先做界面骨架**（工具窗/工具栏/空态），真实 DAP 接线排后 |
 | 数据库 | **不做**（本轮范围外） |
 | 数据来源 | 宿主**直连 `lithe-core`**（现有路径依赖已验证）；功能面照 **Core 的数据语义**（命令名/字段/事件）实现，**不要**照抄 `windows/tauri/src-tauri` 的 Tauri command 封装 |
