@@ -1,0 +1,846 @@
+//! 项目树的视图层：`Explorer` 实体、`LoadState` 与各区域渲染。
+//!
+//! 建树与取数据在 `model.rs`（那个文件不依赖 gpui UI 组件）；crate 的模块文档（规格出处、
+//! 图标对照、未实现清单）在 `lib.rs`。本文件只放宽 `Explorer` 为 `pub`（由 `lib.rs`
+//! re-export），其余项都留在模块内。
+
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+use gpui_kit::assets::IconName;
+use gpui_kit::base::{TreeState, h_flex, v_flex};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::list::ListItem;
+use gpui_kit::component::spinner::Spinner;
+use gpui_kit::component::tree::{Tree, TreeEvent};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, StyledExt as _};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{
+    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, WeakEntity, Window, div, px, relative,
+};
+
+use crate::model::{
+    FOLDER_IS_EMPTY, RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot,
+};
+
+// ---------------------------------------------------------------------------
+// 文案（全部逐字取 `windows/tauri/src/i18n/locale.ts`，不自己编中文）
+// ---------------------------------------------------------------------------
+
+/// `workbench.project` → 「项目」（`locale.ts:4605`）：文件树头部标题。
+const TITLE: &str = "项目";
+/// `fileExplorer.searchFiles` → 「搜索文件」（`locale.ts:7446`）：搜索按钮的提示 + 输入框占位。
+const SEARCH_FILES: &str = "搜索文件";
+/// `search.clear` → 「清除搜索」（`locale.ts:5895`）。
+const CLEAR_SEARCH: &str = "清除搜索";
+/// `fileExplorer.preferences` → 「文件资源管理器偏好设置」（`locale.ts:7445`）。
+const PREFERENCES: &str = "文件资源管理器偏好设置";
+/// `fileExplorer.ariaLabel` → 「文件资源管理器」（`locale.ts:7447`；调研文档 §5.4 漏了这一条）。
+const TREE_ARIA_LABEL: &str = "文件资源管理器";
+/// `quickOpen.loadingFiles` → 「正在加载文件」（`locale.ts:7835`）。
+const LOADING_FILES: &str = "正在加载文件";
+/// `ui.retry` → 「重试」（`locale.ts:4628`）。
+const RETRY: &str = "重试";
+/// `fileExplorer.noFolderOpen` → 「未打开文件夹」（`locale.ts:7458`）。
+const NO_FOLDER_OPEN: &str = "未打开文件夹";
+/// `welcome.openFolder` → 「打开文件夹」（`locale.ts:8740`）。
+const OPEN_FOLDER: &str = "打开文件夹";
+/// `fileExplorer.noMatchingFiles` → 「没有匹配的文件」（`locale.ts:7460`）。
+const NO_MATCHING_FILES: &str = "没有匹配的文件";
+
+// ---------------------------------------------------------------------------
+// 度量（全部取 Windows 源码；`px()` 直搬，`gpui/UI-MAP.md` §1.1 第 1 条）
+// ---------------------------------------------------------------------------
+
+/// 侧栏头部高度 32px（`styles/theme.css:124` `--lithe-sidebar-header-height: 2rem`）。
+const HEADER_HEIGHT: f32 = 32.;
+/// 头部水平内边距 8px（`file-explorer-tree.tsx:1310` 的 `px-2`）。
+const HEADER_PADDING_INLINE: f32 = 8.;
+/// 头部纵向内边距 4px（`ui/sidebar.tsx:93` 的 `py-1`）。
+const HEADER_PADDING_BLOCK: f32 = 4.;
+/// 头部图标按钮 24×24（`ui/button.tsx:27` `"icon-xs": "size-6 p-0"`）。
+const HEADER_BUTTON_SIZE: f32 = 24.;
+/// 头部图标按钮圆角 6.4px（`ui/button.tsx:9` 的 `rounded-md` → `--radius-md = --radius × 0.8`，
+/// `theme.css:7,134`）。
+const HEADER_BUTTON_RADIUS: f32 = 6.4;
+/// 头部标题行高 16px（`file-explorer/styles/file-explorer-tree.css:151-156`：
+/// `font-size: var(--ui-text-chrome)` / `font-weight: 600` / `line-height: var(--lithe-chrome-line-height)`，
+/// 后者的值 1rem 见 `theme.css:128`）。
+const TITLE_LINE_HEIGHT: f32 = 16.;
+/// 搜索输入框高 28px（`h-7`；树内搜索框与全局搜索工具栏是同一套 Chrome 控件，
+/// `global-search-toolbar.tsx:101-102`）+ 圆角 8px（`rounded-lg`）。
+const SEARCH_INPUT_HEIGHT: f32 = 28.;
+const SEARCH_INPUT_RADIUS: f32 = 8.;
+/// 搜索行内边距 8px（`global-search-toolbar.tsx:93` 的 `py-2`、compact `px-2`）。
+const SEARCH_ROW_PADDING: f32 = 8.;
+
+/// 树行高 24px。
+///
+/// 真机公式 `max(24, uiFontSize × 1.35 + 6)`，`uiFontSize = 13` → `max(24, 23.55) = 24`
+/// （`file-explorer/lib/file-tree-row.ts:1-14`；13px 见 `theme.css:112`）。
+///
+/// 表体是 `uniform_list`，**行高只取第 0 行的测量值**再按固定值铺满
+/// （`gpui-pre-0.3.6/src/elements/uniform_list.rs:658-680,371,397`），所以行内容必须正好是这个高度，
+/// 行内纵向内边距一律清零（`ListItem` 默认 `py_1`，见 `gpui-component-0.6.6/src/list/list_item.rs:186`）。
+const ROW_HEIGHT: f32 = 24.;
+/// 行基准缩进 10px（`file-explorer/lib/file-tree-row.ts:1` `FILE_TREE_BASE_INDENT = 10`）。
+const BASE_INDENT: f32 = 10.;
+/// 缩进步长 16px（默认 `fileTreeIndentSize: 16`，`features/settings/config/default-settings.ts:182`；
+/// 可选 12/16/20/24 见 `file-explorer-tree.tsx:1482-1493`）。
+const INDENT_STEP: f32 = 16.;
+/// 树体水平内缩 6px（`file-explorer/styles/file-explorer-tree.css:6,36` `--file-tree-row-inline-inset`）。
+///
+/// 真机给每一行（`.file-tree-virtual-row`）加 `padding-inline`，于是行底色左右各缩 6px。
+/// `uniform_list` 的行没法加外边距，等价做法是把整棵树套一层 `px(6.)`（见 [`Explorer::render_tree`]）。
+const ROW_INLINE_INSET: f32 = 6.;
+/// 行内水平内边距 6px（`features/sidebar/components/sidebar-tree.tsx:241` 的 `px-1.5`）。
+/// 左内边距被行内样式覆写成 `10 + depth × 16`（`sidebar-tree.tsx:246`），右内边距保持 6。
+const ROW_PADDING_INLINE: f32 = 6.;
+/// 行内列间距 4px（`file-explorer-tree.css:56` `column-gap: var(--lithe-chrome-gap) !important`，
+/// `--lithe-chrome-gap: 4px` 见 `theme.css:130`）。
+const ROW_GAP: f32 = 4.;
+/// 展开箭头槽 16×16（`sidebar-tree.tsx:301` 的 `size-4`），右侧另加 2px（同行 `mr-0.5`）。
+const DISCLOSURE_SIZE: f32 = 16.;
+const DISCLOSURE_MARGIN: f32 = 2.;
+/// 箭头字形 12×12（`file-explorer-tree.css:121-124` 的 `svg { width: 12px; height: 12px }`）。
+const CARET_SIZE: f32 = 12.;
+/// 文件/目录图标 16×16（`file-explorer-tree.css:5,126-131` `--file-tree-icon-size: 16px`）。
+const ICON_SIZE: f32 = 16.;
+/// 行圆角 4px（`file-explorer-tree.css:7` `--file-tree-row-radius: 4px`）。
+const ROW_RADIUS: f32 = 4.;
+/// 树行字号 13px（`file-explorer-tree.css:100` `font-size: var(--ui-text-sm)`；
+/// `--ui-text-sm = --app-ui-font-size = 13px`，`theme.css:112,116`）。
+const ROW_TEXT_SIZE: f32 = 13.;
+/// 行高倍数 1.35（`theme.css:4` `--leading-row: 1.35`；`sidebar-tree.tsx:241` 的 `leading-row`）。
+const ROW_LINE_HEIGHT: f32 = 1.35;
+/// 加载胶囊：`p-3`(12) 定位、`px-3 py-1.5`(12/6)、`rounded-full`
+/// （`file-explorer-pane.tsx:55-56`）；间距 8 与 13px 字号取 `ui/spinner.tsx:44` 的 `gap-2 … ui-text-sm`。
+const LOADING_PILL_OFFSET: f32 = 12.;
+const LOADING_PILL_PADDING_INLINE: f32 = 12.;
+const LOADING_PILL_PADDING_BLOCK: f32 = 6.;
+const LOADING_PILL_GAP: f32 = 8.;
+
+// ---------------------------------------------------------------------------
+// 状态：树体的加载状态（本 Entity 自己保留）
+// ---------------------------------------------------------------------------
+
+/// 项目树的加载状态。
+enum LoadState {
+    /// 正在后台取 `workspace.snapshot`。
+    Loading,
+    /// 快照到手（或工作区根为空，此时没有可加载的东西）。
+    Ready,
+    /// 取快照失败：存 **Core 的错误码原文**（例如 `WorkspaceNotFound`）。
+    ///
+    /// 这里刻意不编中文：`locale.ts` 里没有"文件树加载失败"这类键，最近的
+    /// `files.unableToDetermineRootPath`（「无法确定根文件夹路径」，`locale.ts:7413`）语义只覆盖
+    /// "根路径不合法"，套到任意失败上是错的。显示稳定错误码对排查更有用，也不暴露环境细节。
+    Failed(String),
+}
+
+impl LoadState {
+    /// 是否正在取快照（渲染时用来决定要不要画加载胶囊）。
+    fn is_loading(&self) -> bool {
+        matches!(self, Self::Loading)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 组件
+// ---------------------------------------------------------------------------
+
+/// 侧栏的项目树（资源管理器）。
+///
+/// 对外只暴露 [`Explorer::new`]、[`Explorer::refresh`] 与 `Render`；字段全部私有。
+/// 点击文件时通过构造时传入的 `on_open` 回调把**绝对路径**抛给外壳（主代理接到编辑区）；
+/// 点击目录只做展开/折叠 —— 由 `Tree` 自己在 `mouse_down` 里处理
+/// （`gpui-base-0.6.6/src/tree.rs:413-417,442-456`）。
+pub struct Explorer {
+    /// 工作区根（外壳给出；Core 不回传它，所以自己留着拼绝对路径）。
+    root: PathBuf,
+    /// 最近一次成功加载的**工作区相对**路径（已截断到 [`RENDER_LIMIT`]）。
+    paths: Vec<String>,
+    /// 加载状态。
+    state: LoadState,
+    /// 树的交互状态（选中、滚动、展开后的扁平表）。
+    tree: Entity<TreeState>,
+    /// 用户展开过的目录 id（`dir:<相对路径>`）。
+    ///
+    /// 从 `TreeEvent::Expanded/Collapsed` 攒出来（`gpui-base-0.6.6/src/tree.rs:91-96,320-338`）。
+    expanded: BTreeSet<SharedString>,
+    /// 最后一次点击打开的文件（相对路径），用来给那一行加底色。
+    active: Option<SharedString>,
+    /// 树内搜索的输入状态。
+    search: Entity<InputState>,
+    /// 搜索输入框是否展开（真机是 `SidebarSearchPopover` 的 `open`，`file-explorer-tree.tsx:1321`）。
+    search_open: bool,
+    /// 当前查询词（小写比较在 [`build_tree_items`] 里做）。
+    query: SharedString,
+    /// 点击文件时往外抛的回调。
+    ///
+    /// 存 `Rc` 而不是 `Box`：渲染闭包要求 `'static`，没法借用 `&self.on_open`。
+    on_open: Rc<dyn Fn(PathBuf, &mut Window, &mut App) + 'static>,
+    /// `TreeEvent` 订阅（攒 [`Explorer::expanded`]）。订阅器一 drop 就失效，所以要存住。
+    _tree_events: Subscription,
+    /// `InputEvent` 订阅（查询变化 → 重建树）。同上。
+    _search_events: Subscription,
+}
+
+impl Explorer {
+    /// `root` = 工作区根；`on_open` = 点击文件时往外抛的回调（主代理会接到编辑区）。
+    ///
+    /// 构造期只做两件轻活：建两个 `Entity`、挂两个订阅，**不取数据** —— 快照是后台任务，
+    /// 见 [`Explorer::load`]。
+    pub fn new(
+        root: PathBuf,
+        on_open: Box<dyn Fn(PathBuf, &mut Window, &mut App) + 'static>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let tree = cx.new(|cx| TreeState::new(cx));
+        let search = cx.new(|cx| InputState::new(window, cx));
+        search.update(cx, |state, cx| {
+            state.set_placeholder(SEARCH_FILES, window, cx);
+        });
+
+        // 攒展开状态。`TreeEvent` 只有 `Expanded` / `Collapsed` 两个变体
+        // （`gpui-base-0.6.6/src/tree.rs:91-96`），所以这里能直接取里面的 id。
+        let tree_events = cx.subscribe(
+            &tree,
+            |this, _tree, event: &TreeEvent, _cx: &mut Context<Self>| match event {
+                TreeEvent::Expanded(id) => {
+                    this.expanded.insert(id.clone());
+                }
+                TreeEvent::Collapsed(id) => {
+                    this.expanded.remove(id);
+                }
+            },
+        );
+
+        // 查询变化 → 重建树。`InputEvent` 见 `gpui-base-0.6.6/src/input/base/state.rs:121-127`。
+        let search_events = cx.subscribe(
+            &search,
+            |this, _input, event: &InputEvent, cx: &mut Context<Self>| {
+                if matches!(event, InputEvent::Change) {
+                    // ⚠️ `&**cx`：`Entity::read` 要 `&App`，而这里是 `&mut Context<Self>`。
+                    // 显式走两级 Deref（Context<Self> → App），不依赖多级 deref 强制转换。
+                    let query = this.search.read(&**cx).value();
+                    this.set_query(query, cx);
+                }
+            },
+        );
+
+        let mut explorer = Self {
+            root,
+            paths: Vec::new(),
+            state: LoadState::Loading,
+            tree,
+            expanded: BTreeSet::new(),
+            active: None,
+            search,
+            search_open: false,
+            query: SharedString::default(),
+            on_open: Rc::from(on_open),
+            _tree_events: tree_events,
+            _search_events: search_events,
+        };
+        // 根行默认展开一次（真机 `file-explorer-tree.tsx:235-238`）。
+        explorer.expanded.insert(SharedString::new_static(ROOT_ID));
+        explorer.load(cx);
+        explorer
+    }
+
+    /// 重新取一次工作区快照。
+    ///
+    /// 真机的「刷新」在右键菜单里（`files.refresh`「刷新」，`locale.ts:7421`；
+    /// `use-file-explorer-context-menu.tsx:221`），本模块没有画右键菜单，所以把它开成公开方法
+    /// 交给外壳接线。
+    ///
+    /// `window` 现在用不上（后台任务不需要窗口），保留参数是为了调用形态与 `new` 一致。
+    pub fn refresh(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.load(cx);
+    }
+
+    /// 取工作区快照：**在后台线程调 Core**，回到前台才建树。
+    ///
+    /// `shared::core_client` 的 Core 调用是同步的（`lithe_core::execute_json`，
+    /// `rust/lithe-core/src/lib.rs:25`），直接放在 UI 线程上
+    /// 会把整棵树扫描（本仓库约 4.8 千个文件）挡在渲染前面，所以走 `cx.background_spawn`
+    /// （`gpui-pre-0.3.6/src/app.rs:3073-3078`，`AppContext` trait 上的方法）再 `await` 回前台；
+    /// 调用形态与上一轮跑通的 `workspace.rs` 加载一致。
+    fn load(&mut self, cx: &mut Context<Self>) {
+        self.state = LoadState::Loading;
+        cx.notify();
+
+        // 工作区根为空：没有可加载的东西，直接进空态（真机的 `!rootFolderPath`，
+        // `file-explorer-tree.tsx:1532-1538`）。
+        if self.root.as_os_str().is_empty() {
+            self.paths.clear();
+            self.state = LoadState::Ready;
+            self.rebuild(cx);
+            return;
+        }
+
+        let root = self.root.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_spawn(async move { load_snapshot(&root) })
+                .await;
+
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(paths) => {
+                        // 截断不静默：把工作区根与渲染量打一行诊断（探针口径同 `workspace.rs`
+                        // 的 `S1_VIEWPORT`）；总量超出 `RENDER_LIMIT` 时这一行就是证据。
+                        println!(
+                            "S1_EXPLORER root={} rendered={} limit={}",
+                            this.root.display(),
+                            paths.len(),
+                            RENDER_LIMIT,
+                        );
+                        this.paths = paths;
+                        this.state = LoadState::Ready;
+                    }
+                    Err(error) => {
+                        println!("S1_EXPLORER root={} error={error}", this.root.display());
+                        this.paths.clear();
+                        this.state = LoadState::Failed(error);
+                    }
+                }
+                this.rebuild(cx);
+            });
+        })
+        .detach();
+    }
+
+    /// 按当前的 `paths` / `expanded` / `query` 重建树。
+    ///
+    /// `TreeState::set_items` 会**清空选中**（`gpui-base-0.6.6/src/tree.rs:214-219`），这是刻意的：
+    /// 可见行被换掉之后旧行号已经没有意义（真机搜索时也是重新定位）。
+    fn rebuild(&mut self, cx: &mut Context<Self>) {
+        let filter: Option<String> = if self.query.is_empty() {
+            None
+        } else {
+            Some(self.query.to_lowercase())
+        };
+        let label = root_label(&self.root);
+        let items = build_tree_items(&label, &self.paths, &self.expanded, filter.as_deref());
+        self.tree.update(cx, |state, cx| state.set_items(items, cx));
+    }
+
+    /// 写入查询词并重建树（`InputEvent::Change` 与「清除搜索」都走这里）。
+    fn set_query(&mut self, query: SharedString, cx: &mut Context<Self>) {
+        if self.query == query {
+            return;
+        }
+        self.query = query;
+        self.rebuild(cx);
+        cx.notify();
+    }
+
+    /// 展开 / 收起树内搜索。
+    ///
+    /// 收起时清空查询：真机的 `Escape` 也是"关闭搜索"（`file-explorer-tree.tsx:1329-1335`），
+    /// 留着过滤词会让下次打开看到一棵"少了东西"的树。
+    fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_open = !self.search_open;
+        if self.search_open {
+            let search = self.search.clone();
+            search.update(cx, |state, cx| state.focus(window, cx));
+        } else {
+            self.clear_search(window, cx);
+        }
+        cx.notify();
+    }
+
+    /// 清空查询并重建（对应 `search.clear`「清除搜索」按钮，`file-explorer-tree.tsx:1344-1356`）。
+    ///
+    /// ⚠️ **不能只靠 `InputEvent::Change`**：`InputState::set_value` 内部把 `emit_events` 置成
+    /// `false`（`gpui-base-0.6.6/src/input/base/state.rs:903-907`），**不会**发 `Change` 事件，
+    /// 所以这里必须自己调 [`Explorer::set_query`]。
+    fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let search = self.search.clone();
+        search.update(cx, |state, cx| {
+            state.set_value(SharedString::default(), window, cx);
+        });
+        self.set_query(SharedString::default(), cx);
+    }
+
+    // ---- 渲染 ----
+
+    /// 头部：标题「项目」+ 搜索按钮 + 清空按钮（有查询时）+ 偏好按钮。
+    ///
+    /// 组成与度量照 `file-explorer-tree.tsx:1309-1518`：`SidebarHeader` 高 32
+    /// （`ui/sidebar.tsx:93` 的 `h-(--lithe-sidebar-header-height)`）、`px-2 py-1`、
+    /// 间距 4（`gap-(--lithe-chrome-gap)`）、下边框 1px（`file-explorer-tree.css:146`）。
+    ///
+    /// 三个按钮都是 `SidebarHeaderIconButton`（`ui/sidebar.tsx:127-141`）：ghost 变体
+    /// （前景 `--subtle-foreground`、悬停底色 `--accent`，`ui/button.tsx:17`）、
+    /// `icon-xs` 24×24（`ui/button.tsx:27`）、`rounded-md` 6.4px（`ui/button.tsx:9`）。
+    fn render_header(&self, cx: &mut Context<Self>) -> AnyElement {
+        let mut header = h_flex()
+            .w_full()
+            .flex_shrink_0()
+            .h(px(HEADER_HEIGHT))
+            .gap(px(ROW_GAP))
+            .px(px(HEADER_PADDING_INLINE))
+            .py(px(HEADER_PADDING_BLOCK))
+            .bg(cx.theme().background)
+            .border_b_1()
+            // 真机是 `color-mix(var(--border) 72%, transparent)`（`file-explorer-tree.css:146`）。
+            // gpui-kit 没有"72% 透明度的边框"token（`--border-strong` 是混进前景色，语义不同），
+            // 取最接近的 `theme.border` —— 差一档不透明度，登记在未实现清单里。
+            .border_color(cx.theme().border)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(ROW_TEXT_SIZE))
+                    .font_semibold()
+                    .line_height(px(TITLE_LINE_HEIGHT))
+                    .text_color(cx.theme().foreground)
+                    .child(SharedString::from(TITLE)),
+            )
+            .child(header_button(
+                "explorer-search",
+                IconName::Search,
+                SEARCH_FILES,
+                Some(Box::new(cx.listener(
+                    |this: &mut Self,
+                     _event: &ClickEvent,
+                     window: &mut Window,
+                     cx: &mut Context<Self>| {
+                        this.toggle_search(window, cx);
+                    },
+                ))),
+            ));
+
+        if !self.query.is_empty() {
+            header = header.child(header_button(
+                "explorer-search-clear",
+                IconName::X,
+                CLEAR_SEARCH,
+                Some(Box::new(cx.listener(
+                    |this: &mut Self,
+                     _event: &ClickEvent,
+                     window: &mut Window,
+                     cx: &mut Context<Self>| {
+                        this.clear_search(window, cx);
+                    },
+                ))),
+            ));
+        }
+
+        // 偏好下拉：真机是 `DropdownMenu`（可见性 / 外观 / 排序 / 缩进 / 自动定位 / 删除确认，
+        // `file-explorer-tree.tsx:1357-1517`）。这些设置项在探针里**没有落点**（没有设置存储，
+        // 也没有 `showHiddenFilesInFileTree` 这类可见性过滤的数据源），所以按"宁可禁用也不画假按钮"
+        // 的约定渲染成**禁用态**并登记，而不是画一个点了没反应的按钮。
+        header
+            .child(header_button(
+                "explorer-preferences",
+                IconName::Settings,
+                PREFERENCES,
+                None,
+            ))
+            .into_any_element()
+    }
+
+    /// 树内搜索行。展开时插在头部**下面**。
+    ///
+    /// ⚠️ **与真机的差异**：真机把它做成锚在搜索按钮上的浮层 `SidebarSearchPopover`
+    /// （`file-explorer-tree.tsx:1317-1343` → `ui/sidebar.tsx:143-...`），本模块渲染成
+    /// 一整行内联输入框：gpui-kit 0.6.6 的 `Popover` 必须自带 trigger 并锚在 trigger 上
+    /// （`gpui/UI-MAP.md` §1.3 浮层一节），而这一行的高度预算（28 + 8 + 8 = 44）在侧栏里够用，
+    /// 内联更容易点中、也少一层焦点陷阱。度量仍照真机：输入框高 28（`h-7`）、圆角 8
+    /// （`rounded-lg`）、整行水平内边距 8（compact `px-2`）、下边框 1px、底色 `--surface/55`
+    /// （`global-search-toolbar.tsx:93,101-102`；树内搜索框与全局搜索工具栏是同一套 Chrome 控件）。
+    fn render_search_row(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.search_open {
+            return None;
+        }
+
+        // ⚠️ **必须用 `Styled::h` 的全限定写法**：`Input` 有一个**同名固有方法**
+        // `Input::h(impl Into<DefiniteLength>)`，它只写 `self.height`，而那个字段只在
+        // **多行**输入里生效（`gpui-component-0.6.6/src/input/input.rs:256-260,706-709`）。
+        // 单行输入的实际高度来自 `input_h(self.size)` —— `Size::Medium` → `h_8()` = 32px
+        // （`input.rs:703`、`sizing.rs:261-269`）。方法调用语法会优先挑固有方法，所以这里
+        // 走 `Styled::h(...)` 直接给样式表写高 28px（`refine_style` 在 `input_h` 之后执行，
+        // `input.rs:703,719`，能覆写掉它）。
+        let input = gpui_kit::Styled::h(Input::new(&self.search), px(SEARCH_INPUT_HEIGHT))
+            .w_full()
+            .rounded(px(SEARCH_INPUT_RADIUS))
+            .text_size(px(ROW_TEXT_SIZE));
+
+        Some(
+            h_flex()
+                .w_full()
+                .flex_shrink_0()
+                .px(px(SEARCH_ROW_PADDING))
+                .py(px(SEARCH_ROW_PADDING))
+                .bg(cx.theme().muted)
+                .border_b_1()
+                .border_color(cx.theme().border)
+                .child(input)
+                .into_any_element(),
+        )
+    }
+
+    /// 主体：加载中的胶囊 +（树体 / 空态 / 失败态）。
+    fn render_body(&self, cx: &mut Context<Self>) -> AnyElement {
+        // 首次加载时真机**不挂载树**，只显示顶部居中的加载胶囊（`file-explorer-pane.tsx:34-60`）；
+        // 已有数据时刷新则保留树体、胶囊浮在上面（真机靠一层 `absolute inset-0` 做同一件事）。
+        let content: AnyElement = if self.state.is_loading() && self.paths.is_empty() {
+            div().flex_1().into_any_element()
+        } else {
+            match &self.state {
+                LoadState::Failed(error) => self.empty_failed(error.clone(), cx),
+                _ if self.paths.is_empty() => self.empty_no_rows(cx),
+                _ => self.render_tree(cx),
+            }
+        };
+
+        let loading = self.state.is_loading();
+        v_flex()
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .when(loading, |this| {
+                this.child(
+                    h_flex()
+                        .absolute()
+                        .top(px(LOADING_PILL_OFFSET))
+                        .left_0()
+                        .right_0()
+                        .justify_center()
+                        .child(
+                            // 真机胶囊：`rounded-full border border-border/60 bg-surface/92
+                            // px-3 py-1.5 shadow-popover backdrop-blur-sm`
+                            // （`file-explorer-pane.tsx:55-56`）。`bg-surface/92` 取 `theme.muted`
+                            // （`--surface` → `muted`）；阴影与背景模糊没有对应 token，不画
+                            // （登记在未实现清单里）。
+                            h_flex()
+                                .gap(px(LOADING_PILL_GAP))
+                                .px(px(LOADING_PILL_PADDING_INLINE))
+                                .py(px(LOADING_PILL_PADDING_BLOCK))
+                                .rounded_full()
+                                .bg(cx.theme().muted)
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .text_size(px(ROW_TEXT_SIZE))
+                                .text_color(cx.theme().muted_foreground)
+                                // 转圈图标 16 + 文案 13 + 间距 8：`ui/spinner.tsx:20-51` 的
+                                // `size-4` / `ui-text-sm` / `gap-2`。`Spinner` 默认 `Size::Medium`
+                                // → 16px（`gpui-component-0.6.6/src/spinner.rs:22`、`icon.rs:185`），
+                                // 自带 `with_animation` 常转（`spinner.rs:60-74`）。
+                                .child(Spinner::new().color(cx.theme().muted_foreground))
+                                .child(SharedString::from(LOADING_FILES)),
+                        ),
+                )
+            })
+            .child(content)
+            .into_any_element()
+    }
+
+    /// 树体。
+    ///
+    /// - 外面套 `px(6.)`：真机给每一行加 `padding-inline: 6px`
+    ///   （`file-explorer-tree.css:6,36`），行底色因此左右各缩 6px；`uniform_list` 的行不能加
+    ///   外边距，等价做法是把整棵树缩进 6px。所以行内的左内边距只需
+    ///   `10 + depth × 16`（真机的 `paddingLeft`，`sidebar-tree.tsx:246`）。
+    /// - 行内容按真机的 `SidebarTreeRow`（`features/sidebar/components/sidebar-tree.tsx:231-278`）。
+    /// - `ListItem` 的 children 是**竖排**的（它内部装 children 的是普通块级 `div`，
+    ///   `gpui-component-0.6.6/src/list/list_item.rs:215-221`），所以整行必须自己套一层 `h_flex()`。
+    /// - 行高由内容决定、`uniform_list` 只量第 0 行（`gpui/UI-MAP.md` §1.3），所以行内容按
+    ///   [`ROW_HEIGHT`] 定死，`ListItem` 默认的纵向内边距用 `p_0()` 清掉。
+    fn render_tree(&self, cx: &mut Context<Self>) -> AnyElement {
+        let on_open = self.on_open.clone();
+        let active = self.active.clone();
+        let root = self.root.clone();
+        // 点击时要把"当前打开的文件"记回来给行加底色，但 `ListItem::on_click` 只给 `&mut App`，
+        // 拿不到 `Context<Explorer>`，所以带一个弱引用进来。
+        let explorer: WeakEntity<Self> = cx.entity().downgrade();
+
+        let tree = Tree::new(&self.tree, move |index, entry, selected, _window, cx| {
+            let id = entry.item().id.clone();
+            let label = entry.item().label.clone();
+            let is_folder = entry.is_folder();
+            let expanded = entry.is_expanded();
+            let (kind, relative_path) = RowKind::parse(id.as_ref());
+            let is_active =
+                kind == RowKind::File && active.as_deref() == Some(relative_path.as_str());
+
+            // 展开箭头：只有目录行有；其它行留一个**等宽空槽**，同层的图标才能左对齐
+            // （真机的 `reserveDisclosureSpace`，`file-explorer-tree-item.tsx:211-213`）。
+            let caret: AnyElement = if is_folder {
+                h_flex()
+                    .w(px(DISCLOSURE_SIZE))
+                    .h(px(DISCLOSURE_SIZE))
+                    .mr(px(DISCLOSURE_MARGIN))
+                    .flex_shrink_0()
+                    .justify_center()
+                    .child(
+                        Icon::new(if expanded {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        })
+                        .w(px(CARET_SIZE))
+                        .h(px(CARET_SIZE))
+                        .text_color(cx.theme().muted_foreground),
+                    )
+                    .into_any_element()
+            } else {
+                div()
+                    .w(px(DISCLOSURE_SIZE))
+                    .h(px(DISCLOSURE_SIZE))
+                    .mr(px(DISCLOSURE_MARGIN))
+                    .flex_shrink_0()
+                    .into_any_element()
+            };
+
+            let icon = match kind {
+                RowKind::EmptyPlaceholder => IconName::File,
+                RowKind::Directory => {
+                    if expanded {
+                        IconName::FolderOpen
+                    } else {
+                        IconName::FolderClosed
+                    }
+                }
+                RowKind::File => icon_for_file(&label),
+            };
+
+            let mut label_el = div().flex_1().min_w_0().truncate().child(label);
+            // 根行标签 600 粗体（`file-explorer-tree.css:133-135`
+            // `.file-tree-row[data-root="true"] .file-tree-node-label { font-weight: 600 }`）。
+            // 整棵树只有一条 `depth == 0` 的行，就是工作区根
+            // （`TreeEntry::is_root()`，`gpui-base-0.6.6/src/tree.rs:71-73`）。
+            if entry.is_root() {
+                label_el = label_el.font_semibold();
+            }
+
+            let row = h_flex()
+                .w_full()
+                .h(px(ROW_HEIGHT))
+                .gap(px(ROW_GAP))
+                .pl(px(BASE_INDENT + entry.depth() as f32 * INDENT_STEP))
+                .pr(px(ROW_PADDING_INLINE))
+                .rounded(px(ROW_RADIUS))
+                .child(caret)
+                .child(
+                    Icon::new(icon)
+                        .w(px(ICON_SIZE))
+                        .h(px(ICON_SIZE))
+                        .text_color(cx.theme().muted_foreground),
+                )
+                .child(label_el)
+                // 「当前打开的文件」加一层选中底色。真机把"活动文件"与"悬停"都用
+                // `subtleSelection`，两者在真机上不可区分（`gpui/UI-MAP.md` §2.3 的"优化"一条），
+                // 这里直接用选中色 `list_active`。
+                .when(is_active, |this| this.bg(cx.theme().list_active));
+
+            // 目录行的展开/折叠由 `Tree` 在 `mouse_down` 里处理；空目录占位行是禁用的，
+            // 连 `mouse_down` 都不会挂上（`gpui-base-0.6.6/src/tree.rs:413-417,442-456`）。
+            let opening: Option<PathBuf> = if kind == RowKind::File {
+                Some(join_relative(&root, &relative_path))
+            } else {
+                None
+            };
+
+            // ⚠️ 这个外层渲染闭包是 `Fn`（`Tree::new` 要求，`gpui-component-0.6.6/src/tree.rs:41-43`），
+            // 所以**不能**把捕获到的 `on_open` / `explorer` 移进下面那个 `move` 点击闭包 ——
+            // 每行都要现克隆一份（`relative_path` / `opening` 是本次调用新建的局部量，可以直接移）。
+            let row_on_open = on_open.clone();
+            let row_explorer = explorer.clone();
+            let row_relative_path = relative_path;
+            let row_path = opening;
+
+            ListItem::new(SharedString::from(format!("explorer-row-{index}")))
+                .selected(selected)
+                // 行高必须可控：`ListItem` 默认 `py_1() px_3()`
+                // （`gpui-component-0.6.6/src/list/list_item.rs:186-187`），纵向内边距会让
+                // 24px 的行装不下内容（`gpui/UI-MAP.md` §1.3 第一条）。
+                .p_0()
+                .h(px(ROW_HEIGHT))
+                .text_size(px(ROW_TEXT_SIZE))
+                .line_height(relative(ROW_LINE_HEIGHT))
+                .whitespace_nowrap()
+                .overflow_hidden()
+                .child(row)
+                .on_click(
+                    move |_event: &ClickEvent, window: &mut Window, cx: &mut App| {
+                        let Some(path) = row_path.clone() else {
+                            return;
+                        };
+                        row_on_open(path, window, cx);
+                        // 记住这次打开的文件，给这一行加底色；实体已经没了就跳过（不影响打开）。
+                        let _ = row_explorer.update(cx, |this, cx| {
+                            this.active = Some(SharedString::from(row_relative_path.clone()));
+                            cx.notify();
+                        });
+                    },
+                )
+        })
+        .size_full();
+
+        // 树的 a11y：`gpui_base::Tree` 自己会挂 `role(Tree)`（`gpui-base-0.6.6/src/tree.rs:517-522`），
+        // 但不会设 aria-label，所以在包裹层补一次（真机 `aria-label` 取
+        // `fileExplorer.ariaLabel`，`file-explorer-tree.tsx:1524`）。
+        // ⚠️ `.role()` / `.aria_label()` 在 `StatefulInteractiveElement` 上，而它只对
+        // `Stateful<E>` 实现（`gpui-pre-0.3.6/src/elements/div.rs:1300-1326,4074`），
+        // 所以必须先 `.id(...)` 把 `Div` 变成 `Stateful<Div>`。
+        v_flex()
+            .id("explorer-tree-viewport")
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .px(px(ROW_INLINE_INSET))
+            .role(Role::Tree)
+            .aria_label(TREE_ARIA_LABEL)
+            .child(tree)
+            .into_any_element()
+    }
+
+    /// 树体为空时的空态。分支照真机的三段文案（`file-explorer-tree.tsx:1531-1551`）：
+    /// 没有工作区 →「未打开文件夹」；有查询无命中 →「没有匹配的文件」；否则 →「文件夹为空」。
+    fn empty_no_rows(&self, cx: &mut Context<Self>) -> AnyElement {
+        if self.root.as_os_str().is_empty() {
+            // 真机的动作按钮是「打开文件夹」（`welcome.openFolder`，`locale.ts:8740`）。
+            // 打开目录需要一个系统目录选择器、而且换工作区根要重建整个外壳布局，
+            // 本模块拿不到这条通路，所以按"宁可禁用也不画假按钮"的约定渲染成**禁用态**并登记。
+            return self.empty(
+                SharedString::from(NO_FOLDER_OPEN),
+                Some((OPEN_FOLDER, true)),
+                cx,
+            );
+        }
+
+        let message = if self.query.is_empty() {
+            FOLDER_IS_EMPTY
+        } else {
+            NO_MATCHING_FILES
+        };
+        self.empty(SharedString::from(message), None, cx)
+    }
+
+    /// 加载失败：显示 Core 错误码 + 「重试」（真的会重新取快照）。
+    fn empty_failed(&self, error: String, cx: &mut Context<Self>) -> AnyElement {
+        self.empty(SharedString::from(error), Some((RETRY, false)), cx)
+    }
+
+    /// 空态的公共骨架，照 `ui/empty.tsx:111-130` 的 `EmptyState`：
+    /// `Empty`（居中、`gap-2`、`p-3`、`rounded-lg`、虚线边）+ `EmptyDescription` 承载文案
+    /// + 可选 `EmptyContent` 里的一个 `xs` 按钮（高 24、`px-1.5`，`ui/button.tsx:23`）。
+    fn empty(
+        &self,
+        message: SharedString,
+        action: Option<(&'static str, bool)>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut empty = Empty::new().header(
+            EmptyHeader::new().description(
+                EmptyDescription::new()
+                    .text_size(px(ROW_TEXT_SIZE))
+                    .child(message),
+            ),
+        );
+
+        if let Some((label, disabled)) = action {
+            let button = Button::new("explorer-empty-action")
+                .label(label)
+                .h(px(HEADER_BUTTON_SIZE))
+                .px(px(6.));
+            let button = if disabled {
+                button.disabled(true)
+            } else {
+                button.on_click(cx.listener(
+                    |this: &mut Self,
+                     _event: &ClickEvent,
+                     _window: &mut Window,
+                     cx: &mut Context<Self>| {
+                        this.load(cx);
+                    },
+                ))
+            };
+            empty = empty.content(EmptyContent::new().child(button));
+        }
+
+        // `Empty` 的根是 `v_flex().flex_1()`，会吃掉剩余高度并把内容居中
+        // （`gpui-component-0.6.6/src/empty.rs:63-82`）；外面这层必须是 flex 容器
+        // （`v_flex`），否则 `flex_1` 不生效、空态会贴在顶部。
+        v_flex().size_full().child(empty).into_any_element()
+    }
+}
+
+/// 头部的一个图标按钮。
+///
+/// `on_click` 为 `None` 就是禁用态：走 gpui-kit 的 `Disableable`
+/// （`gpui-component-0.6.6/src/button/button.rs:503-508`；禁用后不响应指针，
+/// 与 `ui/button.tsx:9` 的 `disabled:pointer-events-none disabled:opacity-50` 同语义）。
+fn header_button(
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
+) -> Button {
+    let button = Button::new(id)
+        .ghost()
+        .icon(icon)
+        .tab_stop(false)
+        .w(px(HEADER_BUTTON_SIZE))
+        .h(px(HEADER_BUTTON_SIZE))
+        .rounded(px(HEADER_BUTTON_RADIUS))
+        .tooltip(label)
+        .accessibility_label(label);
+
+    match on_click {
+        Some(handler) => button.on_click(handler),
+        None => button.disabled(true),
+    }
+}
+
+/// 工作区根那一行显示的名字：根目录名；根是盘符根（`D:\`）这类没有文件名的情况退回整条路径。
+fn root_label(root: &Path) -> String {
+    root.file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| root.to_string_lossy().to_string())
+}
+
+/// 把工作区相对路径（Core 约定用 `/` 分隔，`rust/lithe-core/src/project/files.rs:576`）拼成绝对路径。
+///
+/// 逐段 `join` 而不是整串 `join`：这样结果用的是平台自己的分隔符，空段与 `..` 的行为也更可控。
+fn join_relative(root: &Path, relative: &str) -> PathBuf {
+    relative
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .fold(root.to_path_buf(), |path, segment| path.join(segment))
+}
+
+impl Render for Explorer {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 三个 `render_*` 都返回 `AnyElement`（具体类型，不借用 self）：edition 2024 下
+        // `-> impl IntoElement` 会捕获作用域内的生命周期，返回 `&self` 派生的类型会和下面
+        // `cx.theme()` 的共享借用打架（E0502）。上一轮实现踩过同一个坑。
+        let header = self.render_header(cx);
+        let search_row = self.render_search_row(cx);
+        let body = self.render_body(cx);
+
+        v_flex()
+            .size_full()
+            .min_h_0()
+            .overflow_hidden()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
+            .child(header)
+            .children(search_row)
+            .child(body)
+    }
+}
