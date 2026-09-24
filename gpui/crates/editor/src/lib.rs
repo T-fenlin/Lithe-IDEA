@@ -31,6 +31,22 @@
 //! 不出现在 import 路径里（《编码指南》「内部重组时保持 public module path」的反面用法：
 //! 新建 crate 直接发布 `pub use`，不让 `buffer` / `editor_view` 这类实现路径变成契约）。
 //!
+//! 阶段 10 第二批（JDTLS 语义跳转 + 索引缓存，维护者定稿的两批里的第二批）：见
+//! `gpui/PLAN.md` §10.3。**编辑器只做接线**，Java 语言服务本体在新 crate
+//! `lithe-gpui-java`（`gpui/crates/java`）：
+//!
+//! 1. **跨文件 / 跨模块**：`F12` / `Ctrl+单击` 同一入口，结果来源换成
+//!    `lsp.request{textDocument/definition}`，目标文件没开着就先打开再定位
+//!    （`editor_view.rs` 的 `apply_definition`）；
+//! 2. **`jdt://` 库源码**：目标的 URI 不是 `file://` 时用 `lsp.request{virtualDocument}`
+//!    取回只读正文，开一个以虚拟 URI 为身份的只读 buffer（`open_virtual`）；
+//! 3. **打开项目生成索引**：外壳在 `ShellWorkspace::new` 里转发工作区根 →
+//!    `EditorPane::prepare_java` 后台起服务并等就绪，缓存键与目录由 Core 的
+//!    `lsp.jdtWorkspaceKey` / `java.jdtWorkspaceFingerprint` 决定；
+//! 4. **`← →` 对跨文件目标继续可用**（第一批的历史实现不动）。
+//!
+//! JDTLS 是**增强**：服务不可用时 `navigation::resolve_target` 会退回第一批的轻量导航。
+//!
 //! ## 原 `editor.rs` 文件头（逐字保留）
 //!
 //! 编辑区：**标签栏 + 正文 + 空状态**。
@@ -96,8 +112,12 @@
 //! 本轮**范围外**（真机有、这里没有）还有：标签悬停才显示关闭按钮的那一档
 //! （`TabBar` 不暴露每个标签的悬停状态）、标签拖拽重排 / 拖出成新窗格、
 //! 标签右键菜单、面包屑栏、分屏与轮播、外部冲突横幅与大文件「仍然启用」降级、
-//! **跨文件 / 跨模块 / 依赖库源码的跳转（阶段 10 第二批，JDTLS）**、
 //! 非 UTF-8 文件的编码探测与"按编码保存"。
+//!
+//! 另外两条与阶段 10 第二批直接相关的边界（细节见 `gpui/PLAN.md` §10.4）：
+//! `jdt://` 的 buffer 被关掉之后不能用 `←` 回去（虚拟正文只来自 Core 的虚拟文档请求，
+//! 没有"重新读盘"这条路）；Java 运行时的选择靠发现 + `LITHE_JDTLS_JAVA` 覆盖，
+//! 还没有做成设置项。
 
 mod buffer;
 mod editor_view;

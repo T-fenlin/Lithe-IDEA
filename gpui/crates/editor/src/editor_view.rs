@@ -24,16 +24,31 @@
 //!
 //! Core 调用与历史的数据侧都在 [`crate::navigation`]，本文件只负责接线与诊断。
 
+//! ## 阶段 10 第二批接上的四件事（JDTLS 语义结果，`gpui/PLAN.md` §10.3）
+//!
+//! | 项 | 落点 |
+//! | --- | --- |
+//! | 跨文件 / 跨模块跳转 | [`EditorPane::apply_definition`] 的 `NavTarget::File` 分支（目标文件没开着就先 [`EditorPane::open`]） |
+//! | `jdt://` 库源码 | [`EditorPane::apply_definition`] 的 `NavTarget::Virtual` 分支 + [`EditorPane::open_virtual`]（只读 buffer，身份是虚拟 URI） |
+//! | 打开项目生成索引 | [`EditorPane::prepare_java`]（外壳在 `ShellWorkspace::new` 里转发工作区根）→ 后台 `JavaLanguageService::prepare` |
+//! | 退出时关会话 | `impl Drop for EditorPane`（同步 `lsp.stopServer` + `lsp.destroyServer`，理由见该处注释） |
+//!
+//! 结果来源的**选择**在 [`crate::navigation::resolve_target`]（`.java` 优先 JDTLS、
+//! 服务不可用退回第一批的轻量导航），本文件只负责把选出来的目标落地。
+//!
+//! Core 调用与历史的数据侧都在 [`crate::navigation`]，本文件只负责接线与诊断。
+
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::buffer::{Buffer, display_names, icon_for_file, read_body};
-use crate::navigation::{JumpEntry, JumpHistory, definition_target};
+use crate::navigation::{JumpEntry, JumpHistory, NavTarget, editor_position, resolve_target};
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
-use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position};
+use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, Rope};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
@@ -43,6 +58,7 @@ use gpui_kit::{
     MouseDownEvent, ParentElement as _, Render, ScrollWheelEvent, SharedString, Styled as _, Task,
     Window, div, point, px, relative,
 };
+use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::{tr, tr_args};
 
 // ---------------------------------------------------------------------------
@@ -161,6 +177,13 @@ pub struct EditorPane {
     nav_task: Option<Task<()>>,
     /// 请求号的自增源。
     nav_generation: u64,
+    /// Java 语言服务（阶段 10 第二批）。`None` = 外壳还没告诉本视图工作区根，
+    /// 或宿主根本没有 Java 工具 —— 两种情况下跳转都走第一批的轻量导航。
+    ///
+    /// `Arc` 是必要的：每次跳转都要把服务句柄 move 进后台任务，而服务本身被本视图持有。
+    java: Option<Arc<JavaLanguageService>>,
+    /// 打开项目时那次"起服务 + 生成 / 复用索引"的后台任务，必须被持有（same as above）。
+    java_task: Option<Task<()>>,
 }
 
 impl EditorPane {
@@ -177,7 +200,34 @@ impl EditorPane {
             nav_request: None,
             nav_task: None,
             nav_generation: 0,
+            java: None,
+            java_task: None,
         }
+    }
+
+    /// 打开项目时调一次（由外壳在 `ShellWorkspace::new` 里转发）：登记工作区根，
+    /// 并在后台跑一次 [`JavaLanguageService::prepare`] —— 也就是"生成索引、下次复用"。
+    ///
+    /// **不阻塞**：`prepare` 要起 JVM、等 JDT 握手与项目导入（实测首次 ~5s，大项目更久），
+    /// 所以整段放进 `background_spawn`。它失败也不影响任何现有功能：跳转会退回
+    /// 第一批的轻量导航（见 [`crate::navigation::resolve_target`]）。
+    ///
+    /// 幂等：已经登记过工作区就不再重复起服务。
+    pub fn prepare_java(&mut self, workspace_root: PathBuf, cx: &mut Context<Self>) {
+        if self.java.is_some() {
+            return;
+        }
+        let service = Arc::new(JavaLanguageService::new(workspace_root));
+        self.java = Some(service.clone());
+        // `detach`：这是一次"发出去就不管结果"的预热，结果只走 `S1_JAVA_*` 诊断行。
+        // 服务的生命周期由 `self.java` 这个 `Arc` 持有，与任务是否被持有无关。
+        self.java_task = Some(cx.background_spawn(async move {
+            match service.prepare() {
+                Ok(true) => println!("S1_JAVA_PREPARED"),
+                Ok(false) => {}
+                Err(reason) => println!("S1_JAVA_PREPARE_FAILED reason={reason}"),
+            }
+        }));
     }
 
     /// 打开一个文件：读盘、判定类型、更新标签栏与正文。
@@ -301,8 +351,9 @@ impl EditorPane {
     ///
     /// 由 [`crate::NavigateToDefinition`] action 的处理器转发进来（见 [`install_actions`]）。
     ///
-    /// 三步：读光标（**字节偏移**，`state.cursor()`）→ 后台调 Core
-    /// （`lsp.builtinNavigation`，见 [`crate::navigation`]）→ 回到前台移动光标。
+    /// 三步：读光标（**字节偏移**，`state.cursor()`）→ 后台解析目标
+    /// （[`crate::navigation::resolve_target`]：`.java` 上优先 JDTLS 语义结果，
+    /// 服务不可用时退回第一批的 `lsp.builtinNavigation`）→ 回到前台移动光标。
     /// Core 调用是同步的，所以一定放 `cx.background_spawn`，不能在 UI 线程上直接调
     /// （`gpui/crates/shared/src/core_client.rs:27-28`）。
     fn navigate_to_definition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -328,6 +379,7 @@ impl EditorPane {
                 state.text().clone(),
             )
         };
+        let java = self.java.clone();
 
         // 同一时刻只有一个请求在飞：替换 `Task` 就是取消上一个
         // （`gpui-pre-scheduler-0.3.6/src/executor.rs:389-390`："If you drop a task it will be
@@ -344,7 +396,9 @@ impl EditorPane {
 
         let task = cx.spawn_in(window, async move |pane, cx| {
             let result = cx
-                .background_spawn(async move { definition_target(&file_path, &text, offset) })
+                .background_spawn(async move {
+                    resolve_target(java.as_deref(), &file_path, &text, offset)
+                })
                 .await;
             // 编辑区可能已经销毁：`update_in` 返回 `Err` 时静默忽略，不 panic。
             let _ = pane.update_in(cx, |pane, window, cx| {
@@ -361,11 +415,11 @@ impl EditorPane {
     fn apply_definition(
         &mut self,
         generation: u64,
-        result: Result<Option<Position>, String>,
+        result: Result<Option<NavTarget>, String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((path, revision, origin)) = self
+        let Some((origin_path, revision, origin)) = self
             .nav_request
             .as_ref()
             .filter(|request| request.generation == generation)
@@ -375,11 +429,12 @@ impl EditorPane {
             return;
         };
 
-        let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
+        let Some(origin_index) = self.buffers.iter().position(|buffer| buffer.path == origin_path)
+        else {
             println!("S1_NAV_FAILED reason=buffer-closed");
             return;
         };
-        if self.buffers[index].revision != revision {
+        if self.buffers[origin_index].revision != revision {
             println!("S1_NAV_FAILED reason=content-changed");
             return;
         }
@@ -387,7 +442,8 @@ impl EditorPane {
         let target = match result {
             Ok(Some(target)) => target,
             // 契约允许"没有目标"：Core 找不到光标处的标识符时 `locations` 是空数组
-            // （`rust/lithe-core/src/lsp/lightweight/symbols.rs:164-168`）。
+            // （`rust/lithe-core/src/lsp/lightweight/symbols.rs:164-168`），
+            // JDTLS 也会给出空的 `locations`。
             Ok(None) => {
                 println!("S1_NAV_FAILED reason=no-target");
                 Self::notify_no_target(window, cx);
@@ -400,25 +456,74 @@ impl EditorPane {
             }
         };
 
+        // 落地：算出目标 buffer 下标 + 编辑器口径的位置 + 诊断行里的 `via`。
+        let (index, position, via) = match target {
+            NavTarget::Local(position) => (origin_index, position, "builtin"),
+            NavTarget::File {
+                path,
+                line,
+                utf16_column,
+            } => {
+                // 跨文件 / 跨模块：目标文件没开着就先打开（真机同样会打开目标文件）。
+                if !self.buffers.iter().any(|buffer| buffer.path == path) {
+                    self.open(&path, window, cx);
+                }
+                let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
+                    println!("S1_NAV_FAILED reason=no-target");
+                    Self::notify_no_target(window, cx);
+                    return;
+                };
+                // 列换算用**目标文件自己**的正文：UTF-16 列与编辑器的字符列只在 ASCII 上相等
+                // （见 `crate::navigation` 的模块文档）。
+                let text = self.buffers[index].editor.read(cx).text().clone();
+                (
+                    index,
+                    editor_position(&text, line as usize, utf16_column as usize),
+                    "jdtls",
+                )
+            }
+            NavTarget::Virtual {
+                uri,
+                display_path,
+                text,
+                line,
+                utf16_column,
+            } => {
+                // 位置先按取回来的正文算（`open_virtual` 会把它 move 走），
+                // 之后编辑器里的正文与这里算的完全是同一份内容。
+                let position = editor_position(
+                    &Rope::from(text.as_str()),
+                    line as usize,
+                    utf16_column as usize,
+                );
+                let index = self.open_virtual(&uri, &display_path, text, window, cx);
+                (index, position, "jdtls-virtual")
+            }
+        };
+
         // 历史记的是**跳转前的位置**，且只在跳转成功后记一次 —— 与真机的顺序一致
         // （先判目标、再 `pushEntry`，`navigation-command-actions.ts:449-467`）。
         self.history.record(JumpEntry {
-            path,
+            path: origin_path,
             position: origin,
         });
-        self.buffers[index].editor.update(cx, |state, cx| {
-            state.set_cursor_position(target, window, cx)
+        // 位置可能已经被编辑过：读回来的才是**真实**落点，日志与历史都用它。
+        let to = self.buffers[index].editor.update(cx, |state, cx| {
+            state.set_cursor_position(position, window, cx);
+            state.cursor_position()
         });
         self.active = Some(index);
 
-        // `from` / `to` 都是 **1 基**（与 `S1_EDITOR_CURSOR` 的显示口径一致，便于对日志）：
-        // `kind=definition` 是本批唯一的跳转种类，留给第二批复用同一行格式。
+        // `from` / `to` 都是 **1 基**（与 `S1_EDITOR_CURSOR` 的显示口径一致，便于对日志）。
+        // `kind=definition` 与第一批同一行格式，新增 `via` 区分结果来源
+        // （`builtin` = 轻量导航降级路径，`jdtls` / `jdtls-virtual` = 语义结果）。
         println!(
-            "S1_NAV_JUMP from={}:{} to={}:{} kind=definition",
+            "S1_NAV_JUMP from={}:{} to={}:{} kind=definition via={via} file={}",
             origin.line + 1,
             origin.character + 1,
-            target.line + 1,
-            target.character + 1
+            to.line + 1,
+            to.character + 1,
+            self.buffers[index].path.display()
         );
         self.sync_cursor(cx);
         cx.notify();
@@ -470,6 +575,72 @@ impl EditorPane {
         self.navigate_to_definition(window, cx);
     }
 
+    /// 打开（或切到）一个 **JDT 虚拟源码** buffer：`jdt://` 的只读正文。
+    ///
+    /// 与 [`Self::open`] 的三点不同，都是"这不是一个磁盘文件"的直接后果：
+    ///
+    /// 1. 正文由调用方给（来自 Core 的 `virtualDocument` 语义请求），**不读盘**；
+    /// 2. 去重键是 JDT 的虚拟 URI（`jdt://contents/java.base/java/lang/String.class?=...`），
+    ///    同一个类每次跳转都是同一个 URI，所以只会有一个标签；
+    /// 3. `writable = false` 且 `set_readonly(true)` —— 契约把 JDT 虚拟位置标成
+    ///    `isReadOnly`（`rust/lithe-core/src/lsp/languages/jdt.rs:631-642`），
+    ///    而且"反编译出来的源码"写回去没有任何意义。
+    ///
+    /// ⚠️ **已知边界**：这个 buffer 的正文只来自 Core 的虚拟文档请求，没有"重新读盘"这条路。
+    /// 用户把它关掉之后，用 `←` 回到它只会得到一条 `S1_NAV_FAILED reason=buffer-closed`
+    /// （见 [`Self::restore_entry`]）—— 想彻底解决要给历史项也保留一份只读正文或异步重取，
+    /// 那是后续的事，本轮如实登记。
+    fn open_virtual(
+        &mut self,
+        uri: &str,
+        display_path: &str,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> usize {
+        let path = PathBuf::from(uri);
+        if let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) {
+            return index;
+        }
+
+        // 显示名取 `display_path` 的最后一段（`java.base/java/lang/String.java` → `String.java`）。
+        let name: SharedString = display_path
+            .rsplit('/')
+            .find(|segment| !segment.is_empty())
+            .unwrap_or(display_path)
+            .to_string()
+            .into();
+
+        let editor = cx.new(|cx| {
+            let mut state = EditorState::new(window, cx).searchable(true);
+            state.set_readonly(true, cx);
+            state
+        });
+        editor.update(cx, |state, cx| state.set_value(text, window, cx));
+
+        let subscriptions = vec![
+            cx.subscribe_in(
+                &editor,
+                window,
+                |pane: &mut Self,
+                 editor: &gpui_kit::Entity<EditorState>,
+                 event: &InputEvent,
+                 window,
+                 cx| {
+                    if matches!(event, InputEvent::Change) {
+                        pane.on_input_change(editor, window, cx);
+                    }
+                },
+            ),
+            cx.observe(&editor, |pane: &mut Self, _editor, cx| pane.sync_cursor(cx)),
+        ];
+
+        let icon = icon_for_file(&name);
+        self.buffers
+            .push(Buffer::new(path, name, icon, editor, false, subscriptions));
+        self.buffers.len() - 1
+    }
+
     /// `←`：回到上一个跳转位置。
     fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(present) = self.current_entry(cx) else {
@@ -496,6 +667,10 @@ impl EditorPane {
     ///
     /// 目标 buffer 已经关掉时**重新打开那个文件**：历史项存的是"路径 + 位置"，
     /// 不依赖那个 buffer 还活着（真机的 jump list 同样能在 buffer 被关掉后回到文件）。
+    ///
+    /// 例外：`jdt://` 虚拟源码的正文只来自 Core 的虚拟文档请求（见 [`Self::open_virtual`]），
+    /// 没有"重新读盘"这条路，所以它的 buffer 一旦关掉就只能放弃这次回退并留一行诊断 ——
+    /// 不这么做会走 [`Self::open`] 的读盘失败分支，给用户一个"无法打开 jdt://..."的说明 buffer。
     fn restore_entry(
         &mut self,
         from: JumpEntry,
@@ -505,6 +680,10 @@ impl EditorPane {
         cx: &mut Context<Self>,
     ) {
         if !self.buffers.iter().any(|buffer| buffer.path == entry.path) {
+            if is_virtual_source_path(&entry.path) {
+                println!("S1_NAV_FAILED reason=buffer-closed");
+                return;
+            }
             self.open(&entry.path, window, cx);
         }
         let Some(index) = self
@@ -1215,6 +1394,25 @@ impl EditorPane {
                     ),
             )
             .into_any_element()
+    }
+}
+
+/// JDT 虚拟源码路径的判据：`crate::navigation` 用 `uri` 直接当 `PathBuf` 建的 buffer。
+fn is_virtual_source_path(path: &Path) -> bool {
+    path.to_string_lossy().starts_with("jdt://")
+}
+
+/// 编辑区销毁时关掉 Java 会话。
+///
+/// **同步**在 drop 里调（而不是丢给一个 detached 线程）：Core 拥有 JDTLS 的**子进程**，
+/// 而进程退出时不会替我们回收它 —— 一个分离线程很可能在 `main` 返回时被一起杀掉，
+/// 留下一个孤儿 JVM。代价是窗口关闭时最多卡住 [`JavaLanguageService::shutdown`] 的有界时间
+/// （`lsp.stopServer` 的 shutdown 期限 2s + 终态等待 5s，实测 <1s）。
+impl Drop for EditorPane {
+    fn drop(&mut self) {
+        if let Some(service) = self.java.take() {
+            service.shutdown();
+        }
     }
 }
 

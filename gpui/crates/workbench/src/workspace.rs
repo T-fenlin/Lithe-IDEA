@@ -240,6 +240,10 @@ impl ShellWorkspace {
 
         // 先建编辑区，再把它的弱引用交给项目树：点文件 → 打开到编辑区。
         let editor = cx.new(|cx| EditorPane::new(window, cx));
+        // 阶段 10 第二批：打开项目时在后台起 Java 语言服务（= 生成 / 复用 JDT 索引缓存）。
+        // 放在这里而不是编辑区自己：工作区根是外壳的参数，编辑区不认识它。
+        // 整段是后台任务，失败只留 `S1_JAVA_*` 诊断，跳转退回第一批的轻量链路。
+        editor.update(cx, |pane, cx| pane.prepare_java(root.clone(), cx));
         let editor_handle = editor.downgrade();
 
         let on_open: Box<dyn Fn(PathBuf, &mut Window, &mut App) + 'static> =

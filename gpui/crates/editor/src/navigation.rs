@@ -51,6 +51,7 @@
 use std::path::PathBuf;
 
 use gpui_kit::component::input::{Position, Rope, RopeExt};
+use lithe_gpui_java::{JavaLanguageService, JavaTarget};
 use lithe_gpui_shared::core_json;
 use serde_json::{Value, json};
 
@@ -63,9 +64,115 @@ const BUILTIN_NAVIGATION: &str = "lsp.builtinNavigation";
 /// （`rust/lithe-core/src/lsp/lightweight/symbols.rs:174-185`）。
 const DEFINITION_METHOD: &str = "textDocument/definition";
 
+/// 会走 JDTLS 语义跳转的文件后缀。
+///
+/// 只有 `.java`：`java.workspacePolicy` 的判据也一样（契约 `:1280-1291`），
+/// 给非 Java 文件起一个 Java 语言服务没有任何意义。
+const JAVA_EXTENSION: &str = "java";
+
 /// 跳转历史的上限，逐值照 Windows 的 `DEFAULT_MAX_ENTRIES`
 /// （`windows/tauri/src/features/editor/stores/jump-list.store.ts:43`）。
 const MAX_JUMP_ENTRIES: usize = 100;
+
+/// 一次跳转解析出来的目标。
+///
+/// 第二批新增 `File`（跨文件 / 跨模块）与 `Virtual`（`jdt://` 库源码）两支；
+/// 第一批的 `Local` 一支保留为**降级路径**：JDTLS 不可用时（没装 JDK 21、载荷不全）
+/// 跳转不该整体失效。
+pub(crate) enum NavTarget {
+    /// 当前文件内的位置（第一批的 `lsp.builtinNavigation`，返回的列已换算成编辑器口径）。
+    Local(Position),
+    /// 磁盘上的目标文件 + **Core 口径**的位置（0 基行 / UTF-16 列）。
+    ///
+    /// 列换算要用**目标文件**的正文，所以推迟到文件真的打开之后再做
+    /// （见 `EditorPane::apply_definition`）：提前读一遍盘既多一次 I/O，
+    /// 又可能与真正打开的正文不一致。
+    File {
+        /// 目标文件绝对路径。
+        path: PathBuf,
+        /// 0 基行。
+        line: u32,
+        /// 0 基 UTF-16 码元列。
+        utf16_column: u32,
+    },
+    /// JDT 虚拟源码（`jdt://`）：只读正文已经取回来了。
+    Virtual {
+        /// 不透明虚拟 URI，也是 buffer 的去重键。
+        uri: String,
+        /// 标签显示名（Core 归一化出的源码形态路径，例如 `java.base/java/lang/String.java`）。
+        display_path: String,
+        /// 只读源码正文。
+        text: String,
+        /// 0 基行。
+        line: u32,
+        /// 0 基 UTF-16 码元列。
+        utf16_column: u32,
+    },
+}
+
+/// 解析一次跳转请求：**优先 JDTLS 的语义结果**，不可用时降级到第一批的轻量导航。
+///
+/// 三条判据（都写在调用点，避免"有时候语义、有时候启发式"这种不可解释的行为）：
+///
+/// 1. 文件不是 `.java`，或还没有 Java 语言服务 → 直接走轻量导航；
+/// 2. JDTLS 返回**结果**（哪怕是"没有位置"）→ 语义结果是权威的，**不回退**：
+///    回退会让"JDT 说这里没有定义"变成"启发式猜一个位置"，那比不跳更糟；
+/// 3. JDTLS **不可用**（`Err`：没装 JDK 21、载荷缺失、会话已关闭）→ 回退到轻量导航，
+///    并留一条 `S1_JAVA_UNAVAILABLE`。
+pub(crate) fn resolve_target(
+    java: Option<&JavaLanguageService>,
+    file_path: &str,
+    text: &Rope,
+    offset: usize,
+) -> Result<Option<NavTarget>, String> {
+    if let Some(service) = java.filter(|_| is_java_source(file_path)) {
+        let (line, utf16_column) = core_position(text, offset);
+        match service.definition(
+            std::path::Path::new(file_path),
+            &text.to_string(),
+            line as u32,
+            utf16_column as u32,
+        ) {
+            Ok(Some(JavaTarget::File {
+                path,
+                line,
+                utf16_column,
+            })) => {
+                return Ok(Some(NavTarget::File {
+                    path,
+                    line,
+                    utf16_column,
+                }));
+            }
+            Ok(Some(JavaTarget::Virtual {
+                uri,
+                display_path,
+                text,
+                line,
+                utf16_column,
+            })) => {
+                return Ok(Some(NavTarget::Virtual {
+                    uri,
+                    display_path,
+                    text,
+                    line,
+                    utf16_column,
+                }));
+            }
+            Ok(None) => return Ok(None),
+            Err(reason) => println!("S1_JAVA_UNAVAILABLE reason={reason} fallback=builtin"),
+        }
+    }
+
+    Ok(definition_target(file_path, text, offset)?.map(NavTarget::Local))
+}
+
+/// 这个路径该不该走 Java 语义跳转。
+fn is_java_source(file_path: &str) -> bool {
+    std::path::Path::new(file_path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(JAVA_EXTENSION))
+}
 
 /// 取光标（字节偏移 `offset`）处标识符的**定义位置**；没有可跳的目标时返回 `None`。
 ///
@@ -136,7 +243,10 @@ fn core_position(text: &Rope, offset: usize) -> (u64, usize) {
 ///
 /// 越界的列按行尾夹住（`position_to_offset` 自己也会夹，但这里先夹掉可以少一次
 /// 越界路径）：`utf16_to_byte_idx` 的入参要求不超过行的 UTF-16 长度。
-fn editor_position(text: &Rope, line: usize, utf16_column: usize) -> Position {
+///
+/// `pub(crate)`：跨文件 / `jdt://` 两支拿到的是**目标文件**的 Core 口径位置，
+/// 换算必须用目标文件自己的 `Rope`，所以 `editor_view.rs` 也要用这个函数。
+pub(crate) fn editor_position(text: &Rope, line: usize, utf16_column: usize) -> Position {
     let line_text = text.slice_line(line);
     let byte = line_text.utf16_to_byte_idx(utf16_column.min(line_text.len_utf16()));
     Position::new(line as u32, line_text.slice(..byte).chars().count() as u32)
@@ -331,6 +441,34 @@ mod tests {
             definition_target("Hello.java", &text, offset).expect("Core 调用成功"),
             None
         );
+    }
+
+    /// 只有 `.java` 会走 JDTLS 语义跳转（`java.workspacePolicy` 的判据同样只看 Java 源）。
+    #[test]
+    fn only_java_sources_take_the_semantic_path() {
+        assert!(is_java_source(r"src\demo\App.java"));
+        assert!(is_java_source("/ws/src/demo/App.JAVA"));
+        assert!(!is_java_source("/ws/src/App.kt"));
+        assert!(!is_java_source("/ws/README"));
+    }
+
+    /// **没有 Java 服务时必须退回第一批的轻量导航**（有服务那一路的真实验证在
+    /// `lithe-gpui-java` 的选定式端到端测试里，需要本地 JDTLS + JDK 21）。
+    ///
+    /// 这条守住的是"降级不是空手"：同一个光标位置，`java = None` 得到的结果必须与
+    /// 第一批完全相同。
+    #[test]
+    fn without_a_java_service_the_builtin_navigation_still_answers() {
+        let text = Rope::from(SAMPLE);
+        let offset = offset_of(&text, 11, 18);
+
+        let target = resolve_target(None, "Hello.java", &text, offset)
+            .expect("Core 调用成功")
+            .expect("样本里 `add` 有声明");
+        let NavTarget::Local(position) = target else {
+            panic!("没有 Java 服务时只可能是当前文件内的位置");
+        };
+        assert_eq!((position.line, position.character), (2, 15));
     }
 
     /// 非 ASCII 正文：Core 的 `utf16Column` 与编辑器的字符列**不同**，换算必须两边都对。

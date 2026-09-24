@@ -3887,6 +3887,7 @@ name = "lithe-gpui-editor"
 version = "0.0.1"
 dependencies = [
  "gpui-kit",
+ "lithe-gpui-java",
  "lithe-gpui-shared",
  "serde_json",
 ]
@@ -3907,6 +3908,15 @@ dependencies = [
  "gpui-kit",
  "lithe-gpui-shared",
  "serde_json",
+]
+
+[[package]]
+name = "lithe-gpui-java"
+version = "0.0.1"
+dependencies = [
+ "lithe-gpui-shared",
+ "serde_json",
+ "url",
 ]
 
 [[package]]

@@ -920,6 +920,122 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 环境结论（本机实测）：TLS 可用（`download.eclipse.org` 200 OK）；有 JDK 21 / 25；但 **jdtls 载荷尚未
 下载**（`third_party/jdtls/` 只有 `manifest.json`，`.artifacts/jdtls` 不存在）——第二批开工前先跑
 `scripts/prepare-jdtls.ps1`（jdtls 1.61.0 + lombok + java-debug + java-test，带 sha256 校验）。
+（2026-09-25 第二批开工时已就绪：`.artifacts/jdtls` 61.7 MB / 114 个 plugin。）
+
+### 10.3 第二批已完成（2026-09-25，本轮）
+
+**落点**：新 crate **`gpui/crates/java`（`lithe-gpui-java`）**，四个模块：
+`jdtls.rs`（载荷 + JDK 发现，移植 `windows/tauri/src-tauri/src/lsp.rs`）、
+`workspace.rs`（指纹 / 缓存键 / 回收，移植同目录 `lsp/jdt_workspace.rs`）、
+`session.rs`（Core LSP 会话的同步信封）、`service.rs`（门面 `JavaLanguageService` + `S1_JAVA_*`）。
+编辑器只做接线：`navigation.rs` 的 `resolve_target`、`editor_view.rs` 的 `apply_definition` /
+`open_virtual` / `prepare_java`。**gpui 侧没有一行 LSP 协议、没有一行 Java 语法**。
+
+#### `lsp.startServer` 的实际请求字段（全部实测通过，`session.rs::Session::start`）
+
+```json
+{ "providerId": "java",
+  "executablePath": "<jdtls>/bin/jdtls.bat", "arguments": [],
+  "environment": { "JAVA_HOME": "<jdk>" },
+  "rootUri": "file:///D:/.../jdt-ws/", "workingDirectory": "D:\\...\\jdt-ws",
+  "runtimeExecutablePath": "<jdk>/bin/java.exe",
+  "jdtlsLaunchResources": { "launcherJarPath": "...", "configurationDirectory": "...\\config_win",
+                            "lombokAgentPath": "...", "javaDebugBundlePath": "...",
+                            "javaExtensionBundlePaths": ["..."] },
+  "cacheDirectory": "%LOCALAPPDATA%\\Lithe\\cache\\language-servers",
+  "workspaceFingerprint": "<java.jdtWorkspaceFingerprint 的不透明结果>",
+  "javaRuntimes": [{ "homePath": "<jdk>", "version": "21.0.8" }],
+  "initializeTimeoutMilliseconds": 90000,
+  "serviceReadyIdleTimeoutMilliseconds": 45000,
+  "serviceReadyAbsoluteTimeoutMilliseconds": 600000,
+  "requestTimeoutMilliseconds": 60000, "javaBuildTimeoutMilliseconds": 600000,
+  "shutdownTimeoutMilliseconds": 2000 }
+```
+三条实测要点：① 有了 `jdtlsLaunchResources` + `runtimeExecutablePath`，`arguments` 留空
+（Core 自己拼 JVM 参数，契约 `:1208-1217`）；② `lsp.startServer` 的响应**同步且很快**
+（返回 `state: initializing`，握手在 Core 后台线程里跑，`engine.rs:1198-1202`），
+就绪要另外等 `lsp.waitEvents` 的 `stateChanged: ready`；③ 送进去的**路径必须先过
+`normalize_path`**（去 `\\?\` verbatim + `\`→`/`），否则 JVM 找不到启动 JAR、进程秒退。
+
+#### 五条链路
+
+| 链路 | Core 命令 | 实测结果 |
+| --- | --- | --- |
+| 起服务 | `lsp.startServer` + `lsp.waitEvents` | `S1_JAVA_READY elapsedMs=4994`（本项目 2 个 `.java`，从应用启动到就绪 6s） |
+| 跨文件 | `lsp.syncDocument` + `lsp.request{operation:"definition"}` | `S1_NAV_JUMP from=6:36 to=4:19 kind=definition via=jdtls file=...Greeter.java` |
+| 回退 | 第一批的 `JumpHistory` | `S1_NAV_BACK from=4:19 to=6:36` / `S1_NAV_FORWARD from=6:36 to=4:19` |
+| 索引缓存 | `java.jdtWorkspaceFingerprint` + `lsp.jdtWorkspaceKey` + `java.jdtCacheRetention` | 键 `8ec4a126…764b`；两遍启动 `reuse=false` → `reuse=true`；Core 自己的进度里 `cacheDisposition` 从 `new` → `reused` |
+| `jdt://` | `lsp.request{operation:"virtualDocument"}` | `System.java` 只读标签，118 124 字节反编译源码，光标 `112:20` |
+
+#### 冲突点：组件 `definition_provider` vs "冒泡读光标"——本轮**继续用后者**
+
+上游那条钩子（`gpui-component-0.6.6/src/editor/lsp/definitions.rs:13-24`）的语义是
+**"Ctrl 悬停时把位置缓存起来，Ctrl 点击时消费缓存"**：一旦启用，
+`handle_click_hover_definition` 会提前 `return`（`.../input/state.rs:2259-2261`），
+**点击不再移动光标**，而第一批的 `Ctrl+单击` 正是靠"组件先移光标、我们冒泡时读 `cursor()`"。
+第二批**不需要**换路，理由是三条叠加：
+
+1. 需要的东西已经够了：`state.cursor()` 在冒泡阶段就是"点到的那一个字符"，与 `F12` 完全同路，
+   所以语义结果与触发方式无关（悬停只是多余的中间态）；
+2. 换路会**新增两条真实交互**：Ctrl+悬停必须停够时间（组件的悬停缓存有延时），
+   而且悬停失败时点击会退化成"只移光标不跳"——维护者定稿的触发器只有 `F12` 与 `Ctrl+单击`
+   两条，不该再多一条"必须先把鼠标停在符号上"；
+3. `definition_provider` 是**同步返回缓存位置**的接口（它自己不请求语言服务），
+   而语义结果要等 JDT 的异步应答；用它就得把"缓存并发的异步结果"再加一层状态，
+   与第一批已有的 `NavRequest`/`generation`/stale 守卫重复。
+
+代价（有意接受）：`Ctrl+单击` 依赖"组件先移光标"这个行为，所以那条
+`input_bounds().contains(..)` 判据仍然必要（点在编辑器内边距上光标不动、不该跳）。
+
+#### 诊断行（第二阶段新增，都可 grep）
+
+```
+S1_JAVA_JDTLS executable=… version=… java=… javaVersion=… launcher=… config=…
+S1_JAVA_CACHE directory=… key=… reuse=<true|false> stateDirectory=…
+S1_JAVA_CACHE_RECLAIM retentionDays=30 removed=n        / S1_JAVA_CACHE_RECLAIM_FAILED error=…
+S1_JAVA_START rootUri=… workingDirectory=…
+S1_JAVA_SESSION started sessionId=… processId=…  /  failed stateChanged=<整条事件>  /  stopped sessionId=…
+S1_JAVA_LOG level=… message=…            （JDT 的导入 / 进度，连续重复只打一次）
+S1_JAVA_READY elapsedMs=… logEvents=… serverInfo=…
+S1_JAVA_SYNC uri=… version=… changed=… bytes=…
+S1_JAVA_DEFINITION target=file path=… line=… col=…      / targets=0
+S1_JAVA_VIRTUAL uri=… displayPath=… bytes=… line=… col=…
+S1_JAVA_SKIPPED reason=not-a-java-workspace   /   S1_JAVA_PREPARED   /   S1_JAVA_PREPARE_FAILED reason=…
+S1_JAVA_UNAVAILABLE reason=… fallback=builtin
+```
+`S1_NAV_JUMP` 沿用第一批的格式，只多一个 `via=<builtin|jdtls|jdtls-virtual>` 与 `file=`。
+
+### 10.4 第二批的边界（有意，不是缺陷）
+
+1. **JDTLS 只是增强，不是依赖**：起不来（没装 JDK 21、载荷不全）时 `definition` 返回 `Err`，
+   `resolve_target` 记一条 `S1_JAVA_UNAVAILABLE` 后**退回第一批的轻量导航**。
+   但 JDTLS **答了**（哪怕是空 `locations`）就是权威答案，**不回退** ——
+   回退会把"这里没有定义"变成"启发式猜一个位置"。
+2. **失败不自动重试**：启动失败几乎都是环境问题，每次 `F12` 都重试一次 30s+ 的启动会把
+   每次跳转都变成一次长时间阻塞。失败只记一次，重启应用等于重试。
+3. **运行 JDK 靠发现，不靠写死**：`LITHE_JDTLS_JAVA` → 捆绑位置（`LanguageServers/jdk`、
+   上一层 `.artifacts/jdk`）→ JDTLS 自带 `jre` → `JAVA_HOME` → PATH → 常见安装根
+   （`~/.jdks`、`Program Files\{Java,Eclipse Adoptium,Microsoft,Amazon Corretto,Zulu,BellSoft}`、
+   `%ProgramData%\java`、scoop）。每个候选都要过 `java -version` 的 **21+ 闸门**。
+   ⚠️ 本机的 JDK 21 装在 `D:\ProgramData\java\openjdk-21`（`%ProgramData%\java` 这一档），
+   而 **PATH 上的 java 是 1.8** —— 所以验证链路显式给 `LITHE_JDTLS_JAVA`。
+   真正的产品化应当把"Java 运行时"做成设置项（`java.jdt.ls.java.home` 同义），本轮没做。
+4. **`jdt://` 的 buffer 关掉之后不能用 `←` 回去**：虚拟源码正文只来自 Core 的虚拟文档请求，
+   没有"重新读盘"这条路。历史项仍在，重开需要"异步重取正文"这一层（本轮未做），
+   现在给一条 `S1_NAV_FAILED reason=buffer-closed` 而不是读盘失败的说明 buffer。
+   `App.java ↔ Greeter.java` 这类真实文件不受影响。
+5. **不做 `java.project.updateSettings` / Maven 剖面 / 构建**：`mavenContext` 没传，
+   所以 Maven 工程的源根与剖面不由 Lithe 喂给 JDT（JDT 自己的 m2e 导入仍在跑）。
+   代价是 Maven 项目里 `src/main/java` 之外的生成源根可能识别不全；本轮验收样本是
+   无构建文件的 invisible project，不受影响。
+6. **一个工作区一个会话，退出时才关**：不随窗口/项目切换重启 JDTLS。
+   窗口关闭时 `EditorPane::drop` **同步**调 `lsp.stopServer` + （等终态后）`lsp.destroyServer`
+   —— 同步是必要的，进程退出不会替我们回收 JDT 的子进程，丢给分离线程会留下孤儿 JVM。
+7. **`← →` 的 `→` 分支**仍沿用第一批的语义（新跳转截断前进分支），跨文件与虚拟源码同样适用。
+
+**验证现场**：`.artifacts/p2/verify-jdt.ps1`（两遍：生成 / 复用）、
+`.artifacts/p2/NOTES-BATCH2.md`（日志原文 + 截图 + 踩坑）、
+`jdt-04-f12.png`（跨文件跳转）/ `jdt-07-virtual.png`（`jdt://` 只读标签）。
 
 ## 11. 协作纪律（每轮都适用）
 
