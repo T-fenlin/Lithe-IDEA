@@ -10,6 +10,7 @@
 //! ## 文件分工
 //!
 //! - [`workspace`]：`ShellWorkspace` 组装（三栏 + 底部窗 + 右工具窗 + 状态栏）与 `Render`；
+//! - [`command_palette`]：命令面板浮层（`Ctrl+Shift+P`；`Dialog` + `Command`，阶段 6 第二半）；
 //! - [`title_bar`]：标题栏（40px）+ 自绘窗口三键；
 //! - [`project_tabs`]：项目标签条；
 //! - [`activity_bar`]：左右活动栏（38px）；
@@ -101,6 +102,7 @@
 //! 而不可变借用可以同时存在。**新增区域模块请遵守这条。**
 
 pub mod activity_bar;
+pub mod command_palette;
 pub mod project_tabs;
 pub mod right_tool_window;
 pub mod status_bar;

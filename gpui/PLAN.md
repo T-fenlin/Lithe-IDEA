@@ -1141,7 +1141,161 @@ S1_JAVA_UNAVAILABLE reason=… fallback=builtin
 `.artifacts/right-panel/inject.ps1` 加了 `-Mode move`（只投 `WM_MOUSEMOVE` 不按键），
 **每次截图前把指针挪到编辑区**，上表的高亮占比都是"指针不在栏上"的干净读数。
 
-## 12. 协作纪律（每轮都适用）
+## 12. 阶段 6 第二半：命令面板（2026-09-25，本轮）
+
+上一半（右侧工具窗，§11）已完成。本半做的是**命令面板浮层**：
+`windows/tauri/src/features/command-palette/` 那一层，本轮落到
+**新模块 `gpui/crates/workbench/src/command_palette.rs`**（浮层零件）+ `workspace.rs` 里的
+动作表与执行器。
+
+### 12.1 快捷键：取自真源，不是惯例
+
+| 项 | 值 | 出处 |
+| --- | --- | --- |
+| 命令 id | `workbench.commandPalette` | `features/keymaps/commands/command-registry.ts:611-615` |
+| 默认绑定 | `cmd+shift+p` | `features/keymaps/defaults/default-keymaps.ts:492-496` |
+| 生效的预设 | `keybindingPreset: "none"` → 用 `defaultKeymaps` | `features/settings/config/default-settings.ts:144` |
+| **Windows 上按什么** | **`Ctrl+Shift+P`** | 绑定在解析时把 `cmd` 归一化成 `ctrl`：`utils/platform.ts:47-54` 的 `normalizeKey`，由 `features/keymaps/utils/parser.ts:76` 调用 |
+| 其它预设的别名（未做） | JetBrains / Xcode 的 `cmd+shift+a`、Emacs 的 `alt+x` | `keybinding-presets.ts:94,119,145` |
+
+实现是**全局 action** `lithe_workbench::OpenCommandPalette` + `KeyBinding::new("ctrl-shift-p", .., None)`，
+登记在 `ShellWorkspace::new`（与 `Ctrl+,` / `Ctrl+S` 同一口径）：gpui 的按键派发在没有焦点元素时
+只走"窗口根节点"这一条路径，挂在工作台根元素上会有"启动后没点过任何地方时按不出来"的死角。
+
+### 12.2 容器：`Dialog` + `Command`（两者都不可替换）
+
+- `component::command::{Command, CommandState}` **只是普通 `v_flex` + 内部 `Input`**
+  （`gpui-component-0.6.6/src/command/state.rs:819-909`），没有遮罩、没有定位、不在窗口层叠序里；
+  官方文档给的唯一浮层用法就是放进 `window.open_dialog`
+  （`docs/gpui-kit/0.6.6/zh-CN/component/command.md:107-157`）。它负责**搜索框、过滤、虚拟列表、
+  行高亮、`↑`/`↓`/`Enter`/`Esc`** —— 这些是成熟实现，本侧不重做。
+- `Dialog` 负责**遮罩 / Escape / 焦点陷阱 / 关闭**，照 `lithe_gpui_settings::open_settings_dialog`
+  的口径组合；**没有新增挂载点**（dialog 层已经由 `ShellWorkspace::render` 挂好）。
+- ❌ **不用 `CommandState` 的 `Action` 机制**（`CommandItem::action(Box<dyn Action>)`）：实现它要么引
+  `anyhow` + `serde`（`Action::build` 收 `serde_json::Value` 并返回 `anyhow::Result`，
+  `gpui-pre-0.3.6/src/action.rs:135`），要么引 `#[derive(Action)]` 需要的 `serde` / `schemars`。
+  本轮不新增依赖，所以用 `on_confirm` 的 `IndexPath` 直接查动作表
+  （未分组条目 `section = 0`、`row` = 动作表行号，`command/state.rs:359-368`）。
+  **代价**：没有真源每行尾部的快捷键提示列（提示位来自被绑定 `Action` 的解析结果，
+  `command/state.rs:722-729`）。
+
+度量（真源 `windows/tauri/src/ui/command.tsx`）：宽 `44rem` = **704**、最大高 `32rem` = **512**、
+距窗口顶 `pt-16` = **16**。704 / 512 不在 gpui 的 rem 档位上，按《编码指南》写 `rems(P / 16.)`
+（不是 `/ 4.`），`Dialog::width` / `margin_top` 只收 `Pixels`，所以走
+`AbsoluteLength::to_pixels`（与 `settings/src/dialog.rs` 的 `rem_px` 同一换算）。
+
+### 12.3 动作清单（**每一条都真的改状态**，没有"点了没反应"的项）
+
+| id（`S1_COMMAND_RUN id=…`） | 标签（zh-CN） | 真的改了什么 |
+| --- | --- | --- |
+| `open-settings` | 首选项：打开设置 | 打开设置对话框（**常规**页） |
+| `open-appearance-settings` | 首选项：打开设置 | 打开设置对话框且**停在外观页**（`open_settings_dialog_at`，真源 `openSettingsDialog(tab)` 的等价物） |
+| `switch-theme-light` / `switch-theme-dark` | 首选项：切换到浅色/深色主题 | `SettingsStore::set_theme_explicit`（**同时关掉「跟随系统」**，照真源 `handleThemeChange`）+ 立即生效 + 防抖落盘 |
+| `toggle-terminal` | 视图：显示/隐藏终端 | 底部工具窗可见性 + 首次显示时懒建终端会话 |
+| `toggle-maven` | 视图：显示/隐藏 Maven | 右工具窗 `resolve_click(Maven, …)`（与右活动栏点击同一份状态、同一条诊断） |
+| `toggle-status-bar` | 视图：显示/隐藏状态栏 | `SettingsStore::set_show_status_bar` |
+
+- **主题那两条互斥**：当前深色只列"切浅色"，反之亦然（真机把两色都列出来是因为它走二级视图
+  `color-theme`，本侧没有那一层；同时列两条会出现一条按下去什么都不变）。行序的**唯一真源**是
+  `workspace::visible_commands`，`command_actions`（画）与 `run_command`（执行）都必须经过它 ——
+  单测钉住了这一点。
+- 标签 / 描述**能复用真源既有键就复用**（`commandPalette.actions.open-settings.label`、
+  `toggle-terminal.enableLabel/disableLabel`、`color-theme.label`、
+  `settings.appearance.showStatusBar(+Description)`、`commandPalette.categories.*`）；真源缺的
+  9 条（切主题两对 + Maven 三条 + 状态栏两条）进 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS`（每条写了理由）。
+- **没放进来**的：`toggle-sidebar`（本侧左栏是常驻的、没有收起态 → 放了就是"点了没反应"）、
+  真源的二级视图、窗口 / 缩放 / pane / git / github / markdown / database 等动作（对应能力在
+  gpui 侧还不存在）。
+
+### 12.4 两个实测出来的缺陷（本轮顺带修掉，都不是命令面板独有的）
+
+1. **没有焦点节点时全局快捷键全死**。`dispatch_key_event` 拿
+   `focus_node_id_in_rendered_frame(self.focus)`（`window.rs:5815-5816`）定派发路径，`focus` 为
+   `None` 时路径为空、keymap 一条都匹配不到。真机上这个焦点来自"用户点过界面里的某个元素"，
+   **启动后什么都不点时 `Ctrl+Shift+P` / `Ctrl+,` 一个都不响**。修法：`ShellWorkspace` 根元素挂
+   `.track_focus(&self.focus)` 当兜底锚点，并在 `new()` 里主动 `window.focus(..)` 一次。
+2. **命令面板打开后搜索框没有焦点**。`window.open_dialog` 把焦点给了 Dialog 自己
+   （`root.rs:309-310`），于是 `↑`/`↓`/`Enter` 落不到 `CommandState` 的 key_context 上，而且
+   `WM_CHAR` 会被丢掉（Windows 的字符输入走**已安装的输入处理器**，
+   `gpui-pre-windows-0.3.6/src/events.rs:477-484`）。修法：打开时置位 `PENDING_FOCUS`，
+   `CommandPalette::render` 的第一帧消费它并调 `CommandState::focus`。
+
+### 12.5 诊断与 i18n
+
+- `S1_COMMAND_PALETTE opened=true actions=<n>` / `focus=search`（可 grep）；
+- `S1_COMMAND_RUN id=<id> state=<open|applied|visible|hidden|unavailable>`：**每条动作一行**，
+  `unavailable` 用在"没有设置状态的宿主"上（不装作做成了）；`toggle-maven` 另有一行
+  `S1_RIGHT_PANEL`（与右活动栏点击同一份诊断）；
+- 新接线 **22 条键**（13 条真源既有 + 9 条 `GPUI_ONLY_KEYS`），全部进
+  `crates/shared/src/i18n.rs` 的 `WIRED` 清单（`lithe.commandPalette.categories.Settings` 另进
+  `SAME_IN_BOTH_LOCALES`：中英都是「设置」）；界面上没有中英文字面量，颜色全走 `cx.theme()`。
+
+### 12.6 验证（本轮实际跑过）
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo build --bin Lithe` | 0 error（只有既有的 `linker_messages` warning） |
+| `cargo test -p lithe-gpui-workbench` | **9 passed**（原 5 + 新增 4：主题互斥 / 其余动作恒在 / 行序是 `COMMAND_ORDER` 的子序列 / 诊断 id 唯一） |
+| `cargo test -p lithe-gpui-settings category` | passed（`Category::DEFAULT` + 分类 id 是诊断取值） |
+| `cargo test -p lithe-gpui-shared every_wired_key_resolves_in_both_locales` | passed（新增 22 条键在 zh-CN/en 下都命中） |
+| `node gpui/tools/extract-locale.mjs --check` | 两个 yml 与真源一致（4334 条 key） |
+| `.artifacts/command-palette/verify-command-palette.ps1` | **21/21 判定全过**（见下表） |
+
+端到端证据（**注入方式：PostMessage**；⚠️ 本机仍锁屏，**键盘注入这次不生效**，详见 §12.7）：
+
+| 步骤 | 判定 | 截图 |
+| --- | --- | --- |
+| 1 基线 | 不带 `--open-palette` 的实例里 `S1_COMMAND_PALETTE` 行数 = 0 | `cp-00-baseline.png` |
+| 2 打开 | `S1_COMMAND_PALETTE opened=true actions=6` + `focus=search` | `cp-01-opened.png` |
+| 2b 宽 | 880 物理 = **704 逻辑**，与真源 `44rem` **逐像素相等** | 同上 |
+| 2c 顶距 | 16.8 逻辑 vs 真源 `pt-16` = 16（本次截图落在动画帧上，见 §12.7） | 同上 |
+| 2d 高 | 367.2 逻辑 ≤ 真源上限 512 | 同上 |
+| 2e 选中行 | accent 底色只出现在第 1 行（y=100 附近） | 同上 |
+| 3 执行 + 二级界面 | 点「首选项：打开设置（外观）」→ `S1_COMMAND_RUN id=open-appearance-settings` + `S1_SETTINGS dialog_opened category=appearance` | `cp-02-open-appearance.png` |
+| 4 过滤 | 输入 `maven` → 面板 y 21..479 → 21..139（矮 340 物理），墨迹 2555 → 631；只剩「视图：显示 Maven」 | `cp-03`/`cp-04-filtered-maven.png` |
+| 4c 空态 | 输入 `zzzz` → 墨迹 68，面板只剩搜索行 + 「未找到命令」 | `cp-05-empty.png` |
+| 5 主题（自证） | `id=switch-theme-light state=applied` + `S1_THEME applied=Lithe Light dark=false` + 设置文件写入 `theme: "Lithe Light"` + 界面底色 `#1E1F22` → `#FFFFFF` | `cp-06-after-light-theme.png` |
+| 5e 对称性 | 浅色下再打开，点同一位置执行的是 `switch-theme-dark`，设置文件回到 `Lithe Dark` | `cp-07-reopened-light.png` |
+| 6 终端 | `id=toggle-terminal state=visible` + `S1_TERMINAL_TAB` 0 → 1（懒建会话，`profile=powershell`） | `cp-08-terminal-shown.png` |
+| 6b Maven | `id=toggle-maven state=visible` + `S1_RIGHT_PANEL view=maven visible=true`（右栏 500 物理 = 400 逻辑） | `cp-09-maven-shown.png` |
+| 7 关闭 | 点面板外的遮罩 → 与基线帧在面板区域**逐像素无差异**（差异 0） | `cp-11-closed.png` |
+
+### 12.7 ⚠️ 本轮验证的强度边界（必须与结论一起读）
+
+**键盘输入在锁屏下进不了应用。** 5 组对照实验（`.artifacts/command-palette/NOTES.md` §2）：
+
+| 通路 | 结果 |
+| --- | --- |
+| `WM_LBUTTONDOWN/UP`（PostMessage） | **有效** —— 行点击 / 遮罩点击都生效 |
+| `WM_CHAR`（PostMessage） | **有效** —— 文本进搜索框（第 4 步靠它） |
+| `WM_KEYDOWN`（带 / 不带 scan code）、直接投 `WM_GPUI_KEYDOWN` | **无效** |
+| `AttachThreadInput` + `SetKeyboardState` | 修饰键**置位成功**（`GetKeyState` 读到 0x80），按键仍到不了 gpui |
+| `--palette-keys`（gpui 自己的 `dispatch_keystroke` + keymap，已显式补焦点锚点） | 派发执行了，**keymap 不命中**（连进程内已登记的 `ctrl-,` 都不响） |
+
+所以本轮：
+- **面板打开**走 `--open-palette`（诊断入口，调的就是按键最终落到的那个函数
+  `command_palette::open_command_palette`），**不是**真的按了 `Ctrl+Shift+P`；
+- **`Enter` 执行**改成**点行** —— gpui 里两者是同一个 `confirm`
+  （`command/state.rs:757-759` 的 `on_click` → `confirm(matched_ix, ..)`，与 `:561-565` 的
+  `on_action_confirm` 调同一个函数）；
+- **`Esc` 关闭**改成**点遮罩** —— `Dialog` 的遮罩关闭与键盘 `Cancel` 走 `Root` 同一个关闭路径
+  （`dialog/dialog.rs:584-585,601-607`）。
+
+**这三条替换都不能证明"操作系统把 Ctrl+Shift+P 送进窗口"**。能被证明的是：绑定已登记
+（`--palette-keys` 的调试输出能列出 `action: "lithe_workbench::OpenCommandPalette"`、
+`key: "p"` + `control/shift`）、面板打开后的几何/过滤/键盘导航/执行/关闭全部按真源语义工作。
+下一轮若要补这一条，需要在**没锁屏**的会话里重跑一次真实按键（`keybd_event` + `SetForegroundWindow`）。
+
+另记一处小偏差（本轮**已修**）：行高原本**不均匀** —— `CommandItem::child` 自绘内容的高度决定行高，
+主题那两条（没有图标、标签也短）会塌成别的行的一半，列表看起来一高一低（真源固定 `min-h-8`，
+`ui/command.tsx:41`）。修法是给自绘内容加 `min_h_8()` + `justify_center()`；修后行距稳定
+**50 物理 = 40 逻辑**（首行中心截图 y=90，逐行 +50）。
+
+顶距 16.8 而不是 16 的另一个可能解释：截图可能落在 Dialog 的入场动画帧上
+（`dialog/dialog.rs:558-563` 的 `ANIMATION_DURATION` 缓动），偏差 0.8 逻辑 < 1 物理像素量级；
+宽 704 是逐像素准的（动画只改 `opacity/scale/y`）。
+
+## 13. 协作纪律（每轮都适用）
 
 - **cargo 只跑改动范围**（维护者多次强调，全量测试会拖很久）：`cargo build --bin Lithe`；
   测试用 `cargo test -p <只动过的那个 crate>`，能按测试名过滤就再加过滤

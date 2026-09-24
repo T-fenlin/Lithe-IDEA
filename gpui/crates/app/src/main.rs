@@ -38,8 +38,8 @@ use std::path::PathBuf;
 
 use gpui_kit::component::{Root, Theme, ThemeMode, TitleBar};
 use gpui_kit::{
-    App, AppContext as _, Bounds, Pixels, SharedString, Size, WindowBounds, WindowOptions, point,
-    px, size,
+    App, AppContext as _, Bounds, Pixels, SharedString, Size, Window, WindowBounds, WindowOptions,
+    point, px, size,
 };
 use lithe_gpui_settings::{Init, SettingsStore};
 use lithe_gpui_workbench::ShellWorkspace;
@@ -80,11 +80,12 @@ fn startup_window_bounds(cx: &App) -> WindowBounds {
 
 /// 命令行参数。
 ///
-/// ⚠️ `--theme` / `--locale` 是**显式覆盖**，不是设置的常规入口：
+/// ⚠️ `--theme` / `--locale` / `--palette-keys` 是**显式覆盖**，不是设置的常规入口：
 /// 「配色主题」与「显示语言」的正规来源是设置文件（`gpui/crates/settings`，设置界面的
-/// 「外观 / 常规」两页）。这两个开关的作用域只有"这一次启动"，**不写回设置文件**，
-/// 保留它们是为了让主题与语言能在一个进程里被可复现地指定 —— `.artifacts/verify-visual.ps1`
-/// 的 4 配置视觉验证依赖这一点（`--theme` × `--locale` 的四组组合），CI/验证脚本不能去改用户设置。
+/// 「外观 / 常规」两页）。这些开关的作用域只有"这一次启动"，**不写回设置文件**，
+/// 保留它们是为了让主题 / 语言 / 键盘交互能在一个进程里被可复现地指定
+/// （`.artifacts/verify-visual.ps1` 的 4 配置视觉验证依赖后者；
+/// `--palette-keys` 的理由见下）。
 struct Options {
     /// 工作区根，传给 `workspace.snapshot` 与 `git.*`。
     root: PathBuf,
@@ -94,25 +95,69 @@ struct Options {
     locale_override: Option<String>,
     /// 启动后自动打开设置对话框（**验证/诊断用**：让机器能截到设置界面的图）。
     open_settings: bool,
+    /// 启动后自动打开**命令面板**（**验证/诊断用**）。
+    ///
+    /// 为什么需要它：本机锁屏导致键盘注入到不了应用（理由见 [`Options::palette_keys`]），
+    /// 而命令面板的**唯一**入口就是 `Ctrl+Shift+P`；没有这个开关，"面板打开长什么样"
+    /// 这件事在无人值守环境里无法取证。它调的是与按键同一条链：
+    /// `window.dispatch_action(OpenCommandPalette)` → `App::on_action` 的全局处理器
+    /// （`crate::command_palette::install_actions`）→ `open_command_palette`。
+    /// 与已有的 `--open-settings` 同一性质，不是产品能力。
+    open_palette: bool,
+    /// 启动后按顺序派发的一串串按键（**验证/诊断用**，可重复给多次 = 多串）。
+    ///
+    /// 用途与实测边界见 [`dispatch_next_key`] 的文档：这台工作站当前**锁屏**，
+    /// `PostMessage` 投递的 `WM_KEYDOWN` 到不了 GPUI 的按键回调（同一通路上的
+    /// `WM_LBUTTONDOWN` / `WM_CHAR` 照常生效，5 组对照实验见
+    /// `.artifacts/command-palette/NOTES.md` §2），所以真实按键既打不开面板、也做不了
+    /// 过滤。这个开关把按键交给 **gpui 自己的按键派发**
+    /// （`Window::dispatch_keystroke`，`gpui-pre-0.3.6/src/window.rs:5373` 起：
+    /// 构造成 `KeyDownEvent` 后走 `dispatch_event` 的完整路径）。
+    ///
+    /// ⚠️ 它**不能**代替真机验证"操作系统把 Ctrl+Shift+P 送进窗口"这一段；本轮实测连
+    /// 已登记的 `ctrl-,` 都不命中（原因见上），所以本轮的键盘验证改走鼠标（`CommandItem`
+    /// 的行点击与 `Enter` 在 gpui 里是同一个 `confirm`）。
+    palette_keys: Vec<Vec<gpui_kit::Keystroke>>,
 }
 
-/// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings]`。
+/// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--palette-keys <串>]`。
 fn parse_options() -> Result<Options, String> {
-    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题名>] [--locale <语言>] [--open-settings]\n\
+    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题名>] [--locale <语言>] [--open-settings] [--open-palette] [--palette-keys <按键串>]\n\
          \x20 --theme <主题名>     本次启动使用的主题（覆盖设置文件；验证/诊断用）\n\
          \x20 --locale <语言>      本次启动使用的界面语言（覆盖设置文件；验证/诊断用）\n\
-         \x20 --open-settings     启动后自动打开设置对话框（验证/诊断用）";
+         \x20 --open-settings     启动后自动打开设置对话框（验证/诊断用）\n\
+         \x20 --open-palette      启动后自动打开命令面板（验证/诊断用）\n\
+         \x20 --palette-keys <串> 启动后按顺序派发一串按键，逗号分隔；可重复给多次 = 多串（验证/诊断用；\n\
+         \x20                     例：\"ctrl-shift-p,n,down,enter,escape\"）";
     let mut args = std::env::args().skip(1);
     let mut root: Option<PathBuf> = None;
     let mut theme_override: Option<SharedString> = None;
     let mut locale_override: Option<String> = None;
     let mut open_settings = false;
+    let mut open_palette = false;
+    let mut palette_keys = Vec::new();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--theme" => theme_override = Some(args.next().ok_or("--theme 缺少值")?.into()),
             "--locale" => locale_override = Some(args.next().ok_or("--locale 缺少值")?),
             "--open-settings" => open_settings = true,
+            "--open-palette" => open_palette = true,
+            "--palette-keys" => {
+                let raw = args.next().ok_or("--palette-keys 缺少值")?;
+                let mut sequence = Vec::new();
+                for token in raw.split(',') {
+                    let token = token.trim();
+                    if token.is_empty() {
+                        continue;
+                    }
+                    // 解析失败**直接报错退出**：静默跳过一个键会让验证脚本得出错误结论。
+                    let keystroke = gpui_kit::Keystroke::parse(token)
+                        .map_err(|error| format!("--palette-keys 里解析不了 {token:?}：{error}"))?;
+                    sequence.push(keystroke);
+                }
+                palette_keys.push(sequence);
+            }
             "-h" | "--help" => return Err(USAGE.to_string()),
             other if root.is_none() && !other.starts_with("--") => {
                 root = Some(PathBuf::from(other));
@@ -126,11 +171,65 @@ fn parse_options() -> Result<Options, String> {
         theme_override,
         locale_override,
         open_settings,
+        open_palette,
+        palette_keys,
     })
 }
 
-/// bin 目标的入口点。
+/// `--palette-keys` 的派发计划：若干串按键 + 派发前要聚焦的根节点。
 ///
+/// **为什么必须先聚焦**：`dispatch_key_event`（`gpui-pre-0.3.6/src/window.rs:5815-5816`）拿
+/// `focus_node_id_in_rendered_frame(self.focus)` 定出派发路径，`self.focus` 为 `None` 时路径
+/// 为空，`dispatch_tree.dispatch_key(..)`（同文件 `:5880`）就匹配不到任何 keymap 绑定。
+/// 真机上这个焦点由"用户点过界面里的某个元素"建立，无人值守启动必须自己给
+/// （`ShellWorkspace` 的根元素就是那个兜底锚点）。
+///
+/// ⚠️ 实测结论：**键盘派发没有让 keymap 命中** —— 同一个进程里 `ctrl-,`
+/// （已登记的 `lithe_settings::OpenSettings`）与 `ctrl-shift-p` 都不触发 action，
+/// 5 组对照实验（scan code / 直接投 `WM_GPUI_KEYDOWN` / `AttachThreadInput` / 显式聚焦）
+/// 见 `.artifacts/command-palette/NOTES.md` §2。所以本轮验证**不依赖**这条路径，
+/// 它只保留成"复现实验"的入口。
+struct KeyPlan {
+    focus: gpui_kit::FocusHandle,
+    rounds: std::collections::VecDeque<std::collections::VecDeque<gpui_kit::Keystroke>>,
+}
+
+/// 派发 `--palette-keys` 里的下一个按键，并把自己排到下一帧（**每帧一个**）。
+///
+/// `Window::dispatch_keystroke`（`gpui-pre-0.3.6/src/window.rs:5373-5396`）把按键交给
+/// gpui 自己的派发路径；每帧一个是为了让上一个键的 `InputState` 变更（以及它触发的重绘）
+/// 在这一帧结束前落地，与真实敲键的时序一致。
+///
+/// 计划是**按值传递**的（`on_next_frame` 的回调要 `'static`，借用逃不出去）。
+fn dispatch_next_key(window: &mut Window, cx: &mut App, mut plan: KeyPlan) {
+    if window.focused(cx).is_none() {
+        window.focus(&plan.focus, cx);
+    }
+
+    let Some(keystroke) = plan.rounds.front_mut().and_then(|round| round.pop_front()) else {
+        // 当前这一串发完了；还有下一串就继续（每帧一个键，串与串之间自然有帧间隔）。
+        if plan.rounds.pop_front().is_none() || plan.rounds.is_empty() {
+            println!("S1_KEYS done");
+            return;
+        }
+        println!("S1_KEYS next_sequence");
+        window.on_next_frame(move |window, cx| dispatch_next_key(window, cx, plan));
+        return;
+    };
+
+    println!(
+        "S1_KEYS dispatch={keystroke} focused={}",
+        window.focused(cx).is_some()
+    );
+    window.dispatch_keystroke(keystroke, cx);
+    if plan.rounds.is_empty() {
+        println!("S1_KEYS done");
+        return;
+    }
+    window.on_next_frame(move |window, cx| dispatch_next_key(window, cx, plan));
+}
+
+/// bin 目标的入口点。
 /// 启动顺序（0.6.6 只有这一种写法，顺序错会静默失败或 panic）：
 /// `application().with_assets(..).run` → `set_locale` → `gpui_kit::init` → `Theme::change` →
 /// 设置（读文件 + 主题监听 + 动作）→ `cx.spawn` → `open_window` → `Root::new`。
@@ -142,6 +241,8 @@ fn main() {
         theme_override,
         locale_override,
         open_settings,
+        open_palette,
+        palette_keys,
     } = match parse_options() {
         Ok(options) => options,
         Err(message) => {
@@ -224,8 +325,62 @@ fn main() {
                             lithe_gpui_settings::open_settings_dialog(window, cx);
                         });
                     }
+                    // `--open-palette`：同上，只是换成命令面板。它调的是**按键最终落到的那
+                    // 同一个函数**（`open_command_palette`，也就是 `OpenCommandPalette` 全局
+                    // 处理器里面的那句）；被绕开的只有"操作系统把 `Ctrl+Shift+P` 送进窗口"这一段。
+                    //
+                    // ⚠️ 这里**不用** `window.dispatch_action(..)`：`Window::dispatch_action`
+                    // 走的是 `dispatch_action_on_node(node_id, ..)`（`window.rs:2442-2454`），
+                    // 只派发给**焦点节点及其祖先**上的处理器，**不触发** `App::on_action` 注册的
+                    // 全局监听器 —— 本轮实测它一次都没进 `open_command_palette`（无
+                    // `S1_COMMAND_PALETTE` 行）。全局 action 的官方路径是按键派发
+                    // （`dispatch_key_event` → `dispatch_action_on_node` 后冒泡到全局），
+                    // 或直接调用处理函数本身。
+                    if open_palette {
+                        window.on_next_frame(|window, cx| {
+                            lithe_gpui_workbench::command_palette::open_command_palette(window, cx);
+                        });
+                    }
                     // `Root` 必须是窗口的第一层：它负责对话框、浮层与通知。
-                    cx.new(|cx| Root::new(workspace, window, cx))
+                    let root_entity = cx.new(|cx| Root::new(workspace, window, cx));
+
+                    // `--palette-keys`：**在 `Root` 装好之后**、首帧之后再开始派发按键。
+                    //
+                    // ⚠️ 两个"不能更早"都有实测理由：
+                    // 1. `dispatch_keystroke` 会同步走一次 `Window::draw`（`window.rs:5810-5813`），
+                    //    而 `draw` 里 `self.root.as_ref().unwrap()`（`window.rs:3540`）**要求窗口
+                    //    根已就位** —— 本轮第一次尝试就是在这里 panic 的（`None` unwrap）；
+                    // 2. `on_next_frame`（`window.rs:2610`）保证不在 render 阶段改窗口状态。
+                    if !palette_keys.is_empty() {
+                        println!("S1_KEYS plan={}", palette_keys.len());
+                        let Some(focus) = lithe_gpui_workbench::command_palette::shell_focus()
+                        else {
+                            eprintln!("S1_KEYS no_shell_focus（外壳还没登记焦点锚点）");
+                            return root_entity;
+                        };
+                        let plan = KeyPlan {
+                            focus,
+                            rounds: palette_keys
+                                .into_iter()
+                                .map(|sequence| sequence.into_iter().collect())
+                                .collect(),
+                        };
+                        root_entity.update(cx, |_root, cx| {
+                            cx.spawn_in(window, async move |_root, cx| {
+                                // 首帧之后再开始：与 `--open-settings` 同一条理由。
+                                cx.background_executor()
+                                    .timer(std::time::Duration::from_millis(400))
+                                    .await;
+                                let _ = cx.update(|window, _cx| {
+                                    window.on_next_frame(move |window, cx| {
+                                        dispatch_next_key(window, cx, plan);
+                                    });
+                                });
+                            })
+                            .detach();
+                        });
+                    }
+                    root_entity
                 })
                 .expect("failed to open window");
             })

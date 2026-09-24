@@ -257,6 +257,23 @@ impl SettingsStore {
         self.commit(cx, next, Effects::Theme);
     }
 
+    /// 显式选一个配色主题：**同时关掉「跟随系统」**，立即生效 + 防抖落盘。
+    ///
+    /// 与 [`Self::set_theme`] 的差别只有一条：这里把 `syncSystemTheme` 一起关掉。
+    /// 为什么需要它：真机命令面板切主题走的是两种写法 —— 设置面板那种是"跟随系统时改的是
+    /// 首选深/浅主题"（`macos-settings-panels.tsx:115-123`），而命令面板**切主题**是
+    /// 先 `updateSetting("syncSystemTheme", false)` 再写 `theme`
+    /// （`features/command-palette/components/command-palette.tsx:107-116`）——
+    /// 用户从命令面板点名要一个主题，意思就是"别跟着系统了"。
+    /// 这里把真源那两步合成一次 `commit`，避免中间态落一次盘。
+    pub fn set_theme_explicit(&mut self, name: SharedString, cx: &mut Context<Self>) {
+        self.theme_override = None;
+        let mut next = self.settings.clone();
+        next.sync_system_theme = false;
+        next.theme = name.to_string();
+        self.commit(cx, next, Effects::Theme);
+    }
+
     /// 改「外观模式」。立即生效 + 防抖落盘。
     ///
     /// 照 Windows：选浅/深色会**同时**把 `syncSystemTheme` 关掉并写 `theme`

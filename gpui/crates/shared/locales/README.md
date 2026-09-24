@@ -8,7 +8,7 @@ Windows 前端的文案真源提取生成**，不手工维护；改文案请改�
 
 | 产物 | 内容 |
 | --- | --- |
-| `lithe.zh-CN.yml` | 4317 条 `lithe.*` 应用文案 + 2 条 `gpui_component.*` 覆盖（简体中文） |
+| `lithe.zh-CN.yml` | 4321 条 `lithe.*` 应用文案（真源 catalog）+ 13 条 gpui 侧自有 key + 2 条 `gpui_component.*` 覆盖（简体中文） |
 | `lithe.en.yml` | 同上（英文） |
 | 生成脚本 | `gpui/tools/extract-locale.mjs` |
 | 真源 | `windows/tauri/src/i18n/locale.ts`（`catalogs` 对象，内含 `"en-US"` 与 `"zh-CN"` 两套） |
@@ -116,7 +116,7 @@ Windows 目录里**没有**月份名/星期名/日期选择器文案（已全文
 
 ## 7. 未能机械提取的清单
 
-**locale.ts 的 catalog：0 条未能提取。** 4317 条 key 全部是字符串字面量，已 100% 转换
+**locale.ts 的 catalog：0 条未能提取。** 4321 条 key 全部是字符串字面量，已 100% 转换
 （`extract-locale.mjs` 运行后无「跳过」输出；非字符串值会被跳过并报错，本次没有发生）。
 以下是**不在 catalog 里、因此没有进入 YAML** 的界面文案/本地化逻辑，接线时需要单独处理：
 

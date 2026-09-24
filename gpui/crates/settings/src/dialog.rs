@@ -89,12 +89,22 @@ gpui_kit::actions!(lithe_settings, [OpenSettings]);
 
 /// 打开设置对话框。已经开着时（含确认子对话框）不叠第二层。
 pub fn open_settings_dialog(window: &mut Window, cx: &mut App) {
+    open_settings_dialog_at(window, cx, Category::DEFAULT);
+}
+
+/// 打开设置对话框并**直接停在某个分类**上。
+///
+/// 命令面板用这条入口（`gpui/crates/workbench/src/command_palette.rs` 的
+/// `open-appearance-settings`）：真源里「首选项：打开 X 设置」会带一个页签
+/// （`features/command-palette/constants/settings-actions.tsx:127-138` 的
+/// `openSettingsDialog(tab)`），本侧只有两页，所以"到指定分类"就是全部差异。
+pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Category) {
     if window.has_active_dialog(cx) {
         return;
     }
     let store = store(cx);
-    let view = cx.new(|cx| SettingsDialog::new(store, window, cx));
-    println!("S1_SETTINGS dialog_opened");
+    let view = cx.new(|cx| SettingsDialog::new(store, category, window, cx));
+    println!("S1_SETTINGS dialog_opened category={}", category.id());
 
     window.open_dialog(cx, move |dialog, window, _cx| {
         // 820×620 用 rem 表达（`rems(P / 16.)`，1rem = 16px），再按窗口当前的 rem 基准求值：
@@ -151,8 +161,11 @@ const NAV_WIDTH: f32 = 190.;
 
 /// 左侧分类。**v1 只有两页**：其余 10 个分类对应的子系统在 gpui 侧不存在，
 /// 做了也只是空壳；理由与前置条件写在 `gpui/PLAN.md` 的「阶段 8」。
+///
+/// 公开是因为命令面板要能"打开到指定分类"（[`open_settings_dialog_at`]）；
+/// 取值域本身仍是这两个，命令面板不新增分类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Category {
+pub enum Category {
     /// 常规（`settings.tabs.general` = 常规）。
     General,
     /// 外观（`settings.tabs.appearance` = 外观）。
@@ -161,7 +174,18 @@ enum Category {
 
 impl Category {
     /// 渲染顺序（Windows 的 12 个分类里前两个就是这两个）。
-    const ALL: [Category; 2] = [Category::General, Category::Appearance];
+    pub const ALL: [Category; 2] = [Category::General, Category::Appearance];
+
+    /// 不带参数打开设置时停在哪一页（真源默认是 `general`，`settings-dialog.tsx` 的初值）。
+    pub const DEFAULT: Category = Category::General;
+
+    /// 诊断行 `S1_SETTINGS dialog_opened category=…` 的取值。
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::General => "general",
+            Self::Appearance => "appearance",
+        }
+    }
 
     /// 分类名文案键（Windows `settings-dialog.tsx:35-48` 的 `labelKey`）。
     fn label_key(self) -> &'static str {
@@ -192,7 +216,12 @@ pub struct SettingsDialog {
 }
 
 impl SettingsDialog {
-    fn new(store: Entity<SettingsStore>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(
+        store: Entity<SettingsStore>,
+        category: Category,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let value = store.read(cx).settings().ui_font_size;
         // 数字框的引擎配置放在 `InputState` 上：`+`/`-` 与上下键都按 `step` 走、
         // 越界文本在输入期间被容忍、失焦时收敛到范围（`gpui-base-0.6.6/src/input/base/state.rs:9032-9052`）。
@@ -230,7 +259,7 @@ impl SettingsDialog {
 
         Self {
             store,
-            category: Category::General,
+            category,
             font_size_input,
             _subscriptions: subscriptions,
         }
@@ -764,6 +793,15 @@ mod tests {
             [Category::General, Category::Appearance],
             "v1 只做常规与外观两页"
         );
+        assert_eq!(Category::DEFAULT, Category::General);
+    }
+
+    /// 分类 id 是诊断行 `S1_SETTINGS dialog_opened category=…` 的取值，也是命令面板
+    /// "打开到指定分类"要传的值 —— 改它就是改可 grep 的契约。
+    #[test]
+    fn category_ids_are_probe_tokens() {
+        assert_eq!(Category::General.id(), "general");
+        assert_eq!(Category::Appearance.id(), "appearance");
     }
 
     /// rem 换算：`rems(P / 16.)` 在 16px 基准下必须等于规格像素值。

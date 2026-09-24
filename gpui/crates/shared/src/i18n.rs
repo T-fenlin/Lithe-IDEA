@@ -46,6 +46,7 @@
 //! | `git`（标题栏 / 筛选 / 提交表 / 引用树 / Inspector / 控制台 / 占位） | `lithe.git.*`、`lithe.workbench.gitLog`、`lithe.footer.readOnly` |
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
 //! | `workbench`（活动栏 / 状态栏 / 项目标签条 / 右工具窗） | `lithe.workbench.*`、`lithe.footer.spaces`、`lithe.titleProject.closeProject`、`lithe.maven.title`、`lithe.maven.notDetected`、`lithe.notifications.empty`、`lithe.extensions.noneFound`、`lithe.commandPalette.close` |
+//! | `workbench` 的命令面板（阶段 6 第二半） | `lithe.commandPalette.{title, placeholder, noCommands, categories.*}`、`lithe.commandPalette.actions.toggle-*`、`lithe.commandPalette.actions.color-theme.label`、`lithe.settings.appearance.theme`、`lithe.settings.appearance.showStatusBar`、`lithe.settings.appearance.showStatusBarDescription`、`lithe.settings.tabs.*`、`lithe.appearance.gpui.*`、`lithe.maven.gpui.*` |
 //! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 6 条 `lithe.settings.gpui.*` 自有文案）、`lithe.ui.cancel` |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
@@ -333,6 +334,48 @@ mod tests {
             ("lithe.notifications.empty", "暂无通知。"),
             ("lithe.extensions.noneFound", "未找到扩展。"),
             ("lithe.commandPalette.close", "关闭命令面板"),
+            // 阶段 6 第二半（命令面板，`gpui/crates/workbench/src/command_palette.rs`）。
+            // 前三条是**真源既有**的命令面板外壳文案：标题 / 占位 / 空态
+            // （`command-palette.tsx:401,449,455`；`locale.ts:7904-7906`，en `:3585-3587`）。
+            ("lithe.commandPalette.title", "命令面板"),
+            ("lithe.commandPalette.placeholder", "输入命令..."),
+            ("lithe.commandPalette.noCommands", "未找到命令"),
+            // 动作的分类名（真源 `Action.category` 经
+            // `commandPalette.categories.<Category>` 本地化，`utils/action-localization.ts:29-30`）。
+            ("lithe.commandPalette.categories.Settings", "设置"),
+            ("lithe.commandPalette.categories.View", "视图"),
+            // 打开设置（`commandPalette.actions.open-settings.label` = 「首选项：打开设置」，
+            // `settings-actions.tsx:155-157`；`locale.ts:8036` / en `:3719`）。
+            ("lithe.commandPalette.actions.open-settings.label", "首选项：打开设置"),
+            // 终端的显示 / 隐藏两条（`view-actions.tsx:125-145`；`locale.ts:8104-8105` / en `:3801-3802`）。
+            ("lithe.commandPalette.actions.toggle-terminal.enableLabel", "视图：显示终端"),
+            ("lithe.commandPalette.actions.toggle-terminal.disableLabel", "视图：隐藏终端"),
+            // 配色主题：真源是命令面板的二级视图（`commandPalette.actions.color-theme.label`，
+            // `settings-actions.tsx` 的 `pushPaletteView("color-theme")` 路径；`locale.ts:8041` / en `:3724`）。
+            ("lithe.commandPalette.actions.color-theme.label", "首选项：颜色主题"),
+            // 设置里的三个文案：主题分组名 / 状态栏开关的标签与描述
+            // （`macos-settings-panels.tsx`；`locale.ts:6644-6645`，en `:2276-2277`）。
+            ("lithe.settings.appearance.theme", "主题"),
+            ("lithe.settings.appearance.showStatusBar", "显示状态栏"),
+            (
+                "lithe.settings.appearance.showStatusBarDescription",
+                "在底部边缘显示应用控件和状态信息",
+            ),
+            // 下面 9 条真源里没有，由 `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 提供
+            // （每条都写了理由）：切换主题的两条 + Maven 工具窗的三条 + 状态栏的两条父项标签
+            // （状态栏的**描述**复用真源 `settings.appearance.showStatusBarDescription`）。
+            ("lithe.appearance.gpui.switchThemeLight", "首选项：切换到浅色主题"),
+            ("lithe.appearance.gpui.switchThemeLightDescription", "使用 Lithe Light 配色"),
+            ("lithe.appearance.gpui.switchThemeDark", "首选项：切换到深色主题"),
+            ("lithe.appearance.gpui.switchThemeDarkDescription", "使用 Lithe Dark 配色"),
+            ("lithe.maven.gpui.toggleToolWindowShow", "视图：显示 Maven"),
+            ("lithe.maven.gpui.toggleToolWindowHide", "视图：隐藏 Maven"),
+            (
+                "lithe.maven.gpui.toggleToolWindowDescription",
+                "开关右侧的 Maven 工具窗",
+            ),
+            ("lithe.appearance.gpui.toggleStatusBarShow", "视图：显示状态栏"),
+            ("lithe.appearance.gpui.toggleStatusBarHide", "视图：隐藏状态栏"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

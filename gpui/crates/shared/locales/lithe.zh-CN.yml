@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 8 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 17 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8659,6 +8659,24 @@ lithe:
     zh-CN: "放弃修改"
   editor.gpui.unsavedChangesBody:
     zh-CN: "对“{name}”的修改尚未保存。"
+  appearance.gpui.switchThemeLight:
+    zh-CN: "首选项：切换到浅色主题"
+  appearance.gpui.switchThemeLightDescription:
+    zh-CN: "使用 Lithe Light 配色"
+  appearance.gpui.switchThemeDark:
+    zh-CN: "首选项：切换到深色主题"
+  appearance.gpui.switchThemeDarkDescription:
+    zh-CN: "使用 Lithe Dark 配色"
+  maven.gpui.toggleToolWindowShow:
+    zh-CN: "视图：显示 Maven"
+  maven.gpui.toggleToolWindowHide:
+    zh-CN: "视图：隐藏 Maven"
+  maven.gpui.toggleToolWindowDescription:
+    zh-CN: "开关右侧的 Maven 工具窗"
+  appearance.gpui.toggleStatusBarShow:
+    zh-CN: "视图：显示状态栏"
+  appearance.gpui.toggleStatusBarHide:
+    zh-CN: "视图：隐藏状态栏"
 
 gpui_component:
   Dialog.ok:

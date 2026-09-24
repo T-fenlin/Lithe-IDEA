@@ -48,7 +48,9 @@ pub mod schema;
 pub mod store;
 pub mod theme;
 
-pub use dialog::{OpenSettings, install_actions, open_settings_dialog};
+pub use dialog::{
+    Category, OpenSettings, install_actions, open_settings_dialog, open_settings_dialog_at,
+};
 pub use paths::{SETTINGS_FILE_ENV, settings_file_path};
 pub use persistence::{DebounceState, Loaded, SAVE_DEBOUNCE_MS, load, load_from};
 pub use restart::restart_application;

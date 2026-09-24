@@ -62,13 +62,15 @@ const GPUI_COMPONENT_OVERRIDES = [
 ];
 
 /**
- * 真源里**没有**、但 GPUI 侧确实需要的文案（`settings.gpui.*`）。
+ * 真源里**没有**、但 GPUI 侧确实需要的文案（`settings.gpui.*` / `editor.gpui.*` /
+ * `appearance.gpui.*` / `maven.gpui.*`）。
  *
  * 允许出现的只有两类，别的一律加进真源：
  *   1. Windows 把文案**硬编码**在 TSX 里、没进 catalog（下拉选项名之类）；
  *   2. Windows 的文案在 GPUI 侧**不成立**（例如"语言会立即生效"，而 gpui 只能重启后生效），
  *      或有意的设计偏离（按 `gpui/docs/gpui-kit/0.6.6/zh-CN/docs/design-guides.md` 的
- *      「界面用词」改写确认对话框）。
+ *      「界面用词」改写确认对话框），或真源把同一件事做成了**另一条路径**（命令面板的
+ *      二级视图 vs 本侧的一等动作）。
  *
  * `reason` 只写给读脚本的人，不进产物；`zh` / `en` 两侧都要写，`--check` 会守住它们
  * 与两个 YAML 一致。
@@ -127,6 +129,65 @@ const GPUI_ONLY_KEYS = [
     en: 'Your changes to "{name}" are not saved yet.',
     reason:
       "同一个对话框的正文。真源只有拆成三段拼接的 unsavedChanges.messagePrefix/messageSuffix（「是否要保存对」+ 文件名 +「 所做的更改？」，locale.ts:7874-7875），是 design-guides.md:427-434 点名的『您确定要……吗』式提问；按指南改成『正文只补充作用范围与后果』，文件名仍是唯一新增信息。",
+  },
+  {
+    key: "appearance.gpui.switchThemeLight",
+    zh: "首选项：切换到浅色主题",
+    en: "Preferences: Switch to Light Theme",
+    reason:
+      "阶段 6 第二半（命令面板）。真源把「切换配色主题」做成 command-palette 的二级视图 `color-theme`（components/theme-selector.tsx，入口 `commandPalette.actions.color-theme.label` = 「首选项：颜色主题」，locale.ts:8041 / en :3724），本侧命令面板还没有二级视图，先做成一等的切换动作，所以要有自己的标签。前缀沿用真源同一族（`Preferences: Open … Settings`，settings-actions.tsx:129）；动作名取真机主题名既有译名「浅色 / 深色」（locale.ts:6250-6251）。",
+  },
+  {
+    key: "appearance.gpui.switchThemeLightDescription",
+    zh: "使用 Lithe Light 配色",
+    en: "Use the Lithe Light color theme",
+    reason:
+      "同上：命令面板每行可以带一句描述（`ui/command.tsx:528-537`）。真源只有二级视图，没有这一句，本侧按主题名如实写。",
+  },
+  {
+    key: "appearance.gpui.switchThemeDark",
+    zh: "首选项：切换到深色主题",
+    en: "Preferences: Switch to Dark Theme",
+    reason: "同上；两条互为反向。",
+  },
+  {
+    key: "appearance.gpui.switchThemeDarkDescription",
+    zh: "使用 Lithe Dark 配色",
+    en: "Use the Lithe Dark color theme",
+    reason: "同上。",
+  },
+  {
+    key: "maven.gpui.toggleToolWindowShow",
+    zh: "视图：显示 Maven",
+    en: "View: Show Maven",
+    reason:
+      "阶段 6 第二半（命令面板）。真源左活动栏底部组的 maven 项点下去走 `toggleMavenPane` → `applyRightToolWindowIntent`（features/maven/actions/maven-tool-window-actions.ts:58），是真机「开/关 Maven 工具窗」的入口；但真源没有一个进 catalog 的命令行标签（左活动栏项只有 aria-label `run.title - maven.title`，sidebar-pane-selector.tsx:243,247）。本侧按真源 View 组既有的措辞仿写（`commandPalette.actions.toggle-terminal.enableLabel` = 「视图：显示终端」，locale.ts:8104 / en :3801），所以是 gpui 侧新增键。",
+  },
+  {
+    key: "maven.gpui.toggleToolWindowHide",
+    zh: "视图：隐藏 Maven",
+    en: "View: Hide Maven",
+    reason: "同上；两条互为反向。",
+  },
+  {
+    key: "maven.gpui.toggleToolWindowDescription",
+    zh: "开关右侧的 Maven 工具窗",
+    en: "Toggle the Maven tool window on the right",
+    reason:
+      "同上。真机 Maven 工具窗在右侧栏（features/layout/components/main-layout.tsx:336-340），所以描述里点明「右侧」。",
+  },
+  {
+    key: "appearance.gpui.toggleStatusBarShow",
+    zh: "视图：显示状态栏",
+    en: "View: Show Status Bar",
+    reason:
+      "阶段 6 第二半（命令面板）。真源只有设置项 `settings.appearance.showStatusBar` = 「显示状态栏」（locale.ts:6644 / en :2276），命令面板在这一项上没有动作条目；本侧按 View 组既有措辞补一条切换动作，所以是 gpui 侧新增键。",
+  },
+  {
+    key: "appearance.gpui.toggleStatusBarHide",
+    zh: "视图：隐藏状态栏",
+    en: "View: Hide Status Bar",
+    reason: "同上；两条互为反向。",
   },
 ];
 
@@ -228,7 +289,7 @@ function renderFile({ yamlLocale, entries, overrides, sourceLabel }) {
   const lines = [
     "# 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。",
     `# 真源：${sourceLabel}`,
-    `# 另有 ${GPUI_ONLY_KEYS.length} 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
+    `# 另有 ${GPUI_ONLY_KEYS.length} 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
     "# 重新生成：node gpui/tools/extract-locale.mjs",
     "#",
     `# rust-i18n 4.2 约定：_version: ${FILE_VERSION}（key 在前、locale 在后）。`,

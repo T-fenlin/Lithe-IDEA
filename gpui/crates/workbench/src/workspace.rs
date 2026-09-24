@@ -59,9 +59,14 @@ use gpui_kit::{
 use lithe_gpui_editor::{EditorPane, SaveBuffer};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::BottomPane;
+use lithe_gpui_settings::Category as SettingsCategory;
 use lithe_gpui_shared::tr;
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
+use crate::command_palette::{
+    Category, CommandAction, CommandId, install_actions as install_command_palette, set_shell,
+    set_shell_focus,
+};
 use crate::project_tabs::{ProjectTab, project_tabs};
 use crate::right_tool_window::{
     RightToolWindowView, diagnose as diagnose_right_panel, resolve_click as resolve_right_click,
@@ -187,6 +192,155 @@ fn bottom_pane_for(index: usize) -> Option<BottomPaneKind> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 命令面板的动作表（阶段 6 第二半）
+// ---------------------------------------------------------------------------
+
+/// 生成命令面板动作表时需要的三个**朝向**开关。
+///
+/// 为什么单独一个结构体而不是直接读 `ShellWorkspace`：动作表要能被两处以**只有 `&self`**
+/// 的方式生成（`render` 里借不到 `&mut Context<Self>`），所以把"当前状态推出哪一条标签"
+/// 这件事做成纯函数 [`command_action`]，开关由调用方先取成快照。
+#[derive(Clone, Copy)]
+pub(crate) struct ActionFlags {
+    /// 底部工具窗当前显示的是不是终端（可见 && 页签 = 终端，判据同 [`ShellWorkspace::is_activity_active`]）。
+    pub(crate) terminal_shown: bool,
+    /// 右工具窗当前显示的是不是 Maven。
+    pub(crate) maven_shown: bool,
+    /// 状态栏当前是否显示（`Settings::show_status_bar`）。
+    pub(crate) status_bar_shown: bool,
+    /// 当前生效的主题是不是深色（判据见 [`ShellWorkspace::action_flags`]）：
+    /// 只决定面板里给"切浅色"还是"切深色"。
+    pub(crate) dark_theme: bool,
+}
+
+/// 一条动作的数据：分类 / 标签 / 描述 / 图标。**纯函数，没有副作用**。
+///
+/// ## 清单与真源逐条对应
+///
+/// | 本侧 id | 真源 | 真的改了什么 |
+/// | --- | --- | --- |
+/// | `open-settings` | `commandPalette.actions.open-settings.label`（`settings-actions.tsx:155-163`） | `SettingsStore` 对话框（常规页） |
+/// | `open-appearance-settings` | `settingsTabCommands` 的 `appearance` 那一页（`settings-actions.tsx:127-138`） | 设置对话框且**停在外观页** |
+/// | `switch-theme-light` / `-dark` | 真源是命令面板二级视图 `color-theme`（`command-palette.tsx:402-409`），执行 `handleThemeChange`（`:107-116`） | `SettingsStore::set_theme`（跟随系统时同时关掉 `syncSystemTheme`，与真源逐条一致） |
+/// | `toggle-terminal` | `commandPalette.actions.toggle-terminal.*`（`view-actions.tsx:125-145`） | 底部工具窗的可见性 + 懒建终端会话 |
+/// | `toggle-maven` | 左活动栏 maven 项 → `toggleMavenPane`（`maven-tool-window-actions.ts:58`） | 右工具窗 `resolve_click(Maven, …)` |
+/// | `toggle-status-bar` | 设置项 `settings.appearance.showStatusBar`（`settings-actions.tsx` 没有对应动作） | `SettingsStore::set_show_status_bar` |
+///
+/// 没有放进来的（有意）：`toggle-sidebar`（左栏可见性）—— 本侧左栏是常驻的、没有收起态，
+/// 放进来就是"点了没反应"；窗口 / 缩放 / pane / git / github / markdown 等动作对应的能力
+/// 在 gpui 侧还不存在，理由见 `gpui/PLAN.md` 的阶段 6 第二半。
+pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction {
+    use CommandId as C;
+    let (category, icon) = match id {
+        C::OpenSettings | C::OpenAppearanceSettings => (Category::Settings, IconName::Settings),
+        // 主题动作在两套界面里都用「调色板」字形（真源 `settings-actions.tsx` 的 `PaletteIcon`）。
+        C::SwitchToLightTheme | C::SwitchToDarkTheme => (Category::Settings, IconName::Palette),
+        C::ToggleTerminal => (Category::View, IconName::SquareTerminal),
+        C::ToggleMaven => (Category::View, IconName::Package),
+        C::ToggleStatusBar => (Category::View, IconName::PanelBottom),
+    };
+
+    // 标签 / 描述：**能复用真源既有键就复用**（逐条的键与出处写在 `shared/src/i18n.rs`
+    // 的 `WIRED` 清单里；剩下 9 条是 gpui 侧新增键，理由写在 `extract-locale.mjs`）。
+    let (label, description) = match id {
+        C::OpenSettings => (
+            tr("lithe.commandPalette.actions.open-settings.label"),
+            tr("lithe.settings.tabs.general"),
+        ),
+        C::OpenAppearanceSettings => (
+            tr("lithe.commandPalette.actions.open-settings.label"),
+            tr("lithe.settings.tabs.appearance"),
+        ),
+        // 朝向与实际生效的主题相反：跟着系统走时 `theme` 就是"首选深/浅主题"，
+        // 与 `SettingsStore::set_theme` 写的那一支一致。
+        C::SwitchToLightTheme => (
+            tr("lithe.appearance.gpui.switchThemeLight"),
+            tr("lithe.appearance.gpui.switchThemeLightDescription"),
+        ),
+        C::SwitchToDarkTheme => (
+            tr("lithe.appearance.gpui.switchThemeDark"),
+            tr("lithe.appearance.gpui.switchThemeDarkDescription"),
+        ),
+        C::ToggleTerminal => (
+            if flags.terminal_shown {
+                tr("lithe.commandPalette.actions.toggle-terminal.disableLabel")
+            } else {
+                tr("lithe.commandPalette.actions.toggle-terminal.enableLabel")
+            },
+            tr("lithe.workbench.terminal"),
+        ),
+        C::ToggleMaven => (
+            if flags.maven_shown {
+                tr("lithe.maven.gpui.toggleToolWindowHide")
+            } else {
+                tr("lithe.maven.gpui.toggleToolWindowShow")
+            },
+            tr("lithe.maven.gpui.toggleToolWindowDescription"),
+        ),
+        C::ToggleStatusBar => (
+            if flags.status_bar_shown {
+                tr("lithe.appearance.gpui.toggleStatusBarHide")
+            } else {
+                tr("lithe.appearance.gpui.toggleStatusBarShow")
+            },
+            tr("lithe.settings.appearance.showStatusBarDescription"),
+        ),
+    };
+
+    CommandAction {
+        id,
+        category,
+        label,
+        description,
+        icon,
+    }
+}
+
+/// 动作表顺序（= 面板里从上到下的顺序，也是 `run_command` 的行号含义）。
+///
+/// 按分类分块、块内按"用户最常找的"排：设置 → 主题 → 视图类。
+/// 真源按 `createXxxActions` 的拼接顺序排（`command-palette.tsx:233-335`），本侧动作少，
+/// 按上面的口径重排是**有意**的（真源那张表里有 200+ 条，顺序照搬没有意义）。
+///
+/// ⚠️ 主题那两条是**互斥**的（[`ShellWorkspace::command_actions`] 按当前主题只保留一条），
+/// 所以面板里的实际行号与这里的下标**不总是一一对应** —— `run_command` 的 `row` 由
+/// `CommandState` 的 `IndexPath` 给出，它数的是**渲染时那一份表**。
+const COMMAND_ORDER: [CommandId; 7] = [
+    CommandId::OpenSettings,
+    CommandId::OpenAppearanceSettings,
+    CommandId::SwitchToLightTheme,
+    CommandId::SwitchToDarkTheme,
+    CommandId::ToggleTerminal,
+    CommandId::ToggleMaven,
+    CommandId::ToggleStatusBar,
+];
+
+/// 打一行命令面板诊断（可 grep，与其他 `S1_*` 同一口径）。
+fn diagnose_run(id: CommandId, state: &str) {
+    println!("S1_COMMAND_RUN id={} state={state}", id.id());
+}
+
+/// 当前状态下**真的会出现在面板里**的动作，顺序 = 面板行序 = `run_command` 的行号。
+///
+/// 只做一件事：把主题那一对按当前配色二选一 —— 真机把两色都列出来是因为它走的是二级视图
+/// （`command-palette.tsx:402-409` 的 `color-theme` 列出全部主题），本侧没有那一层，
+/// 再同时列出"切浅色 / 切深色"就会出现一条按下去什么都不变的动作。
+/// 当前是深色 → 只给"切浅色"，反之亦然（与真源 `handleThemeChange` 从当前值出发同一个意思）。
+///
+/// ⚠️ 这个函数是**动作表行序的唯一真源**：`command_actions`（画）与 `run_command`（执行）
+/// 都必须经过它，否则两边会错位一行。
+fn visible_commands(flags: ActionFlags) -> Vec<CommandId> {
+    COMMAND_ORDER
+        .into_iter()
+        .filter(|id| match id {
+            CommandId::SwitchToLightTheme => flags.dark_theme,
+            CommandId::SwitchToDarkTheme => !flags.dark_theme,
+            _ => true,
+        })
+        .collect()
+}
+
 /// 工作台根视图。
 pub struct ShellWorkspace {
     /// 项目标签条的数据。
@@ -259,6 +413,15 @@ pub struct ShellWorkspace {
     /// `cx.notify()`，所以这里不会跟着编辑器的每一次重绘空转。
     /// 同样是 RAII，必须持有。
     _editor_subscription: Option<gpui_kit::Subscription>,
+    /// 外壳根元素的焦点句柄，真机上由 `Ctrl+S` 的 `SaveBuffer` 处理器与
+    /// 命令面板的全局快捷键共用。
+    ///
+    /// **为什么根元素要有焦点**：gpui 的按键派发路径由当前焦点节点决定
+    /// （`gpui-pre-0.3.6/src/window.rs:5815-5816`），没有焦点节点时 keymap 一条都匹配不到
+    /// —— 也就是说"启动后没点过任何地方"，`Ctrl+S` 与 `Ctrl+Shift+P` 都不会响。
+    /// 根元素挂 `.track_focus(..)` 之后，只要没有后代元素抢走焦点，键盘事件就落在这一层，
+    /// 全局 action 照常派发。理由与实测见 `crate::command_palette` 的 `SHELL_FOCUS`。
+    focus: gpui_kit::FocusHandle,
 }
 
 impl ShellWorkspace {
@@ -272,6 +435,10 @@ impl ShellWorkspace {
         // `Ctrl+F` / `Ctrl+H` 不在这里 —— 它们归编辑器组件自己的 `Input` 上下文绑定
         // （见 `lithe_gpui_editor::install_actions` 的说明）。
         lithe_gpui_editor::install_actions(cx);
+        // 命令面板的 `Ctrl+Shift+P`（真源 `cmd+shift+p` 在 Windows 上的归一化形式，
+        // 出处见 `crate::command_palette` 的模块文档）。同样登记成**全局 action**：
+        // 挂在根元素上会有"启动后没点过任何地方时按不出来"的死角。
+        install_command_palette(cx);
 
         // 先建编辑区，再把它的弱引用交给项目树：点文件 → 打开到编辑区。
         let editor = cx.new(|cx| EditorPane::new(window, cx));
@@ -363,11 +530,167 @@ impl ShellWorkspace {
             _settings_subscription: settings_subscription,
             _terminal_subscription: terminal_subscription,
             _editor_subscription: editor_subscription,
+            // 根元素的兜底焦点锚点（理由见字段文档）。
+            focus: cx.focus_handle(),
         };
         // 启动期也留一行状态证据：右工具窗**默认隐藏**这件事要能被机器验证，
         // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。
         diagnose_right_panel(workspace.right_view, workspace.right_visible);
+        // 命令面板的动作要改本视图的状态，而浮层的 builder / 回调都是 `'static`，
+        // 够不着 `self`：所以在这里登记一个弱引用句柄（理由见 `crate::command_palette`
+        // 的 `SHELL`）。登记在 `Self` 建好之后，句柄一定是可升级的。
+        set_shell(cx.entity().downgrade());
+        // 兜底焦点锚点的句柄（理由见 `crate::command_palette` 的 `SHELL_FOCUS`）。
+        set_shell_focus(workspace.focus.clone());
+        // 根元素**主动要一次焦点**：无人值守启动（验证脚本）时 gpui 不会自己给任何一个
+        // 元素焦点，而"没有焦点节点"会让全部全局快捷键失效 —— 真机上用户点一下界面就有了，
+        // 自动化里没有这一步。有后代元素持有焦点时，user 的点击会照常把焦点移走。
+        window.focus(&workspace.focus, cx);
         workspace
+    }
+
+    /// 当前状态下命令面板的动作表（顺序 = 面板里的行序 = [`ShellWorkspace::run_command`]
+    /// 的行号）。纯读：不改任何状态，也不生成任何界面元素。
+    ///
+    /// 判据与活动栏高亮**同源**（[`ShellWorkspace::is_activity_active`]）：终端"是不是开着"
+    /// 就是 `bottom_visible && bottom_kind == Terminal`，Maven 就是
+    /// `right_visible && right_view == Maven` —— 这样面板里的标签朝向与界面上看到的一致。
+    pub(crate) fn command_actions(&self, cx: &App) -> Vec<CommandAction> {
+        let flags = self.action_flags(cx);
+        visible_commands(flags)
+            .into_iter()
+            .map(|id| command_action(id, flags))
+            .collect()
+    }
+
+    /// 动作表需要的朝向快照（理由见 [`ActionFlags`]）。
+    fn action_flags(&self, cx: &App) -> ActionFlags {
+        // 状态栏：没有设置状态时按默认值（显示）处理 —— 与 `render` 里那条判据一致，
+        // 否则面板会说"隐藏状态栏"而界面上根本没有状态栏。
+        let (status_bar_shown, dark_theme) = lithe_gpui_settings::try_store(cx)
+            .map(|store| {
+                let store = store.read(cx);
+                let settings = store.settings();
+                // 主题为什么看 `applied_theme()` 而不看 `settings.theme`：与设置对话框显示
+                // "当前生效的主题"同一条口径（`settings/src/dialog.rs`）。跟随系统时
+                // `applied_theme()` 按系统外观解析，面板因此不会给出一条"按了没变化"的动作。
+                //
+                // 判据用"主题名里有没有 light"，与 `AppearanceMode::from_settings`
+                // 完全一致（`settings/src/store.rs:55-64`）—— 同一个问题只留一条判据。
+                (
+                    settings.show_status_bar,
+                    !store.applied_theme().to_lowercase().contains("light"),
+                )
+            })
+            .unwrap_or((true, true));
+        ActionFlags {
+            terminal_shown: self.bottom_visible && self.bottom_kind == BottomPaneKind::Terminal,
+            maven_shown: self.right_visible && self.right_view == RightToolWindowView::Maven,
+            status_bar_shown,
+            dark_theme,
+        }
+    }
+
+    /// 执行命令面板的第 `row` 条动作（`row` = [`ShellWorkspace::command_actions`] 的行号）。
+    ///
+    /// **每一条都真的改到状态**：不是日志占位。越界行号直接返回（不 panic、不静默落到某项）。
+    ///
+    /// 与真源的对应关系与"为什么只有这几条"写在 [`command_action`] 的文档上。
+    pub(crate) fn run_command(&mut self, row: usize, window: &mut Window, cx: &mut Context<Self>) {
+        // 行号 → 动作 id 必须经过 `visible_commands`（面板渲染时用的同一条），
+        // 否则主题那两条的互斥会把行号错开一位。
+        let Some(id) = visible_commands(self.action_flags(cx)).get(row).copied() else {
+            return;
+        };
+        match id {
+            CommandId::OpenSettings => {
+                diagnose_run(id, "open");
+                lithe_gpui_settings::open_settings_dialog_at(window, cx, SettingsCategory::General);
+            }
+            CommandId::OpenAppearanceSettings => {
+                diagnose_run(id, "open");
+                lithe_gpui_settings::open_settings_dialog_at(window, cx, SettingsCategory::Appearance);
+            }
+            CommandId::SwitchToLightTheme | CommandId::SwitchToDarkTheme => {
+                self.apply_theme_command(id == CommandId::SwitchToDarkTheme, cx);
+            }
+            CommandId::ToggleTerminal => {
+                // 与活动栏点「终端」同一条迁移（`is_activity_active` 的判据同源）：
+                // 已经开着就收起，否则切到终端页签并显示。
+                let terminal_handle = self.terminal.clone();
+                let (visible, ensure_session) = if self.bottom_visible
+                    && self.bottom_kind == BottomPaneKind::Terminal
+                {
+                    self.bottom_visible = false;
+                    (false, false)
+                } else {
+                    self.bottom_kind = BottomPaneKind::Terminal;
+                    self.bottom_visible = true;
+                    (true, true)
+                };
+                diagnose_run(id, if visible { "visible" } else { "hidden" });
+                if ensure_session {
+                    // 幂等：会话已存在就什么都不做；首次创建由它自己把焦点延到帧末交给输入行。
+                    let _ = terminal_handle.update(cx, |pane, cx| pane.ensure_session(window, cx));
+                }
+            }
+            CommandId::ToggleMaven => {
+                let (view, visible) =
+                    resolve_right_click(RightToolWindowView::Maven, self.right_view, self.right_visible);
+                self.right_view = view;
+                self.right_visible = visible;
+                // 与右活动栏点击走同一个诊断（`S1_RIGHT_PANEL view=maven visible=…`）：
+                // 这样"面板里的 Maven 项和右栏那一项改的是同一份状态"有机器证据。
+                diagnose_right_panel(view, visible);
+                diagnose_run(id, if visible { "visible" } else { "hidden" });
+            }
+            CommandId::ToggleStatusBar => {
+                let next = lithe_gpui_settings::try_store(cx)
+                    .map(|store| !store.read(cx).settings().show_status_bar)
+                    .unwrap_or(false);
+                if let Some(store) = lithe_gpui_settings::try_store(cx) {
+                    store.update(cx, |store, cx| store.set_show_status_bar(next, cx));
+                    diagnose_run(id, if next { "visible" } else { "hidden" });
+                } else {
+                    // 没有设置状态（测试宿主 / 别的宿主）：不装作做成了。
+                    diagnose_run(id, "unavailable");
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// 切配色主题：立即生效 + 防抖落盘。
+    ///
+    /// 照真源命令面板的 `handleThemeChange`（`command-palette.tsx:107-116`）：用户从命令面板
+    /// 点名要一个主题，意思就是**别跟着系统了**，所以走
+    /// `SettingsStore::set_theme_explicit`（它把 `syncSystemTheme` 一起关掉）。
+    /// ⚠️ 与设置对话框里那个主题下拉的口径**不同**（那边跟随系统时改的是"首选深/浅主题"，
+    /// `macos-settings-panels.tsx:115-123`）—— 这正是真源自身的两种写法，不是本侧的偏离。
+    fn apply_theme_command(&mut self, dark: bool, cx: &mut Context<Self>) {
+        let id = if dark {
+            CommandId::SwitchToDarkTheme
+        } else {
+            CommandId::SwitchToLightTheme
+        };
+        let Some(store) = lithe_gpui_settings::try_store(cx) else {
+            // 没有设置状态（测试宿主 / 别的宿主）：不装作做成了。
+            diagnose_run(id, "unavailable");
+            return;
+        };
+        let settings = store.read(cx).settings().clone();
+        // 目标主题取"当前这一支"的既有值：面板在同一支上永远走反方向，所以
+        // `Lithe Dark` / `Lithe Light` 这一对名字直接来自设置（默认值见
+        // `settings/src/schema.rs:54,57`），不在这里另写一份字面量。
+        let name = if dark {
+            settings.auto_theme_dark.clone()
+        } else {
+            settings.auto_theme_light.clone()
+        };
+        store.update(cx, |store, cx| {
+            store.set_theme_explicit(name.into(), cx);
+        });
+        diagnose_run(id, "applied");
     }
 
     /// 状态栏右组（尾随项）：顺序与内容都照真机，**每次重绘时按当前状态算**。
@@ -645,6 +968,10 @@ impl Render for ShellWorkspace {
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
+            // 兜底焦点锚点：没有后代元素持有焦点时，键盘事件落在这里，
+            // 全局 action（`Ctrl+S` / `Ctrl+Shift+P` / `Ctrl+,`）才派发得出去。
+            // 理由与实测见结构体字段 `focus` 与 `crate::command_palette` 的 `SHELL_FOCUS`。
+            .track_focus(&self.focus)
             // `Ctrl+S`：绑定登记在 `lithe_gpui_editor::install_actions`，动作转发给编辑区。
             // 放在**外壳根元素**而不是编辑区根元素：焦点落在资源管理器 / 终端 / 标签栏时
             // `Ctrl+S` 也应该保存当前文件，而它们在元素树里都是这个根元素的后代
@@ -853,4 +1180,98 @@ fn right_activity_items() -> Vec<ActivityItem> {
         // 语义的 `package`。
         ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ActionFlags, CommandId, COMMAND_ORDER, visible_commands};
+
+    /// 深色配色下的朝向快照（其余字段取默认可见状态，避免测试里到处写一遍）。
+    fn dark() -> ActionFlags {
+        ActionFlags {
+            terminal_shown: false,
+            maven_shown: false,
+            status_bar_shown: true,
+            dark_theme: true,
+        }
+    }
+
+    /// 主题那一对**互斥**：面板里永远只有"反方向"那一条。
+    ///
+    /// 这是"动作表行序"的回归测试：`command_actions`（画）与 `run_command`（执行）都必须
+    /// 经过 `visible_commands`，一旦有人只改一边，面板点下去就会错行。
+    #[test]
+    fn theme_actions_are_mutually_exclusive() {
+        let on_dark = visible_commands(dark());
+        assert!(on_dark.contains(&CommandId::SwitchToLightTheme));
+        assert!(!on_dark.contains(&CommandId::SwitchToDarkTheme));
+
+        let on_light = visible_commands(ActionFlags {
+            dark_theme: false,
+            ..dark()
+        });
+        assert!(on_light.contains(&CommandId::SwitchToDarkTheme));
+        assert!(!on_light.contains(&CommandId::SwitchToLightTheme));
+    }
+
+    /// 除主题那一条外，其余动作**总是**在表里（它们没有"按了没变化"的可能：
+    /// 终端 / Maven / 状态栏都是双向开关，设置对话框总是能打开）。
+    #[test]
+    fn the_rest_of_the_table_is_always_present() {
+        for flags in [
+            dark(),
+            ActionFlags {
+                dark_theme: false,
+                ..dark()
+            },
+        ] {
+            let ids = visible_commands(flags);
+            for id in COMMAND_ORDER {
+                if matches!(
+                    id,
+                    CommandId::SwitchToLightTheme | CommandId::SwitchToDarkTheme
+                ) {
+                    continue;
+                }
+                assert!(ids.contains(&id), "{} 不该被过滤掉", id.id());
+            }
+        }
+    }
+
+    /// 动作表**没有重复项**，而且是 `COMMAND_ORDER` 的子序列（顺序 = 面板行序）。
+    #[test]
+    fn visible_order_follows_the_table_order() {
+        let ids = visible_commands(dark());
+        assert_eq!(ids.len(), COMMAND_ORDER.len() - 1, "主题只留一条");
+        let mut rest = COMMAND_ORDER.iter();
+        for id in &ids {
+            assert!(
+                rest.any(|candidate| candidate == id),
+                "{} 不在 COMMAND_ORDER 的剩余部分里（顺序被打乱或重复）",
+                id.id()
+            );
+        }
+    }
+
+    /// `CommandId::id()` 是诊断行 `S1_COMMAND_RUN id=…` 的取值，改它就是改可 grep 的契约；
+    /// 同时它也是搜索关键词，所以要稳定且唯一。
+    #[test]
+    fn command_ids_are_stable_and_unique() {
+        let all = [
+            CommandId::OpenSettings,
+            CommandId::OpenAppearanceSettings,
+            CommandId::SwitchToLightTheme,
+            CommandId::SwitchToDarkTheme,
+            CommandId::ToggleTerminal,
+            CommandId::ToggleMaven,
+            CommandId::ToggleStatusBar,
+        ];
+        assert_eq!(CommandId::OpenSettings.id(), "open-settings");
+        assert_eq!(CommandId::SwitchToLightTheme.id(), "switch-theme-light");
+        assert_eq!(CommandId::ToggleTerminal.id(), "toggle-terminal");
+        let mut ids: Vec<&str> = all.iter().map(|id| id.id()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), all.len(), "诊断 id 必须互不相同");
+    }
 }
