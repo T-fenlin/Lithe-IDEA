@@ -1,0 +1,9 @@
+[package]
+name = "lithe-gpui-terminal"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui-kit = "0.6"
+lithe-gpui-shared = { path = "../shared" }
