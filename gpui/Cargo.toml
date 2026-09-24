@@ -1,0 +1,37 @@
+# 实验性的 GPUI 宿主 workspace。
+#
+# 刻意与 `rust/` workspace 分离：
+# - `rust/Cargo.toml` 的 release profile 是为 Rust Core 的体积优化的（strip / lto /
+#   codegen-units = 1 / opt-level = "s"），桌面应用的 profile 需求不同；
+# - 合在一起会让 `rust/Cargo.lock` 被 GPUI 的依赖树污染，并拖慢现有 Core 构建与校验。
+
+[workspace]
+members = ["shell"]
+resolver = "3"
+
+# 与 rust/Cargo.toml 同一条设置：RSA 大整数运算在未优化时极慢，Discourse 登录流每次
+# 授权都要生成 2048 位密钥，因此 dev 构建也必须提升该依赖的优化等级。
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+# 来自 gpui-kit 官方安装文档：debug 构建会把 GPUI、组件库与文本栈都按未优化编译，
+# `cargo run` 的渲染会明显慢于 release。只优化这些上游 crate，自己的代码仍保持
+# 可调试的 debug 构建。profile 只在本 workspace 根 Cargo.toml 生效，所以放在这里。
+[profile.dev.package.gpui-pre]
+opt-level = 3
+[profile.dev.package.gpui-component]
+opt-level = 3
+[profile.dev.package.gpui-kit]
+opt-level = 3
+[profile.dev.package.gpui-kit-assets]
+opt-level = 3
+[profile.dev.package.gpui-pre-macros]
+opt-level = 3
+[profile.dev.package.gpui-pre-platform]
+opt-level = 3
+[profile.dev.package.rustybuzz]
+opt-level = 3
+[profile.dev.package.taffy]
+opt-level = 3
+[profile.dev.package.ttf-parser]
+opt-level = 3

@@ -1,0 +1,18 @@
+[package]
+name = "lithe-gpui-shell"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "lithe-gpui-shell"
+path = "src/main.rs"
+
+[dependencies]
+# 精确钉版本：gpui-kit 的窗口创建 API 近期发生过变更（Root::new -> open_window），
+# 宽松版本范围会让构建结果随上游漂移。gpui-kit 自己把 GPUI 快照 gpui-pre 精确钉在
+# =0.3.6，该约束会进入 gpui/Cargo.lock。
+gpui-kit = "=0.6.6"
+# 进程内直接链接 Rust Core 的 Rust 接口，而不是走 macOS 的 C ABI。
+lithe-core = { path = "../../rust/lithe-core" }
+serde_json = "1"
