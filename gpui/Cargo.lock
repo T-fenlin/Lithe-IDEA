@@ -3875,6 +3875,7 @@ dependencies = [
 name = "lithe-gpui-app"
 version = "0.0.1"
 dependencies = [
+ "embed-resource",
  "gpui-kit",
  "lithe-gpui-shared",
  "lithe-gpui-workbench",
