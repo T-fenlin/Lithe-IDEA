@@ -78,7 +78,7 @@ const WORKBENCH_GAP: f32 = 4.;
 /// ⚠️ **保留 `px(...)`**：26 不在 gpui 的 rem 档位上（档位里 `_6()`=24、`_7()`=28）。
 const LEFT_ITEM_WIDTH: f32 = 26.;
 /// 左 rail 图标项盒高 `min-h-6`（`main-sidebar.tsx:332` 覆盖掉组件的 `--lithe-tab-height`）= 24。
-/// 24 在 rem 档位上（见 `item_button` 里的 `rems(LEFT_ITEM_HEIGHT / 4.)`，与 `h_6()` 同值）。
+/// 24 在 rem 档位上（见 `item_button` 里的 `rems(LEFT_ITEM_HEIGHT / 16.)`，与 `h_6()` 同值）。
 const LEFT_ITEM_HEIGHT: f32 = 24.;
 /// 左 rail 圆角 `--lithe-chrome-radius`（`theme.css:133`，= 4）。
 ///
@@ -88,7 +88,7 @@ const LEFT_ITEM_HEIGHT: f32 = 24.;
 /// `--radius × k` 阶梯。
 const LEFT_ITEM_RADIUS: f32 = 4.;
 /// 右 rail 图标项 `Button variant=ghost size=icon-sm`（`plugin-activity-rail.tsx:39`）= 28×28。
-/// 28 在 rem 档位上，调用点写 `rems(7.)`（= `size_7()`，值随 `side` 变化所以套不了固定 helper）。
+/// 28 在 rem 档位上，调用点写 `rems(1.75)`（= `size_7()`，值随 `side` 变化所以套不了固定 helper）。
 const RIGHT_ITEM_SIZE: f32 = 28.;
 /// 右 rail 图标项圆角 `rounded-sm`（`plugin-activity-rail.tsx:45`）= 4.8。
 ///
@@ -190,11 +190,11 @@ pub fn activity_bar(
     // 右：38 宽的盒、无内衬、图标项 28 居中 → 中心 x=19；外侧再补 4px 间隔，总宽同样是 42。
     //
     // `gutter` / `outer_pad_end` 的取值随 `side` 变化，套不了固定的 rem 档位 helper，所以用
-    // helper 底层的 `rems()` 表达同一个单位：`rems(2.)` = `px_2()` 的 8、`rems(1.)` = `pr_1()` 的 4、
+    // helper 底层的 `rems()` 表达同一个单位：`rems(0.5)` = `px_2()` 的 8、`rems(0.25)` = `pr_1()` 的 4、
     // `rems(0.)` = 0。它们仍然随主题基准字号缩放（这正是换算成 rem 的目的）。
     let (column_width, gutter, outer_pad_end) = match side {
-        ActivitySide::Left => (COLLAPSED_WIDTH + WORKBENCH_GAP, rems(2.), rems(0.)),
-        ActivitySide::Right => (COLLAPSED_WIDTH, rems(0.), rems(1.)),
+        ActivitySide::Left => (COLLAPSED_WIDTH + WORKBENCH_GAP, rems(0.5), rems(0.)),
+        ActivitySide::Right => (COLLAPSED_WIDTH, rems(0.), rems(0.25)),
     };
     let border = cx.theme().border;
 
@@ -291,24 +291,24 @@ fn item_button(
     // tooltip 朝栏内：左 rail `tooltipSide="right"`、右 rail `"left"`
     // （`sidebar-pane-selector.tsx:106`、`plugin-activity-rail.tsx:42`）。
     // 宽度/高度是随 `side` 变化的运行时值，两边类型要一致，所以统一收敛到 `Length`：
-    // 档位内的值走 `rems(N / 4.)`（与 `_N()` 同值），档位外的 26 保留 `px(...)`。
+    // px 值走 `rems(P / 16.)`（与 `_N()` 同值），档位外的 26 保留 `px(...)`。
     let (id_name, placement, width, height, radius): (&str, Placement, Length, Length, Pixels) =
         match side {
             // 26×24：26 不在 gpui 的 rem 档位上（档位里 24 / 28），所以保留 `px(...)`；
-            // 24 在档位上 → `rems(24. / 4.)` 与 `h_6()` 同值。
+            // 24 在档位上 → `rems(24. / 16.)` 与 `h_6()` 同值。
             ActivitySide::Left => (
                 "lithe-activity-bar-left",
                 Placement::Right,
                 px(LEFT_ITEM_WIDTH).into(),
-                rems(LEFT_ITEM_HEIGHT / 4.).into(),
+                rems(LEFT_ITEM_HEIGHT / 16.).into(),
                 px(LEFT_ITEM_RADIUS),
             ),
-            // 28 = `w-7` → `rems(28. / 4.)` 与 `size_7()` 同值。
+            // 28 = `w-7` → `rems(28. / 16.)` 与 `size_7()` 同值。
             ActivitySide::Right => (
                 "lithe-activity-bar-right",
                 Placement::Left,
-                rems(RIGHT_ITEM_SIZE / 4.).into(),
-                rems(RIGHT_ITEM_SIZE / 4.).into(),
+                rems(RIGHT_ITEM_SIZE / 16.).into(),
+                rems(RIGHT_ITEM_SIZE / 16.).into(),
                 px(RIGHT_ITEM_RADIUS),
             ),
         };
