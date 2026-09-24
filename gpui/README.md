@@ -14,7 +14,10 @@
 ```powershell
 cd gpui
 cargo build --bin shell-probe
-.\target\debug\shell-probe.exe D:\developmentProjects\rust\Lithe-IDEA     # 参数 = 工作区根
+# 参数 = 工作区根；--theme / --locale 是设置界面做好之前的临时开关（见 crates/app/src/main.rs）
+.\target\debug\shell-probe.exe D:\developmentProjects\rust\Lithe-IDEA
+.\target\debug\shell-probe.exe D:\developmentProjects\rust\Lithe-IDEA --theme "Lithe Light"
+.\target\debug\shell-probe.exe D:\developmentProjects\rust\Lithe-IDEA --locale en
 ```
 
 - 窗口尺寸从主显示器的可见区域算（`startup_window_bounds`），**不写死机器路径**；
