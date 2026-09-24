@@ -343,7 +343,8 @@ impl SettingsDialog {
                     // ⚠️ **不照抄** Windows 的 `settings.mac.languageDescription`
                     // （「界面语言会立即生效。默认语言为英文。」）—— gpui 侧 `set_locale` 只在启动早期
                     // 调用一次，而界面里有构造期就 `tr()` 过的文案（活动栏项、状态栏），运行中换语言会
-                    // 变成一半新一半旧。所以描述如实写"重启后生效"。这条是 gpui 侧新增的键
+                    // 变成一半新一半旧。本侧的做法是**选完就用相同参数重启自己**（见下），所以描述写
+                    // "重启后生效"——它确实会重启，只是不用用户自己动手。这条是 gpui 侧新增的键
                     // （Windows 缺失，本侧补）。
                     Some(tr("lithe.settings.gpui.languageRestartDescription")),
                     self.dropdown(
@@ -363,17 +364,21 @@ impl SettingsDialog {
                         {
                             let store = self.store.clone();
                             Box::new(move |value, _, cx| {
-                                // 只写设置（`set_display_language` 不等防抖、立即落盘），语言在
-                                // **下次启动**生效。
+                                // 改语言 → 立即落盘（`set_display_language` 不等防抖）→ 用相同参数
+                                // **重启自己**，新进程直接以新语言起来。只有**真的变了**才重启：
+                                // 选回当前语言不该把应用重启一次。
                                 //
-                                // `restart.rs` 里有现成的"用相同参数重启自己"（`restart_application`），
-                                // 本轮**故意不接**：为一次语言切换杀掉进程，会连带丢掉编辑器未保存内容
-                                // 与终端会话，而 `PLAN.md` §8 的 v1 口径就是"只提示、由用户自己重启"。
-                                // 要改成"选完立即重启"，在这里补一次
-                                // `crate::restart::restart_application(cx)` 即可。
-                                store.update(cx, |store, cx| {
-                                    store.set_display_language(value.to_string(), cx);
+                                // 为什么不走"热切"：`set_locale` 只在启动早期调一次，界面里又有构造期
+                                // 就 `tr()` 过的文案（活动栏项、状态栏），热切只会"一半新一半旧"；
+                                // 而"只提示、让用户自己重启"会让界面长期停在半生效状态。重启最干净。
+                                // ⚠️ 代价：当前进程里未保存的编辑器内容与终端会话会随之结束
+                                // （编辑器接上保存后，这里要重新评估是否加确认）。
+                                let changed = store.update(cx, |store, cx| {
+                                    store.set_display_language(value.to_string(), cx)
                                 });
+                                if changed {
+                                    crate::restart::restart_application(cx);
+                                }
                             })
                         },
                     ),

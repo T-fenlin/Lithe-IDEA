@@ -712,7 +712,7 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 
 | 分类 | 页面里的项 | 能立刻生效吗 | 怎么验证 |
 | --- | --- | --- | --- |
-| **常规** | `displayLanguage`（语言下拉：简体中文 / 英语） | ❌ **重启后生效**（gpui 的 `set_locale` 只在启动早期调一次；描述里逐字写明） | 改完看设置文件里的 `displayLanguage`；重启后界面语言变化 |
+| **常规** | `displayLanguage`（语言下拉：英语 / 简体中文，顺序照抄 Windows 的 `DISPLAY_LANGUAGES`） | ✅ **选完自动重启生效**：写设置（立即落盘）→ 用**相同参数**重新拉起自己 → 退出当前进程（`restart.rs`）。不做运行中热切：`set_locale` 只在启动早期调一次，活动栏/状态栏文案是构造期 `tr()` 的，热切只会"一半新一半旧" | stdout `S1_SETTINGS restarting pid=… args=…` + 新进程 `S1_SETTINGS loaded … locale=en-US`；截图里界面变英文 |
 | **外观** | `theme`（配色主题下拉，候选 = `ThemeRegistry` 已加载的主题） | ✅ 立即 | `.artifacts/p1/theme-from-settings.png` + stdout `S1_THEME applied=… dark=false` |
 | | `uiFontSize`（数字输入，10–24 / 0.5 步长） | ✅ 立即（写 `Theme.font_size`，`Root::render` 每帧 `window.set_rem_size`） | stdout `S1_THEME font_size=…`；另有 rem 基准不变量兜底 |
 | | `showStatusBar`（开关） | ✅ 立即（`ShellWorkspace::render` 条件渲染 + 订阅 `SettingsStore` 重绘） | 关掉后状态栏整条消失 |
@@ -789,6 +789,7 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 | 「配色主题」在跟随系统时显示**当前生效**的主题 | Windows 在该模式下显示的是 `settings.theme`（并非生效值，`macos-settings-panels.tsx:141` vs `:122`）；显示生效值更不容易骗人 |
 | 语言下拉的两个选项名走新键（`settings.gpui.language*`） | Windows 把 `English` / `简体中文` **硬编码在 TSX 里**、不在 catalog；界面上不许出现字面量 |
 | 遮罩比 Windows 浅：gpui-kit `Dialog` 默认 **20% 黑**，Windows 覆写成 `bg-black/55` | `Dialog` 只暴露 `overlay(bool)`、没有遮罩色入口。实测压暗系数 k≈0.798（= 20%，与组件默认一致）。为不改组件、也不自绘遮罩（那会丢掉焦点陷阱与 Esc 语义）而保留默认 |
+| 「显示语言」选完**自动重启**，而不是"只提示、让用户自己重启" | 热切做不到干净（见 §8.2 常规行）；只提示又会让界面长期停在半生效状态。实现与代价（当前进程未保存的编辑器内容与终端会话会结束）写在 `crates/settings/src/restart.rs` 的模块文档里；编辑器接上保存后要重新评估是否加确认 |
 
 ### 8.7 验证（本轮实际跑过）
 

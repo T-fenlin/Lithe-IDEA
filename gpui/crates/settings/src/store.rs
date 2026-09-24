@@ -293,12 +293,11 @@ impl SettingsStore {
         self.commit(cx, next, Effects::None);
     }
 
-    /// 改「显示语言」。返回是否真的变了。**立即落盘**（不等 300ms 防抖）：语言要下次启动才生效，
-    /// 而用户完全可能选完就关掉应用，不能把这次写留在一个随时会被丢掉的防抖窗口里。
+    /// 改「显示语言」。返回是否真的变了。**立即落盘**（不等 300ms 防抖）：调用方紧接着就会
+    /// 重启应用（[`crate::restart::restart_application`]），新进程必须马上读到新语言。
     ///
     /// 为什么语言不做运行中热切：gpui 侧 `set_locale` 只在启动早期调一次，而界面里有构造期就
-    /// `tr()` 过的文案（活动栏项、状态栏文案），热切只会"一半变、一半不变"。真正的生效路径是重启
-    /// （`restart.rs` 有"用相同参数重启自己"的现成实现，本轮**未接线**，理由见那里的模块文档）。
+    /// `tr()` 过的文案（活动栏项、状态栏文案），热切只会"一半变、一半不变"。生效路径是重启。
     pub fn set_display_language(&mut self, tag: String, cx: &mut Context<Self>) -> bool {
         let mut next = self.settings.clone();
         next.display_language = tag;
