@@ -1,20 +1,31 @@
-//! 外壳入口：命令行参数、首窗口尺寸与**应用启动顺序**。
+//! `shell-probe` bin 目标的 crate 根，也是 **App Shell**（应用外壳）。
 //!
-//! 界面按"区域"拆在同目录的兄弟模块里，一个区域一个文件，便于并行改动互不冲突：
+//! ## 职责（《编码指南》「架构总览」）
 //!
-//! - [`workspace`]：工作台骨架（标题栏 + 项目标签条 + 活动栏 + Dock 组装 + 状态栏）。
+//! App Shell **只组合窗口与 Feature**，不承载任何具体 Feature 逻辑：命令行参数、首窗口尺寸、
+//! 应用启动顺序、主题加载，以及把 `lithe-gpui-workbench` 的 `ShellWorkspace` 挂到 `Root` 下。
 //!
-//! 启动顺序固定为 `application().run` → `gpui_kit::init` → `cx.spawn` →
-//! `open_window` → `Root::new`，与历史实现完全一致（顺序错会静默失败或 panic）。
+//! 旧的 P1 冒烟宿主（`gpui/shell/src/main.rs`，bin 目标 `lithe-gpui-shell`）已删除：
+//! 它的职责被本文件完全覆盖，而指南要求「一个应用一个 shell」。
+//!
+//! ## 启动顺序（0.6.6 只有这一种写法，顺序错会静默失败或 panic）
+//!
+//! `application().with_assets(..).run` → `gpui_kit::init` → `Theme::change` →
+//! `cx.spawn` → `open_window` → `Root::new`。`Root` **必须是窗口的第一层**：它负责对话框、
+//! 抽屉、通知与焦点归还；`Root::new` 之前不得打开任何浮层（那时窗口根还不是 `Root`，
+//! `window.open_dialog` 会 panic）。
+//!
+//! ## 国际化（i18n）不在本文件
+//!
+//! `rust_i18n::i18n!` **必须出现在持有 `locales/` 的那个 crate 的根**：`rust_i18n::t!` 展开成
+//! `crate::_rust_i18n_try_translate(..)`（`rust-i18n-macro-4.2.2/src/tr.rs:438,454`），
+//! 而该函数由 `i18n!` 在**调用它的那个 crate** 里生成。本项目的 `t!` 包装
+//! （`tr` / `tr_args`，含 `{name}` 插值）住在 `lithe-gpui-shared`，所以 locale 与 loader
+//! 也落在那里（`gpui/crates/shared/locales/`，由 `gpui/tools/extract-locale.mjs` 从
+//! `windows/tauri/src/i18n/locale.ts` 生成）。**不要在这里再调一次 `i18n!`** —— 那会生成
+//! 第二份 backend，变成两个真相源。
 //!
 //! 运行：`cargo run --bin shell-probe -- <workspace-root>`
-
-mod bottom_panel;
-mod editor;
-mod explorer;
-mod shell;
-mod terminal;
-mod workspace;
 
 use std::path::PathBuf;
 
@@ -23,6 +34,7 @@ use gpui_kit::{
     App, AppContext as _, Bounds, Pixels, SharedString, Size, WindowBounds, WindowOptions, point,
     px, size,
 };
+use lithe_gpui_workbench::ShellWorkspace;
 
 /// 加载并监听 Lithe 主题目录，然后把 `Lithe Dark` 应用上去。
 ///
@@ -37,9 +49,9 @@ fn apply_lithe_theme(cx: &mut App) {
     // 名字全局唯一，不能与内置的 `Default Light` / `Default Dark` 同名。
     let theme_name: SharedString = "Lithe Dark".into();
 
-    // 用 `CARGO_MANIFEST_DIR`（= `gpui/shell`）拼路径，不依赖进程的工作目录：
+    // 用 `CARGO_MANIFEST_DIR`（= `gpui/crates/app`）拼路径，不依赖进程的工作目录：
     // `watch_dir` 收的是真实路径，而"从哪个目录启动 exe"是会变的。
-    let themes_dir = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../themes"));
+    let themes_dir = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../themes"));
     // 回调是 `move` 的（`watch_dir` 要求 `F: Fn(&mut App) + 'static`），所以路径要各留一份。
     let callback_dir = themes_dir.clone();
 
@@ -103,15 +115,15 @@ fn startup_window_bounds(cx: &App) -> WindowBounds {
     WindowBounds::Windowed(Bounds::new(origin, size))
 }
 
+/// 工作区根：来自命令行第一个参数（不硬编码任何机器路径）。
 fn workspace_root() -> Result<PathBuf, String> {
     let mut args = std::env::args().skip(1);
     let first = args.next().ok_or("用法：shell-probe <workspace-root>")?;
     Ok(PathBuf::from(first))
 }
 
-/// bin 目标的入口点。`pub` 是必需的：crate 根文件用 `pub use shell_probe::main;`
-/// 把它再导出到根（入口点必须解析自 crate 根），私有函数无法被再导出。
-pub fn main() {
+/// bin 目标的入口点。
+fn main() {
     let root = match workspace_root() {
         Ok(root) => root,
         Err(message) => {
@@ -136,7 +148,7 @@ pub fn main() {
             // `gpui-component` 加成**直接依赖**（它展开成 `gpui_component::_rust_i18n_extend(..)`，
             // 并用 `stringify!($target)` 当 namespace，见 `rust-i18n-4.2.2/src/lib.rs:214-219`），
             // 而 gpui-kit 的编码规范要求"应用只依赖 gpui-kit 一个 crate"。两者冲突以规范为准；
-            // 我们自己的文案走本 crate 的 `rust_i18n::t!("lithe.…")`。
+            // 我们自己的文案走 `lithe_gpui_shared::{tr, tr_args}`。
             gpui_kit::component::set_locale("zh-CN");
             gpui_kit::init(cx);
             // `gpui_kit::init` 默认给**浅色**主题，而 Lithe 产品默认是深色，所以显式切一次。
@@ -156,7 +168,7 @@ pub fn main() {
                 };
 
                 cx.open_window(window_options, move |window, cx| {
-                    let workspace = cx.new(|cx| workspace::ShellWorkspace::new(root, window, cx));
+                    let workspace = cx.new(|cx| ShellWorkspace::new(root, window, cx));
                     // `Root` 必须是窗口的第一层：它负责对话框、浮层与通知。
                     cx.new(|cx| Root::new(workspace, window, cx))
                 })

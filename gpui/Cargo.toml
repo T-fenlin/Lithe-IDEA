@@ -6,7 +6,7 @@
 # - 合在一起会让 `rust/Cargo.lock` 被 GPUI 的依赖树污染，并拖慢现有 Core 构建与校验。
 
 [workspace]
-members = ["shell"]
+members = ["crates/*"]
 resolver = "3"
 
 # 与 rust/Cargo.toml 同一条设置：RSA 大整数运算在未优化时极慢，Discourse 登录流每次

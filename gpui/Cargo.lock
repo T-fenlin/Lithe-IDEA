@@ -3872,13 +3872,67 @@ dependencies = [
 ]
 
 [[package]]
-name = "lithe-gpui-shell"
+name = "lithe-gpui-app"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lithe-gpui-shared",
+ "lithe-gpui-workbench",
+]
+
+[[package]]
+name = "lithe-gpui-editor"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+]
+
+[[package]]
+name = "lithe-gpui-explorer"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lithe-gpui-shared",
+ "serde_json",
+]
+
+[[package]]
+name = "lithe-gpui-git"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lithe-gpui-shared",
+ "serde_json",
+]
+
+[[package]]
+name = "lithe-gpui-shared"
 version = "0.0.1"
 dependencies = [
  "gpui-kit",
  "lithe-core",
  "rust-i18n",
  "serde_json",
+]
+
+[[package]]
+name = "lithe-gpui-terminal"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lithe-gpui-shared",
+]
+
+[[package]]
+name = "lithe-gpui-workbench"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lithe-gpui-editor",
+ "lithe-gpui-explorer",
+ "lithe-gpui-git",
+ "lithe-gpui-shared",
+ "lithe-gpui-terminal",
 ]
 
 [[package]]

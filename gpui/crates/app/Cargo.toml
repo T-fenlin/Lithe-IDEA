@@ -1,11 +1,11 @@
 [package]
-name = "lithe-gpui-shell"
+name = "lithe-gpui-app"
 version = "0.0.1"
 edition = "2024"
 publish = false
 
 [[bin]]
-name = "lithe-gpui-shell"
+name = "shell-probe"
 path = "src/main.rs"
 
 [dependencies]
@@ -21,13 +21,9 @@ path = "src/main.rs"
 # （`gpui-kit-0.6.6/src` 里 grep `pub fn open_window` 零命中，它自己的文档注释用的是
 # `cx.open_window`）。细节见 `gpui/docs/README.md`。
 gpui-kit = "0.6"
-# 国际化：gpui-kit 已经依赖 `rust-i18n` 4.2（所以在锁文件与本地缓存里都有），
-# 应用要放自己的 locale 文件时需要在**持有 locale 的 crate** 里直接声明它。
-# 用法（官方文档 `https://gpui-kit.com/zh-CN/docs/i18n.md`）：
-# crate root 调 `rust_i18n::i18n!("locales", fallback = "en");`，
-# 在 `gpui_kit::init(cx)` **之前**调 `rust_i18n::extend!(gpui_component);`，
-# 切换语言用 `gpui_kit::component::set_locale("zh-CN")`。
-rust-i18n = "4.2"
-# 进程内直接链接 Rust Core 的 Rust 接口，而不是走 macOS 的 C ABI。
-lithe-core = { path = "../../rust/lithe-core" }
-serde_json = "1"
+lithe-gpui-shared = { path = "../shared" }
+lithe-gpui-workbench = { path = "../workbench" }
+# 注意：本 crate **不**声明 `rust-i18n`。`rust_i18n::i18n!` 必须出现在持有 `locales/` 的那个
+# crate（本项目是 `lithe-gpui-shared`，理由见 `crates/shared/src/i18n.rs` 的模块文档），
+# `t!` 只能在自己调过 `i18n!` 的 crate 里解析。在这里再声明一次只会多一份没用的依赖。
+# 切换语言仍用 `gpui_kit::component::set_locale("zh-CN")`（见 `src/main.rs`）。
