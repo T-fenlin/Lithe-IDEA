@@ -3877,6 +3877,7 @@ version = "0.0.1"
 dependencies = [
  "gpui-kit",
  "lithe-core",
+ "rust-i18n",
  "serde_json",
 ]
 

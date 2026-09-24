@@ -9,10 +9,25 @@ name = "lithe-gpui-shell"
 path = "src/main.rs"
 
 [dependencies]
-# 精确钉版本：gpui-kit 的窗口创建 API 近期发生过变更（Root::new -> open_window），
-# 宽松版本范围会让构建结果随上游漂移。gpui-kit 自己把 GPUI 快照 gpui-pre 精确钉在
-# =0.3.6，该约束会进入 gpui/Cargo.lock。
-gpui-kit = "=0.6.6"
+# 版本口径照**官方文档**（`https://gpui-kit.com/zh-CN/docs/getting-started.md` 与
+# `.../versions/main/zh-CN/docs/getting-started.md` 都写 `gpui-kit = "0.6"`）：
+# 取已发布的最新 0.6.x，而不是把补丁版本也钉死。
+#
+# 可复现性由**提交进仓库的 `gpui/Cargo.lock`** 保证（gpui-kit 自己也把 GPUI 快照
+# `gpui-pre` 精确钉在 `=0.3.6`，该约束在锁文件里）。只有显式 `cargo update` 才会移动版本。
+#
+# ⚠️ 注意别把 `versions/main` 文档里的新 API 当成 0.6.x 可用：
+# `versions/main` 用的是 `gpui_kit::open_window(...)`，而 0.6.6 里**没有**这个函数
+# （`gpui-kit-0.6.6/src` 里 grep `pub fn open_window` 零命中，它自己的文档注释用的是
+# `cx.open_window`）。细节见 `gpui/docs/README.md`。
+gpui-kit = "0.6"
+# 国际化：gpui-kit 已经依赖 `rust-i18n` 4.2（所以在锁文件与本地缓存里都有），
+# 应用要放自己的 locale 文件时需要在**持有 locale 的 crate** 里直接声明它。
+# 用法（官方文档 `https://gpui-kit.com/zh-CN/docs/i18n.md`）：
+# crate root 调 `rust_i18n::i18n!("locales", fallback = "en");`，
+# 在 `gpui_kit::init(cx)` **之前**调 `rust_i18n::extend!(gpui_component);`，
+# 切换语言用 `gpui_kit::component::set_locale("zh-CN")`。
+rust-i18n = "4.2"
 # 进程内直接链接 Rust Core 的 Rust 接口，而不是走 macOS 的 C ABI。
 lithe-core = { path = "../../rust/lithe-core" }
 serde_json = "1"
