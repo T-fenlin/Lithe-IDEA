@@ -3888,6 +3888,7 @@ version = "0.0.1"
 dependencies = [
  "gpui-kit",
  "lithe-gpui-shared",
+ "serde_json",
 ]
 
 [[package]]

@@ -41,7 +41,7 @@
 //!
 //! | 位置 | 键 |
 //! | --- | --- |
-//! | `editor`（标签栏导航 / 关闭 / 空状态 / 打不开文件 / 保存与自动保存失败 / 关闭未保存确认） | `lithe.tabs.*`、`lithe.workbench.emptyEditor*`、`lithe.ui.noActionsHere`、`lithe.files.openFailed`、`lithe.editor.saveFailed`、`lithe.editor.autoSaveFailed`、`lithe.editor.gpui.*`、`lithe.unsavedChanges.title`、`lithe.ui.save` |
+//! | `editor`（标签栏导航 / 关闭 / 空状态 / 打不开文件 / 保存与自动保存失败 / 关闭未保存确认 / 跳转失败） | `lithe.tabs.*`、`lithe.workbench.emptyEditor*`、`lithe.ui.noActionsHere`、`lithe.files.openFailed`、`lithe.editor.saveFailed`、`lithe.editor.autoSaveFailed`、`lithe.editor.gpui.*`、`lithe.unsavedChanges.title`、`lithe.ui.save`、`lithe.navigation.definition`、`lithe.navigation.noTargetFound` |
 //! | `explorer`（头部 / 空态 / 加载 / 树 a11y） | `lithe.workbench.project`、`lithe.fileExplorer.*`、`lithe.quickOpen.loadingFiles`、`lithe.search.clear`、`lithe.ui.retry`、`lithe.titleProject.openFolder` |
 //! | `git`（标题栏 / 筛选 / 提交表 / 引用树 / Inspector / 控制台 / 占位） | `lithe.git.*`、`lithe.workbench.gitLog`、`lithe.footer.readOnly` |
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
@@ -313,6 +313,11 @@ mod tests {
             ),
             ("lithe.unsavedChanges.title", "未保存的更改"),
             ("lithe.ui.save", "保存"),
+            // 阶段 10 第一批（Java 代码跳转）复用的**真源既有**键：跳转失败时的提示
+            // 「未找到{target}。」+ `{target}` 的取值「定义」
+            // （`windows/tauri/src/i18n/locale.ts:8435,8439`；英文侧同键 `:4137,4141`）。
+            ("lithe.navigation.definition", "定义"),
+            ("lithe.navigation.noTargetFound", "未找到{target}。"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

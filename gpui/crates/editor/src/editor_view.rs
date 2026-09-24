@@ -13,24 +13,35 @@
 //! | B 状态栏光标 | [`EditorPane::sync_cursor`]（`CursorPosition` + `S1_EDITOR_CURSOR` 诊断） |
 //! | C 查找替换 | [`EditorPane::open`] 里显式写出的 `searchable(true)` —— 面板与 `Ctrl+F` / `Ctrl+H` 都归组件（见该处注释） |
 //! | E 关闭确认 | [`EditorPane::request_close`]（`保存` / `放弃修改` / `取消`） |
+//!
+//! ## 阶段 10 第一批接上的三件事（Java 代码跳转的轻量链路，不启 JDTLS）
+//!
+//! | 项 | 落点 |
+//! | --- | --- |
+//! | `F12` | [`crate::NavigateToDefinition`] action + [`EditorPane::navigate_to_definition`] |
+//! | `Ctrl+单击` | [`EditorPane::render_body`] 里包装层 div 的 `on_mouse_down` → [`EditorPane::on_editor_click`]（同一个落点） |
+//! | `← →` 回退 | [`crate::navigation::JumpHistory`] + [`EditorPane::go_back`] / [`EditorPane::go_forward`]；按钮的禁用态见 [`EditorPane::nav_button`] |
+//!
+//! Core 调用与历史的数据侧都在 [`crate::navigation`]，本文件只负责接线与诊断。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::buffer::{Buffer, display_names, icon_for_file, read_body};
+use crate::navigation::{JumpEntry, JumpHistory, definition_target};
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
-use gpui_kit::component::input::{Editor, EditorState, InputEvent};
+use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, ScrollWheelEvent, SharedString, Styled as _, Window, div, point,
-    px, relative,
+    AnyElement, App, AppContext as _, Context, InteractiveElement as _, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement as _, Render, ScrollWheelEvent, SharedString, Styled as _, Task,
+    Window, div, point, px, relative,
 };
 use lithe_gpui_shared::{tr, tr_args};
 
@@ -115,6 +126,21 @@ impl CursorPosition {
     const INITIAL: Self = Self { line: 1, column: 1 };
 }
 
+/// 一次在飞的跳转请求，用来把"结果回来"和"什么时候发的"对上。
+///
+/// 三段校验都在 [`EditorPane::apply_definition`] 里：`generation` 防"同一窗口里又跳了一次"，
+/// `path` 防"buffer 已经关了/换了一个"，`revision` 防"正文在等待期间被改过"。
+struct NavRequest {
+    /// 本进程内自增的请求号（新请求会让旧请求的结果作废）。
+    generation: u64,
+    /// 发起时活动 buffer 的打开路径。
+    path: PathBuf,
+    /// 发起时该 buffer 的正文修订号。
+    revision: u64,
+    /// 发起时的光标位置（0 基）：跳转成功后它就是历史里的"跳转前的位置"。
+    origin: Position,
+}
+
 /// 编辑区视图：标签栏 + 正文（正文没有活动 buffer 时是空状态）。
 pub struct EditorPane {
     /// 打开的 buffer，顺序就是标签栏里的顺序。
@@ -124,6 +150,17 @@ pub struct EditorPane {
     /// 上一次报给外壳的光标位置；用来把"光标真的动了"和"编辑器又重绘了一次"分开，
     /// 否则外壳会跟着每一次编辑器重绘重排状态栏。
     cursor: Option<CursorPosition>,
+    /// `← →` 的跳转历史（语义见 [`JumpHistory`]）。
+    history: JumpHistory,
+    /// 在飞的那次 [`crate::NavigateToDefinition`] 请求；`None` = 没有。
+    nav_request: Option<NavRequest>,
+    /// 在飞请求的后台任务。
+    ///
+    /// 必须**被持有**：gpui 的 `Task` 一 drop 就取消（与 [`Buffer::auto_save_task`] 同一约定），
+    /// 丢掉它等于请求发出去之后立刻取消。换掉旧任务就是取消旧请求。
+    nav_task: Option<Task<()>>,
+    /// 请求号的自增源。
+    nav_generation: u64,
 }
 
 impl EditorPane {
@@ -136,6 +173,10 @@ impl EditorPane {
             buffers: Vec::new(),
             active: None,
             cursor: None,
+            history: JumpHistory::default(),
+            nav_request: None,
+            nav_task: None,
+            nav_generation: 0,
         }
     }
 
@@ -252,6 +293,275 @@ impl EditorPane {
         self.write_buffer(index, "lithe.editor.saveFailed", window, cx);
     }
 
+    // -----------------------------------------------------------------------
+    // 阶段 10 第一批：F12 / Ctrl+单击 / ← →（Core 轻量导航，不启 JDTLS）
+    // -----------------------------------------------------------------------
+
+    /// `F12`：取光标处标识符的定义位置并跳过去。
+    ///
+    /// 由 [`crate::NavigateToDefinition`] action 的处理器转发进来（见 [`install_actions`]）。
+    ///
+    /// 三步：读光标（**字节偏移**，`state.cursor()`）→ 后台调 Core
+    /// （`lsp.builtinNavigation`，见 [`crate::navigation`]）→ 回到前台移动光标。
+    /// Core 调用是同步的，所以一定放 `cx.background_spawn`，不能在 UI 线程上直接调
+    /// （`gpui/crates/shared/src/core_client.rs:27-28`）。
+    fn navigate_to_definition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            println!("S1_NAV_FAILED reason=no-buffer");
+            return;
+        };
+        let Some(buffer) = self.buffers.get(index) else {
+            println!("S1_NAV_FAILED reason=no-buffer");
+            return;
+        };
+
+        let path = buffer.path.clone();
+        let revision = buffer.revision;
+        let file_path = path.to_string_lossy().to_string();
+        // 三次借用分开取：一次 `read` 拿不到两个返回值，而 `Rope` 的克隆很便宜
+        // （它是持久化数据结构，`to_string()` 只发生在后台拼请求那一步）。
+        let (offset, origin, text) = {
+            let state = buffer.editor.read(cx);
+            (
+                state.cursor(),
+                state.cursor_position(),
+                state.text().clone(),
+            )
+        };
+
+        // 同一时刻只有一个请求在飞：替换 `Task` 就是取消上一个
+        // （`gpui-pre-scheduler-0.3.6/src/executor.rs:389-390`："If you drop a task it will be
+        // cancelled immediately"），`generation` 是第二道闸 —— 万一旧请求的结果还是落了回来，
+        // 它也过不了 [`EditorPane::apply_definition`] 的第一段校验。
+        let generation = self.nav_generation.wrapping_add(1);
+        self.nav_generation = generation;
+        self.nav_request = Some(NavRequest {
+            generation,
+            path: path.clone(),
+            revision,
+            origin,
+        });
+
+        let task = cx.spawn_in(window, async move |pane, cx| {
+            let result = cx
+                .background_spawn(async move { definition_target(&file_path, &text, offset) })
+                .await;
+            // 编辑区可能已经销毁：`update_in` 返回 `Err` 时静默忽略，不 panic。
+            let _ = pane.update_in(cx, |pane, window, cx| {
+                pane.apply_definition(generation, result, window, cx)
+            });
+        });
+        self.nav_task = Some(task);
+    }
+
+    /// 后台结果回到前台：校验它还算不算数，然后记历史 + 移动光标。
+    ///
+    /// 三段校验与 [`NavRequest`] 一一对应；任何一段不成立都**不改光标**，
+    /// 只留一行 `S1_NAV_FAILED`（跳转失败不能悄悄把用户的光标搬走）。
+    fn apply_definition(
+        &mut self,
+        generation: u64,
+        result: Result<Option<Position>, String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((path, revision, origin)) = self
+            .nav_request
+            .as_ref()
+            .filter(|request| request.generation == generation)
+            .map(|request| (request.path.clone(), request.revision, request.origin))
+        else {
+            println!("S1_NAV_FAILED reason=stale");
+            return;
+        };
+
+        let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
+            println!("S1_NAV_FAILED reason=buffer-closed");
+            return;
+        };
+        if self.buffers[index].revision != revision {
+            println!("S1_NAV_FAILED reason=content-changed");
+            return;
+        }
+
+        let target = match result {
+            Ok(Some(target)) => target,
+            // 契约允许"没有目标"：Core 找不到光标处的标识符时 `locations` 是空数组
+            // （`rust/lithe-core/src/lsp/lightweight/symbols.rs:164-168`）。
+            Ok(None) => {
+                println!("S1_NAV_FAILED reason=no-target");
+                Self::notify_no_target(window, cx);
+                return;
+            }
+            Err(error) => {
+                println!("S1_NAV_FAILED reason={error}");
+                Self::notify_no_target(window, cx);
+                return;
+            }
+        };
+
+        // 历史记的是**跳转前的位置**，且只在跳转成功后记一次 —— 与真机的顺序一致
+        // （先判目标、再 `pushEntry`，`navigation-command-actions.ts:449-467`）。
+        self.history.record(JumpEntry {
+            path,
+            position: origin,
+        });
+        self.buffers[index].editor.update(cx, |state, cx| {
+            state.set_cursor_position(target, window, cx)
+        });
+        self.active = Some(index);
+
+        // `from` / `to` 都是 **1 基**（与 `S1_EDITOR_CURSOR` 的显示口径一致，便于对日志）：
+        // `kind=definition` 是本批唯一的跳转种类，留给第二批复用同一行格式。
+        println!(
+            "S1_NAV_JUMP from={}:{} to={}:{} kind=definition",
+            origin.line + 1,
+            origin.character + 1,
+            target.line + 1,
+            target.character + 1
+        );
+        self.sync_cursor(cx);
+        cx.notify();
+    }
+
+    /// 编辑器正文区上的 `Ctrl+单击`。
+    ///
+    /// 组件自己**没有**把点击位置换算成文本偏移的公开 API
+    /// （`InputBaseState::index_for_mouse_position` 是 `pub(crate)`，
+    /// `gpui-base-0.6.6/src/input/base/state.rs:2868-2871`；`resolve_mouse_position` 更窄，
+    /// 同文件 `:2879`），但**不需要**：组件的 `on_mouse_down` 已经把光标移到了点击位置
+    /// （`state.rs:2311-2315` 的 `move_to_with_affinity`），而包装层的冒泡处理器**在它之后**
+    /// 才跑（`gpui-pre-0.3.6/src/window.rs:5778-5787`：bubble 阶段遍历 `.rev()`，
+    /// 祖先排在后面）。所以这里读 `state.cursor()` 拿到的就是"点到的那一个字符"——
+    /// 与 `F12` 完全同一条路径，不碰组件内部。
+    ///
+    /// 组件的 `on_mouse_down` 全程不 `stop_propagation()`（`state.rs:2223-2316`），
+    /// 所以这个处理器能收到；收不到的位置只有左栏折叠箭头与滚动条
+    /// （`input/base/element.rs:1326`、`scrollbar.rs:1716-1718`）。
+    fn on_editor_click(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // 触发器只有 `Ctrl+单击`：`Modifiers::secondary()` 在 Windows / Linux 上就是 Ctrl，
+        // macOS 上是 Cmd（`gpui-pre-0.3.6/src/platform/keystroke.rs:479-493`）。
+        if !event.modifiers.secondary() || event.modifiers.alt {
+            return;
+        }
+
+        // 包装层（[`Self::render_body`] 的滚动容器）比编辑器大：点在编辑器之外时组件的
+        // `on_mouse_down` 不会跑，光标还停在上一次的位置 —— 不做这个判据就会"点到空白也跳"。
+        // `input_bounds()` 是编辑器自己上报的绝对 bounds（`state.rs:537`）。
+        let inside = self
+            .active
+            .and_then(|index| self.buffers.get(index))
+            .is_some_and(|buffer| {
+                buffer
+                    .editor
+                    .read(cx)
+                    .input_bounds()
+                    .contains(&event.position)
+            });
+        if !inside {
+            return;
+        }
+
+        self.navigate_to_definition(window, cx);
+    }
+
+    /// `←`：回到上一个跳转位置。
+    fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(present) = self.current_entry(cx) else {
+            return;
+        };
+        let Some(entry) = self.history.go_back(present.clone()) else {
+            return;
+        };
+        self.restore_entry(present, entry, "S1_NAV_BACK", window, cx);
+    }
+
+    /// `→`：前进到下一个跳转位置（只可能来自"曾经 `←` 过"的分支）。
+    fn go_forward(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(present) = self.current_entry(cx) else {
+            return;
+        };
+        let Some(entry) = self.history.go_forward() else {
+            return;
+        };
+        self.restore_entry(present, entry, "S1_NAV_FORWARD", window, cx);
+    }
+
+    /// 把光标挪到 `entry`（`from` 只用于诊断行）。
+    ///
+    /// 目标 buffer 已经关掉时**重新打开那个文件**：历史项存的是"路径 + 位置"，
+    /// 不依赖那个 buffer 还活着（真机的 jump list 同样能在 buffer 被关掉后回到文件）。
+    fn restore_entry(
+        &mut self,
+        from: JumpEntry,
+        entry: JumpEntry,
+        log_tag: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.buffers.iter().any(|buffer| buffer.path == entry.path) {
+            self.open(&entry.path, window, cx);
+        }
+        let Some(index) = self
+            .buffers
+            .iter()
+            .position(|buffer| buffer.path == entry.path)
+        else {
+            println!("S1_NAV_FAILED reason=buffer-closed");
+            return;
+        };
+
+        // 位置可能已经被编辑过：`set_cursor_position` 自己按行内容夹住列，
+        // 读回来的才是**真实**落点，日志用它而不是用请求值。
+        let to = self.buffers[index].editor.update(cx, |state, cx| {
+            state.set_cursor_position(entry.position, window, cx);
+            state.cursor_position()
+        });
+        self.active = Some(index);
+
+        println!(
+            "{log_tag} from={}:{} to={}:{}",
+            from.position.line + 1,
+            from.position.character + 1,
+            to.line + 1,
+            to.character + 1
+        );
+        self.sync_cursor(cx);
+        cx.notify();
+    }
+
+    /// 活动 buffer 当前的光标位置，包成历史项（路径就是它的身份）。
+    fn current_entry(&self, cx: &App) -> Option<JumpEntry> {
+        let index = self.active?;
+        let buffer = self.buffers.get(index)?;
+        Some(JumpEntry {
+            path: buffer.path.clone(),
+            position: buffer.editor.read(cx).cursor_position(),
+        })
+    }
+
+    /// 跳转失败时给一条反馈。
+    ///
+    /// 真机在这一档是 `toast.info("未找到" + 目标种类)`
+    /// （`windows/tauri/src/features/keymaps/commands/navigation-command-actions.ts:449-456`），
+    /// 文案与插值直接复用真源既有的两条键：`navigation.noTargetFound` +
+    /// `navigation.definition`（`windows/tauri/src/i18n/locale.ts:8435,8439`）。
+    /// 静默失败会让用户以为 `F12` 坏了，所以这一条**要**给。
+    fn notify_no_target(window: &mut Window, cx: &mut Context<Self>) {
+        window.push_notification(
+            Notification::info(tr_args(
+                "lithe.navigation.noTargetFound",
+                &[("target", tr("lithe.navigation.definition").as_ref())],
+            )),
+            cx,
+        );
+    }
+
     /// 切到第 `index` 个标签（重复打开同一路径、点标签都走这里）。
     fn activate(&mut self, index: usize, cx: &mut Context<Self>) {
         if index >= self.buffers.len() {
@@ -303,6 +613,8 @@ impl EditorPane {
             self.buffers[index].is_dirty = true;
             cx.notify();
         }
+        // 修订号无条件 +1（与脏标记解耦）：在飞的跳转请求靠它判断"结果回来时正文已经变了"。
+        self.buffers[index].revision = self.buffers[index].revision.wrapping_add(1);
 
         if AUTO_SAVE_ENABLED {
             self.schedule_auto_save(index, window, cx);
@@ -549,7 +861,7 @@ impl EditorPane {
             // `max_width` 让**标签文字**在空间不够时让位（图标与关闭按钮保持原尺寸），
             // 也就是真机那种 `OrderChargeService.j…` 的截断。
             .max_width(TAB_MAX_WIDTH)
-            .prefix(Self::render_nav_group())
+            .prefix(self.render_nav_group(cx))
             .on_click(cx.listener(|pane, index: &usize, _window, cx| {
                 // `TabBar::on_click` 给的是被点标签的下标
                 // （`tab/tab_bar.rs:168-177`），切换活动 buffer 就是切标签。
@@ -572,7 +884,10 @@ impl EditorPane {
     /// 真机是一个 `h-8` 的行（`windows/tauri/src/features/tabs/components/tab-bar.tsx:633-660`），
     /// 与后面的标签区之间有标签栏自己的 4px gap；`TabBar` 的 `Underline` 变体不给
     /// 外层容器设 gap，所以这里用右外边距补上同样的 4px。
-    fn render_nav_group() -> impl IntoElement {
+    ///
+    /// 两个按钮的可用性直接来自 [`JumpHistory`]（真机是 `canGoBack` / `canGoForward`
+    /// 两个 selector，`tab-bar.tsx:634,649`）：**没有历史时仍然是禁用态**。
+    fn render_nav_group(&self, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .items_center()
             .gap_0p5()
@@ -586,12 +901,20 @@ impl EditorPane {
                 IconName::ArrowLeft,
                 tr("lithe.tabs.goBackShort"),
                 tr("lithe.tabs.goBack"),
+                self.history.can_go_back(),
+                cx.listener(|pane, _event: &gpui_kit::ClickEvent, window, cx| {
+                    pane.go_back(window, cx)
+                }),
             ))
             .child(Self::nav_button(
                 "editor-nav-forward",
                 IconName::ArrowRight,
                 tr("lithe.tabs.goForwardShort"),
                 tr("lithe.tabs.goForward"),
+                self.history.can_go_forward(),
+                cx.listener(|pane, _event: &gpui_kit::ClickEvent, window, cx| {
+                    pane.go_forward(window, cx)
+                }),
             ))
     }
 
@@ -605,24 +928,26 @@ impl EditorPane {
     /// `small()` 才是 24×24（`button/button.rs:618-623`）。这里对齐的是**尺寸值**，
     /// 所以用 `.small()`，不要被变体名带偏。
     ///
-    /// ⚠️ **本轮只有外观 + 禁用态，没有历史栈**：探针没有 jump list，
-    /// 所以两个按钮恒为 `disabled(true)`（禁用态 ghost = 灰图标，`button/button.rs:1273-1306`），
-    /// 而不是"点了没反应"的假按钮。接上历史栈后改成 `disabled(!can_go_back)`
-    /// 并在 `on_click` 里跳转即可。
+    /// `enabled` 只决定**禁用态外观 + 是否派发点击**（禁用态 ghost = 灰图标，
+    /// `button/button.rs:1273-1306`）；处理器本身也会在历史为空时早退
+    /// （[`EditorPane::go_back`]），所以"禁用时点了没反应"有两道闸。
     fn nav_button(
         id: &'static str,
         icon: IconName,
         tooltip: SharedString,
         label: SharedString,
+        enabled: bool,
+        on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Button {
         Button::new(id)
             .icon(icon)
             .ghost()
             .small()
-            .disabled(true)
+            .disabled(!enabled)
             .tab_stop(false)
             .tooltip(tooltip)
             .accessibility_label(label)
+            .on_click(on_click)
     }
 
     /// 一个标签：文件类型图标 + 显示名（+ 未保存圆点）+ 关闭按钮。
@@ -760,6 +1085,16 @@ impl EditorPane {
             .flex_1()
             .min_h_0()
             .overflow_hidden()
+            // `Ctrl+单击` 的接线点：**包装层**的 `on_mouse_down`（冒泡阶段）——
+            // 组件自己不带点位置换算的公开 API，但它在自己的 `on_mouse_down` 里已经把光标
+            // 移到了点击处，而冒泡到这个包装层时那一步已经做完（理由与出处见
+            // [`EditorPane::on_editor_click`]）。
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|pane, event: &MouseDownEvent, window, cx| {
+                    pane.on_editor_click(event, window, cx);
+                }),
+            )
             // ⚠️ **滚轮必须自己接**：编辑器元素的样式只有 `position: absolute` + `100%`，
             // **没有** `overflow: scroll`（`gpui-base-0.6.6/src/input/base/element.rs:202-213`），
             // 而 gpui 只把滚轮交给"命中元素样式里带 `Overflow::Scroll`"的那个
@@ -892,6 +1227,15 @@ impl Render for EditorPane {
             .min_h_0()
             .overflow_hidden()
             .bg(cx.theme().background)
+            // `F12`：绑定登记在 `lithe_gpui_editor::install_actions`，处理器在本视图根元素上。
+            // 放根元素而不是编辑器元素：焦点在编辑器里时 action 从焦点节点往祖先冒泡
+            // （`gpui-pre-0.3.6/src/window.rs:6333` 一带），根元素必然经过；
+            // 而焦点在资源管理器 / 终端时这一串里没有编辑区，`F12` 自然什么都不做。
+            .on_action(
+                cx.listener(|pane, _: &crate::NavigateToDefinition, window, cx| {
+                    pane.navigate_to_definition(window, cx);
+                }),
+            )
             .child(self.render_tab_bar(cx))
             .child(self.render_body(cx))
     }

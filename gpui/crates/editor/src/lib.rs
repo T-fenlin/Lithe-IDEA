@@ -17,14 +17,17 @@
 //! - `buffer.rs`：`Buffer`（打开的文件 + 它的正文状态）与读盘（`read_body` / `notice`）、
 //!   文件类型图标（`icon_for_file`）、标签显示名（`display_names` 等 path-shortener 的同名区分）；
 //! - `editor_view.rs`：`EditorPane` 的结构体与字段、`new` / `open` / `close`、
-//!   全部 `render_*` 与 `impl Render for EditorPane`，以及界面用的度量常量与文案。
+//!   全部 `render_*` 与 `impl Render for EditorPane`，以及界面用的度量常量与文案；
+//! - `navigation.rs`：代码跳转的**数据侧** —— Core 轻量导航（`lsp.builtinNavigation`）的
+//!   请求/响应与列口径换算、`← →` 的跳转历史 [`navigation::JumpHistory`]。
 //!
 //! ## 公开边界
 //!
 //! 对外只有三样东西（都由本文件 `pub use` 发布）：[`EditorPane`]（`new` / `open` /
 //! `cursor_position` / `save_active`）、它用来回话给外壳的 [`CursorPosition`]，
-//! 以及登记快捷键的 [`install_actions`] 与它绑定的 `SaveBuffer` action；
-//! `Buffer` 与两个实现模块都留在 crate 内部（`mod buffer; mod editor_view;`），
+//! 以及登记快捷键的 [`install_actions`] 与它绑定的两个 action（[`SaveBuffer`] /
+//! [`NavigateToDefinition`]）；
+//! `Buffer` 与三个实现模块都留在 crate 内部（`mod buffer; mod editor_view; mod navigation;`），
 //! 不出现在 import 路径里（《编码指南》「内部重组时保持 public module path」的反面用法：
 //! 新建 crate 直接发布 `pub use`，不让 `buffer` / `editor_view` 这类实现路径变成契约）。
 //!
@@ -55,10 +58,8 @@
 //!
 //! 本轮**明确没做的一件事**（只有外观/位置，行为留待后续接线）：
 //!
-//! 1. **`← →` 只有外观 + 禁用态**：探针里没有 jump list（历史栈），
-//!    两个按钮恒为 `disabled(true)`，见 [`EditorPane::nav_button`]。
-//!    ⚠️ **阶段 9 不做 D（跳转历史）**：维护者把 `← →` 的跳转与**回退**一起挪到阶段 10
-//!    （跳转必须有回退），所以这里仍然只有外观。
+//! 1. ~~**`← →` 只有外观 + 禁用态**~~：阶段 10 第一批已接上真实跳转历史
+//!    （[`navigation::JumpHistory`]），无历史时仍是禁用态。
 //!
 //! 阶段 9（编辑器完善）已经接上的（原来登记在模块文档里的三件事）：
 //!
@@ -69,6 +70,19 @@
 //!    并留 `S1_EDITOR_CURSOR` 诊断行；
 //! 4. **`Ctrl+F` / `Ctrl+H` 查找替换**（组件自带面板，阶段 9 的 C）；
 //! 5. **关闭未保存 buffer 时确认**（保存 / 放弃修改 / 取消，阶段 9 的 E）。
+//!
+//! 阶段 10 第一批（Java 代码跳转的**轻量链路**，维护者定稿的两批里的第一批）：见
+//! `gpui/PLAN.md` §10。
+//!
+//! 1. **`F12`** → [`NavigateToDefinition`] action → [`EditorPane::navigate_to_definition`]；
+//! 2. **`Ctrl+单击`** → 编辑器包装层的 `on_mouse_down`（同一落点）；
+//! 3. **`← →` 回退**（阶段 9 未做的 D）：[`navigation::JumpHistory`]，标签栏那两个按钮
+//!    由"恒禁用"改成按历史算。
+//!
+//! Core 侧只用了既有的**无进程**轻量导航 `lsp.builtinNavigation`
+//! （`shared/contracts/rust-core-api.md:135,1143-1151`），**没有**自己解析 Java：
+//! 请求/响应与列口径换算都在 [`navigation`]。本批只在**当前文件内**跳转
+//! （Core 的轻量导航本身就只返回当前文件的位置），跨文件 / 依赖库源码属于第二批（JDTLS）。
 //!
 //! 还有几处**组件写死、公开 API 改不动**的尺寸偏差（细节见交付报告）：
 //! `TabVariant::Underline` 的标签高度是 36px（真机标签 28px 居中在 36px 条里，
@@ -82,26 +96,35 @@
 //! 本轮**范围外**（真机有、这里没有）还有：标签悬停才显示关闭按钮的那一档
 //! （`TabBar` 不暴露每个标签的悬停状态）、标签拖拽重排 / 拖出成新窗格、
 //! 标签右键菜单、面包屑栏、分屏与轮播、外部冲突横幅与大文件「仍然启用」降级、
-//! 跳转历史（`← →`，阶段 10）、非 UTF-8 文件的编码探测与"按编码保存"。
+//! **跨文件 / 跨模块 / 依赖库源码的跳转（阶段 10 第二批，JDTLS）**、
+//! 非 UTF-8 文件的编码探测与"按编码保存"。
 
 mod buffer;
 mod editor_view;
+mod navigation;
 
 pub use editor_view::{CursorPosition, EditorPane};
 
 use gpui_kit::{App, KeyBinding};
 
-gpui_kit::actions!(lithe_editor, [SaveBuffer]);
+gpui_kit::actions!(lithe_editor, [SaveBuffer, NavigateToDefinition]);
 
 /// 登记编辑区的应用级快捷键。**每个窗口调用一次**（`ShellWorkspace::new`）。
 ///
-/// 只有一条：`ctrl-s` → [`SaveBuffer`]，命中后由 `ShellWorkspace` 根元素的处理器
-/// 转发给编辑区（见 `workspace.rs`）。
+/// 两条：`ctrl-s` → [`SaveBuffer`]、`f12` → [`NavigateToDefinition`]；命中后都由
+/// `ShellWorkspace` / [`EditorPane`] 根元素的处理器接住（见各自的 `on_action`）。
 ///
 /// `KeyBinding::new(.., None)` 的上下文谓词是空，`binding_enabled` 会按
 /// `contexts.len()`（**最深**）算深度（`gpui-pre-0.3.6/src/keymap.rs:246-252`），
 /// 也就是"任何焦点下都可能命中、且优先级最高"。`ctrl-s` 在整个应用里没有别的绑定
 /// （gpui-base / gpui-component 全量 grep 零命中），所以给它 `None` 是安全的。
+///
+/// ⚠️ `f12` 也**没有**和组件撞车：gpui-base 的 `GoToDefinition` action
+/// （`gpui-base-0.6.6/src/input/base/state.rs:117`、处理器在
+/// `input/editor/lsp/definitions.rs:109-126`）在本组件里**没有登记任何按键**
+/// （`gpui-base` / `gpui-component` 全量 grep `f12` 零命中），而且它是"先 Ctrl+悬停
+/// 缓存过位置、再按键"才动的那种；我们的 [`NavigateToDefinition`] 是独立 action，
+/// 由 Core 的轻量导航直接给目标，不依赖悬停缓存。
 ///
 /// ⚠️ **这里没有 `Search` / `Replace` 的绑定，这是有意的**：`Ctrl+F` / `Ctrl+H`
 /// 由**组件自己**接管 —— `EditorState::new` 默认 `searchable = true`
@@ -115,5 +138,8 @@ gpui_kit::actions!(lithe_editor, [SaveBuffer]);
 /// 而聚焦编辑器时 `Input` 上下文更深、组件内置绑定先命中并 `stop_propagation`。
 /// 兜底绑定既然永远不会触发，就是死代码，已删除（《编码指南》「避免投机性抽象」）。
 pub fn install_actions(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("ctrl-s", SaveBuffer, None)]);
+    cx.bind_keys([
+        KeyBinding::new("ctrl-s", SaveBuffer, None),
+        KeyBinding::new("f12", NavigateToDefinition, None),
+    ]);
 }

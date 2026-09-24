@@ -858,6 +858,65 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 
 **触发器只有 `F12` 与 `Ctrl+单击`**（维护者选定：不做 `Ctrl+B`、不做右键菜单）。
 
+### 10.1 第一批已完成（2026-09-25，本轮）
+
+**用的 Core 命令**：`lsp.builtinNavigation`（`shared/contracts/rust-core-api.md:135,1143-1151`；
+请求 `{filePath, text, position{line, utf16Column}, method}`，`method = "textDocument/definition"`
+—— `rust/lithe-core/src/lsp/lightweight/symbols.rs:23-28`；响应
+`{locations:[{filePath, range{start{line,utf16Column},…}, isReadOnly, displayPath}]}`，同文件 `:68-80`）。
+**没有**选 `java.sourceDefinition`：它要求宿主先答出"光标下这个标识符叫什么"
+（`rust-core-api.md:1723-1725`），那等于在 gpui 侧写一遍"取光标处标识符"，而
+`lsp.builtinNavigation` 本身就是按光标位置取标识符的。**gpui 侧一行 Java 语法都没写。**
+
+**落点**：新 crate 内模块 `gpui/crates/editor/src/navigation.rs`（Core 调用 + 列口径换算 +
+`JumpHistory`）；接线在 `editor_view.rs`；action/键位在 `lib.rs`。
+
+**三组口径必须显式换算**（`navigation.rs` 的 `core_position` / `editor_position`）：编辑器的
+光标是**字节偏移**（`state.cursor()`），`Position.character` 是**字符数**
+（`gpui-base-0.6.6/src/input/base/rope_ext.rs:190-198`），Core 的 `utf16Column` 是 **UTF-16 码元**。
+只有 ASCII 上三者才恰好相等（单测用 `🎉` 把两个口径分开守住了）。
+
+**`Ctrl+单击` 为什么不需要"点→文本位置"换算**（本批最想记下的一条）：
+`InputBaseState::index_for_mouse_position` 是 `pub(crate)`、`resolve_mouse_position` 是
+`pub(super)`（`gpui-base-0.6.6/src/input/base/state.rs:2868-2887`），组件**没有**公开的点换算 API。
+但组件自己的 `on_mouse_down` 已经把光标移到了点击位置（`state.rs:2311-2315` 的
+`move_to_with_affinity`），而我们在编辑器外面包一层 div 接 `on_mouse_down`（冒泡阶段）——
+冒泡是 `.rev()` 遍历、**祖先排在目标之后**（`gpui-pre-0.3.6/src/window.rs:5778-5787`），
+所以处理器里读 `cursor()` 拿到的就是"点到的那个字符"。组件的 `on_mouse_down` 全程不
+`stop_propagation()`（`state.rs:2223-2316`），事件能冒到包装层。另配一道
+`input_bounds().contains(event.position)` 判据，避免"点到编辑器之外也跳"。**没有 hack 组件内部**。
+（上游还有一条 `EditorState::lsp_mut().definition_provider` 的 `DefinitionProvider` 钩子，
+`input/editor/lsp/definitions.rs:13-24`；那是"Ctrl 悬停缓存 + Ctrl 点击"的双步路径，
+本批没用它——两条路径同时开会让组件的 `handle_click_hover_definition` 提前 `return`
+（`state.rs:2259-2261`），光标就不会被点击移动，我们的读取点会读到旧位置。第二批做
+`jdt://` 跨文件跳转时再改用它 + `show_document` 钩子。）
+
+**`← →`**：语义逐条照 `windows/tauri/src/features/editor/stores/jump-list.store.ts`
+（新跳转**截断前进分支** `:49-53`、同位置不重复入栈 `:77-92`、`go_back` 在"现在"时先压入
+当前位置再退一项 `:136-142`、两个 `can_*` 的判据 `:189-200`）。没有历史时两个按钮仍是
+`disabled(true)`（`Enabled` 由 `can_go_back` / `can_go_forward` 算）。
+
+**诊断行**（验证就靠它们，`cargo build` 后跑 `.artifacts/p2/verify-nav.ps1`）：
+`S1_NAV_JUMP from=l:c to=l:c kind=definition`、`S1_NAV_BACK` / `S1_NAV_FORWARD from/to`、
+`S1_NAV_FAILED reason=<no-buffer|no-target|stale|buffer-closed|content-changed|Core 错误码>`；
+跳转失败时**不移动光标**，并按真机给一条提示（`navigation.noTargetFound` + `navigation.definition`，
+`windows/tauri/src/i18n/locale.ts:8435,8439`，两条都是真源既有键、已进 WIRED）。
+
+### 10.2 第一批的边界（有意，不是缺陷）
+
+1. **只在当前文件内跳转**：Core 的轻量导航返回的 `filePath` 恒等于请求里的文件
+   （`symbols.rs:194`）。跨文件是第二批的事。
+2. **"定义"的精度依赖 Core 的轻量启发式**：`looks_like_declaration` 只认紧贴标识符的
+   `class`/`func`/`let` 这类关键字（`symbols.rs:336-368`），**不认 Java 的 `类型 名字(`**
+   （`static int add(` 的前一个 token 是 `int`）。所以 Java 里通常走的是"找不到声明形态 →
+   退回全部出现位置、取第一个"（`symbols.rs:183-185`）—— 只要**声明写在首次使用之前**
+   就落在声明上（本轮样本 `Hello.java:3` 声明 / `:12` 使用已验证）。类型感知的精确跳转
+   归第二批。
+3. **`Ctrl+单击` 的位置判据**用 `input_bounds()`（编辑器整块 bounds，含内边距），不是
+   精确到字形；点在编辑器内边距上也会触发（真机的编辑器内边距同样算在内）。
+4. **`←` 回到一个已经被关掉的 buffer** 时会重新读盘打开该文件（真机同样如此）；
+   未保存的修改在关标签时已经过确认对话框，所以这里不会静默丢数据。
+
 环境结论（本机实测）：TLS 可用（`download.eclipse.org` 200 OK）；有 JDK 21 / 25；但 **jdtls 载荷尚未
 下载**（`third_party/jdtls/` 只有 `manifest.json`，`.artifacts/jdtls` 不存在）——第二批开工前先跑
 `scripts/prepare-jdtls.ps1`（jdtls 1.61.0 + lombok + java-debug + java-test，带 sha256 校验）。

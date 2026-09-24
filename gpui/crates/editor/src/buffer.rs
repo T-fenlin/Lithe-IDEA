@@ -290,6 +290,13 @@ pub(crate) struct Buffer {
     /// （`windows/tauri/src/features/editor/stores/editor-app.store.ts:518-529` 比的是
     /// 正文内容，内容变一次版本必然也变一次，判据等价，且不必为每次按键物化整篇正文）。
     pub(crate) save_generation: u64,
+    /// 正文修订号：**每改动一次 +1**，与保存无关。
+    ///
+    /// 跳转请求要发到后台线程（Core 调用是同步的，见 `shared::core_client`），结果回来时
+    /// 正文可能已经变了 —— 那时按旧正文算出来的行列已经没有意义。它的判据与
+    /// [`Buffer::save_generation`] 不同：那个会被"写盘成功"重置语义，而修订号只增不减，
+    /// 所以两者分开记（一个字段两用会让"保存过就不算脏"这类改动悄悄破坏跳转守卫）。
+    pub(crate) revision: u64,
     /// 待执行的防抖自动保存任务。
     ///
     /// gpui 的 `Task` **一 drop 就取消**，所以"换掉上一个"就是 Windows 的 `clearTimeout`
@@ -321,6 +328,7 @@ impl Buffer {
             is_dirty: false,
             writable,
             save_generation: 0,
+            revision: 0,
             auto_save_task: None,
             _subscriptions: subscriptions,
         }
