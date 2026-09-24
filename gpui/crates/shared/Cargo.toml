@@ -1,0 +1,15 @@
+[package]
+name = "lithe-gpui-shared"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+# `shared::i18n` 的返回值是 `SharedString`（调用点是 GPUI element 的 `.child` / `.text`），
+# 所以这里只需要 gpui-kit 的那一个类型；本 crate 不做任何 GPUI 渲染。
+gpui-kit = "0.6"
+# 进程内直接链接 Rust Core 的 Rust 接口，而不是走 macOS 的 C ABI。
+lithe-core = { path = "../../../rust/lithe-core" }
+serde_json = "1"
+# 国际化：`rust_i18n::i18n!` **必须是持有 `locales/` 的那个 crate**（见 `src/i18n.rs` 的说明）。
+rust-i18n = "4.2"
