@@ -30,11 +30,14 @@
 | 诊断波浪线 | ⛔ 未开工 | **卡在事件泵重构**：`Session::request`（`java/src/session.rs:302-359`）自己消费 `waitEvents` 并丢弃非本 `operationId` 的事件，再加订阅会互相偷事件；必须先改成"单一事件泵 + 按 operationId 分派"，而**补全与跳转都压在这层**（要一整轮，中途状态是坏的，别在预算不足时开工） |
 | 自动补 import / `Ctrl+Space` | ⛔ 未做 | 上游 `insert_completion` **忽略 `additionalTextEdits`**（JDT 的自动 import 正靠它；Core 有 `lsp.applyTextEdits` 可自落）；上游**没有任何补全快捷键**，`Ctrl+Space` 要自定义 action |
 
-**下一批的第一件事（我已核实、可直接开工）**：**Spring 面板** —— 右活动栏加第 4 项
-（`right_tool_window.rs` 的 `RightToolWindowView` + `from_rail_index` + `title`/`icon`/`empty_title`，
-`workspace.rs` 的 `right_activity_items()` 与懒扫字段照 Maven 那套抄），内容用现成的
-`spring.rs` 视图（端点列表 `label()` + 计数）。注意：新文案要先看 locale 里有没有 Spring 相关键，
-没有就进 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS`（不能写死字面量）。
+**下一批的第一件事（我已核实、可直接开工）**：**给右栏加启动态探针 `--right-view <id>`**
+（或给视图菜单加「显示/隐藏 Spring」，与既有「显示/隐藏 Maven」一致）。
+理由：Spring 面板（`a8be039e`，右活动栏第 4 项）已经做完，但**面板内容的截图没取到** ——
+本机右栏点击会**双触发**（一次点击打出 `S1_RIGHT_PANEL view=spring visible=true` 紧跟 `false`），
+面板被自己关掉；光标停在图标上还会被"杂散点击"再切一次。有了启动态探针，
+这一族面板的取证就不再依赖点击（与 `--open-settings` / `--menu-probe` 同一家族）。
+顺带两件同批可做的：① 用**依赖已解析**的 `spring-boot-starter-web` 夹具拿非零 `endpoints`；
+② 会话改事件泵 → 诊断波浪线。
 
 **本会话踩到、下个会话必须知道的坑**：
 1. **强杀 Lithe 不会走 `lsp.stopServer`** ⇒ JDTLS 的 `java.exe` 会留在后台，
