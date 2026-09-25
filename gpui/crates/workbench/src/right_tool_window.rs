@@ -85,6 +85,9 @@ pub enum RightToolWindowView {
     Notifications,
     /// Maven（`activeRightSidebarView === "maven"`）。
     Maven,
+    /// Spring（**本侧新增**：真机 Windows 没有独立的 Spring 面板，Spring 能力留在语言服务里；
+    /// 这里把 Core 的 `spring.index` 结论呈现出来，见 `crate::spring` 的模块文档）。
+    Spring,
 }
 
 impl RightToolWindowView {
@@ -97,18 +100,21 @@ impl RightToolWindowView {
             Self::Extensions => "extensions",
             Self::Notifications => "notifications",
             Self::Maven => "maven",
+            Self::Spring => "spring",
         }
     }
 
     /// 右活动栏下标 → 视图；`None` = 该下标没有对应视图。
     ///
     /// ⚠️ 下标必须与 [`crate::workspace::right_activity_items`] 的顺序一致
-    /// （0 扩展 / 1 通知 / 2 Maven，照 `plugin-activity-rail.tsx:31-67`）。
+    /// （0 扩展 / 1 通知 / 2 Maven / 3 Spring；前三个照 `plugin-activity-rail.tsx:31-67`，
+    /// Spring 是本侧新增的第四项）。
     pub const fn from_rail_index(index: usize) -> Option<Self> {
         match index {
             0 => Some(Self::Extensions),
             1 => Some(Self::Notifications),
             2 => Some(Self::Maven),
+            3 => Some(Self::Spring),
             _ => None,
         }
     }
@@ -123,6 +129,9 @@ impl RightToolWindowView {
             Self::Extensions => tr("lithe.extensions.title"),
             Self::Notifications => tr("lithe.notifications.title"),
             Self::Maven => tr("lithe.maven.title"),
+            // Spring 在真源 catalog 里没有面板标题（Windows 没有独立面板），
+            // 是本侧新增的键（理由写在 `extract-locale.mjs` 的 GPUI_ONLY_KEYS 里）。
+            Self::Spring => tr("lithe.spring.title"),
         }
     }
 
@@ -133,6 +142,9 @@ impl RightToolWindowView {
             Self::Notifications => IconName::Bell,
             // Lucide 没有 Maven 字形，取「包 / 构建产物」语义的 `package`（与活动栏一致）。
             Self::Maven => IconName::Package,
+            // Spring 的真源字形是品牌绿叶（`spring-icon.tsx` 内联 path，没有 SVG 文件），
+            // Lucide 里语义最近的是 `leaf` —— 与 Maven 用 `package` 同一取舍。
+            Self::Spring => IconName::Leaf,
         }
     }
 
@@ -153,6 +165,10 @@ impl RightToolWindowView {
             Self::Extensions => tr("lithe.extensions.noneFound"),
             Self::Notifications => tr("lithe.notifications.empty"),
             Self::Maven => tr("lithe.maven.notDetected"),
+            // 判据是 Core 的 `spring.index` 没给出任何事实（响应 null 或集合全空），
+            // 所以文案说「组件与端点」而不是「项目」——不把"没有 Spring 的 Java 项目"
+            // 说成"没检测到项目"。键是本侧新增（同 `title`）。
+            Self::Spring => tr("lithe.spring.notDetected"),
         }
     }
 }
@@ -196,6 +212,7 @@ pub fn diagnose(view: RightToolWindowView, visible: bool) {
 pub fn right_tool_window(
     view: RightToolWindowView,
     maven: Option<&crate::maven::MavenProjectView>,
+    spring: Option<&crate::spring::SpringIndexView>,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -207,12 +224,80 @@ pub fn right_tool_window(
         .aria_label(title.clone())
         .size_full()
         .child(header(view, title, on_close, cx))
-        .child(match (view, maven) {
+        .child(match (view, maven, spring) {
             // 扫到了 Maven 项目就画项目结构；没扫到（或还没扫）保持真源的「未检测到 Maven 项目」。
-            (RightToolWindowView::Maven, Some(project)) => maven_content(project, cx),
+            (RightToolWindowView::Maven, Some(project), _) => maven_content(project, cx),
+            // Spring 同理：Core 的 `spring.index` 给到事实才画，否则空态（`is_empty` 也算没有事实）。
+            (RightToolWindowView::Spring, _, Some(index)) if !index.is_empty() => {
+                spring_content(index, cx)
+            }
             _ => empty_state(view),
         })
         .into_any_element()
+}
+
+/// Spring 面板内容：**只呈现 `spring.index` 已经给出的事实**。
+///
+/// 三块，按"用户打开这一栏最想先看到什么"排：
+/// 1. **端点**（`@RequestMapping` 家族的展开结果）：`GET/POST /api/users` 一行一条，
+///    右边弱化显示 `控制器.方法`；这是 Spring 开发者最常核对的东西；
+/// 2. **索引计数**（属性 / 配置值 / `@Value` 引用 / 注入点 / bean）：一眼看出索引覆盖到什么程度；
+/// 3. 诊断条数单列 —— 它非 0 说明元数据或源码里有 `spring.index` 认不出的东西。
+///
+/// 真源那套（配置属性补全、注入链、`@Value` 引用跳转）要各自的 UI，本侧**不画假控件**；
+/// 逐条渲染属于后续批次（`spring.rs` 的模块文档里登记了）。
+fn spring_content(index: &crate::spring::SpringIndexView, cx: &App) -> AnyElement {
+    let mut column = v_flex()
+        .id("spring-index")
+        .w_full()
+        .flex_1()
+        .min_h_0()
+        .gap_1()
+        .p_3();
+
+    for endpoint in &index.endpoints {
+        column = column.child(
+            h_flex()
+                .w_full()
+                .gap_2()
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_xs()
+                        .text_color(cx.theme().foreground)
+                        .child(endpoint.label()),
+                )
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("{}.{}", endpoint.controller, endpoint.method)),
+                ),
+        );
+    }
+
+    // 计数行：数字是事实，标签是**已有的** maven 面板同族风格（纯数字 + 弱化色），
+    // 不引入新的文案键。
+    column = column.child(
+        div()
+            .w_full()
+            .mt_2()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(format!(
+                "properties {} · values {} · refs {} · injections {} · beans {} · diagnostics {}",
+                index.properties,
+                index.values,
+                index.property_references,
+                index.injections,
+                index.beans,
+                index.diagnostics
+            )),
+    );
+
+    column.into_any_element()
 }
 
 /// Maven 面板内容：**只呈现 `maven.scan` 已经给出的事实**，不画任何还没有数据源的控件。
@@ -464,7 +549,13 @@ mod tests {
             RightToolWindowView::from_rail_index(2),
             Some(RightToolWindowView::Maven)
         );
-        assert_eq!(RightToolWindowView::from_rail_index(3), None);
+        // 第 4 项是**本侧新增**的 Spring 视图（真机右栏没有它，Spring 能力留在语言服务里）；
+        // 它与 `workspace::right_activity_items()` 的顺序必须对齐。
+        assert_eq!(
+            RightToolWindowView::from_rail_index(3),
+            Some(RightToolWindowView::Spring)
+        );
+        assert_eq!(RightToolWindowView::from_rail_index(4), None);
     }
 
     /// 视图 id 是诊断行 `S1_RIGHT_PANEL view=…` 的取值，改它就是改机器可验证的契约。
@@ -473,6 +564,7 @@ mod tests {
         assert_eq!(RightToolWindowView::Extensions.id(), "extensions");
         assert_eq!(RightToolWindowView::Notifications.id(), "notifications");
         assert_eq!(RightToolWindowView::Maven.id(), "maven");
+        assert_eq!(RightToolWindowView::Spring.id(), "spring");
     }
 
     /// 再点同一项 → 收起，且**视图保持不变**（收起时记住最后显示过的视图，

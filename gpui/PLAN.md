@@ -1623,6 +1623,38 @@ Maven 面板时才扫（右活动栏点击与菜单 `ToggleMaven` 两条路都�
 `S1_MAVEN scan=ok artifactId=lite-fixture version=1.0.0 reactorPath=. modules=1 profiles=0`，
 截图 `22-maven-pane.png` 里面板显示 `lite-fixture 1.0.0` + `.`，空态消失。
 
+### 16.8 右侧「Spring」视图（数据层 §16.9 + 面板，2026-09-26）
+
+**数据层**（`crates/workbench/src/spring.rs`）：把 Core 的 `spring.index` 解析成
+`SpringIndexView`（端点 `label()` + 各集合计数）+ `S1_SPRING` 诊断 + 4 条单测。
+`spring.index` 读工作区元数据**与依赖 JAR 里的 `spring-configuration-metadata.json`**
+（契约 `:1737-1758`），所以**一行注解解析都不写**（`verify-java-semantic-ownership.mjs` 把这类 token 列为禁区）。
+
+**面板**：右活动栏新增第 4 项（`RightToolWindowView::Spring`，图标 Lucide `leaf` ——
+真源 `spring-icon.tsx` 是内联品牌 path，没有 SVG 文件；与 Maven 用 `package` 同一取舍）；
+内容 = 端点列表（`GET/POST /api/users` + 弱化的 `控制器.方法`）+ 一行计数
+（properties / values / refs / injections / beans / diagnostics）。空态文案是本侧新增的
+`lithe.spring.notDetected`（说「组件与端点」而不是「项目」——不把"没有 Spring 的 Java 项目"
+说成"没检测到项目"）。懒扫 + 缓存与 Maven 同口径（`spring.index` 更贵：会读依赖元数据）。
+
+**验证**：`cargo build --bin Lithe` exit=0；`cargo test -p lithe-gpui-workbench` **38 passed**
+（新增 rail 映射 3→Spring、id 契约、`spring::parse` 4 条）；WIRED 键测试 passed（新增 2 条键，
+`spring.title` 进 `SAME_IN_BOTH_LOCALES`）；`extract-locale.mjs` 两 yml 各 4346 条。
+实机：`S1_SPRING index=ok endpoints=0 beans=0 properties=10 values=0 refs=0 injections=0 diagnostics=0`
+（**懒扫真的在第一次激活时跑了**，且从本机依赖元数据里读到了 10 条属性），
+`S1_RIGHT_PANEL view=spring visible=true`，右栏第 4 个图标在截图里可见。
+
+⚠️ **两条未取证的事（诚实登记）**：
+1. **Spring 面板内容的截图没拿到**：这一轮右栏点击在本机出现**双触发**（一次点击打出
+   `visible=true` 紧接着 `visible=false`，光标停在图标上还会被"杂散点击"再切一次），
+   面板被自己关掉。取证办法已经明确：**给右栏加一个启动态探针**（例如 `--right-view spring`，
+   与 `--open-settings` / `--menu-probe` 同一家族），或者给视图菜单加"显示/隐藏 Spring"
+   （与既有"显示/隐藏 Maven"一致）—— 两条都属于下一批，不是本轮。
+2. **`endpoints=0`**：夹具里的 `@RestController` 没被识别成端点。最可能的原因是
+   **夹具 pom 没有任何 Spring 依赖**，注解解析不到（而 `properties=10` 说明元数据那一路是通的）。
+   要拿到非零端点，夹具需要一个带 `spring-boot-starter-web` 的、依赖已解析的 Maven 工程
+   （`mvn dependency:resolve` 之后）。这条同样是下一批的验证项，**不是**"端点功能没做"。
+
 ### 16.5 下一批（按用户可感知价值）
 
 1. 补上"菜单真的弹出来"的交互级证据（打字注入 + 截图 + 诊断原文）。

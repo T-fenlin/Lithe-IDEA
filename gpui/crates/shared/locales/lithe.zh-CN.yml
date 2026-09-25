@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 27 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 29 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8673,6 +8673,10 @@ lithe:
     zh-CN: "前置条件：日志系统（日志目录、诊断开关与诊断包导出）。"
   settings.gpui.prerequisiteUpdates:
     zh-CN: "前置条件：更新器（检查更新、更新通道与安装流程）。"
+  spring.title:
+    zh-CN: "Spring"
+  spring.notDetected:
+    zh-CN: "未检测到 Spring 组件与端点"
   editor.gpui.discardChanges:
     zh-CN: "放弃修改"
   editor.gpui.unsavedChangesBody:

@@ -429,6 +429,11 @@ mod tests {
             ("lithe.notifications.empty", "暂无通知。"),
             ("lithe.extensions.noneFound", "未找到扩展。"),
             ("lithe.commandPalette.close", "关闭命令面板"),
+            // 右侧工具窗「Spring」视图（`workbench/src/right_tool_window.rs`）：
+            // 标题与空态都是 gpui 侧新增（真源 Windows 没有独立的 Spring 面板，
+            // 理由逐条写在 `extract-locale.mjs` 的 GPUI_ONLY_KEYS 里）。
+            ("lithe.spring.title", "Spring"),
+            ("lithe.spring.notDetected", "未检测到 Spring 组件与端点"),
             // 阶段 6 第二半（命令面板，`gpui/crates/workbench/src/command_palette.rs`）。
             // 前三条是**真源既有**的命令面板外壳文案：标题 / 占位 / 空态
             // （`command-palette.tsx:401,449,455`；`locale.ts:7904-7906`，en `:3585-3587`）。
@@ -740,5 +745,7 @@ mod tests {
         "lithe.settings.mac.shellWsl",
         "lithe.settings.tabs.lsp",
         "lithe.settings.tabs.git",
+        // 产品名，中英同形（右侧工具窗「Spring」视图的标题）。
+        "lithe.spring.title",
     ];
 }

@@ -177,6 +177,20 @@ const GPUI_ONLY_KEYS = [
     reason: "「更新」页的前置条件（同 pageNotAvailableTitle）；gpui 侧没有更新器。",
   },
   {
+    key: "spring.title",
+    zh: "Spring",
+    en: "Spring",
+    reason:
+      "右侧工具窗「Spring」视图的标题。真源 Windows 前端没有独立的 Spring 面板（Spring 能力留在语言服务与运行配置里），catalog 里因此没有这个键；命名与 lithe.maven.title / lithe.workbench.maven 同一口径（产品名，中英同形）。",
+  },
+  {
+    key: "spring.notDetected",
+    zh: "未检测到 Spring 组件与端点",
+    en: "No Spring components or endpoints detected",
+    reason:
+      "同一个视图的空态。判据是 Core 的 spring.index 没给出任何事实（响应为 null 或集合全空），所以文案如实说「组件与端点」而不是「项目」——免得把「打开了一个没有 Spring 的 Java 项目」说成「没检测到项目」。句式沿用 maven.notDetected（「未检测到 X」），保持同一面板族的读感。",
+  },
+  {
     key: "editor.gpui.discardChanges",
     zh: "放弃修改",
     en: "Discard changes",

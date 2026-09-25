@@ -531,6 +531,13 @@ pub struct ShellWorkspace {
     /// 是否已经扫过（`None` 的三种情况靠它区分不了，但"扫过没有"必须能区分，
     /// 否则每次渲染都会重扫）。
     maven_scanned: bool,
+    /// Spring 索引（`spring.index` 的结论），与 Maven 同一套懒扫 + 缓存口径。
+    ///
+    /// `spring.index` 会读依赖 JAR 里的 `spring-configuration-metadata.json`（契约说
+    /// `refreshDependencyMetadata: true` 只该在"打开项目"时置真），所以它比 `maven.scan` 更贵，
+    /// **更不能**挂在启动路径或每次按键上。
+    spring_index: Option<crate::spring::SpringIndexView>,
+    spring_scanned: bool,
     /// 左侧栏内容：项目树（真实 `workspace.snapshot` 数据）。
     ///
     /// 状态栏左组（前导项）**不再是字段**：它每帧现算（[`ShellWorkspace::footer_left`]），
@@ -963,6 +970,8 @@ impl ShellWorkspace {
             right_visible: false,
             maven_project: None,
             maven_scanned: false,
+            spring_index: None,
+            spring_scanned: false,
             explorer,
             changes,
             editor,
@@ -1581,6 +1590,12 @@ impl Render for ShellWorkspace {
                         this.maven_scanned = true;
                         this.maven_project = crate::maven::scan(&this.root);
                     }
+                    // Spring 同一套懒扫口径：`spring.index` 更贵（会读依赖元数据），
+                    // 所以同样只在第一次显示时跑一次。
+                    if visible && view == RightToolWindowView::Spring && !this.spring_scanned {
+                        this.spring_scanned = true;
+                        this.spring_index = crate::spring::index(&this.root);
+                    }
                     diagnose_right_panel(view, visible);
                     cx.notify();
                 });
@@ -1645,6 +1660,7 @@ impl Render for ShellWorkspace {
         let right_tool_window = right_tool_window(
             self.right_view,
             self.maven_project.as_ref(),
+            self.spring_index.as_ref(),
             on_close_right_activity,
             cx,
         );
@@ -1942,6 +1958,9 @@ fn right_activity_items() -> Vec<ActivityItem> {
         // （注意：Maven **文件类型**图标是有真源的 —— `icon-themes/idea` 的
         // `pom.xml` → `icons/expui/fileTypes/maven.svg`，所以文件树里 `pom.xml` 是真源。）
         ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
+        // Spring（**本侧新增加的第四项**）：真机右栏没有这一项（Spring 能力留在语言服务里），
+        // 图标取语义最近的 Lucide `leaf`（真源 `spring-icon.tsx` 是内联品牌 path，没有 SVG 文件）。
+        ActivityItem::new(IconName::Leaf, tr("lithe.spring.title")),
     ]
 }
 
