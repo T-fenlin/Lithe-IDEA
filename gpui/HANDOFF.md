@@ -26,7 +26,7 @@
 | **智能提示（补全）** | ✅ **端到端可用** | `c97af956` + `ffa095f2`：补全菜单**一行没写**（上游 `gpui-base` 自带），只写了一个 `CompletionProvider` 适配器（`crates/editor/src/completion.rs`）；JDTLS 优先、`lsp.builtinCompletions` 兜底；snippet 用 Core 的 `lsp.plainSnippet` 还原；**交互级已验**：菜单真的弹出（`S1_JAVA_COMPLETION source=jdtls items=10`）+ 键盘接受真插入。见 `PLAN.md` §16 |
 | **代码跳转** | ✅ 已有 | 更早的批次：`F12` / `Ctrl+单击` / `←→` 历史 / `jdt://` 虚拟源码 |
 | **Maven** | ✅ 项目模型 + 面板 | `dcb6b248`：`mavenContext` 送进 `lsp.startServer`（生成源根 / profile / settings 生效；Core 校验通过）。`6a2b653d` + `6bbae83a` + `76f25427`：右侧 Maven 面板显示 reactor 头 + 模块树 + profile + **源码根**（懒扫 + 缓存，`S1_MAVEN scan=ok`）。见 `PLAN.md` §16.6/§16.7 |
-| **Spring** | 🔶 **只有数据层** | `c896cb84`：`crates/workbench/src/spring.rs` 把 Core 的 `spring.index`（端点 / 属性 / bean / 注入 / 诊断）解析成可渲染视图 + `S1_SPRING` 诊断 + 4 条单测。**面板还没做** |
+| **Spring** | ✅ 数据层 + 面板 | `c896cb84`：`crates/workbench/src/spring.rs` 把 Core 的 `spring.index`（端点 / 属性 / bean / 注入 / 诊断）解析成可渲染视图 + `S1_SPRING` + 4 条单测。`a8be039e`：右活动栏**第 4 项**「Spring」面板（端点列表 + 计数；空态 `lithe.spring.notDetected`），懒扫 + 缓存与 Maven 同口径。见 `PLAN.md` §16.8。**两条未取证**：面板内容截图（本机右栏点击双触发，需启动态探针或视图菜单项）、`endpoints` 非零（夹具缺 Spring 依赖） |
 | 诊断波浪线 | ⛔ 未开工 | **卡在事件泵重构**：`Session::request`（`java/src/session.rs:302-359`）自己消费 `waitEvents` 并丢弃非本 `operationId` 的事件，再加订阅会互相偷事件；必须先改成"单一事件泵 + 按 operationId 分派"，而**补全与跳转都压在这层**（要一整轮，中途状态是坏的，别在预算不足时开工） |
 | 自动补 import / `Ctrl+Space` | ⛔ 未做 | 上游 `insert_completion` **忽略 `additionalTextEdits`**（JDT 的自动 import 正靠它；Core 有 `lsp.applyTextEdits` 可自落）；上游**没有任何补全快捷键**，`Ctrl+Space` 要自定义 action |
 
