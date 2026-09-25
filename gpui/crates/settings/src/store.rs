@@ -382,6 +382,30 @@ impl SettingsStore {
         self.commit(cx, next, Effects::None);
     }
 
+    /// 记住「这次项目是怎么打开的」（真源 `executeProjectOpenDecision`，
+    /// `windows/tauri/src/features/file-system/controllers/project-open-destination.ts:112-131`）。
+    ///
+    /// ⚠️ **调用时机是"打开成功之后"**，不是点了按钮就写：真源那里是
+    /// `const opened = await open(decision.destination); if (!opened) return false;`
+    /// 之后才写这两个键（`:117-128`）。调用方是 `workbench` 的换项目链路。
+    ///
+    /// 两个键**一起写**（真源写两次 `updateSetting`，本侧合成一次 `commit`）：
+    /// 分开写会在中间态落一次盘（`askWhereToOpenProjects = false` 而
+    /// `openFoldersInNewWindow` 还是旧值），下一次启动就会按半套偏好直接定目的地。
+    ///
+    /// `Effects::None`：这两个键没有即时副作用 —— 它们只被"下一次打开项目"的决策读到
+    /// （不像主题/字号那样要当帧生效）。
+    pub fn remember_project_open_destination(
+        &mut self,
+        open_in_new_window: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let mut next = self.settings.clone();
+        next.open_folders_in_new_window = open_in_new_window;
+        next.ask_where_to_open_projects = false;
+        self.commit(cx, next, Effects::None);
+    }
+
     /// 改「显示语言」。返回是否真的变了。**立即落盘**（不等 300ms 防抖）：调用方紧接着就会
     /// 重启应用（[`crate::restart::restart_application`]），新进程必须马上读到新语言。
     ///

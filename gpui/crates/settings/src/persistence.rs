@@ -221,6 +221,19 @@ fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<Strin
         &mut settings.auto_completion,
         diagnostics,
     );
+    // 「打开其他项目」（B4）：决策判据 + 「不再询问」写回的两个键。
+    take(
+        object,
+        "askWhereToOpenProjects",
+        &mut settings.ask_where_to_open_projects,
+        diagnostics,
+    );
+    take(
+        object,
+        "openFoldersInNewWindow",
+        &mut settings.open_folders_in_new_window,
+        diagnostics,
+    );
     settings
 }
 
@@ -542,6 +555,10 @@ mod tests {
             maven_java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
             // `autoCompletion` 的"非默认值"是 `false`（默认 `true`）。
             auto_completion: false,
+            // 同上：这两个键的默认值也是 `true`（`default-settings.ts:111-112`），
+            // 所以"非默认值"必须写 `false`，否则这条往返测不出"漏了登记"。
+            ask_where_to_open_projects: false,
+            open_folders_in_new_window: false,
         };
         // 先规范化，保证"写出去的"就是"合法的"（否则比的是两个不同的东西）。
         settings.normalize();

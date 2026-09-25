@@ -99,20 +99,19 @@
 //!    `bounds` 与触发器的视觉盒子逐像素相等 → 面板左边与触发器左边严格对齐（都是 `487`）。
 //!    —— 这两条都在 `.artifacts/p8/NOTES.md` §4 有实测记录与截图。
 //!
-//! # v1 范围：外观 + 当前项目行 + 空态
+//! # 范围（B4 之后）
 //!
-//! | 面板里的东西 | v1 | 前置条件（都**没有**写进菜单） |
+//! | 面板里的东西 | 现状 | 说明 |
 //! | --- | --- | --- |
-//! | 三条动作行的**外观 / 文案 / 图标** | ✅ 画出来（**禁用态**） | 各自缺的能力见下表；点了什么都不发生、面板也不关 |
+//! | 三条动作行的**外观 / 文案 / 图标** | ✅ 画出来 | 「打开…」B4 起**可点**（换项目链路）；另两条仍是禁用态 |
 //! | 「打开的项目」的当前项目行（高亮 + 勾） | ✅ | — |
-//! | 「最近项目」的空态 | ✅ | 最近项目的**来源**：本侧没有任何持久化层（研究 §5.2-B 第 2 行） |
-//! | 「最近项目」的行 | ❌ 恒空态 | 同上 |
-//! | 切换到别的项目 | ❌ | 没有工作区生命周期（重扫树 / 重起 watcher、LSP、git），研究 §5.2-B 第 3 行 |
-//! | 打开…（系统目录对话框） | ❌ | gpui 侧没有任何文件对话框依赖（无 `rfd` / `tinyfiledialogs` / `native-dialog`） |
-//! | 新建项目… | ❌ | 没有脚手架能力（真机是 `createNewDirectory` + 起终端跑 `npm create`） |
-//! | 克隆仓库… | ❌ | 没有 `git.write` clone 的调用点，目标目录选择也没有 |
+//! | 「最近项目」的列表 / 空态 | ✅ B4 起是**真数据**（`lithe_gpui_settings::recent_projects`，落 `%APPDATA%\Lithe\recent-projects.json`；空态沿用 `noRecentProjects`） | 行**可点** → 换项目链路 |
+//! | 切换到别的项目 | ✅ B4：走 `ShellWorkspace::request_open_project`（重建整个 `ShellWorkspace`） | |
+//! | 打开…（系统目录对话框） | ✅ B4：`ShellWorkspace::open_project_picker`（gpui 自带的 `prompt_for_paths`） | |
+//! | 新建项目… | ❌ **禁用态** | 没有脚手架能力（真机是 `createNewDirectory` + 起终端跑 `npm create`） |
+//! | 克隆仓库… | ❌ **禁用态** | 没有 `git.write` clone 的调用点，目标目录选择也没有 |
 //!
-//! ⚠️ **三条动作行画成禁用态**（维护者口径，2026-09-26 拍板）：真源三者**恒可执行、不置灰**
+//! ⚠️ **两条仍不可用的动作行画成禁用态**（维护者口径，2026-09-26 拍板）：真源三者**恒可执行、不置灰**
 //! （`title-project-menu.tsx:172-192`），本侧缺能力，所以两难的取舍是 —— **不能画成可点**
 //! （点下去面板照 `closeAndRun` `:133-136` 会关，却什么都没发生 = 对用户说谎），
 //! **也不能整段不画**（面板结构与维护者截图不符）。取中间的**真禁用态**：
@@ -124,7 +123,7 @@
 //! | 偏差 | 真源 | 本侧 | 理由 |
 //! | --- | --- | --- | --- |
 //! | 面板内边距 / 行间距 / 圆角 | 6 / 0 / 6.4 | 4 / 2 / 6 | `PopupMenu` 三个值都硬编码且无 builder（见上） |
-//! | 三条动作项 | 恒可执行、不置灰 | **禁用态**（灰 + 无 hover + 点了不关面板） | 本侧缺能力；"可点但只打日志"会让用户以为有反应（见 [`action_row`]） |
+//! | 三条动作项 | 恒可执行、不置灰 | 「打开…」**可点**（B4 起），新建 / 克隆仍是**禁用态**（灰 + 无 hover + 点了不关面板） | 本侧缺能力；"可点但只打日志"会让用户以为有反应（见 [`action_row`]） |
 //! | 行内可用宽度 | 384 − 12(面板内距) − 16(行内距) ≈ 356 | 384 − 20(滚动条 16) − 8 − 16 ≈ 340 | `scrollable(true)` 的竖向滚动条**常驻**占 16 逻辑 px（`.artifacts/p8` 量到右侧 947..966 物理那一条），真源是 `overflow-y-auto`（无溢出时无条）。留着它是因为 `max_h` 就加在这个滚动容器上：**内容再高也撑不破 520**（12 条最近项目 ≈ 900 逻辑也照样被截住并滚动），换成"需要时才滚动"等于自己重算一遍内容高 |
 //! | 项目行高 | `min-h-11`(44) | 量到 **52.8 逻辑**（44 只是下限，没被触发） | `min-h` 是**下限**：两行文字（14px 名 + 12px 路径，行高 ~1.4–1.5）+ `py-1.5`(12) 撑到 ~53。真源同样由内容撑高（13px 两行 ≈ 50）；差 ~3 是本侧 13→14 字号的既定口径（见 [`project_row`]） |
 //! | 当前项目行 / 空态行 / 分组标题 | 可键盘高亮（`Menu.Item`） | `.disabled(true)`，跳过键盘导航 | 真源点当前项是 no-op 且**不关面板**（`:207-210`），而 `PopupMenuItem` 一旦可点，`confirm` 里**无条件** `dismiss`（`popup_menu.rs:875-884`）—— 只有 disabled 能表达"可画不可点" |
@@ -156,6 +155,9 @@ use gpui_kit::{
 };
 
 use lithe_gpui_shared::{tr, tr_args};
+use lithe_gpui_settings::RecentProject;
+
+use crate::workspace::ShellWorkspace;
 
 // ---------------------------------------------------------------------------
 // 度量常量（规格值逐条来自 title-project-menu.tsx，见模块头表格）
@@ -361,16 +363,31 @@ impl PanelAction {
     }
 
     /// 这条动作缺的**前置条件**（只进诊断，不是界面文案 —— 所以不走 i18n）。
-    fn precondition(self) -> &'static str {
+    ///
+    /// `None` = 这条**已经接线**（面板里的「打开…」，B4）。诊断行因此能用同一个格式
+    /// 区分"可点"与"不可点"：`state=disabled precondition=no_scaffolding` /
+    /// `state=enabled precondition=none` —— 判据与 [`PanelAction::enabled`] 同源。
+    fn precondition(self) -> Option<&'static str> {
         match self {
-            Self::NewProject => "no_scaffolding",
-            Self::OpenFolder => "no_folder_dialog",
-            Self::CloneRepository => "no_git_clone_call_site",
+            Self::NewProject => Some("no_scaffolding"),
+            // B4 接线之后这条不再缺前置条件：它落到 `ShellWorkspace::open_project_picker`
+            // （gpui 自带的 `prompt_for_paths`，零新增依赖）—— 与「文件 → 打开文件夹」同一个函数。
+            Self::OpenFolder => None,
+            Self::CloneRepository => Some("no_git_clone_call_site"),
         }
+    }
+
+    /// 这条动作今天**能不能点**。真源三者恒可执行；本侧只有「打开…」有实现。
+    fn enabled(self) -> bool {
+        self.precondition().is_none()
     }
 }
 
-/// 一条动作行：32 高、8 内距、8 间隔、16×16 图标、13→14px 文字。**禁用态**。
+/// 一条动作行：32 高、8 内距、8 间隔、16×16 图标、13→14px 文字。
+///
+/// 「打开…」**可点**（B4 起）：它的 `on_click` 把这次点击交给
+/// `ShellWorkspace::open_project_picker` —— 也就是与「文件 → 打开文件夹」/`Ctrl+O`
+/// **同一个执行点**（Q12：这两条同义）。新建 / 克隆仓库仍是**禁用态**。
 ///
 /// ⚠️ **必须自绘**（`PopupMenuItem::element`）：`Item` 固定 26 高（`popup_menu.rs:1309`），
 /// 撑不到真源的 32。
@@ -378,11 +395,11 @@ impl PanelAction {
 /// `mx_neg_2()` + `px_2()` 是抵消父级的 `.px(8)`（`popup_menu.rs:1230`）：
 /// `MenuItemElement` 自己有 8 内距，行底色要铺满行宽就得先退回来。
 ///
-/// # ⚠️ 为什么是禁用态（维护者口径，2026-09-26 拍板）
+/// # ⚠️ 为什么没能力的两条是禁用态（维护者口径，2026-09-26 拍板）
 ///
 /// **真源这三条恒可执行**（`title-project-menu.tsx:172-192`，三者都不置灰），本侧**缺能力**：
-/// 新建要脚手架、打开要系统目录对话框、克隆要 `git.write` clone 的调用点
-/// （前置条件逐条写在 [`PanelAction::precondition`] 与模块头）。两难的取舍是：
+/// 新建要脚手架、克隆要 `git.write` clone 的调用点（前置条件逐条写在
+/// [`PanelAction::precondition`] 与模块头）。两难的取舍是：
 ///
 /// - **不能画成可点**：点下去面板照真源 `closeAndRun`（`:133-136`）会关掉，而什么都没发生 ——
 ///   那对用户是**说谎**（"有反应"与"有效果"被混成一件事）；
@@ -390,18 +407,27 @@ impl PanelAction {
 ///
 /// 取中间的**真禁用态**：`.disabled(true)` 让 `PopupMenuItem` 不挂点击、不进键盘导航、
 /// 前景走 `muted_foreground`、没有 hover 高亮（`menu_item.rs:115-133`），
-/// 于是"不可用"在**语义与视觉上都能区分**（不是只靠颜色）。三条动作因此
+/// 于是"不可用"在**语义与视觉上都能区分**（不是只靠颜色）。两条动作因此
 /// **点了什么都不发生、面板也不关**。
 ///
-/// 前置条件仍然可 grep：面板每次打开时打一行 `S1_PROJECT_MENU action=… state=disabled
-/// precondition=…`（见 [`diagnose_actions`]）—— 诊断从"点击时"挪到"打开时"，
+/// 前置条件仍然可 grep：面板每次打开时打一行 `S1_PROJECT_MENU action=… state=… precondition=…`
+/// （见 [`diagnose_actions`]）—— 诊断从"点击时"挪到"打开时"，
 /// 不再给用户一个假装能点的入口。
-fn action_row(action: PanelAction) -> PopupMenuItem {
-    PopupMenuItem::element(move |_window, cx| {
+///
+/// `shell` 是**外壳句柄**（面板实体自己没有句柄，见 [`ProjectMenu::shell`]）：可点的那条
+/// 要回到外壳上执行 —— 被绕开的只有"点一下面板"这一段，执行的是与文件菜单同一个函数。
+fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) -> PopupMenuItem {
+    let enabled = action.enabled();
+    let item = PopupMenuItem::element(move |_window, cx| {
         // 禁用态前景：真源由 `data-disabled:opacity-50` + 继承色决定；gpui-kit 的
         // `MenuItemElement` 直接给 `muted_foreground`（`menu_item.rs:131-133`），
         // 所以图标与文字都显式取同一个 token（子元素的显式色会覆盖父级继承色）。
-        let muted = cx.theme().muted_foreground;
+        // 可点的那条取正常前景色 —— 两者在界面上必须一眼可分。
+        let color = if enabled {
+            cx.theme().foreground
+        } else {
+            cx.theme().muted_foreground
+        };
         h_flex()
             .w_full()
             .h(rems(ACTION_ROW_HEIGHT_SPEC / 16.))
@@ -411,17 +437,30 @@ fn action_row(action: PanelAction) -> PopupMenuItem {
             .rounded(ROW_RADIUS)
             // 图标 16×16：真源由 `[&_svg:not([class*='size-'])]:size-4` 决定
             // （`ui/dropdown.tsx:782`），`Icon` 侧显式 `.size_4()`（`Icon::xsmall()` 是 12）。
-            .child(Icon::new(action.icon()).size_4().text_color(muted))
+            .child(Icon::new(action.icon()).size_4().text_color(color))
             .child(
                 div()
                     .min_w_0()
                     .truncate()
                     .text_sm()
-                    .text_color(muted)
+                    .text_color(color)
                     .child(tr(action.label_key())),
             )
+    });
+
+    if !enabled {
+        return item.disabled(true);
+    }
+
+    // 可点的那条：只**路由**，不在这里实现换项目 —— 执行点是
+    // `ShellWorkspace::open_project_picker`，与「文件 → 打开文件夹」/`Ctrl+O` **同一个函数**
+    // （Q12：这两条同义）。句柄没登记（窗口正在关）时退化成禁用态，而不是假装能点。
+    let Some(shell) = shell else {
+        return item.disabled(true);
+    };
+    item.on_click(move |_event, window, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.open_project_picker(window, cx));
     })
-    .disabled(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -553,9 +592,11 @@ fn group_label(key: &'static str) -> PopupMenuItem {
     .disabled(true)
 }
 
-/// 「最近项目」的空态行：`px-2 py-3 text-subtle-foreground ui-text-xs`（`:221-225`）。
+/// 「最近项目」的**空态行**：`px-2 py-3 text-subtle-foreground ui-text-xs`（`:221-225`）。
 ///
-/// v1 **恒空态**：本侧没有最近项目的来源（见模块头的前置条件表）。
+/// 只在**一条最近项目都没有**时画（[`build_popup`] 的段③）。这不是"占位"：数据层
+/// （`lithe_gpui_settings::recent_projects`）读不出文件时同样得到空列表，界面就该照真源
+/// 说「没有最近项目」。
 fn recent_empty_row() -> PopupMenuItem {
     PopupMenuItem::element(move |_window, cx| {
         div()
@@ -572,6 +613,74 @@ fn recent_empty_row() -> PopupMenuItem {
     .disabled(true)
 }
 
+/// 一行「最近项目」：版式照 [`project_row`]（徽标 + 名 + 路径两行），但**可点** —— 点了就换到那个项目
+/// （[`ShellWorkspace::request_open_project`]，与"选一个文件夹"之后的链路完全同一条）。
+///
+/// 与 [`project_row`] 的三处差别（都是有意的）：
+///
+/// 1. **不做"当前项"高亮、不画勾**：真源的最近项目行没有这两样（它是历史列表，当前项目
+///    在上面的段②里已经标出来了）；
+/// 2. **可点**：`on_click` 把路径交给外壳；面板的 `confirm` 会自己收起（`popup_menu.rs:875-884`），
+///    不需要额外写关闭逻辑；
+/// 3. `missing`（目录已失效）的行**照样可点**：路径探测在换项目链路里做（真源
+///    `openRecentFolder` 也是先探测、再决定是标 `missing` 还是打开），而不是在这里
+///    静默禁用 —— 用户点了之后会收到一句状态栏提示，比一个点不动的灰行更容易理解。
+fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) -> PopupMenuItem {
+    let badge = ProjectBadge::for_name(&entry.name);
+    let name: SharedString = entry.name.clone().into();
+    let path_text = entry.path.clone();
+    let path = std::path::PathBuf::from(entry.path.clone());
+    let item = PopupMenuItem::element(move |_window, cx| {
+        let theme = cx.theme();
+        let foreground = theme.foreground;
+        let muted = theme.muted_foreground;
+
+        h_flex()
+            .w_full()
+            .min_h(rems(PROJECT_ROW_HEIGHT_SPEC / 16.))
+            .gap_2p5()
+            .mx_neg_2()
+            .px_2()
+            .py_1p5()
+            .rounded(ROW_RADIUS)
+            .child(badge_view(&badge, rem_px(ROW_BADGE_SIZE_SPEC)))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(foreground)
+                            .child(name.clone()),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_xs()
+                            .text_color(muted)
+                            .child(path_text.clone()),
+                    ),
+            )
+    });
+
+    match shell {
+        Some(shell) => item.on_click(move |_event, window, cx| {
+            // `clone`：`on_click` 收 `Fn`，路径可能被调用多次。
+            let path = path.clone();
+            let _ = shell.update(cx, |shell, cx| {
+                shell.request_open_project(path.clone(), None, window, cx)
+            });
+        }),
+        // 句柄没登记（窗口正在关）：画出来但不挂点击 —— 与 [`action_row`] 同一处置。
+        None => item.disabled(true),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 面板
 // ---------------------------------------------------------------------------
@@ -579,11 +688,14 @@ fn recent_empty_row() -> PopupMenuItem {
 /// 造一个项目下拉面板。每次**打开**现建（收起后缓存被丢掉，见 [`ProjectMenu::popup`]）。
 fn build_popup(
     entries: &[ProjectEntry],
+    recent: &[RecentProject],
+    shell: Option<WeakEntity<ShellWorkspace>>,
     action_context: FocusHandle,
     window: &mut Window,
     cx: &mut App,
 ) -> Entity<PopupMenu> {
     let entries = entries.to_vec();
+    let recent = recent.to_vec();
     PopupMenu::build(window, cx, move |menu, _window, _cx| {
         let mut menu = menu
             // 收起时把焦点还给外壳根元素（`PopupMenu::dismiss` 的 `action_context`，
@@ -607,9 +719,9 @@ fn build_popup(
             .max_h(rem_px(PANEL_MAX_HEIGHT_SPEC))
             .scrollable(true);
 
-        // 段 ①：三条动作（**禁用态**，理由见 [`action_row`]）。
+        // 段 ①：三条动作（「打开…」可点，另两条禁用，理由见 [`action_row`]）。
         for action in PanelAction::ALL {
-            menu = menu.item(action_row(action));
+            menu = menu.item(action_row(action, shell.clone()));
         }
 
         // 段 ②：「打开的项目」。`N === 0` 时段 2 **没有**空态占位（真源 `:199` 直接 map 空数组，
@@ -621,10 +733,18 @@ fn build_popup(
             menu = menu.item(project_row(entry));
         }
 
-        // 段 ③：「最近项目」+ 空态。
-        menu.separator()
-            .item(group_label("lithe.titleProject.recentProjects"))
-            .item(recent_empty_row())
+        // 段 ③：「最近项目」——真数据（B4），空列表时才是真源那个空态行。
+        menu = menu
+            .separator()
+            .item(group_label("lithe.titleProject.recentProjects"));
+        if recent.is_empty() {
+            menu = menu.item(recent_empty_row());
+        } else {
+            for entry in &recent {
+                menu = menu.item(recent_row(entry, shell.clone()));
+            }
+        }
+        menu
     })
 }
 
@@ -659,48 +779,63 @@ fn popup_for(popup: Entity<PopupMenu>, trigger_bounds: Bounds<Pixels>) -> impl I
 // 诊断（`S1_PROJECT_MENU_*`）
 // ---------------------------------------------------------------------------
 
-/// v1 的最近项目条数：**恒 0**（没有来源，见模块头的前置条件表）。
-///
-/// 写成常量而不是 `entries.len()` 之类：它变的那一天，面板结构与这条诊断要一起改。
-const RECENT_PROJECTS: usize = 0;
-
 /// 开合状态那一行诊断。`opened=false` 在构造期打（启动证据），`opened=true` 在面板
 /// **真的被画出来**的那一帧打 —— 后者才是"面板出现"的机器证据，而不是"状态位被置了"。
-fn diagnose(opened: bool, current: &str) {
-    eprintln!("S1_PROJECT_MENU opened={opened} recent={RECENT_PROJECTS} current={current}");
+///
+/// `recent` 是**真数据**的条数（B4 起；以前是写死的常量 0）。
+fn diagnose(opened: bool, current: &str, recent: usize) {
+    eprintln!("S1_PROJECT_MENU opened={opened} recent={recent} current={current}");
 }
 
 /// 面板结构那行诊断：把"三段 / 三动作 / 行高"这些只能从像素里量出来的事实写成可 grep 的契约。
 ///
 /// 它是**实现值**（本侧画成多少），不是量出来的像素；截图量出来的那一份在验收报告里对照。
-fn diagnose_structure(projects: usize) {
+fn diagnose_structure(projects: usize, recent: usize) {
     eprintln!(
         "S1_PROJECT_MENU panel_w={} max_h={} sections=3 actions={} actions_disabled={} \
          open_projects={} recent={} action_h={} row_h={} badge={}",
         PANEL_WIDTH_SPEC as i32,
         PANEL_MAX_HEIGHT_SPEC as i32,
         PanelAction::ALL.len(),
-        // v1 三条动作全是禁用态（见 [`action_row`]）—— 这个数就是"画出来的外观项"与
+        // 画出来但**不可点**的动作数（B4 之后是 2：新建 / 克隆）。这个数就是"外观项"与
         // "真的能用的项"之间的差额，写在诊断里免得只靠注释。
-        PanelAction::ALL.len(),
+        PanelAction::ALL
+            .iter()
+            .filter(|action| !action.enabled())
+            .count(),
         projects,
-        RECENT_PROJECTS,
+        recent,
         ACTION_ROW_HEIGHT_SPEC as i32,
         PROJECT_ROW_HEIGHT_SPEC as i32,
         ROW_BADGE_SIZE_SPEC as i32,
     );
 }
 
-/// 三条动作各自的禁用原因，**面板每次打开时**打三行（原来挂在点击回调上，但 v1 它们不可点）。
+/// 三条动作各自的状态，**面板每次打开时**打三行。
 ///
-/// 这样"为什么灰着"仍然可 grep（`state=disabled precondition=…`），而用户不会看到一个
-/// 点下去只有日志、还把面板关掉的假入口。
+/// 这样"为什么灰着 / 哪条能点"可 grep（`state=disabled precondition=…` /
+/// `state=enabled precondition=none`），而用户不会看到一个点下去只有日志、还把面板关掉的假入口。
 fn diagnose_actions() {
     for action in PanelAction::ALL {
         eprintln!(
-            "S1_PROJECT_MENU action={} state=disabled precondition={}",
+            "S1_PROJECT_MENU action={} state={} precondition={}",
             action.id(),
-            action.precondition()
+            if action.enabled() { "enabled" } else { "disabled" },
+            action.precondition().unwrap_or("none")
+        );
+    }
+}
+
+/// 逐条打最近项目（**列表顺序 = 界面顺序**，即 `pinned` 优先 + `lastOpenedAt` 降序）。
+///
+/// 为什么值得一条一条打：验收线要证明"打开两个文件夹 → 下拉里两条、最近的在最前"，
+/// 而截图只能证明"画出来了"、证明不了顺序与 `missing` 标记。这个行是可 grep 的契约：
+/// `S1_PROJECT_MENU recent_project index=0 path=… missing=false pinned=false`。
+fn diagnose_recent(recent: &[RecentProject]) {
+    for (index, entry) in recent.iter().enumerate() {
+        eprintln!(
+            "S1_PROJECT_MENU recent_project index={index} path={} missing={} pinned={} lastOpenedAt={}",
+            entry.path, entry.missing, entry.pinned, entry.last_opened_at
         );
     }
 }
@@ -739,21 +874,45 @@ pub struct ProjectMenu {
     /// 面板内部收起（`Esc` / 选中项）由 `PopupMenu::dismiss` 自己归还；**点触发器收起**这条
     /// 走路不了它（那时是我们主动丢掉面板实体），所以 [`ProjectMenu::toggle`] 显式归还一次。
     action_context: FocusHandle,
+    /// 外壳句柄：面板里**可点**的那些行（「打开…」动作行与最近项目行）要落到外壳的能力上
+    /// （换项目 / 记最近 / 路径失效标记），而面板实体不是外壳、也拿不到它。
+    ///
+    /// 为什么是 `Option`：建面板实体时 `ShellWorkspace` 还没构造完（`cx.new` 的闭包里没有
+    /// 外壳句柄），所以由 [`ProjectMenu::set_shell`] 在外壳建好之后补登记。
+    /// 为什么是 `WeakEntity`：与 [`PROJECT_MENU`] 同一条理由 —— 这里**不能**吊住整个外壳，
+    /// 否则 `replace_root` 丢掉旧外壳时引用计数归不了零（换项目就变成泄漏）。
+    shell: Option<WeakEntity<ShellWorkspace>>,
 }
 
 impl ProjectMenu {
     /// 建状态并在**构造期**打一行 `opened=false` 的诊断（启动证据）。
     ///
     /// `current` 只用于这行诊断；面板里的项目名每帧由 [`render`] 从外壳拿（真值只有一个来源）。
-    pub fn new(current: &str, action_context: FocusHandle, cx: &mut App) -> Entity<Self> {
-        diagnose(false, current);
+    /// `recent_count` 同理：构造期的最近项目条数（外壳刚读出来的那一份）。
+    pub fn new(
+        current: &str,
+        recent_count: usize,
+        action_context: FocusHandle,
+        cx: &mut App,
+    ) -> Entity<Self> {
+        diagnose(false, current, recent_count);
         cx.new(|_| Self {
             open: false,
             popup: None,
             trigger_bounds: Rc::new(Cell::new(None)),
             _dismiss_subscription: None,
             action_context,
+            shell: None,
         })
+    }
+
+    /// 登记外壳句柄（[`crate::workspace::ShellWorkspace::new`] 在 `Self` 建好之后调一次）。
+    ///
+    /// 与 [`set_project_menu`] 分开：那个登记的是"面板句柄"（给诊断入口用），
+    /// 这个登记的是"面板能回到哪儿去执行"（给面板里的行用）。两条都在 `ShellWorkspace::new`
+    /// 里调用，理由见 [`ProjectMenu::shell`] 的字段文档。
+    pub(crate) fn set_shell(&mut self, shell: WeakEntity<ShellWorkspace>) {
+        self.shell = Some(shell);
     }
 
     /// 面板是否展开。
@@ -914,11 +1073,14 @@ fn trigger(
 /// 收 `&Entity<ProjectMenu>` 而不是从 [`PROJECT_MENU`] 现取：外壳持有这个 `Entity` 才算
 /// 它活着（见 `ShellWorkspace::project_menu` 字段的说明）。
 ///
+/// `recent` 是外壳刚读出来的最近项目（**真数据**，B4 起），顺序就是界面顺序。
+///
 /// 返回 `None` = 一个项目都没有（那时标题栏里只留拖拽区）—— `ShellWorkspace` 恒有 ≥1 个项目，
 /// 所以这只在当前没有工作区时发生。
 pub(crate) fn render(
     menu: &Entity<ProjectMenu>,
     entries: &[ProjectEntry],
+    recent: &[RecentProject],
     window: &mut Window,
     cx: &mut App,
 ) -> Option<AnyElement> {
@@ -926,7 +1088,7 @@ pub(crate) fn render(
         return None;
     }
     menu.downgrade()
-        .update(cx, |menu, cx| project_menu(menu, entries, window, cx))
+        .update(cx, |menu, cx| project_menu(menu, entries, recent, window, cx))
         .ok()
 }
 
@@ -934,6 +1096,7 @@ pub(crate) fn render(
 fn project_menu(
     menu: &mut ProjectMenu,
     entries: &[ProjectEntry],
+    recent: &[RecentProject],
     window: &mut Window,
     cx: &mut Context<ProjectMenu>,
 ) -> AnyElement {
@@ -944,7 +1107,14 @@ fn project_menu(
     // 而面板由本实体的 `popup` 字段缓存，所以这段一帧只跑一次（照 `AppMenu::build_popup_menu`，
     // `app_menu_bar.rs:169-204`）。
     if open && menu.popup.is_none() {
-        let popup = build_popup(entries, menu.action_context.clone(), window, cx);
+        let popup = build_popup(
+            entries,
+            recent,
+            menu.shell.clone(),
+            menu.action_context.clone(),
+            window,
+            cx,
+        );
         menu._dismiss_subscription =
             Some(cx.subscribe_in(&popup, window, ProjectMenu::handle_dismiss));
         // 焦点交给面板：`Esc` / `↑↓` / `Enter` 的 `key_context` 在它身上
@@ -955,9 +1125,10 @@ fn project_menu(
         }
         menu.popup = Some(popup);
         // 面板真的画出来了 —— 这一行才是"面板出现"的证据（不是"状态位被置了"）。
-        diagnose(true, entries[0].name.as_ref());
-        diagnose_structure(entries.len());
+        diagnose(true, entries[0].name.as_ref(), recent.len());
+        diagnose_structure(entries.len(), recent.len());
         diagnose_actions();
+        diagnose_recent(recent);
     }
 
     let trigger = trigger(&entries[0], open, handle(), cx).into_any_element();
@@ -1085,12 +1256,66 @@ mod tests {
                 "lithe.titleProject.cloneRepository"
             ]
         );
-        // 三条动作的前置条件必须各说各的（v1 一条都做不到），免得诊断行说不清缺什么。
-        let mut preconditions: Vec<&str> =
-            PanelAction::ALL.iter().map(|a| a.precondition()).collect();
+        // 三段动作各自的状态必须说清楚（B4 之后：一条可点、两条缺前置条件），
+        // 免得诊断行说不清"哪条能用、缺的是哪条能力"。
+        let mut preconditions: Vec<&str> = PanelAction::ALL
+            .iter()
+            .map(|action| action.precondition().unwrap_or("none"))
+            .collect();
         preconditions.sort_unstable();
         preconditions.dedup();
-        assert_eq!(preconditions.len(), 3);
+        assert_eq!(
+            preconditions,
+            vec!["no_git_clone_call_site", "no_scaffolding", "none"],
+            "三条动作的前置条件必须各说各的（可点的那条是 none）"
+        );
+    }
+
+    /// B4 的动作表状态：**只有「打开…」可点**，另两条仍是禁用态 —— 那两条的
+    /// `precondition()` 必须各给一个具体理由（诊断行靠它说清"缺什么"）。
+    ///
+    /// 这条守的是一类回归：把某条动作的 `precondition` 从 `Some` 改成 `None`（或反过来）会让
+    /// 面板画出一个"点了只有日志"的假入口，而肉眼在截图里看不出来。
+    #[test]
+    fn only_open_folder_is_clickable() {
+        let clickable: Vec<PanelAction> = PanelAction::ALL
+            .into_iter()
+            .filter(|action| action.enabled())
+            .collect();
+        assert_eq!(clickable, vec![PanelAction::OpenFolder]);
+        assert_eq!(
+            PanelAction::OpenFolder.precondition(),
+            None,
+            "可点的那条不该再报前置条件"
+        );
+        for action in [PanelAction::NewProject, PanelAction::CloneRepository] {
+            assert!(
+                action.precondition().is_some(),
+                "{action:?} 没接线就必须说清缺什么"
+            );
+        }
+    }
+
+    /// 最近项目行的**可点性**只取决于"外壳句柄登没登记"这一件事 —— 没有句柄时必须能安全地
+    /// 画出来（走 disabled 分支），而不是 panic 或假装能点。
+    ///
+    /// 这里只做结构判据（本 crate 拿不到 `TestAppContext`，理由见 `menu_bar.rs` 里那两处说明）：
+    /// `recent_row` 收 `None` 时能构造出 item 就算过；真正的点击行为（换根 + 记最近）
+    /// 由 `.artifacts/p22` 的实机 `S1_*` 日志覆盖。
+    #[test]
+    fn recent_rows_render_without_a_shell_handle() {
+        use lithe_gpui_settings::RecentProject;
+
+        let entry = RecentProject {
+            name: "alpha".to_string(),
+            path: r"D:\proj\alpha".to_string(),
+            last_opened_at: 1_700_000_000_000,
+            pinned: false,
+            // `missing = true` 的行**照样可点**（路径探测在换项目链路里做，见 `recent_row` 文档）。
+            missing: true,
+            open_in_new_window: None,
+        };
+        let _item = super::recent_row(&entry, None);
     }
 
     /// 面板度量：384 宽 / 520 最大高（真源 `w-96` / `max-h-[min(32.5rem,…)]`）。

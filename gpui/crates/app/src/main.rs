@@ -172,6 +172,38 @@ struct Options {
     /// （`S1_RIGHT_PANEL … visible=true` 紧跟一行 `visible=false`，见 `gpui/HANDOFF.md` §2），
     /// 面板随即被自己收起 —— 于是"Spring 面板里到底画出了什么"在无人值守环境里无法取证。
     right_view: Option<String>,
+    /// `--open-project-probe <目录>`：启动后走一遍「打开其他文件夹」的链路（**验证/诊断用**）。
+    ///
+    /// 见 [`lithe_gpui_workbench::ShellWorkspace::open_project_probe`]：它调的是与"在选择器里
+    /// 选完一个文件夹"**同一个** `request_open_project` —— 被绕开的只有"操作系统把这次选择
+    /// 送回来"那一段（那一段要真的弹 `IFileOpenDialog`，本机锁屏时点不了）。
+    open_project_probe: Option<PathBuf>,
+    /// `--open-project-destination <this-window|new-window>`：给 `--open-project-probe`
+    /// 指定目的地（= 真源的 `explicitDestination`），于是**不弹对话框**、直接执行。
+    ///
+    /// **为什么需要它**：不指定时（照真源默认设置）`--open-project-probe` 会弹换项目对话框
+    /// —— 那正是"截对话框那一帧"要的；而"换根真的生效"这条验收线要在无人值守下**点掉**那个
+    /// 对话框，只能靠这个参数把它显式定下来。取值拼错时当场报错退出（与 `--palette-keys` 同口径）。
+    open_project_destination: Option<String>,
+    /// `--open-project-remember`：配合 `--open-project-probe`，把"用户勾了「不再询问」"这件事
+    /// 写进对话框那个字段（**验证/诊断用**）。
+    ///
+    /// 本机工作站锁屏、点不了 checkbox，而"勾上之后点「此窗口」→ 换根 → 两个偏好键落盘 →
+    /// 下一次不再弹对话框"这条链是要逐环取证的。它写的字段与 checkbox 的 `on_change`
+    /// 写的是**同一个**（不是另一套状态）。
+    open_project_remember: bool,
+    /// `--open-project-delay-ms <毫秒>`：`--open-project-probe` 等多久才真的走那条链路。
+    ///
+    /// 与 `--menu-probe-delay` 同一个用途：给"换根**之前**先制造出要被释放的东西"留出窗口
+    /// （验证无残留进程时，先让 `--menu-probe terminal …` 起一个终端页签 + JDTLS 会话，
+    /// 再换根，然后对照进程数）。
+    open_project_delay_ms: u64,
+    /// `--left-view <下标|id>`：启动后把**左侧栏**切到指定视图（**验证/诊断用**）。
+    ///
+    /// 见 [`lithe_gpui_workbench::ShellWorkspace::show_left_view_probe`]。存在理由同
+    /// `right_view`：验收要证明"换根后 Git 变更视图指向新根"，而
+    /// `S1_SOURCE_CONTROL files=… root=…` 只在变更视图 `activate` 时打一行。
+    left_view: Option<String>,
 }
 
 /// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
@@ -195,6 +227,23 @@ fn parse_options() -> Result<Options, String> {
          \x20 --right-view <id>     启动后把右侧工具窗切到 <id> 并展开（验证/诊断用；走的是与\n\
          \x20                     「点右活动栏那一项」相同的状态迁移）；<id> 取 extensions /\n\
          \x20                     notifications / maven / spring，未知 id 报一行错且不改启动状态\n\
+         \x20 --open-project-probe <目录>\n\
+         \x20                     启动后走一遍「打开文件夹」的链路并打开 <目录>（验证/诊断用；\n\
+         \x20                     走的是与\"在选择器里选完一个文件夹\"相同的 request_open_project，\n\
+         \x20                     被绕开的只有操作系统那个文件夹选择器）；不给\n\
+         \x20                     --open-project-destination 时会照真源默认设置弹出换项目对话框\n\
+         \x20 --open-project-destination <this-window|new-window>\n\
+         \x20                     给 --open-project-probe 指定目的地（= 真源的 explicitDestination，\n\
+         \x20                     于是不弹对话框、直接执行）；取值拼错时报错退出\n\
+         \x20 --open-project-remember\n\
+         \x20                     配合 --open-project-probe：把「勾了不再询问」写进对话框那个字段，\n\
+         \x20                     于是换根成功之后会写两个偏好键（askWhereToOpenProjects /\n\
+         \x20                     openFoldersInNewWindow）\n\
+         \x20 --open-project-delay-ms <毫秒>  --open-project-probe 等多久才执行（默认 0 = 首帧之后；\n\
+         \x20                     给「换根之前先造出要被释放的东西」留窗口）\n\
+         \x20 --left-view <id>     启动后把左栏切到 <id>（验证/诊断用；files / changes / search）；\n\
+         \x20                     「更改」还会顺带重读一次工作区状态，于是能拿到\n\
+         \x20                     `S1_SOURCE_CONTROL files=… root=…` 那一行\n\
          \x20 --menu-probe-delay <毫秒>  `--menu-probe` 打开菜单后等多久才执行动作（默认 2500）\n\
          \x20 --palette-keys <串> 启动后按顺序派发一串按键，逗号分隔；可重复给多次 = 多串（验证/诊断用；\n\
          \x20                     例：\"ctrl-shift-p,n,down,enter,escape\"）";
@@ -213,6 +262,11 @@ fn parse_options() -> Result<Options, String> {
     let mut project_menu_probe = false;
     let mut branch_panel_probe = false;
     let mut right_view: Option<String> = None;
+    let mut open_project_probe: Option<PathBuf> = None;
+    let mut open_project_destination: Option<String> = None;
+    let mut open_project_remember = false;
+    let mut open_project_delay_ms: u64 = 0;
+    let mut left_view: Option<String> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -264,6 +318,32 @@ fn parse_options() -> Result<Options, String> {
             "--right-view" => {
                 right_view = Some(args.next().ok_or("--right-view 缺少视图 id")?);
             }
+            // `--open-project-probe` 只**收下**路径，真正走的那一段放到窗口建好之后
+            // （`on_next_frame`）：对话框只能在 `Root` 就位之后开。
+            "--open-project-probe" => {
+                open_project_probe =
+                    Some(PathBuf::from(args.next().ok_or("--open-project-probe 缺少目录")?));
+            }
+            "--open-project-destination" => {
+                let raw = args.next().ok_or("--open-project-destination 缺少取值")?;
+                // 取值先在这里校验：拼错时当场退出，别让探针静默弹出一个没人点的对话框。
+                if raw != "this-window" && raw != "new-window" {
+                    return Err(format!(
+                        "--open-project-destination 的 {raw:?} 不是 this-window / new-window"
+                    ));
+                }
+                open_project_destination = Some(raw);
+            }
+            "--open-project-remember" => open_project_remember = true,
+            "--open-project-delay-ms" => {
+                let raw = args.next().ok_or("--open-project-delay-ms 缺少毫秒数")?;
+                open_project_delay_ms = raw.parse::<u64>().map_err(|error| {
+                    format!("--open-project-delay-ms 的 {raw:?} 不是毫秒数：{error}")
+                })?;
+            }
+            "--left-view" => {
+                left_view = Some(args.next().ok_or("--left-view 缺少视图 id")?);
+            }
             "--palette-keys" => {
                 let raw = args.next().ok_or("--palette-keys 缺少值")?;
                 let mut sequence = Vec::new();
@@ -302,6 +382,11 @@ fn parse_options() -> Result<Options, String> {
         project_menu_probe,
         branch_panel_probe,
         right_view,
+        open_project_probe,
+        open_project_destination,
+        open_project_remember,
+        open_project_delay_ms,
+        left_view,
     })
 }
 
@@ -490,6 +575,11 @@ fn main() {
         project_menu_probe,
         branch_panel_probe,
         right_view,
+        open_project_probe,
+        open_project_destination,
+        open_project_remember,
+        open_project_delay_ms,
+        left_view,
     } = match parse_options() {
         Ok(options) => options,
         Err(message) => {
@@ -512,6 +602,19 @@ fn main() {
             None
         }
     });
+    // `--left-view <id>`：同一套（未知取值报一行错，不改动启动状态）。
+    let left_view_probe =
+        left_view
+            .as_deref()
+            .and_then(|selector| match lithe_gpui_workbench::left_activity_index(selector) {
+                Some(index) => Some(index),
+                None => {
+                    eprintln!(
+                        "--left-view：未知视图 {selector}（可用取值：files / changes / search）"
+                    );
+                    None
+                }
+            });
 
     // 设置文件必须在 `set_locale` 之前读：界面语言的常规来源就是它
     // （`--locale` 只是本次启动的显式覆盖）。这一步是纯文件读取，不需要 `App`。
@@ -611,6 +714,25 @@ fn main() {
             lithe_gpui_settings::install_actions(cx);
             let _ = store;
 
+            // 外壳的启动期形态登记成 `App::Global`：换项目会**重建整个 `ShellWorkspace`**，
+            // 而重建点在 `window.replace_root` 的闭包里 —— 那里捕获不到下面的局部值
+            // （理由见 `lithe_gpui_workbench::ShellStartup` 的文档）。
+            //
+            // `--right-view` / `--left-view` 也一起登记：它们在 `ShellWorkspace::new` 里应用，
+            // 于是**换根重建出来的外壳也会应用** —— 那正是"换根后右栏面板与 Git 变更视图
+            // 指向新根"这条验收线要的证据（视图不打开就不会去扫 / 去读）。
+            lithe_gpui_workbench::set_shell_startup(
+                cx,
+                compact_menu_bar,
+                right_view_probe,
+                left_view_probe,
+            );
+            // `Ctrl+O` = 「文件 → 打开文件夹」（真源 `file.open`，Q18）。
+            // ⚠️ 在**这里**登记（App 级、一次），不在 `ShellWorkspace::new` 里：
+            // `App::on_action` 是累加的，而 `new` 每次换根都会再跑一遍 ——
+            // 换一次项目就多一个处理器，同一个键会被处理多次。
+            lithe_gpui_workbench::install_open_project_action(cx);
+
             let bounds = startup_window_bounds(cx);
 
             cx.spawn(async move |cx| {
@@ -689,20 +811,77 @@ fn main() {
                     if project_menu_probe {
                         run_project_menu_probe(window);
                     }
-                    // `--right-view`：**首帧之后**把右工具窗切到指定视图并展开。
+                    // `--right-view` / `--left-view`：**不在这里**处理。
+                    // 它们已经在 `set_shell_startup` 里登记进 `ShellStartup`，由
+                    // `ShellWorkspace::new` 在构造期应用 —— 那样**换根重建出来的外壳也会应用**，
+                    // 而这里的一次性 `on_next_frame` 只够得着第一个外壳（理由见那个 Global 的文档）。
                     //
-                    // 为什么是 `on_next_frame` 而不是在 `render` 阶段改：`render` 里改状态要么
-                    // 被本帧的布局忽略（改动要等下一次绘制才可见），要么在下一帧立刻产生新的
-                    // 脏帧；而无人值守环境里 `PrintWindow` 只能拿到"已经画出来的帧"，
-                    // 启动期画的头几帧正是唯一能截到的（理由见 `menu_probe_open_ms` 的文档）。
+                    // `--open-project-probe`：**首帧之后**走一遍「打开文件夹」。
                     //
-                    // 句柄直接用 `cx.new(..)` 出来的那个 `Entity`（`Entity` 可克隆，所以捕获
-                    // 一份克隆、原件照旧交给下面的 `Root::new`）。它调的是
-                    // [`ShellWorkspace::show_right_view_probe`] —— 与"点右活动栏那一项"同一段迁移。
-                    if let Some(view) = right_view_probe {
+                    // ⚠️ 必须在 `Root` 就位前后都行（这里在 `Root::new` **之前**）：它只是
+                    // "请求打开"，真正的对话框 / 换根发生在 `request_open_project` 里 ——
+                    // 而那一段要 `window.open_dialog`，所以它会经由 `on_next_frame` 再排一帧，
+                    // 那时 `Root` 已经装好了。
+                    if let Some(target) = open_project_probe {
                         let workspace = workspace.clone();
-                        window.on_next_frame(move |_window, cx| {
-                            workspace.update(cx, |this, cx| this.show_right_view_probe(view, cx));
+                        let explicit = open_project_destination.clone();
+                        window.on_next_frame(move |window, cx| {
+                            let explicit = explicit.as_deref().map(|raw| match raw {
+                                "new-window" => {
+                                    lithe_gpui_workbench::OpenDestination::NewWindow
+                                }
+                                _ => lithe_gpui_workbench::OpenDestination::ThisWindow,
+                            });
+                            if open_project_delay_ms == 0 {
+                                workspace.update(cx, |this, cx| {
+                                    this.open_project_probe(
+                                        target.clone(),
+                                        explicit,
+                                        open_project_remember,
+                                        window,
+                                        cx,
+                                    )
+                                });
+                                return;
+                            }
+                            // 延时档：与 `--menu-probe-delay` 同一实现（**后台执行器**上的
+                            // timer；不能在前台线程 `block_on` 一个 timer —— 前台被占住时
+                            // 定时器永远不触发，任务会静默死掉）。
+                            //
+                            // ⚠️ 这里只能用 `WeakEntity` + `App::active_window()` 拿回
+                            // `&mut Window`：`cx.update(..)` 给的是 `&mut App`，
+                            // 而换项目那条链要窗口（弹对话框 / 换根）。与
+                            // `install_open_project_action` 的取窗口方式同一条路。
+                            println!("S1_OPEN_PROJECT_PROBE delay_ms={open_project_delay_ms}");
+                            let shell = workspace.downgrade();
+                            let executor = cx.background_executor().clone();
+                            cx.spawn(async move |cx| {
+                                executor
+                                    .timer(std::time::Duration::from_millis(
+                                        open_project_delay_ms,
+                                    ))
+                                    .await;
+                                cx.update(move |cx| {
+                                    let Some(handle) = cx.active_window() else {
+                                        eprintln!(
+                                            "S1_OPEN_PROJECT_PROBE state=no_window"
+                                        );
+                                        return;
+                                    };
+                                    let _ = handle.update(cx, |_, window, cx| {
+                                        let _ = shell.update(cx, |this, cx| {
+                                            this.open_project_probe(
+                                                target.clone(),
+                                                explicit,
+                                                open_project_remember,
+                                                window,
+                                                cx,
+                                            )
+                                        });
+                                    });
+                                });
+                            })
+                            .detach();
                         });
                     }
                     // `Root` 必须是窗口的第一层：它负责对话框、浮层与通知。

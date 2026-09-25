@@ -383,6 +383,13 @@ const GPUI_ONLY_KEYS = [
     en: "View: Hide Status Bar",
     reason: "同上；两条互为反向。",
   },
+  {
+    key: "gpui.newWindowNotWired",
+    zh: "尚未接入：在「新窗口」中打开项目需要多窗口支持（缺窗口级句柄路由）。",
+    en: "Not wired yet: opening a project in a new window needs multi-window support (window-level handle routing is missing).",
+    reason:
+      "B4（打开其他文件夹）的换项目对话框里「新窗口」那一颗按钮的提示。真源的 projectOpen.newWindow 是**真的会开第二个窗口**的按钮（windows/tauri 的 createAppWindow），而 gpui 侧维护者已拍板「多窗口暂不做」（gpui/research/menu-and-open-project-plan.md §5），菜单栏 / 项目下拉 / 命令面板 / Git 身份宿主这几个 thread_local 单例仍是「一个进程一份」—— 点了它只能给一句「尚未接入：缺 X」。真源没有「能力尚未接入」这类文案（它的按钮恒可执行），而按 Q2 / Q14 的口径这句话必须说清缺什么，所以是 gpui 侧新增键。同一批其余的能力提示词归 B3，这里只补这一个。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);

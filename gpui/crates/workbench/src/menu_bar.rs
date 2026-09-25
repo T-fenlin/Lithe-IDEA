@@ -234,6 +234,12 @@ pub enum MenuItem {
 /// 「无能力的项」根本不在 [`MENUS`] 里（理由见模块文档）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuAction {
+    /// 文件 → 打开文件夹…（**换项目**，Q12：与标题栏项目下拉的「打开…」同义）。
+    ///
+    /// 真源 `menu.openFolder` 就是「打开文件夹」，`Ctrl+O` 也归它（Q18）。B4 接线：
+    /// 执行分支在 [`crate::workspace::ShellWorkspace::apply_menu_action`] 里落到
+    /// `ShellWorkspace::open_project_picker`（gpui 自带的 `prompt_for_paths`）。
+    OpenFolder,
     /// 文件 → 打开文件…（**不绑键位**：`Ctrl+O` 留给「打开文件夹」，Q18）。
     OpenFile,
     /// 文件 → 保存（`mod+s`）。
@@ -286,6 +292,9 @@ impl MenuAction {
     /// `every_wired_key_resolves_in_both_locales` 逐条断言。
     pub const fn label_key(self) -> &'static str {
         match self {
+            // 「打开文件夹」用真源 `menu.openFolder`（zh「打开文件夹」/ en "Open Folder"，
+            // `window-menu-bar.tsx` 的文件菜单第 4 项，`locale.ts:6612`）。
+            Self::OpenFolder => "lithe.menu.openFolder",
             // ⚠️ 「打开文件…」**不是** `lithe.menu.*` 的键：真源的 89 条菜单里没有这一项
             // （Windows 靠快速打开 / 文件树取文件），`menu.*` 段没有 `openFile`。
             // 这里复用真源 `outline.openFile`（zh「打开文件」/ en "Open a File"）——
@@ -333,9 +342,11 @@ impl MenuAction {
     /// 与"只列可执行项"同一性质，登记在 `.artifacts/p7/NOTES.md`。
     pub fn icon(self) -> IconName {
         match self {
-            // 「打开文件」用「打开的文件夹」字形：真源菜单项没有图标，字形只是本侧
-            // "两处入口视觉同源"的补充（见本方法的文档），所以取语义最近的那一个。
-            Self::OpenFile => IconName::FolderOpen,
+            // 「打开文件夹」用「打开的文件夹」字形（真源菜单项没有图标，见本方法文档）。
+            Self::OpenFolder => IconName::FolderOpen,
+            // 「打开文件」改用一个**具体的文件**字形：B4 之前它借用了「打开的文件夹」，
+            // 现在那一项真的存在了，两者再用同一个字形就分不出谁是谁。
+            Self::OpenFile => IconName::File,
             Self::Save => IconName::Save,
             // 关闭系一律用「×」系字形：真机标签上的关闭就是 lucide `x`
             // （`windows/tauri/src/ui/tab-bar-item.tsx:150-180` 的关闭按钮）。
@@ -369,6 +380,10 @@ impl MenuAction {
     /// `ShellWorkspace::run_command(id, window, cx)`。
     pub fn command_id(self) -> Option<CommandId> {
         match self {
+            // 「打开文件夹」**没有** `CommandId`：它不是命令面板的一条动作
+            // （面板行序由 `COMMAND_ORDER` 定，多进去一条会让别处错位一行），
+            // 执行分支在 `ShellWorkspace::apply_menu_action` 里，与另外 6 条同一处置。
+            Self::OpenFolder => None,
             Self::OpenFile => Some(CommandId::OpenFile),
             Self::Save => Some(CommandId::SaveBuffer),
             Self::CloseTab => Some(CommandId::CloseTab),
@@ -410,15 +425,15 @@ pub static MENUS: &[TopMenu] = &[
         id: "file",
         label_key: "lithe.menu.file",
         // 顺序照真源 19 条里本侧已实现的那些（`window-menu-bar.tsx:133-199`）：
-        // 打开文件（本侧新增，占真源第 4 项「打开文件夹」的位置 —— 那一条要项目生命周期，
-        // 属 B4）→ 保存（真源第 6）→ ── → 关闭系（真源第 11/13/14/15/16/17/18 项，
-        // 顺序不变）。
+        // 打开文件夹（真源第 4 项，**B4 接线**：选一个文件夹 → 换项目生命周期）→
+        // 打开文件（本侧新增，真源没有这一项）→ 保存（真源第 6）→ ── →
+        // 关闭系（真源第 11/13/14/15/16/17/18 项，顺序不变）。
         //
-        // ⚠️ **「打开文件」有意不绑键位**（Q18）：真源把 `Ctrl+O` 给「打开文件夹」，
-        // 本侧照抄，所以"打开文件"只有菜单入口。关闭系里只有「关闭标签页」有真键位
-        // （`Ctrl+W`），但 B1 **不显示**它 —— 键位显示走 `.action(..)` 让上游解析，
-        // 那是 B2 的事（Q13）。
+        // ⚠️ **两条「打开」都不显示键位**：真源把 `Ctrl+O` 给「打开文件夹」（Q18，
+        // 本侧在 `install_open_project_action` 里登记了它），而"显示键位"走 `.action(..)`
+        // 让上游解析 —— 那是 B2 的事（Q13：绑了就要显示）。「打开文件」有意不绑键位。
         items: &[
+            MenuItem::Action(MenuAction::OpenFolder),
             MenuItem::Action(MenuAction::OpenFile),
             MenuItem::Action(MenuAction::Save),
             MenuItem::Separator,
@@ -977,7 +992,10 @@ impl MenuBar {
     }
 
     /// 记下一次菜单项点击（渲染期由 item 的 `on_click` 写入，见 [`MenuBar::pending`]）。
-    fn push_run(&mut self, action: MenuAction, cx: &mut App) {
+    ///
+    /// `pub(crate)`：`Ctrl+O` 的全局 action 处理器（`workspace::install_open_project_action`）
+    /// 也走这里 —— 于是"按 `Ctrl+O`"与"点「文件 → 打开文件夹」"落到**同一个**待执行队列。
+    pub(crate) fn push_run(&mut self, action: MenuAction, cx: &mut App) {
         self.pending.push(action);
         // 点完就收起（真源 `closeMenu()`，`window-menu-bar.tsx:105-112`）。
         // ⚠️ 这里是 `reason=select`：**不是**上游面板 `dismiss` 的那条路径 —— 面板的
@@ -1138,6 +1156,15 @@ pub fn handle() -> gpui_kit::WeakEntity<MenuBar> {
     MENU_BAR.with(|slot| slot.borrow().clone()).expect(
         "菜单栏句柄没有登记：`ShellWorkspace::new` 必须在 `render` 之前调 `set_menu_bar`",
     )
+}
+
+/// 同 [`handle`]，但**不 panic**：句柄还没登记时给 `None`。
+///
+/// 给"可能在窗口之外被触发"的路径用（`Ctrl+O` 的全局 action 处理器 ——
+/// `App::on_action` 是应用级回调，窗口还没建出来时也会被派发；在那里 panic 会把一个
+/// 按键变成崩溃）。
+pub(crate) fn try_handle() -> Option<gpui_kit::WeakEntity<MenuBar>> {
+    MENU_BAR.with(|slot| slot.borrow().clone())
 }
 
 /// 取走待执行的菜单动作（`ShellWorkspace::render` 每帧开头调一次）。
@@ -1669,8 +1696,19 @@ mod tests {
             assert_eq!(action.command_id(), Some(id), "{action:?} 没有执行分支");
         }
 
-        // File 菜单里**逐条**都在（顺序也照真源：打开文件 → 保存 → ── → 关闭系 → ── →
-        // 重新打开）。
+        // 「打开文件夹」（B4）**没有** `CommandId`：它的执行分支在
+        // `ShellWorkspace::apply_menu_action`（与新建/关闭终端等 6 条同一处置），
+        // 所以它必须登记在 `NON_COMMAND` 里 —— 这条断言与
+        // `every_listed_action_is_executable` 互补。
+        assert_eq!(MenuAction::OpenFolder.label_key(), "lithe.menu.openFolder");
+        assert_eq!(
+            MenuAction::OpenFolder.command_id(),
+            None,
+            "「打开文件夹」不该有 CommandId（那会让命令面板的行序多一条）"
+        );
+
+        // File 菜单里**逐条**都在（顺序也照真源：打开文件夹 → 打开文件 → 保存 → ── →
+        // 关闭系 → ── → 重新打开）。
         let file = MENUS
             .iter()
             .find(|menu| menu.id == "file")
@@ -1686,6 +1724,7 @@ mod tests {
         assert_eq!(
             actions,
             vec![
+                MenuAction::OpenFolder,
                 MenuAction::OpenFile,
                 MenuAction::Save,
                 MenuAction::CloseTab,
@@ -1741,7 +1780,9 @@ mod tests {
         // 6 条不走 `CommandId` 的动作 —— 它们的执行分支在
         // `ShellWorkspace::run_menu_action` 里，逐条接线点写在那里。
         // 这是**清单**而不是白名单：新增一条就得在这里显式登记一次。
-        const NON_COMMAND: [MenuAction; 6] = [
+        // 第 7 条（`OpenFolder`）是 B4 加的「打开文件夹」。
+        const NON_COMMAND: [MenuAction; 7] = [
+            MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
             MenuAction::Preferences,

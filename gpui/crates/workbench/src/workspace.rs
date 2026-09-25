@@ -44,25 +44,61 @@
 //! `notifications-trigger.tsx:18-21`），所以右工具窗**收起时三项都不亮**，与左栏的
 //! 「顶部组照常亮」互不影响（两边本来就是两套状态）。判据见
 //! [`ShellWorkspace::is_right_activity_active`]。
+//!
+//! ## 「打开其他文件夹」（换项目）：**重建整个 `ShellWorkspace`**，不逐个 reset（B4）
+//!
+//! 入口有三个，都落到同一个执行点：
+//!
+//! | 入口 | 走哪条 |
+//! | --- | --- |
+//! | 文件菜单「打开文件夹」（+ `Ctrl+O`） | [`MenuAction::OpenFolder`] → [`ShellWorkspace::open_project_picker`] |
+//! | 标题栏项目下拉「打开…」 | 同一段（面板只负责路由到 `MenuAction` 那条执行分支） |
+//! | 项目下拉「最近项目」某一行 | [`ShellWorkspace::request_open_project`]（路径已知，跳过选择器） |
+//!
+//! 选中文件夹之后照真源的 `chooseProjectOpenDestination` 决定"在哪儿打开"
+//! （判据抽成纯函数 [`resolve_project_open_destination`]，可单测）：需要询问时弹
+//! [`ShellWorkspace::open_project_where_dialog`]，选「此窗口」则
+//! [`ShellWorkspace::rebuild_project_window`] —— `window.replace_root` + 新的 `Root`。
+//!
+//! ⚠️ **为什么不能逐个 reset**（两条硬证据，不是取舍）：
+//!
+//! 1. `EditorPane::prepare_java` 是**幂等早退**（`if self.java.is_some() { return; }`，
+//!    `editor/src/editor_view.rs:436-438`）—— 同一个编辑区**永远换不了 JDTLS 工作区**；
+//! 2. 根在**构造期**被烘进 6 个实体 + 1 个跨 crate 钩子（`Explorer` / `ChangesView` /
+//!    `BottomPane` / `BranchPanel` / `EditorPane` 的 `workspace_root` / `GIT_IDENTITY_HOST`），
+//!    它们**都没有** `set_root` 之类的重指入口。
+//!
+//! 换根的连带释放（JDTLS 会话、终端进程）**不需要**显式 `shutdown`：旧 `Root` 在外层
+//! `App::update` 收尾的 `flush_effects` 里级联 drop（侦察 `gpui/research/menu-open-prereqs.md`
+//! §2），`EditorPane::drop` / `TerminalPane::drop` 各自收尾。⚠️ 但 `java::Session` 的 `Drop`
+//! **只停事件泵、不关 JVM** —— 所以换根后"无残留进程"必须**实测**（B4 验收线），
+//! 不能只看代码路径。
 
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::{ActiveTheme as _, Root};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::checkbox::Checkbox;
+use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, PathPromptOptions, Pixels, Render, SharedString, Styled as _,
-    Window, div, px, rems,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
+    Pixels, Render, SharedString, Styled as _, Window, div, px, rems,
 };
 
 use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::{BottomPane, ChangesView};
-use lithe_gpui_settings::{Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope};
+use lithe_gpui_settings::{
+    Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, RecentProjects,
+};
 use lithe_gpui_shared::icons::idea;
-use lithe_gpui_shared::tr;
+use lithe_gpui_shared::{tr, tr_args};
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 use crate::branch_panel::{BranchPanel, open_branch_panel, trigger as branch_trigger};
@@ -84,6 +120,157 @@ use crate::right_tool_window::{
 };
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
+
+// ---------------------------------------------------------------------------
+// 启动期形态（`App::Global`）+ 换项目决策（纯函数）
+// ---------------------------------------------------------------------------
+
+/// 启动参数里"决定外壳形态"的那几项。
+///
+/// ## 为什么必须是 `Global`（B4 的硬需求）
+///
+/// 换项目要**重建整个 `ShellWorkspace`**（见模块头的"不能逐个 reset"），而重建发生在
+/// `window.replace_root` 的闭包里 —— 那里离 `main.rs` 的启动参数（`compact_menu_bar`）
+/// 有十几层调用，**捕获不到局部变量**。
+///
+/// 本仓库唯一的同类先例是设置句柄 `SettingsHandle`
+/// （`settings/src/store.rs:105,171` 的 `impl Global` / `set_global`），这里照它写。
+/// ⚠️ 这是**应用级**值（一次启动一份，与"哪个窗口"无关），所以放 `Global` 是对的
+/// —— 与 `crate::command_palette::SHELL` 那种"窗口级句柄"不是一类东西（B5 才需要拆那些）。
+pub struct ShellStartup {
+    /// 菜单栏走"左上角图标 + 浮动胶囊"形态（`--compact-menu-bar`）。
+    compact_menu: bool,
+    /// `--right-view <id>`：本次会话把右工具窗开在这个视图上（**验证/诊断用**）。
+    ///
+    /// ⚠️ 与 `compact_menu` 一起放 `Global` 有一个额外好处：**换根重建的外壳也会应用它**。
+    /// 这正是"换根后右栏 Maven / Spring 面板指向新根"这条验收线需要的 —— 面板不打开就不会
+    /// 触发懒扫（`ShellWorkspace::schedule_right_view_scan`），也就没有 `S1_RIGHT_SCAN root=`
+    /// 那行证据。
+    right_view: Option<RightToolWindowView>,
+    /// `--left-view <id>`：本次会话把左栏切到这个视图（**验证/诊断用**，理由同上：
+    /// 「更改」不激活就不会重读 `git.status`，拿不到 `S1_SOURCE_CONTROL root=`）。
+    left_view: Option<usize>,
+}
+
+impl Global for ShellStartup {}
+
+/// 登记启动期形态（`main.rs` 在建窗口之前调一次）。
+///
+/// 不登记时 [`ShellWorkspace::new`] 的调用方仍然显式传 `compact_menu`，重建走
+/// [`startup_compact_menu`] 的默认值 `false`（常驻形态，本侧默认）——
+/// 也就是"没登记 = 用默认形态"，而不是 panic。
+pub fn set_shell_startup(
+    cx: &mut App,
+    compact_menu: bool,
+    right_view: Option<RightToolWindowView>,
+    left_view: Option<usize>,
+) {
+    println!(
+        "S1_WORKSPACE startup compact_menu={compact_menu} right_view={:?} left_view={left_view:?}",
+        right_view.map(|view| view.id())
+    );
+    cx.set_global(ShellStartup {
+        compact_menu,
+        right_view,
+        left_view,
+    });
+}
+
+/// 启动期形态里的菜单栏模式（重建路径读它）。
+fn startup_compact_menu(cx: &App) -> bool {
+    cx.try_global::<ShellStartup>()
+        .map(|startup| startup.compact_menu)
+        .unwrap_or(false)
+}
+
+/// 启动期请求的右 / 左栏视图（重建路径也要应用，理由见 [`ShellStartup`] 的字段文档）。
+fn startup_views(cx: &App) -> (Option<RightToolWindowView>, Option<usize>) {
+    cx.try_global::<ShellStartup>()
+        .map(|startup| (startup.right_view, startup.left_view))
+        .unwrap_or((None, None))
+}
+
+/// 「这次项目在哪儿打开」。真源 `ProjectOpenDestination`
+/// （`windows/tauri/src/features/file-system/controllers/project-open-destination.ts:6`）。
+///
+/// `pub` 是给 `--open-project-probe --open-project-destination <取值>` 用的
+/// （**验证/诊断用**；产品路径的取值由对话框的按钮决定，不走这个类型）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpenDestination {
+    /// 「新窗口」（真源 `new-window`）。
+    NewWindow,
+    /// 「此窗口」（真源 `this-window`）。
+    ThisWindow,
+}
+
+/// 「这次是怎么决定的」：目的地 + 要不要在打开成功之后记住这个选择。
+///
+/// `remember = true` 只可能来自对话框里勾了「不再询问」（真源 `rememberAfterOpen`）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ProjectOpenDecision {
+    pub(crate) destination: OpenDestination,
+    /// 打开成功之后把「不再询问」与本次目的地一起写进设置。
+    pub(crate) remember: bool,
+}
+
+/// 换项目的**决策**：逐条照真源 `chooseProjectOpenDestination`
+/// （`project-open-destination.ts:78-110`）。
+///
+/// 返回 `None` = **需要弹对话框**（真源的第 ④ 段）。四段判据与真源的对应关系：
+///
+/// | 真源 | 这里 |
+/// | --- | --- |
+/// | ① `explicitDestination` 直接用 | `explicit` 参数（`--open-project-destination` / 菜单里点名的那一支） |
+/// | ② `!hasOpenWorkspace` → `this-window`，不询问 | **不适用**：本侧 `ShellWorkspace` 恒有一个工作区根（启动参数给的），不会有"没有工作区"这一态 |
+/// | ③ `!askWhereToOpenProjects` → 按 `openFoldersInNewWindow` 直接定 | `ask == false` 那一支 |
+/// | ④ 否则弹对话框 | `None` |
+///
+/// 做成**纯函数**是为了能单测（本 crate 拿不到 `TestAppContext`，理由见 `menu_bar.rs`）。
+pub(crate) fn resolve_project_open_destination(
+    ask: bool,
+    open_in_new_window: bool,
+    explicit: Option<OpenDestination>,
+) -> Option<ProjectOpenDecision> {
+    if let Some(destination) = explicit {
+        return Some(ProjectOpenDecision {
+            destination,
+            // 真源：显式指定目的地时**不**改偏好（那是"这一次"的意思，不是"以后都这样"）。
+            remember: false,
+        });
+    }
+    if !ask {
+        return Some(ProjectOpenDecision {
+            destination: if open_in_new_window {
+                OpenDestination::NewWindow
+            } else {
+                OpenDestination::ThisWindow
+            },
+            remember: false,
+        });
+    }
+    None
+}
+
+/// 状态栏左侧临时消息的存活时间（毫秒）。
+///
+/// "几秒后自动消失"（规格 Q2）。4 秒：够读到一句话，又不至于一直占着状态栏。
+const STATUS_NOTICE_MS: u64 = 4_000;
+
+/// `--left-view` 的取值 → 左栏下标（**验证/诊断用**的解析，不是产品能力）。
+///
+/// 只认**顶部组**那三个视图（项目 / 更改 / 搜索，`sidebar-pane-selector.tsx:311-319`）：
+/// 底部组那四项（运行 / 终端 / 诊断 / 提交记录）切的是**底部工具窗**，不是"左栏显示谁"，
+/// 把它们混进来会让 `--left-view terminal` 看起来像"左栏没有变化"。
+/// 未知取值返回 `None`（调用方报一行错，不静默落到某一项）。
+pub fn left_activity_index(selector: &str) -> Option<usize> {
+    match selector {
+        "files" | "project" => Some(DEFAULT_TOP_ACTIVITY),
+        "changes" => Some(CHANGES_ACTIVITY_IX),
+        "search" => Some(SEARCH_ACTIVITY_IX),
+        _ => None,
+    }
+}
+
 
 /// 设置侧给宿主的那条"结果投递"回调的类型别名。
 ///
@@ -205,6 +392,12 @@ const TOP_ACTIVITY_ITEMS: std::ops::RangeInclusive<usize> = 0..=2;
 /// （0 起第 1）。左栏内容按这个下标在「项目树」与「更改列表」之间切换 —— 这是本侧左栏
 /// 第一次出现**两个内容视图**（在此之前左栏恒为项目树）。
 const CHANGES_ACTIVITY_IX: usize = 1;
+
+/// 左侧活动栏「搜索」项的下标 = 2（顶部组第 3 项，`item-order.ts:3` 的 `files, git, search`）。
+///
+/// 只给 `--left-view search` 用：本侧搜索视图还没有内容（点它只切选中态），
+/// 所以 `--left-view search` 是"证明探针能切到顶部组任意一项"的对照，不是产品功能。
+const SEARCH_ACTIVITY_IX: usize = 2;
 
 /// 默认选中的顶部组视图：第 0 项「项目」。
 ///
@@ -659,6 +852,48 @@ pub struct ShellWorkspace {
     /// `open_dialog`，而 `Root` 还没建好时窗口根不是 `Root`（`main.rs` 的启动顺序表）。
     /// 消费点是 [`ShellWorkspace::render`] 的第一帧。
     branch_panel_probe: bool,
+    /// 「最近项目」的内存真源（B4）。落盘是它的投影。
+    ///
+    /// 构造期从 `%APPDATA%\Lithe\recent-projects.json`（或 `LITHE_GPUI_SETTINGS_FILE`
+    /// 指到的同目录）读一次，之后只在"打开项目成功"与"路径失效"两处改它并落盘。
+    /// 换项目会**重建整个外壳**，新外壳的构造期会重新读一遍 —— 所以上一条记录一定在新
+    /// 外壳的列表里（写入发生在换根之后，见 [`ShellWorkspace::rebuild_project_window`]）。
+    recent_projects: RecentProjects,
+    /// 最近项目文件的路径（`None` = 推导不出，只影响落盘）。
+    recent_projects_path: Option<PathBuf>,
+    /// 换项目对话框里「不再询问」的**当前勾选态**。
+    ///
+    /// ## 为什么是 `Rc<Cell<bool>>`（实测踩过 panic）
+    ///
+    /// 勾选态必须**跨帧**存在（`window.open_dialog` 的 builder 每帧都会被重跑，
+    /// `gpui-component-0.6.6/src/root.rs:256-262`），所以不能是闭包里的局部变量。
+    /// 但它也**不能**像一开始那样"builder 每帧 `shell.read(..)` 去读实体字段"：
+    /// dialog 层是**外壳自己画的**（本文件 `render` 第一行的 `Root::render_dialog_layer`），
+    /// 于是 builder 运行时外壳正在被更新，再去 `read` 它会 panic：
+    ///
+    /// ```text
+    /// cannot read lithe_gpui_workbench::workspace::ShellWorkspace while it is already being updated
+    /// ```
+    ///
+    /// 所以真源是**一个共享的 cell**：外壳持有它（唯一真源），builder 捕获一份克隆后**直接读值**
+    /// （不碰实体），勾选回调写 cell **并**让外壳重绘 —— 重绘才会重跑 builder，新值于是画出来。
+    /// 同一形状的先例是本文件项目下拉的 `trigger_bounds`（`Rc<Cell<..>>`，理由也一样：
+    /// "在 `'static` 回调里写、在 `render` 里读"）。
+    ///
+    /// 它是**这一次的待写入值**，不是设置本身：真源要求"先打开成功、后写偏好"
+    /// （`project-open-destination.ts:112-131`），所以勾上之后不立刻落盘，
+    /// 由 [`ShellWorkspace::rebuild_project_window`] 在换根成功之后写。
+    project_open_do_not_ask: Rc<Cell<bool>>,
+    /// 状态栏左侧的**临时消息**（规格 Q2/Q6：未接线的能力在这里给一句"尚未接入：缺 X"）。
+    ///
+    /// 为什么放在外壳而不是 `crate::status_bar`：状态栏是**无状态渲染函数**
+    /// （`status_bar` 的模块文档），条目由 [`ShellWorkspace::footer_left`] 每帧现算 ——
+    /// 所以"临时消息"自然就是外壳的一个字段 + 一条 [`STATUS_NOTICE_MS`] 后清掉它的任务。
+    status_notice: Option<SharedString>,
+    /// 临时消息的代数：定时器醒来时只有"自己那一代还是最新的"才清空。
+    ///
+    /// 没有它就会出现"后一条提示被前一条的定时器提前清掉"（4 秒内连开两次项目时可见）。
+    status_notice_generation: u64,
 }
 
 impl ShellWorkspace {
@@ -996,7 +1231,20 @@ impl ShellWorkspace {
         // 标题栏的项目下拉（`crate::project_menu`）。与菜单栏同一套：
         // 先建实体（构造期打一行 `S1_PROJECT_MENU opened=false` 的启动证据），
         // 再登记句柄给 `--project-menu-probe` 用，最后订阅它让自己重绘。
-        let project_menu = ProjectMenu::new(project_name.as_ref(), focus.clone(), cx);
+        //
+        // ⚠️ 最近项目在这里**读一次**（B4）：面板每次打开时用的是内存里的那一份，
+        // 顺序就是数据层的顺序（`pinned` 优先 + `lastOpenedAt` 降序）。读取的容错口径
+        // （文件不在 / 坏 JSON / 坏条目）都在 `recent_projects` 模块里，这里只打印它的诊断。
+        let loaded_recent = lithe_gpui_settings::load_recent_projects();
+        loaded_recent.report();
+        let recent_projects = loaded_recent.projects.clone();
+        let recent_projects_path = loaded_recent.path.clone();
+        let project_menu = ProjectMenu::new(
+            project_name.as_ref(),
+            recent_projects.len(),
+            focus.clone(),
+            cx,
+        );
         set_project_menu(project_menu.downgrade());
         let project_menu_subscription = Some(cx.observe(&project_menu, |_, _, cx| cx.notify()));
 
@@ -1006,7 +1254,7 @@ impl ShellWorkspace {
         let branch_panel = BranchPanel::new(root.clone(), window, cx);
         let branch_panel_subscription = Some(cx.observe(&branch_panel, |_, _, cx| cx.notify()));
 
-        let workspace = Self {
+        let mut workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             root: root.clone(),
             // 单项目时 Windows 会隐藏整条标签条（`project-tab-bar-model.ts:12-13`）；
@@ -1043,14 +1291,56 @@ impl ShellWorkspace {
             branch_panel,
             _branch_panel_subscription: branch_panel_subscription,
             branch_panel_probe,
+            recent_projects,
+            recent_projects_path,
+            // 对话框每次打开都从"没勾"开始：勾选态只活在**这一次**对话框里，
+            // 落盘的是"以后不再问"这件事本身（写进设置）。
+            project_open_do_not_ask: Rc::new(Cell::new(false)),
+            status_notice: None,
+            status_notice_generation: 0,
         };
+        // 一行锚点诊断：整个外壳（项目树 / 编辑区 / JDTLS / 右栏 / Git 面板）都挂在**这一个**
+        // 根上。换项目会重建整个外壳，所以换根前后各有且只有一行 `S1_WORKSPACE root=…`
+        // —— 它是"换根真的发生了"的第一条证据，后面那些 `S1_EXPLORER` / `S1_JAVA_START`
+        // / `S1_BRANCH_PANEL` 都应当指向同一个根。
+        println!("S1_WORKSPACE root={}", root.display());
         // 启动期也留一行状态证据：右工具窗**默认隐藏**这件事要能被机器验证，
         // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。构造期不是指针输入，所以不带坐标。
         diagnose_right_panel(workspace.right_view, workspace.right_visible, None);
+        // `--right-view` / `--left-view`：**每个外壳都应用一次**（含换根重建出来的那个）。
+        //
+        // 为什么放在构造期而不是 `main.rs` 的"首帧之后"：换根会重建整个外壳，而
+        // `main.rs` 那段 `on_next_frame` 是一次性的、捕获的是**第一个**外壳 —— 不做这一步，
+        // "换根后右栏 Maven / Spring 面板与 Git 变更视图都指向新根"就取不到证据
+        // （视图不打开就不会去扫 / 去读）。构造期不是 render，改状态是安全的。
+        let (startup_right_view, startup_left_view) = startup_views(cx);
+        if let Some(view) = startup_right_view {
+            workspace.right_view = view;
+            workspace.right_visible = true;
+            workspace.schedule_right_view_scan(view, true, cx);
+            diagnose_right_panel(view, true, None);
+        }
+        if let Some(index) = startup_left_view {
+            workspace.top_activity_view = Some(index);
+            if index == CHANGES_ACTIVITY_IX {
+                let changes = workspace.changes.clone();
+                let _ = changes.update(cx, |view, cx| view.activate(cx));
+            }
+            println!("S1_LEFT_VIEW index={index}");
+        }
         // 命令面板的动作要改本视图的状态，而浮层的 builder / 回调都是 `'static`，
         // 够不着 `self`：所以在这里登记一个弱引用句柄（理由见 `crate::command_palette`
         // 的 `SHELL`）。登记在 `Self` 建好之后，句柄一定是可升级的。
-        set_shell(cx.entity().downgrade());
+        // 先取外壳句柄（`cx.entity()` 只要 `&App`），再分别登记给命令面板与项目下拉。
+        let shell_handle = cx.entity().downgrade();
+        set_shell(shell_handle.clone());
+        // 项目下拉里**可点的那些行**（「打开…」与最近项目）要回来落到本外壳上：面板实体
+        // 自己没有外壳句柄，所以在 `Self` 建好之后补登记一次（理由见
+        // `crate::project_menu::ProjectMenu` 的 `shell` 字段文档）。
+        workspace
+            .project_menu
+            .clone()
+            .update(cx, |menu, _cx| menu.set_shell(shell_handle));
         // 兜底焦点锚点的句柄（理由见 `crate::command_palette` 的 `SHELL_FOCUS`）。
         set_shell_focus(workspace.focus.clone());
         // 根元素**主动要一次焦点**：无人值守启动（验证脚本）时 gpui 不会自己给任何一个
@@ -1167,6 +1457,13 @@ impl ShellWorkspace {
             return;
         }
         match action {
+            MenuAction::OpenFolder => {
+                // 接线点：gpui 自带的 `App::prompt_for_paths`（directories: true），
+                // 与标题栏项目下拉的「打开…」走**同一个**函数 —— Q12 说这两条同义。
+                // 整段是异步的（oneshot 回来再弹对话框 / 换根），所以这里不会挡住本帧。
+                diagnose_menu_run(action, "prompt");
+                self.open_project_picker(window, cx);
+            }
             MenuAction::NewTerminalTab => {
                 // 接线点：`TerminalPane::new_tab`（`terminal/src/session.rs:345`），
                 // 真机入口是 `terminal.new`（`cmd+t`，`command-registry.ts:258-267`）与页签条
@@ -1519,6 +1816,17 @@ impl ShellWorkspace {
     ///   ⚠️ 分支名本身与工作区根目录无关的这一层没变：切分支后要等下一次
     ///   `cx.notify()` 才会更新（真机是 git 状态推送）。这是既有取舍，不是本轮引入的。
     fn footer_left(&self, cx: &App) -> Vec<StatusEntry> {
+        // **临时消息在的时候它占满左组**（Q2/Q6：未接线的能力在这儿给一句"尚未接入：缺 X"）。
+        //
+        // ⚠️ 为什么不是"插在最前面、其余照排"：实测（`.artifacts/p22/p22-new-window-notice.png`
+        // 的第一版）那样会把项目名与分支**压在提示底下**——状态栏的条目自己不做文字截断
+        // （截断能力在 `status_bar.rs`，而本轮写域不含它），一条 40 字的提示会盖住后面两项。
+        // 提示 4 秒后自己消失，左组照常恢复成"项目名 + 分支"，所以这个取舍在界面上是
+        // "暂时换一句话"而不是"少了两项"。
+        if let Some(notice) = &self.status_notice {
+            return vec![StatusEntry::new(notice.clone())];
+        }
+
         let project_name: SharedString = self
             .projects
             .first()
@@ -1676,6 +1984,14 @@ impl ShellWorkspace {
         // 工作区根在外面拷一份带走：任务全程在主线程（`dispatch_on_main_thread`），
         // 拿快照与"任务里再 `update` 一次去读"等价，但少一次 `update` 与一个失败分支。
         let root = self.root.clone();
+        // 扫的**是哪个根**要能 grep：`maven.rs` / `spring.rs` 自己的诊断只说结论
+        // （artifactId / endpoints），而换项目之后"右栏两个面板指向新根"这条验收线
+        // 需要的正是这一行（B4）。放在这里而不是那两个模块里：这一层才知道根。
+        eprintln!(
+            "S1_RIGHT_SCAN view={} root={}",
+            view.id(),
+            root.display()
+        );
         // 故意只捕获**弱引用**（`cx.spawn` 给的 `this`）：窗口/工作区在任务跑完前被销毁时，
         // `this.update(..)` 直接返回 `Err` 被忽略 —— "面板已关闭"这一支的竞态兜底。
         cx.spawn(async move |this, cx| {
@@ -1728,10 +2044,552 @@ impl ShellWorkspace {
         diagnose_right_panel(view, true, None);
         cx.notify();
     }
+
+    // -----------------------------------------------------------------------
+    // 「打开其他文件夹」＋「最近项目」（B4）
+    // -----------------------------------------------------------------------
+
+    /// 打开"选一个文件夹"的系统选择器（文件菜单「打开文件夹」/ 项目下拉「打开…」/ `Ctrl+O`）。
+    ///
+    /// 用的是 gpui **自带的** `App::prompt_for_paths`
+    /// （`gpui-pre-0.3.6/src/app.rs:1687-1692`；Windows 侧是真 `IFileOpenDialog` +
+    /// `FOS_PICKFOLDERS`）—— **零新增依赖**。`project_menu.rs` 早年写"gpui 侧没有任何文件
+    /// 对话框依赖"时只查了三个第三方 crate，漏掉了这一条（B1 的「打开文件」已经订正过一次）。
+    ///
+    /// ⚠️ 返回的是 **oneshot `Receiver`，不是回调**（取消 = `Ok(None)`），所以整段起一个
+    /// 前台任务：`spawn_in` 给的 `AsyncWindowContext` 能在 `await` 之后拿回 `&mut Window`
+    /// —— 弹对话框 / 换根都要它。选择器的**实现**在专用线程上（Windows 侧
+    /// `gpui-pre-windows-0.3.6/src/dialog.rs` 的 `show_dialog`），本线程只拿一个 `Receiver`
+    /// 就返回，所以从 `render` 里调它不会挡住这一帧（与 B1 的「打开文件」同一条实测）。
+    pub(crate) fn open_project_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // 已经开着浮层（设置 / 命令面板 / 换项目对话框）时不叠第二层：与
+        // `open_settings_dialog` / `open_command_palette` 同一条口径。`Ctrl+O` 的全局
+        // 处理器可能被登记多次（每次重建外壳都会登记一次，见 `install_open_project_action`），
+        // 这道闸门同时挡住"同一次按键被两个处理器各开一个选择器"。
+        if window.has_active_dialog(cx) {
+            eprintln!("S1_OPEN_PROJECT state=skipped reason=active_dialog");
+            return;
+        }
+        eprintln!("S1_OPEN_PROJECT state=prompt");
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            // 选**文件夹**：`directories: true` + `files: false`。Windows 的
+            // `can_select_mixed_files_and_dirs()` 返回 false（`FOS_PICKFOLDERS` 在"只文件"
+            // 与"只文件夹"之间切换），所以两者必须二选一。
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: None,
+        });
+        let shell = cx.entity().downgrade();
+        let task = cx.spawn_in(window, async move |_this, async_cx| {
+            // ⚠️ **两层 `Result`**：外层是 oneshot 通道（送信端被丢），内层是平台侧错误
+            // （Linux 打不开选择器时会给）。两者都不是"用户取消"，各自打一行区分开。
+            let result = match picked.await {
+                Ok(Ok(result)) => result,
+                Ok(Err(error)) => {
+                    eprintln!("S1_OPEN_PROJECT state=failed error={error}");
+                    return;
+                }
+                Err(_) => {
+                    eprintln!("S1_OPEN_PROJECT state=cancelled reason=channel-closed");
+                    return;
+                }
+            };
+            let Some(paths) = result else {
+                eprintln!("S1_OPEN_PROJECT state=cancelled");
+                return;
+            };
+            let Some(target) = paths.into_iter().next() else {
+                eprintln!("S1_OPEN_PROJECT state=empty");
+                return;
+            };
+            eprintln!("S1_OPEN_PROJECT state=picked path={}", target.display());
+            let _ = async_cx.update(move |window, cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    shell.request_open_project(target, None, window, cx)
+                });
+            });
+        });
+        // `detach()` 而不是 `let _ =`：gpui 的 `Task` 一 drop 就**取消**
+        // （与 `GitIdentityHost` 那两段同一条实测教训），丢掉它等于"选择器刚打开就被取消"。
+        task.detach();
+    }
+
+    /// 请求打开 `target` 这个项目：**先探测路径，再决定在哪儿打开**。
+    ///
+    /// 三个入口共用它：选择器选完（[`Self::open_project_picker`]）、项目下拉里的最近项目行、
+    /// 诊断入口 [`Self::open_project_probe`]。`explicit` = 真源的 `explicitDestination`
+    /// （只有诊断/探针会传，产品路径传 `None`）。
+    pub(crate) fn request_open_project(
+        &mut self,
+        target: PathBuf,
+        explicit: Option<OpenDestination>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let path_text = target.to_string_lossy().to_string();
+
+        // 第一步：路径探测（照真源 `openRecentFolder` 的 `getSymlinkInfo` 那一步，
+        // `stores/recent-folders.store.ts:106-120`）。不是目录就不换根 ——
+        // 换根会把当前工作区整个丢掉，为一个点不开的路径付这个代价是不对的。
+        // 最近项目列表里命中这条时**标 missing + 落盘**（真源 `updateRecentFolder(.., {missing:true})`），
+        // 于是列表下次打开就能看出这条失效了。
+        if !target.is_dir() {
+            let marked = self.recent_projects.set_missing(&path_text, true);
+            if marked {
+                self.save_recent_projects();
+            }
+            eprintln!(
+                "S1_OPEN_PROJECT state=missing path={path_text} marked={marked}"
+            );
+            // 两句真源既有文案（`fileSystem.recentProjectNotFolder` /
+            // `fileSystem.recentProjectUnavailable`，`locale.ts:650-653`）：路径**在**但不是
+            // 文件夹 vs 路径**不在**（或读不了）—— 真源也是这么分的（`stores/recent-folders.store.ts:106-120`）。
+            let key = if target.exists() {
+                "lithe.fileSystem.recentProjectNotFolder"
+            } else {
+                "lithe.fileSystem.recentProjectUnavailable"
+            };
+            self.show_status_notice(tr_args(key, &[("path", &path_text)]), cx);
+            return;
+        }
+
+        let (ask, open_in_new_window) = self.project_open_preference(cx);
+        match resolve_project_open_destination(ask, open_in_new_window, explicit) {
+            // 需要询问：弹换项目对话框（勾选态归本实体，见 [`Self::project_open_do_not_ask`]）。
+            None => self.open_project_where_dialog(target, window, cx),
+            Some(decision) => self.execute_project_open(target, decision, window, cx),
+        }
+    }
+
+    /// 读「打开其他项目」的两个判据（设置文件里的值；没有设置状态时按真源默认 `true`）。
+    ///
+    /// 默认值必须是**真源默认**而不是"最省事的那个"：没有设置状态（测试 / 别的宿主）时
+    /// 装作"用户已经选了不再询问"会让对话框永远不出现，那是把默认值当成了用户选择。
+    fn project_open_preference(&self, cx: &App) -> (bool, bool) {
+        lithe_gpui_settings::try_store(cx)
+            .map(|store| {
+                let settings = store.read(cx).settings();
+                (
+                    settings.ask_where_to_open_projects,
+                    settings.open_folders_in_new_window,
+                )
+            })
+            .unwrap_or((true, true))
+    }
+
+    /// 执行一个已经定下来的决定（真源 `executeProjectOpenDecision` 的前半段）。
+    ///
+    /// ⚠️ **`remember` 的写入顺序照真源**：先打开、成功之后才写偏好
+    /// （`project-open-destination.ts:117-128`）—— 见 [`Self::rebuild_project_window`]。
+    fn execute_project_open(
+        &mut self,
+        target: PathBuf,
+        decision: ProjectOpenDecision,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match decision.destination {
+            // 「新窗口」：**多窗口整批暂缓**（维护者决定，规格 §5）。这里不假装能开：
+            // 给一句"尚未接入：缺 X"的状态栏消息 + 一行可 grep 的诊断，也**不**记最近项目
+            // （什么都没打开，记了就是假记录）。
+            OpenDestination::NewWindow => self.report_new_window_not_wired(cx),
+            OpenDestination::ThisWindow => {
+                self.rebuild_project_window(target, decision.remember, window, cx)
+            }
+        }
+    }
+
+    /// 「新窗口」那颗按钮（以及"记住的偏好就是新窗口"那条决策）的落点。
+    ///
+    /// 真源这里真的会开第二个窗口（`createAppWindow`），而 gpui 侧维护者已拍板
+    /// **多窗口暂缓**：菜单栏 / 项目下拉 / 命令面板 / Git 身份宿主那几个 `thread_local`
+    /// 句柄还是"一个进程一份"，第二个 `ShellWorkspace` 会把第一个的句柄覆盖掉（串台）。
+    /// 所以本侧只能给 Q2 口径的那句提示 —— 文案见 `GPUI_ONLY_KEYS`。
+    fn report_new_window_not_wired(&mut self, cx: &mut Context<Self>) {
+        eprintln!(
+            "S1_OPEN_PROJECT destination=new-window state=not_wired missing=window_handle_routing"
+        );
+        self.show_status_notice(tr("lithe.gpui.newWindowNotWired"), cx);
+    }
+
+    /// 「此窗口」：**重建整个外壳**（见模块头的"为什么不能逐个 reset"）。
+    ///
+    /// 顺序（每一步都有理由，不能调换）：
+    ///
+    /// 1. `replace_root`：新根上的 `ShellWorkspace` + 新的 `Root`（**窗口根必须是 `Root`**，
+    ///    它是对话框 / 浮层 / 通知的宿主，`main.rs:709` 同一句）。旧 `Root` 及其整棵视图树
+    ///    （含旧 JDTLS 会话与终端进程）在外层 `App::update` 的 `flush_effects` 里级联 drop。
+    /// 2. **打开成功之后**才：① 把这次打开记进最近项目（含落盘）；② 勾了「不再询问」时
+    ///    写两个偏好键（真源 `:117-128` 的顺序）。
+    ///
+    /// ⚠️ **调用方必须先 `window.close_dialog`**：换项目对话框挂在旧 `Root` 的
+    /// `active_dialogs` 上，而 dialog 层由旧外壳画 —— 不先关掉就会出现"点了按钮对话框
+    /// 凭空消失"（浮层挂在被换掉的那棵树上）。
+    ///
+    /// "打开成功"的判据：`replace_root` 没有 `Result`（`gpui-pre-0.3.6/src/window.rs:2242-2254`），
+    /// 它会同步建出新外壳并装成窗口根 —— 所以**能走到下一步就是成功**。真源的 `open()` 返回
+    /// 一个 bool 是因为它可能被 `createAppWindow` 拒绝（新窗口那条路），本侧这条路没有失败态。
+    fn rebuild_project_window(
+        &mut self,
+        target: PathBuf,
+        remember: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // 菜单栏形态在重建时要取回来：它是应用级启动参数（`ShellStartup`），
+        // 不能捕获 `main.rs` 的局部变量（理由见该 Global 的文档）。
+        let compact_menu = startup_compact_menu(cx);
+        eprintln!(
+            "S1_OPEN_PROJECT destination=this-window path={} state=rebuilding",
+            target.display()
+        );
+        let old_root = self.root.display().to_string();
+        // 闭包是 `FnOnce`，用这个槽把新建出来的外壳句柄带出来（重建之后它才是所有者）。
+        let mut created: Option<Entity<ShellWorkspace>> = None;
+        let new_root = window.replace_root(cx, |window, cx| {
+            let workspace = cx.new(|cx| {
+                ShellWorkspace::new(target.clone(), compact_menu, false, window, cx)
+            });
+            created = Some(workspace.clone());
+            Root::new(workspace, window, cx)
+        });
+        // `replace_root` 已经把新 `Root` 装成窗口根；这里只留一行回执，
+        // 免得读者以为返回值没用上。
+        let _ = new_root;
+
+        let Some(workspace) = created else {
+            // 只可能发生在 `replace_root` 的实现被换掉时；如实登记，不静默。
+            eprintln!("S1_OPEN_PROJECT state=rebuild_failed reason=no_view");
+            return;
+        };
+
+        // ① 最近项目：换根之后写（真源 `addToRecents` 也在打开成功之后），
+        //    于是新外壳的列表里立刻有这一条，不需要再读一次文件。
+        let _ = workspace.update(cx, |shell, cx| {
+            shell.record_opened_project(&target, Some(false), cx)
+        });
+
+        // ② 「不再询问」：两个键一起写（真源写两次 `updateSetting`，本侧合成一次 commit）。
+        if remember {
+            match lithe_gpui_settings::try_store(cx) {
+                Some(store) => {
+                    store.update(cx, |store, cx| {
+                        store.remember_project_open_destination(false, cx)
+                    });
+                    println!(
+                        "S1_OPEN_PROJECT remember=true openFoldersInNewWindow=false askWhereToOpenProjects=false"
+                    );
+                }
+                None => eprintln!(
+                    "S1_OPEN_PROJECT remember=skipped reason=no_settings_store"
+                ),
+            }
+        }
+        println!(
+            "S1_OPEN_PROJECT state=opened path={} from={old_root}",
+            target.display()
+        );
+    }
+
+    /// 换项目对话框（真源 `projectOpen.*` 六键，**零新增真源文案**）。
+    ///
+    /// 形态照真源 `showChoiceDialogWithCheckbox`：标题 + 一行说明 + `□ 不再询问` +
+    /// `取消 / 新窗口 / 此窗口`。
+    ///
+    /// ⚠️ 两处上游限制决定了拼法（侦察 `gpui/research/menu-open-prereqs.md` §1）：
+    ///
+    /// 1. **`Dialog` 只有 ok / cancel 两个按钮槽**（`DialogButtonProps`），三按钮必须走
+    ///    `.footer(..)` —— 上游写死"设了 footer 就忽略 `button_props`"，
+    ///    这正是 `editor_view.rs` 的未保存确认框的写法；
+    /// 2. **没有内置 checkbox 槽**：`Checkbox` 组件存在，但"对话框里的 checkbox"要自己
+    ///    当 child 塞进正文区。
+    ///
+    /// 勾选态存本实体的一个共享 cell（理由见 [`Self::project_open_do_not_ask`] 的字段文档：
+    /// builder 每帧重跑，而它**不能**在外壳正在被更新的渲染期反过来读外壳实体）。
+    fn open_project_where_dialog(
+        &mut self,
+        target: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let shell = cx.entity().downgrade();
+        let do_not_ask = self.project_open_do_not_ask.clone();
+        let name = lithe_gpui_settings::recent_project_name(&target.to_string_lossy());
+        let body = tr_args("lithe.projectOpen.where", &[("project", &name)]);
+        eprintln!(
+            "S1_OPEN_PROJECT state=dialog path={} project={name}",
+            target.display()
+        );
+
+        window.open_dialog(cx, move |dialog, _window, cx| {
+            // ⚠️ 每个捕获值都在闭包体内 `clone`：`open_dialog` 收的是 `Fn`（可被多次调用），
+            // 内层 `move` 闭包不能把外层捕获的变量整个搬走（E0507）。
+            let checkbox_cell = do_not_ask.clone();
+            let checkbox_shell = shell.clone();
+            let click_cell = do_not_ask.clone();
+            let cancel_label = tr("lithe.projectOpen.cancel");
+            let new_window_label = tr("lithe.projectOpen.newWindow");
+            let this_window_label = tr("lithe.projectOpen.thisWindow");
+            let new_window_shell = shell.clone();
+            let this_window_shell = shell.clone();
+            let this_window_target = target.clone();
+
+            dialog
+                // 标题 = 决策，正文 = 说明（含项目名），按钮 = 结果词：与设计指南
+                // `design-guides.md:427-434` 的确认对话框口径一致。
+                .title(tr("lithe.projectOpen.title"))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(body.clone()),
+                )
+                .child(
+                    Checkbox::new("lithe-project-open-do-not-ask")
+                        .label(tr("lithe.projectOpen.doNotAskAgain"))
+                        // 受控值：勾选态来自那个共享 cell（**不读实体** —— 见字段文档里的
+                        // panic 记录：builder 跑在外壳自己的 `render` 里）。
+                        .checked(do_not_ask.get())
+                        .on_change(move |&value, _window, cx| {
+                            checkbox_cell.set(value);
+                            // 写 cell 不够，还要让**外壳重绘**：只有重绘才会重跑 builder，
+                            // 新值才会画出来（`render_dialog_layer` 是渲染期跑的）。
+                            let _ = checkbox_shell.update(cx, |_shell, cx| cx.notify());
+                        }),
+                )
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_end()
+                        // 按钮顺序照指南「取消 + 结果词」，主操作（此窗口）最右且 primary。
+                        .child(Button::new("lithe-project-open-cancel").label(cancel_label).on_click(
+                            |_, window, cx| window.close_dialog(cx),
+                        ))
+                        .child(
+                            Button::new("lithe-project-open-new-window")
+                                .label(new_window_label)
+                                .on_click(move |_, window, cx| {
+                                    // 「新窗口」现在是提示（规格 §5）：先让状态栏那句出现，
+                                    // 再关对话框 —— 反过来的话提示会被浮层的遮罩挡在后面。
+                                    let _ = new_window_shell
+                                        .update(cx, |shell, cx| shell.report_new_window_not_wired(cx));
+                                    window.close_dialog(cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("lithe-project-open-this-window")
+                                .primary()
+                                .label(this_window_label)
+                                .on_click(move |_, window, cx| {
+                                    // 勾选态在**点击这一刻**读一次（共享 cell，不碰实体）：
+                                    // 换根之后旧外壳连同它的 cell 一起没了。
+                                    let remember = click_cell.get();
+                                    // ⚠️ 先关对话框再换根（理由见 `rebuild_project_window`）。
+                                    window.close_dialog(cx);
+                                    let _ = this_window_shell.update(cx, |shell, cx| {
+                                        shell.execute_project_open(
+                                            this_window_target.clone(),
+                                            ProjectOpenDecision {
+                                                destination: OpenDestination::ThisWindow,
+                                                remember,
+                                            },
+                                            window,
+                                            cx,
+                                        )
+                                    });
+                                }),
+                        ),
+                )
+        });
+    }
+
+    /// 记一次"打开项目成功"：写进最近项目列表 + 落盘。
+    ///
+    /// 规则（上限 12 / `pinned` 不占额度 / 按 `path` 精确去重 / 最新在前）**全在数据层**
+    /// （`lithe_gpui_settings::recent_projects`，已单测），这里只负责"给时间戳 + 落盘 + 打诊断"
+    /// —— 与那条"数据层不取时钟"的分工一致。
+    ///
+    /// `open_in_new_window` 传的总是 `Some(false)`：本侧唯一真的打开成功的形态就是「此窗口」
+    /// （新窗口还没做）。真源记的是"用户选了哪一边"，这里如实记 `false`。
+    fn record_opened_project(
+        &mut self,
+        target: &Path,
+        open_in_new_window: Option<bool>,
+        cx: &mut Context<Self>,
+    ) {
+        let path_text = target.to_string_lossy().to_string();
+        if !self.recent_projects.record_open(
+            &path_text,
+            lithe_gpui_settings::now_unix_ms(),
+            open_in_new_window,
+        ) {
+            eprintln!("S1_SETTINGS_RECENT record=skipped path={path_text} reason=empty_path");
+            return;
+        }
+        println!(
+            "S1_SETTINGS_RECENT record=ok path={path_text} count={}",
+            self.recent_projects.len()
+        );
+        self.save_recent_projects();
+        // 下拉下次打开就是新列表（面板每次打开现取本实体的这一份）。
+        cx.notify();
+    }
+
+    /// 把最近项目列表原子写回文件（复用 `persistence::save_json` 的"临时文件 + rename"）。
+    fn save_recent_projects(&self) {
+        let Some(path) = self.recent_projects_path.as_deref() else {
+            eprintln!("S1_SETTINGS_RECENT save=skipped reason=no_path");
+            return;
+        };
+        match lithe_gpui_settings::save_recent_projects(path, &self.recent_projects) {
+            Ok(bytes) => println!(
+                "S1_SETTINGS_RECENT saved path={} bytes={bytes} count={}",
+                path.display(),
+                self.recent_projects.len()
+            ),
+            // 写失败不 panic：内存里的列表仍然是权威的，下一次打开项目会再试一次。
+            Err(error) => eprintln!(
+                "S1_SETTINGS_RECENT save_failed path={} error={error}",
+                path.display()
+            ),
+        }
+    }
+
+    /// 状态栏左侧的**临时消息**：置位 → 重绘 → [`STATUS_NOTICE_MS`] 之后自己清掉。
+    ///
+    /// 出口只有 [`ShellWorkspace::footer_left`]（它是左组的第一条），因为状态栏本身是
+    /// **无状态渲染函数**（`crate::status_bar` 的模块文档）。
+    /// 消息本身走 `tr` / `tr_args`（与别的界面文案同一条规矩），并且额外打一行
+    /// `S1_STATUS_NOTICE` —— 无人值守验证时那句提示是亮过的，可以 grep 到。
+    fn show_status_notice(&mut self, text: SharedString, cx: &mut Context<Self>) {
+        eprintln!("S1_STATUS_NOTICE text={text}");
+        self.status_notice = Some(text);
+        self.status_notice_generation = self.status_notice_generation.wrapping_add(1);
+        let generation = self.status_notice_generation;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(STATUS_NOTICE_MS))
+                .await;
+            // 实体可能已经销毁（换根 / 关窗）：`update` 返回 `Err` 时静默忽略。
+            let _ = this.update(cx, |shell, cx| {
+                // 只有"这一条还是最新的"才清：否则 4 秒内连来两条提示时，
+                // 前一条的定时器会把后一条提前抹掉。
+                if shell.status_notice_generation == generation && shell.status_notice.is_some() {
+                    shell.status_notice = None;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    // -----------------------------------------------------------------------
+    // B4 的诊断入口（`--open-project-probe`）
+    // -----------------------------------------------------------------------
+
+    /// `--open-project-probe <目录>` 的接线点（**验证/诊断用**，不是产品能力）。
+    ///
+    /// 两种形态，**都没有**一条自己的换项目实现：
+    ///
+    /// 1. 不给 `explicit`：走 [`Self::request_open_project`] —— 与"在选择器里选完一个文件夹"
+    ///    完全同一条链路（默认设置下会弹换项目对话框）。被绕开的只有"操作系统把这次选择
+    ///    送回来"那一段；
+    /// 2. 给了 `explicit`（`--open-project-destination`）：直接把决定交给
+    ///    [`Self::execute_project_open`] —— 与"在对话框里点了那一颗按钮"写的是**同一个**
+    ///    [`ProjectOpenDecision`]、同一个执行点，被绕开的只有"点按钮"那一下。
+    ///    `remember`（`--open-project-remember`）也就是对话框里那个
+    ///    [`Self::project_open_do_not_ask`] 字段 —— 于是"勾了「不再询问」→ 换根 → 两个偏好键
+    ///    落盘 → 下一次不再弹"这条链能在本机锁屏（点不了 checkbox）的条件下端到端跑一遍。
+    ///
+    /// ⚠️ 形态 2 **不能**改成"把 explicit 交给 `request_open_project`"：那里显式目的地
+    /// 会照真源把 `remember` 定为 `false`（真源 `:82-84`："这一次"不改偏好）——
+    /// 那正是本探针要验的那条链，会被它吃掉（实测踩过：偏好一直没有落盘）。
+    pub fn open_project_probe(
+        &mut self,
+        target: PathBuf,
+        explicit: Option<OpenDestination>,
+        remember: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        eprintln!(
+            "S1_OPEN_PROJECT_PROBE path={} explicit={:?} remember={remember}",
+            target.display(),
+            explicit
+        );
+        self.project_open_do_not_ask.set(remember);
+        match explicit {
+            Some(destination) => self.execute_project_open(
+                target,
+                ProjectOpenDecision {
+                    destination,
+                    remember,
+                },
+                window,
+                cx,
+            ),
+            None => self.request_open_project(target, None, window, cx),
+        }
+    }
+
+    // `--left-view <id>` 的取值在 `ShellStartup` 里登记，由 `ShellWorkspace::new`
+    // **在构造期应用**（换根重建出来的外壳也要应用，理由见那个 Global 的字段文档）——
+    // 所以这里没有"首帧之后"的入口，处置与 `--right-view` 统一。
 }
 
-/// 右工具窗懒扫的**登记状态**：哪个视图已经排过一次扫描。
+// `Ctrl+O` 的 action（「文件 → 打开文件夹」的键位入口，Q18）。
+//
+// 定义在**本模块**而不是 `crate::command_palette`：那是"命令面板的 action 表"，
+// 而这条动作根本不是命令面板的一条（它不在 `COMMAND_ORDER` 里，只由菜单与键位触发）。
+gpui_kit::actions!(lithe_workbench, [OpenProjectFolder]);
+
+/// 登记 `Ctrl+O`（真源 `file.open` = "Open Project"，`command-registry.ts:236-242`；
+/// 本侧照 Q18 把它给「打开文件夹」而不是「打开文件」）。
 ///
+/// **在 `main.rs` 里登记一次**（App 级），不在 `ShellWorkspace::new` 里：那是每次重建
+/// 外壳都会跑的地方，而 `App::on_action` 是**累加**的 —— 换一次项目就多一个处理器，
+/// 同一个键会被处理多次（本方法里的 `has_active_dialog` 闸门只是第二道保险）。
+///
+/// 执行**不复用**另一条路径：它把 `MenuAction::OpenFolder` 压进菜单栏的待执行队列，
+/// 下一帧由 `ShellWorkspace::render` 的同一个 `apply_menu_action` 收尾执行 ——
+/// 也就是与"点菜单里那一项"逐字同一条链（只是绕开了"把这一项画出来再点它"）。
+pub fn install_open_project_action(cx: &mut App) {
+    cx.bind_keys([KeyBinding::new("ctrl-o", OpenProjectFolder, None)]);
+    cx.on_action(|_: &OpenProjectFolder, cx: &mut App| {
+        // 句柄没登记（窗口还没建出来）就什么都不做：菜单栏是**每个窗口一个**，
+        // 没有窗口时没有"当前菜单栏"可压。这里不能 panic（`handle()` 会 expect）。
+        let bar = crate::menu_bar::try_handle();
+        let Some(bar) = bar else {
+            eprintln!("S1_MENU_KEY id=lithe.menu.openFolder source=ctrl-o state=no_menu_bar");
+            return;
+        };
+        let _ = bar.update(cx, |bar, cx| bar.push_run(MenuAction::OpenFolder, cx));
+        eprintln!("S1_MENU_KEY id=lithe.menu.openFolder source=ctrl-o state=pushed");
+    });
+}
+
+/// 外壳被释放时打一行**锚点诊断**（B4 的换根验收线要它）。
+///
+/// 为什么需要：换根的连带释放（JDTLS 会话、终端进程）是**级联 drop** 做的 ——
+/// `window.replace_root` 丢掉旧 `Root`，旧 `Root` 丢掉旧 `ShellWorkspace`，
+/// 再由 `ShellWorkspace` 的字段 drop 触发 `EditorPane::drop` / `TerminalPane::drop`
+/// （侦察 `gpui/research/menu-open-prereqs.md` §2）。整条链上**只有这一行**能证明
+/// "旧外壳真的被释放了"；没有它，日志里"旧 JVM 还在"到底是"没释放"还是"释放了但
+/// `Session::shutdown` 还在跑"就分不开 —— 而 `java::Session` 的 `Drop` **只停事件泵、
+/// 不关 JVM**（`java/src/session.rs:434-440`），正是这一批必须实测的风险点。
+///
+/// 打印用 `eprintln!`（无缓冲）：`println!` 在重定向到文件时是块缓冲的，
+/// 进程还在跑的时候可能一行都看不到（本仓库已多次踩过，见 `main.rs` 的 `S1_ASSETS` 注释）。
+impl Drop for ShellWorkspace {
+    fn drop(&mut self) {
+        eprintln!("S1_WORKSPACE_DROP root={}", self.root.display());
+    }
+}
+
+/// 右工具窗懒扫的**登记状态**：哪个视图已经排过一次扫描。///
 /// 只记"排过没有"，不记数据 —— 数据（`maven_project` / `spring_index`）由
 /// [`ShellWorkspace::schedule_right_view_scan`] 排出的任务写回。
 ///
@@ -1811,8 +2669,15 @@ impl Render for ShellWorkspace {
         // 紧接着按新值画，所以用户看不到"慢一帧"。
         let menu = crate::menu_bar::render_bar(&self.menu_bar, window, cx);
         // 标题栏的项目下拉（同一段：先渲染，动作在下一帧被菜单项写进队列后由本帧收尾执行）。
+        // 段③ 的最近项目读的是**本实体**里的那一份（每次打开项目成功时更新 + 落盘）。
         let project_entries = self.project_entries();
-        let project_menu = render_project_menu(&self.project_menu, &project_entries, window, cx);
+        let project_menu = render_project_menu(
+            &self.project_menu,
+            &project_entries,
+            self.recent_projects.entries(),
+            window,
+            cx,
+        );
         // 标题栏的分支项（Windows 规格，见 `crate::branch_panel`）：
         // 没有仓库 / 没有分支名时真源整项不渲染（研究 §5），所以这里给 `None` →
         // 调用方传一块空 `div`，拖拽区宽度不受影响。
@@ -2364,9 +3229,71 @@ fn register_java_toolchain(cx: &App) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionFlags, CommandId, COMMAND_ORDER, RightScanState, RightToolWindowView,
+        ActionFlags, CommandId, COMMAND_ORDER, OpenDestination, ProjectOpenDecision, RightScanState,
+        RightToolWindowView, left_activity_index, resolve_project_open_destination,
         right_scan_should_notify, visible_commands,
     };
+
+    /// 换项目的**决策**逐条照真源 `chooseProjectOpenDestination`
+    /// （`project-open-destination.ts:78-110`）：显式目的地优先 → 不询问时按偏好 → 否则弹对话框。
+    ///
+    /// 这条是"第一次打开项目要不要问""勾了不再询问之后还会不会弹"的唯一机器判据 ——
+    /// 它错了不会编译失败，只会让对话框在不该出现的时候出现（或者永远不出现），
+    /// 而两者都只有手动点才能发现。
+    #[test]
+    fn project_open_destination_follows_the_source_decision_table() {
+        // ① 显式目的地直接用，且**不**改偏好（真源 `:82-84`）。
+        assert_eq!(
+            resolve_project_open_destination(true, true, Some(OpenDestination::ThisWindow)),
+            Some(ProjectOpenDecision {
+                destination: OpenDestination::ThisWindow,
+                remember: false,
+            })
+        );
+        assert_eq!(
+            resolve_project_open_destination(false, true, Some(OpenDestination::NewWindow)),
+            Some(ProjectOpenDecision {
+                destination: OpenDestination::NewWindow,
+                remember: false,
+            }),
+            "显式目的地压过偏好"
+        );
+
+        // ③ 不询问：按 `openFoldersInNewWindow` 直接定（真源 `:90-96`）。
+        assert_eq!(
+            resolve_project_open_destination(false, false, None),
+            Some(ProjectOpenDecision {
+                destination: OpenDestination::ThisWindow,
+                remember: false,
+            })
+        );
+        assert_eq!(
+            resolve_project_open_destination(false, true, None),
+            Some(ProjectOpenDecision {
+                destination: OpenDestination::NewWindow,
+                remember: false,
+            })
+        );
+
+        // ④ 默认（询问 + 没给目的地）= 弹对话框。
+        assert_eq!(resolve_project_open_destination(true, false, None), None);
+        assert_eq!(resolve_project_open_destination(true, true, None), None);
+
+        // 真源第 ② 段（`!hasOpenWorkspace`）在本侧不适用：外壳恒有一个工作区根 ——
+        // 所以"询问"这一支永远走到对话框，不会被那条分支吃掉。
+    }
+
+    /// `--left-view` 的取值解析：只认顶部组那三个，未知取值返回 `None`（不静默落到某一项）。
+    #[test]
+    fn left_view_selectors_map_to_top_group_indices() {
+        assert_eq!(left_activity_index("files"), Some(0));
+        assert_eq!(left_activity_index("project"), Some(0));
+        assert_eq!(left_activity_index("changes"), Some(1));
+        assert_eq!(left_activity_index("search"), Some(2));
+        // 底部组（运行 / 终端 / 诊断 / 提交记录）切的是底部工具窗，不是"左栏显示谁"。
+        assert_eq!(left_activity_index("terminal"), None);
+        assert_eq!(left_activity_index("nope"), None);
+    }
 
     /// 设置侧 ↔ `lithe-gpui-git` 的两组枚举映射**双向**都要对（阶段 15）。
     ///

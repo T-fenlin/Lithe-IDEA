@@ -267,6 +267,27 @@ pub struct Settings {
     /// 落到本侧会在实现里点明"关掉 = 不再自动弹出"。
     #[serde(rename = "autoCompletion")]
     pub auto_completion: bool,
+
+    /// 选择打开其他项目时是否**每次询问**（弹「你想在哪里打开项目"X"？」）。
+    /// Windows 键 `askWhereToOpenProjects`，默认 `true`（`default-settings.ts:111`）。
+    ///
+    /// 生效方式：**立即**，判据在 `workbench` 的换项目决策里（照真源
+    /// `chooseProjectOpenDestination`，`project-open-destination.ts:78-110` 的第 ③ 段）：
+    /// 为假时按 [`Self::open_folders_in_new_window`] 直接定目的地，不再弹对话框。
+    /// 对话框里勾上「不再询问」之后由换项目那条链路**写这个键为假**
+    /// （真源 `:112-131` 的 `rememberAfterOpen`，且是"先打开成功、后写偏好"）。
+    #[serde(rename = "askWhereToOpenProjects")]
+    pub ask_where_to_open_projects: bool,
+
+    /// 打开项目时默认在**新窗口**里打开。Windows 键 `openFoldersInNewWindow`，
+    /// 默认 `true`（`default-settings.ts:112`）。
+    ///
+    /// 生效方式：**立即**，只在 [`Self::ask_where_to_open_projects`] 为假时被读到
+    /// （真源同一条决策的第 ③ 段）。⚠️ gpui 侧目前**没有多窗口**（维护者决定，规格 §5），
+    /// 所以这个键取真时那条决策会落到"给提示"而不是真的开第二个窗口——
+    /// 键本身照真源存取，缺的是窗口级句柄路由（B5 暂缓）。
+    #[serde(rename = "openFoldersInNewWindow")]
+    pub open_folders_in_new_window: bool,
 }
 
 impl Default for Settings {
@@ -289,6 +310,10 @@ impl Default for Settings {
             maven_java_home_path: String::new(),
             // 真源默认 `true`（`default-settings.ts:153`）—— 默认就该"打字有提示"。
             auto_completion: true,
+            // 「打开其他项目」的两个键都照真源默认 `true`（`default-settings.ts:111-112`）：
+            // 默认每次询问，且（真源口径下）默认在新窗口打开。
+            ask_where_to_open_projects: true,
+            open_folders_in_new_window: true,
         }
     }
 }
@@ -444,6 +469,10 @@ mod tests {
         assert_eq!(settings.maven_java_home_path, "");
         // LSP 页的 `autoCompletion` 默认 `true`（真源 `default-settings.ts:153`）。
         assert!(settings.auto_completion);
+        // 「打开其他项目」的两个键默认都是 `true`（真源 `default-settings.ts:111-112`）：
+        // 默认每次询问在哪打开，且真源默认偏好"新窗口"。
+        assert!(settings.ask_where_to_open_projects);
+        assert!(settings.open_folders_in_new_window);
     }
 
     /// 字段级 `default`：**缺键**回退到该字段默认值（不是整份丢弃）。
@@ -495,6 +524,9 @@ mod tests {
             "\"mavenJavaHomePath\"",
             // 阶段 18（「LSP」页）：真源三键里唯一有消费方的那一个。
             "\"autoCompletion\"",
+            // 「打开其他项目」的两个键（B4）：真源 `default-settings.ts:111-112` 的键名。
+            "\"askWhereToOpenProjects\"",
+            "\"openFoldersInNewWindow\"",
         ] {
             assert!(json.contains(key), "缺少键 {key}：{json}");
         }

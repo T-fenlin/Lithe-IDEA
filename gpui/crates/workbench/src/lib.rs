@@ -122,4 +122,7 @@ pub mod status_bar;
 pub mod title_bar;
 pub mod workspace;
 
-pub use workspace::ShellWorkspace;
+pub use workspace::{
+    OpenDestination, ShellWorkspace, install_open_project_action, left_activity_index,
+    set_shell_startup,
+};

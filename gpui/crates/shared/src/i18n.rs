@@ -50,6 +50,7 @@
 //! | `workbench` 的命令面板（阶段 6 第二半） | `lithe.commandPalette.{title, placeholder, noCommands, categories.*}`、`lithe.commandPalette.actions.toggle-*`、`lithe.commandPalette.actions.color-theme.label`、`lithe.settings.appearance.theme`、`lithe.settings.appearance.showStatusBar`、`lithe.settings.appearance.showStatusBarDescription`、`lithe.settings.tabs.*`、`lithe.appearance.gpui.*`、`lithe.maven.gpui.*` |
 //! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 26 条 `lithe.settings.gpui.*` 自有文案 —— 全部 26 条自有键都已接线）、`lithe.ui.cancel` |
 //! | `workbench` 的分支弹窗（阶段 11 第三件） | `lithe.git.{searchBranchesAria,repositories,branches,worktrees,selectorSections,searchBranches,branchCount,branchesCount,noMatchingBranches,noBranchesFound,current,refresh}` |
+//! | `workbench` 的打开项目 / 最近项目（B4） | `lithe.menu.openFolder`、`lithe.projectOpen.{title,where,doNotAskAgain,cancel,newWindow,thisWindow}`（全部真源既有键）、`lithe.gpui.newWindowNotWired`（**唯一**一条 gpui 自有键，理由见 `extract-locale.mjs`） |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
 //! **任何键拼错都会让测试失败**（缺键时 `rust-i18n` 原样回显键名，所以断言 `tr(key) != key`）。
@@ -559,6 +560,13 @@ mod tests {
             ),
             ("lithe.appearance.gpui.toggleStatusBarShow", "视图：显示状态栏"),
             ("lithe.appearance.gpui.toggleStatusBarHide", "视图：隐藏状态栏"),
+            // B4「新窗口」那一颗按钮的能力提示（状态栏左侧临时消息）。**唯一一条 B4 新增键**：
+            // 真源的那颗按钮恒可执行（它真的开第二个窗口），所以 catalog 里没有对应的
+            // 「尚未接入」句；理由写在 `tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
+            (
+                "lithe.gpui.newWindowNotWired",
+                "尚未接入：在「新窗口」中打开项目需要多窗口支持（缺窗口级句柄路由）。",
+            ),
             // 主菜单栏（`gpui/crates/workbench/src/menu_bar.rs`）。全部是**真源既有**键
             // （`windows/tauri/src/i18n/locale.ts` 的 `menu.*` 段，本侧前缀 `lithe.`）：
             // 9 个顶级菜单名 + 本轮 v1 真的画出来的项的文案。
@@ -615,6 +623,17 @@ mod tests {
             ("lithe.titleProject.recentProjects", "最近项目"),
             ("lithe.titleProject.noRecentProjects", "没有最近项目"),
             ("lithe.titleProject.trigger", "项目：{project}"),
+            // B4「打开其他项目」：文件菜单的「打开文件夹」+ 换项目对话框（6 条 `projectOpen.*`）。
+            // 7 条全是**真源既有**键（`lithe.menu.openFolder` 在 `locale.ts` 的菜单段；
+            // `projectOpen.*` 在 `locale.ts` 的 `projectOpen` 段，生成在 `locales/*.yml:3526-3537`）
+            // —— 本轮**零新增真源键**，`GPUI_ONLY_KEYS` 只多了一条「新窗口」能力提示（见下）。
+            ("lithe.menu.openFolder", "打开文件夹"),
+            ("lithe.projectOpen.title", "打开项目"),
+            ("lithe.projectOpen.where", "你想在哪里打开项目“{project}”？"),
+            ("lithe.projectOpen.doNotAskAgain", "不再询问"),
+            ("lithe.projectOpen.cancel", "取消"),
+            ("lithe.projectOpen.newWindow", "新窗口"),
+            ("lithe.projectOpen.thisWindow", "此窗口"),
             // 标题栏分支项 + 分支弹窗（`gpui/crates/workbench/src/branch_panel.rs`）。
             // 9 条全是**真源既有**键（`windows/tauri/src/i18n/locale.ts:6836-6948` 的
             // `git.*` 段，生成在 `locales/*.yml`）——本轮**零新增键**，也没有动
