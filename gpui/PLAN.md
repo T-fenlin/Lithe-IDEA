@@ -1569,15 +1569,41 @@ JDTLS 起会话并就绪 → 点开 `App.java` → 在 `greeter` 后输入 `.` �
 3. **菜单不做前缀过滤**：候选集合完全由服务端按位置给；我们透传服务端的 `sort_text`/`filter_text`。
 4. **诊断（波浪线）还没有**：现有 `Session::request` 自己消费 `lsp.waitEvents` 并丢弃非本 `operationId`
    的事件 —— 再加订阅会互相偷事件，必须先改成"单一事件泵 + 按 operationId 分派"。
-5. **Maven context 没传**：Core 的 `lsp.startServer` **已经接受 `mavenContext`**（`engine.rs:965-1003`），
-   gpui 侧完全没传（`java/src/session.rs`）⇒ JDT 拿不到生成源根 / profiles / settings。
-   最小路径 = `maven.scan` 拿 `relativePath` → 塞进 payload，**不需要解析 pom.xml**。
+5. ~~**Maven context 没传**~~ → **本批已做**（见 §16.6）。
+
+### 16.6 Maven 项目模型：把 `mavenContext` 送进 `lsp.startServer`（2026-09-26）
+
+**做了什么**：`crates/java/src/workspace.rs` 新增 `maven_context(root)` —— 调 Core 的 `maven.scan`
+拿 `relativePath` / `profiles` / `settingsPath`，构造 Core 的 `MavenLaunchContextRequest` 形状
+（`rust/lithe-core/src/project/maven.rs:63-78`：`version` / `reactorPath` / `profiles` /
+`settingsPath` / `skipTests`，camelCase），由 `session.rs` 在 `lsp.startServer` 的 payload 里带上
+（`None` 就**不带**这个字段：空 reactor 只会让 Core 做无意义的校验）。**没有解析 pom.xml** ——
+`maven.scan` 就是上游给的入口。诊断行 `S1_JAVA_MAVEN context reactorPath=… profiles=… settings=…`。
+
+**为什么值钱**：Core 拿到 `mavenContext` 后会 ① 把 reactor 的 main / test / generated 四类源根归一成
+`java.project.sourcePaths`（**生成源根生效**：注解处理器产出的代码也能补全/跳转）；
+② `ServiceReady` 后按项目下发 `org.eclipse.m2e.core.selectedProfiles`（profile 生效）；
+③ 发布 `java.configuration.maven.userSettings`。
+
+**验证**：
+- 单测 3 条（`workspace.rs`）：无 scan 结果 → `None`；根 pom → `reactorPath="."`、profiles 取 `id`、
+  `settingsPath` 透传、**没有数据源的字段不出现**；子模块 reactor → `reactorPath` 原样。
+- 选定式真实 JDTLS（夹具**加了 `pom.xml`**，并改成标准 Maven 布局 `src/main/java/demo/`）：
+  `S1_JAVA_MAVEN context reactorPath=. profiles=0 settings=false` → 会话正常起来（Core 校验通过）
+  → 跨文件定义仍解析 → `S1_JAVA_COMPLETION … line=5 col=35 items=10 ms=392`。`cargo test -p lithe-gpui-java` = 17 passed。
+- **一条意外的强证据**：把源码放在非标准的 `src/demo/` 时，一旦带上 `mavenContext`，`Greeter` 就解析不到了
+  —— 说明这个字段**真的改变了 JDT 的项目模型**（源根从"目录里有 .java"变成"Maven 模型"）。
+  夹具因此改成标准布局；这条也写进了测试注释。
+
+**边界**：`localRepositoryPath` / `mavenExecutablePath` / `javaHomePath` 一律**不传**
+（没有数据源，宁可不传也不猜）—— 那些属于「项目环境设置」，等 Java 项目页做出来再接。
 
 ### 16.5 下一批（按用户可感知价值）
 
 1. 补上"菜单真的弹出来"的交互级证据（打字注入 + 截图 + 诊断原文）。
 2. 自动补 import（`additionalTextEdits`）+ `Ctrl+Space`。
-3. **Maven context 送进 `lsp.startServer`**（→ 生成源根 / profiles 生效，Maven 项目体验闭环）。
+3. ~~**Maven context 送进 `lsp.startServer`**~~ → **本批已做（§16.6）**，Maven 项目的源根 / profile / settings
+   现在会同步给 JDT。下一步的自然延伸是**右侧 Maven 工具窗**用同一份 `maven.scan` 结论显示模块与 profile。
 4. 会话改事件泵 → 诊断波浪线（同时是 Spring 端点/注入提示的前置）。
 5. **Spring**：载荷里没有 Spring 插件（已核实），走 Core 的 `spring.index`
    （读 `~/.m2` 的 spring 元数据；macOS 已用它做补全/hover/端点），不捆新载荷。

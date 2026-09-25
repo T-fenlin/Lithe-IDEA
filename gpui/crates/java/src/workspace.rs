@@ -411,9 +411,119 @@ fn core_error(error: lithe_gpui_shared::CoreError) -> String {
     }
 }
 
+/// **Maven 项目上下文**（`lsp.startServer` 的 `mavenContext`）。
+///
+/// 为什么值得做：Core **已经**接受这个字段（`rust/lithe-core/src/project/maven.rs:63-78` 的结构体，
+/// 契约 `shared/contracts/rust-core-api.md:1170-1178`），拿到之后它会
+/// ① 把 reactor 的 main / test / generated 四类源根归一成 `java.project.sourcePaths`
+/// （**生成源根因此生效**：注解处理器产出的代码也能被补全与跳转看到）；
+/// ② 在 `ServiceReady` 之后按项目下发 `org.eclipse.m2e.core.selectedProfiles`；
+/// ③ 把 `settingsPath` 发布成 `java.configuration.maven.userSettings`。
+///
+/// gpui 侧此前**完全没传**（`session.rs` 的 startServer payload 里没有这个字段），这些能力一直空着。
+/// **而且完全不需要我们解析 pom.xml**：`maven.scan` 直接给出 `relativePath` 与 `profiles`。
+///
+/// 返回 `None` = 工作区里没有可读的 `pom.xml`（`maven.scan` 明确返回 `null`）：
+/// 那就**不带**这个字段 —— 带一个空 reactor 只会让 Core 去做无意义的校验。
+pub(crate) fn maven_context(root: &Path) -> Option<Value> {
+    let scan = match core_json("maven.scan", json!({ "root": root.to_string_lossy() })) {
+        Ok(scan) => scan?,
+        Err(error) => {
+            // 失败**不静默**，也**不挡启动**：Maven 上下文只是"更完整的项目模型"，
+            // 缺了它补全/跳转照样能用（只是看不到生成源根与 profile）。
+            println!("S1_JAVA_MAVEN could not scan: error={error}");
+            return None;
+        }
+    };
+    maven_context_from_scan(&scan)
+}
+
+/// 从 `maven.scan` 的响应构造 `mavenContext`（纯函数，便于单测）。
+///
+/// 只带**有证据的**字段：`reactorPath`（scan 的 `relativePath`）、
+/// `profiles`（scan 的 `profiles[].id`）、`settingsPath`（scan 给了才带）。
+/// `localRepositoryPath` / `mavenExecutablePath` / `javaHomePath` **留空**：
+/// 那属于「项目环境设置」的范围，gpui 侧还没有那个数据源 —— 宁可不传，也不猜一个值。
+fn maven_context_from_scan(scan: &Value) -> Option<Value> {
+    if scan.is_null() {
+        return None;
+    }
+    let reactor_path = scan
+        .get("relativePath")
+        .and_then(Value::as_str)
+        .unwrap_or(".");
+    let profiles: Vec<Value> = scan
+        .get("profiles")
+        .and_then(Value::as_array)
+        .map(|profiles| {
+            profiles
+                .iter()
+                .filter_map(|profile| profile.get("id").and_then(Value::as_str))
+                .map(|id| json!(id))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut context = json!({
+        "version": 1,
+        "reactorPath": reactor_path,
+        "profiles": profiles,
+        "skipTests": false,
+    });
+    if let Some(settings_path) = scan
+        .get("settingsPath")
+        .and_then(Value::as_str)
+        .filter(|path| !path.is_empty())
+    {
+        context["settingsPath"] = json!(settings_path);
+    }
+    Some(context)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 没有 Maven 项目时**不传**这个字段（`maven.scan` 给 `null`）。
+    #[test]
+    fn no_scan_result_means_no_context() {
+        assert!(maven_context_from_scan(&Value::Null).is_none());
+    }
+
+    /// 根 pom：`reactorPath` 是 `.`，profiles 取 `id`，`settingsPath` 原样带过去。
+    #[test]
+    fn root_project_maps_to_a_versioned_context() {
+        let context = maven_context_from_scan(&json!({
+            "relativePath": ".",
+            "groupId": "demo",
+            "artifactId": "lite-fixture",
+            "profiles": [{ "id": "dev" }, { "id": "prod" }],
+            "settingsPath": "/home/u/.m2/settings.xml",
+            "modules": []
+        }))
+        .expect("有 relativePath 就是 Maven 项目");
+        assert_eq!(context["version"], 1);
+        assert_eq!(context["reactorPath"], ".");
+        assert_eq!(context["profiles"], json!(["dev", "prod"]));
+        assert_eq!(context["settingsPath"], "/home/u/.m2/settings.xml");
+        assert_eq!(context["skipTests"], false);
+        // 没有数据源的字段**不许出现**（宁可不传，也不猜一个值）。
+        assert!(context.get("localRepositoryPath").is_none());
+        assert!(context.get("mavenExecutablePath").is_none());
+    }
+
+    /// 子模块 reactor：`relativePath` 原样作为 `reactorPath`；没有 profiles 时给空表。
+    #[test]
+    fn nested_reactor_and_empty_profiles() {
+        let context = maven_context_from_scan(&json!({
+            "relativePath": "projects/demo",
+            "profiles": []
+        }))
+        .expect("子模块也是 Maven 项目");
+        assert_eq!(context["reactorPath"], "projects/demo");
+        assert_eq!(context["profiles"], json!([]));
+        assert!(context.get("settingsPath").is_none());
+    }
 
     #[test]
     fn workspace_keys_must_be_lowercase_sha256() {

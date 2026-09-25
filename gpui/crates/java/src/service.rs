@@ -384,6 +384,26 @@ impl JavaLanguageService {
             Err(error) => println!("S1_JAVA_CACHE_RECLAIM_FAILED error={error}"),
         }
 
+        // Maven 项目上下文：有 `pom.xml` 才带（见 `workspace::maven_context`）。
+        // 诊断行把结论说清楚 —— "生成源根有没有生效"这条链路的入口就在这里。
+        let maven_context = workspace::maven_context(&self.workspace_root);
+        match &maven_context {
+            Some(context) => println!(
+                "S1_JAVA_MAVEN context reactorPath={} profiles={} settings={}",
+                context
+                    .get("reactorPath")
+                    .and_then(Value::as_str)
+                    .unwrap_or("."),
+                context
+                    .get("profiles")
+                    .and_then(Value::as_array)
+                    .map(Vec::len)
+                    .unwrap_or(0),
+                context.get("settingsPath").is_some(),
+            ),
+            None => println!("S1_JAVA_MAVEN context=none (no readable pom.xml)"),
+        }
+
         let root_uri = directory_uri(&self.workspace_root)?;
         let spec = SessionSpec {
             workspace_root: &self.workspace_root,
@@ -391,6 +411,7 @@ impl JavaLanguageService {
             installation: &installation,
             java_executable: &runtime.executable,
             java_home: &runtime.home,
+            maven_context,
             // 只有一个候选：跑 JDTLS 的这个 JDK。项目要别的版本时由 Maven/项目设置决定，
             // 那属于 run/debug 的范围（本轮不做）。
             java_runtimes: vec![(runtime.home.clone(), runtime.version.clone())],
@@ -867,10 +888,32 @@ mod tests {
             std::process::id()
         ));
         let _cleanup = TempWorkspace(root.clone());
-        let sources = root.join("src").join("demo");
+        // **标准 Maven 布局**（`src/main/java/...`）：本用例同时验证"`mavenContext` 被 Core 接受
+        // 且真的改变了 JDT 的项目模型"—— 实测把源码放在非标准的 `src/demo/` 时，
+        // 一旦带上 mavenContext（= Maven 源模型生效），`Greeter` 就解析不到了，
+        // 这条断言因此也是"Maven 上下文确实生效"的证据。
+        let sources = root.join("src").join("main").join("java").join("demo");
         std::fs::create_dir_all(&sources).expect("fixture 源码目录");
         std::fs::write(sources.join("Greeter.java"), GREETER).expect("Greeter.java");
         std::fs::write(sources.join("App.java"), APP).expect("App.java");
+        // **Maven 工程**：本用例同时验证"`mavenContext` 被 Core 接受"这条链路 ——
+        // Core 会校验 reactor（`project/maven.rs` 的 `MavenLaunchContextRequest`），
+        // 形状错了 `lsp.startServer` 直接失败，下面的 `prepare()` 就会 panic。
+        // 顺带证明 m2e 导入路径：JDT 拿到 sourcePaths 后补全/跳转照常工作。
+        std::fs::write(
+            root.join("pom.xml"),
+            concat!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+                "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n",
+                "  <modelVersion>4.0.0</modelVersion>\n",
+                "  <groupId>demo</groupId>\n",
+                "  <artifactId>lithe-smoke</artifactId>\n",
+                "  <version>1.0.0</version>\n",
+                "  <properties><maven.compiler.release>21</maven.compiler.release></properties>\n",
+                "</project>\n",
+            ),
+        )
+        .expect("pom.xml");
 
         let service = JavaLanguageService::new(root.clone());
         // 无论断言是否通过都要关掉 Core 会话（否则 java 子进程会活过测试进程）。

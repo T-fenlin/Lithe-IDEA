@@ -78,6 +78,12 @@ pub(crate) struct SessionSpec<'a> {
     pub(crate) cache_directory: &'a Path,
     /// `java.jdtWorkspaceFingerprint` 的不透明结果。
     pub(crate) workspace_fingerprint: &'a str,
+    /// Maven 项目上下文（`maven.scan` 的结论，见 `crate::workspace::maven_context`）。
+    ///
+    /// `None` = 这个工作区没有可读的 `pom.xml`：**不带**这个字段
+    /// （带空的 reactor 只会让 Core 做无意义的校验）。Core 拿到它会归一化生成源根、
+    /// 下发 Maven profile 与 `settingsPath`（契约 `:1170-1178`）。
+    pub(crate) maven_context: Option<Value>,
     pub(crate) timeouts: SessionTimeouts,
 }
 
@@ -138,6 +144,11 @@ impl Session {
             },
             "cacheDirectory": path_text(spec.cache_directory),
             "workspaceFingerprint": spec.workspace_fingerprint,
+            // Maven 项目模型（可选）：Core 会把 reactor 的生成源根并进
+            // `java.project.sourcePaths`、下发 profile 与 settings（契约 `:1170-1178`）。
+            // 字段名与形状逐字照 `rust/lithe-core/src/project/maven.rs:63-78` 的
+            // `MavenLaunchContextRequest`（camelCase、`version` 必填）。
+            "mavenContext": spec.maven_context,
             "javaRuntimes": spec
                 .java_runtimes
                 .iter()
