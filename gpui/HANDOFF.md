@@ -44,12 +44,17 @@
 ⚠️ 注意：上游 `DiagnosticSet` **每次编辑都会 reset**，不要缓存重放；先读
 `gpui-base-0.6.6` 里诊断集合的公开 API 再动手（`gpui/research/editor-lsp-completion.md` §5/§6 可标记
 "单一事件泵"为已实现，实现名 `crate::events::{EventPump, SessionEvents}`）。
-其余按价值排序：① **右栏点击 125% DPI 双触发**（真缺陷，一次点击 visible=true 紧跟 false，
-已在 `PLAN.md` §16.9 登记，需要查 gpui 的点击派发/DPI 换算）；② 自动补 import
-（上游忽略 `additionalTextEdits`，Core 有 `lsp.applyTextEdits`）+ `Ctrl+Space`（上游无补全键位）；
-③ 依赖 JAR 的 `spring-configuration-metadata.json`（gpui 不解析 `~/.m2` 传 `metadataRepositories`，
-所以 `properties` 目前只有内置 + 工作区元数据）；④ `projectPreparation` 事件里带
-lifecycle / maven profile / building —— 「构建进度」的挂点，分派表加一个分支即可。
+其余按价值排序：① **右栏懒扫跑在 MouseUp 派发栈里**（`workspace.rs` 的 `scan_right_view_if_needed`
+在点击回调内同步跑，Spring 会读 JAR）—— 真问题（性能），应延后出派发栈；
+⚠️ 注意：**"右栏点击双触发是产品缺陷"这个说法已被源码级诊断推翻**，别再按它推理，
+证据见 `gpui/research/click-double-trigger-dpi.md`（要点：`ClickEvent::Mouse` 只在 MouseUp 产生一次、
+多一个 MouseUp 产生 0 次额外 click、我们侧没有记两遍、DPI 无证据参与；最可能是环境杂散点击，
+其次是无障碍 `Action::Click` 自造 down+up）。面板类验证的正确姿势是**注入前后用 `SetCursorPos`
+把真光标移离右栏**（`.artifacts/right-panel/NOTES.md:30` 那句是错的），**不要**改 toggle 语义或加防抖；
+② 自动补 import（上游忽略 `additionalTextEdits`，Core 有 `lsp.applyTextEdits`）+ `Ctrl+Space`
+（上游无补全键位）；③ 依赖 JAR 的 `spring-configuration-metadata.json`（gpui 不解析 `~/.m2` 传
+`metadataRepositories`，所以 `properties` 目前只有内置 + 工作区元数据）；④ `projectPreparation`
+事件里带 lifecycle / maven profile / building —— 「构建进度」的挂点，分派表加一个分支即可。
 
 **本会话踩到、下个会话必须知道的坑**：
 1. **强杀 Lithe 不会走 `lsp.stopServer`** ⇒ JDTLS 的 `java.exe` 会留在后台，

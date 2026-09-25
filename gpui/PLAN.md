@@ -1653,11 +1653,21 @@ Maven 面板时才扫（右活动栏点击与菜单 `ToggleMaven` 两条路都�
 实机 13 条判定全 OK：Maven 面板看到 `lite-fixture 1.0.0` + `.`；Spring 面板看到计数行
 `properties 10 · values 0 · …`（不是空态）；未知 id 与基线图像素一致；收尾 `Lithe=0 java=0`。
 
-**② 产品缺陷（未修，已登记）：右活动栏点击在 125% DPI 下会"双触发"** ——
-一次点击打出 `S1_RIGHT_PANEL … visible=true` 紧接着 `visible=false`，面板自己关掉；
-光标停在图标上还会被"杂散点击"再切一次。这就是前几轮面板截图反复拿不到的原因。
-这不是探针能解决的问题（探针只绕过"操作系统把那一下点击送进窗口"这段），需要单独查 gpui 的
-点击派发/DPI 换算，**属于下一批的独立缺陷**。
+**② "右活动栏点击双触发"——我原来的说法是错的（2026-09-26 经源码级诊断推翻）**：
+一次性读到的事实是 `ClickEvent::Mouse` 只在 **MouseUp 的 bubble 阶段产生一次**
+（`gpui-base-0.6.6/src/div.rs:3100-3121`；`pending_mouse_down` 是单个 `Option`，首个 MouseUp 就 take，
+`:3084-3098` ⇒ **多一个 MouseUp 反而产生 0 次额外 click**，要凑出第二次 click 必须**完整多一对 DOWN+UP**）；
+我们侧也没有"记两遍"（`activity_bar.rs:403` 每项一次 `on_click`）；DPI 无证据参与
+（坐标只除一次、hitbox 与鼠标位置同为逻辑坐标、右栏节距 40 物理、注入点都在项中心）。
+可对齐注入次数的日志全是 **1:1**（8 次投递 → 8 行）。所以：**不是"一次点击被派发两次"的产品缺陷**，
+现有证据指向"**确实发生了两次输入**"，第二次来源未确认（最可能是环境杂散点击；
+其次是无障碍 `Action::Click` 会自造一对 down+up，而该路径的日志因项目没装 logger 被丢掉）。
+完整证据与修复优先级见 `gpui/research/click-double-trigger-dpi.md`。
+⇒ **不要再把它当"面板类验证拿不到截图的原因"**；正确的做法是**注入前后用 `SetCursorPos` 把真光标
+移离右栏**（`.artifacts/right-panel/NOTES.md:30` 说 `-Mode move` 会挪真光标，**那句是错的**：它只发
+`WM_MOUSEMOVE`）。同时**不要**改 toggle 语义、**不要**加防抖 —— 真机就是一次 click 一个 toggle。
+附带发现（真问题，性能）：`workspace.rs` 的懒扫是在 **MouseUp 派发栈里同步跑**的（Spring 会读 JAR），
+应当延后出派发栈。
 
 **③ `spring.index` 的 `endpoints` 恒为 0 是我上一批的调用 bug（不是夹具问题）**：
 Core 的 `endpoint_index`（`rust/lithe-core/src/languages/spring.rs:1477-1552`）是**纯文本/正则**索引，
