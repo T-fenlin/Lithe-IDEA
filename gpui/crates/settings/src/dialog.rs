@@ -141,7 +141,12 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
             .p_0()
             .content({
                 let view = view.clone();
-                move |content, _, _| content.p_0().gap_0().child(view.clone())
+                // ⚠️ `.h_full()` **不是装饰，是这一页能不能滚的前提**：`DialogContent`
+                // 默认是内容高度，不把它撑满对话框，`SettingsDialog` 根上的 `size_full()`
+                // 就解析成 auto（百分比高度在 auto 高度的父级里等于 auto），整页按内容高度排下去 ——
+                // 「Git」页那种比对话框高的页里，最后一个分组**够不到**、也滚不动
+                // （实测滚轮前后像素 diff=0；同一注入器在编辑器上 diff=10969）。详见 `content()`。
+                move |content, _, _| content.p_0().gap_0().h_full().child(view.clone())
             })
     });
 }
@@ -606,6 +611,14 @@ impl SettingsDialog {
     }
 
     /// 右栏：页标题 + 分组，只有这一列滚动（滚动条贴住它自己的边缘）。
+    ///
+    /// ⚠️ 这一列能不能滚，取决于**父级有没有确定高度**：`overflow_y_scrollbar()`
+    /// （gpui-component 的 `Scrollable` 包装元素，`scroll/scrollable.rs:128-186`）
+    /// 把"滚动"放在它自己 `size_full()` 的内层，而 `size_full()` 是**百分比高度** ——
+    /// 父级是内容高度时它解析成 auto，于是整列按内容排下去、既没有可滚的余地也不裁剪。
+    /// 实测（2026-09-26）：Git 页比对话框高时，"集成"分组**根本够不到**（滚轮前后像素 diff=0），
+    /// 而同一注入器在编辑器上 diff=10969。修在调用点：给 `DialogContent` 加 `.h_full()`
+    /// （见 [`open_settings_dialog_at`] 的 `.content(..)`）。
     fn content(&self, cx: &Context<Self>) -> impl IntoElement {
         let settings = self.store.read(cx).settings().clone();
         div()
