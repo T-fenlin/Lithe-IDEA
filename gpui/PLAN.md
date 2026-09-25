@@ -1598,6 +1598,31 @@ JDTLS 起会话并就绪 → 点开 `App.java` → 在 `greeter` 后输入 `.` �
 **边界**：`localRepositoryPath` / `mavenExecutablePath` / `javaHomePath` 一律**不传**
 （没有数据源，宁可不传也不猜）—— 那些属于「项目环境设置」，等 Java 项目页做出来再接。
 
+### 16.7 右侧 Maven 工具窗：从"未检测到 Maven 项目"变成真实项目结构（2026-09-26）
+
+**数据层**（`crates/workbench/src/maven.rs`，新）：`maven.scan` → `MavenProjectView`
+（reactor 根 + 递归 `MavenModuleView` + `profiles` / `active_profiles`）+ `scan(root)` + `parse()` 纯函数。
+**归属**：`maven.scan` 是 **Core 的项目命令**（不是 LSP 会话事实），所以放 workbench、
+用 `core_json` 直接问 Core，**不解析 pom.xml**（那是 m2e / `maven.scan` 的活）。
+
+**表现层**（`right_tool_window.rs`）：`right_tool_window(view, maven, …)` 多收一个
+`Option<&MavenProjectView>`；Maven 有项目时画「reactor 头（`artifactId` + 版本 + 相对路径）+
+模块树（递归、每层 `pl_3()`，缩进跟着 rem 档位走）+ profile 列表（默认激活的用主色 **和** 中粗
+两种信号，不只靠颜色）」，没有项目时保持真源的 `maven.notDetected` 空态。
+真源那页的工具栏 / 生命周期 / 依赖树 / 构建输出**不画**（要 `mvn` 执行与依赖解析的数据源，
+画了就是假控件）。
+
+**懒扫 + 缓存**：`ShellWorkspace` 新增 `maven_project` / `maven_scanned`，**第一次真正显示**
+Maven 面板时才扫（右活动栏点击与菜单 `ToggleMaven` 两条路都接），避免启动首帧为不相关的面板付钱。
+诊断 `S1_MAVEN scan=ok artifactId=… version=… reactorPath=… modules=… profiles=…`
+（面板里每个事实都能在这行核对）。
+
+**验证**：`cargo build --bin Lithe` exit=0；`cargo test -p lithe-gpui-workbench` **33 passed**
+（含 4 条 `parse` 单测：null/缺字段 → 不是项目、根 pom 字段落位、递归层级与计数、label 兜底）；
+实机（Maven 夹具 + `--menu-probe view lithe.workbench.maven`）：
+`S1_MAVEN scan=ok artifactId=lite-fixture version=1.0.0 reactorPath=. modules=1 profiles=0`，
+截图 `22-maven-pane.png` 里面板显示 `lite-fixture 1.0.0` + `.`，空态消失。
+
 ### 16.5 下一批（按用户可感知价值）
 
 1. 补上"菜单真的弹出来"的交互级证据（打字注入 + 截图 + 诊断原文）。

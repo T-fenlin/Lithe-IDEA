@@ -78,7 +78,22 @@ impl MavenProjectView {
 /// 扫一个工作区；`None` = 没有可读的 `pom.xml`（`maven.scan` 的权威答案）。
 pub fn scan(root: &Path) -> Option<MavenProjectView> {
     match core_json("maven.scan", serde_json::json!({ "root": root.to_string_lossy() })) {
-        Ok(scan) => scan.as_ref().and_then(parse),
+        Ok(scan) => {
+            let project = scan.as_ref().and_then(parse);
+            // 诊断：面板里显示的每一个事实都能在这行里核对（可 grep）。
+            match &project {
+                Some(project) => println!(
+                    "S1_MAVEN scan=ok artifactId={} version={} reactorPath={} modules={} profiles={}",
+                    project.artifact_id,
+                    project.version.as_deref().unwrap_or("-"),
+                    project.relative_path,
+                    project.module_count(),
+                    project.profiles.len()
+                ),
+                None => println!("S1_MAVEN scan=none (no readable pom.xml)"),
+            }
+            project
+        }
         Err(error) => {
             // 失败不静默，但不 panic：面板会回到"未检测到 Maven 项目"，
             // 日志里留下可追的原因。

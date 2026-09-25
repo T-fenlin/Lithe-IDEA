@@ -58,6 +58,8 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
+// `when` / `children` 收在 `FluentBuilder` 上（与 `explorer_view.rs` 同一取法）。
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
@@ -193,6 +195,7 @@ pub fn diagnose(view: RightToolWindowView, visible: bool) {
 /// `on_close` 由调用方给：可见性归外壳（`ShellWorkspace`），本函数不持有状态。
 pub fn right_tool_window(
     view: RightToolWindowView,
+    maven: Option<&crate::maven::MavenProjectView>,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -204,8 +207,132 @@ pub fn right_tool_window(
         .aria_label(title.clone())
         .size_full()
         .child(header(view, title, on_close, cx))
-        .child(empty_state(view))
+        .child(match (view, maven) {
+            // 扫到了 Maven 项目就画项目结构；没扫到（或还没扫）保持真源的「未检测到 Maven 项目」。
+            (RightToolWindowView::Maven, Some(project)) => maven_content(project, cx),
+            _ => empty_state(view),
+        })
         .into_any_element()
+}
+
+/// Maven 面板内容：**只呈现 `maven.scan` 已经给出的事实**，不画任何还没有数据源的控件。
+///
+/// 图上只有三样东西，每一样都能在 `MavenProjectView` 里找到出处：
+/// 1. reactor 头（`artifactId` + `version` + 相对路径）；
+/// 2. 模块树（递归缩进 —— 真机也是模块树，不是扁平列表）；
+/// 3. profile 列表（默认激活的用主色 + 字重区分：**颜色之外还有字重**作为第二信号）。
+///
+/// 真源那一页还有工具栏 / 生命周期 / 依赖树 / 构建输出四块，它们要 `mvn` 执行与依赖解析的数据源，
+/// 本侧**不画**（画了就是假控件，`07-settings-ui.md` §7.3-D 同一口径）。
+fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyElement {
+    let mut column = v_flex()
+        .id("maven-project")
+        .w_full()
+        .flex_1()
+        .min_h_0()
+        .gap_1()
+        .p_3();
+
+    // 1) reactor 头：`artifactId`（正常色）+ 版本（弱化）。
+    column = column.child(
+        h_flex()
+            .w_full()
+            .gap_2()
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_sm()
+                    .font_weight(gpui_kit::FontWeight::MEDIUM)
+                    .text_color(cx.theme().foreground)
+                    .child(project.artifact_id.clone()),
+            )
+            .children(project.version.clone().map(|version| {
+                div()
+                    .flex_shrink_0()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(version)
+            })),
+    );
+    // 相对路径单独一行：reactor 不在工作区根时这一行才信息量最大。
+    column = column.child(
+        div()
+            .w_full()
+            .text_xs()
+            .truncate()
+            .text_color(cx.theme().muted_foreground)
+            .child(project.relative_path.clone()),
+    );
+
+    // 2) 模块树。
+    for module in &project.modules {
+        column = column.child(maven_module_row(module, cx));
+    }
+
+    // 3) profile：id 直接列出来，默认激活的加主色 + 中粗（两种信号，不只靠颜色）。
+    if !project.profiles.is_empty() {
+        let active = &project.active_profiles;
+        column = column.child(
+            v_flex()
+                .w_full()
+                .mt_2()
+                .gap_1()
+                .children(project.profiles.iter().map(|id| {
+                    let is_active = active.contains(id);
+                    div()
+                        .w_full()
+                        .truncate()
+                        .text_xs()
+                        .when(is_active, |this| {
+                            this.text_color(cx.theme().primary)
+                                .font_weight(gpui_kit::FontWeight::MEDIUM)
+                        })
+                        .when(!is_active, |this| this.text_color(cx.theme().muted_foreground))
+                        .child(id.clone())
+                })),
+        );
+    }
+
+    column.into_any_element()
+}
+
+/// 一行模块：`artifactId` + （有的话）版本；子模块缩进一层。
+///
+/// 用嵌套 `v_flex` + 每层 `pl_3()` 表达层级，而不是手算像素缩进 ——
+/// 缩进因此跟着 rem 档位走（界面字号变了不会错位）。
+fn maven_module_row(module: &crate::maven::MavenModuleView, cx: &App) -> AnyElement {
+    let mut column = v_flex().w_full().gap_1();
+    column = column.child(
+        h_flex()
+            .w_full()
+            .gap_2()
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_xs()
+                    .text_color(cx.theme().foreground)
+                    .child(module.label().to_string()),
+            )
+            .children(module.version.clone().map(|version| {
+                div()
+                    .flex_shrink_0()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(version)
+            })),
+    );
+    if !module.modules.is_empty() {
+        column = column.child(
+            v_flex()
+                .w_full()
+                .pl_3()
+                .gap_1()
+                .children(module.modules.iter().map(|child| maven_module_row(child, cx))),
+        );
+    }
+    column.into_any_element()
 }
 
 /// 面板头部：图标 + 标题 + 关闭按钮。

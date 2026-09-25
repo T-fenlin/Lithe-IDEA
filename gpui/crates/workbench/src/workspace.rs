@@ -521,6 +521,16 @@ pub struct ShellWorkspace {
     /// 与 [`ShellWorkspace::right_view`] 分开的理由同底部窗：收起时保留最后显示过的视图
     /// （`right-tool-window-actions.ts:26-31` 的 toggle 分支不改 `activeRightSidebarView`）。
     right_visible: bool,
+    /// Maven 项目结构（`maven.scan` 的结论），**懒扫一次后缓存**。
+    ///
+    /// `None` 有三种情况，故意不区分：还没扫过、扫过但不是 Maven 项目、扫描失败 ——
+    /// 三种都该显示真源的「未检测到 Maven 项目」空态（见 `crate::maven` 的模块文档）。
+    /// 扫描时机是"右栏第一次切到 Maven 且可见"：`maven.scan` 要解析 pom，
+    /// 放在启动路径上会让首帧为不相关的面板付钱。
+    maven_project: Option<crate::maven::MavenProjectView>,
+    /// 是否已经扫过（`None` 的三种情况靠它区分不了，但"扫过没有"必须能区分，
+    /// 否则每次渲染都会重扫）。
+    maven_scanned: bool,
     /// 左侧栏内容：项目树（真实 `workspace.snapshot` 数据）。
     ///
     /// 状态栏左组（前导项）**不再是字段**：它每帧现算（[`ShellWorkspace::footer_left`]），
@@ -951,6 +961,8 @@ impl ShellWorkspace {
             // 视图字段的默认值理由见字段文档。
             right_view: RightToolWindowView::Maven,
             right_visible: false,
+            maven_project: None,
+            maven_scanned: false,
             explorer,
             changes,
             editor,
@@ -1216,6 +1228,11 @@ impl ShellWorkspace {
                 );
                 self.right_view = view;
                 self.right_visible = visible;
+                // 与右活动栏点击同一条懒扫口径（菜单与右栏改的是同一份状态，取数据也该一致）。
+                if visible && view == RightToolWindowView::Maven && !self.maven_scanned {
+                    self.maven_scanned = true;
+                    self.maven_project = crate::maven::scan(&self.root);
+                }
                 // 与右活动栏点击走同一个诊断（`S1_RIGHT_PANEL view=maven visible=…`）：
                 // 这样"菜单里的 Maven 项和右栏那一项改的是同一份状态"有机器证据。
                 diagnose_right_panel(view, visible);
@@ -1559,6 +1576,11 @@ impl Render for ShellWorkspace {
                         resolve_right_click(clicked, this.right_view, this.right_visible);
                     this.right_view = view;
                     this.right_visible = visible;
+                    // 第一次真正显示 Maven 面板时才扫项目（懒扫 + 缓存，理由见字段文档）。
+                    if visible && view == RightToolWindowView::Maven && !this.maven_scanned {
+                        this.maven_scanned = true;
+                        this.maven_project = crate::maven::scan(&this.root);
+                    }
                     diagnose_right_panel(view, visible);
                     cx.notify();
                 });
@@ -1620,7 +1642,12 @@ impl Render for ShellWorkspace {
         } else {
             explorer.into_any_element()
         };
-        let right_tool_window = right_tool_window(self.right_view, on_close_right_activity, cx);
+        let right_tool_window = right_tool_window(
+            self.right_view,
+            self.maven_project.as_ref(),
+            on_close_right_activity,
+            cx,
+        );
         let right_tool_window_visible = self.right_visible;
 
         // 底部工具窗的内容由活动栏 / 命令面板切换的单值 `bottomPaneActiveTab` 决定。
