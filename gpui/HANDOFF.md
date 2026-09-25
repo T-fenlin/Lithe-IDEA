@@ -54,14 +54,17 @@
 应延后出派发栈；同时按 `gpui/research/click-double-trigger-dpi.md` 的 P0 给 `S1_RIGHT_PANEL` 加
 `seq`/`t_ms`/坐标并改走 stderr，这样"两次输入"才可判定。
 
-> 🔴 **环境警告（第三次踩到，务必先读）**：本机上**有按进程名找 `Lithe` 窗口的外部注入脚本在跑**
-> （`.artifacts/**/inject.ps1` 的 `FindProcessWindow("Lithe")` 就是这个形状）。
-> 实测：无人点击却自动打开了文件、按了 F12、还往夹具源码里敲了字；**杀掉 Lithe 后输入立刻停止**。
-> 因此：① 凡是要用注入驱 GUI 的验证，**先确认没有别的会话在跑同类脚本**；
-> ② 优先用不依赖点击的路径（启动态探针 `--right-view <id>`、资源管理器搜索框过滤）；
-> ③ 注入前后用 **`SetCursorPos` 把真光标移离窗口**（`.artifacts/right-panel/NOTES.md:30`
-> 说 `-Mode move` 会挪真光标是**错的**）。这条同时解释了之前"右栏点击双触发"的观察 ——
-> 源码级诊断已确认**不是产品缺陷**（见 `gpui/research/click-double-trigger-dpi.md`）。
+> 🔴 **环境警告（第三次踩到，务必先读）**：本机的注入工具是**按进程名找窗口**的
+> （`.artifacts/**/inject.ps1` 的 `FindProcessWindow("Lithe")`）⇒ **任何并发运行的注入会话
+> —— 本项目自己的验证脚本、多个代理各自的验证、或仍在执行的旧命令 —— 都会把点击/按键/文本
+> 打到"当时在跑的那一个 Lithe 窗口"上**，与它属于哪个验证任务无关。
+> 实测：一条实机验证记录里**无人点击**却自动打开了文件、按了 F12、还往夹具源码里敲了字
+> （杀进程后输入立即停止）。因此：① **同一时刻只允许一个注入会话**；
+> ② 优先用不依赖点击的确定性路径（启动态探针 `--right-view <id>`、菜单探针、
+> 资源管理器搜索框过滤）；③ 注入前后用 **`SetCursorPos` 把真光标移离窗口**
+> （`.artifacts/right-panel/NOTES.md:30` 说 `-Mode move` 会挪真光标是**错的**）。
+> 这条同时解释了之前"右栏点击双触发"的观察 —— 源码级诊断已确认**不是产品缺陷**
+> （`gpui/research/click-double-trigger-dpi.md`，其 §5 已按"并发注入会话"更正）。
 其余按价值排序：① **右栏懒扫跑在 MouseUp 派发栈里**（`workspace.rs` 的 `scan_right_view_if_needed`
 在点击回调内同步跑，Spring 会读 JAR）—— 真问题（性能），应延后出派发栈；
 ⚠️ 注意：**"右栏点击双触发是产品缺陷"这个说法已被源码级诊断推翻**，别再按它推理，
