@@ -376,6 +376,38 @@ mod tests {
             ),
             ("lithe.appearance.gpui.toggleStatusBarShow", "视图：显示状态栏"),
             ("lithe.appearance.gpui.toggleStatusBarHide", "视图：隐藏状态栏"),
+            // 主菜单栏（`gpui/crates/workbench/src/menu_bar.rs`）。全部是**真源既有**键
+            // （`windows/tauri/src/i18n/locale.ts` 的 `menu.*` 段，本侧前缀 `lithe.`）：
+            // 9 个顶级菜单名 + 本轮 v1 真的画出来的项的文案。
+            // ⚠️ 99 条 `lithe.menu.*` 早就生成在 `locales/` 里（`extract-locale.mjs` 从真源
+            // 抽的），但**没有进过这张表** —— 没进表就不会被测到，键写错只会静默回显键名。
+            // 这里只补 v1 真正用到的那些（没用到的先不进表，免得把"没接线的键"当成已接线）。
+            ("lithe.menu.file", "文件"),
+            ("lithe.menu.edit", "编辑"),
+            ("lithe.menu.view", "视图"),
+            ("lithe.menu.go", "转到"),
+            ("lithe.menu.terminal", "终端"),
+            ("lithe.menu.run", "运行"),
+            ("lithe.menu.tools", "工具"),
+            ("lithe.menu.window", "窗口"),
+            ("lithe.menu.help", "帮助"),
+            ("lithe.menu.save", "保存"),
+            ("lithe.menu.commandPalette", "命令面板"),
+            ("lithe.menu.toggleTerminal", "切换终端"),
+            // ⚠️ 状态栏那条**复用真源设置项**的文案（真源视图菜单里没有状态栏开关，
+            // 它是设置项 `settings.appearance.showStatusBar`，`locale.ts:6644`）——
+            // 所以这里不再列一遍 `lithe.settings.appearance.showStatusBar`（上面已有）。
+            ("lithe.menu.goToDefinition", "转到定义"),
+            ("lithe.menu.theme", "主题"),
+            ("lithe.menu.newTerminal", "新建终端"),
+            ("lithe.menu.closeTerminal", "关闭终端"),
+            ("lithe.menu.preferences", "首选项"),
+            ("lithe.menu.minimize", "最小化"),
+            ("lithe.menu.maximize", "最大化"),
+            ("lithe.menu.toggleFullscreen", "切换全屏"),
+            // 左上角图标按钮的 tooltip / 无障碍名（真源 `t("window.menu")` = 「菜单」，
+            // `title-bar.tsx:209-219`；`locale.ts:7903`）。
+            ("lithe.window.menu", "菜单"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

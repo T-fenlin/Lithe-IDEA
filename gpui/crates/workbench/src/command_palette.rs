@@ -178,6 +178,11 @@ thread_local! {
 /// [`CommandId::id`] 是诊断行 `S1_COMMAND_RUN id=…` 的取值，同时进搜索关键词。
 ///
 /// 与真源逐条对应关系写在 [`crate::workspace::command_action`] 的文档上。
+///
+/// ⚠️ 这里有一条**不是命令面板的**变体：[`CommandId::ToggleMenuBar`] 只由菜单栏的
+/// `Ctrl+M` 与 `run_menu_action` 触发（命令面板里不列它，见 [`crate::workspace`] 的
+/// `COMMAND_ORDER`）。之所以挂在这张表上，是因为它要一个**带表单行的稳定 id** 与
+/// 一个 `Action` —— 那正是本枚举已有的两件事。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandId {
     /// 打开设置对话框（常规页）。
@@ -194,6 +199,14 @@ pub enum CommandId {
     ToggleMaven,
     /// 显示 / 隐藏状态栏。
     ToggleStatusBar,
+    /// 切换菜单栏的两种形态（常驻 / 左上角图标下拉）。**不在命令面板里**。
+    ToggleMenuBar,
+    /// 保存当前文件（`Ctrl+S`；菜单「文件 → 保存」也走它）。
+    SaveBuffer,
+    /// 打开命令面板（菜单「编辑 → 命令面板」也走它）。
+    OpenCommandPalette,
+    /// 转到定义（`F12`；菜单「转到 → 转到定义」也走它）。
+    NavigateToDefinition,
 }
 
 impl CommandId {
@@ -207,6 +220,10 @@ impl CommandId {
             Self::ToggleTerminal => "toggle-terminal",
             Self::ToggleMaven => "toggle-maven",
             Self::ToggleStatusBar => "toggle-status-bar",
+            Self::ToggleMenuBar => "toggle-menu-bar",
+            Self::SaveBuffer => "save-buffer",
+            Self::OpenCommandPalette => "open-command-palette",
+            Self::NavigateToDefinition => "navigate-to-definition",
         }
     }
 }
@@ -257,18 +274,25 @@ impl CommandAction {
 // 打开 / 关闭
 // ---------------------------------------------------------------------------
 
-/// `Ctrl+Shift+P`（真源 `cmd+shift+p` 在 Windows 上的归一化形式，见模块文档）。
+/// `Ctrl+Shift+P`（真源 `cmd+shift+p` 在 Windows 上的归一化形式，见模块文档）；
+/// `Ctrl+M` 是**菜单栏自己的**「切换菜单栏」—— 真源走设置项 + 菜单项
+/// （`menu.toggleMenuBar` = `alt+m`），本侧把形态切换做成一个应用级 action。
 pub fn install_actions(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("ctrl-shift-p", OpenCommandPalette, None)]);
+    cx.bind_keys([
+        KeyBinding::new("ctrl-shift-p", OpenCommandPalette, None),
+        KeyBinding::new("ctrl-m", ToggleMenuBar, None),
+    ]);
     cx.on_action(|_: &OpenCommandPalette, cx: &mut App| {
         let Some(window_handle) = cx.active_window() else {
             return;
         };
         let _ = window_handle.update(cx, |_, window, cx| open_command_palette(window, cx));
     });
+    // 「切换菜单栏」直接落到菜单栏自己身上（它才是形态的所有者），不经过命令面板。
+    cx.on_action(|_: &ToggleMenuBar, cx: &mut App| crate::menu_bar::toggle_menu_bar(cx));
 }
 
-gpui_kit::actions!(lithe_workbench, [OpenCommandPalette]);
+gpui_kit::actions!(lithe_workbench, [OpenCommandPalette, ToggleMenuBar]);
 
 /// 面板宽度 704：`ui/command.tsx:29` 的 `w-[min(44rem,calc(100vw-2rem))]`（44 × 16 = 704）。
 const PANEL_WIDTH: f32 = 704.;

@@ -68,6 +68,10 @@ use crate::command_palette::{
     Category, CommandAction, CommandId, install_actions as install_command_palette, set_shell,
     set_shell_focus,
 };
+use crate::menu_bar::{
+    MenuAction, MenuBar, diagnose_run as diagnose_menu_run, mode_for, set_menu_bar,
+    set_shell as set_menu_bar_shell,
+};
 use crate::project_tabs::{ProjectTab, project_tabs};
 use crate::right_tool_window::{
     RightToolWindowView, diagnose as diagnose_right_panel, resolve_click as resolve_right_click,
@@ -233,6 +237,11 @@ pub(crate) struct ActionFlags {
 /// 在 gpui 侧还不存在，理由见 `gpui/PLAN.md` 的阶段 6 第二半。
 pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction {
     use CommandId as C;
+    // 只有命令面板里真的会出现的动作才需要分类与图标。
+    // [`C::SaveBuffer`] / [`C::OpenCommandPalette`] / [`C::NavigateToDefinition`] /
+    // [`C::ToggleMenuBar`] 这四条**不在面板里**（它们的入口是菜单项与快捷键，
+    // 见 `COMMAND_ORDER` 的说明），所以给它们一个中性分类与图标而不是把它们排除在
+    // 动作表之外 —— 否则菜单项就得自己再写一份 label / description。
     let (category, icon) = match id {
         C::OpenSettings | C::OpenAppearanceSettings => (Category::Settings, IconName::Settings),
         // 主题动作在两套界面里都用「调色板」字形（真源 `settings-actions.tsx` 的 `PaletteIcon`）。
@@ -240,6 +249,10 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
         C::ToggleTerminal => (Category::View, IconName::SquareTerminal),
         C::ToggleMaven => (Category::View, IconName::Package),
         C::ToggleStatusBar => (Category::View, IconName::PanelBottom),
+        C::ToggleMenuBar => (Category::View, IconName::List),
+        C::SaveBuffer => (Category::View, IconName::Save),
+        C::OpenCommandPalette => (Category::View, IconName::Search),
+        C::NavigateToDefinition => (Category::View, IconName::ArrowRight),
     };
 
     // 标签 / 描述：**能复用真源既有键就复用**（逐条的键与出处写在 `shared/src/i18n.rs`
@@ -286,6 +299,22 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
                 tr("lithe.appearance.gpui.toggleStatusBarShow")
             },
             tr("lithe.settings.appearance.showStatusBarDescription"),
+        ),
+        // 下面四条**不在命令面板里**（见 `COMMAND_ORDER`），但菜单项会用到它们的文案，
+        // 所以文案键与菜单那一份**同一个来源**（`MenuAction::label_key` 也是这些键），
+        // 免得菜单与面板各写一份、迟早漂移。
+        C::ToggleMenuBar => (
+            tr("lithe.menu.toggleMenuBar"),
+            tr("lithe.settings.appearance.showStatusBarDescription"),
+        ),
+        C::SaveBuffer => (tr("lithe.menu.save"), tr("lithe.workbench.project")),
+        C::OpenCommandPalette => (
+            tr("lithe.menu.commandPalette"),
+            tr("lithe.commandPalette.placeholder"),
+        ),
+        C::NavigateToDefinition => (
+            tr("lithe.menu.goToDefinition"),
+            tr("lithe.navigation.definition"),
         ),
     };
 
@@ -432,13 +461,29 @@ pub struct ShellWorkspace {
     /// 根元素挂 `.track_focus(..)` 之后，只要没有后代元素抢走焦点，键盘事件就落在这一层，
     /// 全局 action 照常派发。理由与实测见 `crate::command_palette` 的 `SHELL_FOCUS`。
     focus: gpui_kit::FocusHandle,
+    /// 主菜单栏句柄（Windows 规格，见 [`crate::menu_bar`]）。
+    ///
+    /// 菜单栏**不持有在这里的字段里**：它是 `Entity`（自己持有形态、当前打开的顶级菜单与
+    /// "待执行的菜单动作"队列），句柄登记在 `crate::menu_bar` 的 `MENU_BAR` 里，
+    /// 这样 [Render::render] 能借出 `&mut App` 去画它（见 `menu_bar::with_state` 的说明），
+    /// 而 `Ctrl+M` 的应用级 action 也够得着它。
+    ///
+    /// ⚠️ 这里持有**强引用**：`Entity` 一 drop 菜单栏就被销毁（`WeakEntity` 在
+    /// `ShellWorkspace` 侧就升级不到了）。字段本身不参与渲染，只负责生命周期。
+    menu_bar: Entity<MenuBar>,
 }
 
 impl ShellWorkspace {
-    /// 建立工作台视图。
+    /// 建立工作台视图。`compact_menu` = `true` 时菜单栏走"左上角图标 + 浮动胶囊"形态
+    /// （真源默认值），`false` 走"与标题栏同一行的常驻形态"（**本侧默认**，维护者口径）。
     ///
     /// `Root::new` 之前不得打开任何浮层（那时窗口根还不是 `Root`，`window.open_dialog` 会 panic）。
-    pub fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        root: PathBuf,
+        compact_menu: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         // 编辑区的应用级快捷键（`Ctrl+S`）在这里登记：编辑区没有自己的启动入口，
         // 而 workspace 是外壳的组合点。与 `lithe_gpui_settings::install_actions` 同一口径：
         // 绑定是应用级、只登记内容；真正的处理在本视图根元素的 `SaveBuffer` 处理器上。
@@ -513,6 +558,18 @@ impl ShellWorkspace {
         let branch = read_branch(&root).unwrap_or_else(|| "—".to_string());
         eprintln!("S1_BRANCH name={branch}");
 
+        // 兜底焦点锚点：先建句柄，菜单栏与根元素**共用同一个**（菜单收起后焦点回到它，
+        // 见 `crate::menu_bar` 的 `MenuBar::action_context`）。
+        let focus = cx.focus_handle();
+        // 菜单栏：形态来自启动参数，构造期自己打一行 `S1_MENU_BAR`。
+        // 它要一个外壳句柄来通知重绘（菜单栏不是 `Render`，由本视图画），
+        // 所以先把本视图的句柄登记进去，再建菜单栏。
+        set_menu_bar_shell(cx.entity().downgrade());
+        let menu_bar = MenuBar::new(mode_for(compact_menu), focus.clone(), cx);
+        // 把它登记到 `crate::menu_bar` 的 `MENU_BAR`：渲染期取 `&mut App` 画它、
+        // `Ctrl+M` 的全局 action 也走这个句柄（理由见 `menu_bar::set_menu_bar`）。
+        set_menu_bar(menu_bar.downgrade());
+
         let workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             root: root.clone(),
@@ -539,7 +596,8 @@ impl ShellWorkspace {
             _terminal_subscription: terminal_subscription,
             _editor_subscription: editor_subscription,
             // 根元素的兜底焦点锚点（理由见字段文档）。
-            focus: cx.focus_handle(),
+            focus,
+            menu_bar,
         };
         // 启动期也留一行状态证据：右工具窗**默认隐藏**这件事要能被机器验证，
         // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。
@@ -610,17 +668,128 @@ impl ShellWorkspace {
         let Some(id) = visible_commands(self.action_flags(cx)).get(row).copied() else {
             return;
         };
-        match id {
-            CommandId::OpenSettings => {
-                diagnose_run(id, "open");
+        // 执行逻辑只有一份：`run_command_id`（菜单也走它）。
+        self.run_command_id(id, window, cx);
+    }
+
+    /// 执行一条菜单动作（见 [`crate::menu_bar::MenuAction`]）。
+    ///
+    /// `pub` 是给 `--menu-probe` 用的（诊断入口，见 `crate::menu_bar::open_by_id` 的说明）：
+    /// 外壳才是"把动作落到 `&mut Window` 上"的那一层，菜单栏够不到窗口。
+    ///
+    /// **两条路**：
+    ///
+    /// 1. 能映射到 [`CommandId`] 的（[`MenuAction::command_id`] 有值）→ 直接调
+    ///    [`ShellWorkspace::run_command`]，与命令面板**共用同一个执行点**；
+    /// 2. 其余 6 条（新建/关闭终端页签、首选项、窗口三键）在这里各自接一段**已有实现**，
+    ///    每一段的接线点写在下面。
+    ///
+    /// 不存在"点了没反应"的分支：能进这张表的动作在 [`crate::menu_bar::MENUS`] 的测试里
+    /// 被逐条要求"有 CommandId 或在 NON_COMMAND 里登记过"。
+    pub fn apply_menu_action(
+        &mut self,
+        action: MenuAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(id) = action.command_id() {
+            diagnose_menu_run(action, "delegated");
+            self.run_command_id(id, window, cx);
+            return;
+        }
+        match action {
+            MenuAction::NewTerminalTab => {
+                // 接线点：`TerminalPane::new_tab`（`terminal/src/session.rs:345`），
+                // 真机入口是 `terminal.new`（`cmd+t`，`command-registry.ts:258-267`）与页签条
+                // 右端的 `+`。菜单点击时输入行早就在树上，所以直接调即可（见该方法文档）。
+                //
+                // ⚠️ 顺带把底部工具窗切到终端并显示：菜单的「新建终端」不显示终端就等于没反应。
+                self.bottom_kind = BottomPaneKind::Terminal;
+                self.bottom_visible = true;
+                let terminal = self.terminal.clone();
+                let _ = terminal.update(cx, |pane, cx| pane.new_tab(window, cx));
+                diagnose_menu_run(action, "applied");
+            }
+            MenuAction::CloseTerminalTab => {
+                // 接线点：`TerminalPane::close_active_tab`（本模块本轮新增的公开入口，
+                // 内部走既有的 `close_tab`，`session.rs:451`）。关掉最后一个页签时
+                // `TerminalPaneEvent::LastTabClosed` 会把底部窗收起（既有订阅，`:490-499`）。
+                let terminal = self.terminal.clone();
+                let closed = terminal.update(cx, |pane, cx| pane.close_active_tab(cx));
+                diagnose_menu_run(action, if closed { "applied" } else { "no_tab" });            }
+            MenuAction::Preferences => {
+                // 接线点：`lithe_gpui_settings::open_settings_dialog_at(.., General)`
+                // （`settings/src/dialog.rs`；快捷键 `ctrl-,` 在 `install_actions` 里登记）。
+                // 真源 `menu.preferences` 开的也是常规页（`settings-actions.tsx:155-163`）。
+                diagnose_menu_run(action, "open");
                 lithe_gpui_settings::open_settings_dialog_at(window, cx, SettingsCategory::General);
             }
-            CommandId::OpenAppearanceSettings => {
-                diagnose_run(id, "open");
-                lithe_gpui_settings::open_settings_dialog_at(window, cx, SettingsCategory::Appearance);
+            MenuAction::Minimize => {
+                // 接线点：`Window::minimize_window`（`gpui-pre-0.3.6/src/window.rs:6416`）。
+                // 标题栏右侧的三键走 `WindowControlArea`（由系统完成动作），菜单这一条
+                // 是同一个能力在 gpui 侧的公开 API。
+                window.minimize_window();
+                diagnose_menu_run(action, "applied");
             }
-            CommandId::SwitchToLightTheme | CommandId::SwitchToDarkTheme => {
-                self.apply_theme_command(id == CommandId::SwitchToDarkTheme, cx);
+            MenuAction::Maximize => {
+                // 接线点：`Window::zoom_window`（`:2835`）+ `Window::is_maximized`（`:2374`）。
+                // 已经是最大化时这个菜单项的含义是"还原"，而 gpui 侧没有 `restore_window`
+                // （`Window` 上只有 `zoom_window` 会在两态之间来回切），所以文案照真源
+                // 只写「最大化」—— 真源同样只有一个标签（`menu.maximize`，
+                // `window-menu-bar.tsx:473-481`），不是本侧漏了一个「还原」。
+                window.zoom_window();
+                diagnose_menu_run(action, "applied");
+            }
+            MenuAction::ToggleFullscreen => {
+                // 接线点：`Window::toggle_fullscreen`（`:6421`）。
+                window.toggle_fullscreen();
+                diagnose_menu_run(action, "applied");
+            }
+            // 走上一条 `if let` 的七条在这里不可达；写全分支是为了让"表里加一条动作"
+            // 变成编译错误而不是运行时静默。
+            MenuAction::Save
+            | MenuAction::CommandPalette
+            | MenuAction::ToggleTerminal
+            | MenuAction::ToggleMaven
+            | MenuAction::ToggleStatusBar
+            | MenuAction::OpenAppearanceSettings
+            | MenuAction::GoToDefinition => {
+                diagnose_menu_run(action, "unreachable");
+            }
+        }
+        cx.notify();
+    }
+
+    /// 按 [`CommandId`] 执行——[`ShellWorkspace::run_command`] 的 id 版本，也是**两条界面的
+    /// 唯一执行点**：命令面板（行号 → id）与主菜单（[`MenuAction::command_id`]）都落到这里。
+    ///
+    /// ⚠️ 其中 [`CommandId::SaveBuffer`] / [`CommandId::OpenCommandPalette`] /
+    /// [`CommandId::NavigateToDefinition`] / [`CommandId::ToggleMenuBar`] **不在命令面板里**
+    /// （[`COMMAND_ORDER`] 没有它们），只由菜单项或快捷键触发 ——
+    /// 各自的接线点写在分支上。
+    fn run_command_id(&mut self, id: CommandId, window: &mut Window, cx: &mut Context<Self>) {
+        match id {
+            CommandId::SaveBuffer => {
+                // 接线点：`EditorPane::save_active`（`editor_view.rs:371`），
+                // 与 `Ctrl+S` 的 `SaveBuffer` 处理器（本文件 `render` 里）同一条路。
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.save_active(window, cx));
+                diagnose_run(id, "saved");
+            }
+            CommandId::OpenCommandPalette => {
+                // 接线点：`crate::command_palette::open_command_palette` —— 与 `Ctrl+Shift+P`
+                // 的全局处理器里那一句**是同一个函数**。
+                diagnose_run(id, "open");
+                crate::command_palette::open_command_palette(window, cx);
+            }
+            CommandId::NavigateToDefinition => {
+                // 接线点：`EditorPane::navigate_to_definition`（`F12` 的处理器在
+                // `editor_view.rs:1480`，本句与它调的是同一个方法）。
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.navigate_to_definition(window, cx));
+                diagnose_run(id, "applied");
             }
             CommandId::ToggleTerminal => {
                 // 与活动栏点「终端」同一条迁移（`is_activity_active` 的判据同源）：
@@ -643,12 +812,15 @@ impl ShellWorkspace {
                 }
             }
             CommandId::ToggleMaven => {
-                let (view, visible) =
-                    resolve_right_click(RightToolWindowView::Maven, self.right_view, self.right_visible);
+                let (view, visible) = resolve_right_click(
+                    RightToolWindowView::Maven,
+                    self.right_view,
+                    self.right_visible,
+                );
                 self.right_view = view;
                 self.right_visible = visible;
                 // 与右活动栏点击走同一个诊断（`S1_RIGHT_PANEL view=maven visible=…`）：
-                // 这样"面板里的 Maven 项和右栏那一项改的是同一份状态"有机器证据。
+                // 这样"菜单里的 Maven 项和右栏那一项改的是同一份状态"有机器证据。
                 diagnose_right_panel(view, visible);
                 diagnose_run(id, if visible { "visible" } else { "hidden" });
             }
@@ -660,10 +832,29 @@ impl ShellWorkspace {
                     store.update(cx, |store, cx| store.set_show_status_bar(next, cx));
                     diagnose_run(id, if next { "visible" } else { "hidden" });
                 } else {
-                    // 没有设置状态（测试宿主 / 别的宿主）：不装作做成了。
                     diagnose_run(id, "unavailable");
                 }
             }
+            CommandId::OpenSettings => {
+                diagnose_run(id, "open");
+                lithe_gpui_settings::open_settings_dialog_at(
+                    window,
+                    cx,
+                    SettingsCategory::General,
+                );
+            }
+            CommandId::OpenAppearanceSettings => {
+                diagnose_run(id, "open");
+                lithe_gpui_settings::open_settings_dialog_at(
+                    window,
+                    cx,
+                    SettingsCategory::Appearance,
+                );
+            }
+            CommandId::SwitchToLightTheme | CommandId::SwitchToDarkTheme => {
+                self.apply_theme_command(id == CommandId::SwitchToDarkTheme, cx);
+            }
+            CommandId::ToggleMenuBar => crate::menu_bar::toggle_menu_bar(cx),
         }
         cx.notify();
     }
@@ -833,6 +1024,17 @@ impl Render for ShellWorkspace {
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let sheet_layer = Root::render_sheet_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
+
+        // 主菜单：先画菜单栏（它按"上一帧结束时的状态"画），再把用户上一帧点下的动作**真的执行掉**。
+        //
+        // 顺序为什么是"先画再执行"而不是反过来：画菜单栏要 `cx` 的不可变借用（读菜单栏实体），
+        // 而执行动作要 `&mut self`；两者在同一段代码里同时成立会让借用检查失败。
+        // 动作改动的是 `self` 的字段（`bottom_visible` / `right_visible` …），本帧的布局
+        // 紧接着按新值画，所以用户看不到"慢一帧"。
+        let menu = crate::menu_bar::render_bar(&self.menu_bar, window, cx);
+        for action in crate::menu_bar::take_pending_runs(cx) {
+            self.apply_menu_action(action, window, cx);
+        }
 
         // 设置项「显示状态栏」。没有设置状态时按默认值（显示）处理：工作台不应该因为
         // 宿主没装设置而少一块 UI。
@@ -1024,8 +1226,25 @@ impl Render for ShellWorkspace {
                     .editor
                     .update(cx, |pane, cx| pane.save_active(window, cx));
             }))
-            // ① 标题栏 40（含自绘窗口三键 56×40）。
-            .child(title_bar(&project_name, window, cx))
+            // ① 标题栏 40（含自绘窗口三键 56×40）+ 主菜单栏。
+            //
+            // 菜单栏与 `drag_region` 是**兄弟节点**（菜单栏由 `title_bar` 插在拖拽区之前）：
+            // 祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单放进拖拽区就会变成"点菜单只拖窗口"
+            // （理由与源码行号见 `crate::title_bar` 的 `title_bar` 文档）。
+            //
+            // ⚠️ `cx.lease()` 是必须的：`menu_bar()` 要 `&mut App`（它要新造 `PopupMenu`
+            // 实体），而 `cx` 在同一帧里还要用来画后面的区域；`lease` 把这一帧的 `&mut App`
+            // 借出来，避免 "cannot borrow `*cx` as mutable more than once"。
+            // ⚠️ 菜单栏元素必须在**这一帧的布局链**里，所以它由上面算好的 `menu` 给；
+            // `render_bar` 拿不到时会返回 `None`（窗口正在关），那时标题栏里就没有菜单栏
+            // （`Some` 恒为真：`ShellWorkspace::new` 建视图时就把句柄登记好了），
+            // 其余部分照画。
+            .child(title_bar(
+                &project_name,
+                menu.unwrap_or_else(|| div().into_any_element()),
+                window,
+                cx,
+            ))
             // ② 项目标签条 32 —— **只有一个项目时整条隐藏**。
             // 真机规则：`count > 0 && (!hideWhenSingle || count > 1)`
             // （`features/window/components/project-tab-bar/utils/project-tab-bar-model.ts:12-13`，

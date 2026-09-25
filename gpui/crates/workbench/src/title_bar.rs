@@ -14,6 +14,17 @@
 //! - 中文文案：`windows/tauri/src/i18n/locale.ts:6191`（`titleProject.trigger` = `项目：{project}`，
 //!   本区域按可见规格只显示项目名本身，见 `title_bar` 的文档）。
 //!
+//! ## 左侧的菜单栏（本轮新增，见模块 [`crate::menu_bar`]）
+//!
+//! 真源把菜单栏画在**标题栏这一行里**（常驻形态，`title-bar.tsx:230-232`）或标题栏左上角的
+//! `ListIcon` 按钮 + 一行浮动胶囊（紧凑形态，`:207-229`）。两种形态都走
+//! [`crate::menu_bar::menu_bar`]，本文件只负责给它一个位置。
+//!
+//! ⚠️ **菜单栏必须是 `drag_region` 的兄弟节点**：Windows 的命中测试取
+//! `window_control_hitboxes` 里第一个命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
+//! 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢 —— 把菜单放进 `drag_region` 里面，
+//! 点菜单只会拖窗口。这条与下面窗口三键的坑同源：**`Drag` 不能做任何可点元素的祖先**。
+//!
 //! 为什么**不用** gpui-kit 的 `component::TitleBar`：
 //!
 //! 1. 它内部**无条件**再画一组自带窗口三键（`gpui-component-0.6.6/src/title_bar.rs:247-294`
@@ -32,8 +43,8 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::h_flex;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
-    App, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels,
-    SharedString, Styled as _, Window, WindowControlArea, div, px,
+    AnyElement, App, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
+    Pixels, SharedString, Styled as _, Window, WindowControlArea, div, px,
 };
 
 // ---------------------------------------------------------------------------
@@ -68,12 +79,30 @@ use gpui_kit::{
 /// Tailwind 的 `w-14` 是任意档位，gpui 的档位表里没有对应项，不能自己发明 helper。
 const WINDOW_CONTROL_WIDTH: Pixels = px(56.);
 
-/// 标题栏（无状态）：只依赖传入的项目名与当前主题，不持有 `Entity`。
+/// 标题栏（无状态）：只依赖传入的项目名、**已渲染好的菜单栏**与当前主题，不持有 `Entity`。
 ///
 /// `project_name` 是**可见标签**：Windows 侧显示的是项目显示名本身
 /// （`.../title-bar/title-project-menu.tsx:157`），`项目：{project}` 只是该项的
 /// `aria-label`（同文件 `:147`，`windows/tauri/src/i18n/locale.ts:6191`）。
-pub fn title_bar(project_name: &str, window: &Window, cx: &App) -> impl IntoElement {
+///
+/// `menu_bar` 是调用方（[`crate::workspace::ShellWorkspace::render`]）先渲染好的元素，
+/// 收 `AnyElement` 而不是收 `Entity<MenuBar>` + `&mut App` 有两个原因：
+///
+/// 1. 本 crate 是 edition 2024，`-> impl IntoElement` 会捕获签名里所有在作用域的生命周期
+///    （见 `lib.rs` 模块头的"区域渲染函数必须收 `&Window` / `&App`"），多一个 `&mut App`
+///    参数会把可变借用带进返回值；
+/// 2. 菜单栏的形态（常驻 / 图标）由它自己决定要画哪一种，标题栏不需要知道这件事。
+///
+/// ⚠️ **菜单栏是 `drag_region` 的兄弟节点，不能放进它内部**：Windows 的命中测试取
+/// `window_control_hitboxes` 里**第一个**命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
+/// 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢，那时点菜单只会拖窗口。
+/// 本条与本文件窗口三键的 `Drag` 祖先坑同源（见下）。
+pub fn title_bar(
+    project_name: &str,
+    menu_bar: AnyElement,
+    window: &Window,
+    cx: &App,
+) -> impl IntoElement {
     let project_name: SharedString = project_name.to_owned().into();
 
     h_flex()
@@ -92,6 +121,10 @@ pub fn title_bar(project_name: &str, window: &Window, cx: &App) -> impl IntoElem
         // `text-muted-foreground`（`title-bar.tsx:337`）→ `theme.muted_foreground`
         // （`gpui-component-0.6.6/src/theme/theme_color.rs:195`）。
         .text_color(cx.theme().muted_foreground)
+        // ① 菜单栏：`drag_region` 的**兄弟**（理由见函数文档）。
+        //    常驻形态占标题栏左侧一段（真源 `title-bar.tsx:230-232`），
+        //    图标形态只占一个 24×24 按钮 + 一层浮动胶囊。
+        .child(menu_bar)
         .child(drag_region(project_name))
         .child(window_controls(window, cx))
 }

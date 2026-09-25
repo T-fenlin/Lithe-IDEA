@@ -122,15 +122,50 @@ struct Options {
     /// 已登记的 `ctrl-,` 都不命中（原因见上），所以本轮的键盘验证改走鼠标（`CommandItem`
     /// 的行点击与 `Enter` 在 gpui 里是同一个 `confirm`）。
     palette_keys: Vec<Vec<gpui_kit::Keystroke>>,
+    /// 菜单栏走"左上角图标 + 浮动胶囊"形态（**验证/诊断用**）。
+    ///
+    /// 真源的默认值就是这一支（`default-settings.ts:105` 的 `compactMenuBar: true`），
+    /// 而本侧默认取常驻（维护者要求"固定在界面上"）。两种形态是同一份菜单表、
+    /// 只差容器与定位，所以这个开关让"两种形态长什么样"都能在无人值守环境里截到图
+    /// （与 `--open-palette` 同一性质，不是产品能力）。
+    compact_menu_bar: bool,
+    /// `--menu-probe <顶级菜单 id> [动作名]`（**验证/诊断用**，见 [`run_menu_probe`]）。
+    menu_probe: Option<(String, Option<String>)>,
+    /// `--menu-probe` 里"打开菜单"与"执行动作"之间的等待毫秒数。
+    ///
+    /// 默认 2500：够截图脚本在**动作执行之前**抓到"下拉面板真的画出来了"那一帧。
+    menu_probe_delay_ms: u64,
+    /// `--menu-probe` 打开菜单之前等多久（默认 0 = 首帧就打开）。
+    ///
+    /// **为什么需要它**：无人值守环境里窗口不是前台窗口（工作站锁屏），GPUI 只在自己
+    /// 认为脏的时候画一帧，而 `PrintWindow` 只把**上一次绘制的那一帧**画进位图 ——
+    /// 首帧就打开的菜单会出现在首帧里（能截到），但"下一秒才打开"的菜单在窗口没有新
+    /// 输入时**永远画不出来**（`.artifacts/p7/NOTES.md` §4 有实测对照）。
+    /// 所以要把"菜单打开"对齐到**启动时的某一帧**上，让那一帧就是打开态。
+    menu_probe_open_ms: u64,
+    /// `--theme-probe <下标|主题名>`：执行「视图 → 主题」子菜单的一项（**验证/诊断用**）。
+    ///
+    /// 主题项是**动态生成**的（`gpui/themes/*.json` 与 gpui-kit 内置主题合起来才是注册表），
+    /// 没有固定动作名，[`lithe_gpui_workbench::menu_bar::lookup_action`] 覆盖不到它。
+    /// 走的仍是主题项 `on_click` 里那段同一份代码（见 `menu_bar::apply_theme_choice`）。
+    theme_probe: Option<String>,
 }
 
-/// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--palette-keys <串>]`。
+/// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>]`。
 fn parse_options() -> Result<Options, String> {
-    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题名>] [--locale <语言>] [--open-settings] [--open-palette] [--palette-keys <按键串>]\n\
+    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>]\n\
          \x20 --theme <主题名>     本次启动使用的主题（覆盖设置文件；验证/诊断用）\n\
          \x20 --locale <语言>      本次启动使用的界面语言（覆盖设置文件；验证/诊断用）\n\
          \x20 --open-settings     启动后自动打开设置对话框（验证/诊断用）\n\
          \x20 --open-palette      启动后自动打开命令面板（验证/诊断用）\n\
+         \x20 --compact-menu-bar  菜单栏走「左上角图标 + 浮动胶囊」形态（真源默认值；验证/诊断用）\n\
+         \x20 --menu-probe <id> [动作名]\n\
+         \x20                     打开某个顶级菜单，并在 2.5s 后执行指定动作（验证/诊断用；\n\
+         \x20                     例：\"--menu-probe view lithe.menu.toggleTerminal\"）；动作名取\n\
+         \x20                     `S1_MENU_RUN id=` 的值，省略动作名时只打开菜单\n\
+         \x20 --theme-probe <下标> 执行「视图 → 主题」子菜单的第 N 项（验证/诊断用；主题项是\n\
+         \x20                     动态生成的，没有固定动作名，所以单独一个开关）\n\
+         \x20 --menu-probe-delay <毫秒>  `--menu-probe` 打开菜单后等多久才执行动作（默认 2500）\n\
          \x20 --palette-keys <串> 启动后按顺序派发一串按键，逗号分隔；可重复给多次 = 多串（验证/诊断用；\n\
          \x20                     例：\"ctrl-shift-p,n,down,enter,escape\"）";
     let mut args = std::env::args().skip(1);
@@ -139,6 +174,11 @@ fn parse_options() -> Result<Options, String> {
     let mut locale_override: Option<String> = None;
     let mut open_settings = false;
     let mut open_palette = false;
+    let mut compact_menu_bar = false;
+    let mut menu_probe: Option<(String, Option<String>)> = None;
+    let mut menu_probe_delay_ms: u64 = 2500;
+    let mut menu_probe_open_ms: u64 = 0;
+    let mut theme_probe: Option<String> = None;
     let mut palette_keys = Vec::new();
 
     while let Some(arg) = args.next() {
@@ -147,6 +187,43 @@ fn parse_options() -> Result<Options, String> {
             "--locale" => locale_override = Some(args.next().ok_or("--locale 缺少值")?),
             "--open-settings" => open_settings = true,
             "--open-palette" => open_palette = true,
+            "--compact-menu-bar" => compact_menu_bar = true,
+            "--menu-probe" => {
+                let menu = args.next().ok_or("--menu-probe 缺少顶级菜单 id")?;
+                // 第二段是**可选**的：`--menu-probe view` 只打开菜单（用来截"下拉面板"那一帧），
+                // `--menu-probe view lithe.menu.toggleTerminal` 才会接着执行动作。
+                // 判据是"下一个参数看起来像不像一个动作名"（动作名一律以 `lithe.` 开头）；
+                // 这里先把 `next()` 的**所有权**取出来，是 `libgit2` 之外唯一的读法 ——
+                // `std::env::Args` 不实现 `Clone`（本轮实测 `args.clone()` 报 E0599）。
+                let next = args.next();
+                let action = match next {
+                    Some(ref candidate) if candidate.starts_with("lithe.") => Some(candidate.clone()),
+                    Some(candidate) => {
+                        // 不像动作名 → 它一定是别的参数：迭代器是单向的、**放不回去**，
+                        // 所以直接报错退出，避免把一个拼错的参数静默吃掉。
+                        return Err(format!(
+                            "--menu-probe 的第二个参数 {candidate:?} 不像动作名（应以 lithe. 开头）"
+                        ));
+                    }
+                    None => None,
+                };
+                menu_probe = Some((menu, action));
+            }
+            "--menu-probe-delay" => {
+                let raw = args.next().ok_or("--menu-probe-delay 缺少毫秒数")?;
+                menu_probe_delay_ms = raw
+                    .parse::<u64>()
+                    .map_err(|error| format!("--menu-probe-delay 的 {raw:?} 不是毫秒数：{error}"))?;
+            }
+            "--menu-probe-open-ms" => {
+                let raw = args.next().ok_or("--menu-probe-open-ms 缺少毫秒数")?;
+                menu_probe_open_ms = raw
+                    .parse::<u64>()
+                    .map_err(|error| format!("--menu-probe-open-ms 的 {raw:?} 不是毫秒数：{error}"))?;
+            }
+            "--theme-probe" => {
+                theme_probe = Some(args.next().ok_or("--theme-probe 缺少下标或主题名")?);
+            }
             "--palette-keys" => {
                 let raw = args.next().ok_or("--palette-keys 缺少值")?;
                 let mut sequence = Vec::new();
@@ -176,6 +253,11 @@ fn parse_options() -> Result<Options, String> {
         locale_override,
         open_settings,
         open_palette,
+        compact_menu_bar,
+        menu_probe,
+        menu_probe_delay_ms,
+        menu_probe_open_ms,
+        theme_probe,
         palette_keys,
     })
 }
@@ -233,6 +315,95 @@ fn dispatch_next_key(window: &mut Window, cx: &mut App, mut plan: KeyPlan) {
     window.on_next_frame(move |window, cx| dispatch_next_key(window, cx, plan));
 }
 
+/// `--menu-probe` 的驱动函数：打开指定顶级菜单，并在 `delay_ms` 之后执行指定动作。
+///
+/// **为什么需要这个入口**（不是产品能力）：本机的工作站当前**锁屏**，鼠标注入的**两条路都无效**
+/// —— `PostMessage(WM_LBUTTONDOWN/UP)` 与 `SetCursorPos + mouse_event` 实测都到不了应用
+/// （`.artifacts/p7/NOTES.md` §3 有对照实验）。而"主菜单栏"这件东西的要紧处正好是
+/// "点下去会不会开、会不会真的改到状态"，没有这个入口就无法在无人值守环境里取证。
+///
+/// ⚠️ 它**不绕开**菜单：打开走 [`gpui::WeakEntity<MenuBar>`] 上那个与点击回调同一个
+/// `MenuBar::toggle`，执行走 `MenuBar::run_action` → `push_run`（点击回调里唯一干的事）
+/// → 外壳下一帧 `drain_runs` + `apply_menu_action`。被绕开的只有"操作系统把这次点击
+/// 送进窗口"那一段，与 `--open-palette` 绕开 `Ctrl+Shift+P` 是同一条口径。
+fn run_menu_probe(
+    menu_id: String,
+    action_id: Option<String>,
+    open_ms: u64,
+    delay_ms: u64,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    // 动作名先解析：拼错时**当场报错退出**，不静默跑一半（与 `--palette-keys` 同一条口径）。
+    let action = match action_id {
+        Some(id) => match lithe_gpui_workbench::menu_bar::lookup_action(&id) {
+            Some(action) => Some(action),
+            None => {
+                eprintln!("--menu-probe：菜单里没有动作 {id}");
+                return;
+            }
+        },
+        None => None,
+    };
+    // `handle()` 返回的是句柄本身（不是 `Option`）：登记在 `ShellWorkspace::new` 里发生，
+    // 而 `--menu-probe` 只在窗口建好之后才跑，走到这里一定已经登记过。
+    let bar = lithe_gpui_workbench::menu_bar::handle();
+
+    if open_ms == 0 {
+        // 默认：**首帧**就打开。这样"菜单打开"会出现在启动时画的头几帧里，
+        // 而无人值守环境里那几帧正是唯一能被 `PrintWindow` 拿到的新帧。
+        let open_bar = bar.clone();
+        window.on_next_frame(move |_window, cx| {
+            let menu_id = menu_id.clone();
+            let _ = open_bar.update(cx, |bar, cx| {
+                if !bar.open_by_id(&menu_id, cx) {
+                    eprintln!("--menu-probe：没有顶级菜单 {menu_id}");
+                }
+            });
+        });
+    } else {
+        // `--menu-probe-open-ms N`：第 N 毫秒才打开。给"先截基线、再让菜单出现"这种
+        // 需要**两次新鲜绘制**的场景用（此时截图脚本要在 N 之后先戳一次重绘再截）。
+        let open_bar = bar.clone();
+        let executor = cx.background_executor().clone();
+        let opened = cx.spawn(async move |cx| {
+            executor
+                .timer(std::time::Duration::from_millis(open_ms))
+                .await;
+            cx.update(move |cx| {
+                let _ = open_bar.update(cx, |bar, cx| {
+                    if !bar.open_by_id(&menu_id, cx) {
+                        eprintln!("--menu-probe：没有顶级菜单 {menu_id}");
+                    }
+                });
+            });
+        });
+        opened.detach();
+    }
+
+    let Some(action) = action else {
+        return;
+    };
+    // 再等 `delay_ms` 才执行动作：给截图脚本留出"下拉面板已经画出来"的取证窗口。
+    //
+    // ⚠️ 这里用 `App::spawn` 而**不是** `Context::spawn_in`：本函数在 `Root::new` **之前**
+    // 被调用，那时还没有任何视图可以挂这个任务（`spawn_in` 定义在 `Context<T>` 上，
+    // `App` 一侧只有 `spawn`；本轮实测 `cx.spawn_in(..)` 在 `&mut App` 上报 E0599）。
+    // 计时器取 `background_spawn` 的池（**不能在 `foreground_spawn` 上阻塞地
+    // `block_on` 一个 timer** —— 前台线程被占住时定时器永远不触发，任务会静默死掉）。
+    let executor = cx.background_executor().clone();
+    let delayed = cx.spawn(async move |cx| {
+        executor
+            .timer(std::time::Duration::from_millis(delay_ms))
+            .await;
+        println!("S1_MENU_PROBE run_after_ms={delay_ms}");
+        cx.update(move |cx| {
+            let _ = bar.update(cx, |bar, cx| bar.run_action(action, cx));
+        });
+    });
+    delayed.detach();
+}
+
 /// bin 目标的入口点。
 /// 启动顺序（0.6.6 只有这一种写法，顺序错会静默失败或 panic）：
 /// `application().with_assets(..).run` → `set_locale` → `gpui_kit::init` → `Theme::change` →
@@ -246,6 +417,11 @@ fn main() {
         locale_override,
         open_settings,
         open_palette,
+        compact_menu_bar,
+        menu_probe,
+        menu_probe_delay_ms,
+        menu_probe_open_ms,
+        theme_probe,
         palette_keys,
     } = match parse_options() {
         Ok(options) => options,
@@ -363,7 +539,8 @@ fn main() {
                 };
 
                 cx.open_window(window_options, move |window, cx| {
-                    let workspace = cx.new(|cx| ShellWorkspace::new(root, window, cx));
+                    let workspace =
+                        cx.new(|cx| ShellWorkspace::new(root, compact_menu_bar, window, cx));
                     // 系统外观监听要在有窗口之后注册（`Context::observe_window_appearance`
                     // 收 `&mut Window`）；设置里的「跟随系统」才需要它。
                     if let Some(store) = lithe_gpui_settings::try_store(cx) {
@@ -392,6 +569,30 @@ fn main() {
                     if open_palette {
                         window.on_next_frame(|window, cx| {
                             lithe_gpui_workbench::command_palette::open_command_palette(window, cx);
+                        });
+                    }
+                    // `--menu-probe`：打开某个顶级菜单，必要时再执行一条菜单动作。
+                    // 同样放在首帧之后（理由同上），并且**不经过命令行之外任何新通路**
+                    // （见 [`run_menu_probe`] 的说明）。
+                    if let Some((menu_id, action_id)) = menu_probe {
+                        run_menu_probe(
+                            menu_id,
+                            action_id,
+                            menu_probe_open_ms,
+                            menu_probe_delay_ms,
+                            window,
+                            cx,
+                        );
+                    }
+                    // `--theme-probe`：执行「视图 → 主题」子菜单的一项。同样在首帧之后。
+                    if let Some(selector) = theme_probe {
+                        window.on_next_frame(move |_window, cx| {
+                            let bar = lithe_gpui_workbench::menu_bar::handle();
+                            let _ = bar.update(cx, |bar, cx| {
+                                if !bar.run_theme_by(&selector, cx) {
+                                    eprintln!("--theme-probe：注册表里没有主题 {selector}");
+                                }
+                            });
                         });
                     }
                     // `Root` 必须是窗口的第一层：它负责对话框、浮层与通知。

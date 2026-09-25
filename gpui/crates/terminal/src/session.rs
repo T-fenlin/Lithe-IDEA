@@ -349,6 +349,25 @@ impl TerminalPane {
         }
     }
 
+    /// 关掉**当前选中的页签**；返回是否真的关掉了一个。
+    ///
+    /// 为什么需要这个公开入口：关页签的能力本来只有页签条上那颗 `X` 有
+    /// （`terminal_view.rs:172` 调 `close_tab(id, cx)`），而主菜单的
+    /// 「终端 → 关闭终端」要的是"关当前这个"，`id` 是面板自己才知道的东西
+    /// （`session.rs` 的 `tabs` / `active` 都是私有字段）。
+    ///
+    /// 内部走的就是既有的 [`TerminalPane::close_tab`]（杀进程 + 回收 + 选中位置迁移 +
+    /// 关最后一个页签时发 [`TerminalPaneEvent::LastTabClosed`]），没有第二套逻辑。
+    pub fn close_active_tab(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(tab) = self.tabs.get(self.active) else {
+            // 一个页签都没有：不静默改成"关掉别的"，也不 panic。
+            return false;
+        };
+        let id = tab.id;
+        self.close_tab(id, cx);
+        true
+    }
+
     /// 让命令输入行拿焦点。
     ///
     /// **不在构造期调用**：`new` 里窗口根视图还不是 `Root`、输入框也还没上树，

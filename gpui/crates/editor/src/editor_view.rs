@@ -386,16 +386,18 @@ impl EditorPane {
     // 阶段 10 第一批：F12 / Ctrl+单击 / ← →（Core 轻量导航，不启 JDTLS）
     // -----------------------------------------------------------------------
 
-    /// `F12`：取光标处标识符的定义位置并跳过去。
+    /// `F12` / 菜单「转到 → 转到定义」：取光标处标识符的定义位置并跳过去。
     ///
-    /// 由 [`crate::NavigateToDefinition`] action 的处理器转发进来（见 [`install_actions`]）。
+    /// 由 [`crate::NavigateToDefinition`] action 的处理器转发进来（见 [`install_actions`]），
+    /// 也由主菜单的同一项直接调（`crate::workspace::ShellWorkspace::run_command_id` 的
+    /// `CommandId::NavigateToDefinition` 分支）—— 两条入口落到这**同一个**方法上。
     ///
     /// 三步：读光标（**字节偏移**，`state.cursor()`）→ 后台解析目标
     /// （[`crate::navigation::resolve_target`]：`.java` 上优先 JDTLS 语义结果，
     /// 服务不可用时退回第一批的 `lsp.builtinNavigation`）→ 回到前台移动光标。
     /// Core 调用是同步的，所以一定放 `cx.background_spawn`，不能在 UI 线程上直接调
     /// （`gpui/crates/shared/src/core_client.rs:27-28`）。
-    fn navigate_to_definition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn navigate_to_definition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.active else {
             println!("S1_NAV_FAILED reason=no-buffer");
             return;
