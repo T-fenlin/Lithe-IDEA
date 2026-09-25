@@ -44,6 +44,7 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{Selectable as _, h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::input::{InputEvent, InputState, NumberInput};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::scroll::ScrollableElement as _;
@@ -161,13 +162,26 @@ const DIALOG_HEIGHT: f32 = 620.;
 const NAV_WIDTH: f32 = 190.;
 /// 头部高度（`settings-dialog.tsx:120` 的 `h-11` = 44px）——正好在 gpui 档位上，用 `h_11()`。
 
-/// 左侧分类。**只列 gpui 侧真的有页面的分类**：没有子系统的分类不做，
-/// 做了也只是空壳；理由与前置条件写在 `gpui/PLAN.md` 的「阶段 8」与「阶段 14」。
+/// 左侧分类。**两类页面**：有真实内容的（常规 / 外观 / 编辑器 / 终端）与
+/// **明确空态**的（其余 7 个 —— 子系统在 gpui 侧还不存在）。
+///
+/// 顺序 = Windows 分类表（`settings-dialog.tsx:35-48`）去掉 AI 两个分类之后的子序列，
+/// **外加「外观」一页**：
+///
+/// ```text
+/// 常规 → 外观* → 项目 · JDK 与 Maven → 运行配置 → 编辑器 → 快捷键 → 终端 → LSP → Git → 日志 → 更新
+/// ```
+///
+/// ⚠️ `*` 「外观」是 **gpui 侧多出来的一页**：Windows 的真实对话框里**没有**这个分类
+/// （`07-settings-ui.md` §5.1：`tabs/appearance-settings.tsx` 是死代码，`openSettingsDialog("appearance")`
+/// 实际会落到「常规」），但主题必须有个落点，而死代码页签里那些项恰好是"能真生效"的一批。
+/// v1 就把它做成了第 2 页；本阶段保持这个位置（紧挨「常规」，与主题在真源里属于"外观/常规"这一类相符）。
+///
+/// **为什么空态的也要列出来**（HANDOFF §4 第 2 项的口径）：用户点进一个分类期望看到
+/// "这里能配什么、为什么现在没有"，而不是"这个分类不存在"。空态页只写一句前置条件，
+/// **不画任何控件** —— 画一个永远不生效的开关比不画更容易骗人（`07-settings-ui.md` §7.3-D）。
 ///
 /// 公开是因为命令面板要能"打开到指定分类"（[`open_settings_dialog_at`]）。
-///
-/// 顺序照 Windows 的分类表（`settings-dialog.tsx:35-48`）里的相对次序取子序列：
-/// 常规 → 外观 → 编辑器 → 终端。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {
     /// 常规（`settings.tabs.general` = 常规）。
@@ -178,11 +192,43 @@ pub enum Category {
     Editor,
     /// 终端（`settings.tabs.terminal` = 终端）。
     Terminal,
+    /// 项目 · JDK 与 Maven（`settings.project.title`）—— 空态。
+    Project,
+    /// 运行配置（`settings.run.title`）—— 空态。
+    Run,
+    /// 快捷键（`settings.tabs.keyboard`）—— 空态。
+    Keyboard,
+    /// LSP（`settings.tabs.lsp`）—— 空态。
+    Lsp,
+    /// Git（`settings.tabs.git`）—— 空态。
+    Git,
+    /// 日志（`settings.tabs.logs`）—— 空态。
+    Logs,
+    /// 更新（`settings.tabs.updates`）—— 空态。
+    Updates,
 }
 
 impl Category {
-    /// 渲染顺序（Windows 12 个分类里本侧做出来的那 4 个，相对次序与真源一致）。
-    pub const ALL: [Category; 4] = [
+    /// 左栏的渲染顺序（Windows 12 个分类去掉 AI 两个之后的子序列，外加 gpui 侧多出的「外观」）。
+    pub const ALL: [Category; 11] = [
+        Category::General,
+        Category::Appearance,
+        Category::Project,
+        Category::Run,
+        Category::Editor,
+        Category::Keyboard,
+        Category::Terminal,
+        Category::Lsp,
+        Category::Git,
+        Category::Logs,
+        Category::Updates,
+    ];
+
+    /// 有真实页面的分类（其余是 [`Self::prerequisite_key`] 的非空项 = 明确空态）。
+    ///
+    /// 测试用它把"空态页不许有控件、实现页必须有前置条件为 `None`"钉住；
+    /// 把一页从空态升级成实现时，这张表和 `content()` 的分支要一起改。
+    pub const IMPLEMENTED: [Category; 4] = [
         Category::General,
         Category::Appearance,
         Category::Editor,
@@ -199,29 +245,68 @@ impl Category {
             Self::Appearance => "appearance",
             Self::Editor => "editor",
             Self::Terminal => "terminal",
+            Self::Project => "project",
+            Self::Run => "run",
+            Self::Keyboard => "keyboard",
+            Self::Lsp => "lsp",
+            Self::Git => "git",
+            Self::Logs => "logs",
+            Self::Updates => "updates",
         }
     }
 
-    /// 分类名文案键（Windows `settings-dialog.tsx:35-48` 的 `labelKey`）。
+    /// 分类名文案键。**能复用真源既有键就复用**：
+    /// 项目 / 运行配置页的标题在真源里是 `settings.project.title` / `settings.run.title`
+    /// （`macos-settings-panels.tsx` 的分类标签就是这两条），其余走 `settings.tabs.*`。
     fn label_key(self) -> &'static str {
         match self {
             Self::General => "lithe.settings.tabs.general",
             Self::Appearance => "lithe.settings.tabs.appearance",
             Self::Editor => "lithe.settings.tabs.editor",
             Self::Terminal => "lithe.settings.tabs.terminal",
+            Self::Project => "lithe.settings.project.title",
+            Self::Run => "lithe.settings.run.title",
+            Self::Keyboard => "lithe.settings.tabs.keyboard",
+            Self::Lsp => "lithe.settings.tabs.lsp",
+            Self::Git => "lithe.settings.tabs.git",
+            Self::Logs => "lithe.settings.tabs.logs",
+            Self::Updates => "lithe.settings.tabs.updates",
+        }
+    }
+
+    /// 空态页那句"前置条件"的文案键；`None` = 这个分类有真实页面。
+    ///
+    /// 这些键**真源里没有**（Windows 这些页都有内容），由 `extract-locale.mjs` 的
+    /// `GPUI_ONLY_KEYS` 提供，每条写了理由。
+    fn prerequisite_key(self) -> Option<&'static str> {
+        match self {
+            Self::General | Self::Appearance | Self::Editor | Self::Terminal => None,
+            Self::Project => Some("lithe.settings.gpui.prerequisiteProject"),
+            Self::Run => Some("lithe.settings.gpui.prerequisiteRun"),
+            Self::Keyboard => Some("lithe.settings.gpui.prerequisiteKeyboard"),
+            Self::Lsp => Some("lithe.settings.gpui.prerequisiteLsp"),
+            Self::Git => Some("lithe.settings.gpui.prerequisiteGit"),
+            Self::Logs => Some("lithe.settings.gpui.prerequisiteLogs"),
+            Self::Updates => Some("lithe.settings.gpui.prerequisiteUpdates"),
         }
     }
 
     /// 分类图标。Windows 用 `GearSixIcon` / `CodeBlockIcon` / `TerminalWindowIcon` 等
     /// **expui** 图标；本侧的分类图标继续走 Lucide（真源那几个字形已经搬进
-    /// `gpui/assets/ui-icons/`，但分类栏这一列的图标不在本次范围内），逐个取语义最近的一个：
-    /// 编辑器 → `code`、终端 → `square-terminal`（与活动栏「终端」同一个字形）。
+    /// `gpui/assets/ui-icons/`，但分类栏这一列的图标不在本次范围内），逐个取语义最近的一个。
     fn icon(self) -> IconName {
         match self {
             Self::General => IconName::Settings,
             Self::Appearance => IconName::Palette,
             Self::Editor => IconName::Code,
             Self::Terminal => IconName::SquareTerminal,
+            Self::Project => IconName::FolderCog,
+            Self::Run => IconName::Play,
+            Self::Keyboard => IconName::Keyboard,
+            Self::Lsp => IconName::Braces,
+            Self::Git => IconName::GitBranch,
+            Self::Logs => IconName::ScrollText,
+            Self::Updates => IconName::CloudDownload,
         }
     }
 }
@@ -415,6 +500,14 @@ impl SettingsDialog {
                     Category::Appearance => self.appearance_page(&settings, cx),
                     Category::Editor => self.editor_page(&settings, cx),
                     Category::Terminal => self.terminal_page(&settings, cx),
+                    // 其余分类是**明确空态**：只有一句前置条件，没有任何控件。
+                    Category::Project
+                    | Category::Run
+                    | Category::Keyboard
+                    | Category::Lsp
+                    | Category::Git
+                    | Category::Logs
+                    | Category::Updates => self.empty_page(cx),
                 },
             ))
     }
@@ -730,6 +823,52 @@ impl SettingsDialog {
         ]
     }
 
+    /// **明确空态**页：一句「此分类尚未接入」+ 一句前置条件，**没有任何控件**。
+    ///
+    /// 三件事一起看才成立：
+    /// 1. 分类**留在左栏**（用户点得到，不会以为"这个分类不存在"）；
+    /// 2. 标题是分类自己的名字（页面标题照常画），正文说明缺的是**什么子系统**；
+    /// 3. **不画假控件**（`07-settings-ui.md` §7.3-D）：一个永远不生效的开关比不画更容易骗人，
+    ///    所以这里连"置灰的开关"都没有，只有说明文字。
+    ///
+    /// 图标沿用左栏那一列；`Empty` 的虚线边框按编辑区空状态同一口径关掉
+    /// （`empty.rs:74-75` 硬编码了 `border_dashed`，真机界面没有这圈线）。
+    fn empty_page(&self, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+        let prerequisite = self
+            .category
+            .prerequisite_key()
+            .expect("空态分类必须登记一条前置条件文案（`Category::prerequisite_key`）");
+        vec![
+            v_flex().w_full().py_8().child(
+                Empty::new()
+                    .border_color(cx.theme().transparent)
+                    .gap_3()
+                    .px_6()
+                    .header(
+                        EmptyHeader::new()
+                            .max_w_112()
+                            .gap_3()
+                            .media(
+                                EmptyMedia::new().child(
+                                    Icon::new(self.category.icon())
+                                        .size_10()
+                                        .text_color(cx.theme().muted_foreground),
+                                ),
+                            )
+                            .title(
+                                EmptyTitle::new()
+                                    .text_sm()
+                                    .child(tr("lithe.settings.gpui.pageNotAvailableTitle")),
+                            )
+                            .description(
+                                EmptyDescription::new().text_sm().child(tr(prerequisite)),
+                            ),
+                    ),
+            )
+            .into_any_element(),
+        ]
+    }
+
     /// 底部：左「恢复默认设置…」+ 右「完成」。
     fn footer(&self, cx: &Context<Self>) -> impl IntoElement {
         h_flex()
@@ -1004,23 +1143,55 @@ mod tests {
         assert_eq!(format_editor_font_size(14.6), "15");
     }
 
-    /// 分类清单必须正好是**已经做出了页面**的那几页（多一页就是空壳）。
+    /// 分类清单必须正好是 Windows 去掉 AI 之后的 10 个分类 + gpui 侧的「外观」。
     ///
-    /// ⚠️ 这个断言是"不许提前把没做的分类挂进左栏"的守卫：每做完一页就把它加进来，
-    /// 加进来就必须同时有页面与文案。
+    /// ⚠️ 这条断言是"左栏不许和真源漂移"的守卫：加分类要同时有页面（内容或空态）与文案。
     #[test]
-    fn only_implemented_categories_are_exposed() {
+    fn categories_match_the_windows_list_without_ai() {
+        let ids: Vec<&str> = Category::ALL.iter().map(|category| category.id()).collect();
         assert_eq!(
-            Category::ALL,
+            ids,
             [
-                Category::General,
-                Category::Appearance,
-                Category::Editor,
-                Category::Terminal,
+                "general",
+                // 真源对话框里**没有** appearance（那是死代码页签，§5.1）；本侧必须留着它，
+                // 因为主题要有落点。它是这张表与真源唯一的差集。
+                "appearance",
+                "project",
+                "run",
+                "editor",
+                "keyboard",
+                "terminal",
+                "lsp",
+                "git",
+                "logs",
+                "updates",
             ],
-            "左栏只列真的有页面的分类"
+            "顺序与取值都要跟 settings-dialog.tsx:35-48 一致（AI 两个分类 + 本侧新增的 appearance 除外）"
         );
         assert_eq!(Category::DEFAULT, Category::General);
+    }
+
+    /// **每个分类要么是"实现页"、要么有一条前置条件**，两者互斥且必居其一。
+    ///
+    /// 这条守的是空态页的诚实性：漏登记前置条件的空态页会画出一个只有标题的空页
+    /// （`empty_page` 里那句 `expect` 会在运行期炸），而实现页如果被记成空态，
+    /// `content()` 的分支与 `IMPLEMENTED` 就会各说各话。
+    #[test]
+    fn every_category_is_implemented_or_declares_a_prerequisite() {
+        for category in Category::ALL {
+            let implemented = Category::IMPLEMENTED.contains(&category);
+            let prerequisite = category.prerequisite_key();
+            assert_eq!(
+                implemented,
+                prerequisite.is_none(),
+                "{:?} 的实现状态与前置条件登记不一致",
+                category
+            );
+        }
+        // `IMPLEMENTED` 里的每一项都必须在 `ALL` 里（反过来由上一条断言覆盖）。
+        for category in Category::IMPLEMENTED {
+            assert!(Category::ALL.contains(&category), "{category:?} 不在 ALL 里");
+        }
     }
 
     /// 分类 id 是诊断行 `S1_SETTINGS dialog_opened category=…` 的取值，也是命令面板
@@ -1031,6 +1202,8 @@ mod tests {
         assert_eq!(Category::Appearance.id(), "appearance");
         assert_eq!(Category::Editor.id(), "editor");
         assert_eq!(Category::Terminal.id(), "terminal");
+        assert_eq!(Category::Lsp.id(), "lsp");
+        assert_eq!(Category::Updates.id(), "updates");
     }
 
     /// rem 换算：`rems(P / 16.)` 在 16px 基准下必须等于规格像素值。

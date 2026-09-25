@@ -313,6 +313,16 @@ mod tests {
             ("lithe.settings.mac.shellPowerShell", "PowerShell"),
             ("lithe.settings.mac.shellCommandPrompt", "命令提示符"),
             ("lithe.settings.mac.shellWsl", "WSL"),
+            // 阶段 14（设置左栏保留的分类）：7 个空态分类的**分类名**都是真源既有键
+            // （`settings.tabs.*` 与 `settings.project.title` / `settings.run.title`，
+            // 分类表 `settings-dialog.tsx:35-48`）。
+            ("lithe.settings.tabs.keyboard", "快捷键"),
+            ("lithe.settings.tabs.lsp", "LSP"),
+            ("lithe.settings.tabs.git", "Git"),
+            ("lithe.settings.tabs.logs", "日志"),
+            ("lithe.settings.tabs.updates", "更新"),
+            ("lithe.settings.project.title", "项目 · JDK 与 Maven"),
+            ("lithe.settings.run.title", "运行配置"),
             // 下面 6 条真源（`windows/tauri/src/i18n/locale.ts`）里没有，由
             // `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 提供（每条都写了理由）。
             ("lithe.settings.gpui.languageEnglish", "英语"),
@@ -329,6 +339,41 @@ mod tests {
             (
                 "lithe.settings.gpui.editorFontSizeDescription",
                 "调整编辑器与终端正文的字号。界面字号在外观页。",
+            ),
+            // 阶段 14：7 个"还没有子系统"的分类的**明确空态**文案（标题 + 每个分类一句前置条件）。
+            // 真源里这些页都有内容，所以这一族键全是 gpui 侧新增；理由逐条写在
+            // `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里。
+            (
+                "lithe.settings.gpui.pageNotAvailableTitle",
+                "此分类尚未接入",
+            ),
+            (
+                "lithe.settings.gpui.prerequisiteProject",
+                "前置条件：项目环境的探测与保存（JDK、Maven 的发现与生效值展示）。真源是 components/project-environment-settings.tsx。",
+            ),
+            (
+                "lithe.settings.gpui.prerequisiteRun",
+                "前置条件：运行配置的识别与保存。真源是 components/run-configuration-settings.tsx。",
+            ),
+            (
+                "lithe.settings.gpui.prerequisiteKeyboard",
+                "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。",
+            ),
+            (
+                "lithe.settings.gpui.prerequisiteLsp",
+                "前置条件：语言服务客户端（补全、参数提示、语义高亮）与 JDTLS 运行时路径设置。",
+            ),
+            (
+                "lithe.settings.gpui.prerequisiteGit",
+                "前置条件：Git 身份（user.name / user.email）的读写接线；Core 的 git.repositorySetup 与 git.configureIdentity 已经就绪。",
+            ),
+            (
+                "lithe.settings.gpui.prerequisiteLogs",
+                "前置条件：日志系统（日志目录、诊断开关与诊断包导出）。",
+            ),
+            (
+                "lithe.settings.gpui.prerequisiteUpdates",
+                "前置条件：更新器（检查更新、更新通道与安装流程）。",
             ),
             // 阶段 9 的编辑器侧（3 条，同样由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里）。
             ("lithe.editor.gpui.discardChanges", "放弃修改"),
@@ -640,11 +685,14 @@ mod tests {
     /// 在真源的两份 catalog 里本来就是同一个词（`settings.mac.shell` / `shellPowerShell` /
     /// `shellWsl`），没有可翻译的内容；`命令提示符`（`shellCommandPrompt`）有英文对照
     /// （`Command Prompt`），所以**不进**这张表。
+    /// 同批追加的 `settings.tabs.lsp` / `settings.tabs.git` 同理：LSP 与 Git 是中英同形词。
     const SAME_IN_BOTH_LOCALES: &[&str] = &[
         "lithe.workbench.maven",
         "lithe.maven.title",
         "lithe.settings.mac.shell",
         "lithe.settings.mac.shellPowerShell",
         "lithe.settings.mac.shellWsl",
+        "lithe.settings.tabs.lsp",
+        "lithe.settings.tabs.git",
     ];
 }

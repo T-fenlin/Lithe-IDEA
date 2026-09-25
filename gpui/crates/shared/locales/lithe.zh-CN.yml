@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 19 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 27 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8657,6 +8657,22 @@ lithe:
     zh-CN: "所有设置都会回到默认值。"
   settings.gpui.editorFontSizeDescription:
     zh-CN: "调整编辑器与终端正文的字号。界面字号在外观页。"
+  settings.gpui.pageNotAvailableTitle:
+    zh-CN: "此分类尚未接入"
+  settings.gpui.prerequisiteProject:
+    zh-CN: "前置条件：项目环境的探测与保存（JDK、Maven 的发现与生效值展示）。真源是 components/project-environment-settings.tsx。"
+  settings.gpui.prerequisiteRun:
+    zh-CN: "前置条件：运行配置的识别与保存。真源是 components/run-configuration-settings.tsx。"
+  settings.gpui.prerequisiteKeyboard:
+    zh-CN: "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。"
+  settings.gpui.prerequisiteLsp:
+    zh-CN: "前置条件：语言服务客户端（补全、参数提示、语义高亮）与 JDTLS 运行时路径设置。"
+  settings.gpui.prerequisiteGit:
+    zh-CN: "前置条件：Git 身份（user.name / user.email）的读写接线；Core 的 git.repositorySetup 与 git.configureIdentity 已经就绪。"
+  settings.gpui.prerequisiteLogs:
+    zh-CN: "前置条件：日志系统（日志目录、诊断开关与诊断包导出）。"
+  settings.gpui.prerequisiteUpdates:
+    zh-CN: "前置条件：更新器（检查更新、更新通道与安装流程）。"
   editor.gpui.discardChanges:
     zh-CN: "放弃修改"
   editor.gpui.unsavedChangesBody:

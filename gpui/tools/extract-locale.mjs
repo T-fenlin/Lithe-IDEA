@@ -124,6 +124,59 @@ const GPUI_ONLY_KEYS = [
       "真源的「编辑器 → 字体大小」这一行没有描述（macos-settings-panels.tsx:283-292），而 gpui 侧的字号落在唯一的等宽字号 token 上（Theme::mono_font_size），编辑器与终端正文共用它；补一句说明作用范围，避免与外观页的「界面字体大小」（uiFontSize，rem 基准）混淆。",
   },
   {
+    key: "settings.gpui.pageNotAvailableTitle",
+    zh: "此分类尚未接入",
+    en: "This category is not available yet",
+    reason:
+      "设置左栏保留 Windows 的 10 个分类（去掉 AI 两个），其中 7 个在 gpui 侧还没有子系统。HANDOFF §4 的口径是「没有数据源的做成明确空态并写清前置条件，不塞假控件」，所以这些页只有标题 + 前置条件一句，真源里没有这种空态文案，需要自己的键。",
+  },
+  {
+    key: "settings.gpui.prerequisiteProject",
+    zh: "前置条件：项目环境的探测与保存（JDK、Maven 的发现与生效值展示）。真源是 components/project-environment-settings.tsx。",
+    en: "Requires project environment discovery and persistence (JDK and Maven detection with effective values), as in components/project-environment-settings.tsx.",
+    reason:
+      "「项目 · JDK 与 Maven」页的前置条件（同 pageNotAvailableTitle）。真源那一页读写的是项目级文件（services/project-environment.ts），gpui 侧既没有探测也没有存储。",
+  },
+  {
+    key: "settings.gpui.prerequisiteRun",
+    zh: "前置条件：运行配置的识别与保存。真源是 components/run-configuration-settings.tsx。",
+    en: "Requires run configuration discovery and persistence, as in components/run-configuration-settings.tsx.",
+    reason: "「运行配置」页的前置条件（同 pageNotAvailableTitle）；gpui 侧的运行子系统还是 Pending 状态。",
+  },
+  {
+    key: "settings.gpui.prerequisiteKeyboard",
+    zh: "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。",
+    en: "Requires a keybinding table and presets; today only a few shortcuts are bound with fixed keys.",
+    reason:
+      "「快捷键」页的前置条件（同 pageNotAvailableTitle）。真源那一页的预设下拉要整套 keymap 基础设施（features/keymaps/**），gpui 侧只有少量 KeyBinding::new 的固定绑定。",
+  },
+  {
+    key: "settings.gpui.prerequisiteLsp",
+    zh: "前置条件：语言服务客户端（补全、参数提示、语义高亮）与 JDTLS 运行时路径设置。",
+    en: "Requires a language service client (completion, parameter hints, semantic highlighting) and a configurable JDTLS runtime path.",
+    reason:
+      "「LSP」页的前置条件（同 pageNotAvailableTitle）。真源那页的三个开关（autoCompletion / parameterHints / semanticTokens）在 gpui 侧没有消费方；能真做的 JDTLS 运行时路径还没做成设置项（java/src/jdtls.rs:440-460 现在是 env/JAVA_HOME/PATH 三级发现），所以整页先给空态。",
+  },
+  {
+    key: "settings.gpui.prerequisiteGit",
+    zh: "前置条件：Git 身份（user.name / user.email）的读写接线；Core 的 git.repositorySetup 与 git.configureIdentity 已经就绪。",
+    en: "Requires wiring Git identity (user.name / user.email); Core already provides git.repositorySetup and git.configureIdentity.",
+    reason:
+      "「Git」页的前置条件（同 pageNotAvailableTitle）。真源那页 11 项里大部分作用于 gpui 侧还没有的 Git 视图开关，另有「提交身份」子面板要读写 git config —— 后者缺的只是接线，所以文案里点明 Core 已经就绪。",
+  },
+  {
+    key: "settings.gpui.prerequisiteLogs",
+    zh: "前置条件：日志系统（日志目录、诊断开关与诊断包导出）。",
+    en: "Requires the logging subsystem (log directory, diagnostic toggle, and diagnostic bundle export).",
+    reason: "「日志」页的前置条件（同 pageNotAvailableTitle）；gpui 侧没有日志系统与 log-api 等价物。",
+  },
+  {
+    key: "settings.gpui.prerequisiteUpdates",
+    zh: "前置条件：更新器（检查更新、更新通道与安装流程）。",
+    en: "Requires an updater (update check, channels, and installation flow).",
+    reason: "「更新」页的前置条件（同 pageNotAvailableTitle）；gpui 侧没有更新器。",
+  },
+  {
     key: "editor.gpui.discardChanges",
     zh: "放弃修改",
     en: "Discard changes",

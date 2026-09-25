@@ -1368,7 +1368,30 @@ HANDOFF §4 的队列里这一项是"设置剩余页（除 AI）"，本批做的
 | 交互级（真实鼠标注入） | 4 个分类可点、两个下拉可改、落盘可验；`S1_EDITOR_TAB_SIZE size=4 buffers=1`（已开 buffer 被重设）；字号 20→14 时同一文件同一滚动位置文字行数 21→31 |
 | 终端端到端 | `""` → `S1_TERMINAL_TAB profile=powershell`；`"cmd"` → `S1_TERMINAL default_shell=cmd outcome=applied` + `profile=cmd`（页签写 `cmd`、正文是 cmd.exe 横幅） |
 
-### 14.5 未做 / 已知边界
+### 14.5 其余分类：**明确空态**（不是空壳）
+
+左栏补齐到 **11 项** = Windows 分类表（`settings-dialog.tsx:35-48`）去掉 AI 两个之后的 10 项，
+**外加「外观」**（真源对话框里没有这个分类 —— `tabs/appearance-settings.tsx` 是死代码，见 §8.2 与
+`07-settings-ui.md` §5.1；本侧必须留着它，因为主题要有落点）。
+
+| 类别 | 分类 | 页面 |
+| --- | --- | --- |
+| 实现页（4） | 常规 / 外观 / 编辑器 / 终端 | 有控件，全部真的有消费方 |
+| **空态页（7）** | 项目 · JDK 与 Maven / 运行配置 / 快捷键 / LSP / Git / 日志 / 更新 | 页标题 + `Empty`（分类图标 + 「此分类尚未接入」+ 一句前置条件），**没有一个控件** |
+
+为什么空态页也要列出来（HANDOFF §4 的口径）：用户点进一个分类期望看到"这里能配什么、为什么现在没有"，
+而不是"这个分类不存在"。而**不画假控件**是同一句话的另一半 —— 一个永远不生效的开关比不画更容易骗人
+（`07-settings-ui.md` §7.3-D）。
+
+两条结构化守卫（`settings/src/dialog.rs` 的测试）：`categories_match_the_windows_list_without_ai`
+钉住左栏顺序就是真源子序列 + `appearance`；`every_category_is_implemented_or_declares_a_prerequisite`
+钉住"每个分类要么是实现页、要么登记了前置条件"（漏登记的空态页会在运行期 `expect` 炸）。
+
+前置条件文案是 7 条新的 `settings.gpui.prerequisite*`（+ 1 条标题 + 1 条编辑器字号描述），
+理由逐条写在 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里。
+`cargo test -p lithe-gpui-settings` = 36 passed；`13-nav-11.png` / `14-empty-project.png` / `15-empty-updates.png` 是实机证据。
+
+### 14.6 未做 / 已知边界
 
 1. **`Ctrl+,` 仍是"没被机器验证"**：本轮 `ui-keys.ps1` 打印出 `SetForegroundWindow` 被拒
    （`目标 hwnd ≠ 注入前的前台 hwnd`），键送到了别的窗口 —— 是注入侧的限制，不是绑定坏了。

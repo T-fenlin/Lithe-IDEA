@@ -125,14 +125,17 @@
      真源 4 项里的 `codeLens` / `horizontalTabScroll` **不画**（gpui 侧没有消费方，理由在
      `settings/src/dialog.rs::editor_page` 的文档里）。
    - ✅ **终端页**：`terminalDefaultShellId`（→ 新建会话真的换 shell；幂等，不覆盖页签条 ⌄ 的手动选择）。
+   - ✅ **左栏补齐到 11 项**：实现的 4 页（常规/外观/编辑器/终端）+ **7 个明确空态页**
+     （项目 / 运行配置 / 快捷键 / LSP / Git / 日志 / 更新：只有页标题 + 「此分类尚未接入」+ 一句前置条件，
+     **一个控件都没有**）。空态页的诚实性由测试钉住（`every_category_is_implemented_or_declares_a_prerequisite`）。
    - ⏳ **Git 身份**：Core 已有 `git.repositorySetup`（读）与 `git.configureIdentity`（写/清 local|global），
      真源是 `components/git-identity-settings.tsx`（`git.setup.*` 34 键）。**卡在依赖方向**：
-     `settings` 不能依赖 `git` —— 要么在 `settings` 开宿主钩子（`workbench` 启动时登记），
-     要么把这一页放进 `git` crate。**动手前先定这一条**。
+     `settings` 不能依赖 `git` —— 建议照仓库里已有的 `TabMenuHostActions` 口径，
+     由 `settings` 定义一个宿主钩子（`workbench` 启动时登记 `load`/`save` 两个回调），
+     这一页在钩子未登记时就是现在的空态。**动手前先确认这一条。**
    - ⏳ **LSP 页**：真源 3 个开关（`autoCompletion` / `parameterHints` / `semanticTokens`）在 gpui 侧
      **没有消费方**（不画）；能真做的是 **jdtls 运行时路径**（现在只有
      `java/src/jdtls.rs:440-460` 的 `LITHE_JDTLS_JAVA` / `JAVA_HOME` / PATH 三级发现）。
-   - ⏳ **其余分类的明确空态**：项目 / 运行配置 / 快捷键 / Git / 日志 / 更新。
    - ⚠️ **加新设置键时先读 `gpui/PLAN.md` §14.2**：`persistence.rs` 的手写逐键表漏键会
      "写得出、读不回"且无诊断；守卫测试 `every_key_survives_a_round_trip` 会用"所有字段非默认"
      的往返把它照出来。
