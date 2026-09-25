@@ -732,6 +732,14 @@ fn main() {
             // `App::on_action` 是累加的，而 `new` 每次换根都会再跑一遍 ——
             // 换一次项目就多一个处理器，同一个键会被处理多次。
             lithe_gpui_workbench::install_open_project_action(cx);
+            // B2 的六条「菜单项也有的键位入口」：`Ctrl+Shift+T` 重新打开已关闭标签页 /
+            // `Ctrl+B` 侧栏 / `Ctrl+J` 终端 / `Ctrl+=` `Ctrl+-` `Ctrl+0` 缩放。
+            //
+            // ⚠️ 与上面那条**同一条理由**（也必须在这里、只在这里）：`App::on_action` 是累加的，
+            // 而 `ShellWorkspace::new` 每换一次项目就会再跑一遍 —— 放那里会让同一个键
+            // 被处理 N 次。键位字面量在 `lithe_gpui_workbench::menu_bar` 的常量里
+            // （与菜单项显示的那颗键同一份），登记时逐条读它们。
+            lithe_gpui_workbench::menu_bar::install_key_actions(cx);
 
             let bounds = startup_window_bounds(cx);
 

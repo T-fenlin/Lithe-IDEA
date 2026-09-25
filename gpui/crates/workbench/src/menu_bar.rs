@@ -77,6 +77,25 @@
 //! 五条关闭路径全部汇合到 [`MenuBar::close`] 这一个出口，各自打一行
 //! `S1_MENU_CLOSE reason=…`（取值域见 [`CloseReason`]）。
 //!
+//! ## B2 接的两件事：21 条"能力已在、只缺菜单项"的真接线 ＋ 键位胶囊
+//!
+//! 1. **真接线**：按 `gpui/research/windows/10-menu-bar.md:114-259` 的"菜单项 → 命令"清单，
+//!    把底层能力已经在仓库里的那些摆进菜单，并且**每一条都有一个真改状态的执行臂**
+//!    （落在 `crate::workspace::ShellWorkspace::apply_menu_action`，逐条注释接线点）。
+//!    本批真接上 **18 条**（编辑 9 + 视图 9）；另外 3 条（文件→还原文件、转到→后退/前进、
+//!    转到→下一个/上一个标签页）**没有摆**，因为它们的实现在 editor crate 的私有方法里，
+//!    而本批写域不含那个 crate —— 按"占位项不许假装能用"的口径，宁可不摆也不摆死项。
+//! 2. **键位胶囊**：菜单项统一走 [`PopupMenuItem::action`]（见 [`MenuAction::keybind_action`]），
+//!    `PopupMenu` 自己从 keymap 反查并画右侧胶囊（`popup_menu.rs:1119-1144,1301`）——
+//!    **本侧一条键位文案都没有手写**（Q13）。没有绑定的项返回 `None`、不传 action，
+//!    于是右侧空着（Q3：不许"显示了却按不出效果"）。
+//!
+//! ⚠️ **「编辑」菜单那九条的作用目标**（B2 唯一一处需要解释的机制）：它们是上游 `Input`
+//! 上下文里的动作，处理器在编辑器元素自己身上，而 `ShellWorkspace` 够不到那个元素
+//! （`EditorPane::buffers` / `EditorState::focus_handle` 都在 editor crate 内部）。
+//! 所以点击时把它们派发给**打开菜单那一刻窗口的焦点元素**（[`ACTION_TARGET`]），
+//! 没有目标时如实打 `state=no_target` 而不是假装成功。
+//!
 //! ⚠️ **顶级的开合因此从 `on_click` 挪到了 `on_mouse_down`**：面板的
 //! `on_mouse_down_out` 在**捕获阶段**就会把"按在触发器上"的这一下看成"点到了面板外"
 //! （触发器对面板而言确实是外部），若开合还挂在 mouse-up 的 `on_click` 上，
@@ -135,7 +154,7 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
     App, AppContext as _, Bounds, ClickEvent, Context, DismissEvent, Entity, FocusHandle,
-    Focusable as _, InteractiveElement as _, IntoElement, Keystroke, MouseButton,
+    Focusable as _, InteractiveElement as _, IntoElement, KeyBinding, Keystroke, MouseButton,
     ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _,
     Subscription, Window, deferred, div, px,
 };
@@ -226,6 +245,112 @@ pub enum MenuItem {
     Theme,
 }
 
+// ---------------------------------------------------------------------------
+// B2 绑定的键位（**唯一真源**）
+// ---------------------------------------------------------------------------
+
+// Q13：**只给真功能绑并显示键位**。所以这张表就是本批"键位"的完整清单 ——
+// `MenuAction::menu_key`（菜单项上显示哪颗键）与
+// `crate::workspace::install_menu_key_actions`（真的把它绑到 keymap 上）
+// **读的是同一批常量**，两者不会漂移。
+//
+// ⚠️ 不在这张表里的菜单项**就是没有键位**：它们既不显示胶囊、也不该被绑键
+// （Q3：不许"显示了却按不出效果"）。`Ctrl+O` / `Ctrl+S` / `Ctrl+W` / `Ctrl+Shift+P` /
+// `Ctrl+M` / `Ctrl+,` / `F12` 那七条各有自己的登记点（B4 的 `install_open_project_action`、
+// `lithe_gpui_editor::install_actions`、`crate::command_palette` / `lithe_gpui_settings`
+// 的 `install_actions`），这里不重复登记 —— 菜单项的胶囊由 `.action(..)` 反查 keymap 得到。
+
+/// 文件 → 重新打开已关闭标签页：`Ctrl+Shift+T`（真源 `menu.reopenClosedTab` 同键）。
+pub const KEY_REOPEN_CLOSED_TAB: &str = "ctrl-shift-t";
+/// 视图 → 切换活动侧栏：`Ctrl+B`（真源 `menu.toggleActivitySidebar` 同键）。
+pub const KEY_TOGGLE_ACTIVITY_SIDEBAR: &str = "ctrl-b";
+/// 视图 → 切换终端：`Ctrl+J`（真源 `menu.toggleTerminal` 同键；上游无此绑定）。
+pub const KEY_TOGGLE_TERMINAL: &str = "ctrl-j";
+/// 视图 → 放大：`Ctrl+=`（真源 `menu.zoomIn` 的 `mod+=`）。
+pub const KEY_ZOOM_IN: &str = "ctrl-=";
+/// 视图 → 缩小：`Ctrl+-`（真源 `menu.zoomOut` 的 `mod+-`）。
+pub const KEY_ZOOM_OUT: &str = "ctrl--";
+/// 视图 → 重置缩放：`Ctrl+0`（真源 `menu.resetZoom` 的 `mod+0`）。
+pub const KEY_RESET_ZOOM: &str = "ctrl-0";
+
+// B2 那六条键位各自的 action（`Ctrl+Shift+T` / `Ctrl+B` / `Ctrl+J` / `Ctrl+=` / `Ctrl+-` / `Ctrl+0`）。
+//
+// 为什么定义在**本模块**而不是 `crate::workspace`：它们与 `MenuAction` 是同一件事的两半
+// （"这一项绑哪颗键"与"按下这颗键做哪件事"），放一起才不会漂移；而 `pub mod menu_bar`
+// 本来就是公开的，`main.rs` 不需要为了它们多一条 `lib.rs` 的 re-export
+// （B4 的 `OpenProjectFolder` 当初也是为了同样的理由留在 `workspace`，见那里的注释）。
+gpui_kit::actions!(
+    lithe_workbench,
+    [ReopenTab, ToggleSidebar, ToggleTerminalPane, ZoomIn, ZoomOut, ResetZoom]
+);
+
+/// 把一次"键位按下"换成菜单动作（[`install_menu_key`] 的处理器）。
+///
+/// 走 [`MenuBar::push_run`] 而**不是**直接执行：这样"按 `Ctrl+Shift+T`"与
+/// "点「文件 → 重新打开已关闭标签页」"落到**同一个**待执行队列、**同一段**执行代码
+/// （`ShellWorkspace::apply_menu_action`）—— 与 B4 的 `Ctrl+O` 逐字同一条链。
+///
+/// 菜单栏句柄没登记（窗口还没建出来）时什么也不做，只留一行诊断：`handle()` 会 panic，
+/// 而应用级 action 在窗口之外也会被派发（与 `install_open_project_action` 同一条理由）。
+fn push_menu_key(menu_action: MenuAction, key: &'static str, cx: &mut App) {
+    let id = menu_action.label_key();
+    let Some(bar) = try_handle() else {
+        eprintln!("S1_MENU_KEY id={id} source={key} state=no_menu_bar");
+        return;
+    };
+    let _ = bar.update(cx, |bar, cx| bar.push_run(menu_action, cx));
+    eprintln!("S1_MENU_KEY id={id} source={key} state=pushed");
+}
+
+/// 登记一条"键位 → 菜单动作"：`cx.bind_keys` 与 `cx.on_action` **成对**出现。
+///
+/// 收成泛型而不是在 [`install_key_actions`] 里逐条写两遍（`App::on_action` 要具体类型，
+/// 而键位与动作在这两个调用里必须一致 —— 写两遍迟早漂移）。
+fn install_menu_key<A: gpui_kit::Action>(
+    cx: &mut App,
+    key: &'static str,
+    action: A,
+    menu_action: MenuAction,
+) {
+    cx.bind_keys([KeyBinding::new(key, action, None)]);
+    cx.on_action(move |_: &A, cx: &mut App| push_menu_key(menu_action, key, cx));
+}
+
+/// 登记 B2 的六条键位。**在 `crates/app/src/main.rs` 的启动段调用一次**（那里是组合点）。
+///
+/// ⚠️ **只登记一次**：`App::on_action` 是**累加**的，而 `ShellWorkspace::new` 每换一次项目
+/// 就会再跑一遍 —— 放那里会让同一个键被处理 N 次（B4 在 `install_open_project_action`
+/// 上已经踩过这条，这里沿用同一条纪律）。
+///
+/// 键位字面量全部取自本模块的常量，而 [`MenuAction::menu_key`] 读的是**同一批**，
+/// 所以"菜单上显示哪颗键"与"键位真的绑在哪"不可能漂移。
+///
+/// ⚠️ 这里**没有** `Ctrl+S` / `Ctrl+W` / `Ctrl+O` / `Ctrl+Shift+P` / `Ctrl+M` / `Ctrl+,` / `F12`：
+/// 那七条各有自己的登记点（见 [`MenuAction::keybind_action`] 的文档），重复登记没有意义。
+pub fn install_key_actions(cx: &mut App) {
+    install_menu_key(
+        cx,
+        KEY_REOPEN_CLOSED_TAB,
+        ReopenTab,
+        MenuAction::ReopenClosedTab,
+    );
+    install_menu_key(
+        cx,
+        KEY_TOGGLE_ACTIVITY_SIDEBAR,
+        ToggleSidebar,
+        MenuAction::ToggleActivitySidebar,
+    );
+    install_menu_key(
+        cx,
+        KEY_TOGGLE_TERMINAL,
+        ToggleTerminalPane,
+        MenuAction::ToggleTerminal,
+    );
+    install_menu_key(cx, KEY_ZOOM_IN, ZoomIn, MenuAction::ZoomIn);
+    install_menu_key(cx, KEY_ZOOM_OUT, ZoomOut, MenuAction::ZoomOut);
+    install_menu_key(cx, KEY_RESET_ZOOM, ResetZoom, MenuAction::ResetZoom);
+}
+
 /// v1 里**真的能执行**的菜单动作。
 ///
 /// 每个变体都对应一条已存在的实现；走 [`CommandId`] 的那几条与命令面板**共用同一个执行点**
@@ -270,6 +395,48 @@ pub enum MenuAction {
     OpenAppearanceSettings,
     /// 转到 → 转到定义（`f12`）。
     GoToDefinition,
+    // -----------------------------------------------------------------------
+    // B2：以下 18 条是"能力已经在、只缺菜单项"的那一批（侦察 §2 的 🟡）。
+    // 每一条的执行落点写在 `ShellWorkspace::apply_menu_action` 各自的臂上。
+    // -----------------------------------------------------------------------
+    /// 编辑 → 撤销（`Ctrl+Z`，上游 `Input` 上下文绑的 `Undo`）。
+    Undo,
+    /// 编辑 → 重做（`Ctrl+Y`，上游 `Redo`）。
+    Redo,
+    /// 编辑 → 剪切（`Ctrl+X`，上游 `Cut`）。
+    Cut,
+    /// 编辑 → 复制（`Ctrl+C`，上游 `Copy`）。
+    Copy,
+    /// 编辑 → 粘贴（`Ctrl+V`，上游 `Paste`）。
+    Paste,
+    /// 编辑 → 全选（`Ctrl+A`，上游 `SelectAll`）。
+    SelectAll,
+    /// 编辑 → 查找（`Ctrl+F`，上游 `Search`）。
+    Find,
+    /// 编辑 → 查找并替换（`Ctrl+H`，上游 `Replace`；真源是 `mod+alt+f`）。
+    FindAndReplace,
+    /// 编辑 → 快速修复…（`Ctrl+.`，上游 `ToggleCodeActions`；JDT provider 已接线）。
+    QuickFix,
+    /// 视图 → 切换活动侧栏（`Ctrl+B`）。真源 `menu.toggleActivitySidebar`。
+    ToggleActivitySidebar,
+    /// 视图 → 切换辅助侧栏。真源 `menu.toggleSecondarySidebar`（`mod+e`，本侧不绑）。
+    ToggleSecondarySidebar,
+    /// 视图 → 诊断。真源 `menu.diagnostics`（`mod+shift+j`，本侧不绑）。
+    ShowDiagnostics,
+    /// 视图 → 文件资源管理器。真源 `menu.fileExplorer`（`mod+shift+e`，本侧不绑）。
+    ShowFileExplorer,
+    /// 视图 → 源代码管理。真源 `menu.sourceControl`（`mod+shift+g`，本侧不绑）。
+    ShowSourceControl,
+    /// 视图 → 运行和调试。真源 `menu.runAndDebug`（无快捷键）。
+    ShowRunAndDebug,
+    /// 视图 → 放大（`Ctrl+=`）。真源 `menu.zoomIn`。
+    ZoomIn,
+    /// 视图 → 缩小（`Ctrl+-`）。真源 `menu.zoomOut`。
+    ZoomOut,
+    /// 视图 → 重置缩放（`Ctrl+0`）。真源 `menu.resetZoom`。
+    ResetZoom,
+    /// 窗口 → 切换菜单栏（`Ctrl+M`）。真源 `menu.toggleMenuBar` 是 `alt+m`。
+    ToggleMenuBar,
     /// 终端 → 新建终端。
     NewTerminalTab,
     /// 终端 → 关闭终端（关掉当前页签）。
@@ -325,6 +492,27 @@ impl MenuAction {
             Self::Minimize => "lithe.menu.minimize",
             Self::Maximize => "lithe.menu.maximize",
             Self::ToggleFullscreen => "lithe.menu.toggleFullscreen",
+            // B2 的 18 条：**全部是真源既有键**（`lithe.zh-CN.yml:6648-6771`），
+            // 所以本批**零新增文案**，i18n 四处都不用动。
+            Self::Undo => "lithe.menu.undo",
+            Self::Redo => "lithe.menu.redo",
+            Self::Cut => "lithe.menu.cut",
+            Self::Copy => "lithe.menu.copy",
+            Self::Paste => "lithe.menu.paste",
+            Self::SelectAll => "lithe.menu.selectAll",
+            Self::Find => "lithe.menu.find",
+            Self::FindAndReplace => "lithe.menu.findAndReplace",
+            Self::QuickFix => "lithe.menu.quickFix",
+            Self::ToggleActivitySidebar => "lithe.menu.toggleActivitySidebar",
+            Self::ToggleSecondarySidebar => "lithe.menu.toggleSecondarySidebar",
+            Self::ShowDiagnostics => "lithe.menu.diagnostics",
+            Self::ShowFileExplorer => "lithe.menu.fileExplorer",
+            Self::ShowSourceControl => "lithe.menu.sourceControl",
+            Self::ShowRunAndDebug => "lithe.menu.runAndDebug",
+            Self::ZoomIn => "lithe.menu.zoomIn",
+            Self::ZoomOut => "lithe.menu.zoomOut",
+            Self::ResetZoom => "lithe.menu.resetZoom",
+            Self::ToggleMenuBar => "lithe.menu.toggleMenuBar",
         }
     }
 
@@ -371,7 +559,117 @@ impl MenuAction {
             Self::Minimize => IconName::WindowMinimize,
             Self::Maximize => IconName::WindowMaximize,
             Self::ToggleFullscreen => IconName::Maximize,
+            // B2 的 18 条：与 `crate::workspace::command_action` 同一条口径
+            // （真源菜单项没有图标，这是**有意偏离**，用来让"这条到底能做什么"一眼可认）。
+            Self::Undo => IconName::Undo,
+            Self::Redo => IconName::Redo,
+            Self::Cut => IconName::Scissors,
+            Self::Copy => IconName::Copy,
+            Self::Paste => IconName::Clipboard,
+            // 「全选」用虚线方框：它就是"框住整段内容"那个语义（真源无图标）。
+            Self::SelectAll => IconName::SquareDashed,
+            Self::Find => IconName::Search,
+            Self::FindAndReplace => IconName::Replace,
+            // 「快速修复」用灯泡：与编辑器里那条 `Ctrl+.` 的语义一致。
+            Self::QuickFix => IconName::Lightbulb,
+            // 侧栏两条与「关闭左侧/右侧标签页」共用面板字形（图标允许重复，
+            // 菜单动作不许重复 —— 那条由 `every_listed_action_is_executable` 钉住）。
+            Self::ToggleActivitySidebar => IconName::PanelLeft,
+            Self::ToggleSecondarySidebar => IconName::PanelRight,
+            Self::ShowDiagnostics => IconName::SquareActivity,
+            Self::ShowFileExplorer => IconName::Files,
+            Self::ShowSourceControl => IconName::GitBranch,
+            Self::ShowRunAndDebug => IconName::Play,
+            Self::ZoomIn => IconName::ZoomIn,
+            Self::ZoomOut => IconName::ZoomOut,
+            Self::ResetZoom => IconName::RotateCcw,
+            Self::ToggleMenuBar => IconName::List,
         }
+    }
+
+    /// 这一项在 Q13 清单里绑**哪颗键**（`None` = 本批不给它绑键）。
+    ///
+    /// ⚠️ 它只回答"键位字面量是多少"，不回答"键位真的登记了吗" —— 后者由
+    /// `crate::workspace::install_menu_key_actions` 在启动时做一次，两侧读的是
+    /// 同一批常量（见文件上方那一段）。没有登记就显示键位是 Q3 禁止的
+    /// "显示了却按不出效果"，所以**加进这张表就必须同时加进登记函数**。
+    pub const fn menu_key(self) -> Option<&'static str> {
+        match self {
+            Self::ReopenClosedTab => Some(KEY_REOPEN_CLOSED_TAB),
+            Self::ToggleActivitySidebar => Some(KEY_TOGGLE_ACTIVITY_SIDEBAR),
+            Self::ToggleTerminal => Some(KEY_TOGGLE_TERMINAL),
+            Self::ZoomIn => Some(KEY_ZOOM_IN),
+            Self::ZoomOut => Some(KEY_ZOOM_OUT),
+            Self::ResetZoom => Some(KEY_RESET_ZOOM),
+            _ => None,
+        }
+    }
+
+    /// 菜单项右侧那颗**键位胶囊**用哪个 `Action`（`None` = 这一项不显示键位）。
+    ///
+    /// ⚠️ 为什么必须有这个方法：`PopupMenuItem` 只从它自己的 `action` 字段反查 keymap
+    /// （`popup_menu.rs:1119-1144` 的 `render_key_binding`，调用点 `:1301`），
+    /// 所以"显示键位"与"真的有绑定"是**同一件事的两面**：这里返回 `Some` ⇔
+    /// keymap 里真的有一条能命中的绑定。
+    ///
+    /// 上游那三条 `Input` 上下文动作（`Undo` / `Copy` / …）也在这里返回 `Some` ——
+    /// 它们在 `gpui-base` 里确实绑好了（`input/base/state.rs:246-302`），
+    /// 只是上下文是 `Input`（编辑器获得焦点时才有），而面板反查用的 `action_context`
+    /// 是外壳根，所以**解析不出胶囊**（`binding_enabled` 对 `Input` 谓词返回 `None`）。
+    /// 这是上游的解析边界，不是本侧漏写：宁可空着，也不要手写一个"显示了却按不出"的键位文案。
+    pub fn keybind_action(self) -> Option<Box<dyn gpui_kit::Action>> {
+        use crate::command_palette::{OpenCommandPalette, ToggleMenuBar as ToggleMenuBarAction};
+
+        Some(match self {
+            // `Ctrl+O`：B4 在 `install_open_project_action` 里登记（**别在这里重复注册**）。
+            Self::OpenFolder => Box::new(crate::workspace::OpenProjectFolder),
+            // `Ctrl+S` / `Ctrl+W` / `F12`：`lithe_gpui_editor::install_actions` 登记的。
+            Self::Save => Box::new(lithe_gpui_editor::SaveBuffer),
+            Self::CloseTab => Box::new(lithe_gpui_editor::CloseActiveTab),
+            Self::GoToDefinition => Box::new(lithe_gpui_editor::NavigateToDefinition),
+            // `Ctrl+,`：`lithe_gpui_settings::install_actions` 登记的。
+            Self::Preferences => Box::new(lithe_gpui_settings::OpenSettings),
+            // `Ctrl+Shift+P` / `Ctrl+M`：`crate::command_palette::install_actions` 登记的。
+            Self::CommandPalette => Box::new(OpenCommandPalette),
+            Self::ToggleMenuBar => Box::new(ToggleMenuBarAction),
+            // B2 新绑的六条：`install_key_actions` 登记（键位常量见 `menu_key`）。
+            Self::ReopenClosedTab => Box::new(ReopenTab),
+            Self::ToggleActivitySidebar => Box::new(ToggleSidebar),
+            Self::ToggleTerminal => Box::new(ToggleTerminalPane),
+            Self::ZoomIn => Box::new(ZoomIn),
+            Self::ZoomOut => Box::new(ZoomOut),
+            Self::ResetZoom => Box::new(ResetZoom),
+            // 上游 `Input` 上下文那九条（编辑器内是真的能按的，见本方法文档）。
+            Self::Undo => Box::new(gpui_kit::base::input::Undo),
+            Self::Redo => Box::new(gpui_kit::base::input::Redo),
+            Self::Cut => Box::new(gpui_kit::base::input::Cut),
+            Self::Copy => Box::new(gpui_kit::base::input::Copy),
+            Self::Paste => Box::new(gpui_kit::base::input::Paste),
+            Self::SelectAll => Box::new(gpui_kit::base::input::SelectAll),
+            Self::Find => Box::new(gpui_kit::base::input::Search),
+            Self::FindAndReplace => Box::new(gpui_kit::base::input::Replace),
+            Self::QuickFix => Box::new(gpui_kit::base::input::ToggleCodeActions),
+            // 其余项**没有键位**（真源也没有，或有但本侧没绑）：不传 `.action(..)`。
+            Self::OpenFile
+            | Self::CloseOtherTabs
+            | Self::CloseAllTabs
+            | Self::CloseSavedTabs
+            | Self::CloseTabsToLeft
+            | Self::CloseTabsToRight
+            | Self::ToggleMaven
+            | Self::ToggleStatusBar
+            | Self::OpenAppearanceSettings
+            | Self::NewTerminalTab
+            | Self::CloseTerminalTab
+            | Self::Minimize
+            | Self::Maximize
+            | Self::ToggleFullscreen => return None,
+            Self::ToggleSecondarySidebar
+            | Self::ShowDiagnostics
+            | Self::ShowFileExplorer
+            | Self::ShowSourceControl
+            | Self::ShowRunAndDebug => return None,
+        })
     }
 
     /// 能映射到 [`CommandId`] 的那几条：**执行逻辑复用命令面板那一条**，不在菜单里重写一遍。
@@ -405,6 +703,29 @@ impl MenuAction {
             | Self::Minimize
             | Self::Maximize
             | Self::ToggleFullscreen => None,
+            // 窗口 → 切换菜单栏走的是既有的 `CommandId::ToggleMenuBar`
+            // （`crate::workspace::run_command_id` 里那一条）。
+            Self::ToggleMenuBar => Some(CommandId::ToggleMenuBar),
+            // B2 的 18 条**都不进命令面板**（`COMMAND_ORDER` 没有它们，与 B1 的八条同一处置）：
+            // 它们的执行分支在 `ShellWorkspace::apply_menu_action` 各自的臂上。
+            Self::Undo
+            | Self::Redo
+            | Self::Cut
+            | Self::Copy
+            | Self::Paste
+            | Self::SelectAll
+            | Self::Find
+            | Self::FindAndReplace
+            | Self::QuickFix
+            | Self::ToggleActivitySidebar
+            | Self::ToggleSecondarySidebar
+            | Self::ShowDiagnostics
+            | Self::ShowFileExplorer
+            | Self::ShowSourceControl
+            | Self::ShowRunAndDebug
+            | Self::ZoomIn
+            | Self::ZoomOut
+            | Self::ResetZoom => None,
         }
     }
 }
@@ -429,9 +750,11 @@ pub static MENUS: &[TopMenu] = &[
         // 打开文件（本侧新增，真源没有这一项）→ 保存（真源第 6）→ ── →
         // 关闭系（真源第 11/13/14/15/16/17/18 项，顺序不变）。
         //
-        // ⚠️ **两条「打开」都不显示键位**：真源把 `Ctrl+O` 给「打开文件夹」（Q18，
-        // 本侧在 `install_open_project_action` 里登记了它），而"显示键位"走 `.action(..)`
-        // 让上游解析 —— 那是 B2 的事（Q13：绑了就要显示）。「打开文件」有意不绑键位。
+        // ⚠️ **两条「打开」的键位不一样**：`Ctrl+O` 给「打开文件夹」（Q18；B4 在
+        // `install_open_project_action` 里 App 级登记了一次），所以它右侧会显示胶囊
+        // （B2 起走 `.action(..)` 让上游反查 keymap）；「打开文件」**有意不绑键位**，
+        // 于是它右侧空着 —— Q3：不绑就不显示。真源第 9 项「还原文件」本侧**不摆**，
+        // 理由见 `MenuItem::Action` 上方 Go 菜单那段注释（要 editor crate 的公开方法）。
         items: &[
             MenuItem::Action(MenuAction::OpenFolder),
             MenuItem::Action(MenuAction::OpenFile),
@@ -450,13 +773,47 @@ pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "edit",
         label_key: "lithe.menu.edit",
-        items: &[MenuItem::Action(MenuAction::CommandPalette)],
+        // 顺序照真源 19 条里本侧已实现的那些（`window-menu-bar.tsx:200-276`）：
+        // 撤销 / 重做 ── 剪切 / 复制 / 粘贴 / 全选 ── 查找 / 查找并替换 / 快速修复 ── 命令面板。
+        // 真源的 4 条分隔线在原位；中间那些本侧还没有的能力（切换注释 / 触发参数提示 /
+        // 显示悬停信息 / 复制行 / 删除行 / 上移行 / 下移行 / 格式化…）属 B3，本批不摆。
+        items: &[
+            MenuItem::Action(MenuAction::Undo),
+            MenuItem::Action(MenuAction::Redo),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::Cut),
+            MenuItem::Action(MenuAction::Copy),
+            MenuItem::Action(MenuAction::Paste),
+            MenuItem::Action(MenuAction::SelectAll),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::Find),
+            MenuItem::Action(MenuAction::FindAndReplace),
+            MenuItem::Action(MenuAction::QuickFix),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::CommandPalette),
+        ],
     },
     TopMenu {
         id: "view",
         label_key: "lithe.menu.view",
+        // 顺序照真源 18 条里本侧已实现的那些（`window-menu-bar.tsx:277-364`）：
+        // 三条侧栏/终端 ── 诊断 ── 文件资源管理器 / 源代码管理 / 运行和调试 ──
+        // 缩放三条 ── 显示状态栏（本侧新增）── 主题。
         items: &[
+            MenuItem::Action(MenuAction::ToggleActivitySidebar),
+            MenuItem::Action(MenuAction::ToggleSecondarySidebar),
             MenuItem::Action(MenuAction::ToggleTerminal),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::ShowDiagnostics),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::ShowFileExplorer),
+            MenuItem::Action(MenuAction::ShowSourceControl),
+            MenuItem::Action(MenuAction::ShowRunAndDebug),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::ZoomIn),
+            MenuItem::Action(MenuAction::ZoomOut),
+            MenuItem::Action(MenuAction::ResetZoom),
+            MenuItem::Separator,
             MenuItem::Action(MenuAction::ToggleStatusBar),
             MenuItem::Separator,
             // 真源的「主题」是二级子菜单，列出**注册表里全部主题**（动态项）。
@@ -466,6 +823,10 @@ pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "go",
         label_key: "lithe.menu.go",
+        // 真源的「转到」第 3/4 项是后退 / 前进（`:374-382`），本侧**本轮不摆**：
+        // 它们的实现在 `lithe_gpui_editor::EditorPane` 的私有方法里（`go_back` / `go_forward`），
+        // 而 B2 的写域不含 editor crate —— 摆出来就是"点了没反应"的死项（Q3/Q10 禁止）。
+        // 同理缺「下一个 / 上一个标签页」（`nextTab` / `previousTab`）。详见交付报告。
         items: &[MenuItem::Action(MenuAction::GoToDefinition)],
     },
     TopMenu {
@@ -503,9 +864,14 @@ pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "window",
         label_key: "lithe.menu.window",
+        // 顺序照真源 Windows 上那 4 项（`window-menu-bar.tsx:462-503`）：
+        // 最小化 / 最大化 ── 切换菜单栏 ── 切换全屏。
         items: &[
             MenuItem::Action(MenuAction::Minimize),
             MenuItem::Action(MenuAction::Maximize),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::ToggleMenuBar),
+            MenuItem::Separator,
             MenuItem::Action(MenuAction::ToggleFullscreen),
         ],
     },
@@ -1011,6 +1377,18 @@ impl MenuBar {
         std::mem::take(&mut self.pending)
     }
 
+    /// 记下"打开菜单那一刻窗口聚焦在谁身上"（B2，理由见 [`ACTION_TARGET`]）。
+    ///
+    /// 由顶级项的 `on_mouse_down` 在 [`MenuBar::toggle`] **之前**调用：那一刻面板还没拿到焦点，
+    /// 读到的就是用户上一次真正聚焦的东西（编辑器 / 终端 / 资源管理器）。
+    /// 外壳根**不算**：它只是"什么都没点过"时的兜底锚点
+    /// （`crate::workspace` 的 `focus` 字段），不是能编辑的元素 —— 记下它会让
+    /// 「编辑」菜单那些动作看起来有目标、实际什么都派发不出去。
+    pub(crate) fn remember_action_target(&mut self, focused: Option<FocusHandle>) {
+        let target = focused.filter(|handle| handle != &self.action_context);
+        ACTION_TARGET.with(|slot| *slot.borrow_mut() = target);
+    }
+
     /// **验证/诊断入口**：按名字打开一个顶级菜单（`--menu-probe <id>`）。
     ///
     /// 这不是产品能力：它与真机上"点一下那个顶级项"调的是**同一个** [`MenuBar::toggle`]，
@@ -1137,6 +1515,37 @@ thread_local! {
     /// 还没法把自己传进去）。
     static MENU_BAR_SHELL: std::cell::RefCell<Option<gpui_kit::WeakEntity<crate::workspace::ShellWorkspace>>> =
         const { std::cell::RefCell::new(None) };
+
+    /// 「编辑」类菜单动作要作用到**哪个元素**（B2）。
+    ///
+    /// ## 为什么需要它（B2 绕不过去的一件事）
+    ///
+    /// 菜单项的执行点在 `ShellWorkspace::apply_menu_action`，而"撤销 / 复制 / 查找…"这些动
+    /// **不属于外壳**：它们是上游 `Input` 上下文里绑好的动作（`gpui-base-0.6.6/src/input/base/state.rs:246-302`），
+    /// 处理器注册在**编辑器元素自己**身上。gpui 的动作派发是"焦点节点 → 祖先"
+    /// （`gpui-pre-0.3.6/src/window.rs:2442-2454` 的 `dispatch_action_on_node`），所以要让它们响，
+    /// 必须先把焦点放回编辑器，再 `Window::dispatch_action`。
+    ///
+    /// 编辑器元素的句柄拿不到（`EditorPane::buffers` / `EditorState::focus_handle` 都在
+    /// editor crate 内部，B2 的写域不含它），能拿到的只有"窗口当时聚焦在谁身上"。
+    /// 所以这里的语义**如实**是：**打开菜单那一刻，窗口的焦点元素**
+    /// （在顶级项按下的回调里读 `Window::focused`——那时面板还没拿到焦点，
+    /// 见 [`MenuBar::toggle`] 的调用点）。外壳根自己不算（它不是能编辑的东西），
+    /// 于是"启动后什么都没点过就点菜单 → 撤销"会如实打一行 `state=no_target` 而不是假装成功。
+    ///
+    /// 与 [`MENU_BAR`] 一样是 `thread_local`：gpui 的窗口与视图都在主线程，而这里要被
+    /// `ShellWorkspace::apply_menu_action`（只有 `&mut Context<ShellWorkspace>`）读到。
+    static ACTION_TARGET: std::cell::RefCell<Option<FocusHandle>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// B2：「编辑」类菜单动作的目标元素（`None` = 打开菜单时窗口没有可作用的焦点）。
+///
+/// 取值由 [`MenuBar::remember_action_target`] 写、由
+/// [`crate::workspace::ShellWorkspace::apply_menu_action`] 读 —— 中间隔着几帧渲染，
+/// 所以不能靠 `window` 现取（那时焦点已经在菜单面板 / 外壳根上）。
+pub fn action_target() -> Option<FocusHandle> {
+    ACTION_TARGET.with(|slot| slot.borrow().clone())
 }
 
 /// 登记外壳句柄（[`crate::workspace::ShellWorkspace::new`] 调用一次）。
@@ -1395,9 +1804,16 @@ fn trigger(
         // 不会再出现"先被面板收掉、又被 click 开回来"的抖动。
         .on_mouse_down(MouseButton::Left, {
             let handle = handle.clone();
-            move |_, _, cx| {
+            move |_, window, cx| {
                 cx.stop_propagation();
-                let _ = handle.update(cx, |bar, cx| bar.toggle(index, cx));
+                // ⚠️ 先读焦点再切状态，且**在同一个闭包里**：B2 的「编辑」类动作要作用到
+                // "打开菜单那一刻的焦点元素"（理由见 `ACTION_TARGET`）。读在 `toggle` 之前，
+                // 因为 `toggle` 之后外壳会重绘、面板会拿到焦点。
+                let focused = window.focused(cx);
+                let _ = handle.update(cx, |bar, cx| {
+                    bar.remember_action_target(focused);
+                    bar.toggle(index, cx);
+                });
             }
         })
         .child(menu.label())
@@ -1560,14 +1976,20 @@ fn build_popup(
                     // `on_click` 的处理器只做一件事：把"点了什么"记进队列，
                     // 真正的执行在 `ShellWorkspace::render`（理由见 `MenuBar::pending`）。
                     let item_handle = handle.clone();
-                    popup.item(
-                        PopupMenuItem::new(action.label())
-                            .icon(Icon::new(action.icon()))
-                            .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                                let _ = item_handle
-                                    .update(cx, |bar, cx| bar.push_run(action, cx));
-                            }),
-                    )
+                    // ⚠️ B2：`.action(..)` 在这里传 —— `PopupMenu` 拿它反查 keymap 并把命中的
+                    // 键位画成右侧胶囊（`popup_menu.rs:1119-1144` 的 `render_key_binding`，
+                    // 调用点 `:1301`），所以"显示键位"这件事**不需要本侧手写任何键位文案**（Q13）。
+                    // `None` = 这一项没有绑定 ⇒ 不传 ⇒ 右侧本来就该空着（Q3）。
+                    //
+                    // ⚠️ 传了 `action` 也**不会**改点击行为：`PopupMenu::confirm` 先看
+                    // `handler`，有它就只跑 handler（`popup_menu.rs:864-873`）。
+                    let mut item = PopupMenuItem::new(action.label()).icon(Icon::new(action.icon()));
+                    if let Some(bound) = action.keybind_action() {
+                        item = item.action(bound);
+                    }
+                    popup.item(item.on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                        let _ = item_handle.update(cx, |bar, cx| bar.push_run(action, cx));
+                    }))
                 }
                 MenuItem::Theme => match &theme_menu {
                     Some(submenu) => {
@@ -1617,8 +2039,9 @@ fn theme_menu(
 #[cfg(test)]
 mod tests {
     use super::{
-        CloseReason, MENUS, MenuAction, MenuBarMode, MenuItem, NavState, action_count, mode_for,
-        resolve_menu_toggle,
+        CloseReason, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM, KEY_TOGGLE_ACTIVITY_SIDEBAR,
+        KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS, MenuAction, MenuBarMode, MenuItem,
+        NavState, action_count, mode_for, resolve_menu_toggle,
     };
 
     /// `S1_MENU_CLOSE reason=…` 的取值域**正好是 Q17 那五个**（顺序也照那份规格写），
@@ -1771,6 +2194,106 @@ mod tests {
         }
     }
 
+    /// B2 的**接线表**（21 条"能力已在、只缺菜单项"里本批真接上的那些）。
+    ///
+    /// 每一行是"菜单动作 → 文案键 → 有没有键位"。它守的是三件事：
+    ///
+    /// 1. 文案键**全部是真源既有键**（`lithe.zh-CN.yml:6648-6771`），本批零新增文案；
+    /// 2. `menu_key()` 与 `keybind_action()` **同进同出**：有键位字面量的必须有 `Action`
+    ///    （否则菜单上会显示一颗按不出效果的键 —— Q3 明确禁止）；
+    /// 3. 反过来，**没有键位的项不许有 `Action`** 里那些"本侧没绑"的例外
+    ///    （`ToggleSecondarySidebar` 等：真源有 `mod+e` / `mod+shift+e`，本侧有意不绑）。
+    #[test]
+    fn b2_actions_are_wired_and_only_bound_ones_carry_a_key() {
+        // (动作, 文案键, 有没有键位胶囊)
+        let table: &[(MenuAction, &str, bool)] = &[
+            (MenuAction::Undo, "lithe.menu.undo", true),
+            (MenuAction::Redo, "lithe.menu.redo", true),
+            (MenuAction::Cut, "lithe.menu.cut", true),
+            (MenuAction::Copy, "lithe.menu.copy", true),
+            (MenuAction::Paste, "lithe.menu.paste", true),
+            (MenuAction::SelectAll, "lithe.menu.selectAll", true),
+            (MenuAction::Find, "lithe.menu.find", true),
+            (MenuAction::FindAndReplace, "lithe.menu.findAndReplace", true),
+            (MenuAction::QuickFix, "lithe.menu.quickFix", true),
+            // 侧栏 / 终端 / 缩放 / 菜单栏：Q13 明确要绑的。
+            (MenuAction::ToggleActivitySidebar, "lithe.menu.toggleActivitySidebar", true),
+            (MenuAction::ToggleTerminal, "lithe.menu.toggleTerminal", true),
+            (MenuAction::ZoomIn, "lithe.menu.zoomIn", true),
+            (MenuAction::ZoomOut, "lithe.menu.zoomOut", true),
+            (MenuAction::ResetZoom, "lithe.menu.resetZoom", true),
+            (MenuAction::ToggleMenuBar, "lithe.menu.toggleMenuBar", true),
+            (MenuAction::ReopenClosedTab, "lithe.menu.reopenClosedTab", true),
+            // 真源有键位、本侧**有意不绑**（Q3：不绑就不显示）。
+            (MenuAction::ToggleSecondarySidebar, "lithe.menu.toggleSecondarySidebar", false),
+            (MenuAction::ShowDiagnostics, "lithe.menu.diagnostics", false),
+            (MenuAction::ShowFileExplorer, "lithe.menu.fileExplorer", false),
+            (MenuAction::ShowSourceControl, "lithe.menu.sourceControl", false),
+            (MenuAction::ShowRunAndDebug, "lithe.menu.runAndDebug", false),
+        ];
+
+        for (action, key, has_key_hint) in table {
+            assert_eq!(action.label_key(), *key, "{action:?} 的文案键变了");
+            assert!(
+                action.label_key().starts_with("lithe.menu."),
+                "{action:?} 的文案键不在真源的菜单段里"
+            );
+            assert_eq!(
+                action.keybind_action().is_some(),
+                *has_key_hint,
+                "{action:?} 的键位胶囊与真实绑定不一致（显示了却按不出，或能按却不显示）"
+            );
+        }
+
+        // 每一条都必须在 `MENUS` 里出现过（画得出来才谈得上"点"）。
+        let listed: Vec<MenuAction> = MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .filter_map(|item| match item {
+                MenuItem::Action(action) => Some(*action),
+                _ => None,
+            })
+            .collect();
+        for (action, _, _) in table {
+            assert!(listed.contains(action), "{action:?} 没有出现在任何菜单里");
+        }
+
+        // `menu_key()` 那张表（键位字面量）必须：能解析、且与 `keybind_action()` 同进同出。
+        for action in listed.iter().copied() {
+            let Some(key) = action.menu_key() else {
+                continue;
+            };
+            assert!(
+                action.keybind_action().is_some(),
+                "{action:?} 声明了键位 {key} 却没有对应的 Action —— 它会显示一颗按不出的键"
+            );
+            gpui_kit::Keystroke::parse(key)
+                .unwrap_or_else(|error| panic!("{action:?} 的键位 {key:?} 解析不了：{error}"));
+        }
+
+        // 本批真实绑定的六条键位（= `menu_key()` 的非 `None` 项），逐条点名。
+        let bound: Vec<&str> = MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .filter_map(|item| match item {
+                MenuItem::Action(action) => action.menu_key(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            bound,
+            vec![
+                KEY_REOPEN_CLOSED_TAB,
+                KEY_TOGGLE_ACTIVITY_SIDEBAR,
+                KEY_TOGGLE_TERMINAL,
+                KEY_ZOOM_IN,
+                KEY_ZOOM_OUT,
+                KEY_RESET_ZOOM,
+            ],
+            "B2 的键位清单变了（改它就是改验证脚本）"
+        );
+    }
+
     /// **v1 不允许出现"没有行为"的项**：每个 `Action` 都必须有图标与文案键，
     /// 且要么能映射到一条 `CommandId`、要么在 `ShellWorkspace::run_menu_action` 里有分支。
     ///
@@ -1781,7 +2304,7 @@ mod tests {
         // `ShellWorkspace::run_menu_action` 里，逐条接线点写在那里。
         // 这是**清单**而不是白名单：新增一条就得在这里显式登记一次。
         // 第 7 条（`OpenFolder`）是 B4 加的「打开文件夹」。
-        const NON_COMMAND: [MenuAction; 7] = [
+        const NON_COMMAND: [MenuAction; 25] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -1789,6 +2312,26 @@ mod tests {
             MenuAction::Minimize,
             MenuAction::Maximize,
             MenuAction::ToggleFullscreen,
+            // B2 的 18 条（编辑 9 + 视图 9）：执行分支在
+            // `ShellWorkspace::apply_menu_action`，逐条写在那里。
+            MenuAction::Undo,
+            MenuAction::Redo,
+            MenuAction::Cut,
+            MenuAction::Copy,
+            MenuAction::Paste,
+            MenuAction::SelectAll,
+            MenuAction::Find,
+            MenuAction::FindAndReplace,
+            MenuAction::QuickFix,
+            MenuAction::ToggleActivitySidebar,
+            MenuAction::ToggleSecondarySidebar,
+            MenuAction::ShowDiagnostics,
+            MenuAction::ShowFileExplorer,
+            MenuAction::ShowSourceControl,
+            MenuAction::ShowRunAndDebug,
+            MenuAction::ZoomIn,
+            MenuAction::ZoomOut,
+            MenuAction::ResetZoom,
         ];
 
         let mut seen: Vec<MenuAction> = Vec::new();

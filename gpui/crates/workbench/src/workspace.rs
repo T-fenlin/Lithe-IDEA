@@ -720,6 +720,14 @@ pub struct ShellWorkspace {
     /// （`workspace-ui-defaults.ts:7`），底部组来自 `isBottomPaneVisible` + `bottomPaneActiveTab`
     /// （同文件 `:5-6`）。两者可以同时高亮。
     top_activity_view: Option<usize>,
+    /// **左侧整条栏**（活动栏 + 左面板）是否显示。**默认 `true`**。
+    ///
+    /// B2 加的：真源「视图 → 切换活动侧栏」（`menu.toggleActivitySidebar`，`mod+b`）与
+    /// VS Code 的 `workbench.action.toggleSidebarVisibility` 同义 —— 收起的是
+    /// **活动栏 + 面板**这一整块，不是只收起面板。本侧在此之前左栏**常驻、没有收起态**
+    /// （`command_action` 的文档曾把 `toggle-sidebar` 明确排除在外），B2 把它补上：
+    /// 状态只有这一个 bool，渲染时整块不画（与右工具窗 `right_visible` 同一套做法）。
+    left_sidebar_visible: bool,
     /// **右侧**工具窗当前显示的视图（真机 `activeRightSidebarView`，
     /// `stores/ui-state/view-slice.ts:12,26`）。
     ///
@@ -1264,6 +1272,7 @@ impl ShellWorkspace {
             right_activity_items: right_activity_items(),
             // 默认选中顶部第 0 项「项目」（`workspace-ui-defaults.ts:7` 的 `activeSidebarView: "files"`）。
             top_activity_view: Some(DEFAULT_TOP_ACTIVITY),
+            left_sidebar_visible: true,
             // 右工具窗默认**隐藏**（`panel-slice.ts:28` 的 `isRightSidebarVisible: false`），
             // 视图字段的默认值理由见字段文档。
             right_view: RightToolWindowView::Maven,
@@ -1321,11 +1330,7 @@ impl ShellWorkspace {
             diagnose_right_panel(view, true, None);
         }
         if let Some(index) = startup_left_view {
-            workspace.top_activity_view = Some(index);
-            if index == CHANGES_ACTIVITY_IX {
-                let changes = workspace.changes.clone();
-                let _ = changes.update(cx, |view, cx| view.activate(cx));
-            }
+            workspace.select_top_activity(index, cx);
             println!("S1_LEFT_VIEW index={index}");
         }
         // 命令面板的动作要改本视图的状态，而浮层的 builder / 回调都是 `'static`，
@@ -1348,6 +1353,22 @@ impl ShellWorkspace {
         // 自动化里没有这一步。有后代元素持有焦点时，user 的点击会照常把焦点移走。
         window.focus(&workspace.focus, cx);
         workspace
+    }
+
+    /// 选中左栏**顶部组**的第 `index` 项（项目 / 更改 / 搜索）。
+    ///
+    /// 两处入口**共用这一段**，不各写一遍：活动栏顶部组的点击
+    /// （`on_select_activity` 的 `None` 分支）与 B2 的主菜单
+    /// 「视图 → 文件资源管理器 / 源代码管理」。两处改的是同一份状态
+    /// （[`ShellWorkspace::top_activity_view`]），而"切到「更改」要顺手重读一次工作区状态"
+    /// 这条副作用（真源 `use-git-data-controller.ts:276-281`，本侧没有 watcher）必须跟着走，
+    /// 否则从菜单进去会看到一个不刷新的列表。
+    fn select_top_activity(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.top_activity_view = Some(index);
+        if index == CHANGES_ACTIVITY_IX {
+            let changes = self.changes.clone();
+            let _ = changes.update(cx, |view, cx| view.activate(cx));
+        }
     }
 
     /// 项目下拉要显示的项目条目（真源 `projectTabs` 的等价物，见 [`crate::project_menu`]）。
@@ -1511,6 +1532,89 @@ impl ShellWorkspace {
                 window.toggle_fullscreen();
                 diagnose_menu_run(action, "applied");
             }
+            // -------------------------------------------------------------------
+            // B2：编辑那九条 —— 派发给"打开菜单那一刻窗口的焦点元素"
+            // -------------------------------------------------------------------
+            //
+            // 为什么不是"自己实现一遍"：撤销 / 复制 / 查找… 全部是上游 `Input` 上下文里
+            // 已经绑好、且处理器已经挂在编辑器元素上的动作（`gpui-base-0.6.6/src/input/base/state.rs:246-302`
+            // 绑键、`:4191` 一带挂处理器）。重写一遍等于把编辑器引擎的撤销栈 / 剪贴板语义抄一份，
+            // 那是《编码指南》明确禁止的"平行实现一个成熟上游子系统"。
+            //
+            // 机制与它**如实**的语义（焦点目标从哪来、拿不到时怎么办）写在
+            // `crate::menu_bar::ACTION_TARGET` 的文档上。
+            MenuAction::Undo
+            | MenuAction::Redo
+            | MenuAction::Cut
+            | MenuAction::Copy
+            | MenuAction::Paste
+            | MenuAction::SelectAll
+            | MenuAction::Find
+            | MenuAction::FindAndReplace
+            | MenuAction::QuickFix => {
+                self.dispatch_editor_action(action, window, cx);
+            }
+            // -------------------------------------------------------------------
+            // B2：视图那九条
+            // -------------------------------------------------------------------
+            MenuAction::ToggleActivitySidebar => {
+                // 真源 `menu.toggleActivitySidebar`（`mod+b`）= VS Code 的
+                // `toggleSidebarVisibility`：收起的是**活动栏 + 面板**整块。
+                self.left_sidebar_visible = !self.left_sidebar_visible;
+                diagnose_menu_run(
+                    action,
+                    if self.left_sidebar_visible {
+                        "visible"
+                    } else {
+                        "hidden"
+                    },
+                );
+            }
+            MenuAction::ToggleSecondarySidebar => {
+                // 「辅助侧栏」= 右侧那块 400px 工具窗（真源 `menu.toggleSecondarySidebar`）。
+                // 与 [`CommandId::ToggleMaven`] 的差别：这里只改**可见性**，不换视图
+                // （真源 `right-tool-window-actions.ts:26-31` 的 toggle 分支同样不动
+                // `activeRightSidebarView`）。懒扫照走，否则第一次展开会是一块空面板。
+                self.right_visible = !self.right_visible;
+                self.schedule_right_view_scan(self.right_view, self.right_visible, cx);
+                diagnose_menu_run(
+                    action,
+                    if self.right_visible { "visible" } else { "hidden" },
+                );
+            }
+            MenuAction::ShowDiagnostics | MenuAction::ShowRunAndDebug => {
+                // 接线点：底部工具窗的**同一份状态**（`bottom_kind` + `bottom_visible`）——
+                // 活动栏底部组的「诊断 / 运行」两项点下去改的就是这两个字段
+                // （`on_select_activity` 的 `Some(kind)` 分支）。
+                //
+                // ⚠️ **如实说明**：这两个页签的内容目前仍是 `placeholder(..)`
+                // （「{名字} 工具窗（未实现）」，`BottomPaneKind` 的 `label`），
+                // 所以本条"真的发生了那件事"指的是**工具窗真的打开了、页签真的切过去了**，
+                // 而不是"诊断/调试界面做出来了"。那一层能力属 B3 的占位清单。
+                self.bottom_kind = match action {
+                    MenuAction::ShowRunAndDebug => BottomPaneKind::Run,
+                    _ => BottomPaneKind::Diagnostics,
+                };
+                self.bottom_visible = true;
+                diagnose_menu_run(action, "visible");
+            }
+            MenuAction::ShowFileExplorer | MenuAction::ShowSourceControl => {
+                // 「文件资源管理器」= 左栏顶部组的第 0 项、「源代码管理」= 第 1 项
+                // （`activity_items` 的顺序，与活动栏图标同源）。
+                let index = if action == MenuAction::ShowSourceControl {
+                    CHANGES_ACTIVITY_IX
+                } else {
+                    DEFAULT_TOP_ACTIVITY
+                };
+                // 顺带把整块左栏显示出来：侧栏被 `Ctrl+B` 收起时，"打开文件资源管理器"
+                // 却什么都没出现会像死项。活动栏点击路径不会遇到这个（收起时它自己也点不到）。
+                self.left_sidebar_visible = true;
+                self.select_top_activity(index, cx);
+                diagnose_menu_run(action, "applied");
+            }
+            MenuAction::ZoomIn | MenuAction::ZoomOut | MenuAction::ResetZoom => {
+                self.apply_zoom(action, cx);
+            }
             // 走上一条 `if let` 的动作在这里不可达；写全分支是为了让"表里加一条动作"
             // 变成编译错误而不是运行时静默。
             MenuAction::OpenFile
@@ -1527,11 +1631,78 @@ impl ShellWorkspace {
             | MenuAction::ToggleMaven
             | MenuAction::ToggleStatusBar
             | MenuAction::OpenAppearanceSettings
+            | MenuAction::ToggleMenuBar
             | MenuAction::GoToDefinition => {
                 diagnose_menu_run(action, "unreachable");
             }
         }
         cx.notify();
+    }
+
+    /// 「编辑」菜单那九条的执行：把它们**派发给打开菜单那一刻窗口的焦点元素**。
+    ///
+    /// 机制、以及"为什么不能更直接"（编辑器元素的 `FocusHandle` 在 editor crate 内部，
+    /// 本批写域不含它）写在 `crate::menu_bar::ACTION_TARGET` 的文档上。这里只做三件事：
+    ///
+    /// 1. 取目标；没有（启动后什么都没点过就点菜单）就**如实**打一行 `state=no_target`
+    ///    并返回 —— 不假装成功，也不静默；
+    /// 2. 把焦点交给它（`dispatch_action` 走"焦点节点 → 祖先"，焦点不在它身上就什么都碰不到）；
+    /// 3. `Window::dispatch_action(上游动作)` —— 与用户在编辑器里按 `Ctrl+Z` 命中的
+    ///    **是同一个 action、同一个处理器**。
+    ///
+    /// ⚠️ `dispatch_action` 是**延后**执行的（`gpui-pre-0.3.6/src/window.rs:2442-2454` 里
+    /// `cx.defer`），但它**当场**就把当前焦点句柄记了下来，所以本函数之后菜单栏把焦点
+    /// 还给外壳根不影响这次派发。
+    fn dispatch_editor_action(
+        &mut self,
+        action: MenuAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(bound) = action.keybind_action() else {
+            // 只有"编辑"那九条会走到这里，而它们每一条都有上游动作；真出了这种情况
+            // 说明 `keybind_action` 与调用点漂移了 —— 打一行诊断而不是 panic（界面不该崩）。
+            diagnose_menu_run(action, "no_action");
+            return;
+        };
+        let Some(target) = crate::menu_bar::action_target() else {
+            diagnose_menu_run(action, "no_target");
+            return;
+        };
+        target.focus(window, cx);
+        window.dispatch_action(bound, cx);
+        diagnose_menu_run(action, "dispatched");
+    }
+
+    /// 「视图 → 放大 / 缩小 / 重置缩放」（`Ctrl+=` / `Ctrl+-` / `Ctrl+0`）。
+    ///
+    /// ⚠️ **语义映射（有意偏离真源，逐条写清）**：真源这三条是 Monaco 的**视图级** fontZoom
+    /// （`editor.action.fontZoomIn/Out/Reset`，只改编辑器字号、不落盘）。gpui 侧没有视图级字号：
+    /// 正文字号唯一的落点是设置项 `fontSize`（`settings/src/schema.rs` 的 10..=22，
+    /// 经 `theme::apply_editor_font_size` 写到主题的 `mono_font_size`，编辑器与终端正文共用）。
+    /// 所以这里改的就是它：放大 / 缩小 ±1，重置回到默认值 —— 代价是**会落盘**
+    /// （真源不落盘），收益是零新增机制、且与设置页里那一格是同一个值。
+    /// 越界钳制不在这里做：`SettingsStore::set_editor_font_size` 自己会归一
+    /// （`normalize_editor_font_size`），本函数读回**归一之后**的值打诊断。
+    fn apply_zoom(&mut self, action: MenuAction, cx: &mut Context<Self>) {
+        let Some(store) = lithe_gpui_settings::try_store(cx) else {
+            // 没有设置状态（测试宿主）：不装作做成了。
+            diagnose_menu_run(action, "unavailable");
+            return;
+        };
+        let current = store.read(cx).settings().font_size;
+        let next = match action {
+            MenuAction::ZoomIn => current + 1.0,
+            MenuAction::ZoomOut => current - 1.0,
+            // 重置 = 真源 `fontZoomReset` 的等价物。真源回到"设置里配置的值"，而本侧的
+            // 缩放本身就是改那个设置，所以"重置"= **默认值**（不写死 14：从 `Settings::default()` 取）。
+            _ => lithe_gpui_settings::Settings::default().font_size,
+        };
+        store.update(cx, |store, cx| store.set_editor_font_size(next, cx));
+        let applied = store.read(cx).settings().font_size;
+        // 字号是"这条动作真的改到了东西"的唯一机器可读证据（界面上只是字变大变小）。
+        eprintln!("S1_ZOOM font_size={applied} requested={next}");
+        diagnose_menu_run(action, "applied");
     }
 
     /// 按 [`CommandId`] 执行——[`ShellWorkspace::run_command`] 的 id 版本，也是**两条界面的
@@ -2364,9 +2535,22 @@ impl ShellWorkspace {
                         .gap_2()
                         .justify_end()
                         // 按钮顺序照指南「取消 + 结果词」，主操作（此窗口）最右且 primary。
-                        .child(Button::new("lithe-project-open-cancel").label(cancel_label).on_click(
-                            |_, window, cx| window.close_dialog(cx),
-                        ))
+                        //
+                        // ⚠️ 诊断（B2 补的真缺口）：这条路径原来**只有** `window.close_dialog`，
+                        // 而同文件另外四条（`request_open_project` 的取消 / 空选择 / 通道关闭，
+                        // 以及 `--open-project-probe`）都各有一行 `S1_OPEN_PROJECT state=…`。
+                        // 于是"用户点了取消"在日志里跟"什么都没发生"完全一样 —— 验证脚本只能
+                        // 靠"没有出现换根行"来间接推断。现在它自己有一行可 grep 的结论。
+                        .child(
+                            Button::new("lithe-project-open-cancel")
+                                .label(cancel_label)
+                                .on_click(|_, window, cx| {
+                                    eprintln!(
+                                        "S1_OPEN_PROJECT state=cancelled reason=dialog-cancel"
+                                    );
+                                    window.close_dialog(cx);
+                                }),
+                        )
                         .child(
                             Button::new("lithe-project-open-new-window")
                                 .label(new_window_label)
@@ -2544,6 +2728,11 @@ impl ShellWorkspace {
 //
 // 定义在**本模块**而不是 `crate::command_palette`：那是"命令面板的 action 表"，
 // 而这条动作根本不是命令面板的一条（它不在 `COMMAND_ORDER` 里，只由菜单与键位触发）。
+//
+// ⚠️ B2 又加了六条同类的键位入口（重新打开已关闭标签页 / 侧栏 / 终端 / 缩放三条），
+// 它们**不在这里**：它们的登记与映射都跟着菜单项走，落在
+// `crate::menu_bar::install_key_actions`（同一个 crate，`pub mod menu_bar` 已经公开，
+// 于是 `main.rs` 不需要为了它们多一条 `lib.rs` 的 re-export）。
 gpui_kit::actions!(lithe_workbench, [OpenProjectFolder]);
 
 /// 登记 `Ctrl+O`（真源 `file.open` = "Open Project"，`command-registry.ts:236-242`；
@@ -2733,9 +2922,8 @@ impl Render for ShellWorkspace {
             }
         };
         let terminal_handle = self.terminal.downgrade();
-        // 左栏「更改」视图的弱引用：切到该项时刷新一次（本侧没有 watcher，
-        // 「激活时刷新 + 手动刷新 + 写后刷新」是仅有的三条通路，见 `ChangesView::activate`）。
-        let changes_handle = self.changes.downgrade();
+        // ⚠️ 左栏「更改」视图的弱引用**不再需要**：切到它的那条副作用已经收进
+        // [`ShellWorkspace::select_top_activity`]（B2：活动栏与主菜单两处入口共用一段）。
         let on_select_activity = {
             let handle = handle.clone();
             move |index: usize, _event: &ClickEvent, window: &mut Window, cx: &mut App| {
@@ -2767,7 +2955,11 @@ impl Render for ShellWorkspace {
                         // 「顶部组选中谁」。底部高亮由 `bottom_visible` / `bottom_kind` 自己决定，
                         // 所以两组可以同时亮（真机 `activeSidebarView` 与 `isBottomPaneVisible`
                         // 就是两个独立状态，`workspace-ui-defaults.ts:5-7`）。
-                        None => this.top_activity_view = Some(index),
+                        //
+                        // ⚠️ 复用 [`ShellWorkspace::select_top_activity`]（B2）：主菜单的
+                        // 「文件资源管理器 / 源代码管理」走的是同一段 —— "切到「更改」就重读一次"
+                        // 那条副作用只有这样才不会漏。
+                        None => this.select_top_activity(index, cx),
                     }
                     cx.notify();
                     this.bottom_visible && this.bottom_kind == BottomPaneKind::Terminal
@@ -2776,12 +2968,6 @@ impl Render for ShellWorkspace {
                     // 幂等：会话已存在就什么都不做（所以"再点一次隐藏、再点回来"不会重开 shell）。
                     // 首次创建时由它自己把焦点延到帧末交给输入行。
                     let _ = terminal_handle.update(cx, |pane, cx| pane.ensure_session(window, cx));
-                }
-                // 顶部组点到「更改」：左栏内容换人（判据同 `is_activity_active`）之外，
-                // 顺手让那个视图重读一次工作区状态 —— 真源也是"视图重新可见就后台整刷一次"
-                // （`use-git-data-controller.ts:276-281`），本侧没有文件监听，这一步是兜底。
-                if bottom_pane_for(index).is_none() && index == CHANGES_ACTIVITY_IX {
-                    let _ = changes_handle.update(cx, |view, cx| view.activate(cx));
                 }
             }
         };
@@ -2891,6 +3077,9 @@ impl Render for ShellWorkspace {
             cx,
         );
         let right_tool_window_visible = self.right_visible;
+        // 左栏整块（活动栏 + 面板）的可见性（B2）：「视图 → 切换活动侧栏」/`Ctrl+B`。
+        // 收起时两样都不画、不占位 —— 与右工具窗 `right_tool_window_visible` 同一套做法。
+        let left_sidebar_visible = self.left_sidebar_visible;
 
         // 底部工具窗的内容由活动栏 / 命令面板切换的单值 `bottomPaneActiveTab` 决定。
         //
@@ -2991,8 +3180,12 @@ impl Render for ShellWorkspace {
                     // `main-layout.tsx:299` 的 `pr-(--lithe-workbench-gap)`：右端再留 4，
                     // 否则右活动栏会贴到窗口边缘。
                     .pr_1()
-                    .child(left_rail)
-                    .child(side_pane(div().w_80(), left_content, cx))
+                    // 左栏整块（活动栏 + 面板）—— B2 的「切换活动侧栏」收起时两样都不画。
+                    // 与右工具窗同一条口径：`then(..)` 里没有内容就不占位。
+                    .children(left_sidebar_visible.then_some(left_rail))
+                    .children(
+                        left_sidebar_visible.then(|| side_pane(div().w_80(), left_content, cx)),
+                    )
                     .child(
                         // 中央列 = 编辑器岛 + 底部工具窗（默认口径：嵌在中央列内）。
                         v_flex()
@@ -3233,6 +3426,67 @@ mod tests {
         RightToolWindowView, left_activity_index, resolve_project_open_destination,
         right_scan_should_notify, visible_commands,
     };
+
+    /// B2：`menu_bar::install_key_actions` 绑的六条键位，逐条对着 `MENUS` 与 keymap 语法定一遍。
+    ///
+    /// 这条守的是 Q13 的两面：
+    ///
+    /// 1. **键位字面量必须是 keymap 认得的**（`Keystroke::parse` 失败 = 那颗键永远按不出，
+    ///    而菜单上照样会显示胶囊 —— 正是 Q13 禁止的"显示了却按不出效果"）；
+    /// 2. **每一条都必须真的画在某个菜单里**（否则"按了这颗键会改状态"没有可见入口，
+    ///    用户永远不知道它存在；对照 `install_open_project_action` 的 `Ctrl+O`
+    ///    就对应「文件 → 打开文件夹」这一项）。
+    ///
+    /// ⚠️ 它**不能**断言"回调真的被登记了"（`App::on_action` 要一个 `App`，
+    /// 而本 crate 拿不到 `TestAppContext`，理由见 `menu_bar.rs` 里那条说明）。
+    /// 那一半由实机键盘注入覆盖（`.artifacts/p24/`）。
+    #[test]
+    fn menu_key_actions_are_parseable_and_listed() {
+        use crate::menu_bar::{MENUS, MenuAction, MenuItem};
+
+        let listed: Vec<MenuAction> = MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .filter_map(|item| match item {
+                MenuItem::Action(action) => Some(*action),
+                _ => None,
+            })
+            .collect();
+
+        for action in [
+            MenuAction::ReopenClosedTab,
+            MenuAction::ToggleActivitySidebar,
+            MenuAction::ToggleTerminal,
+            MenuAction::ZoomIn,
+            MenuAction::ZoomOut,
+            MenuAction::ResetZoom,
+        ] {
+            let key = action
+                .menu_key()
+                .unwrap_or_else(|| panic!("{action:?} 没有键位字面量"));
+            gpui_kit::Keystroke::parse(key)
+                .unwrap_or_else(|error| panic!("{action:?} 的键位 {key:?} 解析不了：{error}"));
+            assert!(listed.contains(&action), "{action:?} 没有画在任何菜单里");
+            assert!(
+                action.keybind_action().is_some(),
+                "{action:?} 有键位却没有 Action —— 菜单上会显示一颗按不出的键"
+            );
+        }
+
+        // 反向：`MENUS` 里**只有**这六条带键位字面量（B2 的清单，改它就是改验证脚本）。
+        let with_key: Vec<&'static str> = listed.iter().filter_map(|action| action.menu_key()).collect();
+        assert_eq!(
+            with_key,
+            vec![
+                crate::menu_bar::KEY_REOPEN_CLOSED_TAB,
+                crate::menu_bar::KEY_TOGGLE_ACTIVITY_SIDEBAR,
+                crate::menu_bar::KEY_TOGGLE_TERMINAL,
+                crate::menu_bar::KEY_ZOOM_IN,
+                crate::menu_bar::KEY_ZOOM_OUT,
+                crate::menu_bar::KEY_RESET_ZOOM,
+            ]
+        );
+    }
 
     /// 换项目的**决策**逐条照真源 `chooseProjectOpenDestination`
     /// （`project-open-destination.ts:78-110`）：显式目的地优先 → 不询问时按偏好 → 否则弹对话框。
