@@ -139,6 +139,7 @@
 //! 还没有做成设置项。
 
 mod buffer;
+mod completion;
 mod editor_view;
 mod navigation;
 

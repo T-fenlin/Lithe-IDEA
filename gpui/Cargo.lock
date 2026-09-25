@@ -3893,6 +3893,7 @@ dependencies = [
  "gpui-kit",
  "lithe-gpui-java",
  "lithe-gpui-shared",
+ "lsp-types",
  "serde_json",
 ]
 

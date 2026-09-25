@@ -41,4 +41,6 @@ mod service;
 mod session;
 mod workspace;
 
-pub use service::{JavaLanguageService, JavaTarget};
+pub use service::{
+    JavaCompletionItem, JavaLanguageService, JavaPosition, JavaTarget, JavaTextEdit,
+};

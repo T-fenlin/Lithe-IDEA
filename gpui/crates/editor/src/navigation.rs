@@ -229,7 +229,12 @@ pub(crate) fn definition_target(
 }
 
 /// 字节偏移 → Core 契约要的 `(0 基行, UTF-16 列)`。
-fn core_position(text: &Rope, offset: usize) -> (u64, usize) {
+///
+/// `pub(crate)`：补全（`crate::completion`）也要求 Core 口径的位置，
+/// 而"编辑器偏移 → Core 列"的换算**只该有一条实现** —— 三套列（字节 / 字符 / UTF-16）
+/// 混用是这个文件最容易出错的地方（见模块文档的列表与
+/// `utf16_and_character_columns_are_not_interchangeable` 那条测试）。
+pub(crate) fn core_position(text: &Rope, offset: usize) -> (u64, usize) {
     let point = text.offset_to_point(offset);
     let line = text.slice_line(point.row);
     (

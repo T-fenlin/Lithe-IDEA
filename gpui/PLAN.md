@@ -1493,6 +1493,88 @@ settings::identity::{GitIdentityHost, GitIdentityPage, set_git_identity_host}
 4. **LSP 页**：jdtls 运行时路径（`java/src/jdtls.rs:440-460` 现在是 env/JAVA_HOME/PATH 三级发现）；
    真源那三个开关（`autoCompletion` / `parameterHints` / `semanticTokens`）在 gpui 侧**没有消费方**，不画。
 
+---
+
+## 16. Java 第一优先级 · 第一批：智能提示（代码补全，2026-09-26）
+
+**维护者口径（2026-09-26）**：Java 生态第一优先级，**用户体验高于一切**；
+编辑器智能提示 + 代码跳转 → Maven / Spring / Spring Boot；**Git 相关先不做**。
+
+规格来源（都已进仓库）：
+
+| 文件 | 内容 |
+| --- | --- |
+| `gpui/research/editor-lsp-completion.md` | 上游编辑器 LSP 能力清单（6 个 provider 槽位）、触发链路、`lsp_types` 形状、Core 命令序列、分步计划 |
+| `gpui/research/java-spring-maven-inventory.md` | 载荷 106 个 bundle 逐个枚举（**有 m2e、没有 Spring**）、Windows/macOS 的 Java 实现、Core 的 Java 命令、Maven 最小可用路径、Spring 三条路、**不许自研清单** |
+
+### 16.1 补全菜单**一行没写**
+
+上游 `gpui-base` 0.6.6 的编辑器自带整套补全 UI（弹窗渲染、`↑↓`/`Enter`/`Esc`、鼠标点选、
+`filterText` 过滤），挂载点就是 `Lsp.completion_provider`
+（`gpui-base-0.6.6/src/input/editor/lsp/mod.rs:39`，经 `EditorState::lsp_mut()` 赋值；
+官方接线样例在 `gpui-component-0.6.6/src/inspector.rs:104-107`）。
+我们只写一个 `CompletionProvider` 适配器 —— 这正是 `develop-lithe`「复用成熟上游」要求的样子。
+
+| 落点 | 内容 |
+| --- | --- |
+| `crates/java/src/service.rs` | `completion()`：`ensure_session` → `sync_document` → `lsp.request{operation:"completion"}` → 解析 `{items:[…]}`（`client.rs:871-876,937-965`）；**snippet 用 Core 的 `lsp.plainSnippet` 还原**；`staleDocumentVersion`/`requestCancelled` 翻成 `Ok(空)` |
+| `crates/editor/src/completion.rs`（新） | provider：JDTLS 优先、`lsp.builtinCompletions` 兜底；`textEdit` 透传；`sort_text`/`filter_text` 原样过；120ms 防抖 + 代次闸门 |
+| `crates/editor/src/editor_view.rs` | `open()` 装 provider（仅 Java buffer）；`prepare_java()` 给**已打开**的 Java buffer 补装 |
+| `crates/editor/src/navigation.rs` | `core_position` 提成 `pub(crate)`：补全与跳转共用同一条"字节偏移 → UTF-16 列"换算 |
+
+### 16.2 四条口径（每条都对应一类会毁体验的 bug）
+
+1. **JDT 答了就是权威**：`Ok(items)`（含空列表）不回落；只有 `Err`（不可用/超时）才回落轻量补全
+   —— 与 `navigation.rs::resolve_target` 同一条口径。
+2. **`staleDocumentVersion` / `requestCancelled` 不是失败**：快速打字时 Core 会因新 `syncDocument`
+   自动取消旧补全（`engine.rs:4348-4360`），这是常态；翻成 `Ok(空)` 才不会误触发降级、
+   菜单才不会在 jdtls ↔ builtin 两种候选之间乱跳。
+3. **`textEdit` 必须带、且列口径要换算**：没有它上游就"在光标处再插一段"⇒ `Sys` + `System` = `SysSystem`；
+   而 Core 的 `utf16Column` 是 **UTF-16 码元**，上游 `position_to_offset` 当**字符**解
+   （`rope_ext.rs:330-343`）⇒ 入站过 `navigation::editor_position`、出站过 `navigation::core_position`。
+   含 emoji 的行上不换算必错（单测 `item_mapping_converts_utf16_columns_to_character_columns` 钉住）。
+4. **snippet 必须还原成纯文本**：JDT 大量候选是 `insertTextFormat: 2`（`greet(${1:name})`），
+   上游插入路径不认识 snippet 语法（`overlay.rs:166-197`），还原走 Core 的 `lsp.plainSnippet`
+   （进程内同步调用，逐条转换代价可忽略），别在 gpui 侧再写一个转换器。
+
+### 16.3 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo build --bin Lithe` | exit=0 |
+| `cargo test -p lithe-gpui-java` | 14 passed |
+| `cargo test -p lithe-gpui-editor` | 24 passed（新增 6 条补全单测） |
+| `cargo test -p lithe-gpui-workbench` | 29 passed |
+| **真实 JDTLS 端到端**（`LITHE_GPUI_JDTLS_SMOKE=1` + `LITHE_JDTLS_JAVA=<JDK21>`） | `S1_JAVA_COMPLETION … line=5 col=35 items=10 ms=152`；断言：候选含 `greet`、**每条都有 `text_edit`**、`insert_text` 里没有 `$` |
+
+⚠️ **强度边界**：菜单"在界面上弹出来"这一条**本轮没跑到**（需要真实打字触发；预算花在了数据层与接线核验上）。
+所以证据是"真实 JDTLS 往返 + 上游挂载点已装 + 翻译规则被单测钉住"，不是"我看到菜单了"。
+补这条时可用 `.artifacts/p2/inject.ps1 -Mode text`（WM_CHAR 实测能进 gpui 输入框），
+并用 `S1_JAVA_COMPLETION` 的 `source=jdtls|builtin` 判定菜单条目来源。详见 `.artifacts/p14/NOTES.md`。
+
+### 16.4 已知边界（别当已解决）
+
+1. **自动补 import 会丢**：上游 `insert_completion` 只应用 `text_edit` / `insert_text`，
+   **完全忽略 `additionalTextEdits`**（`overlay.rs:166-197`），而 JDT 的自动 import 正靠后者。
+   要补就得自己落（Core 有 `lsp.applyTextEdits`）。
+2. **没有 `Ctrl+Space`**：上游**没有任何补全 action/键位**（全 registry grep `ShowCompletions` 零命中），
+   只能打字触发。要加就得我们自己定义 action 并在编辑器上绑。
+3. **菜单不做前缀过滤**：候选集合完全由服务端按位置给；我们透传服务端的 `sort_text`/`filter_text`。
+4. **诊断（波浪线）还没有**：现有 `Session::request` 自己消费 `lsp.waitEvents` 并丢弃非本 `operationId`
+   的事件 —— 再加订阅会互相偷事件，必须先改成"单一事件泵 + 按 operationId 分派"。
+5. **Maven context 没传**：Core 的 `lsp.startServer` **已经接受 `mavenContext`**（`engine.rs:965-1003`），
+   gpui 侧完全没传（`java/src/session.rs`）⇒ JDT 拿不到生成源根 / profiles / settings。
+   最小路径 = `maven.scan` 拿 `relativePath` → 塞进 payload，**不需要解析 pom.xml**。
+
+### 16.5 下一批（按用户可感知价值）
+
+1. 补上"菜单真的弹出来"的交互级证据（打字注入 + 截图 + 诊断原文）。
+2. 自动补 import（`additionalTextEdits`）+ `Ctrl+Space`。
+3. **Maven context 送进 `lsp.startServer`**（→ 生成源根 / profiles 生效，Maven 项目体验闭环）。
+4. 会话改事件泵 → 诊断波浪线（同时是 Spring 端点/注入提示的前置）。
+5. **Spring**：载荷里没有 Spring 插件（已核实），走 Core 的 `spring.index`
+   （读 `~/.m2` 的 spring 元数据；macOS 已用它做补全/hover/端点），不捆新载荷。
+
 
 
 

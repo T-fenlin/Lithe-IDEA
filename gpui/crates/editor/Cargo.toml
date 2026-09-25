@@ -24,3 +24,10 @@ lithe-gpui-java = { path = "../java" }
 # 跳转请求的 payload 是 JSON（`lsp.builtinNavigation` 的请求字段，见 `src/navigation.rs`），
 # 与 `explorer` / `git` 两个 feature 同一口径：`core_json` 收 `serde_json::Value`。
 serde_json = "1"
+# 补全的 trait（`CompletionProvider`）由 `gpui_kit::component::input` 重导出，但**响应类型**
+# （`CompletionResponse` / `CompletionItem` / `TextEdit`）没有重导出，必须直接依赖。
+# ⚠️ **版本**必须和 `gpui-base-0.6.6/Cargo.toml` 解析到同一个 crate（`0.97.0`，
+# `gpui/Cargo.lock` 已经把它钉住）：版本不一致就是两个不同的 `lsp_types`，
+# 我们实现的 trait 与上游期待的 trait 对不上。`proposed` 不写也行（特性是并集），
+# 写出来只是表明"上游开的是这一档"。
+lsp-types = { version = "0.97", features = ["proposed"] }

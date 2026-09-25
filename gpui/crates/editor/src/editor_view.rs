@@ -378,6 +378,31 @@ impl EditorPane {
         }
         let service = Arc::new(JavaLanguageService::new(workspace_root));
         self.java = Some(service.clone());
+
+        // ⚠️ **给已经打开的 Java buffer 补装补全 provider**：真实的启动顺序是
+        // "外壳建编辑区 → 打开启动文件 →（这里）起 Java 服务"，而 `open()` 里装 provider 时
+        // `self.java` 还是 `None`（那份 provider 只剩轻量兜底）。不补装的话，
+        // "先打开的文件"永远拿不到 JDTLS 的补全 —— 而它往往正是用户马上要写代码的那个文件。
+        // 只补装一次（本方法幂等），且只补 Java buffer（与非 Java 文件不装的口径一致）。
+        let mut patched = 0usize;
+        for buffer in &self.buffers {
+            if crate::buffer::language_for_file(&buffer.name) != Some("java") {
+                continue;
+            }
+            let provider = crate::completion::JavaCompletionProvider::new(
+                Some(service.clone()),
+                buffer.path.clone(),
+            );
+            buffer.editor.update(cx, |state, _cx| {
+                crate::completion::install(state, Some(provider));
+            });
+            patched += 1;
+        }
+        if patched > 0 {
+            // 诊断：证明"服务起来之后，之前打开的文件也接上了"这条路径真的跑到。
+            println!("S1_JAVA_COMPLETION reattached buffers={patched}");
+        }
+
         // `detach`：这是一次"发出去就不管结果"的预热，结果只走 `S1_JAVA_*` 诊断行。
         // 服务的生命周期由 `self.java` 这个 `Arc` 持有，与任务是否被持有无关。
         self.java_task = Some(cx.background_spawn(async move {
@@ -446,6 +471,17 @@ impl EditorPane {
         let language = language_for_file(&name);
         // `TabSize` 是 `Copy`：在 `cx.new` 之前取一份，闭包里直接用（不借用 `self`）。
         let tab = self.tab();
+        // 补全 provider：**只给 Java 文件装**（`language == Some("java")`）。
+        //
+        // 为什么不是"所有文件都装"：JDTLS 只会答 Java，非 Java 文件拿到的是 Core 的轻量兜底
+        // （当前文件标识符），在 `.md` / `.toml` 上弹这个菜单纯属打扰。
+        // `JDTLS 优先、轻量兜底` 这条口径在 provider 内部，见 `crate::completion` 的模块文档。
+        //
+        // ⚠️ **必须在 `open()` 里就装**（而不是只依赖 `prepare_java`）：外壳是先建编辑区、
+        // 打开文件，再（后台）起 Java 服务；`prepare_java` 之后还会给**已经打开的** buffer
+        // 补装一次（见那里的注释）。两条路都覆盖，"先开文件后起服务"时菜单才不会永远不出现。
+        let completion_provider = (language == Some("java"))
+            .then(|| crate::completion::JavaCompletionProvider::new(self.java.clone(), path.clone()));
 
         // 一个标签一个 `EditorState`：先建状态再灌正文，然后才入列。
         let editor = cx.new(|cx| {
@@ -463,6 +499,9 @@ impl EditorPane {
             // 缩进宽度：新 buffer 直接带上当前的设置值（`set_tab_size` 是 `&mut self`，
             // 所以可以放在 builder 之后）。
             state.set_tab_size(tab, cx);
+            // 补全：装 provider + 把菜单调宽（上游默认 320px，Java 签名会被截断，
+            // 见 `crate::completion::install`）。
+            crate::completion::install(&mut state, completion_provider);
             if !writable {
                 // 说明性正文（读不到 / 超大 / 二进制 / 非 UTF-8）不可写：只读能避免
                 // "用户以为改了、其实保存的是说明文案"这种更坏的结果。

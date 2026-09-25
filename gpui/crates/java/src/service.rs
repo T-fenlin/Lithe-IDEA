@@ -35,6 +35,60 @@ use crate::workspace;
 const READY_ABSOLUTE_TIMEOUT: Duration = Duration::from_secs(600);
 /// 单次定义的死线：文档同步 + 一次语义请求。
 const DEFINITION_TIMEOUT: Duration = Duration::from_secs(60);
+/// 单次补全的死线。补全是**交互式**请求：用户正在等着敲下一个字符，不能像跳转那样给 60s。
+/// JDTLS 首次索引进度未知时补全会慢，所以给 15s；超时由编辑器回落到 Core 的轻量补全
+/// （`lsp.builtinCompletions`），用户至少能看到当前文件的标识符，而不是"什么都没有"。
+const COMPLETION_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 一条补全候选：字段与 Core `lsp.request{operation:"completion"}` **归一化后**的条目一一对应
+/// （定义在 `rust/lithe-core/src/lsp/interface/client.rs:937-965`，信封是 `{ "items": [ … ] }`）。
+///
+/// 为什么在这里就转成结构化类型而不是把 JSON 透传给编辑器：Core 的线格式是本 crate 的契约
+/// （crate 文档第一条），编辑器只该看到"标签 / 要插入什么 / 在哪替换"这三件事。
+#[derive(Clone, Debug, PartialEq)]
+pub struct JavaCompletionItem {
+    /// 列表里显示的名字。
+    pub label: String,
+    /// 接受后插入的文本。**snippet 已在 [`JavaLanguageService::completion`] 里转成纯文本**。
+    pub insert_text: String,
+    /// LSP `CompletionItemKind` 的原始数值（1..25），未知为 `None`。
+    pub kind: Option<i64>,
+    /// 一行的补充说明（通常是签名）。
+    pub detail: Option<String>,
+    /// 文档（Core 已把 `string | MarkupContent` 归一成纯文本）。
+    pub documentation: Option<String>,
+    /// 服务端给的排序键（**排序要听服务端的**：它比标签更懂上下文）。
+    pub sort_text: Option<String>,
+    /// 过滤键（有些候选的显示名与匹配名不同，例如别名）。
+    pub filter_text: Option<String>,
+    /// 替换范围 + 新文本；`None` = Core 没给 `textEdit`（此时只能在光标处插入）。
+    ///
+    /// ⚠️ **这一项直接决定补全会不会"插重复"**：上游接受补全时优先用 `textEdit` 的 range
+    /// 替换掉已经敲进去的前缀，没有 `textEdit` 就退化成"在光标处再插一段"
+    /// （`gpui-base-0.6.6/src/input/editor/lsp/overlay.rs:166-197`），
+    /// 于是 `Sys` + `System` 会变成 `SysSystem`。所以只要 Core 给了就必须带上。
+    pub text_edit: Option<JavaTextEdit>,
+}
+
+/// 一条 `textEdit`：0 基行 + 0 基 **UTF-16 码元**列（LSP 口径，与编辑器字符列不同）。
+#[derive(Clone, Debug, PartialEq)]
+pub struct JavaTextEdit {
+    /// 替换起点。
+    pub start: JavaPosition,
+    /// 替换终点。
+    pub end: JavaPosition,
+    /// 替换成什么（同样已经过 snippet 转换）。
+    pub new_text: String,
+}
+
+/// 一个 LSP 位置（0 基行 + 0 基 UTF-16 码元列）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JavaPosition {
+    /// 0 基行。
+    pub line: u32,
+    /// 0 基 UTF-16 码元列。
+    pub utf16_column: u32,
+}
 
 /// 语义跳转的目标。
 #[derive(Clone, Debug)]
@@ -173,6 +227,91 @@ impl JavaLanguageService {
             return Ok(Some(target));
         }
         self.virtual_target(session, first).map(Some)
+    }
+
+    /// 取光标处的补全候选（`textDocument/completion`，走 JDTLS 的**项目感知**结果）。
+    ///
+    /// 形状与 [`Self::definition`] 完全一致：`ensure_session` → 同步文档 → 发语义请求 → 解析结果。
+    /// 只有两处不同，都是为了让用户**能直接用**：
+    ///
+    /// 1. **死线更短**（[`COMPLETION_TIMEOUT`]）：补全是交互式请求，用户正等着敲下一个字符。
+    ///    超时由编辑器回落到 Core 的轻量补全（`lsp.builtinCompletions`），
+    ///    至少还能看到当前文件的标识符 —— "什么都没有"才是最伤的；
+    /// 2. **snippet 已经转成纯文本**：`insertTextFormat == 2` 的条目经 Core 的
+    ///    `lsp.plainSnippet` 过一遍（`rust/lithe-core/src/lsp/lightweight/snippets.rs:14-53`）。
+    ///    上游接受补全时是**把 `textEdit.newText` / `insertText` 原样写进正文**
+    ///    （`gpui-base-0.6.6/src/input/editor/lsp/overlay.rs:166-197`），它不认识 snippet 语法；
+    ///    不转的话用户会看到 `System.out.println(${1:...})` 这种东西。Core 那条命令是
+    ///    **进程内同步调用**（`gpui/crates/shared/src/core_client.rs:189` → `lithe_core::execute_json`），
+    ///    逐条转换的代价可以忽略；也避免我们在 gpui 侧再写一个转换器（那就是两个真相源）。
+    pub fn completion(
+        &self,
+        file_path: &Path,
+        text: &str,
+        line: u32,
+        utf16_column: u32,
+    ) -> Result<Vec<JavaCompletionItem>, String> {
+        // 与 `definition` 同口径：契约说"用户打开 .java 文件时可以按需起服务"，所以这里不再问策略。
+        self.ensure_session()?;
+
+        let uri = file_uri(file_path)?;
+        // 锁必须在整个请求期间持有（理由同 `definition`）：Core 的会话有状态，
+        // 两个线程同时 syncDocument / request 会让文档版本与结果对不上。
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let session = match &*state {
+            State::Ready(session) => &**session,
+            State::Failed(reason) => return Err(reason.clone()),
+            State::Closed => return Err("Java 语言服务已关闭".to_string()),
+            State::Idle => return Err("Java 语言服务尚未启动".to_string()),
+        };
+
+        let (version, changed) = session.sync_document(&uri, "java", text)?;
+        println!(
+            "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+            text.len()
+        );
+
+        let started = Instant::now();
+        let result = session.request(
+            "completion",
+            json!({
+                "uri": uri,
+                "position": { "line": line, "utf16Column": utf16_column },
+            }),
+            Instant::now() + COMPLETION_TIMEOUT,
+        );
+
+        // ⚠️ **"文档变旧了"不是失败**：Core 会在下一次 `syncDocument` 时自动取消版本变旧的补全
+        // 请求（`rust/lithe-core/src/lsp/interface/engine.rs:4348-4360` 的
+        // `is_stale_sensitive_method` 首位就是 `textDocument/completion`，取消走
+        // `:4289-4346`），而快速打字时这**是常态**。所以这里把它翻成 `Ok(空)`：
+        // 调用方（编辑器）就不会误判成"服务不可用"而回落到轻量补全 —— 否则菜单会在
+        // jdtls 与 builtin 两种候选之间来回跳，看起来像"补全在乱跳"。
+        // 错误字符串的形状见 `session.rs:351`（`"{code}@{stage}：{message}"`），只认前缀。
+        let result = match result {
+            Ok(result) => result,
+            Err(error) if is_superseded(&error) => {
+                println!("S1_JAVA_COMPLETION superseded reason={error}");
+                return Ok(Vec::new());
+            }
+            Err(error) => return Err(error),
+        };
+
+        // Core 的信封是 `{ "items": [ … ] }`（`rust/lithe-core/src/lsp/interface/client.rs:871-876`）。
+        let items: Vec<JavaCompletionItem> = result
+            .get("items")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(parse_completion_item).collect())
+            .unwrap_or_default();
+        println!(
+            "S1_JAVA_COMPLETION uri={uri} line={line} col={utf16_column} items={} ms={}",
+            items.len(),
+            started.elapsed().as_millis()
+        );
+        Ok(items)
     }
 
     /// 关闭会话（应用退出时调；`Idle` / `Failed` 时是空操作）。
@@ -452,6 +591,121 @@ fn directory_uri(path: &Path) -> Result<String, String> {
         .map_err(|_| format!("无法把工作区路径转成 file URI：{}", path.display()))
 }
 
+// ---------------------------------------------------------------------------
+// 补全条目的解析（Core 的线格式 → 本 crate 的结构化类型）
+// ---------------------------------------------------------------------------
+
+/// 这个错误是不是"请求被更新的文档版本取代了"（而不是真的失败）。
+///
+/// Core 的运行时错误码见 `rust/lithe-core/src/lsp/interface/engine.rs`：
+/// `staleDocumentVersion`（`syncDocument` 之后旧请求被取消）与 `requestCancelled`
+/// （宿主/服务端主动取消）。两者在**快速打字时是常态**，必须与"服务起不来 / 超时"区分开：
+/// 前者静默丢弃（`Ok(空)`），后者才允许调用方降级到轻量补全。
+///
+/// 判据是错误字符串的前缀（`Session::request` 的形状是 `"{code}@{stage}：{message}"`，
+/// `session.rs:351`）——本 crate 里只有这一处需要识别 Core 的运行时码，不额外引入枚举。
+fn is_superseded(error: &str) -> bool {
+    error.starts_with("staleDocumentVersion@") || error.starts_with("requestCancelled@")
+}
+
+/// 解析 Core 归一化后的一条补全条目。
+///
+/// 字段与 `rust/lithe-core/src/lsp/interface/client.rs:937-965` 一一对应；
+/// **`label` 是唯一的必需字段**（Core 也是这么定的：没有 label 的条目直接丢掉），
+/// 其余缺了就 `None`，绝不 panic —— 语言服务器的返回本来就随版本变化。
+fn parse_completion_item(value: &Value) -> Option<JavaCompletionItem> {
+    let label = value.get("label").and_then(Value::as_str)?.to_string();
+    // Core 已经把 insertText 归一成"非空"（优先 insertText、否则 textEdit.newText、否则 label）。
+    let insert_text_raw = value
+        .get("insertText")
+        .and_then(Value::as_str)
+        .unwrap_or(label.as_str());
+    let is_snippet = value.get("insertTextFormat").and_then(Value::as_u64) == Some(2);
+
+    let mut text_edit = value.get("textEdit").and_then(parse_text_edit);
+    let insert_text = if is_snippet {
+        let plain = plain_snippet(insert_text_raw);
+        // `textEdit` 才是上游真正用来替换前缀的那份文本，所以它也必须转。
+        if let Some(edit) = text_edit.as_mut() {
+            edit.new_text = plain_snippet(&edit.new_text);
+        }
+        plain
+    } else {
+        insert_text_raw.to_string()
+    };
+
+    Some(JavaCompletionItem {
+        label,
+        insert_text,
+        kind: value.get("kind").and_then(Value::as_i64),
+        detail: value
+            .get("detail")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        documentation: value
+            .get("documentation")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        sort_text: value
+            .get("sortText")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        filter_text: value
+            .get("filterText")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        text_edit,
+    })
+}
+
+/// 解析一条 `textEdit`（Core 的 `{ range: { start: {line, utf16Column}, end: {...} }, newText }`）。
+fn parse_text_edit(value: &Value) -> Option<JavaTextEdit> {
+    let range = value.get("range")?;
+    Some(JavaTextEdit {
+        start: parse_position(range.get("start")?)?,
+        end: parse_position(range.get("end")?)?,
+        new_text: value
+            .get("newText")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+/// 解析一个 Core 位置（`{ line, utf16Column }`）。
+fn parse_position(value: &Value) -> Option<JavaPosition> {
+    Some(JavaPosition {
+        line: value.get("line").and_then(Value::as_u64)? as u32,
+        utf16_column: value.get("utf16Column").and_then(Value::as_u64)? as u32,
+    })
+}
+
+/// 把 LSP snippet 还原成可插入的纯文本（`System.out.println(${1:msg})` → `System.out.println(msg)`）。
+///
+/// **走 Core 的 `lsp.plainSnippet`，不在这里自己写规则**：那是 Core 拥有的转换
+/// （`rust/lithe-core/src/lsp/lightweight/snippets.rs:20-53`，含 `${n:默认值}` /
+/// `$n` / 转义 `$` 的全部规则），在 gpui 侧再实现一份就是两个真相源，
+/// 而且一旦不一致，用户看到的候选与实际插入的文本会对不上。
+///
+/// 转换失败（Core 报错 / 返回非字符串）时**原样返回**：宁可在极少数情况下显示占位符，
+/// 也不能因为一次转换失败让整条候选消失或插进空串 —— 并留一条诊断。
+fn plain_snippet(value: &str) -> String {
+    match core_json("lsp.plainSnippet", json!({ "value": value })) {
+        Ok(Some(response)) => match response.get("text").and_then(Value::as_str) {
+            Some(text) => text.to_string(),
+            None => {
+                eprintln!("S1_JAVA_COMPLETION plain_snippet=missing_text_field");
+                value.to_string()
+            }
+        },
+        Ok(None) => value.to_string(),
+        Err(error) => {
+            eprintln!("S1_JAVA_COMPLETION plain_snippet=failed error={error}");
+            value.to_string()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,6 +732,58 @@ mod tests {
         assert!(uri.starts_with("file:///"), "{uri}");
         assert!(uri.ends_with('/'), "{uri}");
         assert!(uri.contains("lithe%20java%20ws"), "{uri}");
+    }
+
+    /// **补全条目**的解析：字段与 Core 的归一化输出一一对应，尤其是 `textEdit` 的
+    /// `utf16Column` 范围（决定"会不会插重复"）。
+    #[test]
+    fn completion_item_reads_the_normalized_fields() {
+        let item = parse_completion_item(&json!({
+            "label": "greet(String)",
+            "insertText": "greet(${1:name})",
+            "insertTextFormat": 2,
+            "kind": 2,
+            "detail": "String Greeter.greet(String name)",
+            "documentation": "打招呼",
+            "sortText": "0001",
+            "filterText": "greet",
+            "textEdit": {
+                "range": {
+                    "start": { "line": 3, "utf16Column": 28 },
+                    "end": { "line": 3, "utf16Column": 31 }
+                },
+                "newText": "greet(${1:name})"
+            }
+        }))
+        .expect("有 label 的条目必须能解析");
+
+        assert_eq!(item.label, "greet(String)");
+        assert_eq!(item.kind, Some(2));
+        assert_eq!(item.detail.as_deref(), Some("String Greeter.greet(String name)"));
+        assert_eq!(item.sort_text.as_deref(), Some("0001"));
+        // snippet 必须被 Core 的 `lsp.plainSnippet` 还原成纯文本（占位符一个都不许留），
+        // 否则用户接受补全会把 `${1:name}` 原样插进源码。
+        assert_eq!(item.insert_text, "greet(name)");
+        let edit = item.text_edit.expect("必须带上 textEdit，否则会插重复");
+        assert_eq!(edit.new_text, "greet(name)");
+        assert_eq!(edit.start.line, 3);
+        assert_eq!(edit.start.utf16_column, 28);
+        assert_eq!(edit.end.utf16_column, 31);
+    }
+
+    /// 没有 `label` 的条目直接丢掉（Core 也是这个判据）；非 snippet 的文本**原样保留**。
+    #[test]
+    fn completion_item_requires_a_label_and_keeps_plain_text() {
+        assert!(parse_completion_item(&json!({ "insertText": "x" })).is_none());
+
+        let item = parse_completion_item(&json!({
+            "label": "println",
+            "insertText": "println",
+            "insertTextFormat": 1,
+        }))
+        .expect("普通文本条目");
+        assert_eq!(item.insert_text, "println");
+        assert!(item.text_edit.is_none(), "Core 没给 textEdit 就该是 None");
     }
 
     /// Core 归一化后的定义位置是 `range.start.{line,utf16Column}`；
@@ -641,5 +947,49 @@ mod tests {
             "虚拟文档应当是 System 的源码：{}",
             &text[..text.len().min(200)]
         );
+
+        // 补全：`greeter.` 之后必须有候选，且**带替换范围**。
+        //
+        // 三条断言各有分工（照 `gpui/research/editor-lsp-completion.md` §7.1 的清单）：
+        // 1. 非空 —— 证明 `operation:"completion"` 与响应解析一路通；
+        // 2. `text_edit.is_some()` —— **唯一会把 `Sys` + `System` 变成 `SysSystem` 的路径**
+        //    （上游没有 `textEdit` 就在光标处再插一段，`overlay.rs:166-197`），必须钉死；
+        // 3. `insert_text` 里没有 `$` —— snippet 已经过 Core 的 `lsp.plainSnippet`，
+        //    否则用户接受补全会把 `${1:name}` 原样插进源码。
+        let dot_line = APP
+            .lines()
+            .position(|line| line.contains("greeter.greet"))
+            .expect("fixture 里有 greeter 调用") as u32;
+        let dot_column = APP
+            .lines()
+            .nth(dot_line as usize)
+            .and_then(|line| line.find("greeter."))
+            .map(|index| index + "greeter.".len())
+            .expect("fixture 里有 greeter.") as u32;
+        let items = service
+            .completion(&app_path, APP, dot_line, dot_column)
+            .unwrap_or_else(|error| panic!("补全请求失败：{error}"));
+        assert!(
+            !items.is_empty(),
+            "`greeter.` 之后 JDT 应当给出成员候选（哪怕是空的也要先确认链路）"
+        );
+        assert!(
+            items.iter().any(|item| item.label.contains("greet")),
+            "候选里应当有 greet：{:?}",
+            items.iter().map(|item| &item.label).collect::<Vec<_>>()
+        );
+        for item in &items {
+            assert!(
+                item.text_edit.is_some(),
+                "候选 {:?} 没有 textEdit：接受它就会插重复（`Sys`+`System` → `SysSystem`）",
+                item.label
+            );
+            assert!(
+                !item.insert_text.contains('$'),
+                "候选 {:?} 的 insert_text 仍是 snippet：{:?}",
+                item.label,
+                item.insert_text
+            );
+        }
     }
 }

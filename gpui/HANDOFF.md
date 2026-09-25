@@ -19,7 +19,19 @@
 > 本轮调研产物：`gpui/research/editor-lsp-completion.md`（补全怎么接）与
 > `gpui/research/java-spring-maven-inventory.md`（上游载荷里到底有什么、Maven/Spring 怎么走）。
 
-- 分支 `feat/gpui-shell-rewrite`，HEAD `dba009cc`，**工作区干净**。
+- 分支 `feat/gpui-shell-rewrite`，**工作区干净**（最近两批：`dba009cc` 设置「Git」页、
+  `53c77651` 交接优先级）。
+- **Java 线第一批已完成并提交**（阶段 16，见 `PLAN.md` §16 与 `.artifacts/p14/NOTES.md`）：
+  **编辑器智能提示（补全）落地** —— 补全菜单一行没写（上游 `gpui-base` 自带），只写了一个
+  `CompletionProvider` 适配器：`crates/java` 加 `completion()`（JDTLS `textDocument/completion` +
+  Core 的 `lsp.plainSnippet` 还原 snippet + stale/cancelled 翻成"空结果"），
+  `crates/editor/src/completion.rs`（新）负责 JDTLS 优先 / 轻量兜底、`textEdit` 透传、
+  120ms 防抖 + 代次闸门，`editor_view.rs` 在 `open()` 与 `prepare_java()` 两处装。
+  **真实 JDTLS 端到端已验**：`S1_JAVA_COMPLETION … items=10 ms=152`，每条候选都有 `text_edit`、
+  `insert_text` 里没有 `$`。**未验**：菜单在界面上真的弹出来（下一步第一件事）。
+- **两份新调研已进仓库**（必读）：`gpui/research/editor-lsp-completion.md`、
+  `gpui/research/java-spring-maven-inventory.md`（载荷里有 **m2e**、**没有 Spring**；
+  Core `lsp.startServer` **已接受 `mavenContext` 而 gpui 没传**；Spring 走 Core 的 `spring.index`）。
 - 最近四批（都经主代理复核 + 交互级验证后提交）：`ebdf4885` 源代码管理 →
   `46d62f41` 设置「编辑器」「终端」页（顺手修掉 `persistence.rs`「写得出、读不回」的真 bug，
   见 `PLAN.md` §14.2，**以后加设置键必读**）→ `b740bdb4` 设置左栏 11 项 + 7 个明确空态 →
