@@ -53,8 +53,8 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::{ActiveTheme as _, Root};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, Pixels, Render, SharedString, Styled as _, Window, div, px,
-    rems,
+    IntoElement, ParentElement as _, PathPromptOptions, Pixels, Render, SharedString, Styled as _,
+    Window, div, px, rems,
 };
 
 use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
@@ -360,6 +360,17 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
         C::SaveBuffer => (Category::View, IconName::Save),
         C::OpenCommandPalette => (Category::View, IconName::Search),
         C::NavigateToDefinition => (Category::View, IconName::ArrowRight),
+        // B1 的八条同样**不在面板里**（`COMMAND_ORDER` 没有它们，入口只有主菜单「文件」）。
+        // 它们的可见图标在 `MenuAction::icon`（菜单那一份才是用户看得到的），
+        // 这里给同一批字形只为保持"两处入口视觉同源"这条既有口径。
+        C::OpenFile => (Category::View, IconName::FolderOpen),
+        C::CloseTab
+        | C::CloseOtherTabs
+        | C::CloseAllTabs
+        | C::CloseSavedTabs
+        | C::CloseTabsToLeft
+        | C::CloseTabsToRight => (Category::View, IconName::X),
+        C::ReopenClosedTab => (Category::View, IconName::RotateCcw),
     };
 
     // 标签 / 描述：**能复用真源既有键就复用**（逐条的键与出处写在 `shared/src/i18n.rs`
@@ -423,6 +434,17 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
             tr("lithe.menu.goToDefinition"),
             tr("lithe.navigation.definition"),
         ),
+        // B1 的八条：label 与菜单项**同一个键**（两处入口同一句话）；description 取它们所在的
+        // 顶级菜单名（真源既有键「文件」）—— 这八条**永远不会被画出来**（不在 `COMMAND_ORDER`），
+        // 所以这里不编新句、也不假装它们是命令面板的动作。
+        C::OpenFile => (tr("lithe.outline.openFile"), tr("lithe.menu.file")),
+        C::CloseTab => (tr("lithe.menu.closeTab"), tr("lithe.menu.file")),
+        C::CloseOtherTabs => (tr("lithe.menu.closeOtherTabs"), tr("lithe.menu.file")),
+        C::CloseAllTabs => (tr("lithe.menu.closeAllTabs"), tr("lithe.menu.file")),
+        C::CloseSavedTabs => (tr("lithe.menu.closeSavedTabs"), tr("lithe.menu.file")),
+        C::CloseTabsToLeft => (tr("lithe.menu.closeTabsToLeft"), tr("lithe.menu.file")),
+        C::CloseTabsToRight => (tr("lithe.menu.closeTabsToRight"), tr("lithe.menu.file")),
+        C::ReopenClosedTab => (tr("lithe.menu.reopenClosedTab"), tr("lithe.menu.file")),
     };
 
     CommandAction {
@@ -1192,9 +1214,17 @@ impl ShellWorkspace {
                 window.toggle_fullscreen();
                 diagnose_menu_run(action, "applied");
             }
-            // 走上一条 `if let` 的七条在这里不可达；写全分支是为了让"表里加一条动作"
+            // 走上一条 `if let` 的动作在这里不可达；写全分支是为了让"表里加一条动作"
             // 变成编译错误而不是运行时静默。
-            MenuAction::Save
+            MenuAction::OpenFile
+            | MenuAction::Save
+            | MenuAction::CloseTab
+            | MenuAction::CloseOtherTabs
+            | MenuAction::CloseAllTabs
+            | MenuAction::CloseSavedTabs
+            | MenuAction::CloseTabsToLeft
+            | MenuAction::CloseTabsToRight
+            | MenuAction::ReopenClosedTab
             | MenuAction::CommandPalette
             | MenuAction::ToggleTerminal
             | MenuAction::ToggleMaven
@@ -1211,7 +1241,8 @@ impl ShellWorkspace {
     /// 唯一执行点**：命令面板（行号 → id）与主菜单（[`MenuAction::command_id`]）都落到这里。
     ///
     /// ⚠️ 其中 [`CommandId::SaveBuffer`] / [`CommandId::OpenCommandPalette`] /
-    /// [`CommandId::NavigateToDefinition`] / [`CommandId::ToggleMenuBar`] **不在命令面板里**
+    /// [`CommandId::NavigateToDefinition`] / [`CommandId::ToggleMenuBar`] 与 B1 新增的
+    /// [`CommandId::OpenFile`] ＋ 七条关闭系 **不在命令面板里**
     /// （[`COMMAND_ORDER`] 没有它们），只由菜单项或快捷键触发 ——
     /// 各自的接线点写在分支上。
     fn run_command_id(&mut self, id: CommandId, window: &mut Window, cx: &mut Context<Self>) {
@@ -1229,6 +1260,132 @@ impl ShellWorkspace {
                 // 的全局处理器里那一句**是同一个函数**。
                 diagnose_run(id, "open");
                 crate::command_palette::open_command_palette(window, cx);
+            }
+            CommandId::OpenFile => {
+                // 接线点：gpui 自带的 `App::prompt_for_paths`
+                // （`gpui-pre-0.3.6/src/app.rs:1687-1692`；Windows 实现是真的
+                // `IFileOpenDialog`，`gpui-pre-windows-0.3.6/src/platform.rs:673-684` →
+                // `:1374-1400` 的 `file_open_dialog`，取消时回 `Ok(None)`）。
+                //
+                // ⚠️ `project_menu.rs:108-113` 当年写"gpui 侧没有任何文件对话框依赖"是**不完整**的
+                // （它只查了 `rfd` / `tinyfiledialogs` / `native-dialog` 三个 crate，漏掉了 gpui
+                // 自带的这一条），并因此把「打开…」判成"做不到"。这里用的是同一台机器上
+                // **零新增依赖**的通路。
+                //
+                // 选中的路径**异步**回来（`oneshot::Receiver`，不是回调），所以整段起一个
+                // 前台任务：`spawn_in` 给的 `AsyncWindowContext` 能在 await 之后拿回
+                // `&mut Window` —— 落盘到编辑区要它（`EditorPane::open` 要 `window`）。
+                //
+                // ⚠️ 本函数是**在渲染里**被调用的（`ShellWorkspace::render` 的
+                // `for action in take_pending_runs(cx)`），所以"调 `prompt_for_paths`
+                // 会不会把这一帧挡住"必须说清楚：Windows 侧的实现把 `IFileOpenDialog`
+                // 放到**专用线程**上跑（`gpui-pre-windows-0.3.6/src/dialog.rs:85-133` 的
+                // `show_dialog` 里 `std::thread::Builder::…spawn`），本线程只拿一个
+                // `Receiver` 就返回 —— 实测这一帧照常画完（面板在点击后立刻收起）。
+                diagnose_run(id, "prompt");
+                let picked = cx.prompt_for_paths(PathPromptOptions {
+                    files: true,
+                    directories: false,
+                    // 多选：真源的文件选择器同样允许一次开多个
+                    // （`windows/tauri/src/features/file-system/controllers/platform.ts:126-127`
+                    // 的 `open({ multiple: true })`）。选多个时**逐个打开**，
+                    // 最后一个成为活动标签（`EditorPane::open` 每次都会把它设成活动）。
+                    multiple: true,
+                    prompt: None,
+                });
+                let editor = self.editor.clone();
+                let opened = cx.spawn_in(window, async move |_this, async_cx| {
+                    // ⚠️ **两层 `Result`**：外层是 oneshot 通道（送信端被丢），内层是平台侧
+                    // 的错误（Linux 打开选择器失败时会给）。两者都不是"用户取消"，
+                    // 所以各自打一行、各自与 `cancelled` 区分开。
+                    let result = match picked.await {
+                        Ok(Ok(result)) => result,
+                        Ok(Err(error)) => {
+                            eprintln!("S1_EDITOR_OPEN_FILE state=failed error={error}");
+                            return;
+                        }
+                        Err(_) => {
+                            eprintln!("S1_EDITOR_OPEN_FILE state=cancelled reason=channel-closed");
+                            return;
+                        }
+                    };
+                    let Some(paths) = result else {
+                        eprintln!("S1_EDITOR_OPEN_FILE state=cancelled");
+                        return;
+                    };
+                    if paths.is_empty() {
+                        eprintln!("S1_EDITOR_OPEN_FILE state=empty");
+                        return;
+                    }
+                    // 诊断先打（在开文件之前）：`count` 是"选择器回了几个路径"的直接证据，
+                    // 而每个文件开成功与否另有 `S1_EDITOR_LANG` / `S1_EDITOR_OPEN` 一行。
+                    eprintln!(
+                        "S1_EDITOR_OPEN_FILE state=picked count={} first={}",
+                        paths.len(),
+                        paths[0].display()
+                    );
+                    // 不在这里 `cx.notify()`：那是 `Context<T>` 的方法，`AsyncWindowContext::update`
+                    // 给的是 `&mut App`（只有一个收 `EntityId` 的 `App::notify`）。也不需要 ——
+                    // `pane.open` 自己收尾会 `cx.notify()`，而外壳订阅了编辑区实体
+                    // （`_editor_subscription`），会跟着重绘。
+                    let _ = async_cx.update(move |window, cx| {
+                        for path in &paths {
+                            eprintln!("S1_EDITOR_OPEN path={}", path.display());
+                            let _ = editor.update(cx, |pane, cx| pane.open(path, window, cx));
+                        }
+                        // 活动标签是谁：`pane.open` 每次都把新开的那个设成活动，
+                        // 所以这里读到的就是"切到该文件"的证据（状态栏那一格读的是同一个值）。
+                        let active = editor.read(cx).active_buffer_name();
+                        eprintln!("S1_EDITOR_OPEN_FILE state=opened active={active}");
+                    });
+                });
+                // `detach()` 而不是 `let _ =`：gpui 的 `Task` 一 drop 就**取消**
+                // （与 `GitIdentityHost` 那两段同一条实测教训），丢掉它等于"选择器刚打开
+                // 就被取消"。
+                opened.detach();
+            }
+            CommandId::CloseTab => {
+                // 接线点：`EditorPane::close_active`（`Ctrl+W` 的同一个方法）。
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.close_active(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::CloseOtherTabs => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.close_other_tabs(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::CloseAllTabs => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.close_all_tabs(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::CloseSavedTabs => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.close_saved_tabs(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::CloseTabsToLeft => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.close_tabs_to_left(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::CloseTabsToRight => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.close_tabs_to_right(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::ReopenClosedTab => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.reopen_closed_tab(window, cx));
+                diagnose_run(id, "applied");
             }
             CommandId::NavigateToDefinition => {
                 // 接线点：`EditorPane::navigate_to_definition`（`F12` 的处理器在
@@ -2345,6 +2502,10 @@ mod tests {
 
     /// `CommandId::id()` 是诊断行 `S1_COMMAND_RUN id=…` 的取值，改它就是改可 grep 的契约；
     /// 同时它也是搜索关键词，所以要稳定且唯一。
+    ///
+    /// ⚠️ 表里**只列命令面板里的那七条**（它们才有"面板行序"这层含义）；B1 新增的
+    /// 「打开文件」与七条关闭系也有 `id()`，但它们的入口只有主菜单 ——
+    /// 那八条的 id 由 [`menu_only_command_ids_are_stable`] 钉住。
     #[test]
     fn command_ids_are_stable_and_unique() {
         let all = [
@@ -2363,6 +2524,58 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), all.len(), "诊断 id 必须互不相同");
+    }
+
+    /// B1 新增的**只走主菜单**的八条 `CommandId`：id 必须稳定（诊断契约）、互不相同，
+    /// 而且**一条都不在命令面板的可见表里** —— 那正是"它们不占面板行序"的机器判据
+    /// （面板的行号含义由 [`visible_commands`] 算，多进去一条就会让别处错位一行）。
+    #[test]
+    fn menu_only_command_ids_are_stable() {
+        let menu_only = [
+            (CommandId::OpenFile, "open-file"),
+            (CommandId::CloseTab, "close-tab"),
+            (CommandId::CloseOtherTabs, "close-other-tabs"),
+            (CommandId::CloseAllTabs, "close-all-tabs"),
+            (CommandId::CloseSavedTabs, "close-saved-tabs"),
+            (CommandId::CloseTabsToLeft, "close-tabs-to-left"),
+            (CommandId::CloseTabsToRight, "close-tabs-to-right"),
+            (CommandId::ReopenClosedTab, "reopen-closed-tab"),
+        ];
+        let visible = visible_commands(dark());
+        let mut ids: Vec<&str> = menu_only.iter().map(|(id, _)| id.id()).collect();
+        for (id, expected) in menu_only {
+            assert_eq!(id.id(), expected, "{} 的诊断 id 变了", expected);
+            assert!(
+                !visible.contains(&id),
+                "{} 不该出现在命令面板里（它只由主菜单触发）",
+                expected
+            );
+            assert!(
+                !COMMAND_ORDER.contains(&id),
+                "{} 不该进 COMMAND_ORDER（那会改掉面板的行序）",
+                expected
+            );
+        }
+        // 与本表之外的 id 也不能撞（面板那七条 + 三条只由快捷键/菜单触发的）。
+        for other in [
+            CommandId::OpenSettings,
+            CommandId::OpenAppearanceSettings,
+            CommandId::SwitchToLightTheme,
+            CommandId::SwitchToDarkTheme,
+            CommandId::ToggleTerminal,
+            CommandId::ToggleMaven,
+            CommandId::ToggleStatusBar,
+            CommandId::ToggleMenuBar,
+            CommandId::SaveBuffer,
+            CommandId::OpenCommandPalette,
+            CommandId::NavigateToDefinition,
+        ] {
+            ids.push(other.id());
+        }
+        let total = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), total, "全部 CommandId 的 id 必须互不相同");
     }
 
     /// 懒扫**延后之后**仍然"每个视图只扫一次"：登记在派发栈内就落下，所以同一项连点两次

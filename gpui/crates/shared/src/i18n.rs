@@ -588,6 +588,19 @@ mod tests {
             ("lithe.menu.minimize", "最小化"),
             ("lithe.menu.maximize", "最大化"),
             ("lithe.menu.toggleFullscreen", "切换全屏"),
+            // B1 接进「文件」菜单的一批（`gpui/crates/workbench/src/menu_bar.rs`）。
+            // **零新增键、零新增文案**：七条关闭系全是真源 `menu.*` 段既有键，
+            // 「打开文件」复用真源 `outline.openFile`（真源 89 条菜单里没有这一项，
+            // `menu.*` 段也就没有 `openFile`；复用与「显示状态栏」同一条口径）。
+            // 所以 `tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 与两份 yml **都没有动**。
+            ("lithe.menu.closeTab", "关闭标签页"),
+            ("lithe.menu.closeOtherTabs", "关闭其他标签页"),
+            ("lithe.menu.closeAllTabs", "关闭所有标签页"),
+            ("lithe.menu.closeSavedTabs", "关闭已保存标签页"),
+            ("lithe.menu.closeTabsToLeft", "关闭左侧标签页"),
+            ("lithe.menu.closeTabsToRight", "关闭右侧标签页"),
+            ("lithe.menu.reopenClosedTab", "重新打开已关闭标签页"),
+            ("lithe.outline.openFile", "打开文件"),
             // 左上角图标按钮的 tooltip / 无障碍名（真源 `t("window.menu")` = 「菜单」，
             // `title-bar.tsx:209-219`；`locale.ts:7903`）。
             ("lithe.window.menu", "菜单"),

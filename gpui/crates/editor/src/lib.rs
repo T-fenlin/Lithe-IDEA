@@ -158,15 +158,26 @@
 //! （依赖 pane 树，本侧是扁平 `buffers` + 单窗格）。
 //!
 //! 落点：菜单挂载在 [`EditorPane::render_tab`] 的内容 div 上（[`EditorPane::with_tab_menu`]），
-//! 三个批量关闭与确认对话框在 [`EditorPane::close_scope`] / [`EditorPane::open_unsaved_dialog`]，
+//! 批量关闭与确认对话框在 [`EditorPane::close_scope`] / [`EditorPane::open_unsaved_dialog`]，
 //! `Ctrl+W`（[`CloseActiveTab`] → [`EditorPane::close_active`]）是"关闭当前"。
 //! 「在资源管理器中显示」与「在终端中打开」要起进程 / 改外壳布局，所以由外壳
 //! （`ShellWorkspace`）通过 [`TabMenuHostActions`] 登记两个回调进来。
 //!
-//! 本轮**范围外**（真机有、这里没有）还有：标签悬停才显示关闭按钮的那一档
-//! （`TabBar` 不暴露每个标签的悬停状态）、标签拖拽重排 / 拖出成新窗格、
+//! B1 起，标签右键菜单那三项**不再是关闭能力的唯一入口**：主菜单「文件 → 关闭…」有
+//! 关闭其他 / 左侧 / 右侧 / 全部 / 已保存 / 重新打开已关闭六项，落到同一批
+//! `EditorPane::close_*` / `reopen_closed_tab`（锚点是当前活动标签）。同时 × 从
+//! "只有活动标签有"改成**活动常显 + 非活动悬停显**，并补上了点 × 时的 `stop_propagation`
+//! （订正了原来那条与上游不符的注释）。
+//!
+//! 本轮**范围外**（真机有、这里没有）还有：标签拖拽重排 / 拖出成新窗格、
 //! 面包屑栏、分屏与轮播、外部冲突横幅与大文件「仍然启用」降级、
 //! 非 UTF-8 文件的编码探测与"按编码保存"。
+//!
+//! ⚠️ 曾经登记在这里的"标签悬停才显示关闭按钮那一档做不到（`TabBar` 不暴露每个标签的
+//! 悬停状态）"**在 B1 已经做掉了** —— 编辑区自己记一个 `hovered_tab`（标签内容 div 的
+//! `on_hover` 写入），非活动标签悬停时才渲染 ×，见 `editor_view.rs` 的 `render_tab`。
+//! 「关闭已保存标签页」与「重新打开已关闭标签页」也在 B1 落地（前者是 `CloseScope::Saved`，
+//! 后者是 `EditorPane::closed` 那个有界 LIFO 栈）。
 //!
 //! 另外两条与阶段 10 第二批直接相关的边界（细节见 `gpui/PLAN.md` §10.4）：
 //! `jdt://` 的 buffer 被关掉之后不能用 `←` 回去（虚拟正文只来自 Core 的虚拟文档请求，

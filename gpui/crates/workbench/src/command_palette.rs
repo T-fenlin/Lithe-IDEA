@@ -179,10 +179,12 @@ thread_local! {
 ///
 /// 与真源逐条对应关系写在 [`crate::workspace::command_action`] 的文档上。
 ///
-/// ⚠️ 这里有一条**不是命令面板的**变体：[`CommandId::ToggleMenuBar`] 只由菜单栏的
-/// `Ctrl+M` 与 `run_menu_action` 触发（命令面板里不列它，见 [`crate::workspace`] 的
-/// `COMMAND_ORDER`）。之所以挂在这张表上，是因为它要一个**带表单行的稳定 id** 与
-/// 一个 `Action` —— 那正是本枚举已有的两件事。
+/// ⚠️ 这里有一批**不是命令面板的**变体：[`CommandId::ToggleMenuBar`] 只由菜单栏的
+/// `Ctrl+M` 与 `run_menu_action` 触发；B1 新增的 [`CommandId::OpenFile`] 与
+/// [`CommandId::CloseTab`]…[`CommandId::ReopenClosedTab`] 八条只由**主菜单「文件」**触发
+/// （命令面板里不列它们，见 [`crate::workspace`] 的 `COMMAND_ORDER`：面板只放
+/// "一屏能扫完的高频动作"）。之所以挂在同一张表上，是因为它们都要一个**稳定 id**
+/// 与一个 `Action` —— 那正是本枚举已有的两件事。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandId {
     /// 打开设置对话框（常规页）。
@@ -207,6 +209,22 @@ pub enum CommandId {
     OpenCommandPalette,
     /// 转到定义（`F12`；菜单「转到 → 转到定义」也走它）。
     NavigateToDefinition,
+    /// 打开文件…（菜单「文件 → 打开文件」，**不绑键位**：`Ctrl+O` 留给「打开文件夹」，Q18）。
+    OpenFile,
+    /// 关闭标签页（菜单「文件 → 关闭标签页」；`Ctrl+W` 是同一个能力的快捷键入口）。
+    CloseTab,
+    /// 关闭其他标签页。
+    CloseOtherTabs,
+    /// 关闭所有标签页。
+    CloseAllTabs,
+    /// 关闭已保存标签页。
+    CloseSavedTabs,
+    /// 关闭左侧标签页。
+    CloseTabsToLeft,
+    /// 关闭右侧标签页。
+    CloseTabsToRight,
+    /// 重新打开已关闭标签页。
+    ReopenClosedTab,
 }
 
 impl CommandId {
@@ -224,6 +242,17 @@ impl CommandId {
             Self::SaveBuffer => "save-buffer",
             Self::OpenCommandPalette => "open-command-palette",
             Self::NavigateToDefinition => "navigate-to-definition",
+            // B1 的一批：全部**只由主菜单触发**（`COMMAND_ORDER` 里没有它们，所以命令面板
+            // 不列）—— 面板要的是"一屏能扫完的高频动作"，而"关闭左侧/右侧标签页"这类
+            // 动作在面板里出现只会挤掉别的。
+            Self::OpenFile => "open-file",
+            Self::CloseTab => "close-tab",
+            Self::CloseOtherTabs => "close-other-tabs",
+            Self::CloseAllTabs => "close-all-tabs",
+            Self::CloseSavedTabs => "close-saved-tabs",
+            Self::CloseTabsToLeft => "close-tabs-to-left",
+            Self::CloseTabsToRight => "close-tabs-to-right",
+            Self::ReopenClosedTab => "reopen-closed-tab",
         }
     }
 }

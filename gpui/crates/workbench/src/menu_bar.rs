@@ -55,6 +55,34 @@
 //! （`window-menu-bar.tsx:558-567`），其余项一律可点。本侧反着做（少画、不画灰），
 //! 所以**菜单结构与真源不可逐条比对** —— 这是维护者明确接受的口径，不是遗漏。
 //!
+//! ## B1 修的两条"收不掉"根因（各自独立，只修一条都还会坏）
+//!
+//! 1. **没接上游的"点外部关闭"出口**：`PopupMenu` 自己挂了
+//!    `on_mouse_down_out` → `dismiss()` → `cx.emit(DismissEvent)`
+//!    （`gpui-component-0.6.6/src/menu/popup_menu.rs:1475 → 1084-1108 → 1055-1057`，
+//!    `EventEmitter<DismissEvent>` 在 `:1407`），而本模块**从头到尾没有订阅过**它 ——
+//!    于是 `selected` 永不被清，面板下一帧照旧被画出来。现在订阅落在面板**真的被建出来**
+//!    的那一帧（[`menu_item`]），处理函数是 [`MenuBar::handle_dismiss`]。
+//!    顺带把焦点交给面板（`Esc` / `↑↓` / `Enter` 的 `key_context` 在它身上），
+//!    收起时再安排"下一帧把焦点还给外壳根"（[`MenuBar::restore_focus`]）。
+//! 2. **摆位写错：面板落在标题栏那一行、把自己的触发器盖住**。原来用
+//!    `deferred(anchored().anchor(Anchor::BottomLeft)…)` —— `anchored()` 取的是锚点元素
+//!    **自己在布局里的静态位置**，配合 `BottomLeft` 会把面板放到触发器**上方**；向上溢出
+//!    窗口上沿后又被 `snap_to_window_with_margin(8)` 夹回 `y=8`，于是面板压回标题栏那一行。
+//!    面板 `.occlude()` = `HitboxBehavior::BlockMouse`，被盖住的标题既拿不到 hover 也拿不到
+//!    点击 —— 这正是"再点同一个标题收不掉"（那一下点击根本没进回调）的原因。
+//!    现在统一走 [`popup_for`] 的 `Positioner::side(触发器 bounds)`（紧凑形态的浮动层
+//!    同理，见 `compact_bar`）。
+//!
+//! 五条关闭路径全部汇合到 [`MenuBar::close`] 这一个出口，各自打一行
+//! `S1_MENU_CLOSE reason=…`（取值域见 [`CloseReason`]）。
+//!
+//! ⚠️ **顶级的开合因此从 `on_click` 挪到了 `on_mouse_down`**：面板的
+//! `on_mouse_down_out` 在**捕获阶段**就会把"按在触发器上"的这一下看成"点到了面板外"
+//! （触发器对面板而言确实是外部），若开合还挂在 mouse-up 的 `on_click` 上，
+//! 就会"先被面板收掉、又被 click 开回来"。现在 [`MenuBar::toggle`] 独占这层语义，
+//! [`MenuBar::handle_dismiss`] 对"按在打开项自己的触发器上"的 dismiss 故意放过。
+//!
 //! ## 度量（真源 `windows/tauri/src/ui/menubar.tsx`）
 //!
 //! | 规格 | 值 | 出处 | 本侧写法 |
@@ -95,15 +123,21 @@
 //! （`Ctrl+M` → 切换两种形态那条**已实现**：[`crate::workspace`] 的 `ToggleMenuBar`
 //! action；它只需要一个 action，不需要 focusable 的顶级项。）
 
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
 use gpui_kit::assets::IconName;
-use gpui_kit::base::h_flex;
+// `Align` / `Placement` / `Positioner` 住在 `gpui_kit::base`（与 `project_menu` 同一取法，
+// 它们是布局基元而不是组件）；`ElementExt` 提供 `on_prepaint`（量触发器盒子要用它）。
+use gpui_kit::base::{Align, ElementExt as _, Placement, Positioner, h_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
-    Anchor, App, AppContext as _, ClickEvent, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, MouseButton, ParentElement as _, Pixels, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, anchored, deferred, div, px,
+    App, AppContext as _, Bounds, ClickEvent, Context, DismissEvent, Entity, FocusHandle,
+    Focusable as _, InteractiveElement as _, IntoElement, Keystroke, MouseButton,
+    ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Subscription, Window, deferred, div, px,
 };
 
 use lithe_gpui_shared::tr;
@@ -112,9 +146,7 @@ use crate::command_palette::CommandId;
 
 // ---------------------------------------------------------------------------
 // 圆角常量（档位外的值，逐条给理由）
-// ---------------------------------------------------------------------------
-
-/// 顶级项圆角 6.4：`ui/menubar.tsx:86` 的 `rounded-md` = `--radius × 0.8`（`theme.css:7`）。
+// ---------------------------------------------------------------------------/// 顶级项圆角 6.4：`ui/menubar.tsx:86` 的 `rounded-md` = `--radius × 0.8`（`theme.css:7`）。
 ///
 /// ⚠️ **保留 `px(...)`**：6.4 不是 gpui 的 rem 档位（`rounded_md()` 是 6），且 Lithe 的圆角阶梯
 /// 一律走应用层具名常量 —— 与 `crate::right_tool_window` 的 `CLOSE_BUTTON_RADIUS` 同一条理由。
@@ -141,6 +173,26 @@ const FLOAT_RADIUS: Pixels = px(14.4);
 /// 要写 rem 得走 `AbsoluteLength::to_pixels`（`crate::command_palette` 的 `rem_px` 就是那么做的），
 /// 为一个菜单面板最小宽引入那层换算不划算；240 与 rem 基准 16px 的换算关系写在这里备查。
 const PANEL_MIN_WIDTH: Pixels = px(240.);
+
+/// 面板与触发器之间的空隙 4：真源 `Menu.Positioner` 的 `sideOffset={4}`
+/// （`windows/tauri/src/ui/menubar.tsx:107`），与 `project_menu.rs` 的 `PANEL_OFFSET_SPEC`
+/// 同一个数、同一条理由（`ui/dropdown.tsx:735-737` 的默认值）。
+///
+/// 4 在 gpui 档位上（`top_1()` = 4），但 `Positioner::offset` 收的是 `Pixels`，所以写 `px`。
+const PANEL_OFFSET_SPEC: f32 = 4.;
+
+/// 面板贴窗口边时留的边距 8：真源 `collisionPadding={8}`（`ui/menubar.tsx:108`）。
+///
+/// ⚠️ 它是**碰撞留白**，不是"面板离触发器 8" —— B1 之前这里把它当成后者的近似
+/// （`snap_to_window_with_margin(px(8.))`），那正是面板被顶回标题栏那一行的最后一环。
+const PANEL_WINDOW_MARGIN_SPEC: f32 = 8.;
+
+/// 一个按键是不是"裸 `Esc`"（`Esc` 拦截器的判据，见 [`MenuBar::escape_interceptor`]）。
+///
+/// `modifiers` 必须为空：`Ctrl+Esc` / `Alt+Esc` 是系统级组合，不该被菜单吃掉。
+fn is_escape(keystroke: &Keystroke) -> bool {
+    keystroke.key == "escape" && keystroke.modifiers.number_of_modifiers() == 0
+}
 
 // ---------------------------------------------------------------------------
 // 菜单数据：静态表（唯一真源）
@@ -182,8 +234,24 @@ pub enum MenuItem {
 /// 「无能力的项」根本不在 [`MENUS`] 里（理由见模块文档）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuAction {
+    /// 文件 → 打开文件…（**不绑键位**：`Ctrl+O` 留给「打开文件夹」，Q18）。
+    OpenFile,
     /// 文件 → 保存（`mod+s`）。
     Save,
+    /// 文件 → 关闭标签页（`Ctrl+W`，见 `lithe_gpui_editor::install_actions`）。
+    CloseTab,
+    /// 文件 → 关闭其他标签页。
+    CloseOtherTabs,
+    /// 文件 → 关闭所有标签页。
+    CloseAllTabs,
+    /// 文件 → 关闭已保存标签页。
+    CloseSavedTabs,
+    /// 文件 → 关闭左侧标签页。
+    CloseTabsToLeft,
+    /// 文件 → 关闭右侧标签页。
+    CloseTabsToRight,
+    /// 文件 → 重新打开已关闭标签页。
+    ReopenClosedTab,
     /// 编辑 → 命令面板（`mod+shift+p`）。
     CommandPalette,
     /// 视图 → 显示/隐藏终端（真源 `mod+j`，本侧没有绑这个键）。
@@ -218,7 +286,20 @@ impl MenuAction {
     /// `every_wired_key_resolves_in_both_locales` 逐条断言。
     pub const fn label_key(self) -> &'static str {
         match self {
+            // ⚠️ 「打开文件…」**不是** `lithe.menu.*` 的键：真源的 89 条菜单里没有这一项
+            // （Windows 靠快速打开 / 文件树取文件），`menu.*` 段没有 `openFile`。
+            // 这里复用真源 `outline.openFile`（zh「打开文件」/ en "Open a File"）——
+            // 同一个词、同一件事，且**零新增键**（不碰 `GPUI_ONLY_KEYS` 与两份 yml）。
+            // 与「显示状态栏」复用 `settings.appearance.showStatusBar` 是同一条口径。
+            Self::OpenFile => "lithe.outline.openFile",
             Self::Save => "lithe.menu.save",
+            Self::CloseTab => "lithe.menu.closeTab",
+            Self::CloseOtherTabs => "lithe.menu.closeOtherTabs",
+            Self::CloseAllTabs => "lithe.menu.closeAllTabs",
+            Self::CloseSavedTabs => "lithe.menu.closeSavedTabs",
+            Self::CloseTabsToLeft => "lithe.menu.closeTabsToLeft",
+            Self::CloseTabsToRight => "lithe.menu.closeTabsToRight",
+            Self::ReopenClosedTab => "lithe.menu.reopenClosedTab",
             Self::CommandPalette => "lithe.menu.commandPalette",
             Self::ToggleTerminal => "lithe.menu.toggleTerminal",
             Self::ToggleMaven => "lithe.workbench.maven",
@@ -252,7 +333,21 @@ impl MenuAction {
     /// 与"只列可执行项"同一性质，登记在 `.artifacts/p7/NOTES.md`。
     pub fn icon(self) -> IconName {
         match self {
+            // 「打开文件」用「打开的文件夹」字形：真源菜单项没有图标，字形只是本侧
+            // "两处入口视觉同源"的补充（见本方法的文档），所以取语义最近的那一个。
+            Self::OpenFile => IconName::FolderOpen,
             Self::Save => IconName::Save,
+            // 关闭系一律用「×」系字形：真机标签上的关闭就是 lucide `x`
+            // （`windows/tauri/src/ui/tab-bar-item.tsx:150-180` 的关闭按钮）。
+            Self::CloseTab => IconName::X,
+            Self::CloseOtherTabs => IconName::Files,
+            Self::CloseAllTabs => IconName::SquareX,
+            // 「关闭已保存」用 `save-check`：这条的判据正是"这份 buffer 已落盘"。
+            Self::CloseSavedTabs => IconName::SaveCheck,
+            Self::CloseTabsToLeft => IconName::PanelLeft,
+            Self::CloseTabsToRight => IconName::PanelRight,
+            // 「重新打开已关闭标签页」= 回退一步，用与「重新加载」同一个回头箭头。
+            Self::ReopenClosedTab => IconName::RotateCcw,
             Self::CommandPalette => IconName::Search,
             Self::ToggleTerminal | Self::NewTerminalTab | Self::CloseTerminalTab => {
                 IconName::SquareTerminal
@@ -274,7 +369,15 @@ impl MenuAction {
     /// `ShellWorkspace::run_command(id, window, cx)`。
     pub fn command_id(self) -> Option<CommandId> {
         match self {
+            Self::OpenFile => Some(CommandId::OpenFile),
             Self::Save => Some(CommandId::SaveBuffer),
+            Self::CloseTab => Some(CommandId::CloseTab),
+            Self::CloseOtherTabs => Some(CommandId::CloseOtherTabs),
+            Self::CloseAllTabs => Some(CommandId::CloseAllTabs),
+            Self::CloseSavedTabs => Some(CommandId::CloseSavedTabs),
+            Self::CloseTabsToLeft => Some(CommandId::CloseTabsToLeft),
+            Self::CloseTabsToRight => Some(CommandId::CloseTabsToRight),
+            Self::ReopenClosedTab => Some(CommandId::ReopenClosedTab),
             Self::CommandPalette => Some(CommandId::OpenCommandPalette),
             Self::ToggleTerminal => Some(CommandId::ToggleTerminal),
             Self::ToggleMaven => Some(CommandId::ToggleMaven),
@@ -306,7 +409,28 @@ pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "file",
         label_key: "lithe.menu.file",
-        items: &[MenuItem::Action(MenuAction::Save)],
+        // 顺序照真源 19 条里本侧已实现的那些（`window-menu-bar.tsx:133-199`）：
+        // 打开文件（本侧新增，占真源第 4 项「打开文件夹」的位置 —— 那一条要项目生命周期，
+        // 属 B4）→ 保存（真源第 6）→ ── → 关闭系（真源第 11/13/14/15/16/17/18 项，
+        // 顺序不变）。
+        //
+        // ⚠️ **「打开文件」有意不绑键位**（Q18）：真源把 `Ctrl+O` 给「打开文件夹」，
+        // 本侧照抄，所以"打开文件"只有菜单入口。关闭系里只有「关闭标签页」有真键位
+        // （`Ctrl+W`），但 B1 **不显示**它 —— 键位显示走 `.action(..)` 让上游解析，
+        // 那是 B2 的事（Q13）。
+        items: &[
+            MenuItem::Action(MenuAction::OpenFile),
+            MenuItem::Action(MenuAction::Save),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::CloseTab),
+            MenuItem::Action(MenuAction::CloseOtherTabs),
+            MenuItem::Action(MenuAction::CloseAllTabs),
+            MenuItem::Action(MenuAction::CloseSavedTabs),
+            MenuItem::Action(MenuAction::CloseTabsToLeft),
+            MenuItem::Action(MenuAction::CloseTabsToRight),
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::ReopenClosedTab),
+        ],
     },
     TopMenu {
         id: "edit",
@@ -427,9 +551,51 @@ pub fn diagnose_open(id: &str) {
     eprintln!("S1_MENU_OPEN id={id}");
 }
 
-/// 收起时的诊断（`state` 说明起因：`toggle` / `compact_toggle` / `run` / `mode`）。
-pub fn diagnose_close(state: &str) {
-    eprintln!("S1_MENU_CLOSE state={state}");
+/// 收起的**起因**（Q17 把下拉的收起统一到一个出口，`reason` 就是它的参数）。
+///
+/// 取值域**只有这五个**，改它就是改可 grep 的验证契约：
+///
+/// | 值 | 什么时候 |
+/// | --- | --- |
+/// | `dismiss` | 点面板外（编辑器 / 文件树 / 面板下方……） |
+/// | `toggle` | 再点**同一个**标题；或点左上角图标收起整层浮动菜单栏 |
+/// | `escape` | `Esc` |
+/// | `select` | 点了面板里的一项 |
+/// | `switch` | 悬停切到**另一个**顶级项（真源 `openOnHover`，`ui/menubar.tsx:84`） |
+///
+/// ⚠️ 为什么不是一个字符串：这五个值要在四处调用点各写一次，写成字符串就一定会有人
+/// 拼出 `escape` 之外的写法（`esc` / `cancel`）而验证脚本 grep 不到。枚举 + 单测钉住
+/// 取值域，比注释可靠。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloseReason {
+    /// 点面板外。
+    Dismiss,
+    /// 再点同一标题（或左上角图标收起整层）。
+    Toggle,
+    /// `Esc`。
+    Escape,
+    /// 选了面板里的一项。
+    Select,
+    /// 悬停切到另一个顶级项。
+    Switch,
+}
+
+impl CloseReason {
+    /// 诊断行 `S1_MENU_CLOSE reason=…` 的取值（可 grep 的契约，改它就是改验证脚本）。
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Dismiss => "dismiss",
+            Self::Toggle => "toggle",
+            Self::Escape => "escape",
+            Self::Select => "select",
+            Self::Switch => "switch",
+        }
+    }
+}
+
+/// 收起时的诊断。`reason` 是**唯一**的收起出口 [`MenuBar::close`] 的入参。
+pub fn diagnose_close(reason: CloseReason) {
+    eprintln!("S1_MENU_CLOSE reason={}", reason.id());
 }
 
 /// 执行一条菜单动作后的诊断。`id` 用**文案键去掉 `lithe.` 前缀**，
@@ -478,11 +644,14 @@ pub fn resolve_menu_toggle(prev: NavState, index: usize) -> NavState {
 /// 菜单的开关状态要**跨越帧**存在（点击 → 下一帧渲染出下拉面板 → 再点收起），
 /// 而渲染函数没有地方放它；放进 `ShellWorkspace` 又会把"菜单内部状态"混进布局状态里。
 ///
-/// 下拉面板（`PopupMenu` 的 `Entity`）**每次打开现建**：
-/// 真机的菜单项是静态表 + 一处动态主题列，重建一张 5 行的面板代价极小，而缓存它会引入
-/// "什么时候该重建"的额外状态（`AppMenuBar` 为此维护 `popup_menu` + `Subscription` +
-/// `handle_dismiss` 三件套，见 `app_menu_bar.rs:142-218`）。**打开时重置高亮/滚动**
-/// 也正好是真机行为（菜单重新打开时从第一项开始）。
+/// 下拉面板（`PopupMenu` 的 `Entity`）**每次打开现建、收起就丢**：
+/// 真机的菜单项是静态表 + 一处动态主题列，重建一张 5 行的面板代价极小（`AppMenuBar` 也是
+/// 这一套：`popup_menu` + `Subscription` + `handle_dismiss`，见 `app_menu_bar.rs:142-218`）。
+/// **打开时重置高亮/滚动**也正好是真机行为（菜单重新打开时从第一项开始）。
+///
+/// ⚠️ 但"现建"不等于"不持有"：B1 起面板实体与它的 `DismissEvent` 订阅**必须被本结构体
+/// 持有到收起为止**（`Subscription` 一 drop 就取消，见 [`MenuBar::dismiss_subscription`]），
+/// 收起时必须一起置 `None`（见 [`MenuBar::close`]），否则旧订阅会吊住已被替换的面板。
 pub struct MenuBar {
     mode: MenuBarMode,
     /// 当前打开的顶级菜单下标（[`MENUS`] 的下标）；`None` = 都收起。
@@ -495,6 +664,39 @@ pub struct MenuBar {
     /// 与 `selected` 分开：图标按钮控制的是"菜单栏这一层在不在"，`selected` 控制的是
     /// "里面哪一项开着"。点图标收起整层时两个一起清。
     compact_visible: bool,
+    /// 打开的那张下拉面板（`None` = 没有面板被建出来）。
+    ///
+    /// 为什么必须持有它（而不是像以前那样每次渲染时现建、画完就不管）：
+    /// 面板的"点外部 / `Esc` / 选中项"三条收起路径都会 `cx.emit(DismissEvent)`
+    /// （`popup_menu.rs:1055-1057` 的 `dismiss`，触发点 `:1474-1475`、`:873`），
+    /// 而我们**必须订阅**它才能把 `selected` 清掉 —— 否则面板下一帧照旧被画出来。
+    /// 订阅要一个活着的实体，实体又要活到订阅被取消为止。
+    popup: Option<Entity<PopupMenu>>,
+    /// 面板 `DismissEvent` 的订阅。**必须被持有**：`Subscription` 一 drop 就取消
+    /// （gpui 的 RAII 语义），丢掉它等于"点外部 / `Esc` 再也收不掉面板"
+    /// —— 那正是 B1 要修的第一个根因。
+    dismiss_subscription: Option<Subscription>,
+    /// 9 个顶级项各自的**窗口内边界**（上一帧 prepaint 量到的）。
+    ///
+    /// 面板摆位要用它：`Positioner::side(trigger_bounds)` 收的是**触发器的盒子**，
+    /// 而不是"锚点元素在布局里的静态位置"（用后者实测会把面板顶到窗口左上角、
+    /// 反过来盖住触发器，见 `popup_for` 的文档与 `project_menu.rs:633-639` 的同一条实测）。
+    /// 用 `Rc<RefCell<Vec<..>>>` 而不是普通字段：量它的 `on_prepaint` 回调要 `'static`，
+    /// 而渲染读它发生在同一个实体的渲染链里（与 `project_menu.rs:726-732` 同一招；
+    /// 那里只有一个触发器所以是 `Cell`，这里有 9 个所以按下标存）。
+    trigger_bounds: Rc<RefCell<Vec<Option<Bounds<Pixels>>>>>,
+    /// 形态 A 的图标按钮边界（浮动胶囊的摆位锚点，同上）。
+    compact_trigger_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// 「把焦点还给外壳根」这件事**排在下一帧做**（`true` = 还没做）。
+    ///
+    /// 为什么需要它：本结构体在收起时会**丢掉面板实体**，而面板当时正持有焦点
+    /// （`Esc` / `↑↓` / `Enter` 的 `key_context` 在它身上，所以打开时我们显式把焦点交给它）。
+    /// 焦点节点一消失，gpui 的按键派发路径就空了 —— **全部全局快捷键都会失效**，
+    /// 直到用户再点一下界面（这条死角在 `crate::command_palette` 的 `SHELL_FOCUS` 上
+    /// 已经踩过一次）。`Window::focus` 要 `&mut Window`，而收起可能发生在
+    /// `--menu-probe` 那种"只有 `&mut App`"的路径上，所以统一延到下一帧的渲染里做
+    /// （渲染链手里正好有 `&mut Window`）。
+    restore_focus: bool,
     /// 下拉项的点击回执，由 [`MenuBar::drain_runs`] 取走。
     ///
     /// ⚠️ 为什么用队列而不是在 item 的 `on_click` 里直接执行：`PopupMenu` 的 item 处理器拿到的是
@@ -516,6 +718,18 @@ pub struct MenuBar {
     /// 取值来自 `MENU_BAR_SHELL`（[`set_shell`]，`ShellWorkspace::new` 登记），
     /// 所以单元/集成测试可以先把某个真实外壳登记进来再用菜单栏。
     shell: Option<gpui_kit::WeakEntity<crate::workspace::ShellWorkspace>>,
+    /// `Esc` 的**应用级拦截器**（`App::intercept_keystrokes`）。
+    ///
+    /// 为什么非它不可：`Esc` 在上游是 `PopupMenu` 自己绑的 `escape → Cancel`
+    /// （`popup_menu.rs:24`）→ `dismiss()` → `DismissEvent`，而且**动作派发早于**任何
+    /// `on_key_down` 监听器（`window.rs:5869` 的 interceptor → `:5880` 的 binding →
+    /// `:6060` 才轮到 key listener）。所以从 `DismissEvent` 那一侧根本分不出
+    /// "`Esc`" 与 "点面板外"（两者是同一个事件、同一个 `dismiss`）。拦截器是唯一
+    /// **在动作之前**跑到的钩子（`app.rs:2317-2321` 明写"fires _before_ all other action
+    /// and event mechanisms"），因此在它里面就能拿到确切的 `escape` 起因，
+    /// 并且 `stop_propagation()` 掉，让上游那条 `Cancel` 不再把面板自己收一遍
+    /// （否则会多出一行 `reason=dismiss`）。
+    escape_interceptor: Option<Subscription>,
 }
 
 impl MenuBar {
@@ -527,14 +741,41 @@ impl MenuBar {
     pub fn new(mode: MenuBarMode, action_context: FocusHandle, cx: &mut App) -> Entity<Self> {
         mode.diagnose();
         let shell = MENU_BAR_SHELL.with(|slot| slot.borrow().clone());
-        cx.new(|_| Self {
+        let bar = cx.new(|_| Self {
             mode,
             selected: None,
             compact_visible: false,
+            popup: None,
+            dismiss_subscription: None,
+            trigger_bounds: Rc::new(RefCell::new(vec![None; MENUS.len()])),
+            compact_trigger_bounds: Rc::new(Cell::new(None)),
+            restore_focus: false,
             pending: Vec::new(),
             action_context,
             shell,
-        })
+            escape_interceptor: None,
+        });
+        // `Esc` 的拦截器（理由见 [`MenuBar::escape_interceptor`]）。
+        // ⚠️ 注册在**构造之后**：闭包要一个本实体的弱引用，而 `cx.new` 的闭包里还拿不到它。
+        // `WeakEntity` 而不是强引用：窗口关掉之后这个应用级订阅不能吊住整条菜单栏。
+        let handle = bar.downgrade();
+        bar.update(cx, |bar, cx| {
+            bar.escape_interceptor = Some(cx.intercept_keystrokes(move |event, _window, cx| {
+                if !is_escape(&event.keystroke) {
+                    return;
+                }
+                let closed = handle
+                    .update(cx, |bar, cx| bar.close(CloseReason::Escape, cx))
+                    .unwrap_or(false);
+                if closed {
+                    // 上游那条 `escape → Cancel` 不能再跑：不然面板会自己 `dismiss()` 一次，
+                    // 我们又会收到一个 `DismissEvent`（那一侧的起因只能是 `dismiss`），
+                    // 日志里就会多出一行原因不对的 `S1_MENU_CLOSE`。
+                    cx.stop_propagation();
+                }
+            }));
+        });
+        bar
     }
 
     /// 让外壳重绘（菜单状态变了就调它；句柄丢了 —— 窗口正在关 —— 就什么都不做）。
@@ -562,14 +803,25 @@ impl MenuBar {
 
     /// 切换形态（`Ctrl+M` → `crate::workspace` 的 `ToggleMenuBar`）。
     ///
-    /// 换形态等于重画整条栏：两个可见性状态一起清，免得切回常驻时还留着浮动层。
+    /// 换形态等于重画整条栏：两个可见性状态一起清、面板实体与订阅一起丢，免得切回常驻时
+    /// 还留着浮动层或一个没人看的订阅。
+    ///
+    /// ⚠️ 这里**不打** `S1_MENU_CLOSE`：Q17 把那个诊断的取值域钉死为五条关闭路径，
+    /// 而"换形态"不在其中（它有自己的 `S1_MENU_BAR mode=…`）。状态清理照做，
+    /// 只是不给它编一个假的起因。
     pub fn toggle_mode(&mut self, cx: &mut App) {
         self.mode = match self.mode {
             MenuBarMode::Pinned => MenuBarMode::Compact,
             MenuBarMode::Compact => MenuBarMode::Pinned,
         };
+        let had_popup = self.popup.take().is_some();
+        self.dismiss_subscription = None;
         self.selected = None;
         self.compact_visible = false;
+        if had_popup {
+            // 面板实体被丢掉 → 它持有的焦点也要在下一帧还给外壳（理由见字段文档）。
+            self.restore_focus = true;
+        }
         // 诊断行与构造期同格式，所以验证脚本一个 grep 就能同时看到两种形态。
         self.mode.diagnose();
         self.notify_shell(cx);
@@ -579,6 +831,13 @@ impl MenuBar {
     ///
     /// 状态迁移本身是纯函数 [`resolve_menu_toggle`]（单测直接覆盖它），这里只负责
     /// 把它落到字段、打诊断、通知外壳。
+    ///
+    /// ⚠️ **由鼠标按下触发**（不是 `on_click`）：真机上"再点同一个标题"这一下会先被下游面板
+    /// 的 `on_mouse_down_out` 看见（触发器对面板而言就是"外部"），面板于是自己
+    /// `dismiss()` 并发 `DismissEvent`；若本函数挂在 mouse-up 的 `on_click` 上，
+    /// 那次收起之后又会立刻把菜单开回来（净效果 = 点了没反应）。挂在按下那一刻，
+    /// 并且 [`MenuBar::handle_dismiss`] 对"按在打开项自己的触发器上"的 dismiss **故意不处理**
+    /// （留给这里），两条路径就不打架了。
     pub fn toggle(&mut self, index: usize, cx: &mut App) {
         // 越界下标什么也不做（纯函数里已经挡住，这里再挡一次是为了不白打日志）。
         let Some(menu) = MENUS.get(index) else {
@@ -587,17 +846,19 @@ impl MenuBar {
         let next = resolve_menu_toggle(self.nav_state(), index);
         match next {
             NavState::Closed => {
-                self.selected = None;
-                self.compact_visible = false;
-                diagnose_close("toggle");
+                self.close(CloseReason::Toggle, cx);
             }
             NavState::Open(opened) => {
+                // 换到另一项：先把旧面板实体与订阅丢掉，新面板由下一帧的渲染现建
+                // （不丢的话旧面板的 `DismissEvent` 订阅还挂着，会把新面板一起收掉）。
+                self.popup = None;
+                self.dismiss_subscription = None;
                 self.compact_visible = true;
                 self.selected = Some(opened);
                 diagnose_open(menu.id);
+                self.notify_shell(cx);
             }
         }
-        self.notify_shell(cx);
     }
 
     /// 当前可见性状态（纯值形式，[`resolve_menu_toggle`] 的输入）。
@@ -608,21 +869,105 @@ impl MenuBar {
         }
     }
 
-    /// 收起菜单（`Esc` / 点面板外 / 点某一项之后）。
-    pub fn close(&mut self, state: &str, cx: &mut App) {
+    /// **收起的唯一出口**（Q17）：五条路径全部走这里，`reason` 说明起因。
+    ///
+    /// 五条路径与各自的调用点：
+    ///
+    /// | 路径 | 调到这里的地方 |
+    /// | --- | --- |
+    /// | 点面板外 | [`MenuBar::handle_dismiss`]（上游 `on_mouse_down_out` → `DismissEvent`） |
+    /// | 再点同一标题 | [`MenuBar::toggle`]（`NavState::Closed` 那一支） |
+    /// | `Esc` | [`MenuBar::new`] 里登记的 `App::intercept_keystrokes` 拦截器 |
+    /// | 选中某项 | [`MenuBar::push_run`] |
+    /// | 悬停切换 | [`MenuBar::hover_switch`]（收起旧的，再打开新的） |
+    ///
+    /// 做三件事：清可见性状态、**丢掉面板实体与它的订阅**、按需安排"下一帧把焦点还给外壳"。
+    ///
+    /// 返回 `true` = 这次真的收起了（本来是开着的）；`false` = 本来就是收起的（不白打日志、
+    /// 也不抢焦点）。`Esc` 拦截器靠这个返回值决定要不要 `stop_propagation`
+    /// （没有菜单开着时绝不能吞掉 `Esc` —— 它可能是别的浮层要用的键）。
+    pub fn close(&mut self, reason: CloseReason, cx: &mut App) -> bool {
         if self.selected.is_none() && !self.compact_visible {
-            return;
+            return false;
         }
+        let had_popup = self.popup.take().is_some();
+        self.dismiss_subscription = None;
         self.selected = None;
         self.compact_visible = false;
-        diagnose_close(state);
+        // 焦点是交给面板的（`Esc` / `↑↓` / `Enter` 的 `key_context` 在它身上），面板一丢
+        // 焦点节点就没了 —— 而"没有焦点节点"会让**全部全局快捷键**失效，所以要还回去。
+        // 还的时机是下一帧的渲染（理由见 [`MenuBar::restore_focus`]）。
+        //
+        // ⚠️ 只有"我们自己丢掉了面板"才需要还：`PopupMenu::dismiss()` 那三条路径
+        // （点外部 / `Esc` / 选中项）它自己会把焦点还给 `action_context`
+        // （`popup_menu.rs:1059-1072`），但那时我们**已经**把实体丢了 ——
+        // 上游是在 `DismissEvent` 之后才还的，不冲突，只是这里多还一次同样安全的焦点。
+        if had_popup {
+            self.restore_focus = true;
+        }
+        diagnose_close(reason);
         self.notify_shell(cx);
+        true
+    }
+
+    /// 面板自己收起来了（`Esc` / 点面板外 / 选中某一项都会发 `DismissEvent`）。
+    ///
+    /// ⚠️ **"按在打开项自己的触发器上"要放过**：那次按下的位置对面板来说是"外部"，
+    /// 于是面板先 `dismiss()` 并把这个事件发过来；但用户的意图是"再点一下这个标题 → 收起"
+    /// （[`MenuBar::toggle`] 的 Closed 分支），如果在这里就收掉，紧接着那次按下的
+    /// `on_mouse_down` 又会把菜单重新打开 —— 净效果是"点标题关不掉"，正是 B1 要修的第二个根因
+    /// 的另一种表现。判据用**当前鼠标位置是否落在打开项自己的触发器盒里**：
+    /// 鼠标位置在事件派发前刚被置成这次按下的坐标（`gpui-pre-0.3.6/src/window.rs:5447`），
+    /// 所以它就是这一下的真实落点。
+    fn handle_dismiss(
+        &mut self,
+        _popup: &Entity<PopupMenu>,
+        _event: &DismissEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(index) = self.selected {
+            let on_own_trigger = self
+                .trigger_bounds_of(index)
+                .is_some_and(|bounds| bounds.contains(&window.mouse_position()));
+            if on_own_trigger {
+                return;
+            }
+        }
+        self.close(CloseReason::Dismiss, cx);
+    }
+
+    /// 第 `index` 个触发器上一帧量到的边界（还没量到就是 `None`）。
+    fn trigger_bounds_of(&self, index: usize) -> Option<Bounds<Pixels>> {
+        self.trigger_bounds.borrow().get(index).copied().flatten()
+    }
+
+    /// 悬停到另一个顶级项：**已经有菜单开着时**直接换过去（真源 `openOnHover`，
+    /// `ui/menubar.tsx:84`；上游 `AppMenuBar::handle_hover` 同口径，`app_menu_bar.rs:241-254`）。
+    ///
+    /// 都收起时**不打开** —— 真源的 `openOnHover` 只在 menubar 已有打开项时才生效，
+    /// 否则鼠标扫过菜单栏就会一路弹出面板。
+    fn hover_switch(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(current) = self.selected else {
+            return;
+        };
+        if current == index || MENUS.get(index).is_none() {
+            return;
+        }
+        // 旧的以 `switch` 为由收起（面板实体与订阅一起丢），然后打开新的 ——
+        // 这两步与"点另一个标题"走的是同一条受控单值迁移，只是起因不同。
+        self.close(CloseReason::Switch, cx);
+        self.toggle(index, cx);
     }
 
     /// 点左上角图标：整层浮动菜单栏的显示 / 收起（真源 `handleCompactMenuToggle`）。
+    ///
+    /// 收起整层与"再点同一标题"是**同一个意图**（把开着的那一层关掉），所以共用
+    /// [`CloseReason::Toggle`]；`id=compact_bar` 那一行 `S1_MENU_OPEN` 负责区分是"整层"
+    /// 还是"某一项"（`S1_MENU_CLOSE` 的取值域由 Q17 钉死为那五个，不为形态另开一个值）。
     pub fn toggle_compact(&mut self, cx: &mut App) {
         if self.compact_visible {
-            self.close("compact_toggle", cx);
+            self.close(CloseReason::Toggle, cx);
         } else {
             self.compact_visible = true;
             self.selected = None;
@@ -635,12 +980,10 @@ impl MenuBar {
     fn push_run(&mut self, action: MenuAction, cx: &mut App) {
         self.pending.push(action);
         // 点完就收起（真源 `closeMenu()`，`window-menu-bar.tsx:105-112`）。
-        // ⚠️ 这里**只清局部状态、不调 `close()`**：`close()` 会打一条 `S1_MENU_CLOSE`，
-        // 而真正的收起来自 `PopupMenu` 自己的 `dismiss` → `S1_MENU_CLOSE state=run`，
-        // 两条一起打会变成同一个事件的两行日志。
-        self.selected = None;
-        self.compact_visible = false;
-        self.notify_shell(cx);
+        // ⚠️ 这里是 `reason=select`：**不是**上游面板 `dismiss` 的那条路径 —— 面板的
+        // `confirm()` 在跑完我们的 item 处理器之后**才会** `dismiss()`（`popup_menu.rs:859-873`），
+        // 而那时订阅已经被 `close()` 一起丢掉了，所以不会多出第二行日志。
+        self.close(CloseReason::Select, cx);
     }
 
     /// 取走待执行的动作。
@@ -664,7 +1007,10 @@ impl MenuBar {
         let Some(index) = MENUS.iter().position(|menu| menu.id == id) else {
             return false;
         };
-        // `--menu-probe` 的形态复位：不带着启动时可能残留的状态打开。
+        // `--menu-probe` 的形态复位：不带着启动时可能残留的状态打开（面板实体与订阅也一起
+        // 丢掉 —— 与 [`MenuBar::close`] 同一套清理，只是这里不产生"关闭"日志）。
+        self.popup = None;
+        self.dismiss_subscription = None;
         self.selected = None;
         self.compact_visible = false;
         self.toggle(index, cx);
@@ -818,7 +1164,21 @@ pub fn toggle_menu_bar(cx: &mut App) {
 /// 点菜单只会拖窗口）。
 ///
 /// 两形态共用同一份 [`MENUS`]，差别只有容器样式与定位 —— 见模块文档的对照表。
-pub fn menu_bar(bar: &MenuBar, window: &mut Window, cx: &mut App) -> impl IntoElement {
+///
+/// ⚠️ 收 `&mut MenuBar` / `&mut Context<MenuBar>`（B1 改的签名）：打开的那一帧要**建面板实体
+/// 并订阅它的 `DismissEvent`**，两件事都要 `&mut`（订阅是 `Context::subscribe_in`）。
+/// 以前这里一路是 `&App`，所以当年"订阅 DismissEvent"这件事根本没有落点。
+pub fn menu_bar(
+    bar: &mut MenuBar,
+    window: &mut Window,
+    cx: &mut Context<MenuBar>,
+) -> impl IntoElement {
+    // 「把焦点还给外壳根」延到这一帧做（理由见 [`MenuBar::restore_focus`]）：渲染链手里
+    // 正好有 `&mut Window`，而收起可能发生在只有 `&mut App` 的路径上。
+    if bar.restore_focus {
+        bar.restore_focus = false;
+        window.focus(&bar.action_context, cx);
+    }
     match bar.mode {
         MenuBarMode::Pinned => pinned_bar(bar, window, cx).into_any_element(),
         MenuBarMode::Compact => compact_bar(bar, window, cx).into_any_element(),
@@ -828,8 +1188,9 @@ pub fn menu_bar(bar: &MenuBar, window: &mut Window, cx: &mut App) -> impl IntoEl
 /// 画菜单栏并返回 `AnyElement`（`ShellWorkspace::render` 的入口）。
 ///
 /// 为什么要有这一层：菜单栏是 `Entity`，读它要 `cx` 的不可变借用，而画下拉面板要
-/// `&mut App`（`PopupMenu::build` 会新建实体）—— 两者不能在同一段代码里同时成立。
-/// 把"读 + 画 + 转 `AnyElement`"收在这一个函数里，外壳那一行就只剩一次调用。
+/// `&mut Context<MenuBar>`（`PopupMenu::build` 会新建实体、`subscribe_in` 要可变上下文）
+/// —— 两者不能在同一段代码里同时成立。把"读 + 画 + 转 `AnyElement`"收在这一个函数里，
+/// 外壳那一行就只剩一次调用。
 ///
 /// ⚠️ 收的是 `&Entity<MenuBar>` 而**不是**从 [`MENU_BAR`] 里现取：外壳持有这个 `Entity`
 /// 才算"菜单栏活着"（见 `ShellWorkspace::menu_bar` 字段的说明），句柄丢了就返回 `None`。
@@ -844,7 +1205,7 @@ pub(crate) fn render_bar(
 }
 
 /// 形态 B：与标题栏同一行的 24px 胶囊。
-fn pinned_bar(bar: &MenuBar, window: &mut Window, cx: &mut App) -> impl IntoElement {
+fn pinned_bar(bar: &mut MenuBar, window: &mut Window, cx: &mut Context<MenuBar>) -> impl IntoElement {
     // ⚠️ 顶级项**逐个 `.child(..)`**，不要写成
     // `.children((0..MENUS.len()).map(|index| trigger(.., window, cx)))`：
     // `window` / `cx` 是可变借用，那个 `map` 闭包一构造就要求独占访问，而外层
@@ -872,8 +1233,16 @@ fn pinned_bar(bar: &MenuBar, window: &mut Window, cx: &mut App) -> impl IntoElem
 /// 形态 A：左上角 `ListIcon` 按钮 + 标题栏下方的浮动胶囊。
 ///
 /// 定位照真源 `absolute top-full left-0 mt-1`（`window-menu-bar.tsx:539`）：
-/// 锚点是按钮的**左下角**，所以浮动层贴着标题栏下沿、左端与按钮对齐。
-fn compact_bar(bar: &MenuBar, window: &mut Window, cx: &mut App) -> impl IntoElement {
+/// 浮动层的**上沿**贴着按钮的下沿、左端与按钮对齐。
+///
+/// ⚠️ B1 前这里用的是 `anchored().anchor(Anchor::BottomLeft)`（"锚点元素自己在布局里的
+/// origin + 面板左下角"），实测把整层顶到了标题栏那一行、压住按钮自己 —— 与下拉面板
+/// 是同一条根因。现在与下拉面板统一走 [`Positioner::side`]（理由见 [`popup_for`]）。
+fn compact_bar(
+    bar: &mut MenuBar,
+    window: &mut Window,
+    cx: &mut Context<MenuBar>,
+) -> impl IntoElement {
     // 回调都是 `'static`、够不到 `bar` 的引用，所以用句柄回来改状态
     // （与 `crate::workspace` 里项目标签条 / 活动栏的回调用法一致）。
     let handle = handle();
@@ -910,27 +1279,44 @@ fn compact_bar(bar: &MenuBar, window: &mut Window, cx: &mut App) -> impl IntoEle
         for index in 0..MENUS.len() {
             capsule = capsule.child(menu_item(bar, index, window, cx));
         }
-        floating = Some(
-            deferred(
-                anchored()
-                    .anchor(Anchor::BottomLeft)
-                    // 贴窗口边时留 8px，与 `AppMenuBar` 的下拉一致（`app_menu_bar.rs:288`）。
-                    .snap_to_window_with_margin(px(8.))
-                    // `occlude()` 不可省：不遮挡的话它下面的标题栏拖拽区会继续吃鼠标事件
-                    // （`AppMenuBar` 的同一处：`app_menu_bar.rs:290-294`）。
-                    .child(div().occlude().child(capsule)),
-            )
-            .with_priority(1)
-            .into_any_element(),
-        );
+        // 摆位与下拉面板同一条：`Positioner::side(按钮边界)`，`offset` 4 就是真源
+        // `mt-1`（`window-menu-bar.tsx:539`）。还没量到按钮边界时（第 1 帧）**不画** ——
+        // 画在错误的位置上比晚一帧更糟（`on_prepaint` 里已经补要了一帧）。
+        if let Some(bounds) = bar.compact_trigger_bounds.get() {
+            floating = Some(
+                deferred(
+                    Positioner::side(bounds)
+                        .placement(Placement::Bottom)
+                        .align(Align::Start)
+                        .offset(px(PANEL_OFFSET_SPEC))
+                        .margin(px(PANEL_WINDOW_MARGIN_SPEC))
+                        // `occlude()` 不可省：不遮挡的话它下面的标题栏拖拽区会继续吃鼠标事件
+                        // （`AppMenuBar` 的同一处：`app_menu_bar.rs:290-294`）。
+                        .occlude()
+                        .child(capsule),
+                )
+                .with_priority(1)
+                .into_any_element(),
+            );
+        }
     }
 
+    // 量按钮盒子的包装层：`on_prepaint` 打在 `Button` 自己身上给的是它的**内容盒**
+    // （`.artifacts/p8` 在项目下拉上实测过：带 `px_2` 的触发器会整体右移 8 逻辑 px），
+    // 所以量这一层无内边距的包装（与 `project_menu.rs:971-989` 同一条）。
+    let bounds_cell = bar.compact_trigger_bounds.clone();
     div()
         .id("lithe-menu-bar-compact")
         .relative()
         .flex_shrink_0()
-        // 父节点必须 `relative`：`anchored()` 的锚点是**父元素**的边
-        // （`AppMenuBar` 同样套一层 `div().relative()`，`app_menu_bar.rs:261-263`）。
+        .on_prepaint(move |bounds, window, _cx| {
+            let first = bounds_cell.get().is_none();
+            bounds_cell.set(Some(bounds));
+            // 第一次量到时主动要一帧：浮动层的位置读的是**上一帧**的 bounds。
+            if first {
+                window.request_animation_frame();
+            }
+        })
         .child(button)
         .children(floating)
 }
@@ -938,7 +1324,12 @@ fn compact_bar(bar: &MenuBar, window: &mut Window, cx: &mut App) -> impl IntoEle
 /// 一个顶级菜单项（两形态共用）：20px 高、`px-1.5`、圆角 6.4、悬停 / 打开态各有底色。
 ///
 /// ⚠️ 这里**不画**下拉面板：面板由 [`menu_item`] 放在本项的外层里（理由见那里的文档）。
-fn trigger(bar: &MenuBar, index: usize, window: &mut Window, cx: &mut App) -> impl IntoElement {
+fn trigger(
+    bar: &MenuBar,
+    index: usize,
+    window: &mut Window,
+    cx: &mut Context<MenuBar>,
+) -> impl IntoElement {
     let _ = window;
     let menu = &MENUS[index];
     let is_open = bar.selected == Some(index);
@@ -959,63 +1350,161 @@ fn trigger(bar: &MenuBar, index: usize, window: &mut Window, cx: &mut App) -> im
         // 这一项，语义最近的是 `muted_foreground`（与标题栏同一取法）。
         .text_color(if is_open { active_text } else { idle })
         .hover(move |style| style.bg(hover_bg).text_color(active_text))
+        // 悬停切换顶级项（真源 `openOnHover`，`ui/menubar.tsx:84`）：只在**已经有菜单开着**
+        // 时生效，判据在 `MenuBar::hover_switch` 里（都收起时悬停不打开，否则鼠标扫过菜单栏
+        // 会把面板一路弹出来）。
+        .on_hover(cx.listener(move |bar, hovered: &bool, _window, cx| {
+            if *hovered {
+                bar.hover_switch(index, cx);
+            }
+        }))
         // 点菜单**不能**拖窗口：菜单栏是 `drag_region` 的兄弟节点，本身不在 `Drag` 命中区里，
         // 所以这里不需要 `prevent_default`（`10-menu-bar.md` §4.5 第 4 条）；
         // `stop_propagation` 只为"别把这次点击继续冒泡给外层"。
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-            let _ = handle.update(cx, |bar, cx| bar.toggle(index, cx));
+        //
+        // ⚠️ **顶级的开合挂在"按下"而不是"点击"上**（理由见 `MenuBar::toggle` 的文档）：
+        // 面板的 `on_mouse_down_out` 会在按下的**捕获阶段**把落在触发器上的这一下当成
+        // "点到了面板外"。改成按下就切换之后，那一下的意图由 `toggle` 独自表达，
+        // 不会再出现"先被面板收掉、又被 click 开回来"的抖动。
+        .on_mouse_down(MouseButton::Left, {
+            let handle = handle.clone();
+            move |_, _, cx| {
+                cx.stop_propagation();
+                let _ = handle.update(cx, |bar, cx| bar.toggle(index, cx));
+            }
         })
         .child(menu.label())
 }
 
 /// 一个顶级菜单的**外层**：`relative` 的定位上下文 + 顶级项 + （打开时的）下拉面板。
 ///
-/// 为什么必须有这一层：下拉面板是 `deferred(anchored(..))`，如果把它直接当 `trigger` 的
+/// 为什么必须有这一层：下拉面板是 `deferred(..)` 的浮层，如果把它直接当 `trigger` 的
 /// 子节点，它（高度 = 面板高）会参与**这一行**的布局测量，把整条菜单栏的其余项顶偏
 /// （实测：打开「视图」时那一项被抬高约 3px，与相邻项基线不齐）。这里让外层
 /// （高度 = 顶级项的 20px）留在行内，面板用 `position: absolute` 摘出布局流。
 ///
-/// `AppMenuBar` 靠把弹出层挂在**外层** `div().relative()` 上避开同一件事
-/// （`app_menu_bar.rs:261-263,285-296`），本侧的结构与它一致，只是外层多包了 9 个。
-fn menu_item(bar: &MenuBar, index: usize, window: &mut Window, cx: &mut App) -> impl IntoElement {
+/// 这一层**还是量触发器盒子的地方**（B1）：`on_prepaint` 打在无内边距的包装层上，
+/// 量到的 bounds 与触发器的视觉盒子逐像素相等，面板因此能与触发器左沿严格对齐
+/// （真源 `align="start"`）。打在 `trigger` 自己身上会拿到**内容盒**（带 `px_1.5`），
+/// 面板会整体右移 6 逻辑 px —— 这条在项目下拉上已经实测过一次
+/// （`project_menu.rs:971-975`）。
+///
+/// 面板**打开的那一帧**在这里建出来并订阅（见 [`MenuBar::popup`] /
+/// [`MenuBar::dismiss_subscription`]），而不是每帧现建 —— 每帧现建的话订阅也会每帧重建，
+/// 而"点外部 / `Esc`"的事件正好落在两次渲染之间，会被丢掉。
+fn menu_item(
+    bar: &mut MenuBar,
+    index: usize,
+    window: &mut Window,
+    cx: &mut Context<MenuBar>,
+) -> impl IntoElement {
+    let is_open = bar.selected == Some(index);
+
+    // 量本项外层的边界（面板摆位要用）。
+    let bounds_cell = bar.trigger_bounds.clone();
     let mut wrapper = div()
+        // 必须有 `id`：`on_prepaint` 与元素状态都挂在有 id 的元素上
+        // （`project_menu.rs:978` 是同一个写法）。
+        .id(("lithe-menu-item", index))
         .relative()
         .flex_shrink_0()
+        .on_prepaint(move |bounds, window, _cx| {
+            let first = bounds_cell.borrow()[index].is_none();
+            bounds_cell.borrow_mut()[index] = Some(bounds);
+            // 第一次量到时主动要一帧：面板的位置读的是**上一帧**的 bounds，
+            // 不补一帧的话第一帧会画在错误的位置上（`Popup` 用同一招，
+            // `gpui-base-0.6.6/src/popup.rs:110-125`）。
+            if first {
+                window.request_animation_frame();
+            }
+        })
         .child(trigger(bar, index, window, cx));
-    if bar.selected == Some(index) {
-        wrapper = wrapper.child(popup_for(bar, index, window, cx));
+
+    if is_open {
+        // 打开的第一帧才建面板：同时**订阅**它的 `DismissEvent`、把焦点交给它。
+        // ⚠️ 顺序有讲究（照 `project_menu.rs:942-961`）：`subscribe_in` 与 `focus` 都必须在
+        // 面板真的被建出来的那一次做，之后它由 `MenuBar::popup` 缓存，直到收起。
+        if bar.popup.is_none() {
+            let popup = build_popup(bar, index, window, cx);
+            bar.dismiss_subscription =
+                Some(cx.subscribe_in(&popup, window, MenuBar::handle_dismiss));
+            // 焦点交给面板：`Esc` / `↑↓` / `Enter` 的 `key_context` 在它身上
+            // （`popup_menu.rs:21-30,1467-1475`），焦点不在它身上这些键就不响 ——
+            // 而"焦点不在"正是 B1 之前 `Esc` 收不掉的一半原因。
+            let focus = popup.read(cx).focus_handle(cx);
+            if !focus.contains_focused(window, cx) {
+                focus.focus(window, cx);
+            }
+            // 位置证据：bounds 只可能来自 `on_prepaint`，所以这一行同时证明"量到了"。
+            // `state=pending` 表示面板实体已经建出来、但**这一帧还没量到**触发器边界
+            // （只有 `--menu-probe` 那种"第一帧就打开"的路径会这样，下一帧就量到了）——
+            // 那时 `popup_for` 返回 `None`，面板还不会画出来，所以不能在这里编造坐标。
+            match bar.trigger_bounds_of(index) {
+                Some(bounds) => eprintln!(
+                    "S1_MENU_BOUNDS id={} x={} y={} w={} h={}",
+                    MENUS[index].id,
+                    f32::from(bounds.origin.x) as i32,
+                    f32::from(bounds.origin.y) as i32,
+                    f32::from(bounds.size.width) as i32,
+                    f32::from(bounds.size.height) as i32,
+                ),
+                None => eprintln!("S1_MENU_BOUNDS id={} state=pending", MENUS[index].id),
+            }
+            bar.popup = Some(popup);
+        }
+        if let Some(popup) = bar.popup.clone() {
+            // `.children(Option<..>)`：`Option<T: IntoElement>` 本身是迭代器（0 或 1 个孩子），
+            // 所以"还没量到触发器边界"那一帧自然就是"不画面板"。
+            wrapper = wrapper.children(popup_for(popup, bar.trigger_bounds_of(index)));
+        }
     }
     wrapper
 }
 
-/// 打开的下拉面板：延迟绘制 + 锚在触发器的左下角。
+/// 打开的下拉面板：延迟绘制 + 摆在触发器的**正下方**（左对齐、间隔 4、贴边留 8）。
 ///
-/// 结构照 `AppMenuBar`（`app_menu_bar.rs:284-297`）：
-/// `deferred(anchored().child(div().occlude().top_1().child(popup_menu)))`，
-/// `top_1()` = 4px 是触发器与面板之间的空隙。
-fn popup_for(
-    bar: &MenuBar,
-    index: usize,
-    window: &mut Window,
-    cx: &mut App,
-) -> impl IntoElement {
-    let popup = build_popup(bar, index, window, cx);
-    deferred(
-        anchored()
-            .anchor(Anchor::BottomLeft)
-            .snap_to_window_with_margin(px(8.))
-            .child(div().occlude().top_1().child(popup)),
+/// ⚠️ **为什么不用 `anchored()` + `Anchor::BottomLeft`**（B1 之前用的那一种，也是"点标题
+/// 收不掉"的第二个根因）：那条路取的是**锚点元素自己在布局里的静态位置**
+/// （`gpui-pre-0.3.6/src/elements/anchored.rs:27-36,273-277`），配合 `Anchor::BottomLeft`
+/// 会把面板的**左下角**放在触发器左上角 —— 面板整体跑到触发器**上方**，向上溢出窗口上沿后
+/// 又被 `snap_to_window_with_margin(8)` 夹回 `y=8`，于是面板压回标题栏那一行、
+/// **把触发器自己盖住**（面板 `.occlude()` = `HitboxBehavior::BlockMouse`，被盖住的标题
+/// 既拿不到 hover 也拿不到点击）。`project_menu.rs:633-639` 在本仓的另一个下拉上
+/// 实测并记过同一条（截图里只露出徽标的 1px）。
+///
+/// `Positioner::side(触发器 bounds)` 直接把"在触发器下方"这件事说出来，与真源的
+/// `side="bottom" align="start" sideOffset=4 collisionPadding=8`
+/// （`ui/menubar.tsx:106-110`）一一对应，也正是 gpui-kit 自己给 Select / Combobox /
+/// DatePicker 用的那一支（`gpui-component-0.6.6/src/popover.rs:33-39` 的
+/// `dropdown_positioner`）。
+///
+/// `bounds` 是 `None` 时**不画**（还没量到触发器，画在哪儿都是错的；`on_prepaint` 里已经
+/// 补要了一帧，所以只影响打开后的第一帧）。
+fn popup_for(popup: Entity<PopupMenu>, bounds: Option<Bounds<Pixels>>) -> Option<impl IntoElement> {
+    let bounds = bounds?;
+    Some(
+        deferred(
+            Positioner::side(bounds)
+                .placement(Placement::Bottom)
+                .align(Align::Start)
+                .offset(px(PANEL_OFFSET_SPEC))
+                .margin(px(PANEL_WINDOW_MARGIN_SPEC))
+                // `occlude()` 不可省：不遮挡的话面板下面的标题栏拖拽区会继续吃鼠标事件
+                // （`AppMenuBar` 的同一处：`app_menu_bar.rs:290-294`）。
+                .occlude()
+                .child(popup),
+        )
+        .with_priority(1),
     )
-    .with_priority(1)
 }
 
-/// 造一个顶级菜单的下拉面板（每次打开现建，理由见 [`MenuBar`] 的文档）。
+/// 造一个顶级菜单的下拉面板（**展开的第一帧建一次**，之后由 `MenuBar::popup` 持有到收起，
+/// 理由见 [`MenuBar::popup`] 的字段文档）。
 fn build_popup(
     bar: &MenuBar,
     index: usize,
     window: &mut Window,
-    cx: &mut App,
+    cx: &mut Context<MenuBar>,
 ) -> Entity<PopupMenu> {
     let items = MENUS[index].items;
     let action_context = bar.action_context.clone();
@@ -1101,9 +1590,114 @@ fn theme_menu(
 #[cfg(test)]
 mod tests {
     use super::{
-        MENUS, MenuAction, MenuBarMode, MenuItem, NavState, action_count, mode_for,
+        CloseReason, MENUS, MenuAction, MenuBarMode, MenuItem, NavState, action_count, mode_for,
         resolve_menu_toggle,
     };
+
+    /// `S1_MENU_CLOSE reason=…` 的取值域**正好是 Q17 那五个**（顺序也照那份规格写），
+    /// 而且互不相同。
+    ///
+    /// 这条守的是"五条关闭路径能被日志区分开"：验证脚本按这五个字面量 grep，
+    /// 谁把 `escape` 写成 `esc`、或者给形态切换另编一个 `compact_toggle`，这里就红。
+    #[test]
+    fn close_reasons_match_the_spec_vocabulary() {
+        let reasons = [
+            (CloseReason::Dismiss, "dismiss"),
+            (CloseReason::Toggle, "toggle"),
+            (CloseReason::Escape, "escape"),
+            (CloseReason::Select, "select"),
+            (CloseReason::Switch, "switch"),
+        ];
+        let ids: Vec<&str> = reasons.iter().map(|(reason, _)| reason.id()).collect();
+        assert_eq!(
+            ids,
+            vec!["dismiss", "toggle", "escape", "select", "switch"]
+        );
+        let mut unique = ids.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len(), "五个起因必须互不相同");
+    }
+
+    /// B1 的三个根因各有一条**结构判据**（不需要窗口就能跑）：
+    ///
+    /// 1. 关闭系菜单项**必须**能映射到 `CommandId` —— 它们就是 `run_command_id` 的分支，
+    ///    映射不上就会变成"画出来但点了不动"的死项；
+    /// 2. 「打开文件」的文案键是**真源既有**的 `lithe.outline.openFile`（真源 `menu.*` 段
+    ///    没有 `openFile`，本侧不新增键）；
+    /// 3. File 菜单里的关闭项**一个不少**（真源 19 条里属于 B1 的那 8 条）。
+    #[test]
+    fn file_menu_close_entries_are_wired() {
+        use crate::command_palette::CommandId;
+
+        let expected = [
+            (MenuAction::OpenFile, "lithe.outline.openFile", CommandId::OpenFile),
+            (MenuAction::CloseTab, "lithe.menu.closeTab", CommandId::CloseTab),
+            (
+                MenuAction::CloseOtherTabs,
+                "lithe.menu.closeOtherTabs",
+                CommandId::CloseOtherTabs,
+            ),
+            (
+                MenuAction::CloseAllTabs,
+                "lithe.menu.closeAllTabs",
+                CommandId::CloseAllTabs,
+            ),
+            (
+                MenuAction::CloseSavedTabs,
+                "lithe.menu.closeSavedTabs",
+                CommandId::CloseSavedTabs,
+            ),
+            (
+                MenuAction::CloseTabsToLeft,
+                "lithe.menu.closeTabsToLeft",
+                CommandId::CloseTabsToLeft,
+            ),
+            (
+                MenuAction::CloseTabsToRight,
+                "lithe.menu.closeTabsToRight",
+                CommandId::CloseTabsToRight,
+            ),
+            (
+                MenuAction::ReopenClosedTab,
+                "lithe.menu.reopenClosedTab",
+                CommandId::ReopenClosedTab,
+            ),
+        ];
+        for (action, key, id) in expected {
+            assert_eq!(action.label_key(), key, "{action:?} 的文案键变了");
+            assert_eq!(action.command_id(), Some(id), "{action:?} 没有执行分支");
+        }
+
+        // File 菜单里**逐条**都在（顺序也照真源：打开文件 → 保存 → ── → 关闭系 → ── →
+        // 重新打开）。
+        let file = MENUS
+            .iter()
+            .find(|menu| menu.id == "file")
+            .expect("顶级菜单里必须有 file");
+        let actions: Vec<MenuAction> = file
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                MenuItem::Action(action) => Some(*action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            actions,
+            vec![
+                MenuAction::OpenFile,
+                MenuAction::Save,
+                MenuAction::CloseTab,
+                MenuAction::CloseOtherTabs,
+                MenuAction::CloseAllTabs,
+                MenuAction::CloseSavedTabs,
+                MenuAction::CloseTabsToLeft,
+                MenuAction::CloseTabsToRight,
+                MenuAction::ReopenClosedTab,
+            ]
+        );
+    }
 
     /// 顶级菜单必须**正好 9 个**，id 互不相同且顺序照真源
     /// （`window-menu-bar.tsx:133,200,277,365,411,427,440,462,504`；`locale.ts:7724-7732`）。

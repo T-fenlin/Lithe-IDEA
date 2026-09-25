@@ -53,6 +53,17 @@
 //! 诊断行一律 `S1_TAB_MENU`（**stderr**）：`opened=true tab=<名> items=<n> separators=<n>` 在菜单
 //! 真的被右键打开时打一次；执行动作打 `run=<动作> …`。
 //!
+//! ## B1 接上的两件事（菜单侧入口 + 关闭按钮可见性）
+//!
+//! 1. **非活动标签也有 ×**（悬停显示、活动标签常显）：[`EditorPane::render_tab`] 的
+//!    分组悬停，以及 [`EditorPane::close_button`] 的 `stop_propagation`；
+//! 2. **主菜单「文件 → 关闭…」那一批入口**：[`EditorPane::close_other_tabs`] /
+//!    [`EditorPane::close_tabs_to_left`] / [`EditorPane::close_tabs_to_right`] /
+//!    [`EditorPane::close_all_tabs`] / [`EditorPane::close_saved_tabs`] /
+//!    [`EditorPane::reopen_closed_tab`] —— **复用**同一条 `close_scope` 链，
+//!    锚点从"被右键的标签"换成"当前活动标签"；「重新打开已关闭标签页」读
+//!    [`EditorPane::closed`] 那个 LIFO 栈并走同一条 [`EditorPane::open`]。
+//!
 //! ## 阶段 12 接上的一件事：JDTLS 诊断波浪线
 //!
 //! | 项 | 落点 |
@@ -84,7 +95,8 @@ use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity, InteractiveElement as _,
     IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Render, ScrollWheelEvent,
-    SharedString, Styled as _, Task, Window, div, point, px, relative, rems,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div, point, px,
+    relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::{tr, tr_args};
@@ -205,21 +217,28 @@ pub struct TabMenuHostActions {
     pub open_terminal: Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>,
 }
 
-/// 三个"批量关闭"菜单项的作用范围。
+/// 批量关闭类菜单项的作用范围。
 ///
 /// **锚点存路径不存下标**：确认对话框弹出期间标签可能增减、顺序可能变，
 /// 确认后要按当下这份顺序**重算**集合（维护者口径），路径比下标稳。
 ///
-/// 真源对应 `handleCloseOtherTabs(keepId)` / `handleCloseTabsToRight(id)` /
-/// `handleCloseAllTabs()`（`windows/tauri/src/features/editor/stores/buffer.store.ts:1742-1830`）。
+/// 真源对应 `handleCloseOtherTabs(keepId)` / `handleCloseTabsToLeft(id)` /
+/// `handleCloseTabsToRight(id)` / `handleCloseAllTabs()` / `handleCloseSavedTabs()`
+/// （`windows/tauri/src/features/editor/stores/buffer.store.ts:1742-1830`；
+/// 左侧与已保存两条的真源入口见 `windows/tauri/src/ui/tab-context-menu.tsx:60-84`
+/// 的 `closeTabsToLeft` / `closeSavedTabs` 命令）。
 #[derive(Clone)]
 enum CloseScope {
     /// 关闭其他：除了锚点那个标签，其余全关。
     Others(PathBuf),
+    /// 关闭左侧：锚点**之前**的标签全关（`slice(0, index)`）。
+    ToLeft(PathBuf),
     /// 关闭右侧：锚点**之后**的标签全关（`slice(index + 1)`）。
     ToRight(PathBuf),
     /// 全部关闭。
     All,
+    /// 关闭已保存：**不脏**的标签全关（脏的一个都不动，也不弹确认框）。
+    Saved,
 }
 
 impl CloseScope {
@@ -227,15 +246,17 @@ impl CloseScope {
     fn tag(&self) -> &'static str {
         match self {
             Self::Others(_) => "closeOthers",
+            Self::ToLeft(_) => "closeLeft",
             Self::ToRight(_) => "closeRight",
             Self::All => "closeAll",
+            Self::Saved => "closeSaved",
         }
     }
 
     /// 当下这批 buffer 里该被关掉的**下标**（升序）。
     ///
-    /// 集合为空是**正常结果**（只有 1 个标签时"关闭其他/右侧"就是空集），
-    /// 真源同样静默空转：`buffer.store.ts:1758` 的 `forEach` 什么都不做、
+    /// 集合为空是**正常结果**（只有 1 个标签时"关闭其他/左侧/右侧"、全脏时"关闭已保存"
+    /// 都是空集），真源同样静默空转：`buffer.store.ts:1758` 的 `forEach` 什么都不做、
     /// `:1813` 的 `index === -1` 直接 `return`。所以调用方**不要**把它当成错误。
     fn targets(&self, buffers: &[Buffer]) -> Vec<usize> {
         match self {
@@ -245,6 +266,13 @@ impl CloseScope {
                 .filter(|(_, buffer)| &buffer.path != anchor)
                 .map(|(index, _)| index)
                 .collect(),
+            // 锚点不在（比如刚被别的路径关掉）→ 空集，不猜一个位置（与 `ToRight` 同口径）。
+            Self::ToLeft(anchor) => {
+                let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor) else {
+                    return Vec::new();
+                };
+                (0..position).collect()
+            }
             Self::ToRight(anchor) => {
                 let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor) else {
                     return Vec::new();
@@ -252,6 +280,12 @@ impl CloseScope {
                 (position + 1..buffers.len()).collect()
             }
             Self::All => (0..buffers.len()).collect(),
+            Self::Saved => buffers
+                .iter()
+                .enumerate()
+                .filter(|(_, buffer)| !buffer.is_dirty)
+                .map(|(index, _)| index)
+                .collect(),
         }
     }
 }
@@ -261,7 +295,7 @@ impl CloseScope {
 enum PendingConfirm {
     /// 关一个标签（关闭按钮 / 菜单「关闭」/ `Ctrl+W`）。
     Single(usize),
-    /// 批量关闭（关闭其他 / 关闭右侧 / 全部关闭）。
+    /// 批量关闭（关闭其他 / 关闭左侧 / 关闭右侧 / 全部关闭）。
     Batch(CloseScope),
     /// 重新加载（真机也是"先关再开"，`tab-bar.tsx:715-739`，所以脏标签要先过确认）。
     Reload(usize),
@@ -326,6 +360,30 @@ pub struct EditorPane {
     ///
     /// 默认 `true`（真源 `default-settings.ts:153`）。
     auto_completion: Rc<AtomicBool>,
+    /// **当前被悬停的标签下标**（`None` = 没有任何标签被悬停）。
+    ///
+    /// 「非活动标签的 × 悬停才显示」要靠它（见 [`Self::render_tab`]）。
+    /// 为什么要把它记在本结构体里，而不是用 gpui 的分组悬停（`.group(..)` +
+    /// `.group_hover(..)` 让那个 div 自己翻显隐）：**实测后者不生效** ——
+    /// 同一套注入步骤（`WM_MOUSEMOVE` 到非活动标签上）下，`.group_hover` 版本
+    /// 前后两帧逐像素相同（`.artifacts/p21/10-two-tabs-active-beta.png` 与
+    /// `11-hover-alpha-close-visible.png` 的 SHA 相同），而同一时刻把鼠标移到文件树某一行上
+    /// 却能看到那行高亮（`12-*` vs `13-*` 的差异框正好是那一行）——说明 hover 事件本身会触发
+    /// 重绘，是分组悬停那条链（`GroupHitboxes` + 它在 paint 期注册的 `on_mouse_event` 监听器，
+    /// `gpui-pre-0.3.6/src/elements/div.rs:3300-3316`）没把重绘要出来。既然本结构体本来就
+    /// 每帧渲染，自己记一个下标是更短、且可实测的路径。
+    hovered_tab: Option<usize>,
+    /// **已关闭磁盘文件的 LIFO 栈**：菜单「文件 → 重新打开已关闭标签页」的数据源。
+    ///
+    /// 为什么存路径而不是存整个 `Buffer`：关掉标签的语义就是**释放**那份 `EditorState`
+    /// （撤销栈、光标、诊断任务一起丢，见 [`Self::close`] 的文档），真源同样只留 id 级别
+    /// 的记录（`buffer.store.ts` 的 `reopenClosedTab` 从 `closedBuffers` 里按 id 重开）。
+    /// 重开时走的是**同一条** [`Self::open`]（读盘 + 建状态 + 排诊断），所以这里不需要
+    /// 缓存正文。
+    ///
+    /// 只记**磁盘文件**：`jdt://` 虚拟源码没有"重新读盘"这条路（正文只来自 Core 的虚拟
+    /// 文档请求），把它压进栈会让重开变成一份读盘失败的说明文案。
+    closed: Vec<PathBuf>,
 }
 
 /// 制表符宽度的默认值（= Windows `tabSize` 的默认值 2、也是组件默认档）。
@@ -334,6 +392,13 @@ const DEFAULT_TAB_SIZE: usize = 2;
 /// 制表符宽度的上界（**只为挡住把编辑区改坏的输入**，不是产品档位表：
 /// 真源的下拉只有 2/4/8，那三个值在设置 crate 的 `TAB_SIZES` 里）。
 const MAX_TAB_SIZE: usize = 64;
+
+/// 「重新打开已关闭标签页」最多回溯多少个（FIFO 淘汰最旧的一条）。
+///
+/// 20 不是真源里的数（真源那个队列没有公布上限）：它只是**有界**要求的一个具体值 ——
+/// 一次会话里连关几十个文件很常见，而用户点"重新打开"只会回溯最近几个；
+/// 上限存在的意义是不让一个长会话把已关文件的路径无限攒下去。
+const MAX_CLOSED_TABS: usize = 20;
 
 impl EditorPane {
     /// 建一个没有打开任何文件的编辑区。
@@ -356,6 +421,8 @@ impl EditorPane {
             tab_menu_actions: None,
             tab_size: DEFAULT_TAB_SIZE,
             auto_completion: Rc::new(AtomicBool::new(true)),
+            hovered_tab: None,
+            closed: Vec::new(),
         }
     }
 
@@ -1256,6 +1323,14 @@ impl EditorPane {
             return;
         }
         self.active = Some(index);
+        // 诊断：这行是"点 × **没有**顺带激活那个标签"的机器判据（B1 的验收项）。
+        // 点 × 的 click 若不 `stop_propagation` 就会冒泡到 `TabBar::on_click` →
+        // 这里，于是关掉一个**非活动**标签之后活动标签会被抢到那个下标上。
+        // 光看界面很难分辨（关掉之后相邻标签本来就会接管高亮），所以留一行可 grep 的。
+        eprintln!(
+            "S1_EDITOR_ACTIVE index={index} file={}",
+            self.buffers[index].name
+        );
         // 状态栏的光标项要立刻跟着换 buffer，不能等下一次编辑器通知。
         self.sync_cursor(cx);
         cx.notify();
@@ -1415,6 +1490,19 @@ impl EditorPane {
             return;
         }
 
+        // 记进"最近关闭"栈：**所有**关闭路径（点 ×、右键关闭、菜单、批量、`Ctrl+W`）都经
+        // 这里，所以"重新打开已关闭标签页"能覆盖全部入口，不必在每个入口各记一次。
+        // 虚拟源码不进栈（理由见 [`Self::closed`] 的字段文档）。
+        let closed = self.buffers[index].path.clone();
+        if !is_virtual_source_path(&closed) {
+            self.closed.push(closed);
+            // 有界：菜单的"重新打开"永远只回溯最近若干个，留着无限长的历史只是内存泄漏
+            // （真源 `closedBuffers` 同样是有界队列）。
+            if self.closed.len() > MAX_CLOSED_TABS {
+                self.closed.remove(0);
+            }
+        }
+
         // 被关掉的标签之后的标签整体左移一位，所以旧下标大于 index 的要减一。
         let shift = |active: usize| if active > index { active - 1 } else { active };
         self.buffers.remove(index);
@@ -1475,6 +1563,84 @@ impl EditorPane {
             return;
         };
         self.request_close(index, window, cx);
+    }
+
+    // -----------------------------------------------------------------------
+    // 主菜单「文件 → 关闭…」的一批入口（B1）
+    //
+    // 主菜单里的这几条与标签右键菜单里的同名项**落同一条链**（`close_scope` →
+    // 一次性确认 → `apply_close_scope`），不重写第二份。差别只有锚点从哪来：
+    // 右键菜单用"被右键的那个标签"，主菜单用**当前活动标签**（真源
+    // `file-command-actions.ts` 的 `closeOtherTabs` / `closeTabsToLeft` 同样是"以当前
+    // 编辑器为锚"）。
+    //
+    // 诊断行沿用 `S1_TAB_MENU run=<tag>`：这是**同一条关闭链**的同一个可 grep 契约，
+    // 多一个前缀只会让"关标签"这件事有两个名字。
+    // -----------------------------------------------------------------------
+
+    /// 当前活动标签的路径（锚点式批量的输入）。
+    fn active_path(&self) -> Option<PathBuf> {
+        self.active
+            .and_then(|index| self.buffers.get(index))
+            .map(|buffer| buffer.path.clone())
+    }
+
+    /// 锚点式批量关闭的公共前半段：没有活动标签就**如实打一行**并返回（不静默什么都不做）。
+    fn close_scope_at_active(
+        &mut self,
+        make: impl FnOnce(PathBuf) -> CloseScope,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(anchor) = self.active_path() else {
+            eprintln!("S1_TAB_MENU run=close reason=no-active");
+            return;
+        };
+        self.close_scope(make(anchor), window, cx);
+    }
+
+    /// 主菜单「关闭其他标签页」：以**当前活动标签**为锚。
+    pub fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_scope_at_active(CloseScope::Others, window, cx);
+    }
+
+    /// 主菜单「关闭左侧标签页」：以**当前活动标签**为锚。
+    pub fn close_tabs_to_left(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_scope_at_active(CloseScope::ToLeft, window, cx);
+    }
+
+    /// 主菜单「关闭右侧标签页」：以**当前活动标签**为锚。
+    pub fn close_tabs_to_right(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_scope_at_active(CloseScope::ToRight, window, cx);
+    }
+
+    /// 主菜单「关闭所有标签页」。
+    pub fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_scope(CloseScope::All, window, cx);
+    }
+
+    /// 主菜单「关闭已保存标签页」：不脏的全关，脏的**一个都不动**。
+    ///
+    /// 判据是「哪些该关」，所以脏标签根本不进 `targets` —— 于是这条路径永远不会弹
+    /// 未保存确认框（真源 `handleCloseSavedTabs` 同样不过确认）。
+    pub fn close_saved_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_scope(CloseScope::Saved, window, cx);
+    }
+
+    /// 主菜单「重新打开已关闭标签页」：从 LIFO 栈取最近一个已关闭的磁盘文件重开。
+    ///
+    /// 走**同一条** [`Self::open`]（读盘 → 建状态 → 排诊断 → 切活动标签），所以重开出来的
+    /// 标签与"从文件树点开"完全一样（不是一份只还原标题的空壳）。
+    ///
+    /// 栈空时如实打一行（`result=empty`）而不是静默：菜单项点了没反应必须能从日志里分辨出
+    /// "本来就是空的"和"接线断了"（与 `close_scope` 的空集诊断同一条口径）。
+    pub fn reopen_closed_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self.closed.pop() else {
+            eprintln!("S1_TAB_MENU run=reopenClosed result=empty");
+            return;
+        };
+        eprintln!("S1_TAB_MENU run=reopenClosed path={}", path.display());
+        self.open(&path, window, cx);
     }
 
     // -----------------------------------------------------------------------
@@ -1615,7 +1781,10 @@ impl EditorPane {
         cx.notify();
     }
 
-    /// 「关闭其他 / 关闭右侧 / 全部关闭」：**算集合 → 脏的一次性确认 → 整批关**。
+    /// 批量关闭类入口的公共实现：**算集合 → 脏的一次性确认 → 整批关**。
+    ///
+    /// 两类调用方都汇合在这里：标签右键菜单的三项（关闭其他 / 右侧 / 全部）与主菜单
+    /// 「文件 → 关闭…」那一批（见 [`Self::close_other_tabs`] 等入口）。
     ///
     /// ⚠️ **不能逐个调 [`Self::request_close`]**：那个每调一次就 `open_dialog`，
     /// 3 个脏标签会叠 3 个对话框；真机是"**只问一次**"
@@ -1918,6 +2087,28 @@ impl EditorPane {
 
         content
             .id(("editor-tab", index))
+            // 悬停进出这一项就更新 [`Self::hovered_tab`]（非活动标签的 × 靠它显隐）。
+            //
+            // ⚠️ 必须挂在**加了 `id` 之后**：`on_hover` 是 `StatefulInteractiveElement` 上的
+            // 方法（`gpui-pre-0.3.6/src/elements/div.rs:1655`），无 id 的 `Div` 上没有它 ——
+            // 悬停状态本来就存在元素状态里（同文件 `:1300` 的 trait 文档）。
+            //
+            // ⚠️ 离开的分支要**带下标守卫**：鼠标从标签 1 移到标签 0 时，同一帧里标签 0 的
+            // `true` 先到、标签 1 的 `false` 后到；无守卫的话后者会把刚落下的 `Some(0)`
+            // 清成 `None`，× 就会在鼠标停着的时候闪掉。
+            .on_hover(cx.listener(move |pane, hovered: &bool, _window, cx| {
+                let next = if *hovered {
+                    Some(index)
+                } else if pane.hovered_tab == Some(index) {
+                    None
+                } else {
+                    pane.hovered_tab
+                };
+                if pane.hovered_tab != next {
+                    pane.hovered_tab = next;
+                    cx.notify();
+                }
+            }))
             .context_menu(move |mut menu: PopupMenu, window: &mut Window, _cx: &mut Context<PopupMenu>| {
                 // 诊断：这条行**只在菜单真的被打开时**才打（闭包由右键按下触发），
                 // 所以它同时是"右键命中了这个标签"的证据。
@@ -2157,16 +2348,24 @@ impl EditorPane {
                 .bg(cx.theme().primary)
         });
 
-        // 关闭按钮：只有活动标签显示。真机默认设置是
-        // `tabCloseButtonVisibility: "active"`（`windows/tauri/src/features/settings/config/default-settings.ts:96`），
+        // 关闭按钮：**所有标签都有**；活动标签常显，非活动标签悬停显。
+        //
+        // 真源默认设置是 `tabCloseButtonVisibility: "active"`（`windows/tauri/src/features/settings/config/default-settings.ts:96`），
         // 规则见 `windows/tauri/src/features/settings/lib/ui-preferences.ts:13-19`
         // （固定标签恒显 / `always` 全显 / `active` 只有活动标签 / 否则悬停才显）。
-        // 悬停那一档没做：`TabBar` 不暴露每个标签的悬停状态，见报告的"未能实现"一节。
+        // 本侧实现的是**活动常显 + 非活动悬停显**这一档（维护者 B1 口径）：
+        // 开关值本身还没有接进设置（那三档留到设置项接线时再分），但"非活动标签也能关掉"
+        // 这件事必须先能用 —— 否则用户只能先点一下选中它、× 才出现。
+        //
+        // 悬停态来自 [`Self::hovered_tab`]（本结构体自己记，理由见那个字段的文档：
+        // 分组悬停实测不生效）。悬停时**渲染出**关闭按钮，不悬停时**不渲染** ——
+        // 标签宽度不受影响，因为正文常驻着 `pr_6()`（24px）那条右边距。
         //
         // 绝对定位而不是 `Tab::suffix`：suffix 是 flex 项，会算进标签宽度，
         // 切换标签时标签宽度会跳；绝对定位后宽度只由正文常驻的 `pr(24px)` 决定，
-        // 与真机一致（关掉按钮绝对定位在 `right-1` 上，见 `windows/tauri/src/features/tabs/components/tab-bar-item.tsx:164-166`）。
-        let close = is_active.then(|| {
+        // 与真机一致（关掉按钮绝对定位在 `right-1` 上，见
+        // `windows/tauri/src/features/tabs/components/tab-bar-item.tsx:164-166`）。
+        let close = (is_active || self.hovered_tab == Some(index)).then(|| {
             div()
                 .absolute()
                 .top_0()
@@ -2213,10 +2412,27 @@ impl EditorPane {
     /// 真机：ghost 图标按钮 `icon-xs`（24×24），tooltip `tabs.close`（"关闭"，
     /// `windows/tauri/src/i18n/locale.ts:7845`），点击关闭该标签
     /// （`windows/tauri/src/features/tabs/components/tab-bar-item.tsx:150-180`）。
-    /// gpui-kit 的 `Button` 点击时会 `stop_propagation`（`button/button.rs:797-808`），
-    /// 所以点关闭不会顺带把标签激活。
-    /// 尺寸用 `.small()` 的理由（gpui-kit 的 `small()` = 24×24、`xsmall()` = 20×20）
-    /// 见 [`TAB_CLOSE_INSET`] 的注释。
+    ///
+    /// ⚠️ **订正一条曾经的错误注释**：这里原来写着"gpui-kit 的 `Button` 点击时会
+    /// `stop_propagation`（`button/button.rs:797-808`）"——**与上游源码不符**。上游只在
+    /// `loading` 分支里 `stop_propagation`（`gpui-component-0.6.6/src/button/button.rs:797-805`），
+    /// 普通点击照常冒泡。所以点 × 之后这次 click 会继续冒到 `Tab::on_click`
+    /// （`tab/tab.rs:871-873`）→ `TabBar::on_click`（`tab_bar.rs:457-459`）→
+    /// `EditorPane::activate(渲染时捕获的旧 index)`。
+    /// 从前"看起来没事"只是因为：关掉**当前**标签时那个旧下标已经被 `close()` 改过、
+    /// 越界守卫挡住了它。但 B1 之后非活动标签也有 × 了 —— 关一个**非活动**标签时，
+    /// 冒泡上来的 `activate(旧 index)` 会把这个已经不该存在的下标变成活动标签，
+    /// 于是"点了 ×，标签关了、但活动标签跑到别处"从隐患变成每次都会走。
+    /// 所以这里显式 `cx.stop_propagation()`：点 × 只关标签、**不激活它**
+    /// （真源同口径：`tab-bar-item.tsx` 的关闭按钮在 `onPointerDown` 里
+    /// `e.stopPropagation()`）。
+    ///
+    /// 尺寸用 `.small()`：真机的 `icon-xs` 是 **24×24**（`windows/tauri/src/ui/button.tsx:27`
+    /// 的 `icon-xs size-6`），而 gpui-kit 的 `Sizable::xsmall()` 给图标按钮是 20×20、
+    /// `small()` 才是 24×24（`gpui-component-0.6.6/src/button/button.rs:618-623`）。
+    /// 这里对齐的是**尺寸值**，所以用 `.small()`，不要被变体名带偏。
+    /// 24 装在 `TabVariant::Underline` 的 26px 内高层里是否会被 `overflow_hidden()` 裁掉，
+    /// 由 B1 的实机验收量过（结论写在交付报告里）。
     fn close_button(index: usize, cx: &mut Context<Self>) -> Button {
         Button::new(format!("editor-tab-close-{index}"))
             // Windows 的关闭字形是 lucide `x`，`icons/x.svg` 在全量目录里确有该字形。
@@ -2227,6 +2443,8 @@ impl EditorPane {
             .tooltip(tr("lithe.tabs.close"))
             .accessibility_label(tr("lithe.tabs.close"))
             .on_click(cx.listener(move |pane, _event, window, cx| {
+                // 先掐掉冒泡（理由见本函数的文档）：否则这次点击会顺带激活这个标签。
+                cx.stop_propagation();
                 // E：脏标签要先过确认对话框（`request_close`）。
                 pane.request_close(index, window, cx);
             }))
