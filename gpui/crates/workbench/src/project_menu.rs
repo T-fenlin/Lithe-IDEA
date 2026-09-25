@@ -84,11 +84,26 @@
 //! `window.prevent_default() + cx.stop_propagation()`（`AppMenuBar` 的同一句，
 //! `app_menu_bar.rs:272-280`）作为第二道保险。
 //!
+//! # ⚠️ 接线时最容易再踩的两个实测坑（本轮都踩过、都有截图取证）
+//!
+//! 1. **`anchored()` 不要用于这张面板**。`deferred(anchored().anchor(Anchor::BottomLeft)…`
+//!    （`crate::menu_bar` 的写法）取的是**锚点元素自己在布局里的静态位置**，本侧实测它把面板
+//!    顶到了**窗口左上角**：面板的 `top` 落在触发器顶上，把触发器整个盖住（截图里只露出徽标
+//!    的 1px 宽一条）。改用 `Positioner::side(触发器 bounds).placement(Bottom).align(Start)`
+//!    —— 这正是 gpui-kit 自己给 Select / Combobox / DatePicker 用的那一支
+//!    （`gpui-component-0.6.6/src/popover.rs:33-39`），摆位与真源
+//!    `side="bottom" align="start" sideOffset=4` 一一对应（`title-project-menu.tsx:168-169`）。
+//! 2. **量触发器的那个 `on_prepaint` 必须挂在"无内边距的包装层"上**。挂在触发器自己身上时
+//!    它给的是**内容盒**（触发器有 `px_2`），于是面板整体右移 8 逻辑 px（实测：触发器盒子
+//!    `x=487`，面板左边跑到 `497`）。挂在无 padding/margin/border 的包装 `div` 上，
+//!    `bounds` 与触发器的视觉盒子逐像素相等 → 面板左边与触发器左边严格对齐（都是 `487`）。
+//!    —— 这两条都在 `.artifacts/p8/NOTES.md` §4 有实测记录与截图。
+//!
 //! # v1 范围：外观 + 当前项目行 + 空态
 //!
 //! | 面板里的东西 | v1 | 前置条件（都**没有**写进菜单） |
 //! | --- | --- | --- |
-//! | 三条动作行的**外观 / 文案 / 图标** | ✅ 画出来 | 点击只打诊断，不动作 —— 见下表 |
+//! | 三条动作行的**外观 / 文案 / 图标** | ✅ 画出来（**禁用态**） | 各自缺的能力见下表；点了什么都不发生、面板也不关 |
 //! | 「打开的项目」的当前项目行（高亮 + 勾） | ✅ | — |
 //! | 「最近项目」的空态 | ✅ | 最近项目的**来源**：本侧没有任何持久化层（研究 §5.2-B 第 2 行） |
 //! | 「最近项目」的行 | ❌ 恒空态 | 同上 |
@@ -97,23 +112,27 @@
 //! | 新建项目… | ❌ | 没有脚手架能力（真机是 `createNewDirectory` + 起终端跑 `npm create`） |
 //! | 克隆仓库… | ❌ | 没有 `git.write` clone 的调用点，目标目录选择也没有 |
 //!
-//! ⚠️ **三条动作行是"外观项"**：真源三者都**不置灰**（`title-project-menu.tsx:172-192`），
-//! 研究 §6 第 3 条明确要求**不要**用 `.disabled(true)`（那会让三行一起变灰成 `muted_foreground`，
-//! 与真源不符）。它们的真实行为各自等上面那张表的前置条件。点击时打一行
-//! `S1_PROJECT_MENU action=… state=not_wired precondition=…`，面板照真源 `closeAndRun` 关闭
-//! （`title-project-menu.tsx:133-136`）——**不留点了没反应的死控件**，但也不假装它们能用。
+//! ⚠️ **三条动作行画成禁用态**（维护者口径，2026-09-26 拍板）：真源三者**恒可执行、不置灰**
+//! （`title-project-menu.tsx:172-192`），本侧缺能力，所以两难的取舍是 —— **不能画成可点**
+//! （点下去面板照 `closeAndRun` `:133-136` 会关，却什么都没发生 = 对用户说谎），
+//! **也不能整段不画**（面板结构与维护者截图不符）。取中间的**真禁用态**：
+//! `.disabled(true)` → 不挂点击、不进键盘导航、前景 `muted_foreground`、无 hover 高亮，
+//! 于是"不可用"在**语义与视觉上都能区分**（不是只靠颜色）。逐条理由见 [`action_row`]。
 //!
 //! # 已知偏差（逐条给理由，都不是遗漏）
 //!
 //! | 偏差 | 真源 | 本侧 | 理由 |
 //! | --- | --- | --- | --- |
 //! | 面板内边距 / 行间距 / 圆角 | 6 / 0 / 6.4 | 4 / 2 / 6 | `PopupMenu` 三个值都硬编码且无 builder（见上） |
-//! | 分组标题字号 | 13（`ui-text-xs` 未定义 → 继承） | **16**（`PopupMenu::label` 的 `text_base`，`menu_item.rs:106`） | 口径要求分组标题走 `menu.label`；要 12px 灰字只能自绘（研究 §5.4） |
-//! | 行内可用宽度 | 384 − 12(面板内距) − 16(行内距) ≈ 356 | 384 − 20(滚动条 16) − 8 − 16 ≈ 340 | `scrollable(true)` 的竖向滚动条**常驻**占 16 逻辑 px（`.artifacts/p8` 量到右侧 947..966 物理那一条），真源是 `overflow-y-auto`（无溢出时无条）。留着它是为了 `max-h` 生效 + 将来 12 条最近项目能滚 |
-//! | 项目行高 | `min-h-11`(44) | 量到 **52.8 逻辑**（44 只是下限，没被触发） | `min-h` 是**下限**：两行文字（14px 名 + 12px 路径，行高 ~1.4–1.5）+ `py-1.5`(12) 撑到 ~53。真源同样由内容撑高（13px 两行 ≈ 50）；差 ~3 是本侧 13→14 字号的既定口径 |
-//! | 当前项目行 / 空态行 | 可键盘高亮（`Menu.Item`） | `.disabled(true)`，跳过键盘导航 | 真源点当前项是 no-op 且**不关面板**（`:207-210`），而 `PopupMenuItem` 一旦可点，`confirm` 里**无条件** `dismiss`（`popup_menu.rs:875-884`）—— 只有 disabled 能表达"可画不可点" |
+//! | 三条动作项 | 恒可执行、不置灰 | **禁用态**（灰 + 无 hover + 点了不关面板） | 本侧缺能力；"可点但只打日志"会让用户以为有反应（见 [`action_row`]） |
+//! | 行内可用宽度 | 384 − 12(面板内距) − 16(行内距) ≈ 356 | 384 − 20(滚动条 16) − 8 − 16 ≈ 340 | `scrollable(true)` 的竖向滚动条**常驻**占 16 逻辑 px（`.artifacts/p8` 量到右侧 947..966 物理那一条），真源是 `overflow-y-auto`（无溢出时无条）。留着它是因为 `max_h` 就加在这个滚动容器上：**内容再高也撑不破 520**（12 条最近项目 ≈ 900 逻辑也照样被截住并滚动），换成"需要时才滚动"等于自己重算一遍内容高 |
+//! | 项目行高 | `min-h-11`(44) | 量到 **52.8 逻辑**（44 只是下限，没被触发） | `min-h` 是**下限**：两行文字（14px 名 + 12px 路径，行高 ~1.4–1.5）+ `py-1.5`(12) 撑到 ~53。真源同样由内容撑高（13px 两行 ≈ 50）；差 ~3 是本侧 13→14 字号的既定口径（见 [`project_row`]） |
+//! | 当前项目行 / 空态行 / 分组标题 | 可键盘高亮（`Menu.Item`） | `.disabled(true)`，跳过键盘导航 | 真源点当前项是 no-op 且**不关面板**（`:207-210`），而 `PopupMenuItem` 一旦可点，`confirm` 里**无条件** `dismiss`（`popup_menu.rs:875-884`）—— 只有 disabled 能表达"可画不可点" |
 //! | 触发器展开态 | 无底色（只有 hover） | 无底色（同上） | 本模块自绘触发器，不接 `Popover::trigger` 的 `selected(is_open)`（那会给一个 `secondary_active` 蓝底，`button.rs:1245`） |
 //! | 徽标配色 / 徽标字号 | 常量 5 色 / 10px | 同 | 真源即常量；10px 不在档位上，写 `rems(10./16.)` |
+//!
+//! 分组标题**没有**偏差：真源 `ui-text-xs` 未定义 → 真机实际 13px，本侧按意图取 12px
+//! （`text_xs()`），见 [`group_label`]。
 //!
 //! 面板几何在 125% DPI 下**逐项量过**（`.artifacts/p8/geometry.ps1`，物理像素 = 逻辑 × 1.25）：
 //! 面板宽 `487..966` = 480 物理 = **384 逻辑** ✓、面板左边 = 触发器左边 `487` ✓
@@ -351,18 +370,38 @@ impl PanelAction {
     }
 }
 
-/// 一条动作行：32 高、8 内距、8 间隔、16×16 图标、13→14px 文字。
+/// 一条动作行：32 高、8 内距、8 间隔、16×16 图标、13→14px 文字。**禁用态**。
 ///
 /// ⚠️ **必须自绘**（`PopupMenuItem::element`）：`Item` 固定 26 高（`popup_menu.rs:1309`），
 /// 撑不到真源的 32。
 ///
 /// `mx_neg_2()` + `px_2()` 是抵消父级的 `.px(8)`（`popup_menu.rs:1230`）：
-/// `MenuItemElement` 自己有 8 内距，行底色（悬停/选中）要像真源那样铺满行宽就得先退回来。
-/// 悬停底色本身不用写：`MenuItemElement` 的 `group_hover` 已经给了 `theme.accent`
-/// （`menu_item.rs:115-119`），与真源的 `DropdownMenuItem` 一致。
+/// `MenuItemElement` 自己有 8 内距，行底色要铺满行宽就得先退回来。
+///
+/// # ⚠️ 为什么是禁用态（维护者口径，2026-09-26 拍板）
+///
+/// **真源这三条恒可执行**（`title-project-menu.tsx:172-192`，三者都不置灰），本侧**缺能力**：
+/// 新建要脚手架、打开要系统目录对话框、克隆要 `git.write` clone 的调用点
+/// （前置条件逐条写在 [`PanelAction::precondition`] 与模块头）。两难的取舍是：
+///
+/// - **不能画成可点**：点下去面板照真源 `closeAndRun`（`:133-136`）会关掉，而什么都没发生 ——
+///   那对用户是**说谎**（"有反应"与"有效果"被混成一件事）；
+/// - **也不能整段不画**：面板结构与维护者截图不符。
+///
+/// 取中间的**真禁用态**：`.disabled(true)` 让 `PopupMenuItem` 不挂点击、不进键盘导航、
+/// 前景走 `muted_foreground`、没有 hover 高亮（`menu_item.rs:115-133`），
+/// 于是"不可用"在**语义与视觉上都能区分**（不是只靠颜色）。三条动作因此
+/// **点了什么都不发生、面板也不关**。
+///
+/// 前置条件仍然可 grep：面板每次打开时打一行 `S1_PROJECT_MENU action=… state=disabled
+/// precondition=…`（见 [`diagnose_actions`]）—— 诊断从"点击时"挪到"打开时"，
+/// 不再给用户一个假装能点的入口。
 fn action_row(action: PanelAction) -> PopupMenuItem {
     PopupMenuItem::element(move |_window, cx| {
-        let foreground = cx.theme().foreground;
+        // 禁用态前景：真源由 `data-disabled:opacity-50` + 继承色决定；gpui-kit 的
+        // `MenuItemElement` 直接给 `muted_foreground`（`menu_item.rs:131-133`），
+        // 所以图标与文字都显式取同一个 token（子元素的显式色会覆盖父级继承色）。
+        let muted = cx.theme().muted_foreground;
         h_flex()
             .w_full()
             .h(rems(ACTION_ROW_HEIGHT_SPEC / 16.))
@@ -372,25 +411,17 @@ fn action_row(action: PanelAction) -> PopupMenuItem {
             .rounded(ROW_RADIUS)
             // 图标 16×16：真源由 `[&_svg:not([class*='size-'])]:size-4` 决定
             // （`ui/dropdown.tsx:782`），`Icon` 侧显式 `.size_4()`（`Icon::xsmall()` 是 12）。
-            .child(Icon::new(action.icon()).size_4().text_color(foreground))
+            .child(Icon::new(action.icon()).size_4().text_color(muted))
             .child(
                 div()
                     .min_w_0()
                     .truncate()
                     .text_sm()
-                    .text_color(foreground)
+                    .text_color(muted)
                     .child(tr(action.label_key())),
             )
     })
-    // 点击：真源是 `closeAndRun(..)`（`:133-136`），面板由 `PopupMenu` 的 `confirm` 收起；
-    // 这里只记一行"为什么没动作"。三条都**不置灰**（真源三者都不置灰，研究 §6 第 3 条）。
-    .on_click(move |_event: &ClickEvent, _window: &mut Window, _cx: &mut App| {
-        eprintln!(
-            "S1_PROJECT_MENU action={} state=not_wired precondition={}",
-            action.id(),
-            action.precondition()
-        );
-    })
+    .disabled(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +450,12 @@ pub(crate) struct ProjectEntry {
 ///    所以当前项那层 `bg-selected` 要自己画；
 /// 4. 右侧勾：`PopupMenuItem::checked(true)` + `check_side(Side::Right)` 现成，但勾固定
 ///    `Icon::xsmall()`(12)，真源是 `size-4`(16)（`:211`）—— 自绘更稳。
+///
+/// ⚠️ **行高是"内容撑高"，不是固定 44**：真源 `min-h-11`(44) 是**下限**
+/// （`title-project-menu.tsx:90-97`），实际高度 = `py-1.5`(12) + 内容。本侧内容 = 徽标 28 与
+/// 两行文字（14px 名 + 12px 路径，行高 ~1.4–1.5）取大者 → 实测（`.artifacts/p8/geometry.ps1`，
+/// 125% DPI）**52.8 逻辑**：44 这个下限**没有被触发**。真源同样由内容撑到约 50（13px 两行），
+/// 差的 ~3 就是本侧"13 → 14 字号"的既定口径（`crate::workspace` 模块头），不是漏了行高。
 fn project_row(entry: &ProjectEntry) -> PopupMenuItem {
     let badge = ProjectBadge::for_name(&entry.name);
     let name = entry.name.clone();
@@ -482,6 +519,40 @@ fn project_row(entry: &ProjectEntry) -> PopupMenuItem {
     .disabled(true)
 }
 
+/// 一个**分组标题**：「打开的项目」/「最近项目」。
+///
+/// 真源 `DropdownMenuLabel className="px-2 pt-1.5 pb-1 font-normal ui-text-xs"`
+/// （`title-project-menu.tsx:196-198,218-220`）→ `px-2`(8) / `pt-1.5`(6) / `pb-1`(4) /
+/// `font-normal`（不设字重）/ 12px 灰字。
+///
+/// ⚠️ **第 7 处必须自绘的地方**（前六处见 [`action_row`] / [`project_row`] /
+/// [`recent_empty_row`] / [`badge_view`]）：真源那个 `ui-text-xs` 类**在仓库里未定义**
+/// （`windows/tauri/src/styles/utilities.css:30-44` 只有 `-sm/-caption/-chrome/-base`，
+/// 全仓库 `.css` grep 无 `.ui-text-xs`），所以真机实测是**继承父级的 13px**
+/// （`ui/dropdown.tsx:753,782`）—— 13px 是"类名写错"的意外结果，不是设计意图
+/// （研究 §7 第 2 条）。本侧按**意图**取 **12px**：`text_xs()`（gpui 的档位只有 12/14/16，
+/// 13 不在档位上，与 `crate::title_bar` / `crate::project_tabs` 同一条口径）。
+///
+/// 若走 `PopupMenu::label`，它会复用 `MenuItemElement` 的 `text_base`(**16**)
+/// （`menu_item.rs:104-106`），比规格意图大一档且**没有覆盖点**（0.6.6 里也没有
+/// `PopupMenuGroup` 类型）—— 这就是这处必须自绘的原因。
+fn group_label(key: &'static str) -> PopupMenuItem {
+    PopupMenuItem::element(move |_window, cx| {
+        div()
+            .w_full()
+            .mx_neg_2()
+            .px_2()
+            .pt_1p5()
+            .pb_1()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(tr(key))
+    })
+    // 分组标题是**非交互**标签（真源 `Menu.GroupLabel`，没有 onClick、没有折叠态，
+    // `title-project-menu.tsx:195-198`）：disabled 让它不进键盘导航、点了也不关面板。
+    .disabled(true)
+}
+
 /// 「最近项目」的空态行：`px-2 py-3 text-subtle-foreground ui-text-xs`（`:221-225`）。
 ///
 /// v1 **恒空态**：本侧没有最近项目的来源（见模块头的前置条件表）。
@@ -522,10 +593,21 @@ fn build_popup(
             .max_w(rem_px(PANEL_WIDTH_SPEC))
             // 真源 `max-h-[min(32.5rem,calc(100vh-3rem))]`（见 [`PANEL_MAX_HEIGHT_SPEC`]）。
             // `max_h` 只在 `scrollable(true)` 时生效（`popup_menu.rs:1488-1492`）。
+            //
+            // ⚠️ **`max_h` 加在"滚动容器本身上"，所以内容再高也撑不破 520**：`PopupMenu::render`
+            // 里这两条是同一个 `when(self.scrollable, ..)` 分支里的兄弟调用
+            // （v_flex().id("items").max_h(max_height).overflow_y_scroll()，`popup_menu.rs:1482-1492`），
+            // 滚动容器的高度 ≤ 520、超出部分走滚动而不参与外层测量。按当前度量算：
+            // 3 动作(3×32) + 2 分组标题(2×~25) + 1 当前行(~53) + 分隔线 2(~12) + 条目间距(~34)
+            // + 面板内距(8) ≈ 265 逻辑；**真到 12 条最近项目**时 ≈ 265 + 12×53 ≈ 900 逻辑，
+            // 仍然被这一层的 `max_h(520)` 截住并滚动（不是把面板撑到 900）。
+            // 代价是滚动条**常驻** 16 逻辑 px（v1 里内容只有 ~265，缩略块占满整条轨道）：
+            // 换成"需要时才滚动"就得自己算内容高（行数 × 行高 + 间距），而那正是
+            // `PopupMenu` 已经用 `max_h` + `overflow_y_scroll` 做对的事，不重复发明。
             .max_h(rem_px(PANEL_MAX_HEIGHT_SPEC))
             .scrollable(true);
 
-        // 段 ①：三条动作。
+        // 段 ①：三条动作（**禁用态**，理由见 [`action_row`]）。
         for action in PanelAction::ALL {
             menu = menu.item(action_row(action));
         }
@@ -534,14 +616,14 @@ fn build_popup(
         // 只有段 3 有空态）。
         menu = menu
             .separator()
-            .label(tr("lithe.titleProject.openProjects"));
+            .item(group_label("lithe.titleProject.openProjects"));
         for entry in &entries {
             menu = menu.item(project_row(entry));
         }
 
         // 段 ③：「最近项目」+ 空态。
         menu.separator()
-            .label(tr("lithe.titleProject.recentProjects"))
+            .item(group_label("lithe.titleProject.recentProjects"))
             .item(recent_empty_row())
     })
 }
@@ -593,10 +675,13 @@ fn diagnose(opened: bool, current: &str) {
 /// 它是**实现值**（本侧画成多少），不是量出来的像素；截图量出来的那一份在验收报告里对照。
 fn diagnose_structure(projects: usize) {
     eprintln!(
-        "S1_PROJECT_MENU panel_w={} max_h={} sections=3 actions={} open_projects={} recent={} \
-         action_h={} row_h={} badge={}",
+        "S1_PROJECT_MENU panel_w={} max_h={} sections=3 actions={} actions_disabled={} \
+         open_projects={} recent={} action_h={} row_h={} badge={}",
         PANEL_WIDTH_SPEC as i32,
         PANEL_MAX_HEIGHT_SPEC as i32,
+        PanelAction::ALL.len(),
+        // v1 三条动作全是禁用态（见 [`action_row`]）—— 这个数就是"画出来的外观项"与
+        // "真的能用的项"之间的差额，写在诊断里免得只靠注释。
         PanelAction::ALL.len(),
         projects,
         RECENT_PROJECTS,
@@ -604,6 +689,20 @@ fn diagnose_structure(projects: usize) {
         PROJECT_ROW_HEIGHT_SPEC as i32,
         ROW_BADGE_SIZE_SPEC as i32,
     );
+}
+
+/// 三条动作各自的禁用原因，**面板每次打开时**打三行（原来挂在点击回调上，但 v1 它们不可点）。
+///
+/// 这样"为什么灰着"仍然可 grep（`state=disabled precondition=…`），而用户不会看到一个
+/// 点下去只有日志、还把面板关掉的假入口。
+fn diagnose_actions() {
+    for action in PanelAction::ALL {
+        eprintln!(
+            "S1_PROJECT_MENU action={} state=disabled precondition={}",
+            action.id(),
+            action.precondition()
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -858,6 +957,7 @@ fn project_menu(
         // 面板真的画出来了 —— 这一行才是"面板出现"的证据（不是"状态位被置了"）。
         diagnose(true, entries[0].name.as_ref());
         diagnose_structure(entries.len());
+        diagnose_actions();
     }
 
     let trigger = trigger(&entries[0], open, handle(), cx).into_any_element();
