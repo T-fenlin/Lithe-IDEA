@@ -669,6 +669,17 @@ impl ShellWorkspace {
         // 挂在根元素上会有"启动后没点过任何地方时按不出来"的死角。
         install_command_palette(cx);
 
+        // 设置里的「项目 · JDK 与 Maven」页把 JDK 覆盖值（`javaHomePath`）存进设置文件，
+        // 而这条值**唯一的消费方是语言服务**（JDT LS 用哪个 JDK 起）：这条链路只有本 crate
+        // 拼得起来 —— `lithe-gpui-java` 不许依赖 `settings`（那会把设置文件的键灌进语言服务），
+        // 而 `settings` 不认识 JDT LS 会话。照 `set_git_identity_host` 同一口径：
+        // 低层 crate 定义注入点（`lithe_gpui_java::toolchain`），外壳在这里登记。
+        //
+        // ⚠️ **必须早于下面那一步 `prepare_java`**：它会在后台起 JDTLS 并当场读这个值，
+        // 登记晚了这一轮读到的还是"自动发现"的那个 JDK —— 也就是页面上写着「已选择」
+        // 却没有生效的那副假象。
+        register_java_toolchain(cx);
+
         // 先建编辑区，再把它的弱引用交给项目树：点文件 → 打开到编辑区。
         let editor = cx.new(|cx| EditorPane::new(window, cx));
         // 阶段 10 第二批：打开项目时在后台起 Java 语言服务（= 生成 / 复用 JDT 索引缓存）。
@@ -901,6 +912,11 @@ impl ShellWorkspace {
                 this.changes.update(cx, |view, cx| {
                     view.set_confirm_before_discard(settings.confirm_before_discard, cx);
                 });
+                // JDK 覆盖值也在这里跟着走：登记本身是幂等的，但**它只影响下一次语言服务
+                // 启动**（JDT LS 会话是一个工作区一个、`EditorPane::prepare_java` 幂等），
+                // 所以改了设置之后要重启应用才真的换 JVM —— 换 JDK 必须重建 JDT 索引，
+                // 静默重启会话会让索引与 JVM 的对应关系断掉。
+                register_java_toolchain(cx);
                 cx.notify();
             })
         });
@@ -2144,6 +2160,42 @@ fn right_activity_items() -> Vec<ActivityItem> {
     ]
 }
 
+/// 设置里的 `javaHomePath` → `lithe-gpui-java` 要的 JDK 覆盖值（**纯函数**，便于单测）。
+///
+/// **只读 `javaHomePath`**：另外两个键（`mavenExecutablePath` / `mavenJavaHomePath`）在 gpui 侧
+/// 没有任何消费方 —— `maven.scan` 是 Core 进程内的项目描述符解析，本侧不执行 `mvn`
+/// （见 `lithe_gpui_java::toolchain` 的模块文档）。登记了没人读只会把"存了不生效"从设置页
+/// 搬到这一层，所以这里不登记它们。
+///
+/// 空串 / 全空白等于"没选"（设置页的「清空」写的就是空串，照 `settings/src/project.rs`
+/// 的 `non_empty_opt` 同一条口径）；有值时去掉前后空白再转成路径。
+fn java_toolchain_override_from(
+    settings: &lithe_gpui_settings::Settings,
+) -> Option<lithe_gpui_java::JavaToolchainOverride> {
+    let trimmed = settings.java_home_path.trim();
+    (!trimmed.is_empty()).then(|| lithe_gpui_java::JavaToolchainOverride {
+        java_home: PathBuf::from(trimmed),
+    })
+}
+
+/// 把设置里的 JDK 覆盖值登记给语言服务（调用点见 `ShellWorkspace::new`）。
+///
+/// 判据全在 [`java_toolchain_override_from`] 里；这里只做"读设置 → 登记"与一行启动证据。
+/// 设置状态不存在时（测试或别的宿主里没有 `SettingsStore`）登记 `None` = 纯自动发现，
+/// 与 `try_store` 在别处"没有设置就回落默认值"的口径一致，不 panic。
+fn register_java_toolchain(cx: &App) {
+    let overridden = lithe_gpui_settings::try_store(cx)
+        .and_then(|store| java_toolchain_override_from(store.read(cx).settings()));
+    println!(
+        "S1_SETTINGS wiring=java_toolchain java_home_path={}",
+        overridden
+            .as_ref()
+            .map(|overridden| overridden.java_home.display().to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    lithe_gpui_java::set_java_toolchain_override(overridden);
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2180,6 +2232,40 @@ mod tests {
         }
         assert_eq!(IdentityField::from_id("email"), IdentityField::Email);
         assert_eq!(IdentityField::from_id("nope"), IdentityField::Name);
+    }
+
+    /// 设置里的 `javaHomePath` → 交给语言服务的 JDK 覆盖值。
+    ///
+    /// 这是"设置 → JDT LS 用哪个 JDK"这条注入链在本 crate 里的唯一判据，所以逐种写法钉住：
+    /// 空串 / 全空白 = 没选（`None`，语言服务退回自动发现），有值 = 去空白后的路径。
+    /// 判据的另一半（覆盖值真的压过自动发现）由 `lithe-gpui-java` 的单测与实机 `S1_JAVA_JDTLS`
+    /// 日志守。
+    #[test]
+    fn java_toolchain_override_follows_java_home_path() {
+        use lithe_gpui_settings::Settings;
+
+        let mut settings = Settings::default();
+        assert_eq!(
+            super::java_toolchain_override_from(&settings),
+            None,
+            "默认的空串 = 没选覆盖值"
+        );
+
+        settings.java_home_path = "   ".to_string();
+        assert_eq!(
+            super::java_toolchain_override_from(&settings),
+            None,
+            "全空白同样等于没选（不能变成 `PathBuf::from(\"\")` 这种「当前目录」）"
+        );
+
+        settings.java_home_path = " C:\\tools\\jdk-21 ".to_string();
+        let overridden =
+            super::java_toolchain_override_from(&settings).expect("填了值就必须给出覆盖值");
+        assert_eq!(
+            overridden.java_home,
+            std::path::PathBuf::from("C:\\tools\\jdk-21"),
+            "前后空白必须去掉（带空白的路径会被 java 侧判成无效）"
+        );
     }
 
     /// 深色配色下的朝向快照（其余字段取默认可见状态，避免测试里到处写一遍）。

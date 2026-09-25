@@ -13,7 +13,9 @@
 //! and graceful/forced termination」。所以这里只做四件事：
 //!
 //! 1. [`jdtls`]：把 JDT LS 安装**发现**出来（可执行文件 / Equinox 启动 JAR / 配置目录 /
-//!    Lombok agent / Java Debug 与 Java Test 扩展包 / 版本），再找出跑它的 JDK（≥ 21）；
+//!    Lombok agent / Java Debug 与 Java Test 扩展包 / 版本），再找出跑它的 JDK（≥ 21）。
+//!    用户显式选的 JDK（设置页 `javaHomePath`）经 [`toolchain`] 这个注入点进来，
+//!    是判据链的**第一条**；值用不了就降级回自动发现并打 `S1_JAVA_TOOLCHAIN`；
 //! 2. [`workspace`]：算 JDT 工作区**索引缓存的键与目录**
 //!    （`java.jdtWorkspaceFingerprint` → `lsp.jdtWorkspaceKey` → `cacheDirectory/jdtls/<key>`），
 //!    并按 `java.jdtCacheRetention` 回收过期目录；
@@ -44,9 +46,11 @@ mod events;
 mod jdtls;
 mod service;
 mod session;
+mod toolchain;
 mod workspace;
 
 pub use events::{JavaDiagnostic, JavaDiagnosticRange};
+pub use toolchain::{JavaToolchainOverride, set_java_toolchain_override};
 pub use service::{
     JavaCodeAction, JavaCompletionItem, JavaLanguageService, JavaPosition, JavaTarget, JavaTextEdit,
     file_uri,

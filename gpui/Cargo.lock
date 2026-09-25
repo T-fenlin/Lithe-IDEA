@@ -3960,6 +3960,7 @@ dependencies = [
  "lithe-gpui-editor",
  "lithe-gpui-explorer",
  "lithe-gpui-git",
+ "lithe-gpui-java",
  "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-terminal",
