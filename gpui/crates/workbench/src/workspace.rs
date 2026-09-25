@@ -79,8 +79,8 @@ use crate::project_menu::{
 };
 use crate::project_tabs::{ProjectTab, project_tabs};
 use crate::right_tool_window::{
-    RightToolWindowView, diagnose as diagnose_right_panel, resolve_click as resolve_right_click,
-    right_tool_window,
+    ProbePoint, RightToolWindowView, diagnose as diagnose_right_panel,
+    resolve_click as resolve_right_click, right_tool_window,
 };
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
@@ -527,17 +527,23 @@ pub struct ShellWorkspace {
     /// 三种都该显示真源的「未检测到 Maven 项目」空态（见 `crate::maven` 的模块文档）。
     /// 扫描时机是"右栏第一次切到 Maven 且可见"：`maven.scan` 要解析 pom，
     /// 放在启动路径上会让首帧为不相关的面板付钱。
+    ///
+    /// ⚠️ 扫描**不是**在派发栈里跑的（[`ShellWorkspace::schedule_right_view_scan`]），
+    /// 所以在"已登记、任务还没跑完"这段窗口里它同样是 `None`，面板画空态。
     maven_project: Option<crate::maven::MavenProjectView>,
-    /// 是否已经扫过（`None` 的三种情况靠它区分不了，但"扫过没有"必须能区分，
-    /// 否则每次渲染都会重扫）。
-    maven_scanned: bool,
     /// Spring 索引（`spring.index` 的结论），与 Maven 同一套懒扫 + 缓存口径。
     ///
     /// `spring.index` 会读依赖 JAR 里的 `spring-configuration-metadata.json`（契约说
     /// `refreshDependencyMetadata: true` 只该在"打开项目"时置真），所以它比 `maven.scan` 更贵，
     /// **更不能**挂在启动路径或每次按键上。
     spring_index: Option<crate::spring::SpringIndexView>,
-    spring_scanned: bool,
+    /// 两个视图"扫过没有"的登记状态（原 `maven_scanned` / `spring_scanned` 的语义）。
+    ///
+    /// 为什么与数据分开存：数据在**延后的任务**里写回，而"要不要排这一次扫描"必须在派发栈内
+    /// 就定下来 —— 否则同一项连点两次（或点击与菜单同时来）会排出两个任务，把"每个视图只扫
+    /// 一次"变成"每次入口都扫一次"。纯值 + 纯函数，所以这条语义可以直接单测
+    /// （[`RightScanState::request`]）。
+    right_scan: RightScanState,
     /// 左侧栏内容：项目树（真实 `workspace.snapshot` 数据）。
     ///
     /// 状态栏左组（前导项）**不再是字段**：它每帧现算（[`ShellWorkspace::footer_left`]），
@@ -969,9 +975,8 @@ impl ShellWorkspace {
             right_view: RightToolWindowView::Maven,
             right_visible: false,
             maven_project: None,
-            maven_scanned: false,
             spring_index: None,
-            spring_scanned: false,
+            right_scan: RightScanState::default(),
             explorer,
             changes,
             editor,
@@ -994,8 +999,8 @@ impl ShellWorkspace {
             branch_panel_probe,
         };
         // 启动期也留一行状态证据：右工具窗**默认隐藏**这件事要能被机器验证，
-        // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。
-        diagnose_right_panel(workspace.right_view, workspace.right_visible);
+        // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。构造期不是指针输入，所以不带坐标。
+        diagnose_right_panel(workspace.right_view, workspace.right_visible, None);
         // 命令面板的动作要改本视图的状态，而浮层的 builder / 回调都是 `'static`，
         // 够不着 `self`：所以在这里登记一个弱引用句柄（理由见 `crate::command_palette`
         // 的 `SHELL`）。登记在 `Self` 建好之后，句柄一定是可升级的。
@@ -1238,13 +1243,15 @@ impl ShellWorkspace {
                 self.right_view = view;
                 self.right_visible = visible;
                 // 与右活动栏点击同一条懒扫口径（菜单与右栏改的是同一份状态，取数据也该一致）：
-                // 懒扫只有一份，见 [`ShellWorkspace::scan_right_view_if_needed`]。
-                if visible {
-                    self.scan_right_view_if_needed(view);
-                }
+                // 懒扫只有一份，见 [`ShellWorkspace::schedule_right_view_scan`]。
+                self.schedule_right_view_scan(view, visible, cx);
                 // 与右活动栏点击走同一个诊断（`S1_RIGHT_PANEL view=maven visible=…`）：
                 // 这样"菜单里的 Maven 项和右栏那一项改的是同一份状态"有机器证据。
-                diagnose_right_panel(view, visible);
+                //
+                // 不带坐标：菜单动作是从菜单栏的点击回调排进队列、再由 render 执行的，
+                // 到这一层已经拿不到那一次点击的坐标；`window.mouse_position()` 这时可能是
+                // 键盘激活菜单前留下的旧位置，拿它冒充"本次点击位置"会造出假的坐标证据。
+                diagnose_right_panel(view, visible, None);
                 diagnose_run(id, if visible { "visible" } else { "hidden" });
             }
             CommandId::ToggleStatusBar => {
@@ -1448,21 +1455,82 @@ impl ShellWorkspace {
     /// 为什么懒扫而不是构造期扫：`maven.scan` 要解析 pom，`spring.index` 还要读依赖 JAR 里的
     /// 元数据（契约说 `refreshDependencyMetadata: true` 只该在"打开项目"时置真，见
     /// [`ShellWorkspace::spring_index`]），挂在启动路径上会让首帧为不相关的面板付钱。
-    fn scan_right_view_if_needed(&mut self, view: RightToolWindowView) {
-        if view == RightToolWindowView::Maven && !self.maven_scanned {
-            self.maven_scanned = true;
-            self.maven_project = crate::maven::scan(&self.root);
-        }
-        if view == RightToolWindowView::Spring && !self.spring_scanned {
-            self.spring_scanned = true;
-            self.spring_index = crate::spring::index(&self.root);
-        }
+    ///
+    /// ## 为什么真正的读盘要**延后出派发栈**
+    ///
+    /// 这个方法的三条入口都跑在**点击派发栈**里（右活动栏的 `on_click`、菜单动作、
+    /// `--right-view` 探针），而 `maven.scan` / `spring.index` 是同步读盘：同步跑会让"点了这一下"
+    /// 一直不返回，后续输入只能排在队列里、随后被立刻处理完 —— 也就是把"第二次输入"和第一次挤进
+    /// 同一段观测窗口（`gpui/research/click-double-trigger-dpi.md` §5 末尾单独登记过这条）。
+    ///
+    /// 所以这里只做两件事：**登记**（[`RightScanState::request`]，两个 bool 里至多改一个）+
+    /// 把读盘排到任务里。选 `cx.spawn`（前台任务）而不是 `cx.defer`：
+    ///
+    /// - `cx.defer` 的回调在**同一轮** `App::update` 结尾的 `flush_effects` 里执行
+    ///   （`gpui-pre-0.3.6/src/app.rs:1781-1843` 的 `Effect::Defer`、`:2064-2070` 的 `App::defer`
+    ///   文档原文 "at the end of the current effect cycle"）。它出了 `dispatch_event`，但**没出
+    ///   这条输入消息** —— 消息循环里排着的下一条输入仍要等它跑完；
+    /// - `cx.spawn` 在 Windows 上经 `dispatcher.rs:118-129` 的 `PostMessageW(
+    ///   WM_GPUI_TASK_DISPATCHED_ON_MAIN_THREAD)` 投递，任务的第一次 poll 发生在当前输入消息
+    ///   处理**返回消息循环之后**，而且排在队列尾部 —— 已经在队列里的输入消息会被先处理。
+    ///   这既是"出派发栈"，也是"不占这一轮消息"；
+    /// - 不用 `background_spawn`：扫描经 Core 的 JSON 边界取数据（`crate::maven` / `crate::spring`），
+    ///   本 crate 里这些调用都还没有跨线程的先例，换成后台线程是另一件事（本轮不做，也不引入
+    ///   自己的线程池/轮询）。
+    ///
+    /// **语义保持不变**：每个视图只扫一次、结果缓存。登记在派发栈内就落下（所以延后不会退化成
+    /// "再次点击又排一个任务"）；数据没回来之前 `maven_project` / `spring_index` 仍是 `None`，
+    /// 面板画的是空态 —— 这一点可接受：没有数据本来就没有内容可画，而且重绘本身是消息循环里的
+    /// 另一条消息（`flush_effects` 最后只是 `schedule_frame()`，`app.rs:1839`），任务排得早时
+    /// 首帧通常已经带上数据（只是不保证，所以按空态兜底）。
+    fn schedule_right_view_scan(
+        &mut self,
+        view: RightToolWindowView,
+        visible: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(target) = self.right_scan.request(view, visible) else {
+            return;
+        };
+        // 工作区根在外面拷一份带走：任务全程在主线程（`dispatch_on_main_thread`），
+        // 拿快照与"任务里再 `update` 一次去读"等价，但少一次 `update` 与一个失败分支。
+        let root = self.root.clone();
+        // 故意只捕获**弱引用**（`cx.spawn` 给的 `this`）：窗口/工作区在任务跑完前被销毁时，
+        // `this.update(..)` 直接返回 `Err` 被忽略 —— "面板已关闭"这一支的竞态兜底。
+        cx.spawn(async move |this, cx| {
+            // 先扫到局部变量，再一次性写回：写回时才可能发现"用户已经切走/收起了"，
+            // 所以竞态判断放在写回处（[`right_scan_should_notify`]）。
+            match target {
+                RightToolWindowView::Maven => {
+                    let project = crate::maven::scan(&root);
+                    let _ = this.update(cx, |this, cx| {
+                        this.maven_project = project;
+                        if right_scan_should_notify(target, this.right_view, this.right_visible) {
+                            cx.notify();
+                        }
+                    });
+                }
+                RightToolWindowView::Spring => {
+                    let index = crate::spring::index(&root);
+                    let _ = this.update(cx, |this, cx| {
+                        this.spring_index = index;
+                        if right_scan_should_notify(target, this.right_view, this.right_visible) {
+                            cx.notify();
+                        }
+                    });
+                }
+                // 扩展 / 通知没有数据层（纯空态）：`RightScanState::request` 不会为它们返回
+                // `Some`，这里只是把匹配写穷尽。
+                RightToolWindowView::Extensions | RightToolWindowView::Notifications => {}
+            }
+        })
+        .detach();
     }
 
     /// `--right-view <id>` 的接线点（**验证/诊断用**，不是产品能力）。
     ///
     /// 做的是与"点右活动栏那一项"**同一段**状态迁移：`right_view = view`、`right_visible = true`、
-    /// 走 [`ShellWorkspace::scan_right_view_if_needed`] 的懒扫、打同一行
+    /// 走 [`ShellWorkspace::schedule_right_view_scan`] 的懒扫、打同一行
     /// `S1_RIGHT_PANEL view=… visible=true` 诊断。
     ///
     /// **为什么需要这个入口**：本机（125% DPI）右活动栏一次点击会被处理成两次
@@ -1473,10 +1541,77 @@ impl ShellWorkspace {
     pub fn show_right_view_probe(&mut self, view: RightToolWindowView, cx: &mut Context<Self>) {
         self.right_view = view;
         self.right_visible = true;
-        self.scan_right_view_if_needed(view);
-        diagnose_right_panel(view, true);
+        self.schedule_right_view_scan(view, true, cx);
+        // 探针不是指针输入：没有"本次点击的坐标"，所以不带 `x=` / `y=`
+        // （判据要求"坐标相同"，编一个坐标出来会污染证据）。
+        diagnose_right_panel(view, true, None);
         cx.notify();
     }
+}
+
+/// 右工具窗懒扫的**登记状态**：哪个视图已经排过一次扫描。
+///
+/// 只记"排过没有"，不记数据 —— 数据（`maven_project` / `spring_index`）由
+/// [`ShellWorkspace::schedule_right_view_scan`] 排出的任务写回。
+///
+/// 为什么单独成类型：延后之后，留在派发栈里的就只剩 [`RightScanState::request`] 这一个决定，
+/// 而它是纯值 + 纯函数，能用普通 `#[test]` 钉住"每个视图只扫一次"。另一半（读盘真的不在派发栈
+/// 里）没有 gpui 宿主就没法有界地测：本 crate 没有 `TestAppContext` / `#[gpui::test]`
+/// （理由见 `menu_bar.rs` 里那两处说明），所以它只由代码结构保证 —— 生产路径上
+/// `crate::maven::scan` / `crate::spring::index` 各只有一处调用点，都在 `cx.spawn` 的任务体内
+/// （`maven.rs` / `spring.rs` 自己的单测另有直接调用，那不是产品路径）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct RightScanState {
+    /// 是否已经**登记**过 Maven 扫描（登记 ≠ 已完成）。
+    maven: bool,
+    /// 同上，Spring。
+    spring: bool,
+}
+
+impl RightScanState {
+    /// 登记一次"请求显示 `view`"，返回**需要真的去扫**的那个视图（`None` = 不用排任务）。
+    ///
+    /// 判据与"延后之前"逐条相同：
+    ///
+    /// - `visible == false` ⇒ `None`，且**不消费**登记额度（收起面板不算"显示过"）；
+    /// - 这个视图已经登记过 ⇒ `None`（"各扫一次并缓存"里那个"一次"）；
+    /// - 没有数据层的两个视图（扩展 / 通知）⇒ 永远 `None`。
+    ///
+    /// 副作用只有至多一个 bool：不读盘、不分配、不阻塞，所以它可以留在派发栈里。
+    fn request(&mut self, view: RightToolWindowView, visible: bool) -> Option<RightToolWindowView> {
+        if !visible {
+            return None;
+        }
+        match view {
+            RightToolWindowView::Maven if !self.maven => {
+                self.maven = true;
+                Some(view)
+            }
+            RightToolWindowView::Spring if !self.spring => {
+                self.spring = true;
+                Some(view)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// 懒扫任务写回数据之后"要不要重画"的决策（纯函数）。
+///
+/// 需要它是因为任务排出去之后状态**可能已经变了**：用户完全可能在扫描跑完前切到别的视图
+/// （右活动栏点另一项 / 菜单里 toggle 到别处）或者把面板收起（再点同一项 / 头部关闭按钮）。
+/// 那时这一帧画的是别的视图，`cx.notify()` 只是白排一次重绘，还会让"这次重绘是谁触发的"
+/// 难以归因 —— 所以只在"当前显示的仍然是这次要扫的视图"时才通知。
+///
+/// 数据**不**受这个判断影响，照写缓存：`RightScanState::request` 里那个"一次"说的是扫描次数，
+/// 不该因为用户在任务跑完前切走就丢掉；用户切回来时点击 / 菜单那条路自己会 `cx.notify()`，
+/// 缓存里的数据照样会被画出来。
+fn right_scan_should_notify(
+    target: RightToolWindowView,
+    current: RightToolWindowView,
+    visible: bool,
+) -> bool {
+    visible && current == target
 }
 
 impl Render for ShellWorkspace {
@@ -1557,7 +1692,7 @@ impl Render for ShellWorkspace {
         let changes_handle = self.changes.downgrade();
         let on_select_activity = {
             let handle = handle.clone();
-            move |index: usize, window: &mut Window, cx: &mut App| {
+            move |index: usize, _event: &ClickEvent, window: &mut Window, cx: &mut App| {
                 // 「设置」打开的是模态对话框（真机如此），**不改**活动栏选中态、
                 // 也不换底部窗：点它只是把对话框打开。
                 if index == SETTINGS_ACTIVITY_IX {
@@ -1612,11 +1747,17 @@ impl Render for ShellWorkspace {
         // `right_tool_window` 模块文档）。
         let on_select_right_activity = {
             let handle = handle.clone();
-            move |index: usize, _window: &mut Window, cx: &mut App| {
+            move |index: usize, event: &ClickEvent, _window: &mut Window, cx: &mut App| {
                 // 越界下标什么也不做：右栏只有三项，多出来的下标不该静默落到某一项上。
                 let Some(clicked) = RightToolWindowView::from_rail_index(index) else {
                     return;
                 };
+                // 本次点击的位置：取 `ClickEvent::mouse_position()`（`activity_bar` 把事件原样传下来），
+                // 它是**这次松手**的位置（`gpui-pre-0.3.6/src/interactive.rs:336-347`）。
+                // ⚠️ 不用 `Window::mouse_position()`：键盘激活按钮（Enter / Space）时那个值是
+                // 上一次指针位置，会给"两行坐标相同 ⇒ 同一次派发"这条判据塞进假证据；
+                // `ClickEvent` 在那种情况下给 `None`，于是这一行干脆不带坐标。
+                let point = event.mouse_position().map(ProbePoint::from);
                 handle.update(cx, |this, cx| {
                     // 状态迁移是纯函数（[`resolve_right_click`]），与真机
                     // `resolveRightToolWindowUpdate` 逐条对应，单测直接覆盖它。
@@ -1624,12 +1765,11 @@ impl Render for ShellWorkspace {
                         resolve_right_click(clicked, this.right_view, this.right_visible);
                     this.right_view = view;
                     this.right_visible = visible;
-                    // 第一次真正显示这个视图时才去取它的数据（懒扫 + 缓存，判据与理由都在
-                    // [`ShellWorkspace::scan_right_view_if_needed`] 里，菜单项与 `--right-view` 同源）。
-                    if visible {
-                        this.scan_right_view_if_needed(view);
-                    }
-                    diagnose_right_panel(view, visible);
+                    // 第一次真正显示这个视图时才去取它的数据：这里只**登记**，
+                    // 同步读盘被排到派发栈之外（判据与理由都在
+                    // [`ShellWorkspace::schedule_right_view_scan`] 里，菜单项与 `--right-view` 同源）。
+                    this.schedule_right_view_scan(view, visible, cx);
+                    diagnose_right_panel(view, visible, point);
                     cx.notify();
                 });
             }
@@ -1638,10 +1778,17 @@ impl Render for ShellWorkspace {
         // 面板头部的关闭按钮：只关可见性，**不动** `right_view`（真机 toggle 分支同理）。
         let on_close_right_activity = {
             let handle = handle.clone();
-            move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+            move |event: &ClickEvent, _window: &mut Window, cx: &mut App| {
                 handle.update(cx, |this, cx| {
                     this.right_visible = false;
-                    diagnose_right_panel(this.right_view, false);
+                    // 关闭按钮的坐标取 `ClickEvent::mouse_position()`：键盘激活时它是 `None`
+                    // （gpui 只给了命中矩形，`interactive.rs:336-347`），那种情况就不打坐标 ——
+                    // 编一个出来会污染"两行坐标相同 ⇒ 同一次派发"这条判据。
+                    diagnose_right_panel(
+                        this.right_view,
+                        false,
+                        event.mouse_position().map(ProbePoint::from),
+                    );
                     cx.notify();
                 });
             }
@@ -1999,7 +2146,10 @@ fn right_activity_items() -> Vec<ActivityItem> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActionFlags, CommandId, COMMAND_ORDER, visible_commands};
+    use super::{
+        ActionFlags, CommandId, COMMAND_ORDER, RightScanState, RightToolWindowView,
+        right_scan_should_notify, visible_commands,
+    };
 
     /// 设置侧 ↔ `lithe-gpui-git` 的两组枚举映射**双向**都要对（阶段 15）。
     ///
@@ -2119,5 +2269,66 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), all.len(), "诊断 id 必须互不相同");
+    }
+
+    /// 懒扫**延后之后**仍然"每个视图只扫一次"：登记在派发栈内就落下，所以同一项连点两次
+    /// （或任务还没跑完就切回来）也不会排第二个任务。
+    ///
+    /// ⚠️ 这条覆盖的是 [`RightScanState::request`]（纯值），也就是
+    /// `ShellWorkspace::schedule_right_view_scan` 在点击回调里**唯一**还会做的事。
+    /// 它**不能**证明"读盘不在派发栈里" —— 那一半要 gpui 宿主，而本 crate 拿不到
+    /// `TestAppContext` / `#[gpui::test]`（同一处限制在 `menu_bar.rs` 里已经记过两次），
+    /// 所以只由代码结构保证：生产路径上 `crate::maven::scan` / `crate::spring::index`
+    /// 各只有一处调用点，都在 `cx.spawn` 的任务体内。
+    #[test]
+    fn scan_registration_happens_once_and_only_while_visible() {
+        let mut state = RightScanState::default();
+
+        // 收起时点一项：不算"显示过"，不消费登记额度。
+        assert_eq!(state.request(RightToolWindowView::Maven, false), None);
+        // 第一次真正显示 → 排一次扫描。
+        assert_eq!(
+            state.request(RightToolWindowView::Maven, true),
+            Some(RightToolWindowView::Maven)
+        );
+        // 再点同一项（收起后再点开 / 延后的任务还没跑完就切回来）→ 不排第二次。
+        assert_eq!(state.request(RightToolWindowView::Maven, true), None);
+        // 收起也不影响"已经登记过"这个事实。
+        assert_eq!(state.request(RightToolWindowView::Maven, false), None);
+
+        // Spring 是**另一格**：Maven 扫过不影响它，且它自己同样只排一次。
+        assert_eq!(
+            state.request(RightToolWindowView::Spring, true),
+            Some(RightToolWindowView::Spring)
+        );
+        assert_eq!(state.request(RightToolWindowView::Spring, true), None);
+
+        // 没有数据层的两个视图永远不排任务（面板是纯空态）。
+        assert_eq!(state.request(RightToolWindowView::Extensions, true), None);
+        assert_eq!(state.request(RightToolWindowView::Notifications, true), None);
+    }
+
+    /// 延后任务的收尾策略：**当前显示的仍是这次要扫的视图**才重画；切走 / 收起之后不通知
+    /// （数据照写缓存，那一步在 `schedule_right_view_scan` 里，与这个判断无关）。
+    #[test]
+    fn scan_completion_notifies_only_while_the_target_view_is_shown() {
+        // 用户就停在这一项上 → 数据到了要重画。
+        assert!(right_scan_should_notify(
+            RightToolWindowView::Maven,
+            RightToolWindowView::Maven,
+            true,
+        ));
+        // 已经切到别的视图 → 这一帧画的是别人，重画没有意义。
+        assert!(!right_scan_should_notify(
+            RightToolWindowView::Maven,
+            RightToolWindowView::Spring,
+            true,
+        ));
+        // 面板已经收起 → 同样不通知（`right_view` 仍保留 Maven 也不算"显示"）。
+        assert!(!right_scan_should_notify(
+            RightToolWindowView::Maven,
+            RightToolWindowView::Maven,
+            false,
+        ));
     }
 }

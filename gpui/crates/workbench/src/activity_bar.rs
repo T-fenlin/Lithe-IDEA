@@ -72,8 +72,8 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Placement, Selectable as _};
 use gpui_kit::{
-    AnyElement, App, ElementId, IntoElement, Length, ParentElement as _, Pixels, SharedString,
-    Styled as _, Window, div, px, rems,
+    AnyElement, App, ClickEvent, ElementId, IntoElement, Length, ParentElement as _, Pixels,
+    SharedString, Styled as _, Window, div, px, rems,
 };
 use lithe_gpui_shared::icons::idea;
 
@@ -219,18 +219,22 @@ impl ActivityItem {
 /// - `is_active(index)` 决定第 `index` 项（**`items` 的下标**，不是底部组的下标）是否画选中底色。
 ///   它是个**谓词而不是单个下标**：顶部组与底部组各自有自己的选中来源，可以同时亮多项
 ///   （见模块文档「选中契约」）。传 `|_| false` 就是"一项都不选中"。
-/// - `on_select(index, window, cx)` 在点击时回调，`index` 同样是 `items` 的下标。
+/// - `on_select(index, event, window, cx)` 在点击时回调，`index` 同样是 `items` 的下标，
+///   `event` 原样传下去 —— 调用方要"这一次点击落在哪里"（诊断行的坐标，见
+///   `right_tool_window::diagnose`）只能从这里拿：`ClickEvent::mouse_position()` 在键盘激活
+///   （Enter / Space）时是 `None`，而 `Window::mouse_position()` 那种写法会给键盘激活配上一个
+///   **上一次**指针位置的旧坐标，把"两行坐标相同 ⇒ 同一次派发"这条判据污染成假证据。
 ///
 /// `window` 按契约保留（当前实现不需要：tooltip / 焦点环都由 `Button` 内部处理）。
 pub fn activity_bar(
     side: ActivitySide,
     items: &[ActivityItem],
     is_active: impl Fn(usize) -> bool + 'static,
-    on_select: impl Fn(usize, &mut Window, &mut App) + 'static,
+    on_select: impl Fn(usize, &ClickEvent, &mut Window, &mut App) + 'static,
     _window: &Window,
     cx: &App,
 ) -> impl IntoElement {
-    let on_select: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(on_select);
+    let on_select: Rc<dyn Fn(usize, &ClickEvent, &mut Window, &mut App)> = Rc::new(on_select);
     // `is_active` 被每个项借用一次，而每个 `item_button` 只读借用，所以包一层 `Rc` 共享
     // （`Rc<dyn Fn>` 而不是 `&dyn Fn`：同一份谓词要在两个组里各用一遍）。
     let is_active: Rc<dyn Fn(usize) -> bool> = Rc::new(is_active);
@@ -346,7 +350,7 @@ fn item_button(
     index: usize,
     item: &ActivityItem,
     is_active: &dyn Fn(usize) -> bool,
-    on_select: Rc<dyn Fn(usize, &mut Window, &mut App)>,
+    on_select: Rc<dyn Fn(usize, &ClickEvent, &mut Window, &mut App)>,
     cx: &App,
 ) -> Button {
     let theme = cx.theme();
@@ -400,5 +404,5 @@ fn item_button(
         .rounded(radius)
         .w(width)
         .h(height)
-        .on_click(move |_event, window, cx| on_select(index, window, cx))
+        .on_click(move |event, window, cx| on_select(index, event, window, cx))
 }

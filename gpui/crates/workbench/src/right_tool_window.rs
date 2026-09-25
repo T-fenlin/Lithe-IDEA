@@ -53,6 +53,10 @@
 //! 颜色一律 `cx.theme()`；圆角保留 `px(...)`，遵循仓库既有约定
 //! （Lithe 的圆角阶梯走应用层具名常量，见 `explorer_view.rs:87-93`）。
 
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -62,7 +66,7 @@ use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 
 use lithe_gpui_shared::tr;
@@ -214,12 +218,105 @@ pub fn resolve_click(
     }
 }
 
+/// 诊断行里的一次指针位置（**逻辑像素**，与 `Window::mouse_position()` 同一坐标空间）。
+///
+/// 坐标是"一次点击变成两行日志"这条判据的另一半：只有**同一个点**上的两次回调才可能是
+/// 派发层重复，不同点必然是两次输入（判据全文见 [`diagnose`]）。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ProbePoint {
+    x: f32,
+    y: f32,
+}
+
+impl ProbePoint {
+    pub(crate) const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
+/// gpui 的窗口坐标 → 诊断点。
+///
+/// 取值走 gpui 自己的 `From<Pixels> for f32`（`gpui-pre-0.3.6/src/geometry.rs:2921-2924`）：
+/// `Pixels` 的字段是 `pub(crate)`，crate 外只能通过这个转换拿数值。
+impl From<Point<Pixels>> for ProbePoint {
+    fn from(point: Point<Pixels>) -> Self {
+        Self::new(f32::from(point.x), f32::from(point.y))
+    }
+}
+
+/// `S1_RIGHT_PANEL` 的进程内序号：每打一行 +1。
+///
+/// 三条入口（右活动栏点击 / 「视图 → Maven」菜单 / `--right-view` 探针）都在 UI 线程上，
+/// 所以 `Relaxed` 足够 —— 这里要的只是"同一进程内单调且唯一"，不拿它同步别的内存。
+static RIGHT_PANEL_SEQ: AtomicUsize = AtomicUsize::new(0);
+
+/// `t_ms` 的单调原点。
+///
+/// `Instant` 不能在 `static` 里直接构造，所以取"第一次打这一族诊断"的时刻为原点。
+/// 判据只看相邻两行的 **Δt**，原点落在哪里都不影响（所以不必去读系统时钟 ——
+/// `Instant` 也不会被 NTP / 手动改表带偏，这一点比 `SystemTime` 重要）。
+static RIGHT_PANEL_EPOCH: OnceLock<Instant> = OnceLock::new();
+
+/// 组装一行右工具窗诊断（纯函数：格式本身可单测）。
+///
+/// 字段顺序是**机器契约**，验证脚本按名字取值，改它就是改契约。
+/// 坐标是**可选**的：只有"这一行真的来自一次指针输入"时才打（见 [`diagnose`]）。
+fn diagnose_line(
+    view: RightToolWindowView,
+    visible: bool,
+    point: Option<ProbePoint>,
+    seq: usize,
+    t_ms: u128,
+) -> String {
+    let mut line = format!(
+        "S1_RIGHT_PANEL seq={seq} t_ms={t_ms} view={} visible={visible}",
+        view.id()
+    );
+    if let Some(point) = point {
+        // 一位小数就够：判据是"两次的坐标**完全相同**"，多打位数不会增加信息，
+        // 反而让"同一次点击的两行看起来不一样"这种噪声更容易被误读。
+        line.push_str(&format!(" x={:.1} y={:.1}", point.x, point.y));
+    }
+    line
+}
+
 /// 打一行右工具窗诊断（可 grep，与其他 `S1_*` 同一口径）。
 ///
 /// 每次状态迁移打一行，构造期也打一行 —— 这样"启动时面板是隐藏的"这件事本身有日志证据，
 /// 不必只靠截图。
-pub fn diagnose(view: RightToolWindowView, visible: bool) {
-    println!("S1_RIGHT_PANEL view={} visible={visible}", view.id());
+///
+/// ## 为什么带 `seq` / `t_ms` / 坐标
+///
+/// 起因是"一次点击打出 `visible=true` 紧跟 `visible=false`"这个现象：在只有
+/// `view=` / `visible=` 的日志里，"同一次派发栈里的重复回调"和"两次独立输入"**在证据上
+/// 完全同构**（`gpui/research/click-double-trigger-dpi.md` §6 P0，那里的结论是派发层
+/// 不会一发二，缺的是能证伪的仪表）。加上序号、单调时钟与点击坐标之后，这条判据变成可判定：
+///
+/// | 相邻两行 | 结论 |
+/// | --- | --- |
+/// | `Δt = t_ms(后) - t_ms(前) < 1ms` **且**两次坐标相同 | 两次回调落在**同一次派发**里 ⇒ 真·派发层重复派发 |
+/// | `Δt` 几十~几百 ms，**或**坐标不同 | **两次独立输入**（环境杂散点击 / UIA `Action::Click` / 脚本点了两次 / 人手又点了一下） |
+/// | 任一行没有 `x=` / `y=` | 这一行不是指针输入产生的（构造期 / `--right-view` 探针 / 菜单通道 / 键盘激活按钮），不能用于这条判据 |
+///
+/// 坐标只来自 `ClickEvent::mouse_position()`（右活动栏点击与面板关闭按钮两处调用点都是），
+/// 所以"有坐标"本身就等于"这一次是鼠标 / 触摸点出来的"。
+///
+/// ⚠️ 这条判据只判"两次输入是不是同一个派发"，**不**改 toggle 语义、也**不**加防抖：
+/// 真机就是一次 click 一个 toggle
+/// （`windows/tauri/src/features/layout/actions/right-tool-window-actions.ts:26-31`、
+/// `windows/tauri/src/features/layout/components/plugin-activity-rail.tsx:62`），
+/// 快速点两次本来就该"开→关"。
+///
+/// ## 为什么走 stderr
+///
+/// stdout 在本仓库是**块缓冲**的：重定向到文件时进程还在跑就可能一行都看不到
+/// （`gpui/crates/app/src/main.rs:504,548-550` 记了这条实测口径），而这一族诊断的用途恰恰是
+/// "点击那一刻发生了什么"，延迟可见等于没有。与交互有关的
+/// `S1_MENU_RUN` / `S1_TAB_MENU` / `S1_SOURCE_CONTROL` 同样走 stderr。
+pub(crate) fn diagnose(view: RightToolWindowView, visible: bool, point: Option<ProbePoint>) {
+    let seq = RIGHT_PANEL_SEQ.fetch_add(1, Ordering::Relaxed);
+    let t_ms = RIGHT_PANEL_EPOCH.get_or_init(Instant::now).elapsed().as_millis();
+    eprintln!("{}", diagnose_line(view, visible, point, seq, t_ms));
 }
 
 /// 画右侧工具窗。
@@ -550,7 +647,7 @@ fn empty_state(view: RightToolWindowView) -> AnyElement {
 
 #[cfg(test)]
 mod tests {
-    use super::{RightToolWindowView, resolve_click};
+    use super::{ProbePoint, RightToolWindowView, diagnose_line, resolve_click};
 
 
     /// 右活动栏下标 → 视图必须与 `workspace::right_activity_items()` 的顺序一一对应
@@ -670,5 +767,44 @@ mod tests {
         );
         assert_eq!(view, RightToolWindowView::Extensions);
         assert!(visible);
+    }
+
+    /// 诊断行的**格式**是机器契约：验证脚本按 `seq=` / `t_ms=` / `view=` / `visible=` /
+    /// `x=` / `y=` 取值，所以逐字段钉住；带坐标与不带坐标两种形态各一条。
+    ///
+    /// 这条也是"两行日志可判定"的前提：没有 `seq` / `t_ms` 时，"同一次派发的重复回调"和
+    /// "两次独立输入"在证据上无法区分（`gpui/research/click-double-trigger-dpi.md` §6 P0）。
+    #[test]
+    fn diagnose_line_carries_seq_timestamp_and_optional_point() {
+        assert_eq!(
+            diagnose_line(
+                RightToolWindowView::Spring,
+                true,
+                Some(ProbePoint::new(1421.6, 123.2)),
+                7,
+                8123,
+            ),
+            "S1_RIGHT_PANEL seq=7 t_ms=8123 view=spring visible=true x=1421.6 y=123.2"
+        );
+        // 没有指针位置的行（构造期 / `--right-view` 探针 / 菜单通道）：坐标字段**整段不出现**，
+        // 不留 `x=0 y=0` 这种会被读成"真的点在原点"的假证据。
+        assert_eq!(
+            diagnose_line(RightToolWindowView::Maven, false, None, 8, 9001),
+            "S1_RIGHT_PANEL seq=8 t_ms=9001 view=maven visible=false"
+        );
+    }
+
+    /// 坐标**只被除一次**：gpui 给的窗口坐标本来就是逻辑像素（
+    /// `gpui-pre-windows-0.3.6/src/util.rs:150-156` 的 `logical_point` 已经除过 `scale_factor`），
+    /// 诊断这一层再缩放一次就会造出"125% DPI 下坐标不对"的假象。
+    #[test]
+    fn probe_point_keeps_logical_pixels_unscaled() {
+        use gpui_kit::{Point, px};
+
+        let point = ProbePoint::from(Point {
+            x: px(1421.6),
+            y: px(123.2),
+        });
+        assert_eq!(point, ProbePoint::new(1421.6, 123.2));
     }
 }
