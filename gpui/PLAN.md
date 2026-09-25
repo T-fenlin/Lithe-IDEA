@@ -1547,10 +1547,17 @@ settings::identity::{GitIdentityHost, GitIdentityPage, set_git_identity_host}
 | `cargo test -p lithe-gpui-workbench` | 29 passed |
 | **真实 JDTLS 端到端**（`LITHE_GPUI_JDTLS_SMOKE=1` + `LITHE_JDTLS_JAVA=<JDK21>`） | `S1_JAVA_COMPLETION … line=5 col=35 items=10 ms=152`；断言：候选含 `greet`、**每条都有 `text_edit`**、`insert_text` 里没有 `$` |
 
-⚠️ **强度边界**：菜单"在界面上弹出来"这一条**本轮没跑到**（需要真实打字触发；预算花在了数据层与接线核验上）。
-所以证据是"真实 JDTLS 往返 + 上游挂载点已装 + 翻译规则被单测钉住"，不是"我看到菜单了"。
-补这条时可用 `.artifacts/p2/inject.ps1 -Mode text`（WM_CHAR 实测能进 gpui 输入框），
-并用 `S1_JAVA_COMPLETION` 的 `source=jdtls|builtin` 判定菜单条目来源。详见 `.artifacts/p14/NOTES.md`。
+⚠️ **交互级验证已补上（2026-09-26 同一批）**：在 Maven 夹具
+（`.artifacts/p14/fixture`：`pom.xml` + `App.java` + `Greeter.java`）上真实注入——
+JDTLS 起会话并就绪 → 点开 `App.java` → 在 `greeter` 后输入 `.` →
+`S1_JAVA_COMPLETION … line=3 col=16 items=10 ms=64` + `source=jdtls prefix="greeter." items=10 ms=192`
+→ **菜单真的渲染**（`12-completion.png`：`args : String[]` / `greeter : Greeter` /
+`main(String[] args) : void` / `App` / `class` / `cast` / `null` / `opt` 等真实语义成员）
+→ 键盘 `Return` 接受条目后**正文真的变了**（第 4 行 `greeter..args`，光标 18 → 22 = `args` 长度）。
+**没复现成功的**：鼠标点选条目（点了之后弹窗关闭、光标跑到别的行）—— 两种可能（点偏 / 截图与点击间隔 2s
+弹窗已自关）**没有区分开**，键盘路径是成功的；下一轮用"先截图、立刻点"的口径重测。
+另外记两条：**强杀 Lithe 会留下 JDTLS 的 `java.exe`**（走不到 `lsp.stopServer`），需单独清理；
+弹窗候选文字偏暗，值得按无障碍检查表量一次对比度。详见 `.artifacts/p14/NOTES.md` §4.3。
 
 ### 16.4 已知边界（别当已解决）
 
