@@ -323,6 +323,31 @@ fn maven_module_row(module: &crate::maven::MavenModuleView, cx: &App) -> AnyElem
                     .child(version)
             })),
     );
+    // 源码根：Maven 模型给的权威事实（不猜目录）。`kind` 是语义分档，原样显示；
+    // 生成源根（`generatedMain` 一类）也列出来 —— 用户在补全里看到生成代码时，
+    // 这一行就是它从哪来的答案。
+    for root in &module.source_roots {
+        column = column.child(
+            h_flex()
+                .w_full()
+                .gap_2()
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(root.path.clone()),
+                )
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(root.kind.clone()),
+                ),
+        );
+    }
     if !module.modules.is_empty() {
         column = column.child(
             v_flex()

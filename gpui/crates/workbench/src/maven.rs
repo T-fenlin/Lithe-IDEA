@@ -21,6 +21,18 @@ use std::path::Path;
 use lithe_gpui_shared::core_json;
 use serde_json::Value;
 
+/// 一条源码根（`maven.scan` 的 `sourceRoots[]`，契约 `protocol/contracts.rs:198-205`）。
+///
+/// `kind` 是语义分档（main / test / generated…），原样保留：面板按它区分显示，
+/// **不在这里翻译成文案**（渲染层管文案，数据层只管事实）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MavenSourceRootView {
+    /// 模块相对路径（`/` 分隔）。
+    pub path: String,
+    /// 语义分档（camelCase 字符串，照 Core 给的原样）。
+    pub kind: String,
+}
+
 /// 一个模块（`maven.scan` 的 `modules[]`，契约 `protocol/contracts.rs:185-195`）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MavenModuleView {
@@ -31,6 +43,8 @@ pub struct MavenModuleView {
     pub artifact_id: String,
     pub version: Option<String>,
     pub packaging: String,
+    /// 本模块的源码根（Maven 模型给的事实；**我们不猜目录**）。
+    pub source_roots: Vec<MavenSourceRootView>,
     /// 子模块（**层级保留**：真机是模块树，扁平化会丢信息）。
     pub modules: Vec<MavenModuleView>,
 }
@@ -178,7 +192,28 @@ fn modules(value: Option<&Value>) -> Vec<MavenModuleView> {
                     .to_string(),
                 version: text(module, "version"),
                 packaging: text(module, "packaging").unwrap_or_else(|| "jar".to_string()),
+                source_roots: source_roots(module.get("sourceRoots")),
                 modules: modules(module.get("modules")),
+            })
+        })
+        .collect()
+}
+
+/// 解析源码根表（顺序照 Core 给的，不重排）。
+fn source_roots(value: Option<&Value>) -> Vec<MavenSourceRootView> {
+    let Some(items) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|root| {
+            Some(MavenSourceRootView {
+                path: root.get("path").and_then(Value::as_str)?.to_string(),
+                kind: root
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("main")
+                    .to_string(),
             })
         })
         .collect()
@@ -258,6 +293,39 @@ mod tests {
         assert_eq!(view.modules[0].modules[0].label(), "model");
         // packaging 缺省是 jar（契约里 packaging 必有；缺了也不该崩）。
         assert_eq!(view.packaging, "jar");
+    }
+
+    /// 源码根：来自 Maven 模型的权威事实（`sourceRoots[]`），面板直接显示它们，
+    /// **不猜目录、不扫文件系统**；`kind` 原样保留（main / test / generated…）。
+    #[test]
+    fn module_source_roots_come_from_the_model() {
+        let view = parse(&json!({
+            "relativePath": ".",
+            "artifactId": "backend",
+            "modules": [{
+                "relativePath": "backend/api",
+                "artifactId": "api",
+                "packaging": "jar",
+                "sourceRoots": [
+                    { "path": "src/main/java", "kind": "main" },
+                    { "path": "target/generated-sources/annotations", "kind": "generatedMain" }
+                ],
+                "modules": []
+            }]
+        }))
+        .expect("reactor");
+        let roots = &view.modules[0].source_roots;
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].path, "src/main/java");
+        assert_eq!(roots[0].kind, "main");
+        // 生成源根也留着 —— 它正是"注解处理器产出的代码能不能被补全看到"的那个目录。
+        assert_eq!(roots[1].kind, "generatedMain");
+        // 没有 sourceRoots 的模块给空表（不 panic、不编造）。
+        assert!(parse(&json!({ "relativePath": ".", "modules": [{ "relativePath": "s", "artifactId": "s" }] }))
+            .expect("reactor")
+            .modules[0]
+            .source_roots
+            .is_empty());
     }
 
     /// 显示名：`artifactId` 为空时回落 `relativePath`（渲染层不判空）。
