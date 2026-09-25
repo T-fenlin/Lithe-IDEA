@@ -3963,6 +3963,7 @@ dependencies = [
  "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-terminal",
+ "serde_json",
 ]
 
 [[package]]

@@ -14,3 +14,6 @@ lithe-gpui-git = { path = "../git" }
 lithe-gpui-settings = { path = "../settings" }
 lithe-gpui-shared = { path = "../shared" }
 lithe-gpui-terminal = { path = "../terminal" }
+# `maven.scan` 的请求与响应都是 JSON（`src/maven.rs`）；与 `editor` / `git` / `explorer`
+# 三个 feature 同一口径：`core_json` 收 `serde_json::Value`。
+serde_json = "1"
