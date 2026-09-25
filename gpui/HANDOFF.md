@@ -142,14 +142,25 @@
 1. **cargo 只跑改动范围**：`cargo build --bin Lithe`；测试用 `cargo test -p <只动过的 crate>`，
    能按测试名过滤就加过滤（例：`cargo test -p lithe-gpui-shared every_wired_key_resolves_in_both_locales`，
    实测 2.6s）。**不要** `-p a -p b` 连带，更不要跑 workspace 全量。
-2. **构建/测试不要用 PowerShell 管道**（慢消费者；`Select-Object -First N` 会给仍在写输出的原生进程
-   发停止信号导致"像卡了十分钟"，且 `$LASTEXITCODE` 不可信）。一律：
+2. **绝不要把 cargo / 任何原生进程的输出接进 PowerShell 管道** —— `cargo build … | Select-String`、
+   `cargo test … 2>&1 | Select-Object -First N`、`| Tee-Object` **全算违规**（慢消费者会给仍在写输出的
+   原生进程发停止信号，表现为"像卡了十分钟"，且 `$LASTEXITCODE` 不可信）。正确做法固定是**两步**：
+   **先重定向到文件，再只对文件过滤**。
    ```powershell
+   # ✅ 正确：原生进程只重定向，管道左手边是 cmdlet（Select-String 读文件）
    cd D:\developmentProjects\rust\Lithe-IDEA\gpui
    cargo build --bin Lithe *> ..\.artifacts\pN\build.log
    Write-Output "exit=$LASTEXITCODE"
-   Select-String -Path ..\.artifacts\pN\build.log -Pattern "^error|error\[|^warning: unused|Finished" -Context 0,6 | Select-Object -First 40
+   Select-String -Path ..\.artifacts\pN\build.log -Pattern "^error|error\[|^warning: unused|Finished" -Context 0,6
    ```
+   ```powershell
+   # 🚫 禁止：原生进程直接被接进管道（这是本仓库最常见的自伤）
+   cargo build --bin Lithe 2>&1 | Select-String "error"
+   cargo test -p lithe-gpui-settings | Select-Object -Last 5
+   ```
+   `Select-String -Path <文件>` **之后**再接 `| Select-Object -First N` 是安全的（左手边不是原生进程）；
+   **写提示词给子代理时不要把这个安全用例和禁止用例写在一起** —— 实测会诱导代理把 cargo 也接进管道，
+   宁可写"只跑 `Select-String`，不要接 `Select-Object`"。
    汇报里贴**日志文件里的原文 + `exit=`**，不要贴管道截断的残留。
 3. **同一时刻只有一个代码写者**（`gpui/target` 是排他锁；验证脚本还会 `Get-Process Lithe | Stop-Process`
    互相杀掉对方的实例）。**文档/审计类任务可以并行**（只读源码 + 各写各的文件）。
