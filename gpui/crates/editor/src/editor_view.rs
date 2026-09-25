@@ -398,6 +398,9 @@ impl EditorPane {
         // `self.java` 还是 `None`（那份 provider 只剩轻量兜底）。不补装的话，
         // "先打开的文件"永远拿不到 JDTLS 的补全 —— 而它往往正是用户马上要写代码的那个文件。
         // 只补装一次（本方法幂等），且只补 Java buffer（与非 Java 文件不装的口径一致）。
+        //
+        // 快速修复 provider 走同一条补装路径（`crate::code_actions`）：它**没有兜底数据源**，
+        // 所以 `open()` 时 `self.java` 还是 `None` 就干脆不装 —— 这里补上第一次。
         let mut patched = 0usize;
         for buffer in &self.buffers {
             if crate::buffer::language_for_file(&buffer.name) != Some("java") {
@@ -407,8 +410,13 @@ impl EditorPane {
                 Some(service.clone()),
                 buffer.path.clone(),
             );
+            let code_actions = crate::code_actions::JavaCodeActionProvider::new(
+                service.clone(),
+                buffer.path.clone(),
+            );
             buffer.editor.update(cx, |state, _cx| {
                 crate::completion::install(state, Some(provider));
+                crate::code_actions::install(state, Some(code_actions));
             });
             patched += 1;
         }
@@ -622,6 +630,17 @@ impl EditorPane {
         let completion_provider = (language == Some("java"))
             .then(|| crate::completion::JavaCompletionProvider::new(self.java.clone(), path.clone()));
 
+        // 快速修复 provider：与补全**同一个判据的一部分**，但多一条 ——
+        // `crate::code_actions::install` 只在拿到服务句柄时才装（理由在 `install` 的文档：
+        // 它没有兜底数据源，装一个永远为空的 provider 会把右键菜单那一项变成"可用但没反应"）。
+        // "先开文件、后起服务"那一档由 `prepare_java()` 补装（与补全同一条路径）。
+        let code_action_provider = (language == Some("java"))
+            .then(|| self.java.clone())
+            .flatten()
+            .map(|service| {
+                crate::code_actions::JavaCodeActionProvider::new(service, path.clone())
+            });
+
         // 一个标签一个 `EditorState`：先建状态再灌正文，然后才入列。
         let editor = cx.new(|cx| {
             // `searchable` 上游默认就是 `true`
@@ -641,6 +660,10 @@ impl EditorPane {
             // 补全：装 provider + 把菜单调宽（上游默认 320px，Java 签名会被截断，
             // 见 `crate::completion::install`）。
             crate::completion::install(&mut state, completion_provider);
+            // 快速修复（`Ctrl+.` / 右键菜单的 Show Code Actions）：菜单与键位归上游，
+            // 我们只给 provider，并且**由我们把编辑落进 buffer**（上游不处理 `edit`，
+            // 见 `crate::code_actions` 的模块文档）。
+            crate::code_actions::install(&mut state, code_action_provider);
             if !writable {
                 // 说明性正文（读不到 / 超大 / 二进制 / 非 UTF-8）不可写：只读能避免
                 // "用户以为改了、其实保存的是说明文案"这种更坏的结果。

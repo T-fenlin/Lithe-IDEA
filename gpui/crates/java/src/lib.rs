@@ -48,5 +48,6 @@ mod workspace;
 
 pub use events::{JavaDiagnostic, JavaDiagnosticRange};
 pub use service::{
-    JavaCompletionItem, JavaLanguageService, JavaPosition, JavaTarget, JavaTextEdit,
+    JavaCodeAction, JavaCompletionItem, JavaLanguageService, JavaPosition, JavaTarget, JavaTextEdit,
+    file_uri,
 };

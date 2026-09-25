@@ -42,6 +42,55 @@ const DEFINITION_TIMEOUT: Duration = Duration::from_secs(60);
 /// （`lsp.builtinCompletions`），用户至少能看到当前文件的标识符，而不是"什么都没有"。
 const COMPLETION_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// 单次快速修复（code action）的死线。与补全同一个量级：它也是**交互式**请求
+/// （用户按下 `Ctrl+.` 正等着菜单弹出来），只是没有兜底 —— 超时就是"菜单不弹"。
+/// 15s 是上限而不是预期值：JDT 在已经 reconcile 过的文档上算一批 quick fix 是毫秒级
+/// （实测 `S1_JAVA_CODE_ACTION … ms=<20`）。
+const CODE_ACTION_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 正文刚变过时，等"诊断追上正文"的**退避**（毫秒，逐次等待）。
+///
+/// 为什么需要它：`context.diagnostics` 是 JDT 算 quick fix 的**唯一输入**
+/// （`CodeActionHandler.getCodeActionCommands` → `getProblemLocationCores`，
+/// 反编译证据见 `code_actions` 的文档），而服务端推给我们的快照描述的是**上一次**
+/// reconcile 的正文。`sync_document` 说"正文真的变了"（`changed=true`）时，
+/// 手里那份快照的行列已经对不上新正文 —— 拿它去请求，JDT 会按错误的位置构造
+/// {@code ProblemLocation}，给出的可能是**另一个**修复。所以这里等一次新发布（有界）。
+///
+/// 为什么是 2 档 250ms：实测 didChange → reconcile → publish 在 100ms 量级
+/// （`Reconciled 1. Took 1 ms` 紧跟着 `1 problems reported`）。上限 500ms 只发生在
+/// "用户刚敲完就按 Ctrl+."这一档，稳态（没改正文）`changed=false` 时一次都不等。
+const CODE_ACTION_DIAGNOSTIC_BACKOFF_MS: [u64; 2] = [250, 250];
+
+/// 一条 JDT 的快速修复（Code Action）。
+///
+/// 字段与 Core 归一化的 codeAction 条目一一对应
+/// （`rust/lithe-core/src/lsp/interface/client.rs:1158-1178` 的 `parse_code_action`）：
+/// `{ title, kind, isPreferred, edit: { changes: { <路径>: [ {range, newText} ] } }, command, data }`。
+/// 这里刻意**只留编辑器真正要用的三样**：
+///
+/// - `title`：菜单里显示的名字（上游 `CodeActionMenu` 只渲染 `action.title`）；
+/// - `kind`：只进诊断行（`kind=quickfix` 一眼看出这是修复而不是重构）；
+/// - `edits`：**落在当前文件上的**替换，UTF-16 口径，已按位置**倒序**排好。
+///
+/// ⚠️ **带 `command` 的 action 在这里就被丢掉**（不返回给编辑器）：
+/// 本批不实现 `workspace/executeCommand`（理由见 [`JavaLanguageService::code_actions`] 的文档），
+/// 返回一个选中后什么都不做的菜单项比不返回它更糟。
+#[derive(Clone, Debug, PartialEq)]
+pub struct JavaCodeAction {
+    /// 菜单里显示的名字（JDT 原样给的，例如 `Import 'List' (java.util)`）。
+    pub title: String,
+    /// LSP `CodeActionKind`（JDT 给的原始字符串，例如 `quickfix` / `source.generate.accessors`）。
+    pub kind: Option<String>,
+    /// 落在**当前文件**上的替换，已按位置倒序（先应用后面的，前面的范围才不会失效）。
+    pub edits: Vec<JavaTextEdit>,
+    /// 落在**其它文件**上的编辑条数。非 0 = 这条修复要"创建 / 改另一个文件"
+    /// （例如 `Create class 'List<T>'` 会往 `demo/List.java` 写内容）。
+    /// 本批的编辑器只有一个 buffer、也没有"新建文件"这条路径，所以这类 action **不返回**；
+    /// 这个数字只用于诊断行（证明它们是被**有意**挡掉的，而不是没解析出来）。
+    pub other_file_edits: usize,
+}
+
 /// 一条补全候选：字段与 Core `lsp.request{operation:"completion"}` **归一化后**的条目一一对应
 /// （定义在 `rust/lithe-core/src/lsp/interface/client.rs:937-965`，信封是 `{ "items": [ … ] }`）。
 ///
@@ -314,6 +363,182 @@ impl JavaLanguageService {
             started.elapsed().as_millis()
         );
         Ok(items)
+    }
+
+    /// 取某个位置上的**快速修复**（`textDocument/codeAction`，JDT 的项目感知结果）。
+    ///
+    /// ## 同步正文的顺序：**先 `sync_document`，再请求**（不能反）
+    ///
+    /// 两条理由，缺一条这个功能就是坏的：
+    ///
+    /// 1. **Core 会拒绝没打开的文档**：`engine.rs:1686-1691` 对不在 `open_documents` 里的
+    ///    uri 直接回 `invalid_request`（`"The document is not open in the language server."`），
+    ///    而"打开"正是 `sync_document` 做的（首次 `didOpen`，之后递增版本的 `didChange`）；
+    /// 2. **服务端算出的行列是针对它手上那一版正文的**：编辑区里的正文可能还没保存、也可能
+    ///    刚被改过，不先同步，JDT 给回的替换范围落到当前正文上就是错位的 —— 用户点
+    ///    "Import 'List'"，结果覆盖掉的是别的地方。
+    ///
+    /// ## `context.diagnostics` 是**必需**的（这是本方法最容易被写漏的一条）
+    ///
+    /// JDT 不是"按光标位置猜修复"，而是拿请求里的诊断反查出 problem location 再算修复：
+    /// `CodeActionHandler.getCodeActionCommands` 里
+    /// `CodeActionContext.getDiagnostics()` → `lambda$0`（只留 `source == "Java"`）→
+    /// `getProblemLocationCores(unit, diagnostics)` → `QuickFixProcessor.getCorrections(..)`。
+    /// **实测**：同一位置、同一 range，`diagnostics: []` 只回 3 条 source action
+    /// （`Generate Getters/Setters`），带上快照之后才回 `Import 'List' (java.util)` 等 quick fix
+    /// （`.artifacts/p17/probe.log` / `probe2.log`）。`getProblemId` 还会把 `code` 当数字解析
+    /// （`Integer.parseInt(getCode().getLeft())`），所以 `code` 必须原样带上。
+    ///
+    /// 客户端只该送"与这次请求相关"的诊断，所以这里送**光标行 / 选区范围内**的那些
+    /// （[`diagnostics_for`]）；快照里其它行的 error 不会变成这个菜单里的候选。
+    ///
+    /// ## 为什么本批**不**执行 `command`
+    ///
+    /// 带 `command` 的 action（JDT 的 `source.organizeImports` / `overrideMethods` /
+    /// `generate.constructors` 等，见 `SourceAssistProcessor` 的 `CodeAction.setCommand`）
+    /// 要客户端发 `workspace/executeCommand` 再应用服务端回的工作区编辑。本批不做：
+    /// 实测 JDT 1.61 在**默认 kind 集合**下（Core 的 codeAction 参数构造没有 `only` 字段）
+    /// 返回的 action 全部带 `edit.changes`，`command` 恒为 `null`；实现一整条执行链
+    /// 是投机性抽象。这类 action 在 [`parse_code_action`] 里被**丢掉**并在诊断行里计数。
+    ///
+    /// 返回值已过滤：只留"能在当前 buffer 里落地"的 action（见 [`JavaCodeAction`]）。
+    pub fn code_actions(
+        &self,
+        file_path: &Path,
+        text: &str,
+        start: JavaPosition,
+        end: JavaPosition,
+    ) -> Result<Vec<JavaCodeAction>, String> {
+        // 与 `definition` / `completion` 同口径：用户打开 .java 文件时可以按需起服务。
+        self.ensure_session()?;
+
+        let uri = file_uri(file_path)?;
+        // 锁必须在整个请求期间持有（理由同 `definition`）：Core 的会话有状态，
+        // 两个线程同时 syncDocument / request 会让文档版本与结果对不上。
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let session = match &*state {
+            State::Ready(session) => &**session,
+            State::Failed(reason) => return Err(reason.clone()),
+            State::Closed => return Err("Java 语言服务已关闭".to_string()),
+            State::Idle => return Err("Java 语言服务尚未启动".to_string()),
+        };
+
+        // 同步**之前**那份快照：`changed=true` 时它描述的是旧正文，必须等新的发布（见常量文档）。
+        let before = session.latest_diagnostics(&uri);
+        let (version, changed) = session.sync_document(&uri, "java", text)?;
+        println!(
+            "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+            text.len()
+        );
+        let waited = self.settle_diagnostics(session, &uri, &before, changed);
+
+        let snapshot = session.latest_diagnostics(&uri);
+        let relevant = diagnostics_for(&snapshot, start, end);
+        let context: Vec<Value> = relevant.iter().map(|d| diagnostic_context(d)).collect();
+
+        let started = Instant::now();
+        // 请求字段名逐字照 Core 的 `SemanticRequest`（`engine.rs:326-349`，camelCase）与
+        // `feature_request_params`（`client.rs:682-692`）：`uri` / `range{start,end}` / `diagnostics`。
+        let result = session.request(
+            "codeActions",
+            json!({
+                "uri": uri,
+                "range": {
+                    "start": { "line": start.line, "utf16Column": start.utf16_column },
+                    "end": { "line": end.line, "utf16Column": end.utf16_column },
+                },
+                "diagnostics": context,
+            }),
+            Instant::now() + CODE_ACTION_TIMEOUT,
+        );
+
+        // 与补全同一口径："文档变旧"不是失败（虽然 `textDocument/codeAction` 不在 Core 的
+        // `is_stale_sensitive_method` 名单里，这一档目前不会走到，但形状必须一致）。
+        let result = match result {
+            Ok(result) => result,
+            Err(error) if is_superseded(&error) => {
+                println!("S1_JAVA_CODE_ACTION superseded reason={error}");
+                return Ok(Vec::new());
+            }
+            Err(error) => return Err(error),
+        };
+
+        // Core 的信封是 `{ "actions": [ … ] }`（`client.rs:1151-1178`）。
+        let raw = result
+            .get("actions")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut actions = Vec::new();
+        let mut other_file = 0usize;
+        let mut commands = 0usize;
+        let mut malformed = 0usize;
+        for action in &raw {
+            match parse_code_action(action, file_path) {
+                CodeActionOutcome::Usable(parsed) => {
+                    other_file += parsed.other_file_edits;
+                    actions.push(parsed);
+                }
+                CodeActionOutcome::Unusable {
+                    other_file_edits,
+                    has_command,
+                } => {
+                    other_file += other_file_edits;
+                    if has_command {
+                        commands += 1;
+                    }
+                }
+                CodeActionOutcome::Malformed => malformed += 1,
+            }
+        }
+        let kinds: Vec<&str> = actions
+            .iter()
+            .filter_map(|action| action.kind.as_deref())
+            .collect();
+        println!(
+            "S1_JAVA_CODE_ACTION uri={uri} line={} col={} raw={} actions={} other_file_edits={other_file} commands={commands} malformed={malformed} diagnostics={} waited_ms={} kinds={kinds:?} ms={}",
+            start.line,
+            start.utf16_column,
+            raw.len(),
+            actions.len(),
+            context.len(),
+            waited,
+            started.elapsed().as_millis()
+        );
+        Ok(actions)
+    }
+
+    /// `sync_document` 说正文变过时，**有界**等一次新的诊断发布，返回等了多少毫秒。
+    ///
+    /// 收手判据是"快照和同步前那份不一样"——新正文的 reconcile 结论到了。
+    /// 为什么不判"非空"：改好一个错误之后新快照就该是**空**的，那也是新结论。
+    /// 为什么可能等满：新正文的错误与旧正文逐条相同（例如只是把 `List` 改了几个字母），
+    /// 两次发布逐条相等 ⇒ 分不出来，只能等满预算；此时手上那份快照**仍然是对的**
+    /// （行列都没变），所以等满不是错误路径，只是白等 500ms。
+    ///
+    /// 同步前那份是空的（`changed=true` 但还没有过任何发布）时**不等**：没有基线可比，
+    /// 而且第一次 Alt+Enter 之前编辑器本来就已经取过一轮诊断（波浪线要先出现）。
+    fn settle_diagnostics(
+        &self,
+        session: &Session,
+        uri: &str,
+        before: &[JavaDiagnostic],
+        changed: bool,
+    ) -> u128 {
+        if !changed || before.is_empty() {
+            return 0;
+        }
+        let started = Instant::now();
+        for delay in CODE_ACTION_DIAGNOSTIC_BACKOFF_MS {
+            std::thread::sleep(Duration::from_millis(delay));
+            if session.latest_diagnostics(uri) != before {
+                break;
+            }
+        }
+        started.elapsed().as_millis()
     }
 
     /// 某个文件的**最近一次**诊断快照（`textDocument/publishDiagnostics` 推送）。
@@ -679,7 +904,12 @@ fn installation_root(executable: &Path) -> &Path {
 }
 
 /// 文件路径 → `file://` URI（百分号编码由 `url` 负责）。
-fn file_uri(path: &Path) -> Result<String, String> {
+/// 文件路径 → `file://` URI（百分号编码由 `url` 负责）。
+///
+/// `pub`：编辑器的快速修复 provider 也用它 —— `edit.changes` 的键必须是这条 URI
+/// （`crate::code_actions` 与 `perform_code_action` 两侧要对上）。**路径 → URI 只该有一处实现**，
+/// 否则两侧各拼一次，某个字符的编码方式不同就会让编辑"找不到自己的文件"。
+pub fn file_uri(path: &Path) -> Result<String, String> {
     url::Url::from_file_path(path)
         .map(|url| url.to_string())
         .map_err(|_| format!("无法把路径转成 file URI：{}", path.display()))
@@ -707,6 +937,167 @@ fn directory_uri(path: &Path) -> Result<String, String> {
 /// `session.rs:351`）——本 crate 里只有这一处需要识别 Core 的运行时码，不额外引入枚举。
 fn is_superseded(error: &str) -> bool {
     error.starts_with("staleDocumentVersion@") || error.starts_with("requestCancelled@")
+}
+
+/// [`parse_code_action`] 的结论。
+///
+/// 三种情况要分开，是因为它们的**原因不同**、诊断行里也要分得开：
+/// `Unusable` 是"能解析但本批落不了地"（要执行命令 / 要写别的文件），
+/// `Malformed` 是"结构不认识"（连标题都没有）。混成一个 `None` 就没法判断
+/// 某个菜单为空到底是"服务端没给"还是"我们挡掉了"。
+#[derive(Debug)]
+enum CodeActionOutcome {
+    /// 能在当前 buffer 里落地。
+    Usable(JavaCodeAction),
+    /// 有标题但落不了地：`other_file_edits` 是落在别的文件上的编辑条数，
+    /// `has_command` 说明它需要 `workspace/executeCommand`（本批不执行）。
+    Unusable {
+        other_file_edits: usize,
+        has_command: bool,
+    },
+    /// 没有标题：结构不认识（Core 的 `parse_code_action` 也是这个判据）。
+    Malformed,
+}
+
+/// 解析一条 Core 归一化后的 codeAction 条目（形状见 [`JavaCodeAction`]）。
+///
+/// `edit.changes` 的键是**路径**而不是 URI：Core 的 `parse_workspace_edit` 用
+/// `file_path_from_uri`（`client.rs:1192-1231`）把 `file:///C:/x` 变成 `/C:/x`。
+/// Windows 上这个前导斜杠必须去掉才能与编辑器手上的盘符路径比（[`is_current_file`]）。
+fn parse_code_action(value: &Value, file_path: &Path) -> CodeActionOutcome {
+    let Some(title) = value.get("title").and_then(Value::as_str) else {
+        return CodeActionOutcome::Malformed;
+    };
+    let kind = value
+        .get("kind")
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
+
+    let mut edits: Vec<JavaTextEdit> = Vec::new();
+    let mut other_file_edits = 0usize;
+    if let Some(changes) = value
+        .get("edit")
+        .and_then(|edit| edit.get("changes"))
+        .and_then(Value::as_object)
+    {
+        for (key, list) in changes {
+            let parsed: Vec<JavaTextEdit> = list
+                .as_array()
+                .map(|edits| edits.iter().filter_map(parse_text_edit).collect())
+                .unwrap_or_default();
+            if is_current_file(key, file_path) {
+                edits.extend(parsed);
+            } else {
+                other_file_edits += parsed.len();
+            }
+        }
+    }
+
+    // 带 command 的 action 整条不返回：LSP 的语义是"先应用 edit、再执行 command"，
+    // 而命令我们执行不了（理由见 `code_actions` 的文档）—— 只做一半会留下一个半成品修复。
+    let has_command = value
+        .get("command")
+        .is_some_and(|command| !command.is_null());
+    if edits.is_empty() || has_command {
+        return CodeActionOutcome::Unusable {
+            other_file_edits,
+            has_command,
+        };
+    }
+
+    // 倒序：一次 action 可能带多条编辑，先应用靠后的，靠前那条的范围才不会被前一次替换挪走
+    // （Core 的 `lsp.applyTextEdits` 也是这个顺序，`lightweight/edits.rs:48-61`）。
+    edits.sort_by_key(|edit| std::cmp::Reverse((edit.start.line, edit.start.utf16_column)));
+
+    CodeActionOutcome::Usable(JavaCodeAction {
+        title: title.to_string(),
+        kind,
+        edits,
+        other_file_edits,
+    })
+}
+
+/// `edit.changes` 的键是不是**这个 buffer 的文件**。
+///
+/// Core 给的键是 `file_path_from_uri` 的结果：`file:///C:/x.java` → `/C:/x.java`
+/// （Windows 上带一个前导斜杠），`file:///Users/x.java` → `/Users/x.java`（macOS 上本就是绝对路径）。
+/// 所以去掉前导斜杠**仅当**后面紧跟 `X:` 形状的盘符时才做；随后交给 `Path` 比 ——
+/// Windows 上 `D:/a/b` 与 `D:\a\b` 的分量相同（`Path` 的分隔符解析对 `/` 与 `\` 一视同仁），
+/// 所以这两侧的分隔符差异不需要自己归一化。
+fn is_current_file(key: &str, file_path: &Path) -> bool {
+    let trimmed = key
+        .strip_prefix('/')
+        .filter(|rest| is_windows_drive_prefix(rest))
+        .unwrap_or(key);
+    Path::new(trimmed) == file_path
+}
+
+/// `C:` / `c:` 形状的盘符前缀（Windows 路径被 URI 化之后会多一个前导斜杠）。
+fn is_windows_drive_prefix(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+/// 挑出这次请求**相关**的诊断：与选区相交的那些，光标是空选区时取**光标所在行**上的那些。
+///
+/// 为什么空选区按"行"而不是按"点"：`Ctrl+.` 的直觉是"修这一行的问题"，而光标常常停在
+/// 行首或标识符之外（缩进、行尾），用零宽区间去判相交会把这些情况全判成"没有相关诊断"，
+/// 菜单里就只剩 source action —— 用户看到的是"快速修复没了"。
+///
+/// 只认 JDT 自己推来的诊断（`source` 字段由 JDT 给 `"Java"`）：`code_actions` 把它们原样
+/// 送回 `context.diagnostics`，而 `getProblemId` 会把 `code` 当数字解析。
+fn diagnostics_for(
+    diagnostics: &[JavaDiagnostic],
+    start: JavaPosition,
+    end: JavaPosition,
+) -> Vec<&JavaDiagnostic> {
+    let empty_selection = start == end;
+    diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            if empty_selection {
+                let line = start.line;
+                diagnostic.range.start.line <= line && line <= diagnostic.range.end.line
+            } else {
+                // 两个区间相交：`!(a.end <= b.start || b.end <= a.start)`，
+                // 行列按 LSP 的"行优先"序比较（先比行，行相同再比列）。
+                let a = (start.line, start.utf16_column);
+                let b = (end.line, end.utf16_column);
+                let d_start = (
+                    diagnostic.range.start.line,
+                    diagnostic.range.start.utf16_column,
+                );
+                let d_end = (diagnostic.range.end.line, diagnostic.range.end.utf16_column);
+                !(d_end <= a || b <= d_start)
+            }
+        })
+        .collect()
+}
+
+/// 一条诊断 → Core 的 `LspClientDiagnostic` 请求形状
+/// （`rust/lithe-core/src/lsp/interface/types.rs:172-185`，`camelCase`）。
+///
+/// 三个字段是 JDT 侧真正会被读到的，一个都不能省：
+/// `source`（`CodeActionHandler` 只要 `"Java"` 的）、`code`（被 `Integer.parseInt` 当 problem id）、
+/// `range`（反查 `ProblemLocation` 的偏移）。`severity`/`message` 是契约里的必填项，
+/// 原样带上（`tags` 有 `#[serde(default)]`，不必写）。
+fn diagnostic_context(diagnostic: &JavaDiagnostic) -> Value {
+    json!({
+        "range": {
+            "start": {
+                "line": diagnostic.range.start.line,
+                "utf16Column": diagnostic.range.start.utf16_column,
+            },
+            "end": {
+                "line": diagnostic.range.end.line,
+                "utf16Column": diagnostic.range.end.utf16_column,
+            },
+        },
+        "severity": diagnostic.severity,
+        "message": diagnostic.message,
+        "source": diagnostic.source,
+        "code": diagnostic.code,
+    })
 }
 
 /// 解析 Core 归一化后的一条补全条目。
@@ -916,6 +1307,244 @@ mod tests {
         assert!(is_superseded("requestCancelled@request：（无消息）"));
         assert!(!is_superseded("requestTimeout@request：语义请求超时"));
         assert!(!is_superseded("事件泵已退出（waitEvents: process_failed：会话已不在运行）"));
+    }
+
+    /// 一条 codeAction 条目（形状逐字取真实 JDTLS 的响应，见 `.artifacts/p17/probe2.log`：
+    /// `Import 'List' (java.util)` 的 `edit.changes` 键是 Core 归一化后的**路径**）。
+    fn code_action_fixture() -> Value {
+        json!({
+            "title": "Import 'List' (java.util)",
+            "kind": "quickfix",
+            "isPreferred": false,
+            "edit": {
+                "changes": {
+                    "/C:/ws/src/main/java/demo/ImportFix.java": [{
+                        "range": {
+                            "start": { "line": 0, "utf16Column": 0 },
+                            "end": { "line": 2, "utf16Column": 0 }
+                        },
+                        "newText": "package demo;\n\nimport java.util.List;\n\n"
+                    }]
+                }
+            },
+            "command": Value::Null,
+            "data": Value::Null
+        })
+    }
+
+    /// 真实形状必须能解析出"要替换的范围 + 新文本"，并且 Windows 下 `/C:/…` 这个键
+    /// 要能对上盘符路径 `C:\…`（少去一个前导斜杠就会**静默**丢掉所有 quick fix）。
+    #[test]
+    fn code_action_reads_edits_for_the_current_file() {
+        let path = PathBuf::from(r"C:\ws\src\main\java\demo\ImportFix.java");
+        let CodeActionOutcome::Usable(action) = parse_code_action(&code_action_fixture(), &path)
+        else {
+            panic!("这条 action 能落地：{:?}", parse_code_action(&code_action_fixture(), &path));
+        };
+        assert_eq!(action.title, "Import 'List' (java.util)");
+        assert_eq!(action.kind.as_deref(), Some("quickfix"));
+        assert_eq!(action.other_file_edits, 0);
+        assert_eq!(action.edits.len(), 1);
+        let edit = &action.edits[0];
+        assert_eq!(edit.start.line, 0);
+        assert_eq!(edit.start.utf16_column, 0);
+        assert_eq!(edit.end.line, 2);
+        assert_eq!(edit.new_text, "package demo;\n\nimport java.util.List;\n\n");
+    }
+
+    /// 落在**别的文件**上的 action（`Create class 'List<T>'`）不返回，但把条数报出来 ——
+    /// 编辑器只有一个 buffer，也没有"新建文件"这条路径，返回它等于给一个点了没反应的菜单项。
+    #[test]
+    fn code_action_for_another_file_is_reported_not_returned() {
+        let action = json!({
+            "title": "Create class 'List<T>'",
+            "kind": "quickfix",
+            "edit": {
+                "changes": {
+                    "/C:/ws/src/main/java/demo/List.java": [{
+                        "range": {
+                            "start": { "line": 0, "utf16Column": 0 },
+                            "end": { "line": 0, "utf16Column": 0 }
+                        },
+                        "newText": "package demo;\n"
+                    }]
+                }
+            },
+            "command": Value::Null
+        });
+        match parse_code_action(&action, Path::new(r"C:\ws\src\main\java\demo\ImportFix.java")) {
+            CodeActionOutcome::Unusable {
+                other_file_edits,
+                has_command,
+            } => {
+                assert_eq!(other_file_edits, 1, "别的文件的编辑条数要报出来（诊断行靠它）");
+                assert!(!has_command, "这条不是 command 型");
+            }
+            other => panic!("只落在别人的文件上就该判 Unusable：{other:?}"),
+        }
+    }
+
+    /// 缺字段 / 脏数据**不 panic**（服务端输出随版本变化）：没有 `title`、没有 `edit`、
+    /// `edit` 是 `null`、`changes` 是数组、`range` 缺一半 —— 一律 `Malformed`/`Unusable`，绝不炸。
+    #[test]
+    fn code_action_tolerates_missing_and_malformed_fields() {
+        let path = Path::new(r"C:\ws\demo\A.java");
+        // 没有 `title` 的：结构不认识（Core 也是这个判据 —— 标题是菜单里唯一要显示的东西）。
+        for broken in [json!({ "kind": "quickfix", "edit": Value::Null }), json!({})] {
+            assert!(
+                matches!(
+                    parse_code_action(&broken, path),
+                    CodeActionOutcome::Malformed
+                ),
+                "缺 title 应当判 Malformed：{broken}"
+            );
+        }
+        // 有 title 但没有可落地的编辑：Unusable（不是崩溃）。
+        for broken in [
+            json!({ "title": "t" }),
+            json!({ "title": "t", "edit": Value::Null }),
+            json!({ "title": "", "edit": { "changes": Value::Null } }),
+            json!({ "title": "t", "edit": { "changes": { "/C:/ws/demo/A.java": "nope" } } }),
+            json!({ "title": "t", "edit": { "changes": { "/C:/ws/demo/A.java": [{ "newText": "x" }] } } }),
+        ] {
+            assert!(
+                matches!(
+                    parse_code_action(&broken, path),
+                    CodeActionOutcome::Unusable { .. }
+                ),
+                "没有可落地编辑的应当判 Unusable：{broken}"
+            );
+        }
+        // 有 `edit` 但同时有 `command`：整条丢掉（执行链本批不做）。
+        let with_command = json!({
+            "title": "Organize Imports",
+            "kind": "source.organizeImports",
+            "edit": {
+                "changes": {
+                    "/C:/ws/demo/A.java": [{
+                        "range": {
+                            "start": { "line": 0, "utf16Column": 0 },
+                            "end": { "line": 0, "utf16Column": 0 }
+                        },
+                        "newText": "x"
+                    }]
+                }
+            },
+            "command": { "title": "Organize Imports", "command": "java.edit.organizeImports", "arguments": [] }
+        });
+        assert!(matches!(
+            parse_code_action(&with_command, Path::new(r"C:\ws\demo\A.java")),
+            CodeActionOutcome::Unusable {
+                has_command: true,
+                ..
+            }
+        ));
+    }
+
+    /// 同一 action 里的多条编辑必须**倒序**返回：先应用靠后的，靠前那条的范围才没有被挪走。
+    /// （正序应用会让前面那条的列号指向已经被替换过的文本 —— 表现是"修复把代码改乱了"。）
+    #[test]
+    fn code_action_edits_are_ordered_back_to_front() {
+        let action = json!({
+            "title": "two edits",
+            "kind": "quickfix",
+            "edit": {
+                "changes": {
+                    "/C:/ws/demo/A.java": [
+                        { "range": { "start": { "line": 1, "utf16Column": 0 }, "end": { "line": 1, "utf16Column": 0 } }, "newText": "first" },
+                        { "range": { "start": { "line": 9, "utf16Column": 4 }, "end": { "line": 9, "utf16Column": 8 } }, "newText": "second" }
+                    ]
+                }
+            }
+        });
+        let CodeActionOutcome::Usable(parsed) =
+            parse_code_action(&action, Path::new(r"C:\ws\demo\A.java"))
+        else {
+            panic!("能落地");
+        };
+        let order: Vec<u32> = parsed.edits.iter().map(|edit| edit.start.line).collect();
+        assert_eq!(order, vec![9, 1], "必须按位置倒序");
+    }
+
+    /// `diagnostics_for`：光标（空选区）取**光标所在行**的诊断 —— 光标停在缩进 / 行尾也要能
+    /// 拿到那一行的错误，否则 `Ctrl+.` 会只剩 source action（"快速修复没了"）。
+    #[test]
+    fn relevant_diagnostics_follow_the_cursor_line() {
+        let snapshot = vec![
+            diagnostic_at(3, 4, 3, 8),
+            diagnostic_at(7, 0, 7, 5),
+            diagnostic_at(9, 2, 11, 3),
+        ];
+        // 光标在错误行的行首（列 0，正好在诊断范围之外）。
+        let picked = diagnostics_for(&snapshot, position(3, 0), position(3, 0));
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].range.start.utf16_column, 4);
+
+        // 跨行诊断（9..11 行）：光标落在中间那一行也算。
+        let picked = diagnostics_for(&snapshot, position(10, 0), position(10, 0));
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].range.start.line, 9);
+
+        // 没有诊断的行：空。
+        assert!(diagnostics_for(&snapshot, position(5, 0), position(5, 0)).is_empty());
+    }
+
+    /// `diagnostics_for`：有选区时按**相交**取，与选区不沾边的错误不进这次菜单。
+    #[test]
+    fn relevant_diagnostics_follow_a_selection() {
+        let snapshot = vec![diagnostic_at(3, 4, 3, 8), diagnostic_at(7, 0, 7, 5)];
+        let picked = diagnostics_for(&snapshot, position(7, 0), position(7, 5));
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].range.start.line, 7);
+
+        // 选区覆盖两条：都要。
+        let picked = diagnostics_for(&snapshot, position(0, 0), position(9, 0));
+        assert_eq!(picked.len(), 2);
+
+        // 选区在两行之间（7:5 之后、没有诊断的地方）：空。
+        assert!(diagnostics_for(&snapshot, position(8, 0), position(8, 2)).is_empty());
+    }
+
+    /// 送回 `context.diagnostics` 的 JSON 里三个 JDT 真正会读的字段一个都不能少
+    /// （`source` 必须是 `"Java"`，`code` 要被 `Integer.parseInt` 解析，`range` 用来反查偏移）——
+    /// 少任何一个，quick fix 就会静默消失。
+    #[test]
+    fn diagnostic_context_keeps_the_fields_jdt_reads() {
+        let value = diagnostic_context(&diagnostic_at(3, 4, 3, 8));
+        assert_eq!(value["source"], "Java");
+        assert_eq!(value["code"], "16777218");
+        assert_eq!(value["severity"], 1);
+        assert_eq!(value["range"]["start"]["utf16Column"], 4);
+        assert_eq!(value["range"]["end"]["line"], 3);
+        assert!(!value["message"].as_str().unwrap_or_default().is_empty());
+    }
+
+    /// 造一条诊断（UTF-16 列口径，与 Core 给的一致）。
+    fn diagnostic_at(
+        start_line: u32,
+        start_column: u32,
+        end_line: u32,
+        end_column: u32,
+    ) -> JavaDiagnostic {
+        JavaDiagnostic {
+            range: crate::events::JavaDiagnosticRange {
+                start: position(start_line, start_column),
+                end: position(end_line, end_column),
+            },
+            severity: Some(1),
+            message: "List cannot be resolved to a type".to_string(),
+            source: Some("Java".to_string()),
+            code: Some("16777218".to_string()),
+            tags: Vec::new(),
+        }
+    }
+
+    /// 一个 LSP 位置。
+    fn position(line: u32, utf16_column: u32) -> JavaPosition {
+        JavaPosition {
+            line,
+            utf16_column,
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1237,6 +1866,145 @@ mod tests {
         assert!(
             on_error_line.range.start.utf16_column < on_error_line.range.end.utf16_column,
             "诊断范围不能是空区间（空区间的波浪线画不出来）：{on_error_line:?}"
+        );
+    }
+
+    /// 真实 JDTLS：**没写 import 的类型必须能拿到 `Import '…' (…)` 快速修复，而且带 `edit`**。
+    ///
+    /// 这条用例守的是本批最关键的一段链路，四件事缺一都会静默失败（菜单里没有修复）：
+    ///
+    /// 1. **先同步正文再请求**：不同步，Core 会以"文档没打开"拒绝，或者 JDT 按旧正文算范围；
+    /// 2. **`context.diagnostics` 必须带上**：实测（`.artifacts/p17/probe.log`）不带诊断时
+    ///    同一位置只回 3 条 source action（`Generate Getters/Setters`），一条 quick fix 都没有 ——
+    ///    JDT 是拿诊断反查 `ProblemLocation` 的，不是按光标猜；
+    /// 3. **诊断的 `source` 必须是 `"Java"`、`code` 必须是可解析的数字**：`CodeActionHandler` 的
+    ///    过滤器只要 `"Java"`，`getProblemId` 会 `Integer.parseInt(code)`；
+    /// 4. **`edit.changes` 的键是 Core 归一化后的路径**（`/C:/…`），
+    ///    [`is_current_file`] 少去一个前导斜杠就会把整条 action 判成"别的文件"而丢掉。
+    ///
+    /// 断言只看"至少有一个能落地的 action 且它落到本文件上"，不断言具体标题
+    /// （JDT 会同时给出 `Import 'List' (java.util)` 与 `(com.sun.tools.javac.util)` 等多个候选，
+    /// 以及 `Create class 'List<T>'` 这种要新建文件的 —— 后者由 [`parse_code_action`] 挡掉）。
+    #[test]
+    fn real_jdtls_returns_an_import_quick_fix_for_an_unresolved_type() {
+        if std::env::var_os(SMOKE_ENV).is_none_or(|value| value.is_empty()) {
+            return;
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("系统时钟应在 Unix 纪元之后")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "lithe-gpui-java-codeaction-{}-{stamp}",
+            std::process::id()
+        ));
+        let _cleanup = TempWorkspace(root.clone());
+        let sources = root.join("src").join("main").join("java").join("demo");
+        std::fs::create_dir_all(&sources).expect("fixture 源码目录");
+        std::fs::write(
+            root.join("pom.xml"),
+            concat!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+                "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n",
+                "  <modelVersion>4.0.0</modelVersion>\n",
+                "  <groupId>demo</groupId>\n",
+                "  <artifactId>lithe-codeaction-smoke</artifactId>\n",
+                "  <version>1.0.0</version>\n",
+                "  <properties><maven.compiler.release>21</maven.compiler.release></properties>\n",
+                "</project>\n",
+            ),
+        )
+        .expect("pom.xml");
+
+        // `List` 没写 import（`ArrayList` 用全限定名，保证错误只有一个）。
+        // 同一个文件也放在 `.artifacts/p17/codeaction-fixture/` 下供实机验证用。
+        const BROKEN: &str = concat!(
+            "package demo;\n",
+            "\n",
+            "public class ImportFix {\n",
+            "    List<String> names = new java.util.ArrayList<>();\n",
+            "}\n",
+        );
+        let path = sources.join("ImportFix.java");
+        std::fs::write(&path, BROKEN).expect("ImportFix.java");
+
+        let service = JavaLanguageService::new(root.clone());
+        struct Shutdown<'a>(&'a JavaLanguageService);
+        impl Drop for Shutdown<'_> {
+            fn drop(&mut self) {
+                self.0.shutdown();
+            }
+        }
+        let _shutdown = Shutdown(&service);
+
+        assert!(service.prepare().expect("真实 JDTLS 应当启动"));
+        let version = service
+            .sync_document(&path, BROKEN)
+            .unwrap_or_else(|error| panic!("同步正文失败：{error}"));
+
+        // 等诊断发布（有界轮询，理由见上一条用例）。
+        let error_line = BROKEN
+            .lines()
+            .position(|line| line.contains("List<String>"))
+            .expect("fixture 里有错误行") as u32;
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut diagnostics = Vec::new();
+        while Instant::now() < deadline {
+            diagnostics = service.diagnostics(&path);
+            if !diagnostics.is_empty() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        assert!(
+            !diagnostics.is_empty(),
+            "同步（文档版本 {version}）之后 30s 内没有诊断，快速修复就无从谈起"
+        );
+
+        // 光标停在 `List` 的起点（与诊断范围同列），与该行的诊断一起送过去。
+        let column = BROKEN
+            .lines()
+            .nth(error_line as usize)
+            .and_then(|line| line.find("List"))
+            .expect("fixture 里有 List") as u32;
+        let caret = JavaPosition {
+            line: error_line,
+            utf16_column: column,
+        };
+        let actions = service
+            .code_actions(&path, BROKEN, caret, caret)
+            .unwrap_or_else(|error| panic!("codeAction 请求失败：{error}"));
+
+        assert!(
+            !actions.is_empty(),
+            "`List` 没有 import，JDT 至少该给出 `Import 'List' (…)`：诊断 {diagnostics:?}"
+        );
+        let import_util = actions
+            .iter()
+            .find(|action| action.title == "Import 'List' (java.util)")
+            .unwrap_or_else(|| {
+                panic!(
+                    "候选中应当有 `Import 'List' (java.util)`：{:?}",
+                    actions.iter().map(|a| &a.title).collect::<Vec<_>>()
+                )
+            });
+        for action in &actions {
+            assert!(
+                !action.edits.is_empty(),
+                "返回给编辑器的 action 必须带可落地的编辑：{action:?}"
+            );
+        }
+        // 真实的 `Import 'List' (java.util)` 编辑：把 `package demo;\n\n` 换成
+        // `package demo;\n\nimport java.util.List;\n\n`（范围 0:0..2:0，见 probe2.log）。
+        assert_eq!(import_util.kind.as_deref(), Some("quickfix"));
+        assert_eq!(import_util.other_file_edits, 0);
+        assert_eq!(import_util.edits.len(), 1);
+        let edit = &import_util.edits[0];
+        assert_eq!(edit.start.line, 0);
+        assert_eq!(edit.start.utf16_column, 0);
+        assert!(
+            edit.new_text.contains("import java.util.List;"),
+            "这条编辑必须真的插入 import：{edit:?}"
         );
     }
 }

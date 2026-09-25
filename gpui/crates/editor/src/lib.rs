@@ -22,7 +22,10 @@
 //!   请求/响应与列口径换算、`← →` 的跳转历史 [`navigation::JumpHistory`]；
 //! - `diagnostics.rs`：JDTLS 诊断的**数据侧** —— 同步正文 + 有界重取 + 列口径换算
 //!   （`DiagnosticSet` 要的是**字符列**，Core 给的是 UTF-16 码元列）；
-//!   触发时机与陈旧保护写在那个模块的文档里。
+//!   触发时机与陈旧保护写在那个模块的文档里；
+//! - `code_actions.rs`：JDTLS 快速修复的**数据侧 + 落地** —— `CodeActionProvider` 适配器
+//!   （菜单 / 键位 / 浮层全归上游），选中时用上游的 `apply_lsp_edits` 把编辑写进 buffer
+//!   （上游**完全不处理** `edit`，这条与列口径一起写在那里的模块文档里）。
 
 //! ## 阶段 12 接上的一件事：**JDTLS 诊断波浪线**
 //!
@@ -36,6 +39,22 @@
 //!    [`EditorPane::apply_diagnostics`] 做代次 + 修订号 + buffer 还在 三段校验后落地；
 //! 3. 诊断行 `S1_EDITOR_DIAGNOSTICS file=… count=… severity_max=… attempts=…`，
 //!    让"界面上有没有波浪线"能从日志判定。
+//!
+//! ## 阶段 12 接上的第二件事：**JDTLS 快速修复（`Ctrl+.`）**
+//!
+//! 上游 0.6.6 的编辑器自带 code action 菜单、`Ctrl+.` 绑定与右键菜单项，
+//! **但完全不处理 `edit`**（`CodeActionMenu` 只读标题、`perform_code_action` 只是转发），
+//! 所以这一项是"装 provider + 自己落盘"：
+//!
+//! 1. `code_actions::JavaCodeActionProvider` 实现上游的 `CodeActionProvider`，
+//!    经 [`EditorPane::open`] / [`EditorPane::prepare_java`] 装上（只在 Java buffer、
+//!    且只在服务句柄可用时 —— 它没有兜底数据源）；
+//! 2. 选中时由 provider 调上游的 `EditorState::apply_lsp_edits` 落地：这样才会标脏、
+//!    进撤销栈、触发诊断重取（理由写在 `code_actions` 的模块文档里）；
+//! 3. 触发路径：`Ctrl+.`（上游自己的绑定）或编辑器右键菜单的 `Show Code Actions`；
+//!    ⚠️ **没有 `Alt+Enter`**（上游 0.6.6 全量 grep 零命中），按"不自造键位"的约定不新增；
+//! 4. 诊断行 `S1_EDITOR_CODE_ACTION file=… actions=N kind=…`（取菜单）与
+//!    `… result=applied edits=N`（真的落地），让"菜单里有没有修复"能从日志判定。
 //!
 //! ## 公开边界
 //!
@@ -155,6 +174,7 @@
 //! 还没有做成设置项。
 
 mod buffer;
+mod code_actions;
 mod completion;
 mod diagnostics;
 mod editor_view;
