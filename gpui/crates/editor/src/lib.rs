@@ -19,7 +19,23 @@
 //! - `editor_view.rs`：`EditorPane` 的结构体与字段、`new` / `open` / `close`、
 //!   全部 `render_*` 与 `impl Render for EditorPane`，以及界面用的度量常量与文案；
 //! - `navigation.rs`：代码跳转的**数据侧** —— Core 轻量导航（`lsp.builtinNavigation`）的
-//!   请求/响应与列口径换算、`← →` 的跳转历史 [`navigation::JumpHistory`]。
+//!   请求/响应与列口径换算、`← →` 的跳转历史 [`navigation::JumpHistory`]；
+//! - `diagnostics.rs`：JDTLS 诊断的**数据侧** —— 同步正文 + 有界重取 + 列口径换算
+//!   （`DiagnosticSet` 要的是**字符列**，Core 给的是 UTF-16 码元列）；
+//!   触发时机与陈旧保护写在那个模块的文档里。
+
+//! ## 阶段 12 接上的一件事：**JDTLS 诊断波浪线**
+//!
+//! 上游 0.6.6 的编辑器自带诊断集合与波浪线渲染，而且**公开了宿主塞入口**
+//! （`EditorState::diagnostics_mut()`），所以这一项是"接线"而不是"自绘"：
+//!
+//! 1. [`diagnostics::apply`] 把一份 JDT 快照整份写进某个 `EditorState`（换算复用
+//!    [`navigation::editor_position`]）；
+//! 2. [`EditorPane::schedule_diagnostics`] 在四个时机排一次后台取回
+//!    （打开 / 服务就绪 / 正文变化 / 重新加载），
+//!    [`EditorPane::apply_diagnostics`] 做代次 + 修订号 + buffer 还在 三段校验后落地；
+//! 3. 诊断行 `S1_EDITOR_DIAGNOSTICS file=… count=… severity_max=… attempts=…`，
+//!    让"界面上有没有波浪线"能从日志判定。
 //!
 //! ## 公开边界
 //!
@@ -140,6 +156,7 @@
 
 mod buffer;
 mod completion;
+mod diagnostics;
 mod editor_view;
 mod navigation;
 

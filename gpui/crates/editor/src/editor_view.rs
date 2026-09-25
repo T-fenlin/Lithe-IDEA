@@ -52,6 +52,17 @@
 //!
 //! 诊断行一律 `S1_TAB_MENU`（**stderr**）：`opened=true tab=<名> items=<n> separators=<n>` 在菜单
 //! 真的被右键打开时打一次；执行动作打 `run=<动作> …`。
+//!
+//! ## 阶段 12 接上的一件事：JDTLS 诊断波浪线
+//!
+//! | 项 | 落点 |
+//! | --- | --- |
+//! | 排一次取回（四个触发点） | [`EditorPane::schedule_diagnostics`]：`open` / `prepare_java` / `on_input_change` / `reload_buffer` |
+//! | 结果落地（代次 + 修订号 + buffer 还在） | [`EditorPane::apply_diagnostics`] |
+//! | 数据侧（同步正文 + 有界重取 + 列换算） | [`crate::diagnostics`] |
+//!
+//! 上游**有**宿主塞诊断的公开入口（`EditorState::diagnostics_mut()`），所以这是接线不是自绘；
+//! 完整的 API 清单、列口径陷阱与"为什么必须有界重取"都写在 [`crate::diagnostics`] 的模块文档里。
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -274,6 +285,8 @@ pub struct EditorPane {
     nav_task: Option<Task<()>>,
     /// 请求号的自增源。
     nav_generation: u64,
+    /// 诊断刷新请求号的自增源（跨所有 buffer 共享：同一份文件被重排时旧结果必须作废）。
+    diagnostics_generation: u64,
     /// Java 语言服务（阶段 10 第二批）。`None` = 外壳还没告诉本视图工作区根，
     /// 或宿主根本没有 Java 工具 —— 两种情况下跳转都走第一批的轻量导航。
     ///
@@ -320,6 +333,7 @@ impl EditorPane {
             nav_request: None,
             nav_task: None,
             nav_generation: 0,
+            diagnostics_generation: 0,
             java: None,
             java_task: None,
             workspace_root: None,
@@ -403,6 +417,21 @@ impl EditorPane {
             println!("S1_JAVA_COMPLETION reattached buffers={patched}");
         }
 
+        // 诊断也要给**已经打开的** Java buffer 补排一次：`open()` 里排的那次因为
+        // `self.java` 还是 `None` 什么都没做（"先开文件、后起服务"是最常见的启动顺序）。
+        // 收集下标再排：`schedule_diagnostics` 要 `&mut self`，不能在 `&self.buffers` 的循环里调。
+        let java_buffers: Vec<usize> = self
+            .buffers
+            .iter()
+            .enumerate()
+            .filter(|(_, buffer)| crate::buffer::language_for_file(&buffer.name) == Some("java"))
+            .map(|(index, _)| index)
+            .collect();
+        for index in java_buffers {
+            // 打开档没有连打要合并，所以不给防抖（退避的第一档已经承担了等待）。
+            self.schedule_diagnostics(index, Duration::ZERO, cx);
+        }
+
         // `detach`：这是一次"发出去就不管结果"的预热，结果只走 `S1_JAVA_*` 诊断行。
         // 服务的生命周期由 `self.java` 这个 `Arc` 持有，与任务是否被持有无关。
         self.java_task = Some(cx.background_spawn(async move {
@@ -412,6 +441,116 @@ impl EditorPane {
                 Err(reason) => println!("S1_JAVA_PREPARE_FAILED reason={reason}"),
             }
         }));
+    }
+
+    // -----------------------------------------------------------------------
+    // JDTLS 诊断波浪线（数据侧在 `crate::diagnostics`）
+    // -----------------------------------------------------------------------
+
+    /// 排一次诊断刷新：**只对"磁盘上的可写 Java buffer"**，其余一律什么都不做。
+    ///
+    /// 后台任务做两件事（理由与"为什么是有界重取"见 [`crate::diagnostics`] 的模块文档）：
+    /// 同步当前正文 → 按退避最多查 5 次快照。任务被存进 `Buffer::diagnostics_task`，
+    /// 所以"再排一次"就是取消上一次（gpui 的 `Task` drop 即取消），防抖也是靠这一条。
+    ///
+    /// 四个调用点与各自"为什么不会漏"的论证在模块文档的表里；这里的三条早退：
+    ///
+    /// - `self.java` 是 `None`（外壳还没登记工作区根）→ 什么都不做，由
+    ///   [`Self::prepare_java`] 给**已经打开的** buffer 补排一次；
+    /// - 不是 `.java`（判据复用 [`crate::buffer::language_for_file`]，与补全 / 语言名同源）；
+    /// - **不可写**（读不到 / 超大 / 二进制 / 非 UTF-8 的有损正文）：这份正文不是文件的
+    ///   忠实副本，把它同步给服务端等于让 JDT 按一段说明文案去算诊断 —— 诊断必然是垃圾，
+    ///   而更糟的是会话里那份文档从此与磁盘内容不一致。
+    ///
+    /// `jdt://` 虚拟源码同样被挡在外面：那是只读的库源码，JDT 不为它发诊断。
+    fn schedule_diagnostics(&mut self, index: usize, debounce: Duration, cx: &mut Context<Self>) {
+        let Some(service) = self.java.clone() else {
+            return;
+        };
+        let Some(buffer) = self.buffers.get(index) else {
+            return;
+        };
+        if !buffer.writable
+            || is_virtual_source_path(&buffer.path)
+            || crate::buffer::language_for_file(&buffer.name) != Some("java")
+        {
+            return;
+        }
+
+        let path = buffer.path.clone();
+        let revision = buffer.revision;
+        let text = buffer.editor.read(cx).text().to_string();
+
+        // 代次 +1 并记进 buffer：回来时只有"我这次"才允许落地（见模块文档的陈旧保护）。
+        let generation = self.diagnostics_generation.wrapping_add(1);
+        self.diagnostics_generation = generation;
+        self.buffers[index].diagnostics_generation = generation;
+
+        let executor = cx.background_executor().clone();
+        let task_path = path.clone();
+        let task = cx.spawn(async move |pane, cx| {
+            let fetched = cx
+                .background_spawn(crate::diagnostics::fetch(
+                    service, task_path.clone(), text, executor, debounce,
+                ))
+                .await;
+            // 编辑区可能已经销毁：`update` 返回 `Err` 时静默忽略，不 panic
+            // （与 `schedule_auto_save` / `navigate_to_definition` 同一约定）。
+            let _ = pane.update(cx, |pane, cx| {
+                pane.apply_diagnostics(generation, revision, task_path, fetched, cx)
+            });
+        });
+        self.buffers[index].diagnostics_task = Some(task);
+    }
+
+    /// 后台结果回到前台：三段校验都过才写进 `EditorState`，并留一行可 grep 的诊断。
+    ///
+    /// 每一段失败都**要留证据**（静默丢弃会让"波浪线没出现"变成一个查不出来的问题）：
+    /// 三段分别对应"标签关了"、"又有一次更新的刷新"、"正文在这次取回期间被改过"。
+    /// 最后一段特别要紧：服务端算的是**那一刻的正文**，行列落到现在的正文上就是错位的波浪线；
+    /// 而新的那一次刷新已经在路上（每次变化都会排一次），所以这里直接丢。
+    fn apply_diagnostics(
+        &mut self,
+        generation: u64,
+        revision: u64,
+        path: PathBuf,
+        fetched: crate::diagnostics::Fetched,
+        cx: &mut Context<Self>,
+    ) {
+        let file = path.display();
+        let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
+            println!("S1_EDITOR_DIAGNOSTICS file={file} result=stale reason=buffer-closed");
+            return;
+        };
+        if self.buffers[index].diagnostics_generation != generation {
+            println!("S1_EDITOR_DIAGNOSTICS file={file} result=stale reason=superseded");
+            return;
+        }
+        if self.buffers[index].revision != revision {
+            println!("S1_EDITOR_DIAGNOSTICS file={file} result=stale reason=content-changed");
+            return;
+        }
+
+        let written = self.buffers[index].editor.update(cx, |state, cx| {
+            let written = crate::diagnostics::apply(state, &fetched.diagnostics);
+            // `diagnostics_mut()` 自己**不**通知（上游只在正文变化时 reset），
+            // 不写这一句波浪线就要等下一次无关的重绘才出现。
+            cx.notify();
+            written
+        });
+
+        // `severity_max` 让"有没有 Error 级波浪线"不必靠截图判断；`attempts` 让
+        // "重取上限够不够"这件事在真机上可观测（打满 5 次说明这一档的等待偏短）。
+        // 同步失败单独一行前缀，避免把"服务不可用"混进正常结果里。
+        if let Some(error) = &fetched.sync_error {
+            println!("S1_EDITOR_DIAGNOSTICS sync_failed file={file} error={error}");
+        }
+        println!(
+            "S1_EDITOR_DIAGNOSTICS file={file} count={written} severity_max={} attempts={} ms={} revision={revision}",
+            crate::diagnostics::severity_max(&fetched.diagnostics),
+            fetched.attempts,
+            fetched.elapsed_ms,
+        );
     }
 
     /// 登记外壳的两个"只有外壳做得了"的动作（见 [`TabMenuHostActions`]）。
@@ -550,6 +689,14 @@ impl EditorPane {
             .push(Buffer::new(path, name, icon, editor, writable, subscriptions));
         self.active = Some(self.buffers.len() - 1);
         self.sync_cursor(cx);
+        // 诊断：新开的 Java buffer 立刻排一次取回。`language` 是刚算出来的语言名，
+        // 与 `schedule_diagnostics` 内部用的判据同源；重复判一次是为了让"非 Java 文件
+        // 一眼看不出会不会去问服务端"这件事在调用点上就明确。
+        if language == Some("java") {
+            let opened = self.buffers.len() - 1;
+            // `Duration::ZERO`：打开档没有连打要合并（退避的第一档已经承担了等待）。
+            self.schedule_diagnostics(opened, Duration::ZERO, cx);
+        }
         cx.notify();
     }
 
@@ -919,9 +1066,13 @@ impl EditorPane {
         let icon = icon_for_file(&name, cx);
         self.buffers
             .push(Buffer::new(path, name, icon, editor, false, subscriptions));
+        // ⚠️ **这里刻意不排诊断刷新**（与 `open` 不同）：这个 buffer 的身份是 `jdt://`
+        // 虚拟 URI，它不是磁盘上的文档 —— JDT 不会为它发 `publishDiagnostics`，
+        // 而 Core 也会把"文档不在 `open_documents` 里"的发布丢掉
+        // （`rust/lithe-core/src/lsp/interface/client.rs:350-352`）。库里反编译出来的源码
+        // 本来也不该画诊断波浪线。
         self.buffers.len() - 1
     }
-
     /// `←`：回到上一个跳转位置。
     fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(present) = self.current_entry(cx) else {
@@ -1075,6 +1226,11 @@ impl EditorPane {
         }
         // 修订号无条件 +1（与脏标记解耦）：在飞的跳转请求靠它判断"结果回来时正文已经变了"。
         self.buffers[index].revision = self.buffers[index].revision.wrapping_add(1);
+
+        // 诊断：正文一变就排一次重取。**必须在这里排**（而不是等自动保存之后再排）：
+        // 自动保存是 150ms 防抖 + 可能失败，而 JDT 要的是 `didChange`，与磁盘无关。
+        // 防抖窗口把连打合并成一次（见 `crate::diagnostics::CHANGE_DEBOUNCE`）。
+        self.schedule_diagnostics(index, crate::diagnostics::CHANGE_DEBOUNCE, cx);
 
         if AUTO_SAVE_ENABLED {
             self.schedule_auto_save(index, window, cx);
@@ -1377,6 +1533,8 @@ impl EditorPane {
             path.display()
         );
         self.sync_cursor(cx);
+        // 诊断：正文被整篇换掉，旧诊断的范围已经无意义 —— 重新同步一次再取。
+        self.schedule_diagnostics(index, Duration::ZERO, cx);
         cx.notify();
     }
 

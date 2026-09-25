@@ -6,6 +6,7 @@
 //! | --- | --- | --- |
 //! | 打开项目（外壳建好编辑区后） | [`JavaLanguageService::prepare`] | 用 `java.workspacePolicy` 判断是不是 Java 工作区；是就起 JDTLS 并**等它就绪**（= 生成 / 复用索引缓存） |
 //! | `F12` / `Ctrl+单击` | [`JavaLanguageService::definition`] | 同步文档 → `textDocument/definition` → 归一化目标 |
+//! | 打开 / 改动 Java 文件 | [`JavaLanguageService::sync_document`] + [`JavaLanguageService::diagnostics`] | 同步正文（让服务端重算）→ 读最近一次诊断快照（编辑器画波浪线） |
 //! | 应用退出 | [`JavaLanguageService::shutdown`] | `lsp.stopServer` + `lsp.destroyServer` |
 //!
 //! ## 失败为什么**退回第一批而不是报错**
@@ -323,8 +324,10 @@ impl JavaLanguageService {
     /// 正常结果，不是失败。为了不让一次查询把 JDTLS 拖起来（`ensure_session` 的启动链是
     /// 10s 级），这里**不**调 `ensure_session`。
     ///
-    /// 本轮**不接编辑器 UI**（波浪线是下一批）：接口先立在这里，泵已经在按 `uri` 归档
-    /// （见 `crate::events`），`S1_JAVA_DIAGNOSTICS` 诊断行能看到每一条发布。
+    /// ⚠️ **空数组有两种含义**（查询口径下不可区分）：服务端刚发布了一次"清空"
+    /// （错误都改好了），或者**还没发布过**。编辑器侧靠"同步正文之后有界重取"
+    /// 把这两者分开（见 gpui 侧 `editor/src/diagnostics.rs`），本方法不做任何等待 ——
+    /// 它必须保持"纯查询"（不起会话、不阻塞），否则每帧查一次就会把 UI 拖住。
     pub fn diagnostics(&self, file_path: &Path) -> Vec<JavaDiagnostic> {
         let uri = match file_uri(file_path) {
             Ok(uri) => uri,
@@ -345,6 +348,50 @@ impl JavaLanguageService {
             // `Idle` / `Failed` / `Closed` 都还没有（或不再有）事件来源 → 空。
             _ => Vec::new(),
         }
+    }
+
+    /// 把一个文档的**当前正文**同步给服务端（首次 `didOpen`，之后 `didChange`），**不发语义请求**。
+    ///
+    /// ## 为什么需要这条（而不是只调 [`Self::diagnostics`]）
+    ///
+    /// 诊断**不是请求的结果**：它是服务端在 `didOpen` / `didChange` / 构建完成之后
+    /// **推送**的（`textDocument/publishDiagnostics` → Core 的 `diagnostics` 事件 → 泵按 uri 归档），
+    /// 而 [`Self::diagnostics`] 只回"最近一次快照"。所以改完正文之后如果不同步过去，
+    /// 服务端永远不会为新正文重算，用户看到的就是"波浪线停在旧位置"或"错误改好了波浪线还在"。
+    /// `definition` / `completion` 里的 `sync_document` 是**顺带**发生的（用户得有那两种动作），
+    /// 诊断刷新不能依赖它们。
+    ///
+    /// ## 口径
+    ///
+    /// - 与 `definition` / `completion` 同一条：**按需启动会话**（契约 `:1287-1288`：
+    ///   "hosts still start a language server on demand when the user opens a .java file"）；
+    /// - 锁在整个同步期间持有（理由同 `definition`：Core 的会话有状态，版本号不能乱）；
+    /// - 返回服务端分配的文档版本号。Core 对"正文没变"的重复同步返回 `changed: false`
+    ///   且**不重发** `didChange`（契约 `:1303-1310`）—— 那是正常结果，
+    ///   诊断仍可能在路上，调用方按"有界重取"处理，不要把 `changed=false` 当失败。
+    ///
+    /// 诊断行复用既有形状（`S1_JAVA_SYNC`）：这条链路的证据是"正文真的递到了服务端"。
+    pub fn sync_document(&self, file_path: &Path, text: &str) -> Result<i64, String> {
+        self.ensure_session()?;
+
+        let uri = file_uri(file_path)?;
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let session = match &*state {
+            State::Ready(session) => &**session,
+            State::Failed(reason) => return Err(reason.clone()),
+            State::Closed => return Err("Java 语言服务已关闭".to_string()),
+            State::Idle => return Err("Java 语言服务尚未启动".to_string()),
+        };
+
+        let (version, changed) = session.sync_document(&uri, "java", text)?;
+        println!(
+            "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+            text.len()
+        );
+        Ok(version)
     }
 
     /// 关闭会话（应用退出时调；`Idle` / `Failed` 时是空操作）。
@@ -1080,5 +1127,116 @@ mod tests {
                 item.insert_text
             );
         }
+    }
+
+    /// 真实 JDTLS：**同步一份有错的正文之后，服务端会推 `publishDiagnostics`**。
+    ///
+    /// 编辑器侧的波浪线只有这一个数据来源，而这条链路有两段容易写错：
+    /// 1. [`JavaLanguageService::diagnostics`] 是**纯查询**（不起会话、不阻塞），
+    ///    它自己**不会**让服务端重算 —— 必须先把正文同步过去（[`JavaLanguageService::sync_document`]，
+    ///    首次 `didOpen`、之后 `didChange`）。少这一步，波浪线会停在旧位置或永远不出现；
+    /// 2. 诊断是**异步推送**的，同步一返回就查几乎必然拿到空快照。
+    ///
+    /// 所以这条测试同时钉住"同步 → 推送 → 泵归档 → 查询"整条链路，以及
+    /// [`JavaLanguageService::diagnostics`] 的空快照语义（同步之后**最终**必须非空）。
+    ///
+    /// 等待是**有界轮询**（单调时钟死线 30s，本地实测 <2s）：服务端在另一个进程里，
+    /// 宿主侧可观测的边界只有"最近一次快照"这一个，没有可注入的时钟或事件源。
+    /// 超时的失败信息带上文档版本号与已等时长，便于区分"同步没生效"与"服务端慢"。
+    #[test]
+    fn real_jdtls_publishes_diagnostics_after_a_sync() {
+        if std::env::var_os(SMOKE_ENV).is_none_or(|value| value.is_empty()) {
+            return;
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("系统时钟应在 Unix 纪元之后")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "lithe-gpui-java-diag-{}-{stamp}",
+            std::process::id()
+        ));
+        let _cleanup = TempWorkspace(root.clone());
+        let sources = root.join("src").join("main").join("java").join("demo");
+        std::fs::create_dir_all(&sources).expect("fixture 源码目录");
+        std::fs::write(
+            root.join("pom.xml"),
+            concat!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+                "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n",
+                "  <modelVersion>4.0.0</modelVersion>\n",
+                "  <groupId>demo</groupId>\n",
+                "  <artifactId>lithe-diag-smoke</artifactId>\n",
+                "  <version>1.0.0</version>\n",
+                "  <properties><maven.compiler.release>21</maven.compiler.release></properties>\n",
+                "</project>\n",
+            ),
+        )
+        .expect("pom.xml");
+
+        // 一个**必然报错**的正文：`String` 赋给 `int` 是类型错（JDT 报
+        // `Type mismatch: cannot convert from String to int`，severity=1）。
+        // 第 5 行（0 基 4）是错误所在行，下面的范围断言用它。
+        const BROKEN: &str = concat!(
+            "package demo;\n",
+            "\n",
+            "public class Broken {\n",
+            "    void run() {\n",
+            "        int x = \"not an int\";\n",
+            "    }\n",
+            "}\n",
+        );
+        let path = sources.join("Broken.java");
+        std::fs::write(&path, BROKEN).expect("Broken.java");
+
+        let service = JavaLanguageService::new(root.clone());
+        struct Shutdown<'a>(&'a JavaLanguageService);
+        impl Drop for Shutdown<'_> {
+            fn drop(&mut self) {
+                self.0.shutdown();
+            }
+        }
+        let _shutdown = Shutdown(&service);
+
+        assert!(service.prepare().expect("真实 JDTLS 应当启动"));
+        let version = service
+            .sync_document(&path, BROKEN)
+            .unwrap_or_else(|error| panic!("同步正文失败：{error}"));
+
+        let error_line = BROKEN
+            .lines()
+            .position(|line| line.contains("not an int"))
+            .expect("fixture 里有错误行") as u32;
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut diagnostics = Vec::new();
+        while Instant::now() < deadline {
+            diagnostics = service.diagnostics(&path);
+            if !diagnostics.is_empty() {
+                break;
+            }
+            // 有界轮询里唯一允许的等待：外部进程异步推送，宿主侧没有事件源可等。
+            std::thread::sleep(Duration::from_millis(200));
+        }
+
+        assert!(
+            !diagnostics.is_empty(),
+            "同步（文档版本 {version}）之后 30s 内没有收到诊断：\
+             要么 `lsp.syncDocument` 没让服务端重算，要么泵没把 `diagnostics` 事件归档"
+        );
+        assert!(
+            diagnostics.iter().any(|diagnostic| diagnostic.severity == Some(1)),
+            "`String` 赋给 `int` 至少该有一条 Error（severity=1）：{diagnostics:?}"
+        );
+        let on_error_line = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.range.start.line == error_line)
+            .unwrap_or_else(|| {
+                panic!("没有一条诊断落在错误行 {error_line}：{diagnostics:?}")
+            });
+        assert!(
+            on_error_line.range.start.utf16_column < on_error_line.range.end.utf16_column,
+            "诊断范围不能是空区间（空区间的波浪线画不出来）：{on_error_line:?}"
+        );
     }
 }

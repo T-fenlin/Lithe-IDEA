@@ -39,11 +39,29 @@
 只读 `JavaLanguageService::diagnostics(&Path)`；真机回归 `items=10 / unclaimed=0`）·
 `.artifacts/p15/spring-fixture`（Boot 3.4.5，依赖全复用缓存）。
 
-**下一批的第一件事：诊断波浪线（地基已经好了）** —— 用 `JavaLanguageService::diagnostics(&path)`
-取 Core 的诊断（事件泵已经在消费 `S1_JAVA_DIAGNOSTICS`），再写进编辑器的诊断集合。
-⚠️ 注意：上游 `DiagnosticSet` **每次编辑都会 reset**，不要缓存重放；先读
-`gpui-base-0.6.6` 里诊断集合的公开 API 再动手（`gpui/research/editor-lsp-completion.md` §5/§6 可标记
-"单一事件泵"为已实现，实现名 `crate::events::{EventPump, SessionEvents}`）。
+**2026-09-26 第三批：诊断波浪线已接通（提交见 `git log`）** —— 上游**有**宿主塞入口
+（`EditorState::diagnostics_mut() -> Option<&mut DiagnosticSet>`，`gpui-base-0.6.6/src/input/base/state.rs:840-847`），
+所以是**接线不是自绘**：新 `editor/src/diagnostics.rs`（换算 `navigation::editor_position`、退避重取、
+陈旧三层校验）+ `editor_view.rs` 四个触发点（`open` / `prepare_java` / `on_input_change` 防抖 400ms / `reload_buffer`）
++ `java/src/service.rs` 新增 `pub fn sync_document(&self, path, text)`（诊断是服务端**推送**的，
+不同步正文不会重算）。实机三条红波浪线 + 悬停浮层 + 改错/撤销的 3→2→3 全程有日志与像素证据。
+⚠️ 三条硬约束：`Diagnostic*` 只在 `gpui_base::input` 重导（用 `gpui_kit::base::input::…`）；
+只在 `CodeEditor` 模式；`highlight_lines` 在 highlighter 为 `None` 时**提前返回**
+（在算诊断样式之前）⇒ **没上色就没波浪线**。
+
+**下一批的第一件事：右栏懒扫移出 MouseUp 派发栈 + 修"仪表"** ——
+`workspace.rs::scan_right_view_if_needed` 现在是在点击回调里**同步跑**的（Spring 那路要读依赖 JAR），
+应延后出派发栈；同时按 `gpui/research/click-double-trigger-dpi.md` 的 P0 给 `S1_RIGHT_PANEL` 加
+`seq`/`t_ms`/坐标并改走 stderr，这样"两次输入"才可判定。
+
+> 🔴 **环境警告（第三次踩到，务必先读）**：本机上**有按进程名找 `Lithe` 窗口的外部注入脚本在跑**
+> （`.artifacts/**/inject.ps1` 的 `FindProcessWindow("Lithe")` 就是这个形状）。
+> 实测：无人点击却自动打开了文件、按了 F12、还往夹具源码里敲了字；**杀掉 Lithe 后输入立刻停止**。
+> 因此：① 凡是要用注入驱 GUI 的验证，**先确认没有别的会话在跑同类脚本**；
+> ② 优先用不依赖点击的路径（启动态探针 `--right-view <id>`、资源管理器搜索框过滤）；
+> ③ 注入前后用 **`SetCursorPos` 把真光标移离窗口**（`.artifacts/right-panel/NOTES.md:30`
+> 说 `-Mode move` 会挪真光标是**错的**）。这条同时解释了之前"右栏点击双触发"的观察 ——
+> 源码级诊断已确认**不是产品缺陷**（见 `gpui/research/click-double-trigger-dpi.md`）。
 其余按价值排序：① **右栏懒扫跑在 MouseUp 派发栈里**（`workspace.rs` 的 `scan_right_view_if_needed`
 在点击回调内同步跑，Spring 会读 JAR）—— 真问题（性能），应延后出派发栈；
 ⚠️ 注意：**"右栏点击双触发是产品缺陷"这个说法已被源码级诊断推翻**，别再按它推理，

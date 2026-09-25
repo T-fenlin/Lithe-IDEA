@@ -326,6 +326,14 @@ pub(crate) struct Buffer {
     /// gpui 的 `Task` **一 drop 就取消**，所以"换掉上一个"就是 Windows 的 `clearTimeout`
     /// （`editor-app.store.ts:505-509`）：连续输入只会留下最后一次。
     pub(crate) auto_save_task: Option<Task<()>>,
+    /// 这个 buffer 最新一次诊断刷新的**代次**（`EditorPane::diagnostics_generation` 的值）。
+    ///
+    /// 结果从后台回来时按它判断"这次结果还算不算数"：同一份文件被排了两次时只认新的那次。
+    /// 与 [`Buffer::revision`] 是两个不同的问题 —— 代次管"有没有更新的请求"，
+    /// 修订号管"正文有没有变过"（见 `crate::diagnostics` 的模块文档）。
+    pub(crate) diagnostics_generation: u64,
+    /// 在飞的诊断刷新任务（同上：drop 即取消，换掉它就是取消上一次）。
+    pub(crate) diagnostics_task: Option<Task<()>>,
     /// 对这个 `EditorState` 的订阅（`InputEvent` + 通知）。
     ///
     /// 必须**被持有**：`Subscription` 一 drop 就取消（gpui 的 RAII 语义），
@@ -354,6 +362,8 @@ impl Buffer {
             save_generation: 0,
             revision: 0,
             auto_save_task: None,
+            diagnostics_generation: 0,
+            diagnostics_task: None,
             _subscriptions: subscriptions,
         }
     }
