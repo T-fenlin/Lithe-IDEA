@@ -12,7 +12,8 @@
 //! - [`workspace`]：`ShellWorkspace` 组装（三栏 + 底部窗 + 右工具窗 + 状态栏）与 `Render`；
 //! - [`command_palette`]：命令面板浮层（`Ctrl+Shift+P`；`Dialog` + `Command`，阶段 6 第二半）；
 //! - [`menu_bar`]：主菜单栏（9 个顶级菜单 + 两种形态；度量与"只列可执行项"的口径见其模块文档）；
-//! - [`title_bar`]：标题栏（40px）+ 自绘窗口三键 + 菜单栏的落位；
+//! - [`title_bar`]：标题栏（40px）+ 自绘窗口三键 + 菜单栏 / 项目下拉的落位；
+//! - [`project_menu`]：标题栏的项目下拉面板（3 段 + 2 分隔线；徽标算法与 v1 范围见其模块文档）；
 //! - [`project_tabs`]：项目标签条；
 //! - [`activity_bar`]：左右活动栏（38px）；
 //! - [`right_tool_window`]：右侧工具窗（400px，可收起；Maven / 通知 / 扩展三个视图）；
@@ -105,6 +106,7 @@
 pub mod activity_bar;
 pub mod command_palette;
 pub mod menu_bar;
+pub mod project_menu;
 pub mod project_tabs;
 pub mod right_tool_window;
 pub mod status_bar;

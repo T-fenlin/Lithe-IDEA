@@ -72,6 +72,9 @@ use crate::menu_bar::{
     MenuAction, MenuBar, diagnose_run as diagnose_menu_run, mode_for, set_menu_bar,
     set_shell as set_menu_bar_shell,
 };
+use crate::project_menu::{
+    ProjectEntry, ProjectMenu, render as render_project_menu, set_project_menu,
+};
 use crate::project_tabs::{ProjectTab, project_tabs};
 use crate::right_tool_window::{
     RightToolWindowView, diagnose as diagnose_right_panel, resolve_click as resolve_right_click,
@@ -471,6 +474,18 @@ pub struct ShellWorkspace {
     /// ⚠️ 这里持有**强引用**：`Entity` 一 drop 菜单栏就被销毁（`WeakEntity` 在
     /// `ShellWorkspace` 侧就升级不到了）。字段本身不参与渲染，只负责生命周期。
     menu_bar: Entity<MenuBar>,
+    /// 标题栏项目下拉的句柄（Windows 规格，见 [`crate::project_menu`]）。
+    ///
+    /// 与 [`ShellWorkspace::menu_bar`] 同一处置：面板的开关状态要跨帧存在，而这个实体
+    /// **不是** `Render`（由本视图画），所以状态变化通过下面的观察订阅让外壳重绘。
+    /// 强引用同样是必需的生命周期锚点（句柄登记在 `crate::project_menu` 的 `PROJECT_MENU` 里）。
+    project_menu: Entity<ProjectMenu>,
+    /// 观察项目下拉：**开合状态一变就重绘外壳**。
+    ///
+    /// 必须持有：`Subscription` 一 drop 就取消（gpui 的 RAII 语义）。
+    /// 用 observe 而不是像菜单栏那样反向持有外壳句柄：项目下拉只需要"让外壳重画"这一件事，
+    /// 订阅是这一件事最短的表达（`editor` / `SettingsStore` 也是这么接的）。
+    _project_menu_subscription: Option<gpui_kit::Subscription>,
 }
 
 impl ShellWorkspace {
@@ -570,6 +585,13 @@ impl ShellWorkspace {
         // `Ctrl+M` 的全局 action 也走这个句柄（理由见 `menu_bar::set_menu_bar`）。
         set_menu_bar(menu_bar.downgrade());
 
+        // 标题栏的项目下拉（`crate::project_menu`）。与菜单栏同一套：
+        // 先建实体（构造期打一行 `S1_PROJECT_MENU opened=false` 的启动证据），
+        // 再登记句柄给 `--project-menu-probe` 用，最后订阅它让自己重绘。
+        let project_menu = ProjectMenu::new(project_name.as_ref(), focus.clone(), cx);
+        set_project_menu(project_menu.downgrade());
+        let project_menu_subscription = Some(cx.observe(&project_menu, |_, _, cx| cx.notify()));
+
         let workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             root: root.clone(),
@@ -598,6 +620,8 @@ impl ShellWorkspace {
             // 根元素的兜底焦点锚点（理由见字段文档）。
             focus,
             menu_bar,
+            project_menu,
+            _project_menu_subscription: project_menu_subscription,
         };
         // 启动期也留一行状态证据：右工具窗**默认隐藏**这件事要能被机器验证，
         // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。
@@ -613,6 +637,30 @@ impl ShellWorkspace {
         // 自动化里没有这一步。有后代元素持有焦点时，user 的点击会照常把焦点移走。
         window.focus(&workspace.focus, cx);
         workspace
+    }
+
+    /// 项目下拉要显示的项目条目（真源 `projectTabs` 的等价物，见 [`crate::project_menu`]）。
+    ///
+    /// ⚠️ 每一条的**路径**都取工作区根：本侧 [`ProjectTab`] 的契约只有 `name`
+    /// （`project_tabs.rs:203-208`），而现在也只有一个工作区根，所以这一条是准确的。
+    /// 等 `ProjectTab` 长出 `path` 之后这里改成逐条取（研究 §5.2-B 第 1 行登记了那个缺口）。
+    ///
+    /// `active` 与 [`ShellWorkspace::active_project`] **同源**：真源面板读的也是
+    /// `projectTabs.find(p => p.isActive)`（`title-project-menu.tsx:112`），而标签条的高亮读的是
+    /// 同一个下标 —— 两处不同源会让"面板里的当前项"和"标签条上的高亮"打架。
+    /// 判据写成"下标相等"而不是"下标 0"，所以关掉当前项目（`active_project` 变 `None`）之后
+    /// 面板里**不会**再有任何一行打勾。
+    fn project_entries(&self) -> Vec<ProjectEntry> {
+        let path: SharedString = self.root.display().to_string().into();
+        self.projects
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| ProjectEntry {
+                name: tab.name().clone(),
+                path: path.clone(),
+                active: self.active_project == Some(index),
+            })
+            .collect()
     }
 
     /// 当前状态下命令面板的动作表（顺序 = 面板里的行序 = [`ShellWorkspace::run_command`]
@@ -1032,6 +1080,9 @@ impl Render for ShellWorkspace {
         // 动作改动的是 `self` 的字段（`bottom_visible` / `right_visible` …），本帧的布局
         // 紧接着按新值画，所以用户看不到"慢一帧"。
         let menu = crate::menu_bar::render_bar(&self.menu_bar, window, cx);
+        // 标题栏的项目下拉（同一段：先渲染，动作在下一帧被菜单项写进队列后由本帧收尾执行）。
+        let project_entries = self.project_entries();
+        let project_menu = render_project_menu(&self.project_menu, &project_entries, window, cx);
         for action in crate::menu_bar::take_pending_runs(cx) {
             self.apply_menu_action(action, window, cx);
         }
@@ -1148,11 +1199,8 @@ impl Render for ShellWorkspace {
             }
         };
 
-        let project_name: SharedString = self
-            .projects
-            .first()
-            .map(|tab| tab.name().clone())
-            .unwrap_or_else(|| SharedString::from("Lithe"));
+        // ⚠️ 标题栏的项目名**不再在这里取一份**：它由 `project_entries()` 一起算出来，
+        // 画在项目下拉的触发器里（真源 `title-project-menu.tsx:157`），拖拽区是空白。
 
         // 选中态先算成一份**不借用 `self`** 的小表：`activity_bar` 要求 `is_active` 是 `'static`，
         // 闭包直接捕获 `self` 会被判成 `E0521 borrowed data escapes outside of method`。
@@ -1240,8 +1288,8 @@ impl Render for ShellWorkspace {
             // （`Some` 恒为真：`ShellWorkspace::new` 建视图时就把句柄登记好了），
             // 其余部分照画。
             .child(title_bar(
-                &project_name,
                 menu.unwrap_or_else(|| div().into_any_element()),
+                project_menu.unwrap_or_else(|| div().into_any_element()),
                 window,
                 cx,
             ))

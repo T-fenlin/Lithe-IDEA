@@ -149,6 +149,10 @@ struct Options {
     /// 没有固定动作名，[`lithe_gpui_workbench::menu_bar::lookup_action`] 覆盖不到它。
     /// 走的仍是主题项 `on_click` 里那段同一份代码（见 `menu_bar::apply_theme_choice`）。
     theme_probe: Option<String>,
+    /// `--project-menu-probe`：启动后把标题栏的**项目下拉**打开（**验证/诊断用**）。
+    ///
+    /// 见 [`run_project_menu_probe`]：走的是与"点触发器"完全相同的那段状态迁移。
+    project_menu_probe: bool,
 }
 
 /// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>]`。
@@ -165,6 +169,8 @@ fn parse_options() -> Result<Options, String> {
          \x20                     `S1_MENU_RUN id=` 的值，省略动作名时只打开菜单\n\
          \x20 --theme-probe <下标> 执行「视图 → 主题」子菜单的第 N 项（验证/诊断用；主题项是\n\
          \x20                     动态生成的，没有固定动作名，所以单独一个开关）\n\
+         \x20 --project-menu-probe  启动后打开标题栏的项目下拉（验证/诊断用；走的是与\n\
+         \x20                     「点触发器」相同的那段状态迁移）\n\
          \x20 --menu-probe-delay <毫秒>  `--menu-probe` 打开菜单后等多久才执行动作（默认 2500）\n\
          \x20 --palette-keys <串> 启动后按顺序派发一串按键，逗号分隔；可重复给多次 = 多串（验证/诊断用；\n\
          \x20                     例：\"ctrl-shift-p,n,down,enter,escape\"）";
@@ -180,6 +186,7 @@ fn parse_options() -> Result<Options, String> {
     let mut menu_probe_open_ms: u64 = 0;
     let mut theme_probe: Option<String> = None;
     let mut palette_keys = Vec::new();
+    let mut project_menu_probe = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -224,6 +231,7 @@ fn parse_options() -> Result<Options, String> {
             "--theme-probe" => {
                 theme_probe = Some(args.next().ok_or("--theme-probe 缺少下标或主题名")?);
             }
+            "--project-menu-probe" => project_menu_probe = true,
             "--palette-keys" => {
                 let raw = args.next().ok_or("--palette-keys 缺少值")?;
                 let mut sequence = Vec::new();
@@ -259,6 +267,7 @@ fn parse_options() -> Result<Options, String> {
         menu_probe_open_ms,
         theme_probe,
         palette_keys,
+        project_menu_probe,
     })
 }
 
@@ -404,6 +413,27 @@ fn run_menu_probe(
     delayed.detach();
 }
 
+/// `--project-menu-probe` 的驱动函数：**首帧之后**把标题栏的项目下拉打开。
+///
+/// **为什么需要这个入口**（不是产品能力）：与 [`run_menu_probe`] 完全同因 —— 本机工作站
+/// 当前**锁屏**，鼠标/键盘注入到不了应用，而"项目下拉长什么样、当前项目行有没有高亮打勾、
+/// 空态文案对不对"这些正是本任务的要紧处；没有它就无法在无人值守环境里取证。
+///
+/// ⚠️ 它**不绕开**面板：调的是 [`lithe_gpui_workbench::project_menu::ProjectMenu::open_by_probe`]，
+/// 它写的那个 `open` 字段与"点触发器"回调（`ProjectMenu::toggle`）写的是**同一个**，
+/// 渲染也是同一段代码。被绕开的只有"操作系统把这次点击送进窗口"那一段，
+/// 与 `--menu-probe` 绕开点击、`--open-palette` 绕开 `Ctrl+Shift+P` 是同一条口径。
+///
+/// ⚠️ 必须等**首帧之后**：`Root::new` 还没返回时窗口根不是 `Root`，浮层只能在事件回调或
+/// 任务里打开（`render` 阶段会 panic）；而 `PrintWindow` 只能拿到"已经画出来的帧"，
+/// 启动期画的头几帧正是无人值守环境里唯一能截到的新帧（理由见 `menu_probe_open_ms` 的文档）。
+fn run_project_menu_probe(window: &mut Window) {
+    let menu = lithe_gpui_workbench::project_menu::handle();
+    window.on_next_frame(move |_window, cx| {
+        let _ = menu.update(cx, |menu, cx| menu.open_by_probe(cx));
+    });
+}
+
 /// bin 目标的入口点。
 /// 启动顺序（0.6.6 只有这一种写法，顺序错会静默失败或 panic）：
 /// `application().with_assets(..).run` → `set_locale` → `gpui_kit::init` → `Theme::change` →
@@ -423,6 +453,7 @@ fn main() {
         menu_probe_open_ms,
         theme_probe,
         palette_keys,
+        project_menu_probe,
     } = match parse_options() {
         Ok(options) => options,
         Err(message) => {
@@ -594,6 +625,10 @@ fn main() {
                                 }
                             });
                         });
+                    }
+                    // `--project-menu-probe`：打开标题栏的项目下拉。同样在首帧之后。
+                    if project_menu_probe {
+                        run_project_menu_probe(window);
                     }
                     // `Root` 必须是窗口的第一层：它负责对话框、浮层与通知。
                     let root_entity = cx.new(|cx| Root::new(workspace, window, cx));

@@ -408,6 +408,17 @@ mod tests {
             // 左上角图标按钮的 tooltip / 无障碍名（真源 `t("window.menu")` = 「菜单」，
             // `title-bar.tsx:209-219`；`locale.ts:7903`）。
             ("lithe.window.menu", "菜单"),
+            // 标题栏项目下拉（`gpui/crates/workbench/src/project_menu.rs`）。7 条全是**真源既有**键
+            // （`windows/tauri/src/i18n/locale.ts:6171-6191` 的 `titleProject.*` 段，
+            // 生成在 `locales/*.yml:3538-3579`）；本轮**零新增键**。
+            // 三条动作行 + 两个分组标题 + 空态 + 触发器的无障碍名（`项目：{project}`，带插值）。
+            ("lithe.titleProject.newProject", "新建项目…"),
+            ("lithe.titleProject.open", "打开…"),
+            ("lithe.titleProject.cloneRepository", "克隆仓库…"),
+            ("lithe.titleProject.openProjects", "打开的项目"),
+            ("lithe.titleProject.recentProjects", "最近项目"),
+            ("lithe.titleProject.noRecentProjects", "没有最近项目"),
+            ("lithe.titleProject.trigger", "项目：{project}"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

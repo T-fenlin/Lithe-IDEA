@@ -14,16 +14,20 @@
 //! - 中文文案：`windows/tauri/src/i18n/locale.ts:6191`（`titleProject.trigger` = `项目：{project}`，
 //!   本区域按可见规格只显示项目名本身，见 `title_bar` 的文档）。
 //!
-//! ## 左侧的菜单栏（本轮新增，见模块 [`crate::menu_bar`]）
+//! ## 左侧的菜单栏（见模块 [`crate::menu_bar`]）与项目下拉（见 [`crate::project_menu`]）
 //!
 //! 真源把菜单栏画在**标题栏这一行里**（常驻形态，`title-bar.tsx:230-232`）或标题栏左上角的
 //! `ListIcon` 按钮 + 一行浮动胶囊（紧凑形态，`:207-229`）。两种形态都走
 //! [`crate::menu_bar::menu_bar`]，本文件只负责给它一个位置。
 //!
-//! ⚠️ **菜单栏必须是 `drag_region` 的兄弟节点**：Windows 的命中测试取
+//! 项目名下拉是左侧组的第二项：真源 `ChromeGroup grow min-w-0 { menuItem, projectControls }`
+//! （`title-bar.tsx:339-343`）—— **菜单栏在前、项目下拉在后**，两者都在拖拽区左边。
+//! 项目名本身**画在触发器里**（`title-project-menu.tsx:157`），所以本文件的拖拽区不再重复画一遍。
+//!
+//! ⚠️ **菜单栏与项目下拉都必须是 `drag_region` 的兄弟节点**：Windows 的命中测试取
 //! `window_control_hitboxes` 里第一个命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
-//! 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢 —— 把菜单放进 `drag_region` 里面，
-//! 点菜单只会拖窗口。这条与下面窗口三键的坑同源：**`Drag` 不能做任何可点元素的祖先**。
+//! 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢 —— 把它们放进 `drag_region` 里面，
+//! 点它们只会拖窗口。这条与下面窗口三键的坑同源：**`Drag` 不能做任何可点元素的祖先**。
 //!
 //! 为什么**不用** gpui-kit 的 `component::TitleBar`：
 //!
@@ -44,7 +48,7 @@ use gpui_kit::base::h_flex;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
     AnyElement, App, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
-    Pixels, SharedString, Styled as _, Window, WindowControlArea, div, px,
+    Pixels, Styled as _, Window, WindowControlArea, div, px,
 };
 
 // ---------------------------------------------------------------------------
@@ -79,32 +83,37 @@ use gpui_kit::{
 /// Tailwind 的 `w-14` 是任意档位，gpui 的档位表里没有对应项，不能自己发明 helper。
 const WINDOW_CONTROL_WIDTH: Pixels = px(56.);
 
-/// 标题栏（无状态）：只依赖传入的项目名、**已渲染好的菜单栏**与当前主题，不持有 `Entity`。
+/// 标题栏（无状态）：只依赖传入的**已渲染好的**菜单栏与项目下拉、当前主题与窗口状态，
+/// 不持有 `Entity`。
 ///
-/// `project_name` 是**可见标签**：Windows 侧显示的是项目显示名本身
-/// （`.../title-bar/title-project-menu.tsx:157`），`项目：{project}` 只是该项的
-/// `aria-label`（同文件 `:147`，`windows/tauri/src/i18n/locale.ts:6191`）。
-///
-/// `menu_bar` 是调用方（[`crate::workspace::ShellWorkspace::render`]）先渲染好的元素，
-/// 收 `AnyElement` 而不是收 `Entity<MenuBar>` + `&mut App` 有两个原因：
+/// `menu_bar` / `project_menu` 是调用方（[`crate::workspace::ShellWorkspace::render`]）先渲染好的
+/// 元素，收 `AnyElement` 而不是收 `Entity<..>` + `&mut App` 有三个原因：
 ///
 /// 1. 本 crate 是 edition 2024，`-> impl IntoElement` 会捕获签名里所有在作用域的生命周期
 ///    （见 `lib.rs` 模块头的"区域渲染函数必须收 `&Window` / `&App`"），多一个 `&mut App`
 ///    参数会把可变借用带进返回值；
-/// 2. 菜单栏的形态（常驻 / 图标）由它自己决定要画哪一种，标题栏不需要知道这件事。
+/// 2. 菜单栏的形态（常驻 / 图标）由它自己决定要画哪一种，标题栏不需要知道这件事；
+/// 3. 项目下拉要读 `Entity<ProjectMenu>` 并新建 `PopupMenu`（要 `&mut App`），
+///    那一步必须发生在调用方，而不是这个只读的区域函数里。
 ///
-/// ⚠️ **菜单栏是 `drag_region` 的兄弟节点，不能放进它内部**：Windows 的命中测试取
+/// ⚠️ **项目名不再由本函数画**：Windows 的项目名就在项目下拉的触发器里
+/// （`title-project-menu.tsx:157`），所以本函数收的是**已经带名字的触发器元素**，
+/// 拖拽区因此只是一块空的剩余宽度（真源 `ChromeGroup grow min-w-0`，`title-bar.tsx:339-343`）。
+///
+/// ⚠️ **参数顺序不可调换**：`menu_bar` 在左、`project_menu` 在右
+/// （真源 `ChromeGroup { menuItem, projectControls }`，`title-bar.tsx:339-343`），
+/// 两者都排在拖拽区之前。
+///
+/// ⚠️ **两者都是 `drag_region` 的兄弟节点，不能放进它内部**：Windows 的命中测试取
 /// `window_control_hitboxes` 里**第一个**命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
-/// 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢，那时点菜单只会拖窗口。
+/// 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢，那时点它们只会拖窗口。
 /// 本条与本文件窗口三键的 `Drag` 祖先坑同源（见下）。
 pub fn title_bar(
-    project_name: &str,
     menu_bar: AnyElement,
+    project_menu: AnyElement,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement {
-    let project_name: SharedString = project_name.to_owned().into();
-
     h_flex()
         // ChromeBar 基线带 `shrink-0`（`windows/tauri/src/ui/chrome.tsx:6`），标题栏不参与压缩。
         .flex_shrink_0()
@@ -125,20 +134,26 @@ pub fn title_bar(
         //    常驻形态占标题栏左侧一段（真源 `title-bar.tsx:230-232`），
         //    图标形态只占一个 24×24 按钮 + 一层浮动胶囊。
         .child(menu_bar)
-        .child(drag_region(project_name))
+        // ② 项目下拉触发器：同样是 `drag_region` 的**兄弟**（见 [`crate::project_menu`] 模块头）。
+        .child(project_menu)
+        // ③ 剩下的宽度全部是拖拽区。
+        .child(drag_region())
         .child(window_controls(window, cx))
 }
 
-/// 左侧「项目名 + 拖拽区」。
+/// 拖拽区：标题栏里除菜单栏 / 项目下拉 / 窗口三键之外的**剩余宽度**。
 ///
-/// 由左组独占标题栏剩余宽度（`ChromeGroup grow min-w-0`，`title-bar.tsx:339`），
-/// 三键是它的**兄弟节点**而不是子节点 —— 这一点必须保持：平台命中测试取
+/// 由左组独占剩余宽度（`ChromeGroup grow min-w-0`，`title-bar.tsx:339`），三键是它的
+/// **兄弟节点**而不是子节点 —— 这一点必须保持：平台命中测试取
 /// `window_control_hitboxes` 里**第一个**命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
 /// 按绘制顺序 = 祖先在前），若把 `Drag` 挂在整条标题栏的祖先上，
 /// 它会盖住子节点的 `Min` / `Max` / `Close`，三键就永远点不动了
 /// （gpui-kit 自己也是把 `Drag` 挂在三键的兄弟 `h_flex` 上：
 /// `gpui-component-0.6.6/src/title_bar.rs:371-379`）。
-fn drag_region(project_name: SharedString) -> impl IntoElement {
+///
+/// ⚠️ **不再画项目名**：项目名归项目下拉的触发器（`title-project-menu.tsx:157`），
+/// 本区域只提供可拖动的空白（真源同一层的 `grow` 部分本来就是空白）。
+fn drag_region() -> impl IntoElement {
     h_flex()
         .flex_1()
         .min_w_0()
@@ -155,17 +170,6 @@ fn drag_region(project_name: SharedString) -> impl IntoElement {
         // 不需要 `#[cfg]`，也不消费事件（`handle_nc_mouse_down_msg` 只有被消费时才拦截，
         // `gpui-pre-windows-0.3.6/src/events.rs:1078-1083`）。
         .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
-        // Windows 侧标签是 `min-w-0 truncate`（`title-project-menu.tsx:157`），
-        // 不新增 `max-w-56`（224px 上限属于带 logo 与箭头的下拉触发器整体，
-        // `title-project-menu.tsx:146`）。
-        .child(
-            div()
-                .min_w_0()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
-                .child(project_name),
-        )
 }
 
 /// 右侧窗口三键组：`ChromeGroup gap="none" h-(--lithe-title-bar-height)`
