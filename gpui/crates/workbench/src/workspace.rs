@@ -59,7 +59,7 @@ use gpui_kit::{
 
 use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
 use lithe_gpui_explorer::Explorer;
-use lithe_gpui_git::BottomPane;
+use lithe_gpui_git::{BottomPane, ChangesView};
 use lithe_gpui_settings::Category as SettingsCategory;
 use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::tr;
@@ -152,6 +152,13 @@ const SETTINGS_ACTIVITY_IX: usize = 7;
 /// 真源 `features/layout/components/sidebar/sidebar-pane-selector.tsx:311-319`
 /// （`files` / `git` / `search`）；底部组从 3 开始（`features/layout/config/item-order.ts:12-19`）。
 const TOP_ACTIVITY_ITEMS: std::ops::RangeInclusive<usize> = 0..=2;
+
+/// 左侧活动栏「更改」（源代码管理）项的下标 = 1。
+///
+/// 真源 `item-order.ts:3` 的顺序是 `files, git, search, …`，所以 `git` 是顶部组第 2 项
+/// （0 起第 1）。左栏内容按这个下标在「项目树」与「更改列表」之间切换 —— 这是本侧左栏
+/// 第一次出现**两个内容视图**（在此之前左栏恒为项目树）。
+const CHANGES_ACTIVITY_IX: usize = 1;
 
 /// 默认选中的顶部组视图：第 0 项「项目」。
 ///
@@ -475,6 +482,14 @@ pub struct ShellWorkspace {
     /// 同步（漏一处就显示错图标）。尾随组本来就是每帧现算的
     /// （[`ShellWorkspace::footer_right`]），这里对齐同一口径。
     explorer: Entity<Explorer>,
+    /// 左侧栏的**第二个**内容视图：源代码管理（活动栏「更改」项，下标 [`CHANGES_ACTIVITY_IX`]）。
+    ///
+    /// 与 [`ShellWorkspace::explorer`] 并排存在、**同一个左栏槽位二选一渲染**：
+    /// 真源是 `MainSidebar` 按 `activePaneId` 单选渲染一个 pane
+    /// （`features/layout/components/sidebar/main-sidebar.tsx:778-816`），
+    /// 本侧用 [`ShellWorkspace::top_activity_view`] 当下标做同一件事。
+    /// 两个实体都常驻（不按需创建）：切换视图不该丢掉对方的滚动位置与展开状态。
+    changes: Entity<ChangesView>,
     /// 中央列内容：编辑区（标签栏 + 正文 / 空状态）。
     editor: Entity<EditorPane>,
     /// 底部窗里的终端。**构造期不建会话**，第一次可见时由
@@ -576,6 +591,10 @@ impl ShellWorkspace {
         // `Ctrl+F` / `Ctrl+H` 不在这里 —— 它们归编辑器组件自己的 `Input` 上下文绑定
         // （见 `lithe_gpui_editor::install_actions` 的说明）。
         lithe_gpui_editor::install_actions(cx);
+        // 左栏「更改」视图的 `Ctrl+Enter`（提交）同样登记成应用级 action：它的处理器在
+        // `ChangesView` 的根元素上，而"启动后没点过任何地方"时那颗处理器够不着键盘事件
+        // （理由与上面 `Ctrl+S` 完全一样）。
+        lithe_gpui_git::install_actions(cx);
         // 命令面板的 `Ctrl+Shift+P`（真源 `cmd+shift+p` 在 Windows 上的归一化形式，
         // 出处见 `crate::command_palette` 的模块文档）。同样登记成**全局 action**：
         // 挂在根元素上会有"启动后没点过任何地方时按不出来"的死角。
@@ -604,6 +623,16 @@ impl ShellWorkspace {
         });
         // 构造期不取数据，第一帧之后立刻去拉 `workspace.snapshot`。
         explorer.update(cx, |this, cx| this.refresh(window, cx));
+
+        // 左栏「更改」（源代码管理）。**构造期不取数据**：顶部组默认选「项目」
+        // （`DEFAULT_TOP_ACTIVITY`），所以这个视图在第一帧不可见；它的第一次读取发生在
+        // 用户点活动栏「更改」时（`on_select_activity` 调 `ChangesView::activate`），
+        // 之后由「手动刷新 + 写后刷新 + 再次激活」维持（本侧刻意不做 watcher，见 crate 文档）。
+        let changes_root = root.clone();
+        let changes = cx.new({
+            let window = &mut *window;
+            move |cx| ChangesView::new(changes_root, window, cx)
+        });
 
         let terminal = cx.new(|cx| TerminalPane::new(window, cx));
 
@@ -739,6 +768,7 @@ impl ShellWorkspace {
             right_view: RightToolWindowView::Maven,
             right_visible: false,
             explorer,
+            changes,
             editor,
             terminal,
             bottom_git,
@@ -1273,6 +1303,9 @@ impl Render for ShellWorkspace {
             }
         };
         let terminal_handle = self.terminal.downgrade();
+        // 左栏「更改」视图的弱引用：切到该项时刷新一次（本侧没有 watcher，
+        // 「激活时刷新 + 手动刷新 + 写后刷新」是仅有的三条通路，见 `ChangesView::activate`）。
+        let changes_handle = self.changes.downgrade();
         let on_select_activity = {
             let handle = handle.clone();
             move |index: usize, window: &mut Window, cx: &mut App| {
@@ -1313,6 +1346,12 @@ impl Render for ShellWorkspace {
                     // 幂等：会话已存在就什么都不做（所以"再点一次隐藏、再点回来"不会重开 shell）。
                     // 首次创建时由它自己把焦点延到帧末交给输入行。
                     let _ = terminal_handle.update(cx, |pane, cx| pane.ensure_session(window, cx));
+                }
+                // 顶部组点到「更改」：左栏内容换人（判据同 `is_activity_active`）之外，
+                // 顺手让那个视图重读一次工作区状态 —— 真源也是"视图重新可见就后台整刷一次"
+                // （`use-git-data-controller.ts:276-281`），本侧没有文件监听，这一步是兜底。
+                if bottom_pane_for(index).is_none() && index == CHANGES_ACTIVITY_IX {
+                    let _ = changes_handle.update(cx, |view, cx| view.activate(cx));
                 }
             }
         };
@@ -1388,6 +1427,15 @@ impl Render for ShellWorkspace {
 
         let explorer = self.explorer.clone();
         let editor = self.editor.clone();
+        // 左栏槽位的内容：顶部组选中项决定画「项目树」还是「更改列表」（真源
+        // `main-sidebar.tsx:777-816` 的 `activePaneId` 单选；本侧的下标来源是
+        // `top_activity_view`，与活动栏高亮同源 —— 两处不同源会出现"图标亮着但内容不对"）。
+        // 两个实体都常驻，切换只换渲染谁，不销毁对方的状态。
+        let left_content: AnyElement = if self.top_activity_view == Some(CHANGES_ACTIVITY_IX) {
+            self.changes.clone().into_any_element()
+        } else {
+            explorer.into_any_element()
+        };
         let right_tool_window = right_tool_window(self.right_view, on_close_right_activity, cx);
         let right_tool_window_visible = self.right_visible;
 
@@ -1491,7 +1539,7 @@ impl Render for ShellWorkspace {
                     // 否则右活动栏会贴到窗口边缘。
                     .pr_1()
                     .child(left_rail)
-                    .child(side_pane(div().w_80(), explorer, cx))
+                    .child(side_pane(div().w_80(), left_content, cx))
                     .child(
                         // 中央列 = 编辑器岛 + 底部工具窗（默认口径：嵌在中央列内）。
                         v_flex()

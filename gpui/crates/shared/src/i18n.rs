@@ -464,6 +464,84 @@ mod tests {
             // 行内「当前」徽章（`locale.ts:6948`）与底栏「刷新」（`:6944`）。
             ("lithe.git.current", "当前"),
             ("lithe.git.refresh", "刷新"),
+            // 左栏「源代码管理」（`gpui/crates/git/src/changes_view.rs`，阶段 11）。
+            // 同样**零新增键**：视图用到的每一条真源里都已经有（`locale.ts` 的 `git.*` 段与
+            // `git.setup.*` 段），所以 `tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 没有动。
+            // 标题栏（`git-view.tsx:707,474,481`）。
+            ("lithe.workbench.sourceControl", "源代码管理"),
+            ("lithe.git.actions", "Git 操作"),
+            ("lithe.git.refreshStatus", "刷新状态"),
+            // 加载 / 失败两态（`git-view.tsx:663-685`）。
+            ("lithe.git.loadingGitStatus", "正在加载 Git 状态"),
+            ("lithe.git.statusLoadFailed", "无法加载 Git 数据，请重试刷新仓库。"),
+            // 分类头（`git-status-panel.tsx:858-864`）与树容器 aria（`:1190`）。
+            ("lithe.git.tracked", "已跟踪"),
+            ("lithe.git.untracked", "未跟踪"),
+            ("lithe.git.trackedFiles", "已跟踪文件"),
+            ("lithe.git.untrackedFiles", "未跟踪文件"),
+            // 工具行（`git-status-panel.tsx:1157-1180`）。
+            ("lithe.git.stageAllChanges", "暂存所有更改"),
+            ("lithe.git.unstageAllChanges", "取消暂存所有更改"),
+            // 行内暂存按钮（`git-status-file-item.tsx:150`）。
+            ("lithe.git.stageFileNamed", "暂存 {name}"),
+            ("lithe.git.unstageFileNamed", "取消暂存 {name}"),
+            // 空态（`git-status-panel.tsx:1220-1226`、`git-repository-empty-state.tsx:94-118`）。
+            ("lithe.git.workingTreeClean", "工作区干净"),
+            ("lithe.git.setup.notRepository", "此项目尚未初始化 Git 仓库"),
+            (
+                "lithe.git.setup.initializeHint",
+                "初始化 Git 后即可跟踪更改并创建首次提交。",
+            ),
+            ("lithe.git.setup.initialize", "初始化 Git 仓库"),
+            ("lithe.git.setup.noCommits", "当前分支尚无提交"),
+            (
+                "lithe.git.setup.firstCommit",
+                "在“更改”面板暂存文件、填写提交消息，然后创建首次提交。",
+            ),
+            // 提交面板（`git-commit-panel.tsx:148-172,281-389`）。
+            ("lithe.git.commitMessagePlaceholder", "提交说明..."),
+            ("lithe.git.filesStaged", "已暂存 {count} 个文件"),
+            ("lithe.git.noFilesStaged", "没有已暂存的文件"),
+            ("lithe.git.selectFilesToCommit", "请选择要提交的文件。"),
+            ("lithe.git.enterCommitMessage", "输入提交说明："),
+            ("lithe.git.commit", "提交"),
+            ("lithe.git.committing", "正在提交..."),
+            ("lithe.git.changesCommitted", "更改已提交"),
+            (
+                "lithe.git.finishOperationBeforeCommit",
+                "请先完成或中止当前 Git 操作，再提交文件。",
+            ),
+            // 操作横幅（`git-operation-banner.tsx:57-137`）。
+            ("lithe.git.mergeInProgress", "合并进行中"),
+            ("lithe.git.rebaseInProgress", "变基进行中"),
+            ("lithe.git.cherryPickInProgress", "拣选进行中"),
+            ("lithe.git.revertInProgress", "还原进行中"),
+            ("lithe.git.operationStep", "第 {step} / {total} 步。"),
+            (
+                "lithe.git.resolveConflicts",
+                "解决 {count} 个冲突文件，暂存后继续。",
+            ),
+            (
+                "lithe.git.conflictsResolved",
+                "所有冲突已解决。继续完成，或中止以撤销。",
+            ),
+            (
+                "lithe.git.resolveConflictsFirst",
+                "请先解决冲突：{paths}",
+            ),
+            ("lithe.git.continueMerge", "继续合并"),
+            ("lithe.git.continueRebase", "继续变基"),
+            ("lithe.git.continueCherryPick", "继续拣选"),
+            ("lithe.git.continueRevert", "继续还原"),
+            ("lithe.git.skipCommit", "跳过提交"),
+            ("lithe.git.abort", "中止"),
+            // 「更多」菜单的「丢弃全部更改」+ 确认框（`git-actions-menu.tsx:146-153,308`）。
+            ("lithe.git.discardAllChanges", "丢弃全部更改"),
+            (
+                "lithe.git.discardChangesConfirm",
+                "丢弃所有未暂存的更改吗？此操作无法撤销。",
+            ),
+            ("lithe.git.rollback", "回滚"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

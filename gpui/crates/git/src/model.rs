@@ -1,4 +1,10 @@
-//! Git Feature 的**数据层**：6 条 `git.*` 命令的请求 / 解析、分页游标生命周期、行数据与纯函数。
+//! Git Feature **底部提交记录面板**的数据层：5 条 `git.*` 命令的请求 / 解析、分页游标生命周期、
+//! 行数据与纯函数。
+//!
+//! > ⚠️ **数目纠正**：本行原先写作「6 条 `git.*` 命令」，实际只有 5 条
+//! > （`git.status` / `git.references` / `git.historyPage` / `git.historyCursorClose` /
+//! > `git.commitFiles`）；第 6 条数据调用是**非 Git 命名空间**的 `workspace.snapshot`
+//! > （[`discover_repository_root`]，用于"工作区根不是仓库"时的一级子目录探测）。
 //!
 //! 从 `shell_probe/bottom_panel.rs` 的「度量」常量区与「数据模型」「Core 调用与解析」
 //! 「纯函数：泳道布局 / 引用树 / 文件树 / 过滤」四节逐字拆出（只调整可见性）。

@@ -101,14 +101,16 @@
 
 **待做**：
 
-1. **源代码管理**（进行中/待复核）：规格 `research/windows/08-source-control.md`。
-   口径：只读 + 单仓库 + 文件级写（左栏第 2 项「更改」切换左栏内容 → `git.status` 列表含
-   stage/unstage/stageAll + 已跟踪/未跟踪分类头 + 空态 → 提交面板 `Ctrl+Enter` → **`git.operationState`
-   横幅必须有** → 手动 + 写后刷新）；不做 watcher/分支/远程/工作树/富差异/AI/多仓库/拖拽。
-   两条已知挡路：`explorer` 行组件无动作槽（要么扩它、要么为变更列表自写最小行组件）；
-   Core **没有删除文件命令**（只做 `git.write discard`，其余不画死控件）。真源写失败常静默 → 本侧不照抄。
-   验收：左栏切换、列表与 `git status` 一致、stage 后用 `git diff --cached --name-only` 独立核对、
-   提交后 `git log -1 --oneline` 真多一条、失败有可见反馈、构建+测试。
+1. ~~**源代码管理**~~ **已完成**（规格 `research/windows/08-source-control.md`）：新增
+   `crates/git/src/changes.rs`（数据层：`git.status` + `operationState`，空列表时补 `references` 判有无提交；
+   `ChangeKind` 逐字对齐 `core-result-adapter.ts:15-26`；6 个写操作；**把"信封 ok:true 但 Git 退出码非 0"
+   翻成用户可见失败**（真源这里是静默的）；11 单测）+ `changes_view.rs`（表现层：标题栏 / 错误条 /
+   操作横幅 / 变更列表 / 提交面板 / 五态空态）；左栏槽位改成 `top_activity_view == Some(1)` → 变更列表、
+   否则项目树；行组件**自写**（`explorer` 零改动，代价是无虚拟滚动）。
+   44 条里做了 15 条 + 提交的 4 条前置校验 + 「丢弃全部更改」（带确认框）；未做的逐条列在两个新文件的
+   模块文档与 `.artifacts/p11/NOTES.md` §6。验证用真实注入 + PowerShell 侧独立核对（stage →
+   `git diff --cached --name-only`；提交 → `git log -1` 真多一条；失败 → 会挂的 pre-commit 钩子触发红条
+   且 `git log` 不变）。`git/src/{lib,model}.rs` 里"调 6 条 `git.*`"的文档已纠正为 5 条。
 2. **设置剩余页**（除 AI）：`research/windows/07-settings-ui.md` §3 有逐页签规格、§7.3/§7.4 有
    "能否立刻生效/建议范围"。原则：**能真生效的先做**（编辑器字号/换行、终端 profile、Git 身份、
    LSP 的 jdtls 路径…），没有数据源的做成**明确空态**并写清前置条件，**不塞假控件**。
