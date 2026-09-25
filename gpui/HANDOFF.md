@@ -49,10 +49,22 @@
 只在 `CodeEditor` 模式；`highlight_lines` 在 highlighter 为 `None` 时**提前返回**
 （在算诊断样式之前）⇒ **没上色就没波浪线**。
 
-**下一批的第一件事：右栏懒扫移出 MouseUp 派发栈 + 修"仪表"** ——
-`workspace.rs::scan_right_view_if_needed` 现在是在点击回调里**同步跑**的（Spring 那路要读依赖 JAR），
-应延后出派发栈；同时按 `gpui/research/click-double-trigger-dpi.md` 的 P0 给 `S1_RIGHT_PANEL` 加
-`seq`/`t_ms`/坐标并改走 stderr，这样"两次输入"才可判定。
+**下一批的第一件事（settings 侧两处"显示 ≠ 实际"，都是 `d87f3b0a` 的实机取证暴露的）**：
+① 设置页 JDK 探测要加 **≥21 闸门** —— 不填覆盖值时页面显「自动 → JDK 1.8.0_221」，而语言服务
+**根本起不来**（1.8 被 `probe_java` 的 ≥21 闸门拒掉；本机 `%ProgramData%` = `C:\ProgramData`
+枚举不到 `D:\ProgramData\java\openjdk-21`）；同一道闸门也要用在**覆盖值**探测上（填 `openjdk-17`
+现在显示成「已选择 → JDK 17.0.16」，而 java 侧判无效并降级）。
+② `mavenExecutablePath` / `mavenJavaHomePath` **确认无消费方**（gpui 全仓没有任何地方执行 `mvn`；
+`runConfig.createLaunchPlan` 自己写着"还没有消费方"）⇒ 页面上必须标注**尚未生效**。
+两条都在 `settings/**`。此后：③ **LSP 页**（规格见 `gpui/research/settings-lsp-and-run-pages.md` §2：
+只有 `autoCompletion` 有真消费方；`parameterHints` 上游没有签名帮助接口 ⇒ **连置灰都不画**；
+JDTLS 路径输入框不做 —— Windows 已主动退役该键并配了守卫测试）；④ **运行配置页**（`runConfig.generate`
+有真数据，但**运行按钮不能画**）；⑤ 清掉仓库根未跟踪的 `org/`（读 JDT 内部实现留下的 `.class` 垃圾）。
+
+**已完成（同一天，供追溯）**：右栏懒扫移出 MouseUp 派发栈 + `S1_RIGHT_PANEL` 加 `seq/t_ms/坐标`（走 stderr）
+已落地并提交；诊断波浪线、快速修复（`Ctrl+.`，含"自动补 import"真实路径）、设置「项目 · JDK 与 Maven」
+真值页、以及 **JDK 覆盖值真正生效**（判据顺序：覆盖值 → `LITHE_JDTLS_JAVA` → 捆绑 → JDTLS 自带 jre →
+`JAVA_HOME` → PATH → 常见安装根；实测 21.0.8 / 25.0.3 按设置生效）都已完成。
 
 > ✅ **2026-09-26 结案（维护者确认，务必先读）**：之前三次被记成"环境杂散点击 / 外部注入脚本"的
 > 输入，**是维护者本人手动点击与打字**。所以：
