@@ -24,6 +24,7 @@
 //! | [`identity`] | 「Git」页的数据边界：宿主钩子（`GitIdentityHost`）+ 身份值的纯判据 |
 //! | [`project`] | 「项目 · JDK 与 Maven」页的数据层：本机 JDK / Maven 的发现 + 生效值判据（纯数据） |
 //! | [`run`] | 「运行配置」页的数据层：`workspace.snapshot` + `runConfig.generate` 的解析与分类（纯数据 + 两条只读 Core 调用） |
+//! | [`recent_projects`] | 「最近项目」的数据层：同目录另一份 `recent-projects.json` 的读 / 写 / 维护（纯数据 + 纯文件 IO，**不取时钟、不碰 UI**；决策 Q20） |
 //! | [`dialog`] | 设置对话框（820×620 模态）：头部 / 分类栏 / 内容页 / 底部 + 确认子对话框 |
 //! | [`restart`] | 切换语言后的"用相同参数重启自己"（语言无法运行中热切，见该模块文档） |
 //!
@@ -47,6 +48,7 @@ pub mod identity;
 pub mod paths;
 pub mod persistence;
 pub mod project;
+pub mod recent_projects;
 pub mod restart;
 pub mod row;
 pub mod run;
@@ -62,11 +64,17 @@ pub use identity::{
     IDENTITY_MAX_BYTES, git_identity_page, host_workspace_root, identity_value_is_valid,
     set_git_identity_host,
 };
-pub use paths::{SETTINGS_FILE_ENV, settings_file_path};
+pub use paths::{SETTINGS_FILE_ENV, recent_projects_file_path, settings_file_path};
 pub use persistence::{DebounceState, Loaded, SAVE_DEBOUNCE_MS, load, load_from};
 pub use project::{
     EffectiveToolchain, MavenConfiguration, MavenDiscovery, Overrides, ProjectEnvironment,
     PROJECT_DIAGNOSTIC_TAG, ToolMode, ToolSource, discover as discover_project_environment,
+};
+pub use recent_projects::{
+    LoadedRecentProjects, MAX_RECENT_PROJECTS, RECENT_PROJECTS_DIAGNOSTIC_TAG, RECENT_PROJECTS_KEY,
+    RecentProject, RecentProjects, folder_name as recent_project_name,
+    load as load_recent_projects, load_from as load_recent_projects_from, now_unix_ms,
+    save as save_recent_projects,
 };
 pub use restart::restart_application;
 pub use schema::Settings;

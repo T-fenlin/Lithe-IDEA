@@ -36,6 +36,9 @@ const APP_DIR_NAME_LINUX: &str = "lithe";
 /// 设置文件名，与 Windows 的 Tauri Store 文件名一致（`settings.json`，
 /// `windows/tauri/src/features/settings/lib/settings-persistence.ts:50`）。
 const SETTINGS_FILE_NAME: &str = "settings.json";
+/// 最近项目文件名。与设置文件**同目录**，但**另一份文件**（决策 Q20：
+/// `gpui/research/menu-and-open-project-plan.md:35`）。
+const RECENT_PROJECTS_FILE_NAME: &str = "recent-projects.json";
 
 /// 解析设置文件的完整路径。
 ///
@@ -56,6 +59,27 @@ pub fn settings_file_override() -> Option<PathBuf> {
     std::env::var_os(SETTINGS_FILE_ENV)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
+}
+
+/// 解析最近项目文件的完整路径：**设置文件的同目录兄弟文件**。
+///
+/// ```text
+/// %APPDATA%\Lithe\settings.json  →  %APPDATA%\Lithe\recent-projects.json
+/// C:\tmp\lithe-verify\settings.json  →  C:\tmp\lithe-verify\recent-projects.json
+/// ```
+///
+/// 为什么跟着设置文件走（而不是各自推一遍目录）：[`SETTINGS_FILE_ENV`] 是这个仓库
+/// **唯一**的"把设置数据挪到临时目录"的开关，机器验证脚本（`.artifacts/` 那几轮）就靠它。
+/// 最近项目如果自己从 `APPDATA` 推导，验证时就会绕过开关、把真实用户目录里的
+/// 最近项目列表读进来又写回去 —— 那正是覆盖开关要避免的事。
+///
+/// 返回 `None` 表示设置文件路径本身推导不出来（见 [`settings_file_path`]），
+/// 此时最近项目也**不落盘**，调用方照样能拿到空列表（`recent_projects::load`）。
+pub fn recent_projects_file_path() -> Option<PathBuf> {
+    let settings = settings_file_path()?;
+    // ⚠️ `SETTINGS_FILE_ENV` 按文档是**完整文件路径**；`with_file_name` 只替换最后一段
+    // （`C:\tmp\dir\` 这种带尾分隔符的写法会得到 `C:\tmp\recent-projects.json`）。
+    Some(settings.with_file_name(RECENT_PROJECTS_FILE_NAME))
 }
 
 #[cfg(target_os = "windows")]
@@ -151,5 +175,35 @@ mod tests {
         // SAFETY: 见 ENV_LOCK 的说明。
         unsafe { std::env::set_var(SETTINGS_FILE_ENV, "") };
         assert_eq!(settings_file_override(), None);
+    }
+
+    /// 最近项目文件是设置文件的**同目录兄弟文件** —— 机器验证脚本靠 `SETTINGS_FILE_ENV`
+    /// 把两份文件一起挪进临时目录；这条测试守的是"最近项目不许绕过那个开关"。
+    #[test]
+    fn recent_projects_file_sits_next_to_the_settings_file() {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _restore = EnvGuard(std::env::var_os(SETTINGS_FILE_ENV));
+
+        // SAFETY: 见 ENV_LOCK 的说明。
+        unsafe {
+            std::env::set_var(
+                SETTINGS_FILE_ENV,
+                r"C:\tmp\lithe-verify\settings.json",
+            )
+        };
+        assert_eq!(
+            recent_projects_file_path(),
+            Some(PathBuf::from(r"C:\tmp\lithe-verify\recent-projects.json"))
+        );
+
+        // 没有覆盖时也必须是兄弟关系（平台默认目录不在这里断言，只断言相对关系与文件名）。
+        // SAFETY: 见 ENV_LOCK 的说明。
+        unsafe { std::env::remove_var(SETTINGS_FILE_ENV) };
+        assert_eq!(
+            recent_projects_file_path(),
+            settings_file_path().map(|settings| settings.with_file_name("recent-projects.json"))
+        );
     }
 }

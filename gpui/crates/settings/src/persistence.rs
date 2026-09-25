@@ -25,6 +25,7 @@ use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
@@ -239,22 +240,33 @@ fn take<T: DeserializeOwned>(
     }
 }
 
-/// 原子写：临时文件 + rename。
+/// 原子写设置文件。
+///
+/// 只是 [`save_json`] 的一个薄包装（保持既有调用点与测试不变）。
+pub fn save(path: &Path, settings: &Settings) -> io::Result<usize> {
+    save_json(path, settings)
+}
+
+/// 原子写任意 JSON 载荷：临时文件 + rename。
 ///
 /// 目录不存在时先建（首次启动要能落盘）。
-pub fn save(path: &Path, settings: &Settings) -> io::Result<usize> {
+///
+/// 做成泛型是为了让**同目录的其它 JSON 文件**（`recent-projects.json`，见
+/// [`crate::recent_projects`]）复用同一套"临时文件 + rename"语义，而不是各自再写一份
+/// —— 两份原子写的实现迟早会在"断电只留半个文件"这类细节上漂移。
+pub fn save_json<T: Serialize>(path: &Path, value: &T) -> io::Result<usize> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
         }
     }
 
-    let json = serde_json::to_string_pretty(settings)
+    let json = serde_json::to_string_pretty(value)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let text = format!("{json}\n");
 
-    // 临时文件名固定（不用随机后缀）：同一进程只有一个写者（`SettingsStore` 的防抖任务），
-    // 而固定后缀让"崩溃后残留的临时文件"可预期、可清理。
+    // 临时文件名固定（不用随机后缀）：每个文件只有一个写者（设置文件是 `SettingsStore` 的
+    // 防抖任务，最近项目是它自己的列表所有者），而固定后缀让"崩溃后残留的临时文件"可预期、可清理。
     let tmp = tmp_path(path);
     std::fs::write(&tmp, text.as_bytes())?;
     std::fs::rename(&tmp, path)?;
