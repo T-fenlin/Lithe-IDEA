@@ -239,6 +239,34 @@ pub struct Settings {
     /// 键名与语义见 [`Self::java_home_path`]。
     #[serde(rename = "mavenJavaHomePath")]
     pub maven_java_home_path: String,
+
+    /// 自动补全（输入时是否自动弹出补全菜单）。Windows 键 `autoCompletion`，默认 `true`
+    /// （`default-settings.ts:153`；真源渲染点 `macos-settings-panels.tsx:406-415`）。
+    ///
+    /// ## 为什么只有这一个 LSP 键
+    ///
+    /// 真源 LSP 页有三个开关（`autoCompletion` / `parameterHints` / `semanticTokens`），
+    /// 只有本键在 gpui 侧**有真消费方**：
+    ///
+    /// - `parameterHints`：上游 `gpui-base-0.6.6` 的 `Lsp` 结构体**没有**签名帮助接口
+    ///   （`input/editor/lsp/mod.rs:39-69` 的 provider 清单里没有，全 crate `SignatureHelp`
+    ///   零命中）⇒ 画一个永远不生效的开关违反"不画假控件"的口径，所以**连置灰都不画**；
+    /// - `semanticTokens`：上游 trait 在（`lsp/semantic_tokens.rs:36-55`）但 Java 侧零实现、
+    ///   零装载点 ⇒ 那是"新做一个特性"，不是"接一个开关"，本批不做、页面也不画。
+    ///
+    /// ## 生效方式与边界
+    ///
+    /// **立即**：落到 `lithe-gpui-editor` 的补全 provider 触发判据
+    /// （`editor/src/completion.rs` 的 `is_completion_trigger`），由外壳在每次设置变化后经
+    /// `EditorPane::set_auto_completion` 转发（与 `tabSize` / `terminalDefaultShellId`
+    /// 同一条"值型设置经外壳转发"的路子）。
+    ///
+    /// ⚠️ 关掉的是**自动弹出**：JDTLS 补全与 Core 的轻量兜底（同一个 provider 的两个数据源）
+    /// 都随之不再自动弹菜单。provider 本身**保留**（不卸载），因为那是将来做手动触发
+    /// （`Ctrl+Space`）的基础；真源的描述句只说"活动语言服务器提供的补全建议"，
+    /// 落到本侧会在实现里点明"关掉 = 不再自动弹出"。
+    #[serde(rename = "autoCompletion")]
+    pub auto_completion: bool,
 }
 
 impl Default for Settings {
@@ -259,6 +287,8 @@ impl Default for Settings {
             java_home_path: String::new(),
             maven_executable_path: String::new(),
             maven_java_home_path: String::new(),
+            // 真源默认 `true`（`default-settings.ts:153`）—— 默认就该"打字有提示"。
+            auto_completion: true,
         }
     }
 }
@@ -412,6 +442,8 @@ mod tests {
         assert_eq!(settings.java_home_path, "");
         assert_eq!(settings.maven_executable_path, "");
         assert_eq!(settings.maven_java_home_path, "");
+        // LSP 页的 `autoCompletion` 默认 `true`（真源 `default-settings.ts:153`）。
+        assert!(settings.auto_completion);
     }
 
     /// 字段级 `default`：**缺键**回退到该字段默认值（不是整份丢弃）。
@@ -461,6 +493,8 @@ mod tests {
             "\"javaHomePath\"",
             "\"mavenExecutablePath\"",
             "\"mavenJavaHomePath\"",
+            // 阶段 18（「LSP」页）：真源三键里唯一有消费方的那一个。
+            "\"autoCompletion\"",
         ] {
             assert!(json.contains(key), "缺少键 {key}：{json}");
         }

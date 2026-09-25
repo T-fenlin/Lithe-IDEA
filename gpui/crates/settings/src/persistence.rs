@@ -213,6 +213,13 @@ fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<Strin
         &mut settings.maven_java_home_path,
         diagnostics,
     );
+    // 「LSP」页（阶段 18）：真源三键里唯一有消费方的那一个。
+    take(
+        object,
+        "autoCompletion",
+        &mut settings.auto_completion,
+        diagnostics,
+    );
     settings
 }
 
@@ -521,6 +528,8 @@ mod tests {
             java_home_path: "D:\\ProgramData\\java\\openjdk-21".to_string(),
             maven_executable_path: "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd".to_string(),
             maven_java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
+            // `autoCompletion` 的"非默认值"是 `false`（默认 `true`）。
+            auto_completion: false,
         };
         // 先规范化，保证"写出去的"就是"合法的"（否则比的是两个不同的东西）。
         settings.normalize();

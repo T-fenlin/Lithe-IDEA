@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 41 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 45 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8675,6 +8675,16 @@ lithe:
     zh-CN: "未知（拿不到用户主目录，推不出 Maven 默认的本地仓库位置）"
   settings.gpui.projectNothingDetected:
     zh-CN: "既没有探测到 JDK，也没有探测到 Maven。下面每一行都写明了查过哪些位置、各自为什么不行。"
+  settings.gpui.jdkBelowLanguageServiceMinimum:
+    zh-CN: "低于语言服务最低要求（JDT LS 需要 JDK {minimum} 或更新版本），语言服务无法启动。"
+  settings.gpui.mavenOverrideNotEffective:
+    zh-CN: "尚未生效：gpui 侧还没有执行 Maven 的通路（不执行 mvn，也没采购 Core 的启动计划），这个值现在不改变任何行为。"
+  settings.gpui.autoCompletionDescription:
+    zh-CN: "输入时自动显示补全建议（Java 语言服务优先，语言服务不可用时用当前文件的标识符兜底）。关掉之后不再自动弹出补全菜单，兜底候选也一并停止。"
+  settings.gpui.lspOnlyAutoCompletion:
+    zh-CN: "本页只做「自动补全」：真源另两项（参数提示、语义高亮）在 gpui 侧没有可挂载的接口（上游没有签名帮助 provider，语义高亮也没有 Java 侧实现），JDTLS / JDK 运行时路径则归「项目 · JDK 与 Maven」页，所以这里不画控件。"
+  settings.gpui.noLanguageServer:
+    zh-CN: "还没有可用的语言服务运行时（本机没有探测到满足要求的 JDK；打开 Java 项目时也会再检测一次）。"
   settings.gpui.runNoProject:
     zh-CN: "打开项目后才能识别可运行配置。"
   settings.gpui.runReadOnlyDescription:
@@ -8689,8 +8699,6 @@ lithe:
     zh-CN: "点击启动尚未接入：gpui 侧还没有运行面板与进程宿主，「运行」工具窗与「运行」菜单目前都是占位。Core 的 runConfig.createLaunchPlan（平台无关的启动计划）已经能给出计划，但还没有消费方。"
   settings.gpui.prerequisiteKeyboard:
     zh-CN: "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。"
-  settings.gpui.prerequisiteLsp:
-    zh-CN: "前置条件：语言服务客户端（补全、参数提示、语义高亮）与 JDTLS 运行时路径设置。"
   settings.gpui.prerequisiteGit:
     zh-CN: "前置条件：Git 身份（user.name / user.email）的读写接线；Core 的 git.repositorySetup 与 git.configureIdentity 已经就绪。"
   settings.gpui.prerequisiteLogs:

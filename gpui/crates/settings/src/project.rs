@@ -86,6 +86,56 @@ pub const CONF_DIRECTORY: &str = "conf";
 /// 安装根的 `bin` 目录名（Core 用它判断"上面那一层是不是安装根"）。
 pub const BIN_DIRECTORY: &str = "bin";
 
+/// JDT LS 允许的最低 Java **主版本**。
+///
+/// ## 数值与判据的唯一真源：`gpui/crates/java/src/jdtls.rs`
+///
+/// 这一个 `21` **不是本模块自己定的**，它是 `jdtls.rs` 里同一条判据的镜像（那个 crate
+/// 对本 crate 是**只读参考**：`settings` 不认识 `lithe-gpui-java`，反向依赖会成环）：
+///
+/// - 数值本身：`jdtls.rs:80` 的 `const MINIMUM_JAVA_MAJOR: u64 = 21;`，
+///   它的文档写着来源是 `third_party/jdtls/manifest.json` 的 `minimumJavaVersion`
+///   （即 **JDT LS 载荷自己声明的运行要求**，不是我们拍脑袋选的版本）；
+/// - 判据落点：`jdtls.rs:820-837` 的 `probe_java` —— 跑 `java -version`、解析版本，
+///   `major_version(&version) < MINIMUM_JAVA_MAJOR` 就返回
+///   `Err("版本 {version} 低于 {MINIMUM_JAVA_MAJOR}")`；
+/// - 主版本解析口径：`jdtls.rs:848-859` 的 `major_version`
+///   （`1.8.0_221` → 8、`21.0.2` → 21、`25` → 25），与下文的 [`jdk_major_version`] 逐条对齐。
+///
+/// ⚠️ **为什么这个闸门必须出现在设置页**：`resolve_runtime`（`jdtls.rs:440-495`）会把
+/// 低于闸门的候选**丢掉并继续往下找**，一个都不满足时整条链路失败
+/// （`jdtls.rs:713-715` 的"未找到 Java 21 或更新版本的 JDK，JDT LS 无法启动"）。
+/// 页面如果只报"自动 → JDK 1.8.0_221"而不说这一层，用户就无法预判
+/// **语言服务到底能不能起来** —— 那正是"显示 ≠ 实际"。
+///
+/// 两条路用的是同一个闸门与同一个解析函数（见 [`JdkDiscovery::effective`]）：
+/// 自动发现（`LITHE_JDTLS_JAVA` / `JAVA_HOME` / `PATH` / 常见安装根）与
+/// 设置页的覆盖值（`javaHomePath`）。
+pub const MINIMUM_JAVA_MAJOR: u64 = 21;
+
+/// 从 `java -version` 报出的版本串里取主版本（`1.8.0_221` → 8、`21.0.2` → 21、`25` → 25）。
+///
+/// 逐条对齐 `jdtls.rs:848-859` 的 `major_version`（那里是唯一真源，本函数只是它的镜像）：
+/// 先按 `.` / `_` / `-` / `+` 切开；首段是 `1` 时（`1.8.0_221` 这种 2006 年前的旧命名）
+/// 主版本是**第二段**；否则首段自己就是主版本。读不出来时返回 `0`
+/// （`0 < MINIMUM_JAVA_MAJOR` ⇒ 判定为"不满足"，与 `jdtls.rs` 的 `unwrap_or(0)` 同一条口径）。
+pub fn jdk_major_version(version: &str) -> u64 {
+    let mut parts = version.split(['.', '_', '-', '+']);
+    let first = parts.next().unwrap_or_default();
+    if first == "1" {
+        return parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+    }
+    first.parse().unwrap_or(0)
+}
+
+/// 这个版本串是否满足 JDT LS 的最低要求（`>= MINIMUM_JAVA_MAJOR`）。
+pub fn meets_language_service_requirement(version: &str) -> bool {
+    jdk_major_version(version) >= MINIMUM_JAVA_MAJOR
+}
+
 /// 一个工具是**从哪一级**找出来的。界面上的「来源」一栏就是它。
 ///
 /// `label_key` 指向的文案键里，`ToolSource::EnvOverride` / `ToolSource::MavenHome` 带一个
@@ -187,6 +237,12 @@ pub struct DetectedJdk {
     pub executable: String,
     /// `java -version` 里的版本串（**原样**，不转成数字：`1.8.0_402` 与 `21.0.2` 都要能显示）。
     pub version: String,
+    /// 这个版本能不能跑 JDT LS（`>= MINIMUM_JAVA_MAJOR`，判据见 [`MINIMUM_JAVA_MAJOR`]）。
+    ///
+    /// ⚠️ **低于闸门的 JDK 仍然是一条"检测到的安装"**（它确实装在这台机器上、版本也读出来了），
+    /// 所以它留在候选列表里；但一旦它成为**生效值**，页面必须标出"语言服务起不来"
+    /// —— 见 [`EffectiveToolchain::Unusable`] 的 `language_service_rejection`。
+    pub meets_language_service: bool,
     /// 从哪一级找出来的。
     pub source: ToolSource,
 }
@@ -216,6 +272,9 @@ pub struct DetectedTool {
     pub path: String,
     /// 版本串。
     pub version: String,
+    /// 见 [`DetectedJdk::meets_language_service`]（Maven 那条探测恒为 `true`：
+    /// Maven 的版本与 JDT LS 的 Java 门槛无关，这里不假造一个判定）。
+    pub meets_language_service: bool,
 }
 
 /// 一个覆盖值的探测结论（连同用户填的原文，用不了时要原样回显）。
@@ -353,6 +412,15 @@ pub enum EffectiveToolchain {
         path: String,
         /// 为什么用不了。
         reason: String,
+        /// 这个"用不了"是不是**仅仅因为版本低于 JDT LS 的门槛**
+        /// （= `jdtls.rs` 的 `probe_java` 那一条判据，见 [`MINIMUM_JAVA_MAJOR`]）。
+        ///
+        /// 为 `true` 时界面会在 [`Self::Unusable::reason`] 之外**再补一句**
+        /// "低于语言服务最低要求 N，语言服务无法启动" + 这个版本串，让用户一眼能预判
+        /// 语言服务起不来（而不是看到一个"因为版本低所以用不了"的笼统失败）。
+        /// 为 `false` 的是路径不存在 / 跑不起来 / 读不出版本这一档，那时补一句关于版本的话
+        /// 反而是编造（我们连版本都没读到）。
+        language_service_rejection: bool,
     },
     /// 没有覆盖值，也没探测到任何东西。
     NotFound {
@@ -382,37 +450,89 @@ impl EffectiveToolchain {
 }
 
 impl JdkDiscovery {
-    /// 自动生效的 JDK（三级里的第一项）。
+    /// 自动生效的 JDK：三级里**第一个满足 JDT LS 最低版本**的候选。
+    ///
+    /// ⚠️ 判据必须与 `jdtls.rs` 的 `resolve_runtime`（`:440-495`）一致：那一条链路会
+    /// 逐候选跑 `probe_java`，**低于 `MINIMUM_JAVA_MAJOR` 的直接丢弃并继续往下找**
+    /// （本机实测：`PATH` 上的 1.8 被拒之后它继续找 `JAVA_HOME` 的 21）。所以页面上的
+    /// "自动生效值"也只能是"第一个过得去闸门的那个" —— 否则页面报 1.8、语言服务实际用 21，
+    /// 或者页面报"可用"而语言服务起不来。
+    ///
+    /// 一个候选都不满足时返回 `None`（由 [`Self::effective`] 翻成如实标注的"用不了"），
+    /// 而**不是**把第一个候选假装成可用值。
     pub fn detected(&self) -> Option<&DetectedJdk> {
+        self.candidates
+            .iter()
+            .find(|jdk| jdk.meets_language_service)
+    }
+
+    /// 一个候选都不过闸门时的那一条：候选列表的**第一项**（发现顺序最高的那个）。
+    ///
+    /// 用它来给出"这台机器上最接近可用"的那条事实（路径 + 版本），界面据此标出
+    /// "低于语言服务最低要求 21"。
+    pub fn closest_below_requirement(&self) -> Option<&DetectedJdk> {
         self.candidates.first()
     }
 
     /// JDK 这一行的生效值（真源 `resolved.java` 的等价物）。
+    ///
+    /// 三条路，与实测判据一一对应：
+    ///
+    /// 1. **覆盖值可用**（`javaHomePath` 指向的 JDK 过了 ≥ 21 闸门）→ `Resolved{Configured}`；
+    /// 2. **覆盖值低于闸门** → `Unusable` + `language_service_rejection = true`
+    ///    （`jdtls.rs` 的 `resolve_runtime` 会拒掉它，页面必须说出来）；
+    /// 3. **没有覆盖值** → 取自动发现里**第一个过闸门**的候选；一个都不过闸门时，
+    ///    用发现顺序里的第一项如实标出"低于最低要求"（而不是报 `NotFound`：JDK 确实找到了，
+    ///    只是版本不够 —— 这两种事实的可排查方向完全不同）。
     pub fn effective(&self) -> EffectiveToolchain {
         if let Some(overridden) = &self.overridden {
             return match &overridden.result {
-                Ok(tool) => EffectiveToolchain::Resolved {
-                    mode: ToolMode::Configured,
-                    path: tool.path.clone(),
-                    version: non_empty(&tool.version),
-                    source: None,
-                },
+                Ok(tool) => {
+                    if tool.meets_language_service {
+                        EffectiveToolchain::Resolved {
+                            mode: ToolMode::Configured,
+                            path: tool.path.clone(),
+                            version: non_empty(&tool.version),
+                            source: None,
+                        }
+                    } else {
+                        EffectiveToolchain::Unusable {
+                            path: overridden.path.clone(),
+                            reason: below_requirement_reason(&tool.version),
+                            language_service_rejection: true,
+                        }
+                    }
+                }
                 Err(reason) => EffectiveToolchain::Unusable {
                     path: overridden.path.clone(),
                     reason: reason.clone(),
+                    language_service_rejection: false,
                 },
             };
         }
-        match self.detected() {
-            Some(jdk) => EffectiveToolchain::Resolved {
+        if let Some(jdk) = self.detected() {
+            return EffectiveToolchain::Resolved {
                 mode: ToolMode::Automatic,
                 path: jdk.home.clone(),
                 version: non_empty(&jdk.version),
                 source: Some(jdk.source),
-            },
-            None => EffectiveToolchain::NotFound {
-                reason: self.rejection_summary(),
-            },
+            };
+        }
+        // 候选都在，但没有一个能跑 JDT LS：如实报"是哪一个、为什么"。
+        if let Some(jdk) = self.closest_below_requirement() {
+            let path = if jdk.home.is_empty() {
+                jdk.executable.clone()
+            } else {
+                jdk.home.clone()
+            };
+            return EffectiveToolchain::Unusable {
+                path,
+                reason: below_requirement_reason(&jdk.version),
+                language_service_rejection: true,
+            };
+        }
+        EffectiveToolchain::NotFound {
+            reason: self.rejection_summary(),
         }
     }
 
@@ -436,6 +556,10 @@ impl MavenDiscovery {
     }
 
     /// Maven 这一行的生效值。
+    ///
+    /// ⚠️ Maven **没有** JDT LS 那种 Java 版本闸门：`mavenJavaHomePath` 指向的 JDK 用不了
+    /// 就是路径/可执行文件本身的问题（见 [`Self::overridden`] 的 `Err`），所以这一行的
+    /// `Unusable` 恒为 `language_service_rejection = false`（不把 Java 门槛混进 Maven 的失败）。
     pub fn effective(&self) -> EffectiveToolchain {
         if let Some(overridden) = &self.overridden {
             return match &overridden.result {
@@ -448,6 +572,7 @@ impl MavenDiscovery {
                 Err(reason) => EffectiveToolchain::Unusable {
                     path: overridden.path.clone(),
                     reason: reason.clone(),
+                    language_service_rejection: false,
                 },
             };
         }
@@ -527,6 +652,14 @@ impl ProjectEnvironment {
         let jdk = self.jdk.effective();
         let maven = self.maven.effective();
         let maven_jdk = self.maven_jdk_effective();
+        // 语言服务能不能起来（本批 A1 的核心判据）：`languageService=ready` 才代表
+        // 页面显示的那个生效 JDK 满足 `jdtls.rs` 的 ≥ 21 闸门。
+        // 与 `S1_JAVA_JDTLS javaVersion=…` 对照就能证明"页面显示"与"实际起服务用的 JDK"一致。
+        let language_service = if matches!(jdk, EffectiveToolchain::Resolved { .. }) {
+            "ready"
+        } else {
+            "unavailable"
+        };
         let jdk_source = match &jdk {
             EffectiveToolchain::Resolved {
                 source: Some(source),
@@ -544,7 +677,7 @@ impl ProjectEnvironment {
             other => other.diagnostic_mode(),
         };
         format!(
-            "{PROJECT_DIAGNOSTIC_TAG} jdk={} source={} version={} mode={} maven={} mavenVersion={} mavenHome={} mavenSource={} mavenJdk={} mavenJdkMode={} settings={} settingsInstallation={} localRepo={} localRepoSource={} overrideJdk={} overrideMaven={} overrideMavenJdk={} candidates={} rejected={}",
+            "{PROJECT_DIAGNOSTIC_TAG} jdk={} source={} version={} mode={} maven={} mavenVersion={} mavenHome={} mavenSource={} mavenJdk={} mavenJdkMode={} settings={} settingsInstallation={} localRepo={} localRepoSource={} overrideJdk={} overrideMaven={} overrideMavenJdk={} candidates={} rejected={} minimumJava={} languageService={}",
             jdk.diagnostic_value(),
             jdk_source,
             jdk_version(&jdk).unwrap_or_else(|| "-".to_string()),
@@ -581,6 +714,8 @@ impl ProjectEnvironment {
             self.overrides.maven_java_home,
             self.jdk.candidates.len() + self.maven.candidates.len(),
             self.jdk.rejected.len() + self.maven.rejected.len(),
+            MINIMUM_JAVA_MAJOR,
+            language_service,
         )
     }
 }
@@ -588,8 +723,23 @@ impl ProjectEnvironment {
 fn jdk_version(effective: &EffectiveToolchain) -> Option<String> {
     match effective {
         EffectiveToolchain::Resolved { version, .. } => version.clone(),
-        _ => None,
+        // ⚠️ `Unusable` 那一档也要报版本：低于 ≥ 21 闸门时版本号**是读到了的**
+        // （只是过不了闸门），页面上那句话就带它；诊断行漏掉它会让
+        // `S1_SETTINGS_PROJECT` 与 `S1_JAVA_JDTLS javaVersion=…` 对不上，
+        // 也无法用日志复核"页面报的那个版本是哪一个"。
+        EffectiveToolchain::Unusable { reason, .. } => version_in_reason(reason),
+        EffectiveToolchain::NotFound { .. } => None,
     }
+}
+
+/// 从 `版本 {X} 低于 {N}…` 这类原因串里把版本号抠出来（[`below_requirement_reason`] 的逆运算）。
+///
+/// 纯字符串处理、失败就返回 `None`（**不编一个版本**）：诊断行宁可少一格，
+/// 也不能因为解析不出来而报一个错的版本。
+fn version_in_reason(reason: &str) -> Option<String> {
+    let rest = reason.strip_prefix("版本 ")?;
+    let version = rest.split_whitespace().next()?;
+    (!version.is_empty()).then(|| version.to_string())
 }
 
 fn maven_version(effective: &EffectiveToolchain) -> Option<String> {
@@ -878,7 +1028,27 @@ fn deduplicate_maven(candidates: &mut Vec<DetectedMaven>) {
     candidates.retain(|maven| seen.insert(maven.executable.clone()));
 }
 
+/// 版本低于 JDT LS 门槛时的**可读原因**（界面上那句话的 `{message}` 部分）。
+///
+/// 与 `jdtls.rs:834` 的错误文本同一条口径（`版本 {version} 低于 {MINIMUM_JAVA_MAJOR}`），
+/// 但这里补上"这意味着什么"：`jdtls.rs:713-715` 在整条链路失败时说的是
+/// "未找到 Java 21 或更新版本的 JDK，**JDT LS 无法启动**"。
+/// 设置页要对齐的是后半句 —— 用户看到版本号不够，真正要预判的是"语言服务起不起得来"。
+pub fn below_requirement_reason(version: &str) -> String {
+    format!("版本 {version} 低于 {MINIMUM_JAVA_MAJOR}，语言服务无法启动")
+}
+
 /// 探测一个 JDK 主目录（或 `java` 可执行文件）：能用就给出 `home` + `version`。
+///
+/// ⚠️ **低于 ≥ 21 闸门的 JDK 仍然算"探测成功"**（`Ok`），只是
+/// [`DetectedTool::meets_language_service`] 是 `false`：它确实装在这台机器上、版本也读得出来，
+/// 界面上它应该出现在"检测到的安装"里，并且成为生效值时**如实标注**"语言服务无法启动"
+/// （见 [`JdkDiscovery::effective`]）。把它直接当 `Err` 会丢掉版本号，
+/// 页面就只能说"用不了"，用户无法预判。
+///
+/// 真正的 `Err` 只留给"根本用不了"：找不到 `java`、跑不起来、读不出版本
+/// （与 `jdtls.rs:820-837` 的 `probe_java` 相比，这里**唯一**放宽的就是把版本闸门
+/// 从"返回 Err"改成"带一个标志位"）。
 fn probe_jdk(path: &str) -> Result<DetectedTool, String> {
     let path = Path::new(path);
     let executable = java_executable_in(path)
@@ -888,6 +1058,7 @@ fn probe_jdk(path: &str) -> Result<DetectedTool, String> {
         path: home_of(&executable)
             .map(|home| home.display().to_string())
             .unwrap_or_else(|| path.display().to_string()),
+        meets_language_service: meets_language_service_requirement(&version),
         version,
     })
 }
@@ -917,6 +1088,8 @@ fn probe_maven(path: &str) -> Result<DetectedTool, String> {
     Ok(DetectedTool {
         path: executable.display().to_string(),
         version: probe.version,
+        // Maven 没有 JDT LS 的 Java 版本门槛（见 [`DetectedTool::meets_language_service`]）。
+        meets_language_service: true,
     })
 }
 
@@ -936,11 +1109,17 @@ fn probe_java_candidate(candidate: &Candidate) -> CandidateProbe {
         return CandidateProbe::Absent;
     };
     match probe_java_version(&executable) {
+        // ⚠️ 低于 ≥ 21 闸门的**也进候选列表**（版本读到了 = 这是一条可显示的事实），
+        // 只是带一个 `meets_language_service = false` 的标志位；"自动生效值"的选取
+        // （[`JdkDiscovery::detected`]）与"生效值标注"（[`JdkDiscovery::effective`]）都用它。
+        // 这与 `jdtls.rs` 的差别只有一处：那边低于闸门直接丢弃候选，因为语言服务不需要它；
+        // 设置页要把它**显示**出来，这正是本批要修的"显示 ≠ 实际"。
         Ok(version) => CandidateProbe::Found(DetectedJdk {
             home: home_of(&executable)
                 .map(|home| home.display().to_string())
                 .unwrap_or_default(),
             executable: executable.display().to_string(),
+            meets_language_service: meets_language_service_requirement(&version),
             version,
             source: candidate.source,
         }),
@@ -1636,14 +1815,15 @@ mod tests {
                 result: Ok(DetectedTool {
                     path: r"D:\ProgramData\java\openjdk-21".to_string(),
                     version: "21.0.2".to_string(),
+                    meets_language_service: true,
                 }),
             }),
-            candidates: vec![DetectedJdk {
-                home: r"C:\jdk8".to_string(),
-                executable: r"C:\jdk8\bin\java.exe".to_string(),
-                version: "1.8.0_402".to_string(),
-                source: ToolSource::Path,
-            }],
+            candidates: vec![detected_jdk(
+                r"C:\jdk8",
+                r"C:\jdk8\bin\java.exe",
+                "1.8.0_402",
+                ToolSource::Path,
+            )],
             rejected: Vec::new(),
         };
         assert_eq!(
@@ -1663,18 +1843,18 @@ mod tests {
         let discovery = JdkDiscovery {
             overridden: None,
             candidates: vec![
-                DetectedJdk {
-                    home: r"D:\ProgramData\java\openjdk-21".to_string(),
-                    executable: r"D:\ProgramData\java\openjdk-21\bin\java.exe".to_string(),
-                    version: "21.0.2".to_string(),
-                    source: ToolSource::JavaHome,
-                },
-                DetectedJdk {
-                    home: r"C:\jdk8".to_string(),
-                    executable: r"C:\jdk8\bin\java.exe".to_string(),
-                    version: "1.8.0_402".to_string(),
-                    source: ToolSource::Path,
-                },
+                detected_jdk(
+                    r"D:\ProgramData\java\openjdk-21",
+                    r"D:\ProgramData\java\openjdk-21\bin\java.exe",
+                    "21.0.2",
+                    ToolSource::JavaHome,
+                ),
+                detected_jdk(
+                    r"C:\jdk8",
+                    r"C:\jdk8\bin\java.exe",
+                    "1.8.0_402",
+                    ToolSource::Path,
+                ),
             ],
             rejected: Vec::new(),
         };
@@ -1691,6 +1871,23 @@ mod tests {
         assert_eq!(discovery.candidates.len(), 2);
     }
 
+    /// 一条"检测到的 JDK"样例；`meets_language_service` 一律**按版本现算**
+    /// （测试里不手写这个标志位，否则闸门与解析改动时测试会继续绿着说谎）。
+    fn detected_jdk(
+        home: &str,
+        executable: &str,
+        version: &str,
+        source: ToolSource,
+    ) -> DetectedJdk {
+        DetectedJdk {
+            home: home.to_string(),
+            executable: executable.to_string(),
+            meets_language_service: meets_language_service_requirement(version),
+            version: version.to_string(),
+            source,
+        }
+    }
+
     /// 覆盖值填了但跑不起来 → `Unusable` + 原因；**不会**悄悄退回自动值。
     #[test]
     fn an_unusable_override_is_reported_instead_of_falling_back() {
@@ -1699,17 +1896,23 @@ mod tests {
                 path: r"D:\nope".to_string(),
                 result: Err("找不到 java.exe（查过 D:\\nope）".to_string()),
             }),
-            candidates: vec![DetectedJdk {
-                home: r"C:\jdk8".to_string(),
-                executable: r"C:\jdk8\bin\java.exe".to_string(),
-                version: "1.8.0_402".to_string(),
-                source: ToolSource::Path,
-            }],
+            candidates: vec![detected_jdk(
+                r"C:\jdk8",
+                r"C:\jdk8\bin\java.exe",
+                "1.8.0_402",
+                ToolSource::Path,
+            )],
             rejected: Vec::new(),
         };
         match discovery.effective() {
-            EffectiveToolchain::Unusable { reason, .. } => {
+            EffectiveToolchain::Unusable {
+                reason,
+                language_service_rejection,
+                ..
+            } => {
                 assert!(reason.contains("找不到 java.exe"), "{reason}");
+                // 路径不存在这一类**不是**版本闸门问题：界面不许补一句关于版本的话（那是编造）。
+                assert!(!language_service_rejection);
             }
             other => panic!("覆盖值用不了时必须报 Unusable，实际 {other:?}"),
         }
@@ -1741,12 +1944,12 @@ mod tests {
             overrides: Overrides::default(),
             jdk: JdkDiscovery {
                 overridden: None,
-                candidates: vec![DetectedJdk {
-                    home: r"D:\ProgramData\java\openjdk-21".to_string(),
-                    executable: r"D:\ProgramData\java\openjdk-21\bin\java.exe".to_string(),
-                    version: "21.0.2".to_string(),
-                    source: ToolSource::JavaHome,
-                }],
+                candidates: vec![detected_jdk(
+                    r"D:\ProgramData\java\openjdk-21",
+                    r"D:\ProgramData\java\openjdk-21\bin\java.exe",
+                    "21.0.2",
+                    ToolSource::JavaHome,
+                )],
                 rejected: Vec::new(),
             },
             maven: MavenDiscovery::default(),
@@ -1763,7 +1966,6 @@ mod tests {
             }
         );
     }
-
     /// 诊断行必须含任务书要求的四个 token，且**每个值都能在行里找到**。
     #[test]
     fn the_diagnostic_line_carries_every_displayed_value() {
@@ -1779,14 +1981,15 @@ mod tests {
                     result: Ok(DetectedTool {
                         path: r"D:\ProgramData\java\openjdk-21".to_string(),
                         version: "21.0.2".to_string(),
+                        meets_language_service: true,
                     }),
                 }),
-                candidates: vec![DetectedJdk {
-                    home: r"C:\jdk8".to_string(),
-                    executable: r"C:\jdk8\bin\java.exe".to_string(),
-                    version: "1.8.0_402".to_string(),
-                    source: ToolSource::Path,
-                }],
+                candidates: vec![detected_jdk(
+                    r"C:\jdk8",
+                    r"C:\jdk8\bin\java.exe",
+                    "1.8.0_402",
+                    ToolSource::Path,
+                )],
                 rejected: Vec::new(),
             },
             maven: MavenDiscovery {
@@ -1917,5 +2120,236 @@ mod tests {
             LocalRepositorySource::SettingsXml.label_key(),
             "lithe.settings.gpui.mavenLocalRepositoryFromSettings"
         );
+    }
+
+    // ---- A1（≥ 21 闸门）：页面显示必须能预判"语言服务起不起得来" ----
+
+    /// 主版本解析逐条对齐 `jdtls.rs:848-859` 的 `major_version`（本模块只做镜像）。
+    ///
+    /// 三种命名都要认：`1.8.0_402`（2006 年前的旧命名，主版本是**第二段**）、
+    /// `21.0.2`（现代命名）、`25`（只有主版本）。
+    #[test]
+    fn jdk_major_version_mirrors_the_jdtls_reading() {
+        assert_eq!(jdk_major_version("1.8.0_402"), 8);
+        assert_eq!(jdk_major_version("1.8.0_221"), 8);
+        assert_eq!(jdk_major_version("21.0.2"), 21);
+        assert_eq!(jdk_major_version("21.0.2+13-LTS"), 21);
+        assert_eq!(jdk_major_version("25"), 25);
+        // 读不出来 → 0 ⇒ 判定为"不满足"（与 `jdtls.rs` 的 `unwrap_or(0)` 同一条口径）。
+        assert_eq!(jdk_major_version("not a version"), 0);
+        assert_eq!(jdk_major_version(""), 0);
+    }
+
+    /// 闸门数值与 `jdtls.rs:80` 的 `MINIMUM_JAVA_MAJOR` 必须相等，且正好卡在 21。
+    ///
+    /// 这条是"两处数值不许各走各的"的守卫：`jdtls.rs` 那边改了下限而这里没跟，
+    /// 页面就会重新变成"显示 ≠ 实际"。
+    #[test]
+    fn the_gate_is_the_jdtls_minimum() {
+        assert_eq!(MINIMUM_JAVA_MAJOR, 21);
+        assert!(meets_language_service_requirement("21.0.8"));
+        assert!(meets_language_service_requirement("22"));
+        assert!(!meets_language_service_requirement("17.0.16"));
+        assert!(!meets_language_service_requirement("1.8.0_221"));
+    }
+
+    /// **自动发现这条路**：低于闸门的 JDK 仍然是"检测到的安装"，但一旦没有过闸门的候选，
+    /// 生效值必须如实标成"用不了 + 语言服务无法启动"，而**不是**显示成可用的 1.8
+    /// （这正是实机取证到的 `自动 → JDK 1.8.0_221` 那条假显示）。
+    #[test]
+    fn a_below_gate_automatic_choice_is_marked_unusable() {
+        let discovery = JdkDiscovery {
+            overridden: None,
+            candidates: vec![
+                detected_jdk(
+                    r"C:\jdk8",
+                    r"C:\jdk8\bin\java.exe",
+                    "1.8.0_221",
+                    ToolSource::Path,
+                ),
+                detected_jdk(
+                    r"D:\ProgramData\java\openjdk-17",
+                    r"D:\ProgramData\java\openjdk-17\bin\java.exe",
+                    "17.0.16",
+                    ToolSource::InstalledRoot,
+                ),
+            ],
+            rejected: Vec::new(),
+        };
+        // 一个都不过闸门 ⇒ 没有"自动生效值"。
+        assert!(discovery.detected().is_none());
+        match discovery.effective() {
+            EffectiveToolchain::Unusable {
+                path,
+                reason,
+                language_service_rejection,
+            } => {
+                assert_eq!(path, r"C:\jdk8");
+                assert!(reason.contains("1.8.0_221"), "{reason}");
+                assert!(reason.contains("21"), "{reason}");
+                assert!(reason.contains("语言服务无法启动"), "{reason}");
+                assert!(language_service_rejection);
+            }
+            other => panic!("低于闸门的自动值必须报 Unusable，实际 {other:?}"),
+        }
+        // 两条候选都还在"检测到的安装"里（版本是读到的事实，不许丢掉）。
+        assert_eq!(discovery.candidates.len(), 2);
+        // 诊断行要能把这件事说清楚，供 `S1_JAVA_JDTLS javaVersion=…` 逐项对照。
+        assert!(discovery
+            .candidates
+            .iter()
+            .all(|jdk| !jdk.meets_language_service));
+    }
+
+    /// **自动发现这条路（混合）**：候选里有一个过闸门的，生效值就是**那一个**
+    /// （与 `jdtls.rs` 的 `resolve_runtime` "丢弃过不去的、继续往下找"逐条一致）。
+    #[test]
+    fn the_automatic_choice_skips_candidates_below_the_gate() {
+        let discovery = JdkDiscovery {
+            overridden: None,
+            candidates: vec![
+                detected_jdk(
+                    r"C:\jdk8",
+                    r"C:\jdk8\bin\java.exe",
+                    "1.8.0_221",
+                    ToolSource::Path,
+                ),
+                detected_jdk(
+                    r"D:\ProgramData\java\openjdk-21",
+                    r"D:\ProgramData\java\openjdk-21\bin\java.exe",
+                    "21.0.8",
+                    ToolSource::JavaHome,
+                ),
+            ],
+            rejected: Vec::new(),
+        };
+        assert_eq!(
+            discovery.effective(),
+            EffectiveToolchain::Resolved {
+                mode: ToolMode::Automatic,
+                path: r"D:\ProgramData\java\openjdk-21".to_string(),
+                version: Some("21.0.8".to_string()),
+                source: Some(ToolSource::JavaHome),
+            }
+        );
+    }
+
+    /// **覆盖值这条路**：填 `openjdk-17`（真实存在、能跑、只是低于门槛）时，
+    /// 页面必须标出"低于语言服务最低要求 21，语言服务无法启动"，
+    /// **不是**「已选择 → JDK 17.0.16」这种看起来可用的显示。
+    #[test]
+    fn a_below_gate_override_is_marked_unusable() {
+        let discovery = JdkDiscovery {
+            overridden: Some(OverrideProbe {
+                path: r"D:\ProgramData\java\openjdk-17".to_string(),
+                result: Ok(DetectedTool {
+                    path: r"D:\ProgramData\java\openjdk-17".to_string(),
+                    version: "17.0.16".to_string(),
+                    meets_language_service: false,
+                }),
+            }),
+            candidates: vec![detected_jdk(
+                r"D:\ProgramData\java\openjdk-21",
+                r"D:\ProgramData\java\openjdk-21\bin\java.exe",
+                "21.0.8",
+                ToolSource::InstalledRoot,
+            )],
+            rejected: Vec::new(),
+        };
+        match discovery.effective() {
+            EffectiveToolchain::Unusable {
+                path,
+                reason,
+                language_service_rejection,
+            } => {
+                // 用户填的原文要回显（否则"用不了"没说清是哪个值用不了）。
+                assert_eq!(path, r"D:\ProgramData\java\openjdk-17");
+                assert!(reason.contains("17.0.16"), "{reason}");
+                assert!(reason.contains("21"), "{reason}");
+                assert!(reason.contains("语言服务无法启动"), "{reason}");
+                assert!(language_service_rejection);
+            }
+            other => panic!("低于闸门的覆盖值必须报 Unusable，实际 {other:?}"),
+        }
+        // ⚠️ **不回落**到那个可用的 21：用户明确选了 17，页面要报"你选的那个不行"，
+        // 而不是悄悄换一个（与"覆盖值用不了不退回自动值"同一条既有口径）。
+        assert_ne!(
+            discovery.effective().diagnostic_value(),
+            r"D:\ProgramData\java\openjdk-21"
+        );
+    }
+
+    /// 覆盖值正好在闸门上（21）→ 照旧是「已选择」（闸门是 `>=` 不是 `>`）。
+    #[test]
+    fn an_override_exactly_at_the_gate_is_usable() {
+        let discovery = JdkDiscovery {
+            overridden: Some(OverrideProbe {
+                path: r"D:\ProgramData\java\openjdk-21".to_string(),
+                result: Ok(DetectedTool {
+                    path: r"D:\ProgramData\java\openjdk-21".to_string(),
+                    version: "21.0.8".to_string(),
+                    meets_language_service: true,
+                }),
+            }),
+            candidates: Vec::new(),
+            rejected: Vec::new(),
+        };
+        assert_eq!(
+            discovery.effective(),
+            EffectiveToolchain::Resolved {
+                mode: ToolMode::Configured,
+                path: r"D:\ProgramData\java\openjdk-21".to_string(),
+                version: Some("21.0.8".to_string()),
+                source: None,
+            }
+        );
+    }
+
+    /// 闸门数值与结论都要在那一行诊断里（否则"页面显示得对"这件事在日志里核不出来，
+    /// 也就无法与 `S1_JAVA_JDTLS javaVersion=…` 逐项对照）。
+    #[test]
+    fn the_diagnostic_line_reports_the_gate_verdict() {
+        let below = ProjectEnvironment {
+            overrides: Overrides::default(),
+            jdk: JdkDiscovery {
+                overridden: None,
+                candidates: vec![detected_jdk(
+                    r"C:\jdk8",
+                    r"C:\jdk8\bin\java.exe",
+                    "1.8.0_221",
+                    ToolSource::Path,
+                )],
+                rejected: Vec::new(),
+            },
+            maven: MavenDiscovery::default(),
+            maven_config: MavenConfiguration::default(),
+            maven_jdk: JdkDiscovery::default(),
+        };
+        let line = below.diagnostic_line();
+        assert!(line.contains("minimumJava=21"), "{line}");
+        assert!(line.contains("languageService=unavailable"), "{line}");
+        // ⚠️ 低于闸门时**也必须报出版本号**：它是页面那句话的一部分，也是与
+        // `S1_JAVA_JDTLS javaVersion=…` 对照的锚点（`jdk_version` 从 `reason` 里抠出来）。
+        assert!(line.contains("version=1.8.0_221"), "{line}");
+        // `Unusable` 那一档的 `jdk=` 取值是 `unusable(<路径>)`（[`EffectiveToolchain::diagnostic_value`]）。
+        assert!(line.contains(r"jdk=unusable(C:\jdk8)"), "{line}");
+
+        // 过闸门时结论换成 `ready`。
+        let ready = ProjectEnvironment {
+            jdk: JdkDiscovery {
+                overridden: None,
+                candidates: vec![detected_jdk(
+                    r"D:\ProgramData\java\openjdk-21",
+                    r"D:\ProgramData\java\openjdk-21\bin\java.exe",
+                    "21.0.8",
+                    ToolSource::InstalledRoot,
+                )],
+                rejected: Vec::new(),
+            },
+            ..below
+        };
+        let line = ready.diagnostic_line();
+        assert!(line.contains("languageService=ready"), "{line}");
+        assert!(line.contains("version=21.0.8"), "{line}");
     }
 }

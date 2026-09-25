@@ -187,6 +187,41 @@ const GPUI_ONLY_KEYS = [
       "这一页唯一一句整页级提示（仅在 JDK 与 Maven 都没有可用生效值时出现）。空态口径要求：不许再用「此分类尚未接入」那句（页面已经接入了），也不能静默 —— 所以补一句如实说明，并指向每一行各自的原因。",
   },
   {
+    key: "settings.gpui.jdkBelowLanguageServiceMinimum",
+    zh: "低于语言服务最低要求（JDT LS 需要 JDK {minimum} 或更新版本），语言服务无法启动。",
+    en: "Below the language service minimum (JDT LS requires JDK {minimum} or newer); the language service cannot start.",
+    reason:
+      "「项目 · JDK 与 Maven」页 JDK 那一行在**版本低于 JDT LS 门槛**时的补充说明。闸门数值的唯一真源是 gpui/crates/java/src/jdtls.rs:80 的 MINIMUM_JAVA_MAJOR（= third_party/jdtls/manifest.json 的 minimumJavaVersion = 21），判据落点是 jdtls.rs:820-837 的 probe_java（低于闸门即拒，整条链路失败时 jdtls.rs:713-715 说的是「未找到 Java 21 或更新版本的 JDK，JDT LS 无法启动」）。真源 Windows 那页只显示「自动 → JDK 1.8.0_221」而**不提**这一层，用户因此无法预判语言服务能不能起来 —— 本批（A1）要修的正是这条「显示 ≠ 实际」。{minimum} 由调用点用 tr_args 填 21。",
+  },
+  {
+    key: "settings.gpui.mavenOverrideNotEffective",
+    zh: "尚未生效：gpui 侧还没有执行 Maven 的通路（不执行 mvn，也没采购 Core 的启动计划），这个值现在不改变任何行为。",
+    en: "Not effective yet: gpui has no path that runs Maven (it never executes mvn and does not consume Core's launch plan), so this value changes nothing today.",
+    reason:
+      "「Maven 主目录 / 可执行文件」与「Maven JDK 主目录」两行的如实标注（A2）。已核实：gpui 全仓没有任何地方执行 mvn（maven.scan 是 Core 进程内的项目描述符解析，右侧 Maven 工具窗只呈现结论），runConfig.createLaunchPlan 在 gpui 侧没有消费方；语言服务那一侧也**故意不登记**这两个键（java/src/toolchain.rs 模块文档：登记了没人读只是把「存了不生效」搬到另一层）。真源 Windows 那页有 Maven 工具窗与运行配置编辑器消费这两个值，所以没有这类措辞。口径是「不藏起来、但必须标出来」——用户需要看到自己填的值，也需要知道它现在不起作用。",
+  },
+  {
+    key: "settings.gpui.autoCompletionDescription",
+    zh: "输入时自动显示补全建议（Java 语言服务优先，语言服务不可用时用当前文件的标识符兜底）。关掉之后不再自动弹出补全菜单，兜底候选也一并停止。",
+    en: "Shows completion suggestions automatically while typing (the Java language service first, falling back to identifiers in the current file when it is unavailable). Turning this off stops the menu from popping up automatically, including the fallback suggestions.",
+    reason:
+      "「LSP」页「自动补全」那一行的描述。真源的 settings.mac.autoCompletionDescription 是「显示活动语言服务器提供的补全建议。」（macos-settings-panels.tsx:406-415）—— 它只提「活动语言服务器」，而 gpui 侧关掉这个开关时**连 Core 的轻量兜底（lsp.builtinCompletions）也一起不再自动弹出**（兜底是同一个 provider 的第二个数据源，见 editor/src/completion.rs 的模块文档）。照抄会让用户以为「关掉之后兜底还在」，所以如实写明两件事：优先/兜底这条降级关系，以及关掉之后两者一起停。",
+  },
+  {
+    key: "settings.gpui.lspOnlyAutoCompletion",
+    zh: "本页只做「自动补全」：真源另两项（参数提示、语义高亮）在 gpui 侧没有可挂载的接口（上游没有签名帮助 provider，语义高亮也没有 Java 侧实现），JDTLS / JDK 运行时路径则归「项目 · JDK 与 Maven」页，所以这里不画控件。",
+    en: "This page only wires Auto Completion: the other two settings in the Windows page (parameter hints and semantic highlighting) have no attachable interface in gpui (the upstream editor has no signature-help provider, and semantic highlighting has no Java implementation), while the JDTLS / JDK runtime path belongs to the Project · JDK and Maven page, so no control is drawn here.",
+    reason:
+      "「LSP」页里那句「为什么只有一项」的说明。真源那页有三个开关，本侧只有 autoCompletion 有消费方（参数提示：上游 gpui-base-0.6.6 的 Lsp 结构体没有签名帮助接口，全 crate SignatureHelp 零命中；语义高亮：上游 trait 在但 Java 侧零实现、零装载点）；JDTLS 运行时路径输入框真源里没有，且 Windows 已主动退役同类键（settings-normalization.ts:550 + 守卫测试:26-33），JDK 路径已有「项目 · JDK 与 Maven」页这个真生效的入口。按「不画假控件」的口径，缺的那几项要有一句如实说明，否则用户会以为设置丢了。",
+  },
+  {
+    key: "settings.gpui.noLanguageServer",
+    zh: "还没有可用的语言服务运行时（本机没有探测到满足要求的 JDK；打开 Java 项目时也会再检测一次）。",
+    en: "No usable language service runtime yet (no JDK meeting the requirement was detected on this machine; detection runs again when a Java project is opened).",
+    reason:
+      "「LSP」页「已检测语言服务器」那一组的空态。真源那里是一句静态文本，没有空态；本侧把它做成真事实（值来自「项目」页同一次真实探测），所以也需要一句「现在为什么是空的」。数值门槛由 java/src/jdtls.rs:80 的 MINIMUM_JAVA_MAJOR 决定，缺失时那一行会改画 jdkBelowLanguageServiceMinimum。",
+  },
+  {
     key: "settings.gpui.runNoProject",
     zh: "打开项目后才能识别可运行配置。",
     en: "Open a project to identify runnable configurations.",
@@ -234,13 +269,6 @@ const GPUI_ONLY_KEYS = [
     en: "Requires a keybinding table and presets; today only a few shortcuts are bound with fixed keys.",
     reason:
       "「快捷键」页的前置条件（同 pageNotAvailableTitle）。真源那一页的预设下拉要整套 keymap 基础设施（features/keymaps/**），gpui 侧只有少量 KeyBinding::new 的固定绑定。",
-  },
-  {
-    key: "settings.gpui.prerequisiteLsp",
-    zh: "前置条件：语言服务客户端（补全、参数提示、语义高亮）与 JDTLS 运行时路径设置。",
-    en: "Requires a language service client (completion, parameter hints, semantic highlighting) and a configurable JDTLS runtime path.",
-    reason:
-      "「LSP」页的前置条件（同 pageNotAvailableTitle）。真源那页的三个开关（autoCompletion / parameterHints / semanticTokens）在 gpui 侧没有消费方；能真做的 JDTLS 运行时路径还没做成设置项（java/src/jdtls.rs:440-460 现在是 env/JAVA_HOME/PATH 三级发现），所以整页先给空态。",
   },
   {
     key: "settings.gpui.prerequisiteGit",

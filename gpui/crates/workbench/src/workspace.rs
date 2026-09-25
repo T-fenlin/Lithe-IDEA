@@ -887,11 +887,15 @@ impl ShellWorkspace {
             // "文件被读回来了"与"外壳确实拿到了这句设置"。阶段 14 就是靠它抓到
             // "`tabSize` 写得出、读不回"那个 bug 的（见 `PLAN.md` §14.2）。
             println!(
-                "S1_SETTINGS wiring=workbench tab_size={} terminal_default_shell_id={:?} confirm_before_discard={}",
-                initial.tab_size, initial.terminal_default_shell_id, initial.confirm_before_discard
+                "S1_SETTINGS wiring=workbench tab_size={} terminal_default_shell_id={:?} confirm_before_discard={} auto_completion={}",
+                initial.tab_size,
+                initial.terminal_default_shell_id,
+                initial.confirm_before_discard,
+                initial.auto_completion
             );
             editor.update(cx, |pane, cx| {
                 pane.set_tab_size(initial.tab_size as usize, cx);
+                pane.set_auto_completion(initial.auto_completion, cx);
             });
             terminal.update(cx, |pane, cx| {
                 pane.set_default_shell(&initial.terminal_default_shell_id, cx);
@@ -903,6 +907,10 @@ impl ShellWorkspace {
                 let settings = store.read(cx).settings().clone();
                 this.editor.update(cx, |pane, cx| {
                     pane.set_tab_size(settings.tab_size as usize, cx);
+                    // 「自动补全」（阶段 18，「LSP」页）：与 `tabSize` 同一条"值型设置经外壳
+                    // 转发"的路子。落点是编辑区那份共享的原子开关，所以**已打开的** Java
+                    // buffer 与之后新开的都立刻跟上（见 `EditorPane::set_auto_completion`）。
+                    pane.set_auto_completion(settings.auto_completion, cx);
                 });
                 this.terminal.update(cx, |pane, cx| {
                     pane.set_default_shell(&settings.terminal_default_shell_id, cx);

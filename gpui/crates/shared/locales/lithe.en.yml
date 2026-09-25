@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 41 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 45 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8675,6 +8675,16 @@ lithe:
     en: "Unknown (the user home directory is unavailable, so Maven's default local repository cannot be derived)"
   settings.gpui.projectNothingDetected:
     en: "Neither a JDK nor Maven was detected. Each row below states which locations were checked and why none qualified."
+  settings.gpui.jdkBelowLanguageServiceMinimum:
+    en: "Below the language service minimum (JDT LS requires JDK {minimum} or newer); the language service cannot start."
+  settings.gpui.mavenOverrideNotEffective:
+    en: "Not effective yet: gpui has no path that runs Maven (it never executes mvn and does not consume Core's launch plan), so this value changes nothing today."
+  settings.gpui.autoCompletionDescription:
+    en: "Shows completion suggestions automatically while typing (the Java language service first, falling back to identifiers in the current file when it is unavailable). Turning this off stops the menu from popping up automatically, including the fallback suggestions."
+  settings.gpui.lspOnlyAutoCompletion:
+    en: "This page only wires Auto Completion: the other two settings in the Windows page (parameter hints and semantic highlighting) have no attachable interface in gpui (the upstream editor has no signature-help provider, and semantic highlighting has no Java implementation), while the JDTLS / JDK runtime path belongs to the Project · JDK and Maven page, so no control is drawn here."
+  settings.gpui.noLanguageServer:
+    en: "No usable language service runtime yet (no JDK meeting the requirement was detected on this machine; detection runs again when a Java project is opened)."
   settings.gpui.runNoProject:
     en: "Open a project to identify runnable configurations."
   settings.gpui.runReadOnlyDescription:
@@ -8689,8 +8699,6 @@ lithe:
     en: "Starting a target is not wired yet: gpui has no run panel and no process host, and the Run tool window and Run menu are placeholders. Core's runConfig.createLaunchPlan already produces a platform-neutral plan, but nothing consumes it yet."
   settings.gpui.prerequisiteKeyboard:
     en: "Requires a keybinding table and presets; today only a few shortcuts are bound with fixed keys."
-  settings.gpui.prerequisiteLsp:
-    en: "Requires a language service client (completion, parameter hints, semantic highlighting) and a configurable JDTLS runtime path."
   settings.gpui.prerequisiteGit:
     en: "Requires wiring Git identity (user.name / user.email); Core already provides git.repositorySetup and git.configureIdentity."
   settings.gpui.prerequisiteLogs:

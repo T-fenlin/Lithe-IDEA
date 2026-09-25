@@ -65,7 +65,9 @@
 //! 完整的 API 清单、列口径陷阱与"为什么必须有界重取"都写在 [`crate::diagnostics`] 的模块文档里。
 
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use crate::buffer::{Buffer, display_names, icon_for_file, language_for_file, read_body};
@@ -310,6 +312,20 @@ pub struct EditorPane {
     /// 所以这里存的是一份值，不是设置句柄；默认值就地写 2，与
     /// `EditorState` 自己的默认档一致（`gpui-base-0.6.6/src/input/editor/indent.rs:20-27`）。
     tab_size: usize,
+    /// 「自动补全」开关（设置里的 `autoCompletion`，阶段 18）。
+    ///
+    /// ⚠️ 与 [`Self::tab_size`] 的**唯一区别**：这是 `Rc<AtomicBool>` 而不是 `bool`。
+    /// 原因是补全 provider 已经被装进每个 `EditorState`（`Rc<dyn CompletionProvider>`），
+    /// 而 `is_completion_trigger(&self, ..)` 只拿得到 `&self` —— 想让它读到最新设置，
+    /// 要么重建每个 buffer 的 provider，要么**共享一个原子**。
+    ///
+    /// 共享原子是更好的那一半：外壳一次 `store(false)` 就让所有已打开的 Java buffer
+    /// 同时停止自动弹菜单（不必遍历 buffer、不会漏掉后打开的），并且 provider 本身
+    /// 仍然装着 —— 那是将来做手动触发（`Ctrl+Space`）的基础
+    /// （理由逐条写在 `crate::completion` 的字段文档里）。
+    ///
+    /// 默认 `true`（真源 `default-settings.ts:153`）。
+    auto_completion: Rc<AtomicBool>,
 }
 
 /// 制表符宽度的默认值（= Windows `tabSize` 的默认值 2、也是组件默认档）。
@@ -339,6 +355,36 @@ impl EditorPane {
             workspace_root: None,
             tab_menu_actions: None,
             tab_size: DEFAULT_TAB_SIZE,
+            auto_completion: Rc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// 登记「自动补全」（设置里的 `autoCompletion`，阶段 18）。**对所有已打开的 Java buffer
+    /// 立即生效**，之后新开的 buffer 也按这个值建。
+    ///
+    /// 落点是共享的那一个 [`std::sync::atomic::AtomicBool`]：所有补全 provider 都持有它的
+    /// 克隆，所以这里一次 `store` 就够了（不必遍历 buffer、也不会漏掉"后打开的"）。
+    /// 与 [`Self::set_tab_size`] 同一形状（外壳订阅设置实体后转发），差别只有这一点。
+    ///
+    /// 诊断 `S1_EDITOR_AUTO_COMPLETION` 打的是**开关值 + 已打开的 buffer 数**：
+    /// 前者证明值真的传进来了，后者是"这一刻有多少个编辑器受了影响"的旁证
+    /// （provider 的触发判据在 [`crate::completion`] 里，那一条由 `S1_JAVA_COMPLETION` 的
+    /// 有无来证明 —— 关掉之后那一行**一行都不该出现**）。
+    pub fn set_auto_completion(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        use std::sync::atomic::Ordering;
+        let changed = self.auto_completion.load(Ordering::Acquire) != enabled;
+        self.auto_completion.store(enabled, Ordering::Release);
+        // 诊断**每次都打**（值没变也打）：外壳在启动时与每次设置变化都会喂一次，
+        // 所以这一行同时是"外壳确实转发过"的证据。`buffers=` 是这一刻已经打开的 buffer 数
+        // ——它证明**已打开的**编辑器也在同一条开关上（不是只管以后新开的）。
+        println!(
+            "S1_EDITOR_AUTO_COMPLETION enabled={} changed={} buffers={}",
+            enabled,
+            changed,
+            self.buffers.len()
+        );
+        if changed {
+            cx.notify();
         }
     }
 
@@ -409,6 +455,9 @@ impl EditorPane {
             let provider = crate::completion::JavaCompletionProvider::new(
                 Some(service.clone()),
                 buffer.path.clone(),
+                // 共用同一个开关：外壳改设置时，**已经打开的** buffer 也立刻跟上
+                // （这正是"补装"这一步顺带要把开关传下去的原因）。
+                self.auto_completion.clone(),
             );
             let code_actions = crate::code_actions::JavaCodeActionProvider::new(
                 service.clone(),
@@ -627,8 +676,13 @@ impl EditorPane {
         // ⚠️ **必须在 `open()` 里就装**（而不是只依赖 `prepare_java`）：外壳是先建编辑区、
         // 打开文件，再（后台）起 Java 服务；`prepare_java` 之后还会给**已经打开的** buffer
         // 补装一次（见那里的注释）。两条路都覆盖，"先开文件后起服务"时菜单才不会永远不出现。
-        let completion_provider = (language == Some("java"))
-            .then(|| crate::completion::JavaCompletionProvider::new(self.java.clone(), path.clone()));
+        let completion_provider = (language == Some("java")).then(|| {
+            crate::completion::JavaCompletionProvider::new(
+                self.java.clone(),
+                path.clone(),
+                self.auto_completion.clone(),
+            )
+        });
 
         // 快速修复 provider：与补全**同一个判据的一部分**，但多一条 ——
         // `crate::code_actions::install` 只在拿到服务句柄时才装（理由在 `install` 的文档：

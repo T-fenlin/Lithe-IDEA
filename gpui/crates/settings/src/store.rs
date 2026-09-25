@@ -372,6 +372,16 @@ impl SettingsStore {
         self.commit(cx, next, Effects::None);
     }
 
+    /// 改「自动补全」（阶段 18，「LSP」页）。**本 store 不自己应用**：补全菜单的触发判据
+    /// 在 `lithe-gpui-editor` 的 provider 上，由外壳订阅本实体后转发给
+    /// `EditorPane::set_auto_completion`（与 `tabSize` 同一条路子，依赖方向：
+    /// `workbench` → `editor`）。
+    pub fn set_auto_completion(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.auto_completion = enabled;
+        self.commit(cx, next, Effects::None);
+    }
+
     /// 改「显示语言」。返回是否真的变了。**立即落盘**（不等 300ms 防抖）：调用方紧接着就会
     /// 重启应用（[`crate::restart::restart_application`]），新进程必须马上读到新语言。
     ///

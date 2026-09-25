@@ -36,7 +36,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use gpui_kit::component::input::{CompletionProvider, Rope};
@@ -96,18 +96,44 @@ pub(crate) struct JavaCompletionProvider {
     file_path: PathBuf,
     /// 请求代次（跨线程共享：`completions()` 返回的 `Task` 在后台线程上跑）。
     generation: Arc<AtomicU64>,
+    /// 设置里的 `autoCompletion`（**共享**的原子布尔）。
+    ///
+    /// ## 为什么是"共享开关"而不是"装 / 不装 provider"
+    ///
+    /// 关掉自动补全时**保留 provider**，只让 [`Self::is_completion_trigger`] 返回 `false`：
+    ///
+    /// 1. **语义最准**：真源的描述句是"显示活动语言服务器提供的补全建议"，
+    ///    关掉 = **不再自动弹出**，与"能不能手动要一次"解耦。上游的调用点
+    ///    （`gpui-base-0.6.6/src/input/editor/lsp/completions.rs:122-146`）只在"有文本变化"时
+    ///    问这个判据，所以门控它正好等于"打字不再自动弹菜单"。
+    /// 2. **为手动触发留路**：上游没有补全快捷键（见模块文档的"未做"一节），将来做
+    ///    `Ctrl+Space` 时要能**直接问 `completions()`**；那时 provider 必须还在。
+    ///    不装 provider 的话那条路要重新判断一遍装/不装。
+    /// 3. **轻量兜底一起关**：兜底（[`builtin_completions`]）是同一个 provider 的第二个数据源，
+    ///    所以它跟着一起不再自动弹 —— 这一条是**有意**的（真源只有一个开关），
+    ///    设置页的描述里如实写了"关掉之后不再自动弹出"。
+    ///
+    /// `Rc<AtomicBool>`：`new` 时与 [`crate::editor_view::EditorPane`] 共享同一个原子，
+    /// 外壳改设置时由 `EditorPane::set_auto_completion` 一次 `store` 就让**所有已打开的** buffer
+    /// 同时跟上（不需要重建 provider，也不需要遍历 buffer）。
+    auto_completion: Rc<AtomicBool>,
 }
 
 impl JavaCompletionProvider {
     /// 建一个 provider。`service` 为 `None` 时只有轻量兜底（见模块文档）。
+    ///
+    /// `auto_completion` 是**共享**的开关（见字段文档）：调用方持有一份，之后改它的值即可
+    /// 让这个 provider 立刻停止自动弹出。
     pub(crate) fn new(
         service: Option<Arc<JavaLanguageService>>,
         file_path: PathBuf,
+        auto_completion: Rc<AtomicBool>,
     ) -> Rc<dyn CompletionProvider> {
         Rc::new(Self {
             service,
             file_path,
             generation: Arc::new(AtomicU64::new(0)),
+            auto_completion,
         })
     }
 
@@ -222,9 +248,31 @@ impl CompletionProvider for JavaCompletionProvider {
     ///
     /// 判据本身是纯函数 [`triggers_on`]，这里只是把上游给的两个参数里的 `new_text` 交过去
     /// （`offset` 用不上：上游只在**有文本变化**时调用本函数）。
+    ///
+    /// ⚠️ **设置里的 `autoCompletion` 门控就在这一行**（阶段 18）：关掉之后判据恒为 `false`
+    /// ⇒ 上游的 `handle_completion_trigger` 直接返回 ⇒ **不再自动弹菜单**。
+    /// `completions()` 本身没有被动过：将来做手动触发（`Ctrl+Space`）时它会直接问那个方法，
+    /// 与这里的门控解耦（理由见 [`JavaCompletionProvider::auto_completion`] 的字段文档）。
+    ///
+    /// ⚠️ 用 `Acquire`/`Release` 而不是 `Relaxed`：这条值跨线程读写
+    /// （UI 线程写、上游在主线程读），`Relaxed` 在语义上足够（只是一个 bool），
+    /// 但这里沿用 [`Self::generation`] 的 `SeqCst` 同族口径，避免读者去推敲可见性。
     fn is_completion_trigger(&self, _offset: usize, new_text: &str, _cx: &mut App) -> bool {
-        triggers_on(new_text)
+        completion_triggered(self.auto_completion.load(Ordering::Acquire), new_text)
     }
+}
+
+/// 补全触发判据的**完整**版本（设置开关 + 字符类），纯函数所以可以直接单测。
+///
+/// [`JavaCompletionProvider::is_completion_trigger`] 只是把共享开关与 `new_text` 交过来
+/// —— 界面路径与测试用的是**同一个函数**，不会出现"测试绿着但页面走的是另一段逻辑"。
+///
+/// ⚠️ 开关关掉时**连字符类输入也不触发**：上游
+/// （`gpui-base-0.6.6/src/input/editor/lsp/completions.rs:122-146`）拿到 `false` 就直接返回，
+/// 连带不会发 `textDocument/completion` 请求，所以"关掉自动补全"同时也省掉了一整条
+/// 每击键一次的 Core 往返（`S1_JAVA_COMPLETION` 一行都不会出现 —— 这正是验证的判据）。
+fn completion_triggered(auto_completion: bool, new_text: &str) -> bool {
+    auto_completion && triggers_on(new_text)
 }
 
 /// 补全触发判据（纯函数，便于单测 —— `is_completion_trigger` 需要 `App`，测起来重）。
@@ -427,6 +475,38 @@ mod tests {
         for text in ["", " ", ";", ")", "\n", "()", "a ", "= ", "//"] {
             assert!(!triggers_on(text), "{text:?} 不该触发补全");
         }
+    }
+
+    /// **阶段 18 的门控**：`autoCompletion = false` 时触发判据恒为 `false`，
+    /// 而**纯函数本身没有变**（`triggers_on` 仍然认那些字符）。
+    ///
+    /// 这一条钉住三件事，任何一件被写错都会重新变成"设置不生效"：
+    /// 1. 开关真的被 [`completion_triggered`] 读到了（不是只存了个字段）；
+    /// 2. 关掉之后**连字符类输入也不触发**（所以上游不会弹菜单、也不会发请求）；
+    /// 3. 开关是**共享**的：改 `Rc` 指向的那一个原子，已经建好的 provider 立刻跟上
+    ///    （外壳改设置时不必重建 provider）。
+    #[test]
+    fn the_auto_completion_switch_gates_the_trigger_only() {
+        let switch = Rc::new(AtomicBool::new(true));
+        let provider = JavaCompletionProvider {
+            service: None,
+            file_path: PathBuf::from("Greeter.java"),
+            generation: Arc::new(AtomicU64::new(0)),
+            auto_completion: switch.clone(),
+        };
+        // 这个测试不需要 `App`：判据里除开关之外只有 `triggers_on`（纯函数）。
+        let engaged = |provider: &JavaCompletionProvider| {
+            completion_triggered(provider.auto_completion.load(Ordering::Acquire), ".")
+        };
+        assert!(engaged(&provider), "默认必须是开（真源默认 true）");
+        assert!(triggers_on("."), "纯函数本身不受设置影响");
+
+        // 外壳关掉它（同一份原子）→ 同一个 provider 立刻不再触发。
+        switch.store(false, Ordering::Release);
+        assert!(!engaged(&provider), "关掉之后 '.' 也不许触发");
+        // 打开 → 恢复（双向都要成立，否则"关掉还能打开"就没有证据）。
+        switch.store(true, Ordering::Release);
+        assert!(engaged(&provider));
     }
 
     /// 前缀提取：只吃标识符 / `.` / `@`，遇到别的字符就停（诊断行的可读性靠它）。

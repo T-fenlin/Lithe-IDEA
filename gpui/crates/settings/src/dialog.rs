@@ -67,8 +67,8 @@ use crate::identity::{
     identity_value_is_valid, identity_value_rejection,
 };
 use crate::project::{
-    DetectedJdk, DetectedMaven, EffectiveToolchain, Overrides, ProjectEnvironment, ToolSource,
-    discover,
+    DetectedJdk, DetectedMaven, EffectiveToolchain, MINIMUM_JAVA_MAJOR, Overrides,
+    ProjectEnvironment, ToolSource, discover,
 };
 use crate::row::{ControlWidth, RowActivation, page_stack, page_title, settings_group, settings_row};
 use crate::run::{RunConfigurationView, RunProjectView};
@@ -116,9 +116,13 @@ pub fn open_settings_dialog(window: &mut Window, cx: &mut App) {
 /// 「运行配置」页同理，但它不是"起子进程"而是"读整个工作区的文件树 + 跑一遍探测器"：
 /// `runConfig.generate` 会 `scan(root)`（深度 ≤ 6、目录数 ≤ 4000），所以同样不该在构造期跑。
 ///
+/// 「LSP」页（阶段 18）也进这张表：它的「检测到的语言服务器」那一组与「项目」页**共用同一份
+/// 探测结果**（判据见 [`detected_language_servers`]），所以这一页同样要懒加载一次 ——
+/// **不为它多探一次**：`project_load` 是共享的那一份（判据见 `SettingsDialog::lsp_page`）。
+///
 /// 判据单独抽出来，是为了让这条分支在测试里可见（它需要窗口才能端到端跑）。
 fn page_loads_on_open(category: Category) -> bool {
-    matches!(category, Category::Project | Category::Run)
+    matches!(category, Category::Project | Category::Run | Category::Lsp)
 }
 
 /// 打开设置对话框并**直接停在某个分类**上。
@@ -240,7 +244,10 @@ pub enum Category {
     Run,
     /// 快捷键（`settings.tabs.keyboard`）—— 空态。
     Keyboard,
-    /// LSP（`settings.tabs.lsp`）—— 空态。
+    /// LSP（`settings.tabs.lsp`）—— **实现页**（阶段 18）：真源三键里**唯一有真消费方**的
+    /// `autoCompletion`（打字时是否自动弹补全菜单）+ 一组**真事实**的「已检测语言服务器」。
+    /// 另两项（`parameterHints` / `semanticTokens`）与 JDTLS 运行时路径输入框**不画**
+    /// （连置灰都不画），理由写在 `lsp_page` 的文档里。
     Lsp,
     /// Git（`settings.tabs.git`）—— **条件实现**（阶段 15）：宿主登记了身份钩子就画
     /// 「提交身份」+ `confirmBeforeDiscard`，否则退回空态。
@@ -286,13 +293,21 @@ impl Category {
     /// 「运行配置」页（阶段 17）同理：数据是 Core 的 `runConfig.generate` 给的
     /// （[`crate::run`]），"一条都没识别到"与"识别失败"都由页面自己如实说明，
     /// **不是**"此分类尚未接入"那种空态，所以也进这张表。
-    pub const IMPLEMENTED: [Category; 6] = [
+    ///
+    /// 「LSP」页（阶段 18）同理：`autoCompletion` 是**真的会改行为**的开关
+    /// （落到 `editor/src/completion.rs` 的触发判据），"检测到的语言服务器"那一组画的也是
+    /// 真探测值（[`detected_language_servers`]），所以它同样进这张表
+    /// —— `prerequisiteLsp` 那句「前置条件：语言服务客户端（补全、参数提示、语义高亮）与
+    /// JDTLS 运行时路径设置。」**已经有一半是假的**（补全客户端早就在了，见 `editor/src/completion.rs`），
+    /// 这一批把它连同空态一起下线。
+    pub const IMPLEMENTED: [Category; 7] = [
         Category::General,
         Category::Appearance,
         Category::Project,
         Category::Run,
         Category::Editor,
         Category::Terminal,
+        Category::Lsp,
     ];
 
     /// 不带参数打开设置时停在哪一页（真源默认是 `general`，`settings-dialog.tsx` 的初值）。
@@ -351,14 +366,18 @@ impl Category {
             // 「运行配置」页自阶段 17 起同样是实现页：它列出 Core 识别出的启动目标，
             // "一条都没有"与"识别失败"各有一句如实说明（`run_page`），整页空态不再适用 ——
             // 原来那条 `settings.gpui.prerequisiteRun` 也随之下线。
+            //
+            // 「LSP」页自阶段 18 起同样是实现页：`autoCompletion` 真生效、
+            // 「已检测语言服务器」是真事实（`lsp_page`）—— 原来那条
+            // `settings.gpui.prerequisiteLsp` 也随之下线（它那句"语言服务客户端"早就不成立了）。
             Self::General
             | Self::Appearance
             | Self::Project
             | Self::Run
             | Self::Editor
-            | Self::Terminal => None,
+            | Self::Terminal
+            | Self::Lsp => None,
             Self::Keyboard => Some("lithe.settings.gpui.prerequisiteKeyboard"),
-            Self::Lsp => Some("lithe.settings.gpui.prerequisiteLsp"),
             Self::Git => Some("lithe.settings.gpui.prerequisiteGit"),
             Self::Logs => Some("lithe.settings.gpui.prerequisiteLogs"),
             Self::Updates => Some("lithe.settings.gpui.prerequisiteUpdates"),
@@ -608,12 +627,35 @@ fn describe_effective(kind: ToolKind, effective: &EffectiveToolchain) -> Effecti
                 detail: None,
             }
         }
-        EffectiveToolchain::Unusable { path, reason } => EffectiveLine {
-            text: tr_args("lithe.toolchain.invalid", &[("message", reason.as_str())]),
-            is_error: true,
-            // 用户填的原文要显示出来，否则"用不了"这句话没说清是哪个值用不了。
-            detail: Some(SharedString::from(path.clone())),
-        },
+        EffectiveToolchain::Unusable {
+            path,
+            reason,
+            language_service_rejection,
+        } => {
+            // ⚠️ 低于 JDT LS 的 ≥ 21 闸门（`java/src/jdtls.rs` 的 `probe_java`）时，
+            // 上面那句只说了"版本 X 低于 21"，用户真正要预判的是**语言服务起不起得来**，
+            // 所以再补一句 —— 而且说的是"语言服务无法启动"，不是笼统的"无法使用"。
+            // 判据与数值的唯一真源是 `project::MINIMUM_JAVA_MAJOR`（它的文档写了对应
+            // `jdtls.rs` 的哪一条判据）。
+            let minimum = MINIMUM_JAVA_MAJOR.to_string();
+            let below_gate = SharedString::from(format!(
+                "{path} · {}",
+                tr_args(
+                    "lithe.settings.gpui.jdkBelowLanguageServiceMinimum",
+                    &[("minimum", minimum.as_str())],
+                )
+            ));
+            EffectiveLine {
+                text: tr_args("lithe.toolchain.invalid", &[("message", reason.as_str())]),
+                is_error: true,
+                // 用户填的原文（或自动选中那一个的路径）要显示出来，否则"用不了"这句话
+                // 没说清是哪个值用不了。
+                detail: Some(match language_service_rejection {
+                    true => below_gate,
+                    false => SharedString::from(path.clone()),
+                }),
+            }
+        }
         EffectiveToolchain::NotFound { reason } => EffectiveLine {
             text: tr(kind.not_found_key()),
             is_error: true,
@@ -643,6 +685,54 @@ fn run_page_hint(text: SharedString, cx: &Context<SettingsDialog>) -> gpui_kit::
         .text_color(cx.theme().foreground)
         .child(text)
         .into_any_element()
+}
+
+/// 「检测到的语言服务器」那一组的**真事实**（对应真源那句静态文本
+/// `settings.mac.detectedServers` / `macos-settings-panels.tsx:431-435` 的 `SettingsGroup`）。
+///
+/// ## 为什么这里能给出真值
+///
+/// JDT LS 是 gpui 侧**唯一**的语言服务器（`java/src/service.rs` 一个门面，
+/// 启动时打 `S1_JAVA_JDTLS executable=… version=… java=… javaVersion=…`），
+/// 而它被"检测"的方式正是真源那句描述说的：**打开受支持的文件时才启动**
+/// （`settings.mac.detectedServersDescription` =「语言服务器由已安装的语言扩展检测，
+/// 并在打开受支持文件时启动。」）。
+///
+/// 所以这里读的是**项目页同一次探测**（[`crate::project::discover`]）里的 JDK 事实 ——
+/// 那正是"跑 JDT LS 用的那个 JDK"（`java/src/jdtls.rs:440-495` 的 `resolve_runtime`，
+/// 判据与闸门见 [`crate::project::MINIMUM_JAVA_MAJOR`]）：
+///
+/// - 生效值（自动或覆盖）过了 ≥ 21 闸门 ⇒ 报 `JDK 主目录 (版本) · 可执行文件`；
+/// - 没过闸门 ⇒ 报同一行，但调用方会用失败色 + 那句"低于语言服务最低要求"；
+/// - 一条候选都没有 ⇒ `None`（页面画"还没有可用的语言服务运行时"）。
+///
+/// ⚠️ **这不是编造**：值全部来自本次真实探测（`java -version` 的输出），
+/// 本函数只做"挑选 + 拼一句话"，没有新的探测逻辑。
+///
+/// ⚠️ **与真源的差别（有意，登记在汇报里）**：真源那组是一句**静态文本**，
+/// 本侧把它做成了真事实。而**已经跑起来的那个 JDTLS 会话**的安装信息
+/// （`S1_JAVA_JDTLS` 那几项：`executable` / `version` / `launcher` / `config`）
+/// 在本侧读不到 —— `JavaLanguageService.installation` 是 `lithe-gpui-java` 的**私有字段**，
+/// 而本批的硬规则不允许改那个 crate（只读参考），所以那几项仍在日志里而不在页面上。
+fn detected_language_servers(environment: &ProjectEnvironment) -> Option<SharedString> {
+    let jdk = environment
+        .jdk
+        .detected()
+        .or_else(|| environment.jdk.closest_below_requirement())?;
+    let home = if jdk.home.is_empty() {
+        jdk.executable.clone()
+    } else {
+        jdk.home.clone()
+    };
+    let version = if jdk.version.is_empty() {
+        "-".to_string()
+    } else {
+        jdk.version.clone()
+    };
+    Some(SharedString::from(format!(
+        "{home} ({version}) · {}",
+        jdk.executable
+    )))
 }
 
 /// 「检测到的安装」那一行的文本（真源 `settings.project.detected` + `path (version); …`）。
@@ -733,6 +823,31 @@ impl ProjectField {
             Self::Jdk => "lithe.run.jdkHomeHint",
             Self::Maven => "lithe.settings.gpui.mavenExecutableHint",
             Self::MavenJdk => "lithe.run.mavenJdkHomeHint",
+        }
+    }
+
+    /// 「这一项在 gpui 侧**还没有消费方**」时那句如实标注的键；`None` = 有真消费方。
+    ///
+    /// ## 为什么 Maven 的两项要标"尚未生效"（已核实，不是猜）
+    ///
+    /// 1. gpui 全仓**没有任何地方执行 `mvn`**：`maven.scan`（`workbench/src/maven.rs`）
+    ///    是 Core 进程内的项目描述符解析，右侧 Maven 工具窗只呈现它的结论；
+    ///    `runConfig.createLaunchPlan` 在 Core 里存在，但 gpui 侧没有采购它的一页
+    ///    （`settings` 的运行配置页只读 `runConfig.generate`，页面上也写明了"点击启动尚未接入"）。
+    /// 2. 语言服务那一侧**故意不登记**这两个键：`java/src/toolchain.rs` 的模块文档写明
+    ///    "后两个键故意不放进这个槽：登记了没人读只会把'存了不生效'从设置页搬到这一层"。
+    /// 3. 所以这两个键今天的状态是"**存了没人读**"。页面的口径是
+    ///    **不藏起来、但要标出来**（HANDOFF §4：用户需要看到自己填的值，也必须知道它现在不起作用）。
+    ///
+    /// ⚠️ 与 `javaHomePath` 的区别就在这里：那一个自阶段 16 起**真的生效**
+    /// （`workbench/src/workspace.rs` 的 `register_java_toolchain` → `java/src/toolchain.rs`
+    /// → `jdtls::resolve_runtime`），所以它**不带**这个标注。
+    fn pending_key(self) -> Option<&'static str> {
+        match self {
+            Self::Maven | Self::MavenJdk => {
+                Some("lithe.settings.gpui.mavenOverrideNotEffective")
+            }
+            Self::Jdk => None,
         }
     }
 }
@@ -1036,6 +1151,18 @@ impl SettingsDialog {
                         {
                             this.run_load(cx);
                         }
+                        // ⚠️ 「LSP」页也要走这一条：它那组「已检测语言服务器」与「项目」页
+                        // **共用同一份探测结果**（判据见 `detected_language_servers`），
+                        // 而 `page_loads_on_open` 只在"带着 LSP 分类打开对话框"时兜住
+                        // （命令面板 / 启动探针那条路）。只点左栏进来时这里就是唯一的触发器 ——
+                        // 不写这一条页面会**永远停在「正在检测…」**（实测：`lsp-page-top.png`
+                        // 第一版就是这一格）。
+                        if *category == Category::Lsp
+                            && this.project.environment.is_none()
+                            && !this.project.busy
+                        {
+                            this.project_load(cx);
+                        }
                         cx.notify();
                     }))
             }))
@@ -1075,11 +1202,14 @@ impl SettingsDialog {
                     // 「Git」页（阶段 15）：提交身份 + 一个真有消费方的开关。
                     // 钩子没登记时 `git_page` 自己退回明确空态。
                     Category::Git => self.git_page(&settings, cx),
+                    // 「LSP」页（阶段 18）：真源三键里唯一有真消费方的那一个（`autoCompletion`）
+                    // + 一组真事实的「已检测语言服务器」。另两项与 JDTLS 路径输入框**不画**
+                    // （理由写在 `lsp_page` 的文档里）。
+                    Category::Lsp => self.lsp_page(&settings, cx),
                     // 其余分类是**明确空态**：只有一句前置条件，没有任何控件。
-                    Category::Keyboard
-                    | Category::Lsp
-                    | Category::Logs
-                    | Category::Updates => self.empty_page(cx),
+                    Category::Keyboard | Category::Logs | Category::Updates => {
+                        self.empty_page(cx)
+                    }
                 },
             ))
     }
@@ -2232,6 +2362,16 @@ impl SettingsDialog {
                     .text_color(cx.theme().muted_foreground)
                     .child(tr(field.hint_key())),
             )
+            // 「尚未生效」标注：Maven 的两个覆盖值今天**没有任何消费方**（判据见
+            // [`ProjectField::pending_key`]）。用 warning 色而不是 danger：它不是错误，
+            // 而是"这一格现在不改变任何行为"的事实；但也不能弱化到看不见。
+            .children(field.pending_key().map(|key| {
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(cx.theme().warning)
+                    .child(tr(key))
+            }))
             .child(
                 div()
                     .w_full()
@@ -2347,9 +2487,124 @@ impl SettingsDialog {
         match category {
             Category::Project => self.project_load(cx),
             Category::Run => self.run_load(cx),
+            // 「LSP」页共用「项目」页那一份探测结果（判据见 `detected_language_servers`）：
+            // 已经有值就不重复探测（用户切页不该反复起 `java -version` 子进程）。
+            Category::Lsp => {
+                if self.project.environment.is_none() && !self.project.busy {
+                    self.project_load(cx);
+                }
+            }
             // 其余分类没有懒加载（`page_loads_on_open` 已经把它们挡在外面）。
             _ => {}
         }
+    }
+
+    /// 「LSP」页（阶段 18；真源 `macos-settings-panels.tsx:398-438` 的 `LspPanel`）。
+    ///
+    /// ## 这一页画什么、为什么只有这些
+    ///
+    /// | 真源项 | 处置 | 判据 |
+    /// | --- | --- | --- |
+    /// | `autoCompletion`（`settings.mac.autoCompletion`） | **画成真开关** | 唯一有真消费方的项：落到 `editor/src/completion.rs` 的 `is_completion_trigger`（经外壳转发，模板是 `tabSize`）。关掉之后 `S1_JAVA_COMPLETION` **一行都不会出现** |
+    /// | `parameterHints` | **不画，连置灰都不画** | 上游 `gpui-base-0.6.6` 的 `Lsp` 结构体没有签名帮助接口（`input/editor/lsp/mod.rs:39-69` 的 provider 清单里没有，全 crate `SignatureHelp` 零命中），没有任何可挂载的浮层 |
+    /// | `semanticTokens`（标签键是 `semanticHighlighting`） | **不画**（本批不做） | 上游 trait 在（`lsp/semantic_tokens.rs:36-55`）但 Java 侧零实现（`java/src/service.rs` 没有 `semantic_tokens`）、零装载点 —— 那是"新做一个特性"，不是"接一个开关" |
+    /// | JDTLS / JDK 运行时路径输入框 | **不画** | ① 真源**没有**这个控件；② Windows 已主动退役同类键（`settings-normalization.ts:550` + 守卫测试 `:26-33`）；③ 「项目 · JDK 与 Maven」页的 JDK 覆盖值**真的生效**（`d87f3b0a`），同一个概念不该有两个入口 |
+    /// | 「已检测语言服务器」分组 | **做成真事实** | 真源只是一句静态文本（`:431-435`）。本侧读的是「项目」页同一次探测里的 JDK 事实 —— 那正是跑 JDT LS 用的那个 JDK（判据与边界见 [`detected_language_servers`]） |
+    ///
+    /// ## 关于描述句（有意改写，不照抄）
+    ///
+    /// 真源的描述是「显示活动语言服务器提供的补全建议。」——它只提"语言服务器"，
+    /// 而本侧的 `autoCompletion` 关掉时**连 Core 的轻量兜底也一起不再自动弹出**
+    /// （兜底是同一个 provider 的第二个数据源）。照抄会让用户以为兜底还在，
+    /// 所以描述句用 gpui 侧新增的键（理由写在 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里），
+    /// 如实写明"关掉之后不再自动弹出"。
+    fn lsp_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+        let environment = self.project.environment.as_ref();
+        let detecting = || SharedString::from(tr("lithe.toolchain.detecting"));
+
+        // ① 「语言服务」分组：真源三个开关里唯一有真消费方的那一个。
+        let mut service_rows: Vec<gpui_kit::AnyElement> = vec![settings_row(
+            "settings-row-lsp-auto-completion",
+            tr("lithe.settings.mac.autoCompletion"),
+            Some(tr("lithe.settings.gpui.autoCompletionDescription")),
+            {
+                let store = self.store.clone();
+                Switch::new("settings-lsp-auto-completion")
+                    .small()
+                    .checked(settings.auto_completion)
+                    .on_change(move |checked, _, cx| {
+                        let checked = *checked;
+                        // 只写设置：把它推给编辑区是**外壳**的事（订阅 `SettingsStore` 后调
+                        // `EditorPane::set_auto_completion`）。设置 crate 不认识编辑区、
+                        // 更不认识 `lithe-gpui-java` —— 依赖方向见 `crate::lib.rs` 的模块文档。
+                        store.update(cx, |store, cx| store.set_auto_completion(checked, cx));
+                    })
+                    .into_any_element()
+            },
+            None,
+            cx,
+        )];
+        // ② 作用域说明：为什么这一页只有一项（真源另两项在本侧没有可挂载的接口）。
+        service_rows.push(
+            div()
+                .w_full()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(tr("lithe.settings.gpui.lspOnlyAutoCompletion"))
+                .into_any_element(),
+        );
+
+        // ③ 「已检测语言服务器」：真事实（或"还没有可用的运行时"那句）。
+        let minimum = MINIMUM_JAVA_MAJOR.to_string();
+        let (server_value, server_is_error) = match environment {
+            None => (detecting(), false),
+            Some(environment) => match detected_language_servers(environment) {
+                Some(servers) => {
+                    // 生效 JDK 过不了 ≥ 21 闸门时，这句话要说清"检测到了、但语言服务起不来"
+                    // —— 与「项目」页那行同一句、同一个判据（`project::MINIMUM_JAVA_MAJOR`）。
+                    let usable = environment.jdk.detected().is_some();
+                    let text = if usable {
+                        servers
+                    } else {
+                        SharedString::from(format!(
+                            "{} · {}",
+                            servers,
+                            tr_args(
+                                "lithe.settings.gpui.jdkBelowLanguageServiceMinimum",
+                                &[("minimum", minimum.as_str())],
+                            )
+                        ))
+                    };
+                    (text, !usable)
+                }
+                None => (
+                    SharedString::from(tr("lithe.settings.gpui.noLanguageServer")),
+                    true,
+                ),
+            },
+        };
+
+        vec![
+            settings_group(
+                tr("lithe.settings.mac.languageServices"),
+                service_rows,
+                cx,
+            )
+            .into_any_element(),
+            settings_group(
+                tr("lithe.settings.mac.detectedServers"),
+                vec![self.project_fact_row(
+                    "settings-lsp-detected-servers",
+                    SharedString::from(tr("lithe.settings.mac.detectedServers")),
+                    server_value,
+                    Some(tr("lithe.settings.mac.detectedServersDescription")),
+                    server_is_error,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+        ]
     }
 
     /// 一行 `S1_SETTINGS_RUN` 诊断（可 grep；走 stdout，与 `S1_SETTINGS_PROJECT` 同口径）。
@@ -3161,6 +3416,25 @@ mod tests {
         assert_eq!(indices, [0, 1, 2]);
     }
 
+    /// **A2 的守卫**：Maven 的两个覆盖值必须带「尚未生效」标注，JDK 那一个**不许**带。
+    ///
+    /// 判据（已核实，见 [`ProjectField::pending_key`] 的文档）：gpui 侧不执行 `mvn`、
+    /// 也没采购 `runConfig.createLaunchPlan`，所以 `mavenExecutablePath` / `mavenJavaHomePath`
+    /// 今天存了没人读；而 `javaHomePath` 自阶段 16 起真的会改 JDT LS 用的 JVM。
+    /// 这条测试同时钉住"两边不许写反"—— 写反了就是**又一处"显示 ≠ 实际"**。
+    #[test]
+    fn only_the_maven_overrides_are_marked_as_not_effective() {
+        assert_eq!(ProjectField::Jdk.pending_key(), None);
+        assert_eq!(
+            ProjectField::Maven.pending_key(),
+            Some("lithe.settings.gpui.mavenOverrideNotEffective")
+        );
+        assert_eq!(
+            ProjectField::MavenJdk.pending_key(),
+            Some("lithe.settings.gpui.mavenOverrideNotEffective")
+        );
+    }
+
     /// 「项目」页自阶段 16 起是**实现页**：不再有空态前置条件（那句「尚未接入」已下线）。
     #[test]
     fn project_page_is_implemented_not_an_empty_state() {
@@ -3180,15 +3454,21 @@ mod tests {
         assert_eq!(Category::Run.id(), "run");
     }
 
-    /// 带着分类打开对话框时，只有两个**懒加载页**需要立刻取一次数
+    /// 带着分类打开对话框时，只有**懒加载页**需要立刻取一次数
     /// （否则它们会停在「正在检测…」）。判据与 `load_page_on_open` 的分派必须一致 ——
     /// 两边都说"这一页要懒加载"，`content()` 的分支才不会漏。
     #[test]
     fn only_the_lazy_pages_load_on_open() {
         assert!(page_loads_on_open(Category::Project));
         assert!(page_loads_on_open(Category::Run));
+        // 「LSP」页共用「项目」页那份探测结果（见 `detected_language_servers`），
+        // 所以它也要懒加载一次 —— 否则从命令面板直接打开到这一页会永远停在"正在检测…"。
+        assert!(page_loads_on_open(Category::Lsp));
         for category in Category::ALL {
-            if matches!(category, Category::Project | Category::Run) {
+            if matches!(
+                category,
+                Category::Project | Category::Run | Category::Lsp
+            ) {
                 continue;
             }
             assert!(
@@ -3196,6 +3476,16 @@ mod tests {
                 "{category:?} 不该在打开时读盘 / 起探测子进程"
             );
         }
+    }
+
+    /// 「LSP」页自阶段 18 起是**实现页**：`autoCompletion` 真生效，
+    /// 「已检测语言服务器」是真事实 —— 那句「此分类尚未接入」的空态前置条件必须下线。
+    #[test]
+    fn lsp_page_is_implemented_not_an_empty_state() {
+        assert!(Category::IMPLEMENTED.contains(&Category::Lsp));
+        assert_eq!(Category::Lsp.prerequisite_key(), None);
+        assert_eq!(Category::Lsp.label_key(), "lithe.settings.tabs.lsp");
+        assert_eq!(Category::Lsp.id(), "lsp");
     }
 
     /// 「运行配置」页的四支不能互相冒充：**失败**不许画成"没有识别到可运行配置"
@@ -3312,11 +3602,37 @@ mod tests {
         let unusable = EffectiveToolchain::Unusable {
             path: r"D:\nope".to_string(),
             reason: "找不到 java.exe".to_string(),
+            // 路径不存在这一类**不是**版本闸门问题（理由见 `project.rs::below_requirement_reason`）。
+            language_service_rejection: false,
         };
         let line = describe_effective(ToolKind::Jdk, &unusable);
         assert!(line.is_error);
         assert!(line.text.contains("找不到 java.exe"), "{}", line.text);
         assert_eq!(line.detail.as_deref(), Some(r"D:\nope"));
+
+        // 低于 JDT LS 的 ≥ 21 闸门：详情行要**同时**给出路径与"语言服务无法启动"，
+        // 这样用户既能看清是哪个值不行，也能预判语言服务起不来（A1 的核心口径）。
+        let below_gate = EffectiveToolchain::Unusable {
+            path: r"D:\ProgramData\java\openjdk-17".to_string(),
+            reason: crate::project::below_requirement_reason("17.0.16"),
+            language_service_rejection: true,
+        };
+        let line = describe_effective(ToolKind::Jdk, &below_gate);
+        assert!(line.is_error);
+        assert!(line.text.contains("17.0.16"), "{}", line.text);
+        let detail = line.detail.as_deref().unwrap_or_default();
+        assert!(detail.contains("openjdk-17"), "{detail}");
+        // ⚠️ 断言**不写死中文**：`tr` 读的是进程级 locale（测试二进制里可能是 en），
+        // 所以这里钉的是"那句话里必须有的三样事实"：闸门数值、语言服务、JDT LS。
+        assert!(
+            detail.contains(&crate::project::MINIMUM_JAVA_MAJOR.to_string()),
+            "详情行必须报出闸门数值：{detail}"
+        );
+        assert!(detail.contains("JDT LS"), "详情行必须点明是哪个语言服务：{detail}");
+        assert!(
+            detail.contains("language service") || detail.contains("语言服务"),
+            "详情行必须说清后果落在语言服务上：{detail}"
+        );
 
         // 没找到：失败色 + 详情行是"试过哪些、为什么不行"。
         let not_found = EffectiveToolchain::NotFound {
@@ -3336,6 +3652,7 @@ mod tests {
             home: r"D:\ProgramData\java\openjdk-21".to_string(),
             executable: r"D:\ProgramData\java\openjdk-21\bin\java.exe".to_string(),
             version: "21.0.2".to_string(),
+            meets_language_service: true,
             source: ToolSource::JavaHome,
         };
         assert_eq!(

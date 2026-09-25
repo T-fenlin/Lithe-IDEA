@@ -352,10 +352,6 @@ mod tests {
                 "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。",
             ),
             (
-                "lithe.settings.gpui.prerequisiteLsp",
-                "前置条件：语言服务客户端（补全、参数提示、语义高亮）与 JDTLS 运行时路径设置。",
-            ),
-            (
                 "lithe.settings.gpui.prerequisiteGit",
                 "前置条件：Git 身份（user.name / user.email）的读写接线；Core 的 git.repositorySetup 与 git.configureIdentity 已经就绪。",
             ),
@@ -404,6 +400,33 @@ mod tests {
             (
                 "lithe.settings.gpui.projectNothingDetected",
                 "既没有探测到 JDK，也没有探测到 Maven。下面每一行都写明了查过哪些位置、各自为什么不行。",
+            ),
+            // 「项目 · JDK 与 Maven」页的 ≥ 21 闸门标注（阶段性批次的 A1）：
+            // 判据与数值的唯一真源是 `java/src/jdtls.rs` 的 `MINIMUM_JAVA_MAJOR` / `probe_java`，
+            // 镜像落在 `settings/src/project.rs`（那里写清了对应哪一条）。{minimum} 由调用点填。
+            (
+                "lithe.settings.gpui.jdkBelowLanguageServiceMinimum",
+                "低于语言服务最低要求（JDT LS 需要 JDK {minimum} 或更新版本），语言服务无法启动。",
+            ),
+            // Maven 两个覆盖值的「尚未生效」标注（同批次 A2）：gpui 侧不执行 mvn、
+            // 也没有采购 `runConfig.createLaunchPlan`，所以这两个键今天存了没人读。
+            (
+                "lithe.settings.gpui.mavenOverrideNotEffective",
+                "尚未生效：gpui 侧还没有执行 Maven 的通路（不执行 mvn，也没采购 Core 的启动计划），这个值现在不改变任何行为。",
+            ),
+            // 「LSP」页（阶段 18）：真源三键里唯一有真消费方的那一个的开关注释，
+            // 加两句"为什么这一页只有一项"与"还没有可用运行时"的如实说明。
+            (
+                "lithe.settings.gpui.autoCompletionDescription",
+                "输入时自动显示补全建议（Java 语言服务优先，语言服务不可用时用当前文件的标识符兜底）。关掉之后不再自动弹出补全菜单，兜底候选也一并停止。",
+            ),
+            (
+                "lithe.settings.gpui.lspOnlyAutoCompletion",
+                "本页只做「自动补全」：真源另两项（参数提示、语义高亮）在 gpui 侧没有可挂载的接口（上游没有签名帮助 provider，语义高亮也没有 Java 侧实现），JDTLS / JDK 运行时路径则归「项目 · JDK 与 Maven」页，所以这里不画控件。",
+            ),
+            (
+                "lithe.settings.gpui.noLanguageServer",
+                "还没有可用的语言服务运行时（本机没有探测到满足要求的 JDK；打开 Java 项目时也会再检测一次）。",
             ),
             // 「运行配置」页（阶段 17）：无项目 / 空态 / 失败 / 没有命令行 / 执行未接入 五句。
             //
