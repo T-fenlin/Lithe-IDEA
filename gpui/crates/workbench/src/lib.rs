@@ -19,6 +19,9 @@
 //! - [`project_tabs`]：项目标签条；
 //! - [`activity_bar`]：左右活动栏（38px）；
 //! - [`right_tool_window`]：右侧工具窗（400px，可收起；Maven / 通知 / 扩展三个视图）；
+//! - [`spring`] / [`spring_paths`]：右侧「Spring」视图的数据层与它**必须**给出的输入清单
+//!   （`spring.index` 只索引请求里 `paths` 列出的文件；`paths` 缺省为空 =
+//!   一个工作区文件都不扫、端点恒为 0。收集口径与排除目录见 [`spring_paths`] 的模块文档）；
 //! - [`status_bar`]：状态栏（24px）。
 //!
 //! ## 设置（阶段 8）
@@ -112,6 +115,7 @@ pub mod maven;
 pub mod menu_bar;
 pub mod project_menu;
 pub mod spring;
+pub mod spring_paths;
 pub mod project_tabs;
 pub mod right_tool_window;
 pub mod status_bar;
