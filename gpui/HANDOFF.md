@@ -30,14 +30,26 @@
 | 诊断波浪线 | ⛔ 未开工 | **卡在事件泵重构**：`Session::request`（`java/src/session.rs:302-359`）自己消费 `waitEvents` 并丢弃非本 `operationId` 的事件，再加订阅会互相偷事件；必须先改成"单一事件泵 + 按 operationId 分派"，而**补全与跳转都压在这层**（要一整轮，中途状态是坏的，别在预算不足时开工） |
 | 自动补 import / `Ctrl+Space` | ⛔ 未做 | 上游 `insert_completion` **忽略 `additionalTextEdits`**（JDT 的自动 import 正靠它；Core 有 `lsp.applyTextEdits` 可自落）；上游**没有任何补全快捷键**，`Ctrl+Space` 要自定义 action |
 
-**下一批的第一件事（我已核实、可直接开工）**：**给右栏加启动态探针 `--right-view <id>`**
-（或给视图菜单加「显示/隐藏 Spring」，与既有「显示/隐藏 Maven」一致）。
-理由：Spring 面板（`a8be039e`，右活动栏第 4 项）已经做完，但**面板内容的截图没取到** ——
-本机右栏点击会**双触发**（一次点击打出 `S1_RIGHT_PANEL view=spring visible=true` 紧跟 `false`），
-面板被自己关掉；光标停在图标上还会被"杂散点击"再切一次。有了启动态探针，
-这一族面板的取证就不再依赖点击（与 `--open-settings` / `--menu-probe` 同一家族）。
-顺带两件同批可做的：① 用**依赖已解析**的 `spring-boot-starter-web` 夹具拿非零 `endpoints`；
-② 会话改事件泵 → 诊断波浪线。
+**2026-09-26 第二轮（四路并行，全部已提交）**：`e358606f` **右栏启动态探针 `--right-view <id>`**
+（`from_id` 双向一致、未知 id 只打 stderr 不改状态、两处重复懒扫合并成
+`scan_right_view_if_needed`；实机 13 条判定全 OK）· `9bdb0fc7` **修 `spring.index` 少传 `paths`**
+（我上一批的真 bug：Core 端点识别是**文本/正则**、与 classpath 无关；修后
+`endpoints` **0 → 2**，`beans=1 values=2 paths=3`，opt-in 测试把旧 payload 钉成 0 回归）·
+`929e923d` **LSP 会话改单一事件泵 + 按 operationId 分派**（`java/src/events.rs`；诊断存储 +
+只读 `JavaLanguageService::diagnostics(&Path)`；真机回归 `items=10 / unclaimed=0`）·
+`.artifacts/p15/spring-fixture`（Boot 3.4.5，依赖全复用缓存）。
+
+**下一批的第一件事：诊断波浪线（地基已经好了）** —— 用 `JavaLanguageService::diagnostics(&path)`
+取 Core 的诊断（事件泵已经在消费 `S1_JAVA_DIAGNOSTICS`），再写进编辑器的诊断集合。
+⚠️ 注意：上游 `DiagnosticSet` **每次编辑都会 reset**，不要缓存重放；先读
+`gpui-base-0.6.6` 里诊断集合的公开 API 再动手（`gpui/research/editor-lsp-completion.md` §5/§6 可标记
+"单一事件泵"为已实现，实现名 `crate::events::{EventPump, SessionEvents}`）。
+其余按价值排序：① **右栏点击 125% DPI 双触发**（真缺陷，一次点击 visible=true 紧跟 false，
+已在 `PLAN.md` §16.9 登记，需要查 gpui 的点击派发/DPI 换算）；② 自动补 import
+（上游忽略 `additionalTextEdits`，Core 有 `lsp.applyTextEdits`）+ `Ctrl+Space`（上游无补全键位）；
+③ 依赖 JAR 的 `spring-configuration-metadata.json`（gpui 不解析 `~/.m2` 传 `metadataRepositories`，
+所以 `properties` 目前只有内置 + 工作区元数据）；④ `projectPreparation` 事件里带
+lifecycle / maven profile / building —— 「构建进度」的挂点，分派表加一个分支即可。
 
 **本会话踩到、下个会话必须知道的坑**：
 1. **强杀 Lithe 不会走 `lsp.stopServer`** ⇒ JDTLS 的 `java.exe` 会留在后台，
