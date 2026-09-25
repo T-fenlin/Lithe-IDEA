@@ -64,6 +64,7 @@ use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::tr;
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
+use crate::branch_panel::{BranchPanel, open_branch_panel, trigger as branch_trigger};
 use crate::command_palette::{
     Category, CommandAction, CommandId, install_actions as install_command_palette, set_shell,
     set_shell_focus,
@@ -486,16 +487,36 @@ pub struct ShellWorkspace {
     /// 用 observe 而不是像菜单栏那样反向持有外壳句柄：项目下拉只需要"让外壳重画"这一件事，
     /// 订阅是这一件事最短的表达（`editor` / `SettingsStore` 也是这么接的）。
     _project_menu_subscription: Option<gpui_kit::Subscription>,
+    /// 标题栏「分支项 + 分支弹窗」的句柄（Windows 规格，见 [`crate::branch_panel`]）。
+    ///
+    /// 与 [`ShellWorkspace::project_menu`] 同一处置：面板的开关与**数据**都要跨帧存在，
+    /// 而这个实体也**不是**本视图的 `Render`，所以状态变化通过下面的观察订阅让外壳重绘。
+    /// 强引用同样是必需的生命周期锚点（`Entity` 一 drop 面板就被销毁）。
+    branch_panel: Entity<BranchPanel>,
+    /// 观察分支弹窗：开合 / 刷新一变就重绘外壳（标题栏那一项与面板都归外壳画）。
+    ///
+    /// 必须持有：`Subscription` 一 drop 就取消（gpui 的 RAII 语义）。
+    _branch_panel_subscription: Option<gpui_kit::Subscription>,
+    /// `--branch-panel-probe`：**首帧之后**把分支弹窗打开（**验证/诊断用**）。
+    ///
+    /// 收成字段而不是在 `new` 里立刻打开：浮层只能在事件回调 / 任务 / 首帧之后的 render 里
+    /// `open_dialog`，而 `Root` 还没建好时窗口根不是 `Root`（`main.rs` 的启动顺序表）。
+    /// 消费点是 [`ShellWorkspace::render`] 的第一帧。
+    branch_panel_probe: bool,
 }
 
 impl ShellWorkspace {
     /// 建立工作台视图。`compact_menu` = `true` 时菜单栏走"左上角图标 + 浮动胶囊"形态
     /// （真源默认值），`false` 走"与标题栏同一行的常驻形态"（**本侧默认**，维护者口径）。
     ///
+    /// `branch_panel_probe` = `true` 时**首帧之后**把标题栏的分支弹窗打开（`--branch-panel-probe`，
+    /// **验证/诊断用**，理由见字段文档）；产品路径恒为 `false`。
+    ///
     /// `Root::new` 之前不得打开任何浮层（那时窗口根还不是 `Root`，`window.open_dialog` 会 panic）。
     pub fn new(
         root: PathBuf,
         compact_menu: bool,
+        branch_panel_probe: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -592,6 +613,12 @@ impl ShellWorkspace {
         set_project_menu(project_menu.downgrade());
         let project_menu_subscription = Some(cx.observe(&project_menu, |_, _, cx| cx.notify()));
 
+        // 标题栏的分支项 + 分支弹窗（`crate::branch_panel`）。同一套：
+        // 构造期自己读一次 `git.status` + `git.references`（标题栏那一项第一帧就要画对），
+        // 打一行 `S1_BRANCH_PANEL opened=false …` 的启动证据，最后订阅它让自己重绘。
+        let branch_panel = BranchPanel::new(root.clone(), window, cx);
+        let branch_panel_subscription = Some(cx.observe(&branch_panel, |_, _, cx| cx.notify()));
+
         let workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             root: root.clone(),
@@ -622,6 +649,9 @@ impl ShellWorkspace {
             menu_bar,
             project_menu,
             _project_menu_subscription: project_menu_subscription,
+            branch_panel,
+            _branch_panel_subscription: branch_panel_subscription,
+            branch_panel_probe,
         };
         // 启动期也留一行状态证据：右工具窗**默认隐藏**这件事要能被机器验证，
         // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。
@@ -1083,6 +1113,26 @@ impl Render for ShellWorkspace {
         // 标题栏的项目下拉（同一段：先渲染，动作在下一帧被菜单项写进队列后由本帧收尾执行）。
         let project_entries = self.project_entries();
         let project_menu = render_project_menu(&self.project_menu, &project_entries, window, cx);
+        // 标题栏的分支项（Windows 规格，见 `crate::branch_panel`）：
+        // 没有仓库 / 没有分支名时真源整项不渲染（研究 §5），所以这里给 `None` →
+        // 调用方传一块空 `div`，拖拽区宽度不受影响。
+        let branch_item = branch_trigger(&self.branch_panel, cx)
+            .unwrap_or_else(|| div().into_any_element());
+        // `--branch-panel-probe`：**到这一帧才开**（`Root` 已就位，浮层只能在事件回调 /
+        // 任务 / 首帧之后的 render 里开）。只消费一次，之后置回 `false` ——
+        // 否则用户关掉面板后会在下一帧被重新打开。
+        //
+        // ⚠️ 位置很讲究：gpui 的区域渲染函数（本文件后面那些 `activity_bar` / `side_pane` /
+        // `title_bar`）在 edition 2024 下都是 `-> impl IntoElement`，**捕获传入的
+        // `&Window` / `&App` 生命周期**（`lib.rs` 模块头的"区域渲染函数必须收 `&Window` /
+        // `&App`"）。只要把它们的结果绑进局部变量并且活到本函数末尾，`window` / `cx` 就被
+        // 不可变借用到最后，再想 `&mut` 开浮层就报 E0502（本轮实测）。所以这一段必须放在
+        // 第一个区域渲染函数**之前**。
+        let probe = self.branch_panel_probe;
+        self.branch_panel_probe = false;
+        if probe {
+            open_branch_panel(&self.branch_panel, window, cx);
+        }
         for action in crate::menu_bar::take_pending_runs(cx) {
             self.apply_menu_action(action, window, cx);
         }
@@ -1255,7 +1305,23 @@ impl Render for ShellWorkspace {
             bottom_pane(content, cx)
         });
 
-        v_flex()
+        // ① 标题栏 40（含自绘窗口三键 56×40）+ 主菜单栏。
+        //
+        // 菜单栏与 `drag_region` 是**兄弟节点**（菜单栏由 `title_bar` 插在拖拽区之前）：
+        // 祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单放进拖拽区就会变成"点菜单只拖窗口"
+        // （理由与源码行号见 `crate::title_bar` 的 `title_bar` 文档）。
+        //
+        // ⚠️ `cx.lease()` 是必须的：`menu_bar()` 要 `&mut App`（它要新造 `PopupMenu`
+        // 实体），而 `cx` 在同一帧里还要用来画后面的区域；`lease` 把这一帧的 `&mut App`
+        // 借出来，避免 "cannot borrow `*cx` as mutable more than once"。
+        // ⚠️ 菜单栏元素必须在**这一帧的布局链**里，所以它由上面算好的 `menu` 给；
+        // `render_bar` 拿不到时会返回 `None`（窗口正在关），那时标题栏里就没有菜单栏
+        // （`Some` 恒为真：`ShellWorkspace::new` 建视图时就把句柄登记好了），
+        // 其余部分照画。
+        // `--branch-panel-probe` 与「待执行菜单动作」都在上面消费掉了（理由见那一段：
+        // 它们要 `&mut Window` / `&mut App`，必须早于第一个区域渲染函数）。
+
+        let root = v_flex()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
@@ -1290,6 +1356,7 @@ impl Render for ShellWorkspace {
             .child(title_bar(
                 menu.unwrap_or_else(|| div().into_any_element()),
                 project_menu.unwrap_or_else(|| div().into_any_element()),
+                branch_item,
                 window,
                 cx,
             ))
@@ -1352,7 +1419,9 @@ impl Render for ShellWorkspace {
             // 浮层三层必须挂在最外层视图上，否则对话框 / 抽屉 / 通知静默不显示。
             .children(dialog_layer)
             .children(sheet_layer)
-            .children(notification_layer)
+            .children(notification_layer);
+
+        root
     }
 }
 

@@ -14,7 +14,8 @@
 //! - 中文文案：`windows/tauri/src/i18n/locale.ts:6191`（`titleProject.trigger` = `项目：{project}`，
 //!   本区域按可见规格只显示项目名本身，见 `title_bar` 的文档）。
 //!
-//! ## 左侧的菜单栏（见模块 [`crate::menu_bar`]）与项目下拉（见 [`crate::project_menu`]）
+//! ## 左侧的菜单栏（见模块 [`crate::menu_bar`]）、项目下拉（见 [`crate::project_menu`]）
+//! ## 与分支项（见 [`crate::branch_panel`]）
 //!
 //! 真源把菜单栏画在**标题栏这一行里**（常驻形态，`title-bar.tsx:230-232`）或标题栏左上角的
 //! `ListIcon` 按钮 + 一行浮动胶囊（紧凑形态，`:207-229`）。两种形态都走
@@ -24,7 +25,14 @@
 //! （`title-bar.tsx:339-343`）—— **菜单栏在前、项目下拉在后**，两者都在拖拽区左边。
 //! 项目名本身**画在触发器里**（`title-project-menu.tsx:157`），所以本文件的拖拽区不再重复画一遍。
 //!
-//! ⚠️ **菜单栏与项目下拉都必须是 `drag_region` 的兄弟节点**：Windows 的命中测试取
+//! 分支项是**左侧组的第三项**：真源同一个 `ChromeGroup gap="tight"`（gap = 2px）里
+//! `TitleProjectMenu` 在前、`{branchItem?.content}` 在后（`title-bar.tsx:236-238`），
+//! 所以参数顺序是「菜单栏 → 项目下拉 → 分支项」。⚠️ 分支触发器上**没有** `▾`：
+//! 真源的子节点只有分支图标 / 分支名 / ahead-behind 箭头（`git-branch-manager.tsx:646-661`），
+//! 维护者截图里的那个 caret 是左邻项目下拉的 `ChevronDownIcon`（`title-project-menu.tsx:157-163`），
+//! 两者只隔 2px（研究 `gpui/research/windows/12-branch-manager.md` §1.2 与 §7.2 第 1 条）。
+//!
+//! ⚠️ **菜单栏、项目下拉与分支项都必须是 `drag_region` 的兄弟节点**：Windows 的命中测试取
 //! `window_control_hitboxes` 里第一个命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
 //! 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢 —— 把它们放进 `drag_region` 里面，
 //! 点它们只会拖窗口。这条与下面窗口三键的坑同源：**`Drag` 不能做任何可点元素的祖先**。
@@ -83,34 +91,38 @@ use gpui_kit::{
 /// Tailwind 的 `w-14` 是任意档位，gpui 的档位表里没有对应项，不能自己发明 helper。
 const WINDOW_CONTROL_WIDTH: Pixels = px(56.);
 
-/// 标题栏（无状态）：只依赖传入的**已渲染好的**菜单栏与项目下拉、当前主题与窗口状态，
+/// 标题栏（无状态）：只依赖传入的**已渲染好的**菜单栏、项目下拉与分支项、当前主题与窗口状态，
 /// 不持有 `Entity`。
 ///
-/// `menu_bar` / `project_menu` 是调用方（[`crate::workspace::ShellWorkspace::render`]）先渲染好的
-/// 元素，收 `AnyElement` 而不是收 `Entity<..>` + `&mut App` 有三个原因：
+/// `menu_bar` / `project_menu` / `branch_item` 是调用方（[`crate::workspace::ShellWorkspace::render`]）
+/// 先渲染好的元素，收 `AnyElement` 而不是收 `Entity<..>` + `&mut App` 有四个原因：
 ///
 /// 1. 本 crate 是 edition 2024，`-> impl IntoElement` 会捕获签名里所有在作用域的生命周期
 ///    （见 `lib.rs` 模块头的"区域渲染函数必须收 `&Window` / `&App`"），多一个 `&mut App`
 ///    参数会把可变借用带进返回值；
 /// 2. 菜单栏的形态（常驻 / 图标）由它自己决定要画哪一种，标题栏不需要知道这件事；
 /// 3. 项目下拉要读 `Entity<ProjectMenu>` 并新建 `PopupMenu`（要 `&mut App`），
-///    那一步必须发生在调用方，而不是这个只读的区域函数里。
+///    那一步必须发生在调用方，而不是这个只读的区域函数里；
+/// 4. 分支项同样要读 `Entity<BranchPanel>`（开合态决定 hover / 展开外观），
+///    而且它**可以不存在**（没有仓库 / 没有分支名时真源整项不渲染，研究 §5），
+///    所以调用方给 `AnyElement`（缺省时是一块空 `div`）。
 ///
 /// ⚠️ **项目名不再由本函数画**：Windows 的项目名就在项目下拉的触发器里
 /// （`title-project-menu.tsx:157`），所以本函数收的是**已经带名字的触发器元素**，
 /// 拖拽区因此只是一块空的剩余宽度（真源 `ChromeGroup grow min-w-0`，`title-bar.tsx:339-343`）。
 ///
-/// ⚠️ **参数顺序不可调换**：`menu_bar` 在左、`project_menu` 在右
-/// （真源 `ChromeGroup { menuItem, projectControls }`，`title-bar.tsx:339-343`），
-/// 两者都排在拖拽区之前。
+/// ⚠️ **参数顺序不可调换**：`menu_bar` 在左，之后是 `project_menu` 与 `branch_item`
+/// （真源 `ChromeGroup { menuItem, projectControls }` + 同组的分支项，
+/// `title-bar.tsx:236-238,339-343`），三者都排在拖拽区之前。
 ///
-/// ⚠️ **两者都是 `drag_region` 的兄弟节点，不能放进它内部**：Windows 的命中测试取
+/// ⚠️ **三者都是 `drag_region` 的兄弟节点，不能放进它内部**：Windows 的命中测试取
 /// `window_control_hitboxes` 里**第一个**命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
 /// 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢，那时点它们只会拖窗口。
 /// 本条与本文件窗口三键的 `Drag` 祖先坑同源（见下）。
 pub fn title_bar(
     menu_bar: AnyElement,
     project_menu: AnyElement,
+    branch_item: AnyElement,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement {
@@ -136,7 +148,11 @@ pub fn title_bar(
         .child(menu_bar)
         // ② 项目下拉触发器：同样是 `drag_region` 的**兄弟**（见 [`crate::project_menu`] 模块头）。
         .child(project_menu)
-        // ③ 剩下的宽度全部是拖拽区。
+        // ③ 分支项：仍是 `drag_region` 的**兄弟**（见 [`crate::branch_panel`] 模块头）。
+        //    真源里它与项目下拉同在 `ChromeGroup gap="tight"`（2px）内、紧跟其后
+        //    （`title-bar.tsx:236-238`）；没有仓库时调用方传一块空 `div`，真源同样是整项不渲染。
+        .child(branch_item)
+        // ④ 剩下的宽度全部是拖拽区。
         .child(drag_region())
         .child(window_controls(window, cx))
 }

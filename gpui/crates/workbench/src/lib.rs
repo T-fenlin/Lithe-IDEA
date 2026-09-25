@@ -12,8 +12,10 @@
 //! - [`workspace`]：`ShellWorkspace` 组装（三栏 + 底部窗 + 右工具窗 + 状态栏）与 `Render`；
 //! - [`command_palette`]：命令面板浮层（`Ctrl+Shift+P`；`Dialog` + `Command`，阶段 6 第二半）；
 //! - [`menu_bar`]：主菜单栏（9 个顶级菜单 + 两种形态；度量与"只列可执行项"的口径见其模块文档）；
-//! - [`title_bar`]：标题栏（40px）+ 自绘窗口三键 + 菜单栏 / 项目下拉的落位；
+//! - [`title_bar`]：标题栏（40px）+ 自绘窗口三键 + 菜单栏 / 项目下拉 / 分支项的落位；
 //! - [`project_menu`]：标题栏的项目下拉面板（3 段 + 2 分隔线；徽标算法与 v1 范围见其模块文档）；
+//! - [`branch_panel`]：标题栏的分支项 + 分支弹窗（`Dialog` + `Command`；只读 v1 与三段自绘的理由
+//!   见其模块文档）；数据来自 `lithe-gpui-git` 的 `BranchSnapshot`（`git.status` + `git.references`）；
 //! - [`project_tabs`]：项目标签条；
 //! - [`activity_bar`]：左右活动栏（38px）；
 //! - [`right_tool_window`]：右侧工具窗（400px，可收起；Maven / 通知 / 扩展三个视图）；
@@ -104,6 +106,7 @@
 //! 而不可变借用可以同时存在。**新增区域模块请遵守这条。**
 
 pub mod activity_bar;
+pub mod branch_panel;
 pub mod command_palette;
 pub mod menu_bar;
 pub mod project_menu;

@@ -48,6 +48,7 @@
 //! | `workbench`（活动栏 / 状态栏 / 项目标签条 / 右工具窗） | `lithe.workbench.*`、`lithe.footer.spaces`、`lithe.titleProject.closeProject`、`lithe.maven.title`、`lithe.maven.notDetected`、`lithe.notifications.empty`、`lithe.extensions.noneFound`、`lithe.commandPalette.close` |
 //! | `workbench` 的命令面板（阶段 6 第二半） | `lithe.commandPalette.{title, placeholder, noCommands, categories.*}`、`lithe.commandPalette.actions.toggle-*`、`lithe.commandPalette.actions.color-theme.label`、`lithe.settings.appearance.theme`、`lithe.settings.appearance.showStatusBar`、`lithe.settings.appearance.showStatusBarDescription`、`lithe.settings.tabs.*`、`lithe.appearance.gpui.*`、`lithe.maven.gpui.*` |
 //! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 6 条 `lithe.settings.gpui.*` 自有文案）、`lithe.ui.cancel` |
+//! | `workbench` 的分支弹窗（阶段 11 第三件） | `lithe.git.{searchBranchesAria,repositories,branches,worktrees,selectorSections,searchBranches,branchCount,branchesCount,noMatchingBranches,noBranchesFound,current,refresh}` |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
 //! **任何键拼错都会让测试失败**（缺键时 `rust-i18n` 原样回显键名，所以断言 `tr(key) != key`）。
@@ -419,6 +420,29 @@ mod tests {
             ("lithe.titleProject.recentProjects", "最近项目"),
             ("lithe.titleProject.noRecentProjects", "没有最近项目"),
             ("lithe.titleProject.trigger", "项目：{project}"),
+            // 标题栏分支项 + 分支弹窗（`gpui/crates/workbench/src/branch_panel.rs`）。
+            // 9 条全是**真源既有**键（`windows/tauri/src/i18n/locale.ts:6836-6948` 的
+            // `git.*` 段，生成在 `locales/*.yml`）——本轮**零新增键**，也没有动
+            // `tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`（Windows 缺的键一条都没用到）。
+            // 触发器无障碍名（`git.searchBranchesAria` = 搜索分支，`locale.ts:6917`）。
+            ("lithe.git.searchBranchesAria", "搜索分支"),
+            // 三个页签（`locale.ts:6836-6838`）+ 页签容器无障碍名（`:6916`）。
+            ("lithe.git.repositories", "仓库"),
+            ("lithe.git.branches", "分支"),
+            ("lithe.git.worktrees", "工作树"),
+            ("lithe.git.selectorSections", "Git 选择分区"),
+            // 搜索框 placeholder（`locale.ts:6907`）。
+            ("lithe.git.searchBranches", "搜索分支..."),
+            // 计数徽章：单复数两键**同值**（`locale.ts:6910,6911`），所以中文下看不出单复数，
+            // 两个键都要接线（`1 个分支` 走单数键，与真源 `branchCount` / `branchesCount` 一致）。
+            ("lithe.git.branchCount", "{count} 个分支"),
+            ("lithe.git.branchesCount", "{count} 个分支"),
+            // 空态两句（`locale.ts:6920,6934`）：有搜索词 / 没有搜索词。
+            ("lithe.git.noMatchingBranches", "没有匹配的分支"),
+            ("lithe.git.noBranchesFound", "未找到分支"),
+            // 行内「当前」徽章（`locale.ts:6948`）与底栏「刷新」（`:6944`）。
+            ("lithe.git.current", "当前"),
+            ("lithe.git.refresh", "刷新"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

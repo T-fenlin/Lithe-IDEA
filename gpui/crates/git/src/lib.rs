@@ -11,6 +11,9 @@
 //!   `resolve_repository_root`、行数据（`Reference` / `Commit` / `RefRow` / `CommitFileRow` /
 //!   `GraphRow` / `Detail` / `Label` 等）与全部纯函数（`layout_graph` / `build_reference_rows` /
 //!   `build_commit_files` / `matches_filter` / `tracking_count` / `parse_*` / 颜色映射）；
+//! - `branch_info.rs`：标题栏「分支弹窗」的**只读数据边界** —— `git.status` + `git.references`
+//!   合成一份 [`BranchSnapshot`]（仓库根 / 当前分支 / ahead-behind / 本地分支列表），
+//!   不渲染任何东西；面板本身由工作台画（`gpui/crates/workbench/src/branch_panel.rs`）。
 //! - `log_view.rs`：`BottomPane` 结构体与它的字段、`new` / `set_visible` / `visible` /
 //!   `refresh`、`Drop`、`Render`、所有 `render_*` 与只画界面的辅助函数
 //!   （`icon_button` / `toolbar_button` / `title_bar` / `tab_row` / `filter_row` / `commit_row` /
@@ -159,7 +162,9 @@
 //!    `shell-probe-<command>-<n>` 变成 `lithe-gpui-<command>-<n>`。它只出现在诊断里，
 //!    而 Core 只要求同一次调用的 `id` / `operationId` 相等（信封层两者取同一个值）。
 
+mod branch_info;
 mod log_view;
 mod model;
 
+pub use branch_info::{BranchInfo, BranchSnapshot, TrackingCounts};
 pub use log_view::BottomPane;

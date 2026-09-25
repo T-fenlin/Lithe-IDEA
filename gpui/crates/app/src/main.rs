@@ -153,6 +153,12 @@ struct Options {
     ///
     /// 见 [`run_project_menu_probe`]：走的是与"点触发器"完全相同的那段状态迁移。
     project_menu_probe: bool,
+    /// `--branch-panel-probe`：启动后把标题栏的**分支弹窗**打开（**验证/诊断用**）。
+    ///
+    /// 见 `lithe_gpui_workbench::branch_panel::open_branch_panel`：走的是与"点标题栏分支项"
+    /// 完全相同的那段代码（先 `BranchPanel::open` 重读数据，再 `window.open_dialog`），
+    /// 被绕开的只有"操作系统把这次点击送进窗口"那一段。
+    branch_panel_probe: bool,
 }
 
 /// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>]`。
@@ -171,6 +177,8 @@ fn parse_options() -> Result<Options, String> {
          \x20                     动态生成的，没有固定动作名，所以单独一个开关）\n\
          \x20 --project-menu-probe  启动后打开标题栏的项目下拉（验证/诊断用；走的是与\n\
          \x20                     「点触发器」相同的那段状态迁移）\n\
+         \x20 --branch-panel-probe  启动后打开标题栏的分支弹窗（验证/诊断用；走的是与\n\
+         \x20                     「点标题栏分支项」相同的那段代码）\n\
          \x20 --menu-probe-delay <毫秒>  `--menu-probe` 打开菜单后等多久才执行动作（默认 2500）\n\
          \x20 --palette-keys <串> 启动后按顺序派发一串按键，逗号分隔；可重复给多次 = 多串（验证/诊断用；\n\
          \x20                     例：\"ctrl-shift-p,n,down,enter,escape\"）";
@@ -187,6 +195,7 @@ fn parse_options() -> Result<Options, String> {
     let mut theme_probe: Option<String> = None;
     let mut palette_keys = Vec::new();
     let mut project_menu_probe = false;
+    let mut branch_panel_probe = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -232,6 +241,7 @@ fn parse_options() -> Result<Options, String> {
                 theme_probe = Some(args.next().ok_or("--theme-probe 缺少下标或主题名")?);
             }
             "--project-menu-probe" => project_menu_probe = true,
+            "--branch-panel-probe" => branch_panel_probe = true,
             "--palette-keys" => {
                 let raw = args.next().ok_or("--palette-keys 缺少值")?;
                 let mut sequence = Vec::new();
@@ -268,6 +278,7 @@ fn parse_options() -> Result<Options, String> {
         theme_probe,
         palette_keys,
         project_menu_probe,
+        branch_panel_probe,
     })
 }
 
@@ -454,6 +465,7 @@ fn main() {
         theme_probe,
         palette_keys,
         project_menu_probe,
+        branch_panel_probe,
     } = match parse_options() {
         Ok(options) => options,
         Err(message) => {
@@ -571,7 +583,15 @@ fn main() {
 
                 cx.open_window(window_options, move |window, cx| {
                     let workspace =
-                        cx.new(|cx| ShellWorkspace::new(root, compact_menu_bar, window, cx));
+                        cx.new(|cx| {
+                            ShellWorkspace::new(
+                                root,
+                                compact_menu_bar,
+                                branch_panel_probe,
+                                window,
+                                cx,
+                            )
+                        });
                     // 系统外观监听要在有窗口之后注册（`Context::observe_window_appearance`
                     // 收 `&mut Window`）；设置里的「跟随系统」才需要它。
                     if let Some(store) = lithe_gpui_settings::try_store(cx) {
