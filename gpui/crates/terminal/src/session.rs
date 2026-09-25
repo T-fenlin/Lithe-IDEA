@@ -15,6 +15,7 @@
 
 use std::cell::RefCell;
 use std::io::{Read, Write as _};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -349,6 +350,35 @@ impl TerminalPane {
         }
     }
 
+    /// 在**指定目录**新开一个页签（"在标签右键菜单里选『在终端中打开』"的接线点）。
+    ///
+    /// 与 [`TerminalPane::new_tab`] 只差一件事：把当前配置文件的 `working_directory`
+    /// 覆盖成 `directory`。真机同样是以**文件所在目录**为工作目录新建终端 buffer
+    /// （`windows/tauri/src/features/tabs/components/tab-bar.tsx:157-165` 的 `getDirName(path)`），
+    /// 而 `Session::start` 本来就认 `TerminalProfile::working_directory`
+    /// （`session.rs:106-108`），缺的只是"从外面带一个目录进来"的入口。
+    ///
+    /// 目录不存在时仍然照开：`Command::current_dir` 失败会让 shell 起不来，那是
+    /// `Session::start` 的失败路径（页签进失败态 + `S1_TERMINAL_FAILED`），不是这里的分支。
+    pub fn new_tab_in(
+        &mut self,
+        directory: impl Into<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let directory = directory.into();
+        let profile = self
+            .profiles
+            .get(self.active_profile)
+            .cloned()
+            .or_else(default_profile)
+            .map(|profile| profile.with_working_directory(directory));
+        let created = self.open_tab_with(profile, cx);
+        if created {
+            self.focus_input(window, cx);
+        }
+    }
+
     /// 关掉**当前选中的页签**；返回是否真的关掉了一个。
     ///
     /// 为什么需要这个公开入口：关页签的能力本来只有页签条上那颗 `X` 有
@@ -407,12 +437,21 @@ impl TerminalPane {
 
     /// 开一个页签并选中它。返回是否真的建了页签。
     pub(crate) fn open_tab(&mut self, cx: &mut Context<Self>) -> bool {
+        self.open_tab_with(None, cx)
+    }
+
+    /// [`TerminalPane::open_tab`] 的实现体；`profile` = `Some` 时用它起进程
+    /// （[`TerminalPane::new_tab_in`] 用这个口子带工作目录进来），`None` 时按
+    /// "活动配置文件 → 探测到的默认配置文件"解析（原行为，一字未改）。
+    pub(crate) fn open_tab_with(
+        &mut self,
+        profile: Option<TerminalProfile>,
+        cx: &mut Context<Self>,
+    ) -> bool {
         // 列表为空时回落到 `default_profile()`：设置界面可能把列表清空过，而"默认 shell"
         // 永远是同一条规则（Windows 优先 powershell、回退 cmd）。
-        let profile = self
-            .profiles
-            .get(self.active_profile)
-            .cloned()
+        let profile = profile
+            .or_else(|| self.profiles.get(self.active_profile).cloned())
             .or_else(default_profile);
         let title: SharedString = match &profile {
             Some(profile) => profile.name().clone(),

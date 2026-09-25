@@ -23,10 +23,12 @@
 //!
 //! ## 公开边界
 //!
-//! 对外只有三样东西（都由本文件 `pub use` 发布）：[`EditorPane`]（`new` / `open` /
-//! `cursor_position` / `save_active`）、它用来回话给外壳的 [`CursorPosition`]，
-//! 以及登记快捷键的 [`install_actions`] 与它绑定的两个 action（[`SaveBuffer`] /
-//! [`NavigateToDefinition`]）；
+//! 对外只有这么几样东西（都由本文件 `pub use` 发布）：[`EditorPane`]（`new` / `open` /
+//! `cursor_position` / `save_active` / `close_active` / `set_workspace_root` /
+//! `set_tab_menu_host_actions`）、它用来回话给外壳的 [`CursorPosition`] 与
+//! [`TabMenuHostActions`]（标签右键菜单里两件"只有外壳做得了"的动作），
+//! 以及登记快捷键的 [`install_actions`] 与它绑定的三个 action（[`SaveBuffer`] /
+//! [`NavigateToDefinition`] / [`CloseActiveTab`]）；
 //! `Buffer` 与三个实现模块都留在 crate 内部（`mod buffer; mod editor_view; mod navigation;`），
 //! 不出现在 import 路径里（《编码指南》「内部重组时保持 public module path」的反面用法：
 //! 新建 crate 直接发布 `pub use`，不让 `buffer` / `editor_view` 这类实现路径变成契约）。
@@ -109,9 +111,26 @@
 //! 这些值都在组件自己的 `render` 里最后写入，外层 `.h()` / `.text_size()` 覆盖不掉
 //! （`Tab::style()` 与组件自己写的字段是同一个 `StyleRefinement`，后写的赢）。
 //!
+//! ## 阶段 11 接上的一件事：**标签右键菜单**
+//!
+//! 规格是 `gpui/research/windows/09-tab-context-menu.md`，真源是
+//! `windows/tauri/src/features/tabs/components/tab-context-menu.tsx`（13 项 + 4 条分隔线）。
+//! 本侧画 **9 项 + 1 条分隔线**（复制路径 / 复制相对路径 / 在资源管理器中显示 /
+//! 在终端中打开 / 重新加载 / ── / 关闭 / 关闭其他 / 关闭右侧 / 全部关闭），
+//! 缺的 4 项按真源"条件不满足就整项不出现"的口径**整项不画**（不是置灰 ——
+//! 真源整份菜单没有任何禁用项）：`pin`（本侧没有 pin 能力）、`rename-terminal`
+//! （只对终端标签出现）、`split-right` / `split-down` / `toggle-editor-group-lock`
+//! （依赖 pane 树，本侧是扁平 `buffers` + 单窗格）。
+//!
+//! 落点：菜单挂载在 [`EditorPane::render_tab`] 的内容 div 上（[`EditorPane::with_tab_menu`]），
+//! 三个批量关闭与确认对话框在 [`EditorPane::close_scope`] / [`EditorPane::open_unsaved_dialog`]，
+//! `Ctrl+W`（[`CloseActiveTab`] → [`EditorPane::close_active`]）是"关闭当前"。
+//! 「在资源管理器中显示」与「在终端中打开」要起进程 / 改外壳布局，所以由外壳
+//! （`ShellWorkspace`）通过 [`TabMenuHostActions`] 登记两个回调进来。
+//!
 //! 本轮**范围外**（真机有、这里没有）还有：标签悬停才显示关闭按钮的那一档
 //! （`TabBar` 不暴露每个标签的悬停状态）、标签拖拽重排 / 拖出成新窗格、
-//! 标签右键菜单、面包屑栏、分屏与轮播、外部冲突横幅与大文件「仍然启用」降级、
+//! 面包屑栏、分屏与轮播、外部冲突横幅与大文件「仍然启用」降级、
 //! 非 UTF-8 文件的编码探测与"按编码保存"。
 //!
 //! 另外两条与阶段 10 第二批直接相关的边界（细节见 `gpui/PLAN.md` §10.4）：
@@ -123,16 +142,22 @@ mod buffer;
 mod editor_view;
 mod navigation;
 
-pub use editor_view::{CursorPosition, EditorPane};
+pub use editor_view::{CursorPosition, EditorPane, TabMenuHostActions};
 
 use gpui_kit::{App, KeyBinding};
 
-gpui_kit::actions!(lithe_editor, [SaveBuffer, NavigateToDefinition]);
+gpui_kit::actions!(lithe_editor, [SaveBuffer, NavigateToDefinition, CloseActiveTab]);
 
 /// 登记编辑区的应用级快捷键。**每个窗口调用一次**（`ShellWorkspace::new`）。
 ///
-/// 两条：`ctrl-s` → [`SaveBuffer`]、`f12` → [`NavigateToDefinition`]；命中后都由
+/// 三条：`ctrl-s` → [`SaveBuffer`]、`f12` → [`NavigateToDefinition`]、
+/// `ctrl-w` → [`CloseActiveTab`]；命中后都由
 /// `ShellWorkspace` / [`EditorPane`] 根元素的处理器接住（见各自的 `on_action`）。
+///
+/// `ctrl-w` 的语义照真源 `file.close` → `closeActiveTab`
+/// （`windows/tauri/src/features/keymaps/commands/file-command-actions.ts:75-86`）：
+/// **关闭当前标签**，不是"关闭全部"、也不是"关闭窗口"（真机在没有任何 buffer 时会关窗口，
+/// 这一支**不复刻**，见 [`EditorPane::close_active`] 的文档）。
 ///
 /// `KeyBinding::new(.., None)` 的上下文谓词是空，`binding_enabled` 会按
 /// `contexts.len()`（**最深**）算深度（`gpui-pre-0.3.6/src/keymap.rs:246-252`），
@@ -161,5 +186,8 @@ pub fn install_actions(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("ctrl-s", SaveBuffer, None),
         KeyBinding::new("f12", NavigateToDefinition, None),
+        // `ctrl-w` 在整个依赖树里没有别的绑定（`gpui-base` / `gpui-component` 全量 grep
+        // `ctrl-w` 零命中），所以给它 `None` 也是安全的。
+        KeyBinding::new("ctrl-w", CloseActiveTab, None),
     ]);
 }

@@ -39,6 +39,20 @@
 //!
 //! Core 调用与历史的数据侧都在 [`crate::navigation`]，本文件只负责接线与诊断。
 
+//! ## 阶段 11 接上的一件事：标签右键菜单（`gpui/research/windows/09-tab-context-menu.md`）
+//!
+//! | 项 | 落点 |
+//! | --- | --- |
+//! | 菜单挂载（per-tab `id` + 当场捕获 index） | [`EditorPane::with_tab_menu`]（由 [`EditorPane::render_tab`] 调） |
+//! | 复制路径 / 复制相对路径 | [`EditorPane::copy_path`] / [`EditorPane::copy_relative_path`]（后者要 `workspace_root`） |
+//! | 在资源管理器中显示 / 在终端中打开 | [`EditorPane::reveal_in_explorer`] / [`EditorPane::open_in_terminal`]（经 [`TabMenuHostActions`] 转发给外壳） |
+//! | 重新加载 | [`EditorPane::request_reload`] → [`EditorPane::reload_buffer`] |
+//! | 关闭 / 关闭其他 / 关闭右侧 / 全部关闭 | [`EditorPane::request_close`] / [`EditorPane::close_scope`]（后者**只弹一次**批量确认） |
+//! | `Ctrl+W` = 关闭当前 | [`EditorPane::close_active`]（绑定在 `crate::install_actions`） |
+//!
+//! 诊断行一律 `S1_TAB_MENU`（**stderr**）：`opened=true tab=<名> items=<n> separators=<n>` 在菜单
+//! 真的被右键打开时打一次；执行动作打 `run=<动作> …`。
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,14 +64,14 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, Rope};
-use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenuItem};
+use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, InteractiveElement as _, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement as _, Render, ScrollWheelEvent, SharedString, Styled as _, Task,
-    Window, div, point, px, relative, rems,
+    AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity, InteractiveElement as _,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Render, ScrollWheelEvent,
+    SharedString, Styled as _, Task, Window, div, point, px, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::{tr, tr_args};
@@ -158,6 +172,88 @@ struct NavRequest {
     origin: Position,
 }
 
+/// 标签右键菜单里"**只有外壳做得了**"的两件事的回调。
+///
+/// 落点理由（`gpui/research/windows/09-tab-context-menu.md` §5.3，与
+/// `gpui/crates/explorer/src/lib.rs` 已登记的"起进程属平台层"是同一条约束）：
+///
+/// - **在资源管理器中显示**要起 `explorer.exe`（`/select,<path>`），启动外部进程不是
+///   一个视图模块该干的事；
+/// - **在终端中打开**要改外壳的底部工具窗可见性（`ShellWorkspace::bottom_visible` 是外壳
+///   自己的布局状态，`TerminalPane` 只知道"我有几个页签"）。
+///
+/// 两者都必须 `&mut Window` + `&mut App`（前者要起进程、后者要 `update` 终端实体），
+/// 所以回调签名与 `PopupMenuItem::on_click` 一致。`Arc` 是必要的：回调用 `&self` 取用，
+/// 而调用时 `self` 还被 `EditorPane` 可变借着一份（先 `clone` 出 `Arc` 再调）。
+pub struct TabMenuHostActions {
+    /// 在系统文件管理器里定位 `path`（Windows = `explorer /select,`）。
+    pub reveal: Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>,
+    /// 在 `path` **所在目录**新开一个终端页签，并让外壳把底部工具窗切到终端且显示。
+    pub open_terminal: Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>,
+}
+
+/// 三个"批量关闭"菜单项的作用范围。
+///
+/// **锚点存路径不存下标**：确认对话框弹出期间标签可能增减、顺序可能变，
+/// 确认后要按当下这份顺序**重算**集合（维护者口径），路径比下标稳。
+///
+/// 真源对应 `handleCloseOtherTabs(keepId)` / `handleCloseTabsToRight(id)` /
+/// `handleCloseAllTabs()`（`windows/tauri/src/features/editor/stores/buffer.store.ts:1742-1830`）。
+#[derive(Clone)]
+enum CloseScope {
+    /// 关闭其他：除了锚点那个标签，其余全关。
+    Others(PathBuf),
+    /// 关闭右侧：锚点**之后**的标签全关（`slice(index + 1)`）。
+    ToRight(PathBuf),
+    /// 全部关闭。
+    All,
+}
+
+impl CloseScope {
+    /// 诊断行里的动作名（与 `S1_TAB_MENU run=` 一起读）。
+    fn tag(&self) -> &'static str {
+        match self {
+            Self::Others(_) => "closeOthers",
+            Self::ToRight(_) => "closeRight",
+            Self::All => "closeAll",
+        }
+    }
+
+    /// 当下这批 buffer 里该被关掉的**下标**（升序）。
+    ///
+    /// 集合为空是**正常结果**（只有 1 个标签时"关闭其他/右侧"就是空集），
+    /// 真源同样静默空转：`buffer.store.ts:1758` 的 `forEach` 什么都不做、
+    /// `:1813` 的 `index === -1` 直接 `return`。所以调用方**不要**把它当成错误。
+    fn targets(&self, buffers: &[Buffer]) -> Vec<usize> {
+        match self {
+            Self::Others(anchor) => buffers
+                .iter()
+                .enumerate()
+                .filter(|(_, buffer)| &buffer.path != anchor)
+                .map(|(index, _)| index)
+                .collect(),
+            Self::ToRight(anchor) => {
+                let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor) else {
+                    return Vec::new();
+                };
+                (position + 1..buffers.len()).collect()
+            }
+            Self::All => (0..buffers.len()).collect(),
+        }
+    }
+}
+
+/// 「确认之后做什么」——三种收尾共用一个未保存确认对话框。
+#[derive(Clone)]
+enum PendingConfirm {
+    /// 关一个标签（关闭按钮 / 菜单「关闭」/ `Ctrl+W`）。
+    Single(usize),
+    /// 批量关闭（关闭其他 / 关闭右侧 / 全部关闭）。
+    Batch(CloseScope),
+    /// 重新加载（真机也是"先关再开"，`tab-bar.tsx:715-739`，所以脏标签要先过确认）。
+    Reload(usize),
+}
+
 /// 编辑区视图：标签栏 + 正文（正文没有活动 buffer 时是空状态）。
 pub struct EditorPane {
     /// 打开的 buffer，顺序就是标签栏里的顺序。
@@ -185,6 +281,14 @@ pub struct EditorPane {
     java: Option<Arc<JavaLanguageService>>,
     /// 打开项目时那次"起服务 + 生成 / 复用索引"的后台任务，必须被持有（same as above）。
     java_task: Option<Task<()>>,
+    /// 工作区根：**只**给标签右键菜单的「复制相对路径」用（真机 `getRelativePath(path,
+    /// rootFolderPath)`，无根时拷全路径，`tab-bar.tsx:355-368`）。
+    ///
+    /// 由外壳在 `ShellWorkspace::new` 里登记（与 [`Self::prepare_java`] 同一个调用点）。
+    workspace_root: Option<PathBuf>,
+    /// 外壳登记的两个"只有外壳做得了"的动作（见 [`TabMenuHostActions`]）。
+    /// `None` = 外壳还没登记（例如组件在测试宿主里单独跑）→ 对应菜单项点了会留一行诊断。
+    tab_menu_actions: Option<TabMenuHostActions>,
 }
 
 impl EditorPane {
@@ -203,6 +307,8 @@ impl EditorPane {
             nav_generation: 0,
             java: None,
             java_task: None,
+            workspace_root: None,
+            tab_menu_actions: None,
         }
     }
 
@@ -229,6 +335,22 @@ impl EditorPane {
                 Err(reason) => println!("S1_JAVA_PREPARE_FAILED reason={reason}"),
             }
         }));
+    }
+
+    /// 登记外壳的两个"只有外壳做得了"的动作（见 [`TabMenuHostActions`]）。
+    ///
+    /// 由 `ShellWorkspace::new` 在**同一个位置**调（`prepare_java` 之后），因为那两个回调要
+    /// 捕获外壳自己的弱引用（终端实体 + 底部工具窗可见性）。
+    pub fn set_tab_menu_host_actions(&mut self, actions: TabMenuHostActions) {
+        self.tab_menu_actions = Some(actions);
+    }
+
+    /// 登记工作区根（标签右键菜单的「复制相对路径」要用它）。
+    ///
+    /// 与 [`Self::prepare_java`] 同一个调用点；分开两个方法是因为职责不同 ——
+    /// 那个是"起 Java 语言服务"，这个是"记住一个路径"（后者不启动任何东西，也永不失败）。
+    pub fn set_workspace_root(&mut self, root: PathBuf) {
+        self.workspace_root = Some(root);
     }
 
     /// 打开一个文件：读盘、判定类型、更新标签栏与正文。
@@ -974,39 +1096,280 @@ impl EditorPane {
     /// `windows/tauri/src/features/editor/stores/buffer.store.ts:1746` 找的就是
     /// `isEditorContent(b) && b.isDirty`）。
     ///
-    /// ⚠️ 浮层只能在事件回调或任务里打开；本函数由关闭按钮的 `on_click` 调用，满足约束
-    /// （`render` 阶段调 `window.open_dialog` 会 panic）。
+    /// ⚠️ 浮层只能在事件回调或任务里打开；本函数由关闭按钮 / 菜单项的 `on_click` 调用，
+    /// 满足约束（`render` 阶段调 `window.open_dialog` 会 panic）。
     fn request_close(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(buffer) = self.buffers.get(index) else {
             return;
         };
 
         if !buffer.is_dirty {
+            eprintln!(
+                "S1_TAB_MENU run=close tab={} dirty=false",
+                buffer.name.as_ref()
+            );
             self.close(index);
             self.sync_cursor(cx);
             cx.notify();
             return;
         }
 
+        // 正文只补"是哪个文件"（指南 `design-guides.md:427-434`：标题写决策、正文写范围、
+        // 按钮写结果，不用"您确定要……吗"）。
+        let body = tr_args(
+            "lithe.editor.gpui.unsavedChangesBody",
+            &[("name", buffer.name.as_ref())],
+        );
+        self.open_unsaved_dialog(PendingConfirm::Single(index), body, window, cx);
+    }
+
+    /// `Ctrl+W`：关闭**当前**标签（真源 `file.close` → `closeActiveTab`，
+    /// `windows/tauri/src/features/keymaps/commands/file-command-actions.ts:75-86`）。
+    ///
+    /// **不复刻**真机"没有任何 buffer 时关窗口"那一支（`:85`）：没有 buffer 时直接返回，
+    /// 与 [`Self::request_close`] 的既有边界一致（见 `gpui/research/windows/09-tab-context-menu.md`
+    /// §2.4 结论 3）。
+    pub fn close_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            return;
+        };
+        self.request_close(index, window, cx);
+    }
+
+    // -----------------------------------------------------------------------
+    // 标签右键菜单（`gpui/research/windows/09-tab-context-menu.md`）
+    //
+    // 真源是 `windows/tauri/src/features/tabs/components/tab-context-menu.tsx`（13 项 +
+    // 4 条分隔线）。本侧画 **9 项 + 1 条分隔线**，缺的 4 项按"条件不满足就整项不出现"落地
+    // （真源本身就是 spread 掉的，且**整份菜单没有任何禁用项**，所以这里也不置灰）：
+    //
+    // | 真源项 | 本侧 | 理由 |
+    // | --- | --- | --- |
+    // | `pin`（固定/取消固定标签页） | **不画** | 本侧 `Buffer` **没有** `is_pinned`（pin 能力不存在：`buffer.rs` 的字段表、`display_names` 的排序、关闭按钮的形态替换三处都缺）。真源里 pin 被 `!isPinned` 三道过滤保护（`buffer.store.ts:1744/1763/1815`），做一半只会留下一个死项 |
+    // | `rename-terminal`（重命名） | **不画** | 只对终端标签出现，而本菜单只挂在编辑区标签上（终端页签在 `TerminalPane` 里，另有自己的面板） |
+    // | `split-right` / `split-down` | **不画** | 依赖 pane 树（分屏），本侧 `EditorPane` 是扁平 `buffers: Vec<Buffer>` + 单窗格渲染 |
+    // | `toggle-editor-group-lock` | **不画** | 同上：没有第二个编辑器组可路由，切 bool 也没有任何可观察后果 |
+    //
+    // 分隔线：真源有 4 条（`sep-1` / `sep-2` / `sep-3` / `sep-lock`），后三条都依附于上面
+    // 不画的那几项，只剩 `sep-3`（"重新加载"与"关闭"之间）有意义 —— **保留那一条**。
+    // -----------------------------------------------------------------------
+
+    /// 「复制路径」：把绝对路径写进剪贴板（真机 `writeClipboardText(buffer.path)`，
+    /// `windows/tauri/src/features/tabs/components/tab-bar.tsx:353-355`）。
+    fn copy_path(&self, index: usize, cx: &mut App) {
+        let Some(buffer) = self.buffers.get(index) else {
+            return;
+        };
+        let text = buffer.path.to_string_lossy().to_string();
+        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+        eprintln!("S1_TAB_MENU run=copyPath value={text}");
+    }
+
+    /// 「复制相对路径」：相对工作区根；**没有根时拷全路径**（真机同口径，
+    /// `tab-bar.tsx:355-368`）。
+    fn copy_relative_path(&self, index: usize, cx: &mut App) {
+        let Some(buffer) = self.buffers.get(index) else {
+            return;
+        };
+        let text = relative_to_workspace(&buffer.path, self.workspace_root.as_deref());
+        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+        eprintln!("S1_TAB_MENU run=copyRelativePath value={text}");
+    }
+
+    /// 「在资源管理器中显示」：交给外壳（起 `explorer.exe` 属平台层）。
+    fn reveal_in_explorer(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(buffer) = self.buffers.get(index) else {
+            return;
+        };
+        let path = buffer.path.clone();
+        // 先把 `Arc` 抠出来：调用它要 `&mut App`，而 `self.tab_menu_actions` 还借着 `self`。
+        let Some(reveal) = self
+            .tab_menu_actions
+            .as_ref()
+            .map(|actions| actions.reveal.clone())
+        else {
+            eprintln!("S1_TAB_MENU run=reveal result=no-host");
+            return;
+        };
+        (reveal)(&path, window, cx);
+        eprintln!("S1_TAB_MENU run=reveal path={}", path.display());
+    }
+
+    /// 「在终端中打开」：取文件**所在目录**，交给外壳开一个终端页签并显示底部工具窗
+    /// （真机 `getDirName(buffer.path)` → 以该目录起终端 buffer，`tab-bar.tsx:157-165`）。
+    fn open_in_terminal(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(buffer) = self.buffers.get(index) else {
+            return;
+        };
+        let path = buffer.path.clone();
+        let Some(open_terminal) = self
+            .tab_menu_actions
+            .as_ref()
+            .map(|actions| actions.open_terminal.clone())
+        else {
+            eprintln!("S1_TAB_MENU run=openInTerminal result=no-host");
+            return;
+        };
+        (open_terminal)(&path, window, cx);
+    }
+
+    /// 「重新加载」：重读磁盘、丢掉撤销栈与滚动位置，与真机"关掉再重开"
+    /// （`tab-bar.tsx:715-739`）的可见结果一致。
+    ///
+    /// ⚠️ **脏标签先过确认**：真机走的是 `closeBuffer`（不是 force），所以脏标签会先弹确认
+    /// （`buffer.store.ts:1348-1365`）；直接重读会把用户的修改无声丢掉。
+    fn request_reload(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(buffer) = self.buffers.get(index) else {
+            return;
+        };
+        if !buffer.is_dirty {
+            self.reload_buffer(index, window, cx);
+            return;
+        }
+        let body = tr_args(
+            "lithe.editor.gpui.unsavedChangesBody",
+            &[("name", buffer.name.as_ref())],
+        );
+        self.open_unsaved_dialog(PendingConfirm::Reload(index), body, window, cx);
+    }
+
+    /// 真的重读第 `index` 个 buffer 的正文。
+    ///
+    /// 三件事一起重置，缺一件都会留下不一致：`is_dirty`（读回来的就是磁盘内容）、
+    /// `revision`（在飞的跳转请求按旧正文算的行列已经无意义）、`save_generation`
+    /// 与 `auto_save_task`（待执行的自动保存会把这**旧**正文写回刚读出来的文件）。
+    fn reload_buffer(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(buffer) = self.buffers.get_mut(index) else {
+            return;
+        };
+        let path = buffer.path.clone();
         let name = buffer.name.clone();
+        let body = read_body(&path, &name);
+        let writable = body.writable;
+        let bytes = body.text.len();
+
+        buffer.is_dirty = false;
+        buffer.writable = writable;
+        buffer.revision = buffer.revision.wrapping_add(1);
+        buffer.save_generation = buffer.save_generation.wrapping_add(1);
+        buffer.auto_save_task = None;
+
+        let editor = buffer.editor.clone();
+        editor.update(cx, |state, cx| {
+            // `set_value` 内部关掉了事件发射（`gpui-base-0.6.6/src/input/base/state.rs:904-907`），
+            // 所以这一步不会把刚清掉的脏标记又打回来。
+            state.set_value(body.text, window, cx);
+            // 文件可能刚刚变得可读 / 不可读（例如权限变了、或"读不到"的文件后来出现了），
+            // 只读态必须跟着**这一次**读盘结果走，不能停在打开时那一档。
+            state.set_readonly(!writable, cx);
+        });
+
+        eprintln!(
+            "S1_TAB_MENU run=reload path={} bytes={bytes}",
+            path.display()
+        );
+        self.sync_cursor(cx);
+        cx.notify();
+    }
+
+    /// 「关闭其他 / 关闭右侧 / 全部关闭」：**算集合 → 脏的一次性确认 → 整批关**。
+    ///
+    /// ⚠️ **不能逐个调 [`Self::request_close`]**：那个每调一次就 `open_dialog`，
+    /// 3 个脏标签会叠 3 个对话框；真机是"**只问一次**"
+    /// （`buffer.store.ts:1746-1755` 找到**第一个**脏的就 `return`，其余一条都不问）。
+    fn close_scope(&mut self, scope: CloseScope, window: &mut Window, cx: &mut Context<Self>) {
+        let targets = scope.targets(&self.buffers);
+        if targets.is_empty() {
+            // 只有 1 个标签时"关闭其他 / 关闭右侧"**静默空转**：不报错、不弹窗、不置灰
+            // （真源 `buffer.store.ts:1758` 的 `forEach` 空转、`:1813` 的 `index === -1` 早退）。
+            eprintln!("S1_TAB_MENU run={} closed=0 reason=empty", scope.tag());
+            return;
+        }
+
+        let mut dirty = 0usize;
+        for index in &targets {
+            if self.buffers[*index].is_dirty {
+                dirty += 1;
+            }
+        }
+        if dirty == 0 {
+            let closed = self.apply_close_scope(&scope, cx);
+            eprintln!("S1_TAB_MENU run={} closed={closed} dirty=0", scope.tag());
+            return;
+        }
+
+        // 正文如实说"有几个文件"（维护者口径）—— 真源只显示**第一个**脏文件名，
+        // 用户看到"A 没保存"，确认后 B、C 也一起被关掉且没被问过
+        // （`pending-buffer-close-dialog.tsx:9-12` + `buffer.store.ts:1746` 的 `find`）。
+        eprintln!(
+            "S1_TAB_MENU run={} confirm=true dirty={dirty} targets={}",
+            scope.tag(),
+            targets.len()
+        );
+        let count = dirty.to_string();
+        let body = tr_args(
+            "lithe.editor.gpui.unsavedChangesBatchBody",
+            &[("count", &count)],
+        );
+        self.open_unsaved_dialog(PendingConfirm::Batch(scope), body, window, cx);
+    }
+
+    /// 按当前这份顺序**重算**要关的下标并整批关掉，返回真的关掉了几个。
+    ///
+    /// **重算**（维护者口径）：确认对话框弹出期间标签可能已经增减、顺序可能变，
+    /// 拿点击那一刻的下标去关会关错人。锚点是**路径**，所以重算永远落在用户当初右键的那个
+    /// 标签上，而不是"第 N 个位置"。
+    fn apply_close_scope(&mut self, scope: &CloseScope, cx: &mut Context<Self>) -> usize {
+        let targets = scope.targets(&self.buffers);
+        // **从大到小**关：`close` 会把后面的标签整体左移一位，先关小下标会让后面的下标错位。
+        for index in targets.iter().rev() {
+            self.close(*index);
+        }
+        self.sync_cursor(cx);
+        cx.notify();
+        targets.len()
+    }
+
+    /// 未保存确认对话框 —— 「关闭单个 / 批量关闭 / 重新加载」三种收尾**共用同一个**。
+    ///
+    /// `body` 已经拼好（单个档是文件名、批量档是"有 N 个文件"），所以这个函数只负责
+    /// 标题 + 三个按钮与各自的收尾动作。写盘失败的通知由 `write_buffer` 自己拼文件名。
+    ///
+    /// ⚠️ **所有捕获值都在 `Fn` 闭包体内 `clone`**：`WindowExt::open_dialog` 收的是
+    /// `Fn(Dialog, ..) -> Dialog`（可被多次调用），所以内层 `move` 闭包不能把外层捕获的
+    /// 变量整个搬走（E0507）。
+    fn open_unsaved_dialog(
+        &self,
+        pending: PendingConfirm,
+        body: SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let pane = cx.weak_entity();
+        // 批量档的主按钮是"全部保存"（真源键 `menu.saveAll` = 「全部保存」/ "Save All"），
+        // 单个档沿用既有的「保存」（`ui.save`，阶段 9 已接线）。
+        let save_label = match &pending {
+            PendingConfirm::Batch(_) => tr("lithe.menu.saveAll"),
+            _ => tr("lithe.ui.save"),
+        };
 
         window.open_dialog(cx, move |dialog, _, cx| {
             let discard_pane = pane.clone();
             let save_pane = pane.clone();
+            let discard_pending = pending.clone();
+            let save_pending = pending.clone();
+            let body = body.clone();
+            let save_label = save_label.clone();
             dialog
-                // 标题 = 状态/条件，正文 = 作用范围（哪个文件），按钮 = 结果词。
+                // 标题 = 状态/条件，正文 = 作用范围（哪个文件 / 有几个文件），按钮 = 结果词。
                 // 指南 `design-guides.md:427-432`：确认对话框要组成一个紧凑决策；
-                // `:434` 明确不用"您确定要……吗"这类套话，所以正文只补"是哪个文件"。
+                // `:434` 明确不用"您确定要……吗"这类套话。
                 .title(tr("lithe.unsavedChanges.title"))
                 .child(
                     div()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child(tr_args(
-                            "lithe.editor.gpui.unsavedChangesBody",
-                            &[("name", name.as_ref())],
-                        )),
+                        .child(body),
                 )
                 .footer(
                     h_flex()
@@ -1031,10 +1394,9 @@ impl EditorPane {
                                 // `GPUI_ONLY_KEYS`。
                                 .label(tr("lithe.editor.gpui.discardChanges"))
                                 .on_click(move |_, window, cx| {
+                                    let pending = discard_pending.clone();
                                     let _ = discard_pane.update(cx, |pane, cx| {
-                                        pane.close(index);
-                                        pane.sync_cursor(cx);
-                                        cx.notify();
+                                        pane.apply_confirm(pending, window, cx)
                                     });
                                     window.close_dialog(cx);
                                 }),
@@ -1042,18 +1404,14 @@ impl EditorPane {
                         .child(
                             Button::new("editor-unsaved-save")
                                 .primary()
-                                .label(tr("lithe.ui.save"))
+                                .label(save_label)
                                 .on_click(move |_, window, cx| {
                                     // 写失败**不关**对话框：用户还可以重试或改成"放弃修改"，
                                     // 失败原因由 `write_buffer` 推的通知说明。
+                                    let pending = save_pending.clone();
                                     let saved = save_pane
                                         .update(cx, |pane, cx| {
-                                            pane.write_buffer(
-                                                index,
-                                                "lithe.editor.saveFailed",
-                                                window,
-                                                cx,
-                                            )
+                                            pane.save_confirm(pending, window, cx)
                                         })
                                         .unwrap_or(false);
                                     if saved {
@@ -1063,6 +1421,68 @@ impl EditorPane {
                         ),
                 )
         });
+    }
+
+    /// 「放弃修改」按下之后：不保存、直接执行收尾（这里**没有** dirty 检查 ——
+    /// 用户刚刚明确选择丢弃）。
+    fn apply_confirm(&mut self, pending: PendingConfirm, window: &mut Window, cx: &mut Context<Self>) {
+        match pending {
+            PendingConfirm::Single(index) => {
+                self.close(index);
+                self.sync_cursor(cx);
+                cx.notify();
+            }
+            PendingConfirm::Batch(scope) => {
+                let closed = self.apply_close_scope(&scope, cx);
+                eprintln!(
+                    "S1_TAB_MENU run={} closed={closed} via=discard",
+                    scope.tag()
+                );
+            }
+            PendingConfirm::Reload(index) => self.reload_buffer(index, window, cx),
+        }
+    }
+
+    /// 「保存（全部）」按下之后：写盘成功才执行收尾；返回是否成功。
+    fn save_confirm(
+        &mut self,
+        pending: PendingConfirm,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        match pending {
+            PendingConfirm::Single(index) => {
+                let saved = self.write_buffer(index, "lithe.editor.saveFailed", window, cx);
+                if saved {
+                    self.close(index);
+                    self.sync_cursor(cx);
+                    cx.notify();
+                }
+                saved
+            }
+            PendingConfirm::Batch(scope) => {
+                // 「全部保存」= 把这一批里**所有**脏 buffer 都写盘（真源只保存
+                // `pendingClose.bufferId` 那一个，然后 force close 其余 —— 那会让用户
+                // 明确点了"保存"却丢掉另外几个文件的修改）。任何一个失败都保持对话框打开。
+                let targets = scope.targets(&self.buffers);
+                for index in &targets {
+                    let dirty = self.buffers.get(*index).is_some_and(|buffer| buffer.is_dirty);
+                    if dirty && !self.write_buffer(*index, "lithe.editor.saveFailed", window, cx) {
+                        return false;
+                    }
+                }
+                let closed = self.apply_close_scope(&scope, cx);
+                eprintln!("S1_TAB_MENU run={} closed={closed} via=save", scope.tag());
+                true
+            }
+            PendingConfirm::Reload(index) => {
+                let saved = self.write_buffer(index, "lithe.editor.saveFailed", window, cx);
+                if saved {
+                    self.reload_buffer(index, window, cx);
+                }
+                saved
+            }
+        }
     }
 
     /// 标签栏：左侧 `← →` 导航组 + 各文件的标签。
@@ -1107,6 +1527,171 @@ impl EditorPane {
         }
 
         bar.into_any_element()
+    }
+
+    /// 给标签的**内容 div** 挂上右键菜单，返回可以直接塞进 `Tab::child(..)` 的元素。
+    ///
+    /// ⚠️ 挂载点的选择（两条都是实测踩过的坑，
+    /// `gpui/research/windows/09-tab-context-menu.md` §5.1）：
+    ///
+    /// 1. **挂在内容 div 上，不是挂在 `Tab` 上**：`TabBar::child` 只收 `impl Into<Tab>`
+    ///    （`tab/tab_bar.rs:151`），外面再包一层 div 之后它就不再是 `Tab` 了。
+    ///    而 `Tab` 自己的 children 正好是被渲染进 inner_content 的
+    ///    （`tab/tab.rs:743`，且它的 **icon 分支会丢掉 children**），Underline 变体的
+    ///    inner padding 是 0（`tab/tab.rs:80-82`），所以挂在内容 div 上与挂在标签上的
+    ///    命中区域一致。
+    /// 2. **必须自己给 `id`**：`context_menu` 生成的元素 id 取
+    ///    `self.interactivity().element_id`，`None` 时退回 `ElementId::CodeLocation(调用点)`
+    ///    （`gpui-component-0.6.6/src/menu/context_menu.rs:26-35`）—— 也就是**同一个源码位置
+    ///    的每个标签共用一个 id**，右键任意一个都会命中同一份元素状态。
+    /// 3. **上下文必须当场捕获**：菜单的构建闭包签名是
+    ///    `Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu`
+    ///    （`context_menu.rs:19-22`）—— **没有鼠标事件、没有位置**，而且它是在
+    ///    **下一帧**的 `window.defer` 里跑的（`:324-333`）。所以"被点的是哪个标签"
+    ///    只能在这里按 `index` 捕获快照（`path` / `name` / 是不是虚拟路径），
+    ///    不能指望闭包回头去问 `self`。
+    ///
+    /// 回调一律走 `window.listener_for(&pane, ..)`（`gpui-pre-0.3.6/src/window.rs:6626-6635`）：
+    /// 它内部 `view.downgrade()` 再 `update`，视图已销毁时静默 `ok()`，
+    /// 而 `on_click` 给的第三参是 `&mut App`（不是 `Context<EditorPane>`），
+    /// 要回到 `EditorPane` 只有这一条路。
+    fn with_tab_menu(
+        &self,
+        index: usize,
+        buffer: &Buffer,
+        content: Div,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let pane: Entity<Self> = cx.entity();
+        // 快照：闭包在下一帧才跑，那时 `buffer` 的借用早已结束。
+        let path = buffer.path.clone();
+        let name = buffer.name.clone();
+        // 真源两条出现条件在 gpui 侧都等价于"这是一份磁盘上的文件"：
+        // 「在终端中打开」是 `!isVirtualContent(buffer) && !buffer.path.includes("://")`
+        // （`tab-context-menu.tsx:151`）、「重新加载」是
+        // `buffer.path !== "extensions://marketplace"`（`:169`）。我们的非磁盘路径空间
+        // 只有 `jdt://` 虚拟源码（`extensions://` 还没有对应 buffer），所以两条合起来判一次。
+        let on_disk = !is_virtual_source_path(&path);
+
+        content
+            .id(("editor-tab", index))
+            .context_menu(move |mut menu: PopupMenu, window: &mut Window, _cx: &mut Context<PopupMenu>| {
+                // 诊断：这条行**只在菜单真的被打开时**才打（闭包由右键按下触发），
+                // 所以它同时是"右键命中了这个标签"的证据。
+                let mut items = 0usize;
+                let mut separators = 0usize;
+
+                // ---- 复制路径 / 复制相对路径 -------------------------------------
+                menu = menu.item(
+                    PopupMenuItem::new(tr("lithe.files.copyPath"))
+                        .icon(IconName::Copy)
+                        .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
+                            pane.copy_path(index, cx);
+                        })),
+                );
+                items += 1;
+
+                menu = menu.item(
+                    PopupMenuItem::new(tr("lithe.files.copyRelativePath"))
+                        .icon(IconName::Copy)
+                        .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
+                            pane.copy_relative_path(index, cx);
+                        })),
+                );
+                items += 1;
+
+                // ---- 在资源管理器中显示 -----------------------------------------
+                menu = menu.item(
+                    PopupMenuItem::new(tr("lithe.files.reveal"))
+                        .icon(IconName::FolderOpen)
+                        .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
+                            pane.reveal_in_explorer(index, window, cx);
+                        })),
+                );
+                items += 1;
+
+                // ---- 在终端中打开（磁盘文件才有）--------------------------------
+                if on_disk {
+                    menu = menu.item(
+                        PopupMenuItem::new(tr("lithe.files.openInTerminal"))
+                            .icon(IconName::Terminal)
+                            .on_click(window.listener_for(
+                                &pane,
+                                move |pane, _, window, cx| {
+                                    pane.open_in_terminal(index, window, cx);
+                                },
+                            )),
+                    );
+                    items += 1;
+                }
+
+                // ---- 重新加载（磁盘文件才有）------------------------------------
+                if on_disk {
+                    menu = menu.item(
+                        PopupMenuItem::new(tr("lithe.tabs.reload"))
+                            .icon(IconName::RotateCcw)
+                            .on_click(window.listener_for(
+                                &pane,
+                                move |pane, _, window, cx| {
+                                    pane.request_reload(index, window, cx);
+                                },
+                            )),
+                    );
+                    items += 1;
+                }
+
+                // ---- sep-3：真源里恒出现的那一条（"重新加载"与"关闭"之间）-------
+                menu = menu.separator();
+                separators += 1;
+
+                // ---- 关闭（右键的那个标签；`Ctrl+W` 是"关闭当前"，两者不同）------
+                menu = menu.item(
+                    PopupMenuItem::new(tr("lithe.tabs.close"))
+                        .icon(IconName::X)
+                        .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
+                            pane.request_close(index, window, cx);
+                        })),
+                );
+                items += 1;
+
+                // ---- 关闭其他 / 关闭右侧 / 全部关闭（批量确认见 `close_scope`）----
+                menu = menu.item(
+                    PopupMenuItem::new(tr("lithe.tabs.closeOthers")).on_click(
+                        window.listener_for(&pane, {
+                            let anchor = path.clone();
+                            move |pane, _, window, cx| {
+                                pane.close_scope(CloseScope::Others(anchor.clone()), window, cx);
+                            }
+                        }),
+                    ),
+                );
+                items += 1;
+
+                menu = menu.item(
+                    PopupMenuItem::new(tr("lithe.tabs.closeToRight")).on_click(
+                        window.listener_for(&pane, {
+                            let anchor = path.clone();
+                            move |pane, _, window, cx| {
+                                pane.close_scope(CloseScope::ToRight(anchor.clone()), window, cx);
+                            }
+                        }),
+                    ),
+                );
+                items += 1;
+
+                menu = menu.item(
+                    PopupMenuItem::new(tr("lithe.tabs.closeAll")).on_click(
+                        window.listener_for(&pane, move |pane, _, window, cx| {
+                            pane.close_scope(CloseScope::All, window, cx);
+                        }),
+                    ),
+                );
+                items += 1;
+
+                eprintln!("S1_TAB_MENU opened=true tab={name} items={items} separators={separators}");
+                menu
+            })
+            .into_any_element()
     }
 
     /// 标签栏左侧的后退/前进按钮组。
@@ -1271,6 +1856,11 @@ impl EditorPane {
             )
             .children(dirty_dot)
             .children(close);
+
+        // 右键菜单挂在内容 div 上（挂载点的选择与两条坑见 [`Self::with_tab_menu`]）。
+        // `.h_full()` 把命中区域从"内容的自然高度"撑到标签内高，右键标签上下边缘时
+        // 也能命中（它比 `items_center` 的对齐结果只大几像素，不改观感）。
+        let content = self.with_tab_menu(index, buffer, content.h_full(), cx);
 
         Tab::new().aria_label(aria_label).child(content)
     }
@@ -1451,6 +2041,30 @@ fn is_virtual_source_path(path: &Path) -> bool {
     path.to_string_lossy().starts_with("jdt://")
 }
 
+/// 把绝对路径相对化到工作区根；**没有根 / 不在根下时返回全路径**。
+///
+/// 真机是 `getRelativePath(path, rootFolderPath)`，`rootFolderPath` 为空时**拷全路径**
+/// （`windows/tauri/src/features/tabs/components/tab-bar.tsx:355-368`）。
+/// 归一化口径照 `windows/tauri/src/utils/path-helpers.ts:6-18`：比较前先把 `\` 换成 `/`
+/// （Windows 上 `C:\a\b` 与 `C:/a/b` 是同一个路径），输出的分隔符也用 `/`
+/// —— 与仓库「工作区相对路径用 `/` 分隔」的契约一致（`AGENTS.md` 的 shared contracts 一节）。
+fn relative_to_workspace(path: &Path, root: Option<&Path>) -> String {
+    let full = path.to_string_lossy().to_string();
+    let Some(root) = root else {
+        return full;
+    };
+
+    let normalized_path = full.replace('\\', "/");
+    let normalized_root = root.to_string_lossy().replace('\\', "/");
+    let root_trimmed = normalized_root.trim_end_matches('/');
+
+    normalized_path
+        .strip_prefix(root_trimmed)
+        .map(|rest| rest.trim_start_matches('/').to_string())
+        .filter(|rest| !rest.is_empty())
+        .unwrap_or(full)
+}
+
 /// 编辑区销毁时关掉 Java 会话。
 ///
 /// **同步**在 drop 里调（而不是丢给一个 detached 线程）：Core 拥有 JDTLS 的**子进程**，
@@ -1483,6 +2097,12 @@ impl Render for EditorPane {
                     pane.navigate_to_definition(window, cx);
                 }),
             )
+            // `Ctrl+W`：绑定登记在 `lithe_gpui_editor::install_actions`，处理器同样放根元素
+            // （理由与 `F12` 完全相同：焦点在编辑器里时 action 从焦点节点往祖先冒泡，
+            // 焦点在终端 / 资源管理器时这一串里没有编辑区，按键自然什么都不做）。
+            .on_action(cx.listener(|pane, _: &crate::CloseActiveTab, window, cx| {
+                pane.close_active(window, cx);
+            }))
             .child(self.render_tab_bar(cx))
             .child(self.render_body(cx))
     }

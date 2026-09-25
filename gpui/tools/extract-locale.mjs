@@ -131,6 +131,13 @@ const GPUI_ONLY_KEYS = [
       "同一个对话框的正文。真源只有拆成三段拼接的 unsavedChanges.messagePrefix/messageSuffix（「是否要保存对」+ 文件名 +「 所做的更改？」，locale.ts:7874-7875），是 design-guides.md:427-434 点名的『您确定要……吗』式提问；按指南改成『正文只补充作用范围与后果』，文件名仍是唯一新增信息。",
   },
   {
+    key: "editor.gpui.unsavedChangesBatchBody",
+    zh: "有 {count} 个文件的修改尚未保存。",
+    en: "{count} files have unsaved changes.",
+    reason:
+      "标签右键菜单的三个批量关闭（关闭其他 / 关闭右侧 / 全部关闭）的确认正文（阶段 11）。真源是「逐个发现脏标签、只弹一次确认」，但弹窗正文只取 pendingClose.bufferId 那**一个**文件名（pending-buffer-close-dialog.tsx:9-12 + buffer.store.ts:1746 的 find），用户看到「是否要保存对 A 所做的更改？」却会连带关掉 B、C —— 读起来像 bug。维护者口径：正文改为如实显示**有几个**文件未保存，所以本侧需要一条自己的键（真源没有「N 个文件」这种句式）。",
+  },
+  {
     key: "appearance.gpui.switchThemeLight",
     zh: "首选项：切换到浅色主题",
     en: "Preferences: Switch to Light Theme",

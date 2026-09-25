@@ -45,7 +45,8 @@
 //! 「顶部组照常亮」互不影响（两边本来就是两套状态）。判据见
 //! [`ShellWorkspace::is_right_activity_active`]。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
@@ -56,7 +57,7 @@ use gpui_kit::{
     rems,
 };
 
-use lithe_gpui_editor::{EditorPane, SaveBuffer};
+use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::BottomPane;
 use lithe_gpui_settings::Category as SettingsCategory;
@@ -84,10 +85,59 @@ use crate::right_tool_window::{
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
 
+/// 在系统文件管理器里**定位**一个文件（标签右键菜单的「在资源管理器中显示」）。
+///
+/// 真源走的是 Tauri 插件 `revealItemInDir(path)`
+/// （`windows/tauri/src/features/file-system/stores/file-system.store.ts:2689-2703`），
+/// gpui 侧**没有等价物**（全量 grep 无 reveal 调用），所以只能自己起进程。
+///
+/// 平台差异用**运行时探测**表达，不写 `#[cfg(target_os)]`（与 `terminal/src/profile.rs`
+/// 的 `command_exists` 同一条口径：Windows 先试 `explorer.exe`，它不存在时
+/// `Command::spawn` 会返回 `NotFound`，再依次试 `open -R`（macOS）与 `xdg-open`（Linux））。
+///
+/// ⚠️ 落点在这里（外壳）而不是编辑区，与 `gpui/crates/explorer/src/lib.rs:86-87`
+/// 已登记的"起 `explorer.exe` 属平台层，不该由 UI 模块做"是同一条约束。
+fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+
+    // `explorer.exe` 的 `/select,<path>` **必须**是同一个参数且不加引号外的转义
+    // （`Command::arg` 会按 Windows 的参数规则给含空格的路径加引号，所以直接给整串）。
+    let attempts: [(&str, Vec<String>); 3] = [
+        ("explorer.exe", vec![format!("/select,{}", path.display())]),
+        ("open", vec!["-R".to_string(), path.display().to_string()]),
+        // `xdg-open` 只能开**目录**（没有"选中某个文件"的通用形式），
+        // 所以父目录拿不到时退回文件本身所在的那一层。
+        (
+            "xdg-open",
+            vec![path
+                .parent()
+                .unwrap_or(path)
+                .display()
+                .to_string()],
+        ),
+    ];
+
+    let mut last = String::from("no known file manager");
+    for (program, args) in attempts {
+        match Command::new(program)
+            .args(&args)
+            // 三路 stdio 全部丢弃：文件管理器是长期存活的分离进程，接了管道等于把宿主的
+            // 生命周期绑上去（终端会话那边同样刻意不接管道，见 `terminal/src/session.rs`）。
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(_child) => return Ok(()),
+            Err(error) => last = format!("{program}: {error}"),
+        }
+    }
+    Err(last)
+}
+
 // ---------------------------------------------------------------------------
 // 活动栏下标
 // ---------------------------------------------------------------------------
-
 /// 左侧活动栏「设置」项的下标（[`activity_items`] 的第 8 项、0 起第 7）。
 ///
 /// 真机里「设置」打开的是**模态对话框**，不是底部工具窗（`gpui/research/windows/07-settings-ui.md`
@@ -556,6 +606,61 @@ impl ShellWorkspace {
         explorer.update(cx, |this, cx| this.refresh(window, cx));
 
         let terminal = cx.new(|cx| TerminalPane::new(window, cx));
+
+        // 标签右键菜单（`gpui/research/windows/09-tab-context-menu.md`）：把工作区根与
+        // 两件"只有外壳做得了"的动作登记给编辑区。
+        //
+        // ⚠️ **必须排在 `terminal` 之后**：两个回调都要捕获终端实体的弱引用（「在终端中打开」
+        // 要新开一个带工作目录的页签，并把底部工具窗切到终端且显示）。
+        // 被绕开的只有"操作系统把这次点击送进窗口"那一段 —— 回调里走的都是与主菜单
+        // 「终端 → 新建终端」同一个 `TerminalPane::new_tab_in` / 同一个 `bottom_visible`。
+        {
+            let shell = cx.entity().downgrade();
+            let terminal_handle = terminal.downgrade();
+            let workspace_root = root.clone();
+            editor.update(cx, |pane, _cx| {
+                // 「复制相对路径」要工作区根（无根时拷全路径，与真机同口径）。
+                pane.set_workspace_root(workspace_root);
+                pane.set_tab_menu_host_actions(TabMenuHostActions {
+                    // 「在资源管理器中显示」：起系统文件管理器的定位进程 ——
+                    // 这与 `gpui/crates/explorer/src/lib.rs:86-87` 登记的"reveal 属平台层、
+                    // 不该由 UI 模块做"是同一条约束，所以落点在这里（外壳）而不是编辑区。
+                    reveal: Arc::new(|path, _window, _cx| {
+                        if let Err(error) = reveal_in_file_manager(path) {
+                            // 失败不静默：`S1_TAB_MENU` 与 `S1_*` 一族同口径走 stderr。
+                            eprintln!(
+                                "S1_TAB_MENU run=reveal result=failed path={} error={error}",
+                                path.display()
+                            );
+                        }
+                    }),
+                    // 「在终端中打开」：以文件**所在目录**新开一个终端页签 + 显示底部工具窗。
+                    open_terminal: Arc::new(move |path, window, cx| {
+                        let directory = path
+                            .parent()
+                            .map(Path::to_path_buf)
+                            .unwrap_or_else(|| path.to_path_buf());
+                        let opened = terminal_handle
+                            .update(cx, |pane, cx| {
+                                pane.new_tab_in(directory.clone(), window, cx)
+                            })
+                            .is_ok();
+                        if opened {
+                            let _ = shell.update(cx, |shell, cx| {
+                                shell.bottom_kind = BottomPaneKind::Terminal;
+                                shell.bottom_visible = true;
+                                cx.notify();
+                            });
+                        }
+                        eprintln!(
+                            "S1_TAB_MENU run=openInTerminal dir={} opened={opened}",
+                            directory.display()
+                        );
+                    }),
+                });
+            });
+        }
+
         let bottom_git = cx.new(|cx| BottomPane::new(root.clone(), window, cx));
 
         // 设置变了要重绘（「显示状态栏」立即生效）。`try_store` 而不是 `store`：

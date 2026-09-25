@@ -42,6 +42,7 @@
 //! | 位置 | 键 |
 //! | --- | --- |
 //! | `editor`（标签栏导航 / 关闭 / 空状态 / 打不开文件 / 保存与自动保存失败 / 关闭未保存确认 / 跳转失败） | `lithe.tabs.*`、`lithe.workbench.emptyEditor*`、`lithe.ui.noActionsHere`、`lithe.files.openFailed`、`lithe.editor.saveFailed`、`lithe.editor.autoSaveFailed`、`lithe.editor.gpui.*`、`lithe.unsavedChanges.title`、`lithe.ui.save`、`lithe.navigation.definition`、`lithe.navigation.noTargetFound` |
+//! | `editor` 的标签右键菜单（阶段 11） | `lithe.files.{copyPath,copyRelativePath,reveal,openInTerminal}`、`lithe.tabs.{reload,close,closeOthers,closeToRight,closeAll}`、`lithe.menu.saveAll`（批量确认的"全部保存"）、`lithe.editor.gpui.unsavedChangesBatchBody` |
 //! | `explorer`（头部 / 空态 / 加载 / 树 a11y） | `lithe.workbench.project`、`lithe.fileExplorer.*`、`lithe.quickOpen.loadingFiles`、`lithe.search.clear`、`lithe.ui.retry`、`lithe.titleProject.openFolder` |
 //! | `git`（标题栏 / 筛选 / 提交表 / 引用树 / Inspector / 控制台 / 占位） | `lithe.git.*`、`lithe.workbench.gitLog`、`lithe.footer.readOnly` |
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
@@ -301,12 +302,32 @@ mod tests {
             ("lithe.settings.gpui.restoreDefaultsOpen", "恢复默认设置…"),
             ("lithe.settings.gpui.restoreDefaultsTitle", "恢复默认设置？"),
             ("lithe.settings.gpui.restoreDefaultsBody", "所有设置都会回到默认值。"),
-            // 阶段 9 的编辑器侧（2 条，同样由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里）。
+            // 阶段 9 的编辑器侧（3 条，同样由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里）。
             ("lithe.editor.gpui.discardChanges", "放弃修改"),
             (
                 "lithe.editor.gpui.unsavedChangesBody",
                 "对“{name}”的修改尚未保存。",
             ),
+            // 阶段 11（标签右键菜单）的批量关闭确认正文：正文如实说"有几个文件"，
+            // 而不是只显示第一个脏文件名（真源的行为，读起来像 bug）。
+            (
+                "lithe.editor.gpui.unsavedChangesBatchBody",
+                "有 {count} 个文件的修改尚未保存。",
+            ),
+            // 阶段 11（标签右键菜单）的 9 个菜单项 + 批量确认的"全部保存"按钮。
+            // 10 条全是**真源既有**键（`windows/tauri/src/i18n/locale.ts` 的 `files.*` /
+            // `tabs.*` / `menu.saveAll`，生成在 `locales/*.yml`）——本菜单**零新增真源键**，
+            // 只新增上面那条 `editor.gpui.*`。
+            ("lithe.files.copyPath", "复制路径"),
+            ("lithe.files.copyRelativePath", "复制相对路径"),
+            ("lithe.files.reveal", "在资源管理器中显示"),
+            ("lithe.files.openInTerminal", "在终端中打开"),
+            ("lithe.tabs.reload", "重新加载"),
+            // 「关闭」在上面 `lithe.tabs.close` 已经接过（标签上的关闭按钮 tooltip），不重复。
+            ("lithe.tabs.closeOthers", "关闭其他"),
+            ("lithe.tabs.closeToRight", "关闭右侧"),
+            ("lithe.tabs.closeAll", "全部关闭"),
+            ("lithe.menu.saveAll", "全部保存"),
             // 阶段 9 的编辑器侧复用的**真源既有**键：保存失败的两句反馈，以及
             // 关闭未保存文件时确认对话框的标题与两个按钮
             // （`windows/tauri/src/i18n/locale.ts:4637-4638`、`:7872`、`:4617`、`:436`）。
