@@ -56,7 +56,7 @@ use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, InteractiveElement as _, IntoElement, MouseButton,
     MouseDownEvent, ParentElement as _, Render, ScrollWheelEvent, SharedString, Styled as _, Task,
-    Window, div, point, px, relative,
+    Window, div, point, px, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::{tr, tr_args};
@@ -298,12 +298,31 @@ impl EditorPane {
         ];
 
         // 实参从左到右求值，图标要在 `name` 被移进构造函数之前算好。
-        let icon = icon_for_file(&name);
+        let icon = icon_for_file(&name, cx);
         self.buffers
             .push(Buffer::new(path, name, icon, editor, writable, subscriptions));
         self.active = Some(self.buffers.len() - 1);
         self.sync_cursor(cx);
         cx.notify();
+    }
+
+    /// 当前活动 buffer 的文件名（没有打开任何 buffer 时是空串）。
+    ///
+    /// 给外壳的状态栏用：那一格的前导图标是**文件类型图标**
+    /// （真机 `file-path-breadcrumb.tsx:196-202` 的 `ThemedFileIcon`），所以外壳需要
+    /// 文件名去查图标主题。**只回文件名不回路径**：调用点只需要查表，
+    /// 而完整路径是本视图的 `Buffer::path`，暴露它会把"谁拥有磁盘路径"这条边界弄糊。
+    ///
+    /// 与 [`Self::cursor_position`] 同一口径：只读、不触发重绘，外壳通过
+    /// `cx.observe(&editor_pane, ..)` 在活动 buffer 变化时重绘（见 `open` / `activate`）。
+    ///
+    /// **不需要 `&App`**，所以签名里没有它：文件名就存在 `Buffer::name` 上，
+    /// 与 [`Self::cursor_position`] 不同（那个要读 `EditorState`）。
+    pub fn active_buffer_name(&self) -> String {
+        self.active
+            .and_then(|index| self.buffers.get(index))
+            .map(|buffer| buffer.name.to_string())
+            .unwrap_or_default()
     }
 
     /// 当前活动 buffer 的光标位置（**1 基**行列，状态栏的显示口径）。
@@ -635,7 +654,7 @@ impl EditorPane {
             cx.observe(&editor, |pane: &mut Self, _editor, cx| pane.sync_cursor(cx)),
         ];
 
-        let icon = icon_for_file(&name);
+        let icon = icon_for_file(&name, cx);
         self.buffers
             .push(Buffer::new(path, name, icon, editor, false, subscriptions));
         self.buffers.len() - 1
@@ -1206,12 +1225,10 @@ impl EditorPane {
             // 没有 `min_w_0` 的话 flex 项的最小尺寸会按内容算，文字截断不了。
             .min_w_0()
             .child(
-                // 全量目录的 `IconName` 是 `Copy`（`gpui-kit-assets-0.6.6/build.rs:52-53`
-                // 的 `#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, IntoElement)]`），
-                // 从借用里直接取出即可。
-                Icon::new(buffer.icon)
-                    .size_3()
-                    .text_color(cx.theme().muted_foreground),
+                // 标签图标：真机默认图标主题（`idea-icons`）有真源就用它（彩色，
+                // `img()` 渲染），否则用 Lucide 字形 —— 判断全在 `FileIcon::render` 里。
+                // 12 = `size_3()`：标签比文件树小一档，档位上，所以写 `rems(0.75)`。
+                buffer.icon.render(rems(0.75), cx),
             )
             .child(
                 div()

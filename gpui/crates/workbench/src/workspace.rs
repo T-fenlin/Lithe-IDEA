@@ -60,6 +60,7 @@ use lithe_gpui_editor::{EditorPane, SaveBuffer};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::BottomPane;
 use lithe_gpui_settings::Category as SettingsCategory;
+use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::tr;
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
@@ -345,6 +346,12 @@ fn visible_commands(flags: ActionFlags) -> Vec<CommandId> {
 pub struct ShellWorkspace {
     /// 项目标签条的数据。
     projects: Vec<ProjectTab>,
+    /// 工作区根目录。
+    ///
+    /// 状态栏的 Git 分支项每帧要从 `.git/HEAD` 现读（见 [`ShellWorkspace::footer_left`]），
+    /// 所以根目录要留着；`read_branch` 只在状态栏重绘时被调用（不是每帧定时器），
+    /// 代价与真机前端的 `useGitBranch` 相当。
+    root: PathBuf,
     /// 当前选中的项目标签（`None` = 一个都没选中）。
     active_project: Option<usize>,
     /// **左侧**活动栏的图标项（Windows `SidebarActivityRail`：顶部 3 + 底部 5 共 8 项）。
@@ -378,9 +385,12 @@ pub struct ShellWorkspace {
     /// 与 [`ShellWorkspace::right_view`] 分开的理由同底部窗：收起时保留最后显示过的视图
     /// （`right-tool-window-actions.ts:26-31` 的 toggle 分支不改 `activeRightSidebarView`）。
     right_visible: bool,
-    /// 状态栏左组（前导项）。
-    footer_left: Vec<StatusEntry>,
     /// 左侧栏内容：项目树（真实 `workspace.snapshot` 数据）。
+    ///
+    /// 状态栏左组（前导项）**不再是字段**：它每帧现算（[`ShellWorkspace::footer_left`]），
+    /// 因为第一项的文件类型图标要跟着"当前活动文件"变，存成字段就得在每个改活动文件的地方
+    /// 同步（漏一处就显示错图标）。尾随组本来就是每帧现算的
+    /// （[`ShellWorkspace::footer_right`]），这里对齐同一口径。
     explorer: Entity<Explorer>,
     /// 中央列内容：编辑区（标签栏 + 正文 / 空状态）。
     editor: Entity<EditorPane>,
@@ -497,10 +507,15 @@ impl ShellWorkspace {
             .unwrap_or_else(|| root.display().to_string())
             .into();
 
+        // 启动期读一次分支只为**诊断**：状态栏那一格现在每帧现算
+        // （见 `ShellWorkspace::footer_left`），但"这个工作区根本读不到 .git/HEAD"
+        // 这件事在无人值守验证里必须能看见，所以启动时打一行可 grep 的证据。
         let branch = read_branch(&root).unwrap_or_else(|| "—".to_string());
+        eprintln!("S1_BRANCH name={branch}");
 
         let workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
+            root: root.clone(),
             // 单项目时 Windows 会隐藏整条标签条（`project-tab-bar-model.ts:12-13`）；
             // 阶段 1 只有一个项目，仍然把 `Some(0)` 选中，方便验收外观。
             active_project: Some(0),
@@ -512,13 +527,6 @@ impl ShellWorkspace {
             // 视图字段的默认值理由见字段文档。
             right_view: RightToolWindowView::Maven,
             right_visible: false,
-            footer_left: vec![
-                // 前导项顺序真源：`features/layout/config/item-order.ts:20-32`
-                // `FOOTER_LEADING_ITEM_IDS = ["filePath", "branch"]`。
-                StatusEntry::new(project_name).with_icon(IconName::FileText),
-                // 真实字形 `git-branch`（`icons/git-branch.svg`，全量目录 `AllAssets` 已注册）。
-                StatusEntry::new(SharedString::from(branch)).with_icon(IconName::GitBranch),
-            ],
             explorer,
             editor,
             terminal,
@@ -693,6 +701,37 @@ impl ShellWorkspace {
         diagnose_run(id, "applied");
     }
 
+    /// 状态栏左组（前导项）：顺序与内容都照真机，**每次重绘时按当前状态算**。
+    ///
+    /// 顺序真源：`features/layout/config/item-order.ts:20-32` 的
+    /// `FOOTER_LEADING_ITEM_IDS = ["filePath", "branch"]`。
+    ///
+    /// 两条都与上一轮不同：
+    ///
+    /// - 第一项（项目名）的图标从写死的 `IconName::FileText` 换成
+    ///   [`StatusEntry::with_file_icon`] —— 按**当前活动文件名**查真机默认图标主题
+    ///   （`idea-icons`），查不到才落 Lucide。真机这一格就是 `ThemedFileIcon`
+    ///   （`file-path-breadcrumb.tsx:196-202`），所以现在与文件树 / 标签条同一套美术。
+    ///   没有活动文件时传空名字，落到 `defaultFile`（`idea-text`）。
+    /// - 第二项（分支）从构造期读一次改成每帧现读 `.git/HEAD`（[`read_branch`]）。
+    ///   ⚠️ 分支名本身与工作区根目录无关的这一层没变：切分支后要等下一次
+    ///   `cx.notify()` 才会更新（真机是 git 状态推送）。这是既有取舍，不是本轮引入的。
+    fn footer_left(&self, cx: &App) -> Vec<StatusEntry> {
+        let project_name: SharedString = self
+            .projects
+            .first()
+            .map(|tab| tab.name().clone())
+            .unwrap_or_default();
+        let active_file = self.editor.read(cx).active_buffer_name();
+        let branch = read_branch(&self.root).unwrap_or_else(|| "—".to_string());
+
+        vec![
+            StatusEntry::new(project_name).with_file_icon(&active_file, cx),
+            // 真源：`ui-icons/idea/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
+            StatusEntry::new(SharedString::from(branch)).with_idea_icon(&idea::GIT_BRANCH_ICON, cx),
+        ]
+    }
+
     /// 状态栏右组（尾随项）：顺序与内容都照真机，**每次重绘时按当前状态算**。
     ///
     /// 顺序真源：`features/layout/config/item-order.ts:20-32` 的
@@ -734,13 +773,15 @@ impl ShellWorkspace {
             // 闭锁字形。要变成真实值需要 `EditorState::is_readonly()` 接进来
             // （真源 `footer-editor-status.tsx:102` 用 `LockIcon` / `LockOpenIcon` 区分），
             // 属于阶段 9 范围外的状态栏打磨。
-            StatusEntry::new(SharedString::from("")).with_icon(IconName::Lock),
+            // 真源：`ui-icons/idea/expui/general/locked.svg(+_dark)` —— 真机 `LockIcon`。
+            StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::LOCK_ICON, cx),
             // ⚠️ 内存条目：真值来自 10s 轮询的原生命令 `get_application_memory_usage`
             // （`footer-editor-status.tsx:24,45-67`），属数据层，本阶段不做。
             StatusEntry::new(SharedString::from("总计 0.0 MB · Lithe 0.0 MB"))
                 .with_icon(IconName::HardDrive),
             // ⚠️ Git 更改数：要等 `git.*` 提供工作区状态，本轮仍是空占位（只有图标）。
-            StatusEntry::new(SharedString::from("")).with_icon(IconName::CircleCheck),
+            // 真源：`ui-icons/idea/expui/general/successDialog.svg(+_dark)` —— 真机 `CheckCircleIcon`。
+            StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::CHECK_CIRCLE_ICON, cx),
         ]
     }
 
@@ -1037,8 +1078,9 @@ impl Render for ShellWorkspace {
             // `data-status-bar` + CSS，见 `07-settings-ui.md` §4.5 的 `lib/ui-preferences.ts:5-11`）。
             // 尾随组每次重绘都按当前光标/活动 buffer 重算，所以用局部变量接一下返回值。
             .children(show_status_bar.then(|| {
+                let left = self.footer_left(cx);
                 let right = self.footer_right(cx);
-                status_bar(&self.footer_left, &right, window, cx)
+                status_bar(&left, &right, window, cx)
             }))
             // 浮层三层必须挂在最外层视图上，否则对话框 / 抽屉 / 通知静默不显示。
             .children(dialog_layer)
@@ -1130,9 +1172,9 @@ fn read_branch(root: &std::path::Path) -> Option<String> {
 
 /// 左侧活动栏的图标项。
 ///
-/// 图标类型是全量目录的 `gpui_kit::assets::IconName`（1830 个 Lucide 字形，应用已注册
-/// `AllAssets`），所以 git / 提交图这些位置都用**真实字形**，没有替代。
-/// 逐项对照表见 `activity_bar.rs` 的模块文档「图标」一节。
+/// 图标来源逐项见 `activity_bar.rs` 模块文档的对照表：**有真源 SVG 的用
+/// `gpui/assets/ui-icons/idea/**`（`ActivityItem::idea`），真源只有内联 React 组件或
+/// 本来就是 Lucide 的保持 `IconName`（`ActivityItem::new`）**。
 ///
 /// ⚠️ **左栏没有 Maven 项**（阶段 6 第一半改）：真机的左栏底部组第一项是 maven
 /// （`features/layout/config/item-order.ts:12-19` 的
@@ -1146,16 +1188,29 @@ fn activity_items() -> Vec<ActivityItem> {
     // 顶部组：`sidebar-pane-selector.tsx:311-319` 的 files / git / search。
     // 底部组：上面的 `SIDEBAR_BOTTOM_ACTIVITY_ITEM_IDS` 去掉 maven。
     vec![
-        ActivityItem::new(IconName::FolderOpen, tr("lithe.workbench.project")),
-        // 真实字形 `git-branch`（`icons/git-branch.svg`）。
-        ActivityItem::new(IconName::GitBranch, tr("lithe.workbench.changes")),
-        ActivityItem::new(IconName::Search, tr("lithe.workbench.search")),
+        // 真源：`ui-icons/idea/expui/general/listFiles.svg(+_dark)` —— 真机 `FilesIcon`
+        // 的同一个文件（`windows/tauri/src/ui/icons/idea-assets.generated.ts:FilesIcon`）。
+        ActivityItem::idea(&idea::FILES_ICON, tr("lithe.workbench.project")),
+        // 真源：`ui-icons/idea/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
+        ActivityItem::idea(&idea::GIT_BRANCH_ICON, tr("lithe.workbench.changes")),
+        // 真源：`ui-icons/idea/expui/general/search.svg(+_dark)` —— 真机 `MagnifyingGlassIcon`。
+        ActivityItem::idea(&idea::MAGNIFYING_GLASS_ICON, tr("lithe.workbench.search")),
+        // ⚠️ 保持 Lucide：真机 `RunIcon`（`features/run/components/run-icon.tsx`）是**内联
+        // React 组件**，只有一条 stroke path、没有 SVG 文件，搬不动（见
+        // `gpui/research/icon-asset-inventory.md` 第 4 节）。
         ActivityItem::new(IconName::Play, tr("lithe.workbench.run")).bottom(true),
+        // ⚠️ 保持 Lucide：真机 `TerminalWindowIcon` 走 `Nucleo.IconSquareTerminalOutline18`
+        // → `lucide-react` 的 `square-terminal`，**本来就是 Lucide，已经是 1:1**。
         ActivityItem::new(IconName::SquareTerminal, tr("lithe.workbench.terminal")).bottom(true),
-        ActivityItem::new(IconName::TriangleAlert, tr("lithe.workbench.diagnostics")).bottom(true),
-        // 真实字形 `git-graph`（`icons/git-graph.svg`）。
+        // 真源：`ui-icons/idea/expui/general/warningDialog.svg(+_dark)` —— 真机 `WarningIcon`。
+        ActivityItem::idea(&idea::WARNING_CIRCLE_ICON, tr("lithe.workbench.diagnostics"))
+            .bottom(true),
+        // ⚠️ 保持 Lucide：真机 `GitGraphIcon` 走 `Nucleo.IconGitGraphOutline18` → Lucide
+        // `git-graph`，同样是 1:1。
         ActivityItem::new(IconName::GitGraph, tr("lithe.workbench.gitLog")).bottom(true),
-        ActivityItem::new(IconName::Settings, tr("lithe.workbench.settings")).bottom(true),
+        // 真源：`ui-icons/idea/expui/general/settings.svg(+_dark)` —— 真机 `GearIcon`
+        // （与 `GearSixIcon` 同一张图，见生成器的别名表）。
+        ActivityItem::idea(&idea::GEAR_ICON, tr("lithe.workbench.settings")).bottom(true),
     ]
 }
 
@@ -1163,8 +1218,8 @@ fn activity_items() -> Vec<ActivityItem> {
 ///
 /// 真源：`features/layout/components/plugin-activity-rail.tsx:31-67`。右栏与左栏是**两套不同**的
 /// 视图集合——左栏是 `SIDEBAR_ACTIVITY_ITEM_IDS`（项目 / 更改 / 搜索 / 运行 / 终端 /
-/// 诊断 / 提交记录 / 设置），右栏只有三个：扩展（`PuzzlePieceIcon`，全量目录里对应的字形是
-/// `puzzle`）、通知（`NotificationsTrigger` 的铃铛，带未读徽标）、Maven（`MavenIcon`）。
+/// 诊断 / 提交记录 / 设置），右栏只有三个：扩展（`PuzzlePieceIcon`）、通知
+/// （`NotificationsTrigger` 的铃铛，带未读徽标）、Maven（`MavenIcon`）。
 ///
 /// 顺序必须与 [`RightToolWindowView::from_rail_index`] 的下标一致（0 扩展 / 1 通知 / 2 Maven）。
 ///
@@ -1174,10 +1229,18 @@ fn activity_items() -> Vec<ActivityItem> {
 /// 右栏三项都没有 `bottom` 分组（Windows 的右栏是单列）。
 fn right_activity_items() -> Vec<ActivityItem> {
     vec![
+        // ⚠️ 保持 Lucide：真机 `PuzzlePieceIcon` 经 `Nucleo` 代理解析到
+        // `legacyIconCompatibility.PuzzlePiece = lucideIcons.Puzzle`，**真源物就是 Lucide
+        // `puzzle`**，没有 SVG 文件可搬；gpui 用的 `IconName::Puzzle` 是同一个字形。
         ActivityItem::new(IconName::Puzzle, tr("lithe.extensions.title")),
-        ActivityItem::new(IconName::Bell, tr("lithe.notifications.title")),
-        // Lucide 没有 Maven 字形，与 `activity_bar.rs` 的对照表同一取舍：取「包 / 构建产物」
-        // 语义的 `package`。
+        // 真源：`ui-icons/idea/expui/toolwindows/notifications.svg(+_dark)` —— 真机
+        // `BellIcon`（`features/notifications/components/notifications-trigger.tsx:43`）。
+        ActivityItem::idea(&idea::BELL_ICON, tr("lithe.notifications.title")),
+        // ⚠️ 保持 Lucide：真机 `MavenIcon`（`features/maven/components/maven-icon.tsx`）是
+        // **内联 React 组件**，只有一条 fill path、没有 SVG 文件。Lucide 没有 Maven 字形，
+        // 与 `activity_bar.rs` 的对照表同一取舍：取「包 / 构建产物」语义的 `package`。
+        // （注意：Maven **文件类型**图标是有真源的 —— `icon-themes/idea` 的
+        // `pom.xml` → `icons/expui/fileTypes/maven.svg`，所以文件树里 `pom.xml` 是真源。）
         ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
     ]
 }

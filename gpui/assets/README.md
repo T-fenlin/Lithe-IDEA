@@ -129,32 +129,38 @@ $pairs | ForEach-Object {
 
 | 来源（Windows 前端） | 目标（gpui） | 文件数 | 其中 SVG | 字节数 |
 | --- | --- | --- | --- | --- |
-| `windows/tauri/src/ui/icons/**` | `gpui/assets/ui-icons/**` | 158 | 157 | 150 309 |
+| `windows/tauri/src/ui/icons/**` | `gpui/assets/ui-icons/**` | 157 | 157 | 130 936 |
 | `windows/tauri/src/extensions/bundled/icon-themes/lithe/**` | `gpui/assets/icon-themes/lithe/**` | 459 | 456 | 703 513 |
 | `windows/tauri/src/extensions/bundled/icon-themes/symbols/**` | `gpui/assets/icon-themes/symbols/**` | 325 | 322 | 4 511 394 |
 | `windows/tauri/src/extensions/bundled/icon-themes/pierre/**` | `gpui/assets/icon-themes/pierre/**` | 149 | 146 | 122 415 |
 | `windows/tauri/src/extensions/bundled/icon-themes/idea/**` | `gpui/assets/icon-themes/idea/**` | 104 | 103 | 144 097 |
-| **合计** | | **1 195** | **1 184** | **5 631 728** |
+| **合计** | | **1 194** | **1 184** | **5 612 355** |
 
 四套图标包小计 **1 037 个文件 / 1 027 个 SVG / 5 481 419 字节**。
 
 两个来源目录的相对结构**原样保留**（只加了 `ui-icons/`、`icon-themes/<包名>/` 这一层前缀）：
 
-- `gpui/assets/ui-icons/` 下是 `idea-assets.generated.ts` + `idea/{expui/{actions,bookmarks,fileTypes,general,ide,image,javaee,nodes,run,toolwindows,vcs},fileTypes,vcs}/`。
-  `expui/general/` 一个目录就占 98 个文件；157 个 SVG 全部被 `idea-assets.generated.ts` 引用（无孤儿文件）。
+- `gpui/assets/ui-icons/` 下是 `idea/{expui/{actions,bookmarks,fileTypes,general,ide,image,javaee,nodes,run,toolwindows,vcs},fileTypes,vcs}/`。
+  `expui/general/` 一个目录就占 98 个文件；157 个 SVG 全部被
+  `gpui/crates/shared/src/icons/idea.rs`（生成物，见 7.3 节）引用，无孤儿文件。
 - `gpui/assets/icon-themes/lithe/` 含浅色变体 `icons/light/{files,folders}/`（各 186 / 42 个，与深色目录一一对应），
   另有 `extension.json`、`generate-icons.ts`、`preview.html`。
 - `symbols/`、`pierre/` 各带 `LICENSE`；`pierre/` 另有 `UPSTREAM.md`；三套包都带各自的 `extension.json`
   （文件类型/目录 → SVG 的映射表）。**这些非 SVG 文件一并复制**，因为 `extension.json` 就是图标查找的真源。
 
-`ui-icons/` 里的 `idea-assets.generated.ts`（19 373 B）是 Windows 侧的生成物（Vite `?url` 导入清单，
-95 个显示名 → 明/暗两个 SVG 路径，共 188 条 import）。gpui 侧没有任何 TS 工具链会编译 `gpui/assets/`
-（`gpui/` 下无 `package.json` / `tsconfig.json`），所以它在这里只是**只读的映射参考数据**，不是可执行代码。
+`ui-icons/` 里**已经没有任何非 SVG 文件**：旧前端那份 `idea-assets.generated.ts`（19 373 B 的
+Vite `?url` 导入清单，95 个显示名 → 明/暗两个 SVG 路径，共 188 条 import）**已按维护者要求删除**。
+gpui 侧没有任何 TS 工具链会编译 `gpui/assets/`（`gpui/` 下无 `package.json` / `tsconfig.json`），
+所以它在这里从来只是**只读的映射参考数据**，不是可执行代码。gpui 侧的等价物是
+`gpui/crates/shared/src/icons/idea.rs`（生成物），由 `gpui/tools/generate-idea-icons.mjs` 直接扫
+文件系统生成 —— **生成器不读那份 TS**，只把它的历史显示名当命名来源（`windows/tauri/scripts/idea-icon-mappings.json`），
+所以删除它不影响再生成。
 
 ## 7.2 完整性证据
 
-全量 1 195 个文件都已用 `Get-FileHash -Algorithm SHA256` 与真源**逐文件比对**（源/目标各算一次哈希，
-再比字符串）：**1195/1195 全部命中，0 个缺失、0 个哈希不同、0 个多余文件**。
+全量 1 194 个文件都已用 `Get-FileHash -Algorithm SHA256` 与真源**逐文件比对**（源/目标各算一次哈希，
+再比字符串）：**1194/1194 全部命中，0 个缺失、0 个哈希不同、0 个多余文件**
+（`ui-icons` 这一组的源侧多出一个已被删除的 `idea-assets.generated.ts`，见 7.2 节 `$excludedNames` 的排除规则）。
 
 抽样（每组至少 1 个，`ui-icons` 取 5 个）的 sha256 如下，可单独复核：
 
@@ -164,7 +170,6 @@ $pairs | ForEach-Object {
 | `ui/icons/idea/expui/general/search_dark.svg` | 364 | `AA3C118BE2522E16522422AAA2FC2453DFA1016156D5E6A0E1B3484FFAC15D14` |
 | `ui/icons/idea/expui/nodes/folder.svg` | 549 | `E78B061F701E39613936BC68751ED51E6CB2B1451DBA322CD98FFDFD1A105065` |
 | `ui/icons/idea/expui/actions/newFolder.svg` | 1 187 | `34B1350D9580A132B85454AA57D8E42C8F9602402C589DDF0240FB96C4706120` |
-| `ui/icons/idea-assets.generated.ts` | 19 373 | `1A3F0C92613843215AB7E95AF80E1679611E77BB5EBDA95F994FBC9BD2FC3A4C` |
 | `icon-themes/lithe/icons/files/typescript.svg` | 1 089 | `F41CBA0789D95ED06D0A0CB4F8A1275011EF9BFA67BBB533C0A6C031C9954287` |
 | `icon-themes/lithe/icons/light/files/typescript.svg` | 1 089 | `687B9F49F1CBB525E0565025B775ABE9BF90629E21D48A6812CBA2B0B58EFF54` |
 | `icon-themes/lithe/icons/folders/folder.svg` | 848 | `D3C5877A3DE5A11585E76AAA672AC5382B0C206C14414F90C806EBF8537A6A89` |
@@ -182,7 +187,12 @@ $pairs | ForEach-Object {
 「两边都有但哈希不同」三类差异（只读，不改任何文件）。它比第 5 节的逐对写法更适合上千个文件：
 
 ⚠️ 必须先从**相对路径**拿到绝对路径再切前缀：`Get-ChildItem` 返回的 `FullName` 是绝对路径，
-用相对的 `$g.s.Length` 去 `Substring` 会切错位置，结果会误报成"1195 个全部缺失"。
+用相对的 `$g.s.Length` 去 `Substring` 会切错位置，结果会误报成"1194 个全部缺失"。
+
+⚠️ 源侧多出一个**未搬入**的文件：`windows/tauri/src/ui/icons/idea-assets.generated.ts` —— 它这次
+**已按维护者要求删除**（见 7.5 节），而真源 `windows/**` 是只读、不动。所以脚本用
+`$excludedNames` 在**双方**都排除这个文件名，否则 `ui-icons` 那一组会永远报 `src=158 dst=157 bad=1`。
+排除后 `ui-icons` 组两侧都是 157，与 7.1 节的表格口径一致。
 
 ```powershell
 $groups = @(
@@ -192,12 +202,14 @@ $groups = @(
   @{n='pierre';   s='windows\tauri\src\extensions\bundled\icon-themes\pierre';  d='gpui\assets\icon-themes\pierre'},
   @{n='idea';     s='windows\tauri\src\extensions\bundled\icon-themes\idea';    d='gpui\assets\icon-themes\idea'}
 )
+# 生成物：已从 gpui 侧删除，真源侧仍在（只读），比对时两边一起排除。
+$excludedNames = @('idea-assets.generated.ts')
 $gt = 0; $gb = 0; $ge = 0
 foreach ($g in $groups) {
   $s = (Resolve-Path $g.s).Path
   $d = (Resolve-Path $g.d).Path
-  $sf = Get-ChildItem $s -Recurse -File
-  $df = Get-ChildItem $d -Recurse -File
+  $sf = Get-ChildItem $s -Recurse -File | Where-Object { $excludedNames -notcontains $_.Name }
+  $df = Get-ChildItem $d -Recurse -File | Where-Object { $excludedNames -notcontains $_.Name }
   $bad = 0
   foreach ($f in $sf) {
     $t = Join-Path $d $f.FullName.Substring($s.Length)
@@ -214,15 +226,15 @@ foreach ($g in $groups) {
 "TOTAL src=$gt bad=$gb extra=$ge"
 ```
 
-预期输出（本次实测即为此值）：
+预期输出（`idea-assets.generated.ts` 删除后实测即为此值）：
 
 ```
-ui-icons  src=158   dst=158   bad=0 extra=0
+ui-icons  src=157   dst=157   bad=0 extra=0
 lithe     src=459   dst=459   bad=0 extra=0
 symbols   src=325   dst=325   bad=0 extra=0
 pierre    src=149   dst=149   bad=0 extra=0
 idea      src=104   dst=104   bad=0 extra=0
-TOTAL src=1195 bad=0 extra=0
+TOTAL src=1194 bad=0 extra=0
 ```
 
 ## 7.3 跳过了什么、为什么
@@ -247,7 +259,7 @@ TOTAL src=1195 bad=0 extra=0
 将来删掉 `windows/` / `macos/` 两个旧前端时，**不能连带丢失**本目录：
 
 - `gpui/assets/ui-icons/**` 是 IntelliJ `expui` 那套 UI 图标的**唯一一份**副本（157 个 SVG）；
-  `idea-assets.generated.ts` 是它唯一的映射清单。
+  它的映射清单是 `gpui/crates/shared/src/icons/idea.rs`（生成物）。
 - `gpui/assets/icon-themes/{lithe,symbols,pierre,idea}/**` 是文件类型/目录图标的**唯一一份**副本
   （1 027 个 SVG + 各包的 `extension.json`）。其中 `symbols/icons/files/cursor.svg`（1 576 205 B）与
   `symbols/icons/folders/folder-cursor.svg`（1 576 419 B）单文件就 1.5 MB，是内嵌位图的 SVG，
@@ -257,3 +269,14 @@ TOTAL src=1195 bad=0 extra=0
 
 删除前建议跑一次第 7.2 节的全量比对脚本，确认本目录就是最新一份，再处理第 7.3 节按需保留的部分
 （尤其 `material/extension.json`，如果届时 gpui 决定支持 Material 图标主题）。
+
+### 7.5 `idea-assets.generated.ts` 已删除
+
+`gpui/assets/ui-icons/idea-assets.generated.ts`（旧前端的 Vite `?url` 生成物）**已按维护者要求
+删除**：它不在 gpui 的构建路径上（`gpui/` 下没有 TS 工具链），`gpui/tools/generate-idea-icons.mjs`
+也**不读它**（生成器扫文件系统 + 自己按文件名推导名字与别名），所以删除不影响再生成，
+`--check` 仍然退出码 0。**若要追溯它的内容，看 git 历史：`d13b254a` 是最后一次带上它的提交**
+（`git show d13b254a:gpui/assets/ui-icons/idea-assets.generated.ts`）。它带来的 3 个口径变化：
+文件数 158 → **157**、总量 1 195 → **1 194**、字节数 150 309 / 5 631 728 → **130 936 / 5 612 355**
+（差额 19 373 B 正好是那份 TS）。真源 `windows/tauri/src/ui/icons/` 下那份仍在（只读，未动），
+第 7.2 节脚本因此按文件名在两侧一起排除，见那里的 `$excludedNames`。

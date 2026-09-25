@@ -70,14 +70,12 @@
 //!
 //! # 图标
 //!
-//! 应用注册的是全量 `gpui_kit::assets::AllAssets`（`shell_probe/mod.rs`），所以图标一律取
-//! `gpui_kit::assets::IconName`（1830 个变体，按 `gpui-kit-assets-0.6.6/assets/icons/` 目录生成，
-//! `build.rs:20-51`）里的**真实字形**：
+//! **有真源的用真源，没真源的保持 Lucide**（与活动栏 / 状态栏同一口径）：
 //!
-//! | 用途 | IconName | 字形文件 |
+//! | 用途 | 采用 | 真源 / 理由 |
 //! | --- | --- | --- |
-//! | 标签左侧文件夹 | `IconName::Folder` | `icons/folder.svg` — 与 Windows 的 `FolderIcon` 同名 |
-//! | 关闭按钮 | `IconName::X` | `icons/x.svg` — 与 Windows 的 `XIcon`（lucide `x`）同名 |
+//! | 标签左侧文件夹 | **真源** `idea::FOLDER_ICON` | `ui-icons/idea/expui/nodes/folder.svg`(+`_dark`) —— 真机 `FolderIcon`（`project-tab-bar.tsx:6,70`）。⚠️ 真源美术**自带颜色**（浅灰填充 + 灰描边），所以不再跟标签的 `text_color` 变（改前是 Lucide 单色、随选中态变色）—— 真机也是彩色图标，见 `icon_themes` 的取舍说明 |
+//! | 关闭按钮 | `IconName::X` | 真源 `expui/general/close.svg` 存在，但关闭按钮的字形与**活动栏按钮的交互色**（悬停/选中变前景色）绑得紧，换成单色 expui 会丢掉那层反馈；且 `x` 本来就是 Windows `XIcon` 的 Lucide 字形，**已经是 1:1**。保持 Lucide |
 //!
 //! # 本模块未实现的部分（见交付报告）
 //!
@@ -111,12 +109,13 @@ use gpui_kit::prelude::FluentBuilder as _;
 // 不在 `gpui_kit::component` 根（`gpui-component-0.6.6/src/lib.rs:32` 是 `pub mod button;`，
 // 根层没有 `pub use button::*`）。
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _};
 use gpui_kit::{
     App, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    StatefulInteractiveElement as _, Styled as _, Window, div, px, rems,
 };
 
+use lithe_gpui_shared::icons::{idea, idea_icon_svg_px};
 use lithe_gpui_shared::tr_args;
 
 // ---------------------------------------------------------------------------
@@ -304,16 +303,12 @@ pub fn project_tabs(
                             }
                         })
                         .child(
-                            Icon::new(IconName::Folder)
-                                .text_color(if is_active {
-                                    primary
-                                } else {
-                                    subtle_foreground
-                                })
-                                // 图标 14：`size_3p5()`（= `rems(0.875)` = 14px）与原来的
-                                // `Size::Size(px(14.))` 分支（`gpui-component-0.6.6/src/icon.rs:181-187`）
-                                // 渲染出的 svg 盒完全一样，只是走 `Styled` 而不是 `Sizable`。
-                                .size_3p5(),
+                            // 真源：`ui-icons/idea/expui/nodes/folder.svg(+_dark)` —— 真机
+                            // `FolderIcon`（`project-tab-bar.tsx:6,70`）。14 = `rems(14. / 16.)`
+                            // （与原来的 `size_3p5()` 同值；14 不在 rem 档位上，所以自己换算）。
+                            // 颜色由真源 SVG 自带（浅灰填充 + 灰描边），不再随选中态变 ——
+                            // 真机同样是彩色图标，理由见模块文档的图标表。
+                            idea_icon_svg_px(&idea::FOLDER_ICON, cx, rems(14. / 16.)),
                         )
                         .child(
                             // 文案容器：`min-w-0 truncate`（`project-tab-bar.tsx:77`）。

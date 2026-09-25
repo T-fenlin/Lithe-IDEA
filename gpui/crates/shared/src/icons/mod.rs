@@ -11,6 +11,8 @@
 //! 2. **清单**（本模块）：[`idea::ALL`] 是全部 79 个图标（每个带 `light` / `dark` 两个资源路径），
 //!    [`idea::ALIASES`] 保留旧前端 TS 清单里的别名显示名。
 //!    文件 `src/icons/idea.rs` 由 `gpui/tools/generate-idea-icons.mjs` **生成**，不要手改。
+//!    **文件类型图标走另一条路**：[`file_icon`] 按文件名 / 后缀查
+//!    `gpui/assets/icon-themes/idea/extension.json`，再用 [`FileIcon::render`] 画出来。
 //! 3. **helper**：[`idea_icon_svg`] 按当前主题明暗挑路径，并设好 16×16 的尺寸与前景色。
 //!    **调用点只写图标名**，不要自己再调 `.size_4()` / `.text_color(..)`（理由见该函数的文档）。
 //! 4. **调用点**：`.child(idea_icon_svg(&idea::GEAR_ICON, cx))`。
@@ -38,15 +40,110 @@
 //!
 //! ## 还没接的部分
 //!
-//! - `gpui/assets/icon-themes/**`（4 套文件类型图标包，1 027 个 SVG）**不在本模块里**：
-//!   它给的不是"一个名字一张图"，而是"按文件名 / 后缀查 `extension.json` 再取 SVG"的另一套体系，
-//!   需要一个查找层 + explorer 改造。详见 `gpui/research/icon-asset-inventory.md` 的第 7 节。
-//! - 因此本模块只覆盖 `ui-icons/idea/**` 的 157 个文件（79 个图标 × 明/暗变体）。
+//! - `gpui/assets/icon-themes/**`（4 套文件类型图标包，1 027 个 SVG）走**另一条路**
+//!   （"按文件名 / 后缀查 `extension.json` 再取 SVG"，不是一个名字一张图），实现在
+//!   [`file_icon`] 子模块；`explorer` / `editor` 的 `icon_for_file` 已经接上它。
+//! - 因此 [`idea`] 子模块只覆盖 `ui-icons/idea/**` 的 157 个文件（79 个图标 × 明/暗变体）。
 
+use gpui_kit::assets::IconName;
 use gpui_kit::component::Theme;
-use gpui_kit::{App, SharedString, Styled as _, Svg, svg};
+use gpui_kit::{AnyElement, App, IntoElement as _, Length, SharedString, Styled as _, Svg, svg};
 
+pub mod file_icon;
 pub mod idea;
+
+/// 一个"文件类型图标"在**用户界面里实际怎么画**的完整答案。
+///
+/// ## 为什么要这个类型（而不是只返回 `IconName`）
+///
+/// 文件类型图标有**两个真源**，而且优先关系是固定的：
+///
+/// 1. **`gpui/assets/icon-themes/idea/**`** —— 真机默认图标主题（`idea-icons`）的文件类型美术。
+///    它按文件名 / 后缀查 `extension.json`，是**彩色**的（见 [`file_icon`]）。
+/// 2. **全量 Lucide 目录**（`gpui_kit::assets::IconName`，`icons/*.svg`）—— 主题包里**没有**
+///    对应条目时的回落。老的 `icon_for_file` 就是这一层。
+///
+/// 把两者放进一个结构体，是为了让"**回落这条路径没坏**"成为类型上的事实：每个调用点拿到的
+/// 都是一个"有真源就用真源、没有就用 Lucide"的完整答案，而不是"先查真源、查不到就当作显示
+/// 空白"或"到处 `unwrap_or_default`"。
+///
+/// ## 字段
+///
+/// - `themed`：主题包里的资源路径（相对 `gpui/assets/`，可直接交给
+///   [`file_icon::theme_file_icon`]）。`None` = 这个文件 / 目录在主题包里没有专属图标。
+/// - `fallback`：Lucide 字形，**永远有值**（`IconName` 是全量目录的封闭枚举）。
+#[derive(Clone, Debug)]
+pub struct FileIcon {
+    /// 主题包（`icon-themes/idea/**`）里的 SVG 资源路径；`None` 时用 `fallback`。
+    pub themed: Option<&'static str>,
+    /// 主题包没有对应条目时用的 Lucide 字形（`icons/*.svg`）。
+    pub fallback: IconName,
+}
+
+impl FileIcon {
+    /// 构造一个"主题包里没有专属条目"的答案（`themed = None`）。
+    #[must_use]
+    pub fn lucide(fallback: IconName) -> Self {
+        Self {
+            themed: None,
+            fallback,
+        }
+    }
+
+    /// 把查到的主题资源路径补进来（builder：`FileIcon::lucide(..).with_themed(opt)`）。
+    #[must_use]
+    pub fn with_themed(mut self, themed: Option<&'static str>) -> Self {
+        self.themed = themed;
+        self
+    }
+
+    /// 查一个**文件**在当前主题 + 当前明暗下的真源图标（查不到就保持 `None`）。
+    ///
+    /// 调用点一行就能拿到完整答案：
+    ///
+    /// ```ignore
+    /// FileIcon::lucide(file_icon::lucide_fallback(name))
+    ///     .with_theme_icon(name, cx)
+    /// ```
+    #[must_use]
+    pub fn with_theme_icon(self, name: &str, cx: &App) -> Self {
+        let themed = file_icon::theme_icon_path(name, false, false, cx);
+        self.with_themed(themed)
+    }
+
+    /// 查一个**目录**在当前主题 + 当前明暗下的真源图标。
+    #[must_use]
+    pub fn with_theme_folder(self, name: &str, expanded: bool, cx: &App) -> Self {
+        let themed = file_icon::theme_icon_path(name, true, expanded, cx);
+        self.with_themed(themed)
+    }
+
+    /// 按这份答案画一个图标。
+    ///
+    /// - 有真源（`themed` 有值且内嵌资源里确实有那个文件）→ **彩色**的
+    ///   [`file_icon::theme_file_icon`]；
+    /// - 否则 → Lucide 字形，颜色照 `Icon` 的口径取 `theme.foreground`。
+    ///
+    /// 两个分支都按 `side` 设边长，所以同一个位置换源不会改变布局。
+    #[must_use]
+    pub fn render(&self, side: impl Into<Length>, cx: &App) -> AnyElement {
+        // 先收敛成 `Length`（`Copy`）：两个分支都要用它，而 `impl Into<Length>` 本身不 `Copy`。
+        let side: Length = side.into();
+        if let Some(themed) = self.themed {
+            if let Some(element) = file_icon::theme_file_icon(themed, side, cx) {
+                return element;
+            }
+        }
+        let theme = Theme::global(cx);
+        svg()
+            .path(SharedString::from(self.fallback.path()))
+            .flex_shrink_0()
+            .text_color(theme.foreground)
+            .w(side)
+            .h(side)
+            .into_any_element()
+    }
+}
 
 /// 按**当前主题明暗**挑一张 IntelliJ `expui` 图标，返回可直接 `.child(..)` 的元素。
 ///
@@ -121,13 +218,19 @@ pub fn idea_icon_svg(icon: &idea::IdeaIcon, cx: &App) -> Svg {
         .size_4()
 }
 
-/// [`idea_icon_svg`] 的显式尺寸版本：正方形边长直接用像素。
+/// [`idea_icon_svg`] 的显式尺寸版本。
 ///
-/// 布局规范要求"用 rem 档位 helper，档位外的值走 `rems(P / 16.)`"，所以调用点传进来的
-/// 应该已经是 `rems(..)` 的结果，本函数不再做换算。
-pub fn idea_icon_svg_px(icon: &idea::IdeaIcon, cx: &App, side: gpui_kit::Pixels) -> Svg {
+/// `side` 接受任何 `Into<Length>`：布局规范要求"用 rem 档位 helper，档位外的值走
+/// `rems(P / 16.)`"，所以调用点传 `rems(1.)`（16）/ `rems(14. / 16.)`（14）/ `rems(0.75)`（12）
+/// 都可以直接过，本函数不做换算也不四舍五入到档位。
+///
+/// ⚠️ 传 `rems(..)` 而不是 `px(..)`：`rems` 会在布局时按**当时的 rem 基准**解析，
+/// 所以主题字号变化时图标跟着缩放（`px` 不会）。这也是"不要自己设 size"的另一面 ——
+/// 尺寸单位的选择同样属于本 helper 的契约。
+pub fn idea_icon_svg_px(icon: &idea::IdeaIcon, cx: &App, side: impl Into<Length>) -> Svg {
     let theme = Theme::global(cx);
     let path: SharedString = icon.path(theme.is_dark()).into();
+    let side: Length = side.into();
     svg()
         .path(path)
         .flex_shrink_0()

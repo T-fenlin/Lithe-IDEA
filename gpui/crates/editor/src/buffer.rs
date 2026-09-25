@@ -6,9 +6,10 @@
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::assets::IconName;
+use gpui_kit::App;
 use gpui_kit::component::input::EditorState;
 use gpui_kit::{Entity, SharedString, Subscription, Task};
+use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::tr_args;
 
 /// 编辑器一次读入的字节上限：2 MiB。
@@ -19,48 +20,22 @@ use lithe_gpui_shared::tr_args;
 /// 读进来只是占内存，所以这里**整篇不读**，正文给一条说明（见 [`read_body`]）。
 const MAX_EDITOR_BYTES: u64 = 2 * 1024 * 1024;
 
-/// 文件类型图标按后缀选，字形一律来自全量 Lucide 目录。
+/// 按文件名挑标签图标：**先查真机默认图标主题（`idea-icons`）的文件类型图标，查不到再回落 Lucide**。
 ///
-/// 应用注册的是 `gpui_kit::assets::AllAssets`，嵌入
-/// `gpui-kit-assets-0.6.6/assets/icons/` 下的全部 1830 个 SVG（`src/native_assets.rs:8-11`），
-/// 而 `gpui_kit::assets::IconName` 就是按这份目录生成的完整枚举（`build.rs:20-51`），
-/// 所以语言级/图片级字形（`FileCode`、`Image` 等）都在可用范围内：
+/// 与 `crates/explorer/src/model.rs` 的同名函数**共用同一份实现**
+/// （`lithe_gpui_shared::icons::file_icon`），所以两处的判断不会再漂移：
 ///
-/// - 图片后缀：`Image`（`icons/image.svg`）；
-/// - JSON / JSONC：目录里**没有 `file-json.svg`**，取 `FileBraces`（`icons/file-braces.svg`）；
-/// - 源码后缀：`FileCode`（`icons/file-code.svg`）；
-/// - Markdown / 文本：`FileText`（`icons/file-text.svg`）；
-/// - 配置（toml/yaml/ini/conf）：`Settings`（`icons/settings.svg`）；
-/// - 依赖锁 / 包文件：`Package`（`icons/package.svg`）；
-/// - 脚本（sh/ps1/bat）：`Terminal`（`icons/terminal.svg`）；
-/// - 其余：`File`（`icons/file.svg`）。
+/// 1. **真源**：`gpui/assets/icon-themes/idea/**` —— 真机默认图标主题
+///    （`windows/tauri/src/features/settings/config/default-settings.ts:100` 的
+///    `iconTheme: "idea-icons"`）。按 `filenames` → `fileExtensions` → `defaultFile` 顺序查，
+///    明暗由 `Theme::global(cx).is_dark()` 决定。图标是彩色的，渲染走 `img()`。
+/// 2. **回落**：`gpui_kit::assets::IconName`（全量 Lucide 目录）—— 主题包没有对应条目时用它。
+///    Lucide 目录**没有 `file-json.svg`**，所以 JSON / JSONC 取语义最近的 `FileBraces`
+///    （`icons/file-braces.svg`）；这条例外与两张旧表逐字同源，现在只有一份。
 ///
-/// 真机按 `ThemedFileIcon` + 图标主题选（`windows/tauri/src/features/tabs/components/tab-bar-item.tsx:246-251`），
-/// 那是 Windows 自己的一套图标资源，gpui-kit 侧无法等价复刻。
-pub(crate) fn icon_for_file(name: &str) -> IconName {
-    let extension = name
-        .rsplit_once('.')
-        .map(|(_, extension)| extension.to_ascii_lowercase());
-
-    match extension.as_deref() {
-        Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "ico" | "svg" | "bmp" | "avif") => {
-            IconName::Image
-        }
-        Some("json" | "jsonc") => IconName::FileBraces,
-        Some("md" | "markdown" | "txt" | "rst" | "adoc") => IconName::FileText,
-        Some("toml" | "yaml" | "yml" | "ini" | "conf" | "cfg" | "properties" | "editorconfig") => {
-            IconName::Settings
-        }
-        Some("lock") => IconName::Package,
-        Some("sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "bat" | "cmd") => IconName::Terminal,
-        Some(
-            "rs" | "ts" | "tsx" | "mts" | "cts" | "js" | "jsx" | "mjs" | "cjs" | "py" | "java"
-            | "kt" | "kts" | "swift" | "go" | "c" | "h" | "cc" | "cpp" | "hpp" | "cs" | "rb"
-            | "php" | "vue" | "svelte" | "sql" | "css" | "scss" | "less" | "html" | "xml"
-            | "gradle" | "lua" | "dart" | "scala" | "ex" | "exs" | "dockerfile",
-        ) => IconName::FileCode,
-        _ => IconName::File,
-    }
+/// 真机对照：`ThemedFileIcon` + `features/tabs/components/tab-bar-item.tsx:246-251`。
+pub(crate) fn icon_for_file(name: &str, cx: &App) -> FileIcon {
+    FileIcon::lucide(file_icon::lucide_fallback(name)).with_theme_icon(name, cx)
 }
 
 /// 读盘结果：正文 + **这份正文是不是文件的忠实副本**。
@@ -268,7 +243,16 @@ pub(crate) struct Buffer {
     /// 文件名，也是 [`display_names`] 分组的键。
     pub(crate) name: SharedString,
     /// 标签左侧的文件类型图标。
-    pub(crate) icon: IconName,
+    ///
+    /// 是 [`FileIcon`] 而不是裸 `IconName`：它同时带上"真机默认图标主题里的真源资源路径"
+    /// 与"Lucide 回落字形"（见 [`icon_for_file`] 的文档）。
+    ///
+    /// **存值而不是每帧现查**：buffer 是长期存活的（切标签、保存、自动保存都碰它），
+    /// 而查表要 `&App`。打开那一刻的明暗就够用 —— 与真机差别是"切主题后已打开的标签
+    /// 仍用打开时那张变体"（真机 `tab-bar-item.tsx:246-251` 是每帧现查）。
+    /// 这个偏差只在"打开标签后切换明暗主题"时可见，且只影响那一张 16×16 图标；
+    /// explorer 侧没有这个偏差（它在 `render` 里现查）。
+    pub(crate) icon: FileIcon,
     /// 正文状态：文件内容，读不到时是说明文案。
     pub(crate) editor: Entity<EditorState>,
     /// 未保存圆点的真实值：`InputEvent::Change` 置 `true`，**写盘成功**置 `false`。
@@ -315,7 +299,7 @@ impl Buffer {
     pub(crate) fn new(
         path: PathBuf,
         name: SharedString,
-        icon: IconName,
+        icon: FileIcon,
         editor: Entity<EditorState>,
         writable: bool,
         subscriptions: Vec<Subscription>,

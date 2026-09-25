@@ -24,27 +24,31 @@
 //!   → 图标项 **28×28 居中**，中心落在 x=19。
 //! - 因此两条 rail 的总宽都是 42，但图标中心一个 21、一个 19 —— 这是源码事实，不是笔误。
 //!
-//! ## 图标：一律取全量 Lucide 目录里的真实字形
+//! ## 图标：真源优先，缺真源的保持 Lucide（逐项登记）
 //!
-//! 应用注册的是 `gpui_kit::assets::AllAssets`（`shell_probe/mod.rs`），它嵌入
-//! `gpui-kit-assets-0.6.6/assets/icons/` 下的全部 **1830 个 Lucide SVG**
-//! （`src/native_assets.rs:8-11`），而 `gpui_kit::assets::IconName` 正是按这份目录生成的完整枚举
-//! （`build.rs:20-51`，变体名 = svg 文件名的 PascalCase）。所以 **`ActivityItem::icon` 用
-//! `gpui_kit::assets::IconName`**，不再需要"默认图标集里没有某字形"的替代：
+//! 每个项的画法由 [`ActivityIcon`] 决定，有两条路：
 //!
-//! | Windows 用途 | Windows 图标组件 | 采用（`gpui_kit::assets::IconName`） | 字形文件 |
+//! 1. **真源**（[`ActivityIcon::Idea`]）—— `gpui/assets/ui-icons/idea/**` 的 IntelliJ `expui` SVG，
+//!    经 `lithe_gpui_shared::icons::idea_icon_svg` 按当前主题明暗挑路径渲染（单色，
+//!    颜色取 `theme.foreground`/`muted_foreground`，与旧实现的 `IconName` 同口径）。
+//! 2. **Lucide**（[`ActivityIcon::Lucide`]）—— 全量 Lucide 目录（1830 个字形）。
+//!    留在这条路上的项都有明确理由，逐条写在 [`workspace`] 的 `activity_items()` 调用处。
+//!
+//! | Windows 用途 | Windows 图标组件 | 现在用 | 真源文件 / 理由 |
 //! | --- | --- | --- | --- |
-//! | 项目 | `FilesIcon` | `FolderOpen` | `icons/folder-open.svg` |
-//! | 搜索 | `MagnifyingGlassIcon` | `Search` | `icons/search.svg` |
-//! | 更改（Git） | `GitBranchIcon` | `GitBranch` | `icons/git-branch.svg` |
-//! | 提交记录 | `GitGraphIcon` | `GitGraph` | `icons/git-graph.svg` |
-//! | 终端 | `TerminalWindowIcon` | `SquareTerminal` | `icons/square-terminal.svg` |
-//! | 诊断 | `WarningIcon` | `TriangleAlert` | `icons/triangle-alert.svg`（Lucide `triangle-alert`） |
-//! | 运行 | `RunIcon` | `Play` | `icons/play.svg` |
-//! | Maven | `MavenIcon` | `Package` | `icons/package.svg`（Lucide 无 Maven 字形，取"包/构建产物"语义） |
-//! | 设置 | `GearIcon` | `Settings` | `icons/settings.svg` |
-//! | 扩展（插件） | `PuzzlePieceIcon` | `Puzzle` | `icons/puzzle.svg` |
-//! | 通知 | `BellIcon` | `Bell` | `icons/bell.svg` |
+//! | 项目 | `FilesIcon` | **真源** `idea::FILES_ICON` | `ui-icons/idea/expui/general/listFiles.svg`（+`_dark`） |
+//! | 搜索 | `MagnifyingGlassIcon` | **真源** `idea::MAGNIFYING_GLASS_ICON` | `expui/general/search.svg` |
+//! | 更改（Git） | `GitBranchIcon` | **真源** `idea::GIT_BRANCH_ICON` | `vcs/branch.svg` |
+//! | 提交记录 | `GitGraphIcon` | `Lucide` `GitGraph` | 真源是 `Nucleo.IconGitGraphOutline18` → Lucide，**无文件** |
+//! | 终端 | `TerminalWindowIcon` | `Lucide` `SquareTerminal` | 同上（`Nucleo.IconSquareTerminalOutline18` → Lucide） |
+//! | 诊断 | `WarningIcon` | **真源** `idea::WARNING_CIRCLE_ICON` | `expui/general/warningDialog.svg` |
+//! | 运行 | `RunIcon` | `Lucide` `Play` | 真源是内联 React 组件 `run-icon.tsx`，**只有 path 没有 SVG 文件** |
+//! | Maven | `MavenIcon` | `Lucide` `Package` | 真源是内联 React 组件 `maven-icon.tsx`，同上 |
+//! | 设置 | `GearIcon` | **真源** `idea::GEAR_ICON` | `expui/general/settings.svg` |
+//! | 扩展（插件） | `PuzzlePieceIcon` | `Lucide` `Puzzle` | 真源经 `Nucleo` 代理解析到 Lucide `puzzle`，**已经是 1:1** |
+//! | 通知 | `BellIcon` | **真源** `idea::BELL_ICON` | `expui/toolwindows/notifications.svg` |
+//!
+//! 出处与被否方案见 `gpui/research/icon-asset-inventory.md` 第 3.1 节。
 //!
 //! ## 未实现清单
 //!
@@ -71,6 +75,7 @@ use gpui_kit::{
     AnyElement, App, ElementId, IntoElement, Length, ParentElement as _, Pixels, SharedString,
     Styled as _, Window, div, px, rems,
 };
+use lithe_gpui_shared::icons::idea;
 
 /// 折叠态 rail 宽（`main-sidebar.tsx:97`）。展开态是 160（140–320），本函数不画。
 ///
@@ -118,17 +123,55 @@ pub enum ActivitySide {
     Right,
 }
 
+/// 活动栏一项的图标来源。
+///
+/// 两个变体对应两条真源路线（见模块文档的对照表）：
+///
+/// - [`ActivityIcon::Lucide`]：全量 Lucide 目录（`gpui_kit::assets::IconName`）。
+/// - [`ActivityIcon::Idea`]：`gpui/assets/ui-icons/idea/**` 的 IntelliJ `expui` SVG，
+///   用 `lithe_gpui_shared::icons::idea::IdeaIcon` 常量引用（生成物，
+///   见 `gpui/tools/generate-idea-icons.mjs`）。
+///
+/// **调用点只写图标名**：明暗选择、尺寸、前景色都在 [`ActivityIcon::render`] 里按
+/// `idea_icon_svg` / `FileIcon::render` 的同一口径做掉（理由见 `shared::icons` 的模块文档：
+/// 裸 `svg().path(..)` 缺 `text_color` 或尺寸就是**白板**，不报错也不 panic）。
+#[derive(Clone, Debug)]
+pub enum ActivityIcon {
+    /// Lucide 字形（真源本来就没有文件的那 4 项）。
+    Lucide(IconName),
+    /// IntelliJ `expui` 真源 SVG（`ui-icons/idea/**`）。
+    Idea(&'static idea::IdeaIcon),
+}
+
+impl ActivityIcon {
+    /// 交给 `Button::icon(..)` 的图标值。
+    ///
+    /// 两条路都收敛到 gpui-kit 的 `Icon`：
+    ///
+    /// - Lucide → `IconName`（`Button::icon(impl Into<ButtonIcon>)` 直接吃它）；
+    /// - expui → `Icon::default().path(资源路径)`，路径由 [`idea_icon_svg_px`] 的同一份
+    ///   明暗选择逻辑给出（[`idea::IdeaIcon::path`]）。
+    ///
+    /// **尺寸不在这里设**：`Button` 渲染时会 `icon.with_size(icon_size)`（按 `size` 档位算），
+    /// 左 rail 该项 26×24、右 rail 28×28，两者都落到 16 —— 与旧实现（`.icon(IconName)`）逐像素一致。
+    /// 这样也避免把 `Icon` 的 `size` 写死而让两侧按钮尺寸算错。
+    fn button_icon(&self, cx: &App) -> gpui_kit::component::Icon {
+        match self {
+            Self::Lucide(name) => gpui_kit::component::Icon::new(*name),
+            Self::Idea(icon) => gpui_kit::component::Icon::default()
+                .path(icon.path(gpui_kit::component::Theme::global(cx).is_dark())),
+        }
+    }
+}
+
 /// 活动栏的一个图标项。
 ///
-/// 图标类型是全量目录的 `gpui_kit::assets::IconName`（1830 个变体，derive
-/// `Clone + Copy + Debug`，`gpui-kit-assets-0.6.6/build.rs:52-53`）；本结构体仍然不 derive
-/// 它们，因为 `SharedString` 不是 `Copy`。
-/// 字段私有 + [`ActivityItem::new`] / [`ActivityItem::bottom`]：跨 crate 之后结构体字面量
-/// 不再是合法构造方式（《编码指南》「公共 API 设计」）。
+/// 字段私有 + [`ActivityItem::new`] / [`ActivityItem::idea`] / [`ActivityItem::bottom`]：
+/// 跨 crate 之后结构体字面量不再是合法构造方式（《编码指南》「公共 API 设计」）。
 #[non_exhaustive]
 pub struct ActivityItem {
-    /// 图标。取 `gpui_kit::assets::IconName`，见模块文档的对照表。
-    icon: IconName,
+    /// 图标来源，见 [`ActivityIcon`]。
+    icon: ActivityIcon,
     /// 文案：中文逐字取自 `windows/tauri/src/i18n/locale.ts`（`workbench.project` = 项目 …），
     /// 同时用作 tooltip 文本与无障碍名称。
     label: SharedString,
@@ -140,10 +183,22 @@ pub struct ActivityItem {
 }
 
 impl ActivityItem {
-    /// 一个归入**顶部组**的活动栏项。
+    /// 用 Lucide 字形的项（真源没有 SVG 文件的那几项，见模块文档的表）。
     pub fn new(icon: IconName, label: impl Into<SharedString>) -> Self {
         Self {
-            icon,
+            icon: ActivityIcon::Lucide(icon),
+            label: label.into(),
+            bottom: false,
+        }
+    }
+
+    /// 用 `gpui/assets/ui-icons/idea/**` 真源 SVG 的项。
+    ///
+    /// 传的是 `idea::` 常量（生成物里的 `IdeaIcon`），**不要**手写资源路径字符串：
+    /// 常量表由 `node gpui/tools/generate-idea-icons.mjs --check` 守着，路径写错会红。
+    pub fn idea(icon: &'static idea::IdeaIcon, label: impl Into<SharedString>) -> Self {
+        Self {
+            icon: ActivityIcon::Idea(icon),
             label: label.into(),
             bottom: false,
         }
@@ -337,7 +392,8 @@ fn item_button(
         // `Selectable::selected` 出选中底色；`toggled` 只补 `aria-pressed`（`button.rs:477-486`）。
         .selected(is_active)
         .toggled(is_active)
-        .icon(item.icon.clone())
+        // 图标：真源（expui）与 Lucide 都交给 `Button::icon(..)`，见 [`ActivityIcon::button_icon`]。
+        .icon(item.icon.button_icon(cx))
         .tooltip(item.label.clone())
         .tooltip_placement(placement)
         .accessibility_label(item.label.clone())

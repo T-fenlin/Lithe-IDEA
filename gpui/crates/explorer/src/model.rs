@@ -4,14 +4,19 @@
 //! 组件**，所以建树与抓取逻辑可以脱离渲染单独读。`Explorer` 实体、`LoadState` 与所有渲染
 //! 辅助在 `explorer_view.rs`；crate 的模块文档（规格出处、图标对照、未实现清单）在 `lib.rs`。
 //!
+//! 唯一的例外是 [`icon_for_file`]：它要按**当前主题明暗**选真源图标（`&App`），
+//! 所以它的签名里有一个只读的 `&App`。它仍然不做任何渲染，返回的
+//! [`lithe_gpui_shared::icons::FileIcon`] 由 `explorer_view.rs` 画出来。
+//!
 //! 信封拼装已收敛到 `lithe_gpui_shared::core_json`（见 [`load_snapshot`]）。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use gpui_kit::App;
 use gpui_kit::SharedString;
-use gpui_kit::assets::IconName;
 use gpui_kit::component::tree::TreeItem;
+use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::{core_json, tr};
 // [`core_json`] 的 payload 需要一个 `serde_json::Value`：直接依赖 `serde_json`
 // （与 `gpui/crates/git` 同一口径），不借 gpui 的内部重导出。
@@ -255,51 +260,22 @@ pub(crate) fn load_snapshot(root: &Path) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// 按文件名后缀挑一个**全量 Lucide 目录里确实存在**的真实字形。
+/// 按文件名挑图标：**先查真机默认图标主题（`idea-icons`）的文件类型图标，查不到再回落 Lucide**。
 ///
-/// 应用注册的是 `gpui_kit::assets::AllAssets`（`shell_probe/mod.rs:73`），它嵌入
-/// `gpui-kit-assets-0.6.6/assets/icons/` 下的全部 1830 个 SVG（`src/native_assets.rs:8-11`），
-/// 而 `gpui_kit::assets::IconName` 就是按这份目录生成的完整枚举（`build.rs:20-51`，
-/// 变体名 = svg 文件名的 PascalCase）—— 所以这里可以按后缀给**真实**字形，
-/// 不再需要"默认图标集里没有图片/代码字形"的替代。
+/// ## 两个真源与优先关系
 ///
-/// 唯一例外已登记在 `lib.rs` 模块文档的替代表里：Lucide 目录**没有 `file-json.svg`**，
-/// 所以 JSON 用语义最近的 `FileBraces`（`icons/file-braces.svg`，
-/// Lucide 对 `braces` 的定位就是 JSON）。
+/// 1. **真源**：`gpui/assets/icon-themes/idea/**` —— 真机默认图标主题
+///    （`windows/tauri/src/features/settings/config/default-settings.ts:100` 的
+///    `iconTheme: "idea-icons"`）。查表在 `lithe_gpui_shared::icons::file_icon`：
+///    文件名 → `filenames`、后缀 → `fileExtensions`、都没有 → `defaultFile`；
+///    明暗由 `Theme::global(cx).is_dark()` 决定（真机同口径，见
+///    `extension-contribution-runtime.ts:81-91`）。这些图标是**彩色**的
+///    （`.java` 是橙色的杯子、`.gitignore` 是红色的 git 字形、`pom.xml` 是蓝色的 Maven `m`），
+///    渲染走 `img()`（见 [`lithe_gpui_shared::icons::FileIcon::render`]）。
+/// 2. **回落**：`gpui_kit::assets::IconName`（全量 Lucide 目录，1830 个字形），
+///    表在 [`lithe_gpui_shared::icons::file_icon::lucide_fallback`]。主题包没有对应条目时用它。
 ///
-/// 真机用的是按语言/类型区分的主题图标集（`ThemedFileIcon`，`file-explorer-tree-item.tsx:233-240`），
-/// 那一套是 Windows 自己的图标资源，这里只用 Lucide 里语义最接近的字形。
-pub(crate) fn icon_for_file(name: &str) -> IconName {
-    let extension = name
-        .rsplit_once('.')
-        .map(|(_, extension)| extension.to_ascii_lowercase());
-
-    match extension.as_deref() {
-        // 图片/图标：`Image`（`icons/image.svg`）。
-        Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "ico" | "svg" | "bmp" | "avif") => {
-            IconName::Image
-        }
-        // JSON / JSONC：目录里**没有 `file-json.svg`**，取 `FileBraces`
-        // （`icons/file-braces.svg`）—— Lucide 里花括号就是 JSON 的通用符号。
-        Some("json" | "jsonc") => IconName::FileBraces,
-        // Markdown / 纯文本：`FileText`（`icons/file-text.svg`）。
-        Some("md" | "markdown" | "txt" | "rst" | "adoc") => IconName::FileText,
-        // 配置：`Settings`（`icons/settings.svg`）。
-        Some("toml" | "yaml" | "yml" | "ini" | "conf" | "cfg" | "properties" | "editorconfig") => {
-            IconName::Settings
-        }
-        // 依赖锁 / 包文件：`Package`（`icons/package.svg`）。
-        Some("lock") => IconName::Package,
-        // 脚本 / 终端入口：`Terminal`（`icons/terminal.svg`）。
-        Some("sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "bat" | "cmd") => IconName::Terminal,
-        // 源码：`FileCode`（`icons/file-code.svg`）。
-        Some(
-            "rs" | "ts" | "tsx" | "mts" | "cts" | "js" | "jsx" | "mjs" | "cjs" | "py" | "java"
-            | "kt" | "kts" | "swift" | "go" | "c" | "h" | "cc" | "cpp" | "hpp" | "cs" | "rb"
-            | "php" | "vue" | "svelte" | "sql" | "css" | "scss" | "less" | "html" | "xml"
-            | "gradle" | "lua" | "dart" | "scala" | "ex" | "exs" | "dockerfile",
-        ) => IconName::FileCode,
-        // 其余（含没有扩展名的）：`File`（`icons/file.svg`）。
-        _ => IconName::File,
-    }
+/// 真机对照：`ThemedFileIcon` + `features/file-explorer/components/file-explorer-tree-item.tsx:233-240`。
+pub(crate) fn icon_for_file(name: &str, cx: &App) -> FileIcon {
+    FileIcon::lucide(file_icon::lucide_fallback(name)).with_theme_icon(name, cx)
 }

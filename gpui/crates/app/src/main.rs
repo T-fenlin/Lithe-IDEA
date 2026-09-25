@@ -308,6 +308,11 @@ fn main() {
                     "ui-icons/idea/expui/general/settings.svg",
                     "ui-icons/idea/expui/general/settings_dark.svg",
                     "icons/settings.svg",
+                    // 文件类型图标主题（`icon-themes/idea/**`，任务 B 的接线点）：这一条是
+                    // "查找层算出的路径确实能 `load` 到字节"的证据。没有它，主题图标取不到
+                    // 字节时界面会**静默回落到 Lucide**（`FileIcon::render` 的 `else` 分支），
+                    // 截图上看不出区别 —— 这正是 S1_ASSETS 存在的理由。
+                    "icon-themes/idea/icons/expui/fileTypes/gitignore.svg",
                 ] {
                     let hit = assets::probe_len(probe);
                     eprintln!(

@@ -35,25 +35,26 @@
 //! `status_bar.rs:99-100`；组件文档也写明"没有 left/right 时它就是普通容器"，`:63-64,81`），
 //! 行内自己排 `justify-between` + 左 `flex_1 min-w_0` + 右 `shrink_0`，与 Windows 源码一一对应。
 //!
-//! # 图标真源（全量 Lucide 目录 `gpui_kit::assets::IconName`）
+//! # 图标真源：真源 SVG 优先，缺真源的保持 Lucide
 //!
-//! 应用注册的是 `gpui_kit::assets::AllAssets`（`shell_probe/mod.rs`），嵌入
-//! `gpui-kit-assets-0.6.6/assets/icons/` 下全部 1830 个字形；`gpui_kit::assets::IconName`
-//! 就是按这份目录生成的完整枚举（`gpui-kit-assets-0.6.6/build.rs:20-51`），所以这里用**真实字形**，
-//! 不再需要"默认图标集里没有某字形"的替代：
+//! 与活动栏同一口径（见 [`crate::activity_bar`] 的模块文档）：**有 `gpui/assets/ui-icons/idea/**`
+//! 真源文件的用真源（[`StatusEntry::with_idea_icon`]），真源只有内联 React 组件或本来就是
+//! Lucide 的保持 `IconName`（[`StatusEntry::with_icon`]）**。
 //!
 //! | Windows 源字形 | 出处 | 本模块采用 | 说明 |
 //! | --- | --- | --- | --- |
-//! | `HardDrivesIcon` | `footer-editor-status.tsx:113` | `IconName::HardDrive` | 同名，1:1（`icons/hard-drive.svg`） |
-//! | `CheckCircleIcon` | `footer-editor-status.tsx:135` | `IconName::CircleCheck` | 同名，1:1（`icons/circle-check.svg`）；Windows 带 `text-success` 上色（`--success: var(--primary)`，`theme.css:151`），本契约无颜色字段故未实现 |
-//! | `LockIcon` / `LockOpenIcon` | `footer-editor-status.tsx:102` | `IconName::Lock` / `IconName::LockOpen` | 同名，1:1（`icons/lock.svg` / `icons/lock-open.svg`） |
-//! | `GitBranchIcon` | `features/git/components/git-branch-manager.tsx:647` | `IconName::GitBranch` | 同名，1:1（`icons/git-branch.svg`） |
-//! | 文件类型图标 | `file-path-breadcrumb.tsx:199` | `IconName::FileText`（文本）/ `File` | 14×14：调用方自己 `Icon::new(..).with_size(px(14.))`，并把 `gpui_kit::component::Sizable` 引入作用域 |
-//! | `CaretRightIcon`（面包屑分隔符） | `ui/breadcrumb.tsx:78` | `IconName::ChevronRight` | 同名，1:1，14×14 |
+//! | `GitBranchIcon` | `features/git/components/git-branch-manager.tsx:647` | **真源** `idea::GIT_BRANCH_ICON` | `ui-icons/idea/vcs/branch.svg`(+`_dark`) |
+//! | `LockIcon` / `LockOpenIcon` | `footer-editor-status.tsx:102` | **真源** `idea::LOCK_ICON` / `LOCK_OPEN_ICON` | `expui/general/locked.svg` / `unlocked.svg` |
+//! | `CheckCircleIcon` | `footer-editor-status.tsx:135` | **真源** `idea::CHECK_CIRCLE_ICON` | `expui/general/successDialog.svg`；Windows 带 `text-success` 上色（`--success: var(--primary)`，`theme.css:151`），本契约无颜色字段故未实现 |
+//! | 文件类型图标 | `file-path-breadcrumb.tsx:196-202` 的 `ThemedFileIcon` | **真源**：当前活动文件名的图标主题查表 | 与文件树 / 标签同一条 `icons::FileIcon` 路线（`explorer` / `editor` 的 `icon_for_file`） |
+//! | `HardDrivesIcon` | `footer-editor-status.tsx:113` | `IconName::HardDrive` | 真源是 `Nucleo.IconHardDriveOutline18` → Lucide `hard-drive`，**已经是 1:1** |
+//! | `CaretRightIcon`（面包屑分隔符） | `ui/breadcrumb.tsx:78` | `IconName::ChevronRight` | 真源 `expui/general/chevronRight.svg` 存在，但面包屑分段本身还没实现（见「未实现」第 1 条），本轮不动 |
 //!
 //! 条目内的图标**不要**显式设尺寸：`Icon` 未设尺寸时会退回继承的字号
 //! （`gpui-component-0.6.6/src/icon.rs:169-180,218`），正好等于 Windows 图标默认的
 //! `size="1em"`（`windows/tauri/src/ui/icons.tsx:154`），状态栏里即 13×13。
+//! 真源那一路由 [`lithe_gpui_shared::icons::FileIcon::render`] 画，边长要显式给，
+//! 所以 [`StatusEntry`] 存**已解析好的**图标（见字段说明）。
 //!
 //! # 未实现 / 需要回调的部分（本契约无法表达，均不改签名）
 //!
@@ -93,10 +94,11 @@ use gpui_kit::base::h_flex;
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    App, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, SharedString,
-    Styled as _, Window, prelude::FluentBuilder as _, px,
+    AnyElement, App, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, SharedString,
+    Styled as _, Window, prelude::FluentBuilder as _, px, rems,
 };
 
+use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
 // ---------------------------------------------------------------------------
@@ -132,13 +134,24 @@ const CHIP_RADIUS: Pixels = px(6.4);
 
 /// 状态栏里的一个条目。
 ///
-/// 字段私有 + [`StatusEntry::new`] / [`StatusEntry::with_icon`]：跨 crate 之后结构体字面量
-/// 不再是合法构造方式（《编码指南》「公共 API 设计」）。图标取自全量目录
-/// （`gpui_kit::assets::IconName`，模块文档的对照表）。
+/// 字段私有 + [`StatusEntry::new`] / [`StatusEntry::with_icon`] / [`StatusEntry::with_idea_icon`] /
+/// [`StatusEntry::with_file_icon`]：跨 crate 之后结构体字面量不再是合法构造方式
+/// （《编码指南》「公共 API 设计」）。
 #[non_exhaustive]
 pub struct StatusEntry {
-    /// 条目前导图标；`None` = 纯文字条目。
-    icon: Option<IconName>,
+    /// 条目前导图标的**已解析**资源路径（`None` = 纯文字条目）。
+    ///
+    /// 存路径而不是存 `IconName`：状态栏的条目在 `ShellWorkspace::footer_right` 里**当帧**
+    /// 构造（光标位置每次都可能变），所以"构造时就定好明暗"和"渲染时再查"是同一帧，
+    /// 没有陈旧风险。这样 [`StatusEntry`] 仍然只是两个 `Copy` 字段，`status_bar` 的
+    /// `use<>` 也不用跟着改。
+    ///
+    /// 真源那一路存 `ui-icons/idea/**` 的路径；Lucide 那一路存 `None` 且用
+    /// [`StatusEntry::lucide`] 记字形（两者互斥，同时给出时真源优先 —— 与
+    /// [`FileIcon::render`] 的优先关系一致）。
+    icon: Option<&'static str>,
+    /// `icon` 为 `None` 时用的 Lucide 字形。
+    lucide: Option<IconName>,
     /// 条目文字；中文一律逐字取 `windows/tauri/src/i18n/locale.ts` 的原文，不要自己编。
     text: SharedString,
 }
@@ -148,13 +161,33 @@ impl StatusEntry {
     pub fn new(text: impl Into<SharedString>) -> Self {
         Self {
             icon: None,
+            lucide: None,
             text: text.into(),
         }
     }
 
-    /// 带前导图标的条目（non-boolean builder 用 `with_` 前缀，《编码指南》词汇表）。
+    /// 带 Lucide 前导图标的条目（non-boolean builder 用 `with_` 前缀，《编码指南》词汇表）。
     pub fn with_icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+        self.lucide = Some(icon);
+        self
+    }
+
+    /// 带**真源**前导图标的条目：`ui-icons/idea/**` 的 expui SVG（`idea::` 常量）。
+    ///
+    /// 明暗在这里就定（`cx` 是当帧的），见 [`StatusEntry::icon`] 的字段说明。
+    pub fn with_idea_icon(mut self, icon: &'static idea::IdeaIcon, cx: &App) -> Self {
+        self.icon = Some(icon.path(gpui_kit::component::Theme::global(cx).is_dark()));
+        self
+    }
+
+    /// 带**文件类型**图标的条目：与文件树 / 编辑器标签同一条主题查表路线
+    /// （真源优先、Lucide 回落），只是换成"状态栏这一格想要的 14×14"。
+    ///
+    /// `name` 是文件名（不是完整路径）。
+    pub fn with_file_icon(mut self, name: &str, cx: &App) -> Self {
+        let icon = FileIcon::lucide(file_icon::lucide_fallback(name)).with_theme_icon(name, cx);
+        self.icon = icon.themed;
+        self.lucide = Some(icon.fallback);
         self
     }
 }
@@ -167,7 +200,8 @@ impl StatusEntry {
 /// 的尾随组是**当帧算出来的临时 `Vec`**（光标位置每次重绘都可能不同，
 /// 见 `ShellWorkspace::footer_right`）。没有 `use<>` 时 edition 2024 的 RPIT 会把
 /// `&[StatusEntry]` 的生命周期捕获进返回类型，临时值活不过返回的元素（E0515）。
-/// 本条链路上的元素本来就只持有 `SharedString` / `IconName` 的**拷贝**，不借入参。
+/// 本条链路上的元素本来就只持有 `SharedString` / `&'static str` / `IconName` 的**拷贝**，
+/// 不借入参，所以 `use<>` 成立。
 pub fn status_bar(
     left: &[StatusEntry],
     right: &[StatusEntry],
@@ -256,6 +290,45 @@ fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
         // `hover:bg-accent hover:text-foreground`（`footer-status-chip.tsx:5`）。
         // UI-MAP §1.2：gpui 的 `accent` 语义就是"悬停底色"。
         .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
-        .when_some(entry.icon.clone(), |this, icon| this.child(Icon::new(icon)))
+        .when_some(entry_icon(entry, cx), |this, icon| this.child(icon))
         .child(entry.text.clone())
+}
+
+/// 条目要画的那个图标元素。
+///
+/// ## 为什么这里用 `svg().path(..)` 而不是 `img()`（与文件树/标签的取舍相反）
+///
+/// 文件类型图标**颜色就是信息**，所以文件树与编辑器标签走 `img()`（保留原色，见
+/// `lithe_gpui_shared::icons::file_icon`）。状态栏这一格不同：它是 13px 单色字形，
+/// 与旁边的文字同色（`--subtle-foreground`）才是真机的样子。
+///
+/// 而且实测（125% DPI，本机）：**`Img` 放在这里根本不画**。同一帧里文件树的 `Img`
+/// 正常显示（16×16 的 `svg_renderer` 位图），状态栏这一格的 `Img` 一个像素都没有
+/// （`statuszoom-before/after.png` 的对比里，分支字形整块消失）。
+/// 原因是 `Img::request_layout` 只在有 `GlobalElementId` 时才会 `use_data`
+/// （`gpui-pre-0.3.6/src/elements/img.rs:289-315`），而这一格（`h_flex` + `.id(..)` 的
+/// 状态栏 chip）没给它稳定的全局 id；`svg()` 没有这个约束。
+///
+/// 走 `svg()` 的代价是丢掉原色、改由 `text_color` 上色 —— 对状态栏这正是想要的。
+///
+/// - **真源**（`entry.icon` 有值）：`ui-icons/idea/**` 的 expui SVG，14 = `rems(14. / 16.)`
+///   （与旧实现的 `with_size(px(14.))` 同值；14 不在 rem 档位上，所以自己换算）。
+/// - **Lucide**（`entry.lucide` 有值）：`Icon::new(..)`，**不设尺寸** ——
+///   `Icon` 会退回继承的字号，正好等于 Windows 图标默认的 `size="1em"`（13×13）。
+fn entry_icon(entry: &StatusEntry, cx: &App) -> Option<AnyElement> {
+    if let Some(path) = entry.icon {
+        let theme = gpui_kit::component::Theme::global(cx);
+        return Some(
+            gpui_kit::svg()
+                .path(path)
+                .flex_shrink_0()
+                .text_color(theme.muted_foreground)
+                .w(rems(14. / 16.))
+                .h(rems(14. / 16.))
+                .into_any_element(),
+        );
+    }
+    entry
+        .lucide
+        .map(|name| Icon::new(name).into_any_element())
 }

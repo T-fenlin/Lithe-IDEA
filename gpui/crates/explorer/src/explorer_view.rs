@@ -24,11 +24,10 @@ use gpui_kit::{
     Styled as _, Subscription, WeakEntity, Window, div, px, relative, rems,
 };
 
+use lithe_gpui_shared::icons::FileIcon;
 use lithe_gpui_shared::tr;
 
-use crate::model::{
-    RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot,
-};
+use crate::model::{RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot};
 
 // ---------------------------------------------------------------------------
 // 文案：全部走 `lithe_gpui_shared::tr`（key 逐字取 `windows/tauri/src/i18n/locale.ts`
@@ -599,15 +598,14 @@ impl Explorer {
             };
 
             let icon = match kind {
-                RowKind::EmptyPlaceholder => IconName::File,
-                RowKind::Directory => {
-                    if expanded {
-                        IconName::FolderOpen
-                    } else {
-                        IconName::FolderClosed
-                    }
-                }
-                RowKind::File => icon_for_file(&label),
+                RowKind::EmptyPlaceholder => FileIcon::lucide(IconName::File),
+                RowKind::Directory => FileIcon::lucide(if expanded {
+                    IconName::FolderOpen
+                } else {
+                    IconName::FolderClosed
+                })
+                .with_theme_folder(&label, expanded, cx),
+                RowKind::File => icon_for_file(&label, cx),
             };
 
             let mut label_el = div().flex_1().min_w_0().truncate().child(label);
@@ -629,11 +627,7 @@ impl Explorer {
                 .pr_1p5()
                 .rounded(px(ROW_RADIUS))
                 .child(caret)
-                .child(
-                    Icon::new(icon)
-                        .size_4()
-                        .text_color(cx.theme().muted_foreground),
-                )
+                .child(icon.render(rems(1.), cx))
                 .child(label_el)
                 // 「当前打开的文件」加一层选中底色。真机把"活动文件"与"悬停"都用
                 // `subtleSelection`，两者在真机上不可区分（`gpui/UI-MAP.md` §2.3 的"优化"一条），
