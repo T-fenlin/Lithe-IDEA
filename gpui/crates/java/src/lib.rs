@@ -23,6 +23,10 @@
 //! 4. [`service`]：把上面三样组成一个可被编辑器调用的门面（[`JavaLanguageService`]），
 //!    并打 `S1_JAVA_*` 诊断行。
 //!
+//! [`events`] 是第 3 项的一部分：**事件泵**（`lsp.waitEvents` 的唯一消费者）+ 分派表 +
+//! 诊断存储。泵是一个 `std::thread`，与 gpui 无关 —— 本 crate 刻意不依赖 UI 框架，
+//! 这样它既能被编辑器调用，也能被没有窗口的测试直接跑（见 `service.rs` 的真实 JDTLS 用例）。
+//!
 //! ## 移植来源
 //!
 //! 发现与缓存这两块**逐条**移植 Windows host 的现成实现，不重新设计（`develop-lithe`：
@@ -36,11 +40,13 @@
 //! 它不是编辑器的表现层：JDTLS 载荷发现、缓存目录回收、Core 会话生命周期都是**产品
 //! 编排**，与 `editor` 的标签 / 光标 / 渲染无关。`editor` 只依赖它拿到"跳到哪里"。
 
+mod events;
 mod jdtls;
 mod service;
 mod session;
 mod workspace;
 
+pub use events::{JavaDiagnostic, JavaDiagnosticRange};
 pub use service::{
     JavaCompletionItem, JavaLanguageService, JavaPosition, JavaTarget, JavaTextEdit,
 };

@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 use lithe_gpui_shared::core_json;
 use serde_json::{Value, json};
 
+use crate::events::JavaDiagnostic;
 use crate::jdtls::{self, JdtlsInstallation, JavaRuntime};
 use crate::session::{Session, SessionSpec, SessionTimeouts};
 use crate::workspace;
@@ -312,6 +313,38 @@ impl JavaLanguageService {
             started.elapsed().as_millis()
         );
         Ok(items)
+    }
+
+    /// 某个文件的**最近一次**诊断快照（`textDocument/publishDiagnostics` 推送）。
+    ///
+    /// 这是**查询**，不是请求：不起会话、不同步文档。诊断由服务端推送，只有同步过（或同步过
+    /// 又改过）的文档才会有发布 —— Core 会丢掉"文档不在 `open_documents` 里"的那些
+    /// （`rust/lithe-core/src/lsp/interface/client.rs:350-352`），所以没打开过的文件返回空是
+    /// 正常结果，不是失败。为了不让一次查询把 JDTLS 拖起来（`ensure_session` 的启动链是
+    /// 10s 级），这里**不**调 `ensure_session`。
+    ///
+    /// 本轮**不接编辑器 UI**（波浪线是下一批）：接口先立在这里，泵已经在按 `uri` 归档
+    /// （见 `crate::events`），`S1_JAVA_DIAGNOSTICS` 诊断行能看到每一条发布。
+    pub fn diagnostics(&self, file_path: &Path) -> Vec<JavaDiagnostic> {
+        let uri = match file_uri(file_path) {
+            Ok(uri) => uri,
+            Err(error) => {
+                eprintln!(
+                    "S1_JAVA_DIAGNOSTICS query_failed path={} error={error}",
+                    file_path.display()
+                );
+                return Vec::new();
+            }
+        };
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match &*state {
+            State::Ready(session) => session.latest_diagnostics(&uri),
+            // `Idle` / `Failed` / `Closed` 都还没有（或不再有）事件来源 → 空。
+            _ => Vec::new(),
+        }
     }
 
     /// 关闭会话（应用退出时调；`Idle` / `Failed` 时是空操作）。
@@ -694,7 +727,10 @@ fn parse_text_edit(value: &Value) -> Option<JavaTextEdit> {
 }
 
 /// 解析一个 Core 位置（`{ line, utf16Column }`）。
-fn parse_position(value: &Value) -> Option<JavaPosition> {
+///
+/// `pub(crate)`：诊断事件（`crate::events`）用的是同一份位置口径 ——
+/// "0 基行 + 0 基 UTF-16 码元列"这个契约字段名只该有一处解析。
+pub(crate) fn parse_position(value: &Value) -> Option<JavaPosition> {
     Some(JavaPosition {
         line: value.get("line").and_then(Value::as_u64)? as u32,
         utf16_column: value.get("utf16Column").and_then(Value::as_u64)? as u32,
@@ -823,6 +859,16 @@ mod tests {
         });
         assert_eq!(location_position(&location), Ok((2, 15)));
         assert!(location_position(&json!({ "range": { "start": { "line": 2 } } })).is_err());
+    }
+
+    /// `is_superseded` 的判据是错误文本的**前缀**，而那段文本由事件泵格式化
+    /// （`crate::events::completion_outcome`）。两处形状必须钉在一起：改动任何一边都该红。
+    #[test]
+    fn superseded_matches_the_event_pump_error_shape() {
+        assert!(is_superseded("staleDocumentVersion@document：文档版本已变旧"));
+        assert!(is_superseded("requestCancelled@request：（无消息）"));
+        assert!(!is_superseded("requestTimeout@request：语义请求超时"));
+        assert!(!is_superseded("事件泵已退出（waitEvents: process_failed：会话已不在运行）"));
     }
 
     // -----------------------------------------------------------------------

@@ -1644,16 +1644,38 @@ Maven 面板时才扫（右活动栏点击与菜单 `ToggleMaven` 两条路都�
 （**懒扫真的在第一次激活时跑了**，且从本机依赖元数据里读到了 10 条属性），
 `S1_RIGHT_PANEL view=spring visible=true`，右栏第 4 个图标在截图里可见。
 
-⚠️ **两条未取证的事（诚实登记）**：
-1. **Spring 面板内容的截图没拿到**：这一轮右栏点击在本机出现**双触发**（一次点击打出
-   `visible=true` 紧接着 `visible=false`，光标停在图标上还会被"杂散点击"再切一次），
-   面板被自己关掉。取证办法已经明确：**给右栏加一个启动态探针**（例如 `--right-view spring`，
-   与 `--open-settings` / `--menu-probe` 同一家族），或者给视图菜单加"显示/隐藏 Spring"
-   （与既有"显示/隐藏 Maven"一致）—— 两条都属于下一批，不是本轮。
-2. **`endpoints=0`**：夹具里的 `@RestController` 没被识别成端点。最可能的原因是
-   **夹具 pom 没有任何 Spring 依赖**，注解解析不到（而 `properties=10` 说明元数据那一路是通的）。
-   要拿到非零端点，夹具需要一个带 `spring-boot-starter-web` 的、依赖已解析的 Maven 工程
-   （`mvn dependency:resolve` 之后）。这条同样是下一批的验证项，**不是**"端点功能没做"。
+### 16.9 本轮并行四路的结论（2026-09-26，含两条产品级发现）
+
+**① 右栏启动态探针 `--right-view <id>`**（`app/src/main.rs` + `workbench/{right_tool_window,workspace}.rs`）：
+`from_id` 与 `id()` 双向一致、未知 id 打一行可 grep 的 stderr 且**不改启动状态**；
+应用走 `window.on_next_frame`（不在 render 阶段改状态）；顺带把"右活动栏点击"与
+「视图 → Maven」菜单两处**重复且已经有分歧**的懒扫抽成 `scan_right_view_if_needed`。
+实机 13 条判定全 OK：Maven 面板看到 `lite-fixture 1.0.0` + `.`；Spring 面板看到计数行
+`properties 10 · values 0 · …`（不是空态）；未知 id 与基线图像素一致；收尾 `Lithe=0 java=0`。
+
+**② 产品缺陷（未修，已登记）：右活动栏点击在 125% DPI 下会"双触发"** ——
+一次点击打出 `S1_RIGHT_PANEL … visible=true` 紧接着 `visible=false`，面板自己关掉；
+光标停在图标上还会被"杂散点击"再切一次。这就是前几轮面板截图反复拿不到的原因。
+这不是探针能解决的问题（探针只绕过"操作系统把那一下点击送进窗口"这段），需要单独查 gpui 的
+点击派发/DPI 换算，**属于下一批的独立缺陷**。
+
+**③ `spring.index` 的 `endpoints` 恒为 0 是我上一批的调用 bug（不是夹具问题）**：
+Core 的 `endpoint_index`（`rust/lithe-core/src/languages/spring.rs:1477-1552`）是**纯文本/正则**索引，
+**与 classpath 无关**；而 `paths` 是 `#[serde(default)]`，我调用时**没传** ⇒ 一个 Java 文件都没扫
+（`properties=10` 正好是 Core 的 10 条内置属性，就是"没扫工作区"的铁证）。修法（另一路在做）：
+有界收集工作区 `.java`（排除 `target/build/out/.git`、有上限、相对路径、确定性排序）后传 `paths`。
+**教训**：诊断行里的数字要读完再下结论 —— 我当时把 `endpoints=0` 归因成"夹具缺依赖"，是错的。
+
+**④ 环境事实（下个会话别再踩）**：本机**没有** `~/.m2/settings.xml`，真正的本地 Maven 仓库是
+`D:\ProgramData\maven\apache-maven-3.6.3\conf\settings.xml:53` 指到的
+**`D:\ProgramData\maven\apache-maven-3.6.3\maven_new`**（`C:\Users\admin\.m2\repository` 里一个 spring 都没有）；
+镜像 `alimaven`。跑 `mvn` 时只给该进程设 `JAVA_HOME=D:\ProgramData\java\openjdk-21`
+（本机 PATH 上的 `java` 是 1.8）。Spring 夹具（`.artifacts/p15/spring-fixture`，Boot 3.4.5）的项目依赖
+**100% 复用缓存**，只有插件走了一次网；`mvn -o … compile` 之后完全离线可复现。
+
+⚠️ **仍未取证**：`endpoints > 0` 的 GUI 端到端（等 `paths` 修完，用探针在
+`.artifacts/p15/spring-fixture` 上复验，期望 `endpoints=2 beans=1 values=2`，面板出现
+`GET/POST /api/users`）。
 
 ### 16.5 下一批（按用户可感知价值）
 

@@ -5,11 +5,18 @@
 //! （契约 `shared/contracts/rust-core-api.md:1162-1220`：进程、stdin/stdout/stderr、
 //! 组帧缓冲、JSON-RPC id、文档版本、超时、能力、诊断与优雅/强制终止都归 Core）。
 //!
+//! ## 事件：会话里**只有一条**队列，也**只有一个**消费者
+//!
+//! `lsp.waitEvents` 是排空语义，两个消费者会互相偷事件（`crate::events` 的模块文档把
+//! 原因与分派表写全了）。所以本文件里没有"等自己的结果时顺便排空事件"这种事：
+//! [`Session::start`] 顺手起 [`crate::events::EventPump`]，`request` / `wait_ready` /
+//! `shutdown` 全部通过泵的分派结果说话，`lsp.waitEvents` 只由泵调用一次。
+//!
 //! ## 为什么用阻塞调用 + `waitEvents` 而不是轮询
 //!
 //! 契约 `:1419-1422` 明写"Hosts should use `waitEvents` so idle sessions do not poll"。
-//! 所以等待就绪与等待请求结果都走 `lsp.waitEvents`（Core 在会话事件通道上阻塞，
-//! 到点或有事就返回），**不 sleep 轮询**。
+//! 所以就绪、请求结果、关闭终态都走"阻塞等事件"（泵阻塞在 Core 的条件变量上，有事立刻
+//! 返回），**不 sleep 轮询**。
 //!
 //! ## 这一步是本 crate 唯一打 JDTLS 自身日志的地方
 //!
@@ -18,12 +25,14 @@
 //! 其余诊断行（载荷解析、缓存、跳转）在 [`crate::service`]。
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::Arc;
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, core_json};
 use serde_json::{Value, json};
 
+use crate::events::{EventPump, JavaDiagnostic, SessionEvents};
 use crate::jdtls::JdtlsInstallation;
 
 /// 执行一条已拼好的请求并解开信封（`CoreClient` 是无状态值，随手建一个即可）。
@@ -91,11 +100,10 @@ pub(crate) struct SessionSpec<'a> {
 #[derive(Debug)]
 pub(crate) struct Session {
     id: String,
-    /// 连续重复的 `log` 消息只打一次，避免 JDT 的进度流把 stdout 刷满。
-    ///
-    /// 用 `Mutex` 而不是 `&mut self`：会话被 `JavaLanguageService` 的状态锁保护，
-    /// 请求路径只需要 `&Session`，为一行日志把整条链改成可变借用不值得。
-    last_log: Mutex<Option<String>>,
+    /// 事件账本 + 诊断存储（泵是唯一的写者，见 [`crate::events`]）。
+    events: Arc<SessionEvents>,
+    /// 事件泵：本会话**唯一**的 `lsp.waitEvents` 消费者。
+    pump: EventPump,
 }
 
 /// 会话启动后的状态，给调用方做诊断与"是否复用"判断。
@@ -195,19 +203,24 @@ impl Session {
                 .unwrap_or_else(|| "-".to_string())
         );
 
-        Ok(Self {
-            id,
-            last_log: Mutex::new(None),
-        })
+        // 泵在 `startServer` 成功之后就起：握手期间的 `stateChanged` / `log` /
+        // `serverInfoChanged` 也在这条事件队列上，晚起就会漏掉就绪信号。
+        // 泵的失败等于"这个会话拿不到任何事件"，所以直接让启动失败（Core 会话由调用方的
+        // `shutdown` 收尾，与 `wait_ready` 失败时同一条路径）。
+        let events = Arc::new(SessionEvents::new());
+        let pump = EventPump::start(id.clone(), Arc::clone(&events))?;
+
+        Ok(Self { id, events, pump })
     }
 
     /// 阻塞等到 `state: ready`（JDT 的 `language/status: ServiceReady`）。
     ///
-    /// 事件只来自 `lsp.waitEvents`；每次等待的片段取 `min(剩余, 5s)`，这样：
-    /// 进程崩了 / 会话 `failed` 能**立刻**看到，而不会被一个很长的阻塞盖住。
+    /// 事件**不在这里读**：泵是唯一的 `lsp.waitEvents` 消费者（见 [`crate::events`]），
+    /// 它把 `stateChanged` / `serverInfoChanged` 放进生命周期队列，这里只等队列。
+    /// 每次等待的片段取 `min(剩余, 5s)`：片段本身不影响"进程崩了能立刻看到" —— 泵一收到
+    /// `stateChanged` 就会叫醒这里，片段只决定我们多久复查一次绝对死线。
     pub(crate) fn wait_ready(&mut self, absolute_deadline: Instant) -> Result<ReadyReport, String> {
         let started_at = Instant::now();
-        let mut log_events = 0usize;
         let mut server_info = None;
 
         loop {
@@ -219,8 +232,13 @@ impl Session {
                 ));
             }
             let slice = remaining.min(Duration::from_secs(5));
-            let events = self.wait_events(slice)?;
+            let events = self.events.wait_lifecycle(slice);
             if events.is_empty() {
+                // 队列空有两种可能：还没事件，或者泵已经退出（会话死在外面）。
+                // 后者不该让我们等到绝对死线，所以直接报出来。
+                if let Some(reason) = self.events.terminal_reason() {
+                    return Err(format!("JDTLS 在就绪前终止：{reason}"));
+                }
                 continue;
             }
             for event in &events {
@@ -229,7 +247,8 @@ impl Session {
                         Some("ready") => {
                             return Ok(ReadyReport {
                                 elapsed: started_at.elapsed(),
-                                log_events,
+                                // 日志由泵计数与打印（`report_log`），这里只取数字。
+                                log_events: self.events.log_event_count(),
                                 server_info,
                             });
                         }
@@ -248,10 +267,6 @@ impl Session {
                         }
                         _ => {}
                     },
-                    Some("log") => {
-                        log_events += 1;
-                        self.report_log(event);
-                    }
                     Some("serverInfoChanged") => {
                         server_info = event
                             .get("serverInfo")
@@ -308,8 +323,10 @@ impl Session {
     /// 一次语义请求（`textDocument/definition` 等）的**终态结果**。
     ///
     /// `lsp.request` 本身是异步的：它只返回 `operationId`，结果通过 `requestCompleted`
-    /// 事件回来（契约 `:1336-1338`、`:1419-1430`）。所以这里发完请求就等着，
-    /// 且**只认带同一个 operationId 的事件**（会话里可能还有别的在飞请求）。
+    /// 事件回来（契约 `:1336-1338`、`:1419-1430`）。外部签名（`operation` / `payload` /
+    /// `deadline`）没有变，但内部不再自己读事件：**先注册 `operationId`，再等自己的通道**，
+    /// 由事件泵按 `operationId` 分派（见 [`crate::events`]）。`deadline` 仍然由调用方决定，
+    /// 直接交给 `recv_timeout`；超时与错误的文本形状也没有变。
     pub(crate) fn request(
         &self,
         operation: &str,
@@ -325,48 +342,33 @@ impl Session {
         object.insert("operationId".to_string(), json!(operation_id));
         object.insert("operation".to_string(), json!(operation));
 
-        core_json("lsp.request", body).map_err(core_error)?;
-
-        let mut seen = 0usize;
-        loop {
-            if Instant::now() >= deadline {
-                return Err(format!(
-                    "{operation} 在超时前没有结果（已观察 {seen} 条事件）"
-                ));
-            }
-            let slice = deadline
-                .saturating_duration_since(Instant::now())
-                .min(Duration::from_secs(5));
-            let events = self.wait_events(slice)?;
-            seen += events.len();
-            for event in &events {
-                match event.get("type").and_then(Value::as_str) {
-                    Some("log") => self.report_log(event),
-                    Some("requestCompleted")
-                        if event.get("operationId").and_then(Value::as_str)
-                            == Some(operation_id.as_str()) =>
-                    {
-                        if let Some(error) = event.get("error").filter(|error| !error.is_null()) {
-                            let code = error
-                                .get("code")
-                                .and_then(Value::as_str)
-                                .unwrap_or("unknown");
-                            let message = error
-                                .get("message")
-                                .and_then(Value::as_str)
-                                .unwrap_or("（无消息）");
-                            let stage = error
-                                .get("stage")
-                                .and_then(Value::as_str)
-                                .unwrap_or("request");
-                            return Err(format!("{code}@{stage}：{message}"));
-                        }
-                        return Ok(event.get("result").cloned().unwrap_or(Value::Null));
-                    }
-                    _ => {}
-                }
-            }
+        // ⚠️ 注册必须**早于** `lsp.request` 发出：Core 会主动终结"文档变旧"的在飞请求
+        // （`engine.rs:4289-4346`），响应窗口可以极短，晚注册就会把结果当成"无人认领"丢掉。
+        let waiter = self.events.register(&operation_id)?;
+        if let Err(error) = core_json("lsp.request", body) {
+            self.events.unregister(&operation_id);
+            return Err(core_error(error));
         }
+
+        let outcome = match waiter
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        {
+            Ok(outcome) => outcome,
+            Err(RecvTimeoutError::Timeout) => Err(format!(
+                "{operation} 在超时前没有结果（会话已观察 {} 条事件）",
+                self.events.events_seen()
+            )),
+            // 泵退出时会叫醒所有等待者（`SessionEvents::mark_terminal`），所以这里
+            // 报的是"事件出口没了"而不是让调用方等满自己的死线。
+            Err(RecvTimeoutError::Disconnected) => Err(format!(
+                "{operation} 的事件泵已退出：{}",
+                self.events
+                    .terminal_reason()
+                    .unwrap_or_else(|| "原因未知".to_string())
+            )),
+        };
+        self.events.unregister(&operation_id);
+        outcome
     }
 
     /// `lsp.stopServer` + `lsp.destroyServer`（契约 `:1130-1141` 的收尾顺序）。
@@ -377,44 +379,22 @@ impl Session {
     /// "A running language-server session cannot be destroyed."）。实测直接连调会拿到
     /// `invalid_request`，于是 `<cacheDirectory>/jdtls/<key>` 里会留下一个写坏的索引，
     /// 更要紧的是 JVM 子进程变成孤儿。
-    pub(crate) fn shutdown(self) {
+    pub(crate) fn shutdown(mut self) {
         let payload = json!({ "sessionId": self.id });
         if let Err(error) = execute(
             CoreRequest::command("lsp.stopServer")
                 .with_payload(payload.clone())
                 .with_timeout_millis(20_000),
         ) {
-            println!("S1_JAVA_SESSION stop_failed sessionId={} error={error}", self.id);
+            println!("S1_JAVA_SESSION stop_failed sessionId={} error={}", self.id, error);
         }
 
-        // 有界等待终态。每一步都用 `waitEvents`（Core 在会话事件通道上阻塞），
-        // 不用 sleep 轮询；`stopped` / `failed` 之外的状态继续等。
-        let deadline = Instant::now() + SHUTDOWN_SETTLE_TIMEOUT;
-        let mut terminal = false;
-        while Instant::now() < deadline {
-            let slice = deadline
-                .saturating_duration_since(Instant::now())
-                .min(Duration::from_millis(250));
-            match self.wait_events(slice) {
-                Ok(events) => {
-                    terminal = events.iter().any(|event| {
-                        event.get("type").and_then(Value::as_str) == Some("stateChanged")
-                            && matches!(
-                                event.get("state").and_then(Value::as_str),
-                                Some("stopped") | Some("failed")
-                            )
-                    });
-                    if terminal {
-                        break;
-                    }
-                }
-                Err(error) => {
-                    // 会话已经没了（`sessionStopped`）也算终态。
-                    println!("S1_JAVA_SESSION settle_failed sessionId={} error={error}", self.id);
-                    break;
-                }
-            }
-        }
+        // 有界等待终态。**泵这时还活着**：`stopServer` 之后到达的 `stateChanged: stopped`
+        // 由泵排进生命周期队列，这里等的就是这个队列（旧实现自己再调一次 `waitEvents` ——
+        // 那正是"两个消费者互相偷事件"的隐患，现在会话里只剩泵一个消费者）。
+        let terminal = self
+            .events
+            .wait_terminal(Instant::now() + SHUTDOWN_SETTLE_TIMEOUT);
         if !terminal {
             // 不静默：摘不掉句柄就是子进程可能还活着，必须在日志里留痕。
             println!(
@@ -432,46 +412,54 @@ impl Session {
         } else {
             println!("S1_JAVA_SESSION stopped sessionId={}", self.id);
         }
+
+        // 收工：置停止标志 + join，**不能**留一个永远等 `waitEvents` 的任务
+        // （`gpui/PLAN.md` §15.1 / 调研 §7.2 第 1 条）。`destroyServer` 之后
+        // `waitEvents` 会立刻报"会话已不在运行"（`engine.rs:1944-1958`），
+        // 所以泵通常已经自行退出，join 只走个形式。
+        self.pump.stop();
     }
 
-    /// 排空事件（不超过 `timeout`）。
-    fn wait_events(&self, timeout: Duration) -> Result<Vec<Value>, String> {
-        let data = execute(
-            CoreRequest::command("lsp.waitEvents")
-                .with_payload(json!({
-                    "sessionId": self.id,
-                    "timeoutMilliseconds": timeout.as_millis().max(1) as u64,
-                }))
-                // 信封超时比会话超时多 5s：Core 在会话通道上阻塞，信封不能先把它掐了。
-                .with_timeout_millis(timeout.as_millis() as u64 + 5_000),
-        )?;
-        Ok(data
-            .as_ref()
-            .and_then(|data| data.get("events"))
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default())
+    /// 某个 `uri` 的**最近一次**诊断快照（`type: "diagnostics"` 事件，由泵归档）。
+    ///
+    /// 只读接口，不发起任何 Core 调用：诊断是服务端推送，没同步过文档就还没有诊断
+    /// （Core 会丢掉"文档不在 `open_documents` 里"的 `publishDiagnostics`，
+    /// `rust/lithe-core/src/lsp/interface/client.rs:350-352`）。
+    /// 本轮**不接编辑器 UI**，接口先立在这里，下一批做波浪线时直接用。
+    pub(crate) fn latest_diagnostics(&self, uri: &str) -> Vec<JavaDiagnostic> {
+        self.events.latest_diagnostics(uri)
     }
+}
 
-    /// JDT 的日志（项目导入 / 进度）→ `S1_JAVA_LOG`，连续重复只打一次。
-    fn report_log(&self, event: &Value) {
-        let message = event
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let detail = event.get("detail").and_then(Value::as_str).unwrap_or_default();
-        let line = format!("{message} {detail}");
-        let mut last_log = self
-            .last_log
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if last_log.as_deref() == Some(line.as_str()) {
-            return;
-        }
-        let level = event.get("level").and_then(Value::as_str).unwrap_or("info");
-        println!("S1_JAVA_LOG level={level} message={line}");
-        *last_log = Some(line);
+impl Drop for Session {
+    fn drop(&mut self) {
+        // 兜底：`wait_ready` 失败等路径上 `Session` 会被直接丢掉，不会走 `shutdown()`。
+        // 少了这一步就会留一个永远卡在 `lsp.waitEvents` 上的线程。
+        self.pump.stop();
     }
+}
+
+/// 排空一个会话的事件（不超过 `timeout`）。
+///
+/// ⚠️ **只有事件泵调它**：`lsp.waitEvents` 是排空语义，第二个调用方就会把事件偷走
+/// （见 [`crate::events`] 的模块文档）。所以这里做成自由函数 —— 它需要的是 `sessionId`
+/// 而不是 `&Session`，免得别处顺手又拿到一个"会话自己的"事件读取口。
+pub(crate) fn wait_events(session_id: &str, timeout: Duration) -> Result<Vec<Value>, String> {
+    let data = execute(
+        CoreRequest::command("lsp.waitEvents")
+            .with_payload(json!({
+                "sessionId": session_id,
+                "timeoutMilliseconds": timeout.as_millis().max(1) as u64,
+            }))
+            // 信封超时比会话超时多 5s：Core 在会话通道上阻塞，信封不能先把它掐了。
+            .with_timeout_millis(timeout.as_millis() as u64 + 5_000),
+    )?;
+    Ok(data
+        .as_ref()
+        .and_then(|data| data.get("events"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
 }
 
 /// 进程内自增的请求号（`operationId` 只需在会话内唯一，进程内唯一更省心）。
