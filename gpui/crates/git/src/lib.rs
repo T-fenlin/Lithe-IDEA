@@ -192,11 +192,13 @@
 mod branch_info;
 mod changes;
 mod changes_view;
+mod identity;
 mod log_view;
 mod model;
 
 pub use branch_info::{BranchInfo, BranchSnapshot, TrackingCounts};
 pub use changes_view::ChangesView;
+pub use identity::{IdentityField, IdentityScope, IdentitySetup, configure_identity, inspect_identity};
 pub use log_view::BottomPane;
 
 use gpui_kit::{App, KeyBinding};

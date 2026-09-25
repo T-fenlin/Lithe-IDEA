@@ -571,6 +571,52 @@ mod tests {
                 "lithe.git.setup.firstCommit",
                 "在“更改”面板暂存文件、填写提交消息，然后创建首次提交。",
             ),
+            // 阶段 15（设置 →「Git」页的**提交身份**）：全部是**真源既有**键
+            // （`windows/tauri/src/i18n/locale.ts` 的 `git.setup.*` 段，渲染点
+            // `components/git-identity-settings.tsx`）。本页**零新增 locale 键** ——
+            // 包括那个会写回 Git 配置的开关（`settings.git.confirmDiscard*` 也在真源里）。
+            ("lithe.git.setup.identity", "提交身份"),
+            (
+                "lithe.git.setup.identityDescription",
+                "Git 会将此姓名和邮箱记录在新提交中，不会修改已有提交。",
+            ),
+            ("lithe.git.setup.scope", "配置范围"),
+            ("lithe.git.setup.local", "当前仓库"),
+            ("lithe.git.setup.global", "全局 Git 配置"),
+            (
+                "lithe.git.setup.globalDescription",
+                "全局身份会用于其他仓库，仓库自身的配置可以覆盖它。",
+            ),
+            (
+                "lithe.git.setup.localDescription",
+                "仓库身份会覆盖继承的全局值。清除覆盖后将使用继承的配置。",
+            ),
+            (
+                "lithe.git.setup.initializeFirst",
+                "请先在 Git 面板初始化项目，再保存当前仓库的身份配置。",
+            ),
+            ("lithe.git.setup.name", "提交者姓名"),
+            ("lithe.git.setup.email", "提交者邮箱"),
+            ("lithe.git.setup.save", "保存"),
+            ("lithe.git.setup.clear", "清除覆盖"),
+            ("lithe.git.setup.effective", "当前生效值"),
+            ("lithe.git.setup.unconfigured", "尚未配置有效值"),
+            ("lithe.git.setup.saved", "Git 配置已保存"),
+            (
+                "lithe.git.setup.separateSave",
+                "每个字段单独保存。切换范围时会重新加载已保存的值。",
+            ),
+            ("lithe.git.setup.reload", "重新加载 Git 配置"),
+            ("lithe.git.setup.loading", "正在检查 Git 仓库…"),
+            ("lithe.git.setup.readFailed", "Git 无法读取此仓库"),
+            // 「Git」页里唯一一个**真有消费方**的设置开关（阶段 15）：
+            // 分组标题 + 行标签 + 行描述（`tabs/git-settings.tsx:93-106`）。
+            ("lithe.settings.git.integration", "集成"),
+            ("lithe.settings.git.confirmDiscard", "丢弃前确认"),
+            (
+                "lithe.settings.git.confirmDiscardDescription",
+                "丢弃文件或仓库更改前显示确认提示",
+            ),
             // 提交面板（`git-commit-panel.tsx:148-172,281-389`）。
             ("lithe.git.commitMessagePlaceholder", "提交说明..."),
             ("lithe.git.filesStaged", "已暂存 {count} 个文件"),

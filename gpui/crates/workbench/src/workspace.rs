@@ -60,7 +60,7 @@ use gpui_kit::{
 use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::{BottomPane, ChangesView};
-use lithe_gpui_settings::Category as SettingsCategory;
+use lithe_gpui_settings::{Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope};
 use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::tr;
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
@@ -84,6 +84,52 @@ use crate::right_tool_window::{
 };
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
+
+/// 设置侧给宿主的那条"结果投递"回调的类型别名。
+///
+/// 写别名只为一件事：让两个 `Box<dyn Fn(..)>` 里的**闭包参数写得出显式类型**。
+/// 不写类型标注时，`async_cx.spawn(async move |async_cx| …)` 的 `R` 推断不出来
+/// （E0282：`AsyncFnOnce` 的返回类型是关联类型，推断会卡在未标注的闭包参数上）。
+type GitIdentityDeliver =
+    Box<dyn FnOnce(Option<String>, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static>;
+
+/// 设置侧的 Git 身份枚举 → `lithe-gpui-git` 的同一枚举。
+///
+/// **为什么需要这一层**：两个 crate 各自拥有一份（设置侧不许依赖 git crate，
+/// 见 `lithe-gpui-settings::identity` 的模块文档），类型不同名同形。
+/// 转换写在一处、并且有单测钉住双向映射，比在两个调用点各写一次 `match` 可靠。
+///
+/// ⚠️ 不能写成 `impl From<lithe_gpui_settings::IdentityScope> for lithe_gpui_git::IdentityScope`：
+/// 两个类型都是外部类型，违反孤儿规则（`E0117`）。所以这里定义一个**本地 trait**。
+trait IntoGitIdentity {
+    /// 目标类型（`lithe-gpui-git` 的对应枚举）。
+    type Target;
+    /// 转换。参数是 `&self` 而不是 `self`：两个枚举都是 `Copy`，但 `&self` 让
+    /// `scope.to_git_identity()` 这种链式写法不必先把 `scope` 移走。
+    fn to_git_identity(&self) -> Self::Target;
+}
+
+impl IntoGitIdentity for IdentityScope {
+    type Target = lithe_gpui_git::IdentityScope;
+
+    fn to_git_identity(&self) -> Self::Target {
+        match self {
+            Self::Local => lithe_gpui_git::IdentityScope::Local,
+            Self::Global => lithe_gpui_git::IdentityScope::Global,
+        }
+    }
+}
+
+impl IntoGitIdentity for IdentityField {
+    type Target = lithe_gpui_git::IdentityField;
+
+    fn to_git_identity(&self) -> Self::Target {
+        match self {
+            Self::Name => lithe_gpui_git::IdentityField::Name,
+            Self::Email => lithe_gpui_git::IdentityField::Email,
+        }
+    }
+}
 
 /// 在系统文件管理器里**定位**一个文件（标签右键菜单的「在资源管理器中显示」）。
 ///
@@ -692,27 +738,132 @@ impl ShellWorkspace {
 
         let bottom_git = cx.new(|cx| BottomPane::new(root.clone(), window, cx));
 
+        // 设置里的「Git」页要读写提交身份（`user.name` / `user.email`），而那条通路是
+        // **本 crate 才拼得起来**的：Core 命令住在 `lithe-gpui-git`，设置 crate 不许依赖它
+        // （依赖方向见 `lithe-gpui-settings` 的 `identity` 模块文档）。
+        //
+        // 所以照仓库里已有的同类口径（`TabMenuHostActions`：编辑区定义回调、外壳登记）：
+        // 设置侧定义钩子，这里用 `lithe-gpui-git` 的实现填进去。
+        // ⚠️ **必须比 `open_settings_dialog` 早**：对话框一开就会画内容页。
+        {
+            let identity_root = root.clone();
+            lithe_gpui_settings::set_git_identity_host(Some(GitIdentityHost {
+                workspace_root: identity_root.clone(),
+                // 两条回调都：`background_spawn` 跑同步的 Core 调用 → 回前台把结果
+                // 交给设置侧给的 delegate。与 `changes.rs` / `explorer` 的现成写法一致。
+                //
+                // 两条回调都要自己拿一份根的文本（闭包是 `'static` 的，借用逃不出去），
+                // 所以各克隆一次、各自在调用时再克隆进后台任务。
+                load: {
+                    let root_text = identity_root.to_string_lossy().to_string();
+                    Box::new(
+                        move |scope: &str,
+                              deliver: GitIdentityDeliver,
+                              async_cx: &mut gpui_kit::AsyncWindowContext| {
+                        let scope = IdentityScope::from_id(scope);
+                        let root = root_text.clone();
+                        // 任务由设置侧的 `Context::spawn_in` 起（那里才有窗口），
+                        // 这里只用它跑 Core 并回前台投递。
+                        // ⚠️ `detach()` 而不是 `let _ =`：gpui 的 `Task` 一 drop 就**取消**
+                        // （`gpui-pre-scheduler-0.3.6/src/executor.rs:389-391`）。
+                        // 本轮实测：写成 `let _ =` 时 `result=…` 永不出现、
+                        // 界面卡在「正在检查 Git 仓库…」。宿主内部 detach，
+                        // 所以本函数返回 `()`（见 `GitIdentityHost` 的文档）。
+                        async_cx
+                            .spawn(async move |async_cx: &mut gpui_kit::AsyncWindowContext| {
+                                let result = async_cx
+                                    .background_spawn(async move {
+                                        lithe_gpui_git::inspect_identity(
+                                            &root,
+                                            scope.to_git_identity(),
+                                        )
+                                    })
+                                    .await;
+                                let _ = async_cx.update(move |window, cx| match result {
+                                    Ok(json) => deliver(Some(json), window, cx),
+                                    Err(error) => {
+                                        // 失败**不静默**：与 `S1_*` 一族同口径走 stderr。
+                                        eprintln!(
+                                            "S1_GIT_IDENTITY run=load scope={} result=failed error={error}",
+                                            scope.id()
+                                        );
+                                        deliver(None, window, cx);
+                                    }
+                                });
+                            })
+                            .detach();
+                        },
+                    )
+                },
+                save: {
+                    let root_text = identity_root.to_string_lossy().to_string();
+                    Box::new(
+                        move |scope: &str,
+                              key: &str,
+                              value: Option<String>,
+                              deliver: GitIdentityDeliver,
+                              async_cx: &mut gpui_kit::AsyncWindowContext| {
+                        let scope = IdentityScope::from_id(scope);
+                        let field = IdentityField::from_id(key);
+                        let root = root_text.clone();
+                        // `detach()` 的理由同 load 那条（`Task` 一 drop 就取消）。
+                        async_cx
+                            .spawn(async move |async_cx: &mut gpui_kit::AsyncWindowContext| {
+                                let result = async_cx
+                                    .background_spawn(async move {
+                                        lithe_gpui_git::configure_identity(
+                                            &root,
+                                            scope.to_git_identity(),
+                                            field.to_git_identity(),
+                                            value.as_deref(),
+                                        )
+                                    })
+                                    .await;
+                                let _ = async_cx.update(move |window, cx| match result {
+                                    Ok(json) => deliver(Some(json), window, cx),
+                                    Err(error) => {
+                                        eprintln!(
+                                            "S1_GIT_IDENTITY run=save scope={} field={} result=failed error={error}",
+                                            scope.id(),
+                                            field.id()
+                                        );
+                                        deliver(None, window, cx);
+                                    }
+                                });
+                            })
+                            .detach();
+                        },
+                    )
+                },
+            }));
+        }
+
         // 设置变了要重绘（「显示状态栏」立即生效）。`try_store` 而不是 `store`：
         // 工作台在测试或将来别的宿主里可能没有设置状态，那时回落"默认显示状态栏"，
         // 而不是 panic。
         //
-        // 这条订阅同时是**两个"值"型设置**的转发点（阶段 14）：缩进宽度与终端默认 Shell
-        // 都是"面板自己不认识设置 crate"的值（依赖方向：`workbench` → `editor`/`terminal`），
-        // 所以由外壳读出来、再喂给两个面板。启动时先各喂一次，之后每次设置变化再喂。
+        // 这条订阅同时是**三个"值"型设置**的转发点（阶段 14 / 15）：缩进宽度、终端默认 Shell
+        // 与「丢弃前确认」都是"面板自己不认识设置 crate"的值（依赖方向：
+        // `workbench` → `editor`/`terminal`/`git`），所以由外壳读出来、再喂给三个面板。
+        // 启动时先各喂一次，之后每次设置变化再喂。
+        let changes_for_settings = changes.clone();
         let settings_subscription = lithe_gpui_settings::try_store(cx).map(|store| {
             let initial = store.read(cx).settings().clone();
-            // 启动态证据行：这行的两个值来自**设置文件读出来的**设置，所以它同时证明
+            // 启动态证据行：这行的值来自**设置文件读出来的**设置，所以它同时证明
             // "文件被读回来了"与"外壳确实拿到了这句设置"。阶段 14 就是靠它抓到
             // "`tabSize` 写得出、读不回"那个 bug 的（见 `PLAN.md` §14.2）。
             println!(
-                "S1_SETTINGS wiring=workbench tab_size={} terminal_default_shell_id={:?}",
-                initial.tab_size, initial.terminal_default_shell_id
+                "S1_SETTINGS wiring=workbench tab_size={} terminal_default_shell_id={:?} confirm_before_discard={}",
+                initial.tab_size, initial.terminal_default_shell_id, initial.confirm_before_discard
             );
             editor.update(cx, |pane, cx| {
                 pane.set_tab_size(initial.tab_size as usize, cx);
             });
             terminal.update(cx, |pane, cx| {
                 pane.set_default_shell(&initial.terminal_default_shell_id, cx);
+            });
+            changes_for_settings.update(cx, |view, cx| {
+                view.set_confirm_before_discard(initial.confirm_before_discard, cx);
             });
             cx.observe(&store, |this, store, cx| {
                 let settings = store.read(cx).settings().clone();
@@ -721,6 +872,11 @@ impl ShellWorkspace {
                 });
                 this.terminal.update(cx, |pane, cx| {
                     pane.set_default_shell(&settings.terminal_default_shell_id, cx);
+                });
+                // ⚠️ 用字段 `changes`（不是外层捕获的那个实体）：这条闭包要在
+                // `ShellWorkspace` 上取本视图自己的引用，否则会和上面的 `cx.observe` 抢借用。
+                this.changes.update(cx, |view, cx| {
+                    view.set_confirm_before_discard(settings.confirm_before_discard, cx);
                 });
                 cx.notify();
             })
@@ -1765,6 +1921,37 @@ fn right_activity_items() -> Vec<ActivityItem> {
 #[cfg(test)]
 mod tests {
     use super::{ActionFlags, CommandId, COMMAND_ORDER, visible_commands};
+
+    /// 设置侧 ↔ `lithe-gpui-git` 的两组枚举映射**双向**都要对（阶段 15）。
+    ///
+    /// 这两组映射是"Git 身份宿主钩子"唯一的翻译层：错了不会编译失败，只会静默写错作用域
+    /// （把 `global` 写成 `local` = **改错文件**），所以必须逐值钉住。
+    /// 同时校验 `id()` / `from_id()` 这一对（宿主钩子的线格式就是这两个字面量）。
+    #[test]
+    fn identity_enums_map_both_ways() {
+        use super::IntoGitIdentity as _;
+        use lithe_gpui_settings::{IdentityField, IdentityScope};
+
+        for scope in IdentityScope::ALL {
+            let git = scope.to_git_identity();
+            assert_eq!(git.id(), scope.id(), "作用域映射改变了线格式字面量");
+            assert_eq!(IdentityScope::from_id(scope.id()), scope);
+        }
+        assert_eq!(IdentityScope::from_id("global"), IdentityScope::Global);
+        assert_eq!(
+            IdentityScope::from_id("anything-else"),
+            IdentityScope::Local,
+            "未知作用域必须退回 Core 的缺省值 local"
+        );
+
+        for field in [IdentityField::Name, IdentityField::Email] {
+            let git = field.to_git_identity();
+            assert_eq!(git.id(), field.id(), "字段映射改变了线格式字面量");
+            assert_eq!(IdentityField::from_id(field.id()), field);
+        }
+        assert_eq!(IdentityField::from_id("email"), IdentityField::Email);
+        assert_eq!(IdentityField::from_id("nope"), IdentityField::Name);
+    }
 
     /// 深色配色下的朝向快照（其余字段取默认可见状态，避免测试里到处写一遍）。
     fn dark() -> ActionFlags {

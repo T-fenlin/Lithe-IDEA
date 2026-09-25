@@ -21,6 +21,7 @@
 //! | [`theme`] | 主题目录装载/监听、按名字应用主题、UI 字号 → rem 基准（真源是 `gpui/themes/`） |
 //! | [`store`] | 状态所有者 `SettingsStore`：改设置 → 立即生效 → 防抖落盘（唯一需要 `App` 的"逻辑"） |
 //! | [`row`] | 行/分组零件（`SettingsGroup` / `SettingsRow` / 宽度档） |
+//! | [`identity`] | 「Git」页的数据边界：宿主钩子（`GitIdentityHost`）+ 身份值的纯判据 |
 //! | [`dialog`] | 设置对话框（820×620 模态）：头部 / 分类栏 / 内容页 / 底部 + 确认子对话框 |
 //! | [`restart`] | 切换语言后的"用相同参数重启自己"（语言无法运行中热切，见该模块文档） |
 //!
@@ -40,6 +41,7 @@
 //! `Lithe Dark`；让装载回调统一应用，启动时 `S1_THEME applied=` 就只会出现一次。
 
 pub mod dialog;
+pub mod identity;
 pub mod paths;
 pub mod persistence;
 pub mod restart;
@@ -50,6 +52,10 @@ pub mod theme;
 
 pub use dialog::{
     Category, OpenSettings, install_actions, open_settings_dialog, open_settings_dialog_at,
+};
+pub use identity::{
+    GitIdentityHost, GitIdentityPage, IdentityField, IdentityScope, IdentitySetup,
+    IDENTITY_MAX_BYTES, git_identity_page, identity_value_is_valid, set_git_identity_host,
 };
 pub use paths::{SETTINGS_FILE_ENV, settings_file_path};
 pub use persistence::{DebounceState, Loaded, SAVE_DEBOUNCE_MS, load, load_from};

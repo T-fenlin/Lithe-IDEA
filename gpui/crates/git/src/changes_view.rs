@@ -262,6 +262,14 @@ pub struct ChangesView {
     _message_subscription: Subscription,
     /// 请求代次：晚到的旧回包直接丢掉。
     request_serial: u64,
+    /// 设置项 `confirmBeforeDiscard`（默认 `true`）：丢弃未暂存更改前是否先弹确认框。
+    ///
+    /// **这是本视图唯一消费的设置键**，也是「Git」设置页里第一个"真的能被消费"的开关
+    /// （研究 `07-settings-ui.md` §7.3-D：没有消费方的开关一律不画）。
+    /// 值由外壳推过来（[`ChangesView::set_confirm_before_discard`]）：本 crate 不认识
+    /// `lithe-gpui-settings`（依赖方向 `workbench` → `git`，反向会成环），
+    /// 与 `terminal/src/session.rs` 的 `default_shell` 同一条路子。
+    confirm_before_discard: bool,
 }
 
 impl ChangesView {
@@ -292,7 +300,25 @@ impl ChangesView {
             message,
             _message_subscription: message_subscription,
             request_serial: 0,
+            // 真源默认 `true`（`default-settings.ts:194`）：**先按真源默认值起步**，
+            // 外壳拿到设置后立刻用 `set_confirm_before_discard` 覆盖它。
+            confirm_before_discard: true,
         }
+    }
+
+    /// 推入设置项 `confirmBeforeDiscard`（外壳在启动时与每次设置变化时各调一次）。
+    ///
+    /// **幂等**：值没变就直接返回（照 `TerminalPane::set_default_shell` 的口径）——
+    /// 这条设置只影响下一次丢弃，重复推同一个值不该产生任何副作用。
+    pub fn set_confirm_before_discard(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.confirm_before_discard == enabled {
+            return;
+        }
+        self.confirm_before_discard = enabled;
+        // 诊断行（可 grep）：证明"设置真的被消费方拿到了"。
+        // 这一条是机器验证的关键证据 —— 光看界面勾选框的变化，证明不了开关接上了。
+        eprintln!("S1_SOURCE_CONTROL confirm_before_discard={enabled}");
+        cx.notify();
     }
 
     /// 重新读一遍工作区状态（手动刷新 / 写操作之后 / 切到本视图时）。
@@ -547,12 +573,18 @@ impl ChangesView {
         .detach();
     }
 
-    /// 「丢弃全部更改」：**先弹确认框**，确认后才跑 `git.write discard`。
+    /// 「丢弃全部更改」：**默认先弹确认框**，确认后才跑 `git.write discard`。
     ///
     /// 只作用于**未暂存的已跟踪文件**（真源那一句文案就是「丢弃所有未暂存的更改吗？」）。
     /// **不含未跟踪路径**：Core 的 `discard` 对未跟踪路径会走 `clean -f -d`
     /// （`git/mod.rs:907-941`），那是**删文件**，而 Core 没有"删除工作区文件"命令
     /// （研究 §4.2 第三条）—— 与"不画没有命令支撑的删除动作"同一条口径。
+    ///
+    /// ⚠️ **关掉确认框的条件是设置项 `confirmBeforeDiscard === false`**
+    /// （真源 `settings.git.confirmDiscard`，默认 `true`；消费点是同一个动作，
+    /// 真源 `git-status-panel.tsx` 的丢弃路径同样只看这一个开关）。
+    /// 关掉之后**直接走同一条写操作**（[`Self::confirm_discard`]），不绕过任何校验：
+    /// 被省掉的只有"弹窗"这一段，`git.write discard` 的参数、失败红条与写后刷新完全一致。
     fn discard_unstaged(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy {
             return;
@@ -568,6 +600,20 @@ impl ChangesView {
             return;
         }
 
+        // 设置关掉了确认框：直接丢弃（同一段写操作与同一套失败处理）。
+        if !self.confirm_before_discard {
+            eprintln!(
+                "S1_SOURCE_CONTROL discard_confirm=off paths={} action=immediate",
+                paths.len()
+            );
+            self.confirm_discard(paths, cx);
+            return;
+        }
+
+        eprintln!(
+            "S1_SOURCE_CONTROL discard_confirm=on paths={} action=dialog",
+            paths.len()
+        );
         let view = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, _window, cx| {
             let confirm_view = view.clone();

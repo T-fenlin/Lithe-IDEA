@@ -1398,10 +1398,101 @@ HANDOFF §4 的队列里这一项是"设置剩余页（除 AI）"，本批做的
    对话框的两条入口 `--open-settings` 与**活动栏齿轮（真实点击）**都验证过。
 2. **`outcome=unavailable` 本机跑不到**：`powershell` / `cmd` / `wsl` 三个都在 PATH 上，
    那条分支只有单测守着。
-3. 还没做的（按顺序）：**Git 身份**（`git.repositorySetup` / `git.configureIdentity` 已有；
-   卡在"`settings` 不能依赖 `git`"的依赖方向，要么开宿主钩子、要么把该页放进 `git` crate）；
-   **LSP 页的 jdtls 运行时路径**（`java/src/jdtls.rs:440-460` 现在是 env/JAVA_HOME/PATH 三级发现）；
-   **其余分类的明确空态**（项目 / 运行配置 / 快捷键 / Git / 日志 / 更新）。
+3. 还没做的（按顺序）：~~**Git 身份**~~（阶段 15 已做，见 §15）；**LSP 页的 jdtls 运行时路径**
+   （`java/src/jdtls.rs:440-460` 现在是 env/JAVA_HOME/PATH 三级发现）；
+   **其余分类的明确空态**（项目 / 运行配置 / 快捷键 / 日志 / 更新）。
+
+---
+
+## 15. 阶段 15：设置「Git」页 = 提交身份 + 一个真有消费方的开关（2026-09-26）
+
+规格：`research/windows/07-settings-ui.md` §3.10（Git 页逐项规格，11 项 + 2 个子面板）、
+§7.3（逐项"能否立刻生效"）、§7.3-D（没有消费方的项应隐藏，不画假控件）；
+契约 `shared/contracts/git-repository-setup.md` + `rust-core-api.md:169,171`；
+渲染真源 `windows/tauri/src/features/settings/components/git-identity-settings.tsx` 与
+`components/tabs/git-settings.tsx:93-106`。这是 HANDOFF §4 队列第 2 项里最后一块
+"能真生效"的设置页（LSP 页仍缺数据源）。
+
+### 15.1 落地形态：宿主钩子（依赖方向不破）
+
+`lithe-gpui-settings` 只许依赖 `gpui-kit` + `lithe-gpui-shared`，而两条身份命令住在
+`lithe-gpui-git`。照仓库里已有的同类口径（`editor/src/editor_view.rs` 的 `TabMenuHostActions`）：
+
+```text
+settings::identity::{GitIdentityHost, GitIdentityPage, set_git_identity_host}
+        ▲                                    │ 由 ShellWorkspace::new 登记（用 lithe-gpui-git 的实现）
+        └── 未登记 → git_page 退回「明确空态」 ┘
+```
+
+三个关键取舍（详见 `settings/src/identity.rs` 的模块文档）：
+
+1. **边界只交换 JSON 文本**，不在钩子签名里出现 `lithe_gpui_git` 的类型 ——
+   否则 settings 为了写出那个类型又得反向依赖 git，钩子就成摆设。
+2. **钩子放线程局部**（`RefCell<Option<Rc<..>>>`）而不是 `App::set_global`：登记有 `App` 没问题，
+   但**读取发生在 `SettingsDialog::render`**，那里只有 `&mut Context<Self>`，gpui 的 `Context`
+   不暴露 `try_global`。
+3. **`Task` 必须 `detach()`**：gpui 的 `Task` 一 drop 就取消
+   （`gpui-pre-scheduler-0.3.6/src/executor.rs:389-391`）。第一版写成 `let _ = cx.spawn_in(..)`
+   的实测现象是"`run=load` 有、`result=` 永远没有、界面卡在「正在检查 Git 仓库…」"。
+   另外 `Context::spawn` 给的是 `AsyncApp`（拿不到窗口），所以设置侧用 `spawn_in` 起任务、
+   把 `AsyncWindowContext` 交给宿主去回前台投递。
+
+### 15.2 界面做了两件事
+
+| 项 | 真源 | 落点 |
+| --- | --- | --- |
+| 提交身份（作用域 local/global + 姓名/邮箱，各自保存 + 清除覆盖 + 当前生效值） | `git-identity-settings.tsx` | `git.repositorySetup` / `git.configureIdentity`（经宿主钩子） |
+| 「丢弃前确认」`settings.git.confirmDiscard`（默认 `true`） | `tabs/git-settings.tsx:93-106` | `ChangesView::set_confirm_before_discard` → 丢弃路径决定要不要先弹确认框 |
+
+**本页零新增 locale 键**：整页文案来自真源既有的 `git.setup.*`（17 条）与
+`settings.git.*`（3 条），`extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 一个字没动、
+两份 yml 也没变（仍各 4344 条）。
+
+真源那页另外 9 项（`gitExecutable` / 凭据助手 / 三个 Fetch 项 / `coreFeatures.git` /
+`autoRefreshGitStatus` / `gitChangesFolderView` / 5 个视图开关 / `gitDefaultDiffView` /
+`enableInlineGitBlame`）**一项都没画**，逐条理由写在 `settings/src/dialog.rs::git_page` 的文档
+（没有消费方的一律不画，`§7.3-D`）。同处还登记了两个**明确的缺口**：
+`git.initialize`（非仓库页的「初始化 Git 仓库」按钮，需要自己的确认框）与
+`git.setup.openProject`（gpui 的 `Lithe` 恒带工作区根，"没有项目"这个状态到不了）。
+
+### 15.3 新增一个设置键（走完 §14.2 的硬前提）
+
+| 键 | 默认 | 落点 | 真源 |
+| --- | --- | --- | --- |
+| `confirmBeforeDiscard` | `true` | 外壳订阅 `SettingsStore` 后转发给 `ChangesView::set_confirm_before_discard`（幂等） | `default-settings.ts:194`、`tabs/git-settings.tsx:93-106` |
+
+三处同时改到位：`schema.rs`（字段 + `Default` + 序列化键名测试）、`persistence.rs`（**逐键容错表**）、
+`store.rs`（`set_confirm_before_discard`）；`every_key_survives_a_round_trip` 用非默认值覆盖它，
+所以"写得出、读不回"那条老 bug 不会再发生。
+
+### 15.4 验证（详见 `.artifacts/p13/NOTES.md`）
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo build --bin Lithe` | exit=0（`Finished dev profile … in 1.58s`） |
+| `cargo test -p lithe-gpui-git` | **23 passed**（新增 10 条：请求体 / 响应解析 / 值校验 / 路径剪裁） |
+| `cargo test -p lithe-gpui-settings` | **46 passed**（新增 7 条：空态降级 / 线格式 / 按钮判据 / 新键往返） |
+| `cargo test -p lithe-gpui-workbench` | **29 passed**（新增 `identity_enums_map_both_ways`） |
+| `cargo test -p lithe-gpui-shared every_wired_key_resolves_in_both_locales` | passed（新接线 22 条真源既有键） |
+| `node gpui/tools/extract-locale.mjs` | 两 yml 各 4344 条 key，**产物无变化** |
+| 交互级（真实鼠标注入 + PowerShell 侧独立核对） | 读身份（`result=ok … effective_name=true`）、local 保存 name/email（`git config --local` 真的变了）、两次清除覆盖（`--local` 真的没了、`--list \| Select-String user\.` 为空）、非仓库 + local 全禁用 + 三行提示、启动态 `confirm_before_discard=false` 同时出现在 `S1_SETTINGS wiring=workbench` 与 `S1_SOURCE_CONTROL` |
+
+**已知边界（照 NOTES §3.3 / §4 的原文）**：global 作用域的**真实写入没有从 UI 走通** ——
+作用域下拉点了不弹菜单（网格试了 7 个点、内容区像素直方图完全一致），3 次没弄好就停下；
+本机真实全局身份也没有被写（全部验证跑在**假 HOME** `.artifacts/p13/home` 下，
+`C:\Users\admin\.gitconfig` 字节未变）。`confirmBeforeDiscard` 只有"值真的到消费方"这一步有日志证据，
+"关掉后丢弃不再弹确认框"这条**交互**本轮没跑到（需要在左栏「更改」里点「更多 → 丢弃全部更改」）。
+
+### 15.5 未做项（按顺序）
+
+1. **global 作用域的 UI 路径**：给 Git 页加一个"初始作用域 = global"的启动态旗标
+   （HANDOFF §2 的退路），绕开这次没接住的点击，再在假 HOME 下把 global 写入跑通。
+2. **`git.initialize`**：非仓库页的「初始化 Git 仓库」按钮 + 确认框（键全在 locale 里：
+   `git.setup.initializeTitle` / `initializeDescription`）。
+3. **`confirmBeforeDiscard` 的交互证据**：左栏「更改」活动栏项的坐标要先标定。
+4. **LSP 页**：jdtls 运行时路径（`java/src/jdtls.rs:440-460` 现在是 env/JAVA_HOME/PATH 三级发现）；
+   真源那三个开关（`autoCompletion` / `parameterHints` / `semanticTokens`）在 gpui 侧**没有消费方**，不画。
+
 
 
 

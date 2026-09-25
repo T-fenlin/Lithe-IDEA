@@ -45,11 +45,11 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{Selectable as _, h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
-use gpui_kit::component::input::{InputEvent, InputState, NumberInput};
+use gpui_kit::component::input::{Input, InputEvent, InputState, NumberInput};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AbsoluteLength, Anchor, App, AppContext as _, Context, ElementId, Entity, FontWeight,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
@@ -60,6 +60,10 @@ use gpui_kit::{
 use lithe_gpui_shared::icons::{idea, idea_icon_svg};
 use lithe_gpui_shared::tr;
 
+use crate::identity::{
+    GitIdentityPage, IdentityField, IdentityScope, IdentitySetup, git_identity_page,
+    identity_value_is_valid, identity_value_rejection,
+};
 use crate::row::{ControlWidth, RowActivation, page_stack, page_title, settings_group, settings_row};
 use crate::schema::{
     DISPLAY_LANGUAGES, EDITOR_FONT_SIZE_DEFAULT, EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN,
@@ -200,7 +204,8 @@ pub enum Category {
     Keyboard,
     /// LSP（`settings.tabs.lsp`）—— 空态。
     Lsp,
-    /// Git（`settings.tabs.git`）—— 空态。
+    /// Git（`settings.tabs.git`）—— **条件实现**（阶段 15）：宿主登记了身份钩子就画
+    /// 「提交身份」+ `confirmBeforeDiscard`，否则退回空态。
     Git,
     /// 日志（`settings.tabs.logs`）—— 空态。
     Logs,
@@ -228,6 +233,13 @@ impl Category {
     ///
     /// 测试用它把"空态页不许有控件、实现页必须有前置条件为 `None`"钉住；
     /// 把一页从空态升级成实现时，这张表和 `content()` 的分支要一起改。
+    ///
+    /// ⚠️ **「Git」页不在表里，但它有真实页面**（阶段 15）：它的能力取决于宿主有没有通过
+    /// [`crate::identity::set_git_identity_host`] 登记钩子——登记了就画提交身份表单，
+    /// 没登记（测试宿主 / 其它宿主）就退回 [`Self::empty_page`]。
+    /// 这张表是**编译期常量**，表达不了"条件实现"，所以它记的是"这句话在没有任何宿主时也成立"
+    /// 的那一面（= 空态需要一句前置条件）。`git_page_degrades_to_the_empty_state_without_a_host`
+    /// 那条测试把这件事同时钉在两边。
     pub const IMPLEMENTED: [Category; 4] = [
         Category::General,
         Category::Appearance,
@@ -274,7 +286,11 @@ impl Category {
         }
     }
 
-    /// 空态页那句"前置条件"的文案键；`None` = 这个分类有真实页面。
+    /// 空态页那句"前置条件"的文案键；`None` = 这个分类**任何情况下都有真实页面**。
+    ///
+    /// ⚠️ 「Git」在这里返回 `Some`，但它在宿主登记了钩子时是**真实页面**
+    /// （见 [`Category::IMPLEMENTED`] 的说明）：这一页的降级分支与其它分类的空态页共用
+    /// 同一段渲染，所以它必须有一句可画的前置条件。
     ///
     /// 这些键**真源里没有**（Windows 这些页都有内容），由 `extract-locale.mjs` 的
     /// `GPUI_ONLY_KEYS` 提供，每条写了理由。
@@ -311,6 +327,78 @@ impl Category {
     }
 }
 
+/// 「Git」页的运行期状态（阶段 15）。
+///
+/// 这一页的数据**不在设置文件里**（它读写的是 Git 的 `user.name` / `user.email`），
+/// 所以整体单独一块，而不是加进 `Settings`。这里只放**可跨渲染帧保留**的状态；
+/// 两个文本框的实体放在 [`SettingsDialog`] 上（与另外两个数字框同一处，
+/// 视图状态集中在一个结构体里更好找）。
+struct GitPageState {
+    /// 宿主登记的钩子；`None` = 没有 Git 身份能力 → 这一页画**明确空态**
+    /// （不是 panic、也不是画一半的控件）。
+    host: Option<GitIdentityPage>,
+    /// 当前作用域（真源 `git-identity-settings.tsx:21` 的初值也是 `local`）。
+    scope: IdentityScope,
+    /// 最近一次读到的快照；`None` = 还没读到（加载中 / 读失败）。
+    setup: Option<IdentitySetup>,
+    /// 读 / 写在飞。
+    busy: bool,
+    /// 最近一次失败的一句话（读或写；`None` = 没有失败）。
+    error: Option<SharedString>,
+    /// 刚保存成功的字段（真源 `git-identity-settings.tsx:27,158-162` 的 `saved`）。
+    saved: Option<IdentityField>,
+    /// 请求代次：切作用域 / 重新加载 / 保存之后，晚到的旧回包直接丢掉
+    /// （真源 `git-identity-settings.tsx:29-33,45` 的 `generation` + `currentContext`）。
+    generation: u64,
+}
+
+impl GitPageState {
+    fn new() -> Self {
+        Self {
+            host: git_identity_page(),
+            scope: IdentityScope::default(),
+            setup: None,
+            busy: false,
+            error: None,
+            saved: None,
+            generation: 0,
+        }
+    }
+}
+
+/// 「Git」页的诊断前缀（与 `S1_SOURCE_CONTROL` 一族同口径，走 stderr）。
+const GIT_IDENTITY_TAG: &str = "S1_GIT_IDENTITY";
+
+/// 「Git」页里「保存」按钮可不可点的**纯判据**（不碰 `App`，所以可以直接单测）。
+///
+/// 四个禁用条件逐条照真源 `git-identity-settings.tsx:133-139`：
+/// 读/写在飞、还没读到快照、`local` 而目标不是仓库、草稿为空 / 非法 / 与已保存值相同。
+/// 界面调用点与测试用的是**同一个函数**，不会出现"测试通过但按钮永远可点"这种漂移。
+fn git_save_enabled(
+    setup: Option<&IdentitySetup>,
+    scope: IdentityScope,
+    field: IdentityField,
+    draft: &str,
+    busy: bool,
+) -> bool {
+    let Some(setup) = setup else {
+        return false;
+    };
+    !busy && setup.can_save(scope, field, draft)
+}
+
+/// 「Git」页里「清除覆盖」按钮可不可点的纯判据（真源 `:147` 的 `configured == null`）。
+fn git_clear_enabled(
+    setup: Option<&IdentitySetup>,
+    field: IdentityField,
+    busy: bool,
+) -> bool {
+    let Some(setup) = setup else {
+        return false;
+    };
+    !busy && setup.can_clear(field)
+}
+
 /// 设置对话框的内容视图。
 pub struct SettingsDialog {
     store: Entity<SettingsStore>,
@@ -319,6 +407,10 @@ pub struct SettingsDialog {
     font_size_input: Entity<InputState>,
     /// 「编辑器字体大小」的数字输入状态（同一个组件，另一份状态 —— 两个键互不相干）。
     editor_font_size_input: Entity<InputState>,
+    /// 「Git」页的输入框与运行期状态（阶段 15；**不进设置文件**）。
+    git_name_input: Entity<InputState>,
+    git_email_input: Entity<InputState>,
+    git: GitPageState,
     /// 订阅与观察（`store` 变了要重绘；输入框变了要写设置）。
     _subscriptions: Vec<Subscription>,
 }
@@ -349,6 +441,12 @@ impl SettingsDialog {
                 .min(EDITOR_FONT_SIZE_MIN)
                 .max(EDITOR_FONT_SIZE_MAX)
         });
+
+        // 「Git」页的两个文本框。**初值是空的**：真源也是先渲染空输入框、等
+        // `git.repositorySetup` 回来才 `setName` / `setEmail`
+        // （`git-identity-settings.tsx:23-24,42-49`），这样"还没读到"与"读到了空值"不会混。
+        let git_name_input = cx.new(|cx| InputState::new(window, cx));
+        let git_email_input = cx.new(|cx| InputState::new(window, cx));
 
         let mut subscriptions = Vec::new();
         // 设置变了 → 重绘（主题/字号/开关的显示都跟着走）。
@@ -390,12 +488,30 @@ impl SettingsDialog {
                 store.update(cx, |store, cx| store.set_editor_font_size(parsed, cx));
             },
         ));
+        // 「Git」页的两个文本框：**只重绘**（保存按钮的禁用态跟着草稿走），
+        // 不写任何东西 —— 写入只发生在「保存」按钮被点的那一刻（真源同样是显式保存，
+        // `git-identity-settings.tsx:131-143`）。这是与上面两个数字框的关键差别：
+        // 那两个是设置项（改即生效），这两个是 Git 配置的**草稿**。
+        for input in [&git_name_input, &git_email_input] {
+            subscriptions.push(cx.subscribe_in(
+                input,
+                window,
+                |_this: &mut Self, _input, event: &InputEvent, _window, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        cx.notify();
+                    }
+                },
+            ));
+        }
 
         Self {
             store,
             category,
             font_size_input,
             editor_font_size_input,
+            git_name_input,
+            git_email_input,
+            git: GitPageState::new(),
             _subscriptions: subscriptions,
         }
     }
@@ -476,8 +592,14 @@ impl SettingsDialog {
                                     .child(tr(category.label_key())),
                             ),
                     )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    .on_click(cx.listener(move |this, _, window, cx| {
                         this.category = *category;
+                        // 「Git」页第一次被打开时读一次身份。**不在构造期读**：那会把首帧卡住，
+                        // 与 `Explorer` / `ChangesView` 的"构造期不取数据"同一条口径。
+                        // 钩子没登记时 `git_load` 直接返回（`host` 是 `None`）。
+                        if *category == Category::Git && this.git.setup.is_none() && !this.git.busy {
+                            this.git_load(window, cx);
+                        }
                         cx.notify();
                     }))
             }))
@@ -500,12 +622,14 @@ impl SettingsDialog {
                     Category::Appearance => self.appearance_page(&settings, cx),
                     Category::Editor => self.editor_page(&settings, cx),
                     Category::Terminal => self.terminal_page(&settings, cx),
+                    // 「Git」页（阶段 15）：提交身份 + 一个真有消费方的开关。
+                    // 钩子没登记时 `git_page` 自己退回明确空态。
+                    Category::Git => self.git_page(&settings, cx),
                     // 其余分类是**明确空态**：只有一句前置条件，没有任何控件。
                     Category::Project
                     | Category::Run
                     | Category::Keyboard
                     | Category::Lsp
-                    | Category::Git
                     | Category::Logs
                     | Category::Updates => self.empty_page(cx),
                 },
@@ -823,9 +947,531 @@ impl SettingsDialog {
         ]
     }
 
-    /// **明确空态**页：一句「此分类尚未接入」+ 一句前置条件，**没有任何控件**。
+    // ---- 「Git」页（阶段 15） ----
+
+    /// 该字段对应的输入框实体。
+    fn git_input(&self, field: IdentityField) -> &Entity<InputState> {
+        match field {
+            IdentityField::Name => &self.git_name_input,
+            IdentityField::Email => &self.git_email_input,
+        }
+    }
+
+    /// 输入框里的当前草稿。
+    fn git_draft(&self, field: IdentityField, cx: &Context<Self>) -> SharedString {
+        self.git_input(field).read(cx).value()
+    }
+
+    /// 把快照里"该作用域已保存的值"写回输入框。
     ///
-    /// 三件事一起看才成立：
+    /// 只在**读回包 / 保存回包 / 重新加载**之后调用（真源 `git-identity-settings.tsx:47-48,76-77`）。
+    /// ⚠️ **成功保存 name 时不要动 email 的草稿**（真源 `:75` 的注释就是这件事）：
+    /// 调用点只传自己那一个字段。
+    fn git_fill_input(
+        &self,
+        field: IdentityField,
+        setup: &IdentitySetup,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let text = setup.configured(field).unwrap_or("").to_string();
+        self.git_input(field).update(cx, |input, cx| {
+            input.set_value(SharedString::from(text), window, cx);
+        });
+    }
+
+    /// 读一次身份快照（切作用域 / 重新加载 / 第一次进这一页）。
+    ///
+    /// **异步**：Core 调用是同步阻塞的，所以走宿主钩子里的 `background_spawn` + 回前台回写
+    /// （照 `changes.rs` / `explorer` 的现成写法）。回包要过**代次校验**：
+    /// 用户在看结果之前又切了一次作用域时，旧结果必须丢掉。
+    ///
+    /// 不收 `Window`：回包那一层拿到的 `window` 由 `WeakEntity::update` 提供
+    /// （见 [`Self::git_fill_input`]）。
+    fn git_load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(host) = self.git.host.clone() else {
+            return;
+        };
+        self.git.generation = self.git.generation.wrapping_add(1);
+        let generation = self.git.generation;
+        let scope = self.git.scope;
+        self.git.busy = true;
+        self.git.error = None;
+        self.git.saved = None;
+        self.git.setup = None;
+        cx.notify();
+
+        self.git_diagnose(&format!(
+            "run=load scope={} root={}",
+            scope.id(),
+            host.workspace_root.display()
+        ));
+
+        let entity = cx.entity().downgrade();
+        host.load(
+            scope,
+            move |setup, window, cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    // `WeakEntity<SettingsDialog>::update(cx: &mut App, ..)` 把 `window`
+                    // 交给闭包，所以这一层不捕获外层的 `window`（捕获了就不是 `'static`）。
+                    if this.git.generation != generation {
+                        return;
+                    }
+                    this.git.busy = false;
+                    match setup {
+                        Some(setup) => {
+                            this.git.setup = Some(setup.clone());
+                            this.git_diagnose(&format!(
+                                "run=load result=ok scope={} repository={} commits={} configured_name={} configured_email={} effective_name={} effective_email={}",
+                                scope.id(),
+                                setup.is_repository,
+                                setup.has_commits,
+                                setup.configured_name.is_some(),
+                                setup.configured_email.is_some(),
+                                setup.effective_name.is_some(),
+                                setup.effective_email.is_some(),
+                            ));
+                            // 两个输入框都填上"该作用域已保存的值"。
+                            this.git_fill_input(IdentityField::Name, &setup, window, cx);
+                            this.git_fill_input(IdentityField::Email, &setup, window, cx);
+                        }
+                        None => {
+                            // 宿主已经打过诊断（`S1_GIT_IDENTITY run=… result=failed`）；
+                            // 这里只把"读失败"这句话画出来（真源 `git.setup.readFailed`）。
+                            this.git_diagnose(&format!(
+                                "run=load result=failed scope={}",
+                                scope.id()
+                            ));
+                            this.git.error = Some(tr("lithe.git.setup.readFailed"));
+                            this.git_fill_input(
+                                IdentityField::Name,
+                                &IdentitySetup::default(),
+                                window,
+                                cx,
+                            );
+                            this.git_fill_input(
+                                IdentityField::Email,
+                                &IdentitySetup::default(),
+                                window,
+                                cx,
+                            );
+                        }
+                    }
+                    cx.notify();
+                });
+            },
+            window,
+            cx,
+        );
+    }
+
+    /// 保存一个字段（`clear` = 清除该作用域的覆盖）。
+    ///
+    /// 与真源同一口径（`git-identity-settings.tsx:63-85`）：**逐字段保存**，
+    /// 一个字段成功不会顺手写另一个；就算另一个字段的草稿还没保存也不会被覆盖。
+    fn git_save(&mut self, field: IdentityField, clear: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(host) = self.git.host.clone() else {
+            return;
+        };
+        let scope = self.git.scope;
+        let draft = self.git_draft(field, cx);
+        let value = if clear {
+            None
+        } else {
+            let value = draft.trim().to_string();
+            if !identity_value_is_valid(&value) {
+                // 界面上的按钮此时是禁用的，所以走到这里只可能是"键盘/程序路径绕过了按钮"。
+                // 不静默：留一行诊断，然后什么都不做（绝不给 Core 发一个必定被拒的请求）。
+                self.git_diagnose(&format!(
+                    "run=save field={} result=blocked reason={}",
+                    field.id(),
+                    identity_value_rejection(&value).unwrap_or("invalid")
+                ));
+                return;
+            }
+            Some(value)
+        };
+
+        self.git.generation = self.git.generation.wrapping_add(1);
+        let generation = self.git.generation;
+        self.git.busy = true;
+        self.git.error = None;
+        self.git.saved = None;
+        cx.notify();
+
+        self.git_diagnose(&format!(
+            "run=save scope={} field={} action={} value_len={}",
+            scope.id(),
+            field.id(),
+            if clear { "clear" } else { "set" },
+            value.as_ref().map(|value| value.len()).unwrap_or(0)
+        ));
+
+        let entity = cx.entity().downgrade();
+        host.save(
+            scope,
+            field,
+            value,
+            move |setup, window, cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    if this.git.generation != generation {
+                        return;
+                    }
+                    this.git.busy = false;
+                    match setup {
+                        Some(setup) => {
+                            this.git.setup = Some(setup.clone());
+                            this.git.saved = Some(field);
+                            this.git_diagnose(&format!(
+                                "run=save field={} result=ok configured={} effective={}",
+                                field.id(),
+                                setup.configured(field).is_some(),
+                                setup.effective(field).is_some(),
+                            ));
+                            // **只回写这一个字段**（真源 `:75-77` 的注释：保存 name 不能
+                            // 抹掉还没保存的 email 草稿）。
+                            this.git_fill_input(field, &setup, window, cx);
+                        }
+                        None => {
+                            this.git_diagnose(&format!(
+                                "run=save field={} result=failed",
+                                field.id()
+                            ));
+                            this.git.error = Some(tr("lithe.git.setup.save"));
+                        }
+                    }
+                    cx.notify();
+                });
+            },
+            window,
+            cx,
+        );
+    }
+
+    /// 一行 `S1_GIT_IDENTITY` 诊断（可 grep；走 stderr，与 `S1_SETTINGS` 一族同口径）。
+    fn git_diagnose(&self, detail: &str) {
+        eprintln!("{GIT_IDENTITY_TAG} {detail}");
+    }
+
+    /// 「Git」页：**提交身份**（真源 `components/git-identity-settings.tsx`，规格
+    /// `07-settings-ui.md` §3.10 的「子面板 2」）+ 一个**真的有消费方**的开关。
+    ///
+    /// 做完的（真源项 → 本侧落点）：
+    ///
+    /// | 真源项 | 本侧 | 落点 |
+    /// | --- | --- | --- |
+    /// | 作用域下拉（`local` / `global`） | ✅ | 切一次重新读一次（`git_load`），并让旧回包作废 |
+    /// | 姓名 / 邮箱两个字段，各自「保存」+「清除覆盖」+「当前生效值」 | ✅ | `git.repositorySetup` / `git.configureIdentity`（经宿主钩子） |
+    /// | 非仓库 + `local` 禁用输入并提示 | ✅ | 两个输入框与保存按钮都禁用 + `git.setup.initializeFirst` |
+    /// | `settings.git.confirmDiscard`（丢弃前确认） | ✅ | `ChangesView::set_confirm_before_discard`（真的被丢弃路径消费） |
+    ///
+    /// **没做完的逐条与理由**（`07-settings-ui.md` §7.3-D 的口径：没有消费方的一律不画，
+    /// 画一个永远不生效的开关比不画更容易骗人）：
+    ///
+    /// | 真源项 | 为什么不做 |
+    /// | --- | --- |
+    /// | `gitExecutable` / `gitUseCredentialHelper` / 整个 `GitExecutionSettings` 子面板 | 它们写的是 **Git 配置文件**（`git.executionConfigure`）或凭据助手，gpui 侧没有这两条通路，也没有对应的 Core 命令落在本侧的命令集里 |
+    /// | `gitFetchPrune` / `gitFetchSubmodules` / `gitFetchTags` | 要 `git.fetchPlan` + 远程 Fetch 子系统；gpui 侧没有 Fetch 入口（`changes.rs` 的写操作只有 stage/commit/discard 一族） |
+    /// | `coreFeatures.git`（Git 集成总开关） | 关掉它意味着"整个源代码管理页消失"，而 gpui 侧没有任何地方读这个分组位；**另开一类破坏性状态**超出本页范围 |
+    /// | `autoRefreshGitStatus` | gpui 侧**刻意没有 watcher**（`git/src/lib.rs` 的 `07` 条），自动刷新只有"切到本视图时刷新一次"这一条，开关关掉等于把唯一一条自动通路也关死 |
+    /// | `gitChangesFolderView` | 变更列表第一版就是扁平列表（没有目录树折叠），开关无处生效 |
+    /// | `showUntrackedFiles` / `showStagedFirst` / `openDiffOnClick` / `compactGitStatusBadges` / `collapseEmptyGitSections` | 都要改**变更列表的行分类与布局**；第一版的分类头与行样式是固定的（真源那几项各自对应一处渲染分支，本侧还没有那些分支） |
+    /// | `rememberLastGitPanelMode` | gpui 侧的底部 Git 面板还没有"分区模式"这个概念 |
+    /// | `gitDefaultDiffView` | gpui 侧**没有差异视图**（要 `git.diff` 与富渲染） |
+    /// | `enableInlineGitBlame` | 编辑区没有行内 blame（同「编辑器」页 `codeLens` 的理由） |
+    fn git_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+        // 钩子没登记 → **明确空态**（与其它未接入分类同一页）。
+        // ⚠️ 这一条是 HANDOFF 要求的降级分支，也是"设置对话框在别的宿主里也能开"的唯一出口：
+        // 不许 panic、不许假装成功。
+        if self.git.host.is_none() {
+            return self.empty_page(cx);
+        }
+        let host_root = self
+            .git
+            .host
+            .as_ref()
+            .map(|host| host.workspace_root.display().to_string())
+            .unwrap_or_default();
+        // 每次渲染打一行（可 grep）：它同时证明"设置对话框**读到了**宿主钩子"与
+        // "这一页真的走到了实现分支而不是空态"。**走 stderr**（stdout 重定向到文件时
+        // 是块缓冲，见 HANDOFF §2）。`git_diagnose` 是 `&self` 方法，这里正好可用。
+        self.git_diagnose(&format!("run=render host=present root={host_root}"));
+
+        let mut rows: Vec<gpui_kit::AnyElement> = Vec::new();
+
+        // ① 作用域：一行下拉 + 一句按作用域变的说明（真源 `:90-104`）。
+        rows.push(settings_row(
+            "settings-row-git-scope",
+            tr("lithe.git.setup.scope"),
+            Some(tr(if self.git.scope == IdentityScope::Local {
+                "lithe.git.setup.localDescription"
+            } else {
+                "lithe.git.setup.globalDescription"
+            })),
+            self.dropdown(
+                "settings-git-scope",
+                git_scope_label(self.git.scope),
+                IdentityScope::ALL
+                    .iter()
+                    .map(|scope| {
+                        let value = SharedString::from(scope.id());
+                        (value, git_scope_label(*scope), self.git.scope == *scope)
+                    })
+                    .collect(),
+                {
+                    let entity = cx.entity().downgrade();
+                    Box::new(move |value, window, cx| {
+                        let scope = match value.as_ref() {
+                            "global" => IdentityScope::Global,
+                            _ => IdentityScope::Local,
+                        };
+                        let _ = entity.update(cx, |this, cx| {
+                            if this.git.scope == scope {
+                                return;
+                            }
+                            this.git.scope = scope;
+                            // 切作用域 = 重新读一次（真源 `:34-61` 的 effect 依赖 `scope`）。
+                            this.git_load(window, cx);
+                        });
+                    })
+                },
+            ),
+            None,
+            cx,
+        ));
+
+        // ② 工作区根：真源把 `root` 原文画出来（`git-identity-settings.tsx:109`）。
+        // 没有它，用户不知道"当前仓库"指的是哪个目录。
+        rows.push(
+            div()
+                .w_full()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(SharedString::from(host_root))
+                .into_any_element(),
+        );
+
+        // ③ 非仓库 + `local`：禁用两个输入并给提示（真源 `:110-112`）。
+        let blocked = self
+            .git
+            .setup
+            .as_ref()
+            .is_some_and(|setup| !setup.editable_in(self.git.scope));
+        if blocked {
+            rows.push(
+                div()
+                    .w_full()
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .child(tr("lithe.git.setup.initializeFirst"))
+                    .into_any_element(),
+            );
+        }
+
+        // ④ 姓名 / 邮箱：各一行（标签 + 输入框 + 保存 + 清除覆盖 + 当前生效值）。
+        for field in [IdentityField::Name, IdentityField::Email] {
+            rows.push(self.git_identity_row(field, cx));
+        }
+
+        // ⑤ 底部三句：逐字段保存的说明、重新加载、加载中 / 失败 / 已保存。
+        rows.push(
+            div()
+                .w_full()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(tr("lithe.git.setup.separateSave"))
+                .into_any_element(),
+        );
+        rows.push(
+            h_flex()
+                .w_full()
+                .items_center()
+                .gap_3()
+                .child(
+                    Button::new("settings-git-reload")
+                        .small()
+                        .ghost()
+                        .label(tr("lithe.git.setup.reload"))
+                        .disabled(self.git.busy)
+                        .on_click(cx.listener(|this, _, window, cx| this.git_load(window, cx))),
+                )
+                .when(self.git.busy, |this| {
+                    this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(tr("lithe.git.setup.loading")),
+                    )
+                })
+                .when_some(self.git.error.clone(), |this, error| {
+                    this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().danger)
+                            .child(error),
+                    )
+                })
+                .when(self.git.saved.is_some(), |this| {
+                    this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(tr("lithe.git.setup.saved")),
+                    )
+                })
+                .into_any_element(),
+        );
+
+        vec![
+            settings_group(
+                tr("lithe.git.setup.identity"),
+                // 分组第一句是那行说明（真源 `:89`），它是**整组的描述**而不是某一行的。
+                {
+                    let mut group_rows = vec![
+                        div()
+                            .w_full()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(tr("lithe.git.setup.identityDescription"))
+                            .into_any_element(),
+                    ];
+                    group_rows.extend(rows);
+                    group_rows
+                },
+                cx,
+            )
+            .into_any_element(),
+            // ⑥ 真的有消费方的设置项（见本函数文档的表）：`confirmBeforeDiscard`。
+            settings_group(
+                tr("lithe.settings.git.integration"),
+                vec![settings_row(
+                    "settings-row-git-confirm-discard",
+                    tr("lithe.settings.git.confirmDiscard"),
+                    Some(tr("lithe.settings.git.confirmDiscardDescription")),
+                    {
+                        let store = self.store.clone();
+                        Switch::new("settings-git-confirm-discard")
+                            .small()
+                            .checked(settings.confirm_before_discard)
+                            .on_change(move |checked, _, cx| {
+                                let checked = *checked;
+                                // 只写设置：把它推给左栏「更改」视图是**外壳**的事
+                                // （订阅 `SettingsStore` 后调
+                                // `ChangesView::set_confirm_before_discard`）。
+                                store.update(cx, |store, cx| {
+                                    store.set_confirm_before_discard(checked, cx)
+                                });
+                            })
+                            .into_any_element()
+                    },
+                    None,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+        ]
+    }
+
+    /// 「Git」页里的一个身份字段行（真源 `git-identity-settings.tsx:113-165`）。
+    ///
+    /// 布局与其它页的行不同：输入框 + 两个按钮横排，下面一行「当前生效值」。
+    /// 输入框要吃掉整行剩余宽度（144px 的控件档装不下"输入框 + 两个按钮"），
+    /// 所以这里**不走** `settings_row` 的左右两栏，而是自己排一个竖排块
+    /// （与其它页的行在视觉上仍然同族：同样的 14px 标签、12px 弱化文字、12px 间隔）。
+    fn git_identity_row(&self, field: IdentityField, cx: &Context<Self>) -> gpui_kit::AnyElement {
+        let draft = self.git_draft(field, cx);
+        let save_enabled = git_save_enabled(
+            self.git.setup.as_ref(),
+            self.git.scope,
+            field,
+            draft.as_ref(),
+            self.git.busy,
+        );
+        let clear_enabled = git_clear_enabled(self.git.setup.as_ref(), field, self.git.busy);
+        // 输入框的禁用条件：读/写在飞、还没读到快照、或非仓库 + `local`（真源 `:129`）。
+        let input_enabled = !self.git.busy
+            && self
+                .git
+                .setup
+                .as_ref()
+                .is_some_and(|setup| setup.editable_in(self.git.scope));
+        let effective = self
+            .git
+            .setup
+            .as_ref()
+            .and_then(|setup| setup.effective(field))
+            .map(str::to_string);
+
+        v_flex()
+            .id(("settings-git-field", field.index()))
+            .w_full()
+            .gap_2()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .child(tr(field.label_key())),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div().flex_1().min_w_0().child(
+                            // ⚠️ 单行输入的实际高度来自 `input_h`（`Input` 的同名固有方法
+                            // `h` 只对多行输入生效，理由见 `explorer_view.rs:467-473`），
+                            // 所以这里不显式写高度、用默认档。
+                            Input::new(self.git_input(field)),
+                        ),
+                    )
+                    .child(
+                        Button::new(("settings-git-save", field.index()))
+                            .small()
+                            .label(tr("lithe.git.setup.save"))
+                            .disabled(!save_enabled)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.git_save(field, false, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new(("settings-git-clear", field.index()))
+                            .small()
+                            .ghost()
+                            .label(tr("lithe.git.setup.clear"))
+                            .disabled(!clear_enabled)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.git_save(field, true, window, cx)
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(match effective {
+                        // 真源拼的是 `${t("git.setup.effective")}: ${effective}`
+                        // （`git-identity-settings.tsx:155`）。
+                        Some(value) => SharedString::from(format!(
+                            "{}: {value}",
+                            tr("lithe.git.setup.effective")
+                        )),
+                        None => tr("lithe.git.setup.unconfigured"),
+                    }),
+            )
+            .when(!input_enabled, |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr("lithe.git.setup.initializeFirst")),
+                )
+            })
+            .into_any_element()
+    }
+
+    /// **明确空态**页：一句「此分类尚未接入」+ 一句前置条件，**没有任何控件**。
     /// 1. 分类**留在左栏**（用户点得到，不会以为"这个分类不存在"）；
     /// 2. 标题是分类自己的名字（页面标题照常画），正文说明缺的是**什么子系统**；
     /// 3. **不画假控件**（`07-settings-ui.md` §7.3-D）：一个永远不生效的开关比不画更容易骗人，
@@ -1128,6 +1774,15 @@ fn shell_label(id: &str) -> SharedString {
     }
 }
 
+/// 身份作用域下拉的显示名。两个取值与真源
+/// `git-identity-settings.tsx:98-99` 的 `<option value="local">` / `value="global"` 一一对应。
+fn git_scope_label(scope: IdentityScope) -> SharedString {
+    match scope {
+        IdentityScope::Local => tr("lithe.git.setup.local"),
+        IdentityScope::Global => tr("lithe.git.setup.global"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1214,5 +1869,89 @@ mod tests {
         assert_eq!(rem_px(px(16.), NAV_WIDTH), px(190.));
         // 基准字号翻倍（uiFontSize 26）时长度等比例放大：这就是用 rem 的意义。
         assert_eq!(rem_px(px(32.), NAV_WIDTH), px(380.));
+    }
+
+    /// **钩子没登记 → 明确空态**（阶段 15 的降级分支）。
+    ///
+    /// 三件事一起钉住：
+    /// 1. `git_identity_page()` 在没人登记时返回 `None`（`GitPageState::new` 因此拿到 `None`）；
+    /// 2. 「Git」分类**仍然登记着前置条件**（空态页要有一句话可画，`empty_page` 的 `expect`
+    ///    才不会在运行期炸）—— 所以它不在 `IMPLEMENTED` 里，这一点与实现页的差别是**有意的**：
+    ///    Git 页的能力取决于宿主有没有登记钩子，而那张表是编译期常量。
+    /// 3. 分类 id 仍是命令面板"打开到指定分类"要传的值。
+    #[test]
+    fn git_page_degrades_to_the_empty_state_without_a_host() {
+        crate::identity::set_git_identity_host(None);
+        assert!(
+            git_identity_page().is_none(),
+            "没有宿主登记钩子时，Git 页必须走空态分支"
+        );
+        assert!(
+            !Category::IMPLEMENTED.contains(&Category::Git),
+            "Git 页是**条件实现**：宿主没登记钩子时它就是空态，不能记进 IMPLEMENTED"
+        );
+        assert_eq!(
+            Category::Git.prerequisite_key(),
+            Some("lithe.settings.gpui.prerequisiteGit")
+        );
+        assert_eq!(Category::Git.id(), "git");
+        assert_eq!(Category::Git.label_key(), "lithe.settings.tabs.git");
+    }
+
+    /// 「保存 / 清除」两个按钮的禁用判据（真源 `git-identity-settings.tsx:133-139,147`）。
+    ///
+    /// 界面调用点与这里用的是**同一个函数**（`git_save_enabled` / `git_clear_enabled`），
+    /// 所以这条测试同时是"按钮不会永远可点、也不会永远禁用"的守卫。
+    #[test]
+    fn git_buttons_follow_the_truth_source_gates() {
+        let setup = IdentitySetup {
+            is_repository: true,
+            configured_name: Some("Lithe Dev".to_string()),
+            effective_name: Some("Lithe Dev".to_string()),
+            ..IdentitySetup::default()
+        };
+        // 有仓库 + 新值 → 可保存；同一个值 / 空值 / 非法值 → 不可保存。
+        assert!(git_save_enabled(
+            Some(&setup),
+            IdentityScope::Local,
+            IdentityField::Name,
+            "Other",
+            false
+        ));
+        assert!(!git_save_enabled(
+            Some(&setup),
+            IdentityScope::Local,
+            IdentityField::Name,
+            "Lithe Dev",
+            false
+        ));
+        assert!(!git_save_enabled(
+            Some(&setup),
+            IdentityScope::Local,
+            IdentityField::Name,
+            "  ",
+            false
+        ));
+        // 读/写在飞 → 两个按钮都禁用（真源 `busy` 挡在最前面）。
+        assert!(!git_save_enabled(
+            Some(&setup),
+            IdentityScope::Local,
+            IdentityField::Name,
+            "Other",
+            true
+        ));
+        assert!(!git_clear_enabled(Some(&setup), IdentityField::Name, true));
+        // 还没读到快照 → 两个按钮都禁用（`state === null`）。
+        assert!(!git_save_enabled(
+            None,
+            IdentityScope::Local,
+            IdentityField::Name,
+            "Other",
+            false
+        ));
+        assert!(!git_clear_enabled(None, IdentityField::Name, false));
+        // 「清除覆盖」只在**该作用域里写着值**时可点。
+        assert!(git_clear_enabled(Some(&setup), IdentityField::Name, false));
+        assert!(!git_clear_enabled(Some(&setup), IdentityField::Email, false));
     }
 }

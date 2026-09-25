@@ -17,6 +17,7 @@
 //! | `fontSize`（编辑器字号） | 立即：写 `Theme.mono_font_size`，编辑器正文当帧就变 | `gpui-component-0.6.6/src/input/editor.rs:137-143` |
 //! | `tabSize` | 立即，但**不由本 store 应用**：外壳订阅本实体后转发给 `EditorPane::set_tab_size` | `gpui-base-0.6.6/src/input/editor/indent.rs:504` |
 //! | `terminalDefaultShellId` | 只影响**新建**的终端会话：外壳订阅后转发给 `TerminalPane::set_default_shell` | `macos-settings-panels.tsx:379-393` 的原文「用于新的终端会话。」 |
+//! | `confirmBeforeDiscard` | 立即：外壳订阅后转发给 `ChangesView::set_confirm_before_discard`，丢弃路径据此决定要不要先弹确认框 | `tabs/git-settings.tsx:93-106`（真源默认 `true`，`default-settings.ts:194`） |
 //! | `showStatusBar` | 立即：`ShellWorkspace::render` 条件渲染 + 本 Entity 的 `notify` | `gpui/crates/workbench/src/workspace.rs` |
 //! | `displayLanguage` | **重启后**（gpui 侧 `set_locale` 只在启动早期调一次） | `gpui/crates/app/src/main.rs` |
 //!
@@ -335,6 +336,14 @@ impl SettingsStore {
     pub fn set_terminal_default_shell_id(&mut self, id: String, cx: &mut Context<Self>) {
         let mut next = self.settings.clone();
         next.terminal_default_shell_id = id;
+        self.commit(cx, next, Effects::None);
+    }
+
+    /// 改「丢弃前确认」（阶段 15，「Git」页）。同样由外壳订阅后转发给
+    /// `ChangesView::set_confirm_before_discard`（只影响下一次丢弃）。
+    pub fn set_confirm_before_discard(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.confirm_before_discard = enabled;
         self.commit(cx, next, Effects::None);
     }
 

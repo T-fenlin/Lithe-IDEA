@@ -18,6 +18,13 @@
   （→ 新建终端会话真的换 shell）。顺手修掉一个**真 bug**：设置的逐键解析表漏了新键时
   「写得出、读不回」且**毫无诊断**（详见 `gpui/PLAN.md` §14.2 —— 后面加新键前务必先读这一段）。
   记录在 `.artifacts/p12/NOTES.md`。
+- **队列第 2 项第二批（阶段 15）已做**：「Git」页从**明确空态**升级成真实页面 ——
+  **提交身份**（`user.name` / `user.email`，local + global 两个作用域，各自保存 + 清除覆盖 + 当前生效值）
+  + 该页唯一一个有消费方的开关 `confirmBeforeDiscard`（→ 左栏「更改」的丢弃确认框）。
+  靠**宿主钩子**破了"`settings` 不能依赖 `git`"的依赖方向（`ShellWorkspace::new` 登记实现，
+  未登记时退回空态）。新增 1 个设置键、**零新增 locale 键**。记录在 `.artifacts/p13/NOTES.md`，
+  设计取舍与未做项见 `gpui/PLAN.md` §15。**已知未走通**：global 作用域的真实写入没从 UI 跑通
+  （下拉点了不弹菜单）、`git.initialize` 按钮没做。
 - `gpui/` 已是一个能跑的前端：设置界面、编辑器（可编辑/保存/自动保存/查找替换/语法高亮/右键菜单）、
   终端、资源管理器、Git 底部工具窗、**左栏源代码管理**、右侧工具窗、命令面板、主菜单栏、项目下拉、
   分支弹窗全部落地并逐项验证过。
@@ -128,17 +135,28 @@
    - ✅ **左栏补齐到 11 项**：实现的 4 页（常规/外观/编辑器/终端）+ **7 个明确空态页**
      （项目 / 运行配置 / 快捷键 / LSP / Git / 日志 / 更新：只有页标题 + 「此分类尚未接入」+ 一句前置条件，
      **一个控件都没有**）。空态页的诚实性由测试钉住（`every_category_is_implemented_or_declares_a_prerequisite`）。
-   - ⏳ **Git 身份**：Core 已有 `git.repositorySetup`（读）与 `git.configureIdentity`（写/清 local|global），
-     真源是 `components/git-identity-settings.tsx`（`git.setup.*` 34 键）。**卡在依赖方向**：
-     `settings` 不能依赖 `git` —— 建议照仓库里已有的 `TabMenuHostActions` 口径，
-     由 `settings` 定义一个宿主钩子（`workbench` 启动时登记 `load`/`save` 两个回调），
-     这一页在钩子未登记时就是现在的空态。**动手前先确认这一条。**
+     阶段 15 之后「Git」不再算空态页（见下条）；剩下的空态页是 6 个 + Git 的降级分支。
+   - ✅ **Git 身份**（阶段 15，见 `gpui/PLAN.md` §15）：照上面建议的 `TabMenuHostActions` 口径做了宿主钩子
+     （`settings::identity::{GitIdentityHost, GitIdentityPage, set_git_identity_host}`，
+     `ShellWorkspace::new` 用 `lithe-gpui-git` 的实现登记；**未登记 → 明确空态**，不 panic）。
+     做了**提交身份**（作用域 local/global + 姓名/邮箱，各自保存 + 清除覆盖 + 当前生效值；
+     `git.repositorySetup` / `git.configureIdentity`）**外加该页唯一一个有消费方的开关**
+     `settings.git.confirmDiscard`（→ `ChangesView::set_confirm_before_discard`，丢弃路径的确认框）。
+     新增 1 个设置键 `confirmBeforeDiscard`（默认 `true`，三处表都改到位）；**零新增 locale 键**。
+     真源另外 9 项（`gitExecutable` / 凭据助手 / 3 个 Fetch 项 / `coreFeatures.git` / `autoRefreshGitStatus` /
+     `gitChangesFolderView` / 5 个视图开关 / `gitDefaultDiffView` / `enableInlineGitBlame`）**一项没画**，
+     逐条理由在 `settings/src/dialog.rs::git_page`。
+     **剩下什么**：① global 作用域的真实写入**没有从 UI 走通**（作用域下拉点了不弹菜单，3 次停手，
+     证据在 `.artifacts/p13/NOTES.md` §3.3；本机验证全跑在假 `HOME` 下，真实 `.gitconfig` 未被写）；
+     ② `git.initialize`（非仓库页的「初始化 Git 仓库」按钮 + 确认框）没做；
+     ③ `confirmBeforeDiscard` 只有"值到消费方"的日志证据，"关掉后不弹框"的交互未跑到。
    - ⏳ **LSP 页**：真源 3 个开关（`autoCompletion` / `parameterHints` / `semanticTokens`）在 gpui 侧
      **没有消费方**（不画）；能真做的是 **jdtls 运行时路径**（现在只有
      `java/src/jdtls.rs:440-460` 的 `LITHE_JDTLS_JAVA` / `JAVA_HOME` / PATH 三级发现）。
+     这是"能真生效"的设置页里**最后一块没做的**。
    - ⚠️ **加新设置键时先读 `gpui/PLAN.md` §14.2**：`persistence.rs` 的手写逐键表漏键会
      "写得出、读不回"且无诊断；守卫测试 `every_key_survives_a_round_trip` 会用"所有字段非默认"
-     的往返把它照出来。
+     的往返把它照出来。（阶段 15 的 `confirmBeforeDiscard` 就是照这条走的。）
 3. **删旧前端之前的前置**（缺一不可）：
    - `gpui` **CI 覆盖**（`.github/**` 目前对 `gpui` **零命中** → 新前端完全没有 CI；建议加
      `paths: gpui/**` 的构建 + 改动范围测试 job）；

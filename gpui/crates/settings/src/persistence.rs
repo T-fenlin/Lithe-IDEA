@@ -188,6 +188,12 @@ fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<Strin
         &mut settings.terminal_default_shell_id,
         diagnostics,
     );
+    take(
+        object,
+        "confirmBeforeDiscard",
+        &mut settings.confirm_before_discard,
+        diagnostics,
+    );
     settings
 }
 
@@ -443,6 +449,7 @@ mod tests {
             font_size: 20.0,
             tab_size: 8,
             terminal_default_shell_id: "cmd".to_string(),
+            confirm_before_discard: false,
         };
         // 先规范化，保证"写出去的"就是"合法的"（否则比的是两个不同的东西）。
         settings.normalize();

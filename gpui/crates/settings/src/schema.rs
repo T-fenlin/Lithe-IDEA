@@ -192,6 +192,16 @@ pub struct Settings {
     /// 这一点与 Windows 完全一致，所以界面上照抄了那句描述。
     #[serde(rename = "terminalDefaultShellId")]
     pub terminal_default_shell_id: String,
+
+    /// 丢弃更改前是否先弹确认框。Windows 键 `confirmBeforeDiscard`，默认 `true`
+    /// （`default-settings.ts:194`；真源渲染点 `tabs/git-settings.tsx:93-106`）。
+    ///
+    /// 生效方式：**立即**，落到左栏「源代码管理」的丢弃路径 ——
+    /// `ChangesView::set_confirm_before_discard` 由外壳订阅本实体后转发
+    /// （与 `tabSize` / `terminalDefaultShellId` 同一条"值型设置经外壳转发"的路子）。
+    /// 关掉之后走的是**同一条** `git.write discard` 写操作，被省掉的只有弹窗那一段。
+    #[serde(rename = "confirmBeforeDiscard")]
+    pub confirm_before_discard: bool,
 }
 
 impl Default for Settings {
@@ -207,6 +217,7 @@ impl Default for Settings {
             font_size: EDITOR_FONT_SIZE_DEFAULT,
             tab_size: TAB_SIZE_DEFAULT,
             terminal_default_shell_id: SHELL_SYSTEM_DEFAULT.to_string(),
+            confirm_before_discard: true,
         }
     }
 }
@@ -347,6 +358,7 @@ mod tests {
         assert_eq!(settings.font_size, 14.0);
         assert_eq!(settings.tab_size, 2);
         assert_eq!(settings.terminal_default_shell_id, "");
+        assert!(settings.confirm_before_discard);
     }
 
     /// 字段级 `default`：**缺键**回退到该字段默认值（不是整份丢弃）。
@@ -389,6 +401,8 @@ mod tests {
             "\"fontSize\"",
             "\"tabSize\"",
             "\"terminalDefaultShellId\"",
+            // 阶段 15（「Git」页）新增的键。
+            "\"confirmBeforeDiscard\"",
         ] {
             assert!(json.contains(key), "缺少键 {key}：{json}");
         }
