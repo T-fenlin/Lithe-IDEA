@@ -41,6 +41,8 @@
 //! ——活动栏「设置」的点击回调、`Ctrl+,` 的**全局 action**（[`init`]）——都在事件回调里；
 //! `--open-settings` 走 `window.on_next_frame`（首帧之后、非 render 阶段）。
 
+use std::path::PathBuf;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{Selectable as _, h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -69,6 +71,7 @@ use crate::project::{
     discover,
 };
 use crate::row::{ControlWidth, RowActivation, page_stack, page_title, settings_group, settings_row};
+use crate::run::{RunConfigurationView, RunProjectView};
 use crate::schema::{
     DISPLAY_LANGUAGES, EDITOR_FONT_SIZE_DEFAULT, EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN,
     SHELL_SYSTEM_DEFAULT, Settings, TAB_SIZES, TERMINAL_SHELL_IDS, UI_FONT_SIZE_DEFAULT,
@@ -103,14 +106,19 @@ pub fn open_settings_dialog(window: &mut Window, cx: &mut App) {
     open_settings_dialog_at(window, cx, Category::DEFAULT);
 }
 
-/// 打开对话框时要不要**立刻**探一次「项目」页的数据（纯判据，可直接单测）。
+/// 打开对话框时要不要**立刻**探一次数据（纯判据，可直接单测）。
 ///
-/// 只有这一页需要："探测"要起子进程，所以它跟「Git」页一样是**懒加载**（点进这一页才探），
+/// 「项目」页要："探测"要起子进程，所以它跟「Git」页一样是**懒加载**（点进这一页才探），
 /// 而懒加载的唯一触发器是左栏的点击回调 —— 如果对话框是**带着这一页**创建的
 /// （[`open_settings_dialog_at`] 的 `category`），那条点击就永远不会发生，页面会停在
-/// 「正在检测…」。判据单独抽出来，是为了让这条分支在测试里可见（它需要窗口才能端到端跑）。
-fn project_load_on_open(category: Category) -> bool {
-    category == Category::Project
+/// 「正在检测…」。
+///
+/// 「运行配置」页同理，但它不是"起子进程"而是"读整个工作区的文件树 + 跑一遍探测器"：
+/// `runConfig.generate` 会 `scan(root)`（深度 ≤ 6、目录数 ≤ 4000），所以同样不该在构造期跑。
+///
+/// 判据单独抽出来，是为了让这条分支在测试里可见（它需要窗口才能端到端跑）。
+fn page_loads_on_open(category: Category) -> bool {
+    matches!(category, Category::Project | Category::Run)
 }
 
 /// 打开设置对话框并**直接停在某个分类**上。
@@ -127,13 +135,13 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
     let view = cx.new(|cx| SettingsDialog::new(store, category, window, cx));
     println!("S1_SETTINGS dialog_opened category={}", category.id());
 
-    // 停在「项目」页时**立刻探一次**。
+    // 停在「项目」/「运行配置」页时**立刻探一次**。
     //
-    // 这一页的数据不在设置文件里，只有"点左栏那一项"那条路会触发探测 —— 从命令面板 / 探针
-    // 直接打开到这一页就会永远停在「正在检测…」。判据抽成纯函数 [`project_load_on_open`]，
+    // 这两页的数据都不在设置文件里，只有"点左栏那一项"那条路会触发取数 —— 从命令面板 /
+    // 探针直接打开到这两页就会永远停在「正在检测…」。判据抽成纯函数 [`page_loads_on_open`]，
     // 所以这条分支有单测钉着（`--open-settings` 走的是默认分类，实测覆盖的是点击那条路）。
-    if project_load_on_open(category) {
-        view.update(cx, |view, cx| view.project_load(cx));
+    if page_loads_on_open(category) {
+        view.update(cx, |view, cx| view.load_page_on_open(category, cx));
     }
 
     window.open_dialog(cx, move |dialog, window, _cx| {
@@ -227,7 +235,8 @@ pub enum Category {
     /// 项目 · JDK 与 Maven（`settings.project.title`）—— **实现页**（阶段 16）：
     /// 本机 JDK / Maven 的真实探测值 + 覆盖值 + 刷新。
     Project,
-    /// 运行配置（`settings.run.title`）—— 空态。
+    /// 运行配置（`settings.run.title`）—— **实现页**（阶段 17）：Core 从项目文件识别出的
+    /// 可运行目标 + 刷新；只有列表，**没有编辑与运行入口**（原因写在 `run_page`）。
     Run,
     /// 快捷键（`settings.tabs.keyboard`）—— 空态。
     Keyboard,
@@ -273,10 +282,15 @@ impl Category {
     /// 「项目 · JDK 与 Maven」页（阶段 16）**没有任何条件**：探测是本进程自己做的
     /// （[`crate::project::discover`]），就算什么都没探测到，页面画的也是
     /// "每个字段各说各的为什么没有"（不是空态），所以它**进这张表**。
-    pub const IMPLEMENTED: [Category; 5] = [
+    ///
+    /// 「运行配置」页（阶段 17）同理：数据是 Core 的 `runConfig.generate` 给的
+    /// （[`crate::run`]），"一条都没识别到"与"识别失败"都由页面自己如实说明，
+    /// **不是**"此分类尚未接入"那种空态，所以也进这张表。
+    pub const IMPLEMENTED: [Category; 6] = [
         Category::General,
         Category::Appearance,
         Category::Project,
+        Category::Run,
         Category::Editor,
         Category::Terminal,
     ];
@@ -333,12 +347,16 @@ impl Category {
             // 「项目」页自阶段 16 起是**实现页**（真机探测 + 覆盖 + 刷新）：它的"什么都没探测到"
             // 由每个字段各自的「未找到 + 已排除的原因」表达，而不是整页的空态，
             // 所以这里返回 `None`（原来那条 `settings.gpui.prerequisiteProject` 已随之下线）。
+            //
+            // 「运行配置」页自阶段 17 起同样是实现页：它列出 Core 识别出的启动目标，
+            // "一条都没有"与"识别失败"各有一句如实说明（`run_page`），整页空态不再适用 ——
+            // 原来那条 `settings.gpui.prerequisiteRun` 也随之下线。
             Self::General
             | Self::Appearance
             | Self::Project
+            | Self::Run
             | Self::Editor
             | Self::Terminal => None,
-            Self::Run => Some("lithe.settings.gpui.prerequisiteRun"),
             Self::Keyboard => Some("lithe.settings.gpui.prerequisiteKeyboard"),
             Self::Lsp => Some("lithe.settings.gpui.prerequisiteLsp"),
             Self::Git => Some("lithe.settings.gpui.prerequisiteGit"),
@@ -434,6 +452,81 @@ impl ProjectPageState {
             generation: 0,
         }
     }
+}
+
+/// 「运行配置」页的运行期状态（阶段 17）。
+///
+/// 与 [`ProjectPageState`] 同一形状（数据不在设置文件里 → 单独一块），差别只有两点：
+///
+/// 1. 它需要**工作区根**（`runConfig.generate` 的 `root`），而根只能从宿主登记的钩子里拿
+///    （[`crate::identity::host_workspace_root`] 的文档写了为什么只有一个来源）；
+///    没登记时 `root` 是 `None`，页面画"打开项目后才能识别"的空态，**不是**空列表。
+/// 2. 它多一个 `error`：Core 往返会失败（目录不存在 / 响应形状不对），失败要显示**原因**，
+///    与"确实没有可运行配置"（空态）是两件事，不能混成一句话。
+struct RunPageState {
+    /// 本次取数用的工作区根（宿主没登记时 `None`）。
+    root: Option<PathBuf>,
+    /// 已经为这一页取过数（区分"还没取"与"没有工作区根"这两件事）。
+    requested: bool,
+    /// 最近一次识别结果；`None` = 还没拿到（首帧 / 刷新在飞 / 失败）。
+    view: Option<RunProjectView>,
+    /// 取数在飞。
+    busy: bool,
+    /// 最近一次失败的一句话（带 Core 的错误码原文，可直接排查）。
+    error: Option<SharedString>,
+    /// 请求代次：刷新后晚到的旧回包直接丢掉（与 [`ProjectPageState::generation`] 同一口径）。
+    generation: u64,
+}
+
+impl RunPageState {
+    fn new() -> Self {
+        Self {
+            root: None,
+            requested: false,
+            view: None,
+            busy: false,
+            error: None,
+            generation: 0,
+        }
+    }
+
+    /// 这一页现在该画哪一支（**纯判据**，`run_page` 只负责把它画出来）。
+    ///
+    /// 拆出来是因为这几支很容易互相**冒充**，而它们说的是不同的事实：
+    ///
+    /// - 「取数失败」不能画成「没有识别到可运行配置」——后者是 Core 走完全部探测器之后的
+    ///   结论，写成前者会让用户以为项目里真的没有可运行项；
+    /// - 「还没取过数 / 正在取」也不能画成空态（那是在替 Core 下结论）。
+    ///
+    /// 单测直接钉住这张表（`run_page_never_confuses_a_failure_with_an_empty_result`）。
+    fn mode(&self) -> RunPageMode {
+        if !self.requested {
+            return RunPageMode::Loading;
+        }
+        if self.root.is_none() {
+            return RunPageMode::NoProject;
+        }
+        if self.error.is_some() {
+            return RunPageMode::Failed;
+        }
+        match self.view {
+            Some(_) => RunPageMode::Ready,
+            None => RunPageMode::Loading,
+        }
+    }
+}
+
+/// [`RunPageState::mode`] 的取值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunPageMode {
+    /// 宿主没登记工作区根 → 「打开项目后才能识别」。
+    NoProject,
+    /// 取数失败 → 只画原因（`runLoadFailed`），**不画**列表也不画空态。
+    Failed,
+    /// 还没拿到结果（首次 / 刷新在飞）→ 只画说明与动作行。
+    Loading,
+    /// 有结果：空表 → 「没有识别到可运行配置」，否则逐条画。
+    Ready,
 }
 
 /// 生效值那一行里"名字"的取法（真源 `describeEffectiveToolchain` 的 `kind` 参数）。
@@ -537,6 +630,19 @@ fn source_label(source: ToolSource) -> SharedString {
         Some(name) => tr_args(source.label_key(), &[("name", name)]),
         None => tr(source.label_key()),
     }
+}
+
+/// 「运行配置」页里的一句整页级提示（无项目 / 没有识别到可运行配置）。
+///
+/// 用 `foreground` 而不是失败色：这两种都是**如实结论**，不是错误
+/// （真正的失败走 `runLoadFailed` + `danger`）。
+fn run_page_hint(text: SharedString, cx: &Context<SettingsDialog>) -> gpui_kit::AnyElement {
+    div()
+        .w_full()
+        .text_sm()
+        .text_color(cx.theme().foreground)
+        .child(text)
+        .into_any_element()
 }
 
 /// 「检测到的安装」那一行的文本（真源 `settings.project.detected` + `path (version); …`）。
@@ -680,6 +786,8 @@ pub struct SettingsDialog {
     maven_java_home_input: Entity<InputState>,
     /// 「项目」页的运行期状态（探测结论）。
     project: ProjectPageState,
+    /// 「运行配置」页的运行期状态（Core 识别出的启动目标）。
+    run: RunPageState,
     /// 订阅与观察（`store` 变了要重绘；输入框变了要写设置）。
     _subscriptions: Vec<Subscription>,
 }
@@ -818,6 +926,7 @@ impl SettingsDialog {
             maven_executable_input,
             maven_java_home_input,
             project: ProjectPageState::new(),
+            run: RunPageState::new(),
             _subscriptions: subscriptions,
         }
     }
@@ -915,6 +1024,18 @@ impl SettingsDialog {
                         {
                             this.project_load(cx);
                         }
+                        // 「运行配置」页也是懒加载，代价换成"读一遍工作区文件树 + 跑探测器"
+                        // （`workspace.snapshot` + `runConfig.generate`）。
+                        //
+                        // 失败之后**不再自动重试**（`error.is_some()` 就不取数了）：失败原因已经
+                        // 画在页面上，重试是用户按「重新识别」的显式动作，来回切分类不该反复跑 Core。
+                        if *category == Category::Run
+                            && this.run.view.is_none()
+                            && this.run.error.is_none()
+                            && !this.run.busy
+                        {
+                            this.run_load(cx);
+                        }
                         cx.notify();
                     }))
             }))
@@ -948,12 +1069,14 @@ impl SettingsDialog {
                     // 「项目 · JDK 与 Maven」页（阶段 16）：真机探测出的 JDK / Maven 生效值
                     // + 可覆盖 + 可刷新。探测不到时**不是整页空态**，而是每个字段各说各的原因。
                     Category::Project => self.project_page(cx),
+                    // 「运行配置」页（阶段 17）：Core 从项目文件识别出的启动目标（只读列表）
+                    // + 刷新。没有编辑与运行入口 —— 理由画在页面上（`run_page` 的最后一段）。
+                    Category::Run => self.run_page(cx),
                     // 「Git」页（阶段 15）：提交身份 + 一个真有消费方的开关。
                     // 钩子没登记时 `git_page` 自己退回明确空态。
                     Category::Git => self.git_page(&settings, cx),
                     // 其余分类是**明确空态**：只有一句前置条件，没有任何控件。
-                    Category::Run
-                    | Category::Keyboard
+                    Category::Keyboard
                     | Category::Lsp
                     | Category::Logs
                     | Category::Updates => self.empty_page(cx),
@@ -2219,6 +2342,314 @@ impl SettingsDialog {
             .into_any_element()
     }
 
+    /// 从 [`open_settings_dialog_at`] 直接落到懒加载页时的那一次取数（判据见 [`page_loads_on_open`]）。
+    fn load_page_on_open(&mut self, category: Category, cx: &mut Context<Self>) {
+        match category {
+            Category::Project => self.project_load(cx),
+            Category::Run => self.run_load(cx),
+            // 其余分类没有懒加载（`page_loads_on_open` 已经把它们挡在外面）。
+            _ => {}
+        }
+    }
+
+    /// 一行 `S1_SETTINGS_RUN` 诊断（可 grep；走 stdout，与 `S1_SETTINGS_PROJECT` 同口径）。
+    ///
+    /// **数据**那一行由 [`crate::run::load`] 打
+    /// （`result=ok root=… configs=N sources=generated:N providers=… ms=…`）；
+    /// 这里补的是"页面做了什么"（第几个代次、结果是几条）。两者合起来就能回答
+    /// "截图里那几行来自哪一次取数"。
+    fn run_diagnose(&self, detail: &str) {
+        println!("{} {detail}", crate::run::RUN_DIAGNOSTIC_TAG);
+    }
+
+    /// 识别一次（真源 `run.store` 的 `generate`，`run-configuration-settings.tsx:97-99` 的按钮）。
+    ///
+    /// 整段取数进 `background_spawn`：`workspace.snapshot` 要遍历整个工作区，
+    /// `runConfig.generate` 还要再 `scan(root)` 一遍（深度 ≤ 6、目录数 ≤ 4000）并解析清单文件，
+    /// 在 UI 线程上跑会让对话框卡住 —— 与「项目」页的 `discover`、`maven`/`spring` 的懒扫同一口径。
+    fn run_load(&mut self, cx: &mut Context<Self>) {
+        self.run.generation = self.run.generation.wrapping_add(1);
+        let generation = self.run.generation;
+        let root = crate::identity::host_workspace_root();
+        self.run.root = root.clone();
+        self.run.requested = true;
+        self.run.busy = true;
+        self.run.error = None;
+        cx.notify();
+
+        let Some(root) = root else {
+            // 没有工作区根（宿主没登记钩子）**不等于**"没有可运行配置"：前者是"看不到项目"，
+            // 后者是"项目里确实没有可运行项"。两句话不能混，所以这一支只画 `runNoProject`。
+            self.run.busy = false;
+            self.run_diagnose(&format!(
+                "run=load generation={generation} result=skipped reason=no_workspace_root"
+            ));
+            cx.notify();
+            return;
+        };
+
+        self.run_diagnose(&format!(
+            "run=load generation={generation} root={}",
+            root.display()
+        ));
+
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_spawn(async move { crate::run::load(&root) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                // 晚到的旧回包丢掉（每次刷新推一代，与 Git / 项目页同一口径）。
+                if this.run.generation != generation {
+                    return;
+                }
+                this.run.busy = false;
+                match result {
+                    Ok(view) => {
+                        // 页面上的行数就是这里的 `rows`：截图与日志可以逐项对照。
+                        this.run_diagnose(&format!(
+                            "run=loaded generation={generation} rows={} entryCount={}",
+                            view.configurations.len(),
+                            view.entry_count
+                        ));
+                        this.run.view = Some(view);
+                    }
+                    Err(error) => {
+                        this.run_diagnose(&format!("run=failed generation={generation}"));
+                        this.run.error = Some(tr_args(
+                            "lithe.settings.gpui.runLoadFailed",
+                            &[("reason", &error)],
+                        ));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// 「运行配置」页（阶段 17；真源 `components/run-configuration-settings.tsx:79-113` 的列表态）。
+    ///
+    /// 画出来的每一格都能在这两个地方找到出处：
+    /// - **「重新识别」/ 已识别的入口数**：真源列表态同一段
+    ///   （`run.identifyAgain` `:97-99`、`run.generatedEntries` `:92-96`）；
+    /// - **每条配置的事实**：真源 `run-configuration-editor.tsx:248-258` 的
+    ///   `grid-cols-[7.5rem_1fr]` 事实块（`run.type` / `run.effectiveSource` / `run.mainClass`），
+    ///   本页按任务要求补上 `run.command` 与 `run.workingDirectory`。
+    ///
+    /// 与真源的**有意差异**（逐条登记在汇报里）：
+    /// - **第一句说明是自己的键**（`settings.gpui.runReadOnlyDescription`）：真源的
+    ///   `settings.run.description` 承诺"配置启动参数 / 环境变量 / 覆盖项 + 点击保存生效"，
+    ///   而本页没有配置编辑器、没有保存、也没有运行子系统；照抄就是"说了做不到"。
+    /// - 真源的行是**可点按钮**（点进去是 `RunConfigurationEditor`），本侧没有配置编辑器、
+    ///   也没有项目级存储，所以行做成**只读事实块**：画一个点不动或点了没反应的按钮更骗人
+    ///   （`07-settings-ui.md` §7.3-D 的口径）；
+    /// - 真源每条行尾有「编辑」，本侧不画（没有那个落点）；
+    /// - **不画任何运行按钮**（连置灰也不画）：gpui 侧没有 run crate、Run 工具窗是占位、
+    ///   Run 菜单是空的、命令面板没有 Run 动作 —— 所以页面最后一段如实写出这件事
+    ///   （`lithe.settings.gpui.runNotWired`），而不是给一个假控件。
+    fn run_page(&self, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+        let mut rows: Vec<gpui_kit::AnyElement> = Vec::new();
+
+        // ① 说明。**故意不用**真源的 `settings.run.description`：那句是「选择服务或任务，
+        //    配置启动参数…点击保存后生效」，承诺的是配置编辑器与保存 —— 本页三样都没有
+        //    （只读列表 + 刷新），照抄就是"说了做不到"（理由写在 `GPUI_ONLY_KEYS` 里）。
+        rows.push(
+            div()
+                .w_full()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child(tr("lithe.settings.gpui.runReadOnlyDescription"))
+                .into_any_element(),
+        );
+
+        // ② 失败态：**显示可排查的原因**（里面带 Core 的错误码原文）。
+        if let Some(error) = self.run.error.as_ref() {
+            rows.push(
+                div()
+                    .w_full()
+                    .text_sm()
+                    .text_color(cx.theme().danger)
+                    .child(error.clone())
+                    .into_any_element(),
+            );
+        }
+
+        // ③ 已识别的入口数（真源 `run.generatedEntries`）。
+        //
+        // 数字用 Core 的 `entryCount`（与真源同一口径：它**不含**恒有的 "Current File" 兜底项），
+        // 而列表长度可能比它多 1 —— 那一行的名字就是 "Current File"，两者不会看起来矛盾。
+        // 只有拿到结果那一支才画这一行：失败 / 还没取到数时显示一个计数等于替 Core 下结论。
+        if self.run.mode() == RunPageMode::Ready {
+            if let Some(view) = self.run.view.as_ref() {
+                rows.push(
+                    div()
+                        .w_full()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr_args(
+                            "lithe.run.generatedEntries",
+                            &[("count", &view.entry_count.to_string())],
+                        ))
+                        .into_any_element(),
+                );
+            }
+        }
+
+        // ④ 动作行：「重新识别」（生成中显示「处理中…」，照真源 `:97-99` 的三元表达式）。
+        rows.push(
+            h_flex()
+                .w_full()
+                .items_center()
+                .gap_3()
+                .pt_2()
+                .child(
+                    Button::new("settings-run-refresh")
+                        .small()
+                        .ghost()
+                        .label(if self.run.busy {
+                            tr("lithe.settings.project.loading")
+                        } else {
+                            tr("lithe.run.identifyAgain")
+                        })
+                        .disabled(self.run.busy)
+                        .on_click(cx.listener(|this, _, _window, cx| this.run_load(cx))),
+                )
+                .into_any_element(),
+        );
+
+        // ⑤ 列表 / 空态 / 无项目。**画哪一支由 [`RunPageState::mode`] 决定**（纯判据，有单测）：
+        //    失败与"还没有结果"两支在这里什么都不画 —— 失败原因已经在 ② 那一行里。
+        match self.run.mode() {
+            RunPageMode::NoProject => {
+                rows.push(run_page_hint(tr("lithe.settings.gpui.runNoProject"), cx));
+            }
+            RunPageMode::Failed | RunPageMode::Loading => {}
+            RunPageMode::Ready => {
+                if let Some(view) = self.run.view.as_ref() {
+                    if view.configurations.is_empty() {
+                        // "一条都没识别到"是**真的结论**（Core 走完了全部探测器），不是"没接入"。
+                        rows.push(run_page_hint(
+                            tr("lithe.settings.gpui.runNothingDetected"),
+                            cx,
+                        ));
+                    } else {
+                        for (index, configuration) in view.configurations.iter().enumerate() {
+                            rows.push(self.run_configuration_row(index, configuration, cx));
+                        }
+                    }
+                }
+            }
+        }
+
+        // ⑥ 最后一段：如实说明"执行尚未接入"，以及缺的是什么。**任何状态下都画**。
+        rows.push(
+            div()
+                .w_full()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(tr("lithe.settings.gpui.runNotWired"))
+                .into_any_element(),
+        );
+
+        rows
+    }
+
+    /// 「运行配置」页里**一条配置**的只读事实块。
+    ///
+    /// 标签 / 值的排版照真源事实块：左列固定 `7.5rem`、右列占满（`run-configuration-editor.tsx:248`
+    /// 的 `grid-cols-[7.5rem_1fr]`）。字段与取值全部来自 Core 的 `RunConfiguration`，
+    /// 一个都不猜：`run.type` = 显示名 + 行为类别 + provider 原名，`run.command`、
+    /// `run.workingDirectory`、`run.effectiveSource`、`run.mainClass`（有才画）。
+    fn run_configuration_row(
+        &self,
+        index: usize,
+        configuration: &RunConfigurationView,
+        cx: &Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        let fact = |label_key: &'static str, value: SharedString, muted: bool| {
+            h_flex()
+                .w_full()
+                .items_start()
+                .gap_2()
+                .child(
+                    div()
+                        .w(rems(7.5))
+                        .flex_shrink_0()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr(label_key)),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .text_sm()
+                        .text_color(if muted {
+                            cx.theme().muted_foreground
+                        } else {
+                            cx.theme().foreground
+                        })
+                        .child(value),
+                )
+        };
+
+        // `run.type` 的取值和真源一样是 `configurationTitle`（`run-configuration-editor.tsx:250`），
+        // 后面括注 provider 原名与行为类别：前两者是显示名，后者让"这是服务还是任务"一眼可见。
+        let kind = format!(
+            "{} · {}（{}）",
+            configuration.provider_title,
+            tr(configuration.execution.label_key()),
+            configuration.provider
+        );
+
+        // 没有命令行不是缺字段：Maven 框架服务把可执行文件交给工具链，真正的命令行由启动计划组装。
+        let (command, command_muted) = match configuration.command_line() {
+            Some(line) => (SharedString::from(line), false),
+            None => (tr("lithe.settings.gpui.runNoCommand"), true),
+        };
+
+        // `run.effectiveSource` 的取值照真源（`run-configuration-editor.tsx:252` 的
+        // `run.source.${source}`），并补上产生它的清单文件 —— 那是"为什么这里会有这一条"的答案。
+        let mut source = tr(configuration.layer.label_key()).to_string();
+        if let Some(manifest) = configuration.manifest.as_ref() {
+            source.push_str(" · ");
+            source.push_str(manifest);
+        }
+
+        v_flex()
+            .id(("settings-run-row", index))
+            .w_full()
+            .gap_1()
+            .p_3()
+            .rounded(cx.theme().radius)
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().popover.opacity(0.35))
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().foreground)
+                    .child(configuration.name.clone()),
+            )
+            .child(fact("lithe.run.type", SharedString::from(kind), false))
+            .child(fact("lithe.run.command", command, command_muted))
+            .child(fact(
+                "lithe.run.workingDirectory",
+                SharedString::from(configuration.cwd.clone()),
+                false,
+            ))
+            .child(fact("lithe.run.effectiveSource", SharedString::from(source), false))
+            .children(configuration.main_class.as_ref().map(|main_class| {
+                fact(
+                    "lithe.run.mainClass",
+                    SharedString::from(main_class.clone()),
+                    false,
+                )
+            }))
+            .into_any_element()
+    }
+
     /// **明确空态**页：一句「此分类尚未接入」+ 一句前置条件，**没有任何控件**。
     /// 1. 分类**留在左栏**（用户点得到，不会以为"这个分类不存在"）；
     /// 2. 标题是分类自己的名字（页面标题照常画），正文说明缺的是**什么子系统**；
@@ -2739,19 +3170,68 @@ mod tests {
         assert_eq!(Category::Project.id(), "project");
     }
 
-    /// 带着分类打开对话框时，只有「项目」页需要立刻探一次（否则它会停在「正在检测…」）。
+    /// 「运行配置」页自阶段 17 起是**实现页**：它列出 Core 识别出的启动目标，
+    /// 不再有空态前置条件（那句「尚未接入」已下线）。
     #[test]
-    fn only_the_project_page_loads_on_open() {
-        assert!(project_load_on_open(Category::Project));
+    fn run_page_is_implemented_not_an_empty_state() {
+        assert!(Category::IMPLEMENTED.contains(&Category::Run));
+        assert_eq!(Category::Run.prerequisite_key(), None);
+        assert_eq!(Category::Run.label_key(), "lithe.settings.run.title");
+        assert_eq!(Category::Run.id(), "run");
+    }
+
+    /// 带着分类打开对话框时，只有两个**懒加载页**需要立刻取一次数
+    /// （否则它们会停在「正在检测…」）。判据与 `load_page_on_open` 的分派必须一致 ——
+    /// 两边都说"这一页要懒加载"，`content()` 的分支才不会漏。
+    #[test]
+    fn only_the_lazy_pages_load_on_open() {
+        assert!(page_loads_on_open(Category::Project));
+        assert!(page_loads_on_open(Category::Run));
         for category in Category::ALL {
-            if category == Category::Project {
+            if matches!(category, Category::Project | Category::Run) {
                 continue;
             }
             assert!(
-                !project_load_on_open(category),
-                "{category:?} 不该在打开时起探测子进程"
+                !page_loads_on_open(category),
+                "{category:?} 不该在打开时读盘 / 起探测子进程"
             );
         }
+    }
+
+    /// 「运行配置」页的四支不能互相冒充：**失败**不许画成"没有识别到可运行配置"
+    /// （那是 Core 走完全部探测器后的结论），**还没取到数**也不许替 Core 下结论。
+    ///
+    /// 这一支判据决定了页面上唯一那句话是哪一句，所以四组状态逐条钉住。
+    #[test]
+    fn run_page_never_confuses_a_failure_with_an_empty_result() {
+        // 还没点过这一页：不画任何结论（第一次进入时它会被 `run_load` 立刻改掉）。
+        let mut state = RunPageState::new();
+        assert_eq!(state.mode(), RunPageMode::Loading);
+
+        // 宿主没登记工作区根：是"看不到项目"，不是"项目里没有可运行项"。
+        state.requested = true;
+        assert_eq!(state.mode(), RunPageMode::NoProject);
+
+        // 有根、但失败：只画原因。
+        state.root = Some(PathBuf::from(r"D:\proj"));
+        state.error = Some(SharedString::from("识别运行配置失败"));
+        assert_eq!(state.mode(), RunPageMode::Failed);
+
+        // 失败之后**不清**这一支：清掉就等于把"没识别到"画在失败上面。
+        assert_ne!(state.mode(), RunPageMode::Ready);
+
+        // 拿到结果（哪怕是空表）才是 Ready —— 空表由页面画"没有识别到可运行配置"。
+        state.error = None;
+        state.view = Some(RunProjectView {
+            configurations: Vec::new(),
+            entry_count: 0,
+            java_entrypoints_origin: None,
+        });
+        assert_eq!(state.mode(), RunPageMode::Ready);
+
+        // 刷新在飞（busy）时仍是 Ready：旧结果继续画，按钮变禁用 + 显示「处理中…」。
+        state.busy = true;
+        assert_eq!(state.mode(), RunPageMode::Ready);
     }
 
     /// 生效值那一行的四种形态（逐条对照真源 `describeEffectiveToolchain`）。

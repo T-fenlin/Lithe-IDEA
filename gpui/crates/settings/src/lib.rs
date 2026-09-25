@@ -22,6 +22,8 @@
 //! | [`store`] | 状态所有者 `SettingsStore`：改设置 → 立即生效 → 防抖落盘（唯一需要 `App` 的"逻辑"） |
 //! | [`row`] | 行/分组零件（`SettingsGroup` / `SettingsRow` / 宽度档） |
 //! | [`identity`] | 「Git」页的数据边界：宿主钩子（`GitIdentityHost`）+ 身份值的纯判据 |
+//! | [`project`] | 「项目 · JDK 与 Maven」页的数据层：本机 JDK / Maven 的发现 + 生效值判据（纯数据） |
+//! | [`run`] | 「运行配置」页的数据层：`workspace.snapshot` + `runConfig.generate` 的解析与分类（纯数据 + 两条只读 Core 调用） |
 //! | [`dialog`] | 设置对话框（820×620 模态）：头部 / 分类栏 / 内容页 / 底部 + 确认子对话框 |
 //! | [`restart`] | 切换语言后的"用相同参数重启自己"（语言无法运行中热切，见该模块文档） |
 //!
@@ -47,6 +49,7 @@ pub mod persistence;
 pub mod project;
 pub mod restart;
 pub mod row;
+pub mod run;
 pub mod schema;
 pub mod store;
 pub mod theme;
@@ -56,7 +59,8 @@ pub use dialog::{
 };
 pub use identity::{
     GitIdentityHost, GitIdentityPage, IdentityField, IdentityScope, IdentitySetup,
-    IDENTITY_MAX_BYTES, git_identity_page, identity_value_is_valid, set_git_identity_host,
+    IDENTITY_MAX_BYTES, git_identity_page, host_workspace_root, identity_value_is_valid,
+    set_git_identity_host,
 };
 pub use paths::{SETTINGS_FILE_ENV, settings_file_path};
 pub use persistence::{DebounceState, Loaded, SAVE_DEBOUNCE_MS, load, load_from};

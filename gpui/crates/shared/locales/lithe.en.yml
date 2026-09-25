@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 36 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 41 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8675,8 +8675,18 @@ lithe:
     en: "Unknown (the user home directory is unavailable, so Maven's default local repository cannot be derived)"
   settings.gpui.projectNothingDetected:
     en: "Neither a JDK nor Maven was detected. Each row below states which locations were checked and why none qualified."
-  settings.gpui.prerequisiteRun:
-    en: "Requires run configuration discovery and persistence, as in components/run-configuration-settings.tsx."
+  settings.gpui.runNoProject:
+    en: "Open a project to identify runnable configurations."
+  settings.gpui.runReadOnlyDescription:
+    en: "This page lists the runnable targets Core identified from the project files: name, type, command line, working directory, and effective source. The result is written nowhere; this page is read-only and has no configuration editor or launch entry point."
+  settings.gpui.runNothingDetected:
+    en: "No runnable configuration was found in the project files. Core checked Maven (Spring Boot / Quarkus / Micronaut), Gradle, npm, Compose, Procfile, Python, Cargo, Go, Make, and just; Java main classes come from the language service, which gpui does not wire yet, so only Maven modules and script-style targets can appear here."
+  settings.gpui.runLoadFailed:
+    en: "Failed to identify run configurations: {reason}"
+  settings.gpui.runNoCommand:
+    en: "No fixed command line (the toolchain provides the executable; the launch plan assembles the real command)"
+  settings.gpui.runNotWired:
+    en: "Starting a target is not wired yet: gpui has no run panel and no process host, and the Run tool window and Run menu are placeholders. Core's runConfig.createLaunchPlan already produces a platform-neutral plan, but nothing consumes it yet."
   settings.gpui.prerequisiteKeyboard:
     en: "Requires a keybinding table and presets; today only a few shortcuts are bound with fixed keys."
   settings.gpui.prerequisiteLsp:

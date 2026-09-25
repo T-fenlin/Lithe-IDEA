@@ -48,7 +48,7 @@
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
 //! | `workbench`（活动栏 / 状态栏 / 项目标签条 / 右工具窗） | `lithe.workbench.*`、`lithe.footer.spaces`、`lithe.titleProject.closeProject`、`lithe.maven.title`、`lithe.maven.notDetected`、`lithe.notifications.empty`、`lithe.extensions.noneFound`、`lithe.commandPalette.close` |
 //! | `workbench` 的命令面板（阶段 6 第二半） | `lithe.commandPalette.{title, placeholder, noCommands, categories.*}`、`lithe.commandPalette.actions.toggle-*`、`lithe.commandPalette.actions.color-theme.label`、`lithe.settings.appearance.theme`、`lithe.settings.appearance.showStatusBar`、`lithe.settings.appearance.showStatusBarDescription`、`lithe.settings.tabs.*`、`lithe.appearance.gpui.*`、`lithe.maven.gpui.*` |
-//! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 22 条 `lithe.settings.gpui.*` 自有文案）、`lithe.ui.cancel` |
+//! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 26 条 `lithe.settings.gpui.*` 自有文案 —— 全部 26 条自有键都已接线）、`lithe.ui.cancel` |
 //! | `workbench` 的分支弹窗（阶段 11 第三件） | `lithe.git.{searchBranchesAria,repositories,branches,worktrees,selectorSections,searchBranches,branchCount,branchesCount,noMatchingBranches,noBranchesFound,current,refresh}` |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
@@ -348,10 +348,6 @@ mod tests {
                 "此分类尚未接入",
             ),
             (
-                "lithe.settings.gpui.prerequisiteRun",
-                "前置条件：运行配置的识别与保存。真源是 components/run-configuration-settings.tsx。",
-            ),
-            (
                 "lithe.settings.gpui.prerequisiteKeyboard",
                 "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。",
             ),
@@ -408,6 +404,36 @@ mod tests {
             (
                 "lithe.settings.gpui.projectNothingDetected",
                 "既没有探测到 JDK，也没有探测到 Maven。下面每一行都写明了查过哪些位置、各自为什么不行。",
+            ),
+            // 「运行配置」页（阶段 17）：无项目 / 空态 / 失败 / 没有命令行 / 执行未接入 五句。
+            //
+            // ⚠️ 这一族**不是**空态文案：这一页有真实页面（Core 的 `runConfig.generate` 给出的
+            // 启动目标 + 刷新），所以 `prerequisiteRun` 已经被删掉
+            // （`Category::prerequisite_key` 现在对 `Run` 返回 `None`）。
+            // 五条的理由逐条写在 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里。
+            (
+                "lithe.settings.gpui.runNoProject",
+                "打开项目后才能识别可运行配置。",
+            ),
+            (
+                "lithe.settings.gpui.runReadOnlyDescription",
+                "本页列出 Core 从项目文件识别到的可运行目标：名称、类型、命令行、工作目录与生效来源。识别结果不写入任何文件；本页只读，没有编辑配置与启动的入口。",
+            ),
+            (
+                "lithe.settings.gpui.runNothingDetected",
+                "没有在项目文件里识别到可运行配置。Core 已按 Maven（Spring Boot / Quarkus / Micronaut）、Gradle、npm、Compose、Procfile、Python、Cargo、Go、Make 与 just 逐类探测过；Java 主类由语言服务提供，gpui 侧还没接那一路，所以这里只会出现 Maven 模块与脚本类目标。",
+            ),
+            (
+                "lithe.settings.gpui.runLoadFailed",
+                "识别运行配置失败：{reason}",
+            ),
+            (
+                "lithe.settings.gpui.runNoCommand",
+                "没有固定命令行（可执行文件由工具链提供，真正的命令行由启动计划组装）",
+            ),
+            (
+                "lithe.settings.gpui.runNotWired",
+                "点击启动尚未接入：gpui 侧还没有运行面板与进程宿主，「运行」工具窗与「运行」菜单目前都是占位。Core 的 runConfig.createLaunchPlan（平台无关的启动计划）已经能给出计划，但还没有消费方。",
             ),
             // 阶段 9 的编辑器侧（3 条，同样由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里）。
             ("lithe.editor.gpui.discardChanges", "放弃修改"),

@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 36 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 41 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8675,8 +8675,18 @@ lithe:
     zh-CN: "未知（拿不到用户主目录，推不出 Maven 默认的本地仓库位置）"
   settings.gpui.projectNothingDetected:
     zh-CN: "既没有探测到 JDK，也没有探测到 Maven。下面每一行都写明了查过哪些位置、各自为什么不行。"
-  settings.gpui.prerequisiteRun:
-    zh-CN: "前置条件：运行配置的识别与保存。真源是 components/run-configuration-settings.tsx。"
+  settings.gpui.runNoProject:
+    zh-CN: "打开项目后才能识别可运行配置。"
+  settings.gpui.runReadOnlyDescription:
+    zh-CN: "本页列出 Core 从项目文件识别到的可运行目标：名称、类型、命令行、工作目录与生效来源。识别结果不写入任何文件；本页只读，没有编辑配置与启动的入口。"
+  settings.gpui.runNothingDetected:
+    zh-CN: "没有在项目文件里识别到可运行配置。Core 已按 Maven（Spring Boot / Quarkus / Micronaut）、Gradle、npm、Compose、Procfile、Python、Cargo、Go、Make 与 just 逐类探测过；Java 主类由语言服务提供，gpui 侧还没接那一路，所以这里只会出现 Maven 模块与脚本类目标。"
+  settings.gpui.runLoadFailed:
+    zh-CN: "识别运行配置失败：{reason}"
+  settings.gpui.runNoCommand:
+    zh-CN: "没有固定命令行（可执行文件由工具链提供，真正的命令行由启动计划组装）"
+  settings.gpui.runNotWired:
+    zh-CN: "点击启动尚未接入：gpui 侧还没有运行面板与进程宿主，「运行」工具窗与「运行」菜单目前都是占位。Core 的 runConfig.createLaunchPlan（平台无关的启动计划）已经能给出计划，但还没有消费方。"
   settings.gpui.prerequisiteKeyboard:
     zh-CN: "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。"
   settings.gpui.prerequisiteLsp:

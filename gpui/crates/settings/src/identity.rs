@@ -331,6 +331,26 @@ pub struct GitIdentityPage {
     host: Rc<GitIdentityHost>,
 }
 
+/// 宿主登记的**工作区根**；没有宿主登记时 `None`。
+///
+/// ## 为什么这个访问器住在这里（而不是新建一份钩子）
+///
+/// `settings` crate 拿不到工作区根：它不依赖外壳，`SettingsDialog::new` 也没有根参数
+/// （见 `crate::lib.rs` 的依赖方向）。全进程里**唯一**把根登记进来的地方就是
+/// [`GitIdentityHost::workspace_root`]（`ShellWorkspace::new` 建视图时登记，
+/// `gpui/crates/workbench/src/workspace.rs:771-774`），而「运行配置」页
+/// （[`crate::run`]）要的正是同一个根（`runConfig.generate` 的 `root`）。
+///
+/// 所以这里把它抽成一个**中性名字**的访问器复用，而不是新加一份"只有设置页会读、
+/// 却没有任何宿主会登记"的空钩子 —— 后者比依赖现有钩子更容易坏（页面会永远停在空态）。
+/// 将来的退出路径：外壳愿意登记一个中性的根钩子时，只改这一个函数体。
+///
+/// 代价与边界：运行配置页的工作区根因此与「Git」页同源；宿主没登记时它退回
+/// "打开项目后才能识别"的明确空态（[`crate::dialog`] 的 `Category::Run` 分支）。
+pub fn host_workspace_root() -> Option<PathBuf> {
+    git_identity_page().map(|page| page.workspace_root)
+}
+
 /// 取当前登记的原子钩子；没登记时 `None`。
 pub fn git_identity_page() -> Option<GitIdentityPage> {
     HOST.with(|slot| {
@@ -431,6 +451,12 @@ mod tests {
         assert!(
             git_identity_page().is_none(),
             "没有宿主登记时必须返回 None（Git 页据此画明确空态）"
+        );
+        // 同一个钩子也是「运行配置」页拿到工作区根的唯一通道（见 `host_workspace_root` 的文档）：
+        // 没登记时它必须同样是 `None`，页面据此画"打开项目后才能识别"的空态。
+        assert!(
+            host_workspace_root().is_none(),
+            "没有宿主登记时工作区根必须是 None"
         );
     }
 

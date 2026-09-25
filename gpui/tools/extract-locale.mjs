@@ -187,10 +187,46 @@ const GPUI_ONLY_KEYS = [
       "这一页唯一一句整页级提示（仅在 JDK 与 Maven 都没有可用生效值时出现）。空态口径要求：不许再用「此分类尚未接入」那句（页面已经接入了），也不能静默 —— 所以补一句如实说明，并指向每一行各自的原因。",
   },
   {
-    key: "settings.gpui.prerequisiteRun",
-    zh: "前置条件：运行配置的识别与保存。真源是 components/run-configuration-settings.tsx。",
-    en: "Requires run configuration discovery and persistence, as in components/run-configuration-settings.tsx.",
-    reason: "「运行配置」页的前置条件（同 pageNotAvailableTitle）；gpui 侧的运行子系统还是 Pending 状态。",
+    key: "settings.gpui.runNoProject",
+    zh: "打开项目后才能识别可运行配置。",
+    en: "Open a project to identify runnable configurations.",
+    reason:
+      "「运行配置」页拿不到工作区根时的整页提示（宿主没登记钩子）。真源同位的 settings.project.openProject 说的是「打开项目后，可在这里配置项目 JDK 和 Maven。」，与本页无关，照抄会指错地方，所以新增一条。",
+  },
+  {
+    key: "settings.gpui.runReadOnlyDescription",
+    zh: "本页列出 Core 从项目文件识别到的可运行目标：名称、类型、命令行、工作目录与生效来源。识别结果不写入任何文件；本页只读，没有编辑配置与启动的入口。",
+    en: "This page lists the runnable targets Core identified from the project files: name, type, command line, working directory, and effective source. The result is written nowhere; this page is read-only and has no configuration editor or launch entry point.",
+    reason:
+      "页面第一句。真源的 settings.run.description 是「选择服务或任务，配置启动参数、环境变量和项目环境覆盖项；点击保存后生效。」（run-configuration-settings.tsx:81）—— 本页**只读**（没有配置编辑器、没有项目级存储、没有运行子系统），照抄会承诺三个不存在的控件，正是 HANDOFF §4 与 07-settings-ui.md §7.3-D 禁止的「说了做不到」。所以按本页真实能力改写，并在句子里点明「识别结果不写入任何文件」（runConfig.generate 的契约行为）。",
+  },
+  {
+    key: "settings.gpui.runNothingDetected",
+    zh: "没有在项目文件里识别到可运行配置。Core 已按 Maven（Spring Boot / Quarkus / Micronaut）、Gradle、npm、Compose、Procfile、Python、Cargo、Go、Make 与 just 逐类探测过；Java 主类由语言服务提供，gpui 侧还没接那一路，所以这里只会出现 Maven 模块与脚本类目标。",
+    en: "No runnable configuration was found in the project files. Core checked Maven (Spring Boot / Quarkus / Micronaut), Gradle, npm, Compose, Procfile, Python, Cargo, Go, Make, and just; Java main classes come from the language service, which gpui does not wire yet, so only Maven modules and script-style targets can appear here.",
+    reason:
+      "空态（runConfig.generate 返回 0 条）。真源的 run.noRunnableActionsFound（「未找到可运行操作」）属于「扫描项目操作」那一族（同族还有 run.scanningProjectActions / run.filterActions / run.tryAnotherActionSearch），落到本页会被读成「筛选结果为空」；而本页要说的是「Core 走完了哪些探测器」与「哪一路还没接」，真源里没有这句话，所以新增，并按探测器全集（rust/lithe-core/src/execution/detectors/mod.rs:227-237）如实写。",
+  },
+  {
+    key: "settings.gpui.runLoadFailed",
+    zh: "识别运行配置失败：{reason}",
+    en: "Failed to identify run configurations: {reason}",
+    reason:
+      "失败态。真源的 settings.project.reloadFailed（「无法重新加载项目环境。」）说的是项目环境，而且不带原因；任务要求失败时显示可排查的原因，所以新增一条带 {reason} 的键 —— {reason} 由调用点填 Core 的错误码原文（例如 workspace_not_found: …）。",
+  },
+  {
+    key: "settings.gpui.runNoCommand",
+    zh: "没有固定命令行（可执行文件由工具链提供，真正的命令行由启动计划组装）",
+    en: "No fixed command line (the toolchain provides the executable; the launch plan assembles the real command)",
+    reason:
+      "工具链接管的条目 Core 会把 command 置空（rust/lithe-core/src/execution/detectors/mod.rs:156-171 的 with_toolchains），这是语义而不是缺字段 —— Maven 的 spring-boot:run 由 maven.launchPlan 组装。真源在编辑器里把这类条目的 run.command 留空即可（用户知道自己在配什么），本页是只读列表，必须说清「为什么这里没有命令」，否则看起来像数据缺失。",
+  },
+  {
+    key: "settings.gpui.runNotWired",
+    zh: "点击启动尚未接入：gpui 侧还没有运行面板与进程宿主，「运行」工具窗与「运行」菜单目前都是占位。Core 的 runConfig.createLaunchPlan（平台无关的启动计划）已经能给出计划，但还没有消费方。",
+    en: "Starting a target is not wired yet: gpui has no run panel and no process host, and the Run tool window and Run menu are placeholders. Core's runConfig.createLaunchPlan already produces a platform-neutral plan, but nothing consumes it yet.",
+    reason:
+      "「运行配置」页的收尾说明（任何状态下都画），只讲「执行缺什么」。真源那一页的行是**可点按钮**（点进去是 RunConfigurationEditor，run-configuration-settings.tsx:100-111），本侧没有配置编辑器也没有运行子系统，所以必须如实写出「列表是真的、执行没接」，否则用户会以为行能点、或以为绿三角在别处。这是 HANDOFF §4 与 07-settings-ui.md §7.3-D「不画假控件」的口径；「本页只读」由 settings.gpui.runReadOnlyDescription 说，两处不重复。",
   },
   {
     key: "settings.gpui.prerequisiteKeyboard",
