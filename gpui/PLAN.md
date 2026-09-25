@@ -1310,6 +1310,76 @@ S1_JAVA_UNAVAILABLE reason=… fallback=builtin
 - 界面验收要对照 `docs/gpui-kit/0.6.6/zh-CN/docs/design-guides.md` 的 **Design review checklist**
   与**无障碍检查表**逐条自检。
 
+## 14. 阶段 14：设置剩余页（第一批：编辑器 / 终端，2026-09-25）
+
+规格：`research/windows/07-settings-ui.md` §3.4（编辑器页 4 项）、§3.6（终端页 1 项）、
+§7.3（逐项"能否立刻生效"）、§7.4（建议范围）。Windows 渲染点
+`features/settings/components/macos-settings-panels.tsx:275-328,372-396`。
+HANDOFF §4 的队列里这一项是"设置剩余页（除 AI）"，本批做的是其中**能真生效**的前两项。
+
+### 14.1 落了两个分类、三个键
+
+分类从 2 → **4**（常规 / 外观 / **编辑器** / **终端**），顺序是 Windows 12 个分类表里的相对次序子序列。
+
+| 设置键 | 控件 | 落点（立即生效） | 真源 |
+| --- | --- | --- | --- |
+| `fontSize`（默认 14，10–22） | 数字输入 | `Theme.mono_font_size` → 编辑器正文；`apply_config` 之后补写（见 `theme.rs`） | `macos-settings-panels.tsx:283-292`、`typography-defaults.ts:13` |
+| `tabSize`（默认 2，2/4/8） | 下拉（`N 个空格`） | 每个 `EditorState` 的 `TabSize`，**已打开的 buffer 也重设** | `:313-325`、`default-settings.ts:55` |
+| `terminalDefaultShellId`（默认 `""`） | 下拉（系统默认 / PowerShell / 命令提示符 / WSL） | `TerminalPane::set_default_shell` → **新建**会话用哪个 shell | `:379-393` |
+
+**"值"型设置经外壳转发**：`tabSize` 与终端 shell 都是"面板自己不认识设置 crate"的值
+（依赖方向是 `workbench` → `editor`/`terminal`，反向会成环），所以由 `ShellWorkspace` 订阅
+`SettingsStore` 后读出来喂给两个面板 —— 与「显示状态栏」同一条路子，只是多了一个"值要送出去"的动作。
+`TerminalPane::set_default_shell` 做成**幂等**（值没变就直接返回）：不然用户在页签条 ⌄ 菜单里
+手动选的配置文件会被"隔壁开关动了一下"重置掉。
+
+### 14.2 顺手修掉一个真 bug：设置**写得出、读不回**（`persistence.rs`）
+
+`settings_from_object` 是一张**手写的逐键表**；新键不登记进去，文件里写得再对、读回来也是默认值，
+而且**没有任何诊断**（文件本身完全合法）。实测：文件里 `"tabSize": 8`，启动后
+`S1_SETTINGS wiring=workbench tab_size=2`。
+
+修法是两段式：先整体 `serde_json::from_value::<Settings>`（认**所有**字段，新键不必再登记），
+只有某个键类型真坏了才退到手写表逐键容错（那张表的存在理由就是 Windows 的"逐键回退"语义）。
+守卫测试 `every_key_survives_a_round_trip` 用"所有字段都非默认"的设置跑存取往返 —— 漏一个键必定不等。
+**这是后面几批（Git / LSP 页加新键）的硬前提。**
+
+### 14.3 不画假控件：编辑器页真源 4 项只做 2 项
+
+`codeLens`（显示用法与 Git 作者）与 `horizontalTabScroll`（缓冲区轮播）在 gpui 侧
+**没有消费方**（无 code lens / 无行内 blame / 标签条没有轮播形态），按 §7.3-D 的"应隐藏或标注"
+整项不画，理由写在 `dialog.rs::editor_page` 的文档里。
+
+一处**有意的副作用**要记住：真源把 `fontSize` 与 `terminalFontSize` 分成两个键，
+而 gpui 的主题只有**一个** `mono_font_size`（编辑器与终端正文共用）。终端页真源只有「默认 Shell」一项，
+所以本侧不加 `terminalFontSize` 控件（会是"存了没用"的键），改在编辑器字号那行加一句描述说明作用范围
+（新键 `settings.gpui.editorFontSizeDescription`，理由在 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS`）。
+
+### 14.4 验证（详见 `.artifacts/p12/NOTES.md`）
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo build --bin Lithe` | 0 error |
+| `cargo test -p lithe-gpui-settings` | 35 passed（含两条新的往返/坏键守卫） |
+| `cargo test -p lithe-gpui-terminal` | 7 passed |
+| `cargo test -p lithe-gpui-workbench` | 28 passed |
+| `cargo test -p lithe-gpui-shared every_wired_key_resolves_in_both_locales` | passed（新接线 16 条键） |
+| `node gpui/tools/extract-locale.mjs` | 两 yml 各 4336 条 key |
+| 交互级（真实鼠标注入） | 4 个分类可点、两个下拉可改、落盘可验；`S1_EDITOR_TAB_SIZE size=4 buffers=1`（已开 buffer 被重设）；字号 20→14 时同一文件同一滚动位置文字行数 21→31 |
+| 终端端到端 | `""` → `S1_TERMINAL_TAB profile=powershell`；`"cmd"` → `S1_TERMINAL default_shell=cmd outcome=applied` + `profile=cmd`（页签写 `cmd`、正文是 cmd.exe 横幅） |
+
+### 14.5 未做 / 已知边界
+
+1. **`Ctrl+,` 仍是"没被机器验证"**：本轮 `ui-keys.ps1` 打印出 `SetForegroundWindow` 被拒
+   （`目标 hwnd ≠ 注入前的前台 hwnd`），键送到了别的窗口 —— 是注入侧的限制，不是绑定坏了。
+   对话框的两条入口 `--open-settings` 与**活动栏齿轮（真实点击）**都验证过。
+2. **`outcome=unavailable` 本机跑不到**：`powershell` / `cmd` / `wsl` 三个都在 PATH 上，
+   那条分支只有单测守着。
+3. 还没做的（按顺序）：**Git 身份**（`git.repositorySetup` / `git.configureIdentity` 已有；
+   卡在"`settings` 不能依赖 `git`"的依赖方向，要么开宿主钩子、要么把该页放进 `git` crate）；
+   **LSP 页的 jdtls 运行时路径**（`java/src/jdtls.rs:440-460` 现在是 env/JAVA_HOME/PATH 三级发现）；
+   **其余分类的明确空态**（项目 / 运行配置 / 快捷键 / Git / 日志 / 更新）。
+
 
 
 

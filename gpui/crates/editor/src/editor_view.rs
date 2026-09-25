@@ -63,7 +63,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
-use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, Rope};
+use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, Rope, TabSize};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
@@ -289,7 +289,22 @@ pub struct EditorPane {
     /// 外壳登记的两个"只有外壳做得了"的动作（见 [`TabMenuHostActions`]）。
     /// `None` = 外壳还没登记（例如组件在测试宿主里单独跑）→ 对应菜单项点了会留一行诊断。
     tab_menu_actions: Option<TabMenuHostActions>,
+    /// 制表符宽度（空格数）。真源是设置里的 `tabSize`（Windows 默认 2，
+    /// `default-settings.ts:55`），由外壳在启动时与每次设置变化后经
+    /// [`EditorPane::set_tab_size`] 登记进来。
+    ///
+    /// ⚠️ 编辑区**不认识设置 crate**（依赖方向：`workbench` → `editor`，反向会成环），
+    /// 所以这里存的是一份值，不是设置句柄；默认值就地写 2，与
+    /// `EditorState` 自己的默认档一致（`gpui-base-0.6.6/src/input/editor/indent.rs:20-27`）。
+    tab_size: usize,
 }
+
+/// 制表符宽度的默认值（= Windows `tabSize` 的默认值 2、也是组件默认档）。
+/// 抽成常量是因为 [`EditorPane::set_tab_size`] 的上界校验与 [`EditorPane::new`] 都要用。
+const DEFAULT_TAB_SIZE: usize = 2;
+/// 制表符宽度的上界（**只为挡住把编辑区改坏的输入**，不是产品档位表：
+/// 真源的下拉只有 2/4/8，那三个值在设置 crate 的 `TAB_SIZES` 里）。
+const MAX_TAB_SIZE: usize = 64;
 
 impl EditorPane {
     /// 建一个没有打开任何文件的编辑区。
@@ -309,7 +324,44 @@ impl EditorPane {
             java_task: None,
             workspace_root: None,
             tab_menu_actions: None,
+            tab_size: DEFAULT_TAB_SIZE,
         }
+    }
+
+    /// 登记「制表符宽度」（设置里的 `tabSize`）。**对所有已打开的 buffer 立即生效**，
+    /// 之后新开的 buffer 也按这个值建。
+    ///
+    /// 落点是 `EditorState::set_tab_size`（`gpui-base-0.6.6/src/input/editor/indent.rs:504`，
+    /// 公开 API），它同时改 Tab 键插入的空白数与 `Tab` 字符的显示宽度。
+    /// 越界输入（0 或大得离谱）在这里夹一次：`TabSize { tab_size: 0 }` 会让缩进计算出 0 个空格，
+    /// 那是"把编辑区改坏"，不是产品档位。
+    ///
+    /// 由外壳调用（`ShellWorkspace` 订阅设置实体后转发），所以编辑区不需要认识设置 crate。
+    pub fn set_tab_size(&mut self, tab_size: usize, cx: &mut Context<Self>) {
+        let tab_size = tab_size.clamp(1, MAX_TAB_SIZE);
+        if self.tab_size == tab_size {
+            return;
+        }
+        self.tab_size = tab_size;
+        let tab = TabSize {
+            tab_size,
+            // 真源的 `tabSize` 就是"N 个空格"（`macos-settings-panels.tsx:321` 用
+            // `settings.mac.spaces` 拼标签），没有"用制表符"这一档，所以恒为软缩进。
+            hard_tabs: false,
+        };
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_tab_size(tab, cx));
+        }
+        // 诊断：`buffers=` 是"这一刻已经打开的 buffer 数"，所以它同时证明了两件事 ——
+        // 值真的传进来了、并且**已打开的**编辑器也被重新设过（不是只管以后新开的）。
+        println!(
+            "S1_EDITOR_TAB_SIZE size={} buffers={}",
+            self.tab_size,
+            self.buffers.len()
+        );
+        cx.notify();
     }
 
     /// 打开项目时调一次（由外壳在 `ShellWorkspace::new` 里转发）：登记工作区根，
@@ -353,6 +405,15 @@ impl EditorPane {
         self.workspace_root = Some(root);
     }
 
+    /// 当前缩进宽度对应的 `TabSize`（两个开 buffer 的路径共用：
+    /// 一个值只在这里翻译一次，避免两处各写一份 `hard_tabs: false`）。
+    fn tab(&self) -> TabSize {
+        TabSize {
+            tab_size: self.tab_size,
+            hard_tabs: false,
+        }
+    }
+
     /// 打开一个文件：读盘、判定类型、更新标签栏与正文。
     ///
     /// **同一路径重复打开只切换活动标签、不再读盘**（沿用上一轮已验证实现的约定，
@@ -383,6 +444,8 @@ impl EditorPane {
         // `cx.new` 之后剩下的只有 `set_highlighter`（同文件 `:772`）。
         // 认不出的扩展名给 `None` → 不调 `.language(..)` → 与"没接高亮"时一样是纯文本。
         let language = language_for_file(&name);
+        // `TabSize` 是 `Copy`：在 `cx.new` 之前取一份，闭包里直接用（不借用 `self`）。
+        let tab = self.tab();
 
         // 一个标签一个 `EditorState`：先建状态再灌正文，然后才入列。
         let editor = cx.new(|cx| {
@@ -397,6 +460,9 @@ impl EditorPane {
             if let Some(language) = language {
                 state = state.language(language);
             }
+            // 缩进宽度：新 buffer 直接带上当前的设置值（`set_tab_size` 是 `&mut self`，
+            // 所以可以放在 builder 之后）。
+            state.set_tab_size(tab, cx);
             if !writable {
                 // 说明性正文（读不到 / 超大 / 二进制 / 非 UTF-8）不可写：只读能避免
                 // "用户以为改了、其实保存的是说明文案"这种更坏的结果。
@@ -776,6 +842,7 @@ impl EditorPane {
         // JDT 反编译出来的正文就是 Java 源码，所以走**同一张**语言表：`display_path` 的
         // 扩展名照常判得出 `"java"`，`jdt://` 虚拟源码因此与磁盘上的 `.java` 一样亮。
         let language = language_for_file(&name);
+        let tab = self.tab();
 
         let editor = cx.new(|cx| {
             let mut state = EditorState::new(window, cx).searchable(true);
@@ -783,6 +850,8 @@ impl EditorPane {
                 state = state.language(language);
             }
             state.set_readonly(true, cx);
+            // 只读的 `jdt://` 库源码同样按当前缩进宽度显示（与磁盘上的 buffer 一致）。
+            state.set_tab_size(tab, cx);
             state
         });
         editor.update(cx, |state, cx| state.set_value(text, window, cx));

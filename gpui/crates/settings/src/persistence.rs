@@ -131,7 +131,22 @@ pub fn load_from_str(text: &str) -> (Settings, Vec<String>) {
 ///
 /// 之所以不用一次性 `serde_json::from_value::<Settings>`：那样任何一个键的类型坏掉都会让整份
 /// 设置丢回默认值，而 Windows 的语义是"逐键回退"（`settings-persistence.ts:73-79`）。
+///
+/// ⚠️ **两段式**（2026-09-25 修）：先整体 `serde` 解析一次 —— 它能认**所有**字段，
+/// 所以新加的字段**不需要**在这里再登记一遍就能被读出来；只有"某个键的类型真的坏了"
+/// （整体解析失败）时才退到下面这张逐键表。修之前只有逐键表这一条路，结果
+/// `fontSize` / `tabSize` / `terminalDefaultShellId` 三个新键**写得出、读不回**
+/// （文件里明明是 8，启动后仍是默认 2），而且**一点诊断都没有** —— 这正是"两份键名表"
+/// 的典型失效方式。
+///
+/// 逐键表仍需与 `Settings` 的字段保持同步（坏键路径靠它）；`every_key_survives_a_round_trip`
+/// 那条测试是守卫：它用"每个字段都不是默认值"的设置跑一遍存取往返。
 fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<String>) -> Settings {
+    if let Ok(parsed) = serde_json::from_value::<Settings>(Value::Object(object.clone())) {
+        return parsed;
+    }
+
+    // 走到这里说明至少有一个键的类型不对；逐键取，坏的那个键回默认并留诊断。
     let mut settings = Settings::default();
     take(object, "theme", &mut settings.theme, diagnostics);
     take(
@@ -163,6 +178,14 @@ fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<Strin
         object,
         "displayLanguage",
         &mut settings.display_language,
+        diagnostics,
+    );
+    take(object, "fontSize", &mut settings.font_size, diagnostics);
+    take(object, "tabSize", &mut settings.tab_size, diagnostics);
+    take(
+        object,
+        "terminalDefaultShellId",
+        &mut settings.terminal_default_shell_id,
         diagnostics,
     );
     settings
@@ -378,6 +401,7 @@ mod tests {
             ui_font_size: 16.5,
             show_status_bar: false,
             display_language: "en-US".to_string(),
+            ..Settings::default()
         };
         settings.normalize();
 
@@ -398,6 +422,56 @@ mod tests {
         assert_eq!(load_from(Some(path.clone())).settings, second);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **每个字段都必须能被读回来**：用"所有字段都不是默认值"的设置跑一次存取往返。
+    ///
+    /// 这条测试守的是一类**静默**失效：`settings_from_object` 里那张逐键表一旦漏了新字段，
+    /// 文件里写得再对、读回来的也是默认值，而且**没有任何诊断**（阶段 14 实测踩到过：
+    /// `fontSize` / `tabSize` / `terminalDefaultShellId` 写得出、读不回）。
+    /// 用全非默认值而不是 `..Settings::default()`，就是为了让"漏了某个键"必定表现为不等。
+    #[test]
+    fn every_key_survives_a_round_trip() {
+        let mut settings = Settings {
+            theme: "Lithe Light".to_string(),
+            sync_system_theme: true,
+            auto_theme_light: "Lithe Light".to_string(),
+            auto_theme_dark: "Lithe Dark".to_string(),
+            ui_font_size: 16.5,
+            show_status_bar: false,
+            display_language: "en-US".to_string(),
+            font_size: 20.0,
+            tab_size: 8,
+            terminal_default_shell_id: "cmd".to_string(),
+        };
+        // 先规范化，保证"写出去的"就是"合法的"（否则比的是两个不同的东西）。
+        settings.normalize();
+        assert_eq!(settings, {
+            // 规范化不该把上面这些合法值改掉；改掉了说明测试自己的取值不合规。
+            let mut copy = settings.clone();
+            copy.normalize();
+            copy
+        });
+
+        let json = serde_json::to_string(&settings).expect("序列化失败");
+        let (loaded, diagnostics) = load_from_str(&json);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        assert_eq!(loaded, settings, "有字段没被读回来（逐键表漏了它？）");
+    }
+
+    /// 一个键的类型坏掉时，**只有那个键**回默认值，其余键照常生效。
+    #[test]
+    fn a_single_broken_key_falls_back_alone() {
+        let (loaded, diagnostics) = load_from_str(
+            r#"{"theme": "Lithe Light", "tabSize": "eight", "terminalDefaultShellId": "wsl"}"#,
+        );
+        assert_eq!(loaded.theme, "Lithe Light", "好键不受坏键连带");
+        assert_eq!(loaded.terminal_default_shell_id, "wsl");
+        assert_eq!(loaded.tab_size, crate::schema::TAB_SIZE_DEFAULT);
+        assert!(
+            diagnostics.iter().any(|line| line.contains("bad_key")),
+            "坏键必须留下诊断：{diagnostics:?}"
+        );
     }
 
     /// 防抖合并：窗口内的多次改动只落盘一次；更晚的那次唤醒不再重复写。

@@ -117,6 +117,13 @@ const GPUI_ONLY_KEYS = [
     reason: "同上：正文只补充作用范围与后果，不重复标题的提问。",
   },
   {
+    key: "settings.gpui.editorFontSizeDescription",
+    zh: "调整编辑器与终端正文的字号。界面字号在外观页。",
+    en: "Adjusts the text size of the editor and terminal. Interface text size lives in Appearance.",
+    reason:
+      "真源的「编辑器 → 字体大小」这一行没有描述（macos-settings-panels.tsx:283-292），而 gpui 侧的字号落在唯一的等宽字号 token 上（Theme::mono_font_size），编辑器与终端正文共用它；补一句说明作用范围，避免与外观页的「界面字体大小」（uiFontSize，rem 基准）混淆。",
+  },
+  {
     key: "editor.gpui.discardChanges",
     zh: "放弃修改",
     en: "Discard changes",

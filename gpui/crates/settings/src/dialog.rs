@@ -61,8 +61,9 @@ use lithe_gpui_shared::tr;
 
 use crate::row::{ControlWidth, RowActivation, page_stack, page_title, settings_group, settings_row};
 use crate::schema::{
-    DISPLAY_LANGUAGES, Settings, UI_FONT_SIZE_DEFAULT, UI_FONT_SIZE_MAX, UI_FONT_SIZE_MIN,
-    UI_FONT_SIZE_STEP,
+    DISPLAY_LANGUAGES, EDITOR_FONT_SIZE_DEFAULT, EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN,
+    SHELL_SYSTEM_DEFAULT, Settings, TAB_SIZES, TERMINAL_SHELL_IDS, UI_FONT_SIZE_DEFAULT,
+    UI_FONT_SIZE_MAX, UI_FONT_SIZE_MIN, UI_FONT_SIZE_STEP,
 };
 use crate::store::{AppearanceMode, SettingsStore, store};
 use crate::theme;
@@ -160,22 +161,33 @@ const DIALOG_HEIGHT: f32 = 620.;
 const NAV_WIDTH: f32 = 190.;
 /// 头部高度（`settings-dialog.tsx:120` 的 `h-11` = 44px）——正好在 gpui 档位上，用 `h_11()`。
 
-/// 左侧分类。**v1 只有两页**：其余 10 个分类对应的子系统在 gpui 侧不存在，
-/// 做了也只是空壳；理由与前置条件写在 `gpui/PLAN.md` 的「阶段 8」。
+/// 左侧分类。**只列 gpui 侧真的有页面的分类**：没有子系统的分类不做，
+/// 做了也只是空壳；理由与前置条件写在 `gpui/PLAN.md` 的「阶段 8」与「阶段 14」。
 ///
-/// 公开是因为命令面板要能"打开到指定分类"（[`open_settings_dialog_at`]）；
-/// 取值域本身仍是这两个，命令面板不新增分类。
+/// 公开是因为命令面板要能"打开到指定分类"（[`open_settings_dialog_at`]）。
+///
+/// 顺序照 Windows 的分类表（`settings-dialog.tsx:35-48`）里的相对次序取子序列：
+/// 常规 → 外观 → 编辑器 → 终端。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {
     /// 常规（`settings.tabs.general` = 常规）。
     General,
     /// 外观（`settings.tabs.appearance` = 外观）。
     Appearance,
+    /// 编辑器（`settings.tabs.editor` = 编辑器）。
+    Editor,
+    /// 终端（`settings.tabs.terminal` = 终端）。
+    Terminal,
 }
 
 impl Category {
-    /// 渲染顺序（Windows 的 12 个分类里前两个就是这两个）。
-    pub const ALL: [Category; 2] = [Category::General, Category::Appearance];
+    /// 渲染顺序（Windows 12 个分类里本侧做出来的那 4 个，相对次序与真源一致）。
+    pub const ALL: [Category; 4] = [
+        Category::General,
+        Category::Appearance,
+        Category::Editor,
+        Category::Terminal,
+    ];
 
     /// 不带参数打开设置时停在哪一页（真源默认是 `general`，`settings-dialog.tsx` 的初值）。
     pub const DEFAULT: Category = Category::General;
@@ -185,6 +197,8 @@ impl Category {
         match self {
             Self::General => "general",
             Self::Appearance => "appearance",
+            Self::Editor => "editor",
+            Self::Terminal => "terminal",
         }
     }
 
@@ -193,15 +207,21 @@ impl Category {
         match self {
             Self::General => "lithe.settings.tabs.general",
             Self::Appearance => "lithe.settings.tabs.appearance",
+            Self::Editor => "lithe.settings.tabs.editor",
+            Self::Terminal => "lithe.settings.tabs.terminal",
         }
     }
 
-    /// 分类图标。Windows 用 `GearSixIcon`（常规）/ 外观页在真源里没有分类图标，
-    /// 这里取 Lucide 的 `palette`（`gpui-kit-assets-0.6.6/assets/palette.svg`，真实字形）。
+    /// 分类图标。Windows 用 `GearSixIcon` / `CodeBlockIcon` / `TerminalWindowIcon` 等
+    /// **expui** 图标；本侧的分类图标继续走 Lucide（真源那几个字形已经搬进
+    /// `gpui/assets/ui-icons/`，但分类栏这一列的图标不在本次范围内），逐个取语义最近的一个：
+    /// 编辑器 → `code`、终端 → `square-terminal`（与活动栏「终端」同一个字形）。
     fn icon(self) -> IconName {
         match self {
             Self::General => IconName::Settings,
             Self::Appearance => IconName::Palette,
+            Self::Editor => IconName::Code,
+            Self::Terminal => IconName::SquareTerminal,
         }
     }
 }
@@ -212,6 +232,8 @@ pub struct SettingsDialog {
     category: Category,
     /// 「界面字体大小」的数字输入状态（`NumberInput` 是 Stateful 组件，状态由调用方持有）。
     font_size_input: Entity<InputState>,
+    /// 「编辑器字体大小」的数字输入状态（同一个组件，另一份状态 —— 两个键互不相干）。
+    editor_font_size_input: Entity<InputState>,
     /// 订阅与观察（`store` 变了要重绘；输入框变了要写设置）。
     _subscriptions: Vec<Subscription>,
 }
@@ -224,6 +246,7 @@ impl SettingsDialog {
         cx: &mut Context<Self>,
     ) -> Self {
         let value = store.read(cx).settings().ui_font_size;
+        let editor_value = store.read(cx).settings().font_size;
         // 数字框的引擎配置放在 `InputState` 上：`+`/`-` 与上下键都按 `step` 走、
         // 越界文本在输入期间被容忍、失焦时收敛到范围（`gpui-base-0.6.6/src/input/base/state.rs:9032-9052`）。
         let font_size_input = cx.new(|cx| {
@@ -232,6 +255,14 @@ impl SettingsDialog {
                 .step(UI_FONT_SIZE_STEP)
                 .min(UI_FONT_SIZE_MIN)
                 .max(UI_FONT_SIZE_MAX)
+        });
+        // 编辑器字号的档位与 UI 字号不同：整数步长、10–22（真源控件属性，不是 `ui-font-size.ts` 那套）。
+        let editor_font_size_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(format_editor_font_size(editor_value))
+                .step(1.)
+                .min(EDITOR_FONT_SIZE_MIN)
+                .max(EDITOR_FONT_SIZE_MAX)
         });
 
         let mut subscriptions = Vec::new();
@@ -257,11 +288,29 @@ impl SettingsDialog {
                 store.update(cx, |store, cx| store.set_ui_font_size(parsed, cx));
             },
         ));
+        subscriptions.push(cx.subscribe_in(
+            &editor_font_size_input,
+            window,
+            |this: &mut Self, input, event: &InputEvent, _window, cx| {
+                if !matches!(event, InputEvent::Change) {
+                    return;
+                }
+                let Ok(parsed) = input.read(cx).value().parse::<f64>() else {
+                    return;
+                };
+                if !(EDITOR_FONT_SIZE_MIN..=EDITOR_FONT_SIZE_MAX).contains(&parsed) {
+                    return;
+                }
+                let store = this.store.clone();
+                store.update(cx, |store, cx| store.set_editor_font_size(parsed, cx));
+            },
+        ));
 
         Self {
             store,
             category,
             font_size_input,
+            editor_font_size_input,
             _subscriptions: subscriptions,
         }
     }
@@ -364,6 +413,8 @@ impl SettingsDialog {
                 match self.category {
                     Category::General => self.general_page(&settings, cx),
                     Category::Appearance => self.appearance_page(&settings, cx),
+                    Category::Editor => self.editor_page(&settings, cx),
+                    Category::Terminal => self.terminal_page(&settings, cx),
                 },
             ))
     }
@@ -562,6 +613,123 @@ impl SettingsDialog {
         ]
     }
 
+    /// 「编辑器」页：**只放真的有消费方的两项**。
+    ///
+    /// 真源 `macos-settings-panels.tsx:275-328` 的「编辑器」页有 4 项，分三组
+    /// （显示 / 编辑器标签页 / 缩进）：
+    ///
+    /// | 真源项 | 本侧 | 为什么 |
+    /// | --- | --- | --- |
+    /// | `fontSize`（数字，10–22） | ✅ 做了 | 落点是主题的 `mono_font_size`，编辑器正文当帧就变（[`crate::store::SettingsStore::set_editor_font_size`]） |
+    /// | `tabSize`（2/4/8） | ✅ 做了 | 落点是每个 `EditorState` 的 `TabSize`，由外壳转发给 `EditorPane::set_tab_size` |
+    /// | `codeLens`（「显示用法与 Git 作者」） | ❌ 不做 | gpui 侧**没有 LSP 的 code lens 通路**，也没有行内 Git blame（`enableInlineGitBlame` 同理）；放上去就是"点了没反应" |
+    /// | `horizontalTabScroll`（缓冲区轮播） | ❌ 不做 | 本侧标签条没有轮播形态（`TabBar` 自带横向滚动，但没有"单行 / 多行换行"这一档设置）；同上，不做假控件 |
+    ///
+    /// 被砍掉的两项**不画置灰控件**：`07-settings-ui.md` §7.3-D 对"没有对应物"的项给的
+    /// 处理是"应隐藏或标注"，而画一个永远不生效的开关比不画更容易骗人。
+    fn editor_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+        vec![
+            settings_group(
+                tr("lithe.settings.mac.display"),
+                vec![settings_row(
+                    "settings-row-editor-font-size",
+                    tr("lithe.settings.mac.fontSize"),
+                    // 真源这一行**没有**描述；这里补一句是因为 gpui 侧的字号作用于主题的
+                    // 等宽字号（编辑器正文），而终端正文也用它 —— 说清楚作用范围，
+                    // 免得用户以为它是"界面字号"（那是外观页的 `uiFontSize`）。
+                    Some(tr("lithe.settings.gpui.editorFontSizeDescription")),
+                    NumberInput::new(&self.editor_font_size_input)
+                        .w(ControlWidth::Number.length())
+                        .into_any_element(),
+                    None,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+            settings_group(
+                tr("lithe.settings.mac.indentation"),
+                vec![settings_row(
+                    "settings-row-tab-size",
+                    tr("lithe.settings.mac.tabWidth"),
+                    None,
+                    self.dropdown(
+                        "settings-tab-size",
+                        tab_size_label(settings.tab_size),
+                        TAB_SIZES
+                            .iter()
+                            .map(|size| {
+                                let value = SharedString::from(size.to_string());
+                                (value, tab_size_label(*size), settings.tab_size == *size)
+                            })
+                            .collect(),
+                        {
+                            let store = self.store.clone();
+                            Box::new(move |value, _, cx| {
+                                let Ok(size) = value.parse::<u32>() else {
+                                    return;
+                                };
+                                store.update(cx, |store, cx| store.set_tab_size(size, cx));
+                            })
+                        },
+                    ),
+                    None,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+        ]
+    }
+
+    /// 「终端」页：真源只有一项（`macos-settings-panels.tsx:372-396`，分组 `Shell`）。
+    ///
+    /// 描述逐字用真源的 `settings.mac.defaultShellDescription`（「用于新的终端会话。」）——
+    /// 这句在 gpui 侧同样成立：已开的会话不会换 shell，只有新建页签才按新值解析
+    /// （`terminal/src/session.rs` 的 `open_tab_with` 读 `active_profile`）。
+    fn terminal_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+        vec![
+            settings_group(
+                tr("lithe.settings.mac.shell"),
+                vec![settings_row(
+                    "settings-row-terminal-shell",
+                    tr("lithe.settings.mac.defaultShell"),
+                    Some(tr("lithe.settings.mac.defaultShellDescription")),
+                    self.dropdown(
+                        "settings-terminal-shell",
+                        shell_label(&settings.terminal_default_shell_id),
+                        TERMINAL_SHELL_IDS
+                            .iter()
+                            .map(|id| {
+                                let value = SharedString::from(*id);
+                                (
+                                    value,
+                                    shell_label(id),
+                                    settings.terminal_default_shell_id == *id,
+                                )
+                            })
+                            .collect(),
+                        {
+                            let store = self.store.clone();
+                            Box::new(move |value, _, cx| {
+                                // 只写设置：把它推给终端面板是**外壳**的事（订阅本实体后调
+                                // `TerminalPane::set_default_shell`）。设置 crate 不认识终端 crate
+                                // —— 依赖方向见 `crate::lib.rs` 的模块文档。
+                                store.update(cx, |store, cx| {
+                                    store.set_terminal_default_shell_id(value.to_string(), cx)
+                                });
+                            })
+                        },
+                    ),
+                    None,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+        ]
+    }
+
     /// 底部：左「恢复默认设置…」+ 右「完成」。
     fn footer(&self, cx: &Context<Self>) -> impl IntoElement {
         h_flex()
@@ -607,10 +775,14 @@ impl SettingsDialog {
     fn confirm_restore_defaults(&self, window: &mut Window, cx: &mut Context<Self>) {
         let store = self.store.clone();
         let input = self.font_size_input.clone();
+        let editor_input = self.editor_font_size_input.clone();
 
         window.open_dialog(cx, move |dialog, _, cx| {
             let store = store.clone();
             let input = input.clone();
+            // 两个数字框都要在确认后回写显示值，所以两个实体都得在**每次重绘**时各克隆一份
+            // （闭包是 `Fn`：直接 move 外层捕获的实体做不到，`Entity` 不是 `Copy`）。
+            let editor_input = editor_input.clone();
             dialog
                 .title(tr("lithe.settings.gpui.restoreDefaultsTitle"))
                 .child(
@@ -643,6 +815,15 @@ impl SettingsDialog {
                                         input.set_value(
                                             SharedString::from(format_ui_font_size(
                                                 UI_FONT_SIZE_DEFAULT,
+                                            )),
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                    editor_input.update(cx, |input, cx| {
+                                        input.set_value(
+                                            SharedString::from(format_editor_font_size(
+                                                EDITOR_FONT_SIZE_DEFAULT,
                                             )),
                                             window,
                                             cx,
@@ -780,6 +961,34 @@ fn format_ui_font_size(value: f64) -> String {
     }
 }
 
+/// 编辑器字号显示文本。它恒为整数档（[`crate::schema::normalize_editor_font_size`]），
+/// 所以只有整数一种形态；分开一个函数是为了让"两个字号的口径不同"这件事在调用点看得见。
+fn format_editor_font_size(value: f64) -> String {
+    format!("{}", crate::schema::normalize_editor_font_size(value) as i64)
+}
+
+/// 制表符宽度的显示文本：`2 个空格`（真源 `macos-settings-panels.tsx:321` 的
+/// `` `${size} ${t("settings.mac.spaces")}` `` —— 数字在前、单位词在后，中间一个空格）。
+fn tab_size_label(size: u32) -> SharedString {
+    SharedString::from(format!("{size} {}", tr("lithe.settings.mac.spaces")))
+}
+
+/// 终端默认 Shell 下拉的显示名。四个取值与真源
+/// `macos-settings-panels.tsx:388-391` 的四个 `<option>` 一一对应。
+fn shell_label(id: &str) -> SharedString {
+    match id {
+        "powershell" => tr("lithe.settings.mac.shellPowerShell"),
+        "cmd" => tr("lithe.settings.mac.shellCommandPrompt"),
+        "wsl" => tr("lithe.settings.mac.shellWsl"),
+        // 空串 = 「系统默认」；未知值不可能出现在界面上（`normalize` 有白名单），
+        // 真出现了也按系统默认显示，不 panic。
+        _ => {
+            debug_assert_eq!(id, SHELL_SYSTEM_DEFAULT);
+            tr("lithe.settings.mac.systemDefault")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -790,15 +999,26 @@ mod tests {
         assert_eq!(format_ui_font_size(13.0), "13");
         assert_eq!(format_ui_font_size(16.5), "16.5");
         assert_eq!(format_ui_font_size(13.24), "13");
+        // 编辑器字号只有整数档：小数先被四舍五入，不会出现 "14.5"。
+        assert_eq!(format_editor_font_size(14.0), "14");
+        assert_eq!(format_editor_font_size(14.6), "15");
     }
 
-    /// 分类清单必须正好是 v1 的两页（多一页就是空壳）。
+    /// 分类清单必须正好是**已经做出了页面**的那几页（多一页就是空壳）。
+    ///
+    /// ⚠️ 这个断言是"不许提前把没做的分类挂进左栏"的守卫：每做完一页就把它加进来，
+    /// 加进来就必须同时有页面与文案。
     #[test]
-    fn only_two_categories_are_exposed() {
+    fn only_implemented_categories_are_exposed() {
         assert_eq!(
             Category::ALL,
-            [Category::General, Category::Appearance],
-            "v1 只做常规与外观两页"
+            [
+                Category::General,
+                Category::Appearance,
+                Category::Editor,
+                Category::Terminal,
+            ],
+            "左栏只列真的有页面的分类"
         );
         assert_eq!(Category::DEFAULT, Category::General);
     }
@@ -809,6 +1029,8 @@ mod tests {
     fn category_ids_are_probe_tokens() {
         assert_eq!(Category::General.id(), "general");
         assert_eq!(Category::Appearance.id(), "appearance");
+        assert_eq!(Category::Editor.id(), "editor");
+        assert_eq!(Category::Terminal.id(), "terminal");
     }
 
     /// rem 换算：`rems(P / 16.)` 在 16px 基准下必须等于规格像素值。

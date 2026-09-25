@@ -91,6 +91,12 @@ pub struct TerminalPane {
     pub(crate) profiles: Vec<TerminalProfile>,
     /// 新建页签用哪个配置文件。
     pub(crate) active_profile: usize,
+    /// 上一次登记进来的「默认 Shell」设置值（Windows 键 `terminalDefaultShellId`）。
+    ///
+    /// 存它是为了**幂等**：外壳在*每一次*设置变化时都会转发一遍（`ShellWorkspace` 的
+    /// 设置订阅），而用户在页签条 ⌄ 菜单里手动选过的配置文件不该被"隔壁开关动了"重置回默认。
+    /// 所以只有这个值**真的变了**才重建 `profiles` 并改 `active_profile`。
+    pub(crate) default_shell_id: String,
     /// 底部命令输入行。
     pub(crate) input: Entity<InputState>,
     /// 输入行的事件订阅（`PressEnter` → 发送一行）。订阅器一 drop 就失效，所以要存住。

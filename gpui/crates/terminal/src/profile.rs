@@ -93,12 +93,41 @@ impl TerminalProfile {
     }
 }
 
+/// 「系统默认 shell」的内部取值：**空串**。
+///
+/// 与设置 crate 的 `SHELL_SYSTEM_DEFAULT` 是同一个值，但这里**不复用**那一个常量：
+/// 依赖方向是 `workbench` → `terminal`，`terminal` 不认识 `settings`
+/// （`crates/terminal/Cargo.toml` 里没有 `lithe-gpui-settings`），所以各自声明一次，
+/// 由 `SHELL_IDS` 的注释钉住两边同源。
+pub(crate) const SHELL_SYSTEM_DEFAULT: &str = "";
+
+/// 「默认 Shell」设置的全部合法取值（**顺序即设置页下拉的顺序**）。
+///
+/// 真源 `windows/tauri/src/features/settings/components/macos-settings-panels.tsx:388-391` 的
+/// 四个 `<option>`：`""`（系统默认）/ `powershell` / `cmd` / `wsl`。
+/// 设置 crate 的 `TERMINAL_SHELL_IDS` 是同一份表的另一份声明，两边的**取值**必须一致
+/// （那边是白名单、这边是"能不能真的起一个进程"）。
+pub(crate) const SHELL_IDS: [&str; 4] = [SHELL_SYSTEM_DEFAULT, "powershell", "cmd", "wsl"];
+
+/// 把设置里的 shell id 解析成一个可执行的配置文件；`None` = 「系统默认」（保持探测顺序）。
+///
+/// 只做**映射**，不判可用性：`wsl` 这类命令在没装 WSL 的机器上不存在，
+/// 判断由调用方（[`crate::TerminalPane::set_default_shell`]）用 [`command_exists`] 做，
+/// 这样"设置里点名了但本机没有"能走一条单独的诊断分支，而不是静默什么都没发生。
+pub(crate) fn profile_for_shell_id(id: &str) -> Option<TerminalProfile> {
+    match id {
+        "powershell" | "cmd" | "wsl" => Some(TerminalProfile::new(id)),
+        // 空串与任何未知值都按「系统默认」处理（设置侧有白名单，未知值到不了这里）。
+        _ => None,
+    }
+}
+
 /// 运行时探测一个程序在不在 `PATH` 上（**不用 `#[cfg]`**）。
 ///
 /// 先试 `where.exe`（Windows），它不存在时（`Err(NotFound)`）再试 `which`（POSIX）；
 /// 两者都拿不到就返回 `false`。这样"Windows 优先 powershell、回退 cmd"这句话
 /// 就是运行期的一条判断，而不是编译期的平台分支（`gpui/UI-MAP.md` §1.1 第 5 条）。
-fn command_exists(program: &str) -> bool {
+pub(crate) fn command_exists(program: &str) -> bool {
     for probe in ["where.exe", "which"] {
         let Ok(status) = Command::new(probe)
             .arg(program)
@@ -121,6 +150,7 @@ fn command_exists(program: &str) -> bool {
 /// 两个都探不到时返回空表，[`TerminalPane::new`] 会把页签置成失败态并显示
 /// [`ERROR_FALLBACK`]（真机在探测不到 shell 时也显示「暂未检测到」，
 /// `terminal.shellUnavailable`，`locale.ts:7542`）。
+/// 注意这张表**只列探测得到的**：设置里点名的 shell 由 [`profile_for_shell_id`] 另判。
 pub(crate) fn profiles() -> Vec<TerminalProfile> {
     detected_profiles().to_vec()
 }
@@ -134,6 +164,10 @@ pub(crate) fn default_profile() -> Option<TerminalProfile> {
 }
 
 /// 真正做探测的地方（只跑一次，结果进 [`OnceLock`]）。
+///
+/// 探测清单是 [`SHELL_IDS`] 里**默认顺序**的那两项（`powershell` → `cmd`）；
+/// `wsl` 只在设置里被点名时才认（[`profile_for_shell_id`]）—— 它不该挤进默认顺序，
+/// 真机的默认顺序同样只有 PowerShell 与命令提示符两条。
 fn detected_profiles() -> &'static [TerminalProfile] {
     static DETECTED: OnceLock<Vec<TerminalProfile>> = OnceLock::new();
     DETECTED.get_or_init(|| {
@@ -145,6 +179,34 @@ fn detected_profiles() -> &'static [TerminalProfile] {
         }
         detected
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 设置里的四个 id → 配置文件：只有 `powershell` / `cmd` / `wsl` 能映射出程序，
+    /// 空串（系统默认）与任何未知值都返回 `None`（= 保持探测顺序）。
+    #[test]
+    fn shell_ids_map_to_programs() {
+        for id in ["powershell", "cmd", "wsl"] {
+            let profile = profile_for_shell_id(id).expect("这三个 id 必须映射出程序");
+            assert_eq!(profile.program().to_string_lossy(), id);
+        }
+        assert!(profile_for_shell_id(SHELL_SYSTEM_DEFAULT).is_none());
+        assert!(profile_for_shell_id("fish").is_none());
+    }
+
+    /// 两份声明（设置 crate 的白名单 / 这里的映射表）必须列同一批取值。
+    /// 这条钉住的是"设置页里能选的值 = 终端认识的值"，加值时两边漏一边就会红。
+    #[test]
+    fn shell_id_table_matches_the_settings_whitelist() {
+        assert_eq!(
+            SHELL_IDS,
+            ["", "powershell", "cmd", "wsl"],
+            "与 lithe-gpui-settings 的 TERMINAL_SHELL_IDS 必须逐项一致"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

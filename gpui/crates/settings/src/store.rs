@@ -14,6 +14,9 @@
 //! | --- | --- | --- |
 //! | `theme` / `autoTheme*` / `syncSystemTheme` | 立即：`Theme::change` + `apply_config` + `refresh_windows` | [`crate::theme::apply_theme_by_name`] |
 //! | `uiFontSize` | 立即：写 `Theme.font_size`（rem 基准），`Root::render` 每帧用它调 `window.set_rem_size` | `gpui-component-0.6.6/src/root.rs:582` |
+//! | `fontSize`（编辑器字号） | 立即：写 `Theme.mono_font_size`，编辑器正文当帧就变 | `gpui-component-0.6.6/src/input/editor.rs:137-143` |
+//! | `tabSize` | 立即，但**不由本 store 应用**：外壳订阅本实体后转发给 `EditorPane::set_tab_size` | `gpui-base-0.6.6/src/input/editor/indent.rs:504` |
+//! | `terminalDefaultShellId` | 只影响**新建**的终端会话：外壳订阅后转发给 `TerminalPane::set_default_shell` | `macos-settings-panels.tsx:379-393` 的原文「用于新的终端会话。」 |
 //! | `showStatusBar` | 立即：`ShellWorkspace::render` 条件渲染 + 本 Entity 的 `notify` | `gpui/crates/workbench/src/workspace.rs` |
 //! | `displayLanguage` | **重启后**（gpui 侧 `set_locale` 只在启动早期调一次） | `gpui/crates/app/src/main.rs` |
 //!
@@ -71,7 +74,9 @@ enum Effects {
     Theme,
     /// 只有 UI 字号变了：只更新 rem 基准。
     FontSize,
-    /// 没有即时副作用（语言要重启、状态栏由订阅方重绘）。
+    /// 只有编辑器字号变了：只更新主题的等宽字号（编辑器正文）。
+    EditorFontSize,
+    /// 没有即时副作用（语言要重启、状态栏/缩进/终端 shell 由订阅方自己应用）。
     None,
 }
 
@@ -165,8 +170,9 @@ pub fn init_store(cx: &mut App, init: Init) -> Entity<SettingsStore> {
     cx.set_global(SettingsHandle(store.clone()));
 
     // 主题还没装载，先把 UI 字号落到 rem 基准上：即使主题文件全坏、一个主题都载不进来，
-    // 字号设置也照样生效。
+    // 字号设置也照样生效。编辑器字号同理（写的是主题的等宽字号，与主题名无关）。
     store.update(cx, |store, cx| store.apply_font_size(cx));
+    store.update(cx, |store, cx| store.apply_editor_font_size(cx));
 
     // rem 基准不变量：`ThemeRegistry` 的全局观察者（`theme/registry.rs:46-71`）在主题目录
     // 重新加载时会调一次 `Theme::change`，而 `apply_config` 会把主题文件里的 `font.size`
@@ -310,6 +316,28 @@ impl SettingsStore {
         self.commit(cx, next, Effects::None);
     }
 
+    /// 改「编辑器字号」。立即生效（写主题的 `mono_font_size`，编辑器正文当帧就变）+ 防抖落盘。
+    pub fn set_editor_font_size(&mut self, value: f64, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.font_size = value;
+        self.commit(cx, next, Effects::EditorFontSize);
+    }
+
+    /// 改「制表符宽度」。**本 store 不自己应用**（缩进只对编辑器状态有意义），
+    /// 由外壳订阅本实体后转发给 `EditorPane::set_tab_size`；这里只落状态 + 防抖落盘 + `notify`。
+    pub fn set_tab_size(&mut self, value: u32, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.tab_size = value;
+        self.commit(cx, next, Effects::None);
+    }
+
+    /// 改「终端默认 Shell」。同样由外壳订阅后转发给 `TerminalPane`（只影响新建会话）。
+    pub fn set_terminal_default_shell_id(&mut self, id: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.terminal_default_shell_id = id;
+        self.commit(cx, next, Effects::None);
+    }
+
     /// 改「显示语言」。返回是否真的变了。**立即落盘**（不等 300ms 防抖）：调用方紧接着就会
     /// 重启应用（[`crate::restart::restart_application`]），新进程必须马上读到新语言。
     ///
@@ -342,6 +370,7 @@ impl SettingsStore {
         match effects {
             Effects::Theme => self.apply_theme(cx),
             Effects::FontSize => self.apply_font_size(cx),
+            Effects::EditorFontSize => self.apply_editor_font_size(cx),
             Effects::None => {}
         }
         self.after_change(cx);
@@ -427,10 +456,17 @@ impl SettingsStore {
         // 主题文件被删掉这种事必须留下证据。
         theme::apply_theme_by_name(cx, &name);
         self.apply_font_size(cx);
+        // ⚠️ 顺序不能反：`apply_config` 会把主题文件里的字体档写回主题 token，
+        // 所以两个"用户设置的字号"必须在它之后各补一次（rem 基准 + 等宽字号）。
+        self.apply_editor_font_size(cx);
     }
 
     fn apply_font_size(&self, cx: &mut Context<Self>) {
         theme::apply_theme_font_size(cx, self.settings.ui_font_size);
+    }
+
+    fn apply_editor_font_size(&self, cx: &mut Context<Self>) {
+        theme::apply_editor_font_size(cx, self.settings.font_size);
     }
 
     /// rem 基准不变量（见 [`init_store`] 的说明）：主题的 `font_size` 必须等于 uiFontSize 的换算值。

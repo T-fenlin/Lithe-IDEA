@@ -291,6 +291,28 @@ mod tests {
             ),
             ("lithe.settings.appearance.showStatusBar", "显示状态栏"),
             ("lithe.ui.cancel", "取消"),
+            // 阶段 14（设置的「编辑器」页）：分组标题 + 两项标签 + 单位词。
+            // 全部是**真源既有**键（`macos-settings-panels.tsx:275-328` 的渲染点；
+            // `settings.mac.spaces` 在那个文件里被拼成 `` `${size} ${t("settings.mac.spaces")}` ``）。
+            ("lithe.settings.tabs.editor", "编辑器"),
+            ("lithe.settings.mac.display", "显示"),
+            ("lithe.settings.mac.fontSize", "字体大小"),
+            ("lithe.settings.mac.indentation", "缩进"),
+            ("lithe.settings.mac.tabWidth", "制表符宽度"),
+            ("lithe.settings.mac.spaces", "个空格"),
+            // 阶段 14（设置的「终端」页）：真源 `macos-settings-panels.tsx:372-396` 的
+            // 分组标题 / 行标签 / 描述，以及四个下拉选项名（`:388-391`）。
+            ("lithe.settings.tabs.terminal", "终端"),
+            ("lithe.settings.mac.shell", "Shell"),
+            ("lithe.settings.mac.defaultShell", "默认 Shell"),
+            (
+                "lithe.settings.mac.defaultShellDescription",
+                "用于新的终端会话。",
+            ),
+            ("lithe.settings.mac.systemDefault", "系统默认"),
+            ("lithe.settings.mac.shellPowerShell", "PowerShell"),
+            ("lithe.settings.mac.shellCommandPrompt", "命令提示符"),
+            ("lithe.settings.mac.shellWsl", "WSL"),
             // 下面 6 条真源（`windows/tauri/src/i18n/locale.ts`）里没有，由
             // `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 提供（每条都写了理由）。
             ("lithe.settings.gpui.languageEnglish", "英语"),
@@ -302,6 +324,12 @@ mod tests {
             ("lithe.settings.gpui.restoreDefaultsOpen", "恢复默认设置…"),
             ("lithe.settings.gpui.restoreDefaultsTitle", "恢复默认设置？"),
             ("lithe.settings.gpui.restoreDefaultsBody", "所有设置都会回到默认值。"),
+            // 阶段 14：真源的「编辑器 → 字体大小」这一行没有描述，本侧补一句说明作用范围
+            // （等宽字号同时作用于编辑器与终端正文）——理由写在 `GPUI_ONLY_KEYS` 里。
+            (
+                "lithe.settings.gpui.editorFontSizeDescription",
+                "调整编辑器与终端正文的字号。界面字号在外观页。",
+            ),
             // 阶段 9 的编辑器侧（3 条，同样由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里）。
             ("lithe.editor.gpui.discardChanges", "放弃修改"),
             (
@@ -607,5 +635,16 @@ mod tests {
     /// 例外是 `lithe.workbench.maven`（**右**活动栏的 Maven 项，阶段 6 第一半后
     /// Maven 只归右栏）与 `lithe.maven.title`（右工具窗 Maven 视图的标题）—— 都是产品名，
     /// 没有可翻译的内容。
-    const SAME_IN_BOTH_LOCALES: &[&str] = &["lithe.workbench.maven", "lithe.maven.title"];
+    ///
+    /// 阶段 14 追加的三条是「终端 → 默认 Shell」下拉里的选项名：`Shell`、`PowerShell`、`WSL`
+    /// 在真源的两份 catalog 里本来就是同一个词（`settings.mac.shell` / `shellPowerShell` /
+    /// `shellWsl`），没有可翻译的内容；`命令提示符`（`shellCommandPrompt`）有英文对照
+    /// （`Command Prompt`），所以**不进**这张表。
+    const SAME_IN_BOTH_LOCALES: &[&str] = &[
+        "lithe.workbench.maven",
+        "lithe.maven.title",
+        "lithe.settings.mac.shell",
+        "lithe.settings.mac.shellPowerShell",
+        "lithe.settings.mac.shellWsl",
+    ];
 }

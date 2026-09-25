@@ -114,6 +114,24 @@ pub fn apply_theme_font_size(cx: &mut App, ui_font_size: f64) {
     );
 }
 
+/// 把「编辑器字号」写进主题的等宽字号并刷新窗口。
+///
+/// 落点是 `Theme::mono_font_size`：gpui-kit 的编辑器正文就用它
+/// （`gpui-component-0.6.6/src/input/editor.rs:137-143` 的
+/// `.text_size(cx.theme().mono_font_size)`），所以改这一个 token 就是"编辑器字号立即生效"。
+///
+/// 与 [`apply_theme_font_size`] 同一口径：**必须在 [`apply_theme_by_name`] 之后调用**
+/// （主题文件里若写了 `font.mono_size`，`apply_config` 会先覆盖一次）。
+/// `sync_base` 不是可选项：不推给 Base 层的话滚动条等基础件会继续用旧字号
+/// （`gpui-component-0.6.6/src/theme/mod.rs:349-372`）。
+pub fn apply_editor_font_size(cx: &mut App, editor_font_size: f64) {
+    let font_size = px(editor_font_size as f32);
+    Theme::global_mut(cx).mono_font_size = font_size;
+    Theme::sync_base(cx);
+    cx.refresh_windows();
+    println!("S1_THEME mono_font_size={font_size:?} editor_font_size={editor_font_size}");
+}
+
 /// 注册表里当前可选的**主题名**（按注册表的稳定序：默认主题在前、浅色在前、名字不区分大小写）。
 ///
 /// 这就是设置界面「配色主题」下拉的候选集合 —— 不写死，因此以后往 `gpui/themes/` 里

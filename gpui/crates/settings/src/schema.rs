@@ -17,10 +17,12 @@
 //! 用 `from_str`，而是走 [`crate::persistence::load_from_str`] 的逐键容错解析
 //! （坏键 → 默认值 + 一条诊断），`#[serde(default)]` 仍然负责"缺键"这一半语义。
 //!
-//! ## v1 只落「gpui 侧真的能生效」的 7 个键
+//! ## 只落「gpui 侧真的能生效」的键
 //!
-//! 取舍与理由见 `gpui/PLAN.md` 的「阶段 8」；`gpui/research/windows/07-settings-ui.md` §7.3
-//! 逐项列了哪些键在 gpui 侧能立刻生效、哪些没有对应子系统。
+//! 取舍与理由见 `gpui/PLAN.md` 的「阶段 8」（v1 的 7 个键）与「阶段 14」（设置剩余页新增的
+//! `fontSize` / `tabSize` / `terminalDefaultShellId`）；`gpui/research/windows/07-settings-ui.md`
+//! §7.3 逐项列了哪些键在 gpui 侧能立刻生效、哪些没有对应子系统。**没有消费方的键不进来**
+//! —— 那只会变成"存了没用"的设置项。
 
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +38,44 @@ pub const UI_FONT_SIZE_DEFAULT: f64 = 13.0;
 
 /// 「显示语言」的默认值。真源 `default-settings.ts:92`（`displayLanguage: "zh-CN"`）。
 pub const DEFAULT_DISPLAY_LANGUAGE: &str = "zh-CN";
+
+/// 编辑器字号的下限 / 上限。真源 `macos-settings-panels.tsx:283-292` 的数字输入
+/// `min={10} max={22}`（真实对话框的「编辑器」页）。
+pub const EDITOR_FONT_SIZE_MIN: f64 = 10.0;
+/// 见 [`EDITOR_FONT_SIZE_MIN`]。
+pub const EDITOR_FONT_SIZE_MAX: f64 = 22.0;
+/// 编辑器字号的默认值。真源 `default-settings.ts:53` 的 `fontSize: DEFAULT_CODE_FONT_SIZE`，
+/// 而 `config/typography-defaults.ts:13` 里 `DEFAULT_CODE_FONT_SIZE = 14`。
+pub const EDITOR_FONT_SIZE_DEFAULT: f64 = 14.0;
+
+/// 制表符宽度的合法取值（**枚举序即下拉顺序**）。真源 `macos-settings-panels.tsx:313-325`
+/// 的 `2 / 4 / 8`，显示时拼成「N 个空格」（`settings.mac.spaces`）。
+pub const TAB_SIZES: [u32; 3] = [2, 4, 8];
+/// 制表符宽度默认值。真源 `default-settings.ts:55`（`tabSize: 2`）——正好是
+/// `EditorState` 自己的默认档（`gpui-base-0.6.6/src/input/editor/indent.rs:20-27`）。
+pub const TAB_SIZE_DEFAULT: u32 = 2;
+
+/// 「系统默认 shell」的内部取值：**空串**。真源 `default-settings.ts:87`
+/// （`terminalDefaultShellId: ""`），对应下拉里的「系统默认」（`settings.mac.systemDefault`）。
+pub const SHELL_SYSTEM_DEFAULT: &str = "";
+/// 终端默认 shell 的合法取值（**枚举序即下拉顺序**）。真源 `macos-settings-panels.tsx:379-393`
+/// 的 `"" / powershell / cmd / wsl`；这里的取值是**内部 id**（不是界面文案），
+/// 解析成真实程序在 `lithe-gpui-terminal`（`profile.rs`）。
+pub const TERMINAL_SHELL_IDS: [&str; 4] = [SHELL_SYSTEM_DEFAULT, "powershell", "cmd", "wsl"];
+
+/// 把 `fontSize`（编辑器字号）归一到 `10..=22` 的整数。
+///
+/// Windows 那侧是 `<input type="number" min={10} max={22}>`（`macos-settings-panels.tsx:283-292`），
+/// 步长没写、渲染出的是整数档；`normalizeUiFontSize` 那套「0.5 步长 + 两位小数」**只针对
+/// `uiFontSize`**（`lib/ui-font-size.ts:10-19`），编辑器字号不该跟着它走。非有限值回落默认。
+pub fn normalize_editor_font_size(value: f64) -> f64 {
+    if !value.is_finite() {
+        return EDITOR_FONT_SIZE_DEFAULT;
+    }
+    value
+        .round()
+        .clamp(EDITOR_FONT_SIZE_MIN, EDITOR_FONT_SIZE_MAX)
+}
 
 /// 「显示语言」的合法取值白名单（**枚举序即下拉顺序**）。
 ///
@@ -115,6 +155,43 @@ pub struct Settings {
     /// `gpui/crates/app/src/main.rs` 的启动顺序说明）。
     #[serde(rename = "displayLanguage")]
     pub display_language: String,
+
+    /// 编辑器字号（px）。Windows 键 `fontSize`，默认 `14`（`default-settings.ts:53` →
+    /// `typography-defaults.ts:13` 的 `DEFAULT_CODE_FONT_SIZE`），范围 `10..=22`
+    /// （真实对话框的数字输入，`macos-settings-panels.tsx:283-292`）。
+    ///
+    /// 生效方式：**立即**。落到 gpui 的主题 token `Theme::mono_font_size`
+    /// （编辑器正文用它，`gpui-component-0.6.6/src/input/editor.rs:137-143`），
+    /// 由 [`crate::theme::apply_editor_font_size`] 在每次应用主题之后补写
+    /// （`apply_config` 会把主题文件里的字体档写回来，顺序不能反）。
+    ///
+    /// ⚠️ **这是"编辑器字号"在 gpui 侧唯一的全局落点**：真源把 `fontSize` 与
+    /// `terminalFontSize` 分成两个键（`default-settings.ts:53,76`），而 gpui 的主题只有
+    /// 一个 `mono_font_size`，终端正文也用它。真实对话框的「终端」页只有「默认 Shell」
+    /// 一项（`macos-settings-panels.tsx:372-396`），所以本侧不新增 `terminalFontSize` 控件
+    /// —— 那会是"存了没用"的键。副作用（终端字号跟着编辑器走）登记在
+    /// `gpui/PLAN.md` 与设置页的描述里。
+    #[serde(rename = "fontSize")]
+    pub font_size: f64,
+
+    /// 制表符宽度。Windows 键 `tabSize`，默认 `2`（`default-settings.ts:55`），
+    /// 取值域 [`TAB_SIZES`]。
+    ///
+    /// 生效方式：**立即**（对**所有已打开**的 buffer 与之后新开的都生效）——
+    /// 由外壳把值转发给 `EditorPane::set_tab_size`，后者写进每个 `EditorState`
+    /// （`gpui-base-0.6.6/src/input/editor/indent.rs:504` 的 `set_tab_size`）。
+    #[serde(rename = "tabSize")]
+    pub tab_size: u32,
+
+    /// 终端默认 Shell 的内部 id。Windows 键 `terminalDefaultShellId`，默认 `""`
+    /// （`default-settings.ts:87`），取值域 [`TERMINAL_SHELL_IDS`]。
+    ///
+    /// 生效方式：**只影响之后新建的终端会话**（真源描述原文
+    /// `settings.mac.defaultShellDescription` =「用于新的终端会话。」，
+    /// `macos-settings-panels.tsx:379-393`）。已开的会话不会换 shell ——
+    /// 这一点与 Windows 完全一致，所以界面上照抄了那句描述。
+    #[serde(rename = "terminalDefaultShellId")]
+    pub terminal_default_shell_id: String,
 }
 
 impl Default for Settings {
@@ -127,6 +204,9 @@ impl Default for Settings {
             ui_font_size: UI_FONT_SIZE_DEFAULT,
             show_status_bar: true,
             display_language: DEFAULT_DISPLAY_LANGUAGE.to_string(),
+            font_size: EDITOR_FONT_SIZE_DEFAULT,
+            tab_size: TAB_SIZE_DEFAULT,
+            terminal_default_shell_id: SHELL_SYSTEM_DEFAULT.to_string(),
         }
     }
 }
@@ -176,7 +256,8 @@ impl Settings {
     /// | 条目 | 真源 | 这里怎么落 |
     /// | --- | --- | --- |
     /// | `uiFontSize` 归一 | `settings-normalization.ts:480` | [`normalize_ui_font_size`] |
-    /// | 枚举白名单 | `settings-normalization.ts:499-519` 的白名单集合写法 | `displayLanguage` 白名单 |
+    /// | 枚举白名单 | `settings-normalization.ts:499-519` 的白名单集合写法 | `displayLanguage` / `tabSize` / `terminalDefaultShellId` 白名单 |
+    /// | `fontSize` 范围钳制 | `macos-settings-panels.tsx:283-292` 的 `min=10 max=22`（真源**没有**单独一条归一，范围由控件属性兜） | [`normalize_editor_font_size`] |
     ///
     /// 主题名是不是"注册表里真有这个主题"要拿到 `App` 才能判断，那条在
     /// [`Self::normalize_with_themes`]。
@@ -185,6 +266,15 @@ impl Settings {
     /// v1 没有任何数组键，做了也没有消费方。
     pub fn normalize(&mut self) {
         self.ui_font_size = normalize_ui_font_size(self.ui_font_size);
+        self.font_size = normalize_editor_font_size(self.font_size);
+
+        if !TAB_SIZES.contains(&self.tab_size) {
+            self.tab_size = TAB_SIZE_DEFAULT;
+        }
+
+        if !TERMINAL_SHELL_IDS.contains(&self.terminal_default_shell_id.as_str()) {
+            self.terminal_default_shell_id = SHELL_SYSTEM_DEFAULT.to_string();
+        }
 
         if !DISPLAY_LANGUAGES.contains(&self.display_language.as_str()) {
             self.display_language = DEFAULT_DISPLAY_LANGUAGE.to_string();
@@ -254,6 +344,9 @@ mod tests {
         assert_eq!(settings.ui_font_size, 13.0);
         assert!(settings.show_status_bar);
         assert_eq!(settings.display_language, "zh-CN");
+        assert_eq!(settings.font_size, 14.0);
+        assert_eq!(settings.tab_size, 2);
+        assert_eq!(settings.terminal_default_shell_id, "");
     }
 
     /// 字段级 `default`：**缺键**回退到该字段默认值（不是整份丢弃）。
@@ -292,6 +385,10 @@ mod tests {
             "\"uiFontSize\"",
             "\"showStatusBar\"",
             "\"displayLanguage\"",
+            // 阶段 14 新增的三个键同样必须用 Windows 的驼峰键名落盘。
+            "\"fontSize\"",
+            "\"tabSize\"",
+            "\"terminalDefaultShellId\"",
         ] {
             assert!(json.contains(key), "缺少键 {key}：{json}");
         }
@@ -322,6 +419,53 @@ mod tests {
         // `normalizeUiFontSize(value) / UI_FONT_SIZE_DEFAULT`）。
         assert!((theme_font_size_for(99.0) - 16.0 * 24.0 / 13.0).abs() < 1e-4);
         assert!((theme_font_size_for(0.0) - 16.0 * 10.0 / 13.0).abs() < 1e-4);
+    }
+
+    /// 编辑器字号：四舍五入到整数档 + 夹在 10..=22（照控件属性，不跟 `uiFontSize` 的 0.5 步长）。
+    #[test]
+    fn editor_font_size_is_rounded_and_clamped() {
+        assert_eq!(normalize_editor_font_size(14.0), 14.0);
+        assert_eq!(normalize_editor_font_size(14.4), 14.0);
+        assert_eq!(normalize_editor_font_size(14.6), 15.0);
+        assert_eq!(normalize_editor_font_size(10.0), EDITOR_FONT_SIZE_MIN);
+        assert_eq!(normalize_editor_font_size(22.0), EDITOR_FONT_SIZE_MAX);
+        assert_eq!(normalize_editor_font_size(0.0), EDITOR_FONT_SIZE_MIN);
+        assert_eq!(normalize_editor_font_size(999.0), EDITOR_FONT_SIZE_MAX);
+        assert_eq!(normalize_editor_font_size(f64::NAN), EDITOR_FONT_SIZE_DEFAULT);
+    }
+
+    /// 制表符宽度与终端 shell 都是白名单：非法值回落默认，合法值原样留下。
+    #[test]
+    fn tab_size_and_shell_id_are_whitelisted() {
+        for value in TAB_SIZES {
+            let mut settings = Settings {
+                tab_size: value,
+                ..Settings::default()
+            };
+            settings.normalize();
+            assert_eq!(settings.tab_size, value);
+        }
+        let mut settings = Settings {
+            tab_size: 3,
+            ..Settings::default()
+        };
+        settings.normalize();
+        assert_eq!(settings.tab_size, TAB_SIZE_DEFAULT);
+
+        for id in TERMINAL_SHELL_IDS {
+            let mut settings = Settings {
+                terminal_default_shell_id: id.to_string(),
+                ..Settings::default()
+            };
+            settings.normalize();
+            assert_eq!(settings.terminal_default_shell_id, id);
+        }
+        let mut settings = Settings {
+            terminal_default_shell_id: "fish".to_string(),
+            ..Settings::default()
+        };
+        settings.normalize();
+        assert_eq!(settings.terminal_default_shell_id, SHELL_SYSTEM_DEFAULT);
     }
 
     /// 语言白名单：非法值回落默认。

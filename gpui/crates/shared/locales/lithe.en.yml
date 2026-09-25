@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 18 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 19 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8655,6 +8655,8 @@ lithe:
     en: "Restore default settings?"
   settings.gpui.restoreDefaultsBody:
     en: "Every setting returns to its default value."
+  settings.gpui.editorFontSizeDescription:
+    en: "Adjusts the text size of the editor and terminal. Interface text size lives in Appearance."
   editor.gpui.discardChanges:
     en: "Discard changes"
   editor.gpui.unsavedChangesBody:

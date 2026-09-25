@@ -695,8 +695,36 @@ impl ShellWorkspace {
         // 设置变了要重绘（「显示状态栏」立即生效）。`try_store` 而不是 `store`：
         // 工作台在测试或将来别的宿主里可能没有设置状态，那时回落"默认显示状态栏"，
         // 而不是 panic。
-        let settings_subscription = lithe_gpui_settings::try_store(cx)
-            .map(|store| cx.observe(&store, |_, _, cx| cx.notify()));
+        //
+        // 这条订阅同时是**两个"值"型设置**的转发点（阶段 14）：缩进宽度与终端默认 Shell
+        // 都是"面板自己不认识设置 crate"的值（依赖方向：`workbench` → `editor`/`terminal`），
+        // 所以由外壳读出来、再喂给两个面板。启动时先各喂一次，之后每次设置变化再喂。
+        let settings_subscription = lithe_gpui_settings::try_store(cx).map(|store| {
+            let initial = store.read(cx).settings().clone();
+            // 启动态证据行：这行的两个值来自**设置文件读出来的**设置，所以它同时证明
+            // "文件被读回来了"与"外壳确实拿到了这句设置"。阶段 14 就是靠它抓到
+            // "`tabSize` 写得出、读不回"那个 bug 的（见 `PLAN.md` §14.2）。
+            println!(
+                "S1_SETTINGS wiring=workbench tab_size={} terminal_default_shell_id={:?}",
+                initial.tab_size, initial.terminal_default_shell_id
+            );
+            editor.update(cx, |pane, cx| {
+                pane.set_tab_size(initial.tab_size as usize, cx);
+            });
+            terminal.update(cx, |pane, cx| {
+                pane.set_default_shell(&initial.terminal_default_shell_id, cx);
+            });
+            cx.observe(&store, |this, store, cx| {
+                let settings = store.read(cx).settings().clone();
+                this.editor.update(cx, |pane, cx| {
+                    pane.set_tab_size(settings.tab_size as usize, cx);
+                });
+                this.terminal.update(cx, |pane, cx| {
+                    pane.set_default_shell(&settings.terminal_default_shell_id, cx);
+                });
+                cx.notify();
+            })
+        });
 
         // 关掉最后一个终端页签 → 收起底部工具窗（真机
         // `features/terminal/utils/terminal-pane-visibility.ts:14-26`）。

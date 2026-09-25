@@ -30,7 +30,7 @@ use crate::constants::{
     EXIT_POLL_ATTEMPTS, EXIT_POLL_INTERVAL, MAX_LINES, READ_BUFFER, error_fallback,
     input_placeholder,
 };
-use crate::profile::{TerminalProfile, default_profile, profiles};
+use crate::profile::{TerminalProfile, command_exists, default_profile, profile_for_shell_id, profiles};
 use crate::terminal_view::{TabSession, TerminalPane};
 
 /// 会话状态（真机的三档：运行中 / 已退出（带退出码）/ 起不来）。
@@ -308,6 +308,9 @@ impl TerminalPane {
             next_run: 1,
             profiles,
             active_profile: 0,
+            // 空串 = 「系统默认」（Windows `default-settings.ts:87` 的默认值），
+            // 也就是"什么都不做"：保持探测顺序。
+            default_shell_id: crate::profile::SHELL_SYSTEM_DEFAULT.to_string(),
             input,
             _input_events: input_events,
         }
@@ -432,6 +435,52 @@ impl TerminalPane {
     #[allow(dead_code)]
     pub fn add_profile(&mut self, profile: TerminalProfile, cx: &mut Context<Self>) {
         self.profiles.push(profile);
+        cx.notify();
+    }
+
+    /// 应用设置里的「默认 Shell」（Windows 键 `terminalDefaultShellId`，
+    /// 取值见 [`crate::profile::SHELL_IDS`]）。
+    ///
+    /// **只影响之后新建的会话**：真源那句描述就是「用于新的终端会话。」
+    /// （`macos-settings-panels.tsx:383`），已开的会话不会、也不该换 shell。
+    ///
+    /// 三条语义（每条都对应一种可验证的结果）：
+    ///
+    /// 1. **幂等**：值没变就直接返回。外壳会在*每一次*设置变化时转发一遍，若不做这一步，
+    ///    用户在页签条 ⌄ 菜单里手动选的配置文件会被"隔壁开关动了"重置掉；
+    /// 2. **点名的 shell 放在列表第一位**并把 `active_profile` 指过去（新建页签读它，
+    ///    `open_tab_with`）；名字就在本机 `PATH` 上时才算数；
+    /// 3. **点名了但本机没有**：保持探测顺序（不假装切过去了），并留一行
+    ///    `S1_TERMINAL default_shell=<id> outcome=unavailable` —— 设置页的下拉里
+    ///    仍然会显示用户选的那一项（那是"用户的选择"），只是本机起不了。
+    pub fn set_default_shell(&mut self, shell_id: &str, cx: &mut Context<Self>) {
+        if self.default_shell_id == shell_id {
+            return;
+        }
+        self.default_shell_id = shell_id.to_string();
+
+        let mut next = profiles();
+        let outcome = match profile_for_shell_id(shell_id) {
+            None => "systemDefault",
+            Some(preferred) => {
+                if command_exists(&preferred.program().to_string_lossy()) {
+                    // 去重再插到最前：`profiles()` 里可能已经有同名的 powershell / cmd。
+                    next.retain(|profile| profile.program() != preferred.program());
+                    next.insert(0, preferred);
+                    "applied"
+                } else {
+                    "unavailable"
+                }
+            }
+        };
+        // 命中的话第一条就是它；「系统默认」时第一条是探测到的首选（Windows 优先 powershell）。
+        self.replace_profiles(next, cx);
+        self.active_profile = 0;
+        println!(
+            "S1_TERMINAL default_shell={} outcome={outcome} profiles={}",
+            if shell_id.is_empty() { "(system)" } else { shell_id },
+            self.profiles.len()
+        );
         cx.notify();
     }
 

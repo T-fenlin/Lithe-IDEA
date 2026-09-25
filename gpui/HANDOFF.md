@@ -10,15 +10,21 @@
 
 ## 0. 一句话现状（2026-09-25 会话结束时）
 
-- 分支 `feat/gpui-shell-rewrite`，HEAD = `be1ef509`。`gpui/` 已是一个能跑的前端：设置界面、
-  编辑器（可编辑/保存/自动保存/查找替换/语法高亮/右键菜单）、终端、资源管理器、Git 底部工具窗、
-  右侧工具窗、命令面板、主菜单栏、项目下拉、分支弹窗全部落地并逐项验证过。
-- **可能有的在途工作**：会话结束前刚派出「源代码管理」实现代理（左栏「更改」视图）。
-  新会话第一件事应是 `git status --short`：若看到它留下的未提交改动，按第 4 节的"验收清单"复核后提交
-  （规格在 `research/windows/08-source-control.md`，口径见下面的队列）。
+- 分支 `feat/gpui-shell-rewrite`。**队列第 1 项（源代码管理）已提交**：`ebdf4885`
+  （左栏「更改」：变更列表 / 暂存 / 提交 / 操作横幅 / 五态空态）。
+- **队列第 2 项（设置剩余页）第一批已做**：设置左栏从 2 页扩到 **4 页**
+  （常规 / 外观 / **编辑器** / **终端**）。新增 `fontSize`（编辑器字号 → 主题 `mono_font_size`）、
+  `tabSize`（→ 每个 `EditorState`，**已打开的 buffer 也重设**）、`terminalDefaultShellId`
+  （→ 新建终端会话真的换 shell）。顺手修掉一个**真 bug**：设置的逐键解析表漏了新键时
+  「写得出、读不回」且**毫无诊断**（详见 `gpui/PLAN.md` §14.2 —— 后面加新键前务必先读这一段）。
+  记录在 `.artifacts/p12/NOTES.md`。
+- `gpui/` 已是一个能跑的前端：设置界面、编辑器（可编辑/保存/自动保存/查找替换/语法高亮/右键菜单）、
+  终端、资源管理器、Git 底部工具窗、**左栏源代码管理**、右侧工具窗、命令面板、主菜单栏、项目下拉、
+  分支弹窗全部落地并逐项验证过。
 - 本文件写就时的验证债务：一批功能（`Ctrl+,`/`Ctrl+Shift+P`/`F12`/`Ctrl+单击`/终端切换/设置入口）
-  最早只有 `PostMessage` 弱证据，**工作站解锁后**后续功能已用真实注入验证；建议在方便时把早期那批
-  也补跑一次真实注入版。
+  最早只有 `PostMessage` 弱证据；`Ctrl+,` 到现在**仍未被机器验证**（本轮实测是注入侧问题：
+  `ui-keys.ps1` 打印 `SetForegroundWindow` 被拒、键送到别的窗口，见 `.artifacts/p12/NOTES.md` §5）。
+  建议在方便时把这一批补跑一次真实按键。
 
 ## 1. 硬规则（这些是维护者明确要求过的，违反会被打回）
 
@@ -114,6 +120,22 @@
 2. **设置剩余页**（除 AI）：`research/windows/07-settings-ui.md` §3 有逐页签规格、§7.3/§7.4 有
    "能否立刻生效/建议范围"。原则：**能真生效的先做**（编辑器字号/换行、终端 profile、Git 身份、
    LSP 的 jdtls 路径…），没有数据源的做成**明确空态**并写清前置条件，**不塞假控件**。
+   **进度（阶段 14，见 `gpui/PLAN.md` §14）**：
+   - ✅ **编辑器页**：`fontSize`（→ `Theme.mono_font_size`）+ `tabSize`（→ 每个 `EditorState`）。
+     真源 4 项里的 `codeLens` / `horizontalTabScroll` **不画**（gpui 侧没有消费方，理由在
+     `settings/src/dialog.rs::editor_page` 的文档里）。
+   - ✅ **终端页**：`terminalDefaultShellId`（→ 新建会话真的换 shell；幂等，不覆盖页签条 ⌄ 的手动选择）。
+   - ⏳ **Git 身份**：Core 已有 `git.repositorySetup`（读）与 `git.configureIdentity`（写/清 local|global），
+     真源是 `components/git-identity-settings.tsx`（`git.setup.*` 34 键）。**卡在依赖方向**：
+     `settings` 不能依赖 `git` —— 要么在 `settings` 开宿主钩子（`workbench` 启动时登记），
+     要么把这一页放进 `git` crate。**动手前先定这一条**。
+   - ⏳ **LSP 页**：真源 3 个开关（`autoCompletion` / `parameterHints` / `semanticTokens`）在 gpui 侧
+     **没有消费方**（不画）；能真做的是 **jdtls 运行时路径**（现在只有
+     `java/src/jdtls.rs:440-460` 的 `LITHE_JDTLS_JAVA` / `JAVA_HOME` / PATH 三级发现）。
+   - ⏳ **其余分类的明确空态**：项目 / 运行配置 / 快捷键 / Git / 日志 / 更新。
+   - ⚠️ **加新设置键时先读 `gpui/PLAN.md` §14.2**：`persistence.rs` 的手写逐键表漏键会
+     "写得出、读不回"且无诊断；守卫测试 `every_key_survives_a_round_trip` 会用"所有字段非默认"
+     的往返把它照出来。
 3. **删旧前端之前的前置**（缺一不可）：
    - `gpui` **CI 覆盖**（`.github/**` 目前对 `gpui` **零命中** → 新前端完全没有 CI；建议加
      `paths: gpui/**` 的构建 + 改动范围测试 job）；
@@ -148,9 +170,12 @@
    面板几何 `704/512/64` 与真源逐值相等。
 5. **项目下拉**：面板右侧有一条**常显细滚动条**（`scrollable(true)` 的 16 逻辑 px 占位）；
    三条动作行已按 review 改成**禁用态**（不再"点了只打日志还关面板"）。
-6. **设置界面**：只做了「常规」（语言）+「外观」（主题/外观模式/界面字号/显示状态栏）两页，
-   其余 10 个分类按 §8.2 的理由没做；「显示语言」选完**自动重启**（`restart.rs`），代价是当前进程里
-   未保存的编辑器内容与终端会话会结束 —— 编辑器接上保存后要重新评估是否加确认。
+6. **设置界面**：已做「常规」（语言）+「外观」（主题/外观模式/界面字号/显示状态栏）+
+   **「编辑器」**（编辑器字号 / 制表符宽度）+ **「终端」**（默认 Shell）四页，其余分类按 §8.2 的理由没做；
+   「显示语言」选完**自动重启**（`restart.rs`），代价是当前进程里未保存的编辑器内容与终端会话会结束
+   —— 编辑器接上保存后要重新评估是否加确认。
+   已知副作用（**有意**）：真源把 `fontSize` 与 `terminalFontSize` 分成两个键，而 gpui 的主题只有
+   一个 `mono_font_size`，"编辑器字号"因此同时作用于终端正文（设置页的描述里写了）。
 7. **平台/环境**：`cargo fmt` 不可用；`verify-rust-core.sh` 需 macOS；`Lithe` 的 release 构建已关掉
    控制台窗口（`#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`）。
 
