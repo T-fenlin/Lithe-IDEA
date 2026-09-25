@@ -48,7 +48,7 @@
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
 //! | `workbench`（活动栏 / 状态栏 / 项目标签条 / 右工具窗） | `lithe.workbench.*`、`lithe.footer.spaces`、`lithe.titleProject.closeProject`、`lithe.maven.title`、`lithe.maven.notDetected`、`lithe.notifications.empty`、`lithe.extensions.noneFound`、`lithe.commandPalette.close` |
 //! | `workbench` 的命令面板（阶段 6 第二半） | `lithe.commandPalette.{title, placeholder, noCommands, categories.*}`、`lithe.commandPalette.actions.toggle-*`、`lithe.commandPalette.actions.color-theme.label`、`lithe.settings.appearance.theme`、`lithe.settings.appearance.showStatusBar`、`lithe.settings.appearance.showStatusBarDescription`、`lithe.settings.tabs.*`、`lithe.appearance.gpui.*`、`lithe.maven.gpui.*` |
-//! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 6 条 `lithe.settings.gpui.*` 自有文案）、`lithe.ui.cancel` |
+//! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 22 条 `lithe.settings.gpui.*` 自有文案）、`lithe.ui.cancel` |
 //! | `workbench` 的分支弹窗（阶段 11 第三件） | `lithe.git.{searchBranchesAria,repositories,branches,worktrees,selectorSections,searchBranches,branchCount,branchesCount,noMatchingBranches,noBranchesFound,current,refresh}` |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
@@ -348,10 +348,6 @@ mod tests {
                 "此分类尚未接入",
             ),
             (
-                "lithe.settings.gpui.prerequisiteProject",
-                "前置条件：项目环境的探测与保存（JDK、Maven 的发现与生效值展示）。真源是 components/project-environment-settings.tsx。",
-            ),
-            (
                 "lithe.settings.gpui.prerequisiteRun",
                 "前置条件：运行配置的识别与保存。真源是 components/run-configuration-settings.tsx。",
             ),
@@ -374,6 +370,44 @@ mod tests {
             (
                 "lithe.settings.gpui.prerequisiteUpdates",
                 "前置条件：更新器（检查更新、更新通道与安装流程）。",
+            ),
+            // 「项目 · JDK 与 Maven」页（阶段 16）：作用域说明 + 「来源」那一栏里两种环境变量来源
+            // + Maven 提示 + settings.xml / 本地仓库的三条说明。理由逐条写在
+            // `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里。
+            //
+            // ⚠️ 这一族**不是**空态文案：这一页有真实页面（探测 + 生效值 + 覆盖值），
+            // 所以 `prerequisiteProject` 已经被删掉（`Category::prerequisite_key` 现在返回 `None`）。
+            (
+                "lithe.settings.gpui.projectScopeGlobal",
+                "覆盖值保存在当前电脑的全局设置文件里；留空则使用自动检测到的值。真源的同一页按项目保存在 .lithe/run/local.json，gpui 侧还没有项目级存储，所以这一页的作用范围是全局，不是当前项目。",
+            ),
+            (
+                "lithe.settings.gpui.sourceFromEnv",
+                "来自 {name} 环境变量",
+            ),
+            (
+                "lithe.settings.gpui.mavenExecutableHint",
+                "可填 Maven 主目录或 mvn 启动器；留空则依次查找 MAVEN_HOME、M2_HOME 与 PATH 上的 Maven。",
+            ),
+            (
+                "lithe.settings.gpui.mavenSettingsMissing",
+                "未检测到 settings.xml（已查用户目录的 .m2/settings.xml 与 Maven 安装目录的 conf/settings.xml）",
+            ),
+            (
+                "lithe.settings.gpui.mavenLocalRepositoryDefault",
+                "Maven 默认位置（settings.xml 未指定 localRepository）",
+            ),
+            (
+                "lithe.settings.gpui.mavenLocalRepositoryFromSettings",
+                "来自用户 settings.xml 的 <localRepository>",
+            ),
+            (
+                "lithe.settings.gpui.mavenLocalRepositoryUnknown",
+                "未知（拿不到用户主目录，推不出 Maven 默认的本地仓库位置）",
+            ),
+            (
+                "lithe.settings.gpui.projectNothingDetected",
+                "既没有探测到 JDK，也没有探测到 Maven。下面每一行都写明了查过哪些位置、各自为什么不行。",
             ),
             // 阶段 9 的编辑器侧（3 条，同样由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里）。
             ("lithe.editor.gpui.discardChanges", "放弃修改"),

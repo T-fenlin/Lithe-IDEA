@@ -194,6 +194,25 @@ fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<Strin
         &mut settings.confirm_before_discard,
         diagnostics,
     );
+    // 「项目 · JDK 与 Maven」页的三个覆盖值（键名 = Core 契约里 toolchain 载荷的键名）。
+    take(
+        object,
+        "javaHomePath",
+        &mut settings.java_home_path,
+        diagnostics,
+    );
+    take(
+        object,
+        "mavenExecutablePath",
+        &mut settings.maven_executable_path,
+        diagnostics,
+    );
+    take(
+        object,
+        "mavenJavaHomePath",
+        &mut settings.maven_java_home_path,
+        diagnostics,
+    );
     settings
 }
 
@@ -430,7 +449,56 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// **每个字段都必须能被读回来**：用"所有字段都不是默认值"的设置跑一次存取往返。
+    /// **写进去能读回来**（文件级往返，专测「项目 · JDK 与 Maven」页的三个覆盖值）。
+    ///
+    /// 这条是独立的守卫，不是 `every_key_survives_a_round_trip` 的重复：
+    /// 那条走的是内存里的 `load_from_str`，这条走**真实的原子写 + 读文件**，
+    /// 覆盖"键名拼错 / 序列化时被 `skip` / 写文件那一段丢了字段"这一类只在落盘路径上出现的失效。
+    #[test]
+    fn project_environment_overrides_survive_a_file_round_trip() {
+        let dir = std::env::temp_dir().join(format!(
+            "lithe-settings-test-project-env-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("settings.json");
+
+        let mut settings = Settings {
+            java_home_path: "D:\\ProgramData\\java\\openjdk-21".to_string(),
+            maven_executable_path: "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd".to_string(),
+            maven_java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
+            ..Settings::default()
+        };
+        settings.normalize();
+        save(&path, &settings).expect("写入失败");
+
+        // 落盘文本里三个键名必须是 Core 契约里的那三个（驼峰）。
+        let text = std::fs::read_to_string(&path).expect("读文件失败");
+        for key in ["\"javaHomePath\"", "\"mavenExecutablePath\"", "\"mavenJavaHomePath\""] {
+            assert!(text.contains(key), "落盘文本缺键 {key}：{text}");
+        }
+
+        let loaded = load_from(Some(path.clone()));
+        assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+        assert_eq!(
+            loaded.settings.java_home_path,
+            "D:\\ProgramData\\java\\openjdk-21"
+        );
+        assert_eq!(
+            loaded.settings.maven_executable_path,
+            "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd"
+        );
+        assert_eq!(
+            loaded.settings.maven_java_home_path,
+            "C:\\Program Files\\Java\\jdk-21"
+        );
+        // 整个结构体也要逐字段相等（漏键会立刻表现为不等）。
+        assert_eq!(loaded.settings, settings);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+
     ///
     /// 这条测试守的是一类**静默**失效：`settings_from_object` 里那张逐键表一旦漏了新字段，
     /// 文件里写得再对、读回来的也是默认值，而且**没有任何诊断**（阶段 14 实测踩到过：
@@ -450,6 +518,9 @@ mod tests {
             tab_size: 8,
             terminal_default_shell_id: "cmd".to_string(),
             confirm_before_discard: false,
+            java_home_path: "D:\\ProgramData\\java\\openjdk-21".to_string(),
+            maven_executable_path: "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd".to_string(),
+            maven_java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
         };
         // 先规范化，保证"写出去的"就是"合法的"（否则比的是两个不同的东西）。
         settings.normalize();

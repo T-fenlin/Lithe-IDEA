@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 29 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 36 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8659,8 +8659,22 @@ lithe:
     zh-CN: "调整编辑器与终端正文的字号。界面字号在外观页。"
   settings.gpui.pageNotAvailableTitle:
     zh-CN: "此分类尚未接入"
-  settings.gpui.prerequisiteProject:
-    zh-CN: "前置条件：项目环境的探测与保存（JDK、Maven 的发现与生效值展示）。真源是 components/project-environment-settings.tsx。"
+  settings.gpui.projectScopeGlobal:
+    zh-CN: "覆盖值保存在当前电脑的全局设置文件里；留空则使用自动检测到的值。真源的同一页按项目保存在 .lithe/run/local.json，gpui 侧还没有项目级存储，所以这一页的作用范围是全局，不是当前项目。"
+  settings.gpui.sourceFromEnv:
+    zh-CN: "来自 {name} 环境变量"
+  settings.gpui.mavenExecutableHint:
+    zh-CN: "可填 Maven 主目录或 mvn 启动器；留空则依次查找 MAVEN_HOME、M2_HOME 与 PATH 上的 Maven。"
+  settings.gpui.mavenSettingsMissing:
+    zh-CN: "未检测到 settings.xml（已查用户目录的 .m2/settings.xml 与 Maven 安装目录的 conf/settings.xml）"
+  settings.gpui.mavenLocalRepositoryDefault:
+    zh-CN: "Maven 默认位置（settings.xml 未指定 localRepository）"
+  settings.gpui.mavenLocalRepositoryFromSettings:
+    zh-CN: "来自用户 settings.xml 的 <localRepository>"
+  settings.gpui.mavenLocalRepositoryUnknown:
+    zh-CN: "未知（拿不到用户主目录，推不出 Maven 默认的本地仓库位置）"
+  settings.gpui.projectNothingDetected:
+    zh-CN: "既没有探测到 JDK，也没有探测到 Maven。下面每一行都写明了查过哪些位置、各自为什么不行。"
   settings.gpui.prerequisiteRun:
     zh-CN: "前置条件：运行配置的识别与保存。真源是 components/run-configuration-settings.tsx。"
   settings.gpui.prerequisiteKeyboard:

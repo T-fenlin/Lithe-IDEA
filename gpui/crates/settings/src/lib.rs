@@ -44,6 +44,7 @@ pub mod dialog;
 pub mod identity;
 pub mod paths;
 pub mod persistence;
+pub mod project;
 pub mod restart;
 pub mod row;
 pub mod schema;
@@ -59,6 +60,10 @@ pub use identity::{
 };
 pub use paths::{SETTINGS_FILE_ENV, settings_file_path};
 pub use persistence::{DebounceState, Loaded, SAVE_DEBOUNCE_MS, load, load_from};
+pub use project::{
+    EffectiveToolchain, MavenConfiguration, MavenDiscovery, Overrides, ProjectEnvironment,
+    PROJECT_DIAGNOSTIC_TAG, ToolMode, ToolSource, discover as discover_project_environment,
+};
 pub use restart::restart_application;
 pub use schema::Settings;
 pub use store::{AppearanceMode, Init, SettingsStore, init_store, store, try_store};

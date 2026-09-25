@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 29 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 36 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8659,8 +8659,22 @@ lithe:
     en: "Adjusts the text size of the editor and terminal. Interface text size lives in Appearance."
   settings.gpui.pageNotAvailableTitle:
     en: "This category is not available yet"
-  settings.gpui.prerequisiteProject:
-    en: "Requires project environment discovery and persistence (JDK and Maven detection with effective values), as in components/project-environment-settings.tsx."
+  settings.gpui.projectScopeGlobal:
+    en: "Overrides live in this computer's global settings file; leave a field empty to use the detected value. The Windows page stores them per project in .lithe/run/local.json, and gpui has no project-level store yet, so this page is global rather than project-scoped."
+  settings.gpui.sourceFromEnv:
+    en: "from the {name} environment variable"
+  settings.gpui.mavenExecutableHint:
+    en: "A Maven home or mvn launcher; leave empty to search MAVEN_HOME, M2_HOME, then PATH."
+  settings.gpui.mavenSettingsMissing:
+    en: "No settings.xml detected (checked .m2/settings.xml in the user directory and conf/settings.xml in the Maven installation)"
+  settings.gpui.mavenLocalRepositoryDefault:
+    en: "Maven's default location (settings.xml declares no localRepository)"
+  settings.gpui.mavenLocalRepositoryFromSettings:
+    en: "from <localRepository> in the user settings.xml"
+  settings.gpui.mavenLocalRepositoryUnknown:
+    en: "Unknown (the user home directory is unavailable, so Maven's default local repository cannot be derived)"
+  settings.gpui.projectNothingDetected:
+    en: "Neither a JDK nor Maven was detected. Each row below states which locations were checked and why none qualified."
   settings.gpui.prerequisiteRun:
     en: "Requires run configuration discovery and persistence, as in components/run-configuration-settings.tsx."
   settings.gpui.prerequisiteKeyboard:

@@ -131,11 +131,60 @@ const GPUI_ONLY_KEYS = [
       "设置左栏保留 Windows 的 10 个分类（去掉 AI 两个），其中 7 个在 gpui 侧还没有子系统。HANDOFF §4 的口径是「没有数据源的做成明确空态并写清前置条件，不塞假控件」，所以这些页只有标题 + 前置条件一句，真源里没有这种空态文案，需要自己的键。",
   },
   {
-    key: "settings.gpui.prerequisiteProject",
-    zh: "前置条件：项目环境的探测与保存（JDK、Maven 的发现与生效值展示）。真源是 components/project-environment-settings.tsx。",
-    en: "Requires project environment discovery and persistence (JDK and Maven detection with effective values), as in components/project-environment-settings.tsx.",
+    key: "settings.gpui.projectScopeGlobal",
+    zh: "覆盖值保存在当前电脑的全局设置文件里；留空则使用自动检测到的值。真源的同一页按项目保存在 .lithe/run/local.json，gpui 侧还没有项目级存储，所以这一页的作用范围是全局，不是当前项目。",
+    en: "Overrides live in this computer's global settings file; leave a field empty to use the detected value. The Windows page stores them per project in .lithe/run/local.json, and gpui has no project-level store yet, so this page is global rather than project-scoped.",
     reason:
-      "「项目 · JDK 与 Maven」页的前置条件（同 pageNotAvailableTitle）。真源那一页读写的是项目级文件（services/project-environment.ts），gpui 侧既没有探测也没有存储。",
+      "「项目 · JDK 与 Maven」页的作用域说明。真源的 settings.project.scope 写的是「仅保存在当前电脑，作用于当前项目」（project-environment-settings.tsx:212 + services/project-environment.ts 写 .lithe/run/local.json），而 gpui 侧的设置 crate 只能落**全局**设置文件（它不依赖外壳、拿不到工作区根，也没有项目级存储）—— 照 task 的硬要求，文案必须如实区分，不能假装是项目级。",
+  },
+  {
+    key: "settings.gpui.sourceFromEnv",
+    zh: "来自 {name} 环境变量",
+    en: "from the {name} environment variable",
+    reason:
+      "工具链「来源」那一栏里两种**环境变量**来源的措辞（JDK 的 LITHE_JDTLS_JAVA、Maven 的 MAVEN_HOME）。真源只有 toolchain.source.javaHome / .path / .project / .detected / .mavenWrapper 五条（locale.ts），没有\"某个环境变量\"这一档，JDK 的显式覆写入口（java/src/jdtls.rs:40 的 LITHE_JDTLS_JAVA）与 MAVEN_HOME 都需要它。{name} 由调用点用 tr_args 填变量名。",
+  },
+  {
+    key: "settings.gpui.mavenExecutableHint",
+    zh: "可填 Maven 主目录或 mvn 启动器；留空则依次查找 MAVEN_HOME、M2_HOME 与 PATH 上的 Maven。",
+    en: "A Maven home or mvn launcher; leave empty to search MAVEN_HOME, M2_HOME, then PATH.",
+    reason:
+      "「Maven 主目录 / 可执行文件」这一行的提示。真源的 run.mavenExecutableHint 是「可选择 Maven 主目录；留空则使用项目 Wrapper 或系统 Maven。」—— gpui 侧**没有**项目 Wrapper 那一级（拿不到工作区根，见 project.rs 的模块文档），照抄会承诺一个不存在的能力；照 discovery 的三级顺序如实改写。",
+  },
+  {
+    key: "settings.gpui.mavenSettingsMissing",
+    zh: "未检测到 settings.xml（已查用户目录的 .m2/settings.xml 与 Maven 安装目录的 conf/settings.xml）",
+    en: "No settings.xml detected (checked .m2/settings.xml in the user directory and conf/settings.xml in the Maven installation)",
+    reason:
+      "「settings.xml」这一行拿不到值时的说明（真源那一行永远有值，因为值来自 Maven 工具窗的项目本地配置）。两个被查过的位置写进文案里，用户才能自己排查，而不是看到一个空的\"未知\"。",
+  },
+  {
+    key: "settings.gpui.mavenLocalRepositoryDefault",
+    zh: "Maven 默认位置（settings.xml 未指定 localRepository）",
+    en: "Maven's default location (settings.xml declares no localRepository)",
+    reason:
+      "「本地仓库」的来源说明之一。真源那一行的值来自 Maven 工具窗的本地配置（maven.store.ts 的 localRepositoryPath），gpui 侧只能报事实：用户级 settings.xml 没写 <localRepository> 时 Maven 用的就是它自己的默认位置 ~/.m2/repository —— 把\"这是默认值而不是从配置里读来的\"写清楚，避免看起来像探测结果。",
+  },
+  {
+    key: "settings.gpui.mavenLocalRepositoryFromSettings",
+    zh: "来自用户 settings.xml 的 <localRepository>",
+    en: "from <localRepository> in the user settings.xml",
+    reason:
+      "「本地仓库」的来源说明之二：值是从用户级 settings.xml 的 <localRepository> 元素里读出来的（Maven 文档规定该元素只在用户级 settings 生效）。真源没有这条措辞，因为它的值来自应用自己保存的配置。",
+  },
+  {
+    key: "settings.gpui.mavenLocalRepositoryUnknown",
+    zh: "未知（拿不到用户主目录，推不出 Maven 默认的本地仓库位置）",
+    en: "Unknown (the user home directory is unavailable, so Maven's default local repository cannot be derived)",
+    reason:
+      "「本地仓库」既没有 settings.xml 的声明、又连用户主目录（USERPROFILE / HOME）都拿不到时的显示值。任务要求拿不到的字段显示\"未知\"并写清原因，而不是猜一个 ~/.m2/repository。",
+  },
+  {
+    key: "settings.gpui.projectNothingDetected",
+    zh: "既没有探测到 JDK，也没有探测到 Maven。下面每一行都写明了查过哪些位置、各自为什么不行。",
+    en: "Neither a JDK nor Maven was detected. Each row below states which locations were checked and why none qualified.",
+    reason:
+      "这一页唯一一句整页级提示（仅在 JDK 与 Maven 都没有可用生效值时出现）。空态口径要求：不许再用「此分类尚未接入」那句（页面已经接入了），也不能静默 —— 所以补一句如实说明，并指向每一行各自的原因。",
   },
   {
     key: "settings.gpui.prerequisiteRun",

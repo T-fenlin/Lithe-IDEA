@@ -347,6 +347,31 @@ impl SettingsStore {
         self.commit(cx, next, Effects::None);
     }
 
+    /// 改「项目 · JDK 与 Maven」页的 JDK 覆盖值（空串 = 用自动检测到的那个）。
+    ///
+    /// **本 store 不自己应用**：这个值是"这台机器上用什么 JDK"的声明，页面上的「生效值」
+    /// 那一行由设置对话框自己按草稿 + 探测结论重算（`dialog.rs` 的 `project_page`），
+    /// 落盘走防抖。运行配置那一侧将来接上时，走的是"外壳订阅本实体后转发"这条既有路子。
+    pub fn set_java_home_path(&mut self, path: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.java_home_path = path;
+        self.commit(cx, next, Effects::None);
+    }
+
+    /// 改 Maven 主目录 / 可执行文件的覆盖值。见 [`Self::set_java_home_path`]。
+    pub fn set_maven_executable_path(&mut self, path: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.maven_executable_path = path;
+        self.commit(cx, next, Effects::None);
+    }
+
+    /// 改 Maven 使用的 JDK 覆盖值。见 [`Self::set_java_home_path`]。
+    pub fn set_maven_java_home_path(&mut self, path: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.maven_java_home_path = path;
+        self.commit(cx, next, Effects::None);
+    }
+
     /// 改「显示语言」。返回是否真的变了。**立即落盘**（不等 300ms 防抖）：调用方紧接着就会
     /// 重启应用（[`crate::restart::restart_application`]），新进程必须马上读到新语言。
     ///

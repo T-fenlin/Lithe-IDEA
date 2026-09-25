@@ -58,11 +58,15 @@ use gpui_kit::{
 };
 
 use lithe_gpui_shared::icons::{idea, idea_icon_svg};
-use lithe_gpui_shared::tr;
+use lithe_gpui_shared::{tr, tr_args};
 
 use crate::identity::{
     GitIdentityPage, IdentityField, IdentityScope, IdentitySetup, git_identity_page,
     identity_value_is_valid, identity_value_rejection,
+};
+use crate::project::{
+    DetectedJdk, DetectedMaven, EffectiveToolchain, Overrides, ProjectEnvironment, ToolSource,
+    discover,
 };
 use crate::row::{ControlWidth, RowActivation, page_stack, page_title, settings_group, settings_row};
 use crate::schema::{
@@ -99,6 +103,16 @@ pub fn open_settings_dialog(window: &mut Window, cx: &mut App) {
     open_settings_dialog_at(window, cx, Category::DEFAULT);
 }
 
+/// 打开对话框时要不要**立刻**探一次「项目」页的数据（纯判据，可直接单测）。
+///
+/// 只有这一页需要："探测"要起子进程，所以它跟「Git」页一样是**懒加载**（点进这一页才探），
+/// 而懒加载的唯一触发器是左栏的点击回调 —— 如果对话框是**带着这一页**创建的
+/// （[`open_settings_dialog_at`] 的 `category`），那条点击就永远不会发生，页面会停在
+/// 「正在检测…」。判据单独抽出来，是为了让这条分支在测试里可见（它需要窗口才能端到端跑）。
+fn project_load_on_open(category: Category) -> bool {
+    category == Category::Project
+}
+
 /// 打开设置对话框并**直接停在某个分类**上。
 ///
 /// 命令面板用这条入口（`gpui/crates/workbench/src/command_palette.rs` 的
@@ -112,6 +126,15 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
     let store = store(cx);
     let view = cx.new(|cx| SettingsDialog::new(store, category, window, cx));
     println!("S1_SETTINGS dialog_opened category={}", category.id());
+
+    // 停在「项目」页时**立刻探一次**。
+    //
+    // 这一页的数据不在设置文件里，只有"点左栏那一项"那条路会触发探测 —— 从命令面板 / 探针
+    // 直接打开到这一页就会永远停在「正在检测…」。判据抽成纯函数 [`project_load_on_open`]，
+    // 所以这条分支有单测钉着（`--open-settings` 走的是默认分类，实测覆盖的是点击那条路）。
+    if project_load_on_open(category) {
+        view.update(cx, |view, cx| view.project_load(cx));
+    }
 
     window.open_dialog(cx, move |dialog, window, _cx| {
         // 820×620 用 rem 表达（`rems(P / 16.)`，1rem = 16px），再按窗口当前的 rem 基准求值：
@@ -201,7 +224,8 @@ pub enum Category {
     Editor,
     /// 终端（`settings.tabs.terminal` = 终端）。
     Terminal,
-    /// 项目 · JDK 与 Maven（`settings.project.title`）—— 空态。
+    /// 项目 · JDK 与 Maven（`settings.project.title`）—— **实现页**（阶段 16）：
+    /// 本机 JDK / Maven 的真实探测值 + 覆盖值 + 刷新。
     Project,
     /// 运行配置（`settings.run.title`）—— 空态。
     Run,
@@ -245,9 +269,14 @@ impl Category {
     /// 这张表是**编译期常量**，表达不了"条件实现"，所以它记的是"这句话在没有任何宿主时也成立"
     /// 的那一面（= 空态需要一句前置条件）。`git_page_degrades_to_the_empty_state_without_a_host`
     /// 那条测试把这件事同时钉在两边。
-    pub const IMPLEMENTED: [Category; 4] = [
+    ///
+    /// 「项目 · JDK 与 Maven」页（阶段 16）**没有任何条件**：探测是本进程自己做的
+    /// （[`crate::project::discover`]），就算什么都没探测到，页面画的也是
+    /// "每个字段各说各的为什么没有"（不是空态），所以它**进这张表**。
+    pub const IMPLEMENTED: [Category; 5] = [
         Category::General,
         Category::Appearance,
+        Category::Project,
         Category::Editor,
         Category::Terminal,
     ];
@@ -301,8 +330,14 @@ impl Category {
     /// `GPUI_ONLY_KEYS` 提供，每条写了理由。
     fn prerequisite_key(self) -> Option<&'static str> {
         match self {
-            Self::General | Self::Appearance | Self::Editor | Self::Terminal => None,
-            Self::Project => Some("lithe.settings.gpui.prerequisiteProject"),
+            // 「项目」页自阶段 16 起是**实现页**（真机探测 + 覆盖 + 刷新）：它的"什么都没探测到"
+            // 由每个字段各自的「未找到 + 已排除的原因」表达，而不是整页的空态，
+            // 所以这里返回 `None`（原来那条 `settings.gpui.prerequisiteProject` 已随之下线）。
+            Self::General
+            | Self::Appearance
+            | Self::Project
+            | Self::Editor
+            | Self::Terminal => None,
             Self::Run => Some("lithe.settings.gpui.prerequisiteRun"),
             Self::Keyboard => Some("lithe.settings.gpui.prerequisiteKeyboard"),
             Self::Lsp => Some("lithe.settings.gpui.prerequisiteLsp"),
@@ -374,6 +409,228 @@ impl GitPageState {
 /// 「Git」页的诊断前缀（与 `S1_SOURCE_CONTROL` 一族同口径，走 stderr）。
 const GIT_IDENTITY_TAG: &str = "S1_GIT_IDENTITY";
 
+/// 「项目 · JDK 与 Maven」页的运行期状态（阶段 16）。
+///
+/// 与 [`GitPageState`] 同一形状（数据不在设置文件里 → 单独一块），但少了 `host` 那一项：
+/// 这一页的数据是**本进程自己探测出来的**（[`crate::project::discover`]），不依赖宿主登记钩子，
+/// 所以它**没有"宿主没接线"这条降级分支** —— 只有"探测有没有回来"。
+struct ProjectPageState {
+    /// 最近一次探测的结论；`None` = 还没探测回来（首帧 / 刷新在飞）。
+    environment: Option<ProjectEnvironment>,
+    /// 探测在飞。
+    busy: bool,
+    /// 刚保存成功的提示（真源 `saved`）。
+    saved: bool,
+    /// 请求代次：刷新 / 保存后晚到的旧回包直接丢掉（与 `GitPageState::generation` 同一口径）。
+    generation: u64,
+}
+
+impl ProjectPageState {
+    fn new() -> Self {
+        Self {
+            environment: None,
+            busy: false,
+            saved: false,
+            generation: 0,
+        }
+    }
+}
+
+/// 生效值那一行里"名字"的取法（真源 `describeEffectiveToolchain` 的 `kind` 参数）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolKind {
+    /// JDK：名字是 `toolchain.jdk`（`JDK {version}`），没有版本时退化成裸 `JDK`。
+    Jdk,
+    /// Maven：名字是 `toolchain.maven`（`Maven {version}`），没有版本时退化成裸 `Maven`。
+    Maven,
+}
+
+impl ToolKind {
+    /// 一个都没找到时那句话的键（真源 `effective-toolchain.ts:38`）。
+    fn not_found_key(self) -> &'static str {
+        match self {
+            Self::Jdk => "lithe.toolchain.javaNotFound",
+            Self::Maven => "lithe.toolchain.mavenNotFound",
+        }
+    }
+
+    /// 有版本时的名字键（带 `{version}` 占位符）。
+    fn name_key(self) -> &'static str {
+        match self {
+            Self::Jdk => "lithe.toolchain.jdk",
+            Self::Maven => "lithe.toolchain.maven",
+        }
+    }
+
+    /// 读不出版本时的裸名字（真源也是硬编码的 `"JDK"` / `"Maven"`，
+    /// `effective-toolchain.ts:46-49`：那是**产品名**，不走 catalog）。
+    fn bare_name(self) -> &'static str {
+        match self {
+            Self::Jdk => "JDK",
+            Self::Maven => "Maven",
+        }
+    }
+}
+
+/// 生效值那一行的完整内容：主行 + 可选的详情行。
+///
+/// 拆出来是为了**可单测**：界面调用点与测试用的是同一个函数，
+/// 不会出现"测试通过但页面画的是另一句话"这种漂移。
+struct EffectiveLine {
+    /// 主行文本（真源 `line.text`）。
+    text: SharedString,
+    /// 主行是不是失败色（真源 `line.tone === "error"`）。
+    is_error: bool,
+    /// 详情行：覆盖值原文（用不了时）或"试过哪些、为什么不行"（没找到时）。
+    detail: Option<SharedString>,
+}
+
+/// 一个工具的「生效值」文案（逐条照 `features/run/utils/effective-toolchain.ts:23-58`）。
+///
+/// 拼法与真源一致：`{模式} → {名字} · {路径}`，来源**只在自动选出时**追加
+/// （`configured` / `projectJdk` 这两档已经由模式本身说明了来源）。
+fn describe_effective(kind: ToolKind, effective: &EffectiveToolchain) -> EffectiveLine {
+    match effective {
+        EffectiveToolchain::Resolved {
+            mode,
+            path,
+            version,
+            source,
+        } => {
+            let name = match version {
+                Some(version) => tr_args(kind.name_key(), &[("version", version.as_str())]),
+                None => SharedString::from(kind.bare_name()),
+            };
+            let mut parts = vec![name.to_string(), path.clone()];
+            if let Some(source) = source {
+                parts.push(source_label(*source).to_string());
+            }
+            EffectiveLine {
+                text: SharedString::from(format!(
+                    "{} → {}",
+                    tr(mode.label_key()),
+                    parts.join(" · ")
+                )),
+                is_error: false,
+                detail: None,
+            }
+        }
+        EffectiveToolchain::Unusable { path, reason } => EffectiveLine {
+            text: tr_args("lithe.toolchain.invalid", &[("message", reason.as_str())]),
+            is_error: true,
+            // 用户填的原文要显示出来，否则"用不了"这句话没说清是哪个值用不了。
+            detail: Some(SharedString::from(path.clone())),
+        },
+        EffectiveToolchain::NotFound { reason } => EffectiveLine {
+            text: tr(kind.not_found_key()),
+            is_error: true,
+            // 试过哪些位置、各自为什么不行 —— 这就是"可排查的原因"。
+            detail: Some(SharedString::from(reason.clone())),
+        },
+    }
+}
+
+/// 「来源」那一栏的文案：`JAVA_HOME` / `PATH` 用真源既有键，
+/// 两个**环境变量**来源用带 `{name}` 占位符的新键填变量名。
+fn source_label(source: ToolSource) -> SharedString {
+    match source.label_arg() {
+        Some(name) => tr_args(source.label_key(), &[("name", name)]),
+        None => tr(source.label_key()),
+    }
+}
+
+/// 「检测到的安装」那一行的文本（真源 `settings.project.detected` + `path (version); …`）。
+fn detected_installations(entries: Vec<String>) -> Option<SharedString> {
+    if entries.is_empty() {
+        return None;
+    }
+    Some(SharedString::from(format!(
+        "{}: {}",
+        tr("lithe.settings.project.detected"),
+        entries.join("; ")
+    )))
+}
+
+/// 「检测到的安装」里一条 JDK：`主目录 (版本)`。
+///
+/// 版本读不出来时只写路径（真源也是 `version ? \` (${version})\` : ""`，
+/// `project-environment-settings.tsx:281`）——**不编一个版本**。
+fn jdk_entry(jdk: &DetectedJdk) -> String {
+    let path = if jdk.home.is_empty() {
+        jdk.executable.clone()
+    } else {
+        jdk.home.clone()
+    };
+    if jdk.version.is_empty() {
+        path
+    } else {
+        format!("{path} ({})", jdk.version)
+    }
+}
+
+/// 「检测到的安装」里一条 Maven：`启动器 (版本)`。见 [`jdk_entry`]。
+fn maven_entry(maven: &DetectedMaven) -> String {
+    if maven.version.is_empty() {
+        maven.executable.clone()
+    } else {
+        format!("{} ({})", maven.executable, maven.version)
+    }
+}
+
+/// 「项目」页里三个**可覆盖**的字段。
+///
+/// 顺序即页面顺序（真源也是 JDK → Maven → Maven JDK，`project-environment-settings.tsx:141-195`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProjectField {
+    /// `javaHomePath` = JDK 主目录。
+    Jdk,
+    /// `mavenExecutablePath` = Maven 主目录 / 可执行文件。
+    Maven,
+    /// `mavenJavaHomePath` = Maven 使用的 JDK 主目录。
+    MavenJdk,
+}
+
+impl ProjectField {
+    /// 页面顺序。
+    const ALL: [ProjectField; 3] = [Self::Jdk, Self::Maven, Self::MavenJdk];
+
+    /// 诊断行里的稳定 token。
+    fn id(self) -> &'static str {
+        match self {
+            Self::Jdk => "jdk",
+            Self::Maven => "maven",
+            Self::MavenJdk => "maven_jdk",
+        }
+    }
+
+    /// 元素 id 用的序号。
+    fn index(self) -> usize {
+        match self {
+            Self::Jdk => 0,
+            Self::Maven => 1,
+            Self::MavenJdk => 2,
+        }
+    }
+
+    /// 行标签（真源既有键）。
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Jdk => "lithe.run.jdkHome",
+            Self::Maven => "lithe.run.mavenExecutable",
+            Self::MavenJdk => "lithe.run.mavenJdkHome",
+        }
+    }
+
+    /// 行提示（真源既有键；Maven 那条是 gpui 侧如实改写的新键，理由见脚本）。
+    fn hint_key(self) -> &'static str {
+        match self {
+            Self::Jdk => "lithe.run.jdkHomeHint",
+            Self::Maven => "lithe.settings.gpui.mavenExecutableHint",
+            Self::MavenJdk => "lithe.run.mavenJdkHomeHint",
+        }
+    }
+}
+
 /// 「Git」页里「保存」按钮可不可点的**纯判据**（不碰 `App`，所以可以直接单测）。
 ///
 /// 四个禁用条件逐条照真源 `git-identity-settings.tsx:133-139`：
@@ -416,6 +673,13 @@ pub struct SettingsDialog {
     git_name_input: Entity<InputState>,
     git_email_input: Entity<InputState>,
     git: GitPageState,
+    /// 「项目 · JDK 与 Maven」页的三个覆盖值输入框（阶段 16）。值是**草稿**：
+    /// 只有点「保存」才写进设置文件并重新探测（与真源的显式保存同一条口径）。
+    java_home_input: Entity<InputState>,
+    maven_executable_input: Entity<InputState>,
+    maven_java_home_input: Entity<InputState>,
+    /// 「项目」页的运行期状态（探测结论）。
+    project: ProjectPageState,
     /// 订阅与观察（`store` 变了要重绘；输入框变了要写设置）。
     _subscriptions: Vec<Subscription>,
 }
@@ -429,6 +693,8 @@ impl SettingsDialog {
     ) -> Self {
         let value = store.read(cx).settings().ui_font_size;
         let editor_value = store.read(cx).settings().font_size;
+        // 构造期读一次设置快照：三个「项目」页输入框的初值来自它（`Settings` 是纯数据，克隆代价可忽略）。
+        let saved = store.read(cx).settings().clone();
         // 数字框的引擎配置放在 `InputState` 上：`+`/`-` 与上下键都按 `step` 走、
         // 越界文本在输入期间被容忍、失焦时收敛到范围（`gpui-base-0.6.6/src/input/base/state.rs:9032-9052`）。
         let font_size_input = cx.new(|cx| {
@@ -452,6 +718,18 @@ impl SettingsDialog {
         // （`git-identity-settings.tsx:23-24,42-49`），这样"还没读到"与"读到了空值"不会混。
         let git_name_input = cx.new(|cx| InputState::new(window, cx));
         let git_email_input = cx.new(|cx| InputState::new(window, cx));
+
+        // 「项目」页的三个覆盖值输入框：初值 = 设置文件里已经保存的值（真源也是拿
+        // `inspected.toolchain` 填输入框，`project-environment-settings.tsx:52-76`）。
+        // 它们同样是**草稿**：改动只重绘，写入发生在「保存」被点的那一刻。
+        let java_home_input =
+            cx.new(|cx| InputState::new(window, cx).default_value(saved.java_home_path.clone()));
+        let maven_executable_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(saved.maven_executable_path.clone())
+        });
+        let maven_java_home_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(saved.maven_java_home_path.clone())
+        });
 
         let mut subscriptions = Vec::new();
         // 设置变了 → 重绘（主题/字号/开关的显示都跟着走）。
@@ -509,6 +787,25 @@ impl SettingsDialog {
             ));
         }
 
+        // 「项目」页的三个覆盖值输入框：**只重绘**（「保存」按钮的可点性跟着草稿走），
+        // 不写任何东西 —— 与上面两个 Git 输入框同一条理由：它们是草稿，
+        // 写入发生在「保存」被点的那一刻（真源同样是显式保存）。
+        for input in [
+            &java_home_input,
+            &maven_executable_input,
+            &maven_java_home_input,
+        ] {
+            subscriptions.push(cx.subscribe_in(
+                input,
+                window,
+                |_this: &mut Self, _input, event: &InputEvent, _window, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        cx.notify();
+                    }
+                },
+            ));
+        }
+
         Self {
             store,
             category,
@@ -517,6 +814,10 @@ impl SettingsDialog {
             git_name_input,
             git_email_input,
             git: GitPageState::new(),
+            java_home_input,
+            maven_executable_input,
+            maven_java_home_input,
+            project: ProjectPageState::new(),
             _subscriptions: subscriptions,
         }
     }
@@ -605,6 +906,15 @@ impl SettingsDialog {
                         if *category == Category::Git && this.git.setup.is_none() && !this.git.busy {
                             this.git_load(window, cx);
                         }
+                        // 「项目」页同理：**第一次切到这一页才探测**。探测要起子进程
+                        // （每个 JDK 候选一次 `java -version`、Maven 一次 `mvn -version`），
+                        // 挂在构造期会让"打开设置对话框"为一张没被看过的页付钱。
+                        if *category == Category::Project
+                            && this.project.environment.is_none()
+                            && !this.project.busy
+                        {
+                            this.project_load(cx);
+                        }
                         cx.notify();
                     }))
             }))
@@ -635,12 +945,14 @@ impl SettingsDialog {
                     Category::Appearance => self.appearance_page(&settings, cx),
                     Category::Editor => self.editor_page(&settings, cx),
                     Category::Terminal => self.terminal_page(&settings, cx),
+                    // 「项目 · JDK 与 Maven」页（阶段 16）：真机探测出的 JDK / Maven 生效值
+                    // + 可覆盖 + 可刷新。探测不到时**不是整页空态**，而是每个字段各说各的原因。
+                    Category::Project => self.project_page(cx),
                     // 「Git」页（阶段 15）：提交身份 + 一个真有消费方的开关。
                     // 钩子没登记时 `git_page` 自己退回明确空态。
                     Category::Git => self.git_page(&settings, cx),
                     // 其余分类是**明确空态**：只有一句前置条件，没有任何控件。
-                    Category::Project
-                    | Category::Run
+                    Category::Run
                     | Category::Keyboard
                     | Category::Lsp
                     | Category::Logs
@@ -1484,6 +1796,429 @@ impl SettingsDialog {
             .into_any_element()
     }
 
+    /// 「项目 · JDK 与 Maven」页里的一个可覆盖字段。
+    ///
+    /// 三个字段的**键名与真源逐字相同**（`javaHomePath` / `mavenExecutablePath` /
+    /// `mavenJavaHomePath`，`project-environment-settings.tsx:141-195`），
+    /// 标签 / 提示也直接复用真源既有键（含 `-Hint` 那一组）。
+    fn project_field_input(&self, field: ProjectField) -> &Entity<InputState> {
+        match field {
+            ProjectField::Jdk => &self.java_home_input,
+            ProjectField::Maven => &self.maven_executable_input,
+            ProjectField::MavenJdk => &self.maven_java_home_input,
+        }
+    }
+
+    /// 「清空」：把这一行的覆盖值草稿置空 = 回到自动检测（真源 `:261-273` 的「清除」）。
+    ///
+    /// 只清草稿，不写设置：写入仍由「保存」负责 —— 与真源"清除按钮改的是同一个 draft"一致。
+    fn project_clear(&mut self, field: ProjectField, window: &mut Window, cx: &mut Context<Self>) {
+        let input = self.project_field_input(field).clone();
+        input.update(cx, |input, cx| {
+            input.set_value(SharedString::from(""), window, cx);
+        });
+        self.project.saved = false;
+        self.project_diagnose(&format!("run=clear field={}", field.id()));
+        cx.notify();
+    }
+
+    /// 一行 `S1_SETTINGS_PROJECT` 诊断（可 grep；走 stdout，与 `discover` 的数据行同前缀）。
+    ///
+    /// 数据本身那一行由 [`crate::project::discover`] 打
+    /// （`jdk=… source=… version=… maven=… localRepo=…`）；这里补的是"页面做了什么"。
+    /// 两者合起来就能回答"截图里的值来自哪一次探测"。
+    fn project_diagnose(&self, detail: &str) {
+        println!("{} {detail}", crate::project::PROJECT_DIAGNOSTIC_TAG);
+    }
+
+    /// 重新探测（真源 `load()`，`project-environment-settings.tsx:47-82`）。
+    ///
+    /// **用设置文件里已保存的覆盖值**，不是输入框草稿：真源的「重新加载并检测」也是先丢掉草稿
+    /// 再 `load()`。
+    ///
+    /// 为什么整段探测要进 `background_spawn`：`discover` 会同步起子进程
+    /// （每个 JDK 候选一次 `java -version`，Maven 一次 `mvn -version`；Windows 上 `mvn.cmd`
+    /// 还要先拉起 `cmd.exe`），在 UI 线程上跑会让整个对话框卡住 ——
+    /// 与 `lithe_gpui_shared::core_client` 的调用方同一条口径。
+    fn project_load(&mut self, cx: &mut Context<Self>) {
+        self.project.generation = self.project.generation.wrapping_add(1);
+        let generation = self.project.generation;
+        self.project.busy = true;
+        self.project.saved = false;
+        cx.notify();
+
+        let settings = self.store.read(cx).settings().clone();
+        let overrides = Overrides {
+            java_home: settings.java_home_path.clone(),
+            maven_executable: settings.maven_executable_path.clone(),
+            maven_java_home: settings.maven_java_home_path.clone(),
+        };
+        self.project_diagnose(&format!("run=discover overrides={}", overrides.count()));
+
+        cx.spawn(async move |this, cx| {
+            let environment = cx
+                .background_spawn(async move { discover(&overrides) })
+                .await;
+            let empty = environment.has_no_toolchain();
+            let _ = this.update(cx, |this, cx| {
+                // 晚到的旧回包丢掉（刷新/保存各推一次代次，与 Git 页的 `generation` 同一口径）。
+                if this.project.generation != generation {
+                    return;
+                }
+                this.project.busy = false;
+                this.project.environment = Some(environment);
+                this.project_diagnose(&format!(
+                    "run=discover result=ok generation={generation} no_toolchain={empty}"
+                ));
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// 「保存」：把三个草稿写进**全局设置文件**，然后按新值重新探测。
+    ///
+    /// ⚠️ 真源的保存写的是**项目级**文件（`.lithe/run/local.json`，经
+    /// `runConfig.updateOptions`）；本侧没有项目级存储与那条 Core 通路，所以写的是全局设置文件，
+    /// 页面上也用 [`Self::project_page`] 的第一句如实说明（`settings.gpui.projectScopeGlobal`）。
+    fn project_save(&mut self, cx: &mut Context<Self>) {
+        let java_home = self.java_home_input.read(cx).value().trim().to_string();
+        let maven_executable = self.maven_executable_input.read(cx).value().trim().to_string();
+        let maven_java_home = self.maven_java_home_input.read(cx).value().trim().to_string();
+        self.project_diagnose(&format!(
+            "run=save javaHome={} mavenExecutable={} mavenJavaHome={}",
+            if java_home.is_empty() { "-" } else { "set" },
+            if maven_executable.is_empty() { "-" } else { "set" },
+            if maven_java_home.is_empty() { "-" } else { "set" },
+        ));
+
+        let store = self.store.clone();
+        store.update(cx, |store, cx| {
+            store.set_java_home_path(java_home, cx);
+            store.set_maven_executable_path(maven_executable, cx);
+            store.set_maven_java_home_path(maven_java_home, cx);
+        });
+        // 保存之后立刻按新值重探一次（真源保存后也会刷新运行侧的视图）；`saved` 要在
+        // `project_load` 之后置位，否则会被它清掉。
+        self.project_load(cx);
+        self.project.saved = true;
+    }
+
+    /// 「项目 · JDK 与 Maven」页（阶段 16；真源
+    /// `components/project-environment-settings.tsx` + `features/run/components/effective-toolchain.tsx`）。
+    ///
+    /// 画出来的每一格都能在这两个地方找到出处：
+    /// - **生效值**：`{模式} → {名字} · {路径} · {来源}`，逐条照 `describeEffectiveToolchain`；
+    /// - **检测到的安装**：真源同名那一行（`settings.project.detected`），列出**全部**候选。
+    ///
+    /// 没找到时的表现：这一格变成失败色的「未找到 JDK/Maven」，**下面紧跟一行"试过哪些位置、
+    /// 各自为什么不行"**（`ProjectEnvironment` 的 `rejected`）—— 这就是任务要的"可排查的原因"。
+    /// 页面级的 `Empty` 空态只在**连一个工具链都没有**时出现（[`ProjectEnvironment::has_no_toolchain`]），
+    /// 文案也不是「此分类尚未接入」。
+    ///
+    /// 与真源的**有意差异**（逐条登记在汇报里）：
+    /// - 真源画「浏览」按钮（系统目录对话框），gpui 侧没有文件对话框依赖
+    ///   （`workbench/src/project_menu.rs:111` 已登记这条边界），所以路径靠输入框粘贴；
+    /// - 真源的 `settings.xml` / 本地仓库两行**可编辑**（写进 Maven 工具窗的项目本地配置），
+    ///   本侧没有那条通路，按「不画假控件」的口径做成**只读事实**；
+    /// - 真源有"项目 Maven Wrapper"这一级候选，本侧拿不到工作区根 → 没做（提示文案也如实改写）。
+    fn project_page(&self, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+        let environment = self.project.environment.as_ref();
+        let detecting = || EffectiveLine {
+            text: tr("lithe.toolchain.detecting"),
+            is_error: false,
+            detail: None,
+        };
+
+        let mut toolchain_rows: Vec<gpui_kit::AnyElement> = Vec::new();
+
+        // ① 作用域：本侧是**全局**覆盖值（真源那句 `settings.project.scope` 说的是"当前项目"，
+        //    照抄会撒谎）。理由逐条写在 `extract-locale.mjs` 的 GPUI_ONLY_KEYS 里。
+        toolchain_rows.push(
+            div()
+                .w_full()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(tr("lithe.settings.gpui.projectScopeGlobal"))
+                .into_any_element(),
+        );
+
+        // ② 一个工具链都没探测到 → 一句如实的前提说明（**不是**「此分类尚未接入」）。
+        if environment.is_some_and(ProjectEnvironment::has_no_toolchain) {
+            toolchain_rows.push(
+                div()
+                    .w_full()
+                    .text_sm()
+                    .text_color(cx.theme().danger)
+                    .child(tr("lithe.settings.gpui.projectNothingDetected"))
+                    .into_any_element(),
+            );
+        }
+
+        // ③ 三个字段（标签 / 提示全部复用真源既有键）。
+        let jdk_candidates = || {
+            environment.and_then(|environment| {
+                detected_installations(environment.jdk.candidates.iter().map(jdk_entry).collect())
+            })
+        };
+        for field in ProjectField::ALL {
+            let effective = match (field, environment) {
+                (ProjectField::Jdk, Some(environment)) => {
+                    describe_effective(ToolKind::Jdk, &environment.jdk.effective())
+                }
+                (ProjectField::Maven, Some(environment)) => {
+                    describe_effective(ToolKind::Maven, &environment.maven.effective())
+                }
+                (ProjectField::MavenJdk, Some(environment)) => {
+                    describe_effective(ToolKind::Jdk, &environment.maven_jdk_effective())
+                }
+                (_, None) => detecting(),
+            };
+            let detected = match field {
+                // Maven 的候选表是"检测到的 Maven 安装"，另两行是"检测到的 JDK 安装"
+                // （真源 `:172-175` 与 `:189-192` 用的是同一份 `discovered.java`）。
+                ProjectField::Maven => environment.and_then(|environment| {
+                    detected_installations(
+                        environment.maven.candidates.iter().map(maven_entry).collect(),
+                    )
+                }),
+                ProjectField::Jdk | ProjectField::MavenJdk => jdk_candidates(),
+            };
+            toolchain_rows.push(self.project_toolchain_row(field, effective, detected, cx));
+        }
+
+        // ④ 底部动作：重新探测 + 保存 + 加载中 / 已保存（真源 `:316-336`）。
+        toolchain_rows.push(self.project_actions(cx));
+
+        // ⑤ Maven 自己的两个配置文件：**只读事实**，拿不到就如实说"未检测到"并写清查过哪里。
+        let maven_rows: Vec<gpui_kit::AnyElement> = match environment {
+            Some(environment) => {
+                let settings_xml = environment.maven_config.effective_settings();
+                let repository = environment.maven_config.local_repository.as_ref();
+                vec![
+                    self.project_fact_row(
+                        "settings-project-settings-xml",
+                        SharedString::from("settings.xml"),
+                        settings_xml
+                            .map(SharedString::from)
+                            .unwrap_or_else(|| tr("lithe.settings.gpui.mavenSettingsMissing")),
+                        // 安装级那份只在**与生效值不同**时单独列一行备注：
+                        // 用户级 settings.xml 不存在时生效值就是安装级那份，再列一次是重复。
+                        environment
+                            .maven_config
+                            .installation_settings
+                            .as_deref()
+                            .filter(|installation| Some(*installation) != settings_xml)
+                            .map(SharedString::from),
+                        settings_xml.is_none(),
+                        cx,
+                    ),
+                    self.project_fact_row(
+                        "settings-project-local-repository",
+                        tr("lithe.maven.localRepository"),
+                        repository
+                            .map(|repository| SharedString::from(repository.path.clone()))
+                            .unwrap_or_else(|| {
+                                tr("lithe.settings.gpui.mavenLocalRepositoryUnknown")
+                            }),
+                        repository.map(|repository| tr(repository.source.label_key())),
+                        repository.is_none(),
+                        cx,
+                    ),
+                ]
+            }
+            None => vec![
+                self.project_fact_row(
+                    "settings-project-settings-xml",
+                    SharedString::from("settings.xml"),
+                    tr("lithe.toolchain.detecting"),
+                    None,
+                    false,
+                    cx,
+                ),
+                self.project_fact_row(
+                    "settings-project-local-repository",
+                    tr("lithe.maven.localRepository"),
+                    tr("lithe.toolchain.detecting"),
+                    None,
+                    false,
+                    cx,
+                ),
+            ],
+        };
+        // 三个覆盖值走的是输入框草稿（真源也是同一条路），所以这一页不读 `Settings`：
+        // 输入框的初值在构造期就从设置里取好了。
+
+        vec![
+            settings_group(
+                tr("lithe.settings.project.detected"),
+                toolchain_rows,
+                cx,
+            )
+            .into_any_element(),
+            settings_group(tr("lithe.maven.settings"), maven_rows, cx).into_any_element(),
+        ]
+    }
+
+    /// 「项目」页的一行工具链：标签 + 覆盖值输入框 + 「清空」+ 提示 + 生效值 + 检测到的安装。
+    ///
+    /// 不走 `settings_row` 的左右两栏：这一行的输入框要吃掉整行剩余宽度，
+    /// 下面还要跟三行说明（与 [`Self::git_identity_row`] 同一条理由）。
+    fn project_toolchain_row(
+        &self,
+        field: ProjectField,
+        effective: EffectiveLine,
+        detected: Option<SharedString>,
+        cx: &Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        v_flex()
+            .id(("settings-project-row", field.index()))
+            .w_full()
+            .gap_2()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .child(tr(field.label_key())),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(Input::new(self.project_field_input(field))),
+                    )
+                    .child(
+                        Button::new(("settings-project-clear", field.index()))
+                            .small()
+                            .ghost()
+                            .label(tr("lithe.ui.clear"))
+                            .disabled(self.project.busy)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.project_clear(field, window, cx)
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(tr(field.hint_key())),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(if effective.is_error {
+                        cx.theme().danger
+                    } else {
+                        cx.theme().foreground
+                    })
+                    .child(effective.text),
+            )
+            .children(effective.detail.map(|detail| {
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(detail)
+            }))
+            .children(detected.map(|detected| {
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(detected)
+            }))
+            .into_any_element()
+    }
+
+    /// 「项目」页的一行**只读事实**（settings.xml / 本地仓库）。
+    fn project_fact_row(
+        &self,
+        id: &'static str,
+        label: SharedString,
+        value: SharedString,
+        note: Option<SharedString>,
+        is_error: bool,
+        cx: &Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        v_flex()
+            .id(id)
+            .w_full()
+            .gap_1()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(if is_error {
+                        cx.theme().danger
+                    } else {
+                        cx.theme().foreground
+                    })
+                    .child(value),
+            )
+            .children(note.map(|note| {
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(note)
+            }))
+            .into_any_element()
+    }
+
+    /// 「项目」页底部的动作行：重新探测 + 保存 + 加载中 / 已保存（真源 `:322-336`）。
+    fn project_actions(&self, cx: &Context<Self>) -> gpui_kit::AnyElement {
+        h_flex()
+            .w_full()
+            .items_center()
+            .gap_3()
+            .pt_2()
+            .child(
+                Button::new("settings-project-refresh")
+                    .small()
+                    .ghost()
+                    .label(tr("lithe.settings.project.refresh"))
+                    .disabled(self.project.busy)
+                    .on_click(cx.listener(|this, _, _window, cx| this.project_load(cx))),
+            )
+            .child(
+                Button::new("settings-project-save")
+                    .small()
+                    .label(tr("lithe.ui.save"))
+                    .disabled(self.project.busy)
+                    .on_click(cx.listener(|this, _, _window, cx| this.project_save(cx))),
+            )
+            .when(self.project.busy, |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr("lithe.toolchain.detecting")),
+                )
+            })
+            .when(self.project.saved && !self.project.busy, |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr("lithe.settings.project.saved")),
+                )
+            })
+            .into_any_element()
+    }
+
     /// **明确空态**页：一句「此分类尚未接入」+ 一句前置条件，**没有任何控件**。
     /// 1. 分类**留在左栏**（用户点得到，不会以为"这个分类不存在"）；
     /// 2. 标题是分类自己的名字（页面标题照常画），正文说明缺的是**什么子系统**；
@@ -1966,5 +2701,203 @@ mod tests {
         // 「清除覆盖」只在**该作用域里写着值**时可点。
         assert!(git_clear_enabled(Some(&setup), IdentityField::Name, false));
         assert!(!git_clear_enabled(Some(&setup), IdentityField::Email, false));
+    }
+
+    /// 「项目 · JDK 与 Maven」页的**行标签与提示全部复用真源既有键**，
+    /// 只有 Maven 那条提示是如实改写的新键（真源那句会承诺一个本侧没有的 Maven Wrapper）。
+    #[test]
+    fn project_field_keys_follow_the_truth_source() {
+        assert_eq!(ProjectField::ALL.len(), 3);
+        assert_eq!(ProjectField::Jdk.label_key(), "lithe.run.jdkHome");
+        assert_eq!(ProjectField::Maven.label_key(), "lithe.run.mavenExecutable");
+        assert_eq!(
+            ProjectField::MavenJdk.label_key(),
+            "lithe.run.mavenJdkHome"
+        );
+        assert_eq!(ProjectField::Jdk.hint_key(), "lithe.run.jdkHomeHint");
+        assert_eq!(
+            ProjectField::Maven.hint_key(),
+            "lithe.settings.gpui.mavenExecutableHint"
+        );
+        assert_eq!(
+            ProjectField::MavenJdk.hint_key(),
+            "lithe.run.mavenJdkHomeHint"
+        );
+        // 三个字段的 token 与序号都唯一（诊断行与元素 id 都靠它定位）。
+        let ids: Vec<&str> = ProjectField::ALL.iter().map(|field| field.id()).collect();
+        assert_eq!(ids, ["jdk", "maven", "maven_jdk"]);
+        let indices: Vec<usize> = ProjectField::ALL.iter().map(|field| field.index()).collect();
+        assert_eq!(indices, [0, 1, 2]);
+    }
+
+    /// 「项目」页自阶段 16 起是**实现页**：不再有空态前置条件（那句「尚未接入」已下线）。
+    #[test]
+    fn project_page_is_implemented_not_an_empty_state() {
+        assert!(Category::IMPLEMENTED.contains(&Category::Project));
+        assert_eq!(Category::Project.prerequisite_key(), None);
+        assert_eq!(Category::Project.label_key(), "lithe.settings.project.title");
+        assert_eq!(Category::Project.id(), "project");
+    }
+
+    /// 带着分类打开对话框时，只有「项目」页需要立刻探一次（否则它会停在「正在检测…」）。
+    #[test]
+    fn only_the_project_page_loads_on_open() {
+        assert!(project_load_on_open(Category::Project));
+        for category in Category::ALL {
+            if category == Category::Project {
+                continue;
+            }
+            assert!(
+                !project_load_on_open(category),
+                "{category:?} 不该在打开时起探测子进程"
+            );
+        }
+    }
+
+    /// 生效值那一行的四种形态（逐条对照真源 `describeEffectiveToolchain`）。
+    ///
+    /// 最关键的一条是**来源只在自动选出时出现**：覆盖值的"来源"由模式（「已选择」）表达，
+    /// 再拼一次来源就是重复信息（真源 `effective-toolchain.ts:51-54`）。
+    #[test]
+    fn effective_lines_follow_the_truth_source_wording() {
+        /// 一条"自动选中"的 JDK 生效值（测试里反复改一两个字段用）。
+        fn resolved(
+            mode: crate::project::ToolMode,
+            version: Option<&str>,
+            source: Option<ToolSource>,
+        ) -> EffectiveToolchain {
+            EffectiveToolchain::Resolved {
+                mode,
+                path: r"D:\ProgramData\java\openjdk-21".to_string(),
+                version: version.map(str::to_string),
+                source,
+            }
+        }
+
+        let automatic = resolved(
+            crate::project::ToolMode::Automatic,
+            Some("21.0.2"),
+            Some(ToolSource::JavaHome),
+        );
+        let line = describe_effective(ToolKind::Jdk, &automatic);
+        assert!(!line.is_error, "自动选中的值是正常态");
+        assert!(line.text.contains(" → "), "{}", line.text);
+        assert!(line.text.contains(r"D:\ProgramData\java\openjdk-21"));
+        assert!(line.text.contains("21.0.2"), "{}", line.text);
+        assert!(
+            line.text.contains(source_label(ToolSource::JavaHome).as_ref()),
+            "自动选中必须报来源：{}",
+            line.text
+        );
+        assert!(line.detail.is_none());
+
+        let configured = resolved(crate::project::ToolMode::Configured, Some("21.0.2"), None);
+        let line = describe_effective(ToolKind::Jdk, &configured);
+        assert!(!line.is_error);
+        assert!(
+            !line.text.contains(source_label(ToolSource::JavaHome).as_ref()),
+            "覆盖值不该再拼来源：{}",
+            line.text
+        );
+        assert!(!line.text.contains(source_label(ToolSource::Path).as_ref()));
+
+        // 读不出版本时退化成裸名字（真源 `"JDK"` / `"Maven"`），**不编一个版本**。
+        let line = describe_effective(
+            ToolKind::Jdk,
+            &resolved(crate::project::ToolMode::Automatic, None, Some(ToolSource::Path)),
+        );
+        assert!(line.text.contains(ToolKind::Jdk.bare_name()), "{}", line.text);
+        let line = describe_effective(
+            ToolKind::Maven,
+            &EffectiveToolchain::Resolved {
+                mode: crate::project::ToolMode::Automatic,
+                path: r"D:\tools\apache-maven-3.9.9\bin\mvn.cmd".to_string(),
+                version: None,
+                source: Some(ToolSource::MavenHome),
+            },
+        );
+        assert!(
+            line.text.contains(ToolKind::Maven.bare_name()),
+            "{}",
+            line.text
+        );
+        assert!(
+            line.text
+                .contains(source_label(ToolSource::MavenHome).as_ref()),
+            "Maven 的来源要报出 MAVEN_HOME：{}",
+            line.text
+        );
+
+        // 覆盖值用不了：失败色 + **详情行回显用户填的原文**。
+        let unusable = EffectiveToolchain::Unusable {
+            path: r"D:\nope".to_string(),
+            reason: "找不到 java.exe".to_string(),
+        };
+        let line = describe_effective(ToolKind::Jdk, &unusable);
+        assert!(line.is_error);
+        assert!(line.text.contains("找不到 java.exe"), "{}", line.text);
+        assert_eq!(line.detail.as_deref(), Some(r"D:\nope"));
+
+        // 没找到：失败色 + 详情行是"试过哪些、为什么不行"。
+        let not_found = EffectiveToolchain::NotFound {
+            reason: "JAVA_HOME=未设置；已排除：C:\\jdk8（版本 1.8.0_402）".to_string(),
+        };
+        let line = describe_effective(ToolKind::Jdk, &not_found);
+        assert!(line.is_error);
+        assert_eq!(line.text, tr(ToolKind::Jdk.not_found_key()));
+        let detail = line.detail.expect("没找到时必须给出已排除清单");
+        assert!(detail.contains("已排除"), "{detail}");
+    }
+
+    /// 「检测到的安装」那两行：有版本写 `路径 (版本)`，没有版本只写路径。
+    #[test]
+    fn detected_installations_omit_a_missing_version() {
+        let jdk = DetectedJdk {
+            home: r"D:\ProgramData\java\openjdk-21".to_string(),
+            executable: r"D:\ProgramData\java\openjdk-21\bin\java.exe".to_string(),
+            version: "21.0.2".to_string(),
+            source: ToolSource::JavaHome,
+        };
+        assert_eq!(
+            jdk_entry(&jdk),
+            r"D:\ProgramData\java\openjdk-21 (21.0.2)"
+        );
+        // 没有 home 时退回可执行文件路径；没有版本时不加空括号。
+        assert_eq!(
+            jdk_entry(&DetectedJdk {
+                home: String::new(),
+                ..jdk.clone()
+            }),
+            r"D:\ProgramData\java\openjdk-21\bin\java.exe (21.0.2)"
+        );
+        assert_eq!(
+            jdk_entry(&DetectedJdk {
+                version: String::new(),
+                ..jdk.clone()
+            }),
+            r"D:\ProgramData\java\openjdk-21"
+        );
+
+        let maven = DetectedMaven {
+            executable: r"D:\tools\apache-maven-3.9.9\bin\mvn.cmd".to_string(),
+            version: "3.9.9".to_string(),
+            home: Some(r"D:\tools\apache-maven-3.9.9".to_string()),
+            java_runtime: Some("21.0.2".to_string()),
+            source: ToolSource::MavenHome,
+        };
+        assert_eq!(
+            maven_entry(&maven),
+            r"D:\tools\apache-maven-3.9.9\bin\mvn.cmd (3.9.9)"
+        );
+        assert_eq!(
+            maven_entry(&DetectedMaven {
+                version: String::new(),
+                ..maven
+            }),
+            r"D:\tools\apache-maven-3.9.9\bin\mvn.cmd"
+        );
+
+        // 一个候选都没有 → 那一行**不画**（不是画一句空话）。
+        assert!(detected_installations(Vec::new()).is_none());
     }
 }

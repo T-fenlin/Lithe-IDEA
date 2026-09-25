@@ -202,6 +202,43 @@ pub struct Settings {
     /// 关掉之后走的是**同一条** `git.write discard` 写操作，被省掉的只有弹窗那一段。
     #[serde(rename = "confirmBeforeDiscard")]
     pub confirm_before_discard: bool,
+
+    /// JDK 主目录的**覆盖值**（空串 = 用自动检测到的那个）。键名 `javaHomePath`。
+    ///
+    /// ## 为什么键名与真源的**运行配置**字段逐字相同
+    ///
+    /// 真源这一页（`components/project-environment-settings.tsx`）读写的是**项目级**文件
+    /// （`.lithe/run/local.json`，经 `services/project-environment.ts` 的
+    /// `runConfig.updateOptions`），它携带的 toolchain 对象就是
+    /// `{ javaHomePath, mavenExecutablePath, mavenJavaHomePath }`
+    /// （`shared/contracts/rust-core-api.md:1625-1627`）—— 这三个键名是 Core 契约里的名字。
+    ///
+    /// ## gpui 侧为什么只能落在**全局**设置文件里（如实登记）
+    ///
+    /// 1. 本 crate 的依赖方向是"只向下依赖 `gpui-kit` + `lithe-gpui-shared`"
+    ///    （见 `lib.rs` 的模块文档），拿不到工作区根；设置对话框里唯一能拿到根的那条路是
+    ///    宿主钩子（如 `identity::set_git_identity_host`），而登记钩子的 `workbench` 不在本次写域内；
+    /// 2. gpui 侧**没有项目级存储**（`.lithe/run/local.json` 的读写归 Core 的 `runConfig.*`，
+    ///    本侧还没有那条通路）。
+    ///
+    /// 所以这三个键是**机器级（全局）**的覆盖值，页面文案也必须如实这么写
+    /// （`settings.gpui.projectScopeGlobal`）——**不假装**是项目级。
+    /// 键名故意选 Core 契约里那三个，是为了将来接上项目级存储时，
+    /// 落盘形状与 `runConfig.updateOptions` 的 toolchain 载荷**同名同义**，不需要第二张映射表。
+    ///
+    /// 生效方式：**立即**（本页"生效值"那一行当帧就按新草稿重算；真正的消费方是运行配置，
+    /// 而 gpui 侧还没有采购它的一页）。
+    #[serde(rename = "javaHomePath")]
+    pub java_home_path: String,
+
+    /// Maven 主目录 / 可执行文件的覆盖值。键名与语义见 [`Self::java_home_path`]。
+    #[serde(rename = "mavenExecutablePath")]
+    pub maven_executable_path: String,
+
+    /// Maven 使用的 JDK 主目录的覆盖值（空串 = 跟随 [`Self::java_home_path`] 的生效值）。
+    /// 键名与语义见 [`Self::java_home_path`]。
+    #[serde(rename = "mavenJavaHomePath")]
+    pub maven_java_home_path: String,
 }
 
 impl Default for Settings {
@@ -218,6 +255,10 @@ impl Default for Settings {
             tab_size: TAB_SIZE_DEFAULT,
             terminal_default_shell_id: SHELL_SYSTEM_DEFAULT.to_string(),
             confirm_before_discard: true,
+            // 空串 = 自动检测（真源也是 `""` 表示"用自动值"）。
+            java_home_path: String::new(),
+            maven_executable_path: String::new(),
+            maven_java_home_path: String::new(),
         }
     }
 }
@@ -301,6 +342,14 @@ impl Settings {
         if self.auto_theme_dark.trim().is_empty() {
             self.auto_theme_dark = DEFAULT_AUTO_THEME_DARK.to_string();
         }
+
+        // 三个工具链覆盖值：**去掉首尾空白**（粘贴路径最容易带上空格 / 换行），
+        // 空串保持空串（= 自动）。路径本身**不在这里校验** —— "这个目录里到底有没有
+        // `bin/java`"要碰文件系统与子进程，归 `project.rs` 的探测层，且结论只影响
+        // "生效值"那一行的显示，不改变落盘的值。
+        self.java_home_path = self.java_home_path.trim().to_string();
+        self.maven_executable_path = self.maven_executable_path.trim().to_string();
+        self.maven_java_home_path = self.maven_java_home_path.trim().to_string();
     }
 
     /// 再补一层"主题名必须在注册表里"的规范化（`known` 是 `ThemeRegistry::themes()` 的键）。
@@ -359,6 +408,10 @@ mod tests {
         assert_eq!(settings.tab_size, 2);
         assert_eq!(settings.terminal_default_shell_id, "");
         assert!(settings.confirm_before_discard);
+        // 「项目 · JDK 与 Maven」页的三个覆盖值默认都是"自动"（空串）。
+        assert_eq!(settings.java_home_path, "");
+        assert_eq!(settings.maven_executable_path, "");
+        assert_eq!(settings.maven_java_home_path, "");
     }
 
     /// 字段级 `default`：**缺键**回退到该字段默认值（不是整份丢弃）。
@@ -403,9 +456,40 @@ mod tests {
             "\"terminalDefaultShellId\"",
             // 阶段 15（「Git」页）新增的键。
             "\"confirmBeforeDiscard\"",
+            // 「项目 · JDK 与 Maven」页的三个覆盖值：键名逐字取自 Core 契约
+            // `runConfig.updateOptions` 的 toolchain 载荷（`rust-core-api.md:1625-1627`）。
+            "\"javaHomePath\"",
+            "\"mavenExecutablePath\"",
+            "\"mavenJavaHomePath\"",
         ] {
             assert!(json.contains(key), "缺少键 {key}：{json}");
         }
+    }
+
+    /// 三个工具链覆盖值：粘贴路径带的首尾空白被去掉，空串仍是空串（= 自动）。
+    #[test]
+    fn toolchain_overrides_are_trimmed() {
+        let mut settings = Settings {
+            java_home_path: "  D:\\ProgramData\\java\\openjdk-21 \n".to_string(),
+            maven_executable_path: "\tD:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd ".to_string(),
+            maven_java_home_path: "   ".to_string(),
+            ..Settings::default()
+        };
+        settings.normalize();
+        assert_eq!(settings.java_home_path, "D:\\ProgramData\\java\\openjdk-21");
+        assert_eq!(
+            settings.maven_executable_path,
+            "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd"
+        );
+        // 只有空白的值 = 没设（否则探测层会拿一个空路径去查文件系统）。
+        assert_eq!(settings.maven_java_home_path, "");
+        // 路径里**内部**的空格不能被动（`C:\Program Files\...` 是合法安装目录）。
+        let mut settings = Settings {
+            java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
+            ..Settings::default()
+        };
+        settings.normalize();
+        assert_eq!(settings.java_home_path, "C:\\Program Files\\Java\\jdk-21");
     }
 
     /// `uiFontSize` 的钳制 + 步长（照 `ui-font-size.ts:10-19` 逐条）。
