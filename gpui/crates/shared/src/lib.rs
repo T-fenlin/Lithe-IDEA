@@ -16,6 +16,10 @@
 //! 所以直接发布 `pub use`，不让 `shared::core_client::CoreRequest` 这类实现路径成为契约）。
 
 mod core_client;
+// 图标资源路径清单（`gpui/assets/ui-icons/idea/**` 的 Rust 等价物）。**公开模块**而不是
+// `pub use`：调用点要写成 `shared::icons::idea::GEAR_ICON`，常量表本身就是一个命名空间，
+// 摊平到 crate 根只会让 79 个常量名污染 `shared::*`。理由与再生成命令见 `src/icons/mod.rs`。
+pub mod icons;
 mod i18n;
 
 // 国际化：**`i18n!` 必须出现在持有 `locales/` 的那个 crate 的根**。

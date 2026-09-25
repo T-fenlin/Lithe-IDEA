@@ -44,6 +44,10 @@ use gpui_kit::{
 use lithe_gpui_settings::{Init, SettingsStore};
 use lithe_gpui_workbench::ShellWorkspace;
 
+/// 资源源与图标 helper（`gpui/assets/**` 的接线）。模块文档里有 `AssetSource` 委托顺序与
+/// "为什么必须包装而不是注册两次"的论证。
+mod assets;
+
 /// 首窗口尺寸：**与同目录的 Dodona 保持同一口径** —— 取显示器可见区域的 **94%**、居中、
 /// 普通窗口（不最大化）。
 ///
@@ -259,15 +263,59 @@ fn main() {
         .unwrap_or_else(|| loaded.settings.gpui_locale().to_string());
 
     gpui_kit::application()
-        // 用**全量**资产源（1830 个 Lucide 字形），不是默认的 101 个字形子集：
-        // `gpui_kit::assets::Assets` 由 `gpui-kit-assets-0.6.6/build.rs` 按
-        // `default-icons.txt` 过滤生成（`native_assets.rs:5` 的 `include!(default_assets.rs)`），
-        // 里面**没有任何 `git-*` 字形**；而 Windows 规格的源码管理 / 提交记录 / 分支全要 git 字形。
-        // `AllAssets` 是同一 crate 的 `#[folder = "assets"]` 全量嵌入
-        // （`native_assets.rs:9-11`、`lib.rs:36`），注册它之后 `gpui_kit::assets::IconName::GitBranch`
-        // 之类的字形才能真的画出来。
-        .with_assets(gpui_kit::assets::AllAssets)
+        // 资源源分两层（`src/assets.rs`）：
+        //
+        // 1. **我们自己搬进来的资源**（`gpui/assets/**`，用 `rust-embed` 编译期内嵌）：
+        //    `ui-icons/**`（157 个 IntelliJ `expui` SVG + 1 个旧前端生成物）、
+        //    `icon-themes/**`（4 套文件类型图标包，1 027 个 SVG）、`icons/**` 与
+        //    `images/logo.png`（应用图标/brand 图）。
+        // 2. **回落 gpui-kit 的全量 Lucide 字形**（1830 个，`gpui_kit::assets::AllAssets`）。
+        //
+        // ⚠️ 只能 `with_assets` **一次**：它签名是 `impl AssetSource`，第二次调用是**覆盖**
+        // 而不是叠加（`gpui-pre-0.3.6/src/app.rs:198-206`）。所以两者由 `LitheAssets` 组合。
+        //
+        // 为什么必须是 `AllAssets`（全量）而不是默认的 `Assets`（101 个字形子集）：
+        // `Assets` 由 `gpui-kit-assets-0.6.6/build.rs` 按 `default-icons.txt` 过滤生成
+        // （`native_assets.rs:5` 的 `include!(default_assets.rs)`），里面**没有任何 `git-*`
+        // 字形**；而 Windows 规格的源码管理 / 提交记录 / 分支全要 git 字形
+        // （`IconName::GitBranch`、`IconName::GitGraph`）。`AllAssets` 是同一 crate 的
+        // `#[folder = "assets"]` 全量嵌入（`native_assets.rs:9-11`、`lib.rs:36`）。
+        .with_assets(assets::LitheAssets)
         .run(move |cx| {
+            // S1_ASSETS：启动诊断，证明包装层被注册、并且两侧资源都能列出来。
+            // 它同时是"回落没坏"的最早证据：`fallback_icons` 是 Lucide 一侧的数量，
+            // `embedded` 是我们自己嵌进来的文件数，`ui_icons` 是其中的图标子集。
+            //
+            // ⚠️ 走 **stderr**（`eprintln!`），不走 stdout：stdout 在重定向到文件时是
+            // **块缓冲**的，进程还在跑时日志文件里可能一行都看不到（本机实测：同一份
+            // 二进制 + 同一个参数，日志里出现过 3 行、也出现过 0 行，纯粹取决于缓冲区
+            // 有没有被填满/刷新）。stderr 是无缓冲的，验证脚本 grep 它才稳定。
+            // 这也与 `crates/settings` 的 `S1_SETTINGS` 诊断同一口径
+            // （`persistence.rs:13` 记的就是"统一走 stderr"）。
+            #[cfg(debug_assertions)]
+            {
+                eprintln!(
+                    "S1_ASSETS embedded={} ui_icons={} fallback_icons={}",
+                    assets::LitheAssets::embedded_count(),
+                    assets::LitheAssets::embedded_count_under("ui-icons/"),
+                    assets::LitheAssets::fallback_count()
+                );
+                // 关键路径探针：证明 `AssetSource::load` 真的能取到我们清单里写的那个键
+                // （`ui-icons/idea/expui/general/settings.svg`）。只是 print 一批路径名是
+                // 不够的 —— 名字对但 `load` 语义错（例如回落把 Err 折叠成 Ok(None) 之后
+                // 上层当成"空 SVG"）时，界面会**静默画不出东西**。
+                for probe in [
+                    "ui-icons/idea/expui/general/settings.svg",
+                    "ui-icons/idea/expui/general/settings_dark.svg",
+                    "icons/settings.svg",
+                ] {
+                    let hit = assets::probe_len(probe);
+                    eprintln!(
+                        "S1_ASSETS probe path={probe} bytes={}",
+                        hit.map_or_else(|| "MISSING".to_string(), |n| n.to_string())
+                    );
+                }
+            }
             // 语言：Lithe 的产品默认是简体中文（`windows/tauri/src/i18n/locale.ts` 的 zh-CN
             // 目录就是本仓库的文案真源）。gpui-kit **组件自己**的文案用它自带的 zh-CN，
             // 所以这里不需要 `rust_i18n::extend!(gpui_component)` —— 那个宏要求把

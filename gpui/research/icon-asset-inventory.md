@@ -359,3 +359,213 @@ gpui 侧 `activity_items()` 只有 **8 项** —— 因为左栏的 Maven 与右
 > **4 个**的真源本来就是 Lucide，已经一模一样；真正**无法靠搬资源还原的只有 2 个**
 > —— Maven 与 Run 的 JetBrains 字形，它们在真源里是内联 SVG 组件（`maven-icon.tsx` / `run-icon.tsx`），
 > 要 1:1 只能移植 path 数据，而这件事需要一个 `AssetSource` 包装层，本次**不做**。
+
+---
+
+## 7. 接线（已完成）：`gpui/assets/**` 现在真的能画出来了
+
+第 0 节第 5 点的"资源已就位、缺接线"在本节闭环。基线：分支 `feat/gpui-shell-rewrite`，
+本次改动之前的 HEAD `d13b254a`。第 1–6 节描述的资源事实**未变**，本节只新增"怎么引用"。
+
+### 7.1 项目应该怎么引用这些图标（四步）
+
+| 步 | 做什么 | 住在哪 |
+| --- | --- | --- |
+| 1. 注册 | `application().with_assets(LitheAssets)` —— 内嵌 `gpui/assets/**`，未命中回落 `AllAssets` | `gpui/crates/app/src/assets.rs`（在 `main.rs:261-280` 注册，**只此一处**） |
+| 2. 清单 | `idea::ALL`（79 个图标）/ `idea::ALIASES`（旧前端别名）—— 名字 → 明/暗资源路径 | `gpui/crates/shared/src/icons/idea.rs`（**生成物**） |
+| 3. helper | `idea_icon_svg(&icon, cx)` 按当前主题明暗挑路径，并设好 16×16 尺寸与前景色 | `gpui/crates/shared/src/icons/mod.rs` |
+| 4. 调用点 | `.child(idea_icon_svg(&idea::GEAR_ICON, cx))` | 任何 feature crate（首个真实调用点：`crates/settings/src/dialog.rs` 的设置对话框头部） |
+
+最小代码片段（四步合起来看）：
+
+```rust
+// ── 1. 注册（App Shell，做一次）────────────────────────────────────────────
+// crates/app/src/main.rs
+gpui_kit::application()
+    .with_assets(assets::LitheAssets)   // 原来是 gpui_kit::assets::AllAssets
+    .run(move |cx| { /* ... */ });
+
+// ── 2 + 3. 清单与 helper（crates/shared/src/icons/）────────────────────────
+// idea.rs（生成物）里每个图标是一个常量：
+pub const GEAR_ICON: IdeaIcon = IdeaIcon {
+    light: "ui-icons/idea/expui/general/settings.svg",
+    dark:  "ui-icons/idea/expui/general/settings_dark.svg",
+    has_dark: true,
+};
+
+// mod.rs 里的 helper：挑明暗 + 设尺寸与前景色（调用点什么都不用管）
+pub fn idea_icon_svg(icon: &idea::IdeaIcon, cx: &App) -> Svg {
+    let theme = Theme::global(cx);
+    let path: SharedString = icon.path(theme.is_dark()).into();
+    svg().path(path).flex_shrink_0().text_color(theme.foreground).size_4()
+}
+
+// ── 4. 调用点 ─────────────────────────────────────────────────────────────
+// crates/settings/src/dialog.rs 的 header()
+use lithe_gpui_shared::icons::{idea, idea_icon_svg};
+
+h_flex()
+    .text_color(cx.theme().foreground)
+    .child(idea_icon_svg(&idea::GEAR_ICON, cx))   // 原来是 Icon::new(IconName::Settings).size_4()
+    .child(div().child(tr("lithe.workbench.settings")))
+```
+
+四条"不要踩"的硬事实（都有源码出处，理由即取舍）：
+
+1. **`with_assets` 只能注册一次**：签名 `impl AssetSource`，第二次调用是**覆盖**不是叠加
+   （`gpui-pre-0.3.6/src/app.rs:198-206`）。所以 `AllAssets` 与我们的资源必须由包装层组合。
+2. **`AllAssets::load` 未命中返回 `Err` 而不是 `Ok(None)`**
+   （`gpui-kit-assets-0.6.6/src/native_assets.rs:27-29`）。回落链里**不能用 `?` 透传**，
+   否则"查一个不存在的资源"会变成硬错误；正确做法是把 `Err` 折叠成 `Ok(None)`。
+   （`list` 的未命中约定相反，是 `Ok(vec![])`，可以透传。）
+3. **`svg()` 从 `gpui_kit` 根就能拿到**，不需要直接依赖 `gpui-pre`：
+   `gpui-kit-0.6.6/src/lib.rs:95` 是 `pub use ::gpui::*`，而 `gpui-pre-0.3.6/src/gpui.rs:103`
+   是 `pub use elements::*`，`svg()` / `Svg` 就在 `elements/svg.rs:27,40`。
+   `gpui/` 的 feature crate 只依赖 `gpui-kit`，本条让它们不必新增依赖。
+4. **`svg().path(..)` 走 alpha mask，SVG 里的 `fill` 会被丢掉**：
+   `Window::paint_svg` 把它渲成 `MonochromeSprite`（`gpui-pre-0.3.6/src/window.rs:4858-4866`），
+   `render_alpha_mask` 只取 `pixel.alpha()`（`svg_renderer.rs:231-249`），
+   所以**实际颜色来自元素的 `text_color`**。这既是"helper 自己设 `text_color`、不让调用点猜"的理由，
+   也是"为什么仍要按主题换路径"的理由 —— 78 对明暗变体里有 **12 对几何形状也不同**（实测），
+   纯换色在 gpui 这条路径上无效。
+
+### 7.1.1 裸 `svg().path(..)` 直接放进 `h_flex` 是**白板**（实测踩过，两次都是白板）
+
+这是本次实现里最费时间的一个坑，单独记下来。`gpui::svg().path(..)` 本身是能画的，
+但**必须同时满足两个条件**，缺任何一个都是"什么都不显示"，而且**不报错、不 panic**：
+
+| 缺什么 | 后果 | 证据 |
+| --- | --- | --- |
+| `text_color` | **整段不画**：`Svg::paint` 的三条绘制分支全被 `style.text.color` 的 `Option` 挡住，为 `None` 时直接跳过 | `gpui-pre-0.3.6/src/elements/svg.rs:149-186` |
+| 显式尺寸 + `flex_shrink_0` | **塌成 0 宽**：`Svg` 无固有尺寸，flex 子项默认 `flex-shrink: 1` + `basis: auto` 把它压到 0 | `svg.rs:84-98`（`request_layout` 只转交 style）；`gpui-component-0.6.6/src/icon.rs:178` 的 `.flex_shrink_0()` 就是同一个坑的官方解法 |
+
+实测过程（这台机器，125% DPI，对话框头部 16×16 图标位置的"亮像素"计数）：
+
+| 写法 | 该位置前景像素 |
+| --- | --- |
+| 改动前的 `Icon::new(IconName::Settings)`（Lucide，基准） | 142 |
+| `svg().path(..).size_4()`（只给尺寸，父容器已有 `text_color`） | **0** |
+| `div().w(16).h(16).child(svg().path(..))` / 加 `text_color` / 加红底 | **0 / 0 / 只有红底** |
+| `svg().path(..).flex_shrink_0().text_color(..).size_4()`（现在的 helper） | **118** |
+
+结论：**helper 必须把这三件事一起做掉**，所以 `idea_icon_svg` 返回已经设好
+`flex_shrink_0()` + `text_color(theme.foreground)` + `size_4()` 的 `Svg`，
+调用点**不要**再自己 `.size_4()`（重复设不会坏，但会让"谁负责尺寸"变得含糊）。
+同理，返回类型必须是具体的 `Svg` 而不是 `impl IntoElement` —— 后者上 `.size_4()`
+会报 `E0599: no method named size_4 found for opaque type impl IntoElement`（实测）。
+
+### 7.2 清单怎么生成、light/dark 怎么配对
+
+生成器：`gpui/tools/generate-idea-icons.mjs`（Node，与 `extract-locale.mjs` 同一风格）。
+产物：`gpui/crates/shared/src/icons/idea.rs`，文件头写明 **AUTO-GENERATED，勿手改** 与再生成命令。
+
+```powershell
+node gpui/tools/generate-idea-icons.mjs          # 重新生成
+node gpui/tools/generate-idea-icons.mjs --check  # 只校验产物与文件系统一致（退出码 0）
+```
+
+三个口径：
+
+- **真源是文件系统**，不是那份 TS：脚本递归扫 `gpui/assets/ui-icons/idea/**/*.svg`，**每张 SVG
+  都必须出现在产物里**（有"无孤儿"与"无悬空引用"两条校验）。
+  `windows/tauri/scripts/idea-icon-mappings.json` **只读**、且**可选**（缺失只降级为"由文件名推导
+  常量名"），用来取旧前端的显示名。
+- **配对规则**：`foo.svg` 的深色变体是同目录的 `foo_dark.svg`（IntelliJ expui 的约定，
+  与旧前端 `generate-idea-icons.ts:95` 同一条）。`*_dark.svg` **不是独立图标**，只是变体文件。
+- **缺 dark 变体**：`dark` 回落到 `light`，并把 `has_dark` 置 `false`，让调用方与 `--check`
+  能区分"真变体"与"兜底"（旧前端 `:131` 也是这么兜的，但类型上看不出来）。
+  当前 157 个文件 = **79 个图标** + 78 个深色变体；79 个图标里 **78 个有真 dark 变体**，
+  唯一没有的是 `fileTypes/text.svg`。
+
+**与旧前端 TS 的对应关系（重要）**：`idea-assets.generated.ts` 有 **95 个显示名**，
+但它们只对应 **79 张 SVG** —— 13 个路径被多个显示名共用
+（`CaretDownIcon`/`ChevronDownIcon` 都指 `chevronDown.svg`；`GearIcon`/`GearSixIcon` 都指
+`settings.svg`；`PenIcon`/`PencilIcon`/`PencilSimpleIcon`/`PencilSimpleLineIcon` 四个都指 `edit.svg`）。
+本模块为每张 SVG 出一个规范常量，其余 **16 个别名**全部保留在 `idea::ALIASES`，
+所以 **95 个显示名一个都没丢**。规范名取字典序最小的显示名（稳定、可复现）。
+
+### 7.3 已接的真实图标（本次唯一改动点）
+
+| 项 | 值 |
+| --- | --- |
+| 位置 | `gpui/crates/settings/src/dialog.rs` 的 `header()` —— 设置对话框头部左侧齿轮 |
+| 之前 | `Icon::new(IconName::Settings)`（Lucide `settings.svg`） |
+| 之后 | `idea_icon_svg(&idea::GEAR_ICON, cx)` |
+| 浅色资源 | `ui-icons/idea/expui/general/settings.svg` |
+| 深色资源 | `ui-icons/idea/expui/general/settings_dark.svg` |
+| 真源对照 | `settings-dialog.tsx:36` 的 `GearSixIcon` → 同一张 `settings.svg`（第 3.8 节已核） |
+
+实测证据（125% DPI，窗口 1823×1024 物理像素，设置对话框头部齿轮所在的 24×24 物理方块）：
+
+| 指标 | before（Lucide `IconName::Settings`） | after（expui `GEAR_ICON`） |
+| --- | --- | --- |
+| 方块内前景像素（亮度 ≥ 100） | 154 | 132 |
+| 齿轮 20×20 区域前景像素 | 142（包围盒 x 416..433） | 118（包围盒 x 417..432） |
+| 两者逐像素差异 | —— | **186**，包围盒 `x 416..433, y 138..157`（**只**在齿轮这一小块） |
+
+差异包围盒就是齿轮本身 —— 证明改动**只**影响这一个图标，其余头部像素（标题 / 关闭按钮）逐字节相同。
+叠图（上 = before，下 = after，头部最左 320 物理像素 ×3）：`.artifacts/idea-icons/before-after-header.png`。
+
+选它的理由：它是 `ui-icons/idea/**` 里**已存在 1:1 真源**的一处（第 5 节的 14 个之一）、改动只有
+一行、可一行回退，而且它在设置对话框里，`--open-settings` 就能稳定复现（本机工作站锁屏，
+只能用鼠标/参数驱动，不能靠按键）。
+
+**回落没坏的证据**：同一帧里活动栏与对话框仍然用 `IconName`（Lucide）画图标 ——
+设置对话框自己的关闭按钮 `IconName::Close`、左栏分类的 `IconName::Settings`
+（`Category::General` 仍在用 Lucide，**本次有意没改**，正好当对照组）、活动栏的
+`FolderOpen` / `GitBranch` / `Search` / `SquareTerminal` / `GitGraph` / `TriangleAlert` 等。
+同一张"after"截图上的量化结果：
+
+| 区域（同一帧） | 用的资源源 | 前景像素 | 结论 |
+| --- | --- | --- | --- |
+| 对话框头部齿轮 | `LitheAssets` 内嵌的 `ui-icons/idea/**` | 118 | 真源图标画出来了 |
+| 对话框左栏两个分类图标（含 `IconName::Settings`） | `AllAssets` 回落（Lucide `icons/**`） | 371 | 回落链路通 |
+| 左活动栏整列 | `AllAssets` 回落（Lucide `icons/**`） | 994 | 回落链路通 |
+
+启动诊断（可 grep，证明包装层被注册且两侧都能列出资源）：
+
+```
+S1_ASSETS embedded=1204 ui_icons=158 fallback_icons=1830
+S1_ASSETS probe path=ui-icons/idea/expui/general/settings.svg bytes=2914
+S1_ASSETS probe path=ui-icons/idea/expui/general/settings_dark.svg bytes=2914
+S1_ASSETS probe path=icons/settings.svg bytes=586
+```
+
+`embedded` 来自 `LitheAssets::embedded_count()`（编译期静态表，1 204 个），
+`ui_icons` 来自 `embedded_count_under("ui-icons/")`（158 个），
+`fallback_icons` 来自 `AllAssets.list("")`（1830 个）。
+后三条 `probe` 是**真的走了一遍 `AssetSource::load`**：它们证明"路径键对、能取到字节"。
+⚠️ 只打印"能 list 出来"是不够的 —— 实测就出现过"名字对、`load` 也返回 2 914 字节，
+但界面是白板"的情况（原因见 7.1.1，是渲染层缺 `text_color`/尺寸，与资源源无关）。
+⚠️ 这四条都走 **stderr**（`eprintln!`）：stdout 重定向到文件时是块缓冲，
+进程还在跑时日志里可能一行都看不到（本机实测同一二进制同一参数，出现过 3 行也出现过 0 行）。
+
+**二进制体积影响**：`gpui/target/debug/Lithe.exe` 从 81 815 040 字节 → 81 906 176 字节，
+**+91 136 字节（+0.09 MiB）**。比 8.2 MiB 的原始资源总和小得多，因为 debug 构建里
+`rust-embed` 的默认非压缩分支只把编译期静态表链进来、字节留给 rustc 的 section GC。
+（release 构建未实测；若届时体积不可接受，`#[include]` 是唯一需要改的地方。）
+
+### 7.4 明确**还没接**的部分
+
+| 没做的 | 为什么 / 需要什么 |
+| --- | --- |
+| `gpui/assets/icon-themes/**`（4 套文件类型图标包，1 027 个 SVG） | 它不是"一个名字一张图"，而是"按 `fileNames` / `fileExtensions` / `folderNames` 查各包 `extension.json` 的 `iconDefinitions`，再选 `icons/light/` 变体"的另一套体系。需要：① 一个主题 id → `extension.json` → SVG 字节的**查找层**（`ThemedFileIcon` 的等价物）；② `explorer` / `editor` 的 `icon_for_file` 从"返回 `IconName`"改成"返回主题资源路径"（第 3.6/3.7 节）。注意 `material` 主题**没有 SVG 文件**（美术内联在 `extension.json` 里）、`minimal` 主题全仓无引用。 |
+| 第 3 节表里其余"可以"的 `expui` 站点 | 只是**没接线**，不是不能接：`workspace.rs` 的活动栏、`status_bar.rs`、`project_tabs.rs`、`right_tool_window.rs`、`command_palette.rs`、`explorer_view.rs`、`git/log_view.rs`、`terminal_view.rs`、`editor_view.rs` 都还在用 `IconName`。逐个换的成本很低（一行一处），但每换一处都要在**同帧**保留至少一个 `IconName` 图标，才能继续证明回落链路没坏。 |
+| `MavenIcon` / `RunIcon`（第 4 节） | 仍然只有内联 SVG path、没有文件。第 4 节给的两条路（落成 SVG 文件 / 当 Rust 常量自己画）都还没做。 |
+| `.ico` / 窗口图标接线 | 与本节无关：`AssetSource` **不参与**窗口/exe 图标（见 `app-icon-and-assets.md` §4.1）。`crates/app/lithe.rc` + `build.rs` 那套已在别处完成。 |
+
+### 7.5 本次动过的文件（供 review）
+
+| 文件 | 性质 |
+| --- | --- |
+| `gpui/tools/generate-idea-icons.mjs` | 新增：生成器 + `--check` |
+| `gpui/crates/shared/src/icons/idea.rs` | 新增：**生成物**（79 图标 + 16 别名） |
+| `gpui/crates/shared/src/icons/mod.rs` | 新增：模块文档 + `idea_icon_svg` helper |
+| `gpui/crates/shared/src/lib.rs` | `pub mod icons;` |
+| `gpui/crates/app/src/assets.rs` | 新增：`LitheAssets`（`rust-embed` + 回落） |
+| `gpui/crates/app/src/main.rs` | `mod assets;`、换注册、加 `S1_ASSETS` 诊断 |
+| `gpui/crates/app/Cargo.toml` | 加 `rust-embed = "8"` |
+| `gpui/crates/settings/src/dialog.rs` | 头部齿轮换成真源图标（唯一调用点改动） |
+| 本节（`gpui/research/icon-asset-inventory.md`） | 文档 |
+
+`gpui/assets/**` 的**资源内容一个字节都没改**（只读）。

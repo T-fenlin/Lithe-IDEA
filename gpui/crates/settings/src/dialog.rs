@@ -56,6 +56,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px, rems,
 };
 
+use lithe_gpui_shared::icons::{idea, idea_icon_svg};
 use lithe_gpui_shared::tr;
 
 use crate::row::{ControlWidth, RowActivation, page_stack, page_title, settings_group, settings_row};
@@ -278,7 +279,13 @@ impl SettingsDialog {
             .border_color(cx.theme().border)
             .bg(cx.theme().popover)
             .text_color(cx.theme().foreground)
-            .child(Icon::new(IconName::Settings).size_4())
+            // 头部齿轮：改用**Windows 真源**的 IntelliJ `expui` 图标
+            // （`ui-icons/idea/expui/general/settings.svg`，深色另有 `settings_dark.svg`），
+            // 不再用 Lucide 的 `IconName::Settings`。这是"图标资源接线"的第一处真实调用点：
+            // 真源文件已在 `gpui/assets/ui-icons/`，注册（`LitheAssets`）与清单
+            // （`shared::icons::idea`）已就位，helper 按主题挑明暗。
+            // 详细的四步引用规范见 `gpui/research/icon-asset-inventory.md` 第 7 节。
+            .child(idea_icon_svg(&idea::GEAR_ICON, cx))
             .child(
                 div()
                     .text_sm()

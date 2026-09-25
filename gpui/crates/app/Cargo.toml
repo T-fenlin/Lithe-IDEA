@@ -38,3 +38,15 @@ lithe-gpui-workbench = { path = "../workbench" }
 # crate（本项目是 `lithe-gpui-shared`，理由见 `crates/shared/src/i18n.rs` 的模块文档），
 # `t!` 只能在自己调过 `i18n!` 的 crate 里解析。在这里再声明一次只会多一份没用的依赖。
 # 切换语言仍用 `gpui_kit::component::set_locale("zh-CN")`（见 `src/main.rs`）。
+
+# `LitheAssets`（`src/assets.rs`）用 `rust_embed` 把 `gpui/assets/**` 编译期内嵌。
+#
+# 版本与 `gpui-kit-assets` 请求的一致（`gpui-kit-assets-0.6.6/Cargo.toml` 的
+# `rust-embed = { version = "8.7.2", features = ["interpolate-folder-path", "include-exclude"] }`），
+# 所以 Cargo 特性合并后只有**一份** `rust-embed`（`gpui/Cargo.lock` 里是 8.12.0）。
+# `interpolate-folder-path` 是必须的：我们的 `#[folder]` 写成
+# `$CARGO_MANIFEST_DIR/../../assets`（crate 在 `gpui/crates/app`、资源在 `gpui/assets`，
+# 是上两级；`..` 不能靠 rust-embed 的相对拼接，理由见 `src/assets.rs` 的注释）。
+# 这里不重复声明 features：它在同一个构建图里已被 `gpui-kit-assets` 打开（Cargo 特性并集），
+# 显式再写一遍只会让"谁打开的"更难追；若将来 gpui-kit 不再依赖它，编译会失败并提示补上。
+rust-embed = "8"
