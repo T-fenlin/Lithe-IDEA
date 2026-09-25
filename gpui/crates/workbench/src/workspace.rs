@@ -1237,10 +1237,10 @@ impl ShellWorkspace {
                 );
                 self.right_view = view;
                 self.right_visible = visible;
-                // 与右活动栏点击同一条懒扫口径（菜单与右栏改的是同一份状态，取数据也该一致）。
-                if visible && view == RightToolWindowView::Maven && !self.maven_scanned {
-                    self.maven_scanned = true;
-                    self.maven_project = crate::maven::scan(&self.root);
+                // 与右活动栏点击同一条懒扫口径（菜单与右栏改的是同一份状态，取数据也该一致）：
+                // 懒扫只有一份，见 [`ShellWorkspace::scan_right_view_if_needed`]。
+                if visible {
+                    self.scan_right_view_if_needed(view);
                 }
                 // 与右活动栏点击走同一个诊断（`S1_RIGHT_PANEL view=maven visible=…`）：
                 // 这样"菜单里的 Maven 项和右栏那一项改的是同一份状态"有机器证据。
@@ -1438,6 +1438,45 @@ impl ShellWorkspace {
             None => false,
         }
     }
+
+    /// 右工具窗的**懒扫**：某视图第一次真的显示出来时才去取它的数据（各扫一次，结果缓存）。
+    ///
+    /// 三条入口（右活动栏点击 / 「视图 → Maven」菜单项 / `--right-view` 启动探针）都调它，
+    /// 所以"点开面板"和"启动就打开面板"拿到的是**同一份数据**。不抽出来的话同一段判据会有三份，
+    /// 一份漏改就会出现"探针打开的面板是空的、点开的不是"这类只在一条路径上的偏差。
+    ///
+    /// 为什么懒扫而不是构造期扫：`maven.scan` 要解析 pom，`spring.index` 还要读依赖 JAR 里的
+    /// 元数据（契约说 `refreshDependencyMetadata: true` 只该在"打开项目"时置真，见
+    /// [`ShellWorkspace::spring_index`]），挂在启动路径上会让首帧为不相关的面板付钱。
+    fn scan_right_view_if_needed(&mut self, view: RightToolWindowView) {
+        if view == RightToolWindowView::Maven && !self.maven_scanned {
+            self.maven_scanned = true;
+            self.maven_project = crate::maven::scan(&self.root);
+        }
+        if view == RightToolWindowView::Spring && !self.spring_scanned {
+            self.spring_scanned = true;
+            self.spring_index = crate::spring::index(&self.root);
+        }
+    }
+
+    /// `--right-view <id>` 的接线点（**验证/诊断用**，不是产品能力）。
+    ///
+    /// 做的是与"点右活动栏那一项"**同一段**状态迁移：`right_view = view`、`right_visible = true`、
+    /// 走 [`ShellWorkspace::scan_right_view_if_needed`] 的懒扫、打同一行
+    /// `S1_RIGHT_PANEL view=… visible=true` 诊断。
+    ///
+    /// **为什么需要这个入口**：本机（125% DPI）右活动栏一次点击会被处理成两次
+    /// （`S1_RIGHT_PANEL … visible=true` 紧跟一行 `visible=false`，见 `gpui/HANDOFF.md` §2），
+    /// 面板随即被自己收起，于是"面板里的内容长什么样"这件事在无人值守环境里取不到证。
+    /// 与 `--open-settings` / `--menu-probe` 同一条口径：被绕开的只有"操作系统把那一下点击
+    /// 送进窗口"这一段，它写的两个字段与点击回调写的是**同一个**（不是另一套状态）。
+    pub fn show_right_view_probe(&mut self, view: RightToolWindowView, cx: &mut Context<Self>) {
+        self.right_view = view;
+        self.right_visible = true;
+        self.scan_right_view_if_needed(view);
+        diagnose_right_panel(view, true);
+        cx.notify();
+    }
 }
 
 impl Render for ShellWorkspace {
@@ -1585,16 +1624,10 @@ impl Render for ShellWorkspace {
                         resolve_right_click(clicked, this.right_view, this.right_visible);
                     this.right_view = view;
                     this.right_visible = visible;
-                    // 第一次真正显示 Maven 面板时才扫项目（懒扫 + 缓存，理由见字段文档）。
-                    if visible && view == RightToolWindowView::Maven && !this.maven_scanned {
-                        this.maven_scanned = true;
-                        this.maven_project = crate::maven::scan(&this.root);
-                    }
-                    // Spring 同一套懒扫口径：`spring.index` 更贵（会读依赖元数据），
-                    // 所以同样只在第一次显示时跑一次。
-                    if visible && view == RightToolWindowView::Spring && !this.spring_scanned {
-                        this.spring_scanned = true;
-                        this.spring_index = crate::spring::index(&this.root);
+                    // 第一次真正显示这个视图时才去取它的数据（懒扫 + 缓存，判据与理由都在
+                    // [`ShellWorkspace::scan_right_view_if_needed`] 里，菜单项与 `--right-view` 同源）。
+                    if visible {
+                        this.scan_right_view_if_needed(view);
                     }
                     diagnose_right_panel(view, visible);
                     cx.notify();

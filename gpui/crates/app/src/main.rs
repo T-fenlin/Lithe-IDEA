@@ -43,6 +43,9 @@ use gpui_kit::{
 };
 use lithe_gpui_settings::{Init, SettingsStore};
 use lithe_gpui_workbench::ShellWorkspace;
+// `RightToolWindowView` 走模块路径引入（`workbench` 的根只重导出 `ShellWorkspace`，
+// 见 `crates/workbench/src/lib.rs:121`）。
+use lithe_gpui_workbench::right_tool_window::RightToolWindowView;
 
 /// 资源源与图标 helper（`gpui/assets/**` 的接线）。模块文档里有 `AssetSource` 委托顺序与
 /// "为什么必须包装而不是注册两次"的论证。
@@ -159,11 +162,21 @@ struct Options {
     /// 完全相同的那段代码（先 `BranchPanel::open` 重读数据，再 `window.open_dialog`），
     /// 被绕开的只有"操作系统把这次点击送进窗口"那一段。
     branch_panel_probe: bool,
+    /// `--right-view <id>`：启动后把**右侧工具窗**切到指定视图并展开（**验证/诊断用**）。
+    ///
+    /// 见 [`lithe_gpui_workbench::ShellWorkspace::show_right_view_probe`]：走的是与"点右活动栏
+    /// 那一项"完全相同的状态迁移（含懒扫与 `S1_RIGHT_PANEL` 诊断），被绕开的只有"操作系统把
+    /// 那一下点击送进窗口"那一段。
+    ///
+    /// **为什么需要它**：本机（125% DPI）右活动栏一次点击会被处理成两次
+    /// （`S1_RIGHT_PANEL … visible=true` 紧跟一行 `visible=false`，见 `gpui/HANDOFF.md` §2），
+    /// 面板随即被自己收起 —— 于是"Spring 面板里到底画出了什么"在无人值守环境里无法取证。
+    right_view: Option<String>,
 }
 
-/// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>]`。
+/// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
 fn parse_options() -> Result<Options, String> {
-    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>]\n\
+    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
          \x20 --theme <主题名>     本次启动使用的主题（覆盖设置文件；验证/诊断用）\n\
          \x20 --locale <语言>      本次启动使用的界面语言（覆盖设置文件；验证/诊断用）\n\
          \x20 --open-settings     启动后自动打开设置对话框（验证/诊断用）\n\
@@ -179,6 +192,9 @@ fn parse_options() -> Result<Options, String> {
          \x20                     「点触发器」相同的那段状态迁移）\n\
          \x20 --branch-panel-probe  启动后打开标题栏的分支弹窗（验证/诊断用；走的是与\n\
          \x20                     「点标题栏分支项」相同的那段代码）\n\
+         \x20 --right-view <id>     启动后把右侧工具窗切到 <id> 并展开（验证/诊断用；走的是与\n\
+         \x20                     「点右活动栏那一项」相同的状态迁移）；<id> 取 extensions /\n\
+         \x20                     notifications / maven / spring，未知 id 报一行错且不改启动状态\n\
          \x20 --menu-probe-delay <毫秒>  `--menu-probe` 打开菜单后等多久才执行动作（默认 2500）\n\
          \x20 --palette-keys <串> 启动后按顺序派发一串按键，逗号分隔；可重复给多次 = 多串（验证/诊断用；\n\
          \x20                     例：\"ctrl-shift-p,n,down,enter,escape\"）";
@@ -196,6 +212,7 @@ fn parse_options() -> Result<Options, String> {
     let mut palette_keys = Vec::new();
     let mut project_menu_probe = false;
     let mut branch_panel_probe = false;
+    let mut right_view: Option<String> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -242,6 +259,11 @@ fn parse_options() -> Result<Options, String> {
             }
             "--project-menu-probe" => project_menu_probe = true,
             "--branch-panel-probe" => branch_panel_probe = true,
+            // `--right-view` 只**收下**这串字符，解析成视图放到窗口建好之后的那一段做：
+            // 未知 id 要在启动状态还没被改动时报错（见 `main` 里的 `on_next_frame`）。
+            "--right-view" => {
+                right_view = Some(args.next().ok_or("--right-view 缺少视图 id")?);
+            }
             "--palette-keys" => {
                 let raw = args.next().ok_or("--palette-keys 缺少值")?;
                 let mut sequence = Vec::new();
@@ -279,6 +301,7 @@ fn parse_options() -> Result<Options, String> {
         palette_keys,
         project_menu_probe,
         branch_panel_probe,
+        right_view,
     })
 }
 
@@ -466,6 +489,7 @@ fn main() {
         palette_keys,
         project_menu_probe,
         branch_panel_probe,
+        right_view,
     } = match parse_options() {
         Ok(options) => options,
         Err(message) => {
@@ -473,6 +497,21 @@ fn main() {
             std::process::exit(2);
         }
     };
+
+    // `--right-view <id>`：**先解析**，未知 id 在这里就报一行错并**不改动启动状态**
+    // （解析成 `None` 之后，窗口那段 `if let Some(view)` 整段不执行，右工具窗保持
+    // "隐藏 + `Maven`"的默认值，与不带这个参数时完全一样）。
+    // 报错走 stderr：stdout 重定向到文件时是块缓冲的，进程还在跑时可能一行都看不到
+    // （理由与本文件开头的 `S1_ASSETS` 一致）。
+    let right_view_probe = right_view.and_then(|id| match RightToolWindowView::from_id(&id) {
+        Some(view) => Some(view),
+        None => {
+            eprintln!(
+                "--right-view：未知视图 {id}（可用取值：extensions / notifications / maven / spring）"
+            );
+            None
+        }
+    });
 
     // 设置文件必须在 `set_locale` 之前读：界面语言的常规来源就是它
     // （`--locale` 只是本次启动的显式覆盖）。这一步是纯文件读取，不需要 `App`。
@@ -649,6 +688,22 @@ fn main() {
                     // `--project-menu-probe`：打开标题栏的项目下拉。同样在首帧之后。
                     if project_menu_probe {
                         run_project_menu_probe(window);
+                    }
+                    // `--right-view`：**首帧之后**把右工具窗切到指定视图并展开。
+                    //
+                    // 为什么是 `on_next_frame` 而不是在 `render` 阶段改：`render` 里改状态要么
+                    // 被本帧的布局忽略（改动要等下一次绘制才可见），要么在下一帧立刻产生新的
+                    // 脏帧；而无人值守环境里 `PrintWindow` 只能拿到"已经画出来的帧"，
+                    // 启动期画的头几帧正是唯一能截到的（理由见 `menu_probe_open_ms` 的文档）。
+                    //
+                    // 句柄直接用 `cx.new(..)` 出来的那个 `Entity`（`Entity` 可克隆，所以捕获
+                    // 一份克隆、原件照旧交给下面的 `Root::new`）。它调的是
+                    // [`ShellWorkspace::show_right_view_probe`] —— 与"点右活动栏那一项"同一段迁移。
+                    if let Some(view) = right_view_probe {
+                        let workspace = workspace.clone();
+                        window.on_next_frame(move |_window, cx| {
+                            workspace.update(cx, |this, cx| this.show_right_view_probe(view, cx));
+                        });
                     }
                     // `Root` 必须是窗口的第一层：它负责对话框、浮层与通知。
                     let root_entity = cx.new(|cx| Root::new(workspace, window, cx));

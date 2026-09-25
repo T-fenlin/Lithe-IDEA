@@ -104,6 +104,25 @@ impl RightToolWindowView {
         }
     }
 
+    /// 视图名 → 视图；`None` = 没有这个视图（**不回落到任何默认项**）。
+    ///
+    /// 与 [`RightToolWindowView::id`] 双向一致：`from_id(v.id()) == Some(v)`，
+    /// 且 `id()` 的四个取值都能反解回来。命令行 `--right-view <id>` 就是靠它把
+    /// "用户写的那串字符"变成状态机里的视图。
+    ///
+    /// 为什么不复用 [`RightToolWindowView::from_rail_index`]：下标是**界面顺序**的坐标，
+    /// 重排右活动栏就会改变含义；`id()` 是诊断行 `S1_RIGHT_PANEL view=…` 的取值，
+    /// 是机器可验证的契约，命令行参数必须绑在契约上而不是绑在顺序上。
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "extensions" => Some(Self::Extensions),
+            "notifications" => Some(Self::Notifications),
+            "maven" => Some(Self::Maven),
+            "spring" => Some(Self::Spring),
+            _ => None,
+        }
+    }
+
     /// 右活动栏下标 → 视图；`None` = 该下标没有对应视图。
     ///
     /// ⚠️ 下标必须与 [`crate::workspace::right_activity_items`] 的顺序一致
@@ -533,6 +552,7 @@ fn empty_state(view: RightToolWindowView) -> AnyElement {
 mod tests {
     use super::{RightToolWindowView, resolve_click};
 
+
     /// 右活动栏下标 → 视图必须与 `workspace::right_activity_items()` 的顺序一一对应
     /// （0 扩展 / 1 通知 / 2 Maven），越界返回 `None` 而不是回落到某一项。
     #[test]
@@ -565,6 +585,48 @@ mod tests {
         assert_eq!(RightToolWindowView::Notifications.id(), "notifications");
         assert_eq!(RightToolWindowView::Maven.id(), "maven");
         assert_eq!(RightToolWindowView::Spring.id(), "spring");
+    }
+
+    /// `--right-view <id>` 的入口必须与 `id()` 双向一致：正解、反解各走一遍，
+    /// 少一遍就会出现"日志打得出来、命令行解不回去"这种只在一侧成立的假契约。
+    #[test]
+    fn id_round_trips_through_from_id() {
+        for view in [
+            RightToolWindowView::Extensions,
+            RightToolWindowView::Notifications,
+            RightToolWindowView::Maven,
+            RightToolWindowView::Spring,
+        ] {
+            assert_eq!(RightToolWindowView::from_id(view.id()), Some(view));
+        }
+        // 反向：`id()` 的四个取值各自解回自己（`from_id` 不能把两个 id 映射到同一个视图）。
+        assert_eq!(
+            RightToolWindowView::from_id("extensions"),
+            Some(RightToolWindowView::Extensions)
+        );
+        assert_eq!(
+            RightToolWindowView::from_id("notifications"),
+            Some(RightToolWindowView::Notifications)
+        );
+        assert_eq!(
+            RightToolWindowView::from_id("maven"),
+            Some(RightToolWindowView::Maven)
+        );
+        assert_eq!(
+            RightToolWindowView::from_id("spring"),
+            Some(RightToolWindowView::Spring)
+        );
+    }
+
+    /// 未知 id 返回 `None`（**不回落**到某一项）：命令行拼错时必须能被发现，
+    /// 否则 `--right-view mavne` 会静默打开一个用户没点名的面板。
+    #[test]
+    fn unknown_id_has_no_view() {
+        assert_eq!(RightToolWindowView::from_id(""), None);
+        assert_eq!(RightToolWindowView::from_id("Maven"), None);
+        assert_eq!(RightToolWindowView::from_id("outline"), None);
+        assert_eq!(RightToolWindowView::from_id("mavne"), None);
+        assert_eq!(RightToolWindowView::from_id("spring "), None);
     }
 
     /// 再点同一项 → 收起，且**视图保持不变**（收起时记住最后显示过的视图，
