@@ -111,6 +111,7 @@ pub mod command_palette;
 pub mod maven;
 pub mod menu_bar;
 pub mod project_menu;
+pub mod spring;
 pub mod project_tabs;
 pub mod right_tool_window;
 pub mod status_bar;
