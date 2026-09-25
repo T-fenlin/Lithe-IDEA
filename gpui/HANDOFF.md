@@ -10,28 +10,29 @@
 
 ## 0. 一句话现状（2026-09-25 会话结束时）
 
-- 分支 `feat/gpui-shell-rewrite`。**队列第 1 项（源代码管理）已提交**：`ebdf4885`
-  （左栏「更改」：变更列表 / 暂存 / 提交 / 操作横幅 / 五态空态）。
-- **队列第 2 项（设置剩余页）第一批已做**：设置左栏从 2 页扩到 **4 页**
-  （常规 / 外观 / **编辑器** / **终端**）。新增 `fontSize`（编辑器字号 → 主题 `mono_font_size`）、
-  `tabSize`（→ 每个 `EditorState`，**已打开的 buffer 也重设**）、`terminalDefaultShellId`
-  （→ 新建终端会话真的换 shell）。顺手修掉一个**真 bug**：设置的逐键解析表漏了新键时
-  「写得出、读不回」且**毫无诊断**（详见 `gpui/PLAN.md` §14.2 —— 后面加新键前务必先读这一段）。
-  记录在 `.artifacts/p12/NOTES.md`。
-- **队列第 2 项第二批（阶段 15）已做**：「Git」页从**明确空态**升级成真实页面 ——
-  **提交身份**（`user.name` / `user.email`，local + global 两个作用域，各自保存 + 清除覆盖 + 当前生效值）
-  + 该页唯一一个有消费方的开关 `confirmBeforeDiscard`（→ 左栏「更改」的丢弃确认框）。
-  靠**宿主钩子**破了"`settings` 不能依赖 `git`"的依赖方向（`ShellWorkspace::new` 登记实现，
-  未登记时退回空态）。新增 1 个设置键、**零新增 locale 键**。记录在 `.artifacts/p13/NOTES.md`，
-  设计取舍与未做项见 `gpui/PLAN.md` §15。**已知未走通**：global 作用域的真实写入没从 UI 跑通
-  （下拉点了不弹菜单）、`git.initialize` 按钮没做。
-- `gpui/` 已是一个能跑的前端：设置界面、编辑器（可编辑/保存/自动保存/查找替换/语法高亮/右键菜单）、
-  终端、资源管理器、Git 底部工具窗、**左栏源代码管理**、右侧工具窗、命令面板、主菜单栏、项目下拉、
-  分支弹窗全部落地并逐项验证过。
-- 本文件写就时的验证债务：一批功能（`Ctrl+,`/`Ctrl+Shift+P`/`F12`/`Ctrl+单击`/终端切换/设置入口）
-  最早只有 `PostMessage` 弱证据；`Ctrl+,` 到现在**仍未被机器验证**（本轮实测是注入侧问题：
-  `ui-keys.ps1` 打印 `SetForegroundWindow` 被拒、键送到别的窗口，见 `.artifacts/p12/NOTES.md` §5）。
-  建议在方便时把这一批补跑一次真实按键。
+> ## 🔴 优先级变更（维护者 2026-09-25 明确）
+>
+> **Java 生态是第一优先级**：编辑器**智能提示（代码补全）** + **代码跳转** →
+> **Maven / Spring / Spring Boot**；**用户体验高于一切**。
+> **Git 相关的先不做**（设置「Git」页的提交身份已经够用，别再往里加东西）；
+> 设置剩余页里与 Java 无关的项（项目/运行配置页、日志、更新）**降到 Java 线之后**。
+> 本轮调研产物：`gpui/research/editor-lsp-completion.md`（补全怎么接）与
+> `gpui/research/java-spring-maven-inventory.md`（上游载荷里到底有什么、Maven/Spring 怎么走）。
+
+- 分支 `feat/gpui-shell-rewrite`，HEAD `dba009cc`，**工作区干净**。
+- 最近四批（都经主代理复核 + 交互级验证后提交）：`ebdf4885` 源代码管理 →
+  `46d62f41` 设置「编辑器」「终端」页（顺手修掉 `persistence.rs`「写得出、读不回」的真 bug，
+  见 `PLAN.md` §14.2，**以后加设置键必读**）→ `b740bdb4` 设置左栏 11 项 + 7 个明确空态 →
+  `dba009cc` 设置「Git」页（提交身份走 Core `git.repositorySetup` / `git.configureIdentity`，
+  用**宿主钩子**保住依赖方向；外加 `confirmBeforeDiscard` 真开关）。
+- **git 那批的一个已知边界已被主代理补验推翻**：NOTES 里写的"global 作用域下拉点不开"是**测量假象**——
+  主代理实测下拉正常弹出、`run=load scope=global` + `run=save scope=global action=clear` 都成立，
+  PowerShell 侧 `git config --global --get user.name` 随之消失。
+- `gpui/` 已是一个能跑的前端：设置界面、编辑器（可编辑/保存/自动保存/查找替换/语法高亮/右键菜单、
+  **F12/Ctrl+单击跳转**）、终端、资源管理器、Git 底部工具窗、左栏源代码管理、右侧工具窗、命令面板、
+  主菜单栏、项目下拉、分支弹窗全部落地并逐项验证过。**缺的是 Java 智能提示（补全）与项目模型**。
+- 验证债务：`Ctrl+,` / `Ctrl+Shift+P` 的**键盘**入口始终没能机器验证（注入侧问题：
+  `SetForegroundWindow` 常被系统拒绝，键会送到别的窗口）。鼠标路径都验过。
 
 ## 1. 硬规则（这些是维护者明确要求过的，违反会被打回）
 
@@ -114,6 +115,13 @@
 
 **待做**：
 
+0. **🔴 Java 线（当前第一优先级，维护者 2026-09-25 定）**：编辑器**智能提示（补全）** + **代码跳转**，
+   然后 **Maven → Spring / Spring Boot**；**用户体验高于一切**。开工前先读本轮两份调研：
+   `gpui/research/editor-lsp-completion.md`（上游编辑器自带哪些 LSP 能力、要补哪几件事、
+   Core 命令序列与 `syncDocument` 时机）与 `gpui/research/java-spring-maven-inventory.md`
+   （`third_party/jdtls` 载荷里到底有没有 m2e / Spring、Maven 最小可用路径、Spring 三条路的取舍）。
+   **硬规则**：上游已有的能力**不许自研**（补全菜单、诊断渲染、语义高亮都在 `gpui-base` 的编辑器里）；
+   Java 符号/项目模型/classpath 的事实归 JDT LS，我们只做编排与呈现。
 1. ~~**源代码管理**~~ **已完成**（规格 `research/windows/08-source-control.md`）：新增
    `crates/git/src/changes.rs`（数据层：`git.status` + `operationState`，空列表时补 `references` 判有无提交；
    `ChangeKind` 逐字对齐 `core-result-adapter.ts:15-26`；6 个写操作；**把"信封 ok:true 但 Git 退出码非 0"
@@ -127,6 +135,9 @@
 2. **设置剩余页**（除 AI）：`research/windows/07-settings-ui.md` §3 有逐页签规格、§7.3/§7.4 有
    "能否立刻生效/建议范围"。原则：**能真生效的先做**（编辑器字号/换行、终端 profile、Git 身份、
    LSP 的 jdtls 路径…），没有数据源的做成**明确空态**并写清前置条件，**不塞假控件**。
+   ⚠️ **本项已降级**：维护者 2026-09-25 明确"Git 先不管、Java 优先"，所以本项**只剩 LSP 页的
+   jdtls 运行时路径**与 Java 项目页（都与 Java 线相关，随 Java 线一起做）；
+   与 Java 无关的空态页（快捷键 / 日志 / 更新）**不再单独推进**。
    **进度（阶段 14，见 `gpui/PLAN.md` §14）**：
    - ✅ **编辑器页**：`fontSize`（→ `Theme.mono_font_size`）+ `tabSize`（→ 每个 `EditorState`）。
      真源 4 项里的 `codeLens` / `horizontalTabScroll` **不画**（gpui 侧没有消费方，理由在
