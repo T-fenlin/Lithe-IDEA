@@ -16,8 +16,33 @@
 > **Maven / Spring / Spring Boot**；**用户体验高于一切**。
 > **Git 相关的先不做**（设置「Git」页的提交身份已经够用，别再往里加东西）；
 > 设置剩余页里与 Java 无关的项（项目/运行配置页、日志、更新）**降到 Java 线之后**。
-> 本轮调研产物：`gpui/research/editor-lsp-completion.md`（补全怎么接）与
+> 调研产物：`gpui/research/editor-lsp-completion.md`（补全怎么接）与
 > `gpui/research/java-spring-maven-inventory.md`（上游载荷里到底有什么、Maven/Spring 怎么走）。
+
+### 🔵 Java 线进度（2026-09-26 会话，11 批已提交，工作区干净）
+
+| 方向 | 状态 | 证据 / 落点 |
+| --- | --- | --- |
+| **智能提示（补全）** | ✅ **端到端可用** | `c97af956` + `ffa095f2`：补全菜单**一行没写**（上游 `gpui-base` 自带），只写了一个 `CompletionProvider` 适配器（`crates/editor/src/completion.rs`）；JDTLS 优先、`lsp.builtinCompletions` 兜底；snippet 用 Core 的 `lsp.plainSnippet` 还原；**交互级已验**：菜单真的弹出（`S1_JAVA_COMPLETION source=jdtls items=10`）+ 键盘接受真插入。见 `PLAN.md` §16 |
+| **代码跳转** | ✅ 已有 | 更早的批次：`F12` / `Ctrl+单击` / `←→` 历史 / `jdt://` 虚拟源码 |
+| **Maven** | ✅ 项目模型 + 面板 | `dcb6b248`：`mavenContext` 送进 `lsp.startServer`（生成源根 / profile / settings 生效；Core 校验通过）。`6a2b653d` + `6bbae83a` + `76f25427`：右侧 Maven 面板显示 reactor 头 + 模块树 + profile + **源码根**（懒扫 + 缓存，`S1_MAVEN scan=ok`）。见 `PLAN.md` §16.6/§16.7 |
+| **Spring** | 🔶 **只有数据层** | `c896cb84`：`crates/workbench/src/spring.rs` 把 Core 的 `spring.index`（端点 / 属性 / bean / 注入 / 诊断）解析成可渲染视图 + `S1_SPRING` 诊断 + 4 条单测。**面板还没做** |
+| 诊断波浪线 | ⛔ 未开工 | **卡在事件泵重构**：`Session::request`（`java/src/session.rs:302-359`）自己消费 `waitEvents` 并丢弃非本 `operationId` 的事件，再加订阅会互相偷事件；必须先改成"单一事件泵 + 按 operationId 分派"，而**补全与跳转都压在这层**（要一整轮，中途状态是坏的，别在预算不足时开工） |
+| 自动补 import / `Ctrl+Space` | ⛔ 未做 | 上游 `insert_completion` **忽略 `additionalTextEdits`**（JDT 的自动 import 正靠它；Core 有 `lsp.applyTextEdits` 可自落）；上游**没有任何补全快捷键**，`Ctrl+Space` 要自定义 action |
+
+**下一批的第一件事（我已核实、可直接开工）**：**Spring 面板** —— 右活动栏加第 4 项
+（`right_tool_window.rs` 的 `RightToolWindowView` + `from_rail_index` + `title`/`icon`/`empty_title`，
+`workspace.rs` 的 `right_activity_items()` 与懒扫字段照 Maven 那套抄），内容用现成的
+`spring.rs` 视图（端点列表 `label()` + 计数）。注意：新文案要先看 locale 里有没有 Spring 相关键，
+没有就进 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS`（不能写死字面量）。
+
+**本会话踩到、下个会话必须知道的坑**：
+1. **强杀 Lithe 不会走 `lsp.stopServer`** ⇒ JDTLS 的 `java.exe` 会留在后台，
+   得单独 `Stop-Process`（验证脚本的"测试后清进程"那一节要照做）。
+2. `--menu-probe` 的动作 id 是 **`lithe.workbench.maven`**（不是 `lithe.menu.toggleMaven`）。
+3. Maven 夹具现在是**标准布局** `src/main/java/demo/`：一旦带上 `mavenContext`，
+   JDT 就按 Maven 源模型解析，放在非标准目录（如 `src/demo/`）的 `.java` **不会被解析**。
+4. 实现类子代理在本会话不稳定（一个静默死掉、一个与主代理撞车）；调研类子代理可用。
 
 - 分支 `feat/gpui-shell-rewrite`，**工作区干净**（最近两批：`dba009cc` 设置「Git」页、
   `53c77651` 交接优先级）。
