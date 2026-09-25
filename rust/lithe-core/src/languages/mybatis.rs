@@ -216,8 +216,9 @@ fn collect_types(
             }
         }
         // Reverse the push order to preserve the recursive walk's source preorder.
+        // tree-sitter 0.26 takes `u32` here while `child_count()` is still `usize`.
         for index in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(index) {
+            if let Some(child) = node.child(index as u32) {
                 pending.push(child);
             }
         }

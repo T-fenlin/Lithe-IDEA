@@ -13,6 +13,7 @@
 //! | B 状态栏光标 | [`EditorPane::sync_cursor`]（`CursorPosition` + `S1_EDITOR_CURSOR` 诊断） |
 //! | C 查找替换 | [`EditorPane::open`] 里显式写出的 `searchable(true)` —— 面板与 `Ctrl+F` / `Ctrl+H` 都归组件（见该处注释） |
 //! | E 关闭确认 | [`EditorPane::request_close`]（`保存` / `放弃修改` / `取消`） |
+//! | D 语法高亮 | [`EditorPane::open`] / [`EditorPane::open_virtual`] 里 `EditorState::new(..).language(..)`，语言名由 [`crate::buffer::language_for_file`] 按扩展名给出；grammar 开关在 `crates/editor/Cargo.toml` 的 `gpui-kit` feature |
 //!
 //! ## 阶段 10 第一批接上的三件事（Java 代码跳转的轻量链路，不启 JDTLS）
 //!
@@ -42,7 +43,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::buffer::{Buffer, display_names, icon_for_file, read_body};
+use crate::buffer::{Buffer, display_names, icon_for_file, language_for_file, read_body};
 use crate::navigation::{JumpEntry, JumpHistory, NavTarget, editor_position, resolve_target};
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
@@ -255,6 +256,11 @@ impl EditorPane {
             .into();
         let body = read_body(&path, &name);
         let writable = body.writable;
+        // 语言名在 `cx.new` **之前**算好：`.language(..)` 是消费 `self` 的 builder
+        // （`gpui-base-0.6.6/src/input/base/state.rs:9240`），只能在建状态的那个闭包里链；
+        // `cx.new` 之后剩下的只有 `set_highlighter`（同文件 `:772`）。
+        // 认不出的扩展名给 `None` → 不调 `.language(..)` → 与"没接高亮"时一样是纯文本。
+        let language = language_for_file(&name);
 
         // 一个标签一个 `EditorState`：先建状态再灌正文，然后才入列。
         let editor = cx.new(|cx| {
@@ -264,14 +270,28 @@ impl EditorPane {
             // **不 searchable 的编辑器不拦截 `Ctrl-F`**，会冒泡到上层
             // （`gpui/docs/gpui-kit/0.6.6/zh-CN/component/editor.md:158-159`）。
             let mut state = EditorState::new(window, cx).searchable(true);
+            // 语法高亮：只有"语言名 + 该语言的 grammar feature"两件都齐才会真的上色
+            // （grammar 开关在 `Cargo.toml`，名字表在 `buffer.rs::language_for_file`）。
+            if let Some(language) = language {
+                state = state.language(language);
+            }
             if !writable {
                 // 说明性正文（读不到 / 超大 / 二进制 / 非 UTF-8）不可写：只读能避免
                 // "用户以为改了、其实保存的是说明文案"这种更坏的结果。
+                // ⚠️ 只读与语言**正交**（`set_readonly` vs `language`）：说明文案本来就用
+                // `// ` 前缀，被当成注释着上色反而更清楚地表明"这不是文件内容"。
                 state.set_readonly(true, cx);
             }
             state
         });
         editor.update(cx, |state, cx| state.set_value(body.text, window, cx));
+        // 诊断：这条读的是 `EditorState` 里**真正存着**的语言名，所以它证明 `.language(..)`
+        // 落到了状态上（`None` = 认不出的扩展名，走纯文本）；但它证明不了"正文真的亮了"
+        // —— 那要 grammar feature 也开着，靠截图与像素统计取证（`S1_EDITOR_CURSOR` 同一套口径）。
+        println!(
+            "S1_EDITOR_LANG name={} file={name}",
+            editor.read(cx).language_name()
+        );
 
         // 订阅必须在 `set_value` **之后**：`set_value` 内部关掉了事件发射
         // （`gpui-base-0.6.6/src/input/base/state.rs:904-907` 的 `emit_events = false`），
@@ -629,13 +649,23 @@ impl EditorPane {
             .unwrap_or(display_path)
             .to_string()
             .into();
+        // JDT 反编译出来的正文就是 Java 源码，所以走**同一张**语言表：`display_path` 的
+        // 扩展名照常判得出 `"java"`，`jdt://` 虚拟源码因此与磁盘上的 `.java` 一样亮。
+        let language = language_for_file(&name);
 
         let editor = cx.new(|cx| {
             let mut state = EditorState::new(window, cx).searchable(true);
+            if let Some(language) = language {
+                state = state.language(language);
+            }
             state.set_readonly(true, cx);
             state
         });
         editor.update(cx, |state, cx| state.set_value(text, window, cx));
+        println!(
+            "S1_EDITOR_LANG name={} file={name} virtual=true",
+            editor.read(cx).language_name()
+        );
 
         let subscriptions = vec![
             cx.subscribe_in(

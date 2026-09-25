@@ -5,7 +5,18 @@ edition = "2024"
 publish = false
 
 [dependencies]
-gpui-kit = "0.6"
+# 语法高亮的 **grammar 开关**：`gpui-kit` 的默认特性里**没有任何** tree-sitter 语言
+# （`gpui-kit-0.6.6/Cargo.toml:46-49`：`default = ["component", "assets"]`），
+# 而 `EditorState::language(..)` 只写语言名、不装 grammar，两者都缺就静默不上色
+# （`gpui-base-0.6.6/src/input/base/mode.rs:296-298`）。
+#
+# `tree-sitter-java`（`gpui-kit-0.6.6/Cargo.toml:122-125` → `gpui-component-0.6.6/Cargo.toml:112-115`）
+# 隐含基础特性 `tree-sitter` = `dep:tree-sitter` + `dep:tree-sitter-json`
+# （`gpui-component-0.6.6/Cargo.toml:52-55`），所以 **Java 与 JSON 两种语言一起亮**。
+# 刻意**不**开 `tree-sitter-languages`：那是 35 个 grammar 的全量包，构建代价与产物体积
+# 都大得多（取舍与证据见 `research/editor-syntax-highlighting.md` §4.1）。
+# 加语言时两件事缺一不可：这里开 feature + `src/buffer.rs` 的 `language_for_file` 加一行。
+gpui-kit = { version = "0.6", features = ["tree-sitter-java"] }
 lithe-gpui-shared = { path = "../shared" }
 # 阶段 10 第二批：语义跳转的来源。**只在编辑器里接线**，Java 语言服务本身
 # （JDTLS 载荷发现 / Core LSP 会话 / 索引缓存）全在那个 crate 里，见 `src/navigation.rs`。

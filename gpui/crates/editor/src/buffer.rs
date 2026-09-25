@@ -38,6 +38,46 @@ pub(crate) fn icon_for_file(name: &str, cx: &App) -> FileIcon {
     FileIcon::lucide(file_icon::lucide_fallback(name)).with_theme_icon(name, cx)
 }
 
+/// 按文件名挑**语法高亮语言名**：交给 `EditorState::language(..)` 的那个名字。
+///
+/// 返回值是**语言名**，不是扩展名、也不是图标名：它必须是上游 `Language::from_name`
+/// 认得的字面量（`gpui-component-0.6.6/src/highlighter/languages.rs:178-256`）。
+/// 传不认识的名字不会报错 —— 工厂拿不到 highlighter 就**静默不上色**
+/// （`gpui-base-0.6.6/src/input/base/mode.rs:290-298`），所以"名字写错"和
+/// "没写 `.language`" 在界面上完全一样，只能靠这张表自己保证正确。
+///
+/// ## 为什么表里只有两种语言（而不是一长串扩展名）
+///
+/// 光有语言名不亮：名字还得在 `LanguageRegistry` 里注册过 grammar，而 grammar 由
+/// **Cargo feature** 决定（`gpui-component-0.6.6/Cargo.toml:112-115`：`tree-sitter-java`
+/// 才 `dep:tree-sitter-java`）。本 crate 只开了 `tree-sitter-java`（见 `Cargo.toml`），
+/// 它隐含基础特性 `tree-sitter` = `dep:tree-sitter` + `dep:tree-sitter-json`
+/// （同文件 `:52-55`），所以**当前真正能亮的只有 Java 与 JSON**。
+///
+/// 其余扩展名一律回落 `None`：把没开 feature 的扩展名写进表里就是"假装支持"，
+/// 用户看到的仍是纯文本，与不写这张表完全一样，却会让人误以为接好了。
+/// 要加语言：`Cargo.toml` 打开对应的 `tree-sitter-<语言>` feature，**再**在下面加一行。
+///
+/// ⚠️ 语言名与扩展名**不是**一一对应，别自造：`.h` 只能映射到 `"c"`
+/// （上游没有 `"h"` 这个名字，`languages.rs:186-187` 只认 `"c"`），
+/// `.ts` 要写 `"typescript"` 而不是 `"ts"` 之外的任何东西（`languages.rs:248-249`）。
+pub(crate) fn language_for_file(name: &str) -> Option<&'static str> {
+    // 扩展名大小写不敏感：Windows 上 `Foo.JAVA` 与 `foo.java` 是同一个文件。
+    let extension = Path::new(name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase);
+
+    match extension.as_deref() {
+        // `"java"` → `Language::Java`（`languages.rs:211`），grammar 来自 `tree-sitter-java`。
+        Some("java") => Some("java"),
+        // `"json"` → `Language::Json`（`languages.rs:181`），**不需要**额外 feature：
+        // 上面的 `tree-sitter-java` 已经把基础特性 `tree-sitter`（含 tree-sitter-json）带进来了。
+        Some("json" | "jsonc") => Some("json"),
+        _ => None,
+    }
+}
+
 /// 读盘结果：正文 + **这份正文是不是文件的忠实副本**。
 ///
 /// 第二个字段是"能不能写回去"的判据（[`Buffer::writable`]）：读不到 / 超大 / 二进制 /
@@ -428,5 +468,42 @@ mod tests {
 
         assert!(!body.writable, "超限文件不打开，给出的是说明");
         assert!(body.text.contains("MiB"), "应是超限说明：{:?}", body.text);
+    }
+
+    // `language_for_file` 的返回值直接进 `EditorState::language(..)`。**写错名字不会报错**
+    // （上游只是静默不上色，见该函数文档），所以"表里到底有哪些扩展名"只能靠这几条守住：
+    // 它们一旦回归（例如有人把 `.xyz` 也映射进来，或把 `java` 拼错），界面会退回纯文本
+    // 而没有任何日志，肉眼很难发现。
+
+    #[test]
+    fn java_maps_to_java_language() {
+        assert_eq!(language_for_file("HighlightProbe.java"), Some("java"));
+        assert_eq!(
+            language_for_file("Foo.JAVA"),
+            Some("java"),
+            "Windows 上扩展名大小写不敏感"
+        );
+    }
+
+    #[test]
+    fn json_maps_to_json_language() {
+        assert_eq!(language_for_file("tsconfig.json"), Some("json"));
+        assert_eq!(language_for_file("settings.jsonc"), Some("json"));
+    }
+
+    #[test]
+    fn unmapped_extension_falls_back_to_none() {
+        // 没开 grammar feature 的扩展名**不进表**：写进来只是"假装支持"。
+        for name in [
+            "notes.txt",
+            "sample.xyz",
+            "Makefile",
+            "half.h",
+            "Main.kt",
+            "app.rs",
+            "Foo.java.bak",
+        ] {
+            assert_eq!(language_for_file(name), None, "{name} 不该有语言名");
+        }
     }
 }
