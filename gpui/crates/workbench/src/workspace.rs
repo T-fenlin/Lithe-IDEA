@@ -88,7 +88,7 @@ use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
-    Pixels, Render, SharedString, Styled as _, Window, div, px, rems,
+    Render, SharedString, Styled as _, Window, div, rems,
 };
 
 use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
@@ -433,11 +433,13 @@ const RIGHT_TOOL_WINDOW_WIDTH: f32 = 400.;
 
 /// 编辑器岛 / 侧栏外壳圆角。真源 `theme.css:9,134`：`rounded-xl = calc(--radius * 1.4) = 11.2`。
 ///
-/// ⚠️ **保留 `px(...)`**：11.2 **不是** gpui 的 rem 档位（gpui 的 `rounded_xl()` 是 12px，
+/// 11.2 **不是** gpui 的 rem 档位（gpui 的 `rounded_xl()` 是 12px，
 /// `gpui-pre-macros-0.3.6/src/styles.rs:1255-1259`）；也不能从主题读 —— `ThemeConfig.radius`
 /// 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 Lithe 的
 /// `--radius × k` 阶梯（4.8 / 6.4 / 11.2），而把主题半径改大又会连带改掉所有 gpui-kit 组件。
-const ISLAND_RADIUS: Pixels = px(11.2);
+/// 挂在 `div` 上，`Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写
+/// `rems(ISLAND_RADIUS_SPEC / 16.)`。
+const ISLAND_RADIUS_SPEC: f32 = 11.2;
 
 /// 底部工具窗当前显示哪一个内容。
 ///
@@ -3294,7 +3296,7 @@ fn side_pane(outer: Div, content: impl IntoElement, cx: &App) -> impl IntoElemen
     outer
         .h_full()
         .flex_shrink_0()
-        .rounded(ISLAND_RADIUS)
+        .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
         .border_1()
         .border_color(cx.theme().border)
         .bg(cx.theme().background)
@@ -3307,7 +3309,7 @@ fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
         .w_full()
         .flex_1()
         .min_h_0()
-        .rounded(ISLAND_RADIUS)
+        .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
         .border_1()
         .border_color(cx.theme().border)
         .bg(cx.theme().background)
@@ -3331,7 +3333,7 @@ fn bottom_pane(content: AnyElement, cx: &App) -> impl IntoElement {
             div()
                 .w_full()
                 .h_80()
-                .rounded(ISLAND_RADIUS)
+                .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
                 .border_1()
                 .border_color(cx.theme().border)
                 .bg(cx.theme().background)

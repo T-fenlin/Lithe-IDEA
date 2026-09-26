@@ -134,14 +134,14 @@
 //! | 本体圆角 / 边框 / 底色 | 全圆角、1px `border-border/70`、`bg-background/65` | 同上 | `rounded_full()` + `border_1()` + `background` |
 //! | 本体内边距 / 项间距 | 2 / 2 | 同上 `px-0.5 py-0.5` / `gap-0.5` | `p_0p5()` + `gap_0p5()` |
 //! | 顶级项高 | **20** | `ui/menubar.tsx:85-88` 的 `h-5` | `h_5()` |
-//! | 顶级项内边距 / 圆角 | 6 / 6.4 | 同上 `px-1.5` / `rounded-md` | `px_1p5()` + [`ITEM_RADIUS`] |
-//! | 下拉面板最小宽 / 圆角 | 240 / 11.2 | `ui/menubar.tsx:125-127` 的 `min-w-60` / `rounded-xl` | `rems(240./16.)` + [`PANEL_RADIUS`] |
-//! | 浮动胶囊圆角 / 内边距 / 上间距 | 14.4 / 4 / 4 | `window-menu-bar.tsx:539,548-549` 的 `rounded-2xl px-1 py-1` / `mt-1` | [`FLOAT_RADIUS`] + `p_1()` + `mt_1()` |
+//! | 顶级项内边距 / 圆角 | 6 / 6.4 | 同上 `px-1.5` / `rounded-md` | `px_1p5()` + [`ITEM_RADIUS_SPEC`] |
+//! | 下拉面板最小宽 / 圆角 | 240 / 11.2 | `ui/menubar.tsx:125-127` 的 `min-w-60` / `rounded-xl` | [`PANEL_MIN_WIDTH_SPEC`] + 面板圆角（**本文件没有**该常量，见本段下方说明） |
+//! | 浮动胶囊圆角 / 内边距 / 上间距 | 14.4 / 4 / 4 | `window-menu-bar.tsx:539,548-549` 的 `rounded-2xl px-1 py-1` / `mt-1` | [`FLOAT_RADIUS_SPEC`] + `p_1()` + `mt_1()` |
 //! | 字号 | 13（`--ui-text-sm`） | `ui/menubar.tsx:85` | `text_sm()`（14；13→14 是经维护者确认的有意改动，见 `crate::workspace` 模块头） |
 //!
 //! 圆角一律走应用层具名常量（Lithe 的圆角阶梯是 `--radius × k` = 4.8 / 6.4 / 11.2，
 //! 不在 4px 网格上，也不能从 `ThemeConfig.radius` 读 —— 那是 `usize`，理由见
-//! `crate::workspace` 的 `ISLAND_RADIUS`）。颜色一律 `cx.theme()`，不写裸色值。
+//! `crate::workspace` 的 `ISLAND_RADIUS_SPEC`）。颜色一律 `cx.theme()`，不写裸色值。
 //!
 //! ## 键盘可达性（**如实说明，未做假**）
 //!
@@ -180,7 +180,7 @@ use gpui_kit::{
     App, AppContext as _, Bounds, ClickEvent, Context, DismissEvent, Entity, FocusHandle,
     Focusable as _, InteractiveElement as _, IntoElement, KeyBinding, Keystroke, MouseButton,
     ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Subscription, Window, deferred, div, px,
+    Subscription, Window, deferred, div, rems,
 };
 
 use lithe_gpui_shared::tr;
@@ -191,37 +191,40 @@ use crate::command_palette::CommandId;
 // 圆角常量（档位外的值，逐条给理由）
 // ---------------------------------------------------------------------------/// 顶级项圆角 6.4：`ui/menubar.tsx:86` 的 `rounded-md` = `--radius × 0.8`（`theme.css:7`）。
 ///
-/// ⚠️ **保留 `px(...)`**：6.4 不是 gpui 的 rem 档位（`rounded_md()` 是 6），且 Lithe 的圆角阶梯
-/// 一律走应用层具名常量 —— 与 `crate::right_tool_window` 的 `CLOSE_BUTTON_RADIUS` 同一条理由。
-const ITEM_RADIUS: Pixels = px(6.4);
+/// 6.4 不是 gpui 的 rem 档位（`rounded_md()` 是 6），且 Lithe 的圆角阶梯一律走应用层具名常量
+/// —— 与 `crate::right_tool_window` 的 `CLOSE_BUTTON_RADIUS_SPEC` 同一条理由。挂在 `div` 上，
+/// `Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写 `rems(6.4 / 16.)`。
+const ITEM_RADIUS_SPEC: f32 = 6.4;
 
 /// 浮动胶囊圆角 14.4：`window-menu-bar.tsx:549` 的 `rounded-2xl` = `--radius × 1.8`（`theme.css:10`）。
 ///
-/// ⚠️ 同上：14.4 不是 gpui 档位。
-const FLOAT_RADIUS: Pixels = px(14.4);
+/// 同上：14.4 不是 gpui 档位，调用点写 `rems(14.4 / 16.)`。
+const FLOAT_RADIUS_SPEC: f32 = 14.4;
 
 // ⚠️ 下拉面板自己的圆角（真源 `rounded-xl` = 11.2）**不在本文件里**：`PopupMenu` 的圆角是
 // 组件内部的 `cx.theme().radius.min(px(8.))`（`popup_menu.rs:1460`，`RenderOptions` 的
 // `radius`），没有任何公开 setter 能覆盖它。所以面板圆角由 gpui-kit 主题决定（默认 6），
 // 这是本轮**已知且未解**的偏差 —— 硬要改只能改全局 `ThemeConfig.radius`，那会连带改掉
-// 所有 gpui-kit 组件的圆角（`crate::workspace` 的 `ISLAND_RADIUS` 记过同一条）。
+// 所有 gpui-kit 组件的圆角（`crate::workspace` 的 `ISLAND_RADIUS_SPEC` 记过同一条）。
 
 /// 下拉面板最小宽 240：`ui/menubar.tsx:126` 的 `min-w-60`（60 × 4 = 240）。
 ///
-/// ⚠️ 240 不在 gpui 的固定档位（档位里 224 → `w_56()`、256 → `w_64()`），按《编码指南》
-/// 这类值应写成 helper 底层的 `rems(P / 16.)`。**但这里写 `px(240.)`**：
-/// `PopupMenu::min_w` 收的是 `impl Into<Pixels>`（`popup_menu.rs:429-432`），
-/// 而 gpui **没有 `impl From<Rems> for Pixels`**（`geometry.rs:2909` 起的那一批
-/// `impl From<_> for Pixels` 里没有它）—— 本轮实测 `rems(..)` 报 E0277。
-/// 要写 rem 得走 `AbsoluteLength::to_pixels`（`crate::command_palette` 的 `rem_px` 就是那么做的），
-/// 为一个菜单面板最小宽引入那层换算不划算；240 与 rem 基准 16px 的换算关系写在这里备查。
-const PANEL_MIN_WIDTH: Pixels = px(240.);
+/// 240 不在 gpui 的固定档位（档位里 224 → `w_56()`、256 → `w_64()`），按《编码指南》
+/// 这类值本应写成 helper 底层的 `rems(P / 16.)`。但 `PopupMenu::min_w` 是**固有方法**、
+/// 收的是 `impl Into<Pixels>`（`popup_menu.rs:429-432`，它遮蔽了收 `impl Into<AbsoluteLength>`
+/// 的 `Styled::min_w`），而 gpui **没有 `impl From<Rems> for Pixels`**
+/// （`geometry.rs:2909` 起的那一批 `impl From<_> for Pixels` 里没有它）—— 本轮实测
+/// `rems(..)` 报 E0277。所以这里保留**规格常量**，由调用点经 [`crate::rem_px`] 按
+/// **当帧的 `window.rem_size()`** 换算成 `Pixels`：`240 / 16 = 15rem`，默认 16px 基准下
+/// 与 `px(240.)` 逐像素相等，界面字号变大时跟着缩放。
+const PANEL_MIN_WIDTH_SPEC: f32 = 240.;
 
 /// 面板与触发器之间的空隙 4：真源 `Menu.Positioner` 的 `sideOffset={4}`
 /// （`windows/tauri/src/ui/menubar.tsx:107`），与 `project_menu.rs` 的 `PANEL_OFFSET_SPEC`
 /// 同一个数、同一条理由（`ui/dropdown.tsx:735-737` 的默认值）。
 ///
-/// 4 在 gpui 档位上（`top_1()` = 4），但 `Positioner::offset` 收的是 `Pixels`，所以写 `px`。
+/// 4 在 gpui 档位上（`top_1()` = 4），但 `Positioner::offset` 是**固有方法**、收 `Pixels`
+/// （`positioner.rs:126`），所以调用点经 [`crate::rem_px`] 按当帧 rem 基准换算。
 const PANEL_OFFSET_SPEC: f32 = 4.;
 
 /// 面板贴窗口边时留的边距 8：真源 `collisionPadding={8}`（`ui/menubar.tsx:108`）。
@@ -2341,7 +2344,7 @@ fn compact_bar(
             .gap_0p5()
             .p_1()
             .mt_1()
-            .rounded(FLOAT_RADIUS)
+            .rounded(rems(FLOAT_RADIUS_SPEC / 16.))
             .border_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().background);
@@ -2352,13 +2355,16 @@ fn compact_bar(
         // `mt-1`（`window-menu-bar.tsx:539`）。还没量到按钮边界时（第 1 帧）**不画** ——
         // 画在错误的位置上比晚一帧更糟（`on_prepaint` 里已经补要了一帧）。
         if let Some(bounds) = bar.compact_trigger_bounds.get() {
+            // `Positioner::offset` / `margin` 是**固有方法**、只吃 `Pixels`，所以按**当帧的**
+            // rem 基准换算（`crate::rem_px`）。
+            let rem = window.rem_size();
             floating = Some(
                 deferred(
                     Positioner::side(bounds)
                         .placement(Placement::Bottom)
                         .align(Align::Start)
-                        .offset(px(PANEL_OFFSET_SPEC))
-                        .margin(px(PANEL_WINDOW_MARGIN_SPEC))
+                        .offset(crate::rem_px(rem, PANEL_OFFSET_SPEC))
+                        .margin(crate::rem_px(rem, PANEL_WINDOW_MARGIN_SPEC))
                         // `occlude()` 不可省：不遮挡的话它下面的标题栏拖拽区会继续吃鼠标事件
                         // （`AppMenuBar` 的同一处：`app_menu_bar.rs:290-294`）。
                         .occlude()
@@ -2413,7 +2419,7 @@ fn trigger(
         // `h-5` = 20（`ui/menubar.tsx:85-88`）。整条栏 24 = 20 + 上下各 2 的内边距。
         .h_5()
         .px_1p5()
-        .rounded(ITEM_RADIUS)
+        .rounded(rems(ITEM_RADIUS_SPEC / 16.))
         .text_sm()
         // 未悬停是 `text-subtle-foreground`（`ui/menubar.tsx:87`）；gpui-kit 没有 `subtle`
         // 这一项，语义最近的是 `muted_foreground`（与标题栏同一取法）。
@@ -2531,7 +2537,9 @@ fn menu_item(
         if let Some(popup) = bar.popup.clone() {
             // `.children(Option<..>)`：`Option<T: IntoElement>` 本身是迭代器（0 或 1 个孩子），
             // 所以"还没量到触发器边界"那一帧自然就是"不画面板"。
-            wrapper = wrapper.children(popup_for(popup, bar.trigger_bounds_of(index)));
+            // rem 基准取**当帧的**窗口值（`Positioner` 的两个固有 setter 只吃 `Pixels`）。
+            let rem = window.rem_size();
+            wrapper = wrapper.children(popup_for(popup, bar.trigger_bounds_of(index), rem));
         }
     }
     wrapper
@@ -2556,15 +2564,22 @@ fn menu_item(
 ///
 /// `bounds` 是 `None` 时**不画**（还没量到触发器，画在哪儿都是错的；`on_prepaint` 里已经
 /// 补要了一帧，所以只影响打开后的第一帧）。
-fn popup_for(popup: Entity<PopupMenu>, bounds: Option<Bounds<Pixels>>) -> Option<impl IntoElement> {
+///
+/// `rem` 是**当帧的** rem 基准：`Positioner::offset` / `margin` 是固有方法、只吃 `Pixels`，
+/// 所以两个规格值经 [`crate::rem_px`] 换算。
+fn popup_for(
+    popup: Entity<PopupMenu>,
+    bounds: Option<Bounds<Pixels>>,
+    rem: Pixels,
+) -> Option<impl IntoElement> {
     let bounds = bounds?;
     Some(
         deferred(
             Positioner::side(bounds)
                 .placement(Placement::Bottom)
                 .align(Align::Start)
-                .offset(px(PANEL_OFFSET_SPEC))
-                .margin(px(PANEL_WINDOW_MARGIN_SPEC))
+                .offset(crate::rem_px(rem, PANEL_OFFSET_SPEC))
+                .margin(crate::rem_px(rem, PANEL_WINDOW_MARGIN_SPEC))
                 // `occlude()` 不可省：不遮挡的话面板下面的标题栏拖拽区会继续吃鼠标事件
                 // （`AppMenuBar` 的同一处：`app_menu_bar.rs:290-294`）。
                 .occlude()
@@ -2587,12 +2602,14 @@ fn build_popup(
     let handle = handle();
 
     PopupMenu::build(window, cx, move |popup, window, cx| {
+        // 面板最小宽 240（`ui/menubar.tsx:126` 的 `min-w-60`）：`PopupMenu::min_w` 是固有方法、
+        // 只吃 `Pixels`，所以按**当帧的** rem 基准换算（见 [`PANEL_MIN_WIDTH_SPEC`]）。
+        let rem = window.rem_size();
         // 动作上下文：`PopupMenu` 收起时把焦点还给它（`popup_menu.rs:1052-1072`），
         // 所以关闭菜单之后焦点不会凭空消失。
         let popup = popup
             .action_context(action_context.clone())
-            // 面板最小宽 240（`ui/menubar.tsx:126` 的 `min-w-60`）。
-            .min_w(PANEL_MIN_WIDTH);
+            .min_w(crate::rem_px(rem, PANEL_MIN_WIDTH_SPEC));
 
         // 主题子菜单是**动态项**，内容每次打开现取（注册表里加了主题文件就能立刻看到）。
         // 主题名来自设置 crate 的注册表（`lithe_gpui_settings::theme::theme_names`），
@@ -2671,8 +2688,9 @@ fn theme_menu(
     window: &mut Window,
     cx: &mut App,
 ) -> Entity<PopupMenu> {
-    PopupMenu::build(window, cx, move |popup, _window, _cx| {
-        let mut popup = popup.min_w(PANEL_MIN_WIDTH);
+    PopupMenu::build(window, cx, move |popup, window, _cx| {
+        let rem = window.rem_size();
+        let mut popup = popup.min_w(crate::rem_px(rem, PANEL_MIN_WIDTH_SPEC));
         for name in names {
             let label: SharedString = name.clone().into();
             let value: SharedString = name.into();

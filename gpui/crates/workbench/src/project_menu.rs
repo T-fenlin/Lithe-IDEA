@@ -173,10 +173,10 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AbsoluteLength, AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, DismissEvent,
-    Entity, FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, DismissEvent, Entity,
+    FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     MouseButton, ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, WeakEntity, Window, deferred, div, px, radians, rems, rgb,
+    Styled as _, Subscription, WeakEntity, Window, deferred, div, radians, rems, rgb,
 };
 
 use lithe_gpui_shared::{tr, tr_args};
@@ -191,10 +191,10 @@ use crate::workspace::ShellWorkspace;
 
 /// 面板宽 384：`w-96`（`title-project-menu.tsx:170`）。
 ///
-/// ⚠️ **保留规格值 + [`rem_px`]**：384 不在 gpui 的固定 rem 档位表上
-/// （`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），而 `PopupMenu::min_w` / `max_w` 收
-/// `impl Into<Pixels>`，gpui **没有 `impl From<Rems> for Pixels`**（`crate::menu_bar` 的
-/// `PANEL_MIN_WIDTH` 记过同一条），所以要经 `AbsoluteLength::to_pixels` 换算一次。
+/// 384 不在 gpui 的固定 rem 档位表上（`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），而
+/// `PopupMenu::min_w` / `max_w` 是**固有方法**、收 `impl Into<Pixels>`（它们遮蔽了 `Styled` 的
+/// 同名方法），gpui 又**没有 `impl From<Rems> for Pixels`**（`crate::menu_bar` 的
+/// `PANEL_MIN_WIDTH_SPEC` 记过同一条），所以要经 [`crate::rem_px`] 按**运行时** rem 基准换算一次。
 const PANEL_WIDTH_SPEC: f32 = 384.;
 
 /// 面板最大高 520：`max-h-[min(32.5rem,calc(100vh-3rem))]`（`title-project-menu.tsx:170`）。
@@ -217,10 +217,11 @@ const PANEL_WINDOW_MARGIN_SPEC: f32 = 8.;
 
 /// 圆角 6.4：真源的 `rounded-md` = `--radius × 0.8` = `8 × 0.8`（`styles/theme.css:7,134`）。
 ///
-/// ⚠️ **保留 `px(...)`**：6.4 不在 4px 网格上，gpui 的 `rounded_md()` 是 6（Tailwind 默认梯度），
+/// 6.4 不在 4px 网格上，gpui 的 `rounded_md()` 是 6（Tailwind 默认梯度），
 /// 也不能从 `ThemeConfig.radius` 读（那是 `usize`，装不下 6.4）。与 `crate::project_tabs` 的
-/// `TAB_RADIUS`、`crate::menu_bar` 的 `ITEM_RADIUS` 同一条。
-const ROW_RADIUS: Pixels = px(6.4);
+/// `TAB_RADIUS_SPEC`、`crate::menu_bar` 的 `ITEM_RADIUS_SPEC` 同一条。
+/// `Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写 `rems(ROW_RADIUS_SPEC / 16.)`。
+const ROW_RADIUS_SPEC: f32 = 6.4;
 
 /// 动作行高 32：`min-h-8`（`title-project-menu.tsx:174,181,188`）。
 ///
@@ -238,15 +239,6 @@ const ROW_BADGE_SIZE_SPEC: f32 = 28.;
 ///
 /// 真源那个容器里装的是应用 logo（见模块头），本侧按维护者截图改画徽标，尺寸沿用容器。
 const TRIGGER_BADGE_SIZE_SPEC: f32 = 20.;
-
-/// 把规格值（px）按当前 rem 基准求值：`rems(P / 16.)`。
-///
-/// ⚠️ 写成 `/ 4.` 是错的：gpui 的档位 helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，
-/// 1rem = 16px（主题的 `font.size`，`gpui/themes/lithe-dark.json:9`）。与
-/// `crate::command_palette::rem_px`、`crate::settings` 的同名 helper 逐字同一条口径。
-fn rem_px(spec_px: f32) -> Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(px(16.))
-}
 
 // ---------------------------------------------------------------------------
 // 项目徽标（首字母 + 5 色哈希）
@@ -333,7 +325,7 @@ fn badge_view(badge: &ProjectBadge, size: Pixels) -> impl IntoElement {
         .items_center()
         .justify_center()
         .size(size)
-        .rounded(ROW_RADIUS)
+        .rounded(rems(ROW_RADIUS_SPEC / 16.))
         .bg(badge.tone())
         .text_color(Hsla::from(rgb(BADGE_FOREGROUND)))
         .text_size(rems(BADGE_FONT_SIZE_SPEC / 16.))
@@ -531,7 +523,7 @@ fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) ->
             .gap_2()
             .mx_neg_2()
             .px_2()
-            .rounded(ROW_RADIUS)
+            .rounded(rems(ROW_RADIUS_SPEC / 16.))
             // 图标 16×16：真源由 `[&_svg:not([class*='size-'])]:size-4` 决定
             // （`ui/dropdown.tsx:782`），`Icon` 侧显式 `.size_4()`（`Icon::xsmall()` 是 12）。
             .child(Icon::new(action.icon()).size_4().text_color(color))
@@ -607,8 +599,11 @@ fn project_row(entry: &ProjectEntry) -> PopupMenuItem {
     let path = entry.path.clone();
     let active = entry.active;
 
-    PopupMenuItem::element(move |_window, cx| {
+    PopupMenuItem::element(move |window, cx| {
         let theme = cx.theme();
+        // `badge_view` 收的是 `Pixels`（`Div::size` 之外还要传给自绘的容器），所以徽标尺寸
+        // 按**当帧的** rem 基准换算一次（`crate::rem_px`）；写死 16 就是假 rem。
+        let rem = window.rem_size();
         // 先取色再进闭包：`cx.theme()` 借 `cx`，而 `.when(..)` 的闭包也要用它。
         let accent = theme.accent;
         let foreground = theme.foreground;
@@ -622,12 +617,12 @@ fn project_row(entry: &ProjectEntry) -> PopupMenuItem {
             .mx_neg_2()
             .px_2()
             .py_1p5()
-            .rounded(ROW_RADIUS)
+            .rounded(rems(ROW_RADIUS_SPEC / 16.))
             // 当前项常态高亮：真源 `active && "bg-selected text-foreground"`（`:96`）。
             // gpui-kit 没有 `selected` 这个 token，语义最近的是 `accent`（`crate::project_tabs`
             // 的选中标签底、`crate::activity_bar` 同一取值）。
             .when(active, |this| this.bg(accent))
-            .child(badge_view(&badge, rem_px(ROW_BADGE_SIZE_SPEC)))
+            .child(badge_view(&badge, crate::rem_px(rem, ROW_BADGE_SIZE_SPEC)))
             .child(
                 // `min-w-0` 是 flex 子项能被压缩的前提（真源 `span.min-w-0.flex-1`，`:100`），
                 // 右侧勾 `shrink-0`，路径因此是**尾部省略**（真源 `truncate`，`:102`：
@@ -736,10 +731,12 @@ fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) 
     let name: SharedString = entry.name.clone().into();
     let path_text = entry.path.clone();
     let path = std::path::PathBuf::from(entry.path.clone());
-    let item = PopupMenuItem::element(move |_window, cx| {
+    let item = PopupMenuItem::element(move |window, cx| {
         let theme = cx.theme();
         let foreground = theme.foreground;
         let muted = theme.muted_foreground;
+        // 徽标尺寸按**当帧的** rem 基准换算（与 [`project_row`] 同一条，见 [`crate::rem_px`]）。
+        let rem = window.rem_size();
 
         h_flex()
             .w_full()
@@ -748,8 +745,8 @@ fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) 
             .mx_neg_2()
             .px_2()
             .py_1p5()
-            .rounded(ROW_RADIUS)
-            .child(badge_view(&badge, rem_px(ROW_BADGE_SIZE_SPEC)))
+            .rounded(rems(ROW_RADIUS_SPEC / 16.))
+            .child(badge_view(&badge, crate::rem_px(rem, ROW_BADGE_SIZE_SPEC)))
             .child(
                 v_flex()
                     .flex_1()
@@ -802,13 +799,16 @@ fn build_popup(
 ) -> Entity<PopupMenu> {
     let entries = entries.to_vec();
     let recent = recent.to_vec();
-    PopupMenu::build(window, cx, move |menu, _window, _cx| {
+    PopupMenu::build(window, cx, move |menu, window, _cx| {
+        // 面板三个尺寸都走 `PopupMenu` 的**固有** setter（只吃 `Pixels`，见
+        // [`PANEL_WIDTH_SPEC`] 的说明），所以按**当帧的** rem 基准换算一次。
+        let rem = window.rem_size();
         let mut menu = menu
             // 收起时把焦点还给外壳根元素（`PopupMenu::dismiss` 的 `action_context`，
             // `popup_menu.rs:1052-1072`），与 `crate::menu_bar` 同一做法。
             .action_context(action_context)
-            .min_w(rem_px(PANEL_WIDTH_SPEC))
-            .max_w(rem_px(PANEL_WIDTH_SPEC))
+            .min_w(crate::rem_px(rem, PANEL_WIDTH_SPEC))
+            .max_w(crate::rem_px(rem, PANEL_WIDTH_SPEC))
             // 真源 `max-h-[min(32.5rem,calc(100vh-3rem))]`（见 [`PANEL_MAX_HEIGHT_SPEC`]）。
             // `max_h` 只在 `scrollable(true)` 时生效（`popup_menu.rs:1488-1492`）。
             //
@@ -822,7 +822,7 @@ fn build_popup(
             // 代价是滚动条**常驻** 16 逻辑 px（v1 里内容只有 ~265，缩略块占满整条轨道）：
             // 换成"需要时才滚动"就得自己算内容高（行数 × 行高 + 间距），而那正是
             // `PopupMenu` 已经用 `max_h` + `overflow_y_scroll` 做对的事，不重复发明。
-            .max_h(rem_px(PANEL_MAX_HEIGHT_SPEC))
+            .max_h(crate::rem_px(rem, PANEL_MAX_HEIGHT_SPEC))
             .scrollable(true);
 
         // 段 ①：三条动作（「打开…」可点，另两条禁用，理由见 [`action_row`]）。
@@ -868,13 +868,20 @@ fn build_popup(
 /// `margin` 8 = `collisionPadding`（同处）、`Align::Start` = `align="start"`。
 /// `occlude()` 不可省：不遮挡的话面板下面的标题栏拖拽区会继续吃鼠标事件
 /// （`crate::menu_bar` 的同一处结论）。
-fn popup_for(popup: Entity<PopupMenu>, trigger_bounds: Bounds<Pixels>) -> impl IntoElement {
+///
+/// `rem` 是**运行时** rem 基准（调用方从 `window.rem_size()` 取）：`Positioner::offset` /
+/// `margin` 是**固有方法**、只吃 `Pixels`，所以两个规格值经 [`crate::rem_px`] 换算。
+fn popup_for(
+    popup: Entity<PopupMenu>,
+    trigger_bounds: Bounds<Pixels>,
+    rem: Pixels,
+) -> impl IntoElement {
     deferred(
         Positioner::side(trigger_bounds)
             .placement(Placement::Bottom)
             .align(Align::Start)
-            .offset(px(PANEL_OFFSET_SPEC))
-            .margin(px(PANEL_WINDOW_MARGIN_SPEC))
+            .offset(crate::rem_px(rem, PANEL_OFFSET_SPEC))
+            .margin(crate::rem_px(rem, PANEL_WINDOW_MARGIN_SPEC))
             .occlude()
             .child(popup),
     )
@@ -1120,10 +1127,14 @@ pub fn handle() -> WeakEntity<ProjectMenu> {
 /// ⚠️ **展开时不给底色**：真源是 `ghost`，只有 hover 态（`ui/button.tsx:16`）。
 /// 若走 gpui-kit 的 `Popover::trigger`，它会替我们 `selected(is_open)`，
 /// 那在 ghost 上是一个 `secondary_active` 蓝底（`button.rs:1245`）—— 与真源不符，所以不接。
+///
+/// `rem` 是**运行时** rem 基准（调用方从 `window.rem_size()` 取）：`max_w` 走 `Styled`（直接写
+/// `rems`），但徽标尺寸要交给 [`badge_view`]、它收 `Pixels`，所以那一个经 [`crate::rem_px`]。
 fn trigger(
     entry: &ProjectEntry,
     open: bool,
     handle: WeakEntity<ProjectMenu>,
+    rem: Pixels,
     cx: &App,
 ) -> impl IntoElement {
     let theme = cx.theme();
@@ -1144,8 +1155,8 @@ fn trigger(
         .h_6()
         .px_2()
         .gap_1p5()
-        .max_w(rem_px(TRIGGER_MAX_WIDTH_SPEC))
-        .rounded(ROW_RADIUS)
+        .max_w(rems(TRIGGER_MAX_WIDTH_SPEC / 16.))
+        .rounded(rems(ROW_RADIUS_SPEC / 16.))
         .text_sm()
         .text_color(idle)
         .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
@@ -1158,7 +1169,7 @@ fn trigger(
         .on_click(move |_event: &ClickEvent, window: &mut Window, cx: &mut App| {
             let _ = handle.update(cx, |menu, cx| menu.toggle(window, cx));
         })
-        .child(badge_view(&badge, rem_px(TRIGGER_BADGE_SIZE_SPEC)))
+        .child(badge_view(&badge, crate::rem_px(rem, TRIGGER_BADGE_SIZE_SPEC)))
         // 项目名 `min-w-0 truncate`（真源 `:157`）：显示的是项目名本身，
         // `项目：{project}` 只是无障碍名（`:147`）。
         .child(div().min_w_0().truncate().child(name))
@@ -1248,11 +1259,14 @@ fn project_menu(
         diagnose_recent(recent);
     }
 
-    let trigger = trigger(&entries[0], open, handle(), cx).into_any_element();
+    // 触发器与面板的位置/尺寸都要按**当帧的** rem 基准换算（`project_menu` 收的是 `&mut Window`，
+    // 取基元只读、不影响后面的 `on_prepaint` 闭包）。
+    let rem = window.rem_size();
+    let trigger = trigger(&entries[0], open, handle(), rem, cx).into_any_element();
     // 面板要等触发器量过一次才画：位置是"触发器下方"，没量到就没法摆
     // （只影响第 1 帧，`on_prepaint` 里已经主动补了一帧）。
     let panel = match (menu.popup.clone(), menu.trigger_bounds.get()) {
-        (Some(popup), Some(trigger_bounds)) => Some(popup_for(popup, trigger_bounds)),
+        (Some(popup), Some(trigger_bounds)) => Some(popup_for(popup, trigger_bounds, rem)),
         _ => None,
     };
 
@@ -1495,8 +1509,9 @@ mod tests {
 
     /// 面板度量：384 宽 / 520 最大高（真源 `w-96` / `max-h-[min(32.5rem,…)]`）。
     ///
-    /// 这两个值是渲染期经 [`super::rem_px`] 换算的，所以这里钉的是规格常量本身
-    /// （换算函数另有 `crate::command_palette` 的同名实现与单测口径）。
+    /// 这两个值是渲染期经 [`crate::rem_px`]（按当帧 `window.rem_size()` 基准）换算的，所以这里
+    /// 钉的是规格常量本身；换算函数自身的"随基准缩放"判据在 `crate::tests` 的
+    /// `rem_px_scales_with_the_runtime_base` 里。
     #[test]
     fn panel_width_and_max_height_match_the_source() {
         assert_eq!(PANEL_WIDTH_SPEC, 384.);

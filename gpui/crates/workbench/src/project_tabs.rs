@@ -54,7 +54,7 @@
 //!
 //! ⚠️ **不要**用 gpui 的 `rounded_sm()`：gpui 的圆角梯度是 Tailwind 默认（`rems(0.25)` = 4px，
 //! `gpui-pre-macros-0.3.6/src/styles.rs:1240-1244`），与 Lithe 的 `--radius-sm` 4.8 不是一回事。
-//! 本模块一律显式写 `px(4.8)`。
+//! 本模块一律显式写 `rems(4.8 / 16.)`（`Styled::rounded*` 收 `impl Into<AbsoluteLength>`）。
 //!
 //! ## 主题 token 映射（一律走 `cx.theme()`，不写裸色值）
 //!
@@ -111,8 +111,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _};
 use gpui_kit::{
-    App, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, div, px, rems,
+    App, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, div, rems,
 };
 
 use lithe_gpui_shared::icons::{idea, idea_icon_svg_px};
@@ -148,36 +148,40 @@ use lithe_gpui_shared::tr_args;
 
 /// 标签最小宽度：`min-w-36` = 144px（`project-tab-bar.tsx:64`）。
 ///
-/// ⚠️ **保留 `px(...)`**：144 不在 gpui 的固定 rem 档位上（档位后缀是 `…_8()`=32、`_9()`=36、
-/// `_10()`=40 → `min_w_32()`=128 / `min_w_40()`=160；没有 `min_w_36()`）。
-const TAB_MIN_WIDTH: Pixels = px(144.);
+/// 144 不在 gpui 的固定 rem 档位上（档位后缀是 `…_8()`=32、`_9()`=36、`_10()`=40 →
+/// `min_w_32()`=128 / `min_w_40()`=160；没有 `min_w_36()`）—— 档位外就写 helper 底层的
+/// `rems(TAB_MIN_WIDTH_SPEC / 16.)`（默认 16px 基准下与 144 逐像素相等，且随主题字号缩放）。
+const TAB_MIN_WIDTH_SPEC: f32 = 144.;
 
 /// 标签最大宽度：`max-w-60` = 240px（`project-tab-bar.tsx:64`）。
 ///
-/// ⚠️ **保留 `px(...)`**：240 不在 gpui 的固定 rem 档位上（档位里 56 → 224、64 → 256，
+/// 240 不在 gpui 的固定 rem 档位上（档位里 56 → 224、64 → 256，
 /// `gpui-pre-macros-0.3.6/src/styles.rs:1043-1052`）。Tailwind v4 的任意整数档
-/// （`max-w-60`）在 gpui 里没有对应 helper，不能自己发明一个。
-const TAB_MAX_WIDTH: Pixels = px(240.);
+/// （`max-w-60`）在 gpui 里没有对应 helper，不能自己发明一个 —— 同样写
+/// `rems(TAB_MAX_WIDTH_SPEC / 16.)`。
+const TAB_MAX_WIDTH_SPEC: f32 = 240.;
 
 /// 标签圆角：`rounded-sm` = `calc(var(--radius) * 0.6)` = `8px × 0.6` = **4.8px**
 /// （`styles/theme.css:6`、`:134`）。
 ///
-/// ⚠️ **保留 `px(...)`**，两条理由都可核对：
+/// 两条理由都可核对：
 /// 1. 4.8 **不是** gpui 的 rem 档位（gpui 的 `rounded_sm()` 是 4px，`styles.rs:1240-1244`）；
 /// 2. 也不能从主题读：`ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
 ///    装不下 4.8 / 6.4；而把主题半径调成 8 会让**所有** gpui-kit 组件的圆角从 6 变成 8，
 ///    离 Lithe 的 `rounded-md`(6.4) 反而更远。
 ///
-/// 所以 Lithe 的圆角阶梯只能作为应用层命名常量，见模块头「圆角换算」。
-const TAB_RADIUS: Pixels = px(4.8);
+/// 所以 Lithe 的圆角阶梯只能作为应用层命名常量（见模块头「圆角换算」），调用点写
+/// `rems(TAB_RADIUS_SPEC / 16.)`。
+const TAB_RADIUS_SPEC: f32 = 4.8;
 
 /// 关闭按钮尺寸：24（`project-tab-bar.tsx:95` 的 `size=icon-xs`；gpui-kit 的 `Size::XSmall`
 /// 图标按钮默认只有 20×20，`gpui-component-0.6.6/src/button/button.rs:620`，所以显式传值）。
 ///
-/// ⚠️ **保留 `px(...)`**：这里走 `Sizable::with_size(impl Into<Size>)`，`Size` 只有
-/// `From<Pixels>`（`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`；
-/// 换成 `Size::XSmall` 会连带改掉内边距与图标尺寸，不是逐像素等价。
-const CLOSE_BUTTON_SIZE: Pixels = px(24.);
+/// ⚠️ 这里**必须**经 [`crate::rem_px`]：走的是 `Sizable::with_size(impl Into<Size>)`，`Size`
+/// 只有 `From<Pixels>`（`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`；
+/// 换成 `Size::XSmall` 会连带改掉内边距与图标尺寸，不是逐像素等价。基准取当帧的
+/// `window.rem_size()`。
+const CLOSE_BUTTON_SIZE_SPEC: f32 = 24.;
 
 /// 悬停底色透明度：Lithe 写 `hover:bg-accent/70`（`project-tab-bar.tsx:67`）。
 const HOVER_BG_ALPHA: f32 = 0.7;
@@ -225,8 +229,9 @@ impl ProjectTab {
 /// - `on_activate(index, window, cx)`：点击某个**未选中**的标签时调用
 ///   （点已选中标签是 no-op，`project-tab-bar.tsx:60`）；
 /// - `on_close(index, window, cx)`：点击某个标签的关闭按钮时调用；
-/// - `window` / `cx`：宿主窗口与应用上下文。本实现只用 `cx` 读主题 token，`window` 按契约保留
-///   （无状态 ⇒ 没有要缓存的焦点/滚动句柄），故以 `_window` 命名。
+/// - `window` / `cx`：宿主窗口与应用上下文。`window` 用于取**运行时 rem 基准**
+///   （`window.rem_size()`）：关闭按钮的 `Sizable::with_size` 只吃 `Pixels`（见
+///   [`CLOSE_BUTTON_SIZE_SPEC`]），其余度量直接写 `rems(P / 16.)`。
 ///
 /// 返回元素**不含**「单项目时隐藏」的判断 —— 那是调用方的条件（`project-tab-bar.tsx:37`、
 /// `project-tab-bar-model.ts:12-13`），本模块只负责画。
@@ -235,11 +240,12 @@ pub fn project_tabs(
     active: Option<usize>,
     on_activate: impl Fn(usize, &mut Window, &mut App) + 'static,
     on_close: impl Fn(usize, &mut Window, &mut App) + 'static,
-    _window: &Window,
+    window: &Window,
     cx: &App,
 ) -> impl IntoElement {
     // 回调用 `Rc` 分发：契约给的是 `Fn`（可重复调用），而 `Div::on_click` 要的是 `'static`
     // 的 `Fn`，每个标签都要自己的一份所有权。
+    let rem = window.rem_size();
     let on_activate: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(on_activate);
     let on_close: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(on_close);
 
@@ -279,13 +285,13 @@ pub fn project_tabs(
                     let mut label = h_flex()
                         .id(("project-tab", index))
                         .h_7()
-                        .min_w(TAB_MIN_WIDTH)
-                        .max_w(TAB_MAX_WIDTH)
+                        .min_w(rems(TAB_MIN_WIDTH_SPEC / 16.))
+                        .max_w(rems(TAB_MAX_WIDTH_SPEC / 16.))
                         .items_center()
                         .gap_1p5()
                         .pl_2p5()
                         .pr_8()
-                        .rounded(TAB_RADIUS)
+                        .rounded(rems(TAB_RADIUS_SPEC / 16.))
                         .text_sm()
                         .overflow_hidden()
                         .whitespace_nowrap()
@@ -344,7 +350,7 @@ pub fn project_tabs(
                                 .left_1p5()
                                 .right_1p5()
                                 .h_0p5()
-                                .rounded_t(TAB_RADIUS)
+                                .rounded_t(rems(TAB_RADIUS_SPEC / 16.))
                                 .bg(primary),
                         );
                     }
@@ -375,8 +381,8 @@ pub fn project_tabs(
                                 .ghost()
                                 // `Sizable::with_size(impl Into<Size>)`；`Pixels` 经
                                 // `From<Pixels> for Size` 变成 `Size::Size(24)`。`Size` 没有
-                                // `From<Rems>`，所以这一处保留 `px(...)`（见常量注释）。
-                                .with_size(CLOSE_BUTTON_SIZE)
+                                // `From<Rems>`，所以这一处按当帧 rem 基准换算（见常量注释）。
+                                .with_size(crate::rem_px(rem, CLOSE_BUTTON_SIZE_SPEC))
                                 // 文案逐字取下 Windows 中文包：`titleProject.closeProject`
                                 // = "关闭项目 {name}"（`windows/tauri/src/i18n/locale.ts:6188`）。
                                 .tooltip(tr_args(

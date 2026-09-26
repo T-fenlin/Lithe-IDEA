@@ -56,15 +56,17 @@
 //! | --- | --- | --- | --- |
 //! | 面板宽 | `w-[min(44rem,calc(100vw-2rem))]` = 704 | `ui/command.tsx:29` | `rems(704. / 16.)`（档位外，见下） |
 //! | 面板最大高 | `max-h-[min(68vh,32rem)]` = 512 | 同上 | `rems(512. / 16.)` → `Dialog` 的 `.max_h()` |
-//! | 距窗口顶 | `pt-16` = 16 | `ui/command.tsx:143`（`items-start justify-center pt-16`） | `Dialog::margin_top(px(16.))` |
+//! | 距窗口顶 | `pt-16` = 16 | `ui/command.tsx:143`（`items-start justify-center pt-16`） | `crate::rem_px(window.rem_size(), 16.)`（`Dialog::margin_top` 是固有方法，只吃 `Pixels`） |
 //! | 行样式 | 最小 32、圆角 8、`px-2.5 py-2`、标签 + 描述两层 | `ui/command.tsx:41,528-537` | `CommandItem::child` 自绘（见 `ShellWorkspace::command_actions`） |
 //! | 搜索行 / 空态 / 行高亮 | 组件自己 | `command/state.rs:841-858,773-788` | 交给 `Command`（成熟实现，不重做） |
 //!
 //! 704 / 512 都不在 gpui 的固定档位上（`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），
 //! 按《编码指南》写成 helper 底层的 `rems(P / 16.)`（**不是** `/ 4.`：rem base = 16px）。
-//! `Dialog::width` / `margin_top` 只收 `Pixels`（`dialog/dialog.rs:395,413`），而 gpui 没有
+//! `Dialog::width` / `margin_top` 是**固有方法**、只收 `Pixels`（`dialog/dialog.rs:395,413`；
+//! 它们遮蔽了收 `impl Into<AbsoluteLength>` 的 `Styled` 同名方法），而 gpui 没有
 //! `impl From<Rems> for Pixels`，所以照 `lithe_gpui_settings::dialog` 的做法走
-//! `AbsoluteLength::to_pixels(rem_size)`（`gpui-pre-0.3.6/src/geometry.rs:3361`）。
+//! [`crate::rem_px`]（`AbsoluteLength::to_pixels`，`gpui-pre-0.3.6/src/geometry.rs:3361`），
+//! 基准取**当帧的** `window.rem_size()` —— 写死 `px(16.)` 就是假 rem。
 //!
 //! ## 与真源的差异（有意，逐条）
 //!
@@ -91,8 +93,8 @@ use gpui_kit::base::v_flex;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::{
-    AbsoluteLength, App, AppContext as _, Context, DefiniteLength, Entity, IntoElement, KeyBinding,
-    ParentElement as _, Render, SharedString, Styled as _, WeakEntity, Window, div, px, rems,
+    App, AppContext as _, Context, DefiniteLength, Entity, IntoElement, KeyBinding,
+    ParentElement as _, Render, SharedString, Styled as _, WeakEntity, Window, div, rems,
 };
 
 use lithe_gpui_shared::tr;
@@ -329,16 +331,9 @@ const PANEL_WIDTH: f32 = 704.;
 const PANEL_MAX_HEIGHT: f32 = 512.;
 /// 距窗口顶 16：`ui/command.tsx:143` 的 `pt-16`。
 ///
-/// 16 正好在 gpui 的档位上，但 `Dialog::margin_top` 只收 `Pixels`，所以直接给 `px(16.)`。
+/// 16 正好在 gpui 的档位上，但 `Dialog::margin_top` 是**固有方法**、只收 `Pixels`，所以调用点
+/// 写 [`crate::rem_px`]（`window.rem_size()` 作基准），不能直接给 `rems`。
 const PANEL_TOP_INSET: f32 = 16.;
-
-/// 把规格值（px）按当前 rem 基准求值：`rems(P / 16.)`。
-///
-/// 写成 `/ 4.` 是错的：gpui 的 rem 档位 helper 后缀 `N` = `N × 0.25rem`，而这里的 `P`
-/// 是**像素**，1rem = 16px（主题的 `font.size`，`gpui/themes/lithe-dark.json:9`）。
-fn rem_px(spec_px: f32) -> gpui_kit::Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(px(16.))
-}
 
 /// 打开命令面板。**只能从事件回调或任务里调用**（`render` 阶段会 panic，见模块文档）。
 ///
@@ -358,15 +353,18 @@ pub fn open_command_palette(window: &mut Window, cx: &mut App) {
     // 打开后要把焦点交给搜索框（理由见 `PENDING_FOCUS`）：在渲染里做，因为只有那一刻
     // `Command` 的输入框才在元素树上。
     PENDING_FOCUS.with(|slot| *slot.borrow_mut() = true);
-    window.open_dialog(cx, move |dialog, _window, _cx| {
+    window.open_dialog(cx, move |dialog, window, _cx| {
+        // `Dialog::width` / `Dialog::margin_top` 是**固有方法**、只吃 `Pixels`（见模块头「度量」），
+        // 所以按**当帧的** rem 基准换算；写死 16 就是假 rem（基准一变就不跟着缩放）。
+        let rem = window.rem_size();
         dialog
             // 面板整个由 `Command` 自己画：搜索行、列表、圆角与边框都不要 Dialog 的。
             .close_button(false)
             .overlay(true)
             .overlay_closable(true)
             .keyboard(true)
-            .width(rem_px(PANEL_WIDTH))
-            .margin_top(px(PANEL_TOP_INSET))
+            .width(crate::rem_px(rem, PANEL_WIDTH))
+            .margin_top(crate::rem_px(rem, PANEL_TOP_INSET))
             .p_0()
             .content({
                 let palette = palette.clone();

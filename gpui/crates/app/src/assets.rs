@@ -30,12 +30,16 @@
 //!
 //! ## 内嵌范围与代价
 //!
-//! 嵌的是 `gpui/assets/**` **减去三套未接线的图标包**。`LitheAssets::iter().count()` 实测
-//! **270 个文件** = **269 个资源文件**（`icons/**` 7 个位图 + `images/logo.png` 1 个
-//! + `ui-icons/**` 157 个 SVG + `icon-themes/idea/**` 104 个文件）**+ 本目录根部的 `README.md`**
-//! （它也在 `#[folder]` 下面，所以也会被嵌）。资源本身合计 **3 200 771 字节（约 3.05 MiB）**
-//! ——`README.md` 的体积随文档编辑变化，不并进这个口径（`mod tests` 里的统计也按同样方式排除它）。
-//! 收窄前是 `gpui/assets/**` 全量 **1 203 个文件 / 8 561 207 字节（约 8.16 MiB）**。
+//! 嵌的是 `gpui/assets/**` **减去三套未接线的图标包，再减去根目录的 `README.md`**。
+//! `LitheAssets::iter().count()` 实测 **269 个文件** = **269 个资源文件**（`icons/**` 7 个位图
+//! + `images/logo.png` 1 个 + `ui-icons/**` 157 个 SVG + `icon-themes/idea/**` 104 个文件），
+//! 合计 **3 200 771 字节（约 3.05 MiB）**。
+//!
+//! `README.md`（29 798 字节）由 `#[exclude]` 挡在二进制外：它是**文档不是资源**，
+//! 而且它一变，所有"总文件数 / 总字节数"就跟着漂 —— 它挂在 `#[folder]` 范围内的那段时间里，
+//! 本模块文档的"收窄前总量"就被追加内容带偏过（`8 561 207` 是旧读数，实测已是 `8 567 891`）。
+//! 收窄前是 `gpui/assets/**` 全量（含 `README.md` 与三套死载荷）**1 203 个文件 /
+//! 8 567 891 字节（约 8.17 MiB）**。
 //! 这样"资源在 `gpui/assets` 下"就是一条统一规则，不需要每加一批资源就改一次 `#[include]`。
 //! 代价是二进制体积（SVG 压缩率高，实测影响见 `gpui/research/icon-asset-inventory.md` 的接线一节）。
 //! 想再收窄范围，`#[exclude]` / `#[include]` 是唯一的开关位置（见 `LitheAssets` 的属性）。
@@ -84,11 +88,16 @@ use gpui_kit::{AssetSource, Result, SharedString};
 /// 已打开同一份；见 `rust-embed-impl-8.12.0/src/lib.rs:441-451` 与
 /// `rust-embed-utils-8.12.0/src/lib.rs:189-224`：`is_path_included = !exclude.matches && include.is_empty_or_matches`）。
 /// 可重复出现，只影响**编译期内嵌**，不动磁盘文件。理由见模块文档。
+///
+/// `README.md` 是**文档不是资源**：它挂在 `#[folder]` 范围内就会进二进制，而且每编辑一次
+/// 「内嵌总文件数 / 总字节数」就跟着变（模块文档里的总量曾经因此漂过一次）。这里 1:1 排除它 ——
+/// globset 对 `README.md` 这种不带通配符的模式就是**精确匹配**该相对路径。
 #[derive(rust_embed::RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../assets"]
 #[exclude = "icon-themes/lithe/**"]
 #[exclude = "icon-themes/pierre/**"]
 #[exclude = "icon-themes/symbols/**"]
+#[exclude = "README.md"]
 pub struct LitheAssets;
 
 impl LitheAssets {
@@ -269,7 +278,8 @@ mod tests {
     ///
     /// 这里的数字是**刻意的变更检测器**：资源增减本来就要同步更新模块文档的口径，
     /// 于是也让这条测试失败一次，强迫那个改动是有意的（而不是 `#[exclude]` 写错导致的静默漏嵌）。
-    /// 唯一放宽的是字节数——只钉"三套死载荷确实不在里面"这个大界限，不逐字复刻体积。
+    /// 文件数、分组数、**总字节数**都逐字钉住（字节数是本轮从"只钉上界"收紧成精确值的：
+    /// 精确值同时蕴含原来那条"不得高于 5 000 000 字节"的死载荷上界断言）。
     #[test]
     fn embedded_range_stays_within_the_documented_envelope() {
         let count = LitheAssets::embedded_count();
@@ -282,7 +292,7 @@ mod tests {
             LitheAssets::embedded_count_under("images/"),
         );
 
-        // 内嵌范围只应是这四组 + 根目录的 `README.md`（它也在 `#[folder]` 下面）。
+        // 内嵌范围只应是这四组：`README.md` 由 `#[exclude]` 挡在表外，所以这里**没有**例外项。
         // 出现别的路径说明 `gpui/assets/` 下多了新目录，那要么该加 `#[exclude]`、要么该更新文档。
         let known_groups = ["ui-icons/", "icon-themes/", "icons/", "images/"];
         let paths = embedded_paths();
@@ -291,10 +301,9 @@ mod tests {
             .filter(|path| !known_groups.iter().any(|group| path.starts_with(group)))
             .map(String::as_str)
             .collect();
-        assert_eq!(
-            ungrouped,
-            vec!["README.md"],
-            "四组之外只允许存在根目录 `README.md`"
+        assert!(
+            ungrouped.is_empty(),
+            "四组之外不应存在任何路径（`README.md` 已被 `#[exclude]` 排除），实得 {ungrouped:?}"
         );
 
         assert_eq!(
@@ -317,13 +326,15 @@ mod tests {
             1,
             "`images/**` 只有品牌 logo 一个文件"
         );
-        assert_eq!(count, 270, "收窄后的内嵌总数（269 个资源 + 根 `README.md`）");
+        assert_eq!(
+            count, 269,
+            "排除 `README.md` 后的内嵌总数（7 + 1 + 157 + 104 = 269 个资源文件）"
+        );
 
         // 本 crate 没有打开 rust-embed 的 `compression` 特性，所以内嵌字节数 == 源文件长度之和，
-        // 可以直接用 `get()` 实测。这里**排除根部 `README.md`**：它就是文档本身，体积随编辑变化，
-        // 混进来会让"资源总量"这个口径每天都在动。打印出来是为了让模块文档里那组数字可核对。
+        // 可以直接用 `get()` 实测。`README.md` 已经不在表里，所以这里的和就是"资源总量"本身，
+        // 不需要再按名字过滤。打印出来是为了让模块文档里那组数字可核对。
         let resource_bytes: usize = <LitheAssets as rust_embed::RustEmbed>::iter()
-            .filter(|name| name.as_ref() != "README.md")
             .filter_map(|name| {
                 <LitheAssets as rust_embed::RustEmbed>::get(&name).map(|file| file.data.len())
             })
@@ -332,10 +343,30 @@ mod tests {
             "embedded resource bytes = {resource_bytes} ({:.2} MiB)",
             resource_bytes as f64 / 1_048_576.0
         );
-        // 三套死载荷本身就是 5 337 322 字节，排除后总量必须明显低于这个数。
+        // 三套死载荷合计 5 337 322 字节：精确钉住 3 200 771 已经蕴含"它们一个都不在里面"。
+        assert_eq!(
+            resource_bytes, 3_200_771,
+            "内嵌资源字节数应精确等于 269 个资源文件之和；若变大，先查三套死载荷（合计 5 337 322 字节）\
+             是不是又进来了，再查是不是有资源被整体替换成了更大的版本"
+        );
+    }
+
+    /// 回归：根目录的 `README.md` **不得**再进内嵌表。
+    ///
+    /// 保护两件不会让编译或别的测试失败的事：
+    ///
+    /// 1. `#[exclude = "README.md"]` 被误删/写错（例如写成 `readme.md`、或加上 `**/` 前缀后
+    ///    反而匹配不到根路径）—— 那样它又会被嵌进二进制，而且每编辑一次文档就改一次
+    ///    「内嵌总文件数与总字节数」这个口径；
+    /// 2. 上面那条总量断言被"顺手放宽"成只钉近似值 —— 这条单独把"表里没有 README.md"
+    ///    变成可执行的判据。
+    #[test]
+    fn the_readme_is_not_embedded() {
+        let paths = embedded_paths();
         assert!(
-            resource_bytes < 5_000_000,
-            "内嵌资源字节数 {resource_bytes} 说明三套死载荷至少有一套又进来了（它们合计 5 337 322 字节）"
+            !paths.iter().any(|path| path == "README.md"),
+            "`README.md` 是文档不是资源，必须由 `#[exclude]` 挡在二进制外（当前内嵌 {} 个路径）",
+            paths.len()
         );
     }
 

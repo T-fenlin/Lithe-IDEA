@@ -73,14 +73,14 @@ use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as
 use gpui_kit::component::{ActiveTheme as _, Placement, Selectable as _};
 use gpui_kit::{
     AnyElement, App, ClickEvent, ElementId, IntoElement, Length, ParentElement as _, Pixels,
-    SharedString, Styled as _, Window, div, px, rems,
+    SharedString, Styled as _, Window, div, rems,
 };
 use lithe_gpui_shared::icons::idea;
 
 /// 折叠态 rail 宽（`main-sidebar.tsx:97`）。展开态是 160（140–320），本函数不画。
 ///
-/// ⚠️ **保留 `px(...)`**：38 不在 gpui 的 rem 档位上（档位里 `_9()`=36、`_10()`=40），
-/// 且它参与 `column_width = 38 + 4` 的盒宽算术，没有对应的固定 helper。
+/// 38 不在 gpui 的 rem 档位上（档位里 `_9()`=36、`_10()`=40），所以调用点写 helper 底层的
+/// `rems(38. / 16.)`（见 `column_width` 的算术：它先与 `WORKBENCH_GAP` 相加，再整体换算）。
 const COLLAPSED_WIDTH: f32 = 38.;
 /// 外壳里各栏之间的固定间隔 `--lithe-workbench-gap`
 /// （`windows/tauri/src/styles/theme.css:125`；rails 用 `main-sidebar.tsx:588-590`、
@@ -88,28 +88,31 @@ const COLLAPSED_WIDTH: f32 = 38.;
 const WORKBENCH_GAP: f32 = 4.;
 /// 左 rail 图标项盒宽：42（38 + 4）− 左右内衬 16 = 26（`main-sidebar.tsx:610-611`）。
 ///
-/// ⚠️ **保留 `px(...)`**：26 不在 gpui 的 rem 档位上（档位里 `_6()`=24、`_7()`=28）。
+/// 26 不在 gpui 的 rem 档位上（档位里 `_6()`=24、`_7()`=28）—— 那正是调用点写
+/// `rems(26. / 16.)` 的理由，不是保留 `px(...)` 的理由。
 const LEFT_ITEM_WIDTH: f32 = 26.;
 /// 左 rail 图标项盒高 `min-h-6`（`main-sidebar.tsx:332` 覆盖掉组件的 `--lithe-tab-height`）= 24。
 /// 24 在 rem 档位上（见 `item_button` 里的 `rems(LEFT_ITEM_HEIGHT / 16.)`，与 `h_6()` 同值）。
 const LEFT_ITEM_HEIGHT: f32 = 24.;
 /// 左 rail 圆角 `--lithe-chrome-radius`（`theme.css:133`，= 4）。
 ///
-/// ⚠️ **保留 `px(...)`**：这是 Lithe 自己的圆角规格（不是 gpui 的 rem 档位）——
-/// 见 [`crate::project_tabs`] 模块头「圆角换算」；`ThemeConfig.radius` 是 `usize`
-/// （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），也表达不了 Lithe 的
-/// `--radius × k` 阶梯。
+/// 这是 Lithe 自己的圆角规格（不是 gpui 的 rem 档位）—— 见 [`crate::project_tabs`] 模块头
+/// 「圆角换算」；`ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
+/// 也表达不了 Lithe 的 `--radius × k` 阶梯。调用点走 [`crate::rem_px`]（**不是**直接写
+/// `rems(4. / 16.)`）：`Button::rounded` 是**固有方法**、只吃 `Pixels`。
 const LEFT_ITEM_RADIUS: f32 = 4.;
 /// 右 rail 图标项 `Button variant=ghost size=icon-sm`（`plugin-activity-rail.tsx:39`）= 28×28。
 /// 28 在 rem 档位上，调用点写 `rems(1.75)`（= `size_7()`，值随 `side` 变化所以套不了固定 helper）。
 const RIGHT_ITEM_SIZE: f32 = 28.;
 /// 右 rail 图标项圆角 `rounded-sm`（`plugin-activity-rail.tsx:45`）= 4.8。
 ///
-/// ⚠️ **保留 `px(...)`**：4.8 不是 gpui 的 rem 档位（`rounded_sm()` 是 4），理由同上。
+/// 4.8 不是 gpui 的 rem 档位（`rounded_sm()` 是 4），理由同上。它同样挂在 `Button::rounded`
+/// 上（固有方法、只吃 `Pixels`），所以调用点也走 [`crate::rem_px`]。
 const RIGHT_ITEM_RADIUS: f32 = 4.8;
 /// 右 rail 容器的右上/右下圆角 `rounded-r-xl`（`plugin-activity-rail.tsx:34`）= 11.2。
 ///
-/// ⚠️ **保留 `px(...)`**：11.2 不是 gpui 的 rem 档位（`rounded_xl()` 是 12），理由同上。
+/// 11.2 不是 gpui 的 rem 档位（`rounded_xl()` 是 12），理由同上。这里挂在 `div` 上，
+/// `Styled::rounded_r` 收 `impl Into<AbsoluteLength>`，所以调用点直接写 `rems(11.2 / 16.)`。
 const RIGHT_RAIL_RADIUS: f32 = 11.2;
 /// 悬停底色不透明度：左 rail 是 `hover:bg-accent/70`（`ui/sidebar.tsx:241`）。
 const HOVER_OPACITY: f32 = 0.7;
@@ -225,15 +228,18 @@ impl ActivityItem {
 ///   （Enter / Space）时是 `None`，而 `Window::mouse_position()` 那种写法会给键盘激活配上一个
 ///   **上一次**指针位置的旧坐标，把"两行坐标相同 ⇒ 同一次派发"这条判据污染成假证据。
 ///
-/// `window` 按契约保留（当前实现不需要：tooltip / 焦点环都由 `Button` 内部处理）。
+/// `window` 只用于取**运行时 rem 基准**（`window.rem_size()`）：两个 rail 项的圆角挂在
+/// `Button::rounded` 上，而它是**固有方法**、只吃 `Pixels`（见 [`crate::rem_px`]）；
+/// tooltip / 焦点环本身仍由 `Button` 内部处理。
 pub fn activity_bar(
     side: ActivitySide,
     items: &[ActivityItem],
     is_active: impl Fn(usize) -> bool + 'static,
     on_select: impl Fn(usize, &ClickEvent, &mut Window, &mut App) + 'static,
-    _window: &Window,
+    window: &Window,
     cx: &App,
 ) -> impl IntoElement {
+    let rem = window.rem_size();
     let on_select: Rc<dyn Fn(usize, &ClickEvent, &mut Window, &mut App)> = Rc::new(on_select);
     // `is_active` 被每个项借用一次，而每个 `item_button` 只读借用，所以包一层 `Rc` 共享
     // （`Rc<dyn Fn>` 而不是 `&dyn Fn`：同一份谓词要在两个组里各用一遍）。
@@ -245,7 +251,8 @@ pub fn activity_bar(
         .enumerate()
         .filter(|(_, item)| !item.bottom)
         .map(|(index, item)| {
-            item_button(side, index, item, &*is_active, on_select.clone(), cx).into_any_element()
+            item_button(side, index, item, &*is_active, on_select.clone(), rem, cx)
+                .into_any_element()
         })
         .collect();
     let bottom_items: Vec<AnyElement> = items
@@ -253,7 +260,8 @@ pub fn activity_bar(
         .enumerate()
         .filter(|(_, item)| item.bottom)
         .map(|(index, item)| {
-            item_button(side, index, item, &*is_active, on_select.clone(), cx).into_any_element()
+            item_button(side, index, item, &*is_active, on_select.clone(), rem, cx)
+                .into_any_element()
         })
         .collect();
     let has_bottom_group = !bottom_items.is_empty();
@@ -301,8 +309,9 @@ pub fn activity_bar(
         .flex_col()
         .items_center()
         .h_full()
-        // 42 = 38 + 4：不在 gpui 的 rem 档位上，且是运行时算出来的值，保留 `px(...)`。
-        .w(px(column_width))
+        // 42 = 38 + 4：运行时算出来的值，档位表里也没有 42，所以按 helper 底层的
+        // `rems(P / 16.)` 表达（基准 16px 时与 `px(42.)` 逐像素相等，且随主题字号缩放）。
+        .w(rems(column_width / 16.))
         .flex_shrink_0()
         .overflow_hidden()
         .child(top_group);
@@ -316,7 +325,7 @@ pub fn activity_bar(
         rail = rail
             .border_r_1()
             .border_color(border)
-            .rounded_r(px(RIGHT_RAIL_RADIUS));
+            .rounded_r(rems(RIGHT_RAIL_RADIUS / 16.));
     }
 
     // 外侧 4px 间隔：Windows 放在父 flex row 的 `pr-(--lithe-workbench-gap)` 上
@@ -351,6 +360,7 @@ fn item_button(
     item: &ActivityItem,
     is_active: &dyn Fn(usize) -> bool,
     on_select: Rc<dyn Fn(usize, &ClickEvent, &mut Window, &mut App)>,
+    rem: Pixels,
     cx: &App,
 ) -> Button {
     let theme = cx.theme();
@@ -363,17 +373,19 @@ fn item_button(
     // tooltip 朝栏内：左 rail `tooltipSide="right"`、右 rail `"left"`
     // （`sidebar-pane-selector.tsx:106`、`plugin-activity-rail.tsx:42`）。
     // 宽度/高度是随 `side` 变化的运行时值，两边类型要一致，所以统一收敛到 `Length`：
-    // px 值走 `rems(P / 16.)`（与 `_N()` 同值），档位外的 26 保留 `px(...)`。
+    // 值本身走 helper 底层的 `rems(P / 16.)`（`Length: From<Rems>`，与 `_N()` 同一条口径）。
+    // 圆角不能这样写 —— `Button::rounded` 是**固有方法**（只吃 `Pixels`），会遮蔽
+    // `Styled::rounded`，所以经 [`crate::rem_px`] 按运行时基准换算。
     let (id_name, placement, width, height, radius): (&str, Placement, Length, Length, Pixels) =
         match side {
-            // 26×24：26 不在 gpui 的 rem 档位上（档位里 24 / 28），所以保留 `px(...)`；
+            // 26×24：26 不在 gpui 的 rem 档位上（档位里 24 / 28）→ `rems(26. / 16.)`；
             // 24 在档位上 → `rems(24. / 16.)` 与 `h_6()` 同值。
             ActivitySide::Left => (
                 "lithe-activity-bar-left",
                 Placement::Right,
-                px(LEFT_ITEM_WIDTH).into(),
+                rems(LEFT_ITEM_WIDTH / 16.).into(),
                 rems(LEFT_ITEM_HEIGHT / 16.).into(),
-                px(LEFT_ITEM_RADIUS),
+                crate::rem_px(rem, LEFT_ITEM_RADIUS),
             ),
             // 28 = `w-7` → `rems(28. / 16.)` 与 `size_7()` 同值。
             ActivitySide::Right => (
@@ -381,7 +393,7 @@ fn item_button(
                 Placement::Left,
                 rems(RIGHT_ITEM_SIZE / 16.).into(),
                 rems(RIGHT_ITEM_SIZE / 16.).into(),
-                px(RIGHT_ITEM_RADIUS),
+                crate::rem_px(rem, RIGHT_ITEM_RADIUS),
             ),
         };
 

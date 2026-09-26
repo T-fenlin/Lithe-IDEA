@@ -59,33 +59,42 @@
 //! `window.set_rem_size(cx.theme().font_size)`）。规格值来自 Windows 前端源码
 //! （`windows/tauri/src/styles/theme.css` 的 `--lithe-*` 令牌与各组件里的 Tailwind 值），
 //! 逐值搬过来才能与真机并排核对：标题栏 **40**（`h_10()`）、项目标签条 **32**（`h_8()`）、
-//! 活动栏 **38**（不在档位上，保留 `px(...)`）、状态栏 **24**（`h_6()`）、左栏 **320**（`w_80()`）、
-//! 右工具窗 **400**（`rems(400. / 16.)`，档位外但可换算成 rem）、工作区间隔 **4**（`gap_1()`）、
-//! 底部窗 **320**（`h_80()`）。
+//! 活动栏 **38**（`rems(38. / 16.)`）、状态栏 **24**（`h_6()`）、左栏 **320**（`w_80()`）、
+//! 右工具窗 **400**（`rems(400. / 16.)`）、工作区间隔 **4**（`gap_1()`）、底部窗 **320**（`h_80()`）。
 //! 每个值的出处写在使用点或 `crates/*/src/*.rs` 顶部的度量映射表里。
 //!
-//! **三类仍写 `px(...)` 的值**（每处都有注释说明，不是漏改）：
+//! **档位外的长度一律写 helper 底层的 `rems(P / 16.)`**（**不是** `/ 4.`）：gpui 的档位表是
+//! 编译期生成的固定列表（`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），例如
+//! 26 / 38 / 42 / 56 / 144 / 200 / 240 / 400 …Tailwind v4 的任意整数档在 gpui 里没有对应
+//! helper，不能自己发明一个 `w_100()`；但 `rems(P / 16.)` 在默认 16px 基准下与 `px(P)`
+//! 逐像素相等，同时随主题字号缩放。**不在档位上从来不是保留 `px(...)` 的理由** ——
+//! 它正是该写 `rems(P / 16.)` 的理由（`coding-guides.md:288` 的四类例外里没有这一条）。
 //!
-//! 1. **不在 gpui 固定档位上的长度**：gpui 的档位表是编译期生成的固定列表
-//!    （`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），例如 38 / 42 / 56 / 144 / 200 /
-//!    240 / 400 …Tailwind v4 的任意整数档在 gpui 里没有对应 helper，不能自己发明一个；
-//!    这类值按《编码指南》写成 helper 底层的 `rems(P / 16.)`（400 = `rems(25.)`），
-//!    rem base 16px 时与 `px(P)` 逐像素相等，同时随主题字号缩放；
+//! **必须先按运行时基准换算成 `Pixels` 的位置**走 [`rem_px`]（不要写 `px(N.)`）：
+//!
+//! 1. **固有方法只吃 `Pixels`**：`Dialog::width` / `Dialog::margin_top`、`PopupMenu::min_w` /
+//!    `max_w` / `max_h`、`Button::rounded`、`Sizable::with_size`、`Positioner::offset` /
+//!    `margin`。这些固有方法会**遮蔽** `Styled` 上的同名方法（`Styled` 那一版收
+//!    `impl Into<AbsoluteLength>`，本来可以直接写 `rems`），而 gpui **没有**
+//!    `impl From<Rems> for Pixels`，所以只能先按运行时 rem 基准求值一次；
 //! 2. **圆角**：Lithe 的圆角阶梯是 `--radius: 8px` 派生的 `calc(--radius × k)`
 //!    （`theme.css:6-12`：`sm` = 4.8、`md` = 6.4、`lg` = 8、`xl` = 11.2），**不在** 4px 网格上。
 //!    也不能改成读主题 —— `ThemeConfig.radius` 是 `usize`
 //!    （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 4.8 / 6.4；而把主题半径设成 8
 //!    会让**所有** gpui-kit 组件的圆角从 6 变成 8，反而离 Lithe 的 `rounded-md`(6.4) 更远。
-//!    所以圆角一律走应用层具名常量（`TAB_RADIUS` / `CHIP_RADIUS` / `ISLAND_RADIUS` / …），值不变；
+//!    所以圆角一律走应用层具名规格常量（`TAB_RADIUS_SPEC` / `CHIP_RADIUS_SPEC` /
+//!    `ISLAND_RADIUS_SPEC` / …），调用点写 `rems(C / 16.)`（`Styled::rounded*` 收
+//!    `impl Into<AbsoluteLength>`，档位外的圆角也一样不需要 `px`）；
 //! 3. **运行时算术**（例如活动栏的 `38 + 4 = 42`、树行的 `10 + depth × 16`）：没有固定的档位
-//!    helper 可套；其中档位内的部分写成 helper 底层的 `rems(N / 16.)`（不是 `/ 4.`：
-//!    rem base = 16px，所以 `rems(8. / 16.)` = 8px，值随主题基准字号缩放）。
+//!    helper 可套；同样写成 helper 底层的 `rems(N / 16.)`（`rems(8. / 16.)` = 8px），
+//!    值随主题基准字号缩放。
 //!
 //! **字号**：Lithe 的 UI 基准是 13px（`--app-ui-font-size` / `--ui-text-chrome` = 13px，
 //! `theme.css:112,115`），gpui 的字号位位只有 `text_xs()`=12 与 `text_sm()`=14，13 不在位位上。
 //! 按《编码指南》统一用 **`text_sm()`（14px）**——13 → 14 是经维护者确认的**有意**视觉改动
 //! （所有 chrome 文字 +1px），不是等价换算；位位内等价换算的是 12 → `text_xs()`、
-//! 16 → `text_base()`；10 / 11（徽章、日期列、等宽字号）不在位位上，保留 `px(...)`。
+//! 16 → `text_base()`；10 / 11 / 13（徽章、日期列、等宽字号）不在位位上，写
+//! `rems(10. / 16.)` 这类换算（见 `crate::branch_panel` 的 ahead/behind 箭头）。
 //!
 //! 颜色仍然一律走 `cx.theme()`（不写裸色值），这条没有偏离。
 //!
@@ -126,3 +135,45 @@ pub use workspace::{
     OpenDestination, ShellWorkspace, install_open_project_action, left_activity_index,
     set_shell_startup,
 };
+
+use gpui_kit::{AbsoluteLength, Pixels, rems};
+
+/// 把规格值（px）按**运行时 rem 基准**求值成 `Pixels`。
+///
+/// 只用在**固有方法只吃 `Pixels`** 的位置（`Dialog::width` / `Dialog::margin_top`、
+/// `PopupMenu::min_w` / `max_w` / `max_h`、`Button::rounded`、`Sizable::with_size`、
+/// `Positioner::offset` / `margin`）：这些固有方法遮蔽了 `Styled` 上的同名方法，而 gpui 没有
+/// `impl From<Rems> for Pixels`，所以必须自己换算。`Styled` 上的方法（`.w()` / `.h()` /
+/// `.rounded()` / `.margin_top()` …）收 `impl Into<AbsoluteLength>`，**那些位置直接写
+/// `rems(P / 16.)`**，不要绕这里。
+///
+/// ⚠️ `spec_px` 是**规格像素值**，不是 rem 数：rem base = 16px，所以除的是 `16.`
+/// （档位 helper 的后缀 `N` = `N × 0.25rem` 才是 4px 一档，别照那个写 `/ 4.`）。
+///
+/// ⚠️ `rem` 必须是**运行时基准**（`window.rem_size()`，或等价的 `cx.theme().font_size`；
+/// `Root::render` 每帧把它写进 `window.set_rem_size`）。写成 `to_pixels(px(16.))` 就是
+/// **假 rem**：看起来合规，实际把基准写死，界面字号一放大就不再跟着缩放。
+pub(crate) fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
+    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rem_px;
+    use gpui_kit::px;
+
+    /// [`rem_px`] 必须**随传入的运行时基准缩放**，而不是把 16px 写死。
+    ///
+    /// 只断言"16px 基准下等于规格值"证明不了这一点 —— 那正是「假 rem」
+    /// （`AbsoluteLength::from(rems(P / 16.)).to_pixels(px(16.))`）也会通过的断言。
+    /// 所以这里额外钉住"基准翻倍 ⇒ 结果翻倍"。
+    #[test]
+    fn rem_px_scales_with_the_runtime_base() {
+        let spec = 26.;
+        assert_eq!(rem_px(px(16.), spec), px(26.));
+        // 32px 基准（界面字号翻倍）下等比放大到 2 倍。
+        assert_eq!(rem_px(px(32.), spec), px(spec * 2.));
+        // 20px 基准（125% DPI 的常见值）下是 20 / 16 倍。
+        assert_eq!(rem_px(px(20.), 32.), px(40.));
+    }
+}

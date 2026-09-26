@@ -94,8 +94,8 @@ use gpui_kit::base::h_flex;
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    AnyElement, App, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, SharedString,
-    Styled as _, Window, prelude::FluentBuilder as _, px, rems,
+    AnyElement, App, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    Styled as _, Window, prelude::FluentBuilder as _, rems,
 };
 
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
@@ -120,17 +120,20 @@ use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
 
 /// 条目最大宽：`max-w-50` = 200px（`footer-status-chip.tsx:5`）。
 ///
-/// ⚠️ **保留 `px(...)`**：200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224，
+/// 200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224，
 /// `gpui-pre-macros-0.3.6/src/styles.rs:1039-1047`）；Tailwind v4 的任意整数档 `max-w-50`
-/// 在 gpui 里没有对应 helper，不能自己发明一个。
-const CHIP_MAX_WIDTH: Pixels = px(200.);
+/// 在 gpui 里没有对应 helper，不能自己发明一个 —— 档位外就写 helper 底层的
+/// `rems(CHIP_MAX_WIDTH_SPEC / 16.)`（`Styled::max_w` 收 `impl Into<Length>`，
+/// 而 `Length: From<Rems>`）。
+const CHIP_MAX_WIDTH_SPEC: f32 = 200.;
 
 /// 条目圆角：`rounded-md` = `--radius-md` = `calc(8px * 0.8)` = 6.4px（`styles/theme.css:7,134`）。
 ///
-/// ⚠️ **保留 `px(...)`**：6.4 **不是** gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px，
+/// 6.4 **不是** gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px，
 /// `gpui-pre-macros-0.3.6/src/styles.rs:1245-1249`）；也不能从主题读 —— `ThemeConfig.radius`
-/// 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 6.4。
-const CHIP_RADIUS: Pixels = px(6.4);
+/// 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 6.4。同样写
+/// `rems(CHIP_RADIUS_SPEC / 16.)`。
+const CHIP_RADIUS_SPEC: f32 = 6.4;
 
 /// 状态栏里的一个条目。
 ///
@@ -280,11 +283,11 @@ fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
     h_flex()
         .id(id)
         .h_6()
-        .max_w(CHIP_MAX_WIDTH)
+        .max_w(rems(CHIP_MAX_WIDTH_SPEC / 16.))
         .flex_shrink_0()
         .items_center()
         .gap_1()
-        .rounded(CHIP_RADIUS)
+        .rounded(rems(CHIP_RADIUS_SPEC / 16.))
         .px_1p5()
         .whitespace_nowrap()
         // `hover:bg-accent hover:text-foreground`（`footer-status-chip.tsx:5`）。

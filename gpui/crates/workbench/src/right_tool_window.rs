@@ -48,10 +48,10 @@
 //! | 头部内衬 | 12 | `px-3`（同上） | `px_3()` |
 //! | 头部图标与标题间距 | 8 | `gap-2`（`maven-pane.tsx:599`） | `gap_2()` |
 //! | 标题字号 | 13（`--ui-text-sm`） | `notifications-tool-window.tsx:347` | `text_sm()`（14；13→14 是经维护者确认的有意改动，见 `crate::workspace` 模块头） |
-//! | 关闭按钮 | 24×24、圆角 6.4 | `size="icon-xs"`（`notifications-tool-window.tsx:353`）、`rounded-md`（`ui/button.tsx:9`） | `size_6()` + `px(CLOSE_BUTTON_RADIUS)` |
+//! | 关闭按钮 | 24×24、圆角 6.4 | `size="icon-xs"`（`notifications-tool-window.tsx:353`）、`rounded-md`（`ui/button.tsx:9`） | `size_6()` + `crate::rem_px(cx.theme().font_size, CLOSE_BUTTON_RADIUS_SPEC)`（`Button::rounded` 是固有方法，只吃 `Pixels`） |
 //!
-//! 颜色一律 `cx.theme()`；圆角保留 `px(...)`，遵循仓库既有约定
-//! （Lithe 的圆角阶梯走应用层具名常量，见 `explorer_view.rs:87-93`）。
+//! 颜色一律 `cx.theme()`；圆角走应用层具名规格常量，按运行时 rem 基准换算
+//! （Lithe 的圆角阶梯不在 gpui 档位上，见 `explorer_view.rs:87-93`）。
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -66,16 +66,19 @@ use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
-    Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 
 use lithe_gpui_shared::tr;
 
 /// 关闭按钮圆角 6.4（`ui/button.tsx:9` 的 `rounded-md` = `--radius × 0.8`，`theme.css:7,134`）。
 ///
-/// ⚠️ **保留 `px(...)`**：6.4 不是 gpui 的 rem 档位（`rounded_md()` 是 6），且 Lithe 的圆角阶梯
-/// 一律走应用层具名常量 —— 与 `explorer_view.rs:87-93` 的 `HEADER_BUTTON_RADIUS` 同一条理由。
-const CLOSE_BUTTON_RADIUS: f32 = 6.4;
+/// 6.4 不是 gpui 的 rem 档位（`rounded_md()` 是 6），且 Lithe 的圆角阶梯一律走应用层具名常量
+/// —— 与 `explorer_view.rs:87-93` 的 `HEADER_BUTTON_RADIUS` 同一条理由。这一处挂在
+/// `Button::rounded` 上，它是**固有方法**（只吃 `Pixels`，`ButtonRounded` 只有 `From<Pixels>`），
+/// 所以调用点经 [`crate::rem_px`] 按运行时 rem 基准换算；本函数拿不到 `Window`，
+/// 基准取等价的 `cx.theme().font_size`（`Root::render` 每帧把它写进 `window.set_rem_size`）。
+const CLOSE_BUTTON_RADIUS_SPEC: f32 = 6.4;
 
 /// 右侧工具窗当前显示哪一个视图。
 ///
@@ -614,7 +617,10 @@ fn header(
                 .icon(IconName::X)
                 .tab_stop(false)
                 .size_6()
-                .rounded(px(CLOSE_BUTTON_RADIUS))
+                .rounded(crate::rem_px(
+                    cx.theme().font_size,
+                    CLOSE_BUTTON_RADIUS_SPEC,
+                ))
                 .tooltip(close_label.clone())
                 .accessibility_label(close_label)
                 .on_click(on_close),

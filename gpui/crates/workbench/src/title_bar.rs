@@ -56,7 +56,7 @@ use gpui_kit::base::h_flex;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
     AnyElement, App, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
-    Pixels, Styled as _, Window, WindowControlArea, div, px,
+    Styled as _, Window, WindowControlArea, div, rems,
 };
 
 // ---------------------------------------------------------------------------
@@ -86,10 +86,11 @@ use gpui_kit::{
 /// 单个窗口控件的宽度：`w-14` = 56px
 /// （`windows/tauri/src/features/window/components/title-bar/window-controls.tsx:59,71,85`）。
 ///
-/// ⚠️ **保留 `px(...)`**：56 不在 gpui 的固定 rem 档位上（档位后缀是 `…_11()`=44、`_12()`=48、
-/// `_16()`=64，`gpui-pre-macros-0.3.6/src/styles.rs:1003-1017`；没有 `_14()`）。
-/// Tailwind 的 `w-14` 是任意档位，gpui 的档位表里没有对应项，不能自己发明 helper。
-const WINDOW_CONTROL_WIDTH: Pixels = px(56.);
+/// 56 不在 gpui 的固定 rem 档位上（档位后缀是 `…_11()`=44、`_12()`=48、`_16()`=64，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1003-1017`；没有 `_14()`）。Tailwind 的 `w-14` 是任意档位，
+/// gpui 的档位表里没有对应项，不能自己发明 helper —— 档位外就写 helper 底层的
+/// `rems(WINDOW_CONTROL_WIDTH_SPEC / 16.)`（默认 16px 基准下与 56 逐像素相等，且随字号缩放）。
+const WINDOW_CONTROL_WIDTH_SPEC: f32 = 56.;
 
 /// 标题栏（无状态）：只依赖传入的**已渲染好的**菜单栏、项目下拉与分支项、当前主题与窗口状态，
 /// 不持有 `Entity`。
@@ -223,7 +224,7 @@ fn window_control(control: WindowControl, cx: &App) -> impl IntoElement {
         .flex_shrink_0()
         .items_center()
         .justify_center()
-        .w(WINDOW_CONTROL_WIDTH)
+        .w(rems(WINDOW_CONTROL_WIDTH_SPEC / 16.))
         .h_full()
         // `rounded-none`（`window-controls.tsx:59,71,85`）：直角。
         .rounded_none()

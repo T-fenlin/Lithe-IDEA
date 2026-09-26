@@ -109,10 +109,9 @@ use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
 use gpui_kit::{
-    AbsoluteLength, AnyElement, App, AppContext as _, Context, DefiniteLength, Entity,
-    Focusable as _, FontWeight, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Subscription, Window, div, px, rems,
+    AnyElement, App, AppContext as _, Context, DefiniteLength, Entity, Focusable as _,
+    FontWeight, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
 };
 
 use lithe_gpui_git::{BranchInfo, BranchSnapshot};
@@ -153,10 +152,11 @@ const BRANCH_ROW_HEIGHT_SPEC: f32 = 36.;
 
 /// 行圆角 8：真源 `rounded-lg`（`ui/command.tsx:41`）。
 ///
-/// ⚠️ **保留 `px(...)`**：8 虽然在 gpui 档位上，但 `rounded_lg()` 是 Tailwind 的 8、
-/// 与 Lithe 的 `rounded-lg` = `--radius × 1` = 8 恰好同值 —— 这里写常量是为了与
-/// [`crate::project_menu::ROW_RADIUS`]（6.4，真源 `rounded-md`）区分开，不混用两个语义。
-const ROW_RADIUS: Pixels = px(8.);
+/// 8 虽然在 gpui 档位上，但 `rounded_lg()` 是 Tailwind 的 8、与 Lithe 的 `rounded-lg`
+/// = `--radius × 1` = 8 恰好同值 —— 这里写规格常量是为了与
+/// [`crate::project_menu::ROW_RADIUS_SPEC`]（6.4，真源 `rounded-md`）区分开，不混用两个语义。
+/// `Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写 `rems(ROW_RADIUS_SPEC / 16.)`。
+const ROW_RADIUS_SPEC: f32 = 8.;
 
 /// 分支名宽度上限 320：真源 `maxWidth = min(max(len+1,6),40)ch`（`git-branch-manager.tsx:189-190`）。
 ///
@@ -169,14 +169,12 @@ const BADGE_MAX_WIDTH_SPEC: f32 = 160.;
 /// 底栏按钮高 32：真源 `Button default size` 的 `h-8`（`ui/button.tsx:22`）。
 const FOOTER_BUTTON_HEIGHT_SPEC: f32 = 32.;
 
-/// 把规格值（px）按当前 rem 基准求值：`rems(P / 16.)`。
+/// 触发器的圆角 6.4：真源 `rounded-md` = `--radius × 0.8`（`styles/theme.css:7,134`）。
 ///
-/// ⚠️ 写成 `/ 4.` 是错的：gpui 的档位 helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，
-/// 1rem = 16px（主题的 `font.size`，`gpui/themes/lithe-dark.json:9`）。与
-/// `crate::command_palette::rem_px`、`crate::project_menu::rem_px` 逐字同一条口径。
-fn rem_px(spec_px: f32) -> Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(px(16.))
-}
+/// 只给 [`trigger`] 用；`Dialog` 的 `margin_top` / `width` 那一侧走 [`crate::rem_px`]，
+/// 因为它们是**固有方法**（只吃 `Pixels`）。这里挂在 `div` 上，`Styled::rounded` 收
+/// `impl Into<AbsoluteLength>`，所以调用点直接写 `rems(TRIGGER_RADIUS_SPEC / 16.)`。
+const TRIGGER_RADIUS_SPEC: f32 = 6.4;
 
 // ---------------------------------------------------------------------------
 // 页签行（自绘：`Command` 没有这个槽位）
@@ -430,7 +428,7 @@ fn render_footer(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
                 .h(rems(FOOTER_BUTTON_HEIGHT_SPEC / 16.))
                 .px_3()
                 .gap_1p5()
-                .rounded(ROW_RADIUS)
+                .rounded(rems(ROW_RADIUS_SPEC / 16.))
                 .bg(theme.accent)
                 .text_sm()
                 .text_color(theme.foreground)
@@ -856,7 +854,7 @@ fn render_error_bar(failures: &[String], cx: &App) -> impl IntoElement {
         .mb_2()
         .px_2()
         .py_1p5()
-        .rounded(ROW_RADIUS)
+        .rounded(rems(ROW_RADIUS_SPEC / 16.))
         .bg(cx.theme().danger.opacity(0.1))
         .text_xs()
         .text_color(cx.theme().danger)
@@ -961,15 +959,19 @@ pub(crate) fn open_branch_panel(
     let _ = panel.update(cx, |panel, cx| panel.focus_search(window, cx));
 
     let handle = panel.clone();
-    window.open_dialog(cx, move |dialog, _window, _cx| {
+    window.open_dialog(cx, move |dialog, window, _cx| {
+        // `Dialog::width` / `Dialog::margin_top` 是**固有方法**、只吃 `Pixels`（它们遮蔽了
+        // `Styled` 上的同名方法，而 gpui 没有 `impl From<Rems> for Pixels`），所以按**运行时**
+        // rem 基准换算一次 —— 基准取自这一帧的窗口，不是写死的 16（见 [`crate::rem_px`]）。
+        let rem = window.rem_size();
         dialog
             // 面板整个由 `Command` + 自绘三段构成：搜索行、圆角与边框都不要 Dialog 的。
             .close_button(false)
             .overlay(true)
             .overlay_closable(true)
             .keyboard(true)
-            .width(rem_px(PANEL_WIDTH_SPEC))
-            .margin_top(px(PANEL_TOP_INSET_SPEC))
+            .width(crate::rem_px(rem, PANEL_WIDTH_SPEC))
+            .margin_top(crate::rem_px(rem, PANEL_TOP_INSET_SPEC))
             .p_0()
             // 关闭的唯一收尾点：`Esc` / 点遮罩 / Dialog 的关闭按钮三条路都经过它
             // （`dialog/dialog.rs:598-607` 的 `on_close`），所以面板状态在这里回到 `false`，
@@ -1030,7 +1032,7 @@ pub(crate) fn trigger(panel: &Entity<BranchPanel>, cx: &App) -> Option<AnyElemen
             .px_2()
             .gap_1()
             .max_w(rems(BRANCH_NAME_MAX_WIDTH_SPEC / 16.))
-            .rounded(px(6.4))
+            .rounded(rems(TRIGGER_RADIUS_SPEC / 16.))
             .text_sm()
             .text_color(idle)
             // 真源触发器**只有 hover 态**（ghost），展开时不给底色（研究 §1.2 的外观一栏）。
@@ -1111,10 +1113,16 @@ fn render_tracking(tracking: lithe_gpui_git::TrackingCounts, cx: &App) -> Vec<An
 ///
 /// ⚠️ 这个函数**只给单测**提供"行高下限"的读数，渲染路径不经过它
 /// （渲染用 `CommandItem::child` 里的 `h_flex`）。写成函数而不是常量断言，
-/// 是为了让"36 这个下限真的被用上了"有一处可读的落点。
+/// 是为了让"36 这个下限真的被用上了"有一处可读的落点；收 `rem` 是为了让单测能把
+/// **运行时基准**喂进来（见 [`crate::rem_px`] 与 `branch_row_height_scales_with_the_rem_base`）。
+// `Pixels` 只在这条 `#[cfg(test)]` 函数签名里出现，所以它的 `use` 也按 `cfg(test)` 收窄：
+// 无条件导入会让非测试构建报 `unused_imports`（`cargo check` 必须零 warning）。
 #[cfg(test)]
-fn branch_row_height() -> Pixels {
-    rem_px(BRANCH_ROW_HEIGHT_SPEC)
+use gpui_kit::Pixels;
+
+#[cfg(test)]
+fn branch_row_height(rem: Pixels) -> Pixels {
+    crate::rem_px(rem, BRANCH_ROW_HEIGHT_SPEC)
 }
 
 /// 触发器上**没有** caret：这条测试把"不画 `▾`"变成可执行的契约。
@@ -1136,7 +1144,7 @@ mod tests {
         PANEL_WIDTH_SPEC, PanelTab, SEARCH_ROW_HEIGHT_SPEC, branch_row_height, matches_query,
         trigger_icon_names, visible_rows,
     };
-    use gpui_kit::SharedString;
+    use gpui_kit::{SharedString, px};
     use lithe_gpui_git::BranchInfo;
 
     fn branch(name: &str, is_current: bool) -> BranchInfo {
@@ -1159,10 +1167,14 @@ mod tests {
         assert_eq!(BRANCH_ROW_HEIGHT_SPEC, 36.);
     }
 
-    /// 行高下限真的经 `rem_px` 求值成 36（125% DPI 下是 45 物理）。
+    /// 行高下限真的经 [`crate::rem_px`] 求值成 36（125% DPI 下是 45 物理），
+    /// 并且**随运行时 rem 基准缩放** —— 只断言 16px 基准下等于 36 证明不了它不是假 rem
+    /// （写死 `to_pixels(px(16.))` 也能过），所以这里再加一条"基准翻倍 ⇒ 行高翻倍"。
     #[test]
-    fn branch_row_height_is_36_pixels() {
-        assert_eq!(f32::from(branch_row_height()), 36.);
+    fn branch_row_height_scales_with_the_rem_base() {
+        assert_eq!(f32::from(branch_row_height(px(16.))), 36.);
+        // 基准 32px（界面字号翻倍）⇒ 36 × 2 = 72，而不是仍然是 36。
+        assert_eq!(f32::from(branch_row_height(px(32.))), 72.);
     }
 
     /// 页签顺序照真源的数组字面量：`仓库` → `分支` → `工作树`，默认选中**分支**
