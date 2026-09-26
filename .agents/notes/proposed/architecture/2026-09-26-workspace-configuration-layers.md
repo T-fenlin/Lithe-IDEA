@@ -78,9 +78,23 @@ language-servers/jdtls/<sha256(归一化工作区路径 + JDT 指纹)>/
 主题标识统一用 **id**（`lithe-dark`）而不是显示名：机器可读、主题改名不影响用户引用。主题目录必须从**构建树**迁到这里——gpui 现在从 `<CARGO_MANIFEST_DIR>/../../themes` 读主题，那个路径在打包后的安装包里不存在，等于主题功能在发布版直接失效。
 
 字体相关新增**三个**键：`fontFamily`（界面）、`monoFontFamily`（代码与终端）、`terminalFontSize`。
-三者都有现成消费方：`gpui-base` 的主题有 typography `sans` 与 `mono` 两个字体族 token，编辑器经
-`gpui-component-0.6.6/src/input/editor.rs:139-142` 的 `.font_family(cx.theme().mono_font_family)` +
-`.text_size(...)` 取字体，与仓库今天写 `mono_font_size` 是同一条路。
+
+两个字族**有现成落点**：`gpui-base` 的主题有 typography `sans` 与 `mono` 两个 token
+（`gpui-base-0.6.6/src/theme_tokens.rs:170-181`），主题 JSON 里它们也是可选字段，编辑器经
+`gpui-component-0.6.6/src/input/editor.rs:139-142` 的 `.font_family(cx.theme().mono_font_family)` 取字体。
+**空串 = 不覆盖**（与 `javaHomePath` 同一条约定），这样主题文件里指定的字体族不会被空设置抹掉。
+
+⚠️ **`terminalFontSize` 没有现成落点，需要自己造一个缝**（实施时勘察，修正了先前"与写
+`mono_font_size` 是同一条路"的说法）：终端正文**不用** `Theme::mono_font_size` —— 它用 typography 的
+`sm` token（`.text_sm()` = 14px，`gpui/crates/terminal/src/terminal_view.rs`）。所以既不能写
+`mono_font_size`（那会连带把编辑器一起改掉），也没有"终端字号"这个 token 可写。落地方式是终端视图
+自己持有一个覆盖值（`TerminalPane::set_font_size`，`None` = 用默认档），由外壳按既有的"值型设置经
+外壳转发"路子喂进去 —— 终端是按行渲染而不是字符网格，改字号没有列宽重算的问题。
+
+⚠️ **两个字族键必须校验"这个字族装没装"**：GPUI 在字族找不到时会于**首次布局那一行 panic**
+（`gpui-component-0.6.6/src/theme/mono_font.rs:1-13` 正是为这件事存在的），而这两个键是用户填的字符串
+—— 一次手写错就能让应用再也起不来。所以写入前对照系统已装字族校验，认不出的**不写进主题**并留诊断；
+设置页的下拉也只列已装字族（外加一个「默认（不覆盖）」项），让用户根本选不出会崩的值。
 
 **不做** `lineHeight`、`iconTheme` 与 `ligatures`。前两者是独立工程（行高逐控件硬编码、图标主题是编译期常量）；
 `ligatures` 是**侦察后砍掉**的：`FontFeatures::disable_ligatures()` 在上游存在
@@ -322,6 +336,53 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 | 写 `.lithe/` 之前**先确保不共享**（写 `.git/info/exclude` 的 `.lithe/`，位置由 Core 解析） | `ensure_project_dir_excluded`；**真实临时仓库**端到端：`git status` 无 `.lithe`、排除文件恰好一行、幂等、别人规则逐字保留 |
 | 显式共享：移除排除行 + 只暂存可共享成员 | `share_project_config`、`is_shareable_member`；端到端断言 `*.local.json` 与 `run/classes/**` 未进暂存区 |
 | **接进产品：打开即建**（`ShellWorkspace::new` 的后台解析，失败不影响打开） | `workbench::workspace::prepare_workspace_config`；端到端两组（Git 仓库 / 非 Git 目录）见下 |
+| **工具链五个值的项目本机层**（`.lithe/run.local.json` 的 `toolchain` + `.lithe/maven.local.json`，schema `maven-local-v1`） | `shared::workspace_config::toolchain`；读写往返、清除、`configurations` 保留、旧路径双读、更高版本拒写等单测 |
+| **`项目本机 > 全局默认 > 自动发现`** | `ToolchainPaths::resolve`（**唯一实现**）+ `settings::project::resolve_overrides`（只搬运字段）；端到端 A/B 见下 |
+| **`.lithe/.gitignore` 的 writer**（第二道闸，此前一直没有写入方） | `sharing::ensure_local_ignore_file`；只追加缺失规则，规则齐全时**不写文件** |
+| 设置页如实标注：有工作区写项目本机层、没有才写全局；每一格标出覆盖值来源 | `dialog::project_save` / `project_load` / `override_origin_key`；文案键 `projectScopeProject` / `overrideFromProject` / `overrideFromGlobal` |
+| 语言服务登记改用**生效值**（此前只读全局） | `workbench::register_java_toolchain(root, cx)` + `S1_SETTINGS wiring=java_toolchain … project=/global=/unset=` |
+| **字体三键**：两个字族写主题 token（带已装校验）+ 终端字号经外壳转发给终端视图 | `schema.rs` 的 `normalize_terminal_font_size`、`theme::apply_font_families` / `usable_family`、`TerminalPane::set_font_size`、`workbench::workspace::terminal_font_size_override`；测试见下 |
+| **守卫与共享动作回读校验**（写了 ≠ 写进去了；不再谎报 `excluded`） | `sharing::pattern_is_present`（纯函数，直接直测）+ `SharingError::NotPersisted`；正常路径的回读闭环测试 `ensure_excluded_verifies_its_own_write_by_reading_back` |
+| **工作区配置失败对用户可见**（常驻红条，可手动关） | `ShellWorkspace::workspace_config_error` + `render_workspace_config_error`；文案键 `gpui.workspaceConfigFailed`（`GPUI_ONLY_KEYS`，locale 生成） |
+
+验证结果（增量 4 · 工具链分层 + `.lithe/.gitignore`）：
+
+- `cargo test -p lithe-gpui-shared --lib workspace_config`：**25 通过 / 0 失败**（新增 10 条：
+  `resolve` 优先级、空白不覆盖、五项往返、清除、`configurations` 保留、旧路径双读、
+  排除条目、`.gitignore` 写入、更高版本）
+- `cargo test -p lithe-gpui-settings --lib`：**144 通过 / 0 失败**（新增 2 条：字段映射逐位、
+  `resolve_overrides` 优先级）
+- `cargo test -p lithe-gpui-workbench --lib`：**68 通过 / 0 失败**（新增 1 条：登记边界上的优先级）
+- `cargo check --workspace --all-targets`：**exit=0**
+- `verify-test-stability.ps1` 静态 gate：**通过**
+- **端到端 A/B（优先级）**：临时 Git 仓库 + 仓库内配置目录；全局写 `javaHomePath=D:\global\jdk-B`，
+  项目本机写 `javaHomePath=D:\project\jdk-A`：
+  - 项目本机有值时：`S1_SETTINGS wiring=java_toolchain java_home_path=D:\project\jdk-A
+    maven_settings_path=D:\global\settings-B.xml project=1 global=1 unset=3`
+    —— **项目本机压过全局**，且项目本机没设的 `settings.xml` 回落到全局；
+  - 把项目本机的 `javaHomePath` 清空后重启：`java_home_path=D:\global\jdk-B project=0 global=2`
+    —— **确实回落到全局默认**。
+- **端到端（`.gitignore` + 不共享）**：启动前 `.lithe/` 在 `git status` 里是 `?? .lithe/`；
+  启动后 `.lithe/.gitignore` **被建出且正好三行**（`*.local.json` / `run/classes/` / `**/*.tmp`）、
+  `.git/info/exclude` 里 `.lithe/` **恰好一行**、`git status --porcelain` **为空**；
+  二次启动 `.gitignore` 的**字节与 mtime 都不变**（规则齐全 → 一个字都没写）。
+- 跑完确认：无残留 `Lithe` 进程、临时目录已删。
+
+验证结果（增量 7 · 字体三键）：
+
+- `cargo test -p lithe-gpui-settings`：**142 通过 / 0 失败**（改动前 139；新增
+  `terminal_font_size_normalizes_to_unset_or_clamped`、`font_family_overrides_are_trimmed`、
+  `usable_family_only_accepts_empty_virtual_or_installed`）
+- `cargo test -p lithe-gpui-terminal`：8 通过 / 0 失败
+- `cargo check -p lithe-gpui-settings -p lithe-gpui-terminal -p lithe-gpui-workbench --all-targets`：exit=0
+- `verify-test-stability.ps1` 静态 gate **通过**；`node gpui/tools/extract-locale.mjs --check` **通过**
+- ⚠️ **`cargo test --workspace` 没能跑完**：同批另一个增量（工具链分层）的 `workbench` 在制品
+  还引用着未导入的符号，7 个编译错误全部落在 `gpui/crates/workbench/src/workspace.rs` 的
+  `mod tests`（3785 行以后）。本次在 `workspace.rs` 的改动都在 1160/1190 与应用路径上，
+  没有一处落在测试模块；两个受影响 crate 的测试与静态检查都已通过，整套验证留给父代理在
+  两个增量都停稳后复跑。
+- **两个字族键的"已装校验"没有 GUI 级验证**（本次不启动 Lithe，避免与并发代理的窗口互相干扰）；
+  `usable_family` 的四种分支由确定性单测覆盖。
 
 验证结果（增量 1）：
 
@@ -377,6 +438,22 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 `gpui/HANDOFF.md`、`gpui/research/settings-lsp-and-run-pages.md`、
 `gpui/research/open-project-and-windows.md`、`gpui/research/editor-lsp-completion.md`、
 `gpui/crates/settings/src/recent_projects.rs` 的模块文档。
+
+### 两条硬要求（实测缺陷换来的）
+
+**一、宣称成功之前必须回读。** 实测：把根指向会话工作区之外的仓库时，日志里出现
+`S1_WORKSPACE_CONFIG excluded root=… pattern=.lithe/`，而那个仓库的 `.git/info/exclude` 里
+**根本没有 `.lithe/` 行**（仍是 git 默认模板注释）—— 写入被环境静默丢弃，`fs` 不报错、Core 也返回成功，
+旧实现于是直接宣称成功。这与仓库"不静默丢弃错误"的规则冲突，而且后果很具体：用户以为目录已被排除，
+实际它正暴露在 `git status` 里。**所以：写（或删）之后读回 `<gitCommonDirectory>/info/exclude`，
+确认那一条的状态确实变了；没变就返回结构化失败（`SharingError::NotPersisted`），绝不打成功那行。**
+判据抽成纯函数 `sharing::pattern_is_present`，因为它所对应的真实成因（静默丢写）**没法确定性构造**，
+只能把判据本身拿出来直测。
+
+**二、失败必须对用户可见。** 同一个实测里，失败只落在 stderr 上；双击启动的用户看不到它，
+只会发现"`.lithe` 目录没出现"。仓库既有口径是"失败一定可见：常驻红条"（`changes_view.rs` 的
+`render_write_error`），所以打开即建这条链的失败也回填到外壳的常驻红条上（可手动关、不自作消失）。
+这两条不只服务 `.lithe` 身份文件：任何"Lithe 主动写用户目录"的动作都适用同一标准。
 
 ## 考虑过的备选方案
 

@@ -45,7 +45,7 @@ use gpui_kit::{
     AbsoluteLength, AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _,
     IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
     StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, WeakEntity,
-    Window, div, relative, rems,
+    Window, div, px, relative, rems,
 };
 
 use crate::constants::new_terminal_label;
@@ -98,6 +98,12 @@ pub struct TerminalPane {
     /// 设置订阅），而用户在页签条 ⌄ 菜单里手动选过的配置文件不该被"隔壁开关动了"重置回默认。
     /// 所以只有这个值**真的变了**才重建 `profiles` 并改 `active_profile`。
     pub(crate) default_shell_id: String,
+    /// 终端正文字号的覆盖值（`None` = 用默认档）。
+    ///
+    /// 默认档是 typography 的 `sm` token（`.text_sm()` = 14px，见 `constants.rs` 的说明）。
+    /// **不能**改主题的 `mono_font_size` 来实现它：那个 token 是编辑器正文在用的，
+    /// 改它会连带把编辑器一起改掉。所以这一个键的落点只能是本视图自己。
+    pub(crate) font_size: Option<f32>,
     /// 底部命令输入行。
     pub(crate) input: Entity<InputState>,
     /// 输入行的事件订阅（`PressEnter` → 发送一行）。订阅器一 drop 就失效，所以要存住。
@@ -348,8 +354,9 @@ impl TerminalPane {
         let rows = tab.rows.clone();
         let mono = cx.theme().mono_font_family.clone();
         let foreground = cx.theme().foreground;
-        // 行渲染闭包是 `move` 的，会把字体名搬走；下面"未完成行"还要用，所以先留一份。
+        // 行渲染闭包是 `move` 的，会把字体名与字号搬走；下面"未完成行"还要用，所以先各留一份。
         let row_mono = mono.clone();
+        let row_font_size = self.font_size;
 
         let scroller = MessageScroller::new(
             SharedString::from(format!("terminal-output-{}", tab.id)),
@@ -361,6 +368,8 @@ impl TerminalPane {
                     .min_w_0()
                     .font_family(row_mono.clone())
                     .text_sm()
+                    // 设置里的终端字号覆盖默认档（`.text_sm()` 的 14px）；不覆盖时保持原样。
+                    .when_some(row_font_size, |this, size| this.text_size(px(size)))
                     .line_height(relative(TERMINAL_LINE_HEIGHT))
                     .text_color(cx.theme().foreground)
                     .child(text)
@@ -406,6 +415,7 @@ impl TerminalPane {
                         .pr_4()
                         .font_family(mono.clone())
                         .text_sm()
+                        .when_some(self.font_size, |this, size| this.text_size(px(size)))
                         .line_height(relative(TERMINAL_LINE_HEIGHT))
                         .text_color(foreground)
                         .child(line),

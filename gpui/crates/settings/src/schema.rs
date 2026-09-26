@@ -77,6 +77,34 @@ pub fn normalize_editor_font_size(value: f64) -> f64 {
         .clamp(EDITOR_FONT_SIZE_MIN, EDITOR_FONT_SIZE_MAX)
 }
 
+/// 终端字号的**未覆盖值**：`0`。
+///
+/// 与 `javaHomePath` 的"空串 = 自动"是同一条约定，只是这里没有"空"可言，所以用 `0`：
+/// 字号 `0` 本身没有意义，拿它当"不覆盖"不会与任何合法取值冲突。
+/// 不覆盖时终端用自己那一档（typography `sm` token = 14px，见
+/// `gpui/crates/terminal/src/constants.rs` 的说明）。
+pub const TERMINAL_FONT_SIZE_UNSET: f64 = 0.0;
+/// 终端字号的下限 / 上限。与编辑器的字号数字输入同一档（`macos-settings-panels.tsx:283-292`
+/// 的 `min={10} max={22}`）：真源那边终端页只有「默认 Shell」一项，没有终端字号控件，
+/// 所以这里不发明第三套范围。
+pub const TERMINAL_FONT_SIZE_MIN: f64 = EDITOR_FONT_SIZE_MIN;
+/// 见 [`TERMINAL_FONT_SIZE_MIN`]。
+pub const TERMINAL_FONT_SIZE_MAX: f64 = EDITOR_FONT_SIZE_MAX;
+
+/// 把 `terminalFontSize` 归一到 `[TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX]`，
+/// 并把"不覆盖"（`0`、负数、非有限值）统一成 [`TERMINAL_FONT_SIZE_UNSET`]。
+///
+/// 与编辑器字号同一条口径：round 到整数档。**`0` 必须原样保留成 `UNSET`**，不能被
+/// `clamp` 到下界 —— 那会把"不覆盖"变成"最小字号"，是语义错误。
+pub fn normalize_terminal_font_size(value: f64) -> f64 {
+    if !value.is_finite() || value <= 0.0 {
+        return TERMINAL_FONT_SIZE_UNSET;
+    }
+    value
+        .round()
+        .clamp(TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX)
+}
+
 /// 「显示语言」的合法取值白名单（**枚举序即下拉顺序**）。
 ///
 /// 真源 `windows/tauri/src/i18n/locale.ts:2` 的 `DISPLAY_LANGUAGES = ["en-US", "zh-CN"]`：
@@ -342,14 +370,33 @@ pub struct Settings {
     /// 由 [`crate::theme::apply_editor_font_size`] 在每次应用主题之后补写
     /// （`apply_config` 会把主题文件里的字体档写回来，顺序不能反）。
     ///
-    /// ⚠️ **这是"编辑器字号"在 gpui 侧唯一的全局落点**：真源把 `fontSize` 与
-    /// `terminalFontSize` 分成两个键（`default-settings.ts:53,76`），而 gpui 的主题只有
-    /// 一个 `mono_font_size`，终端正文也用它。真实对话框的「终端」页只有「默认 Shell」
-    /// 一项（`macos-settings-panels.tsx:372-396`），所以本侧不新增 `terminalFontSize` 控件
-    /// —— 那会是"存了没用"的键。副作用（终端字号跟着编辑器走）登记在
-    /// `gpui/PLAN.md` 与设置页的描述里。
+    /// ⚠️ **这个键只管编辑器，不管终端**。早先的注释写着"终端正文也用它"，那是**错的**：
+    /// 终端正文用 typography 的 `sm` token（`.text_sm()` = 14px，见
+    /// `gpui/crates/terminal/src/terminal_view.rs` 与 `constants.rs` 的说明），
+    /// 所以终端字号有独立的键 [`Self::terminal_font_size`]。
     #[serde(rename = "fontSize")]
     pub font_size: f64,
+
+    /// 界面字体族。Windows 键 `fontFamily`（真源 `default-settings.ts` 的字体族设置）。
+    /// **空串 = 不覆盖**，用主题文件里的值（与 [`Self::java_home_path`] 的"空串 = 自动"同一条约定）。
+    ///
+    /// 生效方式：**立即**，落到主题 token `Theme::font_family`（界面正文用它），由
+    /// [`crate::theme::apply_font_families`] 在每次应用主题之后补写。
+    ///
+    /// ⚠️ **值必须是一个已安装的字族**：GPUI 在"字族找不到"时会于**首次布局那一行** panic
+    /// （`gpui-component-0.6.6/src/theme/mono_font.rs:1-13` 就是为这件事而存在的）。
+    /// 所以写入前会对照系统已装字族校验，不认识的值**不写入并留诊断**
+    /// （`S1_THEME font_family_rejected`）—— 用户手写错的配置不能让应用崩。
+    #[serde(rename = "fontFamily")]
+    pub font_family: String,
+
+    /// 代码字体族（编辑器与终端正文）。Windows 键 `monoFontFamily`。**空串 = 不覆盖**。
+    ///
+    /// 与 [`Self::font_family`] 同一套生效方式与校验规则，落到主题 token
+    /// `Theme::mono_font_family`（编辑器 `gpui-component-0.6.6/src/input/editor.rs:141`，
+    /// 终端 `gpui/crates/terminal/src/terminal_view.rs`）。
+    #[serde(rename = "monoFontFamily")]
+    pub mono_font_family: String,
 
     /// 制表符宽度。Windows 键 `tabSize`，默认 `2`（`default-settings.ts:55`），
     /// 取值域 [`TAB_SIZES`]。
@@ -370,6 +417,20 @@ pub struct Settings {
     #[serde(rename = "terminalDefaultShellId")]
     pub terminal_default_shell_id: String,
 
+    /// 终端正文字号（px）。Windows 键 `terminalFontSize`。
+    /// **[`TERMINAL_FONT_SIZE_UNSET`]（`0`）= 不覆盖**，终端用它自己那一档（14px）。
+    ///
+    /// 生效方式：**立即**，但**不由本 store 应用** —— 终端正文是
+    /// `gpui/crates/terminal` 自己的视图（按行渲染，不是字符网格，所以改字号不影响列宽），
+    /// 由外壳订阅本实体后转发给 `TerminalPane::set_font_size`（与 `tabSize` →
+    /// `EditorPane::set_tab_size` 同一条"值型设置经外壳转发"的路子）。
+    ///
+    /// 为什么不能像编辑器字号那样写主题 token：gpui 主题只有**一个** `mono_font_size`，
+    /// 写它会把编辑器一起改掉；而终端正文用的是 typography 的 `sm` token，也没有单独的
+    /// "终端字号" token 可写。所以这一个键的落点只能是终端视图自己。
+    #[serde(rename = "terminalFontSize")]
+    pub terminal_font_size: f64,
+
     /// 丢弃更改前是否先弹确认框。Windows 键 `confirmBeforeDiscard`，默认 `true`
     /// （`default-settings.ts:194`；真源渲染点 `tabs/git-settings.tsx:93-106`）。
     ///
@@ -380,31 +441,39 @@ pub struct Settings {
     #[serde(rename = "confirmBeforeDiscard")]
     pub confirm_before_discard: bool,
 
-    /// JDK 主目录的**覆盖值**（空串 = 用自动检测到的那个）。键名 `javaHomePath`。
+    /// JDK 主目录的**覆盖值**（空串 = 这一层没设，见下）。键名 `javaHomePath`。
     ///
-    /// ## 为什么键名与真源的**运行配置**字段逐字相同
+    /// ## 这个字段是"全局默认"，真源是项目本机层
+    ///
+    /// 五个工具链覆盖值分两层，优先级 **项目本机 > 全局默认 > 自动发现**：
+    ///
+    /// | 层 | 落点 | 谁读 |
+    /// | --- | --- | --- |
+    /// | 项目本机 | `.lithe/run.local.json` 的 `toolchain` 对象（本字段、[`Self::maven_executable_path`]、[`Self::maven_java_home_path`]）与 `.lithe/maven.local.json`（[`Self::maven_settings_path`]、[`Self::maven_local_repository_path`]） | 语言服务登记与设置页 |
+    /// | 全局默认 | **本字段所在的那份设置文件** | 同上，只作兜底 |
+    ///
+    /// **两层怎么合只有一份实现**：`lithe_gpui_shared::workspace_config::ToolchainPaths::resolve`
+    /// （`settings` 侧的门面是 `project::resolve_overrides`）。设置页的"生效值"与语言服务的登记
+    /// 都走它，所以不会出现"界面显示项目值、实际用全局值"。
+    ///
+    /// ## 键名与真源逐字相同
     ///
     /// 真源这一页（`components/project-environment-settings.tsx`）读写的是**项目级**文件
     /// （`.lithe/run/local.json`，经 `services/project-environment.ts` 的
     /// `runConfig.updateOptions`），它携带的 toolchain 对象就是
     /// `{ javaHomePath, mavenExecutablePath, mavenJavaHomePath }`
     /// （`shared/contracts/rust-core-api.md:1625-1627`）—— 这三个键名是 Core 契约里的名字。
+    /// 全局这一层沿用同样的名字，所以两层之间**不需要第二张映射表**。
     ///
-    /// ## gpui 侧为什么只能落在**全局**设置文件里（如实登记）
+    /// ## 保存时写哪一层
     ///
-    /// 1. 本 crate 的依赖方向是"只向下依赖 `gpui-kit` + `lithe-gpui-shared`"
-    ///    （见 `lib.rs` 的模块文档），拿不到工作区根；设置对话框里唯一能拿到根的那条路是
-    ///    宿主钩子（如 `identity::set_git_identity_host`），而登记钩子的 `workbench` 不在本次写域内；
-    /// 2. gpui 侧**没有项目级存储**（`.lithe/run/local.json` 的读写归 Core 的 `runConfig.*`，
-    ///    本侧还没有那条通路）。
+    /// 设置页按"有没有打开工作区"分流（可用 `dialog.rs` 的 `run=save scope=…` 诊断核对）：
+    /// 有工作区 → 写项目本机层；没有工作区 → 写这里（全局默认）。页面上的作用域标签跟着切换
+    /// （`settings.gpui.projectScopeProject` / `settings.gpui.projectScopeGlobal`），每个字段的
+    /// 生效来源另有 `overrideFromProject` / `overrideFromGlobal` 标注。
     ///
-    /// 所以这三个键是**机器级（全局）**的覆盖值，页面文案也必须如实这么写
-    /// （`settings.gpui.projectScopeGlobal`）——**不假装**是项目级。
-    /// 键名故意选 Core 契约里那三个，是为了将来接上项目级存储时，
-    /// 落盘形状与 `runConfig.updateOptions` 的 toolchain 载荷**同名同义**，不需要第二张映射表。
-    ///
-    /// 生效方式：**立即**（本页"生效值"那一行当帧就按新草稿重算；真正的消费方是运行配置，
-    /// 而 gpui 侧还没有采购它的一页）。
+    /// 生效方式：**立即**（本页"生效值"那一行当帧就按新草稿重算）；语言服务那一侧要**重启会话**
+    /// 才吃到新值（`EditorPane::prepare_java` 一个工作区一个会话、幂等）。
     #[serde(rename = "javaHomePath")]
     pub java_home_path: String,
 
@@ -417,25 +486,21 @@ pub struct Settings {
     #[serde(rename = "mavenJavaHomePath")]
     pub maven_java_home_path: String,
 
-    /// Maven 用户 `settings.xml` 的覆盖值（空串 = 用检测到的那一份）。键名 `mavenSettingsPath`。
+    /// Maven 用户 `settings.xml` 的覆盖值（空串 = 这一层没设）。键名 `mavenSettingsPath`。
     ///
-    /// ## 这一个键在真源里没有对应的**全局**键（如实登记）
-    ///
+    /// 与 [`Self::java_home_path`] 同一套两层语义（项目本机 > 全局默认 > 自动发现），只是**落点不同**：
     /// 真源把 `settings.xml` 与本地仓库写进 **Maven 工具窗的项目本地配置**
     /// （`components/project-environment-settings.tsx:287-314` 读写 `maven.settingsPath` /
-    /// `maven.localRepositoryPath`，落点是项目级 `.lithe` 文档），**不经过**全局设置文件；
-    /// 而 gpui 侧没有项目级存储（理由逐条见 [`Self::java_home_path`]）。
+    /// `maven.localRepositoryPath`），所以我们的项目本机层是 `.lithe/maven.local.json`
+    /// （`shared/contracts/maven-local-v1.schema.json`）。
     ///
-    /// 所以这两个键是**机器级（全局）**覆盖值，字段名沿用真源那一对同名同义的名字，
-    /// 将来接上项目级存储时仍然不需要第二张映射表。
+    /// ## 生效方式（两个键不一样）
     ///
-    /// ## 生效方式（两个键不一样，分别是"真生效"与"尚无消费方"）
-    ///
-    /// - `mavenSettingsPath` **有真消费方**：`workbench` 把它登记进 `lithe-gpui-java` 的覆盖槽
-    ///   （`java/src/toolchain.rs`），JDT LS 启动时随 `mavenContext.settingsPath` 交给 Core，
-    ///   Core 发布成 `java.configuration.maven.userSettings`
+    /// - `mavenSettingsPath` **有真消费方**：`workbench` 把**生效值**（项目本机优先）登记进
+    ///   `lithe-gpui-java` 的覆盖槽（`java/src/toolchain.rs`），JDT LS 启动时随
+    ///   `mavenContext.settingsPath` 交给 Core，Core 发布成 `java.configuration.maven.userSettings`
     ///   （`shared/contracts/rust-core-api.md:1170-1178`）。时机与 [`Self::java_home_path`] 相同：
-    ///   下一次语言服务启动（今天是重启应用）。
+    ///   下一次语言服务启动。
     /// - `mavenLocalRepositoryPath` 今天**没有消费方**：本地仓库只在 `maven.launchPlan`
     ///   （`rust-core-api.md:1477-1487` 的 `-Dmaven.repo.local=<path>`）里用，而 gpui 侧还没有
     ///   执行 Maven 的通路。页面照样画出它，但**如实标注**"尚未生效"（不自称已生效）。
@@ -507,8 +572,13 @@ impl Default for Settings {
             show_status_bar: true,
             display_language: DEFAULT_DISPLAY_LANGUAGE.to_string(),
             font_size: EDITOR_FONT_SIZE_DEFAULT,
+            // 空串 = 不覆盖主题文件里的字体族（与下面几个路径覆盖值同一条约定）。
+            font_family: String::new(),
+            mono_font_family: String::new(),
             tab_size: TAB_SIZE_DEFAULT,
             terminal_default_shell_id: SHELL_SYSTEM_DEFAULT.to_string(),
+            // `0` = 不覆盖：终端用它自己的默认档（14px，typography `sm` token）。
+            terminal_font_size: TERMINAL_FONT_SIZE_UNSET,
             confirm_before_discard: true,
             // 空串 = 自动检测（真源也是 `""` 表示"用自动值"）。
             java_home_path: String::new(),
@@ -583,6 +653,13 @@ impl Settings {
     pub fn normalize(&mut self) {
         self.ui_font_size = normalize_ui_font_size(self.ui_font_size);
         self.font_size = normalize_editor_font_size(self.font_size);
+        self.terminal_font_size = normalize_terminal_font_size(self.terminal_font_size);
+
+        // 两个字族覆盖值：去掉首尾空白，空串保持空串（= 不覆盖）。
+        // "这个字族装没装"不在这里校验 —— 那要问文本系统，归 `theme::apply_font_families`，
+        // 且结论只影响"写不写进主题 token"，不改变落盘的值。
+        self.font_family = self.font_family.trim().to_string();
+        self.mono_font_family = self.mono_font_family.trim().to_string();
 
         if !TAB_SIZES.contains(&self.tab_size) {
             self.tab_size = TAB_SIZE_DEFAULT;
@@ -689,6 +766,55 @@ mod tests {
         // 默认每次询问在哪打开，且真源默认偏好"新窗口"。
         assert!(settings.ask_where_to_open_projects);
         assert!(settings.open_folders_in_new_window);
+        // 字体三键默认"不覆盖"：两个字族是空串，字号是 `0`（用终端自己的 14px 档）。
+        assert_eq!(settings.font_family, "");
+        assert_eq!(settings.mono_font_family, "");
+        assert_eq!(settings.terminal_font_size, TERMINAL_FONT_SIZE_UNSET);
+    }
+
+    /// 终端字号归一：`0` / 负数 / 非有限值都是"不覆盖"（**不能被夹到下界**），
+    /// 其余 round 到整数档并夹进 `10..=22`。
+    #[test]
+    fn terminal_font_size_normalizes_to_unset_or_clamped() {
+        assert_eq!(normalize_terminal_font_size(0.0), TERMINAL_FONT_SIZE_UNSET);
+        assert_eq!(normalize_terminal_font_size(-5.0), TERMINAL_FONT_SIZE_UNSET);
+        assert_eq!(
+            normalize_terminal_font_size(f64::NAN),
+            TERMINAL_FONT_SIZE_UNSET
+        );
+        assert_eq!(
+            normalize_terminal_font_size(f64::INFINITY),
+            TERMINAL_FONT_SIZE_UNSET
+        );
+
+        assert_eq!(normalize_terminal_font_size(14.0), 14.0);
+        assert_eq!(normalize_terminal_font_size(14.4), 14.0);
+        assert_eq!(normalize_terminal_font_size(14.6), 15.0);
+        assert_eq!(normalize_terminal_font_size(1.0), TERMINAL_FONT_SIZE_MIN);
+        assert_eq!(normalize_terminal_font_size(999.0), TERMINAL_FONT_SIZE_MAX);
+    }
+
+    /// 两个字族覆盖值：首尾空白被去掉，空串仍是空串（= 不覆盖）。
+    #[test]
+    fn font_family_overrides_are_trimmed() {
+        let mut settings = Settings {
+            font_family: "  Inter \n".to_string(),
+            mono_font_family: "\tJetBrains Mono ".to_string(),
+            ..Settings::default()
+        };
+        settings.normalize();
+        assert_eq!(settings.font_family, "Inter");
+        assert_eq!(settings.mono_font_family, "JetBrains Mono");
+
+        // 只有空白 = 不覆盖（否则会拿一个空字族去写主题 token）。
+        let mut blank = Settings {
+            font_family: "   ".to_string(),
+            mono_font_family: "\n".to_string(),
+            ..Settings::default()
+        };
+        blank.normalize();
+        assert_eq!(blank.font_family, "");
+        assert_eq!(blank.mono_font_family, "");
     }
 
     /// 字段级 `default`：**缺键**回退到该字段默认值（不是整份丢弃）。
@@ -746,6 +872,11 @@ mod tests {
             // 「打开其他项目」的两个键（B4）：真源 `default-settings.ts:111-112` 的键名。
             "\"askWhereToOpenProjects\"",
             "\"openFoldersInNewWindow\"",
+            // 字体三键（本批）：两个字族来自真源的字体族设置，字号来自
+            // `default-settings.ts:76` 的 `terminalFontSize`。
+            "\"fontFamily\"",
+            "\"monoFontFamily\"",
+            "\"terminalFontSize\"",
         ] {
             assert!(json.contains(key), "缺少键 {key}：{json}");
         }

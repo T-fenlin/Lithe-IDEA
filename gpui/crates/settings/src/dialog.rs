@@ -60,22 +60,26 @@ use gpui_kit::{
 };
 
 use lithe_gpui_shared::icons::{idea, idea_icon_svg};
+use lithe_gpui_shared::workspace_config::{
+    OverrideOrigin, OverrideOrigins, ToolchainPaths, load_local_toolchain, save_local_toolchain,
+};
 use lithe_gpui_shared::{tr, tr_args};
 
 use crate::identity::{
     GitIdentityPage, IdentityField, IdentityScope, IdentitySetup, git_identity_page,
-    identity_value_is_valid, identity_value_rejection,
+    host_workspace_root, identity_value_is_valid, identity_value_rejection,
 };
 use crate::project::{
     DetectedJdk, DetectedMaven, EffectiveToolchain, MINIMUM_JAVA_MAJOR, Overrides,
-    ProjectEnvironment, ToolSource, discover,
+    ProjectEnvironment, ToolSource, discover, resolve_overrides,
 };
 use crate::row::{ControlWidth, RowActivation, page_stack, page_title, settings_group, settings_row};
 use crate::run::{RunConfigurationView, RunProjectView};
 use crate::schema::{
     DISPLAY_LANGUAGES, EDITOR_FONT_SIZE_DEFAULT, EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN,
-    SHELL_SYSTEM_DEFAULT, Settings, TAB_SIZES, TERMINAL_SHELL_IDS, UI_FONT_SIZE_DEFAULT,
-    UI_FONT_SIZE_MAX, UI_FONT_SIZE_MIN, UI_FONT_SIZE_STEP,
+    SHELL_SYSTEM_DEFAULT, Settings, TAB_SIZES, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN,
+    TERMINAL_FONT_SIZE_UNSET, TERMINAL_SHELL_IDS, UI_FONT_SIZE_DEFAULT, UI_FONT_SIZE_MAX,
+    UI_FONT_SIZE_MIN, UI_FONT_SIZE_STEP,
 };
 use crate::store::{AppearanceMode, SettingsStore, store};
 use crate::theme;
@@ -456,19 +460,32 @@ struct ProjectPageState {
     environment: Option<ProjectEnvironment>,
     /// 探测在飞。
     busy: bool,
-    /// 刚保存成功的提示（真源 `saved`）。
+    /// 刚保存成功的成功提示（真源 `saved`）。
     saved: bool,
     /// 请求代次：刷新 / 保存后晚到的旧回包直接丢掉（与 `GitPageState::generation` 同一口径）。
     generation: u64,
+    /// 有工作区时是它的根：**保存写这里**（`.lithe/run.local.json` + `.lithe/maven.local.json`）。
+    /// `None` = 没打开项目，保存退回全局设置文件（本机默认值）。
+    ///
+    /// 根只能从宿主登记的钩子里拿（[`crate::identity::host_workspace_root`] 的文档写了为什么
+    /// 只有一个来源），与「运行配置」页同源。
+    workspace_root: Option<PathBuf>,
+    /// 本次生效的五个覆盖值（**项目本机 > 全局默认**）—— 输入框初值与探测都用它。
+    overrides: Overrides,
+    /// 五个值各自的来源，界面据此如实标注"来自本项目 / 来自全局设置"。
+    origins: OverrideOrigins,
 }
 
 impl ProjectPageState {
-    fn new() -> Self {
+    fn new(workspace_root: Option<PathBuf>, overrides: Overrides, origins: OverrideOrigins) -> Self {
         Self {
             environment: None,
             busy: false,
             saved: false,
             generation: 0,
+            workspace_root,
+            overrides,
+            origins,
         }
     }
 }
@@ -860,6 +877,18 @@ fn maven_entry(maven: &DetectedMaven) -> String {
     }
 }
 
+/// 覆盖值来源那句话的键；`None` = 这一格没有覆盖值（两层都没设，用自动发现），不标注。
+///
+/// 为什么要有这一行：五个覆盖值现在是**两层**（项目本机 > 全局默认），而页面上的输入框只显示
+/// 生效值。不标来源的话，"我明明在全局设了 JDK、为什么这个项目用的是另一个"就无从判断。
+fn override_origin_key(origin: OverrideOrigin) -> Option<&'static str> {
+    match origin {
+        OverrideOrigin::Project => Some("lithe.settings.gpui.overrideFromProject"),
+        OverrideOrigin::Global => Some("lithe.settings.gpui.overrideFromGlobal"),
+        OverrideOrigin::Unset => None,
+    }
+}
+
 /// 「项目」页里三个**可覆盖**的字段。
 ///
 /// 顺序即页面顺序（真源也是 JDK → Maven → Maven JDK，`project-environment-settings.tsx:141-195`）。
@@ -892,6 +921,15 @@ impl ProjectField {
             Self::Jdk => 0,
             Self::Maven => 1,
             Self::MavenJdk => 2,
+        }
+    }
+
+    /// 这一格的覆盖值**最终来自哪一层**（项目本机 / 全局默认 / 没设）。
+    fn origin(self, origins: &OverrideOrigins) -> OverrideOrigin {
+        match self {
+            Self::Jdk => origins.java_home_path,
+            Self::Maven => origins.maven_executable_path,
+            Self::MavenJdk => origins.maven_java_home_path,
         }
     }
 
@@ -972,6 +1010,14 @@ impl MavenConfigField {
         match self {
             Self::SettingsXml => 0,
             Self::LocalRepository => 1,
+        }
+    }
+
+    /// 这一格的覆盖值**最终来自哪一层**（项目本机 / 全局默认 / 没设）。
+    fn origin(self, origins: &OverrideOrigins) -> OverrideOrigin {
+        match self {
+            Self::SettingsXml => origins.maven_settings_path,
+            Self::LocalRepository => origins.maven_local_repository_path,
         }
     }
 
@@ -1097,22 +1143,39 @@ impl SettingsDialog {
         let git_name_input = cx.new(|cx| InputState::new(window, cx));
         let git_email_input = cx.new(|cx| InputState::new(window, cx));
 
-        // 「项目」页的五个覆盖值输入框：初值 = 设置文件里已经保存的值（真源也是拿
+        // 「项目」页的五个覆盖值输入框：初值 = **生效值**（项目本机 > 全局默认；真源也是拿
         // `inspected.toolchain` 填输入框，`project-environment-settings.tsx:52-76`）。
         // 它们同样是**草稿**：改动只重绘，写入发生在「保存」被点的那一刻。
-        let java_home_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(saved.java_home_path.clone()));
+        //
+        // ⚠️ 这里必须用生效值而不是全局值：否则界面显示全局值、语言服务实际用项目值。
+        // 项目本机层是两份很小的 JSON，构造期同步读一次（不碰 Core、不起子进程）；
+        // 真正会阻塞的 `discover` 仍然在后台（见 `project_load`）。
+        let workspace_root = host_workspace_root();
+        let local_toolchain = workspace_root
+            .as_deref()
+            .map(load_local_toolchain)
+            .unwrap_or_default();
+        for diagnostic in &local_toolchain.diagnostics {
+            eprintln!("{} local_toolchain {diagnostic}", crate::project::PROJECT_DIAGNOSTIC_TAG);
+        }
+        let (project_overrides, override_origins) = resolve_overrides(
+            &local_toolchain.paths,
+            &Overrides::from_settings(&saved),
+        );
+        let java_home_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(project_overrides.java_home.clone())
+        });
         let maven_executable_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(saved.maven_executable_path.clone())
+            InputState::new(window, cx).default_value(project_overrides.maven_executable.clone())
         });
         let maven_java_home_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(saved.maven_java_home_path.clone())
+            InputState::new(window, cx).default_value(project_overrides.maven_java_home.clone())
         });
         let maven_settings_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(saved.maven_settings_path.clone())
+            InputState::new(window, cx).default_value(project_overrides.maven_settings.clone())
         });
         let maven_local_repository_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(saved.maven_local_repository_path.clone())
+            InputState::new(window, cx).default_value(project_overrides.maven_local_repository.clone())
         });
 
         let mut subscriptions = Vec::new();
@@ -1205,7 +1268,11 @@ impl SettingsDialog {
             maven_java_home_input,
             maven_settings_input,
             maven_local_repository_input,
-            project: ProjectPageState::new(),
+            project: ProjectPageState::new(
+                workspace_root,
+                project_overrides,
+                override_origins,
+            ),
             run: RunPageState::new(),
             _subscriptions: subscriptions,
         }
@@ -1517,18 +1584,40 @@ impl SettingsDialog {
             .into_any_element(),
             settings_group(
                 tr("lithe.settings.appearance.typography"),
-                vec![settings_row(
-                    "settings-row-ui-font-size",
-                    tr("lithe.settings.appearance.uiFontSize"),
-                    // Windows 的 `settings.appearance.uiFontSizeDescription`
-                    // （「以 0.5 像素为单位调整界面文本和图标缩放」）正好说明了步长与作用范围。
-                    Some(tr("lithe.settings.appearance.uiFontSizeDescription")),
-                    NumberInput::new(&self.font_size_input)
-                        .w(ControlWidth::Number.length())
-                        .into_any_element(),
-                    None,
-                    cx,
-                )],
+                vec![
+                    settings_row(
+                        "settings-row-ui-font-family",
+                        tr("lithe.settings.appearance.uiFontFamily"),
+                        Some(tr("lithe.settings.appearance.uiFontFamilyDescription")),
+                        self.dropdown(
+                            "settings-ui-font-family",
+                            font_family_label(&settings.font_family),
+                            font_family_options(cx, &settings.font_family),
+                            {
+                                let store = self.store.clone();
+                                Box::new(move |value, _, cx| {
+                                    store.update(cx, |store, cx| {
+                                        store.set_font_family(value.to_string(), cx)
+                                    });
+                                })
+                            },
+                        ),
+                        None,
+                        cx,
+                    ),
+                    settings_row(
+                        "settings-row-ui-font-size",
+                        tr("lithe.settings.appearance.uiFontSize"),
+                        // Windows 的 `settings.appearance.uiFontSizeDescription`
+                        // （「以 0.5 像素为单位调整界面文本和图标缩放」）正好说明了步长与作用范围。
+                        Some(tr("lithe.settings.appearance.uiFontSizeDescription")),
+                        NumberInput::new(&self.font_size_input)
+                            .w(ControlWidth::Number.length())
+                            .into_any_element(),
+                        None,
+                        cx,
+                    ),
+                ],
                 cx,
             )
             .into_any_element(),
@@ -1591,19 +1680,40 @@ impl SettingsDialog {
         vec![
             settings_group(
                 tr("lithe.settings.mac.display"),
-                vec![settings_row(
-                    "settings-row-editor-font-size",
-                    tr("lithe.settings.mac.fontSize"),
-                    // 真源这一行**没有**描述；这里补一句是因为 gpui 侧的字号作用于主题的
-                    // 等宽字号（编辑器正文），而终端正文也用它 —— 说清楚作用范围，
-                    // 免得用户以为它是"界面字号"（那是外观页的 `uiFontSize`）。
-                    Some(tr("lithe.settings.gpui.editorFontSizeDescription")),
-                    NumberInput::new(&self.editor_font_size_input)
-                        .w(ControlWidth::Number.length())
-                        .into_any_element(),
-                    None,
-                    cx,
-                )],
+                vec![
+                    settings_row(
+                        "settings-row-editor-font-family",
+                        tr("lithe.settings.editor.fontFamily"),
+                        Some(tr("lithe.settings.editor.fontFamilyDescription")),
+                        self.dropdown(
+                            "settings-editor-font-family",
+                            font_family_label(&settings.mono_font_family),
+                            font_family_options(cx, &settings.mono_font_family),
+                            {
+                                let store = self.store.clone();
+                                Box::new(move |value, _, cx| {
+                                    store.update(cx, |store, cx| {
+                                        store.set_mono_font_family(value.to_string(), cx)
+                                    });
+                                })
+                            },
+                        ),
+                        None,
+                        cx,
+                    ),
+                    settings_row(
+                        "settings-row-editor-font-size",
+                        tr("lithe.settings.mac.fontSize"),
+                        // 真源这一行**没有**描述。这里补一句是因为本侧有三个互不影响的字号键
+                        // （界面 / 编辑器 / 终端），不说清作用范围就会被当成同一个。
+                        Some(tr("lithe.settings.gpui.editorFontSizeDescription")),
+                        NumberInput::new(&self.editor_font_size_input)
+                            .w(ControlWidth::Number.length())
+                            .into_any_element(),
+                        None,
+                        cx,
+                    ),
+                ],
                 cx,
             )
             .into_any_element(),
@@ -1677,6 +1787,36 @@ impl SettingsDialog {
                                 // —— 依赖方向见 `crate::lib.rs` 的模块文档。
                                 store.update(cx, |store, cx| {
                                     store.set_terminal_default_shell_id(value.to_string(), cx)
+                                });
+                            })
+                        },
+                    ),
+                    None,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+            settings_group(
+                tr("lithe.settings.terminal.typography"),
+                vec![settings_row(
+                    "settings-row-terminal-font-size",
+                    tr("lithe.settings.terminal.fontSize"),
+                    Some(tr("lithe.settings.terminal.fontSizeDescription")),
+                    self.dropdown(
+                        "settings-terminal-font-size",
+                        terminal_font_size_label(settings.terminal_font_size),
+                        terminal_font_size_options(settings.terminal_font_size),
+                        {
+                            let store = self.store.clone();
+                            Box::new(move |value, _, cx| {
+                                let Ok(size) = value.parse::<f64>() else {
+                                    return;
+                                };
+                                // 只写设置：推给终端面板是**外壳**的事（订阅本实体后调
+                                // `TerminalPane::set_font_size`），设置 crate 不认识终端 crate。
+                                store.update(cx, |store, cx| {
+                                    store.set_terminal_font_size(size, cx)
                                 });
                             })
                         },
@@ -2384,13 +2524,15 @@ impl SettingsDialog {
 
     /// 重新探测（真源 `load()`，`project-environment-settings.tsx:47-82`）。
     ///
-    /// **用设置文件里已保存的覆盖值**，不是输入框草稿：真源的「重新加载并检测」也是先丢掉草稿
-    /// 再 `load()`。
+    /// **用已保存的覆盖值**，不是输入框草稿：真源的「重新加载并检测」也是先丢掉草稿再 `load()`。
+    /// 覆盖值取**生效值**（项目本机层 > 全局默认），与本页输入框的初值同一条规则
+    /// （[`resolve_overrides`]）—— 否则界面显示一套、探测用另一套。
     ///
     /// 为什么整段探测要进 `background_spawn`：`discover` 会同步起子进程
     /// （每个 JDK 候选一次 `java -version`，Maven 一次 `mvn -version`；Windows 上 `mvn.cmd`
     /// 还要先拉起 `cmd.exe`），在 UI 线程上跑会让整个对话框卡住 ——
-    /// 与 `lithe_gpui_shared::core_client` 的调用方同一条口径。
+    /// 与 `lithe_gpui_shared::core_client` 的调用方同一条口径。读项目本机层那两份小 JSON
+    /// 也顺手放进同一段后台任务里，UI 线程就完全不碰文件系统。
     fn project_load(&mut self, cx: &mut Context<Self>) {
         self.project.generation = self.project.generation.wrapping_add(1);
         let generation = self.project.generation;
@@ -2399,18 +2541,24 @@ impl SettingsDialog {
         cx.notify();
 
         let settings = self.store.read(cx).settings().clone();
-        let overrides = Overrides {
-            java_home: settings.java_home_path.clone(),
-            maven_executable: settings.maven_executable_path.clone(),
-            maven_java_home: settings.maven_java_home_path.clone(),
-            maven_settings: settings.maven_settings_path.clone(),
-            maven_local_repository: settings.maven_local_repository_path.clone(),
-        };
-        self.project_diagnose(&format!("run=discover overrides={}", overrides.count()));
+        let root = self.project.workspace_root.clone();
+        self.project_diagnose(&format!(
+            "run=discover scope={}",
+            if root.is_some() { "project" } else { "global" }
+        ));
 
         cx.spawn(async move |this, cx| {
-            let environment = cx
-                .background_spawn(async move { discover(&overrides) })
+            let (overrides, origins, environment) = cx
+                .background_spawn(async move {
+                    let local = root
+                        .as_deref()
+                        .map(load_local_toolchain)
+                        .unwrap_or_default();
+                    let (overrides, origins) =
+                        resolve_overrides(&local.paths, &Overrides::from_settings(&settings));
+                    let environment = discover(&overrides);
+                    (overrides, origins, environment)
+                })
                 .await;
             let empty = environment.has_no_toolchain();
             let _ = this.update(cx, |this, cx| {
@@ -2419,9 +2567,12 @@ impl SettingsDialog {
                     return;
                 }
                 this.project.busy = false;
+                this.project.overrides = overrides;
+                this.project.origins = origins;
                 this.project.environment = Some(environment);
                 this.project_diagnose(&format!(
-                    "run=discover result=ok generation={generation} no_toolchain={empty}"
+                    "run=discover result=ok generation={generation} no_toolchain={empty} {}",
+                    ToolchainPaths::diagnostic_suffix(&this.project.origins)
                 ));
                 cx.notify();
             });
@@ -2429,40 +2580,86 @@ impl SettingsDialog {
         .detach();
     }
 
-    /// 「保存」：把五个草稿写进**全局设置文件**，然后按新值重新探测。
+    /// 「保存」：**有工作区就写项目本机层**（`.lithe/run.local.json` + `.lithe/maven.local.json`），
+    /// 没有工作区才写全局设置文件（作为"本机默认值"）。
     ///
-    /// ⚠️ 真源的保存写的是**项目级**文件（`.lithe/run/local.json`，经
-    /// `runConfig.updateOptions`；Maven 那两行写的是 Maven 工具窗的项目本地配置）；
-    /// 本侧没有项目级存储与那条 Core 通路，所以写的是全局设置文件，
-    /// 页面上也用 [`Self::project_page`] 的第一句如实说明（`settings.gpui.projectScopeGlobal`）。
+    /// 这与真源一致：真源这一页读写的是**项目级**文件（`.lithe/run/local.json`，经
+    /// `runConfig.updateOptions`；Maven 那两行写 Maven 工具窗的项目本地配置）。设计真源把
+    /// 优先级定为 `项目本机 > 全局默认 > 自动发现`
+    /// （`.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md` 第四节）。
+    ///
+    /// ⚠️ 写项目本机层会调 Core（守卫要 `git rev-parse`），所以走 `background_spawn`；
+    /// 失败只留诊断并**不假装保存成功**（`saved` 不置位）。
     fn project_save(&mut self, cx: &mut Context<Self>) {
         let java_home = draft_value(&self.java_home_input, cx);
         let maven_executable = draft_value(&self.maven_executable_input, cx);
         let maven_java_home = draft_value(&self.maven_java_home_input, cx);
         let maven_settings = draft_value(&self.maven_settings_input, cx);
         let maven_local_repository = draft_value(&self.maven_local_repository_input, cx);
+        let drafts = Overrides {
+            java_home,
+            maven_executable,
+            maven_java_home,
+            maven_settings,
+            maven_local_repository,
+        };
         let state = |value: &str| if value.is_empty() { "-" } else { "set" };
+        let scope = if self.project.workspace_root.is_some() {
+            "project"
+        } else {
+            "global"
+        };
         self.project_diagnose(&format!(
-            "run=save javaHome={} mavenExecutable={} mavenJavaHome={} mavenSettings={} mavenLocalRepo={}",
-            state(&java_home),
-            state(&maven_executable),
-            state(&maven_java_home),
-            state(&maven_settings),
-            state(&maven_local_repository),
+            "run=save scope={scope} javaHome={} mavenExecutable={} mavenJavaHome={} mavenSettings={} mavenLocalRepo={}",
+            state(&drafts.java_home),
+            state(&drafts.maven_executable),
+            state(&drafts.maven_java_home),
+            state(&drafts.maven_settings),
+            state(&drafts.maven_local_repository),
         ));
 
-        let store = self.store.clone();
-        store.update(cx, |store, cx| {
-            store.set_java_home_path(java_home, cx);
-            store.set_maven_executable_path(maven_executable, cx);
-            store.set_maven_java_home_path(maven_java_home, cx);
-            store.set_maven_settings_path(maven_settings, cx);
-            store.set_maven_local_repository_path(maven_local_repository, cx);
-        });
-        // 保存之后立刻按新值重探一次（真源保存后也会刷新运行侧的视图）；`saved` 要在
-        // `project_load` 之后置位，否则会被它清掉。
-        self.project_load(cx);
-        self.project.saved = true;
+        let Some(root) = self.project.workspace_root.clone() else {
+            // 没有工作区：这五个值就是全局默认值（既有行为，一行不变）。
+            let store = self.store.clone();
+            store.update(cx, |store, cx| {
+                store.set_java_home_path(drafts.java_home, cx);
+                store.set_maven_executable_path(drafts.maven_executable, cx);
+                store.set_maven_java_home_path(drafts.maven_java_home, cx);
+                store.set_maven_settings_path(drafts.maven_settings, cx);
+                store.set_maven_local_repository_path(drafts.maven_local_repository, cx);
+            });
+            self.project_load(cx);
+            self.project.saved = true;
+            return;
+        };
+
+        let paths = drafts.to_local();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_spawn(async move { save_local_toolchain(&root, &paths) })
+                .await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(saved) => {
+                    this.project_diagnose(&format!(
+                        "run=save result=ok runLocalBytes={} mavenLocalBytes={} exclusion={:?} ignore={:?}",
+                        saved.run_local_bytes,
+                        saved.maven_local_bytes,
+                        saved.exclusion,
+                        saved.ignore
+                    ));
+                    // 保存之后立刻按新值重探一次（真源保存后也会刷新运行侧的视图）；
+                    // `saved` 要在 `project_load` 之后置位，否则会被它清掉。
+                    this.project_load(cx);
+                    this.project.saved = true;
+                }
+                Err(error) => {
+                    // 不假装成功：页面上的「已保存」不出现，诊断里有原因。
+                    this.project_diagnose(&format!("run=save result=failed error={error}"));
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     /// 「项目 · JDK 与 Maven」页（阶段 16；真源
@@ -2496,14 +2693,21 @@ impl SettingsDialog {
 
         let mut toolchain_rows: Vec<gpui_kit::AnyElement> = Vec::new();
 
-        // ① 作用域：本侧是**全局**覆盖值（真源那句 `settings.project.scope` 说的是"当前项目"，
-        //    照抄会撒谎）。理由逐条写在 `extract-locale.mjs` 的 GPUI_ONLY_KEYS 里。
+        // ① 作用域：**如实**说明这一次保存写的是哪一层 —— 有工作区就是项目本机层
+        //    （`.lithe/*.local.json`），没有工作区才是全局设置文件（本机默认值）。
+        //    真源那句 `settings.project.scope` 说的是"当前项目"，本侧只在有工作区时才成立，
+        //    所以两种情况各一条文案（理由写在 `extract-locale.mjs` 的 GPUI_ONLY_KEYS 里）。
+        let scope_key = if self.project.workspace_root.is_some() {
+            "lithe.settings.gpui.projectScopeProject"
+        } else {
+            "lithe.settings.gpui.projectScopeGlobal"
+        };
         toolchain_rows.push(
             div()
                 .w_full()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(tr("lithe.settings.gpui.projectScopeGlobal"))
+                .child(tr(scope_key))
                 .into_any_element(),
         );
 
@@ -2632,6 +2836,13 @@ impl SettingsDialog {
                     .text_color(cx.theme().muted_foreground)
                     .child(tr(field.hint_key())),
             )
+            // 覆盖值来自哪一层（项目本机 / 全局默认）：没有覆盖值时不画这一行。
+            .children(override_origin_key(field.origin(&self.project.origins)).map(|key| {
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(tr(key))
+            }))
             // 「尚未生效」标注：Maven 的两个覆盖值今天**没有任何消费方**（判据见
             // [`ProjectField::pending_key`]）。用 warning 色而不是 danger：它不是错误，
             // 而是"这一格现在不改变任何行为"的事实；但也不能弱化到看不见。
@@ -2773,6 +2984,15 @@ impl SettingsDialog {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(tr(field.hint_key())),
+            )
+            // 覆盖值来自哪一层（项目本机 / 全局默认）：没有覆盖值时不画这一行。
+            .children(
+                override_origin_key(field.origin(&self.project.origins)).map(|key| {
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr(key))
+                }),
             )
             .child(
                 div()
@@ -3498,6 +3718,88 @@ fn theme_choices(cx: &App, applied: SharedString) -> Vec<(SharedString, SharedSt
             (SharedString::from(id), SharedString::from(label), checked)
         })
         .collect()
+}
+
+/// 字体族下拉的候选项：`(值, 标签, 选中)`。
+///
+/// 第一项固定是「默认（不覆盖）」——**空串**，表示不覆盖主题文件里的字体族
+/// （内置主题都不设字体族，所以实际效果就是系统默认字体）。
+///
+/// 其余项来自**系统已装字族**（排序 + 去重）。让用户只能从已装字族里选是有意的：
+/// GPUI 在"字族找不到"时会于首次布局那一行 panic
+/// （`gpui-component-0.6.6/src/theme/mono_font.rs:1-13`），自由文本输入就能制造那种崩溃，
+/// 而 `crate::theme::apply_font_families` 的校验只能"拒绝写入"、给不出可选的替代。
+///
+/// ⚠️ 当前值若不在这台机器的已装字族里（换了机器、或字体被卸载），**仍然把它列出来并选中**：
+/// 否则下拉会显示成「默认」，而设置文件里其实存着别的值 —— 那是"界面在说谎"。
+fn font_family_options(cx: &App, current: &str) -> Vec<(SharedString, SharedString, bool)> {
+    let current = current.trim();
+    let mut options = vec![(
+        SharedString::from(""),
+        tr("lithe.settings.gpui.valueNotOverridden"),
+        current.is_empty(),
+    )];
+
+    let mut names: Vec<String> = theme::installed_font_names(cx).to_vec();
+    names.sort();
+    names.dedup();
+
+    if !current.is_empty() && !names.iter().any(|name| name == current) {
+        options.push((
+            SharedString::from(current),
+            SharedString::from(current),
+            true,
+        ));
+    }
+    for name in names {
+        let checked = name == current;
+        options.push((
+            SharedString::from(name.clone()),
+            SharedString::from(name),
+            checked,
+        ));
+    }
+    options
+}
+
+/// 字体族下拉**按钮上**显示的文字：空值显示「默认（不覆盖）」，否则就是字族名。
+fn font_family_label(current: &str) -> SharedString {
+    let current = current.trim();
+    if current.is_empty() {
+        tr("lithe.settings.gpui.valueNotOverridden")
+    } else {
+        SharedString::from(current.to_string())
+    }
+}
+
+/// 终端字号下拉**按钮上**显示的文字：不覆盖时显示「默认（不覆盖）」，否则「N px」。
+fn terminal_font_size_label(current: f64) -> SharedString {
+    if current == TERMINAL_FONT_SIZE_UNSET {
+        tr("lithe.settings.gpui.valueNotOverridden")
+    } else {
+        // 归一化已经把值 round 成整数档，所以这里显示整数（`14 px` 而不是 `14.0 px`）。
+        SharedString::from(format!("{} px", current as u32))
+    }
+}
+
+/// 终端字号下拉的候选项：`(值, 标签, 选中)`。
+///
+/// 第一项是「默认（不覆盖）」——`0`，终端用它自己那一档（14px）。其余是
+/// `10..=22` 的整数档（与编辑器字号同一档，理由见 `schema.rs` 的常量文档）。
+fn terminal_font_size_options(current: f64) -> Vec<(SharedString, SharedString, bool)> {
+    let mut options = vec![(
+        SharedString::from((TERMINAL_FONT_SIZE_UNSET as u32).to_string()),
+        tr("lithe.settings.gpui.valueNotOverridden"),
+        current == TERMINAL_FONT_SIZE_UNSET,
+    )];
+    for size in (TERMINAL_FONT_SIZE_MIN as u32)..=(TERMINAL_FONT_SIZE_MAX as u32) {
+        options.push((
+            SharedString::from(size.to_string()),
+            SharedString::from(format!("{size} px")),
+            current == f64::from(size),
+        ));
+    }
+    options
 }
 
 /// 语言下拉的显示名。

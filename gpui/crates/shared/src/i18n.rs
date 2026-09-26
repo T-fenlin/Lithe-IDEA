@@ -337,11 +337,14 @@ mod tests {
             ("lithe.settings.gpui.restoreDefaultsTitle", "恢复默认设置？"),
             ("lithe.settings.gpui.restoreDefaultsBody", "所有设置都会回到默认值。"),
             // 阶段 14：真源的「编辑器 → 字体大小」这一行没有描述，本侧补一句说明作用范围
-            // （等宽字号同时作用于编辑器与终端正文）——理由写在 `GPUI_ONLY_KEYS` 里。
+            // （本侧有三个互不影响的字号键：界面 / 编辑器 / 终端）——理由写在 `GPUI_ONLY_KEYS` 里。
             (
                 "lithe.settings.gpui.editorFontSizeDescription",
-                "调整编辑器与终端正文的字号。界面字号在外观页。",
+                "调整代码编辑器的字号。界面字号在外观页，终端字号在终端页。",
             ),
+            // 字体三键（本批）：两个字族与终端字号都用「空值 = 不覆盖」的语义，
+            // 而真源的对应设置永远有具体值，所以「不覆盖」这个选项名是 gpui 侧新增的。
+            ("lithe.settings.gpui.valueNotOverridden", "默认（不覆盖）"),
             // 阶段 14：7 个"还没有子系统"的分类的**明确空态**文案（标题 + 每个分类一句前置条件）。
             // 真源里这些页都有内容，所以这一族键全是 gpui 侧新增；理由逐条写在
             // `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里。
@@ -373,7 +376,19 @@ mod tests {
             // 所以 `prerequisiteProject` 已经被删掉（`Category::prerequisite_key` 现在返回 `None`）。
             (
                 "lithe.settings.gpui.projectScopeGlobal",
-                "覆盖值保存在当前电脑的全局设置文件里；留空则使用自动检测到的值。真源的同一页按项目保存在 .lithe/run/local.json，gpui 侧还没有项目级存储，所以这一页的作用范围是全局，不是当前项目。",
+                "没有打开项目：覆盖值保存在当前电脑的全局设置文件里，作为本机默认；留空则使用自动检测到的值。打开项目后，这一页改的是那个项目自己的 .lithe/ 本机层，它的优先级更高。",
+            ),
+            (
+                "lithe.settings.gpui.projectScopeProject",
+                "覆盖值保存在当前项目的 .lithe/ 本机层（run.local.json 与 maven.local.json，不进版本控制）；本机层留空的值回落到全局设置，两层都空就用自动检测。",
+            ),
+            (
+                "lithe.settings.gpui.overrideFromProject",
+                "覆盖值来自本项目",
+            ),
+            (
+                "lithe.settings.gpui.overrideFromGlobal",
+                "覆盖值来自全局设置",
             ),
             (
                 "lithe.settings.gpui.sourceFromEnv",

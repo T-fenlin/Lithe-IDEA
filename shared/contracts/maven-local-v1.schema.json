@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lithe.dev/contracts/maven-local-v1.schema.json",
+  "title": "Lithe Maven Local Configuration v1",
+  "description": "Machine-local Maven selection for one workspace, stored in the project's .lithe/maven.local.json. It is the project-local layer of the Maven settings.xml / local-repository override; the global defaults live in the application settings file. Never share this document: it carries absolute machine paths. Note that the shared document layer preserves keys it does not model, so a hand-edited file may legitimately contain more than this schema describes.",
+  "type": "object",
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "settingsPath": { "type": "string" },
+    "localRepositoryPath": { "type": "string" }
+  },
+  "additionalProperties": false
+}

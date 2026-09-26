@@ -95,9 +95,11 @@ use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::{BottomPane, ChangesView};
 use lithe_gpui_settings::{
-    Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, RecentProjects,
+    Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, Overrides,
+    RecentProjects, resolve_overrides,
 };
-use lithe_gpui_shared::icons::idea;
+use lithe_gpui_shared::icons::{idea, idea_icon_svg_px};
+use lithe_gpui_shared::workspace_config::{ToolchainPaths, load_local_toolchain};
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
@@ -904,6 +906,17 @@ pub struct ShellWorkspace {
     ///
     /// 没有它就会出现"后一条提示被前一条的定时器提前清掉"（4 秒内连开两次项目时可见）。
     status_notice_generation: u64,
+    /// **建立工作区配置失败**时的常驻红条文案。
+    ///
+    /// 与 [`ShellWorkspace::status_notice`] 的区别是刻意的：那条是**临时**消息（4 秒后自己
+    /// 清掉），这条是**常驻**的、只能手动关 —— 因为"`.lithe` 没建出来"是一个需要用户处理的
+    /// 状态（写权限、盘符、安全软件），不是一句知会。口径见仓库既有先例
+    /// （`gpui/crates/git/src/changes_view.rs` 的 `render_write_error`：失败一定可见，
+    /// 不用 toast，因为它比红条更容易被用户错过、也更难截图取证）。
+    ///
+    /// 为什么必须存在这条：失败是**异步**到达的（[`prepare_workspace_config`] 走后台执行器），
+    /// 而且只打 stderr —— 双击启动的用户根本看不到 stderr，只会发现"`.lithe` 目录没出现"。
+    workspace_config_error: Option<SharedString>,
 }
 
 impl ShellWorkspace {
@@ -945,7 +958,7 @@ impl ShellWorkspace {
         // ⚠️ **必须早于下面那一步 `prepare_java`**：它会在后台起 JDTLS 并当场读这个值，
         // 登记晚了这一轮读到的还是"自动发现"的那个 JDK —— 也就是页面上写着「已选择」
         // 却没有生效的那副假象。
-        register_java_toolchain(cx);
+        register_java_toolchain(&root, cx);
 
         // 建立这个工作区的 `.lithe/project.json` 身份（首次打开时生成 UUID 并落盘；
         // 之后每次打开只读不写）。**打开即建、无条件**是一条产品决策，而
@@ -1161,9 +1174,10 @@ impl ShellWorkspace {
             // "文件被读回来了"与"外壳确实拿到了这句设置"。阶段 14 就是靠它抓到
             // "`tabSize` 写得出、读不回"那个 bug 的（见 `PLAN.md` §14.2）。
             println!(
-                "S1_SETTINGS wiring=workbench tab_size={} terminal_default_shell_id={:?} confirm_before_discard={} auto_completion={}",
+                "S1_SETTINGS wiring=workbench tab_size={} terminal_default_shell_id={:?} terminal_font_size={} confirm_before_discard={} auto_completion={}",
                 initial.tab_size,
                 initial.terminal_default_shell_id,
+                initial.terminal_font_size,
                 initial.confirm_before_discard,
                 initial.auto_completion
             );
@@ -1173,6 +1187,7 @@ impl ShellWorkspace {
             });
             terminal.update(cx, |pane, cx| {
                 pane.set_default_shell(&initial.terminal_default_shell_id, cx);
+                pane.set_font_size(terminal_font_size_override(initial.terminal_font_size), cx);
             });
             changes_for_settings.update(cx, |view, cx| {
                 view.set_confirm_before_discard(initial.confirm_before_discard, cx);
@@ -1188,6 +1203,9 @@ impl ShellWorkspace {
                 });
                 this.terminal.update(cx, |pane, cx| {
                     pane.set_default_shell(&settings.terminal_default_shell_id, cx);
+                    // 「终端字号」（本批）：与 `terminalDefaultShellId` 同一条"值型设置经外壳
+                    // 转发"的路子。差别是它作用在**所有已打开的页签**上（字号是渲染属性）。
+                    pane.set_font_size(terminal_font_size_override(settings.terminal_font_size), cx);
                 });
                 // ⚠️ 用字段 `changes`（不是外层捕获的那个实体）：这条闭包要在
                 // `ShellWorkspace` 上取本视图自己的引用，否则会和上面的 `cx.observe` 抢借用。
@@ -1198,7 +1216,11 @@ impl ShellWorkspace {
                 // 启动**（JDT LS 会话是一个工作区一个、`EditorPane::prepare_java` 幂等），
                 // 所以改了设置之后要重启应用才真的换 JVM —— 换 JDK 必须重建 JDT 索引，
                 // 静默重启会话会让索引与 JVM 的对应关系断掉。
-                register_java_toolchain(cx);
+                //
+                // ⚠️ 这里也读**项目本机层**（`.lithe/*.local.json`）：用户在设置页把覆盖值
+                // 存进项目本机层之后，全局设置其实没变，但这一行必须重新解析两层才能拿到新值。
+                let current_root = this.root.clone();
+                register_java_toolchain(&current_root, cx);
                 cx.notify();
             })
         });
@@ -1316,6 +1338,7 @@ impl ShellWorkspace {
             project_open_do_not_ask: Rc::new(Cell::new(false)),
             status_notice: None,
             status_notice_generation: 0,
+            workspace_config_error: None,
         };
         // 一行锚点诊断：整个外壳（项目树 / 编辑区 / JDTLS / 右栏 / Git 面板）都挂在**这一个**
         // 根上。换项目会重建整个外壳，所以换根前后各有且只有一行 `S1_WORKSPACE root=…`
@@ -2728,6 +2751,48 @@ impl ShellWorkspace {
         .detach();
     }
 
+    /// 建立工作区配置失败时的**常驻红条**（可手动关闭）。
+    ///
+    /// 与 [`ShellWorkspace::show_status_notice`] 刻意不同：那条是 4 秒后自己消失的临时消息，
+    /// 这条**不会自己消失** —— "`.lithe` 没建出来"是需要用户处理的失败（写权限 / 盘符 /
+    /// 安全软件拦写），自动消失就等于把它藏起来。范式照
+    /// `gpui/crates/git/src/changes_view.rs` 的 `render_write_error`（那个模块的文档写着
+    /// "失败一定可见：常驻红条，不是 console.error、也不是自动消失的 toast"）。
+    fn render_workspace_config_error(
+        &self,
+        message: SharedString,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        h_flex()
+            .w_full()
+            .flex_shrink_0()
+            .items_start()
+            .gap_2()
+            .px_3()
+            .py_2()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().danger.opacity(0.12))
+            .text_sm()
+            .text_color(cx.theme().danger)
+            .child(
+                // 图标用共享 helper（它自己设 `flex_shrink_0` + 尺寸 + 前景色，调用点不猜——
+                // 见 `lithe_gpui_shared::icons::idea_icon_svg_px` 的文档）。尺寸传 `rems`
+                // 而不是 `px`：rem 会随主题字号缩放。
+                idea_icon_svg_px(&idea::WARNING_CIRCLE_ICON, cx, rems(0.875)),
+            )
+            .child(div().flex_1().min_w_0().child(message))
+            .child(
+                Button::new("lithe-workspace-config-error-dismiss")
+                    .label(tr("lithe.ui.cancel"))
+                    .on_click(cx.listener(|shell: &mut Self, _event, _window, cx| {
+                        shell.workspace_config_error = None;
+                        cx.notify();
+                    })),
+            )
+            .into_any_element()
+    }
+
     // -----------------------------------------------------------------------
     // B4 的诊断入口（`--open-project-probe`）
     // -----------------------------------------------------------------------
@@ -2907,6 +2972,14 @@ impl Render for ShellWorkspace {
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let sheet_layer = Root::render_sheet_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
+
+        // 建立工作区配置失败时的**常驻红条**。与上面三个 layer 同一理由先取出来：
+        // 它的渲染要用 `cx`（`cx.theme()` 与关闭按钮的 listener），而后面那些区域渲染函数
+        // 会把 `cx` 不可变借到本函数末尾。
+        let workspace_config_error = self
+            .workspace_config_error
+            .clone()
+            .map(|message| self.render_workspace_config_error(message, cx));
 
         // 主菜单：先画菜单栏（它按"上一帧结束时的状态"画），再把用户上一帧点下的动作**真的执行掉**。
         //
@@ -3238,6 +3311,12 @@ impl Render for ShellWorkspace {
                     cx,
                 )
             }))
+            // ②.5 **建立工作区配置失败**的常驻红条（有才画）。
+            //
+            // 位置：压在标题栏与项目标签条之下、工作区之上 —— 它是"这个工作区的状态"，
+            // 不是全局通知，所以不该盖住标题栏；也不该放进状态栏（那里是 4 秒后自己消失的
+            // 临时消息，而这条要用户处理完才该消失）。
+            .children(workspace_config_error)
             // ③ 工作区：左右活动栏 + 左右面板 + 中央列，间隔 4。
             .child(
                 h_flex()
@@ -3451,7 +3530,11 @@ fn right_activity_items() -> Vec<ActivityItem> {
     ]
 }
 
-/// 设置里的 `javaHomePath` → `lithe-gpui-java` 要的 JDK 覆盖值（**纯函数**，便于单测）。
+/// 生效的 `javaHomePath` → `lithe-gpui-java` 要的 JDK 覆盖值（**纯函数**，便于单测）。
+///
+/// 收的是**五个生效值**（[`ToolchainPaths`]，已经按 `项目本机 > 全局默认` 解析过），不是
+/// `Settings`：这两个来源的优先级只有一份实现（`lithe_gpui_settings::resolve_overrides`），
+/// 这里只负责"空 = 没选"的判据。
 ///
 /// **只读 `javaHomePath`**：另外两个工具链键（`mavenExecutablePath` / `mavenJavaHomePath`）
 /// 在 gpui 侧没有任何消费方 —— `maven.scan` 是 Core 进程内的项目描述符解析，本侧不执行 `mvn`
@@ -3462,15 +3545,15 @@ fn right_activity_items() -> Vec<ActivityItem> {
 /// 空串 / 全空白等于"没选"（设置页的「清空」写的就是空串，照 `settings/src/project.rs`
 /// 的 `non_empty_opt` 同一条口径）；有值时去掉前后空白再转成路径。
 fn java_toolchain_override_from(
-    settings: &lithe_gpui_settings::Settings,
+    paths: &ToolchainPaths,
 ) -> Option<lithe_gpui_java::JavaToolchainOverride> {
-    let trimmed = settings.java_home_path.trim();
+    let trimmed = paths.java_home_path.trim();
     (!trimmed.is_empty()).then(|| lithe_gpui_java::JavaToolchainOverride {
         java_home: PathBuf::from(trimmed),
     })
 }
 
-/// 设置里的 `mavenSettingsPath` → 语言服务要的 Maven 用户 `settings.xml`（**纯函数**，便于单测）。
+/// 生效的 `mavenSettingsPath` → 语言服务要的 Maven 用户 `settings.xml`（**纯函数**，便于单测）。
 ///
 /// 这个键与 JDK 那一条**同等真实**：它进 `mavenContext.settingsPath`，Core 发布成
 /// `java.configuration.maven.userSettings`（`shared/contracts/rust-core-api.md:1170-1178`）。
@@ -3478,9 +3561,18 @@ fn java_toolchain_override_from(
 ///
 /// `mavenLocalRepositoryPath` 仍不在这里：它只在 `maven.launchPlan` 里用，今天是死值
 /// （见 `lithe_gpui_java::toolchain` 的模块文档）。
-fn maven_settings_override_from(settings: &lithe_gpui_settings::Settings) -> Option<PathBuf> {
-    let trimmed = settings.maven_settings_path.trim();
+fn maven_settings_override_from(paths: &ToolchainPaths) -> Option<PathBuf> {
+    let trimmed = paths.maven_settings_path.trim();
     (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
+}
+
+/// 设置里的终端字号 → 终端面板要的 `Option<f32>`。
+///
+/// `terminalFontSize` 用 `0` 表示**不覆盖**（见 `lithe_gpui_settings::schema`），
+/// 而终端面板的 `None` 才是"用默认档"（`.text_sm()` 的 14px）。这个转换只做一次，
+/// 免得两处调用各自写一遍 `> 0.0` 的判据。
+fn terminal_font_size_override(value: f64) -> Option<f32> {
+    (value > 0.0).then_some(value as f32)
 }
 
 /// 解析（并在首次需要时落盘）本工作区的 `.lithe/project.json` 项目身份。调用点见 `ShellWorkspace::new`。
@@ -3514,8 +3606,15 @@ fn maven_settings_override_from(settings: &lithe_gpui_settings::Settings) -> Opt
 ///
 /// 这条链会调 Core（`git.write` 内部要 `git rev-parse`，是子进程），所以阻塞的那一段走
 /// `background_spawn`；任务 detach 掉，外壳被换根丢掉时也不影响它（它不碰实体）。
+/// ## 失败必须**对用户可见**（不只是 stderr）
+///
+/// 失败是异步到达的（这条链在后台执行器上），所以它回填到 [`ShellWorkspace`] 的
+/// [`ShellWorkspace::workspace_config_error`]，由 `render` 画成**常驻红条**（可手动关闭）。
+/// 只打 stderr 是不够的：双击启动的用户看不到它，只会发现"`.lithe` 目录没出现"。
+/// 记录这个选择是因为备选方案（`BackgroundExecutor` 里直接开对话框 / 通知）都要求窗口与
+/// `Root` 已就位，而这里只保证"实体活着"；`this.update` 最稳。
 fn prepare_workspace_config(root: PathBuf, cx: &mut Context<ShellWorkspace>) {
-    cx.spawn(async move |_this, cx| {
+    cx.spawn(async move |this, cx| {
         let task_root = root.clone();
         let identity = cx
             .background_spawn(async move {
@@ -3534,29 +3633,60 @@ fn prepare_workspace_config(root: PathBuf, cx: &mut Context<ShellWorkspace>) {
                     "path"
                 }
             ),
-            Err(error) => eprintln!(
-                "S1_WORKSPACE_CONFIG shell_identity_failed root={} error={error}",
-                root.display()
-            ),
+            Err(error) => {
+                eprintln!(
+                    "S1_WORKSPACE_CONFIG shell_identity_failed root={} error={error}",
+                    root.display()
+                );
+                // 常驻红条：文案带 `{reason}`，填的是 `WorkspaceConfigError` 的 Display 原文
+                // （"确保本机排除失败：…" / "清单文件读写失败：…"），用户据此知道该查什么。
+                let reason = error.to_string();
+                let message = lithe_gpui_shared::tr_args(
+                    "lithe.gpui.workspaceConfigFailed",
+                    &[("reason", &reason)],
+                );
+                // 实体可能已经销毁（换根丢掉外壳）：`update` 返回 `Err` 时静默忽略，不 panic。
+                let _ = this.update(cx, |shell, cx| {
+                    shell.workspace_config_error = Some(message);
+                    cx.notify();
+                });
+            }
         }
     })
     .detach();
 }
 
-/// 把设置里的 JDK 与 Maven `settings.xml` 覆盖值登记给语言服务（调用点见 `ShellWorkspace::new`）。
+/// 把生效的 JDK 与 Maven `settings.xml` 覆盖值登记给语言服务（调用点见 `ShellWorkspace::new`）。
 ///
-/// 判据全在两个 `*_from` 里；这里只做"读设置 → 登记"与一行启动证据。
-/// 设置状态不存在时（测试或别的宿主里没有 `SettingsStore`）登记 `None` = 纯自动发现，
-/// 与 `try_store` 在别处"没有设置就回落默认值"的口径一致，不 panic。
-fn register_java_toolchain(cx: &App) {
-    let settings = lithe_gpui_settings::try_store(cx)
-        .map(|store| store.read(cx).settings().clone());
-    let overridden = settings
-        .as_ref()
-        .and_then(java_toolchain_override_from);
-    let maven_settings = settings.as_ref().and_then(maven_settings_override_from);
+/// **优先级 `项目本机 > 全局默认 > 自动发现`**：项目本机层是 `.lithe/run.local.json` 的
+/// `toolchain` 对象与 `.lithe/maven.local.json`（[`load_local_toolchain`]），全局默认是设置文件里
+/// 那五个键（`Overrides::from_settings`）。两层怎么合只有一份实现
+/// （`lithe_gpui_settings::resolve_overrides`），这里只做"读两层 → 登记"与一行启动证据。
+///
+/// 判据全在两个 `*_from` 里。设置状态不存在时（测试或别的宿主里没有 `SettingsStore`）全局层
+/// 按全空处理，与 `try_store` 在别处"没有设置就回落默认值"的口径一致，不 panic。
+///
+/// ⚠️ 这里同步读两份很小的 JSON（不碰 Core、不起子进程）。**不要**在这里调
+/// `ensure_project_dir_excluded` 之类会起 `git` 子进程的东西：本函数在 `ShellWorkspace::new`
+/// 与设置变化回调里被调用，都属于 UI 线程的路径。
+///
+/// ⚠️ **改了项目本机层的值，语言服务要重启才吃到新值**（与"换 JDK 必须重建 JDT 索引"同一条
+/// 既有口径：`EditorPane::prepare_java` 一个工作区一个会话、幂等）。所以这里不尝试热重启会话。
+fn register_java_toolchain(root: &Path, cx: &App) {
+    let global = lithe_gpui_settings::try_store(cx)
+        .map(|store| Overrides::from_settings(store.read(cx).settings()))
+        .unwrap_or_default();
+    let local = load_local_toolchain(root);
+    for diagnostic in &local.diagnostics {
+        eprintln!("S1_SETTINGS wiring=java_toolchain local_diagnostic {diagnostic}");
+    }
+    let (resolved, origins) = resolve_overrides(&local.paths, &global);
+    let paths = resolved.to_local();
+
+    let overridden = java_toolchain_override_from(&paths);
+    let maven_settings = maven_settings_override_from(&paths);
     println!(
-        "S1_SETTINGS wiring=java_toolchain java_home_path={} maven_settings_path={}",
+        "S1_SETTINGS wiring=java_toolchain java_home_path={} maven_settings_path={} {}",
         overridden
             .as_ref()
             .map(|overridden| overridden.java_home.display().to_string())
@@ -3564,7 +3694,9 @@ fn register_java_toolchain(cx: &App) {
         maven_settings
             .as_ref()
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "-".to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        // 五个值各自的来源（可 grep）：证明"项目本机压过全局"这条优先级真的生效。
+        ToolchainPaths::diagnostic_suffix(&origins)
     );
     lithe_gpui_java::set_java_toolchain_override(overridden);
     lithe_gpui_java::set_maven_settings_override(maven_settings);
@@ -3573,9 +3705,10 @@ fn register_java_toolchain(cx: &App) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionFlags, CommandId, COMMAND_ORDER, OpenDestination, ProjectOpenDecision, RightScanState,
-        RightToolWindowView, left_activity_index, resolve_project_open_destination,
-        right_scan_should_notify, visible_commands,
+        ActionFlags, CommandId, COMMAND_ORDER, OpenDestination, Overrides, ProjectOpenDecision,
+        RightScanState, RightToolWindowView, ToolchainPaths, left_activity_index,
+        resolve_overrides, resolve_project_open_destination, right_scan_should_notify,
+        visible_commands,
     };
 
     /// B2：`menu_bar::install_key_actions` 绑的六条键位，逐条对着 `MENUS` 与 keymap 语法定一遍。
@@ -3739,25 +3872,23 @@ mod tests {
     /// 日志守。
     #[test]
     fn java_toolchain_override_follows_java_home_path() {
-        use lithe_gpui_settings::Settings;
-
-        let mut settings = Settings::default();
+        let mut paths = ToolchainPaths::default();
         assert_eq!(
-            super::java_toolchain_override_from(&settings),
+            super::java_toolchain_override_from(&paths),
             None,
             "默认的空串 = 没选覆盖值"
         );
 
-        settings.java_home_path = "   ".to_string();
+        paths.java_home_path = "   ".to_string();
         assert_eq!(
-            super::java_toolchain_override_from(&settings),
+            super::java_toolchain_override_from(&paths),
             None,
             "全空白同样等于没选（不能变成 `PathBuf::from(\"\")` 这种「当前目录」）"
         );
 
-        settings.java_home_path = " C:\\tools\\jdk-21 ".to_string();
+        paths.java_home_path = " C:\\tools\\jdk-21 ".to_string();
         let overridden =
-            super::java_toolchain_override_from(&settings).expect("填了值就必须给出覆盖值");
+            super::java_toolchain_override_from(&paths).expect("填了值就必须给出覆盖值");
         assert_eq!(
             overridden.java_home,
             std::path::PathBuf::from("C:\\tools\\jdk-21"),
@@ -3770,26 +3901,63 @@ mod tests {
     /// 会让"选了 settings.xml 但没选 JDK"这条最常见的用法静默失效。
     #[test]
     fn maven_settings_override_follows_its_own_key() {
-        use lithe_gpui_settings::Settings;
+        let mut paths = ToolchainPaths::default();
+        assert_eq!(super::maven_settings_override_from(&paths), None);
 
-        let mut settings = Settings::default();
-        assert_eq!(super::maven_settings_override_from(&settings), None);
-
-        settings.maven_settings_path = "  \t".to_string();
+        paths.maven_settings_path = "  \t".to_string();
         assert_eq!(
-            super::maven_settings_override_from(&settings),
+            super::maven_settings_override_from(&paths),
             None,
             "全空白等于没选（否则会拿空路径去当 settings.xml）"
         );
 
-        settings.maven_settings_path = " D:\\ci\\settings.xml ".to_string();
+        paths.maven_settings_path = " D:\\ci\\settings.xml ".to_string();
         assert_eq!(
-            super::maven_settings_override_from(&settings),
+            super::maven_settings_override_from(&paths),
             Some(std::path::PathBuf::from("D:\\ci\\settings.xml")),
             "前后空白必须去掉"
         );
-        // 同一个设置里 JDK 还是"没选"：两条判据互不影响。
-        assert_eq!(super::java_toolchain_override_from(&settings), None);
+        // 同一份生效值里 JDK 还是"没选"：两条判据互不影响。
+        assert_eq!(super::java_toolchain_override_from(&paths), None);
+    }
+
+    /// **优先级 `项目本机 > 全局默认 > 自动发现`** —— 在"登记给语言服务"这个边界上验一次。
+    ///
+    /// 这一层只搬运五个值，优先级实现只有一份（`lithe_gpui_settings::resolve_overrides` →
+    /// `lithe_gpui_shared::workspace_config::ToolchainPaths::resolve`），但"登记确实用了生效值"
+    /// 这件事必须在**调用边界**上钉住：否则界面显示一套、语言服务拿另一套。
+    #[test]
+    fn project_local_toolchain_wins_over_the_global_default_when_registering() {
+        use lithe_gpui_shared::workspace_config::OverrideOrigin;
+
+        let global = Overrides {
+            java_home: "C:\\global\\jdk".to_string(),
+            maven_settings: "C:\\global\\settings.xml".to_string(),
+            ..Overrides::default()
+        };
+        // 项目本机只设了 JDK：Maven 的 settings.xml 应当回落到全局那一个。
+        let local = ToolchainPaths {
+            java_home_path: "D:\\project\\jdk".to_string(),
+            ..ToolchainPaths::default()
+        };
+
+        let (resolved, origins) = resolve_overrides(&local, &global);
+        let paths = resolved.to_local();
+        assert_eq!(
+            super::java_toolchain_override_from(&paths)
+                .expect("项目本机填了值")
+                .java_home,
+            std::path::PathBuf::from("D:\\project\\jdk"),
+            "项目本机必须压过全局"
+        );
+        assert_eq!(
+            super::maven_settings_override_from(&paths),
+            Some(std::path::PathBuf::from("C:\\global\\settings.xml")),
+            "项目本机没设的值回落到全局默认"
+        );
+        assert_eq!(origins.java_home_path, OverrideOrigin::Project);
+        assert_eq!(origins.maven_settings_path, OverrideOrigin::Global);
+        assert_eq!(origins.maven_executable_path, OverrideOrigin::Unset);
     }
 
     /// 深色配色下的朝向快照（其余字段取默认可见状态，避免测试里到处写一遍）。

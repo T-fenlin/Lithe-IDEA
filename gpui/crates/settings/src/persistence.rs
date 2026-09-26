@@ -291,6 +291,10 @@ mod tests {
             // 同上：这两个键的默认值也是 `true`，所以"非默认值"必须写 `false`。
             ask_where_to_open_projects: false,
             open_folders_in_new_window: false,
+            // 字体三键的"非默认值"：两个字族默认空串（不覆盖），终端字号默认 `0`（不覆盖）。
+            font_family: "Inter".to_string(),
+            mono_font_family: "JetBrains Mono".to_string(),
+            terminal_font_size: 16.0,
         }
     }
 

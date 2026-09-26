@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 68 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 73 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8656,11 +8656,19 @@ lithe:
   settings.gpui.restoreDefaultsBody:
     zh-CN: "所有设置都会回到默认值。"
   settings.gpui.editorFontSizeDescription:
-    zh-CN: "调整编辑器与终端正文的字号。界面字号在外观页。"
+    zh-CN: "调整代码编辑器的字号。界面字号在外观页，终端字号在终端页。"
+  settings.gpui.valueNotOverridden:
+    zh-CN: "默认（不覆盖）"
   settings.gpui.pageNotAvailableTitle:
     zh-CN: "此分类尚未接入"
   settings.gpui.projectScopeGlobal:
-    zh-CN: "覆盖值保存在当前电脑的全局设置文件里；留空则使用自动检测到的值。真源的同一页按项目保存在 .lithe/run/local.json，gpui 侧还没有项目级存储，所以这一页的作用范围是全局，不是当前项目。"
+    zh-CN: "没有打开项目：覆盖值保存在当前电脑的全局设置文件里，作为本机默认；留空则使用自动检测到的值。打开项目后，这一页改的是那个项目自己的 .lithe/ 本机层，它的优先级更高。"
+  settings.gpui.projectScopeProject:
+    zh-CN: "覆盖值保存在当前项目的 .lithe/ 本机层（run.local.json 与 maven.local.json，不进版本控制）；本机层留空的值回落到全局设置，两层都空就用自动检测。"
+  settings.gpui.overrideFromProject:
+    zh-CN: "覆盖值来自本项目"
+  settings.gpui.overrideFromGlobal:
+    zh-CN: "覆盖值来自全局设置"
   settings.gpui.sourceFromEnv:
     zh-CN: "来自 {name} 环境变量"
   settings.gpui.mavenExecutableHint:
@@ -8779,6 +8787,8 @@ lithe:
     zh-CN: "尚未接入：缺快捷键一览界面（现在只有 keymap，没有能看的清单）。"
   gpui.menuMissing.terminalSplit:
     zh-CN: "尚未接入：终端没有拆分能力（一个终端面板只有一组页签，没有分栏）。"
+  gpui.workspaceConfigFailed:
+    zh-CN: "建立工作区配置失败：{reason}"
 
 gpui_component:
   Dialog.ok:

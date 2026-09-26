@@ -35,7 +35,7 @@ use crate::core_client::{CoreError, core_json};
 use crate::document;
 use crate::workspace_config::DIAGNOSTIC_PREFIX;
 use crate::workspace_config::paths::WorkspaceConfigPaths;
-use crate::workspace_config::sharing::{self, EnsureExcluded};
+use crate::workspace_config::sharing::{self, EnsureExcluded, IgnoreFileOutcome, SharingError};
 
 /// `project.json` 当前的文档版本。
 pub const PROJECT_MANIFEST_VERSION: u32 = 1;
@@ -74,6 +74,8 @@ pub struct ManifestSaved {
     pub bytes: usize,
     /// 写之前"确保不共享"的结论（非 Git 项目会是 [`EnsureExcluded::NotARepository`]）。
     pub exclusion: EnsureExcluded,
+    /// `.lithe/.gitignore` 的补齐结论（第二道闸，见 [`sharing::ensure_local_ignore_file`]）。
+    pub ignore: IgnoreFileOutcome,
 }
 
 /// 工作区身份。
@@ -103,7 +105,15 @@ impl ProjectIdentity {
 #[derive(Debug)]
 pub enum WorkspaceConfigError {
     /// 写 `.lithe/` 之前"确保本机排除"失败（不是"非 Git 仓库"那一类，那种已经被静默跳过）。
-    Exclude(CoreError),
+    ///
+    /// 载荷是 [`SharingError`] 而不是 `CoreError`：那一层现在会**回读校验**，所以失败可能是
+    /// "写入被静默丢弃"（Core 自己报了成功），不一定是 Core 调用失败。
+    Exclude(SharingError),
+    /// 解析路径身份失败（Core 的 `lsp.jdtWorkspaceKey`）。
+    ///
+    /// 与 [`Self::Exclude`] 分开是因为它是**另一件事**：不是"排除没做成"，而是"清单用不了、
+    /// 退到路径身份时连路径身份也拿不到"。
+    PathIdentity(CoreError),
     /// 读写清单文件失败。
     Io(io::Error),
     /// 生成文档 JSON 失败。
@@ -113,15 +123,35 @@ pub enum WorkspaceConfigError {
     /// 清单当前**只拥有** `id` 这一个字段，所以没有 id 就没有可写内容；更要紧的是
     /// typed 的 `id: null` 会在合并时盖掉文件里已有的 id —— 那是静默的数据丢失。
     MissingId,
+    /// 磁盘上的文档声明了**比本程序支持的更高**的版本：拒绝写入，别把它降级覆盖。
+    ///
+    /// 见设计 Note 第六节（"遇到更高版本不静默降级，提示并只读"）。
+    ReadOnly {
+        /// 被拒绝的文件（用于诊断）。
+        path: String,
+        /// 文件里声明的版本。
+        declared: u64,
+        /// 本程序支持的版本。
+        supported: u32,
+    },
 }
 
 impl fmt::Display for WorkspaceConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Exclude(error) => write!(formatter, "确保本机排除失败：{error}"),
+            Self::PathIdentity(error) => write!(formatter, "解析路径身份失败：{error}"),
             Self::Io(error) => write!(formatter, "清单文件读写失败：{error}"),
             Self::Json(error) => write!(formatter, "清单 JSON 生成失败：{error}"),
             Self::MissingId => write!(formatter, "项目清单缺少 id，拒绝写入（会抹掉已有的身份）"),
+            Self::ReadOnly {
+                path,
+                declared,
+                supported,
+            } => write!(
+                formatter,
+                "文档版本 {declared} 高于本程序支持的 {supported}，拒绝覆盖：{path}"
+            ),
         }
     }
 }
@@ -202,11 +232,18 @@ pub fn save_project_manifest(
         previous.as_ref(),
         PROJECT_MANIFEST_VERSION,
     )?;
+    // 第二道闸跟着一起维护（设计 Note 第七节的硬要求"始终维护 `.lithe/.gitignore`"）：
+    // 它要生效的时刻正是第一道闸（本机排除）被移除的那一刻，所以不能等到共享时才写。
+    let ignore = sharing::ensure_local_ignore_file(root).map_err(WorkspaceConfigError::Io)?;
     println!(
-        "{DIAGNOSTIC_PREFIX} manifest_saved root={} bytes={bytes} exclusion={exclusion:?}",
+        "{DIAGNOSTIC_PREFIX} manifest_saved root={} bytes={bytes} exclusion={exclusion:?} ignore={ignore:?}",
         root.display()
     );
-    Ok(ManifestSaved { bytes, exclusion })
+    Ok(ManifestSaved {
+        bytes,
+        exclusion,
+        ignore,
+    })
 }
 
 /// 解析这个工作区的项目身份：清单里的 `id` 优先，否则生成一个写回，写不了就用路径身份。
@@ -229,7 +266,7 @@ pub fn resolve_project_id(root: &Path) -> Result<ProjectIdentity, WorkspaceConfi
         );
         return path_identity(root)
             .map(ProjectIdentity::PathDerived)
-            .map_err(WorkspaceConfigError::Exclude);
+            .map_err(WorkspaceConfigError::PathIdentity);
     }
 
     let id = uuid::Uuid::new_v4().to_string();

@@ -118,10 +118,17 @@ const GPUI_ONLY_KEYS = [
   },
   {
     key: "settings.gpui.editorFontSizeDescription",
-    zh: "调整编辑器与终端正文的字号。界面字号在外观页。",
-    en: "Adjusts the text size of the editor and terminal. Interface text size lives in Appearance.",
+    zh: "调整代码编辑器的字号。界面字号在外观页，终端字号在终端页。",
+    en: "Adjusts the code editor text size. Interface text size lives in Appearance; terminal text size lives in Terminal.",
     reason:
-      "真源的「编辑器 → 字体大小」这一行没有描述（macos-settings-panels.tsx:283-292），而 gpui 侧的字号落在唯一的等宽字号 token 上（Theme::mono_font_size），编辑器与终端正文共用它；补一句说明作用范围，避免与外观页的「界面字体大小」（uiFontSize，rem 基准）混淆。",
+      "真源的「编辑器 → 字体大小」这一行没有描述（macos-settings-panels.tsx:283-292）。本侧补一句说明作用范围，避免与另外两个字号键混淆：外观页的「界面字体大小」（uiFontSize，rem 基准）与终端页的「字体大小」（terminalFontSize，终端视图自己的覆盖值）。这三者互不影响。",
+  },
+  {
+    key: "settings.gpui.valueNotOverridden",
+    zh: "默认（不覆盖）",
+    en: "Default (no override)",
+    reason:
+      "字体族与终端字号两个键用「空值 = 不覆盖」的语义（两个字族是空串、终端字号是 0），这样主题文件里指定的字体族不会被用户的空设置抹掉。真源的字体族设置永远有一个具体值、终端字号也永远有具体值，没有对应的「不覆盖」选项，所以要自己的键。",
   },
   {
     key: "settings.gpui.pageNotAvailableTitle",
@@ -132,10 +139,31 @@ const GPUI_ONLY_KEYS = [
   },
   {
     key: "settings.gpui.projectScopeGlobal",
-    zh: "覆盖值保存在当前电脑的全局设置文件里；留空则使用自动检测到的值。真源的同一页按项目保存在 .lithe/run/local.json，gpui 侧还没有项目级存储，所以这一页的作用范围是全局，不是当前项目。",
-    en: "Overrides live in this computer's global settings file; leave a field empty to use the detected value. The Windows page stores them per project in .lithe/run/local.json, and gpui has no project-level store yet, so this page is global rather than project-scoped.",
+    zh: "没有打开项目：覆盖值保存在当前电脑的全局设置文件里，作为本机默认；留空则使用自动检测到的值。打开项目后，这一页改的是那个项目自己的 .lithe/ 本机层，它的优先级更高。",
+    en: "No project is open: overrides are stored in this computer's global settings file as machine-wide defaults, and an empty field falls back to the detected value. With a project open, this page edits that project's own .lithe/ local layer instead, which takes precedence.",
     reason:
-      "「项目 · JDK 与 Maven」页的作用域说明。真源的 settings.project.scope 写的是「仅保存在当前电脑，作用于当前项目」（project-environment-settings.tsx:212 + services/project-environment.ts 写 .lithe/run/local.json），而 gpui 侧的设置 crate 只能落**全局**设置文件（它不依赖外壳、拿不到工作区根，也没有项目级存储）—— 照 task 的硬要求，文案必须如实区分，不能假装是项目级。",
+      "「项目 · JDK 与 Maven」页的作用域说明（**没有工作区**的那一支）。真源的 settings.project.scope 写的是「仅保存在当前电脑，作用于当前项目」，本侧拆成两支：有工作区时写项目本机层（见下一条），没有工作区时写全局设置文件充当本机默认。这一句必须如实说明「现在写的是哪一层」，否则用户会以为改的是项目、其实改的是全局。",
+  },
+  {
+    key: "settings.gpui.projectScopeProject",
+    zh: "覆盖值保存在当前项目的 .lithe/ 本机层（run.local.json 与 maven.local.json，不进版本控制）；本机层留空的值回落到全局设置，两层都空就用自动检测。",
+    en: "Overrides are stored in this project's .lithe/ local layer (run.local.json and maven.local.json, never committed); an empty field falls back to the global settings, and if both are empty the detected value is used.",
+    reason:
+      "同一句说明的**有工作区**那一支。设计真源把优先级定为「项目本机 > 全局默认 > 自动发现」（.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md 第四节），这里把它讲给用户听：写哪里、留空会怎样、两层都空会怎样。",
+  },
+  {
+    key: "settings.gpui.overrideFromProject",
+    zh: "覆盖值来自本项目",
+    en: "override from this project",
+    reason:
+      "五个覆盖值现在有两层来源，而输入框只显示生效值。不标来源的话，「我明明在全局设了 JDK、为什么这个项目用的是另一个」无从判断。这一条标「来自项目本机层」。",
+  },
+  {
+    key: "settings.gpui.overrideFromGlobal",
+    zh: "覆盖值来自全局设置",
+    en: "override from global settings",
+    reason:
+      "同上的另一半：这一格的值来自全局设置文件（本机默认）。来源为「自动发现」时不画任何标注，所以不需要第三条键。",
   },
   {
     key: "settings.gpui.sourceFromEnv",
@@ -543,6 +571,13 @@ const GPUI_ONLY_KEYS = [
     en: "Not wired yet: the terminal cannot be split (a terminal panel has one tab strip and no panes).",
     reason:
       "B3（同上）。给「终端 → 向右拆分终端 / 向下拆分终端」。事实依据：terminal crate 只有标签页（TerminalPane::new_tab / close_tab），没有分栏树（terminal_view.rs:695 也记着 terminal.close 之前同样未绑）。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.workspaceConfigFailed",
+    zh: "建立工作区配置失败：{reason}",
+    en: "Failed to set up the workspace configuration: {reason}",
+    reason:
+      "打开项目时建立 `.lithe/project.json` 失败（写不进、或写入被静默丢弃）。真源没有对应文案：Windows 侧打开项目不写 `.lithe`，macOS 侧只在显式「识别并生成」时写。这条是 gpui 侧「打开即建」这条产品决策带来的失败面 —— 它必须**可见**，因为用户双击启动时看不到 stderr，只会发现 `.lithe` 没出现（父代理实测踩到过：环境静默丢弃工作区之外的写入，日志里只有 stderr）。仓库口径见 gpui/crates/git/src/changes_view.rs 的 render_write_error：失败一定可见、常驻红条、不自动消失。{reason} 由调用点填 WorkspaceConfigError 的 Display 原文。",
   },
 ];
 

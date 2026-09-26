@@ -149,6 +149,32 @@
   **退出前补写**（`on_app_quit`，补上防抖窗口里那最后一次改动）。
   新增的两个直接依赖 `notify` / `async-channel` 本来就在依赖树里（分别由 `gpui-component` /
   `gpui-pre` 引入），没有引入新的第三方代码。
+- **字体三键（本批，见 `PLAN.md` §8.10）**：`fontFamily`（界面）、`monoFontFamily`（编辑器与终端）
+  写主题 token，**空串 = 不覆盖**；`terminalFontSize`（`0` = 不覆盖）经外壳转发给
+  `TerminalPane::set_font_size` —— 终端正文用的是 typography 的 `sm` token 而**不是**
+  `mono_font_size`（旧注释写"两者共用"，已改对），所以终端字号只能在终端视图里做。
+  两个字族键**写入前校验系统已装字族**：GPUI 在字族缺失时首次布局会 panic，而这两个键是用户填的
+  字符串；设置页的下拉也只列已装字族 + 一个「默认（不覆盖）」。`ligatures` / `lineHeight` / `iconTheme`
+  仍然**不做**（前者的上游没有消费 FontFeatures 的缝）。
+  ⚠️ 本批**没跑**整 workspace 测试：同批另一个增量（工具链分层）的 `workbench` 在制品还引用着未导入的
+  符号，7 个编译错误全在 `workspace.rs` 的 `mod tests`；本批改动的三个 crate 单独验证已通过。
+- **工具链五个值有了项目本机层**（增量 4，见 `PLAN.md` §8.11）：优先级
+  **`项目本机 > 全局默认 > 自动发现`**。前三个值（`javaHomePath` / `mavenExecutablePath` /
+  `mavenJavaHomePath`）进 `.lithe/run.local.json` 的 `toolchain` 对象（形状由既有运行配置契约定义，
+  `version: 2`），后两个（`mavenSettingsPath` / `mavenLocalRepositoryPath`）进新文件
+  `.lithe/maven.local.json`（新 schema `shared/contracts/maven-local-v1.schema.json`）。
+  - 设置页的「项目 · JDK 与 Maven」现在**有工作区就写项目本机层**，没有工作区才写全局设置文件；
+    作用域那句文案与每一格的来源标注都跟着如实改了（`projectScopeProject` / `overrideFromProject`
+    / `overrideFromGlobal`）。
+  - 语言服务登记改用**生效值**：`S1_SETTINGS wiring=java_toolchain … project=/global=/unset=`
+    这行日志能直接看出五个值各来自哪一层。端到端 A/B 实测：项目写 `jdk-A`、全局写 `jdk-B` →
+    `java_home_path=D:\project\jdk-A`（且 `settings.xml` 回落到全局）；把项目值清空 → 回落到 `jdk-B`。
+  - **`.lithe/.gitignore` 终于有写入方了**（第二道闸，此前只在设计里要求"始终维护"）：
+    只追加缺失规则、规则齐全时**不写文件**（端到端实测字节与 mtime 都不变），用户可用 `!规则` 否定。
+  - `.lithe/run.local.json` 与**旧路径** `.lithe/run/local.json` 是**文件级双读**（现役 macOS/Windows
+    写的是旧路径）；写只写新路径。
+  - **未做**：`mavenExecutablePath` / `mavenJavaHomePath` / `mavenLocalRepositoryPath` 仍无消费方；
+    改了项目本机值要让语言服务重启才生效（与"换 JDK 必须重建 JDT 索引"同一口径）。
 - **gpui 现在能写 `.lithe/` 了**（增量 2/3，见 `PLAN.md` §8.9；设计真源是
   `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`）：
   - `shared::document`：版本化 JSON 文档的通用原语（解析 / 未知键保留 / 原子写），
@@ -180,6 +206,22 @@
     `GIT_CEILING_DIRECTORIES` 挡住外层仓库），跑完确认真实仓库的 `.git/info/exclude` **未污染**。
   - ⚠️ **端到端只能在仓库内做**：`%TEMP%` 与仓库外目录对**应用进程也**不可写
     （`create_dir_all` 报 `os error 5`），所以临时仓库建在 `.artifacts/` 下并自己 `git init`。
+- **守卫改成"写了之后回读"（缺陷修复，见 `PLAN.md` §8.9 的两节）**：实测到守卫**谎报**
+  `excluded` —— 写入被环境静默丢弃时 `fs` 不报错、Core 也返回成功，于是旧实现直接宣称成功，
+  而那个仓库的排除文件里根本没有 `.lithe/`。现在：
+  - `ensure_project_dir_excluded` 写完之后读 `<gitCommonDirectory>/info/exclude`（位置来自 Core 的
+    `git.watchContext`，worktree/submodule 下也对）确认那一条**在**；`share_project_config` 移除后
+    确认它**不在**。判据是纯函数 `sharing::pattern_is_present`（可直接用临时文件测）。
+  - 校验不通过时返回 `SharingError::NotPersisted { operation, pattern, path, reason }` + 诊断
+    `S1_WORKSPACE_CONFIG exclude_not_persisted …`，**绝不**再打 `excluded`。
+  - 顺带把"路径身份也拿不到"从借用 `WorkspaceConfigError::Exclude` 拆成独立的
+    `PathIdentity(CoreError)`（原来语义不对）。
+- **工作区配置失败现在对用户可见**：`ShellWorkspace::workspace_config_error` → 标题栏之下、
+  工作区之上的**常驻红条**（可手动关，`lithe.ui.cancel`）。与状态栏那条 4 秒自动消失的
+  `status_notice` 刻意不同：这是要用户处理的失败。异步结果用 `this.update(…)` 回填 + `notify`
+  （不开对话框/通知：换根时它们要求窗口与 `Root` 就位，而回填只保证实体活着）。
+  文案键 `gpui.workspaceConfigFailed` 在 `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`
+  里 —— **locale 的 yml 是生成的，不要手改**。
 - 最近四批（都经主代理复核 + 交互级验证后提交）：`ebdf4885` 源代码管理 →
   `46d62f41` 设置「编辑器」「终端」页（顺手修掉 `persistence.rs`「写得出、读不回」的真 bug，
   见 `PLAN.md` §14.2，**以后加设置键必读**）→ `b740bdb4` 设置左栏 11 项 + 7 个明确空态 →

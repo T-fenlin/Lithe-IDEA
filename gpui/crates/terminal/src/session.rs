@@ -311,6 +311,8 @@ impl TerminalPane {
             // 空串 = 「系统默认」（Windows `default-settings.ts:87` 的默认值），
             // 也就是"什么都不做"：保持探测顺序。
             default_shell_id: crate::profile::SHELL_SYSTEM_DEFAULT.to_string(),
+            // `None` = 用默认档（typography `sm` token = 14px）。
+            font_size: None,
             input,
             _input_events: input_events,
         }
@@ -419,6 +421,24 @@ impl TerminalPane {
     #[allow(dead_code)]
     pub fn profiles(&self) -> &[TerminalProfile] {
         &self.profiles
+    }
+
+    /// 应用设置里的「终端字号」（Windows 键 `terminalFontSize`）。`None` = 用默认档。
+    ///
+    /// 与 [`Self::set_default_shell`] 同一条口径：**幂等**（外壳在每一次设置变化时都会转发
+    /// 一遍，值没变就不 `notify`，免得让所有终端页签白重绘一次）。
+    ///
+    /// 作用范围是**所有已打开的页签**（字号是渲染属性，不像 shell 那样只影响新会话）。
+    ///
+    /// 只收一个 `Option<f32>`，不收设置类型：依赖方向是 `workbench → terminal`，
+    /// 终端 crate 不认识 `lithe-gpui-settings`。
+    pub fn set_font_size(&mut self, size: Option<f32>, cx: &mut Context<Self>) {
+        if self.font_size == size {
+            return;
+        }
+        self.font_size = size;
+        println!("S1_TERMINAL font_size={size:?}");
+        cx.notify();
     }
 
     /// 换一套配置文件（设置界面接线点）。会保留现有页签，只影响之后新建的页签。

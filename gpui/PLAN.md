@@ -1002,6 +1002,175 @@ request_open_project → execute_project_open → rebuild_project_window（换�
 3. `.lithe/settings.json` / `settings.local.json`（工作区对全局键的覆盖层）**尚未有读写方** ——
    属于增量 4/5。
 
+### 8.11 工具链五个值的分层（本批）
+
+设计真源：`.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`
+的「三、工作区层」与「四、覆盖顺序」。
+
+**优先级：`项目本机 > 全局默认 > 自动发现`。** 保留"全局默认"这一级是有意的：多数开发者在这台
+机器上主用一个 JDK，新建项目不该要求重新手填一遍。
+
+#### 五个值分别在哪个文件
+
+| 值 | 文件 | 键 | 版本 |
+| --- | --- | --- | --- |
+| `javaHomePath` | `.lithe/run.local.json` | `toolchain.java.homePath` | `2`（运行配置契约 `run-configuration-v2.schema.json`） |
+| `mavenExecutablePath` | `.lithe/run.local.json` | `toolchain.maven.executablePath` | 同上 |
+| `mavenJavaHomePath` | `.lithe/run.local.json` | `toolchain.maven.javaHomePath` | 同上 |
+| `mavenSettingsPath` | `.lithe/maven.local.json` | `settingsPath` | `1`（`maven-local-v1.schema.json`） |
+| `mavenLocalRepositoryPath` | `.lithe/maven.local.json` | `localRepositoryPath` | 同上 |
+
+前三个的形状**不是新定的**：`run.local.json` 就是一份运行配置文档，根级 `toolchain` 对象由既有
+契约定义（键名与 Core 契约逐字相同）。`maven.local.json` 是本批新开的文件，schema 一并新增。
+
+三处容易做错、都写在 `toolchain.rs` 的模块文档里：
+
+1. **空串 = 这一层没设**（也是"清除"的写法）。不能用"省略字段"表示清除 —— 省略的字段会被文档层
+   的未知键保留机制从上一版**原样带回来**，表现就是"清不掉"。
+2. **不碰 `configurations`**：它归运行配置、不归本模块。本模块只在文件里还没有它时补一个空数组
+   （契约要求必填），其余情况原样带过。
+3. **旧路径双读是文件级的**：新文件不存在时才读 `.lithe/run/local.json`（现役 macOS/Windows 写的
+   位置）；新文件一旦存在就以它为准，否则"在新文件里清除某个值"会被旧文件的老值顶回来。
+
+#### `.lithe/.gitignore` 的 writer（第二道闸）
+
+设计第七节要求"**始终**维护"它，而此前它**没有写入方**。现在 `sharing::ensure_local_ignore_file`
+负责：只追加缺失的规则（`*.local.json` / `run/classes/` / `**/*.tmp`），**规则齐全时直接返回、
+一个字都不写**（端到端实测字节与 mtime 都不变），从不重写、从不删掉用户的行。用户想否定某条
+规则，在后面写 `!*.local.json` 即可 —— 我们只补齐缺失的规则，不与之争抢。
+
+调用点两处，都幂等：`save_project_manifest`（打开即建时）与 `save_local_toolchain`（保存覆盖值时）。
+
+#### 写侧与读侧
+
+- **写侧**（设置页「保存」）：有工作区就写**项目本机层**，没有才写全局设置文件（本机默认值）。
+  写项目本机层会调 Core（守卫要 `git rev-parse`），所以走 `background_spawn`；失败只留诊断且
+  **不假装保存成功**（页面上的「已保存」不出现）。
+- **读侧**：`ToolchainPaths::resolve` 是优先级的**唯一实现**（`settings::project::resolve_overrides`
+  只搬运字段）。语言服务登记（`register_java_toolchain`）与设置页的「生效值」都走它，所以
+  "界面显示一套、实际用另一套"不可能发生。
+- **页面如实标注**：有工作区时作用域那句换成 `settings.gpui.projectScopeProject`；每一格还会
+  标出覆盖值来自**本项目**还是**全局设置**（来源是"自动发现"时不标）。
+
+#### 验证
+
+`cargo test --workspace` **46+144+68…** 全绿（`shared::workspace_config` 25 条、settings 144 条、
+workbench 68 条）、`cargo check --workspace --all-targets` exit=0、`verify-test-stability.ps1` 通过。
+
+**端到端 A/B（优先级）**：临时 Git 仓库里，全局写 `javaHomePath=jdk-B`、项目本机写 `jdk-A`：
+
+```text
+项目本机有值：S1_SETTINGS wiring=java_toolchain java_home_path=D:\project\jdk-A
+              maven_settings_path=D:\global\settings-B.xml project=1 global=1 unset=3
+项目本机留空：S1_SETTINGS wiring=java_toolchain java_home_path=D:\global\jdk-B
+              project=0 global=2 unset=3
+```
+
+**端到端（`.gitignore` + 不共享）**：启动前 `.lithe/` 在 `git status` 里是 `?? .lithe/`；启动后
+`.lithe/.gitignore` 建出且正好三行、`.git/info/exclude` 里 `.lithe/` 恰好一行、`git status --porcelain`
+**为空**；二次启动 `.gitignore` 字节与 mtime 都不变。
+
+#### 还欠的
+
+- **改了项目本机的覆盖值，语言服务要重启才吃到**（与"换 JDK 必须重建 JDT 索引"同一条既有口径），
+  本批不尝试热重启会话。
+- 设置页的 `mavenExecutablePath` / `mavenJavaHomePath` / `mavenLocalRepositoryPath` 三个值仍**没有
+  消费方**（`maven.scan` 是 Core 进程内解析，本侧不执行 `mvn`），页面上的「尚未生效」标注照旧。
+- `maven.local.json` **没有旧路径可回落**：现役 macOS/Windows 把这两个值放在各自宿主应用数据目录
+  的按项目摘要文件里，不读 `.lithe`，所以那两台上的老值不会自动迁移过来。
+
+#### 守卫必须回读校验：写了 ≠ 写进去了（缺陷修复）
+
+**实测到的缺陷**：把根指向会话工作区**之外**的仓库时，日志里出现了
+
+```text
+S1_WORKSPACE_CONFIG excluded root=D:\…\dbx-plugin-k8s pattern=.lithe/
+S1_WORKSPACE_CONFIG shell_identity_failed root=… error=清单文件读写失败：拒绝访问。 (os error 5)
+```
+
+而随后读那个仓库的 `.git/info/exclude`（git 默认模板注释，**没有任何 `.lithe/` 行**）证明第一行是**谎报**：
+底层写入被静默丢弃，`fs` 没报错，Core 也返回成功，于是旧实现直接打了 `excluded`。这与仓库
+"不静默丢弃错误"的规则直接冲突，而且后果是用户以为目录已被排除、实际它正暴露在 `git status` 里。
+
+修法：**写完（或删完）之后回读**。
+
+| 位置 | 校验 |
+| --- | --- |
+| [`ensure_project_dir_excluded`] | 写 `excludePatterns` 之后读 `<gitCommonDirectory>/info/exclude`，确认那一条 literal **在** |
+| [`share_project_config`] | 移除 `unexcludePatterns` 之后回读，确认那一条 **不在**（否则后面的 `stage` 会踩在"文件仍被排除"之上） |
+
+- **位置必须由 Git 解析**：排除文件的路径来自 Core 的 `git.watchContext` 响应
+  （`gitCommonDirectory`），不是自己拼 `<root>/.git/info/exclude` —— linked worktree / submodule /
+  bare 下 `info/exclude` 落在**共享的 common 目录**里（Core 自己的测试断言过 worktree 下
+  `.git/info/exclude` 并不存在）。
+- **判据抽成纯函数** `sharing::pattern_is_present(exclude_file, pattern)`，单独直测。理由：
+  真机上的"写入被静默丢弃"**没法确定性构造**（`fs` 不报错但不落盘），所以只能把判据拿出来打。
+  三条语义：文件不存在 → `false`；逐行 `trim` 后逐字比较（与 Core 写入时的 trim 口径一致）；
+  **注释行不算命中**（`# .lithe/` 不是规则）。
+- **失败是结构化变体** `SharingError::NotPersisted { operation, pattern, path, reason }`，
+  诊断前缀 `S1_WORKSPACE_CONFIG exclude_not_persisted …`，**绝不再打 `excluded`**。
+  `WorkspaceConfigError::Exclude` 的载荷因此从 `CoreError` 换成 `SharingError`；另外把
+  "路径身份也拿不到"单独拆成 `WorkspaceConfigError::PathIdentity(CoreError)`（原来是借用 `Exclude` 的载荷，
+  语义不对）。
+- "不是 Git 仓库 → 静默跳过"这条语义**不变**（先问 `git.watchContext`，返回 `null` 即跳过）。
+
+#### 失败必须对用户可见（常驻红条）
+
+`.lithe` 建不出来时旧实现只打 stderr。**双击启动的用户看不到 stderr**，只会发现"目录没出现"。
+
+现在失败回填到 `ShellWorkspace::workspace_config_error`，由 `render` 在标题栏/项目标签条之下、
+工作区之上画一条**常驻红条**（`Button` = `lithe.ui.cancel` 可手动关闭）。范式与理由照
+`gpui/crates/git/src/changes_view.rs` 的 `render_write_error`（"失败一定可见：常驻红条，
+不是 console.error、也不是自动消失的 toast"）。
+
+- 与状态栏的 `status_notice` **刻意不同**：那条 4 秒后自己消失，这条不会 —— "建不出来"是需要
+  用户处理的状态（写权限 / 盘符 / 安全软件拦写），自动消失等于把它藏起来。
+- **异步结果怎么回填**（这是一处实现取舍）：`prepare_workspace_config` 走后台执行器，结果回来时
+  只保证"实体还活着"，不保证还有窗口/`Root`（换根会重建外壳）。所以用
+  `cx.spawn(async move |this, cx| …)` 的 `this.update(…)` 回填并 `cx.notify()`，**不**去开对话框或通知
+  （那两者都要求窗口与 `Root` 就位）。实体已销毁时 `update` 返回 `Err`，静默忽略。
+- 文案 `gpui.workspaceConfigFailed`（带 `{reason}`）由 `gpui/tools/extract-locale.mjs` 的
+  `GPUI_ONLY_KEYS` 提供 —— **locale 的 yml 是生成的，不要手改**；改完跑
+  `node gpui/tools/extract-locale.mjs`。
+
+### 8.10 字体三键（本批）
+
+四个字号/字体键的分工（**互不影响**，界面上每行都写清了作用范围）：
+
+| 键 | 默认 | 落点 | 生效 |
+| --- | --- | --- | --- |
+| `uiFontSize` | 13 | 主题 `font_size`（rem 基准，`Root::render` 每帧 `set_rem_size`） | 立即 |
+| `fontFamily` | 空串 = 不覆盖 | 主题 `font_family`（界面正文） | 立即 |
+| `monoFontFamily` | 空串 = 不覆盖 | 主题 `mono_font_family`（编辑器 `input/editor.rs:141` + 终端正文） | 立即 |
+| `fontSize` | 14 | 主题 `mono_font_size`（**只有编辑器**） | 立即 |
+| `terminalFontSize` | `0` = 不覆盖 | `TerminalPane::set_font_size`（终端视图自己的覆盖值） | 立即，作用于所有已开页签 |
+
+**为什么不把终端字号也写主题 token**：终端正文用的是 typography 的 `sm` token（`.text_sm()` = 14px），
+**不是** `mono_font_size`（早先的注释与文档写着"终端与编辑器共用 `mono_font_size`"，那是错的）。
+写 `mono_font_size` 会把编辑器一起改掉，而"终端字号"这个 token 并不存在，所以只能落在终端视图自己身上。
+终端是**按行渲染**而不是字符网格，改字号不会引起列宽重算。
+
+**两个字族键的已装校验（防崩溃）**：GPUI 在字族找不到时会在**首次布局那一行 panic**
+（`gpui-component-0.6.6/src/theme/mono_font.rs:1-13` 就是为这件事存在的）。所以：
+
+- `theme::apply_font_families` 写入前对照 `text_system().all_font_names()` 校验，认不出的
+  **不写主题**并打 `S1_THEME font_family_rejected`；`.SystemUIFont` 是虚拟家族，永远放行；
+- 设置页的两个字体族下拉**只列已装字族**（外加「默认（不覆盖）」），用户选不出会崩的值；
+- 已装字族列表按进程缓存一次（枚举字体在 macOS 上要上百毫秒，同 `mono_font.rs` 的做法）。
+
+**文案**：两个字族、终端字号、以及"字体排印"分组名都用真源已有的键
+（`settings.appearance.uiFontFamily(Description)`、`settings.editor.fontFamily(Description)`、
+`settings.terminal.fontSize(Description)`、`settings.terminal.typography`）。只有「默认（不覆盖）」
+是 gpui 侧新增键（`settings.gpui.valueNotOverridden`）—— 真源的字体族/字号永远有具体值，没有"不覆盖"
+这个选项。同时改对了 `settings.gpui.editorFontSizeDescription`（原文写着"编辑器与终端正文"，
+现在终端有自己的键）。
+
+**验证**：`cargo test -p lithe-gpui-settings` **142 通过**（+3：终端字号归一的三条分支、
+两个字族的 trim、`usable_family` 的四种情况）、`cargo test -p lithe-gpui-terminal` 8 通过、
+`cargo check -p …settings -p …terminal -p …workbench --all-targets` exit=0、
+`verify-test-stability.ps1` 与 `extract-locale.mjs --check` 均通过。
+**未做 GUI 级验证**（本批不启动 Lithe，避免与同批另一个增量的窗口互相干扰）。
+
 ---
 
 ## 9. 阶段 9：编辑器完善（A+B+C+E，维护者定稿）

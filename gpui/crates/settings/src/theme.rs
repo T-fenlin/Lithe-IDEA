@@ -543,6 +543,74 @@ pub fn apply_editor_font_size(cx: &mut App, editor_font_size: f64) {
     println!("S1_THEME mono_font_size={font_size:?} editor_font_size={editor_font_size}");
 }
 
+/// GPUI 自己解析的虚拟家族：它不是一个真实安装的字族，但**永远可用**，所以校验时放行。
+pub const SYSTEM_UI_FONT_FAMILY: &str = ".SystemUIFont";
+
+/// 把两个字族覆盖值写进主题 token；空串 = **不覆盖**（保留主题文件里的值）。
+///
+/// 落点：`Theme::font_family`（界面正文）与 `Theme::mono_font_family`（编辑器
+/// `gpui-component-0.6.6/src/input/editor.rs:141`、终端
+/// `gpui/crates/terminal/src/terminal_view.rs`）。
+///
+/// 与两个字号函数同一条口径：**必须在 [`apply_theme_by_name`] 之后调用**
+/// （主题文件里若写了 `font.family` / `font.mono_family`，`apply_config` 会先覆盖一次）。
+///
+/// ## 为什么必须先校验"这个字族装没装"
+///
+/// GPUI 在**首次布局一行、而该字族找不到**时会 panic
+/// （`gpui-component-0.6.6/src/theme/mono_font.rs:1-13` 就是为这件事存在的：连
+/// `Font::fallbacks` 都救不了，它只在字族本身加载成功后才作为缺字回退链被查）。而这两个键是
+/// **用户在设置里填的字符串**，一次手写错就能让应用再也起不来。所以：
+///
+/// - 认不出的字族**不写入**，保留当前值并留一条
+///   `S1_THEME font_family_rejected` 诊断；
+/// - 空串不写入（= 不覆盖）；
+/// - 校验用系统已装字族列表，它按进程缓存一次（枚举字体在 macOS 上要上百毫秒，
+///   同 `mono_font.rs` 的做法）。
+pub fn apply_font_families(cx: &mut App, ui_family: &str, mono_family: &str) {
+    let installed = installed_font_names(cx);
+
+    if let Some(family) = usable_family("fontFamily", ui_family, installed) {
+        Theme::global_mut(cx).font_family = SharedString::from(family.to_string());
+        println!("S1_THEME font_family key=fontFamily value={family}");
+    }
+    if let Some(family) = usable_family("monoFontFamily", mono_family, installed) {
+        Theme::global_mut(cx).mono_font_family = SharedString::from(family.to_string());
+        println!("S1_THEME font_family key=monoFontFamily value={family}");
+    }
+
+    Theme::sync_base(cx);
+    cx.refresh_windows();
+}
+
+/// 进程内缓存一次系统已装字族（枚举字体在 macOS 上要上百毫秒）。
+///
+/// 与 `gpui-component-0.6.6/src/theme/mono_font.rs:69-72` 同一个理由与同一种做法；
+/// 那边的函数是 `pub(super)`，拿不到，所以这里自己缓存一份。
+pub fn installed_font_names(cx: &App) -> &'static [String] {
+    static NAMES: OnceLock<Vec<String>> = OnceLock::new();
+    NAMES.get_or_init(|| cx.text_system().all_font_names())
+}
+
+/// 一个字族值能不能安全写进主题：`Some(值)` = 可以，`None` = 不覆盖或不可用。
+///
+/// 纯函数，`installed` 由调用方给（测试因此不需要真实文本系统）。
+/// `.SystemUIFont` 是虚拟家族，永远放行。
+pub fn usable_family<'a>(key: &str, value: &'a str, installed: &[String]) -> Option<&'a str> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if value == SYSTEM_UI_FONT_FAMILY {
+        return Some(value);
+    }
+    if installed.iter().any(|name| name == value) {
+        return Some(value);
+    }
+    eprintln!("S1_THEME font_family_rejected key={key} family={value} reason=not_installed");
+    None
+}
+
 /// 注册表里当前可选的**主题显示名**（注册表的稳定序）。
 ///
 /// 保留显示名这条 API 是因为**菜单栏**（`gpui/crates/workbench/src/menu_bar.rs`）用它渲染
@@ -584,6 +652,39 @@ pub fn system_is_dark(appearance: WindowAppearance) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 字体族校验：空串 = 不覆盖；`.SystemUIFont` 是虚拟家族，永远放行；
+    /// 未安装的名字被拒（**这一条是防崩溃的**：GPUI 在字族缺失时首次布局就 panic）。
+    #[test]
+    fn usable_family_only_accepts_empty_virtual_or_installed() {
+        let installed = vec!["Inter".to_string(), "JetBrains Mono".to_string()];
+
+        // 空串 / 只有空白 = 不覆盖（`None`，调用方保留主题里的值）。
+        assert_eq!(usable_family("fontFamily", "", &installed), None);
+        assert_eq!(usable_family("fontFamily", "   ", &installed), None);
+
+        // 装了的字族：原样放行（首尾空白被去掉）。
+        assert_eq!(
+            usable_family("fontFamily", "Inter", &installed),
+            Some("Inter")
+        );
+        assert_eq!(
+            usable_family("monoFontFamily", " JetBrains Mono ", &installed),
+            Some("JetBrains Mono")
+        );
+
+        // 虚拟家族不受已装列表限制。
+        assert_eq!(
+            usable_family("fontFamily", SYSTEM_UI_FONT_FAMILY, &installed),
+            Some(SYSTEM_UI_FONT_FAMILY)
+        );
+
+        // 没装的字族被拒（返回 `None`，调用方不写主题 token）。
+        assert_eq!(
+            usable_family("fontFamily", "No Such Font", &installed),
+            None
+        );
+    }
 
     /// 一个"进程内唯一、用后即删"的临时目录。
     ///

@@ -6,7 +6,10 @@
 //!   在此之前没有任何具名常量）；
 //! - [`project`]：`.lithe/project.json` 的读写 —— 稳定项目身份（UUID v4），
 //!   没有它时回落到 Core 的路径身份；
-//! - [`sharing`]：把"默认不共享"落到磁盘上的守卫，以及显式的"共享此项目的配置"动作。
+//! - [`toolchain`]：工具链五个值的**项目本机层**（`.lithe/run.local.json` 的 `toolchain` 对象
+//!   与 `.lithe/maven.local.json`），以及 `项目本机 > 全局默认 > 自动发现` 的解析；
+//! - [`sharing`]：把"默认不共享"落到磁盘上的两道闸（本机排除文件 + `.lithe/.gitignore`），
+//!   以及显式的"共享此项目的配置"动作。
 //!
 //! ## 与设计 Note 的关系
 //!
@@ -33,6 +36,7 @@
 pub mod paths;
 pub mod project;
 pub mod sharing;
+pub mod toolchain;
 #[cfg(test)]
 pub(crate) mod test_repo;
 
@@ -49,6 +53,12 @@ pub use project::{
     save_project_manifest,
 };
 pub use sharing::{
-    EnsureExcluded, ShareOutcome, ensure_project_dir_excluded, share_project_config,
+    EnsureExcluded, IgnoreFileOutcome, LOCAL_IGNORE_RULES, ShareOutcome, SharingError,
+    ensure_local_ignore_file, ensure_project_dir_excluded, pattern_is_present, share_project_config,
     shareable_members,
+};
+pub use toolchain::{
+    LocalToolchainState, MAVEN_LOCAL_DOCUMENT_VERSION, OverrideOrigin, OverrideOrigins,
+    RUN_LOCAL_DOCUMENT_VERSION, ToolchainPaths, ToolchainSaved, load as load_local_toolchain,
+    save as save_local_toolchain,
 };

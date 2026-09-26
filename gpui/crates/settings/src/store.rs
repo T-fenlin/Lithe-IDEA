@@ -78,7 +78,9 @@ enum Effects {
     FontSize,
     /// 只有编辑器字号变了：只更新主题的等宽字号（编辑器正文）。
     EditorFontSize,
-    /// 没有即时副作用（语言要重启、状态栏/缩进/终端 shell 由订阅方自己应用）。
+    /// 只有字体族变了：只更新主题的两个字体族 token（界面 / 等宽）。
+    FontFamily,
+    /// 没有即时副作用（语言要重启、状态栏/缩进/终端 shell 与终端字号由订阅方自己应用）。
     None,
 }
 
@@ -348,6 +350,33 @@ impl SettingsStore {
         self.commit(cx, next, Effects::EditorFontSize);
     }
 
+    /// 改「界面字体族」。立即生效（写主题的 `font_family`）+ 防抖落盘。
+    ///
+    /// 空串 = 不覆盖（保留主题文件里的值）。**不可用的字族不会被写进主题**（见
+    /// [`crate::theme::apply_font_families`]：GPUI 在字族缺失时会 panic），
+    /// 但用户填的值照旧落盘 —— 可能只是这台机器上还没装那个字体。
+    pub fn set_font_family(&mut self, family: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.font_family = family;
+        self.commit(cx, next, Effects::FontFamily);
+    }
+
+    /// 改「代码字体族」（编辑器与终端正文）。见 [`Self::set_font_family`]。
+    pub fn set_mono_font_family(&mut self, family: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.mono_font_family = family;
+        self.commit(cx, next, Effects::FontFamily);
+    }
+
+    /// 改「终端字号」。**本 store 不自己应用**：终端正文是 `lithe-gpui-terminal` 自己的视图，
+    /// 由外壳订阅本实体后转发给 `TerminalPane::set_font_size`（与 `tabSize` 同一条路子）。
+    /// `0` = 不覆盖，终端用它自己的默认档。
+    pub fn set_terminal_font_size(&mut self, value: f64, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.terminal_font_size = value;
+        self.commit(cx, next, Effects::None);
+    }
+
     /// 改「制表符宽度」。**本 store 不自己应用**（缩进只对编辑器状态有意义），
     /// 由外壳订阅本实体后转发给 `EditorPane::set_tab_size`；这里只落状态 + 防抖落盘 + `notify`。
     pub fn set_tab_size(&mut self, value: u32, cx: &mut Context<Self>) {
@@ -481,6 +510,7 @@ impl SettingsStore {
             Effects::Theme => self.apply_theme(cx),
             Effects::FontSize => self.apply_font_size(cx),
             Effects::EditorFontSize => self.apply_editor_font_size(cx),
+            Effects::FontFamily => self.apply_font_families(cx),
             Effects::None => {}
         }
         self.after_change(cx);
@@ -655,8 +685,10 @@ impl SettingsStore {
         theme::apply_theme_by_id(cx, &applied);
         self.apply_font_size(cx);
         // ⚠️ 顺序不能反：`apply_config` 会把主题文件里的字体档写回主题 token，
-        // 所以两个"用户设置的字号"必须在它之后各补一次（rem 基准 + 等宽字号）。
+        // 所以"用户设置的字体族与字号"必须在它之后各补一次
+        // （rem 基准 + 等宽字号 + 两个字族）。
         self.apply_editor_font_size(cx);
+        self.apply_font_families(cx);
     }
 
     fn apply_font_size(&self, cx: &mut Context<Self>) {
@@ -665,6 +697,14 @@ impl SettingsStore {
 
     fn apply_editor_font_size(&self, cx: &mut Context<Self>) {
         theme::apply_editor_font_size(cx, self.settings.font_size);
+    }
+
+    fn apply_font_families(&self, cx: &mut Context<Self>) {
+        theme::apply_font_families(
+            cx,
+            &self.settings.font_family,
+            &self.settings.mono_font_family,
+        );
     }
 
     /// rem 基准不变量（见 [`init_store`] 的说明）：主题的 `font_size` 必须等于 uiFontSize 的换算值。

@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 68 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 73 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8656,11 +8656,19 @@ lithe:
   settings.gpui.restoreDefaultsBody:
     en: "Every setting returns to its default value."
   settings.gpui.editorFontSizeDescription:
-    en: "Adjusts the text size of the editor and terminal. Interface text size lives in Appearance."
+    en: "Adjusts the code editor text size. Interface text size lives in Appearance; terminal text size lives in Terminal."
+  settings.gpui.valueNotOverridden:
+    en: "Default (no override)"
   settings.gpui.pageNotAvailableTitle:
     en: "This category is not available yet"
   settings.gpui.projectScopeGlobal:
-    en: "Overrides live in this computer's global settings file; leave a field empty to use the detected value. The Windows page stores them per project in .lithe/run/local.json, and gpui has no project-level store yet, so this page is global rather than project-scoped."
+    en: "No project is open: overrides are stored in this computer's global settings file as machine-wide defaults, and an empty field falls back to the detected value. With a project open, this page edits that project's own .lithe/ local layer instead, which takes precedence."
+  settings.gpui.projectScopeProject:
+    en: "Overrides are stored in this project's .lithe/ local layer (run.local.json and maven.local.json, never committed); an empty field falls back to the global settings, and if both are empty the detected value is used."
+  settings.gpui.overrideFromProject:
+    en: "override from this project"
+  settings.gpui.overrideFromGlobal:
+    en: "override from global settings"
   settings.gpui.sourceFromEnv:
     en: "from the {name} environment variable"
   settings.gpui.mavenExecutableHint:
@@ -8779,6 +8787,8 @@ lithe:
     en: "Not wired yet: there is no keyboard-shortcuts view (the keymap exists but nothing displays it)."
   gpui.menuMissing.terminalSplit:
     en: "Not wired yet: the terminal cannot be split (a terminal panel has one tab strip and no panes)."
+  gpui.workspaceConfigFailed:
+    en: "Failed to set up the workspace configuration: {reason}"
 
 gpui_component:
   Dialog.ok:

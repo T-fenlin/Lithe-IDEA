@@ -38,6 +38,8 @@ use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
+use lithe_gpui_shared::workspace_config::{OverrideOrigins, ToolchainPaths};
+
 /// 本页诊断行的前缀（走 stdout，与 `S1_MAVEN` / `S1_SETTINGS` 一族同口径）。
 ///
 /// 页面上每一个显示出来的事实都能在这一行里核对（见
@@ -416,6 +418,53 @@ impl Overrides {
         .filter(|value| !value.trim().is_empty())
         .count()
     }
+
+    /// 全局设置层（`settings.json`）的那五个值。
+    pub fn from_settings(settings: &crate::schema::Settings) -> Self {
+        Self {
+            java_home: settings.java_home_path.clone(),
+            maven_executable: settings.maven_executable_path.clone(),
+            maven_java_home: settings.maven_java_home_path.clone(),
+            maven_settings: settings.maven_settings_path.clone(),
+            maven_local_repository: settings.maven_local_repository_path.clone(),
+        }
+    }
+
+    /// 项目本机层（`.lithe/*.local.json`）的那五个值。
+    pub fn from_local(local: &ToolchainPaths) -> Self {
+        Self {
+            java_home: local.java_home_path.clone(),
+            maven_executable: local.maven_executable_path.clone(),
+            maven_java_home: local.maven_java_home_path.clone(),
+            maven_settings: local.maven_settings_path.clone(),
+            maven_local_repository: local.maven_local_repository_path.clone(),
+        }
+    }
+
+    /// 转成共享层的五元组（写项目本机层时用）。
+    pub fn to_local(&self) -> ToolchainPaths {
+        ToolchainPaths {
+            java_home_path: self.java_home.clone(),
+            maven_executable_path: self.maven_executable.clone(),
+            maven_java_home_path: self.maven_java_home.clone(),
+            maven_settings_path: self.maven_settings.clone(),
+            maven_local_repository_path: self.maven_local_repository.clone(),
+        }
+    }
+}
+
+/// 生效的五个覆盖值：**项目本机层 > 全局默认**，并给出每一项的来源（界面据此如实标注）。
+///
+/// 这里**只做字段搬运**：优先级的唯一实现是
+/// [`lithe_gpui_shared::workspace_config::ToolchainPaths::resolve`]。两张实现迟早会漂移，
+/// 而漂移的表现是"界面显示 A、语言服务用 B"这类最难查的错。
+pub fn resolve_overrides(
+    local: &ToolchainPaths,
+    global: &Overrides,
+) -> (Overrides, OverrideOrigins) {
+    let global_paths = global.to_local();
+    let (resolved, origins) = ToolchainPaths::resolve(local, &global_paths);
+    (Overrides::from_local(&resolved), origins)
 }
 
 /// 一行的「生效值」。界面只按这里的字段画，判定逻辑全在这里（因此可以脱离 GPUI 单测）。
@@ -1479,6 +1528,62 @@ fn non_empty(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 设置 ↔ 共享层五元组的字段映射必须**逐位对上**。
+    ///
+    /// 五个键名长得很像（`javaHomePath` / `mavenJavaHomePath` / `mavenSettingsPath` …），
+    /// 映射错一位的表现是"界面显示一套、语言服务拿另一套"，而且不会有任何报错。
+    /// 所以这里把两边都填成互不相同的可辨认值，逐位比对。
+    #[test]
+    fn overrides_map_field_by_field_to_the_shared_toolchain_paths() {
+        let settings = crate::schema::Settings {
+            java_home_path: "java-home".to_string(),
+            maven_executable_path: "maven-executable".to_string(),
+            maven_java_home_path: "maven-java-home".to_string(),
+            maven_settings_path: "maven-settings".to_string(),
+            maven_local_repository_path: "maven-local-repository".to_string(),
+            ..crate::schema::Settings::default()
+        };
+
+        let overrides = Overrides::from_settings(&settings);
+        let paths = overrides.to_local();
+        assert_eq!(paths.java_home_path, "java-home");
+        assert_eq!(paths.maven_executable_path, "maven-executable");
+        assert_eq!(paths.maven_java_home_path, "maven-java-home");
+        assert_eq!(paths.maven_settings_path, "maven-settings");
+        assert_eq!(paths.maven_local_repository_path, "maven-local-repository");
+
+        // 反向：从共享层回到设置侧，五位仍然一一对应。
+        let back = Overrides::from_local(&paths);
+        assert_eq!(back, overrides);
+    }
+
+    /// 生效值 = 项目本机 > 全局默认（这一层只搬运，优先级在共享层实现）。
+    #[test]
+    fn resolve_overrides_prefers_the_project_layer() {
+        let global = Overrides {
+            java_home: "global-jdk".to_string(),
+            maven_settings: "global-settings".to_string(),
+            ..Overrides::default()
+        };
+        let local = ToolchainPaths {
+            java_home_path: "project-jdk".to_string(),
+            ..ToolchainPaths::default()
+        };
+
+        let (resolved, origins) = resolve_overrides(&local, &global);
+        assert_eq!(resolved.java_home, "project-jdk");
+        assert_eq!(resolved.maven_settings, "global-settings");
+        assert_eq!(resolved.maven_executable, "");
+        assert_eq!(
+            origins.java_home_path,
+            lithe_gpui_shared::workspace_config::OverrideOrigin::Project
+        );
+        assert_eq!(
+            origins.maven_settings_path,
+            lithe_gpui_shared::workspace_config::OverrideOrigin::Global
+        );
+    }
 
     /// 三级候选的顺序与来源必须**逐条**固定：换顺序等于换"哪个 JDK 生效"。
     ///

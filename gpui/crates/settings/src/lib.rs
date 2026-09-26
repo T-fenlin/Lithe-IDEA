@@ -74,6 +74,7 @@ pub use persistence::{
 pub use project::{
     EffectiveToolchain, MavenConfiguration, MavenDiscovery, Overrides, ProjectEnvironment,
     PROJECT_DIAGNOSTIC_TAG, ToolMode, ToolSource, discover as discover_project_environment,
+    resolve_overrides,
 };
 pub use recent_projects::{
     LoadedRecentProjects, MAX_RECENT_PROJECTS, RECENT_PROJECTS_DIAGNOSTIC_TAG, RECENT_PROJECTS_KEY,

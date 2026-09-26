@@ -112,6 +112,15 @@ impl WorkspaceConfigPaths {
         self.directory().join("run.local.json")
     }
 
+    /// `<root>/.lithe/run/local.json`：**旧路径**（设计改名前的位置）。
+    ///
+    /// 现役 macOS / Windows 产品写的是这个路径，所以读的时候要能回落过来（双读过渡，
+    /// 见 [`super::toolchain`] 的模块文档）。**写只写新路径** —— 两个位置同时写会让
+    /// "哪一份是真的"变成没人说得清的问题。
+    pub fn run_local_legacy(&self) -> PathBuf {
+        self.directory().join("run").join("local.json")
+    }
+
     /// `<root>/.lithe/toolchains/requirements.json`：这个项目需要什么工具链（共享层）。
     pub fn toolchain_requirements(&self) -> PathBuf {
         self.directory()
