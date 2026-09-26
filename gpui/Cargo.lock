@@ -3943,7 +3943,9 @@ dependencies = [
  "gpui-kit",
  "lithe-core",
  "rust-i18n",
+ "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]

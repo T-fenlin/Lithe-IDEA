@@ -78,7 +78,25 @@ impl CoreError {
             _ => None,
         }
     }
+
+    /// 这条失败是不是"这个根不是 Git 仓库"。
+    ///
+    /// **这是本类型唯一为分支判断开的入口**，理由：这一种失败**没有字段可看**。
+    /// Core 的 `require_git_repository`（`rust/lithe-core/src/git/mod.rs`）对非仓库根返回
+    /// 错误码 `invalid_request` + 稳定消息 `Not a Git repository`，它的注释明确写着这条稳定
+    /// 消息就是给宿主"跳过 Git 副作用"用的。所以这里匹配它，而不是让每个调用方各自
+    /// 猜、或者再发一次 `git.status` 去重复检测仓库状态。
+    pub fn is_not_a_repository(&self) -> bool {
+        matches!(
+            self,
+            Self::Reported { code, message }
+                if code == "invalid_request" && message == NOT_A_GIT_REPOSITORY_MESSAGE
+        )
+    }
 }
+
+/// Core 用来表示"这个根不是 Git 仓库"的稳定消息（见 [`CoreError::is_not_a_repository`]）。
+const NOT_A_GIT_REPOSITORY_MESSAGE: &str = "Not a Git repository";
 
 impl fmt::Display for CoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -222,4 +240,48 @@ impl CoreClient {
 /// ```
 pub fn core_json(command: &str, payload: Value) -> Result<Option<Value>, CoreError> {
     CoreClient::new().execute(&CoreRequest::command(command).with_payload(payload))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// "不是 Git 仓库"的判定跟着 Core 的**稳定信号**走：错误码 `invalid_request` +
+    /// 消息 `Not a Git repository`（两个条件都要满足）。
+    ///
+    /// 这条单测是那个分支的确定性覆盖：真实路径需要"一个不在任何 Git 工作树里的可写目录"，
+    /// 而那在验证环境里未必成立（见 `workspace_config::test_repo` 的模块文档）。
+    #[test]
+    fn not_a_repository_follows_the_documented_signal() {
+        let reported = |code: &str, message: &str| CoreError::Reported {
+            code: code.to_string(),
+            message: message.to_string(),
+        };
+
+        assert!(reported("invalid_request", "Not a Git repository").is_not_a_repository());
+        // 码对、消息不对：不是这一种失败。
+        assert!(
+            !reported(
+                "invalid_request",
+                "Git ignore operation contains an invalid pattern"
+            )
+            .is_not_a_repository()
+        );
+        // 消息对、码不对：不是这一种失败。
+        assert!(!reported("process_failed", "Not a Git repository").is_not_a_repository());
+        // 信封级失败与缺字段都不是"不是仓库"。
+        assert!(
+            !CoreError::MissingData {
+                command: "git.write".to_string()
+            }
+            .is_not_a_repository()
+        );
+        assert!(
+            !CoreError::InvalidResponse {
+                command: "git.write".to_string(),
+                message: "not json".to_string(),
+            }
+            .is_not_a_repository()
+        );
+    }
 }

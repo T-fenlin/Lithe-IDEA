@@ -1,5 +1,12 @@
 //! 设置文件的读、写与规范化落点（**不依赖 GPUI**）。
 //!
+//! ## 这一层只剩"设置文档"的语义
+//!
+//! 通用原语（解析、未知键保留、版本判定、原子写）在 `lithe_gpui_shared::document`：
+//! 它由两个真实使用方共享（本模块与 `.lithe/project.json`），所以提到共享层，
+//! 而不是让第二份文档再抄一遍"临时文件 + rename"和"未知键保留"。本模块只负责
+//! **设置文档特有**的部分：`version` 取值、逐键诊断的措辞、防抖状态机、读取结果的形状。
+//!
 //! ## 读取语义
 //!
 //! | 情况 | 行为 |
@@ -14,43 +21,35 @@
 //! 诊断统一走 `S1_SETTINGS ...` 前缀打 stderr —— 与 `gpui/crates/app/src/main.rs:74-78` 的
 //! `S1_THEME` 同一风格：可 grep、可在自动化验证里断言。
 //!
-//! ## 未知键为什么要保留
+//! ## 写入语义：原子写 + 300ms 防抖
 //!
-//! 设置文件是给人改的：用户可能写注释性字段、可能装了另一个版本的 Lithe、也可能把同一份
-//! 文件喂给别的工具。早期实现"未知键静默忽略"，代价是**用户手写的字段会在下一次落盘时
-//! 被吃掉**——那是不可逆的数据丢失。现在读入时保留整份原始对象（[`Parsed::previous`]），
-//! 写回时先合并再落盘（[`merge_document`]），未知键（含嵌套对象里的）逐字保留。
+//! - **原子写**：先写 `settings.json.tmp`，再 `rename` 覆盖目标（`std::fs::rename` 在
+//!   Windows 上走 `MoveFileEx(MOVEFILE_REPLACE_EXISTING)`，可以覆盖已存在文件）。
+//! - **300ms 防抖**：同一窗口内的多次改动合并成一次写。防抖的判定被抽成 [`DebounceState`]
+//!   这个**纯状态机**，因此可以确定性单测（不用真实时钟）。
 //!
 //! ## 键表由 schema 派生
 //!
-//! [`known_keys`] 直接取 `Settings::default()` 的序列化结果，**不存在第二份键名清单**。
+//! [`known_keys`] 取 `Settings::default()` 的序列化结果，**不存在第二份键名清单**。
 //! 历史上这里有一张手写的逐键表，新增键忘记登记就表现为"设置写得出、读不回"，而且
 //! **一点诊断都没有**（阶段 14 踩过：`fontSize` / `tabSize` / `terminalDefaultShellId`）。
-//! 现在的坏键回落路径是"逐个已知键单独试解析"，所以新字段天然被覆盖。
-//!
-//! ## 写入语义：原子写 + 300ms 防抖
-//!
-//! - **原子写**：先写 `settings.json.tmp`，再 `rename` 覆盖目标
-//!   （`std::fs::rename` 在 Windows 上走 `MoveFileEx(MOVEFILE_REPLACE_EXISTING)`，可以覆盖已存在文件）。
-//!   这样断电/崩溃只会留下一个 `.tmp`，不会留下半份 JSON。
-//! - **300ms 防抖**：同一窗口内的多次改动合并成一次写。防抖的判定被抽成 [`DebounceState`]
-//!   这个**纯状态机**，因此可以确定性单测（不用真实时钟）。
+//! 现在回落路径遍历派生出来的键集，所以新字段天然被覆盖。
 
 use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
-use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::schema::Settings;
 
+// 通用文档原语原样来自共享层：本模块不再自己实现一份。
+pub use lithe_gpui_shared::{
+    DOCUMENT_VERSION_KEY, declared_version, preserve_unknown, save_json, tmp_path,
+};
+
 /// 防抖窗口（毫秒）。
 pub const SAVE_DEBOUNCE_MS: u64 = 300;
-
-/// 文档版本键名。
-pub const DOCUMENT_VERSION_KEY: &str = "version";
 
 /// 设置文档当前的版本。
 ///
@@ -109,8 +108,8 @@ pub fn load_from(path: Option<PathBuf>) -> Loaded {
         };
     };
 
-    match std::fs::read_to_string(&path) {
-        Ok(text) => {
+    match lithe_gpui_shared::read_document_text(&path) {
+        Ok(Some(text)) => {
             let parsed = parse(&text);
             Loaded {
                 settings: parsed.settings,
@@ -121,7 +120,7 @@ pub fn load_from(path: Option<PathBuf>) -> Loaded {
                 read_only: parsed.read_only,
             }
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+        Ok(None) => {
             // 首次启动：全部默认值，且**不写文件**（改动才写）。
             Loaded {
                 settings: normalized_default(),
@@ -145,170 +144,31 @@ pub fn load_from(path: Option<PathBuf>) -> Loaded {
 
 /// 解析设置文件文本：逐键容错 + 保留原始文档 + 规范化。**永不失败**。
 pub fn parse(text: &str) -> Parsed {
-    let mut diagnostics = Vec::new();
-
-    let parsed: Value = match serde_json::from_str(text) {
-        Ok(value) => value,
-        Err(error) => {
-            diagnostics.push(format!("invalid_json error={error}"));
-            return Parsed {
-                settings: normalized_default(),
-                previous: None,
-                read_only: false,
-                diagnostics,
-            };
-        }
-    };
-
-    let Value::Object(object) = parsed else {
-        diagnostics.push("not_an_object".to_string());
-        return Parsed {
-            settings: normalized_default(),
-            previous: None,
-            read_only: false,
-            diagnostics,
-        };
-    };
-
-    // 版本过新时照常读取能读懂的部分，但把文件标成只读：覆盖它等于把用户在新版本里
-    // 设置的东西（以及我们不认识的键）无声地降级掉。
-    let declared = declared_version(&object);
-    let read_only = declared.is_some_and(|version| version > u64::from(DOCUMENT_VERSION));
-    if let Some(version) = declared.filter(|_| read_only) {
-        diagnostics.push(format!(
-            "document_version_newer declared={version} supported={DOCUMENT_VERSION}"
-        ));
-    }
-
-    let mut settings = settings_from_object(&object, &mut diagnostics);
+    let parsed = lithe_gpui_shared::parse::<Settings>(text, DOCUMENT_VERSION);
+    let mut settings = parsed.value;
     settings.normalize();
     Parsed {
         settings,
-        previous: Some(Value::Object(object)),
-        read_only,
-        diagnostics,
+        previous: parsed.previous,
+        read_only: parsed.read_only,
+        diagnostics: parsed.diagnostics,
     }
-}
-
-/// 文档里声明的版本；缺失或不是非负整数时返回 `None`。
-pub fn declared_version(object: &Map<String, Value>) -> Option<u64> {
-    object.get(DOCUMENT_VERSION_KEY)?.as_u64()
 }
 
 /// 由 schema 派生的已知键集：`Settings::default()` 的序列化结果。
 ///
-/// 这是本模块**唯一**的键名来源。不要再加第二份手写清单——见模块文档。
-pub fn known_keys() -> &'static BTreeSet<String> {
-    static KEYS: OnceLock<BTreeSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| match serde_json::to_value(Settings::default()) {
-        Ok(Value::Object(object)) => object.keys().cloned().collect(),
-        // `Settings` 是纯标量结构，序列化不会失败；真失败时键集为空，
-        // 坏键回落路径会退化成"全部用默认值"（仍然不 panic）。
-        _ => BTreeSet::new(),
-    })
+/// 这是设置文档**唯一**的键名来源。不要再加第二份手写清单——见模块文档与
+/// `gpui/PLAN.md` §14.2。
+pub fn known_keys() -> BTreeSet<String> {
+    lithe_gpui_shared::known_keys::<Settings>()
 }
 
-fn normalized_default() -> Settings {
-    let mut settings = Settings::default();
-    settings.normalize();
-    settings
-}
-
-/// 逐键取值：键不存在 → 默认值；键的类型坏了 → **该键**默认值 + 诊断。
-///
-/// 快路径是整体 `serde` 解析一次（任何一个键的类型坏掉都会失败），失败后退到
-/// "逐个已知键单独试解析"：能解析的留下，不能的留诊断并回落默认值。
-///
-/// ⚠️ 逐键那一步遍历的是 [`known_keys`]（由 schema 派生），**不是**手写清单——
-/// 所以新加的字段不需要在这里登记第二遍。
-fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<String>) -> Settings {
-    if let Ok(parsed) = serde_json::from_value::<Settings>(Value::Object(object.clone())) {
-        return parsed;
-    }
-
-    let known = known_keys();
-    let mut sanitized = Map::new();
-    for (key, value) in object {
-        if !known.contains(key) {
-            continue;
-        }
-        let mut probe = Map::new();
-        probe.insert(key.clone(), value.clone());
-        match serde_json::from_value::<Settings>(Value::Object(probe)) {
-            Ok(_) => {
-                sanitized.insert(key.clone(), value.clone());
-            }
-            Err(error) => diagnostics.push(format!("bad_key key={key} error={error}")),
-        }
-    }
-
-    match serde_json::from_value::<Settings>(Value::Object(sanitized)) {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            diagnostics.push(format!("settings_fallback error={error}"));
-            Settings::default()
-        }
-    }
-}
-
-/// 生成要落盘的文档：typed 设置 + **保留**上一次文件里的未知键 + 写入 `version`。
-///
-/// 两件事必须一起做，缺一不可：
-///
-/// - `typed` 覆盖它自己声明的键（所以设置改动一定生效）；
-/// - 上一次文件里出现、而 `typed` 不认识的键逐字保留（含嵌套对象内部的键），
-///   否则用户手写的字段会被无声吃掉。
-///
-/// `previous` 传 `None`（首次写、或上次文件不可解析）时就是一份干净的新文档。
+/// 生成要落盘的设置文档：typed 设置 + **保留**上一次文件里的未知键 + 写入 `version`。
 pub fn merge_document(
     previous: Option<&Value>,
     settings: &Settings,
 ) -> Result<Value, serde_json::Error> {
-    let typed = serde_json::to_value(settings)?;
-    let mut merged = preserve_unknown(previous, &typed);
-    if let Value::Object(object) = &mut merged {
-        object.insert(
-            DOCUMENT_VERSION_KEY.to_string(),
-            Value::from(DOCUMENT_VERSION),
-        );
-    }
-    Ok(merged)
-}
-
-/// 把 `previous` 里 `next` 不认识的键补回 `next`。
-///
-/// 递归规则（只对"两边都是对象"的键下钻，其余情况 typed 一方胜出）：
-///
-/// ```text
-/// next 有该键，previous 没有        → typed 胜出
-/// next 没有该键，previous 有        → 保留 previous 的值（这就是未知键）
-/// 两边都有且都是对象                → 递归合并（保留嵌套未知键）
-/// 两边都有但至少一边不是对象        → typed 胜出
-/// ```
-fn preserve_unknown(previous: Option<&Value>, next: &Value) -> Value {
-    let (Some(Value::Object(previous)), Value::Object(next)) = (previous, next) else {
-        return next.clone();
-    };
-
-    let mut merged = next.clone();
-    for (key, previous_value) in previous {
-        let unknown = !merged.contains_key(key);
-        if unknown {
-            merged.insert(key.clone(), previous_value.clone());
-            continue;
-        }
-        let nested = merged
-            .get(key)
-            .is_some_and(|next_value| next_value.is_object() && previous_value.is_object());
-        if nested {
-            let next_value = merged.get(key).cloned().unwrap_or(Value::Null);
-            merged.insert(
-                key.clone(),
-                preserve_unknown(Some(previous_value), &next_value),
-            );
-        }
-    }
-    Value::Object(merged)
+    lithe_gpui_shared::merge_document(previous, settings, DOCUMENT_VERSION)
 }
 
 /// 原子写设置文档：合并未知键 → 临时文件 → rename。
@@ -317,42 +177,18 @@ pub fn save_document(
     settings: &Settings,
     previous: Option<&Value>,
 ) -> io::Result<usize> {
-    let document = merge_document(previous, settings)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    save_json(path, &document)
+    lithe_gpui_shared::save_document(path, settings, previous, DOCUMENT_VERSION)
 }
 
-/// 原子写任意 JSON 载荷：临时文件 + rename。
-///
-/// 目录不存在时先建（首次启动要能落盘）。
-///
-/// 做成泛型是为了让**同目录的其它 JSON 文件**（`recent-projects.json`，见
-/// [`crate::recent_projects`]）复用同一套"临时文件 + rename"语义，而不是各自再写一份
-/// —— 两份原子写的实现迟早会在"断电只留半个文件"这类细节上漂移。
-pub fn save_json<T: Serialize>(path: &Path, value: &T) -> io::Result<usize> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
-    }
-
-    let json = serde_json::to_string_pretty(value)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    let text = format!("{json}\n");
-
-    // 临时文件名固定（不用随机后缀）：每个文件只有一个写者（设置文件是 `SettingsStore` 的
-    // 防抖任务，最近项目是它自己的列表所有者），而固定后缀让"崩溃后残留的临时文件"可预期、可清理。
-    let tmp = tmp_path(path);
-    std::fs::write(&tmp, text.as_bytes())?;
-    std::fs::rename(&tmp, path)?;
-    Ok(text.len())
+/// 读上一次落盘的原始设置对象（写回时保留未知键用）。
+pub fn previous_object(path: &Path) -> Option<Value> {
+    lithe_gpui_shared::previous_object(path)
 }
 
-/// 临时文件路径（`settings.json` → `settings.json.tmp`）。
-pub fn tmp_path(path: &Path) -> PathBuf {
-    let mut name = path.as_os_str().to_os_string();
-    name.push(".tmp");
-    PathBuf::from(name)
+fn normalized_default() -> Settings {
+    let mut settings = Settings::default();
+    settings.normalize();
+    settings
 }
 
 /// 300ms 防抖的**纯状态机**（不碰时钟、不碰线程）。
@@ -696,7 +532,7 @@ mod tests {
 
             // 期望值：同一份 JSON 去掉那个坏键（于是它取默认值），其余键保持非默认值。
             let mut without_key = baseline.clone();
-            without_key.remove(key);
+            without_key.remove(&key);
             let expected =
                 parse(&serde_json::to_string(&Value::Object(without_key)).expect("序列化失败"))
                     .settings;
@@ -761,35 +597,6 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// 嵌套对象内部的未知键也要保留（typed 只覆盖它自己认识的那几个子键）。
-    #[test]
-    fn nested_unknown_keys_are_preserved() {
-        let previous = serde_json::json!({
-            "advanced": { "known": "old", "unknown": 42 },
-            "gone": true
-        });
-        let typed = serde_json::json!({
-            "advanced": { "known": "new" }
-        });
-        let merged = preserve_unknown(Some(&previous), &typed);
-        assert_eq!(
-            merged,
-            serde_json::json!({
-                "advanced": { "known": "new", "unknown": 42 },
-                "gone": true
-            })
-        );
-    }
-
-    /// 非对象的文档没有可保留的键：typed 直接胜出（不 panic、不丢设置）。
-    #[test]
-    fn non_object_previous_does_not_break_the_merge() {
-        let merged = preserve_unknown(Some(&Value::from(7)), &serde_json::json!({ "a": 1 }));
-        assert_eq!(merged, serde_json::json!({ "a": 1 }));
-        let merged = preserve_unknown(None, &serde_json::json!({ "a": 1 }));
-        assert_eq!(merged, serde_json::json!({ "a": 1 }));
     }
 
     /// 落盘文档必须带 `version`，而且**不继承**文件里那个（可能是旧的 / 被手改的）值。
