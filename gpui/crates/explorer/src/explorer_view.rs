@@ -566,7 +566,7 @@ impl Explorer {
         // 拿不到 `Context<Explorer>`，所以带一个弱引用进来。
         let explorer: WeakEntity<Self> = cx.entity().downgrade();
 
-        let tree = Tree::new(&self.tree, move |index, entry, selected, _window, cx| {
+        let tree = Tree::new(&self.tree, move |_index, entry, selected, _window, cx| {
             let id = entry.item().id.clone();
             let label = entry.item().label.clone();
             let is_folder = entry.is_folder();
@@ -650,7 +650,7 @@ impl Explorer {
             let row_relative_path = relative_path;
             let row_path = opening;
 
-            ListItem::new(SharedString::from(format!("explorer-row-{index}")))
+            ListItem::new(SharedString::from(explorer_row_element_id(id.as_ref())))
                 .selected(selected)
                 // 行高必须可控：`ListItem` 默认 `py_1() px_3()`
                 // （`gpui-component-0.6.6/src/list/list_item.rs:186-187`），纵向内边距会让
@@ -797,6 +797,17 @@ fn root_label(root: &Path) -> String {
         .unwrap_or_else(|| root.to_string_lossy().to_string())
 }
 
+/// 树行的 ElementId：由 `TreeItem` 自己的 id 决定（`dir:<相对路径>` / `file:<相对路径>` /
+/// `empty:<相对路径>`，见 [`crate::model::RowKind::parse`]）—— 那是建树时按路径写死的稳定
+/// identity，展开 / 折叠 / 搜索过滤都改不了它。
+///
+/// 不用 `ListItem` 的下标：树是 `uniform_list`，行的下标随"展开 / 折叠一个目录、输入一次搜索"
+/// 整体变化，用下标当 key 会让展开态与选中底色串到别的行上（《编码指南》「稳定标识」与
+/// 「精确区分领域词汇」：index 是位置，id 是 identity，可重排数据不能拿 index 当 key）。
+fn explorer_row_element_id(row_id: &str) -> String {
+    format!("explorer-row:{row_id}")
+}
+
 /// 把工作区相对路径（Core 约定用 `/` 分隔，`rust/lithe-core/src/project/files.rs:576`）拼成绝对路径。
 ///
 /// 逐段 `join` 而不是整串 `join`：这样结果用的是平台自己的分隔符，空段与 `..` 的行为也更可控。
@@ -825,5 +836,38 @@ impl Render for Explorer {
             .child(header)
             .children(search_row)
             .child(body)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::explorer_row_element_id;
+
+    /// 回归判据（《编码指南》「稳定标识」）：同一棵树的节点在两种展示顺序下算出的 id 必须
+    /// 相同，不同节点的 id 必须不同。用行下标当 id 时，倒序的每一行都会拿到对方的 id，
+    /// 这条会失败。
+    ///
+    /// 纯函数测试（「测试策略」第 1 层）：不起窗口、不建 `Tree`，直接喂 `TreeItem` 的 id
+    /// —— 那正是建树时写死的稳定身份。
+    #[test]
+    fn row_element_ids_do_not_depend_on_the_visible_row_order() {
+        let nodes = ["dir:", "dir:src", "file:src/main.rs", "empty:src/empty-folder"];
+
+        let forward: Vec<String> = nodes.iter().map(|id| explorer_row_element_id(id)).collect();
+        let reversed: Vec<String> = nodes
+            .iter()
+            .rev()
+            .map(|id| explorer_row_element_id(id))
+            .collect();
+
+        assert_eq!(forward[0], reversed[3], "根行的 id 必须与行号无关");
+        assert_eq!(forward[3], reversed[0], "空目录占位行的 id 必须与行号无关");
+        assert_eq!(forward[1], "explorer-row:dir:src", "id 必须由节点 id 构成");
+        // 两两不同：`dir:src` 与 `file:src/main.rs` 是不同节点（目录行与文件行各有一份状态）。
+        for left in 0..nodes.len() {
+            for right in (left + 1)..nodes.len() {
+                assert_ne!(forward[left], forward[right]);
+            }
+        }
     }
 }

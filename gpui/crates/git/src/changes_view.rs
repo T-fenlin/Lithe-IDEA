@@ -107,8 +107,6 @@ const COMMIT_ERROR_RADIUS: f32 = 6.4;
 /// （`gpui-pre-0.3.6/src/geometry.rs:3597-3606` 对 `Pixels` / `Rems` 都有 `From`），
 /// 用 rem 与 `h_16()` 同值且随主题字号缩放。
 const COMMIT_INPUT_HEIGHT: f32 = 64.;
-/// 操作横幅的警示图标 14（`git-operation-banner.tsx:71-84` 的 `size-3.5`）。
-const BANNER_ICON_SIZE: f32 = 14.;
 /// 冲突提示最多列出多少个路径（真源只给 `{count}` 个数，`git-operation-banner.tsx:97-100`；
 /// 这里补上路径是因为"哪些文件"才是用户下一步唯一要的信息）。
 const CONFLICT_PATH_LIMIT: usize = 3;
@@ -960,7 +958,12 @@ impl ChangesView {
                     .gap_2()
                     .child(
                         Icon::new(IconName::TriangleAlert)
-                            .size(px(BANNER_ICON_SIZE))
+                            // rem 而不是固定 px：真源这一条就是 `size-3.5`（`git-operation-banner.tsx:71-84`），
+                            // 即 3.5 × base font —— 走 `size_3p5()` 后横幅的图标与同一行的
+                            // `text_sm()` 文字一起随主题字号缩放（《编码指南》「渲染与组合」：
+                            // 混用 rem-based text 与 fixed-px icon 必须记录理由，这里没有理由，
+                            // 因为值本身就在 rem 档位上）。
+                            .size_3p5()
                             .text_color(cx.theme().warning),
                     )
                     .child(
@@ -1164,7 +1167,7 @@ impl ChangesView {
     ///
     /// 内容照 `git-status-file-item.tsx:119-182`：文件名（按状态染色）+ 目录（弱色）
     /// + 行尾暂存 / 取消暂存按钮（**常显**，偏差 1）。
-    fn render_row(&self, index: usize, row: &ChangeRow, cx: &mut Context<Self>) -> AnyElement {
+    fn render_row(&self, row: &ChangeRow, cx: &mut Context<Self>) -> AnyElement {
         let file_name = row
             .path
             .rsplit('/')
@@ -1198,7 +1201,7 @@ impl ChangesView {
                 .child(Spinner::new().color(cx.theme().muted_foreground))
                 .into_any_element()
         } else {
-            Button::new(("changes-stage-row", index))
+            Button::new(stage_button_element_id(row))
                 .ghost()
                 .icon(if staged {
                     IconName::Minus
@@ -1217,7 +1220,7 @@ impl ChangesView {
         };
 
         h_flex()
-            .id(("changes-row", index))
+            .id(change_row_element_id(row))
             .w_full()
             .flex_shrink_0()
             .h_6()
@@ -1265,7 +1268,6 @@ impl ChangesView {
             tr(UNTRACKED_FILES_KEY)
         ));
         let mut children: Vec<AnyElement> = Vec::new();
-        let mut index = 0usize;
 
         // 两类都各自画分类头（真机只在**该类为 0** 时不画，`git-status-panel.tsx:374`）：
         // 分类头是"这个文件是已跟踪还是未跟踪"在界面上唯一的标识。
@@ -1276,8 +1278,7 @@ impl ChangesView {
                 cx,
             ));
             for row in &tracked {
-                children.push(self.render_row(index, row, cx));
-                index += 1;
+                children.push(self.render_row(row, cx));
             }
         }
 
@@ -1292,8 +1293,7 @@ impl ChangesView {
                 cx,
             ));
             for row in &untracked {
-                children.push(self.render_row(index, row, cx));
-                index += 1;
+                children.push(self.render_row(row, cx));
             }
         }
 
@@ -1571,6 +1571,22 @@ fn row_aria_label(row: &ChangeRow) -> SharedString {
     SharedString::from(label)
 }
 
+/// 变更行的 ElementId：用**仓库相对路径**（[`ChangeRow::path`]）—— 它是 Core 与真源都认的
+/// 行身份（同一路径的索引 / 工作树两条记录会先合并成一行，见 `changes.rs` 的 `parse_changes`）。
+///
+/// 不用下标：暂存 / 取消暂存会让行在两个分类（已跟踪 ↔ 未跟踪）之间移动，`snapshot` 刷新后
+/// 同一个下标指向的文件可能整个换掉，元素状态（hover / 滚动锚点）就会串到别的文件上
+/// （《编码指南》「稳定标识」/「精确区分领域词汇」：index 是位置，id 是 identity）。
+fn change_row_element_id(row: &ChangeRow) -> String {
+    format!("changes-row:{}", row.path)
+}
+
+/// 行尾暂存按钮的 ElementId：与行同一个 owning object，用同一路径 namespace 分开两个 id
+/// （同一个 control 重复出现时以 owning object namespace child ID，`Button::new(("delete-project", project.id))`）。
+fn stage_button_element_id(row: &ChangeRow) -> String {
+    format!("changes-stage-row:{}", row.path)
+}
+
 impl Render for ChangesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // 各段都返回 `AnyElement`（具体类型，不借用 self）：edition 2024 下
@@ -1629,5 +1645,64 @@ impl Render for ChangesView {
                     view.commit(window, cx)
                 }),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{change_row_element_id, stage_button_element_id};
+    use crate::changes::{ChangeKind, ChangeRow};
+    use gpui_kit::SharedString;
+
+    /// 一行的最小 fixture（与 `changes.rs` 的 `row(..)` 同风格）：只填身份与渲染用得到的字段。
+    fn row(path: &str, status: &str, untracked: bool) -> ChangeRow {
+        ChangeRow {
+            path: SharedString::from(path),
+            original_path: None,
+            raw_status: SharedString::from(status),
+            kind: ChangeKind::parse(status, untracked),
+            staged: !status.starts_with(' ') && !untracked,
+            worktree: !status.ends_with(' ') && !untracked,
+        }
+    }
+
+    /// 回归判据（《编码指南》「稳定标识」）：同一批行在两种顺序下算出的 id 必须相同，
+    /// 不同行算出的 id 必须不同。用下标当 id 时倒序的每一行都会拿到对方的 id，这条会失败。
+    #[test]
+    fn row_element_ids_do_not_depend_on_the_row_order() {
+        // 列表顺序就是"已跟踪分类在前 + 分类内状态序 + 路径升序"（`changes.rs` 的
+        // `rows_sort_by_category_then_status_then_path`），这里刻意把它打乱。
+        let rows = [
+            row("src/main.rs", " M", false),
+            row("README.md", "??", true),
+            row("src/lib.rs", "D ", false),
+        ];
+
+        let forward: Vec<String> = rows.iter().map(change_row_element_id).collect();
+        let reversed: Vec<String> = rows.iter().rev().map(change_row_element_id).collect();
+
+        assert_eq!(forward[0], reversed[2], "同一行在不同顺序下必须算出同一个 id");
+        assert_eq!(forward[1], reversed[1], "同一行在不同顺序下必须算出同一个 id");
+        assert_eq!(forward[2], reversed[0], "同一行在不同顺序下必须算出同一个 id");
+        assert_eq!(forward[0], "changes-row:src/main.rs", "id 必须由路径构成");
+        // 两两不同：不同文件不能共享元素状态。
+        for (left, right) in [(0, 1), (0, 2), (1, 2)] {
+            assert_ne!(forward[left], forward[right], "不同文件的 id 必须互不相同");
+        }
+    }
+
+    /// 同一行的「行」与「暂存按钮」是两个元素：共用同一个 owning object（路径）做 namespace，
+    /// 但彼此的 id 必须不同，否则 hover 状态会互相覆盖。
+    #[test]
+    fn stage_button_id_is_namespaced_apart_from_its_row() {
+        let target = row("src/main.rs", " M", false);
+        let other = row("src/lib.rs", " M", false);
+
+        assert_ne!(change_row_element_id(&target), stage_button_element_id(&target));
+        assert_ne!(stage_button_element_id(&target), stage_button_element_id(&other));
+        assert_eq!(
+            stage_button_element_id(&target),
+            "changes-stage-row:src/main.rs"
+        );
     }
 }

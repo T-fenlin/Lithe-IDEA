@@ -2055,7 +2055,9 @@ impl EditorPane {
     /// 2. **必须自己给 `id`**：`context_menu` 生成的元素 id 取
     ///    `self.interactivity().element_id`，`None` 时退回 `ElementId::CodeLocation(调用点)`
     ///    （`gpui-component-0.6.6/src/menu/context_menu.rs:26-35`）—— 也就是**同一个源码位置
-    ///    的每个标签共用一个 id**，右键任意一个都会命中同一份元素状态。
+    ///    的每个标签共用一个 id**，右键任意一个都会命中同一份元素状态。这里用的 id 是
+    ///    **buffer 路径**（[`tab_element_id`]）而不是下标：关掉一个标签之后下标的指向会整体前移，
+    ///    用它当 key 等于把元素状态交给"当前位置"。
     /// 3. **上下文必须当场捕获**：菜单的构建闭包签名是
     ///    `Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu`
     ///    （`context_menu.rs:19-22`）—— **没有鼠标事件、没有位置**，而且它是在
@@ -2086,7 +2088,9 @@ impl EditorPane {
         let on_disk = !is_virtual_source_path(&path);
 
         content
-            .id(("editor-tab", index))
+            // 稳定 id：buffer 路径（见 [`tab_element_id`]）。下面的 `index` 只用于"点这一项
+            // 操作哪个标签"这层位置语义（下标在点击时重新解析），不参与元素身份。
+            .id(tab_element_id(&buffer.path))
             // 悬停进出这一项就更新 [`Self::hovered_tab`]（非活动标签的 × 靠它显隐）。
             //
             // ⚠️ 必须挂在**加了 `id` 之后**：`on_hover` 是 `StatefulInteractiveElement` 上的
@@ -2373,7 +2377,7 @@ impl EditorPane {
                 .right_1()
                 .flex()
                 .items_center()
-                .child(Self::close_button(index, cx))
+                .child(Self::close_button(&buffer.path, index, cx))
         });
 
         let content = h_flex()
@@ -2433,8 +2437,11 @@ impl EditorPane {
     /// 这里对齐的是**尺寸值**，所以用 `.small()`，不要被变体名带偏。
     /// 24 装在 `TabVariant::Underline` 的 26px 内高层里是否会被 `overflow_hidden()` 裁掉，
     /// 由 B1 的实机验收量过（结论写在交付报告里）。
-    fn close_button(index: usize, cx: &mut Context<Self>) -> Button {
-        Button::new(format!("editor-tab-close-{index}"))
+    ///
+    /// id 由 buffer 路径给出（见 [`tab_close_element_id`]），不用下标：× 的悬停 / 指针状态
+    /// 属于"这个标签"，而不属于"标签条的第 N 个位置"。
+    fn close_button(path: &Path, index: usize, cx: &mut Context<Self>) -> Button {
+        Button::new(tab_close_element_id(path))
             // Windows 的关闭字形是 lucide `x`，`icons/x.svg` 在全量目录里确有该字形。
             .icon(IconName::X)
             .ghost()
@@ -2597,6 +2604,28 @@ impl EditorPane {
     }
 }
 
+/// 标签的 ElementId：由 **buffer 路径**决定。
+///
+/// `Buffer::path` 是打开时的去重键（同一路径重复打开只切标签、不读盘，
+/// `crate::buffer::Buffer::path`），所以它就是标签的稳定 identity。下标只是标签在
+/// `buffers` 里的当前位置：关掉 / 关到右侧 / 重新打开已关闭标签之后，同一个下标会指向
+/// 另一个文件，元素状态（悬停、右键菜单的 element state）就会串到别的标签上
+/// （《编码指南》「稳定标识」/「精确区分领域词汇」：index 是位置，id 是 identity）。
+///
+/// 收 `&Path` 而不是 `&Buffer`：`Buffer` 里持有 `Entity<EditorState>`，纯函数测试造不出来
+/// （《编码指南》「测试策略」第 1 层要求纯测试），而路径正是唯一被用到的字段。
+fn tab_element_id(path: &Path) -> String {
+    format!("editor-tab:{}", path.display())
+}
+
+/// 标签上的关闭按钮：与标签同一个 owning object，用同一路径 namespace 开 child ID。
+///
+/// 与 [`tab_element_id`] 必须不同（否则标签与它的关闭按钮共享元素状态）；两者又必须同时
+/// 由路径决定，否则下标漂移后按钮的悬停 / 禁用态会落到另一个标签的 × 上。
+fn tab_close_element_id(path: &Path) -> String {
+    format!("editor-tab-close:{}", path.display())
+}
+
 /// JDT 虚拟源码路径的判据：`crate::navigation` 用 `uri` 直接当 `PathBuf` 建的 buffer。
 fn is_virtual_source_path(path: &Path) -> bool {
     path.to_string_lossy().starts_with("jdt://")
@@ -2666,5 +2695,48 @@ impl Render for EditorPane {
             }))
             .child(self.render_tab_bar(cx))
             .child(self.render_body(cx))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{tab_close_element_id, tab_element_id};
+    use std::path::{Path, PathBuf};
+
+    /// 回归判据（《编码指南》「稳定标识」）：同一批标签在两种顺序下算出的 id 必须相同，
+    /// 不同标签算出的 id 必须不同。用下标当 id 时倒序的每一项都会拿到对方的 id，这条会失败。
+    ///
+    /// 纯函数测试（「测试策略」第 1 层）：不起窗口、不建 `EditorState`，所以这里直接喂路径。
+    #[test]
+    fn tab_element_ids_do_not_depend_on_the_tab_order() {
+        let tabs = [
+            PathBuf::from("/workspace/src/main.rs"),
+            PathBuf::from("/workspace/README.md"),
+            PathBuf::from("jdt://contents/java.base/java/lang/String.class"),
+        ];
+
+        let forward: Vec<String> = tabs.iter().map(|path| tab_element_id(path)).collect();
+        let reversed: Vec<String> = tabs.iter().rev().map(|path| tab_element_id(path)).collect();
+
+        assert_eq!(forward[0], reversed[2]);
+        assert_eq!(forward[1], reversed[1]);
+        assert_eq!(forward[2], reversed[0]);
+        assert_ne!(forward[0], forward[1]);
+        assert_ne!(forward[0], forward[2]);
+        assert_ne!(forward[1], forward[2]);
+        // 虚拟源码（`jdt://`）与磁盘文件同处一个身份空间：路径本身就是它的身份。
+        assert!(tab_element_id(Path::new("jdt://x")).starts_with("editor-tab:jdt://x"));
+    }
+
+    /// 关闭按钮与它所在的标签是两个元素：必须由同一路径 namespace，但彼此 id 不同
+    /// （否则按钮的悬停 / 指针状态会污染标签本身的元素状态）。
+    #[test]
+    fn close_button_id_is_namespaced_apart_from_its_tab() {
+        let path = Path::new("/workspace/src/main.rs");
+        let other = Path::new("/workspace/src/lib.rs");
+
+        assert_ne!(tab_element_id(path), tab_close_element_id(path));
+        assert_ne!(tab_close_element_id(path), tab_close_element_id(other));
+        assert_eq!(tab_close_element_id(path), "editor-tab-close:/workspace/src/main.rs");
     }
 }

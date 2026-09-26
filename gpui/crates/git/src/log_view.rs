@@ -16,6 +16,7 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -44,6 +45,35 @@ use crate::model::{
     build_commit_files, build_reference_rows, handler, label_color, lane_color, layout_graph,
     load_commit_files, load_first, load_more, matches_filter, tracking_count,
 };
+// ---------------------------------------------------------------------------
+// 稳定标识（ElementId）
+// ---------------------------------------------------------------------------
+//
+// `ElementId` 是元素局部状态（hover / focus / 滚动）的键，必须是**稳定 identity**。
+// 下标只是数据在当帧列表里的位置：筛选、翻页或重排之后同一个下标会指向另一条数据，
+// 元素状态就会串到别的行上 —— 《编码指南》「稳定标识」与「精确区分领域词汇」都要求
+// index 只表示位置、id 才表示 identity，可重排的数据不能用 index 当 key。
+
+/// 页签的 ElementId：只由 [`Panel`] 决定，与它在页签行里的位置无关。
+fn panel_element_id(panel: Panel) -> &'static str {
+    // 取值里带领域名（`log` / `console`）而不是编号：两个页签是**不同**的领域对象，
+    // 键一旦相同也会互相覆盖状态。
+    match panel {
+        Panel::Log => "bottom-git-tab:log",
+        Panel::Console => "bottom-git-tab:console",
+    }
+}
+
+/// 提交行的 ElementId：由提交自己的哈希决定（Core `GitCommitResponse.hash`，
+/// `protocol/contracts.rs:602-611`）。
+///
+/// 不用下标：`visible_commits` 随筛选变化、`load_more` 往列表尾部追加，同一个下标在不同帧
+/// 指向的提交可能完全不同 —— 那时 hover / 元素状态会跟着"第 N 行"而不是"这个提交"走。
+fn commit_element_id(commit: &Commit) -> String {
+    format!("bottom-git-commit:{}", commit.hash)
+}
+
+// ---------------------------------------------------------------------------
 // 面板
 // ---------------------------------------------------------------------------
 
@@ -422,7 +452,11 @@ impl BottomPane {
     // -----------------------------------------------------------------------
 
     /// 一个自绘图标按钮：24×24 命中区、14px 图标、悬停 `accent` 底。
-    /// 偏差 5：不用 `Button`（它的图标会被算成 18px），因此也没有悬停 tooltip，只有 `aria_label`。
+    ///
+    /// 偏差 5：不用 `Button`（它的图标会被算成 18px），所以悬停提示得自己挂 ——
+    /// `div` 上的 `.tooltip(..)` 收的是"构造 tooltip 的闭包"而不是文案
+    /// （`gpui-pre-0.3.6/src/elements/div.rs:1676-1685`），这里用组件自带的文本 tooltip
+    /// [`Tooltip`] 包成 `AnyView`；无障碍名继续用同一份文案（`aria_label`）。
     fn icon_button(
         id: (&'static str, usize),
         icon: IconName,
@@ -436,6 +470,7 @@ impl BottomPane {
         } else {
             cx.theme().muted_foreground
         };
+        let tooltip = label.clone();
 
         div()
             .id(id)
@@ -445,6 +480,7 @@ impl BottomPane {
             .justify_center()
             .size_6()
             .rounded(px(ICON_BUTTON_RADIUS))
+            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             .aria_label(label)
             .when(enabled, |this| {
                 this.hover(|style| style.bg(cx.theme().accent))
@@ -455,6 +491,8 @@ impl BottomPane {
     }
 
     /// 引用树工具栏按钮：32×32、图标 16、圆角 4.8（`git-reference-tree.tsx:146`）。
+    ///
+    /// 悬停提示与无障碍名的挂法与 [`Self::icon_button`] 相同（同样是自绘 `div`，不是 `Button`）。
     fn toolbar_button(
         id: (&'static str, usize),
         icon: IconName,
@@ -468,6 +506,7 @@ impl BottomPane {
         } else {
             cx.theme().muted_foreground
         };
+        let tooltip = label.clone();
         div()
             .id(id)
             .flex()
@@ -476,6 +515,7 @@ impl BottomPane {
             .justify_center()
             .size_8()
             .rounded(px(REFERENCE_TOOLBAR_BUTTON_RADIUS))
+            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             .aria_label(label)
             .when(enabled, |this| {
                 this.hover(|style| style.bg(cx.theme().accent))
@@ -615,18 +655,16 @@ impl BottomPane {
             .text_xs();
 
         // `git.console.log` = 日志（`locale.ts:4556`）、`git.console.title` = 控制台（`locale.ts:4555`）。
-        for (index, (panel, label)) in [
+        for (panel, label) in [
             (Panel::Log, tr("lithe.git.console.log")),
             (Panel::Console, tr("lithe.git.console.title")),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        ] {
             let selected = self.panel == panel;
             let this = this.clone();
             row = row.child(
                 div()
-                    .id(("bottom-git-tab", index))
+                    // 稳定 id 由 `Panel` 决定（见 [`panel_element_id`]），不是循环下标。
+                    .id(panel_element_id(panel))
                     .flex_shrink_0()
                     .aria_selected(selected)
                     // 偏差 4：源码没有选中视觉，这里只补前景色区分。
@@ -664,7 +702,9 @@ impl BottomPane {
             .h_6()
             .px_1p5()
             .label(current.label())
-            .tooltip("Git 日志筛选字段")
+            // `git.log.filterField` = 「Git 日志筛选字段」（`locale.ts:7278`）：曾经硬编码中文，
+            // 现在与其它文案一样走 `tr(..)`（键早就在 locale 与 WIRED 表里）。
+            .tooltip(tr("lithe.git.log.filterField"))
             .dropdown_menu(move |menu, _window, _cx| {
                 let mut menu = menu;
                 for scope in FilterScope::all() {
@@ -897,7 +937,9 @@ impl BottomPane {
         let this = this.clone();
 
         h_flex()
-            .id(("bottom-git-commit", index))
+            // 稳定 id 由提交哈希决定（见 [`commit_element_id`]）；`index` 只用于"点这一行选中
+            // 它"这条位置语义的交互，不参与元素身份。
+            .id(commit_element_id(commit))
             .w_full()
             .min_w(px(COMMIT_CONTENT_MIN_WIDTH))
             .min_h(px(COMMIT_ROW_HEIGHT))
@@ -2022,5 +2064,66 @@ impl Render for BottomPane {
             )),
             LoadState::Ready => root.child(self.log_body(&this, cx)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{commit_element_id, panel_element_id};
+    use crate::model::{Commit, Panel};
+    use gpui_kit::SharedString;
+
+    /// 一行提交的最小 fixture：只填渲染与身份用得到的字段，其余固定值，保持测试确定性
+    /// （不读时钟、不读环境、不起窗口）。
+    fn commit(hash: &str) -> Commit {
+        Commit {
+            hash: SharedString::from(hash),
+            short_hash: SharedString::from(hash),
+            parent_hashes: Vec::new(),
+            subject: SharedString::from("subject"),
+            author: SharedString::from("author"),
+            email: SharedString::from("author@example.invalid"),
+            date: SharedString::from("2026-01-01"),
+            labels: Vec::new(),
+        }
+    }
+
+    /// 回归判据（《编码指南》「稳定标识」）：同一批页签数据在两种顺序下算出的 id 必须相同，
+    /// 不同页签的 id 必须不同。用下标当 id 时，倒序的每一项都会拿到对方的 id，这条会失败。
+    #[test]
+    fn tab_element_ids_do_not_depend_on_the_tab_row_order() {
+        let forward = [Panel::Log, Panel::Console];
+        let reversed = [Panel::Console, Panel::Log];
+
+        let forward_ids: Vec<&str> = forward.into_iter().map(panel_element_id).collect();
+        let reversed_ids: Vec<&str> = reversed.into_iter().map(panel_element_id).collect();
+
+        assert_eq!(forward_ids[0], reversed_ids[1], "Panel::Log 的 id 必须与位置无关");
+        assert_eq!(forward_ids[1], reversed_ids[0], "Panel::Console 的 id 必须与位置无关");
+        assert_ne!(forward_ids[0], forward_ids[1], "两个页签的 id 必须互不相同");
+    }
+
+    /// 同一批复现在两种顺序下算出的 id 必须相同（提交哈希 vs 行下标）。
+    #[test]
+    fn commit_element_ids_do_not_depend_on_the_commit_row_order() {
+        let commits = [
+            commit("1111111111111111111111111111111111111111"),
+            commit("2222222222222222222222222222222222222222"),
+        ];
+
+        let forward: Vec<String> = commits.iter().map(commit_element_id).collect();
+        let reversed: Vec<String> = commits.iter().rev().map(commit_element_id).collect();
+
+        assert_eq!(forward[0], reversed[1], "同一提交在不同顺序下必须算出同一个 id");
+        assert_eq!(forward[1], reversed[0], "同一提交在不同顺序下必须算出同一个 id");
+        assert_ne!(forward[0], forward[1], "不同提交的 id 必须互不相同");
+        assert_eq!(
+            forward[0],
+            "bottom-git-commit:1111111111111111111111111111111111111111"
+        );
+        // 身份是哈希、不是内容：同一提交换了主题行（比如 rebase 改写）也还是同一行。
+        let mut rewritten = commit("1111111111111111111111111111111111111111");
+        rewritten.subject = SharedString::from("另一个主题行");
+        assert_eq!(commit_element_id(&rewritten), forward[0]);
     }
 }
