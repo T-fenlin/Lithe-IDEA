@@ -56,9 +56,17 @@
 - **Maven**：`mavenContext` 进 `lsp.startServer`（生成源根 / profile / settings 生效）· 右栏面板（模块树 / profile / 源码根）。
 - **Spring**：`spring.index` 数据层 + 右栏第 4 项面板（**修掉了"没传 `paths` 导致 `endpoints` 恒为 0"**，0 → 2）。
 - **设置**：`项目 · JDK 与 Maven` 真值页（探测 + 来源 + 覆盖 + 刷新，含 ≥21 闸门与"尚未生效"标注）·
+  **五个路径行都可"选择…"**（gpui 自带的 `prompt_for_paths`：JDK / Maven / Maven JDK / 本地仓库选目录，
+  `settings.xml` 选文件）· `settings.xml` 与本地仓库从**只读事实**改成**可覆盖**，其中
+  `mavenSettingsPath` 经 `mavenContext.settingsPath` 真的进了 JDTLS 的 `java.configuration.maven.userSettings` ·
   `LSP` 页（**一个真开关**：`autoCompletion` 门控补全触发，provider 保留）·
   `运行配置` 页（`runConfig.generate` 真数据，**没有运行按钮**，如实标注执行未接入）·
   对话框正文可滚动（`.h_full()`）· Git 身份页。
+- **主题**：目录从 2 条（Lithe）扩到 **7 个 JSON / 12 条主题** —— 第二批 Gruvbox / JetBrains / Nord /
+  One / VS Code 各带明暗，并补了导出件里没有的 `highlight`（编辑器语法色，映射表见
+  `themes/README.md` §7）；`lithe-*.json` 仍不写 `highlight`（那 18 色的回落规则还没实现）。
+  顺带修掉"切回没有 `highlight` 的主题会留着上一个主题的语法色"，并给**整个主题目录**加了
+  真实 `ThemeSet` 反序列化 + 13 必填 key + 颜色解析 + 名字唯一的校验单测。
 - **JDK 覆盖值真正生效**：判据顺序 = 覆盖值 → `LITHE_JDTLS_JAVA` → 捆绑 → JDTLS 自带 jre → `JAVA_HOME` →
   PATH → 常见安装根；实测 21.0.8 / 25.0.3 按设置生效，无效覆盖降级并打原因。
 - **卫生**：右栏懒扫移出 MouseUp 派发栈（`cx.spawn`）· `S1_RIGHT_PANEL` 加 `seq/t_ms/坐标`（走 stderr）。
@@ -66,8 +74,12 @@
 **下一批的候选（按我的建议排序，都需要维护者点头）**：
 ① **`autoCompletion` 的热生效未验** —— 页面上那个开关点下去走同一条链（会当场打
 `S1_EDITOR_AUTO_COMPLETION`），但**没人实机点过它**；要么验一次，要么在页面上写清"需重开 Java 文件"。
-② `mavenExecutablePath` / `mavenJavaHomePath` **仍无消费方**（页面已标注"尚未生效"）——
-要真生效，得先有执行 Maven 的通路（`runConfig.createLaunchPlan` 是现成入口）。
+② `mavenExecutablePath` / `mavenJavaHomePath` / `mavenLocalRepositoryPath` **仍无消费方**
+（页面已分别标注"尚未生效"）—— 要真生效，得先有执行 Maven 的通路
+（`runConfig.createLaunchPlan` 是现成入口）。⚠️ 同页的 `mavenSettingsPath` **不在这一条里**：
+它本批已接进 `mavenContext.settingsPath`（`java/src/toolchain.rs` 的第二个槽 →
+`java/src/workspace.rs` 的 `maven_context_from_scan`），由 Core 发布成
+`java.configuration.maven.userSettings`。
 ③ **运行配置页的执行**：gpui 没有 run crate、Run 工具窗是占位、Run 菜单是空的 ⇒ 要画运行按钮必须先补宿主。
 ④ 让外壳登记一个**中性的工作区根钩子**（现在「运行配置」页借道 `GitIdentityHost::workspace_root`，
 只改 `identity::host_workspace_root()` 一个函数体即可）。
