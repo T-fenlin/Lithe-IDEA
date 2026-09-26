@@ -54,85 +54,113 @@ use lithe_gpui_shared::{CoreClient, CoreRequest, tr, tr_args};
 //
 // 字号：`ui-text-sm` 是 13px（`git-log-title-bar.tsx:31`、`git-commit-table.tsx:199`），不在 gpui 的
 // 档位（`text_xs()`=12 / `text_sm()`=14）上 → 按《编码指南》用 `text_sm()`（14px，**有意**改动）；
-// 12 → `text_xs()`（等价）；10 / 11（徽章、日期列、等宽字号）不在档位上，保留 `px(...)`。
+// 12 → `text_xs()`（等价）；10 / 11（徽章、日期列、等宽字号）不在档位上 → 调用点写
+// `rems(字号 / 16.)`（rem base = 16px，写 `/ 4.` 就错；`rems(10. / 16.)` 与原来的 `px(10.)`
+// 在默认基准下逐像素相等，但会随界面字号缩放）。
+//
+// ⚠️ 下面每个常量的注释给出调用点**怎么消费**它，而不是"为什么可以保留 `px(...)`"：
+// 「不在 gpui 的固定 rem 档位上」不是《编码指南》`coding-guides.md:288` 的例外类别
+// —— 档位外本来就有 `rems(P / 16.)` 这条正路。只有确实需要 `Pixels` 类型值的槽
+// （`Sizable::with_size(impl Into<Size>)`、`TabBar::max_width`、`lsp.completion_menu.max_width`
+// 这类**固有方法/字段**，它们只接受 `Pixels`）才走 `rem_px(rem, C)` 换算，`rem` 取运行时基准。
 //
 // ⚠️ 圆角一律走应用层具名常量、不用 gpui 的 `rounded_sm()`/`rounded_md()`：Lithe 的圆角阶梯来自
 // `--radius`（`sm`=4.8、`md`=6.4、`lg`=8、`xl`=11.2），与 gpui 的同名档位语义不同；
 // 也不能从主题读 —— `ThemeConfig.radius` 是 `usize`
 // （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 4.8 / 6.4。
+// 这条只约束"用哪个数"，不约束"怎么写"：消费方式仍然是 `rems(半径 / 16.)`。
 
 /// 「引用名」胶囊最大宽 240（`git-log-title-bar.tsx:32-39` 的 `max-w-60`）。
 ///
-/// ⚠️ **保留 `px(...)`**：240 不在 gpui 的固定 rem 档位上（档位里 56 → 224、64 → 256），
-/// 没有 `max_w_60()`。
+/// 240 不在 gpui 的固定 rem 档位上（档位里 56 → 224、64 → 256），没有 `max_w_60()`
+/// —— 这正是「档位外写 helper 底层的 `rems(P / 16.)`」的场合（`coding-guides.md:288` 的例外里
+/// **没有**"值不在档位上"这一类）。调用点：`.max_w(rems(REFERENCE_PILL_MAX_WIDTH / 16.))`。
 pub(crate) const REFERENCE_PILL_MAX_WIDTH: f32 = 240.;
 /// 「引用名」胶囊圆角 6.4（`git-log-title-bar.tsx:32-39`）—— 见上方圆角说明。
 pub(crate) const REFERENCE_PILL_RADIUS: f32 = 6.4;
 /// 图标按钮 24×24（`git-log-title-bar.tsx:40-71`、`ui/button.tsx:9,27` 的 `icon-xs`）。
 ///
-/// ⚠️ **保留 `px(...)`**：字段下拉按钮走 `Sizable::with_size(impl Into<Size>)`，而 `Size` 只有
-/// `From<Pixels>`（`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`；
-/// 换成 `Size::XSmall` 会连带改掉按钮的内边距与图标尺寸，不是逐像素等价。
+/// 该值走 `Sizable::with_size(impl Into<Size>)`，而 `Size` 只有 `From<Pixels>`
+/// （`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`；换成 `Size::XSmall`
+/// 会连带改掉按钮的内边距与图标尺寸，不是逐像素等价。所以调用点写
+/// `rem_px(cx.theme().font_size, ICON_BUTTON_SIZE)`（`log_view.rs` 的 `rem_px`）——
+/// 仍按当前 rem 基准求值，不是写死 16。
 pub(crate) const ICON_BUTTON_SIZE: f32 = 24.;
 /// 图标按钮圆角 6.4（`ui/button.tsx:9`）—— 见上方圆角说明。
 pub(crate) const ICON_BUTTON_RADIUS: f32 = 6.4;
 
 /// 筛选输入框最小宽 144（`git-commit-table.tsx:201` 的 `min-w-36`）。
 ///
-/// ⚠️ **保留 `px(...)`**：144 不在 gpui 的固定 rem 档位上（档位里 32 → 128、40 → 160），
-/// 没有 `min_w_36()`。
+/// 144 不在 gpui 的固定 rem 档位上（档位里 32 → 128、40 → 160），没有 `min_w_36()`；
+/// 调用点：`.min_w(rems(FILTER_INPUT_MIN_WIDTH / 16.))`。
 pub(crate) const FILTER_INPUT_MIN_WIDTH: f32 = 144.;
 /// 筛选输入框最大宽 288（`git-commit-table.tsx:201` 的 `max-w-72`）。
 ///
-/// ⚠️ **保留 `px(...)`**：288 不在 gpui 的固定 rem 档位上（档位里 64 → 256、80 → 320），
-/// 没有 `max_w_72()`。
+/// 288 不在 gpui 的固定 rem 档位上（档位里 64 → 256、80 → 320），没有 `max_w_72()`；
+/// 调用点：`.max_w(rems(FILTER_INPUT_MAX_WIDTH / 16.))`。
 pub(crate) const FILTER_INPUT_MAX_WIDTH: f32 = 288.;
 
 /// 提交行高 30（`git-commit-table.tsx:43` 的 `const ROW_HEIGHT = 30`）。
 ///
-/// ⚠️ **保留 `px(...)`**：30 不在 gpui 的固定 rem 档位上（档位里 28 / 32）；它同时用于
-/// `.min_h(..)` 与 `.line_height(..)`，而 `line_height` 本来也没有档位 helper。
+/// 30 不在 gpui 的固定 rem 档位上（档位里 28 / 32），且同时用于 `.min_h(..)` 与
+/// `.line_height(..)`，后者本来也没有档位 helper —— 两处都写
+/// `rems(COMMIT_ROW_HEIGHT / 16.)`（`line_height` 吃 `DefiniteLength`，`Rems` 有 `From`）。
 pub(crate) const COMMIT_ROW_HEIGHT: f32 = 30.;
 /// 作者列宽 112（`git-commit-table.tsx:321` 的 `w-28`）。
 ///
-/// ⚠️ **保留 `px(...)`**：112 不在 gpui 的固定 rem 档位上（档位里 24 → 96、32 → 128），
-/// 没有 `w_28()`。
+/// 112 不在 gpui 的固定 rem 档位上（档位里 24 → 96、32 → 128），没有 `w_28()`；
+/// 调用点：`.w(rems(AUTHOR_COLUMN_WIDTH / 16.))`。
 pub(crate) const AUTHOR_COLUMN_WIDTH: f32 = 112.;
 /// 日期列字号 11、等宽（`git-commit-table.tsx:324`）。
 ///
-/// ⚠️ **保留 `px(...)`**：gpui 的字号档位只有 12 / 14 / 16 / 18 …，11 不在档位上。
+/// gpui 的字号档位只有 12 / 14 / 16 / 18 …，11 不在档位上 → 调用点写
+/// `.text_size(rems(DATE_FONT_SIZE / 16.))`（`text_size` 吃 `AbsoluteLength`，`Rems` 有 `From`；
+/// 这就是"档位外用 helper 底层的 rems"这条正路，不是"保留 px 的理由"）。
 pub(crate) const DATE_FONT_SIZE: f32 = 11.;
 /// 提交行内容最小宽 520（`git-commit-table.tsx:276` 的 `min-w-130`）。
 ///
-/// ⚠️ **保留 `px(...)`**：520 不在 gpui 的固定 rem 档位上（档位最大档是 128 → 512）。
+/// 520 不在 gpui 的固定 rem 档位上（最大档 128 → 512）；调用点：
+/// `.min_w(rems(COMMIT_CONTENT_MIN_WIDTH / 16.))`。
 pub(crate) const COMMIT_CONTENT_MIN_WIDTH: f32 = 520.;
 /// 「加载更多提交」按钮高 24（`git-commit-table.tsx:434` 的 `size="xs"`）。
 ///
-/// ⚠️ **保留 `px(...)`**：它走 `Sizable::with_size(impl Into<Size>)`，而 `Size` 只有
-/// `From<Pixels>`（`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`；
-/// 换成 `Size::XSmall` 会连带改掉按钮的内边距与图标尺寸，不是逐像素等价。
+/// 与 [`ICON_BUTTON_SIZE`] 同因：它走 `Sizable::with_size(impl Into<Size>)`，而 `Size` 只有
+/// `From<Pixels>`（`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`。
+/// 调用点（三处）都写 `rem_px(cx.theme().font_size, LOAD_MORE_BUTTON_HEIGHT)`。
 pub(crate) const LOAD_MORE_BUTTON_HEIGHT: f32 = 24.;
 
-/// 泳道横向间距 13（`git-graph-row.tsx:4-6`）—— 参与泳道坐标算术，保留 `px(...)`。
+/// 泳道横向间距 13（`git-graph-row.tsx:4-6`）。调用点 `.w(rems(GRAPH_LANE_GAP / 16.))`。
+///
+/// ⚠️ "参与泳道坐标算术"**不是**保留 `px(...)` 的理由：13 是**设计常量**（真源 TS 的
+/// `GRAPH_LANE_GAP`），不是 `prepaint` 测量出来的几何。rem 化之后泳道图会随界面字号缩放
+/// —— 这正是想要的行为。算术里只有"与测量 bounds 直接相加"的那部分才属于
+/// `coding-guides.md:288` 的 measured runtime geometry（本文件里没有这样的调用点）。
 pub(crate) const GRAPH_LANE_GAP: f32 = 13.;
 /// 泳道图最小宽 30（`git-graph-row.tsx:27`）。
 ///
-/// ⚠️ **保留 `px(...)`**：30 不在 gpui 的固定 rem 档位上；它也参与泳道坐标算术。
+/// 30 不在 gpui 的固定 rem 档位上，且参与泳道列宽算术（同 [`GRAPH_LANE_GAP`]：设计值不是测量值）；
+/// 调用点：`.min_w(rems(GRAPH_MIN_WIDTH / 16.))`。
 pub(crate) const GRAPH_MIN_WIDTH: f32 = 30.;
-/// 泳道线宽 1.6（`git-graph-row.tsx:4-6`）：非整数，`border` 档位只有整数，保留 `px(...)`。
+/// 泳道线宽 1.6（`git-graph-row.tsx:4-6`）：非整数，`border` 档位只有整数
+/// → 调用点 `.w(rems(GRAPH_LINE_WIDTH / 16.))`（宽度走 `Styled::w`，不吃 border 档位）。
 pub(crate) const GRAPH_LINE_WIDTH: f32 = 1.6;
-/// 泳道节点半径 4.3（`git-graph-row.tsx:4-6`）：非整数且参与坐标算术，保留 `px(...)`。
+/// 泳道节点半径 4.3（`git-graph-row.tsx:4-6`）：非整数。
+/// 调用点：`.size(rems(GRAPH_NODE_RADIUS * 2. / 16.))`、`.h(rems((half - GRAPH_NODE_RADIUS) / 16.))`
+/// —— 两个式子里的 `4.3` 都是设计常量，缩放后与 `half`（= `COMMIT_ROW_HEIGHT / 2.`）同步。
 pub(crate) const GRAPH_NODE_RADIUS: f32 = 4.3;
 /// 标签徽章最大宽 112（`git-graph-row.tsx:87-88`）。
 ///
-/// ⚠️ **保留 `px(...)`**：112 不在 gpui 的固定 rem 档位上（没有 `max_w_28()`）。
+/// 112 不在 gpui 的固定 rem 档位上（没有 `max_w_28()`）；调用点：
+/// `.max_w(rems(LABEL_MAX_WIDTH / 16.))`。
 pub(crate) const LABEL_MAX_WIDTH: f32 = 112.;
-/// 标签徽章字号 10（`git-graph-row.tsx:87-88`）：不在 gpui 的字号档位上，保留 `px(...)`。
+/// 标签徽章字号 10（`git-graph-row.tsx:87-88`）：不在 gpui 的字号档位上；
+/// 调用点 `.text_size(rems(LABEL_FONT_SIZE / 16.))`。
 pub(crate) const LABEL_FONT_SIZE: f32 = 10.;
 /// 标签徽章圆角 6.4（`git-graph-row.tsx:87-88`）—— 见上方圆角说明。
 pub(crate) const LABEL_RADIUS: f32 = 6.4;
 /// 标签徽章纵向内边距 2（`git-graph-row.tsx:87-88`）—— 参与徽章高度的算术
-/// （`LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.`），保留 `px(...)`。
+/// （`LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.`）；调用点
+/// `.h(rems((LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.) / 16.))`。
 pub(crate) const LABEL_PADDING_Y: f32 = 2.;
 
 /// 三栏比例。出处：`git-log-preferences.store.ts:43-47`、`git-log-tool-window.tsx:622,648,684`。
@@ -142,11 +170,13 @@ pub(crate) const COMMIT_PANE_FRACTION: f32 = 0.57;
 pub(crate) const INSPECTOR_PANE_FRACTION: f32 = 0.24;
 /// 引用栏最小宽 140（`git-log-preferences.store.ts:43-47`、`git-log-tool-window.tsx:622`）。
 ///
-/// ⚠️ **保留 `px(...)`**：140 不在 gpui 的固定 rem 档位上（档位里 32 → 128、40 → 160）。
+/// 140 不在 gpui 的固定 rem 档位上（档位里 32 → 128、40 → 160）；调用点：
+/// `.min_w(rems(REFERENCE_PANE_MIN_WIDTH / 16.))`。
 pub(crate) const REFERENCE_PANE_MIN_WIDTH: f32 = 140.;
 /// Inspector 栏最小宽 220（同上）。
 ///
-/// ⚠️ **保留 `px(...)`**：220 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224）。
+/// 220 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224）；调用点：
+/// `.min_w(rems(INSPECTOR_PANE_MIN_WIDTH / 16.))`。
 pub(crate) const INSPECTOR_PANE_MIN_WIDTH: f32 = 220.;
 
 /// 引用栏工具栏按钮圆角 4.8（`git-reference-tree.tsx:357,371`）—— 见上方圆角说明。
@@ -158,13 +188,17 @@ pub(crate) const REFERENCE_SECTION_RADIUS: f32 = 6.4;
 /// 引用行圆角 4.8（`git-reference-tree.tsx:599`）—— 见上方圆角说明。
 pub(crate) const REFERENCE_ROW_RADIUS: f32 = 4.8;
 /// 引用树缩进基准 10 / 步长 14（`git-reference-tree.tsx:594`）—— 逐层缩进的算术
-/// （`pl(px(REFERENCE_INDENT_BASE + depth × REFERENCE_INDENT_STEP))`），保留 `px(...)`。
+/// （`.pl(rems((REFERENCE_INDENT_BASE + depth × REFERENCE_INDENT_STEP) / 16.))`）。
+///
+/// 10 / 14 都是**设计常量**（真源 TS 里的 `+ 10 + depth * 14`），不是测量几何：
+/// rem 化之后引用树缩进随界面字号缩放。
 pub(crate) const REFERENCE_INDENT_BASE: f32 = 10.;
 pub(crate) const REFERENCE_INDENT_STEP: f32 = 14.;
-/// 「当前」徽章字号 10（`git-reference-tree.tsx:652`）：不在 gpui 的字号档位上，保留 `px(...)`。
+/// 「当前」徽章字号 10（`git-reference-tree.tsx:652`）：不在 gpui 的字号档位上；
+/// 调用点 `.text_size(rems(REFERENCE_BADGE_FONT_SIZE / 16.))`。
 pub(crate) const REFERENCE_BADGE_FONT_SIZE: f32 = 10.;
-/// ahead/behind 计数（`git-tracking-counts.tsx:36-53`）：字号 10 不在 gpui 的字号档位上，
-/// 保留 `px(...)`。
+/// ahead/behind 计数（`git-tracking-counts.tsx:36-53`）：字号 10 不在 gpui 的字号档位上；
+/// 调用点 `.text_size(rems(TRACKING_COUNT_FONT_SIZE / 16.))`。
 pub(crate) const TRACKING_COUNT_FONT_SIZE: f32 = 10.;
 pub(crate) const TRACKING_COUNT_MAX: usize = 99;
 
@@ -173,17 +207,22 @@ pub(crate) const INSPECTOR_FILES_FRACTION: f32 = 0.62;
 pub(crate) const INSPECTOR_DETAILS_FRACTION: f32 = 0.38;
 /// Inspector 文件区最小高 90（`git-commit-inspector.tsx:96-185`）。
 ///
-/// ⚠️ **保留 `px(...)`**：90 不在 gpui 的固定 rem 档位上（档位里 20 → 80、24 → 96）。
+/// 90 不在 gpui 的固定 rem 档位上（档位里 20 → 80、24 → 96）；调用点：
+/// `.min_h(rems(INSPECTOR_FILES_MIN_HEIGHT / 16.))`。
 pub(crate) const INSPECTOR_FILES_MIN_HEIGHT: f32 = 90.;
-/// Inspector 等宽字号 11（`git-commit-inspector.tsx:96-185`）：不在档位上，保留 `px(...)`。
+/// Inspector 等宽字号 11（`git-commit-inspector.tsx:96-185`）：不在档位上；
+/// 调用点 `.text_size(rems(INSPECTOR_MONO_FONT_SIZE / 16.))`。
 pub(crate) const INSPECTOR_MONO_FONT_SIZE: f32 = 11.;
-/// Inspector 提交哈希字号 10：不在档位上，保留 `px(...)`。
+/// Inspector 提交哈希字号 10：不在档位上；调用点
+/// `.text_size(rems(INSPECTOR_HASH_FONT_SIZE / 16.))`。
 pub(crate) const INSPECTOR_HASH_FONT_SIZE: f32 = 10.;
 /// 提交文件树缩进基准 10 / 步长 14（`git-commit-file-tree.tsx:127`、
-/// `file-explorer/lib/file-tree-row.ts:1-13`）—— 逐层缩进的算术，保留 `px(...)`。
+/// `file-explorer/lib/file-tree-row.ts:1-13`）—— 与 [`REFERENCE_INDENT_BASE`] 同口径的
+/// 设计常量算术，调用点写 `rems((COMMIT_FILE_INDENT_BASE + depth × COMMIT_FILE_INDENT_STEP) / 16.)`。
 pub(crate) const COMMIT_FILE_INDENT_BASE: f32 = 10.;
 pub(crate) const COMMIT_FILE_INDENT_STEP: f32 = 14.;
-/// 提交文件状态字号 10（`git-commit-file-tree.tsx:181-184`）：不在档位上，保留 `px(...)`。
+/// 提交文件状态字号 10（`git-commit-file-tree.tsx:181-184`）：不在档位上；调用点
+/// `.text_size(rems(COMMIT_FILE_STATUS_FONT_SIZE / 16.))`。
 pub(crate) const COMMIT_FILE_STATUS_FONT_SIZE: f32 = 10.;
 
 /// `git.historyPage` 的页大小。Core 默认 300（`git/history.rs:20`），上一轮实现与 macOS

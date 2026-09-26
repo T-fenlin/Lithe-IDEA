@@ -19,15 +19,32 @@ use gpui_kit::component::tree::{Tree, TreeEvent};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, WeakEntity, Window, div, px, relative, rems,
+    AbsoluteLength, AnyElement, App, AppContext as _, ClickEvent, Context, Entity,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, relative,
+    rems,
 };
 
 use lithe_gpui_shared::icons::FileIcon;
 use lithe_gpui_shared::tr;
 
 use crate::model::{RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot};
+
+/// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)` 的 `Pixels` 形式。
+///
+/// 只有**必须**交出 `Pixels` 的槽才走这里 —— 固有方法会**静默遮蔽** `Styled` 的同名方法：
+/// `Button::rounded` 吃 `impl Into<ButtonRounded>`，而 `ButtonRounded` 只有 `From<Pixels>`
+/// （`gpui-component-0.6.6/src/button/button.rs:29-33`，**没有** `From<Rems>`），在 `Button` 上写
+/// `.rounded(rems(..))` 会得到 `error[E0277]: ButtonRounded: From<Rems> is not satisfied`。
+/// `div` 上的 `Styled::rounded` / `w` / `h` / `pl` … 能吃 `AbsoluteLength`，直接写
+/// `rems(C / 16.)`，由布局期按窗口 rem 基准求值，不必经过这里。
+///
+/// 写成 `/ 4.` 是错的：helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，1rem = 16px
+/// （主题的 `font.size`；`Root::render` 每帧把 `cx.theme().font_size` 写进 `window.set_rem_size`，
+/// `gpui-component-0.6.6/src/root.rs:582`，所以那也就是本帧的 rem 基准）。
+fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
+    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
+}
 
 // ---------------------------------------------------------------------------
 // 文案：全部走 `lithe_gpui_shared::tr`（key 逐字取 `windows/tauri/src/i18n/locale.ts`
@@ -86,9 +103,11 @@ const NO_MATCHING_FILES_KEY: &str = "lithe.fileExplorer.noMatchingFiles";
 /// 头部图标按钮圆角 6.4px（`ui/button.tsx:9` 的 `rounded-md` → `--radius-md = --radius × 0.8`，
 /// `theme.css:7,134`）。
 ///
-/// ⚠️ **保留 `px(...)`**：6.4 不是 gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px）；也不能从
-/// 主题读 —— `ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
-/// 装不下 Lithe 的 `--radius × k` 阶梯（4.8 / 6.4 / 11.2）。
+/// 6.4 不是 gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px）；也不能从主题读 ——
+/// `ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
+/// 装不下 Lithe 的 `--radius × k` 阶梯（4.8 / 6.4 / 11.2）。所以**保留应用层具名常量**，
+/// 但消费方式仍是 rem：调用点走 `rem_px(rem, HEADER_BUTTON_RADIUS)`（`Button::rounded`
+/// 只吃 `ButtonRounded`，见 [`rem_px`]）——「不在档位上」不是保留 `px(...)` 的理由。
 const HEADER_BUTTON_RADIUS: f32 = 6.4;
 /// 头部标题行高 16px（`file-explorer/styles/file-explorer-tree.css:151-156`：
 /// `font-size: var(--ui-text-chrome)` / `font-weight: 600` / `line-height: var(--lithe-chrome-line-height)`，
@@ -97,7 +116,8 @@ const HEADER_BUTTON_RADIUS: f32 = 6.4;
 const TITLE_LINE_HEIGHT: f32 = 16.;
 /// 搜索输入框圆角 8px（`rounded-lg` = `--radius × 1`，`theme.css:8,134`）。
 ///
-/// ⚠️ **保留 `px(...)`**：Lithe 的圆角阶梯一律走应用层具名常量，理由见 [`HEADER_BUTTON_RADIUS`]。
+/// 与 [`HEADER_BUTTON_RADIUS`] 同因保留应用层具名常量；它是 `Input` 上的 `Styled::rounded`
+/// （吃 `AbsoluteLength`），所以调用点直接写 `rems(SEARCH_INPUT_RADIUS / 16.)`。
 const SEARCH_INPUT_RADIUS: f32 = 8.;
 /// 树行高 24px。
 ///
@@ -110,14 +130,16 @@ const SEARCH_INPUT_RADIUS: f32 = 8.;
 ///
 /// 行基准缩进 10px（`file-explorer/lib/file-tree-row.ts:1` `FILE_TREE_BASE_INDENT = 10`）与
 /// 缩进步长 16px（默认 `fileTreeIndentSize: 16`，`features/settings/config/default-settings.ts:182`；
-/// 可选 12/16/20/24 见 `file-explorer-tree.tsx:1482-1493`）参与逐层缩进的算术
-/// （`pl(px(BASE_INDENT + depth × INDENT_STEP))`）：10 不在 rem 档位上（档位里 8 / 12），
-/// 且它是运行时算出来的缩进量，没有固定的档位 helper 可套，所以保留 `px(...)`。
+/// 可选 12/16/20/24 见 `file-explorer-tree.tsx:1482-1493`）参与逐层缩进的算术：10 不在 rem 档位上
+/// （档位里 8 / 12），但那正是该写 helper 底层 `rems(P / 16.)` 的场合 —— 调用点
+/// `.pl(rems((BASE_INDENT + depth × INDENT_STEP) / 16.))`。它们是**设计常量**（真源 TS 里的
+/// `10 + depth × 16`），不是测量几何，所以 rem 化后缩进随界面字号缩放。
 const BASE_INDENT: f32 = 10.;
 const INDENT_STEP: f32 = 16.;
 /// 行圆角 4px（`file-explorer-tree.css:7` `--file-tree-row-radius: 4px`）。
 ///
-/// ⚠️ **保留 `px(...)`**：Lithe 的圆角阶梯一律走应用层具名常量，理由见 [`HEADER_BUTTON_RADIUS`]。
+/// 与 [`HEADER_BUTTON_RADIUS`] 同因保留应用层具名常量；`div` 上的 `Styled::rounded` 吃
+/// `AbsoluteLength`，所以调用点直接写 `rems(ROW_RADIUS / 16.)`。
 const ROW_RADIUS: f32 = 4.;
 /// 行高倍数 1.35（`theme.css:4` `--leading-row: 1.35`；`sidebar-tree.tsx:241` 的 `leading-row`）——
 /// 是倍数不是长度，`line_height(relative(..))` 原样保留。
@@ -410,6 +432,7 @@ impl Explorer {
                 "explorer-search",
                 IconName::Search,
                 tr(SEARCH_FILES_KEY),
+                cx.theme().font_size,
                 Some(Box::new(cx.listener(
                     |this: &mut Self,
                      _event: &ClickEvent,
@@ -425,6 +448,7 @@ impl Explorer {
                 "explorer-search-clear",
                 IconName::X,
                 tr(CLEAR_SEARCH_KEY),
+                cx.theme().font_size,
                 Some(Box::new(cx.listener(
                     |this: &mut Self,
                      _event: &ClickEvent,
@@ -445,6 +469,7 @@ impl Explorer {
                 "explorer-preferences",
                 IconName::Settings,
                 tr(PREFERENCES_KEY),
+                cx.theme().font_size,
                 None,
             ))
             .into_any_element()
@@ -473,7 +498,7 @@ impl Explorer {
         // `input.rs:703,719`，能覆写掉它）。
         let input = gpui_kit::Styled::h_7(Input::new(&self.search))
             .w_full()
-            .rounded(px(SEARCH_INPUT_RADIUS))
+            .rounded(rems(SEARCH_INPUT_RADIUS / 16.))
             .text_sm();
 
         Some(
@@ -621,11 +646,12 @@ impl Explorer {
                 .w_full()
                 .h_6()
                 .gap_1()
-                // 逐层缩进 = 10 + depth × 16：运行时算出来的值，且 10 不在 rem 档位上，
-                // 没有固定的档位 helper 可套，保留 `px(...)`。
-                .pl(px(BASE_INDENT + entry.depth() as f32 * INDENT_STEP))
+                // 逐层缩进 = 10 + depth × 16：**设计常量**的算术（`file-explorer/lib/file-tree-row.ts:1`
+                // 的 `FILE_TREE_BASE_INDENT = 10` + 默认 `fileTreeIndentSize: 16`），不是测量出来的
+                // 几何 —— 用 helper 底层的 `rems()` 表达后，缩进会随界面字号一起缩放。
+                .pl(rems((BASE_INDENT + entry.depth() as f32 * INDENT_STEP) / 16.))
                 .pr_1p5()
-                .rounded(px(ROW_RADIUS))
+                .rounded(rems(ROW_RADIUS / 16.))
                 .child(caret)
                 .child(icon.render(rems(1.), cx))
                 .child(label_el)
@@ -763,15 +789,21 @@ impl Explorer {
     }
 }
 
-/// 头部的一个图标按钮。
+/// 头部三个按钮共用的构造：ghost、`icon-xs` 24×24、圆角 6.4px、悬停 tooltip。
 ///
 /// `on_click` 为 `None` 就是禁用态：走 gpui-kit 的 `Disableable`
 /// （`gpui-component-0.6.6/src/button/button.rs:503-508`；禁用后不响应指针，
 /// 与 `ui/button.tsx:9` 的 `disabled:pointer-events-none disabled:opacity-50` 同语义）。
+///
+/// `rem` 是逐层传进来的 rem 基准（`cx.theme().font_size`）：圆角那一槽**必须**交 `Pixels`
+/// —— `Button::rounded` 只吃 `ButtonRounded`，而 `ButtonRounded` 只有 `From<Pixels>`
+/// （`gpui-component-0.6.6/src/button/button.rs:29-33`），**没有** `From<Rems>`；
+/// 在 `Button` 上写 `.rounded(rems(..))` 会得到 `error[E0277]: ButtonRounded: From<Rems> ...`。
 fn header_button(
     id: &'static str,
     icon: IconName,
     label: SharedString,
+    rem: Pixels,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
 ) -> Button {
     let button = Button::new(id)
@@ -779,7 +811,7 @@ fn header_button(
         .icon(icon)
         .tab_stop(false)
         .size_6()
-        .rounded(px(HEADER_BUTTON_RADIUS))
+        .rounded(rem_px(rem, HEADER_BUTTON_RADIUS))
         .tooltip(label.clone())
         .accessibility_label(label);
 

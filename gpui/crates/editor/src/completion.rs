@@ -58,6 +58,11 @@ const BUILTIN_COMPLETIONS: &str = "lsp.builtinCompletions";
 /// 它自己的文档就写了"长标签会被截断、宿主可以调宽"。Java 的候选普遍是带参数的签名
 /// （`greet(String name) : String`），再加中文 `detail`，320px 会截得看不出区别；
 /// 480px = 30rem 在 980px 最小窗口里也放得下，且不会盖住整屏。
+///
+/// 常量保持**规格像素值身份**（`f32`，值不变）。消费方式：`lsp.completion_menu.max_width`
+/// 是 `Pixels` 字段，交不了 `AbsoluteLength`，所以调用点走
+/// [`rem_px`](crate::editor_view::rem_px)（rem = 本帧界面字号）——
+/// 「480 不在 rem 档位上」不构成保留 `px(...)` 的理由。
 const COMPLETION_MENU_WIDTH_PX: f32 = 480.;
 
 /// 发出请求前的防抖窗口（毫秒）。
@@ -74,18 +79,22 @@ const COMPLETION_DEBOUNCE_MS: u64 = 120;
 /// 1. 赋值 `Lsp.completion_provider`（挂载点见模块文档的表）；
 /// 2. 调宽菜单（[`COMPLETION_MENU_WIDTH_PX`]）——上游默认 320px 会把 Java 签名截断。
 ///
+/// `rem` 是本帧的 rem 基准（两处调用点都已有 `Window`，传 `window.rem_size()`）：菜单宽度那一槽
+/// 是 `Pixels` 字段（`lsp.completion_menu.max_width`），交不了 `AbsoluteLength`。
+///
 /// 由 [`crate::editor_view`] 在两个位置调用：`open()`（新开的 Java buffer）与
 /// `prepare_java()`（服务就绪后给**已经打开**的 Java buffer 补装）。
 pub(crate) fn install(
     state: &mut gpui_kit::component::input::EditorState,
     provider: Option<Rc<dyn CompletionProvider>>,
+    rem: gpui_kit::Pixels,
 ) {
     let Some(provider) = provider else {
         return;
     };
     let lsp = state.lsp_mut();
     lsp.completion_provider = Some(provider);
-    lsp.completion_menu.max_width = gpui_kit::px(COMPLETION_MENU_WIDTH_PX);
+    lsp.completion_menu.max_width = crate::editor_view::rem_px(rem, COMPLETION_MENU_WIDTH_PX);
 }
 
 /// Java 的补全数据源。

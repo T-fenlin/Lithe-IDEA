@@ -52,9 +52,9 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, px,
-    relative, rems,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, relative,
+    rems,
 };
 
 use lithe_gpui_shared::{tr, tr_args};
@@ -64,6 +64,7 @@ use crate::changes::{
     ChangeRow, ChangesSnapshot, OperationState, commit as write_commit, discard, load,
     operation_action, stage, stage_all, unstage,
 };
+use crate::log_view::rem_px;
 
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper
@@ -89,7 +90,10 @@ use crate::changes::{
 //
 // ⚠️ 圆角一律走应用层具名常量：Lithe 的 `--radius × k` 阶梯（4.8 / 6.4 / 11.2）与 gpui 的
 // 同名档位语义不同，也不能从主题读（`ThemeConfig.radius` 是 `usize`，
-// `gpui-component-0.6.6/src/theme/schema.rs:67-68`）。
+// `gpui-component-0.6.6/src/theme/schema.rs:67-68`）。常量保持**规格像素值身份**（`f32`），
+// 调用点写 `rems(半径 / 16.)`（rem base = 16px，写 `/ 4.` 就错）——`div` 上的 `rounded` 是
+// `Styled::rounded(impl Into<AbsoluteLength>)`，能吃 `Rems`；`Button::rounded` 只吃
+// `ButtonRounded`（只有 `From<Pixels>`），那里走 `rem_px`。
 
 /// 行 / 分类头圆角 4（`sidebar-tree.css` 的 `--file-tree-row-radius: 4px`）。
 const ROW_RADIUS: f32 = 4.;
@@ -745,12 +749,14 @@ impl ChangesView {
                 .any(|row| !row.kind.is_untracked() && row.worktree);
 
         let menu_this = this.clone();
+        // 圆角那一槽与 `icon_button` 同因：`Button::rounded` 只吃 `ButtonRounded`（只有
+        // `From<Pixels>`），所以这里先按当前 rem 基准求值（见 [`rem_px`]）。
         let more = Button::new("changes-more")
             .ghost()
             .icon(IconName::Ellipsis)
             .tab_stop(false)
             .size_6()
-            .rounded(px(ICON_BUTTON_RADIUS))
+            .rounded(rem_px(cx.theme().font_size, ICON_BUTTON_RADIUS))
             .tooltip(tr(ACTIONS_KEY))
             .accessibility_label(tr(ACTIONS_KEY))
             .dropdown_menu(move |menu, _window, _cx| {
@@ -799,6 +805,7 @@ impl ChangesView {
                 IconName::RotateCw,
                 tr(REFRESH_KEY),
                 !matches!(self.state, LoadState::Loading),
+                cx.theme().font_size,
                 cx.listener(|view: &mut Self, _event, _window, cx| view.refresh(cx)),
             ))
             .child(more)
@@ -812,12 +819,18 @@ impl ChangesView {
     /// 头部按钮的也正是 `tooltip`（`git-view.tsx:481-492`）。代价是图标会被
     /// `Button` 按 `size` 算成 `24 × 0.75 = 18px`（`gpui-component-0.6.6/src/button/button.rs:580-583`）
     /// 而不是真源的 14 —— 这是本视图已知的一处像素偏差。
+    ///
+    /// `rem` 是逐层传进来的 rem 基准（`cx.theme().font_size`）：圆角那一槽必须交出 `Pixels`
+    /// —— `Button::rounded` 只吃 `ButtonRounded`，而 `ButtonRounded` 只有 `From<Pixels>`
+    /// （`gpui-component-0.6.6/src/button/button.rs:29-33`），**没有** `From<Rems>`；
+    /// 顺带也省得 `icon_button` 收一个 `&App`（它其余部分不读主题）。
     fn icon_button(
         &self,
         id: &'static str,
         icon: IconName,
         label: SharedString,
         enabled: bool,
+        rem: Pixels,
         on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> AnyElement {
         let button = Button::new(id)
@@ -825,7 +838,7 @@ impl ChangesView {
             .icon(icon)
             .tab_stop(false)
             .size_6()
-            .rounded(px(ICON_BUTTON_RADIUS))
+            .rounded(rem_px(rem, ICON_BUTTON_RADIUS))
             .tooltip(label.clone())
             .accessibility_label(label);
         if enabled {
@@ -888,6 +901,7 @@ impl ChangesView {
                 IconName::X,
                 tr(CANCEL_KEY),
                 true,
+                cx.theme().font_size,
                 cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.error = None;
                     cx.notify();
@@ -922,6 +936,7 @@ impl ChangesView {
                 IconName::X,
                 tr(CANCEL_KEY),
                 true,
+                cx.theme().font_size,
                 cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.notice = None;
                     cx.notify();
@@ -1115,6 +1130,7 @@ impl ChangesView {
                 IconName::Plus,
                 tr(STAGE_ALL_KEY),
                 !self.busy,
+                cx.theme().font_size,
                 cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.set_all_staged(true, cx)
                 }),
@@ -1126,6 +1142,7 @@ impl ChangesView {
                 IconName::Minus,
                 tr(UNSTAGE_ALL_KEY),
                 !self.busy,
+                cx.theme().font_size,
                 cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.set_all_staged(false, cx)
                 }),
@@ -1155,7 +1172,7 @@ impl ChangesView {
                 div()
                     .flex_shrink_0()
                     .px_1p5()
-                    .rounded(px(ROW_RADIUS))
+                    .rounded(rems(ROW_RADIUS / 16.))
                     .bg(cx.theme().muted)
                     .text_color(cx.theme().muted_foreground)
                     .child(SharedString::from(count.to_string())),
@@ -1210,7 +1227,7 @@ impl ChangesView {
                 })
                 .tab_stop(false)
                 .size_5()
-                .rounded(px(ROW_RADIUS))
+                .rounded(rem_px(cx.theme().font_size, ROW_RADIUS))
                 .tooltip(label.clone())
                 .accessibility_label(label)
                 .on_click(cx.listener(move |view: &mut Self, _event, _window, cx| {
@@ -1227,7 +1244,7 @@ impl ChangesView {
             .items_center()
             .gap_1()
             .px_1p5()
-            .rounded(px(ROW_RADIUS))
+            .rounded(rems(ROW_RADIUS / 16.))
             .text_sm()
             .line_height(relative(ROW_LINE_HEIGHT))
             .whitespace_nowrap()
@@ -1470,7 +1487,7 @@ impl ChangesView {
             .flex_shrink_0()
             .mx_2()
             .mb_2()
-            .rounded(px(COMMIT_PANEL_RADIUS))
+            .rounded(rems(COMMIT_PANEL_RADIUS / 16.))
             .border_1()
             .border_color(cx.theme().border)
             .overflow_hidden();
@@ -1482,7 +1499,7 @@ impl ChangesView {
                     .mt_2()
                     .px_2()
                     .py_1p5()
-                    .rounded(px(COMMIT_ERROR_RADIUS))
+                    .rounded(rems(COMMIT_ERROR_RADIUS / 16.))
                     .border_1()
                     .border_color(cx.theme().danger.opacity(0.3))
                     .bg(cx.theme().danger.opacity(0.1))

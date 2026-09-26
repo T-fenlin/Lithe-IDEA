@@ -20,10 +20,10 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, px,
-    relative, rems,
+    AbsoluteLength, AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, relative,
+    rems,
 };
 
 use lithe_gpui_shared::{tr, tr_args};
@@ -45,6 +45,26 @@ use crate::model::{
     build_commit_files, build_reference_rows, handler, label_color, lane_color, layout_graph,
     load_commit_files, load_first, load_more, matches_filter, tracking_count,
 };
+/// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)` 的 `Pixels` 形式。
+///
+/// 只有当调用点**必须**交出 `Pixels` 时才走这里 —— 固有方法会**静默遮蔽** `Styled` 的同名方法：
+/// `Sizable::with_size(impl Into<Size>)` 的 `Size` 只实现了 `From<Pixels>`
+/// （`gpui-component-0.6.6/src/sizing.rs:169-183`，**没有** `From<Rems>`），所以在 `Button` /
+/// `Input` 上写 `rems(..)` 会得到 `error[E0277]: the trait bound Size: From<Rems> is not satisfied`。
+/// 能吃 `AbsoluteLength` / `Length` 的调用点（`Styled::rounded` / `w` / `h` / `min_w` / `max_w` /
+/// `text_size` / `min_h` / `line_height`）直接写 `rems(P / 16.)`，由布局期求值，不必经过这里。
+///
+/// 写成 `/ 4.` 是错的：helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，1rem = 16px
+/// （主题的 `font.size`，`gpui/crates/settings/src/theme.rs` 的 `font_size` token）。
+///
+/// `rem` 从 `cx.theme().font_size` 取：`Root::render` 每帧把它写进 `window.set_rem_size`
+/// （`gpui-component-0.6.6/src/root.rs:582`），所以它就是本帧的 rem 基准。
+///
+/// `pub(crate)`：[`crate::changes_view`] 的同名调用点也走这一份（同一个 crate 只该有一处换算）。
+pub(crate) fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
+    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
+}
+
 // ---------------------------------------------------------------------------
 // 稳定标识（ElementId）
 // ---------------------------------------------------------------------------
@@ -479,7 +499,7 @@ impl BottomPane {
             .items_center()
             .justify_center()
             .size_6()
-            .rounded(px(ICON_BUTTON_RADIUS))
+            .rounded(rems(ICON_BUTTON_RADIUS / 16.))
             .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             .aria_label(label)
             .when(enabled, |this| {
@@ -514,7 +534,7 @@ impl BottomPane {
             .items_center()
             .justify_center()
             .size_8()
-            .rounded(px(REFERENCE_TOOLBAR_BUTTON_RADIUS))
+            .rounded(rems(REFERENCE_TOOLBAR_BUTTON_RADIUS / 16.))
             .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             .aria_label(label)
             .when(enabled, |this| {
@@ -592,9 +612,9 @@ impl BottomPane {
                     .flex_shrink_0()
                     .items_center()
                     .h_6()
-                    .max_w(px(REFERENCE_PILL_MAX_WIDTH))
+                    .max_w(rems(REFERENCE_PILL_MAX_WIDTH / 16.))
                     .px_2()
-                    .rounded(px(REFERENCE_PILL_RADIUS))
+                    .rounded(rems(REFERENCE_PILL_RADIUS / 16.))
                     .border_1()
                     .border_color(cx.theme().border)
                     .bg(cx.theme().background)
@@ -691,14 +711,16 @@ impl BottomPane {
 
     /// 字段下拉按钮。`git-commit-table.tsx:229-238`（h 24、圆角 6.4、px 6）。
     ///
-    /// 不用 `cx`：外观全部来自 `Button` 自己的主题样式（所以这里收不到 `&App`）。
-    fn scope_button(&self, this: &WeakEntity<Self>) -> impl IntoElement {
+    /// `cx` 只用来取 rem 基准（`cx.theme().font_size`）：`Sizable::with_size` 吃
+    /// `impl Into<Size>`，而 `Size` 只有 `From<Pixels>`（见 [`rem_px`]），所以这一个槽必须先
+    /// 求值成像素；按钮其余外观仍然全部来自 `Button` 自己的主题样式。
+    fn scope_button(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
         let current = self.filter_scope;
         let this = this.clone();
 
         Button::new("bottom-git-filter-field")
             .ghost()
-            .with_size(px(ICON_BUTTON_SIZE))
+            .with_size(rem_px(cx.theme().font_size, ICON_BUTTON_SIZE))
             .h_6()
             .px_1p5()
             .label(current.label())
@@ -760,15 +782,15 @@ impl BottomPane {
                     .cleanable(true)
                     .small()
                     .flex_1()
-                    .min_w(px(FILTER_INPUT_MIN_WIDTH))
-                    .max_w(px(FILTER_INPUT_MAX_WIDTH))
+                    .min_w(rems(FILTER_INPUT_MIN_WIDTH / 16.))
+                    .max_w(rems(FILTER_INPUT_MAX_WIDTH / 16.))
                     .prefix(
                         Icon::new(IconName::Search)
                             .size_3p5()
                             .text_color(cx.theme().muted_foreground),
                     ),
             )
-            .child(self.scope_button(this))
+            .child(self.scope_button(this, cx))
             .child(Self::icon_button(
                 ("bottom-git-decorations", 0),
                 if self.show_decorations {
@@ -812,7 +834,7 @@ impl BottomPane {
             .child(div().min_w_0().flex_1().child(tr("lithe.git.log.commit")))
             .child(
                 div()
-                    .w(px(AUTHOR_COLUMN_WIDTH))
+                    .w(rems(AUTHOR_COLUMN_WIDTH / 16.))
                     .flex_shrink_0()
                     .child(tr("lithe.git.log.author")),
             )
@@ -832,12 +854,12 @@ impl BottomPane {
         h_flex()
             .h_full()
             .flex_shrink_0()
-            .min_w(px(GRAPH_MIN_WIDTH))
+            .min_w(rems(GRAPH_MIN_WIDTH / 16.))
             .pl_2()
             .pr_2()
             .children(row.lanes.iter().enumerate().map(move |(lane, color)| {
-                let lane_width = px(GRAPH_LANE_GAP);
-                let line_width = px(GRAPH_LINE_WIDTH);
+                let lane_width = rems(GRAPH_LANE_GAP / 16.);
+                let line_width = rems(GRAPH_LINE_WIDTH / 16.);
                 let edge_here = row.edges.iter().find(|(target, _, _)| *target == lane);
 
                 match (lane == row.lane, color) {
@@ -849,12 +871,12 @@ impl BottomPane {
                         .child(
                             div()
                                 .w(line_width)
-                                .h(px(half - GRAPH_NODE_RADIUS))
+                                .h(rems((half - GRAPH_NODE_RADIUS) / 16.))
                                 .bg(lane_color(row.node_color, cx)),
                         )
                         .child(
                             div()
-                                .size(px(GRAPH_NODE_RADIUS * 2.))
+                                .size(rems(GRAPH_NODE_RADIUS * 2. / 16.))
                                 .flex_shrink_0()
                                 .rounded_full()
                                 .bg(cx.theme().background)
@@ -887,7 +909,7 @@ impl BottomPane {
                             this.child(
                                 div()
                                     .w(line_width)
-                                    .h(px(half))
+                                    .h(rems(half / 16.))
                                     .opacity(if *missing { 0.7 } else { 1.0 })
                                     .bg(lane_color(*index, cx)),
                             )
@@ -901,16 +923,16 @@ impl BottomPane {
     fn label_badge(label: &Label, cx: &App) -> Div {
         let color = label_color(label.kind, cx);
         h_flex()
-            .h(px(LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.))
-            .max_w(px(LABEL_MAX_WIDTH))
+            .h(rems((LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.) / 16.))
+            .max_w(rems(LABEL_MAX_WIDTH / 16.))
             .flex_shrink_0()
             .items_center()
             .px_1p5()
-            .rounded(px(LABEL_RADIUS))
+            .rounded(rems(LABEL_RADIUS / 16.))
             .border_1()
             .border_color(color.opacity(0.45))
             .bg(color.opacity(0.2))
-            .text_size(px(LABEL_FONT_SIZE))
+            .text_size(rems(LABEL_FONT_SIZE / 16.))
             .text_color(color)
             .whitespace_nowrap()
             .child(div().min_w_0().text_ellipsis().child(label.title.clone()))
@@ -941,8 +963,8 @@ impl BottomPane {
             // 它"这条位置语义的交互，不参与元素身份。
             .id(commit_element_id(commit))
             .w_full()
-            .min_w(px(COMMIT_CONTENT_MIN_WIDTH))
-            .min_h(px(COMMIT_ROW_HEIGHT))
+            .min_w(rems(COMMIT_CONTENT_MIN_WIDTH / 16.))
+            .min_h(rems(COMMIT_ROW_HEIGHT / 16.))
             .items_center()
             .px_1()
             .border_b_1()
@@ -974,15 +996,15 @@ impl BottomPane {
                             .flex_1()
                             .min_w_0()
                             .text_ellipsis()
-                            .min_h(px(COMMIT_ROW_HEIGHT))
+                            .min_h(rems(COMMIT_ROW_HEIGHT / 16.))
                             .text_sm()
-                            .line_height(px(COMMIT_ROW_HEIGHT))
+                            .line_height(rems(COMMIT_ROW_HEIGHT / 16.))
                             .child(commit.subject.clone()),
                     ),
             )
             .child(
                 div()
-                    .w(px(AUTHOR_COLUMN_WIDTH))
+                    .w(rems(AUTHOR_COLUMN_WIDTH / 16.))
                     .flex_shrink_0()
                     .px_2()
                     .text_ellipsis()
@@ -995,7 +1017,7 @@ impl BottomPane {
                     .w_32()
                     .flex_shrink_0()
                     .justify_end()
-                    .text_size(px(DATE_FONT_SIZE))
+                    .text_size(rems(DATE_FONT_SIZE / 16.))
                     .font_family(cx.theme().mono_font_family.clone())
                     .text_color(cx.theme().muted_foreground)
                     .child(commit.date.clone()),
@@ -1008,7 +1030,9 @@ impl BottomPane {
         let total = self.commits.len();
         let graphs = layout_graph(&self.commits);
 
-        let mut list = v_flex().w_full().min_w(px(COMMIT_CONTENT_MIN_WIDTH));
+        let mut list = v_flex()
+            .w_full()
+            .min_w(rems(COMMIT_CONTENT_MIN_WIDTH / 16.));
 
         if visible.is_empty() {
             let message = if total == 0 {
@@ -1021,7 +1045,7 @@ impl BottomPane {
             list = list.child(
                 h_flex()
                     .w_full()
-                    .min_h(px(COMMIT_ROW_HEIGHT * 4.))
+                    .min_h(rems(COMMIT_ROW_HEIGHT * 4. / 16.))
                     .items_center()
                     .justify_center()
                     .text_color(cx.theme().muted_foreground)
@@ -1056,7 +1080,7 @@ impl BottomPane {
             list = list.child(
                 h_flex()
                     .w_full()
-                    .min_w(px(COMMIT_CONTENT_MIN_WIDTH))
+                    .min_w(rems(COMMIT_CONTENT_MIN_WIDTH / 16.))
                     .h_9()
                     .flex_shrink_0()
                     .items_center()
@@ -1066,7 +1090,7 @@ impl BottomPane {
                     .child(
                         Button::new("bottom-git-load-more")
                             .ghost()
-                            .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
+                            .with_size(rem_px(cx.theme().font_size, LOAD_MORE_BUTTON_HEIGHT))
                             .label(if self.loading_more {
                                 // `git.log.loadingCommits` = 正在加载提交…（`locale.ts:7294`）。
                                 tr("lithe.git.log.loadingCommits")
@@ -1237,10 +1261,12 @@ impl BottomPane {
             .h_6()
             .items_center()
             .gap_1p5()
-            .pl(px(
-                REFERENCE_INDENT_BASE + depth as f32 * REFERENCE_INDENT_STEP
+            // 逐层缩进是**设计常量**的算术（`git-reference-tree.tsx:594` 的 `10 + depth × 14`），
+            // 不是测量出来的几何：换算成 rem 后引用树会随界面字号一起缩放。
+            .pl(rems(
+                (REFERENCE_INDENT_BASE + depth as f32 * REFERENCE_INDENT_STEP) / 16.
             ))
-            .rounded(px(REFERENCE_ROW_RADIUS))
+            .rounded(rems(REFERENCE_ROW_RADIUS / 16.))
             .when(selected, |row| row.bg(cx.theme().accent))
             .when(is_current, |row| {
                 row.font_weight(FontWeight::SEMIBOLD)
@@ -1282,7 +1308,7 @@ impl BottomPane {
                 .flex_shrink_0()
                 .items_center()
                 .gap_1()
-                .text_size(px(TRACKING_COUNT_FONT_SIZE));
+                .text_size(rems(TRACKING_COUNT_FONT_SIZE / 16.));
             if behind > 0 {
                 counts = counts.child(
                     div()
@@ -1306,9 +1332,9 @@ impl BottomPane {
                 h_flex()
                     .flex_shrink_0()
                     .px_1()
-                    .rounded(px(REFERENCE_SECTION_RADIUS))
+                    .rounded(rems(REFERENCE_SECTION_RADIUS / 16.))
                     .bg(cx.theme().yellow_light.opacity(0.12))
-                    .text_size(px(REFERENCE_BADGE_FONT_SIZE))
+                    .text_size(rems(REFERENCE_BADGE_FONT_SIZE / 16.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(cx.theme().yellow_light)
                     .child(tr("lithe.git.current")),
@@ -1351,7 +1377,7 @@ impl BottomPane {
                 .items_center()
                 .gap_2()
                 .px_2()
-                .rounded(px(REFERENCE_HEAD_ROW_RADIUS))
+                .rounded(rems(REFERENCE_HEAD_ROW_RADIUS / 16.))
                 .font_weight(FontWeight::MEDIUM)
                 .when(head_selected, |row| row.bg(cx.theme().accent))
                 .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
@@ -1394,7 +1420,7 @@ impl BottomPane {
                     .items_center()
                     .gap_1p5()
                     .px_1p5()
-                    .rounded(px(REFERENCE_SECTION_RADIUS))
+                    .rounded(rems(REFERENCE_SECTION_RADIUS / 16.))
                     .font_weight(FontWeight::MEDIUM)
                     .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
                     .on_click(move |_event, _window, cx: &mut App| {
@@ -1603,7 +1629,7 @@ impl BottomPane {
                 v_flex()
                     .w_full()
                     .h(relative(INSPECTOR_FILES_FRACTION))
-                    .min_h(px(INSPECTOR_FILES_MIN_HEIGHT))
+                    .min_h(rems(INSPECTOR_FILES_MIN_HEIGHT / 16.))
                     .min_w_0()
                     // 文件区表头（`git-commit-inspector.tsx:106-130`）。
                     .child(
@@ -1728,8 +1754,10 @@ impl BottomPane {
             .h_6()
             .items_center()
             .gap_1p5()
-            .pl(px(
-                COMMIT_FILE_INDENT_BASE + row.depth as f32 * COMMIT_FILE_INDENT_STEP
+            // 与引用树同口径：`10 + depth × 14` 是设计常量（`git-commit-file-tree.tsx:127`），
+            // 换算成 rem 后文件树会随界面字号一起缩放。
+            .pl(rems(
+                (COMMIT_FILE_INDENT_BASE + row.depth as f32 * COMMIT_FILE_INDENT_STEP) / 16.
             ))
             .pr_1p5()
             .whitespace_nowrap();
@@ -1751,7 +1779,7 @@ impl BottomPane {
                 .child(
                     div()
                         .flex_shrink_0()
-                        .text_size(px(COMMIT_FILE_STATUS_FONT_SIZE))
+                        .text_size(rems(COMMIT_FILE_STATUS_FONT_SIZE / 16.))
                         .text_color(cx.theme().muted_foreground)
                         .child(tr_args(
                             "lithe.git.log.filesCount",
@@ -1771,7 +1799,7 @@ impl BottomPane {
                     div()
                         .flex_shrink_0()
                         .font_family(cx.theme().mono_font_family.clone())
-                        .text_size(px(COMMIT_FILE_STATUS_FONT_SIZE))
+                        .text_size(rems(COMMIT_FILE_STATUS_FONT_SIZE / 16.))
                         .text_color(status_color)
                         // Core 的 `status` 是 name-status 码（可能是 `R100`），Windows 原样渲染
                         // （`git-commit-file-tree.tsx:127`）；这里取首字母，与 macOS 的
@@ -1808,7 +1836,7 @@ impl BottomPane {
             .child(
                 div()
                     .font_family(mono.clone())
-                    .text_size(px(INSPECTOR_MONO_FONT_SIZE))
+                    .text_size(rems(INSPECTOR_MONO_FONT_SIZE / 16.))
                     .text_color(cx.theme().muted_foreground)
                     .child(SharedString::from(if detail.email.is_empty() {
                         format!("{} · {}", detail.short_hash, detail.author)
@@ -1822,7 +1850,7 @@ impl BottomPane {
             .child(
                 div()
                     .font_family(mono.clone())
-                    .text_size(px(INSPECTOR_MONO_FONT_SIZE))
+                    .text_size(rems(INSPECTOR_MONO_FONT_SIZE / 16.))
                     .text_color(cx.theme().muted_foreground)
                     .child(detail.date.clone()),
             )
@@ -1837,7 +1865,7 @@ impl BottomPane {
             .child(
                 div()
                     .font_family(mono)
-                    .text_size(px(INSPECTOR_HASH_FONT_SIZE))
+                    .text_size(rems(INSPECTOR_HASH_FONT_SIZE / 16.))
                     .text_color(cx.theme().muted_foreground)
                     .child(detail.hash.clone()),
             )
@@ -1912,7 +1940,7 @@ impl BottomPane {
             .child(
                 div()
                     .w(relative(REFERENCE_PANE_FRACTION))
-                    .min_w(px(REFERENCE_PANE_MIN_WIDTH))
+                    .min_w(rems(REFERENCE_PANE_MIN_WIDTH / 16.))
                     .h_full()
                     .min_h_0()
                     .child(self.reference_pane(this, cx)),
@@ -1930,7 +1958,7 @@ impl BottomPane {
             .child(
                 div()
                     .w(relative(INSPECTOR_PANE_FRACTION))
-                    .min_w(px(INSPECTOR_PANE_MIN_WIDTH))
+                    .min_w(rems(INSPECTOR_PANE_MIN_WIDTH / 16.))
                     .h_full()
                     .min_h_0()
                     .child(self.inspector_pane(cx)),
@@ -1957,7 +1985,7 @@ impl BottomPane {
             .child(
                 Button::new("bottom-git-retry")
                     .ghost()
-                    .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
+                    .with_size(rem_px(cx.theme().font_size, LOAD_MORE_BUTTON_HEIGHT))
                     .label(tr("lithe.git.log.retry"))
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| pane.refresh(cx));
@@ -1991,7 +2019,7 @@ impl BottomPane {
             block = block.child(
                 Button::new("bottom-git-empty-retry")
                     .ghost()
-                    .with_size(px(LOAD_MORE_BUTTON_HEIGHT))
+                    .with_size(rem_px(cx.theme().font_size, LOAD_MORE_BUTTON_HEIGHT))
                     .label(tr("lithe.git.log.retry"))
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| pane.refresh(cx));
@@ -2069,9 +2097,9 @@ impl Render for BottomPane {
 
 #[cfg(test)]
 mod tests {
-    use super::{commit_element_id, panel_element_id};
+    use super::{commit_element_id, panel_element_id, rem_px};
     use crate::model::{Commit, Panel};
-    use gpui_kit::SharedString;
+    use gpui_kit::{SharedString, px};
 
     /// 一行提交的最小 fixture：只填渲染与身份用得到的字段，其余固定值，保持测试确定性
     /// （不读时钟、不读环境、不起窗口）。
@@ -2125,5 +2153,22 @@ mod tests {
         let mut rewritten = commit("1111111111111111111111111111111111111111");
         rewritten.subject = SharedString::from("另一个主题行");
         assert_eq!(commit_element_id(&rewritten), forward[0]);
+    }
+
+    /// [`rem_px`] 必须按**传入的 rem 基准**求值，而不是写死 16。
+    ///
+    /// 只断言"16px 基准下等于规格值"证明不了这一点 —— `AbsoluteLength::from(rems(P / 16.))
+    /// .to_pixels(px(16.))` 这种**假 rem**写法在 16px 基准下逐像素相等，却完全不随界面字号缩放。
+    /// 所以第二条断言把基准翻倍：真 rem 会跟着翻倍，假 rem 会原样不动。
+    #[test]
+    fn rem_px_scales_with_the_runtime_rem_base() {
+        // 默认基准（`uiFontSize = 13` → `theme_font_size_for(13) = 16.0`）：与规格值逐像素相等
+        // —— 这就是"本次改动默认外观不变"的判据。
+        assert_eq!(rem_px(px(16.), 14.), px(14.));
+        assert_eq!(rem_px(px(16.), 1.6), px(1.6));
+        // 基准翻倍 → 换算结果翻倍（假 rem 会得到 px(14.) 而失败）。
+        assert_eq!(rem_px(px(32.), 14.), px(28.));
+        // 基准 ×1.25（`uiFontSize = 20` → 25.0）：线性缩放。
+        assert_eq!(rem_px(px(20.), 14.), px(17.5));
     }
 }

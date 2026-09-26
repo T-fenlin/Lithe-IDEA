@@ -93,13 +93,25 @@ use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Render, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div, point, px,
-    relative, rems,
+    AbsoluteLength, AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels,
+    Render, ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
+    Window, div, point, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::{tr, tr_args};
+
+/// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)` 的 `Pixels` 形式。
+///
+/// 只有**必须**交出 `Pixels` 的槽才走这里（能做到 rem-based 的样式一律直接写 `rems(P / 16.)`）：
+/// 例如此处的滚轮增量换算 —— `event.delta.pixel_delta(line_height)` 吃的是 `Pixels`，
+/// 交不了 `AbsoluteLength`。写成 `/ 4.` 是错的：helper 后缀 `N` = `N × 0.25rem`，
+/// 而这里的 `P` 是**像素**，1rem = 16px（主题的 `font.size`）。
+///
+/// `pub(crate)`：[`crate::completion::install`] 的菜单宽度也走这一份（同一个 crate 只该有一处换算）。
+pub(crate) fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
+    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
+}
 
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -129,8 +141,10 @@ use lithe_gpui_shared::{tr, tr_args};
 /// 单个标签宽度上限 200px：`--lithe-tab-max-width`（12.5rem，`windows/tauri/src/styles/theme.css:123`，
 /// 用在 `windows/tauri/src/ui/tab-bar.tsx:260`）。**这是标签文字能截断的前提**。
 ///
-/// ⚠️ **保留 `px(...)`**：200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224，
-/// `gpui-pre-macros-0.3.6/src/styles.rs:1039-1047`），没有 `max_w_50()`。
+/// 常量保持**规格像素值身份**（`f32`，值不变）。消费方式：`TabBar::max_width(impl Into<Pixels>)`
+/// （`gpui-component-0.6.6/src/tab/tab_bar.rs:118`）只吃 `Pixels`，所以调用点走
+/// `rem_px(cx.theme().font_size, TAB_MAX_WIDTH)`（见 [`rem_px`]）——「200 不在 rem 档位上」
+/// 不构成保留 `px(...)` 的理由，档位外本来就该写 helper 底层的 `rems(P / 16.)`。
 const TAB_MAX_WIDTH: f32 = 200.;
 
 /// 滚轮增量换算用的行高兜底值：真机默认行高就是 **20**
@@ -139,9 +153,13 @@ const TAB_MAX_WIDTH: f32 = 200.;
 /// 编辑器还没完成首次布局时 `line_height()` 是 `None`，用这个值兜底，
 /// 否则 `ScrollDelta::Lines` 换算出 0，整段滚不动。
 ///
-/// 它是滚轮增量换算里的 `Pixels`（与 `line_height()` 的返回值同类型做算术：
-/// `event.delta.pixel_delta(line_height)`、`if delta == px(0.)`），不是布局样式槽，
-/// 套不了 `Styled` 的 `line_height` 系列 helper，所以保留 `px(...)`。
+/// 它是滚轮增量换算里的 `Pixels`（与 `line_height()` 的返回值——`EditorState::line_height()`
+/// 返回 `Option<Pixels>`，`gpui-base-0.6.6/src/input/base/state.rs:2820`——同类型做算术：
+/// `event.delta.pixel_delta(line_height)`），不是布局样式槽，套不了 `Styled` 的 `line_height`
+/// 系列 helper。但它也**不是** :288 意义上的"measured runtime geometry"：20 是写死的规格值，
+/// 只是"真源默认字号下的行高"。调用点按当前 rem 基准求值（`rem_px(window.rem_size(), ..)`），
+/// 这样把界面字号调大时，这一档兜底值与真源"行高 = ceil(fontSize × 1.4)"的语义一致
+/// —— 默认 16px 基准下与原来的 `px(20.)` 逐像素相等。
 const FALLBACK_LINE_HEIGHT: f32 = 20.;
 
 /// 防抖自动保存的等待窗口 **150ms**：逐值照 Windows 的 `setTimeout(.., 150)`
@@ -530,8 +548,11 @@ impl EditorPane {
                 service.clone(),
                 buffer.path.clone(),
             );
+            // `Entity::update` 的两参闭包只给 `(state, cx)`（不给 `Window`），所以 rem 基准
+            // 从闭包外取好（`cx.theme().font_size`，与 `Root::render` 写进 `set_rem_size` 的是同一个值）。
+            let rem = cx.theme().font_size;
             buffer.editor.update(cx, |state, _cx| {
-                crate::completion::install(state, Some(provider));
+                crate::completion::install(state, Some(provider), rem);
                 crate::code_actions::install(state, Some(code_actions));
             });
             patched += 1;
@@ -780,7 +801,7 @@ impl EditorPane {
             state.set_tab_size(tab, cx);
             // 补全：装 provider + 把菜单调宽（上游默认 320px，Java 签名会被截断，
             // 见 `crate::completion::install`）。
-            crate::completion::install(&mut state, completion_provider);
+            crate::completion::install(&mut state, completion_provider, window.rem_size());
             // 快速修复（`Ctrl+.` / 右键菜单的 Show Code Actions）：菜单与键位归上游，
             // 我们只给 provider，并且**由我们把编辑落进 buffer**（上游不处理 `edit`，
             // 见 `crate::code_actions` 的模块文档）。
@@ -2021,8 +2042,9 @@ impl EditorPane {
             .h_9()
             .px_2()
             // `max_width` 让**标签文字**在空间不够时让位（图标与关闭按钮保持原尺寸），
-            // 也就是真机那种 `OrderChargeService.j…` 的截断。
-            .max_width(TAB_MAX_WIDTH)
+            // 也就是真机那种 `OrderChargeService.j…` 的截断。这一槽是 `Pixels`
+            // （`TabBar::max_width(impl Into<Pixels>)`），所以按当前 rem 基准求值。
+            .max_width(rem_px(cx.theme().font_size, TAB_MAX_WIDTH))
             .prefix(self.render_nav_group(cx))
             .on_click(cx.listener(|pane, index: &usize, _window, cx| {
                 // `TabBar::on_click` 给的是被点标签的下标
@@ -2490,14 +2512,18 @@ impl EditorPane {
             // `gpui-base-0.6.6/src/input/base/state.rs:2806-2817`；后者会自己 clamp、
             // 下一帧生效）。
             .on_scroll_wheel(
-                cx.listener(move |_pane, event: &ScrollWheelEvent, _window, cx| {
+                cx.listener(move |_pane, event: &ScrollWheelEvent, window, cx| {
                     let line_height = scroll_editor
                         .read(cx)
                         .line_height()
-                        // 兜底行高 20：滚轮增量换算里的 `Pixels`（不是样式槽），见常量注释。
-                        .unwrap_or(px(FALLBACK_LINE_HEIGHT));
+                        // 兜底行高 20：滚轮增量换算里的 `Pixels`（不是样式槽），按本帧 rem 基准
+                        // 求值，见 [`FALLBACK_LINE_HEIGHT`]。
+                        .unwrap_or(rem_px(window.rem_size(), FALLBACK_LINE_HEIGHT));
                     let delta = event.delta.pixel_delta(line_height).y;
-                    if delta == px(0.) {
+                    // 零值与缩放无关（`0 × 任何 rem 基准 = 0`），所以用 `Pixels::ZERO`
+                    // （`gpui-pre-0.3.6/src/geometry.rs:2795`）而不是 `px(0.)`：
+                    // 没有"规格值"可换算，写 rem 反而是伪换算。
+                    if delta == Pixels::ZERO {
                         return;
                     }
                     let current = scroll_editor.read(cx).scroll_offset();
@@ -2700,7 +2726,8 @@ impl Render for EditorPane {
 
 #[cfg(test)]
 mod tests {
-    use super::{tab_close_element_id, tab_element_id};
+    use super::{rem_px, tab_close_element_id, tab_element_id};
+    use gpui_kit::px;
     use std::path::{Path, PathBuf};
 
     /// 回归判据（《编码指南》「稳定标识」）：同一批标签在两种顺序下算出的 id 必须相同，
@@ -2738,5 +2765,23 @@ mod tests {
         assert_ne!(tab_element_id(path), tab_close_element_id(path));
         assert_ne!(tab_close_element_id(path), tab_close_element_id(other));
         assert_eq!(tab_close_element_id(path), "editor-tab-close:/workspace/src/main.rs");
+    }
+
+    /// [`rem_px`] 必须按**传入的 rem 基准**求值，而不是写死 16。
+    ///
+    /// `AbsoluteLength::from(rems(P / 16.)).to_pixels(px(16.))` 这种**假 rem**写法在 16px 基准下
+    /// 与规格值逐像素相等，却完全不随界面字号缩放 —— 所以只断言"16px 基准下等于原值"证明不了
+    /// 它真在按基准缩放，必须再断言基准变化时结果跟着变。两个调用点
+    /// （`FALLBACK_LINE_HEIGHT` 兜底行高、`TAB_MAX_WIDTH` 标签宽上限）都靠这条保证语义。
+    #[test]
+    fn rem_px_scales_with_the_runtime_rem_base() {
+        // 默认基准（`uiFontSize = 13` → `theme_font_size_for(13) = 16.0`）：改动前后逐像素相等。
+        assert_eq!(rem_px(px(16.), 20.), px(20.));
+        assert_eq!(rem_px(px(16.), 200.), px(200.));
+        // 基准翻倍 → 换算结果翻倍（假 rem 会得到 px(20.) / px(200.) 而失败）。
+        assert_eq!(rem_px(px(32.), 20.), px(40.));
+        assert_eq!(rem_px(px(32.), 200.), px(400.));
+        // 基准 ×1.25（`uiFontSize = 20` → 25.0）：线性缩放。
+        assert_eq!(rem_px(px(20.), 20.), px(25.));
     }
 }
