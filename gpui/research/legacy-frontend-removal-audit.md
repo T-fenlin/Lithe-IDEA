@@ -401,6 +401,12 @@ gpui 那套是 `expui/**` 结构，**不是同一套**）；结果见 §7.3。
 | `gpui/assets/**` | 1 203 | 8 561 207 |
 | `gpui/themes/**` | 3 | 41 179 |
 
+> ⚠️ 上表是**当次实测的快照**，不随仓库演进而更新。`gpui/assets/**` 现在读作 **1 203 个文件 /
+> 8 567 891 字节**（差 6 684 B 是 `README.md` 自身被追加的内容；该文件现已由 `#[exclude = "README.md"]`
+> 挡在二进制外）；另外 `icon-themes/{lithe,pierre,symbols}`（**933 文件 / 5 337 322 字节**）已用
+> `#[exclude]` 排除出内嵌范围，**但磁盘文件一个都没删**（将来做图标主题切换还要用）。
+> 内嵌现状以 `gpui/assets/README.md` 第 8 节与 `gpui/crates/app/src/assets.rs` 的测试为准。
+
 `windows/` 的资源类大头就是 `.wasm` 48 个（55 813 057 B，tree-sitter）+ `.png` 194 个（8 203 394 B，图标）+ `.icns`/`.ico`。
 **结论：`windows/` 里 87.7 MB 有 63.6% 是明确不需要的 tree-sitter wasm + 过期图标快照；真正的"必须留"只有 38 KB 的主题 JSON、字体（在 macOS 侧）和几十 KB 的图标。**
 

@@ -531,6 +531,11 @@ S1_ASSETS probe path=ui-icons/idea/expui/general/settings_dark.svg bytes=2914
 S1_ASSETS probe path=icons/settings.svg bytes=586
 ```
 
+> ⚠️ 上面这段是**当时的日志快照**（`embedded=1204`、`ui_icons=158` 都是那时读数）。现状：
+> `LitheAssets` 收窄后是 **269** 个路径、`ui-icons/` 是 **157**、`icon-themes/idea/` 是 **104**，
+> 另有 `icon-themes/{lithe,pierre,symbols}` 的 933 文件被 `#[exclude]` 挡在内嵌范围外（磁盘仍在）。
+> 以 `gpui/assets/README.md` 第 8 节与 `gpui/crates/app/src/assets.rs` 的测试为准。
+
 `embedded` 来自 `LitheAssets::embedded_count()`（编译期静态表，1 204 个），
 `ui_icons` 来自 `embedded_count_under("ui-icons/")`（158 个），
 `fallback_icons` 来自 `AllAssets.list("")`（1830 个）。
