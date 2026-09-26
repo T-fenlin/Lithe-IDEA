@@ -56,7 +56,7 @@ use gpui_kit::{
     AbsoluteLength, Anchor, App, AppContext as _, Context, ElementId, Entity, FontWeight,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
-    prelude::FluentBuilder as _, px, rems,
+    prelude::FluentBuilder as _, rems,
 };
 
 use lithe_gpui_shared::icons::{idea, idea_icon_svg};
@@ -160,9 +160,9 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
         // `dialog/dialog.rs:528`）。
         let margin = rem;
         let width = rem_px(rem, DIALOG_WIDTH);
-        let height = rem_px(rem, DIALOG_HEIGHT).min((viewport.height - margin * 2.).max(px(0.)));
+        let height = rem_px(rem, DIALOG_HEIGHT).min((viewport.height - margin * 2.).max(gpui_kit::Pixels::ZERO));
         // 居中：Dialog 的 y 默认是视口的 1/10（`dialog/dialog.rs:529`），Windows 是垂直居中。
-        let margin_top = ((viewport.height - height) / 2.).max(px(0.));
+        let margin_top = ((viewport.height - height) / 2.).max(gpui_kit::Pixels::ZERO);
 
         dialog
             .close_button(false)
@@ -3220,6 +3220,10 @@ fn git_scope_label(scope: IdentityScope) -> SharedString {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // `px` 只在这里当**期望值**用（换算断言：`rem_px(px(16.), W) == px(820.)`），
+    // 生产代码里已没有直接 `px(...)` 调用点，所以 import 落在测试模块内，
+    // 否则顶层 `use` 会报 `unused import`（`check-ui-px.mjs` 只扫生产代码，不看测试）。
+    use gpui_kit::px;
 
     /// 字号显示文本：整数不补 `.00`，半步长保留一位小数。
     #[test]

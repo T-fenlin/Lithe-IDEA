@@ -134,8 +134,9 @@ pub(crate) fn terminals_aria() -> SharedString {
 // 度量
 // ---------------------------------------------------------------------------
 //
-// 布局度量一律用 gpui 的 rem-based helper，不再直接写 `px(...)`。rem base = 主题字号 16px，
-// 所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等：
+// 布局度量一律用 gpui 的 rem-based helper，**生产代码里不再有直接 `px(...)` 的调用点**
+// （`terminal_view.rs` 末尾的换算测试里用 `px(...)` 当期望值，那是断言不是布局）。rem base = 主题字号
+// 16px，所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等：
 //
 // | 规格 | 值 | 用到的 helper | 出处 |
 // | --- | --- | --- | --- |
@@ -146,27 +147,37 @@ pub(crate) fn terminals_aria() -> SharedString {
 // | 终端内容左右内边距 `pl-4` | 16 | `pl_4()` / `pr_4()` | `features/terminal/components/terminal.tsx:870` |
 // | 输入行外框上下 6 / 左右 12、行内间距 6、输入框高 28 | 6 / 12 / 6 / 28 | `py_1p5()` / `px_3()` / `gap_1p5()` / `h_7()` | `features/run/components/run-pane.tsx:454,462` |
 //
+// **档位外的值**（页签最大宽 200、chrome 圆角 4、状态行 24 − 4 = 20）不在上面那张 helper 表里，
+// 按《编码指南》写成 helper 底层的 `rems(P / 16.)`（`gpui/docs/gpui-kit/0.6.6/zh-CN/docs/coding-guides.md:253,288`）；
+// 消费方只收 `Pixels` 的那几处（`Button::rounded` / `TabBar::max_width`）走 `terminal_view.rs`
+// 的 `rem_px(rem, P)` —— 同形于 `settings/src/dialog.rs:189-199`，按**当前** rem 基准求值。
+//
 // 字号：`ui-text-sm` 是 **13px**、`--ui-text-caption` 是 **12px**（`styles/theme.css:114-116`），
 // gpui 的档位是 `text_xs()`=12 / `text_sm()`=14：12 → `text_xs()`（等价）、
 // 13 → `text_sm()`（14px，经维护者确认的**有意**视觉改动）、终端字号 14 → `text_sm()`（等价）。
 
 /// 单个页签最大宽 200（`ui/tab-bar.tsx:257-267`）。
 ///
-/// ⚠️ **保留 `px(...)` 调用点**：200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224），
-/// 没有 `max_w_50()`。
+/// 200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224），没有 `max_w_50()`，所以它保持
+/// **规格像素值**这个身份，由调用点换算成 rem：`TabBar::max_width` 只收 `Pixels`，所以走
+/// `terminal_view.rs` 的 `rem_px(rem, TAB_MAX_WIDTH)`（= `rems(TAB_MAX_WIDTH / 16.)`）。
+/// 写成 `/ 4.` 就错了 —— 1rem = 16px，不是 4px。
 pub(crate) const TAB_MAX_WIDTH: f32 = 200.;
 /// chrome 圆角 4px（`styles/theme.css:133` 的 `--lithe-chrome-radius: 4px`）。
 ///
-/// ⚠️ **保留 `px(...)` 调用点**：Lithe 的圆角阶梯（`--radius × k`）一律走应用层具名常量，
-/// 不套 gpui 的 `rounded_sm()`/`rounded_md()`（语义不同：Lithe 的 `sm` 是 4.8、`md` 是 6.4），
-/// 也不能从主题读 —— `ThemeConfig.radius` 是 `usize`
-/// （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 4.8 / 6.4。
+/// Lithe 的圆角阶梯（`--radius × k`）一律走应用层具名常量，不套 gpui 的 `rounded_sm()`/
+/// `rounded_md()`（语义不同：Lithe 的 `sm` 是 4.8、`md` 是 6.4），也不能从主题读 ——
+/// `ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
+/// 装不下 4.8 / 6.4。
+///
+/// 它是**规格像素值**（4 不在 gpui 档位上），调用点不再写 `px(4.)`：能吃 `AbsoluteLength` 的
+/// 直接写 `rems(CHROME_RADIUS / 16.)`，`Button::rounded`（只收 `Pixels`）走 `rem_px(rem, CHROME_RADIUS)`。
 pub(crate) const CHROME_RADIUS: f32 = 4.;
 /// 状态/边界提示行高 24px（`styles/theme.css:126` 的 `--lithe-chrome-control-height: 1.5rem`）。
 ///
 /// 行高本身用 `h_6()`；常量保留是因为「重试」按钮的高度是运行时算术 `24 − 4`
-/// （让出状态行自己的上下内边距，见 [`crate::terminal_view`] 的 `render_status_line`），
-/// 那个表达式没有固定的档位 helper 可套。
+/// （让出状态行自己的上下内边距，见 [`crate::terminal_view`] 的 `render_status_line`）——
+/// 20 不在档位上，所以那处写 `rems((STATUS_LINE_HEIGHT - 4.) / 16.)`，规格值集中在这个常量里。
 pub(crate) const STATUS_LINE_HEIGHT: f32 = 24.;
 /// 终端行高倍数 1（`config/default-settings.ts:77` 的 `terminalLineHeight: 1`）——
 /// 是倍数不是长度，`line_height(relative(..))` 原样保留。

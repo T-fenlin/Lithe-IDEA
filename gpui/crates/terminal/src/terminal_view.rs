@@ -42,9 +42,10 @@ use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, Size};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
-    StyleRefinement, Styled as _, Subscription, WeakEntity, Window, div, px, relative, rems,
+    AbsoluteLength, AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _,
+    IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
+    StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, WeakEntity,
+    Window, div, relative, rems,
 };
 
 use crate::constants::new_terminal_label;
@@ -145,9 +146,17 @@ impl TerminalPane {
                         .text_color(cx.theme().muted_foreground)
                         .child(no_terminals()),
                 )
-                .child(self.new_tab_button(shell))
+                .child(self.new_tab_button(shell, cx))
                 .into_any_element();
         }
+
+        // `Button::rounded` 只吃 `ButtonRounded`，而 `ButtonRounded` 只实现了 `From<Pixels>`
+        // （`gpui-component-0.6.6/src/button/button.rs:29-33`，没有 `From<Rems>`），所以圆角
+        // 必须**先按当前 rem 基准求值成像素**再交出去（见 [`rem_px`]）。这里的 `rem` 就是
+        // 主题字号：`Root::render` 每帧把 `cx.theme().font_size` 写进 `window.set_rem_size`
+        // （`gpui-component-0.6.6/src/root.rs:582`），所以它就是本帧的 rem 基准。先取出来
+        // 是因为下面的 `map` 闭包若再借一次 `cx`，会和后面的 `self.profile_menu_button(cx)` 打架。
+        let rem = cx.theme().font_size;
 
         let tabs: Vec<Tab> = self
             .tabs
@@ -166,7 +175,7 @@ impl TerminalPane {
                     .icon(IconName::Close)
                     .tab_stop(false)
                     .size_6()
-                    .rounded(px(CHROME_RADIUS))
+                    .rounded(rem_px(rem, CHROME_RADIUS))
                     .tooltip(close_label.clone())
                     .accessibility_label(close_label)
                     .on_click(
@@ -201,15 +210,15 @@ impl TerminalPane {
             // 表里能选的是 Small+Underline=**30** 与 Medium+Underline=36，取更接近的 30。
             .with_size(Size::Small)
             .selected_index(self.active)
-            .max_width(TAB_MAX_WIDTH)
+            .max_width(rem_px(rem, TAB_MAX_WIDTH))
             .children(tabs)
             .suffix(
                 h_flex()
                     .flex_shrink_0()
                     .items_center()
                     .gap_0p5()
-                    .child(self.clear_button(shell.clone()))
-                    .child(self.new_tab_button(shell.clone()))
+                    .child(self.clear_button(shell.clone(), cx))
+                    .child(self.new_tab_button(shell.clone(), cx))
                     .child(self.profile_menu_button(cx)),
             )
             .on_click(move |index: &usize, window: &mut Window, cx: &mut App| {
@@ -292,9 +301,10 @@ impl TerminalPane {
                     .icon(IconName::Play)
                     .label(retry())
                     .tab_stop(false)
-                    // 24 − 4 = 20（让出状态行的上下内边距）：运行时算术，没有档位 helper 可套。
-                    .h(px(STATUS_LINE_HEIGHT - 4.))
-                    .rounded(px(CHROME_RADIUS))
+                    // 24 − 4 = 20（让出状态行的上下内边距）：运行时算术，没有档位 helper 可套，
+                    // 所以写 helper 底层的 `rems(P / 16.)`（rem base = 16px，见 `constants.rs`）。
+                    .h(rems((STATUS_LINE_HEIGHT - 4.) / 16.))
+                    .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
                     .on_click(cx.listener(
                         move |this: &mut Self,
                               _event: &ClickEvent,
@@ -425,7 +435,7 @@ impl TerminalPane {
                                 .label(new_terminal_label())
                                 .h_6()
                                 .px_2()
-                                .rounded(px(CHROME_RADIUS))
+                                .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
                                 .on_click(cx.listener(
                                     |this: &mut Self,
                                      _event: &ClickEvent,
@@ -468,7 +478,7 @@ impl TerminalPane {
                         .label(retry())
                         .h_6()
                         .px_2()
-                        .rounded(px(CHROME_RADIUS))
+                        .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
                         .on_click(cx.listener(
                             move |this: &mut Self, _event: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>| {
                                 this.retry_tab(id, cx);
@@ -494,7 +504,11 @@ impl TerminalPane {
         let input = gpui_kit::Styled::h_7(Input::new(&self.input))
             .w_full()
             .min_w_0()
-            .rounded(px(CHROME_RADIUS))
+            // `Input` 没有固有 `rounded`，这里走的是 `Styled::rounded`（吃 `AbsoluteLength`），
+            // 所以能直接把规格值写成 rem：布局期按窗口 rem 基准求值，`rems(CHROME_RADIUS / 16.)`
+            // 在 16px 基准下与原来的 `px(CHROME_RADIUS)` 逐像素相等。上面那 7 个 `Button` 不行
+            // —— `Button::rounded` 只吃 `ButtonRounded`（只实现了 `From<Pixels>`），走 [`rem_px`]。
+            .rounded(rems(CHROME_RADIUS / 16.))
             .font_family(cx.theme().mono_font_family.clone())
             .text_xs();
 
@@ -514,13 +528,16 @@ impl TerminalPane {
     }
 
     /// `+` 新建终端（真机 `terminal-tab-bar.tsx:724-735`，图标 `Plus`、提示 `terminal.newTerminal`）。
-    pub(crate) fn new_tab_button(&self, shell: WeakEntity<Self>) -> Button {
+    ///
+    /// 收 `cx` 只为取 rem 基准（`cx.theme().font_size`）：`Button::rounded` 只吃 `Pixels`，
+    /// 见 [`rem_px`]。
+    pub(crate) fn new_tab_button(&self, shell: WeakEntity<Self>, cx: &App) -> Button {
         Button::new("terminal-new-tab")
             .ghost()
             .icon(IconName::Plus)
             .tab_stop(false)
             .size_6()
-            .rounded(px(CHROME_RADIUS))
+            .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
             .tooltip(new_terminal_label())
             .accessibility_label(new_terminal_label())
             .on_click(
@@ -536,13 +553,13 @@ impl TerminalPane {
     /// 里**没有 `trash-2.svg`**（全量目录只有 `trash.svg` / `trash-off.svg`），
     /// `IconName` 是按 svg 文件名生成的（`gpui-kit-assets-0.6.6/build.rs:20-51`），
     /// 所以 `IconName::Trash2` 这个变体根本不存在。
-    pub(crate) fn clear_button(&self, shell: WeakEntity<Self>) -> Button {
+    pub(crate) fn clear_button(&self, shell: WeakEntity<Self>, cx: &App) -> Button {
         Button::new("terminal-clear-output")
             .ghost()
             .icon(IconName::Trash)
             .tab_stop(false)
             .size_6()
-            .rounded(px(CHROME_RADIUS))
+            .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
             .tooltip(clear_terminal())
             .accessibility_label(clear_terminal())
             .disabled(self.tabs.is_empty())
@@ -571,7 +588,7 @@ impl TerminalPane {
             .icon(IconName::ChevronDown)
             .tab_stop(false)
             .size_6()
-            .rounded(px(CHROME_RADIUS))
+            .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
             .tooltip(choose_profile())
             .accessibility_label(choose_profile())
             // `DropdownMenu`（`gpui-component-0.6.6/src/menu/dropdown_menu.rs:14-19`）；
@@ -636,6 +653,29 @@ impl Drop for TerminalPane {
         }
     }
 }
+
+/// 把一个**规格像素值**按**当前 rem 基准**求值：`rems(P / 16.)` 再 `to_pixels(rem)`。
+///
+/// 与 `settings/src/dialog.rs:189-199` 的 `rem_px` 同形 —— 那个形态是仓库里**唯一**正确的换算：
+/// `/ 4.` 是错的（gpui 的档位 helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，
+/// 1rem = 16px，见 `constants.rs` 的「度量」一节），写成 `to_pixels(px(16.))` 也是错的
+/// （那是**假 rem**：写死 16 基准、不随字号缩放）。
+///
+/// **为什么圆角要绕这一圈**：`Button::rounded` 收 `impl Into<ButtonRounded>`，而 `ButtonRounded`
+/// 只实现了 `From<Pixels>`（`gpui-component-0.6.6/src/button/button.rs:29-33`），**没有**
+/// `From<Rems>` —— 实测在 `Button` 上写 `.rounded(rems(..))` 报
+/// `E0277: the trait bound ButtonRounded: From<Rems> is not satisfied`（`Button::rounded` 是
+/// 固有方法，它优先于 `Styled::rounded`，所以吃不到 `AbsoluteLength`）。`TabBar::max_width`
+/// 同理（`impl Into<Pixels>`，`tab_bar.rs:118`）。能吃 `AbsoluteLength` / `Length` 的调用点
+/// （`Input` 的 `Styled::rounded`、状态行按钮的 `Styled::h`）直接写 `rems(P / 16.)`，
+/// 由布局期按窗口 rem 基准求值，不必经过这里。
+///
+/// `rem` 从 `cx.theme().font_size` 取：`Root::render` 每帧把它写进 `window.set_rem_size`
+/// （`gpui-component-0.6.6/src/root.rs:582`），所以它就是本帧的 rem 基准。
+fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
+    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
+}
+
 ///
 /// 左右 16 = 真机终端内容左内边距（`pl-4`，`terminal.tsx:870`）；上下 0 = 终端行必须贴行显示。
 fn output_row_style() -> StyleRefinement {
@@ -719,3 +759,45 @@ fn output_row_style() -> StyleRefinement {
 // - 因此：本模块不做本地回显（会重复两遍），并且发送时用 `\r\n` 结尾。
 // - ⚠️ 上面两条测的是**带 `-NoLogo -NoProfile` 的 powershell**；[`profiles`] 默认**不带参数**
 //   （对齐真机的"系统默认"profile，`terminal-profiles.ts:19-23`），差别只是多一条启动横幅。
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui_kit::px;
+
+    /// rem 换算：`rems(P / 16.)` 在 16px 基准下必须等于规格像素值。
+    ///
+    /// 与 `settings/src/row.rs:160-170`、`settings/src/dialog.rs:3298-3306` 同型：`P` 是
+    /// **规格像素值**（真源里的 px），1rem = 16px（默认 `uiFontSize` 13 →
+    /// `theme_font_size_for(13) = 16.0`，`Root::render` 每帧把它写进 `window.set_rem_size`），
+    /// 所以 16px 基准下 `rems(P / 16.)` 与 `px(P)` 逐像素相等，外观不变；基准变了才等比缩放。
+    /// 把 `/ 16.` 写成 `/ 4.` 或别的基准，下面两组断言就会红。
+    #[test]
+    fn rem_conversions_match_the_spec_pixels() {
+        // ① 走 [`rem_px`] 的调用点（`Button::rounded`、`TabBar::max_width` 只吃 `Pixels`）。
+        assert_eq!(rem_px(px(16.), CHROME_RADIUS), px(CHROME_RADIUS));
+        assert_eq!(rem_px(px(16.), TAB_MAX_WIDTH), px(TAB_MAX_WIDTH));
+        assert_eq!(
+            rem_px(px(16.), STATUS_LINE_HEIGHT - 4.),
+            px(STATUS_LINE_HEIGHT - 4.)
+        );
+
+        // ② 直接写 `rems(P / 16.)` 的调用点（吃 `AbsoluteLength` / `Length` 的样式：
+        //    输入框圆角、状态行按钮高度）。
+        let spec_to_px =
+            |spec_px: f32| AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(px(16.));
+        assert_eq!(spec_to_px(CHROME_RADIUS), px(CHROME_RADIUS));
+        assert_eq!(
+            spec_to_px(STATUS_LINE_HEIGHT - 4.),
+            px(STATUS_LINE_HEIGHT - 4.)
+        );
+
+        // ③ 基准字号翻倍（`uiFontSize` 26 → rem 基准 32px）时长度等比例放大：
+        //    这就是用 rem 而不是写死 `px(...)` 的意义。
+        assert_eq!(rem_px(px(32.), CHROME_RADIUS), px(CHROME_RADIUS * 2.));
+        assert_eq!(
+            AbsoluteLength::from(rems(TAB_MAX_WIDTH / 16.)).to_pixels(px(32.)),
+            px(TAB_MAX_WIDTH * 2.)
+        );
+    }
+}
