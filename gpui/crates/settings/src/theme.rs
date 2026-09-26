@@ -18,8 +18,10 @@
 //!    （`theme/schema.rs:1060-1065`），而实际渲染用的是**当前 `ThemeMode`** 对应的槽。
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use gpui_kit::component::{Theme, ThemeRegistry};
+use gpui_kit::component::highlighter::HighlightTheme;
+use gpui_kit::component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
 use gpui_kit::{App, SharedString, WindowAppearance, px};
 
 use crate::schema::theme_font_size_for;
@@ -92,11 +94,62 @@ pub fn apply_theme_by_name(cx: &mut App, name: &str) -> bool {
 
     let mode = theme.mode;
     Theme::change(mode, None, cx);
+    stamp_builtin_highlight_if_absent(cx, &theme, mode);
     Theme::global_mut(cx).apply_config(&theme);
     Theme::sync_base(cx);
     cx.refresh_windows();
     println!("S1_THEME applied={name} dark={}", mode.is_dark());
     true
+}
+
+/// 目标主题**没有** `highlight` 段时，把 `highlight_theme` 复位成该明暗的内置那一份。
+///
+/// 为什么必须有这一步：`apply_config` 只在 `config.highlight` 是 `Some` 时整段替换
+/// `highlight_theme`（`gpui-component-0.6.6/src/theme/schema.rs:1066-1073`），**没有**按字段合并；
+/// 而 `Theme::change(mode)` 重放的是"该明暗槽里存着的那个配置"（`theme/mod.rs:671-686`），
+/// 对没有 `highlight` 的主题（`gpui/themes/lithe-*.json`）同样不会清掉上一份。于是：
+///
+/// `Lithe Dark`（无 `highlight`）→ `Gruvbox Light`（有）→ 切回 `Lithe Dark`
+/// 会把 **Gruvbox Light 的浅色语法色留在深色底上**（深底深字）。这不是"主题没生效"，
+/// 而是编辑器那一层沿用了上一个主题的高亮表。
+///
+/// 复位源是注册表的 `default_themes()`：它就是内置的 `Default Light` / `Default Dark`
+/// （`theme/registry.rs:139-149`），两者都带 `highlight`（`theme/default-theme.json`）。
+/// 复位发生在 `apply_config` **之前**，所以带 `highlight` 的主题不会被这里影响。
+///
+/// ⚠️ 覆盖不到的地方：`Theme::change` 内部会把当时的 `highlight_theme` 拷进
+/// `install_text_view_defaults`（`src/text/mod.rs:64-75`，供 TextView 的 markdown 代码块用），
+/// 这一步在复位之前，所以那些代码块仍可能拿着上一份。本仓库目前没有任何 TextView / markdown
+/// 代码块消费方（`crates/**` 里 `TextView` 零命中），编辑器正文每帧读 `cx.theme().highlight_theme`
+/// （`gpui-component-0.6.6/src/input/input.rs:510`），所以这条不影响当前界面；将来若有消费方，
+/// 需要把复位挪到 `Theme::change` 之前（那要求先修正槽配置，见 `schema.rs:1060-1065` 的写入点）。
+fn stamp_builtin_highlight_if_absent(cx: &mut App, theme: &ThemeConfig, mode: ThemeMode) {
+    if theme.highlight.is_some() {
+        return;
+    }
+
+    let builtin = ThemeRegistry::global(cx)
+        .default_themes()
+        .get(&mode)
+        .cloned();
+    let Some(builtin) = builtin else {
+        return;
+    };
+    let Some(style) = builtin.highlight.clone() else {
+        return;
+    };
+
+    Theme::global_mut(cx).highlight_theme = Arc::new(HighlightTheme {
+        name: builtin.name.to_string(),
+        appearance: mode,
+        style,
+    });
+    println!(
+        "S1_THEME highlight=builtin theme={} dark={} source={}",
+        theme.name,
+        mode.is_dark(),
+        builtin.name
+    );
 }
 
 /// 把 UI 字号写进主题的 rem 基准并刷新窗口。
@@ -182,6 +235,116 @@ mod tests {
         assert!(dir.ends_with("themes"), "{dir:?}");
         assert!(dir.join("lithe-dark.json").exists(), "{dir:?}");
         assert!(dir.join("lithe-light.json").exists(), "{dir:?}");
+    }
+
+    /// `apply_config` **没有 fallback** 的 13 个颜色 key（`theme/schema.rs:685`、`:717-719` 的宏）。
+    ///
+    /// 少写这些 key 不会报错，但缺失时会去读编译进二进制的 shadcn 默认值，把中性灰/蓝
+    /// 漏进主题（`schema.rs:740`、`:774-777`、`:802`、`:819`、`:1016`、`:743-772`）。
+    /// 与 `gpui/themes/README.md` §1.5 是同一份清单。
+    const REQUIRED_COLOR_KEYS: [&str; 13] = [
+        "background",
+        "border",
+        "foreground",
+        "muted.background",
+        "primary.background",
+        "secondary.background",
+        "overlay",
+        "base.red",
+        "base.green",
+        "base.blue",
+        "base.yellow",
+        "base.magenta",
+        "base.cyan",
+    ];
+
+    /// 主题目录里每一份 JSON 都必须能被**真实的** `ThemeSet` 反序列化，并且
+    /// 主题名非空且全局唯一、13 个无 fallback 的 key 齐全、每个颜色值 gpui 都解析得了。
+    ///
+    /// 这四件事全是**静默失效**，只会在界面上表现为"主题没出现"或"某个角还是 shadcn 的灰"：
+    /// 1. 解析失败的文件被整份忽略，只打一行日志（`theme/registry.rs:252-258`）；
+    /// 2. 同名主题条目被跳过（`registry.rs:270-273`），所以重名就是"少一个主题"；
+    /// 3. 无 fallback 的 key 缺失会漏进内置默认色（见 [`REQUIRED_COLOR_KEYS`]）；
+    /// 4. 颜色解析器只认 `#RRGGBB` / `#RRGGBBAA` / Tailwind 色名，**不认** `rgba(...)`
+    ///    （`theme/color.rs:693-697`、`:763`）。
+    ///
+    /// 走的是真类型（`ThemeSet` / 真解析器），不是另写一份 schema，所以上游改了字段形状
+    /// 这里会一起失败。纯同步读文件 + 反序列化，没有等待、没有全局状态。
+    #[test]
+    fn every_theme_file_is_a_loadable_theme_set() {
+        use gpui_kit::component::{ThemeSet, try_parse_background, try_parse_color};
+        use std::collections::BTreeMap;
+
+        let dir = themes_dir();
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap_or_else(|error| panic!("read_dir failed dir={} error={error}", dir.display()))
+            .map(|entry| entry.expect("read_dir entry").path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .collect();
+        files.sort();
+        assert!(!files.is_empty(), "no theme json in {}", dir.display());
+
+        // 主题名 -> 定义它的文件：注册表按名字去重，先把重名找出来。
+        let mut owners: BTreeMap<String, String> = BTreeMap::new();
+        let mut theme_count = 0usize;
+
+        for path in &files {
+            let file = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let text = std::fs::read_to_string(path)
+                .unwrap_or_else(|error| panic!("{file}: not readable/UTF-8: {error}"));
+            let set: ThemeSet = serde_json::from_str(&text)
+                .unwrap_or_else(|error| panic!("{file}: not a loadable ThemeSet: {error}"));
+            assert!(!set.themes.is_empty(), "{file}: themes[] is empty");
+
+            for theme in &set.themes {
+                let name = theme.name.to_string();
+                assert!(!name.trim().is_empty(), "{file}: a theme has an empty name");
+                if let Some(owner) = owners.insert(name.clone(), file.clone()) {
+                    panic!("{file}: theme name {name:?} is already defined in {owner}");
+                }
+
+                // 序列化回 JSON 是为了按 **JSON key** 取值：`None` 会出现成 `null`，
+                // 于是"这个 key 生效了没有"和文件的字面量对得上（`schema.rs` 用 `rename`）。
+                let colors = serde_json::to_value(&theme.colors)
+                    .unwrap_or_else(|error| panic!("{file}/{name}: colors re-encode: {error}"));
+                let colors = colors
+                    .as_object()
+                    .unwrap_or_else(|| panic!("{file}/{name}: colors is not an object"));
+
+                for key in REQUIRED_COLOR_KEYS {
+                    match colors.get(key) {
+                        Some(serde_json::Value::String(_)) => {}
+                        other => panic!(
+                            "{file}/{name}: required color {key:?} is missing/not a string ({other:?})"
+                        ),
+                    }
+                }
+
+                for (key, value) in colors {
+                    // 没写的 key 反序列化成 `None`、再序列化回来就是 `null`：那是合法的
+                    // （走 `apply_config` 的 fallback），只有"写了但 gpui 解析不了"才是错。
+                    let Some(value) = value.as_str() else {
+                        assert!(
+                            value.is_null(),
+                            "{file}/{name}: color {key:?} is not a string ({value:?})"
+                        );
+                        continue;
+                    };
+                    assert!(
+                        try_parse_color(value).is_ok() || try_parse_background(value).is_ok(),
+                        "{file}/{name}: color {key:?} = {value:?} is not parseable by gpui"
+                    );
+                }
+
+                theme_count += 1;
+            }
+        }
+
+        assert!(theme_count > 0, "no theme defined in {}", dir.display());
     }
 
     /// 系统外观 → 明暗：四个变体逐个钉住（Vibrant* 也属于 mac 的深浅两态）。
