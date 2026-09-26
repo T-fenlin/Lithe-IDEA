@@ -191,7 +191,7 @@ mod diagnostics;
 mod editor_view;
 mod navigation;
 
-pub use editor_view::{CursorPosition, EditorPane, TabMenuHostActions};
+pub use editor_view::{CursorPosition, EditorPane, SessionRestore, TabMenuHostActions};
 
 use gpui_kit::{App, KeyBinding};
 

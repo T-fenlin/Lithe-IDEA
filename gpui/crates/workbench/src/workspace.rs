@@ -121,8 +121,8 @@ use crate::right_tool_window::{
     resolve_click as resolve_right_click, right_tool_window,
 };
 use crate::status_bar::{StatusEntry, status_bar};
+use crate::session::{SessionPlan, SessionTracker};
 use crate::title_bar::title_bar;
-
 // ---------------------------------------------------------------------------
 // 启动期形态（`App::Global`）+ 换项目决策（纯函数）
 // ---------------------------------------------------------------------------
@@ -471,6 +471,21 @@ enum BottomPaneKind {
 }
 
 impl BottomPaneKind {
+    /// 稳定 id：会话文档（`.lithe/session.local.json` 的 `bottomKind`）与诊断行用它。
+    ///
+    /// 为什么不直接 `serde` 派生到 `BottomPaneKind` 上：那个枚举是**界面私有**类型
+    /// （`BottomPaneKind` 不上任何对外契约），而文档层要的是"一个不随 Rust 标识符改名的
+    /// 字符串"—— 把这两件事绑在一起，改个枚举名就会悄悄改掉磁盘上的取值。
+    /// 两个方向的映射由 [`bottom_kind_from_id`] 与这里**同处一个文件**，改一处必须改两处。
+    fn id(self) -> &'static str {
+        match self {
+            Self::Terminal => "terminal",
+            Self::Git => "git",
+            Self::Run => "run",
+            Self::Diagnostics => "diagnostics",
+        }
+    }
+
     /// 工具窗标题里的名字，用于占位内容那句「{label} 工具窗（未实现）」。
     ///
     /// 走 `lithe_gpui_shared::tr`（界面不许出现中英文字面量）。真源键与原文：
@@ -486,8 +501,21 @@ impl BottomPaneKind {
     }
 }
 
-/// 活动栏第 `index` 项对应的底部窗内容；`None` = 该项不换底部窗。
+/// 会话文档里的 `bottomKind` 字符串 → 底部窗内容；认不出的取值返回 `None`。
 ///
+/// **认不出就返回 `None`**（调用方保留当前值）而不是落到某一项：会话文件是可丢弃的本机文档，
+/// 里面可能是别的版本写的 id，静默落到「终端」会让用户看到一个自己没开过的面板。
+fn bottom_kind_from_id(id: &str) -> Option<BottomPaneKind> {
+    match id {
+        "terminal" => Some(BottomPaneKind::Terminal),
+        "git" => Some(BottomPaneKind::Git),
+        "run" => Some(BottomPaneKind::Run),
+        "diagnostics" => Some(BottomPaneKind::Diagnostics),
+        _ => None,
+    }
+}
+
+/// 活动栏第 `index` 项对应的底部窗内容；`None` = 该项不换底部窗。
 /// ⚠️ 下标必须与**左栏** [`activity_items`] 的顺序一致（0 项目 / 1 更改 / 2 搜索 / 3 运行 /
 /// 4 终端 / 5 诊断 / 6 提交记录 / 7 设置）。「设置」在真机是对话框，不是底部窗，所以这里是 `None`。
 /// **Maven 不在表里**：它归右活动栏（[`RightToolWindowView::Maven`]）。
@@ -917,6 +945,26 @@ pub struct ShellWorkspace {
     /// 为什么必须存在这条：失败是**异步**到达的（[`prepare_workspace_config`] 走后台执行器），
     /// 而且只打 stderr —— 双击启动的用户根本看不到 stderr，只会发现"`.lithe` 目录没出现"。
     workspace_config_error: Option<SharedString>,
+    /// **会话状态**（`.lithe/session.local.json`）：打开的文件 + 当前文件 + 侧栏可见性 +
+    /// 左右面板的当前视图 id。
+    ///
+    /// 一个工作区一个实例：换根会重建整个外壳，新外壳的 [`SessionTracker::new`] 读的是新根的
+    /// 会话，旧实例随旧外壳一起 drop —— 所以换根**前**必须先
+    /// [`ShellWorkspace::flush_session`]（见 `crate::session` 的模块文档）。
+    ///
+    /// 装载期的诊断同样在这里（构造期读的，与渲染无关）。
+    session: SessionTracker,
+    /// 在飞的那次会话防抖写的**任务**。
+    ///
+    /// 必须被持有：gpui 的 `Task` 一 drop 就**取消**（同 `editor` 的 `auto_save_task`）。
+    /// 更要紧的是"换掉旧任务就是取消旧的防抖唤醒"—— 连点标签时只留最后一次计时器，
+    /// 这正是 [`SessionTracker`] 里 `DebounceState` 的代数机制要表达的语义。
+    session_save_task: Option<gpui_kit::Task<()>>,
+    /// 退出前补写会话的钩子（`on_app_quit`）。
+    ///
+    /// 必须被持有：`Subscription` 一 drop 就取消（gpui 的 RAII 语义），丢在 `new` 的局部
+    /// 变量里等于没装 —— 同一个陷阱在 `_settings_subscription` 那边已经记过一次。
+    _quit_subscription: Option<gpui_kit::Subscription>,
 }
 
 impl ShellWorkspace {
@@ -1255,7 +1303,15 @@ impl ShellWorkspace {
         ));
 
         // 编辑区 → 外壳：光标位置变了就重绘，状态栏的 `行:列` 才跟着走。
-        let editor_subscription = Some(cx.observe(&editor, |_, _, cx| cx.notify()));
+        //
+        // 同一条观察也是**会话内容的触发点**：开 / 关标签、切标签都会让 `EditorPane`
+        // `notify`，而"哪几个文件开着 + 当前是哪个"正是会话文档里的核心内容。
+        // 每个打开动作都去调一次 `schedule_session_save` 会长出六七个调用点，而这里一个就够
+        // —— `SessionTracker::plan` 自己判"内容没变"，所以重绘不会变成写盘。
+        let editor_subscription = Some(cx.observe(&editor, |shell: &mut Self, _, cx| {
+            shell.schedule_session_save(cx);
+            cx.notify();
+        }));
 
         let project_name: SharedString = root
             .file_name()
@@ -1353,6 +1409,13 @@ impl ShellWorkspace {
             status_notice: None,
             status_notice_generation: 0,
             workspace_config_error: None,
+            // 会话装载：**只读文件，不创建**（`.lithe/session.local.json` 在第一次真的产生
+            // 内容之前不存在）。恢复（打开文件 + 还原侧栏 / 视图）排在下面 `Self` 建好之后 ——
+            // 它要 `window` 才能建编辑器 buffer，也要本结构体自己的字段才能恢复界面状态。
+            session: SessionTracker::new(&root),
+            session_save_task: None,
+            // 下面 `new` 的收尾里装上（见 `on_app_quit` 那一段）。
+            _quit_subscription: None,
         };
         // 一行锚点诊断：整个外壳（项目树 / 编辑区 / JDTLS / 右栏 / Git 面板）都挂在**这一个**
         // 根上。换项目会重建整个外壳，所以换根前后各有且只有一行 `S1_WORKSPACE root=…`
@@ -1398,7 +1461,241 @@ impl ShellWorkspace {
         // 元素焦点，而"没有焦点节点"会让全部全局快捷键失效 —— 真机上用户点一下界面就有了，
         // 自动化里没有这一步。有后代元素持有焦点时，user 的点击会照常把焦点移走。
         window.focus(&workspace.focus, cx);
+
+        // 会话恢复：把上次打开的文件、当前文件与侧栏 / 视图状态装回来。**排在最后**：
+        // ① 它要 `window`（建 buffer 要窗口）；② 它要覆盖本结构体自己的字段（侧栏与视图），
+        // 排在 `--right-view` / `--left-view` 那些启动参数**之后**，于是"显式启动参数"
+        // 仍然赢过会话（自动化里 `--left-view` 与恢复的侧栏态同时存在时，参数是更明确的意图）。
+        workspace.restore_session(window, cx);
+
+        // 会话的落盘时机有两处硬保证 + 一段防抖（见 `crate::session` 的模块文档）：
+        // 换项目前 `flush_session`（在 `rebuild_project_window` 里），退出前装这个钩子。
+        // `on_app_quit` 与设置文档那条补写同一条口径（`SettingsStore::install_quit_flush`）。
+        let quit_shell = cx.entity().downgrade();
+        let _quit_subscription = cx.on_app_quit(move |_shell, cx| {
+            let _ = quit_shell.update(cx, |shell, cx| shell.flush_session(true, cx));
+            // 回调要求返回一个 future；补写本身是同步的，所以这里立即完成。
+            async {}
+        });
+        // ⚠️ `Subscription` 一 drop 就取消（gpui 的 RAII 语义），所以挂进字段。
+        // 同一个陷阱在 `_settings_subscription` 那边已经记过一次。
+        workspace._quit_subscription = Some(_quit_subscription);
+
         workspace
+    }
+
+    /// 把会话状态装回界面（构造期调一次）：打开文件、切活动标签、恢复侧栏与视图。
+    ///
+    /// 文件被删 / 改名 / 在根外时**跳过它**（诊断逐条打 `S1_WORKSPACE_CONFIG session_skipped`），
+    /// 不报错、不崩溃 —— 判定与过滤在 `crate::session::restore_into` 里。
+    fn restore_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let outcome = crate::session::restore_into(&self.root, &self.editor, window, cx);
+        let session = outcome.session;
+
+        // 侧栏：会话里没记（第一次打开这个项目）时保留默认值 `true`。
+        if let Some(visible) = session.left_sidebar_visible {
+            self.left_sidebar_visible = visible;
+        }
+        // 左右面板的当前视图：稳定 id 认不出时保留当前值（不静默落到某一项）。
+        if let Some(index) = session.top_activity_view {
+            if index < self.activity_items.len() {
+                self.select_top_activity(index, cx);
+            }
+        }
+        if let Some(kind) = session.bottom_kind.as_deref().and_then(bottom_kind_from_id) {
+            self.bottom_kind = kind;
+        }
+        if let Some(visible) = session.bottom_visible {
+            self.bottom_visible = visible;
+        }
+        if let Some(view) = session.right_view.as_deref().and_then(RightToolWindowView::from_id) {
+            self.right_view = view;
+        }
+        if let Some(visible) = session.right_visible {
+            self.right_visible = visible;
+        }
+
+        println!(
+            "S1_WORKSPACE session_applied left_sidebar_visible={} top_activity_view={:?} bottom_kind={} bottom_visible={} right_view={} right_visible={}",
+            self.left_sidebar_visible,
+            self.top_activity_view,
+            self.bottom_kind.id(),
+            self.bottom_visible,
+            self.right_view.id(),
+            self.right_visible
+        );
+        // 恢复出来的右栏视图若已可见，照 `--right-view` 同一条路径排一次懒扫
+        // （不排的话面板会画空态，看起来像"恢复没生效"）。
+        if self.right_visible {
+            self.schedule_right_view_scan(self.right_view, true, cx);
+        }
+        cx.notify();
+    }
+
+    /// `--session-probe`：把"打开若干文件 → 把其中一个设为当前 → 收起侧栏"这段迁移真的
+    /// 走一遍，然后**立刻写一次会话**（**验证/诊断用**）。
+    ///
+    /// ## 为什么必须自己 flush
+    ///
+    /// 真机上"关窗退出"会走 [`ShellWorkspace::flush_session`]（挂在 `on_app_quit` 上），
+    /// 而无人值守环境只能强杀进程 —— 强杀不走那个钩子，防抖窗口里那次改动就丢了。
+    /// 所以探针在打开动作之后显式 `flush_session(true, ..)`：
+    /// 这样"磁盘上那份会话 == 这一段操作的结果"是**当场成立**的，外部脚本可以直接读文件断言。
+    ///
+    /// 走的是与"资源管理器里点文件"完全相同的那条路（[`EditorPane::open`]），
+    /// 被绕开的只有鼠标点击那一段 —— 与 `--menu-probe` / `--right-view` 同一条口径。
+    pub fn session_probe(
+        &mut self,
+        paths: &[PathBuf],
+        active: Option<usize>,
+        hide_sidebar: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for path in paths {
+            let _ = self
+                .editor
+                .update(cx, |pane, cx| pane.open(path, window, cx));
+        }
+        // 当前文件：与用户点标签同一个迁移（`EditorPane::open` 每次都会把新开的设成活动），
+        // 所以"把第 N 个设为当前"只要**再 open 一次**那一个（同路径只切活动标签、不重读盘）。
+        if let Some(index) = active {
+            if let Some(path) = paths.get(index) {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.open(path, window, cx));
+            }
+        }
+        if hide_sidebar {
+            self.left_sidebar_visible = false;
+        }
+        println!(
+            "S1_SESSION_PROBE opened={} active={:?} hide_sidebar={hide_sidebar}",
+            paths.len(),
+            active
+        );
+        // 探针必须显式落盘（理由见方法文档）。
+        self.flush_session(true, cx);
+        cx.notify();
+    }
+
+    /// `--session-assert`：把**恢复之后**的会话状态打成一行可 grep 的证据（**验证/诊断用**）。
+    ///
+    /// 恢复本身在 `ShellWorkspace::new`（构造期）结束时就完成了，所以这一行是对
+    /// "三个文件回来了、当前文件是第二个、侧栏仍是隐藏"这件事的**直接断言**，
+    /// 而不是"再恢复一次"。读的也是**界面上的真实字段**（不是磁盘文件）——
+    /// 这才证明恢复真的落到了界面上。
+    ///
+    /// ## 为什么还要写一个文件
+    ///
+    /// 这两行同时写一份到 `S1_SESSION_ASSERT_FILE` 指到的路径（环境变量，没设就不写）。
+    /// 理由是本轮实测：无人值守脚本用 `Start-Process -RedirectStandardOutput/Error` 抓
+    /// 子进程输出时，**进程被强杀会把块缓冲里的内容一起丢掉** —— 而"窗口开着、脚本读结论、
+    /// 再杀掉"正是这个探针的用法。写文件是唯一不受缓冲影响的取证方式。
+    pub fn session_assert(&self, cx: &App) {
+        let files = self.editor.read(cx).open_disk_files();
+        let active = self.editor.read(cx).active_disk_file();
+        let active_index = active
+            .as_ref()
+            .and_then(|active| files.iter().position(|path| path == active));
+        let headline = format!(
+            "S1_SESSION_ASSERT root={} open={} active_index={:?} active={:?} left_sidebar_visible={} bottom_kind={} bottom_visible={} right_view={} right_visible={} top_activity_view={:?}",
+            self.root.display(),
+            files.len(),
+            active_index,
+            active.as_ref().map(|path| path.display().to_string()),
+            self.left_sidebar_visible,
+            self.bottom_kind.id(),
+            self.bottom_visible,
+            self.right_view.id(),
+            self.right_visible,
+            self.top_activity_view
+        );
+        println!("{headline}");
+        let mut report = format!("{headline}\n");
+        for path in &files {
+            let relative = lithe_gpui_shared::workspace_config::workspace_relative(&self.root, path)
+                .unwrap_or_else(|| path.display().to_string());
+            println!("S1_SESSION_ASSERT file={relative}");
+            report.push_str(&format!("S1_SESSION_ASSERT file={relative}\n"));
+        }
+        if let Some(target) = std::env::var_os("S1_SESSION_ASSERT_FILE") {
+            let target = PathBuf::from(target);
+            // 写失败只留一行诊断：这是验证辅助路径，不该让界面因此出问题。
+            if let Err(error) = std::fs::write(&target, report) {
+                eprintln!(
+                    "S1_SESSION_ASSERT write_failed path={} error={error}",
+                    target.display()
+                );
+            }
+        }
+    }
+
+    /// 会话状态变了：排一次 300ms 防抖写（同窗口里的多次改动合并成一次）。
+    /// 由"开 / 关标签、切标签、切视图、收起侧栏"这些**真的改了会话内容**的路径调用，
+    /// 不是每帧调用：`SessionTracker::plan` 自己会判"内容没变"，没变时连计时器都不排。
+    pub(crate) fn schedule_session_save(&mut self, cx: &mut Context<Self>) {
+        let ui = self.session_ui_state();
+        let plan = {
+            let editor = self.editor.clone();
+            self.session.plan(&editor, ui, cx)
+        };
+        match plan {
+            SessionPlan::Unchanged => {}
+            SessionPlan::ReadOnly => eprintln!(
+                "S1_WORKSPACE_CONFIG session_save_skipped root={} reason=document_version_newer",
+                self.root.display()
+            ),
+            SessionPlan::Debounced(armed) => {
+                // 换掉旧任务 = 取消旧的防抖唤醒（gpui 的 `Task` 一 drop 就取消），
+                // 于是"连点只写一次"这条语义由任务槽与代数**共同**保证。
+                self.session_save_task = Some(cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(
+                            crate::session::SESSION_SAVE_DEBOUNCE_MS,
+                        ))
+                        .await;
+                    // 实体可能已经销毁：`update` 返回 `Err` 时静默忽略，不 panic。
+                    let _ = this.update(cx, |shell, _cx| {
+                        shell.session.flush_if_current(armed);
+                    });
+                }));
+            }
+        }
+    }
+
+    /// 立刻落盘（切换项目前 / 退出前）。`force = true` 时内容没变也写。
+    ///
+    /// ⚠️ **先 `plan` 再 `flush`**：`plan` 才是"把编辑区此刻的状态收进文档"的那一步，
+    /// 少了它写出去的会是上一次 [`Self::schedule_session_save`] 时的快照。
+    pub(crate) fn flush_session(&mut self, force: bool, cx: &mut Context<Self>) {
+        let ui = self.session_ui_state();
+        let editor = self.editor.clone();
+        let plan = self.session.plan(&editor, ui, cx);
+        if matches!(plan, SessionPlan::ReadOnly) {
+            eprintln!(
+                "S1_WORKSPACE_CONFIG session_save_skipped root={} reason=document_version_newer",
+                self.root.display()
+            );
+            return;
+        }
+        let wrote = self.session.flush(force);
+        println!(
+            "S1_WORKSPACE_CONFIG session_flush root={} force={force} wrote={wrote}",
+            self.root.display()
+        );
+    }
+
+    /// 会话文档里的界面部分（外壳那六个值 → [`lithe_gpui_shared::workspace_config::SessionUiState`]）。
+    fn session_ui_state(&self) -> lithe_gpui_shared::workspace_config::SessionUiState {
+        lithe_gpui_shared::workspace_config::SessionUiState {
+            left_sidebar_visible: Some(self.left_sidebar_visible),
+            top_activity_view: self.top_activity_view,
+            bottom_kind: Some(self.bottom_kind.id().to_string()),
+            bottom_visible: Some(self.bottom_visible),
+            right_view: Some(self.right_view.id().to_string()),
+            right_visible: Some(self.right_visible),
+        }
     }
 
     /// 选中左栏**顶部组**的第 `index` 项（项目 / 更改 / 搜索）。
@@ -1682,6 +1979,10 @@ impl ShellWorkspace {
                 diagnose_menu_run(action, "unreachable");
             }
         }
+        // 菜单里那几条视图动作（切换活动侧栏 / 辅助侧栏 / 诊断 / 运行 / 资源管理器…）改的是
+        // 会话文档里的字段，所以在这里统一排一次。**不是每一条都会真的排**：
+        // `SessionTracker::plan` 判"内容没变"就直接返回，缩放、编辑类动作都落在那一支。
+        self.schedule_session_save(cx);
         cx.notify();
     }
 
@@ -1981,6 +2282,9 @@ impl ShellWorkspace {
             }
             CommandId::ToggleMenuBar => crate::menu_bar::toggle_menu_bar(cx),
         }
+        // 命令面板里的视图动作（终端 / Maven 工具窗）同样改会话文档里的字段；
+        // 与 `apply_menu_action` 同一处置（内容没变时 `plan` 不排计时器）。
+        self.schedule_session_save(cx);
         cx.notify();
     }
 
@@ -2511,6 +2815,13 @@ impl ShellWorkspace {
             target.display()
         );
         let old_root = self.root.display().to_string();
+        // ⚠️ **先保存会话，再换根**：`replace_root` 会丢掉旧 `Root` → 旧 `ShellWorkspace`，
+        // 连带丢掉它的 `SessionTracker`（内存里那份会话）。防抖窗口里还没落盘的那次改动
+        // 就在这一步永久消失 —— 所以这里是 `crate::session` 文档里那条"换根前必须先写"的落点。
+        //
+        // 必须在 `replace_root` **之前**（不能在闭包之后）：闭包一执行，`self` 指向的外壳
+        // 已经不再被窗口持有，它的字段随时可能被 drop。
+        self.flush_session(true, cx);
         // 闭包是 `FnOnce`，用这个槽把新建出来的外壳句柄带出来（重建之后它才是所有者）。
         let mut created: Option<Entity<ShellWorkspace>> = None;
         let new_root = window.replace_root(cx, |window, cx| {
@@ -3116,6 +3427,8 @@ impl Render for ShellWorkspace {
                         // 那条副作用只有这样才不会漏。
                         None => this.select_top_activity(index, cx),
                     }
+                    // 活动栏点击同样改会话文档里的字段（顶部组选中 / 底部窗页签与可见性）。
+                    this.schedule_session_save(cx);
                     cx.notify();
                     this.bottom_visible && this.bottom_kind == BottomPaneKind::Terminal
                 });
@@ -3157,6 +3470,8 @@ impl Render for ShellWorkspace {
                     // [`ShellWorkspace::schedule_right_view_scan`] 里，菜单项与 `--right-view` 同源）。
                     this.schedule_right_view_scan(view, visible, cx);
                     diagnose_right_panel(view, visible, point);
+                    // 右栏当前视图 / 可见性也在会话文档里。
+                    this.schedule_session_save(cx);
                     cx.notify();
                 });
             }
@@ -3176,6 +3491,7 @@ impl Render for ShellWorkspace {
                         false,
                         event.mouse_position().map(ProbePoint::from),
                     );
+                    this.schedule_session_save(cx);
                     cx.notify();
                 });
             }

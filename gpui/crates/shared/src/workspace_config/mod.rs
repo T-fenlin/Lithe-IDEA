@@ -6,6 +6,8 @@
 //!   在此之前没有任何具名常量）；
 //! - [`project`]：`.lithe/project.json` 的读写 —— 稳定项目身份（UUID v4），
 //!   没有它时回落到 Core 的路径身份；
+//! - [`session`]：`.lithe/session.local.json` 的读写 —— 会话状态（打开的文件 + 当前文件 +
+//!   侧栏可见性 + 左右面板当前视图 id），本机层、可丢弃，打开的文件有上界；
 //! - [`toolchain`]：工具链五个值的**项目本机层**（`.lithe/run.local.json` 的 `toolchain` 对象
 //!   与 `.lithe/maven.local.json`），以及 `项目本机 > 全局默认 > 自动发现` 的解析；
 //! - [`sharing`]：把"默认不共享"落到磁盘上的两道闸（本机排除文件 + `.lithe/.gitignore`），
@@ -35,6 +37,7 @@
 
 pub mod paths;
 pub mod project;
+pub mod session;
 pub mod sharing;
 pub mod toolchain;
 #[cfg(test)]
@@ -51,6 +54,11 @@ pub use project::{
     PROJECT_MANIFEST_VERSION, ProjectIdentity, ProjectManifest, ProjectManifestState,
     WorkspaceConfigError, load_project_manifest, path_identity, resolve_project_id,
     save_project_manifest,
+};
+pub use session::{
+    MAX_OPEN_FILES, SESSION_DOCUMENT_VERSION, SessionError, SessionFileOutcome, SessionLoaded,
+    SessionSaved, SessionState, SessionUiState, load_session, resolve_session_files, save_session,
+    session_from_paths, session_path,
 };
 pub use sharing::{
     EnsureExcluded, IgnoreFileOutcome, LOCAL_IGNORE_RULES, ShareOutcome, SharingError,

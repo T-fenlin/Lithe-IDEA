@@ -274,10 +274,10 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 - 本机排除"写完必须回读"、失败必须对用户可见 →
   `.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md`
 
-**本文仍然负责的是两件增量**（其中增量 5 的**代码已落地**，见下面的落地记录；本节的决策文本仍然
-是它的真源，直到迁入 `implemented/`）：
+**两件增量的代码都已落地（2026-09-27 本批）**，本节的决策文本仍是它们的真源，
+直到迁入 `implemented/`：
 
-- **增量 5（外观的工作区覆盖层）——已落地（2026-09-27 本批）**：实现落在
+- **增量 5（外观的工作区覆盖层）——已落地**：实现落在
   `gpui/crates/settings/src/workspace.rs`（覆盖层模型、覆盖顺序的**唯一**实现
   `resolve_effective`、来源判定、原子写回）+ `settings/src/store.rs`（分层持有全局层与两层覆盖、
   按"有没有工作区"分流写入、一键改回）+ `settings/src/row.rs` / `dialog.rs`（来源标注与按钮）+
@@ -290,10 +290,25 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
   生效值真的回落到全局值）。**未做**：工作区设置文件的 watcher（打开 / 切换项目时重读是下限）、
   共享层的写入方（"共享此项目的配置"那一批）。完整实现说明、覆盖顺序与验证记录见
   `gpui/PLAN.md` §8.12。
-- **增量 8（会话状态）**：`.lithe/session.local.json` 与 `project.json` 的 `directoryMarks` 都还没有
-  读写方。侦察结论必须约束这一版的范围：今天能持久化的只有**打开的文件 + 当前文件**，以及
-  `ShellWorkspace::left_sidebar_visible`；**gpui 目前没有任何面板/分栏尺寸**可存，也没有调试器
-  （因此没有断点），展开的树节点也不在任何地方被记录。所以第一版按这个事实写，不能照抄草案的字段清单。
+- **增量 8（会话状态）——已落地（2026-09-27 本批）**：`.lithe/session.local.json` 的读写落在
+  `gpui/crates/shared/src/workspace_config/session.rs`（文档模型 + 容错 + 上界 + 相对路径转换，
+  复用 `shared::document` 的 `parse` / `merge_document` / `preserve_unknown` / `save_json` /
+  `tmp_path` / `previous_object`，**没有第二份** version / 未知键 / 原子写实现）+
+  `gpui/crates/workbench/src/session.rs`（装载、恢复、落盘时机）+
+  `workbench/src/workspace.rs`（收集状态、防抖写、换根前与退出前 flush）。
+  **第一版范围严格按今天的实现事实**：只存**打开的文件（工作区相对路径 + `/` 分隔、有上界）+
+  当前文件（下标）+ 侧栏可见性 + 左右面板的当前视图 id 与可见性**。
+  **今天没有宿主的字段一个都没存**：光标与滚动（只在 `EditorState` 内部、无读出口）、
+  展开的树节点（资源管理器不记录展开态）、面板 / 分栏尺寸（gpui 侧没有可拖动分隔条那套状态）、
+  断点与监视表达式（gpui 侧没有调试器）。逐条理由写在 `session.rs` 的模块文档里。
+  `directoryMarks` 那一半**没做**：核实结果是 gpui 侧**根本没有"标记目录"这个交互**
+  （`gpui/crates` 全量搜 `markDirectory` / `标记` / `directoryMarks` 零命中；
+  `gpui/crates/explorer` 的右键菜单至今没实现，模块文档只登记了 `Tree::context_menu`
+  可用；`gpui/crates/workbench/src/menu_bar.rs` 的菜单表里也没有这一项）。
+  按"只建模有消费方的字段"的口径，`ProjectManifest` **不**加 `directoryMarks` 字段 ——
+  加进去就是"写得出、没人读、还得为它写测试"的假契约。
+  完整实现说明与验证记录见 `gpui/PLAN.md` §8.13。
+
 ## 考虑过的备选方案
 
 ### 备选方案一：照 IDEA 只用一个个人文件（`workspace.local.json`）

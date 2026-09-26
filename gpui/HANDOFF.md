@@ -343,6 +343,7 @@
 | `.artifacts/ui-type.ps1` | 键盘/文本注入，`-Ctrl` 组合键 |
 | `.artifacts/p5 … p10/` | 各阶段的验证脚本 + 截图 + `NOTES.md`（**每批的诊断与踩坑都在这里**，接手前值得翻） |
 | `.artifacts/verify-visual.ps1` | 早期 4 配置（深/浅/en/坏主题名）视觉回归；**注意**它的"非灰像素"类判据在正文文字上不可靠（色度伪影） |
+| `.artifacts/session-e2e.ps1` | **会话状态端到端**（增量 8）：在工作区外造一个真 Git 仓库、从工作区外的 exe 副本跑三次（建立会话 → 重启断言恢复 → 删掉当前文件再断言跳过）。断言结果从 `S1_SESSION_ASSERT_FILE` 指的**文件**读（强杀会丢掉被重定向的块缓冲内容） |
 
 坐标换算：**客户区坐标 = 截图坐标 − (客户区屏幕左上 − 窗口矩形原点)**（实测内缩 ≈ (9,0)）。
 
@@ -455,6 +456,19 @@
    一个 `mono_font_size`，"编辑器字号"因此同时作用于终端正文（设置页的描述里写了）。
 7. **平台/环境**：`cargo fmt` 不可用；`verify-rust-core.sh` 需 macOS；`Lithe` 的 release 构建已关掉
    控制台窗口（`#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`）。
+8. **会话状态（增量 8，2026-09-27 本批）**：`.lithe/session.local.json` 已落地
+   （打开的文件 + 当前文件 + 侧栏可见性 + 左右面板视图 id），详细范围、上界、写入时机与
+   验证记录见 `PLAN.md` §8.13。三条要记住的限制：
+   - **`project.json` 的 `directoryMarks` 没做**：gpui 侧根本没有"标记目录"这个交互
+     （`gpui/crates` 全量搜 `markDirectory` / `directoryMarks` / `标记` 零命中；explorer 的右键
+     菜单至今没实现）。要补就得先补最小标记交互，`ProjectManifest` 与
+     `shared/contracts/project-manifest-v1.schema.json` 才会跟着动。
+   - **没有 watcher**：外部手改会话文件要重新打开项目才生效。
+   - **"关窗退出前 flush" 没有端到端取证**：无人值守只能强杀进程（强杀不走 `on_app_quit`），
+     本批的替代证据是探针显式 `flush_session(true)` 后磁盘上确实有文件。
+   - **探针不要挂在窗口帧上**：实测无人值守启动里 `on_next_frame` 一次都不跑；
+     另外**不要在 `application().run(..)` 之后加驻留循环**——它会把 `cx.spawn` 的建窗口任务
+     整个饿死（窗口根本不存在，`Get-Process` 报的 `MainWindowHandle` 其实是控制台窗口）。
 
 ## 6. 文档索引（接手先读这些）
 

@@ -212,6 +212,20 @@ struct Options {
     /// —— 本机工作站锁屏、鼠标注入到不了应用，而"一键改回之后生效值真的回落到全局值"是一条
     /// 必须逐字取证的验收线（工作区外观覆盖的三条缓解措施之一）。
     appearance_revert: Option<String>,
+    /// `--session-probe <文件>[,<文件>]*`：启动后打开这些文件（**验证/诊断用**）。
+    ///
+    /// 见 [`Options::session_assert`] 与 `ShellWorkspace::session_probe`：它走的是与
+    /// "资源管理器里点文件"完全相同的 `EditorPane::open`。
+    session_probe: Option<Vec<PathBuf>>,
+    /// `--session-active <下标>`：配合 `--session-probe`，把第 N 个打开的文件设为当前文件。
+    session_active: Option<usize>,
+    /// `--session-hide-sidebar`：配合 `--session-probe`，把左侧栏收起来。
+    session_hide_sidebar: bool,
+    /// `--session-assert`：把恢复出来的会话状态打成一行可 grep 的断言证据。
+    ///
+    /// 恢复本身发生在 `ShellWorkspace::new`（构造期），所以这个开关只负责"把结果打出来"——
+    /// 存在理由是端到端验证要断言"三个文件回来了、当前文件是第二个、侧栏仍是隐藏"。
+    session_assert: bool,
 }
 
 /// 解析 `<workspace-root> [--theme <id|名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
@@ -256,6 +270,13 @@ fn parse_options() -> Result<Options, String> {
          \x20                     启动后执行一次「改回我的全局外观」（验证/诊断用；键名取外观键的\n\
          \x20                     JSON 名，例如 fontSize / theme；走的是与设置页那个按钮相同的调用）\n\
          \x20 --menu-probe-delay <毫秒>  `--menu-probe` 打开菜单后等多久才执行动作（默认 2500）\n\
+         \x20 --session-probe <文件>[,...]\n\
+         \x20                     启动后打开这些文件（逗号分隔，验证/诊断用；走的是与资源管理器里\n\
+         \x20                     点文件相同的 EditorPane::open），随后立刻写一次会话并可用\n\
+         \x20 --session-active <下标>  --session-probe 打开的文件里把第 N 个设为当前文件（0 起）\n\
+         \x20 --session-hide-sidebar  --session-probe 之后收起左侧栏\n\
+         \x20 --session-assert   首帧之后打印恢复出来的会话状态（验证/诊断用；恢复本身发生在\n\
+         \x20                     构造期，这一行是\"三个文件回来了、当前文件是第二个\"的判据）\n\
          \x20 --palette-keys <串> 启动后按顺序派发一串按键，逗号分隔；可重复给多次 = 多串（验证/诊断用；\n\
          \x20                     例：\"ctrl-shift-p,n,down,enter,escape\"）";
     let mut args = std::env::args().skip(1);
@@ -279,6 +300,10 @@ fn parse_options() -> Result<Options, String> {
     let mut open_project_delay_ms: u64 = 0;
     let mut left_view: Option<String> = None;
     let mut appearance_revert: Option<String> = None;
+    let mut session_probe: Option<Vec<PathBuf>> = None;
+    let mut session_active: Option<usize> = None;
+    let mut session_hide_sidebar = false;
+    let mut session_assert = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -325,6 +350,28 @@ fn parse_options() -> Result<Options, String> {
             }
             "--project-menu-probe" => project_menu_probe = true,
             "--branch-panel-probe" => branch_panel_probe = true,
+            "--session-probe" => {
+                let raw = args.next().ok_or("--session-probe 缺少文件列表")?;
+                let paths: Vec<PathBuf> = raw
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|item| !item.is_empty())
+                    .map(PathBuf::from)
+                    .collect();
+                if paths.is_empty() {
+                    return Err("--session-probe 的文件列表是空的".to_string());
+                }
+                session_probe = Some(paths);
+            }
+            "--session-active" => {
+                let raw = args.next().ok_or("--session-active 缺少下标")?;
+                session_active = Some(
+                    raw.parse::<usize>()
+                        .map_err(|error| format!("--session-active 的 {raw:?} 不是下标：{error}"))?,
+                );
+            }
+            "--session-hide-sidebar" => session_hide_sidebar = true,
+            "--session-assert" => session_assert = true,
             // `--right-view` 只**收下**这串字符，解析成视图放到窗口建好之后的那一段做：
             // 未知 id 要在启动状态还没被改动时报错（见 `main` 里的 `on_next_frame`）。
             "--right-view" => {
@@ -410,6 +457,10 @@ fn parse_options() -> Result<Options, String> {
         open_project_delay_ms,
         left_view,
         appearance_revert,
+        session_probe,
+        session_active,
+        session_hide_sidebar,
+        session_assert,
     })
 }
 
@@ -653,6 +704,10 @@ fn main() {
         open_project_delay_ms,
         left_view,
         appearance_revert,
+        session_probe,
+        session_active,
+        session_hide_sidebar,
+        session_assert,
     } = match parse_options() {
         Ok(options) => options,
         Err(message) => {
@@ -974,6 +1029,32 @@ fn main() {
                             .detach();
                         });
                     }
+                    // `--session-probe` / `--session-assert`：会话的**恢复**已经在
+                    // `ShellWorkspace::new`（构造期）做完了 —— 这里只做两件事：
+                    // ① 探针把"点开三个文件、把第二个设为当前、收起侧栏"这段迁移真的走一遍
+                    //    并立刻 flush（强杀不会走 `on_app_quit` 的补写，所以必须显式写）；
+                    // ② `--session-assert` 把恢复出来的状态打成一行可 grep 的证据。
+                    //
+                    // ⚠️ **不能放进 `window.on_next_frame`**：本轮实测 —— 无人值守启动里
+                    // 帧回调一次都不跑（窗口在、`MainWindowHandle` 非零、`Responding=true`，
+                    // 但探针一行都没有）。所以这一段在**窗口建好之后立刻**执行：那时 `Root`
+                    // 还没建，但它只用编辑区（打开文件）与外壳的几个字段，不碰任何浮层。
+                    if session_probe.is_some() || session_assert {
+                        let _ = workspace.update(cx, |this, cx| {
+                            if let Some(paths) = session_probe.clone() {
+                                this.session_probe(
+                                    &paths,
+                                    session_active,
+                                    session_hide_sidebar,
+                                    window,
+                                    cx,
+                                );
+                            }
+                            if session_assert {
+                                this.session_assert(cx);
+                            }
+                        });
+                    }
                     // `Root` 必须是窗口的第一层：它负责对话框、浮层与通知。
                     let root_entity = cx.new(|cx| Root::new(workspace, window, cx));
 
@@ -1018,5 +1099,13 @@ fn main() {
                 .expect("failed to open window");
             })
             .detach();
+
+            // ⚠️ **这里不能加"驻留循环"**（曾经有一个 `--session-keep-alive`，已删除）：
+            // `application().run(..)` 的 `run` 之后**必须让 `run` 进入事件循环**，上面那次
+            // `cx.spawn`（建窗口的那一段）才会被轮询 —— 本轮实测：在 `main` 里睡一秒的循环
+            // 会把窗口创建任务整个饿死（窗口不存在、`ShellWorkspace::new` 一行都不打、
+            // `Get-Process` 报的 `MainWindowHandle` 其实是进程的控制台窗口）。
+            // 探针的验证改为"由脚本在后台启动 + 轮询磁盘上刚落盘的会话文件"（见
+            // `.artifacts/session-e2e.ps1`），不需要驻留。
         });
 }

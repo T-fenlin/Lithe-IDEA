@@ -127,6 +127,7 @@ pub mod spring;
 pub mod spring_paths;
 pub mod project_tabs;
 pub mod right_tool_window;
+pub mod session;
 pub mod status_bar;
 pub mod title_bar;
 pub mod workspace;

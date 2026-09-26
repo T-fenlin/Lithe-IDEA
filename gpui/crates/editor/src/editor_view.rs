@@ -319,6 +319,23 @@ enum PendingConfirm {
     Reload(usize),
 }
 
+/// 一次会话恢复的结论（给外壳打诊断用，不参与渲染）。
+///
+/// 单独一个类型而不是返回 `usize`：调用方要同时知道"开了哪几个"与"最后停在哪个标签上"，
+/// 而"活动下标"的语义（见 [`EditorPane::restore_session`]）不写明就会被误读成"会话文件里的
+/// 那个下标"——它其实是**恢复之后**的列表下标。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRestore {
+    /// 真的打开（或切到）的磁盘文件，顺序 = 标签顺序。
+    pub opened: Vec<PathBuf>,
+    /// 恢复后活动标签在 [`Self::opened`] 里的下标；`None` = 没有打开任何文件。
+    ///
+    /// 会话里记的下标**越界**时（例如它指向的文件被跳过了）这里的取值：
+    /// - 会话没记活动文件（`None`）→ 第一个文件（`0`）；
+    /// - 会话记了但越界 → 沿用"打开之前那一刻的活动标签"（`open` 的既有语义），而不是硬选第一个。
+    pub active_index: Option<usize>,
+}
+
 /// 编辑区视图：标签栏 + 正文（正文没有活动 buffer 时是空状态）。
 pub struct EditorPane {
     /// 打开的 buffer，顺序就是标签栏里的顺序。
@@ -884,9 +901,87 @@ impl EditorPane {
             .unwrap_or_default()
     }
 
-    /// 当前活动 buffer 的光标位置（**1 基**行列，状态栏的显示口径）。
+    /// 打开着的**磁盘文件**的路径，顺序 = 标签顺序（`jdt://` 虚拟 buffer 不在其中）。
     ///
-    /// 只读：给外壳的状态栏用。外壳通过 `cx.observe(&editor_pane, ..)` 重绘，
+    /// 给外壳的会话落盘用（`.lithe/session.local.json`）：存的是"工作区相对路径"，
+    /// 而相对化要工作区根 —— 那是外壳的参数，不是本视图的，所以这里只交出绝对路径。
+    ///
+    /// **不暴露 `Buffer`**：外壳只需要路径，拿到 `Buffer` 就能改 `EditorState`，
+    /// 那会把"谁拥有编辑器状态"这条边界弄糊（与 [`Self::active_buffer_name`] 同一条口径）。
+    pub fn open_disk_files(&self) -> Vec<PathBuf> {
+        self.buffers
+            .iter()
+            .filter(|buffer| !is_virtual_source_path(&buffer.path))
+            .map(|buffer| buffer.path.clone())
+            .collect()
+    }
+
+    /// 当前活动 buffer 的**磁盘文件**路径；活动 buffer 是虚拟源码或没有活动 buffer 时 `None`。
+    pub fn active_disk_file(&self) -> Option<PathBuf> {
+        self.active
+            .and_then(|index| self.buffers.get(index))
+            .filter(|buffer| !is_virtual_source_path(&buffer.path))
+            .map(|buffer| buffer.path.clone())
+    }
+
+    /// 按会话记下的路径打开一组文件，并在最后切到 `active` 那个下标（会话恢复用）。
+    ///
+    /// 三条语义（都是"恢复不能让用户看见一个残缺的界面"逼出来的）：
+    ///
+    /// - `paths` 里的路径**已经**由调用方（外壳）解析并过滤过磁盘存在性 —— 本视图不再判一遍，
+    ///   免得同一件事有两份实现（判据见 `lithe_gpui_shared::workspace_config::resolve_session_files`）；
+    /// - `active` 指向**过滤之后**的列表下标：被跳过的文件不在 `paths` 里，所以恢复出来的活动
+    ///   标签是"第一个还存在的、位于它之前的那个"或紧随其后的那个（见
+    ///   [`SessionRestore::active_index`] 的文档）；
+    /// - 一个都没开起来时保持不变（空编辑器还是空编辑器）。
+    pub fn restore_session(
+        &mut self,
+        paths: &[PathBuf],
+        active: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> SessionRestore {
+        for path in paths {
+            // `open` 对**已经开着**的路径只切活动标签、不新建 buffer，两种情况都是我们想要的
+            // 结果（会话恢复的语义是"让这些文件都开着"）。
+            self.open(path, window, cx);
+        }
+
+        let opened = self
+            .buffers
+            .iter()
+            .filter(|buffer| paths.contains(&buffer.path))
+            .map(|buffer| buffer.path.clone())
+            .collect::<Vec<_>>();
+        // 活动标签的三段判据：
+        // ① 会话记的下标在恢复出来的列表里 → 用它（这是最常见的一支）；
+        // ② 越界（它指向的文件被跳过了）→ 沿用"打开之前那一刻的活动标签"，与 `open`
+        //    的既有语义一致，不硬选第一个（那会让用户看到光标跳到一个无关的文件上）；
+        // ③ 之前根本没有活动标签（空编辑器）→ 落到第一个。
+        let mut active_index = active
+            .filter(|index| *index < opened.len())
+            .or_else(|| {
+                self.active_disk_file()
+                    .and_then(|path| opened.iter().position(|candidate| *candidate == path))
+            });
+        if active_index.is_none() && active.is_none() && !opened.is_empty() {
+            active_index = Some(0);
+        }
+        if let Some(index) = active_index {
+            if let Some(path) = opened.get(index) {
+                if let Some(position) = self.buffers.iter().position(|buffer| buffer.path == *path) {
+                    self.activate(position, cx);
+                }
+            }
+        }
+
+        SessionRestore {
+            opened,
+            active_index,
+        }
+    }
+
+    /// 当前活动 buffer 的光标位置（**1 基**行列，状态栏的显示口径）。
     /// 而本视图只在位置**真的变了**的时候 `notify`（见 [`Self::sync_cursor`]）。
     pub fn cursor_position(&self, cx: &App) -> CursorPosition {
         self.active

@@ -1331,6 +1331,143 @@ GUI 端到端逐项（`C:\Users\admin\lithe-probe\Lithe.exe`，仓库 `…\e2e-w
 
 ---
 
+### 8.13 会话状态：`.lithe/session.local.json`（增量 8，本批）
+
+**目标**：把"上次打开的文件、当前文件、侧栏与左右面板的当前视图"跨会话带回来，落在
+**项目本机层**（`.lithe/session.local.json`，可丢弃、不进 Git）。
+设计真源是 `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`
+的"实施进度 · 增量 8"。
+
+#### 文件形状（`version = 1`）
+
+```json
+{
+  "openFiles": ["alpha.txt", "beta.txt", "gamma.txt"],
+  "activeFile": 1,
+  "leftSidebarVisible": false,
+  "topActivityView": 0,
+  "bottomKind": "terminal",
+  "bottomVisible": false,
+  "rightView": "maven",
+  "rightVisible": false,
+  "version": 1
+}
+```
+
+两条硬口径：
+
+1. **路径是工作区相对 + `/` 分隔**（共享契约口径），根之外的文件**根本不写进文档** ——
+   本机层同样不许出现机器路径（同一份会话在根被移动后仍然要能用）；
+2. **`activeFile` 是 `openFiles` 的下标**，不是第二份路径（两份数据一旦不一致就没有仲裁者）。
+
+#### 范围：只存今天**真的有宿主**的字段
+
+| 字段 | 今天的持有者 |
+| --- | --- |
+| `openFiles` / `activeFile` | `EditorPane::buffers` / `EditorPane::active` |
+| `leftSidebarVisible` | `ShellWorkspace::left_sidebar_visible` |
+| `topActivityView` / `bottomKind` / `bottomVisible` / `rightView` / `rightVisible` | `ShellWorkspace` 的同名字段 |
+
+**没有宿主、因此一个都没存**（不是"以后再说"，是今天真的没有值可读）：
+
+- **光标与滚动位置**：只在 `EditorState` 内部，编辑器没有读出口；
+- **展开的树节点**：`gpui/crates/explorer` 不记录展开态；
+- **面板 / 分栏尺寸**：gpui 侧没有可拖动分隔条那套状态（`workspace.rs` 的宽度全是常量）；
+- **断点与监视表达式**：gpui 侧没有调试器。
+
+#### 落点与分工
+
+| 位置 | 负责 |
+| --- | --- |
+| `gpui/crates/shared/src/workspace_config/session.rs` | 文档模型、装载（不创建文件）、原子落盘、版本过新只读、容错与逐条判定、上界与截断、相对路径 |
+| `gpui/crates/editor/src/editor_view.rs` | `open_disk_files` / `active_disk_file` / `restore_session`（编辑区自己的状态） |
+| `gpui/crates/workbench/src/session.rs` | 装载、恢复编排（`restore_into`）、防抖状态机与落盘时机 |
+| `gpui/crates/workbench/src/workspace.rs` | 收集外壳状态（`session_ui_state`）、排防抖（`schedule_session_save`）、立刻写（`flush_session`）、换根前 / 退出前 flush |
+| `gpui/crates/app/src/main.rs` | 端到端探针（`--session-probe` / `--session-active` / `--session-hide-sidebar` / `--session-assert`） |
+
+**复用而不是重写**：版本注入、未知键原样保留、`<name>.json.tmp` + rename 原子写全部走
+`shared::document`（`parse` / `merge_document` / `preserve_unknown` / `save_json` /
+`tmp_path` / `previous_object`）。写 `.lithe/` 之前调同一个"确保本机排除"守卫
+（`sharing::ensure_project_dir_excluded`），所以会话文件天然不进 `git status`。
+
+#### 上界（`MAX_OPEN_FILES = 40`）
+
+截断规则（顺序不能改）：按标签顺序留下前 `MAX_OPEN_FILES - 1` 个 → **当前活动文件若不在
+那一段里就追加到最后** → **在截断之后**再算下标。于是文档里的条数恒 ≤ 40，而且当前文件
+**任何情况下都不会被丢掉**（"只开了一个第 40 号标签"的会话恢复之后当前文件必须还在）。
+40 这一档的来历：它对应"一次会话里打开的标签数"这一档量级，目的只是让这份文档有界。
+
+#### 写入时机：两处硬保证 + 一段防抖
+
+| 时机 | 走哪条 |
+| --- | --- |
+| 会话内容变化（开 / 关标签、切标签、切视图、收起侧栏） | 300ms 防抖（`cx.background_executor().timer` + `DebounceState` 代数，连点只写一次） |
+| **切换项目** | `rebuild_project_window` 在 `replace_root` **之前** `flush_session(true, ..)`（换根会丢掉整个旧外壳，防抖窗口里那次改动必须先落盘） |
+| **退出 / 关窗** | `on_app_quit` 钩子 → `flush_session(true, ..)`（与设置文档的 `install_quit_flush` 同一口径） |
+
+写入不阻塞 UI 线程：防抖睡在后台执行器上；两处 `flush` 是**离散动作**（换根、退出），
+写一份几百字节的 JSON 再 rename，与设置文档的 `flush_pending` 同一条量级与理由。
+
+#### 容错
+
+| 情况 | 行为 |
+| --- | --- |
+| 文件不存在 | 默认值，**不创建文件**（读取不得创建文件） |
+| 坏 JSON / 不是对象 | 退化成"没有会话" + 一条 `S1_WORKSPACE_CONFIG session_diagnostic invalid_json …` |
+| 某个键类型坏了 | **那一个键**回落默认值，其余照用（`shared::document` 的逐键路径） |
+| 版本比本程序新 | 能读，**拒绝覆盖**（`session_save_skipped reason=document_version_newer`） |
+| 会话里记的文件被删 / 改名 / 在根外 | **恢复阶段跳过它**（`session_skipped path=… reason=missing|outside_root`），不报错、不崩溃，其余照常恢复 |
+
+#### 验证记录（本批实测，2026-09-27）
+
+命令（`TEMP` 必须指到仓库内的 `.artifacts/alt-tmp`，理由见本文件末尾的测试纪律）：
+
+1. `cargo check --workspace --all-targets` → 成功（只剩 `lithe-gpui-git` / `lithe-gpui-terminal`
+   两条既有 `never used` warning）；
+2. `cargo test --workspace` → **423 passed / 0 failed**（基线 407，本批新增 16 条：
+   `shared` 12 条会话用例 + `workbench` 4 条；`cargo check --workspace --all-targets` 同样通过）；
+3. `./.agents/skills/write-stable-tests/scripts/verify-test-stability.ps1` →
+   `Test stability check passed (added lines, windows).`；
+4. `node scripts/verify-agent-notes.mjs` → `ok: 38 active Agent Note(s) verified`；
+5. **GUI 端到端**（`.artifacts/session-e2e.ps1`，从工作区外的 exe 副本
+   `C:\Users\admin\lithe-probe\Lithe.exe` 跑，根在 `%TEMP%\lithe-session-e2e` 的真 Git 仓库里）：
+
+   - 第一次 `--session-probe alpha,beta,gamma --session-active 1 --session-hide-sidebar`
+     → 磁盘上写出上面那份文档（`openFiles` 三条、`activeFile=1`、`leftSidebarVisible=false`）；
+     同时 `git status --porcelain` **为空**（`.lithe/` 被本机排除挡住）；
+   - 第二次重启 `--session-assert` →
+     `S1_SESSION_ASSERT … open=3 active_index=Some(1) active=…\beta.txt left_sidebar_visible=false`
+     + 三条 `S1_SESSION_ASSERT file=alpha.txt|beta.txt|gamma.txt` —— **三个文件回来了、
+     当前文件是第二个、侧栏仍是隐藏**；
+   - 删掉 `beta.txt` 后第三次重启 → `open=2 active_index=Some(1) active=…\gamma.txt`，
+     只剩 `file=alpha.txt` / `file=gamma.txt`，并且 `session_skipped path=beta.txt reason=missing`
+     —— **跳过被删的那个、不崩、其余照常**；
+   - 全程 `residual_lithe_processes=0`。
+
+#### 未做 / 还欠的
+
+1. **`project.json` 的 `directoryMarks` 没做**：核实结果是 gpui 侧**没有"标记目录"这个交互**
+   —— `gpui/crates` 全量搜 `markDirectory` / `mark_directory` / `directoryMarks` / `标记`
+   零命中；`gpui/crates/explorer` 的右键菜单至今没实现（模块文档只登记了 `Tree::context_menu`
+   可用），`gpui/crates/workbench/src/menu_bar.rs` 的菜单表里也没有这一项。
+   macOS 端有完整的标记目录实现（`macos/Sources/LitheWorkspaceModule`），但那是**另一个产品**，
+   不能当成 gpui 的消费方。按"只建模有消费方的字段"，`ProjectManifest` **不**加这个字段、
+   `shared/contracts/project-manifest-v1.schema.json` **不动**。是否补最小标记交互由维护者决定。
+2. **没有给会话文件加 watcher**：外部手改 `.lithe/session.local.json` 要重新打开项目才生效
+   （与工作区设置文件同一条下限）。
+3. **没有写"退出前 flush 真的生效"的端到端证据**：无人值守环境只能强杀进程，而强杀不走
+   `on_app_quit`。本批的替代证据是探针**显式** `flush_session(true)` 之后磁盘上确实有文件，
+   以及那两处 `flush` 与设置侧已验证过的 `flush_pending` 是同一形状。真机上"关窗再打开"这一条
+   没有在本机取证。
+4. **`--session-probe` / `--session-assert` 是验证入口，不是产品能力**：它们与 `--menu-probe`
+   同一条口径（走的是与用户操作相同的迁移，绕开的只有鼠标点击那一段）。
+5. **探针不能挂在窗口帧上**（实测记录）：最初写成 `window.on_next_frame(..)` 时**一行都不打**
+   ——无人值守启动里帧回调一次都不跑（窗口在、`MainWindowHandle` 非零、`Responding=true`）。
+   相关的一个坑也记在这里：**不要在 `application().run(..)` 之后加驻留循环**，它会把
+   `cx.spawn` 的建窗口任务整个饿死。
+
+---
+
 ## 9. 阶段 9：编辑器完善（A+B+C+E，维护者定稿）
 
 **先读这三条前提事实，避免重复判断**：
