@@ -27,19 +27,28 @@
 //! `None`，于是"设置里选了 JDK、语言服务照旧用自动发现的那个"这种假生效会原样重现。
 //! 所以这里用进程级 `Mutex`（值是 `PathBuf`，天然 `Send + Sync`）。
 //!
-//! ## 三个设置键里为什么只有 JDK 那一个
+//! ## 五个设置键里哪些进这个模块
 //!
-//! 设置页的三个键是 `javaHomePath` / `mavenExecutablePath` / `mavenJavaHomePath`
-//! （键名逐字取自 Core 契约的 toolchain 载荷，`shared/contracts/rust-core-api.md:1625-1627`）。
-//! 本侧**只有第一个有消费方**：
+//! 设置页的五个路径键是 `javaHomePath` / `mavenExecutablePath` / `mavenJavaHomePath` /
+//! `mavenSettingsPath` / `mavenLocalRepositoryPath`（前三个键名逐字取自 Core 契约的 toolchain
+//! 载荷，`shared/contracts/rust-core-api.md:1625-1627`；后两个见 `settings/src/schema.rs`
+//! 的字段文档）。本模块只装**有两个真读者**的那两个：
 //!
 //! - `javaHomePath` → JDT LS 的 JVM 用哪个 JDK 起（[`crate::jdtls::resolve_runtime`]）；
+//! - `mavenSettingsPath` → `mavenContext.settingsPath`（[`crate::workspace::maven_context`]），
+//!   Core 把它发布成 `java.configuration.maven.userSettings`
+//!   （`rust-core-api.md:1170-1178`）—— JDT LS 真的读它。
+//!
+//! 另外三个**故意不放进这个模块**：
+//!
 //! - `mavenExecutablePath` / `mavenJavaHomePath` → **没有任何地方执行 Maven**：
 //!   `maven.scan` 是 Core 进程内的项目描述符解析（不发 `mvn` 子进程），右侧工具窗只呈现
-//!   它的结论（`workbench/src/maven.rs` 的模块文档），gpui 侧也没有 `runConfig.*` 那条通路。
+//!   它的结论（`workbench/src/maven.rs` 的模块文档），gpui 侧也没有 `runConfig.*` 那条通路；
+//! - `mavenLocalRepositoryPath` → 只在 `maven.launchPlan` 里用（`rust-core-api.md:1477-1487`
+//!   的 `-Dmaven.repo.local=`），而那条通路今天同样没有调用方。
 //!
-//! 所以后两个键**故意不放进这个槽**：登记了没人读只会把"存了不生效"从设置页搬到这一层。
-//! 它们仍无消费方这件事如实登记在汇报里；页面上的"尚未生效"标注属于设置 crate 的改动。
+//! 登记了没人读只会把"存了不生效"从设置页搬到这一层，所以这三个键仍然只存在于设置文件里，
+//! 页面上的"尚未生效"标注属于设置 crate 的改动。
 //!
 //! ## 生效时机
 //!
@@ -90,17 +99,46 @@ pub(crate) fn java_home_override() -> Option<PathBuf> {
     slot.as_ref().map(|overridden| overridden.java_home.clone())
 }
 
+/// 宿主要交给语言服务的 Maven 用户 `settings.xml`（设置页 `mavenSettingsPath`）。
+///
+/// 为什么与 [`JavaToolchainOverride`] 分成两个槽：那个结构体回答"用哪个 JVM"，
+/// 这一个回答"用哪份 Maven 用户设置"。两者的读者、形态与生命周期都不同 ——
+/// 前者由 [`crate::jdtls::resolve_runtime`] 读、决定起哪个进程；后者由
+/// [`crate::workspace::maven_context`] 读、只进 `lsp.startServer` 的启动载荷
+/// （`settingsPath`）。硬塞进同一个结构体会让"没有 JDK 覆盖值但选了 settings.xml"
+/// 这种组合变成 `None`，那条设置就白存了。
+static MAVEN_SETTINGS: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// 登记（或清除）Maven 用户 `settings.xml` 覆盖值。由 `workbench` 与 JDK 那一条一起调。
+///
+/// 传 `None` = 没选（用 `maven.scan` 自己给出的那一个）；设置页的「清空」走这条。
+pub fn set_maven_settings_override(settings: Option<PathBuf>) {
+    let mut slot = MAVEN_SETTINGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *slot = settings;
+}
+
+/// 当前登记的 `settings.xml` 路径；`None` = 没选。每次调用都重读。
+pub(crate) fn maven_settings_override() -> Option<PathBuf> {
+    let slot = MAVEN_SETTINGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    slot.clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 清一次槽：本模块的用例会写全局状态，跑完必须还原成"没登记"，
+    /// 清一次两个槽：本模块的用例会写全局状态，跑完必须还原成"没登记"，
     /// 否则同一个测试二进制里之后跑的用例会莫名其妙地带上一个覆盖值。
     struct Cleared;
 
     impl Drop for Cleared {
         fn drop(&mut self) {
             set_java_toolchain_override(None);
+            set_maven_settings_override(None);
         }
     }
 
@@ -120,5 +158,25 @@ mod tests {
 
         set_java_toolchain_override(None);
         assert_eq!(java_home_override(), None);
+    }
+
+    /// `settings.xml` 与 JDK 是**两个独立的槽**：只选 settings.xml（没选 JDK）时它仍然读得到 ——
+    /// 这是"设置里选了 Maven 配置、语言服务却拿不到"的最小回归网（两个值合成一个 `Option`
+    /// 就会在这里失败）。
+    #[test]
+    fn the_maven_settings_slot_is_independent_from_the_jdk_slot() {
+        let _cleared = Cleared;
+        set_java_toolchain_override(None);
+        set_maven_settings_override(None);
+        assert_eq!(maven_settings_override(), None);
+
+        let settings = PathBuf::from("ci-settings.xml");
+        set_maven_settings_override(Some(settings.clone()));
+        assert_eq!(maven_settings_override(), Some(settings));
+        // 只登记了 settings.xml：JDK 那一格仍然是"没选"。
+        assert_eq!(java_home_override(), None);
+
+        set_maven_settings_override(None);
+        assert_eq!(maven_settings_override(), None);
     }
 }

@@ -423,6 +423,10 @@ fn core_error(error: lithe_gpui_shared::CoreError) -> String {
 /// gpui 侧此前**完全没传**（`session.rs` 的 startServer payload 里没有这个字段），这些能力一直空着。
 /// **而且完全不需要我们解析 pom.xml**：`maven.scan` 直接给出 `relativePath` 与 `profiles`。
 ///
+/// `settingsPath` 有两个来源，**设置页选的那份优先**：`mavenSettingsPath` 覆盖值
+/// （`crate::toolchain::maven_settings_override`，由 `workbench` 登记）→ 否则用 `maven.scan`
+/// 给的那一份。用户明确选过就按他选的走，这也正是那个设置键唯一的消费点。
+///
 /// 返回 `None` = 工作区里没有可读的 `pom.xml`（`maven.scan` 明确返回 `null`）：
 /// 那就**不带**这个字段 —— 带一个空 reactor 只会让 Core 去做无意义的校验。
 pub(crate) fn maven_context(root: &Path) -> Option<Value> {
@@ -435,16 +439,23 @@ pub(crate) fn maven_context(root: &Path) -> Option<Value> {
             return None;
         }
     };
-    maven_context_from_scan(&scan)
+    // 设置页选的那份 `settings.xml`（`mavenSettingsPath`）优先于 `maven.scan` 给出的那一份：
+    // 用户明确选过就按他选的走，这是这个覆盖值唯一的消费点。
+    let overridden = crate::toolchain::maven_settings_override();
+    maven_context_from_scan(&scan, overridden.as_deref())
 }
 
 /// 从 `maven.scan` 的响应构造 `mavenContext`（纯函数，便于单测）。
 ///
 /// 只带**有证据的**字段：`reactorPath`（scan 的 `relativePath`）、
-/// `profiles`（scan 的 `profiles[].id`）、`settingsPath`（scan 给了才带）。
+/// `profiles`（scan 的 `profiles[].id`）、`settingsPath`（`settings_override` 优先，
+/// 其次 scan 给了才带）。
 /// `localRepositoryPath` / `mavenExecutablePath` / `javaHomePath` **留空**：
-/// 那属于「项目环境设置」的范围，gpui 侧还没有那个数据源 —— 宁可不传，也不猜一个值。
-fn maven_context_from_scan(scan: &Value) -> Option<Value> {
+/// 那三个字段只有 `maven.launchPlan` / `runConfig.createLaunchPlan` 会读
+/// （`shared/contracts/rust-core-api.md:1477-1487` 的 `-Dmaven.repo.local=` 那一类），
+/// 而 gpui 侧还没有执行 Maven 的通路 —— 宁可不传，也不传一个 JDT LS 读都不读的值
+/// （同一个判据写在 `toolchain.rs` 的模块文档里）。
+fn maven_context_from_scan(scan: &Value, settings_override: Option<&Path>) -> Option<Value> {
     if scan.is_null() {
         return None;
     }
@@ -470,11 +481,16 @@ fn maven_context_from_scan(scan: &Value) -> Option<Value> {
         "profiles": profiles,
         "skipTests": false,
     });
-    if let Some(settings_path) = scan
-        .get("settingsPath")
-        .and_then(Value::as_str)
+    let settings_path = settings_override
+        .map(|path| path.to_string_lossy().to_string())
         .filter(|path| !path.is_empty())
-    {
+        .or_else(|| {
+            scan.get("settingsPath")
+                .and_then(Value::as_str)
+                .filter(|path| !path.is_empty())
+                .map(str::to_string)
+        });
+    if let Some(settings_path) = settings_path {
         context["settingsPath"] = json!(settings_path);
     }
     Some(context)
@@ -487,20 +503,26 @@ mod tests {
     /// 没有 Maven 项目时**不传**这个字段（`maven.scan` 给 `null`）。
     #[test]
     fn no_scan_result_means_no_context() {
-        assert!(maven_context_from_scan(&Value::Null).is_none());
+        assert!(maven_context_from_scan(&Value::Null, None).is_none());
+        // 就算选了 `settings.xml`，没有 Maven 项目也**不带**这个字段：
+        // 空 reactor 只会让 Core 去做无意义的校验。
+        assert!(maven_context_from_scan(&Value::Null, Some(Path::new("ci.xml"))).is_none());
     }
 
     /// 根 pom：`reactorPath` 是 `.`，profiles 取 `id`，`settingsPath` 原样带过去。
     #[test]
     fn root_project_maps_to_a_versioned_context() {
-        let context = maven_context_from_scan(&json!({
-            "relativePath": ".",
-            "groupId": "demo",
-            "artifactId": "lite-fixture",
-            "profiles": [{ "id": "dev" }, { "id": "prod" }],
-            "settingsPath": "/home/u/.m2/settings.xml",
-            "modules": []
-        }))
+        let context = maven_context_from_scan(
+            &json!({
+                "relativePath": ".",
+                "groupId": "demo",
+                "artifactId": "lite-fixture",
+                "profiles": [{ "id": "dev" }, { "id": "prod" }],
+                "settingsPath": "/home/u/.m2/settings.xml",
+                "modules": []
+            }),
+            None,
+        )
         .expect("有 relativePath 就是 Maven 项目");
         assert_eq!(context["version"], 1);
         assert_eq!(context["reactorPath"], ".");
@@ -512,13 +534,42 @@ mod tests {
         assert!(context.get("mavenExecutablePath").is_none());
     }
 
+    /// 设置页选了 `settings.xml` → **覆盖** `maven.scan` 给的那一份（这是 `mavenSettingsPath`
+    /// 唯一的生效路径）；scan 没给而覆盖值给了时也要带上。
+    #[test]
+    fn a_selected_settings_file_overrides_the_scanned_one() {
+        let scanned = json!({
+            "relativePath": ".",
+            "profiles": [],
+            "settingsPath": "/home/u/.m2/settings.xml"
+        });
+        let context = maven_context_from_scan(&scanned, Some(Path::new("D:/ci/settings.xml")))
+            .expect("有 relativePath 就是 Maven 项目");
+        assert_eq!(
+            context["settingsPath"],
+            json!(Path::new("D:/ci/settings.xml").to_string_lossy())
+        );
+
+        // scan 没给 settingsPath、覆盖值给了 → 仍然带上（覆盖值本身就是数据源）。
+        let without = json!({ "relativePath": "projects/demo", "profiles": [] });
+        let context = maven_context_from_scan(&without, Some(Path::new("D:/ci/settings.xml")))
+            .expect("子模块也是 Maven 项目");
+        assert_eq!(
+            context["settingsPath"],
+            json!(Path::new("D:/ci/settings.xml").to_string_lossy())
+        );
+    }
+
     /// 子模块 reactor：`relativePath` 原样作为 `reactorPath`；没有 profiles 时给空表。
     #[test]
     fn nested_reactor_and_empty_profiles() {
-        let context = maven_context_from_scan(&json!({
-            "relativePath": "projects/demo",
-            "profiles": []
-        }))
+        let context = maven_context_from_scan(
+            &json!({
+                "relativePath": "projects/demo",
+                "profiles": []
+            }),
+            None,
+        )
         .expect("子模块也是 Maven 项目");
         assert_eq!(context["reactorPath"], "projects/demo");
         assert_eq!(context["profiles"], json!([]));

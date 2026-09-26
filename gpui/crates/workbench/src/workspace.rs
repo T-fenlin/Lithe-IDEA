@@ -3446,10 +3446,11 @@ fn right_activity_items() -> Vec<ActivityItem> {
 
 /// 设置里的 `javaHomePath` → `lithe-gpui-java` 要的 JDK 覆盖值（**纯函数**，便于单测）。
 ///
-/// **只读 `javaHomePath`**：另外两个键（`mavenExecutablePath` / `mavenJavaHomePath`）在 gpui 侧
-/// 没有任何消费方 —— `maven.scan` 是 Core 进程内的项目描述符解析，本侧不执行 `mvn`
+/// **只读 `javaHomePath`**：另外两个工具链键（`mavenExecutablePath` / `mavenJavaHomePath`）
+/// 在 gpui 侧没有任何消费方 —— `maven.scan` 是 Core 进程内的项目描述符解析，本侧不执行 `mvn`
 /// （见 `lithe_gpui_java::toolchain` 的模块文档）。登记了没人读只会把"存了不生效"从设置页
-/// 搬到这一层，所以这里不登记它们。
+/// 搬到这一层，所以这里不登记它们。`mavenSettingsPath` 有真消费方，走它自己那条
+/// [`maven_settings_override_from`]（同一个登记函数里一起交给语言服务）。
 ///
 /// 空串 / 全空白等于"没选"（设置页的「清空」写的就是空串，照 `settings/src/project.rs`
 /// 的 `non_empty_opt` 同一条口径）；有值时去掉前后空白再转成路径。
@@ -3462,22 +3463,44 @@ fn java_toolchain_override_from(
     })
 }
 
-/// 把设置里的 JDK 覆盖值登记给语言服务（调用点见 `ShellWorkspace::new`）。
+/// 设置里的 `mavenSettingsPath` → 语言服务要的 Maven 用户 `settings.xml`（**纯函数**，便于单测）。
 ///
-/// 判据全在 [`java_toolchain_override_from`] 里；这里只做"读设置 → 登记"与一行启动证据。
+/// 这个键与 JDK 那一条**同等真实**：它进 `mavenContext.settingsPath`，Core 发布成
+/// `java.configuration.maven.userSettings`（`shared/contracts/rust-core-api.md:1170-1178`）。
+/// 判据与 [`java_toolchain_override_from`] 逐字相同（空 / 全空白 = 没选）。
+///
+/// `mavenLocalRepositoryPath` 仍不在这里：它只在 `maven.launchPlan` 里用，今天是死值
+/// （见 `lithe_gpui_java::toolchain` 的模块文档）。
+fn maven_settings_override_from(settings: &lithe_gpui_settings::Settings) -> Option<PathBuf> {
+    let trimmed = settings.maven_settings_path.trim();
+    (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
+}
+
+/// 把设置里的 JDK 与 Maven `settings.xml` 覆盖值登记给语言服务（调用点见 `ShellWorkspace::new`）。
+///
+/// 判据全在两个 `*_from` 里；这里只做"读设置 → 登记"与一行启动证据。
 /// 设置状态不存在时（测试或别的宿主里没有 `SettingsStore`）登记 `None` = 纯自动发现，
 /// 与 `try_store` 在别处"没有设置就回落默认值"的口径一致，不 panic。
 fn register_java_toolchain(cx: &App) {
-    let overridden = lithe_gpui_settings::try_store(cx)
-        .and_then(|store| java_toolchain_override_from(store.read(cx).settings()));
+    let settings = lithe_gpui_settings::try_store(cx)
+        .map(|store| store.read(cx).settings().clone());
+    let overridden = settings
+        .as_ref()
+        .and_then(java_toolchain_override_from);
+    let maven_settings = settings.as_ref().and_then(maven_settings_override_from);
     println!(
-        "S1_SETTINGS wiring=java_toolchain java_home_path={}",
+        "S1_SETTINGS wiring=java_toolchain java_home_path={} maven_settings_path={}",
         overridden
             .as_ref()
             .map(|overridden| overridden.java_home.display().to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        maven_settings
+            .as_ref()
+            .map(|path| path.display().to_string())
             .unwrap_or_else(|| "-".to_string())
     );
     lithe_gpui_java::set_java_toolchain_override(overridden);
+    lithe_gpui_java::set_maven_settings_override(maven_settings);
 }
 
 #[cfg(test)]
@@ -3673,6 +3696,33 @@ mod tests {
             std::path::PathBuf::from("C:\\tools\\jdk-21"),
             "前后空白必须去掉（带空白的路径会被 java 侧判成无效）"
         );
+    }
+
+    /// `mavenSettingsPath` 同样"空 = 没选"，且**与 JDK 那一条互不依赖**：
+    /// 只填 Maven 配置（不填 JDK）时它照样要送到语言服务 —— 合成一个 `Option`
+    /// 会让"选了 settings.xml 但没选 JDK"这条最常见的用法静默失效。
+    #[test]
+    fn maven_settings_override_follows_its_own_key() {
+        use lithe_gpui_settings::Settings;
+
+        let mut settings = Settings::default();
+        assert_eq!(super::maven_settings_override_from(&settings), None);
+
+        settings.maven_settings_path = "  \t".to_string();
+        assert_eq!(
+            super::maven_settings_override_from(&settings),
+            None,
+            "全空白等于没选（否则会拿空路径去当 settings.xml）"
+        );
+
+        settings.maven_settings_path = " D:\\ci\\settings.xml ".to_string();
+        assert_eq!(
+            super::maven_settings_override_from(&settings),
+            Some(std::path::PathBuf::from("D:\\ci\\settings.xml")),
+            "前后空白必须去掉"
+        );
+        // 同一个设置里 JDK 还是"没选"：两条判据互不影响。
+        assert_eq!(super::java_toolchain_override_from(&settings), None);
     }
 
     /// 深色配色下的朝向快照（其余字段取默认可见状态，避免测试里到处写一遍）。
