@@ -460,6 +460,26 @@ mod tests {
                 "lithe.settings.gpui.runNotWired",
                 "点击启动尚未接入：gpui 侧还没有运行面板与进程宿主，「运行」工具窗与「运行」菜单目前都是占位。Core 的 runConfig.createLaunchPlan（平台无关的启动计划）已经能给出计划，但还没有消费方。",
             ),
+            // 「项目 · JDK 与 Maven」页的路径选择按钮 + Maven 配置那两行的提示与生效说明
+            // （5 条，都由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里：真源那颗按钮是纯图标且
+            // 没有这两行的说明）。
+            ("lithe.settings.gpui.pickPath", "选择…"),
+            (
+                "lithe.settings.gpui.mavenSettingsHint",
+                "留空则用检测到的那一份：用户目录的 .m2/settings.xml 优先，其次 Maven 安装目录的 conf/settings.xml。",
+            ),
+            (
+                "lithe.settings.gpui.mavenSettingsEffective",
+                "生效：下一次语言服务启动时作为 Maven 用户设置交给 Java 语言服务。",
+            ),
+            (
+                "lithe.settings.gpui.mavenLocalRepositoryHint",
+                "留空则用生效 settings.xml 里的 <localRepository>；没写就是 Maven 默认位置 ~/.m2/repository。",
+            ),
+            (
+                "lithe.settings.gpui.overridePathMissing",
+                "这个路径不存在；留空会回到自动检测。",
+            ),
             // 阶段 9 的编辑器侧（3 条，同样由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里）。
             ("lithe.editor.gpui.discardChanges", "放弃修改"),
             (

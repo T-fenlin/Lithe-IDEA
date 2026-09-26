@@ -290,6 +290,41 @@ const GPUI_ONLY_KEYS = [
     reason: "「更新」页的前置条件（同 pageNotAvailableTitle）；gpui 侧没有更新器。",
   },
   {
+    key: "settings.gpui.pickPath",
+    zh: "选择…",
+    en: "Choose…",
+    reason:
+      "「项目 · JDK 与 Maven」页每一行路径右侧的按钮（打开系统目录/文件对话框）。真源那颗按钮是**纯图标**（project-environment-settings.tsx:243-260 的 Button size=\"icon-sm\" + aria-label={t(\"ui.browse\")}），而 design-guides.md 的无障碍清单要求「图标按钮必须有可访问名」—— gpui 的 Button 没有可访问名接口，所以只能画带字的按钮；又按 design-guides.md 的省略号规则（打开对话框的命令补单个省略号）写成「选择…」。真源既有的 lithe.ui.browse（「浏览」）不带省略号，且那份文案由本脚本逐字同步、不能改。对象名由同一行的字段标签给出，按钮不重复它。",
+  },
+  {
+    key: "settings.gpui.mavenSettingsHint",
+    zh: "留空则用检测到的那一份：用户目录的 .m2/settings.xml 优先，其次 Maven 安装目录的 conf/settings.xml。",
+    en: "Leave empty to use the detected file: .m2/settings.xml in your home directory first, then conf/settings.xml in the Maven installation.",
+    reason:
+      "「项目 · JDK 与 Maven」页 Maven 配置那一行（settings.xml）的提示。真源那一行只有 placeholder t(\"maven.automatic\")（「自动检测」），没有说明它到底会挑哪一份；gpui 侧的探测真的按这两级找（project.rs 的 maven_configuration），所以如实写出来。",
+  },
+  {
+    key: "settings.gpui.mavenSettingsEffective",
+    zh: "生效：下一次语言服务启动时作为 Maven 用户设置交给 Java 语言服务。",
+    en: "Applies: takes effect on the next language-service start, as the Maven user settings for the Java language service.",
+    reason:
+      "同上那一行的生效说明。事实依据：这个值经 JavaToolchainOverride → mavenContext.settingsPath → Core 发布成 java.configuration.maven.userSettings（contracts/rust-core-api.md:1170-1178），时机与 javaHomePath 相同（下一次语言服务启动，今天是重启应用）。真源没有这条 —— 它写进项目级文档、由运行侧的 Maven 工具窗消费。",
+  },
+  {
+    key: "settings.gpui.mavenLocalRepositoryHint",
+    zh: "留空则用生效 settings.xml 里的 <localRepository>；没写就是 Maven 默认位置 ~/.m2/repository。",
+    en: "Leave empty to use <localRepository> from the effective settings.xml; when absent, Maven's default ~/.m2/repository.",
+    reason:
+      "「项目 · JDK 与 Maven」页本地仓库那一行的提示（判据同 mavenSettingsHint）。真源同一行只有 placeholder t(\"maven.automatic\")。",
+  },
+  {
+    key: "settings.gpui.overridePathMissing",
+    zh: "这个路径不存在；留空会回到自动检测。",
+    en: "This path does not exist; clearing the field returns to automatic detection.",
+    reason:
+      "同上两行的失败态：用户选的 settings.xml / 本地仓库不是一个存在的文件时标出来（判据是 project.rs 的 override_settings_missing）。真源没有这条 —— 它的输入框不做存在性检查；本侧这两行会被交给语言服务，指错了必须当场说清，不能看起来像已生效。",
+  },
+  {
     key: "spring.title",
     zh: "Spring",
     en: "Spring",

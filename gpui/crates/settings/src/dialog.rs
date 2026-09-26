@@ -54,8 +54,8 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AbsoluteLength, Anchor, App, AppContext as _, Context, ElementId, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
+    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
     prelude::FluentBuilder as _, rems,
 };
 
@@ -674,6 +674,93 @@ fn source_label(source: ToolSource) -> SharedString {
     }
 }
 
+/// 一行「项目」页草稿输入框的当前值（去首尾空白）。
+///
+/// 「保存」那一段五个框走同一条口径：空 / 全空白 = 没选（`settings/src/project.rs` 的
+/// `non_empty_opt`、`maven_configuration` 都是这个判据），所以空白必须在**写入设置之前**
+/// 就抹掉，否则设置文件里会存一串空格、探测层再把它当"选了某个空路径"。
+fn draft_value(input: &Entity<InputState>, cx: &App) -> String {
+    input.read(cx).value().trim().to_string()
+}
+
+/// Maven 配置那一行（`settings.xml` / 本地仓库）的「生效值」：主行 + 是否失败色 + 说明。
+///
+/// **判定与画分开**：这一层只把 [`ProjectEnvironment`] 已有的事实翻成一句话，不重算路径
+/// （重算就会与 `project.rs` 的探测漂移）。四条判据：
+///
+/// 1. **选了 `settings.xml` 但它不是一个文件** → 失败色 + 「这个路径不存在」（能不能生效
+///    由存在性决定，不能让一个不存在的路径看起来像已生效）；
+/// 2. **选了 `settings.xml` 且存在** → 正常色 + 「生效：交给 Java 语言服务」；
+/// 3. **没选** → 报检测到的那一份：用户级优先，安装级那份只在**与生效值不同**时单列
+///    （用户级不存在时生效值就是安装级，再列一次是重复 —— 旧版只读行也是这个口径）；
+/// 4. **本地仓库没有覆盖值** → 报推导值 + 来源；**有覆盖值** → 报它并**如实标注尚未生效**
+///    （Maven 执行通路还没有，判据见 `schema.rs` 的 `maven_local_repository_path` 文档）。
+fn maven_config_effective(
+    field: MavenConfigField,
+    environment: Option<&ProjectEnvironment>,
+) -> EffectiveLine {
+    let Some(environment) = environment else {
+        return EffectiveLine {
+            text: tr("lithe.toolchain.detecting"),
+            is_error: false,
+            detail: None,
+        };
+    };
+    let config = &environment.maven_config;
+
+    match field {
+        MavenConfigField::SettingsXml => match config.effective_settings() {
+            Some(path) if config.override_settings_missing => EffectiveLine {
+                text: SharedString::from(path.to_string()),
+                is_error: true,
+                detail: Some(tr("lithe.settings.gpui.overridePathMissing")),
+            },
+            Some(path) if config.settings_is_overridden() => EffectiveLine {
+                text: SharedString::from(path.to_string()),
+                is_error: false,
+                detail: Some(tr("lithe.settings.gpui.mavenSettingsEffective")),
+            },
+            Some(path) => EffectiveLine {
+                text: SharedString::from(path.to_string()),
+                is_error: false,
+                detail: config
+                    .installation_settings
+                    .as_deref()
+                    .filter(|installation| *installation != path)
+                    .map(SharedString::from),
+            },
+            None => EffectiveLine {
+                text: tr("lithe.settings.gpui.mavenSettingsMissing"),
+                is_error: true,
+                detail: None,
+            },
+        },
+        MavenConfigField::LocalRepository => {
+            let overridden = environment.overrides.maven_local_repository.trim();
+            if !overridden.is_empty() {
+                return EffectiveLine {
+                    text: SharedString::from(overridden.to_string()),
+                    is_error: false,
+                    detail: Some(tr("lithe.settings.gpui.mavenOverrideNotEffective")),
+                };
+            }
+            match config.local_repository.as_ref() {
+                Some(repository) => EffectiveLine {
+                    text: SharedString::from(repository.path.clone()),
+                    is_error: false,
+                    // 这一份是怎么来的：settings.xml 里写的，还是 Maven 的默认位置。
+                    detail: Some(tr(repository.source.label_key())),
+                },
+                None => EffectiveLine {
+                    text: tr("lithe.settings.gpui.mavenLocalRepositoryUnknown"),
+                    is_error: true,
+                    detail: None,
+                },
+            }
+        }
+    }
+}
+
 /// 「运行配置」页里的一句整页级提示（无项目 / 没有识别到可运行配置）。
 ///
 /// 用 `foreground` 而不是失败色：这两种都是**如实结论**，不是错误
@@ -852,6 +939,70 @@ impl ProjectField {
     }
 }
 
+/// 「项目 · JDK 与 Maven」页里 **Maven 自己那份配置**的两个可覆盖字段（本批新增）。
+///
+/// 与 [`ProjectField`] 分开的原因：那三个走"探测一个工具链"那条判定
+/// （[`EffectiveToolchain`]，`Resolved` / `Unusable` / `NotFound` 三态），
+/// 这两个走"用哪份 settings.xml、哪个本地仓库"（[`crate::project::MavenConfiguration`]），
+/// 形状、判定与消费方都不同 —— 塞进同一个枚举会让每个 `match` 都要写"这一支不可能"。
+///
+/// 顺序即页面顺序（真源 `project-environment-settings.tsx:287-314` 也是 settings.xml → 本地仓库）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MavenConfigField {
+    /// 用户 `settings.xml`（真源同名项目级字段 `maven.settingsPath`）。
+    SettingsXml,
+    /// 本地仓库（真源 `maven.localRepositoryPath`）。
+    LocalRepository,
+}
+
+impl MavenConfigField {
+    /// 页面顺序。
+    const ALL: [MavenConfigField; 2] = [Self::SettingsXml, Self::LocalRepository];
+
+    /// 诊断行 / 元素 id 里的稳定 token。
+    fn id(self) -> &'static str {
+        match self {
+            Self::SettingsXml => "settings_xml",
+            Self::LocalRepository => "local_repository",
+        }
+    }
+
+    /// 元素 id 用的序号。
+    fn index(self) -> usize {
+        match self {
+            Self::SettingsXml => 0,
+            Self::LocalRepository => 1,
+        }
+    }
+
+    /// 行标签。
+    ///
+    /// `settings.xml` 是**文件名**（代码标识符，不是文案，所以不走 i18n —— 真源同一行也是
+    /// 字面量，`project-environment-settings.tsx:290`）；本地仓库用真源既有键。
+    fn label(self) -> SharedString {
+        match self {
+            Self::SettingsXml => SharedString::from("settings.xml"),
+            Self::LocalRepository => tr("lithe.maven.localRepository"),
+        }
+    }
+
+    /// 行提示（两条都是 gpui 侧新增键：真源只有 placeholder「自动检测」，没有说明会挑哪一份）。
+    fn hint_key(self) -> &'static str {
+        match self {
+            Self::SettingsXml => "lithe.settings.gpui.mavenSettingsHint",
+            Self::LocalRepository => "lithe.settings.gpui.mavenLocalRepositoryHint",
+        }
+    }
+
+    /// 系统对话框里选**文件**还是**目录**。
+    ///
+    /// 照真源 `:305` 的 `choose(key !== "settingsPath", …)`：`settings.xml` 是文件，
+    /// 本地仓库是目录。
+    fn picks_file(self) -> bool {
+        matches!(self, Self::SettingsXml)
+    }
+}
+
 /// 「Git」页里「保存」按钮可不可点的**纯判据**（不碰 `App`，所以可以直接单测）。
 ///
 /// 四个禁用条件逐条照真源 `git-identity-settings.tsx:133-139`：
@@ -894,11 +1045,15 @@ pub struct SettingsDialog {
     git_name_input: Entity<InputState>,
     git_email_input: Entity<InputState>,
     git: GitPageState,
-    /// 「项目 · JDK 与 Maven」页的三个覆盖值输入框（阶段 16）。值是**草稿**：
+    /// 「项目 · JDK 与 Maven」页的五个覆盖值输入框（阶段 16 + 本批的 Maven 配置两行）。值是**草稿**：
     /// 只有点「保存」才写进设置文件并重新探测（与真源的显式保存同一条口径）。
     java_home_input: Entity<InputState>,
     maven_executable_input: Entity<InputState>,
     maven_java_home_input: Entity<InputState>,
+    /// Maven 用户 `settings.xml`（`mavenSettingsPath`）。
+    maven_settings_input: Entity<InputState>,
+    /// Maven 本地仓库（`mavenLocalRepositoryPath`）。
+    maven_local_repository_input: Entity<InputState>,
     /// 「项目」页的运行期状态（探测结论）。
     project: ProjectPageState,
     /// 「运行配置」页的运行期状态（Core 识别出的启动目标）。
@@ -942,7 +1097,7 @@ impl SettingsDialog {
         let git_name_input = cx.new(|cx| InputState::new(window, cx));
         let git_email_input = cx.new(|cx| InputState::new(window, cx));
 
-        // 「项目」页的三个覆盖值输入框：初值 = 设置文件里已经保存的值（真源也是拿
+        // 「项目」页的五个覆盖值输入框：初值 = 设置文件里已经保存的值（真源也是拿
         // `inspected.toolchain` 填输入框，`project-environment-settings.tsx:52-76`）。
         // 它们同样是**草稿**：改动只重绘，写入发生在「保存」被点的那一刻。
         let java_home_input =
@@ -952,6 +1107,12 @@ impl SettingsDialog {
         });
         let maven_java_home_input = cx.new(|cx| {
             InputState::new(window, cx).default_value(saved.maven_java_home_path.clone())
+        });
+        let maven_settings_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(saved.maven_settings_path.clone())
+        });
+        let maven_local_repository_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(saved.maven_local_repository_path.clone())
         });
 
         let mut subscriptions = Vec::new();
@@ -1010,13 +1171,15 @@ impl SettingsDialog {
             ));
         }
 
-        // 「项目」页的三个覆盖值输入框：**只重绘**（「保存」按钮的可点性跟着草稿走），
+        // 「项目」页的五个覆盖值输入框：**只重绘**（「保存」按钮的可点性跟着草稿走），
         // 不写任何东西 —— 与上面两个 Git 输入框同一条理由：它们是草稿，
         // 写入发生在「保存」被点的那一刻（真源同样是显式保存）。
         for input in [
             &java_home_input,
             &maven_executable_input,
             &maven_java_home_input,
+            &maven_settings_input,
+            &maven_local_repository_input,
         ] {
             subscriptions.push(cx.subscribe_in(
                 input,
@@ -1040,6 +1203,8 @@ impl SettingsDialog {
             java_home_input,
             maven_executable_input,
             maven_java_home_input,
+            maven_settings_input,
+            maven_local_repository_input,
             project: ProjectPageState::new(),
             run: RunPageState::new(),
             _subscriptions: subscriptions,
@@ -2062,11 +2227,144 @@ impl SettingsDialog {
         }
     }
 
+    /// Maven 配置那两行的输入框。
+    fn maven_config_input(&self, field: MavenConfigField) -> &Entity<InputState> {
+        match field {
+            MavenConfigField::SettingsXml => &self.maven_settings_input,
+            MavenConfigField::LocalRepository => &self.maven_local_repository_input,
+        }
+    }
+
+    /// 「选择…」（工具链那三行）：系统对话框挑一个**目录**。
+    ///
+    /// 三个字段都为目录：真源同一处的 `choose(true, …)` 就是 `directory: true`
+    /// （`project-environment-settings.tsx:197-260`）；`javaHomePath` 也允许直接填
+    /// `java` 可执行文件（探测层认），但**挑**的时候给目录 —— 允许两者会让
+    /// `IFileOpenDialog` 的行为在平台上不一致。
+    fn project_pick_toolchain(
+        &self,
+        field: ProjectField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.project_pick(
+            self.project_field_input(field).clone(),
+            false,
+            tr(field.label_key()),
+            field.id(),
+            window,
+            cx,
+        );
+    }
+
+    /// 「选择…」（Maven 配置那两行）：`settings.xml` 挑文件、本地仓库挑目录。
+    fn project_pick_maven_config(
+        &self,
+        field: MavenConfigField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.project_pick(
+            self.maven_config_input(field).clone(),
+            field.picks_file(),
+            field.label(),
+            field.id(),
+            window,
+            cx,
+        );
+    }
+
+    /// 五个「选择…」按钮的公共实现：开系统对话框 → 把选中的路径写进这一行的**草稿**。
+    ///
+    /// 用 gpui **自带**的 `App::prompt_for_paths`（`gpui-pre-0.3.6/src/app.rs:1687-1692`；
+    /// Windows 实现是真的 `IFileOpenDialog`，跑在专用线程上，本线程只拿一个 `Receiver` 就返回），
+    /// 零新增依赖 —— 与「文件 → 打开文件夹」是同一条通路（`workbench/src/workspace.rs` 的
+    /// `ShellWorkspace::open_project_picker`）。
+    ///
+    /// ⚠️ 本页早先的注释写"gpui 侧没有文件对话框依赖"，那是**不完整**的结论
+    /// （`project_menu.rs:108-113` 只查了 `rfd` / `tinyfiledialogs` / `native-dialog` 三个 crate，
+    /// 漏了 gpui 自带的这一条；`workspace.rs:1740-1743` 已经推翻过它）。
+    ///
+    /// 写入的只是草稿：真正落盘仍由「保存」负责（与真源"选择器只写 draft"一致）。
+    /// 选完打一行 `S1_SETTINGS_PROJECT run=pick …`，与 `discover` 的数据行、`run=save` 合起来
+    /// 就能回答"这个路径是手打、挑来的还是探测到的"。
+    fn project_pick(
+        &self,
+        input: Entity<InputState>,
+        files: bool,
+        label: SharedString,
+        target: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files,
+            // 文件与目录**互斥**：`files` 为真时只选文件（`settings.xml`），否则只选目录。
+            directories: !files,
+            // 单选：每一行只有一个路径，多选没有语义（真源同样是 `multiple: false`）。
+            multiple: false,
+            prompt: Some(label),
+        });
+        cx.spawn_in(window, async move |this, async_cx| {
+            // 两层 `Result`：外层是 oneshot 通道（送信端被丢），内层是平台侧的错误
+            // （Linux 打不开选择器时会给）。两者都不是"用户取消"，所以各自打一行。
+            let result = match picked.await {
+                Ok(Ok(result)) => result,
+                Ok(Err(error)) => {
+                    eprintln!(
+                        "S1_SETTINGS_PROJECT run=pick target={target} state=failed error={error}"
+                    );
+                    return;
+                }
+                Err(_) => {
+                    eprintln!(
+                        "S1_SETTINGS_PROJECT run=pick target={target} state=cancelled reason=channel-closed"
+                    );
+                    return;
+                }
+            };
+            let Some(path) = result.and_then(|paths| paths.into_iter().next()) else {
+                eprintln!("S1_SETTINGS_PROJECT run=pick target={target} state=cancelled");
+                return;
+            };
+            let value = path.to_string_lossy().to_string();
+            println!("S1_SETTINGS_PROJECT run=pick target={target} state=picked path={value}");
+            // 选中之后照常是**草稿**：与手打一个字符等价，只是省掉粘贴。
+            let _ = async_cx.update(move |window, cx| {
+                let _ = this.update(cx, |this, cx| {
+                    input.update(cx, |input, cx| {
+                        input.set_value(SharedString::from(value), window, cx);
+                    });
+                    this.project.saved = false;
+                    cx.notify();
+                });
+            });
+        })
+        // `detach()` 而不是丢掉：gpui 的 `Task` 一 drop 就**取消**（选择器刚打开就被取消）。
+        .detach();
+    }
+
     /// 「清空」：把这一行的覆盖值草稿置空 = 回到自动检测（真源 `:261-273` 的「清除」）。
     ///
     /// 只清草稿，不写设置：写入仍由「保存」负责 —— 与真源"清除按钮改的是同一个 draft"一致。
     fn project_clear(&mut self, field: ProjectField, window: &mut Window, cx: &mut Context<Self>) {
         let input = self.project_field_input(field).clone();
+        input.update(cx, |input, cx| {
+            input.set_value(SharedString::from(""), window, cx);
+        });
+        self.project.saved = false;
+        self.project_diagnose(&format!("run=clear field={}", field.id()));
+        cx.notify();
+    }
+
+    /// 「清空」（Maven 配置那两行）：同样只清草稿 = 回到自动检测/推导。
+    fn project_clear_maven_config(
+        &mut self,
+        field: MavenConfigField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = self.maven_config_input(field).clone();
         input.update(cx, |input, cx| {
             input.set_value(SharedString::from(""), window, cx);
         });
@@ -2105,6 +2403,8 @@ impl SettingsDialog {
             java_home: settings.java_home_path.clone(),
             maven_executable: settings.maven_executable_path.clone(),
             maven_java_home: settings.maven_java_home_path.clone(),
+            maven_settings: settings.maven_settings_path.clone(),
+            maven_local_repository: settings.maven_local_repository_path.clone(),
         };
         self.project_diagnose(&format!("run=discover overrides={}", overrides.count()));
 
@@ -2129,20 +2429,26 @@ impl SettingsDialog {
         .detach();
     }
 
-    /// 「保存」：把三个草稿写进**全局设置文件**，然后按新值重新探测。
+    /// 「保存」：把五个草稿写进**全局设置文件**，然后按新值重新探测。
     ///
     /// ⚠️ 真源的保存写的是**项目级**文件（`.lithe/run/local.json`，经
-    /// `runConfig.updateOptions`）；本侧没有项目级存储与那条 Core 通路，所以写的是全局设置文件，
+    /// `runConfig.updateOptions`；Maven 那两行写的是 Maven 工具窗的项目本地配置）；
+    /// 本侧没有项目级存储与那条 Core 通路，所以写的是全局设置文件，
     /// 页面上也用 [`Self::project_page`] 的第一句如实说明（`settings.gpui.projectScopeGlobal`）。
     fn project_save(&mut self, cx: &mut Context<Self>) {
-        let java_home = self.java_home_input.read(cx).value().trim().to_string();
-        let maven_executable = self.maven_executable_input.read(cx).value().trim().to_string();
-        let maven_java_home = self.maven_java_home_input.read(cx).value().trim().to_string();
+        let java_home = draft_value(&self.java_home_input, cx);
+        let maven_executable = draft_value(&self.maven_executable_input, cx);
+        let maven_java_home = draft_value(&self.maven_java_home_input, cx);
+        let maven_settings = draft_value(&self.maven_settings_input, cx);
+        let maven_local_repository = draft_value(&self.maven_local_repository_input, cx);
+        let state = |value: &str| if value.is_empty() { "-" } else { "set" };
         self.project_diagnose(&format!(
-            "run=save javaHome={} mavenExecutable={} mavenJavaHome={}",
-            if java_home.is_empty() { "-" } else { "set" },
-            if maven_executable.is_empty() { "-" } else { "set" },
-            if maven_java_home.is_empty() { "-" } else { "set" },
+            "run=save javaHome={} mavenExecutable={} mavenJavaHome={} mavenSettings={} mavenLocalRepo={}",
+            state(&java_home),
+            state(&maven_executable),
+            state(&maven_java_home),
+            state(&maven_settings),
+            state(&maven_local_repository),
         ));
 
         let store = self.store.clone();
@@ -2150,6 +2456,8 @@ impl SettingsDialog {
             store.set_java_home_path(java_home, cx);
             store.set_maven_executable_path(maven_executable, cx);
             store.set_maven_java_home_path(maven_java_home, cx);
+            store.set_maven_settings_path(maven_settings, cx);
+            store.set_maven_local_repository_path(maven_local_repository, cx);
         });
         // 保存之后立刻按新值重探一次（真源保存后也会刷新运行侧的视图）；`saved` 要在
         // `project_load` 之后置位，否则会被它清掉。
@@ -2169,11 +2477,14 @@ impl SettingsDialog {
     /// 页面级的 `Empty` 空态只在**连一个工具链都没有**时出现（[`ProjectEnvironment::has_no_toolchain`]），
     /// 文案也不是「此分类尚未接入」。
     ///
-    /// 与真源的**有意差异**（逐条登记在汇报里）：
-    /// - 真源画「浏览」按钮（系统目录对话框），gpui 侧没有文件对话框依赖
-    ///   （`workbench/src/project_menu.rs:111` 已登记这条边界），所以路径靠输入框粘贴；
-    /// - 真源的 `settings.xml` / 本地仓库两行**可编辑**（写进 Maven 工具窗的项目本地配置），
-    ///   本侧没有那条通路，按「不画假控件」的口径做成**只读事实**；
+    /// 与真源的**有意差异**（逐条登记在这里与汇报里）：
+    /// - 真源画「浏览」按钮（系统目录对话框），**本批已对齐**：五个路径行都有「选择…」
+    ///   （gpui 自带的 `prompt_for_paths`，零新增依赖，判据见 [`Self::project_pick`]）；
+    /// - 真源的 `settings.xml` / 本地仓库两行写进 Maven 工具窗的**项目本地配置**，
+    ///   本侧没有那条通路，改成**全局设置里的覆盖值**（`mavenSettingsPath` /
+    ///   `mavenLocalRepositoryPath`），并如实标注哪一个真的生效：
+    ///   `settings.xml` 会经 `mavenContext.settingsPath` 交给语言服务
+    ///   （`java.configuration.maven.userSettings`），本地仓库今天还没有消费方；
     /// - 真源有"项目 Maven Wrapper"这一级候选，本侧拿不到工作区根 → 没做（提示文案也如实改写）。
     fn project_page(&self, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
         let environment = self.project.environment.as_ref();
@@ -2243,63 +2554,12 @@ impl SettingsDialog {
         // ④ 底部动作：重新探测 + 保存 + 加载中 / 已保存（真源 `:316-336`）。
         toolchain_rows.push(self.project_actions(cx));
 
-        // ⑤ Maven 自己的两个配置文件：**只读事实**，拿不到就如实说"未检测到"并写清查过哪里。
-        let maven_rows: Vec<gpui_kit::AnyElement> = match environment {
-            Some(environment) => {
-                let settings_xml = environment.maven_config.effective_settings();
-                let repository = environment.maven_config.local_repository.as_ref();
-                vec![
-                    self.project_fact_row(
-                        "settings-project-settings-xml",
-                        SharedString::from("settings.xml"),
-                        settings_xml
-                            .map(SharedString::from)
-                            .unwrap_or_else(|| tr("lithe.settings.gpui.mavenSettingsMissing")),
-                        // 安装级那份只在**与生效值不同**时单独列一行备注：
-                        // 用户级 settings.xml 不存在时生效值就是安装级那份，再列一次是重复。
-                        environment
-                            .maven_config
-                            .installation_settings
-                            .as_deref()
-                            .filter(|installation| Some(*installation) != settings_xml)
-                            .map(SharedString::from),
-                        settings_xml.is_none(),
-                        cx,
-                    ),
-                    self.project_fact_row(
-                        "settings-project-local-repository",
-                        tr("lithe.maven.localRepository"),
-                        repository
-                            .map(|repository| SharedString::from(repository.path.clone()))
-                            .unwrap_or_else(|| {
-                                tr("lithe.settings.gpui.mavenLocalRepositoryUnknown")
-                            }),
-                        repository.map(|repository| tr(repository.source.label_key())),
-                        repository.is_none(),
-                        cx,
-                    ),
-                ]
-            }
-            None => vec![
-                self.project_fact_row(
-                    "settings-project-settings-xml",
-                    SharedString::from("settings.xml"),
-                    tr("lithe.toolchain.detecting"),
-                    None,
-                    false,
-                    cx,
-                ),
-                self.project_fact_row(
-                    "settings-project-local-repository",
-                    tr("lithe.maven.localRepository"),
-                    tr("lithe.toolchain.detecting"),
-                    None,
-                    false,
-                    cx,
-                ),
-            ],
-        };
-        // 三个覆盖值走的是输入框草稿（真源也是同一条路），所以这一页不读 `Settings`：
+        // ⑤ Maven 自己的两个配置文件：可选择的覆盖值（选的那份优先，下面写清谁在生效）。
+        let maven_rows: Vec<gpui_kit::AnyElement> = MavenConfigField::ALL
+            .into_iter()
+            .map(|field| self.project_maven_config_row(field, cx))
+            .collect();
+        // 五个覆盖值走的是输入框草稿（真源也是同一条路），所以这一页不读 `Settings`：
         // 输入框的初值在构造期就从设置里取好了。
 
         vec![
@@ -2344,6 +2604,16 @@ impl SettingsDialog {
                             .flex_1()
                             .min_w_0()
                             .child(Input::new(self.project_field_input(field))),
+                    )
+                    .child(
+                        Button::new(("settings-project-pick", field.index()))
+                            .small()
+                            .ghost()
+                            .label(tr("lithe.settings.gpui.pickPath"))
+                            .disabled(self.project.busy)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.project_pick_toolchain(field, window, cx)
+                            })),
                     )
                     .child(
                         Button::new(("settings-project-clear", field.index()))
@@ -2400,7 +2670,11 @@ impl SettingsDialog {
             .into_any_element()
     }
 
-    /// 「项目」页的一行**只读事实**（settings.xml / 本地仓库）。
+    /// 一行**只读事实**（标签 + 值 + 备注）。
+    ///
+    /// 调用点：**「LSP」页**的「已检测语言服务器」（那一格只是把项目页同一次探测的 JDK 事实
+    /// 复述出来，没有可编辑的覆盖值）。「项目」页的 `settings.xml` / 本地仓库从本批起
+    /// 不再是只读事实，走 [`Self::project_maven_config_row`]。
     fn project_fact_row(
         &self,
         id: &'static str,
@@ -2437,6 +2711,86 @@ impl SettingsDialog {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(note)
+            }))
+            .into_any_element()
+    }
+
+    /// 「项目」页 Maven 自己那份配置的一行（`settings.xml` / 本地仓库）：
+    /// 标签 + 草稿输入框 + 「选择…」+「清空」+ 提示 + **谁在生效**那一行。
+    ///
+    /// 判定（哪一份生效、要不要标失败色）全在纯函数 [`maven_config_effective`] 里，
+    /// 这里只画 —— 与 [`Self::project_toolchain_row`] 同一条分工。
+    fn project_maven_config_row(
+        &self,
+        field: MavenConfigField,
+        cx: &Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        let effective = maven_config_effective(field, self.project.environment.as_ref());
+        v_flex()
+            .id(("settings-maven-config-row", field.index()))
+            .w_full()
+            .gap_2()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .child(field.label()),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(Input::new(self.maven_config_input(field))),
+                    )
+                    .child(
+                        Button::new(("settings-maven-pick", field.index()))
+                            .small()
+                            .ghost()
+                            .label(tr("lithe.settings.gpui.pickPath"))
+                            .disabled(self.project.busy)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.project_pick_maven_config(field, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new(("settings-maven-clear", field.index()))
+                            .small()
+                            .ghost()
+                            .label(tr("lithe.ui.clear"))
+                            .disabled(self.project.busy)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.project_clear_maven_config(field, window, cx)
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(tr(field.hint_key())),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(if effective.is_error {
+                        cx.theme().danger
+                    } else {
+                        cx.theme().foreground
+                    })
+                    .child(effective.text),
+            )
+            .children(effective.detail.map(|detail| {
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(detail)
             }))
             .into_any_element()
     }
@@ -3446,6 +3800,165 @@ mod tests {
         assert_eq!(Category::Project.prerequisite_key(), None);
         assert_eq!(Category::Project.label_key(), "lithe.settings.project.title");
         assert_eq!(Category::Project.id(), "project");
+    }
+
+    /// Maven 配置那两行的键、token、序号与**选文件/选目录**逐条钉住。
+    ///
+    /// `picks_file` 写反的后果是实机才能发现的：`settings.xml` 会开成"选目录"（永远选不到
+    /// 文件），本地仓库会开成"选文件"（永远选不到目录）—— 两行都变成走不通的按钮。
+    /// 判据照真源 `project-environment-settings.tsx:305` 的 `choose(key !== "settingsPath", …)`。
+    #[test]
+    fn maven_config_fields_follow_the_truth_source() {
+        assert_eq!(MavenConfigField::ALL.len(), 2);
+        assert_eq!(MavenConfigField::SettingsXml.label().as_ref(), "settings.xml");
+        assert_eq!(
+            MavenConfigField::LocalRepository.label(),
+            tr("lithe.maven.localRepository")
+        );
+        assert_eq!(
+            MavenConfigField::SettingsXml.hint_key(),
+            "lithe.settings.gpui.mavenSettingsHint"
+        );
+        assert_eq!(
+            MavenConfigField::LocalRepository.hint_key(),
+            "lithe.settings.gpui.mavenLocalRepositoryHint"
+        );
+        let ids: Vec<&str> = MavenConfigField::ALL.iter().map(|field| field.id()).collect();
+        assert_eq!(ids, ["settings_xml", "local_repository"]);
+        let indices: Vec<usize> = MavenConfigField::ALL
+            .iter()
+            .map(|field| field.index())
+            .collect();
+        assert_eq!(indices, [0, 1]);
+        // `settings.xml` 是文件、本地仓库是目录。
+        assert!(MavenConfigField::SettingsXml.picks_file());
+        assert!(!MavenConfigField::LocalRepository.picks_file());
+    }
+
+    /// `maven_config_effective` 的四条判据：选了且存在 → 生效说明；选了但不存在 → 失败色 +
+    /// 「这个路径不存在」；没选 → 报检测到的那一份（安装级那份只在不同时单列）；
+    /// 本地仓库有覆盖值 → 如实标注尚未生效。
+    #[test]
+    fn maven_config_lines_report_who_is_effective() {
+        use crate::project::{LocalRepository, LocalRepositorySource, MavenConfiguration};
+
+        let environment = |config: MavenConfiguration, overrides: Overrides| ProjectEnvironment {
+            overrides,
+            jdk: crate::project::JdkDiscovery::default(),
+            maven: crate::project::MavenDiscovery::default(),
+            maven_config: config,
+            maven_jdk: crate::project::JdkDiscovery::default(),
+        };
+
+        // 没探测到（环境还没有结论）：两行都是"正在检测"，且不是失败色。
+        for field in MavenConfigField::ALL {
+            let line = maven_config_effective(field, None);
+            assert_eq!(line.text, tr("lithe.toolchain.detecting"));
+            assert!(!line.is_error);
+        }
+
+        // 自动检测到用户级 settings.xml，安装级那份不同 → 单列一行备注（旧口径保留）。
+        let auto = environment(
+            MavenConfiguration {
+                user_settings: Some(r"C:\Users\x\.m2\settings.xml".to_string()),
+                installation_settings: Some(r"C:\maven\conf\settings.xml".to_string()),
+                local_repository: Some(LocalRepository {
+                    path: r"D:\repo".to_string(),
+                    source: LocalRepositorySource::SettingsXml,
+                }),
+                ..MavenConfiguration::default()
+            },
+            Overrides::default(),
+        );
+        let line = maven_config_effective(MavenConfigField::SettingsXml, Some(&auto));
+        assert_eq!(line.text.as_ref(), r"C:\Users\x\.m2\settings.xml");
+        assert!(!line.is_error);
+        assert_eq!(
+            line.detail.as_deref(),
+            Some(r"C:\maven\conf\settings.xml"),
+            "安装级那份只在与生效值不同时出现"
+        );
+        let line = maven_config_effective(MavenConfigField::LocalRepository, Some(&auto));
+        assert_eq!(line.text.as_ref(), r"D:\repo");
+        assert_eq!(
+            line.detail,
+            Some(tr(LocalRepositorySource::SettingsXml.label_key()))
+        );
+
+        // 用户选了一份存在的 settings.xml → 生效值是它，并说明交给语言服务。
+        let picked = environment(
+            MavenConfiguration {
+                override_settings: Some(r"D:\ci\settings.xml".to_string()),
+                override_settings_missing: false,
+                local_repository: Some(LocalRepository {
+                    path: r"D:\ci-repo".to_string(),
+                    source: LocalRepositorySource::SettingsXml,
+                }),
+                ..MavenConfiguration::default()
+            },
+            Overrides::default(),
+        );
+        let line = maven_config_effective(MavenConfigField::SettingsXml, Some(&picked));
+        assert_eq!(line.text.as_ref(), r"D:\ci\settings.xml");
+        assert!(!line.is_error);
+        assert_eq!(
+            line.detail,
+            Some(tr("lithe.settings.gpui.mavenSettingsEffective"))
+        );
+
+        // 选的那份不存在 → 失败色 + 那句"这个路径不存在"（不能看起来像已生效）。
+        let missing = environment(
+            MavenConfiguration {
+                override_settings: Some(r"D:\nope\settings.xml".to_string()),
+                override_settings_missing: true,
+                ..MavenConfiguration::default()
+            },
+            Overrides::default(),
+        );
+        let line = maven_config_effective(MavenConfigField::SettingsXml, Some(&missing));
+        assert_eq!(line.text.as_ref(), r"D:\nope\settings.xml");
+        assert!(line.is_error);
+        assert_eq!(
+            line.detail,
+            Some(tr("lithe.settings.gpui.overridePathMissing"))
+        );
+
+        // 一份都没检测到 → 失败色 + 「未检测到 settings.xml」。
+        let none = environment(MavenConfiguration::default(), Overrides::default());
+        let line = maven_config_effective(MavenConfigField::SettingsXml, Some(&none));
+        assert_eq!(line.text, tr("lithe.settings.gpui.mavenSettingsMissing"));
+        assert!(line.is_error);
+
+        // 本地仓库有覆盖值 → 报它，但**如实标注尚未生效**（Maven 执行通路还没有）。
+        let overridden = environment(
+            MavenConfiguration {
+                local_repository: Some(LocalRepository {
+                    path: r"D:\repo".to_string(),
+                    source: LocalRepositorySource::MavenDefault,
+                }),
+                ..MavenConfiguration::default()
+            },
+            Overrides {
+                maven_local_repository: " D:\\my-repo ".to_string(),
+                ..Overrides::default()
+            },
+        );
+        let line = maven_config_effective(MavenConfigField::LocalRepository, Some(&overridden));
+        assert_eq!(line.text.as_ref(), "D:\\my-repo");
+        assert!(!line.is_error);
+        assert_eq!(
+            line.detail,
+            Some(tr("lithe.settings.gpui.mavenOverrideNotEffective"))
+        );
+
+        // 本地仓库既没覆盖值、也推不出来（拿不到用户主目录）→ 失败色 + 「未知」。
+        let unknown = environment(MavenConfiguration::default(), Overrides::default());
+        let line = maven_config_effective(MavenConfigField::LocalRepository, Some(&unknown));
+        assert_eq!(
+            line.text,
+            tr("lithe.settings.gpui.mavenLocalRepositoryUnknown")
+        );
+        assert!(line.is_error);
     }
 
     /// 「运行配置」页自阶段 17 起是**实现页**：它列出 Core 识别出的启动目标，

@@ -214,6 +214,19 @@ fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<Strin
         &mut settings.maven_java_home_path,
         diagnostics,
     );
+    // 同页 Maven 自己那份配置（`settings.xml` / 本地仓库）的两个覆盖值。
+    take(
+        object,
+        "mavenSettingsPath",
+        &mut settings.maven_settings_path,
+        diagnostics,
+    );
+    take(
+        object,
+        "mavenLocalRepositoryPath",
+        &mut settings.maven_local_repository_path,
+        diagnostics,
+    );
     // 「LSP」页（阶段 18）：真源三键里唯一有消费方的那一个。
     take(
         object,
@@ -499,14 +512,22 @@ mod tests {
             java_home_path: "D:\\ProgramData\\java\\openjdk-21".to_string(),
             maven_executable_path: "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd".to_string(),
             maven_java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
+            maven_settings_path: "C:\\Users\\u\\.m2\\settings.xml".to_string(),
+            maven_local_repository_path: "D:\\m2\\repository".to_string(),
             ..Settings::default()
         };
         settings.normalize();
         save(&path, &settings).expect("写入失败");
 
-        // 落盘文本里三个键名必须是 Core 契约里的那三个（驼峰）。
+        // 落盘文本里五个键名必须是 Core 契约 / 真源里的那几个（驼峰）。
         let text = std::fs::read_to_string(&path).expect("读文件失败");
-        for key in ["\"javaHomePath\"", "\"mavenExecutablePath\"", "\"mavenJavaHomePath\""] {
+        for key in [
+            "\"javaHomePath\"",
+            "\"mavenExecutablePath\"",
+            "\"mavenJavaHomePath\"",
+            "\"mavenSettingsPath\"",
+            "\"mavenLocalRepositoryPath\"",
+        ] {
             assert!(text.contains(key), "落盘文本缺键 {key}：{text}");
         }
 
@@ -523,6 +544,14 @@ mod tests {
         assert_eq!(
             loaded.settings.maven_java_home_path,
             "C:\\Program Files\\Java\\jdk-21"
+        );
+        assert_eq!(
+            loaded.settings.maven_settings_path,
+            "C:\\Users\\u\\.m2\\settings.xml"
+        );
+        assert_eq!(
+            loaded.settings.maven_local_repository_path,
+            "D:\\m2\\repository"
         );
         // 整个结构体也要逐字段相等（漏键会立刻表现为不等）。
         assert_eq!(loaded.settings, settings);
@@ -553,6 +582,8 @@ mod tests {
             java_home_path: "D:\\ProgramData\\java\\openjdk-21".to_string(),
             maven_executable_path: "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd".to_string(),
             maven_java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
+            maven_settings_path: "C:\\Users\\u\\.m2\\settings.xml".to_string(),
+            maven_local_repository_path: "D:\\m2\\repository".to_string(),
             // `autoCompletion` 的"非默认值"是 `false`（默认 `true`）。
             auto_completion: false,
             // 同上：这两个键的默认值也是 `true`（`default-settings.ts:111-112`），

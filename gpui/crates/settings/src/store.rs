@@ -372,6 +372,24 @@ impl SettingsStore {
         self.commit(cx, next, Effects::None);
     }
 
+    /// 改 Maven 用户 `settings.xml` 的覆盖值。见 [`Self::set_java_home_path`]。
+    ///
+    /// 这一个键**有真消费方**：外壳把它登记进 `lithe-gpui-java` 的覆盖槽，JDT LS 启动时随
+    /// `mavenContext.settingsPath` 交给 Core（判据见 `schema.rs` 字段文档），所以它和
+    /// `javaHomePath` 一样是"下一次语言服务启动时生效"，不是当帧生效。
+    pub fn set_maven_settings_path(&mut self, path: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.maven_settings_path = path;
+        self.commit(cx, next, Effects::None);
+    }
+
+    /// 改 Maven 本地仓库的覆盖值。见 [`Self::set_java_home_path`]（今天没有消费方）。
+    pub fn set_maven_local_repository_path(&mut self, path: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.maven_local_repository_path = path;
+        self.commit(cx, next, Effects::None);
+    }
+
     /// 改「自动补全」（阶段 18，「LSP」页）。**本 store 不自己应用**：补全菜单的触发判据
     /// 在 `lithe-gpui-editor` 的 provider 上，由外壳订阅本实体后转发给
     /// `EditorPane::set_auto_completion`（与 `tabSize` 同一条路子，依赖方向：

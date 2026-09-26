@@ -344,29 +344,45 @@ pub struct LocalRepository {
     pub source: LocalRepositorySource,
 }
 
-/// Maven 自己的两个 settings.xml 位置与本地仓库。
+/// Maven 自己的两个 settings.xml 位置、用户选的那一份与本地仓库。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MavenConfiguration {
     /// 用户级 `~/.m2/settings.xml`（**存在**时才有值）。
     pub user_settings: Option<String>,
     /// 安装级 `<maven home>/conf/settings.xml`（存在时才有值）。
     pub installation_settings: Option<String>,
+    /// 用户在设置页选的 `settings.xml`（`mavenSettingsPath` 的原文；空串 = 没选）。
+    ///
+    /// **原样保留**（不做存在性过滤）：这一行是"你选的是哪一个"的事实，界面要能显示出来
+    /// 并标出它不存在；`override_settings_missing` 单独记存在性。
+    pub override_settings: Option<String>,
+    /// 选的 `settings.xml` **不是一个存在的文件**（拼错 / 被删 / 指到目录）。
+    /// 界面据此把这一行画成失败色，而不是让一个不存在的路径看起来"已生效"。
+    pub override_settings_missing: bool,
     /// 本地仓库；`None` = 连用户主目录都拿不到（此时界面显示"未知"）。
     pub local_repository: Option<LocalRepository>,
 }
 
 impl MavenConfiguration {
-    /// 生效的 settings.xml：**用户级优先**，其次安装级。
+    /// 生效的 settings.xml：**选的那一份优先**，其次用户级，最后安装级。
     ///
-    /// Maven 两个都读，但用户级能覆盖安装级，所以"生效的那个"按用户级优先报。
+    /// Maven 自己只读用户级与安装级（用户级覆盖安装级）；本侧多一层"用户明确选的那一份"，
+    /// 因为那一份会被交给语言服务（`java.configuration.maven.userSettings`）去**替代**
+    /// 自动检测的结果 —— 所以它必须排在生效值的第一位，页面上的"生效值"也只能指它。
     pub fn effective_settings(&self) -> Option<&str> {
-        self.user_settings
+        self.override_settings
             .as_deref()
+            .or(self.user_settings.as_deref())
             .or(self.installation_settings.as_deref())
+    }
+
+    /// 生效的 settings.xml 是**用户选的那一份**（而不是自动检测到的）。
+    pub fn settings_is_overridden(&self) -> bool {
+        self.override_settings.is_some()
     }
 }
 
-/// 页面上的三个覆盖值（都是**全局**设置键，见 `schema.rs` 的说明）。
+/// 页面上的五个覆盖值（都是**全局**设置键，见 `schema.rs` 的说明）。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Overrides {
     /// JDK 主目录（`javaHomePath`）。
@@ -375,20 +391,30 @@ pub struct Overrides {
     pub maven_executable: String,
     /// Maven 用的 JDK 主目录（`mavenJavaHomePath`）。
     pub maven_java_home: String,
+    /// 用户选的 Maven `settings.xml`（`mavenSettingsPath`）。
+    pub maven_settings: String,
+    /// 用户选的 Maven 本地仓库（`mavenLocalRepositoryPath`）。
+    pub maven_local_repository: String,
 }
 
 impl Overrides {
-    /// 三个覆盖值全为空 = 全自动（真源也是 `""` 表示"用自动检测的值"）。
+    /// 五个覆盖值全为空 = 全自动（真源也是 `""` 表示"用自动检测的值"）。
     pub fn is_empty(&self) -> bool {
         self.count() == 0
     }
 
     /// 非空覆盖值的个数（诊断行用）。
     pub fn count(&self) -> usize {
-        [&self.java_home, &self.maven_executable, &self.maven_java_home]
-            .iter()
-            .filter(|value| !value.trim().is_empty())
-            .count()
+        [
+            &self.java_home,
+            &self.maven_executable,
+            &self.maven_java_home,
+            &self.maven_settings,
+            &self.maven_local_repository,
+        ]
+        .iter()
+        .filter(|value| !value.trim().is_empty())
+        .count()
     }
 }
 
@@ -648,6 +674,12 @@ impl ProjectEnvironment {
     ///
     /// 形状（**顺序固定**，便于 `grep 'S1_SETTINGS_PROJECT'` 后逐项对照）：
     /// `jdk=… source=… version=… maven=… mavenVersion=… mavenHome=… mavenSource=… settings=… localRepo=… …`
+    ///
+    /// 其中 Maven 配置那一段的顺序是
+    /// `settings=… settingsInstallation=… localRepo=… localRepoSource=… settingsOverridden=…
+    /// overrideJdk=… overrideMaven=… overrideMavenJdk=… overrideSettings=… overrideLocalRepo=…`：
+    /// 前四项是**检测/推导出来的事实**，后五项是**用户填的覆盖值原文**（空 = `-` 之外的原文，
+    /// 由 `Overrides` 原样带出），`settingsOverridden` 说明生效的 settings.xml 是不是用户选的那份。
     pub fn diagnostic_line(&self) -> String {
         let jdk = self.jdk.effective();
         let maven = self.maven.effective();
@@ -677,7 +709,7 @@ impl ProjectEnvironment {
             other => other.diagnostic_mode(),
         };
         format!(
-            "{PROJECT_DIAGNOSTIC_TAG} jdk={} source={} version={} mode={} maven={} mavenVersion={} mavenHome={} mavenSource={} mavenJdk={} mavenJdkMode={} settings={} settingsInstallation={} localRepo={} localRepoSource={} overrideJdk={} overrideMaven={} overrideMavenJdk={} candidates={} rejected={} minimumJava={} languageService={}",
+            "{PROJECT_DIAGNOSTIC_TAG} jdk={} source={} version={} mode={} maven={} mavenVersion={} mavenHome={} mavenSource={} mavenJdk={} mavenJdkMode={} settings={} settingsInstallation={} localRepo={} localRepoSource={} settingsOverridden={} overrideJdk={} overrideMaven={} overrideMavenJdk={} overrideSettings={} overrideLocalRepo={} candidates={} rejected={} minimumJava={} languageService={}",
             jdk.diagnostic_value(),
             jdk_source,
             jdk_version(&jdk).unwrap_or_else(|| "-".to_string()),
@@ -709,9 +741,17 @@ impl ProjectEnvironment {
                 .as_ref()
                 .map(|repository| repository.source.id())
                 .unwrap_or("none"),
+            // 生效的 settings.xml 是不是用户选的那份（`yes` 时下面那格 `overrideSettings=` 就是它）。
+            if self.maven_config.settings_is_overridden() {
+                "yes"
+            } else {
+                "no"
+            },
             self.overrides.java_home,
             self.overrides.maven_executable,
             self.overrides.maven_java_home,
+            self.overrides.maven_settings,
+            self.overrides.maven_local_repository,
             self.jdk.candidates.len() + self.maven.candidates.len(),
             self.jdk.rejected.len() + self.maven.rejected.len(),
             MINIMUM_JAVA_MAJOR,
@@ -1005,7 +1045,11 @@ pub fn discover(overrides: &Overrides) -> ProjectEnvironment {
         });
     }
 
-    let maven_config = maven_configuration(&maven, env.user_home.as_deref());
+    let maven_config = maven_configuration(
+        &maven,
+        env.user_home.as_deref(),
+        Some(&overrides.maven_settings),
+    );
     let environment = ProjectEnvironment {
         overrides: overrides.clone(),
         jdk,
@@ -1286,12 +1330,17 @@ fn labeled_line(output: &str, label: &str) -> Option<String> {
         .and_then(|value| non_empty(value))
 }
 
-/// Maven 自己的两个 settings.xml 位置与本地仓库。
+/// Maven 自己的两个 settings.xml 位置、用户选的那一份与本地仓库。
+///
+/// `settings_override` 是设置页选的那份 `settings.xml`（空串 / 全空白 = 没选）：
+/// 选了就以它为**生效值**，本地仓库也从它那里读 `<localRepository>` —— 用户换了 settings.xml
+/// 之后"本地仓库"那一行必须跟着变，否则页面会显示一份与实际生效文件无关的仓库路径。
 ///
 /// `user_home` 拿不到时 `local_repository` 是 `None`（界面显示"未知"，不猜）。
 pub fn maven_configuration(
     maven: &MavenDiscovery,
     user_home: Option<&str>,
+    settings_override: Option<&str>,
 ) -> MavenConfiguration {
     let m2 = user_home.map(|home| Path::new(home).join(M2_DIRECTORY));
     let user_settings = m2
@@ -1304,14 +1353,25 @@ pub fn maven_configuration(
         .and_then(|maven| installation_settings_path(&maven.executable))
         .map(|path| path.display().to_string());
 
+    let override_settings = non_empty_opt(settings_override).map(str::to_string);
+    let override_settings_missing = override_settings
+        .as_deref()
+        .is_some_and(|path| !Path::new(path).is_file());
+
     let local_repository = local_repository(
-        user_settings.as_deref().map(Path::new),
+        // 生效的那一份：用户选的优先（判据与 [`MavenConfiguration::effective_settings`] 同源）。
+        override_settings
+            .as_deref()
+            .or(user_settings.as_deref())
+            .map(Path::new),
         m2.as_deref(),
     );
 
     MavenConfiguration {
         user_settings,
         installation_settings,
+        override_settings,
+        override_settings_missing,
         local_repository,
     }
 }
@@ -1775,8 +1835,9 @@ mod tests {
 
         // ① 没有 settings.xml → 默认位置。
         let maven = MavenDiscovery::default();
-        let configuration = maven_configuration(&maven, Some(&home.to_string_lossy()));
+        let configuration = maven_configuration(&maven, Some(&home.to_string_lossy()), None);
         assert_eq!(configuration.user_settings, None);
+        assert!(!configuration.settings_is_overridden());
         let repository = configuration.local_repository.expect("必须给出默认位置");
         assert_eq!(
             repository.path,
@@ -1790,7 +1851,7 @@ mod tests {
             "<settings><localRepository>D:\\maven-repo</localRepository></settings>",
         )
         .expect("写 settings.xml 失败");
-        let configuration = maven_configuration(&maven, Some(&home.to_string_lossy()));
+        let configuration = maven_configuration(&maven, Some(&home.to_string_lossy()), None);
         assert_eq!(
             configuration.effective_settings(),
             configuration.user_settings.as_deref()
@@ -1800,8 +1861,96 @@ mod tests {
         assert_eq!(repository.source, LocalRepositorySource::SettingsXml);
 
         // ③ 连用户主目录都没有 → 不猜，`None`。
-        let configuration = maven_configuration(&maven, None);
+        let configuration = maven_configuration(&maven, None, None);
         assert!(configuration.local_repository.is_none());
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// 用户选了一份 settings.xml：它成为**生效值**，本地仓库也改从它那里读 ——
+    /// 而且"用户级"那一格仍然报自动检测到的那份（两个事实不能互相冒充）。
+    ///
+    /// 保护的是"选了 settings.xml 但本地仓库那一行没跟着变"这类**看起来生效、实际没生效**：
+    /// 那份文件会被交给语言服务去替代自动检测结果，所以本地仓库必须同源。
+    #[test]
+    fn a_selected_settings_file_wins_and_drives_the_local_repository() {
+        let directory = std::env::temp_dir().join(format!(
+            "lithe-settings-selected-settings-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        let home = directory.join("home");
+        std::fs::create_dir_all(home.join(M2_DIRECTORY)).expect("建 .m2 失败");
+        // 自动检测到的那份：仓库是 auto-repo。
+        std::fs::write(
+            home.join(M2_DIRECTORY).join(SETTINGS_FILE_NAME),
+            "<settings><localRepository>D:\\auto-repo</localRepository></settings>",
+        )
+        .expect("写用户级 settings.xml 失败");
+        // 用户选的那份：仓库是 picked-repo。
+        let picked = directory.join("ci-settings.xml");
+        std::fs::write(
+            &picked,
+            "<settings><localRepository>D:\\picked-repo</localRepository></settings>",
+        )
+        .expect("写选中的 settings.xml 失败");
+
+        let maven = MavenDiscovery::default();
+        let configuration = maven_configuration(
+            &maven,
+            Some(&home.to_string_lossy()),
+            Some(&picked.to_string_lossy()),
+        );
+        assert!(configuration.settings_is_overridden());
+        assert!(!configuration.override_settings_missing);
+        assert_eq!(
+            configuration.effective_settings(),
+            Some(picked.to_string_lossy().as_ref())
+        );
+        // 用户级那一格仍然是自动检测到的那份（不是被选中的那份顶替）。
+        assert_eq!(
+            configuration.user_settings.as_deref(),
+            Some(
+                home.join(M2_DIRECTORY)
+                    .join(SETTINGS_FILE_NAME)
+                    .to_string_lossy()
+                    .as_ref()
+            )
+        );
+        let repository = configuration.local_repository.expect("必须给出仓库路径");
+        assert_eq!(repository.path, r"D:\picked-repo");
+        assert_eq!(repository.source, LocalRepositorySource::SettingsXml);
+
+        // 选了一份**不存在**的文件：生效值仍然是它（界面要如实显示"你选的是这个"），
+        // 但存在性标志为真 → 界面画失败色；本地仓库退回 Maven 默认位置（读不到就是没写）。
+        let missing = directory.join("nope.xml");
+        let configuration = maven_configuration(
+            &maven,
+            Some(&home.to_string_lossy()),
+            Some(&missing.to_string_lossy()),
+        );
+        assert!(configuration.settings_is_overridden());
+        assert!(configuration.override_settings_missing);
+        assert_eq!(
+            configuration.local_repository.map(|r| r.path),
+            Some(
+                home.join(M2_DIRECTORY)
+                    .join(REPOSITORY_DIRECTORY)
+                    .display()
+                    .to_string()
+            )
+        );
+
+        // 空 / 全空白 = 没选（与 `Overrides` 同一口径，否则探测层会拿空路径去查文件系统）。
+        for blank in ["", "   "] {
+            let configuration =
+                maven_configuration(&maven, Some(&home.to_string_lossy()), Some(blank));
+            assert!(!configuration.settings_is_overridden(), "{blank:?}");
+            assert_eq!(
+                configuration.effective_settings(),
+                configuration.user_settings.as_deref()
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&directory);
     }
@@ -1974,6 +2123,8 @@ mod tests {
                 java_home: r"D:\ProgramData\java\openjdk-21".to_string(),
                 maven_executable: String::new(),
                 maven_java_home: String::new(),
+                maven_settings: String::new(),
+                maven_local_repository: String::new(),
             },
             jdk: JdkDiscovery {
                 overridden: Some(OverrideProbe {
@@ -2006,6 +2157,8 @@ mod tests {
             maven_config: MavenConfiguration {
                 user_settings: Some(r"C:\Users\x\.m2\settings.xml".to_string()),
                 installation_settings: None,
+                override_settings: None,
+                override_settings_missing: false,
                 local_repository: Some(LocalRepository {
                     path: r"D:\maven-repo".to_string(),
                     source: LocalRepositorySource::SettingsXml,
@@ -2033,6 +2186,26 @@ mod tests {
             "settings=C:\\Users\\x\\.m2\\settings.xml",
             "localRepo=D:\\maven-repo",
             "localRepoSource=settings_xml",
+            // 没选 settings.xml 时"生效值不是选来的"，且两个新覆盖值都是空串。
+            "settingsOverridden=no",
+            "overrideSettings= overrideLocalRepo=",
+        ] {
+            assert!(line.contains(expected), "诊断行缺 {expected}：{line}");
+        }
+
+        // 选了 settings.xml：生效值换成它、`settingsOverridden=yes`、本地仓库随之改写
+        // （本地仓库的推导由 `a_selected_settings_file_wins_and_drives_the_local_repository` 覆盖，
+        //  这里只钉诊断行确实把"谁在生效"说了出来）。
+        let mut selected = environment.clone();
+        selected.overrides.maven_settings = r"D:\ci\settings.xml".to_string();
+        selected.overrides.maven_local_repository = r"D:\repo".to_string();
+        selected.maven_config.override_settings = Some(r"D:\ci\settings.xml".to_string());
+        let line = selected.diagnostic_line();
+        for expected in [
+            r"settings=D:\ci\settings.xml",
+            "settingsOverridden=yes",
+            r"overrideSettings=D:\ci\settings.xml",
+            r"overrideLocalRepo=D:\repo",
         ] {
             assert!(line.contains(expected), "诊断行缺 {expected}：{line}");
         }
@@ -2075,6 +2248,8 @@ mod tests {
                 java_home: r"D:\nope".to_string(),
                 maven_executable: String::new(),
                 maven_java_home: String::new(),
+                maven_settings: String::new(),
+                maven_local_repository: String::new(),
             },
             jdk: JdkDiscovery {
                 overridden: Some(OverrideProbe {

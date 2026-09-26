@@ -240,6 +240,35 @@ pub struct Settings {
     #[serde(rename = "mavenJavaHomePath")]
     pub maven_java_home_path: String,
 
+    /// Maven 用户 `settings.xml` 的覆盖值（空串 = 用检测到的那一份）。键名 `mavenSettingsPath`。
+    ///
+    /// ## 这一个键在真源里没有对应的**全局**键（如实登记）
+    ///
+    /// 真源把 `settings.xml` 与本地仓库写进 **Maven 工具窗的项目本地配置**
+    /// （`components/project-environment-settings.tsx:287-314` 读写 `maven.settingsPath` /
+    /// `maven.localRepositoryPath`，落点是项目级 `.lithe` 文档），**不经过**全局设置文件；
+    /// 而 gpui 侧没有项目级存储（理由逐条见 [`Self::java_home_path`]）。
+    ///
+    /// 所以这两个键是**机器级（全局）**覆盖值，字段名沿用真源那一对同名同义的名字，
+    /// 将来接上项目级存储时仍然不需要第二张映射表。
+    ///
+    /// ## 生效方式（两个键不一样，分别是"真生效"与"尚无消费方"）
+    ///
+    /// - `mavenSettingsPath` **有真消费方**：`workbench` 把它登记进 `lithe-gpui-java` 的覆盖槽
+    ///   （`java/src/toolchain.rs`），JDT LS 启动时随 `mavenContext.settingsPath` 交给 Core，
+    ///   Core 发布成 `java.configuration.maven.userSettings`
+    ///   （`shared/contracts/rust-core-api.md:1170-1178`）。时机与 [`Self::java_home_path`] 相同：
+    ///   下一次语言服务启动（今天是重启应用）。
+    /// - `mavenLocalRepositoryPath` 今天**没有消费方**：本地仓库只在 `maven.launchPlan`
+    ///   （`rust-core-api.md:1477-1487` 的 `-Dmaven.repo.local=<path>`）里用，而 gpui 侧还没有
+    ///   执行 Maven 的通路。页面照样画出它，但**如实标注**"尚未生效"（不自称已生效）。
+    #[serde(rename = "mavenSettingsPath")]
+    pub maven_settings_path: String,
+
+    /// Maven 本地仓库的覆盖值。键名与生效方式见 [`Self::maven_settings_path`]。
+    #[serde(rename = "mavenLocalRepositoryPath")]
+    pub maven_local_repository_path: String,
+
     /// 自动补全（输入时是否自动弹出补全菜单）。Windows 键 `autoCompletion`，默认 `true`
     /// （`default-settings.ts:153`；真源渲染点 `macos-settings-panels.tsx:406-415`）。
     ///
@@ -308,6 +337,9 @@ impl Default for Settings {
             java_home_path: String::new(),
             maven_executable_path: String::new(),
             maven_java_home_path: String::new(),
+            // Maven 自己那份配置的两个覆盖值同样默认"自动"（用检测到 / 推导出来的值）。
+            maven_settings_path: String::new(),
+            maven_local_repository_path: String::new(),
             // 真源默认 `true`（`default-settings.ts:153`）—— 默认就该"打字有提示"。
             auto_completion: true,
             // 「打开其他项目」的两个键都照真源默认 `true`（`default-settings.ts:111-112`）：
@@ -405,6 +437,8 @@ impl Settings {
         self.java_home_path = self.java_home_path.trim().to_string();
         self.maven_executable_path = self.maven_executable_path.trim().to_string();
         self.maven_java_home_path = self.maven_java_home_path.trim().to_string();
+        self.maven_settings_path = self.maven_settings_path.trim().to_string();
+        self.maven_local_repository_path = self.maven_local_repository_path.trim().to_string();
     }
 
     /// 再补一层"主题名必须在注册表里"的规范化（`known` 是 `ThemeRegistry::themes()` 的键）。
@@ -463,10 +497,13 @@ mod tests {
         assert_eq!(settings.tab_size, 2);
         assert_eq!(settings.terminal_default_shell_id, "");
         assert!(settings.confirm_before_discard);
-        // 「项目 · JDK 与 Maven」页的三个覆盖值默认都是"自动"（空串）。
+        // 「项目 · JDK 与 Maven」页的五个覆盖值默认都是"自动"（空串）。
         assert_eq!(settings.java_home_path, "");
         assert_eq!(settings.maven_executable_path, "");
         assert_eq!(settings.maven_java_home_path, "");
+        // Maven 自己那份配置（`settings.xml` / 本地仓库）的覆盖值同样默认为空。
+        assert_eq!(settings.maven_settings_path, "");
+        assert_eq!(settings.maven_local_repository_path, "");
         // LSP 页的 `autoCompletion` 默认 `true`（真源 `default-settings.ts:153`）。
         assert!(settings.auto_completion);
         // 「打开其他项目」的两个键默认都是 `true`（真源 `default-settings.ts:111-112`）：
@@ -522,6 +559,9 @@ mod tests {
             "\"javaHomePath\"",
             "\"mavenExecutablePath\"",
             "\"mavenJavaHomePath\"",
+            // 同页 Maven 自己那份配置的两个覆盖值（真源的项目级字段名，见字段文档）。
+            "\"mavenSettingsPath\"",
+            "\"mavenLocalRepositoryPath\"",
             // 阶段 18（「LSP」页）：真源三键里唯一有消费方的那一个。
             "\"autoCompletion\"",
             // 「打开其他项目」的两个键（B4）：真源 `default-settings.ts:111-112` 的键名。
@@ -532,13 +572,15 @@ mod tests {
         }
     }
 
-    /// 三个工具链覆盖值：粘贴路径带的首尾空白被去掉，空串仍是空串（= 自动）。
+    /// 五个覆盖值：粘贴路径带的首尾空白被去掉，空串仍是空串（= 自动）。
     #[test]
     fn toolchain_overrides_are_trimmed() {
         let mut settings = Settings {
             java_home_path: "  D:\\ProgramData\\java\\openjdk-21 \n".to_string(),
             maven_executable_path: "\tD:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd ".to_string(),
             maven_java_home_path: "   ".to_string(),
+            maven_settings_path: " D:\\m2\\settings.xml ".to_string(),
+            maven_local_repository_path: "\t \n".to_string(),
             ..Settings::default()
         };
         settings.normalize();
@@ -549,6 +591,8 @@ mod tests {
         );
         // 只有空白的值 = 没设（否则探测层会拿一个空路径去查文件系统）。
         assert_eq!(settings.maven_java_home_path, "");
+        assert_eq!(settings.maven_settings_path, "D:\\m2\\settings.xml");
+        assert_eq!(settings.maven_local_repository_path, "");
         // 路径里**内部**的空格不能被动（`C:\Program Files\...` 是合法安装目录）。
         let mut settings = Settings {
             java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),

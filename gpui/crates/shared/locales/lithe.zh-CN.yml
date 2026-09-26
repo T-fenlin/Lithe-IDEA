@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 63 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 68 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8705,6 +8705,16 @@ lithe:
     zh-CN: "前置条件：日志系统（日志目录、诊断开关与诊断包导出）。"
   settings.gpui.prerequisiteUpdates:
     zh-CN: "前置条件：更新器（检查更新、更新通道与安装流程）。"
+  settings.gpui.pickPath:
+    zh-CN: "选择…"
+  settings.gpui.mavenSettingsHint:
+    zh-CN: "留空则用检测到的那一份：用户目录的 .m2/settings.xml 优先，其次 Maven 安装目录的 conf/settings.xml。"
+  settings.gpui.mavenSettingsEffective:
+    zh-CN: "生效：下一次语言服务启动时作为 Maven 用户设置交给 Java 语言服务。"
+  settings.gpui.mavenLocalRepositoryHint:
+    zh-CN: "留空则用生效 settings.xml 里的 <localRepository>；没写就是 Maven 默认位置 ~/.m2/repository。"
+  settings.gpui.overridePathMissing:
+    zh-CN: "这个路径不存在；留空会回到自动检测。"
   spring.title:
     zh-CN: "Spring"
   spring.notDetected:
