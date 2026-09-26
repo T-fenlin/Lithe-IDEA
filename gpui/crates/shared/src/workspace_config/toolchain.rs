@@ -7,8 +7,10 @@
 //! 项目本机（本模块）> 全局默认（全局 settings.json）> 自动发现
 //! ```
 //!
-//! 设计真源：`.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`
-//! 的「三、工作区层」与「四、覆盖顺序」。为什么保留"全局默认"这一级：多数开发者在这台机器上
+//! 决策与验证证据：`.agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md`
+//! （"工具链五值落到项目本机层"一节；设计意图留在
+//! `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md` 的
+//! 「三、工作区层」与「四、覆盖顺序」）。为什么保留"全局默认"这一级：多数开发者在这台机器上
 //! 主用一个 JDK，新建项目不该要求重新手填一遍。
 //!
 //! ## 五个值分别在哪个文件

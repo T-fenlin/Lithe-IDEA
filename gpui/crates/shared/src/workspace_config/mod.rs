@@ -15,9 +15,11 @@
 //!
 //! ## 与设计 Note 的关系
 //!
-//! 分层与文件形状的真源是
-//! `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`
-//! （四层模型：全局 / 项目可共享 / 项目本机 / 派生物）。本模块只实现其中的**项目侧**：
+//! 分层与文件形状的决策与验证证据在
+//! `.agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md`
+//! （四层模型：全局 / 项目可共享 / 项目本机 / 派生物；仍在推进的设计意图留在
+//! `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`）。
+//! 本模块只实现其中的**项目侧**：
 //! 路径、身份、"默认不共享"。全局层仍归 `lithe-gpui-settings` 的 `paths`。
 //!
 //! ## 为什么在 `shared`

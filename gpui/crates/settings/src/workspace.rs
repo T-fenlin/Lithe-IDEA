@@ -19,7 +19,9 @@
 //! 语言、终端 shell、缩进、工具链、Git 相关键**只有全局层**：工作区文件里写了它们也
 //! 不生效（它们会被当作未知键逐字保留，但不会改变生效值）。
 //! 为什么这样切：维护者已经决定**允许**外观被工作区覆盖（团队统一主题与字号是真实需求），
-//! 其余键的"项目层"是另一批工作，见设计 Note
+//! 决策与验证证据见
+//! `.agents/notes/implemented/feature/2026-09-27-appearance-workspace-overlay.md`；
+//! 其余键的"项目层"是另一批工作，设计意图见
 //! `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md` 第四节。
 //!
 //! ## 三条缓解措施（都是硬要求，不是可选项）

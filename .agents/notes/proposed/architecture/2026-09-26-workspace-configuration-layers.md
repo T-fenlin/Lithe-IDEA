@@ -265,7 +265,8 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 
 ## 实施进度
 
-**已落地的部分不在本文**，它们的决策与证据（含一手验证记录）在：
+**已落地的部分不在本文。** 本文只保存**尚未落地**的设计意图（下面的各节），
+已经生效的决策与验证证据全部在 `implemented/`，共五篇：
 
 - 文档语义、四层与文件形状、项目身份、默认不共享、打开即建、主题目录与标识、工具链五值分层 →
   `.agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md`
@@ -273,41 +274,30 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
   `.agents/notes/implemented/feature/2026-09-27-font-family-and-terminal-font-size.md`
 - 本机排除"写完必须回读"、失败必须对用户可见 →
   `.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md`
+- 外观可被工作区覆盖（九键白名单、三态来源可见、一键改回）→
+  `.agents/notes/implemented/feature/2026-09-27-appearance-workspace-overlay.md`
+- 会话状态持久化与恢复（`.lithe/session.local.json`）→
+  `.agents/notes/implemented/feature/2026-09-27-session-state-persistence.md`
 
-**两件增量的代码都已落地（2026-09-27 本批）**，本节的决策文本仍是它们的真源，
-直到迁入 `implemented/`：
+**唯一仍未落地的设计项是 `project.json` 的 `directoryMarks`**（本提案第三节与"与 IDEA 的差异"表
+提到的那个字段）。它没有落地，原因**不是技术困难，而是今天没有任何"标记目录"的交互**：
 
-- **增量 5（外观的工作区覆盖层）——已落地**：实现落在
-  `gpui/crates/settings/src/workspace.rs`（覆盖层模型、覆盖顺序的**唯一**实现
-  `resolve_effective`、来源判定、原子写回）+ `settings/src/store.rs`（分层持有全局层与两层覆盖、
-  按"有没有工作区"分流写入、一键改回）+ `settings/src/row.rs` / `dialog.rs`（来源标注与按钮）+
-  `workbench/src/workspace.rs`（`ShellWorkspace::new` 登记工作区根、后台问一次
-  `git ls-files --error-unmatch` 决定"团队设置"还是"本项目的设置"）。范围**严格限定为九键**
-  （主题四键 + `uiFontSize` / `fontSize` / `fontFamily` / `monoFontFamily` / `terminalFontSize`），
-  其余键仍然只有全局层（守卫测试 `non_appearance_keys_are_not_overridable`）。
-  三条缓解措施都落地了：独立文件（覆盖只写 `.lithe/settings.json` / `settings.local.json`，
-  全局文件只写全局层）、三态来源可见（四档文案 + 只在被覆盖时画）、一键改回（把键从**两层**删掉，
-  生效值真的回落到全局值）。**未做**：工作区设置文件的 watcher（打开 / 切换项目时重读是下限）、
-  共享层的写入方（"共享此项目的配置"那一批）。完整实现说明、覆盖顺序与验证记录见
-  `gpui/PLAN.md` §8.12。
-- **增量 8（会话状态）——已落地（2026-09-27 本批）**：`.lithe/session.local.json` 的读写落在
-  `gpui/crates/shared/src/workspace_config/session.rs`（文档模型 + 容错 + 上界 + 相对路径转换，
-  复用 `shared::document` 的 `parse` / `merge_document` / `preserve_unknown` / `save_json` /
-  `tmp_path` / `previous_object`，**没有第二份** version / 未知键 / 原子写实现）+
-  `gpui/crates/workbench/src/session.rs`（装载、恢复、落盘时机）+
-  `workbench/src/workspace.rs`（收集状态、防抖写、换根前与退出前 flush）。
-  **第一版范围严格按今天的实现事实**：只存**打开的文件（工作区相对路径 + `/` 分隔、有上界）+
-  当前文件（下标）+ 侧栏可见性 + 左右面板的当前视图 id 与可见性**。
-  **今天没有宿主的字段一个都没存**：光标与滚动（只在 `EditorState` 内部、无读出口）、
-  展开的树节点（资源管理器不记录展开态）、面板 / 分栏尺寸（gpui 侧没有可拖动分隔条那套状态）、
-  断点与监视表达式（gpui 侧没有调试器）。逐条理由写在 `session.rs` 的模块文档里。
-  `directoryMarks` 那一半**没做**：核实结果是 gpui 侧**根本没有"标记目录"这个交互**
-  （`gpui/crates` 全量搜 `markDirectory` / `标记` / `directoryMarks` 零命中；
-  `gpui/crates/explorer` 的右键菜单至今没实现，模块文档只登记了 `Tree::context_menu`
-  可用；`gpui/crates/workbench/src/menu_bar.rs` 的菜单表里也没有这一项）。
-  按"只建模有消费方的字段"的口径，`ProjectManifest` **不**加 `directoryMarks` 字段 ——
-  加进去就是"写得出、没人读、还得为它写测试"的假契约。
-  完整实现说明与验证记录见 `gpui/PLAN.md` §8.13。
+- `gpui/crates/**` 全量检索 `markDirectory` / `directoryMarks` / `标记` **零命中**
+  （只有"脏标记""失效标记"这类无关命中）；
+- `gpui/crates/explorer/src/explorer_view.rs:280` 的模块文档明说**本模块没有画右键菜单**
+  （真机的「刷新」在右键菜单里，本侧把它开成公开方法交给外壳接线）；
+- `gpui/crates/workbench/src/menu_bar.rs` 的菜单表与命令面板里也没有这一项。
+
+所以它今天是一个**没有生产者**的字段：写出来没人读，只能为一个没人能触发的动作写测试。
+维护者已决定**本批不补 UI**，并保持 `ProjectManifest` 不加字段、
+`shared/contracts/project-manifest-v1.schema.json` 不动。macOS 端有完整的标记目录实现
+（`macos/Sources/LitheWorkspaceModule`），但那是**另一个产品**，不能当成 gpui 的消费方。
+
+**将来谁要补这一项，第一步不是改 schema，而是先决定交互形态**：标记动作从哪进入
+（资源管理器右键菜单 / 菜单栏 / 命令面板）？标记结果在树上怎么显示？谁来消费它
+（编译源码根、Maven 模块识别、还是只做展示）？这三个问题有答案之后，字段形状才有依据 ——
+在那之前把字段加进契约，只会得到一份"写得出、没人读、还得为它写测试"的假契约。
+`ProjectManifest` 因此继续只建模 `id`；别的生产者写进去的字段靠未知键逐字保留带过。
 
 ## 考虑过的备选方案
 

@@ -2657,7 +2657,9 @@ impl SettingsDialog {
     /// 这与真源一致：真源这一页读写的是**项目级**文件（`.lithe/run/local.json`，经
     /// `runConfig.updateOptions`；Maven 那两行写 Maven 工具窗的项目本地配置）。设计真源把
     /// 优先级定为 `项目本机 > 全局默认 > 自动发现`
-    /// （`.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md` 第四节）。
+    /// （决策与验证证据：
+    /// `.agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md`
+    /// 的"工具链五值落到项目本机层"一节）。
     ///
     /// ⚠️ 写项目本机层会调 Core（守卫要 `git rev-parse`），所以走 `background_spawn`；
     /// 失败只留诊断并**不假装保存成功**（`saved` 不置位）。

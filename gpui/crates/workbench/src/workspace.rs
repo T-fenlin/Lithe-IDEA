@@ -3909,8 +3909,8 @@ fn terminal_font_size_override(value: f64) -> Option<f32> {
 ///
 /// ## 为什么接在 `ShellWorkspace::new`
 ///
-/// 产品决策是**打开即建、无条件**（设计真源：
-/// `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`）：
+/// 产品决策是**打开即建、无条件**（决策与验证证据：
+/// `.agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md`）：
 /// 打开任何一个目录就建立它的 `.lithe/project.json`（带稳定 UUID 身份），写之前先确保
 /// `.lithe/` 进了本机排除文件。而 `ShellWorkspace::new` 是**所有"打开"路径的公共收口** ——
 /// 它全仓库只有两个调用点：`main.rs` 的启动（argv 给的根）与

@@ -222,8 +222,8 @@ pub fn load_session(root: &Path) -> SessionLoaded {
 /// 调用方不需要记得先调守卫。未知键靠 [`document::previous_object`] 从磁盘现读，
 /// 所以这里不需要调用方传上一版文档。
 ///
-/// ⚠️ **写完**才检查版本：版本过新的文件在被覆盖之前就要拦住，所以判据放在写之前
-/// （先读一次 previous，同一次读结果同时用于判只读与保留未知键）。
+/// ⚠️ 版本判据在**写之前**：版本过新的文件必须在被覆盖之前就拦住，所以先读一次 previous 拿到
+/// 声明版本、再决定写不写（同一次读的结果同时用于判只读与保留未知键）。
 pub fn save_session(root: &Path, session: &SessionState) -> Result<SessionSaved, SessionError> {
     let path = session_path(root);
     let previous = document::previous_object(&path);
