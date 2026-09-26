@@ -99,24 +99,36 @@
 //!    `bounds` 与触发器的视觉盒子逐像素相等 → 面板左边与触发器左边严格对齐（都是 `487`）。
 //!    —— 这两条都在 `.artifacts/p8/NOTES.md` §4 有实测记录与截图。
 //!
-//! # 范围（B4 之后）
+//! # 范围（B4 + B3 之后）
 //!
 //! | 面板里的东西 | 现状 | 说明 |
 //! | --- | --- | --- |
-//! | 三条动作行的**外观 / 文案 / 图标** | ✅ 画出来 | 「打开…」B4 起**可点**（换项目链路）；另两条仍是禁用态 |
+//! | 三条动作行的**外观 / 文案 / 图标** | ✅ 画出来 | 「打开…」B4 起**可点**（换项目链路）；「克隆仓库…」B3 起**可点但不是真做**（点了给"尚未接入：缺 X"）；「新建项目…」仍是禁用态 |
 //! | 「打开的项目」的当前项目行（高亮 + 勾） | ✅ | — |
 //! | 「最近项目」的列表 / 空态 | ✅ B4 起是**真数据**（`lithe_gpui_settings::recent_projects`，落 `%APPDATA%\Lithe\recent-projects.json`；空态沿用 `noRecentProjects`） | 行**可点** → 换项目链路 |
 //! | 切换到别的项目 | ✅ B4：走 `ShellWorkspace::request_open_project`（重建整个 `ShellWorkspace`） | |
 //! | 打开…（系统目录对话框） | ✅ B4：`ShellWorkspace::open_project_picker`（gpui 自带的 `prompt_for_paths`） | |
-//! | 新建项目… | ❌ **禁用态** | 没有脚手架能力（真机是 `createNewDirectory` + 起终端跑 `npm create`） |
-//! | 克隆仓库… | ❌ **禁用态** | 没有 `git.write` clone 的调用点，目标目录选择也没有 |
+//! | 新建项目… | ❌ **禁用态** | 没有脚手架能力（真机是 `createNewDirectory` + 起终端跑 `npm create`）；**B3 没有把它改成占位项**（规格的 B3 清单只点名了克隆仓库，见下） |
+//! | 克隆仓库… | ⚠️ **占位项**（B3） | Core 的 `git.write` **已含** clone，缺的是 URL / 凭据 / 进度 UI —— 点了给那句话（[`crate::menu_bar::MISSING_CLONE_UI`]），不是"没有能力" |
 //!
-//! ⚠️ **两条仍不可用的动作行画成禁用态**（维护者口径，2026-09-26 拍板）：真源三者**恒可执行、不置灰**
-//! （`title-project-menu.tsx:172-192`），本侧缺能力，所以两难的取舍是 —— **不能画成可点**
-//! （点下去面板照 `closeAndRun` `:133-136` 会关，却什么都没发生 = 对用户说谎），
-//! **也不能整段不画**（面板结构与维护者截图不符）。取中间的**真禁用态**：
-//! `.disabled(true)` → 不挂点击、不进键盘导航、前景 `muted_foreground`、无 hover 高亮，
-//! 于是"不可用"在**语义与视觉上都能区分**（不是只靠颜色）。逐条理由见 [`action_row`]。
+//! ## 为什么「克隆仓库…」从禁用态改成了占位项（B3）
+//!
+//! 规格 `gpui/research/menu-and-open-project-plan.md` §B3 的注明确把 `克隆仓库…` 收进
+//! 「按缺什么给提示」那张表（Q16 也是"先占位、不做最小版"），并且**要求那句话写成
+//! "Core 的 `git.write` 已含 clone，缺的是 URL / 凭据 / 进度 UI"** —— 能力在 Core 里，
+//! 只是没有它外面那层界面。禁用态说不出这句话（它只打诊断，见下），所以这一条改成
+//! 可点的占位项：点了打 `S1_PROJECT_MENU action=cloneRepository state=not_wired missing=clone_ui`
+//! ＋ 状态栏那句提示（与菜单栏那 51 条占位项走同一句文案）。
+//!
+//! ⚠️ 「新建项目…」**没有**一起改：规格的占位清单里没有它（它缺的是脚手架生成，
+//! 不是"能力已在、只缺 UI"），B3 的写域也不含这个面板。它继续是真禁用态。
+//!
+//! ⚠️ **不可用的动作行仍画成禁用态**（维护者口径，2026-09-26 拍板）：真源三条**恒可执行、不置灰**
+//! （`title-project-menu.tsx:172-192`）。对**真的没有能力、连"缺什么"都说不成一句能力话**
+//! 的那条（新建项目），两难的取舍是 —— **不能画成可点**（点下去面板照 `closeAndRun` `:133-136`
+//! 会关，却什么都没发生 = 对用户说谎），**也不能整段不画**（面板结构与维护者截图不符）。
+//! 取中间的**真禁用态**：`.disabled(true)` → 不挂点击、不进键盘导航、前景 `muted_foreground`、
+//! 无 hover 高亮，于是"不可用"在**语义与视觉上都能区分**（不是只靠颜色）。逐条理由见 [`action_row`]。
 //!
 //! # 已知偏差（逐条给理由，都不是遗漏）
 //!
@@ -364,30 +376,66 @@ impl PanelAction {
 
     /// 这条动作缺的**前置条件**（只进诊断，不是界面文案 —— 所以不走 i18n）。
     ///
-    /// `None` = 这条**已经接线**（面板里的「打开…」，B4）。诊断行因此能用同一个格式
-    /// 区分"可点"与"不可点"：`state=disabled precondition=no_scaffolding` /
-    /// `state=enabled precondition=none` —— 判据与 [`PanelAction::enabled`] 同源。
+    /// `None` = 这条**真的接线了**（面板里的「打开…」，B4）。诊断行因此能用同一个格式
+    /// 区分三档（判据在 [`PanelAction::wire`]）：`state=wired precondition=none` /
+    /// `state=not_wired precondition=no_git_clone_call_site`（B3 的占位项：**可点**，
+    /// 但能力确实不全）/ `state=disabled precondition=no_scaffolding`。
     fn precondition(self) -> Option<&'static str> {
         match self {
             Self::NewProject => Some("no_scaffolding"),
             // B4 接线之后这条不再缺前置条件：它落到 `ShellWorkspace::open_project_picker`
             // （gpui 自带的 `prompt_for_paths`，零新增依赖）—— 与「文件 → 打开文件夹」同一个函数。
             Self::OpenFolder => None,
+            // ⚠️ B3 起这一条**可点**，但前置条件照旧登记：它缺的不是"没有 clone 能力"
+            // （Core 的 `git.write` 已含），而是 URL / 凭据 / 进度 UI 这三块界面，
+            // 所以诊断行里仍然看得到 `precondition=no_git_clone_call_site`。
             Self::CloneRepository => Some("no_git_clone_call_site"),
         }
     }
 
-    /// 这条动作今天**能不能点**。真源三者恒可执行；本侧只有「打开…」有实现。
-    fn enabled(self) -> bool {
-        self.precondition().is_none()
+    /// 这条动作**点了之后落到哪**（`None` = 真禁用态，压根没有 `on_click`）。
+    ///
+    /// ⚠️ 这是 B3 起新拆出来的一问：以前"能不能点"与"缺什么前置条件"是同一件事
+    /// （`enabled() == precondition().is_none()`）。「克隆仓库…」变成占位项之后两者分家了 ——
+    /// 它**可点**，但**仍然缺前置条件**（真做起来要 URL / 凭据 / 进度 UI）。
+    /// 所以判据只留在这里一处，`enabled()` 由它派生，不会再漂移。
+    fn wire(self) -> Option<PanelWire> {
+        match self {
+            // 新建项目要脚手架生成（真机是 `createNewDirectory` + 起终端跑 `npm create`），
+            // 本侧没有这条能力，也没有一句"缺什么"的能力话可说 ⇒ 继续真禁用。
+            Self::NewProject => None,
+            Self::OpenFolder => Some(PanelWire::OpenFolder),
+            Self::CloneRepository => Some(PanelWire::CloneNotWired),
+        }
     }
+
+    /// 这条动作今天**点不点得动**（真源三者恒可执行；本侧只剩「新建项目」是禁用态）。
+    fn enabled(self) -> bool {
+        self.wire().is_some()
+    }
+}
+
+/// 段 ① 一条动作行**点下去会发生什么**（[`PanelAction::wire`] 的返回值）。
+///
+/// 抽成枚举而不是两个 `bool`：`action_row` 里那段 `on_click` 要按它分流，
+/// 而"漏掉一档"会在 `match` 里变成编译错误（两个 bool 只会静默走进 else）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PanelWire {
+    /// 已接线（B4）：调 `ShellWorkspace::open_project_picker`，与「文件 → 打开文件夹」/
+    /// `Ctrl+O` **同一个函数**（Q12：这两条同义）。
+    OpenFolder,
+    /// 占位（B3 / Q16）：点「克隆仓库…」→ 外壳打诊断 ＋ 状态栏给
+    /// 「尚未接入：Core 的 `git.write` 已含 clone，缺的是 URL / 凭据 / 进度 UI。」
+    /// （[`crate::menu_bar::MISSING_CLONE_UI`]）。
+    CloneNotWired,
 }
 
 /// 一条动作行：32 高、8 内距、8 间隔、16×16 图标、13→14px 文字。
 ///
-/// 「打开…」**可点**（B4 起）：它的 `on_click` 把这次点击交给
-/// `ShellWorkspace::open_project_picker` —— 也就是与「文件 → 打开文件夹」/`Ctrl+O`
-/// **同一个执行点**（Q12：这两条同义）。新建 / 克隆仓库仍是**禁用态**。
+/// 三条的落点见 [`PanelAction::wire`]：「打开…」**真接线**（B4：交给
+/// `ShellWorkspace::open_project_picker`，与「文件 → 打开文件夹」/`Ctrl+O` **同一个执行点**）、
+/// 「克隆仓库…」**占位**（B3：交给 `ShellWorkspace::report_clone_not_wired`，给一句"尚未接入"）、
+/// 「新建项目…」**真禁用**。
 ///
 /// ⚠️ **必须自绘**（`PopupMenuItem::element`）：`Item` 固定 26 高（`popup_menu.rs:1309`），
 /// 撑不到真源的 32。
@@ -395,35 +443,36 @@ impl PanelAction {
 /// `mx_neg_2()` + `px_2()` 是抵消父级的 `.px(8)`（`popup_menu.rs:1230`）：
 /// `MenuItemElement` 自己有 8 内距，行底色要铺满行宽就得先退回来。
 ///
-/// # ⚠️ 为什么没能力的两条是禁用态（维护者口径，2026-09-26 拍板）
+/// # ⚠️ 为什么「新建项目…」是禁用态、而「克隆仓库…」不是（B3 的分界）
 ///
-/// **真源这三条恒可执行**（`title-project-menu.tsx:172-192`，三者都不置灰），本侧**缺能力**：
-/// 新建要脚手架、克隆要 `git.write` clone 的调用点（前置条件逐条写在
-/// [`PanelAction::precondition`] 与模块头）。两难的取舍是：
+/// **真源这三条恒可执行**（`title-project-menu.tsx:172-192`，三者都不置灰），本侧两条缺东西：
+/// 新建要脚手架、克隆要 URL / 凭据 / 进度 UI。B3 起这条分界改成**"能不能说清缺什么"**：
 ///
-/// - **不能画成可点**：点下去面板照真源 `closeAndRun`（`:133-136`）会关掉，而什么都没发生 ——
-///   那对用户是**说谎**（"有反应"与"有效果"被混成一件事）；
-/// - **也不能整段不画**：面板结构与维护者截图不符。
-///
-/// 取中间的**真禁用态**：`.disabled(true)` 让 `PopupMenuItem` 不挂点击、不进键盘导航、
-/// 前景走 `muted_foreground`、没有 hover 高亮（`menu_item.rs:115-133`），
-/// 于是"不可用"在**语义与视觉上都能区分**（不是只靠颜色）。两条动作因此
-/// **点了什么都不发生、面板也不关**。
+/// - 「克隆仓库…」的能量在 Core（`git.write` 已含 clone），缺的只是界面 ⇒ **可点**，
+///   点了给那句话（Q16"先占位"、规格 §B3 的注要求这么写）；
+/// - 「新建项目…」缺的是脚手架生成这条能力本身，规格的占位清单里也没有它 ⇒ 仍是**真禁用态**：
+///   `.disabled(true)` 让 `PopupMenuItem` 不挂点击、不进键盘导航、前景走 `muted_foreground`、
+///   没有 hover 高亮（`menu_item.rs:115-133`），于是"不可用"在**语义与视觉上都能区分**
+///   （不是只靠颜色）。它因此**点了什么都不发生、面板也不关**。
 ///
 /// 前置条件仍然可 grep：面板每次打开时打一行 `S1_PROJECT_MENU action=… state=… precondition=…`
-/// （见 [`diagnose_actions`]）—— 诊断从"点击时"挪到"打开时"，
-/// 不再给用户一个假装能点的入口。
+/// （见 [`diagnose_actions`]）—— 「克隆仓库…」那一行现在的 `state=not_wired`，
+/// 点下去还会追加一行同 id 的 `state=not_wired missing=clone_ui`（见
+/// `ShellWorkspace::report_clone_not_wired`）。
 ///
-/// `shell` 是**外壳句柄**（面板实体自己没有句柄，见 [`ProjectMenu::shell`]）：可点的那条
-/// 要回到外壳上执行 —— 被绕开的只有"点一下面板"这一段，执行的是与文件菜单同一个函数。
+/// `shell` 是**外壳句柄**（面板实体自己没有句柄，见 [`ProjectMenu::shell`]）：可点的两条
+/// 都要回到外壳上执行 —— 被绕开的只有"点一下面板"这一段。
 fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) -> PopupMenuItem {
-    let enabled = action.enabled();
+    // 有接线（真做或占位）**且**外壳句柄还在 ⇒ 这一行画成可点态；否则真禁用
+    // （句柄丢了意味着窗口正在关，那时"点了有反应"本来就做不到）。
+    let wire = action.wire().zip(shell);
+    let clickable = wire.is_some();
     let item = PopupMenuItem::element(move |_window, cx| {
         // 禁用态前景：真源由 `data-disabled:opacity-50` + 继承色决定；gpui-kit 的
         // `MenuItemElement` 直接给 `muted_foreground`（`menu_item.rs:131-133`），
         // 所以图标与文字都显式取同一个 token（子元素的显式色会覆盖父级继承色）。
-        // 可点的那条取正常前景色 —— 两者在界面上必须一眼可分。
-        let color = if enabled {
+        // 可点的两条取正常前景色 —— 两者在界面上必须一眼可分。
+        let color = if clickable {
             cx.theme().foreground
         } else {
             cx.theme().muted_foreground
@@ -448,18 +497,22 @@ fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) ->
             )
     });
 
-    if !enabled {
+    if !clickable {
         return item.disabled(true);
     }
 
-    // 可点的那条：只**路由**，不在这里实现换项目 —— 执行点是
-    // `ShellWorkspace::open_project_picker`，与「文件 → 打开文件夹」/`Ctrl+O` **同一个函数**
-    // （Q12：这两条同义）。句柄没登记（窗口正在关）时退化成禁用态，而不是假装能点。
-    let Some(shell) = shell else {
+    let Some((wire, shell)) = wire else {
         return item.disabled(true);
     };
-    item.on_click(move |_event, window, cx| {
-        let _ = shell.update(cx, |shell, cx| shell.open_project_picker(window, cx));
+    // 两条可点的动作各自回外壳执行（这里只**路由**，不实现换项目 / 不实现克隆 UI）。
+    // 句柄在上面已经判过非空；`update` 返回 `Err` 只可能是"窗口正在关"，静默忽略。
+    item.on_click(move |_event, window, cx| match wire {
+        PanelWire::OpenFolder => {
+            let _ = shell.update(cx, |shell, cx| shell.open_project_picker(window, cx));
+        }
+        PanelWire::CloneNotWired => {
+            let _ = shell.update(cx, |shell, cx| shell.report_clone_not_wired(cx));
+        }
     })
 }
 
@@ -813,14 +866,23 @@ fn diagnose_structure(projects: usize, recent: usize) {
 
 /// 三条动作各自的状态，**面板每次打开时**打三行。
 ///
-/// 这样"为什么灰着 / 哪条能点"可 grep（`state=disabled precondition=…` /
-/// `state=enabled precondition=none`），而用户不会看到一个点下去只有日志、还把面板关掉的假入口。
+/// 这样"哪条能点、缺什么"可 grep（B3 起三档：`state=wired precondition=none`（真做）/
+/// `state=not_wired precondition=…`（占位，点了给提示）/ `state=disabled precondition=…`
+/// （真禁用，点了什么都不发生））—— 用户不会看到一个点下去只有日志、还把面板关掉的假入口。
+///
+/// ⚠️ `state` 的取值域就这三个，判据与 [`PanelAction::wire`] 同源（一个 `match` 分流，
+/// 不写第二处 if）。
 fn diagnose_actions() {
     for action in PanelAction::ALL {
+        let state = match action.wire() {
+            Some(PanelWire::OpenFolder) => "wired",
+            Some(PanelWire::CloneNotWired) => "not_wired",
+            None => "disabled",
+        };
         eprintln!(
             "S1_PROJECT_MENU action={} state={} precondition={}",
             action.id(),
-            if action.enabled() { "enabled" } else { "disabled" },
+            state,
             action.precondition().unwrap_or("none")
         );
     }
@@ -1167,7 +1229,7 @@ fn project_menu(
 mod tests {
     use super::{
         BADGE_FALLBACK, BADGE_TONES, PANEL_MAX_HEIGHT_SPEC, PANEL_WIDTH_SPEC, PanelAction,
-        ProjectBadge,
+        PanelWire, ProjectBadge,
     };
 
     /// 徽标字母对三个**在真源侧核对过**的样本必须逐个命中（研究 §2.2-5）：
@@ -1271,29 +1333,61 @@ mod tests {
         );
     }
 
-    /// B4 的动作表状态：**只有「打开…」可点**，另两条仍是禁用态 —— 那两条的
-    /// `precondition()` 必须各给一个具体理由（诊断行靠它说清"缺什么"）。
+    /// B3 的动作表状态：**「打开…」（真接线）与「克隆仓库…」（占位项）都可点**，
+    /// 只有「新建项目…」仍是禁用态 —— 后两条的 `precondition()` 必须各给一个具体理由
+    /// （诊断行靠它说清"缺什么"）。
     ///
-    /// 这条守的是一类回归：把某条动作的 `precondition` 从 `Some` 改成 `None`（或反过来）会让
-    /// 面板画出一个"点了只有日志"的假入口，而肉眼在截图里看不出来。
+    /// 这条守的是一类回归：
+    ///
+    /// 1. 把某条动作的 `precondition` 从 `Some` 改成 `None`（或反过来）会让诊断说谎；
+    /// 2. 把「克隆仓库…」悄悄改回禁用态（或把「新建项目…」改成可点）会让面板出现
+    ///    "点了没反应"或"假装能用"的入口 —— 两者都是 B3 的硬规则禁止的；
+    /// 3. **文案**：占位项那句必须是 [`crate::menu_bar::MISSING_CLONE_UI`]（"Core 的
+    ///    `git.write` 已含 clone，缺的是 URL / 凭据 / 进度 UI"），不是"没有能力"。
     #[test]
-    fn only_open_folder_is_clickable() {
+    fn open_folder_and_clone_are_clickable_new_project_is_not() {
         let clickable: Vec<PanelAction> = PanelAction::ALL
             .into_iter()
             .filter(|action| action.enabled())
             .collect();
-        assert_eq!(clickable, vec![PanelAction::OpenFolder]);
+        assert_eq!(
+            clickable,
+            vec![PanelAction::OpenFolder, PanelAction::CloneRepository],
+            "「打开…」真接线、「克隆仓库…」是 B3 的占位项（可点），「新建项目…」仍禁用"
+        );
         assert_eq!(
             PanelAction::OpenFolder.precondition(),
             None,
-            "可点的那条不该再报前置条件"
+            "真接线的那条不该再报前置条件"
+        );
+        assert_eq!(
+            PanelAction::OpenFolder.wire(),
+            Some(PanelWire::OpenFolder)
+        );
+        assert_eq!(
+            PanelAction::CloneRepository.wire(),
+            Some(PanelWire::CloneNotWired)
+        );
+        assert_eq!(
+            PanelAction::NewProject.wire(),
+            None,
+            "「新建项目…」缺的是脚手架能力本身，规格的 B3 占位清单里没有它"
         );
         for action in [PanelAction::NewProject, PanelAction::CloneRepository] {
             assert!(
                 action.precondition().is_some(),
-                "{action:?} 没接线就必须说清缺什么"
+                "{action:?} 没真的做出来就必须说清缺什么"
             );
         }
+        assert_eq!(
+            PanelAction::NewProject.precondition(),
+            Some("no_scaffolding")
+        );
+        assert_eq!(
+            PanelAction::CloneRepository.precondition(),
+            Some("no_git_clone_call_site"),
+            "占位项也要留前置条件：那句话说的是'缺 URL / 凭据 / 进度 UI'，不是'什么都有'"
+        );
     }
 
     /// 最近项目行的**可点性**只取决于"外壳句柄登没登记"这一件事 —— 没有句柄时必须能安全地

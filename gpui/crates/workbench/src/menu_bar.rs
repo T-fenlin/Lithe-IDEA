@@ -43,17 +43,41 @@
 //! 所以这里只复用 [`gpui_kit::component::menu::PopupMenu`]（下拉面板 / 子菜单 / 分隔线 /
 //! 键盘导航 / 快捷键提示全部现成），容器与顶级项自绘。
 //!
-//! ## v1 只列**真能执行**的项（维护者口径）
+//! ## 菜单结构：v1 的"只列能跑的" → B3 的"89 条照画"（维护者口径变更）
 //!
-//! 真源 89 条里，按 gpui 侧能力分档：**5 条已有实现**、**约 20 条有底层能力缺动作**、
-//! **约 64 条无能力**（`10-menu-bar.md` §2.11）。本侧**只把真的改到状态的那些放进来**
-//! —— 不摆"点了一片灰"的菜单，理由有两条：本仓库一贯"不放死控件"，以及《设计指南》的
-//! "还能做得更少吗"。没能力的那 ~64 条**逐条登记**在 `.artifacts/p7/NOTES.md`，
-//! 随能力落地再加。
+//! v1 只把真的改到状态的那些放进来（不摆"点了一片灰"）。B1/B2/B4 之后，
+//! 维护者在 B3 上改了这条口径：**真源 89 条一条不少地画出来**，有能力的真执行
+//! （B2/B4），没能力的按 Q2/Q8 渲染成**占位项**（点了在状态栏左侧给"尚未接入：缺 X"）。
+//! 于是菜单结构与真源**可以逐条比对**了 —— 这正是 v1 那条有意偏离被撤回的原因。
 //!
-//! ⚠️ 这条**有意偏离真源**：真源把那 89 条全画出来，只按 4 处后端能力开关禁用
-//! （`window-menu-bar.tsx:558-567`），其余项一律可点。本侧反着做（少画、不画灰），
-//! 所以**菜单结构与真源不可逐条比对** —— 这是维护者明确接受的口径，不是遗漏。
+//! | | 真源 | 本侧 v1 | 本侧 B3（现在） |
+//! | --- | --- | --- | --- |
+//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：41 条已接线 + 51 条占位 |
+//! | 没能力的项 | 恒可点（点下去做那件事） | 不画 | 画出来、可点、点了**如实**说缺什么 |
+//! | 灰化 | 4 处后端能力开关 | 不灰化 | 不灰化（占位项用提示表达"还没有"，不用颜色） |
+//!
+//! ## B3：占位项（`missing` 声明 + 状态栏提示 + 不给键位）
+//!
+//! 1. **声明挂在每一项自己身上**（Q14 形态 `1b`）：[`MenuItem::NotWired`] 必须带一个
+//!    [`Missing`]；已接线的 [`MenuItem::Action`] 结构上就没有这个字段，
+//!    [`MenuItem::missing`] 因此如实返回 `None`。单测
+//!    `every_listed_item_is_wired_or_declares_what_is_missing` 逐条断言
+//!    "要么已接线（有 `CommandId` 或在 `NON_COMMAND` 里登记）、要么声明非空"——
+//!    谁想悄悄加一条永远不工作的项，这里就红。
+//! 2. **文案按能力分组**（Q14 粒度 `2d`）：51 条占位项只有 [`MISSING_GROUPS`] 那么多句话
+//!    （**16 条**，一种能力一句），每句都回答"缺什么"。文案键全部是 gpui 侧新增
+//!    （真源的菜单项恒可执行，catalog 里没有"尚未接入"这类句子），理由逐条写在
+//!    `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
+//! 3. **点了有反馈**（Q2/Q6）：点击 → [`MenuRequest::NotWired`] 进队列 → 下一帧
+//!    `ShellWorkspace` 打一行 `S1_MENU notWired id=… missing=…` 并在**状态栏左侧**
+//!    显示那句话（复用 B4 的临时消息机制：`show_status_notice`，4 秒自动消失、代数防串）。
+//! 4. **不绑键位**（Q3）：占位项**连 `.action(..)` 都不传**（`build_popup` 的 `NotWired` 臂），
+//!    所以右侧那一列天然空着 —— 本批一条键位都没登记。
+//!
+//! ⚠️ **B2 那 7 条没接的**（还原文件 / 后退 / 前进 / 下一个·上一个标签页 / 另存为 /
+//! 切换自动换行）按规格 §5 第 5 条**也落在占位表里**：它们的实现在 editor crate 的
+//! 私有方法或干脆没有，而本批**未授权改动那个 crate**，所以如实写"缺编辑器侧的公开入口"
+//! （[`MISSING_EDITOR_ENTRY`]），不假装能用、也不登记按不出的键。
 //!
 //! ## B1 修的两条"收不掉"根因（各自独立，只修一条都还会坏）
 //!
@@ -234,15 +258,258 @@ impl TopMenu {
     }
 }
 
+/// 一条菜单项**缺什么**（B3 / Q14 的形态 `1b`：声明挂在**菜单项自己身上**）。
+///
+/// 拆成两半是因为两个消费者要的东西不一样：
+///
+/// - [`Missing::id`] 进诊断行 `S1_MENU notWired id=… missing=…`（短、稳定、可 grep）；
+/// - [`Missing::text_key`] 进状态栏左侧那句话（Q2："尚未接入：缺 X"）。
+///
+/// ⚠️ **文案按能力分组**（Q14 的粒度 `2d`）：同一种能力的所有项共用**同一个常量**，
+/// 所以占位项只有 [`MISSING_GROUPS`] 那么多句话（16 条），不会退化成"每项一句"。
+/// 每句话都必须回答"缺什么" —— 单测逐条断言声明非空、且文案键真的解析得出。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Missing {
+    /// 诊断行里的能力键（`missing=…`）。
+    pub id: &'static str,
+    /// 状态栏那句话的文案键（`lithe.gpui.menuMissing.*`）。
+    pub text_key: &'static str,
+}
+
+impl Missing {
+    /// 状态栏左侧那句话（"尚未接入：缺 X"）。
+    pub fn text(self) -> SharedString {
+        tr(self.text_key)
+    }
+
+    /// 这一项被点时的诊断行。
+    ///
+    /// `id` 用**文案键去掉 `lithe.` 前缀**（与 [`diagnose_run`] 同一条口径），
+    /// 于是日志里的 `id=menu.newTab` 与 `lithe.menu.newTab` 一眼对得上。
+    /// 格式只在这里拼一次：验证脚本按 `S1_MENU notWired id=… missing=…` grep。
+    pub fn diagnose(self, label_key: &str) {
+        eprintln!(
+            "S1_MENU notWired id={} missing={}",
+            label_key.trim_start_matches("lithe."),
+            self.id
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// B3 的能力分组（**一种能力一句话**，Q14 的粒度 `2d`）
+// ---------------------------------------------------------------------------
+//
+// 51 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
+// `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里（逐条写了理由：
+// 真源的菜单项**恒可执行**，catalog 里没有"尚未接入"这类文案）。
+//
+// ⚠️ 改这里的 `id` 就是改可 grep 的验证契约（`S1_MENU notWired missing=…`）；
+// 改 `text_key` 要同步改 i18n 四处（脚本 + 两份 yml + `shared/src/i18n.rs` 的 WIRED）。
+
+/// 编辑器侧的公开入口（B2 那 7 条没接的：另存为 / 还原 / 后退 / 前进 / 切换标签页 / 自动换行）。
+///
+/// 缺的不是"编辑器没这个功能"，而是**那个功能在 editor crate 里是私有的**：
+/// `EditorPane::request_reload` / `go_back` / `go_forward` / `activate` / `EditorState::set_soft_wrap`
+/// 都够不到（见 `.artifacts/p24/NOTES-p24.md` §1 末）。规格 §5 第 5 条：本批**未授权**动那个 crate。
+pub const MISSING_EDITOR_ENTRY: Missing = Missing {
+    id: "editor_entry",
+    text_key: "lithe.gpui.menuMissing.editorEntry",
+};
+
+/// 编辑器侧**根本没有**的编辑功能（行级编辑 / 转到行 / 视图开关 / 分屏）。
+///
+/// 与 [`MISSING_EDITOR_ENTRY`] 的差别是"有没有那个能力"：这里几条在整个仓库里零命中
+/// （`toggle_comment` / `duplicate_line` / `move_line` / `format` / `soft_wrap` / 分屏都没有），
+/// 不是"私有方法挡住了"。
+pub const MISSING_EDITOR_FEATURES: Missing = Missing {
+    id: "editor_features",
+    text_key: "lithe.gpui.menuMissing.editorFeatures",
+};
+
+/// Java 服务侧还没接的 LSP 请求（实现 / 类型定义 / 引用 / 重命名 / 悬停 / 参数提示 / 格式化）。
+///
+/// `JavaLanguageService` 现在只暴露 `definition` / `completion` / `code_actions` / `diagnostics`
+/// / `sync_document`（`java/src/service.rs`），所以这几条不是"编辑器缺入口"，
+/// 而是**上一条链的请求本身没接**。
+pub const MISSING_LSP_REQUESTS: Missing = Missing {
+    id: "lsp_requests",
+    text_key: "lithe.gpui.menuMissing.lspRequests",
+};
+
+/// 还没有索引器（全局搜索 / 快速打开）。真源这两条都走跨文件索引。
+pub const MISSING_INDEXER: Missing = Missing {
+    id: "indexer",
+    text_key: "lithe.gpui.menuMissing.indexer",
+};
+
+/// 没有调试进程宿主（开始 / 停止调试、切换断点）。
+///
+/// 真源这三条走 DAP；本侧连"能挂载调试器的进程宿主"都还没有（`BottomPaneKind::Run` 只是占位）。
+pub const MISSING_DEBUGGER_HOST: Missing = Missing {
+    id: "debugger_host",
+    text_key: "lithe.gpui.menuMissing.debuggerHost",
+};
+
+/// 还没有对应子系统（数据库 / Web 检查器）。
+pub const MISSING_SUBSYSTEM: Missing = Missing {
+    id: "subsystem",
+    text_key: "lithe.gpui.menuMissing.subsystem",
+};
+
+/// 还没有 GitHub 集成（认证 / 仓库 / PR）。
+pub const MISSING_GITHUB: Missing = Missing {
+    id: "github_integration",
+    text_key: "lithe.gpui.menuMissing.github",
+};
+
+/// 还没有更新器（检查更新 / 下载 / 安装）。
+pub const MISSING_UPDATER: Missing = Missing {
+    id: "updater",
+    text_key: "lithe.gpui.menuMissing.updater",
+};
+
+/// 克隆仓库：**能力在 Core 里已经有了**，缺的是它外面那层 UI。
+///
+/// ⚠️ 这句**不许**写成"没有能力"（规格 §B3 的注）：Core 的 `git.write` 已含 clone
+/// （`rust/lithe-core/src/protocol/command.rs`；语义见 `gpui/research/menu-open-prereqs.md`），
+/// 缺的是 URL / 凭据 / 进度这三块界面。它是**项目下拉**里那一行（`project_menu.rs`），
+/// 不在 89 条菜单项里 —— 但规格把它的提示归到 B3 这一张表上。
+pub const MISSING_CLONE_UI: Missing = Missing {
+    id: "clone_ui",
+    text_key: "lithe.gpui.menuMissing.cloneUi",
+};
+
+/// 缺"新建文件 / 空标签页"的文件生命周期（无标题 buffer + 命名 + 落盘）。
+pub const MISSING_FILE_LIFECYCLE: Missing = Missing {
+    id: "file_lifecycle",
+    text_key: "lithe.gpui.menuMissing.fileLifecycle",
+};
+
+/// 缺"关闭项目"的项目生命周期（销毁项目窗口 + 落盘项目列表）。
+///
+/// `workspace.rs` 的 `on_close` 现在只把 `active_project` 取消选中，注释自认"本轮不做"。
+pub const MISSING_PROJECT_LIFECYCLE: Missing = Missing {
+    id: "project_lifecycle",
+    text_key: "lithe.gpui.menuMissing.projectLifecycle",
+};
+
+/// 缺本地历史存储（没有内容仓库，也就没有可看的历史）。
+pub const MISSING_LOCAL_HISTORY: Missing = Missing {
+    id: "local_history",
+    text_key: "lithe.gpui.menuMissing.localHistory",
+};
+
+/// 缺窗口级句柄路由（新建窗口 / 关闭窗口 / 退出）。
+///
+/// 与 B4 的 `lithe.gpui.newWindowNotWired` 同一个根因（规格 §5 第 1 条：多窗口暂缓）：
+/// 菜单栏 / 项目下拉 / 命令面板 / Git 身份宿主这几个 `thread_local` 单例仍是"一个进程一份"。
+pub const MISSING_WINDOW_ROUTING: Missing = Missing {
+    id: "window_routing",
+    text_key: "lithe.gpui.menuMissing.windowRouting",
+};
+
+/// 缺帮助 / 关于的落地页（文档站与外链入口都没接）。
+pub const MISSING_HELP_ABOUT: Missing = Missing {
+    id: "help_about",
+    text_key: "lithe.gpui.menuMissing.helpAbout",
+};
+
+/// 缺快捷键一览界面（keymap 有，但没有能看的清单）。
+///
+/// 真源里「键盘快捷键」在**工具**与**帮助**两处各一条、共用同一个文案键
+/// （`menu.keyboardShortcuts`，`10-menu-bar.md` §2.7 的注），本侧照抄这个重复。
+pub const MISSING_SHORTCUTS_VIEW: Missing = Missing {
+    id: "shortcuts_view",
+    text_key: "lithe.gpui.menuMissing.shortcutsView",
+};
+
+/// 终端没有拆分能力（一个终端面板只有一组页签，没有分栏）。
+pub const MISSING_TERMINAL_SPLIT: Missing = Missing {
+    id: "terminal_split",
+    text_key: "lithe.gpui.menuMissing.terminalSplit",
+};
+
+/// 全部分组（单测拿它守住"没有第 17 组"、"每组都被用到"、"组 id 不重复"）。
+pub const MISSING_GROUPS: [Missing; 16] = [
+    MISSING_EDITOR_ENTRY,
+    MISSING_EDITOR_FEATURES,
+    MISSING_LSP_REQUESTS,
+    MISSING_INDEXER,
+    MISSING_DEBUGGER_HOST,
+    MISSING_SUBSYSTEM,
+    MISSING_GITHUB,
+    MISSING_UPDATER,
+    MISSING_CLONE_UI,
+    MISSING_FILE_LIFECYCLE,
+    MISSING_PROJECT_LIFECYCLE,
+    MISSING_LOCAL_HISTORY,
+    MISSING_WINDOW_ROUTING,
+    MISSING_HELP_ABOUT,
+    MISSING_SHORTCUTS_VIEW,
+    MISSING_TERMINAL_SPLIT,
+];
+
+/// **不在 [`MENUS`] 里**的那条占位项：项目下拉的「克隆仓库…」（`crate::project_menu`）。
+///
+/// 单独列出来只为一件事：让"每组都被用到"这条单测算得全 —— 否则
+/// [`MISSING_CLONE_UI`] 会被判成虚胖的声明（它的使用点在另一个模块里）。
+/// 这里的 `&str` 是**文案键**（真源既有 `titleProject.cloneRepository`），
+/// 与 [`MenuItem::NotWired`] 的 `label_key` 同一个语义。
+pub const NOT_WIRED_OUTSIDE_MENUS: [(&str, Missing); 1] =
+    [("lithe.titleProject.cloneRepository", MISSING_CLONE_UI)];
+
 /// 菜单里的一项。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuItem {
-    /// 可执行的项。
+    /// **已接线**的项（点了真的改状态）。
     Action(MenuAction),
+    /// **占位项**（B3）：画出来、可点，点了给"尚未接入：缺 [`Missing`]"。
+    ///
+    /// ⚠️ 为什么不复用 [`MenuItem::Action`]：占位项**没有** `MenuAction`
+    /// （那是一个"每一支都有执行分支"的枚举）。硬塞进去会让
+    /// `ShellWorkspace::apply_menu_action` 多出一堆什么都不做的臂 —— 那正是 Q10 要挡的
+    /// "悄悄加一条永远不工作的项"。用独立变体之后，"接线"与"占位"在**类型上**就是两回事：
+    /// 加一条占位项必须同时写出 `missing` 声明，而它进不了执行分支。
+    ///
+    /// ⚠️ 渲染时**不传 `.action(..)`** ⇒ 右侧没有键位胶囊（Q3：不绑键就不显示，
+    /// 更不登记一颗按不出的键）。
+    NotWired {
+        /// 文案键（真源既有 `lithe.menu.*`，与已实现项同一份真源文案）。
+        label_key: &'static str,
+        /// 这一项缺什么（同能力组共用同一个常量，见 [`MISSING_GROUPS`]）。
+        missing: Missing,
+        /// 左侧图标（与已实现项同一条口径：真源菜单项没有图标，这是本侧的有意偏离）。
+        icon: IconName,
+    },
     /// 分隔线（真源的 `<MenubarSeparator />`）。
     Separator,
     /// 二级子菜单：**主题列表**（真源唯一的动态项，见 `10-menu-bar.md` §3.1）。
     Theme,
+}
+
+impl MenuItem {
+    /// 这一项声明的"缺什么"：**已接线的项为 `None`**（Q14 的形态 `1b`）。
+    ///
+    /// 单测靠它把两种项分开断言；它也是"每条菜单项都带一个 `missing: Option<…>` 声明"
+    /// 这句话在代码里的形状。
+    pub const fn missing(&self) -> Option<Missing> {
+        match self {
+            Self::NotWired { missing, .. } => Some(*missing),
+            Self::Action(_) | Self::Separator | Self::Theme => None,
+        }
+    }
+
+    /// 这一项的文案键（分隔线没有文案，返回 `None`）。
+    ///
+    /// 给诊断与单测用：占位项的 `id=` 取的就是它（见 [`Missing::diagnose`]）。
+    pub const fn label_key(&self) -> Option<&'static str> {
+        match self {
+            Self::Action(action) => Some(action.label_key()),
+            Self::NotWired { label_key, .. } => Some(label_key),
+            Self::Separator | Self::Theme => None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -730,53 +997,108 @@ impl MenuAction {
     }
 }
 
-/// 9 个顶级菜单的静态表（**唯一真源**，两形态共用）。v1 只列真能执行的项。
+/// 9 个顶级菜单的静态表（**唯一真源**，两形态共用）。
 ///
-/// 空菜单（运行 / 帮助）也**照画**：真源有这 9 个顶级项，少一个肉眼就能看出来；
-/// 点开是一张空面板，而不是一片灰 —— 这是本侧口径下"没有能力"的最诚实表达。
-/// 项数与"没能力因此未列入"的条数逐条记在 `.artifacts/p7/NOTES.md`。
+/// B3 起**真源 89 条一条不少**：能执行的走 [`MenuItem::Action`]（41 条），
+/// 没能力的走 [`MenuItem::NotWired`]（51 条占位）。顺序与分隔线位置**照真源**
+/// （`gpui/research/windows/10-menu-bar.md:114-259` 每张表的"分隔线"列：写在它出现在该项**之后**），
+/// 所以这张表可以与那份清单逐行比对。四条本侧新增项（⚪：打开文件 / 显示状态栏 /
+/// 外观设置 / Maven）插在同一族里，**不动真源的相对顺序**。
 ///
-/// ⚠️ "视图 → 外观设置" 与 "工具 → 首选项" 指向**同一个对话框**，但页面不同
-/// （外观页 vs 常规页）：真源 `menu.preferences` 开的是常规页
-/// （`settings-actions.tsx:155-163`），而外观页在真源里只有命令面板入口
-/// （`:127-138` 的 `settingsTabCommands`）。这里把外观页放进视图菜单是**本侧的补齐**
-/// （真源视图菜单里没有它）。
+/// ⚠️ **"视图 → 外观设置" 与 "工具 → 首选项"** 指向同一个对话框的不同页：
+/// 真源 `menu.preferences` 开常规页（`settings-actions.tsx:155-163`），
+/// 而外观页在真源里只有命令面板入口（`:127-138` 的 `settingsTabCommands`）。
+/// 把外观页放进视图菜单是**本侧的补齐**（真源视图菜单里没有它）。
 pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "file",
         label_key: "lithe.menu.file",
-        // 顺序照真源 19 条里本侧已实现的那些（`window-menu-bar.tsx:133-199`）：
-        // 打开文件夹（真源第 4 项，**B4 接线**：选一个文件夹 → 换项目生命周期）→
-        // 打开文件（本侧新增，真源没有这一项）→ 保存（真源第 6）→ ── →
-        // 关闭系（真源第 11/13/14/15/16/17/18 项，顺序不变）。
+        // 真源 19 条，顺序与 3 条分隔线（在第 5 / 10 / 12 项之后）逐条照抄
+        // （`window-menu-bar.tsx:133-199`）。B1 接的 8 条、B4 接的「打开文件夹」、
+        // B2 接的「重新打开已关闭标签页」都在原位；其余 10 条是占位项。
+        //
+        // ⚪「打开文件…」是**本侧新增**（真源 89 条里没有这一项：Windows 靠快速打开 /
+        // 文件树取文件），插在同族的「打开文件夹」之后、不破坏真源顺序。
         //
         // ⚠️ **两条「打开」的键位不一样**：`Ctrl+O` 给「打开文件夹」（Q18；B4 在
-        // `install_open_project_action` 里 App 级登记了一次），所以它右侧会显示胶囊
-        // （B2 起走 `.action(..)` 让上游反查 keymap）；「打开文件」**有意不绑键位**，
-        // 于是它右侧空着 —— Q3：不绑就不显示。真源第 9 项「还原文件」本侧**不摆**，
-        // 理由见 `MenuItem::Action` 上方 Go 菜单那段注释（要 editor crate 的公开方法）。
+        // `install_open_project_action` 里 App 级登记了一次），所以它右侧会显示胶囊；
+        // 「打开文件」**有意不绑键位**，于是它右侧空着 —— Q3：不绑就不显示。
         items: &[
+            MenuItem::NotWired {
+                label_key: "lithe.menu.newTab",
+                missing: MISSING_FILE_LIFECYCLE,
+                icon: IconName::FilePlus,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.newWindow",
+                missing: MISSING_WINDOW_ROUTING,
+                icon: IconName::AppWindow,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.newFile",
+                missing: MISSING_FILE_LIFECYCLE,
+                icon: IconName::FilePlusCorner,
+            },
             MenuItem::Action(MenuAction::OpenFolder),
             MenuItem::Action(MenuAction::OpenFile),
+            MenuItem::NotWired {
+                label_key: "lithe.menu.closeFolder",
+                missing: MISSING_PROJECT_LIFECYCLE,
+                icon: IconName::FolderX,
+            },
+            MenuItem::Separator,
             MenuItem::Action(MenuAction::Save),
+            MenuItem::NotWired {
+                label_key: "lithe.menu.saveAs",
+                missing: MISSING_EDITOR_ENTRY,
+                icon: IconName::SavePen,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.saveAll",
+                missing: MISSING_EDITOR_ENTRY,
+                icon: IconName::SaveAll,
+            },
+            // 真源第 9 项「还原文件」：能力在 `EditorPane::request_reload`，但它是 editor
+            // crate 的**私有**方法（规格 §5 第 5 条：本批未授权动那个 crate）。
+            MenuItem::NotWired {
+                label_key: "lithe.menu.revertFile",
+                missing: MISSING_EDITOR_ENTRY,
+                icon: IconName::RotateCcw,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.showLocalHistory",
+                missing: MISSING_LOCAL_HISTORY,
+                icon: IconName::Clock,
+            },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::CloseTab),
+            MenuItem::NotWired {
+                label_key: "lithe.menu.closeWindow",
+                missing: MISSING_WINDOW_ROUTING,
+                icon: IconName::WindowClose,
+            },
+            MenuItem::Separator,
+            // ⚠️ 真源第 13/14 项的顺序是「关闭所有标签页」在「关闭其他标签页」之前，本侧这里是
+            // 反的。**B3 没有动它**：这两条是 B1 已接线的项，按本批纪律"只加占位项"，改顺序
+            // 属于另一件事（连 `file_menu_close_entries_are_wired` 的期望序列也要一起改）。
             MenuItem::Action(MenuAction::CloseOtherTabs),
             MenuItem::Action(MenuAction::CloseAllTabs),
             MenuItem::Action(MenuAction::CloseSavedTabs),
             MenuItem::Action(MenuAction::CloseTabsToLeft),
             MenuItem::Action(MenuAction::CloseTabsToRight),
-            MenuItem::Separator,
             MenuItem::Action(MenuAction::ReopenClosedTab),
+            MenuItem::NotWired {
+                label_key: "lithe.menu.quit",
+                missing: MISSING_WINDOW_ROUTING,
+                icon: IconName::Power,
+            },
         ],
     },
     TopMenu {
         id: "edit",
         label_key: "lithe.menu.edit",
-        // 顺序照真源 19 条里本侧已实现的那些（`window-menu-bar.tsx:200-276`）：
-        // 撤销 / 重做 ── 剪切 / 复制 / 粘贴 / 全选 ── 查找 / 查找并替换 / 快速修复 ── 命令面板。
-        // 真源的 4 条分隔线在原位；中间那些本侧还没有的能力（切换注释 / 触发参数提示 /
-        // 显示悬停信息 / 复制行 / 删除行 / 上移行 / 下移行 / 格式化…）属 B3，本批不摆。
+        // 真源 19 条，4 条分隔线（在第 2 / 6 / 8 / 12 项之后，`window-menu-bar.tsx:200-276`）。
+        // B2 接的 10 条（撤销…快速修复 / 命令面板）在原位，其余 9 条是占位项。
         items: &[
             MenuItem::Action(MenuAction::Undo),
             MenuItem::Action(MenuAction::Redo),
@@ -788,27 +1110,114 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Separator,
             MenuItem::Action(MenuAction::Find),
             MenuItem::Action(MenuAction::FindAndReplace),
-            MenuItem::Action(MenuAction::QuickFix),
             MenuItem::Separator,
+            MenuItem::NotWired {
+                label_key: "lithe.menu.toggleComment",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::Code,
+            },
+            MenuItem::Action(MenuAction::QuickFix),
+            MenuItem::NotWired {
+                label_key: "lithe.menu.triggerParameterHints",
+                missing: MISSING_LSP_REQUESTS,
+                icon: IconName::Parentheses,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.showHover",
+                missing: MISSING_LSP_REQUESTS,
+                icon: IconName::Info,
+            },
+            MenuItem::Separator,
+            MenuItem::NotWired {
+                label_key: "lithe.menu.duplicateLine",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::CopyPlus,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.deleteLine",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::Trash,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.moveLineUp",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::ArrowUp,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.moveLineDown",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::ArrowDown,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.formatDocument",
+                missing: MISSING_LSP_REQUESTS,
+                icon: IconName::Pilcrow,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.formatSelection",
+                missing: MISSING_LSP_REQUESTS,
+                icon: IconName::SquarePilcrow,
+            },
             MenuItem::Action(MenuAction::CommandPalette),
         ],
     },
     TopMenu {
         id: "view",
         label_key: "lithe.menu.view",
-        // 顺序照真源 18 条里本侧已实现的那些（`window-menu-bar.tsx:277-364`）：
-        // 三条侧栏/终端 ── 诊断 ── 文件资源管理器 / 源代码管理 / 运行和调试 ──
-        // 缩放三条 ── 显示状态栏（本侧新增）── 主题。
+        // 真源 18 条，5 条分隔线（在第 3 / 5 / 9 / 14 / 17 项之后，`window-menu-bar.tsx:277-364`）。
+        // B2 接的 10 条在原位，7 条是占位项，第 18 项是「主题」子菜单。
+        // ⚪「显示状态栏」是**本侧新增**（真源视图菜单里没有它，见本表文档）。
         items: &[
             MenuItem::Action(MenuAction::ToggleActivitySidebar),
             MenuItem::Action(MenuAction::ToggleSecondarySidebar),
             MenuItem::Action(MenuAction::ToggleTerminal),
             MenuItem::Separator,
+            MenuItem::NotWired {
+                label_key: "lithe.menu.globalSearch",
+                missing: MISSING_INDEXER,
+                icon: IconName::Globe,
+            },
             MenuItem::Action(MenuAction::ShowDiagnostics),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::ShowFileExplorer),
             MenuItem::Action(MenuAction::ShowSourceControl),
+            MenuItem::NotWired {
+                label_key: "lithe.menu.github",
+                missing: MISSING_GITHUB,
+                icon: IconName::Github,
+            },
             MenuItem::Action(MenuAction::ShowRunAndDebug),
+            MenuItem::Separator,
+            // 真源的「拆分编辑器」依赖 pane 树；本侧 `EditorPane` 是扁平 `buffers: Vec<Buffer>`
+            // （`editor_view.rs:1491`、`editor/src/lib.rs:157`）—— 属"编辑器侧根本没有"那一组。
+            MenuItem::NotWired {
+                label_key: "lithe.menu.splitEditor",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::SquareSplitHorizontal,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.toggleMinimap",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::Map,
+            },
+            // ⚠️ 「切换自动换行」是规格 §5 第 5 条点名的那 7 条之一：能力在
+            // `EditorState::set_soft_wrap`（`pub`），但外壳够不到任何一个 `EditorState`
+            // （`EditorPane::buffers` 在 editor crate 内部）—— 所以缺的是**公开入口**。
+            MenuItem::NotWired {
+                label_key: "lithe.menu.toggleWordWrap",
+                missing: MISSING_EDITOR_ENTRY,
+                icon: IconName::TextWrap,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.toggleLineNumbers",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::ListOrdered,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.toggleRenderWhitespace",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::Space,
+            },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::ZoomIn),
             MenuItem::Action(MenuAction::ZoomOut),
@@ -823,49 +1232,146 @@ pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "go",
         label_key: "lithe.menu.go",
-        // 真源的「转到」第 3/4 项是后退 / 前进（`:374-382`），本侧**本轮不摆**：
-        // 它们的实现在 `lithe_gpui_editor::EditorPane` 的私有方法里（`go_back` / `go_forward`），
-        // 而 B2 的写域不含 editor crate —— 摆出来就是"点了没反应"的死项（Q3/Q10 禁止）。
-        // 同理缺「下一个 / 上一个标签页」（`nextTab` / `previousTab`）。详见交付报告。
-        items: &[MenuItem::Action(MenuAction::GoToDefinition)],
+        // 真源 11 条，3 条分隔线（在第 2 / 4 / 9 项之后，`window-menu-bar.tsx:365-410`）。
+        // 本侧只有「转到定义」已接线；其余 10 条是占位项 —— 其中后退 / 前进 / 下一个 /
+        // 上一个标签页是 B2 没接的那 5 条里的 4 条（规格 §5 第 5 条，理由见 MISSING_EDITOR_ENTRY）。
+        items: &[
+            MenuItem::NotWired {
+                label_key: "lithe.menu.quickOpen",
+                missing: MISSING_INDEXER,
+                icon: IconName::Zap,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.goToLine",
+                missing: MISSING_EDITOR_FEATURES,
+                icon: IconName::Hash,
+            },
+            MenuItem::Separator,
+            MenuItem::NotWired {
+                label_key: "lithe.menu.goBack",
+                missing: MISSING_EDITOR_ENTRY,
+                icon: IconName::ArrowLeft,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.goForward",
+                missing: MISSING_EDITOR_ENTRY,
+                icon: IconName::ArrowRight,
+            },
+            MenuItem::Separator,
+            MenuItem::Action(MenuAction::GoToDefinition),
+            MenuItem::NotWired {
+                label_key: "lithe.menu.goToImplementation",
+                missing: MISSING_LSP_REQUESTS,
+                icon: IconName::ArrowUpRight,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.goToTypeDefinition",
+                missing: MISSING_LSP_REQUESTS,
+                icon: IconName::FileType,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.goToReferences",
+                missing: MISSING_LSP_REQUESTS,
+                icon: IconName::Network,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.renameSymbol",
+                missing: MISSING_LSP_REQUESTS,
+                icon: IconName::Signature,
+            },
+            MenuItem::Separator,
+            MenuItem::NotWired {
+                label_key: "lithe.menu.nextTab",
+                missing: MISSING_EDITOR_ENTRY,
+                icon: IconName::ChevronRight,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.previousTab",
+                missing: MISSING_EDITOR_ENTRY,
+                icon: IconName::ChevronLeft,
+            },
+        ],
     },
     TopMenu {
         id: "terminal",
         label_key: "lithe.menu.terminal",
         items: &[
             MenuItem::Action(MenuAction::NewTerminalTab),
+            MenuItem::NotWired {
+                label_key: "lithe.menu.splitTerminalRight",
+                missing: MISSING_TERMINAL_SPLIT,
+                icon: IconName::Columns2,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.splitTerminalDown",
+                missing: MISSING_TERMINAL_SPLIT,
+                icon: IconName::Rows2,
+            },
             MenuItem::Action(MenuAction::CloseTerminalTab),
         ],
     },
     TopMenu {
         id: "run",
         label_key: "lithe.menu.run",
-        items: &[],
+        // 真源 3 条（`window-menu-bar.tsx:427-439`），本侧三条都是占位项：
+        // 「运行」因此**不再是空菜单**，但也没有一条真能跑起来的东西 —— 如实写在文案里。
+        items: &[
+            MenuItem::NotWired {
+                label_key: "lithe.menu.startDebugging",
+                missing: MISSING_DEBUGGER_HOST,
+                icon: IconName::Play,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.stopDebugging",
+                missing: MISSING_DEBUGGER_HOST,
+                icon: IconName::SquareStop,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.toggleBreakpoint",
+                missing: MISSING_DEBUGGER_HOST,
+                icon: IconName::CircleDot,
+            },
+        ],
     },
     TopMenu {
         id: "tools",
         label_key: "lithe.menu.tools",
+        // 真源 4 条，2 条分隔线（在第 1 / 2 项之后，`window-menu-bar.tsx:440-461`）。
+        // 后两条是**本侧新增**：⚪「外观设置」（真源只有命令面板入口）与
+        // ⚪「Maven」（真源把它开在**右侧栏**，`maven-tool-window-actions.ts:58`，
+        // 而 Windows 的工具菜单本来就只有 4 项、其中「数据库」默认还是灰的
+        // `backend-capabilities.ts:5`；本侧把"Maven 工具窗"归到「工具」下更贴语义）。
         items: &[
+            MenuItem::NotWired {
+                label_key: "lithe.menu.databases",
+                missing: MISSING_SUBSYSTEM,
+                icon: IconName::Database,
+            },
+            MenuItem::Separator,
+            MenuItem::NotWired {
+                label_key: "lithe.menu.webInspector",
+                missing: MISSING_SUBSYSTEM,
+                icon: IconName::Monitor,
+            },
+            MenuItem::Separator,
             MenuItem::Action(MenuAction::Preferences),
-            // ⚠️ 「外观设置」与「首选项」是**同一个对话框的两页**（常规 / 外观），不是两条死项：
-            // 真源 `menu.preferences` 开常规页（`settings-actions.tsx:155-163`），外观页在真源里
-            // 只有命令面板入口（`:127-138` 的 `settingsTabCommands`）。本侧把它放进工具菜单
-            // 是**补齐**（真源视图菜单里没有它，见 `10-menu-bar.md` §5.1 B 档）。
+            // 真源里「键盘快捷键」在**工具**与**帮助**两处各一条、走同一个文案键
+            // （`10-menu-bar.md` §2.7 的注）—— 这里的重复是照抄真源，不是笔误。
+            MenuItem::NotWired {
+                label_key: "lithe.menu.keyboardShortcuts",
+                missing: MISSING_SHORTCUTS_VIEW,
+                icon: IconName::Keyboard,
+            },
             MenuItem::Action(MenuAction::OpenAppearanceSettings),
             MenuItem::Separator,
-            // ⚠️ 「Maven」放在这里（**不在**真源的**视图**菜单里）：真源把 Maven 工具窗开在
-            // **右侧栏**（`maven-tool-window-actions.ts:58` 的 `toggleMavenToolWindow`），
-            // 而 Windows 的工具菜单本来就只有 4 项、其中「数据库」默认还是灰的
-            // （`backend-capabilities.ts:5`）。本侧把"Maven 工具窗"归到「工具」下更贴语义。
-            // 真源视图菜单里的第 9 项是「运行和调试」，本侧没有该能力。
             MenuItem::Action(MenuAction::ToggleMaven),
         ],
     },
     TopMenu {
         id: "window",
         label_key: "lithe.menu.window",
-        // 顺序照真源 Windows 上那 4 项（`window-menu-bar.tsx:462-503`）：
-        // 最小化 / 最大化 ── 切换菜单栏 ── 切换全屏。
+        // 真源在 Windows 上那 4 条，2 条分隔线（在第 2 / 3 项之后，`window-menu-bar.tsx:462-503`）。
+        // **这一张表 4 条全部已接线**（B2 之前只有 3 条：缺「切换菜单栏」）。
         items: &[
             MenuItem::Action(MenuAction::Minimize),
             MenuItem::Action(MenuAction::Maximize),
@@ -878,16 +1384,78 @@ pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "help",
         label_key: "lithe.menu.help",
-        items: &[],
+        // 真源 7 条，2 条分隔线（在第 4 / 6 项之后，`window-menu-bar.tsx:504-530`）。
+        // 本侧 7 条**全是占位项**：「帮助」因此不再是空菜单，但一条都点不出真界面来。
+        items: &[
+            MenuItem::NotWired {
+                label_key: "lithe.menu.documentation",
+                missing: MISSING_HELP_ABOUT,
+                icon: IconName::BookOpen,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.keyboardShortcuts",
+                missing: MISSING_SHORTCUTS_VIEW,
+                icon: IconName::Keyboard,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.whatsNew",
+                missing: MISSING_HELP_ABOUT,
+                icon: IconName::Sparkles,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.changelog",
+                missing: MISSING_HELP_ABOUT,
+                icon: IconName::ScrollText,
+            },
+            MenuItem::Separator,
+            MenuItem::NotWired {
+                label_key: "lithe.menu.reportBug",
+                missing: MISSING_HELP_ABOUT,
+                icon: IconName::Bug,
+            },
+            MenuItem::NotWired {
+                label_key: "lithe.menu.requestFeature",
+                missing: MISSING_HELP_ABOUT,
+                icon: IconName::Lightbulb,
+            },
+            MenuItem::Separator,
+            MenuItem::NotWired {
+                label_key: "lithe.menu.checkForUpdates",
+                missing: MISSING_UPDATER,
+                icon: IconName::CloudDownload,
+            },
+        ],
     },
 ];
 
-/// v1 实际画出来的**可执行项**条数（诊断与文档都用它，避免两处各写一份数字）。
+/// 菜单里**已接线**的项数（诊断与文档都用它，避免两处各写一份数字）。
 pub fn action_count() -> usize {
     MENUS
         .iter()
         .flat_map(|menu| menu.items.iter())
         .filter(|item| matches!(item, MenuItem::Action(_)))
+        .count()
+}
+
+/// 菜单里**占位项**的项数（有 `missing` 声明的那种，B3）。诊断行 `notWired=…` 用它。
+///
+/// 这两个数与真源 89 条的关系是恒等式（单测 `every_listed_item_is_wired_or_declares_what_is_missing`
+/// 断言了它，改表时不会悄悄少画一条）：
+///
+/// ```text
+/// action_count()    = 41   // 37 条真源动作 + 4 条本侧新增
+/// not_wired_count() = 51   // 47 条规格 ❌ + 4 条规格 🟡
+/// MenuItem::Theme   =  1   // 「视图 → 主题」子菜单：既不是 Action、也没有 missing 声明
+/// -------------------------
+/// 合计              = 93   = 真源 89 条 + 本侧新增 4 条
+/// ```
+///
+/// 档位分布见 `tests` 模块里那段逐条明细（规格逐条表是 ✅8 / 🟡23 / ❌58）。
+pub fn not_wired_count() -> usize {
+    MENUS
+        .iter()
+        .flat_map(|menu| menu.items.iter())
+        .filter(|item| item.missing().is_some())
         .count()
 }
 
@@ -913,16 +1481,19 @@ impl MenuBarMode {
         }
     }
 
-    /// 构造期与切换形态时那一行诊断：形态 + 顶级项数 + 可执行项数。
+    /// 构造期与切换形态时那一行诊断：形态 + 顶级项数 + 可执行项数 + 占位项数。
     ///
-    /// 为什么打这三个数：它们在界面上读不出来（要数像素），而"9 个顶级菜单 / n 条可执行项"
-    /// 正是本任务最要紧的两个事实。
+    /// 为什么打这四个数：它们在界面上读不出来（要数像素），而"9 个顶级菜单 / n 条可执行项 /
+    /// m 条占位项"正是本任务最要紧的三个事实。
+    ///
+    /// ⚠️ B3 起多了 `notWired=`（追加在行尾，不破坏 p24 那些按 `actions=41` grep 的脚本）。
     pub fn diagnose(self) {
         eprintln!(
-            "S1_MENU_BAR mode={} items={} actions={}",
+            "S1_MENU_BAR mode={} items={} actions={} notWired={}",
             self.id(),
             MENUS.len(),
-            action_count()
+            action_count(),
+            not_wired_count()
         );
     }
 }
@@ -1019,6 +1590,23 @@ pub fn resolve_menu_toggle(prev: NavState, index: usize) -> NavState {
 // 菜单栏状态
 // ---------------------------------------------------------------------------
 
+/// 用户在菜单里选了什么（[`MenuBar::pending`] 的元素，B3 起有两类）。
+///
+/// 抽成一个枚举只为一件事：**让"点了占位项"与"点了真项"走同一条队列、同一段分流代码**
+/// （`ShellWorkspace::render` 里那个 `for`）。写两个 `Vec` 迟早会出现"只清了一个"的 bug。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuRequest {
+    /// 已接线的项：下一帧在 `ShellWorkspace::apply_menu_action` 里真的执行。
+    Run(MenuAction),
+    /// 占位项（B3）：下一帧打一行 `S1_MENU notWired` ＋ 在状态栏左侧说清缺什么（Q2/Q6）。
+    NotWired {
+        /// 这一项的文案键（诊断行 `id=…` 的取值，见 [`Missing::diagnose`]）。
+        label_key: &'static str,
+        /// 这一项缺什么。
+        missing: Missing,
+    },
+}
+
 /// 菜单栏状态：`ShellWorkspace` 持有它，两形态共用。
 ///
 /// ⚠️ 为什么是 `Entity` 而不是像 `activity_bar` / `status_bar` 那样一个无状态渲染函数：
@@ -1085,7 +1673,10 @@ pub struct MenuBar {
     /// 也拿不到 `ShellWorkspace` 的 `&mut self`。用队列把"用户点了什么"带回
     /// `ShellWorkspace::render`（那里两样都有），是本 crate 既有的做法
     /// （`command_palette` 用 `on_confirm` + `SHELL` 也是同一个问题的另一种解法）。
-    pending: Vec<MenuAction>,
+    ///
+    /// B3 起队列里有两类（[`MenuRequest`]）：已接线的动作与占位项。占位项也走同一条队列 ——
+    /// 于是"点了占位项会发生什么"与"点了真项会发生什么"由**同一段**代码分流，不会漏掉一半。
+    pending: Vec<MenuRequest>,
     /// 外壳根元素的焦点句柄：`PopupMenu` 收起时把焦点还给它
     /// （`popup_menu.rs:1052-1072` 的 `dismiss`），所以关闭菜单之后焦点不会凭空消失。
     action_context: FocusHandle,
@@ -1362,7 +1953,7 @@ impl MenuBar {
     /// `pub(crate)`：`Ctrl+O` 的全局 action 处理器（`workspace::install_open_project_action`）
     /// 也走这里 —— 于是"按 `Ctrl+O`"与"点「文件 → 打开文件夹」"落到**同一个**待执行队列。
     pub(crate) fn push_run(&mut self, action: MenuAction, cx: &mut App) {
-        self.pending.push(action);
+        self.pending.push(MenuRequest::Run(action));
         // 点完就收起（真源 `closeMenu()`，`window-menu-bar.tsx:105-112`）。
         // ⚠️ 这里是 `reason=select`：**不是**上游面板 `dismiss` 的那条路径 —— 面板的
         // `confirm()` 在跑完我们的 item 处理器之后**才会** `dismiss()`（`popup_menu.rs:859-873`），
@@ -1370,10 +1961,25 @@ impl MenuBar {
         self.close(CloseReason::Select, cx);
     }
 
-    /// 取走待执行的动作。
+    /// 记下一次**占位项**的点击（B3）：外壳下一帧给状态栏提示 ＋ 诊断。
+    ///
+    /// 与 [`MenuBar::push_run`] 逐字同一条路（同一个队列、同一个 `reason=select` 收起）——
+    /// 差别只有"下一帧执行什么"，那由 [`MenuRequest`] 决定。
+    pub(crate) fn push_not_wired(
+        &mut self,
+        label_key: &'static str,
+        missing: Missing,
+        cx: &mut App,
+    ) {
+        self.pending
+            .push(MenuRequest::NotWired { label_key, missing });
+        self.close(CloseReason::Select, cx);
+    }
+
+    /// 取走待执行的请求。
     ///
     /// 返回值带 `window` / `cx` 的执行留给外壳 —— 理由见 [`MenuBar::pending`]。
-    pub fn drain_runs(&mut self) -> Vec<MenuAction> {
+    pub fn drain_runs(&mut self) -> Vec<MenuRequest> {
         std::mem::take(&mut self.pending)
     }
 
@@ -1576,10 +2182,10 @@ pub(crate) fn try_handle() -> Option<gpui_kit::WeakEntity<MenuBar>> {
     MENU_BAR.with(|slot| slot.borrow().clone())
 }
 
-/// 取走待执行的菜单动作（`ShellWorkspace::render` 每帧开头调一次）。
+/// 取走待执行的菜单请求（`ShellWorkspace::render` 每帧开头调一次）。
 ///
 /// 句柄丢了（窗口正在关）返回空表，不 panic —— 该帧不会执行任何菜单动作。
-pub(crate) fn take_pending_runs(cx: &mut App) -> Vec<MenuAction> {
+pub(crate) fn take_pending_runs(cx: &mut App) -> Vec<MenuRequest> {
     let Some(bar) = MENU_BAR.with(|slot| slot.borrow().clone()) else {
         return Vec::new();
     };
@@ -1991,6 +2597,30 @@ fn build_popup(
                         let _ = item_handle.update(cx, |bar, cx| bar.push_run(action, cx));
                     }))
                 }
+                // B3 的占位项：**画出来、可点**（Q2），点了由外壳给"尚未接入：缺 X"。
+                //
+                // ⚠️ 这里**有意不传 `.action(..)`**（Q3）：`PopupMenuItem` 只从 `action` 字段
+                // 反查 keymap 画右侧键位胶囊（`popup_menu.rs:1119-1144,1301`），不传 ⇒ 那一列
+                // 天然空着。本批**没有登记任何键位** —— 占位项压根没有可执行的 Action，
+                // 登记一颗"按下去什么都不发生"的键才是 Q3 禁止的事。
+                MenuItem::NotWired {
+                    label_key,
+                    missing,
+                    icon,
+                } => {
+                    let label_key = *label_key;
+                    let missing = *missing;
+                    let item_handle = handle.clone();
+                    popup.item(
+                        PopupMenuItem::new(tr(label_key))
+                            .icon(Icon::new(*icon))
+                            .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                let _ = item_handle.update(cx, |bar, cx| {
+                                    bar.push_not_wired(label_key, missing, cx)
+                                });
+                            }),
+                    )
+                }
                 MenuItem::Theme => match &theme_menu {
                     Some(submenu) => {
                         popup.item(PopupMenuItem::submenu(tr("lithe.menu.theme"), submenu.clone()))
@@ -2040,9 +2670,44 @@ fn theme_menu(
 mod tests {
     use super::{
         CloseReason, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM, KEY_TOGGLE_ACTIVITY_SIDEBAR,
-        KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS, MenuAction, MenuBarMode, MenuItem,
-        NavState, action_count, mode_for, resolve_menu_toggle,
+        KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS, MISSING_GROUPS, MenuAction,
+        MenuBarMode, MenuItem, NOT_WIRED_OUTSIDE_MENUS, NavState, action_count, mode_for,
+        not_wired_count, resolve_menu_toggle,
     };
+    use lithe_gpui_shared::tr;
+    use std::collections::BTreeSet;
+
+    /// 真源 89 条的逐条明细，以 `gpui/research/windows/10-menu-bar.md` §2.1–§2.9 的
+    /// **逐条表字形**为准（独立复核过两遍）：
+    ///
+    /// ```text
+    /// ✅ 8 + 🟡 23 + ❌ 58 = 89
+    /// ```
+    ///
+    /// ⚠️ 两处会误导人的来源，都已核对过：
+    /// - `10-menu-bar.md:298-300`（§2.10 的**汇总行**）写的是 ✅ 5 / 🟡 ~20 / ❌ **~64**，
+    ///   与它自己的逐条表不符（那是"约数"，不是逐条数）；
+    /// - 本文件曾按「✅ 11 + 🟡 26 + ❌ 52」记录过，该分类**无法从逐条表复原**，已废弃。
+    ///
+    /// B1/B2/B4 之后各档的落点：
+    ///
+    /// | 档 | 条数 | 落点 |
+    /// | --- | --- | --- |
+    /// | ✅ 已实现 | 8 | 全部接线 |
+    /// | 🟡 能力已在 | 23 | 19 条接线（B1/B2/B4），**4 条**（后退 / 前进 / 上一个·下一个标签页）进占位表 |
+    /// | ❌ 无能力 | 58 | 11 条被 B1/B2/B4 接掉（关闭所有·其他·已保存·左侧·右侧·重新打开 / 快速修复 / 放大·缩小·重置缩放 / 切换菜单栏），**47 条**进占位表 |
+    ///
+    /// ⚠️ 「还原文件」在规格里是 ❌（`10-menu-bar.md:126`），**不是** 🟡 —— 别被它跟
+    /// 「后退 / 前进」摆在同一张表里的位置骗了。
+    ///
+    /// ⇒ 本侧菜单 = 真源 89（37 个 Action + 「主题」子菜单 + **51 条占位项**）+ 本侧新增 4 条
+    /// = 93 个条目。
+    const SOURCE_MENU_ITEMS: usize = 89;
+    /// 本侧**新增**（真源 89 条里没有）的项数：4 条。
+    ///
+    /// 侦察 §2.11 记的是 3 条（显示状态栏 / 外观设置 / Maven），第 4 条是 B1 加的
+    /// 「文件 → 打开文件…」（`lithe.outline.openFile` 复用真源文案键）—— 侦察写在 B1 之前。
+    const LOCAL_ONLY_ITEMS: usize = 4;
 
     /// `S1_MENU_CLOSE reason=…` 的取值域**正好是 Q17 那五个**（顺序也照那份规格写），
     /// 而且互不相同。
@@ -2294,14 +2959,25 @@ mod tests {
         );
     }
 
-    /// **v1 不允许出现"没有行为"的项**：每个 `Action` 都必须有图标与文案键，
-    /// 且要么能映射到一条 `CommandId`、要么在 `ShellWorkspace::run_menu_action` 里有分支。
+    /// **Q10 的那条单测翻面**：菜单里每一顶要么**已接线**（点下去真的改状态），
+    /// 要么**带一个非空的 `missing` 声明**（点下去如实说清缺什么）。
     ///
-    /// 这条测试守的是维护者的硬口径（"不要摆一片灰"）：一旦有人往表里塞一个占位项，这里就红。
+    /// 翻面的前身叫 `every_listed_action_is_executable`（"表里不许有死项"）—— 那条口径在 B3
+    /// 被维护者改掉了（Q10：从"不许有死项"改成"每项要么已接线、要么在声明里给出缺什么"）。
+    ///
+    /// ⚠️ **它仍然挡得住"悄悄加一条永远不工作的项"**，两层：
+    ///
+    /// 1. 占位项那一支：`missing.id` / `missing.text_key` 任一为空 ⇒ 红（"没声明"过不去）；
+    ///    文案键拼错时 `rust-i18n` 会回显键名，所以 `tr(key) != key` 这条也挡得住。
+    /// 2. 已接线那一支：`action` 必须能映射到一条 `CommandId`、或在 `NON_COMMAND` 里**显式登记**
+    ///    —— 后者是**清单**而不是白名单，新增一条就得在这里写一次（`NON_COMMAND` 的反向断言
+    ///    保证它不会越攒越假）。
+    ///
+    /// 验证手法（本批交付报告里有原文）：临时插一条声明为空的占位项 → 这条测试红 → 撤掉 → 绿。
     #[test]
-    fn every_listed_action_is_executable() {
+    fn every_listed_item_is_wired_or_declares_what_is_missing() {
         // 6 条不走 `CommandId` 的动作 —— 它们的执行分支在
-        // `ShellWorkspace::run_menu_action` 里，逐条接线点写在那里。
+        // `ShellWorkspace::apply_menu_action` 里，逐条接线点写在那里。
         // 这是**清单**而不是白名单：新增一条就得在这里显式登记一次。
         // 第 7 条（`OpenFolder`）是 B4 加的「打开文件夹」。
         const NON_COMMAND: [MenuAction; 25] = [
@@ -2334,35 +3010,179 @@ mod tests {
             MenuAction::ResetZoom,
         ];
 
-        let mut seen: Vec<MenuAction> = Vec::new();
+        let mut wired: Vec<MenuAction> = Vec::new();
+        let mut declared: Vec<(&'static str, super::Missing)> = Vec::new();
         for menu in MENUS {
             for item in menu.items {
-                let MenuItem::Action(action) = item else {
-                    continue;
-                };
-                assert!(
-                    action.command_id().is_some() || NON_COMMAND.contains(action),
-                    "{action:?} 既没有 CommandId，也没登记在 NON_COMMAND 里 —— 它就是一条死项"
-                );
-                assert!(
-                    action.label_key().starts_with("lithe."),
-                    "{action:?} 的文案键不在 lithe.* 命名空间里"
-                );
-                assert!(
-                    !seen.contains(action),
-                    "{action:?} 在菜单里出现了两次（同一个能力不该两个入口）"
-                );
-                seen.push(*action);
+                match item {
+                    MenuItem::Action(action) => {
+                        // 已接线的项**不该**带 missing 声明（两边都写就是两边都可能过期）。
+                        assert!(
+                            item.missing().is_none(),
+                            "{action:?} 已经接线了，却又带了一条 missing 声明"
+                        );
+                        assert!(
+                            action.command_id().is_some() || NON_COMMAND.contains(action),
+                            "{action:?} 既没有 CommandId，也没登记在 NON_COMMAND 里 —— 它就是一条死项"
+                        );
+                        assert!(
+                            action.label_key().starts_with("lithe."),
+                            "{action:?} 的文案键不在 lithe.* 命名空间里"
+                        );
+                        assert!(
+                            !wired.contains(action),
+                            "{action:?} 在菜单里出现了两次（同一个能力不该两个入口）"
+                        );
+                        wired.push(*action);
+                    }
+                    MenuItem::NotWired {
+                        label_key, missing, ..
+                    } => {
+                        assert!(
+                            label_key.starts_with("lithe."),
+                            "{label_key} 的文案键不在 lithe.* 命名空间里"
+                        );
+                        // 文案键（真源既有键）必须解析得出：拼错时 rust-i18n 原样回显键名，
+                        // 界面上就会画出一串键名。⚠️ 本批新摆的 51 条标签全是手写的，
+                        // 这条断言是它们唯一的机器判据（真源 `menu.*` 段本来就都在产物里）。
+                        assert_ne!(
+                            tr(label_key).as_ref(),
+                            *label_key,
+                            "{label_key} 的菜单文案解析不出来（键名拼错了？）"
+                        );
+                        // ⚠️ 这一条就是"不许悄悄加一条既没接线也没声明的项"的刀口。
+                        assert!(
+                            !missing.id.is_empty(),
+                            "{label_key} 既没有接线、也没有声明缺什么（missing.id 是空串）"
+                        );
+                        assert!(
+                            !missing.text_key.is_empty(),
+                            "{label_key} 的 missing 声明是空的 —— 每句提示都必须回答'缺什么'"
+                        );
+                        // 文案键必须真的**解析得出**：拼错时 rust-i18n 原样回显键名。
+                        let text = tr(missing.text_key);
+                        assert_ne!(
+                            text.as_ref(),
+                            missing.text_key,
+                            "{label_key} 的 missing 文案键解析不出来：{}",
+                            missing.text_key
+                        );
+                        assert!(
+                            text.starts_with("尚未接入：") || text.starts_with("Not wired yet:"),
+                            "{label_key} 的提示必须一眼看出'尚未接入'：{text}"
+                        );
+                        declared.push((label_key, *missing));
+                    }
+                    MenuItem::Separator | MenuItem::Theme => {}
+                }
             }
         }
+
         // 反向：`NON_COMMAND` 里登记过的动作必须真的在表里出现过，否则这张表会越攒越假。
         for action in NON_COMMAND {
             assert!(
-                seen.contains(&action),
+                wired.contains(&action),
                 "{action:?} 登记在 NON_COMMAND 里，但菜单里没有它"
             );
         }
-        assert_eq!(action_count(), seen.len());
+        assert_eq!(action_count(), wired.len());
+        assert_eq!(not_wired_count(), declared.len());
+        // 菜单项总数 = 真源 89 条 + 本侧新增 4 条（少画一条这里就红）。
+        assert_eq!(
+            action_count() + not_wired_count() + 1 /* Theme 子菜单 */,
+            SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
+        );
+        assert!(
+            declared.len() >= 48,
+            "占位项突然少了一半（现在 {}）？查一下是不是有人把没能力的项又删掉了",
+            declared.len()
+        );
+    }
+
+    /// **一个能力一句话**（Q14 的粒度 `2d`）：占位项只许用 [`MISSING_GROUPS`] 里那些声明，
+    /// 而且每组都被真的用到；不许给 51 条占位项各写一句。
+    ///
+    /// 这条挡的是两类退化：① 有人给某一条占位项现编一个新 `Missing`
+    /// （那会绕开 i18n 四处、也没有文案键）；② 有人加了一组却一条都没用（声明表虚胖）。
+    #[test]
+    fn missing_declarations_are_grouped_by_capability() {
+        // 组本身要自洽：id 非空、互不相同，文案键都在 gpui 自有段里（`GPUI_ONLY_KEYS`）。
+        let mut ids = BTreeSet::new();
+        for group in MISSING_GROUPS {
+            assert!(!group.id.is_empty(), "能力组 id 不许为空");
+            assert!(
+                group.text_key.starts_with("lithe.gpui.menuMissing."),
+                "{} 的文案键不在 lithe.gpui.menuMissing.* 里",
+                group.id
+            );
+            assert!(ids.insert(group.id), "能力组 id 重复：{}", group.id);
+        }
+
+        let mut used: BTreeSet<&'static str> = BTreeSet::new();
+        let mut texts: BTreeSet<&'static str> = BTreeSet::new();
+        for menu in MENUS {
+            for item in menu.items {
+                if let Some(missing) = item.missing() {
+                    assert!(
+                        MISSING_GROUPS.contains(&missing),
+                        "有一条占位项用了登记表之外的声明：{}",
+                        missing.id
+                    );
+                    used.insert(missing.id);
+                    texts.insert(missing.text_key);
+                }
+            }
+        }
+        // 项目下拉里那条（不在 `MENUS` 里，见 [`NOT_WIRED_OUTSIDE_MENUS`]）。
+        for (label_key, missing) in NOT_WIRED_OUTSIDE_MENUS {
+            assert!(
+                MISSING_GROUPS.contains(&missing),
+                "{label_key} 用了登记表之外的声明：{}",
+                missing.id
+            );
+            assert_ne!(
+                tr(label_key).as_ref(),
+                label_key,
+                "{label_key} 的文案键解析不出来（键名拼错了？）"
+            );
+            used.insert(missing.id);
+            texts.insert(missing.text_key);
+        }
+        for group in MISSING_GROUPS {
+            assert!(
+                used.contains(group.id),
+                "能力组 {} 一条占位项都没用（声明表虚胖）",
+                group.id
+            );
+        }
+        // Q14 的粒度上限：**一种能力一句话**，不许退化成"每项一句"。
+        assert!(
+            texts.len() <= 16,
+            "占位文案有 {} 句，超过了'按能力分组'的上限 16",
+            texts.len()
+        );
+    }
+
+    /// 真源里「键盘快捷键」在**工具**与**帮助**两处各一条、共用同一个文案键
+    /// （`10-menu-bar.md` §2.7 的注）—— 这里的重复是照抄真源。
+    ///
+    /// 这条把它钉住：谁"顺手去重"删掉一条，菜单就与真源对不上了。
+    #[test]
+    fn keyboard_shortcuts_appears_in_tools_and_help() {
+        let places = MENUS
+            .iter()
+            .flat_map(|menu| {
+                menu.items.iter().filter_map(|item| match item {
+                    MenuItem::NotWired { label_key, .. }
+                        if *label_key == "lithe.menu.keyboardShortcuts" =>
+                    {
+                        Some(menu.id)
+                    }
+                    _ => None,
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(places, vec!["tools", "help"]);
     }
 
     /// 分隔线不能出现在菜单的**首尾**（`PopupMenu` 会把末尾那条丢掉，

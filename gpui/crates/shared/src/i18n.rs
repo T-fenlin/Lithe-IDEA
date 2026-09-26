@@ -51,6 +51,7 @@
 //! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 26 条 `lithe.settings.gpui.*` 自有文案 —— 全部 26 条自有键都已接线）、`lithe.ui.cancel` |
 //! | `workbench` 的分支弹窗（阶段 11 第三件） | `lithe.git.{searchBranchesAria,repositories,branches,worktrees,selectorSections,searchBranches,branchCount,branchesCount,noMatchingBranches,noBranchesFound,current,refresh}` |
 //! | `workbench` 的打开项目 / 最近项目（B4） | `lithe.menu.openFolder`、`lithe.projectOpen.{title,where,doNotAskAgain,cancel,newWindow,thisWindow}`（全部真源既有键）、`lithe.gpui.newWindowNotWired`（**唯一**一条 gpui 自有键，理由见 `extract-locale.mjs`） |
+//! | `workbench` 的菜单占位项（B3） | **16 条** `lithe.gpui.menuMissing.*`（一种能力一句："尚未接入：缺 X"），由 `menu_bar.rs` 的 `MISSING_GROUPS` 使用、状态栏左侧显示；全部是 gpui 自有键（真源的菜单项恒可执行，catalog 里没有这类句子），理由见 `extract-locale.mjs` |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
 //! **任何键拼错都会让测试失败**（缺键时 `rust-i18n` 原样回显键名，所以断言 `tr(key) != key`）。
@@ -566,6 +567,74 @@ mod tests {
             (
                 "lithe.gpui.newWindowNotWired",
                 "尚未接入：在「新窗口」中打开项目需要多窗口支持（缺窗口级句柄路由）。",
+            ),
+            // B3 的**能力分组提示**（状态栏左侧那 16 句话，`Missing::text_key`）。
+            // 全部是 gpui 侧新增键（真源那 89 条菜单项恒可执行，catalog 里没有
+            // "尚未接入"这类句子），理由逐条写在 `tools/extract-locale.mjs` 的
+            // `GPUI_ONLY_KEYS`；`menu_bar.rs` 的 `MISSING_GROUPS` 是它们的唯一使用点。
+            (
+                "lithe.gpui.menuMissing.editorEntry",
+                "尚未接入：缺编辑器侧的公开入口，本批未授权改动 editor crate。",
+            ),
+            (
+                "lithe.gpui.menuMissing.editorFeatures",
+                "尚未接入：编辑器还没有这些功能（行级编辑、转到行、缩略图 / 行号 / 空白字符开关、分屏）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.lspRequests",
+                "尚未接入：Java 服务侧还没有这条 LSP 请求（现在只接了定义 / 补全 / 快速修复）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.indexer",
+                "尚未接入：还没有索引器（跨文件搜索与快速打开都依赖它）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.debuggerHost",
+                "尚未接入：没有进程宿主（调试适配器还没接）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.subsystem",
+                "尚未接入：还没有对应子系统。",
+            ),
+            (
+                "lithe.gpui.menuMissing.github",
+                "尚未接入：还没有 GitHub 集成（认证 / 仓库 / 拉取请求三条链都不在）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.updater",
+                "尚未接入：还没有更新器（检查更新 / 下载 / 安装都没接）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.cloneUi",
+                "尚未接入：Core 的 git.write 已含 clone，缺的是 URL / 凭据 / 进度 UI。",
+            ),
+            (
+                "lithe.gpui.menuMissing.fileLifecycle",
+                "尚未接入：缺新建文件 / 空标签页所需的文件生命周期（无标题 buffer + 命名 + 落盘）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.projectLifecycle",
+                "尚未接入：缺关闭项目的项目生命周期（销毁项目窗口 + 落盘项目列表）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.localHistory",
+                "尚未接入：缺本地历史存储（没有内容仓库，也就没有可看的历史）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.windowRouting",
+                "尚未接入：缺窗口级句柄路由（多窗口与窗口生命周期都还没做）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.helpAbout",
+                "尚未接入：缺帮助 / 关于的落地页（文档站与外链入口都没接）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.shortcutsView",
+                "尚未接入：缺快捷键一览界面（现在只有 keymap，没有能看的清单）。",
+            ),
+            (
+                "lithe.gpui.menuMissing.terminalSplit",
+                "尚未接入：终端没有拆分能力（一个终端面板只有一组页签，没有分栏）。",
             ),
             // 主菜单栏（`gpui/crates/workbench/src/menu_bar.rs`）。全部是**真源既有**键
             // （`windows/tauri/src/i18n/locale.ts` 的 `menu.*` 段，本侧前缀 `lithe.`）：

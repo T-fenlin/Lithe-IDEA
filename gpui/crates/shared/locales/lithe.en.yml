@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 46 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 62 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8735,6 +8735,38 @@ lithe:
     en: "View: Hide Status Bar"
   gpui.newWindowNotWired:
     en: "Not wired yet: opening a project in a new window needs multi-window support (window-level handle routing is missing)."
+  gpui.menuMissing.editorEntry:
+    en: "Not wired yet: the editor crate exposes no public entry point for this, and changing that crate is out of scope for this batch."
+  gpui.menuMissing.editorFeatures:
+    en: "Not wired yet: the editor has none of these features (line editing, go to line, minimap / line numbers / whitespace toggles, split view)."
+  gpui.menuMissing.lspRequests:
+    en: "Not wired yet: the Java service does not expose this LSP request (only definition, completion and code actions are wired)."
+  gpui.menuMissing.indexer:
+    en: "Not wired yet: there is no indexer (cross-file search and quick open both need it)."
+  gpui.menuMissing.debuggerHost:
+    en: "Not wired yet: there is no process host (no debug adapter is wired)."
+  gpui.menuMissing.subsystem:
+    en: "Not wired yet: the corresponding subsystem does not exist."
+  gpui.menuMissing.github:
+    en: "Not wired yet: there is no GitHub integration (auth, repositories and pull requests are all missing)."
+  gpui.menuMissing.updater:
+    en: "Not wired yet: there is no updater (check, download and install are all missing)."
+  gpui.menuMissing.cloneUi:
+    en: "Not wired yet: Core's git.write already covers clone; what is missing is the URL, credential and progress UI."
+  gpui.menuMissing.fileLifecycle:
+    en: "Not wired yet: the untitled-buffer lifecycle (create, name, save to disk) does not exist."
+  gpui.menuMissing.projectLifecycle:
+    en: "Not wired yet: closing a project needs the project lifecycle (dispose the project window and persist the project list)."
+  gpui.menuMissing.localHistory:
+    en: "Not wired yet: there is no local history store (no content repository, so nothing to show)."
+  gpui.menuMissing.windowRouting:
+    en: "Not wired yet: window-level handle routing is missing (multi-window and the window lifecycle are not implemented)."
+  gpui.menuMissing.helpAbout:
+    en: "Not wired yet: there is no help/about surface (the documentation site and external links are not wired)."
+  gpui.menuMissing.shortcutsView:
+    en: "Not wired yet: there is no keyboard-shortcuts view (the keymap exists but nothing displays it)."
+  gpui.menuMissing.terminalSplit:
+    en: "Not wired yet: the terminal cannot be split (a terminal panel has one tab strip and no panes)."
 
 gpui_component:
   Dialog.ok:

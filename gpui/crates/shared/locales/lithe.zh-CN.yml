@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 46 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 62 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8735,6 +8735,38 @@ lithe:
     zh-CN: "视图：隐藏状态栏"
   gpui.newWindowNotWired:
     zh-CN: "尚未接入：在「新窗口」中打开项目需要多窗口支持（缺窗口级句柄路由）。"
+  gpui.menuMissing.editorEntry:
+    zh-CN: "尚未接入：缺编辑器侧的公开入口，本批未授权改动 editor crate。"
+  gpui.menuMissing.editorFeatures:
+    zh-CN: "尚未接入：编辑器还没有这些功能（行级编辑、转到行、缩略图 / 行号 / 空白字符开关、分屏）。"
+  gpui.menuMissing.lspRequests:
+    zh-CN: "尚未接入：Java 服务侧还没有这条 LSP 请求（现在只接了定义 / 补全 / 快速修复）。"
+  gpui.menuMissing.indexer:
+    zh-CN: "尚未接入：还没有索引器（跨文件搜索与快速打开都依赖它）。"
+  gpui.menuMissing.debuggerHost:
+    zh-CN: "尚未接入：没有进程宿主（调试适配器还没接）。"
+  gpui.menuMissing.subsystem:
+    zh-CN: "尚未接入：还没有对应子系统。"
+  gpui.menuMissing.github:
+    zh-CN: "尚未接入：还没有 GitHub 集成（认证 / 仓库 / 拉取请求三条链都不在）。"
+  gpui.menuMissing.updater:
+    zh-CN: "尚未接入：还没有更新器（检查更新 / 下载 / 安装都没接）。"
+  gpui.menuMissing.cloneUi:
+    zh-CN: "尚未接入：Core 的 git.write 已含 clone，缺的是 URL / 凭据 / 进度 UI。"
+  gpui.menuMissing.fileLifecycle:
+    zh-CN: "尚未接入：缺新建文件 / 空标签页所需的文件生命周期（无标题 buffer + 命名 + 落盘）。"
+  gpui.menuMissing.projectLifecycle:
+    zh-CN: "尚未接入：缺关闭项目的项目生命周期（销毁项目窗口 + 落盘项目列表）。"
+  gpui.menuMissing.localHistory:
+    zh-CN: "尚未接入：缺本地历史存储（没有内容仓库，也就没有可看的历史）。"
+  gpui.menuMissing.windowRouting:
+    zh-CN: "尚未接入：缺窗口级句柄路由（多窗口与窗口生命周期都还没做）。"
+  gpui.menuMissing.helpAbout:
+    zh-CN: "尚未接入：缺帮助 / 关于的落地页（文档站与外链入口都没接）。"
+  gpui.menuMissing.shortcutsView:
+    zh-CN: "尚未接入：缺快捷键一览界面（现在只有 keymap，没有能看的清单）。"
+  gpui.menuMissing.terminalSplit:
+    zh-CN: "尚未接入：终端没有拆分能力（一个终端面板只有一组页签，没有分栏）。"
 
 gpui_component:
   Dialog.ok:

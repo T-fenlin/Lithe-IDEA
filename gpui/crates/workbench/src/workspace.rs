@@ -107,8 +107,8 @@ use crate::command_palette::{
     set_shell_focus,
 };
 use crate::menu_bar::{
-    MenuAction, MenuBar, diagnose_run as diagnose_menu_run, mode_for, set_menu_bar,
-    set_shell as set_menu_bar_shell,
+    MISSING_CLONE_UI, MenuAction, MenuBar, MenuRequest, Missing, diagnose_run as diagnose_menu_run,
+    mode_for, set_menu_bar, set_shell as set_menu_bar_shell,
 };
 use crate::project_menu::{
     ProjectEntry, ProjectMenu, render as render_project_menu, set_project_menu,
@@ -2384,6 +2384,45 @@ impl ShellWorkspace {
         self.show_status_notice(tr("lithe.gpui.newWindowNotWired"), cx);
     }
 
+    /// **占位项**（B3）被点时的落点：一行可 grep 诊断 ＋ 状态栏左侧那句"尚未接入：缺 X"。
+    ///
+    /// 两件事都在这里做（不在菜单栏那一侧）：状态栏是**外壳的一个字段**
+    /// （[`ShellWorkspace::status_notice`]，`crate::status_bar` 是无状态渲染函数），
+    /// 而菜单栏只有 `&mut App`——它够不到外壳的 `&mut self`。所以菜单栏只把
+    /// "哪一项 × 缺什么"塞进队列（[`MenuRequest::NotWired`]），执行落在这里。
+    ///
+    /// 提示复用 B4 的机制（[`ShellWorkspace::show_status_notice`]）：
+    /// 置位 → 重绘 → 4 秒后自动清掉，且带**代数防串**（4 秒内连点两项时，
+    /// 前一条的定时器不会把后一条提前抹掉）。
+    fn report_menu_not_wired(
+        &mut self,
+        label_key: &'static str,
+        missing: Missing,
+        cx: &mut Context<Self>,
+    ) {
+        // 诊断格式的唯一拼装点（`crate::menu_bar::Missing::diagnose`），验证脚本按它 grep：
+        // `S1_MENU notWired id=menu.newTab missing=file_lifecycle`。
+        missing.diagnose(label_key);
+        self.show_status_notice(missing.text(), cx);
+    }
+
+    /// 项目下拉里「克隆仓库…」被点时的落点（B3）。
+    ///
+    /// ⚠️ 与菜单栏那 51 条占位项**同一句话**（[`MISSING_CLONE_UI`]），因为缺的是同一件事；
+    /// 但诊断前缀是 `S1_PROJECT_MENU`（那一行的 `action=cloneRepository` 与
+    /// `diagnose_actions` 的打开期诊断同一格式）。它不在 89 条菜单项里（真源把克隆仓库放在
+    /// **标题栏项目下拉**），所以不经过 [`MenuRequest`] 那条队列。
+    ///
+    /// `pub(crate)`：调用点是 `crate::project_menu` 那一行动作的 `on_click`
+    /// （面板自己只有 `WeakEntity<ShellWorkspace>`，够不到 `&mut self`）。
+    pub(crate) fn report_clone_not_wired(&mut self, cx: &mut Context<Self>) {
+        eprintln!(
+            "S1_PROJECT_MENU action=cloneRepository state=not_wired missing={}",
+            MISSING_CLONE_UI.id
+        );
+        self.show_status_notice(MISSING_CLONE_UI.text(), cx);
+    }
+
     /// 「此窗口」：**重建整个外壳**（见模块头的"为什么不能逐个 reset"）。
     ///
     /// 顺序（每一步都有理由，不能调换）：
@@ -2887,8 +2926,18 @@ impl Render for ShellWorkspace {
         if probe {
             open_branch_panel(&self.branch_panel, window, cx);
         }
-        for action in crate::menu_bar::take_pending_runs(cx) {
-            self.apply_menu_action(action, window, cx);
+        // 菜单项的点击由上一帧写进队列，在本帧分流执行（B3 起队列里有两类：
+        // 已接线的 [`MenuRequest::Run`] 与占位项 [`MenuRequest::NotWired`]）。
+        //
+        // ⚠️ 两类**必须**在这里都处理：占位项只收起菜单、什么都不做的话，
+        // 用户看到的就是"点了没反应"——那正是 Q2 与"占位项不许假装能用"要挡的。
+        for request in crate::menu_bar::take_pending_runs(cx) {
+            match request {
+                MenuRequest::Run(action) => self.apply_menu_action(action, window, cx),
+                MenuRequest::NotWired { label_key, missing } => {
+                    self.report_menu_not_wired(label_key, missing, cx)
+                }
+            }
         }
 
         // 设置项「显示状态栏」。没有设置状态时按默认值（显示）处理：工作台不应该因为

@@ -390,6 +390,118 @@ const GPUI_ONLY_KEYS = [
     reason:
       "B4（打开其他文件夹）的换项目对话框里「新窗口」那一颗按钮的提示。真源的 projectOpen.newWindow 是**真的会开第二个窗口**的按钮（windows/tauri 的 createAppWindow），而 gpui 侧维护者已拍板「多窗口暂不做」（gpui/research/menu-and-open-project-plan.md §5），菜单栏 / 项目下拉 / 命令面板 / Git 身份宿主这几个 thread_local 单例仍是「一个进程一份」—— 点了它只能给一句「尚未接入：缺 X」。真源没有「能力尚未接入」这类文案（它的按钮恒可执行），而按 Q2 / Q14 的口径这句话必须说清缺什么，所以是 gpui 侧新增键。同一批其余的能力提示词归 B3，这里只补这一个。",
   },
+  {
+    key: "gpui.menuMissing.editorEntry",
+    zh: "尚未接入：缺编辑器侧的公开入口，本批未授权改动 editor crate。",
+    en: "Not wired yet: the editor crate exposes no public entry point for this, and changing that crate is out of scope for this batch.",
+    reason:
+      "B3 的占位项文案（规格 §B3 / Q14 粒度 2d：一种能力一句话）。这一句给「另存为 / 全部保存 / 还原文件 / 后退 / 前进 / 下一个·上一个标签页 / 切换自动换行」这 8 条：能力在 editor crate 里是**私有**的（EditorPane::request_reload / go_back / go_forward / activate、EditorState::set_soft_wrap 都够不到），而规格 §5 第 5 条明确本批不授权改那个 crate。真源的这 8 条恒可执行（catalog 里没有对应提示句），所以是 gpui 侧新增键。",
+  },
+  {
+    key: "gpui.menuMissing.editorFeatures",
+    zh: "尚未接入：编辑器还没有这些功能（行级编辑、转到行、缩略图 / 行号 / 空白字符开关、分屏）。",
+    en: "Not wired yet: the editor has none of these features (line editing, go to line, minimap / line numbers / whitespace toggles, split view).",
+    reason:
+      "B3（同上）。给「切换注释 / 复制行 / 删除行 / 上移行 / 下移行 / 转到行 / 拆分编辑器 / 切换缩略图 / 切换行号 / 切换空白字符显示」。与 editorEntry 的差别是**能力本身不存在**（整个仓库里 toggle_comment / duplicate_line / move_line / go_to_line / minimap / 分屏 零命中），不是「私有方法挡住了」。真源对应 10 条菜单项，catalog 里没有任何描述这些实现缺失的键。",
+  },
+  {
+    key: "gpui.menuMissing.lspRequests",
+    zh: "尚未接入：Java 服务侧还没有这条 LSP 请求（现在只接了定义 / 补全 / 快速修复）。",
+    en: "Not wired yet: the Java service does not expose this LSP request (only definition, completion and code actions are wired).",
+    reason:
+      "B3（同上）。给「转到实现 / 转到类型定义 / 转到引用 / 重命名符号 / 显示悬停信息 / 触发参数提示 / 格式化文档 / 格式化所选内容」。事实依据：crates/java/src/service.rs 只暴露 definition / completion / code_actions / diagnostics / sync_document 五条请求，textDocument/implementation|typeDefinition|references|rename|hover|signatureHelp|formatting 一条都没有 —— 缺的是上一条链的请求，不是编辑器入口。真源这 8 条恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.indexer",
+    zh: "尚未接入：还没有索引器（跨文件搜索与快速打开都依赖它）。",
+    en: "Not wired yet: there is no indexer (cross-file search and quick open both need it).",
+    reason:
+      "B3（同上）。给「视图 → 全局搜索」与「转到 → 快速打开」。维护者口径（规格 §B3 的注）点名这两条写「没有索引器」：真源这两项都走跨文件索引，gpui 侧还没有索引层。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.debuggerHost",
+    zh: "尚未接入：没有进程宿主（调试适配器还没接）。",
+    en: "Not wired yet: there is no process host (no debug adapter is wired).",
+    reason:
+      "B3（同上）。给「运行 → 开始调试 / 停止调试 / 切换断点」三条。维护者口径点名调试类写「没有进程宿主」：真源走 DAP，本侧连能挂调试器的进程宿主都没有（BottomPaneKind::Run 只是占位文案）。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.subsystem",
+    zh: "尚未接入：还没有对应子系统。",
+    en: "Not wired yet: the corresponding subsystem does not exist.",
+    reason:
+      "B3（同上）。给「工具 → 数据库 / Web 检查器」两条。维护者口径点名这两条写「还没有对应子系统」：真源「数据库」默认就是灰的（backend-capabilities.ts:5 的 database:false），「Web 检查器」走 invoke('reopen_current_webview_devtools')，两者在 gpui 侧都没有对应物。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.github",
+    zh: "尚未接入：还没有 GitHub 集成（认证 / 仓库 / 拉取请求三条链都不在）。",
+    en: "Not wired yet: there is no GitHub integration (auth, repositories and pull requests are all missing).",
+    reason:
+      "B3（同上）。给「视图 → GitHub」。维护者口径点名写「还没有 GitHub 集成」。真源那一项走 GitHub 认证与仓库/PR 面板，gpui 侧零实现（crates 里没有任何 GitHub 客户端）。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.updater",
+    zh: "尚未接入：还没有更新器（检查更新 / 下载 / 安装都没接）。",
+    en: "Not wired yet: there is no updater (check, download and install are all missing).",
+    reason:
+      "B3（同上）。给「帮助 → 检查更新」。维护者口径点名写「还没有更新器」：真源走 Tauri updater（checkForUpdates + toast，use-menu-events-wrapper.ts:337-344），gpui 侧没有更新通道与签名校验。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.cloneUi",
+    zh: "尚未接入：Core 的 git.write 已含 clone，缺的是 URL / 凭据 / 进度 UI。",
+    en: "Not wired yet: Core's git.write already covers clone; what is missing is the URL, credential and progress UI.",
+    reason:
+      "B3（同上）。给**标题栏项目下拉**的「克隆仓库…」（那一行在 project_menu.rs，规格 §B3 的注明确把它收进这张占位表）。⚠️ 这一句**必须**这么写：能力已经在 Core 里（rust/lithe-core 的 git.write 命令含 clone，语义见 gpui/research/menu-open-prereqs.md），缺的是它外面那层界面 —— 写成「没有能力」是错的。真源那条恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.fileLifecycle",
+    zh: "尚未接入：缺新建文件 / 空标签页所需的文件生命周期（无标题 buffer + 命名 + 落盘）。",
+    en: "Not wired yet: the untitled-buffer lifecycle (create, name, save to disk) does not exist.",
+    reason:
+      "B3（同上）。给「文件 → 新建标签页 / 新建文件」。事实依据：EditorPane 的 buffers 全是「盘上文件」，没有无标题 buffer，也没有新建文件对话框（editor_view.rs:1844 自认没有 + 按钮）。真源这两条恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.projectLifecycle",
+    zh: "尚未接入：缺关闭项目的项目生命周期（销毁项目窗口 + 落盘项目列表）。",
+    en: "Not wired yet: closing a project needs the project lifecycle (dispose the project window and persist the project list).",
+    reason:
+      "B3（同上）。给「文件 → 关闭文件夹」。事实依据：workspace.rs 的项目标签条 on_close 现在只把 active_project 取消选中，注释自认「关闭项目要销毁项目窗口 / 落盘项目列表，属项目生命周期，本轮不做」。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.localHistory",
+    zh: "尚未接入：缺本地历史存储（没有内容仓库，也就没有可看的历史）。",
+    en: "Not wired yet: there is no local history store (no content repository, so nothing to show).",
+    reason:
+      "B3（同上）。给「文件 → 显示本地历史」。事实依据：gpui 侧没有任何本地历史/快照存储（crates 里零命中）。真源那一项走 IDEA 式 Local History 面板，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.windowRouting",
+    zh: "尚未接入：缺窗口级句柄路由（多窗口与窗口生命周期都还没做）。",
+    en: "Not wired yet: window-level handle routing is missing (multi-window and the window lifecycle are not implemented).",
+    reason:
+      "B3（同上）。给「文件 → 新建窗口 / 关闭窗口 / 退出」。与 B4 的 gpui.newWindowNotWired 同一个根因（规格 §5 第 1 条：多窗口暂缓，菜单栏 / 项目下拉 / 命令面板 / Git 身份宿主那几个 thread_local 单例仍是「一个进程一份」）；这里换成菜单项那一侧的说法，也覆盖「退出 / 关闭窗口」这条窗口生命周期。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.helpAbout",
+    zh: "尚未接入：缺帮助 / 关于的落地页（文档站与外链入口都没接）。",
+    en: "Not wired yet: there is no help/about surface (the documentation site and external links are not wired).",
+    reason:
+      "B3（同上）。给「帮助 → 文档 / 新增功能 / 更新日志 / 报告 Bug / 请求新功能」。事实依据：这五条真源都走外部链接或环境信息拼装（use-menu-events-wrapper.ts:299-336），gpui 侧没有外链打开器与 issue 模板入口。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.shortcutsView",
+    zh: "尚未接入：缺快捷键一览界面（现在只有 keymap，没有能看的清单）。",
+    en: "Not wired yet: there is no keyboard-shortcuts view (the keymap exists but nothing displays it).",
+    reason:
+      "B3（同上）。给「工具 → 键盘快捷键」与「帮助 → 键盘快捷键」（真源两处各一条、共用同一个文案键，见 gpui/research/windows/10-menu-bar.md §2.7 的注）。事实依据：gpui 侧有 7 条 KeyBinding，但没有任何「列出全部快捷键」的界面。真源恒可执行，catalog 里没有这句。",
+  },
+  {
+    key: "gpui.menuMissing.terminalSplit",
+    zh: "尚未接入：终端没有拆分能力（一个终端面板只有一组页签，没有分栏）。",
+    en: "Not wired yet: the terminal cannot be split (a terminal panel has one tab strip and no panes).",
+    reason:
+      "B3（同上）。给「终端 → 向右拆分终端 / 向下拆分终端」。事实依据：terminal crate 只有标签页（TerminalPane::new_tab / close_tab），没有分栏树（terminal_view.rs:695 也记着 terminal.close 之前同样未绑）。真源恒可执行，catalog 里没有这句。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);
@@ -490,7 +602,7 @@ function renderFile({ yamlLocale, entries, overrides, sourceLabel }) {
   const lines = [
     "# 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。",
     `# 真源：${sourceLabel}`,
-    `# 另有 ${GPUI_ONLY_KEYS.length} 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
+    `# 另有 ${GPUI_ONLY_KEYS.length} 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
     "# 重新生成：node gpui/tools/extract-locale.mjs",
     "#",
     `# rust-i18n 4.2 约定：_version: ${FILE_VERSION}（key 在前、locale 在后）。`,
