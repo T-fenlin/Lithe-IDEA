@@ -55,13 +55,20 @@ const FIX_GUIDANCE =
  * 白名单：`coding-guides.md:288` 的四类例外里，本仓库当前**确实**成立的 7 行。
  *
  * 匹配口径是「仓库相对路径（`/` 分隔）+ 行号」；同一行上的多个 `px(...)` 一起放行
- * （例如 `size(px(1024.), px(680.))` 一行两处）。**除这 7 行以外一律算违规**，
+ * （例如 `size(px(1024.), px(680.))` 一行两处）。**除这 7 条例外以外一律算违规**，
  * 白名单不接受"方便"或"匹配截图"，也不接受"不在 gpui 固定 rem 档位上" —— 档位外用
- * `rems(P / 16.)`。给白名单加行必须同时写清引用的例外类别，否则就是给规范开后门。
+ * `rems(P / 16.)`。给白名单加条目必须同时写清引用的例外类别，否则就是给规范开后门。
+ *
+ * ⚠️ **匹配按 `match`（命中行里的一段稳定代码），不按 `line`**：`line` 只记录上次见到的行号，
+ * 供人阅读。按行号匹配的版本活不过一个批次就腐烂了 —— 一次正常重构把 `main.rs` 的
+ * `window_min_size` 从 :751 挪到 :753，那处合法例外就被当成违规报了出来。
+ * 内容匹配的代价是：真的改动了例外所在的那行代码时，这里要跟着更新 `match`，
+ * 而"没命中"会被明确警告（见下面的 `notes`），不会静默放行。
  */
 const WHITELIST = [
   {
     file: "gpui/crates/app/src/main.rs",
+    match: "const MIN_WINDOW",
     line: 69,
     category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
     reason:
@@ -69,12 +76,14 @@ const WHITELIST = [
   },
   {
     file: "gpui/crates/app/src/main.rs",
+    match: "fallback = size(px(1280.)",
     line: 70,
     category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
     reason: "let fallback = size(px(1280.), px(800.)) —— 兜底窗口尺寸，同上（WindowOptions/Size<Pixels> 的平台边界）。",
   },
   {
     file: "gpui/crates/app/src/main.rs",
+    match: "WindowBounds::Windowed(Bounds::new(point(px(60.)",
     line: 73,
     category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
     reason:
@@ -82,29 +91,56 @@ const WHITELIST = [
   },
   {
     file: "gpui/crates/app/src/main.rs",
-    line: 751,
+    match: "window_min_size: Some(size(px(1024.)",
+    line: 753,
     category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
     reason: "window_min_size: Some(size(px(1024.), px(680.))) —— WindowOptions 的最小窗口尺寸，同上。",
   },
   {
     file: "gpui/crates/settings/src/theme.rs",
+    match: "px(theme_font_size_for(ui_font_size))",
     line: 107,
     category: "theme/token definition 本身（coding-guides.md:288 第 4 类）",
     reason: "let font_size = px(theme_font_size_for(ui_font_size)) —— 这里定义的正是 `Theme.font_size` token 自身，是 rem 基准的来源，不能再用 rem 表达。",
   },
   {
     file: "gpui/crates/settings/src/theme.rs",
+    match: "px(editor_font_size as f32)",
     line: 128,
     category: "theme/token definition 本身（coding-guides.md:288 第 4 类）",
     reason: "let font_size = px(editor_font_size as f32) —— 同上，定义 `Theme.mono_font_size` token 自身。",
   },
   {
     file: "gpui/crates/settings/src/store.rs",
+    match: "let desired = px(theme_font_size_for(self.settings.ui_font_size))",
     line: 542,
     category: "theme/token definition 本身（coding-guides.md:288 第 4 类）",
     reason: "let desired = px(theme_font_size_for(self.settings.ui_font_size)) —— 同一条 token 的定义/不变量断言（守卫测试里复算 Theme.font_size 的预期值）。",
   },
 ];
+
+/**
+ * 白名单自身的体检：`match` 为空/过短/重复都会让"例外"变成后门（过短的片段会顺手放行别的调用），
+ * 所以这些情况直接判失败，而不是只警告。
+ */
+function validateWhitelist() {
+  const problems = [];
+  const seen = new Set();
+  for (const entry of WHITELIST) {
+    const text = typeof entry.match === "string" ? entry.match.trim() : "";
+    if (text.length < 12) {
+      problems.push(
+        `白名单条目 ${entry.file} 的 match 为空或过短（${JSON.stringify(entry.match)}）：至少 12 个字符，否则会误放行别的 px() 调用。`,
+      );
+    }
+    const key = `${entry.file}::${text}`;
+    if (seen.has(key)) {
+      problems.push(`白名单里有重复条目：${key}`);
+    }
+    seen.add(key);
+  }
+  return problems;
+}
 
 const IDENT_OR_DOT = /[A-Za-z0-9_.]/;
 const RAW_STRING_PREFIX = /^(?:b|c)?r(#*)"/;
@@ -468,6 +504,14 @@ function main() {
     return;
   }
 
+  const whitelistProblems = validateWhitelist();
+  if (whitelistProblems.length > 0) {
+    for (const problem of whitelistProblems) console.warn(`警告：${problem}`);
+    console.warn("白名单自身有问题（match 为空/过短/重复）—— 先修 WHITELIST 再跑。");
+    process.exitCode = 1;
+    return;
+  }
+
   const sources = collectSources();
   const violations = [];
   const whitelisted = [];
@@ -489,7 +533,7 @@ function main() {
     testCalls += scan.testHits.length;
 
     for (const hit of scan.production) {
-      const entry = WHITELIST.find((item) => item.file === rel && item.line === hit.line);
+      const entry = WHITELIST.find((item) => item.file === rel && hit.text.includes(item.match));
       if (entry === undefined) {
         violations.push({ file: rel, line: hit.line, text: hit.text });
         continue;
@@ -502,7 +546,9 @@ function main() {
   for (const entry of WHITELIST) {
     if (!whitelistSeen.has(entry)) {
       notes.push(
-        `白名单 ${entry.file}:${entry.line} 这次没有命中（已被修掉、或行号漂移了；请复核后更新脚本里的 WHITELIST）。`,
+        `白名单条目 ${entry.file}（match=${JSON.stringify(entry.match)}，上次在 :${entry.line}）这次没有命中：` +
+          `要么那处例外已被改掉（那就从白名单里删掉这条），要么代码变了（那就更新 match）。` +
+          `本脚本按 match 内容匹配，行号漂移不会误报。`,
       );
     }
   }
@@ -515,7 +561,7 @@ function main() {
     } 处。`,
   );
   console.log(
-    `白名单 ${whitelisted.length} 处（表里 ${WHITELIST.length} 行）、违规 ${violations.length} 处。`,
+    `白名单 ${whitelisted.length} 处（表里 ${WHITELIST.length} 条）、违规 ${violations.length} 处。`,
   );
 
   if (list) {
@@ -536,7 +582,7 @@ function main() {
 
   if (violations.length > 0) {
     console.warn(
-      `违规 ${violations.length} 处：Application UI 里每个直接 px(...) 都是 review finding（coding-guides.md:288）；白名单只认 ${WHITELIST.length} 行，且每行都有引用的例外类别。`,
+      `违规 ${violations.length} 处：Application UI 里每个直接 px(...) 都是 review finding（coding-guides.md:288）；白名单只认 ${WHITELIST.length} 条，且每条都有引用的例外类别。`,
     );
     process.exitCode = 1;
     return;
@@ -585,11 +631,10 @@ function selftestSources() {
   // 这一行同时是「字符串里的 `//` 不是注释」的判据：`"a//b"` 之后的两个 `px()` 必须照样被找到
   // （找晚了整行都会被当成注释吞掉，白名单命中数就会从 2 掉到 0）。
   const whitelistEntry = WHITELIST[0];
-  const whitelistLines = [];
-  while (whitelistLines.length < whitelistEntry.line - 1) {
-    whitelistLines.push(`// 填充到白名单行 ${whitelistEntry.line}`);
-  }
-  whitelistLines.push(`fn window_options() { let _ = format!("a//b"); let _ = size(px(1024.), px(680.)); }`);
+  const whitelistLines = [
+    // 白名单按 `match` 内容匹配，所以样例只要让那一行**包含** `match` 即可，不需要填到某个行号上。
+    `fn window_options() { let _ = format!("a//b"); ${whitelistEntry.match} = size(px(1024.), px(680.)); }`,
+  ];
 
   return [
     { file: "gpui/crates/selftest/src/sample.rs", content: `${lines.join("\n")}\n` },
@@ -604,7 +649,9 @@ function runSelftest(list) {
   for (const sample of selftestSources()) {
     const scan = scanSource(sample.content);
     for (const hit of scan.production) {
-      const entry = WHITELIST.find((item) => item.file === sample.file && item.line === hit.line);
+      const entry = WHITELIST.find(
+        (item) => item.file === sample.file && hit.text.includes(item.match),
+      );
       findings.push({ file: sample.file, line: hit.line, text: hit.text, whitelisted: entry !== undefined });
     }
     if (sample.file === "gpui/crates/selftest/src/sample.rs") {
