@@ -399,7 +399,7 @@ window.replace_root(cx, |window, cx| {
 | 4 | **`compact_menu` 等启动参数在 `replace_root` 时怎么拿到** | 它是 `main.rs` 的局部变量，只经由 `ShellWorkspace::new` 的第二个参数进入（`workspace.rs:652`） | 读 `main.rs` 的参数解析段（`:220-260`）确认它是不是 `App::Global`；否则第 3 步要先把它提成 `Global` |
 | 5 | **「打开文件」放哪**（真源文件菜单里没有这一项） | 真源只有 `file.open`="Open Project"(Cmd+O) 与 outline 侧栏的 `outline.openFile`（§2.7） | 需维护者拍板：放文件菜单（本侧新增）／放 `Ctrl+O` 指向项目选择器（对齐真源）／两者都要 |
 | 6 | **`prompt_for_paths` 在无人值守（`--` 探针）下能不能被脚本驱动** | 它弹的是**系统模态**，本轮没跑 | 若要自动化验收，需另设一条"不经对话框"的探针入口（照 `--open-settings` / `--project-menu-probe` 的既有口径，`main.rs:643-691`） |
-| 7 | **最近项目另起文件 vs 塞进 `settings.json`** | 两者都可行，取决于维护者对"设置文件是否只放用户手改的设置"的口径 | 需维护者拍板；技术上 `settings.json` 要新增 `Vec` 字段 + 同步 `persistence.rs:144-196` 的逐键表，另起文件则完全正交 |
+| 7 | **最近项目另起文件 vs 塞进 `settings.json`** | **已定**：另起 `recent-projects.json`（`menu-and-open-project-plan.md:35` 的 Q20），理由是最近的机器状态是高频改写，不该混进用户手改的设置文件 | 当时这条依赖"`Settings` 是扁平标量、塞列表要同步 `persistence.rs` 的逐键表"；**那个前提已经不存在**（键表由 schema 派生，见 `persistence.rs` 的模块文档），但结论不变：分文件是为了"高频改写不重写用户文件"，与结构能否容纳列表无关 |
 | 8 | **「打开的项目（多项目）」这次要不要一起做** | 维护者这轮只说"打开后项目树变成新项目"，没说要不要真正的多项目标签条 | 若要做，`ProjectTab`（`project_tabs.rs:203-207`）只有 `name`，要先长出 `path`（缺口已登记：`workspace.rs:1043-1045`）；`workspace.rs:1952` 的 `len()>1` 渲染条件与 `on_close`(`:1700-1712`) 都要改 |
 
 ---

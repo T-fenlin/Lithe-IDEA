@@ -12,3 +12,8 @@ lithe-gpui-shared = { path = "../shared" }
 # 版本跟随 workspace 已有的 `lithe-gpui-shared`（`serde_json = "1"`）。
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 设置文件的**外部改动**监听（见 `src/watch.rs`）。两个 crate 都已经在本 workspace 的
+# 依赖树里（`notify` 由 `gpui-component` 引入，`async-channel` 由 `gpui-pre` 引入），
+# 所以直接声明它们不增加任何新的第三方代码，只是把它们升成直接依赖。
+notify = "7"
+async-channel = "2"

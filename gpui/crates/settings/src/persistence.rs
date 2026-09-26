@@ -1,38 +1,75 @@
 //! 设置文件的读、写与规范化落点（**不依赖 GPUI**）。
 //!
-//! ## 读取语义（照 Windows 的 `lib/settings-persistence.ts`）
+//! ## 读取语义
 //!
-//! | 情况 | 行为 | 真源 |
-//! | --- | --- | --- |
-//! | 文件不存在 | 全部默认值，**不创建文件**（Windows 也是"改动才写"） | `settings-persistence.ts:18-43,84-94` |
-//! | 文件不是合法 JSON / 不是对象 | 全部默认值 + 一条诊断，**不 panic** | `settings-persistence.ts:59-64` |
-//! | 某个键类型坏了 | **该键**回落默认值 + 一条诊断，其余键照用 | `settings-normalization.ts` 的逐字段思路 |
-//! | 未知键 | 静默忽略 | 同左（用户可能手改过文件） |
-//! | 缺某个键 | 该键回落默认值 | `settings-persistence.ts:73-79` |
+//! | 情况 | 行为 |
+//! | --- | --- |
+//! | 文件不存在 | 全部默认值，**不创建文件**（改动才写） |
+//! | 文件不是合法 JSON / 不是对象 | 全部默认值 + 一条诊断，**不 panic** |
+//! | 某个键类型坏了 | **该键**回落默认值 + 一条诊断，其余键照用 |
+//! | 未知键 | 忽略（不参与设置），但**写回时原样保留** |
+//! | 缺某个键 | 该键回落默认值 |
+//! | `version` 高于本程序支持 | 照常读取，但**转只读**：不覆盖用户的文件 |
 //!
 //! 诊断统一走 `S1_SETTINGS ...` 前缀打 stderr —— 与 `gpui/crates/app/src/main.rs:74-78` 的
 //! `S1_THEME` 同一风格：可 grep、可在自动化验证里断言。
+//!
+//! ## 未知键为什么要保留
+//!
+//! 设置文件是给人改的：用户可能写注释性字段、可能装了另一个版本的 Lithe、也可能把同一份
+//! 文件喂给别的工具。早期实现"未知键静默忽略"，代价是**用户手写的字段会在下一次落盘时
+//! 被吃掉**——那是不可逆的数据丢失。现在读入时保留整份原始对象（[`Parsed::previous`]），
+//! 写回时先合并再落盘（[`merge_document`]），未知键（含嵌套对象里的）逐字保留。
+//!
+//! ## 键表由 schema 派生
+//!
+//! [`known_keys`] 直接取 `Settings::default()` 的序列化结果，**不存在第二份键名清单**。
+//! 历史上这里有一张手写的逐键表，新增键忘记登记就表现为"设置写得出、读不回"，而且
+//! **一点诊断都没有**（阶段 14 踩过：`fontSize` / `tabSize` / `terminalDefaultShellId`）。
+//! 现在的坏键回落路径是"逐个已知键单独试解析"，所以新字段天然被覆盖。
 //!
 //! ## 写入语义：原子写 + 300ms 防抖
 //!
 //! - **原子写**：先写 `settings.json.tmp`，再 `rename` 覆盖目标
 //!   （`std::fs::rename` 在 Windows 上走 `MoveFileEx(MOVEFILE_REPLACE_EXISTING)`，可以覆盖已存在文件）。
 //!   这样断电/崩溃只会留下一个 `.tmp`，不会留下半份 JSON。
-//! - **300ms 防抖**：真源 `lib/settings-persistence.ts:96-112` —— 同一窗口内的多次改动合并成一次写。
-//!   防抖的判定被抽成 [`DebounceState`] 这个**纯状态机**，因此可以确定性单测（不用真实时钟）。
+//! - **300ms 防抖**：同一窗口内的多次改动合并成一次写。防抖的判定被抽成 [`DebounceState`]
+//!   这个**纯状态机**，因此可以确定性单测（不用真实时钟）。
 
 use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::schema::Settings;
 
-/// 防抖窗口。真源 `lib/settings-persistence.ts:111`（`setTimeout(..., 300)`）。
+/// 防抖窗口（毫秒）。
 pub const SAVE_DEBOUNCE_MS: u64 = 300;
+
+/// 文档版本键名。
+pub const DOCUMENT_VERSION_KEY: &str = "version";
+
+/// 设置文档当前的版本。
+///
+/// 改动**含义**（不是改动字段）时才 +1：新增可选字段不需要升版本，因为缺键本来就会回落默认值。
+pub const DOCUMENT_VERSION: u32 = 1;
+
+/// 一次解析的结果（纯数据，不碰文件系统）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parsed {
+    /// 规范化之后的设置。**任何失败路径都返回可用的设置**（最差就是全默认值）。
+    pub settings: Settings,
+    /// 文件里的原始对象；写回时用它保留未知键。`None` = 没有可保留的文档
+    /// （文件不存在、不是 JSON、或不是对象）。
+    pub previous: Option<Value>,
+    /// 文件声明的版本高于本程序支持：调用方**不得覆盖**这个文件。
+    pub read_only: bool,
+    /// 逐键诊断（坏键、整份解析失败、版本过新等）。调用方负责打印。
+    pub diagnostics: Vec<String>,
+}
 
 /// 一次读取的结果。
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +82,10 @@ pub struct Loaded {
     pub file_existed: bool,
     /// 逐键诊断（坏键、整份解析失败等）。调用方负责打印。
     pub diagnostics: Vec<String>,
+    /// 见 [`Parsed::previous`]。
+    pub previous: Option<Value>,
+    /// 见 [`Parsed::read_only`]。
+    pub read_only: bool,
 }
 
 /// 读设置文件（带路径推导），**不创建文件、不 panic**。
@@ -56,221 +97,229 @@ pub fn load() -> Loaded {
 /// 从指定路径读设置文件。`path = None` 表示只使用默认值。
 pub fn load_from(path: Option<PathBuf>) -> Loaded {
     let Some(path) = path else {
-        let mut settings = Settings::default();
-        settings.normalize();
         return Loaded {
-            settings,
+            settings: normalized_default(),
             path: None,
             file_existed: false,
-            diagnostics: vec!["no_settings_path (推导不出设置文件路径，本次会话不落盘)".to_string()],
+            diagnostics: vec![
+                "no_settings_path (推导不出设置文件路径，本次会话不落盘)".to_string(),
+            ],
+            previous: None,
+            read_only: false,
         };
     };
 
     match std::fs::read_to_string(&path) {
         Ok(text) => {
-            let (settings, diagnostics) = load_from_str(&text);
+            let parsed = parse(&text);
             Loaded {
-                settings,
+                settings: parsed.settings,
                 path: Some(path),
                 file_existed: true,
-                diagnostics,
+                diagnostics: parsed.diagnostics,
+                previous: parsed.previous,
+                read_only: parsed.read_only,
             }
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            // 首次启动：全部默认值，且**不写文件**（Windows 是"改动才写"）。
-            let mut settings = Settings::default();
-            settings.normalize();
+            // 首次启动：全部默认值，且**不写文件**（改动才写）。
             Loaded {
-                settings,
+                settings: normalized_default(),
                 path: Some(path),
                 file_existed: false,
                 diagnostics: Vec::new(),
+                previous: None,
+                read_only: false,
             }
         }
-        Err(error) => {
-            let mut settings = Settings::default();
-            settings.normalize();
-            Loaded {
-                settings,
-                path: Some(path),
-                file_existed: false,
-                diagnostics: vec![format!("read_failed error={error}")],
-            }
-        }
+        Err(error) => Loaded {
+            settings: normalized_default(),
+            path: Some(path),
+            file_existed: false,
+            diagnostics: vec![format!("read_failed error={error}")],
+            previous: None,
+            read_only: false,
+        },
     }
 }
 
-/// 解析设置文件文本：逐键容错 + 规范化。
-///
-/// 返回 `(设置, 诊断)`。**永不失败**：最差返回全默认值 + 一条诊断。
-pub fn load_from_str(text: &str) -> (Settings, Vec<String>) {
+/// 解析设置文件文本：逐键容错 + 保留原始文档 + 规范化。**永不失败**。
+pub fn parse(text: &str) -> Parsed {
     let mut diagnostics = Vec::new();
 
     let parsed: Value = match serde_json::from_str(text) {
         Ok(value) => value,
         Err(error) => {
             diagnostics.push(format!("invalid_json error={error}"));
-            let mut settings = Settings::default();
-            settings.normalize();
-            return (settings, diagnostics);
+            return Parsed {
+                settings: normalized_default(),
+                previous: None,
+                read_only: false,
+                diagnostics,
+            };
         }
     };
 
     let Value::Object(object) = parsed else {
         diagnostics.push("not_an_object".to_string());
-        let mut settings = Settings::default();
-        settings.normalize();
-        return (settings, diagnostics);
+        return Parsed {
+            settings: normalized_default(),
+            previous: None,
+            read_only: false,
+            diagnostics,
+        };
     };
+
+    // 版本过新时照常读取能读懂的部分，但把文件标成只读：覆盖它等于把用户在新版本里
+    // 设置的东西（以及我们不认识的键）无声地降级掉。
+    let declared = declared_version(&object);
+    let read_only = declared.is_some_and(|version| version > u64::from(DOCUMENT_VERSION));
+    if let Some(version) = declared.filter(|_| read_only) {
+        diagnostics.push(format!(
+            "document_version_newer declared={version} supported={DOCUMENT_VERSION}"
+        ));
+    }
 
     let mut settings = settings_from_object(&object, &mut diagnostics);
     settings.normalize();
-    (settings, diagnostics)
+    Parsed {
+        settings,
+        previous: Some(Value::Object(object)),
+        read_only,
+        diagnostics,
+    }
+}
+
+/// 文档里声明的版本；缺失或不是非负整数时返回 `None`。
+pub fn declared_version(object: &Map<String, Value>) -> Option<u64> {
+    object.get(DOCUMENT_VERSION_KEY)?.as_u64()
+}
+
+/// 由 schema 派生的已知键集：`Settings::default()` 的序列化结果。
+///
+/// 这是本模块**唯一**的键名来源。不要再加第二份手写清单——见模块文档。
+pub fn known_keys() -> &'static BTreeSet<String> {
+    static KEYS: OnceLock<BTreeSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| match serde_json::to_value(Settings::default()) {
+        Ok(Value::Object(object)) => object.keys().cloned().collect(),
+        // `Settings` 是纯标量结构，序列化不会失败；真失败时键集为空，
+        // 坏键回落路径会退化成"全部用默认值"（仍然不 panic）。
+        _ => BTreeSet::new(),
+    })
+}
+
+fn normalized_default() -> Settings {
+    let mut settings = Settings::default();
+    settings.normalize();
+    settings
 }
 
 /// 逐键取值：键不存在 → 默认值；键的类型坏了 → **该键**默认值 + 诊断。
 ///
-/// 之所以不用一次性 `serde_json::from_value::<Settings>`：那样任何一个键的类型坏掉都会让整份
-/// 设置丢回默认值，而 Windows 的语义是"逐键回退"（`settings-persistence.ts:73-79`）。
+/// 快路径是整体 `serde` 解析一次（任何一个键的类型坏掉都会失败），失败后退到
+/// "逐个已知键单独试解析"：能解析的留下，不能的留诊断并回落默认值。
 ///
-/// ⚠️ **两段式**（2026-09-25 修）：先整体 `serde` 解析一次 —— 它能认**所有**字段，
-/// 所以新加的字段**不需要**在这里再登记一遍就能被读出来；只有"某个键的类型真的坏了"
-/// （整体解析失败）时才退到下面这张逐键表。修之前只有逐键表这一条路，结果
-/// `fontSize` / `tabSize` / `terminalDefaultShellId` 三个新键**写得出、读不回**
-/// （文件里明明是 8，启动后仍是默认 2），而且**一点诊断都没有** —— 这正是"两份键名表"
-/// 的典型失效方式。
-///
-/// 逐键表仍需与 `Settings` 的字段保持同步（坏键路径靠它）；`every_key_survives_a_round_trip`
-/// 那条测试是守卫：它用"每个字段都不是默认值"的设置跑一遍存取往返。
+/// ⚠️ 逐键那一步遍历的是 [`known_keys`]（由 schema 派生），**不是**手写清单——
+/// 所以新加的字段不需要在这里登记第二遍。
 fn settings_from_object(object: &Map<String, Value>, diagnostics: &mut Vec<String>) -> Settings {
     if let Ok(parsed) = serde_json::from_value::<Settings>(Value::Object(object.clone())) {
         return parsed;
     }
 
-    // 走到这里说明至少有一个键的类型不对；逐键取，坏的那个键回默认并留诊断。
-    let mut settings = Settings::default();
-    take(object, "theme", &mut settings.theme, diagnostics);
-    take(
-        object,
-        "syncSystemTheme",
-        &mut settings.sync_system_theme,
-        diagnostics,
-    );
-    take(
-        object,
-        "autoThemeLight",
-        &mut settings.auto_theme_light,
-        diagnostics,
-    );
-    take(
-        object,
-        "autoThemeDark",
-        &mut settings.auto_theme_dark,
-        diagnostics,
-    );
-    take(object, "uiFontSize", &mut settings.ui_font_size, diagnostics);
-    take(
-        object,
-        "showStatusBar",
-        &mut settings.show_status_bar,
-        diagnostics,
-    );
-    take(
-        object,
-        "displayLanguage",
-        &mut settings.display_language,
-        diagnostics,
-    );
-    take(object, "fontSize", &mut settings.font_size, diagnostics);
-    take(object, "tabSize", &mut settings.tab_size, diagnostics);
-    take(
-        object,
-        "terminalDefaultShellId",
-        &mut settings.terminal_default_shell_id,
-        diagnostics,
-    );
-    take(
-        object,
-        "confirmBeforeDiscard",
-        &mut settings.confirm_before_discard,
-        diagnostics,
-    );
-    // 「项目 · JDK 与 Maven」页的三个覆盖值（键名 = Core 契约里 toolchain 载荷的键名）。
-    take(
-        object,
-        "javaHomePath",
-        &mut settings.java_home_path,
-        diagnostics,
-    );
-    take(
-        object,
-        "mavenExecutablePath",
-        &mut settings.maven_executable_path,
-        diagnostics,
-    );
-    take(
-        object,
-        "mavenJavaHomePath",
-        &mut settings.maven_java_home_path,
-        diagnostics,
-    );
-    // 同页 Maven 自己那份配置（`settings.xml` / 本地仓库）的两个覆盖值。
-    take(
-        object,
-        "mavenSettingsPath",
-        &mut settings.maven_settings_path,
-        diagnostics,
-    );
-    take(
-        object,
-        "mavenLocalRepositoryPath",
-        &mut settings.maven_local_repository_path,
-        diagnostics,
-    );
-    // 「LSP」页（阶段 18）：真源三键里唯一有消费方的那一个。
-    take(
-        object,
-        "autoCompletion",
-        &mut settings.auto_completion,
-        diagnostics,
-    );
-    // 「打开其他项目」（B4）：决策判据 + 「不再询问」写回的两个键。
-    take(
-        object,
-        "askWhereToOpenProjects",
-        &mut settings.ask_where_to_open_projects,
-        diagnostics,
-    );
-    take(
-        object,
-        "openFoldersInNewWindow",
-        &mut settings.open_folders_in_new_window,
-        diagnostics,
-    );
-    settings
-}
+    let known = known_keys();
+    let mut sanitized = Map::new();
+    for (key, value) in object {
+        if !known.contains(key) {
+            continue;
+        }
+        let mut probe = Map::new();
+        probe.insert(key.clone(), value.clone());
+        match serde_json::from_value::<Settings>(Value::Object(probe)) {
+            Ok(_) => {
+                sanitized.insert(key.clone(), value.clone());
+            }
+            Err(error) => diagnostics.push(format!("bad_key key={key} error={error}")),
+        }
+    }
 
-/// 取一个键到 `slot`：类型不符就保留默认值并记一条诊断。
-fn take<T: DeserializeOwned>(
-    object: &Map<String, Value>,
-    key: &str,
-    slot: &mut T,
-    diagnostics: &mut Vec<String>,
-) {
-    let Some(value) = object.get(key) else {
-        return;
-    };
-    match serde_json::from_value::<T>(value.clone()) {
-        Ok(parsed) => *slot = parsed,
-        Err(error) => diagnostics.push(format!("bad_key key={key} error={error}")),
+    match serde_json::from_value::<Settings>(Value::Object(sanitized)) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            diagnostics.push(format!("settings_fallback error={error}"));
+            Settings::default()
+        }
     }
 }
 
-/// 原子写设置文件。
+/// 生成要落盘的文档：typed 设置 + **保留**上一次文件里的未知键 + 写入 `version`。
 ///
-/// 只是 [`save_json`] 的一个薄包装（保持既有调用点与测试不变）。
-pub fn save(path: &Path, settings: &Settings) -> io::Result<usize> {
-    save_json(path, settings)
+/// 两件事必须一起做，缺一不可：
+///
+/// - `typed` 覆盖它自己声明的键（所以设置改动一定生效）；
+/// - 上一次文件里出现、而 `typed` 不认识的键逐字保留（含嵌套对象内部的键），
+///   否则用户手写的字段会被无声吃掉。
+///
+/// `previous` 传 `None`（首次写、或上次文件不可解析）时就是一份干净的新文档。
+pub fn merge_document(
+    previous: Option<&Value>,
+    settings: &Settings,
+) -> Result<Value, serde_json::Error> {
+    let typed = serde_json::to_value(settings)?;
+    let mut merged = preserve_unknown(previous, &typed);
+    if let Value::Object(object) = &mut merged {
+        object.insert(
+            DOCUMENT_VERSION_KEY.to_string(),
+            Value::from(DOCUMENT_VERSION),
+        );
+    }
+    Ok(merged)
+}
+
+/// 把 `previous` 里 `next` 不认识的键补回 `next`。
+///
+/// 递归规则（只对"两边都是对象"的键下钻，其余情况 typed 一方胜出）：
+///
+/// ```text
+/// next 有该键，previous 没有        → typed 胜出
+/// next 没有该键，previous 有        → 保留 previous 的值（这就是未知键）
+/// 两边都有且都是对象                → 递归合并（保留嵌套未知键）
+/// 两边都有但至少一边不是对象        → typed 胜出
+/// ```
+fn preserve_unknown(previous: Option<&Value>, next: &Value) -> Value {
+    let (Some(Value::Object(previous)), Value::Object(next)) = (previous, next) else {
+        return next.clone();
+    };
+
+    let mut merged = next.clone();
+    for (key, previous_value) in previous {
+        let unknown = !merged.contains_key(key);
+        if unknown {
+            merged.insert(key.clone(), previous_value.clone());
+            continue;
+        }
+        let nested = merged
+            .get(key)
+            .is_some_and(|next_value| next_value.is_object() && previous_value.is_object());
+        if nested {
+            let next_value = merged.get(key).cloned().unwrap_or(Value::Null);
+            merged.insert(
+                key.clone(),
+                preserve_unknown(Some(previous_value), &next_value),
+            );
+        }
+    }
+    Value::Object(merged)
+}
+
+/// 原子写设置文档：合并未知键 → 临时文件 → rename。
+pub fn save_document(
+    path: &Path,
+    settings: &Settings,
+    previous: Option<&Value>,
+) -> io::Result<usize> {
+    let document = merge_document(previous, settings)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    save_json(path, &document)
 }
 
 /// 原子写任意 JSON 载荷：临时文件 + rename。
@@ -308,8 +357,8 @@ pub fn tmp_path(path: &Path) -> PathBuf {
 
 /// 300ms 防抖的**纯状态机**（不碰时钟、不碰线程）。
 ///
-/// 语义与真源 `lib/settings-persistence.ts:96-112` 一致：每次改动把窗口往后推，
-/// 只有"最后一次改动"对应的那次唤醒才真的落盘 —— 也就是把同一窗口里的多次改动合并成一次写。
+/// 每次改动把窗口往后推，只有"最后一次改动"对应的那次唤醒才真的落盘
+/// —— 也就是把同一窗口里的多次改动合并成一次写。
 ///
 /// 用法：改动时 `arm()` 拿到一个「代数」，睡满 300ms 后把这个代数交回 [`Self::should_flush`]；
 /// 期间又改过就会拿到更大的代数，于是这次唤醒什么都不做。
@@ -353,13 +402,10 @@ impl DebounceState {
     }
 }
 
-/// 逐行 trim + 去空行的数组规范化（Windows §4.3 的多行文本语义：
-/// `hiddenFilePatterns` / `hiddenDirectoryPatterns` 每行一项，`trim` 后丢弃空行，
-/// `macos-settings-panels.tsx:245-269`）。
+/// 逐行 trim + 去空行的数组规范化（多行文本语义：每行一项，`trim` 后丢弃空行）。
 ///
-/// v1 没有任何数组型设置键，所以这个函数目前**只被测试使用**：它把 §4.3 里"数组 trim/去空行"
-/// 这条规范化规则先固定下来，等 explorer 接上隐藏路径过滤时直接用，避免那时再各自实现一遍。
-/// 去重语义照 `normalizeStringList`（`settings-normalization.ts:199-207`）：去重且保序。
+/// 目前**只被测试使用**：它把"数组 trim/去空行"这条规范化规则先固定下来，等隐藏路径
+/// 过滤接上时直接用，避免那时再各自实现一遍。去重语义是"去重且保序"。
 pub fn normalize_pattern_lines(text: &str) -> Vec<String> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
@@ -379,195 +425,15 @@ pub fn normalize_pattern_lines(text: &str) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::schema::{
-        DEFAULT_AUTO_THEME_DARK, DEFAULT_AUTO_THEME_LIGHT, DEFAULT_DISPLAY_LANGUAGE,
-        DEFAULT_THEME, UI_FONT_SIZE_DEFAULT, UI_FONT_SIZE_MAX, UI_FONT_SIZE_MIN,
+        DEFAULT_AUTO_THEME_DARK, DEFAULT_AUTO_THEME_LIGHT, DEFAULT_DISPLAY_LANGUAGE, DEFAULT_THEME,
+        TAB_SIZE_DEFAULT, UI_FONT_SIZE_DEFAULT, UI_FONT_SIZE_MAX, UI_FONT_SIZE_MIN,
     };
 
-    /// 文件不存在 → 全部默认值，且**不创建文件**。
-    #[test]
-    fn missing_file_yields_defaults_without_creating_it() {
-        let dir = std::env::temp_dir().join(format!(
-            "lithe-settings-test-missing-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        let path = dir.join("settings.json");
-
-        let loaded = load_from(Some(path.clone()));
-        assert_eq!(loaded.settings, Settings::default());
-        assert!(!loaded.file_existed);
-        assert!(loaded.diagnostics.is_empty());
-        assert!(!path.exists(), "读取不得创建文件");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// 推导不出路径时也必须能工作（全默认值 + 一条诊断，不 panic）。
-    #[test]
-    fn missing_path_degrades_to_defaults() {
-        let loaded = load_from(None);
-        assert_eq!(loaded.settings, Settings::default());
-        assert!(!loaded.diagnostics.is_empty());
-    }
-
-    /// 整份不是 JSON / 不是对象 → 全默认值 + 诊断，不 panic。
-    #[test]
-    fn broken_json_falls_back_whole_file() {
-        let (settings, diagnostics) = load_from_str("{ not json ");
-        assert_eq!(settings, Settings::default());
-        assert_eq!(diagnostics.len(), 1);
-        assert!(diagnostics[0].starts_with("invalid_json"));
-
-        let (settings, diagnostics) = load_from_str("[1, 2, 3]");
-        assert_eq!(settings, Settings::default());
-        assert_eq!(diagnostics, vec!["not_an_object".to_string()]);
-    }
-
-    /// 坏字段回落默认值，**其余字段照用**（不是整份丢弃）。
-    #[test]
-    fn broken_field_keeps_the_other_fields() {
-        let (settings, diagnostics) = load_from_str(
-            r#"{"theme": "Lithe Light", "uiFontSize": "big", "showStatusBar": false}"#,
-        );
-        assert_eq!(settings.theme, "Lithe Light");
-        assert_eq!(settings.ui_font_size, UI_FONT_SIZE_DEFAULT);
-        assert!(!settings.show_status_bar);
-        assert_eq!(diagnostics.len(), 1);
-        assert!(diagnostics[0].contains("bad_key key=uiFontSize"), "{diagnostics:?}");
-    }
-
-    /// 未知键静默忽略（手改过的文件里可能有别的版本/别的产品的键）。
-    #[test]
-    fn unknown_keys_are_ignored() {
-        let (settings, diagnostics) =
-            load_from_str(r#"{"theme": "Lithe Light", "iconTheme": "idea-icons"}"#);
-        assert_eq!(settings.theme, "Lithe Light");
-        assert!(diagnostics.is_empty(), "{diagnostics:?}");
-    }
-
-    /// 读入即规范化：越界字号被夹住、非法语言回落。
-    #[test]
-    fn values_are_normalized_on_load() {
-        let (settings, _) =
-            load_from_str(r#"{"uiFontSize": 99.0, "displayLanguage": "fr-FR"}"#);
-        assert_eq!(settings.ui_font_size, UI_FONT_SIZE_MAX);
-        assert_eq!(settings.display_language, DEFAULT_DISPLAY_LANGUAGE);
-
-        let (settings, _) = load_from_str(r#"{"uiFontSize": -1.0}"#);
-        assert_eq!(settings.ui_font_size, UI_FONT_SIZE_MIN);
-    }
-
-    /// 缺键逐键回退 + 规范化不改变合法值（往返稳定：写出去的再读回来必须一样）。
-    #[test]
-    fn save_then_load_round_trips() {
-        let dir = std::env::temp_dir().join(format!("lithe-settings-test-rt-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let path = dir.join("settings.json");
-
-        let mut settings = Settings {
-            theme: "Lithe Light".to_string(),
-            auto_theme_light: "Lithe Light".to_string(),
-            auto_theme_dark: DEFAULT_AUTO_THEME_DARK.to_string(),
-            sync_system_theme: true,
-            ui_font_size: 16.5,
-            show_status_bar: false,
-            display_language: "en-US".to_string(),
-            ..Settings::default()
-        };
-        settings.normalize();
-
-        let bytes = save(&path, &settings).expect("写入失败");
-        assert!(bytes > 0);
-        assert!(path.exists());
-        assert!(!tmp_path(&path).exists(), "临时文件必须被 rename 掉");
-
-        let loaded = load_from(Some(path.clone()));
-        assert_eq!(loaded.settings, settings);
-        assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
-        assert!(loaded.file_existed);
-
-        // 覆盖写也必须成功（rename 覆盖已存在文件）。
-        let mut second = settings.clone();
-        second.theme = DEFAULT_THEME.to_string();
-        save(&path, &second).expect("覆盖写失败");
-        assert_eq!(load_from(Some(path.clone())).settings, second);
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// **写进去能读回来**（文件级往返，专测「项目 · JDK 与 Maven」页的三个覆盖值）。
+    /// 每个字段都不是默认值的设置：用来让"某个字段没被读回来"必定表现为不等。
     ///
-    /// 这条是独立的守卫，不是 `every_key_survives_a_round_trip` 的重复：
-    /// 那条走的是内存里的 `load_from_str`，这条走**真实的原子写 + 读文件**，
-    /// 覆盖"键名拼错 / 序列化时被 `skip` / 写文件那一段丢了字段"这一类只在落盘路径上出现的失效。
-    #[test]
-    fn project_environment_overrides_survive_a_file_round_trip() {
-        let dir = std::env::temp_dir().join(format!(
-            "lithe-settings-test-project-env-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        let path = dir.join("settings.json");
-
-        let mut settings = Settings {
-            java_home_path: "D:\\ProgramData\\java\\openjdk-21".to_string(),
-            maven_executable_path: "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd".to_string(),
-            maven_java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
-            maven_settings_path: "C:\\Users\\u\\.m2\\settings.xml".to_string(),
-            maven_local_repository_path: "D:\\m2\\repository".to_string(),
-            ..Settings::default()
-        };
-        settings.normalize();
-        save(&path, &settings).expect("写入失败");
-
-        // 落盘文本里五个键名必须是 Core 契约 / 真源里的那几个（驼峰）。
-        let text = std::fs::read_to_string(&path).expect("读文件失败");
-        for key in [
-            "\"javaHomePath\"",
-            "\"mavenExecutablePath\"",
-            "\"mavenJavaHomePath\"",
-            "\"mavenSettingsPath\"",
-            "\"mavenLocalRepositoryPath\"",
-        ] {
-            assert!(text.contains(key), "落盘文本缺键 {key}：{text}");
-        }
-
-        let loaded = load_from(Some(path.clone()));
-        assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
-        assert_eq!(
-            loaded.settings.java_home_path,
-            "D:\\ProgramData\\java\\openjdk-21"
-        );
-        assert_eq!(
-            loaded.settings.maven_executable_path,
-            "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd"
-        );
-        assert_eq!(
-            loaded.settings.maven_java_home_path,
-            "C:\\Program Files\\Java\\jdk-21"
-        );
-        assert_eq!(
-            loaded.settings.maven_settings_path,
-            "C:\\Users\\u\\.m2\\settings.xml"
-        );
-        assert_eq!(
-            loaded.settings.maven_local_repository_path,
-            "D:\\m2\\repository"
-        );
-        // 整个结构体也要逐字段相等（漏键会立刻表现为不等）。
-        assert_eq!(loaded.settings, settings);
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-
-    ///
-    /// 这条测试守的是一类**静默**失效：`settings_from_object` 里那张逐键表一旦漏了新字段，
-    /// 文件里写得再对、读回来的也是默认值，而且**没有任何诊断**（阶段 14 实测踩到过：
-    /// `fontSize` / `tabSize` / `terminalDefaultShellId` 写得出、读不回）。
-    /// 用全非默认值而不是 `..Settings::default()`，就是为了让"漏了某个键"必定表现为不等。
-    #[test]
-    fn every_key_survives_a_round_trip() {
-        let mut settings = Settings {
+    /// 用 `..Settings::default()` 会让漏字段的测试**静默通过**，所以这里逐字段写全。
+    fn all_non_default() -> Settings {
+        Settings {
             theme: "Lithe Light".to_string(),
             sync_system_theme: true,
             auto_theme_light: "Lithe Light".to_string(),
@@ -586,39 +452,405 @@ mod tests {
             maven_local_repository_path: "D:\\m2\\repository".to_string(),
             // `autoCompletion` 的"非默认值"是 `false`（默认 `true`）。
             auto_completion: false,
-            // 同上：这两个键的默认值也是 `true`（`default-settings.ts:111-112`），
-            // 所以"非默认值"必须写 `false`，否则这条往返测不出"漏了登记"。
+            // 同上：这两个键的默认值也是 `true`，所以"非默认值"必须写 `false`。
             ask_where_to_open_projects: false,
             open_folders_in_new_window: false,
+        }
+    }
+
+    /// 独立的临时目录（每个测试一个），用完删掉。
+    ///
+    /// 目录名带上调用方的标记，避免并行执行的测试互相踩。
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("lithe-settings-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    /// 文件不存在 → 全部默认值，且**不创建文件**。
+    #[test]
+    fn missing_file_yields_defaults_without_creating_it() {
+        let dir = temp_dir("missing");
+        let path = dir.join("settings.json");
+
+        let loaded = load_from(Some(path.clone()));
+        assert_eq!(loaded.settings, Settings::default());
+        assert!(!loaded.file_existed);
+        assert!(loaded.diagnostics.is_empty());
+        assert!(!path.exists(), "读取不得创建文件");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 推导不出路径时也必须能工作（全默认值 + 一条诊断，不 panic）。
+    #[test]
+    fn missing_path_degrades_to_defaults() {
+        let loaded = load_from(None);
+        assert_eq!(loaded.settings, Settings::default());
+        assert!(!loaded.diagnostics.is_empty());
+        assert!(loaded.previous.is_none());
+        assert!(!loaded.read_only);
+    }
+
+    /// 整份不是 JSON / 不是对象 → 全默认值 + 诊断，不 panic。
+    #[test]
+    fn broken_json_falls_back_whole_file() {
+        let parsed = parse("{ not json ");
+        assert_eq!(parsed.settings, Settings::default());
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert!(parsed.diagnostics[0].starts_with("invalid_json"));
+        assert!(parsed.previous.is_none(), "不可解析的文件没有可保留的文档");
+
+        let parsed = parse("[1, 2, 3]");
+        assert_eq!(parsed.settings, Settings::default());
+        assert_eq!(parsed.diagnostics, vec!["not_an_object".to_string()]);
+        assert!(parsed.previous.is_none());
+    }
+
+    /// 坏字段回落默认值，**其余字段照用**（不是整份丢弃）。
+    #[test]
+    fn broken_field_keeps_the_other_fields() {
+        let parsed =
+            parse(r#"{"theme": "Lithe Light", "uiFontSize": "big", "showStatusBar": false}"#);
+        assert_eq!(parsed.settings.theme, "Lithe Light");
+        assert_eq!(parsed.settings.ui_font_size, UI_FONT_SIZE_DEFAULT);
+        assert!(!parsed.settings.show_status_bar);
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert!(
+            parsed.diagnostics[0].contains("bad_key key=uiFontSize"),
+            "{:?}",
+            parsed.diagnostics
+        );
+    }
+
+    /// 未知键不影响设置值，也不产生诊断。
+    #[test]
+    fn unknown_keys_are_ignored() {
+        let parsed = parse(r#"{"theme": "Lithe Light", "iconTheme": "idea-icons"}"#);
+        assert_eq!(parsed.settings.theme, "Lithe Light");
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    }
+
+    /// 读入即规范化：越界字号被夹住、非法语言回落。
+    #[test]
+    fn values_are_normalized_on_load() {
+        let parsed = parse(r#"{"uiFontSize": 99.0, "displayLanguage": "fr-FR"}"#);
+        assert_eq!(parsed.settings.ui_font_size, UI_FONT_SIZE_MAX);
+        assert_eq!(parsed.settings.display_language, DEFAULT_DISPLAY_LANGUAGE);
+
+        let parsed = parse(r#"{"uiFontSize": -1.0}"#);
+        assert_eq!(parsed.settings.ui_font_size, UI_FONT_SIZE_MIN);
+    }
+
+    /// 写出去再读回来必须一样（含原子写路径与临时文件清理）。
+    #[test]
+    fn save_then_load_round_trips() {
+        let dir = temp_dir("rt");
+        let path = dir.join("settings.json");
+
+        let mut settings = Settings {
+            theme: "Lithe Light".to_string(),
+            auto_theme_light: "Lithe Light".to_string(),
+            auto_theme_dark: DEFAULT_AUTO_THEME_DARK.to_string(),
+            sync_system_theme: true,
+            ui_font_size: 16.5,
+            show_status_bar: false,
+            display_language: "en-US".to_string(),
+            ..Settings::default()
         };
-        // 先规范化，保证"写出去的"就是"合法的"（否则比的是两个不同的东西）。
         settings.normalize();
-        assert_eq!(settings, {
-            // 规范化不该把上面这些合法值改掉；改掉了说明测试自己的取值不合规。
-            let mut copy = settings.clone();
-            copy.normalize();
-            copy
-        });
+
+        let bytes = save_document(&path, &settings, None).expect("写入失败");
+        assert!(bytes > 0);
+        assert!(path.exists());
+        assert!(!tmp_path(&path).exists(), "临时文件必须被 rename 掉");
+
+        let loaded = load_from(Some(path.clone()));
+        assert_eq!(loaded.settings, settings);
+        assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+        assert!(loaded.file_existed);
+
+        // 覆盖写也必须成功（rename 覆盖已存在文件）。
+        let mut second = settings.clone();
+        second.theme = DEFAULT_THEME.to_string();
+        save_document(&path, &second, loaded.previous.as_ref()).expect("覆盖写失败");
+        assert_eq!(load_from(Some(path.clone())).settings, second);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **写进去能读回来**（文件级往返，专测「项目 · JDK 与 Maven」页的覆盖值）。
+    ///
+    /// 走的是真实的原子写 + 读文件，覆盖"键名拼错 / 序列化时被 `skip` / 写文件那一段丢了字段"
+    /// 这类只在落盘路径上出现的失效。
+    #[test]
+    fn project_environment_overrides_survive_a_file_round_trip() {
+        let dir = temp_dir("project-env");
+        let path = dir.join("settings.json");
+
+        let mut settings = Settings {
+            java_home_path: "D:\\ProgramData\\java\\openjdk-21".to_string(),
+            maven_executable_path: "D:\\tools\\apache-maven-3.9.9\\bin\\mvn.cmd".to_string(),
+            maven_java_home_path: "C:\\Program Files\\Java\\jdk-21".to_string(),
+            maven_settings_path: "C:\\Users\\u\\.m2\\settings.xml".to_string(),
+            maven_local_repository_path: "D:\\m2\\repository".to_string(),
+            ..Settings::default()
+        };
+        settings.normalize();
+        save_document(&path, &settings, None).expect("写入失败");
+
+        // 落盘文本里五个键名必须是 Core 契约 / 真源里的那几个（驼峰）。
+        let text = std::fs::read_to_string(&path).expect("读文件失败");
+        for key in [
+            "\"javaHomePath\"",
+            "\"mavenExecutablePath\"",
+            "\"mavenJavaHomePath\"",
+            "\"mavenSettingsPath\"",
+            "\"mavenLocalRepositoryPath\"",
+        ] {
+            assert!(text.contains(key), "落盘文本缺键 {key}：{text}");
+        }
+
+        let loaded = load_from(Some(path.clone()));
+        assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+        assert_eq!(loaded.settings, settings);
+        assert_eq!(
+            loaded.settings.java_home_path,
+            "D:\\ProgramData\\java\\openjdk-21"
+        );
+        assert_eq!(
+            loaded.settings.maven_local_repository_path,
+            "D:\\m2\\repository"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 每个键都能写出去再读回来。
+    ///
+    /// 守的是一类**静默**失效：键名表一旦漏了字段，文件里写得再对、读回来的也是默认值，
+    /// 而且没有任何诊断。用全非默认值就是为了让"漏了某个键"必定表现为不等。
+    #[test]
+    fn every_key_survives_a_round_trip() {
+        let settings = all_non_default();
+        // 先确认这些取值本身就是规范化的不动点（否则比的是两个不同的东西）。
+        let mut copy = settings.clone();
+        copy.normalize();
+        assert_eq!(copy, settings, "测试自己的取值不合规");
 
         let json = serde_json::to_string(&settings).expect("序列化失败");
-        let (loaded, diagnostics) = load_from_str(&json);
-        assert!(diagnostics.is_empty(), "{diagnostics:?}");
-        assert_eq!(loaded, settings, "有字段没被读回来（逐键表漏了它？）");
+        let parsed = parse(&json);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        assert_eq!(parsed.settings, settings, "有字段没被读回来");
     }
 
     /// 一个键的类型坏掉时，**只有那个键**回默认值，其余键照常生效。
     #[test]
     fn a_single_broken_key_falls_back_alone() {
-        let (loaded, diagnostics) = load_from_str(
+        let parsed = parse(
             r#"{"theme": "Lithe Light", "tabSize": "eight", "terminalDefaultShellId": "wsl"}"#,
         );
-        assert_eq!(loaded.theme, "Lithe Light", "好键不受坏键连带");
-        assert_eq!(loaded.terminal_default_shell_id, "wsl");
-        assert_eq!(loaded.tab_size, crate::schema::TAB_SIZE_DEFAULT);
+        assert_eq!(parsed.settings.theme, "Lithe Light", "好键不受坏键连带");
+        assert_eq!(parsed.settings.terminal_default_shell_id, "wsl");
+        assert_eq!(parsed.settings.tab_size, TAB_SIZE_DEFAULT);
         assert!(
-            diagnostics.iter().any(|line| line.contains("bad_key")),
-            "坏键必须留下诊断：{diagnostics:?}"
+            parsed
+                .diagnostics
+                .iter()
+                .any(|line| line.contains("bad_key")),
+            "坏键必须留下诊断：{:?}",
+            parsed.diagnostics
         );
+    }
+
+    /// **坏键回落路径由 schema 派生**：逐个已知键故意喂一个非法值，其余键必须全部完好。
+    ///
+    /// 这条测试是"手写逐键表"那类失效的守卫：只要新的 `Settings` 字段没有自动进入回落路径，
+    /// 当坏键是别的键时它就**读不回来**，这里立刻不等。
+    ///
+    /// 非法值用 `null`：`Settings` 今天全是标量字段（`String` / `bool` / 数字），`null` 一律不被接受；
+    /// 断言里要求必须出现 `bad_key` 诊断，所以将来若真有字段接受 `null`，这条测试会**明确失败**
+    /// 并提示换一个非法值，而不是静默变弱。
+    #[test]
+    fn any_single_broken_key_leaves_every_other_key_intact() {
+        let settings = all_non_default();
+        let Value::Object(baseline) = serde_json::to_value(&settings).expect("序列化失败")
+        else {
+            panic!("设置必须是 JSON 对象");
+        };
+        assert!(baseline.len() >= 19, "键集太小，这条测试失去意义");
+
+        for key in known_keys() {
+            let mut object = baseline.clone();
+            object.insert(key.clone(), Value::Null);
+            let text = serde_json::to_string(&Value::Object(object)).expect("序列化失败");
+            let parsed = parse(&text);
+
+            assert!(
+                parsed
+                    .diagnostics
+                    .iter()
+                    .any(|line| line.contains(&format!("bad_key key={key}"))),
+                "键 {key} 传 null 没被判成坏键（它是不是其实接受 null？换一个非法值）：{:?}",
+                parsed.diagnostics
+            );
+
+            // 期望值：同一份 JSON 去掉那个坏键（于是它取默认值），其余键保持非默认值。
+            let mut without_key = baseline.clone();
+            without_key.remove(key);
+            let expected =
+                parse(&serde_json::to_string(&Value::Object(without_key)).expect("序列化失败"))
+                    .settings;
+            assert_eq!(
+                parsed.settings, expected,
+                "坏键 {key} 连带影响了别的键（回落路径漏了某个字段？）"
+            );
+        }
+    }
+
+    /// 未知键在写回时**必须逐字保留**——这是"用户手改不会被吃掉"的守卫。
+    #[test]
+    fn unknown_keys_are_preserved_across_a_write() {
+        let dir = temp_dir("preserve");
+        let path = dir.join("settings.json");
+
+        let original = r#"{
+  "theme": "Lithe Light",
+  "iconTheme": "idea-icons",
+  "thirdParty": { "keepMe": [1, 2, 3], "alsoKeep": "yes" },
+  "version": 1
+}"#;
+        // 直接 `fs::write` 不会建父目录（`save_document` 会），所以这里自己建。
+        std::fs::create_dir_all(&dir).expect("建目录失败");
+        std::fs::write(&path, original).expect("写初始文件失败");
+
+        let loaded = load_from(Some(path.clone()));
+        assert_eq!(loaded.settings.theme, "Lithe Light");
+        assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+
+        // 改一个已知键再落盘。
+        let mut settings = loaded.settings.clone();
+        settings.ui_font_size = 17.0;
+        settings.normalize();
+        save_document(&path, &settings, loaded.previous.as_ref()).expect("写入失败");
+
+        let text = std::fs::read_to_string(&path).expect("读文件失败");
+        let Value::Object(written) = serde_json::from_str::<Value>(&text).expect("落盘必须是 JSON")
+        else {
+            panic!("落盘必须是对象");
+        };
+        assert_eq!(written.get("theme"), Some(&Value::from("Lithe Light")));
+        assert_eq!(written.get("uiFontSize"), Some(&Value::from(17.0)));
+        assert_eq!(
+            written.get("iconTheme"),
+            Some(&Value::from("idea-icons")),
+            "未知键被吃掉了：{text}"
+        );
+        assert_eq!(
+            written.get("thirdParty"),
+            Some(&serde_json::json!({ "keepMe": [1, 2, 3], "alsoKeep": "yes" })),
+            "未知的嵌套对象必须整体保留：{text}"
+        );
+
+        // 再读一次：保留的键仍然在，且不影响设置解析。
+        let reloaded = load_from(Some(path.clone()));
+        assert_eq!(reloaded.settings, settings);
+        assert!(
+            reloaded.diagnostics.is_empty(),
+            "{:?}",
+            reloaded.diagnostics
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 嵌套对象内部的未知键也要保留（typed 只覆盖它自己认识的那几个子键）。
+    #[test]
+    fn nested_unknown_keys_are_preserved() {
+        let previous = serde_json::json!({
+            "advanced": { "known": "old", "unknown": 42 },
+            "gone": true
+        });
+        let typed = serde_json::json!({
+            "advanced": { "known": "new" }
+        });
+        let merged = preserve_unknown(Some(&previous), &typed);
+        assert_eq!(
+            merged,
+            serde_json::json!({
+                "advanced": { "known": "new", "unknown": 42 },
+                "gone": true
+            })
+        );
+    }
+
+    /// 非对象的文档没有可保留的键：typed 直接胜出（不 panic、不丢设置）。
+    #[test]
+    fn non_object_previous_does_not_break_the_merge() {
+        let merged = preserve_unknown(Some(&Value::from(7)), &serde_json::json!({ "a": 1 }));
+        assert_eq!(merged, serde_json::json!({ "a": 1 }));
+        let merged = preserve_unknown(None, &serde_json::json!({ "a": 1 }));
+        assert_eq!(merged, serde_json::json!({ "a": 1 }));
+    }
+
+    /// 落盘文档必须带 `version`，而且**不继承**文件里那个（可能是旧的 / 被手改的）值。
+    #[test]
+    fn document_version_is_written_and_normalized() {
+        let settings = Settings::default();
+
+        let fresh = merge_document(None, &settings).expect("合并失败");
+        assert_eq!(fresh.get(DOCUMENT_VERSION_KEY), Some(&Value::from(1)));
+
+        let stale = serde_json::json!({ "version": 0, "theme": "Lithe Light" });
+        let merged = merge_document(Some(&stale), &settings).expect("合并失败");
+        assert_eq!(
+            merged.get(DOCUMENT_VERSION_KEY),
+            Some(&Value::from(DOCUMENT_VERSION)),
+            "写回时必须写当前版本，而不是文件里那个旧值"
+        );
+        assert_eq!(
+            merged.get("theme"),
+            Some(&Value::from(DEFAULT_THEME)),
+            "typed 设置覆盖它自己声明的键"
+        );
+    }
+
+    /// 版本高于本程序支持 → 照常读取，但标成只读并留诊断。
+    #[test]
+    fn newer_document_version_is_read_only() {
+        let parsed = parse(r#"{"version": 99, "theme": "Lithe Light", "futureKey": true}"#);
+        assert!(parsed.read_only, "更高版本必须转只读");
+        assert_eq!(parsed.settings.theme, "Lithe Light", "仍然读取能读懂的部分");
+        assert!(
+            parsed
+                .diagnostics
+                .iter()
+                .any(|line| line.contains("document_version_newer")),
+            "{:?}",
+            parsed.diagnostics
+        );
+
+        // 相同或更低版本照常可写。
+        assert!(!parse(r#"{"version": 1}"#).read_only);
+        assert!(!parse(r#"{"version": 0}"#).read_only);
+        // 版本字段缺失 = 老文件，可写。
+        assert!(!parse(r#"{"theme": "Lithe Dark"}"#).read_only);
+        // 版本不是整数：当成没写，不因此转只读（保守但可写）。
+        assert!(!parse(r#"{"version": "one"}"#).read_only);
+    }
+
+    /// 已知键集由 schema 派生（抽查几个键名 + 规模），不是另一张手写表。
+    #[test]
+    fn known_keys_come_from_the_schema() {
+        let keys = known_keys();
+        for key in ["theme", "tabSize", "terminalDefaultShellId", "javaHomePath"] {
+            assert!(keys.contains(key), "缺键 {key}");
+        }
+        let Value::Object(defaults) =
+            serde_json::to_value(Settings::default()).expect("序列化失败")
+        else {
+            panic!("设置必须是对象");
+        };
+        assert_eq!(keys.len(), defaults.len());
     }
 
     /// 防抖合并：窗口内的多次改动只落盘一次；更晚的那次唤醒不再重复写。
@@ -657,7 +889,7 @@ mod tests {
         );
     }
 
-    /// §4.3 的数组规范化：trim、去空行、去重且保序（v1 备用，见 `normalize_pattern_lines` 文档）。
+    /// 数组规范化：trim、去空行、去重且保序。
     #[test]
     fn pattern_lines_are_trimmed_and_deduplicated() {
         assert_eq!(

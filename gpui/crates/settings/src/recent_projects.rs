@@ -8,10 +8,11 @@
 //! %APPDATA%\Lithe\recent-projects.json   ← 本模块（路径见 crate::paths::recent_projects_file_path）
 //! ```
 //!
-//! 为什么不塞进 [`crate::schema::Settings`]：那是个**扁平标量**结构（`String` / `bool` /
-//! `f64` / `u32`，没有 `Vec`），塞一个列表进去要新增复合字段、同步 `persistence.rs` 的逐键表，
-//! 而且最近项目是**机器高频改写**的东西，写它不该把用户手改过的设置文件也一起重写一遍
-//! （维护者原话：不污染 `Settings` 扁平模型，`gpui/research/menu-and-open-project-plan.md:35`）。
+//! 为什么不塞进 [`crate::schema::Settings`]：最近项目是**机器高频改写**的东西，写它会把
+//! 用户手改过的设置文件也一起重写一遍（维护者原话：不污染 `Settings` 模型，
+//! `gpui/research/menu-and-open-project-plan.md:35`）。设置结构现在允许数组与嵌套
+//! （键表由 schema 派生，见 `crate::persistence` 的模块文档），所以这里的理由只剩
+//! "高频改写的机器状态不该混进用户手改的文件"这一条。
 //!
 //! 为什么不落 `.lithe/`：gpui 侧**没有**项目级写入通路（对 `.lithe` 只有一处**读**：
 //! `gpui/crates/java/src/jdtls.rs:402-407` 把 `.lithe/toolchains/jdtls` 当探测候选根），

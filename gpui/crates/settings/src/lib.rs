@@ -17,7 +17,8 @@
 //! | --- | --- |
 //! | [`schema`] | `Settings` 结构体、逐键默认值、不依赖运行时的规范化（**纯数据，无 GPUI**） |
 //! | [`paths`] | 设置文件路径（唯一允许出现 `#[cfg(target_os)]` 的地方）+ 环境变量覆盖 |
-//! | [`persistence`] | 读（逐键容错）、原子写、300ms 防抖状态机（**纯数据，无 GPUI**） |
+//! | [`persistence`] | 读（逐键容错）、**未知键原样保留**、顶层 `version`、原子写、300ms 防抖状态机（**纯数据，无 GPUI**） |
+//! | [`watch`] | 设置文件的**外部改动**监听（手改文件不必重启；监听父目录以避开 rename 让文件级监听失效） |
 //! | [`theme`] | 主题目录装载/监听、按名字应用主题、UI 字号 → rem 基准（真源是 `gpui/themes/`） |
 //! | [`store`] | 状态所有者 `SettingsStore`：改设置 → 立即生效 → 防抖落盘（唯一需要 `App` 的"逻辑"） |
 //! | [`row`] | 行/分组零件（`SettingsGroup` / `SettingsRow` / 宽度档） |
@@ -55,6 +56,7 @@ pub mod run;
 pub mod schema;
 pub mod store;
 pub mod theme;
+pub mod watch;
 
 pub use dialog::{
     Category, OpenSettings, install_actions, open_settings_dialog, open_settings_dialog_at,
@@ -65,7 +67,10 @@ pub use identity::{
     set_git_identity_host,
 };
 pub use paths::{SETTINGS_FILE_ENV, recent_projects_file_path, settings_file_path};
-pub use persistence::{DebounceState, Loaded, SAVE_DEBOUNCE_MS, load, load_from};
+pub use persistence::{
+    DOCUMENT_VERSION, DOCUMENT_VERSION_KEY, DebounceState, Loaded, Parsed, SAVE_DEBOUNCE_MS, load,
+    load_from, merge_document, parse as parse_settings_document, save_document,
+};
 pub use project::{
     EffectiveToolchain, MavenConfiguration, MavenDiscovery, Overrides, ProjectEnvironment,
     PROJECT_DIAGNOSTIC_TAG, ToolMode, ToolSource, discover as discover_project_environment,

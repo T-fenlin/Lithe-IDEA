@@ -14,7 +14,7 @@
 //! `Settings::default()` —— 见本文件末尾的测试。
 //!
 //! ⚠️ **类型损坏的键**（例如 `"uiFontSize": "big"`）会让整份反序列化失败，所以启动路径**不直接**
-//! 用 `from_str`，而是走 [`crate::persistence::load_from_str`] 的逐键容错解析
+//! 用 `from_str`，而是走 [`crate::persistence::parse`] 的逐键容错解析
 //! （坏键 → 默认值 + 一条诊断），`#[serde(default)]` 仍然负责"缺键"这一半语义。
 //!
 //! ## 只落「gpui 侧真的能生效」的键

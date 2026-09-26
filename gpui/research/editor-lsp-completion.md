@@ -786,5 +786,5 @@ pub fn present_completion_items(&mut self, trigger_start_offset: usize, query: i
 ### 7.3 与设置页的关系（`HANDOFF.md` §4 队列第 2 项的 LSP 页）
 
 真源 LSP 页的三个开关 `autoCompletion` / `parameterHints` / `semanticTokens` 目前在 gpui 侧**没有消费方**，所以照 §7.3-D 的口径"不画假控件"（`PLAN.md` §15.5 第 4 条）。
-本调研之后，**`autoCompletion` 第一次有了真实消费方** —— 它可以接到第 2 步的 `is_completion_trigger` 上（关掉就恒 `false`）。要落这一项时必须走 `PLAN.md` §14.2 的硬前提：`settings/src/schema.rs` + `persistence.rs` 的逐键容错表 + 守卫测试 `every_key_survives_a_round_trip` **三处同时改**，否则会复现"写得出、读不回"的老 bug。
+本调研之后，**`autoCompletion` 第一次有了真实消费方** —— 它可以接到第 2 步的 `is_completion_trigger` 上（关掉就恒 `false`）。要落这一项时按 `PLAN.md` §14.2 的口径改**两处**：`settings/src/schema.rs`（字段 + `Default` + 序列化键名测试）与消费方（`store.rs` 的 setter + 编辑器转发）。`persistence.rs` **不需要改** —— 键表已由 schema 派生，坏键回落路径自动覆盖新字段，守卫测试 `any_single_broken_key_leaves_every_other_key_intact` 会照出没进去的字段。
 `parameterHints`（签名帮助）与 `semanticTokens` 仍无消费方：前者上游**完全没有**接口（§2.10），后者要先把 Core 的 full 结果切区间（§2.6）。

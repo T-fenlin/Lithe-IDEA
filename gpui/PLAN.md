@@ -758,10 +758,17 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 | --- | --- | --- |
 | 路径 | Windows `%APPDATA%\Lithe\settings.json`；macOS `~/Library/Application Support/Lithe/`；Linux `$XDG_CONFIG_HOME/lithe/` | 任务书；gpui 侧**没有**数据目录 helper（五个 crate `grep` 零命中），所以平台分支集中在 `paths.rs` |
 | 覆盖 | `LITHE_GPUI_SETTINGS_FILE`（完整文件路径）优先于一切推导 | 供测试与两轮机器验证 |
-| 读取 | 文件不存在 → 全默认值、**不创建文件**；不是 JSON / 不是对象 → 全默认值 + 一条诊断；**某个键坏了只回落该键**；未知键忽略 | `lib/settings-persistence.ts:18-43,73-79` |
-| 写入 | **原子写**（`settings.json.tmp` + rename）；普通改动 **300ms 防抖**；「恢复默认设置」**立即写**；关对话框补一次 flush | `lib/settings-persistence.ts:96-112`、`stores/settings.store.ts:88-97` |
+| 读取 | 文件不存在 → 全默认值、**不创建文件**；不是 JSON / 不是对象 → 全默认值 + 一条诊断；**某个键坏了只回落该键**；未知键不参与设置、但**写回时原样保留** | `lib/settings-persistence.ts:18-43,73-79` + 见 §14.2 |
+| 版本 | 顶层 `version`（当前 `DOCUMENT_VERSION = 1`）；写回时写当前版本；文件声明的版本**更高**时转**只读**（内存里照常生效，但不覆盖用户的文件） | 本仓库新增（手改安全） |
+| 写入 | **原子写**（`settings.json.tmp` + rename）；普通改动 **300ms 防抖**；「恢复默认设置」**立即写**；关对话框补一次 flush；**进程退出前**用 `on_app_quit` 再补一次 | `lib/settings-persistence.ts:96-112`、`stores/settings.store.ts:88-97` |
+| 外部改动 | 监听**父目录**（非递归）并按文件名过滤，手改文件不必重启；内容与内存一致时不动（挡住自己写入触发的自激）；**外部改动胜出**，文件被删则保留内存设置 | 本仓库新增（见 `src/watch.rs`） |
 | 去重 | 值没变就不应用、不落盘（也挡住"打开对话框时数字框发一次值不变的 Change 就写盘"的噪音） | `lib/settings-persistence.ts:34` 的 `!isEqual` |
 | 规范化 | `uiFontSize` 10–24 / 0.5 步长；`displayLanguage` 白名单；空主题名回落默认；**主题名必须在注册表里**（在主题装载回调里校验，不写回文件） | `lib/ui-font-size.ts:10-19`、`settings-normalization.ts:480,499-519` |
+| 键表 | 由 schema 派生（`known_keys()` 取 `Settings::default()` 的序列化结果），**没有第二份手写清单** | 见 §14.2 |
+
+⚠️ **监听目录而不是监听文件**：我们自己的写入是"临时文件 + rename"，文件级监听会跟着被 rename
+换掉的那一份一起失效（自己写完第一次就再也听不到）。所以监听父目录、按文件名过滤；
+代理目录不存在时会先建目录（读设置文件本身仍然不创建文件）。
 
 §4.3 里的数组类条目（隐藏路径 trim / 去空行、四个"项目顺序"数组）**v1 不适用**（没有数组键），
 规则先落在 `persistence::normalize_pattern_lines` 并带测试，等 explorer 接过滤时直接用。
@@ -1333,16 +1340,31 @@ HANDOFF §4 的队列里这一项是"设置剩余页（除 AI）"，本批做的
 `TerminalPane::set_default_shell` 做成**幂等**（值没变就直接返回）：不然用户在页签条 ⌄ 菜单里
 手动选的配置文件会被"隔壁开关动了一下"重置掉。
 
-### 14.2 顺手修掉一个真 bug：设置**写得出、读不回**（`persistence.rs`）
+### 14.2 设置**写得出、读不回**（`persistence.rs`）——已根治：键表由 schema 派生
 
-`settings_from_object` 是一张**手写的逐键表**；新键不登记进去，文件里写得再对、读回来也是默认值，
+历史上 `settings_from_object` 是一张**手写的逐键表**；新键不登记进去，文件里写得再对、读回来也是默认值，
 而且**没有任何诊断**（文件本身完全合法）。实测：文件里 `"tabSize": 8`，启动后
 `S1_SETTINGS wiring=workbench tab_size=2`。
 
-修法是两段式：先整体 `serde_json::from_value::<Settings>`（认**所有**字段，新键不必再登记），
-只有某个键类型真坏了才退到手写表逐键容错（那张表的存在理由就是 Windows 的"逐键回退"语义）。
-守卫测试 `every_key_survives_a_round_trip` 用"所有字段都非默认"的设置跑存取往返 —— 漏一个键必定不等。
-**这是后面几批（Git / LSP 页加新键）的硬前提。**
+**现在不存在第二份键名清单。** `persistence::known_keys()` 直接取 `Settings::default()` 的序列化结果，
+坏键回落路径遍历它，所以：
+
+- 先整体 `serde_json::from_value::<Settings>`（认**所有**字段）；只有某个键的类型真坏了才退到逐键容错；
+- 逐键那一步自动覆盖新字段 —— **加新键不需要再改 `persistence.rs`**；
+- 守护测试从 `every_key_survives_a_round_trip` 扩到
+  `any_single_broken_key_leaves_every_other_key_intact`：逐个已知键喂 `null`，要求其余键全部完好。
+  任何新字段没进入回落路径，这条测试立刻不等（它同时断言"喂的值确实被判成坏键"，
+  所以将来若真有字段接受 `null`，测试会明确失败并提示换一个非法值，而不是静默变弱）。
+
+同一次改动还落地了两条**文档层**性质（完整理由在 `persistence.rs` 的模块文档）：
+
+| 性质 | 行为 |
+| --- | --- |
+| 顶层 `version` | 写回时写当前 `DOCUMENT_VERSION`；文件声明的版本比程序新时**转只读**，只读期间不落盘（内存里照常生效） |
+| **未知键原样保留** | 写回前先用上一次文件的原始对象合并（含嵌套对象内部的键）。用户手写的字段、另一个版本写的字段都不会被吃掉 |
+
+这两条一起解决的是"设置文件是**给人改的**"这件事：早先"未知键静默忽略"会在下一次落盘时
+删掉用户手写的键，那是不可逆的数据丢失。
 
 ### 14.3 不画假控件：编辑器页真源 4 项只做 2 项
 
@@ -1461,9 +1483,10 @@ settings::identity::{GitIdentityHost, GitIdentityPage, set_git_identity_host}
 | --- | --- | --- | --- |
 | `confirmBeforeDiscard` | `true` | 外壳订阅 `SettingsStore` 后转发给 `ChangesView::set_confirm_before_discard`（幂等） | `default-settings.ts:194`、`tabs/git-settings.tsx:93-106` |
 
-三处同时改到位：`schema.rs`（字段 + `Default` + 序列化键名测试）、`persistence.rs`（**逐键容错表**）、
-`store.rs`（`set_confirm_before_discard`）；`every_key_survives_a_round_trip` 用非默认值覆盖它，
-所以"写得出、读不回"那条老 bug 不会再发生。
+两处同时改到位：`schema.rs`（字段 + `Default` + 序列化键名测试）、`store.rs`（
+`set_confirm_before_discard`）。**`persistence.rs` 不需要改**（§14.2：键表由 schema 派生）；
+`any_single_broken_key_leaves_every_other_key_intact` 与 `every_key_survives_a_round_trip`
+会自动用非默认值覆盖它，所以"写得出、读不回"那条老 bug 不会再发生。
 
 ### 15.4 验证（详见 `.artifacts/p13/NOTES.md`）
 

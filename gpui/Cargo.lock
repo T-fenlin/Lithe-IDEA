@@ -3928,8 +3928,10 @@ dependencies = [
 name = "lithe-gpui-settings"
 version = "0.0.1"
 dependencies = [
+ "async-channel",
  "gpui-kit",
  "lithe-gpui-shared",
+ "notify",
  "serde",
  "serde_json",
 ]

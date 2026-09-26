@@ -33,6 +33,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, Global, SharedString, Subscription, Window,
     WindowAppearance, px,
 };
+use serde_json::Value;
 
 use crate::persistence::{self, DebounceState, Loaded};
 use crate::schema::{Settings, theme_font_size_for};
@@ -87,6 +88,11 @@ pub struct SettingsStore {
     settings: Settings,
     /// 设置文件路径；`None` = 推导不出（例如 Windows 上 `APPDATA` 缺失），只影响落盘。
     path: Option<PathBuf>,
+    /// 设置文件里上一次的原始文档。写回时用它保留未知键（见
+    /// [`crate::persistence::merge_document`]），所以每次写成功都要把它换成新文档。
+    previous: Option<Value>,
+    /// 文件声明的版本高于本程序支持：**只读**，任何改动都不落盘（但内存里照样生效）。
+    read_only: bool,
     /// `--theme` 的显式覆盖（**验证/诊断用**，不写进设置文件）。用户一改主题就作废。
     theme_override: Option<SharedString>,
     /// 最近一次解析出来的、应该生效的主题名（`watch_dir` 热重载后按它复原，界面也显示它）。
@@ -97,6 +103,8 @@ pub struct SettingsStore {
     appearance_subscription: Option<Subscription>,
     /// rem 基准不变量（见 [`SettingsStore::enforce_rem_base`] 的说明）。
     theme_subscription: Option<Subscription>,
+    /// 进程退出前的补写钩子（见 [`SettingsStore::install_quit_flush`]）。
+    quit_subscription: Option<Subscription>,
 }
 
 /// `Global` 只承载"哪里能找到那个 Entity"。
@@ -139,6 +147,8 @@ pub fn init_store(cx: &mut App, init: Init) -> Entity<SettingsStore> {
         path,
         file_existed,
         diagnostics,
+        previous,
+        read_only,
     } = loaded;
 
     // ⚠️ **这里不做"主题名必须在注册表里"的规范化**：主题目录是异步加载的
@@ -161,14 +171,22 @@ pub fn init_store(cx: &mut App, init: Init) -> Entity<SettingsStore> {
     let store = cx.new(|_| SettingsStore {
         settings,
         path,
+        previous,
+        read_only,
         theme_override,
         applied_theme,
         debounce: DebounceState::default(),
         appearance_subscription: None,
         theme_subscription: None,
+        quit_subscription: None,
     });
 
     cx.set_global(SettingsHandle(store.clone()));
+
+    // 外部改动监听（手改文件不必重启）与退出前补写。两件事都在这里装，调用方不需要记得：
+    // 少装监听 = 手改文件不生效，少装退出补写 = 退出前 300ms 内的改动丢掉。
+    store.update(cx, |store, cx| store.install_watcher(cx));
+    store.update(cx, |store, cx| store.install_quit_flush(cx));
 
     // 主题还没装载，先把 UI 字号落到 rem 基准上：即使主题文件全坏、一个主题都载不进来，
     // 字号设置也照样生效。编辑器字号同理（写的是主题的等宽字号，与主题名无关）。
@@ -476,13 +494,93 @@ impl SettingsStore {
         cx.notify();
     }
 
-    /// 把待写的改动立刻落盘（关闭对话框时调用，避免最后一次改动落在防抖窗口里）。
+    /// 把待写的改动立刻落盘（关闭对话框、进程退出时调用，避免最后一次改动落在防抖窗口里）。
     pub fn flush_pending(&mut self) {
         if !self.debounce.has_pending() {
             return;
         }
         self.debounce.mark_flushed();
         self.write();
+    }
+
+    // ------------------------------------------------------- 外部改动 / 退出补写
+
+    /// 装外部改动监听（手改设置文件不必重启）。没有文件路径时什么都不做。
+    fn install_watcher(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.path.clone() else {
+            eprintln!("S1_SETTINGS watch_skipped reason=no_path");
+            return;
+        };
+        crate::watch::watch_settings_file(cx, path);
+    }
+
+    /// 装上"进程退出前补写一次"的钩子。
+    ///
+    /// 300ms 防抖的写入是一个 detached 任务：进程在窗口内退出时它会随实体一起消失，
+    /// 那次改动就丢了。这里用 gpui 的 `on_app_quit` 在退出流程里补一次同步写。
+    fn install_quit_flush(&mut self, cx: &mut Context<Self>) {
+        if self.quit_subscription.is_some() {
+            return;
+        }
+        self.quit_subscription = Some(cx.on_app_quit(|store, _cx| {
+            let pending = store.debounce.has_pending();
+            store.flush_pending();
+            if pending {
+                println!("S1_SETTINGS flush_on_quit pending=yes");
+            }
+            // 回调要求返回一个 future；补写本身是同步的，所以这里立即完成。
+            async {}
+        }));
+    }
+
+    /// 外部改动之后重新读文件：内容与内存一致时什么都不做（挡住"自己的写入触发自己"）。
+    ///
+    /// 详见 [`crate::watch`] 的模块文档（为什么以文件为准、文件被删为什么不动内存）。
+    pub fn reload_from_disk(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        let loaded = persistence::load_from(Some(path.clone()));
+
+        // 文件被删 / 暂时读不到：保留内存里的设置，不把用户打回默认值。
+        if !loaded.file_existed {
+            eprintln!(
+                "S1_SETTINGS reload_skipped path={} reason=file_missing",
+                path.display()
+            );
+            return;
+        }
+
+        let changed = loaded.settings != self.settings;
+        let read_only_changed = loaded.read_only != self.read_only;
+        // 未知键的快照无论内容有没有变都要刷新：下一次写回要靠它保留这些键。
+        self.previous = loaded.previous;
+        if !changed && !read_only_changed {
+            return;
+        }
+
+        self.settings = loaded.settings;
+        self.read_only = loaded.read_only;
+        // 内存已经等于文件内容，那次待写没有必要了（留着只会把同一份内容再写一遍）。
+        self.debounce.mark_flushed();
+
+        for diagnostic in &loaded.diagnostics {
+            eprintln!("S1_SETTINGS reload_diagnostic {diagnostic}");
+        }
+        println!(
+            "S1_SETTINGS reloaded path={} theme={} ui_font_size={} read_only={}",
+            path.display(),
+            self.settings.theme,
+            self.settings.ui_font_size,
+            self.read_only
+        );
+
+        // 即时副作用与用户改设置走同一条路：主题、rem 基准、编辑器字号。
+        // 语言要重启才生效、终端 shell 只影响新会话，两者由订阅方按 `notify` 自行跟随。
+        self.apply_theme(cx);
+        self.apply_font_size(cx);
+        self.apply_editor_font_size(cx);
+        cx.notify();
     }
 
     // ---------------------------------------------------------------- 主题应用
@@ -600,11 +698,34 @@ impl SettingsStore {
         let Some(path) = self.path.clone() else {
             return;
         };
-        match persistence::save(&path, &self.settings) {
-            Ok(bytes) => println!(
-                "S1_SETTINGS saved path={} bytes={bytes}",
+        // 文件版本比本程序新：改动能生效（内存里已经改了），但**不落盘** ——
+        // 覆盖它等于把用户在新版本里设置的东西连同我们不认识的键一起无声降级。
+        if self.read_only {
+            eprintln!(
+                "S1_SETTINGS save_skipped path={} reason=document_version_newer",
                 path.display()
-            ),
+            );
+            return;
+        }
+
+        // 先合并出要写的文档：它同时是"带未知键的落盘内容"和"下一次写回时的 previous"，
+        // 所以只合并一次，写成功后就地更新，避免两次写之间丢掉这一轮保留的键。
+        let document = match persistence::merge_document(self.previous.as_ref(), &self.settings) {
+            Ok(document) => document,
+            Err(error) => {
+                eprintln!(
+                    "S1_SETTINGS save_failed path={} error={error}",
+                    path.display()
+                );
+                return;
+            }
+        };
+
+        match persistence::save_json(&path, &document) {
+            Ok(bytes) => {
+                self.previous = Some(document);
+                println!("S1_SETTINGS saved path={} bytes={bytes}", path.display());
+            }
             // 写失败不 panic：内存里的设置仍然是权威的，下一次改动会再试一次。
             Err(error) => eprintln!(
                 "S1_SETTINGS save_failed path={} error={error}",
@@ -645,15 +766,17 @@ mod tests {
     /// `LITHE_GPUI_SETTINGS_FILE` 指向的文件被读进来之后，语言/字号必须逐字生效。
     #[test]
     fn loaded_file_drives_the_schema() {
-        let (settings, diagnostics) =
-            persistence::load_from_str(r#"{"displayLanguage": "en-US", "uiFontSize": 15.0}"#);
-        assert!(diagnostics.is_empty(), "{diagnostics:?}");
-        assert_eq!(settings.display_language, "en-US");
-        assert_eq!(settings.gpui_locale(), "en");
-        assert_eq!(settings.ui_font_size, 15.0);
+        let parsed = persistence::parse(r#"{"displayLanguage": "en-US", "uiFontSize": 15.0}"#);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        assert_eq!(parsed.settings.display_language, "en-US");
+        assert_eq!(parsed.settings.gpui_locale(), "en");
+        assert_eq!(parsed.settings.ui_font_size, 15.0);
         // 缺的键回落默认，不是整份丢弃。
-        assert_eq!(settings.display_language.is_empty(), false);
-        let (only_theme, _) = persistence::load_from_str(r#"{"theme": "Lithe Light"}"#);
-        assert_eq!(only_theme.display_language, DEFAULT_DISPLAY_LANGUAGE);
+        assert_eq!(parsed.settings.display_language.is_empty(), false);
+        let only_theme = persistence::parse(r#"{"theme": "Lithe Light"}"#);
+        assert_eq!(
+            only_theme.settings.display_language,
+            DEFAULT_DISPLAY_LANGUAGE
+        );
     }
 }

@@ -135,6 +135,13 @@
 - **两份新调研已进仓库**（必读）：`gpui/research/editor-lsp-completion.md`、
   `gpui/research/java-spring-maven-inventory.md`（载荷里有 **m2e**、**没有 Spring**；
   Core `lsp.startServer` **已接受 `mavenContext` 而 gpui 没传**；Spring 走 Core 的 `spring.index`）。
+- **设置文件现在是一个"可以放心手改"的文档层**（本批新增，见 `PLAN.md` §8.4 与 §14.2）：
+  顶层 `version`（更高版本 → 只读、不覆盖用户文件）、**未知键原样保留**（含嵌套，写回前先合并
+  上一次的原始对象）、键表由 schema 派生（`known_keys()`，**不再有手写逐键表**）、
+  **外部改动监听**（改文件不必重启；监听父目录以避开 rename 让文件级监听失效）、
+  **退出前补写**（`on_app_quit`，补上防抖窗口里那最后一次改动）。
+  新增的两个直接依赖 `notify` / `async-channel` 本来就在依赖树里（分别由 `gpui-component` /
+  `gpui-pre` 引入），没有引入新的第三方代码。
 - 最近四批（都经主代理复核 + 交互级验证后提交）：`ebdf4885` 源代码管理 →
   `46d62f41` 设置「编辑器」「终端」页（顺手修掉 `persistence.rs`「写得出、读不回」的真 bug，
   见 `PLAN.md` §14.2，**以后加设置键必读**）→ `b740bdb4` 设置左栏 11 项 + 7 个明确空态 →
@@ -292,9 +299,10 @@
      **没有消费方**（不画）；能真做的是 **jdtls 运行时路径**（现在只有
      `java/src/jdtls.rs:440-460` 的 `LITHE_JDTLS_JAVA` / `JAVA_HOME` / PATH 三级发现）。
      这是"能真生效"的设置页里**最后一块没做的**。
-   - ⚠️ **加新设置键时先读 `gpui/PLAN.md` §14.2**：`persistence.rs` 的手写逐键表漏键会
-     "写得出、读不回"且无诊断；守卫测试 `every_key_survives_a_round_trip` 会用"所有字段非默认"
-     的往返把它照出来。（阶段 15 的 `confirmBeforeDiscard` 就是照这条走的。）
+   - ⚠️ **加新设置键时先读 `gpui/PLAN.md` §14.2**：键表由 schema 派生（`persistence::known_keys()`），
+     所以**不需要**改 `persistence.rs`；要改的是 `schema.rs`（字段 + `Default` + 序列化键名测试）
+     与消费方。守卫测试 `any_single_broken_key_leaves_every_other_key_intact` 会逐个已知键喂非法值，
+     任何新字段没进入坏键回落路径都会立刻不等。（阶段 15 的 `confirmBeforeDiscard` 走的是老的"三处同时改"。）
 3. **删旧前端之前的前置**（缺一不可）：
    - `gpui` **CI 覆盖**（`.github/**` 目前对 `gpui` **零命中** → 新前端完全没有 CI；建议加
      `paths: gpui/**` 的构建 + 改动范围测试 job）；
