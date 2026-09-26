@@ -573,6 +573,41 @@ const GPUI_ONLY_KEYS = [
       "B3（同上）。给「终端 → 向右拆分终端 / 向下拆分终端」。事实依据：terminal crate 只有标签页（TerminalPane::new_tab / close_tab），没有分栏树（terminal_view.rs:695 也记着 terminal.close 之前同样未绑）。真源恒可执行，catalog 里没有这句。",
   },
   {
+    key: "settings.gpui.appearanceSourceGlobal",
+    zh: "当前外观跟随全局设置（这个键在工作区两层里都没有覆盖）",
+    en: "This appearance follows the global settings (neither workspace layer overrides this key)",
+    reason:
+      "外观键的来源有四档，这是最后一档（跟随全局）。默认形态下界面**不画**任何标注（设计 Note 第七节：默认静默，不把「还没共享」当异常），这条键只在诊断与将来可能的显式说明里用到。",
+  },
+  {
+    key: "settings.gpui.appearanceSourceTeam",
+    zh: "当前外观来自团队设置（.lithe/settings.json，已被 Git 跟踪）",
+    en: "This appearance comes from the team settings (.lithe/settings.json, tracked by Git)",
+    reason:
+      "外观被工作区覆盖时的来源三态之一。判据是「.lithe/settings.json 设了这个键，且该文件已被 Git 跟踪」——跟踪与否由 git ls-files 判定（见 settings/src/workspace.rs 的 AppearanceSource）。真源 Windows 侧没有项目级外观覆盖，也就没有这三条来源文案。",
+  },
+  {
+    key: "settings.gpui.appearanceSourceProject",
+    zh: "当前外观来自本项目的设置（.lithe/settings.json，尚未提交）",
+    en: "This appearance comes from this project's settings (.lithe/settings.json, not committed yet)",
+    reason:
+      "同上的第二态：共享层文件设了这个键、但该文件还没被 Git 跟踪。它与「团队设置」是同一个文件的两个状态（设计 Note 第七节的表），界面文案必须是两句 —— 把未提交的文件说成团队设置会指向一个不存在的团队约定。默认不共享，所以这是常见形态。",
+  },
+  {
+    key: "settings.gpui.appearanceSourceLocal",
+    zh: "当前外观来自你的个人覆盖（.lithe/settings.local.json）",
+    en: "This appearance comes from your personal override (.lithe/settings.local.json)",
+    reason:
+      "同上的第三态：本机层（.lithe/settings.local.json，不进版本控制）设了这个键，它的优先级最高。有工作区时用户在设置页改外观就是写这一层（见 store.rs 的 commit_appearance），所以用户改完立刻会看到这一句 —— 这正是「外观被工作区覆盖」这条决策需要的可见性。",
+  },
+  {
+    key: "settings.gpui.appearanceRevertToGlobal",
+    zh: "改回我的全局外观",
+    en: "Reset to my global appearance",
+    reason:
+      "来源标注右侧的按钮（设计 Note 第四节与验收标准要求的「一键改回」）。它把这个键从工作区两层文件里**删掉**，于是生效值真的回落到全局值 —— 不是留一个空值。真源没有这条：Windows 侧外观只有全局一层，不存在「被项目覆盖」这个状态。",
+  },
+  {
     key: "gpui.workspaceConfigFailed",
     zh: "建立工作区配置失败：{reason}",
     en: "Failed to set up the workspace configuration: {reason}",

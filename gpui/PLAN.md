@@ -1007,8 +1007,8 @@ Note（architecture / feature / bug-fix，日期均为 2026-09-27）。
    Rust 进程只能写仓库工作区内，所以那条用例会明确跳过。**但产品路径已经验过**：应用进程 +
    `GIT_CEILING_DIRECTORIES` 的端到端拿到了 `exclusion=NotARepository`（见上一节）。
 2. 共享动作**没有界面入口**（本批只要可调用函数），所以"用户点一下完成共享"这条端到端没跑。
-3. `.lithe/settings.json` / `settings.local.json`（工作区对全局键的覆盖层）**尚未有读写方** ——
-   属于增量 4/5。
+3. `.lithe/settings.json` / `settings.local.json`（工作区对全局键的覆盖层）在**增量 2/3 那一批**里
+   还没有读写方；**增量 5 已落地外观那九个键**（`PLAN.md` §8.12），其余键仍然只有全局层。
 
 ### 8.11 工具链五个值的分层（本批）
 
@@ -1178,6 +1178,156 @@ S1_WORKSPACE_CONFIG shell_identity_failed root=… error=清单文件读写失�
 `cargo check -p …settings -p …terminal -p …workbench --all-targets` exit=0、
 `verify-test-stability.ps1` 与 `extract-locale.mjs --check` 均通过。
 **未做 GUI 级验证**（本批不启动 Lithe，避免与同批另一个增量的窗口互相干扰）。
+
+### 8.12 工作区外观覆盖层（增量 5，本批）
+
+设计真源：`.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`
+第四节与第七节。维护者已决定**允许**外观被工作区覆盖（团队统一主题与字号是真实需求，
+IDEA 也有"Project"级配色方案），所以配套的**三条缓解措施是硬要求**：独立文件、来源可见、一键改回。
+
+#### 覆盖顺序与"只有外观"
+
+```text
+内置默认 < 全局 settings.json < .lithe/settings.json < .lithe/settings.local.json
+```
+
+**唯一实现**是 `lithe_gpui_settings::workspace::resolve_effective(global, shared, local)`
+（`crates/settings/src/workspace.rs`）：设置页显示的生效值、主题应用、字号转发都走它。
+**不要在别处再写一遍"项目优先"** —— 两份实现漂移的表现是"界面显示 A、实际生效 B"。
+
+可被覆盖的键是**白名单九键**（`AppearanceKey::ALL`）：主题四键（`theme` / `syncSystemTheme` /
+`autoThemeLight` / `autoThemeDark`）+ `uiFontSize` / `fontSize` / `fontFamily` / `monoFontFamily` /
+`terminalFontSize`。语言、终端 shell、缩进、工具链五值、Git 相关键**仍然只有全局层**：
+工作区文件里写了它们会被当**未知键逐字保留**，但不改变生效值（守卫测试
+`non_appearance_keys_are_not_overridable`）。把它们的项目层做出来是另一批工作。
+
+主题为什么是**四个键一组**：跟随系统时生效主题由 `autoTheme*` 决定（`theme` 那一格根本不被读），
+所以"主题选择"这件事在这份文件里天然是四个键 —— 只让 `theme` 可覆盖会让"工作区设了主题"
+在跟随系统时**静默无效**。设置页那两行也因此按"**决定生效主题的那个键**"判来源
+（`workspace::effective_theme_key`），一键改回则一次清四个。
+
+#### 钳制沿用既有实现，不发明第三套范围
+
+`resolve_effective` 合并完之后调 [`Settings::normalize`]，所以 `uiFontSize` 10–24、
+`fontSize` 10–22、`terminalFontSize` 0(=不覆盖)/10–22 一个字面量都没有重复写；
+写回覆盖层之前再调 `AppearanceOverlay::clamp_with(&effective)`，**把归一之后的值写回文件**
+（否则会出现"界面上是 24、文件里是 99"）。两个字族的"必须已装否则不写主题"校验不受影响：
+生效值最终都要经 `theme::apply_font_families` → `theme::usable_family` 才进主题。
+
+#### 文档语义照抄，不重写第二版
+
+读走 `shared::document::parse`（逐键容错 + 未知键保留 + 版本判定），写走 `preserve_unknown` +
+`save_json`（临时文件 + rename），工作区设置文档的 `version` 从 **1** 开始。两处与通用实现**有实质
+差别**，都写在 `workspace.rs` 的模块文档里：
+
+- **未设的键不落盘**：`AppearanceOverlay` 的字段是 `Option<..>`，未设的键序列化成 `null`，
+  而 `null` 不是这份文档的形状（用户手改时读不出"清掉了"与"没写过"）。所以 `merged_document`
+  在 `preserve_unknown` 之上补一步"把未设的键从对象里删掉"。
+- **键名有两处**：`AppearanceKey::json_key()`（删键只能按字符串做）。守卫是测试
+  `json_keys_come_from_the_overlay_schema`：逐个键断言它在 `known_keys::<AppearanceOverlay>()` 里、
+  且反查回同一个键。
+
+#### 来源可见：三态 + 跟随全局
+
+| 覆盖来自哪里 | 界面怎么说 | 判据 |
+| --- | --- | --- |
+| `.lithe/settings.local.json` | 当前外观来自**你的个人覆盖** | 本机层有这个键 |
+| `.lithe/settings.json`，**已被 Git 跟踪** | 当前外观来自**团队设置** | `git ls-files --error-unmatch` 退出码 0 |
+| `.lithe/settings.json`，未被跟踪 | 当前外观来自**本项目的设置** | 退出码非 0 / 不是仓库 / 问不到 |
+| 两层都没有这个键 | **不画任何标注**（跟随全局） | — |
+
+跟踪与否**只问一次**（打开项目时，`background_spawn` 里调 `git.command`），回填走
+`SettingsStore::set_workspace_settings_tracked`；问不到时按"尚未提交"显示 —— 那是默认形态
+（`.lithe/` 默认被本机排除挡着），把未跟踪的文件说成团队设置会指向一个不存在的团队约定。
+四档的来源文案各有一个 locale 键（`settings.gpui.appearanceSource{Global,Team,Project,Local}`），
+加在 `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里、由生成器产出 yml。
+
+行内标注只在被覆盖时出现（设置对话框 `dialog.rs` 的 `appearance_note_for` +
+`row.rs` 的 `settings_row_with_note` / `appearance_source_note`）：一句来源 + 一个 ghost 小按钮
+「改回我的全局外观」（`settings.gpui.appearanceRevertToGlobal`）。行与没有这套机制时逐像素相同。
+
+#### 一键改回：清掉的是"工作区那一层"，两层一起
+
+`revert_appearance_group_to_global` 把这个键从 `.lithe/settings.json` **与**
+`.lithe/settings.local.json` **两处都删掉**，然后重算生效值。为什么是两层：工作区那一层由共享层
+与本机层共同构成（本机层盖在共享层上），只清本机层的话，一个同时被两层覆盖的键会回落到**共享层的值**
+而不是用户的全局值 —— 按钮的名字承诺的是后者。清掉之后**文件里不留空值**（见上"未设的键不落盘"）。
+
+#### 写侧分流：有工作区 → 本机层；落盘永远写全局层
+
+| 情况 | 写哪里 | 为什么 |
+| --- | --- | --- |
+| 有工作区 | `.lithe/settings.local.json`（本机层） | 与工具链五值同一条口径（"有工作区写项目本机层"）；用户自己的改动**不该悄悄进团队文件**，共享层要由"共享此项目的配置"那个显式动作写（那一批还没落地） |
+| 没有工作区 | 全局 `settings.json` | 与改动之前的行为完全一致 |
+
+⚠️ **全局层的落盘只写 `self.global`**（`store.rs` 的 `write()`）：`SettingsStore` 现在同时持有
+**生效值**（`settings`）与**全局层**（`global`）。只留生效值会让"改一个字幕大小"把工作区覆盖的值
+一起写进全局文件 —— 那是静默的数据污染，也是本批最容易做错的一处（所有 `set_*` 入口都因此分成
+`commit_global` 与 `commit_appearance` 两条）。
+
+工作区那一层**不参与 300ms 防抖**：它的写入是同步立即的（`write_workspace_layer`）。
+理由：那个防抖器管的是"全局设置文件这一份真源"，而工作区覆盖只是很小的两份 JSON，
+且它**必须**在改动当帧就落盘（用户可能马上切项目，外壳重建后旧实体消失，防抖窗口里的改动就丢了）。
+代价是数字输入框连续按键会产生几次小文件写 —— 实测可接受（输入 `19` 只在值合法时写一次）。
+
+#### 外部改动
+
+工作区文件**在打开 / 切换项目时重新读**（`ShellWorkspace::new` 里 `set_workspace_root`，
+它全仓库只有两个调用点，与"打开即建"同一处收口）。**没有**给它们加 watcher：
+全局设置文件那条 watcher 只监 `settings.json` 所在的目录，覆盖不到 `.lithe/`；
+而设计 Note 对宿主的最低要求就是"打开时重新读"。要加 watcher 时必须监听**父目录**
+（工作区文件同样是"临时文件 + rename"写的，文件级监听会被 rename 换掉），这与
+`settings/src/watch.rs` 模块文档记的是同一条理由。
+
+**恢复默认设置只恢复全局层**：一个叫"恢复默认设置"的按钮去改团队/项目的文件是错的。
+被覆盖的键照旧显示工作区值，来源标注会说明原因，日志留
+`S1_SETTINGS reset_to_defaults workspace_overridden=fontSize` 让"按了没反应"可排查。
+
+#### 验证（本批实跑）
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo check --workspace --all-targets` | **exit=0**（只有两条既存 dead_code 警告） |
+| `cargo test --workspace` | **407 通过 / 0 失败**（基线 393；+14 全部在 `workspace` 模块） |
+| `verify-test-stability.ps1` | 通过（`Test stability check passed (added lines, windows)`） |
+| `node gpui/tools/extract-locale.mjs` 然后 `--check` | `--check：产物与真源一致。`（4395 条 key） |
+| `node scripts/verify-agent-notes.mjs` | 通过 |
+| GUI 端到端（**工作区之外的 exe 副本** + 工作区外的临时 Git 仓库 + `LITHE_GPUI_SETTINGS_FILE`） | 见下 |
+
+GUI 端到端逐项（`C:\Users\admin\lithe-probe\Lithe.exe`，仓库 `…\e2e-ws`，全局设置 `fontSize=14`）：
+
+1. `.lithe/settings.json` 设 `fontSize=18` → `workspace_appearance … shared_file=true local_file=false
+   overridden=fontSize` + `appearance_source key=fontSize source=project value=18` + `mono_font_size=18px`
+   （来源"本项目的设置"）；
+2. 再在 `.lithe/settings.local.json` 设 `fontSize=20` → `appearance_source … source=local value=20` +
+   `mono_font_size=20px`（来源"你的个人覆盖"）；**把该文件 force-add 进索引**后再启动 →
+   `settings_tracked tracked=true exit_code=0` + `appearance_source … source=team`（来源"团队设置"）；
+3. `--appearance-revert fontSize`（与设置页那个按钮**同一个**调用）→
+   `appearance_reverted key=fontSize layers=shared+local value=14 global=14` + `mono_font_size=14px`
+   —— **生效值回落到全局值 14**，不是空值、不崩溃；
+4. 未知键逐字保留：改过值之后 `.lithe/settings.json` 里 `thirdParty{keepMe[1,2,3],alsoKeep}` 与
+   `futureFlag` **原样还在**，`.lithe/settings.local.json` 只剩 `{"version": 1}`（清掉的键不留 `null`）；
+5. `git status --porcelain` **为空**（`.local.json` 不进 Git）；把 `.lithe/` 那一行从本机排除里移除
+   （= "共享此项目的配置"的第一步）后 `git status -uall` 只出现 `.lithe/.gitignore`、
+   `.lithe/project.json`、`.lithe/settings.json`，而 `git check-ignore -v .lithe/settings.local.json`
+   命中 `.lithe/.gitignore:1:*.local.json`（本机层被第二道闸挡住、共享层可提交）。跑完排除行已还原。
+6. **UI 写入路径**（`--menu-probe view lithe.menu.zoomIn`，即「视图 → 放大」→ `set_editor_font_size`）：
+   `workspace_saved layer=local … keys=fontSize`，`.lithe/settings.local.json` 出现 `"fontSize": 19.0`，
+   而全局设置文件**仍然是 `14`** —— 外观改动**没有**污染全局层；生效值 `mono_font_size=19px`。
+
+#### 未能确认 / 还欠的
+
+1. **没有给工作区设置文件加 watcher**：外部手改 `.lithe/settings.json` 要**重新打开项目**才生效
+   （本批的明确下限）。加 watcher 时要监父目录，理由见上。
+2. **对话框内"来源标注 + 一键改回"没有像素级取证**：本机工作站锁屏、鼠标注入到不了应用，
+   所以"按钮点下去"那一段是靠 `--appearance-revert` 探针走**同一个 store 调用**验的
+   （与 `--theme-probe` / `--open-project-probe` 同一条口径）。界面代码本身的证据是编译通过 +
+   与既有两个外观页同一个行零件（`settings_row_with_note` 只是多一个 `children(note)`）。
+3. **共享层没有写入方**：用户改外观写的是本机层；`.lithe/settings.json` 今天只能手写或等
+   "共享此项目的配置"那批（那一批也同样还没落地）。所以"团队统一主题"的完整链路
+   （写共享层 → 共享动作 → 同事拉到）只走通了读的那一半。
+4. **`restore_defaults` 不清工作区覆盖**（有意为之，见上）。用户在"恢复默认设置"之后如果仍看到
+   被覆盖的值，只能看那一行的来源标注 —— 文案上没有额外提示（依赖来源标注那句话）。
 
 ---
 

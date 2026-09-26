@@ -109,6 +109,24 @@ pub fn settings_row(
     on_activate: Option<RowActivation>,
     cx: &App,
 ) -> AnyElement {
+    settings_row_with_note(id, label, description, None, control, on_activate, cx)
+}
+
+/// 与 [`settings_row`] 相同，但在标签与描述之下多一行**补充说明**（外观来源标注）。
+///
+/// 它存在的理由只有一个：外观键可以被工作区覆盖（`.lithe/settings.json` /
+/// `settings.local.json`），而用户必须能看出"这一刻这个值来自哪一层"，
+/// 并有一个动作把它改回全局（见 `workspace.rs` 的三条缓解措施）。
+/// 没有覆盖时调用方传 `None`，行与 [`settings_row`] 逐像素相同（默认静默）。
+pub fn settings_row_with_note(
+    id: impl Into<ElementId>,
+    label: SharedString,
+    description: Option<SharedString>,
+    note: Option<AnyElement>,
+    control: AnyElement,
+    on_activate: Option<RowActivation>,
+    cx: &App,
+) -> AnyElement {
     h_flex()
         // 行本身要有 `id` 才能挂 `on_click`（`InteractiveElement` / `StatefulInteractiveElement`
         // 的约束，与 `gpui/crates/git/src/log_view.rs:1050` 的同一处结论）。
@@ -131,9 +149,35 @@ pub fn settings_row(
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
                         .child(description)
-                })),
+                }))
+                .children(note),
         )
         .child(div().flex_shrink_0().child(control))
+        .into_any_element()
+}
+
+/// 外观来源标注的容器：一句来源说明 + 一个「改回我的全局外观」按钮。
+///
+/// 配色走主题的 `muted_foreground`（弱化文字角色，与行描述同一档），按钮用 ghost 小按钮：
+/// 它是"纠正一个意外状态"的动作，不该比主控件更抢眼。
+pub fn appearance_source_note(
+    text: SharedString,
+    revert: AnyElement,
+    cx: &App,
+) -> AnyElement {
+    h_flex()
+        .w_full()
+        .min_w_0()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .min_w_0()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(text),
+        )
+        .child(div().flex_shrink_0().child(revert))
         .into_any_element()
 }
 

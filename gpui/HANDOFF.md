@@ -190,7 +190,37 @@
   - ⚠️ 跑 gpui 测试必须把 `TEMP`/`TMP` 指到仓库内可写目录（本机 `%TEMP%` 对 Rust 测试进程返回
     `PermissionDenied`）；副作用是"临时目录"落在本仓库工作树内，所以测试夹具一律先自己
     `git init`，否则守卫会去改**真实检出**的 `.git/info/exclude`。
-  - **未做**：共享动作的界面入口；`.lithe/settings.json` 覆盖层（增量 4/5）。
+  - **未做**：共享动作的界面入口；`.lithe/session.local.json` 覆盖层（增量 8）。
+- **外观可以被工作区覆盖了（增量 5，见 `PLAN.md` §8.12）**：`.lithe/settings.json`（**共享**）与
+  `.lithe/settings.local.json`（**本机**）现在有读写方，覆盖顺序是
+  `内置默认 < 全局 settings.json < .lithe/settings.json < .lithe/settings.local.json`，
+  但**只有外观类键**可被覆盖（九键：主题四键 + `uiFontSize` / `fontSize` / 两个字族 / `terminalFontSize`）。
+  语言、终端 shell、缩进、工具链、Git 相关键**仍然只有全局层** —— 工作区文件里写了它们会被当未知键
+  逐字保留但不生效（有守卫测试 `non_appearance_keys_are_not_overridable`）。
+  - 维护者已决定**允许**这条覆盖，所以三条缓解措施是硬要求：**独立文件**（覆盖只在 `.lithe/` 那两份，
+    全局文件里不出现项目字段）· **来源可见**（设置页每个被覆盖的外观键画一行
+    「团队设置 / 本项目的设置 / 你的个人覆盖」+ 一个「改回我的全局外观」按钮；跟随全局时不画，
+    默认静默）· **一键改回**（把键从**两层**工作区文件里删掉，生效值真的回落到全局值）。
+  - 写侧按"有没有工作区"分流：有工作区时用户改外观写**本机层**（`.lithe/settings.local.json`，
+    与工具链五值同一条口径），没有工作区仍写全局文件。**落盘永远写全局层**（`store.rs` 的
+    `write()` 写 `self.global`）—— 把生效值写回全局文件是静默数据污染。
+  - 合并顺序只有一份实现：`lithe_gpui_settings::workspace::resolve_effective`。**不要在别处再写一遍
+    "项目优先"的判断。**
+  - `团队设置` 与 `本项目的设置` 是**同一个文件的两个状态**，判据是 `git ls-files --error-unmatch`
+    的退出码（外壳在打开项目的后台任务里问一次，`S1_WORKSPACE_CONFIG settings_tracked`）；问不到时
+    按"尚未提交"显示（更弱也更安全）。
+  - 外部改动：工作区文件**在打开 / 切换项目时重新读**（`ShellWorkspace::new` 里
+    `set_workspace_root`）。**没有**给它们加 watcher（全局设置文件那条 watcher 不覆盖 `.lithe/`，
+    而"打开时重读"是本批的明确下限）。
+  - 诊断（可 grep）：`S1_SETTINGS workspace_appearance … overridden=fontSize`、
+    `S1_SETTINGS appearance_source key=… source=team|project|local value=…`、
+    `S1_SETTINGS workspace_saved layer=shared|local …`、
+    `S1_SETTINGS appearance_reverted key=… layers=shared+local value=14 global=14`。
+  - 端到端的环境前提（与上面"端到端只能在仓库内做"那条**不是同一件事**，也**推翻**了它）：
+    工作区内的可执行文件写不出工作区（`gpui/target/debug/Lithe.exe` 连 `%APPDATA%\Lithe` 都写不了，
+    守卫会 `failed=7`），但**把同一个 exe 复制到工作区之外就一切正常**。本批的 GUI 端到端就是这么跑的：
+    `C:\Users\admin\lithe-probe\Lithe.exe` + 工作区外的临时 Git 仓库 + `LITHE_GPUI_SETTINGS_FILE`
+    把全局设置文件指到工作区外。诊断入口 `--appearance-revert <键名>`（验证/诊断用，见 `main.rs`）。
 - **`.lithe/` 已经真的接进产品了：打开即建**（见 `PLAN.md` §8.9 的「接进产品」一节）。
   产品决策是**打开任何一个目录就建 `.lithe/project.json`，无条件**（不是按需生成）。调用点是
   `ShellWorkspace::new` 里的 `prepare_workspace_config` —— 它全仓库只有两个调用点（`main.rs`

@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 73 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 78 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8787,6 +8787,16 @@ lithe:
     en: "Not wired yet: there is no keyboard-shortcuts view (the keymap exists but nothing displays it)."
   gpui.menuMissing.terminalSplit:
     en: "Not wired yet: the terminal cannot be split (a terminal panel has one tab strip and no panes)."
+  settings.gpui.appearanceSourceGlobal:
+    en: "This appearance follows the global settings (neither workspace layer overrides this key)"
+  settings.gpui.appearanceSourceTeam:
+    en: "This appearance comes from the team settings (.lithe/settings.json, tracked by Git)"
+  settings.gpui.appearanceSourceProject:
+    en: "This appearance comes from this project's settings (.lithe/settings.json, not committed yet)"
+  settings.gpui.appearanceSourceLocal:
+    en: "This appearance comes from your personal override (.lithe/settings.local.json)"
+  settings.gpui.appearanceRevertToGlobal:
+    en: "Reset to my global appearance"
   gpui.workspaceConfigFailed:
     en: "Failed to set up the workspace configuration: {reason}"
 

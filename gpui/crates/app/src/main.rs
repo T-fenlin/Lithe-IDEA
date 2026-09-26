@@ -205,6 +205,13 @@ struct Options {
     /// `right_view`：验收要证明"换根后 Git 变更视图指向新根"，而
     /// `S1_SOURCE_CONTROL files=… root=…` 只在变更视图 `activate` 时打一行。
     left_view: Option<String>,
+    /// `--appearance-revert <键名>`：启动后执行一次「改回我的全局外观」（**验证/诊断用**）。
+    ///
+    /// 见 [`run_appearance_revert_probe`]：它调的是与设置页那个按钮**同一个**
+    /// `SettingsStore::revert_appearance_group_to_global`。存在理由与 `--theme-probe` 完全一样
+    /// —— 本机工作站锁屏、鼠标注入到不了应用，而"一键改回之后生效值真的回落到全局值"是一条
+    /// 必须逐字取证的验收线（工作区外观覆盖的三条缓解措施之一）。
+    appearance_revert: Option<String>,
 }
 
 /// 解析 `<workspace-root> [--theme <id|名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
@@ -245,6 +252,9 @@ fn parse_options() -> Result<Options, String> {
          \x20 --left-view <id>     启动后把左栏切到 <id>（验证/诊断用；files / changes / search）；\n\
          \x20                     「更改」还会顺带重读一次工作区状态，于是能拿到\n\
          \x20                     `S1_SOURCE_CONTROL files=… root=…` 那一行\n\
+         \x20 --appearance-revert <键名>\n\
+         \x20                     启动后执行一次「改回我的全局外观」（验证/诊断用；键名取外观键的\n\
+         \x20                     JSON 名，例如 fontSize / theme；走的是与设置页那个按钮相同的调用）\n\
          \x20 --menu-probe-delay <毫秒>  `--menu-probe` 打开菜单后等多久才执行动作（默认 2500）\n\
          \x20 --palette-keys <串> 启动后按顺序派发一串按键，逗号分隔；可重复给多次 = 多串（验证/诊断用；\n\
          \x20                     例：\"ctrl-shift-p,n,down,enter,escape\"）";
@@ -268,6 +278,7 @@ fn parse_options() -> Result<Options, String> {
     let mut open_project_remember = false;
     let mut open_project_delay_ms: u64 = 0;
     let mut left_view: Option<String> = None;
+    let mut appearance_revert: Option<String> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -345,6 +356,16 @@ fn parse_options() -> Result<Options, String> {
             "--left-view" => {
                 left_view = Some(args.next().ok_or("--left-view 缺少视图 id")?);
             }
+            "--appearance-revert" => {
+                // 键名先在这里校验：拼错时当场退出，别让探针静默什么都不做。
+                let raw = args.next().ok_or("--appearance-revert 缺少键名")?;
+                if lithe_gpui_settings::AppearanceKey::from_json_key(&raw).is_none() {
+                    return Err(format!(
+                        "--appearance-revert 的 {raw:?} 不是外观键（可用：theme / syncSystemTheme / autoThemeLight / autoThemeDark / uiFontSize / fontSize / fontFamily / monoFontFamily / terminalFontSize）"
+                    ));
+                }
+                appearance_revert = Some(raw);
+            }
             "--palette-keys" => {
                 let raw = args.next().ok_or("--palette-keys 缺少值")?;
                 let mut sequence = Vec::new();
@@ -388,6 +409,7 @@ fn parse_options() -> Result<Options, String> {
         open_project_remember,
         open_project_delay_ms,
         left_view,
+        appearance_revert,
     })
 }
 
@@ -533,6 +555,55 @@ fn run_menu_probe(
     delayed.detach();
 }
 
+/// `--appearance-revert <键名>` 的驱动函数：首帧之后执行一次「改回我的全局外观」。
+///
+/// **为什么需要这个入口**（不是产品能力）：与 `--theme-probe` / `--open-settings` 完全同因 ——
+/// 本机工作站锁屏，鼠标注入到不了应用，而"工作区覆盖被清掉之后生效值真的回落到全局值"
+/// 是增量 5 的验收线之一（设计 Note 第四节的三条缓解措施里那条"一键改回"）。
+///
+/// ⚠️ 它**不绕开**产品路径：调的是与设置页那个按钮**同一个**
+/// `SettingsStore::revert_appearance_group_to_global`（按钮只是把键名换成那一行的键）。
+/// 被绕开的只有"操作系统把这次点击送进窗口"那一段。
+///
+/// 主题那一组（`theme` / `syncSystemTheme` / `autoThemeLight` / `autoThemeDark`）要一次清四个
+/// —— 只清一个的话生效主题可能仍被同组另一个工作区键决定；其余键各自一组。
+fn run_appearance_revert_probe(key: String, window: &mut Window, _cx: &mut App) {
+    let Some(key) = lithe_gpui_settings::AppearanceKey::from_json_key(&key) else {
+        // 命令行解析已经挡过一次；这里只兜住"解析表被改坏"的极端情况，不 panic。
+        eprintln!("--appearance-revert：未知外观键 {key}");
+        return;
+    };
+    window.on_next_frame(move |_window, cx| {
+        let Some(store) = lithe_gpui_settings::try_store(cx) else {
+            eprintln!("--appearance-revert：没有设置状态（这个宿主里没有 SettingsStore）");
+            return;
+        };
+        let keys: Vec<lithe_gpui_settings::AppearanceKey> = match key {
+            lithe_gpui_settings::AppearanceKey::Theme
+            | lithe_gpui_settings::AppearanceKey::SyncSystemTheme
+            | lithe_gpui_settings::AppearanceKey::AutoThemeLight
+            | lithe_gpui_settings::AppearanceKey::AutoThemeDark => vec![
+                lithe_gpui_settings::AppearanceKey::Theme,
+                lithe_gpui_settings::AppearanceKey::SyncSystemTheme,
+                lithe_gpui_settings::AppearanceKey::AutoThemeLight,
+                lithe_gpui_settings::AppearanceKey::AutoThemeDark,
+            ],
+            single => vec![single],
+        };
+        println!(
+            "S1_APPEARANCE_PROBE revert key={} keys={}",
+            key.as_str(),
+            keys.iter()
+                .map(|key| key.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        store.update(cx, |store, cx| {
+            store.revert_appearance_group_to_global(&keys, cx)
+        });
+    });
+}
+
 /// `--project-menu-probe` 的驱动函数：**首帧之后**把标题栏的项目下拉打开。
 ///
 /// **为什么需要这个入口**（不是产品能力）：与 [`run_menu_probe`] 完全同因 —— 本机工作站
@@ -581,6 +652,7 @@ fn main() {
         open_project_remember,
         open_project_delay_ms,
         left_view,
+        appearance_revert,
     } = match parse_options() {
         Ok(options) => options,
         Err(message) => {
@@ -823,6 +895,11 @@ fn main() {
                     // `--project-menu-probe`：打开标题栏的项目下拉。同样在首帧之后。
                     if project_menu_probe {
                         run_project_menu_probe(window);
+                    }
+                    // `--appearance-revert <键名>`：执行一次「改回我的全局外观」。
+                    // 同样在首帧之后（那时 `ShellWorkspace::new` 已经把工作区根登记进设置状态）。
+                    if let Some(key) = appearance_revert.clone() {
+                        run_appearance_revert_probe(key, window, cx);
                     }
                     // `--right-view` / `--left-view`：**不在这里**处理。
                     // 它们已经在 `set_shell_startup` 里登记进 `ShellStartup`，由

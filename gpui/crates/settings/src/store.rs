@@ -35,9 +35,12 @@ use gpui_kit::{
 };
 use serde_json::Value;
 
+use lithe_gpui_shared::workspace_config::WorkspaceConfigPaths;
+
 use crate::persistence::{self, DebounceState, Loaded};
 use crate::schema::{Settings, theme_font_size_for};
 use crate::theme;
+use crate::workspace::{self, AppearanceKey, AppearanceOverlay, AppearanceSource, AppearanceValue};
 
 /// 「外观模式」下拉的三个取值。真源 `macos-settings-panels.tsx:87-91,158-171`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,8 +89,32 @@ enum Effects {
 
 /// 设置状态。
 pub struct SettingsStore {
-    /// 当前设置（内存真源；落盘只是它的投影）。
+    /// **生效值**：全局层 + 工作区两层外观覆盖合并之后的结果（`workspace::resolve_effective`）。
+    /// 界面、主题应用、字号转发读的都是它。
     settings: Settings,
+    /// **全局层**（设置文件里那一份，19 个键的真源）。落盘写的是它，
+    /// 非外观键（语言 / 缩进 / 终端 shell / 工具链…）的唯一来源也是它。
+    ///
+    /// ⚠️ 这两个字段必须分开：只留 `settings`（生效值）会让"改一个字幕大小"把工作区覆盖的
+    /// 值一起写进全局文件 —— 那是静默的数据污染。
+    global: Settings,
+    /// 工作区根；`None` = 没有打开工作区，只有全局层。
+    workspace_root: Option<PathBuf>,
+    /// `.lithe/settings.json` 的外观覆盖（共享层：团队 / 本项目的设置）。
+    workspace_shared: AppearanceOverlay,
+    /// 共享层上一次落盘的原始文档（写回时保留未知键）。
+    workspace_shared_previous: Option<Value>,
+    /// 共享层声明了更高的文档版本：**不覆盖**这个文件。
+    workspace_shared_read_only: bool,
+    /// `.lithe/settings.local.json` 的外观覆盖（本机层：你的个人覆盖）。
+    workspace_local: AppearanceOverlay,
+    /// 本机层上一次落盘的原始文档（写回时保留未知键）。
+    workspace_local_previous: Option<Value>,
+    /// 本机层声明了更高的文档版本：**不覆盖**这个文件。
+    workspace_local_read_only: bool,
+    /// `.lithe/settings.json` 是否已被 Git 跟踪（决定界面叫它"团队设置"还是"本项目的设置"）。
+    /// `None` = 还没问到（按"尚未提交"显示，见 `workspace::source_for`）。
+    workspace_shared_tracked: Option<bool>,
     /// 设置文件路径；`None` = 推导不出（例如 Windows 上 `APPDATA` 缺失），只影响落盘。
     path: Option<PathBuf>,
     /// 设置文件里上一次的原始文档。写回时用它保留未知键（见
@@ -171,7 +198,17 @@ pub fn init_store(cx: &mut App, init: Init) -> Entity<SettingsStore> {
     });
 
     let store = cx.new(|_| SettingsStore {
-        settings,
+        // 打开工作区之前，生效值就是全局值。
+        settings: settings.clone(),
+        global: settings,
+        workspace_root: None,
+        workspace_shared: AppearanceOverlay::default(),
+        workspace_shared_previous: None,
+        workspace_shared_read_only: false,
+        workspace_local: AppearanceOverlay::default(),
+        workspace_local_previous: None,
+        workspace_local_read_only: false,
+        workspace_shared_tracked: None,
         path,
         previous,
         read_only,
@@ -240,10 +277,125 @@ fn report_load(
     }
 }
 
+/// 工作区覆盖的两层（写回与日志都要按层区分）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkspaceLayer {
+    /// `.lithe/settings.json`（共享层）。
+    Shared,
+    /// `.lithe/settings.local.json`（本机层）。
+    Local,
+}
+
+impl WorkspaceLayer {
+    /// 日志里的层名。
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Local => "local",
+        }
+    }
+}
+
+/// 日志/界面用的来源短名（`global` / `team` / `project` / `local`）。
+fn source_tag(source: AppearanceSource) -> &'static str {
+    match source {
+        AppearanceSource::Global => "global",
+        AppearanceSource::ProjectShared { tracked: true } => "team",
+        AppearanceSource::ProjectShared { tracked: false } => "project",
+        AppearanceSource::ProjectLocal => "local",
+    }
+}
+
+/// 一个外观键变化之后要应用的副作用（与用户改设置走同一条路）。
+fn effects_for(key: AppearanceKey) -> Effects {
+    match key {
+        AppearanceKey::Theme
+        | AppearanceKey::SyncSystemTheme
+        | AppearanceKey::AutoThemeLight
+        | AppearanceKey::AutoThemeDark => Effects::Theme,
+        AppearanceKey::UiFontSize => Effects::FontSize,
+        AppearanceKey::EditorFontSize => Effects::EditorFontSize,
+        AppearanceKey::FontFamily | AppearanceKey::MonoFontFamily => Effects::FontFamily,
+        AppearanceKey::TerminalFontSize => Effects::None,
+    }
+}
+
+/// 一个覆盖层里设了的键（顺序 = [`AppearanceKey::ALL`]）。
+fn overlay_keys(overlay: &AppearanceOverlay) -> Vec<AppearanceKey> {
+    AppearanceKey::ALL
+        .iter()
+        .copied()
+        .filter(|key| overlay.has(*key))
+        .collect()
+}
+
+/// 一个键在给定设置里的值的文本形式（只用于诊断行）。
+fn value_text(settings: &Settings, key: AppearanceKey) -> String {
+    match AppearanceValue::from_settings(settings, key) {
+        AppearanceValue::Text(text) => text,
+        AppearanceValue::Number(number) => number.to_string(),
+        AppearanceValue::Flag(flag) => flag.to_string(),
+    }
+}
+
 impl SettingsStore {
-    /// 当前设置（只读）。
+    /// **生效值**（全局层 + 工作区外观覆盖）。界面与各消费方读的都是它。
     pub fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    /// 全局层的值（不含工作区外观覆盖）。只有需要区分"这一层"的地方才读它
+    /// （例如诊断、以及测试里对照"改回全局之后到底回落到了哪个值"）。
+    pub fn global_settings(&self) -> &Settings {
+        &self.global
+    }
+
+    /// 当前打开的工作区根（没有打开工作区时是 `None`）。
+    pub fn workspace_root(&self) -> Option<&std::path::Path> {
+        self.workspace_root.as_deref()
+    }
+
+    /// 一个外观键这一刻的来源（三态 + 跟随全局）。
+    ///
+    /// "跟随系统"时主题由 `autoTheme*` 决定，所以调用方要么用
+    /// [`Self::effective_theme_source`]，要么自己传 [`AppearanceKey`]。
+    pub fn appearance_source(&self, key: AppearanceKey) -> AppearanceSource {
+        workspace::source_for(
+            key,
+            &self.workspace_shared,
+            &self.workspace_local,
+            self.workspace_shared_tracked,
+        )
+    }
+
+    /// 当前**决定生效主题**的那个键的来源（设置页「配色主题」那一行用它）。
+    pub fn effective_theme_source(&self, system_is_dark: bool) -> AppearanceSource {
+        let key = workspace::effective_theme_key(&self.settings, system_is_dark);
+        self.appearance_source(key)
+    }
+
+    /// 「外观模式」（跟随系统 / 浅色 / 深色）这一刻的来源。
+    ///
+    /// 跟随系统时模式由 `syncSystemTheme` 决定；不跟随时模式由生效主题属于浅色还是深色决定，
+    /// 所以取"决定生效主题的那个键"的来源。这样"工作区设了跟随系统"与"工作区设了主题"
+    /// 两种情况都会如实显示出来。
+    pub fn appearance_mode_source(&self, system_is_dark: bool) -> AppearanceSource {
+        if self.settings.sync_system_theme {
+            let key = AppearanceKey::SyncSystemTheme;
+            if self.appearance_source(key).is_workspace_override() {
+                return self.appearance_source(key);
+            }
+        }
+        self.effective_theme_source(system_is_dark)
+    }
+
+    /// 逐键来源（诊断用；顺序 = [`AppearanceKey::ALL`]）。
+    pub fn appearance_sources(&self) -> Vec<workspace::AppearanceKeySource> {
+        workspace::appearance_sources(
+            &self.workspace_shared,
+            &self.workspace_local,
+            self.workspace_shared_tracked,
+        )
     }
 
     /// 设置文件路径（诊断/界面提示用）。
@@ -270,22 +422,30 @@ impl SettingsStore {
     ///
     /// 参数接受 **id 或显示名**（[`theme::canonical_theme_id`] 归一）：设置界面给的是 id，
     /// 菜单栏给的是显示名，两条路都通。
+    ///
+    /// 写哪一层由 [`Self::commit_appearance`] 决定（有工作区 → 本机层）。
     pub fn set_theme(&mut self, value: SharedString, cx: &mut Context<Self>) {
         self.theme_override = None;
         let id = theme::canonical_theme_id(cx, &value);
-        let mut next = self.settings.clone();
         let is_dark = theme::theme_is_dark(cx, &id);
-        if next.sync_system_theme {
+        // 跟随系统时改的是"首选深/浅主题"，不是 `theme` —— 判据在**生效值**上，
+        // 因为工作区层也可能把 `syncSystemTheme` 打开（那时用户的改动要落到 autoTheme* 上，
+        // 否则他改了主题却看不出任何变化）。
+        let key = if self.settings.sync_system_theme {
             match is_dark {
-                Some(true) => next.auto_theme_dark = id.clone(),
-                Some(false) => next.auto_theme_light = id.clone(),
+                Some(true) => AppearanceKey::AutoThemeDark,
+                Some(false) => AppearanceKey::AutoThemeLight,
                 // 主题不在注册表里：能确定的只有"用户挑了它"，写进 `theme` 更不容易丢。
-                None => next.theme = id.clone(),
+                None => AppearanceKey::Theme,
             }
         } else {
-            next.theme = id.clone();
-        }
-        self.commit(cx, next, Effects::Theme);
+            AppearanceKey::Theme
+        };
+        self.commit_appearance(
+            cx,
+            &[(key, AppearanceValue::Text(id.to_string()))],
+            Effects::Theme,
+        );
     }
 
     /// 显式选一个配色主题：**同时关掉「跟随系统」**，立即生效 + 防抖落盘。
@@ -301,10 +461,20 @@ impl SettingsStore {
     /// 参数同样接受 **id 或显示名**：菜单栏的主题子菜单列的是显示名。
     pub fn set_theme_explicit(&mut self, value: SharedString, cx: &mut Context<Self>) {
         self.theme_override = None;
-        let mut next = self.settings.clone();
-        next.sync_system_theme = false;
-        next.theme = theme::canonical_theme_id(cx, &value);
-        self.commit(cx, next, Effects::Theme);
+        let id = theme::canonical_theme_id(cx, &value);
+        // 两个键**一起写**（真源写两次是两步，本侧合成一次，避免中间态落一次盘。
+        // 与 `remember_project_open_destination` 同一条口径）。
+        self.commit_appearance(
+            cx,
+            &[
+                (
+                    AppearanceKey::SyncSystemTheme,
+                    AppearanceValue::Flag(false),
+                ),
+                (AppearanceKey::Theme, AppearanceValue::Text(id.to_string())),
+            ],
+            Effects::Theme,
+        );
     }
 
     /// 改「外观模式」。立即生效 + 防抖落盘。
@@ -314,40 +484,53 @@ impl SettingsStore {
     /// 由 [`Self::apply_theme`] 按当前系统外观解析。
     pub fn set_appearance_mode(&mut self, mode: AppearanceMode, cx: &mut Context<Self>) {
         self.theme_override = None;
-        let mut next = self.settings.clone();
+        let mut values = vec![(
+            AppearanceKey::SyncSystemTheme,
+            AppearanceValue::Flag(mode == AppearanceMode::System),
+        )];
         match mode {
-            AppearanceMode::System => next.sync_system_theme = true,
-            AppearanceMode::Light => {
-                next.sync_system_theme = false;
-                next.theme = next.auto_theme_light.clone();
-            }
-            AppearanceMode::Dark => {
-                next.sync_system_theme = false;
-                next.theme = next.auto_theme_dark.clone();
-            }
+            AppearanceMode::System => {}
+            // 浅/深色模式要写 `theme`：真源写的也是 `settings.theme`（`macos-settings-panels.tsx:158-166`）。
+            AppearanceMode::Light => values.push((
+                AppearanceKey::Theme,
+                AppearanceValue::Text(self.settings.auto_theme_light.clone()),
+            )),
+            AppearanceMode::Dark => values.push((
+                AppearanceKey::Theme,
+                AppearanceValue::Text(self.settings.auto_theme_dark.clone()),
+            )),
         }
-        self.commit(cx, next, Effects::Theme);
+        self.commit_appearance(cx, &values, Effects::Theme);
     }
 
     /// 改「界面字体大小」。立即生效（同时被 rem 基准不变量兜底）+ 防抖落盘。
     pub fn set_ui_font_size(&mut self, value: f64, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
-        next.ui_font_size = value;
-        self.commit(cx, next, Effects::FontSize);
+        self.commit_appearance(
+            cx,
+            &[(AppearanceKey::UiFontSize, AppearanceValue::Number(value))],
+            Effects::FontSize,
+        );
     }
 
     /// 改「显示状态栏」。立即生效（订阅方重绘）+ 防抖落盘。
+    ///
+    /// **只有全局层**：状态栏不是外观覆盖范围内的键（见 `workspace.rs` 的键白名单）。
     pub fn set_show_status_bar(&mut self, value: bool, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.show_status_bar = value;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改「编辑器字号」。立即生效（写主题的 `mono_font_size`，编辑器正文当帧就变）+ 防抖落盘。
     pub fn set_editor_font_size(&mut self, value: f64, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
-        next.font_size = value;
-        self.commit(cx, next, Effects::EditorFontSize);
+        self.commit_appearance(
+            cx,
+            &[(
+                AppearanceKey::EditorFontSize,
+                AppearanceValue::Number(value),
+            )],
+            Effects::EditorFontSize,
+        );
     }
 
     /// 改「界面字体族」。立即生效（写主题的 `font_family`）+ 防抖落盘。
@@ -355,49 +538,65 @@ impl SettingsStore {
     /// 空串 = 不覆盖（保留主题文件里的值）。**不可用的字族不会被写进主题**（见
     /// [`crate::theme::apply_font_families`]：GPUI 在字族缺失时会 panic），
     /// 但用户填的值照旧落盘 —— 可能只是这台机器上还没装那个字体。
+    /// 工作区层里的字族值走**同一条**校验：生效值最终都要经 `apply_font_families` 才进主题。
     pub fn set_font_family(&mut self, family: String, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
-        next.font_family = family;
-        self.commit(cx, next, Effects::FontFamily);
+        self.commit_appearance(
+            cx,
+            &[(
+                AppearanceKey::FontFamily,
+                AppearanceValue::Text(family),
+            )],
+            Effects::FontFamily,
+        );
     }
 
     /// 改「代码字体族」（编辑器与终端正文）。见 [`Self::set_font_family`]。
     pub fn set_mono_font_family(&mut self, family: String, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
-        next.mono_font_family = family;
-        self.commit(cx, next, Effects::FontFamily);
+        self.commit_appearance(
+            cx,
+            &[(
+                AppearanceKey::MonoFontFamily,
+                AppearanceValue::Text(family),
+            )],
+            Effects::FontFamily,
+        );
     }
 
     /// 改「终端字号」。**本 store 不自己应用**：终端正文是 `lithe-gpui-terminal` 自己的视图，
     /// 由外壳订阅本实体后转发给 `TerminalPane::set_font_size`（与 `tabSize` 同一条路子）。
     /// `0` = 不覆盖，终端用它自己的默认档。
     pub fn set_terminal_font_size(&mut self, value: f64, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
-        next.terminal_font_size = value;
-        self.commit(cx, next, Effects::None);
+        self.commit_appearance(
+            cx,
+            &[(
+                AppearanceKey::TerminalFontSize,
+                AppearanceValue::Number(value),
+            )],
+            Effects::None,
+        );
     }
 
     /// 改「制表符宽度」。**本 store 不自己应用**（缩进只对编辑器状态有意义），
     /// 由外壳订阅本实体后转发给 `EditorPane::set_tab_size`；这里只落状态 + 防抖落盘 + `notify`。
     pub fn set_tab_size(&mut self, value: u32, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.tab_size = value;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改「终端默认 Shell」。同样由外壳订阅后转发给 `TerminalPane`（只影响新建会话）。
     pub fn set_terminal_default_shell_id(&mut self, id: String, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.terminal_default_shell_id = id;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改「丢弃前确认」（阶段 15，「Git」页）。同样由外壳订阅后转发给
     /// `ChangesView::set_confirm_before_discard`（只影响下一次丢弃）。
     pub fn set_confirm_before_discard(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.confirm_before_discard = enabled;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改「项目 · JDK 与 Maven」页的 JDK 覆盖值（空串 = 用自动检测到的那个）。
@@ -406,23 +605,23 @@ impl SettingsStore {
     /// 那一行由设置对话框自己按草稿 + 探测结论重算（`dialog.rs` 的 `project_page`），
     /// 落盘走防抖。运行配置那一侧将来接上时，走的是"外壳订阅本实体后转发"这条既有路子。
     pub fn set_java_home_path(&mut self, path: String, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.java_home_path = path;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改 Maven 主目录 / 可执行文件的覆盖值。见 [`Self::set_java_home_path`]。
     pub fn set_maven_executable_path(&mut self, path: String, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.maven_executable_path = path;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改 Maven 使用的 JDK 覆盖值。见 [`Self::set_java_home_path`]。
     pub fn set_maven_java_home_path(&mut self, path: String, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.maven_java_home_path = path;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改 Maven 用户 `settings.xml` 的覆盖值。见 [`Self::set_java_home_path`]。
@@ -431,16 +630,16 @@ impl SettingsStore {
     /// `mavenContext.settingsPath` 交给 Core（判据见 `schema.rs` 字段文档），所以它和
     /// `javaHomePath` 一样是"下一次语言服务启动时生效"，不是当帧生效。
     pub fn set_maven_settings_path(&mut self, path: String, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.maven_settings_path = path;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改 Maven 本地仓库的覆盖值。见 [`Self::set_java_home_path`]（今天没有消费方）。
     pub fn set_maven_local_repository_path(&mut self, path: String, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.maven_local_repository_path = path;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改「自动补全」（阶段 18，「LSP」页）。**本 store 不自己应用**：补全菜单的触发判据
@@ -448,9 +647,9 @@ impl SettingsStore {
     /// `EditorPane::set_auto_completion`（与 `tabSize` 同一条路子，依赖方向：
     /// `workbench` → `editor`）。
     pub fn set_auto_completion(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.auto_completion = enabled;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 记住「这次项目是怎么打开的」（真源 `executeProjectOpenDecision`，
@@ -471,10 +670,10 @@ impl SettingsStore {
         open_in_new_window: bool,
         cx: &mut Context<Self>,
     ) {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.open_folders_in_new_window = open_in_new_window;
         next.ask_where_to_open_projects = false;
-        self.commit(cx, next, Effects::None);
+        self.commit_global(cx, next, Effects::None);
     }
 
     /// 改「显示语言」。返回是否真的变了。**立即落盘**（不等 300ms 防抖）：调用方紧接着就会
@@ -483,9 +682,9 @@ impl SettingsStore {
     /// 为什么语言不做运行中热切：gpui 侧 `set_locale` 只在启动早期调一次，而界面里有构造期就
     /// `tr()` 过的文案（活动栏项、状态栏文案），热切只会"一半变、一半不变"。生效路径是重启。
     pub fn set_display_language(&mut self, tag: String, cx: &mut Context<Self>) -> bool {
-        let mut next = self.settings.clone();
+        let mut next = self.global.clone();
         next.display_language = tag;
-        let changed = self.commit(cx, next, Effects::None);
+        let changed = self.commit_global(cx, next, Effects::None);
         if changed {
             self.debounce.mark_flushed();
             self.write();
@@ -493,19 +692,71 @@ impl SettingsStore {
         changed
     }
 
-    /// 所有改动入口的唯一落点：规范化 → **值没变就直接返回**（不应用、不落盘）→ 应用副作用 →
+    /// 改动**全局层**的唯一落点：规范化 → **值没变就直接返回**（不应用、不落盘）→ 应用副作用 →
     /// 通知 + 防抖写。
     ///
     /// 去重不是优化而是语义：Windows 也是"只有真正变化的键才 `store.set`"
     /// （`lib/settings-persistence.ts:34` 的 `if (!isEqual(currentValue, nextValue))`）。
     /// 它同时挡住一类噪音：数字输入框在**创建**时会先发一次值不变的 `InputEvent::Change`，
     /// 不去重就会出现"只是打开设置对话框，什么都没改，却写了一次盘"。
-    fn commit(&mut self, cx: &mut Context<Self>, mut next: Settings, effects: Effects) -> bool {
+    fn commit_global(&mut self, cx: &mut Context<Self>, mut next: Settings, effects: Effects) -> bool {
         next.normalize();
-        if next == self.settings {
+        if next == self.global {
             return false;
         }
-        self.settings = next;
+        self.global = next;
+        // 全局层变了要重算生效值（工作区覆盖可能正盖在上面）。
+        self.recompute_effective(cx, effects);
+        self.after_change(cx);
+        true
+    }
+
+    /// 改动**外观键**的唯一落点：按"有没有工作区"分流到正确的那一层。
+    ///
+    /// | 情况 | 写哪里 | 为什么 |
+    /// | --- | --- | --- |
+    /// | 有工作区 | `.lithe/settings.local.json`（本机层） | 与工具链五值同一条口径（`project.rs` 的"有工作区写项目本机层"）：当前项目的外观改动属于"这个人 + 这个项目"。写在个人层而不是共享层，因为**用户自己的改动不该悄悄进团队文件**；共享层要由"共享此项目的配置"那个显式动作写（那一批还没落地） |
+    /// | 没有工作区 | 全局 `settings.json` | 与改动之前的行为完全一致 |
+    ///
+    /// ⚠️ 无论写哪一层，**生效值都当场重算**（[`Self::recompute_effective`]），
+    /// 所以"改了没反应"不可能发生：本机层优先级最高，用户改的值一定赢。
+    fn commit_appearance(
+        &mut self,
+        cx: &mut Context<Self>,
+        values: &[(AppearanceKey, AppearanceValue)],
+        effects: Effects,
+    ) -> bool {
+        if self.workspace_root.is_none() {
+            // 没有工作区：外观改动照旧写全局设置文件。借用覆盖层的那一个 set，避免在这里
+            // 再写一遍"键 → 字段"的映射（第二份映射迟早与 schema 漂移）。
+            let mut patch = AppearanceOverlay::default();
+            for (key, value) in values {
+                patch.set(*key, value.clone());
+            }
+            let mut next = self.global.clone();
+            patch.apply_to(&mut next);
+            return self.commit_global(cx, next, effects);
+        }
+
+        let before = self.workspace_local.clone();
+        for (key, value) in values {
+            self.workspace_local.set(*key, value.clone());
+        }
+        if self.workspace_local == before {
+            return false;
+        }
+
+        // 归一（钳制范围沿用 `Settings::normalize` 那一份实现）之后再落盘：
+        // 否则会出现"界面上是 24、文件里是 99"。
+        let effective = workspace::resolve_effective(
+            &self.global,
+            &self.workspace_shared,
+            &self.workspace_local,
+        );
+        self.workspace_local.clamp_with(&effective);
+        self.settings = effective;
+        self.write_workspace_layer(WorkspaceLayer::Local);
+
         match effects {
             Effects::Theme => self.apply_theme(cx),
             Effects::FontSize => self.apply_font_size(cx),
@@ -513,22 +764,60 @@ impl SettingsStore {
             Effects::FontFamily => self.apply_font_families(cx),
             Effects::None => {}
         }
-        self.after_change(cx);
+        cx.notify();
         true
     }
 
+    /// 重算生效值（全局层 + 两层工作区覆盖），再按需应用副作用。
+    ///
+    /// **优先级只有一份实现**（[`workspace::resolve_effective`]）：任何"全局层 / 工作区层
+    /// 变了"的路径都必须走这里，不要各自手写合并。
+    fn recompute_effective(&mut self, cx: &mut Context<Self>, effects: Effects) {
+        self.settings = workspace::resolve_effective(
+            &self.global,
+            &self.workspace_shared,
+            &self.workspace_local,
+        );
+        match effects {
+            Effects::Theme => self.apply_theme(cx),
+            Effects::FontSize => self.apply_font_size(cx),
+            Effects::EditorFontSize => self.apply_editor_font_size(cx),
+            Effects::FontFamily => self.apply_font_families(cx),
+            Effects::None => {}
+        }
+        cx.notify();
+    }
+
     /// 恢复默认设置：**立即落盘**（真源 `stores/settings.store.ts:88-97`）。
+    ///
+    /// ⚠️ 恢复的是**全局层**。工作区两层的外观覆盖**不会**被它删掉 —— 那是团队/项目的文件，
+    /// 一个叫"恢复默认设置"的按钮去改别人的提交文件是错的。被覆盖的键照旧显示工作区值，
+    /// 设置页那一行的来源标注会如实说明原因；这里再留一行诊断，让"按了没反应"可排查。
     pub fn restore_defaults(&mut self, cx: &mut Context<Self>) {
-        self.settings = Settings::default();
+        self.global = Settings::default();
         // 默认值本身已经是 id，这里再归一一次是为了兜住"默认主题那份文件不在索引里"的极端情况
         // （索引来自主题文件，见 `theme::theme_index`）。
-        self.settings.normalize_with_themes(&theme::theme_index());
+        self.global.normalize_with_themes(&theme::theme_index());
         self.theme_override = None;
+        let overridden: Vec<AppearanceKey> = self
+            .appearance_sources()
+            .into_iter()
+            .filter(|entry| entry.source.is_workspace_override())
+            .map(|entry| entry.key)
+            .collect();
+        self.settings = workspace::resolve_effective(
+            &self.global,
+            &self.workspace_shared,
+            &self.workspace_local,
+        );
         self.apply_theme(cx);
         self.apply_font_size(cx);
         self.debounce.mark_flushed();
         self.write();
-        println!("S1_SETTINGS reset_to_defaults");
+        println!(
+            "S1_SETTINGS reset_to_defaults workspace_overridden={}",
+            workspace::describe_keys(&overridden)
+        );
         cx.notify();
     }
 
@@ -539,6 +828,230 @@ impl SettingsStore {
         }
         self.debounce.mark_flushed();
         self.write();
+    }
+
+    // ------------------------------------------------------- 工作区外观覆盖层
+
+    /// 登记当前工作区根并读入它的两层外观覆盖（打开 / 切换项目时调）。
+    ///
+    /// - 这是"外部改动至少要在打开 / 切换项目时重新读"这条要求的落点；设置文件本身的
+    ///   watcher（[`crate::watch`]）监听的是**全局**设置文件，工作区文件不共享它。
+    /// - 读两份很小的 JSON，**不碰 Core、不起子进程**（同 `dialog.rs` 构造期读工具链本机层
+    ///   那条口径）。传 `None` = 没有工作区：两层清空，生效值就是全局值。
+    /// - 失败不 panic、也不让打开项目失败：坏文件只留诊断（那一层当"没设"）。
+    pub fn set_workspace_root(&mut self, root: Option<PathBuf>, cx: &mut Context<Self>) {
+        self.workspace_root = root;
+        self.workspace_shared = AppearanceOverlay::default();
+        self.workspace_shared_previous = None;
+        self.workspace_shared_read_only = false;
+        // 换根之后"上一个项目的共享文件有没有被跟踪"不再成立，重新等一次 Core 的答复。
+        self.workspace_shared_tracked = None;
+        self.workspace_local = AppearanceOverlay::default();
+        self.workspace_local_previous = None;
+        self.workspace_local_read_only = false;
+
+        let Some(root) = self.workspace_root.clone() else {
+            println!("S1_SETTINGS workspace_appearance root=(none) overridden=");
+            self.recompute_effective(cx, Effects::Theme);
+            return;
+        };
+
+        let paths = WorkspaceConfigPaths::new(root.clone());
+        let shared = workspace::load_overlay(&paths.settings());
+        let local = workspace::load_overlay(&paths.settings_local());
+        for diagnostic in shared.diagnostics.iter().chain(local.diagnostics.iter()) {
+            eprintln!("S1_SETTINGS workspace_appearance {diagnostic}");
+        }
+
+        self.workspace_shared = shared.overlay;
+        self.workspace_shared_previous = shared.previous;
+        self.workspace_shared_read_only = shared.read_only;
+        self.workspace_local = local.overlay;
+        self.workspace_local_previous = local.previous;
+        self.workspace_local_read_only = local.read_only;
+
+        self.recompute_effective(cx, Effects::Theme);
+
+        // 一行启动证据：生效值到底来自哪一层。它同时是"工作区覆盖真的被读进来了"的判据。
+        let overridden: Vec<AppearanceKey> = self
+            .appearance_sources()
+            .into_iter()
+            .filter(|entry| entry.source.is_workspace_override())
+            .map(|entry| entry.key)
+            .collect();
+        println!(
+            "S1_SETTINGS workspace_appearance root={} shared_file={} local_file={} shared_read_only={} local_read_only={} overridden={}",
+            root.display(),
+            shared.file_existed,
+            local.file_existed,
+            shared.read_only,
+            local.read_only,
+            workspace::describe_keys(&overridden)
+        );
+        self.report_appearance_sources();
+    }
+
+    /// 登记 `.lithe/settings.json` 是否已被 Git 跟踪。
+    ///
+    /// 只有这一件事需要问 Git（判据见 [`AppearanceSource::ProjectShared`]），所以由外壳在
+    /// 打开项目的后台任务里查一次再回填，本 crate 不认识 Core。`None` = 还没问到。
+    pub fn set_workspace_settings_tracked(&mut self, tracked: Option<bool>, cx: &mut Context<Self>) {
+        if self.workspace_shared_tracked == tracked {
+            return;
+        }
+        self.workspace_shared_tracked = tracked;
+        println!(
+            "S1_SETTINGS workspace_settings_tracked tracked={}",
+            tracked
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        );
+        // 来源标注跟着这次答复变（团队设置 ↔ 本项目的设置），所以再打一遍证据行：
+        // 设置页那一行也会在同一帧之后重画（`notify`）。
+        self.report_appearance_sources();
+        cx.notify();
+    }
+
+    /// 打出被工作区覆盖的每一个外观键的**来源 + 生效值**（诊断证据行）。
+    fn report_appearance_sources(&self) {
+        for entry in self.appearance_sources() {
+            if entry.source.is_workspace_override() {
+                println!(
+                    "S1_SETTINGS appearance_source key={} source={} value={}",
+                    entry.key.as_str(),
+                    source_tag(entry.source),
+                    value_text(&self.settings, entry.key)
+                );
+            }
+        }
+    }
+
+    /// 「改回我的全局外观」：把这个外观键从**两层**工作区文件里删掉，于是生效值回落到全局值。
+    ///
+    /// 为什么是两层一起：工作区的"那一层"由共享层与本机层共同构成（本机层盖在共享层上）。
+    /// 只清本机层的话，一个同时被两层覆盖的键会回落到**共享层的值**而不是用户的全局值 ——
+    /// 按钮的名字（"改回我的全局外观"）承诺的是后者。清掉之后文件里**不留空值**：
+    /// 写回时未设的键会从文档里删掉（见 `workspace::merged_document`）。
+    pub fn revert_appearance_to_global(&mut self, key: AppearanceKey, cx: &mut Context<Self>) {
+        self.revert_appearance_group_to_global(&[key], cx);
+    }
+
+    /// 一次把一组外观键改回全局。
+    ///
+    /// "主题"那一组（`theme` / `syncSystemTheme` / `autoThemeLight` / `autoThemeDark`）是
+    /// **一件事**：只清其中一个，生效主题可能仍然被另一个工作区键决定，按钮就变成"按了没用"。
+    /// 所以主题行一次清四个；其余键各自一组。
+    pub fn revert_appearance_group_to_global(
+        &mut self,
+        keys: &[AppearanceKey],
+        cx: &mut Context<Self>,
+    ) {
+        if self.workspace_root.is_none() {
+            eprintln!(
+                "S1_SETTINGS appearance_revert_skipped keys={} reason=no_workspace",
+                workspace::describe_keys(keys)
+            );
+            return;
+        }
+
+        let mut cleared_shared = Vec::new();
+        let mut cleared_local = Vec::new();
+        for key in keys {
+            if self.workspace_shared.has(*key) {
+                self.workspace_shared.clear(*key);
+                cleared_shared.push(*key);
+            }
+            if self.workspace_local.has(*key) {
+                self.workspace_local.clear(*key);
+                cleared_local.push(*key);
+            }
+        }
+        if !cleared_shared.is_empty() {
+            self.write_workspace_layer(WorkspaceLayer::Shared);
+        }
+        if !cleared_local.is_empty() {
+            self.write_workspace_layer(WorkspaceLayer::Local);
+        }
+
+        // 一组里只要有一个键带即时副作用就按最强的那个重应用（主题那一组四键都归 Theme）。
+        let effects = if keys.len() == 1 {
+            effects_for(keys[0])
+        } else {
+            Effects::Theme
+        };
+        self.recompute_effective(cx, effects);
+
+        // 证据行：`value=` 是**回落之后**的生效值，`global=` 是全局层里的值。
+        // 两者相等即"真的回落到全局值"（而不是空值、也不是默认值）。
+        let layers = match (cleared_shared.is_empty(), cleared_local.is_empty()) {
+            (true, true) => "(none)".to_string(),
+            (false, true) => "shared".to_string(),
+            (true, false) => "local".to_string(),
+            (false, false) => "shared+local".to_string(),
+        };
+        for key in keys {
+            println!(
+                "S1_SETTINGS appearance_reverted key={} layers={} value={} global={}",
+                key.as_str(),
+                layers,
+                value_text(&self.settings, *key),
+                value_text(&self.global, *key)
+            );
+        }
+    }
+
+    /// 把一层工作区覆盖原子写回磁盘，并刷新它的"上一次文档"快照（写回时保留未知键要用）。
+    fn write_workspace_layer(&mut self, layer: WorkspaceLayer) {
+        let Some(root) = self.workspace_root.clone() else {
+            return;
+        };
+        let paths = WorkspaceConfigPaths::new(root);
+        let (path, overlay, previous, read_only) = match layer {
+            WorkspaceLayer::Shared => (
+                paths.settings(),
+                self.workspace_shared.clone(),
+                self.workspace_shared_previous.clone(),
+                self.workspace_shared_read_only,
+            ),
+            WorkspaceLayer::Local => (
+                paths.settings_local(),
+                self.workspace_local.clone(),
+                self.workspace_local_previous.clone(),
+                self.workspace_local_read_only,
+            ),
+        };
+
+        // 文件声明的版本比本程序新：与全局设置文件同一条口径 —— 内存里照常生效，
+        // 但**绝不覆盖**用户的文件。
+        if read_only {
+            eprintln!(
+                "S1_SETTINGS workspace_save_skipped layer={} path={} reason=document_version_newer",
+                layer.as_str(),
+                path.display()
+            );
+            return;
+        }
+
+        match workspace::write_overlay(&path, previous.as_ref(), &overlay) {
+            Ok(document) => {
+                match layer {
+                    WorkspaceLayer::Shared => self.workspace_shared_previous = Some(document),
+                    WorkspaceLayer::Local => self.workspace_local_previous = Some(document),
+                }
+                println!(
+                    "S1_SETTINGS workspace_saved layer={} path={} keys={}",
+                    layer.as_str(),
+                    path.display(),
+                    workspace::describe_keys(&overlay_keys(&overlay))
+                );
+            }
+            // 写失败不 panic：内存里的覆盖仍然生效（这一次会话内），下一次改动会再试。
+            Err(error) => eprintln!(
+                "S1_SETTINGS workspace_save_failed layer={} path={} error={error}",
+                layer.as_str(),
+                path.display()
+            ),
+        }
     }
 
     // ------------------------------------------------------- 外部改动 / 退出补写
@@ -589,7 +1102,7 @@ impl SettingsStore {
             return;
         }
 
-        let changed = loaded.settings != self.settings;
+        let changed = loaded.settings != self.global;
         let read_only_changed = loaded.read_only != self.read_only;
         // 未知键的快照无论内容有没有变都要刷新：下一次写回要靠它保留这些键。
         self.previous = loaded.previous;
@@ -597,8 +1110,14 @@ impl SettingsStore {
             return;
         }
 
-        self.settings = loaded.settings;
+        self.global = loaded.settings;
         self.read_only = loaded.read_only;
+        // 全局层变了要重算生效值：工作区覆盖可能正盖在上面（界面与消费方读的是生效值）。
+        self.settings = workspace::resolve_effective(
+            &self.global,
+            &self.workspace_shared,
+            &self.workspace_local,
+        );
         // 内存已经等于文件内容，那次待写没有必要了（留着只会把同一份内容再写一遍）。
         self.debounce.mark_flushed();
 
@@ -764,7 +1283,10 @@ impl SettingsStore {
 
         // 先合并出要写的文档：它同时是"带未知键的落盘内容"和"下一次写回时的 previous"，
         // 所以只合并一次，写成功后就地更新，避免两次写之间丢掉这一轮保留的键。
-        let document = match persistence::merge_document(self.previous.as_ref(), &self.settings) {
+        //
+        // ⚠️ 写的是**全局层**（`self.global`），不是生效值（`self.settings`）：
+        // 把工作区覆盖的值写进全局文件会静默污染用户跨项目的默认外观。
+        let document = match persistence::merge_document(self.previous.as_ref(), &self.global) {
             Ok(document) => document,
             Err(error) => {
                 eprintln!(

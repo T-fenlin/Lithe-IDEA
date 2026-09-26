@@ -26,6 +26,7 @@
 //! | [`project`] | 「项目 · JDK 与 Maven」页的数据层：本机 JDK / Maven 的发现 + 生效值判据（纯数据） |
 //! | [`run`] | 「运行配置」页的数据层：`workspace.snapshot` + `runConfig.generate` 的解析与分类（纯数据 + 两条只读 Core 调用） |
 //! | [`recent_projects`] | 「最近项目」的数据层：同目录另一份 `recent-projects.json` 的读 / 写 / 维护（纯数据 + 纯文件 IO，**不取时钟、不碰 UI**；决策 Q20） |
+//! | [`workspace`] | **工作区外观覆盖层**：`.lithe/settings.json` / `settings.local.json` 的读、合并（唯一一份覆盖顺序实现）、来源判定与写回（纯数据） |
 //! | [`dialog`] | 设置对话框（820×620 模态）：头部 / 分类栏 / 内容页 / 底部 + 确认子对话框 |
 //! | [`restart`] | 切换语言后的"用相同参数重启自己"（语言无法运行中热切，见该模块文档） |
 //!
@@ -57,6 +58,7 @@ pub mod schema;
 pub mod store;
 pub mod theme;
 pub mod watch;
+pub mod workspace;
 
 pub use dialog::{
     Category, OpenSettings, install_actions, open_settings_dialog, open_settings_dialog_at,
@@ -86,3 +88,7 @@ pub use restart::restart_application;
 pub use schema::Settings;
 pub use store::{AppearanceMode, Init, SettingsStore, init_store, store, try_store};
 pub use theme::watch_lithe_themes;
+pub use workspace::{
+    AppearanceKey, AppearanceKeySource, AppearanceOverlay, AppearanceSource, AppearanceValue,
+    WORKSPACE_SETTINGS_VERSION,
+};

@@ -967,6 +967,20 @@ impl ShellWorkspace {
         // [`prepare_workspace_config`] 的文档里。
         prepare_workspace_config(root.clone(), cx);
 
+        // 把工作区根交给设置状态：`.lithe/settings.json`（共享层）与
+        // `.lithe/settings.local.json`（本机层）里的**外观覆盖**从这一刻起生效。
+        //
+        // 位置有要求：必须**早于**下面那条 `try_store(..)` 的设置订阅块 —— 那一条读设置算
+        // 「工作台启动证据」（缩进 / 终端 shell / 终端字号…），根登记晚了它读到的还是全局值
+        // （随后会被订阅回调纠正，但那一行证据就变成误导性的）。读两份很小的 JSON、
+        // 不碰 Core；**覆盖顺序的唯一实现**在 `lithe_gpui_settings::workspace::resolve_effective`。
+        if let Some(store) = lithe_gpui_settings::try_store(cx) {
+            let settings_root = root.clone();
+            store.update(cx, |store, cx| {
+                store.set_workspace_root(Some(settings_root), cx)
+            });
+        }
+
         // 先建编辑区，再把它的弱引用交给项目树：点文件 → 打开到编辑区。
         let editor = cx.new(|cx| EditorPane::new(window, cx));
         // 阶段 10 第二批：打开项目时在后台起 Java 语言服务（= 生成 / 复用 JDT 索引缓存）。
@@ -3616,11 +3630,25 @@ fn terminal_font_size_override(value: f64) -> Option<f32> {
 fn prepare_workspace_config(root: PathBuf, cx: &mut Context<ShellWorkspace>) {
     cx.spawn(async move |this, cx| {
         let task_root = root.clone();
-        let identity = cx
+        let (identity, settings_tracked) = cx
             .background_spawn(async move {
-                lithe_gpui_shared::workspace_config::resolve_project_id(&task_root)
+                let identity = lithe_gpui_shared::workspace_config::resolve_project_id(&task_root);
+                // 顺手问一次 Git：`.lithe/settings.json` 是否已被跟踪。设置页用它把外观来源
+                // 显示成「团队设置」还是「本项目的设置」（判据见
+                // `settings/src/workspace.rs` 的 `AppearanceSource`）。
+                let tracked = workspace_settings_tracked(&task_root);
+                (identity, tracked)
             })
             .await;
+
+        // 回填"共享层文件有没有被跟踪"（`None` 不写：那表示"还没问到"，界面按尚未提交显示）。
+        let _ = this.update(cx, |_shell, cx| {
+            if let Some(store) = lithe_gpui_settings::try_store(cx) {
+                store.update(cx, |store, cx| {
+                    store.set_workspace_settings_tracked(Some(settings_tracked), cx)
+                });
+            }
+        });
 
         match identity {
             Ok(identity) => println!(
@@ -3654,6 +3682,60 @@ fn prepare_workspace_config(root: PathBuf, cx: &mut Context<ShellWorkspace>) {
         }
     })
     .detach();
+}
+
+/// `.lithe/settings.json` 是否已被 Git 跟踪。
+///
+/// ## 为什么需要问 Git
+///
+/// 外观被工作区覆盖时，界面要说清"来自哪一层"，而 `.lithe/settings.json` 这一层有**两个**
+/// 状态：已被提交（团队设置）与还没提交（本项目的设置）—— 判据只能是 Git 的索引，
+/// 不能靠"文件在不在"（那两种情况文件都在）。设计 Note 第七节的表就是这么定的。
+///
+/// ## 判据与失败语义
+///
+/// - `git ls-files --error-unmatch -- .lithe/settings.json` 的**退出码**：`0` = 在索引里。
+///   用 `--error-unmatch` 而不是 `ls-files` 的裸输出，是因为要的是"已跟踪"这个是非判断，
+///   而不是一份可能很长的清单。
+/// - **不是仓库、没有这个文件、Git 不在、Core 报错**，全部收敛成 `false`（= 尚未提交）。
+///   这是**更弱也更安全**的那个承诺：把未跟踪的文件说成"团队设置"会让用户以为同事也看得到它。
+/// - 走 `background_spawn`（Core 要起 Git 子进程），**不允许落在 UI 线程**。
+fn workspace_settings_tracked(root: &std::path::Path) -> bool {
+    let paths = lithe_gpui_shared::workspace_config::WorkspaceConfigPaths::new(root);
+    let Some(relative) =
+        lithe_gpui_shared::workspace_config::workspace_relative(root, &paths.settings())
+    else {
+        return false;
+    };
+    let payload = serde_json::json!({
+        "root": root.display().to_string(),
+        "arguments": ["ls-files", "--error-unmatch", "--", relative],
+    });
+    match lithe_gpui_shared::core_json("git.command", payload) {
+        Ok(Some(data)) => {
+            let tracked = data.get("exitCode").and_then(serde_json::Value::as_i64) == Some(0);
+            println!(
+                "S1_WORKSPACE_CONFIG settings_tracked root={} tracked={} exit_code={}",
+                root.display(),
+                tracked,
+                data.get("exitCode")
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "(none)".to_string())
+            );
+            tracked
+        }
+        // `Ok(None)` = Core 返回空载荷（理论上不会），按未跟踪处理。
+        Ok(None) => false,
+        Err(error) => {
+            // 非 Git 目录是**正常情况**（打开即建那一条已经接受它），所以只在 stderr 留一行，
+            // 不挡任何流程、也不冒充成"已跟踪"。
+            eprintln!(
+                "S1_WORKSPACE_CONFIG settings_tracked_unknown root={} error={error}",
+                root.display()
+            );
+            false
+        }
+    }
 }
 
 /// 把生效的 JDK 与 Maven `settings.xml` 覆盖值登记给语言服务（调用点见 `ShellWorkspace::new`）。

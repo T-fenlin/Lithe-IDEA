@@ -73,7 +73,10 @@ use crate::project::{
     DetectedJdk, DetectedMaven, EffectiveToolchain, MINIMUM_JAVA_MAJOR, Overrides,
     ProjectEnvironment, ToolSource, discover, resolve_overrides,
 };
-use crate::row::{ControlWidth, RowActivation, page_stack, page_title, settings_group, settings_row};
+use crate::row::{
+    ControlWidth, RowActivation, appearance_source_note, page_stack, page_title, settings_group,
+    settings_row, settings_row_with_note,
+};
 use crate::run::{RunConfigurationView, RunProjectView};
 use crate::schema::{
     DISPLAY_LANGUAGES, EDITOR_FONT_SIZE_DEFAULT, EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN,
@@ -83,6 +86,7 @@ use crate::schema::{
 };
 use crate::store::{AppearanceMode, SettingsStore, store};
 use crate::theme;
+use crate::workspace::{AppearanceKey, AppearanceSource};
 
 /// 打开设置对话框（`Ctrl+,`）。**只能从事件回调或任务里调用。**
 ///
@@ -1506,6 +1510,52 @@ impl SettingsDialog {
     }
 
     /// 「外观」页：v1 做**能立刻生效**的 4 项。
+    /// 一个外观键的来源标注（**只在被工作区覆盖时**才画）。
+    ///
+    /// 跟随全局是默认形态，所以这时返回 `None` —— 行与没有这套机制时逐像素相同
+    /// （设计 Note 第七节的口径：默认静默，不把"没共享"当异常）。
+    fn appearance_note(
+        &self,
+        key: AppearanceKey,
+        cx: &Context<Self>,
+    ) -> Option<gpui_kit::AnyElement> {
+        let source = self.store.read(cx).appearance_source(key);
+        self.appearance_note_for(source, &[key], cx)
+    }
+
+    /// 与 [`Self::appearance_note`] 相同，只是来源与"要清哪些键"由调用方给出。
+    ///
+    /// 主题那两行要按**决定生效主题的那个键**判来源（跟随系统时是 `autoTheme*`，
+    /// 否则是 `theme`），而"改回我的全局外观"要一次清掉整组四个键 ——
+    /// 只清一个的话，生效主题可能仍然被另一个工作区键决定，按钮就成"按了没用"。
+    fn appearance_note_for(
+        &self,
+        source: AppearanceSource,
+        keys: &[AppearanceKey],
+        cx: &Context<Self>,
+    ) -> Option<gpui_kit::AnyElement> {
+        if !source.is_workspace_override() {
+            return None;
+        }
+        let store = self.store.clone();
+        let keys = keys.to_vec();
+        // 元素 id 用第一个键的 JSON 名：每个被覆盖的键各自一行，同一行不会重复。
+        let id = SharedString::from(format!("settings-appearance-revert-{}", keys[0].as_str()));
+        let revert = Button::new(id)
+            .small()
+            .ghost()
+            .label(tr("settings.gpui.appearanceRevertToGlobal"))
+            .on_click(move |_, _, cx| {
+                let keys = keys.clone();
+                store.update(cx, |store, cx| {
+                    store.revert_appearance_group_to_global(&keys, cx)
+                });
+            })
+            .into_any_element();
+        Some(appearance_source_note(tr(source.locale_key()), revert, cx))
+    }
+
+    /// 「外观」页：主题（模式 + 配色）+ 排版（界面字体族 / 界面字号）+ 界面（状态栏）。
     fn appearance_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
         let mode = AppearanceMode::from_settings(settings);
         // 显示**当前生效**的主题（跟随系统时就是系统对应的那一支），而不是 Windows 的
@@ -1515,14 +1565,29 @@ impl SettingsDialog {
         let applied_theme = self.store.read(cx).applied_theme();
         let themes = theme_choices(cx, applied_theme.clone());
 
+        // 主题那一组的来源：一个是"决定生效主题的键"（= 用户改主题时会写到的那个），
+        // 一个是"外观模式"。两者都由工作区两层决定，所以工作区一覆盖就显示。
+        let system_is_dark = theme::system_is_dark(cx.window_appearance());
+        let theme_source = self.store.read(cx).effective_theme_source(system_is_dark);
+        let mode_source = self.store.read(cx).appearance_mode_source(system_is_dark);
+        let theme_keys = [
+            AppearanceKey::Theme,
+            AppearanceKey::SyncSystemTheme,
+            AppearanceKey::AutoThemeLight,
+            AppearanceKey::AutoThemeDark,
+        ];
+        let theme_note = self.appearance_note_for(theme_source, &theme_keys, cx);
+        let mode_note = self.appearance_note_for(mode_source, &theme_keys, cx);
+
         vec![
             settings_group(
                 tr("lithe.settings.appearance.theme"),
                 vec![
-                    settings_row(
+                    settings_row_with_note(
                         "settings-row-theme",
                         tr("lithe.settings.appearance.colorTheme"),
                         None,
+                        theme_note,
                         self.dropdown(
                             "settings-theme",
                             applied_theme,
@@ -1537,10 +1602,11 @@ impl SettingsDialog {
                         None,
                         cx,
                     ),
-                    settings_row(
+                    settings_row_with_note(
                         "settings-row-appearance-mode",
                         tr("lithe.settings.mac.appearanceMode"),
                         Some(tr("lithe.settings.mac.appearanceDescription")),
+                        mode_note,
                         self.dropdown(
                             "settings-appearance-mode",
                             mode_label(mode),
@@ -1585,10 +1651,11 @@ impl SettingsDialog {
             settings_group(
                 tr("lithe.settings.appearance.typography"),
                 vec![
-                    settings_row(
+                    settings_row_with_note(
                         "settings-row-ui-font-family",
                         tr("lithe.settings.appearance.uiFontFamily"),
                         Some(tr("lithe.settings.appearance.uiFontFamilyDescription")),
+                        self.appearance_note(AppearanceKey::FontFamily, cx),
                         self.dropdown(
                             "settings-ui-font-family",
                             font_family_label(&settings.font_family),
@@ -1605,12 +1672,13 @@ impl SettingsDialog {
                         None,
                         cx,
                     ),
-                    settings_row(
+                    settings_row_with_note(
                         "settings-row-ui-font-size",
                         tr("lithe.settings.appearance.uiFontSize"),
                         // Windows 的 `settings.appearance.uiFontSizeDescription`
                         // （「以 0.5 像素为单位调整界面文本和图标缩放」）正好说明了步长与作用范围。
                         Some(tr("lithe.settings.appearance.uiFontSizeDescription")),
+                        self.appearance_note(AppearanceKey::UiFontSize, cx),
                         NumberInput::new(&self.font_size_input)
                             .w(ControlWidth::Number.length())
                             .into_any_element(),
@@ -1681,10 +1749,11 @@ impl SettingsDialog {
             settings_group(
                 tr("lithe.settings.mac.display"),
                 vec![
-                    settings_row(
+                    settings_row_with_note(
                         "settings-row-editor-font-family",
                         tr("lithe.settings.editor.fontFamily"),
                         Some(tr("lithe.settings.editor.fontFamilyDescription")),
+                        self.appearance_note(AppearanceKey::MonoFontFamily, cx),
                         self.dropdown(
                             "settings-editor-font-family",
                             font_family_label(&settings.mono_font_family),
@@ -1701,12 +1770,13 @@ impl SettingsDialog {
                         None,
                         cx,
                     ),
-                    settings_row(
+                    settings_row_with_note(
                         "settings-row-editor-font-size",
                         tr("lithe.settings.mac.fontSize"),
                         // 真源这一行**没有**描述。这里补一句是因为本侧有三个互不影响的字号键
                         // （界面 / 编辑器 / 终端），不说清作用范围就会被当成同一个。
                         Some(tr("lithe.settings.gpui.editorFontSizeDescription")),
+                        self.appearance_note(AppearanceKey::EditorFontSize, cx),
                         NumberInput::new(&self.editor_font_size_input)
                             .w(ControlWidth::Number.length())
                             .into_any_element(),
@@ -1799,10 +1869,11 @@ impl SettingsDialog {
             .into_any_element(),
             settings_group(
                 tr("lithe.settings.terminal.typography"),
-                vec![settings_row(
+                vec![settings_row_with_note(
                     "settings-row-terminal-font-size",
                     tr("lithe.settings.terminal.fontSize"),
                     Some(tr("lithe.settings.terminal.fontSizeDescription")),
+                    self.appearance_note(AppearanceKey::TerminalFontSize, cx),
                     self.dropdown(
                         "settings-terminal-font-size",
                         terminal_font_size_label(settings.terminal_font_size),

@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 73 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 78 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8787,6 +8787,16 @@ lithe:
     zh-CN: "尚未接入：缺快捷键一览界面（现在只有 keymap，没有能看的清单）。"
   gpui.menuMissing.terminalSplit:
     zh-CN: "尚未接入：终端没有拆分能力（一个终端面板只有一组页签，没有分栏）。"
+  settings.gpui.appearanceSourceGlobal:
+    zh-CN: "当前外观跟随全局设置（这个键在工作区两层里都没有覆盖）"
+  settings.gpui.appearanceSourceTeam:
+    zh-CN: "当前外观来自团队设置（.lithe/settings.json，已被 Git 跟踪）"
+  settings.gpui.appearanceSourceProject:
+    zh-CN: "当前外观来自本项目的设置（.lithe/settings.json，尚未提交）"
+  settings.gpui.appearanceSourceLocal:
+    zh-CN: "当前外观来自你的个人覆盖（.lithe/settings.local.json）"
+  settings.gpui.appearanceRevertToGlobal:
+    zh-CN: "改回我的全局外观"
   gpui.workspaceConfigFailed:
     zh-CN: "建立工作区配置失败：{reason}"
 

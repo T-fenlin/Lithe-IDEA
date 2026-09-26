@@ -274,12 +274,22 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 - 本机排除"写完必须回读"、失败必须对用户可见 →
   `.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md`
 
-**本文仍然负责的是两件未落地的增量**：
+**本文仍然负责的是两件增量**（其中增量 5 的**代码已落地**，见下面的落地记录；本节的决策文本仍然
+是它的真源，直到迁入 `implemented/`）：
 
-- **增量 5（外观的工作区覆盖层）**：`.lithe/settings.json` 与 `.lithe/settings.local.json` 这一层
-  至今**没有任何读写方**；三种来源（团队设置 / 本项目的设置 / 你的个人覆盖）的可见提示，以及
-  "改回我的全局外观"这个动作，也都还没做。维护者已经决定**允许**外观被工作区覆盖，所以配套的三条
-  缓解措施（独立文件、来源可见、一键改回）是这一增量的**硬要求**，不是可选项。
+- **增量 5（外观的工作区覆盖层）——已落地（2026-09-27 本批）**：实现落在
+  `gpui/crates/settings/src/workspace.rs`（覆盖层模型、覆盖顺序的**唯一**实现
+  `resolve_effective`、来源判定、原子写回）+ `settings/src/store.rs`（分层持有全局层与两层覆盖、
+  按"有没有工作区"分流写入、一键改回）+ `settings/src/row.rs` / `dialog.rs`（来源标注与按钮）+
+  `workbench/src/workspace.rs`（`ShellWorkspace::new` 登记工作区根、后台问一次
+  `git ls-files --error-unmatch` 决定"团队设置"还是"本项目的设置"）。范围**严格限定为九键**
+  （主题四键 + `uiFontSize` / `fontSize` / `fontFamily` / `monoFontFamily` / `terminalFontSize`），
+  其余键仍然只有全局层（守卫测试 `non_appearance_keys_are_not_overridable`）。
+  三条缓解措施都落地了：独立文件（覆盖只写 `.lithe/settings.json` / `settings.local.json`，
+  全局文件只写全局层）、三态来源可见（四档文案 + 只在被覆盖时画）、一键改回（把键从**两层**删掉，
+  生效值真的回落到全局值）。**未做**：工作区设置文件的 watcher（打开 / 切换项目时重读是下限）、
+  共享层的写入方（"共享此项目的配置"那一批）。完整实现说明、覆盖顺序与验证记录见
+  `gpui/PLAN.md` §8.12。
 - **增量 8（会话状态）**：`.lithe/session.local.json` 与 `project.json` 的 `directoryMarks` 都还没有
   读写方。侦察结论必须约束这一版的范围：今天能持久化的只有**打开的文件 + 当前文件**，以及
   `ShellWorkspace::left_sidebar_visible`；**gpui 目前没有任何面板/分栏尺寸**可存，也没有调试器
