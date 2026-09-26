@@ -90,6 +90,14 @@ paint 时 highlighter.styles(.., theme.highlight_theme)                         
 * **我们的主题 JSON 里没有 `highlight` 段**（`REPO\themes\README.md:321-333` 明确写了"本次故意不写"）。
   `Theme::apply_config` 只在 JSON 带 `highlight` 时才替换 `highlight_theme`（`CMP\src\theme\schema.rs:1066-1073`）。
 
+  > ⚠️ **2026-09 第二批主题改变了这条的适用范围**（本节其余内容与读数**不改**，它们描述的是当时的状态）：
+  > `gpui/themes/` 里新加的 `gruvbox.json` / `jetbrains.json` / `nord.json` / `one.json` / `vscode.json`
+  > **都带 `highlight` 段**（语法色映射表见 `gpui/themes/README.md` §7）；仍然不带的是第一批的
+  > `lithe-{dark,light}.json`（理由见该文档 §6.1，行号引用已改为章节号）。
+  > 另外 `crates/settings/src/theme.rs` 的 `apply_theme_by_name` 现在会在"目标主题没有 `highlight`"时
+  > 按明暗把内置那一份 `highlight_theme` 复位（`stamp_builtin_highlight_if_absent`），§6.5 那条
+  > "暗色下正文会不会是黑字"的坑因此不再是默认路径。
+
   ⚠️ **这里有一条需要先验证的坑（见 §6.5）**：
   * `Theme::default()` 的 `highlight_theme` 是 **`HighlightTheme::default_light()`**（`CMP\src\theme\mod.rs:679`），
     而它带 `editor.foreground = "#000000"`（`CMP\src\theme\default-theme.json:113`）。
@@ -433,6 +441,17 @@ $bmp.Dispose()
    推出来的，**缺一次截图确认**。
    最便宜的确认方式：开 feature 后看正文区里"非灰像素"的颜色，若普通标识符的像素是 `#000000` 附近
    （而不是主题前景色），就说明命中了这条，需要补 `highlight` 段。
+
+   > ⚠️ **2026-09 现状（本条的"未确认"只剩 Lithe 两族）**：第二批的
+   > `gruvbox.json` / `jetbrains.json` / `nord.json` / `one.json` / `vscode.json` 都写了 `highlight`，
+   > 映射规则见 `gpui/themes/README.md` §7；Lithe 仍不写（理由同该文档 §6.1，那条 18 色回落没有变）。
+   > "黑字"那条已在代码侧收口：`crates/settings/src/theme.rs` 的 `apply_theme_by_name` 在目标主题没有
+   > `highlight` 时按明暗复位内置那一份（`stamp_builtin_highlight_if_absent` + `S1_THEME highlight=builtin`
+   > 探针），所以"切换到 Lithe 会留着上一个主题的语法色"不会再发生。**实机验证点**：先切到一个新主题
+   > 再切回 Lithe，日志里应出现 `S1_THEME highlight=builtin theme=Lithe Dark …`，且正文不是黑字。
+   > **同时也要知道**：
+   > `highlight` 段是**整段替换**而不是按字段合并，所以主题文件里没写的字段（`editor.invisible`、
+   > status 色等）会走各自的 `unwrap_or` 回落——逐项见 `gpui/themes/README.md` §7.4。
 6. **是否也应给 `.json` / `.md` 等开 feature**：本轮只回答了"Java 要开什么"，
    多语言的 feature 组合取舍（体积 vs 覆盖）留给维护者定；映射表（§4.2）里我按"没有 feature 就不写进表"
    的原则给了最小形态，但没有替维护者决定要开几种语言。

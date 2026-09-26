@@ -1,17 +1,31 @@
 # `gpui/themes` —— Lithe 的 gpui-kit 主题文件
 
-本目录是 gpui-kit（`gpui-component-0.6.6`）主题注册表的监视目录。`ThemeRegistry::watch_dir(PathBuf::from("./themes"), cx, callback)`
-会递归加载并监听本目录下所有 `*.json`（`gpui-component-0.6.6/src/theme/registry.rs:98-118`、`:186-223`、`:238-262`），
-由回调里的 `Theme::global_mut(cx).apply_config(&theme)` 应用。
+本目录是 gpui-kit（`gpui-component-0.6.6`）主题注册表的监视目录：`ThemeRegistry::watch_dir(..)`
+（`gpui-component-0.6.6/src/theme/registry.rs:98`）装载本目录并监听它，回调里
+`Theme::global_mut(cx).apply_config(&theme)` 应用。**只扫顶层**——`reload` 是
+`read_dir` + `path.is_file()` + 扩展名 `json`（`registry.rs:242-262`，不递归），
+而 `notify` 的监听是递归的（`:186-223`），所以子目录里的改动只会白触发一次重载、不会被读进来。
 
-> ⚠️ 本目录**只放数据**。Rust 侧的接线（`init` 里调 `watch_dir`、按 `name` 选主题、`Theme::change`）不在本次改动范围内。
+Rust 侧的接线在 `crates/settings/src/theme.rs`：`themes_dir()` 指向本目录（`concat!(env!("CARGO_MANIFEST_DIR"), "/../../themes")`）、
+`watch_lithe_themes` 在 `main.rs` 的启动流程里装载（`crates/app/src/main.rs:717`）、`apply_theme_by_name` 按 `themes[].name` 选主题并
+`Theme::change` + `apply_config` + `sync_base`（`crates/settings/src/store.rs:525` 是设置界面的写入口），
+设置界面的「配色主题」下拉直接列 `ThemeRegistry::sorted_themes()`。
+**所以加主题 = 往本目录丢一个 JSON，不用改 Rust**。
 
-| 文件 | 主题 `name` | `mode` | colors 条数 |
+| 文件 | 主题 `name`（`mode`） | colors 条数 | `highlight`（编辑器语法色） |
 | --- | --- | --- | --- |
-| `lithe-dark.json` | `Lithe Dark` | `dark` | 60 |
-| `lithe-light.json` | `Lithe Light` | `light` | 60 |
+| `lithe-dark.json` | `Lithe Dark`（dark） | 60 | 无（§6.1） |
+| `lithe-light.json` | `Lithe Light`（light） | 60 | 无（§6.1） |
+| `gruvbox.json` | `Gruvbox Light`（light）/ `Gruvbox Dark`（dark） | 各 60 | 有（§7） |
+| `jetbrains.json` | `IntelliJ Light`（light）/ `Darcula`（dark） | 各 60 | 有（§7） |
+| `nord.json` | `Nord Light`（light）/ `Nord Dark`（dark） | 各 60 | 有（§7） |
+| `one.json` | `One Light`（light）/ `One Dark`（dark） | 各 60 | 有（§7） |
+| `vscode.json` | `VS Code Light+`（light）/ `VS Code Dark+`（dark） | 各 60 | 有（§7） |
 
-参考主题名与 Windows 侧默认主题一致（`lithe-dark`，`windows/tauri/src/features/settings/config/default-settings.ts:99`，见 `gpui/UI-MAP-WINDOWS.md:29`）。
+本目录共 **12 条主题**（注册表里另有内置的 `Default Light` / `Default Dark`，共 14 条）。
+`themes[].name` 必须**全局唯一**：重名条目被注册表直接跳过（`registry.rs:270-273`），表现是"少一个主题"。
+`Lithe Dark` / `Lithe Light` 的名字与 Windows 侧默认主题一致（`lithe-dark`，`windows/tauri/src/features/settings/config/default-settings.ts:99`，见 `gpui/UI-MAP-WINDOWS.md:29`）。
+第二批 5 个文件与 `windows/tauri/src/extensions/themes/builtin/` 里的同名族是**同一批设计值**，但格式不同（那张表是 Lithe schema，这张是 gpui-kit schema），映射与新增的 `highlight` 段见 §7。
 
 ---
 
@@ -318,19 +332,30 @@ base.yellow base.yellow.light base.magenta base.magenta.light base.cyan base.cya
 
 ## 6. 未写入的内容与未确认项
 
-### 6.1 `highlight`（语法高亮）本次**故意不写**
+### 6.1 `highlight`（语法高亮）：**第一批**的两个 Lithe 文件没写
 
-1. 它是独立的 `HighlightThemeStyle`（`src/highlighter/registry.rs:435-457`）：字段是 `Option<Hsla>` +
+（下面是第一批不写的三条理由，原文保留——它们对 `lithe-*.json` 仍然成立）
+
+1. 它是独立的 `HighlightThemeStyle`（`src/highlighter/registry.rs:436`）：字段是 `Option<Hsla>` +
    `#[serde(flatten)] StatusColors` + 一个**非 Option** 的 `syntax`，与 `colors` 的形状完全不同；
    `ThemeSet` 里写错形状会让**整份文件**解析失败并被静默丢弃（`registry.rs:252-258`）。
 2. Lithe 侧还有一条主题文件表达不了的规则：「syntax 值缺失**或**与 `foreground` 的欧氏 RGB 距离 < 28 就回落到
    按明暗硬编码的 18 色」（`windows/tauri/src/extensions/themes/syntax-token-colors.ts:3-44,99-128`）。
    硬搬 18 色会得到与 Windows 不一致的高亮结果，必须由 Rust 侧实现这条回落。
-3. 本次任务不允许运行 `cargo`（`gpui/target` 由主代理独占），**没有**用 `serde_json::from_str::<ThemeSet>` 实测过
+3. 第一批任务不允许运行 `cargo`（`gpui/target` 由主代理独占），**没有**用 `serde_json::from_str::<ThemeSet>` 实测过
    `highlight` 的形状 → 宁可不写，避免整份主题静默失效。
 
-后续要补的话，格式参照上游 `themes/ayu.json` 的 `highlight` 段（`{"editor.background": "#...", "syntax": {"comment": {"color": "#..."}}}`，
+**第二批起（§7）**：`gruvbox.json` / `jetbrains.json` / `nord.json` / `one.json` / `vscode.json`
+**都写 `highlight` 段**，映射规则与"整段替换"的后果见 §7。`lithe-*.json` 维持不写——第 2 条那条回落规则
+没有变，Lithe 的 18 个 `--syntax-*` 值直搬进主题文件反而不等于 Windows 的显示结果。
+于是当前 12 条主题里，只有 Lithe 两族的编辑器语法色来自 gpui 内置色板。
+
+格式参照上游 `themes/ayu.json` 的 `highlight` 段（`{"editor.background": "#...", "syntax": {"comment": {"color": "#..."}}}`，
 Zed theme 兼容，`registry.rs:459-463` 的文档链接即 Zed 官方说明）。
+
+**形状已实测**（第 3 条的历史限制已解除）：`crates/settings/src/theme.rs` 的
+`every_theme_file_is_a_loadable_theme_set` 用真实 `ThemeSet` 反序列化整个目录，形状写错就是测试失败，
+不会再出现"整份主题静默消失"。
 
 ### 6.2 `is_default` 未设置（默认 `false`）
 
@@ -343,23 +368,135 @@ Zed theme 兼容，`registry.rs:459-463` 的文档链接即 Zed 官方说明）�
 
 ### 6.3 其它未确认
 
-- 本目录文件的合法性校验方式：`ConvertFrom-Json` + node `JSON.parse` 各一次；并把 `colors` 的 key 与
+- **第一批**的合法性校验方式是 `ConvertFrom-Json` + node `JSON.parse`，并把 `colors` 的 key 与
   `schema.rs:252-675` 里正则抽出的 **139 个** `#[serde(rename = ...)]` 逐一做了子集检查（结果：未知 key 0 个、非 hex 值 0 个、
-  重复 key 0 个、无 BOM、LF）。**未做**的是「真实 Rust 反序列化」（不让跑 cargo）。
+  重复 key 0 个、无 BOM、LF）；当时**没有**跑 cargo，所以"真实 Rust 反序列化"是缺的。
+  **第二批起这条缺口已补**：`crates/settings/src/theme.rs` 的 `every_theme_file_is_a_loadable_theme_set`
+  对**整个目录**做真实 `ThemeSet` 反序列化 + 13 个无 fallback 的 key + 每个颜色值过 gpui 解析器 + 主题名唯一，
+  跑 `cargo test -p lithe-gpui-settings theme::` 即可（12 条主题全绿）。
 - 未确认：Lithe 的 `--tab-hover-bg`、`--lithe-glass-*` 是否值得自建 token；`switch` 未选中态的底色（gpui 用
   `secondary.active`，Lithe 的 `ui/switch.tsx` 未在本次核查范围内确认其 unchecked 底色）→ 未写入 `switch.background`。
-- 上游主题目录共 20+ 个，本次只取了 `ayu.json` 作为格式参照；`raw.githubusercontent.com` 在本沙盒不可直连（解析到非公网 IP），
+- 上游主题目录共 20+ 个，第一批只取了 `ayu.json` 作为格式参照；`raw.githubusercontent.com` 在本沙盒不可直连（解析到非公网 IP），
   走 `cdn.jsdelivr.net` 镜像成功。docs 页 `https://gpui-kit.com/zh-CN/component/theme.md` 可正常抓取。
 
 ---
 
-## 7. 以后加主题就放这个目录
+## 7. 第二批主题：Gruvbox / JetBrains / Nord / One / VS Code
+
+### 7.1 来源：设计真源两件套
+
+每个族由**同一批设计值**导出两份文件，本次进仓库的是第二份：
+
+| 文件 | 格式 | 用途 |
+| --- | --- | --- |
+| `theme-<族>.json` | Lithe 设计语言 schema（`themes[]` 带 `id` / `appearance` / `colors` / **`syntax`**），与 `windows/tauri/src/extensions/themes/builtin/` 里那些 JSON 同构 | 设计真源；Windows 侧读的格式 |
+| `gpui-theme-<族>.json` → 本目录 `<族>.json` | gpui-kit `ThemeSet`（`name` / `author` / `themes[]` 带 `mode` / `font.size` / `radius` / `colors` / **`highlight`**） | gpui 侧加载的格式 |
+
+进仓库时**只做了一件事**：把设计真源的 `syntax` 块按下面的表映射成 gpui 的 `highlight` 段写进 `themes[]`。
+
+| 事实 | 证据 |
+| --- | --- |
+| `colors`（60 个 key）、`themes[].name`、`mode`、`font.size` / `radius` / `radius.lg` **一个字节都没改**，与导出的 `gpui-theme-<族>.json` 逐 key 相等 | 逐族比对：5 个族的 `colors` 键序与取值、`name`、`mode`、`radius*`、`font.size` 差异为 0；**只有 `highlight` 段是本次新增的** |
+| 这 5 个族的 `colors` 映射**由设计真源自己给出**，与 §3/§4 的 Lithe 推导**不是同一套**——键名与语义对齐，推导过程不同。已核对的两个例子：① `ring` 十色**全部**等于设计真源的 `subtle-foreground`（Gruvbox Light `#7c6f64`、VS Code Light+ `#8c8c8c`…），而 Lithe 的 `ring` 是 `color-mix(border 72%, foreground 28%)` 算出来的（§4）；② `primary.foreground` 多数族取 `#ffffff`（Darcula、One Light、VS Code Dark+…），而 Lithe 的规则是 `= --background` | 逐值比对两套导出件；§3/§4 的推导只对 `lithe-*.json` 成立，**不要**拿它当这批文件的验收标准 |
+| §5 里"gpui 没有对应 token"的那批设计键对这批主题同样成立，但**落点可能不同**：`subtle-foreground` 在这里还被用作 `ring`（Lithe 不用它做 `ring`），`cursor-vim-*`、6 个 `git-*`、16 个 `terminal-*` 里未被借用的 10 个仍然没有落点 | §5；逐键比对导出件 |
+| `is_default` 仍**没写**（默认 `false`），默认主题仍是 `Lithe Dark` | `crates/settings/src/schema.rs:94` |
+
+### 7.2 `syntax` → `highlight.syntax` 的映射（16 个 key）
+
+设计真源的 `syntax` 是 18 个 token，gpui 的 `SyntaxColors`（`highlighter/registry.rs:113-172`）是 41 个名字。
+下表左列在设计真源里都存在，右列就是写进主题文件的那 16 个 key：
+
+| 设计 `syntax.*` | gpui `highlight.syntax.*` | 说明 |
+| --- | --- | --- |
+| `attribute` | `attribute` | 直搬 |
+| `boolean` | `boolean` | 直搬 |
+| `comment` | `comment`、`comment_doc` | 一条设计值覆盖两个 gpui 名字 |
+| `constant` | `constant` | 直搬（Java 的 `@constant.builtin` 会回落到它，见下） |
+| `function` | `function` | 直搬（`@function.builtin` / `@function.method` 回落到它） |
+| `keyword` | `keyword` | 直搬 |
+| `number` | `number` | 直搬 |
+| `operator` | `operator` | 直搬 |
+| `property` | `property` | 直搬 |
+| `punctuation` | `punctuation` | `punctuation.bracket` / `.delimiter` / `.special` 回落到它 |
+| `regex` | `string.regex` | 直搬（没写 `string.special`，它回落到 `string`） |
+| `string` | `string` | 直搬（`string.escape` / `string.special` 回落到它） |
+| `tag` | `tag` | 直搬（`tag.doctype` 回落到它） |
+| `type` | `type` | 直搬（`@type.builtin` 回落到它） |
+| `variable` | `variable` | 直搬（`@variable.builtin` 回落到它） |
+
+**"回落"不是 gpui 的猜测，是 `SyntaxColors::style` 的显式规则**：命中不到名字、且名字里含 `.` 时，
+用第一个点号前的前缀再查一次（`highlighter/registry.rs:241-307`）。所以上表里那些带点号的 gpui 名字
+不写也能拿到同族颜色，写出来只是重复。
+
+三个**没有落点**的设计 token（写进去也会被忽略，所以没写）：
+
+| 设计 token | 为什么没落点 |
+| --- | --- |
+| `null` | 41 个 gpui 名字里没有 `null`。Java 的 `null_literal` 被 grammar 标成 `@constant.builtin`（`tree-sitter-java-0.23.5/queries/highlights.scm:82-86`），只能回落到 `constant`——**无法**单独给 `null` 上色 |
+| `jsx` | gpui 只有一套 `tag` / `attribute` 名字，没有 JSX 专用名；tsx 的 JSX 元素名也会走 `tag` |
+| `jsx-attribute` | 同上，merge 进 `attribute` |
+
+⚠️ **`comment_doc` 是下划线，不是 `comment.doc`**：结构体字段是 `pub comment_doc`（`registry.rs:117`，**没有** `rename`），
+所以 JSON key 是 `comment_doc`。上游自己的 `default-theme.json:136`、`:347` 写的是 `"comment.doc"` ——
+那是**死键**（和 §1.3 第 2 条列的上游过期 key 同一类问题），照抄会静默失效。
+
+### 7.3 `highlight` 段里额外写的三个 `editor.*` 值
+
+`syntax` 之外只写了三个键，`editor.*` 的其余键（`editor.invisible`、`editor.line_number`、
+`editor.active_line_number`、`editor.gutter.background`）**故意不写**：
+
+| 写入的 key | 取值来源 | 依据 |
+| --- | --- | --- |
+| `editor.background` | 设计 `background` | 编辑器画布的落点是 `Theme::editor_background()`：`highlight` 里没写就回落到 `input_background()`（`theme/mod.rs:389-393`），而那个函数在**深色**下返回 `input.mix_oklab(transparent, 0.3)`（`:379-385`，`input` = `input.border` 键，`schema.rs:776`）——即"背景 + 30% 边框色"，一个不在设计调色板里的混色。写成主题自己的 `background` 才是设计值（VS Code Dark+ 的编辑器底就是 `#1e1e1e` = 它的 `background`），代价是**这批主题的深色编辑器底比 Lithe 两族更"平"**（Lithe 没有 `highlight`，走的就是那个混色） |
+| `editor.foreground` | 设计 `foreground` | 与 `InputEditorStyle.foreground`（`cx.theme().foreground`，`gpui-component-0.6.6/src/input/input.rs:498`）同值，不另造颜色 |
+| `editor.active_line.background` | 设计 **`accent`**（推导，非直搬） | 设计语言没有"当前行高亮"这个 token。**不写的话当前行高亮会消失**（见 §7.4），所以取语义最近的"悬停/激活底" `accent`；VS Code Dark+ 的真实 `editor.lineHighlightBackground` 恰好就是 `#2a2d2e` = 该主题的 `accent` |
+
+### 7.4 为什么 `highlight` 是**整段替换**，缺的键不会沿用内置值
+
+`apply_config` 在 `highlight` 存在时**直接换掉整个 `HighlightTheme`**（`schema.rs:1066-1073`），不是按字段合并。
+于是没写的字段变成 `None`，各自走自己的回落：
+
+| 没写的字段 | 结果 | 回落点 |
+| --- | --- | --- |
+| `editor.invisible` | 空白符指示色 = `muted.foreground` | `gpui-base-0.6.6/src/input/base/element.rs:1077-1080` |
+| `editor.line_number` / `editor.active_line_number` | **无影响**：这两个字段在 `gpui-base` / `gpui-component` 里没有任何消费方，行号色走 `muted.foreground`（`element.rs:2118`） | 全仓 grep 只命中结构体定义 |
+| `editor.active_line.background` | 若也不写 → **当前行不再有底色**（内置主题里有）→ 所以 §7.3 补上了它 | `element.rs:2237-2239`、`:2261` |
+| status 色（`error` / `warning` / `info` / `success` / `hint` 及其 `.background` / `.border`） | 落到本主题的 `red` / `yellow` / `blue` / `green` / `cyan`——比内置色板更贴主题，所以**不写** | `highlighter/registry.rs:348-434` 的 `unwrap_or(cx.theme().…)` |
+
+（第一批的 `lithe-*.json` 没有 `highlight` 段：`apply_config` 不动 `highlight_theme`，所以 Lithe 两族用的是
+**内置同明暗的那一份**——`crates/settings/src/theme.rs` 的 `stamp_builtin_highlight_if_absent` 在 `apply_config`
+之前按明暗把它复位，否则"上一个带 `highlight` 的主题"的语法色会留在 Lithe 上（浅色语法画在深底）。
+`editor.active_line` / `editor.invisible` 也来自这一份。这不是 Lithe 的设计值，是 §6.1 第 2 条那个待实现的回落。）
+
+### 7.5 怎么校验（改主题文件后必跑）
+
+```powershell
+cargo test -p lithe-gpui-settings theme::
+```
+
+`every_theme_file_is_a_loadable_theme_set`（`crates/settings/src/theme.rs`）对**整个目录**断言四件事，
+每一件都是"不报错但主题消失/漏色"的静默失效：
+
+1. 每份 `*.json` 都能被真实 `ThemeSet` 反序列化（`highlight` 少写非 Option 的 `syntax`、颜色值写成 `rgba(...)`、JSON 语法错，都会在这里失败）；
+2. 每条主题都有 §1.5 的 13 个无 fallback 的 key；
+3. 每个**写了**的颜色值都能过 gpui 的颜色解析器（`try_parse_color` / `try_parse_background`，`theme/color.rs:693`、`:763`）；
+4. `themes[].name` 全局唯一且非空。
+
+覆盖不到的两件事（要实机看）：颜色**搭配**好不好看，以及 `list.active.background` / `selection.background`
+的 alpha 被 `clamp_alpha` 压到 ≤ 0.2 / 0.3 之后的实际观感（§1.7）。
+
+---
+
+## 8. 以后加主题就放这个目录
 
 1. 在本目录新建 `*.json`，根必须是 `{"name": ..., "themes": [{"name": ..., "mode": "light|dark", "colors": {...}}]}`。
 2. `themes[].name` 必须**全局唯一**（与内置的 `Default Light` / `Default Dark` 也不能同名，同名条目会被跳过）。
-3. 明暗各写一条；一个文件放一条或两条都行（文件名不影响加载）。
+3. 明暗各写一条；一个文件放一条或两条都行（文件名不影响加载）。**不要放进子目录**——`reload` 不递归（`registry.rs:242-262`）。
 4. 至少写 §1.5 的 13 个无 fallback 的 key。
 5. key 只能取自 §1.3 的 139 个；**拼错的 key 不会报错，只会静默失效**。
 6. 值用 `#RRGGBB` / `#RRGGBBAA` / Tailwind 色名；**不要用 `rgba()`**。
 7. 保存为 UTF-8（无 BOM）、LF；不要写注释和尾逗号——解析失败就是整份主题消失。
-8. 保存后 `notify` 会自动重载（`registry.rs:186-223`），不需要重启进程；但**当前激活主题的切换逻辑由 Rust 侧负责**。
+8. 想让**编辑器语法色**也跟着换，再加一个 `highlight` 段：`{"editor.background": …, "editor.foreground": …, "editor.active_line.background": …, "syntax": {"comment": {"color": …}, …}}`。
+   映射照 §7.2 的表，注意 `comment_doc` 的下划线写法与"整段替换"（§7.4）。
+9. 保存后 `notify` 会自动重载（`registry.rs:186-223`），不需要重启进程；但**当前激活主题的切换逻辑由 Rust 侧负责**。
+10. 跑一遍 `cargo test -p lithe-gpui-settings theme::`（§7.5）。

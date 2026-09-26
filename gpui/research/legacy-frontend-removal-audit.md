@@ -372,6 +372,17 @@ Rust 侧最密集的文件（引用行数）：
 | 12 | Lucide 字形 | `lucide-react` npm 包（`windows/node_modules` 在工作区不存在） | gpui 自带同一套（`gpui-kit-assets-0.6.6/assets/icons/`，1830 字形） | **明确不需要**：`gpui/assets/README.md:249`。 |
 | 13 | `MavenIcon` / `RunIcon` 内联 SVG | `windows/tauri/src/features/{maven,run}/components/*-icon.tsx`（**只有内联 path，无 SVG 文件**） | 无 | **建议补迁为 SVG 文件**：`gpui/research/icon-asset-inventory.md:24-26,554` 明确「**不可能**靠搬资源 1:1 还原——真源只有内联 SVG 的 React 组件」。删除前若不落成 SVG，这两个图标将**永久无法 1:1 还原**。 |
 
+> ⚠️ **上表第 3b 行（主题族）是本次审计时的快照，已被 2026-09 的第二批补迁部分推翻**（审计原文与读数**不改**）：
+> `gpui/themes/` 现在有 **7 个 JSON / 12 条主题**，其中 `gruvbox.json`、`jetbrains.json`、`nord.json`、
+> `one.json`、`vscode.json` 各带明暗两条，`lithe-{dark,light}.json` 是第一批；5 个新文件同时补了
+> `highlight`（编辑器语法色）段，对照表与映射规则见 `gpui/themes/README.md` §7。
+> **未变的部分**：`ayu` / `catppuccin` / `christmas` / `contrast-themes` / `dracula` / `github` /
+> `solarized` / `tokyo-night` / `vitesse` 等族在 `gpui/` 仍**无副本**，`syntax-token-colors.ts` 的
+> 18 色回落规则也仍未在 Rust 侧实现（`gpui/themes/README.md` §6.1）——所以"删掉 `builtin/themes/**`
+> 会永久失去那些主题的真源值"这条结论**不变**。
+> **另外**：3b 行里对 `gpui/themes/README.md` 的**行号**引用（`:293-315`、`:321-333`）在 §7 增补后已经漂了，
+> 现以该文档的**章节号**（§3 / §4 / §5 / §6.1 / §7）为准。
+
 ### 3.3 逐字节/逐张差集：已测规模 + 待确认部分
 
 **已实测规模**（本次审计用 `Get-ChildItem -Recurse -File | Measure-Object Length -Sum` 直接量的，非引用）：
