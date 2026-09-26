@@ -96,7 +96,8 @@ fn startup_window_bounds(cx: &App) -> WindowBounds {
 struct Options {
     /// 工作区根，传给 `workspace.snapshot` 与 `git.*`。
     root: PathBuf,
-    /// 本次启动要应用的主题名（覆盖设置文件；`themes/*.json` 里 `themes[].name`）。
+    /// 本次启动要应用的主题：**主题 id 或显示名都收**（覆盖设置文件；
+    /// id 是 `themes[].id`，如 `lithe-dark`；显示名是 `themes[].name`，如 `Lithe Dark`）。
     theme_override: Option<SharedString>,
     /// 本次启动的界面语言（覆盖设置文件）。gpui-kit 组件自带 `en` / `zh-CN` / `zh-HK`。
     locale_override: Option<String>,
@@ -206,10 +207,10 @@ struct Options {
     left_view: Option<String>,
 }
 
-/// 解析 `<workspace-root> [--theme <名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
+/// 解析 `<workspace-root> [--theme <id|名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
 fn parse_options() -> Result<Options, String> {
-    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
-         \x20 --theme <主题名>     本次启动使用的主题（覆盖设置文件；验证/诊断用）\n\
+    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题 id 或名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
+         \x20 --theme <id|名>      本次启动使用的主题（id 如 lithe-dark，名如 Lithe Dark；覆盖设置文件；验证/诊断用）\n\
          \x20 --locale <语言>      本次启动使用的界面语言（覆盖设置文件；验证/诊断用）\n\
          \x20 --open-settings     启动后自动打开设置对话框（验证/诊断用）\n\
          \x20 --open-palette      启动后自动打开命令面板（验证/诊断用）\n\

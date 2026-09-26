@@ -5,6 +5,7 @@
   "themes": [
     {
       "name": "Gruvbox Light",
+      "id": "gruvbox-light",
       "mode": "light",
       "font.size": 16,
       "radius": 6,
@@ -130,6 +131,7 @@
     },
     {
       "name": "Gruvbox Dark",
+      "id": "gruvbox-dark",
       "mode": "dark",
       "font.size": 16,
       "radius": 6,

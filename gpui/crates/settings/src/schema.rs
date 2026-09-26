@@ -84,20 +84,194 @@ pub fn normalize_editor_font_size(value: f64) -> f64 {
 /// 默认值是另一件事，由 [`DEFAULT_DISPLAY_LANGUAGE`]（`zh-CN`）决定。
 pub const DISPLAY_LANGUAGES: [&str; 2] = ["en-US", DEFAULT_DISPLAY_LANGUAGE];
 
-/// 配色主题默认值：**gpui 侧的 `ThemeSet` 主题名**，不是 Windows 的 `themes[].id`。
+/// 配色主题默认值：**主题 id**（`themes[].id`），不是显示名、也不是注册表索引键。
 ///
-/// Windows 的默认是 `lithe-dark`（`default-settings.ts:99`），而 gpui 的主题注册表按
-/// `themes[].name` 索引（`gpui-component-0.6.6/src/theme/registry.rs:121,154`），
-/// `gpui/themes/lithe-dark.json:7` 里这个名字是 `Lithe Dark`。两套标识的对应关系见
-/// `gpui/research/windows/07-settings-ui.md` §5.4。本文件属于 gpui 侧新开的设置文件
-/// （Windows 那份是 Tauri Store 写的另一份 `settings.json`），所以直接存 gpui 的名字。
-pub const DEFAULT_THEME: &str = "Lithe Dark";
-/// 「首选浅色主题」的默认值（gpui 名）。对应 Windows `autoThemeLight: "lithe-light"`
+/// ## 为什么持久化的是 id 而不是名字
+///
+/// 注册表按 `themes[].name` 索引（`gpui-component-0.6.6/src/theme/registry.rs:121,154`），
+/// 但**名字是给人看的、随时可能改**（改一次名字，所有用户的设置文件里那一项就指向不存在
+/// 的东西）。id 是机器标识：改名时把新名字写进 `name`、id 保持不变，用户的引用不受影响。
+///
+/// Windows 侧存的也是 id（`lithe-dark`，`default-settings.ts:99`），所以两者现在同构；
+/// 主题 id 与显示名的对应关系由 [`ThemeIndex`] 表达，见 [`crate::theme`]。
+pub const DEFAULT_THEME: &str = "lithe-dark";
+/// 「首选浅色主题」的默认值（主题 id）。对应 Windows `autoThemeLight: "lithe-light"`
 /// （`default-settings.ts:102`）。
-pub const DEFAULT_AUTO_THEME_LIGHT: &str = "Lithe Light";
-/// 「首选深色主题」的默认值（gpui 名）。对应 Windows `autoThemeDark: "lithe-dark"`
+pub const DEFAULT_AUTO_THEME_LIGHT: &str = "lithe-light";
+/// 「首选深色主题」的默认值（主题 id）。对应 Windows `autoThemeDark: "lithe-dark"`
 /// （`default-settings.ts:103`）。
-pub const DEFAULT_AUTO_THEME_DARK: &str = "Lithe Dark";
+pub const DEFAULT_AUTO_THEME_DARK: &str = "lithe-dark";
+
+/// 主题显示名 → id 的**兜底**规则（`"VS Code Light+"` → `"vs-code-light"`）。
+///
+/// 只在主题条目**没有**写 `id` 时使用：gpui-kit 的内置主题（`Default Light` / `Default Dark`）
+/// 与我们自己的文件都写了 id，但用户手写的主题文件不会写。规则是
+/// "只保留字母数字（含非 ASCII），其余连续片段折叠成一个 `-`，转小写，不留首尾 `-`"。
+///
+/// 兜底而不是唯一来源：id 一旦由名字派生，"改名字就换 id"，用户设置里那条引用就断了 ——
+/// 而那正是我们改用 id 要避免的事。所以**内置主题一律显式写 id**，这个函数只服务
+/// 没写 id 的文件。结果为空时返回 `"theme"`（id 不允许是空串）。
+pub fn slugify_theme_id(name: &str) -> String {
+    let mut out = String::new();
+    let mut pending_separator = false;
+    for ch in name.chars() {
+        if ch.is_alphanumeric() {
+            if pending_separator && !out.is_empty() {
+                out.push('-');
+            }
+            pending_separator = false;
+            out.extend(ch.to_lowercase());
+        } else if !out.is_empty() {
+            pending_separator = true;
+        }
+    }
+    if out.is_empty() {
+        "theme".to_string()
+    } else {
+        out
+    }
+}
+
+/// 一条主题：机器标识、显示名、明暗。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeEntry {
+    /// 机器标识（设置文件里存的就是它）。
+    pub id: String,
+    /// 显示名，同时也是注册表的索引键（`themes[].name`）。
+    pub name: String,
+    /// 是否深色（`mode == "dark"`）。
+    pub dark: bool,
+}
+
+/// 主题 id ↔ 显示名 的映射表，由**主题文件的原始 JSON** 构建。
+///
+/// ## 为什么必须自己解析文件，而不是问注册表
+///
+/// 注册表的 `ThemeConfig` 只有 `name`（`gpui-component-0.6.6/src/theme/schema.rs:36-82`），
+/// **没有** id 字段：`themes[].id` 是我们加进主题文件的、被上游静默忽略的字段。所以
+/// "id 是什么"只能自己读原始 JSON 才知道。
+///
+/// ## 输入与去重
+///
+/// 每个元素是一份 `ThemeSet` 的 JSON 文本（不是路径）。解析失败或 `name` 为空的条目跳过：
+/// 注册表那边也会忽略它们，索引跟着忽略才一致。**同一个 id 或同一个显示名重复时，
+/// 先出现的赢** —— 所以结果只取决于输入顺序，调用方按文件名排序传入即可得到确定结果。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ThemeIndex {
+    entries: Vec<ThemeEntry>,
+}
+
+impl ThemeIndex {
+    /// 从一组主题文件文本构建索引。
+    pub fn from_documents(documents: impl IntoIterator<Item = String>) -> Self {
+        let mut entries: Vec<ThemeEntry> = Vec::new();
+
+        for document in documents {
+            let Ok(set) = serde_json::from_str::<RawThemeSet>(&document) else {
+                continue;
+            };
+            for theme in set.themes {
+                let name = theme.name.trim();
+                if name.is_empty() {
+                    continue;
+                }
+                let id = match theme.id.as_deref().map(str::trim) {
+                    Some(id) if !id.is_empty() => id.to_string(),
+                    _ => slugify_theme_id(name),
+                };
+                let duplicate = entries
+                    .iter()
+                    .any(|entry| entry.id == id || entry.name == name);
+                if duplicate {
+                    continue;
+                }
+                entries.push(ThemeEntry {
+                    id,
+                    name: name.to_string(),
+                    dark: theme.mode.as_deref() == Some("dark"),
+                });
+            }
+        }
+
+        Self { entries }
+    }
+
+    /// 一条都没有（主题目录还没播种、或一份文件都读不到）。
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// 表里全部条目（顺序 = 输入顺序）。
+    pub fn entries(&self) -> &[ThemeEntry] {
+        &self.entries
+    }
+
+    /// 按显示名找 id。
+    pub fn id_for_name(&self, name: &str) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .map(|entry| entry.id.as_str())
+    }
+
+    /// 按 id 找显示名（界面要显示的是它）。
+    pub fn name_for_id(&self, id: &str) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| entry.name.as_str())
+    }
+
+    /// 把设置文件里的值归一成 id：**同时接受 id 与显示名**。
+    ///
+    /// 这就是老设置文件的兼容路径：升级前文件里存的是显示名（`"Lithe Dark"`），
+    /// 这条规则把它换成 `"lithe-dark"`，于是老文件不用迁移也能用、也不会回落默认主题。
+    /// 精确匹配优先，最后才做一次不区分大小写的匹配（大小写写错不该导致"主题丢失"）。
+    pub fn canonicalize(&self, value: &str) -> Option<String> {
+        let value = value.trim();
+        if value.is_empty() {
+            return None;
+        }
+        if let Some(entry) = self.entries.iter().find(|entry| entry.id == value) {
+            return Some(entry.id.clone());
+        }
+        if let Some(entry) = self.entries.iter().find(|entry| entry.name == value) {
+            return Some(entry.id.clone());
+        }
+        let lowered = value.to_lowercase();
+        self.entries
+            .iter()
+            .find(|entry| {
+                entry.id.to_lowercase() == lowered || entry.name.to_lowercase() == lowered
+            })
+            .map(|entry| entry.id.clone())
+    }
+
+    /// 表里全部 id（顺序 = 输入顺序）。
+    pub fn ids(&self) -> Vec<String> {
+        self.entries.iter().map(|entry| entry.id.clone()).collect()
+    }
+}
+
+/// 主题文件的**原始**形状：只要 id / name / mode 三个字段。
+///
+/// 刻意不复用 gpui-kit 的 `ThemeSet`：那个类型里没有 id，而且我们只想要索引需要的最小信息
+/// （颜色、highlight 那些字段解析失败也不该让索引整体失效）。
+#[derive(Deserialize)]
+struct RawThemeSet {
+    #[serde(default)]
+    themes: Vec<RawTheme>,
+}
+
+#[derive(Deserialize)]
+struct RawTheme {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    mode: Option<String>,
+}
 
 /// 全部设置。
 ///
@@ -106,10 +280,13 @@ pub const DEFAULT_AUTO_THEME_DARK: &str = "Lithe Dark";
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    /// 配色主题名（`ThemeSet` 的 `themes[].name`）。
+    /// 配色主题 **id**（`themes[].id`）。
     ///
-    /// - Windows 键：`theme`，默认 `lithe-dark`（`default-settings.ts:99`）。
-    /// - gpui 取值：`Lithe Dark`（见 [`DEFAULT_THEME`] 的说明）。
+    /// - Windows 键：`theme`，默认 `lithe-dark`（`default-settings.ts:99`）—— 两侧现在同构。
+    /// - gpui 取值：`lithe-dark`（见 [`DEFAULT_THEME`] 的说明）；显示名由
+    ///   [`ThemeIndex::name_for_id`] 得到，注册表的索引键（`themes[].name`）也由它解析。
+    /// - 老设置文件里存的是显示名（`"Lithe Dark"`）：读入时由
+    ///   [`Self::normalize_with_themes`] 归一成 id，**不需要用户做迁移**。
     /// - 生效方式：**立即**（`Theme::change` + `apply_config` + `refresh_windows`）。
     #[serde(rename = "theme")]
     pub theme: String,
@@ -441,25 +618,26 @@ impl Settings {
         self.maven_local_repository_path = self.maven_local_repository_path.trim().to_string();
     }
 
-    /// 再补一层"主题名必须在注册表里"的规范化（`known` 是 `ThemeRegistry::themes()` 的键）。
+    /// 再补一层"主题必须在索引里"的规范化，并把**老值（显示名）归一成 id**。
     ///
-    /// 只把**不存在的名字**换成默认，不动存在的名字：用户可能装了自定义主题，
-    /// 而那些主题在启动早期还没加载完。
-    pub fn normalize_with_themes(&mut self, known: &[String]) {
-        // 一个主题都没加载出来（注册表还没就绪 / 主题目录为空）时不做判断，
-        // 否则会把用户选的主题误判成"不存在"。
-        if known.is_empty() {
+    /// 只把**不存在的主题**换成默认，不动存在的那一个：用户可能装了自定义主题，
+    /// 而那些主题在启动早期还没读到。索引为空的语义与"注册表还没就绪"一致 —— 不做判断。
+    ///
+    /// ⚠️ 这里会把内存里的显示名换成 id，但**不写回文件**：下一次因为别的原因落盘时才会写成
+    /// id。这样"老文件继续可用"和"不做一次无关的强制迁移"两件事同时成立。
+    pub fn normalize_with_themes(&mut self, index: &ThemeIndex) {
+        if index.is_empty() {
             return;
         }
-        if !known.iter().any(|name| name == &self.theme) {
-            self.theme = DEFAULT_THEME.to_string();
-        }
-        if !known.iter().any(|name| name == &self.auto_theme_light) {
-            self.auto_theme_light = DEFAULT_AUTO_THEME_LIGHT.to_string();
-        }
-        if !known.iter().any(|name| name == &self.auto_theme_dark) {
-            self.auto_theme_dark = DEFAULT_AUTO_THEME_DARK.to_string();
-        }
+        self.theme = index
+            .canonicalize(&self.theme)
+            .unwrap_or_else(|| DEFAULT_THEME.to_string());
+        self.auto_theme_light = index
+            .canonicalize(&self.auto_theme_light)
+            .unwrap_or_else(|| DEFAULT_AUTO_THEME_LIGHT.to_string());
+        self.auto_theme_dark = index
+            .canonicalize(&self.auto_theme_dark)
+            .unwrap_or_else(|| DEFAULT_AUTO_THEME_DARK.to_string());
     }
 
     /// 按系统外观解析出**当前应该生效**的主题名。
@@ -486,10 +664,11 @@ mod tests {
     #[test]
     fn defaults_match_the_windows_truth() {
         let settings = Settings::default();
-        assert_eq!(settings.theme, "Lithe Dark");
+        // 主题持久化的是 **id**（与 Windows 的 `lithe-dark` / `lithe-light` 同构）。
+        assert_eq!(settings.theme, "lithe-dark");
         assert!(!settings.sync_system_theme);
-        assert_eq!(settings.auto_theme_light, "Lithe Light");
-        assert_eq!(settings.auto_theme_dark, "Lithe Dark");
+        assert_eq!(settings.auto_theme_light, "lithe-light");
+        assert_eq!(settings.auto_theme_dark, "lithe-dark");
         assert_eq!(settings.ui_font_size, 13.0);
         assert!(settings.show_status_bar);
         assert_eq!(settings.display_language, "zh-CN");
@@ -696,9 +875,9 @@ mod tests {
         assert_eq!(settings.gpui_locale(), "en");
     }
 
-    /// 空串主题回落默认；不存在的主题名在拿到注册表后再回落。
+    /// 空串主题回落默认；索引为空时不做判断；索引就绪后把**老值（显示名）归一成 id**。
     #[test]
-    fn theme_names_fall_back_to_defaults() {
+    fn theme_ids_fall_back_to_defaults_and_accept_legacy_names() {
         let mut settings = Settings {
             theme: "  ".to_string(),
             auto_theme_light: String::new(),
@@ -714,10 +893,10 @@ mod tests {
             theme: "No Such Theme".to_string(),
             ..Settings::default()
         };
-        // 注册表为空时不做判断（启动早期注册表还没加载完，不能误判）。
-        settings.normalize_with_themes(&[]);
+        // 索引为空时不做判断（主题目录还没播种完，不能误判）。
+        settings.normalize_with_themes(&ThemeIndex::default());
         assert_eq!(settings.theme, "No Such Theme");
-        settings.normalize_with_themes(&["Lithe Dark".to_string()]);
+        settings.normalize_with_themes(&index_of(&["lithe-dark"]));
         assert_eq!(settings.theme, DEFAULT_THEME);
     }
 
@@ -725,17 +904,147 @@ mod tests {
     #[test]
     fn effective_theme_respects_sync_flag() {
         let mut settings = Settings {
-            theme: "Lithe Light".to_string(),
-            auto_theme_light: "Lithe Light".to_string(),
-            auto_theme_dark: "Lithe Dark".to_string(),
+            theme: "lithe-light".to_string(),
+            auto_theme_light: "lithe-light".to_string(),
+            auto_theme_dark: "lithe-dark".to_string(),
             sync_system_theme: false,
             ..Settings::default()
         };
-        assert_eq!(settings.effective_theme(true), "Lithe Light");
-        assert_eq!(settings.effective_theme(false), "Lithe Light");
+        assert_eq!(settings.effective_theme(true), "lithe-light");
+        assert_eq!(settings.effective_theme(false), "lithe-light");
 
         settings.sync_system_theme = true;
-        assert_eq!(settings.effective_theme(true), "Lithe Dark");
-        assert_eq!(settings.effective_theme(false), "Lithe Light");
+        assert_eq!(settings.effective_theme(true), "lithe-dark");
+        assert_eq!(settings.effective_theme(false), "lithe-light");
+    }
+
+    /// 一份最小的主题文件文本（一条主题）。
+    fn document(id: Option<&str>, name: &str, mode: &str) -> String {
+        let id = match id {
+            Some(id) => format!(r#""id": "{id}","#),
+            None => String::new(),
+        };
+        format!(r#"{{"name":"test","themes":[{{{id}"name":"{name}","mode":"{mode}"}}]}}"#)
+    }
+
+    /// 用一批主题**显示名**造索引（id 由 slugify 兜底）——测试里最常用的简写。
+    fn index_of(names: &[&str]) -> ThemeIndex {
+        ThemeIndex::from_documents(
+            names
+                .iter()
+                .map(|name| document(None, name, "dark"))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// 显式 `id` 优先于名字派生；没有 id 时按名字 slugify（用户手写的主题文件走这条）。
+    #[test]
+    fn theme_index_prefers_the_explicit_id_and_falls_back_to_the_name() {
+        let index = ThemeIndex::from_documents(vec![
+            document(Some("lithe-dark"), "Lithe Dark", "dark"),
+            document(None, "VS Code Light+", "light"),
+        ]);
+
+        assert_eq!(index.entries().len(), 2);
+        assert_eq!(index.id_for_name("Lithe Dark"), Some("lithe-dark"));
+        assert_eq!(index.name_for_id("lithe-dark"), Some("Lithe Dark"));
+        assert_eq!(index.id_for_name("VS Code Light+"), Some("vs-code-light"));
+        assert!(index.entries()[0].dark);
+        assert!(!index.entries()[1].dark, "light 主题不是深色");
+        assert_eq!(index.ids(), vec!["lithe-dark", "vs-code-light"]);
+    }
+
+    /// **老设置文件的兼容路径**：显示名与 id 都能归一到同一个 id。
+    ///
+    /// 升级前文件里存的是 `"Lithe Dark"`（显示名），升级后存的是 `"lithe-dark"`；
+    /// 两条都必须解析成同一个值，否则老用户会看到"主题丢失、回落默认"。
+    #[test]
+    fn canonicalize_accepts_both_ids_and_display_names() {
+        let index = ThemeIndex::from_documents(vec![
+            document(Some("lithe-dark"), "Lithe Dark", "dark"),
+            document(Some("lithe-light"), "Lithe Light", "light"),
+            document(Some("darcula"), "Darcula", "dark"),
+        ]);
+
+        // 新值：id。
+        assert_eq!(
+            index.canonicalize("lithe-dark").as_deref(),
+            Some("lithe-dark")
+        );
+        // 老值：显示名（大小写与前后空白都容忍）。
+        assert_eq!(
+            index.canonicalize("  Lithe Dark  ").as_deref(),
+            Some("lithe-dark")
+        );
+        assert_eq!(
+            index.canonicalize("lithe LIGHT").as_deref(),
+            Some("lithe-light")
+        );
+        assert_eq!(index.canonicalize("DARCULA").as_deref(), Some("darcula"));
+        // 显示名写错大小写也要认（id 与显示名都做一次不区分大小写的兜底）。
+        assert_eq!(
+            index.canonicalize("lItHe LiGhT").as_deref(),
+            Some("lithe-light")
+        );
+        // 不存在的主题（含空串）→ None，由调用方决定回落。
+        assert_eq!(index.canonicalize("No Such Theme"), None);
+        assert_eq!(index.canonicalize("   "), None);
+    }
+
+    /// 归一：老文件里的显示名在拿到索引后变成 id；不存在的回落默认。
+    #[test]
+    fn normalize_with_themes_rewrites_display_names_to_ids() {
+        let index = ThemeIndex::from_documents(vec![
+            document(Some("lithe-dark"), "Lithe Dark", "dark"),
+            document(Some("lithe-light"), "Lithe Light", "light"),
+            document(Some("gruvbox-dark"), "Gruvbox Dark", "dark"),
+        ]);
+
+        let mut settings = Settings {
+            // 三份都是老值：显示名。
+            theme: "Gruvbox Dark".to_string(),
+            auto_theme_light: "Lithe Light".to_string(),
+            auto_theme_dark: "Lithe Dark".to_string(),
+            ..Settings::default()
+        };
+        settings.normalize_with_themes(&index);
+        assert_eq!(settings.theme, "gruvbox-dark");
+        assert_eq!(settings.auto_theme_light, "lithe-light");
+        assert_eq!(settings.auto_theme_dark, "lithe-dark");
+
+        // 一份已卸载的主题 → 回落默认（那条主题确实不在索引里）。
+        let mut settings = Settings {
+            theme: "Uninstalled Theme".to_string(),
+            ..Settings::default()
+        };
+        settings.normalize_with_themes(&index);
+        assert_eq!(settings.theme, DEFAULT_THEME);
+    }
+
+    /// 重名/重 id 的条目只保留先出现的那个，结果只依赖输入顺序。
+    #[test]
+    fn theme_index_keeps_the_first_of_each_id_and_name() {
+        let index = ThemeIndex::from_documents(vec![
+            document(Some("dup"), "First", "dark"),
+            document(Some("dup"), "Second", "dark"),
+            document(Some("other"), "First", "light"),
+            document(None, "   ", "light"),
+        ]);
+        assert_eq!(index.entries().len(), 1);
+        assert_eq!(index.ids(), vec!["dup"]);
+        assert_eq!(index.name_for_id("dup"), Some("First"));
+    }
+
+    /// slugify 的边界：非字母数字折叠成一个 `-`、不留首尾、空串兜底。
+    #[test]
+    fn slugify_folds_punctuation_and_never_returns_empty() {
+        assert_eq!(slugify_theme_id("Lithe Dark"), "lithe-dark");
+        assert_eq!(slugify_theme_id("VS Code Light+"), "vs-code-light");
+        assert_eq!(slugify_theme_id("  One   Dark  "), "one-dark");
+        assert_eq!(slugify_theme_id("gruvbox-dark"), "gruvbox-dark");
+        // 非 ASCII 字母数字保留（中文主题名不该全部塌成同一个 id）。
+        assert_eq!(slugify_theme_id("深色主题"), "深色主题");
+        assert_eq!(slugify_theme_id("+++"), "theme");
+        assert_eq!(slugify_theme_id(""), "theme");
     }
 }

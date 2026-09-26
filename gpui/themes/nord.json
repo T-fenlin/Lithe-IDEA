@@ -5,6 +5,7 @@
   "themes": [
     {
       "name": "Nord Light",
+      "id": "nord-light",
       "mode": "light",
       "font.size": 16,
       "radius": 6,
@@ -130,6 +131,7 @@
     },
     {
       "name": "Nord Dark",
+      "id": "nord-dark",
       "mode": "dark",
       "font.size": 16,
       "radius": 6,

@@ -1,31 +1,79 @@
-# `gpui/themes` —— Lithe 的 gpui-kit 主题文件
+# `gpui/themes` —— Lithe 的**内置** gpui-kit 主题文件
 
-本目录是 gpui-kit（`gpui-component-0.6.6`）主题注册表的监视目录：`ThemeRegistry::watch_dir(..)`
-（`gpui-component-0.6.6/src/theme/registry.rs:98`）装载本目录并监听它，回调里
-`Theme::global_mut(cx).apply_config(&theme)` 应用。**只扫顶层**——`reload` 是
-`read_dir` + `path.is_file()` + 扩展名 `json`（`registry.rs:242-262`，不递归），
-而 `notify` 的监听是递归的（`:186-223`），所以子目录里的改动只会白触发一次重载、不会被读进来。
+⚠️ **本目录不再是运行时的监视目录**（2026-09-26 改）。运行时的主题目录是**用户配置目录**下的
+`themes/`：Windows `%APPDATA%\Lithe\themes\`、macOS `~/Library/Application Support/Lithe/themes/`、
+Linux `$XDG_CONFIG_HOME/lithe/themes/`（解析在 `crates/settings/src/paths.rs::themes_dir`）。
 
-Rust 侧的接线在 `crates/settings/src/theme.rs`：`themes_dir()` 指向本目录（`concat!(env!("CARGO_MANIFEST_DIR"), "/../../themes")`）、
-`watch_lithe_themes` 在 `main.rs` 的启动流程里装载（`crates/app/src/main.rs:717`）、`apply_theme_by_name` 按 `themes[].name` 选主题并
-`Theme::change` + `apply_config` + `sync_base`（`crates/settings/src/store.rs:525` 是设置界面的写入口），
-设置界面的「配色主题」下拉直接列 `ThemeRegistry::sorted_themes()`。
-**所以加主题 = 往本目录丢一个 JSON，不用改 Rust**。
+为什么必须改：旧实现把 `concat!(env!("CARGO_MANIFEST_DIR"), "/../../themes")` 当运行目录，
+那是**构建树路径**，打包成安装包后不存在 —— 表现是主题功能整体失效、而且不报错。
 
-| 文件 | 主题 `name`（`mode`） | colors 条数 | `highlight`（编辑器语法色） |
+现在的形状是**播种（seed）**：
+
+```text
+启动 → crates/settings/src/theme.rs 的 BUNDLED_THEMES（include_str! 编译进二进制的本目录内容）
+     → 写到 <配置目录>/themes/（已存在的文件一个字节都不动）
+     → ThemeRegistry::watch_dir(<配置目录>/themes/) 装载 + 监听
+```
+
+为什么是播种而不是"内置 + 用户两个目录都装载"：上游只支持**一个**目录 ——
+`ThemeRegistry::watch_dir` 里 `self.themes_dir = themes_dir` 是覆盖写，`reload()` 只读它
+（`gpui-component-0.6.6/src/theme/registry.rs:102,241-262`）。调两次 `watch_dir` 只有最后一次生效。
+
+**代价（明确登记）**：用户目录里那 7 份是**首次启动那一次的副本**，程序升级后不会自动更新
+（"已存在就不动"是保护用户修改的必然结果）。想拿到新版的某一份，删掉
+`<配置目录>/themes/<文件>` 再重启即可重新播种。
+
+**本目录的双重身份**：
+
+| 用途 | 谁用 |
+| --- | --- |
+| `include_str!` 的播种源 | `crates/settings/src/theme.rs::BUNDLED_THEMES` |
+| 测试与开发时的格式校验对象 | `every_theme_file_is_a_loadable_theme_set`（跑 `cargo test -p lithe-gpui-settings theme::`） |
+
+所以往本目录丢文件**仍然**要同时改一行 Rust：在 `BUNDLED_THEMES` 里登记，否则运行期看不到它
+（`every_theme_file_is_embedded_and_loadable` 会拿本目录的文件清单与那张表比对，漏登记就是测试失败）。
+
+其余加载事实（只扫顶层、`themes[].name` 去重、`mode` 决定明暗、13 个无 fallback 的 key、
+颜色值的合法写法、两个会被强制改写的 alpha）见下文各节 —— 那些**没有变**，变的是"目录在哪"
+与"文件怎么到用户目录"。
+
+| 文件 | 主题 `name`（`id`，`mode`） | colors 条数 | `highlight`（编辑器语法色） |
 | --- | --- | --- | --- |
-| `lithe-dark.json` | `Lithe Dark`（dark） | 60 | 无（§6.1） |
-| `lithe-light.json` | `Lithe Light`（light） | 60 | 无（§6.1） |
-| `gruvbox.json` | `Gruvbox Light`（light）/ `Gruvbox Dark`（dark） | 各 60 | 有（§7） |
-| `jetbrains.json` | `IntelliJ Light`（light）/ `Darcula`（dark） | 各 60 | 有（§7） |
-| `nord.json` | `Nord Light`（light）/ `Nord Dark`（dark） | 各 60 | 有（§7） |
-| `one.json` | `One Light`（light）/ `One Dark`（dark） | 各 60 | 有（§7） |
-| `vscode.json` | `VS Code Light+`（light）/ `VS Code Dark+`（dark） | 各 60 | 有（§7） |
+| `lithe-dark.json` | `Lithe Dark`（`lithe-dark`，dark） | 60 | 无（§6.1） |
+| `lithe-light.json` | `Lithe Light`（`lithe-light`，light） | 60 | 无（§6.1） |
+| `gruvbox.json` | `Gruvbox Light`（`gruvbox-light`，light）/ `Gruvbox Dark`（`gruvbox-dark`，dark） | 各 60 | 有（§7） |
+| `jetbrains.json` | `IntelliJ Light`（`intellij-light`，light）/ `Darcula`（`darcula`，dark） | 各 60 | 有（§7） |
+| `nord.json` | `Nord Light`（`nord-light`，light）/ `Nord Dark`（`nord-dark`，dark） | 各 60 | 有（§7） |
+| `one.json` | `One Light`（`one-light`，light）/ `One Dark`（`one-dark`，dark） | 各 60 | 有（§7） |
+| `vscode.json` | `VS Code Light+`（`vs-code-light`，light）/ `VS Code Dark+`（`vs-code-dark`，dark） | 各 60 | 有（§7） |
 
 本目录共 **12 条主题**（注册表里另有内置的 `Default Light` / `Default Dark`，共 14 条）。
 `themes[].name` 必须**全局唯一**：重名条目被注册表直接跳过（`registry.rs:270-273`），表现是"少一个主题"。
-`Lithe Dark` / `Lithe Light` 的名字与 Windows 侧默认主题一致（`lithe-dark`，`windows/tauri/src/features/settings/config/default-settings.ts:99`，见 `gpui/UI-MAP-WINDOWS.md:29`）。
-第二批 5 个文件与 `windows/tauri/src/extensions/themes/builtin/` 里的同名族是**同一批设计值**，但格式不同（那张表是 Lithe schema，这张是 gpui-kit schema），映射与新增的 `highlight` 段见 §7。
+`themes[].id` 也必须唯一（同一份索引里 id 或名字重复时**先出现的赢**）。
+
+`Lithe Dark` / `Lithe Light` 的 `id`（`lithe-dark` / `lithe-light`）与 Windows 侧默认主题的 id 一致
+（`windows/tauri/src/features/settings/config/default-settings.ts:99`，见 `gpui/UI-MAP-WINDOWS.md:29`），
+所以同一份设置值在两端含义相同。第二批 5 个文件与 `windows/tauri/src/extensions/themes/builtin/`
+里的同名族是**同一批设计值**，但格式不同（那张表是 Lithe schema，这张是 gpui-kit schema），
+映射与新增的 `highlight` 段见 §7。
+
+---
+
+## 0. 主题标识：`themes[].id` 与 `themes[].name`
+
+| | 用途 | 谁读 | 能不能改 |
+| --- | --- | --- | --- |
+| `themes[].name` | 注册表的索引键、界面显示名 | `ThemeRegistry`（上游）、菜单栏、下拉的 label | 改了要连带想清楚（见下） |
+| `themes[].id` | **设置文件里持久化的值**（`lithe-dark`） | 我们自己的 `crate::schema::ThemeIndex` | 改了等于断掉所有用户的引用 |
+
+- `id` 是**我们加进主题文件的字段**，上游 `ThemeConfig` 里没有它、也不认识它 ——
+  `ThemeSet` / `ThemeConfig` 没有 `deny_unknown_fields`，所以它被静默忽略，不影响装载。
+- 没写 `id` 的主题（用户手写的文件、gpui-kit 内置的 `Default Light` / `Default Dark`）按
+  **显示名 slug 化**兜底：`"VS Code Light+"` → `vs-code-light`。
+- 因此改 `name` 时**保留 `id` 不变**，用户的引用就不会断；这正是持久化 id 而不是名字的理由。
+- 老设置文件里存的是显示名（升级前的行为）：读入时由 `Settings::normalize_with_themes`
+  （及 `store::apply_theme_for`）归一成 id，**用户不需要做迁移**。
+
 
 ---
 
@@ -53,8 +101,9 @@ ThemeSet { name: SharedString, author: Option<SharedString>, url: Option<SharedS
 
 | 加载事实 | 证据 |
 | --- | --- |
-| 只扫描 `themes_dir` 下扩展名为 `json` 的**普通文件**（非递归收集，但 notify 监听是递归的） | `registry.rs:242-262` |
-| 默认目录 `./themes`，目录不存在会自动创建 | `registry.rs:174`、`:187-189` |
+| 只扫描监视目录下扩展名为 `json` 的**普通文件**（非递归收集，但 notify 监听是递归的） | `registry.rs:242-262` |
+| 注册表自己有个默认目录 `./themes`（相对进程工作目录）；**我们从不使用它** —— `watch_lithe_themes` 总是显式传 `<配置目录>/themes` | `registry.rs:174`、`paths.rs:themes_dir` |
+| 监视目录不存在时注册表会自动创建（我们播种时也会先建） | `registry.rs:187-189` |
 | 主题按 `themes[]` 条目的 **`name`** 去重，**同名条目被跳过**（不覆盖） | `registry.rs:154`、`:270-273` |
 | `is_default: true` 会写进 `default_themes[theme.mode]` | `registry.rs:275-278` |
 | 一个文件可以放多条主题（一条一个明暗） | `registry.rs:250`（`themes.extend(theme_set.themes)`） |
@@ -399,7 +448,7 @@ Zed theme 兼容，`registry.rs:459-463` 的文档链接即 Zed 官方说明）�
 | `colors`（60 个 key）、`themes[].name`、`mode`、`font.size` / `radius` / `radius.lg` **一个字节都没改**，与导出的 `gpui-theme-<族>.json` 逐 key 相等 | 逐族比对：5 个族的 `colors` 键序与取值、`name`、`mode`、`radius*`、`font.size` 差异为 0；**只有 `highlight` 段是本次新增的** |
 | 这 5 个族的 `colors` 映射**由设计真源自己给出**，与 §3/§4 的 Lithe 推导**不是同一套**——键名与语义对齐，推导过程不同。已核对的两个例子：① `ring` 十色**全部**等于设计真源的 `subtle-foreground`（Gruvbox Light `#7c6f64`、VS Code Light+ `#8c8c8c`…），而 Lithe 的 `ring` 是 `color-mix(border 72%, foreground 28%)` 算出来的（§4）；② `primary.foreground` 多数族取 `#ffffff`（Darcula、One Light、VS Code Dark+…），而 Lithe 的规则是 `= --background` | 逐值比对两套导出件；§3/§4 的推导只对 `lithe-*.json` 成立，**不要**拿它当这批文件的验收标准 |
 | §5 里"gpui 没有对应 token"的那批设计键对这批主题同样成立，但**落点可能不同**：`subtle-foreground` 在这里还被用作 `ring`（Lithe 不用它做 `ring`），`cursor-vim-*`、6 个 `git-*`、16 个 `terminal-*` 里未被借用的 10 个仍然没有落点 | §5；逐键比对导出件 |
-| `is_default` 仍**没写**（默认 `false`），默认主题仍是 `Lithe Dark` | `crates/settings/src/schema.rs:94` |
+| `is_default` 仍**没写**（默认 `false`），默认主题仍是 `lithe-dark`（显示名 `Lithe Dark`） | `crates/settings/src/schema.rs` 的 `DEFAULT_THEME` |
 
 ### 7.2 `syntax` → `highlight.syntax` 的映射（16 个 key）
 
@@ -489,14 +538,25 @@ cargo test -p lithe-gpui-settings theme::
 
 ## 8. 以后加主题就放这个目录
 
-1. 在本目录新建 `*.json`，根必须是 `{"name": ..., "themes": [{"name": ..., "mode": "light|dark", "colors": {...}}]}`。
-2. `themes[].name` 必须**全局唯一**（与内置的 `Default Light` / `Default Dark` 也不能同名，同名条目会被跳过）。
-3. 明暗各写一条；一个文件放一条或两条都行（文件名不影响加载）。**不要放进子目录**——`reload` 不递归（`registry.rs:242-262`）。
-4. 至少写 §1.5 的 13 个无 fallback 的 key。
-5. key 只能取自 §1.3 的 139 个；**拼错的 key 不会报错，只会静默失效**。
-6. 值用 `#RRGGBB` / `#RRGGBBAA` / Tailwind 色名；**不要用 `rgba()`**。
-7. 保存为 UTF-8（无 BOM）、LF；不要写注释和尾逗号——解析失败就是整份主题消失。
-8. 想让**编辑器语法色**也跟着换，再加一个 `highlight` 段：`{"editor.background": …, "editor.foreground": …, "editor.active_line.background": …, "syntax": {"comment": {"color": …}, …}}`。
-   映射照 §7.2 的表，注意 `comment_doc` 的下划线写法与"整段替换"（§7.4）。
-9. 保存后 `notify` 会自动重载（`registry.rs:186-223`），不需要重启进程；但**当前激活主题的切换逻辑由 Rust 侧负责**。
-10. 跑一遍 `cargo test -p lithe-gpui-settings theme::`（§7.5）。
+1. 在本目录新建 `*.json`，根必须是 `{"name": ..., "themes": [{"id": ..., "name": ..., "mode": "light|dark", "colors": {...}}]}`。
+2. 每条主题都要写 `id`（小写、用 `-` 分隔，例如 `my-theme-dark`）：它是**设置文件里持久化的值**，
+   `name` 只是显示名。不写也会工作（按名字 slug 兜底），但那时改 `name` 就会断掉用户的引用（§0）。
+3. `themes[].id` 与 `themes[].name` 都必须全局唯一（与内置的 `Default Light` / `Default Dark` 也不能同名/同 id）。
+4. 明暗各写一条；一个文件放一条或两条都行（文件名不影响加载）。**不要放进子目录**——`reload` 不递归（`registry.rs:242-262`）。
+5. **在 `crates/settings/src/theme.rs` 的 `BUNDLED_THEMES` 里登记这一份**（`include_str!`），
+   否则运行期看不到它、打包后更没有；`every_theme_file_is_embedded_and_loadable` 会用目录清单比对这张表，漏登记即测试失败。
+6. 至少写 §1.5 的 13 个无 fallback 的 key。
+7. key 只能取自 §1.3 的 139 个；**拼错的 key 不会报错，只会静默失效**。
+8. 值用 `#RRGGBB` / `#RRGGBBAA` / Tailwind 色名；**不要用 `rgba()`**。
+9. 保存为 UTF-8（无 BOM）、LF；不要写注释和尾逗号——解析失败就是整份主题消失。
+10. 想让**编辑器语法色**也跟着换，再加一个 `highlight` 段：`{"editor.background": …, "editor.foreground": …, "editor.active_line.background": …, "syntax": {"comment": {"color": …}, …}}`。
+    映射照 §7.2 的表，注意 `comment_doc` 的下划线写法与"整段替换"（§7.4）。
+11. 保存后 `notify` 会自动重载（`registry.rs:186-223`），不需要重启进程；但**当前激活主题的切换逻辑由 Rust 侧负责**。
+12. 跑一遍 `cargo test -p lithe-gpui-settings theme::`（§7.5）。
+
+⚠️ **改已有主题时的两条提醒**（都和"播种只补缺失、不覆盖"有关）：
+
+- 已经跑过一次的用户，其 `<配置目录>/themes/` 里那份**不会自动更新**：要么让用户删掉旧副本重启，
+  要么**换一个文件名**（新文件名会被补种，但旧文件仍在用户目录里、表现为多出一条旧主题）。
+- **改 `name` 时保留 `id`**：这样用户的设置仍然指向同一个主题；反之（改 `id`）等于让所有用户的
+  那份设置失效并回落默认主题。

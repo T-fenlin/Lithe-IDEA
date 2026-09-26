@@ -3479,23 +3479,23 @@ const MODE_SYSTEM: &str = "system";
 const MODE_LIGHT: &str = "light";
 const MODE_DARK: &str = "dark";
 
-/// 主题下拉的候选：注册表里全部主题名；**当前生效的名字不在列表里时补在第一位**
+/// 主题下拉的候选：注册表里全部主题的 **(id, 显示名)**；**当前生效的 id 不在列表里时补在第一位**
 /// （照 Windows 的 `normalizedThemeOptions`，`macos-settings-panels.tsx:102-113`），
 /// 否则用户在设置文件里写了一个已卸载的主题时，下拉会显示一个不在候选里的空值。
 ///
-/// 返回 `(value, label, checked)` 三元组：value 是主题名（设置文件里存的就是它），
-/// label 是显示名 —— gpui 的主题没有单独的展示名，两者都是 `themes[].name`。
+/// 返回 `(value, label, checked)` 三元组：**value 是主题 id**（设置文件里存的就是它），
+/// label 是显示名（`themes[].name`）。id 与显示名的关系见 `crate::schema::ThemeIndex`。
 fn theme_choices(cx: &App, applied: SharedString) -> Vec<(SharedString, SharedString, bool)> {
-    let mut names = theme::theme_names(cx);
-    if !names.iter().any(|name| name == applied.as_ref()) {
-        names.insert(0, applied.to_string());
+    let mut options = theme::theme_options(cx);
+    if !options.iter().any(|(id, _)| id == applied.as_ref()) {
+        // 补进来的这一项要尽量给出显示名（settings 里可能是 id，也可能是升级前的显示名）。
+        options.insert(0, (applied.to_string(), theme::display_name_for(&applied)));
     }
-    names
+    options
         .into_iter()
-        .map(|name| {
-            let label = SharedString::from(name.clone());
-            let checked = name == applied.as_ref();
-            (SharedString::from(name), label, checked)
+        .map(|(id, label)| {
+            let checked = id == applied.as_ref();
+            (SharedString::from(id), SharedString::from(label), checked)
         })
         .collect()
 }

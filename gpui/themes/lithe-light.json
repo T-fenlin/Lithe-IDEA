@@ -5,6 +5,7 @@
   "themes": [
     {
       "name": "Lithe Light",
+      "id": "lithe-light",
       "mode": "light",
       "font.size": 16.0,
       "radius": 6,

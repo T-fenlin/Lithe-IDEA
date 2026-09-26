@@ -5,6 +5,7 @@
   "themes": [
     {
       "name": "One Light",
+      "id": "one-light",
       "mode": "light",
       "font.size": 16,
       "radius": 6,
@@ -130,6 +131,7 @@
     },
     {
       "name": "One Dark",
+      "id": "one-dark",
       "mode": "dark",
       "font.size": 16,
       "radius": 6,

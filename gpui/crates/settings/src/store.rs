@@ -12,7 +12,7 @@
 //!
 //! | 设置 | 生效方式 | 依据 |
 //! | --- | --- | --- |
-//! | `theme` / `autoTheme*` / `syncSystemTheme` | 立即：`Theme::change` + `apply_config` + `refresh_windows` | [`crate::theme::apply_theme_by_name`] |
+//! | `theme` / `autoTheme*` / `syncSystemTheme` | 立即：`Theme::change` + `apply_config` + `refresh_windows` | [`crate::theme::apply_theme_by_id`] |
 //! | `uiFontSize` | 立即：写 `Theme.font_size`（rem 基准），`Root::render` 每帧用它调 `window.set_rem_size` | `gpui-component-0.6.6/src/root.rs:582` |
 //! | `fontSize`（编辑器字号） | 立即：写 `Theme.mono_font_size`，编辑器正文当帧就变 | `gpui-component-0.6.6/src/input/editor.rs:137-143` |
 //! | `tabSize` | 立即，但**不由本 store 应用**：外壳订阅本实体后转发给 `EditorPane::set_tab_size` | `gpui-base-0.6.6/src/input/editor/indent.rs:504` |
@@ -249,7 +249,7 @@ impl SettingsStore {
         self.path.as_deref()
     }
 
-    /// 当前应该生效的主题名（界面用它作为下拉的当前值）。
+    /// 当前应该生效的主题 **id**（界面用它作为下拉的当前值，设置文件里存的也是它）。
     pub fn applied_theme(&self) -> SharedString {
         self.applied_theme.clone()
     }
@@ -265,19 +265,23 @@ impl SettingsStore {
     ///
     /// 与 Windows 一致：**跟随系统时改的是"首选深/浅主题"**，不是 `theme`
     /// （`macos-settings-panels.tsx:115-123`）。
-    pub fn set_theme(&mut self, name: SharedString, cx: &mut Context<Self>) {
+    ///
+    /// 参数接受 **id 或显示名**（[`theme::canonical_theme_id`] 归一）：设置界面给的是 id，
+    /// 菜单栏给的是显示名，两条路都通。
+    pub fn set_theme(&mut self, value: SharedString, cx: &mut Context<Self>) {
         self.theme_override = None;
+        let id = theme::canonical_theme_id(cx, &value);
         let mut next = self.settings.clone();
-        let is_dark = theme::theme_is_dark(cx, &name);
+        let is_dark = theme::theme_is_dark(cx, &id);
         if next.sync_system_theme {
             match is_dark {
-                Some(true) => next.auto_theme_dark = name.to_string(),
-                Some(false) => next.auto_theme_light = name.to_string(),
+                Some(true) => next.auto_theme_dark = id.clone(),
+                Some(false) => next.auto_theme_light = id.clone(),
                 // 主题不在注册表里：能确定的只有"用户挑了它"，写进 `theme` 更不容易丢。
-                None => next.theme = name.to_string(),
+                None => next.theme = id.clone(),
             }
         } else {
-            next.theme = name.to_string();
+            next.theme = id.clone();
         }
         self.commit(cx, next, Effects::Theme);
     }
@@ -291,11 +295,13 @@ impl SettingsStore {
     /// （`features/command-palette/components/command-palette.tsx:107-116`）——
     /// 用户从命令面板点名要一个主题，意思就是"别跟着系统了"。
     /// 这里把真源那两步合成一次 `commit`，避免中间态落一次盘。
-    pub fn set_theme_explicit(&mut self, name: SharedString, cx: &mut Context<Self>) {
+    ///
+    /// 参数同样接受 **id 或显示名**：菜单栏的主题子菜单列的是显示名。
+    pub fn set_theme_explicit(&mut self, value: SharedString, cx: &mut Context<Self>) {
         self.theme_override = None;
         let mut next = self.settings.clone();
         next.sync_system_theme = false;
-        next.theme = name.to_string();
+        next.theme = theme::canonical_theme_id(cx, &value);
         self.commit(cx, next, Effects::Theme);
     }
 
@@ -484,7 +490,9 @@ impl SettingsStore {
     /// 恢复默认设置：**立即落盘**（真源 `stores/settings.store.ts:88-97`）。
     pub fn restore_defaults(&mut self, cx: &mut Context<Self>) {
         self.settings = Settings::default();
-        self.settings.normalize_with_themes(&theme::theme_names(cx));
+        // 默认值本身已经是 id，这里再归一一次是为了兜住"默认主题那份文件不在索引里"的极端情况
+        // （索引来自主题文件，见 `theme::theme_index`）。
+        self.settings.normalize_with_themes(&theme::theme_index());
         self.theme_override = None;
         self.apply_theme(cx);
         self.apply_font_size(cx);
@@ -615,7 +623,7 @@ impl SettingsStore {
     }
 
     fn apply_theme_for(&mut self, appearance: WindowAppearance, cx: &mut Context<Self>) {
-        let mut name = self.theme_override.clone().unwrap_or_else(|| {
+        let raw = self.theme_override.clone().unwrap_or_else(|| {
             SharedString::from(
                 self.settings
                     .effective_theme(theme::system_is_dark(appearance))
@@ -623,22 +631,28 @@ impl SettingsStore {
             )
         });
 
-        // 「主题名必须在注册表里」的规范化落在**这里**而不是加载设置时：只有到这一步
+        // 先归一成 id：`--theme` 可能给显示名，设置文件里也可能是升级前写的显示名
+        // （`init_store` 不做主题校验，理由见那里的注释）。两条路都不该因为我们"拿到的是名字"
+        // 而回落默认主题。
+        let id = theme::canonical_theme_id(cx, &raw);
+
+        // 「这个主题在注册表里吗」的判定落在**这里**而不是加载设置时：只有到这一步
         // （主题目录装载回调、或用户改设置）注册表才是就绪的。做法是"应用默认主题 + 留一条诊断"，
         // **不写回设置文件**：主题文件可能在热重载后重新出现，写回就把用户的选择抹掉了。
-        let known = theme::theme_names(cx);
-        if !known.is_empty() && !known.iter().any(|theme_name| theme_name == name.as_ref()) {
+        let known = theme::theme_ids(cx);
+        let mut applied = id.clone();
+        if !known.is_empty() && !known.iter().any(|known_id| known_id == &id) {
             eprintln!(
-                "S1_SETTINGS theme_missing name={name} fallback={}",
+                "S1_SETTINGS theme_missing id={id} fallback={}",
                 crate::schema::DEFAULT_THEME
             );
-            name = SharedString::from(crate::schema::DEFAULT_THEME);
+            applied = crate::schema::DEFAULT_THEME.to_string();
         }
 
-        self.applied_theme = name.clone();
-        // 查不到名字时 `apply_theme_by_name` 自己会打 `S1_THEME missing`，不做静默回落：
+        self.applied_theme = SharedString::from(applied.clone());
+        // 查不到时 `apply_theme_by_id` 自己会打 `S1_THEME missing`，不做静默回落：
         // 主题文件被删掉这种事必须留下证据。
-        theme::apply_theme_by_name(cx, &name);
+        theme::apply_theme_by_id(cx, &applied);
         self.apply_font_size(cx);
         // ⚠️ 顺序不能反：`apply_config` 会把主题文件里的字体档写回主题 token，
         // 所以两个"用户设置的字号"必须在它之后各补一次（rem 基准 + 等宽字号）。
