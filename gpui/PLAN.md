@@ -989,6 +989,14 @@ request_open_project → execute_project_open → rebuild_project_window（换�
   `.lithe/project.json` 建出来了，且**没有**创建 `.git` 或排除文件、**没有**错误诊断。
 - 两次 e2e 之后都确认真实仓库的 `.git/info/exclude` **未被污染**、无残留 `Lithe` 进程、临时目录已删。
 
+**合并验证（字体三键 + 工具链五值分层 + 守卫回读校验写完后一次性复跑）**：`cargo test --workspace`
+**393 通过 / 0 失败**、`cargo check --workspace --all-targets` exit=0、静态 gate 通过、
+`node scripts/verify-agent-notes.mjs` 通过、`node gpui/tools/extract-locale.mjs --check` 报"产物与
+真源一致"。其中两条新增行为有端到端证据：**优先级**（全局设 `…global-jdk`、项目本机设 `…project-jdk`
+→ 生效值是项目本机那个，来源计数 `project=3 global=1 unset=1`）与**字族拒绝**（不存在的字族只留
+`S1_THEME font_family_rejected … reason=not_installed`，不写主题）。决策与完整证据见三篇 implemented
+Note（architecture / feature / bug-fix，日期均为 2026-09-27）。
+
 ⚠️ 这一层**没有单测**：`ShellWorkspace::new` 需要真实 `Window`，而仓库既有口径就是"测试不构造它"
 （`gpui/crates/settings/src/identity.rs` 里已登记）。证据来自上面的端到端；底下那一层
 （`shared::workspace_config`）已有 16 条真实 Git 仓库测试。

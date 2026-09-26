@@ -15,7 +15,11 @@ Lithe 的持久化配置现在分四层：**全局**（跟人走）、**项目�
 （这是对"Git 写操作只在用户显式动作时发生"的定向例外，理由见下）。
 
 本文记录的是**已经落地并验证**的部分：文档语义、四层与文件形状、项目身份、默认不共享、打开即建、
-主题目录与主题标识。仍在推进的部分不在本文范围。
+主题目录与主题标识、**工具链五值落到项目本机层**。仍在推进的部分（外观的工作区覆盖层、会话状态）
+不在本文范围。
+
+配套阅读：本机排除写入的缺陷与"写完必须回读"的约束见
+`.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md`。
 
 ## 问题
 
@@ -131,6 +135,28 @@ Git（多一次 Core 往返）；而**只锚定到排除文件所在目录（`/.
 "改名就换 id"，正是改用 id 要避免的事）；没写 `id` 的主题按名字 slug 兜底。**老设置文件不迁移也能用**：
 `ThemeIndex::canonicalize` 同时接受 id 与显示名（精确优先，最后做一次不区分大小写）。
 
+### 七、工具链五值落到项目本机层
+
+五个"跟着机器走"的值现在有了项目层：`javaHomePath` / `mavenExecutablePath` / `mavenJavaHomePath`
+进 `.lithe/run.local.json` 的 `toolchain` 对象，`mavenSettingsPath` / `mavenLocalRepositoryPath` 进
+`.lithe/maven.local.json`。优先级是 **项目本机 > 全局 `settings.json`（作为本机默认值）> 自动发现**。
+
+三条给开发者的规则：
+
+1. **优先级的唯一实现是 `ToolchainPaths::resolve(local, global)` 这个纯函数。** 设置页只做字段搬运
+   （`resolve_overrides` 返回 `(值, 来源)`），界面按返回的**来源**如实标注。不要在任何地方再写一遍
+   "项目优先"的判断——两份实现漂移的表现是"界面显示 A、语言服务用 B"，这是最难查的一类错。
+2. **写侧按"有没有工作区"分流**：有工作区写项目本机层，没有才写全局默认；失败不假装成功
+   （不置"已保存"）。
+3. **旧路径只做文件级回落**：`.lithe/run.local.json` **不存在**时才去读旧路径；它存在就不再读旧的。
+   不要做键级合并——同一份配置有两个来源会在用户改值时产生"改了没生效"。
+
+`.lithe/.gitignore` 的 writer 也在这一批落地：三条规则（`*.local.json` / `run/classes/` / `**/*.tmp`）、
+**只追加缺失规则、绝不重写、绝不删用户既有行**、幂等（命中时不改文件、不留 `.tmp`）。它要生效的时刻是
+"共享那一刻"——在此之前整个 `.lithe/` 被本机排除挡着，它是惰性的。
+
+
+
 ## 考虑过的备选方案
 
 ### 只做产品口径、不写任何忽略文件
@@ -175,8 +201,18 @@ Git（多一次 Core 往返）；而**只锚定到排除文件所在目录（`/.
 
 ## 验证
 
-- `cargo test --workspace`（gpui，10 个 test binary）：**372 通过 / 0 失败**（本批从 334 起；settings 125 → 139、
-  shared 从 3 到 37）
+- `cargo test --workspace`（gpui）：**393 通过 / 0 失败**（本批从 334 起；settings 125 → 144、
+  shared 从 3 到 52、terminal 8、workbench 与其余 191）
+- **工具链优先级的端到端**（工作区之外的仓库；全局层设 `javaHomePath=D:\…global-jdk`，
+  项目本机层设 `javaHomePath=D:\…project-jdk`）：
+
+  ```text
+  S1_SETTINGS wiring=java_toolchain java_home_path=D:\lithe-e2e-project-jdk maven_settings_path=D:\lithe-e2e-global-settings.xml project=3 global=1 unset=1
+  ```
+
+  **项目本机值赢了全局值**，只在全局设的 `mavenSettingsPath` 正常兜底，来源计数 `project=3 global=1
+  unset=1` 与界面标注同源。同一趟还证明：预设的 `.lithe/run.local.json` 读完后**逐字未变**
+  （读侧不写文件、不丢键、不升版本）。
 - `cargo check --workspace --all-targets`（gpui）：**exit=0**
 - `./.agents/skills/write-stable-tests/scripts/verify-test-stability.ps1`：**通过**
 - `./scripts/verify-agent-notes.sh`：**通过**
