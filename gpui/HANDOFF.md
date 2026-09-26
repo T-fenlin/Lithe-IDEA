@@ -67,6 +67,13 @@
   `themes/README.md` §7）；`lithe-*.json` 仍不写 `highlight`（那 18 色的回落规则还没实现）。
   顺带修掉"切回没有 `highlight` 的主题会留着上一个主题的语法色"，并给**整个主题目录**加了
   真实 `ThemeSet` 反序列化 + 13 必填 key + 颜色解析 + 名字唯一的校验单测。
+- **主题目录与主题标识（本批）**：运行时主题目录改成 **`<配置目录>/themes/`**
+  （旧实现是 `CARGO_MANIFEST_DIR/../../themes` 这个**构建树路径**，打包成安装包后不存在 →
+  主题功能整体失效且不报错）。内置主题改为 `include_str!` 进二进制、启动时**播种**到用户目录
+  （已存在的不覆盖），因为上游注册表只能监视**一个**目录。
+  `themes[].id` 成为设置文件里持久化的值（与 Windows 的 `lithe-dark` 同构），
+  老设置文件里的**显示名**读入时归一成 id，用户不需要迁移。
+  代价与边界写进 `themes/README.md` 开头与 `PLAN.md` §8.1.1。
 - **JDK 覆盖值真正生效**：判据顺序 = 覆盖值 → `LITHE_JDTLS_JAVA` → 捆绑 → JDTLS 自带 jre → `JAVA_HOME` →
   PATH → 常见安装根；实测 21.0.8 / 25.0.3 按设置生效，无效覆盖降级并打原因。
 - **卫生**：右栏懒扫移出 MouseUp 派发栈（`cx.spawn`）· `S1_RIGHT_PANEL` 加 `seq/t_ms/坐标`（走 stderr）。
@@ -142,6 +149,23 @@
   **退出前补写**（`on_app_quit`，补上防抖窗口里那最后一次改动）。
   新增的两个直接依赖 `notify` / `async-channel` 本来就在依赖树里（分别由 `gpui-component` /
   `gpui-pre` 引入），没有引入新的第三方代码。
+- **gpui 现在能写 `.lithe/` 了**（增量 2/3，见 `PLAN.md` §8.9；设计真源是
+  `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`）：
+  - `shared::document`：版本化 JSON 文档的通用原语（解析 / 未知键保留 / 原子写），
+    由设置文档与 `project.json` 两个使用方共享；`lithe-gpui-settings::persistence` 改为委托它。
+  - `shared::workspace_config`：`.lithe/` 的**路径真源**（`WorkspaceConfigPaths`，此前 `.lithe`
+    在整个仓库里没有任何具名常量）、`project.json` 的身份清单（UUID v4，回落 Core 的路径身份）、
+    **"默认不共享"守卫**、以及可调用的共享动作。
+  - 排除条目用 Core 的 `git.write {operation: "excludePatterns"}`（literal、幂等、只追加），
+    因此能用同一个 `.lithe/` literal 精确删掉；**没有**在 gpui 里自己拼 `.git/info/exclude`
+    （位置由 Core 的 `git_path` 解析，worktree / submodule 下也对）。
+  - 独立新增 26 条测试（含**真实临时 Git 仓库**的端到端：`git status` 里不再出现 `.lithe`、
+    排除文件里恰好一行、重复调用不产生第二行、别人的规则逐字保留、共享只暂存可共享成员）。
+  - ⚠️ 跑 gpui 测试必须把 `TEMP`/`TMP` 指到仓库内可写目录（本机 `%TEMP%` 对 Rust 测试进程返回
+    `PermissionDenied`）；副作用是"临时目录"落在本仓库工作树内，所以测试夹具一律先自己
+    `git init`，否则守卫会去改**真实检出**的 `.git/info/exclude`。
+  - **未做**：共享动作的界面入口；`.lithe/settings.json` 覆盖层（增量 4/5）；"非 Git 仓库静默跳过"
+    的真实路径（本机找不到"仓库外又可写"的目录，改由确定性单测覆盖分类逻辑）。
 - 最近四批（都经主代理复核 + 交互级验证后提交）：`ebdf4885` 源代码管理 →
   `46d62f41` 设置「编辑器」「终端」页（顺手修掉 `persistence.rs`「写得出、读不回」的真 bug，
   见 `PLAN.md` §14.2，**以后加设置键必读**）→ `b740bdb4` 设置左栏 11 项 + 7 个明确空态 →

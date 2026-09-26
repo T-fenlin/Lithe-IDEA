@@ -696,15 +696,30 @@ explorer / workbench / app，按依赖顺序）→ 随后：度量 rem 迁移、
 | 文件 | 职责 |
 | --- | --- |
 | `schema.rs` | `Settings` + 逐键默认值 + 纯规范化（无 GPUI） |
-| `paths.rs` | 设置文件路径（唯一出现 `#[cfg(target_os)]` 的地方）+ `LITHE_GPUI_SETTINGS_FILE` |
+| `paths.rs` | 设置文件 / 最近项目 / **主题目录**的路径（唯一出现 `#[cfg(target_os)]` 的地方）+ `LITHE_GPUI_SETTINGS_FILE` / `LITHE_GPUI_THEMES_DIR` |
 | `persistence.rs` | 容错读、原子写、300ms 防抖状态机（无 GPUI） |
-| `theme.rs` | 主题目录装载/监听、「按名字应用主题」、UI 字号 → rem 基准 |
+| `theme.rs` | **内置主题播种** + 主题目录装载/监听 + 「按 id 应用主题」+ UI 字号 → rem 基准 |
 | `store.rs` | `SettingsStore`（Entity + Global 句柄）：改设置 → 立即生效 → 防抖落盘 |
 | `row.rs` | `SettingsGroup` / `SettingsRow` / 控件宽度档 |
 | `dialog.rs` | 820×620 模态对话框：头部 / 分类栏 / 内容页 / 底部 + 确认子对话框 |
 
-`main.rs` 原来的 `apply_lithe_theme` 被拆成 `theme::watch_lithe_themes`（装载 + 监听 + 重载后复原）
-与 `theme::apply_theme_by_name`（真正应用一个主题）：**启动与设置里切主题现在是同一条路**。
+`main.rs` 原来的 `apply_lithe_theme` 被拆成 `theme::watch_lithe_themes`（播种 + 装载 + 监听 + 重载后复原）
+与 `theme::apply_theme_by_id` / `apply_theme_by_name`（真正应用一个主题）：
+**启动与设置里切主题现在是同一条路**。
+
+### 8.1.1 主题目录与主题标识（2026-09-26 改）
+
+| 事实 | 现在的做法 | 为什么 |
+| --- | --- | --- |
+| 运行时主题目录 | `<配置目录>/themes/`（`paths::themes_dir`） | 旧实现用 `CARGO_MANIFEST_DIR/../../themes`（构建树路径），打包后不存在 → 主题功能整体失效且不报错 |
+| 内置主题怎么到用户那里 | `theme.rs::BUNDLED_THEMES` 用 `include_str!` 编译进二进制，启动时**播种**到用户目录（已存在的不覆盖） | 上游注册表只能监视**一个**目录（`watch_dir` 覆盖写 `themes_dir`、`reload()` 只读它），所以"内置目录 + 用户目录"两条装载路径做不到 |
+| 播种的代价 | 用户目录里的副本不会随程序升级自动更新；删掉该文件重启即可重新播种 | "已存在就不动"是保护用户修改的必然结果，本产品认为那更重要 |
+| 设置里持久化的值 | **主题 id**（`themes[].id`，如 `lithe-dark`） | 注册表按 `themes[].name` 索引，而名字随时可能改；id 改名不变，用户的引用不会断 |
+| id 从哪来 | 主题文件里显式写 `id`；没写时按显示名 slug 兜底（`"VS Code Light+"` → `vs-code-light`） | 显式 id 才能做到"改名不断引用"；兜底让用户手写的主题文件也能用 |
+| 老设置文件（存显示名） | 读入时归一成 id（`Settings::normalize_with_themes` + `store::apply_theme_for`），**不需要用户迁移** | 升级不能表现为"主题丢失、回落默认" |
+| 菜单栏 | 仍按显示名列出、点击后交给 `set_theme_explicit`（内部归一成 id） | 菜单栏不需要知道 id 的存在，避免为了标识体系去改 `workbench` |
+
+细节与逐值对照表在 `gpui/themes/README.md`（文件开头讲目录与播种、§0 讲 id 与 name）。
 
 ### 8.2 v1 只做两页（其余 10 个分类为什么不做）
 
@@ -756,14 +771,14 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 
 | 语义 | 实现 | 真源 |
 | --- | --- | --- |
-| 路径 | Windows `%APPDATA%\Lithe\settings.json`；macOS `~/Library/Application Support/Lithe/`；Linux `$XDG_CONFIG_HOME/lithe/` | 任务书；gpui 侧**没有**数据目录 helper（五个 crate `grep` 零命中），所以平台分支集中在 `paths.rs` |
-| 覆盖 | `LITHE_GPUI_SETTINGS_FILE`（完整文件路径）优先于一切推导 | 供测试与两轮机器验证 |
+| 路径 | Windows `%APPDATA%\Lithe\settings.json`；macOS `~/Library/Application Support/Lithe/`；Linux `$XDG_CONFIG_HOME/lithe/`；**主题目录**是同级的 `themes/`（`paths::themes_dir`，另见 §8.1.1） | 任务书；gpui 侧**没有**数据目录 helper（五个 crate `grep` 零命中），所以平台分支集中在 `paths.rs` |
+| 覆盖 | `LITHE_GPUI_SETTINGS_FILE`（完整文件路径）优先于一切推导；`LITHE_GPUI_THEMES_DIR`（完整目录）只覆盖主题目录，没有它时主题目录跟设置文件的父目录走 | 供测试与两轮机器验证（挪一个变量就把设置与主题一起搬进临时目录） |
 | 读取 | 文件不存在 → 全默认值、**不创建文件**；不是 JSON / 不是对象 → 全默认值 + 一条诊断；**某个键坏了只回落该键**；未知键不参与设置、但**写回时原样保留** | `lib/settings-persistence.ts:18-43,73-79` + 见 §14.2 |
 | 版本 | 顶层 `version`（当前 `DOCUMENT_VERSION = 1`）；写回时写当前版本；文件声明的版本**更高**时转**只读**（内存里照常生效，但不覆盖用户的文件） | 本仓库新增（手改安全） |
 | 写入 | **原子写**（`settings.json.tmp` + rename）；普通改动 **300ms 防抖**；「恢复默认设置」**立即写**；关对话框补一次 flush；**进程退出前**用 `on_app_quit` 再补一次 | `lib/settings-persistence.ts:96-112`、`stores/settings.store.ts:88-97` |
 | 外部改动 | 监听**父目录**（非递归）并按文件名过滤，手改文件不必重启；内容与内存一致时不动（挡住自己写入触发的自激）；**外部改动胜出**，文件被删则保留内存设置 | 本仓库新增（见 `src/watch.rs`） |
 | 去重 | 值没变就不应用、不落盘（也挡住"打开对话框时数字框发一次值不变的 Change 就写盘"的噪音） | `lib/settings-persistence.ts:34` 的 `!isEqual` |
-| 规范化 | `uiFontSize` 10–24 / 0.5 步长；`displayLanguage` 白名单；空主题名回落默认；**主题名必须在注册表里**（在主题装载回调里校验，不写回文件） | `lib/ui-font-size.ts:10-19`、`settings-normalization.ts:480,499-519` |
+| 规范化 | `uiFontSize` 10–24 / 0.5 步长；`displayLanguage` 白名单；空主题回落默认；**主题必须是索引里的 id**（`normalize_with_themes` 同时接受 id 与显示名，把老值归一成 id；"到底存不存在"仍在主题装载回调里按注册表校验，且**不写回文件**） | `lib/ui-font-size.ts:10-19`、`settings-normalization.ts:480,499-519` + 见 §8.1.1 |
 | 键表 | 由 schema 派生（`known_keys()` 取 `Settings::default()` 的序列化结果），**没有第二份手写清单** | 见 §14.2 |
 
 ⚠️ **监听目录而不是监听文件**：我们自己的写入是"临时文件 + rename"，文件级监听会跟着被 rename
@@ -776,8 +791,8 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
 ### 8.5 接线
 
 - **启动**：读设置文件 → 语言（`--locale` 优先）→ `set_locale` → `gpui_kit::init` → `init_store` →
-  `watch_lithe_themes`（主题在这里应用）→ `install_actions`（`Ctrl+,`）→ 开窗 → `attach_window`
-  （系统外观监听）。
+  `watch_lithe_themes`（**先把内置主题播种到 `<配置目录>/themes/`**，再装载/监听，最后按设置应用主题）
+  → `install_actions`（`Ctrl+,`）→ 开窗 → `attach_window`（系统外观监听）。
 - `--theme` / `--locale` 从"设置界面做好之前的临时开关"改成**显式覆盖（验证/诊断用、不写回设置文件）**
   —— `.artifacts/` 的 4 配置视觉验证依赖它们。
 - **入口**：① 左侧活动栏第 9 项「设置」（`SETTINGS_ACTIVITY_IX = 8`）→ 打开对话框（**不改**活动栏选中态，
@@ -822,6 +837,120 @@ Windows 真实对话框的分类表是 **12 项**（`settings-dialog.tsx:35-48`�
    未做机器格式化。
 5. 主题热重载后 `uiFontSize` 的 rem 基准靠"不变量观察者"兜底（`ThemeRegistry` 的全局观察者会在
    重载时把 `Theme.font_size` 写回主题文件的 16），这条路径没有单独截图验证。
+
+### 8.9 工作区配置文档层与"默认不共享"（增量 2/3）
+
+设计真源是 `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`
+（四层模型：全局 / 项目可共享 / 项目本机 / 派生物）。这一轮落的是**项目侧**的骨架，全部在
+`lithe-gpui-shared` 里，gpui 首次具备写 `.lithe/` 的能力。
+
+#### 放在哪、为什么
+
+| 模块 | 职责 | 为什么在这个 crate |
+| --- | --- | --- |
+| `shared::document` | 版本化 JSON 文档的通用原语：解析（逐键容错）、**未知键原样保留**、顶层 `version`、原子写 | 有两个真实使用方（设置文档 + `project.json`），不是提前共享 |
+| `shared::workspace_config` | `.lithe/` 路径真源、身份清单读写、"默认不共享"守卫、显式共享动作 | 守卫要调 Core（`git.write`），而 Core 的信封层就在 `shared`；放在别处就得复制信封拼装或单开一个 crate |
+
+`lithe-gpui-settings::persistence` 现在**只剩设置文档特有**的部分（`version` 取值、诊断措辞、
+防抖状态机），通用原语改为委托给 `shared::document`。这是抽取而不是抄写：增量 1 的守卫测试
+一条没删，两条纯函数测试搬到了 `document.rs` 并扩成**与文档类型无关**的版本。
+
+⚠️ `shared::document` 有两条硬约束（写在模块文档里）：文档类型**必须**在容器级加
+`#[serde(default)]`（否则坏键回落会从"一个键"退化成"整份"）；字段**不能**加
+`skip_serializing_if`（否则它不进 `known_keys`，另一个键坏掉时就读不回来）。
+
+#### `.lithe/` 路径真源
+
+`.lithe` 这个字面量在此之前**整个仓库里没有任何具名常量**（十几处裸字面量）。现在 gpui 侧有
+`WorkspaceConfigPaths`（`shared::workspace_config::paths`）：
+
+| 成员 | 路径（相对工作区根） | 层 | 现在有读写方吗 |
+| --- | --- | --- | --- |
+| `directory` | `.lithe/` | — | 是（守卫/共享） |
+| `project_manifest` | `.lithe/project.json` | 共享 | **是（本轮）** |
+| `ignore_file` | `.lithe/.gitignore` | 共享 | 否（等写入方） |
+| `settings` / `settings_local` | `.lithe/settings.json` / `settings.local.json` | 共享 / 本机 | 否（增量 4/5） |
+| `git` | `.lithe/git.json` | 共享 | 否 |
+| `run_configurations` / `run_generated` / `run_local` | `.lithe/run/*`、`.lithe/run.local.json` | 共享 / 本机 | 否 |
+| `toolchain_requirements` / `toolchain_local` | `.lithe/toolchains/requirements.json`、`.lithe/toolchains.local.json` | 共享 / 本机 | 否 |
+| `maven_config` / `maven_local` | `.lithe/maven/config.json`、`.lithe/maven.local.json` | 共享 / 本机 | 否 |
+| `language_providers` | `.lithe/lsp/language-providers.json` | 共享 | 否 |
+| `session_local` | `.lithe/session.local.json` | 本机 | 否（增量 8） |
+
+**只登记路径、不替换既有字面量**：Core / macOS / Windows 各自的 `.lithe` 解析保持原样，
+收敛它们属于跨端契约的后续工作。新写的代码必须走这里。
+
+**"可共享"的判定只有两条排除规则**（`is_shareable_member`，`paths.rs`）：
+
+1. 文件名以 `.local.json` 结尾 → 本机层，不可共享（**靠后缀，不靠目录位置**）；
+2. 文件名以 `.tmp` 结尾，或路径落在 `run/classes/` 之下 → 原子写中间产物与编译产物。
+
+也就是说：**默认全可共享，只有被这两条明确排除的才不可共享**（不是白名单）。将来新增一个成员
+时，如果它属于本机层就命名为 `<name>.local.json`，属于派生物就放进 `run/classes/`；
+**不需要改任何代码**，判定和 `.gitignore` 都自动成立。若新增的是"另一种派生物"，则要改
+`is_pruned_directory`（遍历剪枝）与 `is_shareable_member` 两处 —— 前者管"不走进这个子树"，
+后者管"不收这个成员"。
+
+#### 项目身份
+
+`project.json` 只建模 **`id`** 一个字段（UUID v4，首次生成时写入）。理由：它是跨端共享文件，
+Core 与现役产品还会写 `defaultRunConfiguration` 之类的字段，而那些字段 gpui 今天没有消费方；
+靠 `document` 的未知键保留，它们会被**逐字带过**（既不改也不丢），不必为它们建类型造出假契约。
+
+- 已有 `id` → 直接用，**不写文件**；
+- 没有 `id` 且文件可写 → 生成 UUID v4 并写回；
+- 没有 `id` 但文件版本比本程序新（只读）→ 回落到 Core 的**路径身份**
+  （`lsp.jdtWorkspaceKey`，**不传指纹**就是纯路径的 `normalized_workspace_identity` + SHA-256）；
+- 写入时 `id` 缺失/空白 → **拒绝写入**（`MissingId`）。typo 之外的用意：typed 的 `id: null`
+  会在合并时盖掉文件里已有的 id，那是静默的数据丢失。
+
+#### 默认不共享：为什么是 `excludePatterns`
+
+| operation | 走哪个函数 | 写进去的形态 |
+| --- | --- | --- |
+| `exclude` | `append_git_ignore_patterns` → `git_ignore_patterns` | 会 root-anchor、会转义 pathspec 字符 |
+| `excludePatterns` | `mutate_literal_git_ignore_patterns(adding=true)` | **保留调用方原文**（只 trim） |
+
+判据只有一条：**能不能用同一个 literal 把自己加的那一行精确删掉**。`unexcludePatterns` 按
+存储的原始字节逐行比对删除，所以只有 `excludePatterns` 写进去的 `.lithe/` 才能被同一个
+`.lithe/` 精确删掉；用 `exclude` 就得在 gpui 里复现 Core 的锚定/转义逻辑 —— 那正是"发明第二个实现"。
+
+`excludePatterns` 还自带两个我们要的性质：**已存在时不写**（no-op）、只追加不重写文件
+（别人的规则逐字保留）。排除文件的位置由 Core 用 `git_path(root, "info/exclude")` 解析，
+**不硬编码 `<root>/.git/info/exclude`**（worktree / submodule 下 `.git` 是文件）。
+
+"不是 Git 仓库"用 Core 的稳定信号判定：错误码 `invalid_request` + 消息 `Not a Git repository`
+（`CoreError::is_not_a_repository`，它存在的唯一理由就是这一种失败**没有字段可看**）。
+命中时静默跳过：不报错、不创建任何文件、不打诊断。
+
+顺序（`share_project_config`）：先算可共享成员 → 为空则什么都不做（**不动排除行**，没东西可共享
+就不该把目录暴露出来）→ 移除自己写的那一行 → `stage` 显式文件清单。全程不需要用户知道 `git add -f`
+的存在。**不做界面**，入口留给下一批。
+
+#### 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo test -p lithe-gpui-shared --lib` | **37 通过**（其中本轮新增 26：`document` 9 + `workspace_config` 16 + `is_not_a_repository` 1） |
+| `cargo test -p lithe-gpui-settings --lib` | 139 通过（其中 `persistence` 19 条 = 本轮重写后的全部守卫，含增量 1 的每一条；其余是既有的设置页 / 主题用例） |
+| `verify-test-stability.ps1` | 通过 |
+| 端到端（**真实临时 Git 仓库**） | `git status --porcelain` 里不再出现 `.lithe`；排除文件里恰好一行 `.lithe/`；重复调用不产生第二行；别人的规则（`# 别人的规则` / `*.log`）逐字保留；共享后排除行消失、只有 3 个可共享成员进暂存区、`*.local.json` 与 `run/classes/**` 未进 |
+
+⚠️ **跑测试必须把 `TEMP`/`TMP` 指到仓库内可写目录**（本机 `%TEMP%` 对 Rust 测试进程返回
+`PermissionDenied`，且仓库外的 `D:\` / `%LOCALAPPDATA%` 同样被拒）。副作用是"临时目录"落在
+Lithe 仓库自己的工作树里 —— 于是任何直接调排除守卫的测试都会通过 `git rev-parse` 找到**外层**
+仓库、把 `.lithe/` 写进真实检出的 `.git/info/exclude`。所以测试夹具 `test_repo::TempRepo`
+一律先在自己的临时目录里 `git init` 来限制作用域。`non_repository_is_skipped_silently`
+在当前环境下会**明确跳过**（它就要求一个不在任何工作树里的目录），见"未能确认"。
+
+#### 未能确认 / 还欠的
+
+1. **"非 Git 仓库 → 静默跳过"的真实路径没有跑到**：需要"一个既在仓库外又可写"的目录，而本机
+   Rust 测试进程只能写仓库工作区内。当前覆盖是确定性的单测（`core_client` 里
+   `is_not_a_repository` 的两个条件）+ 该用例在条件满足时的真实断言。
+2. 共享动作**没有界面入口**（本批只要可调用函数），所以"用户点一下完成共享"这条端到端没跑。
+3. `.lithe/settings.json` / `settings.local.json`（工作区对全局键的覆盖层）**尚未有读写方** ——
+   属于增量 4/5。
 
 ---
 

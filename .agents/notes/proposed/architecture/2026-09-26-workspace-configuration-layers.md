@@ -252,7 +252,18 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 ## 实施进度
 
 增量 1（**配置文档底座**）已在 gpui 落地并验证，落在 `gpui/crates/settings/src/` 的
-`persistence.rs`、`store.rs`、`watch.rs`。其余增量尚未开始。
+`persistence.rs`、`store.rs`、`watch.rs`。
+
+增量 2/3 的**项目侧骨架**也已落地（`gpui/crates/shared/src/` 的 `document.rs` 与
+`workspace_config/`）：`.lithe/` 路径真源、`project.json` 的身份、**"默认不共享"守卫**、
+可调用的共享动作。尚未落地的是**各成员文件自己的读写方**——`.lithe/settings.json` 覆盖层
+（增量 4/5）、会话状态（增量 8）等仍然没有 writer。
+
+⚠️ **这套能力还没有接进产品**：`save_project_manifest` / `ensure_project_dir_excluded` /
+`share_project_config` 的调用方**只有它们自己的测试**。守卫按设计必须在"第一次往 `.lithe/`
+写文件"之前调用，而**"第一次写发生在什么时候"是未决的产品问题**：原始需求说的是"通过 Lithe
+打开就生成 `.lithe`"，这与"按需生成（识别出项目类型 / 用户点运行 / 显式保存设置）"不是一回事。
+接线前必须先定这件事，否则会先把目录撒进每一个被打开过的文件夹里。
 
 | 已完成 | 证据 |
 | --- | --- |
@@ -261,8 +272,13 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 | 键表由 schema 派生，**手写逐键表已删除** | `known_keys()`；守卫测试 `any_single_broken_key_leaves_every_other_key_intact`（逐个已知键喂非法值，要求其余键完好且该键必须被判成坏键） |
 | 外部改动监听并热重载（监听父目录，避开 rename 让文件级监听失效） | `src/watch.rs`；端到端实测：外部改文件后 `S1_SETTINGS reloaded … ui_font_size=15.5`（13 → 15.5，未重启） |
 | 进程退出前 flush（补上 300ms 防抖窗口里那最后一次改动） | `SettingsStore::install_quit_flush`（gpui `on_app_quit`） |
+| 通用文档原语抽到 `shared::document`，设置文档改为委托它（两个使用方） | 设置文档 + `.lithe/project.json`；`document.rs` 9 条测试用**与设置无关**的类型证明通用性 |
+| `.lithe/` 路径真源（此前整个仓库没有具名常量） | `WorkspaceConfigPaths`（`workspace_config::paths`）；`members_live_under_the_config_directory` 等 6 条测试 |
+| `project.json` 的稳定身份（UUID v4，回落 Core 路径身份） | `resolve_project_id`；测试 `a_new_workspace_gets_a_generated_uuid_identity`、`newer_manifest_version_falls_back_to_the_path_identity` |
+| 写 `.lithe/` 之前**先确保不共享**（写 `.git/info/exclude` 的 `.lithe/`，位置由 Core 解析） | `ensure_project_dir_excluded`；**真实临时仓库**端到端：`git status` 无 `.lithe`、排除文件恰好一行、幂等、别人规则逐字保留 |
+| 显式共享：移除排除行 + 只暂存可共享成员 | `share_project_config`、`is_shareable_member`；端到端断言 `*.local.json` 与 `run/classes/**` 未进暂存区 |
 
-验证结果：
+验证结果（增量 1）：
 
 - `cargo test --workspace`（gpui，10 个 test binary，合计 **334 通过 / 0 失败**；settings 由 125 → **127**）
 - `cargo check --workspace --all-targets`（gpui）**exit=0**
@@ -270,10 +286,19 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 - 端到端一次：外部改文件 → `S1_SETTINGS reloaded … ui_font_size=15.5`（13 → 15.5，未重启），
   进程已关闭、无残留
 
-⚠️ **环境注意（与本次改动无关，但会误导后来者）**：这台机器的 `%TEMP%` 对 Rust 测试进程返回
-`PermissionDenied`，于是 `lithe-gpui-editor` 里 5 个使用临时目录的测试会失败（`buffer.rs:390` 的
-`create_dir_all`）。把 `TEMP`/`TMP` 指到仓库内可写目录后，那 5 个以及整个 workspace 全过。
-上面报的"334 通过"就是这个条件下的结果。
+验证结果（增量 2/3）：
+
+- `cargo test --workspace`（gpui）**exit=0**，全部 test binary 0 失败（`shared` 37 条，其中本轮新增 26）
+- `verify-test-stability.ps1` 静态 gate **通过**
+- 端到端（真实临时 Git 仓库）见上表两行；脚本细节与限制写在 `gpui/PLAN.md` §8.9
+
+⚠️ **环境注意（与代码无关，但会误导后来者）**：这台机器的 `%TEMP%` 对 Rust 测试进程返回
+`PermissionDenied`，仓库外的 `D:\` 与 `%LOCALAPPDATA%` 同样被拒；于是 `lithe-gpui-editor` 里
+5 个使用临时目录的测试会失败（`buffer.rs:390` 的 `create_dir_all`），且 rustdoc 的 doctest 会因为
+建不了临时目录而报"compiler unexpectedly panicked"。把 `TEMP`/`TMP` 指到仓库内可写目录后一切正常。
+代价是"临时目录"落在 Lithe 仓库自己的工作树里 —— 所以任何直接调排除守卫的测试都必须先在自己的
+临时目录里 `git init`，否则会通过 `git rev-parse` 找到**外层**仓库、把 `.lithe/` 写进真实检出的
+`.git/info/exclude`。
 
 **未能执行的验证**：测试计时 harness 没有 gpui scope（`test-stability-windows.ps1` 只支持
 `Frontend` / `WindowsRust` / `SharedRust`），所以这次拿不到 gpui 的逐测试计时报告。
