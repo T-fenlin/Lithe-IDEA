@@ -30,11 +30,31 @@
 //!
 //! ## 内嵌范围与代价
 //!
-//! 嵌的是**整个 `gpui/assets/**`**（1 204 个文件、约 8.2 MiB）：`icons/**` 8 个位图 + `images/logo.png`、
-//! `ui-icons/**` 158 个文件 + `icon-themes/**` 1 037 个文件。这样"资源在 `gpui/assets` 下"
-//! 就是一条统一规则，不需要每加一批资源就改一次 `#[include]`。
+//! 嵌的是 `gpui/assets/**` **减去三套未接线的图标包**。`LitheAssets::iter().count()` 实测
+//! **270 个文件** = **269 个资源文件**（`icons/**` 7 个位图 + `images/logo.png` 1 个
+//! + `ui-icons/**` 157 个 SVG + `icon-themes/idea/**` 104 个文件）**+ 本目录根部的 `README.md`**
+//! （它也在 `#[folder]` 下面，所以也会被嵌）。资源本身合计 **3 200 771 字节（约 3.05 MiB）**
+//! ——`README.md` 的体积随文档编辑变化，不并进这个口径（`mod tests` 里的统计也按同样方式排除它）。
+//! 收窄前是 `gpui/assets/**` 全量 **1 203 个文件 / 8 561 207 字节（约 8.16 MiB）**。
+//! 这样"资源在 `gpui/assets` 下"就是一条统一规则，不需要每加一批资源就改一次 `#[include]`。
 //! 代价是二进制体积（SVG 压缩率高，实测影响见 `gpui/research/icon-asset-inventory.md` 的接线一节）。
-//! 如果将来只想带一部分，`#[include]` 是唯一的开关位置。
+//! 想再收窄范围，`#[exclude]` / `#[include]` 是唯一的开关位置（见 `LitheAssets` 的属性）。
+//!
+//! ### 为什么 `icon-themes/{lithe,pierre,symbols}` 已从内嵌范围排除
+//!
+//! 这三套（459 + 149 + 325 = 933 个文件 / 5 337 322 字节 / 约 5.09 MiB）**没有任何代码路径能取到**：
+//! 文件图标主题 id 是编译期常量
+//! `lithe_gpui_shared::icons::file_icon::ACTIVE_FILE_ICON_THEME = "idea"`（`file_icon.rs:72`），
+//! 主题映射表由 `include_str!` 在编译期读入（`file_icon.rs:89,216`），仓库里也没有任何运行期
+//! 枚举 `icon-themes/` 的代码（唯一的 `.list("")` 是本文件 `fallback_count` 那类启动诊断，不按主题取文件）。
+//! 所以那三套只是死载荷，用 `#[exclude]` 挡在二进制外。
+//! **磁盘上文件一个都没删**：将来做图标主题切换还要用它们。
+//!
+//! ⚠️ 要真正启用图标主题切换，得先做完前两步，再去掉对应的 `#[exclude]`：
+//! ① 把 `file_icon.rs` 从"编译期常量 + `include_str!`"改成运行期主题注册表（能按主题 id 取到各包
+//! `extension.json`）；② 让取图标的那一侧走 `LitheAssets::load(..)` / `list(..)`，而不是编译期内嵌的 JSON。
+//! 两步都做完之前去掉 `#[exclude]` 只会白占体积，没有任何行为变化。
+//! 本文件 `mod tests` 里的回归测试会在有人误删 `#[exclude]`、或把整包拷回来时失败。
 //!
 //! ## 与窗口 / 任务栏图标无关
 //!
@@ -50,7 +70,8 @@ use gpui_kit::{AssetSource, Result, SharedString};
 /// 内嵌 `gpui/assets/` 的 rust-embed 资产表。
 ///
 /// 路径键**相对 `gpui/assets/`**（例如 `ui-icons/idea/expui/general/search.svg`、
-/// `icons/search.svg`、`images/logo.png`），可以直接传给 `svg().path(..)` 或 `img(..)`。
+/// `icons/icon.ico`、`icon-themes/idea/extension.json`、`images/logo.png`），可以直接传给
+/// `svg().path(..)` 或 `img(..)`。
 ///
 /// `#[folder]` 必须是绝对路径字符串：crate 在 `gpui/crates/app`、资源在 `gpui/assets`，
 /// 相对写法 `../../assets` 在 rust-embed 里**不可靠**（它的 `get()` 直接把 `folder` 与
@@ -58,8 +79,16 @@ use gpui_kit::{AssetSource, Result, SharedString};
 /// 见 `rust-embed-impl-8.12.0/src/lib.rs:198-223`）。`$CARGO_MANIFEST_DIR` 插值由
 /// `interpolate-folder-path` 特性提供 —— 特性和 `gpui-kit-assets` 打开的是同一份
 /// （见 `Cargo.toml` 的注释）。
+///
+/// `#[exclude]` 是 rust-embed 的 1:1 + glob 开关（`include-exclude` 特性，`gpui-kit-assets`
+/// 已打开同一份；见 `rust-embed-impl-8.12.0/src/lib.rs:441-451` 与
+/// `rust-embed-utils-8.12.0/src/lib.rs:189-224`：`is_path_included = !exclude.matches && include.is_empty_or_matches`）。
+/// 可重复出现，只影响**编译期内嵌**，不动磁盘文件。理由见模块文档。
 #[derive(rust_embed::RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../assets"]
+#[exclude = "icon-themes/lithe/**"]
+#[exclude = "icon-themes/pierre/**"]
+#[exclude = "icon-themes/symbols/**"]
 pub struct LitheAssets;
 
 impl LitheAssets {
@@ -105,6 +134,38 @@ pub fn probe_len(path: &str) -> Option<usize> {
     }
 }
 
+/// 启动诊断 `S1_ASSETS` 探针用的路径清单 —— **只有这一处真源**。
+///
+/// `crates/app/src/main.rs` 的 `S1_ASSETS` 循环直接遍历它，本文件 `mod tests` 的
+/// `probe_paths_are_loadable_from_the_embedded_table` 也拿它做回归输入。两处共用同一个数组是
+/// 刻意的：探针路径与 `#[exclude]` / `#[include]` 是同一件事的两侧，写两份迟早漂移。
+///
+/// ⚠️ 这些键**必须**来自**我们内嵌的那张表**。历史回归：这里曾有一条
+/// `icons/settings.svg`，而 `gpui/assets/icons/**` 下只有 7 个位图（`icon.ico` / `icon.icns` /
+/// `icon.png` / `32x32.png` / `64x64.png` / `128x128.png` / `128x128@2x.png`），**一个 `.svg`
+/// 都没有**。⚠️ 它当年**没有**打 `MISSING` —— [`AssetSource::load`] 会回落到 gpui-kit 的
+/// Lucide，而那里**恰好也有** `icons/settings.svg`，于是探针拿到了 **586 字节**
+/// （真机日志见 `gpui/research/icon-asset-inventory.md:531`）：日志看着一切正常，
+/// 却完全没有证明"我们自己内嵌的键能用"。所以回归测试先断言路径在**内嵌表**里，
+/// 再断言 `load` 拿得到非空字节 —— 这两条缺一不可。
+///
+/// 五条路径覆盖四类**真的会被界面取**的资源：
+///
+/// 1. `ui-icons/**`：IDE 图标，明暗两套都要能取到（`shared/src/icons/idea.rs` 按主题二选一）；
+/// 2. `icons/icon.ico`：应用图标（PE 资源那份走 `crates/app/build.rs`，这一份是 `AssetSource` 侧）；
+/// 3. `icon-themes/idea/extension.json`：文件类型图标主题的**清单**，由 `file_icon.rs` 的
+///    `include_str!` 在编译期读入；
+/// 4. `icon-themes/idea/icons/expui/fileTypes/gitignore.svg`：主题里的一个**具体图标** —— 这条是
+///    "查找层算出的路径确实能 `load` 到字节"的证据。没有它，主题图标取不到字节时界面会
+///    **静默回落到 Lucide**（`FileIcon::render` 的 `else` 分支），截图上看不出区别。
+pub const PROBE_PATHS: &[&str] = &[
+    "ui-icons/idea/expui/general/settings.svg",
+    "ui-icons/idea/expui/general/settings_dark.svg",
+    "icons/icon.ico",
+    "icon-themes/idea/extension.json",
+    "icon-themes/idea/icons/expui/fileTypes/gitignore.svg",
+];
+
 impl AssetSource for LitheAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         // ① 我们自己的资源：编译期内嵌，路径名与 `gpui/assets/` 下的相对路径一一对应。
@@ -132,5 +193,183 @@ impl AssetSource for LitheAssets {
         paths.sort();
         paths.dedup();
         Ok(paths)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LitheAssets, PROBE_PATHS};
+    use gpui_kit::AssetSource as _;
+
+    /// 内嵌表的全部路径键（相对 `gpui/assets/`）。`iter()` 是编译期静态表，测试里读它很便宜。
+    fn embedded_paths() -> Vec<String> {
+        <LitheAssets as rust_embed::RustEmbed>::iter()
+            .map(|name| name.to_string())
+            .collect()
+    }
+
+    /// 回归：三套未接线的图标包不得再进二进制。
+    ///
+    /// 保护的是"整包被拷回来"或 `#[exclude]` 被误删/写错（例如把 `lithe` 拼成 `light`）这类回归：
+    /// 这两种情况都不会让任何测试或编译失败，只会让二进制静默多背约 5.09 MiB 死载荷。
+    #[test]
+    fn unwired_icon_themes_are_not_embedded() {
+        let paths = embedded_paths();
+        for prefix in [
+            "icon-themes/lithe/",
+            "icon-themes/pierre/",
+            "icon-themes/symbols/",
+        ] {
+            let leaked: Vec<&str> = paths
+                .iter()
+                .filter(|path| path.starts_with(prefix))
+                .map(String::as_str)
+                .collect();
+            assert!(
+                leaked.is_empty(),
+                "`{prefix}` 应该被 #[exclude] 挡在二进制外，但内嵌表里仍有 {} 个路径，例如 {:?}",
+                leaked.len(),
+                &leaked[..leaked.len().min(3)]
+            );
+        }
+    }
+
+    /// 回归：被代码真正引用的资源必须还在内嵌表里。
+    ///
+    /// 收窄 `#[exclude]` / `#[include]` 时最容易连坐删掉在用的那一批；那种回归的表现是
+    /// 文件树图标、exe 图标、品牌 logo **静默**变空白（`load` 回落失败只是 `Ok(None)`）。
+    /// 这四个路径分别代表四类在用资源，逐一钉住。
+    #[test]
+    fn wired_assets_are_still_embedded() {
+        let paths = embedded_paths();
+        for required in [
+            // 文件图标主题：`shared/src/icons/file_icon.rs` 的 `include_str!` 读它。
+            "icon-themes/idea/extension.json",
+            // UI 图标：`shared/src/icons/idea.rs` 里的常量路径之一。
+            "ui-icons/idea/expui/general/search.svg",
+            // exe / 窗口 / 任务栏图标（PE 资源走 `build.rs`，这一份是 AssetSource 侧）。
+            "icons/icon.ico",
+            // 品牌 logo。
+            "images/logo.png",
+        ] {
+            assert!(
+                paths.iter().any(|path| path == required),
+                "`{required}` 必须留在内嵌表里（当前内嵌 {} 个路径）",
+                paths.len()
+            );
+        }
+        // 反向保护：`icons/` 下只有位图，没有 `icons/search.svg` 这种 SVG。
+        assert!(
+            !paths.iter().any(|path| path == "icons/search.svg"),
+            "`icons/search.svg` 从不存在，内嵌表里出现它说明路径口径又漂移了"
+        );
+    }
+
+    /// 实测口径：把内嵌文件数、分组数与总字节数打出来，供人工核对模块文档里那组数字。
+    ///
+    /// 这里的数字是**刻意的变更检测器**：资源增减本来就要同步更新模块文档的口径，
+    /// 于是也让这条测试失败一次，强迫那个改动是有意的（而不是 `#[exclude]` 写错导致的静默漏嵌）。
+    /// 唯一放宽的是字节数——只钉"三套死载荷确实不在里面"这个大界限，不逐字复刻体积。
+    #[test]
+    fn embedded_range_stays_within_the_documented_envelope() {
+        let count = LitheAssets::embedded_count();
+        println!("LitheAssets::iter().count() = {count}");
+        println!(
+            "ui-icons/ = {}, icon-themes/idea/ = {}, icons/ = {}, images/ = {}",
+            LitheAssets::embedded_count_under("ui-icons/"),
+            LitheAssets::embedded_count_under("icon-themes/idea/"),
+            LitheAssets::embedded_count_under("icons/"),
+            LitheAssets::embedded_count_under("images/"),
+        );
+
+        // 内嵌范围只应是这四组 + 根目录的 `README.md`（它也在 `#[folder]` 下面）。
+        // 出现别的路径说明 `gpui/assets/` 下多了新目录，那要么该加 `#[exclude]`、要么该更新文档。
+        let known_groups = ["ui-icons/", "icon-themes/", "icons/", "images/"];
+        let paths = embedded_paths();
+        let ungrouped: Vec<&str> = paths
+            .iter()
+            .filter(|path| !known_groups.iter().any(|group| path.starts_with(group)))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            ungrouped,
+            vec!["README.md"],
+            "四组之外只允许存在根目录 `README.md`"
+        );
+
+        assert_eq!(
+            LitheAssets::embedded_count_under("icon-themes/"),
+            104,
+            "只应剩 `icon-themes/idea/**` 这 104 个文件"
+        );
+        assert_eq!(
+            LitheAssets::embedded_count_under("ui-icons/"),
+            157,
+            "`ui-icons/**` 应当全量内嵌"
+        );
+        assert_eq!(
+            LitheAssets::embedded_count_under("icons/"),
+            7,
+            "`icons/**` 只有 7 个位图"
+        );
+        assert_eq!(
+            LitheAssets::embedded_count_under("images/"),
+            1,
+            "`images/**` 只有品牌 logo 一个文件"
+        );
+        assert_eq!(count, 270, "收窄后的内嵌总数（269 个资源 + 根 `README.md`）");
+
+        // 本 crate 没有打开 rust-embed 的 `compression` 特性，所以内嵌字节数 == 源文件长度之和，
+        // 可以直接用 `get()` 实测。这里**排除根部 `README.md`**：它就是文档本身，体积随编辑变化，
+        // 混进来会让"资源总量"这个口径每天都在动。打印出来是为了让模块文档里那组数字可核对。
+        let resource_bytes: usize = <LitheAssets as rust_embed::RustEmbed>::iter()
+            .filter(|name| name.as_ref() != "README.md")
+            .filter_map(|name| {
+                <LitheAssets as rust_embed::RustEmbed>::get(&name).map(|file| file.data.len())
+            })
+            .sum();
+        println!(
+            "embedded resource bytes = {resource_bytes} ({:.2} MiB)",
+            resource_bytes as f64 / 1_048_576.0
+        );
+        // 三套死载荷本身就是 5 337 322 字节，排除后总量必须明显低于这个数。
+        assert!(
+            resource_bytes < 5_000_000,
+            "内嵌资源字节数 {resource_bytes} 说明三套死载荷至少有一套又进来了（它们合计 5 337 322 字节）"
+        );
+    }
+
+    /// 回归：`S1_ASSETS` 探针指的**每一条**路径都必须来自**我们内嵌的那张表**，且能取到字节。
+    ///
+    /// 保护的是"诊断自己失信"这一类回归（两类触发方式，都不会让编译或别的测试失败）：
+    ///
+    /// 1. 探针路径写错 —— 历史上就有 `icons/settings.svg`（`gpui/assets/icons/**` 下只有
+    ///    7 个位图，一个 `.svg` 都没有）；
+    /// 2. `#[exclude]` / `#[include]` 改动把探针要用的那一批挡在了内嵌表外
+    ///    （例如把 `icon-themes/idea/**` 也排除掉）。
+    ///
+    /// ⚠️ **只断言 `load` 非空是不够的**（本轮反向验证实测踩到）：[`LitheAssets::load`] 会回落
+    /// `gpui_kit::assets::AllAssets`，而 Lucide 那 1 830 个字形里**就有** `icons/settings.svg`
+    /// —— 于是那条写错的探针**经回落拿到了 586 字节**（真机日志见
+    /// `gpui/research/icon-asset-inventory.md:531`）：既不打 `MISSING`、也不让任何测试失败，
+    /// 却完全没证明"我们内嵌的键能用"。所以这里先断言路径在**内嵌表**里（`iter()` 的静态表），
+    /// 再走真正的 [`AssetSource::load`]（与 `probe_len` 同一条路）确认拿到非空字节。
+    /// 无 sleep、无文件系统访问。
+    #[test]
+    fn probe_paths_are_loadable_from_the_embedded_table() {
+        let paths = embedded_paths();
+        for &path in PROBE_PATHS {
+            assert!(
+                paths.iter().any(|embedded| embedded == path),
+                "`{path}` 不在 LitheAssets 的内嵌表里（当前内嵌 {} 个路径）—— 这种探针要么经 \
+                 Lucide 回落拿到字节、要么永远打 MISSING，两者都证明不了我们的键能用",
+                paths.len()
+            );
+            let bytes = LitheAssets
+                .load(path)
+                .unwrap_or_else(|error| panic!("`{path}` load 报错：{error}"))
+                .unwrap_or_else(|| panic!("`{path}` 在内嵌表里，但 `load` 取不到字节"));
+            assert!(!bytes.is_empty(), "`{path}` 取到了 0 字节，等于取不到");
+        }
     }
 }

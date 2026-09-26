@@ -626,10 +626,16 @@ fn main() {
     gpui_kit::application()
         // 资源源分两层（`src/assets.rs`）：
         //
-        // 1. **我们自己搬进来的资源**（`gpui/assets/**`，用 `rust-embed` 编译期内嵌）：
-        //    `ui-icons/**`（157 个 IntelliJ `expui` SVG + 1 个旧前端生成物）、
-        //    `icon-themes/**`（4 套文件类型图标包，1 027 个 SVG）、`icons/**` 与
-        //    `images/logo.png`（应用图标/brand 图）。
+        // 1. **我们自己搬进来的资源**（`gpui/assets/**`，用 `rust-embed` 编译期内嵌）。
+        //    实测内嵌 **270 个文件**（= 269 个资源文件 + 本目录根部的 `README.md`），
+        //    资源本身合计 **3 200 771 字节（约 3.05 MiB，不含 `README.md`）**，按目录分四组：
+        //    `ui-icons/**`（157 个 IntelliJ `expui` SVG）、`icon-themes/idea/**`（104 个文件，
+        //    文件图标主题 id 是编译期常量 `ACTIVE_FILE_ICON_THEME = "idea"`）、`icons/**`
+        //    （7 个位图）、`images/logo.png`（品牌图）。
+        //    ⚠️ `icon-themes/{lithe,pierre,symbols}` 三套（459 + 149 + 325 = 933 个文件 /
+        //    5 337 322 字节，约 5.09 MiB）已被 `#[exclude]` 挡在二进制外，**磁盘上一个文件
+        //    都没删**（将来做图标主题切换还要用）；收窄前 `gpui/assets/**` 全量是 1 203 个文件。
+        //    口径与理由见 `src/assets.rs` 的模块文档。
         // 2. **回落 gpui-kit 的全量 Lucide 字形**（1830 个，`gpui_kit::assets::AllAssets`）。
         //
         // ⚠️ 只能 `with_assets` **一次**：它签名是 `impl AssetSource`，第二次调用是**覆盖**
@@ -661,20 +667,18 @@ fn main() {
                     assets::LitheAssets::embedded_count_under("ui-icons/"),
                     assets::LitheAssets::fallback_count()
                 );
-                // 关键路径探针：证明 `AssetSource::load` 真的能取到我们清单里写的那个键
-                // （`ui-icons/idea/expui/general/settings.svg`）。只是 print 一批路径名是
-                // 不够的 —— 名字对但 `load` 语义错（例如回落把 Err 折叠成 Ok(None) 之后
-                // 上层当成"空 SVG"）时，界面会**静默画不出东西**。
-                for probe in [
-                    "ui-icons/idea/expui/general/settings.svg",
-                    "ui-icons/idea/expui/general/settings_dark.svg",
-                    "icons/settings.svg",
-                    // 文件类型图标主题（`icon-themes/idea/**`，任务 B 的接线点）：这一条是
-                    // "查找层算出的路径确实能 `load` 到字节"的证据。没有它，主题图标取不到
-                    // 字节时界面会**静默回落到 Lucide**（`FileIcon::render` 的 `else` 分支），
-                    // 截图上看不出区别 —— 这正是 S1_ASSETS 存在的理由。
-                    "icon-themes/idea/icons/expui/fileTypes/gitignore.svg",
-                ] {
+                // 关键路径探针：证明 `AssetSource::load` 真的能取到我们清单里写的那些键。
+                // 只是 print 一批路径名是不够的 —— 名字对但 `load` 语义错（例如回落把 Err 折叠成
+                // Ok(None) 之后上层当成"空 SVG"）时，界面会**静默画不出东西**。
+                //
+                // ⚠️ 路径清单的真源是 `assets::PROBE_PATHS`（**唯一一处**）：这里遍历它，
+                // `src/assets.rs` 的 `probe_paths_are_loadable_from_the_embedded_table`
+                // 也用它做回归输入 —— 那条测试同时要求"路径在我们内嵌的表里"与"`load`
+                // 拿得到非空字节"。只钉后者是不够的：`LitheAssets::load` 会回落 Lucide，
+                // 而 Lucide 里恰好也有 `icons/settings.svg` —— 那条写错的探针当年就是
+                // **经回落拿到 586 字节**（`gpui/research/icon-asset-inventory.md:531`），
+                // 日志看着正常，其实一点都没证明我们的键能用。
+                for &probe in assets::PROBE_PATHS {
                     let hit = assets::probe_len(probe);
                     eprintln!(
                         "S1_ASSETS probe path={probe} bytes={}",

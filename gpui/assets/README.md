@@ -280,3 +280,88 @@ TOTAL src=1194 bad=0 extra=0
 文件数 158 → **157**、总量 1 195 → **1 194**、字节数 150 309 / 5 631 728 → **130 936 / 5 612 355**
 （差额 19 373 B 正好是那份 TS）。真源 `windows/tauri/src/ui/icons/` 下那份仍在（只读，未动），
 第 7.2 节脚本因此按文件名在两侧一起排除，见那里的 `$excludedNames`。
+
+---
+
+# 8. 谁在用 / 谁没接线（内嵌范围收窄记录）
+
+本节是**第 1–7 节之后的状态盘点**，不改动前面任何历史记录与 sha256 表。回答两个问题：
+本目录里每一组资源**有没有代码路径能取到**，以及没有的那几组现在**是不是还进二进制**。
+
+## 8.1 逐组实测与接线状态
+
+数字用 `Get-ChildItem -Recurse -File` + `Measure-Object Length -Sum` **实测**（不是估算），与
+`gpui/crates/app/src/assets.rs` 的 `LitheAssets::iter().count()`（收窄后 270）互相印证。
+"是否内嵌"指**是否进 `Lithe.exe` 的 rust-embed 静态表**——磁盘上文件一个都没少。
+
+| 子目录 / 文件 | 文件数 | 字节数 | 约 | 代码引用情况 | 本次是否内嵌 |
+| --- | ---: | ---: | ---: | --- | --- |
+| `icon-themes/idea/**` | 104 | 144 097 | 0.14 MiB | **在用**：`gpui/crates/shared/src/icons/file_icon.rs:72` 的 `ACTIVE_FILE_ICON_THEME = "idea"` + `:89` 的 `include_str!` 读 `extension.json` | 是 |
+| `icon-themes/lithe/**` | 459 | 703 513 | 0.67 MiB | **零引用** | **否（`#[exclude]`）** |
+| `icon-themes/pierre/**` | 149 | 122 415 | 0.12 MiB | **零引用** | **否（`#[exclude]`）** |
+| `icon-themes/symbols/**` | 325 | 4 511 394 | 4.30 MiB | **零引用** | **否（`#[exclude]`）** |
+| `ui-icons/idea/**` | 157 | 130 936 | 0.13 MiB | **在用**：`gpui/crates/shared/src/icons/idea.rs` 的 79 个常量路径指向这里 | 是 |
+| `icons/**` | 7 | 2 115 156 | 2.02 MiB | **在用**：`gpui/crates/app/build.rs:1,16` + `lithe.rc:22` 把 `icons/icon.ico` 嵌成 PE 资源 ID 1（其余 6 个 `32x32/64x64/128x128/128x128@2x.png`、`icon.png`、`icon.icns` 目前**没有**引用点，是窗口/任务栏/macOS 打包的备用导出） | 是 |
+| `images/logo.png` | 1 | 810 582 | 0.77 MiB | **保留内嵌**：`gpui/crates/workbench/src/project_menu.rs:37,40` 明确写"真源那个触发器画 `/logo.png`，本侧改画徽标"——即当前**没有** `img("images/logo.png")` 调用点，品牌 logo 的接线（欢迎页/标题栏）属后续任务 | 是 |
+| `README.md`（本文件，根目录） | 1 | 随文档编辑变化 | — | 自身文档，也在 `#[folder]` 下面，所以**也会被嵌进二进制** | 是 |
+| **合计** | **1 203** | **8 561 207** | **8.16 MiB** | | 收窄后内嵌 **269 个资源 + 根 `README.md` = 270 个**，资源合计 **3 200 771 字节（3.05 MiB）** |
+
+三套零引用包合计 **933 个文件 / 5 337 322 字节（5.09 MiB）**，占本目录 62% 的体积、被无条件内嵌
+——直到本节这次收窄。
+
+⚠️ 一个口径细节：`LitheAssets::iter().count()` 收窄后是 **270**，比"269 个资源"多 1——那 1 个就是本文件
+（`README.md` 也在 `#[folder]` 下）。`gpui/crates/app/src/assets.rs` 的测试因此**把 `README.md` 排除在
+字节统计之外**，否则"资源总量"会随文档编辑天天变。
+
+## 8.2 为什么那三套"没有任何代码路径"
+
+不是"暂时没找到引用点"，而是**结构上没有运行期入口**：
+
+- 文件图标主题 id 是**编译期常量**：`file_icon.rs:72` 的 `ACTIVE_FILE_ICON_THEME = "idea"`。
+- 主题映射表是**编译期内嵌**：`file_icon.rs:89` 的 `include_str!("../../../../assets/icon-themes/idea/extension.json")`，
+  `:216` 的 `FileIconTheme::from_json(ACTIVE_FILE_ICON_THEME, IDEA_EXTENSION_JSON)` 只吃这一个常量。
+- `gpui/**` 下**没有任何运行期枚举 `icon-themes/` 的代码**：唯一的 `.list("")`（`assets.rs` 启动诊断）
+  只是打印数量，不按主题取文件。
+
+所以 `lithe` / `pierre` / `symbols` 即使内嵌进去，也没有一行代码能把它们取出来。
+处理方式是 `gpui/crates/app/src/assets.rs` 里给 `#[derive(rust_embed::RustEmbed)]` 加三条
+
+```rust
+#[exclude = "icon-themes/lithe/**"]
+#[exclude = "icon-themes/pierre/**"]
+#[exclude = "icon-themes/symbols/**"]
+```
+
+**只挡编译期内嵌，不动磁盘**：`gpui/assets/icon-themes/{lithe,pierre,symbols}/**` 的 933 个文件
+**全部原样保留在仓库里**（这同时是刻意的——将来做图标主题切换还要用它们，见第 8.4 节）。
+同文件里的 `mod tests` 加了回归测试：内嵌表里出现这三组任一前缀即失败，同时钉住
+`icon-themes/idea/extension.json`、`ui-icons/idea/**` 的 svg、`icons/icon.ico`、`images/logo.png`
+必须仍在表里——避免"收窄范围"把在用资源一起收走导致文件树图标静默消失。
+
+## 8.3 `material/` 与 `minimal/` 从未被拷进 gpui
+
+真源 `windows/tauri/src/extensions/bundled/icon-themes/` 下有 **6 套**主题，gpui 只搬了 **4 套**
+（见 7.1 / 7.3 节），另外两套**从来没进过本目录**，因此这次也没有任何东西可排除：
+
+| 真源目录 | 状态 | 说明 |
+| --- | --- | --- |
+| `icon-themes/material/**` | **未拷入** | 2 个文件（`extension.json` 526 237 B + `LICENSE` 1 070 B）：**它的美术全部内联在 `extension.json`** 的 `iconDefinitions` 里（`"folder": "<svg …>"` 这样的字符串），**没有任何 `.svg` 文件**。所以"拷文件树"这条路对它不成立，要用得改成解析 JSON 里的 SVG 字符串。 |
+| `icon-themes/minimal/**` | **未拷入** | 3 个 SVG（`file.svg` / `folder.svg` / `folder-open.svg`，合计 947 B）：真源侧 `bundled-icon-theme-assets.ts` 的 glob 是 `{idea,material,pierre,symbols}`，不含 `minimal`，属未接线的死资源。 |
+
+即：本目录里 `icon-themes/` 只有 `idea` / `lithe` / `pierre` / `symbols` 四套，
+"6 套里少 2 套"是**第 7 节那次提取的既成事实**，不是本次收窄造成的。
+
+## 8.4 恢复 / 启用主题切换的前置条件
+
+**在子目录里加回文件（或去掉 `#[exclude]`）本身不会带来任何行为变化**——现在没有任何代码能按主题取图标。
+真要启用图标主题切换，顺序必须是：
+
+1. 把 `gpui/crates/shared/src/icons/file_icon.rs` 从"编译期常量 + `include_str!`"改成
+   **运行期主题注册表**：能按主题 id 找到对应包并解析它的 `extension.json`
+   （`material` 还要额外支持"美术内联在 JSON 里"这条路径，见 8.3）。
+2. 让取图标那一侧走 `LitheAssets::load(..)` / `list(..)` 取 SVG（含 `icons/light/**` 这类变体），
+   而不是只认一个编译期内嵌的 JSON。
+3. 最后才去掉 `assets.rs` 里对应的 `#[exclude]`，并同步更新第 8.1 节的数字与 `assets.rs` 模块文档里
+   `LitheAssets::iter().count()` 的实测值（`assets.rs` 的回归测试会在数字对不上时失败，这是有意的）。
+
+在这三步做完之前去掉 `#[exclude]`，唯一的效果是二进制白多背 **5.09 MiB**。
