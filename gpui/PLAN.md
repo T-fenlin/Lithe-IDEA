@@ -943,11 +943,61 @@ Lithe 仓库自己的工作树里 —— 于是任何直接调排除守卫的测
 一律先在自己的临时目录里 `git init` 来限制作用域。`non_repository_is_skipped_silently`
 在当前环境下会**明确跳过**（它就要求一个不在任何工作树里的目录），见"未能确认"。
 
+#### 接进产品：打开即建（谁在什么时候调它）
+
+产品决策是**打开任何一个目录就建 `.lithe/project.json`，无条件**——**不是**"按需生成
+（识别出项目类型 / 用户点运行 / 显式保存设置）"。调用点是 `ShellWorkspace::new` 里的
+`prepare_workspace_config`：
+
+```text
+main.rs（启动，argv 给的根）────────────────────┐
+                                              ├─→ ShellWorkspace::new
+request_open_project → execute_project_open → rebuild_project_window（换根）┘        │
+        ↑ 选择器 / 项目下拉里的最近项目 / --open-project 探针三条入口都汇到这里        ↓
+                                                            prepare_workspace_config
+                                                                      ↓
+                                                            resolve_project_id（后台）
+```
+
+`ShellWorkspace::new` 全仓库只有这两个调用点，所以接一处就覆盖所有"打开"。**唯一覆盖不到的是
+`OpenDestination::NewWindow`**：它今天**什么都不打开**（多窗口整批暂缓，只报一句"尚未接入"），
+所以没有漏；将来多窗口落地时它会新建窗口、同样走 `new`，那时自动被覆盖。
+
+顺序上**不**自己去拼 `ensure_project_dir_excluded` + 写文件：那会重实现"先确保不共享、再落盘"
+这条保证，它由 `save_project_manifest` 内部负责。
+
+行为约定：
+
+| 情况 | 表现 |
+| --- | --- |
+| 首次打开（无 `project.json`） | 生成 UUID v4 → **先确保 `.lithe/` 不进 Git** → 原子落盘；日志依次 `excluded` → `manifest_saved` → `project_id_created` → `shell_identity` |
+| 再次打开（已有 `id`） | **只读不写**（`id` / 字节数 / mtime 三者都不变），日志只有 `shell_identity … source=manifest`，**没有** `project_id_created` |
+| 非 Git 目录 | 守卫返回 `NotARepository`（`manifest_saved … exclusion=NotARepository`），**清单照建**、不创建任何忽略文件、不打错误诊断。**打开任何目录都会多出一个 `.lithe/`**，这是明确接受的代价 |
+| `.lithe` 建不出来 / 排除写不了 / Core 报错 | 只留 `S1_WORKSPACE_CONFIG shell_identity_failed`，**窗口照常打开、项目照常可用**——失败绝不影响打开 |
+| 文件版本比程序新 | 回落到 Core 路径身份，**不覆盖**用户的文件 |
+
+**不阻塞 UI 线程**：阻塞的那一段（会起 `git rev-parse` 子进程）走 `background_spawn`，外层任务
+`detach` 掉——它不碰实体，所以换根把外壳丢掉也不影响。
+
+端到端（本批，`cargo check --workspace --all-targets` exit=0、`cargo test --workspace` **372 通过
+/ 0 失败**、`verify-test-stability.ps1` 通过）：
+
+- **Git 仓库**：临时仓库 `git init` + 一次提交 → 首次四行日志齐全；`.lithe/project.json` 的
+  `version=1`、`id` 是 UUID v4；排除文件里 `.lithe/` **恰好一行**；`git status --porcelain`
+  **完全为空**。二次启动 `id` / 字节数 / mtime **三者都不变**、排除仍一行、无 `project_id_created`。
+- **非 Git 目录**：用 `GIT_CEILING_DIRECTORIES` 挡住向外层查找后 `exclusion=NotARepository`，
+  `.lithe/project.json` 建出来了，且**没有**创建 `.git` 或排除文件、**没有**错误诊断。
+- 两次 e2e 之后都确认真实仓库的 `.git/info/exclude` **未被污染**、无残留 `Lithe` 进程、临时目录已删。
+
+⚠️ 这一层**没有单测**：`ShellWorkspace::new` 需要真实 `Window`，而仓库既有口径就是"测试不构造它"
+（`gpui/crates/settings/src/identity.rs` 里已登记）。证据来自上面的端到端；底下那一层
+（`shared::workspace_config`）已有 16 条真实 Git 仓库测试。
+
 #### 未能确认 / 还欠的
 
-1. **"非 Git 仓库 → 静默跳过"的真实路径没有跑到**：需要"一个既在仓库外又可写"的目录，而本机
-   Rust 测试进程只能写仓库工作区内。当前覆盖是确定性的单测（`core_client` 里
-   `is_not_a_repository` 的两个条件）+ 该用例在条件满足时的真实断言。
+1. **"非 Git 仓库 → 静默跳过"在单测里仍然跑不到**：它要求"一个既在仓库外又可写"的目录，而本机
+   Rust 进程只能写仓库工作区内，所以那条用例会明确跳过。**但产品路径已经验过**：应用进程 +
+   `GIT_CEILING_DIRECTORIES` 的端到端拿到了 `exclusion=NotARepository`（见上一节）。
 2. 共享动作**没有界面入口**（本批只要可调用函数），所以"用户点一下完成共享"这条端到端没跑。
 3. `.lithe/settings.json` / `settings.local.json`（工作区对全局键的覆盖层）**尚未有读写方** ——
    属于增量 4/5。

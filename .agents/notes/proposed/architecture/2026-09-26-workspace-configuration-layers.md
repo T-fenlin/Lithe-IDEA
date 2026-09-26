@@ -259,11 +259,55 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 可调用的共享动作。尚未落地的是**各成员文件自己的读写方**——`.lithe/settings.json` 覆盖层
 （增量 4/5）、会话状态（增量 8）等仍然没有 writer。
 
-⚠️ **这套能力还没有接进产品**：`save_project_manifest` / `ensure_project_dir_excluded` /
-`share_project_config` 的调用方**只有它们自己的测试**。守卫按设计必须在"第一次往 `.lithe/`
-写文件"之前调用，而**"第一次写发生在什么时候"是未决的产品问题**：原始需求说的是"通过 Lithe
-打开就生成 `.lithe`"，这与"按需生成（识别出项目类型 / 用户点运行 / 显式保存设置）"不是一回事。
-接线前必须先定这件事，否则会先把目录撒进每一个被打开过的文件夹里。
+### 打开即建（产品决策）
+
+**打开任何一个目录就建立它的 `.lithe/project.json`，无条件。** 这是明确的产品决策，**不是**
+"按需生成（识别出项目类型 / 用户点运行 / 显式保存设置）"：用户在两者之间选了前者。
+
+落地形式是 `ShellWorkspace::new` 里的一次后台解析（`resolve_project_id`）。选这里是因为它是
+**所有"打开"路径的公共收口**：`ShellWorkspace::new` 全仓库只有两个调用点 —— `main.rs` 的启动
+（argv 给的根）与 `rebuild_project_window` 的 `replace_root`（选择器、项目下拉里的最近项目、
+探针三条入口都经 `request_open_project` → `execute_project_open` 汇到这里）。接一处就够了，
+不需要给每个入口各接一次。
+
+**"先确保不共享、再写清单"这条顺序由 `save_project_manifest` 内部保证**，调用方不需要记得先调守卫
+（自己拼 `ensure_project_dir_excluded` + 写文件会重实现一遍顺序保证，那是禁止的）。
+
+连带后果（都是明确接受的，不是疏漏）：
+
+- **非 Git 目录也会多出一个 `.lithe/`**：守卫返回 `NotARepository` 后清单照建。
+- 打开一个目录会**产生磁盘写入**，其中包含对 `.git/info/exclude` 的一次写入——这正是第七节里
+  那条"偏离既有约束的定向例外"。
+- **失败绝不让打开项目失败**：`.lithe` 建不出来、排除写不了、Core 报错，都只留
+  `S1_WORKSPACE_CONFIG` 诊断；窗口照常打开、项目照常可用。
+- 解析走**后台执行器**（`background_spawn`），因为这条链会调 Core（`git.write` 内部要
+  `git rev-parse`，是子进程），不允许落在 UI 线程上。
+
+**一个待补的实现缺口（不是这条决策的后果，但被它放大）**：`.lithe/.gitignore` **至今没有 writer**。
+刚打开的仓库里这不是问题 —— 整个 `.lithe/` 被本机排除挡着。但一旦有人执行共享、移除那一行，
+本机层文件（`*.local.json`）就会重新出现在 `git status` 里，因为第二道闸还不存在。设计上明确要求
+"Lithe 必须**始终**维护 `.lithe/.gitignore`"（第七节），所以这是要补的实现，应当与增量 4/5
+（工作区覆盖层落地、第一次真的写出 `*.local.json`）一起做。
+
+**唯一覆盖不到的路径**：`OpenDestination::NewWindow`。它今天什么都不打开（多窗口整批暂缓，
+`execute_project_open` 里只报一句"尚未接入"），所以没有漏；将来多窗口落地时它会新建窗口、
+同样走 `ShellWorkspace::new`，那时自动被覆盖。
+
+### 排除条目用未锚定的 `.lithe/`（已决定的取舍）
+
+写进本机排除文件的是**未锚定**的 `.lithe/`（`workspace_config_exclude_pattern()`）。Git 里不带
+前导 `/` 的模式**在任何深度都匹配**，所以代价是具体的：把 `<repo>/subdir` 当项目打开时，那一行
+同时也忽略了 `<repo>/.lithe/` 以及仓库里任何嵌套的 `.lithe/`；依次打开同一个仓库的多个子目录时，
+彼此的工作区配置会被互相忽略。**共享**其中某一个时（`unexcludePatterns` 按同一 literal 精确删行）
+会把其他工作区的排除行一起去掉 —— 这是这个取舍唯一真正会咬人的地方。
+
+**为什么不改成锚定的写法**：唯一正确的锚定形态是"仓库根 + 工作区相对路径"（根 == 仓库根时
+`/.lithe/`，根是子目录时 `/subdir/.lithe/`），而要知道仓库根就得先问一次 Git（多一次 Core 往返）。
+**只把模式锚定到排除文件所在目录（`/.lithe/`）是错的**：那对"把子目录当项目打开"的情形会去忽略
+`<repo>/.lithe/` 而不是 `<repo>/sub/.lithe/`，等于在真正需要它的地方失效。
+
+**什么时候该改**：当一个仓库里同时存在多个 Lithe 工作区、且其中至少一个需要共享配置时。
+在那之前保持现状：它隐藏的都是 `.lithe/` 目录，而"默认不共享"本就是这些目录的默认语义。
 
 | 已完成 | 证据 |
 | --- | --- |
@@ -277,6 +321,7 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 | `project.json` 的稳定身份（UUID v4，回落 Core 路径身份） | `resolve_project_id`；测试 `a_new_workspace_gets_a_generated_uuid_identity`、`newer_manifest_version_falls_back_to_the_path_identity` |
 | 写 `.lithe/` 之前**先确保不共享**（写 `.git/info/exclude` 的 `.lithe/`，位置由 Core 解析） | `ensure_project_dir_excluded`；**真实临时仓库**端到端：`git status` 无 `.lithe`、排除文件恰好一行、幂等、别人规则逐字保留 |
 | 显式共享：移除排除行 + 只暂存可共享成员 | `share_project_config`、`is_shareable_member`；端到端断言 `*.local.json` 与 `run/classes/**` 未进暂存区 |
+| **接进产品：打开即建**（`ShellWorkspace::new` 的后台解析，失败不影响打开） | `workbench::workspace::prepare_workspace_config`；端到端两组（Git 仓库 / 非 Git 目录）见下 |
 
 验证结果（增量 1）：
 
@@ -292,6 +337,26 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 - `verify-test-stability.ps1` 静态 gate **通过**
 - 端到端（真实临时 Git 仓库）见上表两行；脚本细节与限制写在 `gpui/PLAN.md` §8.9
 
+验证结果（接进产品 · 打开即建）：
+
+- `cargo check --workspace --all-targets`：**exit=0**
+- `cargo test --workspace`：**372 通过 / 0 失败**（其中 `workspace_config` 16 条）
+- `verify-test-stability.ps1` 静态 gate：**通过**
+- **端到端 · Git 仓库**（临时仓库 `git init` + 一次提交，配置目录指到仓库内）：
+  首次 `excluded … pattern=.lithe/` → `manifest_saved bytes=67 exclusion=Ensured` →
+  `project_id_created id=4be89b14-…` → `shell_identity … source=manifest`；
+  `.lithe/project.json` 存在、`version=1`、`id` 是 UUID v4；本机排除文件里 `.lithe/` **恰好一行**；
+  `git status --porcelain` **完全为空**（连 `.lithe` 都没有）。二次启动：`id` / 字节数 / mtime
+  **三者都不变**、排除仍是一行、日志里**没有** `project_id_created`（证明没有无谓改写）。
+- **端到端 · 非 Git 目录**（用 `GIT_CEILING_DIRECTORIES` 挡住向上找到外层仓库）：
+  `manifest_saved … exclusion=NotARepository` → `project_id_created` → `.lithe/project.json` 建出来了，
+  且**没有**创建任何 `.git` 或排除文件、**没有** `exclude_failed` / `shell_identity_failed`。
+- 两组跑完都确认：真实 Lithe 仓库的 `.git/info/exclude` 仍只有 git 默认注释（**零污染**）、
+  无残留 `Lithe` 进程、临时目录已删。
+- 这一层**没有单测**：`ShellWorkspace::new` 需要真实 `Window`，而仓库既有口径就是"测试不构造它"
+  （`gpui/crates/settings/src/identity.rs` 里已登记）。所以证据来自上面两组端到端，
+  底下那一层（`shared::workspace_config`）已有 16 条真实 Git 仓库测试。
+
 ⚠️ **环境注意（与代码无关，但会误导后来者）**：这台机器的 `%TEMP%` 对 Rust 测试进程返回
 `PermissionDenied`，仓库外的 `D:\` 与 `%LOCALAPPDATA%` 同样被拒；于是 `lithe-gpui-editor` 里
 5 个使用临时目录的测试会失败（`buffer.rs:390` 的 `create_dir_all`），且 rustdoc 的 doctest 会因为
@@ -299,6 +364,11 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 代价是"临时目录"落在 Lithe 仓库自己的工作树里 —— 所以任何直接调排除守卫的测试都必须先在自己的
 临时目录里 `git init`，否则会通过 `git rev-parse` 找到**外层**仓库、把 `.lithe/` 写进真实检出的
 `.git/info/exclude`。
+
+**这条限制对应用进程同样成立**（不只是测试进程）：把根指到 `%TEMP%` 或仓库外的目录时，
+`create_dir_all` 报 `os error 5`，而写既有文件可能"看起来成功却没落盘"。所以接进产品这一步的
+端到端必须在 `<repo>/.artifacts/` 下建临时仓库；非 Git 那一组用 `GIT_CEILING_DIRECTORIES`
+把向上查找挡住，否则会误判成"在仓库里"并污染外层仓库的排除文件。
 
 **未能执行的验证**：测试计时 harness 没有 gpui scope（`test-stability-windows.ps1` 只支持
 `Frontend` / `WindowsRust` / `SharedRust`），所以这次拿不到 gpui 的逐测试计时报告。

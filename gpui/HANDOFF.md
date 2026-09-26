@@ -164,8 +164,22 @@
   - ⚠️ 跑 gpui 测试必须把 `TEMP`/`TMP` 指到仓库内可写目录（本机 `%TEMP%` 对 Rust 测试进程返回
     `PermissionDenied`）；副作用是"临时目录"落在本仓库工作树内，所以测试夹具一律先自己
     `git init`，否则守卫会去改**真实检出**的 `.git/info/exclude`。
-  - **未做**：共享动作的界面入口；`.lithe/settings.json` 覆盖层（增量 4/5）；"非 Git 仓库静默跳过"
-    的真实路径（本机找不到"仓库外又可写"的目录，改由确定性单测覆盖分类逻辑）。
+  - **未做**：共享动作的界面入口；`.lithe/settings.json` 覆盖层（增量 4/5）。
+- **`.lithe/` 已经真的接进产品了：打开即建**（见 `PLAN.md` §8.9 的「接进产品」一节）。
+  产品决策是**打开任何一个目录就建 `.lithe/project.json`，无条件**（不是按需生成）。调用点是
+  `ShellWorkspace::new` 里的 `prepare_workspace_config` —— 它全仓库只有两个调用点（`main.rs`
+  的启动 + `rebuild_project_window` 的换根），所以一处覆盖所有"打开"；唯一覆盖不到的是
+  `OpenDestination::NewWindow`，而那条路今天什么都不打开。
+  - 首次打开：生成 UUID v4 → **先确保 `.lithe/` 不进 Git** → 原子落盘；再次打开只读不写
+    （`id`/字节数/mtime 三者不变，日志里没有 `project_id_created`）。
+  - **非 Git 目录也会多出一个 `.lithe/`**（`exclusion=NotARepository`，清单照建）——这是
+    "打开即建"的明确代价。
+  - **失败绝不影响打开**：建不出来只留 `S1_WORKSPACE_CONFIG shell_identity_failed`，窗口照常。
+    阻塞段走 `background_spawn`，不占 UI 线程。
+  - 端到端两组都跑了（Git 仓库：`git status` 完全为空 + 排除恰好一行；非 Git 目录用
+    `GIT_CEILING_DIRECTORIES` 挡住外层仓库），跑完确认真实仓库的 `.git/info/exclude` **未污染**。
+  - ⚠️ **端到端只能在仓库内做**：`%TEMP%` 与仓库外目录对**应用进程也**不可写
+    （`create_dir_all` 报 `os error 5`），所以临时仓库建在 `.artifacts/` 下并自己 `git init`。
 - 最近四批（都经主代理复核 + 交互级验证后提交）：`ebdf4885` 源代码管理 →
   `46d62f41` 设置「编辑器」「终端」页（顺手修掉 `persistence.rs`「写得出、读不回」的真 bug，
   见 `PLAN.md` §14.2，**以后加设置键必读**）→ `b740bdb4` 设置左栏 11 项 + 7 个明确空态 →

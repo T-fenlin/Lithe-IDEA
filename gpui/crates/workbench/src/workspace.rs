@@ -947,6 +947,13 @@ impl ShellWorkspace {
         // 却没有生效的那副假象。
         register_java_toolchain(cx);
 
+        // 建立这个工作区的 `.lithe/project.json` 身份（首次打开时生成 UUID 并落盘；
+        // 之后每次打开只读不写）。**打开即建、无条件**是一条产品决策，而
+        // `ShellWorkspace::new` 是所有"打开"路径的公共收口 —— 理由、失败语义、
+        // 以及"非 Git 目录也会多出一个 `.lithe/`"这个明确接受的代价，都写在
+        // [`prepare_workspace_config`] 的文档里。
+        prepare_workspace_config(root.clone(), cx);
+
         // 先建编辑区，再把它的弱引用交给项目树：点文件 → 打开到编辑区。
         let editor = cx.new(|cx| EditorPane::new(window, cx));
         // 阶段 10 第二批：打开项目时在后台起 Java 语言服务（= 生成 / 复用 JDT 索引缓存）。
@@ -3474,6 +3481,66 @@ fn java_toolchain_override_from(
 fn maven_settings_override_from(settings: &lithe_gpui_settings::Settings) -> Option<PathBuf> {
     let trimmed = settings.maven_settings_path.trim();
     (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
+}
+
+/// 解析（并在首次需要时落盘）本工作区的 `.lithe/project.json` 项目身份。调用点见 `ShellWorkspace::new`。
+///
+/// ## 为什么接在 `ShellWorkspace::new`
+///
+/// 产品决策是**打开即建、无条件**（设计真源：
+/// `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`）：
+/// 打开任何一个目录就建立它的 `.lithe/project.json`（带稳定 UUID 身份），写之前先确保
+/// `.lithe/` 进了本机排除文件。而 `ShellWorkspace::new` 是**所有"打开"路径的公共收口** ——
+/// 它全仓库只有两个调用点：`main.rs` 的启动（argv 给的根）与
+/// `rebuild_project_window` 的 `replace_root`（选择器、项目下拉里的最近项目、探针三条入口
+/// 都经 `request_open_project` → `execute_project_open` 汇到这里）。接在这一处，就不需要
+/// 给每个入口各接一次（多处接会重复调用）。
+///
+/// ⚠️ **唯一覆盖不到的路径**：`OpenDestination::NewWindow`。它今天**什么都不打开**
+/// （多窗口整批暂缓，`execute_project_open` 里只报一句"尚未接入"），所以没有漏。
+/// 将来多窗口落地时它会新建一个窗口、同样走 `ShellWorkspace::new`，那时自动被覆盖。
+///
+/// ## 顺序与失败语义
+///
+/// - **先确保不共享、再写清单**这条顺序由 `resolve_project_id` 内部保证（它走
+///   `save_project_manifest`），所以这里**不**自己去拼 `ensure_project_dir_excluded` ——
+///   那样会重实现一遍顺序保证。
+/// - ⚠️ **绝不能让打开项目失败**：`.lithe` 建不出来、排除写不了、Core 报错，都只留诊断
+///   （`S1_WORKSPACE_CONFIG` 前缀），窗口照常打开、项目照常可用。
+/// - **非 Git 目录是正常情况**：守卫返回 `NotARepository`，`.lithe/project.json` 照样建。
+///   代价是打开任何目录都会多出一个 `.lithe/`（含非 Git 目录），这是明确接受的产品选择。
+///
+/// ## 为什么不阻塞 UI 线程
+///
+/// 这条链会调 Core（`git.write` 内部要 `git rev-parse`，是子进程），所以阻塞的那一段走
+/// `background_spawn`；任务 detach 掉，外壳被换根丢掉时也不影响它（它不碰实体）。
+fn prepare_workspace_config(root: PathBuf, cx: &mut Context<ShellWorkspace>) {
+    cx.spawn(async move |_this, cx| {
+        let task_root = root.clone();
+        let identity = cx
+            .background_spawn(async move {
+                lithe_gpui_shared::workspace_config::resolve_project_id(&task_root)
+            })
+            .await;
+
+        match identity {
+            Ok(identity) => println!(
+                "S1_WORKSPACE_CONFIG shell_identity root={} id={} source={}",
+                root.display(),
+                identity.value(),
+                if identity.is_manifest_backed() {
+                    "manifest"
+                } else {
+                    "path"
+                }
+            ),
+            Err(error) => eprintln!(
+                "S1_WORKSPACE_CONFIG shell_identity_failed root={} error={error}",
+                root.display()
+            ),
+        }
+    })
+    .detach();
 }
 
 /// 把设置里的 JDK 与 Maven `settings.xml` 覆盖值登记给语言服务（调用点见 `ShellWorkspace::new`）。
