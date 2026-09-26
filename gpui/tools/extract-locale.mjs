@@ -454,6 +454,13 @@ const GPUI_ONLY_KEYS = [
       "B3（同上）。给**标题栏项目下拉**的「克隆仓库…」（那一行在 project_menu.rs，规格 §B3 的注明确把它收进这张占位表）。⚠️ 这一句**必须**这么写：能力已经在 Core 里（rust/lithe-core 的 git.write 命令含 clone，语义见 gpui/research/menu-open-prereqs.md），缺的是它外面那层界面 —— 写成「没有能力」是错的。真源那条恒可执行，catalog 里没有这句。",
   },
   {
+    key: "gpui.menuMissing.newProjectScaffolding",
+    zh: "尚未接入：缺项目脚手架生成（真机是新建目录 + 起终端跑 npm create）。",
+    en: "Not wired yet: project scaffolding is missing (Windows creates the directory and runs npm create in a terminal).",
+    reason:
+      "B3 那一批（同上；本轮补的第 17 组能力）。给**标题栏项目下拉**的「新建项目…」（那一行在 project_menu.rs，与 gpui.menuMissing.cloneUi 同一张面板）。事实依据：真机的新建项目是一条完整模态链路 —— createNewDirectory(destinationPath) → handleOpenFolderByPath → nextjs/vite 源再开一个终端跑脚手架命令（windows/tauri/src/features/project-picker/new-project-content.tsx:239-277），gpui 侧没有这条链路，所以那句「缺什么」说的是**能力本身不在**。⚠️ 与 gpui.menuMissing.cloneUi **不是**同一件事（那条说的是「能力已在 Core、只缺界面」），两句不许互相借用，所以它是独立一组、也是**第 17 组**（menu_bar.rs 的组数上界断言同步改到 17）。真源那条恒可执行，catalog 里没有这句。",
+  },
+  {
     key: "gpui.menuMissing.fileLifecycle",
     zh: "尚未接入：缺新建文件 / 空标签页所需的文件生命周期（无标题 buffer + 命名 + 落盘）。",
     en: "Not wired yet: the untitled-buffer lifecycle (create, name, save to disk) does not exist.",

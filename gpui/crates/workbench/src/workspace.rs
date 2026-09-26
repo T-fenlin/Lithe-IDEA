@@ -107,8 +107,8 @@ use crate::command_palette::{
     set_shell_focus,
 };
 use crate::menu_bar::{
-    MISSING_CLONE_UI, MenuAction, MenuBar, MenuRequest, Missing, diagnose_run as diagnose_menu_run,
-    mode_for, set_menu_bar, set_shell as set_menu_bar_shell,
+    MenuAction, MenuBar, MenuRequest, Missing, diagnose_run as diagnose_menu_run, mode_for,
+    set_menu_bar, set_shell as set_menu_bar_shell,
 };
 use crate::project_menu::{
     ProjectEntry, ProjectMenu, render as render_project_menu, set_project_menu,
@@ -2406,21 +2406,31 @@ impl ShellWorkspace {
         self.show_status_notice(missing.text(), cx);
     }
 
-    /// 项目下拉里「克隆仓库…」被点时的落点（B3）。
+    /// 项目下拉里**占位项**被点时的落点（B3 的「克隆仓库…」、B3 之后的「新建项目…」）。
     ///
-    /// ⚠️ 与菜单栏那 51 条占位项**同一句话**（[`MISSING_CLONE_UI`]），因为缺的是同一件事；
-    /// 但诊断前缀是 `S1_PROJECT_MENU`（那一行的 `action=cloneRepository` 与
-    /// `diagnose_actions` 的打开期诊断同一格式）。它不在 89 条菜单项里（真源把克隆仓库放在
-    /// **标题栏项目下拉**），所以不经过 [`MenuRequest`] 那条队列。
+    /// ⚠️ 与菜单栏那 51 条占位项**同一个口径**（都是 [`Missing`] 声明 → "尚未接入：缺 X"），
+    /// 但诊断前缀是 `S1_PROJECT_MENU`（那一行的 `action=<id>` 与 `diagnose_actions` 的打开期
+    /// 诊断同一格式）。这几条不在 89 条菜单项里（真源把它们放在**标题栏项目下拉**），
+    /// 所以不经过 [`MenuRequest`] 那条队列。
     ///
-    /// `pub(crate)`：调用点是 `crate::project_menu` 那一行动作的 `on_click`
+    /// `action_id` 是 [`crate::project_menu`] 的 `PanelAction::id()`；`missing` 是这一条缺的
+    /// **能力组**（「克隆仓库…」是 [`crate::menu_bar::MISSING_CLONE_UI`]，新建项目是
+    /// [`crate::menu_bar::MISSING_NEW_PROJECT_SCAFFOLDING`]）—— 一句话对应一种能力，
+    /// 与菜单栏那张表同一条规矩。
+    ///
+    /// `pub(crate)`：调用点是 `crate::project_menu` 那几行动作的 `on_click`
     /// （面板自己只有 `WeakEntity<ShellWorkspace>`，够不到 `&mut self`）。
-    pub(crate) fn report_clone_not_wired(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn report_panel_action_not_wired(
+        &mut self,
+        action_id: &'static str,
+        missing: Missing,
+        cx: &mut Context<Self>,
+    ) {
         eprintln!(
-            "S1_PROJECT_MENU action=cloneRepository state=not_wired missing={}",
-            MISSING_CLONE_UI.id
+            "S1_PROJECT_MENU action={action_id} state=not_wired missing={}",
+            missing.id
         );
-        self.show_status_notice(MISSING_CLONE_UI.text(), cx);
+        self.show_status_notice(missing.text(), cx);
     }
 
     /// 「此窗口」：**重建整个外壳**（见模块头的"为什么不能逐个 reset"）。

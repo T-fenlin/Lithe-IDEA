@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 62 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 63 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8753,6 +8753,8 @@ lithe:
     zh-CN: "尚未接入：还没有更新器（检查更新 / 下载 / 安装都没接）。"
   gpui.menuMissing.cloneUi:
     zh-CN: "尚未接入：Core 的 git.write 已含 clone，缺的是 URL / 凭据 / 进度 UI。"
+  gpui.menuMissing.newProjectScaffolding:
+    zh-CN: "尚未接入：缺项目脚手架生成（真机是新建目录 + 起终端跑 npm create）。"
   gpui.menuMissing.fileLifecycle:
     zh-CN: "尚未接入：缺新建文件 / 空标签页所需的文件生命周期（无标题 buffer + 命名 + 落盘）。"
   gpui.menuMissing.projectLifecycle:

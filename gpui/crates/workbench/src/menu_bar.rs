@@ -65,7 +65,7 @@
 //!    "要么已接线（有 `CommandId` 或在 `NON_COMMAND` 里登记）、要么声明非空"——
 //!    谁想悄悄加一条永远不工作的项，这里就红。
 //! 2. **文案按能力分组**（Q14 粒度 `2d`）：51 条占位项只有 [`MISSING_GROUPS`] 那么多句话
-//!    （**16 条**，一种能力一句），每句都回答"缺什么"。文案键全部是 gpui 侧新增
+//!    （**17 条**，一种能力一句），每句都回答"缺什么"。文案键全部是 gpui 侧新增
 //!    （真源的菜单项恒可执行，catalog 里没有"尚未接入"这类句子），理由逐条写在
 //!    `gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
 //! 3. **点了有反馈**（Q2/Q6）：点击 → [`MenuRequest::NotWired`] 进队列 → 下一帧
@@ -266,7 +266,7 @@ impl TopMenu {
 /// - [`Missing::text_key`] 进状态栏左侧那句话（Q2："尚未接入：缺 X"）。
 ///
 /// ⚠️ **文案按能力分组**（Q14 的粒度 `2d`）：同一种能力的所有项共用**同一个常量**，
-/// 所以占位项只有 [`MISSING_GROUPS`] 那么多句话（16 条），不会退化成"每项一句"。
+/// 所以占位项只有 [`MISSING_GROUPS`] 那么多句话（17 条），不会退化成"每项一句"。
 /// 每句话都必须回答"缺什么" —— 单测逐条断言声明非空、且文案键真的解析得出。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Missing {
@@ -380,6 +380,20 @@ pub const MISSING_CLONE_UI: Missing = Missing {
     text_key: "lithe.gpui.menuMissing.cloneUi",
 };
 
+/// 新建项目：缺的是**项目脚手架生成**这条能力本身。
+///
+/// 真机是"建目录 + 起终端跑脚手架"（`createNewDirectory` → `handleOpenFolderByPath` →
+/// nextjs/vite 源再开一个终端跑命令，`new-project-content.tsx:239-277`），gpui 侧没有这条链路。
+///
+/// ⚠️ 与 [`MISSING_CLONE_UI`] **不是同一件事**，不许互相借用：克隆那条说的是"能力已在 Core、
+/// 只缺界面"，这一条说的是"能力本身不在"。它也是**项目下拉**里那一行（`project_menu.rs`），
+/// 不在 89 条菜单项里 —— 与克隆仓库一样由 [`NOT_WIRED_OUTSIDE_MENUS`] 登记，
+/// 好让"每组都被用到"那条单测算得全。
+pub const MISSING_NEW_PROJECT_SCAFFOLDING: Missing = Missing {
+    id: "new_project_scaffolding",
+    text_key: "lithe.gpui.menuMissing.newProjectScaffolding",
+};
+
 /// 缺"新建文件 / 空标签页"的文件生命周期（无标题 buffer + 命名 + 落盘）。
 pub const MISSING_FILE_LIFECYCLE: Missing = Missing {
     id: "file_lifecycle",
@@ -430,8 +444,13 @@ pub const MISSING_TERMINAL_SPLIT: Missing = Missing {
     text_key: "lithe.gpui.menuMissing.terminalSplit",
 };
 
-/// 全部分组（单测拿它守住"没有第 17 组"、"每组都被用到"、"组 id 不重复"）。
-pub const MISSING_GROUPS: [Missing; 16] = [
+/// 全部分组（单测拿它守住"组数就是这么多"、"每组都被用到"、"组 id 不重复"）。
+///
+/// ⚠️ 组数（**17**）不是随手写的数：它是 Q14 粒度 `2d`（"一种能力一句话"）的上界，
+/// `missing_declarations_are_grouped_by_capability` 拿它挡住"给每条占位项现编一句"的退化。
+/// 第 17 组 [`MISSING_NEW_PROJECT_SCAFFOLDING`] 是本轮为项目下拉的「新建项目…」补的
+/// （它原先因为"缺的是能力本身、说不成一句能力话"而留在真禁用态，见 `project_menu.rs` 模块头）。
+pub const MISSING_GROUPS: [Missing; 17] = [
     MISSING_EDITOR_ENTRY,
     MISSING_EDITOR_FEATURES,
     MISSING_LSP_REQUESTS,
@@ -441,6 +460,7 @@ pub const MISSING_GROUPS: [Missing; 16] = [
     MISSING_GITHUB,
     MISSING_UPDATER,
     MISSING_CLONE_UI,
+    MISSING_NEW_PROJECT_SCAFFOLDING,
     MISSING_FILE_LIFECYCLE,
     MISSING_PROJECT_LIFECYCLE,
     MISSING_LOCAL_HISTORY,
@@ -450,14 +470,21 @@ pub const MISSING_GROUPS: [Missing; 16] = [
     MISSING_TERMINAL_SPLIT,
 ];
 
-/// **不在 [`MENUS`] 里**的那条占位项：项目下拉的「克隆仓库…」（`crate::project_menu`）。
+/// **不在 [`MENUS`] 里**的那两条占位项：项目下拉的「克隆仓库…」与「新建项目…」
+/// （`crate::project_menu`）。
 ///
 /// 单独列出来只为一件事：让"每组都被用到"这条单测算得全 —— 否则
-/// [`MISSING_CLONE_UI`] 会被判成虚胖的声明（它的使用点在另一个模块里）。
-/// 这里的 `&str` 是**文案键**（真源既有 `titleProject.cloneRepository`），
+/// [`MISSING_CLONE_UI`] / [`MISSING_NEW_PROJECT_SCAFFOLDING`] 会被判成虚胖的声明
+/// （它们的使用点在另一个模块里）。这里的 `&str` 是**文案键**（真源既有
+/// `titleProject.cloneRepository` / `titleProject.newProject`），
 /// 与 [`MenuItem::NotWired`] 的 `label_key` 同一个语义。
-pub const NOT_WIRED_OUTSIDE_MENUS: [(&str, Missing); 1] =
-    [("lithe.titleProject.cloneRepository", MISSING_CLONE_UI)];
+pub const NOT_WIRED_OUTSIDE_MENUS: [(&str, Missing); 2] = [
+    ("lithe.titleProject.cloneRepository", MISSING_CLONE_UI),
+    (
+        "lithe.titleProject.newProject",
+        MISSING_NEW_PROJECT_SCAFFOLDING,
+    ),
+];
 
 /// 菜单里的一项。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3156,10 +3183,22 @@ mod tests {
             );
         }
         // Q14 的粒度上限：**一种能力一句话**，不许退化成"每项一句"。
+        //
+        // 上界 = [`MISSING_GROUPS`] 的组数，**16 → 17**：本轮给项目下拉的「新建项目…」
+        // 补了 `new_project_scaffolding` 一组（理由见该常量与 `project_menu.rs` 模块头）。
+        // 它仍然远小于占位项条数（约 52 条），所以这条断言的保护力没变 ——
+        // 谁给每条占位项现编一句，`texts` 立刻超过 17。
         assert!(
-            texts.len() <= 16,
-            "占位文案有 {} 句，超过了'按能力分组'的上限 16",
+            texts.len() <= 17,
+            "占位文案有 {} 句，超过了'按能力分组'的上限 17（= MISSING_GROUPS 的组数）",
             texts.len()
+        );
+        // 组数本身也钉住：加第 18 组必须同时改上面那行上界与本常量的文档，并说清是哪条新能力
+        // —— 不许为了让测试过就悄悄把上界放宽。
+        assert_eq!(
+            MISSING_GROUPS.len(),
+            17,
+            "能力组数变了就必须同步改上面的上界与 `MISSING_GROUPS` 的文档"
         );
     }
 

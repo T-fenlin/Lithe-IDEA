@@ -51,7 +51,7 @@
 //! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 26 条 `lithe.settings.gpui.*` 自有文案 —— 全部 26 条自有键都已接线）、`lithe.ui.cancel` |
 //! | `workbench` 的分支弹窗（阶段 11 第三件） | `lithe.git.{searchBranchesAria,repositories,branches,worktrees,selectorSections,searchBranches,branchCount,branchesCount,noMatchingBranches,noBranchesFound,current,refresh}` |
 //! | `workbench` 的打开项目 / 最近项目（B4） | `lithe.menu.openFolder`、`lithe.projectOpen.{title,where,doNotAskAgain,cancel,newWindow,thisWindow}`（全部真源既有键）、`lithe.gpui.newWindowNotWired`（**唯一**一条 gpui 自有键，理由见 `extract-locale.mjs`） |
-//! | `workbench` 的菜单占位项（B3） | **16 条** `lithe.gpui.menuMissing.*`（一种能力一句："尚未接入：缺 X"），由 `menu_bar.rs` 的 `MISSING_GROUPS` 使用、状态栏左侧显示；全部是 gpui 自有键（真源的菜单项恒可执行，catalog 里没有这类句子），理由见 `extract-locale.mjs` |
+//! | `workbench` 的菜单占位项（B3） | **17 条** `lithe.gpui.menuMissing.*`（一种能力一句："尚未接入：缺 X"），由 `menu_bar.rs` 的 `MISSING_GROUPS` 使用、状态栏左侧显示（其中 `cloneUi` / `newProjectScaffolding` 两条用在项目下拉那两行上）；全部是 gpui 自有键（真源的菜单项恒可执行，catalog 里没有这类句子），理由见 `extract-locale.mjs` |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
 //! **任何键拼错都会让测试失败**（缺键时 `rust-i18n` 原样回显键名，所以断言 `tr(key) != key`）。
@@ -568,7 +568,7 @@ mod tests {
                 "lithe.gpui.newWindowNotWired",
                 "尚未接入：在「新窗口」中打开项目需要多窗口支持（缺窗口级句柄路由）。",
             ),
-            // B3 的**能力分组提示**（状态栏左侧那 16 句话，`Missing::text_key`）。
+            // B3 的**能力分组提示**（状态栏左侧那 17 句话，`Missing::text_key`）。
             // 全部是 gpui 侧新增键（真源那 89 条菜单项恒可执行，catalog 里没有
             // "尚未接入"这类句子），理由逐条写在 `tools/extract-locale.mjs` 的
             // `GPUI_ONLY_KEYS`；`menu_bar.rs` 的 `MISSING_GROUPS` 是它们的唯一使用点。
@@ -607,6 +607,10 @@ mod tests {
             (
                 "lithe.gpui.menuMissing.cloneUi",
                 "尚未接入：Core 的 git.write 已含 clone，缺的是 URL / 凭据 / 进度 UI。",
+            ),
+            (
+                "lithe.gpui.menuMissing.newProjectScaffolding",
+                "尚未接入：缺项目脚手架生成（真机是新建目录 + 起终端跑 npm create）。",
             ),
             (
                 "lithe.gpui.menuMissing.fileLifecycle",

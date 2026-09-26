@@ -103,39 +103,52 @@
 //!
 //! | 面板里的东西 | 现状 | 说明 |
 //! | --- | --- | --- |
-//! | 三条动作行的**外观 / 文案 / 图标** | ✅ 画出来 | 「打开…」B4 起**可点**（换项目链路）；「克隆仓库…」B3 起**可点但不是真做**（点了给"尚未接入：缺 X"）；「新建项目…」仍是禁用态 |
+//! | 三条动作行的**外观 / 文案 / 图标** | ✅ 画出来 | 三条**都可点**：「打开…」B4 起是**真接线**（换项目链路）；「克隆仓库…」B3 起、「新建项目…」B3 之后**都是占位项**（点了给"尚未接入：缺 X"，不是真做） |
 //! | 「打开的项目」的当前项目行（高亮 + 勾） | ✅ | — |
 //! | 「最近项目」的列表 / 空态 | ✅ B4 起是**真数据**（`lithe_gpui_settings::recent_projects`，落 `%APPDATA%\Lithe\recent-projects.json`；空态沿用 `noRecentProjects`） | 行**可点** → 换项目链路 |
 //! | 切换到别的项目 | ✅ B4：走 `ShellWorkspace::request_open_project`（重建整个 `ShellWorkspace`） | |
 //! | 打开…（系统目录对话框） | ✅ B4：`ShellWorkspace::open_project_picker`（gpui 自带的 `prompt_for_paths`） | |
-//! | 新建项目… | ❌ **禁用态** | 没有脚手架能力（真机是 `createNewDirectory` + 起终端跑 `npm create`）；**B3 没有把它改成占位项**（规格的 B3 清单只点名了克隆仓库，见下） |
+//! | 新建项目… | ⚠️ **占位项**（B3 之后补） | 缺的是项目脚手架生成（真机是 `createNewDirectory` + 起终端跑 `npm create`）；能说成一句"缺什么"就与克隆仓库统一成占位项，用它自己那条能力组（[`crate::menu_bar::MISSING_NEW_PROJECT_SCAFFOLDING`]），见下 |
 //! | 克隆仓库… | ⚠️ **占位项**（B3） | Core 的 `git.write` **已含** clone，缺的是 URL / 凭据 / 进度 UI —— 点了给那句话（[`crate::menu_bar::MISSING_CLONE_UI`]），不是"没有能力" |
 //!
-//! ## 为什么「克隆仓库…」从禁用态改成了占位项（B3）
+//! ## 为什么两条「缺能力」的动作行都是占位项
 //!
-//! 规格 `gpui/research/menu-and-open-project-plan.md` §B3 的注明确把 `克隆仓库…` 收进
-//! 「按缺什么给提示」那张表（Q16 也是"先占位、不做最小版"），并且**要求那句话写成
-//! "Core 的 `git.write` 已含 clone，缺的是 URL / 凭据 / 进度 UI"** —— 能力在 Core 里，
-//! 只是没有它外面那层界面。禁用态说不出这句话（它只打诊断，见下），所以这一条改成
-//! 可点的占位项：点了打 `S1_PROJECT_MENU action=cloneRepository state=not_wired missing=clone_ui`
-//! ＋ 状态栏那句提示（与菜单栏那 51 条占位项走同一句文案）。
+//! 真源三条**恒可执行、不置灰**（`title-project-menu.tsx:172-192`），本侧两条缺东西。
+//! 判据是**"能不能说清缺什么"**：能说成一句能力话的画成**可点的占位项**，说了等于没说的
+//! 才是真禁用态 —— 维护者拍板（同一张面板里两种"不可用"表达方式属于不一致）。
 //!
-//! ⚠️ 「新建项目…」**没有**一起改：规格的占位清单里没有它（它缺的是脚手架生成，
-//! 不是"能力已在、只缺 UI"），B3 的写域也不含这个面板。它继续是真禁用态。
+//! - 「克隆仓库…」（B3）：规格 `gpui/research/menu-and-open-project-plan.md` §B3 的注把它收进
+//!   「按缺什么给提示」那张表（Q16 也是"先占位、不做最小版"），并且**要求那句话写成
+//!   "Core 的 `git.write` 已含 clone，缺的是 URL / 凭据 / 进度 UI"** —— 能力在 Core 里，
+//!   只是没有它外面那层界面。
+//! - 「新建项目…」（B3 之后）：缺的是**项目脚手架生成**（真机是 `createNewDirectory` 建目录 +
+//!   起终端跑 `npm create`，`windows/tauri/src/features/project-picker/new-project-content.tsx:239-277`）。
+//!   它确实**不是**"能力已在、只缺 UI"，但"缺脚手架生成"本身就是一句诚实的能力话 ——
+//!   于是与克隆仓库统一：可点、给提示，用**它自己那条**能力组
+//!   （[`crate::menu_bar::MISSING_NEW_PROJECT_SCAFFOLDING`]，诊断里是
+//!   `precondition=no_scaffolding`），**不借**克隆仓库那句。
 //!
-//! ⚠️ **不可用的动作行仍画成禁用态**（维护者口径，2026-09-26 拍板）：真源三条**恒可执行、不置灰**
-//! （`title-project-menu.tsx:172-192`）。对**真的没有能力、连"缺什么"都说不成一句能力话**
-//! 的那条（新建项目），两难的取舍是 —— **不能画成可点**（点下去面板照 `closeAndRun` `:133-136`
-//! 会关，却什么都没发生 = 对用户说谎），**也不能整段不画**（面板结构与维护者截图不符）。
-//! 取中间的**真禁用态**：`.disabled(true)` → 不挂点击、不进键盘导航、前景 `muted_foreground`、
-//! 无 hover 高亮，于是"不可用"在**语义与视觉上都能区分**（不是只靠颜色）。逐条理由见 [`action_row`]。
+//! 两条的行为因此逐字一致：点了打一行
+//! `S1_PROJECT_MENU action=<id> state=not_wired missing=<能力组 id>` ＋ 状态栏那句"尚未接入：缺 X"
+//! （走菜单栏同一套 [`Missing`] 文案机制，见 [`crate::menu_bar::Missing`]）。
+//!
+//! ⚠️ **为什么不做最小版**（Q16，2026-09-26 维护者口径，仍然有效）：真机的新建项目是一条完整
+//! 模态链路（选源 → 校验目标目录 → `createNewDirectory` → 起终端跑脚手架 → 打开项目），
+//! 最小版只能做到"建一个空目录再打开" —— 那既不是真源行为，又把"缺脚手架"藏了起来，
+//! 所以 v1 只占位，不假装做了。
+//!
+//! ⚠️ **真禁用态这一档没有消失**：动作行在外壳句柄丢了（窗口正在关）时仍走 `.disabled(true)`，
+//! 面板里另有**非交互**行（分组标题 / 当前项目行 / 最近项目空态）同样用 `disabled(true)` 表达
+//! "可画不可点" —— `disabled(true)` 的效果是不挂点击、不进键盘导航、前景 `muted_foreground`、
+//! 无 hover 高亮（`menu_item.rs:115-133`），于是"不可用"在**语义与视觉上都能区分**
+//! （不是只靠颜色）。逐条理由见 [`action_row`]。
 //!
 //! # 已知偏差（逐条给理由，都不是遗漏）
 //!
 //! | 偏差 | 真源 | 本侧 | 理由 |
 //! | --- | --- | --- | --- |
 //! | 面板内边距 / 行间距 / 圆角 | 6 / 0 / 6.4 | 4 / 2 / 6 | `PopupMenu` 三个值都硬编码且无 builder（见上） |
-//! | 三条动作项 | 恒可执行、不置灰 | 「打开…」**可点**（B4 起），新建 / 克隆仍是**禁用态**（灰 + 无 hover + 点了不关面板） | 本侧缺能力；"可点但只打日志"会让用户以为有反应（见 [`action_row`]） |
+//! | 三条动作项 | 恒可执行、不置灰 | 三条**都可点**（B4 / B3 起），其中「新建项目…」「克隆仓库…」是**占位项**（点了给"尚未接入：缺 X"） | 本侧缺能力；把"缺什么"说成一句能力话，比留一个点不动的灰行更诚实（见 [`action_row`]） |
 //! | 行内可用宽度 | 384 − 12(面板内距) − 16(行内距) ≈ 356 | 384 − 20(滚动条 16) − 8 − 16 ≈ 340 | `scrollable(true)` 的竖向滚动条**常驻**占 16 逻辑 px（`.artifacts/p8` 量到右侧 947..966 物理那一条），真源是 `overflow-y-auto`（无溢出时无条）。留着它是因为 `max_h` 就加在这个滚动容器上：**内容再高也撑不破 520**（12 条最近项目 ≈ 900 逻辑也照样被截住并滚动），换成"需要时才滚动"等于自己重算一遍内容高 |
 //! | 项目行高 | `min-h-11`(44) | 量到 **52.8 逻辑**（44 只是下限，没被触发） | `min-h` 是**下限**：两行文字（14px 名 + 12px 路径，行高 ~1.4–1.5）+ `py-1.5`(12) 撑到 ~53。真源同样由内容撑高（13px 两行 ≈ 50）；差 ~3 是本侧 13→14 字号的既定口径（见 [`project_row`]） |
 //! | 当前项目行 / 空态行 / 分组标题 | 可键盘高亮（`Menu.Item`） | `.disabled(true)`，跳过键盘导航 | 真源点当前项是 no-op 且**不关面板**（`:207-210`），而 `PopupMenuItem` 一旦可点，`confirm` 里**无条件** `dismiss`（`popup_menu.rs:875-884`）—— 只有 disabled 能表达"可画不可点" |
@@ -169,6 +182,7 @@ use gpui_kit::{
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_gpui_settings::RecentProject;
 
+use crate::menu_bar::Missing;
 use crate::workspace::ShellWorkspace;
 
 // ---------------------------------------------------------------------------
@@ -376,10 +390,11 @@ impl PanelAction {
 
     /// 这条动作缺的**前置条件**（只进诊断，不是界面文案 —— 所以不走 i18n）。
     ///
-    /// `None` = 这条**真的接线了**（面板里的「打开…」，B4）。诊断行因此能用同一个格式
-    /// 区分三档（判据在 [`PanelAction::wire`]）：`state=wired precondition=none` /
-    /// `state=not_wired precondition=no_git_clone_call_site`（B3 的占位项：**可点**，
-    /// 但能力确实不全）/ `state=disabled precondition=no_scaffolding`。
+    /// `None` = 这条**真的接线了**（面板里的「打开…」，B4）。诊断行因此能用同一个格式区分
+    /// 三档（判据在 [`PanelAction::wire`]）：`state=wired precondition=none` /
+    /// `state=not_wired precondition=…`（两条占位项：**可点**，但各自缺一种能力）/
+    /// `state=disabled precondition=…`（真禁用态：今天三条动作都到不了这里，只有外壳句柄
+    /// 丢了时才在 [`action_row`] 里按"画出来但不可点"处理）。
     fn precondition(self) -> Option<&'static str> {
         match self {
             Self::NewProject => Some("no_scaffolding"),
@@ -393,23 +408,29 @@ impl PanelAction {
         }
     }
 
-    /// 这条动作**点了之后落到哪**（`None` = 真禁用态，压根没有 `on_click`）。
+    /// 这条动作**点了之后落到哪**（「缺什么」能力组，或 `None` = 真禁用态）。
     ///
     /// ⚠️ 这是 B3 起新拆出来的一问：以前"能不能点"与"缺什么前置条件"是同一件事
     /// （`enabled() == precondition().is_none()`）。「克隆仓库…」变成占位项之后两者分家了 ——
     /// 它**可点**，但**仍然缺前置条件**（真做起来要 URL / 凭据 / 进度 UI）。
     /// 所以判据只留在这里一处，`enabled()` 由它派生，不会再漂移。
+    ///
+    /// ⚠️ 返回 `None` 的唯一含义是"这条**连缺什么都说不成一句能力话**"——B3 之后
+    /// 三条动作都给出了能力组，所以这个 `None` 臂现在**只作为兜底存在**（新增动作时若
+    /// 想不出能力句，它会挡着不让人偷偷把动作画成可点）。
     fn wire(self) -> Option<PanelWire> {
         match self {
-            // 新建项目要脚手架生成（真机是 `createNewDirectory` + 起终端跑 `npm create`），
-            // 本侧没有这条能力，也没有一句"缺什么"的能力话可说 ⇒ 继续真禁用。
-            Self::NewProject => None,
+            // 新建项目缺**项目脚手架生成**（真机是 `createNewDirectory` + 起终端跑 `npm create`）。
+            // 这是"没有这条能力"，但它能被说成一句诚实的"缺什么"，所以与克隆仓库统一成占位项 ——
+            // 而**不是**复用克隆仓库那句（缺的根本不是同一件事）。
+            Self::NewProject => Some(PanelWire::NewProjectNotWired),
             Self::OpenFolder => Some(PanelWire::OpenFolder),
             Self::CloneRepository => Some(PanelWire::CloneNotWired),
         }
     }
 
-    /// 这条动作今天**点不点得动**（真源三者恒可执行；本侧只剩「新建项目」是禁用态）。
+    /// 这条动作今天**点不点得动**（真源三者恒可执行；本侧 B3 之后三条都可点，
+    /// 只有"外壳句柄丢了"会在 [`action_row`] 里被降级成真禁用态）。
     fn enabled(self) -> bool {
         self.wire().is_some()
     }
@@ -418,7 +439,7 @@ impl PanelAction {
 /// 段 ① 一条动作行**点下去会发生什么**（[`PanelAction::wire`] 的返回值）。
 ///
 /// 抽成枚举而不是两个 `bool`：`action_row` 里那段 `on_click` 要按它分流，
-/// 而"漏掉一档"会在 `match` 里变成编译错误（两个 bool 只会静默走进 else）。
+/// 而"漏掉一档"会在 [`PanelWire::missing`] 的 `match` 里变成编译错误（两个 bool 只会静默走进 else）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PanelWire {
     /// 已接线（B4）：调 `ShellWorkspace::open_project_picker`，与「文件 → 打开文件夹」/
@@ -428,14 +449,36 @@ enum PanelWire {
     /// 「尚未接入：Core 的 `git.write` 已含 clone，缺的是 URL / 凭据 / 进度 UI。」
     /// （[`crate::menu_bar::MISSING_CLONE_UI`]）。
     CloneNotWired,
+    /// 占位（B3 之后）：点「新建项目…」→ 外壳打诊断 ＋ 状态栏给
+    /// 「尚未接入：缺项目脚手架生成（真机是新建目录 + 起终端跑 `npm create`）。」
+    /// （[`crate::menu_bar::MISSING_NEW_PROJECT_SCAFFOLDING`]）。
+    ///
+    /// 与 [`PanelWire::CloneNotWired`] 走**同一个**外壳入口
+    /// （`ShellWorkspace::report_panel_action_not_wired`），差别只有传进去的能力组。
+    NewProjectNotWired,
+}
+
+impl PanelWire {
+    /// 这一档缺的**能力组**（`None` = 真接线，不需要提示）。
+    ///
+    /// 抽在这里只为一件事：**"哪一档用哪句能力话"只有这一处真源** —— `on_click` 用它取文案，
+    /// 单测也用它钉住"新建项目**没有**借克隆仓库那句"（两句说的根本不是同一件事）。
+    /// 新增一档占位项时，这里的 `match` 会强制作者登记它的能力组。
+    fn missing(self) -> Option<Missing> {
+        match self {
+            Self::OpenFolder => None,
+            Self::CloneNotWired => Some(crate::menu_bar::MISSING_CLONE_UI),
+            Self::NewProjectNotWired => Some(crate::menu_bar::MISSING_NEW_PROJECT_SCAFFOLDING),
+        }
+    }
 }
 
 /// 一条动作行：32 高、8 内距、8 间隔、16×16 图标、13→14px 文字。
 ///
 /// 三条的落点见 [`PanelAction::wire`]：「打开…」**真接线**（B4：交给
 /// `ShellWorkspace::open_project_picker`，与「文件 → 打开文件夹」/`Ctrl+O` **同一个执行点**）、
-/// 「克隆仓库…」**占位**（B3：交给 `ShellWorkspace::report_clone_not_wired`，给一句"尚未接入"）、
-/// 「新建项目…」**真禁用**。
+/// 「克隆仓库…」与「新建项目…」**占位**（B3 / B3 之后：交给
+/// `ShellWorkspace::report_panel_action_not_wired`，给一句"尚未接入：缺 X"）。
 ///
 /// ⚠️ **必须自绘**（`PopupMenuItem::element`）：`Item` 固定 26 高（`popup_menu.rs:1309`），
 /// 撑不到真源的 32。
@@ -443,24 +486,29 @@ enum PanelWire {
 /// `mx_neg_2()` + `px_2()` 是抵消父级的 `.px(8)`（`popup_menu.rs:1230`）：
 /// `MenuItemElement` 自己有 8 内距，行底色要铺满行宽就得先退回来。
 ///
-/// # ⚠️ 为什么「新建项目…」是禁用态、而「克隆仓库…」不是（B3 的分界）
+/// # ⚠️ 三条都可点，那"不可用"怎么表达（B3 之后的口径）
 ///
 /// **真源这三条恒可执行**（`title-project-menu.tsx:172-192`，三者都不置灰），本侧两条缺东西：
-/// 新建要脚手架、克隆要 URL / 凭据 / 进度 UI。B3 起这条分界改成**"能不能说清缺什么"**：
+/// 新建缺脚手架生成、克隆缺 URL / 凭据 / 进度 UI。判据是**"能不能说清缺什么"**：
 ///
-/// - 「克隆仓库…」的能量在 Core（`git.write` 已含 clone），缺的只是界面 ⇒ **可点**，
-///   点了给那句话（Q16"先占位"、规格 §B3 的注要求这么写）；
-/// - 「新建项目…」缺的是脚手架生成这条能力本身，规格的占位清单里也没有它 ⇒ 仍是**真禁用态**：
-///   `.disabled(true)` 让 `PopupMenuItem` 不挂点击、不进键盘导航、前景走 `muted_foreground`、
+/// - 两条都能说成一句诚实的能力话 ⇒ **可点**，点了把那句话交给外壳（状态栏 ＋ `S1_PROJECT_MENU`
+///   诊断），各用**自己**那条能力组（[`crate::menu_bar::MISSING_NEW_PROJECT_SCAFFOLDING`] /
+///   [`crate::menu_bar::MISSING_CLONE_UI`]）—— 维护者拍板：同一张面板里两种"不可用"表达方式
+///   属于不一致，所以「新建项目…」从真禁用态改成与克隆仓库一致的占位项。
+/// - `.disabled(true)` 这一档**没有删除**，它现在只服务两类行：
+///   ① 外壳句柄丢了（窗口正在关）的动作行 —— 那时"点了有反应"本来就做不到，画出来但不可点；
+///   ② 面板里的**非交互**行（分组标题 / 当前项目行 / 最近项目空态，见本文件后面三处）。
+///   `disabled(true)` 让 `PopupMenuItem` 不挂点击、不进键盘导航、前景走 `muted_foreground`、
 ///   没有 hover 高亮（`menu_item.rs:115-133`），于是"不可用"在**语义与视觉上都能区分**
-///   （不是只靠颜色）。它因此**点了什么都不发生、面板也不关**。
+///   （不是只靠颜色）。
 ///
 /// 前置条件仍然可 grep：面板每次打开时打一行 `S1_PROJECT_MENU action=… state=… precondition=…`
-/// （见 [`diagnose_actions`]）—— 「克隆仓库…」那一行现在的 `state=not_wired`，
-/// 点下去还会追加一行同 id 的 `state=not_wired missing=clone_ui`（见
-/// `ShellWorkspace::report_clone_not_wired`）。
+/// （见 [`diagnose_actions`]）—— 两条占位项那一行是 `state=not_wired`（新建是
+/// `precondition=no_scaffolding`、克隆是 `precondition=no_git_clone_call_site`），
+/// 点下去还会追加一行同 id 的 `state=not_wired missing=<能力组 id>`（见
+/// `ShellWorkspace::report_panel_action_not_wired`）。
 ///
-/// `shell` 是**外壳句柄**（面板实体自己没有句柄，见 [`ProjectMenu::shell`]）：可点的两条
+/// `shell` 是**外壳句柄**（面板实体自己没有句柄，见 [`ProjectMenu::shell`]）：可点的三条
 /// 都要回到外壳上执行 —— 被绕开的只有"点一下面板"这一段。
 fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) -> PopupMenuItem {
     // 有接线（真做或占位）**且**外壳句柄还在 ⇒ 这一行画成可点态；否则真禁用
@@ -504,14 +552,19 @@ fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) ->
     let Some((wire, shell)) = wire else {
         return item.disabled(true);
     };
-    // 两条可点的动作各自回外壳执行（这里只**路由**，不实现换项目 / 不实现克隆 UI）。
+    // 三条可点的动作各自回外壳执行（这里只**路由**：不实现换项目 / 不实现脚手架 / 不实现克隆 UI）。
     // 句柄在上面已经判过非空；`update` 返回 `Err` 只可能是"窗口正在关"，静默忽略。
-    item.on_click(move |_event, window, cx| match wire {
-        PanelWire::OpenFolder => {
-            let _ = shell.update(cx, |shell, cx| shell.open_project_picker(window, cx));
+    item.on_click(move |_event, window, cx| match wire.missing() {
+        // 两条占位项走**同一个**外壳入口，差别只有能力组（[`PanelWire::missing`]）——
+        // 于是"状态栏那句话 + `S1_PROJECT_MENU` 诊断行"的格式只有一处真源。
+        Some(missing) => {
+            let _ = shell.update(cx, |shell, cx| {
+                shell.report_panel_action_not_wired(action.id(), missing, cx)
+            });
         }
-        PanelWire::CloneNotWired => {
-            let _ = shell.update(cx, |shell, cx| shell.report_clone_not_wired(cx));
+        // 真接线的那一条（B4）。
+        None => {
+            let _ = shell.update(cx, |shell, cx| shell.open_project_picker(window, cx));
         }
     })
 }
@@ -850,8 +903,10 @@ fn diagnose_structure(projects: usize, recent: usize) {
         PANEL_WIDTH_SPEC as i32,
         PANEL_MAX_HEIGHT_SPEC as i32,
         PanelAction::ALL.len(),
-        // 画出来但**不可点**的动作数（B4 之后是 2：新建 / 克隆）。这个数就是"外观项"与
-        // "真的能用的项"之间的差额，写在诊断里免得只靠注释。
+        // 画出来但**不可点**的动作数：B3 之后是 **0** —— 三条都可点（两条占位项"点了给提示"
+        // 在 `enabled()` 口径里算可点，理由见 [`PanelAction::wire`]）。这个数就是"外观项"与
+        // "点了有反应"之间的差额，写在诊断里免得只靠注释（它非零时说明有人把某条动作
+        // 悄悄改回了真禁用态）。
         PanelAction::ALL
             .iter()
             .filter(|action| !action.enabled())
@@ -866,17 +921,17 @@ fn diagnose_structure(projects: usize, recent: usize) {
 
 /// 三条动作各自的状态，**面板每次打开时**打三行。
 ///
-/// 这样"哪条能点、缺什么"可 grep（B3 起三档：`state=wired precondition=none`（真做）/
+/// 这样"哪条能点、缺什么"可 grep（B3 之后三档：`state=wired precondition=none`（真做）/
 /// `state=not_wired precondition=…`（占位，点了给提示）/ `state=disabled precondition=…`
-/// （真禁用，点了什么都不发生））—— 用户不会看到一个点下去只有日志、还把面板关掉的假入口。
+/// （真禁用态））—— 用户不会看到一个点下去只有日志、还把面板关掉的假入口。
 ///
 /// ⚠️ `state` 的取值域就这三个，判据与 [`PanelAction::wire`] 同源（一个 `match` 分流，
-/// 不写第二处 if）。
+/// 不写第二处 if）；今天三条动作分别落在 `wired` / `not_wired` / `not_wired`。
 fn diagnose_actions() {
     for action in PanelAction::ALL {
         let state = match action.wire() {
             Some(PanelWire::OpenFolder) => "wired",
-            Some(PanelWire::CloneNotWired) => "not_wired",
+            Some(PanelWire::CloneNotWired | PanelWire::NewProjectNotWired) => "not_wired",
             None => "disabled",
         };
         eprintln!(
@@ -1318,7 +1373,7 @@ mod tests {
                 "lithe.titleProject.cloneRepository"
             ]
         );
-        // 三段动作各自的状态必须说清楚（B4 之后：一条可点、两条缺前置条件），
+        // 三段动作各自的状态必须说清楚（B3 之后：一条真接线、两条占位项，后两条各缺一种能力），
         // 免得诊断行说不清"哪条能用、缺的是哪条能力"。
         let mut preconditions: Vec<&str> = PanelAction::ALL
             .iter()
@@ -1329,31 +1384,36 @@ mod tests {
         assert_eq!(
             preconditions,
             vec!["no_git_clone_call_site", "no_scaffolding", "none"],
-            "三条动作的前置条件必须各说各的（可点的那条是 none）"
+            "三条动作的前置条件必须各说各的（真接线的那条是 none）"
         );
     }
 
-    /// B3 的动作表状态：**「打开…」（真接线）与「克隆仓库…」（占位项）都可点**，
-    /// 只有「新建项目…」仍是禁用态 —— 后两条的 `precondition()` 必须各给一个具体理由
+    /// B3 之后的动作表状态：**三条都可点** —— 「打开…」真接线，另两条是占位项
+    /// （点了给"尚未接入：缺 X"），且两条的 `precondition()` 各给一个具体理由
     /// （诊断行靠它说清"缺什么"）。
     ///
     /// 这条守的是一类回归：
     ///
     /// 1. 把某条动作的 `precondition` 从 `Some` 改成 `None`（或反过来）会让诊断说谎；
-    /// 2. 把「克隆仓库…」悄悄改回禁用态（或把「新建项目…」改成可点）会让面板出现
-    ///    "点了没反应"或"假装能用"的入口 —— 两者都是 B3 的硬规则禁止的；
-    /// 3. **文案**：占位项那句必须是 [`crate::menu_bar::MISSING_CLONE_UI`]（"Core 的
-    ///    `git.write` 已含 clone，缺的是 URL / 凭据 / 进度 UI"），不是"没有能力"。
+    /// 2. 把两条占位项中的任何一条悄悄改回真禁用态（`wire()` → `None`）会让面板出现
+    ///    "点了没反应"的入口；反过来把「打开…」也降级成占位项则是假装配不上真能力 ——
+    ///    两者都被 B3 与维护者口径禁止；
+    /// 3. **文案**：两条占位项必须各用**自己**那条能力组，尤其不许让「新建项目…」借
+    ///    「克隆仓库…」那句（"Core 的 `git.write` 已含 clone"与脚手架生成无关）。
     #[test]
-    fn open_folder_and_clone_are_clickable_new_project_is_not() {
+    fn every_action_row_is_clickable_and_says_what_is_missing() {
         let clickable: Vec<PanelAction> = PanelAction::ALL
             .into_iter()
             .filter(|action| action.enabled())
             .collect();
         assert_eq!(
             clickable,
-            vec![PanelAction::OpenFolder, PanelAction::CloneRepository],
-            "「打开…」真接线、「克隆仓库…」是 B3 的占位项（可点），「新建项目…」仍禁用"
+            vec![
+                PanelAction::NewProject,
+                PanelAction::OpenFolder,
+                PanelAction::CloneRepository
+            ],
+            "三条都可点：「打开…」真接线，新建 / 克隆是占位项（点了给提示）"
         );
         assert_eq!(
             PanelAction::OpenFolder.precondition(),
@@ -1370,8 +1430,8 @@ mod tests {
         );
         assert_eq!(
             PanelAction::NewProject.wire(),
-            None,
-            "「新建项目…」缺的是脚手架能力本身，规格的 B3 占位清单里没有它"
+            Some(PanelWire::NewProjectNotWired),
+            "「新建项目…」缺脚手架生成 —— 那句话说得出来，所以与克隆仓库一致做成占位项"
         );
         for action in [PanelAction::NewProject, PanelAction::CloneRepository] {
             assert!(
@@ -1381,12 +1441,33 @@ mod tests {
         }
         assert_eq!(
             PanelAction::NewProject.precondition(),
-            Some("no_scaffolding")
+            Some("no_scaffolding"),
+            "占位项保留它**自己**那条前置条件，不复用克隆仓库的"
         );
         assert_eq!(
             PanelAction::CloneRepository.precondition(),
             Some("no_git_clone_call_site"),
             "占位项也要留前置条件：那句话说的是'缺 URL / 凭据 / 进度 UI'，不是'什么都有'"
+        );
+        // 「哪一种占位项用哪句能力话」只有一处真源（[`PanelWire::missing`]）：
+        // 新建项目必须拿到**它自己**那条能力组，且与克隆仓库那句不同。
+        assert_eq!(
+            PanelWire::NewProjectNotWired.missing(),
+            Some(crate::menu_bar::MISSING_NEW_PROJECT_SCAFFOLDING)
+        );
+        assert_eq!(
+            PanelWire::CloneNotWired.missing(),
+            Some(crate::menu_bar::MISSING_CLONE_UI)
+        );
+        assert_ne!(
+            PanelWire::NewProjectNotWired.missing(),
+            PanelWire::CloneNotWired.missing(),
+            "两条占位项缺的不是同一件事，不许共用同一句能力话"
+        );
+        assert_eq!(
+            PanelWire::OpenFolder.missing(),
+            None,
+            "真接线的那条不该带能力提示"
         );
     }
 
