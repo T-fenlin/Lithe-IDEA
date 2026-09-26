@@ -279,8 +279,18 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 - 会话状态持久化与恢复（`.lithe/session.local.json`）→
   `.agents/notes/implemented/feature/2026-09-27-session-state-persistence.md`
 
-**唯一仍未落地的设计项是 `project.json` 的 `directoryMarks`**（本提案第三节与"与 IDEA 的差异"表
-提到的那个字段）。它没有落地，原因**不是技术困难，而是今天没有任何"标记目录"的交互**：
+**本文范围内已声明、但至今没有落地的有两项**，都由维护者确认过"下一批再做"：
+
+1. **`project.json` 的 `directoryMarks`**（本提案第三节与"与 IDEA 的差异"表提到的那个字段）。
+   原因**不是技术困难，而是今天没有任何"标记目录"的交互**（细节见下）。
+2. **"共享此项目的配置"的界面入口。** 那个动作的函数（`sharing::share_project_config`）
+   **已经落地并有真实临时仓库测试**（移除本机排除行 + 只暂存可共享成员 + 移除后回读确认），
+   但**界面入口留给下一批**：用户今天没有"点一下完成共享"的办法。这条的原始记录在
+   `gpui/PLAN.md` 的 §8.9（"**不做界面**，入口留给下一批"），维护者已确认按此执行，
+   并接受它的直接后果 —— 共享层（`.lithe/settings.json`）今天**没有写入方**，
+   "团队统一主题"这条链路只走通"读"的一半，用户要共享只能手写那个文件。
+
+**`directoryMarks` 为什么没有落地**：
 
 - `gpui/crates/**` 全量检索 `markDirectory` / `directoryMarks` / `标记` **零命中**
   （只有"脏标记""失效标记"这类无关命中）；
