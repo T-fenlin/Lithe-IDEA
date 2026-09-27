@@ -151,28 +151,18 @@
   .statusbar .grow{flex:1}
   .statusbar .bread{color:var(--muted-fg)}
 
-  /* ── 图注与标注层 ── */
-  .note{position:absolute;font-size:13px;font-weight:600;line-height:1.35;pointer-events:none}
-  .note.red{color:#ff4d4f;text-shadow:0 0 3px #000,0 0 3px #000}
-  .note.green{color:#4ade80;text-shadow:0 0 3px #000,0 0 3px #000}
-  .box{position:absolute;border:2px solid #ff4d4f;border-radius:4px;pointer-events:none}
-  .box.green{border-color:#4ade80}
-  /* 编号气泡：画在界面外围，不压内容 */
-  .num{position:absolute;width:20px;height:20px;border-radius:10px;background:#ff4d4f;color:#1e1f22;
-       font-size:12px;font-weight:700;display:grid;place-items:center;pointer-events:none;
-       box-shadow:0 1px 3px #000a}
-  .num.green{background:#4ade80}
-  /* 图例：窗口下方，不进窗口 */
-  .legend{width:1920px;padding:20px 26px 26px;color:#c3c7ce;font-size:14px;line-height:1.85;
-          background:#141518;border-top:2px solid #2b2d30}
-  .legend h3{color:#dfe1e5;font-size:16px;margin-bottom:2px}
-  .legend p{margin:6px 0}
-  .legend b{color:#4ade80}
-  .legend i{color:#ff4d4f;font-style:normal}
-  .legend code{font-family:var(--mono);color:#8b929e;font-size:12.5px}
-  .legend ol{margin:8px 0 0 22px;display:grid;grid-template-columns:1fr 1fr;gap:2px 34px}
-  .legend li{margin:3px 0;padding-left:2px}
-  .legend li::marker{color:#8b929e;font-weight:700}
+  /* ── 标题栏右侧的运行控件（IDEA 风格：配置名 + ▶ + 🐞 + ⟳） ── */
+  .car{font-size:9px;color:var(--subtle);margin-left:3px}
+  .runbox{display:flex;align-items:center;gap:2px;margin-right:8px}
+  .runbox .cfg{display:flex;align-items:center;font-size:12.5px;color:var(--muted-fg);
+               padding:2px 8px;border-radius:6px}
+  .runbox .cfg:hover{background:var(--accent)}
+  .runbox .play{color:#57965c}
+  .runbox .dbg{color:#3574f0}
+  .runbox .reload{color:var(--subtle)}
+
+  /* ── 图下只有一行标识（不是标注） ── */
+  .caption{width:1920px;padding:14px 26px;color:#8b929e;font-size:13px;background:#141518;line-height:1.7}
   .wrap{width:1920px}
 </style>
 </head>
@@ -188,16 +178,16 @@
       <span>窗口</span><span>帮助</span>
     </div>
     <div class="tsep"></div>
-    <div class="chip"><span class="fold">S</span>svmHtFrontInterface<span style="font-size:9px;color:var(--subtle)">▾</span></div>
-    <div class="chip"><span class="br">⑂</span>main<span style="font-size:9px;color:var(--subtle)">▾</span></div>
+    <div class="chip"><span class="fold">S</span>svmHtFrontInterface<span class="car">▾</span></div>
+    <div class="chip"><span class="br">⑂</span>main<span class="car">▾</span></div>
     <div class="drag"></div>
-    <!-- ★ 变更 3：启动/调试三图标（图注：后续把启动、debug 放这里） -->
-    <div class="titletools">
-      <div class="icbtn" title="运行" style="color:#57965c">▶</div>
-      <div class="icbtn" title="调试" style="color:#3574f0">🐞</div>
-      <div class="icbtn" title="重新加载" style="color:var(--subtle)">⟳</div>
+    <div class="runbox">
+      <div class="cfg">InpInfoApiAction<span class="car">▾</span></div>
+      <div class="icbtn play">▶</div>
+      <div class="icbtn dbg">🐞</div>
+      <div class="icbtn reload">⟳</div>
     </div>
-      <div class="wincontrols">
+    <div class="wincontrols">
       <div>—</div><div>▢</div><div class="close">✕</div>
     </div>
   </div>
@@ -336,18 +326,10 @@
 版权所有（C） Microsoft Corporation。保留所有权利。
 
 <span class="dim">PS D:\developmentProjects\rust\Lithe-IDEA\gpui\target\release&gt;</span></div>
-        <!-- ○ 图注要求过的输入框：本轮**不做**（维护者：终端我现在都没有使用） -->
-        <div class="notice" style="border-top:1px solid var(--border);padding:6px 10px;margin-top:4px">
-          输入命令…　<span style="color:#6b7280">（本轮不做：图注「终端要有这么火的」，已登记为下一批）</span>
-        </div>
       </div>
     </div>
 
-    <!-- 右侧工具窗 400：默认收起时整块不占位；这里画成"未打开"的岛，供 ⑦ 定位 -->
-    <div class="right island" data-spec="右工具窗 400（可收起；默认无打开视图）"
-         style="display:grid;place-items:center;color:#43454a;font-size:13px">
-      右侧工具窗 400（未打开）
-    </div>
+    <!-- 右侧工具窗 400：默认未打开任何工具窗，整块不占位（真机口径） -->
 
     <!-- 右活动栏 38+4 -->
     <div class="rail" data-spec="右活动栏 38（+4 间距）">
@@ -359,7 +341,7 @@
   </div>
 
   <!-- ④ 状态栏 24 -->
-  <div class="statusbar" data-spec="状态栏 24（实测像两行 ≈46，待核）">
+  <div class="statusbar" data-spec="状态栏 24">
     <div class="grp">svmHtFrontInterface</div>
     <div class="grp">⑂ main</div>
     <div class="grow"></div>
@@ -368,60 +350,12 @@
     <div class="grp">2 个空格</div>
     <div class="grp">总计 0.0 MB · Lithe 0.0 MB</div>
   </div>
-
-  <!-- ══ 标注层：只保留编号气泡，所有文字说明都在窗口下方的图例里（不压界面） ══ -->
-  <!-- ③ 启动/调试搬到标题栏右侧（绿 = 本轮要做的改动） -->
-  <div class="box green" style="left:1628px;top:34px;width:206px;height:36px"></div>
-  <div class="num green" style="left:1838px;top:12px">③</div>
-
-  <!-- ① 删「项目」树头 32px -->
-  <div class="box" style="left:52px;top:70px;width:330px;height:34px"></div>
-  <div class="num" style="left:34px;top:72px">①</div>
-
-  <!-- ② 删树内搜索行 28px -->
-  <div class="box" style="left:52px;top:214px;width:330px;height:30px"></div>
-  <div class="num" style="left:34px;top:215px">②</div>
-
-  <!-- ④ 文件树图标换 IDEA 彩色 -->
-  <div class="box" style="left:52px;top:508px;width:330px;height:150px"></div>
-  <div class="num" style="left:34px;top:508px">④</div>
-
-  <!-- ⑤ 左栏终端图标 -->
-  <div class="box" style="left:34px;top:738px;width:30px;height:30px"></div>
-  <div class="num" style="left:6px;top:770px">⑤</div>
-
-  <!-- ⑥ 编辑区左边界「收起侧栏」 -->
-  <div class="box green" style="left:440px;top:282px;width:26px;height:26px"></div>
-  <div class="num green" style="left:470px;top:284px">⑥</div>
-
-  <!-- ⑦ 通知徽标 -->
-  <div class="box" style="left:1846px;top:916px;width:34px;height:30px"></div>
-  <div class="num" style="left:1884px;top:918px">⑦</div>
-
-  <!-- ⑧ 终端：本轮不做 -->
-  <div class="box" style="left:438px;top:722px;width:1052px;height:328px"></div>
-  <div class="num" style="left:1494px;top:724px">⑧</div>
 </div>
 
-<!-- 图例（在窗口下方，不占窗口；对应界面上的编号气泡） -->
-<div class="legend">
-  <h3>Lithe 界面对标 IDEA · 效果图　<span style="font-weight:400;color:#8b929e">窗口 1920×1080，尺寸取自真机实测 + 源码常量；配色取自 <code>gpui/themes/lithe-dark.json</code></span></h3>
-  <p><b>绿框 = 本轮要做的改动</b>　<i>红框 = 你在截图上的图注要求</i></p>
-  <ol>
-    <li><b>删掉「项目」树头 32px</b>（你标的「项目」红框）—— <code>explorer_view.rs:405-476</code> 的 <code>render_header</code>；删掉后侧栏顶端直接是文件树，腾出 32px。</li>
-    <li><b>删掉树内搜索行 28px</b>（你标的「搜索文件」红框）—— <code>explorer_view.rs:487-516</code> 的 <code>render_search_row</code>；<b>搜索入口收到左栏「搜索」项</b>（放大镜图标已在）。再腾 28px。</li>
-    <li><b>启动 / 调试三图标搬进标题栏右侧</b>（你标的「后续把启动、debug 放这里」）——落点 <code>title_bar.rs</code> 三键左边。⚠️ 标题栏里可点元素必须是 <code>drag_region</code> 的兄弟节点，否则点它只会拖窗口（<code>title_bar.rs:35-38</code>）。</li>
-    <li><b style="color:#8b929e">文件树图标：核对后"不用改"</b>（你标的「图标更换」）——真源已在映射表里：<code>extension.json:143</code> <code>.java → idea-java</code>、<code>:220</code> <code>pom.xml → idea-maven</code>、<code>:222</code> <code>.gitignore → idea-gitignore</code>；资产的 <code>java_dark.svg</code> 本来就是橙红方片，<b>文件夹图标在 IDEA 里本来就是单色</b>。所以你截图里看到的不是回退 Lucide。唯一真缺的是语义键（<code>\u0000lithe:java.class</code>、<code>folder.source-root</code>）没有数据源。</li>
-    <li><b style="color:#8b929e">左栏终端图标：真源说保持 Lucide</b>（你标的左栏「图标更换」）——<code>idea-icon-mappings.json:779</code> 的原话是"IDEA 终端工具窗图标在 terminal 插件里，不在 platform/icons，<b>保持 lucide 回落</b>"，而 <code>activity_bar.rs:43</code> 已按这条办。要换得先指认换哪张图。</li>
-    <li><b>编辑区左边界加「收起侧栏」按钮</b>（你标的「边框这里可以点击图标进行收起」）——新增，贴在编辑器岛左边界内侧；行为复用现有侧栏显隐动作，不要另起一套状态。</li>
-    <li><b>右活动栏通知徽标</b>（你标的「但是实现通知」）——<code>activity_bar.rs:57-58</code> 已登记为未实现；绘制规格现成（min-w 12 / 字号 9 / <code>&gt;9 → 9+</code>），缺的是"未读数从哪来"。</li>
-    <li><b>终端面板：本轮不做</b>（你说"我现在都没有使用"）——图注「终端要有这么火的」已登记为下一批：页签行已有，缺工具窗工具栏与底部输入框。</li>
-  </ol>
-  <p style="margin-top:6px">已实现、本轮只需核尺寸：<b>文件标签的文件类型图标</b>（<code>editor_view.rs:2507-2512</code>，标签最左 12px）·
-  <b>底部工具窗页签行</b>（<code>terminal_view.rs:121-155</code>）·
-  <b>菜单/项目下拉/分支在标题栏</b>（<code>title_bar.rs:20-33</code>，你标「前面的一样」= 保持）。</p>
-  <p>未画出来的已知差异（登记在 <code>gpui/docs/ui-mockup-idea.md</code>）：顶部两条 40px 行的归属（路径改短面包屑）、
-  左栏顶部搜索框归属、状态栏实测像两行 ≈46 而源码写 24。</p>
+<!-- 只有一行标识，不是标注 -->
+<div class="caption">
+  Lithe 界面对标 IDEA · 效果图（1920×1080）。尺寸 = 真机实测 + 源码常量；配色 = gpui/themes/lithe-dark.json。
+  改动清单见 ui-mockup-idea.md。
 </div>
 </div>
 </body>
