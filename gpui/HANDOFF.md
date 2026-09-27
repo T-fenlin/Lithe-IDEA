@@ -469,6 +469,16 @@
    - **探针不要挂在窗口帧上**：实测无人值守启动里 `on_next_frame` 一次都不跑；
      另外**不要在 `application().run(..)` 之后加驻留循环**——它会把 `cx.spawn` 的建窗口任务
      整个饿死（窗口根本不存在，`Get-Process` 报的 `MainWindowHandle` 其实是控制台窗口）。
+9. **双击启动（无参数启动，2026-09-27 本批）**：位置参数不再是必填 ——
+   省略时打开「最近项目」里最近且仍然存在的那个，列表空 / 全失效时**回落到当前工作目录**
+   （`PLAN.md` §17、`.agents/notes/implemented/feature/2026-09-27-launch-without-arguments.md`）。
+   两条要记住的：
+   - **GUI 子系统里"打印一行再退出"就是静默失败**：release 是 `windows_subsystem = "windows"`，
+     没有控制台，`eprintln!` 的用法说明没有任何接收者 —— 原缺陷（双击毫无反应、`ExitCode = 2`）
+     就是这么来的。启动路径上不许再有 `exit`；要看输出就用
+     `Start-Process -RedirectStandardOutput/-RedirectStandardError`。
+   - **外壳仍然要求一个根**（"没有项目也能开窗口"是更大的改动，归 B 方案）：所以兜底是
+     CWD 而不是空态窗口。诊断行 `S1_WORKSPACE_LAUNCH source=recent|current_dir root=…` 走 stderr。
 
 ## 6. 文档索引（接手先读这些）
 

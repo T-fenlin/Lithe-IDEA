@@ -25,7 +25,9 @@
 //! `windows/tauri/src/i18n/locale.ts` 生成）。**不要在这里再调一次 `i18n!`** —— 那会生成
 //! 第二份 backend，变成两个真相源。
 //!
-//! 运行：`cargo run --bin Lithe -- <workspace-root>`
+//! 运行：`cargo run --bin Lithe -- <workspace-root>`。位置参数可省略：省略时打开「最近项目」
+//! 里最近且仍然存在的那个，一个都没有时回落到当前工作目录 —— 资源管理器里双击 exe 走的就是
+//! 这一条（见 [`resolve_launch_root`]）。
 
 // Windows 发布构建**不要弹控制台窗口**：GUI 程序带一个黑底控制台是明显的产品缺陷
 // （Explorer 里双击会多出一个窗口，实测抓到的那个控制台是 1239x647）。
@@ -95,7 +97,11 @@ fn startup_window_bounds(cx: &App) -> WindowBounds {
 /// `--palette-keys` 的理由见下）。
 struct Options {
     /// 工作区根，传给 `workspace.snapshot` 与 `git.*`。
-    root: PathBuf,
+    ///
+    /// `Some` = 命令行**显式**给了位置参数（`Lithe <root>`，既有行为一字不改，包括"路径不存在
+    /// 也照原样传给外壳"）；`None` = 一个位置参数都没有 —— 这正是资源管理器里双击
+    /// `Lithe.exe` 的情形（Explorer 不传任何参数），由 [`resolve_launch_root`] 补上根。
+    root: Option<PathBuf>,
     /// 本次启动要应用的主题：**主题 id 或显示名都收**（覆盖设置文件；
     /// id 是 `themes[].id`，如 `lithe-dark`；显示名是 `themes[].name`，如 `Lithe Dark`）。
     theme_override: Option<SharedString>,
@@ -228,9 +234,15 @@ struct Options {
     session_assert: bool,
 }
 
-/// 解析 `<workspace-root> [--theme <id|名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
+/// 解析 `[<workspace-root>] [--theme <id|名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
+///
+/// ⚠️ 位置参数**可省略**（2026-09-27 起）：省略时由 [`resolve_launch_root`] 决定根，
+/// 于是"双击 exe"也能开出一个窗口。`--help` / 未知参数仍然返回 `Err(USAGE)`，
+/// `main` 照旧把它打到 stderr 并以退出码 2 退出。
 fn parse_options() -> Result<Options, String> {
-    const USAGE: &str = "用法：Lithe <workspace-root> [--theme <主题 id 或名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
+    const USAGE: &str = "用法：Lithe [<workspace-root>] [--theme <主题 id 或名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
+         \x20 省略 <workspace-root> 时：打开「最近项目」里最近且仍然存在的那个（已失效的条目标为失效）；\n\
+         \x20 一个都没有时回落到当前工作目录 —— 双击启动走的就是这一条，窗口一定会开出来。\n\
          \x20 --theme <id|名>      本次启动使用的主题（id 如 lithe-dark，名如 Lithe Dark；覆盖设置文件；验证/诊断用）\n\
          \x20 --locale <语言>      本次启动使用的界面语言（覆盖设置文件；验证/诊断用）\n\
          \x20 --open-settings     启动后自动打开设置对话框（验证/诊断用）\n\
@@ -437,7 +449,7 @@ fn parse_options() -> Result<Options, String> {
     }
 
     Ok(Options {
-        root: root.ok_or_else(|| USAGE.to_string())?,
+        root,
         theme_override,
         locale_override,
         open_settings,
@@ -676,6 +688,132 @@ fn run_project_menu_probe(window: &mut Window) {
     });
 }
 
+/// 「无参数启动」这条链的诊断前缀（可 grep）。
+///
+/// ⚠️ 走 **stderr**（`eprintln!`）：release 是 GUI 子系统，没有控制台，只有把
+/// stdout/stderr 重定向到文件才看得见；而 stdout 在被重定向时是**块缓冲**的，
+/// 进程还在跑（窗口开着）时它可能一行都没落盘。stderr 是无缓冲的，验证脚本 grep 它才稳定
+/// （与本文件开头的 `S1_ASSETS` 同一条理由）。
+const LAUNCH_TAG: &str = "S1_WORKSPACE_LAUNCH";
+
+/// 启动根的**纯选择**：显式路径 > 最近且仍然存在的项目 > 兜底目录。
+///
+/// 三个候选都由调用方准备好，所以这条优先级规则只有一个落点、也就能直接单测
+/// （见本文件底部的 `mod tests`）。真正的"读文件 / 探测目录"都在 [`resolve_launch_root`]。
+fn choose_launch_root(
+    explicit: Option<PathBuf>,
+    recent_root: Option<String>,
+    fallback: PathBuf,
+) -> PathBuf {
+    explicit
+        .or_else(|| recent_root.map(PathBuf::from))
+        .unwrap_or(fallback)
+}
+
+/// 没给位置参数时决定打开哪个根：**读最近项目 → 挑第一条存在的 → 标记失效条目 → 兜底**。
+///
+/// 为什么双击 `Lithe.exe` 会走到这里（根因，别再踩）：位置参数在原实现里是
+/// `root.ok_or_else(|| USAGE.to_string())?` —— **必填**；解析失败走
+/// `std::process::exit(2)`，而 release 是 GUI 子系统（`windows_subsystem = "windows"`），
+/// **没有控制台**，那段用法说明写到哪里都看不见，于是双击的表现就是"毫无反应地静默退出"。
+fn resolve_launch_root(explicit: Option<PathBuf>) -> PathBuf {
+    // 显式路径这一支**故意不读最近项目文件**：`Lithe <root>` 的既有行为一字不改
+    // （不产生新的诊断行，也不会去动 `recent-projects.json`）。
+    // 传 `None` / 空 `PathBuf` 只是为了让"显式优先"这条规则只写在 `choose_launch_root` 里。
+    if explicit.is_some() {
+        return choose_launch_root(explicit, None, PathBuf::new());
+    }
+
+    // 与项目菜单**同一份**数据（`%APPDATA%\Lithe\recent-projects.json`，或
+    // `LITHE_GPUI_SETTINGS_FILE` 指到的那个目录里的同名文件）。
+    let loaded = lithe_gpui_settings::load_recent_projects();
+    let pick = loaded
+        .projects
+        .select_launch_root(|path| std::path::Path::new(path).is_dir());
+
+    // 顺手把失效条目标成 `missing` 并落盘 —— 与项目菜单里点一条失效项目的行为一致
+    // （`ShellWorkspace::request_open_project` 的 `set_missing` + `save_recent_projects`）。
+    // `pick.missing` 里的每条路径都来自列表本身，所以 `set_missing` 必然命中（不需要判返回值）。
+    if !pick.missing.is_empty() {
+        let mut projects = loaded.projects.clone();
+        for path in &pick.missing {
+            projects.set_missing(path, true);
+        }
+        match loaded.path.as_deref() {
+            Some(file) => match lithe_gpui_settings::save_recent_projects(file, &projects) {
+                Ok(bytes) => eprintln!(
+                    "{LAUNCH_TAG} recent_marked_missing={} saved bytes={bytes} path={}",
+                    pick.missing.len(),
+                    file.display()
+                ),
+                // 写失败不 panic：选根照常继续，下一次打开项目会再写一次。
+                Err(error) => eprintln!("{LAUNCH_TAG} recent_save_failed error={error}"),
+            },
+            None => eprintln!("{LAUNCH_TAG} recent_mark_skipped reason=no_path"),
+        }
+    }
+
+    let root = choose_launch_root(None, pick.root.clone(), fallback_directory());
+    // 一行可 grep 的启动证据：选了谁、候选有几条、跳过了几条失效的。
+    let source = if pick.root.is_some() {
+        "recent"
+    } else {
+        "current_dir"
+    };
+    eprintln!(
+        "{LAUNCH_TAG} source={source} root={} candidates={} missing={}",
+        root.display(),
+        loaded.projects.len(),
+        pick.missing.len()
+    );
+    root
+}
+
+/// 「最近项目列表为空 / 所有条目都已失效」时的兜底目录：**当前工作目录**。
+///
+/// 取舍（维护者口径："双击之后窗口一定会开出来"，不允许静默什么都不发生）：
+///
+/// - **为什么不选"弹一个真正的消息框然后退出"**：那只把"静默"换成"点一下确认"，点完还是
+///   什么都开不出来，用户仍然到不了任何工作区；而且 GUI 子系统要加平台调用
+///   （`MessageBoxW`），`app` crate 虽是平台宿主层、放得下，但为一个只起提示作用的兜底
+///   引入新依赖不划算。
+/// - **为什么 CWD 合适**：从资源管理器双击时 CWD 就是 exe 所在目录（例如
+///   `gpui\target\release`），它**一定是个真实存在的目录**，所以外壳一定建得出来；
+///   用户随即能用项目菜单 / `Ctrl+O` 打开真正的项目。要是这个目录不可写
+///   （例如将来装进 `C:\Program Files\…`），`.lithe/` 建不出来这件事会走已经落地的
+///   常驻红条路径 —— 失败仍然是**可见**的，不是静默。
+/// - 从终端启动时这条兜底同样合理：CWD 就是用户当前所在的目录。
+///
+/// CWD 拿不到（被删掉 / 探测失败）时退到 **exe 所在目录**；连它都拿不到时才用 `.`
+/// —— 无论如何都返回一个路径，**不在这里退出**（宁可带着一个可疑的根开出来、让外壳
+/// 自己的诊断说话，也不静默退出）。
+fn fallback_directory() -> PathBuf {
+    if let Ok(cwd) = std::env::current_dir() {
+        if cwd.is_dir() {
+            return cwd;
+        }
+    }
+
+    match std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    {
+        Some(dir) => {
+            if !dir.is_dir() {
+                eprintln!(
+                    "{LAUNCH_TAG} fallback_warning source=exe_dir path={} reason=not_a_directory",
+                    dir.display()
+                );
+            }
+            dir
+        }
+        None => {
+            eprintln!("{LAUNCH_TAG} fallback_warning source=dot reason=no_exe_path");
+            PathBuf::from(".")
+        }
+    }
+}
+
 /// bin 目标的入口点。
 /// 启动顺序（0.6.6 只有这一种写法，顺序错会静默失败或 panic）：
 /// `application().with_assets(..).run` → `set_locale` → `gpui_kit::init` → `Theme::change` →
@@ -715,6 +853,10 @@ fn main() {
             std::process::exit(2);
         }
     };
+
+    // 工作区根：显式给了位置参数就用它（既有行为一字不改）；一个位置参数都没给就挑一个
+    // —— 资源管理器里双击 `Lithe.exe` 走的正是后者（见 [`resolve_launch_root`] 的根因说明）。
+    let root = resolve_launch_root(root);
 
     // `--right-view <id>`：**先解析**，未知 id 在这里就报一行错并**不改动启动状态**
     // （解析成 `None` 之后，窗口那段 `if let Some(view)` 整段不执行，右工具窗保持
@@ -1108,4 +1250,58 @@ fn main() {
             // 探针的验证改为"由脚本在后台启动 + 轮询磁盘上刚落盘的会话文件"（见
             // `.artifacts/session-e2e.ps1`），不需要驻留。
         });
+}
+
+/// 启动根选择逻辑的单测。
+///
+/// 只测**纯函数**（[`choose_launch_root`]）与另一条纯函数
+/// （`lithe_gpui_settings::RecentProjects::select_launch_root`，在 settings crate 里测）：
+/// 这两条合起来就是"无参数启动打开哪个根"的全部判断，不需要构造 GPUI、不需要真的建目录。
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **显式路径优先**：`Lithe <root>` 的既有行为一字不改 —— 即使最近项目里有一条存在的，
+    /// 命令行给的那个也必须赢。
+    #[test]
+    fn explicit_root_wins_over_the_recent_project() {
+        let root = choose_launch_root(
+            Some(PathBuf::from(r"D:\explicit")),
+            Some(r"D:\recent".to_string()),
+            PathBuf::from(r"D:\fallback"),
+        );
+        assert_eq!(root, PathBuf::from(r"D:\explicit"));
+    }
+
+    /// 没有显式路径时用**最近且存在的项目**（用兜底目录会开错工作区）。
+    #[test]
+    fn recent_project_wins_over_the_fallback_directory() {
+        let root = choose_launch_root(
+            None,
+            Some(r"D:\recent".to_string()),
+            PathBuf::from(r"D:\fallback"),
+        );
+        assert_eq!(root, PathBuf::from(r"D:\recent"));
+    }
+
+    /// 最近项目列表为空 / 全部失效（这一层拿到的是 `None`）时回落到兜底目录 ——
+    /// 这条守着"绝不允许仍然静默什么都不发生"：兜底目录一定是个真实目录，窗口一定开得出来。
+    #[test]
+    fn fallback_directory_is_used_when_there_is_no_recent_project() {
+        let root = choose_launch_root(None, None, PathBuf::from(r"D:\fallback"));
+        assert_eq!(root, PathBuf::from(r"D:\fallback"));
+    }
+
+    /// 兜底目录本身必须是**真实存在的目录**（它是"窗口一定开得出来"这条口径的最后一环）。
+    ///
+    /// 不比对具体路径（那会依赖跑测试的机器）：只断言"探测出来的东西确实是个目录"。
+    #[test]
+    fn fallback_directory_is_a_real_directory() {
+        let dir = fallback_directory();
+        assert!(
+            dir.is_dir(),
+            "兜底目录必须是真实目录，否则外壳又会开不出来：{}",
+            dir.display()
+        );
+    }
 }

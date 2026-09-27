@@ -77,7 +77,7 @@
 //!    所以剩下的中文字面量只是那句话的固定部分。
 //!    （阶段 6 第一半之前这里还有一句「右侧工具窗（阶段 6）· 工作区：{}」，右工具窗做成真实
 //!    区域后已删除，它的位置现在是 `lithe.maven.title` 等真键。）
-//! 4. **不是界面文案**：CLI 用法提示（`app/src/main.rs` 的「用法：Lithe <workspace-root>」）、
+//! 4. **不是界面文案**：CLI 用法提示（`app/src/main.rs` 的「用法：Lithe [<workspace-root>]」）、
 //!    单元测试夹具（`terminal/src/ansi.rs` 的 `"终"` 是 ansi-cleaner 的字节夹具）。
 //!
 //! `tr_args` 的**占位符名以 locale 值为准**，不是以调用点原来的 `format!` 位置为准：

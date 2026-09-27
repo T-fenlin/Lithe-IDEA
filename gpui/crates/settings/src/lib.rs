@@ -79,8 +79,8 @@ pub use project::{
     resolve_overrides,
 };
 pub use recent_projects::{
-    LoadedRecentProjects, MAX_RECENT_PROJECTS, RECENT_PROJECTS_DIAGNOSTIC_TAG, RECENT_PROJECTS_KEY,
-    RecentProject, RecentProjects, folder_name as recent_project_name,
+    LaunchRootPick, LoadedRecentProjects, MAX_RECENT_PROJECTS, RECENT_PROJECTS_DIAGNOSTIC_TAG,
+    RECENT_PROJECTS_KEY, RecentProject, RecentProjects, folder_name as recent_project_name,
     load as load_recent_projects, load_from as load_recent_projects_from, now_unix_ms,
     save as save_recent_projects,
 };

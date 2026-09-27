@@ -2372,3 +2372,75 @@ Core 的 `endpoint_index`（`rust/lithe-core/src/languages/spring.rs:1477-1552`�
 
 
 
+
+---
+
+## 17. 可用性修复：双击 `Lithe.exe` 也能开出窗口（无参数启动，2026-09-27）
+
+完整决策与被否方案见 `.agents/notes/implemented/feature/2026-09-27-launch-without-arguments.md`。
+
+### 17.1 缺陷与根因（父代理已查实，本批只做修复）
+
+用户双击 `gpui\target\release\Lithe.exe`、点掉 SmartScreen 的「仍要运行」之后**毫无反应**。实测：
+
+```text
+原地无参数启动 →  HasExited = True    ExitCode = 2      stderr = 一整段 USAGE 用法说明
+带路径启动     →  HasExited = False   MainWindowHandle = 2034844（窗口正常）
+```
+
+根因是**必填位置参数**（当时 `root: root.ok_or_else(|| USAGE.to_string())?`）+ **release 是 GUI 子系统**
+（`#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`，没有控制台）：
+解析失败走 `eprintln!` + `std::process::exit(2)`，而那段用法说明**写到哪儿都没人看得见**。
+"打印用法 + 退 2"在终端里是对的，双击场景里就退化成静默什么都不发生。
+
+### 17.2 落地方案（三段式）
+
+1. **选择逻辑是纯函数**（`gpui/crates/settings/src/recent_projects.rs`）：
+   `RecentProjects::select_launch_root(&self, is_dir)` → `LaunchRootPick { root, missing }`。
+   按**界面顺序**（`pinned` 优先 + `lastOpenedAt` 降序）取第一条真的存在的；扫描不提前退出，
+   已经失效的条目交回调用方去 `set_missing(.., true)` + 落盘（与项目菜单点失效条目同一行为）。
+   文件系统探测由调用方注入 ⇒ 不构造 GPUI、不真的建/删目录就能单测。
+2. **App Shell 只做"读文件 + 调它 + 建窗口"**（`gpui/crates/app/src/main.rs`）：
+   `Options::root` 变成 `Option<PathBuf>`；`resolve_launch_root` 负责读 `recent-projects.json`、
+   调上面的函数、标记失效条目；优先级本身是 `choose_launch_root(explicit, recent_root, fallback)`
+   —— **显式 > 最近且存在 > 兜底**，只有一个落点。
+3. **兜底 = 当前工作目录**（维护者口径："双击之后窗口一定会开出来"，不许退出、不许只弹提示框）：
+   双击时 CWD 就是 exe 所在目录，一定是真实目录，窗口一定开得出来，用户随即能用项目菜单换根；
+   该目录不可写时 `.lithe/` 建不出来会走**常驻红条**，失败仍然可见。CWD 拿不到才退到 exe 目录。
+   **这条启动路径上没有任何 `exit`。**
+
+`Lithe <root>` 一字不改（显式那一支**不读**最近项目文件、不做存在性检查）；`--help` / 未知参数
+照旧打用法并退 2；用法首行改成 `Lithe [<workspace-root>]` 并补了省略时的两句说明。
+
+### 17.3 验证记录
+
+- `cargo check --workspace --all-targets`：通过（`Finished dev profile … in 4m 48s`，只有既有的
+  `dead_code` 警告，与本批无关）。
+- `cargo test --workspace`（`$env:TEMP` / `$env:TMP` = `.artifacts\alt-tmp`）：**432 passed / 0 failed**。
+  基线 423，本批 +9：`lithe-gpui-settings` 5 条（空列表 / 全失效 / 最近且存在 / 置顶顺序 /
+  只剩最后一条存在）+ `lithe-gpui-app` 4 条（显式优先 / 最近优先 / 兜底 / 兜底目录真的是目录）。
+- `./.agents/skills/write-stable-tests/scripts/verify-test-stability.ps1` → `Test stability check passed (added lines, windows).`
+- `node gpui/tools/extract-locale.mjs --check` → `--check：产物与真源一致。`（本批没有新增界面文案）
+- `node scripts/verify-agent-notes.mjs` → `ok: 41 active Agent Note(s) verified`
+- **GUI 端到端**（工作区**外**的 exe 副本、`LITHE_GPUI_SETTINGS_FILE` 指向工作区外的配置目录、
+  `Start-Process -RedirectStandardOutput/-RedirectStandardError` 取日志、跑完 `taskkill /T /F`）：
+
+  | 情形 | 启动 | 观察 |
+  | --- | --- | --- |
+  | 最近项目里最新的一条**已失效**、次新的一条存在 | 无参数，CWD=`C:\Users\admin\lithe-probe` | `HasExited=False MainWindowHandle=724640`；stderr `S1_WORKSPACE_LAUNCH recent_marked_missing=1 saved bytes=374` + `source=recent root=…\ws\proj-a candidates=2 missing=1`；stdout `S1_WORKSPACE root=…\ws\proj-a`；`…\ws\proj-a\.lithe\project.json` 被建出来；`recent-projects.json` 里那条变成 `"missing": true` |
+  | 最近列表**空** | 无参数，CWD=`C:\Users\admin\lithe-probe\cwd-fallback` | `MainWindowHandle=3083448`；`S1_WORKSPACE_LAUNCH source=current_dir root=C:\Users\admin\lithe-probe\cwd-fallback candidates=0 missing=0`；该目录下 `.lithe\project.json` 被建出来 |
+  | 最近列表**全部失效** | 同上 | `S1_WORKSPACE_LAUNCH recent_marked_missing=2 saved bytes=364` + `source=current_dir root=…\cwd-fallback candidates=2 missing=2`；两条都落盘成 `"missing": true`；窗口照常开出来 |
+  | **显式路径**（最近列表里另有一条存在的） | `Lithe C:\Users\admin\lithe-probe\ws\proj-a` | 窗口开出来；stdout `S1_WORKSPACE root=…\ws\proj-a`；**没有任何** `S1_WORKSPACE_LAUNCH` 行（显式那一支不读最近项目文件）；`recent-projects.json` 未被改动 |
+  | `--help` / `--nope` | — | `ExitCode=2`，stderr 51 / 53 行，首行分别是 `用法：Lithe [<workspace-root>] …` 与 `未知参数 --nope` |
+  | **对照**：父代理留下的旧 release 副本 | 无参数 | `HasExited=True ExitCode=2`，stderr 首行是旧用法文本 —— 原缺陷可复现 |
+
+  跑完 `Get-Process | Where-Object { $_.ProcessName -like 'Lithe*' }` 计数为 **0**（无残留）。
+
+### 17.4 未做 / 已知边界
+
+- **外壳仍然要求一个根**：没有"欢迎页 / 空态窗口"，所以"最近列表空"时的形态是
+  "用 CWD 开一个普通工作区"，而不是真正的空态窗口（维护者已把"支持没有根"归到更大的 B 方案）。
+- **兜底没有界面提示**：只有 `S1_WORKSPACE_LAUNCH` 诊断行，界面上看不出"这是兜底工作区"。
+- 没有用 release 构建复验（本轮约定不跑 `cargo build --release`，打包由父代理统一重跑）；
+  端到端跑的是 **debug** 二进制 —— 根解析逻辑与子系统位无关，但"没有控制台时 stderr 看不见"
+  这一条本身依赖 release 的子系统设置，属既有事实（父代理已验：debug=3 / release=2）。

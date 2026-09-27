@@ -66,6 +66,15 @@
 //! `bad_key key=recentProjects` / `bad_entry index=N error=…` / `normalized removed=N`。
 //! 调用方用 [`LoadedRecentProjects::report`] 打印（`S1_SETTINGS_RECENT …`，与 `S1_SETTINGS` 一族同口径）。
 //!
+//! ## 「无参数启动」怎么挑根
+//!
+//! 双击 `Lithe.exe` 时资源管理器不会传任何参数（位置参数在原实现里是**必填**的），所以
+//! 这里补一条纯选择逻辑 [`RecentProjects::select_launch_root`]：按列表顺序取**第一条
+//! 仍然存在**的项目，并把扫描中判定失效的条目交回调用方去标 `missing`（与项目菜单的
+//! 既有行为一致）。文件系统探测由调用方注入，本模块因此仍然不碰 GPUI、也不需要真的
+//! 建 / 删目录就能单测。兜底（列表为空 / 全失效时开哪个根）**不在本模块**，
+//! 它属于 App Shell 的启动策略，见 `gpui/crates/app/src/main.rs` 的 `resolve_launch_root`。
+//!
 //! ## 为什么数据层不取时钟
 //!
 //! 时间戳是 `record_open` 的**入参**（[`now_unix_ms`] 只是"要现取时用哪个"的唯一落点）。
@@ -150,10 +159,54 @@ pub struct RecentProjects {
     entries: Vec<RecentProject>,
 }
 
+/// 「无位置参数启动」时挑启动根的结果（纯数据）。
+///
+/// `Lithe` 双击启动（Explorer 传不进任何参数）时没有工作区根，只能从最近项目里挑一个。
+/// 这个结构体把"挑了谁"和"扫描中发现谁已经失效"分开返回，于是调用方可以照项目菜单
+/// 既有行为把失效条目标成 `missing`，而**不必**在选根逻辑里做任何文件写入。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchRootPick {
+    /// 选中的启动根 = 列表里**第一条真的存在**的项目路径（列表顺序 = 界面顺序）。
+    /// `None` = 列表为空，或者所有条目都已失效（调用方据此走兜底，**不得静默退出**）。
+    pub root: Option<String>,
+    /// 扫描中判定为**已失效**的条目路径（按列表顺序，含排在选中项之后的那些）。
+    /// 调用方逐条 [`RecentProjects::set_missing`] 后落盘，与项目菜单点开失效条目同一行为。
+    pub missing: Vec<String>,
+}
+
 impl RecentProjects {
     /// 空列表。
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 从最近项目里挑「双击启动」要打开的根（**纯选择逻辑**：不碰文件系统、不取时钟、
+    /// 不做落盘）。
+    ///
+    /// 「存在」由调用方通过 `is_dir` 注入（生产代码传 `Path::is_dir`，单测传闭包），
+    /// 所以这条选择逻辑可以在不构造 GPUI、不真的建 / 删目录的情况下单测
+    /// —— 与模块文档那条"数据层不取时钟"同一口径。
+    ///
+    /// 顺序口径：**按 [`Self::entries`] 的顺序取第一条存在的**，也就是用户在项目下拉里
+    /// 看到的顺序（`pinned` 优先，再 `lastOpenedAt` 降序）。因此
+    /// - 没有置顶项时，选中的就是"最近且仍然存在的那个项目"；
+    /// - 有置顶项且它还在时，优先打开置顶的那个（用户的置顶意图比"最近"更强，
+    ///   否则每次双击都会无视他明确钉住的项目）。
+    ///
+    /// 扫描**不提前退出**：即使已经选中了某一条，剩下的条目仍然会被探测一遍，这样
+    /// "列表里所有失效条目都标出来"这件事与"选中哪一条"无关（列表最多十几条，代价可忽略）。
+    pub fn select_launch_root(&self, mut is_dir: impl FnMut(&str) -> bool) -> LaunchRootPick {
+        let mut pick = LaunchRootPick::default();
+        for entry in &self.entries {
+            if is_dir(&entry.path) {
+                if pick.root.is_none() {
+                    pick.root = Some(entry.path.clone());
+                }
+            } else {
+                pick.missing.push(entry.path.clone());
+            }
+        }
+        pick
     }
 
     /// 列出最近项目，顺序 = 界面上该显示的顺序（`pinned` 优先 + `lastOpenedAt` 降序）。
@@ -963,5 +1016,91 @@ mod tests {
             (1_577_836_800_000..4_102_444_800_000).contains(&now),
             "now_unix_ms 必须是毫秒：{now}"
         );
+    }
+
+    /// 「无参数启动」选根：**空列表** → 没有根可选，也没有失效条目。
+    ///
+    /// 守的是"空列表不许 panic、也不许挑出一个不存在的路径"；调用方据此走兜底
+    /// （见 `app/src/main.rs` 的 `resolve_launch_root`），所以这里必须如实返回 `None`。
+    #[test]
+    fn select_launch_root_on_an_empty_list_picks_nothing() {
+        let projects = RecentProjects::new();
+        let pick = projects.select_launch_root(|_| panic!("空列表不得探测任何路径"));
+
+        assert_eq!(pick.root, None);
+        assert!(pick.missing.is_empty(), "{pick:?}");
+    }
+
+    /// 「无参数启动」选根：**所有条目都失效** → 没有根，且每一条都被标成待标记的 missing。
+    #[test]
+    fn select_launch_root_reports_every_missing_entry() {
+        let mut projects = RecentProjects::new();
+        assert!(projects.record_open(r"D:\proj\gone-newer", 300, None));
+        assert!(projects.record_open(r"D:\proj\gone-older", 100, None));
+
+        let pick = projects.select_launch_root(|_| false);
+
+        assert_eq!(pick.root, None, "一条都不存在 ⇒ 没有根可选（调用方走兜底）");
+        assert_eq!(
+            pick.missing,
+            vec![
+                r"D:\proj\gone-newer".to_string(),
+                r"D:\proj\gone-older".to_string()
+            ],
+            "失效条目按列表顺序（时间降序）交回，调用方逐条 set_missing + 落盘"
+        );
+    }
+
+    /// 「无参数启动」选根：**最近且存在**的那条被选中；比它更新的失效条目被跳过并记进
+    /// `missing`，比它更旧的条目**仍然会被探测**（失效的要标记，存在的只是不选）。
+    #[test]
+    fn select_launch_root_picks_the_most_recent_existing_project() {
+        let mut projects = RecentProjects::new();
+        assert!(projects.record_open(r"D:\proj\gone", 300, None));
+        assert!(projects.record_open(r"D:\proj\here", 200, None));
+        assert!(projects.record_open(r"D:\proj\older-gone", 100, None));
+
+        let pick = projects.select_launch_root(|path| path == r"D:\proj\here");
+
+        assert_eq!(pick.root.as_deref(), Some(r"D:\proj\here"));
+        assert_eq!(
+            pick.missing,
+            vec![r"D:\proj\gone".to_string(), r"D:\proj\older-gone".to_string()],
+            "选中之后排在后面的条目照样被探测（要标记的失效条目与选中项无关）"
+        );
+    }
+
+    /// 「无参数启动」选根：置顶项**优先**（列表顺序就是界面顺序），即使它比别的条目旧。
+    #[test]
+    fn select_launch_root_respects_pinned_order() {
+        let mut projects = RecentProjects::new();
+        assert!(projects.record_open(r"D:\proj\newer", 900, None));
+        assert!(projects.record_open(r"D:\proj\pinned-old", 100, None));
+        assert!(projects.set_pinned(r"D:\proj\pinned-old", true));
+
+        let pick = projects.select_launch_root(|_| true);
+
+        assert_eq!(
+            pick.root.as_deref(),
+            Some(r"D:\proj\pinned-old"),
+            "置顶项排在界面前面 ⇒ 双击打开的也是它（用户的置顶意图优先于最近）"
+        );
+        assert!(pick.missing.is_empty(), "{pick:?}");
+    }
+
+    /// 「无参数启动」选根：**只要有一条存在就不会没有根** —— 这条守着"绝不静默什么都不发生"
+    /// 里能被单测覆盖的那一半（剩下那一半是调用方的兜底，见 `app/src/main.rs`）。
+    #[test]
+    fn select_launch_root_finds_the_only_surviving_project_at_the_end() {
+        let mut projects = RecentProjects::new();
+        for index in 0..3u64 {
+            assert!(projects.record_open(&format!(r"D:\proj\gone{index}"), 100 + index, None));
+        }
+        assert!(projects.record_open(r"D:\proj\survivor", 1, None));
+
+        let pick = projects.select_launch_root(|path| path == r"D:\proj\survivor");
+
+        assert_eq!(pick.root.as_deref(), Some(r"D:\proj\survivor"));
+        assert_eq!(pick.missing.len(), 3, "{pick:?}");
     }
 }
