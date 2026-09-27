@@ -2,9 +2,11 @@
 /**
  * extract-locale.mjs —— 把 Windows 前端的界面文案真源转换成 GPUI Kit 的 rust-i18n 资源。
  *
- * 真源：
- *   windows/tauri/src/i18n/locale.ts   （平面 key 的 `catalogs` 对象，内含 "en-US" 与 "zh-CN"）
- *   windows/tauri/src/i18n/ai-commit.ts（locale.ts 通过 `...aiCommitEnglish` / `...aiCommitChinese` 展开）
+ * 真源（已随旧前端删除而迁入本目录，内容逐字节未改，见同目录 README.md）：
+ *   gpui/crates/shared/locales/source/locale.ts
+ *       （平面 key 的 `catalogs` 对象，内含 "en-US" 与 "zh-CN"）
+ *   gpui/crates/shared/locales/source/ai-commit.ts
+ *       （locale.ts 通过 `...aiCommitEnglish` / `...aiCommitChinese` 展开）
  *
  * 产物：
  *   gpui/crates/shared/locales/lithe.en.yml
@@ -31,8 +33,10 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..");
-const LOCALE_TS = resolve(REPO_ROOT, "windows/tauri/src/i18n/locale.ts");
-const AI_COMMIT_TS = resolve(REPO_ROOT, "windows/tauri/src/i18n/ai-commit.ts");
+// 真源随旧前端（`windows/`）删除而迁到 `crates/shared/locales/source/`，与产物同属一个 crate：
+// 文案自此以本目录为唯一真源，`--check` 继续可复现（迁移前后的产物逐字节一致）。
+const LOCALE_TS = resolve(HERE, "../crates/shared/locales/source/locale.ts");
+const AI_COMMIT_TS = resolve(HERE, "../crates/shared/locales/source/ai-commit.ts");
 // 持有 `locales/` 的 crate 是 `crates/shared`（`rust_i18n::i18n!` 必须在那个 crate 的根，
 // 见 `gpui/crates/shared/src/i18n.rs`）；早期版本的脚本写的是 `gpui/shell/locales`，
 // 那个目录在 workspace 重组后已经不存在，会把产物写到错的地方。
@@ -938,7 +942,7 @@ function main() {
       yamlLocale: locale.yamlLocale,
       entries,
       overrides,
-      sourceLabel: "windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）",
+      sourceLabel: "crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）",
     });
     const target = resolve(OUT_DIR, locale.file);
     const previous = tryRead(target);

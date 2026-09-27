@@ -44,6 +44,21 @@
 //! 代价是二进制体积（SVG 压缩率高，实测影响见 `gpui/research/icon-asset-inventory.md` 的接线一节）。
 //! 想再收窄范围，`#[exclude]` / `#[include]` 是唯一的开关位置（见 `LitheAssets` 的属性）。
 //!
+//! ### 归档目录（随旧前端删除而迁入，全部 `#[exclude]`）
+//!
+//! 旧前端（`windows/`、`macos/`）删除前，只存在于那两侧、gpui 侧没有副本的资源按
+//! `gpui/research/legacy-frontend-removal-audit.md` 的结论迁到了 `gpui/assets/` 下，但**都还没有接线**：
+//! `fonts/`（JetBrains Mono 4 字重 + OFL）、`legacy-ide-icons/`（macOS 侧 IDEAIcons 144 文件，
+//! 与 `ui-icons/idea/**` 的 expui 命名体系**不是同一套**）、`gutter-icons/`（行号旁运行/测试标记）、
+//! `database-icons/`（数据库品牌图标）、`feature-icons/`（MavenIcon / RunIcon / JavaCupIcon ——
+//! 旧前端只有内联 SVG 的 React 组件，没有文件对象，这里落成了 SVG）、
+//! `icon-themes/material/**`。全部由 `#[exclude]` 挡在二进制外：**磁盘文件保留，接线时再去掉
+//! 对应的 `#[exclude]`**。理由与既有三套图标包完全一样（见下一节），本文件 `mod tests` 里的
+//! 回归测试会在有人误删这些 `#[exclude]` 时失败。
+//!
+//! `gpui/themes/legacy-builtin/` 同理：旧 schema 的 12 份主题真源（35 条主题）只作追溯用，
+//! 生效主题仍是 `gpui/themes/*.json` 那 7 份 gpui-kit schema 文件。
+//!
 //! ### 为什么 `icon-themes/{lithe,pierre,symbols}` 已从内嵌范围排除
 //!
 //! 这三套（459 + 149 + 325 = 933 个文件 / 5 337 322 字节 / 约 5.09 MiB）**没有任何代码路径能取到**：
@@ -97,6 +112,12 @@ use gpui_kit::{AssetSource, Result, SharedString};
 #[exclude = "icon-themes/lithe/**"]
 #[exclude = "icon-themes/pierre/**"]
 #[exclude = "icon-themes/symbols/**"]
+#[exclude = "icon-themes/material/**"]
+#[exclude = "fonts/**"]
+#[exclude = "legacy-ide-icons/**"]
+#[exclude = "gutter-icons/**"]
+#[exclude = "database-icons/**"]
+#[exclude = "feature-icons/**"]
 #[exclude = "README.md"]
 pub struct LitheAssets;
 
@@ -217,10 +238,11 @@ mod tests {
             .collect()
     }
 
-    /// 回归：三套未接线的图标包不得再进二进制。
+    /// 回归：未接线的图标包与归档目录不得再进二进制。
     ///
     /// 保护的是"整包被拷回来"或 `#[exclude]` 被误删/写错（例如把 `lithe` 拼成 `light`）这类回归：
-    /// 这两种情况都不会让任何测试或编译失败，只会让二进制静默多背约 5.09 MiB 死载荷。
+    /// 这两种情况都不会让任何测试或编译失败，只会让二进制静默多背死载荷
+    /// （三套图标包约 5.09 MiB，加归档目录约 1.79 MiB）。
     #[test]
     fn unwired_icon_themes_are_not_embedded() {
         let paths = embedded_paths();
@@ -228,6 +250,12 @@ mod tests {
             "icon-themes/lithe/",
             "icon-themes/pierre/",
             "icon-themes/symbols/",
+            "icon-themes/material/",
+            "fonts/",
+            "legacy-ide-icons/",
+            "gutter-icons/",
+            "database-icons/",
+            "feature-icons/",
         ] {
             let leaked: Vec<&str> = paths
                 .iter()
@@ -343,11 +371,13 @@ mod tests {
             "embedded resource bytes = {resource_bytes} ({:.2} MiB)",
             resource_bytes as f64 / 1_048_576.0
         );
-        // 三套死载荷合计 5 337 322 字节：精确钉住 3 200 771 已经蕴含"它们一个都不在里面"。
+        // 三套图标包 + material 合计 5 864 529 字节，归档目录约 1.79 MiB：
+        // 精确钉住 3 200 771 已经蕴含"它们一个都不在里面"。
         assert_eq!(
             resource_bytes, 3_200_771,
-            "内嵌资源字节数应精确等于 269 个资源文件之和；若变大，先查三套死载荷（合计 5 337 322 字节）\
-             是不是又进来了，再查是不是有资源被整体替换成了更大的版本"
+            "内嵌资源字节数应精确等于 269 个资源文件之和；若变大，先查未接线的图标包\
+             （lithe/pierre/symbols/material 合计 5 864 529 字节）与归档目录是不是又进来了，\
+             再查是不是有资源被整体替换成了更大的版本"
         );
     }
 

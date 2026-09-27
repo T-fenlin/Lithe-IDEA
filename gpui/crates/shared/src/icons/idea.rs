@@ -604,7 +604,7 @@ pub const XCIRCLE_ICON: IdeaIcon = IdeaIcon {
 /// 旧前端那份 Vite 清单（`idea-assets.generated.ts`，**已删除**）里那些**别名**显示名 → 规范常量。
 ///
 /// 键就是那份清单的 `ideaIconAssets` 键（`"ChevronDownIcon"` 这种**原样**未截断的显示名）；
-/// 别名由生成器按 `windows/tauri/scripts/idea-icon-mappings.json` 推导，不再读那份 TS。
+/// 别名由生成器按 `gpui/tools/idea-icon-mappings.json` 推导，不再读那份 TS。
 /// 只为迁移期与文档对照保留；新代码应该直接用规范常量（[`ALL`] 里的那些）。
 pub const ALIASES: [(&str, IdeaIcon); 16] = [
     ("ChevronDownIcon", CARET_DOWN_ICON),

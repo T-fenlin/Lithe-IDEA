@@ -14,9 +14,10 @@
  * 真源（只读）：
  *   gpui/assets/ui-icons/idea/ 下的 *.svg
  *       —— 实际产出的依据。**每张 SVG 都必须出现在产物里**（脚本会校验无孤儿、无悬空引用）。
- *   windows/tauri/scripts/idea-icon-mappings.json
+ *   gpui/tools/idea-icon-mappings.json
  *       —— 只读参考，**只用来取"旧前端那 95 个显示名"**（`SearchIcon` 这种），让 Rust 侧的
- *           常量名与旧前端对齐。它**不在 `gpui/` 下**，所以是可选输入：文件缺失时脚本仍然成功，
+ *           常量名与旧前端对齐。它随旧前端（`windows/`）删除而迁入本目录，所以是可选输入：
+ *           文件缺失时脚本仍然成功，
  *           只是退化成"由文件名推导常量名"（见下）。它**不是**那份已删除的 `.ts`。
  *
  * 产物：
@@ -55,10 +56,7 @@ const SVG_ROOT = resolve(ASSETS_DIR, "ui-icons/idea");
 /** AssetSource 路径的命名空间前缀（规则 4）。 */
 const PATH_PREFIX = "ui-icons/idea";
 /** 旧前端的显示名映射（只读参考，可选；见文件头「真源」）。 */
-const MAPPINGS_JSON = resolve(
-  REPO_ROOT,
-  "windows/tauri/scripts/idea-icon-mappings.json",
-);
+const MAPPINGS_JSON = resolve(HERE, "idea-icon-mappings.json");
 const OUT_FILE = resolve(REPO_ROOT, "gpui/crates/shared/src/icons/idea.rs");
 
 const CHECK = process.argv.slice(2).includes("--check");
@@ -277,7 +275,7 @@ out += "\n";
 out += "/// 旧前端那份 Vite 清单（`idea-assets.generated.ts`，**已删除**）里那些**别名**显示名 → 规范常量。\n";
 out += "///\n";
 out += "/// 键就是那份清单的 `ideaIconAssets` 键（`\"ChevronDownIcon\"` 这种**原样**未截断的显示名）；\n";
-out += "/// 别名由生成器按 `windows/tauri/scripts/idea-icon-mappings.json` 推导，不再读那份 TS。\n";
+out += "/// 别名由生成器按 `gpui/tools/idea-icon-mappings.json` 推导，不再读那份 TS。\n";
 out += "/// 只为迁移期与文档对照保留；新代码应该直接用规范常量（[`ALL`] 里的那些）。\n";
 out += `pub const ALIASES: [(&str, IdeaIcon); ${aliasRows.length}] = [\n`;
 for (const row of aliasRows) {
