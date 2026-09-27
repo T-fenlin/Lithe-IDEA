@@ -3986,16 +3986,8 @@ fn drag_handle(this: gpui_kit::WeakEntity<ShellWorkspace>, cx: &App) -> impl Int
         .w(rems(DRAG_HANDLE_SPEC / 16.))
         .cursor_col_resize()
         // 平时与面板同底（看不出有这条热区），悬停时整条染成主色。
-        // "整条 4px 染色"是**稳的做法**：gpui 的 `StyleRefinement` 只改元素自己的样式，
-        // 画不出"只在右端 1px"那种效果（`.hover(..)` 的闭包拿不到子元素）。
         .hover(move |style| style.bg(hover))
         // 只记起点（鼠标 x + 按下那一刻的面板宽）。
-        //
-        // ⚠️ **必须用元素自带的 `on_mouse_move`，不能用 `Window::on_mouse_event`**：
-        // 后者在 `window.rs:5258` 有一条 `debug_assert_paint`，**只允许在 render 期注册**，
-        // 在"鼠标按下"的事件回调里调用会当场 panic
-        // （实测：`this method can only be called during paint`，点了热区就崩）。
-        // 元素级 `on_mouse_move` 没有这个限制。
         .on_mouse_down(gpui_kit::MouseButton::Left, move |event, _window, cx| {
             let press_x = f32::from(event.position.x);
             let _ = pressed.update(cx, |shell, cx| {
@@ -4003,21 +3995,60 @@ fn drag_handle(this: gpui_kit::WeakEntity<ShellWorkspace>, cx: &App) -> impl Int
                 cx.notify();
             });
         })
-        // 拖动跟踪：每次鼠标在本元素上移动就按 `起点 + (当前 x - 起点 x)` 改宽；
-        // 停下来（光标移出热区）就下一次进入时按新起点重算，不会跳变。
-        .on_mouse_move(move |event, _window, cx| {
-            let _ = drag.update(cx, |shell, cx| {
-                let Some((press_x, press_width)) = shell.left_sidebar_drag_origin else {
-                    return;
-                };
-                shell.left_sidebar_width = clamped_drag_width(
-                    press_x,
-                    press_width,
-                    f32::from(event.position.x),
-                );
-                cx.notify();
-            });
-        })
+        // 拖动跟踪：**窗口级**监听，在 `canvas` 的 paint 闭包里每帧注册一次。
+        //
+        // ## 为什么不能用元素级的 `on_mouse_move`
+        //
+        // 它内部要求 `hitbox.is_hovered(window)`（`gpui-pre-0.3.6/src/elements/div.rs:303-315`）——
+        // 只有光标**仍在这条 4px 热区上**才触发。维护者实测的正是这个症状：
+        // 「鼠标过快就不能拖动」—— 手一快光标就离开那 4px，拖动当场断线。
+        //
+        // ## 为什么必须在这里注册（而不是在 `on_mouse_down` 里）
+        //
+        // `Window::on_mouse_event` 有一条 `debug_assert_paint`（`window.rs:5258`），
+        // 文档明说 *"should only be called as part of the paint phase"*。
+        // 上一版我在鼠标按下的事件回调里调它，于是**点一下热区就崩**
+        // （维护者实测：`this method can only be called during paint`）。
+        // `canvas` 的第二个闭包就是 paint 闭包、签名带 `&mut Window`，是合法且**每帧都会重跑**
+        // 的注册点 —— 与 gpui-component 自己的 `carousel/scroll_mask.rs:125-155` 同一套做法。
+        //
+        // 拖动期间宽度每次变化都会让窗口重绘，所以监听会逐帧续上（与 `scroll_mask` 同机制）。
+        // 不在这里调 `cx.notify()`：paint 期不该再触发重绘。
+        //
+        // # 这条路的实测证据（2026-09-27，合成输入）
+        //
+        // 用 `SetCursorPos` + `mouse_event(LEFTDOWN/LEFTUP)` 合成一次"快拖"
+        // （热区按下后 6 步共 258px）复验：窗口收到 **1886** 条移动事件、宽度从 320 连续算到 576、
+        // 并在一路右拖下钳到上界 720 —— 期间**没有 panic**，手快也没有断线。
+        // （诊断行 `S1_SIDEBAR_DRAG` 是那次的临时脚手架，验完已拆；证据留在提交信息里。）
+        .child(
+            gpui_kit::canvas(
+                |_bounds, _window, _cx| {},
+                move |_bounds, _prepaint, window, _cx| {
+                    window.on_mouse_event(
+                        move |event: &gpui_kit::MouseMoveEvent, _phase, _window, cx| {
+                            if event.pressed_button != Some(gpui_kit::MouseButton::Left) {
+                                return;
+                            }
+                            let _ = drag.update(cx, |shell, cx| {
+                                let Some((press_x, press_width)) = shell.left_sidebar_drag_origin
+                                else {
+                                    return;
+                                };
+                                shell.left_sidebar_width = clamped_drag_width(
+                                    press_x,
+                                    press_width,
+                                    f32::from(event.position.x),
+                                );
+                                cx.notify();
+                            });
+                        },
+                    );
+                },
+            )
+            .absolute()
+            .size_full(),
+        )
 }
 
 /// 中央编辑器岛：`rounded-xl border-l bg-background`（`main-layout.tsx:313`）。
