@@ -430,6 +430,9 @@ impl TerminalPane {
             .size_full()
             .child(
                 Empty::new()
+                    // `Empty` 硬编码了 `.border_dashed()`（`gpui-component-0.6.6/src/empty.rs:74-75`），
+                    // 真机界面没有这圈虚线；改边框色为透明关掉（与编辑器空态同一招，2026-09-27 统一）。
+                    .border_color(cx.theme().transparent)
                     .header(
                         EmptyHeader::new()
                             .media(
@@ -469,6 +472,9 @@ impl TerminalPane {
             .unwrap_or_default();
         v_flex().size_full().child(
             Empty::new()
+                // `Empty` 硬编码了 `.border_dashed()`（`gpui-component-0.6.6/src/empty.rs:74-75`），
+                // 真机界面没有这圈虚线；改边框色为透明关掉（与编辑器空态同一招，2026-09-27 统一）。
+                .border_color(cx.theme().transparent)
                 .header(
                     EmptyHeader::new()
                         .media(

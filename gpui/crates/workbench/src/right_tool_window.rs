@@ -356,7 +356,7 @@ pub fn right_tool_window(
             (RightToolWindowView::Spring, _, Some(index)) if !index.is_empty() => {
                 spring_content(index, cx)
             }
-            _ => empty_state(view),
+            _ => empty_state(view, cx),
         })
         .into_any_element()
 }
@@ -644,13 +644,17 @@ fn header(
 /// （`gpui-component-0.6.6/src/empty.rs:63-82`），父级不是 flex 容器时它不生效
 /// （`explorer_view.rs:722-724` 记过同一个坑；该行号随 2026-09-27 删除树头/搜索行而下移，
 /// 原来是 `:765-768`）。
-fn empty_state(view: RightToolWindowView) -> AnyElement {
+fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
     v_flex()
         .w_full()
         .flex_1()
         .min_h_0()
         .child(
-            Empty::new().header(
+            Empty::new()
+                // `Empty` 硬编码了 `.border_dashed()`（`gpui-component-0.6.6/src/empty.rs:74-75`），
+                // 真机界面没有这圈虚线；改边框色为透明关掉（与编辑器空态同一招，2026-09-27 统一）。
+                .border_color(cx.theme().transparent)
+                .header(
                 EmptyHeader::new()
                     .media(EmptyMedia::new().child(Icon::new(view.icon()).size_8()))
                     .title(EmptyTitle::new().text_sm().child(view.empty_title())),

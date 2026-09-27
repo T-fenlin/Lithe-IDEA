@@ -2290,12 +2290,14 @@ fn pinned_bar(bar: &mut MenuBar, window: &mut Window, cx: &mut Context<MenuBar>)
         .flex_shrink_0()
         .items_center()
         .h_6()
+        // 2026-09-27（维护者口径「帮助那个是椭圆的，可以直接去掉吗」）：常驻形态**去掉胶囊**。
+        // 原来的 `rounded_full() + border_1() + bg(background)` 是照 Windows 前端
+        // `ui/menubar.tsx` 搬的——那套装在**比标题栏更亮的底色**上，胶囊是有意义的；
+        // 本侧标题栏底色与 `theme.background` 同色，于是那圈 1px 全圆角边框在两个同色背景之间
+        // 画出一个没有实际分界的椭圆。IDEA 的主菜单也没有这圈线。
+        // 顶级项自己的 hover / 选中底色（`menu_item` 里）不受影响，交互反馈由它承担。
         .gap_0p5()
-        .p_0p5()
-        .rounded_full()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().background);
+        .p_0p5();
     for index in 0..MENUS.len() {
         bar_element = bar_element.child(menu_item(bar, index, window, cx));
     }

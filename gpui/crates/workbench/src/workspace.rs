@@ -10,7 +10,7 @@
 //! ├─ 项目标签条 32        project-tab-bar.tsx:41     h-8
 //! ├─ 工作区 h_flex flex-1  main-layout.tsx:299       行尾 pr = 4（--lithe-workbench-gap）
 //! │  ├─ 左活动栏 38+4      main-sidebar.tsx:97,588   折叠态图标竖条
-//! │  ├─ 左侧栏 320        default-settings.ts:138   settings.sidebarWidth
+//! │  ├─ 左侧栏 480        2026-09-27 加宽（真源 320） settings.sidebarWidth
 //! │  ├─ 中央列 flex-1      main-layout.tsx:312       v_flex[ 编辑器岛, 底部工具窗 240 ]
 //! │  ├─ 右侧工具窗 400    default-settings.ts:139   settings.rightToolWindowWidth（**可收起**）
 //! │  └─ 右活动栏 38+4     plugin-activity-rail.tsx:34
@@ -414,6 +414,18 @@ const SEARCH_ACTIVITY_IX: usize = 2;
 /// —— 启动时左活动栏顶部第一项就是选中态。
 const DEFAULT_TOP_ACTIVITY: usize = 0;
 
+/// 左侧栏宽度（**2026-09-27 从 320 加宽到 480**，维护者口径「界面不协调」）。
+///
+/// 320 是照 Lithe 自己的 Windows 前端搬的（`features/settings/config/default-settings.ts:138`
+/// 的 `sidebarWidth`），但在 1920 宽的窗口里只占 19.8%：本项目自己的路径
+/// `D:\developmentProjects\rust\Lithe-IDEA` 都放不下、项目名被截断成 `Lithe-IDEA…`，
+/// 而 IDEA 的项目树约占 26%。480 之后编辑器仍占约 64%。
+///
+/// **480 不在 gpui 的 rem 档位上**（档位表到 `w_96()` 附近就没有更宽的了），所以按《编码指南》
+/// 写 helper 底层的 `rems(SIDEBAR_WIDTH_SPEC / 16.)`，而不是自己发明一个 `w_120()` ——
+/// 与 `BOTTOM_PANE_HEIGHT_SPEC` / `RIGHT_TOOL_WINDOW_WIDTH` 同一处置。
+const SIDEBAR_WIDTH_SPEC: f32 = 480.;
+
 // ---------------------------------------------------------------------------
 // 度量：应用布局一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
 // ---------------------------------------------------------------------------
@@ -422,11 +434,17 @@ const DEFAULT_TOP_ACTIVITY: usize = 0;
 //
 // | 规格（Windows 真源） | 值 | 用到的 helper |
 // | --- | --- | --- |
-// | `sidebarWidth: 320`（`features/settings/config/default-settings.ts:138`） | 320 | `w_80()` |
+// | `sidebarWidth: 320`（`features/settings/config/default-settings.ts:138`） | **480**（2026-09-27 加宽，见下） | `rems(SIDEBAR_WIDTH_SPEC / 16.)` |
 // | `--lithe-workbench-gap: 4px`（`styles/theme.css:125`） | 4 | `gap_1()` / `pr_1()` / `h_1()` |
 // | 底部工具窗高 240（真源 320，`bottom-pane/bottom-pane.tsx:47`；2026-09-27 收窄） | 240 | `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)` |
 // | 区域占位块内边距 8 | 8 | `p_2()` |
 // | 占位块字号 13（`--ui-text-chrome`） | 13 | `text_sm()`（14px，见下） |
+//
+// **左侧栏 320 → 480（2026-09-27，维护者口径"界面不协调"）**：320 是照 Lithe 自己的
+// Windows 前端搬来的值，在 1920 宽的窗口里只占 19.8%，连本项目自己的路径
+// `D:\developmentProjects\rust\Lithe-IDEA` 都放不下、项目名被截断成 `Lithe-IDEA…`；
+// IDEA 的项目树约占 26%。改后编辑器仍占约 64%，是本轮**有意偏离 Windows 规格**的一处，
+// 理由与截图证据见 `gpui/docs/ui-mockup-idea.md`。
 //
 // 字号：13 不在 gpui 的档位（`text_xs()`=12 / `text_sm()`=14）上，按《编码指南》用
 // `text_sm()`（14px）——13 → 14 是经维护者确认的**有意**视觉改动，不是等价换算。
@@ -3708,7 +3726,13 @@ impl Render for ShellWorkspace {
                     // 与右工具窗同一条口径：`then(..)` 里没有内容就不占位。
                     .children(left_sidebar_visible.then_some(left_rail))
                     .children(
-                        left_sidebar_visible.then(|| side_pane(div().w_80(), left_content, cx)),
+                        left_sidebar_visible.then(|| {
+                            side_pane(
+                                div().w(rems(SIDEBAR_WIDTH_SPEC / 16.)),
+                                left_content,
+                                cx,
+                            )
+                        }),
                     )
                     .child(
                         // 中央列 = 编辑器岛 + 底部工具窗（默认口径：嵌在中央列内）。
@@ -3835,6 +3859,11 @@ fn collapse_sidebar_button(
         .absolute()
         .left_1()
         .top_1()
+        // ⚠️ 外层**必须显式给宽高**（2026-09-27 实测缺陷）：只写 `absolute + left_1 + top_1`
+        // 时这一个绝对定位盒的尺寸由内容/父级约束决定，实测被拉成一条**竖长条**
+        // （截图里约 36×160，红框圈出来的那个），而不是 24×24 的方块。
+        // 显式 `size_6()` 把盒钉死，内层再居中画图标。
+        .size_6()
         .child(
             // 必须有 `id`：hover 态要元素状态（`gpui-pre-0.3.6/src/elements/div.rs:2844-2849`）。
             div()

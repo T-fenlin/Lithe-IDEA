@@ -657,7 +657,12 @@ impl Explorer {
         action: Option<(SharedString, bool)>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut empty = Empty::new().header(
+        let mut empty = Empty::new()
+        // `Empty` 的 render 里**硬编码**了 `.border_dashed().border_color(cx.theme().border)`
+        // （`gpui-component-0.6.6/src/empty.rs:74-75`），真机界面没有这圈虚线；
+        // 把边框色改成透明来关掉它（编辑器空态 `editor_view.rs:2671-2676` 用的是同一招）。
+        .border_color(cx.theme().transparent)
+        .header(
             EmptyHeader::new().description(EmptyDescription::new().text_sm().child(message)),
         );
 

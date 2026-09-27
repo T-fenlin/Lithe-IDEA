@@ -1423,7 +1423,12 @@ impl ChangesView {
                 .child(message),
         );
 
-        let mut empty = Empty::new().p_3().header(header);
+        let mut empty = Empty::new()
+            // `Empty` 硬编码了 `.border_dashed()`（`gpui-component-0.6.6/src/empty.rs:74-75`），
+            // 真机界面没有这圈虚线；改边框色为透明关掉（与编辑器空态同一招，2026-09-27 统一）。
+            .border_color(cx.theme().transparent)
+            .p_3()
+            .header(header);
         if let Some((hint, label, enabled)) = action {
             let mut content = v_flex().gap_2().items_center().child(
                 div()
