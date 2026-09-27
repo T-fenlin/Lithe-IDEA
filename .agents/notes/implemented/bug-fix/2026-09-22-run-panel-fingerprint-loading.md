@@ -50,16 +50,18 @@ macOS 的加载顺序没有变化。
 ## 验证
 
 - `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`
-- `./scripts/verify-windows-boundaries.sh`
 - `./scripts/verify-shared-contracts.sh`
 - `./scripts/verify-agent-notes.sh`
-- `./.agents/skills/write-stable-tests/scripts/test-stability-windows.ps1 -Scope Frontend -FrontendTestPath src/features/run/stores/run-project-load.test.ts`
-
 回归测试控制校验完成的时机，验证提前显示、超时保留配置、过期提示以及旧结果隔离。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
-- `windows/tauri/src/features/run/stores/run.store.ts`
-- `windows/tauri/src/features/run/stores/run-project-load.test.ts`
-- `windows/tauri/src/features/run/api/run-core-api.ts`
 - `rust/lithe-core/src/execution/configuration.rs`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

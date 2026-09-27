@@ -145,15 +145,9 @@ I/O 失败和冲突不自动重试。关闭文档、关闭自动保存或请求�
 
 共享 fixture 位于 `shared/fixtures/documents/lifecycle-v1.json`。
 运行 `./scripts/verify-shared-contracts.sh`、`./scripts/verify-rust-core.sh`、
-`./scripts/verify-core.sh` 和 `./scripts/verify-rust-core-comments.sh`。
-
-macOS 使用 `./scripts/test-macos.sh` 及
-`./.agents/skills/write-stable-tests/scripts/test-stability-macos.sh`，验证等长同时间
 修改、缺失重建、过期基线、Unicode 字节差异、异步保存期间输入及关闭流程。
 `DocumentSaveBatchTests` 验证跨工作区保存后的新输入和新增会话；
 `MacDocumentObservationTests` 验证普通事件路径筛选、目录替换和丢失事件恢复。
-Windows 使用 `./scripts/build-windows.ps1 -Configuration Release`，以及
-`./.agents/skills/write-stable-tests/scripts/test-stability-windows.ps1`；原生测试覆盖
 替换通知、多窗口释放、提交前变化与暂存清理，前端测试覆盖注册代次、保存延后
 核对和冲突选择。连续打断后的调度、保存等待和关闭取消使用手动调度器验证，
 不依赖真实计时器。项目 watcher 测试直接验证原生事件类型、递归创建和洪峰重扫；
@@ -161,22 +155,17 @@ Windows 使用 `./scripts/build-windows.ps1 -Configuration Release`，以及
 关闭确认自动收起、旧确认迟到、保存中取消、项目关闭时新增输入和自动保存任务
 交替使用有界测试门控制顺序。Windows CI 显式运行文档监听控制器测试，并在
 WindowsRust 范围单独运行 `lithe-project`；只运行宿主不会执行依赖包内的测试。
-
-边界和笔记分别使用 `./scripts/verify-service-boundaries.sh`、
-`./scripts/verify-windows-boundaries.sh`、`./scripts/verify-agent-notes.sh`。
 实际运行结果和未通过的既有测试写入交付说明；单元测试不冒充完整产品界面验收。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
-- `windows/tauri/crates/project/src/document_file.rs`
-- `windows/tauri/crates/project/src/document_watcher.rs`
-- `windows/tauri/crates/project/src/lib.rs`
-- `windows/tauri/src-tauri/src/document.rs`
-- `windows/tauri/src/features/editor/`
-- `windows/tauri/src/features/file-system/services/file-watcher-listener.ts`
-- `windows/tauri/src/features/file-system/stores/file-watcher.store.ts`
-- `macos/Sources/Lithe/Application/Features/DocumentFeatureModel.swift`
-- `macos/Sources/Lithe/Platform/MacOS/FileWatching/MacDocumentObservation.swift`
-- `macos/Sources/Lithe/Platform/MacOS/FileSystem/MacWorkspaceFileOperations.swift`
 - `rust/lithe-core/src/project/document_lifecycle.rs`
 - `shared/contracts/application-boundary.md`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

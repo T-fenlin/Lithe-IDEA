@@ -1,6 +1,8 @@
 # Agent 笔记：macOS Monaco 独立可行性实验
 
 状态：已实现
+归档日期：2026-09-28
+归档原因：结论是「macOS 可以承载 Monaco」，随 macOS 旧前端与 `frontend/editor/`（Monaco 表现层）一起删除；gpui 侧编辑器是原生 Rust 实现。
 
 ## 先说结论
 

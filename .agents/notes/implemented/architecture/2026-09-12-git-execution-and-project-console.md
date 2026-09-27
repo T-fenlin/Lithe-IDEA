@@ -166,30 +166,22 @@ stdout/stderr 分开，复制原始输出时不混入提示。没有完整变化
 - `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`
 - `./scripts/verify-rust-core-comments.sh`
 - `./scripts/verify-rust-core.sh`
-- `./scripts/verify-core.sh`
-- `./scripts/verify-service-boundaries.sh`
 - `./scripts/verify-shared-contracts.sh`
-- `./scripts/verify-windows-boundaries.sh`
 - `./scripts/verify-agent-notes.sh`
-
 共享 fixture 覆盖命令、事件、生命周期、Fetch、远程查询和完整展示结果。
 本地 HTTP 认证测试服务器直接绑定数字回环地址，不做反向 DNS 查询。服务器
 启动不能在 Git 请求 deadline 之前引入无界网络等待；回归用例禁止调用
 `socket.getfqdn`，认证、重试与取消场景仍保留原有 15 秒预算。
-
-Rust 与 macOS 测试使用仓库计时工具；`scripts/test-git-execution.py` 通过
 C ABI 和隔离仓库、本地认证服务验证配置作用域、部分成功、重试、取消及
 包含空格的 AskPass 路径，要求已构建的 Core 和 macOS 应用。
 Windows CI 使用同一计时工具执行生命周期日志回归并保留 HTML/JUnit 报告，
 同时负责原生构建、Rust 测试和安装包验证。静态边界检查不能替代 Windows
 进程清理及认证的运行时验证。
-
 两端 CI 都显式执行 `lithe-git-host` 的独立计时测试并保留
 `git-host-rust` 报告。只测试 `lithe-core` 或 Tauri 宿主不会执行依赖库自身
 的测试，因此不能用这些任务通过来代替原生进程和认证回归的执行证据。
 共享布尔配置 fixture 和真实 Git 集成同时覆盖 Fetch 预览、执行、显式远程
 选择及非法值，防止两端一起偏离 Git 原有行为。
-
 历史改写回归需要创建仓库并启动大量 Git 子进程，有的用例还重复建立多个
 仓库；Windows 计时已触及原有请求或测试截止时间，因此整个历史改写集成
 模块和旧 Git 集成模块中的 squash、drop、reword 用例采用独立的 30 秒
@@ -199,19 +191,15 @@ Windows CI 使用同一计时工具执行生命周期日志回归并保留 HTML/
 时间；报告逐条采用实际预算。不能靠删掉过期计划校验、重试失败断言或提高
 所有测试的时限来隐藏这类问题。计时工具用可控时钟验证普通、集成和总截止
 时间，并验证 HTML 与 JUnit 不会把合法的集成耗时误判为失败。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
 - `rust/lithe-core/src/git/`
 - `rust/lithe-git-host/`
-- `macos/Sources/LitheGitModule/`
-- `macos/Sources/Lithe/Core/Rust/`
-- `macos/Sources/Lithe/Views/Git/`
-- `macos/Sources/Lithe/Platform/MacOS/`
-- `windows/tauri/src/features/git/`
-- `windows/tauri/src/platform/`
-- `windows/tauri/src-tauri/src/platform.rs`
 - `shared/fixtures/git/`
 - `shared/contracts/rust-core-api.md`
-- `scripts/test-git-execution.py`
-- `.github/workflows/ci-windows.yml`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

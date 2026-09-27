@@ -1,6 +1,8 @@
 # Agent 笔记：macOS Git 提交图对齐 IntelliJ 布局与长边导航
 
 状态：已实现
+归档日期：2026-09-28
+归档原因：布局实现在已删除的 macOS Git 图。
 
 关联需求：[Issue #410](https://github.com/1lck/Lithe-IDEA/issues/410)。
 

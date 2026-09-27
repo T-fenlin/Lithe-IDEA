@@ -88,18 +88,16 @@ macOS 和 Windows 可以用不同的 UI 技术实现，但用户看到的交互�
 
 ## 验证
 
-- `./scripts/verify-service-boundaries.sh`
 - `git diff --check`
 - 相关 macOS 或 Windows 产品构建
 - Windows 标签滚轮行为测试：
   `cd windows/tauri && bun test src/features/tabs/hooks/use-tab-wheel-scroll.test.tsx`
   Windows CI 显式运行整个 `src/features/tabs` 测试目录，并生成逐项计时报告。
 - 代码审查时确认拖动不会导致高频整页重绘
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
-- `macos/Sources/Lithe/Views/`
-- `macos/Sources/Lithe/Theme/`
-- `windows/tauri/src/features/`
-- `windows/tauri/src/ui/`
-- `macos/Tests/LitheTests/`
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

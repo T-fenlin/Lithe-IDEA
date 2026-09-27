@@ -39,11 +39,11 @@ Issue #727 的 Maven 路径只保存在 Maven 面板中，不在系统 PATH 或 
 - `windows/tauri/src/features/run/stores/run-project-load.test.ts`：旧加载结果不能恢复已消除的告警。
 - `windows/tauri/src/features/run/stores/run-maven-context.test.ts`：实际启动等待相同工作区的 Maven 上下文。
 - `node .agents/skills/write-stable-tests/scripts/run-bun-tests-with-timing.mjs -- src/features/run/services/resolve-run-project.test.ts src/features/run/stores/run-project-load.test.ts src/features/run/stores/run-maven-context.test.ts`
-- `./scripts/verify-windows-boundaries.sh`
 - `./scripts/verify-agent-notes.sh`
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
-- `windows/tauri/src/features/run/services/resolve-run-project.ts`
-- `windows/tauri/src/features/run/stores/run.store.ts`
-- `windows/tauri/src/features/run/components/run-pane.tsx`
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

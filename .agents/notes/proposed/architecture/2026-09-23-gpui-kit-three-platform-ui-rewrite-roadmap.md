@@ -56,9 +56,8 @@ Rust Core 的边界已经是语言中立的，这一点决定了重写的性质�
 
 ### 已经解决过的部分（不要重开）
 
-- **编辑器已经共享**：macOS 与 Windows 都用 Monaco 0.55.1，共用 `frontend/editor/`（`@lithe/editor`），macOS 侧宿主在 `macos/Sources/Lithe/Platform/MacOS/MonacoWorkbenchEditor.swift`。这条路线已经投入过真实成本，见
-  [macOS Monaco 独立可行性实验](../../implemented/architecture/2026-09-15-macos-monaco-feasibility-probe.md)。
-- **Windows 已经重写过一次界面**：此前的 Qt/C++ 实现已经退役，现在只构建 Tauri。历史上做过一次全量前端替换，说明这类替换在本仓库是可行但昂贵的，不是第一次。
+- **编辑器曾经共享，但那条路线整体退役了**：旧前端时期 macOS 与 Windows 都用 Monaco 0.55.1、共用 `frontend/editor/`（`@lithe/editor`）。它投入过真实成本，也验证过「WebView 承载 Monaco」可行（那篇实验笔记已随旧前端归档，可在 git tag `legacy-frontends-final` 追溯）。旧前端与 `frontend/editor/` 一并删除后，gpui 侧编辑器是**原生 Rust 实现**（`gpui/crates/editor/`，语法高亮走 `tree-sitter-java`），不再有 Monaco。
+- **Windows 已经重写过一次界面**：此前的 Qt/C++ 实现已经退役，然后是 Tauri，最后是 gpui。历史上做过两次全量前端替换，说明这类替换在本仓库可行但昂贵，不是第一次。
 
 ### 本次要解决的新问题
 
@@ -191,7 +190,7 @@ gpui_kit::application().run(move |cx| {
   1. 统一命令入口：生成 `operationId`、超时、取消（`lithe_core::cancel_operation`）、陈旧结果丢弃。
   2. 事件回调路由：把 `lithe_core_execute_json_with_events` 的事件投递到 GPUI 实体状态。后台线程不得直接改 UI，必须经 GPUI 的异步任务回到前台。
   3. 模块生命周期状态机：9 个状态 `disabled`、`inactive`、`activating`、`active`、`idle`、`preparingToSleep`、`sleeping`、`sleepBlocked`、`failed`，以及租约与 provider 依赖规则，契约见
-     [应用边界契约](../../../../shared/contracts/application-boundary.md)与[模块运行时边界与生命周期](../../implemented/architecture/2026-09-13-module-runtime-boundaries-and-lifecycle.md)。
+     [应用边界契约](../../../../shared/contracts/application-boundary.md)。状态机原本照 Swift 侧那套模块运行时实现（该 Note 已随 macOS 旧前端归档，可在 git tag `legacy-frontends-final` 追溯）；9 个状态名与租约/依赖规则属于跨端契约，不随实现一起消失。。
   4. 内置模块注册表：`workspace`（唯一 required）、`terminal`、`search` 三个先接通，其余 7 个（`ai-assistance`、`database`、`debug`、`execution`、`git`、`language-intelligence`、`local-history`）先登记为 disabled。
   5. 平台端口 trait：进程、PTY、文件监听、凭据、对话框。先各给 macOS 与 Windows 一份最小实现，界面代码只依赖 trait。
 - **产出**：宿主骨架 crate、状态机测试、端口 trait 定义与两份平台实现。
@@ -236,14 +235,14 @@ gpui_kit::application().run(move |cx| {
 | E | 设置写入与剩余 | `settings`（12,334）、`remote`（659）、`wsl`（123）、`onboarding`（423） | 约 1.35 万行 |
 
 - **门槛**：每批次的 128 个命令映射逐条有结论（"已对等"或"显式不支持"），不允许"看起来能用但走的是本地假实现"，这条沿用
-  [Windows React/Tauri 产品对齐完成度](2026-09-13-windows-tauri-product-parity.md)的教训；Java/Maven 相关事实必须来自所选后端，不得在宿主里重建第二真源。
+  已归档的 Windows 产品功能对齐提案的教训（随 `windows/` 删除，可在 git tag `legacy-frontends-final` 追溯）；Java/Maven 相关事实必须来自所选后端，不得在宿主里重建第二真源。
 - **并行要求**：批次 A–E 之间只共享宿主骨架与端口 trait，可以 2–3 条线并行。单线串行会超过一年，这一点在排期时必须显式决定。
 
 ### 阶段 6：三端构建与发布准备（4–6 周）
 
 - **目标**：三端都能构建出可运行产物。
 - **工作项**：macOS 打包、Windows 打包（沿用 `scripts/build-windows.ps1` 的经验）、Linux 打包（全新）、三端 CI lane、依赖与缓存策略（参考
-  [CI 构建缓存与产物策略](../../implemented/process/2026-09-13-ci-build-cache-and-artifact-strategy.md)）。
+  已归档的 CI 构建缓存与产物策略（随两个旧前端删除，可在 git tag `legacy-frontends-final` 追溯））。
 - **门槛**：三端构建通过；不修改现有发布 workflow 与签名配置。
 - **注意**：仓库目前**没有任何 Linux 支持**——没有 Linux 目录，CI 只有 `ci-macos.yml` 与 `ci-windows.yml`。第三端是从零开始，不是"顺便多编一个目标"。
 
@@ -380,7 +379,7 @@ Zed 是 GPUI 的创造者，它的扩展模型是本方向最直接的先例。�
 ## 风险
 
 - **编辑器是最贵也最不确定的一块**：Monaco 在本仓库承载了增量协议、版本号、undo/redo 分支、保存冲突、差异视图、图片粘贴与共享语义 token 编码，这些都在
-  [macOS Monaco 独立可行性实验](../../implemented/architecture/2026-09-15-macos-monaco-feasibility-probe.md)里被逐条解决过。换成 GPUI Kit 编辑器意味着重新赚回这些保证，任何一项不达标都会让编辑器成为阻塞点。
+  已归档的「macOS Monaco 独立可行性实验」里被逐条解决过（随旧前端归档，可在 git tag `legacy-frontends-final` 追溯）。换成 GPUI Kit 编辑器意味着重新赚回这些保证，任何一项不达标都会让编辑器成为阻塞点。
 - **"一套 Rust 界面"不等于"零平台代码"**：平台专属的进程、PTY/ConPTY、凭据存储、更新、对话框、文件监听仍然要各写一份。`windows/tauri/src-tauri` 的 12,706 行里有多少属于这一类，需要在对齐阶段逐项确认，不能假设都白拿。
 - **GPUI / GPUI Kit 的成熟度边界**：技能文档记录的平台差异（macOS/Windows/Linux/wasm 的 feature gates）说明跨平台一致性需要实测。Windows 上的输入法、DPI 缩放、无障碍、窗口装饰、拖拽这类细节，历史上是两套实现产生体验差异的主要来源，换框架不会自动解决。
 - **技能文档与已发布版本错位**：`gpui-kit` 的技能文档已经描述尚未发布的 0.7.0，而可用版本是 0.6.6；P1 为此付出了一次编译失败（`open_window`、`with_assets`、`overflow_y_scrollbar`、`.then(..)` 四处）。一年周期里 GPUI、GPUI Kit 与 `lithe-core` 契约都会变，因此判断依据必须固定在"已发布版本的源码 + 提交的 `Cargo.lock`"上，升级时逐处复核。
@@ -388,7 +387,7 @@ Zed 是 GPUI 的创造者，它的扩展模型是本方向最直接的先例。�
 - **三端里的第三端是从零开始**：仓库没有 Linux 目录、没有 Linux CI、没有 Linux 打包与签名链路。把 Linux 放进一年范围，等于同时新增一个平台。
 - **并行开发期**：`gpui/` 与现有产品在同一分支上共存，需要持续跟进 `lithe-core` 契约的变化，否则新宿主会快速过期。
 - **"看起来完成了"的假象**：对齐阶段最容易出现界面入口存在但后端没接的情况。这条已经在
-  [Windows React/Tauri 产品对齐完成度](2026-09-13-windows-tauri-product-parity.md)里被点名为真实风险，本方向必须沿用"没有共享实现就显式失败"的规则。
+  已归档的 Windows 产品功能对齐提案里被点名为真实风险（随 `windows/` 删除，可在 git tag `legacy-frontends-final` 追溯），本方向必须沿用"没有共享实现就显式失败"的规则。
 - **插件 ABI 改动的兼容风险**：`nativeBundle` 是已发布的插件加载方式，改动 manifest schema 会影响已装插件的用户。过渡期必须保留旧 kind 的识别与明确提示，否则用户升级后会看到插件神秘消失。
 - **能力授权缺失导致插件权限过大**：今天只要签名可信，插件在能力上就没有进一步约束，用户也无法收窄授权。补上"用户可裁剪、按调用点校验"的授权层之前，任何插件都可以按宿主权限行事。这是 Zed 的 `granted_extension_capabilities` 已经解决、而 Lithe 尚未解决的问题。
 - **第二层的宿主 API 会成为长期维护面**：WASM 里的插件读不到环境变量、找不到 PATH，必须由宿主逐项开放。开出去多少 API，就要维护多少兼容性；Zed 的记录说明这不是一次性成本。
@@ -397,17 +396,13 @@ Zed 是 GPUI 的创造者，它的扩展模型是本方向最直接的先例。�
 
 ## 适用范围
 
-- `macos/`
-- `windows/`
 - `rust/lithe-core/`
 - `shared/contracts/`
 - `shared/fixtures/modules/`
-- `frontend/editor/`
-- `Plugins/mac/`
-- `Plugins/win/`
 - `.agents/notes/proposed/architecture/`
 - `scripts/verify-agent-notes.sh`
 - `scripts/verify-rust-core.sh`
 - `scripts/verify-shared-contracts.sh`
-- `scripts/verify-service-boundaries.sh`
-- `scripts/verify-module-boundaries.sh`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

@@ -1,6 +1,8 @@
 # Agent 笔记：Windows React/Tauri 产品对齐完成度
 
-状态：提议中
+状态：已实现
+归档日期：2026-09-28
+归档原因：提案对象是 `windows/tauri` 产品的功能对齐，随 Windows 旧前端删除而不再适用。
 
 ## 先说结论
 

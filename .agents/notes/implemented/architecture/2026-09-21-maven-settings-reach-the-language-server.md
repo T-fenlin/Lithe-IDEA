@@ -250,7 +250,6 @@ Maven、版本、路径和来源，例如「自动 → JDK 21.0.4 · 路径 · �
 - Rust Core 注释规范：`./scripts/verify-rust-core-comments.sh`。
 - Windows 前端：`bun test src/features/maven` 覆盖优先级链、各层失败时的降级、
   面板留空时把解析结果带进启动上下文、清空路径时丢弃上一次的解析结果。
-  边界校验运行 `./scripts/verify-windows-boundaries.sh`。
 - Windows 宿主：`cargo test --manifest-path windows/tauri/src-tauri/Cargo.toml
   maven_resolution_without_probing` 覆盖 Wrapper 优先、主目录与启动器两种覆盖
   写法、残缺 Wrapper 不被选中。
@@ -271,12 +270,13 @@ Maven、版本、路径和来源，例如「自动 → JDK 21.0.4 · 路径 · �
   覆盖默认值读写、Maven 保存重试、编辑器跳转、中文搜索，以及打开「设置 → 运行配置」
   不重载同一项目；`run.store` 测试覆盖同一项目重载保留 JDT 刷新与待确认启动、
 等待进行中的识别发布，以及切换项目仍会取消；`project-environment` 测试覆盖保存在
-运行配置刷新完成前返回、刷新失败与 Maven 写入失败的报告。macOS 运行 `./scripts/test-macos.sh`，
   `RunConfigurationIntegrationTests` 覆盖未生成配置时保存、Git 忽略规则逐条补齐且
   重复保存不改动文件、不支持版本的识别拦截，只有读完当前项目文档后才允许保存
 项目默认值，未生成配置时读取本机默认值，以及服务编辑器保存写入有效默认值；`MavenRuntimeTests` 覆盖镜像以本机层
 为准且不改动其他 Maven 设置。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
 - Rust Core Maven 域：`rust/lithe-core/src/project/maven.rs`

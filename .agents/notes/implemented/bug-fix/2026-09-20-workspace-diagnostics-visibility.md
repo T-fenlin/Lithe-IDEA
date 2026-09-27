@@ -132,12 +132,13 @@ if (!isDocumentOpen(published)) return;
   （`diagnostics-file-path.test.ts` 覆盖工作区内保留、已知 buffer 优先、工作区外
   丢弃、同名前缀目录不算包含、分隔符归一、POSIX 大小写敏感；
   `diagnostics-retention.test.ts` 覆盖三种结果、上限行为和"已打开文件不受限"）。
-- 边界校验：`./scripts/verify-windows-boundaries.sh`
 - 测试稳定性门禁：`./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`
 - 类型检查：`cd windows/tauri && bun run typecheck`
 - 未在本次执行：Windows 实机验证。需要在 Windows 上打开若依 Plus，点运行，
   确认失败后诊断面板列出具体错误。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
 - Windows：`windows/tauri/src/features/editor/lsp/diagnostics-file-path.ts`、

@@ -42,8 +42,9 @@ actionlint .github/workflows/sync-atomgit-release.yml .github/workflows/release-
 ## 适用范围
 
 - `.github/workflows/sync-atomgit-release.yml`
-- `.github/workflows/release-macos.yml`
-- `.github/workflows/release-windows.yml`
 - `scripts/sync-atomgit-release.mjs`
 - `scripts/test-sync-atomgit-release.mjs`
 - `docs/releases/atomgit-sync.md`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

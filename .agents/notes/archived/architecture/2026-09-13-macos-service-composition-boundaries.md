@@ -1,6 +1,8 @@
 # Agent 笔记：macOS 组合根、Coordinator 拆分与平台边界
 
 状态：已实现
+归档日期：2026-09-28
+归档原因：决策对象是 `macos/` 的 `MacServiceContainer` 组合根，随 macOS 旧前端删除；gpui 侧的组合根是 `gpui/crates/app`。
 
 ## 先说结论
 

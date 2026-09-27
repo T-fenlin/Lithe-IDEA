@@ -83,12 +83,9 @@
 
 ## 验证
 
-- `./scripts/verify-rust-core-comments.sh`、`./scripts/verify-rust-core.sh`
-- `./scripts/verify-shared-contracts.sh`、`./scripts/verify-service-boundaries.sh`
+- `./scripts/verify-rust-core-comments.sh`
 - `./scripts/verify-agent-notes.sh`
-- `./scripts/test-macos.sh`；Windows 在 Parallels VM 上
-  `./scripts/build-windows.ps1 -Configuration Release` 与
-  `cargo test --manifest-path windows/tauri/src-tauri/Cargo.toml`
+- `cargo test --manifest-path rust/Cargo.toml -p lithe-core`
 - Rust 用例：`rust/lithe-core/src/tests/run_configuration.rs` 的
   `plain_java_main_uses_the_jdk_without_maven`、
   `nested_maven_generation_keeps_standalone_java_on_the_jdk`、
@@ -98,7 +95,9 @@
 - 共享 fixture：`shared/fixtures/execution/standalone-java-compile-run-v1.json`
 - 手动：用 JDK 8 打开裸独立文件项目，点运行 → 编译后打印结果（不再报找不到
   主类）；再用 JDK 17 复测。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
 - Rust 核心：`rust/lithe-core/src/execution/configuration.rs`（`create_launch_plan`）、

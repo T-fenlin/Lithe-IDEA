@@ -1,6 +1,8 @@
 # Agent 笔记：模块运行时边界与生命周期
 
 状态：已实现
+归档日期：2026-09-28
+归档原因：决策对象是 `LitheModuleAPI` / `LitheApplicationKernel` 这套 Swift 模块运行时，随 macOS 旧前端删除。「禁用模块不得偷偷持有长生命周期资源」这条原则仍然成立，gpui 侧由各 crate 的显式生命周期承担。
 
 ## 先说结论
 

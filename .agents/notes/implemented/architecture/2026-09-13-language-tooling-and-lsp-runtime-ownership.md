@@ -219,8 +219,6 @@ Windows 启动回归由 `workspace-git-bootstrap.test.ts` 验证恢复 Java 文�
 共用准备任务、子仓库未完成时不启动 Maven、失败后继续、关闭重开丢弃旧结果，
 以及文件树仍能匹配主仓库的修改标记。相关用例与扫描合并、Git 历史恢复用例
 一起进入 Windows CI 的 Git 隔离测试清单；使用
-`.agents/skills/write-stable-tests/scripts/run-bun-tests-with-timing.mjs` 输出单例计时。
-
 迁移完成的判定标准（均已通过测试验证）：未初始化的进程不能变为
 ready；initialize 出错不能变为 ready；两次 sync 分别产生 open
 version 1 和 change version 2；崩溃会以 `serverExited` 使所有 pending
@@ -234,21 +232,19 @@ shutdown 在收到响应后发送 exit，超时则强制终止；`Content-Length
 生产 Swift 代码不再持有 LSP `Content-Length`、原始 JSON-RPC 请求 ID、
 frame 缓冲区、open-document 集合、pending LSP 请求或语言服务器子
 进程。
-
-真实 gopls 集成验证见
-[`macos/Tests/LitheTests/RealGoplsIntegrationTests.swift`](../../../../macos/Tests/LitheTests/RealGoplsIntegrationTests.swift)
-头部注释里的运行方式和所需环境变量。接入新语言服务器的检查清单见
+真实 gopls 集成验证原本在 macOS 侧的 `RealGoplsIntegrationTests.swift`（随旧前端删除，
+运行方式见 git tag `legacy-frontends-final`）；gpui 侧目前只覆盖 Java，接入新语言服务器时
+需要补回等价验证。接入新语言服务器的检查清单见
 [`rust/lithe-core/src/lsp/languages/catalog.rs`](../../../../rust/lithe-core/src/lsp/languages/catalog.rs)
 头部注释。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
 - `rust/lithe-core/src/lsp/`
 - `rust/lithe-core/resources/lsp/language-providers.json`
 - `docs/reference/language-providers.schema.json`
-- `macos/Sources/LitheLanguageIntelligenceModule/`
-- `macos/Sources/Lithe/Core/Rust/RustCoreBridge.swift`
-- `macos/Sources/Lithe/Core/Ports/LanguageTooling.swift`
-- `macos/Tests/LitheTests/RealGoplsIntegrationTests.swift`
-- `windows/tauri/src/features/editor/lsp/`
-- `windows/tauri/src/features/workspace/services/workspace-git-bootstrap.ts`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

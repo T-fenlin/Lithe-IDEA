@@ -114,16 +114,14 @@ intellij-community 的 `runConfigurations/testState` 图标（Apache 2.0）。
   fixture，以及可选的真实 JDT 冒烟测试（设置 `LITHE_JDTLS_SMOKE_ROOT` 时断言 Java 25
   实例 `main` 有标记、`private main` 没有）。
 - `./scripts/verify-shared-contracts.sh`
-- `./scripts/verify-windows-boundaries.sh`
-- `./scripts/test-macos.sh`：`MavenTestOutcomeTests` 与测试服务报告请求断言。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
 - `rust/lithe-core/src/lsp/languages/java_main_methods.rs`
 - `rust/lithe-core/src/lsp/languages/java_run_markers.rs`
 - `rust/lithe-core/src/project/maven_test_reports.rs`
-- `windows/tauri/src/features/run/services/java-run-markers.ts`
-- `windows/tauri/src/features/editor/engines/monaco/java-run-markers.ts`
-- `frontend/editor/src/run-markers.ts`
-- `macos/Sources/Lithe/Models/AppModel/AppModel+JavaRunMarkers.swift`
-- `macos/Sources/LitheExecutionModule/Services/LanguageTestService.swift`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

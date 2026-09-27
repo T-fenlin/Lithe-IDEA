@@ -160,12 +160,9 @@ Windows 会先同步当前编辑文档再请求该操作。两端都不再解析
 - `rust/lithe-core/src/lsp/languages/`
 - `rust/lithe-core/src/execution/configuration.rs`
 - `third_party/jdtls/manifest.json`
-- `scripts/prepare-jdtls.sh`
-- `scripts/prepare-jdtls.ps1`
-- `windows/tauri/src/features/run/`
-- `windows/tauri/src/platform/lsp-core-adapter.ts`
-- `macos/Sources/LitheExecutionModule/Services/`
-- `.github/workflows/ci-windows.yml`
 - 相关笔记：
   `.agents/notes/implemented/feature/2026-09-20-run-configuration-discovery-quality.md`、
   `.agents/notes/implemented/architecture/2026-09-18-java-project-build-and-launch-boundary.md`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。

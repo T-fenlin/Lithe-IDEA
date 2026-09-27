@@ -1,6 +1,8 @@
 # Agent 笔记：CI 构建缓存与测试产物策略
 
 状态：已实现
+归档日期：2026-09-28
+归档原因：描述的是 macOS 双架构 DMG 与 Windows NSIS 安装包的缓存/产物策略，随两个旧前端及其发布工作流一起删除。gpui 尚无发布流水线，接管发布时需要重写而不是照搬。
 
 ## 先说结论
 
@@ -125,30 +127,20 @@ Swift 测试已经编译完整 Lithe 目标。再生成两个 DMG 会在普通�
 ## 验证
 
 - `actionlint .github/workflows/ci-macos.yml .github/workflows/ci-windows.yml`
-- `./scripts/test-macos.sh`
-- `./scripts/build-macos.sh --configuration debug --triple arm64-apple-macosx`
-- `./scripts/build-macos.sh --configuration debug --triple x86_64-apple-macosx`
-- `./scripts/build-official-plugins.sh --configuration debug --triple arm64-apple-macosx`
-- `./scripts/build-official-plugins.sh --configuration debug --triple x86_64-apple-macosx`
 - `./scripts/verify-rust-core.sh`
-- `./scripts/verify-windows-boundaries.sh`
 - `gh run download <run-id> --repo 1lck/Lithe-IDEA --pattern 'Lithe-macos-*'`
 - `gh workflow run release-preview-windows.yml -f source_branch=<branch>`
-
 具体下载方式、工作流入口和历史耗时记录见
 [`docs/ci-builds.md`](../../../../docs/ci-builds.md)。
-
+> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
+> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
+> git tag `legacy-frontends-final`。
 ## 适用范围
 
 - `docs/ci-builds.md`
-- `.github/workflows/ci-macos.yml`
-- `.github/workflows/ci-windows.yml`
 - `scripts/classify-ci-changes.sh`
-- `scripts/test-classify-ci-changes.sh`
-- `scripts/build-macos.sh`
-- `scripts/build-official-plugins.sh`
 - `scripts/verify-rust-core.sh`
-- `scripts/MacOS13SDKCompatibility.h`
 - `rust/`
-- `macos/`
-- `windows/tauri/`
+
+> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
+> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。
