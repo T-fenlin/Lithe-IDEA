@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./macos/Resources/AppIcon.png" width="112" alt="Lithe 应用图标">
+  <img src="./gpui/assets/images/logo.png" width="112" alt="Lithe 应用图标">
 
   <h1>Lithe</h1>
 
@@ -22,10 +22,8 @@
   <p>
     <a href="https://github.com/1lck/Lithe-IDEA/releases/latest"><img src="https://img.shields.io/github/v/release/1lck/Lithe-IDEA?style=flat&label=release&logo=github&logoColor=white" alt="最新版本"></a>
     <a href="https://github.com/1lck/Lithe-IDEA/releases"><img src="https://img.shields.io/github/downloads/1lck/Lithe-IDEA/total?style=flat&label=downloads&logo=github&logoColor=white" alt="累计下载量"></a>
-    <img src="https://img.shields.io/badge/macOS-13%2B-111827?style=flat&logo=apple&logoColor=white" alt="macOS 13+">
-    <img src="https://img.shields.io/badge/Windows-x64-0078D4?style=flat&logo=windows&logoColor=white" alt="Windows x64">
+    <img src="https://img.shields.io/badge/status-尚未发布-lightgrey?style=flat" alt="尚无发布构建">
     <img src="https://img.shields.io/badge/memory-300--400%20MB-159957?style=flat" alt="基础内存 300 到 400 MB">
-    <a href="#下载与安装"><img src="https://img.shields.io/badge/Homebrew-Install-FBB040?style=flat&logo=homebrew&logoColor=black" alt="通过 Homebrew 安装"></a>
     <a href="./LICENSE"><img src="https://img.shields.io/github/license/1lck/Lithe-IDEA?style=flat&label=license" alt="Apache License 2.0"></a>
   </p>
 </div>
@@ -61,23 +59,17 @@ Lithe 是一款主要面向 Java 和 Spring Boot 开发者的轻量级 IDEA 替�
 
 > **AI 负责编写代码，Lithe 负责帮你看懂、跑通并审查修改。**
 
-## macOS 提示“无法打开 Lithe.app”
+## 仓库现状
 
-如果 macOS 提示“Apple 无法验证 Lithe.app 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件”，通常是因为手动下载的安装包尚未经过 Apple 公证。请先确认应用来自可信的 [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases/latest)，然后选择以下任一方式：
+macOS（SwiftUI/AppKit）与 Windows（React/Tauri 2）两套前端已从本仓库移除，
+接替它们的是 `gpui/` 里唯一的 GPUI Kit 宿主，目前仍在开发中，尚未建立发布流水线。
+[GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases) 上的安装包来自
+已删除的源码，仅作历史留存。
 
-<p align="center">
-  <img src="./docs/assets/screenshots/macos-app-verification-warning.png" width="492" alt="macOS 提示无法打开 Lithe.app">
-</p>
-
-1. 在“应用程序”中按住 Control 键点按 `Lithe.app`，选择“打开”，再在确认对话框中选择“打开”。
-2. 如果仍被阻止，打开“系统设置 > 隐私与安全性”，在安全性提示旁点按“仍要打开”，然后再次启动应用。
-3. 也可以在终端中移除下载文件的隔离标记：
-
-   ```bash
-   sudo xattr -dr com.apple.quarantine /Applications/Lithe.app
-   ```
-
-上述命令只应对你确认来源可靠的应用使用；通过 Homebrew 安装通常不需要手动执行这些步骤。
+如果你安装的是此前发布的 macOS 版本并被 Gatekeeper 阻止，处理方式不变：在
+“应用程序”中按住 Control 键点按应用，或在终端执行
+`sudo xattr -dr com.apple.quarantine /Applications/Lithe.app`。上述命令只应对
+你确认来源可靠的应用使用。
 
 ## 核心功能
 
@@ -151,79 +143,67 @@ Lithe 是一款主要面向 Java 和 Spring Boot 开发者的轻量级 IDEA 替�
 
 ## 下载与安装
 
-- **macOS 13+：**前往 [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases/latest) 下载 `.dmg`。M 系列芯片选择 `arm64`，Intel 芯片选择 `x86_64`。
-- **Windows x64：**前往 [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases/latest) 下载 Windows `.exe` 安装包。
-
-macOS 推荐使用 Homebrew 安装和更新：
-
-```bash
-brew tap 1lck/lithe https://github.com/1lck/Lithe-IDEA.git
-brew install --cask 1lck/lithe/lithe
-brew upgrade --cask lithe
-```
+**目前没有可下载的构建产物。** 原 macOS 与 Windows 产品已从本仓库移除，接替它们的
+GPUI 宿主还没有打包与发布流水线。[GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases)
+上仍然能下载到旧安装包，但它们是用已删除的源码构建的。
 
 ## 架构概览
 
-macOS 是当前参考产品，Windows 是独立的 React/Tauri 实现。两端通过 Rust Core 共享确定性命令与契约，同时保持原生界面和平台能力相互独立。
+Lithe 现在是一个纯 Rust 仓库，只有一个宿主：`gpui/` 里的 GPUI Kit 应用，
+它驱动 `rust/lithe-core` 的确定性命令面。
 
 ```mermaid
 flowchart LR
-    subgraph macOS["macOS"]
-        MacUI["SwiftUI / AppKit 工作台"] --> MacApp["应用模型与服务"]
-        MacApp --> MacAdapters["macOS 适配器"]
+    subgraph Host["gpui/ — GPUI Kit 宿主"]
+        App["app — 组合根"] --> Workbench["workbench — 工作台外壳"]
+        Workbench --> Editor["editor / explorer / git / terminal"]
+        App --> Settings["settings"]
+        Editor --> Shared["shared — 图标、i18n、Core 客户端"]
     end
 
-    subgraph Shared["共享行为"]
-        Contracts["JSON 契约与 Fixtures"] --> Core["Rust lithe-core"]
+    subgraph Core["rust/lithe-core"]
+        Commands["确定性命令、模型、校验"]
     end
 
-    subgraph Windows["Windows"]
-        WinUI["React 工作台"] --> WinFeatures["TypeScript Features 与 Stores"]
-        WinFeatures --> Tauri["Tauri 2 Host 与 Windows 适配器"]
-    end
-
-    MacApp -->|"JSON C ABI"| Core
-    Tauri -->|"Rust crate"| Core
+    Contracts["shared/ — 契约与 fixture"] --> Commands
+    Shared -->|"Rust crate，直接链接"| Commands
 ```
+
+gpui 各 crate 的依赖严格向下：`app -> workbench -> {editor, explorer, git,
+terminal} -> shared`，以及 `app -> settings -> shared`。`rust/lithe-core`
+不依赖 GPUI，也不依赖任何界面框架。
 
 <details>
-<summary><strong>如何开发</strong></summary>
+<summary><strong>开发 Lithe</strong></summary>
 
 
-开发环境和 CI 使用 `.swift-version` 固定的 Swift 6.3.3 与 Xcode 26.6。运行完整测试需要 Xcode；基础 SwiftPM 构建只需要匹配的 Command Line Tools。使用 Xcode 27 的开发者也可以在本地构建，构建脚本会自动识别 macOS 27 SDK 的兼容路径。`Package.swift` 仍保留 Swift 6.2 的 manifest API 下限，这不会选择编译器版本。
-
-在项目根目录运行开发版本：
+在仓库根目录构建并运行宿主：
 
 ```bash
-./scripts/preview.sh
+cd gpui
+cargo build --bin Lithe
+./target/debug/Lithe <workspace-root>
 ```
 
-该脚本会构建并链接 Rust Core，然后启动 macOS 应用。只验证 Swift 源码时可以运行：
+`--theme`、`--locale`、`--open-settings` 只对这一次启动生效，不会写回设置。
+测试时用 `LITHE_GPUI_SETTINGS_FILE` 把设置文件指向临时路径。
+
+提交改动前请运行：
 
 ```bash
-swift run --disable-sandbox Lithe
-```
-
-构建 App Bundle：
-
-```bash
-./scripts/package-app.sh
-open dist/Lithe.app
-```
-
-提交改动前运行：
-
-```bash
-./scripts/test-macos.sh
-./scripts/verify-core.sh
-./scripts/verify-git-graph.sh
-./scripts/verify-service-boundaries.sh
-./scripts/verify-shared-contracts.sh
-./scripts/verify-windows-boundaries.sh
+cargo fmt --manifest-path rust/Cargo.toml -p lithe-core -- --check
+cargo test --manifest-path rust/Cargo.toml -p lithe-core
+cargo test --manifest-path gpui/Cargo.toml
 ./scripts/verify-rust-core.sh
+./scripts/verify-shared-contracts.sh
+node scripts/verify-agent-notes.mjs
+node scripts/test-classify-ci-changes.mjs
 ```
 
-目录归属、跨平台边界、共享规则以及 Rust Core 必须遵守的注释规范见[仓库所有权与共享边界](./.agents/notes/implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md)。提交功能改动时，请说明验证方式和已知限制。
+gpui 宿主目前还没有 CI lane，上面这些检查就是门槛。目录所有权与 Rust Core
+注释规范见
+[仓库所有权与共享边界](./.agents/notes/implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md)。
+提交时请写清验证步骤与已知限制。
 
 </details>
 

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./macos/Resources/AppIcon.png" width="112" alt="Lithe app icon">
+  <img src="./gpui/assets/images/logo.png" width="112" alt="Lithe app icon">
 
   <h1>Lithe</h1>
 
@@ -22,10 +22,8 @@
   <p>
     <a href="https://github.com/1lck/Lithe-IDEA/releases/latest"><img src="https://img.shields.io/github/v/release/1lck/Lithe-IDEA?style=flat&label=release&logo=github&logoColor=white" alt="Latest release"></a>
     <a href="https://github.com/1lck/Lithe-IDEA/releases"><img src="https://img.shields.io/github/downloads/1lck/Lithe-IDEA/total?style=flat&label=downloads&logo=github&logoColor=white" alt="Total downloads"></a>
-    <img src="https://img.shields.io/badge/macOS-13%2B-111827?style=flat&logo=apple&logoColor=white" alt="macOS 13+">
-    <img src="https://img.shields.io/badge/Windows-x64-0078D4?style=flat&logo=windows&logoColor=white" alt="Windows x64">
+    <img src="https://img.shields.io/badge/status-no%20release%20yet-lightgrey?style=flat" alt="No release build yet">
     <img src="https://img.shields.io/badge/memory-300--400%20MB-159957?style=flat" alt="300 to 400 MB baseline memory">
-    <a href="#download-and-install"><img src="https://img.shields.io/badge/Homebrew-Install-FBB040?style=flat&logo=homebrew&logoColor=black" alt="Install with Homebrew"></a>
     <a href="./LICENSE"><img src="https://img.shields.io/github/license/1lck/Lithe-IDEA?style=flat&label=license" alt="Apache License 2.0"></a>
   </p>
 </div>
@@ -61,23 +59,18 @@ The Lithe application typically uses about **300–400 MB of baseline memory** a
 
 > **AI writes the code. Lithe helps you understand it, run it, and review it.**
 
-## If macOS says it cannot open `Lithe.app`
+## Repository status
 
-If macOS says that Apple cannot verify whether `Lithe.app` contains malware, the manually downloaded package may not yet be notarized by Apple. First confirm that the app came from the trusted [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases/latest), then use one of these methods:
+The macOS (SwiftUI/AppKit) and Windows (React/Tauri 2) frontends have been
+removed from this repository. They were replaced by a single GPUI Kit host in
+`gpui/`, which is under active development and has no release pipeline yet.
+Installers on [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases)
+come from the removed source and are kept for reference.
 
-<p align="center">
-  <img src="./docs/assets/screenshots/macos-app-verification-warning.png" width="492" alt="macOS warning that Lithe.app cannot be opened">
-</p>
-
-1. In **Applications**, Control-click `Lithe.app`, choose **Open**, and choose **Open** again in the confirmation dialog.
-2. If macOS still blocks it, open **System Settings > Privacy & Security**, click **Open Anyway** next to the security warning, and launch the app again.
-3. You can also remove the quarantine attribute in Terminal:
-
-   ```bash
-   sudo xattr -dr com.apple.quarantine /Applications/Lithe.app
-   ```
-
-Only use these steps for an app whose source you trust. Homebrew installations usually do not require manual quarantine removal.
+If you are installing a previously published macOS build and Gatekeeper blocks
+it, the recovery steps are unchanged: Control-click the app in **Applications**,
+or run `sudo xattr -dr com.apple.quarantine /Applications/Lithe.app`. Use those
+only for an app whose source you trust.
 
 ## Core features
 
@@ -151,83 +144,71 @@ Only use these steps for an app whose source you trust. Homebrew installations u
 
 ## Download and install
 
-- **macOS 13+:** Download the `arm64` DMG for Apple silicon or the `x86_64` DMG for Intel Macs from [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases/latest).
-- **Windows x64:** Download the Windows `.exe` installer from [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases/latest).
-
-Homebrew is the recommended installation and update method on macOS:
-
-```bash
-brew tap 1lck/lithe https://github.com/1lck/Lithe-IDEA.git
-brew install --cask 1lck/lithe/lithe
-brew upgrade --cask lithe
-```
+**There is no downloadable build yet.** The previous macOS and Windows
+products were removed from this repository, and the GPUI host that replaces
+them has no packaging or release pipeline. Published installers still exist on
+[GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases) but they were
+built from the removed source.
 
 ## Architecture Overview
 
-macOS is the current reference product. Windows is an independent React/Tauri implementation. Both products share deterministic commands and contracts through Rust Core while keeping native UI and platform integrations separate.
+Lithe is a pure Rust repository with one host: a GPUI Kit application in
+`gpui/` that drives the deterministic command surface in `rust/lithe-core`.
 
 ```mermaid
 flowchart LR
-    subgraph macOS["macOS"]
-        MacUI["SwiftUI / AppKit workbench"] --> MacApp["Application models and services"]
-        MacApp --> MacAdapters["macOS adapters"]
+    subgraph Host["gpui/ — GPUI Kit host"]
+        App["app — composition root"] --> Workbench["workbench — shell"]
+        Workbench --> Editor["editor / explorer / git / terminal"]
+        App --> Settings["settings"]
+        Editor --> Shared["shared — icons, i18n, core client"]
     end
 
-    subgraph Shared["Shared behavior"]
-        Contracts["JSON contracts and fixtures"] --> Core["Rust lithe-core"]
+    subgraph Core["rust/lithe-core"]
+        Commands["Deterministic commands, models, validation"]
     end
 
-    subgraph Windows["Windows"]
-        WinUI["React workbench"] --> WinFeatures["TypeScript features and stores"]
-        WinFeatures --> Tauri["Tauri 2 host and Windows adapters"]
-    end
-
-    MacApp -->|"JSON C ABI"| Core
-    Tauri -->|"Rust crate"| Core
+    Contracts["shared/ — contracts and fixtures"] --> Commands
+    Shared -->|"Rust crate, direct link"| Commands
 ```
+
+The gpui crates depend strictly downward:
+`app -> workbench -> {editor, explorer, git, terminal} -> shared`, plus
+`app -> settings -> shared`. `rust/lithe-core` stays free of GPUI and of any
+UI framework.
 
 <details>
 <summary><strong>Develop Lithe</strong></summary>
 
 
-Development and CI use Swift 6.3.3, pinned in `.swift-version`, with Xcode 26.6. Running the complete test suite requires Xcode; basic SwiftPM builds only need matching Command Line Tools. Developers using Xcode 27 may also build locally; the macOS 27 SDK compatibility path is detected by the build scripts. `Package.swift` keeps its Swift 6.2 manifest API minimum; this does not select the compiler version.
-
-Run the development build from the repository root:
+Build and run the host from the repository root:
 
 ```bash
-./scripts/preview.sh
+cd gpui
+cargo build --bin Lithe
+./target/debug/Lithe <workspace-root>
 ```
 
-The script builds and links Rust Core before launching the macOS app. To validate only the Swift source, run:
-
-```bash
-swift run --disable-sandbox Lithe
-```
-
-Build an app bundle:
-
-```bash
-./scripts/package-app.sh
-open dist/Lithe.app
-```
+`--theme`, `--locale`, and `--open-settings` override settings for a single
+launch without writing them back. Set `LITHE_GPUI_SETTINGS_FILE` to point the
+settings file at a temporary path during testing.
 
 Before submitting a change, run:
 
 ```bash
-./scripts/test-macos.sh
-./scripts/test-git-performance-baseline.sh
-./scripts/verify-core.sh
-./scripts/verify-git-graph.sh
-./scripts/verify-service-boundaries.sh
-./scripts/verify-shared-contracts.sh
-./scripts/verify-windows-boundaries.sh
+cargo fmt --manifest-path rust/Cargo.toml -p lithe-core -- --check
+cargo test --manifest-path rust/Cargo.toml -p lithe-core
+cargo test --manifest-path gpui/Cargo.toml
 ./scripts/verify-rust-core.sh
+./scripts/verify-shared-contracts.sh
+node scripts/verify-agent-notes.mjs
+node scripts/test-classify-ci-changes.mjs
 ```
 
-`test-git-performance-baseline.sh` runs deterministic Git graph work gates and
-records an optimized multi-sample timing baseline under `.artifacts/`.
-
-See [Repository ownership and sharing boundaries](./.agents/notes/implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md) for directory ownership, cross-platform boundaries, sharing rules, and the required Rust Core comment standard. Include your verification steps and known limitations when submitting a change.
+The gpui host has no CI lane yet, so those checks are the gate. Directory
+ownership and the required Rust Core comment standard are described in
+[Repository ownership and sharing boundaries](./.agents/notes/implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md).
+Include your verification steps and known limitations when submitting a change.
 
 </details>
 
