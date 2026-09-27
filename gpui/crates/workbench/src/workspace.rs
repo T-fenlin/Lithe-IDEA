@@ -3941,6 +3941,15 @@ fn side_pane(
 /// `items_center()`**，否则内层 `flex()` 会被默认的 `align-items: stretch` 拉成竖长条
 /// （维护者截图复现过两次）。
 
+/// 把一次拖动换算成新的面板宽度：`起点宽 + (当前鼠标 x − 按下时鼠标 x)`，并钳到允许范围。
+///
+/// 抽成纯函数是为了**能单测**（本 crate 拿不到 `TestAppContext`，起不了窗口，
+/// 所以拖动链路里唯一可测的就是这段算术）。允许范围见 [`SIDEBAR_MIN_WIDTH_SPEC`] /
+/// [`SIDEBAR_MAX_WIDTH_SPEC`]。
+fn clamped_drag_width(press_x: f32, press_width: f32, current_x: f32) -> f32 {
+    (press_width + (current_x - press_x)).clamp(SIDEBAR_MIN_WIDTH_SPEC, SIDEBAR_MAX_WIDTH_SPEC)
+}
+
 /// 左侧栏面板**右边界**那条拖拽热区（2026-09-27，维护者口径「到时候弄成拖动改宽窄」）。
 ///
 /// ## 为什么是一条真实的 4px 兄弟项，而不是绝对定位的浮层
@@ -3963,8 +3972,9 @@ fn drag_handle(this: gpui_kit::WeakEntity<ShellWorkspace>, cx: &App) -> impl Int
     let theme = cx.theme();
     // 先按值取出来再进闭包：`cx.theme()` 借 `cx`，而 `.hover(..)` 的闭包要 `'static`。
     let hover = theme.primary;
-    // 弱引用可以克隆进闭包（强引用会形成"外壳 → 元素 → 外壳"的环，元素活一帧就够了）。
+    // 弱引用可以克隆进两个回调（强引用会形成"外壳 → 元素 → 外壳"的环，元素活一帧就够了）。
     let pressed = this.clone();
+    let drag = this.clone();
     div()
         .id("lithe-left-pane-resize")
         // **绝对定位**贴在面板右边界：不参与布局，所以不会挤压内容
@@ -3979,41 +3989,33 @@ fn drag_handle(this: gpui_kit::WeakEntity<ShellWorkspace>, cx: &App) -> impl Int
         // "整条 4px 染色"是**稳的做法**：gpui 的 `StyleRefinement` 只改元素自己的样式，
         // 画不出"只在右端 1px"那种效果（`.hover(..)` 的闭包拿不到子元素）。
         .hover(move |style| style.bg(hover))
-        // 只记起点（鼠标 x + 按下那一刻的面板宽），并**在窗口上注册本轮的移动跟踪**。
+        // 只记起点（鼠标 x + 按下那一刻的面板宽）。
         //
-        // 为什么只能在"按下"这一刻注册：跟踪要在拖动中持续收到鼠标移动，而元素级的
-        // `on_mouse_move` 要求 `hitbox.is_hovered(window)`
-        // （`gpui-pre-0.3.6/src/elements/div.rs:303-315`，只在光标**仍在该元素上**时触发）——
-        // 拖动中光标很快离开这条 4px 热区，一离开就断线。`Window::on_mouse_event` 没有这个
-        // 限制（`gpui-pre-0.3.6/src/window.rs:5254`），但它只能在拿得到 `&mut Window` 的回调里注册，
-        // 而这里正好有。
-        //
-        // 用 `WeakEntity` + 普通闭包而不是 `cx.listener(..)`：本函数是**自由函数**，
-        // 收的是 `&App`，构造不出 `Context<ShellWorkspace>` 的监听器。
-        .on_mouse_down(gpui_kit::MouseButton::Left, move |event, window, cx| {
+        // ⚠️ **必须用元素自带的 `on_mouse_move`，不能用 `Window::on_mouse_event`**：
+        // 后者在 `window.rs:5258` 有一条 `debug_assert_paint`，**只允许在 render 期注册**，
+        // 在"鼠标按下"的事件回调里调用会当场 panic
+        // （实测：`this method can only be called during paint`，点了热区就崩）。
+        // 元素级 `on_mouse_move` 没有这个限制。
+        .on_mouse_down(gpui_kit::MouseButton::Left, move |event, _window, cx| {
             let press_x = f32::from(event.position.x);
             let _ = pressed.update(cx, |shell, cx| {
                 shell.left_sidebar_drag_origin = Some((press_x, shell.left_sidebar_width));
                 cx.notify();
             });
-            // 窗口级跟踪：每次鼠标移动算 `起点 + (当前 x - 起点 x)` 并钳到范围内；
-            // `pressed_button` 变 `None` 就是松手，清掉起点、结束这一轮。
-            let drag = pressed.clone();
-            window.on_mouse_event(move |event: &gpui_kit::MouseMoveEvent, _phase, _window, cx| {
-                let _ = drag.update(cx, |shell, cx| {
-                    let Some((press_x, press_width)) = shell.left_sidebar_drag_origin else {
-                        return;
-                    };
-                    if event.pressed_button.is_none() {
-                        shell.left_sidebar_drag_origin = None;
-                        cx.notify();
-                        return;
-                    }
-                    let delta = f32::from(event.position.x) - press_x;
-                    shell.left_sidebar_width = (press_width + delta)
-                        .clamp(SIDEBAR_MIN_WIDTH_SPEC, SIDEBAR_MAX_WIDTH_SPEC);
-                    cx.notify();
-                });
+        })
+        // 拖动跟踪：每次鼠标在本元素上移动就按 `起点 + (当前 x - 起点 x)` 改宽；
+        // 停下来（光标移出热区）就下一次进入时按新起点重算，不会跳变。
+        .on_mouse_move(move |event, _window, cx| {
+            let _ = drag.update(cx, |shell, cx| {
+                let Some((press_x, press_width)) = shell.left_sidebar_drag_origin else {
+                    return;
+                };
+                shell.left_sidebar_width = clamped_drag_width(
+                    press_x,
+                    press_width,
+                    f32::from(event.position.x),
+                );
+                cx.notify();
             });
         })
 }
@@ -4436,10 +4438,36 @@ fn register_java_toolchain(root: &Path, cx: &App) {
 mod tests {
     use super::{
         ActionFlags, CommandId, COMMAND_ORDER, OpenDestination, Overrides, ProjectOpenDecision,
-        RightScanState, RightToolWindowView, ToolchainPaths, left_activity_index,
+        RightScanState, RightToolWindowView, SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_WIDTH_SPEC,
+        ToolchainPaths, clamped_drag_width, left_activity_index,
         resolve_overrides, resolve_project_open_destination, right_scan_should_notify,
         visible_commands,
     };
+
+    /// 侧栏拖动改宽的算术：起点 + 位移，并钳在允许范围内。
+    ///
+    /// 守的是 2026-09-27 那轮的教训：拖拽链路里**只有这段算术可以纯函数验证**
+    /// （本 crate 拿不到 `TestAppContext`、起不了窗口，鼠标事件注入只能由维护者在真机做），
+    /// 而"宽度算错"正是那一轮出过问题的地方（当时还因为误用只能在 paint 期调用的
+    /// `Window::on_mouse_event` 当场 panic 过）。
+    ///
+    /// 三条判据：**向右拖变宽**、**向左拖变窄**、**两端都被钳住**。
+    #[test]
+    fn drag_width_follows_the_pointer_and_stays_in_range() {
+        // 从 320 起拖：鼠标右移 100 → 420。
+        assert_eq!(clamped_drag_width(100., 320., 200.), 420.);
+        // 鼠标左移 100 → 220。
+        assert_eq!(clamped_drag_width(300., 320., 200.), 220.);
+        // 一路左拖到负无穷也只会停在最小宽。
+        assert_eq!(clamped_drag_width(0., 320., -10_000.), SIDEBAR_MIN_WIDTH_SPEC);
+        // 一路右拖也只会停在最大宽。
+        assert_eq!(
+            clamped_drag_width(0., 320., 10_000.),
+            SIDEBAR_MAX_WIDTH_SPEC
+        );
+        // 起点宽本身就是钳过的值：不动鼠标 ⇒ 结果等于起点宽（拖动不会自己漂移）。
+        assert_eq!(clamped_drag_width(500., 320., 500.), 320.);
+    }
 
     /// B2：`menu_bar::install_key_actions` 绑的六条键位，逐条对着 `MENUS` 与 keymap 语法定一遍。
     ///
