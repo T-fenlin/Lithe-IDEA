@@ -23,8 +23,6 @@ maven_portable_schema="shared/contracts/maven-portable-configuration-v1.schema.j
 maven_launch_context_schema="shared/contracts/maven-launch-context-v1.schema.json"
 update_schema="shared/contracts/update-v1.schema.json"
 update_fixture="shared/fixtures/updates/update-v1.json"
-macos_syntax_colors="macos/Sources/Lithe/Resources/SyntaxHighlighting/color-mappings.json"
-windows_lithe_theme="windows/tauri/src/extensions/themes/builtin/lithe.json"
 
 /usr/bin/ruby -rjson -e '
   fixture = JSON.parse(File.read(ARGV.fetch(0)))
@@ -59,30 +57,17 @@ windows_lithe_theme="windows/tauri/src/extensions/themes/builtin/lithe.json"
   phases = fixture.fetch("lifecyclePhases")
   abort "Maven lifecycle phases differ from v1" unless phases == %w[clean validate compile test package verify install site deploy]
   cases = fixture.fetch("storageIdentityCases")
+  # fixture 仍保留 macOS / Windows 两个平台的存储身份用例：它们是**契约的一部分**，
+  # 描述"同一份本地仓库在不同平台上如何归一化"，与两个旧前端是否还在仓库里无关。
+  # 旧前端删除后无法再回源核对，所以这里只断言覆盖面与内部一致性，不做跨端比对。
   abort "Maven storage fixture must cover both platforms" unless cases.map { |item| item.fetch("platform") }.sort == %w[macos windows]
   abort "Maven storage fixture names must be unique" unless cases.map { |item| item.fetch("name") }.uniq.length == cases.length
   abort "Maven storage identities must contain one separator" unless cases.all? { |item| item.fetch("expectedIdentity").count("\0") == 1 }
 ' "$maven_portable_schema" "$maven_launch_context_schema" "$maven_platform_fixture"
 
-fixture_ids=$(/usr/bin/ruby -rjson -e 'puts JSON.parse(File.read(ARGV.fetch(0))).fetch("modules").map { |m| m.fetch("id") }.sort' "$module_fixture")
-swift_ids=$(rg '^[[:space:]]*static let .* = ModuleID\("dev\.lithe\.[^"]+"\)' macos/Sources/LitheModuleAPI/Lifecycle/ModuleTypes.swift \
-    | sed -E 's/.*ModuleID\("([^"]+)"\).*/\1/' \
-    | sort)
-if [[ "$fixture_ids" != "$swift_ids" ]]; then
-    print -u2 "Built-in module fixture and Swift ModuleID declarations differ"
-    diff <(print -r -- "$fixture_ids") <(print -r -- "$swift_ids") || true
-    exit 1
-fi
-
-fixture_capability_ids=$(/usr/bin/ruby -rjson -e 'puts JSON.parse(File.read(ARGV.fetch(0))).fetch("modules").flat_map { |m| m.fetch("capabilities") }.uniq.sort' "$module_fixture")
-swift_capability_ids=$(rg '^[[:space:]]*static let .* = ModuleCapabilityID\("dev\.lithe\.capability\.[^"]+"\)' macos/Sources/LitheModuleAPI/Lifecycle/ModuleTypes.swift \
-    | sed -E 's/.*ModuleCapabilityID\("([^"]+)"\).*/\1/' \
-    | sort)
-if [[ "$fixture_capability_ids" != "$swift_capability_ids" ]]; then
-    print -u2 "Built-in module fixture and Swift capability declarations differ"
-    diff <(print -r -- "$fixture_capability_ids") <(print -r -- "$swift_capability_ids") || true
-    exit 1
-fi
+# 旧前端删除前，这里还有两段"把 fixture 与 `macos/Sources/LitheModuleAPI/.../ModuleTypes.swift`
+# 里的 Swift `ModuleID` / `ModuleCapabilityID` 声明逐条对比"的检查（保证 fixture 不是漂移的孤本）。
+# 声明方已随 `macos/` 删除，比对对象不复存在；fixture 自身的结构断言（下面那段）仍然保留。
 
 /usr/bin/ruby -rjson -e '
   data = JSON.parse(File.read(ARGV.fetch(0)))
@@ -159,8 +144,6 @@ fi
 
 /usr/bin/ruby -rjson -e '
   fixture = JSON.parse(File.read(ARGV.fetch(0)))
-  macos = JSON.parse(File.read(ARGV.fetch(1)))
-  windows = JSON.parse(File.read(ARGV.fetch(2)))
 
   abort "syntax theme fixture version must be 1" unless fixture.fetch("version") == 1
   abort "syntax theme fixture ID must be lithe" unless fixture.fetch("id") == "lithe"
@@ -191,6 +174,11 @@ fi
     end
   end
 
+  # 旧前端删除前，这段还会把 fixture 与 `macos/.../color-mappings.json`（19 个语义 role 的
+  # light/dark 回落表）和 `windows/.../builtin/lithe.json`（同一调色板的 gpui 无关 schema）逐条对比。
+  # 两个比对对象已随旧前端删除，改为**就地验证回落关系本身**：每个 fallback 键必须存在、
+  # 不得成环，且必须解析到一个真实颜色 —— 这条断言过去是靠跨端比对间接覆盖的，
+  # 现在直接钉住，不再依赖任何外部文件。
   resolve_role = lambda do |appearance, role, trail = []|
     palette = appearances.fetch(appearance)
     return palette.fetch(role) if palette.key?(role)
@@ -198,56 +186,13 @@ fi
     abort "cyclic syntax role fallback for #{role}" if trail.include?(role)
     resolve_role.call(appearance, fallbacks.fetch(role), trail + [role])
   end
-
-  macos_role_sources = {
-    "text" => "text",
-    "keyword" => "keyword",
-    "annotation" => "annotation",
-    "type" => "type",
-    "property" => "property",
-    "boolean" => "boolean",
-    "constant" => "constant",
-    "documentationComment" => "documentationComment",
-    "field" => "field",
-    "functionCall" => "functionCall",
-    "functionDeclaration" => "functionDeclaration",
-    "null" => "null",
-    "number" => "number",
-    "operator" => "operator",
-    "parameter" => "parameter",
-    "punctuation" => "punctuation",
-    "string" => "string",
-    "comment" => "comment",
-    "typeParameter" => "typeParameter",
-    "variable" => "variable"
-  }
-  macos_defaults = macos.fetch("defaults")
-  abort "macOS syntax roles differ from the shared subset" unless macos_defaults.keys.sort == macos_role_sources.keys.sort
   %w[light dark].each do |appearance|
-    macos_role_sources.each do |macos_role, shared_role|
-      value = macos_defaults.fetch(macos_role)
-      abort "macOS #{macos_role} must define light and dark colors" unless value.is_a?(Hash)
-      actual = value.fetch(appearance)
-      expected = resolve_role.call(appearance, shared_role)
-      abort "macOS #{appearance} #{macos_role} differs from shared palette" unless actual.casecmp?(expected)
+    fallbacks.each_key do |role|
+      resolved = resolve_role.call(appearance, role)
+      abort "#{appearance} #{role} resolves to #{resolved.inspect}" unless resolved.match?(color_pattern)
     end
   end
-
-  windows_syntax_roles = palette_roles - %w[invalid text]
-  %w[light dark].each do |appearance|
-    theme = windows.fetch("themes").find { |entry| entry.fetch("id") == "lithe-#{appearance}" }
-    abort "missing Windows lithe-#{appearance} theme" unless theme
-    syntax = theme.fetch("syntax")
-    abort "Windows #{appearance} syntax roles differ from v1" unless syntax.keys.sort == windows_syntax_roles
-    windows_syntax_roles.each do |role|
-      expected = resolve_role.call(appearance, role)
-      abort "Windows #{appearance} #{role} differs from shared palette" unless syntax.fetch(role).casecmp?(expected)
-    end
-    colors = theme.fetch("colors")
-    abort "Windows #{appearance} text differs from shared palette" unless colors.fetch("foreground").casecmp?(resolve_role.call(appearance, "text"))
-    abort "Windows #{appearance} invalid differs from shared palette" unless colors.fetch("destructive").casecmp?(resolve_role.call(appearance, "invalid"))
-  end
-' "$syntax_theme_fixture" "$macos_syntax_colors" "$windows_lithe_theme"
+' "$syntax_theme_fixture"
 
 /usr/bin/ruby -rjson -e '
   background = JSON.parse(File.read(ARGV.fetch(0)))

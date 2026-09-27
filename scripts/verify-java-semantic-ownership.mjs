@@ -7,8 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoots = [
   "rust/lithe-core/src",
-  "macos/Sources",
-  "windows/tauri/src",
+  "gpui/crates/java/src",
 ];
 const forbidden = [
   "is_main_method",
@@ -18,7 +17,7 @@ const forbidden = [
   "java.runConfigurations",
   "java.testMethods",
 ];
-const extensions = new Set([".rs", ".swift", ".ts", ".tsx"]);
+const extensions = new Set([".rs"]);
 const violations = [];
 
 function visit(relative) {

@@ -1,7 +1,14 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="${0:A:h:h}"
+# Rust Core 的确定性校验：注释规范、模块布局、格式、单测，以及 gpui 宿主侧"能真正驱动 Core"的证据。
+#
+# 旧前端（`macos/` 的 C 桥 + `swift build` 链接、`windows/` 的 Tauri host）删除后，这里不再验证
+# "Core 的 C ABI 符号出现在 macOS 二进制里"——那条链路已随 `macos/Sources/LitheRustCore/bridge.c`
+# 一起消失。gpui 宿主**直接链接 crate**（`gpui/crates/*/Cargo.toml` 的 `lithe-core = { path = ... }`），
+# 所以对应的证据是"gpui 侧对 Core 的调用能编译并通过其单测"，见末尾的 `cargo test -p lithe-gpui-*`。
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 mkdir -p .artifacts/test-stability
@@ -17,71 +24,8 @@ node .agents/skills/write-stable-tests/scripts/run-rust-tests-with-timing.mjs \
     --report .artifacts/test-stability/git-host-rust.json
 cargo test --manifest-path rust/Cargo.toml -p lithe-core
 
-case "$(uname -m)" in
-    arm64) TRIPLE="arm64-apple-macosx"; RUST_TARGET="aarch64-apple-darwin" ;;
-    x86_64) TRIPLE="x86_64-apple-macosx"; RUST_TARGET="x86_64-apple-darwin" ;;
-    *) print -u2 -- "Unsupported host architecture: $(uname -m)"; exit 1 ;;
-esac
+# gpui 宿主对 Core 的调用面：Core 契约一变，这些 crate 就编不过或行为漂移。
+cargo test --manifest-path gpui/Cargo.toml \
+    -p lithe-gpui-shared -p lithe-gpui-app -p lithe-gpui-workbench
 
-RUST_LIBRARY="$(scripts/build-rust-core.sh --debug --target "$RUST_TARGET")"
-
-SWIFT_LINKER_ARGS=()
-if ! /usr/bin/xcrun ld -help 2>&1 | /usr/bin/grep -q -- '-no_warn_duplicate_libraries'; then
-    SWIFT_LINKER_ARGS=(-Xswiftc "-ld-path=$ROOT_DIR/scripts/ld-macos13-compat.sh")
-fi
-
-SWIFT_BUILD_ARGS=(build --disable-sandbox --triple "$TRIPLE" "${SWIFT_LINKER_ARGS[@]}")
-SWIFT_BIN_PATH="$(swift build --show-bin-path --configuration debug --triple "$TRIPLE")"
-if [[ "$SWIFT_BIN_PATH" == */out/Products/* ]]; then
-    # Newer SwiftPM layouts put all --triple products below .build/out. Use a
-    # per-architecture scratch path only for that layout; older SwiftPM keeps
-    # the repository's original .build/<triple>/debug path.
-    SWIFT_BUILD_ROOT="$ROOT_DIR/.build/$TRIPLE"
-    SWIFT_BUILD_ARGS+=(--scratch-path "$SWIFT_BUILD_ROOT")
-    SWIFT_BIN_PATH="$SWIFT_BUILD_ROOT/debug"
-fi
-swift "${SWIFT_BUILD_ARGS[@]}" \
-    -Xswiftc -Xfrontend \
-    -Xswiftc -disable-round-trip-debug-types \
-    -Xcc -include \
-    -Xcc "$ROOT_DIR/scripts/MacOS13SDKCompatibility.h" \
-    -Xlinker -force_load \
-    -Xlinker "$RUST_LIBRARY"
-
-BRIDGE_BINARY="$(mktemp -t lithe-rust-bridge).out"
-trap 'rm -f "$BRIDGE_BINARY"' EXIT
-MACOS_SDK="$(xcrun --sdk macosx --show-sdk-path)"
-swiftc scripts/RustCoreBridgeVerification.swift \
-    macos/Sources/LitheRustCore/bridge.c \
-    -sdk "$MACOS_SDK" \
-    -target "${TRIPLE}13.0" \
-    -Xlinker -force_load \
-    -Xlinker "$RUST_LIBRARY" \
-    -o "$BRIDGE_BINARY"
-"$BRIDGE_BINARY"
-
-BINARY="$SWIFT_BIN_PATH/Lithe"
-if ! nm -gU "$BINARY" | grep -F "_lithe_core_execute_json" > /dev/null; then
-    print -u2 -- "Rust Core symbols are missing from the macOS binary"
-    exit 1
-fi
-if ! nm -gU "$BINARY" | grep -F "_lithe_core_lsp_provider_catalog_json" > /dev/null; then
-    print -u2 -- "Rust Core LSP provider catalog symbol is missing from the macOS binary"
-    exit 1
-fi
-
-# Exercise the same linked app's early AskPass mode as well as the C ABI and
-# isolated local Git/HTTP flows. This lane never contacts an external remote.
-cargo build --manifest-path rust/Cargo.toml -p lithe-core
-python3 scripts/test-git-execution.py --application "$BINARY"
-node --input-type=module -e 'import { writeTestReportArtifacts } from "./.agents/skills/write-stable-tests/scripts/generate-test-report.mjs"; writeTestReportArtifacts(".artifacts/test-stability/git-execution-integration.json");'
-
-# Exercise the macOS journal through a real non-Git-feature entry point. The
-# ordinary Swift unit lane does not link Core, so this integration is explicit.
-LITHE_RUN_GIT_EXECUTION_INTEGRATION=1 \
-    ./.agents/skills/write-stable-tests/scripts/test-stability-macos.sh \
-    --suite-timeout-seconds 900 \
-    --report .artifacts/test-stability/git-console-bridge.json \
-    -- --filter 'MacGitHubGitOperationsTests|GitConsolePresentationBridgeTests|GitConsoleLifecycleBridgeTests' -Xlinker -force_load -Xlinker "$RUST_LIBRARY"
-
-print "Rust Core verification passed: comments, Rust tests, Swift bridge, linked symbols, and Git execution integration"
+printf '%s\n' "Rust Core verification passed: comments, layout, formatting, core tests, and gpui host integration"
