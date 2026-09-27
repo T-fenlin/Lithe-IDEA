@@ -7,29 +7,21 @@
   ════════════════════════════════════════════════════════════════════════════
   Lithe 界面「对标 IDEA」的效果图（静态 HTML，无外部依赖，双击可开）。
 
-  口径（与 gpui/docs/ui-mockup-idea.md 同源）：
-    · 尺寸 = Lithe 真机实测（截图量的）+ 源码常量，见每块上的 data-spec 注记；
-    · 配色 = gpui/themes/lithe-dark.json 的 JetBrains 官方色；
-    · 标注红字 = 维护者图注原话（即"要改的点"），绿色 = 本轮已定要做的改动。
+  内容口径：
+    · 布局与元素 = 照维护者提供的 IntelliJ IDEA 真机截图（New UI，1920 宽）逐块对齐；
+    · 尺寸 = Lithe 真机实测 + 源码常量；配色 = gpui/themes/lithe-dark.json（JetBrains 官方色）；
+    · 文件树图标按 IDEA 画成彩色 —— 这是**目标态**：Lithe 目前走 svg() 渲染所以是单色，
+      彩色需要换掉 Img 那条链路（理由见 gpui/crates/shared/src/icons/file_icon.rs:262-281）。
 
-  ★ 本轮改动（图注 → 落点）：
-    1  删掉「项目」树头 32px        → explorer_view.rs render_header
-    2  删掉树内搜索行 28px          → explorer_view.rs render_search_row
-    3  启动/调试三图标搬到标题栏右侧 → title_bar.rs（图注：后续把启动、debug 放这里）
-    4  文件树图标换 IDEA 彩色        → file_icon.rs（机制已在，待实测）
-    5  左栏终端图标换 IDEA 字形      → workspace.rs activity_items()
-    6  编辑区左边界加收起按钮        → 图注：边框这里可以点击图标进行收起
-  ○ 终端面板本轮**不动**（维护者：我现在都没有使用）
+  打开即自适应窗口缩放；右下角按钮切换「实际大小 / 适应窗口」。
   ════════════════════════════════════════════════════════════════════════════
 -->
 <style>
   :root{
-    /* ── JetBrains 官方色（gpui/themes/lithe-dark.json:14-62） ── */
     --bg:#1e1f22; --surface:#2b2d30; --border:#43454a;
     --fg:#dfe1e5; --muted-fg:#b4b8bf; --subtle:#8b929e;
     --accent:#393b40; --selection:#2e436e; --primary:#3574f0;
-    --tab-fg:#8b929e;
-    --stroke:#6f7175;
+    --tab-fg:#8b929e; --line:#5a5d63;
     --mono:"JetBrains Mono","Cascadia Code",Consolas,monospace;
     --ui:"Microsoft YaHei UI","Segoe UI",system-ui,sans-serif;
   }
@@ -37,343 +29,411 @@
   html{background:#0d0e10}
   body{display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:16px 0;
        font-family:var(--ui)}
-  /* 自动缩放：把 1920 宽的稿子整体适配到当前窗口，保证"一眼看到全部" */
   .wrap{width:1920px;transform-origin:top center;will-change:transform}
   .fitbtn{position:fixed;right:14px;bottom:14px;z-index:99;background:#2b2d30;color:#b4b8bf;
           border:1px solid #43454a;border-radius:6px;padding:5px 12px;font-size:12.5px;
           cursor:pointer;font-family:var(--ui);box-shadow:0 2px 10px #0008}
   .fitbtn:hover{background:#393b40;color:#dfe1e5}
-  /* 自动化截图（?scale=1）时隐藏这个按钮，图里只有界面 */
   body.bare .fitbtn{display:none}
+
   .app{width:1920px;height:1080px;background:var(--bg);color:var(--fg);
        display:flex;flex-direction:column;position:relative;overflow:hidden;flex-shrink:0}
 
-  /* ── ① 标题栏 40（含菜单 + 项目下拉 + 分支 + 【新】启动/调试 + 三键） ── */
+  /* ── ① 标题栏 40：菜单｜项目 ▾ 分支 ▾｜运行配置 ▾ ▶ 🐞 ⋮｜账号 搜索 设置｜三键 ── */
   .titlebar{height:40px;flex:0 0 40px;display:flex;align-items:center;padding:0 8px;gap:4px;
             background:var(--surface);font-size:13px;color:var(--muted-fg)}
-  .menubar{display:flex;gap:2px}
+  .menubar{display:flex;gap:1px}
   .menubar span{padding:2px 8px;border-radius:4px}
   .menubar span:hover{background:var(--accent)}
-  .tsep{width:1px;height:16px;background:var(--border);margin:0 6px}
-  .chip{display:flex;align-items:center;gap:6px;padding:2px 8px;border-radius:6px;background:transparent}
+  .chip{display:flex;align-items:center;gap:6px;padding:2px 6px;border-radius:6px}
   .chip:hover{background:var(--accent)}
-  .chip .fold{width:14px;height:14px;border-radius:3px;background:var(--primary);
-              color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center}
-  .chip .br{color:var(--primary);font-size:13px}
-  .drag{flex:1;height:100%;display:flex;align-items:center;justify-content:center;
-        -webkit-app-region:drag}
-  .titletools{display:flex;align-items:center;gap:4px;margin-right:8px}
-  .icbtn{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;
-         color:var(--muted-fg);font-size:13px}
+  .projicon{width:15px;height:15px;border-radius:3px;background:#3574f0;color:#fff;
+            font-size:9px;font-weight:700;display:grid;place-items:center}
+  .br{color:var(--primary);font-size:14px}
+  .car{font-size:9px;color:var(--subtle);margin-left:2px}
+  .drag{flex:1;height:100%}
+  .runbox{display:flex;align-items:center;gap:2px;margin-right:6px}
+  .cfg{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--fg);
+       padding:2px 8px;border-radius:6px}
+  .cfg:hover{background:var(--accent)}
+  .rcicon{position:relative;width:16px;height:16px;border:1.5px solid #6f9bd1;border-radius:3px;
+          flex-shrink:0}
+  .rcicon::before{content:"✕";position:absolute;right:-6px;top:-7px;color:#e05561;font-size:10px;
+                  font-weight:700}
+  .icbtn{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;
+         color:var(--muted-fg);font-size:14px}
   .icbtn:hover{background:var(--accent);color:var(--fg)}
+  .icbtn.play{color:#57965c;font-size:16px}
+  .icbtn.dbg{color:#57965c;font-size:15px}
+  .vsep{width:1px;height:18px;background:var(--border);margin:0 6px}
   .wincontrols{display:flex;align-self:stretch}
-  .wincontrols div{width:56px;display:grid;place-items:center;color:var(--muted-fg);font-size:11px}
+  .wincontrols div{width:46px;display:grid;place-items:center;color:var(--muted-fg);font-size:12px}
   .wincontrols div:hover{background:var(--accent)}
   .wincontrols .close:hover{background:#db5c5c;color:#fff}
 
-  /* ── ② 编辑器标签栏 36（粗算 40；文件类型图标已在画，见变更 1） ── */
-  .toolstrip{height:40px;flex:0 0 40px;display:flex;align-items:center;gap:8px;
-             padding:0 8px;background:var(--bg)}
-  .navgrp{display:flex;gap:2px;margin-right:4px}
-  .navgrp .icbtn{width:24px;height:24px}
-  .tabs{display:flex;align-items:flex-end;height:100%;gap:0;flex:1;min-width:0}
-  .tab{height:36px;display:flex;align-items:center;gap:6px;padding:0 24px 0 8px;
-       max-width:200px;color:var(--tab-fg);font-size:13px;position:relative;white-space:nowrap}
-  .tab .name{overflow:hidden;text-overflow:ellipsis}
-  .tab .x{position:absolute;right:4px;width:18px;height:18px;border-radius:4px;
-          display:grid;place-items:center;font-size:11px;color:var(--subtle)}
-  .tab.active{color:var(--fg);background:var(--bg)}
-  .tab.active::after{content:"";position:absolute;left:6px;right:6px;bottom:0;height:2px;
-                     background:var(--primary);border-radius:2px 2px 0 0}
-  .badge{width:12px;height:12px;border-radius:2px;font-size:8px;font-weight:700;
-         display:grid;place-items:center;color:#fff;flex-shrink:0}
+  /* ── ② 工作区 ── */
+  .work{flex:1;display:flex;min-height:0}
 
-  /* ── ③ 工作区：4px 间距的 flex 行（真机口径） ── */
-  .work{flex:1;display:flex;gap:4px;padding-right:4px;min-height:0}
+  /* 左活动栏 38（IDEA：项目图标在上，底部一组） */
   .rail{width:38px;flex:0 0 38px;display:flex;flex-direction:column;align-items:center;
-        padding:4px 0;gap:4px}
-  .rail .item{width:28px;height:28px;border-radius:4.8px;display:grid;place-items:center;
-              color:var(--subtle);font-size:14px}
+        padding:6px 0 4px;gap:4px}
+  .rail .item{width:28px;height:28px;border-radius:5px;display:grid;place-items:center;
+              color:var(--subtle);font-size:14px;position:relative}
   .rail .item:hover{background:var(--accent);color:var(--fg)}
   .rail .item.on{background:var(--selection);color:var(--fg)}
   .rail .sp{flex:1}
-  .rail .badged{position:relative}
-  .rail .dot{position:absolute;top:-1px;left:15px;min-width:12px;height:12px;border-radius:6px;
-             background:#db5c5c;color:#fff;font-size:9px;line-height:12px;text-align:center;
-             padding:0 3px;font-weight:600;z-index:2}
-  .island{background:var(--bg);border:1px solid var(--border);border-radius:11.2px}
-  .side{width:320px;flex:0 0 320px;display:flex;flex-direction:column;overflow:hidden}
-  .center{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-  .right{width:400px;flex:0 0 400px;display:flex;flex-direction:column;overflow:hidden}
 
-  /* ── 文件树（本轮：树头与搜索行都删掉了） ── */
-  .tree{padding:4px 0;font-size:13px;color:var(--muted-fg);overflow:hidden;flex:1}
-  .row{height:22px;display:flex;align-items:center;gap:6px;padding:0 6px 0 8px;white-space:nowrap}
+  /* 项目树面板：无圆角、无边框（IDEA 口径），顶部一条 32px 头部 */
+  .tree-pane{width:500px;flex:0 0 500px;display:flex;flex-direction:column;
+             background:var(--bg);border-right:1px solid #303236;overflow:hidden}
+  .tree-head{height:32px;flex:0 0 32px;display:flex;align-items:center;gap:6px;padding:0 8px;
+             font-size:13px;color:var(--fg)}
+  .tree-head .picon{width:15px;height:15px;border-radius:3px;background:#3574f0;color:#fff;
+                    font-size:9px;font-weight:700;display:grid;place-items:center;flex-shrink:0}
+  .tree-head .pname{font-weight:600;white-space:nowrap}
+  .tree-head .ppath{color:var(--subtle);font-size:12px;overflow:hidden;text-overflow:ellipsis;
+                    white-space:nowrap;flex:1;min-width:0}
+  .tree-head .hbtn{width:24px;height:24px;border-radius:5px;display:grid;place-items:center;
+                   color:var(--subtle);font-size:13px;flex-shrink:0}
+  .tree-head .hbtn:hover{background:var(--accent);color:var(--fg)}
+  .tree{flex:1;padding:2px 0 8px;font-size:13px;overflow:hidden}
+  .row{height:22px;display:flex;align-items:center;gap:5px;padding-right:8px;white-space:nowrap;
+       color:var(--muted-fg)}
   .row:hover{background:var(--accent)}
-  .row.sel{background:var(--selection);color:var(--fg);border-radius:4px}
-  .ind{display:inline-block;width:14px;flex-shrink:0;color:var(--subtle);font-size:9px;text-align:center}
-  .ficon{width:16px;height:16px;flex-shrink:0;border-radius:3px;display:grid;place-items:center;
-         font-size:9px;font-weight:700;color:#fff}
+  .row.sel{background:var(--selection);color:var(--fg);border-radius:3px}
+  /* 缩进按层级给（IDEA 每级约 20px） */
+  .lv0{padding-left:8px}.lv1{padding-left:28px}.lv2{padding-left:48px}.lv3{padding-left:68px}
+  .lv4{padding-left:88px}.lv5{padding-left:108px}.lv6{padding-left:128px}.lv7{padding-left:148px}
+  .lv8{padding-left:168px}.lv9{padding-left:188px}
+  .tw{width:14px;flex-shrink:0;color:var(--subtle);font-size:9px;text-align:center}
+  .fi{width:16px;height:16px;flex-shrink:0;display:grid;place-items:center;border-radius:2px}
+  .fi.java{background:#e76f00;color:#fff;font-size:9px;font-weight:700}
+  .fi.folder{color:#8aa9d6;font-size:14px}
+  .fi.xml{color:#d6a45a;font-size:13px}
+  .fi.doc{color:#9aa4b2;font-size:13px}
 
-  /* ── 编辑区 ── */
-  .editor{flex:1;min-height:0;display:flex;overflow:hidden;position:relative}
-  /* ★ 变更 6：编辑区左边界那条可点的「收起侧栏」 */
-  .collapse{width:24px;flex:0 0 24px;display:flex;align-items:flex-start;justify-content:center;
-            padding-top:8px}
-  .collapse button{width:20px;height:20px;border:1px solid var(--border);border-radius:4px;
-                   background:var(--surface);color:var(--muted-fg);cursor:pointer;
-                   font-size:10px;display:grid;place-items:center}
-  .collapse button:hover{background:var(--accent);color:var(--fg)}
-  .code{flex:1;min-width:0;font-family:var(--mono);font-size:13.5px;line-height:21px;
-        padding:6px 0;flex:1;overflow:hidden}
-  .ln{display:flex;gap:14px;padding-left:24px}
-  .lno{width:30px;text-align:right;color:#5a5d63;flex-shrink:0;user-select:none}
+  /* 中央：编辑器 + 底部工具窗 */
+  .center{flex:1;min-width:0;display:flex;flex-direction:column}
+
+  /* 编辑器标签行 44 */
+  .tabrow{height:44px;flex:0 0 44px;display:flex;align-items:stretch;padding:0 6px;
+          border-bottom:1px solid #303236}
+  .tab{display:flex;align-items:center;gap:7px;padding:0 10px 0 12px;font-size:13.5px;
+       color:var(--tab-fg);position:relative;max-width:230px;white-space:nowrap}
+  .tab .name{overflow:hidden;text-overflow:ellipsis}
+  .tab .ix{width:10px;color:var(--subtle);font-size:11px;visibility:hidden}
+  .tab.on{color:var(--fg)}
+  .tab.on::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--primary)}
+  .tab.on .ix{visibility:visible}
+  .tabrow .spacer{flex:1}
+  .tabrow .mv{width:26px;align-self:center;display:grid;place-items:center;color:var(--subtle);
+              font-size:13px;border-radius:5px;height:26px}
+  .tabrow .mv:hover{background:var(--accent)}
+
+  /* 编辑器工具栏行 30：← → ⟳ ｜ 面包屑 ｜ 行:列 ▾ */
+  .edbar{height:30px;flex:0 0 30px;display:flex;align-items:center;gap:4px;padding:0 8px;
+         font-size:12.5px;color:var(--muted-fg);border-bottom:1px solid #303236}
+  .edbar .nb{width:24px;height:24px;border-radius:5px;display:grid;place-items:center;
+             color:var(--subtle);font-size:13px}
+  .edbar .nb:hover{background:var(--accent);color:var(--fg)}
+  .crumb{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted-fg);
+         margin-left:4px;white-space:nowrap;overflow:hidden}
+  .crumb .sep{color:#6b7280;font-size:10px}
+  .edbar .tail{margin-left:auto;display:flex;align-items:center;gap:4px;color:var(--subtle)}
+
+  /* 代码区 */
+  .code{flex:1;min-height:0;font-family:var(--mono);font-size:13.5px;line-height:21px;
+        padding:8px 0 0;overflow:hidden;position:relative}
+  .ln{display:flex;gap:12px;padding-left:8px;position:relative}
+  .lno{width:44px;text-align:right;color:var(--line);flex-shrink:0;user-select:none;font-size:12.5px}
   .src{white-space:pre}
-  .k{color:#cf8e6d}   /* 关键字 */
-  .t{color:#4ec9b0}   /* 类型 */
-  .s{color:#6aab73}   /* 字符串 */
-  .c{color:#7a7e85}   /* 注释 */
-  .f{color:#56a8f5}   /* 方法 */
-  .n{color:#2aacb8}
+  .k{color:#cf8e6d}.t{color:#4ec9b0}.s{color:#6aab73}.c{color:#7a7e85}.m{color:#56a8f5}.n{color:#2aacb8}
+  .rg{position:absolute;right:0;top:0;bottom:0;width:11px;background:#1a1b1e}
+  .rg i{position:absolute;right:1px;height:4px;width:8px;background:#c9a227;border-radius:1px}
+  .err{position:absolute;left:0;width:3px;top:0;bottom:0;background:#e05561}
+  .warn{position:absolute;left:3px;width:3px;top:0;bottom:0;background:#d6ae58}
 
-  /* ── 终端（本轮不动，按真机现状画；仅作对照） ── */
-  .bottom{height:320px;flex:0 0 320px;display:flex;flex-direction:column;overflow:hidden}
+  /* 底部工具窗（本轮不动，按真机现状画） */
+  .bottom{height:300px;flex:0 0 300px;display:flex;flex-direction:column;border-top:1px solid #303236}
   .grip{height:4px;flex:0 0 4px}
   .grip:hover{background:linear-gradient(var(--primary),var(--primary)) center/100% 1px no-repeat}
-  .termtabs{height:36px;flex:0 0 36px;display:flex;align-items:center;gap:0;
-            background:var(--bg);padding:0 8px}
-  .termtab{height:36px;display:flex;align-items:center;gap:8px;padding:0 20px 0 12px;
-           font-size:13px;color:var(--tab-fg);position:relative}
+  .termtabs{height:36px;flex:0 0 36px;display:flex;align-items:center;padding:0 8px;gap:0}
+  .termtab{height:36px;display:flex;align-items:center;gap:8px;padding:0 22px 0 12px;font-size:13px;
+           color:var(--tab-fg);position:relative}
   .termtab.on{color:var(--fg)}
   .termtab.on::after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:2px;
                      background:var(--primary)}
   .termtools{margin-left:auto;display:flex;gap:2px}
-  .notice{font-size:12px;color:var(--subtle);padding:2px 10px 6px}
+  .notice{font-size:12px;color:var(--subtle);padding:0 10px 6px}
   .termbody{flex:1;min-height:0;font-family:var(--mono);font-size:13px;color:var(--muted-fg);
             padding:0 10px;white-space:pre-wrap;line-height:19px;overflow:hidden}
   .termbody .dim{color:var(--subtle)}
 
-  /* ── ④ 状态栏 24（真机实测像两行 ≈46；此处按"保持"画一条 24 + 右侧组） ── */
-  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:8px;padding:0 8px;
-             font-size:12px;color:var(--subtle);background:var(--surface)}
-  .statusbar .grp{display:flex;align-items:center;gap:6px;height:24px;padding:0 6px;border-radius:6.4px}
-  .statusbar .grp:hover{background:var(--accent)}
-  .statusbar .grow{flex:1}
-  .statusbar .bread{color:var(--muted-fg)}
+  /* 右活动栏 44 */
+  .rail.right{width:44px;flex:0 0 44px;padding-top:6px}
+  .rail.right .item{width:30px;height:30px;font-size:15px}
+  .badge{position:absolute;top:-2px;left:16px;min-width:12px;height:12px;border-radius:6px;
+         background:#db5c5c;color:#fff;font-size:9px;line-height:12px;text-align:center;
+         padding:0 3px;font-weight:600;z-index:2}
 
-  /* ── 标题栏右侧的运行控件（IDEA 风格：配置名 + ▶ + 🐞 + ⟳） ── */
-  .car{font-size:9px;color:var(--subtle);margin-left:3px}
-  .runbox{display:flex;align-items:center;gap:2px;margin-right:8px}
-  .runbox .cfg{display:flex;align-items:center;font-size:12.5px;color:var(--muted-fg);
-               padding:2px 8px;border-radius:6px}
-  .runbox .cfg:hover{background:var(--accent)}
-  .runbox .play{color:#57965c}
-  .runbox .dbg{color:#3574f0}
-  .runbox .reload{color:var(--subtle)}
+  /* 状态栏 24（IDEA：左 分支 ▾ ｜ 右 缩进 编码 换行符 字数 ····· 行:列） */
+  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:2px;padding:0 6px;
+             font-size:12px;color:var(--subtle);background:var(--bg)}
+  .sitem{display:flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:5px}
+  .sitem:hover{background:var(--accent)}
+  .spgrow{flex:1}
+  .zoombar{margin-left:6px;color:#6b7280;font-size:11px}
 
-  /* ── 图下只有一行标识（不是标注） ── */
   .caption{width:1920px;padding:14px 26px;color:#8b929e;font-size:13px;background:#141518;line-height:1.7}
 </style>
 </head>
 <body>
 <button class="fitbtn" id="fitbtn" type="button">实际大小</button>
 <div class="wrap" id="wrap">
-<div class="app" style="height:1080px">
+<div class="app">
 
-  <!-- ① 标题栏 40 -->
-  <div class="titlebar" data-spec="标题栏 40（实测 40 / workspace.rs:8）">
+  <!-- ══ 标题栏 40 ══ -->
+  <div class="titlebar">
     <div class="menubar">
-      <span>文件</span><span>编辑</span><span>视图</span><span>转到</span><span>代码</span>
-      <span>重构</span><span>构建</span><span>运行</span><span>工具</span><span>Git</span>
-      <span>窗口</span><span>帮助</span>
+      <span>File</span><span>Edit</span><span>View</span><span>Navigate</span><span>Code</span>
+      <span>Refactor</span><span>Build</span><span>Run</span><span>Tools</span><span>Git</span>
+      <span>Window</span><span>Help</span>
     </div>
-    <div class="tsep"></div>
-    <div class="chip"><span class="fold">S</span>svmHtFrontInterface<span class="car">▾</span></div>
+    <div class="chip"><span class="projicon">Z</span>zywg<span class="car">▾</span></div>
     <div class="chip"><span class="br">⑂</span>main<span class="car">▾</span></div>
     <div class="drag"></div>
+    <!-- 运行配置：IDEA 把它放在标题栏右侧 -->
     <div class="runbox">
-      <div class="cfg">InpInfoApiAction<span class="car">▾</span></div>
+      <div class="cfg"><span class="rcicon"></span>LocalWorkstationApiAction<span class="car">▾</span></div>
       <div class="icbtn play">▶</div>
       <div class="icbtn dbg">🐞</div>
-      <div class="icbtn reload">⟳</div>
+      <div class="icbtn">⋮</div>
     </div>
+    <div class="vsep"></div>
+    <div class="icbtn">👤</div>
+    <div class="icbtn">⌕</div>
+    <div class="icbtn">⚙</div>
     <div class="wincontrols">
-      <div>—</div><div>▢</div><div class="close">✕</div>
+      <div>—</div><div>❐</div><div class="close">✕</div>
     </div>
   </div>
 
-  <!-- ② 工具/标签行 40：导航箭头 + 编辑器标签 -->
-  <div class="toolstrip" data-spec="导航+标签行 40（实测 40；标签栏本体 36）">
-    <div class="navgrp">
-      <div class="icbtn">←</div><div class="icbtn">→</div>
-    </div>
-    <div class="tabs">
-      <div class="tab" data-spec="标签高 36 / 图标槽 12（editor_view.rs:124,129）">
-        <span class="badge" style="background:#e76f00">J</span><span class="name">HtFrontInterfaceAp…</span><span class="x">✕</span>
-      </div>
-      <div class="tab">
-        <span class="badge" style="background:#e76f00">J</span><span class="name">HtInterfaceApinterf…</span><span class="x">✕</span>
-      </div>
-      <div class="tab active">
-        <span class="badge" style="background:#e76f00">J</span><span class="name">InpInfoApiAction.java</span><span class="x">✕</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ③ 工作区 -->
+  <!-- ══ 工作区 ══ -->
   <div class="work">
-    <!-- 左活动栏 38+4 -->
-    <div class="rail" data-spec="左活动栏 38（+4 间距）">
+
+    <!-- 左活动栏 -->
+    <div class="rail">
       <div class="item on" title="项目">▤</div>
-      <div class="item" title="更改">⑂</div>
-      <div class="item" title="搜索">⌕</div>
       <div class="sp"></div>
-      <div class="item" title="运行">▶</div>
       <div class="item" title="终端">▣</div>
-      <div class="item" title="诊断">⚠</div>
-      <div class="item" title="提交记录">⑃</div>
+      <div class="item" title="版本控制">⑂</div>
+      <div class="item" title="运行">▷</div>
+      <div class="item" title="调试">🐞</div>
       <div class="item" title="设置">⚙</div>
     </div>
 
-    <!-- 左侧栏 320：本轮删掉树头(32) 与 搜索行(28) -->
-    <div class="side island" data-spec="左侧栏 320（实测像 369）">
+    <!-- 项目树：头部带项目名 + 路径 + 搜索 + 齿轮；下面彩色文件类型图标 -->
+    <div class="tree-pane">
+      <div class="tree-head">
+        <span class="picon">Z</span><span class="pname">zywg</span>
+        <span class="ppath">D:\Haitai\code\gds\cqxhyy\zywg</span>
+        <span class="hbtn" title="搜索">⌕</span>
+        <span class="hbtn" title="设置">⚙</span>
+      </div>
       <div class="tree">
-        <div class="row" style="color:var(--fg)">
-          <span class="ind">▾</span>
-          <span class="ficon" style="background:#3d6fd6">▣</span>svmHtFrontInterface
-        </div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#6b7280">⚙</span>.settings</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#a3742b">▣</span>bin</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#6b7280">▤</span>docs</div>
-        <div class="row"><span class="ind">▾</span><span class="ficon" style="background:#3d6fd6">▣</span>src</div>
-        <div class="row"><span class="ind">▾</span><span class="ficon" style="background:#3d6fd6">▣</span>main</div>
-        <div class="row"><span class="ind">▾</span><span class="ficon" style="background:#c2410c">▣</span>java</div>
-        <div class="row"><span class="ind">▾</span><span class="ficon" style="background:#3d6fd6">▣</span>com</div>
-        <div class="row"><span class="ind">▾</span><span class="ficon" style="background:#3d6fd6">▣</span>haitaiinc</div>
-        <div class="row"><span class="ind">▾</span><span class="ficon" style="background:#3d6fd6">▣</span>htfrontinterface</div>
-        <div class="row"><span class="ind">▾</span><span class="ficon" style="background:#3d6fd6">▣</span>apicall</div>
-        <div class="row" style="padding-left:34px"><span class="ind"> </span><span class="ficon" style="background:#e76f00">J</span>HtInterfaceApIn…</div>
-        <div class="row"><span class="ind">▾</span><span class="ficon" style="background:#3d6fd6">▣</span>business</div>
-        <div class="row" style="padding-left:34px"><span class="ind"> </span><span class="ficon" style="background:#e76f00">J</span>ExamReportApi…</div>
-        <div class="row sel" style="padding-left:34px"><span class="ind"> </span><span class="ficon" style="background:#e76f00">J</span>InpInfoApiActio…</div>
-        <div class="row" style="padding-left:34px"><span class="ind"> </span><span class="ficon" style="background:#e76f00">J</span>PInInfoApiAction.j…</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>config</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>front</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>localinterface</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>restful</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>schedule</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>util</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>webservice</div>
-        <div class="row"><span class="ind"> </span><span class="ficon" style="background:#e76f00">J</span>HtFrontInterfaceApp.</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>resources</div>
-        <div class="row"><span class="ind">▸</span><span class="ficon" style="background:#3d6fd6">▣</span>test</div>
-        <div class="row"><span class="ind"> </span><span class="ficon" style="background:#6b7280">▤</span>.classpath</div>
-        <div class="row"><span class="ind"> </span><span class="ficon" style="background:#6b7280">▤</span>.factorypath</div>
-        <div class="row"><span class="ind"> </span><span class="ficon" style="background:#e34f26">⑂</span>.gitignore</div>
-        <div class="row"><span class="ind"> </span><span class="ficon" style="background:#6b7280">▤</span>.project</div>
-        <div class="row"><span class="ind"> </span><span class="ficon" style="background:#c2410c">m</span>pom.xml</div>
+        <div class="row lv0"><span class="tw">▸</span><span class="fi folder">▣</span>.idea</div>
+        <div class="row lv0"><span class="tw">▸</span><span class="fi folder">▣</span>docs</div>
+        <div class="row lv0"><span class="tw">▾</span><span class="fi folder">▣</span>htweb5LocalInpInfo</div>
+        <div class="row lv1"><span class="tw">▾</span><span class="fi folder">▣</span>src</div>
+        <div class="row lv2"><span class="tw">▾</span><span class="fi folder">▣</span>main</div>
+        <div class="row lv3"><span class="tw">▾</span><span class="fi folder">▣</span>java</div>
+        <div class="row lv4"><span class="tw">▾</span><span class="fi folder">▣</span>com.haitaiinc</div>
+        <div class="row lv5"><span class="tw">▾</span><span class="fi folder">▣</span>htlocalinpinfo.service</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>dao</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localadtapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localadversereportapi</div>
+        <div class="row lv6"><span class="tw">▾</span><span class="fi folder">▣</span>localapi</div>
+        <div class="row lv7 sel"><span class="tw"></span><span class="fi java">J</span>LocalApiAction</div>
+        <div class="row lv6"><span class="tw">▾</span><span class="fi folder">▣</span>localbloodapi</div>
+        <div class="row lv7"><span class="tw"></span><span class="fi java">J</span>LocalBloodApiAction</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localcasereportingapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localconsultationapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localcpcmaapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localcriticalvalueapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localcrsapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localdatashareapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localdoctorapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localHtIntegrateInterfaceapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localinpdiagapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localisbarapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localloginapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localmeapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localmodulebillapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localmrmsapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localnurseapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localnursingconsultationapi</div>
+        <div class="row lv6"><span class="tw">▾</span><span class="fi folder">▣</span>localoperationapi</div>
+        <div class="row lv7"><span class="tw"></span><span class="fi java">J</span>LocalOperationApiAction</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localoutpatientapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localpaymentapi</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localprescriptionapi</div>
+        <div class="row lv6"><span class="tw">▾</span><span class="fi folder">▣</span>localworkstationapi</div>
+        <div class="row lv7"><span class="tw"></span><span class="fi java">J</span>LocalPatientQueryApiAction</div>
+        <div class="row lv7"><span class="tw"></span><span class="fi java">J</span>OperationRecService</div>
+        <div class="row lv6"><span class="tw">▸</span><span class="fi folder">▣</span>localzhuyuanapi</div>
+        <div class="row lv5"><span class="tw">▾</span><span class="fi folder">▣</span>util</div>
+        <div class="row lv5"><span class="tw">▸</span><span class="fi folder">▣</span>webService</div>
+        <div class="row lv4"><span class="tw">▾</span><span class="fi folder">▣</span>resources</div>
+        <div class="row lv4"><span class="tw">▸</span><span class="fi folder">▣</span>test</div>
+        <div class="row lv1"><span class="tw"></span><span class="fi xml">◈</span>pom.xml</div>
+        <div class="row lv1"><span class="tw"></span><span class="fi doc">▤</span>README.md</div>
       </div>
     </div>
 
-    <!-- 中央列：编辑器岛 + 底部工具窗 -->
+    <!-- 中央列：标签行 + 编辑器工具栏 + 代码区 + 底部工具窗 -->
     <div class="center">
-      <div class="island editor" data-spec="编辑器岛 radius 11.2 + 1px 边框">
-        <!-- ★ 变更 6 的落点：编辑区左边界收起按钮 -->
-        <div class="collapse">
-          <button title="隐藏侧栏">⇤</button>
+      <div class="tabrow">
+        <div class="tab on">
+          <span class="fi java" style="width:14px;height:14px;font-size:8px">J</span>
+          <span class="name">LocalApiAction.java</span>
+          <span class="ix">✕</span>
         </div>
-        <div class="code">
-          <div class="ln"><span class="lno">1</span><span class="src"><span class="k">package</span> com.haitaiinc.htfrontinterface.business;</span></div>
-          <div class="ln"><span class="lno">2</span><span class="src"></span></div>
-          <div class="ln"><span class="lno">3</span><span class="src"><span class="k">import</span> com.haitaiinc.htdb5.adt.InpChangeInfo;</span></div>
-          <div class="ln"><span class="lno">4</span><span class="src"><span class="k">import</span> com.haitaiinc.htdb5.adt.Inpatient;</span></div>
-          <div class="ln"><span class="lno">5</span><span class="src"><span class="k">import</span> com.haitaiinc.htdb5.adt.InpatientOther;</span></div>
-          <div class="ln"><span class="lno">6</span><span class="src"><span class="k">import</span> com.haitaiinc.htdb5.inpchild.InpatientChild;</span></div>
-          <div class="ln"><span class="lno">7</span><span class="src"><span class="k">import</span> com.haitaiinc.htdb5.mpi.Patient;</span></div>
-          <div class="ln"><span class="lno">8</span><span class="src"><span class="k">import</span> com.haitaiinc.htfrontinterface.localinterface.dao.BloodSugarInfoDao;</span></div>
-          <div class="ln"><span class="lno">9</span><span class="src"><span class="k">import</span> com.haitaiinc.htfrontinterface.localinterface.pojo.HtResponse;</span></div>
-          <div class="ln"><span class="lno">10</span><span class="src"><span class="k">import</span> com.haitaiinc.htfrontinterface.localinterface.utils.util.DataUtil;</span></div>
-          <div class="ln"><span class="lno">11</span><span class="src"><span class="k">import</span> com.haitaiinc.htfrontinterface.localinterface.utils.util.localInterfaceUtil;</span></div>
-          <div class="ln"><span class="lno">12</span><span class="src"><span class="k">import</span> com.haitaiinc.htfrontinterface.util.MapUtil;</span></div>
-          <div class="ln"><span class="lno">13</span><span class="src"><span class="k">import</span> com.haitaiinc.htinterface.StandardInterfaceLog;</span></div>
-          <div class="ln"><span class="lno">14</span><span class="src"><span class="k">import</span> com.haitaiinc.json.JSONArray;</span></div>
-          <div class="ln"><span class="lno">15</span><span class="src"><span class="k">import</span> com.haitaiinc.json.JSONObject;</span></div>
-          <div class="ln"><span class="lno">16</span><span class="src"><span class="k">import</span> com.haitaiinc.v5.Log;</span></div>
-          <div class="ln"><span class="lno">17</span><span class="src"><span class="k">import</span> com.haitaiinc.v5.Util;</span></div>
-          <div class="ln"><span class="lno">18</span><span class="src"></span></div>
-          <div class="ln"><span class="lno">19</span><span class="src"><span class="k">import</span> java.sql.SQLException;</span></div>
-          <div class="ln"><span class="lno">20</span><span class="src"><span class="k">import</span> java.util.ArrayList;</span></div>
-          <div class="ln"><span class="lno">21</span><span class="src"><span class="k">import</span> java.util.List;</span></div>
-          <div class="ln"><span class="lno">22</span><span class="src"><span class="k">import</span> java.util.Map;</span></div>
-          <div class="ln"><span class="lno">23</span><span class="src"><span class="k">import</span> java.util.stream.Collectors;</span></div>
-          <div class="ln"><span class="lno">24</span><span class="src"></span></div>
-          <div class="ln"><span class="lno">25</span><span class="src"><span class="c">/**</span></span></div>
-          <div class="ln"><span class="lno">26</span><span class="src"><span class="c"> * 住院患者信息查询</span></span></div>
-          <div class="ln"><span class="lno">27</span><span class="src"><span class="c"> */</span></span></div>
-          <div class="ln"><span class="lno">28</span><span class="src"><span class="k">public class</span> <span class="t">InpInfoApiAction</span> {</span></div>
-          <div class="ln"><span class="lno">29</span><span class="src">    <span class="t">LocalInterfaceUtil</span> localInterfaceUtil = <span class="k">new</span> <span class="t">LocalInterfaceUtil</span>();</span></div>
-          <div class="ln"><span class="lno">30</span><span class="src">    <span class="k">public</span> <span class="t">String</span> <span class="f">searchInpPatientInfo</span>(<span class="t">String</span> jsonStr) <span class="k">throws</span> <span class="t">Exception</span> {</span></div>
-          <div class="ln"><span class="lno">31</span><span class="src">        <span class="t">StandardInterfaceLog</span> interfacelog = <span class="k">new</span> <span class="t">StandardInterfaceLog</span>();</span></div>
-          <div class="ln"><span class="lno">32</span><span class="src">        <span class="t">HtResponse</span> response = <span class="k">new</span> <span class="t">HtResponse</span>();</span></div>
-          <div class="ln"><span class="lno">33</span><span class="src">        <span class="t">Log</span>.<span class="f">info</span>(<span class="s">"住院患者信息[searchInpPatientInfo] Begin......"</span>);</span></div>
+        <div class="tab">
+          <span class="fi java" style="width:14px;height:14px;font-size:8px">J</span>
+          <span class="name">LocalPatientQueryApiAction.java</span>
+          <span class="ix">✕</span>
+        </div>
+        <div class="tab">
+          <span class="fi java" style="width:14px;height:14px;font-size:8px">J</span>
+          <span class="name">OperationRecService.java</span>
+          <span class="ix">✕</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="mv">⋮</div>
+      </div>
+
+      <div class="edbar">
+        <div class="nb">←</div>
+        <div class="nb">→</div>
+        <div class="nb">⟳</div>
+        <div class="crumb">
+          <span class="fi folder" style="font-size:12px">▣</span>src
+          <span class="sep">›</span>main
+          <span class="sep">›</span>java
+          <span class="sep">›</span>com.haitaiinc
+          <span class="sep">›</span>htlocalinpinfo.service
+          <span class="sep">›</span>localworkstationapi
+          <span class="sep">›</span>LocalApiAction
+        </div>
+        <div class="tail"><span>113:77</span><span class="car">▾</span></div>
+      </div>
+
+      <div class="code">
+        <div class="ln" style="background:#2b2d30">
+          <span class="lno">31</span>
+          <span class="src"><span class="k">public class</span> <span class="t">OperationRecService</span> <span class="k">extends</span> <span class="t">OperationUtil</span> {  <span class="c">2 usages</span>  <span class="s">czheng</span></span>
+        </div>
+        <div class="ln" style="height:14px"><span class="lno"></span><span class="src"></span></div>
+        <div class="ln"><span class="lno">100</span><span class="src">    <span class="c">*/</span></span></div>
+        <div class="ln"><span class="lno">101</span><span class="src">    <span class="k">private void</span> <span class="m">insertOperationNameToCustome</span>(<span class="t">Inpatient</span> inpatient, <span class="t">Patient</span> patient, <span class="t">UserContextInCommon</span> user, <span class="c">1 usage</span> <span class="s">czheng</span></span></div>
+        <div class="ln"><span class="lno">102</span><span class="src">            <span class="t">OperationInfoRec</span> operationInfoRec, <span class="t">OperationInfoSubRec</span> operationInfoSubRec,</span></div>
+        <div class="ln"><span class="lno">103</span><span class="src">            <span class="t">OperationInfoRecCont</span> operationInfoRecCont, <span class="t">String</span> type) {</span></div>
+        <div class="ln"><span class="lno">104</span><span class="src"></span></div>
+        <div class="ln"><span class="lno">105</span><span class="src">        <span class="t">OperaRelationInfoRec</span> <span class="n">orir</span> = <span class="k">new</span> <span class="t">HtlocalinpinfoDAO</span>().<span class="m">searchOperaRelationInfoRec</span>(operationInfoRec);</span></div>
+        <div class="ln"><span class="lno">106</span><span class="src">        <span class="t">List</span>&lt;<span class="t">OperationAidRec</span>&gt; <span class="n">oar</span> = <span class="k">new</span> <span class="t">HtlocalinpinfoDAO</span>().<span class="m">searchOperationAidRecList</span>(operationInfoRec.<span class="m">getOperaSn</span>());</span></div>
+        <div class="ln"><span class="lno">107</span><span class="src"></span></div>
+        <div class="ln"><span class="lno">108</span><span class="src">        <span class="t">String</span> <span class="n">fzss</span> = <span class="s">""</span>;</span></div>
+        <div class="ln"><span class="lno">109</span><span class="src"></span></div>
+        <div class="ln"><span class="lno">110</span><span class="src">        <span class="c">//辅助手术</span></span></div>
+        <div class="ln"><span class="lno">111</span><span class="src">        <span class="k">if</span>(!<span class="t">Util</span>.<span class="m">isNullOrEmpty</span>(oar)) {</span></div>
+        <div class="ln"><span class="lno">112</span><span class="src">            <span class="k">for</span> (<span class="t">OperationAidRec</span> operationAidRec : oar) {</span></div>
+        <div class="ln"><span class="lno">113</span><span class="src">                <span class="k">if</span>(!<span class="t">Util</span>.<span class="m">isNullOrEmpty</span>(operationAidRec.<span class="m">getBeforeRemark</span>())) {</span></div>
+        <div class="ln"><span class="lno">114</span><span class="src">                    fzss += <span class="s">"("</span>+operationAidRec.<span class="m">getBeforeRemark</span>() + <span class="s">")"</span>+operationAidRec.<span class="m">getOperationName</span>()+<span class="s">"+"</span>;</span></div>
+        <div class="ln"><span class="lno">115</span><span class="src">                }<span class="k">else</span> {</span></div>
+        <div class="ln"><span class="lno">116</span><span class="src">                    fzss += operationAidRec.<span class="m">getOperationName</span>()+<span class="s">"+"</span>;</span></div>
+        <div class="ln"><span class="lno">117</span><span class="src">                }</span></div>
+        <div class="ln"><span class="lno">118</span><span class="src">                <span class="k">if</span>(!<span class="t">Util</span>.<span class="m">isNullOrEmpty</span>(operationAidRec.<span class="m">getAfterRemark</span>())) {</span></div>
+        <div class="ln"><span class="lno">119</span><span class="src">                    fzss += operationAidRec.<span class="m">getOperationName</span>()+<span class="s">"("</span>+operationAidRec.<span class="m">getAfterRemark</span>()+<span class="s">")+"</span>;</span></div>
+        <div class="ln"><span class="lno">120</span><span class="src">                }<span class="k">else</span> {</span></div>
+        <div class="ln"><span class="lno">121</span><span class="src">                    fzss += operationAidRec.<span class="m">getOperationName</span>()+<span class="s">"+"</span>;</span></div>
+        <div class="ln"><span class="lno">122</span><span class="src">                }</span></div>
+        <div class="ln"><span class="lno">123</span><span class="src">                <span class="k">if</span>(!<span class="t">Util</span>.<span class="m">isNullOrEmpty</span>(operationAidRec.<span class="m">getBeforeRemark</span>()) &amp;&amp; !<span class="t">Util</span>.<span class="m">isNullOrEmpty</span>(operationAidRec.<span class="m">getAfterRemark</span>())) {</span></div>
+        <div class="ln"><span class="lno">124</span><span class="src">                    fzss += <span class="s">"("</span>+operationAidRec.<span class="m">getBeforeRemark</span>() + <span class="s">")"</span>+operationAidRec.<span class="m">getOperationName</span>()+<span class="s">"("</span>+operationAidRec.<span class="m">getAfterRemark</span>()+<span class="s">")"</span>;</span></div>
+        <div class="ln"><span class="lno">125</span><span class="src">                }<span class="k">else</span> {</span></div>
+        <div class="ln"><span class="lno">126</span><span class="src">                    fzss += operationAidRec.<span class="m">getOperationName</span>()+<span class="s">"+"</span>;</span></div>
+        <div class="ln"><span class="lno">127</span><span class="src">                }</span></div>
+        <div class="ln"><span class="lno">128</span><span class="src">            }</span></div>
+        <div class="ln"><span class="lno">129</span><span class="src">        }</span></div>
+        <div class="ln"><span class="lno">130</span><span class="src"></span></div>
+        <div class="ln"><span class="lno">131</span><span class="src">        <span class="k">if</span> (fzss != <span class="k">null</span> &amp;&amp; fzss.<span class="m">endsWith</span>(<span class="s">"+"</span>)) {</span></div>
+        <div class="ln"><span class="lno">132</span><span class="src">            fzss = fzss.<span class="m">substring</span>(0, fzss.<span class="m">length</span>() - 1);</span></div>
+        <div class="ln"><span class="lno">133</span><span class="src">        }</span></div>
+        <div class="ln"><span class="lno">134</span><span class="src"></span></div>
+        <div class="ln"><span class="lno">135</span><span class="src">        <span class="t">OperationInfoRecSub</span> operationInfoRecSub = <span class="k">new</span> <span class="t">OperationInfoRecSub</span>();</span></div>
+        <div class="ln"><span class="lno">136</span><span class="src">        operationInfoRecSub.<span class="m">setFzss</span>(fzss);</span></div>
+        <div class="ln"><span class="lno">137</span><span class="src">    }</span></div>
+        <div class="rg">
+          <i style="top:6px"></i><i style="top:26px"></i><i style="top:46px;height:22px"></i>
+          <i style="top:88px"></i><i style="top:110px"></i><i style="top:150px;height:34px"></i>
+          <i style="top:200px"></i><i style="top:240px;height:60px"></i><i style="top:320px"></i>
+          <i style="top:360px;height:20px"></i><i style="top:400px"></i><i style="top:440px;height:40px"></i>
+          <i style="top:500px"></i><i style="top:540px;height:80px"></i><i style="top:640px"></i>
         </div>
       </div>
 
-      <!-- 终端（本轮不动：保留真机现状，只作对照） -->
-      <div class="island bottom" data-spec="底部工具窗 320 / 拖拽热区 4 / 页签行 36">
+      <!-- 底部工具窗：本轮不动（维护者：终端现在没用） -->
+      <div class="bottom">
         <div class="grip"></div>
         <div class="termtabs">
           <div class="termtab on">Terminal</div>
-          <div class="termtab">powershell<span style="color:var(--subtle)">✕</span></div>
+          <div class="termtab">Local</div>
+          <div class="termtab">Local (2)</div>
+          <div class="termtab" style="padding-right:12px">＋</div>
           <div class="termtools">
-            <div class="icbtn" title="删除">🗑</div>
-            <div class="icbtn" title="新建">＋</div>
-            <div class="icbtn" title="折叠">⌄</div>
+            <div class="icbtn" title="更多">⋮</div>
+            <div class="icbtn" title="收起">—</div>
           </div>
         </div>
         <div class="notice">运行中　能力边界：不能运行 vim/top 等全屏程序；Ctrl+C 不可用</div>
         <div class="termbody">Windows PowerShell
 版权所有（C） Microsoft Corporation。保留所有权利。
 
-<span class="dim">PS D:\developmentProjects\rust\Lithe-IDEA\gpui\target\release&gt;</span></div>
+<span class="dim">PS D:\Haitai\code\gds\cqxhyy\zywg&gt;</span></div>
       </div>
     </div>
 
-    <!-- 右侧工具窗 400：默认未打开任何工具窗，整块不占位（真机口径） -->
-
-    <!-- 右活动栏 38+4 -->
-    <div class="rail" data-spec="右活动栏 38（+4 间距）">
-      <div class="item" title="扩展">⧉</div>
-      <div class="item badged" title="通知">🔔<span class="dot">9+</span></div>
-      <div class="item" title="Maven">▦</div>
-      <div class="item" title="Spring">🌿</div>
+    <!-- 右活动栏（IDEA：铃铛 / AI / 数据库 / Maven / 运行中 / 服务） -->
+    <div class="rail right">
+      <div class="item" title="通知">🔔<span class="badge">2</span></div>
+      <div class="item" title="AI Assistant">◉</div>
+      <div class="item" title="数据库">🛢</div>
+      <div class="item" title="Maven" style="color:#8b929e">m</div>
+      <div class="item" title="运行中" style="color:#e8710a">●</div>
+      <div class="item" title="服务">▣</div>
     </div>
   </div>
 
-  <!-- ④ 状态栏 24 -->
-  <div class="statusbar" data-spec="状态栏 24">
-    <div class="grp">svmHtFrontInterface</div>
-    <div class="grp">⑂ main</div>
-    <div class="grow"></div>
-    <div class="grp">5:47</div>
-    <div class="grp">UTF-8</div>
-    <div class="grp">2 个空格</div>
-    <div class="grp">总计 0.0 MB · Lithe 0.0 MB</div>
+  <!-- ══ 状态栏 24 ══ -->
+  <div class="statusbar">
+    <div class="sitem"><span class="br">⑂</span>main<span class="car">▾</span></div>
+    <div class="spgrow"></div>
+    <div class="sitem">113:77</div>
+    <div class="sitem">2 个空格</div>
+    <div class="sitem">UTF-8</div>
+    <div class="sitem">4 个空格</div>
+    <div class="sitem" style="color:#6b7280">⏸</div>
+    <div class="zoombar">▁▁▁▁▁▁▁</div>
   </div>
 </div>
 
-<!-- 只有一行标识，不是标注 -->
 <div class="caption">
-  Lithe 界面对标 IDEA · 效果图（1920×1080）。尺寸 = 真机实测 + 源码常量；配色 = gpui/themes/lithe-dark.json。
-  改动清单见 ui-mockup-idea.md。
+  Lithe 界面对标 IDEA · 效果图（1920×1080）。布局逐块对齐 IntelliJ IDEA 真机截图；尺寸 = Lithe 真机实测 + 源码常量；
+  配色 = gpui/themes/lithe-dark.json。文件树图标按 IDEA 画成彩色 —— 目标态，Lithe 现在走 svg() 渲染所以是单色
+  （理由见 file_icon.rs:262-281）。改动清单见 ui-mockup-idea.md。
 </div>
 </div>
 
 <script>
-/* 自适应缩放：默认把 1920 宽的稿子缩到窗口内，保证一眼看到全部内容。
-   · 右上角按钮切换「实际大小 / 适应窗口」
-   · 滚动或改窗口大小后自动回到「适应窗口」（除非你手动选了实际大小）
-   · 截图/自动化可加 ?scale=1 强制实际大小 */
 (function () {
   var wrap = document.getElementById('wrap');
   var btn = document.getElementById('fitbtn');
