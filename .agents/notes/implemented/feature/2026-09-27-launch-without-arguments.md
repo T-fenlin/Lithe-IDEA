@@ -126,6 +126,19 @@ S1_WORKSPACE_LAUNCH source=current_dir root=C:\...\cwd-fallback candidates=0 mis
 - `node scripts/verify-agent-notes.mjs`：通过。
 - GUI 端到端（工作区**外**的 exe 副本 + `LITHE_GPUI_SETTINGS_FILE` 指到工作区外的配置目录，
   三种情形各跑一次）：断言与观察输出记在 `gpui/HANDOFF.md` 的本批小节里。
+- **release 二进制复验**（由父代理在本批提交后重跑，取代"release 未复验"这条缺口）：
+  `cargo build --release` exit=0（增量 3m42s）；**PE 子系统位 = 2（GUI，无控制台）**；
+  用 release 副本按**双击的等价条件（不带任何位置参数）**启动：
+  - 手写最近列表两条、其中最新的那条目录已删 → `S1_SETTINGS_RECENT loaded count=2 fileExisted=true`、
+    `S1_WORKSPACE_LAUNCH recent_marked_missing=1 saved bytes=386`、
+    `S1_WORKSPACE_LAUNCH source=recent root=…\proj-b candidates=2 missing=1`、
+    窗口句柄非 0（`HasExited=False`）、`proj-b` 里建出 `.lithe/project.json`、
+    磁盘上失效那条被标 `"missing": true`；
+  - 最近列表**不存在** → `source=current_dir root=<CWD>`、窗口句柄非 0、
+    **CWD 里建出 `.lithe/project.json`** —— 也就是"直接进"这一支在 release 上确实可见地发生了，
+    不是静默退出。
+  - ⚠️ 一个排查教训：早先一次实验里 `.lithe` 看似没建出，原因是**在窗口出现后立刻杀进程**——
+    工作区配置那一步是后台任务。判这条要么等文件出现（有界轮询），要么多等几秒再杀。
 
 ## 适用范围
 
