@@ -5,13 +5,26 @@ description: Prepare and validate stable Lithe release notes and publishing work
 
 # Release Lithe
 
-Apply this Skill after `develop-lithe` for stable releases. Preview releases
-keep their existing workflow unless the task explicitly includes them.
+Apply this Skill after `develop-lithe` for stable releases.
+
+> **当前状态：没有可发布的产物。** 旧前端（macOS 的 `.app`/DMG 与 Windows 的
+> NSIS 安装包）连同它们的发布工作流已删除，`gpui/` 宿主**还没有**发布流水线。
+> 因此本 Skill 现在只约束两件事：写发布说明的**文风与校验**，以及"恢复发布前必须
+> 先补齐什么"。不要照着旧章节去引用已经不存在的安装包、Gatekeeper 提示或
+> Homebrew 配方；`docs/releases/v*.md` 里的下载链接属于**历史发布记录**，保留原样。
+
+恢复发布前必须先补齐（缺任何一项都不要发版）：
+
+- gpui 的打包与产物命名（安装包格式、图标、版本号注入）。
+- 签名与公证方式，以及"未签名时用户会看到什么"的说明。
+- 一个真正的 CI lane 跑 `cargo build --release` 与 `cargo test`，而不是只跑 Core。
+- 更新 `docs/releases/TEMPLATE.md`：它当前的下载/升级段落写的是 macOS 与 Windows
+  产物，已与仓库不符。
 
 ## Prepare the release notes first
 
 - Create `docs/releases/v<version>.md` and commit it before creating the tag or
-  manually dispatching either stable release workflow.
+  manually dispatching the stable release workflow.
 - Derive the content from the commits, pull requests, tests, packaging changes,
   and known limitations between the previous stable tag and the target commit.
   Do not invent features, compatibility claims, download assets, or fixes.
@@ -28,15 +41,6 @@ keep their existing workflow unless the task explicitly includes them.
   terminology. Mention a technical name only when a user must recognize it in
   the UI or follow a setup step, and explain it in plain language.
 - Do not publish a raw commit or pull-request list as the release description.
-- Every stable release description must include the macOS Gatekeeper recovery
-  note below in both languages. Keep the command exactly as written and remind
-  users to use it only for an app downloaded from a source they trust:
-
-  Chinese:
-  `xattr -dr com.apple.quarantine /Applications/Lithe.app`
-
-  English:
-  `xattr -dr com.apple.quarantine /Applications/Lithe.app`
 
 ## Use the bilingual structure
 
@@ -57,12 +61,12 @@ this order:
 9. At the very bottom, `### 🙌 感谢贡献者` followed by `### 🙌 Contributors`, with
    equivalent contributor names or GitHub profile links in both languages.
 
-The download sections cover the project page, both macOS architectures,
-Windows x64, and the complete Release Assets page. Use versioned asset URLs
-that match the packaging workflows. Upgrade instructions cover macOS DMG,
-Homebrew, and Windows. The compatibility section must include the Gatekeeper
-note, plus platform preview or signing limitations only when they actually
-apply to that version.
+The download sections must list **exactly the artifacts the release actually
+produces**, with versioned URLs that match the packaging workflow. Do not copy
+the asset list from an older release: those files are gone. Upgrade
+instructions must cover the real installation method for that version, and the
+compatibility section must state the real platform requirements, signing status,
+and known issues.
 
 ## User-facing writing checklist
 
@@ -75,16 +79,9 @@ apply to that version.
   explanation the first time it appears.
 - Do not claim performance numbers, compatibility, security, or fixes unless
   the target commit and release checks verify them.
-- Include the Gatekeeper recovery instructions as a small, actionable note:
-
-  Chinese: “如果 macOS 提示无法打开 Lithe.app，请在‘应用程序’中按住 Control
-  点按应用并选择‘打开’；如果仍被阻止，可在终端执行
-  `xattr -dr com.apple.quarantine /Applications/Lithe.app`。仅对可信来源的应用使用。”
-
-  English: “If macOS says it cannot open Lithe.app, Control-click it in
-  Applications and choose Open. If it is still blocked, run
-  `xattr -dr com.apple.quarantine /Applications/Lithe.app` in Terminal. Use
-  this only for an app from a source you trust.”
+- If the artifact is unsigned, say so plainly and give the recovery step users
+  will actually need. Do not carry over the macOS Gatekeeper paragraph unless
+  that platform ships again.
 
 Use [the reusable release template](../../../docs/releases/TEMPLATE.md) as the
 formatting source of truth. Copy it to `docs/releases/v<version>.md`, replace
@@ -121,8 +118,8 @@ before committing the notes.
 
 - Confirm the version uses `MAJOR.MINOR.PATCH`, the filename is exactly
   `docs/releases/v<version>.md`, and the file is non-empty.
-- Check that Chinese and English describe the same release and that download
-  filenames match the artifacts produced by both platform workflows.
+- Check that Chinese and English describe the same release and that every
+  download filename matches an artifact the release workflow actually produces.
 - Check the comparison range, current platform requirements, bundled tools,
   signing status, updater availability, and known issues against the target
   commit and release configuration.

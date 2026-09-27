@@ -1,6 +1,6 @@
 ---
 name: develop-lithe
-description: Apply Lithe repository architecture, cross-platform contracts, coding rules, hardcoding restrictions, and validation workflow. Use for every implementation, refactor, review, debugging, test, build, or documentation task in the Lithe repository.
+description: Apply Lithe repository architecture, Core contracts, coding rules, hardcoding restrictions, and validation workflow. Use for every implementation, refactor, review, debugging, test, build, or documentation task in the Lithe repository.
 ---
 
 # Develop Lithe
@@ -17,10 +17,10 @@ those notes, load `.agents/skills/agent-notes/SKILL.md`.
 
 - Read the implementation and tests around a change before editing it.
 - For ownership or dependency changes, read the relevant `implemented` Agent
-  Note under `.agents/notes/implemented/architecture/` and the relevant
-  platform boundary document.
-- For cross-platform behavior, read `shared/contracts/application-boundary.md`,
-  `shared/contracts/rust-core-api.md`, and the related fixtures.
+  Note under `.agents/notes/implemented/architecture/`.
+- For behavior that crosses the Rust Core boundary, read
+  `shared/contracts/application-boundary.md`, `shared/contracts/rust-core-api.md`,
+  and the related fixtures.
 - For resizable panels, splitters, continuous dragging, or other high-frequency
   UI interaction, also read
   `.agents/notes/implemented/architecture/2026-09-13-resizable-ui-performance-boundaries.md`.
@@ -66,51 +66,48 @@ individual upstream commands were called.
 
 ## Respect repository ownership
 
+Lithe is a pure Rust repository. The Swift macOS product, the React/Tauri Windows
+product, and the shared Monaco editor package were removed; `gpui/` is the only
+host.
+
 | Path | Responsibility |
 | --- | --- |
-| `macos/Sources/Lithe/Views/` | SwiftUI/AppKit presentation and view-local rendering |
-| `macos/Sources/Lithe/Models/` | UI-facing models and the `AppModel` aggregate |
-| `macos/Sources/Lithe/Application/` | Feature models, state transitions, and user actions |
-| `macos/Sources/Lithe/Services/` | Product workflow orchestration |
-| `macos/Sources/Lithe/Core/` | Platform-neutral ports and typed Rust operations |
-| `macos/Sources/Lithe/Platform/MacOS/` | macOS adapters and composition |
-| `rust/lithe-core/` | Deterministic shared commands, models, validation, and C ABI |
-| `windows/` | React/Tauri Windows product and Rust platform adapters |
-| `Plugins/mac/` | macOS-owned plugin packages |
-| `Plugins/win/` | Windows-owned plugin packages |
-| `frontend/editor/` | Shared Monaco presentation, tokenization, and editor model lifecycle; no platform APIs |
-| `shared/` | Cross-platform contracts and fixtures, not compiled implementation |
+| `rust/lithe-core/` | Deterministic commands, models, validation, and the JSON command envelope |
+| `gpui/crates/app/` | App Shell: composition root, window sizing, startup order, settings load and theme application |
+| `gpui/crates/workbench/` | Workbench shell: title bar, project tabs, activity bar, status bar, central column |
+| `gpui/crates/editor/` | Editor presentation, buffer, navigation, diagnostics, completion |
+| `gpui/crates/explorer/` | Project tree |
+| `gpui/crates/git/` | Git feature state and views |
+| `gpui/crates/terminal/` | Terminal session, ANSI parsing, rendering |
+| `gpui/crates/java/` | JDTLS session, workspace fingerprint, Maven context |
+| `gpui/crates/settings/` | Settings model, persistence, themes, and the settings dialog |
+| `gpui/crates/notify/` | Notification center store and model |
+| `gpui/crates/shared/` | Cross-crate primitives: icons, i18n, Core client, workspace config |
+| `shared/` | Contracts and fixtures, not compiled implementation |
 | `infra/` | Repository-level development and validation infrastructure |
 | `third_party/` | Upstream code; leave unchanged unless the task explicitly targets it |
 
-macOS is the current reference product. Windows is an independent React/Tauri
-implementation and must not import Swift source or depend on macOS types.
-
 ## Preserve application boundaries
 
-- Views receive `AppModel` or a dedicated feature model. They must not call the
-  Rust C ABI, construct platform adapters, or depend on concrete workflow
-  services.
-- Application feature models own UI state transitions and coordinate user
-  actions. Keep platform setup out of `AppModel`.
-- Services orchestrate workflows through ports. They must not directly create
-  `Process`, `Pipe`, `FileManager`, `FileHandle`, watchers, persistence stores,
-  or concrete `Mac*` adapters.
-- Core and application code must remain free of SwiftUI, AppKit, CoreServices,
-  Tauri, WebView2, Win32, and concrete platform implementations.
-- `MacServiceContainer` is the macOS composition root. Platform capabilities
-  belong in `macos/Sources/Lithe/Platform/MacOS/`.
-- Deterministic behavior shared by both products belongs in `rust/lithe-core/`.
-  Native filesystem, process, terminal, runtime, security, persistence, and UI
-  behavior belongs in platform adapters.
+- Features receive a dedicated feature model. They must not call `lithe-core`
+  directly, construct platform adapters, or reach into another feature's state.
+- Feature models own UI state transitions and coordinate user actions.
+- Workflows are orchestrated through ports. They must not directly create
+  processes, PTYs, watchers, or persistence stores.
+- `rust/lithe-core/` must stay free of GPUI and of any concrete UI or platform
+  implementation. It is a deterministic command surface, not a UI library.
+- `gpui/crates/app` is the composition root. Platform capabilities belong in the
+  crate that owns the feature, reached through a port.
+- Deterministic behavior shared by features belongs in `rust/lithe-core/`.
+  Filesystem, process, terminal, runtime, security, persistence, and UI behavior
+  belongs in the owning feature crate.
 - Cross-platform use alone does not justify duplicating semantics already owned by
   a mature upstream engine. Put only Lithe's stable normalization and orchestration
   contract in Core; keep language, build, project-model, and debugger facts in the
   selected provider.
-- Windows feature code must import `@/platform/tauri-core` instead of the Tauri
-  core API directly. Shared operations route through `lithe-core`; Windows-only
-  terminal, watcher, credential, process, and WebView behavior stays in the
-  Tauri host or a platform plugin.
+- `gpui/crates/*` must not import each other's private modules. The dependency
+  direction is `app -> workbench -> {editor, explorer, git, terminal} -> shared`
+  and `app -> settings -> shared`.
 
 ## Keep shared contracts deterministic
 
@@ -137,25 +134,30 @@ types and functions, explicit ownership, and straightforward control flow.
 Avoid unrelated cleanup, speculative abstractions, and new dependencies that
 the existing stack can reasonably avoid.
 
-### Swift and macOS
-
-- Use the Swift 6.3.3 toolchain pinned in `.swift-version` (Xcode 26.6). The application target intentionally uses Swift
-  5 language mode while tests use Swift 6 language mode; do not change these
-  modes as part of unrelated work.
-- Put presentation in Views, feature state in Application, orchestration in
-  Services, interfaces in Core ports, and native APIs in Platform/MacOS.
-- Use the existing Swift Testing patterns under `macos/Tests/LitheTests/`.
-- Keep platform-specific types from leaking through shared or application
-  interfaces.
-
 ### Rust
 
 - Run `cargo fmt` and follow existing crate and module conventions.
-- Keep shared results deterministic and preserve the JSON envelope and C ABI.
+- Keep shared results deterministic and preserve the JSON envelope.
 - Return structured failures across the boundary; do not expose unstable Rust
   implementation details as contract error codes.
 - Add tests in the owning crate for changes to commands, parsing, validation,
   ordering, cancellation, or serialization.
+
+### GPUI host (`gpui/`)
+
+- The crate dependency direction is fixed: `app -> workbench -> {editor, explorer,
+  git, terminal} -> shared`, and `app -> settings -> shared`. A feature must not
+  depend on `app` or on a sibling feature it does not need.
+- GPUI Kit is pinned to the published `0.6.x` line. Do not write code against
+  APIs that only exist in `versions/main` docs; read the 0.6.6 source under
+  `gpui/docs/gpui-kit/` or the vendored crate source instead.
+- The UI thread does not do blocking work. Long operations run on a background
+  task and return through the async boundary; see
+  `gpui/crates/shared/src/core_client.rs` for how the Core client marshals
+  between the two.
+- Assets are served through `LitheAssets` (`gpui/crates/app/src/assets.rs`).
+  Directories that are on disk but not wired up are excluded there on purpose;
+  removing an `#[exclude]` without wiring the asset only grows the binary.
 
 #### Rust Core comments
 
@@ -186,19 +188,6 @@ Windows/Tauri Rust crates, generated code, or third-party sources.
   helper. Still review changed internal types and implementations for the
   semantic cases above, which a static check cannot judge reliably.
 
-### Windows React and Tauri
-
-- Use Bun for frontend scripts and Tauri 2 for the Windows host. Keep React
-  feature code in `windows/tauri/src/features`, reusable UI in
-  `windows/tauri/src/ui`, the invoke boundary in
-  `windows/tauri/src/platform`, and native Rust behavior in
-  `windows/tauri/src-tauri`.
-- Do not restore a parallel C++/Qt application layer or one Tauri command per
-  shared Core operation. Translate compatibility command names through the
-  central platform dispatcher.
-- Add frontend tests for product behavior and Rust tests in the owning crate.
-  Verify WebView2, ConPTY, installer, signing, and updater behavior on Windows.
-
 ## Avoid hardcoded environment details
 
 - Never commit credentials, tokens, private endpoints, signing material, or
@@ -216,8 +205,8 @@ Windows/Tauri Rust crates, generated code, or third-party sources.
 
 - Do not silently discard errors. Return, translate, or log them at the layer
   that has enough context to act on them.
-- Preserve stable contract error categories when crossing Rust, Swift,
-  TypeScript, Tauri, or process boundaries.
+- Preserve stable contract error categories when crossing the Rust Core
+  boundary or a process boundary.
 - User-facing failures should be actionable without exposing credentials,
   environment contents, or unnecessary internal details.
 - Comments should explain non-obvious constraints or decisions, not narrate the
@@ -230,26 +219,22 @@ before handoff.
 
 | Change | Minimum relevant validation |
 | --- | --- |
-| Agent Notes or architecture decision migration | `./scripts/verify-agent-notes.sh` |
-| Test code or test infrastructure | `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`, then the affected platform timing harness from `write-stable-tests` |
-| Swift application or tests | `./scripts/test-macos.sh` |
-| Core, Services, Views, or composition boundaries | `./scripts/verify-service-boundaries.sh` |
-| Shared application behavior or JSON fixtures | `./scripts/verify-shared-contracts.sh` |
-| Rust Core, JSON C ABI, or Swift bridge | `./scripts/verify-rust-core.sh` |
-| Core feature behavior | `./scripts/verify-core.sh` |
-| Git graph behavior | `./scripts/verify-git-graph.sh` |
-| Windows boundaries from macOS/Linux | `./scripts/verify-windows-boundaries.sh` |
-| Windows implementation on Windows | `./scripts/build-windows.ps1 -Configuration Release`, then `cargo test --manifest-path windows/tauri/src-tauri/Cargo.toml` |
+| Agent Notes or architecture decision migration | `node scripts/verify-agent-notes.mjs` |
+| Test code or test infrastructure | `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`, then the affected Rust timing harness from `write-stable-tests` |
+| Shared contracts or JSON fixtures | `./scripts/verify-shared-contracts.sh` |
+| Rust Core, or the Core-to-host contract | `./scripts/verify-rust-core.sh` |
+| `gpui/crates/*` | `cargo test --manifest-path gpui/Cargo.toml` for the affected crates, plus `cargo fmt --manifest-path gpui/Cargo.toml -- --check` |
+| CI lane or path classifier | `node scripts/test-classify-ci-changes.mjs` |
+| Java semantic ownership | `node scripts/verify-java-semantic-ownership.mjs` |
 
-Also run tests for directly affected crates or targets. If the current machine
-cannot run a platform-specific check, state that clearly; do not claim an
-unexecuted check passed.
+Also run tests for directly affected crates. If the current machine cannot run
+a check, state that clearly; do not claim an unexecuted check passed.
 
 ## Keep changes reviewable
 
 - Preserve existing uncommitted work and avoid modifying unrelated files.
-- Do not commit generated output such as `.build/`, `.swiftpm/`, `target/`,
-  `dist/`, `DerivedData/`, fixture build directories, or local IDE settings.
+- Do not commit generated output such as `target/`, `.artifacts/`, fixture build
+  directories, or local IDE settings.
 - Do not perform broad formatting or dependency updates as part of a focused
   fix.
 - Do not use destructive Git commands, create commits, push branches, or change

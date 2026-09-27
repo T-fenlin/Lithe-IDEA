@@ -59,12 +59,14 @@
 
 ## Lithe 特别边界
 
-- `rust/lithe-core` 承载确定性共享行为、模型、验证和跨平台语义。
+- `rust/lithe-core` 承载确定性共享行为、模型、验证和跨功能语义。
 - 语言服务、项目模型、构建工具、测试运行器和调试器已拥有的领域事实不属于
   `rust/lithe-core`；Core 只承载 Lithe 的稳定归一化和编排契约。
-- `shared/` 承载跨平台契约和 fixture，不承载编译实现。
-- macOS 平台能力留在 `macos/Sources/Lithe/Platform/MacOS/`。
-- Windows 前端通过 `@/platform/tauri-core` 和统一 dispatcher 接入共享能力。
+- `shared/` 承载契约和 fixture，不承载编译实现。
+- 平台能力留在拥有该功能的 crate，通过端口暴露；`gpui/crates/app` 是组合根。
+- `gpui/crates/*` 的依赖方向固定：
+  `app -> workbench -> {editor, explorer, git, terminal} -> shared`，
+  以及 `app -> settings -> shared`；越界依赖属于架构问题。
 - 架构取舍、所有权边界和高风险约束以相关 `.agents/notes/implemented/`
   为准。
 - 测试问题必须结合稳定性规则判断，重点关注有界等待、确定性时间、取消和
