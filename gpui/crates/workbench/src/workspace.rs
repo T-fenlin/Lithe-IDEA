@@ -414,17 +414,27 @@ const SEARCH_ACTIVITY_IX: usize = 2;
 /// —— 启动时左活动栏顶部第一项就是选中态。
 const DEFAULT_TOP_ACTIVITY: usize = 0;
 
-/// 左侧栏宽度（**2026-09-27 从 320 加宽到 480**，维护者口径「界面不协调」）。
+/// 左侧栏宽度（**2026-09-27 从 320 改为 380**，维护者口径「这个默认修改为 380 的」）。
 ///
 /// 320 是照 Lithe 自己的 Windows 前端搬的（`features/settings/config/default-settings.ts:138`
-/// 的 `sidebarWidth`），但在 1920 宽的窗口里只占 19.8%：本项目自己的路径
-/// `D:\developmentProjects\rust\Lithe-IDEA` 都放不下、项目名被截断成 `Lithe-IDEA…`，
-/// 而 IDEA 的项目树约占 26%。480 之后编辑器仍占约 64%。
+/// 的 `sidebarWidth`），在 1920 宽窗口里只占 19.8%：本项目自己的路径
+/// `D:\developmentProjects\rust\Lithe-IDEA` 都放不下、项目名被截断成 `Lithe-IDEA…`；
+/// 480 又偏宽（维护者口径）。380 是维护者指定的默认值。
 ///
-/// **480 不在 gpui 的 rem 档位上**（档位表到 `w_96()` 附近就没有更宽的了），所以按《编码指南》
-/// 写 helper 底层的 `rems(SIDEBAR_WIDTH_SPEC / 16.)`，而不是自己发明一个 `w_120()` ——
+/// **拖动改宽还没接**：后端范围（min/max）与热区都未实现，登记在
+/// `gpui/docs/ui-mockup-idea.md`。所以这里是一个**固定的默认值**，不是一个可调状态的初值。
+///
+/// **380 不在 gpui 的 rem 档位上**（档位是 …`w_92()`=368、`w_96()`=384…），所以按《编码指南》
+/// 写 helper 底层的 `rems(SIDEBAR_WIDTH_SPEC / 16.)`，而不是自己发明一个 helper ——
 /// 与 `BOTTOM_PANE_HEIGHT_SPEC` / `RIGHT_TOOL_WINDOW_WIDTH` 同一处置。
-const SIDEBAR_WIDTH_SPEC: f32 = 480.;
+const SIDEBAR_WIDTH_SPEC: f32 = 380.;
+
+/// 工作区各岛之间的间距（真源 `--lithe-workbench-gap: 4px`，`styles/theme.css:125`）。
+///
+/// 单独提成常量是因为它**不只用于 `gap_1()`**：左侧栏与编辑区之间的那 4px 要按维护者口径
+/// 吃成"直接连接"，靠的是负外边距 `rems(-WORKBENCH_GAP_SPEC / 16.)` ——
+/// 数值只有一个来源，免得"间距改了、负边距没跟着改"。
+const WORKBENCH_GAP_SPEC: f32 = 4.;
 
 // ---------------------------------------------------------------------------
 // 度量：应用布局一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -434,17 +444,16 @@ const SIDEBAR_WIDTH_SPEC: f32 = 480.;
 //
 // | 规格（Windows 真源） | 值 | 用到的 helper |
 // | --- | --- | --- |
-// | `sidebarWidth: 320`（`features/settings/config/default-settings.ts:138`） | **480**（2026-09-27 加宽，见下） | `rems(SIDEBAR_WIDTH_SPEC / 16.)` |
+// | `sidebarWidth: 320`（`features/settings/config/default-settings.ts:138`） | **380**（2026-09-27 改默认值，见下） | `rems(SIDEBAR_WIDTH_SPEC / 16.)` |
 // | `--lithe-workbench-gap: 4px`（`styles/theme.css:125`） | 4 | `gap_1()` / `pr_1()` / `h_1()` |
 // | 底部工具窗高 240（真源 320，`bottom-pane/bottom-pane.tsx:47`；2026-09-27 收窄） | 240 | `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)` |
 // | 区域占位块内边距 8 | 8 | `p_2()` |
 // | 占位块字号 13（`--ui-text-chrome`） | 13 | `text_sm()`（14px，见下） |
 //
-// **左侧栏 320 → 480（2026-09-27，维护者口径"界面不协调"）**：320 是照 Lithe 自己的
+// **左侧栏 320 → 380（2026-09-27，维护者口径「这个默认修改为 380 的」）**：320 是照 Lithe 自己的
 // Windows 前端搬来的值，在 1920 宽的窗口里只占 19.8%，连本项目自己的路径
-// `D:\developmentProjects\rust\Lithe-IDEA` 都放不下、项目名被截断成 `Lithe-IDEA…`；
-// IDEA 的项目树约占 26%。改后编辑器仍占约 64%，是本轮**有意偏离 Windows 规格**的一处，
-// 理由与截图证据见 `gpui/docs/ui-mockup-idea.md`。
+// `D:\developmentProjects\rust\Lithe-IDEA` 都放不下、项目名被截断成 `Lithe-IDEA…`。
+// 380 是本轮**有意偏离 Windows 规格**的一处，理由与截图证据见 `gpui/docs/ui-mockup-idea.md`。
 //
 // 字号：13 不在 gpui 的档位（`text_xs()`=12 / `text_sm()`=14）上，按《编码指南》用
 // `text_sm()`（14px）——13 → 14 是经维护者确认的**有意**视觉改动，不是等价换算。
@@ -3730,8 +3739,16 @@ impl Render for ShellWorkspace {
                             side_pane(
                                 div().w(rems(SIDEBAR_WIDTH_SPEC / 16.)),
                                 left_content,
+                                // **把左侧栏与编辑区"直接连接"**（维护者 2026-09-27 口径：
+                                // 「这个中间可以直接连接吗？现在这样还有空细」）。
+                                // 原来这一行与中央列之间是工作区的 4px 间距（`gap_1()`），两侧又各有一条
+                                // 1px 边框，于是在两个同色 #1e1f23 面板之间画出"两条平行线夹一条缝"。
+                                // 用**负外边距吃掉这一侧的两段间距**，而不是把全局 `gap_1()` 改成 0 ——
+                                // 右侧工具窗与右活动栏之间那 4px 是另一处观感，不该被这次改动连坐。
+                                -WORKBENCH_GAP_SPEC,
                                 cx,
                             )
+                            .into_any_element()
                         }),
                     )
                     .child(
@@ -3770,8 +3787,12 @@ impl Render for ShellWorkspace {
                         side_pane(
                             div().w(rems(RIGHT_TOOL_WINDOW_WIDTH / 16.)),
                             right_tool_window,
+                            // 右侧工具窗**不吃间距**：它与右活动栏之间的 4px 是另一处观感，
+                            // 本轮只按维护者口径处理"左侧栏与编辑区直接连接"。
+                            0.,
                             cx,
                         )
+                        .into_any_element()
                     }))
                     .child(right_rail),
             )
@@ -3799,10 +3820,23 @@ impl Render for ShellWorkspace {
 ///
 /// `outer` 由调用方给：宽度是布局度量，调用点用 gpui 的 rem 档位 helper（`w_80()`）或
 /// 档位外的 `rems(P / 16.)` 各自表达，这里只负责外壳剩下的部分。
-fn side_pane(outer: Div, content: impl IntoElement, cx: &App) -> impl IntoElement {
+///
+/// `horizontal_margin`（**2026-09-27 新增**）是这一侧要**额外施加的水平外边距**，单位是规格像素，
+/// 允许负值。存在的唯一理由：左侧栏与编辑区之间的工作区间距要"吃成直接连接"（维护者口径），
+/// 而 `side_pane` 返回 `impl IntoElement`，调用点**拿不到 `Styled` 的方法**去补 `.ml()` / `.mr()`
+/// —— 所以由这个函数把外边距一起贴上。传 `0.` 表示不额外施加（右侧工具窗现在是这一档）。
+fn side_pane(
+    outer: Div,
+    content: impl IntoElement,
+    horizontal_margin: f32,
+    cx: &App,
+) -> impl IntoElement {
+    let margin = crate::rem_px(cx.theme().font_size, horizontal_margin);
     outer
         .h_full()
         .flex_shrink_0()
+        .ml(margin)
+        .mr(margin)
         .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
         .border_1()
         .border_color(cx.theme().border)
@@ -3859,11 +3893,15 @@ fn collapse_sidebar_button(
         .absolute()
         .left_1()
         .top_1()
-        // ⚠️ 外层**必须显式给宽高**（2026-09-27 实测缺陷）：只写 `absolute + left_1 + top_1`
-        // 时这一个绝对定位盒的尺寸由内容/父级约束决定，实测被拉成一条**竖长条**
-        // （截图里约 36×160，红框圈出来的那个），而不是 24×24 的方块。
-        // 显式 `size_6()` 把盒钉死，内层再居中画图标。
+        // ⚠️ 外层盒**必须显式给宽高**（2026-09-27 实测缺陷）：只写 `absolute + left_1 + top_1`
+        // 时这个绝对定位盒的尺寸由内容/父级约束决定，实测被拉成一条**竖长条**而不是 24×24。
         .size_6()
+        // ⚠️ 而且**必须 `items_center()`**：内层是 `flex()` 容器，父级不给交叉轴对齐时
+        // 默认 `align-items: stretch`，内层会被拉满外层高度 —— 只钉外层尺寸还是竖条
+        // （维护者 2026-09-27 截图复现）。这一行与内层的 `.items_center()` 是两件事：
+        // 外层管"内层在盒子里垂直居中"，内层管"图标在内层里居中"。
+        .items_center()
+        .justify_center()
         .child(
             // 必须有 `id`：hover 态要元素状态（`gpui-pre-0.3.6/src/elements/div.rs:2844-2849`）。
             div()
