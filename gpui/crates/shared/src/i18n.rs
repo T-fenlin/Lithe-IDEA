@@ -43,7 +43,7 @@
 //! | --- | --- |
 //! | `editor`（标签栏导航 / 关闭 / 空状态 / 打不开文件 / 保存与自动保存失败 / 关闭未保存确认 / 跳转失败） | `lithe.tabs.*`、`lithe.workbench.emptyEditor*`、`lithe.ui.noActionsHere`、`lithe.files.openFailed`、`lithe.editor.saveFailed`、`lithe.editor.autoSaveFailed`、`lithe.editor.gpui.*`、`lithe.unsavedChanges.title`、`lithe.ui.save`、`lithe.navigation.definition`、`lithe.navigation.noTargetFound` |
 //! | `editor` 的标签右键菜单（阶段 11） | `lithe.files.{copyPath,copyRelativePath,reveal,openInTerminal}`、`lithe.tabs.{reload,close,closeOthers,closeToRight,closeAll}`、`lithe.menu.saveAll`（批量确认的"全部保存"）、`lithe.editor.gpui.unsavedChangesBatchBody` |
-//! | `explorer`（头部 / 空态 / 加载 / 树 a11y） | `lithe.workbench.project`、`lithe.fileExplorer.*`、`lithe.quickOpen.loadingFiles`、`lithe.search.clear`、`lithe.ui.retry`、`lithe.titleProject.openFolder` |
+//! | `explorer`（空态 / 加载 / 树 a11y） | `lithe.workbench.project`、`lithe.fileExplorer.*`、`lithe.quickOpen.loadingFiles`、`lithe.search.clear`、`lithe.ui.retry`、`lithe.titleProject.openFolder`（⚠️ 2026-09-27 起「项目」树头与树内搜索行已按维护者要求删除，`lithe.fileExplorer.searchFiles` 仍用作搜索输入框的 placeholder，`lithe.search.clear` 等键随搜索入口一起**暂时没有界面落点**，待左活动栏「搜索」项接上） |
 //! | `git`（标题栏 / 筛选 / 提交表 / 引用树 / Inspector / 控制台 / 占位） | `lithe.git.*`、`lithe.workbench.gitLog`、`lithe.footer.readOnly` |
 //! | `terminal`（页签栏 / 状态行 / 空态 / 失败态 / 能力提示除外的全部） | `lithe.terminal.*`、`lithe.run.*`、`lithe.git.console.exit`、`lithe.git.console.scrollToEnd`、`lithe.commandPalette.placeholder` |
 //! | `workbench`（活动栏 / 状态栏 / 项目标签条 / 右工具窗） | `lithe.workbench.*`、`lithe.footer.spaces`、`lithe.titleProject.closeProject`、`lithe.maven.title`、`lithe.maven.notDetected`、`lithe.notifications.empty`、`lithe.extensions.noneFound`、`lithe.commandPalette.close` |

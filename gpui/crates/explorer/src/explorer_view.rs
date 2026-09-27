@@ -3,6 +3,14 @@
 //! 建树与取数据在 `model.rs`（那个文件不依赖 gpui UI 组件）；crate 的模块文档（规格出处、
 //! 图标对照、未实现清单）在 `lib.rs`。本文件只放宽 `Explorer` 为 `pub`（由 `lib.rs`
 //! re-export），其余项都留在模块内。
+//!
+//! **现状（2026-09-27 按维护者要求删除）**：侧栏顶部**不再有**「项目」头部行（原 32px）与
+//! 树内搜索行（原 28px），本模块渲染出的第一个元素就是文件树本身；搜索入口改由左活动栏的
+//! 「搜索」项承担（`gpui/crates/workbench/src/activity_bar.rs`）。这两条与 Windows 真机的差异
+//! 原先登记在 `lib.rs` 未实现清单的第 10 条（偏好下拉菜单）与第 11 条（搜索浮层），随实现一并
+//! 删除。搜索状态（`search` / `search_open` / `query`）与 `toggle_search` / `clear_search` /
+//! `set_query` / `rebuild` 的过滤通路**保留**，等左活动栏与树内 `Mod+F` / `/` 键位接上，
+//! 保留理由写在各声明处。
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -10,19 +18,18 @@ use std::rc::Rc;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{TreeState, h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tree::{Tree, TreeEvent};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AbsoluteLength, AnyElement, App, AppContext as _, ClickEvent, Context, Entity,
-    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, relative,
-    rems,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, WeakEntity, Window, div, relative, rems,
 };
 
 use lithe_gpui_shared::icons::FileIcon;
@@ -30,35 +37,16 @@ use lithe_gpui_shared::tr;
 
 use crate::model::{RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot};
 
-/// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)` 的 `Pixels` 形式。
-///
-/// 只有**必须**交出 `Pixels` 的槽才走这里 —— 固有方法会**静默遮蔽** `Styled` 的同名方法：
-/// `Button::rounded` 吃 `impl Into<ButtonRounded>`，而 `ButtonRounded` 只有 `From<Pixels>`
-/// （`gpui-component-0.6.6/src/button/button.rs:29-33`，**没有** `From<Rems>`），在 `Button` 上写
-/// `.rounded(rems(..))` 会得到 `error[E0277]: ButtonRounded: From<Rems> is not satisfied`。
-/// `div` 上的 `Styled::rounded` / `w` / `h` / `pl` … 能吃 `AbsoluteLength`，直接写
-/// `rems(C / 16.)`，由布局期按窗口 rem 基准求值，不必经过这里。
-///
-/// 写成 `/ 4.` 是错的：helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，1rem = 16px
-/// （主题的 `font.size`；`Root::render` 每帧把 `cx.theme().font_size` 写进 `window.set_rem_size`，
-/// `gpui-component-0.6.6/src/root.rs:582`，所以那也就是本帧的 rem 基准）。
-fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
-}
-
 // ---------------------------------------------------------------------------
 // 文案：全部走 `lithe_gpui_shared::tr`（key 逐字取 `windows/tauri/src/i18n/locale.ts`
 // 生成的 locale，不自己编中文）。下面每一条注释保留原文与成 key 的对应关系。
 // ---------------------------------------------------------------------------
 
-/// `workbench.project` → 「项目」（`locale.ts:4605`）：文件树头部标题。
-const TITLE_KEY: &str = "lithe.workbench.project";
-/// `fileExplorer.searchFiles` → 「搜索文件」（`locale.ts:7446`）：搜索按钮的提示 + 输入框占位。
+/// `fileExplorer.searchFiles` → 「搜索文件」（`locale.ts:7446`）：树内搜索输入框的占位文案。
+///
+/// 原先它同时是头部搜索按钮的 tooltip；头部行与树内搜索行已在 **2026-09-27 按维护者要求**删除，
+/// 现在只剩 [`Explorer::new`] 里 `InputState::set_placeholder` 这一处消费。
 const SEARCH_FILES_KEY: &str = "lithe.fileExplorer.searchFiles";
-/// `search.clear` → 「清除搜索」（`locale.ts:5895`）。
-const CLEAR_SEARCH_KEY: &str = "lithe.search.clear";
-/// `fileExplorer.preferences` → 「文件资源管理器偏好设置」（`locale.ts:7445`）。
-const PREFERENCES_KEY: &str = "lithe.fileExplorer.preferences";
 /// `fileExplorer.ariaLabel` → 「文件资源管理器」（`locale.ts:7447`；调研文档 §5.4 漏了这一条）。
 const TREE_ARIA_LABEL_KEY: &str = "lithe.fileExplorer.ariaLabel";
 /// `quickOpen.loadingFiles` → 「正在加载文件」（`locale.ts:7835`）。
@@ -78,15 +66,10 @@ const NO_MATCHING_FILES_KEY: &str = "lithe.fileExplorer.noMatchingFiles";
 // ---------------------------------------------------------------------------
 //
 // 全部取自 Windows 源码（规格真源）。rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`，
-// 与规格逐像素相等：
+// 与规格逐像素相等。表里只列**仍在渲染路径上**的项：
 //
 // | 规格 | 值 | 用到的 helper | 出处 |
 // | --- | --- | --- | --- |
-// | 头部高 `--lithe-sidebar-header-height: 2rem` | 32 | `h_8()` | `styles/theme.css:124` |
-// | 头部 `px-2` / `py-1` | 8 / 4 | `px_2()` / `py_1()` | `file-explorer-tree.tsx:1310`、`ui/sidebar.tsx:93` |
-// | 头部图标按钮 `icon-xs` | 24 | `size_6()` | `ui/button.tsx:27` |
-// | 搜索框高 `h-7` | 28 | `h_7()` | `global-search-toolbar.tsx:101-102` |
-// | 搜索行 `px-2 py-2` | 8 | `px_2()` / `py_2()` | `global-search-toolbar.tsx:93` |
 // | 树行高 | 24 | `h_6()` | 见下方 `BASE_INDENT` 注释 |
 // | 行水平内缩 / 右内边距 `px-1.5` | 6 | `px_1p5()` / `pr_1p5()` | `file-explorer-tree.css:6`、`sidebar-tree.tsx:241` |
 // | 行内列间距 `--lithe-chrome-gap` | 4 | `gap_1()` | `theme.css:130` |
@@ -94,31 +77,22 @@ const NO_MATCHING_FILES_KEY: &str = "lithe.fileExplorer.noMatchingFiles";
 // | 箭头字形 / 文件图标 | 12 / 16 | `size_3()` / `size_4()` | `file-explorer-tree.css:121-124,126-131` |
 // | 加载胶囊 `p-3` / `px-3 py-1.5` / `gap-2` | 12 / 12 / 6 / 8 | `top_3()` / `px_3()` / `py_1p5()` / `gap_2()` | `file-explorer-pane.tsx:55-56`、`ui/spinner.tsx:44` |
 //
+// **2026-09-27 按维护者要求删除**的那两行（「项目」头部行 32px、树内搜索行 28px）曾经用到的度量，
+// 现在文件里已无调用点，一并列出以免后来者以为漏了：头部高 32 → `h_8()`（`styles/theme.css:124`）、
+// 头部 `px-2 py-1`（`file-explorer-tree.tsx:1310`、`ui/sidebar.tsx:93`）、头部图标按钮 `icon-xs`
+// 24 → `size_6()`（`ui/button.tsx:27`）、搜索框高 28 → `h_7()`（`global-search-toolbar.tsx:101-102`）、
+// 搜索行 `px-2 py-2`（同文件 `:93`）。随它们删除的具名常量是 `HEADER_BUTTON_RADIUS`（6.4）、
+// `TITLE_LINE_HEIGHT`（16）、`SEARCH_INPUT_RADIUS`（8）与那个只给 `Button::rounded` 用的
+// `rem_px`；这两个与真机的差异原先登记在 `lib.rs` 未实现清单第 10 条（偏好下拉菜单）与第 11 条
+// （搜索浮层）。
+//
 // 字号：`--ui-text-sm` = 13px（`theme.css:116`）不在 gpui 的档位（`text_xs()`=12 / `text_sm()`=14）
 // 上，按《编码指南》用 **`text_sm()`（14px）**——13 → 14 是经维护者确认的**有意**视觉改动。
 //
 // ⚠️ `line_height` 没有 rem 档位 helper（`gpui-pre-0.3.6/src/styled.rs:740` 只有取值形式），
-// 所以这一项用 helper 底层的 `rems()` 表达（`rems(16. / 16.)` = 1rem = 原来的 `px(16.)`）。
+// 需要定长行高时用 helper 底层的 `rems(P / 16.)` 表达；倍数行高仍走 `relative(..)`
+// （见 [`ROW_LINE_HEIGHT`]）。
 
-/// 头部图标按钮圆角 6.4px（`ui/button.tsx:9` 的 `rounded-md` → `--radius-md = --radius × 0.8`，
-/// `theme.css:7,134`）。
-///
-/// 6.4 不是 gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px）；也不能从主题读 ——
-/// `ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
-/// 装不下 Lithe 的 `--radius × k` 阶梯（4.8 / 6.4 / 11.2）。所以**保留应用层具名常量**，
-/// 但消费方式仍是 rem：调用点走 `rem_px(rem, HEADER_BUTTON_RADIUS)`（`Button::rounded`
-/// 只吃 `ButtonRounded`，见 [`rem_px`]）——「不在档位上」不是保留 `px(...)` 的理由。
-const HEADER_BUTTON_RADIUS: f32 = 6.4;
-/// 头部标题行高 16px（`file-explorer/styles/file-explorer-tree.css:151-156`：
-/// `font-size: var(--ui-text-chrome)` / `font-weight: 600` / `line-height: var(--lithe-chrome-line-height)`，
-/// 后者的值 1rem 见 `theme.css:128`）。16 在 rem 档位上，但 `line_height` 没有档位 helper，
-/// 所以调用点写 `rems(TITLE_LINE_HEIGHT / 16.)`。
-const TITLE_LINE_HEIGHT: f32 = 16.;
-/// 搜索输入框圆角 8px（`rounded-lg` = `--radius × 1`，`theme.css:8,134`）。
-///
-/// 与 [`HEADER_BUTTON_RADIUS`] 同因保留应用层具名常量；它是 `Input` 上的 `Styled::rounded`
-/// （吃 `AbsoluteLength`），所以调用点直接写 `rems(SEARCH_INPUT_RADIUS / 16.)`。
-const SEARCH_INPUT_RADIUS: f32 = 8.;
 /// 树行高 24px。
 ///
 /// 真机公式 `max(24, uiFontSize × 1.35 + 6)`，`uiFontSize = 13` → `max(24, 23.55) = 24`
@@ -138,8 +112,11 @@ const BASE_INDENT: f32 = 10.;
 const INDENT_STEP: f32 = 16.;
 /// 行圆角 4px（`file-explorer-tree.css:7` `--file-tree-row-radius: 4px`）。
 ///
-/// 与 [`HEADER_BUTTON_RADIUS`] 同因保留应用层具名常量；`div` 上的 `Styled::rounded` 吃
-/// `AbsoluteLength`，所以调用点直接写 `rems(ROW_RADIUS / 16.)`。
+/// 与已随头部行删除的 `HEADER_BUTTON_RADIUS`（6.4）同因保留应用层具名常量：它不在 gpui 的
+/// rem 档位上，也不能从主题读 —— `ThemeConfig.radius` 是 `Option<usize>`
+/// （`gpui-component-0.6.6/src/theme/schema.rs:66-68`），装不下 Lithe 的 `--radius × k` 阶梯
+/// （4.8 / 6.4 / 11.2）。消费方式仍是 rem：`div` 上的 `Styled::rounded` 吃 `AbsoluteLength`，
+/// 调用点直接写 `rems(ROW_RADIUS / 16.)` ——「不在档位上」不是保留 `px(...)` 的理由。
 const ROW_RADIUS: f32 = 4.;
 /// 行高倍数 1.35（`theme.css:4` `--leading-row: 1.35`；`sidebar-tree.tsx:241` 的 `leading-row`）——
 /// 是倍数不是长度，`line_height(relative(..))` 原样保留。
@@ -195,9 +172,22 @@ pub struct Explorer {
     expanded: BTreeSet<SharedString>,
     /// 最后一次点击打开的文件（相对路径），用来给那一行加底色。
     active: Option<SharedString>,
-    /// 树内搜索的输入状态。
+    /// 树内搜索的输入状态（placeholder 在 [`Explorer::new`] 里设置）。
+    ///
+    /// ⚠️ **保留项**：承载它的树内搜索行已在 **2026-09-27 按维护者要求**删除（见文件顶部模块
+    /// 文档），搜索入口改由左活动栏的「搜索」项承担。它现在仍被生产路径读写（`new` 里的
+    /// placeholder 设置与 `InputEvent` 订阅），`#[allow(dead_code)]` 是**显式的保留说明**：
+    /// 后续把左活动栏那一项与树内 `Mod+F` / `/` 键位接到这里时，整个搜索簇（本字段 +
+    /// [`Explorer::toggle_search`] / [`Explorer::clear_search`] / [`Explorer::set_query`]）
+    /// 一起复活，别让任何一次局部调整把它判成死代码删掉。
+    #[allow(dead_code)]
     search: Entity<InputState>,
     /// 搜索输入框是否展开（真机是 `SidebarSearchPopover` 的 `open`，`file-explorer-tree.tsx:1321`）。
+    ///
+    /// ⚠️ **保留项**：唯一读它的渲染函数（原来的 `render_search_row`）随搜索行删除，现在生产路径上
+    /// 只剩 [`Explorer::toggle_search`] 在读写它，所以 `#[allow(dead_code)]` 是必须的显式保留说明
+    /// （删除原因是 **2026-09-27 按维护者要求**去掉了那两行；见文件顶部模块文档）。
+    #[allow(dead_code)]
     search_open: bool,
     /// 当前查询词（小写比较在 [`build_tree_items`] 里做）。
     query: SharedString,
@@ -223,6 +213,9 @@ impl Explorer {
         cx: &mut Context<Self>,
     ) -> Self {
         let tree = cx.new(|cx| TreeState::new(cx));
+        // ⚠️ placeholder 这一处是搜索簇**保留**下来的活代码之一：树内搜索行已在 **2026-09-27 按
+        // 维护者要求**删除，所以这个 `InputState` 目前没有可见的输入框；等左活动栏的「搜索」项与
+        // 树内 `Mod+F` / `/` 键位接上后复用（见 `search` 字段的注释）。
         let search = cx.new(|cx| InputState::new(window, cx));
         search.update(cx, |state, cx| {
             state.set_placeholder(tr(SEARCH_FILES_KEY), window, cx);
@@ -354,6 +347,12 @@ impl Explorer {
     }
 
     /// 写入查询词并重建树（`InputEvent::Change` 与「清除搜索」都走这里）。
+    ///
+    /// ⚠️ **保留项**：搜索入口（头部行的搜索按钮、树内搜索行）已在 **2026-09-27 按维护者要求**
+    /// 删除，但这条通路本身还是活代码 —— [`Explorer::new`] 里 `InputEvent::Change` 的订阅仍会调它。
+    /// 保留给左活动栏的「搜索」项与树内 `Mod+F` / `/` 键位接上；`#[allow(dead_code)]` 是显式的
+    /// 保留说明（同 `search` 字段的注释：整个搜索簇一起复活，别被逐项判成死代码删掉）。
+    #[allow(dead_code)]
     fn set_query(&mut self, query: SharedString, cx: &mut Context<Self>) {
         if self.query == query {
             return;
@@ -367,6 +366,12 @@ impl Explorer {
     ///
     /// 收起时清空查询：真机的 `Escape` 也是"关闭搜索"（`file-explorer-tree.tsx:1329-1335`），
     /// 留着过滤词会让下次打开看到一棵"少了东西"的树。
+    ///
+    /// ⚠️ **暂时不可达**：唯一调用点（头部行的搜索按钮）已在 **2026-09-27 按维护者要求**删除，
+    /// 所以这里必须 `#[allow(dead_code)]`。保留它是因为左活动栏「搜索」项与树内 `Mod+F` / `/`
+    /// 键位（真机键位见 `lib.rs` 未实现清单第 9 条）接上时，这个开关就是入口；维护者明确要求
+    /// 不要为了让 warning 消失而删掉搜索状态。
+    #[allow(dead_code)]
     fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_open = !self.search_open;
         if self.search_open {
@@ -378,11 +383,17 @@ impl Explorer {
         cx.notify();
     }
 
-    /// 清空查询并重建（对应 `search.clear`「清除搜索」按钮，`file-explorer-tree.tsx:1344-1356`）。
+    /// 清空查询并重建（对应 `search.clear`「清除搜索」按钮，`file-explorer-tree.tsx:1344-1356`；
+    /// 那个按钮本身已随头部行在 **2026-09-27 按维护者要求**删除）。
+    ///
+    /// ⚠️ **暂时不可达**：现在只有 [`Explorer::toggle_search`] 调它，而那个入口本身也暂时不可达
+    /// （原因见那里），所以这里必须 `#[allow(dead_code)]`；保留它是为了接上搜索入口后直接复用
+    /// 「Escape / 关闭搜索要连过滤词一起清掉」这条语义。
     ///
     /// ⚠️ **不能只靠 `InputEvent::Change`**：`InputState::set_value` 内部把 `emit_events` 置成
     /// `false`（`gpui-base-0.6.6/src/input/base/state.rs:903-907`），**不会**发 `Change` 事件，
     /// 所以这里必须自己调 [`Explorer::set_query`]。
+    #[allow(dead_code)]
     fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let search = self.search.clone();
         search.update(cx, |state, cx| {
@@ -393,127 +404,15 @@ impl Explorer {
 
     // ---- 渲染 ----
 
-    /// 头部：标题「项目」+ 搜索按钮 + 清空按钮（有查询时）+ 偏好按钮。
-    ///
-    /// 组成与度量照 `file-explorer-tree.tsx:1309-1518`：`SidebarHeader` 高 32
-    /// （`ui/sidebar.tsx:93` 的 `h-(--lithe-sidebar-header-height)`）、`px-2 py-1`、
-    /// 间距 4（`gap-(--lithe-chrome-gap)`）、下边框 1px（`file-explorer-tree.css:146`）。
-    ///
-    /// 三个按钮都是 `SidebarHeaderIconButton`（`ui/sidebar.tsx:127-141`）：ghost 变体
-    /// （前景 `--subtle-foreground`、悬停底色 `--accent`，`ui/button.tsx:17`）、
-    /// `icon-xs` 24×24（`ui/button.tsx:27`）、`rounded-md` 6.4px（`ui/button.tsx:9`）。
-    fn render_header(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut header = h_flex()
-            .w_full()
-            .flex_shrink_0()
-            .h_8()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .bg(cx.theme().background)
-            .border_b_1()
-            // 真机是 `color-mix(var(--border) 72%, transparent)`（`file-explorer-tree.css:146`）。
-            // gpui-kit 没有"72% 透明度的边框"token（`--border-strong` 是混进前景色，语义不同），
-            // 取最接近的 `theme.border` —— 差一档不透明度，登记在未实现清单里。
-            .border_color(cx.theme().border)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_sm()
-                    .font_semibold()
-                    // `line_height` 没有 rem 档位 helper，用 helper 底层的 `rems()`（原 16px）。
-                    .line_height(rems(TITLE_LINE_HEIGHT / 16.))
-                    .text_color(cx.theme().foreground)
-                    .child(tr(TITLE_KEY)),
-            )
-            .child(header_button(
-                "explorer-search",
-                IconName::Search,
-                tr(SEARCH_FILES_KEY),
-                cx.theme().font_size,
-                Some(Box::new(cx.listener(
-                    |this: &mut Self,
-                     _event: &ClickEvent,
-                     window: &mut Window,
-                     cx: &mut Context<Self>| {
-                        this.toggle_search(window, cx);
-                    },
-                ))),
-            ));
-
-        if !self.query.is_empty() {
-            header = header.child(header_button(
-                "explorer-search-clear",
-                IconName::X,
-                tr(CLEAR_SEARCH_KEY),
-                cx.theme().font_size,
-                Some(Box::new(cx.listener(
-                    |this: &mut Self,
-                     _event: &ClickEvent,
-                     window: &mut Window,
-                     cx: &mut Context<Self>| {
-                        this.clear_search(window, cx);
-                    },
-                ))),
-            ));
-        }
-
-        // 偏好下拉：真机是 `DropdownMenu`（可见性 / 外观 / 排序 / 缩进 / 自动定位 / 删除确认，
-        // `file-explorer-tree.tsx:1357-1517`）。这些设置项在探针里**没有落点**（没有设置存储，
-        // 也没有 `showHiddenFilesInFileTree` 这类可见性过滤的数据源），所以按"宁可禁用也不画假按钮"
-        // 的约定渲染成**禁用态**并登记，而不是画一个点了没反应的按钮。
-        header
-            .child(header_button(
-                "explorer-preferences",
-                IconName::Settings,
-                tr(PREFERENCES_KEY),
-                cx.theme().font_size,
-                None,
-            ))
-            .into_any_element()
-    }
-
-    /// 树内搜索行。展开时插在头部**下面**。
-    ///
-    /// ⚠️ **与真机的差异**：真机把它做成锚在搜索按钮上的浮层 `SidebarSearchPopover`
-    /// （`file-explorer-tree.tsx:1317-1343` → `ui/sidebar.tsx:143-...`），本模块渲染成
-    /// 一整行内联输入框：gpui-kit 0.6.6 的 `Popover` 必须自带 trigger 并锚在 trigger 上
-    /// （`gpui/UI-MAP.md` §1.3 浮层一节），而这一行的高度预算（28 + 8 + 8 = 44）在侧栏里够用，
-    /// 内联更容易点中、也少一层焦点陷阱。度量仍照真机：输入框高 28（`h-7`）、圆角 8
-    /// （`rounded-lg`）、整行水平内边距 8（compact `px-2`）、下边框 1px、底色 `--surface/55`
-    /// （`global-search-toolbar.tsx:93,101-102`；树内搜索框与全局搜索工具栏是同一套 Chrome 控件）。
-    fn render_search_row(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        if !self.search_open {
-            return None;
-        }
-
-        // ⚠️ **必须用 `Styled::h` 的全限定写法**：`Input` 有一个**同名固有方法**
-        // `Input::h(impl Into<DefiniteLength>)`，它只写 `self.height`，而那个字段只在
-        // **多行**输入里生效（`gpui-component-0.6.6/src/input/input.rs:256-260,706-709`）。
-        // 单行输入的实际高度来自 `input_h(self.size)` —— `Size::Medium` → `h_8()` = 32px
-        // （`input.rs:703`、`sizing.rs:261-269`）。方法调用语法会优先挑固有方法，所以这里
-        // 走 `Styled::h(...)` 直接给样式表写高 28px（`refine_style` 在 `input_h` 之后执行，
-        // `input.rs:703,719`，能覆写掉它）。
-        let input = gpui_kit::Styled::h_7(Input::new(&self.search))
-            .w_full()
-            .rounded(rems(SEARCH_INPUT_RADIUS / 16.))
-            .text_sm();
-
-        Some(
-            h_flex()
-                .w_full()
-                .flex_shrink_0()
-                .px_2()
-                .py_2()
-                .bg(cx.theme().muted)
-                .border_b_1()
-                .border_color(cx.theme().border)
-                .child(input)
-                .into_any_element(),
-        )
-    }
+    // ⚠️ **2026-09-27 按维护者要求删除**：这里原有 `render_header`（「项目」标题 32px 头部行：
+    // 标题 + 搜索按钮 + 清空按钮 + 偏好按钮）与 `render_search_row`（28px 树内搜索行：内联
+    // 一整行 `Input`）两个函数，以及 [`Explorer::new`] 之外的调用点、只服务它们的辅助函数
+    // `header_button` 与常量 `TITLE_KEY` / `CLEAR_SEARCH_KEY` / `PREFERENCES_KEY` /
+    // `HEADER_BUTTON_RADIUS` / `TITLE_LINE_HEIGHT` / `SEARCH_INPUT_RADIUS`、`rem_px`。
+    // 删掉它们是为了让侧栏顶部就是文件树本身（对齐 IntelliJ IDEA 的观感），搜索入口改由左活动栏
+    // 的「搜索」项承担。这两条与 Windows 真机的差异原先登记在 `lib.rs` 未实现清单第 10 条
+    // （偏好下拉菜单）与第 11 条（搜索浮层），随实现一并删除；搜索状态与查询入口按维护者要求保留，
+    // 理由写在字段与方法的注释里。图标、颜色、主题一律没动。
 
     /// 主体：加载中的胶囊 +（树体 / 空态 / 失败态）。
     fn render_body(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -789,38 +688,6 @@ impl Explorer {
     }
 }
 
-/// 头部三个按钮共用的构造：ghost、`icon-xs` 24×24、圆角 6.4px、悬停 tooltip。
-///
-/// `on_click` 为 `None` 就是禁用态：走 gpui-kit 的 `Disableable`
-/// （`gpui-component-0.6.6/src/button/button.rs:503-508`；禁用后不响应指针，
-/// 与 `ui/button.tsx:9` 的 `disabled:pointer-events-none disabled:opacity-50` 同语义）。
-///
-/// `rem` 是逐层传进来的 rem 基准（`cx.theme().font_size`）：圆角那一槽**必须**交 `Pixels`
-/// —— `Button::rounded` 只吃 `ButtonRounded`，而 `ButtonRounded` 只有 `From<Pixels>`
-/// （`gpui-component-0.6.6/src/button/button.rs:29-33`），**没有** `From<Rems>`；
-/// 在 `Button` 上写 `.rounded(rems(..))` 会得到 `error[E0277]: ButtonRounded: From<Rems> ...`。
-fn header_button(
-    id: &'static str,
-    icon: IconName,
-    label: SharedString,
-    rem: Pixels,
-    on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
-) -> Button {
-    let button = Button::new(id)
-        .ghost()
-        .icon(icon)
-        .tab_stop(false)
-        .size_6()
-        .rounded(rem_px(rem, HEADER_BUTTON_RADIUS))
-        .tooltip(label.clone())
-        .accessibility_label(label);
-
-    match on_click {
-        Some(handler) => button.on_click(handler),
-        None => button.disabled(true),
-    }
-}
-
 /// 工作区根那一行显示的名字：根目录名；根是盘符根（`D:\`）这类没有文件名的情况退回整条路径。
 fn root_label(root: &Path) -> String {
     root.file_name()
@@ -852,11 +719,12 @@ fn join_relative(root: &Path, relative: &str) -> PathBuf {
 
 impl Render for Explorer {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // 三个 `render_*` 都返回 `AnyElement`（具体类型，不借用 self）：edition 2024 下
+        // `render_body` 返回 `AnyElement`（具体类型，不借用 self）：edition 2024 下
         // `-> impl IntoElement` 会捕获作用域内的生命周期，返回 `&self` 派生的类型会和下面
         // `cx.theme()` 的共享借用打架（E0502）。上一轮实现踩过同一个坑。
-        let header = self.render_header(cx);
-        let search_row = self.render_search_row(cx);
+        //
+        // 根容器下**只有主体**：顶部的「项目」头部行与树内搜索行已在 **2026-09-27 按维护者要求**
+        // 删除（见上面「渲染」小节开头的说明），所以侧栏顶部就是文件树本身。
         let body = self.render_body(cx);
 
         v_flex()
@@ -865,8 +733,6 @@ impl Render for Explorer {
             .overflow_hidden()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(header)
-            .children(search_row)
             .child(body)
     }
 }

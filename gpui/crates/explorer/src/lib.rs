@@ -1,24 +1,30 @@
 //! 侧栏 · 项目树（资源管理器）。
 //!
-//! 这一块对应 Windows 前端的 `FileExplorerPane` → `FileExplorerTree`：头部（标题 + 搜索 +
-//! 偏好）+ 树体（虚拟滚动、任意深度、目录展开/折叠、点击文件打开）。规格一律取
+//! 这一块对应 Windows 前端的 `FileExplorerPane` → `FileExplorerTree`：**只有树体**（虚拟滚动、
+//! 任意深度、目录展开/折叠、点击文件打开）。规格一律取
 //! `windows/tauri/src/features/file-explorer/` 的源码，每个数值都带 `文件:行号`。
 //!
-//! 三层结构（照真机，`windows/tauri/src/features/file-explorer/components/file-explorer-pane.tsx:32-61`）：
+//! ⚠️ **2026-09-27 按维护者要求删除**：真机 `FileExplorerPane` 的第一层 `SidebarHeader`
+//! 「项目」头部行（高 32、标题 + 搜索按钮 + 清空按钮 + 偏好按钮）与它下面的树内搜索行（高 28，
+//! 原实现是一整行内联输入框）都已删除，所以本模块渲染出来的顶部就是文件树本身；搜索入口改由
+//! 左活动栏的「搜索」项承担（`gpui/crates/workbench/src/activity_bar.rs`）。这两条与 Windows
+//! 真机的差异原先登记在下面的未实现清单第 10 条（偏好下拉菜单）与第 11 条（搜索浮层），随实现
+//! 一并删除（原第 12 条顺延为第 10 条）。图标、颜色、主题一律没动。
 //!
-//! 1. **头部** `SidebarHeader.file-explorer-header`：高 32、水平内边距 8、下边框 1px、
-//!    标题「项目」（13px / 600）+ 搜索按钮 + 清空按钮（有查询时）+ 偏好按钮
-//!    （`file-explorer-tree.tsx:1309-1518`）；
-//! 2. **树体**：gpui 的 `Tree`（表体是 `uniform_list`）—— 行高固定 24、缩进 `10 + depth × 16`、
+//! 两层结构：
+//!
+//! 1. **树体**：gpui 的 `Tree`（表体是 `uniform_list`）—— 行高固定 24、缩进 `10 + depth × 16`、
 //!    目录优先 + 名字小写升序，工作区根是一行 600 粗体的根行（真机默认显示根目录）；
-//! 3. **状态**：加载中顶部胶囊（`file-explorer-pane.tsx:54-60`）、空态 / 失败态用
+//! 2. **状态**：加载中顶部胶囊（`file-explorer-pane.tsx:54-60`）、空态 / 失败态用
 //!    `Empty`（`ui/empty.tsx:111-130` 的 `EmptyState`）。
 //!
 //! 数据来自 Rust Core 的 `workspace.snapshot`（`rust/lithe-core/src/project/files.rs:36-45,160-167`），
 //! **在后台线程**取，回前台再建树（见 [`Explorer::load`]）。
 //!
 //! 已知取舍（各自的理由写在使用处）：
-//! - 树内搜索用**内联一整行输入框**代替 Windows 的 `SidebarSearchPopover` 浮层；
+//! - 树内搜索的**状态与查询通路保留、暂时没有界面**：`Explorer` 的 `search` / `search_open` /
+//!   `query` 字段与 `toggle_search` / `clear_search` / `set_query` 都留着，其中暂时不可达的那几项
+//!   标了 `#[allow(dead_code)]` 并写明为什么留着，等左活动栏「搜索」项与树内 `Mod+F` / `/` 键位接上；
 //! - 空目录挂一条禁用占位行「文件夹为空」，因为 `TreeItem::is_folder()` 是"有没有子节点"
 //!   推导出来的（`gpui-base-0.6.6/src/tree.rs:131-134`），没有子节点就会被当成文件行；
 //! - 未能实现的项逐条登记在文件末尾。
@@ -69,10 +75,11 @@
 //! | 脚本（sh/ps1/bat） | 终端图标 | `Terminal`（`terminal.svg`） | 真实字形 |
 //! | 图片/图标文件 | 主题图标集 image | `Image`（`image.svg`） | 真实字形 |
 //! | 其它文件 | 主题图标集 file | `File`（`file.svg`） | 同语义 |
-//! | 搜索按钮 | `Search` | `Search`（`search.svg`） | 同语义 |
-//! | 清空搜索按钮 | `X` | `X`（`x.svg`） | 同语义 |
-//! | 偏好按钮 | `Preferences`（自定义齿轮） | `Settings`（`settings.svg`） | Windows 的 `Preferences` 是自有字形，Lucide 里取齿轮 |
 //! | 加载转圈 | 自绘 CSS 圆环 | `Spinner` 默认的 `Loader`（`loader.svg`） | 组件自带 |
+//!
+//! 头部行那三个按钮（搜索 → `Search`（`search.svg`）、清空搜索 → `X`（`x.svg`）、偏好 →
+//! `Settings`（`settings.svg`，真机上「偏好」用的是自有字形的 `Preferences` 齿轮））随头部行在
+//! **2026-09-27 按维护者要求**删除，本 crate 已不再渲染它们，所以对照表里不再有这三行。
 //!
 //! 未实现清单（本轮**不做**的，逐条写明卡在哪）：
 //!
@@ -97,16 +104,20 @@
 //! 7. **根行自动定位**（`autoRevealActiveFileInFileTree: true`）：`TreeState::reveal_item`
 //!    现成可用（`gpui-base-0.6.6/src/tree.rs:268-278`），缺的是"当前活动文件"这个输入 ——
 //!    外壳还没把编辑区状态回传给侧栏（本模块只记自己点开过的那一个）。
-//! 8. **两档选中底色 / 边框 72% / 胶囊阴影**：真机的选中底色分"树未聚焦 `--border` / 聚焦
+//! 8. **两档选中底色 / 胶囊阴影**：真机的选中底色分"树未聚焦 `--border` / 聚焦
 //!    `--selected`"（`file-explorer-tree.css:69-78`），gpui 的 `Tree` 只给一档 `list_active`；
-//!    头部下边框的 72% 透明度没有对应 token（取了 `theme.border`）；
 //!    加载胶囊的 `shadow-popover` 与 `backdrop-blur-sm` 也没有对应 token。
+//!    （原先这里还登记了"头部下边框 72% 透明度没有对应 token"一条；头部行已在 **2026-09-27 按
+//!    维护者要求**删除，那一条随之不再存在。）
 //! 9. **树容器级键盘**（`Mod+F` / `/` 开搜索、`Mod+C/X/V`、`F2`、`Home/End`）：`Tree` 内建
 //!    `↑↓←→` 与 `Enter`（`gpui-base-0.6.6/src/tree.rs:19-27,350-411`），其余要在外层
-//!    `track_focus` + 自己绑 action，本轮只保证内建那几条可用。
-//! 10. **偏好下拉菜单**：见 [`Explorer::render_header`] 的注释（渲染成禁用按钮）。
-//! 11. **搜索浮层**：见 [`Explorer::render_search_row`] 的注释（改成一整行内联输入框）。
-//! 12. **空态的「打开文件夹」按钮**：渲染成禁用态（原因见 [`Explorer::empty_no_rows`]）。
+//!    `track_focus` + 自己绑 action，本轮只保证内建那几条可用。**2026-09-27 起**「开搜索」那两条
+//!    键位暂时没有落点可绑：树内搜索行已删除，等左活动栏的「搜索」项接上后再绑。
+//! 10. **空态的「打开文件夹」按钮**：渲染成禁用态（原因见 [`Explorer::empty_no_rows`]）。
+//!
+//! 原第 10 条「偏好下拉菜单」与原第 11 条「搜索浮层」（分别对应已被删除的
+//! `Explorer::render_header` 与 `Explorer::render_search_row`）随那两行在 **2026-09-27 按维护者
+//! 要求**删除；原第 12 条顺延为上面的第 10 条。
 
 mod explorer_view;
 mod model;
