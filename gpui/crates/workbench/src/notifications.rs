@@ -560,37 +560,72 @@ impl Render for NotificationPanel {
             .upgrade()
             .map(|store| store.read(cx).len())
             .unwrap_or(0);
-        // 「空态」有两种，判据是**筛选前**有没有东西：原来就有、只是被筛掉了，说
-        // 「没有匹配」；本来就没有，说「暂无通知」。
-        let filtered = total > 0 && rows.is_empty();
 
-        if rows.is_empty() {
-            return self.empty_state(filtered, cx).into_any_element();
+        match layout_for(total, rows.len()) {
+            // 中心一条通知都没有 → 整块空态，不画工具条与筛选条（没有可筛的东西）。
+            Layout::Empty => self.empty_state(false, cx).into_any_element(),
+            // ⚠️ 只要中心还有通知，工具条与筛选条就**必须**画，哪怕筛选/搜索的结果是空的。
+            // 少了这一句会出现「切到警告/错误后出不来」：筛到零结果时空态吞掉了整个面板，
+            // 于是「全部」「信息」那两个按钮和搜索框一起消失，用户再也点不回去、也清不掉
+            // 查询。空态只该占**列表区**。
+            Layout::List { filtered } => v_flex()
+                .w_full()
+                .flex_1()
+                .min_h_0()
+                .child(self.toolbar(total, cx))
+                .child(self.filter_bar(cx))
+                .child(
+                    v_flex()
+                        .id("lithe-notification-list")
+                        .w_full()
+                        .flex_1()
+                        .min_h_0()
+                        .gap_0()
+                        // 滚动容器**无条件**挂：空列表挂它没有副作用（不会画滚动条），
+                        // 而把它放进 `when` 里会让两个分支类型不同（`child` 给
+                        // `Stateful<Div>`、`overflow_y_scrollbar` 给 `Scrollable<…>`），
+                        // 编译不过。分支只改**内容**。
+                        .overflow_y_scrollbar()
+                        .when(filtered, |this| this.child(self.empty_state(true, cx)))
+                        .when(
+                            !filtered,
+                            |this| this.children(rows.iter().map(|row| self.row(row, cx))),
+                        ),
+                )
+                .into_any_element(),
         }
+    }
+}
 
-        v_flex()
-            .w_full()
-            .flex_1()
-            .min_h_0()
-            .child(self.toolbar(total, cx))
-            .child(self.filter_bar(cx))
-            .child(
-                v_flex()
-                    .id("lithe-notification-list")
-                    .w_full()
-                    .flex_1()
-                    .min_h_0()
-                    .gap_0()
-                    .overflow_y_scrollbar()
-                    .children(rows.iter().map(|row| self.row(row, cx))),
-            )
-            .into_any_element()
+/// 面板这一帧画什么。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Layout {
+    /// 整块空态「暂无通知」。
+    Empty,
+    /// 工具条 + 筛选条 + 列表区。`filtered` = 列表区该显示「没有匹配」而不是行。
+    List {
+        /// 筛选/搜索之后一条都不剩。
+        filtered: bool,
+    },
+}
+
+/// 布局判据。
+///
+/// `total` 是**筛选前**的条数，`visible` 是筛选后的。判据只看 `total` —— 这正是那个 bug
+/// 的要害：拿 `visible` 去判的话，筛到零结果就会走 `Empty` 分支，把工具条和筛选条一起
+/// 吞掉，用户点不回「全部」。
+fn layout_for(total: usize, visible: usize) -> Layout {
+    if total == 0 {
+        return Layout::Empty;
+    }
+    Layout::List {
+        filtered: visible == 0,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Filter, Severity, format_age, option_key};
+    use super::{Filter, Layout, Severity, format_age, layout_for, option_key};
     use lithe_gpui_shared::tr;
 
     /// 筛选的放行判据：`All` 全放，其余只放自己那一档。
@@ -611,6 +646,25 @@ mod tests {
 
         assert!(Filter::Error.admits(Severity::Error));
         assert!(!Filter::Error.admits(Severity::Info));
+    }
+
+    /// 回归：筛到零结果时**工具条与筛选条必须还在**。
+    ///
+    /// 曾经的 bug：布局判据用的是筛选**后**的条数，于是切到「警告」/「错误」而一条都
+    /// 不匹配时，整块空态把工具条与筛选条一起吞掉 —— 用户点不回「全部」，搜索框也跟着
+    /// 消失（搜到零结果时同样出不来）。这条把「判据只看筛选前的条数」钉住。
+    #[test]
+    fn chrome_survives_an_empty_filtered_result() {
+        // 中心有 3 条，但当前筛选一条都不匹配 → 仍要画工具条与筛选条。
+        assert_eq!(
+            layout_for(3, 0),
+            Layout::List { filtered: true },
+            "筛到零结果不能吞掉筛选条，否则用户出不来"
+        );
+        // 有匹配 → 同样画chrome，只是列表区显示行。
+        assert_eq!(layout_for(3, 2), Layout::List { filtered: false });
+        // 中心真的空了 → 整块空态（此时没有可筛的东西，不画筛选条是对的）。
+        assert_eq!(layout_for(0, 0), Layout::Empty);
     }
 
     /// 筛选条的四个元素 id 必须互不相同 —— gpui 的 `ElementId` 撞了会让点击串到别的按钮上。
