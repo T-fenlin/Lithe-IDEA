@@ -1,40 +1,34 @@
 # Rust Core API
 
-The Rust core is the shared application runtime for macOS SwiftUI and Windows
-React/Tauri. macOS calls the stable C ABI while the Tauri host links the Rust
-crate directly. The C ABI remains:
+The Rust core is the deterministic application runtime. The gpui host in `gpui/`
+is its only consumer, and it **links the Rust crate directly**: there is no C
+bridge, no `staticlib` force-load, and no per-command host shim.
 
-```c
-const char *lithe_core_version(void);
-char *lithe_core_execute_json(const char *request);
-char *lithe_core_execute_json_with_events(const char *request, void (*callback)(const char *, void *), void *context);
-int32_t lithe_core_git_askpass(const char *prompt);
-char *lithe_core_lsp_provider_catalog_json(const char *workspace_root);
-int32_t lithe_core_cancel(const char *operation_id);
-void lithe_core_free_string(char *value);
-```
+> **C ABI 已退役。** 旧 macOS 产品通过 `macos/Sources/LitheRustCore/bridge.c` 的稳定
+> C ABI 接入 Core。那条链路随旧前端一起删除后，`lithe_core.h` 与
+> `rust/lithe-core/src/runtime/ffi.rs` 里的 7 个导出函数**没有任何调用方**。它们仍是
+> 有效的导出，但已无消费者；删除前要先确认没有外部 crate 依赖该符号。退役记录见
+> git tag `legacy-frontends-final`。
 
-The macOS package uses the small C bridge in `macos/Sources/LitheRustCore/`. The
-canonical C declarations are in `rust/lithe-core/include/lithe_core.h`.
-Native clients can link the same `staticlib` or `cdylib`; Rust hosts call
-`lithe_core::execute_json` and `lithe_core::cancel_operation` directly. A Rust
-host also calls `lithe_core::execution::plan_launch_command` before spawning a
-Java process. It estimates the Windows command-line limit and moves oversized
-classpath/module-path options into argument-file text. The planner requires a
-Java executable and a known JDK feature version of at least 9, obtained through
-`java_feature_version_from_release`; other launches remain unchanged. It stops
-at the application target (class, JAR, or module), preserving all program arguments.
-Core owns the Unicode argument-file text and quoting. The Windows host encodes
-that text losslessly using the launcher's actual system code page, independently
-of the JDK feature version: JEP 400 does not make native launcher arguments UTF-8.
-An unrepresentable path is reported as an actionable failure, never substituted.
-The host also escapes backslash bytes introduced by multibyte encoding inside
-quoted values, since the native argument-file parser processes bytes.
-Every execution owns an exclusively created temporary file; partial writes and
-spawn failures clean it up, while successful launches retain it until that exact
-process exits. A replacement execution never shares its predecessor's file.
-Strings returned by the core are UTF-8 JSON allocated by Rust. The caller must
-release response strings with `lithe_core_free_string`.
+A Rust host calls `lithe_core::execute_json` and `lithe_core::cancel_operation`
+directly. It also calls `lithe_core::execution::plan_launch_command` before
+spawning a Java process. It estimates the Windows command-line limit and moves
+oversized classpath/module-path options into argument-file text. The planner
+requires a Java executable and a known JDK feature version of at least 9,
+obtained through `java_feature_version_from_release`; other launches remain
+unchanged. It stops at the application target (class, JAR, or module),
+preserving all program arguments. Core owns the Unicode argument-file text and
+quoting. The host encodes that text losslessly using the launcher's actual system
+code page, independently of the JDK feature version: JEP 400 does not make
+native launcher arguments UTF-8. An unrepresentable path is reported as an
+actionable failure, never substituted. The host also escapes backslash bytes
+introduced by multibyte encoding inside quoted values, since the native
+argument-file parser processes bytes. Every execution owns an exclusively
+created temporary file; partial writes and spawn failures clean it up, while
+successful launches retain it until that exact process exits. A replacement
+execution never shares its predecessor's file. Strings crossing the boundary are
+UTF-8 JSON allocated by Rust; in Rust they are ordinary `String`/`&str` and need
+no manual release.
 
 ## Envelope
 
