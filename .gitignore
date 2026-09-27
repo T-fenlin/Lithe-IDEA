@@ -1,18 +1,11 @@
-.DS_Store
-.build/
-rust/target/
-.swiftpm/
+# 仓库现在是纯 Rust 工程：Core 与数据库 crate 在 `rust/`，GPUI Kit 宿主在 `gpui/`。
+# Swift / Tauri / bun / Monaco 相关的忽略规则已随旧前端删除而移除。
 .idea/
-DerivedData/
-/windows/build*/
-dist/
+rust/target/
+gpui/target/
 .artifacts/
 shared/fixtures/projects/**/target/
-*.xcuserstate
-*.xcuserdata/
 design-qa-artifacts/
-docs/visual-qa/
 .reasonix/
 reasonix.toml
 .codex/
-/node_modules/
