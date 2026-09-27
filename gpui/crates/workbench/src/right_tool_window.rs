@@ -51,7 +51,8 @@
 //! | 关闭按钮 | 24×24、圆角 6.4 | `size="icon-xs"`（`notifications-tool-window.tsx:353`）、`rounded-md`（`ui/button.tsx:9`） | `size_6()` + `crate::rem_px(cx.theme().font_size, CLOSE_BUTTON_RADIUS_SPEC)`（`Button::rounded` 是固有方法，只吃 `Pixels`） |
 //!
 //! 颜色一律 `cx.theme()`；圆角走应用层具名规格常量，按运行时 rem 基准换算
-//! （Lithe 的圆角阶梯不在 gpui 档位上，见 `explorer_view.rs:87-93`）。
+//! （Lithe 的圆角阶梯不在 gpui 档位上，见 `explorer_view.rs` 的 `ROW_RADIUS` 文档 ——
+//! 原来这里指向 `explorer_view.rs:87-93`，该处随「项目」树头一起删除后移到 `:113-120`）。
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -74,7 +75,8 @@ use lithe_gpui_shared::tr;
 /// 关闭按钮圆角 6.4（`ui/button.tsx:9` 的 `rounded-md` = `--radius × 0.8`，`theme.css:7,134`）。
 ///
 /// 6.4 不是 gpui 的 rem 档位（`rounded_md()` 是 6），且 Lithe 的圆角阶梯一律走应用层具名常量
-/// —— 与 `explorer_view.rs:87-93` 的 `HEADER_BUTTON_RADIUS` 同一条理由。这一处挂在
+/// —— 与 `explorer_view.rs:113-120` 的 `ROW_RADIUS` 同一条理由（那里原本写的是
+/// `HEADER_BUTTON_RADIUS`，该常量 2026-09-27 随「项目」树头一起删除）。这一处挂在
 /// `Button::rounded` 上，它是**固有方法**（只吃 `Pixels`，`ButtonRounded` 只有 `From<Pixels>`），
 /// 所以调用点经 [`crate::rem_px`] 按运行时 rem 基准换算；本函数拿不到 `Window`，
 /// 基准取等价的 `cx.theme().font_size`（`Root::render` 每帧把它写进 `window.set_rem_size`）。
@@ -133,8 +135,12 @@ impl RightToolWindowView {
     /// 右活动栏下标 → 视图；`None` = 该下标没有对应视图。
     ///
     /// ⚠️ 下标必须与 [`crate::workspace::right_activity_items`] 的顺序一致
-    /// （0 扩展 / 1 通知 / 2 Maven / 3 Spring；前三个照 `plugin-activity-rail.tsx:31-67`，
-    /// Spring 是本侧新增的第四项）。
+    /// （0 扩展 / 1 通知 / 2 Maven；照 `plugin-activity-rail.tsx:31-67`）。
+    ///
+    /// `3 → Spring` 这一支**保留但活动栏不再产生下标 3**：2026-09-27 按维护者要求把右活动栏
+    /// 收敛为三项，Spring 视图本身（数据层 / 渲染 / 空态 / `--right-view spring` 探针）都留着，
+    /// 只是暂时没有活动栏入口。右栏点击本就按下标查表、越界什么都不做，所以保留这一支不会
+    /// 造成"映射到不存在的视图"。
     pub const fn from_rail_index(index: usize) -> Option<Self> {
         match index {
             0 => Some(Self::Extensions),
@@ -611,7 +617,8 @@ fn header(
         )
         .child(
             // `Button variant=ghost size=icon-xs`：24×24（`ui/button.tsx:27`）。
-            // `ghost()` 与 `explorer_view.rs` 的 `header_button` 同一取法（前景 `muted_foreground`）。
+            // `ghost()` 取法与原 `explorer_view.rs` 的 `header_button` 相同（前景 `muted_foreground`）
+            // —— 那个辅助函数 2026-09-27 随「项目」树头一起删除，这里只留"同一取法"的说明。
             Button::new("right-tool-window-close")
                 .ghost()
                 .icon(IconName::X)
@@ -635,7 +642,8 @@ fn header(
 ///
 /// ⚠️ 外面必须套一层 `v_flex().flex_1()`：`Empty` 的根是 `v_flex().flex_1()`
 /// （`gpui-component-0.6.6/src/empty.rs:63-82`），父级不是 flex 容器时它不生效
-/// （`explorer_view.rs:765-768` 记过同一个坑）。
+/// （`explorer_view.rs:722-724` 记过同一个坑；该行号随 2026-09-27 删除树头/搜索行而下移，
+/// 原来是 `:765-768`）。
 fn empty_state(view: RightToolWindowView) -> AnyElement {
     v_flex()
         .w_full()
@@ -672,8 +680,10 @@ mod tests {
             RightToolWindowView::from_rail_index(2),
             Some(RightToolWindowView::Maven)
         );
-        // 第 4 项是**本侧新增**的 Spring 视图（真机右栏没有它，Spring 能力留在语言服务里）；
-        // 它与 `workspace::right_activity_items()` 的顺序必须对齐。
+        // 下标 3 是**本侧新增**的 Spring 视图（真机右栏没有它，Spring 能力留在语言服务里）。
+        // ⚠️ 2026-09-27 起右活动栏**收敛为三项**（扩展 / 通知 / Maven），活动栏不再产生下标 3，
+        // 但这一支保留：Spring 视图（数据层 / 渲染 / 空态 / `--right-view spring` 探针）都还在，
+        // 只是暂时没有活动栏入口。右栏点击按下标查表、越界什么都不做，保留这一支不会出问题。
         assert_eq!(
             RightToolWindowView::from_rail_index(3),
             Some(RightToolWindowView::Spring)

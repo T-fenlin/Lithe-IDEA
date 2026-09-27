@@ -5,21 +5,28 @@
 //!
 //! ```text
 //! v_flex
-//! ├─ 标题栏 40            title-bar.tsx:337          40 = --lithe-title-bar-height（theme.css:118）
+//! ├─ 标题栏第一行 30      ui-mockup-idea.md §1.3    只有菜单栏；2026-09-27 由单行 40 拆成两行
+//! ├─ 标题栏第二行 38      ui-mockup-idea.md §1.3    项目下拉 / 分支项 / 运行控件 / 窗口三键
 //! ├─ 项目标签条 32        project-tab-bar.tsx:41     h-8
 //! ├─ 工作区 h_flex flex-1  main-layout.tsx:299       行尾 pr = 4（--lithe-workbench-gap）
 //! │  ├─ 左活动栏 38+4      main-sidebar.tsx:97,588   折叠态图标竖条
 //! │  ├─ 左侧栏 320        default-settings.ts:138   settings.sidebarWidth
-//! │  ├─ 中央列 flex-1      main-layout.tsx:312       v_flex[ 编辑器岛, 底部工具窗 ]
+//! │  ├─ 中央列 flex-1      main-layout.tsx:312       v_flex[ 编辑器岛, 底部工具窗 240 ]
 //! │  ├─ 右侧工具窗 400    default-settings.ts:139   settings.rightToolWindowWidth（**可收起**）
 //! │  └─ 右活动栏 38+4     plugin-activity-rail.tsx:34
 //! └─ 状态栏 24            footer.tsx:45-49          24 = --lithe-footer-height（theme.css:119）
 //! ```
 //!
+//! ⚠️ **顶部两行合计 68，比上一版的单行 40 净增 28**（两块高度与理由见
+//! `crate::title_bar` 的 `TITLE_BAR_MENU_ROW_HEIGHT_SPEC` / `TITLE_BAR_MAIN_ROW_HEIGHT_SPEC`）
+//! —— 这 28px 从底部工具窗里让出来，见下面的 320 → 240。
+//!
 //! **底部窗不横跨工作台**（维护者 2026-09-25 拍板）：Windows 默认
 //! `terminalWidthMode === "editor"`（`features/terminal/store.ts:29`），`BottomPane` 就是
-//! 中央列里编辑器岛的下一个 flex 兄弟（`main-layout.tsx:318-322`），默认高 **320**
+//! 中央列里编辑器岛的下一个 flex 兄弟（`main-layout.tsx:318-322`），真源默认高 **320**
 //! （`bottom-pane/bottom-pane.tsx:47`），上面还有一条 4px 的拖拽热区（同文件 `:222-232`）。
+//! **本侧取 240**（[`BOTTOM_PANE_HEIGHT_SPEC`]）：2026-09-27 标题栏改两行后从 320 收到 240，
+//! 保持"窗口总高不变"（40 → 30+38 净增的 28 正好是 320-240），否则项目树底部会被挤出窗口。
 //! 本版用普通 `v_flex` + 固定高度表达这个分栏，**不用** gpui-kit 的 Dock：Windows 的
 //! `MainLayout` 本身就是 flex + `ResizablePane`，没有 dock 系统，用 Dock 反而会多出
 //! 一条 Windows 没有的标签头。
@@ -84,11 +91,11 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Icon, Root, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
-    Render, SharedString, Styled as _, Window, div, rems,
+    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems,
 };
 
 use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
@@ -330,7 +337,7 @@ impl IntoGitIdentity for IdentityField {
 /// 的 `command_exists` 同一条口径：Windows 先试 `explorer.exe`，它不存在时
 /// `Command::spawn` 会返回 `NotFound`，再依次试 `open -R`（macOS）与 `xdg-open`（Linux））。
 ///
-/// ⚠️ 落点在这里（外壳）而不是编辑区，与 `gpui/crates/explorer/src/lib.rs:86-87`
+/// ⚠️ 落点在这里（外壳）而不是编辑区，与 `gpui/crates/explorer/src/lib.rs:93-94`
 /// 已登记的"起 `explorer.exe` 属平台层，不该由 UI 模块做"是同一条约束。
 fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     use std::process::{Command, Stdio};
@@ -417,7 +424,7 @@ const DEFAULT_TOP_ACTIVITY: usize = 0;
 // | --- | --- | --- |
 // | `sidebarWidth: 320`（`features/settings/config/default-settings.ts:138`） | 320 | `w_80()` |
 // | `--lithe-workbench-gap: 4px`（`styles/theme.css:125`） | 4 | `gap_1()` / `pr_1()` / `h_1()` |
-// | 底部工具窗默认高 320（`bottom-pane/bottom-pane.tsx:47`） | 320 | `h_80()` |
+// | 底部工具窗高 240（真源 320，`bottom-pane/bottom-pane.tsx:47`；2026-09-27 收窄） | 240 | `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)` |
 // | 区域占位块内边距 8 | 8 | `p_2()` |
 // | 占位块字号 13（`--ui-text-chrome`） | 13 | `text_sm()`（14px，见下） |
 //
@@ -442,6 +449,26 @@ const RIGHT_TOOL_WINDOW_WIDTH: f32 = 400.;
 /// 挂在 `div` 上，`Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写
 /// `rems(ISLAND_RADIUS_SPEC / 16.)`。
 const ISLAND_RADIUS_SPEC: f32 = 11.2;
+
+/// 底部工具窗（终端 / Git 提交记录 / 占位）的高度 **240**。
+///
+/// ## 为什么是 240，而不是真源的 320
+///
+/// Windows 真源是 **320**（`bottom-pane/bottom-pane.tsx:47`，`terminalWidthMode === "editor"`
+/// 下的默认高），本侧到 2026-09-27 之前也一直是 320。
+///
+/// 2026-09-27 标题栏按效果图口径改成**两行**（`crate::title_bar` 的
+/// `TITLE_BAR_MENU_ROW_HEIGHT_SPEC` = 30 与 `TITLE_BAR_MAIN_ROW_HEIGHT_SPEC` = 38，合计 68），
+/// 比上一版单行 40 **净增 28px**。窗口总高不变的前提下，这 28px 只能从别处让出来 ——
+/// 从底部工具窗让 320 → 240 是维护者这一轮的口径（否则中央列会超出窗口，
+/// 表现为项目树底部被挤出可视区）。
+///
+/// ⚠️ 与 `crate::title_bar` 那两个行高常量是**一对**：只改一处就会出现"窗口装不下"。
+///
+/// ⚠️ 240 不在 gpui 的 4px 档位上（档位里 56 → 224、64 → 256，没有 60，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1043-1052`），所以不用 `h_60()`（它不存在），
+/// 按《编码指南》写 `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)`（16px 基准下 = 240，且随字号缩放）。
+const BOTTOM_PANE_HEIGHT_SPEC: f32 = 240.;
 
 /// 底部工具窗当前显示哪一个内容。
 ///
@@ -1081,7 +1108,7 @@ impl ShellWorkspace {
                 pane.set_workspace_root(workspace_root);
                 pane.set_tab_menu_host_actions(TabMenuHostActions {
                     // 「在资源管理器中显示」：起系统文件管理器的定位进程 ——
-                    // 这与 `gpui/crates/explorer/src/lib.rs:86-87` 登记的"reveal 属平台层、
+                    // 这与 `gpui/crates/explorer/src/lib.rs:93-94` 登记的"reveal 属平台层、
                     // 不该由 UI 模块做"是同一条约束，所以落点在这里（外壳）而不是编辑区。
                     reveal: Arc::new(|path, _window, _cx| {
                         if let Err(error) = reveal_in_file_manager(path) {
@@ -1780,6 +1807,27 @@ impl ShellWorkspace {
         }
     }
 
+    /// 「切换活动侧栏」唯一的状态改动点（左边一条 rail + 它那块面板一起收放）。
+    ///
+    /// 为什么抽成方法：2026-09-27 起这条路有**两个入口** —— 菜单/键位那条
+    /// （[`MenuAction::ToggleActivitySidebar`]，`Ctrl+B`）与**编辑区左边界那个「收起侧栏」按钮**
+    /// （效果图口径「边框这里可以点击图标进行收起」）。两处必须同时改同一个 bool、打同一句诊断，
+    /// 写两份迟早漂移；所以状态改动只留这一处，两边都调它。
+    ///
+    /// 真源语义：`menu.toggleActivitySidebar`（`mod+b`）= VS Code 的 `toggleSidebarVisibility`，
+    /// 收起的是**活动栏 + 面板**整块（不是只收面板）。
+    fn toggle_left_sidebar(&mut self) {
+        self.left_sidebar_visible = !self.left_sidebar_visible;
+        diagnose_menu_run(
+            MenuAction::ToggleActivitySidebar,
+            if self.left_sidebar_visible {
+                "visible"
+            } else {
+                "hidden"
+            },
+        );
+    }
+
     /// 执行命令面板的第 `row` 条动作（`row` = [`ShellWorkspace::command_actions`] 的行号）。
     ///
     /// **每一条都真的改到状态**：不是日志占位。越界行号直接返回（不 panic、不静默落到某项）。
@@ -1903,15 +1951,10 @@ impl ShellWorkspace {
             MenuAction::ToggleActivitySidebar => {
                 // 真源 `menu.toggleActivitySidebar`（`mod+b`）= VS Code 的
                 // `toggleSidebarVisibility`：收起的是**活动栏 + 面板**整块。
-                self.left_sidebar_visible = !self.left_sidebar_visible;
-                diagnose_menu_run(
-                    action,
-                    if self.left_sidebar_visible {
-                        "visible"
-                    } else {
-                        "hidden"
-                    },
-                );
+                // 2026-09-27：编辑区左边界那个「收起侧栏」按钮也走这一条（同一个状态、同一句
+                // 诊断），不另立第二套状态 —— 契约与 `activity_bar.rs:61-67` 的
+                // 「左栏顶部组/底部组各自独立高亮」同源。
+                self.toggle_left_sidebar();
             }
             MenuAction::ToggleSecondarySidebar => {
                 // 「辅助侧栏」= 右侧那块 400px 工具窗（真源 `menu.toggleSecondarySidebar`）。
@@ -3571,11 +3614,13 @@ impl Render for ShellWorkspace {
             bottom_pane(content, cx)
         });
 
-        // ① 标题栏 40（含自绘窗口三键 56×40）+ 主菜单栏。
+        // ① 标题栏**两行** 30 + 38（第一行：菜单栏；第二行：项目下拉 / 分支项 /
+        // 运行控件 / 自绘窗口三键 56×38），行高见 `crate::title_bar` 的两个 `*_ROW_HEIGHT_SPEC`。
         //
-        // 菜单栏与 `drag_region` 是**兄弟节点**（菜单栏由 `title_bar` 插在拖拽区之前）：
-        // 祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单放进拖拽区就会变成"点菜单只拖窗口"
-        // （理由与源码行号见 `crate::title_bar` 的 `title_bar` 文档）。
+        // 两行里除各自的 `drag_region` 之外的可点元素都是它的**兄弟节点**（由 `title_bar`
+        // 分别挂在两个行容器上）：祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单 / 运行控件
+        // 放进拖拽区就会变成"点菜单只拖窗口"（理由与源码行号见 `crate::title_bar` 的
+        // `title_bar` 文档）。
         //
         // ⚠️ `cx.lease()` 是必须的：`menu_bar()` 要 `&mut App`（它要新造 `PopupMenu`
         // 实体），而 `cx` 在同一帧里还要用来画后面的区域；`lease` 把这一帧的 `&mut App`
@@ -3606,11 +3651,13 @@ impl Render for ShellWorkspace {
                     .editor
                     .update(cx, |pane, cx| pane.save_active(window, cx));
             }))
-            // ① 标题栏 40（含自绘窗口三键 56×40）+ 主菜单栏。
+            // ① 标题栏**两行** 30 + 38（第一行：菜单栏；第二行：项目下拉 / 分支项 /
+            // 运行控件 / 自绘窗口三键 56×38），行高见 `crate::title_bar` 的两个 `*_ROW_HEIGHT_SPEC`。
             //
-            // 菜单栏与 `drag_region` 是**兄弟节点**（菜单栏由 `title_bar` 插在拖拽区之前）：
-            // 祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单放进拖拽区就会变成"点菜单只拖窗口"
-            // （理由与源码行号见 `crate::title_bar` 的 `title_bar` 文档）。
+            // 两行里除各自的 `drag_region` 之外的可点元素都是它的**兄弟节点**（由 `title_bar`
+            // 分别挂在两个行容器上）：祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单 / 运行控件
+            // 放进拖拽区就会变成"点菜单只拖窗口"（理由与源码行号见 `crate::title_bar` 的
+            // `title_bar` 文档）。
             //
             // ⚠️ `cx.lease()` 是必须的：`menu_bar()` 要 `&mut App`（它要新造 `PopupMenu`
             // 实体），而 `cx` 在同一帧里还要用来画后面的区域；`lease` 把这一帧的 `&mut App`
@@ -3669,7 +3716,27 @@ impl Render for ShellWorkspace {
                             .flex_1()
                             .h_full()
                             .min_w_0()
-                            .child(editor_island(editor, cx))
+                            .child(editor_island(
+                                editor,
+                                left_sidebar_visible.then(|| {
+                                    // 监听器必须在这里构造：`cx.listener` 要 `Context<ShellWorkspace>`，
+                                    // 而 `collapse_sidebar_button` 只拿得到 `&App`（它只读主题）。
+                                    collapse_sidebar_button(
+                                        cx.listener(
+                                            |shell: &mut ShellWorkspace,
+                                             _event: &ClickEvent,
+                                             _window: &mut Window,
+                                             cx: &mut Context<Self>| {
+                                                shell.toggle_left_sidebar();
+                                                cx.notify();
+                                            },
+                                        ),
+                                        cx,
+                                    )
+                                    .into_any_element()
+                                }),
+                                cx,
+                            ))
                             .children(bottom),
                     )
                     // 右工具窗 400 —— **可收起**：真机整块 `ResizablePane` 的 `hidden` 由
@@ -3719,21 +3786,113 @@ fn side_pane(outer: Div, content: impl IntoElement, cx: &App) -> impl IntoElemen
         .child(content)
 }
 
-/// 中央编辑器岛：`rounded-xl border-l bg-background`（`main-layout.tsx:313`）。
-fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
+/// 编辑区左边界那个「收起侧栏」按钮（效果图口径：IDEA 在编辑区左边缘贴一个可点的小按钮，
+/// 点一下收起左侧栏）。
+///
+/// ## 位置与为什么这么画
+///
+/// - 绝对定位贴在编辑器岛的左边界内侧（`left_1()` / 垂直 `top_1()`），**不占布局宽度**：
+///   编辑器正文的行号列不能被它挤动，所以只有"浮在上面"这一条路；
+/// - 岛自己的 `overflow_hidden` 会给按钮沿岛圆角裁边 —— 这是有意的（贴在边界上更整齐）；
+/// - gpui 0.6.6 没有 z-index，叠放靠绘制顺序，所以它必须是 [`editor_island`] 的**最后一个**
+///   child（见那个函数的文档）。
+///
+/// ## 24×24 与图标
+///
+/// 尺寸取 gpui 档位上的 `size_6()`（24）—— 与标题栏、右工具窗口关闭按钮同一档（`ui/button.tsx:27`
+/// 的 `icon-xs`），不发明新刻度。图标用**已有的** `IconName::ChevronLeft`（Lucide，
+/// `menu_bar.rs:1321` 已在使用），**不新增任何图标资源**（维护者 2026-09-27 口径：
+/// 图标保持原来的单色、本轮不动图标）。
+///
+/// ## 为什么是普通 `div` + hover 而不是 gpui-kit 的 `Button`
+///
+/// 与 [`crate::title_bar`] 的运行控件同一取法（`title_bar.rs:516-549`）：`Button` 的 ghost 变体
+/// 自带一组 `icon-xs` 内边距与圆角，要覆盖成这里的圆角反而得绕 `Button::rounded(Pixels)`；
+/// 自绘 `div` 能直接用 rem helper，也与标题栏那两个控件保持同一种观感与代码形状。
+/// 圆角取 `cx.theme().radius`（不写裸值）。
+///
+/// ## 点击行为与那两行"防回归"
+///
+/// `toggle` 由调用方用 `cx.listener(..)` 构造好传进来 —— 这里拿的是 `&App`，构造不了监听器；
+/// 而状态改动落在 [`ShellWorkspace::toggle_left_sidebar`]，与菜单「视图 → 切换活动侧栏」（`Ctrl+B`）
+/// **同一处状态、同一句诊断**，两处各写一份迟早漂移。
+///
+/// `window.prevent_default()` + `cx.stop_propagation()` 与项目下拉 / 分支项 / 运行控件逐字相同：
+/// 它此刻**不在**任何 `Drag` 命中区里（见 [`editor_island`] 的文档），这两行挡的是
+/// "将来有人把它挪进拖拽区"这类回归，**不是**兄弟关系的替代品。
+fn collapse_sidebar_button(
+    toggle: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> impl IntoElement {
+    let theme = cx.theme();
+    // 先按值取出来再进闭包：`cx.theme()` 借 `cx`，而 `.hover(..)` 的闭包要 `'static`。
+    let idle = theme.muted_foreground;
+    let hover_bg = theme.accent;
+    let hover_fg = theme.foreground;
+    let radius = theme.radius;
+
     div()
+        .absolute()
+        .left_1()
+        .top_1()
+        .child(
+            // 必须有 `id`：hover 态要元素状态（`gpui-pre-0.3.6/src/elements/div.rs:2844-2849`）。
+            div()
+                .id("editor-collapse-sidebar")
+                .flex()
+                .flex_shrink_0()
+                .items_center()
+                .justify_center()
+                .size_6()
+                .rounded(radius)
+                .text_color(idle)
+                .cursor_pointer()
+                .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
+                .on_mouse_down(gpui_kit::MouseButton::Left, |_event, window, cx| {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                })
+                .on_click(move |event, window, cx| toggle(event, window, cx))
+                // 无障碍名 = 它复用的那一条菜单文案（图标按钮没有可见文字，必须给名字）。
+                .aria_label(tr("lithe.menu.toggleActivitySidebar"))
+                // 图标 14×14：`Sizable::small()` → `size_3p5()`（与窗口三键同一处换算）。
+                .child(Icon::new(IconName::ChevronLeft).small()),
+        )
+}
+
+/// 中央编辑器岛：`rounded-xl border-l bg-background`（`main-layout.tsx:313`）。
+///
+/// `collapse_sidebar_button` 是**编辑区左边界**那个「收起侧栏」按钮（效果图口径：IDEA 在编辑区
+/// 左边缘贴一个可点的小按钮）。它由调用方按「左侧栏当前是否可见」预先构造好传进来：
+/// 不可见时传 `None`，此时连占位都不留 —— 与本文件其它区域「`then(..)` 里没内容就不占位」
+/// 同一条口径（见 [`ShellWorkspace::render`] 的左右栏注释）。
+///
+/// 岛本身要 `.relative()` 才能让按钮绝对定位贴在左边界上（gpui 0.6.6 没有 z-index，
+/// 叠放只由绘制顺序决定，所以按钮必须是岛的**后一个** child）。
+fn editor_island(
+    content: impl IntoElement,
+    collapse_sidebar_button: Option<AnyElement>,
+    cx: &App,
+) -> impl IntoElement {
+    div()
+        .relative()
         .w_full()
         .flex_1()
         .min_h_0()
+        .overflow_hidden()
         .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
         .border_1()
         .border_color(cx.theme().border)
         .bg(cx.theme().background)
         .child(content)
+        .children(collapse_sidebar_button)
 }
 
-/// 底部工具窗外框：默认 **320** 高，上面一条 **4px** 拖拽热区
-/// （`bottom-pane/bottom-pane.tsx:47,222-232`）。
+/// 底部工具窗外框：**240** 高（[`BOTTOM_PANE_HEIGHT_SPEC`]），上面一条 **4px** 拖拽热区
+/// （真源 `bottom-pane/bottom-pane.tsx:47,222-232` —— 真源那里是 320）。
+///
+/// ⚠️ **2026-09-27：标题栏改两行后从 320 收到 240，保持总高不变**（40 → 30 + 38 净增 28），
+/// 理由与"为什么和标题栏那两个行高常量是一对"写在 [`BOTTOM_PANE_HEIGHT_SPEC`] 上。
 ///
 /// 内容由调用方给（终端 / Git 提交记录 / 占位），与真机"底部窗只有一个、内容由
 /// `bottomPaneActiveTab` 切换"的结构一致。
@@ -3748,7 +3907,8 @@ fn bottom_pane(content: AnyElement, cx: &App) -> impl IntoElement {
         .child(
             div()
                 .w_full()
-                .h_80()
+                // 240 不在 4px 档位上（没有 `h_60()`），所以走 rems —— 见 [`BOTTOM_PANE_HEIGHT_SPEC`]。
+                .h(rems(BOTTOM_PANE_HEIGHT_SPEC / 16.))
                 .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
                 .border_1()
                 .border_color(cx.theme().border)
@@ -3839,6 +3999,29 @@ fn activity_items() -> Vec<ActivityItem> {
 /// `isMavenAvailable`），我们还没有 Maven 项目探测，先固定渲染三项；Maven 视图的空态
 /// 如实写"未检测到 Maven 项目"（`lithe.maven.notDetected`）。
 /// 右栏三项都没有 `bottom` 分组（Windows 的右栏是单列）。
+///
+/// ## 2026-09-27：按维护者要求**收敛为三项**，Spring 项从活动栏入口删掉
+///
+/// 本侧曾在这个列表末尾加过第四项 Spring
+/// （`ActivityItem::new(IconName::Leaf, tr("lithe.spring.title"))`）。维护者 2026-09-27 的定稿
+/// 是右栏**只留三项：扩展 / 通知 / Maven**（`gpui/docs/ui-mockup-idea.md` §1.3 的表格），
+/// 所以那一项从**活动栏入口**删掉 —— 上面那张表因此与真源 `plugin-activity-rail.tsx:31-67`
+/// 逐项相同。
+///
+/// ⚠️ **Spring 视图保留、暂无活动栏入口**：删的只是入口，不是能力。连带核对过三处，结论是
+/// "只删一行的入口，其余都不动"：
+///
+/// 1. [`RightToolWindowView::Spring`] 这个视图、`crate::spring` 的数据层、
+///    [`right_tool_window`] 里的 Spring 渲染分支与空态**全部保留**（`right_tool_window.rs`）；
+/// 2. **下标映射仍然自洽**：`RightToolWindowView::from_rail_index(0/1/2)` 分别映射到
+///    扩展 / 通知 / Maven，与上面这个列表的顺序一一对应；`from_rail_index(3)` 仍映射到 Spring，
+///    而活动栏**不再产生下标 3** —— 于是 Spring 只是"没有活动栏入口"，
+///    仍可由 `--right-view spring` 探针到达（[`ShellWorkspace::show_right_view_probe`]），
+///    它的下标映射单测（`right_tool_window.rs` 的 `rail_index_maps_to_view`）照旧成立、无需改；
+/// 3. 右栏的点击分流（[`ShellWorkspace::is_right_activity_active`]、`on_select_right_activity`）
+///    本来就按"下标 → 视图"查表，越界下标什么都不做，所以少一项不会让某个下标静默落到别的视图上。
+///
+/// **删除一行**这件事没有制造出"映射到不存在的视图"或"视图永远映射不到"的死角。
 fn right_activity_items() -> Vec<ActivityItem> {
     vec![
         // ⚠️ 保持 Lucide：真机 `PuzzlePieceIcon` 经 `Nucleo` 代理解析到
@@ -3854,9 +4037,6 @@ fn right_activity_items() -> Vec<ActivityItem> {
         // （注意：Maven **文件类型**图标是有真源的 —— `icon-themes/idea` 的
         // `pom.xml` → `icons/expui/fileTypes/maven.svg`，所以文件树里 `pom.xml` 是真源。）
         ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
-        // Spring（**本侧新增加的第四项**）：真机右栏没有这一项（Spring 能力留在语言服务里），
-        // 图标取语义最近的 Lucide `leaf`（真源 `spring-icon.tsx` 是内联品牌 path，没有 SVG 文件）。
-        ActivityItem::new(IconName::Leaf, tr("lithe.spring.title")),
     ]
 }
 
