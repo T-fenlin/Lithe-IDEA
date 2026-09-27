@@ -38,30 +38,20 @@ rust_diff_is_comment_only() {
     [[ "$saw_change" == true ]]
 }
 
-swift=false
-plugins=false
-swift_database=false
+# 旧前端（`macos/`、`windows/`）删除后，剩下的验证 lane 只有 Rust Core、数据库 crate
+# 与 GPUI 宿主。`swift` / `plugins` / `swift_database` / `macos_release` / `windows` /
+# `windows_rust` / `java_jdt` / `git_validation` 及其模式已随对应工作流一并移除：
+# 留着它们会让 `*)` fallback 在删目录的改动上点亮不存在的 lane。
 rust_core=false
 rust_database=false
-macos_release=false
-windows=false
-windows_rust=false
-java_jdt=false
+gpui=false
 rust_comments=false
 metadata=false
-git_validation=false
 
 enable_all_validation() {
-    swift=true
-    plugins=true
-    swift_database=true
     rust_core=true
     rust_database=true
-    macos_release=true
-    windows=true
-    windows_rust=true
-    java_jdt=true
-    git_validation=true
+    gpui=true
 }
 
 while IFS=$'\t' read -r status first_path _; do
@@ -76,15 +66,8 @@ while IFS=$'\t' read -r status first_path _; do
     lowercase_path="${path,,}"
 
     case "$lowercase_path" in
-        .github/workflows/ci-windows.yml|third_party/jdtls/*|third_party/jdk/*|scripts/prepare-jdtls.*|scripts/prepare-jdk.*|rust/lithe-core/src/lsp/interface/engine.rs|rust/lithe-core/src/lsp/interface/engine_real_jdt_tests.rs|rust/lithe-core/src/lsp/languages/java*|rust/lithe-core/src/lsp/languages/jdt*|macos/*java*|windows/*java*)
-            java_jdt=true
-            ;;
-    esac
-
-    case "$lowercase_path" in
         *.md|*.mdx)
-            # Text-only documentation still receives git diff validation in the
-            # workflow, but does not reserve a macOS or Windows runner.
+            # Text-only documentation does not reserve a runner.
             ;;
         casks/*|scripts/update-homebrew-cask.rb)
             metadata=true
@@ -93,300 +76,79 @@ while IFS=$'\t' read -r status first_path _; do
             # A classifier change must exercise every lane that it can select.
             enable_all_validation
             ;;
-        .github/workflows/ci-macos.yml)
-            swift=true
-            rust_core=true
-            macos_release=true
-            git_validation=true
-            ;;
-        .github/workflows/ci-plugins.yml)
-            plugins=true
-            ;;
         .github/workflows/ci-database.yml)
-            swift_database=true
             rust_database=true
             ;;
-        .github/workflows/ci-windows.yml)
-            windows=true
-            windows_rust=true
-            ;;
-        .github/workflows/release-macos.yml|.github/workflows/release-preview-macos.yml)
-            macos_release=true
-            ;;
-        .github/workflows/release-windows.yml|.github/workflows/release-preview-windows.yml)
-            windows=true
-            ;;
-        .github/actions/prepare-macos-dependency-cache/*|.github/actions/setup-macos-toolchain/*|.swift-version)
-            swift=true
-            plugins=true
-            swift_database=true
+        .github/workflows/ci-rust.yml)
             rust_core=true
-            macos_release=true
-            git_validation=true
-            ;;
-        .agents/skills/write-stable-tests/scripts/*)
-            # Test policy and timing infrastructure can select or reject every
-            # product test lane, but does not affect release packaging.
-            swift=true
-            plugins=true
-            swift_database=true
-            rust_core=true
-            windows=true
-            windows_rust=true
-            git_validation=true
+            gpui=true
             ;;
         .github/*|docs/*|.agents/*|.idea/*|.gitignore|license)
             ;;
-        package.swift|package.resolved)
-            # SwiftPM graph changes can affect the main suite and both isolated
-            # module suites even when no source path changes.
-            swift=true
-            plugins=true
-            swift_database=true
-            macos_release=true
-            git_validation=true
-            ;;
-        plugins/mac/*|macos/tests/litheofficialpluginverifier/*)
-            plugins=true
-            ;;
-        plugins/win/*)
-            # Windows plugin packages may contain frontend and native host code.
-            # Until their per-language layout is narrower, validate both lanes.
-            windows=true
-            windows_rust=true
-            ;;
-        macos/tests/lithetests/nativepluginloadertests.swift|macos/tests/lithetests/pluginmanagementpresentationtests.swift|macos/tests/lithetests/pluginmanagertests.swift|macos/tests/lithetests/pluginpackagestoretests.swift|macos/tests/lithetests/linuxdoanonymouswebsessiontests.swift|macos/tests/lithetests/linuxdocommunityformattingtests.swift|macos/tests/lithetests/macexternalauthorizationcallbackroutertests.swift|macos/tests/lithetests/webkitintegrationtests.swift)
-            plugins=true
-            ;;
-        macos/sources/lithe/litheapp.swift|macos/sources/lithe/application/features/pluginmanagement.swift|macos/sources/lithe/core/language/pluginlanguageprovidercatalogsource.swift|macos/sources/lithe/models/appmodel/appmodel+pluginmanagement.swift|macos/sources/lithe/platform/macos/community/*|macos/sources/lithe/platform/macos/plugins/*|macos/sources/lithe/views/app/pluginmanagementview.swift|macos/sources/lithe/views/community/*|macos/sources/lithe/views/workbench/workbenchmoduleuicomposition.swift|macos/sources/litheapplicationkernel/plugins/*|macos/sources/lithemoduleapi/catalog/bundledlanguageplugincatalog.swift|macos/sources/lithemoduleapi/plugins/*)
-            # Host-side plugin APIs are product code, while their focused
-            # behavior is owned by the plugin lane.
-            swift=true
-            plugins=true
-            macos_release=true
-            ;;
-        macos/tests/litheapplicationkerneltests/moduleruntimetests.swift|macos/tests/lithelanguageintelligencemoduletests/languageintelligencemoduletests.swift|macos/tests/lithetests/applocalizationtests.swift)
-            swift=true
-            plugins=true
-            ;;
-        macos/sources/lithedatabasemodule/*|macos/tests/lithedatabasemoduletests/*)
-            swift_database=true
-            if [[ "$lowercase_path" == macos/sources/* ]]; then
-                macos_release=true
-            fi
-            ;;
-        macos/sources/lithe/platform/macos/persistence/macdatabaserecoverystore.swift|macos/sources/lithe/platform/macos/process/macdatabasesidecarlocator.swift|macos/sources/lithe/platform/macos/storage/macdatabaseadapters.swift|macos/sources/lithe/theme/databasebrandicon.swift|macos/sources/lithe/views/database/*|macos/resources/databaseicons/*)
-            swift_database=true
-            macos_release=true
-            ;;
-        macos/sources/lithe/models/appmodel/appmodel.swift)
-            # This is a shared app composition point for the database module.
-            swift=true
-            swift_database=true
-            macos_release=true
-            ;;
-        macos/sources/lithe/platform/macos/macservicecontainer.swift)
-            # The service container composes both database and plugin runtime dependencies.
-            swift=true
-            plugins=true
-            swift_database=true
-            macos_release=true
-            ;;
-        macos/sources/lithe/views/workbench/workbenchview.swift)
-            # The root workbench composes both database and plugin-owned UI.
-            swift=true
-            plugins=true
-            swift_database=true
-            macos_release=true
-            ;;
-        macos/sources/lithemoduleapi/catalog/builtinmodulecatalog.swift)
-            swift=true
-            plugins=true
-            swift_database=true
-            macos_release=true
-            ;;
-        macos/sources/lithemoduleapi/*|macos/sources/litheapplicationkernel/*|macos/sources/lithecorecontracts/*)
-            # These contracts and runtime primitives are direct dependencies of
-            # both isolated Swift module suites.
-            swift=true
-            plugins=true
-            swift_database=true
-            macos_release=true
-            ;;
-        macos/sources/lithelanguageintelligencemodule/*)
-            # Go support is an official plugin and depends on this runtime.
-            swift=true
-            plugins=true
-            macos_release=true
-            ;;
-        macos/tests/lithetests/lithecorelogictests.swift)
-            # This legacy mixed suite still contains the database integration
-            # tests; both filtered lanes must run until the suite is separated.
-            swift=true
-            swift_database=true
-            ;;
-        macos/resources/*.lproj/*)
-            # Localization files contain both database and plugin-facing copy.
-            swift=true
-            plugins=true
-            swift_database=true
-            macos_release=true
-            ;;
-        macos/sources/litherustcore/*)
-            rust_core=true
-            swift=true
-            macos_release=true
-            ;;
-        macos/sources/lithe/core/rust/rustgit*|macos/sources/lithe/core/rust/rustcorebridge+git*)
-            swift=true
-            macos_release=true
-            git_validation=true
-            ;;
-        macos/sources/lithe/core/rust/*)
-            # Swift bridge changes affect the release linkage boundary.
-            swift=true
-            macos_release=true
-            ;;
-        macos/sources/lithegitmodule/*|macos/sources/lithe/application/composition/gitmodulecoordinator.swift|macos/sources/lithe/models/appmodel/appmodel+git*|macos/sources/lithe/models/bridges/gitmodulebridges.swift|macos/sources/lithe/platform/macos/storage/macgit*|macos/sources/lithe/views/git/*)
-            swift=true
-            git_validation=true
-            ;;
-        macos/sources/*)
-            # Swift tests compile the complete Lithe target. Ordinary product
-            # source changes do not also need two complete PR installer builds.
-            swift=true
-            ;;
-        macos/resources/*)
-            # Resource assembly is observable only in the packaged app, so keep
-            # both architecture package checks for these changes.
-            swift=true
-            macos_release=true
-            ;;
-        macos/tests/lithegitperformancetests/*|macos/tests/lithegitperformancesupport/*|macos/tests/lithegitperformanceverifier/*|macos/tests/lithetests/gitstatusobservationtests.swift)
-            swift=true
-            git_validation=true
-            ;;
-        macos/tests/*)
-            swift=true
-            ;;
         rust/lithe-core/src/*.rs)
             # Comment-only Rust Core edits use the documentation verifier but
-            # skip unit tests and integrated release builds.
+            # skip unit tests.
             if [[ "$status" == M* ]] && rust_diff_is_comment_only "$path"; then
                 rust_comments=true
             else
                 rust_core=true
-                if [[ "$lowercase_path" != rust/lithe-core/src/tests/* && "$lowercase_path" != */tests.rs ]]; then
-                    macos_release=true
-                    windows=true
-                    windows_rust=true
-                fi
             fi
             ;;
-        rust/lithe-core/tests/*)
+        rust/lithe-core/tests/*|rust/lithe-core/cargo.toml|rust/lithe-core/include/*)
             rust_core=true
-            ;;
-        rust/lithe-core/cargo.toml|rust/lithe-core/include/*)
-            rust_core=true
-            macos_release=true
-            windows=true
-            windows_rust=true
             ;;
         rust/cargo.toml|rust/cargo.lock)
             rust_core=true
             rust_database=true
-            macos_release=true
-            windows=true
-            windows_rust=true
             ;;
         rust/lithe-db-mcp/*|rust/lithe-db-sidecar/*)
             rust_database=true
-            # Database helpers are shipped as macOS executables, so Linux crate
-            # tests are not sufficient to validate their production target.
-            macos_release=true
             ;;
         rust/*)
             # Unknown Rust workspace paths fail closed across all Rust-backed
-            # products because workspace configuration can affect every crate.
+            # crates because workspace configuration can affect every crate.
             rust_core=true
             rust_database=true
-            macos_release=true
-            windows=true
-            windows_rust=true
             ;;
         shared/*)
-            # Non-Markdown shared contracts and fixtures are compatibility
-            # surfaces consumed by Swift, Rust Core, and the Windows product.
-            swift=true
+            # Shared contracts and fixtures are compatibility surfaces consumed by
+            # Rust Core and by the gpui host.
             rust_core=true
-            windows=true
-            windows_rust=true
+            gpui=true
             ;;
-        windows/tauri/src-tauri/*.rs|windows/tauri/src-tauri/cargo.toml|windows/tauri/src-tauri/cargo.lock|windows/tauri/crates/*)
-            windows=true
-            windows_rust=true
-            ;;
-        windows/*)
-            windows=true
-            ;;
-        scripts/test-macos.sh|scripts/test-git-performance-baseline.sh|scripts/run-git-performance-verifier.mjs)
-            swift=true
-            plugins=true
-            swift_database=true
-            git_validation=true
-            ;;
-        scripts/package-macos-localizations.sh)
-            # Localization assembly has Swift regression tests and is shared by
-            # release, preview, and performance bundles; it cannot affect Windows.
-            swift=true
-            macos_release=true
-            ;;
-        scripts/measure-macos-performance-baseline.sh)
-            # The baseline harness assembles a macOS release app, without changing
-            # shared Core behavior or the isolated database/plugin test lanes.
-            macos_release=true
-            ;;
-        scripts/verify-official-plugins.sh|scripts/build-official-plugins.sh)
-            plugins=true
-            ;;
-        scripts/verify-rust-core.sh|scripts/verify-rust-core-comments.sh|scripts/verify-rust-core-layout.sh|scripts/build-rust-core.sh|scripts/rustcorebridgeverification.swift)
+        gpui/crates/*/src/*|gpui/crates/*/build.rs|gpui/crates/*/cargo.toml)
+            # The gpui host drives Rust Core through the command envelope, so a
+            # shell change is validated together with the core contract.
+            gpui=true
             rust_core=true
-            macos_release=true
             ;;
-        scripts/build-database-mcp.sh|scripts/build-database-sidecar.sh)
-            rust_database=true
-            macos_release=true
+        gpui/tools/*)
+            # Locale and icon generators are reproducible-artifact checks.
+            gpui=true
             ;;
-        scripts/database-sidecar-smoke.sh|scripts/database-validation-smoke.sh)
+        gpui/assets/*|gpui/themes/*|gpui/crates/*/locales/*|gpui/crates/*/src/icons/*)
+            gpui=true
+            ;;
+        gpui/cargo.toml|gpui/cargo.lock)
+            gpui=true
+            ;;
+        gpui/*)
+            gpui=true
+            ;;
+        scripts/verify-rust-core.sh|scripts/verify-rust-core-comments.sh|scripts/verify-rust-core-layout.sh|scripts/verify-shared-contracts.sh|scripts/verify-java-semantic-ownership.mjs|scripts/test-rust-core-comments.mjs|scripts/create-git-graph-fixture.sh)
+            rust_core=true
+            gpui=true
+            ;;
+        scripts/build-database-mcp.sh|scripts/build-database-sidecar.sh|scripts/database-sidecar-smoke.sh|scripts/database-validation-smoke.sh)
             rust_database=true
             ;;
-        scripts/*sparkle*|scripts/import-macos-signing.sh|scripts/build-macos.sh|scripts/verify-macos-app-build-safety.sh|scripts/verify-macos-package.sh|scripts/macos13sdkcompatibility.h|scripts/ld-macos13-compat.sh|scripts/package-app.sh|scripts/preview.sh|scripts/stamp-macos-app-build-info.sh|scripts/create-dmg.sh|scripts/create-macos-update-manifest.rb|scripts/test-macos-update-manifest.rb|scripts/prepare-jdtls.sh|scripts/prepare-jdk.sh)
-            macos_release=true
+        scripts/verify-test-stability.sh|scripts/verify-agent-notes.sh)
+            enable_all_validation
             ;;
         scripts/verify-download-cache.mjs|scripts/test-verify-download-cache.mjs)
-            swift=true
-            plugins=true
-            swift_database=true
-            rust_core=true
-            macos_release=true
-            windows=true
-            windows_rust=true
+            enable_all_validation
             ;;
-        scripts/validate-windows-build-caches.ps1|scripts/invoke-cargo-with-cache-fallback.ps1)
-            windows=true
-            windows_rust=true
-            ;;
-        scripts/validate-macos-dependency-caches.sh|scripts/prepare-macos-dependencies.sh)
-            swift=true
-            plugins=true
-            swift_database=true
-            rust_core=true
-            macos_release=true
-            ;;
-        scripts/build-windows.ps1|scripts/verify-windows-boundaries.ps1|scripts/verify-windows-boundaries.sh|scripts/prepare-jdtls.ps1|scripts/prepare-jdk.ps1|scripts/package-windows.ps1|scripts/install-windows-frontend-dependencies.ps1|scripts/invoke-windows-tauri-build.ps1|scripts/create-windows-updater-manifest.ps1|scripts/test-windows-updater-manifest.ps1)
-            windows=true
-            ;;
-        scripts/prepare-lithe-pr-review.mjs|scripts/test-prepare-lithe-pr-review.mjs|scripts/run-lithe-codex-with-timeout.sh|scripts/update-repo-charts.py)
+        scripts/prepare-lithe-pr-review.mjs|scripts/test-prepare-lithe-pr-review.mjs|scripts/update-repo-charts.py)
             ;;
         infra/docker/*)
             rust_database=true
@@ -399,15 +161,8 @@ while IFS=$'\t' read -r status first_path _; do
     esac
 done < <(git diff --name-status --find-renames "$BASE_REVISION" "$HEAD_REVISION")
 
-printf 'swift=%s\n' "$swift"
-printf 'plugins=%s\n' "$plugins"
-printf 'swift_database=%s\n' "$swift_database"
 printf 'rust_core=%s\n' "$rust_core"
 printf 'rust_database=%s\n' "$rust_database"
-printf 'macos_release=%s\n' "$macos_release"
-printf 'windows=%s\n' "$windows"
-printf 'windows_rust=%s\n' "$windows_rust"
-printf 'java_jdt=%s\n' "$java_jdt"
+printf 'gpui=%s\n' "$gpui"
 printf 'rust_comments=%s\n' "$rust_comments"
 printf 'metadata=%s\n' "$metadata"
-printf 'git_validation=%s\n' "$git_validation"
