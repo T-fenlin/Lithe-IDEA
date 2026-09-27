@@ -125,6 +125,7 @@ pub mod branch_panel;
 pub mod command_palette;
 pub mod maven;
 pub mod menu_bar;
+pub mod notifications;
 pub mod project_menu;
 pub mod spring;
 pub mod spring_paths;

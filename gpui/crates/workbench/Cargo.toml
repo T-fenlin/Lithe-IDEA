@@ -15,6 +15,10 @@ lithe-gpui-git = { path = "../git" }
 lithe-gpui-java = { path = "../java" }
 # 设置：活动栏「设置」项打开对话框（`workspace.rs` 的 `SETTINGS_ACTIVITY_IX`），
 # 状态栏按 `showStatusBar` 条件渲染。方向是 workbench → settings，settings 不反向依赖。
+# 通知中心的状态层（`src/notifications.rs`）。方向是 workbench → notify，
+# 而 `git` / `editor` / `java` 也在 notify 之上（它们要发通知，见 notify 的模块文档
+# 「为什么独立成一个 crate」的两条约束）。notify 不反向依赖任何 crate。
+lithe-gpui-notify = { path = "../notify" }
 lithe-gpui-settings = { path = "../settings" }
 lithe-gpui-shared = { path = "../shared" }
 lithe-gpui-terminal = { path = "../terminal" }

@@ -69,11 +69,12 @@
 use std::rc::Rc;
 
 use gpui_kit::assets::IconName;
+use gpui_kit::component::badge::Badge;
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Placement, Selectable as _};
 use gpui_kit::{
-    AnyElement, App, ClickEvent, ElementId, IntoElement, Length, ParentElement as _, Pixels,
-    SharedString, Styled as _, Window, div, rems,
+    AnyElement, App, ClickEvent, ElementId, Hsla, IntoElement, Length, ParentElement as _,
+    Pixels, SharedString, Styled as _, Window, div, rems,
 };
 use lithe_gpui_shared::icons::idea;
 
@@ -183,6 +184,17 @@ pub struct ActivityItem {
     /// （`windows/tauri/src/features/layout/config/item-order.ts:12-19`），
     /// 顶部组只剩 files / git / search（`sidebar-pane-selector.tsx:311-319`）。
     bottom: bool,
+    /// 右上角角点的颜色（`None` = 不画）。
+    ///
+    /// 只有铃铛用得上（`workspace::right_activity_items()` 里那一个），所以做成"一个可选
+    /// 颜色"而不是"一个通知专用字段" —— 这样 `activity_bar` 不必知道通知中心存在。
+    ///
+    /// **颜色而不是数字**：IDEA 的铃铛角标是**一个点**，「蓝点 = 常规事件、红点 = 错误」
+    /// （<https://www.jetbrains.com/help/idea/notifications.html>）。不画数字是因为数字要
+    /// 一整套 read/unread 状态机，而那套状态机唯一的实际效果就是
+    /// `gpui/docs/archive/ui-map-macos.md:96` 点名的缺陷（未读红点形同虚设）。决策见
+    /// `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`。
+    badge: Option<Hsla>,
 }
 
 impl ActivityItem {
@@ -192,6 +204,7 @@ impl ActivityItem {
             icon: ActivityIcon::Lucide(icon),
             label: label.into(),
             bottom: false,
+            badge: None,
         }
     }
 
@@ -204,6 +217,7 @@ impl ActivityItem {
             icon: ActivityIcon::Idea(icon),
             label: label.into(),
             bottom: false,
+            badge: None,
         }
     }
 
@@ -211,6 +225,17 @@ impl ActivityItem {
     /// 按《编码指南》词汇表用形容词式 `bottom`）。
     pub fn bottom(mut self, bottom: bool) -> Self {
         self.bottom = bottom;
+        self
+    }
+
+    /// 在这一项右上角画一个角点（`color` = 主题色；传 `None` 的那支由调用方自己决定要不要画）。
+    ///
+    /// 画法用 gpui-kit 的 `Badge`：它的根是 `div().relative()`，角点自己绝对定位到
+    /// `top_0().right_0()`（`gpui-component-0.6.6/src/badge.rs:114-163`），所以**必须由
+    /// `Badge` 包住 `Button`**，不能反过来把 `Badge` 塞进 `Button` 的 children ——
+    /// `Button` 的子元素落在 `h_flex().overflow_hidden()` 里（`button.rs:698-733`），会被裁掉。
+    pub fn badge(mut self, color: Hsla) -> Self {
+        self.badge = Some(color);
         self
     }
 }
@@ -362,7 +387,7 @@ fn item_button(
     on_select: Rc<dyn Fn(usize, &ClickEvent, &mut Window, &mut App)>,
     rem: Pixels,
     cx: &App,
-) -> Button {
+) -> AnyElement {
     let theme = cx.theme();
     let accent = theme.accent;
 
@@ -398,7 +423,7 @@ fn item_button(
         };
 
     let is_active = is_active(index);
-    Button::new(ElementId::named_usize(id_name, index))
+    let button = Button::new(ElementId::named_usize(id_name, index))
         .custom(
             ButtonCustomVariant::new(cx)
                 .foreground(foreground)
@@ -416,5 +441,20 @@ fn item_button(
         .rounded(radius)
         .w(width)
         .h(height)
-        .on_click(move |event, window, cx| on_select(index, event, window, cx))
+        .on_click(move |event, window, cx| on_select(index, event, window, cx));
+
+    // 无角点时直接给 `Button`，不套一层盒子 —— 免得给另外几个项也白加一层。
+    //
+    // 有角点时是 **`Badge` 包住 `Button`**，不能反过来：`Badge` 的根是 `div().relative()`
+    // 而角点自己绝对定位到 `top_0().right_0()`（`badge.rs:114-163`）；而 `Button` 的子元素
+    // 落在 `h_flex().overflow_hidden()` 里（`button.rs:698-733`），塞进去会被裁掉。
+    match item.badge {
+        None => button.into_any_element(),
+        Some(color) => Badge::new()
+            .dot()
+            // `Badge` 的默认色是 `theme().red`（`badge.rs:125`），所以必须显式给色。
+            .color(color)
+            .child(button)
+            .into_any_element(),
+    }
 }

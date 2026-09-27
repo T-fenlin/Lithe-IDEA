@@ -89,13 +89,16 @@
 //! 零处引用，`footer.tsx` 也没有用它——所以本模块不画竖线（`01-shell.md:101` 把它列成
 //! "标题栏/状态栏共用原语"，与源码不符）。
 
+use std::rc::Rc;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::base::h_flex;
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    AnyElement, App, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
-    Styled as _, Window, prelude::FluentBuilder as _, rems,
+    AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window, prelude::FluentBuilder as _,
+    rems,
 };
 
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
@@ -157,6 +160,17 @@ pub struct StatusEntry {
     lucide: Option<IconName>,
     /// 条目文字；中文一律逐字取 `windows/tauri/src/i18n/locale.ts` 的原文，不要自己编。
     text: SharedString,
+    /// 点击回调（`None` = 纯展示条目）。
+    ///
+    /// 2026-09-27 为通知中心加的：那条「点开通知中心」的入口就是一个可点的前导项
+    /// （IDEA 的口径是状态栏那条消息**就是**通知本身，点它打开工具窗，见
+    /// `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`）。
+    ///
+    /// 这正是本模块文档第 5 条预言的那个扩展点（"要还原差异需给 `StatusEntry` 加一个
+    /// `interactive: bool`（或 `on_click`）"）—— 选了 `on_click` 而不是布尔，因为
+    /// Windows 那边是 `FooterStatusChip`（可点）与 `FooterStatusLabel`（纯展示）两种
+    /// 组件，带回调就顺便把两者区分开了。
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
 }
 
 impl StatusEntry {
@@ -166,7 +180,17 @@ impl StatusEntry {
             icon: None,
             lucide: None,
             text: text.into(),
+            on_click: None,
         }
+    }
+
+    /// 让这一格可点。
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Rc::new(handler));
+        self
     }
 
     /// 带 Lucide 前导图标的条目（non-boolean builder 用 `with_` 前缀，《编码指南》词汇表）。
@@ -279,6 +303,7 @@ fn entry_group(
 fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
     let hover_bg = cx.theme().accent;
     let hover_fg = cx.theme().foreground;
+    let on_click = entry.on_click.clone();
 
     h_flex()
         .id(id)
@@ -295,6 +320,12 @@ fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
         .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
         .when_some(entry_icon(entry, cx), |this, icon| this.child(icon))
         .child(entry.text.clone())
+        // `on_click` 挂在 `StatefulInteractiveElement` 上，而这格已经有 `.id(..)`（变
+        // `Stateful<Div>`），所以能挂。`cursor_pointer` 只给可点的那格 —— 纯展示条目
+        // 保持默认指针，Windows 的 `FooterStatusLabel` 也是这样（`footer-status-chip.tsx:26-29`）。
+        .when_some(on_click, |this, handler| {
+            this.cursor_pointer().on_click(move |event, window, cx| handler(event, window, cx))
+        })
 }
 
 /// 条目要画的那个图标元素。

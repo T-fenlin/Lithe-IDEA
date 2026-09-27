@@ -1,6 +1,6 @@
 # 本文件由 gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：windows/tauri/src/i18n/locale.ts（含 ai-commit.ts 展开）
-# 另有 78 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 92 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8799,6 +8799,34 @@ lithe:
     zh-CN: "改回我的全局外观"
   gpui.workspaceConfigFailed:
     zh-CN: "建立工作区配置失败：{reason}"
+  notifications.core.invalidRequest:
+    zh-CN: "请求无效：{detail}"
+  notifications.core.workspaceNotFound:
+    zh-CN: "找不到工作区：{detail}"
+  notifications.core.permissionDenied:
+    zh-CN: "没有权限：{detail}"
+  notifications.core.notSupported:
+    zh-CN: "当前版本不支持这个操作：{detail}"
+  notifications.core.runtimeMissing:
+    zh-CN: "缺少运行时：{detail}"
+  notifications.core.processStartFailed:
+    zh-CN: "无法启动进程：{detail}"
+  notifications.core.processFailed:
+    zh-CN: "进程执行失败：{detail}"
+  notifications.core.parseFailed:
+    zh-CN: "无法解析结果：{detail}"
+  notifications.core.timedOut:
+    zh-CN: "操作超时：{detail}"
+  notifications.core.unknown:
+    zh-CN: "操作失败：{detail}"
+  notifications.justNow:
+    zh-CN: "刚刚"
+  notifications.minutesAgo:
+    zh-CN: "{count} 分钟前"
+  notifications.hoursAgo:
+    zh-CN: "{count} 小时前"
+  notifications.daysAgo:
+    zh-CN: "{count} 天前"
 
 gpui_component:
   Dialog.ok:

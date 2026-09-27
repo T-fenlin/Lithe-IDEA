@@ -3892,6 +3892,7 @@ version = "0.0.1"
 dependencies = [
  "gpui-kit",
  "lithe-gpui-java",
+ "lithe-gpui-notify",
  "lithe-gpui-shared",
  "lsp-types",
  "serde_json",
@@ -3922,6 +3923,14 @@ dependencies = [
  "lithe-gpui-shared",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "lithe-gpui-notify"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lithe-gpui-shared",
 ]
 
 [[package]]
@@ -3965,6 +3974,7 @@ dependencies = [
  "lithe-gpui-explorer",
  "lithe-gpui-git",
  "lithe-gpui-java",
+ "lithe-gpui-notify",
  "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-terminal",

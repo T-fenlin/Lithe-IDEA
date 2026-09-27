@@ -85,7 +85,7 @@ use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Duration;
+
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
@@ -93,7 +93,7 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
     Render, SharedString, Styled as _, Window, div, rems,
 };
@@ -259,11 +259,6 @@ pub(crate) fn resolve_project_open_destination(
     }
     None
 }
-
-/// 状态栏左侧临时消息的存活时间（毫秒）。
-///
-/// "几秒后自动消失"（规格 Q2）。4 秒：够读到一句话，又不至于一直占着状态栏。
-const STATUS_NOTICE_MS: u64 = 4_000;
 
 /// `--left-view` 的取值 → 左栏下标（**验证/诊断用**的解析，不是产品能力）。
 ///
@@ -1013,21 +1008,30 @@ pub struct ShellWorkspace {
     /// （`project-open-destination.ts:112-131`），所以勾上之后不立刻落盘，
     /// 由 [`ShellWorkspace::rebuild_project_window`] 在换根成功之后写。
     project_open_do_not_ask: Rc<Cell<bool>>,
-    /// 状态栏左侧的**临时消息**（规格 Q2/Q6：未接线的能力在这里给一句"尚未接入：缺 X"）。
+    /// 通知中心的**数据**（`lithe-gpui-notify::Store`）。
     ///
-    /// 为什么放在外壳而不是 `crate::status_bar`：状态栏是**无状态渲染函数**
-    /// （`status_bar` 的模块文档），条目由 [`ShellWorkspace::footer_left`] 每帧现算 ——
-    /// 所以"临时消息"自然就是外壳的一个字段 + 一条 [`STATUS_NOTICE_MS`] 后清掉它的任务。
-    status_notice: Option<SharedString>,
-    /// 临时消息的代数：定时器醒来时只有"自己那一代还是最新的"才清空。
+    /// 这是「消息发生过」的唯一落点：角落 toast（gpui-kit `component::Notification`）与状态栏
+    /// 那条 4 秒小字都已废掉。决策与被否方案见
+    /// `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`。
     ///
-    /// 没有它就会出现"后一条提示被前一条的定时器提前清掉"（4 秒内连开两次项目时可见）。
-    status_notice_generation: u64,
+    /// 为什么住在 `App` 的全局状态而不是本结构体的字段：换根会**重建整个外壳**，而
+    /// `.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md:73-77`
+    /// 已经把这条技术理由写死了 —— 异步回填时只保证外壳实体还活着，通知/对话框要求
+    /// 窗口与 `Root` 就位。store 挂在外壳上就会跟着换根一起没。
+    ///
+    /// 代价是它比外壳活得久，所以**换根必须显式清空**：见
+    /// [`ShellWorkspace::clear_notifications_on_root_swap`]，否则旧项目的通知会挂到新项目上。
+    notifications: Entity<lithe_gpui_notify::Store>,
+    /// 通知中心的**面板**（搜索 / 筛选 / 展开都在它自己身上，见 `crate::notifications`）。
+    ///
+    /// 刻意不做成 `right_tool_window` 的自由函数参数：面板要持有自己的视图状态，而
+    /// `ShellWorkspace` 已经 287KB 了。
+    notification_panel: Entity<crate::notifications::NotificationPanel>,
     /// **建立工作区配置失败**时的常驻红条文案。
     ///
-    /// 与 [`ShellWorkspace::status_notice`] 的区别是刻意的：那条是**临时**消息（4 秒后自己
-    /// 清掉），这条是**常驻**的、只能手动关 —— 因为"`.lithe` 没建出来"是一个需要用户处理的
-    /// 状态（写权限、盘符、安全软件），不是一句知会。口径见仓库既有先例
+    /// 与通知中心的区别是刻意的：通知中心是**记录**（用户主动去看），这条是**常驻**的、
+    /// 只能手动关 —— 因为"`.lithe` 没建出来"是一个需要用户处理的状态（写权限、盘符、
+    /// 安全软件），把它放进一个需要主动点开的面板里等于把它藏起来。口径见仓库既有先例
     /// （`gpui/crates/git/src/changes_view.rs` 的 `render_write_error`：失败一定可见，
     /// 不用 toast，因为它比红条更容易被用户错过、也更难截图取证）。
     ///
@@ -1118,8 +1122,19 @@ impl ShellWorkspace {
             });
         }
 
+        // 通知 store 每次建外壳都新建一份：换根 = 换项目，所以下一个项目的通知中心天然是
+        // 空的（新 store、水位线归零），不需要显式清空。理由与代价见
+        // `lithe-gpui-notify` 的模块文档「store 归谁持有」。
+        //
+        // 位置在编辑区**之前**：编辑区要拿它的弱引用（保存失败 / 跳转无目标要往里记）。
+        let notifications = cx.new(|_| lithe_gpui_notify::Store::new());
+
         // 先建编辑区，再把它的弱引用交给项目树：点文件 → 打开到编辑区。
-        let editor = cx.new(|cx| EditorPane::new(window, cx));
+        let editor = cx.new(|cx| {
+            // 通知中心的弱引用注入（见 `EditorPane::new` 的参数文档）。弱引用而不是强引用：
+            // 所有权在 `ShellWorkspace`，编辑区不该 prolong store 的寿命。
+            EditorPane::new(Some(notifications.downgrade()), window, cx)
+        });
         // 阶段 10 第二批：打开项目时在后台起 Java 语言服务（= 生成 / 复用 JDT 索引缓存）。
         // 放在这里而不是编辑区自己：工作区根是外壳的参数，编辑区不认识它。
         // 整段是后台任务，失败只留 `S1_JAVA_*` 诊断，跳转退回第一批的轻量链路。
@@ -1452,6 +1467,11 @@ impl ShellWorkspace {
         let branch_panel = BranchPanel::new(root.clone(), window, cx);
         let branch_panel_subscription = Some(cx.observe(&branch_panel, |_, _, cx| cx.notify()));
 
+        // 通知 store 已在编辑区之前建好（那里要它的弱引用）。面板与字段必须观察**同一个**
+        // 实体，否则面板会盯住一个没人往里写的 store（表现为「铃铛一直不亮」）。
+        let notification_panel =
+            cx.new(|cx| crate::notifications::NotificationPanel::new(&notifications, window, cx));
+
         let mut workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             root: root.clone(),
@@ -1459,7 +1479,9 @@ impl ShellWorkspace {
             // 阶段 1 只有一个项目，仍然把 `Some(0)` 选中，方便验收外观。
             active_project: Some(0),
             activity_items: activity_items(),
-            right_activity_items: right_activity_items(),
+            // 构造期这一份的角点必然是「无未读」（store 刚建、还是空的）；`render` 每帧
+            // 会用 `right_activity_items(&self.notifications, cx)` 重算一份带角点的。
+            right_activity_items: right_activity_items(&notifications, cx),
             // 默认选中顶部第 0 项「项目」（`workspace-ui-defaults.ts:7` 的 `activeSidebarView: "files"`）。
             top_activity_view: Some(DEFAULT_TOP_ACTIVITY),
             left_sidebar_visible: true,
@@ -1499,8 +1521,8 @@ impl ShellWorkspace {
             // 对话框每次打开都从"没勾"开始：勾选态只活在**这一次**对话框里，
             // 落盘的是"以后不再问"这件事本身（写进设置）。
             project_open_do_not_ask: Rc::new(Cell::new(false)),
-            status_notice: None,
-            status_notice_generation: 0,
+            notifications,
+            notification_panel,
             workspace_config_error: None,
             // 会话装载：**只读文件，不创建**（`.lithe/session.local.json` 在第一次真的产生
             // 内容之前不存在）。恢复（打开文件 + 还原侧栏 / 视图）排在下面 `Self` 建好之后 ——
@@ -2449,12 +2471,13 @@ impl ShellWorkspace {
         diagnose_run(id, "applied");
     }
 
-    /// 状态栏左组（前导项）：顺序与内容都照真机，**每次重绘时按当前状态算**。
+    /// 状态栏左组（前导项）：**通知中心入口**（有未读时）+ 项目名 + 分支。
     ///
-    /// 顺序真源：`features/layout/config/item-order.ts:20-32` 的
-    /// `FOOTER_LEADING_ITEM_IDS = ["filePath", "branch"]`。
+    /// 2026-09-27 改过。顺序真源仍是
+    /// `FOOTER_LEADING_ITEM_IDS = ["filePath", "branch"]`（`item-order.ts:20-32`），但前面
+    /// 多了一格「通知」—— 见下面「为什么它不是另一条临时提示」。
     ///
-    /// 两条都与上一轮不同：
+    /// 两格老改动与上一轮不同，仍然成立：
     ///
     /// - 第一项（项目名）的图标从写死的 `IconName::FileText` 换成
     ///   [`StatusEntry::with_file_icon`] —— 按**当前活动文件名**查真机默认图标主题
@@ -2464,16 +2487,47 @@ impl ShellWorkspace {
     /// - 第二项（分支）从构造期读一次改成每帧现读 `.git/HEAD`（[`read_branch`]）。
     ///   ⚠️ 分支名本身与工作区根目录无关的这一层没变：切分支后要等下一次
     ///   `cx.notify()` 才会更新（真机是 git 状态推送）。这是既有取舍，不是本轮引入的。
-    fn footer_left(&self, cx: &App) -> Vec<StatusEntry> {
-        // **临时消息在的时候它占满左组**（Q2/Q6：未接线的能力在这儿给一句"尚未接入：缺 X"）。
-        //
-        // ⚠️ 为什么不是"插在最前面、其余照排"：实测（`.artifacts/p22/p22-new-window-notice.png`
-        // 的第一版）那样会把项目名与分支**压在提示底下**——状态栏的条目自己不做文字截断
-        // （截断能力在 `status_bar.rs`，而本轮写域不含它），一条 40 字的提示会盖住后面两项。
-        // 提示 4 秒后自己消失，左组照常恢复成"项目名 + 分支"，所以这个取舍在界面上是
-        // "暂时换一句话"而不是"少了两项"。
-        if let Some(notice) = &self.status_notice {
-            return vec![StatusEntry::new(notice.clone())];
+    /// 状态栏左组（前导项）：**通知中心入口**（有未读时）+ 项目名 + 分支。
+    ///
+    /// 2026-09-27 改过。顺序真源仍是
+    /// `FOOTER_LEADING_ITEM_IDS = ["filePath", "branch"]`（`item-order.ts:20-32`），但前面
+    /// 多了一格「通知」—— 见下面「为什么它不是另一条临时提示」。
+    ///
+    /// 原来第一格是 `status_notice`（一条 4 秒后自己消失的临时消息，带代数防串），随通知
+    /// 中心一起废掉：说完就没了，用户事后无从查证。
+    ///
+    /// 现在这一格是**通知中心里最新那一条的文案，点它打开右工具窗的「通知」**。
+    ///
+    /// ## 为什么它不是「另一条临时提示」
+    ///
+    /// 它和中心里那一条是**同一个数据的第二个视图**，不是第二次记录。IDEA 的口径正是
+    /// 这样：官方文档写状态栏里能看到的消息「点它会在工具窗里打开」——
+    /// `https://www.jetbrains.com/help/idea/notifications.html` 的 Notifications tool
+    /// window 一节。所以不存在「哪条通知只进了状态栏没进中心」的分裂。
+    ///
+    /// ## 为什么有未读才占这一格
+    ///
+    /// 它占了左组第一格，**有未读时**才出现，所以界面上是「暂时多一条」而不是
+    /// 「少了项目名和分支」。仍然有未读就一直显示 —— 与 IDEA 一致。
+    ///
+    /// ## 为什么参数是 `&mut Context<Self>`
+    ///
+    /// 因为「点它打开中心」要拿到 `&mut ShellWorkspace`（切 `right_view` + 推水位线），
+    /// 而 [`StatusEntry::on_click`] 的处理器只有 `(&ClickEvent, &mut Window, &mut App)`。
+    /// 桥是 `cx.listener` —— 它把 `&mut Self` 闭包适配成那个签名（`status_bar.rs` 的
+    /// `entry_chip` 用 `when_some(..)` 挂上去）。
+    fn footer_left(&mut self, cx: &mut Context<Self>) -> Vec<StatusEntry> {
+        let mut entries: Vec<StatusEntry> = Vec::new();
+
+        let latest = self.notifications.read(cx).latest().cloned();
+        if let Some(entry) = latest {
+            entries.push(
+                StatusEntry::new(crate::notifications::render_message(&entry))
+                    .with_icon(IconName::Bell)
+                    .on_click(cx.listener(|shell, _, _, cx| {
+                        shell.open_notification_center(cx);
+                    })),
+            );
         }
 
         let project_name: SharedString = self
@@ -2484,11 +2538,31 @@ impl ShellWorkspace {
         let active_file = self.editor.read(cx).active_buffer_name();
         let branch = read_branch(&self.root).unwrap_or_else(|| "—".to_string());
 
-        vec![
-            StatusEntry::new(project_name).with_file_icon(&active_file, cx),
-            // 真源：`ui-icons/idea/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
+        entries.push(StatusEntry::new(project_name).with_file_icon(&active_file, cx));
+        // 真源：`ui-icons/idea/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
+        entries.push(
             StatusEntry::new(SharedString::from(branch)).with_idea_icon(&idea::GIT_BRANCH_ICON, cx),
-        ]
+        );
+        entries
+    }
+
+    /// 打开通知中心：切右工具窗到「通知」并把未读水位线推上去。
+    ///
+    /// 「推水位线」是这个动作的**一半** —— IDEA 的红点是「有未读」，而用户点开铃铛或状态栏
+    /// 那条就是在说「我知道了」。不推的话角标永远不消。
+    ///
+    /// 已经在通知视图里时**不重复切视图**（否则会把面板收起来 —— 那是「点当前高亮项」的
+    /// 语义，见 `right_tool_window::resolve_click`），但水位线照样推。
+    fn open_notification_center(&mut self, cx: &mut Context<Self>) {
+        if self.right_view != RightToolWindowView::Notifications {
+            self.right_view = RightToolWindowView::Notifications;
+        }
+        self.right_visible = true;
+        self.notifications.update(cx, |store, _| store.mark_all_read());
+        let read_upto = self.notifications.read(cx).read_upto_seq();
+        crate::right_tool_window::diagnose(RightToolWindowView::Notifications, true, None);
+        eprintln!("S1_NOTIFICATION action=open readUpToSeq={read_upto}");
+        cx.notify();
     }
 
     /// 状态栏右组（尾随项）：顺序与内容都照真机，**每次重绘时按当前状态算**。
@@ -2799,7 +2873,12 @@ impl ShellWorkspace {
             } else {
                 "lithe.fileSystem.recentProjectUnavailable"
             };
-            self.show_status_notice(tr_args(key, &[("path", &path_text)]), cx);
+            self.notify(
+                lithe_gpui_notify::Input::new(key, lithe_gpui_notify::Severity::Error)
+                    .param("path", path_text.as_str())
+                    .key("recent-project-missing"),
+                cx,
+            );
             return;
         }
 
@@ -2859,19 +2938,19 @@ impl ShellWorkspace {
         eprintln!(
             "S1_OPEN_PROJECT destination=new-window state=not_wired missing=window_handle_routing"
         );
-        self.show_status_notice(tr("lithe.gpui.newWindowNotWired"), cx);
+        self.notify_not_wired("lithe.gpui.newWindowNotWired", "New Window", cx);
     }
 
-    /// **占位项**（B3）被点时的落点：一行可 grep 诊断 ＋ 状态栏左侧那句"尚未接入：缺 X"。
+    /// **占位项**（B3）被点时的落点：一行可 grep 诊断 ＋ 通知中心里一条"尚未接入：缺 X"。
     ///
-    /// 两件事都在这里做（不在菜单栏那一侧）：状态栏是**外壳的一个字段**
-    /// （[`ShellWorkspace::status_notice`]，`crate::status_bar` 是无状态渲染函数），
-    /// 而菜单栏只有 `&mut App`——它够不到外壳的 `&mut self`。所以菜单栏只把
-    /// "哪一项 × 缺什么"塞进队列（[`MenuRequest::NotWired`]），执行落在这里。
+    /// 两件事都在这里做（不在菜单栏那一侧）：通知 store 是**外壳的一个字段**
+    /// （[`ShellWorkspace::notifications`]，换根时显式清空），而菜单栏只有 `&mut App`
+    /// ——它够不到外壳的 `&mut self`。所以菜单栏只把"哪一项 × 缺什么"塞进队列
+    /// （[`MenuRequest::NotWired`]），执行落在这里。
     ///
-    /// 提示复用 B4 的机制（[`ShellWorkspace::show_status_notice`]）：
-    /// 置位 → 重绘 → 4 秒后自动清掉，且带**代数防串**（4 秒内连点两项时，
-    /// 前一条的定时器不会把后一条提前抹掉）。
+    /// 原来这一族走状态栏那条 4 秒小字（`show_status_notice`，带**代数防串**），2026-09-27
+    /// 随通知中心一起废掉。去重键固定是 `not-wired`：用户连点 20 个占位项时，中心里是
+    /// **一条**「尚未接入」且次数变成 20，而不是 20 行几乎一样的话。
     fn report_menu_not_wired(
         &mut self,
         label_key: &'static str,
@@ -2881,7 +2960,7 @@ impl ShellWorkspace {
         // 诊断格式的唯一拼装点（`crate::menu_bar::Missing::diagnose`），验证脚本按它 grep：
         // `S1_MENU notWired id=menu.newTab missing=file_lifecycle`。
         missing.diagnose(label_key);
-        self.show_status_notice(missing.text(), cx);
+        self.notify_not_wired(missing.text_key, label_key, cx);
     }
 
     /// 项目下拉里**占位项**被点时的落点（B3 的「克隆仓库…」、B3 之后的「新建项目…」）。
@@ -2908,7 +2987,7 @@ impl ShellWorkspace {
             "S1_PROJECT_MENU action={action_id} state=not_wired missing={}",
             missing.id
         );
-        self.show_status_notice(missing.text(), cx);
+        self.notify_not_wired(missing.text_key, action_id, cx);
     }
 
     /// 「此窗口」：**重建整个外壳**（见模块头的"为什么不能逐个 reset"）。
@@ -2950,6 +3029,12 @@ impl ShellWorkspace {
         // 必须在 `replace_root` **之前**（不能在闭包之后）：闭包一执行，`self` 指向的外壳
         // 已经不再被窗口持有，它的字段随时可能被 drop。
         self.flush_session(true, cx);
+        // 通知中心**不需要**在这里清空：store 是 `ShellWorkspace` 的字段，换根会重建整个
+        // 外壳，于是新外壳拿到的是一个空 store（水位线也是 0）。见 `lithe-gpui-notify`
+        // 的模块文档「store 归谁持有」。
+        //
+        // 换根前到达的通知会跟着旧 store 一起没 —— 但那一刻旧 `EditorPane` 的异步任务本身
+        // 也被 drop 了，原来那条 toast 同样发不出来，所以没有回归。
         // 闭包是 `FnOnce`，用这个槽把新建出来的外壳句柄带出来（重建之后它才是所有者）。
         let mut created: Option<Entity<ShellWorkspace>> = None;
         let new_root = window.replace_root(cx, |window, cx| {
@@ -3175,40 +3260,62 @@ impl ShellWorkspace {
         }
     }
 
-    /// 状态栏左侧的**临时消息**：置位 → 重绘 → [`STATUS_NOTICE_MS`] 之后自己清掉。
+    /// 往通知中心记一条通知。
     ///
-    /// 出口只有 [`ShellWorkspace::footer_left`]（它是左组的第一条），因为状态栏本身是
-    /// **无状态渲染函数**（`crate::status_bar` 的模块文档）。
-    /// 消息本身走 `tr` / `tr_args`（与别的界面文案同一条规矩），并且额外打一行
-    /// `S1_STATUS_NOTICE` —— 无人值守验证时那句提示是亮过的，可以 grep 到。
-    fn show_status_notice(&mut self, text: SharedString, cx: &mut Context<Self>) {
-        eprintln!("S1_STATUS_NOTICE text={text}");
-        self.status_notice = Some(text);
-        self.status_notice_generation = self.status_notice_generation.wrapping_add(1);
-        let generation = self.status_notice_generation;
+    /// 这是外壳侧**唯一**的「事情发生了」出口。原来这里是 `show_status_notice`（状态栏
+    /// 一条 4 秒后自己消失的小字），2026-09-27 随通知中心一起废掉 —— 理由是它说完就没了，
+    /// 用户事后无从查证，而通知中心是唯一的记录面。决策与被否方案见
+    /// `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`。
+    ///
+    /// 诊断行从 `S1_STATUS_NOTICE` 换成 `S1_NOTIFICATION`：交互类改动在本仓库只能靠维护者
+    /// 手动验证（`gpui/docs/grill.md` D1a），这行可 grep 的证据是唯一的机器判据，所以
+    /// **必须**跟着迁移，否则这批改动没法按现有方式验收。
+    pub(crate) fn notify(
+        &mut self,
+        input: lithe_gpui_notify::Input,
+        cx: &mut Context<Self>,
+    ) {
+        let code = input.code().to_string();
+        let severity = input.severity();
+        let outcome = self
+            .notifications
+            .update(cx, |store, _| store.record(input, crate::notifications::now_ms()));
+        match outcome {
+            lithe_gpui_notify::RecordOutcome::Inserted => eprintln!(
+                "S1_NOTIFICATION action=record code={code} severity={severity:?} state=inserted"
+            ),
+            lithe_gpui_notify::RecordOutcome::Replaced { occurrences } => eprintln!(
+                "S1_NOTIFICATION action=record code={code} severity={severity:?} state=replaced occurrences={occurrences}"
+            ),
+        }
         cx.notify();
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(STATUS_NOTICE_MS))
-                .await;
-            // 实体可能已经销毁（换根 / 关窗）：`update` 返回 `Err` 时静默忽略。
-            let _ = this.update(cx, |shell, cx| {
-                // 只有"这一条还是最新的"才清：否则 4 秒内连来两条提示时，
-                // 前一条的定时器会把后一条提前抹掉。
-                if shell.status_notice_generation == generation && shell.status_notice.is_some() {
-                    shell.status_notice = None;
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
+    }
+
+    /// 「尚未接入：缺 X」这一族通知的落点（菜单栏 / 项目下拉的占位项，以及多窗口那句）。
+    ///
+    /// 三个调用点共用它，因为它们是**同一类**事情：用户点了一个还没接线的能力。`code` 直接
+    /// 用 `Missing::text_key` / `lithe.gpui.newWindowNotWired` —— 那些键本来就在 catalog 里
+    /// （`extract-locale.mjs` 的 `GPUI_ONLY_KEYS`），所以这一族迁移**不需要新增任何文案键**，
+    /// 而条目仍然是 `(code, params)` 形状（`item` 让详情里能看到点的到底是哪一项）。
+    pub(crate) fn notify_not_wired(
+        &mut self,
+        code: &'static str,
+        item: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.notify(
+            lithe_gpui_notify::Input::new(code, lithe_gpui_notify::Severity::Info)
+                .param("item", item)
+                .key("not-wired"),
+            cx,
+        );
     }
 
     /// 建立工作区配置失败时的**常驻红条**（可手动关闭）。
     ///
-    /// 与 [`ShellWorkspace::show_status_notice`] 刻意不同：那条是 4 秒后自己消失的临时消息，
-    /// 这条**不会自己消失** —— "`.lithe` 没建出来"是需要用户处理的失败（写权限 / 盘符 /
-    /// 安全软件拦写），自动消失就等于把它藏起来。范式照
+    /// 与通知中心刻意不同：通知中心是**记录**（用户主动点铃铛才看得到），这条是**常驻**的、
+    /// 不会自己消失 —— "`.lithe` 没建出来"是需要用户处理的失败（写权限 / 盘符 /
+    /// 安全软件拦写），把它放进一个需要主动点开的面板里就等于把它藏起来。范式照
     /// `gpui/crates/git/src/changes_view.rs` 的 `render_write_error`（那个模块的文档写着
     /// "失败一定可见：常驻红条，不是 console.error、也不是自动消失的 toast"）。
     fn render_workspace_config_error(
@@ -3637,7 +3744,6 @@ impl Render for ShellWorkspace {
         let right_activity_flags: Vec<bool> = (0..self.right_activity_items.len())
             .map(|index| self.is_right_activity_active(index))
             .collect();
-
         let left_rail = activity_bar(
             ActivitySide::Left,
             &self.activity_items,
@@ -3647,9 +3753,13 @@ impl Render for ShellWorkspace {
             window,
             cx,
         );
+        // 右活动栏这一份**每帧重算**：铃铛的角点颜色跟着通知中心的未读状态变，而未读
+        // 状态在「一条通知进来」和「用户打开中心」两个时刻都会改。构造期存的那一份永远
+        // 是「无未读」，所以不能直接用字段。
+        let right_activity_items = right_activity_items(&self.notifications, cx);
         let right_rail = activity_bar(
             ActivitySide::Right,
-            &self.right_activity_items,
+            &right_activity_items,
             // 右栏选中态 = `right_visible && right_view == 该项`，所以收起时三项全灭。
             move |index| right_activity_flags.get(index).copied().unwrap_or(false),
             on_select_right_activity,
@@ -3672,6 +3782,7 @@ impl Render for ShellWorkspace {
             self.right_view,
             self.maven_project.as_ref(),
             self.spring_index.as_ref(),
+            &self.notification_panel,
             on_close_right_activity,
             cx,
         );
@@ -3858,6 +3969,8 @@ impl Render for ShellWorkspace {
             // `data-status-bar` + CSS，见 `07-settings-ui.md` §4.5 的 `lib/ui-preferences.ts:5-11`）。
             // 尾随组每次重绘都按当前光标/活动 buffer 重算，所以用局部变量接一下返回值。
             .children(show_status_bar.then(|| {
+                // `footer_left` 要 `&mut Context<Self>`：通知中心那格的点击处理器得拿到
+                // `&mut ShellWorkspace` 才能切右工具窗（见它的文档）。
                 let left = self.footer_left(cx);
                 let right = self.footer_right(cx);
                 status_bar(&left, &right, window, cx)
@@ -4207,7 +4320,38 @@ fn activity_items() -> Vec<ActivityItem> {
 ///    本来就按"下标 → 视图"查表，越界下标什么都不做，所以少一项不会让某个下标静默落到别的视图上。
 ///
 /// **删除一行**这件事没有制造出"映射到不存在的视图"或"视图永远映射不到"的死角。
-fn right_activity_items() -> Vec<ActivityItem> {
+/// 铃铛角点的颜色（`None` = 不画）。
+///
+/// 红点优先于蓝点，与 IDEA 一致（红点标错误、蓝点标常规事件）。三态判据在
+/// [`lithe_gpui_notify::Store::badge`]，这里只把它翻译成主题色 —— 取色要 `&App`，
+/// 而 `right_activity_items()` 是无状态函数。
+fn notification_badge_color(
+    store: &Entity<lithe_gpui_notify::Store>,
+    cx: &App,
+) -> Option<Hsla> {
+    match store.read(cx).badge() {
+        lithe_gpui_notify::Badge::None => None,
+        lithe_gpui_notify::Badge::Info => Some(cx.theme().info),
+        lithe_gpui_notify::Badge::Error => Some(cx.theme().danger),
+    }
+}
+
+/// 右活动栏三项：扩展 / 通知 / Maven。顺序即下标（`RightToolWindowView::from_rail_index`）。
+fn right_activity_items(
+    store: &Entity<lithe_gpui_notify::Store>,
+    cx: &App,
+) -> Vec<ActivityItem> {
+    // 铃铛的角点：红 = 有未读错误、蓝 = 有未读其它、无未读不画。
+    //
+    // 现算而不是存字段：角点状态每次通知进来 / 用户打开中心都会变，而这个函数每帧被
+    // `render` 调一次。
+    let bell = {
+        let item = ActivityItem::idea(&idea::BELL_ICON, tr("lithe.notifications.title"));
+        match notification_badge_color(store, cx) {
+            Some(color) => item.badge(color),
+            None => item,
+        }
+    };
     vec![
         // ⚠️ 保持 Lucide：真机 `PuzzlePieceIcon` 经 `Nucleo` 代理解析到
         // `legacyIconCompatibility.PuzzlePiece = lucideIcons.Puzzle`，**真源物就是 Lucide
@@ -4215,7 +4359,7 @@ fn right_activity_items() -> Vec<ActivityItem> {
         ActivityItem::new(IconName::Puzzle, tr("lithe.extensions.title")),
         // 真源：`ui-icons/idea/expui/toolwindows/notifications.svg(+_dark)` —— 真机
         // `BellIcon`（`features/notifications/components/notifications-trigger.tsx:43`）。
-        ActivityItem::idea(&idea::BELL_ICON, tr("lithe.notifications.title")),
+        bell,
         // ⚠️ 保持 Lucide：真机 `MavenIcon`（`features/maven/components/maven-icon.tsx`）是
         // **内联 React 组件**，只有一条 fill path、没有 SVG 文件。Lucide 没有 Maven 字形，
         // 与 `activity_bar.rs` 的对照表同一取舍：取「包 / 构建产物」语义的 `package`。

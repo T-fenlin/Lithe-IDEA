@@ -614,6 +614,117 @@ const GPUI_ONLY_KEYS = [
     reason:
       "打开项目时建立 `.lithe/project.json` 失败（写不进、或写入被静默丢弃）。真源没有对应文案：Windows 侧打开项目不写 `.lithe`，macOS 侧只在显式「识别并生成」时写。这条是 gpui 侧「打开即建」这条产品决策带来的失败面 —— 它必须**可见**，因为用户双击启动时看不到 stderr，只会发现 `.lithe` 没出现（父代理实测踩到过：环境静默丢弃工作区之外的写入，日志里只有 stderr）。仓库口径见 gpui/crates/git/src/changes_view.rs 的 render_write_error：失败一定可见、常驻红条、不自动消失。{reason} 由调用点填 WorkspaceConfigError 的 Display 原文。",
   },
+  // ── 通知中心：Core 稳定错误码 ──────────────────────────────────────────
+  // 这 10 条把 `rust/lithe-core/src/protocol/error.rs:11-34` 的 11 个 snake_case 错误码
+  // （扣掉 `cancelled` —— 用户自己取消的，不进中心）映射成通知文案。
+  //
+  // 为什么真源里没有：Windows 侧通知中心的内容全部是产品层文案，从不显示 Core 错误码
+  // （它的 389 个 `toast.*` 调用点传的都是 `t("git.historyMutationFailed")` 这类句子）。
+  // gpui 是第一个把 Core 的**稳定码**放进通知中心的实现，所以这批键是 gpui 侧自有。
+  //
+  // 键名 camelCase（不是码本身的 snake_case）：`tr` 的键要人可读，且 `lithe.notifications.*`
+  // 命名空间下与旧 Windows 的 `notifications.*` 键不冲突。码本身作为 `coreCode` 参数存进
+  // 通知条目，于是既可搜（`Entry::matches_query` 对参数值原样匹配）也可显示在详情里。
+  {
+    key: "notifications.core.invalidRequest",
+    zh: "请求无效：{detail}",
+    en: "Invalid request: {detail}",
+    reason:
+      "Core 稳定错误码 `invalid_request` 的通知文案。真源没有：Windows 侧通知中心从不显示 Core 错误码。{detail} 填 `CoreError::message`（`error.rs:41` 写明它是 user-facing summary that is safe to display）。",
+  },
+  {
+    key: "notifications.core.workspaceNotFound",
+    zh: "找不到工作区：{detail}",
+    en: "Workspace not found: {detail}",
+    reason: "Core 稳定错误码 `workspace_not_found` 的通知文案。真源没有，理由同 invalidRequest。",
+  },
+  {
+    key: "notifications.core.permissionDenied",
+    zh: "没有权限：{detail}",
+    en: "Permission denied: {detail}",
+    reason: "Core 稳定错误码 `permission_denied` 的通知文案。真源没有，理由同 invalidRequest。",
+  },
+  {
+    key: "notifications.core.notSupported",
+    zh: "当前版本不支持这个操作：{detail}",
+    en: "Not supported: {detail}",
+    reason:
+      "Core 稳定错误码 `not_supported` 的通知文案。分到 warning 档（不是 error）：`error.rs:18-19` 说它是「行为合法但本版 Core 没有」，也就是降级而非失败。真源没有，理由同 invalidRequest。",
+  },
+  {
+    key: "notifications.core.runtimeMissing",
+    zh: "缺少运行时：{detail}",
+    en: "Required runtime is missing: {detail}",
+    reason:
+      "Core 稳定错误码 `runtime_missing` 的通知文案。分到 warning 档：`error.rs:20-21` 说它是「宿主发现的可执行文件或运行时不可用」，IDE 本身还能用。真源没有，理由同 invalidRequest。",
+  },
+  {
+    key: "notifications.core.processStartFailed",
+    zh: "无法启动进程：{detail}",
+    en: "Could not start the process: {detail}",
+    reason: "Core 稳定错误码 `process_start_failed` 的通知文案。真源没有，理由同 invalidRequest。",
+  },
+  {
+    key: "notifications.core.processFailed",
+    zh: "进程执行失败：{detail}",
+    en: "The process failed: {detail}",
+    reason: "Core 稳定错误码 `process_failed` 的通知文案。真源没有，理由同 invalidRequest。",
+  },
+  {
+    key: "notifications.core.parseFailed",
+    zh: "无法解析结果：{detail}",
+    en: "Could not parse the result: {detail}",
+    reason: "Core 稳定错误码 `parse_failed` 的通知文案。真源没有，理由同 invalidRequest。",
+  },
+  {
+    key: "notifications.core.timedOut",
+    zh: "操作超时：{detail}",
+    en: "The operation timed out: {detail}",
+    reason:
+      "Core 稳定错误码 `timed_out` 的通知文案。分到 warning 档：超时通常是可重试的，不是一次不可逆的失败。真源没有，理由同 invalidRequest。",
+  },
+  {
+    key: "notifications.core.unknown",
+    zh: "操作失败：{detail}",
+    en: "The operation failed: {detail}",
+    reason:
+      "Core 稳定错误码 `unknown` 的通知文案，也是**未识别码的兜底键**（`Severity::notification_code_for_core_code` 的 `_` 分支）。分到 warning 档而不是 error 是刻意的：Core 以后新增码时我们不知道它要不要用户处理，先按降级处理，不谎报严重性。真源没有，理由同 invalidRequest。",
+  },
+  // ── 通知中心：相对时间四档 ───────────────────────────────────────────
+  // 旧 Windows 有 `formatNotificationAge`（`notification-formatters.ts`）但它没有自己的
+  // 文案键 —— 相对时间在真源里是拼出来的英文/中文片段，不在 catalog。这 4 条是 gpui 侧
+  // 通知中心要的**可翻译**相对时间：面板每行都要显示「多久以前」，而 gpui 的规矩是界面
+  // 文案一律走 `tr`（`shared/contracts/application-boundary.md:228` 文案归展示层）。
+  //
+  // 只到分钟、只四档：秒级相对时间每帧都在变，会让整列表每帧重排
+  // （`gpui/crates/workbench/src/notifications.rs` 的 `format_age` 注释）。
+  {
+    key: "notifications.justNow",
+    zh: "刚刚",
+    en: "just now",
+    reason:
+      "通知中心相对时间的第一档（不足 1 分钟）。真源没有：Windows 侧 `formatNotificationAge` 直接拼字符串、不进 catalog，而 gpui 侧界面文案一律走 `tr`。",
+  },
+  {
+    key: "notifications.minutesAgo",
+    zh: "{count} 分钟前",
+    en: "{count} min ago",
+    reason:
+      "通知中心相对时间的第二档（1–59 分钟）。中文无复数变化，一个键够用；英文用 `min ago` 这种缩写形态，1 与 N 共用一个键，避免为一处时间戳引入复数规则（`extract-locale.mjs` 对真源里那些 `[count,plural]` 的不一致已经在提示了）。",
+  },
+  {
+    key: "notifications.hoursAgo",
+    zh: "{count} 小时前",
+    en: "{count} h ago",
+    reason: "通知中心相对时间的第三档（1–23 小时）。同上，无复数变化。",
+  },
+  {
+    key: "notifications.daysAgo",
+    zh: "{count} 天前",
+    en: "{count} d ago",
+    reason:
+      "通知中心相对时间的第四档（≥1 天）。同 macOS 中心用绝对时刻（`WorkbenchView.swift:1900` 的 `date: .omitted, time: .shortened`）是同一层信息，跨天再折成天数比显示时刻更好比较。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);

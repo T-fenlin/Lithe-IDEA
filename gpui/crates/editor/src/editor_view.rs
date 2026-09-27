@@ -89,14 +89,13 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, Rope, TabSize};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AbsoluteLength, AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity,
     InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels,
     Render, ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
-    Window, div, point, relative, rems,
+    WeakEntity, Window, div, point, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::{tr, tr_args};
@@ -338,6 +337,16 @@ pub struct SessionRestore {
 
 /// 编辑区视图：标签栏 + 正文（正文没有活动 buffer 时是空状态）。
 pub struct EditorPane {
+    /// 通知中心的**弱引用**（`lithe_gpui_notify::Store`）。
+    ///
+    /// 2026-09-27 把「保存失败」与「跳转无目标」两处反馈从 gpui-kit 角落 toast 迁进通知
+    /// 中心（决策见
+    /// `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`），
+    /// 而 `editor` 在 `workbench` **之下**，拿不到外壳的实体 —— 所以由 `ShellWorkspace` 在
+    /// `EditorPane::new` 时注入。
+    ///
+    /// 弱引用：store 归外壳所有，本实体不该 prolong 它的寿命。
+    notifications: Option<WeakEntity<lithe_gpui_notify::Store>>,
     /// 打开的 buffer，顺序就是标签栏里的顺序。
     buffers: Vec<Buffer>,
     /// 活动 buffer 在 [`Self::buffers`] 里的下标；`None` = 没有活动 buffer → 空状态。
@@ -440,8 +449,18 @@ impl EditorPane {
     ///
     /// 真机启动时编辑区就是空状态（标签栏在、正文是空状态），
     /// 打开动作由用户触发（`panes/components/pane-container.tsx:1100`）。
-    pub fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
+    ///
+    /// `notifications` 是通知中心的**弱引用**（保存失败 / 跳转无目标要往里记）。弱引用而不是
+    /// 强引用：store 归 `ShellWorkspace` 所有，编辑区不该 prolong 它的寿命；store 先没时
+    /// 这两处反馈退化成「只有 `S1_*` 诊断行」，不 panic。理由见
+    /// `lithe-gpui-notify` 的模块文档「store 归谁持有」。
+    pub fn new(
+        notifications: Option<WeakEntity<lithe_gpui_notify::Store>>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Self {
         Self {
+            notifications,
             buffers: Vec::new(),
             active: None,
             cursor: None,
@@ -1121,12 +1140,12 @@ impl EditorPane {
             // JDTLS 也会给出空的 `locations`。
             Ok(None) => {
                 println!("S1_NAV_FAILED reason=no-target");
-                Self::notify_no_target(window, cx);
+                self.notify_no_target(cx);
                 return;
             }
             Err(error) => {
                 println!("S1_NAV_FAILED reason={error}");
-                Self::notify_no_target(window, cx);
+                self.notify_no_target(cx);
                 return;
             }
         };
@@ -1145,7 +1164,7 @@ impl EditorPane {
                 }
                 let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
                     println!("S1_NAV_FAILED reason=no-target");
-                    Self::notify_no_target(window, cx);
+                    self.notify_no_target(cx);
                     return;
                 };
                 // 列换算用**目标文件自己**的正文：UTF-16 列与编辑器的字符列只在 ASCII 上相等
@@ -1433,14 +1452,49 @@ impl EditorPane {
     /// 文案与插值直接复用真源既有的两条键：`navigation.noTargetFound` +
     /// `navigation.definition`（`windows/tauri/src/i18n/locale.ts:8435,8439`）。
     /// 静默失败会让用户以为 `F12` 坏了，所以这一条**要**给。
-    fn notify_no_target(window: &mut Window, cx: &mut Context<Self>) {
-        window.push_notification(
-            Notification::info(tr_args(
-                "lithe.navigation.noTargetFound",
-                &[("target", tr("lithe.navigation.definition").as_ref())],
-            )),
+    ///
+    /// 2026-09-27 从角落 toast 改成**通知中心**：toast 说完就没了，而「没找到定义」是用户
+    /// 事后会回来查的事。
+    ///
+    /// ⚠️ `target` 这个参数是**已解析的** `tr` 结果而不是原始值 —— 消息里要的是个本地化
+    /// 名词（「定义」/「引用」），只能这样传。代价是它不参与搜索（搜索走
+    /// `Entry::matches_query` 的**原始**参数值那一路）。
+    ///
+    /// 去重键 `navigation-no-target`：连按 F12 找不到十次，中心里是**一条**且次数 10，
+    /// 而不是 10 行一模一样的话。
+    fn notify_no_target(&self, cx: &mut Context<Self>) {
+        let target = tr("lithe.navigation.definition");
+        let code = "lithe.navigation.noTargetFound";
+        if !self.record_notification(
             cx,
-        );
+            lithe_gpui_notify::Input::new(code, lithe_gpui_notify::Severity::Info)
+                .param("target", target.as_ref())
+                .key("navigation-no-target"),
+        ) {
+            eprintln!("S1_NOTIFICATION action=record state=dropped reason=no_store code={code}");
+        }
+        cx.notify();
+    }
+
+    /// 往通知中心记一条，返回是否真的记进去了。
+    ///
+    /// `false` 的唯一原因是 store 已经不在了（换根时旧 `EditorPane` 连同它的异步任务一起
+    /// 被 drop）。那种情况**不静默**：调用点打一行 `S1_NOTIFICATION action=record
+    /// state=dropped`，因为「失败一定可见」是本仓库对失败反馈的一贯要求。
+    fn record_notification(
+        &self,
+        cx: &mut Context<Self>,
+        input: lithe_gpui_notify::Input,
+    ) -> bool {
+        match self.notifications.as_ref().and_then(WeakEntity::upgrade) {
+            Some(store) => {
+                store.update(cx, |store, _| {
+                    store.record(input, lithe_gpui_notify::now_ms());
+                });
+                true
+            }
+            None => false,
+        }
     }
 
     /// 切到第 `index` 个标签（重复打开同一路径、点标签都走这里）。
@@ -1564,7 +1618,7 @@ impl EditorPane {
         &mut self,
         index: usize,
         failure_key: &'static str,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
         let Some(buffer) = self.buffers.get(index) else {
@@ -1594,11 +1648,23 @@ impl EditorPane {
                     "S1_EDITOR_SAVE_FAILED path={} error={error}",
                     path.display()
                 );
-                window.push_notification(
-                    // 保存失败是**错误**而不是普通提示：用 error 档（自带语义色与图标）。
-                    Notification::error(tr_args(failure_key, &[("name", name.as_ref())])),
+                // 2026-09-27 从角落 toast 改成通知中心（决策见
+                // `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`）。
+                //
+                // 去重键按 `failure_key` 分：手动保存失败与自动保存失败是**不同的后果**
+                // （"重试" vs "更改仍在编辑器里"，见本函数文档），不能折叠成一条。
+                if !self.record_notification(
                     cx,
-                );
+                    lithe_gpui_notify::Input::new(failure_key, lithe_gpui_notify::Severity::Error)
+                        .param("name", name.as_ref())
+                        .param("error", error.to_string())
+                        .key(failure_key),
+                ) {
+                    eprintln!(
+                        "S1_NOTIFICATION action=record state=dropped reason=no_store code={failure_key}"
+                    );
+                }
+                cx.notify();
                 false
             }
         }

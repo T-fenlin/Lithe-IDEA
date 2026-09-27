@@ -28,7 +28,7 @@
 //! | 视图 | 右活动栏项 | 真源 | 本侧完成度 |
 //! | --- | --- | --- | --- |
 //! | Maven | `MavenIcon`（`plugin-activity-rail.tsx:51-66`） | `MavenPane`（`features/maven/components/maven-pane.tsx:596-870`） | 头部（图标 + 标题 + 关闭）+ 空态（`maven.notDetected`）。**未做**：工具栏、模块树、生命周期、依赖树、Profiles、构建输出 —— 它们要 Maven 项目探测与 `maven.*` 数据源，属阶段 B |
-//! | 通知 | `NotificationsTrigger`（`plugin-activity-rail.tsx:50`） | `NotificationsToolWindow`（`features/notifications/components/notifications-tool-window.tsx:340-475`） | 头部 + 空态（`notifications.empty`）。**未做**：搜索 / 过滤 / 分组 / 详情 —— 没有通知数据源 |
+//! | 通知 | `NotificationsTrigger`（`plugin-activity-rail.tsx:50`） | `NotificationsToolWindow`（`features/notifications/components/notifications-tool-window.tsx:340-475`） | 头部 + 面板（[`crate::notifications`]）：搜索 / 按严重性过滤 / 展开详情 / 全部清除。**未做**：按日期分组、复制按钮、右键菜单 · **有意不做**：跳转链接（[`lithe_gpui_notify::Target`] 只占位，见那个类型的文档） |
 //! | 扩展 | `PuzzlePieceIcon`（`plugin-activity-rail.tsx:36-49`） | ⚠️ **真机里这个按钮不是右栏视图**：它调 `openExtensionsBuffer`，扩展是一个**编辑器缓冲区**（同文件 `:13,46`） | 按本轮任务要求做成右栏视图（头部 + 空态）。**这是有意偏离真源**，理由与后续收敛路径写在 `PLAN.md` §11.3 |
 //!
 //! ## 收起面板的三条出路（真源语义）
@@ -66,8 +66,9 @@ use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
 // `when` / `children` 收在 `FluentBuilder` 上（与 `explorer_view.rs` 同一取法）。
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
-    Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
+    AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window, div,
 };
 
 use lithe_gpui_shared::tr;
@@ -330,14 +331,19 @@ pub(crate) fn diagnose(view: RightToolWindowView, visible: bool, point: Option<P
 
 /// 画右侧工具窗。
 ///
-/// 结构照真机：`<section>` 头部（图标 + 标题 + 关闭按钮）+ 内容区。本轮的三个视图都只有
-/// 空态内容（见模块文档的完成度表）。
+/// 结构照真机：`<section>` 头部（图标 + 标题 + 关闭按钮）+ 内容区。
 ///
 /// `on_close` 由调用方给：可见性归外壳（`ShellWorkspace`），本函数不持有状态。
+///
+/// `notifications` 是通知中心面板。它是**必填**而不是 `Option`：唯一调用方
+/// （`ShellWorkspace::render`）在构造期就建好了面板，通知视图不存在「拿不到面板」这种
+/// 启动期形状 —— `--right-view notifications` 探针（`app/src/main.rs:263,870`）也是走
+/// 同一个外壳。
 pub fn right_tool_window(
     view: RightToolWindowView,
     maven: Option<&crate::maven::MavenProjectView>,
     spring: Option<&crate::spring::SpringIndexView>,
+    notifications: &Entity<crate::notifications::NotificationPanel>,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -356,6 +362,8 @@ pub fn right_tool_window(
             (RightToolWindowView::Spring, _, Some(index)) if !index.is_empty() => {
                 spring_content(index, cx)
             }
+            // 通知中心：面板自己管搜索 / 筛选 / 展开，所以这里只转交实体。
+            (RightToolWindowView::Notifications, _, _) => notifications.clone().into_any_element(),
             _ => empty_state(view, cx),
         })
         .into_any_element()

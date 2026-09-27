@@ -17,6 +17,11 @@ publish = false
 # 都大得多（取舍与证据见 `research/editor-syntax-highlighting.md` §4.1）。
 # 加语言时两件事缺一不可：这里开 feature + `src/buffer.rs` 的 `language_for_file` 加一行。
 gpui-kit = { version = "0.6", features = ["tree-sitter-java"] }
+# 通知中心：保存失败 / 跳转无目标都写进通知中心（2026-09-27 从角落 toast 迁过来，决策见
+# `.agents/notes/proposed/architecture/2026-09-27-gpui-notification-center.md`）。
+# `editor` 在 `workbench` **之下**，所以只能走 notify 自己提供的全局槽窄接口
+# （`lithe_gpui_notify::record`），不能去摸外壳的实体。
+lithe-gpui-notify = { path = "../notify" }
 lithe-gpui-shared = { path = "../shared" }
 # 阶段 10 第二批：语义跳转的来源。**只在编辑器里接线**，Java 语言服务本身
 # （JDTLS 载荷发现 / Core LSP 会话 / 索引缓存）全在那个 crate 里，见 `src/navigation.rs`。

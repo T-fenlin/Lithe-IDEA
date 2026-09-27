@@ -263,6 +263,45 @@ mod tests {
             ("lithe.workbench.maven", "Maven"),
             ("lithe.extensions.title", "扩展"),
             ("lithe.notifications.title", "通知"),
+            // 通知中心的搜索 / 筛选 / 详情 / 清除。这批键 2026-09-27 之前就在
+            // catalog 里但无人引用（右工具窗只有空态，见 right_tool_window.rs 的模块
+            // 文档）；通知中心落地后全部接上。注意 `filterSuccess` **故意不用**：中心
+            // 没有 success 档（`lithe-gpui-notify` 的 `severity.rs` 模块文档）。
+            ("lithe.notifications.search", "搜索通知"),
+            ("lithe.notifications.noMatch", "没有匹配的通知。"),
+            ("lithe.notifications.filter", "筛选通知"),
+            ("lithe.notifications.filterAll", "全部"),
+            ("lithe.notifications.filterInfo", "信息"),
+            ("lithe.notifications.filterWarnings", "警告"),
+            ("lithe.notifications.filterErrors", "错误"),
+            ("lithe.notifications.details", "通知详情"),
+            ("lithe.notifications.delete", "删除"),
+            ("lithe.notifications.clearAll", "全部清除"),
+            // Core 稳定错误码 → 通知文案。11 个码扣掉 `cancelled`（用户自己取消的，
+            // 不进中心），所以是 10 条。`{detail}` 填 `CoreError::message`。
+            // 分档与文案都在 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里有理由。
+            (
+                "lithe.notifications.core.invalidRequest",
+                "请求无效：{detail}",
+            ),
+            (
+                "lithe.notifications.core.workspaceNotFound",
+                "找不到工作区：{detail}",
+            ),
+            (
+                "lithe.notifications.core.permissionDenied",
+                "没有权限：{detail}",
+            ),
+            ("lithe.notifications.core.notSupported", "当前版本不支持这个操作：{detail}"),
+            ("lithe.notifications.core.runtimeMissing", "缺少运行时：{detail}"),
+            (
+                "lithe.notifications.core.processStartFailed",
+                "无法启动进程：{detail}",
+            ),
+            ("lithe.notifications.core.processFailed", "进程执行失败：{detail}"),
+            ("lithe.notifications.core.parseFailed", "无法解析结果：{detail}"),
+            ("lithe.notifications.core.timedOut", "操作超时：{detail}"),
+            ("lithe.notifications.core.unknown", "操作失败：{detail}"),
             ("lithe.git.log.filesCount", "{count} 个文件"),
             ("lithe.git.log.filterPlaceholder", "{field} 筛选"),
             ("lithe.git.log.logLabel", "日志：{name}"),
