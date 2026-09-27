@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 
+// verify-test-stability.mjs 的用例集。
+//
+// 旧前端删除后，闸门只剩 Rust 一条通道，所以这里的扫描器用例全部改用 Rust 样本；
+// Swift / Bun 计时运行器的用例（无界等待、runner 停摆、逐项预算）随对应运行器一并删除。
+// 保留的 Rust 侧覆盖：扫描规则与例外注解、新增行筛选、编译失败归因、进程树终止、
+// 逐项超时与预算。
+
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -8,109 +15,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAddedLines, scanFile } from "./verify-test-stability.mjs";
 import { parseJUnitCases } from "./parse-junit-cases.mjs";
-import { run as runBunTestsWithTiming } from "./run-bun-tests-with-timing.mjs";
 import { parseArguments as parseRustTimingArguments, run as runRustTestsWithTiming } from "./run-rust-tests-with-timing.mjs";
-import {
-  parseSwiftSuiteLine,
-  parseSwiftTimingLine,
-  run as runSwiftTestsWithTiming,
-} from "./run-swift-tests-with-timing.mjs";
 import { runProcess } from "./test-timing-lib.mjs";
 
-const swiftViolations = scanFile(
-  "macos/Tests/LitheTests/BlockingTests.swift",
-  `import Testing
-private let gate = DispatchSemaphore(value: 0)
-gate.wait()
-gate.wait(timeout: .distantFuture)
-gate.wait(timeout: DispatchTime.distantFuture)
-gate.wait(timeout: .now() + .seconds(1))
-// test-stability: allow(swift-real-sleep) reason: verifies a native synchronous timeout boundary
-try await Task.sleep(for: .milliseconds(1))
-`,
-);
-assert.deepEqual(
-  swiftViolations.map((violation) => violation.rule),
-  ["swift-unbounded-wait", "swift-unbounded-wait", "swift-unbounded-wait"],
-);
+// ── 扫描规则 ────────────────────────────────────────────────────────────────────
 
-const detachedViolations = scanFile(
-  "macos/Tests/LitheTests/DetachedBlockingTests.swift",
-  `Task.detached {
-    operations
-        .waitUntilBlocked()
-}
-`,
-);
-assert.deepEqual(detachedViolations.map((violation) => violation.rule), ["swift-detached-blocking"]);
-assert.equal(detachedViolations[0].line, 3);
-
-const multilineWaitContent = `gate.wait(
-    timeout: .distantFuture
-)
-`;
-
-const multilineWaitViolations = scanFile(
-  "macos/Tests/LitheTests/MultilineWaitTests.swift",
-  multilineWaitContent,
-);
-
-assert.deepEqual(
-  multilineWaitViolations.map((violation) => violation.rule),
-  ["swift-unbounded-wait"],
-);
-
-assert.equal(multilineWaitViolations[0].line, 1);
-
-const selectedMultilineWaitViolations = scanFile(
-  "macos/Tests/LitheTests/MultilineWaitTests.swift",
-  multilineWaitContent,
-  new Set([2]),
-);
-
-assert.deepEqual(
-  selectedMultilineWaitViolations.map((violation) => violation.rule),
-  ["swift-unbounded-wait"],
-);
-
-assert.equal(selectedMultilineWaitViolations[0].line, 2);
-
-assert.match(
-  selectedMultilineWaitViolations[0].source,
-  /distantFuture/,
-);
-
-const bareMultilineWaitViolations = scanFile(
-  "macos/Tests/LitheTests/MultilineWaitTests.swift",
-  `gate.wait(
-)
-`,
-);
-
-assert.deepEqual(
-  bareMultilineWaitViolations.map((violation) => violation.rule),
-  ["swift-unbounded-wait"],
-);
-
-const finiteMultilineWaitViolations = scanFile(
-  "macos/Tests/LitheTests/MultilineWaitTests.swift",
-  `gate.wait(
-    timeout: .now() + .seconds(timeoutSeconds())
-)
-`,
-);
-
-assert.deepEqual(finiteMultilineWaitViolations, []);
-
-const typescriptViolations = scanFile(
-  "windows/tauri/src/example.test.ts",
-  `test("bad timer", async () => {
-  await new Promise((resolve) => setTimeout(resolve, 10));
-});
-`,
-);
-assert.deepEqual(typescriptViolations.map((violation) => violation.rule), ["typescript-real-timer"]);
-
+// 只有 `#[cfg(test)]` 区域里的写法才算违规；生产代码里的退避 sleep 是合理的。
 const rustViolations = scanFile(
   "rust/lithe-core/src/example.rs",
   `use std::thread;
@@ -127,47 +37,126 @@ mod tests {
 assert.deepEqual(rustViolations.map((violation) => violation.rule), ["rust-real-sleep"]);
 assert.equal(rustViolations[0].line, 7);
 
-const diff = `diff --git a/macos/Tests/LitheTests/Example.swift b/macos/Tests/LitheTests/Example.swift
---- a/macos/Tests/LitheTests/Example.swift
-+++ b/macos/Tests/LitheTests/Example.swift
+const receiveViolations = scanFile(
+  "gpui/crates/git/tests/observation.rs",
+  `#[test]
+fn waits() {
+    let value = receiver.recv();
+    assert!(value.is_ok());
+}
+`,
+);
+assert.deepEqual(receiveViolations.map((violation) => violation.rule), ["rust-unbounded-receive"]);
+
+// 有限等待是正确做法，必须放行。
+const boundedReceive = scanFile(
+  "gpui/crates/git/tests/observation.rs",
+  `#[test]
+fn waits() {
+    let value = receiver.recv_timeout(Duration::from_secs(1));
+    assert!(value.is_ok());
+}
+`,
+);
+assert.deepEqual(boundedReceive, []);
+
+// `select!` 的结构判定：有 default 臂、有超时分支都必须放行，两种都没有才是违规。
+const selectWithoutEscape = scanFile(
+  "gpui/crates/terminal/tests/session.rs",
+  `#[test]
+fn forwards() {
+    select! {
+        line = reader.next() => { handle(line); }
+        status = child.wait() => { record(status); }
+    }
+}
+`,
+);
+assert.deepEqual(
+  selectWithoutEscape.map((violation) => violation.rule),
+  ["rust-unbounded-select"],
+);
+
+const selectWithDefault = scanFile(
+  "gpui/crates/terminal/tests/session.rs",
+  `#[test]
+fn forwards() {
+    select! {
+        line = reader.next() => { handle(line); }
+        default => { /* nothing buffered yet */ }
+    }
+}
+`,
+);
+assert.deepEqual(selectWithDefault, []);
+
+const selectWithTimeout = scanFile(
+  "gpui/crates/terminal/tests/session.rs",
+  `#[test]
+fn forwards() {
+    select! {
+        line = reader.next() => { handle(line); }
+        _ = tokio::time::sleep(Duration::from_secs(1)) => { panic!("no output"); }
+    }
+}
+`,
+);
+assert.deepEqual(selectWithTimeout, []);
+
+// 例外注解：理由够长才放行，太短仍然拦。
+const annotated = scanFile(
+  "gpui/crates/terminal/tests/session.rs",
+  `#[test]
+fn blocks_on_native_boundary() {
+    // test-stability: allow(rust-unbounded-receive) reason: the native API only exposes a blocking call
+    let value = receiver.recv();
+    drop(value);
+}
+`,
+);
+assert.deepEqual(annotated, []);
+
+const shortAnnotation = scanFile(
+  "gpui/crates/terminal/tests/session.rs",
+  `#[test]
+fn blocks_on_native_boundary() {
+    // test-stability: allow(rust-unbounded-receive) reason: native
+    let value = receiver.recv();
+    drop(value);
+}
+`,
+);
+assert.match(shortAnnotation[0].message, /Exception reason is too short/);
+
+// 非 Rust 文件不再被扫描（Swift / TypeScript 规则已随旧前端删除）。
+assert.deepEqual(scanFile("macos/Tests/LitheTests/Example.swift", "gate.wait()\n"), []);
+assert.deepEqual(scanFile("windows/tauri/src/example.test.ts", "setTimeout(r, 1);\n"), []);
+
+// ── 新增行筛选 ──────────────────────────────────────────────────────────────────
+
+const diff = `diff --git a/gpui/crates/git/tests/observation.rs b/gpui/crates/git/tests/observation.rs
+--- a/gpui/crates/git/tests/observation.rs
++++ b/gpui/crates/git/tests/observation.rs
 @@ -2,0 +3,2 @@
-+let gate = DispatchSemaphore(value: 0)
-+gate.wait()
++let receiver = channel();
++let value = receiver.recv();
 `;
 const added = parseAddedLines(diff);
-assert.deepEqual([...added.get("macos/Tests/LitheTests/Example.swift")], [3, 4]);
+assert.deepEqual([...added.get("gpui/crates/git/tests/observation.rs")], [3, 4]);
 
+// 只看新增行：未改动的旧违规不报。
 const selectedViolations = scanFile(
-  "macos/Tests/LitheTests/Example.swift",
-  "let unchanged = true\nThread.sleep(forTimeInterval: 1)\nlet added = true\ngate.wait()\n",
-  new Set([3, 4]),
+  "gpui/crates/git/tests/observation.rs",
+  "#[test]\nlet old = receiver.recv();\nlet other = receiver.recv();\n",
+  new Set([3]),
 );
-assert.deepEqual(selectedViolations.map((violation) => violation.rule), ["swift-unbounded-wait"]);
+assert.deepEqual(
+  selectedViolations.map((violation) => violation.rule),
+  ["rust-unbounded-receive"],
+);
+assert.equal(selectedViolations[0].line, 3);
 
-assert.deepEqual(
-  parseSwiftTimingLine("✔ Test deterministicGate() passed after 0.024 seconds."),
-  { name: "deterministicGate()", event: "passed", durationMs: 24, caseCount: null },
-);
-assert.deepEqual(
-  parseSwiftTimingLine("✘ Test activationPublishes() failed after 0.041 seconds with 5 issues."),
-  { name: "activationPublishes()", event: "failed", durationMs: 41, caseCount: null },
-);
-assert.deepEqual(
-  parseSwiftTimingLine("Test Case '-[LitheTests.Legacy testValue]' failed (1.250 seconds)."),
-  { name: "-[LitheTests.Legacy testValue]", event: "failed", durationMs: 1250, caseCount: null },
-);
-assert.equal(
-  parseSwiftTimingLine("◇ Test case passing 1 argument value → 1 to parameterized(_:) started."),
-  null,
-);
-assert.deepEqual(
-  parseSwiftTimingLine("✔ Test parameterized(_:) with 4 test cases passed after 0.125 seconds."),
-  { name: "parameterized(_:)", event: "passed", durationMs: 125, caseCount: 4 },
-);
-assert.deepEqual(
-  parseSwiftSuiteLine('◇ Suite "App localization" started.'),
-  { name: "App localization", event: "started" },
-);
+// ── 报告解析 ────────────────────────────────────────────────────────────────────
 
 assert.deepEqual(
   parseJUnitCases(
@@ -179,308 +168,20 @@ assert.deepEqual(
   ],
 );
 
-const bunTimeoutRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-bun-timeout-"));
-try {
-  const reportPath = path.join(bunTimeoutRoot, "bun-timeout.json");
-  await assert.rejects(
-    runBunTestsWithTiming(
-      {
-        workingDirectory: bunTimeoutRoot,
-        warnMs: 50,
-        maxMs: 200,
-        suiteTimeoutMs: 500,
-        report: reportPath,
-        testArguments: [],
-      },
-      {
-        runProcessImpl: async () => ({
-          code: null,
-          signal: "SIGTERM",
-          timedOut: true,
-          terminationConfirmed: true,
-          durationMs: 500,
-          stdout: "",
-          stderr: "",
-        }),
-      },
-    ),
-    /Bun test suite exceeded 500ms/,
-  );
-  const timeoutReport = JSON.parse(readFileSync(reportPath, "utf8"));
-  assert.deepEqual(
-    timeoutReport.tests.map(({ name, status }) => ({ name, status })),
-    [{ name: "Bun test suite timeout", status: "timeout" }],
-  );
-  assert.match(readFileSync(reportPath.replace(/\.json$/, ".junit.xml"), "utf8"), /errors="1"/);
-  assert.ok(existsSync(reportPath.replace(/\.json$/, ".html")));
-} finally {
-  rmSync(bunTimeoutRoot, { recursive: true, force: true });
-}
+// ── Rust 计时运行器 ──────────────────────────────────────────────────────────────
 
-const swiftTimeoutRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-swift-timeout-"));
-try {
-  const reportPath = path.join(swiftTimeoutRoot, "swift-timeout.json");
-  await assert.rejects(
-    runSwiftTestsWithTiming(
-      {
-        warnMs: 50,
-        maxMs: 200,
-        suiteTimeoutMs: 500,
-        report: reportPath,
-        command: "swift",
-        commandArguments: ["test"],
-      },
-      {
-        runProcessImpl: async ({ onSpawn }) => {
-          onSpawn({ terminate: async () => true });
-          return {
-            code: null,
-            signal: "SIGTERM",
-            timedOut: true,
-            terminationConfirmed: true,
-            durationMs: 500,
-            stdout: "",
-            stderr: "",
-          };
-        },
-      },
-    ),
-    /Swift test suite exceeded 500ms/,
-  );
-  const timeoutReport = JSON.parse(readFileSync(reportPath, "utf8"));
-  assert.deepEqual(
-    timeoutReport.tests.map(({ name, status }) => ({ name, status })),
-    [{ name: "Swift test suite timeout", status: "timeout" }],
-  );
-  assert.match(readFileSync(reportPath.replace(/\.json$/, ".junit.xml"), "utf8"), /errors="1"/);
-  assert.ok(existsSync(reportPath.replace(/\.json$/, ".html")));
-} finally {
-  rmSync(swiftTimeoutRoot, { recursive: true, force: true });
-}
-
-// Regression coverage for the CI misattribution incident: block-buffered pipes
-// can swallow a finish line, so a stall must be reported as runner silence with
-// the unfinished tests listed, never as "test X exceeded the budget".
-const swiftStallRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-swift-stall-"));
-try {
-  const reportPath = path.join(swiftStallRoot, "swift-stall.json");
-  await assert.rejects(
-    runSwiftTestsWithTiming(
-      {
-        warnMs: 50,
-        maxMs: 200,
-        stallTimeoutMs: 100,
-        suiteTimeoutMs: 5000,
-        report: reportPath,
-        command: "swift",
-        commandArguments: ["test"],
-      },
-      {
-        runProcessImpl: async ({ onStdoutLine, onSpawn }) => {
-          let resolveTerminated;
-          const terminated = new Promise((resolve) => {
-            resolveTerminated = resolve;
-          });
-          onSpawn({
-            terminate: async () => {
-              resolveTerminated();
-              return true;
-            },
-          });
-          onStdoutLine('◇ Suite "Keyboard shortcuts" started.');
-          onStdoutLine("◇ Test fast() started.");
-          onStdoutLine("✔ Test fast() passed after 0.001 seconds.");
-          onStdoutLine("◇ Test truncatedFinishLine() started.");
-          // The finish line for truncatedFinishLine() never arrives, as when the
-          // runner's stdio buffer is lost; the stall watchdog must fire.
-          await terminated;
-          return {
-            code: null,
-            signal: "SIGTERM",
-            timedOut: false,
-            terminationConfirmed: true,
-            durationMs: 150,
-            stdout: "",
-            stderr: "",
-          };
-        },
-      },
-    ),
-    /produced no output for 100ms; tests without a reported result: truncatedFinishLine\(\)/,
-  );
-  const stallReport = JSON.parse(readFileSync(reportPath, "utf8"));
-  assert.equal(stallReport.process.stalled, true);
-  assert.deepEqual(
-    stallReport.tests.map(({ name, status }) => ({ name, status })),
-    [
-      { name: "fast()", status: "passed" },
-      { name: "truncatedFinishLine()", status: "timeout" },
-      { name: "Swift test runner stall", status: "timeout" },
-    ],
-  );
-} finally {
-  rmSync(swiftStallRoot, { recursive: true, force: true });
-}
-
-// A stall after every test reported a result points at teardown/exit instead of
-// blaming any test.
-const swiftTeardownStallRoot = mkdtempSync(
-  path.join(os.tmpdir(), "lithe-test-stability-swift-teardown-stall-"),
-);
-try {
-  const reportPath = path.join(swiftTeardownStallRoot, "swift-teardown-stall.json");
-  await assert.rejects(
-    runSwiftTestsWithTiming(
-      {
-        warnMs: 50,
-        maxMs: 200,
-        stallTimeoutMs: 100,
-        suiteTimeoutMs: 5000,
-        report: reportPath,
-        command: "swift",
-        commandArguments: ["test"],
-      },
-      {
-        runProcessImpl: async ({ onStdoutLine, onSpawn }) => {
-          let resolveTerminated;
-          const terminated = new Promise((resolve) => {
-            resolveTerminated = resolve;
-          });
-          onSpawn({
-            terminate: async () => {
-              resolveTerminated();
-              return true;
-            },
-          });
-          onStdoutLine("◇ Test fast() started.");
-          onStdoutLine("✔ Test fast() passed after 0.001 seconds.");
-          await terminated;
-          return {
-            code: null,
-            signal: "SIGTERM",
-            timedOut: false,
-            terminationConfirmed: true,
-            durationMs: 150,
-            stdout: "",
-            stderr: "",
-          };
-        },
-      },
-    ),
-    /produced no output for 100ms; every parsed test had reported a result/,
-  );
-  const teardownReport = JSON.parse(readFileSync(reportPath, "utf8"));
-  assert.equal(teardownReport.process.stalled, true);
-  assert.deepEqual(
-    teardownReport.tests.map(({ name, status }) => ({ name, status })),
-    [
-      { name: "fast()", status: "passed" },
-      { name: "Swift test runner stall", status: "timeout" },
-    ],
-  );
-} finally {
-  rmSync(swiftTeardownStallRoot, { recursive: true, force: true });
-}
-
-// The per-test budget is enforced from the durations swift-testing reports: a
-// test that finishes over maxMs must fail the run even though the runner
-// exited cleanly and no watchdog fired.
-const swiftBudgetRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-swift-budget-"));
-try {
-  const reportPath = path.join(swiftBudgetRoot, "swift-budget.json");
-  await assert.rejects(
-    runSwiftTestsWithTiming(
-      {
-        warnMs: 50,
-        maxMs: 200,
-        stallTimeoutMs: 5000,
-        suiteTimeoutMs: 10000,
-        report: reportPath,
-        command: "swift",
-        commandArguments: ["test"],
-      },
-      {
-        runProcessImpl: async ({ onStdoutLine, onSpawn }) => {
-          onSpawn({ terminate: async () => true });
-          onStdoutLine("◇ Test overBudget() started.");
-          onStdoutLine("✔ Test overBudget() passed after 0.250 seconds.");
-          return {
-            code: 0,
-            signal: null,
-            timedOut: false,
-            terminationConfirmed: true,
-            durationMs: 300,
-            stdout: "",
-            stderr: "",
-          };
-        },
-      },
-    ),
-    /1 Swift test\(s\) exceeded the local budget/,
-  );
-  const budgetReport = JSON.parse(readFileSync(reportPath, "utf8"));
-  assert.deepEqual(
-    budgetReport.tests.map(({ name, status, durationMs }) => ({ name, status, durationMs })),
-    [{ name: "overBudget()", status: "passed", durationMs: 250 }],
-  );
-} finally {
-  rmSync(swiftBudgetRoot, { recursive: true, force: true });
-}
-
-// A spawn failure must reject promptly and clear the stall watchdog; a leaked
-// ref'd timer would keep the harness process alive for the full stall timeout.
-{
-  const spawnFailureRoot = mkdtempSync(
-    path.join(os.tmpdir(), "lithe-test-stability-swift-spawn-failure-"),
-  );
-  try {
-    await assert.rejects(
-      runSwiftTestsWithTiming(
-        {
-          warnMs: 50,
-          maxMs: 200,
-          stallTimeoutMs: 600000,
-          suiteTimeoutMs: 10000,
-          report: path.join(spawnFailureRoot, "swift-spawn-failure.json"),
-          command: "swift",
-          commandArguments: ["test"],
-        },
-        {
-          runProcessImpl: async () => {
-            throw new Error("spawn ENOENT");
-          },
-        },
-      ),
-      /spawn ENOENT/,
-    );
-    // If the watchdog leaked, the 600s timer would hold this test process open
-    // long past its CI budget; reaching this line with a cleared event loop is
-    // asserted implicitly by the suite finishing on time.
-  } finally {
-    rmSync(spawnFailureRoot, { recursive: true, force: true });
-  }
-}
-
+// 编译失败必须归因到「编译」这一步，而不是伪装成某个测试超时。
 const rustCompileFailureRoot = mkdtempSync(
-  path.join(
-    os.tmpdir(),
-    "lithe-test-stability-rust-compile-failure-",
-  ),
+  path.join(os.tmpdir(), "lithe-test-stability-rust-compile-failure-"),
 );
 
 try {
-  const reportPath = path.join(
-    rustCompileFailureRoot,
-    "rust-compile-failure.json",
-  );
+  const reportPath = path.join(rustCompileFailureRoot, "rust-compile-failure.json");
 
   await assert.rejects(
     runRustTestsWithTiming(
       {
-        manifest: path.join(
-          rustCompileFailureRoot,
-          "Cargo.toml",
-        ),
+        manifest: path.join(rustCompileFailureRoot, "Cargo.toml"),
         package: null,
         warnMs: 50,
         maxMs: 200,
@@ -490,15 +191,12 @@ try {
         keepGoing: false,
       },
       {
-        runProcessImpl: async ({
-          onStdoutLine = () => {},
-        }) => {
+        runProcessImpl: async ({ onStdoutLine = () => {} }) => {
           onStdoutLine(
             JSON.stringify({
               reason: "compiler-message",
               message: {
-                rendered:
-                  "error[E0425]: cannot find value `missing` in this scope\n",
+                rendered: "error[E0425]: cannot find value `missing` in this scope\n",
               },
             }),
           );
@@ -518,60 +216,24 @@ try {
     /Cargo test compilation exited with code 101/,
   );
 
-  const compileFailureReport = JSON.parse(
-    readFileSync(reportPath, "utf8"),
-  );
+  const compileFailureReport = JSON.parse(readFileSync(reportPath, "utf8"));
 
   assert.deepEqual(
-    compileFailureReport.tests.map(
-      ({ name, status }) => ({ name, status }),
-    ),
-    [
-      {
-        name: "Cargo test compilation",
-        status: "failed",
-      },
-    ],
+    compileFailureReport.tests.map(({ name, status }) => ({ name, status })),
+    [{ name: "Cargo test compilation", status: "failed" }],
   );
-
-  assert.match(
-    compileFailureReport.tests[0].details,
-    /E0425/,
-  );
-
-  assert.match(
-    readFileSync(
-      reportPath.replace(/\.json$/, ".log"),
-      "utf8",
-    ),
-    /E0425/,
-  );
-
-  assert.match(
-    readFileSync(
-      reportPath.replace(/\.json$/, ".junit.xml"),
-      "utf8",
-    ),
-    /failures="1"/,
-  );
-
-  assert.ok(
-    existsSync(
-      reportPath.replace(/\.json$/, ".html"),
-    ),
-  );
+  assert.match(compileFailureReport.tests[0].details, /E0425/);
+  assert.match(readFileSync(reportPath.replace(/\.json$/, ".log"), "utf8"), /E0425/);
+  assert.match(readFileSync(reportPath.replace(/\.json$/, ".junit.xml"), "utf8"), /failures="1"/);
+  assert.ok(existsSync(reportPath.replace(/\.json$/, ".html")));
 } finally {
-  rmSync(rustCompileFailureRoot, {
-    recursive: true,
-    force: true,
-  });
+  rmSync(rustCompileFailureRoot, { recursive: true, force: true });
 }
 
+// 超时必须杀掉整个进程树，而不只是直接子进程。
 if (process.platform !== "win32") {
   let rootPID = null;
   let descendantPID = null;
-  // swift-testing may detach its helper into a separate process group. The
-  // timeout owner must still discover and terminate that descendant.
   const descendantSource = "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);";
   const rootSource = `
     const { spawn } = require("node:child_process");
@@ -613,6 +275,7 @@ if (process.platform !== "win32") {
   }
 }
 
+// 端到端：挂住的测试必须在自己的截止时间被判为 timeout，并写全四种产物。
 const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-rust-"));
 try {
   mkdirSync(path.join(fixtureRoot, "src"));
@@ -633,7 +296,10 @@ mod tests {
 `,
   );
   const reportPath = path.join(fixtureRoot, "timing.json");
-  const runnerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-rust-tests-with-timing.mjs");
+  const runnerPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "run-rust-tests-with-timing.mjs",
+  );
   const result = spawnSync(
     process.execPath,
     [
@@ -672,6 +338,7 @@ mod tests {
   rmSync(fixtureRoot, { recursive: true, force: true });
 }
 
+// 共享 suite 截止时间必须落到「当前正在跑的那个测试」上。
 const deadlineFixtureRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-deadline-"));
 try {
   const reportPath = path.join(deadlineFixtureRoot, "deadline.json");
@@ -767,6 +434,7 @@ try {
   rmSync(deadlineFixtureRoot, { recursive: true, force: true });
 }
 
+// 逐项预算：超预算但通过的测试算 warning，挂住的测试在自己的预算上判 timeout。
 const budgetFixtureRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-budget-"));
 try {
   const report = path.join(budgetFixtureRoot, "budget.json");
@@ -803,8 +471,6 @@ try {
   assert.deepEqual(result.tests.map(({ status, maxMs }) => ({ status, maxMs })), [
     { status: "passed", maxMs: 100 }, { status: "passed", maxMs: 300 }, { status: "timeout", maxMs: 300 },
   ]);
-  // The native pass exceeds the ordinary budget but must remain a passing case
-  // in both HTML and JUnit. The hung native case still fails at its own deadline.
   const junit = readFileSync(report.replace(".json", ".junit.xml"), "utf8");
   assert.match(junit, /failures="0"/);
   assert.match(junit, /errors="1"/);

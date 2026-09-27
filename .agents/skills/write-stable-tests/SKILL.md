@@ -1,6 +1,6 @@
 ---
 name: write-stable-tests
-description: Write and review deterministic, bounded Lithe tests for macOS Swift, Windows TypeScript, and Rust. Use whenever creating, modifying, or reviewing test code or test infrastructure, especially concurrency, timers, polling, subprocess, watcher, lifecycle, or cancellation tests that could hang CI.
+description: Write and review deterministic, bounded Lithe tests for Rust. Use whenever creating, modifying, or reviewing test code or test infrastructure, especially concurrency, timers, polling, subprocess, watcher, lifecycle, or cancellation tests that could hang CI.
 ---
 
 # Write Stable Tests
@@ -8,31 +8,25 @@ description: Write and review deterministic, bounded Lithe tests for macOS Swift
 Apply this Skill after `develop-lithe`. Its purpose is to make a broken test
 fail locally with a useful diagnostic instead of waiting for a CI job timeout.
 
-## Toolchain boundaries
+## Scope
 
-- macOS uses Swift, `zsh`, and Node.js. It does not require Bun, `npm`, or a
-  JavaScript package installation for stability checks, timing, JUnit output,
-  or HTML report generation.
-- Windows Rust scopes use Node.js plus Cargo. Windows `Frontend` additionally
-  uses the repository's Bun toolchain because the product tests run under Bun;
-  this dependency is isolated to that scope.
+Lithe is a pure Rust repository: `rust/lithe-core` (deterministic commands and
+contracts) plus the GPUI Kit host in `gpui/`. The Swift macOS product, the
+React/Tauri Windows product, and the shared Monaco editor package were removed;
+there are no platform test lanes left to keep green.
 
-## Swift CI compatibility
+Two test surfaces remain, and they have different constraints:
 
-- Compile tests with the same Swift toolchain as CI before handing them off. A
-  local compiler that is newer or older can accept or reject syntax differently.
-- A `weak` reference is mutable storage because the runtime may clear it;
-  declare it as `weak var`.
-- When a CI compile fails before tests start, inspect the CI compiler diagnostic
-  first and reproduce the compile lane before diagnosing test timing or
-  concurrency behavior.
+- **Rust Core** (`rust/lithe-core`): deterministic, no UI, no long-lived
+  resources. Tests are plain `cargo test`.
+- **GPUI host** (`gpui/crates/*`): owns windows, threads, channels, file
+  watchers, terminal PTYs, and JDTLS child processes. This is where hanging is
+  actually possible, so most of the rules below exist for it.
 
 ## Read the platform guidance
 
-- For Swift or macOS tests, read [references/macos-swift.md](references/macos-swift.md).
-- For TypeScript, Tauri Rust, or shared Rust tests exercised by Windows, read
-  [references/windows-and-rust.md](references/windows-and-rust.md).
-- Read both references when a shared contract or cross-platform behavior changes.
+- For Rust Core and gpui host tests, read
+  [references/rust-and-gpui.md](references/rust-and-gpui.md).
 - For HTML/JUnit output, performance budgets, or CI artifacts, read
   [references/test-reporting.md](references/test-reporting.md).
 
@@ -42,18 +36,19 @@ fail locally with a useful diagnostic instead of waiting for a CI job timeout.
   first mechanism capable of terminating a stuck test.
 - Do not use real-time sleeps to synchronize state. Inject a clock, scheduler,
   event, continuation, channel, or controllable test double.
-- Do not move a blocking wait into a detached task merely to make an async test
-  compile. Blocking a cooperative executor or main/UI thread is forbidden.
+- Do not move a blocking wait into a spawned task merely to make an async test
+  compile. Blocking a cooperative executor or the UI thread is forbidden.
 - Every spawned task, timer, process, thread, continuation, stream, and gate has
   one owner and a cleanup path that runs after assertion failures as well as
-  success. Prefer `defer` or the framework's teardown mechanism.
+  success. Prefer `Drop` or an explicit teardown guard.
 - A concurrency test describes and controls its event order: operation starts,
   reaches the synchronization point, is released or cancelled, and terminates.
 - Polling is a last resort. It must use a monotonic deadline, produce a useful
   timeout diagnostic, and poll an observable boundary rather than private state.
 - Unit tests do not depend on real network services, installed developer tools,
   machine speed, personal paths, or wall-clock time. Put unavoidable external
-  dependencies in an explicitly identified integration test.
+  dependencies in an explicitly identified integration test. In particular, do
+  not start a real JDTLS, a real terminal, or a real file watcher in a unit test.
 - Assert observable behavior. Do not weaken production behavior, expose private
   state solely for a test, or delete a test to satisfy the stability gate.
 
@@ -76,18 +71,20 @@ fail locally with a useful diagnostic instead of waiting for a CI job timeout.
    ./.agents/skills/write-stable-tests/scripts/verify-test-stability.ps1
    ```
 
-4. Run the platform timing harness. A changed test is not verified until its
-   individual duration appears in the generated HTML and JUnit reports:
+4. Run the affected suites and record per-test durations. A changed test is not
+   verified until its individual duration appears in the generated report:
 
    ```bash
-   ./.agents/skills/write-stable-tests/scripts/test-stability-macos.sh -- --filter '<focused-test>'
-   ./.agents/skills/write-stable-tests/scripts/test-stability-windows.ps1 -Scope Frontend
-   ./.agents/skills/write-stable-tests/scripts/test-stability-windows.ps1 -Scope WindowsRust
+   cargo test --manifest-path rust/Cargo.toml -p lithe-core
+   node .agents/skills/write-stable-tests/scripts/run-rust-tests-with-timing.mjs \
+       --manifest gpui/Cargo.toml --package lithe-gpui-workbench \
+       --suite-timeout-ms 120000 \
+       --report .artifacts/test-stability/gpui-workbench.json
    ```
 
 5. Run the broader affected validation required by `develop-lithe`. Report the
-   HTML report path, slowest changed tests, exact commands, and any suite that
-   could not run on the current platform. Open
+   report path, slowest changed tests, exact commands, and any suite that could
+   not run on the current platform. Open
    `.artifacts/test-stability/index.html` to review failures, module health, and
    performance warnings before handoff.
 

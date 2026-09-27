@@ -1,5 +1,15 @@
 #!/usr/bin/env node
 
+// verify-test-stability.mjs —— 测试稳定性静态闸门。
+//
+// 仓库现在是纯 Rust：`rust/lithe-core`（确定性业务逻辑）与 `gpui/`（GPUI Kit 宿主）。
+// Swift / TypeScript 规则与 `--platform macos|windows` 通道随旧前端删除一并移除 ——
+// 留着它们只会让闸门去扫不存在的目录，并把"该跑哪个平台的测试"这个已经不存在的问题
+// 继续交给读者。
+//
+// 保留的通用机制（与平台无关）：新增行筛选、字符串/行注释剥离、测试区域掩码、
+// `test-stability: allow(<rule>) reason: …` 例外注解、以及报告格式。
+
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -8,88 +18,45 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIRECTORY, "../../../..");
 
-const RULES = {
-  swift: [
-    {
-      id: "swift-unbounded-wait",
-      pattern: /\.wait\s*\(\s*\)|\.wait\s*\([^)]*\.\s*distantFuture\b[^)]*\)/,
-      message: "Use a finite timeout and assert its result; bare waits and distantFuture can hang CI.",
-    },
-    {
-      id: "swift-real-sleep",
-      pattern: /\b(?:Task|Thread)\.sleep\s*\(|\busleep\s*\(/,
-      message: "Use an injected clock, event, or continuation instead of real-time sleep.",
-    },
-    {
-      id: "swift-process-wait",
-      pattern: /\.waitUntilExit\s*\(/,
-      message: "Wait for subprocesses through a watchdog that can terminate the process tree.",
-    },
-    {
-      id: "swift-run-loop-wait",
-      pattern: /RunLoop\.current\.run\s*\(/,
-      message: "Do not spin a run loop to synchronize a test; await an observable event.",
-    },
-  ],
-  typescript: [
-    {
-      id: "typescript-real-timer",
-      pattern: /\b(?:globalThis\.|window\.)?set(?:Timeout|Interval)\s*\(/,
-      message: "Inject a manual timer or scheduler instead of using a real timer in a test.",
-    },
-    {
-      id: "typescript-atomic-wait",
-      pattern: /\bAtomics\.wait\s*\(/,
-      message: "Atomics.wait blocks the test worker; use a deferred promise with owned cleanup.",
-    },
-    {
-      id: "typescript-infinite-loop",
-      pattern: /\bwhile\s*\(\s*true\s*\)/,
-      message: "Test polling loops require an explicit deadline and timeout diagnostic.",
-    },
-  ],
-  rust: [
-    {
-      id: "rust-real-sleep",
-      pattern: /\b(?:std::)?thread::sleep\s*\(/,
-      message: "Use a channel, barrier, or injected clock instead of sleeping to coordinate a test.",
-    },
-    {
-      id: "rust-unbounded-receive",
-      pattern: /\.recv\(\s*\)/,
-      message: "Use recv_timeout or another bounded receive in test synchronization.",
-    },
-  ],
-};
+/**
+ * Rust 测试里最容易造成"CI 挂到超时"的写法。
+ *
+ * 规则集按 gpui 宿主真正拥有的资源来定：它现在持有线程、channel、文件监听、终端 PTY
+ * 与 JDTLS 子进程，所以"无界等待"和"无人认领的阻塞点"是这里最现实的风险。
+ */
+const RUST_RULES = [
+  {
+    id: "rust-real-sleep",
+    pattern: /\b(?:std::)?thread::sleep\s*\(/,
+    message: "Use a channel, barrier, or injected clock instead of sleeping to coordinate a test.",
+  },
+  {
+    id: "rust-unbounded-receive",
+    pattern: /\.recv\(\s*\)/,
+    message: "Use recv_timeout or another bounded receive in test synchronization.",
+  },
+  {
+    id: "rust-unbounded-select",
+    pattern: /select!\s*\{/,
+    // `select!` 本身不是问题；只有不带 `default` 分支且所有分支都无超时时才会永久阻塞。
+    // 交给下面的 `selectWithoutDefaultBranchViolations` 做结构判定，这里不按行匹配。
+    lineOnly: true,
+    message: "select! without a default branch can block forever; add a timeout branch or a default arm.",
+  },
+  {
+    id: "rust-unbounded-blocking-lock",
+    pattern: /\.lock\(\s*\)\s*(?:\.unwrap\(\)|;)/,
+    message:
+      "A poisoned or never-released mutex can deadlock the suite; prefer try_lock with a deadline in tests.",
+  },
+];
 
 function normalizePath(filePath) {
   return filePath.split(path.sep).join("/").replace(/^\.\//, "");
 }
 
-function languageFor(filePath) {
-  const normalized = normalizePath(filePath);
-  if (
-    normalized.endsWith(".swift") &&
-    (normalized.includes("/Tests/") || normalized.startsWith("macos/Tests/"))
-  ) {
-    return "swift";
-  }
-  if (/\.(?:test|spec)\.tsx?$/.test(normalized)) return "typescript";
-  if (normalized.endsWith(".rs")) return "rust";
-  return null;
-}
-
-function belongsToPlatform(filePath, platform) {
-  if (platform === "all") return true;
-  const normalized = normalizePath(filePath);
-  if (platform === "macos") {
-    return (
-      normalized.startsWith("macos/") ||
-      normalized.startsWith("Plugins/mac/") ||
-      normalized.startsWith("rust/")
-    );
-  }
-  return normalized.startsWith("windows/") || normalized.startsWith("rust/lithe-core/");
+function isRustTestFile(filePath) {
+  return normalizePath(filePath).endsWith(".rs");
 }
 
 function stripStringsAndLineComments(line) {
@@ -117,12 +84,14 @@ function stripStringsAndLineComments(line) {
   return result;
 }
 
-function rustTestLineMask(lines, filePath) {
-  const normalized = normalizePath(filePath);
-  if (normalized.includes("/tests/") || /(?:^|\/)tests\.rs$/.test(normalized)) {
-    return lines.map(() => true);
-  }
-
+/**
+ * 标出「属于测试代码」的行。
+ *
+ * Rust 没有路径约定（不像 Swift 的 `/Tests/`），所以只能从 `#[cfg(test)]` 模块与
+ * `#[test]` / `#[tokio::test]` 之类的属性函数里推：`#[test]` 属性的**下一行**先记为待定，
+ * 见到 `fn … {` 才开一个区域，按花括号深度配平。
+ */
+function rustTestLineMask(lines) {
   const mask = lines.map(() => false);
   let depth = 0;
   let pendingTestModule = false;
@@ -161,9 +130,7 @@ function rustTestLineMask(lines, filePath) {
 function exceptionReason(lines, lineIndex, ruleID) {
   const candidates = [lines[lineIndex], lines[lineIndex - 1]].filter(Boolean);
   const escapedRule = ruleID.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(
-    `test-stability:\\s*allow\\(${escapedRule}\\)\\s*reason:\\s*(.+)$`,
-  );
+  const pattern = new RegExp(`test-stability:\\s*allow\\(${escapedRule}\\)\\s*reason:\\s*(.+)$`);
   for (const candidate of candidates) {
     const match = candidate.match(pattern);
     if (match) return match[1].trim();
@@ -171,173 +138,82 @@ function exceptionReason(lines, lineIndex, ruleID) {
   return null;
 }
 
-function swiftUnboundedWaitViolations(lines, selected) {
+/**
+ * `select!` 的每一个分支都是"等这一路就绪"，只要**所有**分支都没有超时也没有
+ * `default`，这行就是一个能永久阻塞的同步点。逐个分支收集文本再判定，避免把
+ * 同一行里带 `default` 的合法写法误报。
+ */
+function selectWithoutDefaultBranchViolations(lines, selected) {
   const violations = [];
-  const rule = RULES.swift.find((candidate) => candidate.id === "swift-unbounded-wait");
+  const rule = RUST_RULES.find((candidate) => candidate.id === "rust-unbounded-select");
 
   for (let index = 0; index < lines.length; index += 1) {
-    const firstLine = stripStringsAndLineComments(lines[index]);
-    let searchOffset = 0;
-
-    while (searchOffset < firstLine.length) {
-      const match = firstLine.slice(searchOffset).match(/\.wait\s*\(/);
-      if (!match) break;
-
-      const waitColumn = searchOffset + match.index;
-      let depth = 0;
-      let callStarted = false;
-      let callClosed = false;
-      let callEnd = index;
-      let callText = "";
-
-      callLines:
-      for (let callIndex = index; callIndex < lines.length; callIndex += 1) {
-        const structural = stripStringsAndLineComments(lines[callIndex]);
-        const columnStart = callIndex === index ? waitColumn : 0;
-
-        for (let column = columnStart; column < structural.length; column += 1) {
-          const character = structural[column];
-          callText += character;
-          if (character === "(") {
-            depth += 1;
-            callStarted = true;
-          } else if (character === ")" && callStarted) {
-            depth -= 1;
-
-            if (depth === 0) {
-              callEnd = callIndex;
-              callClosed = true;
-              break callLines;
-            }
-          }
-        }
-
-        callEnd = callIndex;
-        callText += "\n";
-      }
-
-      if (!callStarted || !callClosed) {
-        break;
-      }
-
-      const openParen = callText.indexOf("(");
-      const closeParen = callText.lastIndexOf(")");
-      const argumentsText = callText.slice(openParen + 1, closeParen);
-
-      const isUnbounded =
-        argumentsText.trim().length === 0 ||
-        /\.\s*distantFuture\b/.test(argumentsText);
-
-      if (isUnbounded) {
-        const selectedLines = selected
-          ? [...selected].filter(
-              (lineNumber) =>
-                lineNumber >= index + 1 &&
-                lineNumber <= callEnd + 1,
-            )
-          : [];
-
-        if (!selected || selectedLines.length > 0) {
-          const reportLine = selected
-            ? Math.min(...selectedLines) - 1
-            : index;
-
-          const reason = exceptionReason(lines, index, rule.id);
-
-          if (!reason || reason.length < 16) {
-            violations.push({
-              file: null,
-              line: reportLine + 1,
-              rule: rule.id,
-              message: reason
-                ? `Exception reason is too short. ${rule.message}`
-                : rule.message,
-              source: lines[reportLine].trim(),
-            });
-          }
-        }
-      }
-
-      searchOffset = waitColumn + match[0].length;
-    }
-  }
-
-  return violations;
-}
-
-function swiftDetachedBlockingViolations(lines, selected) {
-  const violations = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const firstLine = stripStringsAndLineComments(lines[index]);
-    const detachedIndex = firstLine.search(/\bTask\.detached\b/);
-    if (detachedIndex < 0) continue;
+    if (!/select!\s*\{/.test(lines[index])) continue;
 
     let depth = 0;
-    let blockStarted = false;
-    let blockEnd = index;
-    let waitLine = null;
-    for (let blockIndex = index; blockIndex < lines.length; blockIndex += 1) {
-      let structural = stripStringsAndLineComments(lines[blockIndex]);
-      if (blockIndex === index) structural = structural.slice(detachedIndex);
-      if (!blockStarted) {
-        const openingBrace = structural.indexOf("{");
-        if (openingBrace < 0) continue;
-        structural = structural.slice(openingBrace);
-        blockStarted = true;
+    let started = false;
+    let body = "";
+    let end = index;
+    for (let cursor = index; cursor < lines.length; cursor += 1) {
+      const structural = stripStringsAndLineComments(lines[cursor]);
+      for (const character of structural) {
+        if (character === "{") {
+          depth += 1;
+          started = true;
+        } else if (character === "}") {
+          depth -= 1;
+        }
+        body += character;
+        // ⚠️ 只有**见过左花括号之后**才谈"闭合"：`select! {` 这一行在 `{` 之前都是空格，
+        // 那时 depth 还是 0，若无条件判 `depth === 0` 就会在第一个空格处误判为已闭合。
+        if (started && depth === 0) {
+          end = cursor;
+          break;
+        }
       }
-      if (waitLine === null && /\bwait\w*\s*\(/.test(structural)) waitLine = blockIndex;
-      depth += (structural.match(/\{/g) ?? []).length;
-      depth -= (structural.match(/\}/g) ?? []).length;
-      blockEnd = blockIndex;
-      if (depth <= 0) break;
+      if (started && depth === 0) break;
     }
-    if (!blockStarted || waitLine === null) continue;
+    // `select!` 的分支用 `=>` 分隔；没有 `=>` 说明正则没匹配到真实宏调用，跳过。
+    if (!started || !body.includes("=>")) continue;
+    if (/\bdefault\b/.test(body)) continue;
+    if (/recv_timeout\s*\(|after\s*\(|Duration::from/.test(body)) continue;
 
     const selectedLines = selected
-      ? [...selected].filter((lineNumber) => lineNumber >= index + 1 && lineNumber <= blockEnd + 1)
+      ? [...selected].filter((lineNumber) => lineNumber >= index + 1 && lineNumber <= end + 1)
       : [];
     if (selected && selectedLines.length === 0) continue;
-    const reportLine = selected?.has(waitLine + 1)
-      ? waitLine
-      : selected
-        ? Math.min(...selectedLines) - 1
-        : waitLine;
-    const reason = exceptionReason(lines, waitLine, "swift-detached-blocking");
+    const reportLine = selected ? Math.min(...selectedLines) - 1 : index;
+
+    const reason = exceptionReason(lines, index, rule.id);
     if (reason && reason.length >= 16) continue;
     violations.push({
       file: null,
       line: reportLine + 1,
-      rule: "swift-detached-blocking",
-      message: reason
-        ? "Exception reason is too short. Do not hide a blocking wait in Task.detached; use bounded asynchronous signaling."
-        : "Do not hide a blocking wait in Task.detached; use bounded asynchronous signaling.",
+      rule: rule.id,
+      message: reason ? `Exception reason is too short. ${rule.message}` : rule.message,
       source: lines[reportLine].trim(),
     });
-    index = blockEnd;
   }
+
   return violations;
 }
 
-export function scanFile(filePath, content, selectedLineNumbers = null, platform = "all") {
+export function scanFile(filePath, content, selectedLineNumbers = null) {
   const normalized = normalizePath(filePath);
-  const language = languageFor(normalized);
-  if (!language || !belongsToPlatform(normalized, platform)) return [];
+  if (!isRustTestFile(normalized)) return [];
 
   const lines = content.split(/\r?\n/);
-  const rustMask = language === "rust" ? rustTestLineMask(lines, normalized) : null;
+  const mask = rustTestLineMask(lines);
   const selected = selectedLineNumbers ? new Set(selectedLineNumbers) : null;
   const violations = [];
 
   for (let index = 0; index < lines.length; index += 1) {
     const lineNumber = index + 1;
     if (selected && !selected.has(lineNumber)) continue;
-    if (rustMask && !rustMask[index]) continue;
+    if (!mask[index]) continue;
 
-    for (const rule of RULES[language]) {
-      if (language === "swift" && rule.id === "swift-unbounded-wait") {
-        continue;
-      }
-
+    for (const rule of RUST_RULES) {
+      if (rule.lineOnly) continue;
       if (!rule.pattern.test(lines[index])) continue;
       const reason = exceptionReason(lines, index, rule.id);
       if (reason && reason.length >= 16) continue;
@@ -345,21 +221,14 @@ export function scanFile(filePath, content, selectedLineNumbers = null, platform
         file: normalized,
         line: lineNumber,
         rule: rule.id,
-        message: reason
-          ? `Exception reason is too short. ${rule.message}`
-          : rule.message,
+        message: reason ? `Exception reason is too short. ${rule.message}` : rule.message,
         source: lines[index].trim(),
       });
     }
   }
-  if (language === "swift") {
-    for (const violation of swiftUnboundedWaitViolations(lines, selected)) {
-      violations.push({ ...violation, file: normalized });
-    }
 
-    for (const violation of swiftDetachedBlockingViolations(lines, selected)) {
-      violations.push({ ...violation, file: normalized });
-    }
+  for (const violation of selectWithoutDefaultBranchViolations(lines, selected)) {
+    violations.push({ ...violation, file: normalized });
   }
   return violations;
 }
@@ -411,18 +280,14 @@ function git(...arguments_) {
 }
 
 function parseArguments(arguments_) {
-  const options = { all: false, platform: "all", base: null, head: "HEAD" };
+  const options = { all: false, base: null, head: "HEAD" };
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--all") options.all = true;
-    else if (argument === "--platform") options.platform = arguments_[++index];
     else if (argument === "--base") options.base = arguments_[++index];
     else if (argument === "--head") options.head = arguments_[++index];
     else if (argument === "--help") options.help = true;
     else throw new Error(`Unknown argument: ${argument}`);
-  }
-  if (!['all', 'macos', 'windows'].includes(options.platform)) {
-    throw new Error(`Unsupported platform: ${options.platform}`);
   }
   return options;
 }
@@ -447,7 +312,7 @@ export function run(options) {
     : changedFiles(options);
   const violations = [];
   for (const [file, selectedLines] of candidates) {
-    if (!languageFor(file) || !belongsToPlatform(file, options.platform)) continue;
+    if (!isRustTestFile(file)) continue;
     const absolute = path.resolve(REPOSITORY_ROOT, file);
     let content;
     try {
@@ -455,7 +320,7 @@ export function run(options) {
     } catch {
       continue;
     }
-    violations.push(...scanFile(file, content, selectedLines, options.platform));
+    violations.push(...scanFile(file, content, selectedLines));
   }
   return violations;
 }
@@ -470,13 +335,13 @@ function main() {
     return;
   }
   if (options.help) {
-    console.log("Usage: verify-test-stability.mjs [--all] [--platform all|macos|windows] [--base REV --head REV]");
+    console.log("Usage: verify-test-stability.mjs [--all] [--base REV --head REV]");
     return;
   }
 
   const violations = run(options);
   if (violations.length === 0) {
-    console.log(`Test stability check passed (${options.all ? "full tree" : "added lines"}, ${options.platform}).`);
+    console.log(`Test stability check passed (${options.all ? "full tree" : "added lines"}, rust).`);
     return;
   }
 
