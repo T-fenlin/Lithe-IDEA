@@ -39,10 +39,12 @@
        font-family:var(--ui)}
   /* 自动缩放：把 1920 宽的稿子整体适配到当前窗口，保证"一眼看到全部" */
   .wrap{width:1920px;transform-origin:top center;will-change:transform}
-  .fitbtn{position:fixed;right:14px;top:12px;z-index:99;background:#2b2d30;color:#b4b8bf;
+  .fitbtn{position:fixed;right:14px;bottom:14px;z-index:99;background:#2b2d30;color:#b4b8bf;
           border:1px solid #43454a;border-radius:6px;padding:5px 12px;font-size:12.5px;
           cursor:pointer;font-family:var(--ui);box-shadow:0 2px 10px #0008}
   .fitbtn:hover{background:#393b40;color:#dfe1e5}
+  /* 自动化截图（?scale=1）时隐藏这个按钮，图里只有界面 */
+  body.bare .fitbtn{display:none}
   .app{width:1920px;height:1080px;background:var(--bg);color:var(--fg);
        display:flex;flex-direction:column;position:relative;overflow:hidden;flex-shrink:0}
 
@@ -377,6 +379,7 @@
   var btn = document.getElementById('fitbtn');
   var manual = new URLSearchParams(location.search).get('scale') === '1';
   var natural = 1920;
+  if (manual) document.body.classList.add('bare');
 
   function apply() {
     var avail = window.innerWidth - 32;
