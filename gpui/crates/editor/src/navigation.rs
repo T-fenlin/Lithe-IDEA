@@ -294,11 +294,20 @@ pub(crate) struct JumpHistory {
 
 impl JumpHistory {
     /// `←` 可不可用。
+    ///
+    /// ⚠️ **2026-09-27 起没有生产调用点**：它唯一的用主是标签栏那对导航按钮，
+    /// 已按维护者口径删除（见 `editor_view.rs` 里 `render_nav_group` 的墓碑注释）。
+    /// 方法保留、标 `#[allow(dead_code)]` —— 单测仍在用（`can_go_back` 那几条断言），
+    /// 而且把 `← →` 接到键位（`Alt+←` / `Alt+→`）时还是靠它算禁用态。
+    #[allow(dead_code)]
     pub(crate) fn can_go_back(&self) -> bool {
         !self.entries.is_empty() && self.current_index.is_none_or(|index| index > 0)
     }
 
     /// `→` 可不可用。
+    ///
+    /// ⚠️ 与 [`JumpHistory::can_go_back`] 同一处置：2026-09-27 起没有生产调用点，保留 + `allow`。
+    #[allow(dead_code)]
     pub(crate) fn can_go_forward(&self) -> bool {
         self.current_index
             .is_some_and(|index| index + 1 < self.entries.len())

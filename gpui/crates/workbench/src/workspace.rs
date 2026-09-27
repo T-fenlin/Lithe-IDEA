@@ -91,11 +91,11 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::{ActiveTheme as _, Icon, Root, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems,
+    Render, SharedString, Styled as _, Window, div, rems,
 };
 
 use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
@@ -414,20 +414,19 @@ const SEARCH_ACTIVITY_IX: usize = 2;
 /// —— 启动时左活动栏顶部第一项就是选中态。
 const DEFAULT_TOP_ACTIVITY: usize = 0;
 
-/// 左侧栏宽度（**2026-09-27 从 320 改为 380**，维护者口径「这个默认修改为 380 的」）。
+/// 左侧栏面板的**初始**宽度（规格像素，320 = 真源 `sidebarWidth`）。
 ///
-/// 320 是照 Lithe 自己的 Windows 前端搬的（`features/settings/config/default-settings.ts:138`
-/// 的 `sidebarWidth`），在 1920 宽窗口里只占 19.8%：本项目自己的路径
-/// `D:\developmentProjects\rust\Lithe-IDEA` 都放不下、项目名被截断成 `Lithe-IDEA…`；
-/// 480 又偏宽（维护者口径）。380 是维护者指定的默认值。
+/// ⚠️ 这只是**初值**：2026-09-27 起运行期可以拖（[`drag_handle`] 写
+/// [`ShellWorkspace::left_sidebar_width`]，范围 [`SIDEBAR_MIN_WIDTH_SPEC`] …
+/// [`SIDEBAR_MAX_WIDTH_SPEC`]）。维护者口径：「workspace.rs 我还是改为 320 了，
+/// 到时候弄成拖动改宽窄」—— 即恢复真源默认值，宽度交给用户拖。
 ///
-/// **拖动改宽还没接**：后端范围（min/max）与热区都未实现，登记在
-/// `gpui/docs/ui-mockup-idea.md`。所以这里是一个**固定的默认值**，不是一个可调状态的初值。
+/// **不持久化**：会话文档（`workspace_config::session`）只有可见性字段，还没有宽度字段；
+/// 加字段要动那边手写的 `Deserialize`，属独立一批（登记在 `gpui/docs/ui-mockup-idea.md`）。
 ///
-/// **380 不在 gpui 的 rem 档位上**（档位是 …`w_92()`=368、`w_96()`=384…），所以按《编码指南》
-/// 写 helper 底层的 `rems(SIDEBAR_WIDTH_SPEC / 16.)`，而不是自己发明一个 helper ——
-/// 与 `BOTTOM_PANE_HEIGHT_SPEC` / `RIGHT_TOOL_WINDOW_WIDTH` 同一处置。
-const SIDEBAR_WIDTH_SPEC: f32 = 380.;
+/// **320 在 gpui 的 rem 档位上**（`w_80()`），但仍走 `rems(SIDEBAR_WIDTH_SPEC / 16.)`
+/// 表达：宽度现在是**变量**（拖拽会改），用 helper 只会把常量与变量两种写法混在一起。
+const SIDEBAR_WIDTH_SPEC: f32 = 320.;
 
 /// 工作区各岛之间的间距（真源 `--lithe-workbench-gap: 4px`，`styles/theme.css:125`）。
 ///
@@ -435,6 +434,16 @@ const SIDEBAR_WIDTH_SPEC: f32 = 380.;
 /// 吃成"直接连接"，靠的是负外边距 `rems(-WORKBENCH_GAP_SPEC / 16.)` ——
 /// 数值只有一个来源，免得"间距改了、负边距没跟着改"。
 const WORKBENCH_GAP_SPEC: f32 = 4.;
+
+/// 拖左侧栏宽度的那条热区宽度（规格像素）。取 4 与工作区间距同宽 ——
+/// 两条相邻面板之间的可拖分界线在真源里也是这一个量级
+/// （`ResizablePane` 的 4px 热区，`resizable-pane.tsx:203-206` 一带）。
+const DRAG_HANDLE_SPEC: f32 = 4.;
+
+/// 拖拽改宽的下界：再窄就连 `domain` 这样的目录名都放不下。
+const SIDEBAR_MIN_WIDTH_SPEC: f32 = 200.;
+/// 拖拽改宽的上界：留够编辑区，不至于把中央列压没。
+const SIDEBAR_MAX_WIDTH_SPEC: f32 = 720.;
 
 // ---------------------------------------------------------------------------
 // 度量：应用布局一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -814,6 +823,32 @@ pub struct ShellWorkspace {
     /// （`command_action` 的文档曾把 `toggle-sidebar` 明确排除在外），B2 把它补上：
     /// 状态只有这一个 bool，渲染时整块不画（与右工具窗 `right_visible` 同一套做法）。
     left_sidebar_visible: bool,
+    /// **左侧栏那块面板**（项目树 / 更改）单独是否显示。**默认 `true`**。
+    ///
+    /// 2026-09-27 新增，把"活动栏"和"面板"拆成两个状态 —— 维护者口径是 **IDEA 语义**：
+    ///
+    /// - **活动栏常驻**（只要 [`ShellWorkspace::left_sidebar_visible`] 为真就画，不随面板收起而消失）；
+    /// - **点活动栏当前高亮的那一项 = 只收/放面板**（`left_pane_visible` 取反），点**别的**项 = 切视图
+    ///   并把面板放出来。判据都落在 [`ShellWorkspace::select_top_activity`] 一处；
+    /// - `Ctrl+B` / 菜单「视图 → 切换活动侧栏」仍然是**整块收**（活动栏 + 面板），
+    ///   那是给"想要最大编辑区"的人用的，语义不变。
+    ///
+    /// 真机的对应关系：`isSidebarVisible`（整块）与 `activePaneId`（哪一页）之间并没有"面板收起"
+    /// 这个第三态；IDEA 是有的（工具窗按钮按下/弹起）。这是本侧**有意照 IDEA 而非 Windows 真源**
+    /// 的一处，理由就是维护者那句"点击图标无法关闭项目的这个界面"。
+    left_pane_visible: bool,
+    /// 左侧栏面板宽度（规格像素，见 [`SIDEBAR_WIDTH_SPEC`] 与 [`SIDEBAR_MIN_WIDTH_SPEC`] /
+    /// [`SIDEBAR_MAX_WIDTH_SPEC`]）。
+    ///
+    /// 运行期可改：拖面板右边界那条 4px 热区（[`drag_handle`]）会写它。**不持久化** ——
+    /// 会话文档（`workspace_config::session`）目前只有可见性字段，没有宽度字段；
+    /// 加字段要动那边的手写 `Deserialize`（它刻意不吃 `deny_unknown_fields`），属独立一批。
+    left_sidebar_width: f32,
+    /// 正在拖左侧栏宽度时记下的「按下那一刻的 (鼠标 x, 面板宽)」；`None` = 没在拖。
+    ///
+    /// 存**起点**而不是每帧累加 delta：累加会随事件频率漂移（一次快拖与一次慢拖结果不同），
+    /// 而 `起点 + (当前 x - 起点 x)` 与事件频率无关。
+    left_sidebar_drag_origin: Option<(f32, f32)>,
     /// **右侧**工具窗当前显示的视图（真机 `activeRightSidebarView`，
     /// `stores/ui-state/view-slice.ts:12,26`）。
     ///
@@ -1428,6 +1463,10 @@ impl ShellWorkspace {
             // 默认选中顶部第 0 项「项目」（`workspace-ui-defaults.ts:7` 的 `activeSidebarView: "files"`）。
             top_activity_view: Some(DEFAULT_TOP_ACTIVITY),
             left_sidebar_visible: true,
+            // IDEA 语义（2026-09-27）：活动栏常驻，面板默认展开、点当前项可单独收起。
+            left_pane_visible: true,
+            left_sidebar_width: SIDEBAR_WIDTH_SPEC,
+            left_sidebar_drag_origin: None,
             // 右工具窗默认**隐藏**（`panel-slice.ts:28` 的 `isRightSidebarVisible: false`），
             // 视图字段的默认值理由见字段文档。
             right_view: RightToolWindowView::Maven,
@@ -1760,8 +1799,24 @@ impl ShellWorkspace {
     /// （[`ShellWorkspace::top_activity_view`]），而"切到「更改」要顺手重读一次工作区状态"
     /// 这条副作用（真源 `use-git-data-controller.ts:276-281`，本侧没有 watcher）必须跟着走，
     /// 否则从菜单进去会看到一个不刷新的列表。
+    ///
+    /// ## IDEA 语义（2026-09-27，维护者口径）
+    ///
+    /// - 点**当前已经高亮**的那一项 → **只收/放面板**（[`ShellWorkspace::left_pane_visible`] 取反），
+    ///   活动栏自己**不动**（它常驻）；
+    /// - 点**别的**项 → 切视图，并把面板放出来（切视图时面板不该还是收着的）。
+    ///
+    /// 这与 `Ctrl+B` / 菜单「视图 → 切换活动侧栏」**不是同一件事**：那两条仍然整块收
+    /// （活动栏 + 面板），见 [`ShellWorkspace::toggle_left_sidebar`]。
+    /// 判据写成"下标是否相等"而不是"面板此前是否可见"：后者在"面板收着、点了另一个项"时会
+    /// 反向动作（切过去却把面板关掉），与直觉相反。
     fn select_top_activity(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.top_activity_view = Some(index);
+        if self.top_activity_view == Some(index) {
+            self.left_pane_visible = !self.left_pane_visible;
+        } else {
+            self.top_activity_view = Some(index);
+            self.left_pane_visible = true;
+        }
         if index == CHANGES_ACTIVITY_IX {
             let changes = self.changes.clone();
             let _ = changes.update(cx, |view, cx| view.activate(cx));
@@ -1836,10 +1891,13 @@ impl ShellWorkspace {
 
     /// 「切换活动侧栏」唯一的状态改动点（左边一条 rail + 它那块面板一起收放）。
     ///
-    /// 为什么抽成方法：2026-09-27 起这条路有**两个入口** —— 菜单/键位那条
-    /// （[`MenuAction::ToggleActivitySidebar`]，`Ctrl+B`）与**编辑区左边界那个「收起侧栏」按钮**
-    /// （效果图口径「边框这里可以点击图标进行收起」）。两处必须同时改同一个 bool、打同一句诊断，
-    /// 写两份迟早漂移；所以状态改动只留这一处，两边都调它。
+    /// 入口只有两条、都走这里：菜单「视图 → 切换活动侧栏」与键位 `Ctrl+B`
+    /// （[`MenuAction::ToggleActivitySidebar`]）。
+    ///
+    /// ⚠️ **活动栏图标的点击不在这里**（2026-09-27 起）：那条路走
+    /// [`ShellWorkspace::select_top_activity`] 的 IDEA 语义 —— 点当前高亮项**只收面板**
+    /// （[`ShellWorkspace::left_pane_visible`]），活动栏常驻。原来还有一个「编辑区左边界收起侧栏」
+    /// 按钮也调这里，那个按钮按维护者口径删掉了（见它的墓碑注释）。
     ///
     /// 真源语义：`menu.toggleActivitySidebar`（`mod+b`）= VS Code 的 `toggleSidebarVisibility`，
     /// 收起的是**活动栏 + 面板**整块（不是只收面板）。
@@ -3618,9 +3676,12 @@ impl Render for ShellWorkspace {
             cx,
         );
         let right_tool_window_visible = self.right_visible;
-        // 左栏整块（活动栏 + 面板）的可见性（B2）：「视图 → 切换活动侧栏」/`Ctrl+B`。
-        // 收起时两样都不画、不占位 —— 与右工具窗 `right_tool_window_visible` 同一套做法。
+        // 左栏**两个**状态（2026-09-27，IDEA 语义）：整块可见性（`Ctrl+B` / 菜单那条能收它）
+        // 与面板可见性（点活动栏当前高亮项只收它）。活动栏画不画只看前者。
         let left_sidebar_visible = self.left_sidebar_visible;
+        let left_pane_visible = self.left_pane_visible;
+        // 面板宽度是**变量**（拖拽会改），闭包按值捕获，所以先拷出来。
+        let left_sidebar_width = self.left_sidebar_width;
 
         // 底部工具窗的内容由活动栏 / 命令面板切换的单值 `bottomPaneActiveTab` 决定。
         //
@@ -3678,6 +3739,7 @@ impl Render for ShellWorkspace {
                     .editor
                     .update(cx, |pane, cx| pane.save_active(window, cx));
             }))
+        
             // ① 标题栏**两行** 30 + 38（第一行：菜单栏；第二行：项目下拉 / 分支项 /
             // 运行控件 / 自绘窗口三键 56×38），行高见 `crate::title_bar` 的两个 `*_ROW_HEIGHT_SPEC`。
             //
@@ -3731,14 +3793,27 @@ impl Render for ShellWorkspace {
                     // `main-layout.tsx:299` 的 `pr-(--lithe-workbench-gap)`：右端再留 4，
                     // 否则右活动栏会贴到窗口边缘。
                     .pr_1()
-                    // 左栏整块（活动栏 + 面板）—— B2 的「切换活动侧栏」收起时两样都不画。
-                    // 与右工具窗同一条口径：`then(..)` 里没有内容就不占位。
+                    // 左栏：**活动栏与面板是两个状态**（IDEA 语义，2026-09-27）。
+                    // - 活动栏：只要 `left_sidebar_visible` 为真就画（`Ctrl+B` / 菜单那条才整块收）；
+                    // - 面板：还要 `left_pane_visible`（点当前高亮的活动栏项只收这一个）。
+                    // 可见性判据与 [`ShellWorkspace::is_activity_active`] 同源，见字段文档。
                     .children(left_sidebar_visible.then_some(left_rail))
                     .children(
-                        left_sidebar_visible.then(|| {
+                        (left_sidebar_visible && left_pane_visible).then(|| {
+                            // 面板内容 = 视图 Entity（填满）+ 右边界那条拖拽热区（绝对定位，不占布局）。
+                            //
+                            // 包装是 `relative().size_full()`：内容 Entity（`Explorer` / `ChangesView`）
+                            // 的根是 `size_full` 的 `v_flex`，父级给满尺寸它就铺开 ——
+                            // 这个形状与 2026-09-27 之前（树显示正常的那几版）完全一致，没动；
+                            // 热区是新加的，走绝对定位所以**不挤压**内容。
+                            let pane = div()
+                                .relative()
+                                .size_full()
+                                .child(left_content)
+                                .child(drag_handle(handle.downgrade(), cx));
                             side_pane(
-                                div().w(rems(SIDEBAR_WIDTH_SPEC / 16.)),
-                                left_content,
+                                div().w(rems(left_sidebar_width / 16.)),
+                                pane,
                                 // **把左侧栏与编辑区"直接连接"**（维护者 2026-09-27 口径：
                                 // 「这个中间可以直接连接吗？现在这样还有空细」）。
                                 // 原来这一行与中央列之间是工作区的 4px 间距（`gap_1()`），两侧又各有一条
@@ -3753,31 +3828,14 @@ impl Render for ShellWorkspace {
                     )
                     .child(
                         // 中央列 = 编辑器岛 + 底部工具窗（默认口径：嵌在中央列内）。
+                        // 2026-09-27：原来这里还给 `editor_island` 传一个「编辑区左边界收起侧栏」
+                        // 按钮（`left_sidebar_visible.then(..)`），按维护者口径删除 ——
+                        // 它与标签栏那对导航箭头挤在同一个角上，两个都去掉了。
                         v_flex()
                             .flex_1()
                             .h_full()
                             .min_w_0()
-                            .child(editor_island(
-                                editor,
-                                left_sidebar_visible.then(|| {
-                                    // 监听器必须在这里构造：`cx.listener` 要 `Context<ShellWorkspace>`，
-                                    // 而 `collapse_sidebar_button` 只拿得到 `&App`（它只读主题）。
-                                    collapse_sidebar_button(
-                                        cx.listener(
-                                            |shell: &mut ShellWorkspace,
-                                             _event: &ClickEvent,
-                                             _window: &mut Window,
-                                             cx: &mut Context<Self>| {
-                                                shell.toggle_left_sidebar();
-                                                cx.notify();
-                                            },
-                                        ),
-                                        cx,
-                                    )
-                                    .into_any_element()
-                                }),
-                                cx,
-                            ))
+                            .child(editor_island(editor, cx))
                             .children(bottom),
                     )
                     // 右工具窗 400 —— **可收起**：真机整块 `ResizablePane` 的 `hidden` 由
@@ -3837,6 +3895,9 @@ fn side_pane(
         .flex_shrink_0()
         .ml(margin)
         .mr(margin)
+        // `relative()` 是拖拽热区（[`drag_handle`]）绝对定位的定位上下文 ——
+        // 热区贴在面板右边界上，而**不**参与布局（见那里"不套 flex 包装"的理由）。
+        .relative()
         .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
         .border_1()
         .border_color(cx.theme().border)
@@ -3844,26 +3905,21 @@ fn side_pane(
         .child(content)
 }
 
-/// 编辑区左边界那个「收起侧栏」按钮（效果图口径：IDEA 在编辑区左边缘贴一个可点的小按钮，
-/// 点一下收起左侧栏）。
+/// 编辑区左边界那个「收起侧栏」按钮 —— **2026-09-27 按维护者口径删除**。
 ///
-/// ## 位置与为什么这么画
+/// 维护者原话：「侧栏折叠按钮（那个 ‹ 与编辑区那对 ← → 重叠了，也去掉」。
+/// 它当时绝对定位贴在编辑器岛左上角（`left_1() + top_1()`），与标签栏左侧那对导航箭头
+/// 落在同一个角上，视觉上重叠；两个都删掉之后那个角是干净的。
 ///
-/// - 绝对定位贴在编辑器岛的左边界内侧（`left_1()` / 垂直 `top_1()`），**不占布局宽度**：
-///   编辑器正文的行号列不能被它挤动，所以只有"浮在上面"这一条路；
-/// - 岛自己的 `overflow_hidden` 会给按钮沿岛圆角裁边 —— 这是有意的（贴在边界上更整齐）；
-/// - gpui 0.6.6 没有 z-index，叠放靠绘制顺序，所以它必须是 [`editor_island`] 的**最后一个**
-///   child（见那个函数的文档）。
+/// **不删能力**：收起侧栏本身还留着三个入口 —— 左活动栏点当前高亮项
+/// （IDEA 语义，见 [`ShellWorkspace::select_top_activity`]）、菜单
+/// 「视图 → 切换活动侧栏」、键位 `Ctrl+B`（后两者走
+/// [`MenuAction::ToggleActivitySidebar`] → [`ShellWorkspace::toggle_left_sidebar`]）。
 ///
-/// ## 24×24 与图标
-///
-/// 尺寸取 gpui 档位上的 `size_6()`（24）—— 与标题栏、右工具窗口关闭按钮同一档（`ui/button.tsx:27`
-/// 的 `icon-xs`），不发明新刻度。图标用**已有的** `IconName::ChevronLeft`（Lucide，
-/// `menu_bar.rs:1321` 已在使用），**不新增任何图标资源**（维护者 2026-09-27 口径：
-/// 图标保持原来的单色、本轮不动图标）。
-///
-/// ## 为什么是普通 `div` + hover 而不是 gpui-kit 的 `Button`
-///
+/// 记一笔当时的实现细节，免得将来重新发明：绝对定位盒**必须显式给宽高且外层要
+/// `items_center()`**，否则内层 `flex()` 会被默认的 `align-items: stretch` 拉成竖长条
+/// （维护者截图复现过两次）。
+
 /// 与 [`crate::title_bar`] 的运行控件同一取法（`title_bar.rs:516-549`）：`Button` 的 ghost 变体
 /// 自带一组 `icon-xs` 内边距与圆角，要覆盖成这里的圆角反而得绕 `Button::rounded(Pixels)`；
 /// 自绘 `div` 能直接用 rem helper，也与标题栏那两个控件保持同一种观感与代码形状。
@@ -3871,76 +3927,106 @@ fn side_pane(
 ///
 /// ## 点击行为与那两行"防回归"
 ///
-/// `toggle` 由调用方用 `cx.listener(..)` 构造好传进来 —— 这里拿的是 `&App`，构造不了监听器；
-/// 而状态改动落在 [`ShellWorkspace::toggle_left_sidebar`]，与菜单「视图 → 切换活动侧栏」（`Ctrl+B`）
-/// **同一处状态、同一句诊断**，两处各写一份迟早漂移。
+/// 编辑区左边界那个「收起侧栏」按钮 —— **2026-09-27 按维护者口径删除**（墓碑注释）。
 ///
-/// `window.prevent_default()` + `cx.stop_propagation()` 与项目下拉 / 分支项 / 运行控件逐字相同：
-/// 它此刻**不在**任何 `Drag` 命中区里（见 [`editor_island`] 的文档），这两行挡的是
-/// "将来有人把它挪进拖拽区"这类回归，**不是**兄弟关系的替代品。
-fn collapse_sidebar_button(
-    toggle: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    cx: &App,
-) -> impl IntoElement {
+/// 维护者原话：「侧栏折叠按钮（那个 ‹ 与编辑区那对 ← → 重叠了，也去掉」。
+/// 它当时绝对定位贴在编辑器岛左上角（`left_1() + top_1()`），与标签栏左侧那对导航箭头
+/// 落在同一个角上、视觉重叠；两个都删掉之后那个角是干净的。
+///
+/// **能力没删**：收起侧栏还留着三个入口 —— 左活动栏点当前高亮项（IDEA 语义，见
+/// [`ShellWorkspace::select_top_activity`]）、菜单「视图 → 切换活动侧栏」、键位 `Ctrl+B`
+/// （后两者走 [`MenuAction::ToggleActivitySidebar`] / [`ShellWorkspace::toggle_left_sidebar`]）。
+///
+/// 实现细节记一笔，免得重新发明时再踩：绝对定位盒**必须显式给宽高、且外层要
+/// `items_center()`**，否则内层 `flex()` 会被默认的 `align-items: stretch` 拉成竖长条
+/// （维护者截图复现过两次）。
+
+/// 左侧栏面板**右边界**那条拖拽热区（2026-09-27，维护者口径「到时候弄成拖动改宽窄」）。
+///
+/// ## 为什么是一条真实的 4px 兄弟项，而不是绝对定位的浮层
+///
+/// 面板内容是别人的 `Entity`（项目树 / 更改列表），把热区**叠**在它右边会挡住树最右侧
+/// 那几像素（树的行是整行可点的）。做成 `h_flex` 里的兄弟项就天然不挡点击，
+/// 代价是内容区窄了 4px —— 与"能拖"相比值得。
+///
+/// ## 观感
+///
+/// 平时与面板同底（看不见），悬停时右端画一条 1px 主色线 —— 与底部工具窗那条拖拽热区
+/// （`bottom_pane` 里的 `grip`）同一套"平时隐形、悬停才显"的做法。
+///
+/// ## 与鼠标移动的关系
+///
+/// 这里只负责**开始**（按下时记下起点：鼠标 x + 当前面板宽）。
+/// 跟踪与结束在根元素那**一条** `on_mouse_event::<MouseMoveEvent>` 里，理由见那里的注释
+/// （拖动中光标会离开这条 4px 热区）。
+fn drag_handle(this: gpui_kit::WeakEntity<ShellWorkspace>, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
     // 先按值取出来再进闭包：`cx.theme()` 借 `cx`，而 `.hover(..)` 的闭包要 `'static`。
-    let idle = theme.muted_foreground;
-    let hover_bg = theme.accent;
-    let hover_fg = theme.foreground;
-    let radius = theme.radius;
-
+    let hover = theme.primary;
+    // 弱引用可以克隆进闭包（强引用会形成"外壳 → 元素 → 外壳"的环，元素活一帧就够了）。
+    let pressed = this.clone();
     div()
+        .id("lithe-left-pane-resize")
+        // **绝对定位**贴在面板右边界：不参与布局，所以不会挤压内容
+        // （见 `side_pane` 那条"不要再套一层 flex 包装"的理由）。
         .absolute()
-        .left_1()
-        .top_1()
-        // ⚠️ 外层盒**必须显式给宽高**（2026-09-27 实测缺陷）：只写 `absolute + left_1 + top_1`
-        // 时这个绝对定位盒的尺寸由内容/父级约束决定，实测被拉成一条**竖长条**而不是 24×24。
-        .size_6()
-        // ⚠️ 而且**必须 `items_center()`**：内层是 `flex()` 容器，父级不给交叉轴对齐时
-        // 默认 `align-items: stretch`，内层会被拉满外层高度 —— 只钉外层尺寸还是竖条
-        // （维护者 2026-09-27 截图复现）。这一行与内层的 `.items_center()` 是两件事：
-        // 外层管"内层在盒子里垂直居中"，内层管"图标在内层里居中"。
-        .items_center()
-        .justify_center()
-        .child(
-            // 必须有 `id`：hover 态要元素状态（`gpui-pre-0.3.6/src/elements/div.rs:2844-2849`）。
-            div()
-                .id("editor-collapse-sidebar")
-                .flex()
-                .flex_shrink_0()
-                .items_center()
-                .justify_center()
-                .size_6()
-                .rounded(radius)
-                .text_color(idle)
-                .cursor_pointer()
-                .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
-                .on_mouse_down(gpui_kit::MouseButton::Left, |_event, window, cx| {
-                    window.prevent_default();
-                    cx.stop_propagation();
-                })
-                .on_click(move |event, window, cx| toggle(event, window, cx))
-                // 无障碍名 = 它复用的那一条菜单文案（图标按钮没有可见文字，必须给名字）。
-                .aria_label(tr("lithe.menu.toggleActivitySidebar"))
-                // 图标 14×14：`Sizable::small()` → `size_3p5()`（与窗口三键同一处换算）。
-                .child(Icon::new(IconName::ChevronLeft).small()),
-        )
+        .right_0()
+        .top_0()
+        .bottom_0()
+        .w(rems(DRAG_HANDLE_SPEC / 16.))
+        .cursor_col_resize()
+        // 平时与面板同底（看不出有这条热区），悬停时整条染成主色。
+        // "整条 4px 染色"是**稳的做法**：gpui 的 `StyleRefinement` 只改元素自己的样式，
+        // 画不出"只在右端 1px"那种效果（`.hover(..)` 的闭包拿不到子元素）。
+        .hover(move |style| style.bg(hover))
+        // 只记起点（鼠标 x + 按下那一刻的面板宽），并**在窗口上注册本轮的移动跟踪**。
+        //
+        // 为什么只能在"按下"这一刻注册：跟踪要在拖动中持续收到鼠标移动，而元素级的
+        // `on_mouse_move` 要求 `hitbox.is_hovered(window)`
+        // （`gpui-pre-0.3.6/src/elements/div.rs:303-315`，只在光标**仍在该元素上**时触发）——
+        // 拖动中光标很快离开这条 4px 热区，一离开就断线。`Window::on_mouse_event` 没有这个
+        // 限制（`gpui-pre-0.3.6/src/window.rs:5254`），但它只能在拿得到 `&mut Window` 的回调里注册，
+        // 而这里正好有。
+        //
+        // 用 `WeakEntity` + 普通闭包而不是 `cx.listener(..)`：本函数是**自由函数**，
+        // 收的是 `&App`，构造不出 `Context<ShellWorkspace>` 的监听器。
+        .on_mouse_down(gpui_kit::MouseButton::Left, move |event, window, cx| {
+            let press_x = f32::from(event.position.x);
+            let _ = pressed.update(cx, |shell, cx| {
+                shell.left_sidebar_drag_origin = Some((press_x, shell.left_sidebar_width));
+                cx.notify();
+            });
+            // 窗口级跟踪：每次鼠标移动算 `起点 + (当前 x - 起点 x)` 并钳到范围内；
+            // `pressed_button` 变 `None` 就是松手，清掉起点、结束这一轮。
+            let drag = pressed.clone();
+            window.on_mouse_event(move |event: &gpui_kit::MouseMoveEvent, _phase, _window, cx| {
+                let _ = drag.update(cx, |shell, cx| {
+                    let Some((press_x, press_width)) = shell.left_sidebar_drag_origin else {
+                        return;
+                    };
+                    if event.pressed_button.is_none() {
+                        shell.left_sidebar_drag_origin = None;
+                        cx.notify();
+                        return;
+                    }
+                    let delta = f32::from(event.position.x) - press_x;
+                    shell.left_sidebar_width = (press_width + delta)
+                        .clamp(SIDEBAR_MIN_WIDTH_SPEC, SIDEBAR_MAX_WIDTH_SPEC);
+                    cx.notify();
+                });
+            });
+        })
 }
 
 /// 中央编辑器岛：`rounded-xl border-l bg-background`（`main-layout.tsx:313`）。
 ///
-/// `collapse_sidebar_button` 是**编辑区左边界**那个「收起侧栏」按钮（效果图口径：IDEA 在编辑区
-/// 左边缘贴一个可点的小按钮）。它由调用方按「左侧栏当前是否可见」预先构造好传进来：
-/// 不可见时传 `None`，此时连占位都不留 —— 与本文件其它区域「`then(..)` 里没内容就不占位」
-/// 同一条口径（见 [`ShellWorkspace::render`] 的左右栏注释）。
+/// 只收内容：原来还收一个「编辑区左边界收起侧栏」按钮（`collapse_sidebar_button:
+/// Option<AnyElement>`），2026-09-27 按维护者口径删除，见上方那段墓碑注释。
 ///
-/// 岛本身要 `.relative()` 才能让按钮绝对定位贴在左边界上（gpui 0.6.6 没有 z-index，
-/// 叠放只由绘制顺序决定，所以按钮必须是岛的**后一个** child）。
-fn editor_island(
-    content: impl IntoElement,
-    collapse_sidebar_button: Option<AnyElement>,
-    cx: &App,
-) -> impl IntoElement {
+/// 仍然保留 `.relative() + .overflow_hidden()`：岛是绝对定位子元素的定位上下文，
+/// 而且 gpui 0.6.6 没有 z-index、叠放只由绘制顺序决定 —— 将来要往岛的边界上贴浮层，
+/// 这两条是前提（`overflow_hidden` 会沿圆角裁边，这是有意的）。
+fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
     div()
         .relative()
         .w_full()
@@ -3952,7 +4038,6 @@ fn editor_island(
         .border_color(cx.theme().border)
         .bg(cx.theme().background)
         .child(content)
-        .children(collapse_sidebar_button)
 }
 
 /// 底部工具窗外框：**240** 高（[`BOTTOM_PANE_HEIGHT_SPEC`]），上面一条 **4px** 拖拽热区

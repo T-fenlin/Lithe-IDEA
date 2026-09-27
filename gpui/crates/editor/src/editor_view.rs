@@ -91,7 +91,7 @@ use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, Rope
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AbsoluteLength, AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity,
     InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels,
@@ -1334,6 +1334,12 @@ impl EditorPane {
         self.buffers.len() - 1
     }
     /// `←`：回到上一个跳转位置。
+    ///
+    /// ⚠️ **2026-09-27 起没有调用点**：标签栏左侧那对按钮已按维护者口径删除
+    /// （见 `render_nav_group` 的墓碑注释）。方法**保留**是为了不把「跳转历史」这条能力
+    /// 从 API 上抹掉 —— 历史仍在记录（`F12` / `Ctrl+单击` 都压栈），
+    /// 接回来最省事的一条路是绑一对键位（`Alt+←` / `Alt+→`），不要再把按钮画回那个角。
+    #[allow(dead_code)]
     fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(present) = self.current_entry(cx) else {
             return;
@@ -1345,6 +1351,10 @@ impl EditorPane {
     }
 
     /// `→`：前进到下一个跳转位置（只可能来自"曾经 `←` 过"的分支）。
+    ///
+    /// ⚠️ 与 [`EditorPane::go_back`] 同一处置：2026-09-27 起没有调用点，方法保留、标
+    /// `#[allow(dead_code)]`。
+    #[allow(dead_code)]
     fn go_forward(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(present) = self.current_entry(cx) else {
             return;
@@ -2136,11 +2146,13 @@ impl EditorPane {
             .bg(cx.theme().tab_bar)
             .h_9()
             .px_2()
+            // 2026-09-27：原来这里还有 `.prefix(self.render_nav_group(cx))`（标签栏左侧那对
+            // `← →`）。按维护者口径「编辑区那对 ← → 去掉」删除 —— 它与编辑区左边界那个
+            // 「收起侧栏」按钮挤在同一个角上，视觉上重叠。
             // `max_width` 让**标签文字**在空间不够时让位（图标与关闭按钮保持原尺寸），
             // 也就是真机那种 `OrderChargeService.j…` 的截断。这一槽是 `Pixels`
             // （`TabBar::max_width(impl Into<Pixels>)`），所以按当前 rem 基准求值。
             .max_width(rem_px(cx.theme().font_size, TAB_MAX_WIDTH))
-            .prefix(self.render_nav_group(cx))
             .on_click(cx.listener(|pane, index: &usize, _window, cx| {
                 // `TabBar::on_click` 给的是被点标签的下标
                 // （`tab/tab_bar.rs:168-177`），切换活动 buffer 就是切标签。
@@ -2349,76 +2361,22 @@ impl EditorPane {
             .into_any_element()
     }
 
-    /// 标签栏左侧的后退/前进按钮组。
+    /// 标签栏左侧的后退/前进按钮组 —— **2026-09-27 按维护者口径删除**。
     ///
-    /// 真机是一个 `h-8` 的行（`windows/tauri/src/features/tabs/components/tab-bar.tsx:633-660`），
-    /// 与后面的标签区之间有标签栏自己的 4px gap；`TabBar` 的 `Underline` 变体不给
-    /// 外层容器设 gap，所以这里用右外边距补上同样的 4px。
+    /// 维护者原话：「编辑区那对 ← → 去掉」。当时它们与编辑区左边界那个「收起侧栏」按钮
+    /// 挤在同一角上（都落在 x≈430、y≈85 附近），视觉上重叠。
     ///
-    /// 两个按钮的可用性直接来自 [`JumpHistory`]（真机是 `canGoBack` / `canGoForward`
-    /// 两个 selector，`tab-bar.tsx:634,649`）：**没有历史时仍然是禁用态**。
-    fn render_nav_group(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .items_center()
-            .gap_0p5()
-            .mr_1()
-            // 文案取中文 i18n 原文：tooltip = `tabs.goBackShort` / `tabs.goForwardShort`
-            // （"后退" / "前进"，`windows/tauri/src/i18n/locale.ts:7854-7855`），
-            // 无障碍名 = `tabs.goBack` / `tabs.goForward`
-            // （"后退到上一个位置" / "前进到下一个位置"，`windows/tauri/src/i18n/locale.ts:7850-7851`）。
-            .child(Self::nav_button(
-                "editor-nav-back",
-                IconName::ArrowLeft,
-                tr("lithe.tabs.goBackShort"),
-                tr("lithe.tabs.goBack"),
-                self.history.can_go_back(),
-                cx.listener(|pane, _event: &gpui_kit::ClickEvent, window, cx| {
-                    pane.go_back(window, cx)
-                }),
-            ))
-            .child(Self::nav_button(
-                "editor-nav-forward",
-                IconName::ArrowRight,
-                tr("lithe.tabs.goForwardShort"),
-                tr("lithe.tabs.goForward"),
-                self.history.can_go_forward(),
-                cx.listener(|pane, _event: &gpui_kit::ClickEvent, window, cx| {
-                    pane.go_forward(window, cx)
-                }),
-            ))
-    }
-
-    /// 单个导航按钮。
+    /// 删掉的只是**渲染**：跳转历史本身（`crate::navigation::JumpHistory`，由 `F12` /
+    /// `Ctrl+单击` 记录）与 [`EditorPane::go_back`] / [`EditorPane::go_forward`] 两个方法
+    /// 都保留着（那两个方法现在没有调用点，按仓库口径标 `#[allow(dead_code)]` 并写明原因）。
+    /// 想接回来最省事的一条路是给它们绑一对键位（`Alt+←` / `Alt+→`），
+    /// 而**不要**再把这组按钮画回这个角落。
     ///
-    /// 真机：`variant="ghost" size="icon-xs"`、`disabled={!canGoBack}`、
-    /// tooltip `tooltipSide="bottom"`（`windows/tauri/src/features/tabs/components/tab-bar.tsx:634-659`）。
+    /// 真源那套（`windows/tauri/src/features/tabs/components/tab-bar.tsx:633-660`）与
+    /// `icon-xs` 24×24 的尺寸陷阱记录在 git 历史与本轮提交信息里。
     ///
-    /// ⚠️ **尺寸陷阱**：真机的 `icon-xs` 是 **24×24**（`windows/tauri/src/ui/button.tsx:27`
-    /// 的 `icon-xs size-6`），而 gpui-kit 的 `Sizable::xsmall()` 给图标按钮是 **20×20**、
-    /// `small()` 才是 24×24（`button/button.rs:618-623`）。这里对齐的是**尺寸值**，
-    /// 所以用 `.small()`，不要被变体名带偏。
-    ///
-    /// `enabled` 只决定**禁用态外观 + 是否派发点击**（禁用态 ghost = 灰图标，
-    /// `button/button.rs:1273-1306`）；处理器本身也会在历史为空时早退
-    /// （[`EditorPane::go_back`]），所以"禁用时点了没反应"有两道闸。
-    fn nav_button(
-        id: &'static str,
-        icon: IconName,
-        tooltip: SharedString,
-        label: SharedString,
-        enabled: bool,
-        on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Button {
-        Button::new(id)
-            .icon(icon)
-            .ghost()
-            .small()
-            .disabled(!enabled)
-            .tab_stop(false)
-            .tooltip(tooltip)
-            .accessibility_label(label)
-            .on_click(on_click)
-    }
+    /// 下面原来还有 `nav_button`（单个按钮，对齐真机 `icon-xs` = 24×24，而不是 gpui-kit
+    /// `xsmall()` 的 20×20），随这一组一起删除。
 
     /// 一个标签：文件类型图标 + 显示名（+ 未保存圆点）+ 关闭按钮。
     ///
