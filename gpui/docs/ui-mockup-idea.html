@@ -39,13 +39,15 @@
   .app{width:1920px;height:1080px;background:var(--bg);color:var(--fg);
        display:flex;flex-direction:column;position:relative;overflow:hidden;flex-shrink:0}
 
-  /* ── ① 标题栏 40：菜单｜项目 ▾ 分支 ▾｜运行配置 ▾ ▶ 🐞 ⋮｜账号 搜索 设置｜三键 ── */
-  .titlebar{height:40px;flex:0 0 40px;display:flex;align-items:center;padding:0 8px;gap:4px;
-            background:var(--surface);font-size:13px;color:var(--muted-fg)}
+  /* ── ① 标题栏：两行（第一行菜单，第二行 项目/分支 + 运行控件 + 账号/设置 + 三键） ── */
+  .titlebar{flex:0 0 auto;display:flex;flex-direction:column;background:var(--surface);
+            font-size:13px;color:var(--muted-fg)}
+  .tb-menu{height:30px;flex:0 0 30px;display:flex;align-items:center;padding:0 6px;gap:1px}
   .menubar{display:flex;gap:1px}
-  .menubar span{padding:2px 8px;border-radius:4px}
+  .menubar span{padding:3px 10px;border-radius:4px}
   .menubar span:hover{background:var(--accent)}
-  .chip{display:flex;align-items:center;gap:6px;padding:2px 6px;border-radius:6px}
+  .tb-tools{height:38px;flex:0 0 38px;display:flex;align-items:center;padding:0 8px;gap:4px}
+  .chip{display:flex;align-items:center;gap:6px;padding:2px 8px;border-radius:6px}
   .chip:hover{background:var(--accent)}
   .projicon{width:15px;height:15px;border-radius:3px;background:#3574f0;color:#fff;
             font-size:9px;font-weight:700;display:grid;place-items:center}
@@ -154,7 +156,7 @@
   .warn{position:absolute;left:3px;width:3px;top:0;bottom:0;background:#d6ae58}
 
   /* 底部工具窗（本轮不动，按真机现状画） */
-  .bottom{height:300px;flex:0 0 300px;display:flex;flex-direction:column;border-top:1px solid #303236}
+  .bottom{height:240px;flex:0 0 240px;display:flex;flex-direction:column;border-top:1px solid #303236}
   .grip{height:4px;flex:0 0 4px}
   .grip:hover{background:linear-gradient(var(--primary),var(--primary)) center/100% 1px no-repeat}
   .termtabs{height:36px;flex:0 0 36px;display:flex;align-items:center;padding:0 8px;gap:0}
@@ -192,43 +194,46 @@
 <div class="wrap" id="wrap">
 <div class="app">
 
-  <!-- ══ 标题栏 40 ══ -->
+  <!-- ══ 标题栏：两行 ══ -->
   <div class="titlebar">
-    <div class="menubar">
-      <span>File</span><span>Edit</span><span>View</span><span>Navigate</span><span>Code</span>
-      <span>Refactor</span><span>Build</span><span>Run</span><span>Tools</span><span>Git</span>
-      <span>Window</span><span>Help</span>
+    <!-- 第一行：菜单 -->
+    <div class="tb-menu">
+      <div class="menubar">
+        <span>文件</span><span>编辑</span><span>视图</span><span>转到</span><span>终端</span>
+        <span>Git</span><span>工具</span><span>窗口</span><span>帮助</span>
+      </div>
     </div>
-    <div class="chip"><span class="projicon">Z</span>zywg<span class="car">▾</span></div>
-    <div class="chip"><span class="br">⑂</span>main<span class="car">▾</span></div>
-    <div class="drag"></div>
-    <!-- 运行配置：IDEA 把它放在标题栏右侧 -->
-    <div class="runbox">
-      <div class="cfg"><span class="rcicon"></span>LocalWorkstationApiAction<span class="car">▾</span></div>
-      <div class="icbtn play">▶</div>
-      <div class="icbtn dbg">🐞</div>
-      <div class="icbtn">⋮</div>
-    </div>
-    <div class="vsep"></div>
-    <div class="icbtn">👤</div>
-    <div class="icbtn">⌕</div>
-    <div class="icbtn">⚙</div>
-    <div class="wincontrols">
-      <div>—</div><div>❐</div><div class="close">✕</div>
+    <!-- 第二行：项目/分支 + 运行配置 + 账号/设置 + 窗口三键 -->
+    <div class="tb-tools">
+      <div class="chip"><span class="projicon">Z</span>zywg<span class="car">▾</span></div>
+      <div class="chip"><span class="br">⑂</span>main<span class="car">▾</span></div>
+      <div class="drag"></div>
+      <div class="runbox">
+        <div class="cfg"><span class="rcicon"></span>LocalWorkstationApiAction<span class="car">▾</span></div>
+        <div class="icbtn play">▶</div>
+        <div class="icbtn dbg">🐞</div>
+      </div>
+      <div class="vsep"></div>
+      <div class="icbtn">👤</div>
+      <div class="icbtn">⚙</div>
+      <div class="wincontrols">
+        <div>—</div><div>❐</div><div class="close">✕</div>
+      </div>
     </div>
   </div>
 
   <!-- ══ 工作区 ══ -->
   <div class="work">
 
-    <!-- 左活动栏 -->
+    <!-- 左活动栏：顶部组 项目/更改/搜索；底部组 终端/诊断/提交记录/设置 -->
     <div class="rail">
       <div class="item on" title="项目">▤</div>
+      <div class="item" title="更改">⑂</div>
+      <div class="item" title="搜索">⌕</div>
       <div class="sp"></div>
       <div class="item" title="终端">▣</div>
-      <div class="item" title="版本控制">⑂</div>
-      <div class="item" title="运行">▷</div>
-      <div class="item" title="调试">🐞</div>
+      <div class="item" title="诊断">⚠</div>
+      <div class="item" title="提交记录">⑃</div>
       <div class="item" title="设置">⚙</div>
     </div>
 
@@ -402,14 +407,11 @@
       </div>
     </div>
 
-    <!-- 右活动栏（IDEA：铃铛 / AI / 数据库 / Maven / 运行中 / 服务） -->
+    <!-- 右活动栏：扩展 / 通知 / Maven -->
     <div class="rail right">
+      <div class="item" title="扩展">⧉</div>
       <div class="item" title="通知">🔔<span class="badge">2</span></div>
-      <div class="item" title="AI Assistant">◉</div>
-      <div class="item" title="数据库">🛢</div>
       <div class="item" title="Maven" style="color:#8b929e">m</div>
-      <div class="item" title="运行中" style="color:#e8710a">●</div>
-      <div class="item" title="服务">▣</div>
     </div>
   </div>
 
