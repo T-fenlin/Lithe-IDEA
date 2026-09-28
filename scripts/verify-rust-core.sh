@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # 旧前端（`macos/` 的 C 桥 + `swift build` 链接、`windows/` 的 Tauri host）删除后，这里不再验证
 # "Core 的 C ABI 符号出现在 macOS 二进制里"——那条链路已随 `macos/Sources/LitheRustCore/bridge.c`
-# 一起消失。gpui 宿主**直接链接 crate**（`gpui/crates/*/Cargo.toml` 的 `lithe-core = { path = ... }`），
+# 一起消失。gpui 宿主**直接链接 crate**（`rust/gpui/crates/*/Cargo.toml` 的 `lithe-core = { path = ... }`），
 # 所以对应的证据是"gpui 侧对 Core 的调用能编译并通过其单测"，见末尾的 `cargo test -p lithe-gpui-*`。
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"

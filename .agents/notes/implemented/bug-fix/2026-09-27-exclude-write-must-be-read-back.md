@@ -145,5 +145,4 @@ Core 的错误分类会让"非仓库静默跳过"的判据（按错误码与消�
 - `rust/gpui/crates/workbench/src/workspace.rs`
 - `rust/gpui/crates/shared/locales/lithe.zh-CN.yml`
 - `rust/gpui/tools/extract-locale.mjs`
-- `rust/gpui/PLAN.md`
 - `rust/gpui/HANDOFF.md`

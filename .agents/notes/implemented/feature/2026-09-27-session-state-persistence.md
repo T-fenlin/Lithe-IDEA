@@ -240,5 +240,4 @@
 - `rust/gpui/crates/editor/src/editor_view.rs`
 - `rust/gpui/crates/app/src/main.rs`
 - `rust/gpui/crates/settings/src/persistence.rs`
-- `rust/gpui/PLAN.md`
 - `rust/gpui/HANDOFF.md`

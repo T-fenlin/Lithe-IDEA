@@ -236,5 +236,4 @@ Git（多一次 Core 往返）；而**只锚定到排除文件所在目录（`/.
 - `rust/gpui/crates/app/src/main.rs`
 - `rust/gpui/themes/`
 - `shared/contracts/project-manifest-v1.schema.json`
-- `rust/gpui/PLAN.md`
 - `rust/gpui/HANDOFF.md`

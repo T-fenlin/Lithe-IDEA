@@ -38,7 +38,7 @@ assert.deepEqual(rustViolations.map((violation) => violation.rule), ["rust-real-
 assert.equal(rustViolations[0].line, 7);
 
 const receiveViolations = scanFile(
-  "gpui/crates/git/tests/observation.rs",
+  "rust/gpui/crates/git/tests/observation.rs",
   `#[test]
 fn waits() {
     let value = receiver.recv();
@@ -50,7 +50,7 @@ assert.deepEqual(receiveViolations.map((violation) => violation.rule), ["rust-un
 
 // 有限等待是正确做法，必须放行。
 const boundedReceive = scanFile(
-  "gpui/crates/git/tests/observation.rs",
+  "rust/gpui/crates/git/tests/observation.rs",
   `#[test]
 fn waits() {
     let value = receiver.recv_timeout(Duration::from_secs(1));
@@ -62,7 +62,7 @@ assert.deepEqual(boundedReceive, []);
 
 // `select!` 的结构判定：有 default 臂、有超时分支都必须放行，两种都没有才是违规。
 const selectWithoutEscape = scanFile(
-  "gpui/crates/terminal/tests/session.rs",
+  "rust/gpui/crates/terminal/tests/session.rs",
   `#[test]
 fn forwards() {
     select! {
@@ -78,7 +78,7 @@ assert.deepEqual(
 );
 
 const selectWithDefault = scanFile(
-  "gpui/crates/terminal/tests/session.rs",
+  "rust/gpui/crates/terminal/tests/session.rs",
   `#[test]
 fn forwards() {
     select! {
@@ -91,7 +91,7 @@ fn forwards() {
 assert.deepEqual(selectWithDefault, []);
 
 const selectWithTimeout = scanFile(
-  "gpui/crates/terminal/tests/session.rs",
+  "rust/gpui/crates/terminal/tests/session.rs",
   `#[test]
 fn forwards() {
     select! {
@@ -105,7 +105,7 @@ assert.deepEqual(selectWithTimeout, []);
 
 // 例外注解：理由够长才放行，太短仍然拦。
 const annotated = scanFile(
-  "gpui/crates/terminal/tests/session.rs",
+  "rust/gpui/crates/terminal/tests/session.rs",
   `#[test]
 fn blocks_on_native_boundary() {
     // test-stability: allow(rust-unbounded-receive) reason: the native API only exposes a blocking call
@@ -117,7 +117,7 @@ fn blocks_on_native_boundary() {
 assert.deepEqual(annotated, []);
 
 const shortAnnotation = scanFile(
-  "gpui/crates/terminal/tests/session.rs",
+  "rust/gpui/crates/terminal/tests/session.rs",
   `#[test]
 fn blocks_on_native_boundary() {
     // test-stability: allow(rust-unbounded-receive) reason: native
@@ -134,19 +134,19 @@ assert.deepEqual(scanFile("windows/tauri/src/example.test.ts", "setTimeout(r, 1)
 
 // ── 新增行筛选 ──────────────────────────────────────────────────────────────────
 
-const diff = `diff --git a/gpui/crates/git/tests/observation.rs b/gpui/crates/git/tests/observation.rs
---- a/gpui/crates/git/tests/observation.rs
-+++ b/gpui/crates/git/tests/observation.rs
+const diff = `diff --git a/rust/gpui/crates/git/tests/observation.rs b/rust/gpui/crates/git/tests/observation.rs
+--- a/rust/gpui/crates/git/tests/observation.rs
++++ b/rust/gpui/crates/git/tests/observation.rs
 @@ -2,0 +3,2 @@
 +let receiver = channel();
 +let value = receiver.recv();
 `;
 const added = parseAddedLines(diff);
-assert.deepEqual([...added.get("gpui/crates/git/tests/observation.rs")], [3, 4]);
+assert.deepEqual([...added.get("rust/gpui/crates/git/tests/observation.rs")], [3, 4]);
 
 // 只看新增行：未改动的旧违规不报。
 const selectedViolations = scanFile(
-  "gpui/crates/git/tests/observation.rs",
+  "rust/gpui/crates/git/tests/observation.rs",
   "#[test]\nlet old = receiver.recv();\nlet other = receiver.recv();\n",
   new Set([3]),
 );

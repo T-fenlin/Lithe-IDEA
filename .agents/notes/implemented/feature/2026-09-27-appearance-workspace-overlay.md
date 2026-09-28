@@ -221,5 +221,4 @@ Git 键**仍然只有全局层**——写进工作区文件里也会被当未知
 - `rust/gpui/crates/workbench/src/workspace.rs`
 - `rust/gpui/crates/shared/locales/lithe.zh-CN.yml`
 - `rust/gpui/tools/extract-locale.mjs`
-- `rust/gpui/PLAN.md`
 - `rust/gpui/HANDOFF.md`

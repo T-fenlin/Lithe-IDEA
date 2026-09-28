@@ -11,7 +11,7 @@ fail locally with a useful diagnostic instead of waiting for a CI job timeout.
 ## Scope
 
 Lithe is a pure Rust repository: `rust/lithe-core` (deterministic commands and
-contracts) plus the GPUI Kit host in `gpui/`. The Swift macOS product, the
+contracts) plus the GPUI Kit host in `rust/gpui/`. The Swift macOS product, the
 React/Tauri Windows product, and the shared Monaco editor package were removed;
 there are no platform test lanes left to keep green.
 
@@ -19,7 +19,7 @@ Two test surfaces remain, and they have different constraints:
 
 - **Rust Core** (`rust/lithe-core`): deterministic, no UI, no long-lived
   resources. Tests are plain `cargo test`.
-- **GPUI host** (`gpui/crates/*`): owns windows, threads, channels, file
+- **GPUI host** (`rust/gpui/crates/*`): owns windows, threads, channels, file
   watchers, terminal PTYs, and JDTLS child processes. This is where hanging is
   actually possible, so most of the rules below exist for it.
 
