@@ -1,6 +1,6 @@
 # Host Shared Crate
 
-`rust/gpui/crates/shared/` is the layer every other gpui crate sits on. It depends on
+`gpui/crates/shared/` is the layer every other gpui crate sits on. It depends on
 `gpui-kit`, `lithe-core` (in-process), `serde`, `uuid` and `rust-i18n` — and on **no
 other gpui crate**.
 
@@ -230,12 +230,12 @@ and the proposed `.agents/notes/proposed/architecture/2026-09-26-workspace-confi
 
 ## Sources
 
-- `rust/gpui/crates/shared/src/` (all files)
-- `rust/gpui/crates/shared/Cargo.toml`, `locales/`
-- `rust/gpui/tools/generate-idea-icons.mjs`, `extract-locale.mjs`
-- `rust/gpui/crates/app/src/assets.rs`
-- `rust/gpui/crates/editor/src/{buffer,code_actions}.rs`
+- `gpui/crates/shared/src/` (all files)
+- `gpui/crates/shared/Cargo.toml`, `locales/`
+- `gpui/tools/generate-idea-icons.mjs`, `extract-locale.mjs`
+- `gpui/crates/app/src/assets.rs`
+- `gpui/crates/editor/src/{buffer,code_actions}.rs`
 - `rust/lithe-core/src/git/mod.rs` (`git.watchContext`)
-- `rust/gpui/crates/settings/src/{persistence,workspace}.rs`
+- `gpui/crates/settings/src/{persistence,workspace}.rs`
 - `.agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md`
 - `.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md`

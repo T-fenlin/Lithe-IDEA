@@ -1,6 +1,6 @@
 # Editor
 
-`rust/gpui/crates/editor/` is 5 modules, ~5 400 lines, and holds the tab bar, buffers,
+`gpui/crates/editor/` is 5 modules, ~5 400 lines, and holds the tab bar, buffers,
 navigation, diagnostics, completion and code actions. There is no `tests/` directory —
 tests are inline `#[cfg(test)] mod tests` in every file.
 
@@ -227,10 +227,10 @@ resizable-UI performance note places no obligation on this crate.
 
 ## Sources
 
-- `rust/gpui/crates/editor/src/` (all files)
-- `rust/gpui/crates/editor/Cargo.toml`
-- `rust/gpui/crates/java/src/service.rs`
-- `rust/gpui/crates/shared/src/core_client.rs`
+- `gpui/crates/editor/src/` (all files)
+- `gpui/crates/editor/Cargo.toml`
+- `gpui/crates/java/src/service.rs`
+- `gpui/crates/shared/src/core_client.rs`
 - `rust/lithe-core/src/editor/line_edit.rs`, `tests.rs`
 - `rust/lithe-core/src/lsp/lightweight/`
 - `.agents/notes/implemented/bug-fix/2026-09-15-external-document-changes-and-guarded-save.md`

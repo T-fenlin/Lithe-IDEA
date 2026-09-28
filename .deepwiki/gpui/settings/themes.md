@@ -1,7 +1,7 @@
 # Themes
 
-`rust/gpui/crates/settings/src/theme.rs` plus the theme directory in
-`rust/gpui/themes/`. Seven built-in themes ship with the binary: gruvbox, jetbrains,
+`gpui/crates/settings/src/theme.rs` plus the theme directory in
+`gpui/themes/`. Seven built-in themes ship with the binary: gruvbox, jetbrains,
 lithe-dark, lithe-light, nord, one, vscode.
 
 ## Seed, don't watch
@@ -30,7 +30,7 @@ fails to parse — that would silently replace a hand-broken theme (`:129-131`).
 user-renamed seeded theme still resolves; it is cached on the user directory's mtime, with
 the known edge case documented at `:256-258`.
 
-Adding a file to `rust/gpui/themes/` **requires** registering it in `BUNDLED_THEMES`
+Adding a file to `gpui/themes/` **requires** registering it in `BUNDLED_THEMES`
 (`theme.rs:68-70`) or a test fails.
 
 ## Persist by id, apply by display name
@@ -113,9 +113,9 @@ tests — the old implementation read it at runtime and silently broke in instal
 
 ## Sources
 
-- `rust/gpui/crates/settings/src/theme.rs`, `store.rs`, `schema.rs`, `paths.rs`, `lib.rs`
-- `rust/gpui/themes/` (7 JSON themes + `README.md` + `themes/legacy-builtin/`)
-- `rust/gpui/crates/app/src/main.rs` (steps 6–9 of the startup order)
-- `rust/gpui/crates/terminal/src/terminal_view.rs` (why the terminal has its own font size)
+- `gpui/crates/settings/src/theme.rs`, `store.rs`, `schema.rs`, `paths.rs`, `lib.rs`
+- `gpui/themes/` (7 JSON themes + `README.md` + `themes/legacy-builtin/`)
+- `gpui/crates/app/src/main.rs` (steps 6–9 of the startup order)
+- `gpui/crates/terminal/src/terminal_view.rs` (why the terminal has its own font size)
 - `.agents/notes/implemented/feature/2026-09-27-font-family-and-terminal-font-size.md`
 - `.agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md`

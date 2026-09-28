@@ -7,7 +7,7 @@ terminals, build tools, debuggers and database helpers all start on demand.
 
 Repository status (read this before assuming a feature works): the Swift/macOS and
 React/Tauri/Windows frontends were **removed**. What remains is a single GPUI Kit host
-under `rust/gpui/`, still under active development with **no release pipeline**. The
+under `gpui/`, still under active development with **no release pipeline**. The
 installers on GitHub Releases were built from the deleted source and are kept for
 reference only (`README.md:87-93`).
 
@@ -17,10 +17,10 @@ reference only (`README.md:87-93`).
 | --- | --- | --- |
 | UI framework | GPUI Kit `0.6.6` (+ `gpui-pre 0.3.6`, `lsp-types 0.97`) | `rust/Cargo.lock:2800-2803` |
 | Language | Rust 2021 (core crates) / Rust 2024 (gpui crates) | `rust/Cargo.toml:10-13` |
-| i18n | `rust-i18n 4.2`, YAML catalogues | `rust/gpui/crates/shared/locales/` |
-| Assets | `rust-embed 8` (`LitheAssets`) | `rust/gpui/crates/app/src/assets.rs:110-122` |
+| i18n | `rust-i18n 4.2`, YAML catalogues | `gpui/crates/shared/locales/` |
+| Assets | `rust-embed 8` (`LitheAssets`) | `gpui/crates/app/src/assets.rs:110-122` |
 | Language service | Eclipse JDT LS 1.61.0 (manifest-pinned, downloaded at build time) | `third_party/jdtls/manifest.json` |
-| Runtime JDK | Temurin 21 (minimum major 21 enforced in code) | `rust/gpui/crates/java/src/jdtls.rs:80` |
+| Runtime JDK | Temurin 21 (minimum major 21 enforced in code) | `gpui/crates/java/src/jdtls.rs:80` |
 
 ## Repo map
 
@@ -40,12 +40,12 @@ Lithe-IDEA/
 ├─ third_party/             upstream manifests only, no vendored code
 ├─ infra/                   docker compose for database validation
 ├─ docs/                    release notes, screenshots, one JSON schema
-└─ rust/gpui/               themes, assets, UI maps, PLAN.md, research notes
+└─ gpui/               themes, assets, UI maps, PLAN.md, research notes
 ```
 
 ## Build and run
 
-The workspace root is `rust/Cargo.toml`. `rust/gpui/Cargo.toml` does not exist — the two
+The workspace root is `rust/Cargo.toml`. `gpui/Cargo.toml` does not exist — the two
 trees were merged after the frontends were deleted (`rust/Cargo.toml:1-13`).
 
 ```bash
@@ -55,7 +55,7 @@ cargo build --bin Lithe
 
 `--theme <id|name>` and `--locale <tag>` override settings for one launch **without
 writing them back**; `LITHE_GPUI_SETTINGS_FILE` redirects `settings.json` *and*
-`recent-projects.json` to a temp path (`rust/gpui/crates/settings/src/paths.rs:81-100`).
+`recent-projects.json` to a temp path (`gpui/crates/settings/src/paths.rs:81-100`).
 
 ## Where to look
 
@@ -83,7 +83,7 @@ writing them back**; `LITHE_GPUI_SETTINGS_FILE` redirects `settings.json` *and*
 - **`S1_*` diagnostic lines are a deliberate, machine-greppable surface.** Nearly every
   non-trivial transition prints one. `println!` to stdout when ordering does not matter;
   `eprintln!` to stderr when it does (stdout is block-buffered when redirected and can
-  lose lines while the process is alive — `rust/gpui/crates/app/src/main.rs:926-931`).
+  lose lines while the process is alive — `gpui/crates/app/src/main.rs:926-931`).
 - **"Not wired" is a real, named state.** Unimplemented surfaces are declared with
   `MenuItem::NotWired { .. }`, a `NotWired` flag, an empty-state page, or an explicit
   "not implemented" register at the bottom of a crate's `lib.rs` — never a dead control.
@@ -94,7 +94,7 @@ writing them back**; `LITHE_GPUI_SETTINGS_FILE` redirects `settings.json` *and*
 - `rust/Cargo.toml`
 - `AGENTS.md`
 - `.agents/skills/develop-lithe/SKILL.md`
-- `rust/gpui/crates/app/src/main.rs`
-- `rust/gpui/crates/app/src/assets.rs`
-- `rust/gpui/crates/shared/locales/`
+- `gpui/crates/app/src/main.rs`
+- `gpui/crates/app/src/assets.rs`
+- `gpui/crates/shared/locales/`
 - `third_party/jdtls/manifest.json`

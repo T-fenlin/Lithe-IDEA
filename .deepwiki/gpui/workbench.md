@@ -1,6 +1,6 @@
 # Workbench
 
-`rust/gpui/crates/workbench/` is the shell: 15 modules, ~287 kB in `workspace.rs` alone.
+`gpui/crates/workbench/` is the shell: 15 modules, ~287 kB in `workspace.rs` alone.
 Its public surface is deliberately tiny — only `ShellWorkspace` is public, plus
 `right_tool_window::RightToolWindowView` (re-exported via the module path only, because
 `app/src/main.rs:48-50` needs to name it). Area modules expose only their render
@@ -239,12 +239,12 @@ The correct call is `cx.open_window`.
 
 ## Sources
 
-- `rust/gpui/crates/workbench/src/` (all files)
-- `rust/gpui/crates/workbench/Cargo.toml`
-- `rust/gpui/crates/editor/src/editor_view.rs`
-- `rust/gpui/crates/settings/src/store.rs`
-- `rust/gpui/crates/notify/src/lib.rs`
-- `rust/gpui/crates/app/src/main.rs`
-- `rust/gpui/README.md`, `rust/gpui/PLAN.md`
+- `gpui/crates/workbench/src/` (all files)
+- `gpui/crates/workbench/Cargo.toml`
+- `gpui/crates/editor/src/editor_view.rs`
+- `gpui/crates/settings/src/store.rs`
+- `gpui/crates/notify/src/lib.rs`
+- `gpui/crates/app/src/main.rs`
+- `gpui/README.md`, `gpui/PLAN.md`
 - `.agents/notes/implemented/architecture/2026-09-13-resizable-ui-performance-boundaries.md`
 - `.agents/notes/implemented/feature/2026-09-27-session-state-persistence.md`

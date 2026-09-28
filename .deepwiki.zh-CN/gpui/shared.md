@@ -1,6 +1,6 @@
 # Host Shared Crate
 
-`rust/gpui/crates/shared/` 是所有 gpui crate 共同依赖的层。它依赖 `gpui-kit`、`lithe-core`（进程内）、`serde`、`uuid` 和 `rust-i18n`，并且**不依赖任何其他 gpui crate**。
+`gpui/crates/shared/` 是所有 gpui crate 共同依赖的层。它依赖 `gpui-kit`、`lithe-core`（进程内）、`serde`、`uuid` 和 `rust-i18n`，并且**不依赖任何其他 gpui crate**。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -130,7 +130,7 @@ exclude 文件的位置通过 Core 的 `git.watchContext` -> `gitCommonDirectory
 
 ## 参考资料
 
-- `rust/gpui/crates/shared/` 下全部文件
+- `gpui/crates/shared/` 下全部文件
 - `gpui/tools/extract-locale.mjs`
 - `shared/contracts/application-boundary.md`
 - `shared/contracts/*` 相关文档

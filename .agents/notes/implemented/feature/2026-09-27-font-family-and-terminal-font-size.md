@@ -101,10 +101,10 @@
 
 ## 适用范围
 
-- `rust/gpui/crates/settings/src/schema.rs`
-- `rust/gpui/crates/settings/src/store.rs`
-- `rust/gpui/crates/settings/src/theme.rs`
-- `rust/gpui/crates/settings/src/dialog.rs`
-- `rust/gpui/crates/terminal/src/terminal_view.rs`
-- `rust/gpui/crates/terminal/src/session.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
+- `gpui/crates/settings/src/schema.rs`
+- `gpui/crates/settings/src/store.rs`
+- `gpui/crates/settings/src/theme.rs`
+- `gpui/crates/settings/src/dialog.rs`
+- `gpui/crates/terminal/src/terminal_view.rs`
+- `gpui/crates/terminal/src/session.rs`
+- `gpui/crates/workbench/src/workspace.rs`

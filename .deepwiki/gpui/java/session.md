@@ -1,6 +1,6 @@
 # Language Service: Session & Events
 
-The runtime half of `rust/gpui/crates/java/`. Discovery, JDK resolution and the
+The runtime half of `gpui/crates/java/`. Discovery, JDK resolution and the
 workspace index cache are on the [parent page](../java.md); this page covers the session
 envelope, the event pump, and the semantic request path.
 
@@ -213,10 +213,10 @@ re-reads after a bounded delay.
 
 ## Sources
 
-- `rust/gpui/crates/java/src/session.rs`, `events.rs`, `service.rs`
-- `rust/gpui/crates/editor/src/{navigation,diagnostics,completion,code_actions}.rs`
-- `rust/gpui/crates/editor/src/editor_view.rs`
-- `rust/gpui/crates/settings/src/dialog.rs`
+- `gpui/crates/java/src/session.rs`, `events.rs`, `service.rs`
+- `gpui/crates/editor/src/{navigation,diagnostics,completion,code_actions}.rs`
+- `gpui/crates/editor/src/editor_view.rs`
+- `gpui/crates/settings/src/dialog.rs`
 - `rust/lithe-core/src/lsp/interface/engine.rs`
 - `rust/lithe-core/src/lsp/lightweight/snippets.rs`
 - `shared/fixtures/lsp/`

@@ -10,7 +10,7 @@ Lithe 对标轻量级 IDEA，所以持久化数据照 IDEA 的两级模型组织
 
 ### 1. gpui 只有一份全局设置，没有项目层
 
-`rust/gpui/crates/settings/src/schema.rs` 里的 `Settings` 是一个**扁平标量结构**，19 个键**全部是全局作用域**，没有任何按项目或按工作区生效的键。这不是设计偏好，而是实现现状的登记——同一文件的注释写着：gpui 侧没有项目级存储，`.lithe/run/local.json` 的读写归 Core 的 `runConfig.*`，而这条通路还没有接上。
+`gpui/crates/settings/src/schema.rs` 里的 `Settings` 是一个**扁平标量结构**，19 个键**全部是全局作用域**，没有任何按项目或按工作区生效的键。这不是设计偏好，而是实现现状的登记——同一文件的注释写着：gpui 侧没有项目级存储，`.lithe/run/local.json` 的读写归 Core 的 `runConfig.*`，而这条通路还没有接上。
 
 后果直接可见：**项目 JDK、Maven 可执行文件、Maven JDK、`settings.xml`、本地仓库这五个值，本来每个项目都可能不同，却被放在同一个全局文件里。** 设置页的文案因此必须专门标注"这一页的作用范围是全局，不是当前项目"，而且用户切换项目时要么忍受错误的 JDK，要么每次改一遍设置。
 
@@ -29,7 +29,7 @@ gpui 整个 crate 的非测试磁盘写入只有四处：全局 `settings.json`�
 - 全局 `settings.json` **没有 `version` 字段**，未知键**静默忽略**（`unknown_keys_are_ignored` 是一条正式测试）。用户手写的字段会在下一次落盘时被吃掉。
 - **不监听外部改动**：`settings.json` 每个进程只读一次，改了不重启就不生效。
 - **只在"完成"按钮里 flush**，关闭按钮 `×`、`Esc` 以及进程退出都会丢弃 300ms 防抖窗口内的改动。
-- **逐键容错表是手写的**（`rust/gpui/crates/settings/src/persistence.rs` 里那张表），历史上出过一次"设置写得出、读不回"的事故：新增键忘记登记，就静默不落盘。设置结构一旦允许数组与嵌套，这张手写表会更容易漏。
+- **逐键容错表是手写的**（`gpui/crates/settings/src/persistence.rs` 里那张表），历史上出过一次"设置写得出、读不回"的事故：新增键忘记登记，就静默不落盘。设置结构一旦允许数组与嵌套，这张手写表会更容易漏。
 
 ### 4. 待建能力没有落点
 
@@ -86,7 +86,7 @@ language-servers/jdtls/<sha256(归一化工作区路径 + JDT 指纹)>/
 
 ⚠️ **`terminalFontSize` 没有现成落点，需要自己造一个缝**（实施时勘察，修正了先前"与写
 `mono_font_size` 是同一条路"的说法）：终端正文**不用** `Theme::mono_font_size` —— 它用 typography 的
-`sm` token（`.text_sm()` = 14px，`rust/gpui/crates/terminal/src/terminal_view.rs`）。所以既不能写
+`sm` token（`.text_sm()` = 14px，`gpui/crates/terminal/src/terminal_view.rs`）。所以既不能写
 `mono_font_size`（那会连带把编辑器一起改掉），也没有"终端字号"这个 token 可写。落地方式是终端视图
 自己持有一个覆盖值（`TerminalPane::set_font_size`，`None` = 用默认档），由外壳按既有的"值型设置经
 外壳转发"路子喂进去 —— 终端是按行渲染而不是字符网格，改字号没有列宽重算的问题。
@@ -286,17 +286,17 @@ FontFeatures**（`gpui-base-0.6.6/src/input/editor/display_map/text_wrapper.rs` 
 2. **"共享此项目的配置"的界面入口。** 那个动作的函数（`sharing::share_project_config`）
    **已经落地并有真实临时仓库测试**（移除本机排除行 + 只暂存可共享成员 + 移除后回读确认），
    但**界面入口留给下一批**：用户今天没有"点一下完成共享"的办法。这条的原始记录在
-   `rust/gpui/PLAN.md` 的 §8.9（"**不做界面**，入口留给下一批"），维护者已确认按此执行，
+   `gpui/PLAN.md` 的 §8.9（"**不做界面**，入口留给下一批"），维护者已确认按此执行，
    并接受它的直接后果 —— 共享层（`.lithe/settings.json`）今天**没有写入方**，
    "团队统一主题"这条链路只走通"读"的一半，用户要共享只能手写那个文件。
 
 **`directoryMarks` 为什么没有落地**：
 
-- `rust/gpui/crates/**` 全量检索 `markDirectory` / `directoryMarks` / `标记` **零命中**
+- `gpui/crates/**` 全量检索 `markDirectory` / `directoryMarks` / `标记` **零命中**
   （只有"脏标记""失效标记"这类无关命中）；
-- `rust/gpui/crates/explorer/src/explorer_view.rs:280` 的模块文档明说**本模块没有画右键菜单**
+- `gpui/crates/explorer/src/explorer_view.rs:280` 的模块文档明说**本模块没有画右键菜单**
   （真机的「刷新」在右键菜单里，本侧把它开成公开方法交给外壳接线）；
-- `rust/gpui/crates/workbench/src/menu_bar.rs` 的菜单表与命令面板里也没有这一项。
+- `gpui/crates/workbench/src/menu_bar.rs` 的菜单表与命令面板里也没有这一项。
 
 所以它今天是一个**没有生产者**的字段：写出来没人读，只能为一个没人能触发的动作写测试。
 维护者已决定**本批不补 UI**，并保持 `ProjectManifest` 不加字段、
@@ -366,7 +366,7 @@ gpui 现在特意把 `Settings` 做成"扁平标量"，理由是最近项目这�
 ## 风险
 
 - **自动写本机排除偏离了"Git 写操作只在用户显式动作时发生"这条既有约束**：它是本提案唯一的定向例外（理由与三条边界见提案第七节）。回退方式：如果这个例外不可接受，退到备选方案八不需要改动其他任何决策——层划分、文件名、身份方案都不依赖它。
-- **gpui 写通道是新能力**：它直接推翻 `rust/gpui/research/open-project-and-windows.md` 里"不要落 `.lithe/`"的现行结论。那份研究文档必须与本次改动同步更新，否则后来者会照着旧结论把写通道又拆掉。
+- **gpui 写通道是新能力**：它直接推翻 `gpui/research/open-project-and-windows.md` 里"不要落 `.lithe/`"的现行结论。那份研究文档必须与本次改动同步更新，否则后来者会照着旧结论把写通道又拆掉。
 - **"默认不共享"容易被误读成"已经共享"**：团队成员各自打开同一个仓库时，`.lithe/` 的内容互不可见，但每个人本机看到的效果都"很正常"。回退方式：文案与验收标准都按"默认静默、只在检测到已在共享时才提示"来设计；不要为了让功能"看起来生效"而改成默认提示或默认提交。
 - **外观可被工作区覆盖**会带来"为什么我的字号变了"的困惑。提示与一键改回是**验收标准的一部分**，不是可选项；如果困惑度太高，退回"禁止工作区覆盖"是安全的（删掉 `.lithe/settings.json` 的外观段即可，不涉及数据迁移）。
 - **未知键 round-trip 与嵌套结构**：嵌套对象内部的未知键需要在类型化解析之前、在原始 `Value` 树上做保留与回写，否则会在深层丢字段。这是实现上最容易做错的一处，必须有测试覆盖。
@@ -376,9 +376,9 @@ gpui 现在特意把 `Settings` 做成"扁平标量"，理由是最近项目这�
 ## 适用范围
 
 - `.agents/notes/`
-- `rust/gpui/crates/settings/`
-- `rust/gpui/crates/java/src/`
-- `rust/gpui/crates/workbench/src/`
+- `gpui/crates/settings/`
+- `gpui/crates/java/src/`
+- `gpui/crates/workbench/src/`
 - `rust/lithe-core/src/execution/`
 - `rust/lithe-core/src/lsp/`
 - `rust/lithe-core/src/git/`

@@ -121,5 +121,5 @@ which is out of the six commands in scope for that crate.
 - `rust/lithe-core/src/protocol/contracts.rs`
 - `rust/lithe-core/src/protocol/command.rs`
 - `rust/lithe-core/src/runtime/dispatcher.rs`
-- `rust/gpui/crates/git/src/lib.rs`, `model.rs`, `changes.rs`
+- `gpui/crates/git/src/lib.rs`, `model.rs`, `changes.rs`
 - `shared/contracts/{rust-core-api,git-rebase-session,git-patch-exchange,git-repository-setup}.md`

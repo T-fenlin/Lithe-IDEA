@@ -1,6 +1,6 @@
 # Notification Centre
 
-`rust/gpui/crates/notify/` is the smallest crate in the host and the one with the cleanest
+`gpui/crates/notify/` is the smallest crate in the host and the one with the cleanest
 state model. It depends on `gpui-kit` (only for `SharedString`) and `shared` (only for
 `CoreError`). It **never calls Core** — it only consumes `CoreError` values produced
 elsewhere.
@@ -133,11 +133,11 @@ a **parameter** so tests never touch real time.
 
 ## Sources
 
-- `rust/gpui/crates/notify/src/` (all files)
-- `rust/gpui/crates/notify/Cargo.toml`
-- `rust/gpui/crates/workbench/src/notifications.rs`, `workspace.rs`
-- `rust/gpui/crates/editor/src/editor_view.rs`
-- `rust/gpui/crates/shared/src/core_client.rs`
+- `gpui/crates/notify/src/` (all files)
+- `gpui/crates/notify/Cargo.toml`
+- `gpui/crates/workbench/src/notifications.rs`, `workspace.rs`
+- `gpui/crates/editor/src/editor_view.rs`
+- `gpui/crates/shared/src/core_client.rs`
 - `rust/lithe-core/src/protocol/error.rs`
 - `shared/contracts/application-boundary.md`
 - `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`

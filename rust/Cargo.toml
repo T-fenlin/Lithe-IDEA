@@ -1,16 +1,12 @@
-# Lithe 的唯一 Rust workspace。
+# Lithe Core 与辅助 crate 的 Rust workspace。
 #
-# 两部分：
-# - Core 与辅助 crate（lithe-core / lithe-git-host / lithe-db-*）：确定性业务逻辑，
-#   唯一的消费者是下面的 gpui 宿主。
-# - gpui/crates/*：GPUI Kit 宿主。历史上 `gpui/` 曾是独立 workspace，理由是
-#   "lithe-core 有两个语言宿主，Core 要能独立产出体积受控的 staticlib"。macOS 与
-#   Windows 前端删除后只剩一个宿主，那条理由失效，两棵树合并到此处。
+# 本 workspace 只包含确定性命令表面和随它一起发布的进程：
+# - lithe-core：确定性业务逻辑与 JSON 命令信封。
+# - lithe-git-host / lithe-db-sidecar / lithe-db-mcp：Core 的宿主与工具进程。
 #
-# 合并带来的唯一语义变化是 resolver 从 2 升到 3：gpui 各 crate 是 edition 2024
-# （rust/ 下四个 crate 仍是 2021），Cargo 不允许在含 edition 2024 成员的 workspace
-# 上用 resolver 2。resolver 3 改变 feature 合并策略（不再跨 target / build-dep
-# 统一 feature），所以下面的 `[profile.dev.package.*]` 覆盖是必需的,不是优化。
+# GPUI Kit 桌面前端不在这里，它在自己的 `gpui/` workspace（见 `gpui/Cargo.toml`），
+# 并通过路径依赖链接 `lithe-core`。两者刻意不合并：这样 Core 侧不会被 GUI 依赖树
+# 污染，`Cargo.lock` 与构建缓存各自独立。
 
 [workspace]
 members = [
@@ -18,15 +14,14 @@ members = [
     "lithe-git-host",
     "lithe-db-sidecar",
     "lithe-db-mcp",
-    "gpui/crates/*",
 ]
-resolver = "3"
+# 本 workspace 的四个 crate 都是 edition 2021，所以 resolver 2 即可。
+# `gpui/` 那边用 resolver 3，因为它的 crate 是 edition 2024。
+resolver = "2"
 
-# 面向桌面应用，而不是面向"被链接进别人进程的小体积库"。
-# `opt-level` 从 "s" 改为 3：体积优化的动机是当年要产出 staticlib 给 Swift/Tauri
-# 宿主链接；现在 lithe-core 只静态链接进我们自己的 exe，而 GPUI 是渲染热路径，
-# 用 "s" 换来的体积收益（相对 8.5 MB 内嵌资产可忽略）远不及它对帧率的拖累。
-# lto 与 codegen-units 保留：应用受益于跨 crate 内联与单 codegen unit。
+# 面向桌面应用，而不是面向"被链接进别人进程的小体积库"。lithe-core 现在只静态链接
+# 进我们自己的 exe，不再有 Swift / Tauri 宿主，体积优化的动机已经消失，所以
+# `opt-level` 从 "s" 改为 3。
 [profile.release]
 strip = true
 lto = true
@@ -36,27 +31,4 @@ opt-level = 3
 # RSA 大整数运算在未优化时极慢，而 Discourse 登录流每次授权都要生成 2048 位密钥，
 # 因此 dev 构建与测试也必须提升该依赖的优化等级。
 [profile.dev.package.num-bigint-dig]
-opt-level = 3
-
-# 来自 gpui-kit 官方安装文档：debug 构建会把 GPUI、组件库与文本栈都按未优化编译，
-# `cargo run` 的渲染会明显慢于 release。只优化这些上游 crate，自己的代码仍保持
-# 可调试的 debug 构建。这些覆盖只对列出的包生效，因此 `cargo test -p lithe-core`
-# 不会为 GPUI 付出编译代价。
-[profile.dev.package.gpui-pre]
-opt-level = 3
-[profile.dev.package.gpui-component]
-opt-level = 3
-[profile.dev.package.gpui-kit]
-opt-level = 3
-[profile.dev.package.gpui-kit-assets]
-opt-level = 3
-[profile.dev.package.gpui-pre-macros]
-opt-level = 3
-[profile.dev.package.gpui-pre-platform]
-opt-level = 3
-[profile.dev.package.rustybuzz]
-opt-level = 3
-[profile.dev.package.taffy]
-opt-level = 3
-[profile.dev.package.ttf-parser]
 opt-level = 3

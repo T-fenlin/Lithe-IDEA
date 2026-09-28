@@ -10,9 +10,9 @@
   "packaged": false,
   "retainedArtifacts": [
     {
-      "path": "rust/gpui/assets/database-icons",
-      "notice": "rust/gpui/assets/database-icons/NOTICE.txt",
-      "license": "rust/gpui/assets/database-icons/LICENSE-APACHE-2.0.txt"
+      "path": "gpui/assets/database-icons",
+      "notice": "gpui/assets/database-icons/NOTICE.txt",
+      "license": "gpui/assets/database-icons/LICENSE-APACHE-2.0.txt"
     }
   ]
 }

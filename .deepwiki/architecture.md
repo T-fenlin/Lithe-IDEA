@@ -1,7 +1,7 @@
 # Architecture
 
 Lithe is split into a **deterministic command surface** (`rust/lithe-core`) and a
-**single GPUI Kit host** (`rust/gpui/crates/*`). Everything interesting in the design
+**single GPUI Kit host** (`gpui/crates/*`). Everything interesting in the design
 follows from keeping those two apart.
 
 ## Crate graph
@@ -46,7 +46,7 @@ follows from keeping those two apart.
 ```
 
 Declared direction: `app → workbench → {editor, explorer, git, terminal} → shared`, plus
-`app → settings → shared` (`rust/gpui/README.md:70-74`). Verified against
+`app → settings → shared` (`gpui/README.md:70-74`). Verified against
 `rust/Cargo.lock:4427-4531` — the graph is a DAG, nothing depends upward.
 
 **Edges beyond the documented diagram**, all deliberate and documented in-manifest:
@@ -141,16 +141,16 @@ rather than `error` — "don't lie about severity".
 | --- | --- |
 | `rust/lithe-core/` | Commands, models, validation, the JSON envelope, deterministic ordering |
 | `rust/lithe-git-host/` | Git child processes, pipes, AskPass transport, bounded cleanup |
-| `rust/gpui/crates/app/` | Composition root, CLI, window sizing, startup order, assets |
-| `rust/gpui/crates/workbench/` | Shell chrome, pane layout, project tabs, root swap |
-| `rust/gpui/crates/editor/` | Buffers, tabs, navigation, diagnostics, completion, code actions |
-| `rust/gpui/crates/explorer/` | Project tree |
-| `rust/gpui/crates/git/` | Source control + commit log views, branch data, Git identity |
-| `rust/gpui/crates/terminal/` | Process sessions, ANSI stripping, scrollback |
-| `rust/gpui/crates/java/` | JDT LS discovery, workspace index cache, session envelope, event pump |
-| `rust/gpui/crates/settings/` | Settings model, persistence, themes, settings dialog |
-| `rust/gpui/crates/notify/` | Notification store and severity mapping |
-| `rust/gpui/crates/shared/` | Core client, icons, i18n, `.lithe/` workspace config |
+| `gpui/crates/app/` | Composition root, CLI, window sizing, startup order, assets |
+| `gpui/crates/workbench/` | Shell chrome, pane layout, project tabs, root swap |
+| `gpui/crates/editor/` | Buffers, tabs, navigation, diagnostics, completion, code actions |
+| `gpui/crates/explorer/` | Project tree |
+| `gpui/crates/git/` | Source control + commit log views, branch data, Git identity |
+| `gpui/crates/terminal/` | Process sessions, ANSI stripping, scrollback |
+| `gpui/crates/java/` | JDT LS discovery, workspace index cache, session envelope, event pump |
+| `gpui/crates/settings/` | Settings model, persistence, themes, settings dialog |
+| `gpui/crates/notify/` | Notification store and severity mapping |
+| `gpui/crates/shared/` | Core client, icons, i18n, `.lithe/` workspace config |
 | `shared/` | Contracts and fixtures — documentation, never compiled |
 | `infra/` | Docker compose for database validation |
 | `third_party/` | Upstream manifests (immutable revision + checksum), no vendored code |
@@ -184,14 +184,14 @@ main.rs
 ## Sources
 
 - `rust/Cargo.toml`, `rust/Cargo.lock`
-- `rust/gpui/README.md`
-- `rust/gpui/crates/*/Cargo.toml`
-- `rust/gpui/crates/shared/src/core_client.rs`
-- `rust/gpui/crates/app/src/main.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
+- `gpui/README.md`
+- `gpui/crates/*/Cargo.toml`
+- `gpui/crates/shared/src/core_client.rs`
+- `gpui/crates/app/src/main.rs`
+- `gpui/crates/workbench/src/workspace.rs`
 - `rust/lithe-core/src/protocol/error.rs`, `contracts.rs`
 - `rust/lithe-core/src/project/files.rs`
 - `rust/lithe-core/src/project/document_lifecycle.rs`
-- `rust/gpui/crates/notify/src/severity.rs`
+- `gpui/crates/notify/src/severity.rs`
 - `shared/contracts/application-boundary.md`
 - `.agents/notes/implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md`

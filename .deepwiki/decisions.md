@@ -111,7 +111,7 @@ notes + `TEMPLATE.md` + `atomgit-sync.md`), `docs/assets/` (screenshots, contact
 sponsors) and `docs/visual-qa/`. `docs/architecture/` existed and was migrated into
 `.agents/notes/`.
 
-The GPUI design material lives under `rust/gpui/`:
+The GPUI design material lives under `gpui/`:
 
 | Path | Purpose |
 | --- | --- |
@@ -126,7 +126,7 @@ The GPUI design material lives under `rust/gpui/`:
 | `docs/gpui-kit/` | Vendored gpui-kit 0.6.6 documentation |
 
 `develop-lithe` also warns: **do not write code against APIs that only exist in
-`versions/main` docs** — read the 0.6.6 source under `rust/gpui/docs/gpui-kit/` or the
+`versions/main` docs** — read the 0.6.6 source under `gpui/docs/gpui-kit/` or the
 vendored crate instead. A concrete instance: the `versions/main` docs advertise
 `gpui_kit::open_window(..)`, which does not exist in 0.6.6 (`gpui/crates/app/Cargo.toml:26-29`).
 
@@ -153,5 +153,5 @@ vendored crate instead. A concrete instance: the `versions/main` docs advertise
 - `scripts/verify-agent-notes.mjs`, `verify-rust-core-comments.sh`, `build-agent-notes-board.mjs`
 - `.github/workflows/verify-agent-notes.yml`, `deploy-agent-notes-board.yml`
 - `docs/`
-- `rust/gpui/{PLAN.md,README.md,UI-MAP.md,research/,docs/}`
+- `gpui/{PLAN.md,README.md,UI-MAP.md,research/,docs/}`
 - `third_party/README.md`

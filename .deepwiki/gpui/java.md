@@ -1,6 +1,6 @@
 # Language Service (`lithe-gpui-java`)
 
-`rust/gpui/crates/java/` owns **everything platform-specific** about Eclipse JDT LS. It
+`gpui/crates/java/` owns **everything platform-specific** about Eclipse JDT LS. It
 deliberately has **no `gpui-kit` dependency** (`Cargo.toml:7-15`) — it is a pure
 data / request-construction layer, which is what lets it own a blocking `std::thread`
 event pump.
@@ -171,15 +171,15 @@ failed scan returns `None` and does not block startup.
 
 ## Sources
 
-- `rust/gpui/crates/java/src/jdtls.rs`, `workspace.rs`, `toolchain.rs`, `lib.rs`
-- `rust/gpui/crates/java/Cargo.toml`
-- `rust/gpui/crates/editor/src/editor_view.rs`
-- `rust/gpui/crates/settings/src/project.rs`, `dialog.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
-- `rust/gpui/crates/shared/src/workspace_config/toolchain.rs`
+- `gpui/crates/java/src/jdtls.rs`, `workspace.rs`, `toolchain.rs`, `lib.rs`
+- `gpui/crates/java/Cargo.toml`
+- `gpui/crates/editor/src/editor_view.rs`
+- `gpui/crates/settings/src/project.rs`, `dialog.rs`
+- `gpui/crates/workbench/src/workspace.rs`
+- `gpui/crates/shared/src/workspace_config/toolchain.rs`
 - `rust/lithe-core/src/lsp/languages/jdt.rs`
 - `shared/fixtures/lsp/`
 - `.agents/notes/implemented/architecture/2026-09-13-language-tooling-and-lsp-runtime-ownership.md`
 - `.agents/notes/implemented/architecture/2026-09-18-java-project-build-and-launch-boundary.md`
 - `.agents/notes/implemented/architecture/2026-09-21-maven-settings-reach-the-language-server.md`
-- `rust/gpui/research/java-spring-maven-inventory.md`
+- `gpui/research/java-spring-maven-inventory.md`

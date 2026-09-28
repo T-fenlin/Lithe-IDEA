@@ -16,16 +16,16 @@ gpui 的活动栏铃铛 + 右工具窗「通知」是「事情发生过」的唯
 
 ### 铃铛是个空壳
 
-右工具窗已经有铃铛图标、标题和空态「暂无通知。」，但 `rust/gpui/crates/workbench/src/right_tool_window.rs`
+右工具窗已经有铃铛图标、标题和空态「暂无通知。」，但 `gpui/crates/workbench/src/right_tool_window.rs`
 的模块文档自己写着「**未做**：搜索 / 过滤 / 分组 / 详情 —— 没有通知数据源」。用户点进去只得到一个
-空面板。`rust/gpui/crates/shared/locales/lithe.zh-CN.yml` 里已经躺着 20 个 `notifications.*` 键
+空面板。`gpui/crates/shared/locales/lithe.zh-CN.yml` 里已经躺着 20 个 `notifications.*` 键
 （搜索 / 过滤 / 复制 / 详情），全部无人引用。
 
 ### 同一个产品名下的两套通知语义
 
 macOS 产品有完整的一套：`macos/Sources/Lithe/Application/Features/WorkbenchNotificationFeatureModel.swift`
 管 4 秒显示、最多 3 条可见、100 条历史、悬停暂停，95 个 `showNotification(` 调用点。gpui 侧原本
-什么都没有。macOS 那套的缺陷也已经被记下来了（`rust/gpui/docs/archive/ui-map-macos.md:96`）：HUD 与
+什么都没有。macOS 那套的缺陷也已经被记下来了（`gpui/docs/archive/ui-map-macos.md:96`）：HUD 与
 通知中心两套样式、HUD 所有通知同色无类型区分、通知中心一打开就 `markAllNotificationsRead()`
 导致未读红点形同虚设。gpui 侧要建，就不要把这三个缺陷一起继承过来。
 
@@ -62,10 +62,10 @@ gpui 原本的用户可见消息面：角落 toast（`editor_view.rs` 两处）�
 ### 条目模型：存事件码 + 参数，不存文案
 
 `shared/contracts/application-boundary.md:227-228` 已经强制了这个切分：「领域层返回稳定原因，
-用户可见文案归各产品展示层所有」。文案由 `rust/gpui/crates/workbench/src/notifications.rs` 的
+用户可见文案归各产品展示层所有」。文案由 `gpui/crates/workbench/src/notifications.rs` 的
 `render_message` 在渲染时用 `tr_args` 拼 —— 那是**唯一**拼文案的地方。
 
-这么定还有个具体理由：gpui 一半功能还没建（`rust/gpui/HANDOFF.md:265` 记着缺 Java 智能提示与项目
+这么定还有个具体理由：gpui 一半功能还没建（`gpui/HANDOFF.md:265` 记着缺 Java 智能提示与项目
 模型），存了文案就等于把文案写死在错误的抽象层上。
 
 ### 角标是圆点，未读用水位线
@@ -139,7 +139,7 @@ store **由 `ShellWorkspace` 持有一个 `Entity<Store>`**，并把**弱引用*
 
 ### 面板是独立实体，且不用 gpui-kit 的 `List`
 
-搜索框 / 筛选 / 展开都住在 `rust/gpui/crates/workbench/src/notifications.rs` 的
+搜索框 / 筛选 / 展开都住在 `gpui/crates/workbench/src/notifications.rs` 的
 `NotificationPanel` 自己身上。`ShellWorkspace` 已经 287KB，再塞 4 个视图状态字段会让「哪部分
 状态归谁」更难看。
 
@@ -149,7 +149,7 @@ store **由 `ShellWorkspace` 持有一个 `Entity<Store>`**，并把**弱引用*
 ### 诊断行
 
 记录 / 展开 / 清除 / 打开各有可 grep 的 `S1_NOTIFICATION` 诊断行，接替被删掉的
-`S1_STATUS_NOTICE`。交互类改动在本仓库只能靠维护者手动验证（`rust/gpui/docs/grill.md` D1a），
+`S1_STATUS_NOTICE`。交互类改动在本仓库只能靠维护者手动验证（`gpui/docs/grill.md` D1a），
 这行可 grep 的证据是唯一的机器判据，所以**必须**跟着迁移。
 
 ### 复用清单
@@ -192,7 +192,7 @@ tr_args(entry.code().as_ref(), &args)
 最省事：两个 `push_notification` 调用点不用改，`render_notification_layer` 已经挂好了。
 
 不采用的理由是它产生一个必须回答的额外问题 —— 弹了但没进中心、或进了中心但用户当时没看到，
-两种不一致都要处理。`rust/gpui/UI-MAP.md:158` 已经把这个病记成「macOS 手搓 HUD 与通知中心两套
+两种不一致都要处理。`gpui/UI-MAP.md:158` 已经把这个病记成「macOS 手搓 HUD 与通知中心两套
 样式」。落点唯一就绕开了它。
 
 ### 保留 `status_notice` 当轻提示
@@ -237,7 +237,7 @@ tr_args(entry.code().as_ref(), &args)
 
 ### 只做样式，先不接真实数据
 
-`rust/gpui/docs/ui-mockup-idea.md:419` 当时的建议是「没有真事实时画个假数字，比不画更危险」。
+`gpui/docs/ui-mockup-idea.md:419` 当时的建议是「没有真事实时画个假数字，比不画更危险」。
 
 不采用是因为本轮就是要接真实事实 —— 已有 Core 的 11 个稳定错误码和若干 gpui 自有事件码可以
 接。当年那个前提（没有通知子系统）现在不成立了。
@@ -281,22 +281,22 @@ tr_args(entry.code().as_ref(), &args)
 - ⚠️ `cargo test -p lithe-gpui-workbench` / `-p lithe-gpui-shared` / `-p lithe-gpui-editor` 里有
   50 个测试在本机失败，**全部**是 `std::env::temp_dir()` 不可写（`os error 5`）导致的，与本次
   改动无关：失败点在 `session.rs:324`、`shared/src/workspace_config/*`、`editor/src/buffer.rs`
-  这些本次没碰的文件里。这是本仓库已记录的环境限制（`rust/gpui/HANDOFF.md:237-238`：「`%TEMP%`
+  这些本次没碰的文件里。这是本仓库已记录的环境限制（`gpui/HANDOFF.md:237-238`：「`%TEMP%`
   与仓库外目录对**应用进程也**不可写」）。
 - **未做机器验证**：角点显隐、筛选、搜索、展开详情、状态栏那格的点击，全部属交互类，本仓库
-  只能靠维护者手动确认（`rust/gpui/docs/grill.md` D1a）。可 grep 的判据是 `S1_NOTIFICATION` 那几行。
+  只能靠维护者手动确认（`gpui/docs/grill.md` D1a）。可 grep 的判据是 `S1_NOTIFICATION` 那几行。
 
 ## 适用范围
 
-- `rust/gpui/crates/notify/`（`model` / `severity` / `store` 三个模块）
-- `rust/gpui/crates/workbench/src/notifications.rs`（面板）
-- `rust/gpui/crates/workbench/src/right_tool_window.rs`
-- `rust/gpui/crates/workbench/src/activity_bar.rs`
-- `rust/gpui/crates/workbench/src/status_bar.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
-- `rust/gpui/crates/editor/src/editor_view.rs`
-- `rust/gpui/crates/shared/src/i18n.rs`
-- `rust/gpui/tools/extract-locale.mjs`
+- `gpui/crates/notify/`（`model` / `severity` / `store` 三个模块）
+- `gpui/crates/workbench/src/notifications.rs`（面板）
+- `gpui/crates/workbench/src/right_tool_window.rs`
+- `gpui/crates/workbench/src/activity_bar.rs`
+- `gpui/crates/workbench/src/status_bar.rs`
+- `gpui/crates/workbench/src/workspace.rs`
+- `gpui/crates/editor/src/editor_view.rs`
+- `gpui/crates/shared/src/i18n.rs`
+- `gpui/tools/extract-locale.mjs`
 - 交叉参考：`.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md`
 - 交叉参考：`.agents/notes/implemented/architecture/2026-09-13-macos-service-composition-boundaries.md`
 - 交叉参考：`.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`

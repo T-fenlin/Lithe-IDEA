@@ -1,6 +1,6 @@
 # 架构
 
-Lithe 被拆分为两部分：一个是确定性的命令表面（`rust/lithe-core`），另一个是单一的 GPUI Kit 宿主（`rust/gpui/crates/*`）。设计里最关键的事实，就是把这两者严格分离。
+Lithe 被拆分为两部分：一个是确定性的命令表面（`rust/lithe-core`），另一个是单一的 GPUI Kit 宿主（`gpui/crates/*`）。设计里最关键的事实，就是把这两者严格分离。
 
 ## Crate 图
 
@@ -43,7 +43,7 @@ Lithe 被拆分为两部分：一个是确定性的命令表面（`rust/lithe-co
                         └────────────────────────┘
 ```
 
-已声明的方向是：`app → workbench → {editor, explorer, git, terminal} → shared`，以及 `app → settings → shared`（`rust/gpui/README.md:70-74`）。这已通过 `rust/Cargo.lock:4427-4531` 验证：整个图是 DAG，没有依赖向上回流。
+已声明的方向是：`app → workbench → {editor, explorer, git, terminal} → shared`，以及 `app → settings → shared`（`gpui/README.md:70-74`）。这已通过 `rust/Cargo.lock:4427-4531` 验证：整个图是 DAG，没有依赖向上回流。
 
 **超出图示之外的边**，都是有意而且在清单中写明的：
 
@@ -104,16 +104,16 @@ cx.spawn(async move |this, cx| {
 | --- | --- |
 | `rust/lithe-core/` | 命令、模型、校验、JSON 信封、确定性排序 |
 | `rust/lithe-git-host/` | Git 子进程、管道、AskPass 传输、受限清理 |
-| `rust/gpui/crates/app/` | 组合根、CLI、窗口尺寸、启动顺序、资源 |
-| `rust/gpui/crates/workbench/` | Shell chrome、面板布局、项目标签页、根切换 |
-| `rust/gpui/crates/editor/` | 缓冲区、标签页、导航、诊断、补全、代码操作 |
-| `rust/gpui/crates/explorer/` | 项目树 |
-| `rust/gpui/crates/git/` | 源代码控制 + 提交日志视图、分支数据、Git 身份 |
-| `rust/gpui/crates/terminal/` | 进程会话、ANSI 清理、滚动缓冲 |
-| `rust/gpui/crates/java/` | JDT LS 发现、工作区索引缓存、会话信封、事件泵 |
-| `rust/gpui/crates/settings/` | 设置模型、持久化、主题、设置对话框 |
-| `rust/gpui/crates/notify/` | 通知存储和严重程度映射 |
-| `rust/gpui/crates/shared/` | Core client、图标、i18n、`.lithe/` 工作区配置 |
+| `gpui/crates/app/` | 组合根、CLI、窗口尺寸、启动顺序、资源 |
+| `gpui/crates/workbench/` | Shell chrome、面板布局、项目标签页、根切换 |
+| `gpui/crates/editor/` | 缓冲区、标签页、导航、诊断、补全、代码操作 |
+| `gpui/crates/explorer/` | 项目树 |
+| `gpui/crates/git/` | 源代码控制 + 提交日志视图、分支数据、Git 身份 |
+| `gpui/crates/terminal/` | 进程会话、ANSI 清理、滚动缓冲 |
+| `gpui/crates/java/` | JDT LS 发现、工作区索引缓存、会话信封、事件泵 |
+| `gpui/crates/settings/` | 设置模型、持久化、主题、设置对话框 |
+| `gpui/crates/notify/` | 通知存储和严重程度映射 |
+| `gpui/crates/shared/` | Core client、图标、i18n、`.lithe/` 工作区配置 |
 | `shared/` | 契约和 fixture——文档，不参与编译 |
 | `infra/` | 数据库校验用 docker compose |
 | `third_party/` | 上游 manifests（固定修订 + 校验和），无 vendored 代码 |
@@ -144,14 +144,14 @@ main.rs
 ## 参考资料
 
 - `rust/Cargo.toml`, `rust/Cargo.lock`
-- `rust/gpui/README.md`
-- `rust/gpui/crates/*/Cargo.toml`
-- `rust/gpui/crates/shared/src/core_client.rs`
-- `rust/gpui/crates/app/src/main.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
+- `gpui/README.md`
+- `gpui/crates/*/Cargo.toml`
+- `gpui/crates/shared/src/core_client.rs`
+- `gpui/crates/app/src/main.rs`
+- `gpui/crates/workbench/src/workspace.rs`
 - `rust/lithe-core/src/protocol/error.rs`, `contracts.rs`
 - `rust/lithe-core/src/project/files.rs`
 - `rust/lithe-core/src/project/document_lifecycle.rs`
-- `rust/gpui/crates/notify/src/severity.rs`
+- `gpui/crates/notify/src/severity.rs`
 - `shared/contracts/application-boundary.md`
 - `.agents/notes/implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md`

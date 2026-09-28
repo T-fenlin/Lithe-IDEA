@@ -93,7 +93,7 @@ Language tooling 以 “project detection / java runtime / workspace cache / dia
 - `rust/lithe-core/src/languages/`（全部文件）
 - `rust/lithe-core/src/workspace/`（全部文件）
 - `rust/lithe-core/src/protocol/contracts.rs`
-- `rust/gpui/crates/java/src/`（全部文件）
-- `rust/gpui/crates/editor/src/navigation.rs`、`diagnostics.rs`、`completion.rs`
+- `gpui/crates/java/src/`（全部文件）
+- `gpui/crates/editor/src/navigation.rs`、`diagnostics.rs`、`completion.rs`
 - `shared/contracts/application-boundary.md`
 - `shared/contracts/language-providers.schema.json`

@@ -1,6 +1,6 @@
 # GPUI App Shell
 
-`rust/gpui/crates/app/` 是**组合根**。它只有 5 个文件，一个二进制目标（`Lithe`），没有 `lib.rs`，也没有 `tests/`。它的全部职责在 `app/src/main.rs:1-6` 中被概括为：*“App Shell 只组合窗口与 Feature，不承载任何具体 Feature 逻辑”*。
+`gpui/crates/app/` 是**组合根**。它只有 5 个文件，一个二进制目标（`Lithe`），没有 `lib.rs`，也没有 `tests/`。它的全部职责在 `app/src/main.rs:1-6` 中被概括为：*“App Shell 只组合窗口与 Feature，不承载任何具体 Feature 逻辑”*。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -101,9 +101,9 @@ pub struct LitheAssets;                                        // assets.rs:110-
 
 ## 参考资料
 
-- `rust/gpui/crates/app/src/main.rs`
-- `rust/gpui/crates/app/src/assets.rs`
-- `rust/gpui/crates/app/build.rs`, `lithe.rc`, `Cargo.toml`
-- `rust/gpui/crates/settings/src/lib.rs`, `store.rs`, `theme.rs`, `paths.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
-- `rust/gpui/README.md`
+- `gpui/crates/app/src/main.rs`
+- `gpui/crates/app/src/assets.rs`
+- `gpui/crates/app/build.rs`, `lithe.rc`, `Cargo.toml`
+- `gpui/crates/settings/src/lib.rs`, `store.rs`, `theme.rs`, `paths.rs`
+- `gpui/crates/workbench/src/workspace.rs`
+- `gpui/README.md`

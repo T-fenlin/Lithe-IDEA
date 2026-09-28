@@ -1,6 +1,6 @@
 # Editor
 
-`rust/gpui/crates/editor/` 是 5 个模块，约 5400 行代码，负责标签栏、缓冲区、导航、诊断、补全和代码操作。这里没有 `tests/` 目录——测试都写作内联的 `#[cfg(test)] mod tests`。
+`gpui/crates/editor/` 是 5 个模块，约 5400 行代码，负责标签栏、缓冲区、导航、诊断、补全和代码操作。这里没有 `tests/` 目录——测试都写作内联的 `#[cfg(test)] mod tests`。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -149,7 +149,7 @@ editor_position(text, line, utf16_column) -> Position              // navigation
 
 ## 参考资料
 
-- `rust/gpui/crates/editor/` 下全部文件
+- `gpui/crates/editor/` 下全部文件
 - `gpui/crates/java/src/service.rs`
 - `gpui/crates/notify/src/severity.rs`
 - `shared/contracts/application-boundary.md`

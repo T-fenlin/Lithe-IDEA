@@ -120,10 +120,10 @@ try {
   write("rust/lithe-core/tests/value.rs", ["#[test]", "fn value_is_one() { assert_eq!(1, 1); }"]);
   write("rust/lithe-db-sidecar/src/main.rs", ["fn main() {}"]);
   write("infra/docker/database-validation/compose.yaml", ["services: {}"]);
-  write("rust/gpui/crates/app/src/main.rs", ["fn main() {}"]);
-  write("rust/gpui/crates/editor/src/lib.rs", ["pub fn view() {}"]);
-  write("rust/gpui/tools/extract-locale.mjs", ['console.log("check");']);
-  write("rust/gpui/themes/lithe-dark.json", ["{}"]);
+  write("gpui/crates/app/src/main.rs", ["fn main() {}"]);
+  write("gpui/crates/editor/src/lib.rs", ["pub fn view() {}"]);
+  write("gpui/tools/extract-locale.mjs", ['console.log("check");']);
+  write("gpui/themes/lithe-dark.json", ["{}"]);
   // 旧前端目录进**基线**提交：`whole-directory-deletion` 用例要测的是"从有到删"这一个 diff。
   // 若在同一个用例里先提交再加再删，`git diff base..HEAD` 会互相抵消成空，测不到任何东西。
   write("windows/tauri/src/value.ts", ["export const value = 1;"]);
@@ -160,31 +160,35 @@ try {
     ["database-docker", classification({ rustCore: "false", rustDatabase: "true", gpui: "false" }),
       () => write("infra/docker/database-validation/compose.yaml", ["services:", "  mariadb: {}"])],
 
-    // 合并成一个 workspace 后，rust/Cargo.toml 与 rust/Cargo.lock 同时覆盖 Core 与
-    // gpui 宿主，解析策略一变两侧都可能受影响，因此三条 lane 一起点亮。
-    ["rust-workspace", classification({ rustCore: "true", rustDatabase: "true", gpui: "true" }),
+    // 两棵树是两个 workspace，各有各的 manifest 与 lock。Core 侧那份只拥有
+    // lithe-core 与数据库 crate，所以不点亮 gpui lane。
+    ["rust-workspace", classification({ rustCore: "true", rustDatabase: "true", gpui: "false" }),
       () => write("rust/Cargo.toml", ["[workspace]"])],
+
+    // 宿主侧那份通过 crates/shared 的路径依赖链到 lithe-core，解析策略一变，
+    // Core 在宿主里的编译方式也可能跟着变，所以同时点亮 rust_core 与 gpui。
+    ["gpui-workspace", classification({ rustCore: "true", rustDatabase: "false", gpui: "true" }),
+      () => write("gpui/Cargo.toml", ["[workspace]"])],
 
     // gpui 宿主通过命令信封驱动 Rust Core，所以外壳源码改动同时验证两条 lane。
     ["gpui-source", classification({ rustCore: "true", rustDatabase: "false", gpui: "true" }),
-      () => write("rust/gpui/crates/app/src/main.rs", ["fn main() { println!(\"updated\"); }"])],
+      () => write("gpui/crates/app/src/main.rs", ["fn main() { println!(\"updated\"); }"])],
 
     ["gpui-crate-source", classification({ rustCore: "true", rustDatabase: "false", gpui: "true" }),
-      () => write("rust/gpui/crates/editor/src/lib.rs", ["pub fn view() { }"])],
+      () => write("gpui/crates/editor/src/lib.rs", ["pub fn view() { }"])],
 
     ["gpui-tool", classification({ rustCore: "false", rustDatabase: "false", gpui: "true" }),
-      () => write("rust/gpui/tools/extract-locale.mjs", ['console.log("regenerated");'])],
+      () => write("gpui/tools/extract-locale.mjs", ['console.log("regenerated");'])],
 
     ["gpui-theme", classification({ rustCore: "false", rustDatabase: "false", gpui: "true" }),
-      () => write("rust/gpui/themes/lithe-dark.json", ['{"background":"#000"}'])],
+      () => write("gpui/themes/lithe-dark.json", ['{"background":"#000"}'])],
 
-    // 回归：gpui 的目录整体移进 rust/ 之后，`rust/*` 这个 catch-all 会先于任何
-    // `rust/gpui/**` 模式匹配，把宿主改动判成"未知 Rust 路径"而丢掉 gpui lane。
-    // 上面的 gpui-source 用例守住顺序，这条守住兜底：gpui 下没有被专门模式覆盖的
-    // 文件（这里是 crate 根的 PE 资源 lithe.rc）也必须仍然算 gpui 改动。
-    // 用 .md 做这条会被更早的 `*.md` 空操作分支拦掉，那样测不到 catch-all 的顺序。
+    // 兜底：gpui 下没有被专门模式覆盖的文件（这里是 crate 根的 PE 资源 lithe.rc）
+    // 必须仍然算 gpui 改动。gpui/ 与 rust/ 已经是两棵不相交的目录树，所以这条
+    // 不再守 `rust/*` catch-all 的先后顺序，守的是 `gpui/*` 这条兜底本身。
+    // 用 .md 做这条会被更早的 `*.md` 空操作分支拦掉，那样测不到 catch-all。
     ["gpui-unclassified-fallback", classification({ rustCore: "false", rustDatabase: "false", gpui: "true" }),
-      () => write("rust/gpui/crates/app/lithe.rc", ["1 ICON"])],
+      () => write("gpui/crates/app/lithe.rc", ["1 ICON"])],
 
     // shared 契约同时是 Rust Core 与 gpui 宿主的兼容面。
     ["shared-fixture", classification({ rustCore: "true", rustDatabase: "false", gpui: "true" }),

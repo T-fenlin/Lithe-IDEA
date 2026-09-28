@@ -4,7 +4,7 @@
 
 ## 先说结论
 
-在资源管理器里双击 `rust/gpui/target/release/Lithe.exe` 现在一定会开出一个窗口：
+在资源管理器里双击 `gpui/target/release/Lithe.exe` 现在一定会开出一个窗口：
 **先打开「最近项目」里最近且仍然存在的那个项目**；最近项目列表为空、或者里面每一条都已失效时，
 **回落到当前工作目录**（双击时就是 exe 所在目录），窗口照样开出来，用户随即能用项目菜单换根。
 
@@ -24,7 +24,7 @@ stderr         →  一整段 USAGE 用法说明
 
 根因是一条**必填参数 + 没有控制台**的组合：
 
-1. `rust/gpui/crates/app/src/main.rs` 里位置参数是必填的：
+1. `gpui/crates/app/src/main.rs` 里位置参数是必填的：
    `root: root.ok_or_else(|| USAGE.to_string())?`（当时 `Options::root` 是 `PathBuf`）；
 2. 解析失败由 `main` 统一处理：`eprintln!("{message}")` 之后 `std::process::exit(2)`；
 3. 而 release 是 **GUI 子系统**（`#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`），
@@ -38,7 +38,7 @@ stderr         →  一整段 USAGE 用法说明
 
 ### 一、无位置参数时打开「最近的项目」，数据来自项目菜单那份 `recent-projects.json`
 
-选择逻辑抽成**纯函数**，放在数据层（`rust/gpui/crates/settings/src/recent_projects.rs`）：
+选择逻辑抽成**纯函数**，放在数据层（`gpui/crates/settings/src/recent_projects.rs`）：
 
 ```rust
 // 文件系统探测由调用方注入，所以这条逻辑可以在不构造 GPUI、不真的建/删目录的情况下单测。
@@ -52,7 +52,7 @@ pub fn select_launch_root(&self, is_dir: impl FnMut(&str) -> bool) -> LaunchRoot
 - 结果是纯数据 `LaunchRootPick { root, missing }`：**选根逻辑自己不写文件、不取时钟**，
   与模块既有的"数据层不取时钟"同一条分工。
 
-App Shell（`rust/gpui/crates/app/src/main.rs`）只做三件事：读文件 → 调上面这个函数 → 建窗口。
+App Shell（`gpui/crates/app/src/main.rs`）只做三件事：读文件 → 调上面这个函数 → 建窗口。
 优先级本身写成一个只有三行的纯函数，只有一个落点：
 
 ```rust
@@ -121,11 +121,11 @@ S1_WORKSPACE_LAUNCH source=current_dir root=C:\...\cwd-fallback candidates=0 mis
 - `cargo test --workspace`：**432 通过 / 0 失败**（本批之前的基线是 423，本批新增 9 条：
   `lithe-gpui-settings` 5 条守纯函数，`lithe-gpui-app` 4 条守优先级与兜底目录）。
 - `./.agents/skills/write-stable-tests/scripts/verify-test-stability.ps1`：通过。
-- `node rust/gpui/tools/extract-locale.mjs --check`：通过（本批没有新增界面文案，
+- `node gpui/tools/extract-locale.mjs --check`：通过（本批没有新增界面文案，
   `S1_WORKSPACE_LAUNCH` 是诊断行、不是 `tr` 文案）。
 - `node scripts/verify-agent-notes.mjs`：通过。
 - GUI 端到端（工作区**外**的 exe 副本 + `LITHE_GPUI_SETTINGS_FILE` 指到工作区外的配置目录，
-  三种情形各跑一次）：断言与观察输出记在 `rust/gpui/HANDOFF.md` 的本批小节里。
+  三种情形各跑一次）：断言与观察输出记在 `gpui/HANDOFF.md` 的本批小节里。
 - **release 二进制复验**（由父代理在本批提交后重跑，取代"release 未复验"这条缺口）：
   `cargo build --release` exit=0（增量 3m42s）；**PE 子系统位 = 2（GUI，无控制台）**；
   用 release 副本按**双击的等价条件（不带任何位置参数）**启动：
@@ -142,10 +142,10 @@ S1_WORKSPACE_LAUNCH source=current_dir root=C:\...\cwd-fallback candidates=0 mis
 
 ## 适用范围
 
-- `rust/gpui/crates/app/src/main.rs` —— 启动根策略（`resolve_launch_root` / `choose_launch_root` /
+- `gpui/crates/app/src/main.rs` —— 启动根策略（`resolve_launch_root` / `choose_launch_root` /
   `fallback_directory`）、`Options::root` 的类型、用法文本、`S1_WORKSPACE_LAUNCH` 诊断。
-- `rust/gpui/crates/settings/src/recent_projects.rs` —— `LaunchRootPick` 与
+- `gpui/crates/settings/src/recent_projects.rs` —— `LaunchRootPick` 与
   `RecentProjects::select_launch_root`；最近项目文件的读写口径不变。
-- `rust/gpui/crates/workbench/src/workspace.rs` —— 最近项目的消费方：外壳仍然**要求**一个根，
+- `gpui/crates/workbench/src/workspace.rs` —— 最近项目的消费方：外壳仍然**要求**一个根，
   项目菜单的换根与 `set_missing` 行为是本次选择逻辑的对齐目标。
-- `rust/gpui/crates/shared/src/i18n.rs` —— 模块文档里引用 CLI 用法首行的那句话（已同步）。
+- `gpui/crates/shared/src/i18n.rs` —— 模块文档里引用 CLI 用法首行的那句话（已同步）。

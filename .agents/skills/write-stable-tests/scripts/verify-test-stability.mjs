@@ -2,7 +2,7 @@
 
 // verify-test-stability.mjs —— 测试稳定性静态闸门。
 //
-// 仓库现在是纯 Rust：`rust/lithe-core`（确定性业务逻辑）与 `rust/gpui/`（GPUI Kit 宿主）。
+// 仓库现在是纯 Rust：`rust/lithe-core`（确定性业务逻辑）与 `gpui/`（GPUI Kit 宿主）。
 // Swift / TypeScript 规则与 `--platform macos|windows` 通道随旧前端删除一并移除 ——
 // 留着它们只会让闸门去扫不存在的目录，并把"该跑哪个平台的测试"这个已经不存在的问题
 // 继续交给读者。

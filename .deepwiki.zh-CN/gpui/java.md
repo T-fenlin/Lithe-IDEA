@@ -1,6 +1,6 @@
 # Language Service (`lithe-gpui-java`)
 
-`rust/gpui/crates/java/` 拥有**所有与平台相关的 Eclipse JDT LS 细节**。它故意**没有** `gpui-kit` 依赖（`Cargo.toml:7-15`）——它是纯数据 / 请求构造层，这也是它能持有阻塞式 `std::thread` 事件泵的关键。
+`gpui/crates/java/` 拥有**所有与平台相关的 Eclipse JDT LS 细节**。它故意**没有** `gpui-kit` 依赖（`Cargo.toml:7-15`）——它是纯数据 / 请求构造层，这也是它能持有阻塞式 `std::thread` 事件泵的关键。
 
 分层设计是整个点：`lib.rs:8-26` 中写得很清楚：Core 负责子进程、stdin/stdout、帧协议、JSON-RPC id、文档版本、等待超时、能力声明、诊断以及优雅/强制终止；这个 crate 则**不包含任何 LSP 协议代码，也不含 Java 语法实现**。它承担四类职责：
 
@@ -151,8 +151,8 @@ events.mark_terminal("事件泵已退出（{reason}）")
 
 ## 参考资料
 
-- `rust/gpui/crates/java/` 下全部文件
-- `rust/gpui/crates/editor/src/editor_view.rs`
+- `gpui/crates/java/` 下全部文件
+- `gpui/crates/editor/src/editor_view.rs`
 - `rust/lithe-core/src/lsp/` 全部内容
 - `shared/contracts/application-boundary.md`
 - `third_party/jdtls/manifest.json`

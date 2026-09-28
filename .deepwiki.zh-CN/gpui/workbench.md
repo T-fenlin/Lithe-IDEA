@@ -1,6 +1,6 @@
 # Workbench
 
-`rust/gpui/crates/workbench/` 是 shell：15 个模块，`workspace.rs` 单文件约 287 kB。它的公开表面非常小——只有 `ShellWorkspace` 是 public，另一个 `right_tool_window::RightToolWindowView` 仅通过模块路径导出，因为 `app/src/main.rs:48-50` 需要它来命名。区域模块只暴露 render 函数（`lib.rs:104-108`）。
+`gpui/crates/workbench/` 是 shell：15 个模块，`workspace.rs` 单文件约 287 kB。它的公开表面非常小——只有 `ShellWorkspace` 是 public，另一个 `right_tool_window::RightToolWindowView` 仅通过模块路径导出，因为 `app/src/main.rs:48-50` 需要它来命名。区域模块只暴露 render 函数（`lib.rs:104-108`）。
 
 ## Layout
 

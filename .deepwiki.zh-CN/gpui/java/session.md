@@ -1,6 +1,6 @@
 # Language Service: Session & Events
 
-`rust/gpui/crates/java/` 的运行时半边。发现（discovery）、JDK 解析和工作区索引缓存在[父页面](../java.md)；这一页涵盖 session 信封、事件泵，以及语义请求路径。
+`gpui/crates/java/` 的运行时半边。发现（discovery）、JDK 解析和工作区索引缓存在[父页面](../java.md)；这一页涵盖 session 信封、事件泵，以及语义请求路径。
 
 状态概览：
 
@@ -141,10 +141,10 @@ events.unregister(&operation_id);
 
 ## Sources
 
-- `rust/gpui/crates/java/src/session.rs`, `events.rs`, `service.rs`
-- `rust/gpui/crates/editor/src/{navigation,diagnostics,completion,code_actions}.rs`
-- `rust/gpui/crates/editor/src/editor_view.rs`
-- `rust/gpui/crates/settings/src/dialog.rs`
+- `gpui/crates/java/src/session.rs`, `events.rs`, `service.rs`
+- `gpui/crates/editor/src/{navigation,diagnostics,completion,code_actions}.rs`
+- `gpui/crates/editor/src/editor_view.rs`
+- `gpui/crates/settings/src/dialog.rs`
 - `rust/lithe-core/src/lsp/interface/engine.rs`
 - `rust/lithe-core/src/lsp/lightweight/snippets.rs`
 - `shared/fixtures/lsp/`

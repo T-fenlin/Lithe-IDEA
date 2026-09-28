@@ -1,6 +1,6 @@
 # Settings
 
-`rust/gpui/crates/settings/` owns persistence, theming and the settings dialog. It depends
+`gpui/crates/settings/` owns persistence, theming and the settings dialog. It depends
 on `gpui-kit`, `shared`, `serde`, `serde_json`, the third-party `notify 7` filesystem
 watcher and `async-channel 2`. It depends **only downward** — never on `workbench` or
 `app` (`lib.rs:5-7`).
@@ -216,13 +216,13 @@ that check lives in `apply_theme_for` (`:1183-1200`).
 
 ## Sources
 
-- `rust/gpui/crates/settings/src/` (all files)
-- `rust/gpui/crates/settings/Cargo.toml`
-- `rust/gpui/crates/shared/src/document.rs`, `workspace_config/toolchain.rs`
-- `rust/gpui/crates/git/src/identity.rs`
-- `rust/gpui/crates/java/src/toolchain.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
-- `rust/gpui/themes/`
+- `gpui/crates/settings/src/` (all files)
+- `gpui/crates/settings/Cargo.toml`
+- `gpui/crates/shared/src/document.rs`, `workspace_config/toolchain.rs`
+- `gpui/crates/git/src/identity.rs`
+- `gpui/crates/java/src/toolchain.rs`
+- `gpui/crates/workbench/src/workspace.rs`
+- `gpui/themes/`
 - `shared/contracts/application-boundary.md`
 - `.agents/notes/implemented/feature/2026-09-27-appearance-workspace-overlay.md`
 - `.agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md`

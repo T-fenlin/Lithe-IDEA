@@ -1,6 +1,6 @@
 # Rust Core API
 
-The Rust core is the deterministic application runtime. The gpui host in `rust/gpui/`
+The Rust core is the deterministic application runtime. The gpui host in `gpui/`
 is its only consumer, and it **links the Rust crate directly**: there is no C
 bridge, no `staticlib` force-load, and no per-command host shim.
 

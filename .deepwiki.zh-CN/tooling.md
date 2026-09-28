@@ -26,7 +26,7 @@ README 明确写道：GPUI 宿主尚无 CI lane，因此这些检查就是当前
 | 测试代码或测试基础设施 | `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`，再用受影响的 Rust timing harness |
 | Shared contracts 或 JSON fixture | `./scripts/verify-shared-contracts.sh` |
 | Rust Core 或 Core↔host contract | `./scripts/verify-rust-core.sh` |
-| `rust/gpui/crates/*` | 受影响 crate 的 `cargo test -p <crate>` + `cargo fmt -- --check` |
+| `gpui/crates/*` | 受影响 crate 的 `cargo test -p <crate>` + `cargo fmt -- --check` |
 | CI lane 或 path classifier | `node scripts/test-classify-ci-changes.mjs` |
 | Java semantic ownership | `node scripts/verify-java-semantic-ownership.mjs` |
 
@@ -90,7 +90,7 @@ README 明确写道：GPUI 宿主尚无 CI lane，因此这些检查就是当前
 - rename / copy ⇒ `enable_all_validation`
 - `*.md` / `docs/*` / `.agents/*` 等路径一般不触发 lane
 - Rust Core 注释-only 更新会触发 `rust_comments`，而不是 `rust_core`
-- `rust/gpui/crates/*/src/*` 会同时设置 `gpui` 和 `rust_core`
+- `gpui/crates/*/src/*` 会同时设置 `gpui` 和 `rust_core`
 - `rust/Cargo.toml` / `Cargo.lock` 会触发全部 lane
 - `shared/*` 同样会触发 `rust_core` + `gpui`
 

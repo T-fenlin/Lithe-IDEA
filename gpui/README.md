@@ -1,10 +1,9 @@
 # `gpui/` — GPUI Kit 宿主
 
-> **先读 [`UI-MAP.md`](./UI-MAP.md)**（界面规格：macOS 界面逐区域 → gpui-kit 组件的对应表）
-> 与 [`PLAN.md`](./PLAN.md)（执行计划：下一步做什么、怎么算做完、当前差距）。
+>  [`PLAN.md`](./PLAN.md)（执行计划：下一步做什么、怎么算做完、当前差距）。
 > 本文件只讲**怎么跑**、**已经验证过的接口事实**和**硬约束**。
 
-这个目录是「用 GPUI Kit 统一三端界面」方向的落地起点。它**独立于现有产品**：不修改 `macos/`、`windows/`、`rust/`、`shared/`、`Plugins/` 的任何现有文件。
+这个目录是「用 GPUI Kit 统一三端界面」方向的落地起点。它**独立于现有产品**：不修改 `rust/`、`shared/`、`Plugins/` 的任何现有文件。
 
 决策依据见
 [`.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`](../.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md)。

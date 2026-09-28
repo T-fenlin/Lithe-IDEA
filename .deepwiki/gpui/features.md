@@ -213,11 +213,11 @@ explicitly named in settings.
 
 ## Sources
 
-- `rust/gpui/crates/explorer/src/` (all files)
-- `rust/gpui/crates/git/src/` (all files)
-- `rust/gpui/crates/terminal/src/` (all files)
-- `rust/gpui/crates/shared/src/core_client.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
+- `gpui/crates/explorer/src/` (all files)
+- `gpui/crates/git/src/` (all files)
+- `gpui/crates/terminal/src/` (all files)
+- `gpui/crates/shared/src/core_client.rs`
+- `gpui/crates/workbench/src/workspace.rs`
 - `rust/lithe-core/src/project/files.rs`
 - `rust/lithe-core/src/git/`
 - `shared/contracts/terminal-profiles.md`

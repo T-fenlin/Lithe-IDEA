@@ -1,6 +1,6 @@
 # GPUI App Shell
 
-`rust/gpui/crates/app/` is the **composition root**. Five files, one binary target
+`gpui/crates/app/` is the **composition root**. Five files, one binary target
 (`Lithe`), no `lib.rs`, no `tests/`. Its whole mandate is stated at
 `app/src/main.rs:1-6`: *"App Shell 只组合窗口与 Feature，不承载任何具体 Feature 逻辑"*.
 
@@ -132,9 +132,9 @@ by the fallback and prove nothing (`:403-418`).
 
 ## Sources
 
-- `rust/gpui/crates/app/src/main.rs`
-- `rust/gpui/crates/app/src/assets.rs`
-- `rust/gpui/crates/app/build.rs`, `lithe.rc`, `Cargo.toml`
-- `rust/gpui/crates/settings/src/lib.rs`, `store.rs`, `theme.rs`, `paths.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
-- `rust/gpui/README.md`
+- `gpui/crates/app/src/main.rs`
+- `gpui/crates/app/src/assets.rs`
+- `gpui/crates/app/build.rs`, `lithe.rc`, `Cargo.toml`
+- `gpui/crates/settings/src/lib.rs`, `store.rs`, `theme.rs`, `paths.rs`
+- `gpui/crates/workbench/src/workspace.rs`
+- `gpui/README.md`

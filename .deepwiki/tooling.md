@@ -29,11 +29,11 @@ the gate."*
 | Test code or test infrastructure | `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`, then the affected Rust timing harness |
 | Shared contracts or JSON fixtures | `./scripts/verify-shared-contracts.sh` |
 | Rust Core, or the Core↔host contract | `./scripts/verify-rust-core.sh` |
-| `rust/gpui/crates/*` | `cargo test -p <crate>` for affected crates + `cargo fmt -- --check` |
+| `gpui/crates/*` | `cargo test -p <crate>` for affected crates + `cargo fmt -- --check` |
 | CI lane or path classifier | `node scripts/test-classify-ci-changes.mjs` |
 | Java semantic ownership | `node scripts/verify-java-semantic-ownership.mjs` |
 
-`rust/gpui/PLAN.md:1948-1961` adds collaboration discipline: run cargo only on the changed
+`gpui/PLAN.md:1948-1961` adds collaboration discipline: run cargo only on the changed
 scope, never `-p a -p b`, never workspace-wide; one cargo writer at a time; verify at
 interaction level with the screenshot scripts. Note that 125 % DPI means screenshot pixels
 = logical × 1.25.
@@ -129,7 +129,7 @@ met**.
   ⇒ no lane (`:69-71, 86-87`).
 - Comment-only edits under `rust/lithe-core/src/*.rs` set `rust_comments` **instead of**
   `rust_core` (`:88-96`, detector at `:18-39`).
-- `rust/gpui/crates/*/src/*` sets **both** `gpui` and `rust_core` (`:100-109`, with an
+- `gpui/crates/*/src/*` sets **both** `gpui` and `rust_core` (`:100-109`, with an
   explicit warning about ordering vs. the `rust/*` catch-all).
 - `rust/Cargo.toml` / `Cargo.lock` ⇒ all three lanes (`:120-126`).
 - `shared/*` ⇒ `rust_core` + `gpui` (`:136-141`).
@@ -183,5 +183,5 @@ if a process cannot be stopped. Do not leave a test-built app in the user's app 
 - `scripts/test-classify-ci-changes.mjs`
 - `scripts/verify-download-cache.mjs`, `invoke-cargo-with-cache-fallback.ps1`
 - `.github/workflows/` (all files)
-- `rust/gpui/PLAN.md`, `rust/gpui/README.md`
+- `gpui/PLAN.md`, `gpui/README.md`
 - `.agents/skills/{develop-lithe,write-stable-tests,release-lithe}/SKILL.md`

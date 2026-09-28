@@ -97,32 +97,37 @@ while IFS=$'\t' read -r status first_path _; do
         rust/lithe-core/tests/*|rust/lithe-core/cargo.toml|rust/lithe-core/include/*)
             rust_core=true
             ;;
-        rust/gpui/crates/*/src/*|rust/gpui/crates/*/build.rs|rust/gpui/crates/*/cargo.toml)
+        gpui/crates/*/src/*|gpui/crates/*/build.rs|gpui/crates/*/cargo.toml)
             # The gpui host drives Rust Core through the command envelope, so a
             # shell change is validated together with the core contract.
             #
-            # ⚠️ These cases must stay **above** the `rust/*` catch-all below:
-            # `rust/gpui/**` would otherwise match that first and only turn on
-            # the Core/database lanes, silently dropping the gpui lane.
+            # `gpui/**` and `rust/**` are disjoint trees, so these cases no longer
+            # have to be ordered against the `rust/*` catch-all below.
             gpui=true
             rust_core=true
             ;;
-        rust/gpui/tools/*)
+        gpui/tools/*)
             # Locale and icon generators are reproducible-artifact checks.
             gpui=true
             ;;
-        rust/gpui/assets/*|rust/gpui/themes/*|rust/gpui/crates/*/locales/*|rust/gpui/crates/*/src/icons/*)
+        gpui/assets/*|gpui/themes/*|gpui/crates/*/locales/*|gpui/crates/*/src/icons/*)
             gpui=true
             ;;
-        rust/gpui/*)
+        gpui/cargo.toml|gpui/cargo.lock)
+            # The host has its own workspace and lock file. `crates/shared`
+            # path-depends on `rust/lithe-core`, so a host resolution change can
+            # also change how Core is compiled in.
+            gpui=true
+            rust_core=true
+            ;;
+        gpui/*)
             gpui=true
             ;;
         rust/cargo.toml|rust/cargo.lock)
-            # One lock file now covers the Core crates and the gpui host, so a
-            # resolution change can affect either side.
+            # This manifest only owns the Core and database crates. The host has
+            # its own workspace root, so no gpui lane is needed here.
             rust_core=true
             rust_database=true
-            gpui=true
             ;;
         rust/lithe-db-mcp/*|rust/lithe-db-sidecar/*)
             rust_database=true

@@ -1,8 +1,9 @@
-# 仓库现在是纯 Rust 工程，且只有一个 cargo workspace：根在 `rust/`，
-# Core 与数据库 crate 和 GPUI Kit 宿主（`rust/gpui/`）共用一份 `rust/target/`。
+# 仓库现在是纯 Rust 工程，有两个 cargo workspace：`rust/`（Core 与数据库 crate）和
+# `gpui/`（GPUI Kit 宿主），各自带一份 `target/`。
 # Swift / Tauri / bun / Monaco 相关的忽略规则已随旧前端删除而移除。
 .idea/
 rust/target/
+gpui/target/
 .artifacts/
 shared/fixtures/projects/**/target/
 design-qa-artifacts/

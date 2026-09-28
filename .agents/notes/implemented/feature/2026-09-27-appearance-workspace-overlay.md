@@ -54,7 +54,7 @@ Git 键**仍然只有全局层**——写进工作区文件里也会被当未知
 ```
 
 唯一的落点是 `workspace::resolve_effective(global, shared, local)`
-（`rust/gpui/crates/settings/src/workspace.rs`）：设置页显示的生效值、主题应用、字号转发、字族校验
+（`gpui/crates/settings/src/workspace.rs`）：设置页显示的生效值、主题应用、字号转发、字族校验
 走的都是它算出来的那一份 `Settings`。**不要在任何别处再写一遍"项目优先"**——两份实现漂移的表现是
 "界面显示 A、实际生效 B"，这是最难查的一类错（与工具链五值的 `ToolchainPaths::resolve` 同一条口径）。
 
@@ -64,7 +64,7 @@ Git 键**仍然只有全局层**——写进工作区文件里也会被当未知
 ### 三、三态来源：`git ls-files --error-unmatch` 的退出码区分"团队"与"本项目"
 
 同一份 `.lithe/settings.json` 有**两个**状态，"文件在不在"区分不了它们，判据只能是 Git 的索引
-（`rust/gpui/crates/workbench/src/workspace.rs` 的 `workspace_settings_tracked`）：
+（`gpui/crates/workbench/src/workspace.rs` 的 `workspace_settings_tracked`）：
 
 | 覆盖来自哪里 | 界面怎么说 | 判据 |
 | --- | --- | --- |
@@ -194,7 +194,7 @@ Git 键**仍然只有全局层**——写进工作区文件里也会被当未知
 - `cargo check --workspace --all-targets`：**exit=0**（只剩两条既有 `dead_code` 警告）。
 - `./.agents/skills/write-stable-tests/scripts/verify-test-stability.ps1`：通过。
 - `node scripts/verify-agent-notes.mjs`：通过。
-- `node rust/gpui/tools/extract-locale.mjs --check`：报"产物与真源一致"。
+- `node gpui/tools/extract-locale.mjs --check`：报"产物与真源一致"。
 - **GUI 端到端**（工作区之外的 exe 副本 + 工作区之外的真 Git 仓库；全局 `fontSize=14`）：
   1. 共享层设 18 → `appearance_source key=fontSize source=project value=18` + `mono_font_size=18px`；
   2. 本机层设 20 → `source=local value=20`；把共享文件 `git add -f` 后重启 →
@@ -211,14 +211,14 @@ Git 键**仍然只有全局层**——写进工作区文件里也会被当未知
 
 ## 适用范围
 
-- `rust/gpui/crates/settings/src/workspace.rs`
-- `rust/gpui/crates/settings/src/store.rs`
-- `rust/gpui/crates/settings/src/schema.rs`
-- `rust/gpui/crates/settings/src/dialog.rs`
-- `rust/gpui/crates/settings/src/row.rs`
-- `rust/gpui/crates/settings/src/persistence.rs`
-- `rust/gpui/crates/shared/src/workspace_config/`
-- `rust/gpui/crates/workbench/src/workspace.rs`
-- `rust/gpui/crates/shared/locales/lithe.zh-CN.yml`
-- `rust/gpui/tools/extract-locale.mjs`
-- `rust/gpui/HANDOFF.md`
+- `gpui/crates/settings/src/workspace.rs`
+- `gpui/crates/settings/src/store.rs`
+- `gpui/crates/settings/src/schema.rs`
+- `gpui/crates/settings/src/dialog.rs`
+- `gpui/crates/settings/src/row.rs`
+- `gpui/crates/settings/src/persistence.rs`
+- `gpui/crates/shared/src/workspace_config/`
+- `gpui/crates/workbench/src/workspace.rs`
+- `gpui/crates/shared/locales/lithe.zh-CN.yml`
+- `gpui/tools/extract-locale.mjs`
+- `gpui/HANDOFF.md`

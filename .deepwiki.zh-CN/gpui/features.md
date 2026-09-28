@@ -121,8 +121,8 @@ shell profile 在运行时用 `where.exe` 再 `which` 探测，不用 `#[cfg]`�
 
 ## 参考资料
 
-- `rust/gpui/crates/explorer/src/` 下全部文件
-- `rust/gpui/crates/git/src/` 下全部文件
-- `rust/gpui/crates/terminal/src/` 下全部文件
-- `rust/gpui/crates/shared/src/core_client.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
+- `gpui/crates/explorer/src/` 下全部文件
+- `gpui/crates/git/src/` 下全部文件
+- `gpui/crates/terminal/src/` 下全部文件
+- `gpui/crates/shared/src/core_client.rs`
+- `gpui/crates/workbench/src/workspace.rs`

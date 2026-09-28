@@ -141,7 +141,7 @@ Two loading patterns, both in `lithe-core`:
    `git/mod.rs:7011`, `lsp/languages/project_preparation.rs:59-61`, and more.
 2. **Runtime read via `CARGO_MANIFEST_DIR`** — `src/tests/support.rs:6-11`.
 
-**Only `lithe-core` reads fixtures.** A grep of `rust/gpui/**/*.rs` for `shared/fixtures`
+**Only `lithe-core` reads fixtures.** A grep of `gpui/**/*.rs` for `shared/fixtures`
 returns zero hits: the host re-implements the contract shapes as Rust types
 (`gpui/crates/shared/src/workspace_config/toolchain.rs:27-30`) and cites the contracts in
 doc comments only. That is intentional — the host owns presentation, not the wire format.
@@ -179,7 +179,7 @@ merge commit, a `feature/orders` rebase history, tag `v0.1.0` and an `origin/mai
   rather than user-facing prose; each product's presentation layer owns localized
   notification text." The implementation lives entirely host-side in
   `gpui/crates/shared/src/i18n.rs` + `locales/`.
-- **`rust/gpui/README.md:70-86`** and **`rust/gpui/PLAN.md`** predate the workspace merge
+- **`gpui/README.md:70-86`** and **`gpui/PLAN.md`** predate the workspace merge
   and the frontends' removal; several paths in them are wrong.
 - **Locale key counts disagree** across three sources in `locales/` — treat the yml file,
   not its header, as authoritative.
@@ -205,6 +205,6 @@ Update the contract prose **and** every consumer, and add or update a fixture.
 - `scripts/verify-shared-contracts.sh`
 - `scripts/create-git-graph-fixture.sh`
 - `rust/lithe-core/src/protocol/`, `src/tests/support.rs`
-- `rust/gpui/crates/shared/src/workspace_config/`
+- `gpui/crates/shared/src/workspace_config/`
 - `docs/reference/language-providers.schema.json`
 - `.agents/skills/develop-lithe/SKILL.md`

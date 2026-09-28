@@ -1,0 +1,55 @@
+# GPUI Kit 宿主 workspace。
+#
+# 刻意与 `rust/` workspace 分离：Core 与数据库 crate 在 `rust/`，本目录是唯一的
+# 桌面宿主。分开的理由是把两棵依赖树隔开——`gpui/` 是 GUI 应用（GPUI、组件库、
+# 文本栈），`rust/` 是确定性命令表面与 sidecar/MCP，两者的构建节奏和依赖体量
+# 完全不同，共用一份 `Cargo.lock` 会让 Core 侧的校验与缓存跟着宿主的依赖树走。
+#
+# 两棵树通过路径依赖连接：`gpui/crates/shared` 直接依赖 `rust/lithe-core`。
+#
+# resolver 是 3：本 workspace 的 crate 是 edition 2024，Cargo 不允许 edition 2024
+# 成员跑在 resolver 2 上。resolver 3 改变 feature 合并策略（不再跨 target /
+# build-dep 统一 feature），所以下面的 `[profile.dev.package.*]` 覆盖是必需的，
+# 不是优化。`rust/` 那边的四个 crate 是 edition 2021，用 resolver 2。
+
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+# 面向桌面应用。`rust/` 那份 release profile 当初是给"被链接进别人进程的小体积
+# staticlib"用的；旧前端删除后 lithe-core 只静态链接进这个 exe，体积优化的动机早已
+# 消失，而 GPUI 是渲染热路径，用 opt-level 优化换来的体积收益（相对 8.5 MB 内嵌
+# 资产可忽略）远不及它对帧率的拖累。lto 与 codegen-units 保留：应用受益于跨 crate
+# 内联与单 codegen unit。
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = 3
+
+# RSA 大整数运算在未优化时极慢，而 Discourse 登录流每次授权都要生成 2048 位密钥，
+# 因此 dev 构建与测试也必须提升该依赖的优化等级。
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+# 来自 gpui-kit 官方安装文档：debug 构建会把 GPUI、组件库与文本栈都按未优化编译，
+# `cargo run` 的渲染会明显慢于 release。只优化这些上游 crate，自己的代码仍保持
+# 可调试的 debug 构建。profile 只在本 workspace 根 Cargo.toml 生效，所以放在这里。
+[profile.dev.package.gpui-pre]
+opt-level = 3
+[profile.dev.package.gpui-component]
+opt-level = 3
+[profile.dev.package.gpui-kit]
+opt-level = 3
+[profile.dev.package.gpui-kit-assets]
+opt-level = 3
+[profile.dev.package.gpui-pre-macros]
+opt-level = 3
+[profile.dev.package.gpui-pre-platform]
+opt-level = 3
+[profile.dev.package.rustybuzz]
+opt-level = 3
+[profile.dev.package.taffy]
+opt-level = 3
+[profile.dev.package.ttf-parser]
+opt-level = 3
