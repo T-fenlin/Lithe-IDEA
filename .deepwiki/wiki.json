@@ -1,0 +1,390 @@
+{
+  "name": "Lithe",
+  "description": "A low-memory IntelliJ IDEA alternative for Java development and AI collaboration: a deterministic Rust Core plus a single GPUI Kit host.",
+  "depth": "standard",
+  "pages": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "file": "overview.md",
+      "summary": "What Lithe is, its repository status, tech stack, repo map, build/run commands, and where to look for each kind of question.",
+      "sources": [
+        "README.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "rust/Cargo.toml",
+        "rust/gpui/crates/app/src/main.rs",
+        "rust/gpui/crates/app/src/assets.rs",
+        "rust/gpui/crates/shared/locales",
+        "third_party/jdtls/manifest.json",
+        ".agents/skills/develop-lithe/SKILL.md"
+      ],
+      "sourcesHash": "3e206f191b0f4fd9a8ea0a3ad868810456a505be06324063eeb6ff515492bbcc"
+    },
+    {
+      "id": "architecture",
+      "title": "Architecture",
+      "file": "architecture.md",
+      "summary": "The crate graph and its five documented edges beyond the standard direction, the three boundary rules, the mandatory Core call pattern, the determinism rules, the ownership table, and the project-open data flow.",
+      "sources": [
+        "rust/Cargo.toml",
+        "rust/Cargo.lock",
+        "rust/gpui/README.md",
+        "rust/gpui/crates",
+        "rust/lithe-core/src/protocol",
+        "rust/lithe-core/src/project/document_lifecycle.rs",
+        "rust/gpui/crates/shared/src/core_client.rs",
+        "rust/gpui/crates/notify/src/severity.rs",
+        "shared/contracts/application-boundary.md",
+        ".agents/notes/implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md"
+      ],
+      "sourcesHash": "4d5cb09e60db9a63f5d8b0cd16020a08b7c2955752f58a3a969721be6f32c541"
+    },
+    {
+      "id": "rust-core",
+      "title": "Rust Core",
+      "file": "rust-core.md",
+      "summary": "Module map, the JSON envelope, the single-match dispatcher pipeline, cancellation/deadline/stale layering, the Git event stream, the retired C ABI, and the two test shapes.",
+      "children": [
+        {
+          "id": "rust-core-git",
+          "title": "Core: Git",
+          "file": "rust-core/git.md",
+          "summary": "The Git command facade, the reviewed preview-then-write mutation model, the command surface and its three hard host constraints, determinism specifics, and console folding.",
+          "sources": [
+            "rust/lithe-core/src/git",
+            "rust/lithe-core/src/tests/git.rs",
+            "rust/lithe-core/src/tests/git_history_rewrite.rs",
+            "rust/lithe-core/src/tests/git_patch_exchange.rs",
+            "rust/lithe-core/src/tests/git_fetch.rs",
+            "rust/lithe-core/src/tests/git_repository_setup.rs",
+            "rust/lithe-core/tests/git_push.rs",
+            "rust/lithe-core/tests/git_watch_context.rs",
+            "rust/lithe-core/src/protocol/contracts.rs",
+            "shared/contracts/rust-core-api.md",
+            "shared/contracts/git-rebase-session.md",
+            "shared/contracts/git-patch-exchange.md",
+            "shared/contracts/git-repository-setup.md"
+          ],
+          "sourcesHash": "67f1b62b59da636485acb9fe0f9e6403d004dbbde90a5669a45bc52139bc33b4"
+        },
+        {
+          "id": "rust-core-language-tooling",
+          "title": "Core: Language Tooling",
+          "file": "rust-core/language-tooling.md",
+          "summary": "The lsp/languages/project split by truth owner, the scripted-server test seam, JDT LS policy adapters, the 4-state project-preparation model, the always-available lightweight path, and path-safety enforcement.",
+          "sources": [
+            "rust/lithe-core/src/lsp",
+            "rust/lithe-core/src/languages",
+            "rust/lithe-core/src/project",
+            "rust/lithe-core/src/protocol/error.rs",
+            "rust/lithe-core/src/tests/project.rs",
+            "rust/lithe-core/src/tests/languages.rs",
+            "shared/fixtures/lsp",
+            "shared/contracts/application-boundary.md",
+            ".agents/notes/implemented/architecture/2026-09-13-language-tooling-and-lsp-runtime-ownership.md"
+          ],
+          "sourcesHash": "f5dab83a808739d7eeb6ba678c493d661294aa133711ff792b6e31ecad276988"
+        },
+        {
+          "id": "rust-core-execution",
+          "title": "Core: Execution & Support Subsystems",
+          "file": "rust-core/execution.md",
+          "summary": "Run-configuration generation and 12 project detectors, the transport-neutral DAP reducer, AI and GitHub request planning, plugins/community/diagnostics, the pure line-edit transforms, and the host-side 4-state mirrors.",
+          "sources": [
+            "rust/lithe-core/src/execution",
+            "rust/lithe-core/src/debug",
+            "rust/lithe-core/src/ai",
+            "rust/lithe-core/src/github",
+            "rust/lithe-core/src/plugins",
+            "rust/lithe-core/src/community",
+            "rust/lithe-core/src/diagnostics",
+            "rust/lithe-core/src/editor",
+            "rust/lithe-core/src/tests",
+            "shared/contracts/application-boundary.md",
+            "shared/contracts/ai-commit.md",
+            "shared/contracts/github.md"
+          ],
+          "sourcesHash": "ff27adadf23d560924681d17ab2f6ce79fd1bba0d9a8b8b9eab9eb43334c5ef1"
+        }
+      ],
+      "sources": [
+        "rust/lithe-core/src",
+        "rust/lithe-core/Cargo.toml",
+        "rust/lithe-core/include/lithe_core.h",
+        "shared/contracts/rust-core-api.md"
+      ],
+      "sourcesHash": "5cb6f71813aeb37c1b15e1152cae664acd5df6eec0e9c1f8bd82d07f257e84bc"
+    },
+    {
+      "id": "gpui-app",
+      "title": "GPUI App Shell",
+      "file": "gpui/app.md",
+      "summary": "The composition root: the 21-step startup order and why each step is where it is, the CLI surface, window bounds, and the measured LitheAssets embed envelope with its exclusion reasons.",
+      "sources": [
+        "rust/gpui/crates/app",
+        "rust/gpui/crates/settings/src/lib.rs",
+        "rust/gpui/crates/settings/src/store.rs",
+        "rust/gpui/crates/settings/src/theme.rs",
+        "rust/gpui/crates/settings/src/paths.rs",
+        "rust/gpui/README.md"
+      ],
+      "sourcesHash": "e7d1b49fdda487b380372a659da1e0fb96649e6431c3ded356418e2d6e74abde"
+    },
+    {
+      "id": "gpui-workbench",
+      "title": "Workbench",
+      "file": "gpui/workbench.md",
+      "summary": "The shell: layout tree and region owners, how child panes are hosted by callback injection, every pane state machine, the store/observation conventions, single-project root swap, session persistence, and the edition-2024 RPIT trap.",
+      "sources": [
+        "rust/gpui/crates/workbench",
+        "rust/gpui/crates/editor/src/editor_view.rs",
+        "rust/gpui/crates/settings/src/store.rs",
+        "rust/gpui/crates/notify/src/lib.rs",
+        "rust/gpui/README.md",
+        "rust/gpui/PLAN.md",
+        ".agents/notes/implemented/architecture/2026-09-13-resizable-ui-performance-boundaries.md",
+        ".agents/notes/implemented/feature/2026-09-27-session-state-persistence.md"
+      ],
+      "sourcesHash": "c474432f9dffb503822df2b214206e6ab13c4ef96b47a113890e53b21e4f3cf2"
+    },
+    {
+      "id": "gpui-editor",
+      "title": "Editor",
+      "file": "gpui/editor.md",
+      "summary": "Buffer and tab model, the three column conventions and their two converters, degraded-read states, navigation, diagnostics/completion/code-action throttling and staleness guards, tree-sitter wiring, and the performance constants.",
+      "sources": [
+        "rust/gpui/crates/editor",
+        "rust/gpui/crates/java/src/service.rs",
+        "rust/gpui/crates/shared/src/core_client.rs",
+        "rust/lithe-core/src/editor",
+        "rust/lithe-core/src/lsp/lightweight"
+      ],
+      "sourcesHash": "6bdbba4046b27bad65488b5aadaf1160bd8c1ab66ff93b950c69f94c58e141fd"
+    },
+    {
+      "id": "gpui-shared",
+      "title": "Host Shared Crate",
+      "file": "gpui/shared.md",
+      "summary": "The Core envelope client, the versioned-JSON document primitive, the two icon resolution paths and their rendering traps, the i18n crate-root rule, and the four-layer .lithe/ workspace config with the not-shared guard.",
+      "sources": [
+        "rust/gpui/crates/shared",
+        "rust/gpui/tools/generate-idea-icons.mjs",
+        "rust/gpui/tools/extract-locale.mjs",
+        "rust/gpui/crates/app/src/assets.rs",
+        "rust/gpui/crates/editor/src/buffer.rs",
+        "rust/gpui/crates/settings/src/persistence.rs",
+        ".agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md",
+        ".agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md"
+      ],
+      "sourcesHash": "cb3e7ef7e7ec86827caeea743baa42f8a0a57500a95ce53f948de44ab67d6928"
+    },
+    {
+      "id": "gpui-java",
+      "title": "Language Service (lithe-gpui-java)",
+      "file": "gpui/java.md",
+      "summary": "The boundary against Core, the service state machine, JDT LS discovery with its do-not-sort install-root rule, the JDK judgement order and injection chain, and the workspace index fingerprinting and cache reclaim.",
+      "children": [
+        {
+          "id": "gpui-java-session",
+          "title": "Language Service: Session & Events",
+          "file": "gpui/java/session.md",
+          "summary": "The startServer payload, the single-consumer event pump, wait_ready, the register-before-send rule, the three-step mandatory shutdown, the semantic request requirements, and the three staleness mechanisms.",
+          "sources": [
+            "rust/gpui/crates/java/src/session.rs",
+            "rust/gpui/crates/java/src/events.rs",
+            "rust/gpui/crates/java/src/service.rs",
+            "rust/gpui/crates/editor/src/navigation.rs",
+            "rust/gpui/crates/editor/src/diagnostics.rs",
+            "rust/gpui/crates/editor/src/completion.rs",
+            "rust/gpui/crates/editor/src/code_actions.rs",
+            "rust/gpui/crates/editor/src/editor_view.rs",
+            "rust/gpui/crates/settings/src/dialog.rs",
+            "rust/lithe-core/src/lsp/interface/engine.rs",
+            "rust/lithe-core/src/lsp/lightweight/snippets.rs",
+            "shared/fixtures/lsp",
+            "shared/contracts/rust-core-api.md",
+            ".agents/notes/implemented/architecture/2026-09-13-language-tooling-and-lsp-runtime-ownership.md",
+            ".agents/notes/implemented/architecture/2026-09-18-java-project-build-and-launch-boundary.md"
+          ],
+          "sourcesHash": "e95ba598c7335a862584928578bf7515d9baf9ab4a5b50280dc234513d955981"
+        }
+      ],
+      "sources": [
+        "rust/gpui/crates/java",
+        "rust/gpui/crates/java/Cargo.toml",
+        "rust/gpui/crates/editor/src/editor_view.rs",
+        "rust/gpui/crates/settings/src/project.rs",
+        "rust/gpui/crates/settings/src/dialog.rs",
+        "rust/gpui/crates/workbench/src/workspace.rs",
+        "rust/gpui/crates/shared/src/workspace_config/toolchain.rs",
+        "rust/lithe-core/src/lsp/languages/jdt.rs",
+        "shared/fixtures/lsp",
+        ".agents/notes/implemented/architecture/2026-09-13-language-tooling-and-lsp-runtime-ownership.md",
+        ".agents/notes/implemented/architecture/2026-09-18-java-project-build-and-launch-boundary.md",
+        ".agents/notes/implemented/architecture/2026-09-21-maven-settings-reach-the-language-server.md",
+        "rust/gpui/research/java-spring-maven-inventory.md"
+      ],
+      "sourcesHash": "06eaaf81aa6f80adbf8d5b06999270772e8c95295d77d35c927442c37fb674f0"
+    },
+    {
+      "id": "gpui-features",
+      "title": "Feature Panes: Explorer, Git, Terminal",
+      "file": "gpui/features.md",
+      "summary": "The three side/bottom panes: the project tree and its load-bearing empty placeholder, the two independent Git state machines with the request_serial guard and live-cursor lifetime, and the no-PTY terminal with its generation guard and cleanup paths.",
+      "sources": [
+        "rust/gpui/crates/explorer",
+        "rust/gpui/crates/git",
+        "rust/gpui/crates/terminal",
+        "rust/gpui/crates/shared/src/core_client.rs",
+        "rust/gpui/crates/workbench/src/workspace.rs",
+        "rust/lithe-core/src/project/files.rs",
+        "rust/lithe-core/src/git",
+        "shared/contracts/terminal-profiles.md",
+        "shared/fixtures/terminal",
+        "shared/fixtures/git"
+      ],
+      "sourcesHash": "ebae2239bc004e295ffbb9d39bbb1a3a2a2e3357e53f5296f3dcafdbdffefb51"
+    },
+    {
+      "id": "gpui-settings",
+      "title": "Settings",
+      "file": "gpui/settings.md",
+      "summary": "The three-layer settings value model, the 24-key schema and its effect timings, the 9-key appearance overlay, tolerant persistence, the settings dialog with its empty-state policy, and the startup contract.",
+      "children": [
+        {
+          "id": "gpui-settings-themes",
+          "title": "Themes",
+          "file": "gpui/settings/themes.md",
+          "summary": "The seed-don't-watch strategy forced by ThemeRegistry, the 5-step apply order and its two traps, the highlight-stamping bug it fixes, the rem-base invariant, and font-family validation.",
+          "sources": [
+            "rust/gpui/crates/settings/src/theme.rs",
+            "rust/gpui/crates/settings/src/store.rs",
+            "rust/gpui/crates/settings/src/schema.rs",
+            "rust/gpui/crates/settings/src/paths.rs",
+            "rust/gpui/crates/settings/src/lib.rs",
+            "rust/gpui/themes",
+            "rust/gpui/crates/app/src/main.rs",
+            "rust/gpui/crates/terminal/src/terminal_view.rs",
+            ".agents/notes/implemented/feature/2026-09-27-font-family-and-terminal-font-size.md",
+            ".agents/notes/implemented/architecture/2026-09-27-config-document-semantics-and-workspace-config.md"
+          ],
+          "sourcesHash": "96ba68f03d2254eb3c0d7e474788dd65adc7ed2f6b46f96c2d1aea60aff0eb17"
+        }
+      ],
+      "sources": [
+        "rust/gpui/crates/settings",
+        "rust/gpui/crates/settings/Cargo.toml",
+        "rust/gpui/crates/shared/src/document.rs",
+        "rust/gpui/crates/shared/src/workspace_config/toolchain.rs",
+        "rust/gpui/crates/git/src/identity.rs",
+        "rust/gpui/crates/java/src/toolchain.rs",
+        "rust/gpui/crates/workbench/src/workspace.rs",
+        "shared/contracts/application-boundary.md",
+        ".agents/notes/implemented/feature/2026-09-27-appearance-workspace-overlay.md",
+        ".agents/notes/proposed/architecture/2026-09-26-workspace-configuration-layers.md"
+      ],
+      "sourcesHash": "bcdaee30436fa18963f9998903c7f19102495d7475f5c71890ba694ae67675ce"
+    },
+    {
+      "id": "gpui-notify",
+      "title": "Notification Centre",
+      "file": "gpui/notify.md",
+      "summary": "The notification store's seq-based unread watermark, dedup and capacity rules, the Core-error severity table with its never-escalate fallback, the read-back Core-error bridge, and why the store is a shell-owned Entity rather than a Global.",
+      "sources": [
+        "rust/gpui/crates/notify",
+        "rust/gpui/crates/notify/Cargo.toml",
+        "rust/gpui/crates/workbench/src/notifications.rs",
+        "rust/gpui/crates/workbench/src/workspace.rs",
+        "rust/gpui/crates/editor/src/editor_view.rs",
+        "rust/gpui/crates/shared/src/core_client.rs",
+        "rust/lithe-core/src/protocol/error.rs",
+        "shared/contracts/application-boundary.md",
+        ".agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md"
+      ],
+      "sourcesHash": "b287cea2a0a46a95aef812c43b81a61ba932851ec3f5a62128b770e34daca634"
+    },
+    {
+      "id": "contracts",
+      "title": "Contracts & Fixtures",
+      "file": "contracts.md",
+      "summary": "The source of truth per concern, the nine data rules, the 12 JSON schemas, roughly 90 fixtures and how they are consumed, which 7 get structural validation, and the rule of thumb for what counts as a compatibility surface.",
+      "sources": [
+        "shared",
+        "scripts/verify-shared-contracts.sh",
+        "scripts/create-git-graph-fixture.sh",
+        "rust/lithe-core/src/protocol",
+        "rust/lithe-core/src/tests/support.rs",
+        "rust/gpui/crates/shared/src/workspace_config",
+        "docs/reference/language-providers.schema.json",
+        ".agents/skills/develop-lithe/SKILL.md"
+      ],
+      "sourcesHash": "c88ccf7032b196d717c4405366c80c500c97022ec6718d056a2a2909342124bf"
+    },
+    {
+      "id": "tooling",
+      "title": "Tooling & Validation",
+      "file": "tooling.md",
+      "summary": "The local gate, what verify-rust-core.sh actually covers, the eight CI workflows and the coverage matrix showing most Rust has no lane, the path classifier rules, build-profile rationale, and the process cleanup obligation.",
+      "sources": [
+        "README.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "rust/Cargo.toml",
+        "scripts",
+        ".github/workflows",
+        "rust/gpui/PLAN.md",
+        "rust/gpui/README.md",
+        ".agents/skills/develop-lithe/SKILL.md",
+        ".agents/skills/write-stable-tests/SKILL.md",
+        ".agents/skills/release-lithe/SKILL.md"
+      ],
+      "sourcesHash": "b6744d160cd81986f05fb966331f4c418cec18305b564dd90d14ba483c3fec9e"
+    },
+    {
+      "id": "supporting-crates",
+      "title": "Supporting Crates & Upstream Pinning",
+      "file": "supporting-crates.md",
+      "summary": "The native Git process adapter and its unreachable AskPass path, the database sidecar and MCP server with their not-wired status, the docker validation environment, and the manifests-only discipline for third_party.",
+      "sources": [
+        "rust/lithe-git-host",
+        "rust/lithe-core/src/runtime/ffi.rs",
+        "rust/lithe-db-sidecar",
+        "rust/lithe-db-mcp",
+        "rust/gpui/crates/java/src/jdtls.rs",
+        "rust/gpui/crates/app/src/assets.rs",
+        "rust/gpui/crates/workbench/src/menu_bar.rs",
+        "infra",
+        "third_party",
+        "shared/fixtures/modules/built-in-v1.json",
+        "shared/contracts/rust-core-api.md",
+        "scripts/prepare-jdk.sh",
+        "scripts/verify-download-cache.mjs"
+      ],
+      "sourcesHash": "66b9d21c9e0b4395f0406409c052a5fbfeb097a5d784f7a40549857ced651b94"
+    },
+    {
+      "id": "decisions",
+      "title": "Decisions & Notes",
+      "file": "decisions.md",
+      "summary": "The Agent Notes system: lifecycle and class taxonomy, the required-heading schema, the nine architecture notes to read, the enforced Rust Core comment standard, where the GPUI design documents live, and the process conventions.",
+      "sources": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".agents/notes",
+        ".agents/skills",
+        "scripts/verify-agent-notes.mjs",
+        "scripts/verify-rust-core-comments.sh",
+        "scripts/build-agent-notes-board.mjs",
+        ".github/workflows/verify-agent-notes.yml",
+        "docs",
+        "rust/gpui/PLAN.md",
+        "rust/gpui/README.md",
+        "rust/gpui/UI-MAP.md",
+        "rust/gpui/research"
+      ],
+      "sourcesHash": "1caa8f2937ea0b64e201b7b7d6087fa9fe4b8596099d5497818c5f7ee3cd4bb2"
+    }
+  ],
+  "generatedAt": "2026-09-28T02:33:07.335Z"
+}
