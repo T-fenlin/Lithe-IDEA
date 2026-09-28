@@ -63,8 +63,8 @@
 - 语言服务、项目模型、构建工具、测试运行器和调试器已拥有的领域事实不属于
   `rust/lithe-core`；Core 只承载 Lithe 的稳定归一化和编排契约。
 - `shared/` 承载契约和 fixture，不承载编译实现。
-- 平台能力留在拥有该功能的 crate，通过端口暴露；`rust/gpui/crates/app` 是组合根。
-- `rust/gpui/crates/*` 的依赖方向固定：
+- 平台能力留在拥有该功能的 crate，通过端口暴露；`rust/lithe-db-gpui/crates/app` 是组合根。
+- `rust/lithe-db-gpui/crates/*` 的依赖方向固定：
   `app -> workbench -> {editor, explorer, git, terminal} -> shared`，
   以及 `app -> settings -> shared`；越界依赖属于架构问题。
 - 架构取舍、所有权边界和高风险约束以相关 `.agents/notes/implemented/`

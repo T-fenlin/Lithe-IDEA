@@ -67,11 +67,11 @@ Core 统一在 `application-boundary.md:18` 中说明，并且只在一个地方
 | 层 | 枚举 | 位置 |
 | --- | --- | --- |
 | Core | `ProjectPreparation { status }` | `lsp/languages/project_preparation.rs:8-43` |
-| Git log pane | `LoadState { Loading, Ready, Stale, Failed, NoRepository }` —— `Stale` 表示“有数据，但最后一次刷新失败” | `gpui/crates/git/src/model.rs:249-261` |
-| Git commit inspector | `FilesState { Idle, Loading, Ready, Failed }` | `gpui/crates/git/src/model.rs:408-417` |
-| Explorer | `LoadState { Loading, Ready, Failed(String) }` —— 没有 `idle`，因为空根直接短路到 `Ready` | `gpui/crates/explorer/src/explorer_view.rs:130-141` |
-| Source control | `LoadState { Loading, Ready, Failed(String) }` | `gpui/crates/git/src/changes_view.rs:213-219` |
-| Settings run page | `RunPageMode { NoProject, Failed, Loading, Ready }` | `gpui/crates/settings/src/dialog.rs:561-570` |
+| Git log pane | `LoadState { Loading, Ready, Stale, Failed, NoRepository }` —— `Stale` 表示“有数据，但最后一次刷新失败” | `lithe-db-gpui/crates/git/src/model.rs:249-261` |
+| Git commit inspector | `FilesState { Idle, Loading, Ready, Failed }` | `lithe-db-gpui/crates/git/src/model.rs:408-417` |
+| Explorer | `LoadState { Loading, Ready, Failed(String) }` —— 没有 `idle`，因为空根直接短路到 `Ready` | `lithe-db-gpui/crates/explorer/src/explorer_view.rs:130-141` |
+| Source control | `LoadState { Loading, Ready, Failed(String) }` | `lithe-db-gpui/crates/git/src/changes_view.rs:213-219` |
+| Settings run page | `RunPageMode { NoProject, Failed, Loading, Ready }` | `lithe-db-gpui/crates/settings/src/dialog.rs:561-570` |
 
 ## 参考资料
 
@@ -82,4 +82,4 @@ Core 统一在 `application-boundary.md:18` 中说明，并且只在一个地方
 - `rust/lithe-core/src/lsp/languages/project_preparation.rs`
 - `shared/contracts/{application-boundary,ai-commit,github}.md`
 - `shared/fixtures/debug/`、`shared/fixtures/ai/`、`shared/fixtures/github/`
-- `gpui/crates/{explorer,git}/src/`、`gpui/crates/settings/src/dialog.rs`
+- `lithe-db-gpui/crates/{explorer,git}/src/`、`lithe-db-gpui/crates/settings/src/dialog.rs`

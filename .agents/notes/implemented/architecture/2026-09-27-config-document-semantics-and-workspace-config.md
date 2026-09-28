@@ -38,8 +38,8 @@ Lithe 的持久化配置现在分四层：**全局**（跟人走）、**项目�
 
 ### 一、文档语义（设置文档与 `project.json` 共用一份实现）
 
-通用原语在 `rust/gpui/crates/shared/src/document.rs`，两个使用方：设置文档
-（`rust/gpui/crates/settings/src/persistence.rs` 委托它）与 `.lithe/project.json`。
+通用原语在 `rust/lithe-db-gpui/crates/shared/src/document.rs`，两个使用方：设置文档
+（`rust/lithe-db-gpui/crates/settings/src/persistence.rs` 委托它）与 `.lithe/project.json`。
 
 | 语义 | 行为 |
 | --- | --- |
@@ -229,11 +229,11 @@ Git（多一次 Core 往返）；而**只锚定到排除文件所在目录（`/.
 
 ## 适用范围
 
-- `rust/gpui/crates/settings/`
-- `rust/gpui/crates/shared/src/document.rs`
-- `rust/gpui/crates/shared/src/workspace_config/`
-- `rust/gpui/crates/workbench/src/workspace.rs`
-- `rust/gpui/crates/app/src/main.rs`
-- `rust/gpui/themes/`
+- `rust/lithe-db-gpui/crates/settings/`
+- `rust/lithe-db-gpui/crates/shared/src/document.rs`
+- `rust/lithe-db-gpui/crates/shared/src/workspace_config/`
+- `rust/lithe-db-gpui/crates/workbench/src/workspace.rs`
+- `rust/lithe-db-gpui/crates/app/src/main.rs`
+- `rust/lithe-db-gpui/themes/`
 - `shared/contracts/project-manifest-v1.schema.json`
-- `rust/gpui/HANDOFF.md`
+- `rust/lithe-db-gpui/HANDOFF.md`

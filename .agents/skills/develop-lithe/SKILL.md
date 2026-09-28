@@ -67,22 +67,22 @@ individual upstream commands were called.
 ## Respect repository ownership
 
 Lithe is a pure Rust repository. The Swift macOS product, the React/Tauri Windows
-product, and the shared Monaco editor package were removed; `rust/gpui/` is the only
+product, and the shared Monaco editor package were removed; `rust/lithe-db-gpui/` is the only
 host.
 
 | Path | Responsibility |
 | --- | --- |
 | `rust/lithe-core/` | Deterministic commands, models, validation, and the JSON command envelope |
-| `rust/gpui/crates/app/` | App Shell: composition root, window sizing, startup order, settings load and theme application |
-| `rust/gpui/crates/workbench/` | Workbench shell: title bar, project tabs, activity bar, status bar, central column |
-| `rust/gpui/crates/editor/` | Editor presentation, buffer, navigation, diagnostics, completion |
-| `rust/gpui/crates/explorer/` | Project tree |
-| `rust/gpui/crates/git/` | Git feature state and views |
-| `rust/gpui/crates/terminal/` | Terminal session, ANSI parsing, rendering |
-| `rust/gpui/crates/java/` | JDTLS session, workspace fingerprint, Maven context |
-| `rust/gpui/crates/settings/` | Settings model, persistence, themes, and the settings dialog |
-| `rust/gpui/crates/notify/` | Notification center store and model |
-| `rust/gpui/crates/shared/` | Cross-crate primitives: icons, i18n, Core client, workspace config |
+| `rust/lithe-db-gpui/crates/app/` | App Shell: composition root, window sizing, startup order, settings load and theme application |
+| `rust/lithe-db-gpui/crates/workbench/` | Workbench shell: title bar, project tabs, activity bar, status bar, central column |
+| `rust/lithe-db-gpui/crates/editor/` | Editor presentation, buffer, navigation, diagnostics, completion |
+| `rust/lithe-db-gpui/crates/explorer/` | Project tree |
+| `rust/lithe-db-gpui/crates/git/` | Git feature state and views |
+| `rust/lithe-db-gpui/crates/terminal/` | Terminal session, ANSI parsing, rendering |
+| `rust/lithe-db-gpui/crates/java/` | JDTLS session, workspace fingerprint, Maven context |
+| `rust/lithe-db-gpui/crates/settings/` | Settings model, persistence, themes, and the settings dialog |
+| `rust/lithe-db-gpui/crates/notify/` | Notification center store and model |
+| `rust/lithe-db-gpui/crates/shared/` | Cross-crate primitives: icons, i18n, Core client, workspace config |
 | `shared/` | Contracts and fixtures, not compiled implementation |
 | `infra/` | Repository-level development and validation infrastructure |
 | `third_party/` | Upstream code; leave unchanged unless the task explicitly targets it |
@@ -96,7 +96,7 @@ host.
   processes, PTYs, watchers, or persistence stores.
 - `rust/lithe-core/` must stay free of GPUI and of any concrete UI or platform
   implementation. It is a deterministic command surface, not a UI library.
-- `rust/gpui/crates/app` is the composition root. Platform capabilities belong in the
+- `rust/lithe-db-gpui/crates/app` is the composition root. Platform capabilities belong in the
   crate that owns the feature, reached through a port.
 - Deterministic behavior shared by features belongs in `rust/lithe-core/`.
   Filesystem, process, terminal, runtime, security, persistence, and UI behavior
@@ -105,7 +105,7 @@ host.
   a mature upstream engine. Put only Lithe's stable normalization and orchestration
   contract in Core; keep language, build, project-model, and debugger facts in the
   selected provider.
-- `rust/gpui/crates/*` must not import each other's private modules. The dependency
+- `rust/lithe-db-gpui/crates/*` must not import each other's private modules. The dependency
   direction is `app -> workbench -> {editor, explorer, git, terminal} -> shared`
   and `app -> settings -> shared`.
 
@@ -143,19 +143,19 @@ the existing stack can reasonably avoid.
 - Add tests in the owning crate for changes to commands, parsing, validation,
   ordering, cancellation, or serialization.
 
-### GPUI host (`rust/gpui/`)
+### GPUI host (`rust/lithe-db-gpui/`)
 
 - The crate dependency direction is fixed: `app -> workbench -> {editor, explorer,
   git, terminal} -> shared`, and `app -> settings -> shared`. A feature must not
   depend on `app` or on a sibling feature it does not need.
 - GPUI Kit is pinned to the published `0.6.x` line. Do not write code against
   APIs that only exist in `versions/main` docs; read the 0.6.6 source under
-  `rust/gpui/docs/gpui-kit/` or the vendored crate source instead.
+  `rust/lithe-db-gpui/docs/gpui-kit/` or the vendored crate source instead.
 - The UI thread does not do blocking work. Long operations run on a background
   task and return through the async boundary; see
-  `rust/gpui/crates/shared/src/core_client.rs` for how the Core client marshals
+  `rust/lithe-db-gpui/crates/shared/src/core_client.rs` for how the Core client marshals
   between the two.
-- Assets are served through `LitheAssets` (`rust/gpui/crates/app/src/assets.rs`).
+- Assets are served through `LitheAssets` (`rust/lithe-db-gpui/crates/app/src/assets.rs`).
   Directories that are on disk but not wired up are excluded there on purpose;
   removing an `#[exclude]` without wiring the asset only grows the binary.
 
@@ -223,7 +223,7 @@ before handoff.
 | Test code or test infrastructure | `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`, then the affected Rust timing harness from `write-stable-tests` |
 | Shared contracts or JSON fixtures | `./scripts/verify-shared-contracts.sh` |
 | Rust Core, or the Core-to-host contract | `./scripts/verify-rust-core.sh` |
-| `rust/gpui/crates/*` | `cargo test --manifest-path rust/Cargo.toml -p <crate>` for the affected crates, plus `cargo fmt --manifest-path rust/Cargo.toml -- --check` |
+| `rust/lithe-db-gpui/crates/*` | `cargo test --manifest-path rust/Cargo.toml -p <crate>` for the affected crates, plus `cargo fmt --manifest-path rust/Cargo.toml -- --check` |
 | CI lane or path classifier | `node scripts/test-classify-ci-changes.mjs` |
 | Java semantic ownership | `node scripts/verify-java-semantic-ownership.mjs` |
 

@@ -1,0 +1,15 @@
+[package]
+name = "lithe-db-gpui-java"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Core 的信封层（`core_json`）。本 crate **不**实现 LSP 协议：
+# 进程、会话、文档版本、`jdt://` 虚拟文档全归 Rust Core 的 LSP 运行时
+# （`shared/contracts/rust-core-api.md` §LSP），这里只拼请求 / 读事件。
+lithe-db-gpui-shared = { path = "../shared" }
+serde_json = "1"
+# 只用于把工作区路径转成 LSP 的 `rootUri`（路径里的空格、非 ASCII 都要百分号编码，
+# 手拼会得到一个 Core / JDTLS 都认不出的 URI）。`url` 已在 gpui 依赖树里（gpui-pre 依赖它）。
+url = "2"

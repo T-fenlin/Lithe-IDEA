@@ -15,7 +15,7 @@ Lithe 现在只有两个 Rust 测试面。判断一条规则适不适用，先�
 - **顺序与格式必须确定**。Core 的返回值是兼容面：列表要排序、路径用工作区相对
   路径 + `/`、行号从 1 开始、缺失位置用 `null`。
 
-## gpui 宿主（`rust/gpui/crates/*`）
+## gpui 宿主（`rust/lithe-db-gpui/crates/*`）
 
 这里是**真正会挂 CI** 的地方。宿主持有窗口、后台线程、channel、文件监听、
 终端 PTY 和 JDTLS 子进程。

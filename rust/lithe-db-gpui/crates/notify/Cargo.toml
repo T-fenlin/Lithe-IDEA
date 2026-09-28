@@ -1,0 +1,13 @@
+[package]
+name = "lithe-db-gpui-notify"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+# `Entry` 的字段用 `SharedString`（调用点是 GPUI element 的 `.child` / `.text`），与
+# `lithe-db-gpui-shared` 同一口径；本 crate 不做任何 GPUI 渲染，只需要那一个类型。
+gpui-kit = "0.6"
+# 只为了 `core_bridge` 那一个 `CoreError` 类型 —— 它住在 `shared::core_client`。方向是
+# notify → shared，与其它 crate 一致（shared 在依赖图最底下）。
+lithe-db-gpui-shared = { path = "../shared" }

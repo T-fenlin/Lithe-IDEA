@@ -39,13 +39,13 @@
 **今天没有宿主、因此一个字段都没建的**（不是"以后再说"，是今天真的没有值可读）：
 
 - **光标与滚动位置**：只在 `EditorState` 内部，编辑器没有读出口；
-- **展开的树节点**：`rust/gpui/crates/explorer` 不记录展开态；
+- **展开的树节点**：`rust/lithe-db-gpui/crates/explorer` 不记录展开态；
 - **面板 / 分栏尺寸**：gpui 侧没有可拖动分隔条那套状态（外壳里的宽度全是常量）；
 - **断点与监视表达式**：gpui 侧没有调试器。
 
 给开发者的话：**不要为"将来会有人读"的字段先建契约**。写进去、没人读、还要为它写测试，
 就是一份假契约；等宿主出现时再加字段，代价只是一次小迁移。逐条理由写在
-`rust/gpui/crates/shared/src/workspace_config/session.rs` 的模块文档里。
+`rust/lithe-db-gpui/crates/shared/src/workspace_config/session.rs` 的模块文档里。
 
 ### 二、路径存工作区相对路径，根之外的文件根本不写进文档
 
@@ -122,7 +122,7 @@
 
 - **`replace_root` 之前先 flush 是硬顺序**，而且必须在调用 `replace_root` **之前**（不能在它的闭包
   之后）：闭包一执行，`self` 指向的外壳已经被换掉了。这是"换项目丢改动"唯一的堵点。
-- **防抖用代数而不是计时器**：防抖状态机是 `lithe-gpui-settings` 已有的 `DebounceState`（纯值、
+- **防抖用代数而不是计时器**：防抖状态机是 `lithe-db-gpui-settings` 已有的 `DebounceState`（纯值、
   可确定性单测），计时器由外壳在 `Context<Self>` 上排；过期代数醒来什么都不做
   （`only_the_last_debounce_generation_writes`）。换掉旧任务同时取消旧唤醒——gpui 的 `Task`
   一 drop 就取消。
@@ -202,9 +202,9 @@
 - `cargo check --workspace --all-targets`：**exit=0**（只剩两条既有 `dead_code` 警告）。
 - `./.agents/skills/write-stable-tests/scripts/verify-test-stability.ps1`：通过。
 - `node scripts/verify-agent-notes.mjs`：通过（当时 38 篇）。
-- `node rust/gpui/tools/extract-locale.mjs --check`：报"产物与真源一致"。
-- **规则对应的测试名**（`rust/gpui/crates/shared/src/workspace_config/session.rs` 与
-  `rust/gpui/crates/workbench/src/session.rs`）：`loading_a_missing_session_does_not_create_it`、
+- `node rust/lithe-db-gpui/tools/extract-locale.mjs --check`：报"产物与真源一致"。
+- **规则对应的测试名**（`rust/lithe-db-gpui/crates/shared/src/workspace_config/session.rs` 与
+  `rust/lithe-db-gpui/crates/workbench/src/session.rs`）：`loading_a_missing_session_does_not_create_it`、
   `broken_json_degrades_to_no_session_with_a_diagnostic`、
   `saving_a_session_lands_under_the_excluded_directory`、`a_newer_document_version_is_refused_instead_of_downgraded`、
   `resolving_files_skips_missing_and_outside_paths_in_order`、`files_outside_the_root_are_not_recorded`、
@@ -224,20 +224,20 @@
 - **release 打包**（同批）：`cargo build --release` exit=0、11m20s、产物 49 MB；PE 子系统位
   debug=**3（控制台）**、release=**2（GUI/无控制台）**；release 版在**工作区外**的真 Git 项目上
   冒烟通过（`.lithe/project.json`、`.lithe/.gitignore`、排除文件恰好一行、`git status` 为空）。
-- **环境坑（实测记录，两条都已写进 `rust/gpui/PLAN.md` §8.13 与 `rust/gpui/HANDOFF.md`）**：无人值守启动里
+- **环境坑（实测记录，两条都已写进 `rust/lithe-db-gpui/PLAN.md` §8.13 与 `rust/lithe-db-gpui/HANDOFF.md`）**：无人值守启动里
   `window.on_next_frame` **一次都不跑**（窗口在、`MainWindowHandle` 非零、`Responding=true`），
   所以探针改成窗口建好之后立刻同步执行；另外**不要**在 `application().run(..)` 之后加驻留循环，
   它会把 `cx.spawn` 的建窗口任务整个饿死。
 
 ## 适用范围
 
-- `rust/gpui/crates/shared/src/workspace_config/session.rs`
-- `rust/gpui/crates/shared/src/workspace_config/paths.rs`
-- `rust/gpui/crates/shared/src/workspace_config/sharing.rs`
-- `rust/gpui/crates/shared/src/document.rs`
-- `rust/gpui/crates/workbench/src/session.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
-- `rust/gpui/crates/editor/src/editor_view.rs`
-- `rust/gpui/crates/app/src/main.rs`
-- `rust/gpui/crates/settings/src/persistence.rs`
-- `rust/gpui/HANDOFF.md`
+- `rust/lithe-db-gpui/crates/shared/src/workspace_config/session.rs`
+- `rust/lithe-db-gpui/crates/shared/src/workspace_config/paths.rs`
+- `rust/lithe-db-gpui/crates/shared/src/workspace_config/sharing.rs`
+- `rust/lithe-db-gpui/crates/shared/src/document.rs`
+- `rust/lithe-db-gpui/crates/workbench/src/session.rs`
+- `rust/lithe-db-gpui/crates/workbench/src/workspace.rs`
+- `rust/lithe-db-gpui/crates/editor/src/editor_view.rs`
+- `rust/lithe-db-gpui/crates/app/src/main.rs`
+- `rust/lithe-db-gpui/crates/settings/src/persistence.rs`
+- `rust/lithe-db-gpui/HANDOFF.md`

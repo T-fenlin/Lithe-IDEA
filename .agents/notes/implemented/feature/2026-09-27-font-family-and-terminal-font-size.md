@@ -101,10 +101,10 @@
 
 ## 适用范围
 
-- `rust/gpui/crates/settings/src/schema.rs`
-- `rust/gpui/crates/settings/src/store.rs`
-- `rust/gpui/crates/settings/src/theme.rs`
-- `rust/gpui/crates/settings/src/dialog.rs`
-- `rust/gpui/crates/terminal/src/terminal_view.rs`
-- `rust/gpui/crates/terminal/src/session.rs`
-- `rust/gpui/crates/workbench/src/workspace.rs`
+- `rust/lithe-db-gpui/crates/settings/src/schema.rs`
+- `rust/lithe-db-gpui/crates/settings/src/store.rs`
+- `rust/lithe-db-gpui/crates/settings/src/theme.rs`
+- `rust/lithe-db-gpui/crates/settings/src/dialog.rs`
+- `rust/lithe-db-gpui/crates/terminal/src/terminal_view.rs`
+- `rust/lithe-db-gpui/crates/terminal/src/session.rs`
+- `rust/lithe-db-gpui/crates/workbench/src/workspace.rs`

@@ -67,7 +67,7 @@ Plus `2026-09-27-gpui-notification-center.md`.
 - `2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md` — the whole GPUI direction.
   This is the note that explains why the Swift and React frontends were removed.
 - `2026-09-26-workspace-configuration-layers.md` — the configuration layering that
-  `gpui/crates/shared/src/workspace_config/` implements ahead of full sign-off.
+  `lithe-db-gpui/crates/shared/src/workspace_config/` implements ahead of full sign-off.
 
 `implemented/process/` has `2026-09-13-agent-notes-board-and-pages-publishing.md` and
 `2026-09-22-atomgit-release-sync.md`.
@@ -111,7 +111,7 @@ notes + `TEMPLATE.md` + `atomgit-sync.md`), `docs/assets/` (screenshots, contact
 sponsors) and `docs/visual-qa/`. `docs/architecture/` existed and was migrated into
 `.agents/notes/`.
 
-The GPUI design material lives under `rust/gpui/`:
+The GPUI design material lives under `rust/lithe-db-gpui/`:
 
 | Path | Purpose |
 | --- | --- |
@@ -122,13 +122,13 @@ The GPUI design material lives under `rust/gpui/`:
 | `docs/ui-mockup-idea.md` + `.html` + mockup PNGs | UI mockups |
 | `BLOCKERS.md`, `HANDOFF.md` | Work-in-progress state |
 | `themes/` | 7 built-in themes + `themes/legacy-builtin/` |
-| `assets/` | Icons, fonts, icon themes, images (see the `#[exclude]` table in [GPUI App Shell](gpui/app.md)) |
+| `assets/` | Icons, fonts, icon themes, images (see the `#[exclude]` table in [GPUI App Shell](lithe-db-gpui/app.md)) |
 | `docs/gpui-kit/` | Vendored gpui-kit 0.6.6 documentation |
 
 `develop-lithe` also warns: **do not write code against APIs that only exist in
-`versions/main` docs** — read the 0.6.6 source under `rust/gpui/docs/gpui-kit/` or the
+`versions/main` docs** — read the 0.6.6 source under `rust/lithe-db-gpui/docs/gpui-kit/` or the
 vendored crate instead. A concrete instance: the `versions/main` docs advertise
-`gpui_kit::open_window(..)`, which does not exist in 0.6.6 (`gpui/crates/app/Cargo.toml:26-29`).
+`gpui_kit::open_window(..)`, which does not exist in 0.6.6 (`lithe-db-gpui/crates/app/Cargo.toml:26-29`).
 
 ## Process conventions
 
@@ -153,5 +153,5 @@ vendored crate instead. A concrete instance: the `versions/main` docs advertise
 - `scripts/verify-agent-notes.mjs`, `verify-rust-core-comments.sh`, `build-agent-notes-board.mjs`
 - `.github/workflows/verify-agent-notes.yml`, `deploy-agent-notes-board.yml`
 - `docs/`
-- `rust/gpui/{PLAN.md,README.md,UI-MAP.md,research/,docs/}`
+- `rust/lithe-db-gpui/{PLAN.md,README.md,UI-MAP.md,research/,docs/}`
 - `third_party/README.md`

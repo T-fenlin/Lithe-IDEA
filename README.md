@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./rust/gpui/assets/images/logo.png" width="112" alt="Lithe app icon">
+  <img src="./rust/lithe-db-gpui/assets/images/logo.png" width="112" alt="Lithe app icon">
 
   <h1>Lithe</h1>
 
@@ -63,7 +63,7 @@ The Lithe application typically uses about **300–400 MB of baseline memory** a
 
 The macOS (SwiftUI/AppKit) and Windows (React/Tauri 2) frontends have been
 removed from this repository. They were replaced by a single GPUI Kit host in
-`rust/gpui/`, which is under active development and has no release pipeline yet.
+`rust/lithe-db-gpui/`, which is under active development and has no release pipeline yet.
 Installers on [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases)
 come from the removed source and are kept for reference.
 
@@ -153,11 +153,11 @@ built from the removed source.
 ## Architecture Overview
 
 Lithe is a pure Rust repository with one host: a GPUI Kit application in
-`rust/gpui/` that drives the deterministic command surface in `rust/lithe-core`.
+`rust/lithe-db-gpui/` that drives the deterministic command surface in `rust/lithe-core`.
 
 ```mermaid
 flowchart LR
-    subgraph Host["rust/gpui/ — GPUI Kit host"]
+    subgraph Host["rust/lithe-db-gpui/ — GPUI Kit host"]
         App["app — composition root"] --> Workbench["workbench — shell"]
         Workbench --> Editor["editor / explorer / git / terminal"]
         App --> Settings["settings"]
@@ -197,7 +197,7 @@ Before submitting a change, run:
 ```bash
 cargo fmt --manifest-path rust/Cargo.toml -p lithe-core -- --check
 cargo test --manifest-path rust/Cargo.toml -p lithe-core
-cargo test --manifest-path rust/Cargo.toml -p lithe-gpui-app
+cargo test --manifest-path rust/Cargo.toml -p lithe-db-gpui-app
 ./scripts/verify-rust-core.sh
 ./scripts/verify-shared-contracts.sh
 node scripts/verify-agent-notes.mjs

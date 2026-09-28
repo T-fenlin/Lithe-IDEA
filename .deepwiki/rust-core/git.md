@@ -58,17 +58,17 @@ Other guarded mutations:
 ## Command surface
 
 Roughly 40 `git.*` commands. The ones the gpui host actually issues
-(`gpui/crates/git/src/{model,changes,branch_info,identity}.rs`, `gpui/crates/java`):
+(`lithe-db-gpui/crates/git/src/{model,changes,branch_info,identity}.rs`, `lithe-db-gpui/crates/java`):
 
 `git.status`, `git.write`, `git.references`, `git.historyPage`, `git.historyCursorClose`,
 `git.commitFiles`, `git.operationState`, `git.repositorySetup`, `git.configureIdentity`,
 `git.watchContext`, `git.authRespond`.
 
 Three **hard constraints** the host must respect, each documented in
-`gpui/crates/git/src/lib.rs`:
+`lithe-db-gpui/crates/git/src/lib.rs`:
 
 1. `git.status.repositoryRoot` may come back **workspace-relative** and must be re-joined
-   against the host's root (`gpui/crates/git/src/model.rs:517-528`).
+   against the host's root (`lithe-db-gpui/crates/git/src/model.rs:517-528`).
 2. "Not a repository" is `ok: true` with `repositoryRoot: null` — **not an error**
    (`model.rs:805-812`).
 3. `git.write` returns `ok: true` even when Git exits non-zero, so `operationError` /
@@ -99,8 +99,8 @@ continuous text (`console/output.rs`), and lossless disclosure ranges
 (`console/types.rs`). `console/tests.rs` is described as "Cross-platform presentation
 fixtures protect semantics, lossless ranges and grouping" — but the gpui bottom pane
 currently renders the console **shell only**, with all six toolbar buttons disabled
-(`gpui/crates/git/src/log_view.rs:1875-1930`, registered as deviation 6 in
-`gpui/crates/git/src/lib.rs:152-154`). The real output would need the Git event channel,
+(`lithe-db-gpui/crates/git/src/log_view.rs:1875-1930`, registered as deviation 6 in
+`lithe-db-gpui/crates/git/src/lib.rs:152-154`). The real output would need the Git event channel,
 which is out of the six commands in scope for that crate.
 
 ## Where to change things
@@ -121,5 +121,5 @@ which is out of the six commands in scope for that crate.
 - `rust/lithe-core/src/protocol/contracts.rs`
 - `rust/lithe-core/src/protocol/command.rs`
 - `rust/lithe-core/src/runtime/dispatcher.rs`
-- `rust/gpui/crates/git/src/lib.rs`, `model.rs`, `changes.rs`
+- `rust/lithe-db-gpui/crates/git/src/lib.rs`, `model.rs`, `changes.rs`
 - `shared/contracts/{rust-core-api,git-rebase-session,git-patch-exchange,git-repository-setup}.md`
