@@ -67,7 +67,7 @@ S1_WORKSPACE_CONFIG shell_identity_failed root=D:\…\dbx-plugin-k8s error=清�
 ### 四、失败必须让用户看见
 
 `ShellWorkspace` 新增字段 `workspace_config_error: Option<SharedString>`，渲染成**常驻红条**
-（可手动关，范式照 `gpui/crates/git/src/changes_view.rs` 的 `render_write_error`），插在项目标签条
+（可手动关，范式照 `rust/gpui/crates/git/src/changes_view.rs` 的 `render_write_error`），插在项目标签条
 之下、工作区之上。
 
 **刻意不用状态栏那条 4 秒自动消失的提示，也不用通知/对话框**：
@@ -139,11 +139,11 @@ Core 的错误分类会让"非仓库静默跳过"的判据（按错误码与消�
 
 ## 适用范围
 
-- `gpui/crates/shared/src/workspace_config/sharing.rs`
-- `gpui/crates/shared/src/workspace_config/project.rs`
-- `gpui/crates/shared/src/workspace_config/mod.rs`
-- `gpui/crates/workbench/src/workspace.rs`
-- `gpui/crates/shared/locales/lithe.zh-CN.yml`
-- `gpui/tools/extract-locale.mjs`
-- `gpui/PLAN.md`
-- `gpui/HANDOFF.md`
+- `rust/gpui/crates/shared/src/workspace_config/sharing.rs`
+- `rust/gpui/crates/shared/src/workspace_config/project.rs`
+- `rust/gpui/crates/shared/src/workspace_config/mod.rs`
+- `rust/gpui/crates/workbench/src/workspace.rs`
+- `rust/gpui/crates/shared/locales/lithe.zh-CN.yml`
+- `rust/gpui/tools/extract-locale.mjs`
+- `rust/gpui/PLAN.md`
+- `rust/gpui/HANDOFF.md`

@@ -25,7 +25,8 @@ node .agents/skills/write-stable-tests/scripts/run-rust-tests-with-timing.mjs \
 cargo test --manifest-path rust/Cargo.toml -p lithe-core
 
 # gpui 宿主对 Core 的调用面：Core 契约一变，这些 crate 就编不过或行为漂移。
-cargo test --manifest-path gpui/Cargo.toml \
+# 与 Core 同属一个 workspace，所以 manifest 仍是 rust/Cargo.toml，只是多了 -p 选择。
+cargo test --manifest-path rust/Cargo.toml \
     -p lithe-gpui-shared -p lithe-gpui-app -p lithe-gpui-workbench
 
 printf '%s\n' "Rust Core verification passed: comments, layout, formatting, core tests, and gpui host integration"

@@ -15,9 +15,9 @@ const __filename = fileURLToPath(import.meta.url);
 const rootDir = resolve(dirname(__filename), "..");
 const templatePath = resolve(rootDir, "assets/agent-notes-board.html");
 const parserPath = resolve(dirname(__filename), "agent-notes-parser.mjs");
-// 文档站 logo 随旧前端删除而改指 gpui 侧的同一份美术：`gpui/assets/images/logo.png` 与
+// 文档站 logo 随旧前端删除而改指 gpui 侧的同一份美术：`rust/gpui/assets/images/logo.png` 与
 // 已删除的 `macos/Resources/AppIcon-source.png` 逐字节相同，所以视觉零变化。
-const logoPath = resolve(rootDir, "gpui/assets/images/logo.png");
+const logoPath = resolve(rootDir, "rust/gpui/assets/images/logo.png");
 const args = process.argv.slice(2);
 
 const isInitMode = args.includes("--init");

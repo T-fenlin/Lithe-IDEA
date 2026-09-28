@@ -97,9 +97,32 @@ while IFS=$'\t' read -r status first_path _; do
         rust/lithe-core/tests/*|rust/lithe-core/cargo.toml|rust/lithe-core/include/*)
             rust_core=true
             ;;
+        rust/gpui/crates/*/src/*|rust/gpui/crates/*/build.rs|rust/gpui/crates/*/cargo.toml)
+            # The gpui host drives Rust Core through the command envelope, so a
+            # shell change is validated together with the core contract.
+            #
+            # ⚠️ These cases must stay **above** the `rust/*` catch-all below:
+            # `rust/gpui/**` would otherwise match that first and only turn on
+            # the Core/database lanes, silently dropping the gpui lane.
+            gpui=true
+            rust_core=true
+            ;;
+        rust/gpui/tools/*)
+            # Locale and icon generators are reproducible-artifact checks.
+            gpui=true
+            ;;
+        rust/gpui/assets/*|rust/gpui/themes/*|rust/gpui/crates/*/locales/*|rust/gpui/crates/*/src/icons/*)
+            gpui=true
+            ;;
+        rust/gpui/*)
+            gpui=true
+            ;;
         rust/cargo.toml|rust/cargo.lock)
+            # One lock file now covers the Core crates and the gpui host, so a
+            # resolution change can affect either side.
             rust_core=true
             rust_database=true
+            gpui=true
             ;;
         rust/lithe-db-mcp/*|rust/lithe-db-sidecar/*)
             rust_database=true
@@ -114,25 +137,6 @@ while IFS=$'\t' read -r status first_path _; do
             # Shared contracts and fixtures are compatibility surfaces consumed by
             # Rust Core and by the gpui host.
             rust_core=true
-            gpui=true
-            ;;
-        gpui/crates/*/src/*|gpui/crates/*/build.rs|gpui/crates/*/cargo.toml)
-            # The gpui host drives Rust Core through the command envelope, so a
-            # shell change is validated together with the core contract.
-            gpui=true
-            rust_core=true
-            ;;
-        gpui/tools/*)
-            # Locale and icon generators are reproducible-artifact checks.
-            gpui=true
-            ;;
-        gpui/assets/*|gpui/themes/*|gpui/crates/*/locales/*|gpui/crates/*/src/icons/*)
-            gpui=true
-            ;;
-        gpui/cargo.toml|gpui/cargo.lock)
-            gpui=true
-            ;;
-        gpui/*)
             gpui=true
             ;;
         scripts/verify-rust-core.sh|scripts/verify-rust-core-comments.sh|scripts/verify-rust-core-layout.sh|scripts/verify-shared-contracts.sh|scripts/verify-java-semantic-ownership.mjs|scripts/test-rust-core-comments.mjs|scripts/create-git-graph-fixture.sh)

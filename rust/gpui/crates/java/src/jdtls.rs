@@ -31,7 +31,7 @@ const JAVA_DEBUG_BUNDLE_PREFIX: &str = "com.microsoft.java.debug.plugin-";
 /// Java Test 扩展包清单（`prepare-jdtls` 按扩展声明的顺序逐行写出）。
 const JAVA_TEST_BUNDLE_LIST: &str = "extensions.txt";
 /// 捆绑载荷的嵌入清单（与 Windows host 同一份文件）。
-const BUNDLED_MANIFEST: &str = include_str!("../../../../third_party/jdtls/manifest.json");
+const BUNDLED_MANIFEST: &str = include_str!("../../../../../third_party/jdtls/manifest.json");
 
 /// 显式指定运行 JDT LS 的 `java` 可执行文件（验证链路与"装在非常规位置"的用户用）。
 ///

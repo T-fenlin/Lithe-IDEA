@@ -223,7 +223,7 @@ before handoff.
 | Test code or test infrastructure | `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`, then the affected Rust timing harness from `write-stable-tests` |
 | Shared contracts or JSON fixtures | `./scripts/verify-shared-contracts.sh` |
 | Rust Core, or the Core-to-host contract | `./scripts/verify-rust-core.sh` |
-| `gpui/crates/*` | `cargo test --manifest-path gpui/Cargo.toml` for the affected crates, plus `cargo fmt --manifest-path gpui/Cargo.toml -- --check` |
+| `rust/gpui/crates/*` | `cargo test --manifest-path rust/Cargo.toml -p <crate>` for the affected crates, plus `cargo fmt --manifest-path rust/Cargo.toml -- --check` |
 | CI lane or path classifier | `node scripts/test-classify-ci-changes.mjs` |
 | Java semantic ownership | `node scripts/verify-java-semantic-ownership.mjs` |
 

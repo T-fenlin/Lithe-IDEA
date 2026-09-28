@@ -77,7 +77,7 @@ Two test surfaces remain, and they have different constraints:
    ```bash
    cargo test --manifest-path rust/Cargo.toml -p lithe-core
    node .agents/skills/write-stable-tests/scripts/run-rust-tests-with-timing.mjs \
-       --manifest gpui/Cargo.toml --package lithe-gpui-workbench \
+       --manifest rust/Cargo.toml --package lithe-gpui-workbench \
        --suite-timeout-ms 120000 \
        --report .artifacts/test-stability/gpui-workbench.json
    ```
