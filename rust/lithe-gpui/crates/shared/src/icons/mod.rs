@@ -218,6 +218,47 @@ pub fn idea_icon_svg(icon: &idea::IdeaIcon, cx: &App) -> Svg {
         .size_4()
 }
 
+/// 把一张 expui **UI 图标**画成**保留原色**的元素（`img()` 管线，与文件图标同一条）。
+///
+/// ## 与 [`idea_icon_svg`] 的区别：颜色保不保留
+///
+/// | helper | 管线 | 结果 |
+/// | --- | --- | --- |
+/// | [`idea_icon_svg`] / [`idea_icon_svg_px`] | `svg()` → alpha 遮罩 + 单一 `text_color` | **单色**（颜色 = 主题前景色） |
+/// | 本函数 | `file_icon::theme_file_icon` → `img()` → 彩色 RGBA 栅格化 | **原色** |
+///
+/// 两条管线的源码依据与"为什么 `img()` 才是彩色那条"写在
+/// [`file_icon::theme_file_icon`] 的文档里（`svg()` 把 SVG 当遮罩用，`img()` 走
+/// `SvgRenderer::render_single_frame` 出彩色 RGBA）。这里**复用同一个实现**而不是再写一份：
+/// 判别"资源在不在"的那一步（`theme_icon_bytes`）也正是本函数的前置条件。
+///
+/// ## 为什么 expui 的 UI 图标该走彩色那条
+///
+/// 它们**本身就是彩色的**：`lithe-gpui/assets/ui-icons/idea/**` 的 157 个 SVG 里
+/// **没有一个**用 `currentColor`，全是硬编码色值（`#3574F0` 蓝、`#E66D17` 橙、`#FFAF0F` 琥珀…），
+/// 而且每个图标都有明暗两套变体（深色下另一组色值）。走单色管线等于把这份信息抹掉 ——
+/// 界面上就是"图标全是灰的"（2026-09-30 维护者口径：**图标上彩色**）。
+///
+/// ## 状态反馈不再靠图标变色
+///
+/// 彩色图标**不跟随 `text_color`**，所以悬停 / 选中的反馈只能靠**底色**（活动的轨道项仍由
+/// `Button::selected` 出底色、悬停由 `ButtonCustomVariant::hover` 出底色）。
+/// 这与 IDEA New UI 一致：轨道图标保持自己的颜色，高亮靠背景块。
+/// Lucide 那些单色字形仍走 `.icon(..)`，照旧跟主题前景色。
+///
+/// ## 兜底
+///
+/// 资源取不到（例如只注册了部分资产源）时回落到 [`idea_icon_svg_px`] 的单色版本 ——
+/// **不画空白**。所以调用点可以直接 `.child(idea_icon_image(..))`，不需要自己判空。
+pub fn idea_icon_image(icon: &idea::IdeaIcon, cx: &App, side: impl Into<Length>) -> AnyElement {
+    let side: Length = side.into();
+    let is_dark = Theme::global(cx).is_dark();
+    match file_icon::theme_file_icon(icon.path(is_dark), side, cx) {
+        Some(element) => element,
+        None => idea_icon_svg_px(icon, cx, side).into_any_element(),
+    }
+}
+
 /// [`idea_icon_svg`] 的显式尺寸版本。
 ///
 /// `side` 接受任何 `Into<Length>`：布局规范要求"用 rem 档位 helper，档位外的值走

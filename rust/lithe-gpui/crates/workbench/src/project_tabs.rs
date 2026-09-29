@@ -115,7 +115,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Window, div, rems,
 };
 
-use lithe_gpui_shared::icons::{idea, idea_icon_svg_px};
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::tr_args;
 
 // ---------------------------------------------------------------------------
@@ -314,7 +314,7 @@ pub fn project_tabs(
                             // （与原来的 `size_3p5()` 同值；14 不在 rem 档位上，所以自己换算）。
                             // 颜色由真源 SVG 自带（浅灰填充 + 灰描边），不再随选中态变 ——
                             // 真机同样是彩色图标，理由见模块文档的图标表。
-                            idea_icon_svg_px(&idea::FOLDER_ICON, cx, rems(14. / 16.)),
+                            idea_icon_image(&idea::FOLDER_ICON, cx, rems(14. / 16.)),
                         )
                         .child(
                             // 文案容器：`min-w-0 truncate`（`project-tab-bar.tsx:77`）。

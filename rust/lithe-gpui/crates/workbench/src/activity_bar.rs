@@ -76,7 +76,7 @@ use gpui_kit::{
     AnyElement, App, ClickEvent, ElementId, Hsla, IntoElement, Length, ParentElement as _, Pixels,
     SharedString, Styled as _, Window, div, rems,
 };
-use lithe_gpui_shared::icons::idea;
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
 /// 折叠态 rail 宽（`main-sidebar.tsx:97`）。展开态是 160（140–320），本函数不画。
 ///
@@ -136,9 +136,10 @@ pub enum ActivitySide {
 ///   用 `lithe_gpui_shared::icons::idea::IdeaIcon` 常量引用（生成物，
 ///   见 `lithe-gpui/tools/generate-idea-icons.mjs`）。
 ///
-/// **调用点只写图标名**：明暗选择、尺寸、前景色都在 [`ActivityIcon::render`] 里按
-/// `idea_icon_svg` / `FileIcon::render` 的同一口径做掉（理由见 `shared::icons` 的模块文档：
-/// 裸 `svg().path(..)` 缺 `text_color` 或尺寸就是**白板**，不报错也不 panic）。
+/// **调用点只写图标名**：明暗选择、尺寸、颜色都由 [`ActivityIcon::apply`] 做掉 ——
+/// expui 走 [`idea_icon_image`]（彩色 `img()`，原色保留），Lucide 走 `.icon(..)`（单色 + 主题前景色）。
+/// 理由见 `shared::icons` 的模块文档：裸 `svg().path(..)` 缺 `text_color` 或尺寸就是**白板**，
+/// 不报错也不 panic。
 #[derive(Clone, Debug)]
 pub enum ActivityIcon {
     /// Lucide 字形（真源本来就没有文件的那 4 项）。
@@ -148,22 +149,24 @@ pub enum ActivityIcon {
 }
 
 impl ActivityIcon {
-    /// 交给 `Button::icon(..)` 的图标值。
+    /// 把图标装进轨道项按钮（`Button::child`），**两条路各自用对的管线**：
     ///
-    /// 两条路都收敛到 gpui-kit 的 `Icon`：
+    /// - [`Self::Idea`]（IntelliJ expui）：走 [`idea_icon_image`] 的 `img()` 管线 → **保留原色**。
+    ///   这些资产本身是彩色的（157 个 SVG、0 个 `currentColor`、每个都有明暗两套），
+    ///   走单色管线就会变成"图标全是灰的"（2026-09-30 维护者口径：图标上彩色）。
+    /// - [`Self::Lucide`]：是**单色字形**，本来就没有颜色可保留 → 继续 `.icon(..)`，
+    ///   照旧按按钮尺寸档位定大小、按主题前景色染色。
     ///
-    /// - Lucide → `IconName`（`Button::icon(impl Into<ButtonIcon>)` 直接吃它）；
-    /// - expui → `Icon::default().path(资源路径)`，路径由 [`idea_icon_svg_px`] 的同一份
-    ///   明暗选择逻辑给出（[`idea::IdeaIcon::path`]）。
+    /// ⚠️ 彩色那条**不跟随 `text_color`**：悬停 / 选中的反馈由**底色**承担
+    /// （`ButtonCustomVariant::hover` / `Button::selected`），与 IDEA New UI 一致。
+    /// 所以不要再给这一项加"图标变色表示选中"的样式 —— 那对 expui 图标不会生效。
     ///
-    /// **尺寸不在这里设**：`Button` 渲染时会 `icon.with_size(icon_size)`（按 `size` 档位算），
-    /// 左 rail 该项 26×24、右 rail 28×28，两者都落到 16 —— 与旧实现（`.icon(IconName)`）逐像素一致。
-    /// 这样也避免把 `Icon` 的 `size` 写死而让两侧按钮尺寸算错。
-    fn button_icon(&self, cx: &App) -> gpui_kit::component::Icon {
+    /// 尺寸：expui 那条**自己带尺寸**（`rems(1.)` = 16，与 `Button` 按档位算出来的 16 一致），
+    /// 因为 `Button::child` 不会像 `.icon(..)` 那样替它设尺寸。
+    fn apply(&self, button: Button, cx: &App) -> Button {
         match self {
-            Self::Lucide(name) => gpui_kit::component::Icon::new(*name),
-            Self::Idea(icon) => gpui_kit::component::Icon::default()
-                .path(icon.path(gpui_kit::component::Theme::global(cx).is_dark())),
+            Self::Lucide(name) => button.icon(*name),
+            Self::Idea(icon) => button.child(idea_icon_image(icon, cx, rems(1.))),
         }
     }
 }
@@ -423,18 +426,22 @@ fn item_button(
         };
 
     let is_active = is_active(index);
-    let button = Button::new(ElementId::named_usize(id_name, index))
-        .custom(
-            ButtonCustomVariant::new(cx)
-                .foreground(foreground)
-                .hover(hover_background)
-                .active(accent),
-        )
-        // `Selectable::selected` 出选中底色；`toggled` 只补 `aria-pressed`（`button.rs:477-486`）。
-        .selected(is_active)
-        .toggled(is_active)
-        // 图标：真源（expui）与 Lucide 都交给 `Button::icon(..)`，见 [`ActivityIcon::button_icon`]。
-        .icon(item.icon.button_icon(cx))
+    // 图标先装（expui 走彩色 `img()`、Lucide 走单色 `.icon(..)`，见 [`ActivityIcon::apply`]），
+    // 后面的链是两侧共用的外观与交互。
+    let button = item.icon.apply(
+        Button::new(ElementId::named_usize(id_name, index))
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .foreground(foreground)
+                    .hover(hover_background)
+                    .active(accent),
+            )
+            // `Selectable::selected` 出选中底色；`toggled` 只补 `aria-pressed`（`button.rs:477-486`）。
+            .selected(is_active)
+            .toggled(is_active),
+        cx,
+    );
+    let button = button
         .tooltip(item.label.clone())
         .tooltip_placement(placement)
         .accessibility_label(item.label.clone())

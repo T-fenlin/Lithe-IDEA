@@ -59,7 +59,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, rems,
 };
 
-use lithe_gpui_shared::icons::{idea, idea_icon_svg};
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::workspace_config::{
     OverrideOrigin, OverrideOrigins, ToolchainPaths, load_local_toolchain, save_local_toolchain,
 };
@@ -1298,7 +1298,7 @@ impl SettingsDialog {
             // 真源文件已在 `lithe-gpui/assets/ui-icons/`，注册（`LitheAssets`）与清单
             // （`shared::icons::idea`）已就位，helper 按主题挑明暗。
             // 详细的四步引用规范见 `lithe-gpui/research/icon-asset-inventory.md` 第 7 节。
-            .child(idea_icon_svg(&idea::GEAR_ICON, cx))
+            .child(idea_icon_image(&idea::GEAR_ICON, cx, rems(1.)))
             .child(
                 div()
                     .text_sm()
