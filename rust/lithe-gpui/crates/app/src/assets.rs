@@ -110,7 +110,6 @@ use gpui_kit::{AssetSource, Result, SharedString};
 #[derive(rust_embed::RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../assets"]
 #[exclude = "icon-themes/lithe/**"]
-#[exclude = "icon-themes/pierre/**"]
 #[exclude = "icon-themes/symbols/**"]
 #[exclude = "icon-themes/material/**"]
 #[exclude = "fonts/**"]

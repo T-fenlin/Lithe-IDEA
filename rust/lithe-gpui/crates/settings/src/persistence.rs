@@ -297,6 +297,8 @@ mod tests {
             terminal_font_size: 16.0,
             // 卸载清单的"非默认值"：默认是空列表，这里放一个（校验往返）。
             uninstalled_extensions: vec!["lithe.nordTheme".to_string()],
+            // 图标主题的"非默认值"：默认是内置的 idea。
+            icon_theme: "pierre".to_string(),
         }
     }
 

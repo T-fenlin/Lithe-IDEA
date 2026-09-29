@@ -27,6 +27,11 @@ extensions page:
   and re-applies the current theme on reload.
 - **Fonts** apply on the next start — GPUI's `TextSystem::add_fonts` only adds,
   so an already registered family cannot be removed while the app runs.
+- **Icon sets** apply immediately — switching only swaps the lookup table. Unlike
+  themes and fonts, an icon set has **no package files on disk**: it is compiled
+  into the host (`assets/icon-themes/<package>/`), so uninstalling one marks it
+  unavailable (it disappears from the chooser and the active set falls back to
+  the built-in `idea` package) rather than deleting files.
 
 ## Catalog document
 

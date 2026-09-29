@@ -14,7 +14,8 @@
 //!
 //! ## 选哪套主题、为什么
 //!
-//! 固定用 **`idea` 包**（`lithe-gpui/assets/icon-themes/idea/extension.json`，主题 id `idea-icons`）：
+//! 生效的包由**设置键 `iconTheme`** 决定（[\`set_active_icon_theme\`]），默认是内置的
+//! **`idea` 包**（`lithe-gpui/assets/icon-themes/idea/extension.json`，主题 id `idea-icons`）：
 //!
 //! - 真机默认就是它 —— `windows/tauri/src/features/settings/config/default-settings.ts:100`
 //!   的 `iconTheme: "idea-icons"`。所以"还原真机截图里的文件树"要的就是这一套
@@ -58,20 +59,24 @@
 //! 之后每次调用都立即返回 `None`，于是全局走 Lucide 回落。
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Theme;
-use gpui_kit::{AnyElement, App, IntoElement as _, SharedString, Styled as _};
+use gpui_kit::{AnyElement, App, AssetSource, IntoElement as _, SharedString, Styled as _};
 
-/// gpui 侧使用的图标主题 id（= `windows/tauri/src/features/settings/config/default-settings.ts:100`
-/// 的 `iconTheme` 默认值，也是 `file-icon-semantics.ts:14` 的 `IDEA_ICON_THEME_ID`）。
+/// 内置（不可卸载）图标主题的包名：`lithe-gpui/assets/icon-themes/idea/`。
 ///
-/// 它同时是 `lithe-gpui/assets/icon-themes/` 下的**目录名**：`lithe-gpui/assets/icon-themes/idea/extension.json`。
-/// 目前没有"用户在设置里换图标主题"这条路径（gpui 侧还没有这个设置项），所以它是常量而不是配置。
-pub const ACTIVE_FILE_ICON_THEME: &str = "idea";
+/// 它同时是设置键 `iconTheme` 的**默认值**（`schema::DEFAULT_ICON_THEME`）与 `icon-themes/`
+/// 下的**目录名**——取值口径统一成"包名"，于是"设置里存的值 → 资源路径"是一次字符串拼接，
+/// 不需要再维护一张 id 映射表（真机存的是清单里的 `idea-icons`，本侧取目录名，理由见
+/// `.agents/notes/implemented/feature/2026-09-29-plugin-catalog-v2-and-extensions-page.md`）。
+pub const BUILTIN_FILE_ICON_THEME: &str = "idea";
 
-/// 主题包目录（相对 `lithe-gpui/assets/`）的前缀；资源路径就是 `{THEMES_ROOT}/{主题 id}/{定义里的相对路径}`。
+/// 兼容旧名（真机 `default-settings.ts:100` 的默认值口径）。
+pub const ACTIVE_FILE_ICON_THEME: &str = BUILTIN_FILE_ICON_THEME;
+
+/// 主题包目录（相对 `lithe-gpui/assets/`）的前缀；资源路径就是 `{THEMES_ROOT}/{包名}/{定义里的相对路径}`。
 const THEMES_ROOT: &str = "icon-themes";
 
 /// 真机 `FileIcon` 的 `defaultFile` / `defaultFolder` / `defaultFolderOpen`
@@ -79,14 +84,82 @@ const THEMES_ROOT: &str = "icon-themes";
 const DEFAULT_FILE: &str = "idea-text";
 const DEFAULT_FOLDER: &str = "idea-folder";
 
-/// `idea` 主题包的 `extension.json`，**编译期内嵌**。
+/// 内置图标包（`idea`）的 `extension.json`，**编译期内嵌**。
 ///
-/// 用 `include_str!` 而不是运行期读盘 / 走 `AssetSource`：这个文件是图标查找的**真源**，
-/// 编译期嵌进来之后"资源在不在"是编译错误而不是运行期静默回落；而且它与
-/// `crates/app/src/assets.rs` 的 `rust-embed` 嵌的是**同一个文件**，不会漂移。
-/// 路径相对**本文件**：`crates/shared/src/icons/` → 上溯四级到 `lithe-gpui/`，再进 `assets/`。
-const IDEA_EXTENSION_JSON: &str =
+/// 用途只有一个：宿主还没把 `iconTheme` 推下来时（启动极早期）兜底 —— 见 [`active_theme`]。
+/// 正常路径（含内置包自己）都走 [`set_active_icon_theme`] 从 `AssetSource` 读，两者取的是
+/// **同一份文件**（本常量与 `crates/app/src/assets.rs` 的 rust-embed 都指向
+/// `assets/icon-themes/idea/`），所以不会漂移。
+/// 路径相对本文件：`crates/shared/src/icons/` → 上溯四级到 `lithe-gpui/`。
+const BUILTIN_EXTENSION_JSON: &str =
     include_str!("../../../../assets/icon-themes/idea/extension.json");
+
+/// 生效的图标主题：`(包名, 已解析的表)`。
+///
+/// 由 [`set_active_icon_theme`] 写入（调用方是设置存储：它是 `iconTheme` 的持有者，
+/// 而依赖方向是 `settings → shared`，所以"读设置"这一动作只能由上层推下来）。
+/// 表本身用 `Box::leak` 泄漏一份：切换图标主题是**低频**动作（用户点一次「使用」），
+/// 代价是每次切换几十 KB，换来 `&'static` 的返回类型 —— 否则 `theme_icon_path` 的
+/// `&'static str` 契约要一路改成 `String`，`explorer` / `editor` / 状态栏的调用点全得跟着动。
+static ACTIVE_THEME: Mutex<Option<(&'static str, &'static FileIconTheme)>> = Mutex::new(None);
+
+/// 切换生效的文件图标主题：从**注册的 `AssetSource`** 读 `icon-themes/<包>/extension.json` 并解析。
+///
+/// 返回 `false` = 这个包不在内嵌资源里（包名写错、或该图标集没随宿主编译）：
+/// 此时**不改动**当前主题，由调用方决定回落策略（设置侧会回落到内置包）。
+///
+/// 为什么从 `AssetSource` 读而不是 `include_str!`：图标主题现在是**可切换**的，
+/// 编译期常量只能表达"内置的那一套"；走资源源之后，内置的 `idea` 与随包分发的
+/// 其他图标集（如 `pierre`）走**同一条**路径解析，没有"两套加载方式"的分叉。
+pub fn set_active_icon_theme(package: &str, source: &dyn AssetSource) -> bool {
+    if active_theme_package() == Some(package) {
+        return true;
+    }
+    let manifest_path = format!("{THEMES_ROOT}/{package}/extension.json");
+    let Some(bytes) = source.load(&manifest_path).ok().flatten() else {
+        eprintln!("S1_ICON_THEME missing package={package} path={manifest_path}");
+        return false;
+    };
+    let Ok(json) = std::str::from_utf8(&bytes) else {
+        eprintln!("S1_ICON_THEME invalid_utf8 package={package}");
+        return false;
+    };
+    match FileIconTheme::from_json(package, json) {
+        Ok(theme) => {
+            // 包名同样泄漏成 `'static`（次数 = 用户切换次数，可忽略）。
+            let package: &'static str = Box::leak(package.to_string().into_boxed_str());
+            let theme: &'static FileIconTheme = Box::leak(Box::new(theme));
+            {
+                let mut guard = ACTIVE_THEME
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                *guard = Some((package, theme));
+            }
+            println!(
+                "S1_ICON_THEME applied package={package} definitions={} root={}",
+                theme.definition_count(),
+                theme.root()
+            );
+            true
+        }
+        Err(error) => {
+            eprintln!("S1_ICON_THEME parse_failed package={package} error={error}");
+            false
+        }
+    }
+}
+
+/// 当前生效的图标主题包名；`None` = 还没被设置过（启动极早期）。
+#[must_use]
+pub fn active_theme_package() -> Option<&'static str> {
+    lock_active_theme().map(|(package, _)| package)
+}
+
+fn lock_active_theme() -> Option<(&'static str, &'static FileIconTheme)> {
+    *ACTIVE_THEME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// 已经解析好的 `idea` 主题包：图标 id → SVG 相对路径，以及各级查找表。
 ///
@@ -214,19 +287,22 @@ impl FileIconTheme {
 /// "Java class / 源码根目录"等语义（`file-icon-semantics.ts:16-28`）。gpui 侧还没有
 /// 对应的语义信息，所以查表时把它们全部跳过，让这些条目走普通后缀规则。
 const SEMANTIC_PREFIX: char = '\0';
-/// 进程内唯一一份已解析的主题表。
-///
-/// 解析失败会存 `Err`（而不是重试）：`extension.json` 是编译期内嵌的常量，失败必然是
-/// 打包/生成出了错；每次查表都重试只会把同一个错误重复上千次。
-static ACTIVE_THEME: OnceLock<Result<FileIconTheme, serde_json::Error>> = OnceLock::new();
 
-/// 取当前生效的文件图标主题（进程内缓存）。
+/// 取当前生效的文件图标主题。
 ///
-/// 出错时返回 `None`，调用方据此走 Lucide 回落 —— **这是"读不到时回落"的落地点**。
+/// 没被 [`set_active_icon_theme`] 设置过（启动极早期、或宿主没接这条设置）时返回内置的
+/// `idea` 那一份 —— 用 `include_str!` 的编译期常量兜底，所以"读不到任何主题"这条路径
+/// 不存在：最坏也只是回到内置包。
+///
+/// 解析失败返回 `None`，调用方据此走 Lucide 回落 —— **这是"读不到时回落"的落地点**。
 #[must_use]
 pub fn active_theme() -> Option<&'static FileIconTheme> {
-    ACTIVE_THEME
-        .get_or_init(|| FileIconTheme::from_json(ACTIVE_FILE_ICON_THEME, IDEA_EXTENSION_JSON))
+    if let Some((_, theme)) = lock_active_theme() {
+        return Some(theme);
+    }
+    static BUILTIN: OnceLock<Result<FileIconTheme, serde_json::Error>> = OnceLock::new();
+    BUILTIN
+        .get_or_init(|| FileIconTheme::from_json(BUILTIN_FILE_ICON_THEME, BUILTIN_EXTENSION_JSON))
         .as_ref()
         .ok()
 }

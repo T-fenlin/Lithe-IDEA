@@ -37,6 +37,9 @@ pub struct ExtensionSnapshot {
     pub theme_names: Vec<String>,
     /// 贡献的图标主题名，按清单顺序。
     pub icon_theme_names: Vec<String>,
+    /// 贡献的图标主题**清单路径**（`icon-themes/<包>/extension.json`）。
+    /// 扩展页从这里取包名 —— 它是设置键 `iconTheme` 的取值。
+    pub icon_theme_paths: Vec<String>,
     /// 贡献的字体家族，去重后按规范顺序。
     pub font_families: Vec<String>,
     /// 贡献的调试适配器名，按清单顺序。
@@ -121,6 +124,8 @@ struct WireEntrypoint {
 #[derive(Debug, Deserialize)]
 struct WireNamed {
     name: String,
+    #[serde(default)]
+    path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -166,6 +171,11 @@ impl ExtensionSnapshot {
                 .icon_themes
                 .iter()
                 .map(|item| item.name.clone())
+                .collect(),
+            icon_theme_paths: wire
+                .icon_themes
+                .iter()
+                .map(|item| item.path.clone())
                 .collect(),
             font_families,
             debug_adapter_names: wire

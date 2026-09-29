@@ -135,6 +135,17 @@ pub const DEFAULT_AUTO_THEME_LIGHT: &str = "intellij-light";
 /// 现随默认主题组改为 IDEA 的深色变体。
 pub const DEFAULT_AUTO_THEME_DARK: &str = "darcula";
 
+/// 文件图标主题的**包名**（`lithe-gpui/assets/icon-themes/<包>/` 下的目录名），默认 `idea`。
+///
+/// 真机键名也是 `iconTheme`（`default-settings.ts:100`），但真机存的是清单里的主题 id
+/// （`idea-icons`），本侧存**目录名** —— 于是"设置值 → 资源路径"是一次字符串拼接
+/// （`icon-themes/<值>/extension.json`），不需要再维护 id → 目录的映射表。
+///
+/// 生效方式：**立即**。设置存储把它推给 `shared::icons::set_active_icon_theme`
+/// （依赖方向是 settings → shared），文件树/编辑器标签/状态栏下一次重绘就用新主题。
+/// 取值必须是一个**随宿主编译**的图标包：认不出来时回落内置包（`S1_ICON_THEME missing`）。
+pub const DEFAULT_ICON_THEME: &str = "idea";
+
 /// 代码字体（编辑器 / 终端）的默认字族：**IDEA 的默认代码字体 JetBrains Mono**。
 ///
 /// 它由 [`crate::fonts::register_fonts`] 从内嵌内容注册（`lithe-gpui/assets/fonts/`），
@@ -577,6 +588,10 @@ pub struct Settings {
     #[serde(rename = "openFoldersInNewWindow")]
     pub open_folders_in_new_window: bool,
 
+    /// 文件图标主题的包名（见 [`DEFAULT_ICON_THEME`]）。真机键名同为 `iconTheme`。
+    #[serde(rename = "iconTheme")]
+    pub icon_theme: String,
+
     /// 已卸载的**捆绑主题扩展** id 列表（`uninstalledExtensions`，本侧新增键，
     /// 真源没有）。
     ///
@@ -622,6 +637,8 @@ impl Default for Settings {
             // 默认每次询问，且（真源口径下）默认在新窗口打开。
             ask_where_to_open_projects: true,
             open_folders_in_new_window: true,
+            // 默认是内置的 IDEA 图标包（见 [`DEFAULT_ICON_THEME`]）。
+            icon_theme: DEFAULT_ICON_THEME.to_string(),
             // 捆绑主题扩展默认全部在装（空列表 = 没有卸载记录）。
             uninstalled_extensions: Vec::new(),
         }
@@ -724,6 +741,13 @@ impl Settings {
         self.maven_java_home_path = self.maven_java_home_path.trim().to_string();
         self.maven_settings_path = self.maven_settings_path.trim().to_string();
         self.maven_local_repository_path = self.maven_local_repository_path.trim().to_string();
+
+        // 图标主题：空串 / 全空白是"这个键被手改坏了"，回落内置包。
+        if self.icon_theme.trim().is_empty() {
+            self.icon_theme = DEFAULT_ICON_THEME.to_string();
+        } else {
+            self.icon_theme = self.icon_theme.trim().to_string();
+        }
 
         // 卸载清单：去空白、去重、排序 —— 落盘形状确定，两次写之间不会因为顺序漂移
         // 互相覆盖。"id 是不是捆绑主题扩展"不在这里校验（写入入口已经挡了），

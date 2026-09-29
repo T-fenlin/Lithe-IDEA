@@ -148,6 +148,38 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
    并补了回归测试 `migration_leaves_the_load_surface_mirror_alone`；修复后稳态为
    `created=0 kept=7 removed=0`。
 
+### 第四批：图标（分类改名 + 彩色 + 可切换的图标集）
+
+维护者口径："扩展里面的图标主题修改为图标，图标从单色修改为有颜色的，看下 gpui kit 0.7
+里面的 svg 有颜色的是怎么弄的，除当前内置图标，再弄一份可卸载的图标扩展"。
+
+1. **彩色怎么来（源码结论）**：gpui 有两条互斥的渲染管线 —— `svg()` 走
+   `SvgRenderer::render_alpha_mask`（渲成 **alpha 遮罩**，用单一 `text_color` 上色，
+   `text_color` 为 None 时**根本不画**），`img()` 走图片链路
+   （`image::guess_format` 认不出 SVG → `SvgRenderer::render_single_frame` →
+   `rasterize_tree` 出**彩色 RGBA**）。所以"彩色"是**换管线**，不是参数开关：
+   `theme_file_icon` 从 `svg()` 改成 `img(Resource::Embedded(path))`。
+   数据侧佐证：搬进来的图标包本来就是彩色的（idea 引用的 103 个 SVG 里 79 个带
+   `fill="#…"`，pierre 完整档 57/57）。
+   顺带**订正一条过期结论**：旧注释把"img 时灵时不灵"归因于 `Img::request_layout` 需要
+   `GlobalElementId`；复核 0.3.7 源码，那个判断只门控**多帧动画的续帧**（img.rs:382），
+   图像在 paint 阶段取（:480），与全局 id 无关。
+   已知代价：内嵌资源这条路固定按 `scale_factor = 1.0` 栅格化（上游 TODO），
+   HiDPI 下比矢量遮罩略软 —— 取舍是"原色优先"。
+2. **分类改名**：扩展页筛选条与卡片上的「图标主题」改叫「图标」（新增 gpui-only 键
+   `extensions.icons`）；卡片不再显示原始分类 id，改走本地化标签。
+3. **可卸载 + 可切换的图标集（pierre）**：
+   - 数据来源与主题/字体不同：图标集**随宿主编译**（`assets/icon-themes/<包>/`，
+     pierre 从 assets.rs 的 `#[exclude]` 里放出来），所以它**没有落盘包文件**；
+     卸载的语义因此是"不可选 + 正在使用时回落内置包"，而不是删文件（契约里写明了这条差别）。
+   - 新增设置键 `iconTheme`（默认 `idea` = 包名；真机存清单 id，本侧存目录名，
+     于是"设置值 → 资源路径"是一次字符串拼接，不需要 id 映射表）。
+   - `shared::icons::file_icon::set_active_icon_theme(package, asset_source)`：
+     从**资源源**读 `icon-themes/<包>/extension.json` —— 内置包与捆绑包走同一条路径，
+     没有"两套加载方式"。设置存储（依赖方向 settings → shared）在应用主题时推一次，
+     卸载兜底也在那里（与配色主题"当前主题被卸载 → 回落默认"同一条口径）。
+   - 扩展页给图标集卡片加「使用 / 当前」（复用真源既有键），切换**立即**生效。
+
 ## 考虑过的备选方案
 
 - **在清单里声明 `categories` 数组**（最初共识里选的就是它）：看完 Zed 源码后否决

@@ -204,7 +204,7 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
     let plugins = response["data"]["plugins"]
         .as_array()
         .expect("plugins array should encode");
-    assert_eq!(plugins.len(), 12);
+    assert_eq!(plugins.len(), 13);
     let by_id: Vec<(&str, Vec<&str>)> = plugins
         .iter()
         .map(|plugin| {
@@ -230,6 +230,7 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
             ("lithe.litheTheme", vec!["themes"]),
             ("lithe.nordTheme", vec!["themes"]),
             ("lithe.oneTheme", vec!["themes"]),
+            ("lithe.pierreIconTheme", vec!["icon-themes"]),
             ("lithe.sourceCodeProFont", vec!["fonts"]),
             ("lithe.vscodeTheme", vec!["themes"]),
         ]
@@ -261,6 +262,22 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
             .count(),
         2,
         "两个可卸载的字体扩展"
+    );
+    // 图标集：一个内置（idea，不可卸载）+ 一个捆绑（pierre，可卸载可切换）。
+    let pierre = &plugins[10];
+    assert_eq!(pierre["displayName"], "Pierre 图标");
+    assert_eq!(pierre["entrypoint"]["kind"], "bundled");
+    assert_eq!(
+        pierre["iconThemes"][0]["path"],
+        "icon-themes/pierre/extension.json"
+    );
+    // 图标集：一个内置（idea，不可卸载）与一个捆绑（pierre，可卸载、也可切换使用）。
+    let pierre = &plugins[10];
+    assert_eq!(pierre["id"], "lithe.pierreIconTheme");
+    assert_eq!(pierre["entrypoint"]["kind"], "bundled");
+    assert_eq!(
+        pierre["iconThemes"][0]["path"],
+        "icon-themes/pierre/extension.json"
     );
     let idea = &plugins[4];
     assert_eq!(idea["displayName"], "IDEA 主题（内置）");

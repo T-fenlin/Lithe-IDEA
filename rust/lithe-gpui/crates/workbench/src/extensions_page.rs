@@ -30,7 +30,9 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{ActiveTheme as _, Icon, Selectable as _, Sizable as _};
+use gpui_kit::component::{
+    ActiveTheme as _, Disableable as _, Icon, Selectable as _, Sizable as _,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _,
@@ -104,6 +106,9 @@ struct Card {
     removable: bool,
     /// 这个包贡献了字体（详情里要写清「下次启动生效」—— 字体运行期摘不掉）。
     has_fonts: bool,
+    /// 这个包贡献的是图标集时，它的**包名**（设置键 `iconTheme` 的取值）；
+    /// 卡片据此画「使用 / 当前」——图标主题与配色主题一样是"选一个生效"的东西。
+    icon_theme_package: Option<String>,
     /// 展开详情里的贡献项行（字体家族已去重）。
     contributions: Vec<SharedString>,
 }
@@ -150,6 +155,16 @@ impl Card {
             built_in: entry.entrypoint_kind == "builtIn",
             removable: entry.entrypoint_kind == "bundled",
             has_fonts: !entry.font_families.is_empty(),
+            icon_theme_package: if entry.categories.iter().any(|item| item == "icon-themes") {
+                // 目录里的贡献路径形如 `icon-themes/pierre/extension.json`，包名就是中间那段。
+                entry
+                    .icon_theme_paths
+                    .first()
+                    .and_then(|path| path.split('/').nth(1))
+                    .map(str::to_string)
+            } else {
+                None
+            },
             contributions,
         }
     }
@@ -262,6 +277,19 @@ impl ExtensionsPage {
             _search_subscription: search_subscription,
             _settings_subscription: settings_subscription,
         }
+    }
+
+    /// 切换文件图标主题（图标集卡片上的「使用」）。
+    ///
+    /// 落点是 `SettingsStore::set_icon_theme`（它负责"认不出的包名不写入"），
+    /// 本页只转交意图 —— 与卸载按钮同一条口径。
+    fn use_icon_theme(&mut self, package: &str, cx: &mut Context<Self>) {
+        let Some(store) = self.settings.clone() else {
+            eprintln!("S1_EXTENSIONS_PAGE action=use_no_settings package={package}");
+            return;
+        };
+        store.update(cx, |store, cx| store.set_icon_theme(package, cx));
+        // 设置存储的订阅会让本页重绘（「当前」随之移动）。
     }
 
     /// 这个扩展此刻是不是"已卸载"（设置里的 `uninstalledExtensions`）。
@@ -411,94 +439,126 @@ impl ExtensionsPage {
         let expanded = self.expanded.as_deref() == Some(card.id.as_str());
         let id = card.id.clone();
 
-        let mut column = v_flex()
-            .w_full()
-            .gap_1()
-            .py_2()
-            .px_3()
-            .cursor_pointer()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(
-                h_flex()
-                    .w_full()
-                    .gap_2()
-                    .items_center()
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_sm()
-                            .font_medium()
-                            .text_color(cx.theme().foreground)
-                            .child(card.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(card.version.clone()),
-                    )
-                    .child(
-                        // 分类标签直接用 Core 推导出的稳定 id（`languages` 等），
-                        // 与筛选条同一词汇，不另造一套展示名。
-                        div()
-                            .flex_shrink_0()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(card.categories_label.clone()),
-                    )
-                    // 状态徽标按**数据判据**决定（`entrypoint.kind` + 设置里的卸载清单），
-                    // 不是硬编码：内置显示「内置」，捆绑未卸载显示「内置」（它确实随宿主
-                    // 分发），已卸载显示「已卸载」。
-                    .when(card.built_in || (card.removable && !uninstalled), |this| {
-                        this.child(
+        let mut column =
+            v_flex()
+                .w_full()
+                .gap_1()
+                .py_2()
+                .px_3()
+                .cursor_pointer()
+                .border_b_1()
+                .border_color(cx.theme().border)
+                .child(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .items_center()
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_sm()
+                                .font_medium()
+                                .text_color(cx.theme().foreground)
+                                .child(card.name.clone()),
+                        )
+                        .child(
                             div()
                                 .flex_shrink_0()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(tr("lithe.extensions.builtIn")),
+                                .child(card.version.clone()),
                         )
-                    })
-                    .when(card.removable && uninstalled, |this| {
-                        this.child(
+                        .child(
+                            // 分类标签直接用 Core 推导出的稳定 id（`languages` 等），
+                            // 与筛选条同一词汇，不另造一套展示名。
                             div()
                                 .flex_shrink_0()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(tr("lithe.extensions.uninstalled")),
+                                .child(card.categories_label.clone()),
                         )
-                    })
-                    // 卸载 / 重新安装：只有 `bundled` 入口点才有这个动作。
-                    // 卸载是**可逆**的（重装从内嵌内容写回），所以用 outline 而不是 danger
-                    // —— 危险样式留给不可逆操作。
-                    .when(card.removable, |this| {
-                        let label = if uninstalled {
-                            tr("lithe.extensions.reinstall")
-                        } else {
-                            tr("lithe.extensions.uninstall")
-                        };
-                        let id_for_click = card.id.clone();
-                        this.child(
-                            Button::new(SharedString::from(format!(
-                                "lithe-extensions-toggle-{}",
-                                card.id
-                            )))
-                            .outline()
-                            .small()
-                            .flex_shrink_0()
-                            .label(label)
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    // 阻断冒泡：否则这一次点击会连带展开/折叠整行。
-                                    cx.stop_propagation();
-                                    this.set_uninstalled(&id_for_click, !uninstalled, cx);
-                                },
-                            )),
+                        // 状态徽标按**数据判据**决定（`entrypoint.kind` + 设置里的卸载清单），
+                        // 不是硬编码：内置显示「内置」，捆绑未卸载显示「内置」（它确实随宿主
+                        // 分发），已卸载显示「已卸载」。
+                        .when(card.built_in || (card.removable && !uninstalled), |this| {
+                            this.child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(tr("lithe.extensions.builtIn")),
+                            )
+                        })
+                        .when(card.removable && uninstalled, |this| {
+                            this.child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(tr("lithe.extensions.uninstalled")),
+                            )
+                        })
+                        // 图标集：与配色主题一样"选一个生效" —— 当前那个显示「当前」（禁用），
+                        // 其余显示「使用」。文案复用真源既有的 extensions.current / extensions.use。
+                        .when_some(
+                            card.icon_theme_package.clone().filter(|_| !uninstalled),
+                            |this, package| {
+                                let is_current = package
+                                    == crate::extensions_page::active_icon_theme(cx)
+                                        .unwrap_or_default();
+                                let label = if is_current {
+                                    tr("lithe.extensions.current")
+                                } else {
+                                    tr("lithe.extensions.use")
+                                };
+                                let package_for_click = package.clone();
+                                this.child(
+                                    Button::new(SharedString::from(format!(
+                                        "lithe-extensions-use-{}",
+                                        card.id
+                                    )))
+                                    .outline()
+                                    .small()
+                                    .flex_shrink_0()
+                                    .disabled(is_current)
+                                    .label(label)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.use_icon_theme(&package_for_click, cx);
+                                    })),
+                                )
+                            },
                         )
-                    }),
-            );
+                        // 卸载 / 重新安装：只有 `bundled` 入口点才有这个动作。
+                        // 卸载是**可逆**的（重装从内嵌内容写回），所以用 outline 而不是 danger
+                        // —— 危险样式留给不可逆操作。
+                        .when(card.removable, |this| {
+                            let label = if uninstalled {
+                                tr("lithe.extensions.reinstall")
+                            } else {
+                                tr("lithe.extensions.uninstall")
+                            };
+                            let id_for_click = card.id.clone();
+                            this.child(
+                                Button::new(SharedString::from(format!(
+                                    "lithe-extensions-toggle-{}",
+                                    card.id
+                                )))
+                                .outline()
+                                .small()
+                                .flex_shrink_0()
+                                .label(label)
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        // 阻断冒泡：否则这一次点击会连带展开/折叠整行。
+                                        cx.stop_propagation();
+                                        this.set_uninstalled(&id_for_click, !uninstalled, cx);
+                                    },
+                                )),
+                            )
+                        }),
+                );
 
         if expanded {
             let mut details = v_flex()
@@ -600,6 +660,15 @@ impl ExtensionsPage {
             }))
             .into_any_element()
     }
+}
+
+/// 当前生效的图标主题包名（设置键 `iconTheme`）；读不到设置时为 `None`。
+///
+/// 图标集卡片的「当前 / 使用」两态靠它判定 —— 判据来自设置存储（`iconTheme` 是它的键），
+/// 不是"页面自己记一个选中项"：那样会出现"设置里换过、页面还显示旧的那个"。
+pub(crate) fn active_icon_theme(cx: &App) -> Option<String> {
+    let store = lithe_gpui_settings::try_store(cx)?;
+    Some(store.read(cx).icon_theme())
 }
 
 /// 筛选项的稳定元素 id 片段（`None` = 全部）。

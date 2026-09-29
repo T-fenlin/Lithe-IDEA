@@ -278,6 +278,9 @@ mod tests {
             ("lithe.extensions.languages", "语言"),
             ("lithe.extensions.builtIn", "内置"),
             ("lithe.extensions.uninstalled", "已卸载"),
+            // 图标集卡片的「当前 / 使用」（真源既有键，复用于图标主题切换）。
+            ("lithe.extensions.current", "当前"),
+            ("lithe.extensions.use", "使用"),
             ("lithe.extensions.uninstall", "卸载"),
             ("lithe.extensions.reinstall", "重新安装"),
             (

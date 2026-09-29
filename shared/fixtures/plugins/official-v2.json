@@ -105,8 +105,8 @@
     },
     {
       "id": "lithe.ideaIconTheme",
-      "displayName": "IDEA 图标主题（内置）",
-      "description": "随宿主内置的 IDEA 风格文件图标主题。不可卸载。",
+      "displayName": "IDEA 图标（内置）",
+      "description": "随宿主内置的 IDEA 风格文件图标集（彩色），也是默认图标主题。不可卸载。",
       "version": "0.0.1",
       "apiVersion": 1,
       "hostCompatibility": {
@@ -308,6 +308,34 @@
         {
           "name": "One",
           "path": "extensions/themes/one.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.pierreIconTheme",
+      "displayName": "Pierre 图标",
+      "description": "随宿主捆绑的 Pierre 文件图标集（彩色，含浅色与深色两套）。可在扩展页卸载、也可切换使用。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-app"
+      },
+      "moduleIDs": [
+        "lithe.iconTheme.pierre"
+      ],
+      "iconThemes": [
+        {
+          "name": "Pierre",
+          "path": "icon-themes/pierre/extension.json"
         }
       ]
     },
