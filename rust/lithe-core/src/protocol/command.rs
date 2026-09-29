@@ -302,6 +302,8 @@ pub enum CoreCommand {
     DiagnosticsRedactText,
     /// Shapes a deterministic diagnostic bundle manifest from host-gathered facts (`diagnostics.buildManifest`).
     DiagnosticsBuildManifest,
+    /// Returns the validated built-in plugin catalog (`plugins.listCatalog`).
+    PluginListCatalog,
 }
 
 impl CoreCommand {
@@ -443,6 +445,7 @@ impl CoreCommand {
             "github.normalizeResponse" => Some(Self::GitHubNormalizeResponse),
             "diagnostics.redactText" => Some(Self::DiagnosticsRedactText),
             "diagnostics.buildManifest" => Some(Self::DiagnosticsBuildManifest),
+            "plugins.listCatalog" => Some(Self::PluginListCatalog),
             _ => None,
         }
     }
@@ -496,6 +499,15 @@ mod tests {
             CoreCommand::parse("maven.testResults"),
             Some(CoreCommand::MavenTestResults)
         ));
+    }
+
+    #[test]
+    fn parses_plugin_catalog_command() {
+        assert!(matches!(
+            CoreCommand::parse("plugins.listCatalog"),
+            Some(CoreCommand::PluginListCatalog)
+        ));
+        assert!(CoreCommand::parse("plugins.list").is_none());
     }
 
     #[test]

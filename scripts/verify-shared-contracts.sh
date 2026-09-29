@@ -13,7 +13,7 @@ for schema in shared/contracts/*.schema.json; do
 done
 
 module_fixture="shared/fixtures/modules/built-in-v1.json"
-plugin_fixture="shared/fixtures/plugins/official-v1.json"
+plugin_fixture="shared/fixtures/plugins/official-v2.json"
 github_fixture="shared/fixtures/github/pull-request-v1.json"
 workbench_background_fixture="shared/fixtures/settings/workbench-background-v1.json"
 syntax_theme_fixture="shared/fixtures/editor-themes/lithe-v1.json"
@@ -117,7 +117,7 @@ update_fixture="shared/fixtures/updates/update-v1.json"
 
 /usr/bin/ruby -rjson -e '
   plugins = JSON.parse(File.read(ARGV.fetch(0)))
-  abort "plugin fixture schema must be 1" unless plugins.fetch("schemaVersion") == 1
+  abort "plugin fixture schema must be 2" unless plugins.fetch("schemaVersion") == 2
   abort "plugin API version must be 1" unless plugins.fetch("pluginAPIVersion") == 1
   entries = plugins.fetch("plugins")
   ids = entries.map { |plugin| plugin.fetch("id") }
@@ -128,6 +128,13 @@ update_fixture="shared/fixtures/updates/update-v1.json"
     abort "plugin API mismatch" unless plugin.fetch("apiVersion") == plugins.fetch("pluginAPIVersion")
     abort "official plugin signature policy mismatch" unless plugin.fetch("vendor").fetch("signatureRequirement") == "sameTeamAsHost"
     abort "plugin module IDs must be sorted" unless plugin.fetch("moduleIDs") == plugin.fetch("moduleIDs").sort
+    contribution_lists = %w[themes iconThemes fonts debugAdapters languageSupports]
+    provided = contribution_lists.count { |key| Array(plugin[key]).any? }
+    abort "plugin #{plugin.fetch('id')} must contribute at least one capability" unless provided >= 1
+    contribution_lists.each do |key|
+      list = Array(plugin[key])
+      abort "plugin #{plugin.fetch('id')} #{key} paths must stay in the bundle" unless list.all? { |entry| !entry["path"] || !entry["path"].start_with?("/") && !entry["path"].include?("\\") && !entry["path"].split("/").include?("..") }
+    end
   end
 ' "$plugin_fixture"
 

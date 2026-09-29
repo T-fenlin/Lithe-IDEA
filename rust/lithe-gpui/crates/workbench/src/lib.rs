@@ -123,15 +123,18 @@
 pub mod activity_bar;
 pub mod branch_panel;
 pub mod command_palette;
+// 中央扩展页（`ShellWorkspace` 的中央页槽位，Zed 式扩展管理入口）。
+// 数据层在 `lithe-gpui-extensions`（model + Core 桥），本模块只做视图。
+pub mod extensions_page;
 pub mod maven;
 pub mod menu_bar;
 pub mod notifications;
 pub mod project_menu;
-pub mod spring;
-pub mod spring_paths;
 pub mod project_tabs;
 pub mod right_tool_window;
 pub mod session;
+pub mod spring;
+pub mod spring_paths;
 pub mod status_bar;
 pub mod title_bar;
 pub mod workspace;

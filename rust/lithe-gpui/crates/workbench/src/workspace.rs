@@ -86,7 +86,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -99,17 +98,6 @@ use gpui_kit::{
     Render, SharedString, Styled as _, Window, div, rems,
 };
 
-use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
-use lithe_gpui_explorer::Explorer;
-use lithe_gpui_git::{BottomPane, ChangesView};
-use lithe_gpui_settings::{
-    Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, Overrides,
-    RecentProjects, resolve_overrides,
-};
-use lithe_gpui_shared::icons::idea;
-use lithe_gpui_shared::workspace_config::{ToolchainPaths, load_local_toolchain};
-use lithe_gpui_shared::{tr, tr_args};
-use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 use crate::branch_panel::{BranchPanel, open_branch_panel, trigger as branch_trigger};
 use crate::command_palette::{
@@ -125,12 +113,23 @@ use crate::project_menu::{
 };
 use crate::project_tabs::{ProjectTab, project_tabs};
 use crate::right_tool_window::{
-    ProbePoint, RightToolWindowView, diagnose as diagnose_right_panel,
+    ProbePoint, RightToolWindowView, diagnose as diagnose_right_panel, diagnose_extensions_page,
     resolve_click as resolve_right_click, right_tool_window,
 };
-use crate::status_bar::{StatusEntry, status_bar};
 use crate::session::{SessionPlan, SessionTracker};
+use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
+use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
+use lithe_gpui_explorer::Explorer;
+use lithe_gpui_git::{BottomPane, ChangesView};
+use lithe_gpui_settings::{
+    Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, Overrides,
+    RecentProjects, resolve_overrides,
+};
+use lithe_gpui_shared::icons::idea;
+use lithe_gpui_shared::workspace_config::{ToolchainPaths, load_local_toolchain};
+use lithe_gpui_shared::{tr, tr_args};
+use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 // ---------------------------------------------------------------------------
 // 启动期形态（`App::Global`）+ 换项目决策（纯函数）
 // ---------------------------------------------------------------------------
@@ -157,6 +156,12 @@ pub struct ShellStartup {
     /// 触发懒扫（`ShellWorkspace::schedule_right_view_scan`），也就没有 `S1_RIGHT_SCAN root=`
     /// 那行证据。
     right_view: Option<RightToolWindowView>,
+    /// `--right-view extensions`：本次会话**打开中央扩展页**（**验证/诊断用**）。
+    ///
+    /// 扩展页不是右工具窗视图（`RightToolWindowView::from_id("extensions")` 是 `None`），
+    /// 所以单独一个开关而不是复用 `right_view`；应用时机与换根语义与 `right_view` 相同
+    /// （每个重建出来的外壳都应用一次）。
+    extensions_page: bool,
     /// `--left-view <id>`：本次会话把左栏切到这个视图（**验证/诊断用**，理由同上：
     /// 「更改」不激活就不会重读 `git.status`，拿不到 `S1_SOURCE_CONTROL root=`）。
     left_view: Option<usize>,
@@ -173,15 +178,17 @@ pub fn set_shell_startup(
     cx: &mut App,
     compact_menu: bool,
     right_view: Option<RightToolWindowView>,
+    extensions_page: bool,
     left_view: Option<usize>,
 ) {
     println!(
-        "S1_WORKSPACE startup compact_menu={compact_menu} right_view={:?} left_view={left_view:?}",
+        "S1_WORKSPACE startup compact_menu={compact_menu} right_view={:?} extensions_page={extensions_page} left_view={left_view:?}",
         right_view.map(|view| view.id())
     );
     cx.set_global(ShellStartup {
         compact_menu,
         right_view,
+        extensions_page,
         left_view,
     });
 }
@@ -193,11 +200,17 @@ fn startup_compact_menu(cx: &App) -> bool {
         .unwrap_or(false)
 }
 
-/// 启动期请求的右 / 左栏视图（重建路径也要应用，理由见 [`ShellStartup`] 的字段文档）。
-fn startup_views(cx: &App) -> (Option<RightToolWindowView>, Option<usize>) {
+/// 启动期请求的右 / 左栏视图与扩展页（重建路径也要应用，理由见 [`ShellStartup`] 的字段文档）。
+fn startup_views(cx: &App) -> (Option<RightToolWindowView>, bool, Option<usize>) {
     cx.try_global::<ShellStartup>()
-        .map(|startup| (startup.right_view, startup.left_view))
-        .unwrap_or((None, None))
+        .map(|startup| {
+            (
+                startup.right_view,
+                startup.extensions_page,
+                startup.left_view,
+            )
+        })
+        .unwrap_or((None, false, None))
 }
 
 /// 「这次项目在哪儿打开」。真源 `ProjectOpenDestination`
@@ -276,7 +289,6 @@ pub fn left_activity_index(selector: &str) -> Option<usize> {
     }
 }
 
-
 /// 设置侧给宿主的那条"结果投递"回调的类型别名。
 ///
 /// 写别名只为一件事：让两个 `Box<dyn Fn(..)>` 里的**闭包参数写得出显式类型**。
@@ -347,11 +359,7 @@ fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
         // 所以父目录拿不到时退回文件本身所在的那一层。
         (
             "xdg-open",
-            vec![path
-                .parent()
-                .unwrap_or(path)
-                .display()
-                .to_string()],
+            vec![path.parent().unwrap_or(path).display().to_string()],
         ),
     ];
 
@@ -403,6 +411,14 @@ const CHANGES_ACTIVITY_IX: usize = 1;
 /// 只给 `--left-view search` 用：本侧搜索视图还没有内容（点它只切选中态），
 /// 所以 `--left-view search` 是"证明探针能切到顶部组任意一项"的对照，不是产品功能。
 const SEARCH_ACTIVITY_IX: usize = 2;
+
+/// 右侧活动栏「扩展」拼图项的下标 = 0。
+///
+/// ⚠️ 2026-09-29 起这一项**不是右工具窗视图**：它开/关**中央扩展页**
+/// （[`ShellWorkspace::toggle_extensions_page`]，对齐真机 `openExtensionsBuffer` 的口径）。
+/// [`RightToolWindowView::from_rail_index`] 因此对下标 0 返回 `None`，点击处理在
+/// 进入右栏状态机**之前**先拦截这个下标。
+const EXTENSIONS_RAIL_IX: usize = 0;
 
 /// 默认选中的顶部组视图：第 0 项「项目」。
 ///
@@ -901,6 +917,21 @@ pub struct ShellWorkspace {
     changes: Entity<ChangesView>,
     /// 中央列内容：编辑区（标签栏 + 正文 / 空状态）。
     editor: Entity<EditorPane>,
+    /// 中央扩展页（`crate::extensions_page`，Zed 式独立页，2026-09-29 起）。
+    ///
+    /// **懒创建**：第一次打开时才建实体（它构造后会自己拉一次目录数据）；创建后
+    /// **常驻**——关掉只翻 [`ShellWorkspace::extensions_page_open`]，重开不丢搜索与
+    /// 筛选状态（与左栏双实体同一口径）。中央列在「本页 ↔ 编辑器岛」之间二选一渲染，
+    /// 与左栏的「项目树 ↔ 更改」同一套模式。
+    extensions_page: Option<Entity<crate::extensions_page::ExtensionsPage>>,
+    /// 中央扩展页是否占据中央列（取代编辑器岛）。
+    ///
+    /// **不入会话文档**（2026-09-29 口径）：会话持久化只存"今天真的有宿主"的字段
+    /// （`feature/2026-09-27-session-state-persistence.md`），扩展页是新形态，等它有
+    /// 更多宿主能力（安装 / 启停）再决定要不要存。旧会话里的 `rightView: "extensions"`
+    /// 在恢复时解不出视图（[`RightToolWindowView::from_id`] 已不认它），按"未知 id 保留
+    /// 当前值"的既有规则静默落到默认视图。
+    extensions_page_open: bool,
     /// 底部窗里的终端。**构造期不建会话**，第一次可见时由
     /// [`TerminalPane::ensure_session`] 懒创建。
     terminal: Entity<TerminalPane>,
@@ -1154,9 +1185,16 @@ impl ShellWorkspace {
         // 整段是后台任务，失败只留 `S1_JAVA_*` 诊断，跳转退回第一批的轻量链路。
         editor.update(cx, |pane, cx| pane.prepare_java(root.clone(), cx));
         let editor_handle = editor.downgrade();
+        // 「打开文件 → 中央区让位回编辑器」要够得着外壳：扩展页若开着就收掉。
+        let shell_for_open = cx.entity().downgrade();
 
         let on_open: Box<dyn Fn(PathBuf, &mut Window, &mut App) + 'static> =
             Box::new(move |path: PathBuf, window: &mut Window, cx: &mut App| {
+                // 中央区让位回编辑器：资源管理器点文件时扩展页若开着就收掉
+                // （与命令面板「打开文件」同一条；诊断行同族可 grep）。
+                let _ = shell_for_open.update(cx, |this, cx| {
+                    this.close_extensions_page(None, cx);
+                });
                 // 编辑区可能已经被关掉：`update` 返回 `Err` 时静默忽略，不 panic。
                 let _ = editor_handle.update(cx, |pane, cx| pane.open(&path, window, cx));
             });
@@ -1261,16 +1299,16 @@ impl ShellWorkspace {
                         move |scope: &str,
                               deliver: GitIdentityDeliver,
                               async_cx: &mut gpui_kit::AsyncWindowContext| {
-                        let scope = IdentityScope::from_id(scope);
-                        let root = root_text.clone();
-                        // 任务由设置侧的 `Context::spawn_in` 起（那里才有窗口），
-                        // 这里只用它跑 Core 并回前台投递。
-                        // ⚠️ `detach()` 而不是 `let _ =`：gpui 的 `Task` 一 drop 就**取消**
-                        // （`gpui-pre-scheduler-0.3.6/src/executor.rs:389-391`）。
-                        // 本轮实测：写成 `let _ =` 时 `result=…` 永不出现、
-                        // 界面卡在「正在检查 Git 仓库…」。宿主内部 detach，
-                        // 所以本函数返回 `()`（见 `GitIdentityHost` 的文档）。
-                        async_cx
+                            let scope = IdentityScope::from_id(scope);
+                            let root = root_text.clone();
+                            // 任务由设置侧的 `Context::spawn_in` 起（那里才有窗口），
+                            // 这里只用它跑 Core 并回前台投递。
+                            // ⚠️ `detach()` 而不是 `let _ =`：gpui 的 `Task` 一 drop 就**取消**
+                            // （`gpui-pre-scheduler-0.3.6/src/executor.rs:389-391`）。
+                            // 本轮实测：写成 `let _ =` 时 `result=…` 永不出现、
+                            // 界面卡在「正在检查 Git 仓库…」。宿主内部 detach，
+                            // 所以本函数返回 `()`（见 `GitIdentityHost` 的文档）。
+                            async_cx
                             .spawn(async move |async_cx: &mut gpui_kit::AsyncWindowContext| {
                                 let result = async_cx
                                     .background_spawn(async move {
@@ -1304,11 +1342,11 @@ impl ShellWorkspace {
                               value: Option<String>,
                               deliver: GitIdentityDeliver,
                               async_cx: &mut gpui_kit::AsyncWindowContext| {
-                        let scope = IdentityScope::from_id(scope);
-                        let field = IdentityField::from_id(key);
-                        let root = root_text.clone();
-                        // `detach()` 的理由同 load 那条（`Task` 一 drop 就取消）。
-                        async_cx
+                            let scope = IdentityScope::from_id(scope);
+                            let field = IdentityField::from_id(key);
+                            let root = root_text.clone();
+                            // `detach()` 的理由同 load 那条（`Task` 一 drop 就取消）。
+                            async_cx
                             .spawn(async move |async_cx: &mut gpui_kit::AsyncWindowContext| {
                                 let result = async_cx
                                     .background_spawn(async move {
@@ -1513,6 +1551,9 @@ impl ShellWorkspace {
             explorer,
             changes,
             editor,
+            // 中央扩展页：懒创建（首次打开才建实体），启动时关闭。
+            extensions_page: None,
+            extensions_page_open: false,
             terminal,
             bottom_git,
             // 默认页签是终端（`workspace-ui-defaults.ts:6` 的 `bottomPaneActiveTab: "terminal"`），
@@ -1562,12 +1603,16 @@ impl ShellWorkspace {
         // `main.rs` 那段 `on_next_frame` 是一次性的、捕获的是**第一个**外壳 —— 不做这一步，
         // "换根后右栏 Maven / Spring 面板与 Git 变更视图都指向新根"就取不到证据
         // （视图不打开就不会去扫 / 去读）。构造期不是 render，改状态是安全的。
-        let (startup_right_view, startup_left_view) = startup_views(cx);
+        let (startup_right_view, startup_extensions, startup_left_view) = startup_views(cx);
         if let Some(view) = startup_right_view {
             workspace.right_view = view;
             workspace.right_visible = true;
             workspace.schedule_right_view_scan(view, true, cx);
             diagnose_right_panel(view, true, None);
+        }
+        if startup_extensions {
+            // `--right-view extensions`：打开的是**中央扩展页**（不是右工具窗视图）。
+            workspace.open_extensions_page(None, window, cx);
         }
         if let Some(index) = startup_left_view {
             workspace.select_top_activity(index, cx);
@@ -1639,7 +1684,11 @@ impl ShellWorkspace {
         if let Some(visible) = session.bottom_visible {
             self.bottom_visible = visible;
         }
-        if let Some(view) = session.right_view.as_deref().and_then(RightToolWindowView::from_id) {
+        if let Some(view) = session
+            .right_view
+            .as_deref()
+            .and_then(RightToolWindowView::from_id)
+        {
             self.right_view = view;
         }
         if let Some(visible) = session.right_visible {
@@ -1745,8 +1794,9 @@ impl ShellWorkspace {
         println!("{headline}");
         let mut report = format!("{headline}\n");
         for path in &files {
-            let relative = lithe_gpui_shared::workspace_config::workspace_relative(&self.root, path)
-                .unwrap_or_else(|| path.display().to_string());
+            let relative =
+                lithe_gpui_shared::workspace_config::workspace_relative(&self.root, path)
+                    .unwrap_or_else(|| path.display().to_string());
             println!("S1_SESSION_ASSERT file={relative}");
             report.push_str(&format!("S1_SESSION_ASSERT file={relative}\n"));
         }
@@ -2017,7 +2067,8 @@ impl ShellWorkspace {
                 // `TerminalPaneEvent::LastTabClosed` 会把底部窗收起（既有订阅，`:490-499`）。
                 let terminal = self.terminal.clone();
                 let closed = terminal.update(cx, |pane, cx| pane.close_active_tab(cx));
-                diagnose_menu_run(action, if closed { "applied" } else { "no_tab" });            }
+                diagnose_menu_run(action, if closed { "applied" } else { "no_tab" });
+            }
             MenuAction::Preferences => {
                 // 接线点：`lithe_gpui_settings::open_settings_dialog_at(.., General)`
                 // （`settings/src/dialog.rs`；快捷键 `ctrl-,` 在 `install_actions` 里登记）。
@@ -2088,7 +2139,11 @@ impl ShellWorkspace {
                 self.schedule_right_view_scan(self.right_view, self.right_visible, cx);
                 diagnose_menu_run(
                     action,
-                    if self.right_visible { "visible" } else { "hidden" },
+                    if self.right_visible {
+                        "visible"
+                    } else {
+                        "hidden"
+                    },
                 );
             }
             MenuAction::ShowDiagnostics | MenuAction::ShowRunAndDebug => {
@@ -2275,6 +2330,8 @@ impl ShellWorkspace {
                     prompt: None,
                 });
                 let editor = self.editor.clone();
+                // 打开文件时中央区让位回编辑器：扩展页开着就收掉（与资源管理器点文件同一条）。
+                let shell_for_open = cx.entity().downgrade();
                 let opened = cx.spawn_in(window, async move |_this, async_cx| {
                     // ⚠️ **两层 `Result`**：外层是 oneshot 通道（送信端被丢），内层是平台侧
                     // 的错误（Linux 打开选择器失败时会给）。两者都不是"用户取消"，
@@ -2310,6 +2367,10 @@ impl ShellWorkspace {
                     // `pane.open` 自己收尾会 `cx.notify()`，而外壳订阅了编辑区实体
                     // （`_editor_subscription`），会跟着重绘。
                     let _ = async_cx.update(move |window, cx| {
+                        // 中央区让位回编辑器：文件真的要开了，扩展页不再占着。
+                        let _ = shell_for_open.update(cx, |this, cx| {
+                            this.close_extensions_page(None, cx);
+                        });
                         for path in &paths {
                             eprintln!("S1_EDITOR_OPEN path={}", path.display());
                             let _ = editor.update(cx, |pane, cx| pane.open(path, window, cx));
@@ -2380,16 +2441,15 @@ impl ShellWorkspace {
                 // 与活动栏点「终端」同一条迁移（`is_activity_active` 的判据同源）：
                 // 已经开着就收起，否则切到终端页签并显示。
                 let terminal_handle = self.terminal.clone();
-                let (visible, ensure_session) = if self.bottom_visible
-                    && self.bottom_kind == BottomPaneKind::Terminal
-                {
-                    self.bottom_visible = false;
-                    (false, false)
-                } else {
-                    self.bottom_kind = BottomPaneKind::Terminal;
-                    self.bottom_visible = true;
-                    (true, true)
-                };
+                let (visible, ensure_session) =
+                    if self.bottom_visible && self.bottom_kind == BottomPaneKind::Terminal {
+                        self.bottom_visible = false;
+                        (false, false)
+                    } else {
+                        self.bottom_kind = BottomPaneKind::Terminal;
+                        self.bottom_visible = true;
+                        (true, true)
+                    };
                 diagnose_run(id, if visible { "visible" } else { "hidden" });
                 if ensure_session {
                     // 幂等：会话已存在就什么都不做；首次创建由它自己把焦点延到帧末交给输入行。
@@ -2429,11 +2489,7 @@ impl ShellWorkspace {
             }
             CommandId::OpenSettings => {
                 diagnose_run(id, "open");
-                lithe_gpui_settings::open_settings_dialog_at(
-                    window,
-                    cx,
-                    SettingsCategory::General,
-                );
+                lithe_gpui_settings::open_settings_dialog_at(window, cx, SettingsCategory::General);
             }
             CommandId::OpenAppearanceSettings => {
                 diagnose_run(id, "open");
@@ -2610,7 +2666,8 @@ impl ShellWorkspace {
     /// 就是在说「我知道了」。不推的话角标永远不消。原来挂在状态栏回显的点击上，
     /// 回显废掉后这是唯一的推点（右活动栏点铃铛 / 菜单与探针的打开路径都调它）。
     fn note_notifications_opened(&mut self, cx: &mut Context<Self>) {
-        self.notifications.update(cx, |store, _| store.mark_all_read());
+        self.notifications
+            .update(cx, |store, _| store.mark_all_read());
         let read_upto = self.notifications.read(cx).read_upto_seq();
         eprintln!("S1_NOTIFICATION action=open readUpToSeq={read_upto}");
     }
@@ -2697,11 +2754,15 @@ impl ShellWorkspace {
     /// 判据照真机 `plugin-activity-rail.tsx:24-26`（Maven）与
     /// `notifications-trigger.tsx:18-21`（通知）：
     /// `isRightSidebarVisible && activeRightSidebarView === "<该项>"`。
-    /// 扩展项的真机判据是「扩展缓冲区是不是当前 buffer」（`plugin-activity-rail.tsx:14-20`），
-    /// 本侧按本轮口径换成同一条右栏判据（见 [`crate::right_tool_window`] 的偏离说明）。
+    /// **扩展拼图项例外**（2026-09-29 起）：它的真机判据是「扩展视图是不是打开着」，
+    /// 这里就是"中央扩展页开着"（[`ShellWorkspace::extensions_page_open`]）——
+    /// 它不是右工具窗视图，不参与 `right_visible` / `right_view` 那套状态。
     ///
-    /// 推论（都是有意行为）：**面板收起时三项都不亮**；点另一项时旧项立刻灭、新项亮。
+    /// 推论（都是有意行为）：**面板收起时通知与 Maven 不亮**；点另一项时旧项立刻灭、新项亮。
     fn is_right_activity_active(&self, index: usize) -> bool {
+        if index == EXTENSIONS_RAIL_IX {
+            return self.extensions_page_open;
+        }
         match RightToolWindowView::from_rail_index(index) {
             Some(view) => self.right_visible && self.right_view == view,
             None => false,
@@ -2760,11 +2821,7 @@ impl ShellWorkspace {
         // 扫的**是哪个根**要能 grep：`maven.rs` / `spring.rs` 自己的诊断只说结论
         // （artifactId / endpoints），而换项目之后"右栏两个面板指向新根"这条验收线
         // 需要的正是这一行（B4）。放在这里而不是那两个模块里：这一层才知道根。
-        eprintln!(
-            "S1_RIGHT_SCAN view={} root={}",
-            view.id(),
-            root.display()
-        );
+        eprintln!("S1_RIGHT_SCAN view={} root={}", view.id(), root.display());
         // 故意只捕获**弱引用**（`cx.spawn` 给的 `this`）：窗口/工作区在任务跑完前被销毁时，
         // `this.update(..)` 直接返回 `Err` 被忽略 —— "面板已关闭"这一支的竞态兜底。
         cx.spawn(async move |this, cx| {
@@ -2789,9 +2846,10 @@ impl ShellWorkspace {
                         }
                     });
                 }
-                // 扩展 / 通知没有数据层（纯空态）：`RightScanState::request` 不会为它们返回
+                // 扩展 / 通知没有数据层（扩展页在 `extensions_page` 自己的构造任务里拉
+                // 目录，通知是推送写入）：`RightScanState::request` 不会为它们返回
                 // `Some`，这里只是把匹配写穷尽。
-                RightToolWindowView::Extensions | RightToolWindowView::Notifications => {}
+                RightToolWindowView::Notifications => {}
             }
         })
         .detach();
@@ -2820,6 +2878,57 @@ impl ShellWorkspace {
         // （判据要求"坐标相同"，编一个坐标出来会污染证据）。
         diagnose_right_panel(view, true, None);
         cx.notify();
+    }
+
+    // -----------------------------------------------------------------------
+    // 中央扩展页（`crate::extensions_page`，2026-09-29 起）
+    // -----------------------------------------------------------------------
+
+    /// 打开中央扩展页（右活动栏拼图项 / `--right-view extensions` 探针共用）。
+    ///
+    /// 实体**懒创建**：首次打开才建（它构造后会自己拉一次目录数据）；创建后常驻，
+    /// 重开不丢搜索与筛选状态（与左栏双实体同一口径）。
+    fn open_extensions_page(
+        &mut self,
+        point: Option<ProbePoint>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.extensions_page_open = true;
+        if self.extensions_page.is_none() {
+            self.extensions_page =
+                Some(cx.new(|cx| crate::extensions_page::ExtensionsPage::new(window, cx)));
+        }
+        diagnose_extensions_page(true, point);
+        cx.notify();
+    }
+
+    /// 关闭中央扩展页（中央列让位回编辑器）。
+    ///
+    /// 「打开文件时收起」走这里：资源管理器点文件（`on_open`）与命令面板
+    /// 「打开文件」两条路径都在开文件前调它 —— 用户既然要编辑器，页面就该让位。
+    pub(crate) fn close_extensions_page(
+        &mut self,
+        point: Option<ProbePoint>,
+        cx: &mut Context<Self>,
+    ) {
+        self.extensions_page_open = false;
+        diagnose_extensions_page(false, point);
+        cx.notify();
+    }
+
+    /// 拼图项的开关语义：再点一次关闭（与右栏 toggle 同一口径）。
+    pub(crate) fn toggle_extensions_page(
+        &mut self,
+        point: Option<ProbePoint>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.extensions_page_open {
+            self.close_extensions_page(point, cx);
+        } else {
+            self.open_extensions_page(point, window, cx);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -2916,9 +3025,7 @@ impl ShellWorkspace {
             if marked {
                 self.save_recent_projects();
             }
-            eprintln!(
-                "S1_OPEN_PROJECT state=missing path={path_text} marked={marked}"
-            );
+            eprintln!("S1_OPEN_PROJECT state=missing path={path_text} marked={marked}");
             // 两句真源既有文案（`fileSystem.recentProjectNotFolder` /
             // `fileSystem.recentProjectUnavailable`，`locale.ts:650-653`）：路径**在**但不是
             // 文件夹 vs 路径**不在**（或读不了）—— 真源也是这么分的（`stores/recent-folders.store.ts:106-120`）。
@@ -3092,9 +3199,8 @@ impl ShellWorkspace {
         // 闭包是 `FnOnce`，用这个槽把新建出来的外壳句柄带出来（重建之后它才是所有者）。
         let mut created: Option<Entity<ShellWorkspace>> = None;
         let new_root = window.replace_root(cx, |window, cx| {
-            let workspace = cx.new(|cx| {
-                ShellWorkspace::new(target.clone(), compact_menu, false, window, cx)
-            });
+            let workspace =
+                cx.new(|cx| ShellWorkspace::new(target.clone(), compact_menu, false, window, cx));
             created = Some(workspace.clone());
             Root::new(workspace, window, cx)
         });
@@ -3125,9 +3231,7 @@ impl ShellWorkspace {
                         "S1_OPEN_PROJECT remember=true openFoldersInNewWindow=false askWhereToOpenProjects=false"
                     );
                 }
-                None => eprintln!(
-                    "S1_OPEN_PROJECT remember=skipped reason=no_settings_store"
-                ),
+                None => eprintln!("S1_OPEN_PROJECT remember=skipped reason=no_settings_store"),
             }
         }
         println!(
@@ -3230,8 +3334,9 @@ impl ShellWorkspace {
                                 .on_click(move |_, window, cx| {
                                     // 「新窗口」现在是提示（规格 §5）：先让状态栏那句出现，
                                     // 再关对话框 —— 反过来的话提示会被浮层的遮罩挡在后面。
-                                    let _ = new_window_shell
-                                        .update(cx, |shell, cx| shell.report_new_window_not_wired(cx));
+                                    let _ = new_window_shell.update(cx, |shell, cx| {
+                                        shell.report_new_window_not_wired(cx)
+                                    });
                                     window.close_dialog(cx);
                                 }),
                         )
@@ -3324,16 +3429,12 @@ impl ShellWorkspace {
     /// 诊断行从 `S1_STATUS_NOTICE` 换成 `S1_NOTIFICATION`：交互类改动在本仓库只能靠维护者
     /// 手动验证（`lithe-gpui/docs/grill.md` D1a），这行可 grep 的证据是唯一的机器判据，所以
     /// **必须**跟着迁移，否则这批改动没法按现有方式验收。
-    pub(crate) fn notify(
-        &mut self,
-        input: lithe_gpui_notify::Input,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn notify(&mut self, input: lithe_gpui_notify::Input, cx: &mut Context<Self>) {
         let code = input.code().to_string();
         let severity = input.severity();
-        let outcome = self
-            .notifications
-            .update(cx, |store, _| store.record(input, crate::notifications::now_ms()));
+        let outcome = self.notifications.update(cx, |store, _| {
+            store.record(input, crate::notifications::now_ms())
+        });
         match outcome {
             lithe_gpui_notify::RecordOutcome::Inserted => eprintln!(
                 "S1_NOTIFICATION action=record code={code} severity={severity:?} state=inserted"
@@ -3570,8 +3671,8 @@ impl Render for ShellWorkspace {
         // 标题栏的分支项（Windows 规格，见 `crate::branch_panel`）：
         // 没有仓库 / 没有分支名时真源整项不渲染（研究 §5），所以这里给 `None` →
         // 调用方传一块空 `div`，拖拽区宽度不受影响。
-        let branch_item = branch_trigger(&self.branch_panel, cx)
-            .unwrap_or_else(|| div().into_any_element());
+        let branch_item =
+            branch_trigger(&self.branch_panel, cx).unwrap_or_else(|| div().into_any_element());
         // `--branch-panel-probe`：**到这一帧才开**（`Root` 已就位，浮层只能在事件回调 /
         // 任务 / 首帧之后的 render 里开）。只消费一次，之后置回 `false` ——
         // 否则用户关掉面板后会在下一帧被重新打开。
@@ -3691,17 +3792,26 @@ impl Render for ShellWorkspace {
         // `right_tool_window` 模块文档）。
         let on_select_right_activity = {
             let handle = handle.clone();
-            move |index: usize, event: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                // 越界下标什么也不做：右栏只有三项，多出来的下标不该静默落到某一项上。
-                let Some(clicked) = RightToolWindowView::from_rail_index(index) else {
-                    return;
-                };
+            move |index: usize, event: &ClickEvent, window: &mut Window, cx: &mut App| {
                 // 本次点击的位置：取 `ClickEvent::mouse_position()`（`activity_bar` 把事件原样传下来），
                 // 它是**这次松手**的位置（`gpui-pre-0.3.6/src/interactive.rs:336-347`）。
                 // ⚠️ 不用 `Window::mouse_position()`：键盘激活按钮（Enter / Space）时那个值是
                 // 上一次指针位置，会给"两行坐标相同 ⇒ 同一次派发"这条判据塞进假证据；
                 // `ClickEvent` 在那种情况下给 `None`，于是这一行干脆不带坐标。
                 let point = event.mouse_position().map(ProbePoint::from);
+                // 扩展拼图项（下标 0）不是右工具窗视图：它开/关**中央扩展页**（2026-09-29
+                // 起对齐真机 `openExtensionsBuffer` 的口径，见 `right_tool_window` 模块文档
+                // 与 [`EXTENSIONS_RAIL_IX`]）。在进入右栏状态机**之前**拦截。
+                if index == EXTENSIONS_RAIL_IX {
+                    handle.update(cx, |this, cx| {
+                        this.toggle_extensions_page(point, window, cx);
+                    });
+                    return;
+                }
+                // 越界下标什么也不做：右栏除拼图项外只有通知与 Maven，多出来的下标不该静默落到某一项上。
+                let Some(clicked) = RightToolWindowView::from_rail_index(index) else {
+                    return;
+                };
                 handle.update(cx, |this, cx| {
                     // 状态迁移是纯函数（[`resolve_right_click`]），与真机
                     // `resolveRightToolWindowUpdate` 逐条对应，单测直接覆盖它。
@@ -3792,6 +3902,18 @@ impl Render for ShellWorkspace {
         } else {
             explorer.into_any_element()
         };
+        // 中央列的内容：扩展页开着时是**扩展页实体**，否则是编辑器岛 —— 与左栏
+        // 「项目树 ↔ 更改」同一套"两实体二选一"模式（2026-09-29 起，Zed 式扩展页）。
+        // `extensions_page_open` 为真而实体缺失只可能出现在构造路径之外（理论上不可达），
+        // 防御式回落到编辑器而不是 panic。
+        let center: AnyElement = if self.extensions_page_open {
+            match &self.extensions_page {
+                Some(page) => page.clone().into_any_element(),
+                None => editor_island(editor, cx).into_any_element(),
+            }
+        } else {
+            editor_island(editor, cx).into_any_element()
+        };
         let right_tool_window = right_tool_window(
             self.right_view,
             self.maven_project.as_ref(),
@@ -3864,7 +3986,6 @@ impl Render for ShellWorkspace {
                     .editor
                     .update(cx, |pane, cx| pane.save_active(window, cx));
             }))
-        
             // ① 标题栏**两行** 30 + 38（第一行：菜单栏；第二行：项目下拉 / 分支项 /
             // 运行控件 / 自绘窗口三键 56×38），行高见 `crate::title_bar` 的两个 `*_ROW_HEIGHT_SPEC`。
             //
@@ -3919,44 +4040,42 @@ impl Render for ShellWorkspace {
                     // - 面板：还要 `left_pane_visible`（点当前高亮的活动栏项只收这一个）。
                     // 可见性判据与 [`ShellWorkspace::is_activity_active`] 同源，见字段文档。
                     .children(left_sidebar_visible.then_some(left_rail))
-                    .children(
-                        (left_sidebar_visible && left_pane_visible).then(|| {
-                            // 面板内容 = 视图 Entity（填满）+ 右边界那条拖拽热区（绝对定位，不占布局）。
-                            //
-                            // 包装是 `relative().size_full()`：内容 Entity（`Explorer` / `ChangesView`）
-                            // 的根是 `size_full` 的 `v_flex`，父级给满尺寸它就铺开 ——
-                            // 这个形状与 2026-09-27 之前（树显示正常的那几版）完全一致，没动；
-                            // 热区是新加的，走绝对定位所以**不挤压**内容。
-                            let pane = div()
-                                .relative()
-                                .size_full()
-                                .child(left_content)
-                                .child(drag_handle(handle.downgrade(), cx));
-                            side_pane(
-                                div().w(rems(left_sidebar_width / 16.)),
-                                pane,
-                                // **把左侧栏与编辑区"直接连接"**（维护者 2026-09-27 口径：
-                                // 「这个中间可以直接连接吗？现在这样还有空细」）。
-                                // 原来这一行与中央列之间是工作区的 4px 间距（`gap_1()`），两侧又各有一条
-                                // 1px 边框，于是在两个同色 #1e1f23 面板之间画出"两条平行线夹一条缝"。
-                                // 用**负外边距吃掉这一侧的两段间距**，而不是把全局 `gap_1()` 改成 0 ——
-                                // 右侧工具窗与右活动栏之间那 4px 是另一处观感，不该被这次改动连坐。
-                                -WORKBENCH_GAP_SPEC,
-                                cx,
-                            )
-                            .into_any_element()
-                        }),
-                    )
+                    .children((left_sidebar_visible && left_pane_visible).then(|| {
+                        // 面板内容 = 视图 Entity（填满）+ 右边界那条拖拽热区（绝对定位，不占布局）。
+                        //
+                        // 包装是 `relative().size_full()`：内容 Entity（`Explorer` / `ChangesView`）
+                        // 的根是 `size_full` 的 `v_flex`，父级给满尺寸它就铺开 ——
+                        // 这个形状与 2026-09-27 之前（树显示正常的那几版）完全一致，没动；
+                        // 热区是新加的，走绝对定位所以**不挤压**内容。
+                        let pane = div()
+                            .relative()
+                            .size_full()
+                            .child(left_content)
+                            .child(drag_handle(handle.downgrade(), cx));
+                        side_pane(
+                            div().w(rems(left_sidebar_width / 16.)),
+                            pane,
+                            // **把左侧栏与编辑区"直接连接"**（维护者 2026-09-27 口径：
+                            // 「这个中间可以直接连接吗？现在这样还有空细」）。
+                            // 原来这一行与中央列之间是工作区的 4px 间距（`gap_1()`），两侧又各有一条
+                            // 1px 边框，于是在两个同色 #1e1f23 面板之间画出"两条平行线夹一条缝"。
+                            // 用**负外边距吃掉这一侧的两段间距**，而不是把全局 `gap_1()` 改成 0 ——
+                            // 右侧工具窗与右活动栏之间那 4px 是另一处观感，不该被这次改动连坐。
+                            -WORKBENCH_GAP_SPEC,
+                            cx,
+                        )
+                        .into_any_element()
+                    }))
                     .child(
-                        // 中央列 = 编辑器岛 + 底部工具窗（默认口径：嵌在中央列内）。
-                        // 2026-09-27：原来这里还给 `editor_island` 传一个「编辑区左边界收起侧栏」
-                        // 按钮（`left_sidebar_visible.then(..)`），按维护者口径删除 ——
-                        // 它与标签栏那对导航箭头挤在同一个角上，两个都去掉了。
+                        // 中央列 = 中央页（扩展页，开着时）/ 编辑器岛 + 底部工具窗（默认口径：
+                        // 嵌在中央列内）。2026-09-27：原来这里还给 `editor_island` 传一个
+                        // 「编辑区左边界收起侧栏」按钮（`left_sidebar_visible.then(..)`），
+                        // 按维护者口径删除 —— 它与标签栏那对导航箭头挤在同一个角上，两个都去掉了。
                         v_flex()
                             .flex_1()
                             .h_full()
                             .min_w_0()
-                            .child(editor_island(editor, cx))
+                            .child(center)
                             .children(bottom),
                     )
                     // 右工具窗 400 —— **可收起**：真机整块 `ResizablePane` 的 `hidden` 由
@@ -4279,8 +4398,11 @@ fn activity_items() -> Vec<ActivityItem> {
         // → `lucide-react` 的 `square-terminal`，**本来就是 Lucide，已经是 1:1**。
         ActivityItem::new(IconName::SquareTerminal, tr("lithe.workbench.terminal")).bottom(true),
         // 真源：`ui-icons/idea/expui/general/warningDialog.svg(+_dark)` —— 真机 `WarningIcon`。
-        ActivityItem::idea(&idea::WARNING_CIRCLE_ICON, tr("lithe.workbench.diagnostics"))
-            .bottom(true),
+        ActivityItem::idea(
+            &idea::WARNING_CIRCLE_ICON,
+            tr("lithe.workbench.diagnostics"),
+        )
+        .bottom(true),
         // ⚠️ 保持 Lucide：真机 `GitGraphIcon` 走 `Nucleo.IconGitGraphOutline18` → Lucide
         // `git-graph`，同样是 1:1。
         ActivityItem::new(IconName::GitGraph, tr("lithe.workbench.gitLog")).bottom(true),
@@ -4297,7 +4419,9 @@ fn activity_items() -> Vec<ActivityItem> {
 /// 诊断 / 提交记录 / 设置），右栏只有三个：扩展（`PuzzlePieceIcon`）、通知
 /// （`NotificationsTrigger` 的铃铛，带未读徽标）、Maven（`MavenIcon`）。
 ///
-/// 顺序必须与 [`RightToolWindowView::from_rail_index`] 的下标一致（0 扩展 / 1 通知 / 2 Maven）。
+/// 顺序（0 扩展拼图 / 1 通知 / 2 Maven）：**拼图项不是右工具窗视图**（2026-09-29 起
+/// 它开/关中央扩展页，[`RightToolWindowView::from_rail_index`] 对 0 返回 `None`），
+/// 通知与 Maven 仍按下标 1 / 2 查表。
 ///
 /// Windows 只在探测到 Maven 项目时才渲染 Maven 按钮（`plugin-activity-rail.tsx:21-23,51` 的
 /// `isMavenAvailable`），我们还没有 Maven 项目探测，先固定渲染三项；Maven 视图的空态
@@ -4312,29 +4436,27 @@ fn activity_items() -> Vec<ActivityItem> {
 /// 所以那一项从**活动栏入口**删掉 —— 上面那张表因此与真源 `plugin-activity-rail.tsx:31-67`
 /// 逐项相同。
 ///
-/// ⚠️ **Spring 视图保留、暂无活动栏入口**：删的只是入口，不是能力。连带核对过三处，结论是
-/// "只删一行的入口，其余都不动"：
+/// ## 2026-09-29：扩展项改为**中央扩展页**入口，右窗只剩通知与 Maven
 ///
-/// 1. [`RightToolWindowView::Spring`] 这个视图、`crate::spring` 的数据层、
-///    [`right_tool_window`] 里的 Spring 渲染分支与空态**全部保留**（`right_tool_window.rs`）；
-/// 2. **下标映射仍然自洽**：`RightToolWindowView::from_rail_index(0/1/2)` 分别映射到
-///    扩展 / 通知 / Maven，与上面这个列表的顺序一一对应；`from_rail_index(3)` 仍映射到 Spring，
-///    而活动栏**不再产生下标 3** —— 于是 Spring 只是"没有活动栏入口"，
-///    仍可由 `--right-view spring` 探针到达（[`ShellWorkspace::show_right_view_probe`]），
-///    它的下标映射单测（`right_tool_window.rs` 的 `rail_index_maps_to_view`）照旧成立、无需改；
-/// 3. 右栏的点击分流（[`ShellWorkspace::is_right_activity_active`]、`on_select_right_activity`）
-///    本来就按"下标 → 视图"查表，越界下标什么都不做，所以少一项不会让某个下标静默落到别的视图上。
+/// 拼图项的**入口与组合不变**（仍是右栏三项之一，2026-09-27 的决策不动），变的是**行为**：
+/// 点击它开/关中央扩展页（[`crate::extensions_page`]，对齐真机 `openExtensionsBuffer` 的
+/// 口径），不再落到右工具窗。连带核对过三处，结论是"行为变更不产生映射死角"：
 ///
-/// **删除一行**这件事没有制造出"映射到不存在的视图"或"视图永远映射不到"的死角。
+/// 1. [`RightToolWindowView`] 枚举删掉了 `Extensions` 变体 —— 右窗视图、空态、诊断行
+///    都不再有"扩展"取值；[`RightToolWindowView::from_rail_index(0)`] 因此返回 `None`；
+/// 2. 右栏点击分流（`on_select_right_activity`）在进入右栏状态机**之前**按下标 0 拦截
+///    （[`EXTENSIONS_RAIL_IX`]），走 [`ShellWorkspace::toggle_extensions_page`]；
+///    高亮判据（[`ShellWorkspace::is_right_activity_active`]）对下标 0 读
+///    `extensions_page_open`，对其余下标仍读右栏状态；
+/// 3. Spring 视图仍由 `--right-view spring` 探针到达（[`RightToolWindowView::from_id`]）；
+///    旧会话里的 `rightView: "extensions"` 恢复时解不出视图，按"未知 id 保留当前值"
+///    的既有规则落到默认视图（不会 panic，也不会静默打开别的面板）。
 /// 铃铛角点的颜色（`None` = 不画）。
 ///
 /// 红点优先于蓝点，与 IDEA 一致（红点标错误、蓝点标常规事件）。三态判据在
 /// [`lithe_gpui_notify::Store::badge`]，这里只把它翻译成主题色 —— 取色要 `&App`，
 /// 而 `right_activity_items()` 是无状态函数。
-fn notification_badge_color(
-    store: &Entity<lithe_gpui_notify::Store>,
-    cx: &App,
-) -> Option<Hsla> {
+fn notification_badge_color(store: &Entity<lithe_gpui_notify::Store>, cx: &App) -> Option<Hsla> {
     match store.read(cx).badge() {
         lithe_gpui_notify::Badge::None => None,
         lithe_gpui_notify::Badge::Info => Some(cx.theme().info),
@@ -4342,11 +4464,9 @@ fn notification_badge_color(
     }
 }
 
-/// 右活动栏三项：扩展 / 通知 / Maven。顺序即下标（`RightToolWindowView::from_rail_index`）。
-fn right_activity_items(
-    store: &Entity<lithe_gpui_notify::Store>,
-    cx: &App,
-) -> Vec<ActivityItem> {
+/// 右活动栏三项：扩展 / 通知 / Maven。顺序即下标 —— 拼图项（0）开中央扩展页，
+/// 通知（1）与 Maven（2）按下标查右工具窗视图（`RightToolWindowView::from_rail_index`）。
+fn right_activity_items(store: &Entity<lithe_gpui_notify::Store>, cx: &App) -> Vec<ActivityItem> {
     // 铃铛的角点：红 = 有未读错误、蓝 = 有未读其它、无未读不画。
     //
     // 现算而不是存字段：角点状态每次通知进来 / 用户打开中心都会变，而这个函数每帧被
@@ -4624,11 +4744,10 @@ fn register_java_toolchain(root: &Path, cx: &App) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionFlags, CommandId, COMMAND_ORDER, OpenDestination, Overrides, ProjectOpenDecision,
+        ActionFlags, COMMAND_ORDER, CommandId, OpenDestination, Overrides, ProjectOpenDecision,
         RightScanState, RightToolWindowView, SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_WIDTH_SPEC,
-        ToolchainPaths, clamped_drag_width, left_activity_index,
-        resolve_overrides, resolve_project_open_destination, right_scan_should_notify,
-        visible_commands,
+        ToolchainPaths, clamped_drag_width, left_activity_index, resolve_overrides,
+        resolve_project_open_destination, right_scan_should_notify, visible_commands,
     };
 
     /// 侧栏拖动改宽的算术：起点 + 位移，并钳在允许范围内。
@@ -4646,7 +4765,10 @@ mod tests {
         // 鼠标左移 100 → 220。
         assert_eq!(clamped_drag_width(300., 320., 200.), 220.);
         // 一路左拖到负无穷也只会停在最小宽。
-        assert_eq!(clamped_drag_width(0., 320., -10_000.), SIDEBAR_MIN_WIDTH_SPEC);
+        assert_eq!(
+            clamped_drag_width(0., 320., -10_000.),
+            SIDEBAR_MIN_WIDTH_SPEC
+        );
         // 一路右拖也只会停在最大宽。
         assert_eq!(
             clamped_drag_width(0., 320., 10_000.),
@@ -4703,7 +4825,10 @@ mod tests {
         }
 
         // 反向：`MENUS` 里**只有**这六条带键位字面量（B2 的清单，改它就是改验证脚本）。
-        let with_key: Vec<&'static str> = listed.iter().filter_map(|action| action.menu_key()).collect();
+        let with_key: Vec<&'static str> = listed
+            .iter()
+            .filter_map(|action| action.menu_key())
+            .collect();
         assert_eq!(
             with_key,
             vec![
@@ -5082,9 +5207,12 @@ mod tests {
         );
         assert_eq!(state.request(RightToolWindowView::Spring, true), None);
 
-        // 没有数据层的两个视图永远不排任务（面板是纯空态）。
-        assert_eq!(state.request(RightToolWindowView::Extensions, true), None);
-        assert_eq!(state.request(RightToolWindowView::Notifications, true), None);
+        // 没有数据层的视图永远不排任务：通知是推送写入；扩展页在自己的构造任务里拉目录
+        // （2026-09-29 起它根本不是右窗视图，连 `RightScanState` 都不经过）。
+        assert_eq!(
+            state.request(RightToolWindowView::Notifications, true),
+            None
+        );
     }
 
     /// 延后任务的收尾策略：**当前显示的仍是这次要扫的视图**才重画；切走 / 收起之后不通知

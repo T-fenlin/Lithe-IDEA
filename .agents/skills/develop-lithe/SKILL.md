@@ -77,6 +77,7 @@ host.
 | `rust/lithe-gpui/crates/workbench/` | Workbench shell: title bar, project tabs, activity bar, status bar, central column |
 | `rust/lithe-gpui/crates/editor/` | Editor presentation, buffer, navigation, diagnostics, completion |
 | `rust/lithe-gpui/crates/explorer/` | Project tree |
+| `rust/lithe-gpui/crates/extensions/` | Extensions catalog state: response snapshot from Core `plugins.listCatalog`, Core bridge, and search/category filtering |
 | `rust/lithe-gpui/crates/git/` | Git feature state and views |
 | `rust/lithe-gpui/crates/terminal/` | Terminal session, ANSI parsing, rendering |
 | `rust/lithe-gpui/crates/java/` | JDTLS session, workspace fingerprint, Maven context |
@@ -106,7 +107,7 @@ host.
   contract in Core; keep language, build, project-model, and debugger facts in the
   selected provider.
 - `rust/lithe-gpui/crates/*` must not import each other's private modules. The dependency
-  direction is `app -> workbench -> {editor, explorer, git, terminal} -> shared`
+  direction is `app -> workbench -> {editor, explorer, extensions, git, terminal} -> shared`
   and `app -> settings -> shared`.
 
 ## Keep shared contracts deterministic
@@ -146,7 +147,7 @@ the existing stack can reasonably avoid.
 ### GPUI host (`rust/lithe-gpui/`)
 
 - The crate dependency direction is fixed: `app -> workbench -> {editor, explorer,
-  git, terminal} -> shared`, and `app -> settings -> shared`. A feature must not
+  extensions, git, terminal} -> shared`, and `app -> settings -> shared`. A feature must not
   depend on `app` or on a sibling feature it does not need.
 - GPUI Kit is pinned to the published `0.7.x` line (upgraded from `0.6.6` on
   2026-09-29). Do not write code against APIs that only exist in `versions/main`

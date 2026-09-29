@@ -25,8 +25,8 @@ mod document;
 // 图标资源路径清单（`lithe-gpui/assets/ui-icons/idea/**` 的 Rust 等价物）。**公开模块**而不是
 // `pub use`：调用点要写成 `shared::icons::idea::GEAR_ICON`，常量表本身就是一个命名空间，
 // 摊平到 crate 根只会让 79 个常量名污染 `shared::*`。理由与再生成命令见 `src/icons/mod.rs`。
-pub mod icons;
 mod i18n;
+pub mod icons;
 pub mod workspace_config;
 
 // 国际化：**`i18n!` 必须出现在持有 `locales/` 的那个 crate 的根**。
@@ -52,3 +52,9 @@ pub use document::{
     preserve_unknown, previous_object, read_document_text, save_document, save_json, tmp_path,
 };
 pub use i18n::{tr, tr_args};
+
+/// 宿主版本（= 本 crate 的 `CARGO_PKG_VERSION`，全 gpui crate 版本一致发布）。
+///
+/// `plugins.listCatalog` 用它做目录兼容性校验：`shared/fixtures/plugins/official-v2.json`
+/// 的 `hostVersion` 必须与这里保持一致，否则 Core 会以 `parse_failed` 拒绝整个目录。
+pub const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");

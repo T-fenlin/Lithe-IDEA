@@ -7,6 +7,10 @@ publish = false
 [dependencies]
 gpui-kit = "0.7"
 lithe-gpui-editor = { path = "../editor" }
+# 扩展目录的状态层（`src/extensions_page.rs` 的数据源）：`load_catalog` 走 Core 的
+# `plugins.listCatalog`。方向是 workbench → extensions → shared，与其它 feature 同一口径；
+# extensions 不反向依赖任何 crate。
+lithe-gpui-extensions = { path = "../extensions" }
 lithe-gpui-explorer = { path = "../explorer" }
 lithe-gpui-git = { path = "../git" }
 # Java 语言服务：设置里的 JDK 覆盖值（`javaHomePath`）只有这里能交给它 ——

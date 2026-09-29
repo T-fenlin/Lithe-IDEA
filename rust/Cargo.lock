@@ -4460,6 +4460,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lithe-gpui-extensions"
+version = "0.0.1"
+dependencies = [
+ "lithe-gpui-shared",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lithe-gpui-git"
 version = "0.0.1"
 dependencies = [
@@ -4524,6 +4533,7 @@ dependencies = [
  "gpui-kit",
  "lithe-gpui-editor",
  "lithe-gpui-explorer",
+ "lithe-gpui-extensions",
  "lithe-gpui-git",
  "lithe-gpui-java",
  "lithe-gpui-notify",

@@ -1,0 +1,141 @@
+# Agent 笔记：扩展目录 schema v2 与中央扩展页
+
+状态：已实现
+
+## 先说结论
+
+扩展（plugin）系统落地了第一块真实地基：Core 的插件清单升级到 **schema v2**（新增
+主题 / 图标主题 / 字体 / 调试适配器的贡献项结构，分类从贡献项**推导**），新增
+`plugins.listCatalog` 命令把内置目录交给宿主；gpui 宿主新增 `lithe-gpui-extensions`
+crate 和**中央扩展页**（搜索 + 分类筛选 + 卡片展开详情）。右活动栏拼图项的行为从
+"打开右栏空态"改为"开/关中央扩展页"，右工具窗只剩通知与 Maven。v1 是**只读**目录：
+没有安装、启停、下载，也没有 wasm 加载。
+
+日常开发的影响：往目录里加一个内置扩展 = 改 `shared/fixtures/plugins/official-v2.json`
+（一条清单）；升级宿主版本时必须同步 fixture 的 `hostVersion`（有测试钉住）；分类
+筛选、术语（用户说"扩展"、代码写 `plugin`）都已在 CONTEXT.md 登记。
+
+## 问题
+
+Core 里一直有一个 `plugins` 模块（清单解析 + 兼容性校验），但它是"零消费者"状态：
+官方目录 fixture 是空的、没有任何 Core 命令引用它、UI 只有一个右侧栏空态视图
+（"未找到扩展。"）。同时它有三个互相纠缠的缺口：
+
+1. 清单 schema v1 只建模了语言支持，表达不了"主题 / 图标主题 / 字体 / 调试适配器"
+   这些用户点名的扩展分类；
+2. fixture 的 `hostVersion` 是 `0.3.0`——那是已删除的 Tauri 产品的版本，与现在的
+   gpui 宿主（`0.0.1`）对不上，校验注定失败；
+3. 右侧栏的扩展入口是一个记录在案的临时偏离：真机（已删除的 Windows/Tauri 产品）
+   里它是 `openExtensionsBuffer`——扩展占**中央区**，不是右栏视图。
+
+## 决策
+
+### 1. 契约升级到 schema v2：贡献项全建模，分类靠推导（对齐 Zed）
+
+`PluginPackageManifest` 新增 `themes` / `iconThemes` / `fonts` / `debugAdapters`
+四个贡献项数组（原有 `languageSupports` 不动）。**清单里没有 categories 字段**：
+分类（`debug` / `fonts` / `icon-themes` / `languages` / `lsp` / `themes`）由 Core
+从非空贡献项推导，随 `plugins.listCatalog` 响应一起给出。这是照着 Zed 的
+`ExtensionManifest::provides()`（`crates/extension/src/extension_manifest.rs`）做的
+——Zed 源码里 `extension.toml` 同样不存 categories，分类是计算出来的。好处是
+"分类"和"贡献项"是同一份数据的两种视图，永远不会互相矛盾。
+
+校验规则同步收紧：贡献项数组严格按主键排序（防重复）、路径必须包内相对
+（无前导 `/`、无反斜杠、无 `..`）、categories 与贡献项的一致性因此**不需要**再校验。
+
+### 2. 官方目录 fixture = 产品数据，由 Core 内嵌并经 `plugins.listCatalog` 交付
+
+`official-v1.json` 更名为 `official-v2.json`，填入 **5 个真实内置条目**覆盖 6 个
+分类：内置主题包（settings 的 7 组主题文件）、JetBrains Mono 字体包（assets 的
+4 个字重文件）、IDEA 图标主题（shared 里唯一真正接线的 `icon-themes/idea`）、
+Java 语言支持（java crate 的 JDTLS 服务，分类 `languages`+`lsp`）、Java 调试支持
+（Core DAP 引擎 + JDT LS 调试 bundle 发现）。条目如实描述宿主现有能力，不编造
+"假扩展"。字体那条要说明：字体文件目前在 assets 里**尚未接线**（`assets.rs` 有意
+排除），条目声明的是"随产品捆绑"这个事实，不是"运行时已可加载"。
+
+`plugins.listCatalog` 的 payload 是 `{"hostVersion": "..."}`；Core 用
+`include_str!` 把 fixture 作为**产品数据**嵌进生产代码，走完整校验后返回规范化
+目录。宿主版本常量 `lithe_gpui_shared::HOST_VERSION`（= crate 版本 `0.0.1`）与
+fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝——这是"目录
+就是随这个宿主构建分发的"这一语义的机械保证。
+
+### 3. 宿主：新 crate `lithe-gpui-extensions` + 中央扩展页
+
+- `lithe-gpui-extensions`（依赖方向 `extensions -> shared`）：目录快照模型 +
+  Core 桥 + 搜索/分类过滤纯函数。不渲染、不读时钟，与 `notify` 同一套约束。
+- 视图在 `workbench/src/extensions_page.rs`：顶部标题 + 可用数、搜索框、七个分类
+  筛选 chips（全部/主题/图标主题/字体/调试/LSP/语言）、卡片列表（名称 + 版本 +
+  分类 + "内置"徽标），点击行内展开详情（描述、作者、贡献项）。
+- **中央页槽位**：`ShellWorkspace` 新增 `extensions_page` 实体（懒创建、常驻）与
+  `extensions_page_open` 开关；中央列在"扩展页 ↔ 编辑器岛"之间二选一渲染——与
+  左栏"项目树 ↔ 更改"同一套既有模式，**没有**动 editor crate 的 buffer 模型。
+- 行为：拼图项再点一次关闭；从资源管理器或命令面板**打开文件时页面让位回编辑器**；
+  会话文档**不**新增字段（遵循"只存今天真的有宿主的字段"）；`--right-view
+  extensions` 探针改为打开中央页（`ShellStartup` 独立开关）。
+- 右工具窗枚举删除 `Extensions` 变体；`from_rail_index` 改为 1→通知、2→Maven，
+  下标 0 由外壳在进入右栏状态机之前拦截。2026-09-27"右栏三项"的组合决策不变，
+  变的只是拼图项的行为。
+
+## 考虑过的备选方案
+
+- **在清单里声明 `categories` 数组**（最初共识里选的就是它）：看完 Zed 源码后否决
+  ——声明式分类需要额外校验"声明的分类与贡献项一致"，而推导式分类让这种漂移
+  在结构上不可能发生。
+- **独立的轻量 registry 契约**（Zed 的 registry entry 与 extension.toml 是两层）：
+  否决。会造出两套目录文档，现有 `validate_plugin_catalog_json` 被旁路，v1 阶段
+  目录与清单合一是更小的面。
+- **用 moduleID 前缀约定推导分类**：否决。隐式契约，前缀改名即静默破坏。
+- **扩展页继续放右侧工具窗**：否决。真机口径是中央区（`openExtensionsBuffer`），
+  右栏空态是记录在案的临时偏离；且维护者明确要 Zed 式的独立界面。
+- **v1 带安装 / 启停 / 下载**：否决。没有任何可安装的包、没有下载基础设施，
+  画按钮就是假控件（`07-settings-ui.md` §7.3-D）。
+- **hostVersion 放宽成区间或升级产品版本号**：否决。前者改契约语义，后者是独立
+  的发布决策，都不该混在这个功能里。
+
+## 后果
+
+**收益**：Core 的清单校验从"零消费者"变成扩展系统的真实地基；目录、命令、宿主
+三层都有确定性测试；分类与贡献项结构上不可能漂移；入口行为与真机口径对齐，
+右栏偏差消除。
+
+**代价**：
+
+- fixture 的 `hostVersion` 与宿主版本**硬耦合**：升级版本号时必须同步
+  `official-v2.json` 和 `HOST_VERSION`（`lithe-gpui-extensions` 的
+  `load_catalog_matches_the_bundled_fixture_host_version` 测试会在不同步时先红）；
+- `lithe-core` 生产代码第一次 `include_str!` 一个 shared fixture（此前只有测试
+  这么做）——这是"fixture 即产品数据"的有意先例，契约文档已写明；
+- 旧会话里的 `rightView: "extensions"` 恢复时解不出视图，按"未知 id 保留当前值"
+  的既有规则落到默认视图（不会 panic，可接受）；
+- 扩展页关闭再打开不丢状态，但它不是编辑器 buffer，不出现在"打开的文件"里，
+  也不进会话。
+
+## 验证
+
+- `cargo test --manifest-path rust/Cargo.toml -p lithe-core`：plugins 用例全部通过
+  （v2 校验、分类覆盖、v1 拒绝、`plugins.listCatalog` 信封级正反用例）。git/lsp
+  引擎在本机有与本次无关的既有失败（干净基线同样失败，已复核）。
+- `cargo test -p lithe-gpui-extensions / -p lithe-gpui-shared / -p
+  lithe-gpui-workbench / -p lithe-gpui-app`：全部通过（快照归一、过滤判据、
+  i18n WIRED、右栏下标映射、扩展页筛选 id）。
+- `node rust/lithe-gpui/tools/extract-locale.mjs` 重新生成两份 yml；新增 4 条
+  gpui-only 键（字体 / 调试 / LSP / 加载失败）带理由。
+- `scripts/verify-shared-contracts.sh` 的插件段已更新到 v2 并加了贡献项断言；
+  ⚠️ 本机（Windows）没有 zsh / ruby，脚本本体跑不了，改用 Node 复刻同一段断言
+  验证通过——CI（Linux）仍以脚本为准。
+- `./scripts/verify-agent-notes.sh`、`./scripts/verify-rust-core-comments.sh`、
+  `cargo fmt --check` 随本批次执行。
+
+## 适用范围
+
+- `rust/lithe-core/src/plugins/`、`rust/lithe-core/src/protocol/command.rs`、
+  `rust/lithe-core/src/runtime/dispatcher.rs`、`rust/lithe-core/src/tests/plugins.rs`
+- `shared/fixtures/plugins/official-v2.json`、`language-support-v2.json`、
+  `shared/contracts/plugin-catalog.md`
+- `rust/lithe-gpui/crates/extensions/`、
+  `rust/lithe-gpui/crates/workbench/src/extensions_page.rs`、
+  `rust/lithe-gpui/crates/workbench/src/workspace.rs`、
+  `rust/lithe-gpui/crates/workbench/src/right_tool_window.rs`、
+  `rust/lithe-gpui/crates/app/src/main.rs`
+- `rust/lithe-gpui/crates/shared/`（`HOST_VERSION`、locales、i18n WIRED）
+- `CONTEXT.md`（术语：扩展 / Plugin / 模块 / 目录 / 贡献项 / 分类）

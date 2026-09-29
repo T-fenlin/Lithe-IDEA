@@ -29,7 +29,7 @@
 //! | --- | --- | --- | --- |
 //! | Maven | `MavenIcon`（`plugin-activity-rail.tsx:51-66`） | `MavenPane`（`features/maven/components/maven-pane.tsx:596-870`） | 头部（图标 + 标题 + 关闭）+ 空态（`maven.notDetected`）。**未做**：工具栏、模块树、生命周期、依赖树、Profiles、构建输出 —— 它们要 Maven 项目探测与 `maven.*` 数据源，属阶段 B |
 //! | 通知 | `NotificationsTrigger`（`plugin-activity-rail.tsx:50`） | `NotificationsToolWindow`（`features/notifications/components/notifications-tool-window.tsx:340-475`） | 头部 + 面板（[`crate::notifications`]）：搜索 / 按严重性过滤 / 展开详情 / 全部清除。**未做**：按日期分组、复制按钮、右键菜单 · **有意不做**：跳转链接（[`lithe_gpui_notify::Target`] 只占位，见那个类型的文档） |
-//! | 扩展 | `PuzzlePieceIcon`（`plugin-activity-rail.tsx:36-49`） | ⚠️ **真机里这个按钮不是右栏视图**：它调 `openExtensionsBuffer`，扩展是一个**编辑器缓冲区**（同文件 `:13,46`） | 按本轮任务要求做成右栏视图（头部 + 空态）。**这是有意偏离真源**，理由与后续收敛路径写在 `PLAN.md` §11.3 |
+//! | 扩展 | `PuzzlePieceIcon`（`plugin-activity-rail.tsx:36-49`） | `openExtensionsBuffer` —— 真机里扩展是一个**编辑器缓冲区**（同文件 `:13,46`） | ⚠️ **不再是右栏视图**（2026-09-29）：曾按旧任务要求做成右栏空态（当时是有意偏离真源，理由写在已删除的 `PLAN.md` §11.3）；现已对齐真源 —— 拼图项打开**中央扩展页**（[`crate::extensions_page`]，由 `ShellWorkspace` 的中央列切换），右窗只剩通知与 Maven，下标映射见 [`RightToolWindowView::from_rail_index`] |
 //!
 //! ## 收起面板的三条出路（真源语义）
 //!
@@ -66,9 +66,8 @@ use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
 // `when` / `children` 收在 `FluentBuilder` 上（与 `explorer_view.rs` 同一取法）。
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Window, div,
+    AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+    Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 
 use lithe_gpui_shared::tr;
@@ -86,11 +85,11 @@ const CLOSE_BUTTON_RADIUS_SPEC: f32 = 6.4;
 /// 右侧工具窗当前显示哪一个视图。
 ///
 /// 取值与真机 `activeRightSidebarView` 的子集对应（`SidebarView` 见
-/// `features/layout/utils/sidebar-pane-utils.ts`；本侧只实现右活动栏三项各自的那一个）。
+/// `features/layout/utils/sidebar-pane-utils.ts`；本侧实现右活动栏的通知与 Maven 两项）。
+/// **扩展不是本枚举的取值**（2026-09-29 起）：右活动栏的拼图项打开中央扩展页
+/// （[`crate::extensions_page`]），见 [`RightToolWindowView::from_rail_index`]。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RightToolWindowView {
-    /// 扩展（真机是编辑器缓冲区，本侧按任务要求做成右栏视图 —— 见模块文档）。
-    Extensions,
     /// 通知（`activeRightSidebarView === "notifications"`）。
     Notifications,
     /// Maven（`activeRightSidebarView === "maven"`）。
@@ -104,10 +103,9 @@ impl RightToolWindowView {
     /// 诊断行里的视图名（`S1_RIGHT_PANEL view=…`，可 grep）。
     ///
     /// 用真机的 `activeRightSidebarView` 取值口径（`"notifications"` / `"maven"`），
-    /// 便于和真源对照；扩展没有对应的真机取值，取 `extensions`。
+    /// 便于和真源对照。
     pub const fn id(self) -> &'static str {
         match self {
-            Self::Extensions => "extensions",
             Self::Notifications => "notifications",
             Self::Maven => "maven",
             Self::Spring => "spring",
@@ -116,16 +114,17 @@ impl RightToolWindowView {
 
     /// 视图名 → 视图；`None` = 没有这个视图（**不回落到任何默认项**）。
     ///
-    /// 与 [`RightToolWindowView::id`] 双向一致：`from_id(v.id()) == Some(v)`，
-    /// 且 `id()` 的四个取值都能反解回来。命令行 `--right-view <id>` 就是靠它把
-    /// "用户写的那串字符"变成状态机里的视图。
+    /// 与 [`RightToolWindowView::id`] 双向一致：`from_id(v.id()) == Some(v)`。
+    /// 命令行 `--right-view <id>` 就是靠它把"用户写的那串字符"变成状态机里的视图。
+    ///
+    /// `"extensions"` 在这里返回 `None`：扩展页不是右工具窗视图，`--right-view
+    /// extensions` 由 `ShellStartup` 的独立开关承接（`crate::workspace`）。
     ///
     /// 为什么不复用 [`RightToolWindowView::from_rail_index`]：下标是**界面顺序**的坐标，
     /// 重排右活动栏就会改变含义；`id()` 是诊断行 `S1_RIGHT_PANEL view=…` 的取值，
     /// 是机器可验证的契约，命令行参数必须绑在契约上而不是绑在顺序上。
     pub fn from_id(id: &str) -> Option<Self> {
         match id {
-            "extensions" => Some(Self::Extensions),
             "notifications" => Some(Self::Notifications),
             "maven" => Some(Self::Maven),
             "spring" => Some(Self::Spring),
@@ -136,18 +135,17 @@ impl RightToolWindowView {
     /// 右活动栏下标 → 视图；`None` = 该下标没有对应视图。
     ///
     /// ⚠️ 下标必须与 [`crate::workspace::right_activity_items`] 的顺序一致
-    /// （0 扩展 / 1 通知 / 2 Maven；照 `plugin-activity-rail.tsx:31-67`）。
+    /// （0 扩展拼图 / 1 通知 / 2 Maven；照 `plugin-activity-rail.tsx:31-67`）。
+    /// **下标 0 返回 `None`**：拼图项不是右工具窗视图，它开/关中央扩展页
+    /// （`ShellWorkspace::toggle_extensions_page` 在派发前拦截下标 0）。
     ///
-    /// `3 → Spring` 这一支**保留但活动栏不再产生下标 3**：2026-09-27 按维护者要求把右活动栏
-    /// 收敛为三项，Spring 视图本身（数据层 / 渲染 / 空态 / `--right-view spring` 探针）都留着，
-    /// 只是暂时没有活动栏入口。右栏点击本就按下标查表、越界什么都不做，所以保留这一支不会
-    /// 造成"映射到不存在的视图"。
+    /// 曾有的 `3 → Spring` 一支已删：2026-09-27 收敛为三项后活动栏本就不产生下标 3，
+    /// 2026-09-29 扩展项改为中央页入口后，连"保留一个永不命中的下标"的对照意义也没有了
+    /// —— Spring 视图仍由 `--right-view spring`（[`RightToolWindowView::from_id`]）到达。
     pub const fn from_rail_index(index: usize) -> Option<Self> {
         match index {
-            0 => Some(Self::Extensions),
             1 => Some(Self::Notifications),
             2 => Some(Self::Maven),
-            3 => Some(Self::Spring),
             _ => None,
         }
     }
@@ -155,11 +153,9 @@ impl RightToolWindowView {
     /// 头部标题。
     ///
     /// 键取自真源：`maven.title`（`maven-pane.tsx:602`）、`notifications.title`
-    /// （`notifications-tool-window.tsx:348`）、`extensions.title`
-    /// （扩展在真机是缓冲区标题，`plugin-activity-rail.tsx:28` 的 `extensionsLabel` 是同一个键）。
+    /// （`notifications-tool-window.tsx:348`）。
     fn title(self) -> SharedString {
         match self {
-            Self::Extensions => tr("lithe.extensions.title"),
             Self::Notifications => tr("lithe.notifications.title"),
             Self::Maven => tr("lithe.maven.title"),
             // Spring 在真源 catalog 里没有面板标题（Windows 没有独立面板），
@@ -171,7 +167,6 @@ impl RightToolWindowView {
     /// 头部图标。与右活动栏逐项同字形（`activity_bar.rs` 的对照表）。
     fn icon(self) -> IconName {
         match self {
-            Self::Extensions => IconName::Puzzle,
             Self::Notifications => IconName::Bell,
             // Lucide 没有 Maven 字形，取「包 / 构建产物」语义的 `package`（与活动栏一致）。
             Self::Maven => IconName::Package,
@@ -183,19 +178,16 @@ impl RightToolWindowView {
 
     /// 空态标题。
     ///
-    /// 三条都是真源**已有的**空态文案，不是新写的：
+    /// 两条都是真源**已有的**空态文案，不是新写的：
     /// - Maven：`maven.notDetected`（"未检测到 Maven 项目"，`maven-pane.tsx:806` 在
     ///   `projectStatus !== "loading"` 且没有项目时显示的那一句）；
-    /// - 通知：`notifications.empty`（`notifications-tool-window.tsx:399` 的 `CommandEmpty`）；
-    /// - 扩展：`extensions.noneFound`（`extensions.noneFound` = "未找到扩展。"，
-    ///   `locale.ts:7620`，扩展面板搜不到任何扩展时的空态）。
+    /// - 通知：`notifications.empty`（`notifications-tool-window.tsx:399` 的 `CommandEmpty`）。
     ///
     /// Maven 的空态是**如实**的：本侧还没有 Maven 项目探测（真机也只探测到 Maven 项目时才
     /// 渲染右栏那一项，`plugin-activity-rail.tsx:21-23,51`），所以"未检测到 Maven 项目"
     /// 就是当前的真实状态，不是占位文案。
     fn empty_title(self) -> SharedString {
         match self {
-            Self::Extensions => tr("lithe.extensions.noneFound"),
             Self::Notifications => tr("lithe.notifications.empty"),
             Self::Maven => tr("lithe.maven.notDetected"),
             // 判据是 Core 的 `spring.index` 没给出任何事实（响应 null 或集合全空），
@@ -325,8 +317,26 @@ fn diagnose_line(
 /// `S1_MENU_RUN` / `S1_TAB_MENU` / `S1_SOURCE_CONTROL` 同样走 stderr。
 pub(crate) fn diagnose(view: RightToolWindowView, visible: bool, point: Option<ProbePoint>) {
     let seq = RIGHT_PANEL_SEQ.fetch_add(1, Ordering::Relaxed);
-    let t_ms = RIGHT_PANEL_EPOCH.get_or_init(Instant::now).elapsed().as_millis();
+    let t_ms = RIGHT_PANEL_EPOCH
+        .get_or_init(Instant::now)
+        .elapsed()
+        .as_millis();
     eprintln!("{}", diagnose_line(view, visible, point, seq, t_ms));
+}
+
+/// 打一行中央扩展页诊断（`S1_EXTENSIONS_PAGE`，与 [`diagnose`] 同族、可 grep）。
+///
+/// 坐标纪律与 [`diagnose`] 相同：只有"这一次真的来自指针输入"才带 `x=` / `y=`
+/// （构造期 / 探针路径没有坐标，编一个出来会污染"同一次派发"判据）。
+pub(crate) fn diagnose_extensions_page(open: bool, point: Option<ProbePoint>) {
+    if let Some(point) = point {
+        eprintln!(
+            "S1_EXTENSIONS_PAGE open={open} x={:.1} y={:.1}",
+            point.x, point.y
+        );
+    } else {
+        eprintln!("S1_EXTENSIONS_PAGE open={open}");
+    }
 }
 
 /// 画右侧工具窗。
@@ -491,25 +501,23 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
     // 3) profile：id 直接列出来，默认激活的加主色 + 中粗（两种信号，不只靠颜色）。
     if !project.profiles.is_empty() {
         let active = &project.active_profiles;
-        column = column.child(
-            v_flex()
-                .w_full()
-                .mt_2()
-                .gap_1()
-                .children(project.profiles.iter().map(|id| {
-                    let is_active = active.contains(id);
-                    div()
-                        .w_full()
-                        .truncate()
-                        .text_xs()
-                        .when(is_active, |this| {
-                            this.text_color(cx.theme().primary)
-                                .font_weight(gpui_kit::FontWeight::MEDIUM)
-                        })
-                        .when(!is_active, |this| this.text_color(cx.theme().muted_foreground))
-                        .child(id.clone())
-                })),
-        );
+        column = column.child(v_flex().w_full().mt_2().gap_1().children(
+            project.profiles.iter().map(|id| {
+                let is_active = active.contains(id);
+                div()
+                    .w_full()
+                    .truncate()
+                    .text_xs()
+                    .when(is_active, |this| {
+                        this.text_color(cx.theme().primary)
+                            .font_weight(gpui_kit::FontWeight::MEDIUM)
+                    })
+                    .when(!is_active, |this| {
+                        this.text_color(cx.theme().muted_foreground)
+                    })
+                    .child(id.clone())
+            }),
+        ));
     }
 
     column.into_any_element()
@@ -568,11 +576,12 @@ fn maven_module_row(module: &crate::maven::MavenModuleView, cx: &App) -> AnyElem
     }
     if !module.modules.is_empty() {
         column = column.child(
-            v_flex()
-                .w_full()
-                .pl_3()
-                .gap_1()
-                .children(module.modules.iter().map(|child| maven_module_row(child, cx))),
+            v_flex().w_full().pl_3().gap_1().children(
+                module
+                    .modules
+                    .iter()
+                    .map(|child| maven_module_row(child, cx)),
+            ),
         );
     }
     column.into_any_element()
@@ -663,10 +672,10 @@ fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
                 // 真机界面没有这圈虚线；改边框色为透明关掉（与编辑器空态同一招，2026-09-27 统一）。
                 .border_color(cx.theme().transparent)
                 .header(
-                EmptyHeader::new()
-                    .media(EmptyMedia::new().child(Icon::new(view.icon()).size_8()))
-                    .title(EmptyTitle::new().text_sm().child(view.empty_title())),
-            ),
+                    EmptyHeader::new()
+                        .media(EmptyMedia::new().child(Icon::new(view.icon()).size_8()))
+                        .title(EmptyTitle::new().text_sm().child(view.empty_title())),
+                ),
         )
         .into_any_element()
 }
@@ -675,15 +684,12 @@ fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
 mod tests {
     use super::{ProbePoint, RightToolWindowView, diagnose_line, resolve_click};
 
-
-    /// 右活动栏下标 → 视图必须与 `workspace::right_activity_items()` 的顺序一一对应
-    /// （0 扩展 / 1 通知 / 2 Maven），越界返回 `None` 而不是回落到某一项。
+    /// 右活动栏下标 → 视图必须与 `workspace::right_activity_items()` 的顺序对应：
+    /// 下标 0 是**扩展拼图项**（开中央扩展页，不是右工具窗视图，所以是 `None`），
+    /// 1 通知 / 2 Maven；越界返回 `None` 而不是回落到某一项。
     #[test]
     fn rail_index_maps_to_view() {
-        assert_eq!(
-            RightToolWindowView::from_rail_index(0),
-            Some(RightToolWindowView::Extensions)
-        );
+        assert_eq!(RightToolWindowView::from_rail_index(0), None);
         assert_eq!(
             RightToolWindowView::from_rail_index(1),
             Some(RightToolWindowView::Notifications)
@@ -692,21 +698,12 @@ mod tests {
             RightToolWindowView::from_rail_index(2),
             Some(RightToolWindowView::Maven)
         );
-        // 下标 3 是**本侧新增**的 Spring 视图（真机右栏没有它，Spring 能力留在语言服务里）。
-        // ⚠️ 2026-09-27 起右活动栏**收敛为三项**（扩展 / 通知 / Maven），活动栏不再产生下标 3，
-        // 但这一支保留：Spring 视图（数据层 / 渲染 / 空态 / `--right-view spring` 探针）都还在，
-        // 只是暂时没有活动栏入口。右栏点击按下标查表、越界什么都不做，保留这一支不会出问题。
-        assert_eq!(
-            RightToolWindowView::from_rail_index(3),
-            Some(RightToolWindowView::Spring)
-        );
-        assert_eq!(RightToolWindowView::from_rail_index(4), None);
+        assert_eq!(RightToolWindowView::from_rail_index(3), None);
     }
 
     /// 视图 id 是诊断行 `S1_RIGHT_PANEL view=…` 的取值，改它就是改机器可验证的契约。
     #[test]
     fn view_ids_are_probe_tokens() {
-        assert_eq!(RightToolWindowView::Extensions.id(), "extensions");
         assert_eq!(RightToolWindowView::Notifications.id(), "notifications");
         assert_eq!(RightToolWindowView::Maven.id(), "maven");
         assert_eq!(RightToolWindowView::Spring.id(), "spring");
@@ -717,18 +714,12 @@ mod tests {
     #[test]
     fn id_round_trips_through_from_id() {
         for view in [
-            RightToolWindowView::Extensions,
             RightToolWindowView::Notifications,
             RightToolWindowView::Maven,
             RightToolWindowView::Spring,
         ] {
             assert_eq!(RightToolWindowView::from_id(view.id()), Some(view));
         }
-        // 反向：`id()` 的四个取值各自解回自己（`from_id` 不能把两个 id 映射到同一个视图）。
-        assert_eq!(
-            RightToolWindowView::from_id("extensions"),
-            Some(RightToolWindowView::Extensions)
-        );
         assert_eq!(
             RightToolWindowView::from_id("notifications"),
             Some(RightToolWindowView::Notifications)
@@ -745,9 +736,13 @@ mod tests {
 
     /// 未知 id 返回 `None`（**不回落**到某一项）：命令行拼错时必须能被发现，
     /// 否则 `--right-view mavne` 会静默打开一个用户没点名的面板。
+    ///
+    /// `"extensions"` 也是 `None`：扩展页不是右工具窗视图，`--right-view extensions`
+    /// 由 `ShellStartup` 的独立开关承接（`crate::workspace`），不走这个枚举。
     #[test]
     fn unknown_id_has_no_view() {
         assert_eq!(RightToolWindowView::from_id(""), None);
+        assert_eq!(RightToolWindowView::from_id("extensions"), None);
         assert_eq!(RightToolWindowView::from_id("Maven"), None);
         assert_eq!(RightToolWindowView::from_id("outline"), None);
         assert_eq!(RightToolWindowView::from_id("mavne"), None);
@@ -789,11 +784,11 @@ mod tests {
         assert!(visible);
 
         let (view, visible) = resolve_click(
-            RightToolWindowView::Extensions,
             RightToolWindowView::Maven,
+            RightToolWindowView::Notifications,
             false,
         );
-        assert_eq!(view, RightToolWindowView::Extensions);
+        assert_eq!(view, RightToolWindowView::Maven);
         assert!(visible);
     }
 

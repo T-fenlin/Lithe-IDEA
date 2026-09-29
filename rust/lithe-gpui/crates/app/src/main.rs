@@ -169,7 +169,9 @@ struct Options {
     /// 完全相同的那段代码（先 `BranchPanel::open` 重读数据，再 `window.open_dialog`），
     /// 被绕开的只有"操作系统把这次点击送进窗口"那一段。
     branch_panel_probe: bool,
-    /// `--right-view <id>`：启动后把**右侧工具窗**切到指定视图并展开（**验证/诊断用**）。
+    /// `--right-view <id>`：启动后把**右侧工具窗**切到指定视图并展开；`extensions`
+    /// 是例外 —— 它打开**中央扩展页**（2026-09-29 起，扩展不是右工具窗视图）。
+    /// （**验证/诊断用**。）
     ///
     /// 见 [`lithe_gpui_workbench::ShellWorkspace::show_right_view_probe`]：走的是与"点右活动栏
     /// 那一项"完全相同的状态迁移（含懒扫与 `S1_RIGHT_PANEL` 诊断），被绕开的只有"操作系统把
@@ -259,8 +261,9 @@ fn parse_options() -> Result<Options, String> {
          \x20 --branch-panel-probe  启动后打开标题栏的分支弹窗（验证/诊断用；走的是与\n\
          \x20                     「点标题栏分支项」相同的那段代码）\n\
          \x20 --right-view <id>     启动后把右侧工具窗切到 <id> 并展开（验证/诊断用；走的是与\n\
-         \x20                     「点右活动栏那一项」相同的状态迁移）；<id> 取 extensions /\n\
-         \x20                     notifications / maven / spring，未知 id 报一行错且不改启动状态\n\
+         \x20                     「点右活动栏那一项」相同的状态迁移）；<id> 取 notifications /\n\
+         \x20                     maven / spring，或 extensions（打开中央扩展页），\n\
+         \x20                     未知 id 报一行错且不改启动状态\n\
          \x20 --open-project-probe <目录>\n\
          \x20                     启动后走一遍「打开文件夹」的链路并打开 <目录>（验证/诊断用；\n\
          \x20                     走的是与\"在选择器里选完一个文件夹\"相同的 request_open_project，\n\
@@ -333,7 +336,9 @@ fn parse_options() -> Result<Options, String> {
                 // `std::env::Args` 不实现 `Clone`（本轮实测 `args.clone()` 报 E0599）。
                 let next = args.next();
                 let action = match next {
-                    Some(ref candidate) if candidate.starts_with("lithe.") => Some(candidate.clone()),
+                    Some(ref candidate) if candidate.starts_with("lithe.") => {
+                        Some(candidate.clone())
+                    }
                     Some(candidate) => {
                         // 不像动作名 → 它一定是别的参数：迭代器是单向的、**放不回去**，
                         // 所以直接报错退出，避免把一个拼错的参数静默吃掉。
@@ -347,15 +352,15 @@ fn parse_options() -> Result<Options, String> {
             }
             "--menu-probe-delay" => {
                 let raw = args.next().ok_or("--menu-probe-delay 缺少毫秒数")?;
-                menu_probe_delay_ms = raw
-                    .parse::<u64>()
-                    .map_err(|error| format!("--menu-probe-delay 的 {raw:?} 不是毫秒数：{error}"))?;
+                menu_probe_delay_ms = raw.parse::<u64>().map_err(|error| {
+                    format!("--menu-probe-delay 的 {raw:?} 不是毫秒数：{error}")
+                })?;
             }
             "--menu-probe-open-ms" => {
                 let raw = args.next().ok_or("--menu-probe-open-ms 缺少毫秒数")?;
-                menu_probe_open_ms = raw
-                    .parse::<u64>()
-                    .map_err(|error| format!("--menu-probe-open-ms 的 {raw:?} 不是毫秒数：{error}"))?;
+                menu_probe_open_ms = raw.parse::<u64>().map_err(|error| {
+                    format!("--menu-probe-open-ms 的 {raw:?} 不是毫秒数：{error}")
+                })?;
             }
             "--theme-probe" => {
                 theme_probe = Some(args.next().ok_or("--theme-probe 缺少下标或主题名")?);
@@ -377,10 +382,10 @@ fn parse_options() -> Result<Options, String> {
             }
             "--session-active" => {
                 let raw = args.next().ok_or("--session-active 缺少下标")?;
-                session_active = Some(
-                    raw.parse::<usize>()
-                        .map_err(|error| format!("--session-active 的 {raw:?} 不是下标：{error}"))?,
-                );
+                session_active =
+                    Some(raw.parse::<usize>().map_err(|error| {
+                        format!("--session-active 的 {raw:?} 不是下标：{error}")
+                    })?);
             }
             "--session-hide-sidebar" => session_hide_sidebar = true,
             "--session-assert" => session_assert = true,
@@ -392,8 +397,9 @@ fn parse_options() -> Result<Options, String> {
             // `--open-project-probe` 只**收下**路径，真正走的那一段放到窗口建好之后
             // （`on_next_frame`）：对话框只能在 `Root` 就位之后开。
             "--open-project-probe" => {
-                open_project_probe =
-                    Some(PathBuf::from(args.next().ok_or("--open-project-probe 缺少目录")?));
+                open_project_probe = Some(PathBuf::from(
+                    args.next().ok_or("--open-project-probe 缺少目录")?,
+                ));
             }
             "--open-project-destination" => {
                 let raw = args.next().ok_or("--open-project-destination 缺少取值")?;
@@ -861,30 +867,33 @@ fn main() {
     // `--right-view <id>`：**先解析**，未知 id 在这里就报一行错并**不改动启动状态**
     // （解析成 `None` 之后，窗口那段 `if let Some(view)` 整段不执行，右工具窗保持
     // "隐藏 + `Maven`"的默认值，与不带这个参数时完全一样）。
+    // 例外：`extensions` 是**中央扩展页**（2026-09-29 起，不是右工具窗视图 ——
+    // `RightToolWindowView::from_id` 已不认它），走 `ShellStartup` 的独立开关。
     // 报错走 stderr：stdout 重定向到文件时是块缓冲的，进程还在跑时可能一行都看不到
     // （理由与本文件开头的 `S1_ASSETS` 一致）。
-    let right_view_probe = right_view.and_then(|id| match RightToolWindowView::from_id(&id) {
-        Some(view) => Some(view),
-        None => {
-            eprintln!(
-                "--right-view：未知视图 {id}（可用取值：extensions / notifications / maven / spring）"
-            );
-            None
+    let extensions_page_probe = right_view.as_deref() == Some("extensions");
+    let right_view_probe = right_view
+        .as_deref()
+        .filter(|id| *id != "extensions")
+        .and_then(|id| match RightToolWindowView::from_id(id) {
+            Some(view) => Some(view),
+            None => {
+                eprintln!(
+                    "--right-view：未知视图 {id}（可用取值：extensions（扩展页）/ notifications / maven / spring）"
+                );
+                None
+            }
+        });
+    // `--left-view <id>`：同一套（未知取值报一行错，不改动启动状态）。
+    let left_view_probe = left_view.as_deref().and_then(|selector| {
+        match lithe_gpui_workbench::left_activity_index(selector) {
+            Some(index) => Some(index),
+            None => {
+                eprintln!("--left-view：未知视图 {selector}（可用取值：files / changes / search）");
+                None
+            }
         }
     });
-    // `--left-view <id>`：同一套（未知取值报一行错，不改动启动状态）。
-    let left_view_probe =
-        left_view
-            .as_deref()
-            .and_then(|selector| match lithe_gpui_workbench::left_activity_index(selector) {
-                Some(index) => Some(index),
-                None => {
-                    eprintln!(
-                        "--left-view：未知视图 {selector}（可用取值：files / changes / search）"
-                    );
-                    None
-                }
-            });
 
     // 设置文件必须在 `set_locale` 之前读：界面语言的常规来源就是它
     // （`--locale` 只是本次启动的显式覆盖）。这一步是纯文件读取，不需要 `App`。
@@ -999,6 +1008,7 @@ fn main() {
                 cx,
                 compact_menu_bar,
                 right_view_probe,
+                extensions_page_probe,
                 left_view_probe,
             );
             // `Ctrl+O` = 「文件 → 打开文件夹」（真源 `file.open`，Q18）。
@@ -1025,16 +1035,9 @@ fn main() {
                 };
 
                 cx.open_window(window_options, move |window, cx| {
-                    let workspace =
-                        cx.new(|cx| {
-                            ShellWorkspace::new(
-                                root,
-                                compact_menu_bar,
-                                branch_panel_probe,
-                                window,
-                                cx,
-                            )
-                        });
+                    let workspace = cx.new(|cx| {
+                        ShellWorkspace::new(root, compact_menu_bar, branch_panel_probe, window, cx)
+                    });
                     // 系统外观监听要在有窗口之后注册（`Context::observe_window_appearance`
                     // 收 `&mut Window`）；设置里的「跟随系统」才需要它。
                     if let Some(store) = lithe_gpui_settings::try_store(cx) {
@@ -1114,9 +1117,7 @@ fn main() {
                         let explicit = open_project_destination.clone();
                         window.on_next_frame(move |window, cx| {
                             let explicit = explicit.as_deref().map(|raw| match raw {
-                                "new-window" => {
-                                    lithe_gpui_workbench::OpenDestination::NewWindow
-                                }
+                                "new-window" => lithe_gpui_workbench::OpenDestination::NewWindow,
                                 _ => lithe_gpui_workbench::OpenDestination::ThisWindow,
                             });
                             if open_project_delay_ms == 0 {
@@ -1144,15 +1145,11 @@ fn main() {
                             let executor = cx.background_executor().clone();
                             cx.spawn(async move |cx| {
                                 executor
-                                    .timer(std::time::Duration::from_millis(
-                                        open_project_delay_ms,
-                                    ))
+                                    .timer(std::time::Duration::from_millis(open_project_delay_ms))
                                     .await;
                                 cx.update(move |cx| {
                                     let Some(handle) = cx.active_window() else {
-                                        eprintln!(
-                                            "S1_OPEN_PROJECT_PROBE state=no_window"
-                                        );
+                                        eprintln!("S1_OPEN_PROJECT_PROBE state=no_window");
                                         return;
                                     };
                                     let _ = handle.update(cx, |_, window, cx| {

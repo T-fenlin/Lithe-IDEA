@@ -1,12 +1,23 @@
-//! Plugin manifest parsing, compatibility checks, and deterministic catalog merging.
+//! Plugin manifest parsing, compatibility checks, deterministic catalog
+//! validation, and the built-in catalog command surface (`plugins.listCatalog`).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Manifest schema understood by this Core build.
-pub const PLUGIN_MANIFEST_SCHEMA_VERSION: u32 = 1;
+use crate::protocol::{CoreError, ErrorCode};
+
+/// Catalog manifest schema understood by this Core build.
+pub const PLUGIN_MANIFEST_SCHEMA_VERSION: u32 = 2;
 /// Host/plugin API level required by compatible packages.
 pub const PLUGIN_API_VERSION: u32 = 1;
+
+/// Official built-in catalog shipped with this Core build. It is product data,
+/// not test data: every entry describes a capability that is compiled into the
+/// host and every field is validated by [`validate_catalog`] before listing.
+const OFFICIAL_CATALOG_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../shared/fixtures/plugins/official-v2.json"
+));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Strict three-component semantic version used for compatibility comparisons.
@@ -69,6 +80,13 @@ pub enum PluginValidationError {
         /// Plugin containing inconsistent loading or publisher metadata.
         plugin: String,
     },
+    /// A contribution list is malformed, unordered, or points outside its bundle.
+    InvalidContribution {
+        /// Plugin declaring the malformed contribution.
+        plugin: String,
+        /// Category of the offending contribution, such as `themes` or `fonts`.
+        category: &'static str,
+    },
     /// More than one package declares the same plugin identifier.
     DuplicatePlugin(String),
     /// More than one package claims ownership of the same module identifier.
@@ -106,9 +124,9 @@ pub struct PluginCatalogFixture {
     pub plugins: Vec<PluginPackageManifest>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Compatibility and ownership metadata for one plugin package.
+/// Compatibility, ownership, and contribution metadata for one plugin package.
 pub struct PluginPackageManifest {
     /// Stable package identifier used as the catalog key.
     pub id: String,
@@ -127,12 +145,100 @@ pub struct PluginPackageManifest {
     /// Stable module identifiers owned by this package, in sorted order.
     #[serde(rename = "moduleIDs")]
     pub module_ids: Vec<String>,
+    /// Short listing summary shown by the host extensions page.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Theme files contributed by this package, sorted by name then path.
+    #[serde(default)]
+    pub themes: Vec<ThemeContribution>,
+    /// Icon themes contributed by this package, sorted by name then path.
+    #[serde(default)]
+    pub icon_themes: Vec<IconThemeContribution>,
+    /// Font families contributed by this package, sorted by family then path.
+    #[serde(default)]
+    pub fonts: Vec<FontContribution>,
+    /// Debug adapters contributed by this package, sorted by id then name.
+    #[serde(default)]
+    pub debug_adapters: Vec<DebugAdapterContribution>,
     /// Language capabilities contributed by the package.
     #[serde(default)]
     pub language_supports: Vec<LanguageSupportManifest>,
 }
 
-#[derive(Debug, Deserialize)]
+impl PluginPackageManifest {
+    /// Stable category identifiers derived from non-empty contributions, in
+    /// canonical order. Categories are never declared in the manifest; they are
+    /// always computed so a listing cannot drift from the contributions that
+    /// back it.
+    pub fn categories(&self) -> Vec<&'static str> {
+        let mut categories = Vec::new();
+        if !self.debug_adapters.is_empty() {
+            categories.push("debug");
+        }
+        if !self.fonts.is_empty() {
+            categories.push("fonts");
+        }
+        if !self.icon_themes.is_empty() {
+            categories.push("icon-themes");
+        }
+        if !self.language_supports.is_empty() {
+            categories.push("languages");
+        }
+        if self
+            .language_supports
+            .iter()
+            .any(|support| support.language_server_module_id.is_some())
+        {
+            categories.push("lsp");
+        }
+        if !self.themes.is_empty() {
+            categories.push("themes");
+        }
+        categories
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// One theme file contributed by a package.
+pub struct ThemeContribution {
+    /// Human-readable theme family name shown by the host.
+    pub name: String,
+    /// Bundle-relative path of the theme definition file.
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// One icon theme contributed by a package.
+pub struct IconThemeContribution {
+    /// Human-readable icon theme name shown by the host.
+    pub name: String,
+    /// Bundle-relative path of the icon theme manifest.
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// One font file contributed by a package.
+pub struct FontContribution {
+    /// Font family name shared by the contributed weights.
+    pub family: String,
+    /// Bundle-relative path of the font file.
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// One debug adapter contributed by a package.
+pub struct DebugAdapterContribution {
+    /// Stable adapter identifier used as the launch key.
+    pub id: String,
+    /// Human-readable adapter name shown by the host.
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// File recognition and module ownership for one contributed language.
 pub struct LanguageSupportManifest {
@@ -163,7 +269,7 @@ pub struct LanguageSupportManifest {
     pub debug_module_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// Half-open host-version interval supported by a plugin.
 pub struct HostCompatibility {
@@ -173,7 +279,7 @@ pub struct HostCompatibility {
     pub maximum_exclusive: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// Plugin publisher identity and the signature relationship required by the host.
 pub struct PluginVendor {
@@ -185,7 +291,7 @@ pub struct PluginVendor {
     pub signature_requirement: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// Mutually exclusive loading metadata for built-in and native-bundle plugins.
 pub struct PluginEntrypoint {
@@ -201,17 +307,104 @@ pub struct PluginEntrypoint {
     pub bundle_path: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Payload of `plugins.listCatalog`.
+pub struct ListCatalogRequest {
+    /// Version of the host requesting the catalog; the bundled catalog is
+    /// only returned when it was assembled for exactly this version.
+    pub host_version: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// One validated catalog listing: the package manifest plus its derived categories.
+pub struct PluginCatalogEntry {
+    /// Validated package manifest, serialized in camelCase.
+    #[serde(flatten)]
+    pub manifest: PluginPackageManifest,
+    /// Categories derived from non-empty contributions, in canonical order.
+    pub categories: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Validated `plugins.listCatalog` response describing the built-in catalog.
+pub struct PluginCatalogData {
+    /// Catalog manifest schema version echoed from the bundled catalog.
+    pub schema_version: u32,
+    /// Host version the bundled catalog was assembled for.
+    pub host_version: String,
+    /// Plugin API level shared by every package in the catalog.
+    #[serde(rename = "pluginAPIVersion")]
+    pub plugin_api_version: u32,
+    /// Validated package listings in canonical identifier order.
+    pub plugins: Vec<PluginCatalogEntry>,
+}
+
+/// Returns the validated built-in plugin catalog for the requesting host.
+///
+/// The catalog is bundled with Core, so no host input beyond its version is
+/// trusted: a version mismatch or any validation failure fails the whole
+/// command instead of serving a partially verified listing.
+pub fn list_catalog(request: ListCatalogRequest) -> Result<PluginCatalogData, CoreError> {
+    let host_version = PluginVersion::parse(&request.host_version).ok_or_else(|| {
+        CoreError::new(
+            ErrorCode::InvalidRequest,
+            "Invalid host version in plugin catalog request",
+        )
+        .with_details(request.host_version)
+    })?;
+    let catalog: PluginCatalogFixture =
+        serde_json::from_str(OFFICIAL_CATALOG_JSON).map_err(|_| {
+            CoreError::new(
+                ErrorCode::ParseFailed,
+                "Bundled plugin catalog is not valid JSON",
+            )
+        })?;
+    let (_, catalog) = validate_catalog(catalog, host_version).map_err(|error| {
+        CoreError::new(
+            ErrorCode::ParseFailed,
+            "Bundled plugin catalog failed validation",
+        )
+        .with_details(format!("{error:?}"))
+    })?;
+    let plugins = catalog
+        .plugins
+        .iter()
+        .map(|plugin| PluginCatalogEntry {
+            manifest: plugin.clone(),
+            categories: plugin.categories(),
+        })
+        .collect();
+    Ok(PluginCatalogData {
+        schema_version: catalog.schema_version,
+        host_version: catalog.host_version,
+        plugin_api_version: catalog.plugin_api_version,
+        plugins,
+    })
+}
+
 /// Validates a complete catalog and returns the owning plugin for every module.
 ///
 /// Validation also enforces deterministic ordering, host/API compatibility,
-/// entrypoint consistency, and that language capabilities reference only
-/// modules owned by their declaring package.
+/// entrypoint consistency, contribution shape, and that language capabilities
+/// reference only modules owned by their declaring package.
 pub fn validate_plugin_catalog_json(
     input: &str,
     host_version: PluginVersion,
 ) -> Result<BTreeMap<String, String>, PluginValidationError> {
     let catalog: PluginCatalogFixture =
         serde_json::from_str(input).map_err(|_| PluginValidationError::InvalidJson)?;
+    validate_catalog(catalog, host_version).map(|(owners, _)| owners)
+}
+
+/// Validates one parsed catalog and returns both the module ownership map and
+/// the catalog itself so callers can keep serving the validated data.
+fn validate_catalog(
+    catalog: PluginCatalogFixture,
+    host_version: PluginVersion,
+) -> Result<(BTreeMap<String, String>, PluginCatalogFixture), PluginValidationError> {
     if catalog.schema_version != PLUGIN_MANIFEST_SCHEMA_VERSION {
         return Err(PluginValidationError::UnsupportedSchema {
             plugin: "catalog".into(),
@@ -241,13 +434,13 @@ pub fn validate_plugin_catalog_json(
 
     let mut seen_plugins = BTreeSet::new();
     let mut module_owners = BTreeMap::new();
-    for plugin in catalog.plugins {
+    for plugin in &catalog.plugins {
         if !seen_plugins.insert(plugin.id.clone()) {
-            return Err(PluginValidationError::DuplicatePlugin(plugin.id));
+            return Err(PluginValidationError::DuplicatePlugin(plugin.id.clone()));
         }
         if plugin.api_version != PLUGIN_API_VERSION {
             return Err(PluginValidationError::UnsupportedApi {
-                plugin: plugin.id,
+                plugin: plugin.id.clone(),
                 version: plugin.api_version,
             });
         }
@@ -260,7 +453,9 @@ pub fn validate_plugin_catalog_json(
             .map(|value| parse_version(&plugin.id, value))
             .transpose()?;
         if host_version < minimum || maximum.is_some_and(|value| host_version >= value) {
-            return Err(PluginValidationError::IncompatibleHost { plugin: plugin.id });
+            return Err(PluginValidationError::IncompatibleHost {
+                plugin: plugin.id.clone(),
+            });
         }
         if plugin.display_name.is_empty()
             || plugin.vendor.id.is_empty()
@@ -268,25 +463,112 @@ pub fn validate_plugin_catalog_json(
             || plugin.vendor.signature_requirement != "sameTeamAsHost"
             || !valid_entrypoint(&plugin.entrypoint)
         {
-            return Err(PluginValidationError::InvalidEntrypoint { plugin: plugin.id });
+            return Err(PluginValidationError::InvalidEntrypoint {
+                plugin: plugin.id.clone(),
+            });
         }
         if plugin.module_ids.is_empty() {
-            return Err(PluginValidationError::EmptyPlugin(plugin.id));
+            return Err(PluginValidationError::EmptyPlugin(plugin.id.clone()));
         }
         if !plugin.module_ids.windows(2).all(|pair| pair[0] < pair[1]) {
-            return Err(PluginValidationError::UnsortedModules { plugin: plugin.id });
+            return Err(PluginValidationError::UnsortedModules {
+                plugin: plugin.id.clone(),
+            });
         }
-        validate_language_supports(&plugin)?;
-        for module_id in plugin.module_ids {
+        validate_contributions(plugin)?;
+        validate_language_supports(plugin)?;
+        for module_id in &plugin.module_ids {
             if module_owners
                 .insert(module_id.clone(), plugin.id.clone())
                 .is_some()
             {
-                return Err(PluginValidationError::DuplicateModule(module_id));
+                return Err(PluginValidationError::DuplicateModule(module_id.clone()));
             }
         }
     }
-    Ok(module_owners)
+    Ok((module_owners, catalog))
+}
+
+/// Enforces shape, ordering, and bundle-relative paths for every non-language
+/// contribution list. Sorting is strict so equal keys cannot hide duplicates.
+fn validate_contributions(plugin: &PluginPackageManifest) -> Result<(), PluginValidationError> {
+    for theme in &plugin.themes {
+        if theme.name.is_empty() || invalid_bundle_path(&theme.path) {
+            return Err(PluginValidationError::InvalidContribution {
+                plugin: plugin.id.clone(),
+                category: "themes",
+            });
+        }
+    }
+    if !strictly_sorted_by(&plugin.themes, |theme| (&theme.name, &theme.path)) {
+        return Err(PluginValidationError::InvalidContribution {
+            plugin: plugin.id.clone(),
+            category: "themes",
+        });
+    }
+    for icon_theme in &plugin.icon_themes {
+        if icon_theme.name.is_empty() || invalid_bundle_path(&icon_theme.path) {
+            return Err(PluginValidationError::InvalidContribution {
+                plugin: plugin.id.clone(),
+                category: "icon-themes",
+            });
+        }
+    }
+    if !strictly_sorted_by(&plugin.icon_themes, |icon_theme| {
+        (&icon_theme.name, &icon_theme.path)
+    }) {
+        return Err(PluginValidationError::InvalidContribution {
+            plugin: plugin.id.clone(),
+            category: "icon-themes",
+        });
+    }
+    for font in &plugin.fonts {
+        if font.family.is_empty() || invalid_bundle_path(&font.path) {
+            return Err(PluginValidationError::InvalidContribution {
+                plugin: plugin.id.clone(),
+                category: "fonts",
+            });
+        }
+    }
+    if !strictly_sorted_by(&plugin.fonts, |font| (&font.family, &font.path)) {
+        return Err(PluginValidationError::InvalidContribution {
+            plugin: plugin.id.clone(),
+            category: "fonts",
+        });
+    }
+    for adapter in &plugin.debug_adapters {
+        if adapter.id.is_empty() || adapter.name.is_empty() {
+            return Err(PluginValidationError::InvalidContribution {
+                plugin: plugin.id.clone(),
+                category: "debug",
+            });
+        }
+    }
+    if !strictly_sorted_by(&plugin.debug_adapters, |adapter| {
+        (&adapter.id, &adapter.name)
+    }) {
+        return Err(PluginValidationError::InvalidContribution {
+            plugin: plugin.id.clone(),
+            category: "debug",
+        });
+    }
+    Ok(())
+}
+
+fn strictly_sorted_by<'a, T, K: Ord>(values: &'a [T], key: impl Fn(&'a T) -> K) -> bool {
+    values.windows(2).all(|pair| key(&pair[0]) < key(&pair[1]))
+}
+
+/// Bundle-relative paths must stay inside the package: no absolute, empty, or
+/// parent components. Backslashes are rejected so a Windows-shaped path cannot
+/// bypass checks on another host.
+fn invalid_bundle_path(value: &str) -> bool {
+    value.is_empty()
+        || value.starts_with('/')
+        || value.contains('\\')
+        || value
+            .split('/')
+            .any(|component| component.is_empty() || component == "..")
 }
 
 fn validate_language_supports(plugin: &PluginPackageManifest) -> Result<(), PluginValidationError> {

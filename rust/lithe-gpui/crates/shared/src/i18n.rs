@@ -262,6 +262,24 @@ mod tests {
             ("lithe.workbench.settings", "设置"),
             ("lithe.workbench.maven", "Maven"),
             ("lithe.extensions.title", "扩展"),
+            // 中央扩展页（2026-09-29，`workbench/src/extensions_page.rs`）：搜索占位 /
+            // 计数 / 分类筛选 / 徽标 / 详情大多是**真源既有**键（旧 Windows 前端的
+            // extensions.* 全家，locale 里一直有但无人引用）；「字体 / 调试 / LSP」
+            // 三个分类与「加载失败」是 gpui 侧新增（理由在 GPUI_ONLY_KEYS）。
+            ("lithe.extensions.searchPlaceholder", "搜索扩展"),
+            ("lithe.extensions.availableCount", "{count} 个可用"),
+            ("lithe.extensions.all", "全部"),
+            ("lithe.extensions.themes", "主题"),
+            ("lithe.extensions.iconThemes", "图标主题"),
+            ("lithe.extensions.category.fonts", "字体"),
+            ("lithe.extensions.category.debug", "调试"),
+            ("lithe.extensions.category.lsp", "LSP"),
+            ("lithe.extensions.languages", "语言"),
+            ("lithe.extensions.builtIn", "内置"),
+            ("lithe.extensions.byPublisher", "作者：{publisher}"),
+            ("lithe.extensions.contributions", "贡献项"),
+            ("lithe.extensions.loadingExtension", "正在加载扩展"),
+            ("lithe.extensions.loadFailed", "加载扩展列表失败。"),
             ("lithe.notifications.title", "通知"),
             // 通知中心的搜索 / 筛选 / 详情 / 清除。这批键 2026-09-27 之前就在
             // catalog 里但无人引用（右工具窗只有空态，见 right_tool_window.rs 的模块
@@ -292,14 +310,26 @@ mod tests {
                 "lithe.notifications.core.permissionDenied",
                 "没有权限：{detail}",
             ),
-            ("lithe.notifications.core.notSupported", "当前版本不支持这个操作：{detail}"),
-            ("lithe.notifications.core.runtimeMissing", "缺少运行时：{detail}"),
+            (
+                "lithe.notifications.core.notSupported",
+                "当前版本不支持这个操作：{detail}",
+            ),
+            (
+                "lithe.notifications.core.runtimeMissing",
+                "缺少运行时：{detail}",
+            ),
             (
                 "lithe.notifications.core.processStartFailed",
                 "无法启动进程：{detail}",
             ),
-            ("lithe.notifications.core.processFailed", "进程执行失败：{detail}"),
-            ("lithe.notifications.core.parseFailed", "无法解析结果：{detail}"),
+            (
+                "lithe.notifications.core.processFailed",
+                "进程执行失败：{detail}",
+            ),
+            (
+                "lithe.notifications.core.parseFailed",
+                "无法解析结果：{detail}",
+            ),
             ("lithe.notifications.core.timedOut", "操作超时：{detail}"),
             ("lithe.notifications.core.unknown", "操作失败：{detail}"),
             ("lithe.git.log.filesCount", "{count} 个文件"),
@@ -374,7 +404,10 @@ mod tests {
             ),
             ("lithe.settings.gpui.restoreDefaultsOpen", "恢复默认设置…"),
             ("lithe.settings.gpui.restoreDefaultsTitle", "恢复默认设置？"),
-            ("lithe.settings.gpui.restoreDefaultsBody", "所有设置都会回到默认值。"),
+            (
+                "lithe.settings.gpui.restoreDefaultsBody",
+                "所有设置都会回到默认值。",
+            ),
             // 阶段 14：真源的「编辑器 → 字体大小」这一行没有描述，本侧补一句说明作用范围
             // （本侧有三个互不影响的字号键：界面 / 编辑器 / 终端）——理由写在 `GPUI_ONLY_KEYS` 里。
             (
@@ -429,10 +462,7 @@ mod tests {
                 "lithe.settings.gpui.overrideFromGlobal",
                 "覆盖值来自全局设置",
             ),
-            (
-                "lithe.settings.gpui.sourceFromEnv",
-                "来自 {name} 环境变量",
-            ),
+            ("lithe.settings.gpui.sourceFromEnv", "来自 {name} 环境变量"),
             (
                 "lithe.settings.gpui.mavenExecutableHint",
                 "可填 Maven 主目录或 mvn 启动器；留空则依次查找 MAVEN_HOME、M2_HOME 与 PATH 上的 Maven。",
@@ -563,7 +593,10 @@ mod tests {
             // 阶段 9 的编辑器侧复用的**真源既有**键：保存失败的两句反馈，以及
             // 关闭未保存文件时确认对话框的标题与两个按钮
             // （`windows/tauri/src/i18n/locale.ts:4637-4638`、`:7872`、`:4617`、`:436`）。
-            ("lithe.editor.saveFailed", "无法保存“{name}”。请检查文件是否可写，然后重试。"),
+            (
+                "lithe.editor.saveFailed",
+                "无法保存“{name}”。请检查文件是否可写，然后重试。",
+            ),
             (
                 "lithe.editor.autoSaveFailed",
                 "无法自动保存“{name}”。更改仍保留在编辑器中。",
@@ -605,13 +638,25 @@ mod tests {
             ("lithe.commandPalette.categories.View", "视图"),
             // 打开设置（`commandPalette.actions.open-settings.label` = 「首选项：打开设置」，
             // `settings-actions.tsx:155-157`；`locale.ts:8036` / en `:3719`）。
-            ("lithe.commandPalette.actions.open-settings.label", "首选项：打开设置"),
+            (
+                "lithe.commandPalette.actions.open-settings.label",
+                "首选项：打开设置",
+            ),
             // 终端的显示 / 隐藏两条（`view-actions.tsx:125-145`；`locale.ts:8104-8105` / en `:3801-3802`）。
-            ("lithe.commandPalette.actions.toggle-terminal.enableLabel", "视图：显示终端"),
-            ("lithe.commandPalette.actions.toggle-terminal.disableLabel", "视图：隐藏终端"),
+            (
+                "lithe.commandPalette.actions.toggle-terminal.enableLabel",
+                "视图：显示终端",
+            ),
+            (
+                "lithe.commandPalette.actions.toggle-terminal.disableLabel",
+                "视图：隐藏终端",
+            ),
             // 配色主题：真源是命令面板的二级视图（`commandPalette.actions.color-theme.label`，
             // `settings-actions.tsx` 的 `pushPaletteView("color-theme")` 路径；`locale.ts:8041` / en `:3724`）。
-            ("lithe.commandPalette.actions.color-theme.label", "首选项：颜色主题"),
+            (
+                "lithe.commandPalette.actions.color-theme.label",
+                "首选项：颜色主题",
+            ),
             // 设置里的三个文案：主题分组名 / 状态栏开关的标签与描述
             // （`macos-settings-panels.tsx`；`locale.ts:6644-6645`，en `:2276-2277`）。
             ("lithe.settings.appearance.theme", "主题"),
@@ -623,18 +668,36 @@ mod tests {
             // 下面 9 条真源里没有，由 `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 提供
             // （每条都写了理由）：切换主题的两条 + Maven 工具窗的三条 + 状态栏的两条父项标签
             // （状态栏的**描述**复用真源 `settings.appearance.showStatusBarDescription`）。
-            ("lithe.appearance.gpui.switchThemeLight", "首选项：切换到浅色主题"),
-            ("lithe.appearance.gpui.switchThemeLightDescription", "使用 Lithe Light 配色"),
-            ("lithe.appearance.gpui.switchThemeDark", "首选项：切换到深色主题"),
-            ("lithe.appearance.gpui.switchThemeDarkDescription", "使用 Lithe Dark 配色"),
+            (
+                "lithe.appearance.gpui.switchThemeLight",
+                "首选项：切换到浅色主题",
+            ),
+            (
+                "lithe.appearance.gpui.switchThemeLightDescription",
+                "使用 Lithe Light 配色",
+            ),
+            (
+                "lithe.appearance.gpui.switchThemeDark",
+                "首选项：切换到深色主题",
+            ),
+            (
+                "lithe.appearance.gpui.switchThemeDarkDescription",
+                "使用 Lithe Dark 配色",
+            ),
             ("lithe.maven.gpui.toggleToolWindowShow", "视图：显示 Maven"),
             ("lithe.maven.gpui.toggleToolWindowHide", "视图：隐藏 Maven"),
             (
                 "lithe.maven.gpui.toggleToolWindowDescription",
                 "开关右侧的 Maven 工具窗",
             ),
-            ("lithe.appearance.gpui.toggleStatusBarShow", "视图：显示状态栏"),
-            ("lithe.appearance.gpui.toggleStatusBarHide", "视图：隐藏状态栏"),
+            (
+                "lithe.appearance.gpui.toggleStatusBarShow",
+                "视图：显示状态栏",
+            ),
+            (
+                "lithe.appearance.gpui.toggleStatusBarHide",
+                "视图：隐藏状态栏",
+            ),
             // B4「新窗口」那一颗按钮的能力提示（状态栏左侧临时消息）。**唯一一条 B4 新增键**：
             // 真源的那颗按钮恒可执行（它真的开第二个窗口），所以 catalog 里没有对应的
             // 「尚未接入」句；理由写在 `tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
@@ -813,7 +876,10 @@ mod tests {
             ("lithe.git.refreshStatus", "刷新状态"),
             // 加载 / 失败两态（`git-view.tsx:663-685`）。
             ("lithe.git.loadingGitStatus", "正在加载 Git 状态"),
-            ("lithe.git.statusLoadFailed", "无法加载 Git 数据，请重试刷新仓库。"),
+            (
+                "lithe.git.statusLoadFailed",
+                "无法加载 Git 数据，请重试刷新仓库。",
+            ),
             // 分类头（`git-status-panel.tsx:858-864`）与树容器 aria（`:1190`）。
             ("lithe.git.tracked", "已跟踪"),
             ("lithe.git.untracked", "未跟踪"),
@@ -911,10 +977,7 @@ mod tests {
                 "lithe.git.conflictsResolved",
                 "所有冲突已解决。继续完成，或中止以撤销。",
             ),
-            (
-                "lithe.git.resolveConflictsFirst",
-                "请先解决冲突：{paths}",
-            ),
+            ("lithe.git.resolveConflictsFirst", "请先解决冲突：{paths}"),
             ("lithe.git.continueMerge", "继续合并"),
             ("lithe.git.continueRebase", "继续变基"),
             ("lithe.git.continueCherryPick", "继续拣选"),
@@ -1009,5 +1072,7 @@ mod tests {
         "lithe.settings.tabs.git",
         // 产品名，中英同形（右侧工具窗「Spring」视图的标题）。
         "lithe.spring.title",
+        // 行业缩写，中英同形（扩展页分类筛选条的「LSP」档；与 settings.tabs.lsp 同一取舍）。
+        "lithe.extensions.category.lsp",
     ];
 }

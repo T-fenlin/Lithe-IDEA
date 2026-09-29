@@ -371,6 +371,34 @@ const GPUI_ONLY_KEYS = [
       "同一个视图的空态。判据是 Core 的 spring.index 没给出任何事实（响应为 null 或集合全空），所以文案如实说「组件与端点」而不是「项目」——免得把「打开了一个没有 Spring 的 Java 项目」说成「没检测到项目」。句式沿用 maven.notDetected（「未检测到 X」），保持同一面板族的读感。",
   },
   {
+    key: "extensions.category.fonts",
+    zh: "字体",
+    en: "Fonts",
+    reason:
+      "扩展页（2026-09-29 起，crate::extensions_page）分类筛选条的「字体」档。真源 catalog 里只有 databases / ai / integrations / skills / agents 等分类，没有字体 —— 字体分类是 schema v2 目录新增贡献项（fonts）带来的。",
+  },
+  {
+    key: "extensions.category.debug",
+    zh: "调试",
+    en: "Debug",
+    reason:
+      "扩展页分类筛选条的「调试」档。真源 catalog 没有这一分类；调试分类对应 schema v2 的 debugAdapters 贡献项（Core 的 DAP 引擎 + Java 调试 bundle 发现）。",
+  },
+  {
+    key: "extensions.category.lsp",
+    zh: "LSP",
+    en: "LSP",
+    reason:
+      "扩展页分类筛选条的「LSP」档。真源把语言服务器并进 languages 分类；Lithe 的分类由 Core 从 languageSupports 的 languageServerModuleID 推导出独立的 lsp 档（维护者点名要语言与 LSP 分开可筛），中英同形用行业缩写。",
+  },
+  {
+    key: "extensions.loadFailed",
+    zh: "加载扩展列表失败。",
+    en: "Failed to load extensions.",
+    reason:
+      "扩展页的失败态空态标题。目录是打包数据，失败只会是宿主版本不匹配或打包损坏（Core plugins.listCatalog 的 parse_failed / invalid_request），如实说加载失败并把错误原文放在标题下方；句式沿用 extensions.noneFound（句号结尾的空态句）。",
+  },
+  {
     key: "editor.gpui.discardChanges",
     zh: "放弃修改",
     en: "Discard changes",

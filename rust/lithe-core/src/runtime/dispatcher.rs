@@ -22,6 +22,7 @@ use crate::languages::{
     JavaClassNameRequest, JavaCodeVisionRequest, JavaServerPortRequest,
     JavaSourceDefinitionRequest, JavaStructureRequest, MybatisIndexRequest, SpringIndexRequest,
 };
+use crate::plugins::ListCatalogRequest;
 use crate::project::{
     self, DocumentLifecycleRequest, FileReadRequest, FileWriteRequest, ReplacementPreviewRequest,
     SearchIndexRequest, SearchIndexUpdateRequest, SearchRequest, WorkspaceSnapshotRequest,
@@ -484,6 +485,21 @@ fn execute(request: &str) -> CoreResponse {
             ),
             Err(error) => CoreResponse::failure(id, error),
         },
+        CoreCommand::PluginListCatalog => {
+            match serde_json::from_value::<ListCatalogRequest>(parsed.payload)
+                .map_err(|error| {
+                    CoreError::new(ErrorCode::InvalidRequest, "Invalid plugin catalog request")
+                        .with_details(error.to_string())
+                })
+                .and_then(crate::plugins::list_catalog)
+            {
+                Ok(data) => CoreResponse::success(
+                    id,
+                    serde_json::to_value(data).expect("plugin catalog should encode"),
+                ),
+                Err(error) => CoreResponse::failure(id, error),
+            }
+        }
         CoreCommand::MavenLaunchPlan => {
             match serde_json::from_value::<crate::project::MavenLaunchPlanRequest>(parsed.payload)
                 .map_err(|error| {

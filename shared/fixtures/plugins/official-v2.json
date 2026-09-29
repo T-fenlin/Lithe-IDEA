@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 2,
+  "hostVersion": "0.0.1",
+  "pluginAPIVersion": 1,
+  "plugins": [
+    {
+      "id": "lithe.builtinThemes",
+      "displayName": "Lithe 内置主题包",
+      "description": "随宿主内置的七组界面与编辑器主题，覆盖浅色与深色共十四个主题。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "builtIn",
+        "targetName": "lithe-gpui-settings"
+      },
+      "moduleIDs": [
+        "lithe.theme.builtin"
+      ],
+      "themes": [
+        {
+          "name": "Gruvbox",
+          "path": "themes/gruvbox.json"
+        },
+        {
+          "name": "IntelliJ",
+          "path": "themes/jetbrains.json"
+        },
+        {
+          "name": "Lithe Dark",
+          "path": "themes/lithe-dark.json"
+        },
+        {
+          "name": "Lithe Light",
+          "path": "themes/lithe-light.json"
+        },
+        {
+          "name": "Nord",
+          "path": "themes/nord.json"
+        },
+        {
+          "name": "One",
+          "path": "themes/one.json"
+        },
+        {
+          "name": "VS Code",
+          "path": "themes/vscode.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.bundledFonts",
+      "displayName": "JetBrains Mono 字体包",
+      "description": "随宿主捆绑的 JetBrains Mono 等宽字体家族，覆盖常规、粗体、斜体与粗斜体。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "builtIn",
+        "targetName": "lithe-gpui-app"
+      },
+      "moduleIDs": [
+        "lithe.font.jetbrainsMono"
+      ],
+      "fonts": [
+        {
+          "family": "JetBrains Mono",
+          "path": "fonts/JetBrainsMono-Bold.ttf"
+        },
+        {
+          "family": "JetBrains Mono",
+          "path": "fonts/JetBrainsMono-BoldItalic.ttf"
+        },
+        {
+          "family": "JetBrains Mono",
+          "path": "fonts/JetBrainsMono-Italic.ttf"
+        },
+        {
+          "family": "JetBrains Mono",
+          "path": "fonts/JetBrainsMono-Regular.ttf"
+        }
+      ]
+    },
+    {
+      "id": "lithe.ideaIconTheme",
+      "displayName": "IDEA 图标主题",
+      "description": "随宿主内置的 IDEA 风格文件图标主题。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "builtIn",
+        "targetName": "lithe-gpui-shared"
+      },
+      "moduleIDs": [
+        "lithe.iconTheme.idea"
+      ],
+      "iconThemes": [
+        {
+          "name": "IDEA",
+          "path": "icon-themes/idea/extension.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.javaDebugAdapter",
+      "displayName": "Java 调试支持",
+      "description": "随宿主内置的 Java 调试适配器，基于 JDT LS 调试插件的 bundle 发现。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "builtIn",
+        "targetName": "lithe-gpui-java"
+      },
+      "moduleIDs": [
+        "lithe.java.debugAdapter"
+      ],
+      "debugAdapters": [
+        {
+          "id": "java",
+          "name": "Java Debug Server"
+        }
+      ]
+    },
+    {
+      "id": "lithe.javaLanguageSupport",
+      "displayName": "Java 语言支持",
+      "description": "随宿主内置的 Java 语言服务：补全、诊断、定义跳转、代码操作与文档同步。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "builtIn",
+        "targetName": "lithe-gpui-java"
+      },
+      "moduleIDs": [
+        "lithe.java.languageServer",
+        "lithe.java.languageSupport"
+      ],
+      "languageSupports": [
+        {
+          "id": "java",
+          "displayName": "Java",
+          "fileExtensions": [
+            "java"
+          ],
+          "fileNames": [],
+          "projectFileNames": [
+            "build.gradle",
+            "build.gradle.kts",
+            "pom.xml",
+            "settings.gradle"
+          ],
+          "languageServerModuleID": "lithe.java.languageServer"
+        }
+      ]
+    }
+  ]
+}

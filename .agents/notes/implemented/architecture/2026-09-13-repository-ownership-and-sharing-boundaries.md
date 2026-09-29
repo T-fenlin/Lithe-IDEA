@@ -25,6 +25,7 @@ Lithe 现在只有一个宿主（`rust/lithe-gpui/` 里的 GPUI Kit 应用）和
 | `rust/lithe-gpui/crates/workbench/` | 工作台外壳：标题栏、项目标签、活动栏、状态栏、中央列 |
 | `rust/lithe-gpui/crates/editor/` | 编辑器表现、缓冲区、跳转、诊断、补全 |
 | `rust/lithe-gpui/crates/explorer/` | 项目树 |
+| `rust/lithe-gpui/crates/extensions/` | 扩展目录状态层：`plugins.listCatalog` 响应快照、Core 桥与过滤（2026-09-29 起） |
 | `rust/lithe-gpui/crates/git/` | Git 功能状态与视图 |
 | `rust/lithe-gpui/crates/terminal/` | 终端会话、ANSI 解析与渲染 |
 | `rust/lithe-gpui/crates/java/` | JDTLS 会话、workspace 指纹、Maven 上下文 |
@@ -38,9 +39,12 @@ Lithe 现在只有一个宿主（`rust/lithe-gpui/` 里的 GPUI Kit 应用）和
 gpui 各 crate 的依赖方向固定，只向下：
 
 ```text
-app ──> workbench ──> {editor, explorer, git, terminal} ──> shared
+app ──> workbench ──> {editor, explorer, extensions, git, terminal} ──> shared
 app ──> settings ──> shared
 ```
+
+（`notify` 压在 `shared` 之上、其余功能 crate 之下，见它的模块文档；
+`extensions` 与 `editor` / `explorer` 同一层。）
 
 `workbench` 不得依赖 `settings`；`shared` 不依赖任何功能 crate；任何 crate 都
 不得依赖 `app`。越界依赖属于架构问题，不是风格问题。
