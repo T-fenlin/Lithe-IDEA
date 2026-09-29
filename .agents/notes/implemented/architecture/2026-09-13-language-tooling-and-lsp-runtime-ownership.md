@@ -224,7 +224,10 @@ ready；initialize 出错不能变为 ready；两次 sync 分别产生 open
 version 1 和 change version 2；崩溃会以 `serverExited` 使所有 pending
 操作失败；请求 deadline 会移除 pending 请求；超时后的迟到响应被
 忽略；旧 session 的响应不能影响重启后的新 session；旧 session/旧
-文档版本的诊断被忽略；关闭文档会清除 Rust 侧文档和诊断状态；
+文档版本的诊断被忽略；关闭文档会清除 Rust 侧的文档状态与版本记录
+（工作区**之内**的文件保留它最后一次诊断快照，判据见
+`.agents/notes/implemented/bug-fix/2026-09-20-workspace-diagnostics-visibility.md`：
+"在不在工作区内"而不是"有没有打开"）；
 shutdown 在收到响应后发送 exit，超时则强制终止；`Content-Length`
 畸形产生 transport failure；不完整的 stdout frame 会被保留并在 Rust
 侧补全；连续 frame 按顺序解析；动态 capability 注册/反注册会更新

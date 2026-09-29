@@ -192,8 +192,11 @@ mod editor_view;
 // 注册 gpui-kit 没内置、我们自己带的语法（目前只有 XML，见模块文档）。
 mod languages;
 mod navigation;
+// 底部工具窗「诊断」页：跨文件的问题列表（数据来自 Java 语言服务，见模块文档）。
+mod problems;
 
 pub use editor_view::{CursorPosition, EditorPane, SessionRestore, TabMenuHostActions};
+pub use problems::ProblemsPane;
 
 use gpui_kit::{App, KeyBinding};
 

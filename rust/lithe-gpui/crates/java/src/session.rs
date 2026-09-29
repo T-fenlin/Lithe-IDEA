@@ -424,12 +424,17 @@ impl Session {
 
     /// 某个 `uri` 的**最近一次**诊断快照（`type: "diagnostics"` 事件，由泵归档）。
     ///
-    /// 只读接口，不发起任何 Core 调用：诊断是服务端推送，没同步过文档就还没有诊断
-    /// （Core 会丢掉"文档不在 `open_documents` 里"的 `publishDiagnostics`，
-    /// `rust/lithe-core/src/lsp/interface/client.rs:350-352`）。
-    /// 本轮**不接编辑器 UI**，接口先立在这里，下一批做波浪线时直接用。
+    /// 只读接口，不发起任何 Core 调用：诊断是服务端推送的，没发布过就还没有诊断。
     pub(crate) fn latest_diagnostics(&self, uri: &str) -> Vec<JavaDiagnostic> {
         self.events.latest_diagnostics(uri)
+    }
+
+    /// **全部**有诊断的文件（原始 `uri` → 快照），按 uri 排序。
+    ///
+    /// 问题列表的数据源：它要的是"工作区里现在哪些文件在报错"，而不是某个文件的快照。
+    /// 范围由 Core 决定（已打开的文档 + 工作区根之内的文件），这里不做筛选。
+    pub(crate) fn diagnostics_by_uri(&self) -> Vec<(String, Vec<JavaDiagnostic>)> {
+        self.events.diagnostics_by_uri()
     }
 }
 

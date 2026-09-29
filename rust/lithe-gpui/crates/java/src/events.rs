@@ -255,6 +255,27 @@ impl SessionEvents {
             .unwrap_or_default()
     }
 
+    /// **全部**有诊断的文件（不含已被服务端清空成空快照的那些），按 `uri` 排序。
+    ///
+    /// 这是问题列表（`editor` 的 `problems` 面板）的数据来源：它要的不是"某个文件的
+    /// 快照"，而是"整个工作区里现在有哪些文件在报错"。键是服务端发布的原始 `uri`
+    /// （`file:///…` 或 `jdt://…`），转换与筛选留给调用方。
+    ///
+    /// 空快照在这里被丢掉，取值的含义与 [`Self::latest_diagnostics`] 一致但也借此
+    /// 把"服务端已经撤回了"的文件从列表里去掉 —— 列表上留一行 0 条问题的文件没有意义。
+    pub(crate) fn diagnostics_by_uri(&self) -> Vec<(String, Vec<JavaDiagnostic>)> {
+        let mut snapshot: Vec<(String, Vec<JavaDiagnostic>)> = lock(&self.diagnostics)
+            .iter()
+            .filter(|(_, diagnostics)| !diagnostics.is_empty())
+            .map(|(uri, diagnostics)| (uri.clone(), diagnostics.clone()))
+            .collect();
+        // `HashMap` 的迭代顺序不稳定，而契约要求列表按确定顺序给出去
+        // （`shared/contracts/rust-api` 的"Keep lists and serialized results
+        // deterministically ordered"）。按 uri 排是最省事也最可复现的一档。
+        snapshot.sort_by(|left, right| left.0.cmp(&right.0));
+        snapshot
+    }
+
     // -----------------------------------------------------------------------
     // 泵侧
     // -----------------------------------------------------------------------

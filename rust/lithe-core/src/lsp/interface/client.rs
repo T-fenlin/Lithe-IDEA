@@ -1,4 +1,31 @@
 //! Pure LSP client-state transitions and JSON-RPC message construction.
+//!
+//! ## Diagnostics retention: open documents plus the rest of the workspace
+//!
+//! `publishDiagnostics` is the server's complete snapshot for one URI, and this
+//! module is the only place that decides whether a snapshot is kept. Two cases
+//! are kept:
+//!
+//! 1. the URI belongs to a document the session has open. This is the
+//!    editor-driven case: the snapshot is version-gated against the open
+//!    document version, because a snapshot computed for an older revision would
+//!    underline the wrong range;
+//! 2. the URI names a file inside [`LspClientState::workspace_root_uri`] even
+//!    though nothing has it open. This is the problems-list case: a Java module
+//!    nobody opened can still fail to compile, and dropping those snapshots left
+//!    the product telling users to "fix the reported errors" while showing none
+//!    of them (`.agents/notes/implemented/bug-fix/2026-09-20-workspace-diagnostics-visibility.md`).
+//!
+//! Everything else is dropped: JDK sources, dependency JARs, and decompiled
+//! classes all publish diagnostics that are noise in a problems list. The
+//! retention for unopened files is capped by
+//! [`WORKSPACE_DIAGNOSTIC_FILE_LIMIT`], because the server may publish for a
+//! whole repository and this state lives for the session's lifetime.
+//!
+//! Closing a document therefore no longer removes its snapshot when the file is
+//! inside the workspace: the file still exists, so its reported problems do. The
+//! server remains the single owner of that truth — an empty snapshot (how a
+//! server retracts diagnostics) removes the entry in both cases.
 
 use super::types::*;
 use crate::lsp::{
@@ -8,11 +35,27 @@ use crate::lsp::{
 use crate::protocol::{CoreError, ErrorCode};
 use serde_json::{json, Value};
 
+/// How many files outside the open-document set may hold diagnostics at once.
+///
+/// The server publishes for the whole workspace, so without a bound this state
+/// grows with the repository for the lifetime of the session. Reaching the limit
+/// stops *new* files from being tracked; files already tracked keep updating, so
+/// a tracked file can never be left holding a stale snapshot while its
+/// replacement is refused. Open documents are never counted here: an editor that
+/// cannot see the errors of the file in front of it is worse than a truncated
+/// list. The limit is an order-of-magnitude guard rather than a measured
+/// threshold, so it is reported once through the session log instead of failing
+/// silently.
+pub(crate) const WORKSPACE_DIAGNOSTIC_FILE_LIMIT: usize = 2000;
+
 /// Creates an initialize request and records it as pending client state.
 pub fn client_initialize(request: ClientInitializeRequest) -> Result<LspClientResponse, CoreError> {
     validate_uri(&request.root_uri)?;
     let workspace_name = workspace_name_from_uri(&request.root_uri);
     let mut state = request.state;
+    // Recorded here, not passed per message: containment is a property of the
+    // session, and the reducer is the only place that decides what to retain.
+    state.workspace_root_uri = Some(request.root_uri.clone());
     let id = allocate_request(&mut state, "initialize");
     let message = json_rpc_request(
         &id,
@@ -251,7 +294,14 @@ fn apply_content_changes_as_simultaneous_edits(
     .text)
 }
 
-/// Closes a document and clears diagnostics owned by its URI.
+/// Closes a document and clears document-scoped diagnostics state.
+///
+/// The document leaves the session, so its version bookkeeping goes with it. Its
+/// last snapshot stays when the file is inside the workspace: the file itself is
+/// still there, and a problems list that forgets the errors of a closed tab is
+/// the failure this retention exists to prevent. The server still owns that
+/// truth and retracts it with an empty snapshot. Files outside the workspace are
+/// dropped, which is what this function did for every document before.
 pub fn client_close_document(
     request: ClientCloseDocumentRequest,
 ) -> Result<LspClientResponse, CoreError> {
@@ -263,7 +313,9 @@ pub fn client_close_document(
             "Cannot close a document that is not open in the LSP client.",
         ));
     };
-    state.diagnostics.remove(&request.uri);
+    if !uri_within_workspace(&state, &request.uri) {
+        state.diagnostics.remove(&request.uri);
+    }
     state.diagnostic_versions.remove(&request.uri);
     let message = json_rpc_notification(
         "textDocument/didClose",
@@ -274,6 +326,52 @@ pub fn client_close_document(
         }),
     )?;
     Ok(client_response(state, vec![message], Vec::new()))
+}
+
+/// One `diagnostics` event carrying a complete snapshot for one URI.
+fn diagnostics_event(
+    uri: &str,
+    version: Option<i64>,
+    diagnostics: Vec<LspClientDiagnostic>,
+) -> LspClientEvent {
+    LspClientEvent {
+        kind: "diagnostics".to_string(),
+        request_id: None,
+        method: None,
+        uri: Some(uri.to_string()),
+        version,
+        diagnostics: Some(diagnostics),
+        result: None,
+        error: None,
+    }
+}
+
+/// Whether a published URI names a file inside this session's workspace.
+///
+/// Compared as paths rather than as strings, through the same URI decoding the
+/// rest of this module uses: `/project-b` must not count as inside `/project`,
+/// and a root spelled as a UNC share or with percent escapes must still line up
+/// with the files published under it. A URI that is not a `file:` URI (`jdt://`
+/// virtual sources, for example) has no filesystem path and never matches.
+pub(crate) fn uri_within_workspace(state: &LspClientState, uri: &str) -> bool {
+    let Some(root_uri) = state.workspace_root_uri.as_deref() else {
+        return false;
+    };
+    std::path::Path::new(&file_path_from_uri(uri))
+        .starts_with(std::path::Path::new(&file_path_from_uri(root_uri)))
+}
+
+/// Files holding diagnostics that no open document accounts for.
+///
+/// These are what [`WORKSPACE_DIAGNOSTIC_FILE_LIMIT`] bounds. Open documents are
+/// tracked however many there are, so an editor never loses the errors of the
+/// file in front of it.
+pub(crate) fn tracked_workspace_file_count(state: &LspClientState) -> usize {
+    state
+        .diagnostics
+        .keys()
+        .filter(|uri| !state.open_documents.contains_key(*uri))
+        .count()
 }
 
 /// Begins the two-step LSP shutdown and exit handshake.
@@ -347,32 +445,59 @@ pub fn client_apply_server_message(
                         .and_then(Value::as_str)
                         .unwrap_or_default();
                     validate_uri(uri)?;
-                    let Some(document) = state.open_documents.get(uri) else {
-                        return Ok(client_response(state, responses, events));
-                    };
-                    let version = params.get("version").and_then(Value::as_i64);
-                    if version.is_some_and(|version| version != document.version) {
-                        return Ok(client_response(state, responses, events));
-                    }
                     let diagnostics = parse_diagnostics(params.get("diagnostics"));
-                    state
-                        .diagnostics
-                        .insert(uri.to_string(), diagnostics.clone());
-                    if let Some(version) = version {
-                        state.diagnostic_versions.insert(uri.to_string(), version);
-                    } else {
-                        state.diagnostic_versions.remove(uri);
+                    let version = params.get("version").and_then(Value::as_i64);
+                    match state
+                        .open_documents
+                        .get(uri)
+                        .map(|document| document.version)
+                    {
+                        // Open documents: the snapshot describes the revision the
+                        // editor is showing, so a mismatching version is stale and
+                        // is dropped without touching the stored snapshot.
+                        Some(document_version) => {
+                            if version.is_some_and(|version| version != document_version) {
+                                return Ok(client_response(state, responses, events));
+                            }
+                            state
+                                .diagnostics
+                                .insert(uri.to_string(), diagnostics.clone());
+                            if let Some(version) = version {
+                                state.diagnostic_versions.insert(uri.to_string(), version);
+                            } else {
+                                state.diagnostic_versions.remove(uri);
+                            }
+                            events.push(diagnostics_event(uri, version, diagnostics));
+                        }
+                        // Unopened files: kept only for a file inside the session
+                        // workspace, and only while it stays within the file limit.
+                        // A version here describes no open document, so it is not
+                        // recorded and not compared; the engine applies server
+                        // messages in order, so the last snapshot wins.
+                        None => {
+                            if !uri_within_workspace(&state, uri) {
+                                return Ok(client_response(state, responses, events));
+                            }
+                            if diagnostics.is_empty() {
+                                // The server retracts diagnostics with an empty
+                                // snapshot. A file that never had any is left
+                                // untouched so cleaning a workspace does not emit
+                                // one event per clean file.
+                                if state.diagnostics.remove(uri).is_some() {
+                                    state.diagnostic_versions.remove(uri);
+                                    events.push(diagnostics_event(uri, None, Vec::new()));
+                                }
+                            } else if state.diagnostics.contains_key(uri)
+                                || tracked_workspace_file_count(&state)
+                                    < WORKSPACE_DIAGNOSTIC_FILE_LIMIT
+                            {
+                                state
+                                    .diagnostics
+                                    .insert(uri.to_string(), diagnostics.clone());
+                                events.push(diagnostics_event(uri, None, diagnostics));
+                            }
+                        }
                     }
-                    events.push(LspClientEvent {
-                        kind: "diagnostics".to_string(),
-                        request_id: None,
-                        method: None,
-                        uri: Some(uri.to_string()),
-                        version,
-                        diagnostics: Some(diagnostics),
-                        result: None,
-                        error: None,
-                    });
                 }
             }
             "client/registerCapability" => {

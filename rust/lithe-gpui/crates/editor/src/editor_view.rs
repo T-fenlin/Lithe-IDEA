@@ -376,6 +376,12 @@ pub struct EditorPane {
     java: Option<Arc<JavaLanguageService>>,
     /// 打开项目时那次"起服务 + 生成 / 复用索引"的后台任务，必须被持有（same as above）。
     java_task: Option<Task<()>>,
+    /// 底部工具窗「诊断」页（跨文件的问题列表）。
+    ///
+    /// 归本视图所有而不是外壳：它的数据来自 [`Self::java`]，而"点一行"要落到本视图的
+    /// [`Self::open_at`] —— 放到外壳就要把 Java 服务句柄和"打开文件"这两样一起搬出去。
+    /// 外壳只负责画：`ShellWorkspace` 用 [`Self::problems_pane`] 拿到实体塞进底部工具窗。
+    problems: Entity<crate::problems::ProblemsPane>,
     /// 工作区根：**只**给标签右键菜单的「复制相对路径」用（真机 `getRelativePath(path,
     /// rootFolderPath)`，无根时拷全路径，`tab-bar.tsx:355-368`）。
     ///
@@ -459,7 +465,7 @@ impl EditorPane {
     pub fn new(
         notifications: Option<WeakEntity<lithe_gpui_notify::Store>>,
         _window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> Self {
         Self {
             notifications,
@@ -473,6 +479,7 @@ impl EditorPane {
             diagnostics_generation: 0,
             java: None,
             java_task: None,
+            problems: cx.new(|_| crate::problems::ProblemsPane::new()),
             workspace_root: None,
             tab_menu_actions: None,
             tab_size: DEFAULT_TAB_SIZE,
@@ -559,8 +566,27 @@ impl EditorPane {
         if self.java.is_some() {
             return;
         }
-        let service = Arc::new(JavaLanguageService::new(workspace_root));
+        let service = Arc::new(JavaLanguageService::new(workspace_root.clone()));
         self.java = Some(service.clone());
+
+        // 问题列表：同一个服务句柄 + 工作区根（显示相对路径用），外加"点一行"的落地动作。
+        //
+        // ⚠️ 落地动作捕获的是 `WeakEntity<EditorPane>`：面板比视图活得久是可能的
+        // （外壳建面板、视图重建），那时点击只该什么都不做，不该 panic —— 与
+        // `schedule_diagnostics` / `schedule_auto_save` 的约定一致（`update` 返回 `Err` 即忽略）。
+        let view = cx.entity().downgrade();
+        let problems = self.problems.clone();
+        problems.update(cx, |pane, cx| {
+            pane.set_service(service.clone(), workspace_root.clone(), cx);
+            pane.set_open(Arc::new(move |path, line, utf16_column, window, cx| {
+                let Some(view) = view.upgrade() else {
+                    return;
+                };
+                view.update(cx, |pane, cx| {
+                    pane.open_at(path, line, utf16_column, window, cx);
+                });
+            }));
+        });
 
         // ⚠️ **给已经打开的 Java buffer 补装补全 provider**：真实的启动顺序是
         // "外壳建编辑区 → 打开启动文件 →（这里）起 Java 服务"，而 `open()` 里装 provider 时
@@ -738,6 +764,86 @@ impl EditorPane {
             fetched.attempts,
             fetched.elapsed_ms,
         );
+
+        // 问题列表跟着波浪线一起刷新：两者读的是**同一份**服务端快照，所以不该一个新一个旧。
+        // 刷新是"整份重建"，但它发生在防抖之后（每个 buffer 一次取回只有一次落地），
+        // 而且范围由 Core 的 2000 文件上限兜着。
+        self.refresh_problems(cx);
+    }
+
+    /// 底部工具窗「诊断」页的实体（外壳把它塞进 `BottomPaneKind::Diagnostics`）。
+    ///
+    /// 返回克隆的 `Entity`（gpui 的实体是引用计数句柄，克隆很便宜）：外壳持有它去渲染，
+    /// 不接触本视图的任何内部状态。
+    pub fn problems_pane(&self) -> Entity<crate::problems::ProblemsPane> {
+        self.problems.clone()
+    }
+
+    /// 重新问一次问题列表（外壳把面板切到前台时调一次）。
+    ///
+    /// 面板自己不知道"用户什么时候打开了我" —— 那是外壳的布局状态（`bottom_visible` /
+    /// `bottom_kind`），所以由外壳在切过去的时候补一次刷新。
+    pub fn refresh_problems(&mut self, cx: &mut Context<Self>) {
+        self.problems.update(cx, |pane, cx| pane.refresh(cx));
+    }
+
+    /// 打开 `path` 并把光标落到服务端给的位置（问题列表点一行时调）。
+    ///
+    /// 这是 [`Self::apply_definition`] 的"跨文件落地"那一段去掉解析那一半：调用方手里已经
+    /// 有目标了（服务端报的位置）。两条约定与 `F12` 完全一致：
+    ///
+    /// 1. **列口径**：`utf16_column` 是 LSP 的 UTF-16 码元列，要换成编辑器的字符列
+    ///    （[`editor_position`]，理由见 `crate::navigation` 的模块文档）—— 用**目标文件
+    ///    自己**的正文换算；
+    /// 2. **历史**：跳转前的位置进 `←` 的历史（`apply_definition` 同样是先记 origin 再落地），
+    ///    所以从问题列表跳过去之后按 `←` 回得来。
+    ///
+    /// 目标打不开（文件被删、二进制、超大）时返回 `false`：`open()` 自己已经留了
+    /// `S1_*` 诊断行，这里不重复报错。
+    pub fn open_at(
+        &mut self,
+        path: &Path,
+        line: u32,
+        utf16_column: u32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let origin = self
+            .active
+            .and_then(|index| self.buffers.get(index))
+            .map(|buffer| JumpEntry {
+                path: buffer.path.clone(),
+                position: buffer.editor.read(cx).cursor_position(),
+            });
+
+        if !self.buffers.iter().any(|buffer| buffer.path == path) {
+            self.open(path, window, cx);
+        }
+        let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
+            return false;
+        };
+
+        let text = self.buffers[index].editor.read(cx).text().clone();
+        let position = editor_position(&text, line as usize, utf16_column as usize);
+        if let Some(origin) = origin {
+            self.history.record(origin);
+        }
+        let to = self.buffers[index].editor.update(cx, |state, cx| {
+            state.set_cursor_position(position, window, cx);
+            state.cursor_position()
+        });
+        self.active = Some(index);
+
+        // 位置是 1 基显示口径（与 `S1_NAV_JUMP` 的其它来源一致，便于对日志）。
+        println!(
+            "S1_NAV_JUMP to={}:{} kind=problems file={}",
+            to.line + 1,
+            to.character + 1,
+            self.buffers[index].path.display()
+        );
+        self.sync_cursor(cx);
+        cx.notify();
+        true
     }
 
     /// 登记外壳的两个"只有外壳做得了"的动作（见 [`TabMenuHostActions`]）。

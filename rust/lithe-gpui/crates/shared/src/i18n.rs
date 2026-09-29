@@ -256,6 +256,21 @@ mod tests {
             ("lithe.terminal.newTerminal", "新建终端"),
             ("lithe.workbench.run", "运行"),
             ("lithe.workbench.diagnostics", "诊断"),
+            // 底部工具窗「诊断」页 = 问题列表（`editor/src/problems.rs`）。这 8 条全部
+            // **复用旧 Windows 前端已经在 locale 里的键**（真源 `features/diagnostics/
+            // components/diagnostics-pane.tsx` 用的就是它们，见 locale 的 `diagnostics.*`
+            // 一段），所以本批一条新键都没加。
+            ("lithe.diagnostics.problemCount", "{count} 个问题"),
+            (
+                "lithe.diagnostics.severityCount",
+                "{label} ({visible}/{total})",
+            ),
+            ("lithe.diagnostics.errors", "错误"),
+            ("lithe.diagnostics.warnings", "警告"),
+            ("lithe.diagnostics.info", "信息"),
+            ("lithe.diagnostics.empty", "未检测到问题"),
+            ("lithe.diagnostics.noMatch", "没有符合当前筛选条件的问题"),
+            ("lithe.diagnostics.resetFilters", "重置筛选"),
             ("lithe.workbench.changes", "更改"),
             ("lithe.workbench.search", "搜索"),
             ("lithe.workbench.terminal", "终端"),
@@ -272,7 +287,10 @@ mod tests {
             ("lithe.extensions.themes", "主题"),
             ("lithe.extensions.icons", "图标"),
             ("lithe.extensions.contributionLine", "{label}：{items}"),
-            ("lithe.extensions.languageUninstallHint", "卸载后这些文件打开时是纯文本。"),
+            (
+                "lithe.extensions.languageUninstallHint",
+                "卸载后这些文件打开时是纯文本。",
+            ),
             ("lithe.extensions.category.fonts", "字体"),
             ("lithe.extensions.category.debug", "调试"),
             ("lithe.extensions.category.lsp", "LSP"),
@@ -1086,5 +1104,9 @@ mod tests {
         "lithe.spring.title",
         // 行业缩写，中英同形（扩展页分类筛选条的「LSP」档；与 settings.tabs.lsp 同一取舍）。
         "lithe.extensions.category.lsp",
+        // 问题列表的严重度开关文案：整条**只有占位符与括号**（`{label} ({visible}/{total})`），
+        // 没有可翻译的词 —— 真正有内容的是 `errors` / `warnings` / `info` 那三条（它们在
+        // WIRED 里各自带中英对照）。这一条进表是承认"两边的英文与中文逐字相同**本来就对**"。
+        "lithe.diagnostics.severityCount",
     ];
 }

@@ -5,11 +5,12 @@ use super::{
     client_apply_server_message, client_change_document, client_close_document,
     client_feature_request_canonical, client_initialize, client_open_document,
     client_provider_document_feature_request_canonical, client_shutdown, frame_message,
-    parse_server_messages, ClientApplyServerMessageRequest, ClientChangeDocumentRequest,
-    ClientCloseDocumentRequest, ClientFeatureRequest, ClientInitializeRequest,
-    ClientOpenDocumentRequest, ClientShutdownRequest, FrameMessageRequest, LspClientDiagnostic,
-    LspClientDocument, LspClientState, LspDocumentContentChange, LspPosition, LspRange,
-    ParseServerMessagesRequest,
+    parse_server_messages, tracked_workspace_file_count, uri_within_workspace,
+    ClientApplyServerMessageRequest, ClientChangeDocumentRequest, ClientCloseDocumentRequest,
+    ClientFeatureRequest, ClientInitializeRequest, ClientOpenDocumentRequest,
+    ClientShutdownRequest, FrameMessageRequest, LspClientDiagnostic, LspClientDocument,
+    LspClientState, LspDocumentContentChange, LspPosition, LspRange, ParseServerMessagesRequest,
+    WORKSPACE_DIAGNOSTIC_FILE_LIMIT,
 };
 use crate::lsp::languages::java_entrypoints::{
     java_entrypoints_command, normalize_java_entrypoints,
@@ -477,6 +478,8 @@ pub struct EngineSnapshot {
     pub open_documents: BTreeMap<String, LspClientDocument>,
     pub pending_operation_ids: Vec<String>,
     pub diagnostic_versions: BTreeMap<String, i64>,
+    /// Retained snapshots per URI, including files that are not open.
+    pub diagnostics: BTreeMap<String, Vec<LspClientDiagnostic>>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -541,6 +544,10 @@ struct SessionState {
     /// Latest workspace event per URI observed before protocol initialization.
     /// The engine owns and drains this queue exactly once after `initialized`.
     pending_workspace_file_changes: BTreeMap<String, WorkspaceFileChangeKind>,
+    /// Whether the retained-diagnostics file limit has already been reported in
+    /// this session's log. The limit itself is enforced in the client reducer;
+    /// this only keeps the notice from repeating on every publish.
+    workspace_diagnostics_limit_reported: bool,
     events: VecDeque<LspRuntimeEvent>,
     next_sequence: u64,
     initialize_deadline: Option<Instant>,
@@ -1132,6 +1139,7 @@ impl LspEngine {
                 java_navigation_marker_batches: BTreeMap::new(),
                 java_navigation_marker_cache: BTreeMap::new(),
                 pending_workspace_file_changes: BTreeMap::new(),
+                workspace_diagnostics_limit_reported: false,
                 preparation_snapshot: None,
                 events: VecDeque::new(),
                 next_sequence: 1,
@@ -1377,9 +1385,17 @@ impl RuntimeSession {
             };
             state.java_navigation_marker_cache.remove(uri);
             cleared = state.client.diagnostics.contains_key(uri);
+            // A file inside the workspace keeps its diagnostics after its tab
+            // closes: the file is still there, so its reported problems are, and
+            // a problems list that forgets closed tabs is what the retention in
+            // the client reducer exists to prevent. Only a file we stop tracking
+            // is announced as cleared to the host.
+            let retained = uri_within_workspace(&state.client, uri);
             if document.version == 0 {
                 state.client.open_documents.remove(uri);
-                state.client.diagnostics.remove(uri);
+                if !retained {
+                    state.client.diagnostics.remove(uri);
+                }
                 state.client.diagnostic_versions.remove(uri);
             } else {
                 let response = client_close_document(ClientCloseDocumentRequest {
@@ -1389,7 +1405,7 @@ impl RuntimeSession {
                 state.client = response.state;
                 messages = response.messages;
             }
-            if cleared {
+            if cleared && !retained {
                 push_diagnostics_event(self, &mut state, uri, None, Vec::new());
             }
         }
@@ -1994,6 +2010,7 @@ impl RuntimeSession {
                 ids
             },
             diagnostic_versions: state.client.diagnostic_versions.clone(),
+            diagnostics: state.client.diagnostics.clone(),
         })
     }
 
@@ -2164,6 +2181,25 @@ impl RuntimeSession {
         {
             let mut state = self.lock_state()?;
             state.client = reduced.state;
+            // Diagnostics for files nobody has open are retained so a problems
+            // list can show them. That retention is bounded, and a reviewer
+            // reading a session log has to be able to tell a truly clean
+            // workspace apart from a truncated one, so the limit is reported once
+            // per session instead of being applied silently.
+            if !state.workspace_diagnostics_limit_reported
+                && tracked_workspace_file_count(&state.client) >= WORKSPACE_DIAGNOSTIC_FILE_LIMIT
+            {
+                state.workspace_diagnostics_limit_reported = true;
+                push_log_event(
+                    self,
+                    &mut state,
+                    "warn",
+                    "Workspace diagnostics reached the tracked-file limit",
+                    Some(format!(
+                        "limit={WORKSPACE_DIAGNOSTIC_FILE_LIMIT} files outside the open documents are tracked; further files are not listed until the language-server session restarts",
+                    )),
+                );
+            }
             if let Some(request_id) = response_id.as_ref() {
                 state.client.pending_requests.remove(request_id);
                 state.client.pending_semantic_legends.remove(request_id);
@@ -6515,7 +6551,8 @@ mod tests {
     }
 
     /// Criterion 8: diagnostics for a stale document version are ignored.
-    /// Criterion 9: closing a document clears document and diagnostic state.
+    /// Criterion 9: closing a document clears document state, and keeps a
+    /// snapshot whose file is still inside the workspace.
     #[test]
     fn diagnostics_follow_the_current_document_version_and_clear_on_close() {
         let mut harness = Harness::ready();
@@ -6570,8 +6607,66 @@ mod tests {
             harness.notification("textDocument/didClose").is_some(),
             "the server must be told the document closed"
         );
-        // Clearing is published so the editor drops its markers, rather than
-        // leaving them until the next unrelated publish.
+        // The file is still inside the workspace, so its reported problems are
+        // still there and no clearing event is published: a problems list must
+        // keep listing a file nobody has open.
+        assert_eq!(
+            snapshot.diagnostics[uri].len(),
+            1,
+            "an in-workspace file keeps its snapshot after its tab closes"
+        );
+        let last = harness
+            .poll()
+            .iter()
+            .rev()
+            .find(|event| event.kind == "diagnostics" && event.uri.as_deref() == Some(uri));
+        assert_eq!(
+            last.and_then(|event| event.diagnostics.as_ref())
+                .map(Vec::len),
+            Some(1),
+            "closing must not publish a clearing snapshot for a retained file"
+        );
+    }
+
+    /// A closed document outside the workspace is cleared exactly as before:
+    /// JDK sources and dependency JARs are noise in a problems list, so they are
+    /// neither retained nor left behind as stale entries.
+    #[test]
+    fn closing_a_document_outside_the_workspace_clears_its_diagnostics() {
+        let mut harness = Harness::ready();
+        let uri = "file:///elsewhere/library.go";
+        harness.sync(uri, "package library");
+        harness.server.send(json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/publishDiagnostics",
+            "params": {
+                "uri": uri,
+                "version": 1,
+                "diagnostics": [{
+                    "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": 0, "character": 7 }
+                    },
+                    "message": "library problem"
+                }]
+            }
+        }));
+        harness.await_event(|event| {
+            event.kind == "diagnostics"
+                && event.uri.as_deref() == Some(uri)
+                && event
+                    .diagnostics
+                    .as_ref()
+                    .is_some_and(|list| list.len() == 1)
+        });
+        assert_eq!(harness.snapshot().diagnostics[uri].len(), 1);
+
+        harness.session().close_document(uri).unwrap();
+        let snapshot = harness.snapshot();
+        assert!(
+            !snapshot.diagnostics.contains_key(uri),
+            "a file outside the workspace must not be retained"
+        );
         let cleared = harness
             .poll()
             .iter()
@@ -6581,7 +6676,8 @@ mod tests {
             cleared
                 .and_then(|event| event.diagnostics.as_ref())
                 .map(Vec::len),
-            Some(0)
+            Some(0),
+            "clearing is published so the editor drops its markers"
         );
     }
 

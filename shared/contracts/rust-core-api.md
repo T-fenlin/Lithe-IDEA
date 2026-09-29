@@ -136,7 +136,8 @@ stable error code and a user-facing message:
 | `lsp.stopServer` | Gracefully shut down a session, with a bounded force-stop fallback |
 | `lsp.syncDocument` | Open a document or apply a full-text or incremental `didChange` with monotonic versions |
 | `lsp.workspaceFilesChanged` | Publish normalized created, changed, or deleted workspace files to one session |
-| `lsp.closeDocument` | Close a document and clear its diagnostics |
+| `lsp.closeDocument` | Close a document, keeping a snapshot whose file is inside the workspace root |
+| `lsp.clearDiagnostics` | Clear every diagnostic owned by a session, open or not |
 | `lsp.request` | Submit a typed semantic request and return an opaque operation ID |
 | `java.navigationMarkers` | Resolve versioned Java gutter markers from bounded JDT LS semantic requests |
 | `java.resolveNavigation` | Resolve one Java gutter marker to normalized parent or implementation locations |
@@ -1420,8 +1421,17 @@ include `stateChanged`, `featuresChanged`, `diagnostics`,
 most once with either `result` or a structured runtime error containing
 provider/session, stage, optional method/document/request, stable code, and
 optional process-exit detail. Late responses after cancellation or deadline
-are ignored. Diagnostics are accepted only for documents open in the current
-session, and versioned diagnostics must match the current document version.
+are ignored. Diagnostics are accepted for documents open in the current
+session, where a versioned snapshot must match the current document version,
+and for files inside the session's workspace root even when no document has
+them open. The second case exists so a problems list can show a compile error
+in a module nobody opened; such snapshots carry no version bookkeeping, are
+bounded to 2000 files outside the open documents, and that limit is reported
+once through a `log` event when it is reached. Files outside the workspace root
+(JDK sources, dependency JARs, decompiled classes) and non-`file:` URIs are
+never accepted. Closing a document keeps its snapshot only when its file is
+inside the workspace root, and the server retracts any snapshot by publishing
+an empty array.
 
 The client reducer, raw JSON-RPC message, frame, and parser functions are
 internal Rust implementation seams; they are not public application commands.

@@ -4,10 +4,9 @@
 
 ## 先说结论
 
-以前 Windows 端只保留"编辑器里已经打开的文件"的诊断，语言服务报给其他文件的
-错误一律丢弃。结果是：Java 项目因为编译错误而无法启动时，Lithe 提示"请修复
-报告的错误"，但用户在界面上根本看不到任何错误——错误在没打开的模块里，已经
-被丢掉了。
+以前只保留"编辑器里已经打开的文件"的诊断，语言服务报给其他文件的错误一律丢弃。
+结果是：Java 项目因为编译错误而无法启动时，Lithe 提示"请修复报告的错误"，但用户在
+界面上根本看不到任何错误——错误在没打开的模块里，已经被丢掉了。
 
 现在改为：诊断所属文件只要落在某个已打开工作区（workspace root，即用户打开的
 项目根目录）内就保留，工作区之外的（JDK 源码、依赖 jar、反编译的 class）继续
@@ -15,6 +14,15 @@
 
 开发者以后要注意：**不要再以"文件有没有打开"作为诊断的过滤条件**。判断依据是
 "在不在工作区内"。
+
+> **2026-09-30 在 Rust 前端上的重新落地（同一决策，换了实现位置）**：这条决策原本写在
+> 旧 Windows 前端（TypeScript）里。旧前端删除、gpui + Rust Core 成为唯一宿主之后，
+> 这条过滤**在 Core 里被写成了"只接受已打开的文档"**（`lsp/interface/client.rs` 的
+> `publishDiagnostics` 分支），于是问题以同样的形态回来了：错误在没打开的文件里，
+> 界面上一片空白（第一次读那行代码的人多半会以为这是有意的性能取舍，其实它就是
+> 本笔记要修掉的缺陷）。现在保留判据回到 Core：**已打开的文档 + 工作区根之内的文件**。
+> 下面"决策"一节补了新宿主的落点，行为语义（保留 / 清除 / 忽略、上限、"已打开文件不受限"）
+> 与旧前端逐条一致。
 
 ## 问题
 
@@ -57,6 +65,27 @@ ruoyi-admin 自己或它的某个依赖模块有真实编译错误。
 workspace root 取自 `LspClient` 已有的 `activeLanguageServers`（serverKey 形如
 `<workspacePath>:<languageId>`），不引入对 project store 的新依赖——诊断本来就
 由某个语言服务推送，它的工作区就是最准确的判断依据。
+
+### Rust 宿主上的落点（2026-09-30）
+
+新宿主里"谁接受一条诊断"只有一个地方：`lsp/interface/client.rs` 的
+`publishDiagnostics` 分支（LSP 状态机归 Rust Core，见
+`2026-09-13-language-tooling-and-lsp-runtime-ownership.md`）。判据与上文同源：
+
+- **已打开的文档**：行为不变（版本号必须与文档版本一致，快照整份替换）；
+- **未打开但工作区根之内的文件**：`store` / `clear` / `ignore` 三种结果照旧 ——
+  非空快照保留并发一条 `diagnostics` 事件（这样前端的两个消费者都收得到：
+  编辑器按 URI 找自己的 buffer，问题列表按 URI 分组列出全部）；
+  空快照只在**曾经有过诊断**时才清掉，从来没干净文件不产生事件；
+  没进过表的空快照什么都不做（否则清理一个干净仓库会为每个文件发一条事件）；
+- **工作区之外**：丢弃。包含判据按**路径**比较（`Path::starts_with`，经 Core 既有的
+  URI → 路径解码），所以 `/project-b` 不算在 `/project` 之内，UNC 与百分号转义也认得；
+  非 `file:` URI（`jdt://` 虚拟源码）永远不算在内；
+- **上限**：未打开文件最多 2000 个。**已打开的文档不受上限约束**（编辑器看不到
+  眼前文件的错误，比列表被截断更糟）；触顶后已经在跟踪的文件继续更新，只拒绝新文件；
+- **关闭文档**：文档本身（含版本号）照旧离开会话，但**工作区内的文件保留快照** ——
+  文件还在，它报的问题就还在。旧前端同样如此（store 按文件路径存，不随 buffer 关闭清理），
+  只有服务端用空快照才能真正撤回一条诊断。
 
 ### 为什么需要"保留 / 清除 / 忽略"三种结果
 
@@ -117,8 +146,9 @@ if (!isDocumentOpen(published)) return;
 代价和例外：
 
 - 大型项目首次构建后，诊断状态会比以前大。上限 2000 个未打开文件是拍出来的
-  经验值，不是测出来的；若依 Plus 量级（1186 个文件）远达不到。触顶时会打一条
-  `logger.warn`，每次触顶只报一次。
+  经验值，不是测出来的；若依 Plus 量级（1186 个文件）远达不到。触顶时会报一次
+  （旧前端是 `logger.warn`，Rust 宿主是 Core 发的一条 `warn` 级 `log` 事件），
+  每次触顶只报一次。
 - 上限触顶后新文件的错误会被静默丢弃。这是刻意的取舍：面板在几千条错误时
   本来就已经失去意义。
 - 本次改动**没有**触碰启动门禁本身。构建报编译错误时 Lithe 仍然拒绝启动，
@@ -128,21 +158,34 @@ if (!isDocumentOpen(published)) return;
 
 ## 验证
 
-- 前端单测：`cd windows/tauri && bun test src/features/editor/lsp`
+- 旧前端（已删除）：`cd windows/tauri && bun test src/features/editor/lsp`
   （`diagnostics-file-path.test.ts` 覆盖工作区内保留、已知 buffer 优先、工作区外
   丢弃、同名前缀目录不算包含、分隔符归一、POSIX 大小写敏感；
   `diagnostics-retention.test.ts` 覆盖三种结果、上限行为和"已打开文件不受限"）。
-- 测试稳定性门禁：`./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`
-- 类型检查：`cd windows/tauri && bun run typecheck`
-- 未在本次执行：Windows 实机验证。需要在 Windows 上打开若依 Plus，点运行，
-  确认失败后诊断面板列出具体错误。
-> 旧前端的构建、发布与边界校验脚本（Core 验证器、Service/Module 边界检查、Windows Tauri
-> 与 macOS 打包脚本、Git 执行集成测试等）已随旧前端删除。删除前的完整验证口径见
-> git tag `legacy-frontends-final`。
+  完整口径见 git tag `legacy-frontends-final`。
+- Rust Core（当前真源）：`cargo test -p lithe-core --lib lsp::`
+  —— `client_core_retains_diagnostics_for_unopened_workspace_files`（保留 / 清除 / 忽略）、
+  `client_core_drops_diagnostics_outside_the_workspace`（工作区之外、同名前缀目录、
+  没有工作区根三种情形）、`client_core_accepts_versioned_diagnostics_for_unopened_workspace_files`、
+  `client_core_bounds_unopened_workspace_retention_without_freezing_tracked_files`（上限
+  只拒绝新文件）、`client_core_keeps_workspace_diagnostics_when_a_document_closes`；
+  引擎层两条：`diagnostics_follow_the_current_document_version_and_clear_on_close`
+  与 `closing_a_document_outside_the_workspace_clears_its_diagnostics`。
+- 问题列表的数据整理（排序 / 分组 / 显示名 / 严重度分档）：`cargo test -p lithe-gpui-editor --lib`。
+- 未在本次执行：真实 JDTLS 端到端（需要 JDK 21 + `.artifacts/jdtls` 载荷 + 一个会报错的
+  Java 工程）与界面点击验证。接手者按"打开一个含编译错误的 Maven 工程 → 打开底部「诊断」页"
+  复现，日志判据是 `S1_JAVA_PROBLEMS files=… problems=…` 与 `S1_EDITOR_PROBLEMS …`
+  两行（前者来自服务查询，后者来自列表重建）。
+
 ## 适用范围
 
-- Windows：`windows/tauri/src/features/editor/lsp/diagnostics-file-path.ts`、
-  `windows/tauri/src/features/editor/lsp/diagnostics-retention.ts`、
-  `windows/tauri/src/features/editor/lsp/lsp-client.ts`
+- Rust Core：`rust/lithe-core/src/lsp/interface/client.rs`（保留判据与上限）、
+  `rust/lithe-core/src/lsp/interface/engine.rs`（关闭文档与上限提示）
+- gpui 宿主：`rust/lithe-gpui/crates/java/src/{events.rs,service.rs}`（按 URI 归档 +
+  `workspace_diagnostics` 查询）、`rust/lithe-gpui/crates/editor/src/problems.rs`
+  （底部工具窗「诊断」页）、`rust/lithe-gpui/crates/workbench/src/workspace.rs`
+  （把面板接进底部工具窗的切换处）
+- 兼容面：`shared/contracts/rust-core-api.md` 的 `lsp.pollEvents` 一节（诊断接受范围）
 - 相关笔记：
-  `.agents/notes/implemented/architecture/2026-09-18-java-project-build-and-launch-boundary.md`
+  `.agents/notes/implemented/architecture/2026-09-18-java-project-build-and-launch-boundary.md`、
+  `.agents/notes/implemented/architecture/2026-09-13-language-tooling-and-lsp-runtime-ownership.md`

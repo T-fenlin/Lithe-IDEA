@@ -248,46 +248,78 @@ fn to_upstream(diagnostic: &JavaDiagnostic, text: &Rope) -> Diagnostic {
     mapped
 }
 
+/// LSP 的严重度四档（`1=Error … 4=Hint`）。
+///
+/// 上层有**两个**消费者：编辑器的波浪线（要换成上游的 `DiagnosticSeverity`）与问题列表
+/// （要自己的档位）。两边必须按同一套判据分档，所以数值 → 档位的换算只在这里做一次
+/// （[`Level::from_lsp`]），两边都从这里出发。
+///
+/// 变体的顺序就是严重度顺序（`Error` 最重、`Hint` 最轻），所以 `Ord` 派生可以直接用来
+/// 取"最严重的一档"。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Level {
+    /// LSP `1`。
+    Error,
+    /// LSP `2`。
+    Warning,
+    /// LSP `3`，**以及缺字段 / 未知值**。
+    Info,
+    /// LSP `4`。
+    Hint,
+}
+
+impl Level {
+    /// LSP 的数值 → 档位。
+    ///
+    /// **缺字段与未知值都给 `Info`**：上游自己的 `From<lsp_types::Diagnostic>` 就是这么做的
+    /// （`diagnostics.rs:58-61` 的 `unwrap_or(DiagnosticSeverity::Info)`），我们照抄它的口径，
+    /// 而不是用上游 `DiagnosticSeverity::default()` 的 `Hint` —— Hint 的颜色在主题里几乎看不见
+    /// （`input.rs:508` 的 `style.status.hint`），把"服务端没说严重度"画成几乎不可见，
+    /// 等于把一条真诊断藏起来。
+    pub(crate) fn from_lsp(value: Option<i64>) -> Self {
+        match value {
+            Some(1) => Self::Error,
+            Some(2) => Self::Warning,
+            Some(4) => Self::Hint,
+            _ => Self::Info,
+        }
+    }
+
+    /// 界面与诊断行里的名字（`error` / `warning` / `info` / `hint`）。
+    pub(crate) fn id(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Info => "info",
+            Self::Hint => "hint",
+        }
+    }
+}
+
 /// LSP 的 `DiagnosticSeverity` 数值 → 上游的严重度。
 ///
 /// 数值口径由 LSP 定死：`1=Error 2=Warning 3=Information 4=Hint`
-/// （`lsp-types-0.97.0/src/lib.rs:447-458`）。
-///
-/// **缺字段与未知值都给 `Info`**：上游自己的 `From<lsp_types::Diagnostic>` 就是这么做的
-/// （`diagnostics.rs:58-61` 的 `unwrap_or(DiagnosticSeverity::Info)`），我们照抄它的口径，
-/// 而不是用上游 `DiagnosticSeverity::default()` 的 `Hint` —— Hint 的颜色在主题里几乎看不见
-/// （`input.rs:508` 的 `style.status.hint`），把"服务端没说严重度"画成几乎不可见，
-/// 等于把一条真诊断藏起来。
+/// （`lsp-types-0.97.0/src/lib.rs:447-458`）；分档判据在 [`Level::from_lsp`]。
 fn severity(value: Option<i64>) -> DiagnosticSeverity {
-    match value {
-        Some(1) => DiagnosticSeverity::Error,
-        Some(2) => DiagnosticSeverity::Warning,
-        Some(3) => DiagnosticSeverity::Info,
-        Some(4) => DiagnosticSeverity::Hint,
-        _ => DiagnosticSeverity::Info,
+    match Level::from_lsp(value) {
+        Level::Error => DiagnosticSeverity::Error,
+        Level::Warning => DiagnosticSeverity::Warning,
+        Level::Info => DiagnosticSeverity::Info,
+        Level::Hint => DiagnosticSeverity::Hint,
     }
 }
 
 /// `S1_EDITOR_DIAGNOSTICS` 里的 `severity_max=`：这一份快照里**最严重**的那一档。
 ///
-/// LSP 的数值越小越严重，所以取最小值；空快照给 `none`。缺字段 / 未知值按 [`severity`]
-/// 的口径算 `info`（两处必须一致，否则日志说 `info` 而画出来的是别的颜色）。
+/// LSP 的数值越小越严重，而 [`Level`] 的变体顺序就是严重度顺序，所以取最小值；
+/// 空快照给 `none`（不取 `Hint`，否则"什么都没有"与"只有 hint"分不开）。
 pub(crate) fn severity_max(diagnostics: &[JavaDiagnostic]) -> &'static str {
-    // 5 = 比 LSP 的四档都"轻"，空快照与"只有未知严重度"因此不会混淆：前者 `none`。
-    let mut rank = 5i64;
-    for diagnostic in diagnostics {
-        rank = rank.min(match diagnostic.severity {
-            Some(value @ 1..=4) => value,
-            _ => 3,
-        });
-    }
-    match rank {
-        1 => "error",
-        2 => "warning",
-        3 => "info",
-        4 => "hint",
-        _ => "none",
-    }
+    diagnostics
+        .iter()
+        .map(|diagnostic| Level::from_lsp(diagnostic.severity))
+        .min()
+        .map(Level::id)
+        .unwrap_or("none")
 }
 
 #[cfg(test)]

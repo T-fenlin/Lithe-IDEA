@@ -2151,15 +2151,16 @@ impl ShellWorkspace {
                 // 活动栏底部组的「诊断 / 运行」两项点下去改的就是这两个字段
                 // （`on_select_activity` 的 `Some(kind)` 分支）。
                 //
-                // ⚠️ **如实说明**：这两个页签的内容目前仍是 `placeholder(..)`
-                // （「{名字} 工具窗（未实现）」，`BottomPaneKind` 的 `label`），
-                // 所以本条"真的发生了那件事"指的是**工具窗真的打开了、页签真的切过去了**，
-                // 而不是"诊断/调试界面做出来了"。那一层能力属 B3 的占位清单。
+                // ⚠️ **如实说明**：「运行」那一页仍是 `placeholder(..)`
+                // （「{名字} 工具窗（未实现）」，`BottomPaneKind` 的 `label`），而「诊断」
+                // 已经是真的问题列表（`editor` 的 `problems` 面板）。所以本条的"真的发生了
+                // 那件事"对运行页只指**工具窗真的打开了**，对诊断页还包含**列表真的画出来了**。
                 self.bottom_kind = match action {
                     MenuAction::ShowRunAndDebug => BottomPaneKind::Run,
                     _ => BottomPaneKind::Diagnostics,
                 };
                 self.bottom_visible = true;
+                self.refresh_problems_if_visible(cx);
                 diagnose_menu_run(action, "visible");
             }
             MenuAction::ShowFileExplorer | MenuAction::ShowSourceControl => {
@@ -2746,6 +2747,20 @@ impl ShellWorkspace {
         match bottom_pane_for(index) {
             Some(kind) => self.bottom_visible && self.bottom_kind == kind,
             None => false,
+        }
+    }
+
+    /// 底部工具窗当前显示的是「诊断」页时，让问题列表重新问一次服务端。
+    ///
+    /// 为什么外壳要管这件事：面板自己不知道"用户什么时候打开了我" —— 那是外壳的布局状态
+    /// （[`Self::bottom_visible`] / [`Self::bottom_kind`]）。而诊断可能在面板不可见的
+    /// 那段时间里变多了（另一个文件报错、项目构建完成），所以切过去时补一次刷新，
+    /// 与"编辑区每次诊断落地后刷新"（`editor::problems` 的表）一起构成完整的刷新时机。
+    ///
+    /// 不满足条件时**什么都不做**：没打开的面板刷不刷新都看不见，白花一次查询。
+    fn refresh_problems_if_visible(&mut self, cx: &mut Context<Self>) {
+        if self.bottom_visible && self.bottom_kind == BottomPaneKind::Diagnostics {
+            self.editor.update(cx, |pane, cx| pane.refresh_problems(cx));
         }
     }
 
@@ -3774,6 +3789,9 @@ impl Render for ShellWorkspace {
                     }
                     // 活动栏点击同样改会话文档里的字段（顶部组选中 / 底部窗页签与可见性）。
                     this.schedule_session_save(cx);
+                    // 切到「诊断」页时补一次刷新：面板自己不知道"用户什么时候打开了我"，
+                    // 而诊断可能是在它不可见的那段时间里变多的（见 `editor::problems` 的表）。
+                    this.refresh_problems_if_visible(cx);
                     cx.notify();
                     this.bottom_visible && this.bottom_kind == BottomPaneKind::Terminal
                 });
@@ -3940,10 +3958,19 @@ impl Render for ShellWorkspace {
             let content: AnyElement = match self.bottom_kind {
                 BottomPaneKind::Terminal => self.terminal.clone().into_any_element(),
                 BottomPaneKind::Git => self.bottom_git.clone().into_any_element(),
-                kind @ (BottomPaneKind::Run | BottomPaneKind::Diagnostics) => {
-                    // 占位文案是临时脚手架（阶段 6 第二半会换成真界面）；里面的 {label} 是活动栏
-                    // 项的名字，走 i18n（`lithe.workbench.run` / `.diagnostics`）。
-                    placeholder(format!("{} 工具窗（未实现）", kind.label()), cx).into_any_element()
+                // 诊断页：**真的问题列表**（实体归编辑区，见 `editor::problems` 的模块文档）。
+                // 外壳只把它塞进来：数据（哪些文件在报什么错）与"点一行"的落地都在那边。
+                BottomPaneKind::Diagnostics => {
+                    self.editor.read(cx).problems_pane().into_any_element()
+                }
+                BottomPaneKind::Run => {
+                    // 占位文案是临时脚手架；里面的 {label} 是活动栏项的名字，走
+                    // i18n（`lithe.workbench.run`）。
+                    placeholder(
+                        format!("{} 工具窗（未实现）", BottomPaneKind::Run.label()),
+                        cx,
+                    )
+                    .into_any_element()
                 }
             };
             bottom_pane(content, cx)

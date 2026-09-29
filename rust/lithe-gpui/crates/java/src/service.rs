@@ -543,11 +543,9 @@ impl JavaLanguageService {
 
     /// 某个文件的**最近一次**诊断快照（`textDocument/publishDiagnostics` 推送）。
     ///
-    /// 这是**查询**，不是请求：不起会话、不同步文档。诊断由服务端推送，只有同步过（或同步过
-    /// 又改过）的文档才会有发布 —— Core 会丢掉"文档不在 `open_documents` 里"的那些
-    /// （`rust/lithe-core/src/lsp/interface/client.rs:350-352`），所以没打开过的文件返回空是
-    /// 正常结果，不是失败。为了不让一次查询把 JDTLS 拖起来（`ensure_session` 的启动链是
-    /// 10s 级），这里**不**调 `ensure_session`。
+    /// 这是**查询**，不是请求：不起会话、不同步文档。诊断由服务端推送，所以还没发布过的
+    /// 文件返回空是正常结果，不是失败。为了不让一次查询把 JDTLS 拖起来
+    /// （`ensure_session` 的启动链是 10s 级），这里**不**调 `ensure_session`。
     ///
     /// ⚠️ **空数组有两种含义**（查询口径下不可区分）：服务端刚发布了一次"清空"
     /// （错误都改好了），或者**还没发布过**。编辑器侧靠"同步正文之后有界重取"
@@ -573,6 +571,46 @@ impl JavaLanguageService {
             // `Idle` / `Failed` / `Closed` 都还没有（或不再有）事件来源 → 空。
             _ => Vec::new(),
         }
+    }
+
+    /// 整个工作区**当前有诊断的文件**，按路径排序（问题列表的数据源）。
+    ///
+    /// 与 [`Self::diagnostics`] 的差别只有一处：那个问"这一个文件怎么样"，这个问
+    /// "现在有哪些文件在报错"。列表要的就是后者，而逐个文件去问是不可能的 ——
+    /// 面板并不知道该问哪些文件。
+    ///
+    /// **范围由 Core 决定，不由这里筛**：Core 接受"已打开的文档"与"工作区根之内的文件"
+    /// （`rust/lithe-core/src/lsp/interface/client.rs` 的模块文档），工作区之外的
+    /// （JDK 源码、依赖 jar、反编译的 class）从来不会进这个表 —— 这正是
+    /// `.agents/notes/implemented/bug-fix/2026-09-20-workspace-diagnostics-visibility.md`
+    /// 定下的口径：判据是"在不在工作区内"，不是"有没有打开"。
+    ///
+    /// 只回 `file://` 能落到磁盘路径的条目：`jdt://` 是反编译出来的库源码，
+    /// 在那里报的问题跳不过去、也不该占问题列表。
+    ///
+    /// 纯查询，与 [`Self::diagnostics`] 同一口径（不起会话、不阻塞）。列表是**空**的
+    /// 有两种含义，取值上不区分：工作区真的干净，或者语言服务还没起来 ——
+    /// 面板按前者画空态，因为"服务没起来"的入口在别处（Java 项目准备状态）。
+    pub fn workspace_diagnostics(&self) -> Vec<JavaFileDiagnostics> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // `Idle` / `Failed` / `Closed` 都还没有（或不再有）事件来源 → 空列表。
+        let State::Ready(session) = &*state else {
+            return Vec::new();
+        };
+        let mut files: Vec<JavaFileDiagnostics> = session
+            .diagnostics_by_uri()
+            .into_iter()
+            .filter_map(|(uri, diagnostics)| {
+                file_path_from_uri(&uri).map(|path| JavaFileDiagnostics { path, diagnostics })
+            })
+            .collect();
+        files.sort_by(|left, right| left.path.cmp(&right.path));
+        let problems: usize = files.iter().map(|file| file.diagnostics.len()).sum();
+        println!("S1_JAVA_PROBLEMS files={} problems={problems}", files.len());
+        files
     }
 
     /// 把一个文档的**当前正文**同步给服务端（首次 `didOpen`，之后 `didChange`），**不发语义请求**。
@@ -906,7 +944,6 @@ fn installation_root(executable: &Path) -> &Path {
 }
 
 /// 文件路径 → `file://` URI（百分号编码由 `url` 负责）。
-/// 文件路径 → `file://` URI（百分号编码由 `url` 负责）。
 ///
 /// `pub`：编辑器的快速修复 provider 也用它 —— `edit.changes` 的键必须是这条 URI
 /// （`crate::code_actions` 与 `perform_code_action` 两侧要对上）。**路径 → URI 只该有一处实现**，
@@ -915,6 +952,27 @@ pub fn file_uri(path: &Path) -> Result<String, String> {
     url::Url::from_file_path(path)
         .map(|url| url.to_string())
         .map_err(|_| format!("无法把路径转成 file URI：{}", path.display()))
+}
+
+/// `file://` URI → 本地路径；不是 `file:` URI（`jdt://` 虚拟源码）时返回 `None`。
+///
+/// 与 [`file_uri`] 互逆，且**只在这一处**做反方向换算：问题列表点一行要拿路径去开文件，
+/// 而服务端给的是 URI。`jdt://` 没有磁盘位置，所以给 `None` 而不是猜一个路径。
+fn file_path_from_uri(uri: &str) -> Option<PathBuf> {
+    let url = url::Url::parse(uri).ok()?;
+    if url.scheme() != "file" {
+        return None;
+    }
+    url.to_file_path().ok()
+}
+
+/// 一个文件的**最新诊断快照**，供问题列表按文件成组显示。
+#[derive(Clone, Debug, PartialEq)]
+pub struct JavaFileDiagnostics {
+    /// 服务端发布该快照时对应的磁盘路径（绝对路径）。
+    pub path: PathBuf,
+    /// 服务端的完整快照；[`JavaLanguageService::workspace_diagnostics`] 不会给出空的那一种。
+    pub diagnostics: Vec<JavaDiagnostic>,
 }
 
 /// 目录路径 → `file://` URI（LSP 的 `rootUri` 以 `/` 结尾）。
