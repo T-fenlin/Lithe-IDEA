@@ -45,13 +45,13 @@ git.write { operation: "push", expected: { localHead, remote, ... } }
 
 ## 命令表面
 
-大约 40 个 `git.*` 命令。gpui 宿主真正发起的（`lithe-db-gpui/crates/git/src/{model,changes,branch_info,identity}.rs`，以及 `lithe-db-gpui/crates/java`）：
+大约 40 个 `git.*` 命令。gpui 宿主真正发起的（`lithe-gpui/crates/git/src/{model,changes,branch_info,identity}.rs`，以及 `lithe-gpui/crates/java`）：
 
 `git.status`、`git.write`、`git.references`、`git.historyPage`、`git.historyCursorClose`、`git.commitFiles`、`git.operationState`、`git.repositorySetup`、`git.configureIdentity`、`git.watchContext`、`git.authRespond`。
 
-三个**硬约束**宿主必须遵守，且都在 `lithe-db-gpui/crates/git/src/lib.rs` 中写明：
+三个**硬约束**宿主必须遵守，且都在 `lithe-gpui/crates/git/src/lib.rs` 中写明：
 
-1. `git.status.repositoryRoot` 可能返回**工作区相对路径**，必须按宿主 root 重新拼接（`lithe-db-gpui/crates/git/src/model.rs:517-528`）。
+1. `git.status.repositoryRoot` 可能返回**工作区相对路径**，必须按宿主 root 重新拼接（`lithe-gpui/crates/git/src/model.rs:517-528`）。
 2. “Not a repository” 是 `ok: true` 且 `repositoryRoot: null`——**不是错误**（`model.rs:805-812`）。
 3. `git.write` 即使 Git 退出非零也返回 `ok: true`，因此必须检查 `operationError` / `exitCode`（`changes.rs:488-561`）。
 
@@ -70,7 +70,7 @@ git.write { operation: "push", expected: { localHead, remote, ... } }
 
 ## Console folding
 
-`git/console/` 是与传输无关的展示逻辑：保守的 command 压缩，要求行为改变的 flag 仍保留可见（`console/command.rs`）；IDEA 风格的 progress folding，同时普通输出仍保持连续文本（`console/output.rs`）；无损 disclosure ranges（`console/types.rs`）。`console/tests.rs` 被描述为“Cross-platform presentation fixtures protect semantics, lossless ranges and grouping”，但 gpui 底部面板目前只渲染 console shell，所有 6 个 toolbar button 都禁用（`lithe-db-gpui/crates/git/src/log_view.rs:1875-1930`，对应 `lithe-db-gpui/crates/git/src/lib.rs:152-154` 的 deviation 6）。真正的输出需要 Git 执行事件通道，而这超出该 crate 的范围。
+`git/console/` 是与传输无关的展示逻辑：保守的 command 压缩，要求行为改变的 flag 仍保留可见（`console/command.rs`）；IDEA 风格的 progress folding，同时普通输出仍保持连续文本（`console/output.rs`）；无损 disclosure ranges（`console/types.rs`）。`console/tests.rs` 被描述为“Cross-platform presentation fixtures protect semantics, lossless ranges and grouping”，但 gpui 底部面板目前只渲染 console shell，所有 6 个 toolbar button 都禁用（`lithe-gpui/crates/git/src/log_view.rs:1875-1930`，对应 `lithe-gpui/crates/git/src/lib.rs:152-154` 的 deviation 6）。真正的输出需要 Git 执行事件通道，而这超出该 crate 的范围。
 
 ## 变更起点
 
@@ -90,5 +90,5 @@ git.write { operation: "push", expected: { localHead, remote, ... } }
 - `rust/lithe-core/src/protocol/contracts.rs`
 - `rust/lithe-core/src/protocol/command.rs`
 - `rust/lithe-core/src/runtime/dispatcher.rs`
-- `rust/lithe-db-gpui/crates/git/src/lib.rs`、`model.rs`、`changes.rs`
+- `rust/lithe-gpui/crates/git/src/lib.rs`、`model.rs`、`changes.rs`
 - `shared/contracts/{rust-core-api,git-rebase-session,git-patch-exchange,git-repository-setup}.md`

@@ -63,12 +63,12 @@ function parseArguments(argv) {
   }
 
   if (options.cargoLocks.length === 0) {
-    // 仓库现在有两个独立的 Rust 构建图：`rust/`（Core 与数据库 crate）与 `lithe-db-gpui/`（宿主）。
+    // 仓库现在有两个独立的 Rust 构建图：`rust/`（Core 与数据库 crate）与 `lithe-gpui/`（宿主）。
     // 两者各自有锁文件，下载缓存的键必须把两份都算进去 —— 只算一份会让另一份的依赖变化
     // 命中旧缓存。
     options.cargoLocks.push(
       path.join(REPOSITORY_ROOT, "rust", "Cargo.lock"),
-      path.join(REPOSITORY_ROOT, "lithe-db-gpui", "Cargo.lock"),
+      path.join(REPOSITORY_ROOT, "lithe-gpui", "Cargo.lock"),
     );
   }
   return options;

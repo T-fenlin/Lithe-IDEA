@@ -1,0 +1,19 @@
+[package]
+name = "lithe-gpui-settings"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui-kit = "0.6"
+lithe-gpui-shared = { path = "../shared" }
+# 设置文件是 JSON，而 `gpui-kit` **不重导出** serde / serde_json
+# （`gpui-kit-0.6.6/src/lib.rs` 的 `pub use` 清单里两者都没有），所以直接声明。
+# 版本跟随 workspace 已有的 `lithe-gpui-shared`（`serde_json = "1"`）。
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 设置文件的**外部改动**监听（见 `src/watch.rs`）。两个 crate 都已经在本 workspace 的
+# 依赖树里（`notify` 由 `gpui-component` 引入，`async-channel` 由 `gpui-pre` 引入），
+# 所以直接声明它们不增加任何新的第三方代码，只是把它们升成直接依赖。
+notify = "7"
+async-channel = "2"

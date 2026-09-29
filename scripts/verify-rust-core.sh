@@ -5,8 +5,8 @@ set -euo pipefail
 #
 # 旧前端（`macos/` 的 C 桥 + `swift build` 链接、`windows/` 的 Tauri host）删除后，这里不再验证
 # "Core 的 C ABI 符号出现在 macOS 二进制里"——那条链路已随 `macos/Sources/LitheRustCore/bridge.c`
-# 一起消失。gpui 宿主**直接链接 crate**（`rust/lithe-db-gpui/crates/*/Cargo.toml` 的 `lithe-core = { path = ... }`），
-# 所以对应的证据是"gpui 侧对 Core 的调用能编译并通过其单测"，见末尾的 `cargo test -p lithe-db-gpui-*`。
+# 一起消失。gpui 宿主**直接链接 crate**（`rust/lithe-gpui/crates/*/Cargo.toml` 的 `lithe-core = { path = ... }`），
+# 所以对应的证据是"gpui 侧对 Core 的调用能编译并通过其单测"，见末尾的 `cargo test -p lithe-gpui-*`。
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -27,6 +27,6 @@ cargo test --manifest-path rust/Cargo.toml -p lithe-core
 # gpui 宿主对 Core 的调用面：Core 契约一变，这些 crate 就编不过或行为漂移。
 # 与 Core 同属一个 workspace，所以 manifest 仍是 rust/Cargo.toml，只是多了 -p 选择。
 cargo test --manifest-path rust/Cargo.toml \
-    -p lithe-db-gpui-shared -p lithe-db-gpui-app -p lithe-db-gpui-workbench
+    -p lithe-gpui-shared -p lithe-gpui-app -p lithe-gpui-workbench
 
 printf '%s\n' "Rust Core verification passed: comments, layout, formatting, core tests, and gpui host integration"

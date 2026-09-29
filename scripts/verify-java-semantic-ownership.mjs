@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoots = [
   "rust/lithe-core/src",
-  "rust/lithe-db-gpui/crates/java/src",
+  "rust/lithe-gpui/crates/java/src",
 ];
 const forbidden = [
   "is_main_method",

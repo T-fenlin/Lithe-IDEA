@@ -3,13 +3,13 @@
 状态：提议中
 
 > **状态变更（2026-09-25，维护者决定）**：
-> **实现框架不变：界面继续用 GPUI Kit 重写**（`rust/lithe-db-gpui/`）。变的是**界面规格来源** ——
+> **实现框架不变：界面继续用 GPUI Kit 重写**（`rust/lithe-gpui/`）。变的是**界面规格来源** ——
 > 从 macOS SwiftUI 改回 **Windows 前端**（`windows/tauri/src/features/*`，Tauri v2 + React + Tailwind + shadcn）。
 >
 > 直接影响：
-> - **尺寸、布局、观感一律以 Windows 前端为准**；macOS 那份调研（`rust/lithe-db-gpui/UI-MAP.md` 与 `.artifacts/ui-map/01..09`）降级为
+> - **尺寸、布局、观感一律以 Windows 前端为准**；macOS 那份调研（`rust/lithe-gpui/UI-MAP.md` 与 `.artifacts/ui-map/01..09`）降级为
 >   **行为/功能对照**（它功能最全，用来查"这个交互原本怎么工作"），不再当视觉规格；
-> - `rust/lithe-db-gpui/UI-MAP.md` 需要**重新以 Windows 为源做一份逐区域对应表**；执行提示词见
+> - `rust/lithe-gpui/UI-MAP.md` 需要**重新以 Windows 为源做一份逐区域对应表**；执行提示词见
 >   `docs/development/gpui-ui-windows-prompt.md`；
 > - 仍然成立：已发布的 `gpui-kit 0.6.x` 与技能文档（描述 0.7.0）的差异、"跨端契约不动、宿主只做平台能力"这条边界、
 >   以及 `UI-MAP.md` §1.3 里那些用真机踩出来的 gpui-kit 实现规则（行高、编辑器高度、滚动条、浮层挂层、DPI 与截图口径）。
@@ -56,7 +56,7 @@ Rust Core 的边界已经是语言中立的，这一点决定了重写的性质�
 
 ### 已经解决过的部分（不要重开）
 
-- **编辑器曾经共享，但那条路线整体退役了**：旧前端时期 macOS 与 Windows 都用 Monaco 0.55.1、共用 `frontend/editor/`（`@lithe/editor`）。它投入过真实成本，也验证过「WebView 承载 Monaco」可行（那篇实验笔记已随旧前端归档，可在 git tag `legacy-frontends-final` 追溯）。旧前端与 `frontend/editor/` 一并删除后，gpui 侧编辑器是**原生 Rust 实现**（`rust/lithe-db-gpui/crates/editor/`，语法高亮走 `tree-sitter-java`），不再有 Monaco。
+- **编辑器曾经共享，但那条路线整体退役了**：旧前端时期 macOS 与 Windows 都用 Monaco 0.55.1、共用 `frontend/editor/`（`@lithe/editor`）。它投入过真实成本，也验证过「WebView 承载 Monaco」可行（那篇实验笔记已随旧前端归档，可在 git tag `legacy-frontends-final` 追溯）。旧前端与 `frontend/editor/` 一并删除后，gpui 侧编辑器是**原生 Rust 实现**（`rust/lithe-gpui/crates/editor/`，语法高亮走 `tree-sitter-java`），不再有 Monaco。
 - **Windows 已经重写过一次界面**：此前的 Qt/C++ 实现已经退役，然后是 Tauri，最后是 gpui。历史上做过两次全量前端替换，说明这类替换在本仓库可行但昂贵，不是第一次。
 
 ### 本次要解决的新问题
@@ -87,7 +87,7 @@ P1 已完成（结果见阶段 1）。此后的短期目标按"**先界面、后
 | S4 | P3 工作台外壳 | 能不能接真实数据做出可用外壳？ | 打开工作区、切换与拖动面板、命令面板、项目内搜索都可用 | 未开始 |
 | S5 | 决策门 B（编辑器） | GPUI Kit 的编辑器能否替代 Monaco？ | 对等清单逐项有实测结论 | 未开始 |
 
-**S1 结论：工作区用 `DockArea`，不是手搓 flex。** 六个区域（标题栏、左 `Project`、中编辑器、底部 `Terminal`、右 `Outline`、状态栏）同时在真实窗口中渲染，数据来自 `workspace.snapshot`（4,851 个文件）。实现见 `rust/lithe-db-gpui/shell/src/bin/shell-probe.rs`，证据 `.artifacts/p1/s1-final.png`。
+**S1 结论：工作区用 `DockArea`，不是手搓 flex。** 六个区域（标题栏、左 `Project`、中编辑器、底部 `Terminal`、右 `Outline`、状态栏）同时在真实窗口中渲染，数据来自 `workspace.snapshot`（4,851 个文件）。实现见 `rust/lithe-gpui/shell/src/bin/shell-probe.rs`，证据 `.artifacts/p1/s1-final.png`。
 
 **S1 期间确认的两条硬约束（都是踩过坑才拿到的）**：
 
@@ -99,11 +99,11 @@ P1 已完成（结果见阶段 1）。此后的短期目标按"**先界面、后
 **界面参考（2026-09-24 改定，取代此前"照搬 Windows"的决定）**：不做独立设计，**以 macOS 端源码为界面规格**，用 gpui-kit 一比一复刻。
 
 - 原因：macOS 端是功能最全、更新最快的实现（`macos/Sources/Lithe` 的 `Views/` 约 5.4 万行，覆盖编辑区、Git、数据库、运行调试、语言智能等），Windows 端是它的滞后镜像；拿最新最全的一端当规格，才不会把已经改掉的设计抄进来。
-- **两步走**：先把 macOS 界面逐区域逆向成 `rust/lithe-db-gpui/UI-MAP.md`（区域组成 + 度量 + 每个元素 → gpui-kit 组件 + 缺口 + 优化点），再照它实现。区域调研原文在 `.artifacts/ui-map/0X-*.md`（不入库）。
+- **两步走**：先把 macOS 界面逐区域逆向成 `rust/lithe-gpui/UI-MAP.md`（区域组成 + 度量 + 每个元素 → gpui-kit 组件 + 缺口 + 优化点），再照它实现。区域调研原文在 `.artifacts/ui-map/0X-*.md`（不入库）。
 - **实现只能用 gpui-kit 0.6.6 源码里真实存在的组件**（判断依据是已发布源码，不是在线文档——在线文档描述的是未发布的 0.7.0）。macOS 做得不好的地方允许用 gpui-kit 做得更好，但必须在 `UI-MAP.md` 的"优化"一栏写明理由。
 - **Windows 端与产品截图降为旁证**，只用来交叉验证同一功能在另一端的取舍。此前的 Windows 结构分析（`main-layout.tsx` / `footer/` / `main-sidebar.tsx`）保留在下一段，作为旁证材料，不再是规格来源。
 
-已确认的 macOS 外壳结构（`11` 号子代理调研 `macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift` 等，细节见 `rust/lithe-db-gpui/UI-MAP.md` §2）：
+已确认的 macOS 外壳结构（`11` 号子代理调研 `macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift` 等，细节见 `rust/lithe-gpui/UI-MAP.md` §2）：
 
 ```text
 VStack
@@ -121,7 +121,7 @@ VStack
 
 **这与 gpui-kit 的一个能力边界冲突，已定取舍**：gpui-kit 的 `DockPlacement::Bottom` 只横跨中心列（`gpui-base-0.6.6/src/dock/dock_area.rs:1415-1431` 把 bottom dock 挂在 center_frame 内），而 macOS 的底部工具窗横跨"左栏 + 编辑区"。因此本项目把底部工具窗放进 center 的 `v_split`（而不是用 Bottom dock）：结构上等价于 macOS，代价是失去 Dock 自带的底部停靠/拖拽能力，需要时再评估。
 
-**旁证（Windows 结构，不再是规格）**：`windows/tauri/src/features/layout/components/main-layout.tsx`（外壳）、`footer/`（状态栏）、`sidebar/main-sidebar.tsx`（侧栏）。旧结论：设计 token 名与 gpui-kit 的 `Theme` 高度对应（`--sidebar`、`--title-bar`、`--status-bar`、`--tab-bar`、`--border`、`--background`、`--primary`）；这条对 macOS 同样成立，但 macOS token 有两个语义陷阱（`accent` = primary、`selection` 不透明），映射表在 `rust/lithe-db-gpui/UI-MAP.md` §1.2。
+**旁证（Windows 结构，不再是规格）**：`windows/tauri/src/features/layout/components/main-layout.tsx`（外壳）、`footer/`（状态栏）、`sidebar/main-sidebar.tsx`（侧栏）。旧结论：设计 token 名与 gpui-kit 的 `Theme` 高度对应（`--sidebar`、`--title-bar`、`--status-bar`、`--tab-bar`、`--border`、`--background`、`--primary`）；这条对 macOS 同样成立，但 macOS token 有两个语义陷阱（`accent` = primary、`selection` 不透明），映射表在 `rust/lithe-gpui/UI-MAP.md` §1.2。
 
 **已确认的一条硬约束**：不设 `window_bounds` 时 GPUI 默认窗口是 1536x1095 **逻辑**像素；在 125% 缩放的显示器上桌面只有 1536x864 逻辑像素，窗口比屏幕高 231px，**底部（状态栏）整体落在屏幕之外**。窗口尺寸必须从 `primary_display().visible_bounds()` 算出来。
 
@@ -164,16 +164,16 @@ gpui_kit::application().run(move |cx| {
 
 **分支与落点**：
 
-- 在**当前工作区与当前分支**上开发，不新建分支：`rust/lithe-db-gpui/` 作为仓库根的新目录加入，现有产品目录不做改动。
-- 新宿主作为**仓库根的独立 Cargo workspace**（例如 `rust/lithe-db-gpui/`），用 path 依赖引用 `rust/lithe-core`，不并入 `rust/` workspace。原因：`rust/Cargo.toml` 的 release profile 是为 Core 体积优化的（`strip`、`lto`、`codegen-units = 1`、`opt-level = "s"`），而桌面应用的 profile 需求不同；并入同一个 workspace 会让 `rust/Cargo.lock` 被 GPUI 的大依赖树污染，并拖慢现有 Core 构建与校验。
+- 在**当前工作区与当前分支**上开发，不新建分支：`rust/lithe-gpui/` 作为仓库根的新目录加入，现有产品目录不做改动。
+- 新宿主作为**仓库根的独立 Cargo workspace**（例如 `rust/lithe-gpui/`），用 path 依赖引用 `rust/lithe-core`，不并入 `rust/` workspace。原因：`rust/Cargo.toml` 的 release profile 是为 Core 体积优化的（`strip`、`lto`、`codegen-units = 1`、`opt-level = "s"`），而桌面应用的 profile 需求不同；并入同一个 workspace 会让 `rust/Cargo.lock` 被 GPUI 的大依赖树污染，并拖慢现有 Core 构建与校验。
 - 本方向落地后需要更新 `develop-lithe` 的所有权表与
-  [仓库所有权与共享边界](../../implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md)，把 `rust/lithe-db-gpui/` 登记为新的界面层；在此之前它只是实验目录。
+  [仓库所有权与共享边界](../../implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md)，把 `rust/lithe-gpui/` 登记为新的界面层；在此之前它只是实验目录。
 
 ### 阶段 1：冒烟验证（1–2 周）
 
 - **目标**：证明"GPUI 宿主能直接驱动 Rust Core"。
 - **工作项**：
-  1. 在当前分支上新建 `rust/lithe-db-gpui/` workspace，添加 `gpui`、`gpui-kit` 与 `lithe-core` 依赖。
+  1. 在当前分支上新建 `rust/lithe-gpui/` workspace，添加 `gpui`、`gpui-kit` 与 `lithe-core` 依赖。
   2. 用 `gpui_kit::open_window` 打开窗口并挂载 `Root`。
   3. 进程内调用 `lithe_core::execute_json` 执行 `core.ping`。
   4. 执行 `workspace.snapshot`，把返回的相对路径列表画成一个可滚动列表。
@@ -253,7 +253,7 @@ gpui_kit::application().run(move |cx| {
 现状与证据：
 
 - 官方插件只有两个：`Plugins/mac/Official/GoSupport`（Go 语言服务器与执行模块，`contributions` 为空）与 `Plugins/mac/Official/LinuxDoSupport`（社区模块）。
-- **更正（2026-09-23，由 `rust/lithe-db-gpui/PLUGINS.md` 的调查发现并已复核）**：`LinuxDoSupport/plugin.json` 的模块**声明了一个界面贡献** —— `kind: "toolWindow"`、`placement: "rightSidebar"`、`rendererID: "community.linux-do.browser"`。也就是说 macOS 侧**今天就存在"插件贡献工具窗面板、由浏览器渲染器渲染"的机制**，本文早先"两个插件都不贡献界面"的说法有误。只有 GoSupport 的 `contributions` 是空数组。
+- **更正（2026-09-23，由 `rust/lithe-gpui/PLUGINS.md` 的调查发现并已复核）**：`LinuxDoSupport/plugin.json` 的模块**声明了一个界面贡献** —— `kind: "toolWindow"`、`placement: "rightSidebar"`、`rendererID: "community.linux-do.browser"`。也就是说 macOS 侧**今天就存在"插件贡献工具窗面板、由浏览器渲染器渲染"的机制**，本文早先"两个插件都不贡献界面"的说法有误。只有 GoSupport 的 `contributions` 是空数组。
 - 另一点：Core 的 `PluginPackageManifest`（`rust/lithe-core/src/plugins/mod.rs`）**没有 `contributions` 字段**，该字段目前只被 Swift 侧消费。因此"插件不贡献界面"相对今天是**收紧**而不是维持现状，且已有插件面板在迁移时必须给出处置。
 - manifest 的解析、兼容校验与目录合并**已经在 Rust Core 里**（`rust/lithe-core/src/plugins/mod.rs`），`PluginEntrypoint.kind` 目前只接受 `builtIn` 与 `nativeBundle` 两种取值，判定逻辑集中在文件末尾的一个 `match`。
 - 唯一 macOS 专属的部分是 `nativeBundle` 的加载元数据：`bundleIdentifier`、`principalClass`、`bundlePath`，对应 Swift 侧的 `MacNativePluginLoader.swift`、`MacPluginHostContext.swift` 等文件。
@@ -346,7 +346,7 @@ Zed 是 GPUI 的创造者，它的扩展模型是本方向最直接的先例。�
 
 ### 现在就能做的下一步
 
-1. 在当前分支上新建 `rust/lithe-db-gpui/` 目录与 workspace，不修改 `macos/`、`windows/`、`rust/`、`shared/` 的现有文件。
+1. 在当前分支上新建 `rust/lithe-gpui/` 目录与 workspace，不修改 `macos/`、`windows/`、`rust/`、`shared/` 的现有文件。
 2. 做阶段 1：新 workspace + 最小宿主 + `core.ping` + `workspace.snapshot` 真实数据。
 3. 阶段 1 通过后立刻做决策门 B 的实测：编辑器是最大不确定性，越早知道越好。
 
@@ -374,7 +374,7 @@ Zed 是 GPUI 的创造者，它的扩展模型是本方向最直接的先例。�
 - 阶段 4：决策门 B 的对等清单逐项附实测证据；插件的三层各有交付与验收——第一层声明式贡献能被 Core 校验并合并，第三层新增 entrypoint kind 后 `builtIn` 行为不变、`nativeBundle` 在 GPUI 宿主里显式拒绝而非静默失效、两个官方插件有进程型替代实现、能力授权可按调用点校验且用户能收窄，第二层若启动则需给出 WASM 宿主 API 的维护成本评估；插件 SDK 与 `create`、`package`、`dev` 工具链可用，且 `dev` 能脱离宿主启动一个示例插件。
 - 阶段 5：128 个命令都有"已对等"或"显式不支持"的明确结论；Java/Maven 语义仍来自所选后端。
 - 阶段 6：三端都能构建出可运行产物。
-- 全程约束：本方向的改动只新增在 `rust/lithe-db-gpui/` 内，不修改 `macos/`、`windows/`、`rust/`、`shared/` 的现有文件，直到明确决定替换现有产品。
+- 全程约束：本方向的改动只新增在 `rust/lithe-gpui/` 内，不修改 `macos/`、`windows/`、`rust/`、`shared/` 的现有文件，直到明确决定替换现有产品。
 
 ## 风险
 
@@ -385,7 +385,7 @@ Zed 是 GPUI 的创造者，它的扩展模型是本方向最直接的先例。�
 - **技能文档与已发布版本错位**：`gpui-kit` 的技能文档已经描述尚未发布的 0.7.0，而可用版本是 0.6.6；P1 为此付出了一次编译失败（`open_window`、`with_assets`、`overflow_y_scrollbar`、`.then(..)` 四处）。一年周期里 GPUI、GPUI Kit 与 `lithe-core` 契约都会变，因此判断依据必须固定在"已发布版本的源码 + 提交的 `Cargo.lock`"上，升级时逐处复核。
 - **42.6 万行界面代码的体量被低估**：这个数字只统计了 Swift 与 TS 源码，不含资源、本地化、测试、构建脚本与平台配置。真实迁移量大于该数字。
 - **三端里的第三端是从零开始**：仓库没有 Linux 目录、没有 Linux CI、没有 Linux 打包与签名链路。把 Linux 放进一年范围，等于同时新增一个平台。
-- **并行开发期**：`rust/lithe-db-gpui/` 与现有产品在同一分支上共存，需要持续跟进 `lithe-core` 契约的变化，否则新宿主会快速过期。
+- **并行开发期**：`rust/lithe-gpui/` 与现有产品在同一分支上共存，需要持续跟进 `lithe-core` 契约的变化，否则新宿主会快速过期。
 - **"看起来完成了"的假象**：对齐阶段最容易出现界面入口存在但后端没接的情况。这条已经在
   已归档的 Windows 产品功能对齐提案里被点名为真实风险（随 `windows/` 删除，可在 git tag `legacy-frontends-final` 追溯），本方向必须沿用"没有共享实现就显式失败"的规则。
 - **插件 ABI 改动的兼容风险**：`nativeBundle` 是已发布的插件加载方式，改动 manifest schema 会影响已装插件的用户。过渡期必须保留旧 kind 的识别与明确提示，否则用户升级后会看到插件神秘消失。

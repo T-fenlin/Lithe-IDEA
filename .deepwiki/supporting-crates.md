@@ -66,7 +66,7 @@ JUnit report.
 
 `Session::configure` sets `GIT_ASKPASS` to `std::env::current_exe()` (`authentication.rs:70-79`),
 i.e. the `Lithe` binary. But `git_askpass_main` is reachable only through the **retired C
-ABI** (`rust/lithe-core/src/runtime/ffi.rs:134-140`), and no file under `rust/lithe-db-gpui` references
+ABI** (`rust/lithe-core/src/runtime/ffi.rs:134-140`), and no file under `rust/lithe-gpui` references
 `git_askpass_main` or `LITHE_GIT_ASKPASS_MODE`.
 
 So interactive Git authentication has **no host-side consumer today**:
@@ -109,10 +109,10 @@ framing. `verify-rust-core.sh` does **not** cover this crate; only
 ### ⚠️ Not wired to the gpui host
 
 The **only** consumer of the sidecar is `lithe-db-mcp`. No gpui Rust code references it
-(a grep for `database` in `rust/lithe-db-gpui/crates/**/*.rs` finds 6 unrelated hits). The database
+(a grep for `database` in `rust/lithe-gpui/crates/**/*.rs` finds 6 unrelated hits). The database
 menu item renders as `MenuItem::NotWired { label_key: "lithe.menu.databases", .. }`
-(`lithe-db-gpui/crates/workbench/src/menu_bar.rs:1375-1379`), `database-icons/` is `#[exclude]`d
-from the embedded assets (`lithe-db-gpui/crates/app/src/assets.rs:119`), and the
+(`lithe-gpui/crates/workbench/src/menu_bar.rs:1375-1379`), `database-icons/` is `#[exclude]`d
+from the embedded assets (`lithe-gpui/crates/app/src/assets.rs:119`), and the
 `dev.lithe.database` built-in module is `defaultState: "disabled"`
 (`shared/fixtures/modules/built-in-v1.json:24-36`).
 
@@ -174,22 +174,22 @@ The directory currently holds **three manifests and no source**:
 | --- | --- |
 | `jdtls/manifest.json` | JDT LS **1.61.0** milestone tarball + SHA-256; EPL-2.0 text + SHA; Lombok 1.18.46 jar + SHA + licence + SHA; `vscode-java-debug` 0.59.0 VSIX + SHA with inner plugin SHA and java-debug 0.53.2 licence + SHA; `vscode-java-test` 0.46.0 VSIX + SHA with plugin SHA, runner SHA and licence SHA; `minimumJavaVersion: 21` |
 | `jdk/manifest.json` | Temurin **21.0.12.1+1**; four platform entries (`macos-aarch64`, `macos-x86_64`, `windows-aarch64` = `21.0.12+8`, `windows-x86_64`), each with URL, `sha256` and `jdkRoot` |
-| `dbx/manifest.json` | `t8y2/dbx` @ `996ce42e…`, `usage: "reference-only"`, `buildDependency: false`, `runtimeDependency: false`, `packaged: false`; `retainedArtifacts` points at `rust/lithe-db-gpui/assets/database-icons/` with its `NOTICE.txt` and `LICENSE-APACHE-2.0.txt` |
+| `dbx/manifest.json` | `t8y2/dbx` @ `996ce42e…`, `usage: "reference-only"`, `buildDependency: false`, `runtimeDependency: false`, `packaged: false`; `retainedArtifacts` points at `rust/lithe-gpui/assets/database-icons/` with its `NOTICE.txt` and `LICENSE-APACHE-2.0.txt` |
 
 The JDK and JDTLS manifests are consumed by `scripts/prepare-jdk.{sh,ps1}` and validated by
 `scripts/verify-download-cache.mjs`, which is itself an `enable_all_validation` trigger in
 the path classifier (`classify-ci-changes.sh:152-154`).
 
 `BUNDLED_MANIFEST` is `include_str!`-ed into the binary
-(`lithe-db-gpui/crates/java/src/jdtls.rs:34`) so version detection has a compiled-in fallback when
+(`lithe-gpui/crates/java/src/jdtls.rs:34`) so version detection has a compiled-in fallback when
 no `manifest.json` is present.
 
 ## `.lithe/` is per-project, not repo-root
 
 The repository root has **no** `.lithe/`. That directory belongs to each *opened project*
 and is created on open, unconditionally — a product decision that accepts a `.lithe/` even
-in a non-Git directory (`lithe-db-gpui/crates/workbench/src/workspace.rs:1104-1108, 4439-4442`).
-The document set is enumerated in `lithe-db-gpui/crates/shared/src/workspace_config/paths.rs:60-160`.
+in a non-Git directory (`lithe-gpui/crates/workbench/src/workspace.rs:1104-1108, 4439-4442`).
+The document set is enumerated in `lithe-gpui/crates/shared/src/workspace_config/paths.rs:60-160`.
 
 Root-level hidden entries that do exist: `.agents/`, `.deepwiki/`, `.github/`, `.gitignore`.
 `.gitignore:1-11` covers `.idea/`, `rust/target/`, `.artifacts/`,
@@ -203,9 +203,9 @@ Root-level hidden entries that do exist: `.agents/`, `.deepwiki/`, `.github/`, `
 - `rust/lithe-core/Cargo.toml`
 - `rust/lithe-db-sidecar/src/`, `Cargo.toml`
 - `rust/lithe-db-mcp/src/main.rs`, `Cargo.toml`
-- `rust/lithe-db-gpui/crates/java/src/jdtls.rs`
-- `rust/lithe-db-gpui/crates/app/src/assets.rs`
-- `rust/lithe-db-gpui/crates/workbench/src/menu_bar.rs`
+- `rust/lithe-gpui/crates/java/src/jdtls.rs`
+- `rust/lithe-gpui/crates/app/src/assets.rs`
+- `rust/lithe-gpui/crates/workbench/src/menu_bar.rs`
 - `scripts/{prepare-jdk.sh,verify-download-cache.mjs,build-database-*.sh,database-*-smoke.sh}`
 - `infra/docker/database-validation/`
 - `third_party/README.md`, `third_party/*/manifest.json`

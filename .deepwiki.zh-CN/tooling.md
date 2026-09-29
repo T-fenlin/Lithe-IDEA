@@ -9,7 +9,7 @@
 ```bash
 cargo fmt --manifest-path rust/Cargo.toml -p lithe-core -- --check
 cargo test --manifest-path rust/Cargo.toml -p lithe-core
-cargo test --manifest-path rust/Cargo.toml -p lithe-db-gpui-app
+cargo test --manifest-path rust/Cargo.toml -p lithe-gpui-app
 ./scripts/verify-rust-core.sh
 ./scripts/verify-shared-contracts.sh
 node scripts/verify-agent-notes.mjs
@@ -26,7 +26,7 @@ README 明确写道：GPUI 宿主尚无 CI lane，因此这些检查就是当前
 | 测试代码或测试基础设施 | `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`，再用受影响的 Rust timing harness |
 | Shared contracts 或 JSON fixture | `./scripts/verify-shared-contracts.sh` |
 | Rust Core 或 Core↔host contract | `./scripts/verify-rust-core.sh` |
-| `rust/lithe-db-gpui/crates/*` | 受影响 crate 的 `cargo test -p <crate>` + `cargo fmt -- --check` |
+| `rust/lithe-gpui/crates/*` | 受影响 crate 的 `cargo test -p <crate>` + `cargo fmt -- --check` |
 | CI lane 或 path classifier | `node scripts/test-classify-ci-changes.mjs` |
 | Java semantic ownership | `node scripts/verify-java-semantic-ownership.mjs` |
 
@@ -40,7 +40,7 @@ README 明确写道：GPUI 宿主尚无 CI lane，因此这些检查就是当前
 4. `cargo fmt -p lithe-core -- --check`
 5. 限时 `cargo test -p lithe-git-host`（120 s）
 6. `cargo test -p lithe-core`
-7. `cargo test -p lithe-db-gpui-shared -p lithe-db-gpui-app -p lithe-db-gpui-workbench`
+7. `cargo test -p lithe-gpui-shared -p lithe-gpui-app -p lithe-gpui-workbench`
 
 注意：第 7 步只覆盖 3 个 GPUI crate；其他 crate 需要按需单独做 `cargo test -p <crate>`。
 
@@ -90,7 +90,7 @@ README 明确写道：GPUI 宿主尚无 CI lane，因此这些检查就是当前
 - rename / copy ⇒ `enable_all_validation`
 - `*.md` / `docs/*` / `.agents/*` 等路径一般不触发 lane
 - Rust Core 注释-only 更新会触发 `rust_comments`，而不是 `rust_core`
-- `rust/lithe-db-gpui/crates/*/src/*` 会同时设置 `gpui` 和 `rust_core`
+- `rust/lithe-gpui/crates/*/src/*` 会同时设置 `gpui` 和 `rust_core`
 - `rust/Cargo.toml` / `Cargo.lock` 会触发全部 lane
 - `shared/*` 同样会触发 `rust_core` + `gpui`
 
@@ -107,10 +107,10 @@ README 明确写道：GPUI 宿主尚无 CI lane，因此这些检查就是当前
 
 以下脚本支持主题和 UI 资产的生成 / 校验：
 
-- `lithe-db-gpui/tools/generate-idea-icons.mjs`
-- `lithe-db-gpui/tools/extract-locale.mjs`
-- `lithe-db-gpui/tools/check-ui-px.mjs`
-- `lithe-db-gpui/capture-screenshot.ps1`
+- `lithe-gpui/tools/generate-idea-icons.mjs`
+- `lithe-gpui/tools/extract-locale.mjs`
+- `lithe-gpui/tools/check-ui-px.mjs`
+- `lithe-gpui/capture-screenshot.ps1`
 - `ui-click.ps1`
 
 ## 清理义务

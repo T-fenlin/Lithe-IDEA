@@ -4,13 +4,13 @@
 
 ## 先说结论
 
-Lithe 现在只有一个宿主（`rust/lithe-db-gpui/` 里的 GPUI Kit 应用）和一份确定性业务逻辑（`rust/lithe-core`）。目录不只是组织方式，它就是架构所有权信号：写代码前先确认这件事归哪个 crate。判定顺序是**先问它是否确定性、是否被两个以上功能需要**——是就放 Core，否则留在拥有它的功能 crate。
+Lithe 现在只有一个宿主（`rust/lithe-gpui/` 里的 GPUI Kit 应用）和一份确定性业务逻辑（`rust/lithe-core`）。目录不只是组织方式，它就是架构所有权信号：写代码前先确认这件事归哪个 crate。判定顺序是**先问它是否确定性、是否被两个以上功能需要**——是就放 Core，否则留在拥有它的功能 crate。
 
 ## 问题
 
 旧仓库有两套彼此独立的平台产品（macOS SwiftUI/AppKit 与 Windows React/Tauri），只有少量契约相连。维护两个产品时，平台代码会互相泄漏，同一行为会被实现两次，界面层也容易绕过应用层直接调底层能力。
 
-那两套前端已删除，只留下 `rust/lithe-db-gpui/`。所有权问题没有消失，只是换了一种形态：现在的风险变成"功能 crate 之间互相伸手"，以及"确定性逻辑被塞进界面 crate，导致无法测试"。
+那两套前端已删除，只留下 `rust/lithe-gpui/`。所有权问题没有消失，只是换了一种形态：现在的风险变成"功能 crate 之间互相伸手"，以及"确定性逻辑被塞进界面 crate，导致无法测试"。
 
 ## 决策
 
@@ -21,16 +21,16 @@ Lithe 现在只有一个宿主（`rust/lithe-db-gpui/` 里的 GPUI Kit 应用）
 | `rust/lithe-core/` | 确定性命令、模型、校验和 JSON 命令信封 |
 | `rust/lithe-git-host/` | 原生 Git 子进程、管道、临时输入和有界清理 |
 | `rust/lithe-db-mcp/`、`rust/lithe-db-sidecar/` | 数据库辅助进程与 MCP 服务 |
-| `rust/lithe-db-gpui/crates/app/` | 组合根：命令行参数、窗口尺寸、启动顺序、设置加载与主题应用 |
-| `rust/lithe-db-gpui/crates/workbench/` | 工作台外壳：标题栏、项目标签、活动栏、状态栏、中央列 |
-| `rust/lithe-db-gpui/crates/editor/` | 编辑器表现、缓冲区、跳转、诊断、补全 |
-| `rust/lithe-db-gpui/crates/explorer/` | 项目树 |
-| `rust/lithe-db-gpui/crates/git/` | Git 功能状态与视图 |
-| `rust/lithe-db-gpui/crates/terminal/` | 终端会话、ANSI 解析与渲染 |
-| `rust/lithe-db-gpui/crates/java/` | JDTLS 会话、workspace 指纹、Maven 上下文 |
-| `rust/lithe-db-gpui/crates/settings/` | 设置模型、持久化、主题与设置对话框 |
-| `rust/lithe-db-gpui/crates/notify/` | 通知中心的 store 与模型 |
-| `rust/lithe-db-gpui/crates/shared/` | 跨 crate 原语：图标、i18n、Core 客户端、workspace 配置 |
+| `rust/lithe-gpui/crates/app/` | 组合根：命令行参数、窗口尺寸、启动顺序、设置加载与主题应用 |
+| `rust/lithe-gpui/crates/workbench/` | 工作台外壳：标题栏、项目标签、活动栏、状态栏、中央列 |
+| `rust/lithe-gpui/crates/editor/` | 编辑器表现、缓冲区、跳转、诊断、补全 |
+| `rust/lithe-gpui/crates/explorer/` | 项目树 |
+| `rust/lithe-gpui/crates/git/` | Git 功能状态与视图 |
+| `rust/lithe-gpui/crates/terminal/` | 终端会话、ANSI 解析与渲染 |
+| `rust/lithe-gpui/crates/java/` | JDTLS 会话、workspace 指纹、Maven 上下文 |
+| `rust/lithe-gpui/crates/settings/` | 设置模型、持久化、主题与设置对话框 |
+| `rust/lithe-gpui/crates/notify/` | 通知中心的 store 与模型 |
+| `rust/lithe-gpui/crates/shared/` | 跨 crate 原语：图标、i18n、Core 客户端、workspace 配置 |
 | `shared/` | 契约和夹具，不放编译实现 |
 | `infra/` | 仓库级开发和验证基础设施 |
 | `third_party/` | 固定版本的上游清单和必要的局部源码补丁 |
@@ -150,7 +150,7 @@ Note 中；正式契约、源码、夹具和验证脚本分别作为各自表面
 
 - `rust/lithe-core/`
 - `rust/lithe-git-host/`
-- `rust/lithe-db-gpui/crates/`
+- `rust/lithe-gpui/crates/`
 - `shared/`
 - `scripts/`
 - `infra/`

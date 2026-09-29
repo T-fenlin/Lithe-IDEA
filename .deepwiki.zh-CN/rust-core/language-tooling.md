@@ -36,7 +36,7 @@ ProjectPreparationStatus {
 
 - 失败不等于“永远失败”。`Failed` 只是当前 attempt 的终结状态；如果 user 重新打开同一 workspace 或重试更改配置，状态允许再次进入 `Preparing`。
 - `Ready` 只在叫 `languageProviders` 的结果里表明**至少存在一个 provider**，而不是“所有语言都好”。这意味着 Java provider 可能 ready，而做法依赖于 fallback 逻辑单独判定是否可用。
-- 语义有两个层次：project preparation 是框架状态；installation / runtime detection 由 `lithe-db-gpui/crates/java` 完成，并通过 `settings` 重新注入。
+- 语义有两个层次：project preparation 是框架状态；installation / runtime detection 由 `lithe-gpui/crates/java` 完成，并通过 `settings` 重新注入。
 
 `workspace detection` 只读取**受控目录集合**；未被显式写入的目录不会被认为是有效 worktree root。`workspaceRoot` 规范化规则是：
 
@@ -45,7 +45,7 @@ ProjectPreparationStatus {
 - Windows dir names 如果具有 `\\?\` verbatim 前缀就被规范化成 `/` / 统一形式；
 - 反向路径和 UNC share 需要同一套 `normalize_path` 函数。
 
-这个一致性非常重要，因为 JDT LS 的实际 config 与 gpui 侧缓存根都依赖同一套路径 normalization，见 `lithe-db-gpui/crates/java/workspace.rs` 和 `shared/workspace_config/paths.rs`。
+这个一致性非常重要，因为 JDT LS 的实际 config 与 gpui 侧缓存根都依赖同一套路径 normalization，见 `lithe-gpui/crates/java/workspace.rs` 和 `shared/workspace_config/paths.rs`。
 
 ## Java provider
 
@@ -72,7 +72,7 @@ Java 语言服务被显式分成两部分：
 - `diagnostics`：`line`, `character` 是**字符列**，并在宿主映射回 UTF-16；
 - `hover`：symbol 解析的 `range` 必须在当前 revision 之内，否则抛弃。
 
-这套约束在 `lithe-db-gpui/crates/editor/src/navigation.rs` 与 `diagnostics.rs` 中被反复用到；Core 只保证**语义输出**，不保证宿主 UI 直接使用原始 `LSP` 结构。
+这套约束在 `lithe-gpui/crates/editor/src/navigation.rs` 与 `diagnostics.rs` 中被反复用到；Core 只保证**语义输出**，不保证宿主 UI 直接使用原始 `LSP` 结构。
 
 ## Determinism guardrails
 
@@ -93,7 +93,7 @@ Language tooling 以 “project detection / java runtime / workspace cache / dia
 - `rust/lithe-core/src/languages/`（全部文件）
 - `rust/lithe-core/src/workspace/`（全部文件）
 - `rust/lithe-core/src/protocol/contracts.rs`
-- `rust/lithe-db-gpui/crates/java/src/`（全部文件）
-- `rust/lithe-db-gpui/crates/editor/src/navigation.rs`、`diagnostics.rs`、`completion.rs`
+- `rust/lithe-gpui/crates/java/src/`（全部文件）
+- `rust/lithe-gpui/crates/editor/src/navigation.rs`、`diagnostics.rs`、`completion.rs`
 - `shared/contracts/application-boundary.md`
 - `shared/contracts/language-providers.schema.json`

@@ -11,7 +11,7 @@ From `README.md:195-207`, which is the authoritative pre-submit list:
 ```bash
 cargo fmt --manifest-path rust/Cargo.toml -p lithe-core -- --check
 cargo test --manifest-path rust/Cargo.toml -p lithe-core
-cargo test --manifest-path rust/Cargo.toml -p lithe-db-gpui-app
+cargo test --manifest-path rust/Cargo.toml -p lithe-gpui-app
 ./scripts/verify-rust-core.sh
 ./scripts/verify-shared-contracts.sh
 node scripts/verify-agent-notes.mjs
@@ -29,11 +29,11 @@ the gate."*
 | Test code or test infrastructure | `./.agents/skills/write-stable-tests/scripts/verify-test-stability.sh`, then the affected Rust timing harness |
 | Shared contracts or JSON fixtures | `./scripts/verify-shared-contracts.sh` |
 | Rust Core, or the Core↔host contract | `./scripts/verify-rust-core.sh` |
-| `rust/lithe-db-gpui/crates/*` | `cargo test -p <crate>` for affected crates + `cargo fmt -- --check` |
+| `rust/lithe-gpui/crates/*` | `cargo test -p <crate>` for affected crates + `cargo fmt -- --check` |
 | CI lane or path classifier | `node scripts/test-classify-ci-changes.mjs` |
 | Java semantic ownership | `node scripts/verify-java-semantic-ownership.mjs` |
 
-`rust/lithe-db-gpui/PLAN.md:1948-1961` adds collaboration discipline: run cargo only on the changed
+`rust/lithe-gpui/PLAN.md:1948-1961` adds collaboration discipline: run cargo only on the changed
 scope, never `-p a -p b`, never workspace-wide; one cargo writer at a time; verify at
 interaction level with the screenshot scripts. Note that 125 % DPI means screenshot pixels
 = logical × 1.25.
@@ -53,7 +53,7 @@ interaction level with the screenshot scripts. Note that 125 % DPI means screens
 4. `cargo fmt -p lithe-core -- --check`
 5. timed `cargo test -p lithe-git-host` (120 s cap)
 6. `cargo test -p lithe-core`
-7. `cargo test -p lithe-db-gpui-shared -p lithe-db-gpui-app -p lithe-db-gpui-workbench`
+7. `cargo test -p lithe-gpui-shared -p lithe-gpui-app -p lithe-gpui-workbench`
 
 **Step 7 covers only 3 of the 10 gpui crates.** `editor`, `explorer`, `git`, `terminal`,
 `java`, `settings` and `notify` are exercised only by an ad hoc
@@ -66,7 +66,7 @@ interaction level with the screenshot scripts. Note that 125 % DPI means screens
 | `verify-rust-core-comments.sh` | The Rust Core comment standard: module docs, English-only comments, exported rustdoc, unsafe safety sections |
 | `verify-rust-core-layout.sh` | Package-facade layout for `lithe-core/src` |
 | `verify-shared-contracts.sh` | JSON validity for all fixtures/schemas + 7 structural assertion blocks (see [Contracts](contracts.md)) |
-| `verify-java-semantic-ownership.mjs` | Fails if any of 6 retired local entry/test scanner identifiers reappear in `lithe-core/src` or `lithe-db-gpui/crates/java/src` — "JDT must remain the only entry/test authority" |
+| `verify-java-semantic-ownership.mjs` | Fails if any of 6 retired local entry/test scanner identifiers reappear in `lithe-core/src` or `lithe-gpui/crates/java/src` — "JDT must remain the only entry/test authority" |
 | `verify-agent-notes.mjs` | Note lifecycle, class, required headings, status lines, links |
 | `classify-ci-changes.sh` | The CI path classifier (see below) |
 | `validate-stable-release-notes.mjs` | 9 required bilingual headings in order, with content |
@@ -104,8 +104,8 @@ Eight workflows in `.github/workflows/`:
 | Agent Notes | yes, path-filtered |
 | `lithe-core` | **none** — the classifier computes `rust_core` but nothing consumes it |
 | `lithe-git-host` | **none** |
-| `lithe-db-gpui-shared` / `-app` / `-workbench` | **none** |
-| `lithe-db-gpui-editor`, `-explorer`, `-git`, `-terminal`, `-java`, `-settings`, `-notify` | **none** |
+| `lithe-gpui-shared` / `-app` / `-workbench` | **none** |
+| `lithe-gpui-editor`, `-explorer`, `-git`, `-terminal`, `-java`, `-settings`, `-notify` | **none** |
 | `verify-shared-contracts.sh`, `verify-java-semantic-ownership.mjs`, `test-classify-ci-changes.mjs`, the test-stability gate | **none** |
 
 **`ci-rust.yml` does not exist**, even though the classifier has a dedicated case for it
@@ -129,7 +129,7 @@ met**.
   ⇒ no lane (`:69-71, 86-87`).
 - Comment-only edits under `rust/lithe-core/src/*.rs` set `rust_comments` **instead of**
   `rust_core` (`:88-96`, detector at `:18-39`).
-- `rust/lithe-db-gpui/crates/*/src/*` sets **both** `gpui` and `rust_core` (`:100-109`, with an
+- `rust/lithe-gpui/crates/*/src/*` sets **both** `gpui` and `rust_core` (`:100-109`, with an
   explicit warning about ordering vs. the `rust/*` catch-all).
 - `rust/Cargo.toml` / `Cargo.lock` ⇒ all three lanes (`:120-126`).
 - `shared/*` ⇒ `rust_core` + `gpui` (`:136-141`).
@@ -159,13 +159,13 @@ met**.
 
 | Script | Purpose |
 | --- | --- |
-| `lithe-db-gpui/tools/generate-idea-icons.mjs` | Regenerates `shared/src/icons/idea.rs`; `--check` verifies it |
-| `lithe-db-gpui/tools/extract-locale.mjs` | Regenerates `shared/locales/*.yml` from the vendored `source/*.ts` |
-| `lithe-db-gpui/tools/check-ui-px.mjs` | Pixel-level UI verification |
-| `lithe-db-gpui/capture-screenshot.ps1`, `ui-click.ps1` | Interaction-level verification for the GPUI host |
+| `lithe-gpui/tools/generate-idea-icons.mjs` | Regenerates `shared/src/icons/idea.rs`; `--check` verifies it |
+| `lithe-gpui/tools/extract-locale.mjs` | Regenerates `shared/locales/*.yml` from the vendored `source/*.ts` |
+| `lithe-gpui/tools/check-ui-px.mjs` | Pixel-level UI verification |
+| `lithe-gpui/capture-screenshot.ps1`, `ui-click.ps1` | Interaction-level verification for the GPUI host |
 
-Adding a file to `lithe-db-gpui/themes/` **requires** registering it in
-`BUNDLED_THEMES` (`lithe-db-gpui/crates/settings/src/theme.rs:68-70`) or a test fails.
+Adding a file to `lithe-gpui/themes/` **requires** registering it in
+`BUNDLED_THEMES` (`lithe-gpui/crates/settings/src/theme.rs:68-70`) or a test fails.
 
 ## Cleanup obligation
 
@@ -183,5 +183,5 @@ if a process cannot be stopped. Do not leave a test-built app in the user's app 
 - `scripts/test-classify-ci-changes.mjs`
 - `scripts/verify-download-cache.mjs`, `invoke-cargo-with-cache-fallback.ps1`
 - `.github/workflows/` (all files)
-- `rust/lithe-db-gpui/PLAN.md`, `rust/lithe-db-gpui/README.md`
+- `rust/lithe-gpui/PLAN.md`, `rust/lithe-gpui/README.md`
 - `.agents/skills/{develop-lithe,write-stable-tests,release-lithe}/SKILL.md`

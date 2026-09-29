@@ -79,7 +79,7 @@ This is what makes Lithe useful before JDT LS finishes indexing (or if it never 
 - `edits.rs` — UTF-16-aware text edit validation and application.
 - `snippets.rs` — LSP snippet → insertion-ready plain text. The host deliberately calls
   `lsp.plainSnippet` rather than reimplementing it, so the shown candidate and the
-  inserted text cannot diverge (`lithe-db-gpui/crates/java/src/service.rs:1178-1202`).
+  inserted text cannot diverge (`lithe-gpui/crates/java/src/service.rs:1178-1202`).
 - `symbols.rs` — in-process document symbols, references, renames, semantic-token helpers.
 
 Command surface: `lsp.builtinCompletions`, `lsp.builtinNavigation`,
@@ -113,10 +113,10 @@ absolute input — so a Windows-shaped path cannot bypass validation on another 
 
 ## Host-side counterpart
 
-`lithe-db-gpui/crates/java/` owns everything platform-specific about JDT LS: discovery, JDK
+`lithe-gpui/crates/java/` owns everything platform-specific about JDT LS: discovery, JDK
 resolution, the workspace-index cache, the synchronous session envelope, and a single
 `std::thread` event pump that is the only consumer of `lsp.waitEvents`. See
-[Language Service](../lithe-db-gpui/java.md).
+[Language Service](../lithe-gpui/java.md).
 
 ## Sources
 
@@ -128,6 +128,6 @@ resolution, the workspace-index cache, the synchronous session envelope, and a s
 - `rust/lithe-core/src/tests/{project,languages,protocol}.rs`
 - `shared/fixtures/lsp/`, `shared/fixtures/search/`, `shared/fixtures/documents/`
 - `shared/contracts/application-boundary.md`
-- `lithe-db-gpui/crates/java/src/service.rs`
+- `lithe-gpui/crates/java/src/service.rs`
 - `.agents/notes/implemented/architecture/2026-09-13-language-tooling-and-lsp-runtime-ownership.md`
 - `.agents/notes/implemented/architecture/2026-09-21-java-entrypoints-owned-by-jdt.md`

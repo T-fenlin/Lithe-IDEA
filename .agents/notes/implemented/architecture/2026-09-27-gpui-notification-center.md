@@ -16,16 +16,16 @@ gpui 的活动栏铃铛 + 右工具窗「通知」是「事情发生过」的唯
 
 ### 铃铛是个空壳
 
-右工具窗已经有铃铛图标、标题和空态「暂无通知。」，但 `rust/lithe-db-gpui/crates/workbench/src/right_tool_window.rs`
+右工具窗已经有铃铛图标、标题和空态「暂无通知。」，但 `rust/lithe-gpui/crates/workbench/src/right_tool_window.rs`
 的模块文档自己写着「**未做**：搜索 / 过滤 / 分组 / 详情 —— 没有通知数据源」。用户点进去只得到一个
-空面板。`rust/lithe-db-gpui/crates/shared/locales/lithe.zh-CN.yml` 里已经躺着 20 个 `notifications.*` 键
+空面板。`rust/lithe-gpui/crates/shared/locales/lithe.zh-CN.yml` 里已经躺着 20 个 `notifications.*` 键
 （搜索 / 过滤 / 复制 / 详情），全部无人引用。
 
 ### 同一个产品名下的两套通知语义
 
 macOS 产品有完整的一套：`macos/Sources/Lithe/Application/Features/WorkbenchNotificationFeatureModel.swift`
 管 4 秒显示、最多 3 条可见、100 条历史、悬停暂停，95 个 `showNotification(` 调用点。gpui 侧原本
-什么都没有。macOS 那套的缺陷也已经被记下来了（`rust/lithe-db-gpui/docs/archive/ui-map-macos.md:96`）：HUD 与
+什么都没有。macOS 那套的缺陷也已经被记下来了（`rust/lithe-gpui/docs/archive/ui-map-macos.md:96`）：HUD 与
 通知中心两套样式、HUD 所有通知同色无类型区分、通知中心一打开就 `markAllNotificationsRead()`
 导致未读红点形同虚设。gpui 侧要建，就不要把这三个缺陷一起继承过来。
 
@@ -62,10 +62,10 @@ gpui 原本的用户可见消息面：角落 toast（`editor_view.rs` 两处）�
 ### 条目模型：存事件码 + 参数，不存文案
 
 `shared/contracts/application-boundary.md:227-228` 已经强制了这个切分：「领域层返回稳定原因，
-用户可见文案归各产品展示层所有」。文案由 `rust/lithe-db-gpui/crates/workbench/src/notifications.rs` 的
+用户可见文案归各产品展示层所有」。文案由 `rust/lithe-gpui/crates/workbench/src/notifications.rs` 的
 `render_message` 在渲染时用 `tr_args` 拼 —— 那是**唯一**拼文案的地方。
 
-这么定还有个具体理由：gpui 一半功能还没建（`rust/lithe-db-gpui/HANDOFF.md:265` 记着缺 Java 智能提示与项目
+这么定还有个具体理由：gpui 一半功能还没建（`rust/lithe-gpui/HANDOFF.md:265` 记着缺 Java 智能提示与项目
 模型），存了文案就等于把文案写死在错误的抽象层上。
 
 ### 角标是圆点，未读用水位线
@@ -118,12 +118,12 @@ gpui 原本的用户可见消息面：角落 toast（`editor_view.rs` 两处）�
 
 ### store 的位置
 
-新建 `lithe-db-gpui-notify` crate，压在 `lithe-db-gpui-shared` 之上、其余所有 crate 之下。硬约束是
+新建 `lithe-gpui-notify` crate，压在 `lithe-gpui-shared` 之上、其余所有 crate 之下。硬约束是
 **依赖方向**：`workbench` 依赖全部其它 crate，而其余每个只依赖 `shared`；store 放 `workbench`
 会让 `git` / `editor` / `java` 反向依赖而成环。
 
 store **由 `ShellWorkspace` 持有一个 `Entity<Store>`**，并把**弱引用**注入给要发通知的业务实体
-（当前只有 `EditorPane`）。既不放全局槽也不放 `lithe-db-gpui-shared`：全局槽走不通（gpui 的
+（当前只有 `EditorPane`）。既不放全局槽也不放 `lithe-gpui-shared`：全局槽走不通（gpui 的
 `Global` 只有 `App` 上有 `try_global` / `set_global`，`gpui-pre-0.3.6/src/app.rs:2134,2164`，
 而 `&mut Context<T>` 拿不到 `&mut App`）；`shared` 是无状态的 `tr()` / icons / locales，塞一个
 有状态的 store 是改它的角色。
@@ -139,7 +139,7 @@ store **由 `ShellWorkspace` 持有一个 `Entity<Store>`**，并把**弱引用*
 
 ### 面板是独立实体，且不用 gpui-kit 的 `List`
 
-搜索框 / 筛选 / 展开都住在 `rust/lithe-db-gpui/crates/workbench/src/notifications.rs` 的
+搜索框 / 筛选 / 展开都住在 `rust/lithe-gpui/crates/workbench/src/notifications.rs` 的
 `NotificationPanel` 自己身上。`ShellWorkspace` 已经 287KB，再塞 4 个视图状态字段会让「哪部分
 状态归谁」更难看。
 
@@ -149,7 +149,7 @@ store **由 `ShellWorkspace` 持有一个 `Entity<Store>`**，并把**弱引用*
 ### 诊断行
 
 记录 / 展开 / 清除 / 打开各有可 grep 的 `S1_NOTIFICATION` 诊断行，接替被删掉的
-`S1_STATUS_NOTICE`。交互类改动在本仓库只能靠维护者手动验证（`rust/lithe-db-gpui/docs/grill.md` D1a），
+`S1_STATUS_NOTICE`。交互类改动在本仓库只能靠维护者手动验证（`rust/lithe-gpui/docs/grill.md` D1a），
 这行可 grep 的证据是唯一的机器判据，所以**必须**跟着迁移。
 
 ### 复用清单
@@ -160,8 +160,8 @@ store **由 `ShellWorkspace` 持有一个 `Entity<Store>`**，并把**弱引用*
 ### 正确做法
 
 ```rust
-// 业务 crate 只依赖 lithe-db-gpui-notify，把 Core 的错误码原样传进去：
-let Some(input) = lithe_db_gpui_notify::Input::for_core_code(&error.code) else {
+// 业务 crate 只依赖 lithe-gpui-notify，把 Core 的错误码原样传进去：
+let Some(input) = lithe_gpui_notify::Input::for_core_code(&error.code) else {
     return; // cancelled：用户自己取消的，不进中心
 };
 input.param("detail", &error.message);
@@ -192,7 +192,7 @@ tr_args(entry.code().as_ref(), &args)
 最省事：两个 `push_notification` 调用点不用改，`render_notification_layer` 已经挂好了。
 
 不采用的理由是它产生一个必须回答的额外问题 —— 弹了但没进中心、或进了中心但用户当时没看到，
-两种不一致都要处理。`rust/lithe-db-gpui/UI-MAP.md:158` 已经把这个病记成「macOS 手搓 HUD 与通知中心两套
+两种不一致都要处理。`rust/lithe-gpui/UI-MAP.md:158` 已经把这个病记成「macOS 手搓 HUD 与通知中心两套
 样式」。落点唯一就绕开了它。
 
 ### 保留 `status_notice` 当轻提示
@@ -223,7 +223,7 @@ tr_args(entry.code().as_ref(), &args)
 
 统一入口很诱人。不采用的理由见「三条红/绿条不动」。
 
-### store 放 `lithe-db-gpui-shared` crate
+### store 放 `lithe-gpui-shared` crate
 
 少一个 crate。不采用的理由见「store 的位置」。
 
@@ -237,7 +237,7 @@ tr_args(entry.code().as_ref(), &args)
 
 ### 只做样式，先不接真实数据
 
-`rust/lithe-db-gpui/docs/ui-mockup-idea.md:419` 当时的建议是「没有真事实时画个假数字，比不画更危险」。
+`rust/lithe-gpui/docs/ui-mockup-idea.md:419` 当时的建议是「没有真事实时画个假数字，比不画更危险」。
 
 不采用是因为本轮就是要接真实事实 —— 已有 Core 的 11 个稳定错误码和若干 gpui 自有事件码可以
 接。当年那个前提（没有通知子系统）现在不成立了。
@@ -259,7 +259,7 @@ tr_args(entry.code().as_ref(), &args)
 - **代价**：状态栏左组第一格在有未读时被通知占住（项目名与分支被挤到第二、三格）；去重键
   复用率不高时 100 条上限可能被高频信息占满。
 - **需要重新评估的触发条件**：① 通知量开始挤掉有用信息时，给高频事件补去重键或降级成不写
-  中心；② 某个功能真的需要「跳到出错的地方」时，`lithe_db_gpui_notify::Target` 那个占位字段可以
+  中心；② 某个功能真的需要「跳到出错的地方」时，`lithe_gpui_notify::Target` 那个占位字段可以
   填上真实目的地；③ macOS 开始对齐时，本篇的模型是它的目标形状。
 - **已知缺口**：`Input::for_core_code` 与 10 条 `notifications.core.*` 文案都已实现、已本地化、
   已单测，但**没有任何调用点把 Core 错误写进中心** —— gpui 现有的每一个 Core 失败都有一块
@@ -268,35 +268,35 @@ tr_args(entry.code().as_ref(), &args)
 
 ## 验证
 
-- `cargo test -p lithe-db-gpui-notify` —— 26 passed。含 11 个 Core 码逐个断言分档、
+- `cargo test -p lithe-gpui-notify` —— 26 passed。含 11 个 Core 码逐个断言分档、
   `cancelled` 断言不入中心、同 key 原地替换、容量截断、水位线（`first_record_is_unread` 守着
   「第一条通知必须是未读」那个 off-by-one）、清除时水位线一起归零。
-- `cargo test -p lithe-db-gpui-workbench notifications` —— 5 passed（筛选放行判据、四个元素 id
+- `cargo test -p lithe-gpui-workbench notifications` —— 5 passed（筛选放行判据、四个元素 id
   互不相同、相对时间四档边界、时间戳在未来时不崩）。
-- `cargo test -p lithe-db-gpui-shared i18n` —— 4 passed，含
+- `cargo test -p lithe-gpui-shared i18n` —— 4 passed，含
   `every_wired_key_resolves_in_both_locales`：新增的 20 个键（10 个 Core 码 + 10 个面板键）
   逐个断言两个 locale 都解析得出且中文值一致。
 - `cargo build --bin Lithe` —— 通过，无新增 warning。
 - `node scripts/verify-agent-notes.mjs` —— 通过。
-- ⚠️ `cargo test -p lithe-db-gpui-workbench` / `-p lithe-db-gpui-shared` / `-p lithe-db-gpui-editor` 里有
+- ⚠️ `cargo test -p lithe-gpui-workbench` / `-p lithe-gpui-shared` / `-p lithe-gpui-editor` 里有
   50 个测试在本机失败，**全部**是 `std::env::temp_dir()` 不可写（`os error 5`）导致的，与本次
   改动无关：失败点在 `session.rs:324`、`shared/src/workspace_config/*`、`editor/src/buffer.rs`
-  这些本次没碰的文件里。这是本仓库已记录的环境限制（`rust/lithe-db-gpui/HANDOFF.md:237-238`：「`%TEMP%`
+  这些本次没碰的文件里。这是本仓库已记录的环境限制（`rust/lithe-gpui/HANDOFF.md:237-238`：「`%TEMP%`
   与仓库外目录对**应用进程也**不可写」）。
 - **未做机器验证**：角点显隐、筛选、搜索、展开详情、状态栏那格的点击，全部属交互类，本仓库
-  只能靠维护者手动确认（`rust/lithe-db-gpui/docs/grill.md` D1a）。可 grep 的判据是 `S1_NOTIFICATION` 那几行。
+  只能靠维护者手动确认（`rust/lithe-gpui/docs/grill.md` D1a）。可 grep 的判据是 `S1_NOTIFICATION` 那几行。
 
 ## 适用范围
 
-- `rust/lithe-db-gpui/crates/notify/`（`model` / `severity` / `store` 三个模块）
-- `rust/lithe-db-gpui/crates/workbench/src/notifications.rs`（面板）
-- `rust/lithe-db-gpui/crates/workbench/src/right_tool_window.rs`
-- `rust/lithe-db-gpui/crates/workbench/src/activity_bar.rs`
-- `rust/lithe-db-gpui/crates/workbench/src/status_bar.rs`
-- `rust/lithe-db-gpui/crates/workbench/src/workspace.rs`
-- `rust/lithe-db-gpui/crates/editor/src/editor_view.rs`
-- `rust/lithe-db-gpui/crates/shared/src/i18n.rs`
-- `rust/lithe-db-gpui/tools/extract-locale.mjs`
+- `rust/lithe-gpui/crates/notify/`（`model` / `severity` / `store` 三个模块）
+- `rust/lithe-gpui/crates/workbench/src/notifications.rs`（面板）
+- `rust/lithe-gpui/crates/workbench/src/right_tool_window.rs`
+- `rust/lithe-gpui/crates/workbench/src/activity_bar.rs`
+- `rust/lithe-gpui/crates/workbench/src/status_bar.rs`
+- `rust/lithe-gpui/crates/workbench/src/workspace.rs`
+- `rust/lithe-gpui/crates/editor/src/editor_view.rs`
+- `rust/lithe-gpui/crates/shared/src/i18n.rs`
+- `rust/lithe-gpui/tools/extract-locale.mjs`
 - 交叉参考：`.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md`
 - 交叉参考：`.agents/notes/implemented/architecture/2026-09-13-macos-service-composition-boundaries.md`
 - 交叉参考：`.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`

@@ -3,7 +3,7 @@
 # 两部分：
 # - Core 与辅助 crate（lithe-core / lithe-git-host / lithe-db-*）：确定性业务逻辑，
 #   唯一的消费者是下面的 gpui 宿主。
-# - lithe-db-gpui/crates/*：GPUI Kit 宿主。历史上 `lithe-db-gpui/` 曾是独立 workspace，理由是
+# - lithe-gpui/crates/*：GPUI Kit 宿主。历史上 `lithe-gpui/` 曾是独立 workspace，理由是
 #   "lithe-core 有两个语言宿主，Core 要能独立产出体积受控的 staticlib"。macOS 与
 #   Windows 前端删除后只剩一个宿主，那条理由失效，两棵树合并到此处。
 #
@@ -18,7 +18,7 @@ members = [
     "lithe-git-host",
     "lithe-db-sidecar",
     "lithe-db-mcp",
-    "lithe-db-gpui/crates/*",
+    "lithe-gpui/crates/*",
 ]
 resolver = "3"
 

@@ -1,0 +1,27 @@
+[package]
+name = "lithe-gpui-workbench"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui-kit = "0.6"
+lithe-gpui-editor = { path = "../editor" }
+lithe-gpui-explorer = { path = "../explorer" }
+lithe-gpui-git = { path = "../git" }
+# Java 语言服务：设置里的 JDK 覆盖值（`javaHomePath`）只有这里能交给它 ——
+# `java` 不许依赖 `settings`，而 `settings` 不认识 JDT LS 会话（依赖方向见
+# `lithe-gpui-java::toolchain` 的模块文档）。用法只有一处：`register_java_toolchain`。
+lithe-gpui-java = { path = "../java" }
+# 设置：活动栏「设置」项打开对话框（`workspace.rs` 的 `SETTINGS_ACTIVITY_IX`），
+# 状态栏按 `showStatusBar` 条件渲染。方向是 workbench → settings，settings 不反向依赖。
+# 通知中心的状态层（`src/notifications.rs`）。方向是 workbench → notify，
+# 而 `git` / `editor` / `java` 也在 notify 之上（它们要发通知，见 notify 的模块文档
+# 「为什么独立成一个 crate」的两条约束）。notify 不反向依赖任何 crate。
+lithe-gpui-notify = { path = "../notify" }
+lithe-gpui-settings = { path = "../settings" }
+lithe-gpui-shared = { path = "../shared" }
+lithe-gpui-terminal = { path = "../terminal" }
+# `maven.scan` 的请求与响应都是 JSON（`src/maven.rs`）；与 `editor` / `git` / `explorer`
+# 三个 feature 同一口径：`core_json` 收 `serde_json::Value`。
+serde_json = "1"

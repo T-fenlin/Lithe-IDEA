@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./rust/lithe-db-gpui/assets/images/logo.png" width="112" alt="Lithe 应用图标">
+  <img src="./rust/lithe-gpui/assets/images/logo.png" width="112" alt="Lithe 应用图标">
 
   <h1>Lithe</h1>
 
@@ -62,7 +62,7 @@ Lithe 是一款主要面向 Java 和 Spring Boot 开发者的轻量级 IDEA 替�
 ## 仓库现状
 
 macOS（SwiftUI/AppKit）与 Windows（React/Tauri 2）两套前端已从本仓库移除，
-接替它们的是 `rust/lithe-db-gpui/` 里唯一的 GPUI Kit 宿主，目前仍在开发中，尚未建立发布流水线。
+接替它们的是 `rust/lithe-gpui/` 里唯一的 GPUI Kit 宿主，目前仍在开发中，尚未建立发布流水线。
 [GitHub Releases](https://github.com/1lck/Lithe-IDEA/releases) 上的安装包来自
 已删除的源码，仅作历史留存。
 
@@ -149,12 +149,12 @@ GPUI 宿主还没有打包与发布流水线。[GitHub Releases](https://github.
 
 ## 架构概览
 
-Lithe 现在是一个纯 Rust 仓库，只有一个宿主：`rust/lithe-db-gpui/` 里的 GPUI Kit 应用，
+Lithe 现在是一个纯 Rust 仓库，只有一个宿主：`rust/lithe-gpui/` 里的 GPUI Kit 应用，
 它驱动 `rust/lithe-core` 的确定性命令面。
 
 ```mermaid
 flowchart LR
-    subgraph Host["rust/lithe-db-gpui/ — GPUI Kit 宿主"]
+    subgraph Host["rust/lithe-gpui/ — GPUI Kit 宿主"]
         App["app — 组合根"] --> Workbench["workbench — 工作台外壳"]
         Workbench --> Editor["editor / explorer / git / terminal"]
         App --> Settings["settings"]
@@ -199,7 +199,7 @@ Windows 上也可以直接用仓库里的脚本：
 ```bash
 cargo fmt --manifest-path rust/Cargo.toml -p lithe-core -- --check
 cargo test --manifest-path rust/Cargo.toml -p lithe-core
-cargo test --manifest-path rust/Cargo.toml -p lithe-db-gpui-app
+cargo test --manifest-path rust/Cargo.toml -p lithe-gpui-app
 ./scripts/verify-rust-core.sh
 ./scripts/verify-shared-contracts.sh
 node scripts/verify-agent-notes.mjs

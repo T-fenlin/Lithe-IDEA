@@ -104,11 +104,11 @@ place. Every gpui view mirrors it with its own naming:
 | Layer | Enum | Site |
 | --- | --- | --- |
 | Core | `ProjectPreparation { status }` | `lsp/languages/project_preparation.rs:8-43` |
-| Git log pane | `LoadState { Loading, Ready, Stale, Failed, NoRepository }` — adds `Stale` = "has data, last refresh failed" | `lithe-db-gpui/crates/git/src/model.rs:249-261` |
-| Git commit inspector | `FilesState { Idle, Loading, Ready, Failed }` | `lithe-db-gpui/crates/git/src/model.rs:408-417` |
-| Explorer | `LoadState { Loading, Ready, Failed(String) }` — no `idle`, because empty root short-circuits to `Ready` | `lithe-db-gpui/crates/explorer/src/explorer_view.rs:130-141` |
-| Source control | `LoadState { Loading, Ready, Failed(String) }` | `lithe-db-gpui/crates/git/src/changes_view.rs:213-219` |
-| Settings run page | `RunPageMode { NoProject, Failed, Loading, Ready }` | `lithe-db-gpui/crates/settings/src/dialog.rs:561-570` |
+| Git log pane | `LoadState { Loading, Ready, Stale, Failed, NoRepository }` — adds `Stale` = "has data, last refresh failed" | `lithe-gpui/crates/git/src/model.rs:249-261` |
+| Git commit inspector | `FilesState { Idle, Loading, Ready, Failed }` | `lithe-gpui/crates/git/src/model.rs:408-417` |
+| Explorer | `LoadState { Loading, Ready, Failed(String) }` — no `idle`, because empty root short-circuits to `Ready` | `lithe-gpui/crates/explorer/src/explorer_view.rs:130-141` |
+| Source control | `LoadState { Loading, Ready, Failed(String) }` | `lithe-gpui/crates/git/src/changes_view.rs:213-219` |
+| Settings run page | `RunPageMode { NoProject, Failed, Loading, Ready }` | `lithe-gpui/crates/settings/src/dialog.rs:561-570` |
 
 ## Sources
 
@@ -119,4 +119,4 @@ place. Every gpui view mirrors it with its own naming:
 - `rust/lithe-core/src/lsp/languages/project_preparation.rs`
 - `shared/contracts/{application-boundary,ai-commit,github}.md`
 - `shared/fixtures/debug/`, `shared/fixtures/ai/`, `shared/fixtures/github/`
-- `lithe-db-gpui/crates/{explorer,git}/src/`, `lithe-db-gpui/crates/settings/src/dialog.rs`
+- `lithe-gpui/crates/{explorer,git}/src/`, `lithe-gpui/crates/settings/src/dialog.rs`

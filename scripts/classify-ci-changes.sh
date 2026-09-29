@@ -97,24 +97,24 @@ while IFS=$'\t' read -r status first_path _; do
         rust/lithe-core/tests/*|rust/lithe-core/cargo.toml|rust/lithe-core/include/*)
             rust_core=true
             ;;
-        rust/lithe-db-gpui/crates/*/src/*|rust/lithe-db-gpui/crates/*/build.rs|rust/lithe-db-gpui/crates/*/cargo.toml)
+        rust/lithe-gpui/crates/*/src/*|rust/lithe-gpui/crates/*/build.rs|rust/lithe-gpui/crates/*/cargo.toml)
             # The gpui host drives Rust Core through the command envelope, so a
             # shell change is validated together with the core contract.
             #
             # ⚠️ These cases must stay **above** the `rust/*` catch-all below:
-            # `rust/lithe-db-gpui/**` would otherwise match that first and only turn on
+            # `rust/lithe-gpui/**` would otherwise match that first and only turn on
             # the Core/database lanes, silently dropping the gpui lane.
             gpui=true
             rust_core=true
             ;;
-        rust/lithe-db-gpui/tools/*)
+        rust/lithe-gpui/tools/*)
             # Locale and icon generators are reproducible-artifact checks.
             gpui=true
             ;;
-        rust/lithe-db-gpui/assets/*|rust/lithe-db-gpui/themes/*|rust/lithe-db-gpui/crates/*/locales/*|rust/lithe-db-gpui/crates/*/src/icons/*)
+        rust/lithe-gpui/assets/*|rust/lithe-gpui/themes/*|rust/lithe-gpui/crates/*/locales/*|rust/lithe-gpui/crates/*/src/icons/*)
             gpui=true
             ;;
-        rust/lithe-db-gpui/*)
+        rust/lithe-gpui/*)
             gpui=true
             ;;
         rust/cargo.toml|rust/cargo.lock)
