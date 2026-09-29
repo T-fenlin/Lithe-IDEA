@@ -42,6 +42,9 @@ pub const SETTINGS_FILE_ENV: &str = "LITHE_GPUI_SETTINGS_FILE";
 /// 覆盖主题目录完整路径的环境变量名。
 pub const THEMES_DIR_ENV: &str = "LITHE_GPUI_THEMES_DIR";
 
+/// 覆盖主题扩展目录完整路径的环境变量名。
+pub const THEME_EXTENSIONS_DIR_ENV: &str = "LITHE_GPUI_THEME_EXTENSIONS_DIR";
+
 /// 应用数据目录名（Windows 的 `Lithe`）。
 const APP_DIR_NAME: &str = "Lithe";
 /// Linux 惯例的目录名（XDG 规范建议小写）。只在非 Windows/macOS 的构建里用到，
@@ -56,6 +59,10 @@ const SETTINGS_FILE_NAME: &str = "settings.json";
 const RECENT_PROJECTS_FILE_NAME: &str = "recent-projects.json";
 /// 主题目录名（配置目录下的 `themes/`）。
 const THEMES_DIRECTORY_NAME: &str = "themes";
+/// 扩展目录名（配置目录下的 `extensions/`）。
+const EXTENSIONS_DIRECTORY_NAME: &str = "extensions";
+/// 扩展目录下的主题包目录名（`extensions/themes/`）。
+const THEME_EXTENSIONS_DIRECTORY_NAME: &str = "themes";
 
 /// 解析设置文件的完整路径。
 ///
@@ -136,6 +143,44 @@ pub fn themes_dir() -> Option<PathBuf> {
 /// 2. 测试校验"仓库里的每份主题文件都被 `include_str!` 登记了、且都能被真实 `ThemeSet` 解析"。
 pub fn repository_themes_dir() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../themes"))
+}
+
+/// 仓库里的**捆绑主题扩展源目录**（`lithe-gpui/extensions/themes`）。
+///
+/// 与 [`repository_themes_dir`] 同一条约束：构建树路径，只服务 `include_str!` 与测试，
+/// 运行期绝不读它。
+pub fn repository_theme_extensions_dir() -> PathBuf {
+    PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../extensions/themes"
+    ))
+}
+
+/// 解析**扩展目录**的完整路径：`<配置目录>/extensions`。
+///
+/// 与 [`themes_dir`] 同一条跟随规则：没有专门覆盖时跟着设置文件的父目录走，
+/// 验证脚本挪一个 [`SETTINGS_FILE_ENV`] 就能把设置、主题与扩展一起搬走。
+pub fn extensions_dir() -> Option<PathBuf> {
+    Some(
+        settings_file_path()?
+            .parent()?
+            .join(EXTENSIONS_DIRECTORY_NAME),
+    )
+}
+
+/// 解析**主题扩展目录**（扩展包的存放地）的完整路径：`<配置目录>/extensions/themes`。
+///
+/// 这是捆绑主题扩展（`bundled` entrypoint，可在扩展页卸载/重装）的**管理面**：
+/// 安装 = 从编译进二进制的内嵌内容写到这里；卸载 = 从这里删除。
+/// 它**不是**装载目录 —— 注册表只能监视一个目录，真正的装载副本由
+/// [`crate::theme`] 同步进 [`themes_dir`]（两个目录的分工见 [`crate::theme`] 模块文档）。
+pub fn theme_extensions_dir() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os(THEME_EXTENSIONS_DIR_ENV) {
+        if !path.is_empty() {
+            return Some(PathBuf::from(path));
+        }
+    }
+    Some(extensions_dir()?.join(THEME_EXTENSIONS_DIRECTORY_NAME))
 }
 
 #[cfg(target_os = "windows")]
@@ -333,6 +378,19 @@ mod tests {
     fn repository_themes_dir_points_at_the_repo_themes_folder() {
         let dir = repository_themes_dir();
         assert!(dir.ends_with("themes"), "{dir:?}");
-        assert!(dir.join("lithe-dark.json").exists(), "{dir:?}");
+        assert!(dir.join("jetbrains.json").exists(), "{dir:?}");
+    }
+
+    /// 捆绑主题扩展源目录指向仓库的 `lithe-gpui/extensions/themes`（同上，构建树路径）。
+    #[test]
+    fn repository_theme_extensions_dir_points_at_the_repo_extensions_folder() {
+        let dir = repository_theme_extensions_dir();
+        assert!(dir.ends_with("themes"), "{dir:?}");
+        assert!(
+            dir.parent()
+                .is_some_and(|parent| parent.ends_with("extensions")),
+            "{dir:?}"
+        );
+        assert!(dir.join("lithe.json").exists(), "{dir:?}");
     }
 }

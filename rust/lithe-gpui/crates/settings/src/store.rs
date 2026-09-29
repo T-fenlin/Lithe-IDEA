@@ -519,6 +519,61 @@ impl SettingsStore {
         self.commit_global(cx, next, Effects::None);
     }
 
+    // ---------------------------------------------------------------- 扩展（捆绑主题扩展的卸载/重装）
+
+    /// 已卸载的捆绑主题扩展 id 列表（设置键 `uninstalledExtensions`，排序去重后落盘）。
+    ///
+    /// 扩展页用它判定「卸载」还是「重新安装」按钮；启动时的目录同步也按它跳过
+    /// （见 [`crate::theme::sync_theme_extensions_into`]）。
+    pub fn uninstalled_extensions(&self) -> &[String] {
+        &self.global.uninstalled_extensions
+    }
+
+    /// 卸载（`uninstalled = true`）或重装一个捆绑主题扩展 —— 扩展页两个按钮的唯一落点。
+    ///
+    /// 文件操作（删/写扩展目录与主题目录的副本）与设置记录在这里一起完成，顺序是
+    /// **文件先动、清单后记**：失败路径上最坏的后果是"文件已删但清单没记"，下次启动
+    /// 同步会把包装回来（种子语义），不会出现"清单记了、文件还在却永远加载不了"的死结。
+    ///
+    /// 主题的视觉切换由主题目录的 watcher 自动收口：装载面少/多了一个文件 → 注册表
+    /// 热重载 → [`Self::reapply_theme`]；被卸载的正是当前主题时，按既有规则回落默认主题
+    /// （`S1_SETTINGS theme_missing`，设置文件里的选择不抹掉，重装后自动回来）。
+    ///
+    /// 非 `bundled` 的 id（内置主题、字体、Java 等）在这里被拒：它们没有卸载语义。
+    pub fn set_extension_uninstalled(
+        &mut self,
+        id: &str,
+        uninstalled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if crate::theme::bundled_theme_extension(id).is_none() {
+            eprintln!("S1_SETTINGS extension_unknown id={id}");
+            return;
+        }
+        let result = if uninstalled {
+            crate::theme::uninstall_theme_extension(id)
+        } else {
+            crate::theme::reinstall_theme_extension(id)
+        };
+        if let Err(error) = result {
+            eprintln!(
+                "S1_SETTINGS extension_failed id={id} uninstalled={uninstalled} error={error}"
+            );
+            return;
+        }
+        let mut next = self.global.clone();
+        if uninstalled {
+            if !next.uninstalled_extensions.iter().any(|value| value == id) {
+                next.uninstalled_extensions.push(id.to_string());
+            }
+        } else {
+            next.uninstalled_extensions.retain(|value| value != id);
+        }
+        // 清单没变（重复点同一个按钮）时 `commit_global` 返回 false、不写盘 ——
+        // 那正说明状态已与目标一致。
+        self.commit_global(cx, next, Effects::None);
+    }
+
     /// 改「编辑器字号」。立即生效（写主题的 `mono_font_size`，编辑器正文当帧就变）+ 防抖落盘。
     pub fn set_editor_font_size(&mut self, value: f64, cx: &mut Context<Self>) {
         self.commit_appearance(

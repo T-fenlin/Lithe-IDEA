@@ -399,6 +399,13 @@ const GPUI_ONLY_KEYS = [
       "扩展页的失败态空态标题。目录是打包数据，失败只会是宿主版本不匹配或打包损坏（Core plugins.listCatalog 的 parse_failed / invalid_request），如实说加载失败并把错误原文放在标题下方；句式沿用 extensions.noneFound（句号结尾的空态句）。",
   },
   {
+    key: "extensions.uninstalled",
+    zh: "已卸载",
+    en: "Uninstalled",
+    reason:
+      "捆绑扩展被卸载后卡片上的状态徽标。真源 catalog 只有 uninstalledSuccessfully（一次性提示文案），没有「已卸载」这个状态词；本侧扩展页需要它把「可卸载且当前不在装」这一态说清楚（同排的「内置」徽标是 extensions.builtIn）。",
+  },
+  {
     key: "editor.gpui.discardChanges",
     zh: "放弃修改",
     en: "Discard changes",

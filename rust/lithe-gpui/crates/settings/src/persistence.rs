@@ -295,6 +295,8 @@ mod tests {
             font_family: "Inter".to_string(),
             mono_font_family: "JetBrains Mono".to_string(),
             terminal_font_size: 16.0,
+            // 卸载清单的"非默认值"：默认是空列表，这里放一个（校验往返）。
+            uninstalled_extensions: vec!["lithe.nordTheme".to_string()],
         }
     }
 

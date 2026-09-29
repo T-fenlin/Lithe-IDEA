@@ -25,6 +25,7 @@
 //! —— 那只会变成"存了没用"的设置项。
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 /// UI 字体大小下限。真源 `windows/tauri/src/features/settings/lib/ui-font-size.ts:3`。
 pub const UI_FONT_SIZE_MIN: f64 = 10.0;
@@ -120,15 +121,19 @@ pub const DISPLAY_LANGUAGES: [&str; 2] = ["en-US", DEFAULT_DISPLAY_LANGUAGE];
 /// 但**名字是给人看的、随时可能改**（改一次名字，所有用户的设置文件里那一项就指向不存在
 /// 的东西）。id 是机器标识：改名时把新名字写进 `name`、id 保持不变，用户的引用不受影响。
 ///
-/// Windows 侧存的也是 id（`lithe-dark`，`default-settings.ts:99`），所以两者现在同构；
-/// 主题 id 与显示名的对应关系由 [`ThemeIndex`] 表达，见 [`crate::theme`]。
-pub const DEFAULT_THEME: &str = "lithe-dark";
-/// 「首选浅色主题」的默认值（主题 id）。对应 Windows `autoThemeLight: "lithe-light"`
-/// （`default-settings.ts:102`）。
-pub const DEFAULT_AUTO_THEME_LIGHT: &str = "lithe-light";
-/// 「首选深色主题」的默认值（主题 id）。对应 Windows `autoThemeDark: "lithe-dark"`
-/// （`default-settings.ts:103`）。
-pub const DEFAULT_AUTO_THEME_DARK: &str = "lithe-dark";
+/// ## 为什么默认是 IDEA 主题（2026-09-29 维护者决策）
+///
+/// 主题重组后 IDEA 主题（`jetbrains.json`）是**唯一内置**的主题组（不可卸载），
+/// 其余组都成了可卸载的捆绑主题扩展 —— 默认值必须指向一个卸不掉的主题，否则
+/// "卸载默认主题"会悬空。Windows 真源 `default-settings.ts:99` 写的是 `lithe-dark`，
+/// 那是重组前的品牌默认；**这是有意的偏离**（旧行为见 git 历史）。
+pub const DEFAULT_THEME: &str = "darcula";
+/// 「首选浅色主题」的默认值（主题 id）。重组前是 `lithe-light`（`default-settings.ts:102`），
+/// 现随默认主题组改为 IDEA 的浅色变体。
+pub const DEFAULT_AUTO_THEME_LIGHT: &str = "intellij-light";
+/// 「首选深色主题」的默认值（主题 id）。重组前是 `lithe-dark`（`default-settings.ts:103`），
+/// 现随默认主题组改为 IDEA 的深色变体。
+pub const DEFAULT_AUTO_THEME_DARK: &str = "darcula";
 
 /// 主题显示名 → id 的**兜底**规则（`"VS Code Light+"` → `"vs-code-light"`）。
 ///
@@ -310,9 +315,10 @@ struct RawTheme {
 pub struct Settings {
     /// 配色主题 **id**（`themes[].id`）。
     ///
-    /// - Windows 键：`theme`，默认 `lithe-dark`（`default-settings.ts:99`）—— 两侧现在同构。
-    /// - gpui 取值：`lithe-dark`（见 [`DEFAULT_THEME`] 的说明）；显示名由
-    ///   [`ThemeIndex::name_for_id`] 得到，注册表的索引键（`themes[].name`）也由它解析。
+    /// - Windows 键：`theme`，默认 `darcula`（本侧 2026-09-29 决策，见 [`DEFAULT_THEME`]；
+    ///   真源 `default-settings.ts:99` 的 `lithe-dark` 是重组前的品牌默认）。
+    /// - gpui 取值：`darcula`；显示名由 [`ThemeIndex::name_for_id`] 得到，注册表的索引键
+    ///   （`themes[].name`）也由它解析。
     /// - 老设置文件里存的是显示名（`"Lithe Dark"`）：读入时由
     ///   [`Self::normalize_with_themes`] 归一成 id，**不需要用户做迁移**。
     /// - 生效方式：**立即**（`Theme::change` + `apply_config` + `refresh_windows`）。
@@ -559,6 +565,17 @@ pub struct Settings {
     /// 键本身照真源存取，缺的是窗口级句柄路由（B5 暂缓）。
     #[serde(rename = "openFoldersInNewWindow")]
     pub open_folders_in_new_window: bool,
+
+    /// 已卸载的**捆绑主题扩展** id 列表（`uninstalledExtensions`，本侧新增键，
+    /// 真源没有）。
+    ///
+    /// 卸载 = 删扩展目录与主题目录里的包文件 + 把 id 记进这里；记录的目的是
+    /// **防止下次启动同步把包又装回来**（同步"缺才写"是种子语义）。重装 = 从列表
+    /// 移除 id + 从内嵌内容重新写出。只接受 `lithe-gpui-settings::theme` 的
+    /// `BUNDLED_THEME_EXTENSIONS` 里登记的 id，其他值在写入前就被拒。
+    /// 排序 + 去重由 [`Self::normalize`] 收口，落盘形状确定。
+    #[serde(rename = "uninstalledExtensions")]
+    pub uninstalled_extensions: Vec<String>,
 }
 
 impl Default for Settings {
@@ -593,6 +610,8 @@ impl Default for Settings {
             // 默认每次询问，且（真源口径下）默认在新窗口打开。
             ask_where_to_open_projects: true,
             open_folders_in_new_window: true,
+            // 捆绑主题扩展默认全部在装（空列表 = 没有卸载记录）。
+            uninstalled_extensions: Vec::new(),
         }
     }
 }
@@ -693,6 +712,18 @@ impl Settings {
         self.maven_java_home_path = self.maven_java_home_path.trim().to_string();
         self.maven_settings_path = self.maven_settings_path.trim().to_string();
         self.maven_local_repository_path = self.maven_local_repository_path.trim().to_string();
+
+        // 卸载清单：去空白、去重、排序 —— 落盘形状确定，两次写之间不会因为顺序漂移
+        // 互相覆盖。"id 是不是捆绑主题扩展"不在这里校验（写入入口已经挡了），
+        // 手改坏的无名条目无害：同步阶段对不上号就忽略它。
+        self.uninstalled_extensions = self
+            .uninstalled_extensions
+            .iter()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
     }
 
     /// 再补一层"主题必须在索引里"的规范化，并把**老值（显示名）归一成 id**。
@@ -737,15 +768,19 @@ impl Settings {
 mod tests {
     use super::*;
 
-    /// 默认值必须与 Windows 的默认值一一对应（改错这里等于改错产品默认外观）。
+    /// 默认值必须与产品决策一一对应（改错这里等于改错产品默认外观）。
+    ///
+    /// 主题三项 2026-09-29 起指向 **IDEA 主题**（唯一内置组、不可卸载）；
+    /// Windows 真源 `default-settings.ts:99-103` 的 `lithe-dark` / `lithe-light`
+    /// 是重组前的品牌默认（那次偏离的理由见 [`DEFAULT_THEME`] 的文档）。
     #[test]
     fn defaults_match_the_windows_truth() {
         let settings = Settings::default();
-        // 主题持久化的是 **id**（与 Windows 的 `lithe-dark` / `lithe-light` 同构）。
-        assert_eq!(settings.theme, "lithe-dark");
+        // 主题持久化的是 **id**。
+        assert_eq!(settings.theme, "darcula");
         assert!(!settings.sync_system_theme);
-        assert_eq!(settings.auto_theme_light, "lithe-light");
-        assert_eq!(settings.auto_theme_dark, "lithe-dark");
+        assert_eq!(settings.auto_theme_light, "intellij-light");
+        assert_eq!(settings.auto_theme_dark, "darcula");
         assert_eq!(settings.ui_font_size, 13.0);
         assert!(settings.show_status_bar);
         assert_eq!(settings.display_language, "zh-CN");

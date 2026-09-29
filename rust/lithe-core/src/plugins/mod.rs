@@ -293,9 +293,11 @@ pub struct PluginVendor {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Mutually exclusive loading metadata for built-in and native-bundle plugins.
+/// Mutually exclusive loading metadata for built-in, bundled, and native-bundle plugins.
 pub struct PluginEntrypoint {
-    /// Entrypoint discriminator: `builtIn` or `nativeBundle`.
+    /// Entrypoint discriminator: `builtIn` (host core, not uninstallable),
+    /// `bundled` (shipped with the host, uninstallable by the user), or
+    /// `nativeBundle`.
     pub kind: String,
     /// Build target used by a built-in plugin.
     pub target_name: Option<String>,
@@ -630,7 +632,10 @@ fn parse_version(plugin: &str, value: &str) -> Result<PluginVersion, PluginValid
 
 fn valid_entrypoint(entrypoint: &PluginEntrypoint) -> bool {
     match entrypoint.kind.as_str() {
-        "builtIn" => {
+        // `builtIn` = 宿主核心能力，不可卸载；`bundled` = 随宿主分发的捆绑扩展，
+        // 用户可以卸载（宿主负责落盘/删除，Core 只负责清单契约）。两者都编译在
+        // 宿主里，所以形状一致：只认 targetName，不认 nativeBundle 的三件套。
+        "builtIn" | "bundled" => {
             entrypoint
                 .target_name
                 .as_ref()

@@ -4,58 +4,6 @@
   "pluginAPIVersion": 1,
   "plugins": [
     {
-      "id": "lithe.builtinThemes",
-      "displayName": "Lithe 内置主题包",
-      "description": "随宿主内置的七组界面与编辑器主题，覆盖浅色与深色共十四个主题。",
-      "version": "0.0.1",
-      "apiVersion": 1,
-      "hostCompatibility": {
-        "minimum": "0.0.1"
-      },
-      "vendor": {
-        "id": "lithe",
-        "displayName": "Lithe Team",
-        "signatureRequirement": "sameTeamAsHost"
-      },
-      "entrypoint": {
-        "kind": "builtIn",
-        "targetName": "lithe-gpui-settings"
-      },
-      "moduleIDs": [
-        "lithe.theme.builtin"
-      ],
-      "themes": [
-        {
-          "name": "Gruvbox",
-          "path": "themes/gruvbox.json"
-        },
-        {
-          "name": "IntelliJ",
-          "path": "themes/jetbrains.json"
-        },
-        {
-          "name": "Lithe Dark",
-          "path": "themes/lithe-dark.json"
-        },
-        {
-          "name": "Lithe Light",
-          "path": "themes/lithe-light.json"
-        },
-        {
-          "name": "Nord",
-          "path": "themes/nord.json"
-        },
-        {
-          "name": "One",
-          "path": "themes/one.json"
-        },
-        {
-          "name": "VS Code",
-          "path": "themes/vscode.json"
-        }
-      ]
-    },
-    {
       "id": "lithe.bundledFonts",
       "displayName": "JetBrains Mono 字体包",
       "description": "随宿主捆绑的 JetBrains Mono 等宽字体家族，覆盖常规、粗体、斜体与粗斜体。",
@@ -96,9 +44,37 @@
       ]
     },
     {
+      "id": "lithe.gruvboxTheme",
+      "displayName": "Gruvbox 主题",
+      "description": "随宿主捆绑的 Gruvbox 主题，浅色与深色各一。可在扩展页卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-settings"
+      },
+      "moduleIDs": [
+        "lithe.theme.gruvbox"
+      ],
+      "themes": [
+        {
+          "name": "Gruvbox",
+          "path": "extensions/themes/gruvbox.json"
+        }
+      ]
+    },
+    {
       "id": "lithe.ideaIconTheme",
-      "displayName": "IDEA 图标主题",
-      "description": "随宿主内置的 IDEA 风格文件图标主题。",
+      "displayName": "IDEA 图标主题（内置）",
+      "description": "随宿主内置的 IDEA 风格文件图标主题。不可卸载。",
       "version": "0.0.1",
       "apiVersion": 1,
       "hostCompatibility": {
@@ -120,6 +96,34 @@
         {
           "name": "IDEA",
           "path": "icon-themes/idea/extension.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.ideaTheme",
+      "displayName": "IDEA 主题（内置）",
+      "description": "随宿主内置的 IDEA 主题：浅色 IntelliJ Light 与深色 Darcula，默认主题。不可卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "builtIn",
+        "targetName": "lithe-gpui-settings"
+      },
+      "moduleIDs": [
+        "lithe.theme.idea"
+      ],
+      "themes": [
+        {
+          "name": "IDEA",
+          "path": "themes/jetbrains.json"
         }
       ]
     },
@@ -188,6 +192,118 @@
             "settings.gradle"
           ],
           "languageServerModuleID": "lithe.java.languageServer"
+        }
+      ]
+    },
+    {
+      "id": "lithe.litheTheme",
+      "displayName": "Lithe 主题",
+      "description": "随宿主捆绑的 Lithe 品牌主题，浅色与深色各一。可在扩展页卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-settings"
+      },
+      "moduleIDs": [
+        "lithe.theme.lithe"
+      ],
+      "themes": [
+        {
+          "name": "Lithe",
+          "path": "extensions/themes/lithe.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.nordTheme",
+      "displayName": "Nord 主题",
+      "description": "随宿主捆绑的 Nord 主题，浅色与深色各一。可在扩展页卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-settings"
+      },
+      "moduleIDs": [
+        "lithe.theme.nord"
+      ],
+      "themes": [
+        {
+          "name": "Nord",
+          "path": "extensions/themes/nord.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.oneTheme",
+      "displayName": "One 主题",
+      "description": "随宿主捆绑的 One 主题，浅色与深色各一。可在扩展页卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-settings"
+      },
+      "moduleIDs": [
+        "lithe.theme.one"
+      ],
+      "themes": [
+        {
+          "name": "One",
+          "path": "extensions/themes/one.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.vscodeTheme",
+      "displayName": "VS Code 主题",
+      "description": "随宿主捆绑的 VS Code 主题，浅色与深色各一。可在扩展页卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-settings"
+      },
+      "moduleIDs": [
+        "lithe.theme.vscode"
+      ],
+      "themes": [
+        {
+          "name": "VS Code",
+          "path": "extensions/themes/vscode.json"
         }
       ]
     }

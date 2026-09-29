@@ -7,6 +7,19 @@ categories from them, following Zed's extension model: the manifest never
 declares categories; categories are computed from non-empty contributions so
 a listing cannot drift from the contributions that back it.
 
+## Entrypoint kinds
+
+| Kind | Meaning |
+| --- | --- |
+| `builtIn` | Host core capability compiled into the host. **Not uninstallable.** |
+| `bundled` | Shipped with the host, but **uninstallable by the user** (e.g. a bundled theme group). Same shape as `builtIn`: only `targetName` is accepted. |
+| `nativeBundle` | Third-party native package, referenced by bundle path. Not distributable yet. |
+
+Uninstall is a host-side lifecycle, not a catalog fact: Core serves the same
+catalog either way and the host records what the user removed. The host marks
+`bundled` entries uninstallable and keeps the ordered
+`uninstalledExtensions` list in its settings document.
+
 ## Catalog document
 
 The catalog is a JSON document with:
@@ -31,7 +44,7 @@ One entry per plugin package:
 | `apiVersion` | integer | Must equal `pluginAPIVersion`. |
 | `hostCompatibility` | object | Inclusive `minimum`, optional exclusive `maximumExclusive`. |
 | `vendor` | object | `id`, `displayName`, `signatureRequirement` (`sameTeamAsHost` only). |
-| `entrypoint` | object | `builtIn` (with `targetName`) or `nativeBundle` (with `bundleIdentifier`, `principalClass`, `bundlePath`). |
+| `entrypoint` | object | `builtIn` or `bundled` (both with `targetName`), or `nativeBundle` (with `bundleIdentifier`, `principalClass`, `bundlePath`). |
 | `moduleIDs` | array | Stable module identifiers owned by this package, sorted, globally unique. |
 | `themes` | array | Optional. `{ name, path }` sorted by `(name, path)`. |
 | `iconThemes` | array | Optional. `{ name, path }` sorted by `(name, path)`. |

@@ -76,6 +76,41 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
   下标 0 由外壳在进入右栏状态机之前拦截。2026-09-27"右栏三项"的组合决策不变，
   变的只是拼图项的行为。
 
+## 后续修订（2026-09-29，同一分支的第二批）
+
+维护者追加的口径：**主题改成 6 组（每组浅色 + 深色一对）、默认 IDEA 主题、除内置主题外
+其余都可卸载**。落地成：
+
+1. **主题重组**：仓库里 `lithe-gpui/themes/` 只留 `jetbrains.json`（IDEA 组 = IntelliJ Light
+   + Darcula，唯一 `builtIn`、默认主题）；Gruvbox / Nord / One / VS Code 四份搬进
+   `lithe-gpui/extensions/themes/`，两份 Lithe 单变体文件（`lithe-dark.json` /
+   `lithe-light.json`）合并成一份 `lithe.json`（浅 + 深）。
+   ⚠️ 维护者说的是"7 组"，但仓库现状只有 6 个主题族；第 7 组需要从 `themes/legacy-builtin/`
+   提拔一个（dracula / ayu / catppuccin …）或新增，**待维护者点名**（`legacy-builtin/` 的
+   10 份是按旧 schema 归档的，不能直接启用）。
+2. **契约加 `bundled` 入口点**：`builtIn` = 宿主核心、不可卸载；`bundled` = 随宿主分发、
+   用户可卸载（形状同 builtIn，只认 `targetName`）。目录 fixture 因此是 10 条：
+   IDEA 主题（`themes`，builtIn）+ 5 个主题组（`themes`，bundled）+ 图标主题 + 字体 +
+   Java 语言支持 + Java 调试（均 builtIn）。
+3. **卸载是宿主侧生命周期，不进契约**：宿主把包文件放在
+   `<配置目录>/extensions/themes/`，卸载 = 删文件 + 在设置键 `uninstalledExtensions`
+   记一笔（**防止下次启动同步又装回来**，同步是"缺就补"的种子语义）；重装 = 从内嵌内容
+   写回 + 从清单移除。设置键是本侧新增（真源没有卸载概念）。
+4. **两个目录的分工（必须有，因为注册表只能监视一个目录）**：扩展目录是**管理面**，
+   `themes/` 是**装载面**（镜像，以管理面为准）。启动顺序：播种内置 → 迁移老版本播种在
+   `themes/` 里的捆绑文件（搬进扩展目录；Lithe 拆分文件删除）→ 按卸载清单同步两个目录
+   → `watch_dir(themes/)`。
+5. **默认主题**：`theme` → `darcula`、`autoThemeLight` → `intellij-light`、
+   `autoThemeDark` → `darcula`。理由：默认值必须指向一个**卸不掉**的主题。
+   真源 `default-settings.ts:99-103` 的 `lithe-dark` / `lithe-light` 是重组前的品牌默认，
+   这是有意的偏离。
+6. **扩展页的卸载/重装**：`bundled` 卡片带一个 outline 按钮（卸载 ⇄ 重新安装）与
+   「已卸载」徽标；`builtIn` 卡片只有「内置」徽标。按钮 `stop_propagation`，否则点它
+   会连带展开整行。卸载的是当前主题时，既有的"主题缺失 → 回落 `DEFAULT_THEME`"规则
+   自动兜底（设置文件里的选择不抹掉，重装后回来）。
+7. **主题索引的取舍**：捆绑扩展**不进**编译期索引（装没装看装载面的镜像），
+   所以卸载后下拉里立刻不再出现它们的主题；内置那份仍做编译期兜底。
+
 ## 考虑过的备选方案
 
 - **在清单里声明 `categories` 数组**（最初共识里选的就是它）：看完 Zed 源码后否决
@@ -96,7 +131,8 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
 
 **收益**：Core 的清单校验从"零消费者"变成扩展系统的真实地基；目录、命令、宿主
 三层都有确定性测试；分类与贡献项结构上不可能漂移；入口行为与真机口径对齐，
-右栏偏差消除。
+右栏偏差消除；主题首次有了**真实生命周期**（可卸载/重装），而且"卸载 = 删文件 +
+记清单"这条路径不会在下一次启动被同步悄悄回滚。
 
 **代价**：
 
@@ -108,16 +144,25 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
 - 旧会话里的 `rightView: "extensions"` 恢复时解不出视图，按"未知 id 保留当前值"
   的既有规则落到默认视图（不会 panic，可接受）；
 - 扩展页关闭再打开不丢状态，但它不是编辑器 buffer，不出现在"打开的文件"里，
-  也不进会话。
+  也不进会话；
+- **装载面是镜像**：直接改 `<配置目录>/themes/<捆绑主题>.json` 会在下次启动被扩展面
+  覆盖（与内置主题"绝不覆盖"的规则相反）。改捆绑主题要改扩展目录那份 —— 这条差异
+  来自"扩展有卸载/重装生命周期、内容必须跟着管理面走"；
+- 卸载主题包会连带让该组的**两条**主题从主题下拉里消失；如果那正是当前主题，
+  界面会回落到默认的 Darcula（设置文件里的原选择保留，重装后自动回来）；
+- 老用户升级时有一次**文件迁移**（老播种在 `themes/` 的 6 份文件搬到扩展目录）：
+  幂等、失败只留诊断；迁移后 `themes/` 里用户自己改过的同名文件会被扩展目录那份
+  顶替（迁移的"缺才搬"保证了不会覆盖扩展目录里已有的）。
 
 ## 验证
 
 - `cargo test --manifest-path rust/Cargo.toml -p lithe-core`：plugins 用例全部通过
   （v2 校验、分类覆盖、v1 拒绝、`plugins.listCatalog` 信封级正反用例）。git/lsp
   引擎在本机有与本次无关的既有失败（干净基线同样失败，已复核）。
-- `cargo test -p lithe-gpui-extensions / -p lithe-gpui-shared / -p
-  lithe-gpui-workbench / -p lithe-gpui-app`：全部通过（快照归一、过滤判据、
-  i18n WIRED、右栏下标映射、扩展页筛选 id）。
+- `cargo test --manifest-path rust/Cargo.toml -p lithe-gpui-extensions / -p
+  lithe-gpui-shared / -p lithe-gpui-settings / -p lithe-gpui-workbench / -p
+  lithe-gpui-app`：全部通过（快照归一、过滤判据、i18n WIRED、右栏下标映射、
+  扩展页筛选 id、播种/同步/卸载/重装/迁移的文件语义、默认主题真源）。
 - `node rust/lithe-gpui/tools/extract-locale.mjs` 重新生成两份 yml；新增 4 条
   gpui-only 键（字体 / 调试 / LSP / 加载失败）带理由。
 - `scripts/verify-shared-contracts.sh` 的插件段已更新到 v2 并加了贡献项断言；
@@ -138,4 +183,10 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
   `rust/lithe-gpui/crates/workbench/src/right_tool_window.rs`、
   `rust/lithe-gpui/crates/app/src/main.rs`
 - `rust/lithe-gpui/crates/shared/`（`HOST_VERSION`、locales、i18n WIRED）
-- `CONTEXT.md`（术语：扩展 / Plugin / 模块 / 目录 / 贡献项 / 分类）
+- `rust/lithe-gpui/themes/`（只剩内置的 `jetbrains.json`）、
+  `rust/lithe-gpui/extensions/themes/`（五个捆绑主题组）
+- `rust/lithe-gpui/crates/settings/src/theme.rs`（播种/同步/卸载/重装/迁移）、
+  `paths.rs`（扩展目录）、`schema.rs`（默认主题 + `uninstalledExtensions`）、
+  `store.rs`（`set_extension_uninstalled`）
+- `CONTEXT.md`（术语：扩展 / Plugin / 模块 / 目录 / 贡献项 / 分类 /
+  内置主题 / 捆绑主题扩展 / 装载面与扩展面）

@@ -82,6 +82,11 @@ struct Card {
     categories_label: SharedString,
     publisher: SharedString,
     built_in: bool,
+    /// **可卸载**（入口点是 `bundled`）：卡片上出现卸载/重新安装按钮。
+    ///
+    /// v1 里只有捆绑主题扩展属于这一类；`builtIn`（宿主核心能力，如 IDEA 主题、
+    /// 字体、Java 支持）不给卸载按钮 —— 它们没有卸载语义，画出来就是假控件。
+    removable: bool,
     /// 展开详情里的贡献项行（字体家族已去重）。
     contributions: Vec<SharedString>,
 }
@@ -120,6 +125,7 @@ impl Card {
             categories_label: entry.categories.join(" · ").into(),
             publisher: entry.publisher.clone().into(),
             built_in: entry.entrypoint_kind == "builtIn",
+            removable: entry.entrypoint_kind == "bundled",
             contributions,
         }
     }
@@ -169,8 +175,16 @@ pub struct ExtensionsPage {
     /// 展开了详情的扩展（稳定包 id）。只展开一条。
     expanded: Option<String>,
     status: CatalogStatus,
+    /// 设置存储：读 `uninstalledExtensions`（决定卡片画「卸载」还是「重新安装」）。
+    ///
+    /// `Option` 而不是必填：设置存储比本页更早建立（`main.rs` 的启动顺序），
+    /// 但页面构造在**换根重建**时也可能跑，那时句柄一定在；拿不到就按"全部在装"
+    /// 渲染（不画卸载按钮会撒谎，所以只影响状态判定，见 [`Self::is_uninstalled`]）。
+    settings: Option<Entity<lithe_gpui_settings::SettingsStore>>,
     /// 盯住搜索框：查询一变就重画。必须持有（`Subscription` 是 RAII）。
     _search_subscription: Subscription,
+    /// 盯住设置存储：卸载状态一变就重画（按钮与徽标跟着换）。
+    _settings_subscription: Option<Subscription>,
 }
 
 impl ExtensionsPage {
@@ -193,6 +207,10 @@ impl ExtensionsPage {
                 }
             },
         );
+        let settings = lithe_gpui_settings::try_store(cx);
+        let settings_subscription = settings
+            .as_ref()
+            .map(|store| cx.observe(store, |_, _, cx| cx.notify()));
         cx.spawn(async move |this, cx| {
             let status = match lithe_gpui_extensions::load_catalog() {
                 Ok(snapshot) => CatalogStatus::Loaded(
@@ -216,8 +234,36 @@ impl ExtensionsPage {
             category: None,
             expanded: None,
             status: CatalogStatus::Loading,
+            settings,
             _search_subscription: search_subscription,
+            _settings_subscription: settings_subscription,
         }
+    }
+
+    /// 这个扩展此刻是不是"已卸载"（设置里的 `uninstalledExtensions`）。
+    fn is_uninstalled(&self, id: &str, cx: &App) -> bool {
+        self.settings.as_ref().is_some_and(|store| {
+            store
+                .read(cx)
+                .uninstalled_extensions()
+                .iter()
+                .any(|value| value == id)
+        })
+    }
+
+    /// 卸载 / 重新安装一个捆绑扩展（卡片上那个按钮的唯一动作）。
+    ///
+    /// 文件与设置记录的落点在 `SettingsStore::set_extension_uninstalled`（它负责
+    /// "文件先动、清单后记"的顺序，理由见那里的文档）；本页只转交意图。
+    fn set_uninstalled(&mut self, id: &str, uninstalled: bool, cx: &mut Context<Self>) {
+        let Some(store) = self.settings.clone() else {
+            eprintln!("S1_EXTENSIONS_PAGE action=no_settings id={id}");
+            return;
+        };
+        store.update(cx, |store, cx| {
+            store.set_extension_uninstalled(id, uninstalled, cx);
+        });
+        // 展开详情保持原样：卸载后卡片还在（只是状态变了），用户能看到「重新安装」。
     }
 
     /// 展开 / 折叠一条扩展的详情。
@@ -332,11 +378,12 @@ impl ExtensionsPage {
             .into_any_element()
     }
 
-    /// 一张扩展卡片：名称 + 版本 + 分类标签 + 「内置」徽标；点击展开详情。
+    /// 一张扩展卡片：名称 + 版本 + 分类标签 + 状态徽标；点击展开详情。
     ///
-    /// **行内没有嵌套可点元素** —— GPUI 的点击默认冒泡，嵌套按钮会在点它时连带
-    /// 展开整行（`notifications.rs` 的同一条规矩）。
-    fn card(&self, card: &Card, cx: &mut Context<Self>) -> AnyElement {
+    /// ⚠️ **行内的卸载/重装按钮必须 `stop_propagation`**：GPUI 的点击默认冒泡
+    /// （`gpui-pre-0.3.6/src/app.rs:2383`），不阻断就会"点按钮同时把整行展开"
+    /// （`terminal_view.rs` 的页签关闭按钮是同一处置）。
+    fn card(&self, card: &Card, uninstalled: bool, cx: &mut Context<Self>) -> AnyElement {
         let expanded = self.expanded.as_deref() == Some(card.id.as_str());
         let id = card.id.clone();
 
@@ -378,15 +425,53 @@ impl ExtensionsPage {
                             .text_color(cx.theme().muted_foreground)
                             .child(card.categories_label.clone()),
                     )
-                    // v1 目录全部是内置能力；徽标是数据判据（`entrypoint.kind`），
-                    // 不是硬编码 —— 将来接入 nativeBundle 时它自然消失。
-                    .when(card.built_in, |this| {
+                    // 状态徽标按**数据判据**决定（`entrypoint.kind` + 设置里的卸载清单），
+                    // 不是硬编码：内置显示「内置」，捆绑未卸载显示「内置」（它确实随宿主
+                    // 分发），已卸载显示「已卸载」。
+                    .when(card.built_in || (card.removable && !uninstalled), |this| {
                         this.child(
                             div()
                                 .flex_shrink_0()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
                                 .child(tr("lithe.extensions.builtIn")),
+                        )
+                    })
+                    .when(card.removable && uninstalled, |this| {
+                        this.child(
+                            div()
+                                .flex_shrink_0()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(tr("lithe.extensions.uninstalled")),
+                        )
+                    })
+                    // 卸载 / 重新安装：只有 `bundled` 入口点才有这个动作。
+                    // 卸载是**可逆**的（重装从内嵌内容写回），所以用 outline 而不是 danger
+                    // —— 危险样式留给不可逆操作。
+                    .when(card.removable, |this| {
+                        let label = if uninstalled {
+                            tr("lithe.extensions.reinstall")
+                        } else {
+                            tr("lithe.extensions.uninstall")
+                        };
+                        let id_for_click = card.id.clone();
+                        this.child(
+                            Button::new(SharedString::from(format!(
+                                "lithe-extensions-toggle-{}",
+                                card.id
+                            )))
+                            .outline()
+                            .small()
+                            .flex_shrink_0()
+                            .label(label)
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    // 阻断冒泡：否则这一次点击会连带展开/折叠整行。
+                                    cx.stop_propagation();
+                                    this.set_uninstalled(&id_for_click, !uninstalled, cx);
+                                },
+                            )),
                         )
                     }),
             );
@@ -504,6 +589,12 @@ impl Render for ExtensionsPage {
         // 先把要画的数据拷成自有值（`visible_cards` 返回 `Vec<Card>`），借用在建树
         // 之前结束 —— 之后 `toolbar` / `card` 都要 `&mut Context`。
         let cards = self.visible_cards();
+        // 卸载清单也先取出来（`is_uninstalled` 要读设置实体，不能在闭包里再借一次）。
+        let uninstalled: Vec<String> = self
+            .settings
+            .as_ref()
+            .map(|store| store.read(cx).uninstalled_extensions().to_vec())
+            .unwrap_or_default();
         let total = match &self.status {
             CatalogStatus::Loaded(loaded) => loaded.len(),
             _ => 0,
@@ -527,7 +618,10 @@ impl Render for ExtensionsPage {
                     .overflow_y_scrollbar()
                     .when(cards.is_empty(), |this| this.child(self.empty_state(cx)))
                     .when(!cards.is_empty(), |this| {
-                        this.children(cards.iter().map(|card| self.card(card, cx)))
+                        this.children(cards.iter().map(|card| {
+                            let is_uninstalled = uninstalled.iter().any(|value| value == &card.id);
+                            self.card(card, is_uninstalled, cx)
+                        }))
                     }),
             )
             .into_any_element()

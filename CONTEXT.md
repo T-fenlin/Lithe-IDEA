@@ -31,3 +31,20 @@ _Avoid_: 插件（用户可见文案一律用"扩展"）、addon、模块
 扩展在目录里的浏览分类（`debug` / `fonts` / `icon-themes` / `languages` / `lsp` /
 `themes`）。分类**永远从非空贡献项推导**，不在清单里声明——这是 Zed 式做法，
 保证分类与贡献项不可能互相矛盾。
+
+### 主题与装载
+
+**内置主题（Built-in theme）**:
+编译进宿主、**不可卸载**的主题组（v1 只有 IDEA 一组：IntelliJ Light + Darcula，也是默认主题）。
+清单入口点是 `builtIn`。
+
+**捆绑主题扩展（Bundled theme extension）**:
+随宿主分发、**用户可以卸载**的主题组（Gruvbox / Lithe / Nord / One / VS Code）。
+清单入口点是 `bundled`；卸载是宿主侧的文件生命周期，不是目录事实。
+
+**装载面与扩展面（load surface / extension surface）**:
+主题只有一个装载目录（`<配置目录>/themes/`，注册表只能监视一个目录），而扩展包住在
+`<配置目录>/extensions/themes/`。扩展面是**管理面**（装/卸都发生在这里），
+装载面是**镜像**（启动时与扩展面对齐）。所以改一个捆绑主题要改扩展面那份。
+_Avoid_: 把两个目录说成"双目录加载"（做不到，见 `settings/src/theme.rs` 模块文档）
+

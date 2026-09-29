@@ -146,15 +146,15 @@ fn schema_v1_catalog_is_rejected_with_unsupported_schema() {
 fn unsorted_theme_contribution_is_rejected_deterministically() {
     let catalog: Value = serde_json::from_str(OFFICIAL_PLUGINS).expect("official catalog");
     let mut unsorted = catalog.clone();
-    unsorted["plugins"][0]["themes"] = serde_json::json!([
-        {"name": "Nord", "path": "themes/nord.json"},
-        {"name": "Gruvbox", "path": "themes/gruvbox.json"}
+    unsorted["plugins"][1]["themes"] = serde_json::json!([
+        {"name": "Nord", "path": "extensions/themes/nord.json"},
+        {"name": "Gruvbox", "path": "extensions/themes/gruvbox.json"}
     ]);
     let error = validate_plugin_catalog_json(&unsorted.to_string(), HOST_VERSION).unwrap_err();
     assert_eq!(
         error,
         PluginValidationError::InvalidContribution {
-            plugin: "lithe.builtinThemes".into(),
+            plugin: "lithe.gruvboxTheme".into(),
             category: "themes",
         }
     );
@@ -164,15 +164,15 @@ fn unsorted_theme_contribution_is_rejected_deterministically() {
 fn theme_path_escaping_the_bundle_is_rejected() {
     let catalog: Value = serde_json::from_str(OFFICIAL_PLUGINS).expect("official catalog");
     let mut escaping = catalog.clone();
-    escaping["plugins"][0]["themes"] = serde_json::json!([
+    escaping["plugins"][1]["themes"] = serde_json::json!([
         {"name": "Gruvbox", "path": "../secrets/gruvbox.json"},
-        {"name": "Nord", "path": "themes/nord.json"}
+        {"name": "Nord", "path": "extensions/themes/nord.json"}
     ]);
     let error = validate_plugin_catalog_json(&escaping.to_string(), HOST_VERSION).unwrap_err();
     assert_eq!(
         error,
         PluginValidationError::InvalidContribution {
-            plugin: "lithe.builtinThemes".into(),
+            plugin: "lithe.gruvboxTheme".into(),
             category: "themes",
         }
     );
@@ -194,7 +194,7 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
     let plugins = response["data"]["plugins"]
         .as_array()
         .expect("plugins array should encode");
-    assert_eq!(plugins.len(), 5);
+    assert_eq!(plugins.len(), 10);
     let by_id: Vec<(&str, Vec<&str>)> = plugins
         .iter()
         .map(|plugin| {
@@ -210,17 +210,38 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
     assert_eq!(
         by_id,
         vec![
-            ("lithe.builtinThemes", vec!["themes"]),
             ("lithe.bundledFonts", vec!["fonts"]),
+            ("lithe.gruvboxTheme", vec!["themes"]),
             ("lithe.ideaIconTheme", vec!["icon-themes"]),
+            ("lithe.ideaTheme", vec!["themes"]),
             ("lithe.javaDebugAdapter", vec!["debug"]),
             ("lithe.javaLanguageSupport", vec!["languages", "lsp"]),
+            ("lithe.litheTheme", vec!["themes"]),
+            ("lithe.nordTheme", vec!["themes"]),
+            ("lithe.oneTheme", vec!["themes"]),
+            ("lithe.vscodeTheme", vec!["themes"]),
         ]
     );
-    // The listing must echo the manifest fields the extensions page renders.
-    let java = &plugins[4];
+    // The listing must echo the manifest fields the extensions page renders:
+    // the IDEA theme is the only `builtIn` theme (the uninstallable default),
+    // the other five theme groups are `bundled` (uninstallable by the user),
+    // and six of the nine entries carry theme contributions.
+    let idea = &plugins[3];
+    assert_eq!(idea["displayName"], "IDEA 主题（内置）");
+    assert_eq!(idea["entrypoint"]["kind"], "builtIn");
+    let lithe = &plugins[6];
+    assert_eq!(lithe["entrypoint"]["kind"], "bundled");
+    assert_eq!(lithe["themes"][0]["path"], "extensions/themes/lithe.json");
+    assert_eq!(
+        plugins
+            .iter()
+            .filter(|plugin| !plugin["themes"].as_array().expect("themes").is_empty())
+            .count(),
+        6,
+        "六个主题组（IDEA 内置 + 五个可卸载）"
+    );
+    let java = &plugins[5];
     assert_eq!(java["displayName"], "Java 语言支持");
-    assert_eq!(java["entrypoint"]["kind"], "builtIn");
     assert_eq!(java["languageSupports"][0]["id"], "java");
 }
 
