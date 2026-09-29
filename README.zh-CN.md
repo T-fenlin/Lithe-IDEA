@@ -180,8 +180,15 @@ terminal} -> shared`，以及 `app -> settings -> shared`。`rust/lithe-core`
 在仓库根目录构建并运行宿主：
 
 ```bash
-cargo build --bin Lithe
+cargo build --manifest-path rust/Cargo.toml --bin Lithe
 ./rust/target/debug/Lithe <workspace-root>
+```
+
+Windows 上也可以直接用仓库里的脚本：
+
+```powershell
+./scripts/build-lithe-debug.ps1
+./scripts/build-lithe-release.ps1
 ```
 
 `--theme`、`--locale`、`--open-settings` 只对这一次启动生效，不会写回设置。

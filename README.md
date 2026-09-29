@@ -184,8 +184,15 @@ UI framework.
 Build and run the host from the repository root:
 
 ```bash
-cargo build --bin Lithe
+cargo build --manifest-path rust/Cargo.toml --bin Lithe
 ./rust/target/debug/Lithe <workspace-root>
+```
+
+On Windows the repository also ships helper scripts:
+
+```powershell
+./scripts/build-lithe-debug.ps1
+./scripts/build-lithe-release.ps1
 ```
 
 `--theme`, `--locale`, and `--open-settings` override settings for a single
