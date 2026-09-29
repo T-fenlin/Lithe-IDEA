@@ -169,6 +169,18 @@ struct Options {
     /// 完全相同的那段代码（先 `BranchPanel::open` 重读数据，再 `window.open_dialog`），
     /// 被绕开的只有"操作系统把这次点击送进窗口"那一段。
     branch_panel_probe: bool,
+    /// `--run-probe`：启动后**自动跑第一条运行配置**（**验证/诊断用**）。
+    ///
+    /// 走的是与"点标题栏 ▶"完全相同的那段代码（`RunPane::launch(false)`），被绕开的只有
+    /// "操作系统把这次点击送进窗口"那一段 —— 无人值守的机器上注入不可靠，这个开关是拿到
+    /// `S1_RUN_START` / `S1_RUN_EXIT`（真进程、真输出、真退出码）的唯一确定性路径。
+    /// 它会**真的启动项目里识别到的第一个可运行目标**，所以只在验证/诊断时用。
+    run_probe: bool,
+    /// `--run-probe-debug`：与 `--run-probe` 同一条路，但按 `🐞`（调试方式）起。
+    ///
+    /// 用来验证"请求调试"这条链在真机上真的走到了 —— 对非 JVM 配置（npm / cargo）计划里
+    /// 不会有 `-agentlib:jdwp`，那时状态必须如实停在「运行中」并给一句解释，而不是假装在等调试器。
+    run_probe_debug: bool,
     /// `--right-view <id>`：启动后把**右侧工具窗**切到指定视图并展开；`extensions`
     /// 是例外 —— 它打开**中央扩展页**（2026-09-29 起，扩展不是右工具窗视图）。
     /// （**验证/诊断用**。）
@@ -308,6 +320,8 @@ fn parse_options() -> Result<Options, String> {
     let mut palette_keys = Vec::new();
     let mut project_menu_probe = false;
     let mut branch_panel_probe = false;
+    let mut run_probe = false;
+    let mut run_probe_debug = false;
     let mut right_view: Option<String> = None;
     let mut open_project_probe: Option<PathBuf> = None;
     let mut open_project_destination: Option<String> = None;
@@ -367,6 +381,11 @@ fn parse_options() -> Result<Options, String> {
             }
             "--project-menu-probe" => project_menu_probe = true,
             "--branch-panel-probe" => branch_panel_probe = true,
+            "--run-probe" => run_probe = true,
+            "--run-probe-debug" => {
+                run_probe = true;
+                run_probe_debug = true;
+            }
             "--session-probe" => {
                 let raw = args.next().ok_or("--session-probe 缺少文件列表")?;
                 let paths: Vec<PathBuf> = raw
@@ -468,6 +487,8 @@ fn parse_options() -> Result<Options, String> {
         palette_keys,
         project_menu_probe,
         branch_panel_probe,
+        run_probe,
+        run_probe_debug,
         right_view,
         open_project_probe,
         open_project_destination,
@@ -841,6 +862,8 @@ fn main() {
         palette_keys,
         project_menu_probe,
         branch_panel_probe,
+        run_probe,
+        run_probe_debug,
         right_view,
         open_project_probe,
         open_project_destination,
@@ -1047,7 +1070,15 @@ fn main() {
 
                 cx.open_window(window_options, move |window, cx| {
                     let workspace = cx.new(|cx| {
-                        ShellWorkspace::new(root, compact_menu_bar, branch_panel_probe, window, cx)
+                        ShellWorkspace::new(
+                            root,
+                            compact_menu_bar,
+                            branch_panel_probe,
+                            run_probe,
+                            run_probe_debug,
+                            window,
+                            cx,
+                        )
                     });
                     // 系统外观监听要在有窗口之后注册（`Context::observe_window_appearance`
                     // 收 `&mut Window`）；设置里的「跟随系统」才需要它。

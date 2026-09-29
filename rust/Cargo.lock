@@ -4502,11 +4502,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lithe-gpui-run"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lithe-gpui-shared",
+ "serde_json",
+]
+
+[[package]]
 name = "lithe-gpui-settings"
 version = "0.0.1"
 dependencies = [
  "async-channel",
  "gpui-kit",
+ "lithe-gpui-run",
  "lithe-gpui-shared",
  "notify",
  "serde",
@@ -4544,6 +4554,7 @@ dependencies = [
  "lithe-gpui-git",
  "lithe-gpui-java",
  "lithe-gpui-notify",
+ "lithe-gpui-run",
  "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-terminal",

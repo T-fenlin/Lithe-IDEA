@@ -71,13 +71,14 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
-    AnyElement, App, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
-    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea, div, rems,
+    AnyElement, App, Entity, Hsla, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    WindowControlArea, div, rems,
 };
 
 use lithe_gpui_shared::tr;
 
-use crate::menu_bar::{MISSING_DEBUGGER_HOST, MenuAction, Missing};
+use crate::menu_bar::{MenuAction, push_show_run_pane};
 
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -162,6 +163,13 @@ const TITLE_BAR_MAIN_ROW_HEIGHT_SPEC: f32 = 38.;
 /// `rems(TITLE_BAR_CONTROL_RADIUS_SPEC / 16.)`。
 const TITLE_BAR_CONTROL_RADIUS_SPEC: f32 = 6.4;
 
+/// 运行配置槽位的最大宽度 180。
+///
+/// 真源那一段按内容宽度铺开、只受标题栏余量限制；本侧给它一个上界，免得一个超长配置名
+/// （Maven 的 `artifactId` 可以很长）把窗口三键挤出去。180 是"看得见一截、截断处有省略号"
+/// 的量级（一行约 20 个中文字符），`truncate()` 负责省略号。
+const TITLE_BAR_RUN_SLOT_MAX_WIDTH_SPEC: f32 = 180.;
+
 /// 标题栏（无状态）：**两行**的高度与排布、第二行右侧的运行控件与自绘窗口三键都在这里，
 /// 不持有 `Entity`。只依赖传入的**已渲染好的**菜单栏、项目下拉与分支项、当前主题与窗口状态。
 ///
@@ -200,6 +208,7 @@ pub fn title_bar(
     menu_bar: AnyElement,
     project_menu: AnyElement,
     branch_item: AnyElement,
+    run: Entity<lithe_gpui_run::RunPane>,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement {
@@ -248,7 +257,7 @@ pub fn title_bar(
                 // 左右两组各自按内容宽度贴在两端，中间全归拖拽区（真源 `ChromeGroup grow`）。
                 .child(drag_region())
                 // 运行控件（`运行配置 ▾ ▶ 🐞`）：本轮新增，见 [`run_controls`]。
-                .child(run_controls(cx))
+                .child(run_controls(run, cx))
                 // 「账号 / 设置」槽位：只留空隙，见 [`account_slot`]。
                 .child(account_slot())
                 .child(window_controls(window, cx)),
@@ -444,15 +453,15 @@ impl WindowControl {
 /// 真源 Windows 标题栏**没有**这一组（它把运行 / 调试挂在编辑区标签栏右侧，
 /// `lithe-gpui/docs/ui-mockup-idea.md` §1.2 的图注 A1「后续把启动、debug 放这里」正是这一轮要做的搬迁），
 /// 所以这里没有 `title-bar.tsx` 的行号可引；形状与顺序取自效果图 §1.3。
-fn run_controls(cx: &App) -> impl IntoElement {
+fn run_controls(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> impl IntoElement {
     h_flex()
         .flex_shrink_0()
         .h_full()
         // 组内 4（`--lithe-chrome-gap`，`styles/theme.css:130`）：与第二行其它子元素同一个间距。
         .gap_1()
-        .child(run_configuration_slot(cx))
-        .child(run_control(RunControl::Run, cx))
-        .child(run_control(RunControl::Debug, cx))
+        .child(run_configuration_slot(run.clone(), cx))
+        .child(run_control(RunControl::Run, run.clone(), cx))
+        .child(run_control(RunControl::Debug, run, cx))
 }
 
 /// 第二行右端的「账号 / 设置」槽位：**只留空隙、不画控件**。
@@ -474,35 +483,51 @@ fn account_slot() -> impl IntoElement {
 
 /// `运行配置 ▾`：第二行右端的文字槽位（效果图 §1.3）。
 ///
-/// ## 文案
+/// ## 显示的是**真实**的当前配置名
 ///
-/// 用 `lithe.run.configurations`（zh「运行配置」/ en "Run configurations"，
-/// `lithe-gpui/crates/shared/locales/lithe.zh-CN.yml:3078` 与 `lithe.en.yml:3078` 同一行号）。
-/// 真源那一段显示的是**当前运行配置的名字**（`run.run` 的键面就是 "Run configuration"），
-/// 但本侧**没有运行配置子系统** —— 运行菜单三条（开始调试 / 停止 / 切换断点）全是占位项
-/// （`crate::menu_bar` 的 `MENUS`，`menu_bar.rs:1343-1365`），拿不到任何配置名，
-/// 所以这里显示这件东西的**类名**本身，不编一个假配置名。
+/// 从运行面板实体读（`lithe_gpui_run::RunPane::selected`）：有配置时显示它的名字，
+/// 一条都没有（未打开 Java 工程 / 还没识别出来）时退回工具窗自己的名字
+/// `lithe.run.configurations`（zh「运行配置」）。**不编假配置名**。
 ///
-/// ## ⚠️ 为什么它**不挂点击**
+/// ## 点它 = 打开运行工具窗（那里才是配置列表）
 ///
-/// 没有可下拉的东西：本侧没有任何"运行配置"清单（对比项目下拉走 `Entity<ProjectMenu>`、
-/// 菜单栏走 `Entity<MenuBar>`，两者都有真实数据与浮层实现）。画成可点却什么都不发生，
-/// 就是《编码指南》禁止的"假装能用"；`▾` 只是效果图给的外形，等运行配置接上再补行为。
-/// 它也因此**不需要** `id()`（`hover` / `active` 态要元素状态，`gpui-pre-0.3.6/src/elements/div.rs:2844-2849`，
-/// 而这里两者都没有）。
-fn run_configuration_slot(cx: &App) -> impl IntoElement {
+/// 真源这一格点开是一个下拉清单。本侧**不画假下拉**：列表在底部「运行」工具窗里
+/// （`lithe_gpui_run::RunPane`，点一行即选中），所以这里的落点是把那个工具窗切过来并显示
+/// —— 与「视图 → 运行和调试」走同一条 `MenuAction::ShowRunAndDebug`（同一个待执行队列）。
+/// 等这一格真的有了弹出菜单组件（`Entity<ProjectMenu>` 那种），再把它换成内联下拉。
+fn run_configuration_slot(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> impl IntoElement {
+    let theme = cx.theme();
+    let idle = theme.muted_foreground;
+    let hover_bg = theme.accent;
+    let hover_fg = theme.foreground;
+    // 配置名来自**运行面板**（同一份 `RunConfigurationView` 模型，不另解析一次）。
+    let label = run
+        .read(cx)
+        .selected()
+        .map(|configuration| SharedString::from(configuration.name.clone()))
+        .unwrap_or_else(|| tr("lithe.run.configurations"));
+
     h_flex()
+        .id("title-bar-run-configuration")
         .flex_shrink_0()
         .h_6()
         .px_2()
         .gap_1()
+        .max_w(rems(TITLE_BAR_RUN_SLOT_MAX_WIDTH_SPEC / 16.))
         .rounded(rems(TITLE_BAR_CONTROL_RADIUS_SPEC / 16.))
-        // 与项目下拉 / 分支项触发器同一个未悬停前景（ghost 的 `text-subtle-foreground`
-        // 在 gpui-kit 里与 `muted_foreground` 合并，见 [`window_control`] 的同一处说明）。
-        .text_color(cx.theme().muted_foreground)
-        .child(tr("lithe.run.configurations"))
-        // caret 14×14：与项目下拉触发器同一个字形与尺寸
-        // （`ui-mockup-idea.md` §1.3 的 `运行配置 ▾`；`title-project-menu.tsx:157-163` 的 `ChevronDownIcon`）。
+        .text_color(idle)
+        .cursor_pointer()
+        .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
+        // 与两个图标按钮同样的第二道保险（防"将来被挪进拖拽区"）。
+        .on_mouse_down(MouseButton::Left, |_event, window, cx| {
+            window.prevent_default();
+            cx.stop_propagation();
+        })
+        .on_click(|_event, _window, cx| {
+            push_show_run_pane(cx);
+        })
+        .aria_label(tr("lithe.run.configurations"))
+        .child(div().min_w_0().truncate().child(label))
         .child(Icon::new(IconName::ChevronDown).small())
 }
 
@@ -513,7 +538,11 @@ fn run_configuration_slot(cx: &App) -> impl IntoElement {
 /// `text-foreground`（真源 ghost 按钮的 `hover:bg-accent`，`windows/tauri/src/ui/button.tsx:17,19`）。
 /// 尺寸 24 = `icon-xs`（`windows/tauri/src/ui/button.tsx:27`），与右工具窗的关闭按钮、
 /// 终端页签的关闭按钮同档（`right_tool_window.rs` / `terminal/src/constants.rs` 的同一处对照）。
-fn run_control(control: RunControl, cx: &App) -> impl IntoElement {
+fn run_control(
+    control: RunControl,
+    run: Entity<lithe_gpui_run::RunPane>,
+    cx: &App,
+) -> impl IntoElement {
     let theme = cx.theme();
     // 先按值取出来再进闭包：`cx.theme()` 借 `cx`，而 `.hover(..)` 的闭包要 `'static`。
     let idle = theme.muted_foreground;
@@ -539,9 +568,13 @@ fn run_control(control: RunControl, cx: &App) -> impl IntoElement {
             window.prevent_default();
             cx.stop_propagation();
         })
-        // 点击只**入队**，真正的执行在下一帧的 `ShellWorkspace::render` 里
-        // （见 [`RunControl::dispatch`]）。
-        .on_click(move |_event, _window, cx| control.dispatch(cx))
+        // 点击**直接**让运行面板起一次（不再走菜单队列）：`▶` = 普通运行，`🐞` = 调试方式
+        // （JDWP 等调试器接入，见 `lithe_gpui_run` 的模块文档）。面板自己会：
+        // 起进程 → 通过 `RunPaneEvent::Started` 让外壳把底部工具窗切到「运行」。
+        .on_click(move |_event, _window, cx| {
+            let debug = matches!(control, RunControl::Debug);
+            let _ = run.update(cx, |pane, cx| pane.launch(debug, cx));
+        })
         // 无障碍名 = 它复用的那一条菜单文案（图标按钮没有可见文字，必须给名字）。
         .aria_label(tr(control.label_key()))
         // 图标 14×14：`Sizable::small()` → `size_3p5()`（与窗口三键同一处换算）。
@@ -554,9 +587,9 @@ fn run_control(control: RunControl, cx: &App) -> impl IntoElement {
 /// 不参与比较，多 derive 一个 `PartialEq` 只会让"将来有人拿它当状态比较"看起来可行。
 #[derive(Clone, Copy)]
 enum RunControl {
-    /// `▶` 运行：复用「视图 → 运行和调试」。
+    /// `▶` 运行：按当前选中的运行配置起一次进程。
     Run,
-    /// `🐞` 调试：复用「运行 → 开始调试」那条**占位项**。
+    /// `🐞` 调试：同一条计划 + `debugPort`（JVM 以 JDWP 起、挂着等调试器接入）。
     Debug,
 }
 
@@ -571,11 +604,7 @@ impl RunControl {
 
     /// 字形：**只用 `gpui_kit::assets::IconName` 里已有的变体，不新增图标资源**
     /// （`▶` = `IconName::Play`，`🐞` = `IconName::Bug`；两个字形在本仓库里都已用过：
-    /// `menu_bar.rs:879` 的「运行和调试」与 `menu_bar.rs:1444` 的帮助菜单项）。
-    ///
-    /// ⚠️ 如实说明一处差别：菜单里「运行 → 开始调试」那一项的图标是 `IconName::Play`
-    /// （`menu_bar.rs:1352`），而效果图把调试按钮画成 `🐞` —— 这里按效果图取 `IconName::Bug`。
-    /// 图标不同、**行为完全相同**（同一条 `Missing` 声明，见 [`RunControl::dispatch`]）。
+    /// `menu_bar.rs` 的「运行和调试」与「开始调试」）。
     fn icon(self) -> IconName {
         match self {
             Self::Run => IconName::Play,
@@ -583,72 +612,13 @@ impl RunControl {
         }
     }
 
-    /// 这一项复用的是**菜单里的哪一条**（诊断行与无障碍名都用它）。
+    /// 无障碍名 / 悬停提示复用的是**菜单里的哪一条**（图标按钮没有可见文字，必须给名字）。
     fn label_key(self) -> &'static str {
         match self {
             // 「视图 → 运行和调试」：键从 `MenuAction` 现取，不在这里抄第二份字符串。
             Self::Run => MenuAction::ShowRunAndDebug.label_key(),
-            // 「运行 → 开始调试」在菜单里是 `MenuItem::NotWired`，**没有** `MenuAction` 变体，
-            // 所以只能写它的文案键（`crate::menu_bar` 的 `MENUS`，`menu_bar.rs:1350`）。
-            // ⚠️ 与菜单里那条是**同一个字符串**、不是同一个来源：那边改了键，这里会画出键名
-            // （rust-i18n 缺键时回显键名），是**可见**的失败而不是静默。
-            // 这个键本身有测试守着解析得出（`menu_bar.rs:3093` 的 `assert_ne!(tr(label_key), label_key)`）。
+            // 「运行 → 开始调试」：与菜单里那条**同一个键**（`crate::menu_bar` 的 `MENUS`）。
             Self::Debug => "lithe.menu.startDebugging",
         }
-    }
-
-    /// 已接线的动作；`None` = 这一项在菜单里是**占位项**（那 [`RunControl::missing`] 才有值）。
-    ///
-    /// 两个方法故意写成互补的一对：`dispatch` 用 `match (action(), missing())` 分流，
-    /// 于是"接线"与"缺能力"不可能各写一份判据而互相漂移。
-    fn action(self) -> Option<MenuAction> {
-        match self {
-            Self::Run => Some(MenuAction::ShowRunAndDebug),
-            Self::Debug => None,
-        }
-    }
-
-    /// 占位项缺什么；已接线的是 `None`。
-    fn missing(self) -> Option<Missing> {
-        match self {
-            Self::Run => None,
-            // 与菜单里「开始调试」同一条能力声明：本侧没有调试进程宿主
-            // （`menu_bar.rs:349-355` 的 `MISSING_DEBUGGER_HOST`），
-            // 「Run 工具窗」目前也只是占位内容（`crate::workspace` 的 `BottomPaneKind::Run`）。
-            Self::Debug => Some(MISSING_DEBUGGER_HOST),
-        }
-    }
-
-    /// 点击落点：**与菜单项点击同一条队列、同一段执行代码**。
-    ///
-    /// 走 `crate::menu_bar` 的待执行队列（`MenuBar::push_run` / `MenuBar::push_not_wired`），
-    /// 下一帧由 `ShellWorkspace::render` 的 `for request in take_pending_runs(cx)` 分流：
-    ///
-    /// - 已接线的（`▶`）→ `ShellWorkspace::apply_menu_action` 的
-    ///   `MenuAction::ShowRunAndDebug` 分支：把底部工具窗切到「运行」页签并显示
-    ///   （`workspace.rs:1928-1943`；⚠️ 该页签**内容**目前仍是"未实现"占位）；
-    /// - 占位项（`🐞`）→ `ShellWorkspace::report_menu_not_wired`：状态栏"尚未接入：缺 X" ＋
-    ///   `S1_MENU notWired id=… missing=debugger_host` 诊断行（`workspace.rs:2747-2757`），
-    ///   与点菜单里「运行 → 开始调试」**逐字相同**。
-    ///
-    /// `Ctrl+O` 的 `install_open_project_action` 与菜单键位（`crate::menu_bar::push_menu_key`）
-    /// 走的也是这条链，所以"点标题栏的 ▶"与"点菜单里的运行和调试"不可能表现出两种行为。
-    fn dispatch(self, cx: &mut App) {
-        let label_key = self.label_key();
-        // 菜单栏句柄没登记（窗口还没建出来 / 正在关）就什么都不做，只留一行诊断：
-        // `try_handle` 不 panic（与 `crate::menu_bar::push_menu_key` 同一条理由 —— `handle()`
-        // 在没有窗口时会 expect 失败，而标题栏按钮可能跑在窗口拆除的过程中）。
-        let Some(bar) = crate::menu_bar::try_handle() else {
-            eprintln!("S1_TITLE_BAR_RUN id={label_key} state=no_menu_bar");
-            return;
-        };
-        let _ = bar.update(cx, |bar, cx| match (self.action(), self.missing()) {
-            (Some(action), None) => bar.push_run(action, cx),
-            (None, Some(missing)) => bar.push_not_wired(label_key, missing, cx),
-            // 上面两个方法是一对互补取值，这一支不可达；写出来只是把匹配穷尽 ——
-            // 真出现了（有人只改了一边）就**哪个都不做**，而不是猜一个方向执行。
-            (Some(_), Some(_)) | (None, None) => {}
-        });
-        eprintln!("S1_TITLE_BAR_RUN id={label_key} state=pushed");
     }
 }

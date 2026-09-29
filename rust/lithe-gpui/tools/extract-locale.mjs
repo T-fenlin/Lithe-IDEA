@@ -290,10 +290,59 @@ const GPUI_ONLY_KEYS = [
   },
   {
     key: "settings.gpui.runNotWired",
-    zh: "点击启动尚未接入：gpui 侧还没有运行面板与进程宿主，「运行」工具窗与「运行」菜单目前都是占位。Core 的 runConfig.createLaunchPlan（平台无关的启动计划）已经能给出计划，但还没有消费方。",
-    en: "Starting a target is not wired yet: gpui has no run panel and no process host, and the Run tool window and Run menu are placeholders. Core's runConfig.createLaunchPlan already produces a platform-neutral plan, but nothing consumes it yet.",
+    zh: "启动入口在「运行」工具窗（左侧活动栏的 ▶）与标题栏的 ▶ / 🐞：那里能选配置、起进程、看输出、停止运行。本页仍然只读——配置编辑器（改参数、环境变量、JVM 参数）还没有落点。",
+    en: "Launching happens in the Run tool window (the ▶ item in the left activity bar) and in the title bar's ▶ / 🐞: pick a configuration, start it, watch the output, stop it. This page stays read-only — there is still no configuration editor (arguments, environment, JVM options).",
     reason:
-      "「运行配置」页的收尾说明（任何状态下都画），只讲「执行缺什么」。真源那一页的行是**可点按钮**（点进去是 RunConfigurationEditor，run-configuration-settings.tsx:100-111），本侧没有配置编辑器也没有运行子系统，所以必须如实写出「列表是真的、执行没接」，否则用户会以为行能点、或以为绿三角在别处。这是 HANDOFF §4 与 07-settings-ui.md §7.3-D「不画假控件」的口径；「本页只读」由 settings.gpui.runReadOnlyDescription 说，两处不重复。",
+      "「运行配置」页的收尾说明（任何状态下都画）。2026-09-30 之前这里写的是「运行面板与进程宿主都没有」——运行工具窗落地后那句话就成了假的（HANDOFF §4 的口径：说了做不到与本可以做却不说，都是误导），所以改成「入口在哪、本页仍然缺什么」。页面本身仍然只读：真源的行是可点按钮（点进去是 RunConfigurationEditor，run-configuration-settings.tsx:100-111），本侧没有配置编辑器，这一点必须继续如实写。",
+  },
+  {
+    key: "run.gpui.debugUnsupported",
+    zh: "这条配置的启动计划里没有调试参数：只有 JVM 配置（java / spring-boot.maven）会以 JDWP 方式启动并等待调试器。",
+    en: "This configuration's launch plan carries no debug arguments: only JVM configurations (java / spring-boot.maven) start with JDWP and wait for a debugger.",
+    reason:
+      "按下 🐞 但计划里没有 `-agentlib:jdwp=` 时的一行说明（例如对一条 npm / cargo 配置按调试）。状态栏那时如实显示「运行中」——不解释一句，用户会以为那个按钮坏了。真源没有这一档（它只给能调试的配置画调试入口）。",
+  },
+  {
+    key: "run.gpui.noWorkspace",
+    zh: "还没有打开项目：运行配置从工作区里识别。",
+    en: "No project is open: run configurations are identified from the workspace.",
+    reason:
+      "运行工具窗里「点了运行但还没有工作区」的提示（正常启动路径上不会出现，换根 / 探针宿主里可能出现）。真源没有对应键：它那边的工作区总是存在。",
+  },
+  {
+    key: "run.gpui.noConfiguration",
+    zh: "没有可运行的配置：先在列表里选一条（列表为空说明项目里没识别到可运行目标）。",
+    en: "No runnable configuration: pick one in the list (an empty list means the project has no identified target).",
+    reason:
+      "同上，是「选了运行但一条配置都没有」的提示。与 run.gpui.noWorkspace 分开是因为两种原因对应两种修法（打开项目 / 让识别认出目标）。",
+  },
+  {
+    key: "run.gpui.planFailed",
+    zh: "启动失败：{reason}",
+    en: "Could not start: {reason}",
+    reason:
+      "启动失败那一行（含取计划失败、前置步骤 javac 失败、进程起不来三种原因，{reason} 由宿主填）。真源的失败态是 run 面板里的红色横幅，键面不同（run.missingMessage 一类只讲「没有配置」），所以单独一条。",
+  },
+  {
+    key: "run.gpui.debugWaiting",
+    zh: "等待调试器接入（127.0.0.1:{port}）",
+    en: "Waiting for a debugger on 127.0.0.1:{port}",
+    reason:
+      "🐞 起的那一次：JVM 带 `-agentlib:jdwp=…,suspend=y` 起来就停住等接入，这一行说明「它在等、以及接哪个端口」。必须与 run.running（「运行中」）分开——那会说成「已经在跑」，而进程其实停着。",
+  },
+  {
+    key: "run.gpui.exitCode",
+    zh: "已退出（退出码 {code}）",
+    en: "Exited (code {code})",
+    reason:
+      "退出后的状态文字。真源有 debugger.statusExited（「已退出」）但没有带退出码的句子，而「退出码是多少」正是运行失败时最该看到的事实。",
+  },
+  {
+    key: "run.gpui.outputTruncated",
+    zh: "输出超过 5000 行，只保留最后 5000 行。",
+    en: "Output exceeded 5000 lines; only the last 5000 are kept.",
+    reason:
+      "输出被截断时的告示（`lithe_gpui_run::session` 的 MAX_OUTPUT_LINES）。不写会让人以为服务只输出了这么多——那是最容易被误读成「程序卡住」的假象。",
   },
   {
     key: "settings.gpui.prerequisiteKeyboard",

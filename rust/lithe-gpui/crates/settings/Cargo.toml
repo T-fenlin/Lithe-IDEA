@@ -7,6 +7,9 @@ publish = false
 [dependencies]
 gpui-kit = "0.7"
 lithe-gpui-shared = { path = "../shared" }
+# 运行配置的模型与取数（「运行配置」页与运行工具窗共用同一份）。
+# 依赖方向是 settings -> run -> shared：run 不认识设置，设置只读它的模型。
+lithe-gpui-run = { path = "../run" }
 # 设置文件是 JSON，而 `gpui-kit` **不重导出** serde / serde_json
 # （`gpui-kit-0.6.6/src/lib.rs` 的 `pub use` 清单里两者都没有），所以直接声明。
 # 版本跟随 workspace 已有的 `lithe-gpui-shared`（`serde_json = "1"`）。

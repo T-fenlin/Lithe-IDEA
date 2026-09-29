@@ -572,7 +572,32 @@ mod tests {
             ),
             (
                 "lithe.settings.gpui.runNotWired",
-                "点击启动尚未接入：gpui 侧还没有运行面板与进程宿主，「运行」工具窗与「运行」菜单目前都是占位。Core 的 runConfig.createLaunchPlan（平台无关的启动计划）已经能给出计划，但还没有消费方。",
+                "启动入口在「运行」工具窗（左侧活动栏的 ▶）与标题栏的 ▶ / 🐞：那里能选配置、起进程、看输出、停止运行。本页仍然只读——配置编辑器（改参数、环境变量、JVM 参数）还没有落点。",
+            ),
+            // 运行工具窗自己的 6 条（2026-09-30，`lithe-gpui-run`）：未打开工作区 / 没选配置 /
+            // 启动失败 / 等调试器接入 / 退出码 / 输出被截断。理由逐条写在
+            // `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里。
+            (
+                "lithe.run.gpui.debugUnsupported",
+                "这条配置的启动计划里没有调试参数：只有 JVM 配置（java / spring-boot.maven）会以 JDWP 方式启动并等待调试器。",
+            ),
+            (
+                "lithe.run.gpui.noWorkspace",
+                "还没有打开项目：运行配置从工作区里识别。",
+            ),
+            (
+                "lithe.run.gpui.noConfiguration",
+                "没有可运行的配置：先在列表里选一条（列表为空说明项目里没识别到可运行目标）。",
+            ),
+            ("lithe.run.gpui.planFailed", "启动失败：{reason}"),
+            (
+                "lithe.run.gpui.debugWaiting",
+                "等待调试器接入（127.0.0.1:{port}）",
+            ),
+            ("lithe.run.gpui.exitCode", "已退出（退出码 {code}）"),
+            (
+                "lithe.run.gpui.outputTruncated",
+                "输出超过 5000 行，只保留最后 5000 行。",
             ),
             // 「项目 · JDK 与 Maven」页的路径选择按钮 + Maven 配置那两行的提示与生效说明
             // （5 条，都由 `GPUI_ONLY_KEYS` 提供，理由写在脚本里：真源那颗按钮是纯图标且

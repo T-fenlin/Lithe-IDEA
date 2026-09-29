@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 101 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 108 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8704,7 +8704,21 @@ lithe:
   settings.gpui.runNoCommand:
     zh-CN: "没有固定命令行（可执行文件由工具链提供，真正的命令行由启动计划组装）"
   settings.gpui.runNotWired:
-    zh-CN: "点击启动尚未接入：gpui 侧还没有运行面板与进程宿主，「运行」工具窗与「运行」菜单目前都是占位。Core 的 runConfig.createLaunchPlan（平台无关的启动计划）已经能给出计划，但还没有消费方。"
+    zh-CN: "启动入口在「运行」工具窗（左侧活动栏的 ▶）与标题栏的 ▶ / 🐞：那里能选配置、起进程、看输出、停止运行。本页仍然只读——配置编辑器（改参数、环境变量、JVM 参数）还没有落点。"
+  run.gpui.debugUnsupported:
+    zh-CN: "这条配置的启动计划里没有调试参数：只有 JVM 配置（java / spring-boot.maven）会以 JDWP 方式启动并等待调试器。"
+  run.gpui.noWorkspace:
+    zh-CN: "还没有打开项目：运行配置从工作区里识别。"
+  run.gpui.noConfiguration:
+    zh-CN: "没有可运行的配置：先在列表里选一条（列表为空说明项目里没识别到可运行目标）。"
+  run.gpui.planFailed:
+    zh-CN: "启动失败：{reason}"
+  run.gpui.debugWaiting:
+    zh-CN: "等待调试器接入（127.0.0.1:{port}）"
+  run.gpui.exitCode:
+    zh-CN: "已退出（退出码 {code}）"
+  run.gpui.outputTruncated:
+    zh-CN: "输出超过 5000 行，只保留最后 5000 行。"
   settings.gpui.prerequisiteKeyboard:
     zh-CN: "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。"
   settings.gpui.prerequisiteGit:

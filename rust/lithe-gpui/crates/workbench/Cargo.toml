@@ -17,6 +17,10 @@ lithe-gpui-git = { path = "../git" }
 # `java` 不许依赖 `settings`，而 `settings` 不认识 JDT LS 会话（依赖方向见
 # `lithe-gpui-java::toolchain` 的模块文档）。用法只有一处：`register_java_toolchain`。
 lithe-gpui-java = { path = "../java" }
+# 运行：底部「运行」工具窗（配置列表 + 输出控制台）与标题栏的 ▶ / 🐞。
+# 进程由它自己起（与 `terminal` 同一口径："进程归 feature crate"），外壳只登记
+# 「工具链在哪」并把面板放进底部工具窗。
+lithe-gpui-run = { path = "../run" }
 # 设置：活动栏「设置」项打开对话框（`workspace.rs` 的 `SETTINGS_ACTIVITY_IX`），
 # 状态栏按 `showStatusBar` 条件渲染。方向是 workbench → settings，settings 不反向依赖。
 # 通知中心的状态层（`src/notifications.rs`）。方向是 workbench → notify，

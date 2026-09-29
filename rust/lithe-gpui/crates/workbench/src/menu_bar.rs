@@ -733,6 +733,13 @@ pub enum MenuAction {
     ShowSourceControl,
     /// 视图 → 运行和调试。真源 `menu.runAndDebug`（无快捷键）。
     ShowRunAndDebug,
+    /// 运行 → 开始调试。真源 `menu.startDebugging`（F5，本侧不绑）。
+    ///
+    /// 落点是运行面板的 `launch(debug = true)`：Core 的启动计划带 `debugPort`，
+    /// JVM 以 `-agentlib:jdwp=…,suspend=y` 起、挂着等调试器接入（见 `lithe_gpui_run`）。
+    StartDebugging,
+    /// 运行 → 停止调试。真源 `menu.stopDebugging`（Shift+F5，本侧不绑）。
+    StopDebugging,
     /// 视图 → 放大（`Ctrl+=`）。真源 `menu.zoomIn`。
     ZoomIn,
     /// 视图 → 缩小（`Ctrl+-`）。真源 `menu.zoomOut`。
@@ -813,6 +820,8 @@ impl MenuAction {
             Self::ShowFileExplorer => "lithe.menu.fileExplorer",
             Self::ShowSourceControl => "lithe.menu.sourceControl",
             Self::ShowRunAndDebug => "lithe.menu.runAndDebug",
+            Self::StartDebugging => "lithe.menu.startDebugging",
+            Self::StopDebugging => "lithe.menu.stopDebugging",
             Self::ZoomIn => "lithe.menu.zoomIn",
             Self::ZoomOut => "lithe.menu.zoomOut",
             Self::ResetZoom => "lithe.menu.resetZoom",
@@ -883,7 +892,8 @@ impl MenuAction {
             Self::ShowDiagnostics => IconName::SquareActivity,
             Self::ShowFileExplorer => IconName::Files,
             Self::ShowSourceControl => IconName::GitBranch,
-            Self::ShowRunAndDebug => IconName::Play,
+            Self::ShowRunAndDebug | Self::StartDebugging => IconName::Play,
+            Self::StopDebugging => IconName::SquareStop,
             Self::ZoomIn => IconName::ZoomIn,
             Self::ZoomOut => IconName::ZoomOut,
             Self::ResetZoom => IconName::RotateCcw,
@@ -972,7 +982,9 @@ impl MenuAction {
             | Self::ShowDiagnostics
             | Self::ShowFileExplorer
             | Self::ShowSourceControl
-            | Self::ShowRunAndDebug => return None,
+            | Self::ShowRunAndDebug
+            | Self::StartDebugging
+            | Self::StopDebugging => return None,
         })
     }
 
@@ -1027,6 +1039,10 @@ impl MenuAction {
             | Self::ShowFileExplorer
             | Self::ShowSourceControl
             | Self::ShowRunAndDebug
+            // 「运行 → 开始/停止调试」同理：执行分支在 `apply_menu_action` 的臂上，
+            // 不进命令面板（面板行序由 `COMMAND_ORDER` 定）。
+            | Self::StartDebugging
+            | Self::StopDebugging
             | Self::ZoomIn
             | Self::ZoomOut
             | Self::ResetZoom => None,
@@ -1350,19 +1366,13 @@ pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "run",
         label_key: "lithe.menu.run",
-        // 真源 3 条（`window-menu-bar.tsx:427-439`），本侧三条都是占位项：
-        // 「运行」因此**不再是空菜单**，但也没有一条真能跑起来的东西 —— 如实写在文案里。
+        // 真源 3 条（`window-menu-bar.tsx:427-439`）。2026-09-30 起前两条**真的能用**：
+        // 「开始调试」按当前运行配置以 JDWP 方式起进程（Core 的 `debugPort` 计划），
+        // 「停止调试」停掉它。**「切换断点」仍是占位项**：断点要编辑器 gutter 与 DAP 会话的
+        // 行级联动，本侧还没有那两样（`MISSING_DEBUGGER_HOST` 现在只剩它一个使用方）。
         items: &[
-            MenuItem::NotWired {
-                label_key: "lithe.menu.startDebugging",
-                missing: MISSING_DEBUGGER_HOST,
-                icon: IconName::Play,
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.stopDebugging",
-                missing: MISSING_DEBUGGER_HOST,
-                icon: IconName::SquareStop,
-            },
+            MenuItem::Action(MenuAction::StartDebugging),
+            MenuItem::Action(MenuAction::StopDebugging),
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleBreakpoint",
                 missing: MISSING_DEBUGGER_HOST,
@@ -2215,6 +2225,20 @@ pub fn handle() -> gpui_kit::WeakEntity<MenuBar> {
 /// 给"可能在窗口之外被触发"的路径用（`Ctrl+O` 的全局 action 处理器 ——
 /// `App::on_action` 是应用级回调，窗口还没建出来时也会被派发；在那里 panic 会把一个
 /// 按键变成崩溃）。
+/// 把「显示运行工具窗」推进待执行队列（标题栏的运行配置槽位用它）。
+///
+/// 与菜单项、标题栏按钮走**同一条**队列（`MenuBar::push_run`），所以"点标题栏那一格"与
+/// "点视图 → 运行和调试"不会表现出两种行为。句柄没登记（窗口在建 / 在拆）时只留一行诊断，
+/// 不 panic —— 与 `try_handle` 的既有理由一致。
+pub fn push_show_run_pane(cx: &mut App) {
+    let Some(bar) = try_handle() else {
+        eprintln!("S1_TITLE_BAR_RUN id=lithe.run.configurations state=no_menu_bar");
+        return;
+    };
+    let _ = bar.update(cx, |bar, cx| bar.push_run(MenuAction::ShowRunAndDebug, cx));
+    eprintln!("S1_TITLE_BAR_RUN id=lithe.run.configurations state=pushed");
+}
+
 pub(crate) fn try_handle() -> Option<gpui_kit::WeakEntity<MenuBar>> {
     MENU_BAR.with(|slot| slot.borrow().clone())
 }
@@ -3072,7 +3096,7 @@ mod tests {
         // `ShellWorkspace::apply_menu_action` 里，逐条接线点写在那里。
         // 这是**清单**而不是白名单：新增一条就得在这里显式登记一次。
         // 第 7 条（`OpenFolder`）是 B4 加的「打开文件夹」。
-        const NON_COMMAND: [MenuAction; 25] = [
+        const NON_COMMAND: [MenuAction; 27] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -3097,6 +3121,11 @@ mod tests {
             MenuAction::ShowFileExplorer,
             MenuAction::ShowSourceControl,
             MenuAction::ShowRunAndDebug,
+            // 「运行 → 开始 / 停止调试」（2026-09-30）：执行分支在
+            // `ShellWorkspace::apply_menu_action`，落点是运行面板实体
+            // （`lithe_gpui_run::RunPane::launch(true)` / `stop`）。
+            MenuAction::StartDebugging,
+            MenuAction::StopDebugging,
             MenuAction::ZoomIn,
             MenuAction::ZoomOut,
             MenuAction::ResetZoom,

@@ -148,11 +148,6 @@ impl SeverityFilter {
             },
         }
     }
-
-    /// 一档都没开 —— 那不是"过滤"，是"什么都没有"，所以它走"没有匹配"的空态。
-    pub(crate) fn is_empty(self) -> bool {
-        !self.errors && !self.warnings && !self.infos
-    }
 }
 
 /// 一次刷新的统计（给工具条与诊断行用）。
@@ -853,7 +848,10 @@ mod tests {
             warnings: false,
             infos: false,
         };
-        assert!(none.is_empty());
+        assert!(
+            !none.shows(Level::Error) && !none.shows(Level::Warning) && !none.shows(Level::Hint),
+            "三档全关时什么都不显示"
+        );
         assert_eq!(visible_count(&built, none), 0);
     }
 

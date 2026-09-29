@@ -122,6 +122,7 @@ use crate::title_bar::title_bar;
 use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::{BottomPane, ChangesView};
+use lithe_gpui_run::{RunPane, RunPaneEvent, ToolchainPath, ToolchainResolver};
 use lithe_gpui_settings::{
     Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, Overrides,
     RecentProjects, resolve_overrides,
@@ -560,20 +561,6 @@ impl BottomPaneKind {
             Self::Diagnostics => "diagnostics",
         }
     }
-
-    /// 工具窗标题里的名字，用于占位内容那句「{label} 工具窗（未实现）」。
-    ///
-    /// 走 `lithe_gpui_shared::tr`（界面不许出现中英文字面量）。真源键与原文：
-    /// `lithe.workbench.run` = 「运行」、`lithe.workbench.diagnostics` = 「诊断」。
-    fn label(self) -> SharedString {
-        match self {
-            Self::Run => tr("lithe.workbench.run"),
-            Self::Diagnostics => tr("lithe.workbench.diagnostics"),
-            // 终端与提交记录有自己的界面，永远不会走到占位分支；给同一个键只为不必返回 `Option`。
-            Self::Terminal => tr("lithe.workbench.terminal"),
-            Self::Git => tr("lithe.workbench.gitLog"),
-        }
-    }
 }
 
 /// 会话文档里的 `bottomKind` 字符串 → 底部窗内容；认不出的取值返回 `None`。
@@ -937,6 +924,14 @@ pub struct ShellWorkspace {
     terminal: Entity<TerminalPane>,
     /// 底部窗里的 Git 提交记录。
     bottom_git: Entity<BottomPane>,
+    /// 底部窗里的「运行」面板（配置列表 + 输出控制台，见 `lithe_gpui_run::RunPane`）。
+    ///
+    /// 进程归它自己起（与终端同一口径："进程归 feature crate"），外壳只负责把它放进底部
+    /// 工具窗、并在它报告"一次运行开始了"时把工具窗切过来。
+    run: Entity<RunPane>,
+    /// 订阅运行面板的 [`RunPaneEvent`]：一次运行开始时自动显示底部工具窗并切到「运行」
+    /// （点 `▶` 之后看不到输出是最糟的体验）。同样是 RAII，必须持有。
+    _run_subscription: Option<gpui_kit::Subscription>,
     /// 底部窗当前显示的内容。**与可见性分开**：隐藏时保留最后显示过的页签。
     bottom_kind: BottomPaneKind,
     /// 底部窗是否展开。**默认 `false`（隐藏）**：真源
@@ -1108,6 +1103,9 @@ impl ShellWorkspace {
         root: PathBuf,
         compact_menu: bool,
         branch_panel_probe: bool,
+        run_probe: bool,
+        // `--run-probe-debug`：探针按 `🐞` 起（见 `app::main` 的同名开关）。
+        run_probe_debug: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -1276,6 +1274,70 @@ impl ShellWorkspace {
         }
 
         let bottom_git = cx.new(|cx| BottomPane::new(root.clone(), window, cx));
+
+        // 「运行」面板（底部工具窗的「运行」页）：配置列表 + 真进程 + 输出控制台。
+        //
+        // 「工具链在哪」按仓库既有的"低层 crate 定义钩子、外壳填实现"口径注入
+        // （与 `TabMenuHostActions` / `GitIdentityHost` 同一形状）：`run` 只依赖 `shared`，
+        // 不认识设置，也不该自己去找 JDK。
+        //
+        // ⚠️ 解析器**懒探测**：`discover` 会跑 `java -version` / `mvn -version`，
+        // 所以只在真的点 ▶ / 🐞 时才算（`register_java_toolchain` 那条路是给语言服务用的，
+        // 必须早算；这里不能跟着它在启动路径上付探测的钱）。
+        let run = cx.new(|_| RunPane::new());
+        {
+            let global = lithe_gpui_settings::try_store(cx)
+                .map(|store| Overrides::from_settings(store.read(cx).settings()))
+                .unwrap_or_default();
+            let local = load_local_toolchain(&root);
+            for diagnostic in &local.diagnostics {
+                eprintln!("S1_RUN_TOOLCHAIN local_diagnostic {diagnostic}");
+            }
+            let (resolved, origins) = resolve_overrides(&local.paths, &global);
+            println!(
+                "S1_RUN_TOOLCHAIN {}",
+                ToolchainPaths::diagnostic_suffix(&origins)
+            );
+            let resolve: ToolchainResolver = Arc::new(move |reference: &str| {
+                // 与设置页「项目 · JDK 与 Maven」用的是**同一个** `discover`
+                // （`settings/src/project.rs`），所以运行用的 JDK / Maven
+                // 与设置页显示的那个值必然一致。
+                let environment = lithe_gpui_settings::project::discover(&resolved);
+                let effective = match reference {
+                    "java" | "project-jdk" => environment.jdk.effective(),
+                    "maven" | "project-maven" => environment.maven.effective(),
+                    _ => return None,
+                };
+                match effective {
+                    lithe_gpui_settings::project::EffectiveToolchain::Resolved { path, .. } => {
+                        // JDK 给的是**主目录**，Maven 给的是**可执行文件**
+                        // （`EffectiveToolchain::Resolved::path` 的文档），两种形态分开传。
+                        let path = PathBuf::from(path);
+                        Some(match reference {
+                            "java" | "project-jdk" => ToolchainPath::JavaHome(path),
+                            _ => ToolchainPath::Program(path),
+                        })
+                    }
+                    _ => None,
+                }
+            });
+            run.update(cx, |pane, cx| {
+                // `--run-probe`（验证/诊断用）：识别完配置就自动跑第一条，走的是与点 ▶
+                // 完全相同的那段代码（见 `RunPane::set_probe` 的文档）。
+                pane.set_probe(run_probe, run_probe_debug);
+                pane.set_workspace(root.clone(), resolve, cx);
+            });
+        }
+        let run_subscription = cx.subscribe(&run, |this, _pane, event: &RunPaneEvent, cx| {
+            if *event == RunPaneEvent::Started {
+                // 一次运行开始了：把底部工具窗切到「运行」并显示（同 `MenuAction::ShowRunAndDebug`
+                // 那两个字段，真机也是"运行 → 输出面板自动出现"）。
+                this.bottom_kind = BottomPaneKind::Run;
+                this.bottom_visible = true;
+                this.schedule_session_save(cx);
+                cx.notify();
+            }
+        });
 
         // 设置里的「Git」页要读写提交身份（`user.name` / `user.email`），而那条通路是
         // **本 crate 才拼得起来**的：Core 命令住在 `lithe-gpui-git`，设置 crate 不许依赖它
@@ -1556,6 +1618,8 @@ impl ShellWorkspace {
             extensions_page_open: false,
             terminal,
             bottom_git,
+            run,
+            _run_subscription: Some(run_subscription),
             // 默认页签是终端（`workspace-ui-defaults.ts:6` 的 `bottomPaneActiveTab: "terminal"`），
             // 但默认**不显示**（同文件 `:5` 的 `isBottomPaneVisible: false`）。
             bottom_kind: BottomPaneKind::Terminal,
@@ -2145,6 +2209,16 @@ impl ShellWorkspace {
                         "hidden"
                     },
                 );
+            }
+            MenuAction::StartDebugging => {
+                // 「运行 → 开始调试」与标题栏的 🐞 落点相同（`lithe_gpui_run::RunPane::launch`）：
+                // 同一条启动计划 + `debugPort`。面板自己会在起进程后让底部工具窗切到「运行」。
+                self.run.update(cx, |pane, cx| pane.launch(true, cx));
+                diagnose_menu_run(action, "debug");
+            }
+            MenuAction::StopDebugging => {
+                self.run.update(cx, |pane, cx| pane.stop(cx));
+                diagnose_menu_run(action, "stop");
             }
             MenuAction::ShowDiagnostics | MenuAction::ShowRunAndDebug => {
                 // 接线点：底部工具窗的**同一份状态**（`bottom_kind` + `bottom_visible`）——
@@ -3214,8 +3288,17 @@ impl ShellWorkspace {
         // 闭包是 `FnOnce`，用这个槽把新建出来的外壳句柄带出来（重建之后它才是所有者）。
         let mut created: Option<Entity<ShellWorkspace>> = None;
         let new_root = window.replace_root(cx, |window, cx| {
-            let workspace =
-                cx.new(|cx| ShellWorkspace::new(target.clone(), compact_menu, false, window, cx));
+            let workspace = cx.new(|cx| {
+                ShellWorkspace::new(
+                    target.clone(),
+                    compact_menu,
+                    false,
+                    false,
+                    false,
+                    window,
+                    cx,
+                )
+            });
             created = Some(workspace.clone());
             Root::new(workspace, window, cx)
         });
@@ -3963,15 +4046,9 @@ impl Render for ShellWorkspace {
                 BottomPaneKind::Diagnostics => {
                     self.editor.read(cx).problems_pane().into_any_element()
                 }
-                BottomPaneKind::Run => {
-                    // 占位文案是临时脚手架；里面的 {label} 是活动栏项的名字，走
-                    // i18n（`lithe.workbench.run`）。
-                    placeholder(
-                        format!("{} 工具窗（未实现）", BottomPaneKind::Run.label()),
-                        cx,
-                    )
-                    .into_any_element()
-                }
+                // 运行页：**真的运行面板**（配置列表 / 输出控制台 / ▶ 🐞 ■ ⌫）。
+                // 进程与输出都在那个实体里，外壳只把它放进来。
+                BottomPaneKind::Run => self.run.clone().into_any_element(),
             };
             bottom_pane(content, cx)
         });
@@ -4032,6 +4109,9 @@ impl Render for ShellWorkspace {
                 menu.unwrap_or_else(|| div().into_any_element()),
                 project_menu.unwrap_or_else(|| div().into_any_element()),
                 branch_item,
+                // 运行面板实体：标题栏的 `运行配置 ▾` 显示**真实**的当前配置名，`▶` / `🐞`
+                // 直接让它起一次（不再走菜单队列），见 `crate::title_bar` 的 `run_controls`。
+                self.run.clone(),
                 window,
                 cx,
             ))
@@ -4365,21 +4445,6 @@ fn bottom_pane(content: AnyElement, cx: &App) -> impl IntoElement {
                 .bg(cx.theme().background)
                 .child(content),
         )
-}
-
-/// 区域占位块的通用外观：弱化文字 + 内边距，用来核对位置与尺寸。
-///
-/// ⚠️ 收 `impl Into<SharedString>` 而**不是** `&str`：本 crate 是 edition 2024，`-> impl IntoElement`
-/// 会捕获参数的生命周期，收 `&str` 时传一个临时 `String`（`&format!(..)`）会报
-/// `E0716 temporary value dropped while borrowed`。
-fn placeholder(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
-    div()
-        .p_2()
-        // 字号 `--ui-text-chrome` 原来是 13px，不在 gpui 的档位（12 / 14）上；
-        // 按《编码指南》用 `text_sm()`（14px）——13 → 14 是经维护者确认的有意改动。
-        .text_sm()
-        .text_color(cx.theme().muted_foreground)
-        .child(text.into())
 }
 
 /// 读当前分支名。
