@@ -162,14 +162,13 @@ pub struct StatusEntry {
     text: SharedString,
     /// 点击回调（`None` = 纯展示条目）。
     ///
-    /// 2026-09-27 为通知中心加的：那条「点开通知中心」的入口就是一个可点的前导项
-    /// （IDEA 的口径是状态栏那条消息**就是**通知本身，点它打开工具窗，见
-    /// `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`）。
-    ///
-    /// 这正是本模块文档第 5 条预言的那个扩展点（"要还原差异需给 `StatusEntry` 加一个
-    /// `interactive: bool`（或 `on_click`）"）—— 选了 `on_click` 而不是布尔，因为
-    /// Windows 那边是 `FooterStatusChip`（可点）与 `FooterStatusLabel`（纯展示）两种
-    /// 组件，带回调就顺便把两者区分开了。
+    /// 2026-09-27 为通知中心的「点开通知中心」入口加的（IDEA 的口径是状态栏那条消息
+    /// **就是**通知本身，点它打开工具窗）。**那个入口已于 2026-09-29 随状态栏回显一起
+    /// 删除**（通知的即时反馈只剩左下角 toast），但能力留下：它就是本模块文档第 5 条
+    /// 预言的那个扩展点（"要还原差异需给 `StatusEntry` 加一个 `interactive: bool`
+    /// （或 `on_click`）"）—— 选了 `on_click` 而不是布尔，因为 Windows 那边是
+    /// `FooterStatusChip`（可点）与 `FooterStatusLabel`（纯展示）两种组件，带回调就顺便
+    /// 把两者区分开了。
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
 }
 

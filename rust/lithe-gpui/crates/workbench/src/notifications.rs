@@ -1,8 +1,8 @@
 //! 通知中心面板：铃铛角标的**内容**那一面。
 //!
-//! 这个面板是「消息发生过」的主要呈现面（另一面是状态栏那条可点的入口，见
-//! [`crate::status_bar`])。gpui-kit 的角落 toast（`component::Notification`）与状态栏那条
-//! 4 秒自动消失的小字都已废掉 —— 决策见
+//! 这个面板是「消息发生过」的留档面；即时反馈是弹出的**左下角 toast**（外壳的
+//! `_notification_toast_subscription` 派发，2026-09-29 起通知唯一的消息面 —— 曾有的
+//! 状态栏回显与常驻红条都删了），决策见
 //! `.agents/notes/implemented/architecture/2026-09-27-gpui-notification-center.md`。
 //!
 //! ## 为什么是独立实体，而不是 `right_tool_window` 的一个自由函数
@@ -112,8 +112,9 @@ fn format_age(now: u64, then: u64) -> SharedString {
 
 /// 渲染一条通知的文案。`code` 是 `tr` 的键，`params` 是插值参数。
 ///
-/// `pub` 是因为状态栏那条入口也要显示同一句话（`ShellWorkspace::footer_left`）—— 两处
-/// 必须显示**同一句**，否则状态栏与中心会各说各话。
+/// `pub` 是因为左下角 toast（`ShellWorkspace::show_notification_toast`）与中心必须显示
+/// **同一句**，否则浮层和面板会各说各话（状态栏回显还在时它也是第三个消费者，
+/// 2026-09-29 随回显一起退场）。
 ///
 /// 这里是**唯一**拼文案的地方，所以「文案不存进条目」这条决定落在代码里而不只是文档里。
 pub fn render_message(entry: &Entry) -> SharedString {

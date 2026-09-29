@@ -91,9 +91,10 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
+use gpui_kit::component::notification::{Notification, NotificationType};
 use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global, Hsla,
+    Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
     Render, SharedString, Styled as _, Window, div, rems,
 };
@@ -105,7 +106,7 @@ use lithe_gpui_settings::{
     Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, Overrides,
     RecentProjects, resolve_overrides,
 };
-use lithe_gpui_shared::icons::{idea, idea_icon_svg_px};
+use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::workspace_config::{ToolchainPaths, load_local_toolchain};
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
@@ -1027,17 +1028,21 @@ pub struct ShellWorkspace {
     /// 刻意不做成 `right_tool_window` 的自由函数参数：面板要持有自己的视图状态，而
     /// `ShellWorkspace` 已经 287KB 了。
     notification_panel: Entity<crate::notifications::NotificationPanel>,
-    /// **建立工作区配置失败**时的常驻红条文案。
+    /// 订阅通知 store：**每记一条就弹一条左下角 toast**。
     ///
-    /// 与通知中心的区别是刻意的：通知中心是**记录**（用户主动去看），这条是**常驻**的、
-    /// 只能手动关 —— 因为"`.lithe` 没建出来"是一个需要用户处理的状态（写权限、盘符、
-    /// 安全软件），把它放进一个需要主动点开的面板里等于把它藏起来。口径见仓库既有先例
-    /// （`lithe-gpui/crates/git/src/changes_view.rs` 的 `render_write_error`：失败一定可见，
-    /// 不用 toast，因为它比红条更容易被用户错过、也更难截图取证）。
+    /// 订阅必须**被持有**：`Subscription` 一 drop 就取消（gpui 的 RAII 语义），
+    /// 所以放在结构体里而不是丢在 `new()` 的局部变量里。回调在
+    /// [`ShellWorkspace::dispatch_notification_toasts`]，它把「刚记进 store 的条目」逐条
+    /// 转成 gpui-kit 的 `component::Notification`（2026-09-29 产品决定：通知的唯一即时
+    /// 反馈是这条 toast，状态栏回显与常驻红条都废掉了）。
+    _notification_toast_subscription: Option<gpui_kit::Subscription>,
+    /// 已经弹过 toast 的最大 `seq`（[`lithe_gpui_notify::Entry::seq`]）。
     ///
-    /// 为什么必须存在这条：失败是**异步**到达的（[`prepare_workspace_config`] 走后台执行器），
-    /// 而且只打 stderr —— 双击启动的用户根本看不到 stderr，只会发现"`.lithe` 目录没出现"。
-    workspace_config_error: Option<SharedString>,
+    /// store 的观察回调每次都会跑，但它分不清「哪几条是这次新进的」—— 这个水位线补上
+    /// 这一半：[`lithe_gpui_notify::Store::entries_since`] 拿到水位线之后的条目，弹完推进。
+    /// 回调可能在一次批量写入后只跑一次（gpui 合并 notify），所以必须是"逐条查询"
+    /// 而不是"弹最新那条"。换根重建外壳时归零，新 store 的 seq 也从 1 起，两边天然对齐。
+    notification_toast_seq: u64,
     /// **会话状态**（`.lithe/session.local.json`）：打开的文件 + 当前文件 + 侧栏可见性 +
     /// 左右面板的当前视图 id。
     ///
@@ -1128,6 +1133,15 @@ impl ShellWorkspace {
         //
         // 位置在编辑区**之前**：编辑区要拿它的弱引用（保存失败 / 跳转无目标要往里记）。
         let notifications = cx.new(|_| lithe_gpui_notify::Store::new());
+
+        // toast 派发：store 一变就把新条目弹成左下角 toast（见
+        // [`ShellWorkspace::dispatch_notification_toasts`]）。观察要 `&mut Window`（弹 toast
+        // 走 `window.push_notification`），所以用 `observe_in`；订阅是 RAII，字段持有。
+        let notification_toast_subscription = Some(cx.observe_in(
+            &notifications,
+            window,
+            |this, store, window, cx| this.dispatch_notification_toasts(&store, window, cx),
+        ));
 
         // 先建编辑区，再把它的弱引用交给项目树：点文件 → 打开到编辑区。
         let editor = cx.new(|cx| {
@@ -1523,7 +1537,9 @@ impl ShellWorkspace {
             project_open_do_not_ask: Rc::new(Cell::new(false)),
             notifications,
             notification_panel,
-            workspace_config_error: None,
+            // toast 水位线从 0 起：新 store 的第一条 seq 是 1，必然 > 0，必然被弹。
+            notification_toast_seq: 0,
+            _notification_toast_subscription: notification_toast_subscription,
             // 会话装载：**只读文件，不创建**（`.lithe/session.local.json` 在第一次真的产生
             // 内容之前不存在）。恢复（打开文件 + 还原侧栏 / 视图）排在下面 `Self` 建好之后 ——
             // 它要 `window` 才能建编辑器 buffer，也要本结构体自己的字段才能恢复界面状态。
@@ -2519,16 +2535,9 @@ impl ShellWorkspace {
     fn footer_left(&mut self, cx: &mut Context<Self>) -> Vec<StatusEntry> {
         let mut entries: Vec<StatusEntry> = Vec::new();
 
-        let latest = self.notifications.read(cx).latest().cloned();
-        if let Some(entry) = latest {
-            entries.push(
-                StatusEntry::new(crate::notifications::render_message(&entry))
-                    .with_icon(IconName::Bell)
-                    .on_click(cx.listener(|shell, _, _, cx| {
-                        shell.open_notification_center(cx);
-                    })),
-            );
-        }
+        // 通知**不再**回显到状态栏（2026-09-29 产品决定：即时反馈只有左下角 toast，
+        // 记录在通知中心）—— 这里原来挂着"最新一条 + 点它开中心"的入口，已随红框
+        // 一并移除，水位线推进挪到 [`ShellWorkspace::note_notifications_opened`]。
 
         let project_name: SharedString = self
             .projects
@@ -2546,23 +2555,64 @@ impl ShellWorkspace {
         entries
     }
 
-    /// 打开通知中心：切右工具窗到「通知」并把未读水位线推上去。
+    /// 把 store 里**还没弹过**的条目逐条弹成左下角 toast。
     ///
-    /// 「推水位线」是这个动作的**一半** —— IDEA 的红点是「有未读」，而用户点开铃铛或状态栏
-    /// 那条就是在说「我知道了」。不推的话角标永远不消。
+    /// [`ShellWorkspace::_notification_toast_subscription`] 的回调体。store 一次批量写入
+    /// 可能只触发一次 notify，所以不能用"弹最新一条"：[`lithe_gpui_notify::Store::entries_since`]
+    /// 按水位线（[`ShellWorkspace::notification_toast_seq`]）做增量查询，这里按发生顺序
+    /// 逐条弹完，再把水位线推进到最后一条。
     ///
-    /// 已经在通知视图里时**不重复切视图**（否则会把面板收起来 —— 那是「点当前高亮项」的
-    /// 语义，见 `right_tool_window::resolve_click`），但水位线照样推。
-    fn open_notification_center(&mut self, cx: &mut Context<Self>) {
-        if self.right_view != RightToolWindowView::Notifications {
-            self.right_view = RightToolWindowView::Notifications;
+    /// 弹窗口径（2026-09-29 产品决定）：**左下角**、**5 秒自动消失**。左下角用
+    /// `Notification::placement(Anchor::BottomLeft)` 逐条指定；5 秒是 gpui-kit 0.7 的
+    /// `autohide` 默认时长（`notification.rs` 的 `timeout: autohide.then_some(from_secs(5))`），
+    /// 库里没有调时长的公开 API，所以不显式设置、靠默认值兑现需求。
+    fn dispatch_notification_toasts(
+        &mut self,
+        store: &Entity<lithe_gpui_notify::Store>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let pending = store.read(cx).entries_since(self.notification_toast_seq);
+        if pending.is_empty() {
+            return;
         }
-        self.right_visible = true;
+        self.notification_toast_seq = pending.last().map(|entry| entry.seq()).unwrap_or_default();
+        for entry in &pending {
+            self.show_notification_toast(entry, window, cx);
+        }
+        // 顺带驱动外壳重绘：铃铛角标读 store（`right_activity_items`），而编辑区是
+        // 直接 `store.update` 记通知、不经过外壳的 —— 外壳原本不观察 store，角标要等
+        // 下一次无关重绘才刷新。这里在弹 toast 的同一帧把它一起刷掉。
+        cx.notify();
+    }
+
+    /// 单条 toast：文案与通知中心**同一份**（[`crate::notifications::render_message`]），
+    /// 类型按严重性档位映射（`Severity` 没有"成功"档，`NotificationType::Success` 用不到）。
+    fn show_notification_toast(
+        &self,
+        entry: &lithe_gpui_notify::Entry,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let note = Notification::from(crate::notifications::render_message(entry))
+            .with_type(match entry.severity() {
+                lithe_gpui_notify::Severity::Info => NotificationType::Info,
+                lithe_gpui_notify::Severity::Warning => NotificationType::Warning,
+                lithe_gpui_notify::Severity::Error => NotificationType::Error,
+            })
+            .placement(Anchor::BottomLeft);
+        window.push_notification(note, cx);
+    }
+
+    /// 打开通知面板时把未读水位线推上去。
+    ///
+    /// 「推水位线」是这个动作的**一半** —— IDEA 的红点是「有未读」，而用户点开铃铛
+    /// 就是在说「我知道了」。不推的话角标永远不消。原来挂在状态栏回显的点击上，
+    /// 回显废掉后这是唯一的推点（右活动栏点铃铛 / 菜单与探针的打开路径都调它）。
+    fn note_notifications_opened(&mut self, cx: &mut Context<Self>) {
         self.notifications.update(cx, |store, _| store.mark_all_read());
         let read_upto = self.notifications.read(cx).read_upto_seq();
-        crate::right_tool_window::diagnose(RightToolWindowView::Notifications, true, None);
         eprintln!("S1_NOTIFICATION action=open readUpToSeq={read_upto}");
-        cx.notify();
     }
 
     /// 状态栏右组（尾随项）：顺序与内容都照真机，**每次重绘时按当前状态算**。
@@ -2761,6 +2811,10 @@ impl ShellWorkspace {
     pub fn show_right_view_probe(&mut self, view: RightToolWindowView, cx: &mut Context<Self>) {
         self.right_view = view;
         self.right_visible = true;
+        // 与右栏点击同一段迁移的一部分：打开通知面板同样推水位线。
+        if view == RightToolWindowView::Notifications {
+            self.note_notifications_opened(cx);
+        }
         self.schedule_right_view_scan(view, true, cx);
         // 探针不是指针输入：没有"本次点击的坐标"，所以不带 `x=` / `y=`
         // （判据要求"坐标相同"，编一个坐标出来会污染证据）。
@@ -3311,47 +3365,12 @@ impl ShellWorkspace {
         );
     }
 
-    /// 建立工作区配置失败时的**常驻红条**（可手动关闭）。
+    /// 建立工作区配置失败时的**常驻红条**（可手动关闭）已删（2026-09-29）。
     ///
-    /// 与通知中心刻意不同：通知中心是**记录**（用户主动点铃铛才看得到），这条是**常驻**的、
-    /// 不会自己消失 —— "`.lithe` 没建出来"是需要用户处理的失败（写权限 / 盘符 /
-    /// 安全软件拦写），把它放进一个需要主动点开的面板里就等于把它藏起来。范式照
-    /// `lithe-gpui/crates/git/src/changes_view.rs` 的 `render_write_error`（那个模块的文档写着
-    /// "失败一定可见：常驻红条，不是 console.error、也不是自动消失的 toast"）。
-    fn render_workspace_config_error(
-        &self,
-        message: SharedString,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        h_flex()
-            .w_full()
-            .flex_shrink_0()
-            .items_start()
-            .gap_2()
-            .px_3()
-            .py_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().danger.opacity(0.12))
-            .text_sm()
-            .text_color(cx.theme().danger)
-            .child(
-                // 图标用共享 helper（它自己设 `flex_shrink_0` + 尺寸 + 前景色，调用点不猜——
-                // 见 `lithe_gpui_shared::icons::idea_icon_svg_px` 的文档）。尺寸传 `rems`
-                // 而不是 `px`：rem 会随主题字号缩放。
-                idea_icon_svg_px(&idea::WARNING_CIRCLE_ICON, cx, rems(0.875)),
-            )
-            .child(div().flex_1().min_w_0().child(message))
-            .child(
-                Button::new("lithe-workspace-config-error-dismiss")
-                    .label(tr("lithe.ui.cancel"))
-                    .on_click(cx.listener(|shell: &mut Self, _event, _window, cx| {
-                        shell.workspace_config_error = None;
-                        cx.notify();
-                    })),
-            )
-            .into_any_element()
-    }
+    /// 原来它刻意与通知中心分开（"要用户处理的失败走常驻条"），本轮产品决定收拢：
+    /// 失败也走通知中心记录 + 左下角 toast（[`prepare_workspace_config`] 的失败分支），
+    /// 消息面上不再有常驻条。Git 的红/绿条（`changes_view` 的写失败/写成功）**不在**
+    /// 本轮范围内，维持原样。
 
     // -----------------------------------------------------------------------
     // B4 的诊断入口（`--open-project-probe`）
@@ -3531,13 +3550,6 @@ impl Render for ShellWorkspace {
         // 每帧统一渲染，外壳不再手动调 `Root::render_*_layer`（0.6 API 已删除）；
         // 这里只画工作区自己的内容。
 
-        // 建立工作区配置失败时的**常驻红条**。它的渲染要用 `cx`（`cx.theme()` 与关闭按钮
-        // 的 listener），所以先取出来：后面那些区域渲染函数会把 `cx` 不可变借到本函数末尾。
-        let workspace_config_error = self
-            .workspace_config_error
-            .clone()
-            .map(|message| self.render_workspace_config_error(message, cx));
-
         // 主菜单：先画菜单栏（它按"上一帧结束时的状态"画），再把用户上一帧点下的动作**真的执行掉**。
         //
         // 顺序为什么是"先画再执行"而不是反过来：画菜单栏要 `cx` 的不可变借用（读菜单栏实体），
@@ -3697,6 +3709,11 @@ impl Render for ShellWorkspace {
                         resolve_right_click(clicked, this.right_view, this.right_visible);
                     this.right_view = view;
                     this.right_visible = visible;
+                    // 打开通知面板 = 用户看了（原来在状态栏回显的点击里，回显废掉后
+                    // 「打开」就是唯一入口）。收起（visible=false）不算。
+                    if view == RightToolWindowView::Notifications && visible {
+                        this.note_notifications_opened(cx);
+                    }
                     // 第一次真正显示这个视图时才去取它的数据：这里只**登记**，
                     // 同步读盘被排到派发栈之外（判据与理由都在
                     // [`ShellWorkspace::schedule_right_view_scan`] 里，菜单项与 `--right-view` 同源）。
@@ -3885,12 +3902,8 @@ impl Render for ShellWorkspace {
                     cx,
                 )
             }))
-            // ②.5 **建立工作区配置失败**的常驻红条（有才画）。
-            //
-            // 位置：压在标题栏与项目标签条之下、工作区之上 —— 它是"这个工作区的状态"，
-            // 不是全局通知，所以不该盖住标题栏；也不该放进状态栏（那里是 4 秒后自己消失的
-            // 临时消息，而这条要用户处理完才该消失）。
-            .children(workspace_config_error)
+            // ②.5 **建立工作区配置失败**的常驻红条已删（2026-09-29）：配置失败改走通知
+            // 中心 + 左下角 toast（见 [`prepare_workspace_config`] 的失败分支）。
             // ③ 工作区：左右活动栏 + 左右面板 + 中央列，间隔 4。
             .child(
                 h_flex()
@@ -4440,11 +4453,12 @@ fn terminal_font_size_override(value: f64) -> Option<f32> {
 /// `background_spawn`；任务 detach 掉，外壳被换根丢掉时也不影响它（它不碰实体）。
 /// ## 失败必须**对用户可见**（不只是 stderr）
 ///
-/// 失败是异步到达的（这条链在后台执行器上），所以它回填到 [`ShellWorkspace`] 的
-/// [`ShellWorkspace::workspace_config_error`]，由 `render` 画成**常驻红条**（可手动关闭）。
-/// 只打 stderr 是不够的：双击启动的用户看不到它，只会发现"`.lithe` 目录没出现"。
-/// 记录这个选择是因为备选方案（`BackgroundExecutor` 里直接开对话框 / 通知）都要求窗口与
-/// `Root` 已就位，而这里只保证"实体活着"；`this.update` 最稳。
+/// 失败是异步到达的（这条链在后台执行器上），所以它经 [`ShellWorkspace::notify`] 记进
+/// 通知中心 —— 弹一条**左下角 toast**（5 秒）并入档，不再画常驻红条（2026-09-29 收拢，
+/// 消息面只剩 toast 一层）。只打 stderr 是不够的：双击启动的用户看不到它，只会发现
+/// "`.lithe` 目录没出现"。走 store 而不是在后台任务里直接 `push_notification` 的理由
+/// 不变：后台任务只保证"实体活着"，而 toast 要求窗口与 `Root` 就位 —— 外壳持有 store，
+/// `this.update` 之后由外壳的订阅（窗口在场）派发 toast，异步边界两侧都稳。
 fn prepare_workspace_config(root: PathBuf, cx: &mut Context<ShellWorkspace>) {
     cx.spawn(async move |this, cx| {
         let task_root = root.clone();
@@ -4484,17 +4498,22 @@ fn prepare_workspace_config(root: PathBuf, cx: &mut Context<ShellWorkspace>) {
                     "S1_WORKSPACE_CONFIG shell_identity_failed root={} error={error}",
                     root.display()
                 );
-                // 常驻红条：文案带 `{reason}`，填的是 `WorkspaceConfigError` 的 Display 原文
-                // （"确保本机排除失败：…" / "清单文件读写失败：…"），用户据此知道该查什么。
+                // 通知中心 + toast：条目存 `(code, params)`，文案键就是原来红条用的
+                // `lithe.gpui.workspaceConfigFailed`，`reason` 填 `WorkspaceConfigError` 的
+                // Display 原文（"确保本机排除失败：…" / "清单文件读写失败：…"），
+                // 用户据此知道该查什么。toast 与中心显示**同一句**（都走 `render_message`）。
                 let reason = error.to_string();
-                let message = lithe_gpui_shared::tr_args(
-                    "lithe.gpui.workspaceConfigFailed",
-                    &[("reason", &reason)],
-                );
                 // 实体可能已经销毁（换根丢掉外壳）：`update` 返回 `Err` 时静默忽略，不 panic。
                 let _ = this.update(cx, |shell, cx| {
-                    shell.workspace_config_error = Some(message);
-                    cx.notify();
+                    shell.notify(
+                        lithe_gpui_notify::Input::new(
+                            "lithe.gpui.workspaceConfigFailed",
+                            lithe_gpui_notify::Severity::Error,
+                        )
+                        .param("reason", reason)
+                        .key("workspace-config"),
+                        cx,
+                    );
                 });
             }
         }

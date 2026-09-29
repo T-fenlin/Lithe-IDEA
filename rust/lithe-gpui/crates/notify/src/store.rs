@@ -280,12 +280,8 @@ impl Store {
         }
     }
 
-    /// 有没有未读。状态栏那条「点开中心」的入口用它决定要不要强调。
-    pub fn has_unread(&self) -> bool {
-        self.badge() != Badge::None
-    }
-
-    /// 未读条数。**只给状态栏 / tooltip 用**，铃铛角标不画数字（见 [`Badge`]）。
+    /// 未读条数。角标只画**有没有**（红点 / 蓝点，见 [`Badge`]），不画数字；
+    /// 这个计数给测试断言与将来的 tooltip 之类用。
     pub fn unread_count(&self) -> usize {
         self.entries
             .iter()
@@ -293,16 +289,24 @@ impl Store {
             .count()
     }
 
-    /// 最新的那一条（`updated_at_ms` 最大的未读优先，否则取第一条）。
+    /// 需要派发角落 toast 的条目：`seq` 严格大于 `after_seq`，按**旧→新**排序。
     ///
-    /// 状态栏那条「点开中心」的入口显示的就是它 —— 那是「刚刚发生了一下」的唯一信号，
-    /// 取代被删掉的 `status_notice` 那条 4 秒小字。
-    pub fn latest(&self) -> Option<&Entry> {
+    /// toast 的派发方（`ShellWorkspace` 的 `observe_in` 回调）维护一个「上次弹到哪个
+    /// `seq`」的水位线，每次 store 变动后用它做增量查询：返回非空就把这些条目逐条弹成
+    /// gpui-kit 的 `component::Notification`（左下角、5 秒自动消失），然后把水位线推进到
+    /// 返回值里的最大 `seq`。排序用旧→新，让同一次变动里的多条按发生顺序弹出。
+    ///
+    /// 为什么是「水位线 + 纯函数查询」而不是 store 发事件：store 的 `record` 是**纯函数**
+    /// （不发事件、不碰时钟），这批单测才能不依赖 gpui 上下文地跑；「哪些条目还没弹过」
+    /// 这个决策本身是纯逻辑，所以放在 store 里可单测，`Context` 相关的粘合留给外壳。
+    pub fn entries_since(&self, after_seq: u64) -> Vec<Entry> {
+        // `entries` 是新→旧；reversed 变旧→新，过滤后顺序即「按发生顺序弹出」。
         self.entries
             .iter()
-            .filter(|entry| entry.is_unread(self.read_upto_seq))
-            .max_by_key(|entry| entry.seq())
-            .or_else(|| self.entries.first())
+            .rev()
+            .filter(|entry| entry.seq() > after_seq)
+            .cloned()
+            .collect()
     }
 
     /// 当前已见最大序号。给「换根时对齐」这类断言用。
@@ -539,21 +543,36 @@ mod tests {
         );
     }
 
-    /// `latest` 给状态栏那条入口用：优先未读里最新的，没有未读才退回最后一条。
+    /// `entries_since` 给 toast 派发用：只返回水位线之后的新条目，且顺序是旧→新。
     #[test]
-    fn latest_prefers_newest_unread() {
+    fn entries_since_returns_new_entries_oldest_first() {
         let mut store = Store::new();
         let mut clock = Clock(0);
-        assert!(store.latest().is_none());
-        store.record(input("a", Severity::Info), clock.next());
-        store.record(input("b", Severity::Info), clock.next());
-        assert_eq!(store.latest().unwrap().code().to_string(), "b");
+        store.record(input("a", Severity::Info).key("k"), clock.next());
+        store.record(input("b", Severity::Error), clock.next());
+        store.record(input("c", Severity::Warning), clock.next());
 
-        store.mark_all_read();
-        assert_eq!(
-            store.latest().unwrap().code().to_string(),
-            "b",
-            "无未读时退回最后一条，让状态栏不留空白"
-        );
+        let none: Vec<_> = store
+            .entries_since(3)
+            .iter()
+            .map(|e| e.code().to_string())
+            .collect();
+        assert!(none.is_empty(), "水位线之后没有条目时什么都不弹");
+
+        let all: Vec<_> = store
+            .entries_since(0)
+            .iter()
+            .map(|e| e.code().to_string())
+            .collect();
+        assert_eq!(all, vec!["a", "b", "c"], "旧→新，弹出的顺序是发生顺序");
+
+        // 去重替换会把条目挪到最前并拿新 seq：它要**重新弹**，且排进旧→新序列的末尾。
+        store.record(input("a2", Severity::Info).key("a"), clock.next());
+        let again: Vec<_> = store
+            .entries_since(2)
+            .iter()
+            .map(|e| e.code().to_string())
+            .collect();
+        assert_eq!(again, vec!["c", "a2"]);
     }
 }
