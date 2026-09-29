@@ -148,9 +148,12 @@ the existing stack can reasonably avoid.
 - The crate dependency direction is fixed: `app -> workbench -> {editor, explorer,
   git, terminal} -> shared`, and `app -> settings -> shared`. A feature must not
   depend on `app` or on a sibling feature it does not need.
-- GPUI Kit is pinned to the published `0.6.x` line. Do not write code against
-  APIs that only exist in `versions/main` docs; read the 0.6.6 source under
-  `rust/lithe-gpui/docs/gpui-kit/` or the vendored crate source instead.
+- GPUI Kit is pinned to the published `0.7.x` line (upgraded from `0.6.6` on
+  2026-09-29). Do not write code against APIs that only exist in `versions/main`
+  docs; read the resolved crate source under the cargo registry (or the version
+  pinned in `rust/Cargo.lock`) instead. Note the 0.7 root model: dialogs, sheets,
+  and notifications are rendered by the window-root `Root` plugin layer every
+  frame; applications must not call the removed `Root::render_*_layer` APIs.
 - The UI thread does not do blocking work. Long operations run on a background
   task and return through the async boundary; see
   `rust/lithe-gpui/crates/shared/src/core_client.rs` for how the Core client marshals

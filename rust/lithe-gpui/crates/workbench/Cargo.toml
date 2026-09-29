@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-gpui-kit = "0.6"
+gpui-kit = "0.7"
 lithe-gpui-editor = { path = "../editor" }
 lithe-gpui-explorer = { path = "../explorer" }
 lithe-gpui-git = { path = "../git" }

@@ -17,7 +17,7 @@ embed-resource = "3"
 
 [dependencies]
 # 版本口径照**官方文档**（`https://gpui-kit.com/zh-CN/docs/getting-started.md` 与
-# `.../versions/main/zh-CN/docs/getting-started.md` 都写 `gpui-kit = "0.6"`）：
+# `.../versions/main/zh-CN/docs/getting-started.md` 都写 `gpui-kit = "0.7"`）：
 # 取已发布的最新 0.6.x，而不是把补丁版本也钉死。
 #
 # 可复现性由**提交进仓库的 `lithe-gpui/Cargo.lock`** 保证（gpui-kit 自己也把 GPUI 快照
@@ -27,7 +27,7 @@ embed-resource = "3"
 # `versions/main` 用的是 `gpui_kit::open_window(...)`，而 0.6.6 里**没有**这个函数
 # （`gpui-kit-0.6.6/src` 里 grep `pub fn open_window` 零命中，它自己的文档注释用的是
 # `cx.open_window`）。细节见 `lithe-gpui/docs/README.md`。
-gpui-kit = "0.6"
+gpui-kit = "0.7"
 # 设置（阶段 8）：App Shell 负责"何时读 / 何时应用"，设置本身的模型、持久化、主题应用
 # 与对话框都在这个 crate 里。依赖方向是 app → settings → (gpui-kit, shared)，
 # **不会**反向：settings 不依赖 app / workbench（理由见其 `lib.rs` 的模块文档）。

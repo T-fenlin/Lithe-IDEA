@@ -16,7 +16,7 @@ publish = false
 # 刻意**不**开 `tree-sitter-languages`：那是 35 个 grammar 的全量包，构建代价与产物体积
 # 都大得多（取舍与证据见 `research/editor-syntax-highlighting.md` §4.1）。
 # 加语言时两件事缺一不可：这里开 feature + `src/buffer.rs` 的 `language_for_file` 加一行。
-gpui-kit = { version = "0.6", features = ["tree-sitter-java"] }
+gpui-kit = { version = "0.7", features = ["tree-sitter-java"] }
 # 通知中心：保存失败 / 跳转无目标都写进通知中心（2026-09-27 从角落 toast 迁过来，决策见
 # `.agents/notes/proposed/architecture/2026-09-27-gpui-notification-center.md`）。
 # `editor` 在 `workbench` **之下**，所以只能走 notify 自己提供的全局槽窄接口

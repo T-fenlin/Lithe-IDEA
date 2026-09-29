@@ -23,14 +23,12 @@
 //! ## 容器：`Dialog` + `Command`，两者都不可替换（读源码得出）
 //!
 //! - **必须有 `Dialog`**：`component::command::{Command, CommandState}` 只是普通的
-//!   `v_flex` + 内部 `Input`（`gpui-component-0.6.6/src/command/state.rs:819-909`），
-//!   自己没有遮罩、没有定位、也不在窗口层叠序里。文档
-//!   （`docs/gpui-kit/0.6.6/zh-CN/component/command.md:107-157`）给的唯一浮层用法就是
-//!   "放进 `window.open_dialog`"（组件文档第 8 行说的"命令面板"指的就是它本身）。
-//!   本侧照 `lithe_gpui_settings::open_settings_dialog` 的口径组合：Dialog 负责遮罩 /
-//!   Escape / 焦点陷阱 / 关闭，`Command` 负责搜索框、过滤、虚拟列表与行高亮。
-//! - **不新增挂载点**：dialog 层已经由 `ShellWorkspace::render` 挂好
-//!   （`workspace.rs` 里的 `Root::render_dialog_layer`），本模块只调 `window.open_dialog`。
+//!   `v_flex` + 内部 `Input`（0.7 里依旧没有遮罩、没有定位，也不在窗口层叠序里），
+//!   文档给的唯一浮层用法就是"放进 `window.open_dialog`"（组件文档说的"命令面板"
+//!   指的就是它本身）。本侧照 `lithe_gpui_settings::open_settings_dialog` 的口径组合：
+//!   Dialog 负责遮罩 / Escape / 焦点陷阱 / 关闭，`Command` 负责搜索框、过滤、虚拟列表与行高亮。
+//! - **不新增挂载点**：dialog 层由窗口根 `Root` 的 plugin 层每帧渲染（gpui-kit 0.7 起
+//!   不再由 `ShellWorkspace::render` 手动挂），本模块只调 `window.open_dialog`。
 //! - ❌ **不用 `CommandState` 的 `Action` 机制**：`CommandItem::action` 要求
 //!   `Box<dyn Action>`（`command/item.rs:15,64`），实现它要么引 `anyhow` + `serde`
 //!   （`Action::build` 收 `serde_json::Value` 并返回 `anyhow::Result`，

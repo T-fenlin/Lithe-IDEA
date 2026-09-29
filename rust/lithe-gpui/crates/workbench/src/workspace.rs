@@ -987,13 +987,13 @@ pub struct ShellWorkspace {
     recent_projects_path: Option<PathBuf>,
     /// 换项目对话框里「不再询问」的**当前勾选态**。
     ///
-    /// ## 为什么是 `Rc<Cell<bool>>`（实测踩过 panic）
+    /// ## 为什么是 `Rc<Cell<bool>>`
     ///
     /// 勾选态必须**跨帧**存在（`window.open_dialog` 的 builder 每帧都会被重跑，
-    /// `gpui-component-0.6.6/src/root.rs:256-262`），所以不能是闭包里的局部变量。
-    /// 但它也**不能**像一开始那样"builder 每帧 `shell.read(..)` 去读实体字段"：
-    /// dialog 层是**外壳自己画的**（本文件 `render` 第一行的 `Root::render_dialog_layer`），
-    /// 于是 builder 运行时外壳正在被更新，再去 `read` 它会 panic：
+    /// gpui-kit 0.7 里由窗口根 `Root` 的 plugin 层渲染时重跑），所以不能是闭包里的
+    /// 局部变量。它也**不能**是"builder 每帧 `shell.read(..)` 去读实体字段"的形状：
+    /// builder 跑在渲染期，而外壳随时可能正被更新（0.6 时代 dialog 层由外壳自己画，
+    /// `shell.read` 必 panic，实测记录保留在这里防止回退），读一个正在被更新的实体会崩：
     ///
     /// ```text
     /// cannot read lithe_gpui_workbench::workspace::ShellWorkspace while it is already being updated
@@ -3139,12 +3139,12 @@ impl ShellWorkspace {
                     Checkbox::new("lithe-project-open-do-not-ask")
                         .label(tr("lithe.projectOpen.doNotAskAgain"))
                         // 受控值：勾选态来自那个共享 cell（**不读实体** —— 见字段文档里的
-                        // panic 记录：builder 跑在外壳自己的 `render` 里）。
+                        // panic 记录：builder 跑在窗口根 `Root` 的渲染期）。
                         .checked(do_not_ask.get())
                         .on_change(move |&value, _window, cx| {
                             checkbox_cell.set(value);
-                            // 写 cell 不够，还要让**外壳重绘**：只有重绘才会重跑 builder，
-                            // 新值才会画出来（`render_dialog_layer` 是渲染期跑的）。
+                            // 写 cell 不够，还要触发下一帧：新帧重跑 dialog builder，
+                            // 新值才会画出来。
                             let _ = checkbox_shell.update(cx, |_shell, cx| cx.notify());
                         }),
                 )
@@ -3527,15 +3527,12 @@ fn right_scan_should_notify(
 
 impl Render for ShellWorkspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // ⚠️ 顺序不可调换：这三个 `render_*_layer` 借用 `cx`，必须先把值取出来，
-        // 再调用任何其它借用 `cx` 的方法（`cx.theme()` 等）。
-        let dialog_layer = Root::render_dialog_layer(window, cx);
-        let sheet_layer = Root::render_sheet_layer(window, cx);
-        let notification_layer = Root::render_notification_layer(window, cx);
+        // gpui-kit 0.7 起对话框 / 抽屉 / 通知三层由窗口根 `Root` 的 plugin 层（WindowState）
+        // 每帧统一渲染，外壳不再手动调 `Root::render_*_layer`（0.6 API 已删除）；
+        // 这里只画工作区自己的内容。
 
-        // 建立工作区配置失败时的**常驻红条**。与上面三个 layer 同一理由先取出来：
-        // 它的渲染要用 `cx`（`cx.theme()` 与关闭按钮的 listener），而后面那些区域渲染函数
-        // 会把 `cx` 不可变借到本函数末尾。
+        // 建立工作区配置失败时的**常驻红条**。它的渲染要用 `cx`（`cx.theme()` 与关闭按钮
+        // 的 listener），所以先取出来：后面那些区域渲染函数会把 `cx` 不可变借到本函数末尾。
         let workspace_config_error = self
             .workspace_config_error
             .clone()
@@ -3974,11 +3971,7 @@ impl Render for ShellWorkspace {
                 let left = self.footer_left(cx);
                 let right = self.footer_right(cx);
                 status_bar(&left, &right, window, cx)
-            }))
-            // 浮层三层必须挂在最外层视图上，否则对话框 / 抽屉 / 通知静默不显示。
-            .children(dialog_layer)
-            .children(sheet_layer)
-            .children(notification_layer);
+            }));
 
         root
     }

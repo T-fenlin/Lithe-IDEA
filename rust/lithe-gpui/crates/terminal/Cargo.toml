@@ -5,5 +5,5 @@ edition = "2024"
 publish = false
 
 [dependencies]
-gpui-kit = "0.6"
+gpui-kit = "0.7"
 lithe-gpui-shared = { path = "../shared" }

@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-gpui-kit = "0.6"
+gpui-kit = "0.7"
 lithe-gpui-shared = { path = "../shared" }
 # 设置文件是 JSON，而 `gpui-kit` **不重导出** serde / serde_json
 # （`gpui-kit-0.6.6/src/lib.rs` 的 `pub use` 清单里两者都没有），所以直接声明。

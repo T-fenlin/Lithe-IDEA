@@ -11,8 +11,13 @@
 >   **行为/功能对照**（它功能最全，用来查"这个交互原本怎么工作"），不再当视觉规格；
 > - `rust/lithe-gpui/UI-MAP.md` 需要**重新以 Windows 为源做一份逐区域对应表**；执行提示词见
 >   `docs/development/gpui-ui-windows-prompt.md`；
-> - 仍然成立：已发布的 `gpui-kit 0.6.x` 与技能文档（描述 0.7.0）的差异、"跨端契约不动、宿主只做平台能力"这条边界、
->   以及 `UI-MAP.md` §1.3 里那些用真机踩出来的 gpui-kit 实现规则（行高、编辑器高度、滚动条、浮层挂层、DPI 与截图口径）。
+> - ~~仍然成立：已发布的 `gpui-kit 0.6.x` 与技能文档（描述 0.7.0）的差异~~
+>   **（2026-09-29 已解除）**：`gpui-kit 0.7.0` 已发布到 crates.io，宿主已升级并按 0.7 API 迁移
+>   （`Root` 变为"窗口内容 + 浮层宿主"，对话框 / 抽屉 / 通知由 `Root` 的 plugin 层每帧统一渲染，
+>   0.6 的 `Root::render_dialog_layer / render_sheet_layer / render_notification_layer` 三个手动挂层
+>   API 已删除）。"判断依据 = 已发布版本的源码 + 提交的 `Cargo.lock`"这条方法论不变，版本号随实版走。
+>   仍成立："跨端契约不动、宿主只做平台能力"这条边界、以及 `UI-MAP.md` §1.3 里那些用真机踩出来的
+>   gpui-kit 实现规则（行高、编辑器高度、滚动条、浮层挂层、DPI 与截图口径）。
 
 ## 先说结论
 
