@@ -61,6 +61,10 @@ pub(crate) fn icon_for_file(name: &str, cx: &App) -> FileIcon {
 /// ⚠️ 语言名与扩展名**不是**一一对应，别自造：`.h` 只能映射到 `"c"`
 /// （上游没有 `"h"` 这个名字，`languages.rs:186-187` 只认 `"c"`），
 /// `.ts` 要写 `"typescript"` 而不是 `"ts"` 之外的任何东西（`languages.rs:248-249`）。
+///
+/// ⚠️ 表里**只放已注册 grammar 的语言**（feature 开的 + `languages.rs` 自己注册的）。
+/// 已知缺口（写在这里免得后人反复查）：`.properties` 在 gpui-kit 的 35 个语法里
+/// **没有**对应语法，gpui-component 也没有 properties 语法，所以它仍然回落纯文本。
 pub(crate) fn language_for_file(name: &str) -> Option<&'static str> {
     // 扩展名大小写不敏感：Windows 上 `Foo.JAVA` 与 `foo.java` 是同一个文件。
     let extension = Path::new(name)
@@ -69,12 +73,27 @@ pub(crate) fn language_for_file(name: &str) -> Option<&'static str> {
         .map(str::to_ascii_lowercase);
 
     match extension.as_deref() {
-        // `"java"` → `Language::Java`（`languages.rs:211`），grammar 来自 `tree-sitter-java`。
+        // `"java"` → `Language::Java`，grammar 来自 `tree-sitter-java`（Spring Boot 主场景）。
         Some("java") => Some("java"),
-        // `"json"` → `Language::Json`（`languages.rs:181`），**不需要**额外 feature：
-        // 上面的 `tree-sitter-java` 已经把基础特性 `tree-sitter`（含 tree-sitter-json）带进来了。
+        // `"json"` → `Language::Json`，**不需要**额外 feature：`tree-sitter-java`
+        // 已经隐含基础特性 `tree-sitter`（含 tree-sitter-json）。
         Some("json" | "jsonc") => Some("json"),
-        _ => None,
+        // 工程文件（feature 见 Cargo.toml）：Spring Boot 项目里除了 Java 就是这些。
+        Some("yml" | "yaml") => Some("yaml"),
+        Some("toml") => Some("toml"),
+        Some("sql") => Some("sql"),
+        Some("md" | "markdown") => Some("markdown"),
+        // `mvnw` / `gradlew` 没有扩展名，走下面的文件名分支。
+        Some("sh" | "bash") => Some("bash"),
+        // Kotlin：`build.gradle.kts` 就是它（`.gradle` 的 Groovy 没有语法，见模块文档）。
+        Some("kt" | "kts" | "ktm") => Some("kotlin"),
+        // XML 家族（`pom.xml`、MyBatis mapper、Spring 配置）。语法由我们自己注册，见 `languages.rs`。
+        Some("xml" | "xsd" | "xsl" | "xslt" | "wsdl") => Some("xml"),
+        _ => match name.to_ascii_lowercase().as_str() {
+            // 无扩展名的脚本：Maven/Gradle wrapper 是 Spring Boot 仓库里最常见的两个。
+            "mvnw" | "gradlew" | "mvnw.cmd" | "gradlew.bat" => Some("bash"),
+            _ => None,
+        },
     }
 }
 
@@ -506,17 +525,44 @@ mod tests {
 
     #[test]
     fn unmapped_extension_falls_back_to_none() {
-        // 没开 grammar feature 的扩展名**不进表**：写进来只是"假装支持"。
+        // 没有 grammar 的扩展名**不进表**：写进来只是"假装支持"
+        // （界面上仍是纯文本，却让后人以为接好了）。
         for name in [
             "notes.txt",
             "sample.xyz",
             "Makefile",
             "half.h",
-            "Main.kt",
             "app.rs",
             "Foo.java.bak",
+            // 已知缺口：没有 properties 语法（gpui-kit 35 个里没有、gpui-component 也没有）。
+            "application.properties",
+            // Groovy 同理（`build.gradle` 不会亮，`build.gradle.kts` 会）。
+            "build.gradle",
         ] {
             assert_eq!(language_for_file(name), None, "{name} 不该有语言名");
+        }
+    }
+
+    /// 工程文件（Spring Boot 仓库里除 Java 之外最常打开的那些）各自的映射。
+    #[test]
+    fn project_files_map_to_their_languages() {
+        for (name, expected) in [
+            ("application.yml", "yaml"),
+            ("application-dev.yaml", "yaml"),
+            ("gradle.properties.toml", "toml"),
+            ("schema.sql", "sql"),
+            ("README.md", "markdown"),
+            ("mvnw", "bash"),
+            ("gradlew", "bash"),
+            ("deploy.sh", "bash"),
+            ("build.gradle.kts", "kotlin"),
+            ("Main.kt", "kotlin"),
+            // XML 家族：pom.xml 与 MyBatis mapper / Spring 配置都走这一支。
+            ("pom.xml", "xml"),
+            ("mapper/UserMapper.xml", "xml"),
+            ("spring.xsd", "xml"),
+        ] {
+            assert_eq!(language_for_file(name), Some(expected), "{name} 的映射");
         }
     }
 }

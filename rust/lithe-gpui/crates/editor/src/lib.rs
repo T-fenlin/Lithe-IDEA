@@ -189,6 +189,8 @@ mod code_actions;
 mod completion;
 mod diagnostics;
 mod editor_view;
+// 注册 gpui-kit 没内置、我们自己带的语法（目前只有 XML，见模块文档）。
+mod languages;
 mod navigation;
 
 pub use editor_view::{CursorPosition, EditorPane, SessionRestore, TabMenuHostActions};

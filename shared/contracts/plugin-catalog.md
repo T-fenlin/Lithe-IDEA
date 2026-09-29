@@ -108,6 +108,16 @@ is no remote registry in v2 and no install/uninstall surface yet.
 - `plugins/language-support-v2.json` — language support + shared module
   ownership scenario.
 
+## Language contributions (current state)
+
+`languageSupports` models **file recognition plus capability-module ownership**
+(language server / execution / testing / debug). It does **not** model syntax
+highlighting yet: grammars and `.scm` queries are a host-build concern today
+(see the feature flags in `lithe-gpui/crates/editor/Cargo.toml` and the extra
+registrations in `lithe-gpui/crates/editor/src/languages.rs`). A future schema
+revision would add a grammar dimension (grammar source + query paths) so a
+highlight-only language can be contributed the way Zed does it.
+
 `fonts[].path` values follow the same rule as themes: `builtIn` families point
 at the host's bundled asset root (`assets/fonts/...`), `bundled` families at
 their package directory (`extensions/fonts/<package>/...`). Bundled font

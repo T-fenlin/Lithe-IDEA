@@ -204,6 +204,43 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
 `assets.rs` 的内嵌分组断言与字节总数断言同步更新（pierre 149 个文件随之进入二进制，
 这是"可切换"的必然代价 —— 内嵌总数 269 → 418）。
 
+### 第六批：语法高亮扩到工程文件，并补上 XML
+
+维护者问："语言扩展主要是语言高亮，gpui-kit 内置了，扩展的形式该怎么弄？Zed 的语言扩展
+是怎样的？"—— 下面是结论与落地。
+
+**Zed 的语言扩展是纯声明式**：\`languages/<语言>/config.toml\`（识别 + 编辑规则）+
+\`.scm\` 查询（highlights/brackets/indents/injections/...）+ 清单里的
+\`[grammars.*]\`（tree-sitter 仓库 + rev）。高亮语言**不写 Rust**，但语法要在**装扩展时**
+编成 \`.wasm\`（wasi-sdk 的 clang），运行时装进 **wasmtime 沙箱**。LSP 是另一段
+（\`language_servers\`），只有它需要扩展的 Rust/wasm 部分。
+
+**gpui-kit 给到哪一步**：注册接口是公开的，而且明确为"运行期加载的 WASM 语法"留了缝
+（\`register_parser_factory\` 的文档原话），但**没有加载器**（没有 libloading / wasmtime /
+dlopen）。语法集是**编译期固定**的 35 个（\`Language\` 枚举按 feature 门控，
+\`singleton()\` 用 \`Language::all()\` 一次性建表）。
+
+**我们这次的做法（编译期 + 公开注册缝）**：
+1. 开工程文件需要的 feature：yaml / toml / sql / markdown / bash / kotlin；
+2. \`buffer.rs::language_for_file\` 补映射（含无扩展名的 \`mvnw\` / \`gradlew\`）；
+3. **XML 不在那 35 个里**，所以自己带 \`tree-sitter-xml\`（它同时给出 \`LANGUAGE_XML\`
+   与 \`XML_HIGHLIGHT_QUERY\`，不需要自己收 \`.scm\`、也不需要 unsafe），在新增的
+   \`editor/src/languages.rs\` 里用 \`LanguageRegistry::register\` 注册 ——
+   **这条路径与"运行期加载语法再注册"是同一个 API**，将来换成加载器只改"Language 从哪来"
+   这一个表达式。
+
+**为什么这次没做"运行期加载"**：运行期要自己补加载器，只有两条路 —— 原生
+\`dlopen\`（引入 \`libloading\` + \`unsafe\`，且**没有沙箱**：语法是 C 代码，等于允许
+扩展执行任意本机代码）或 WASM + wasmtime（安全，但要引入 wasmtime 并自建"把 C 编成 wasm"
+的打包步骤，等于把 Zed 的 extension_builder 重写一遍）。在"我们还没有第三方语法来源"的
+当下，这两条都是先付代价后得收益；而注册缝已经就位，等真有第三方来源时再选。
+
+**已知缺口（登记在此免得反复查）**：\`.properties\` 与 Groovy（\`build.gradle\`）
+在两个语法集里都没有，仍是纯文本；\`Dockerfile\` 同理。颜色方面：gpui-kit 只认 **41 个**
+高亮色名（封闭结构体 + 点号前缀回退），我们的主题只定义了 **16 个**；好在回退机制让
+\`punctuation.delimiter\`→\`punctuation\`、\`string.escape\`→\`string\` 这类都能落到已有色上，
+所以非 Java 语言也能看；补齐那 25 个是观感优化项（未做）。
+
 ## 考虑过的备选方案
 
 - **在清单里声明 `categories` 数组**（最初共识里选的就是它）：看完 Zed 源码后否决

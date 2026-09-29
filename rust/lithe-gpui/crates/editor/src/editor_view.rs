@@ -795,6 +795,10 @@ impl EditorPane {
         // `cx.new` 之后剩下的只有 `set_highlighter`（同文件 `:772`）。
         // 认不出的扩展名给 `None` → 不调 `.language(..)` → 与"没接高亮"时一样是纯文本。
         let language = language_for_file(&name);
+        // ⚠️ 注册要**早于**任何编辑器拿到这个语言名：上游明确说注册后已打开的编辑器
+        // 不会自动换高亮（要重设语言），所以"先注册、后建编辑器"是唯一没有窗口期的顺序。
+        // 幂等（内部 `Once`），所以每次 `open` 调都行。
+        crate::languages::ensure_extra_languages();
         // `TabSize` 是 `Copy`：在 `cx.new` 之前取一份，闭包里直接用（不借用 `self`）。
         let tab = self.tab();
         // 补全 provider：**只给 Java 文件装**（`language == Some("java")`）。
@@ -1319,6 +1323,8 @@ impl EditorPane {
         // JDT 反编译出来的正文就是 Java 源码，所以走**同一张**语言表：`display_path` 的
         // 扩展名照常判得出 `"java"`，`jdt://` 虚拟源码因此与磁盘上的 `.java` 一样亮。
         let language = language_for_file(&name);
+        // 与磁盘 buffer 同一条口径：注册必须早于设语言（幂等）。
+        crate::languages::ensure_extra_languages();
         let tab = self.tab();
 
         let editor = cx.new(|cx| {
