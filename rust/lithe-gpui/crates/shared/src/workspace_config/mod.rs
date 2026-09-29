@@ -41,9 +41,9 @@ pub mod paths;
 pub mod project;
 pub mod session;
 pub mod sharing;
-pub mod toolchain;
 #[cfg(test)]
 pub(crate) mod test_repo;
+pub mod toolchain;
 
 /// 本模块诊断行的前缀（与 `S1_SETTINGS` / `S1_THEME` 同一口径，可 grep）。
 pub const DIAGNOSTIC_PREFIX: &str = "S1_WORKSPACE_CONFIG";
@@ -64,8 +64,8 @@ pub use session::{
 };
 pub use sharing::{
     EnsureExcluded, IgnoreFileOutcome, LOCAL_IGNORE_RULES, ShareOutcome, SharingError,
-    ensure_local_ignore_file, ensure_project_dir_excluded, pattern_is_present, share_project_config,
-    shareable_members,
+    ensure_local_ignore_file, ensure_project_dir_excluded, pattern_is_present,
+    share_project_config, shareable_members,
 };
 pub use toolchain::{
     LocalToolchainState, MAVEN_LOCAL_DOCUMENT_VERSION, OverrideOrigin, OverrideOrigins,

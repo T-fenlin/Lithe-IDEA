@@ -1264,7 +1264,7 @@ impl BottomPane {
             // 逐层缩进是**设计常量**的算术（`git-reference-tree.tsx:594` 的 `10 + depth × 14`），
             // 不是测量出来的几何：换算成 rem 后引用树会随界面字号一起缩放。
             .pl(rems(
-                (REFERENCE_INDENT_BASE + depth as f32 * REFERENCE_INDENT_STEP) / 16.
+                (REFERENCE_INDENT_BASE + depth as f32 * REFERENCE_INDENT_STEP) / 16.,
             ))
             .rounded(rems(REFERENCE_ROW_RADIUS / 16.))
             .when(selected, |row| row.bg(cx.theme().accent))
@@ -1757,7 +1757,7 @@ impl BottomPane {
             // 与引用树同口径：`10 + depth × 14` 是设计常量（`git-commit-file-tree.tsx:127`），
             // 换算成 rem 后文件树会随界面字号一起缩放。
             .pl(rems(
-                (COMMIT_FILE_INDENT_BASE + row.depth as f32 * COMMIT_FILE_INDENT_STEP) / 16.
+                (COMMIT_FILE_INDENT_BASE + row.depth as f32 * COMMIT_FILE_INDENT_STEP) / 16.,
             ))
             .pr_1p5()
             .whitespace_nowrap();
@@ -2126,8 +2126,14 @@ mod tests {
         let forward_ids: Vec<&str> = forward.into_iter().map(panel_element_id).collect();
         let reversed_ids: Vec<&str> = reversed.into_iter().map(panel_element_id).collect();
 
-        assert_eq!(forward_ids[0], reversed_ids[1], "Panel::Log 的 id 必须与位置无关");
-        assert_eq!(forward_ids[1], reversed_ids[0], "Panel::Console 的 id 必须与位置无关");
+        assert_eq!(
+            forward_ids[0], reversed_ids[1],
+            "Panel::Log 的 id 必须与位置无关"
+        );
+        assert_eq!(
+            forward_ids[1], reversed_ids[0],
+            "Panel::Console 的 id 必须与位置无关"
+        );
         assert_ne!(forward_ids[0], forward_ids[1], "两个页签的 id 必须互不相同");
     }
 
@@ -2142,8 +2148,14 @@ mod tests {
         let forward: Vec<String> = commits.iter().map(commit_element_id).collect();
         let reversed: Vec<String> = commits.iter().rev().map(commit_element_id).collect();
 
-        assert_eq!(forward[0], reversed[1], "同一提交在不同顺序下必须算出同一个 id");
-        assert_eq!(forward[1], reversed[0], "同一提交在不同顺序下必须算出同一个 id");
+        assert_eq!(
+            forward[0], reversed[1],
+            "同一提交在不同顺序下必须算出同一个 id"
+        );
+        assert_eq!(
+            forward[1], reversed[0],
+            "同一提交在不同顺序下必须算出同一个 id"
+        );
         assert_ne!(forward[0], forward[1], "不同提交的 id 必须互不相同");
         assert_eq!(
             forward[0],

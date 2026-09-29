@@ -416,7 +416,8 @@ impl Render for CommandPalette {
             pending
         });
         if needs_focus {
-            self.command.update(cx, |command, cx| command.focus(window, cx));
+            self.command
+                .update(cx, |command, cx| command.focus(window, cx));
             println!("S1_COMMAND_PALETTE focus=search");
         }
 
@@ -433,11 +434,7 @@ impl Render for CommandPalette {
             // `Command` 列表上限的默认值是 18.75rem = 300（`command/command.rs:34`），
             // 不放开的话 512 的面板只会用到一半。
             .max_h(DefiniteLength::from(rems(PANEL_MAX_HEIGHT / 16.)))
-            .items(
-                actions
-                    .into_iter()
-                    .map(IntoCommandItem::into_command_item),
-            )
+            .items(actions.into_iter().map(IntoCommandItem::into_command_item))
             .empty(|_, _, cx| {
                 // 空态文案走真源（`command-palette.tsx:455` 的 `CommandEmpty`）。
                 div()

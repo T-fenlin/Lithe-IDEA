@@ -350,8 +350,7 @@ impl Session {
             return Err(core_error(error));
         }
 
-        let outcome = match waiter
-            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        let outcome = match waiter.recv_timeout(deadline.saturating_duration_since(Instant::now()))
         {
             Ok(outcome) => outcome,
             Err(RecvTimeoutError::Timeout) => Err(format!(
@@ -386,7 +385,10 @@ impl Session {
                 .with_payload(payload.clone())
                 .with_timeout_millis(20_000),
         ) {
-            println!("S1_JAVA_SESSION stop_failed sessionId={} error={}", self.id, error);
+            println!(
+                "S1_JAVA_SESSION stop_failed sessionId={} error={}",
+                self.id, error
+            );
         }
 
         // 有界等待终态。**泵这时还活着**：`stopServer` 之后到达的 `stateChanged: stopped`

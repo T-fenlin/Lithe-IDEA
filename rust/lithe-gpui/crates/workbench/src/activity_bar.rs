@@ -73,8 +73,8 @@ use gpui_kit::component::badge::Badge;
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Placement, Selectable as _};
 use gpui_kit::{
-    AnyElement, App, ClickEvent, ElementId, Hsla, IntoElement, Length, ParentElement as _,
-    Pixels, SharedString, Styled as _, Window, div, rems,
+    AnyElement, App, ClickEvent, ElementId, Hsla, IntoElement, Length, ParentElement as _, Pixels,
+    SharedString, Styled as _, Window, div, rems,
 };
 use lithe_gpui_shared::icons::idea;
 

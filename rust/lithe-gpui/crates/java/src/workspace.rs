@@ -52,9 +52,7 @@ pub(crate) struct JdtIndexCache {
 impl JdtIndexCache {
     /// Core 为这次会话选择的状态目录（`cacheDirectory/jdtls/<workspaceKey>`）。
     pub(crate) fn state_directory(&self) -> PathBuf {
-        self.cache_directory
-            .join("jdtls")
-            .join(&self.workspace_key)
+        self.cache_directory.join("jdtls").join(&self.workspace_key)
     }
 }
 
@@ -63,13 +61,11 @@ pub(crate) fn plan(workspace_root: &Path, jdtls_version: &str) -> Result<JdtInde
     let inputs = collect_fingerprint_inputs(workspace_root)?;
     let workspace_fingerprint = resolve_fingerprint(&inputs, jdtls_version)?;
     let workspace_key = resolve_workspace_key(workspace_root, &workspace_fingerprint)?;
-    let cache_directory = language_server_cache(&cache_root().ok_or_else(|| {
-        "推导不出应用缓存目录（Windows 上是 %LOCALAPPDATA%）。".to_string()
-    })?);
-    let state_directory_existed = cache_directory
-        .join("jdtls")
-        .join(&workspace_key)
-        .is_dir();
+    let cache_directory = language_server_cache(
+        &cache_root()
+            .ok_or_else(|| "推导不出应用缓存目录（Windows 上是 %LOCALAPPDATA%）。".to_string())?,
+    );
+    let state_directory_existed = cache_directory.join("jdtls").join(&workspace_key).is_dir();
     Ok(JdtIndexCache {
         cache_directory,
         workspace_key,
@@ -98,8 +94,7 @@ fn cache_root() -> Option<PathBuf> {
 
 #[cfg(target_os = "windows")]
 fn platform_cache_root() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(|base| PathBuf::from(base).join("Lithe").join("cache"))
+    std::env::var_os("LOCALAPPDATA").map(|base| PathBuf::from(base).join("Lithe").join("cache"))
 }
 
 #[cfg(target_os = "macos")]
@@ -141,7 +136,10 @@ fn collect_fingerprint_inputs(workspace_root: &Path) -> Result<FingerprintInputs
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => {
-                return Err(format!("无法读取 Java 构建文件 {}：{error}", path.display()))
+                return Err(format!(
+                    "无法读取 Java 构建文件 {}：{error}",
+                    path.display()
+                ));
             }
         };
         let modified = metadata
@@ -163,8 +161,12 @@ fn collect_fingerprint_inputs(workspace_root: &Path) -> Result<FingerprintInputs
         .map_err(|error| format!("无法枚举 Java 工作区 {}：{error}", workspace_root.display()))?;
     let mut direct_maven_modules = Vec::new();
     for entry in entries {
-        let entry = entry
-            .map_err(|error| format!("无法读取 Java 工作区条目 {}：{error}", workspace_root.display()))?;
+        let entry = entry.map_err(|error| {
+            format!(
+                "无法读取 Java 工作区条目 {}：{error}",
+                workspace_root.display()
+            )
+        })?;
         let path = entry.path();
         let is_directory = entry
             .file_type()
@@ -181,7 +183,7 @@ fn collect_fingerprint_inputs(workspace_root: &Path) -> Result<FingerprintInputs
                 return Err(format!(
                     "无法读取 Maven 模块描述符 {}：{error}",
                     path.join("pom.xml").display()
-                ))
+                ));
             }
         }
         let name = entry
@@ -272,7 +274,7 @@ pub(crate) fn cleanup_expired(
             return Err(format!(
                 "无法枚举 JDTLS 缓存目录 {}：{error}",
                 jdtls_cache.display()
-            ))
+            ));
         }
     };
 
@@ -281,9 +283,8 @@ pub(crate) fn cleanup_expired(
     let mut candidates = Vec::new();
     if let Some(entries) = entries {
         for entry in entries {
-            let entry = entry.map_err(|error| {
-                format!("无法读取 {} 中的条目：{error}", jdtls_cache.display())
-            })?;
+            let entry = entry
+                .map_err(|error| format!("无法读取 {} 中的条目：{error}", jdtls_cache.display()))?;
             let path = entry.path();
             let metadata = std::fs::symlink_metadata(&path)
                 .map_err(|error| format!("无法检查 {}：{error}", path.display()))?;
@@ -298,20 +299,15 @@ pub(crate) fn cleanup_expired(
             }
 
             let modified = if workspace_key == active_workspace_key {
-                std::fs::write(
-                    path.join(LAST_USED_MARKER),
-                    now_unix_seconds.to_string(),
-                )
-                .map_err(|error| {
-                    format!("无法标记 JDTLS 缓存 {} 为活动：{error}", path.display())
-                })?;
+                std::fs::write(path.join(LAST_USED_MARKER), now_unix_seconds.to_string()).map_err(
+                    |error| format!("无法标记 JDTLS 缓存 {} 为活动：{error}", path.display()),
+                )?;
                 now_unix_seconds
             } else {
-                let directory_modified = system_time_unix_seconds(
-                    metadata
-                        .modified()
-                        .map_err(|error| format!("无法读取 {} 的时间戳：{error}", path.display()))?,
-                )?;
+                let directory_modified =
+                    system_time_unix_seconds(metadata.modified().map_err(|error| {
+                        format!("无法读取 {} 的时间戳：{error}", path.display())
+                    })?)?;
                 let marker_modified = match std::fs::metadata(path.join(LAST_USED_MARKER)) {
                     Ok(marker) => Some(system_time_unix_seconds(marker.modified().map_err(
                         |error| format!("无法读取 {} 标记的时间戳：{error}", path.display()),
@@ -321,7 +317,7 @@ pub(crate) fn cleanup_expired(
                         return Err(format!(
                             "无法检查 {} 的 last-used 标记：{error}",
                             path.display()
-                        ))
+                        ));
                     }
                 };
                 marker_modified

@@ -200,7 +200,9 @@ impl CodeActionProvider for JavaCodeActionProvider {
                 // 服务不可用 / 超时：**不外抛**（上游会把 `Err` 静默吃掉，
                 // `code_actions.rs:73` 的 `.ok()`），所以这里自己留一行证据再返回空。
                 Err(error) => {
-                    println!("S1_EDITOR_CODE_ACTION file={file} actions=0 result=failed error={error}");
+                    println!(
+                        "S1_EDITOR_CODE_ACTION file={file} actions=0 result=failed error={error}"
+                    );
                     return Ok(Vec::new());
                 }
             };
@@ -245,7 +247,9 @@ impl CodeActionProvider for JavaCodeActionProvider {
         let file = self.file_path.display().to_string();
         let title = action.title.clone();
         let Some(uri) = self.file_uri() else {
-            println!("S1_EDITOR_CODE_ACTION file={file} result=skipped reason=no-file-uri title={title:?}");
+            println!(
+                "S1_EDITOR_CODE_ACTION file={file} result=skipped reason=no-file-uri title={title:?}"
+            );
             return Task::ready(Ok(()));
         };
         let Some(edits) = action
@@ -333,9 +337,8 @@ fn to_editor_edits(text: &gpui_kit::component::input::Rope, edits: &[TextEdit]) 
             new_text: edit.new_text.clone(),
         })
         .collect();
-    converted.sort_by_key(|edit| {
-        std::cmp::Reverse((edit.range.start.line, edit.range.start.character))
-    });
+    converted
+        .sort_by_key(|edit| std::cmp::Reverse((edit.range.start.line, edit.range.start.character)));
     converted
 }
 
@@ -447,7 +450,10 @@ mod tests {
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].range.start, Position::new(0, 0));
         assert_eq!(edits[0].range.end, Position::new(2, 0));
-        assert_eq!(edits[0].new_text, "package demo;\n\nimport java.util.List;\n\n");
+        assert_eq!(
+            edits[0].new_text,
+            "package demo;\n\nimport java.util.List;\n\n"
+        );
     }
 
     /// `kind` 缺失（服务端没给）时**不 panic**，也不编一个默认值出来：
@@ -531,7 +537,11 @@ mod tests {
             Position::new(1, 5),
             "UTF-16 列 6 → 字符列 5（倒序之后第一条是行 1 那条）"
         );
-        assert_eq!(converted[0].range.end, Position::new(1, 9), "UTF-16 列 10 → 字符列 9");
+        assert_eq!(
+            converted[0].range.end,
+            Position::new(1, 9),
+            "UTF-16 列 10 → 字符列 9"
+        );
         assert_eq!(converted[0].new_text, "java.util.List");
         assert_eq!(converted[1].range.start, Position::new(0, 0), "行 0 在后面");
     }
@@ -540,7 +550,8 @@ mod tests {
     /// 它证明上一条的差异确实来自 emoji，而不是换算函数一律偏移。
     #[test]
     fn ascii_edits_are_unchanged() {
-        let rope = gpui_kit::component::input::Rope::from_str("package demo;\n\npublic class A {}\n");
+        let rope =
+            gpui_kit::component::input::Rope::from_str("package demo;\n\npublic class A {}\n");
         let edits = vec![TextEdit {
             range: lsp_types::Range {
                 start: Position::new(0, 0),
@@ -569,13 +580,7 @@ mod tests {
             "quickfix,source.generate.accessors"
         );
         assert_eq!(
-            kind_summary(&[
-                make("a"),
-                make("b"),
-                make("c"),
-                make("d"),
-                make("e"),
-            ]),
+            kind_summary(&[make("a"), make("b"), make("c"), make("d"), make("e"),]),
             "a,b,c,d,…"
         );
         assert_eq!(kind_summary(&[]), "none");

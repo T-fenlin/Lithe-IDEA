@@ -77,8 +77,8 @@ pub fn watch_settings_file(cx: &mut Context<SettingsStore>, path: PathBuf) {
     }
 
     let (sender, receiver) = async_channel::bounded::<notify::Event>(16);
-    let mut watcher = match notify::recommended_watcher(
-        move |result: notify::Result<notify::Event>| {
+    let mut watcher =
+        match notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
             let Ok(event) = result else {
                 return;
             };
@@ -94,14 +94,13 @@ pub fn watch_settings_file(cx: &mut Context<SettingsStore>, path: PathBuf) {
             // 通道满说明已经有一批待处理事件。丢掉新事件是安全的：重载是幂等的，
             // 而"丢了最后一个事件"最坏也只是少一次重载，下一次改动还会再触发。
             let _ = sender.try_send(event);
-        },
-    ) {
-        Ok(watcher) => watcher,
-        Err(error) => {
-            eprintln!("S1_SETTINGS watch_failed error={error}");
-            return;
-        }
-    };
+        }) {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                eprintln!("S1_SETTINGS watch_failed error={error}");
+                return;
+            }
+        };
 
     let watched = path.clone();
     let watched_for_log = path.clone();

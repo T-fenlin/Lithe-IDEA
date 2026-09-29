@@ -195,7 +195,10 @@ pub use editor_view::{CursorPosition, EditorPane, SessionRestore, TabMenuHostAct
 
 use gpui_kit::{App, KeyBinding};
 
-gpui_kit::actions!(lithe_editor, [SaveBuffer, NavigateToDefinition, CloseActiveTab]);
+gpui_kit::actions!(
+    lithe_editor,
+    [SaveBuffer, NavigateToDefinition, CloseActiveTab]
+);
 
 /// 登记编辑区的应用级快捷键。**每个窗口调用一次**（`ShellWorkspace::new`）。
 ///

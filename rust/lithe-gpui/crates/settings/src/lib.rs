@@ -64,8 +64,8 @@ pub use dialog::{
     Category, OpenSettings, install_actions, open_settings_dialog, open_settings_dialog_at,
 };
 pub use identity::{
-    GitIdentityHost, GitIdentityPage, IdentityField, IdentityScope, IdentitySetup,
-    IDENTITY_MAX_BYTES, git_identity_page, host_workspace_root, identity_value_is_valid,
+    GitIdentityHost, GitIdentityPage, IDENTITY_MAX_BYTES, IdentityField, IdentityScope,
+    IdentitySetup, git_identity_page, host_workspace_root, identity_value_is_valid,
     set_git_identity_host,
 };
 pub use paths::{SETTINGS_FILE_ENV, recent_projects_file_path, settings_file_path};
@@ -74,8 +74,8 @@ pub use persistence::{
     load_from, merge_document, parse as parse_settings_document, save_document,
 };
 pub use project::{
-    EffectiveToolchain, MavenConfiguration, MavenDiscovery, Overrides, ProjectEnvironment,
-    PROJECT_DIAGNOSTIC_TAG, ToolMode, ToolSource, discover as discover_project_environment,
+    EffectiveToolchain, MavenConfiguration, MavenDiscovery, Overrides, PROJECT_DIAGNOSTIC_TAG,
+    ProjectEnvironment, ToolMode, ToolSource, discover as discover_project_environment,
     resolve_overrides,
 };
 pub use recent_projects::{

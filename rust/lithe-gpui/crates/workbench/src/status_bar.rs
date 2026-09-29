@@ -97,8 +97,8 @@ use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
     AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, prelude::FluentBuilder as _,
-    rems,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    prelude::FluentBuilder as _, rems,
 };
 
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
@@ -323,7 +323,8 @@ fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
         // `Stateful<Div>`），所以能挂。`cursor_pointer` 只给可点的那格 —— 纯展示条目
         // 保持默认指针，Windows 的 `FooterStatusLabel` 也是这样（`footer-status-chip.tsx:26-29`）。
         .when_some(on_click, |this, handler| {
-            this.cursor_pointer().on_click(move |event, window, cx| handler(event, window, cx))
+            this.cursor_pointer()
+                .on_click(move |event, window, cx| handler(event, window, cx))
         })
 }
 
@@ -361,7 +362,5 @@ fn entry_icon(entry: &StatusEntry, cx: &App) -> Option<AnyElement> {
                 .into_any_element(),
         );
     }
-    entry
-        .lucide
-        .map(|name| Icon::new(name).into_any_element())
+    entry.lucide.map(|name| Icon::new(name).into_any_element())
 }

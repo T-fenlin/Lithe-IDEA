@@ -53,7 +53,7 @@ mod severity;
 mod store;
 
 pub use core_bridge::{from_core_error, is_reportable};
-pub use model::{matches_text, Entry, EntryId, Target, MAX_ENTRIES};
+pub use model::{Entry, EntryId, MAX_ENTRIES, Target, matches_text};
 pub use severity::{Badge, Severity};
 pub use store::{Input, RecordOutcome, Store};
 

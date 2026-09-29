@@ -262,7 +262,10 @@ impl SessionEvents {
     /// 分派一个事件。**只有泵调它**（也就是 `lsp.waitEvents` 的唯一出口）。
     pub(crate) fn dispatch(&self, event: &Value) {
         self.events_seen.fetch_add(1, Ordering::Relaxed);
-        let kind = event.get("type").and_then(Value::as_str).unwrap_or("unknown");
+        let kind = event
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
         let first_of_kind = self.note_kind(kind);
         match kind {
             "requestCompleted" => self.dispatch_completion(event),
@@ -389,8 +392,10 @@ impl SessionEvents {
         }
         self.signal.notify_all();
 
-        let waiters: Vec<Sender<Result<Value, String>>> =
-            lock(&self.pending).drain().map(|(_, sender)| sender).collect();
+        let waiters: Vec<Sender<Result<Value, String>>> = lock(&self.pending)
+            .drain()
+            .map(|(_, sender)| sender)
+            .collect();
         if waiters.is_empty() {
             return;
         }
@@ -642,10 +647,26 @@ mod tests {
         assert_eq!(diagnostic.source.as_deref(), Some("Java"));
         assert_eq!(diagnostic.code.as_deref(), Some("268435846"));
         assert_eq!(diagnostic.tags, vec![1]);
-        assert_eq!(diagnostic.range.start, JavaPosition { line: 4, utf16_column: 8 });
-        assert_eq!(diagnostic.range.end, JavaPosition { line: 4, utf16_column: 16 });
+        assert_eq!(
+            diagnostic.range.start,
+            JavaPosition {
+                line: 4,
+                utf16_column: 8
+            }
+        );
+        assert_eq!(
+            diagnostic.range.end,
+            JavaPosition {
+                line: 4,
+                utf16_column: 16
+            }
+        );
         // 别的 uri 不受影响（分派是按 uri 归档的，不是"最近一条"）。
-        assert!(events.latest_diagnostics("file:///ws/src/demo/Greeter.java").is_empty());
+        assert!(
+            events
+                .latest_diagnostics("file:///ws/src/demo/Greeter.java")
+                .is_empty()
+        );
     }
 
     /// 缺字段不 panic：没有 `range` 的条目被丢掉，`code` 支持数字，空数组 = 一次"清空"发布。
@@ -678,7 +699,10 @@ mod tests {
         // 事件形态不对（没有 uri / 没有 diagnostics 数组）也不许 panic。
         events.dispatch(&json!({ "type": "diagnostics" }));
         events.dispatch(&json!({ "type": "diagnostics", "uri": uri }));
-        assert!(events.latest_diagnostics(uri).is_empty(), "第二次发布是空数组 = 清空");
+        assert!(
+            events.latest_diagnostics(uri).is_empty(),
+            "第二次发布是空数组 = 清空"
+        );
 
         // 空数组发布确实会把上一份快照替换掉。
         events.dispatch(&json!({
@@ -724,11 +748,15 @@ mod tests {
         }));
 
         assert_eq!(
-            first.recv_timeout(Duration::from_secs(1)).expect("op-1 有结果"),
+            first
+                .recv_timeout(Duration::from_secs(1))
+                .expect("op-1 有结果"),
             Ok(json!({ "locations": [{ "uri": "file:///ws/Greeter.java" }] })),
         );
         assert_eq!(
-            second.recv_timeout(Duration::from_secs(1)).expect("op-2 有结果"),
+            second
+                .recv_timeout(Duration::from_secs(1))
+                .expect("op-2 有结果"),
             Ok(json!({ "items": [] })),
         );
         assert_eq!(events.unclaimed_count(), 0, "两个请求都被认领了");
@@ -747,7 +775,11 @@ mod tests {
         }));
         assert_eq!(events.unclaimed_count(), 1);
         events.dispatch(&json!({ "type": "requestCompleted", "result": Value::Null }));
-        assert_eq!(events.unclaimed_count(), 2, "连 operationId 都没有的也算无人认领");
+        assert_eq!(
+            events.unclaimed_count(),
+            2,
+            "连 operationId 都没有的也算无人认领"
+        );
 
         events.dispatch(&json!({
             "type": "requestCompleted",
@@ -755,7 +787,9 @@ mod tests {
             "result": { "items": [] },
         }));
         assert_eq!(
-            waiter.recv_timeout(Duration::from_secs(1)).expect("op-1 有结果"),
+            waiter
+                .recv_timeout(Duration::from_secs(1))
+                .expect("op-1 有结果"),
             Ok(json!({ "items": [] })),
         );
     }
@@ -814,7 +848,10 @@ mod tests {
         events.dispatch(&json!({ "type": "featuresChanged" }));
         let queued = events.wait_lifecycle(Duration::ZERO);
         assert_eq!(queued.len(), 2, "只有生命周期事件进队列：{queued:?}");
-        assert_eq!(queued[0].get("state").and_then(Value::as_str), Some("initializing"));
+        assert_eq!(
+            queued[0].get("state").and_then(Value::as_str),
+            Some("initializing")
+        );
         assert_eq!(events.events_seen(), 6);
     }
 
@@ -823,15 +860,25 @@ mod tests {
     fn terminal_state_wakes_waiters_and_rejects_new_requests() {
         let events = SessionEvents::new();
         let waiter = events.register("op-1").expect("注册 op-1");
-        assert!(!events.wait_terminal(Instant::now()), "还没终态、且死线已过 → false");
+        assert!(
+            !events.wait_terminal(Instant::now()),
+            "还没终态、且死线已过 → false"
+        );
 
-        events.dispatch(&json!({ "type": "stateChanged", "state": "failed", "detail": "JVM 起不来" }));
-        assert!(events.wait_terminal(Instant::now()), "终态已记录 → 立刻 true");
+        events.dispatch(
+            &json!({ "type": "stateChanged", "state": "failed", "detail": "JVM 起不来" }),
+        );
+        assert!(
+            events.wait_terminal(Instant::now()),
+            "终态已记录 → 立刻 true"
+        );
         let outcome = waiter
             .recv_timeout(Duration::from_secs(1))
             .expect("在飞请求必须被叫醒，而不是等满自己的死线");
         assert!(
-            outcome.expect_err("会话失败时不能给出结果").contains("JVM 起不来"),
+            outcome
+                .expect_err("会话失败时不能给出结果")
+                .contains("JVM 起不来"),
             "终态原因要带到调用方"
         );
 

@@ -179,8 +179,8 @@ use gpui_kit::{
     Styled as _, Subscription, WeakEntity, Window, deferred, div, radians, rems, rgb,
 };
 
-use lithe_gpui_shared::{tr, tr_args};
 use lithe_gpui_settings::RecentProject;
+use lithe_gpui_shared::{tr, tr_args};
 
 use crate::menu_bar::Missing;
 use crate::workspace::ShellWorkspace;
@@ -1166,10 +1166,15 @@ fn trigger(
             window.prevent_default();
             cx.stop_propagation();
         })
-        .on_click(move |_event: &ClickEvent, window: &mut Window, cx: &mut App| {
-            let _ = handle.update(cx, |menu, cx| menu.toggle(window, cx));
-        })
-        .child(badge_view(&badge, crate::rem_px(rem, TRIGGER_BADGE_SIZE_SPEC)))
+        .on_click(
+            move |_event: &ClickEvent, window: &mut Window, cx: &mut App| {
+                let _ = handle.update(cx, |menu, cx| menu.toggle(window, cx));
+            },
+        )
+        .child(badge_view(
+            &badge,
+            crate::rem_px(rem, TRIGGER_BADGE_SIZE_SPEC),
+        ))
         // 项目名 `min-w-0 truncate`（真源 `:157`）：显示的是项目名本身，
         // `项目：{project}` 只是无障碍名（`:147`）。
         .child(div().min_w_0().truncate().child(name))
@@ -1216,7 +1221,9 @@ pub(crate) fn render(
         return None;
     }
     menu.downgrade()
-        .update(cx, |menu, cx| project_menu(menu, entries, recent, window, cx))
+        .update(cx, |menu, cx| {
+            project_menu(menu, entries, recent, window, cx)
+        })
         .ok()
 }
 
@@ -1362,10 +1369,7 @@ mod tests {
         for index in 0..2_000 {
             seen[ProjectBadge::for_name(&format!("project-{index}")).tone_index()] = true;
         }
-        assert!(
-            seen.iter().all(|hit| *hit),
-            "有颜色永远取不到：{seen:?}"
-        );
+        assert!(seen.iter().all(|hit| *hit), "有颜色永远取不到：{seen:?}");
     }
 
     /// 段 ① 的结构：**正好 3 条**动作、顺序照真源，且文案键 / 诊断 id 都不重复。
@@ -1434,10 +1438,7 @@ mod tests {
             None,
             "真接线的那条不该再报前置条件"
         );
-        assert_eq!(
-            PanelAction::OpenFolder.wire(),
-            Some(PanelWire::OpenFolder)
-        );
+        assert_eq!(PanelAction::OpenFolder.wire(), Some(PanelWire::OpenFolder));
         assert_eq!(
             PanelAction::CloneRepository.wire(),
             Some(PanelWire::CloneNotWired)

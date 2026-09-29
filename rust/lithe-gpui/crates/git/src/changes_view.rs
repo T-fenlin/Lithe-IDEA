@@ -278,8 +278,8 @@ impl ChangesView {
     /// 建立视图。**构造期不取数据**，由外壳在第一帧之后调 [`ChangesView::refresh`]
     /// （与 `Explorer::new` 同一口径：构造期读 Core 会把首帧卡住）。
     pub fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let message = cx
-            .new(|cx| TextareaState::new(window, cx).placeholder(tr(COMMIT_PLACEHOLDER_KEY)));
+        let message =
+            cx.new(|cx| TextareaState::new(window, cx).placeholder(tr(COMMIT_PLACEHOLDER_KEY)));
         let message_subscription = cx.subscribe_in(
             &message,
             window,
@@ -644,9 +644,8 @@ impl ChangesView {
                                 .label(tr(ROLLBACK_KEY))
                                 .on_click(move |_, window, cx| {
                                     let paths = confirm_paths.clone();
-                                    let _ = confirm_view.update(cx, |view, cx| {
-                                        view.confirm_discard(paths, cx)
-                                    });
+                                    let _ = confirm_view
+                                        .update(cx, |view, cx| view.confirm_discard(paths, cx));
                                     window.close_dialog(cx);
                                 }),
                         ),
@@ -762,18 +761,17 @@ impl ChangesView {
             .dropdown_menu(move |menu, _window, _cx| {
                 let refresh_this = menu_this.clone();
                 let discard_this = menu_this.clone();
-                menu.item(
-                    PopupMenuItem::new(tr(REFRESH_KEY)).on_click(move |_event, _window, cx| {
+                menu.item(PopupMenuItem::new(tr(REFRESH_KEY)).on_click(
+                    move |_event, _window, cx| {
                         let _ = refresh_this.update(cx, |view, cx| view.refresh(cx));
-                    }),
-                )
+                    },
+                ))
                 .item(
                     PopupMenuItem::new(tr(DISCARD_ALL_KEY))
                         .disabled(!discard_enabled)
                         .on_click(move |_event, window, cx| {
-                            let _ = discard_this.update(cx, |view, cx| {
-                                view.discard_unstaged(window, cx)
-                            });
+                            let _ = discard_this
+                                .update(cx, |view, cx| view.discard_unstaged(window, cx));
                         }),
                 )
             });
@@ -1001,14 +999,10 @@ impl ChangesView {
 
         // 进度（只有 rebase 有；Core 也只对 rebase 填这两个字段，`contracts.rs:799-800`）。
         if let (Some(step), Some(total)) = (operation.step, operation.total) {
-            banner = banner.child(
-                div()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(tr_args(
-                        OPERATION_STEP_KEY,
-                        &[("step", &step.to_string()), ("total", &total.to_string())],
-                    )),
-            );
+            banner = banner.child(div().text_color(cx.theme().muted_foreground).child(tr_args(
+                OPERATION_STEP_KEY,
+                &[("step", &step.to_string()), ("total", &total.to_string())],
+            )));
         }
 
         // 冲突提示：真源给「解决 N 个冲突文件，暂存后继续。」，这里补一行路径
@@ -1024,12 +1018,10 @@ impl ChangesView {
             banner = banner.child(
                 v_flex()
                     .gap_1()
-                    .child(
-                        div().text_color(cx.theme().danger).child(tr_args(
-                            RESOLVE_CONFLICTS_HINT_KEY,
-                            &[("count", &operation.conflicted_paths.len().to_string())],
-                        )),
-                    )
+                    .child(div().text_color(cx.theme().danger).child(tr_args(
+                        RESOLVE_CONFLICTS_HINT_KEY,
+                        &[("count", &operation.conflicted_paths.len().to_string())],
+                    )))
                     .child(
                         div()
                             .text_color(cx.theme().muted_foreground)
@@ -1131,9 +1123,7 @@ impl ChangesView {
                 tr(STAGE_ALL_KEY),
                 !self.busy,
                 cx.theme().font_size,
-                cx.listener(|view: &mut Self, _event, _window, cx| {
-                    view.set_all_staged(true, cx)
-                }),
+                cx.listener(|view: &mut Self, _event, _window, cx| view.set_all_staged(true, cx)),
             ));
         }
         if staged > 0 {
@@ -1143,9 +1133,7 @@ impl ChangesView {
                 tr(UNSTAGE_ALL_KEY),
                 !self.busy,
                 cx.theme().font_size,
-                cx.listener(|view: &mut Self, _event, _window, cx| {
-                    view.set_all_staged(false, cx)
-                }),
+                cx.listener(|view: &mut Self, _event, _window, cx| view.set_all_staged(false, cx)),
             ));
         }
 
@@ -1354,9 +1342,7 @@ impl ChangesView {
                 cx,
             ),
             // ⑤ 加载失败：错误条已经在上面画了（`render_load_error`），这里只留一条重试提示。
-            LoadState::Failed(_) => {
-                self.centered(None, tr(LOAD_FAILED_KEY), None, cx)
-            }
+            LoadState::Failed(_) => self.centered(None, tr(LOAD_FAILED_KEY), None, cx),
             LoadState::Ready => {
                 if self.snapshot.repository_root.is_none() {
                     // ② 未初始化 / 不是仓库。
@@ -1469,23 +1455,25 @@ impl ChangesView {
         // 面板内的错误块只承担**硬守卫**（进行中的操作 / 冲突）与最近一次写失败：
         // "没有暂存文件""没写说明"这两种软守卫在下面那行计数文案里已经说清楚了。
         let panel_error: Option<SharedString> =
-            self.error.clone().or_else(|| match &self.snapshot.operation {
-                Some(operation) if operation.has_conflicts() => Some(tr_args(
-                    RESOLVE_CONFLICTS_KEY,
-                    &[(
-                        "paths",
-                        &operation
-                            .conflicted_paths
-                            .iter()
-                            .take(CONFLICT_PATH_LIMIT)
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join("、"),
-                    )],
-                )),
-                Some(_) => Some(tr(FINISH_OPERATION_KEY)),
-                None => None,
-            });
+            self.error
+                .clone()
+                .or_else(|| match &self.snapshot.operation {
+                    Some(operation) if operation.has_conflicts() => Some(tr_args(
+                        RESOLVE_CONFLICTS_KEY,
+                        &[(
+                            "paths",
+                            &operation
+                                .conflicted_paths
+                                .iter()
+                                .take(CONFLICT_PATH_LIMIT)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                                .join("、"),
+                        )],
+                    )),
+                    Some(_) => Some(tr(FINISH_OPERATION_KEY)),
+                    None => None,
+                });
 
         let mut panel = v_flex()
             .w_full()
@@ -1703,9 +1691,18 @@ mod tests {
         let forward: Vec<String> = rows.iter().map(change_row_element_id).collect();
         let reversed: Vec<String> = rows.iter().rev().map(change_row_element_id).collect();
 
-        assert_eq!(forward[0], reversed[2], "同一行在不同顺序下必须算出同一个 id");
-        assert_eq!(forward[1], reversed[1], "同一行在不同顺序下必须算出同一个 id");
-        assert_eq!(forward[2], reversed[0], "同一行在不同顺序下必须算出同一个 id");
+        assert_eq!(
+            forward[0], reversed[2],
+            "同一行在不同顺序下必须算出同一个 id"
+        );
+        assert_eq!(
+            forward[1], reversed[1],
+            "同一行在不同顺序下必须算出同一个 id"
+        );
+        assert_eq!(
+            forward[2], reversed[0],
+            "同一行在不同顺序下必须算出同一个 id"
+        );
         assert_eq!(forward[0], "changes-row:src/main.rs", "id 必须由路径构成");
         // 两两不同：不同文件不能共享元素状态。
         for (left, right) in [(0, 1), (0, 2), (1, 2)] {
@@ -1720,8 +1717,14 @@ mod tests {
         let target = row("src/main.rs", " M", false);
         let other = row("src/lib.rs", " M", false);
 
-        assert_ne!(change_row_element_id(&target), stage_button_element_id(&target));
-        assert_ne!(stage_button_element_id(&target), stage_button_element_id(&other));
+        assert_ne!(
+            change_row_element_id(&target),
+            stage_button_element_id(&target)
+        );
+        assert_ne!(
+            stage_button_element_id(&target),
+            stage_button_element_id(&other)
+        );
         assert_eq!(
             stage_button_element_id(&target),
             "changes-stage-row:src/main.rs"

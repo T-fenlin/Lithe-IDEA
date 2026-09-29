@@ -85,13 +85,20 @@ pub struct MavenProjectView {
 impl MavenProjectView {
     /// 整个 reactor 的模块总数（含根）。
     pub fn module_count(&self) -> usize {
-        1 + self.modules.iter().map(MavenModuleView::total).sum::<usize>()
+        1 + self
+            .modules
+            .iter()
+            .map(MavenModuleView::total)
+            .sum::<usize>()
     }
 }
 
 /// 扫一个工作区；`None` = 没有可读的 `pom.xml`（`maven.scan` 的权威答案）。
 pub fn scan(root: &Path) -> Option<MavenProjectView> {
-    match core_json("maven.scan", serde_json::json!({ "root": root.to_string_lossy() })) {
+    match core_json(
+        "maven.scan",
+        serde_json::json!({ "root": root.to_string_lossy() }),
+    ) {
         Ok(scan) => {
             let project = scan.as_ref().and_then(parse);
             // 诊断：面板里显示的每一个事实都能在这行里核对（可 grep）。
@@ -183,7 +190,10 @@ fn modules(value: Option<&Value>) -> Vec<MavenModuleView> {
         .iter()
         .filter_map(|module| {
             Some(MavenModuleView {
-                relative_path: module.get("relativePath").and_then(Value::as_str)?.to_string(),
+                relative_path: module
+                    .get("relativePath")
+                    .and_then(Value::as_str)?
+                    .to_string(),
                 group_id: text(module, "groupId"),
                 artifact_id: module
                     .get("artifactId")

@@ -153,7 +153,11 @@ mod tests {
                 assert!(verdict.is_some(), "{code} 必须有档位");
             }
         }
-        assert_eq!(ALL_CORE_CODES.len(), 11, "Core 错误码数量变了，要更新分档表");
+        assert_eq!(
+            ALL_CORE_CODES.len(),
+            11,
+            "Core 错误码数量变了，要更新分档表"
+        );
     }
 
     /// 分档方向不许反：需要用户处理的进 `error`，降级的进 `warning`。
@@ -167,7 +171,11 @@ mod tests {
             "process_failed",
             "parse_failed",
         ] {
-            assert_eq!(Severity::for_core_code(code), Some(Severity::Error), "{code}");
+            assert_eq!(
+                Severity::for_core_code(code),
+                Some(Severity::Error),
+                "{code}"
+            );
         }
         for code in ["not_supported", "runtime_missing", "timed_out", "unknown"] {
             assert_eq!(

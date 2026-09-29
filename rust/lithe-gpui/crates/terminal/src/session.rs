@@ -30,7 +30,9 @@ use crate::constants::{
     EXIT_POLL_ATTEMPTS, EXIT_POLL_INTERVAL, MAX_LINES, READ_BUFFER, error_fallback,
     input_placeholder,
 };
-use crate::profile::{TerminalProfile, command_exists, default_profile, profile_for_shell_id, profiles};
+use crate::profile::{
+    TerminalProfile, command_exists, default_profile, profile_for_shell_id, profiles,
+};
 use crate::terminal_view::{TabSession, TerminalPane};
 
 /// 会话状态（真机的三档：运行中 / 已退出（带退出码）/ 起不来）。
@@ -498,7 +500,11 @@ impl TerminalPane {
         self.active_profile = 0;
         println!(
             "S1_TERMINAL default_shell={} outcome={outcome} profiles={}",
-            if shell_id.is_empty() { "(system)" } else { shell_id },
+            if shell_id.is_empty() {
+                "(system)"
+            } else {
+                shell_id
+            },
             self.profiles.len()
         );
         cx.notify();

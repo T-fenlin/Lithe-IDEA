@@ -168,7 +168,8 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
         // `dialog/dialog.rs:528`）。
         let margin = rem;
         let width = rem_px(rem, DIALOG_WIDTH);
-        let height = rem_px(rem, DIALOG_HEIGHT).min((viewport.height - margin * 2.).max(gpui_kit::Pixels::ZERO));
+        let height = rem_px(rem, DIALOG_HEIGHT)
+            .min((viewport.height - margin * 2.).max(gpui_kit::Pixels::ZERO));
         // 居中：Dialog 的 y 默认是视口的 1/10（`dialog/dialog.rs:529`），Windows 是垂直居中。
         let margin_top = ((viewport.height - height) / 2.).max(gpui_kit::Pixels::ZERO);
 
@@ -481,7 +482,11 @@ struct ProjectPageState {
 }
 
 impl ProjectPageState {
-    fn new(workspace_root: Option<PathBuf>, overrides: Overrides, origins: OverrideOrigins) -> Self {
+    fn new(
+        workspace_root: Option<PathBuf>,
+        overrides: Overrides,
+        origins: OverrideOrigins,
+    ) -> Self {
         Self {
             environment: None,
             busy: false,
@@ -973,9 +978,7 @@ impl ProjectField {
     /// → `jdtls::resolve_runtime`），所以它**不带**这个标注。
     fn pending_key(self) -> Option<&'static str> {
         match self {
-            Self::Maven | Self::MavenJdk => {
-                Some("lithe.settings.gpui.mavenOverrideNotEffective")
-            }
+            Self::Maven | Self::MavenJdk => Some("lithe.settings.gpui.mavenOverrideNotEffective"),
             Self::Jdk => None,
         }
     }
@@ -1072,11 +1075,7 @@ fn git_save_enabled(
 }
 
 /// 「Git」页里「清除覆盖」按钮可不可点的纯判据（真源 `:147` 的 `configured == null`）。
-fn git_clear_enabled(
-    setup: Option<&IdentitySetup>,
-    field: IdentityField,
-    busy: bool,
-) -> bool {
+fn git_clear_enabled(setup: Option<&IdentitySetup>, field: IdentityField, busy: bool) -> bool {
     let Some(setup) = setup else {
         return false;
     };
@@ -1160,12 +1159,13 @@ impl SettingsDialog {
             .map(load_local_toolchain)
             .unwrap_or_default();
         for diagnostic in &local_toolchain.diagnostics {
-            eprintln!("{} local_toolchain {diagnostic}", crate::project::PROJECT_DIAGNOSTIC_TAG);
+            eprintln!(
+                "{} local_toolchain {diagnostic}",
+                crate::project::PROJECT_DIAGNOSTIC_TAG
+            );
         }
-        let (project_overrides, override_origins) = resolve_overrides(
-            &local_toolchain.paths,
-            &Overrides::from_settings(&saved),
-        );
+        let (project_overrides, override_origins) =
+            resolve_overrides(&local_toolchain.paths, &Overrides::from_settings(&saved));
         let java_home_input = cx.new(|cx| {
             InputState::new(window, cx).default_value(project_overrides.java_home.clone())
         });
@@ -1179,7 +1179,8 @@ impl SettingsDialog {
             InputState::new(window, cx).default_value(project_overrides.maven_settings.clone())
         });
         let maven_local_repository_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(project_overrides.maven_local_repository.clone())
+            InputState::new(window, cx)
+                .default_value(project_overrides.maven_local_repository.clone())
         });
 
         let mut subscriptions = Vec::new();
@@ -1272,11 +1273,7 @@ impl SettingsDialog {
             maven_java_home_input,
             maven_settings_input,
             maven_local_repository_input,
-            project: ProjectPageState::new(
-                workspace_root,
-                project_overrides,
-                override_origins,
-            ),
+            project: ProjectPageState::new(workspace_root, project_overrides, override_origins),
             run: RunPageState::new(),
             _subscriptions: subscriptions,
         }
@@ -1363,7 +1360,8 @@ impl SettingsDialog {
                         // 「Git」页第一次被打开时读一次身份。**不在构造期读**：那会把首帧卡住，
                         // 与 `Explorer` / `ChangesView` 的"构造期不取数据"同一条口径。
                         // 钩子没登记时 `git_load` 直接返回（`host` 是 `None`）。
-                        if *category == Category::Git && this.git.setup.is_none() && !this.git.busy {
+                        if *category == Category::Git && this.git.setup.is_none() && !this.git.busy
+                        {
                             this.git_load(window, cx);
                         }
                         // 「项目」页同理：**第一次切到这一页才探测**。探测要起子进程
@@ -1423,31 +1421,33 @@ impl SettingsDialog {
             .p_6()
             .bg(cx.theme().background)
             .overflow_y_scrollbar()
-            .child(page_stack().child(page_title(tr(self.category.label_key()))).children(
-                match self.category {
-                    Category::General => self.general_page(&settings, cx),
-                    Category::Appearance => self.appearance_page(&settings, cx),
-                    Category::Editor => self.editor_page(&settings, cx),
-                    Category::Terminal => self.terminal_page(&settings, cx),
-                    // 「项目 · JDK 与 Maven」页（阶段 16）：真机探测出的 JDK / Maven 生效值
-                    // + 可覆盖 + 可刷新。探测不到时**不是整页空态**，而是每个字段各说各的原因。
-                    Category::Project => self.project_page(cx),
-                    // 「运行配置」页（阶段 17）：Core 从项目文件识别出的启动目标（只读列表）
-                    // + 刷新。没有编辑与运行入口 —— 理由画在页面上（`run_page` 的最后一段）。
-                    Category::Run => self.run_page(cx),
-                    // 「Git」页（阶段 15）：提交身份 + 一个真有消费方的开关。
-                    // 钩子没登记时 `git_page` 自己退回明确空态。
-                    Category::Git => self.git_page(&settings, cx),
-                    // 「LSP」页（阶段 18）：真源三键里唯一有真消费方的那一个（`autoCompletion`）
-                    // + 一组真事实的「已检测语言服务器」。另两项与 JDTLS 路径输入框**不画**
-                    // （理由写在 `lsp_page` 的文档里）。
-                    Category::Lsp => self.lsp_page(&settings, cx),
-                    // 其余分类是**明确空态**：只有一句前置条件，没有任何控件。
-                    Category::Keyboard | Category::Logs | Category::Updates => {
-                        self.empty_page(cx)
-                    }
-                },
-            ))
+            .child(
+                page_stack()
+                    .child(page_title(tr(self.category.label_key())))
+                    .children(match self.category {
+                        Category::General => self.general_page(&settings, cx),
+                        Category::Appearance => self.appearance_page(&settings, cx),
+                        Category::Editor => self.editor_page(&settings, cx),
+                        Category::Terminal => self.terminal_page(&settings, cx),
+                        // 「项目 · JDK 与 Maven」页（阶段 16）：真机探测出的 JDK / Maven 生效值
+                        // + 可覆盖 + 可刷新。探测不到时**不是整页空态**，而是每个字段各说各的原因。
+                        Category::Project => self.project_page(cx),
+                        // 「运行配置」页（阶段 17）：Core 从项目文件识别出的启动目标（只读列表）
+                        // + 刷新。没有编辑与运行入口 —— 理由画在页面上（`run_page` 的最后一段）。
+                        Category::Run => self.run_page(cx),
+                        // 「Git」页（阶段 15）：提交身份 + 一个真有消费方的开关。
+                        // 钩子没登记时 `git_page` 自己退回明确空态。
+                        Category::Git => self.git_page(&settings, cx),
+                        // 「LSP」页（阶段 18）：真源三键里唯一有真消费方的那一个（`autoCompletion`）
+                        // + 一组真事实的「已检测语言服务器」。另两项与 JDTLS 路径输入框**不画**
+                        // （理由写在 `lsp_page` 的文档里）。
+                        Category::Lsp => self.lsp_page(&settings, cx),
+                        // 其余分类是**明确空态**：只有一句前置条件，没有任何控件。
+                        Category::Keyboard | Category::Logs | Category::Updates => {
+                            self.empty_page(cx)
+                        }
+                    }),
+            )
     }
 
     /// 「常规」页：v1 只做「语言」一项。
@@ -1556,7 +1556,11 @@ impl SettingsDialog {
     }
 
     /// 「外观」页：主题（模式 + 配色）+ 排版（界面字体族 / 界面字号）+ 界面（状态栏）。
-    fn appearance_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+    fn appearance_page(
+        &self,
+        settings: &Settings,
+        cx: &Context<Self>,
+    ) -> Vec<gpui_kit::AnyElement> {
         let mode = AppearanceMode::from_settings(settings);
         // 显示**当前生效**的主题（跟随系统时就是系统对应的那一支），而不是 Windows 的
         // `settings.theme`：同步模式下 Windows 会显示一个并非生效中的值
@@ -1588,17 +1592,12 @@ impl SettingsDialog {
                         tr("lithe.settings.appearance.colorTheme"),
                         None,
                         theme_note,
-                        self.dropdown(
-                            "settings-theme",
-                            applied_theme,
-                            themes,
-                            {
-                                let store = self.store.clone();
-                                Box::new(move |value, _, cx| {
-                                    store.update(cx, |store, cx| store.set_theme(value, cx));
-                                })
-                            },
-                        ),
+                        self.dropdown("settings-theme", applied_theme, themes, {
+                            let store = self.store.clone();
+                            Box::new(move |value, _, cx| {
+                                store.update(cx, |store, cx| store.set_theme(value, cx));
+                            })
+                        }),
                         None,
                         cx,
                     ),
@@ -1702,9 +1701,8 @@ impl SettingsDialog {
                             .checked(settings.show_status_bar)
                             .on_change(move |checked, _, cx| {
                                 let checked = *checked;
-                                store.update(cx, |store, cx| {
-                                    store.set_show_status_bar(checked, cx)
-                                });
+                                store
+                                    .update(cx, |store, cx| store.set_show_status_bar(checked, cx));
                             })
                             .into_any_element()
                     },
@@ -1715,9 +1713,7 @@ impl SettingsDialog {
                             let store = self.store.clone();
                             let next = !settings.show_status_bar;
                             Box::new(move |_, _, cx| {
-                                store.update(cx, |store, cx| {
-                                    store.set_show_status_bar(next, cx)
-                                });
+                                store.update(cx, |store, cx| store.set_show_status_bar(next, cx));
                             })
                         };
                         activation
@@ -1886,9 +1882,8 @@ impl SettingsDialog {
                                 };
                                 // 只写设置：推给终端面板是**外壳**的事（订阅本实体后调
                                 // `TerminalPane::set_font_size`），设置 crate 不认识终端 crate。
-                                store.update(cx, |store, cx| {
-                                    store.set_terminal_font_size(size, cx)
-                                });
+                                store
+                                    .update(cx, |store, cx| store.set_terminal_font_size(size, cx));
                             })
                         },
                     ),
@@ -2023,7 +2018,13 @@ impl SettingsDialog {
     ///
     /// 与真源同一口径（`git-identity-settings.tsx:63-85`）：**逐字段保存**，
     /// 一个字段成功不会顺手写另一个；就算另一个字段的草稿还没保存也不会被覆盖。
-    fn git_save(&mut self, field: IdentityField, clear: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn git_save(
+        &mut self,
+        field: IdentityField,
+        clear: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(host) = self.git.host.clone() else {
             return;
         };
@@ -2258,12 +2259,7 @@ impl SettingsDialog {
                     )
                 })
                 .when_some(self.git.error.clone(), |this, error| {
-                    this.child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().danger)
-                            .child(error),
-                    )
+                    this.child(div().text_xs().text_color(cx.theme().danger).child(error))
                 })
                 .when(self.git.saved.is_some(), |this| {
                     this.child(
@@ -2372,14 +2368,12 @@ impl SettingsDialog {
                     .w_full()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div().flex_1().min_w_0().child(
-                            // ⚠️ 单行输入的实际高度来自 `input_h`（`Input` 的同名固有方法
-                            // `h` 只对多行输入生效，理由见 `explorer_view.rs:467-473`），
-                            // 所以这里不显式写高度、用默认档。
-                            Input::new(self.git_input(field)),
-                        ),
-                    )
+                    .child(div().flex_1().min_w_0().child(
+                        // ⚠️ 单行输入的实际高度来自 `input_h`（`Input` 的同名固有方法
+                        // `h` 只对多行输入生效，理由见 `explorer_view.rs:467-473`），
+                        // 所以这里不显式写高度、用默认档。
+                        Input::new(self.git_input(field)),
+                    ))
                     .child(
                         Button::new(("settings-git-save", field.index()))
                             .small()
@@ -2820,7 +2814,12 @@ impl SettingsDialog {
                 // （真源 `:172-175` 与 `:189-192` 用的是同一份 `discovered.java`）。
                 ProjectField::Maven => environment.and_then(|environment| {
                     detected_installations(
-                        environment.maven.candidates.iter().map(maven_entry).collect(),
+                        environment
+                            .maven
+                            .candidates
+                            .iter()
+                            .map(maven_entry)
+                            .collect(),
                     )
                 }),
                 ProjectField::Jdk | ProjectField::MavenJdk => jdk_candidates(),
@@ -2840,12 +2839,8 @@ impl SettingsDialog {
         // 输入框的初值在构造期就从设置里取好了。
 
         vec![
-            settings_group(
-                tr("lithe.settings.project.detected"),
-                toolchain_rows,
-                cx,
-            )
-            .into_any_element(),
+            settings_group(tr("lithe.settings.project.detected"), toolchain_rows, cx)
+                .into_any_element(),
             settings_group(tr("lithe.maven.settings"), maven_rows, cx).into_any_element(),
         ]
     }
@@ -2910,12 +2905,14 @@ impl SettingsDialog {
                     .child(tr(field.hint_key())),
             )
             // 覆盖值来自哪一层（项目本机 / 全局默认）：没有覆盖值时不画这一行。
-            .children(override_origin_key(field.origin(&self.project.origins)).map(|key| {
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(tr(key))
-            }))
+            .children(
+                override_origin_key(field.origin(&self.project.origins)).map(|key| {
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr(key))
+                }),
+            )
             // 「尚未生效」标注：Maven 的两个覆盖值今天**没有任何消费方**（判据见
             // [`ProjectField::pending_key`]）。用 warning 色而不是 danger：它不是错误，
             // 而是"这一格现在不改变任何行为"的事实；但也不能弱化到看不见。
@@ -3232,12 +3229,8 @@ impl SettingsDialog {
         };
 
         vec![
-            settings_group(
-                tr("lithe.settings.mac.languageServices"),
-                service_rows,
-                cx,
-            )
-            .into_any_element(),
+            settings_group(tr("lithe.settings.mac.languageServices"), service_rows, cx)
+                .into_any_element(),
             settings_group(
                 tr("lithe.settings.mac.detectedServers"),
                 vec![self.project_fact_row(
@@ -3541,7 +3534,11 @@ impl SettingsDialog {
                 SharedString::from(configuration.cwd.clone()),
                 false,
             ))
-            .child(fact("lithe.run.effectiveSource", SharedString::from(source), false))
+            .child(fact(
+                "lithe.run.effectiveSource",
+                SharedString::from(source),
+                false,
+            ))
             .children(configuration.main_class.as_ref().map(|main_class| {
                 fact(
                     "lithe.run.mainClass",
@@ -3566,33 +3563,36 @@ impl SettingsDialog {
             .prerequisite_key()
             .expect("空态分类必须登记一条前置条件文案（`Category::prerequisite_key`）");
         vec![
-            v_flex().w_full().py_8().child(
-                Empty::new()
-                    .border_color(cx.theme().transparent)
-                    .gap_3()
-                    .px_6()
-                    .header(
-                        EmptyHeader::new()
-                            .max_w_112()
-                            .gap_3()
-                            .media(
-                                EmptyMedia::new().child(
-                                    Icon::new(self.category.icon())
-                                        .size_10()
-                                        .text_color(cx.theme().muted_foreground),
+            v_flex()
+                .w_full()
+                .py_8()
+                .child(
+                    Empty::new()
+                        .border_color(cx.theme().transparent)
+                        .gap_3()
+                        .px_6()
+                        .header(
+                            EmptyHeader::new()
+                                .max_w_112()
+                                .gap_3()
+                                .media(
+                                    EmptyMedia::new().child(
+                                        Icon::new(self.category.icon())
+                                            .size_10()
+                                            .text_color(cx.theme().muted_foreground),
+                                    ),
+                                )
+                                .title(
+                                    EmptyTitle::new()
+                                        .text_sm()
+                                        .child(tr("lithe.settings.gpui.pageNotAvailableTitle")),
+                                )
+                                .description(
+                                    EmptyDescription::new().text_sm().child(tr(prerequisite)),
                                 ),
-                            )
-                            .title(
-                                EmptyTitle::new()
-                                    .text_sm()
-                                    .child(tr("lithe.settings.gpui.pageNotAvailableTitle")),
-                            )
-                            .description(
-                                EmptyDescription::new().text_sm().child(tr(prerequisite)),
-                            ),
-                    ),
-            )
-            .into_any_element(),
+                        ),
+                )
+                .into_any_element(),
         ]
     }
 
@@ -3612,9 +3612,11 @@ impl SettingsDialog {
                 Button::new("settings-restore-defaults")
                     .ghost()
                     .label(tr("lithe.settings.gpui.restoreDefaultsOpen"))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.confirm_restore_defaults(window, cx)
-                    })),
+                    .on_click(
+                        cx.listener(|this, _, window, cx| {
+                            this.confirm_restore_defaults(window, cx)
+                        }),
+                    ),
             )
             .child(
                 Button::new("settings-done")
@@ -3719,27 +3721,24 @@ impl SettingsDialog {
             .outline()
             .w(ControlWidth::Default.length())
             .justify_between()
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(current_label),
-            )
+            .child(div().min_w_0().truncate().child(current_label))
             .dropdown_caret(true)
             .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
-                options.iter().fold(menu, |menu, (value, label, checked)| {
-                    let on_select = on_select.clone();
-                    let value = value.clone();
-                    menu.item(
-                        PopupMenuItem::new(label.clone())
-                            .checked(*checked)
-                            .on_click(move |_, window, cx| {
-                                on_select(value.clone(), window, cx);
-                            }),
-                    )
-                })
-                // 主题可能有十几个，允许滚动（Windows 的下拉也是可滚动列表）。
-                .scrollable(true)
+                options
+                    .iter()
+                    .fold(menu, |menu, (value, label, checked)| {
+                        let on_select = on_select.clone();
+                        let value = value.clone();
+                        menu.item(
+                            PopupMenuItem::new(label.clone())
+                                .checked(*checked)
+                                .on_click(move |_, window, cx| {
+                                    on_select(value.clone(), window, cx);
+                                }),
+                        )
+                    })
+                    // 主题可能有十几个，允许滚动（Windows 的下拉也是可滚动列表）。
+                    .scrollable(true)
             })
             .into_any_element()
     }
@@ -3912,7 +3911,10 @@ fn format_ui_font_size(value: f64) -> String {
 /// 编辑器字号显示文本。它恒为整数档（[`crate::schema::normalize_editor_font_size`]），
 /// 所以只有整数一种形态；分开一个函数是为了让"两个字号的口径不同"这件事在调用点看得见。
 fn format_editor_font_size(value: f64) -> String {
-    format!("{}", crate::schema::normalize_editor_font_size(value) as i64)
+    format!(
+        "{}",
+        crate::schema::normalize_editor_font_size(value) as i64
+    )
 }
 
 /// 制表符宽度的显示文本：`2 个空格`（真源 `macos-settings-panels.tsx:321` 的
@@ -4012,7 +4014,10 @@ mod tests {
         }
         // `IMPLEMENTED` 里的每一项都必须在 `ALL` 里（反过来由上一条断言覆盖）。
         for category in Category::IMPLEMENTED {
-            assert!(Category::ALL.contains(&category), "{category:?} 不在 ALL 里");
+            assert!(
+                Category::ALL.contains(&category),
+                "{category:?} 不在 ALL 里"
+            );
         }
     }
 
@@ -4119,7 +4124,11 @@ mod tests {
         assert!(!git_clear_enabled(None, IdentityField::Name, false));
         // 「清除覆盖」只在**该作用域里写着值**时可点。
         assert!(git_clear_enabled(Some(&setup), IdentityField::Name, false));
-        assert!(!git_clear_enabled(Some(&setup), IdentityField::Email, false));
+        assert!(!git_clear_enabled(
+            Some(&setup),
+            IdentityField::Email,
+            false
+        ));
     }
 
     /// 「项目 · JDK 与 Maven」页的**行标签与提示全部复用真源既有键**，
@@ -4129,10 +4138,7 @@ mod tests {
         assert_eq!(ProjectField::ALL.len(), 3);
         assert_eq!(ProjectField::Jdk.label_key(), "lithe.run.jdkHome");
         assert_eq!(ProjectField::Maven.label_key(), "lithe.run.mavenExecutable");
-        assert_eq!(
-            ProjectField::MavenJdk.label_key(),
-            "lithe.run.mavenJdkHome"
-        );
+        assert_eq!(ProjectField::MavenJdk.label_key(), "lithe.run.mavenJdkHome");
         assert_eq!(ProjectField::Jdk.hint_key(), "lithe.run.jdkHomeHint");
         assert_eq!(
             ProjectField::Maven.hint_key(),
@@ -4145,7 +4151,10 @@ mod tests {
         // 三个字段的 token 与序号都唯一（诊断行与元素 id 都靠它定位）。
         let ids: Vec<&str> = ProjectField::ALL.iter().map(|field| field.id()).collect();
         assert_eq!(ids, ["jdk", "maven", "maven_jdk"]);
-        let indices: Vec<usize> = ProjectField::ALL.iter().map(|field| field.index()).collect();
+        let indices: Vec<usize> = ProjectField::ALL
+            .iter()
+            .map(|field| field.index())
+            .collect();
         assert_eq!(indices, [0, 1, 2]);
     }
 
@@ -4173,7 +4182,10 @@ mod tests {
     fn project_page_is_implemented_not_an_empty_state() {
         assert!(Category::IMPLEMENTED.contains(&Category::Project));
         assert_eq!(Category::Project.prerequisite_key(), None);
-        assert_eq!(Category::Project.label_key(), "lithe.settings.project.title");
+        assert_eq!(
+            Category::Project.label_key(),
+            "lithe.settings.project.title"
+        );
         assert_eq!(Category::Project.id(), "project");
     }
 
@@ -4185,7 +4197,10 @@ mod tests {
     #[test]
     fn maven_config_fields_follow_the_truth_source() {
         assert_eq!(MavenConfigField::ALL.len(), 2);
-        assert_eq!(MavenConfigField::SettingsXml.label().as_ref(), "settings.xml");
+        assert_eq!(
+            MavenConfigField::SettingsXml.label().as_ref(),
+            "settings.xml"
+        );
         assert_eq!(
             MavenConfigField::LocalRepository.label(),
             tr("lithe.maven.localRepository")
@@ -4198,7 +4213,10 @@ mod tests {
             MavenConfigField::LocalRepository.hint_key(),
             "lithe.settings.gpui.mavenLocalRepositoryHint"
         );
-        let ids: Vec<&str> = MavenConfigField::ALL.iter().map(|field| field.id()).collect();
+        let ids: Vec<&str> = MavenConfigField::ALL
+            .iter()
+            .map(|field| field.id())
+            .collect();
         assert_eq!(ids, ["settings_xml", "local_repository"]);
         let indices: Vec<usize> = MavenConfigField::ALL
             .iter()
@@ -4357,10 +4375,7 @@ mod tests {
         // 所以它也要懒加载一次 —— 否则从命令面板直接打开到这一页会永远停在"正在检测…"。
         assert!(page_loads_on_open(Category::Lsp));
         for category in Category::ALL {
-            if matches!(
-                category,
-                Category::Project | Category::Run | Category::Lsp
-            ) {
+            if matches!(category, Category::Project | Category::Run | Category::Lsp) {
                 continue;
             }
             assert!(
@@ -4447,7 +4462,8 @@ mod tests {
         assert!(line.text.contains(r"D:\ProgramData\java\openjdk-21"));
         assert!(line.text.contains("21.0.2"), "{}", line.text);
         assert!(
-            line.text.contains(source_label(ToolSource::JavaHome).as_ref()),
+            line.text
+                .contains(source_label(ToolSource::JavaHome).as_ref()),
             "自动选中必须报来源：{}",
             line.text
         );
@@ -4457,7 +4473,9 @@ mod tests {
         let line = describe_effective(ToolKind::Jdk, &configured);
         assert!(!line.is_error);
         assert!(
-            !line.text.contains(source_label(ToolSource::JavaHome).as_ref()),
+            !line
+                .text
+                .contains(source_label(ToolSource::JavaHome).as_ref()),
             "覆盖值不该再拼来源：{}",
             line.text
         );
@@ -4466,9 +4484,17 @@ mod tests {
         // 读不出版本时退化成裸名字（真源 `"JDK"` / `"Maven"`），**不编一个版本**。
         let line = describe_effective(
             ToolKind::Jdk,
-            &resolved(crate::project::ToolMode::Automatic, None, Some(ToolSource::Path)),
+            &resolved(
+                crate::project::ToolMode::Automatic,
+                None,
+                Some(ToolSource::Path),
+            ),
         );
-        assert!(line.text.contains(ToolKind::Jdk.bare_name()), "{}", line.text);
+        assert!(
+            line.text.contains(ToolKind::Jdk.bare_name()),
+            "{}",
+            line.text
+        );
         let line = describe_effective(
             ToolKind::Maven,
             &EffectiveToolchain::Resolved {
@@ -4520,7 +4546,10 @@ mod tests {
             detail.contains(&crate::project::MINIMUM_JAVA_MAJOR.to_string()),
             "详情行必须报出闸门数值：{detail}"
         );
-        assert!(detail.contains("JDT LS"), "详情行必须点明是哪个语言服务：{detail}");
+        assert!(
+            detail.contains("JDT LS"),
+            "详情行必须点明是哪个语言服务：{detail}"
+        );
         assert!(
             detail.contains("language service") || detail.contains("语言服务"),
             "详情行必须说清后果落在语言服务上：{detail}"
@@ -4547,10 +4576,7 @@ mod tests {
             meets_language_service: true,
             source: ToolSource::JavaHome,
         };
-        assert_eq!(
-            jdk_entry(&jdk),
-            r"D:\ProgramData\java\openjdk-21 (21.0.2)"
-        );
+        assert_eq!(jdk_entry(&jdk), r"D:\ProgramData\java\openjdk-21 (21.0.2)");
         // 没有 home 时退回可执行文件路径；没有版本时不加空括号。
         assert_eq!(
             jdk_entry(&DetectedJdk {

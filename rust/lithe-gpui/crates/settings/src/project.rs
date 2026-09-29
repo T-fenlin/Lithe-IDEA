@@ -707,9 +707,7 @@ impl ProjectEnvironment {
             return self.maven_jdk.effective();
         }
         match self.jdk.effective() {
-            EffectiveToolchain::Resolved {
-                path, version, ..
-            } => EffectiveToolchain::Resolved {
+            EffectiveToolchain::Resolved { path, version, .. } => EffectiveToolchain::Resolved {
                 mode: ToolMode::ProjectJdk,
                 path,
                 version,
@@ -1144,8 +1142,13 @@ pub fn below_requirement_reason(version: &str) -> String {
 /// 从"返回 Err"改成"带一个标志位"）。
 fn probe_jdk(path: &str) -> Result<DetectedTool, String> {
     let path = Path::new(path);
-    let executable = java_executable_in(path)
-        .ok_or_else(|| format!("找不到 {}（查过 {}）", java_executable_name(), path.display()))?;
+    let executable = java_executable_in(path).ok_or_else(|| {
+        format!(
+            "找不到 {}（查过 {}）",
+            java_executable_name(),
+            path.display()
+        )
+    })?;
     let version = probe_java_version(&executable)?;
     Ok(DetectedTool {
         path: home_of(&executable)
@@ -1238,10 +1241,7 @@ fn absent_is_reportable(source: ToolSource, path: &Path) -> bool {
 }
 
 /// 一个 Maven 候选 → 一个探测成功的 Maven。
-fn probe_maven_executable(
-    executable: &str,
-    source: ToolSource,
-) -> Result<DetectedMaven, String> {
+fn probe_maven_executable(executable: &str, source: ToolSource) -> Result<DetectedMaven, String> {
     let output = run_version(Path::new(executable), &["-version"])?;
     let version = maven_version_text(&output).unwrap_or_default();
     Ok(DetectedMaven {
@@ -1308,7 +1308,10 @@ pub fn java_version_text(output: &str) -> Option<String> {
         if let Some(quoted) = rest.strip_prefix('"') {
             return non_empty(quoted.split('"').next().unwrap_or_default());
         }
-        return rest.split_whitespace().next().and_then(|value| non_empty(value));
+        return rest
+            .split_whitespace()
+            .next()
+            .and_then(|value| non_empty(value));
     }
     None
 }
@@ -1317,7 +1320,9 @@ pub fn java_version_text(output: &str) -> Option<String> {
 pub fn maven_version_text(output: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let rest = line.trim().strip_prefix("Apache Maven")?;
-        rest.split_whitespace().next().and_then(|value| non_empty(value))
+        rest.split_whitespace()
+            .next()
+            .and_then(|value| non_empty(value))
     })
 }
 
@@ -1599,7 +1604,10 @@ mod tests {
         };
         let candidates = java_candidates(&env);
         assert_eq!(candidates[0].source, ToolSource::EnvOverride);
-        assert_eq!(candidates[0].path, PathBuf::from(r"D:\explicit\bin\java.exe"));
+        assert_eq!(
+            candidates[0].path,
+            PathBuf::from(r"D:\explicit\bin\java.exe")
+        );
         assert_eq!(candidates[1].source, ToolSource::JavaHome);
         assert_eq!(
             candidates[1].path,
@@ -1641,7 +1649,10 @@ mod tests {
             .expect("写文件失败");
 
         let env = EnvSnapshot {
-            install_roots: vec![("ProgramData".to_string(), program_data.display().to_string())],
+            install_roots: vec![(
+                "ProgramData".to_string(),
+                program_data.display().to_string(),
+            )],
             ..EnvSnapshot::default()
         };
         let roots = installed_jdk_roots(&env);
@@ -1674,7 +1685,10 @@ mod tests {
             )],
             ..EnvSnapshot::default()
         };
-        assert_eq!(installed_jdk_roots(&env), vec![base.join("nope").join("java")]);
+        assert_eq!(
+            installed_jdk_roots(&env),
+            vec![base.join("nope").join("java")]
+        );
 
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -1692,7 +1706,10 @@ mod tests {
             std::fs::create_dir_all(java.join(format!("jdk-{index:03}"))).expect("建目录失败");
         }
         let env = EnvSnapshot {
-            install_roots: vec![("ProgramData".to_string(), base.join("ProgramData").display().to_string())],
+            install_roots: vec![(
+                "ProgramData".to_string(),
+                base.join("ProgramData").display().to_string(),
+            )],
             ..EnvSnapshot::default()
         };
         let roots = installed_jdk_roots(&env);
@@ -1713,7 +1730,11 @@ mod tests {
         };
         let candidates = java_candidates(&env);
         assert_eq!(candidates.len(), 2);
-        assert!(candidates.iter().all(|item| item.source == ToolSource::Path));
+        assert!(
+            candidates
+                .iter()
+                .all(|item| item.source == ToolSource::Path)
+        );
         assert_eq!(candidates[0].path, PathBuf::from(r"C:\Windows"));
     }
 
@@ -1870,17 +1891,20 @@ mod tests {
     #[test]
     fn local_repository_parsing_handles_the_documented_shapes() {
         assert_eq!(
-            local_repository_in(
-                "<settings><localRepository>D:\\repo</localRepository></settings>"
-            ),
+            local_repository_in("<settings><localRepository>D:\\repo</localRepository></settings>"),
             Some(r"D:\repo".to_string())
         );
         assert_eq!(
-            local_repository_in("<settings><localRepository>  /opt/repo  </localRepository></settings>"),
+            local_repository_in(
+                "<settings><localRepository>  /opt/repo  </localRepository></settings>"
+            ),
             Some("/opt/repo".to_string())
         );
         // 自闭合与空元素都 = "没写"（回落 Maven 默认位置）。
-        assert_eq!(local_repository_in("<settings><localRepository/></settings>"), None);
+        assert_eq!(
+            local_repository_in("<settings><localRepository/></settings>"),
+            None
+        );
         assert_eq!(
             local_repository_in("<settings><localRepository></localRepository></settings>"),
             None
@@ -1929,10 +1953,8 @@ mod tests {
     /// 没写就报 Maven 的默认位置（来源 = Maven 默认），主目录都没有时是 `None`（界面显示"未知"）。
     #[test]
     fn local_repository_falls_back_to_the_maven_default() {
-        let directory = std::env::temp_dir().join(format!(
-            "lithe-settings-localrepo-{}",
-            std::process::id()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("lithe-settings-localrepo-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("建临时目录失败");
         let home = directory.join("home");
@@ -1946,7 +1968,10 @@ mod tests {
         let repository = configuration.local_repository.expect("必须给出默认位置");
         assert_eq!(
             repository.path,
-            home.join(M2_DIRECTORY).join(REPOSITORY_DIRECTORY).display().to_string()
+            home.join(M2_DIRECTORY)
+                .join(REPOSITORY_DIRECTORY)
+                .display()
+                .to_string()
         );
         assert_eq!(repository.source, LocalRepositorySource::MavenDefault);
 
@@ -2178,9 +2203,7 @@ mod tests {
         let discovery = JdkDiscovery {
             overridden: None,
             candidates: Vec::new(),
-            rejected: vec![
-                r"C:\jdk8\bin\java.exe（版本 1.8.0_402 低于 21）".to_string(),
-            ],
+            rejected: vec![r"C:\jdk8\bin\java.exe（版本 1.8.0_402 低于 21）".to_string()],
         };
         let EffectiveToolchain::NotFound { reason } = discovery.effective() else {
             panic!("没有候选时必须报 NotFound");
@@ -2278,7 +2301,10 @@ mod tests {
         let source_at = line.find("source=").expect("缺 source=");
         let maven_at = line.find("maven=").expect("缺 maven=");
         let local_repo_at = line.find("localRepo=").expect("缺 localRepo=");
-        assert!(jdk_at < source_at && source_at < maven_at && maven_at < local_repo_at, "{line}");
+        assert!(
+            jdk_at < source_at && source_at < maven_at && maven_at < local_repo_at,
+            "{line}"
+        );
         // 界面上会显示的每个值都在行里。
         for expected in [
             r"jdk=D:\ProgramData\java\openjdk-21",
@@ -2385,7 +2411,10 @@ mod tests {
         assert_eq!(ToolSource::JavaHome.label_arg(), None);
         assert_eq!(ToolSource::Path.label_arg(), None);
         assert_eq!(ToolSource::InstalledRoot.label_arg(), None);
-        assert_eq!(ToolSource::EnvOverride.label_arg(), Some(JAVA_EXECUTABLE_ENV));
+        assert_eq!(
+            ToolSource::EnvOverride.label_arg(),
+            Some(JAVA_EXECUTABLE_ENV)
+        );
         assert_eq!(ToolSource::MavenHome.label_arg(), Some(MAVEN_HOME_ENV));
         // 三个模式的文案键必须是真源既有的那三条。
         assert_eq!(
@@ -2475,10 +2504,12 @@ mod tests {
         // 两条候选都还在"检测到的安装"里（版本是读到的事实，不许丢掉）。
         assert_eq!(discovery.candidates.len(), 2);
         // 诊断行要能把这件事说清楚，供 `S1_JAVA_JDTLS javaVersion=…` 逐项对照。
-        assert!(discovery
-            .candidates
-            .iter()
-            .all(|jdk| !jdk.meets_language_service));
+        assert!(
+            discovery
+                .candidates
+                .iter()
+                .all(|jdk| !jdk.meets_language_service)
+        );
     }
 
     /// **自动发现这条路（混合）**：候选里有一个过闸门的，生效值就是**那一个**

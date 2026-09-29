@@ -72,8 +72,11 @@ impl Input {
     pub fn for_core_code(core_code: &str) -> Option<Self> {
         let severity = Severity::for_core_code(core_code)?;
         Some(
-            Self::new(Severity::notification_code_for_core_code(core_code), severity)
-                .param("coreCode", core_code),
+            Self::new(
+                Severity::notification_code_for_core_code(core_code),
+                severity,
+            )
+            .param("coreCode", core_code),
         )
     }
 
@@ -176,7 +179,11 @@ impl Store {
         // 先用不可变借用找位置，再单独可变借用改内容 —— 两步分开是为了不把
         // `iter_mut` 的借用拖到「挪到最前」那一步，两个阶段会互相冲突。
         if let Some(key) = input.key.as_ref() {
-            if let Some(position) = self.entries.iter().position(|entry| entry.key() == Some(key)) {
+            if let Some(position) = self
+                .entries
+                .iter()
+                .position(|entry| entry.key() == Some(key))
+            {
                 self.entries[position].replace_with(
                     input.code,
                     input.params,
@@ -342,7 +349,11 @@ mod tests {
         store.record(input("b", Severity::Info), clock.next());
         store.record(input("c", Severity::Info), clock.next());
 
-        let codes: Vec<_> = store.entries().iter().map(|e| e.code().to_string()).collect();
+        let codes: Vec<_> = store
+            .entries()
+            .iter()
+            .map(|e| e.code().to_string())
+            .collect();
         assert_eq!(codes, vec!["c", "b", "a"]);
     }
 
@@ -405,10 +416,7 @@ mod tests {
         }
         assert_eq!(store.len(), MAX_ENTRIES);
         assert_eq!(store.entries()[0].code().to_string(), "n104");
-        assert_eq!(
-            store.entries()[MAX_ENTRIES - 1].code().to_string(),
-            "n5"
-        );
+        assert_eq!(store.entries()[MAX_ENTRIES - 1].code().to_string(), "n5");
     }
 
     /// 角标：红点优先于蓝点。
@@ -536,7 +544,10 @@ mod tests {
         store.record(input, 1);
         let entry = &store.entries()[0];
         assert_eq!(entry.severity(), Severity::Error);
-        assert_eq!(entry.code().to_string(), "lithe.notifications.core.processFailed");
+        assert_eq!(
+            entry.code().to_string(),
+            "lithe.notifications.core.processFailed"
+        );
         assert!(
             entry.matches_query("process_failed"),
             "coreCode 参数必须可搜"

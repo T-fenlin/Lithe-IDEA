@@ -446,7 +446,10 @@ mod tests {
 
         let body = read_body(&path, "app.bin");
 
-        assert!(!body.writable, "二进制文件给出的是说明文案，写回会毁掉原文件");
+        assert!(
+            !body.writable,
+            "二进制文件给出的是说明文案，写回会毁掉原文件"
+        );
         assert!(
             body.text.contains("二进制"),
             "应是二进制说明：{:?}",

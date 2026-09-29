@@ -89,7 +89,10 @@ impl ChangeKind {
         if worktree == 'D' || index == 'D' {
             return Self::Deleted;
         }
-        if [index, worktree].iter().any(|code| *code == 'R' || *code == 'C') {
+        if [index, worktree]
+            .iter()
+            .any(|code| *code == 'R' || *code == 'C')
+        {
             return Self::Renamed;
         }
         if worktree == 'A' {
@@ -787,6 +790,10 @@ mod tests {
         // 见 [`super::ChangesSnapshot::unstaged_count`]）：一行已跟踪改动 + 一行未跟踪 = 2。
         assert_eq!(snapshot.unstaged_count(), 2);
         assert_eq!(snapshot.staged_count(), 0);
-        assert!(snapshot.diagnose().starts_with("S1_SOURCE_CONTROL files=2 staged=0 unstaged=2"));
+        assert!(
+            snapshot
+                .diagnose()
+                .starts_with("S1_SOURCE_CONTROL files=2 staged=0 unstaged=2")
+        );
     }
 }

@@ -578,7 +578,14 @@ pub const KEY_RESET_ZOOM: &str = "ctrl-0";
 // （B4 的 `OpenProjectFolder` 当初也是为了同样的理由留在 `workspace`，见那里的注释）。
 gpui_kit::actions!(
     lithe_workbench,
-    [ReopenTab, ToggleSidebar, ToggleTerminalPane, ZoomIn, ZoomOut, ResetZoom]
+    [
+        ReopenTab,
+        ToggleSidebar,
+        ToggleTerminalPane,
+        ZoomIn,
+        ZoomOut,
+        ResetZoom
+    ]
 );
 
 /// 把一次"键位按下"换成菜单动作（[`install_menu_key`] 的处理器）。
@@ -2198,9 +2205,9 @@ pub(crate) fn set_menu_bar(bar: gpui_kit::WeakEntity<MenuBar>) {
 ///
 /// `pub` 是给 `--menu-probe` 用的（诊断入口，见 [`MenuBar::open_by_id`] 的说明）。
 pub fn handle() -> gpui_kit::WeakEntity<MenuBar> {
-    MENU_BAR.with(|slot| slot.borrow().clone()).expect(
-        "菜单栏句柄没有登记：`ShellWorkspace::new` 必须在 `render` 之前调 `set_menu_bar`",
-    )
+    MENU_BAR
+        .with(|slot| slot.borrow().clone())
+        .expect("菜单栏句柄没有登记：`ShellWorkspace::new` 必须在 `render` 之前调 `set_menu_bar`")
 }
 
 /// 同 [`handle`]，但**不 panic**：句柄还没登记时给 `None`。
@@ -2219,7 +2226,8 @@ pub(crate) fn take_pending_runs(cx: &mut App) -> Vec<MenuRequest> {
     let Some(bar) = MENU_BAR.with(|slot| slot.borrow().clone()) else {
         return Vec::new();
     };
-    bar.update(cx, |bar, _| bar.drain_runs()).unwrap_or_default()
+    bar.update(cx, |bar, _| bar.drain_runs())
+        .unwrap_or_default()
 }
 
 /// 「切换菜单栏」的实现（`Ctrl+M`）。句柄丢了（窗口正在关）就什么都不做。
@@ -2277,7 +2285,11 @@ pub(crate) fn render_bar(
 }
 
 /// 形态 B：与标题栏同一行的 24px 胶囊。
-fn pinned_bar(bar: &mut MenuBar, window: &mut Window, cx: &mut Context<MenuBar>) -> impl IntoElement {
+fn pinned_bar(
+    bar: &mut MenuBar,
+    window: &mut Window,
+    cx: &mut Context<MenuBar>,
+) -> impl IntoElement {
     // ⚠️ 顶级项**逐个 `.child(..)`**，不要写成
     // `.children((0..MENUS.len()).map(|index| trigger(.., window, cx)))`：
     // `window` / `cx` 是可变借用，那个 `map` 闭包一构造就要求独占访问，而外层
@@ -2635,13 +2647,16 @@ fn build_popup(
                     //
                     // ⚠️ 传了 `action` 也**不会**改点击行为：`PopupMenu::confirm` 先看
                     // `handler`，有它就只跑 handler（`popup_menu.rs:864-873`）。
-                    let mut item = PopupMenuItem::new(action.label()).icon(Icon::new(action.icon()));
+                    let mut item =
+                        PopupMenuItem::new(action.label()).icon(Icon::new(action.icon()));
                     if let Some(bound) = action.keybind_action() {
                         item = item.action(bound);
                     }
-                    popup.item(item.on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                        let _ = item_handle.update(cx, |bar, cx| bar.push_run(action, cx));
-                    }))
+                    popup.item(item.on_click(
+                        move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                            let _ = item_handle.update(cx, |bar, cx| bar.push_run(action, cx));
+                        },
+                    ))
                 }
                 // B3 的占位项：**画出来、可点**（Q2），点了由外壳给"尚未接入：缺 X"。
                 //
@@ -2668,9 +2683,10 @@ fn build_popup(
                     )
                 }
                 MenuItem::Theme => match &theme_menu {
-                    Some(submenu) => {
-                        popup.item(PopupMenuItem::submenu(tr("lithe.menu.theme"), submenu.clone()))
-                    }
+                    Some(submenu) => popup.item(PopupMenuItem::submenu(
+                        tr("lithe.menu.theme"),
+                        submenu.clone(),
+                    )),
                     // 注册表里一个主题都没有（宿主没装主题目录）：这一条**不画**，
                     // 而不是画一个点开是空的子菜单。
                     None => popup,
@@ -2685,11 +2701,7 @@ fn build_popup(
 ///
 /// ⚠️ 与真源一致的两点：**不打勾**当前主题（真源没有勾选态，`10-menu-bar.md` §2.3），
 /// 也没有"跟随系统"那一项（真源同样没有）。
-fn theme_menu(
-    names: Vec<String>,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<PopupMenu> {
+fn theme_menu(names: Vec<String>, window: &mut Window, cx: &mut App) -> Entity<PopupMenu> {
     PopupMenu::build(window, cx, move |popup, window, _cx| {
         let rem = window.rem_size();
         let mut popup = popup.min_w(crate::rem_px(rem, PANEL_MIN_WIDTH_SPEC));
@@ -2771,10 +2783,7 @@ mod tests {
             (CloseReason::Switch, "switch"),
         ];
         let ids: Vec<&str> = reasons.iter().map(|(reason, _)| reason.id()).collect();
-        assert_eq!(
-            ids,
-            vec!["dismiss", "toggle", "escape", "select", "switch"]
-        );
+        assert_eq!(ids, vec!["dismiss", "toggle", "escape", "select", "switch"]);
         let mut unique = ids.clone();
         unique.sort_unstable();
         unique.dedup();
@@ -2793,8 +2802,16 @@ mod tests {
         use crate::command_palette::CommandId;
 
         let expected = [
-            (MenuAction::OpenFile, "lithe.outline.openFile", CommandId::OpenFile),
-            (MenuAction::CloseTab, "lithe.menu.closeTab", CommandId::CloseTab),
+            (
+                MenuAction::OpenFile,
+                "lithe.outline.openFile",
+                CommandId::OpenFile,
+            ),
+            (
+                MenuAction::CloseTab,
+                "lithe.menu.closeTab",
+                CommandId::CloseTab,
+            ),
             (
                 MenuAction::CloseOtherTabs,
                 "lithe.menu.closeOtherTabs",
@@ -2926,21 +2943,49 @@ mod tests {
             (MenuAction::Paste, "lithe.menu.paste", true),
             (MenuAction::SelectAll, "lithe.menu.selectAll", true),
             (MenuAction::Find, "lithe.menu.find", true),
-            (MenuAction::FindAndReplace, "lithe.menu.findAndReplace", true),
+            (
+                MenuAction::FindAndReplace,
+                "lithe.menu.findAndReplace",
+                true,
+            ),
             (MenuAction::QuickFix, "lithe.menu.quickFix", true),
             // 侧栏 / 终端 / 缩放 / 菜单栏：Q13 明确要绑的。
-            (MenuAction::ToggleActivitySidebar, "lithe.menu.toggleActivitySidebar", true),
-            (MenuAction::ToggleTerminal, "lithe.menu.toggleTerminal", true),
+            (
+                MenuAction::ToggleActivitySidebar,
+                "lithe.menu.toggleActivitySidebar",
+                true,
+            ),
+            (
+                MenuAction::ToggleTerminal,
+                "lithe.menu.toggleTerminal",
+                true,
+            ),
             (MenuAction::ZoomIn, "lithe.menu.zoomIn", true),
             (MenuAction::ZoomOut, "lithe.menu.zoomOut", true),
             (MenuAction::ResetZoom, "lithe.menu.resetZoom", true),
             (MenuAction::ToggleMenuBar, "lithe.menu.toggleMenuBar", true),
-            (MenuAction::ReopenClosedTab, "lithe.menu.reopenClosedTab", true),
+            (
+                MenuAction::ReopenClosedTab,
+                "lithe.menu.reopenClosedTab",
+                true,
+            ),
             // 真源有键位、本侧**有意不绑**（Q3：不绑就不显示）。
-            (MenuAction::ToggleSecondarySidebar, "lithe.menu.toggleSecondarySidebar", false),
+            (
+                MenuAction::ToggleSecondarySidebar,
+                "lithe.menu.toggleSecondarySidebar",
+                false,
+            ),
             (MenuAction::ShowDiagnostics, "lithe.menu.diagnostics", false),
-            (MenuAction::ShowFileExplorer, "lithe.menu.fileExplorer", false),
-            (MenuAction::ShowSourceControl, "lithe.menu.sourceControl", false),
+            (
+                MenuAction::ShowFileExplorer,
+                "lithe.menu.fileExplorer",
+                false,
+            ),
+            (
+                MenuAction::ShowSourceControl,
+                "lithe.menu.sourceControl",
+                false,
+            ),
             (MenuAction::ShowRunAndDebug, "lithe.menu.runAndDebug", false),
         ];
 
@@ -3136,7 +3181,7 @@ mod tests {
         assert_eq!(not_wired_count(), declared.len());
         // 菜单项总数 = 真源 89 条 + 本侧新增 4 条（少画一条这里就红）。
         assert_eq!(
-            action_count() + not_wired_count() + 1 /* Theme 子菜单 */,
+            action_count() + not_wired_count() + 1, /* Theme 子菜单 */
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
         );
         assert!(
@@ -3316,7 +3361,10 @@ mod tests {
         // 点「运行」→ 上一个收起、这个展开（受控单值语义）。
         let switched = resolve_menu_toggle(state, 5);
         assert_eq!(switched, NavState::Open(5));
-        assert_ne!(switched, state, "切到别的顶级菜单必须换打开项，不是两个都开");
+        assert_ne!(
+            switched, state,
+            "切到别的顶级菜单必须换打开项，不是两个都开"
+        );
 
         // 再点自己 → 收起。
         assert_eq!(resolve_menu_toggle(switched, 5), NavState::Closed);

@@ -324,7 +324,10 @@ fn string_map(value: Option<&serde_json::Value>) -> HashMap<String, String> {
             continue;
         }
         if let Some(text) = value.as_str() {
-            map.insert(key.to_ascii_lowercase(), text.trim_start_matches("./").to_string());
+            map.insert(
+                key.to_ascii_lowercase(),
+                text.trim_start_matches("./").to_string(),
+            );
         }
     }
     map
@@ -359,7 +362,10 @@ fn extension_candidates(lower_name: &str) -> Vec<&str> {
         // 这类名字靠 `filenames` 表命中；纯名字（无点）没有后缀可试。
         return Vec::new();
     }
-    lower_name.match_indices('.').map(|(index, _)| &lower_name[index..]).collect()
+    lower_name
+        .match_indices('.')
+        .map(|(index, _)| &lower_name[index..])
+        .collect()
 }
 
 /// 单表命中；`None` 表示"这一级没有专属图标"。
@@ -474,7 +480,11 @@ mod tests {
                 "icons/expui/fileTypes/yaml.svg",
             ),
         ] {
-            assert_eq!(relative(theme.file_path(name, true)), Some(dark), "dark: {name}");
+            assert_eq!(
+                relative(theme.file_path(name, true)),
+                Some(dark),
+                "dark: {name}"
+            );
             assert_eq!(
                 relative(theme.file_path(name, false)),
                 Some(light),

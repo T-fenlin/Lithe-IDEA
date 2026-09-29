@@ -949,7 +949,10 @@ mod tests {
         assert_eq!(normalize_editor_font_size(22.0), EDITOR_FONT_SIZE_MAX);
         assert_eq!(normalize_editor_font_size(0.0), EDITOR_FONT_SIZE_MIN);
         assert_eq!(normalize_editor_font_size(999.0), EDITOR_FONT_SIZE_MAX);
-        assert_eq!(normalize_editor_font_size(f64::NAN), EDITOR_FONT_SIZE_DEFAULT);
+        assert_eq!(
+            normalize_editor_font_size(f64::NAN),
+            EDITOR_FONT_SIZE_DEFAULT
+        );
     }
 
     /// 制表符宽度与终端 shell 都是白名单：非法值回落默认，合法值原样留下。

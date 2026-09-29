@@ -29,7 +29,7 @@ use lithe_gpui_shared::core_json;
 use serde_json::{Value, json};
 
 use crate::events::JavaDiagnostic;
-use crate::jdtls::{self, JdtlsInstallation, JavaRuntime};
+use crate::jdtls::{self, JavaRuntime, JdtlsInstallation};
 use crate::session::{Session, SessionSpec, SessionTimeouts};
 use crate::workspace;
 
@@ -621,7 +621,10 @@ impl JavaLanguageService {
 
     /// 关闭会话（应用退出时调；`Idle` / `Failed` 时是空操作）。
     pub fn shutdown(&self) {
-        let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let State::Ready(session) = std::mem::replace(&mut *state, State::Closed) {
             session.shutdown();
         } else {
@@ -635,7 +638,10 @@ impl JavaLanguageService {
 
     /// 幂等启动：已经就绪直接返回；失败过就不再重试（见模块文档）。
     fn ensure_session(&self) -> Result<(), String> {
-        let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         match &*state {
             State::Ready(_) => return Ok(()),
             State::Failed(reason) => return Err(reason.clone()),
@@ -829,11 +835,7 @@ impl JavaLanguageService {
     }
 
     /// `jdt://` 虚拟源码目标：先用 `virtualDocument` 把源码取回来，再交给编辑器。
-    fn virtual_target(
-        &self,
-        session: &Session,
-        location: &Value,
-    ) -> Result<JavaTarget, String> {
+    fn virtual_target(&self, session: &Session, location: &Value) -> Result<JavaTarget, String> {
         let uri = location
             .get("uri")
             .and_then(Value::as_str)
@@ -1254,7 +1256,10 @@ mod tests {
 
         assert_eq!(item.label, "greet(String)");
         assert_eq!(item.kind, Some(2));
-        assert_eq!(item.detail.as_deref(), Some("String Greeter.greet(String name)"));
+        assert_eq!(
+            item.detail.as_deref(),
+            Some("String Greeter.greet(String name)")
+        );
         assert_eq!(item.sort_text.as_deref(), Some("0001"));
         // snippet 必须被 Core 的 `lsp.plainSnippet` 还原成纯文本（占位符一个都不许留），
         // 否则用户接受补全会把 `${1:name}` 原样插进源码。
@@ -1303,10 +1308,14 @@ mod tests {
     /// （`crate::events::completion_outcome`）。两处形状必须钉在一起：改动任何一边都该红。
     #[test]
     fn superseded_matches_the_event_pump_error_shape() {
-        assert!(is_superseded("staleDocumentVersion@document：文档版本已变旧"));
+        assert!(is_superseded(
+            "staleDocumentVersion@document：文档版本已变旧"
+        ));
         assert!(is_superseded("requestCancelled@request：（无消息）"));
         assert!(!is_superseded("requestTimeout@request：语义请求超时"));
-        assert!(!is_superseded("事件泵已退出（waitEvents: process_failed：会话已不在运行）"));
+        assert!(!is_superseded(
+            "事件泵已退出（waitEvents: process_failed：会话已不在运行）"
+        ));
     }
 
     /// 一条 codeAction 条目（形状逐字取真实 JDTLS 的响应，见 `.artifacts/p17/probe2.log`：
@@ -1339,7 +1348,10 @@ mod tests {
         let path = PathBuf::from(r"C:\ws\src\main\java\demo\ImportFix.java");
         let CodeActionOutcome::Usable(action) = parse_code_action(&code_action_fixture(), &path)
         else {
-            panic!("这条 action 能落地：{:?}", parse_code_action(&code_action_fixture(), &path));
+            panic!(
+                "这条 action 能落地：{:?}",
+                parse_code_action(&code_action_fixture(), &path)
+            );
         };
         assert_eq!(action.title, "Import 'List' (java.util)");
         assert_eq!(action.kind.as_deref(), Some("quickfix"));
@@ -1372,12 +1384,18 @@ mod tests {
             },
             "command": Value::Null
         });
-        match parse_code_action(&action, Path::new(r"C:\ws\src\main\java\demo\ImportFix.java")) {
+        match parse_code_action(
+            &action,
+            Path::new(r"C:\ws\src\main\java\demo\ImportFix.java"),
+        ) {
             CodeActionOutcome::Unusable {
                 other_file_edits,
                 has_command,
             } => {
-                assert_eq!(other_file_edits, 1, "别的文件的编辑条数要报出来（诊断行靠它）");
+                assert_eq!(
+                    other_file_edits, 1,
+                    "别的文件的编辑条数要报出来（诊断行靠它）"
+                );
                 assert!(!has_command, "这条不是 command 型");
             }
             other => panic!("只落在别人的文件上就该判 Unusable：{other:?}"),
@@ -1390,7 +1408,10 @@ mod tests {
     fn code_action_tolerates_missing_and_malformed_fields() {
         let path = Path::new(r"C:\ws\demo\A.java");
         // 没有 `title` 的：结构不认识（Core 也是这个判据 —— 标题是菜单里唯一要显示的东西）。
-        for broken in [json!({ "kind": "quickfix", "edit": Value::Null }), json!({})] {
+        for broken in [
+            json!({ "kind": "quickfix", "edit": Value::Null }),
+            json!({}),
+        ] {
             assert!(
                 matches!(
                     parse_code_action(&broken, path),
@@ -1541,10 +1562,7 @@ mod tests {
 
     /// 一个 LSP 位置。
     fn position(line: u32, utf16_column: u32) -> JavaPosition {
-        JavaPosition {
-            line,
-            utf16_column,
-        }
+        JavaPosition { line, utf16_column }
     }
 
     // -----------------------------------------------------------------------
@@ -1680,7 +1698,10 @@ mod tests {
             sources.join("Greeter.java").canonicalize().ok(),
             "跨文件定义必须落在 Greeter.java"
         );
-        assert_eq!(target_line, 3, "`greet` 声明在 Greeter.java 第 4 行（0 基 3）");
+        assert_eq!(
+            target_line, 3,
+            "`greet` 声明在 Greeter.java 第 4 行（0 基 3）"
+        );
 
         // `jdt://`：`System` 是 JDK 里的类，JDT 只能给虚拟源码（反编译结果）。
         let system_line = APP
@@ -1854,15 +1875,15 @@ mod tests {
              要么 `lsp.syncDocument` 没让服务端重算，要么泵没把 `diagnostics` 事件归档"
         );
         assert!(
-            diagnostics.iter().any(|diagnostic| diagnostic.severity == Some(1)),
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity == Some(1)),
             "`String` 赋给 `int` 至少该有一条 Error（severity=1）：{diagnostics:?}"
         );
         let on_error_line = diagnostics
             .iter()
             .find(|diagnostic| diagnostic.range.start.line == error_line)
-            .unwrap_or_else(|| {
-                panic!("没有一条诊断落在错误行 {error_line}：{diagnostics:?}")
-            });
+            .unwrap_or_else(|| panic!("没有一条诊断落在错误行 {error_line}：{diagnostics:?}"));
         assert!(
             on_error_line.range.start.utf16_column < on_error_line.range.end.utf16_column,
             "诊断范围不能是空区间（空区间的波浪线画不出来）：{on_error_line:?}"

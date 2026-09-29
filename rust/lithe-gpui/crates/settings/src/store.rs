@@ -149,7 +149,8 @@ pub fn store(cx: &App) -> Entity<SettingsStore> {
 /// 取设置状态；还没初始化时返回 `None`（主题目录的热重载回调可能比 `init` 早/晚，见
 /// [`crate::theme::watch_lithe_themes`]）。
 pub fn try_store(cx: &App) -> Option<Entity<SettingsStore>> {
-    cx.try_global::<SettingsHandle>().map(|handle| handle.0.clone())
+    cx.try_global::<SettingsHandle>()
+        .map(|handle| handle.0.clone())
 }
 
 /// 启动参数。
@@ -237,9 +238,9 @@ pub fn init_store(cx: &mut App, init: Init) -> Entity<SettingsStore> {
     // （`lithe-gpui/themes/lithe-dark.json:9` = 16.0）写回 `Theme.font_size`，把 uiFontSize 的缩放抹掉。
     // 这里把它纠回来：只在真的不一致时才写，所以最多再触发一轮观察者就收敛。
     store.update(cx, |store, cx| {
-        store.theme_subscription = Some(cx.observe_global::<gpui_kit::component::Theme>(
-            |store, cx| store.enforce_rem_base(cx),
-        ));
+        store.theme_subscription = Some(
+            cx.observe_global::<gpui_kit::component::Theme>(|store, cx| store.enforce_rem_base(cx)),
+        );
     });
 
     store
@@ -467,10 +468,7 @@ impl SettingsStore {
         self.commit_appearance(
             cx,
             &[
-                (
-                    AppearanceKey::SyncSystemTheme,
-                    AppearanceValue::Flag(false),
-                ),
+                (AppearanceKey::SyncSystemTheme, AppearanceValue::Flag(false)),
                 (AppearanceKey::Theme, AppearanceValue::Text(id.to_string())),
             ],
             Effects::Theme,
@@ -542,10 +540,7 @@ impl SettingsStore {
     pub fn set_font_family(&mut self, family: String, cx: &mut Context<Self>) {
         self.commit_appearance(
             cx,
-            &[(
-                AppearanceKey::FontFamily,
-                AppearanceValue::Text(family),
-            )],
+            &[(AppearanceKey::FontFamily, AppearanceValue::Text(family))],
             Effects::FontFamily,
         );
     }
@@ -554,10 +549,7 @@ impl SettingsStore {
     pub fn set_mono_font_family(&mut self, family: String, cx: &mut Context<Self>) {
         self.commit_appearance(
             cx,
-            &[(
-                AppearanceKey::MonoFontFamily,
-                AppearanceValue::Text(family),
-            )],
+            &[(AppearanceKey::MonoFontFamily, AppearanceValue::Text(family))],
             Effects::FontFamily,
         );
     }
@@ -699,7 +691,12 @@ impl SettingsStore {
     /// （`lib/settings-persistence.ts:34` 的 `if (!isEqual(currentValue, nextValue))`）。
     /// 它同时挡住一类噪音：数字输入框在**创建**时会先发一次值不变的 `InputEvent::Change`，
     /// 不去重就会出现"只是打开设置对话框，什么都没改，却写了一次盘"。
-    fn commit_global(&mut self, cx: &mut Context<Self>, mut next: Settings, effects: Effects) -> bool {
+    fn commit_global(
+        &mut self,
+        cx: &mut Context<Self>,
+        mut next: Settings,
+        effects: Effects,
+    ) -> bool {
         next.normalize();
         if next == self.global {
             return false;
@@ -895,7 +892,11 @@ impl SettingsStore {
     ///
     /// 只有这一件事需要问 Git（判据见 [`AppearanceSource::ProjectShared`]），所以由外壳在
     /// 打开项目的后台任务里查一次再回填，本 crate 不认识 Core。`None` = 还没问到。
-    pub fn set_workspace_settings_tracked(&mut self, tracked: Option<bool>, cx: &mut Context<Self>) {
+    pub fn set_workspace_settings_tracked(
+        &mut self,
+        tracked: Option<bool>,
+        cx: &mut Context<Self>,
+    ) {
         if self.workspace_shared_tracked == tracked {
             return;
         }
@@ -1155,15 +1156,13 @@ impl SettingsStore {
         if self.appearance_subscription.is_some() {
             return;
         }
-        self.appearance_subscription = Some(cx.observe_window_appearance(
-            window,
-            |store, window, cx| {
+        self.appearance_subscription =
+            Some(cx.observe_window_appearance(window, |store, window, cx| {
                 if !store.settings.sync_system_theme {
                     return;
                 }
                 store.apply_theme_for(window.appearance(), cx);
-            },
-        ));
+            }));
     }
 
     fn apply_theme(&mut self, cx: &mut Context<Self>) {
@@ -1252,7 +1251,9 @@ impl SettingsStore {
         let armed = self.debounce.arm();
         cx.spawn(async move |this, cx| {
             cx.background_executor()
-                .timer(std::time::Duration::from_millis(persistence::SAVE_DEBOUNCE_MS))
+                .timer(std::time::Duration::from_millis(
+                    persistence::SAVE_DEBOUNCE_MS,
+                ))
                 .await;
             // 实体可能已经销毁：`update` 返回 `Err` 时静默忽略，不 panic。
             let _ = this.update(cx, |store, _| store.flush_if_current(armed));

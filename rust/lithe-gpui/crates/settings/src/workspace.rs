@@ -474,7 +474,8 @@ pub struct LoadedOverlay {
 pub fn load_overlay(path: &Path) -> LoadedOverlay {
     match lithe_gpui_shared::read_document_text(path) {
         Ok(Some(text)) => {
-            let parsed = lithe_gpui_shared::parse::<AppearanceOverlay>(&text, WORKSPACE_SETTINGS_VERSION);
+            let parsed =
+                lithe_gpui_shared::parse::<AppearanceOverlay>(&text, WORKSPACE_SETTINGS_VERSION);
             LoadedOverlay {
                 overlay: parsed.value,
                 previous: parsed.previous,
@@ -567,7 +568,8 @@ mod tests {
 
     /// 独立的临时目录，用完删掉（目录名带调用方标记，避免并行测试互相踩）。
     fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("lithe-ws-settings-{tag}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("lithe-ws-settings-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -598,10 +600,7 @@ mod tests {
         let global = global_settings();
 
         let mut shared = AppearanceOverlay::default();
-        shared.set(
-            AppearanceKey::EditorFontSize,
-            AppearanceValue::Number(18.0),
-        );
+        shared.set(AppearanceKey::EditorFontSize, AppearanceValue::Number(18.0));
         shared.set(
             AppearanceKey::FontFamily,
             AppearanceValue::Text("Shared UI".to_string()),
@@ -657,7 +656,8 @@ mod tests {
           "terminalDefaultShellId": "cmd",
           "mavenSettingsPath": "D:\\project-settings.xml"
         }"#;
-        let parsed = lithe_gpui_shared::parse::<AppearanceOverlay>(text, WORKSPACE_SETTINGS_VERSION);
+        let parsed =
+            lithe_gpui_shared::parse::<AppearanceOverlay>(text, WORKSPACE_SETTINGS_VERSION);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         let effective = resolve_effective(&global, &parsed.value, &AppearanceOverlay::default());
 
@@ -688,7 +688,10 @@ mod tests {
         let mut overlay = AppearanceOverlay::default();
         overlay.set(AppearanceKey::UiFontSize, AppearanceValue::Number(99.0));
         overlay.set(AppearanceKey::EditorFontSize, AppearanceValue::Number(99.0));
-        overlay.set(AppearanceKey::TerminalFontSize, AppearanceValue::Number(-3.0));
+        overlay.set(
+            AppearanceKey::TerminalFontSize,
+            AppearanceValue::Number(-3.0),
+        );
 
         let effective = resolve_effective(&global, &overlay, &AppearanceOverlay::default());
         assert_eq!(effective.ui_font_size, UI_FONT_SIZE_MAX);
@@ -773,10 +776,7 @@ mod tests {
     fn the_decisive_theme_key_follows_the_sync_flag() {
         let mut settings = Settings::default();
         settings.sync_system_theme = false;
-        assert_eq!(
-            effective_theme_key(&settings, true),
-            AppearanceKey::Theme
-        );
+        assert_eq!(effective_theme_key(&settings, true), AppearanceKey::Theme);
         settings.sync_system_theme = true;
         assert_eq!(
             effective_theme_key(&settings, true),
@@ -821,7 +821,10 @@ mod tests {
             AppearanceValue::Text("JetBrains Mono".to_string()),
         );
         let document = write_overlay(&path, None, &overlay).expect("写入失败");
-        assert!(!lithe_gpui_shared::tmp_path(&path).exists(), "临时文件必须被 rename 掉");
+        assert!(
+            !lithe_gpui_shared::tmp_path(&path).exists(),
+            "临时文件必须被 rename 掉"
+        );
 
         let loaded = load_overlay(&path);
         assert!(loaded.file_existed);
@@ -835,8 +838,7 @@ mod tests {
         // 覆盖写：清掉一个字族键 → 文档里那个键**消失**（不是留 null）。
         let mut next = loaded.overlay.clone();
         next.clear(AppearanceKey::MonoFontFamily);
-        let document =
-            write_overlay(&path, loaded.previous.as_ref(), &next).expect("覆盖写失败");
+        let document = write_overlay(&path, loaded.previous.as_ref(), &next).expect("覆盖写失败");
         assert!(
             document.get("monoFontFamily").is_none(),
             "清掉的键必须从文档里删掉，而不是留一个 null：{document}"
@@ -943,11 +945,13 @@ mod tests {
             parsed.value.get(AppearanceKey::EditorFontSize),
             Some(AppearanceValue::Number(18.0))
         );
-        assert!(!lithe_gpui_shared::parse::<AppearanceOverlay>(
-            r#"{"version": 1}"#,
-            WORKSPACE_SETTINGS_VERSION
-        )
-        .read_only);
+        assert!(
+            !lithe_gpui_shared::parse::<AppearanceOverlay>(
+                r#"{"version": 1}"#,
+                WORKSPACE_SETTINGS_VERSION
+            )
+            .read_only
+        );
     }
 
     /// 诊断用的键名清单从文档对象直取（不经过 typed 解析）。
@@ -960,9 +964,6 @@ mod tests {
         }) else {
             panic!("必须是对象");
         };
-        assert_eq!(
-            describe_keys(&keys_in_document(&object)),
-            "theme,fontSize"
-        );
+        assert_eq!(describe_keys(&keys_in_document(&object)), "theme,fontSize");
     }
 }

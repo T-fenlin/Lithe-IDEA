@@ -35,7 +35,9 @@ use gpui_kit::{
 use lithe_gpui_shared::icons::FileIcon;
 use lithe_gpui_shared::tr;
 
-use crate::model::{RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot};
+use crate::model::{
+    RENDER_LIMIT, ROOT_ID, RowKind, build_tree_items, icon_for_file, load_snapshot,
+};
 
 // ---------------------------------------------------------------------------
 // 文案：全部走 `lithe_gpui_shared::tr`（key 逐字取 `windows/tauri/src/i18n/locale.ts`
@@ -548,7 +550,9 @@ impl Explorer {
                 // 逐层缩进 = 10 + depth × 16：**设计常量**的算术（`file-explorer/lib/file-tree-row.ts:1`
                 // 的 `FILE_TREE_BASE_INDENT = 10` + 默认 `fileTreeIndentSize: 16`），不是测量出来的
                 // 几何 —— 用 helper 底层的 `rems()` 表达后，缩进会随界面字号一起缩放。
-                .pl(rems((BASE_INDENT + entry.depth() as f32 * INDENT_STEP) / 16.))
+                .pl(rems(
+                    (BASE_INDENT + entry.depth() as f32 * INDENT_STEP) / 16.,
+                ))
                 .pr_1p5()
                 .rounded(rems(ROW_RADIUS / 16.))
                 .child(caret)
@@ -658,13 +662,13 @@ impl Explorer {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mut empty = Empty::new()
-        // `Empty` 的 render 里**硬编码**了 `.border_dashed().border_color(cx.theme().border)`
-        // （`gpui-component-0.6.6/src/empty.rs:74-75`），真机界面没有这圈虚线；
-        // 把边框色改成透明来关掉它（编辑器空态 `editor_view.rs:2671-2676` 用的是同一招）。
-        .border_color(cx.theme().transparent)
-        .header(
-            EmptyHeader::new().description(EmptyDescription::new().text_sm().child(message)),
-        );
+            // `Empty` 的 render 里**硬编码**了 `.border_dashed().border_color(cx.theme().border)`
+            // （`gpui-component-0.6.6/src/empty.rs:74-75`），真机界面没有这圈虚线；
+            // 把边框色改成透明来关掉它（编辑器空态 `editor_view.rs:2671-2676` 用的是同一招）。
+            .border_color(cx.theme().transparent)
+            .header(
+                EmptyHeader::new().description(EmptyDescription::new().text_sm().child(message)),
+            );
 
         if let Some((label, disabled)) = action {
             let button = Button::new("explorer-empty-action")
@@ -754,7 +758,12 @@ mod tests {
     /// —— 那正是建树时写死的稳定身份。
     #[test]
     fn row_element_ids_do_not_depend_on_the_visible_row_order() {
-        let nodes = ["dir:", "dir:src", "file:src/main.rs", "empty:src/empty-folder"];
+        let nodes = [
+            "dir:",
+            "dir:src",
+            "file:src/main.rs",
+            "empty:src/empty-folder",
+        ];
 
         let forward: Vec<String> = nodes.iter().map(|id| explorer_row_element_id(id)).collect();
         let reversed: Vec<String> = nodes

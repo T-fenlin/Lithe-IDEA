@@ -285,13 +285,15 @@ impl CloseScope {
                 .collect(),
             // 锚点不在（比如刚被别的路径关掉）→ 空集，不猜一个位置（与 `ToRight` 同口径）。
             Self::ToLeft(anchor) => {
-                let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor) else {
+                let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor)
+                else {
                     return Vec::new();
                 };
                 (0..position).collect()
             }
             Self::ToRight(anchor) => {
-                let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor) else {
+                let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor)
+                else {
                     return Vec::new();
                 };
                 (position + 1..buffers.len()).collect()
@@ -672,7 +674,11 @@ impl EditorPane {
         let task = cx.spawn(async move |pane, cx| {
             let fetched = cx
                 .background_spawn(crate::diagnostics::fetch(
-                    service, task_path.clone(), text, executor, debounce,
+                    service,
+                    task_path.clone(),
+                    text,
+                    executor,
+                    debounce,
                 ))
                 .await;
             // 编辑区可能已经销毁：`update` 返回 `Err` 时静默忽略，不 panic
@@ -815,9 +821,7 @@ impl EditorPane {
         let code_action_provider = (language == Some("java"))
             .then(|| self.java.clone())
             .flatten()
-            .map(|service| {
-                crate::code_actions::JavaCodeActionProvider::new(service, path.clone())
-            });
+            .map(|service| crate::code_actions::JavaCodeActionProvider::new(service, path.clone()));
 
         // 一个标签一个 `EditorState`：先建状态再灌正文，然后才入列。
         let editor = cx.new(|cx| {
@@ -886,8 +890,14 @@ impl EditorPane {
 
         // 实参从左到右求值，图标要在 `name` 被移进构造函数之前算好。
         let icon = icon_for_file(&name, cx);
-        self.buffers
-            .push(Buffer::new(path, name, icon, editor, writable, subscriptions));
+        self.buffers.push(Buffer::new(
+            path,
+            name,
+            icon,
+            editor,
+            writable,
+            subscriptions,
+        ));
         self.active = Some(self.buffers.len() - 1);
         self.sync_cursor(cx);
         // 诊断：新开的 Java buffer 立刻排一次取回。`language` 是刚算出来的语言名，
@@ -977,18 +987,17 @@ impl EditorPane {
         // ② 越界（它指向的文件被跳过了）→ 沿用"打开之前那一刻的活动标签"，与 `open`
         //    的既有语义一致，不硬选第一个（那会让用户看到光标跳到一个无关的文件上）；
         // ③ 之前根本没有活动标签（空编辑器）→ 落到第一个。
-        let mut active_index = active
-            .filter(|index| *index < opened.len())
-            .or_else(|| {
-                self.active_disk_file()
-                    .and_then(|path| opened.iter().position(|candidate| *candidate == path))
-            });
+        let mut active_index = active.filter(|index| *index < opened.len()).or_else(|| {
+            self.active_disk_file()
+                .and_then(|path| opened.iter().position(|candidate| *candidate == path))
+        });
         if active_index.is_none() && active.is_none() && !opened.is_empty() {
             active_index = Some(0);
         }
         if let Some(index) = active_index {
             if let Some(path) = opened.get(index) {
-                if let Some(position) = self.buffers.iter().position(|buffer| buffer.path == *path) {
+                if let Some(position) = self.buffers.iter().position(|buffer| buffer.path == *path)
+                {
                     self.activate(position, cx);
                 }
             }
@@ -1123,7 +1132,10 @@ impl EditorPane {
             return;
         };
 
-        let Some(origin_index) = self.buffers.iter().position(|buffer| buffer.path == origin_path)
+        let Some(origin_index) = self
+            .buffers
+            .iter()
+            .position(|buffer| buffer.path == origin_path)
         else {
             println!("S1_NAV_FAILED reason=buffer-closed");
             return;
@@ -1481,11 +1493,7 @@ impl EditorPane {
     /// `false` 的唯一原因是 store 已经不在了（换根时旧 `EditorPane` 连同它的异步任务一起
     /// 被 drop）。那种情况**不静默**：调用点打一行 `S1_NOTIFICATION action=record
     /// state=dropped`，因为「失败一定可见」是本仓库对失败反馈的一贯要求。
-    fn record_notification(
-        &self,
-        cx: &mut Context<Self>,
-        input: lithe_gpui_notify::Input,
-    ) -> bool {
+    fn record_notification(&self, cx: &mut Context<Self>, input: lithe_gpui_notify::Input) -> bool {
         match self.notifications.as_ref().and_then(WeakEntity::upgrade) {
             Some(store) => {
                 store.update(cx, |store, _| {
@@ -2129,7 +2137,12 @@ impl EditorPane {
 
     /// 「放弃修改」按下之后：不保存、直接执行收尾（这里**没有** dirty 检查 ——
     /// 用户刚刚明确选择丢弃）。
-    fn apply_confirm(&mut self, pending: PendingConfirm, window: &mut Window, cx: &mut Context<Self>) {
+    fn apply_confirm(
+        &mut self,
+        pending: PendingConfirm,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match pending {
             PendingConfirm::Single(index) => {
                 self.close(index);
@@ -2170,7 +2183,10 @@ impl EditorPane {
                 // 明确点了"保存"却丢掉另外几个文件的修改）。任何一个失败都保持对话框打开。
                 let targets = scope.targets(&self.buffers);
                 for index in &targets {
-                    let dirty = self.buffers.get(*index).is_some_and(|buffer| buffer.is_dirty);
+                    let dirty = self
+                        .buffers
+                        .get(*index)
+                        .is_some_and(|buffer| buffer.is_dirty);
                     if dirty && !self.write_buffer(*index, "lithe.editor.saveFailed", window, cx) {
                         return false;
                     }
@@ -2308,122 +2324,120 @@ impl EditorPane {
                     cx.notify();
                 }
             }))
-            .context_menu(move |mut menu: PopupMenu, window: &mut Window, _cx: &mut Context<PopupMenu>| {
-                // 诊断：这条行**只在菜单真的被打开时**才打（闭包由右键按下触发），
-                // 所以它同时是"右键命中了这个标签"的证据。
-                let mut items = 0usize;
-                let mut separators = 0usize;
+            .context_menu(
+                move |mut menu: PopupMenu, window: &mut Window, _cx: &mut Context<PopupMenu>| {
+                    // 诊断：这条行**只在菜单真的被打开时**才打（闭包由右键按下触发），
+                    // 所以它同时是"右键命中了这个标签"的证据。
+                    let mut items = 0usize;
+                    let mut separators = 0usize;
 
-                // ---- 复制路径 / 复制相对路径 -------------------------------------
-                menu = menu.item(
-                    PopupMenuItem::new(tr("lithe.files.copyPath"))
-                        .icon(IconName::Copy)
-                        .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
-                            pane.copy_path(index, cx);
-                        })),
-                );
-                items += 1;
-
-                menu = menu.item(
-                    PopupMenuItem::new(tr("lithe.files.copyRelativePath"))
-                        .icon(IconName::Copy)
-                        .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
-                            pane.copy_relative_path(index, cx);
-                        })),
-                );
-                items += 1;
-
-                // ---- 在资源管理器中显示 -----------------------------------------
-                menu = menu.item(
-                    PopupMenuItem::new(tr("lithe.files.reveal"))
-                        .icon(IconName::FolderOpen)
-                        .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
-                            pane.reveal_in_explorer(index, window, cx);
-                        })),
-                );
-                items += 1;
-
-                // ---- 在终端中打开（磁盘文件才有）--------------------------------
-                if on_disk {
+                    // ---- 复制路径 / 复制相对路径 -------------------------------------
                     menu = menu.item(
-                        PopupMenuItem::new(tr("lithe.files.openInTerminal"))
-                            .icon(IconName::Terminal)
-                            .on_click(window.listener_for(
-                                &pane,
-                                move |pane, _, window, cx| {
-                                    pane.open_in_terminal(index, window, cx);
-                                },
-                            )),
+                        PopupMenuItem::new(tr("lithe.files.copyPath"))
+                            .icon(IconName::Copy)
+                            .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
+                                pane.copy_path(index, cx);
+                            })),
                     );
                     items += 1;
-                }
 
-                // ---- 重新加载（磁盘文件才有）------------------------------------
-                if on_disk {
                     menu = menu.item(
-                        PopupMenuItem::new(tr("lithe.tabs.reload"))
-                            .icon(IconName::RotateCcw)
-                            .on_click(window.listener_for(
-                                &pane,
-                                move |pane, _, window, cx| {
-                                    pane.request_reload(index, window, cx);
-                                },
-                            )),
+                        PopupMenuItem::new(tr("lithe.files.copyRelativePath"))
+                            .icon(IconName::Copy)
+                            .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
+                                pane.copy_relative_path(index, cx);
+                            })),
                     );
                     items += 1;
-                }
 
-                // ---- sep-3：真源里恒出现的那一条（"重新加载"与"关闭"之间）-------
-                menu = menu.separator();
-                separators += 1;
+                    // ---- 在资源管理器中显示 -----------------------------------------
+                    menu = menu.item(
+                        PopupMenuItem::new(tr("lithe.files.reveal"))
+                            .icon(IconName::FolderOpen)
+                            .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
+                                pane.reveal_in_explorer(index, window, cx);
+                            })),
+                    );
+                    items += 1;
 
-                // ---- 关闭（右键的那个标签；`Ctrl+W` 是"关闭当前"，两者不同）------
-                menu = menu.item(
-                    PopupMenuItem::new(tr("lithe.tabs.close"))
-                        .icon(IconName::X)
-                        .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
-                            pane.request_close(index, window, cx);
-                        })),
-                );
-                items += 1;
+                    // ---- 在终端中打开（磁盘文件才有）--------------------------------
+                    if on_disk {
+                        menu = menu.item(
+                            PopupMenuItem::new(tr("lithe.files.openInTerminal"))
+                                .icon(IconName::Terminal)
+                                .on_click(window.listener_for(
+                                    &pane,
+                                    move |pane, _, window, cx| {
+                                        pane.open_in_terminal(index, window, cx);
+                                    },
+                                )),
+                        );
+                        items += 1;
+                    }
 
-                // ---- 关闭其他 / 关闭右侧 / 全部关闭（批量确认见 `close_scope`）----
-                menu = menu.item(
-                    PopupMenuItem::new(tr("lithe.tabs.closeOthers")).on_click(
+                    // ---- 重新加载（磁盘文件才有）------------------------------------
+                    if on_disk {
+                        menu = menu.item(
+                            PopupMenuItem::new(tr("lithe.tabs.reload"))
+                                .icon(IconName::RotateCcw)
+                                .on_click(window.listener_for(
+                                    &pane,
+                                    move |pane, _, window, cx| {
+                                        pane.request_reload(index, window, cx);
+                                    },
+                                )),
+                        );
+                        items += 1;
+                    }
+
+                    // ---- sep-3：真源里恒出现的那一条（"重新加载"与"关闭"之间）-------
+                    menu = menu.separator();
+                    separators += 1;
+
+                    // ---- 关闭（右键的那个标签；`Ctrl+W` 是"关闭当前"，两者不同）------
+                    menu = menu.item(
+                        PopupMenuItem::new(tr("lithe.tabs.close"))
+                            .icon(IconName::X)
+                            .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
+                                pane.request_close(index, window, cx);
+                            })),
+                    );
+                    items += 1;
+
+                    // ---- 关闭其他 / 关闭右侧 / 全部关闭（批量确认见 `close_scope`）----
+                    menu = menu.item(PopupMenuItem::new(tr("lithe.tabs.closeOthers")).on_click(
                         window.listener_for(&pane, {
                             let anchor = path.clone();
                             move |pane, _, window, cx| {
                                 pane.close_scope(CloseScope::Others(anchor.clone()), window, cx);
                             }
                         }),
-                    ),
-                );
-                items += 1;
+                    ));
+                    items += 1;
 
-                menu = menu.item(
-                    PopupMenuItem::new(tr("lithe.tabs.closeToRight")).on_click(
+                    menu = menu.item(PopupMenuItem::new(tr("lithe.tabs.closeToRight")).on_click(
                         window.listener_for(&pane, {
                             let anchor = path.clone();
                             move |pane, _, window, cx| {
                                 pane.close_scope(CloseScope::ToRight(anchor.clone()), window, cx);
                             }
                         }),
-                    ),
-                );
-                items += 1;
+                    ));
+                    items += 1;
 
-                menu = menu.item(
-                    PopupMenuItem::new(tr("lithe.tabs.closeAll")).on_click(
+                    menu = menu.item(PopupMenuItem::new(tr("lithe.tabs.closeAll")).on_click(
                         window.listener_for(&pane, move |pane, _, window, cx| {
                             pane.close_scope(CloseScope::All, window, cx);
                         }),
-                    ),
-                );
-                items += 1;
+                    ));
+                    items += 1;
 
-                eprintln!("S1_TAB_MENU opened=true tab={name} items={items} separators={separators}");
-                menu
-            })
+                    eprintln!(
+                        "S1_TAB_MENU opened=true tab={name} items={items} separators={separators}"
+                    );
+                    menu
+                },
+            )
             .into_any_element()
     }
 
@@ -2883,7 +2897,10 @@ mod tests {
 
         assert_ne!(tab_element_id(path), tab_close_element_id(path));
         assert_ne!(tab_close_element_id(path), tab_close_element_id(other));
-        assert_eq!(tab_close_element_id(path), "editor-tab-close:/workspace/src/main.rs");
+        assert_eq!(
+            tab_close_element_id(path),
+            "editor-tab-close:/workspace/src/main.rs"
+        );
     }
 
     /// [`rem_px`] 必须按**传入的 rem 基准**求值，而不是写死 16。

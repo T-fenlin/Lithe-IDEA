@@ -202,7 +202,11 @@ impl RunConfigurationView {
     /// （`detectors/mod.rs:156-171` 的 `with_toolchains` 会把 `command` 置空），
     /// 真正的命令行由启动计划按工具链组装，所以界面上如实说"没有固定命令行"。
     pub fn command_line(&self) -> Option<String> {
-        let command = self.command.as_deref().map(str::trim).filter(|c| !c.is_empty())?;
+        let command = self
+            .command
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())?;
         if self.args.is_empty() {
             Some(command.to_string())
         } else {
@@ -378,7 +382,9 @@ pub fn parse_generate(data: Option<&Value>) -> Result<RunProjectView, String> {
             provider_title: provider_title(&provider),
             provider,
             execution: RunExecution::from_id(
-                item.get("execution").and_then(Value::as_str).unwrap_or("application"),
+                item.get("execution")
+                    .and_then(Value::as_str)
+                    .unwrap_or("application"),
             ),
             command: text(item, "command"),
             args: strings(item.get("args")),
@@ -460,8 +466,11 @@ fn fetch(root: &Path) -> Result<(RunProjectView, usize, bool), String> {
         .to_str()
         .ok_or_else(|| "工作区根不是合法 UTF-8 路径".to_string())?;
 
-    let snapshot = core_json("workspace.snapshot", serde_json::json!({ "root": root_text }))
-        .map_err(|error| core_error_text(&error))?;
+    let snapshot = core_json(
+        "workspace.snapshot",
+        serde_json::json!({ "root": root_text }),
+    )
+    .map_err(|error| core_error_text(&error))?;
     let (paths, truncated) = parse_snapshot(snapshot.as_ref())?;
 
     let generated = core_json(
@@ -533,7 +542,10 @@ mod tests {
     fn generate_response_parses_every_field() {
         let view = parse_generate(Some(&generate_data())).expect("合法响应必须能解析");
         assert_eq!(view.entry_count, 2);
-        assert_eq!(view.java_entrypoints_origin.as_deref(), Some("previousGeneration"));
+        assert_eq!(
+            view.java_entrypoints_origin.as_deref(),
+            Some("previousGeneration")
+        );
         assert_eq!(view.configurations.len(), 2);
 
         let maven = &view.configurations[0];
@@ -590,7 +602,10 @@ mod tests {
             "files": ["pom.xml", 7, "src/Main.java"]
         })))
         .expect("合法 files 必须能解析");
-        assert_eq!(files, vec!["pom.xml".to_string(), "src/Main.java".to_string()]);
+        assert_eq!(
+            files,
+            vec!["pom.xml".to_string(), "src/Main.java".to_string()]
+        );
         assert!(!truncated);
     }
 
@@ -655,7 +670,10 @@ mod tests {
         // 认不出来的当 application（Core 的默认值）。
         assert_eq!(RunExecution::from_id("nope"), RunExecution::Application);
         assert_eq!(RunExecution::Service.label_key(), "lithe.run.services");
-        assert_eq!(RunExecution::Application.label_key(), "lithe.run.applications");
+        assert_eq!(
+            RunExecution::Application.label_key(),
+            "lithe.run.applications"
+        );
         assert_eq!(RunExecution::Task.label_key(), "lithe.run.tasks");
         assert_eq!(RunExecution::Group.label_key(), "lithe.run.groups");
     }
@@ -670,7 +688,10 @@ mod tests {
         assert!(line.contains("configs=2"), "{line}");
         assert!(line.contains("entryCount=2"), "{line}");
         assert!(line.contains("sources=generated:2"), "{line}");
-        assert!(line.contains("providers=npm.script:1,spring-boot.maven:1"), "{line}");
+        assert!(
+            line.contains("providers=npm.script:1,spring-boot.maven:1"),
+            "{line}"
+        );
         assert!(line.contains("origin=previousGeneration"), "{line}");
         assert!(line.contains("ms=34"), "{line}");
 
@@ -692,10 +713,8 @@ mod tests {
     /// 所以夹具必须同时有 `<modules>` 之外的合法 pom 与那个插件。
     #[test]
     fn a_real_maven_fixture_yields_the_spring_boot_service() {
-        let root = std::env::temp_dir().join(format!(
-            "lithe-settings-run-fixture-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("lithe-settings-run-fixture-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("src/main/java/com/example")).expect("建目录失败");
         std::fs::write(
@@ -786,10 +805,8 @@ mod tests {
     /// 它证明空表是 Core 的结论，而不是"取数失败"或"还没取到"被画成了空态。
     #[test]
     fn a_project_without_runnable_files_yields_an_empty_list() {
-        let root = std::env::temp_dir().join(format!(
-            "lithe-settings-run-empty-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("lithe-settings-run-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("建目录失败");
         std::fs::write(root.join("README.md"), "# nothing runnable here\n").expect("写文件失败");

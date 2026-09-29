@@ -166,7 +166,10 @@ impl ToolchainPaths {
         };
 
         // 五个字段走同一条规则，所以用一个闭包逐位处理，避免五段复制粘贴各自漂移。
-        let pick = |local_value: &str, global_value: &str, target: &mut String, origin: &mut OverrideOrigin| {
+        let pick = |local_value: &str,
+                    global_value: &str,
+                    target: &mut String,
+                    origin: &mut OverrideOrigin| {
             let local_value = local_value.trim();
             if !local_value.is_empty() {
                 *target = local_value.to_string();
@@ -289,9 +292,7 @@ pub fn load(root: &Path) -> LocalToolchainState {
         state.file_existed = true;
         let parsed = document::parse::<RunLocalDocument>(&text, RUN_LOCAL_DOCUMENT_VERSION);
         for diagnostic in &parsed.diagnostics {
-            state
-                .diagnostics
-                .push(format!("run_local {diagnostic}"));
+            state.diagnostics.push(format!("run_local {diagnostic}"));
         }
         state.paths.java_home_path = parsed.value.toolchain.java.home_path;
         state.paths.maven_executable_path = parsed.value.toolchain.maven.executable_path;
@@ -304,9 +305,7 @@ pub fn load(root: &Path) -> LocalToolchainState {
         state.file_existed = true;
         let parsed = document::parse::<MavenLocalDocument>(&text, MAVEN_LOCAL_DOCUMENT_VERSION);
         for diagnostic in &parsed.diagnostics {
-            state
-                .diagnostics
-                .push(format!("maven_local {diagnostic}"));
+            state.diagnostics.push(format!("maven_local {diagnostic}"));
         }
         state.paths.maven_settings_path = parsed.value.settings_path;
         state.paths.maven_local_repository_path = parsed.value.local_repository_path;
@@ -376,8 +375,9 @@ fn save_run_local(
             },
         },
     };
-    let mut merged = document::merge_document(previous.as_ref(), &typed, RUN_LOCAL_DOCUMENT_VERSION)
-        .map_err(WorkspaceConfigError::Json)?;
+    let mut merged =
+        document::merge_document(previous.as_ref(), &typed, RUN_LOCAL_DOCUMENT_VERSION)
+            .map_err(WorkspaceConfigError::Json)?;
     if let Value::Object(object) = &mut merged {
         // 契约要求 `configurations` 必填，而它不归本模块（见模块文档）：只在文件里还没有它时
         // 补一个空数组，其余情况由未知键保留机制原样带过。
@@ -399,8 +399,13 @@ fn save_maven_local(
         settings_path: paths.maven_settings_path.clone(),
         local_repository_path: paths.maven_local_repository_path.clone(),
     };
-    document::save_document(&path, &typed, previous.as_ref(), MAVEN_LOCAL_DOCUMENT_VERSION)
-        .map_err(WorkspaceConfigError::Io)
+    document::save_document(
+        &path,
+        &typed,
+        previous.as_ref(),
+        MAVEN_LOCAL_DOCUMENT_VERSION,
+    )
+    .map_err(WorkspaceConfigError::Io)
 }
 
 /// 写之前先确认这个文档**没有**声明比我们支持的更高的版本。
@@ -596,7 +601,10 @@ mod tests {
         save(repo.root(), &cleared).expect("写入失败");
         let loaded = load(repo.root());
         assert_eq!(loaded.paths.java_home_path, "", "空串必须真的清掉旧值");
-        assert_eq!(loaded.paths.maven_executable_path, "D:\\maven\\bin\\mvn.cmd");
+        assert_eq!(
+            loaded.paths.maven_executable_path,
+            "D:\\maven\\bin\\mvn.cmd"
+        );
     }
 
     /// **不碰 `configurations`**：别的生产者写进去的运行配置必须逐字保留。
@@ -629,10 +637,7 @@ mod tests {
             Some(&Value::from("current-file"))
         );
         // 未知键也照旧保留（document 层的职责，这里守一条端到端的）。
-        assert_eq!(
-            value.pointer("/thirdParty/keep"),
-            Some(&Value::from(true))
-        );
+        assert_eq!(value.pointer("/thirdParty/keep"), Some(&Value::from(true)));
     }
 
     /// 旧路径双读：新文件不存在时读 `.lithe/run/local.json`；写只写新路径。

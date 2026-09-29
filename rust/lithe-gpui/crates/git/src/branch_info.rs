@@ -43,7 +43,7 @@ use gpui_kit::SharedString;
 
 use crate::model::{
     RefKind, Reference, discover_repository_root, execute_core, parse_references,
-    resolve_repository_root, repository_root_of,
+    repository_root_of, resolve_repository_root,
 };
 
 /// 一条本地分支。
@@ -145,8 +145,7 @@ impl BranchSnapshot {
                 // 当前分支的判定优先用 Core 的 `isCurrent`；它一条都没标时回落到名字比对
                 // （真源就是这个回落：`a === currentBranch`，`git-branch-manager.tsx:66`）。
                 let has_current = references.iter().any(|reference| reference.is_current);
-                snapshot.branches =
-                    local_branches(&references, &snapshot.branch, has_current);
+                snapshot.branches = local_branches(&references, &snapshot.branch, has_current);
             }
             Err(code) => snapshot.failures.push(format!("git.references（{code}）")),
         }
@@ -178,11 +177,7 @@ fn read_status_detailed(
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as usize,
     };
-    Ok((
-        repository_root_of(&data),
-        branch,
-        tracking,
-    ))
+    Ok((repository_root_of(&data), branch, tracking))
 }
 
 /// 从 `git.references` 的全部引用里挑出**本地分支**，当前分支置顶、其余按名字排序。
@@ -323,8 +318,26 @@ mod tests {
     /// （`git-tracking-counts.tsx:33`：两个都为 0 时整段返回 `null`）。
     #[test]
     fn tracking_counts_are_empty_only_when_both_are_zero() {
-        assert!(TrackingCounts { ahead: 0, behind: 0 }.is_empty());
-        assert!(!TrackingCounts { ahead: 2, behind: 0 }.is_empty());
-        assert!(!TrackingCounts { ahead: 0, behind: 1 }.is_empty());
+        assert!(
+            TrackingCounts {
+                ahead: 0,
+                behind: 0
+            }
+            .is_empty()
+        );
+        assert!(
+            !TrackingCounts {
+                ahead: 2,
+                behind: 0
+            }
+            .is_empty()
+        );
+        assert!(
+            !TrackingCounts {
+                ahead: 0,
+                behind: 1
+            }
+            .is_empty()
+        );
     }
 }

@@ -43,7 +43,7 @@ use gpui_kit::component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, Selectable as _,
+    ActiveTheme as _, Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
 };
 // `StyledExt` 提供 `font_semibold` 这类语义化样式方法（gpui-component 的 crate 根，
 // `gpui_kit` 再导出到 `component`）。注意 `align_items_center` / `items_center` **不在**
@@ -241,8 +241,8 @@ pub struct NotificationPanel {
 impl NotificationPanel {
     /// 建面板。`store` 是弱引用，所以 store 被销毁时 `store()` 返回 `None`。
     pub fn new(store: &Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search = cx
-            .new(|cx| InputState::new(window, cx).placeholder(tr("lithe.notifications.search")));
+        let search =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("lithe.notifications.search")));
 
         let store_subscription = cx.observe(store, |_, _, cx| cx.notify());
 
@@ -274,7 +274,11 @@ impl NotificationPanel {
     /// 交互类改动在本仓库只能靠维护者手动验证（`lithe-gpui/docs/grill.md` D1a），所以不另建一套
     /// 事件机制。
     fn toggle(&mut self, id: EntryId, cx: &mut Context<Self>) {
-        self.expanded = if self.expanded == Some(id) { None } else { Some(id) };
+        self.expanded = if self.expanded == Some(id) {
+            None
+        } else {
+            Some(id)
+        };
         Self::diagnose_toggle(id, self.expanded.is_some());
         cx.notify();
     }
@@ -348,9 +352,7 @@ impl NotificationPanel {
                     .small()
                     .cleanable(true)
                     .flex_1()
-                    .prefix(
-                        Icon::new(IconName::Search).text_color(cx.theme().muted_foreground),
-                    )
+                    .prefix(Icon::new(IconName::Search).text_color(cx.theme().muted_foreground))
                     .aria_label(tr("lithe.notifications.search")),
             )
             .child(
@@ -510,7 +512,10 @@ impl NotificationPanel {
         // `.id(..)` 不是装饰：`on_click` 在 `StatefulInteractiveElement` 上（`div.rs:1300`），
         // 只有 `Stateful<Div>` 实现它（`:4074`），所以可点的 div 必须先有 id。
         column
-            .id(ElementId::named_usize("lithe-notification-row", row.id as usize))
+            .id(ElementId::named_usize(
+                "lithe-notification-row",
+                row.id as usize,
+            ))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle(id, cx)))
             .into_any_element()
     }
@@ -533,9 +538,7 @@ impl NotificationPanel {
                     .border_color(cx.theme().transparent)
                     .header(
                         EmptyHeader::new()
-                            .media(EmptyMedia::new().child(
-                                Icon::new(IconName::Inbox).size_8(),
-                            ))
+                            .media(EmptyMedia::new().child(Icon::new(IconName::Inbox).size_8()))
                             .title(EmptyTitle::new().text_sm().child(title)),
                     ),
             )
@@ -588,10 +591,9 @@ impl Render for NotificationPanel {
                         // 编译不过。分支只改**内容**。
                         .overflow_y_scrollbar()
                         .when(filtered, |this| this.child(self.empty_state(true, cx)))
-                        .when(
-                            !filtered,
-                            |this| this.children(rows.iter().map(|row| self.row(row, cx))),
-                        ),
+                        .when(!filtered, |this| {
+                            this.children(rows.iter().map(|row| self.row(row, cx)))
+                        }),
                 )
                 .into_any_element(),
         }
@@ -671,7 +673,9 @@ mod tests {
     /// 筛选条的四个元素 id 必须互不相同 —— gpui 的 `ElementId` 撞了会让点击串到别的按钮上。
     #[test]
     fn filter_option_ids_are_distinct() {
-        let ids: Vec<_> = Filter::options().map(|(option, _)| option_key(option)).collect();
+        let ids: Vec<_> = Filter::options()
+            .map(|(option, _)| option_key(option))
+            .collect();
         assert_eq!(ids, vec!["all", "info", "warning", "error"]);
 
         let mut unique = ids.clone();
@@ -719,7 +723,10 @@ mod tests {
     #[test]
     fn age_tolerates_a_future_timestamp() {
         let now = 1_000u64;
-        assert_eq!(format_age(now, now + 5_000), tr("lithe.notifications.justNow"));
+        assert_eq!(
+            format_age(now, now + 5_000),
+            tr("lithe.notifications.justNow")
+        );
     }
 
     /// 复现 `tr_args` 的调用形状，让上两条断言不依赖内部实现。

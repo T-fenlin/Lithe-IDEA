@@ -109,9 +109,9 @@ use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, DefiniteLength, Entity, Focusable as _,
-    FontWeight, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
+    AnyElement, App, AppContext as _, Context, DefiniteLength, Entity, Focusable as _, FontWeight,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
 };
 
 use lithe_gpui_git::{BranchInfo, BranchSnapshot};
@@ -290,13 +290,11 @@ fn render_tabs(cx: &App) -> impl IntoElement {
             // 禁用态：不挂点击、不挂 hover、前景灰（`disabled` 在 gpui-kit 里**不**自动改色，
             // 所以上面按 `muted` 取过色）；`aria_label` 里补上"缺什么"，
             // 于是"不可用"在读屏与 grep 两侧都说得清（不是只靠颜色）。
-            pill = pill
-                .cursor_default()
-                .aria_label(SharedString::from(format!(
-                    "{} — {}",
-                    tr(tab.label_key()),
-                    tab.precondition()
-                )));
+            pill = pill.cursor_default().aria_label(SharedString::from(format!(
+                "{} — {}",
+                tr(tab.label_key()),
+                tab.precondition()
+            )));
         }
 
         pill
@@ -333,11 +331,7 @@ fn render_tabs(cx: &App) -> impl IntoElement {
 /// （0.6.6 的 `input/input.rs` 只有 `on_paste`），而 `Dialog` 自己带 `keyboard(true)` +
 /// `close_on_escape`（`dialog/dialog.rs:584`）。所以关闭的三条路（`Esc` / 点遮罩 /
 /// Dialog 的关闭按钮）全部由 `Dialog` 提供，面板状态经 `.on_close(..)` 回到 `open=false`。
-fn render_search(
-    input: &Entity<InputState>,
-    total: usize,
-    cx: &App,
-) -> impl IntoElement {
+fn render_search(input: &Entity<InputState>, total: usize, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
 
     h_flex()
@@ -460,77 +454,75 @@ impl IntoBranchItem for BranchInfo {
         let search = self.name.clone();
         let is_current = self.is_current;
 
-        CommandItem::new()
-            .label(search)
-            .child(move |_window, cx| {
-                let theme = cx.theme();
-                // 真源：当前分支文字 `text-foreground`，其它 `text-subtle-foreground`
-                // （`git-branch-manager.tsx:903-906`）；gpui-kit 没有 `subtle` token，
-                // 语义最近的是 `muted_foreground`（与 `crate::project_menu` 同一取值）。
-                let name_color = if is_current {
-                    theme.foreground
-                } else {
-                    theme.muted_foreground
-                };
-                // 前导槽固定 20×20（真源 `CommandItemIcon` = `size-5`，`ui/command.tsx:547-560`），
-                // 里面是 14 的图标（真源 `size-3.5`）。
-                let leading = h_flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .justify_center()
-                    .size_5()
-                    .child(match is_current {
-                        // 当前分支：绿勾（真源 `CheckIcon size-3.5 text-success`，`:892-893`）。
-                        true => Icon::new(IconName::Check)
-                            .size_3p5()
-                            .text_color(theme.success),
-                        // 其它分支：分支图标（真源 `GitBranchIcon text-subtle-foreground`，`:894-896`）。
-                        false => Icon::new(IconName::GitBranch)
-                            .size_3p5()
-                            .text_color(theme.muted_foreground),
-                    });
+        CommandItem::new().label(search).child(move |_window, cx| {
+            let theme = cx.theme();
+            // 真源：当前分支文字 `text-foreground`，其它 `text-subtle-foreground`
+            // （`git-branch-manager.tsx:903-906`）；gpui-kit 没有 `subtle` token，
+            // 语义最近的是 `muted_foreground`（与 `crate::project_menu` 同一取值）。
+            let name_color = if is_current {
+                theme.foreground
+            } else {
+                theme.muted_foreground
+            };
+            // 前导槽固定 20×20（真源 `CommandItemIcon` = `size-5`，`ui/command.tsx:547-560`），
+            // 里面是 14 的图标（真源 `size-3.5`）。
+            let leading = h_flex()
+                .flex_shrink_0()
+                .items_center()
+                .justify_center()
+                .size_5()
+                .child(match is_current {
+                    // 当前分支：绿勾（真源 `CheckIcon size-3.5 text-success`，`:892-893`）。
+                    true => Icon::new(IconName::Check)
+                        .size_3p5()
+                        .text_color(theme.success),
+                    // 其它分支：分支图标（真源 `GitBranchIcon text-subtle-foreground`，`:894-896`）。
+                    false => Icon::new(IconName::GitBranch)
+                        .size_3p5()
+                        .text_color(theme.muted_foreground),
+                });
 
-                let mut row = h_flex()
-                    .w_full()
-                    .min_w_0()
-                    // ⚠️ `min_h_9()`(36) **不能省**：行高由自绘内容决定（见 [`BRANCH_ROW_HEIGHT_SPEC`]）。
-                    .min_h(rems(BRANCH_ROW_HEIGHT_SPEC / 16.))
-                    .gap_2p5()
-                    .child(leading)
-                    .child(
-                        // 分支名 `min-w-0 truncate` + 宽度上限（真源的 `maxWidth` 夹取，
-                        // 见 [`BRANCH_NAME_MAX_WIDTH_SPEC`]）。
-                        div()
-                            .min_w_0()
-                            .max_w(rems(BRANCH_NAME_MAX_WIDTH_SPEC / 16.))
-                            .truncate()
-                            .text_sm()
-                            .text_color(name_color)
-                            .child(name.clone()),
-                    );
+            let mut row = h_flex()
+                .w_full()
+                .min_w_0()
+                // ⚠️ `min_h_9()`(36) **不能省**：行高由自绘内容决定（见 [`BRANCH_ROW_HEIGHT_SPEC`]）。
+                .min_h(rems(BRANCH_ROW_HEIGHT_SPEC / 16.))
+                .gap_2p5()
+                .child(leading)
+                .child(
+                    // 分支名 `min-w-0 truncate` + 宽度上限（真源的 `maxWidth` 夹取，
+                    // 见 [`BRANCH_NAME_MAX_WIDTH_SPEC`]）。
+                    div()
+                        .min_w_0()
+                        .max_w(rems(BRANCH_NAME_MAX_WIDTH_SPEC / 16.))
+                        .truncate()
+                        .text_sm()
+                        .text_color(name_color)
+                        .child(name.clone()),
+                );
 
-                // 右侧「当前」徽章：真源 `CommandItemBadge variant="success"`，文案 `git.current`
-                // （`git-branch-manager.tsx:907-909`；`ui/command.tsx:564-570`；`locale.ts:6948`）。
-                // 真源还有一颗只属于**非当前**分支的「…」按钮（`:910-932`），它要
-                // `merge` / `rebase` / `deleteBranch` 三条写命令（研究 §4.3-4.4）—— 本侧没有，
-                // 所以整颗不画（诊断行里登记为 `state=absent`）。
-                if is_current {
-                    row = row.child(
-                        div()
-                            .ml_auto()
-                            .flex_shrink_0()
-                            .px_1p5()
-                            .rounded_full()
-                            .bg(theme.success.opacity(0.1))
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.success)
-                            .child(tr("lithe.git.current")),
-                    );
-                }
+            // 右侧「当前」徽章：真源 `CommandItemBadge variant="success"`，文案 `git.current`
+            // （`git-branch-manager.tsx:907-909`；`ui/command.tsx:564-570`；`locale.ts:6948`）。
+            // 真源还有一颗只属于**非当前**分支的「…」按钮（`:910-932`），它要
+            // `merge` / `rebase` / `deleteBranch` 三条写命令（研究 §4.3-4.4）—— 本侧没有，
+            // 所以整颗不画（诊断行里登记为 `state=absent`）。
+            if is_current {
+                row = row.child(
+                    div()
+                        .ml_auto()
+                        .flex_shrink_0()
+                        .px_1p5()
+                        .rounded_full()
+                        .bg(theme.success.opacity(0.1))
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.success)
+                        .child(tr("lithe.git.current")),
+                );
+            }
 
-                row.into_any_element()
-            })
+            row.into_any_element()
+        })
     }
 }
 
@@ -634,18 +626,13 @@ impl BranchPanel {
     /// 而 `git.status` + `git.references` 都是本地命令（`BranchSnapshot::load` 的文档）。
     /// 读不到（非仓库 / 命令失败）时快照是空的，标题栏整项不渲染 —— 真源同样是整项不渲染
     /// （研究 §5 第 1 行），所以这里不需要 loading 态。
-    pub fn new(
-        root: std::path::PathBuf,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Entity<Self> {
+    pub fn new(root: std::path::PathBuf, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let branches = BranchSnapshot::load(&root);
         diagnose(false, branches.branches.len(), branches.branch.as_deref());
         diagnose_failures(&branches.failures);
 
-        let search = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(tr("lithe.git.searchBranches"))
-        });
+        let search =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("lithe.git.searchBranches")));
         cx.new(|cx| {
             let command = cx.new(|cx| CommandState::new(window, cx));
             let subscription = cx.subscribe_in(
@@ -690,7 +677,11 @@ impl BranchPanel {
         // 三行诊断都在这里打（每开一次一组）：`opened=true` 是"面板出现"的证据，
         // 结构行与页签行是"画成了什么"的可 grep 契约。**不打在 render 里** ——
         // 面板每帧都会重画（动画 / 悬停），打在那里会刷屏。
-        diagnose(true, self.branches.branches.len(), self.branches.branch.as_deref());
+        diagnose(
+            true,
+            self.branches.branches.len(),
+            self.branches.branch.as_deref(),
+        );
         diagnose_structure();
         diagnose_tabs();
         diagnose_failures(&self.branches.failures);
@@ -915,7 +906,10 @@ fn render_panel(panel: &Entity<BranchPanel>, cx: &App) -> AnyElement {
             // 本侧没有调用点，所以**不执行任何写操作**。这里显式记一行诊断（可 grep），
             // 并关掉面板 —— 真源点**当前**分支是不关面板的（`:282`），点别的分支才关（切完就关）；
             // 本侧两条都走"关面板"，因为两条都做不到切换，留着面板只会让人以为点漏了。
-            eprintln!("S1_BRANCH_PANEL action=checkout row={} state=read_only", index.row);
+            eprintln!(
+                "S1_BRANCH_PANEL action=checkout row={} state=read_only",
+                index.row
+            );
             let _ = confirm_handle.update(cx, |panel, cx| panel.close(window, cx));
         })
         .footer({
@@ -945,11 +939,7 @@ fn render_panel(panel: &Entity<BranchPanel>, cx: &App) -> AnyElement {
 ///
 /// 已经开着别的对话框时不叠第二层 —— 与 `open_settings_dialog` / `open_command_palette`
 /// 同一条口径，也免得 `Esc` 的"只关最上层"语义被两个面板搞乱。
-pub(crate) fn open_branch_panel(
-    panel: &Entity<BranchPanel>,
-    window: &mut Window,
-    cx: &mut App,
-) {
+pub(crate) fn open_branch_panel(panel: &Entity<BranchPanel>, window: &mut Window, cx: &mut App) {
     if window.has_active_dialog(cx) {
         return;
     }
@@ -984,12 +974,7 @@ pub(crate) fn open_branch_panel(
             })
             .content({
                 let handle = handle.clone();
-                move |content, _window, cx| {
-                    content
-                        .p_0()
-                        .gap_0()
-                        .child(render_panel(&handle, cx))
-                }
+                move |content, _window, cx| content.p_0().gap_0().child(render_panel(&handle, cx))
             })
     });
 }
@@ -1054,10 +1039,7 @@ pub(crate) fn trigger(panel: &Entity<BranchPanel>, cx: &App) -> Option<AnyElemen
             .child(Icon::new(IconName::GitBranch).size_3p5())
             .child(
                 // 分支名 `min-w-0 truncate`（真源 `:648-653`）。
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(branch),
+                div().min_w_0().truncate().child(branch),
             )
             // ahead/behind：**只有箭头，没有数字**（真源 `showCounts={false}`，`:654-660`）。
             // 两个都为 0 时整段不画（`git-tracking-counts.tsx:33`）。
@@ -1187,10 +1169,8 @@ mod tests {
         let ids: Vec<&str> = PanelTab::ALL.iter().map(|tab| tab.id()).collect();
         assert_eq!(ids, vec!["branches", "repositories", "worktrees"]);
         // 另两个页签的前置条件必须各说各的（v1 一条都做不到），免得诊断行说不清缺什么。
-        let mut preconditions: Vec<&str> = PanelTab::ALL
-            .iter()
-            .map(|tab| tab.precondition())
-            .collect();
+        let mut preconditions: Vec<&str> =
+            PanelTab::ALL.iter().map(|tab| tab.precondition()).collect();
         preconditions.sort_unstable();
         preconditions.dedup();
         assert_eq!(preconditions.len(), 3);

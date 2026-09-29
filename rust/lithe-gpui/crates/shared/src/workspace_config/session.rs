@@ -239,14 +239,9 @@ pub fn save_session(root: &Path, session: &SessionState) -> Result<SessionSaved,
         }
     }
 
-    let exclusion =
-        sharing::ensure_project_dir_excluded(root).map_err(SessionError::Exclude)?;
-    let bytes = document::save_document(
-        &path,
-        session,
-        previous.as_ref(),
-        SESSION_DOCUMENT_VERSION,
-    )?;
+    let exclusion = sharing::ensure_project_dir_excluded(root).map_err(SessionError::Exclude)?;
+    let bytes =
+        document::save_document(&path, session, previous.as_ref(), SESSION_DOCUMENT_VERSION)?;
     // 第二道闸（`.lithe/.gitignore`）跟着维护：与清单同一条理由 —— 它要生效的时刻正是
     // 第一道闸被"共享此项目的配置"移除的那一刻，不能等到会话真的被共享时才补。
     let _ = sharing::ensure_local_ignore_file(root);
@@ -524,10 +519,10 @@ mod tests {
 
         // 另一份生产者写的字段必须逐字保留（round-trip）。
         let mut object: Value = serde_json::from_str(&text).expect("应是 JSON");
-        object
-            .as_object_mut()
-            .expect("应是对象")
-            .insert("futureField".to_string(), serde_json::json!({ "deep": [1, 2] }));
+        object.as_object_mut().expect("应是对象").insert(
+            "futureField".to_string(),
+            serde_json::json!({ "deep": [1, 2] }),
+        );
         std::fs::write(
             crate::workspace_config::session::session_path(repo.root()),
             serde_json::to_string_pretty(&object).expect("序列化"),
@@ -546,10 +541,13 @@ mod tests {
     #[test]
     fn a_newer_document_version_is_refused_instead_of_downgraded() {
         let repo = TempRepo::new("newer");
-        repo.write(".lithe/session.local.json", r#"{"version":99,"openFiles":["x.txt"]}"#);
+        repo.write(
+            ".lithe/session.local.json",
+            r#"{"version":99,"openFiles":["x.txt"]}"#,
+        );
 
-        let error = save_session(repo.root(), &SessionState::default())
-            .expect_err("更高版本必须被拒绝");
+        let error =
+            save_session(repo.root(), &SessionState::default()).expect_err("更高版本必须被拒绝");
         assert!(matches!(error, SessionError::ReadOnly { .. }), "{error:?}");
         assert_eq!(
             repo.read(".lithe/session.local.json"),
@@ -766,7 +764,14 @@ mod tests {
         for accepted in ["a.txt", "src/main.java", "deep/nested/x/y.txt"] {
             assert!(is_plain_relative(accepted), "{accepted} 应当被接受");
         }
-        for rejected in ["", "/abs.txt", "\\abs.txt", "../up.txt", "a/../../b.txt", "C:/x.txt"] {
+        for rejected in [
+            "",
+            "/abs.txt",
+            "\\abs.txt",
+            "../up.txt",
+            "a/../../b.txt",
+            "C:/x.txt",
+        ] {
             assert!(!is_plain_relative(rejected), "{rejected} 应当被拒绝");
         }
     }
@@ -784,10 +789,7 @@ mod tests {
         assert_eq!(
             resolved,
             vec![SessionFileOutcome::Restored(
-                dir.join("src")
-                    .join("main")
-                    .join("java")
-                    .join("App.java")
+                dir.join("src").join("main").join("java").join("App.java")
             )]
         );
         let _ = std::fs::remove_dir_all(&dir);

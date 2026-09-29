@@ -305,8 +305,7 @@ mod tests {
         );
 
         // 清除覆盖 = 显式 `null`。
-        let payload =
-            configure_request("C:/ws", IdentityScope::Local, IdentityField::Name, None);
+        let payload = configure_request("C:/ws", IdentityScope::Local, IdentityField::Name, None);
         assert_eq!(payload.get("value"), Some(&serde_json::Value::Null));
     }
 
@@ -317,7 +316,10 @@ mod tests {
         assert_eq!(IdentityScope::Global.id(), "global");
         assert_eq!(IdentityField::Name.id(), "name");
         assert_eq!(IdentityField::Email.id(), "email");
-        assert_eq!(IdentityScope::ALL, [IdentityScope::Local, IdentityScope::Global]);
+        assert_eq!(
+            IdentityScope::ALL,
+            [IdentityScope::Local, IdentityScope::Global]
+        );
         assert_eq!(IdentityScope::default(), IdentityScope::Local);
     }
 
@@ -339,7 +341,10 @@ mod tests {
         assert_eq!(setup.branch.as_deref(), Some("main"));
         assert_eq!(setup.scope, IdentityScope::Global);
         assert_eq!(setup.configured(IdentityField::Name), Some("Lithe Dev"));
-        assert_eq!(setup.effective(IdentityField::Email), Some("inherited@example.com"));
+        assert_eq!(
+            setup.effective(IdentityField::Email),
+            Some("inherited@example.com")
+        );
     }
 
     /// **非仓库不是错误**：`isRepository:false` + 两个 `configured*` 为 null 照常解析，
@@ -360,8 +365,14 @@ mod tests {
         assert_eq!(setup.branch, None);
         assert_eq!(setup.configured(IdentityField::Name), None);
         assert_eq!(setup.effective(IdentityField::Name), Some("Machine User"));
-        assert!(!setup.editable(IdentityScope::Local), "非仓库 + local 必须禁用");
-        assert!(setup.editable(IdentityScope::Global), "global 不需要仓库上下文");
+        assert!(
+            !setup.editable(IdentityScope::Local),
+            "非仓库 + local 必须禁用"
+        );
+        assert!(
+            setup.editable(IdentityScope::Global),
+            "global 不需要仓库上下文"
+        );
     }
 
     /// 缺字段 / 类型坏掉时**不 panic、不整体失败**，回落到各自的默认值。

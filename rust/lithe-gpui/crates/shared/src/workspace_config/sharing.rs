@@ -143,9 +143,10 @@ pub fn pattern_is_present(exclude_file: &Path, pattern: &str) -> io::Result<bool
         Err(error) => return Err(error),
     };
     let wanted = pattern.trim();
-    Ok(text.lines().map(str::trim).any(|line| {
-        !line.is_empty() && !line.starts_with('#') && line == wanted
-    }))
+    Ok(text
+        .lines()
+        .map(str::trim)
+        .any(|line| !line.is_empty() && !line.starts_with('#') && line == wanted))
 }
 
 /// 本机排除文件的绝对路径；`Ok(None)` = 这个根不是 Git 仓库。
@@ -698,7 +699,8 @@ mod tests {
     /// 所以把判据抽成纯函数、用临时文件直接打，是唯一可靠的覆盖方式。
     #[test]
     fn pattern_is_present_reads_the_documented_cases() {
-        let dir = std::env::temp_dir().join(format!("lithe-sharing-readback-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("lithe-sharing-readback-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("建临时目录");
         let file = dir.join("exclude");
@@ -745,7 +747,10 @@ mod tests {
         );
         // 别人的规则仍然逐字保留（回读不该顺手改写文件）。
         let text = std::fs::read_to_string(&exclude).expect("读排除文件");
-        assert!(text.contains("# 别人的规则") && text.contains("*.log"), "{text}");
+        assert!(
+            text.contains("# 别人的规则") && text.contains("*.log"),
+            "{text}"
+        );
     }
 
     /// 一个"进程内唯一、用后即删"的**普通**临时目录。
@@ -781,8 +786,14 @@ mod tests {
             .filter(|line| !line.is_empty())
             .map(str::to_string)
             .collect();
-        let expected: Vec<String> = LOCAL_IGNORE_RULES.iter().map(|rule| rule.to_string()).collect();
-        assert_eq!(rules, expected, "第二道闸的内容必须与 LOCAL_IGNORE_RULES 一字对应");
+        let expected: Vec<String> = LOCAL_IGNORE_RULES
+            .iter()
+            .map(|rule| rule.to_string())
+            .collect();
+        assert_eq!(
+            rules, expected,
+            "第二道闸的内容必须与 LOCAL_IGNORE_RULES 一字对应"
+        );
 
         assert!(
             !dir.join(".git").exists(),

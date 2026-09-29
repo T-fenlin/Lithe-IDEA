@@ -407,7 +407,11 @@ fn completion_kind(kind: i64) -> Option<CompletionItemKind> {
 ///
 /// 只有"当前文件里的标识符"，但**不需要任何进程**，所以在 JDTLS 还没起来的那几秒里
 /// 用户照样有候选（模块文档里的降级口径）。
-fn builtin_completions(file_path: &std::path::Path, text: &str, position: Position) -> Vec<JavaCompletionItem> {
+fn builtin_completions(
+    file_path: &std::path::Path,
+    text: &str,
+    position: Position,
+) -> Vec<JavaCompletionItem> {
     let payload = json!({
         "filePath": file_path.to_string_lossy(),
         "text": text,
@@ -532,7 +536,10 @@ mod tests {
 
         // 中文一个字符 3 字节：把字节偏移当字符下标用会取到错的前缀（实测会得到 "Syste"）。
         let source = "中文 System.ou";
-        assert_eq!(JavaCompletionProvider::prefix(source, source.len()), "System.ou");
+        assert_eq!(
+            JavaCompletionProvider::prefix(source, source.len()),
+            "System.ou"
+        );
 
         // 越界 / 落在多字节字符中间：夹到字符边界，不 panic。
         assert_eq!(JavaCompletionProvider::prefix(source, 999), "System.ou");
@@ -586,8 +593,16 @@ mod tests {
         let mapped = to_lsp_item(sample_item(1, 6, 1, 8, "name"), &rope);
         match mapped.text_edit.expect("必须带 textEdit") {
             CompletionTextEdit::Edit(edit) => {
-                assert_eq!(edit.range.start, Position::new(1, 5), "UTF-16 列 6 → 字符列 5");
-                assert_eq!(edit.range.end, Position::new(1, 7), "UTF-16 列 8 → 字符列 7");
+                assert_eq!(
+                    edit.range.start,
+                    Position::new(1, 5),
+                    "UTF-16 列 6 → 字符列 5"
+                );
+                assert_eq!(
+                    edit.range.end,
+                    Position::new(1, 7),
+                    "UTF-16 列 8 → 字符列 7"
+                );
             }
             other => panic!("必须是普通 Edit：{other:?}"),
         }

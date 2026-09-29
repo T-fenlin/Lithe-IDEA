@@ -164,7 +164,8 @@ struct LaunchResources {
 /// 在 `root` 下按 Windows 的判据取齐直启资源；缺件返回 `Ok(None)`（继续看下一个 root），
 /// 目录不可读之类的 I/O 失败返回 `Err`（调用方不该把它当成"换一个 root 就好"）。
 fn resources_for_root(root: &Path) -> Result<Option<LaunchResources>, String> {
-    let Some(launcher_jar_path) = first_regular_file(&root.join("plugins"), EQUINOX_LAUNCHER_PREFIX)
+    let Some(launcher_jar_path) =
+        first_regular_file(&root.join("plugins"), EQUINOX_LAUNCHER_PREFIX)
     else {
         return Ok(None);
     };
@@ -221,7 +222,7 @@ fn java_test_extension_bundles(root: &Path) -> Result<Option<Vec<PathBuf>>, Stri
             return Err(format!(
                 "读取 Java Test 扩展包清单失败 {}：{error}",
                 directory.join(JAVA_TEST_BUNDLE_LIST).display()
-            ))
+            ));
         }
     };
     let extensions = directory.join("extensions");
@@ -283,17 +284,14 @@ fn version_for_root(root: &Path) -> Result<Option<String>, String> {
     let manifest_path = root.join("manifest.json");
     match std::fs::read(&manifest_path) {
         Ok(data) => {
-            let manifest: serde_json::Value = serde_json::from_slice(&data).map_err(|error| {
-                format!("JDTLS 清单无效 {}：{error}", manifest_path.display())
-            })?;
+            let manifest: serde_json::Value = serde_json::from_slice(&data)
+                .map_err(|error| format!("JDTLS 清单无效 {}：{error}", manifest_path.display()))?;
             let version = manifest
                 .get("version")
                 .and_then(serde_json::Value::as_str)
                 .map(str::trim)
                 .filter(|version| !version.is_empty())
-                .ok_or_else(|| {
-                    format!("JDTLS 清单没有有效版本号 {}。", manifest_path.display())
-                })?;
+                .ok_or_else(|| format!("JDTLS 清单没有有效版本号 {}。", manifest_path.display()))?;
             return Ok(Some(version.to_string()));
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -301,7 +299,7 @@ fn version_for_root(root: &Path) -> Result<Option<String>, String> {
             return Err(format!(
                 "读取 JDTLS 清单失败 {}：{error}",
                 manifest_path.display()
-            ))
+            ));
         }
     }
 
@@ -313,7 +311,7 @@ fn version_for_root(root: &Path) -> Result<Option<String>, String> {
             return Err(format!(
                 "无法枚举 JDTLS 插件目录 {}：{error}",
                 plugins_path.display()
-            ))
+            ));
         }
     };
     let mut names = plugins
@@ -370,7 +368,10 @@ fn bundled_roots() -> Vec<PathBuf> {
             }
         }
     }
-    candidates.into_iter().filter(|root| is_root(root)).collect()
+    candidates
+        .into_iter()
+        .filter(|root| is_root(root))
+        .collect()
 }
 
 /// 外部安装位置（Windows `jdtls_search_roots` 的等价物，去掉 Tauri 专有项）。
@@ -385,7 +386,12 @@ fn search_roots(workspace_root: &Path) -> Vec<PathBuf> {
             roots.push(PathBuf::from(trimmed));
         }
     }
-    for key in ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)", "XDG_DATA_HOME"] {
+    for key in [
+        "LOCALAPPDATA",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "XDG_DATA_HOME",
+    ] {
         if let Ok(base) = std::env::var(key) {
             let base = PathBuf::from(base);
             roots.push(base.join("jdtls"));
@@ -396,7 +402,13 @@ fn search_roots(workspace_root: &Path) -> Vec<PathBuf> {
     if let Ok(profile) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
         let profile = PathBuf::from(profile);
         roots.push(profile.join(".jdtls"));
-        roots.push(profile.join("scoop").join("apps").join("jdtls").join("current"));
+        roots.push(
+            profile
+                .join("scoop")
+                .join("apps")
+                .join("jdtls")
+                .join("current"),
+        );
         roots.push(profile.join("scoop").join("shims"));
     }
     roots.push(

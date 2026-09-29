@@ -485,7 +485,10 @@ pub fn load_from_str(text: &str) -> (RecentProjects, Vec<String>) {
     let entries = normalize(entries);
     if entries.len() < parsed_count {
         // 手改过的文件里可能有重复 path 或超过上限的条数；收口是真的丢数据，所以留诊断。
-        diagnostics.push(format!("normalized removed={}", parsed_count - entries.len()));
+        diagnostics.push(format!(
+            "normalized removed={}",
+            parsed_count - entries.len()
+        ));
     }
 
     (RecentProjects { entries }, diagnostics)
@@ -646,7 +649,11 @@ mod tests {
         second.clear();
         save(&path, &second).expect("覆盖写失败");
         let reloaded = load_from(Some(path));
-        assert!(reloaded.diagnostics.is_empty(), "{:?}", reloaded.diagnostics);
+        assert!(
+            reloaded.diagnostics.is_empty(),
+            "{:?}",
+            reloaded.diagnostics
+        );
         assert!(reloaded.projects.is_empty(), "清空必须落盘成空数组");
     }
 
@@ -749,13 +756,21 @@ mod tests {
 
         assert!(projects.record_open(r"D:\proj\alpha", 300, Some(false)));
         assert_eq!(projects.len(), 2, "不得产生重复项");
-        assert_eq!(projects.entries()[0].path, r"D:\proj\alpha", "刚打开的提到最前");
+        assert_eq!(
+            projects.entries()[0].path,
+            r"D:\proj\alpha",
+            "刚打开的提到最前"
+        );
         let alpha = projects.find(r"D:\proj\alpha").expect("α 必须在列表里");
         assert_eq!(alpha.last_opened_at, 300, "时间必须更新");
         assert!(alpha.pinned, "重开不改变置顶");
         assert!(!alpha.missing, "重开一次就是又能用了");
         assert_eq!(alpha.open_in_new_window, Some(false), "打开方式按本次更新");
-        assert_eq!(alpha.name, folder_name(r"D:\proj\alpha"), "名字仍是路径末段");
+        assert_eq!(
+            alpha.name,
+            folder_name(r"D:\proj\alpha"),
+            "名字仍是路径末段"
+        );
 
         // `open_in_new_window = None` = 不改上次的打开方式。
         assert!(projects.record_open(r"D:\proj\alpha", 400, None));
@@ -790,7 +805,10 @@ mod tests {
         let (projects, diagnostics) = load_from_str("{ not json ");
         assert!(projects.is_empty());
         assert_eq!(diagnostics.len(), 1);
-        assert!(diagnostics[0].starts_with("invalid_json"), "{diagnostics:?}");
+        assert!(
+            diagnostics[0].starts_with("invalid_json"),
+            "{diagnostics:?}"
+        );
 
         let (projects, diagnostics) = load_from_str("[1, 2, 3]");
         assert!(projects.is_empty());
@@ -798,10 +816,7 @@ mod tests {
 
         let (projects, diagnostics) = load_from_str(r#"{"recentProjects": "nope"}"#);
         assert!(projects.is_empty());
-        assert_eq!(
-            diagnostics,
-            vec!["bad_key key=recentProjects".to_string()]
-        );
+        assert_eq!(diagnostics, vec!["bad_key key=recentProjects".to_string()]);
 
         // 缺外层键 = 空列表，且**不**打诊断（"缺键回落默认值"）。
         let (projects, diagnostics) = load_from_str(r#"{"other": 1}"#);
@@ -835,8 +850,14 @@ mod tests {
             "缺 name 用路径末段补"
         );
         assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
-        assert!(diagnostics[0].contains("bad_entry index=1"), "{diagnostics:?}");
-        assert!(diagnostics[1].contains("bad_entry index=2"), "{diagnostics:?}");
+        assert!(
+            diagnostics[0].contains("bad_entry index=1"),
+            "{diagnostics:?}"
+        );
+        assert!(
+            diagnostics[1].contains("bad_entry index=2"),
+            "{diagnostics:?}"
+        );
     }
 
     /// 手改过的文件里的重复 `path`：读进来就收口，保留 `lastOpenedAt` 最大的那条，并留诊断。
@@ -890,7 +911,10 @@ mod tests {
         let (projects, diagnostics) = load_from_str("");
         assert!(projects.is_empty());
         assert_eq!(diagnostics.len(), 1);
-        assert!(diagnostics[0].starts_with("invalid_json"), "{diagnostics:?}");
+        assert!(
+            diagnostics[0].starts_with("invalid_json"),
+            "{diagnostics:?}"
+        );
 
         // 文件不存在：空列表、无诊断、**不创建文件**。
         let dir = TempDir::new("missing-file");
@@ -909,7 +933,11 @@ mod tests {
         assert!(loaded.projects.is_empty());
         assert!(loaded.file_existed);
         assert_eq!(loaded.diagnostics.len(), 1);
-        assert!(loaded.diagnostics[0].starts_with("invalid_json"), "{:?}", loaded.diagnostics);
+        assert!(
+            loaded.diagnostics[0].starts_with("invalid_json"),
+            "{:?}",
+            loaded.diagnostics
+        );
 
         // 推导不出路径：空列表 + 一条诊断（不 panic）。
         let loaded = load_from(None);
@@ -928,7 +956,10 @@ mod tests {
 
         assert!(projects.toggle_pinned(r"D:\proj\a"));
         assert!(projects.find(r"D:\proj\a").unwrap().pinned);
-        assert!(projects.entries()[0].path.ends_with('a'), "置顶后回到列表最前");
+        assert!(
+            projects.entries()[0].path.ends_with('a'),
+            "置顶后回到列表最前"
+        );
         assert!(projects.toggle_pinned(r"D:\proj\a"));
         assert!(!projects.find(r"D:\proj\a").unwrap().pinned);
 
@@ -973,7 +1004,10 @@ mod tests {
     /// 显示名 = 路径末段（真源的取分隔符规则：含 `\` 按 `\` 切，否则按 `/` 切）。
     #[test]
     fn folder_name_is_the_last_segment() {
-        assert_eq!(folder_name(r"D:\developmentProjects\Lithe-IDEA"), "Lithe-IDEA");
+        assert_eq!(
+            folder_name(r"D:\developmentProjects\Lithe-IDEA"),
+            "Lithe-IDEA"
+        );
         assert_eq!(folder_name("/home/dev/lithe/"), "lithe");
         assert_eq!(folder_name("lithe"), "lithe");
         // `C:\` 的有效段只有 `C:`（真源 `filter(Boolean)` 之后取末段）。
@@ -1065,7 +1099,10 @@ mod tests {
         assert_eq!(pick.root.as_deref(), Some(r"D:\proj\here"));
         assert_eq!(
             pick.missing,
-            vec![r"D:\proj\gone".to_string(), r"D:\proj\older-gone".to_string()],
+            vec![
+                r"D:\proj\gone".to_string(),
+                r"D:\proj\older-gone".to_string()
+            ],
             "选中之后排在后面的条目照样被探测（要标记的失效条目与选中项无关）"
         );
     }

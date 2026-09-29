@@ -143,7 +143,12 @@ pub fn settings_row_with_note(
                 .min_w_0()
                 .flex_1()
                 .gap_1()
-                .child(div().text_sm().text_color(cx.theme().foreground).child(label))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().foreground)
+                        .child(label),
+                )
                 .children(description.map(|description| {
                     div()
                         .text_xs()
@@ -160,11 +165,7 @@ pub fn settings_row_with_note(
 ///
 /// 配色走主题的 `muted_foreground`（弱化文字角色，与行描述同一档），按钮用 ghost 小按钮：
 /// 它是"纠正一个意外状态"的动作，不该比主控件更抢眼。
-pub fn appearance_source_note(
-    text: SharedString,
-    revert: AnyElement,
-    cx: &App,
-) -> AnyElement {
+pub fn appearance_source_note(text: SharedString, revert: AnyElement, cx: &App) -> AnyElement {
     h_flex()
         .w_full()
         .min_w_0()

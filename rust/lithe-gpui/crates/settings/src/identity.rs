@@ -373,8 +373,7 @@ impl GitIdentityPage {
     pub fn load<T: 'static>(
         &self,
         scope: IdentityScope,
-        deliver: impl FnOnce(Option<IdentitySetup>, &mut gpui_kit::Window, &mut gpui_kit::App)
-        + 'static,
+        deliver: impl FnOnce(Option<IdentitySetup>, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<T>,
     ) {
@@ -411,8 +410,7 @@ impl GitIdentityPage {
         scope: IdentityScope,
         field: IdentityField,
         value: Option<String>,
-        deliver: impl FnOnce(Option<IdentitySetup>, &mut gpui_kit::Window, &mut gpui_kit::App)
-        + 'static,
+        deliver: impl FnOnce(Option<IdentitySetup>, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<T>,
     ) {
@@ -493,7 +491,10 @@ mod tests {
             setup.effective(IdentityField::Email),
             Some("inherited@example.com")
         );
-        assert_eq!(setup.configured(IdentityField::Email), Some("dev@example.com"));
+        assert_eq!(
+            setup.configured(IdentityField::Email),
+            Some("dev@example.com")
+        );
     }
 
     /// 缺字段 / 非法 JSON 都不 panic：缺字段回落默认，非法 JSON 返回 `None`。
