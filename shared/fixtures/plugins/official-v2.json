@@ -4,46 +4,6 @@
   "pluginAPIVersion": 1,
   "plugins": [
     {
-      "id": "lithe.bundledFonts",
-      "displayName": "JetBrains Mono 字体包",
-      "description": "随宿主捆绑的 JetBrains Mono 等宽字体家族，覆盖常规、粗体、斜体与粗斜体。",
-      "version": "0.0.1",
-      "apiVersion": 1,
-      "hostCompatibility": {
-        "minimum": "0.0.1"
-      },
-      "vendor": {
-        "id": "lithe",
-        "displayName": "Lithe Team",
-        "signatureRequirement": "sameTeamAsHost"
-      },
-      "entrypoint": {
-        "kind": "builtIn",
-        "targetName": "lithe-gpui-app"
-      },
-      "moduleIDs": [
-        "lithe.font.jetbrainsMono"
-      ],
-      "fonts": [
-        {
-          "family": "JetBrains Mono",
-          "path": "fonts/JetBrainsMono-Bold.ttf"
-        },
-        {
-          "family": "JetBrains Mono",
-          "path": "fonts/JetBrainsMono-BoldItalic.ttf"
-        },
-        {
-          "family": "JetBrains Mono",
-          "path": "fonts/JetBrainsMono-Italic.ttf"
-        },
-        {
-          "family": "JetBrains Mono",
-          "path": "fonts/JetBrainsMono-Regular.ttf"
-        }
-      ]
-    },
-    {
       "id": "lithe.gruvboxTheme",
       "displayName": "Gruvbox 主题",
       "description": "随宿主捆绑的 Gruvbox 主题，浅色与深色各一。可在扩展页卸载。",
@@ -68,6 +28,78 @@
         {
           "name": "Gruvbox",
           "path": "extensions/themes/gruvbox.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.ibmPlexMonoFont",
+      "displayName": "IBM Plex Mono 字体",
+      "description": "随宿主捆绑的 IBM Plex Mono（IBM，OFL-1.1），常规与粗体。可在扩展页卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-app"
+      },
+      "moduleIDs": [
+        "lithe.font.ibmPlexMono"
+      ],
+      "fonts": [
+        {
+          "family": "IBM Plex Mono",
+          "path": "extensions/fonts/ibm-plex-mono/IBMPlexMono-Bold.ttf"
+        },
+        {
+          "family": "IBM Plex Mono",
+          "path": "extensions/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf"
+        }
+      ]
+    },
+    {
+      "id": "lithe.ideaFont",
+      "displayName": "IDEA 字体（内置）",
+      "description": "随宿主内置的 JetBrains Mono（IDEA 的默认代码字体，四个字重），也是本产品的默认代码字体。不可卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "builtIn",
+        "targetName": "lithe-gpui-app"
+      },
+      "moduleIDs": [
+        "lithe.font.jetbrainsMono"
+      ],
+      "fonts": [
+        {
+          "family": "JetBrains Mono",
+          "path": "assets/fonts/JetBrainsMono-Bold.ttf"
+        },
+        {
+          "family": "JetBrains Mono",
+          "path": "assets/fonts/JetBrainsMono-BoldItalic.ttf"
+        },
+        {
+          "family": "JetBrains Mono",
+          "path": "assets/fonts/JetBrainsMono-Italic.ttf"
+        },
+        {
+          "family": "JetBrains Mono",
+          "path": "assets/fonts/JetBrainsMono-Regular.ttf"
         }
       ]
     },
@@ -276,6 +308,38 @@
         {
           "name": "One",
           "path": "extensions/themes/one.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.sourceCodeProFont",
+      "displayName": "Source Code Pro 字体",
+      "description": "随宿主捆绑的 Source Code Pro（Adobe，OFL-1.1），常规与粗体。可在扩展页卸载。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-app"
+      },
+      "moduleIDs": [
+        "lithe.font.sourceCodePro"
+      ],
+      "fonts": [
+        {
+          "family": "Source Code Pro",
+          "path": "extensions/fonts/source-code-pro/SourceCodePro-Bold.ttf"
+        },
+        {
+          "family": "Source Code Pro",
+          "path": "extensions/fonts/source-code-pro/SourceCodePro-Regular.ttf"
         }
       ]
     },

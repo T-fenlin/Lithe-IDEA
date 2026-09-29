@@ -111,6 +111,43 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
 7. **主题索引的取舍**：捆绑扩展**不进**编译期索引（装没装看装载面的镜像），
    所以卸载后下拉里立刻不再出现它们的主题；内置那份仍做编译期兜底。
 
+### 第三批：字体照同一套形式（同日，维护者追加）
+
+维护者口径："字体也弄成扩展的形式，默认当前 IDEA 这个字体，其他字体弄成扩展的形式，
+跟主题一样，字体的弄一两个就够了"。落地成：
+
+1. **内置字体 = IDEA 的默认代码字体 JetBrains Mono**（`assets/fonts/` 四个字重，
+   `include_bytes!` 进二进制，entrypoint `builtIn`）。`mono_font_family` 的默认值改成
+   `DEFAULT_MONO_FONT_FAMILY = "JetBrains Mono"` —— 默认值指向的字族**必须真实可用**，
+   否则会落到"字族不存在"的 panic 路径（`theme::apply_font_families` 的文档）。
+   界面字体仍默认空串（系统 UI 字体）：等宽字体不适合界面正文，IDEA 自己也这么分。
+2. **两个捆绑字体扩展**（可卸载）：Source Code Pro（Adobe）与 IBM Plex Mono（IBM），
+   都是 OFL-1.1、各带常规 + 粗体与**随包许可文件**。落在
+   `lithe-gpui/extensions/fonts/<包>/`，运行期写到 `<配置目录>/extensions/fonts/<包>/`。
+3. **统一了装/卸机制**（新增 `settings/src/extensions.rs`）：把原来主题专用的
+   同步/卸载/重装抽成"捆绑扩展"的通用实现（注册表
+   `BUNDLED_EXTENSIONS`，`BundledKind::{Theme, Font}`），主题与字体共用一套；
+   主题特有的事（内置播种、老文件迁移、装载面镜像）留在 `theme.rs`。
+4. **字体为什么不需要装载面镜像**：主题走 gpui-kit 的 `ThemeRegistry::watch_dir`
+   （只认一个目录），字体走 `TextSystem::add_fonts`（我们自己喂字节）——
+   所以字体的落点就是它唯一的位置。新增 `settings/src/fonts.rs`：
+   `register_fonts` 在启动时注册内置字节 + 从管理面目录读已安装的捆绑字体。
+5. **启动顺序（硬要求，已写进 `main.rs` 注释与 `lib.rs` 启动顺序表）**：
+   `init_store` → **`prepare_bundled_extensions`**（迁移 + 同步写出主题/字体包）
+   → **`register_fonts`**（读管理面目录）→ `watch_lithe_themes`（装载 + 应用主题）。
+   ②必须早于③（同步没跑就一个字族都读不到）；③必须早于第一次主题应用
+   （`installed_font_names` 的已装字族表是**进程内缓存一次**的，晚了会把内置的
+   JetBrains Mono 判成"没装"而拒绝写入 —— 实机日志 `S1_THEME font_family
+   key=monoFontFamily value=JetBrains Mono` 证明这条顺序成立）。
+6. **生效时机差异**（写进契约、CONTEXT.md 与扩展页）：主题卸载立即生效（热重载），
+   字体要**下次启动**（`add_fonts` 只增不删，运行期摘不掉已注册字族）。
+   扩展页在可卸载字体卡片的详情里加了一行 `lithe.extensions.fontRestartHint`。
+7. **实机验证发现并修掉一个真实缺陷**：老文件迁移会无条件删除 `themes/` 里与扩展目录
+   同名的文件，而同步阶段刚写出的**镜像**正是同名的 —— 于是每次启动都"删镜像 → 再镜像"
+   （日志 `prepared created=3 removed=8`）。修法：迁移时跳过"今天仍由注册表管理的包名"，
+   并补了回归测试 `migration_leaves_the_load_surface_mirror_alone`；修复后稳态为
+   `created=0 kept=7 removed=0`。
+
 ## 考虑过的备选方案
 
 - **在清单里声明 `categories` 数组**（最初共识里选的就是它）：看完 Zed 源码后否决
@@ -152,7 +189,14 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
   界面会回落到默认的 Darcula（设置文件里的原选择保留，重装后自动回来）；
 - 老用户升级时有一次**文件迁移**（老播种在 `themes/` 的 6 份文件搬到扩展目录）：
   幂等、失败只留诊断；迁移后 `themes/` 里用户自己改过的同名文件会被扩展目录那份
-  顶替（迁移的"缺才搬"保证了不会覆盖扩展目录里已有的）。
+  顶替（迁移的"缺才搬"保证了不会覆盖扩展目录里已有的）；
+- **字体扩展多占约 550KB 仓库体积**（两个字体族各两个字重 + 许可原文）；
+  字体是二进制资产，加一个字体族就是加一份体积，取舍时要知道这条；
+- **字体卸载/重装要重启才生效**（GPUI 的 `add_fonts` 没有反注册入口）：
+  文件立刻删/写，但已注册的字族活到进程结束。扩展页写了这句提示；
+- 用户的字族覆盖值（设置里的 `monoFontFamily`）如果指向一个**已卸载**的字体扩展，
+  会走既有的"字族未安装 → 不写入 + 留诊断"路径（界面回落到主题里的等宽字体），
+  不会崩；重装后下次启动恢复。
 
 ## 验证
 
@@ -162,7 +206,13 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
 - `cargo test --manifest-path rust/Cargo.toml -p lithe-gpui-extensions / -p
   lithe-gpui-shared / -p lithe-gpui-settings / -p lithe-gpui-workbench / -p
   lithe-gpui-app`：全部通过（快照归一、过滤判据、i18n WIRED、右栏下标映射、
-  扩展页筛选 id、播种/同步/卸载/重装/迁移的文件语义、默认主题真源）。
+  扩展页筛选 id、播种/同步/卸载/重装/迁移的文件语义、字体族名解析、默认主题与默认
+  字体的真源、镜像不被迁移误删的回归）。
+- **实机启动验证**（隔离的 `LITHE_GPUI_SETTINGS_FILE`，三次启动）：
+  `S1_FONTS registered builtin=4 bundled=4`（第一次）、`bundled=2`（卸载清单里有
+  一个字体包之后）、`S1_THEME font_family key=monoFontFamily value=JetBrains Mono`
+  （默认代码字体真的写进了主题 token，证明注册顺序正确）；卸载清单里的主题组与
+  字体包在两个目录面都被清掉，稳态同步为 `created=0 kept=7 removed=0`。
 - `node rust/lithe-gpui/tools/extract-locale.mjs` 重新生成两份 yml；新增 4 条
   gpui-only 键（字体 / 调试 / LSP / 加载失败）带理由。
 - `scripts/verify-shared-contracts.sh` 的插件段已更新到 v2 并加了贡献项断言；
@@ -185,8 +235,13 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
 - `rust/lithe-gpui/crates/shared/`（`HOST_VERSION`、locales、i18n WIRED）
 - `rust/lithe-gpui/themes/`（只剩内置的 `jetbrains.json`）、
   `rust/lithe-gpui/extensions/themes/`（五个捆绑主题组）
-- `rust/lithe-gpui/crates/settings/src/theme.rs`（播种/同步/卸载/重装/迁移）、
-  `paths.rs`（扩展目录）、`schema.rs`（默认主题 + `uninstalledExtensions`）、
-  `store.rs`（`set_extension_uninstalled`）
-- `CONTEXT.md`（术语：扩展 / Plugin / 模块 / 目录 / 贡献项 / 分类 /
-  内置主题 / 捆绑主题扩展 / 装载面与扩展面）
+- `rust/lithe-gpui/crates/settings/src/theme.rs`（播种/迁移/索引/应用）、
+  `settings/src/extensions.rs`（捆绑扩展注册表 + 装/卸/同步，主题与字体共用）、
+  `settings/src/fonts.rs`（内置字体注册 + 字族名解析）、
+  `settings/src/paths.rs`（扩展目录与两个覆盖开关）、
+  `settings/src/schema.rs`（默认主题 + 默认代码字体 + `uninstalledExtensions`）、
+  `settings/src/store.rs`（`set_extension_uninstalled`）
+- `rust/lithe-gpui/assets/fonts/`（内置 IDEA 字体）、
+  `rust/lithe-gpui/extensions/fonts/`（两个捆绑字体族，含 OFL 许可原文）
+- `CONTEXT.md`（术语：扩展 / Plugin / 模块 / 目录 / 贡献项 / 分类 / 内置主题 /
+  内置字体 / 捆绑扩展 / 装载面与扩展面 / 生效时机）

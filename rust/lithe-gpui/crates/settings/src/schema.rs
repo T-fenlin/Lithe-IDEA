@@ -135,6 +135,17 @@ pub const DEFAULT_AUTO_THEME_LIGHT: &str = "intellij-light";
 /// 现随默认主题组改为 IDEA 的深色变体。
 pub const DEFAULT_AUTO_THEME_DARK: &str = "darcula";
 
+/// 代码字体（编辑器 / 终端）的默认字族：**IDEA 的默认代码字体 JetBrains Mono**。
+///
+/// 它由 [`crate::fonts::register_fonts`] 从内嵌内容注册（`lithe-gpui/assets/fonts/`），
+/// 是**内置、不可卸载**的那一份 —— 所以"默认值 + 真实可用的字族"是同一个东西：
+/// 默认值不会落到"字族不存在"的路径上（那条约束见
+/// [`crate::theme::apply_font_families`] 的 panic 说明）。
+///
+/// ⚠️ **界面字体**（[`Settings::font_family`]）仍默认空串 = 用系统 UI 字体：
+/// 等宽字体不适合界面正文，IDEA 自己也是"界面用系统字体、代码用 JetBrains Mono"。
+pub const DEFAULT_MONO_FONT_FAMILY: &str = "JetBrains Mono";
+
 /// 主题显示名 → id 的**兜底**规则（`"VS Code Light+"` → `"vs-code-light"`）。
 ///
 /// 只在主题条目**没有**写 `id` 时使用：gpui-kit 的内置主题（`Default Light` / `Default Dark`）
@@ -591,7 +602,8 @@ impl Default for Settings {
             font_size: EDITOR_FONT_SIZE_DEFAULT,
             // 空串 = 不覆盖主题文件里的字体族（与下面几个路径覆盖值同一条约定）。
             font_family: String::new(),
-            mono_font_family: String::new(),
+            // 代码字体默认是内置的 IDEA 字体（见 [`DEFAULT_MONO_FONT_FAMILY`]）。
+            mono_font_family: DEFAULT_MONO_FONT_FAMILY.to_string(),
             tab_size: TAB_SIZE_DEFAULT,
             terminal_default_shell_id: SHELL_SYSTEM_DEFAULT.to_string(),
             // `0` = 不覆盖：终端用它自己的默认档（14px，typography `sm` token）。
@@ -801,9 +813,11 @@ mod tests {
         // 默认每次询问在哪打开，且真源默认偏好"新窗口"。
         assert!(settings.ask_where_to_open_projects);
         assert!(settings.open_folders_in_new_window);
-        // 字体三键默认"不覆盖"：两个字族是空串，字号是 `0`（用终端自己的 14px 档）。
+        // 字体三键：界面字体默认"不覆盖"（用系统 UI 字体），**代码字体默认是内置的
+        // IDEA 字体**（`DEFAULT_MONO_FONT_FAMILY`，由 `fonts::register_fonts` 注册），
+        // 终端字号默认 `0`（= 用终端自己的 14px 档）。
         assert_eq!(settings.font_family, "");
-        assert_eq!(settings.mono_font_family, "");
+        assert_eq!(settings.mono_font_family, DEFAULT_MONO_FONT_FAMILY);
         assert_eq!(settings.terminal_font_size, TERMINAL_FONT_SIZE_UNSET);
     }
 

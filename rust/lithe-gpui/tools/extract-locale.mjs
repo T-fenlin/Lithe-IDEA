@@ -406,6 +406,13 @@ const GPUI_ONLY_KEYS = [
       "捆绑扩展被卸载后卡片上的状态徽标。真源 catalog 只有 uninstalledSuccessfully（一次性提示文案），没有「已卸载」这个状态词；本侧扩展页需要它把「可卸载且当前不在装」这一态说清楚（同排的「内置」徽标是 extensions.builtIn）。",
   },
   {
+    key: "extensions.fontRestartHint",
+    zh: "字体在下次启动应用后生效。",
+    en: "Fonts take effect after the next restart.",
+    reason:
+      "字体扩展卡片详情里的时限说明。主题卸载会立刻热重载（注册表监视目录），而字体是启动时喂给文本系统的（gpui 的 TextSystem::add_fonts 只增不删，运行期摘不掉已注册字族），所以卸载/重装字体**要重启才生效** —— 不说这句用户会以为按钮没起作用。真源没有这个键（Windows 前端没有扩展页）。",
+  },
+  {
     key: "editor.gpui.discardChanges",
     zh: "放弃修改",
     en: "Discard changes",

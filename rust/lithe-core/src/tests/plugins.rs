@@ -142,11 +142,21 @@ fn schema_v1_catalog_is_rejected_with_unsupported_schema() {
     );
 }
 
+/// 找到某个 id 在 plugins 数组里的下标（变异测试要改某一条的贡献项）。
+fn index_of(catalog: &Value, id: &str) -> usize {
+    catalog["plugins"]
+        .as_array()
+        .expect("plugins array")
+        .iter()
+        .position(|plugin| plugin["id"] == id)
+        .unwrap_or_else(|| panic!("official catalog must contain {id}"))
+}
+
 #[test]
 fn unsorted_theme_contribution_is_rejected_deterministically() {
     let catalog: Value = serde_json::from_str(OFFICIAL_PLUGINS).expect("official catalog");
     let mut unsorted = catalog.clone();
-    unsorted["plugins"][1]["themes"] = serde_json::json!([
+    unsorted["plugins"][index_of(&catalog, "lithe.gruvboxTheme")]["themes"] = serde_json::json!([
         {"name": "Nord", "path": "extensions/themes/nord.json"},
         {"name": "Gruvbox", "path": "extensions/themes/gruvbox.json"}
     ]);
@@ -164,7 +174,7 @@ fn unsorted_theme_contribution_is_rejected_deterministically() {
 fn theme_path_escaping_the_bundle_is_rejected() {
     let catalog: Value = serde_json::from_str(OFFICIAL_PLUGINS).expect("official catalog");
     let mut escaping = catalog.clone();
-    escaping["plugins"][1]["themes"] = serde_json::json!([
+    escaping["plugins"][index_of(&catalog, "lithe.gruvboxTheme")]["themes"] = serde_json::json!([
         {"name": "Gruvbox", "path": "../secrets/gruvbox.json"},
         {"name": "Nord", "path": "extensions/themes/nord.json"}
     ]);
@@ -194,7 +204,7 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
     let plugins = response["data"]["plugins"]
         .as_array()
         .expect("plugins array should encode");
-    assert_eq!(plugins.len(), 10);
+    assert_eq!(plugins.len(), 12);
     let by_id: Vec<(&str, Vec<&str>)> = plugins
         .iter()
         .map(|plugin| {
@@ -210,8 +220,9 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
     assert_eq!(
         by_id,
         vec![
-            ("lithe.bundledFonts", vec!["fonts"]),
             ("lithe.gruvboxTheme", vec!["themes"]),
+            ("lithe.ibmPlexMonoFont", vec!["fonts"]),
+            ("lithe.ideaFont", vec!["fonts"]),
             ("lithe.ideaIconTheme", vec!["icon-themes"]),
             ("lithe.ideaTheme", vec!["themes"]),
             ("lithe.javaDebugAdapter", vec!["debug"]),
@@ -219,17 +230,42 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
             ("lithe.litheTheme", vec!["themes"]),
             ("lithe.nordTheme", vec!["themes"]),
             ("lithe.oneTheme", vec!["themes"]),
+            ("lithe.sourceCodeProFont", vec!["fonts"]),
             ("lithe.vscodeTheme", vec!["themes"]),
         ]
     );
     // The listing must echo the manifest fields the extensions page renders:
-    // the IDEA theme is the only `builtIn` theme (the uninstallable default),
-    // the other five theme groups are `bundled` (uninstallable by the user),
-    // and six of the nine entries carry theme contributions.
-    let idea = &plugins[3];
+    // - one `builtIn` font (the IDEA default) and two `bundled` font families,
+    // - one `builtIn` theme (IDEA, the default) and five `bundled` theme groups.
+    let idea_font = &plugins[2];
+    assert_eq!(idea_font["displayName"], "IDEA 字体（内置）");
+    assert_eq!(idea_font["entrypoint"]["kind"], "builtIn");
+    assert_eq!(idea_font["fonts"][0]["family"], "JetBrains Mono");
+    assert_eq!(
+        idea_font["fonts"][0]["path"],
+        "assets/fonts/JetBrainsMono-Bold.ttf"
+    );
+    let plex = &plugins[1];
+    assert_eq!(plex["entrypoint"]["kind"], "bundled");
+    assert_eq!(
+        plex["fonts"][0]["path"],
+        "extensions/fonts/ibm-plex-mono/IBMPlexMono-Bold.ttf"
+    );
+    assert_eq!(
+        plugins
+            .iter()
+            .filter(|plugin| {
+                plugin["entrypoint"]["kind"] == "bundled"
+                    && !plugin["fonts"].as_array().expect("fonts").is_empty()
+            })
+            .count(),
+        2,
+        "两个可卸载的字体扩展"
+    );
+    let idea = &plugins[4];
     assert_eq!(idea["displayName"], "IDEA 主题（内置）");
     assert_eq!(idea["entrypoint"]["kind"], "builtIn");
-    let lithe = &plugins[6];
+    let lithe = &plugins[7];
     assert_eq!(lithe["entrypoint"]["kind"], "bundled");
     assert_eq!(lithe["themes"][0]["path"], "extensions/themes/lithe.json");
     assert_eq!(
@@ -240,7 +276,7 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
         6,
         "六个主题组（IDEA 内置 + 五个可卸载）"
     );
-    let java = &plugins[5];
+    let java = &plugins[6];
     assert_eq!(java["displayName"], "Java 语言支持");
     assert_eq!(java["languageSupports"][0]["id"], "java");
 }

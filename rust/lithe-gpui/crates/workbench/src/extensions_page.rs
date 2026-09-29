@@ -87,6 +87,8 @@ struct Card {
     /// v1 里只有捆绑主题扩展属于这一类；`builtIn`（宿主核心能力，如 IDEA 主题、
     /// 字体、Java 支持）不给卸载按钮 —— 它们没有卸载语义，画出来就是假控件。
     removable: bool,
+    /// 这个包贡献了字体（详情里要写清「下次启动生效」—— 字体运行期摘不掉）。
+    has_fonts: bool,
     /// 展开详情里的贡献项行（字体家族已去重）。
     contributions: Vec<SharedString>,
 }
@@ -126,6 +128,7 @@ impl Card {
             publisher: entry.publisher.clone().into(),
             built_in: entry.entrypoint_kind == "builtIn",
             removable: entry.entrypoint_kind == "bundled",
+            has_fonts: !entry.font_families.is_empty(),
             contributions,
         }
     }
@@ -501,6 +504,15 @@ impl ExtensionsPage {
                         &[("publisher", card.publisher.as_ref())],
                     )),
             );
+            // 可卸载的字体包要写清生效时机：主题是热重载、字体要重启（见 fonts.rs 的模块文档）。
+            if card.removable && card.has_fonts {
+                details = details.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr("lithe.extensions.fontRestartHint")),
+                );
+            }
             if !card.contributions.is_empty() {
                 details = details
                     .child(

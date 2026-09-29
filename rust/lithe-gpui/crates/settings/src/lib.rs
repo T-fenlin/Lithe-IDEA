@@ -47,8 +47,9 @@
 
 pub mod dialog;
 pub mod identity;
-// 捆绑扩展（主题组）的注册表与装/卸/同步。
+// 捆绑扩展（主题组 + 字体族）的注册表与装/卸/同步，以及字体的注册。
 pub mod extensions;
+pub mod fonts;
 pub mod paths;
 pub mod persistence;
 pub mod project;
@@ -89,8 +90,11 @@ pub use recent_projects::{
 pub use restart::restart_application;
 pub use schema::Settings;
 pub use store::{AppearanceMode, Init, SettingsStore, init_store, store, try_store};
-// 启动顺序里的第一步：准备捆绑扩展（迁移老主题文件 + 同步管理面与装载面）。
+// 启动顺序里成对使用的两步：先准备捆绑扩展（迁移 + 同步），再注册字体、最后装载主题。
+// ⚠️ 顺序不能反：字体注册要读同步写出的文件，而"已装字族表"是进程内缓存一次的
+// （见 `fonts::register_fonts` 的"调用时机"）。
 pub use extensions::prepare_bundled_extensions;
+pub use fonts::register_fonts;
 pub use theme::watch_lithe_themes;
 pub use workspace::{
     AppearanceKey, AppearanceKeySource, AppearanceOverlay, AppearanceSource, AppearanceValue,

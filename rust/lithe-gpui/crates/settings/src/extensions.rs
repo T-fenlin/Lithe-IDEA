@@ -3,6 +3,8 @@
 //! ## 谁在这里
 //!
 //! - **主题组**（`BundledKind::Theme`）：一个 `.json` 一个包，例如 `gruvbox.json`。
+//! - **字体族**（`BundledKind::Font`）：一个包一个目录（含字重文件与许可），
+//!   例如 `source-code-pro/SourceCodePro-Regular.ttf`。
 //!
 //! 内置（不可卸载）的东西**不在这里**：内置主题在 [`crate::theme::BUILTIN_THEMES`]、
 //! 内置字体在 [`crate::fonts::BUILTIN_FONT_FILES`] —— 那些是宿主核心能力，
@@ -38,13 +40,15 @@
 use std::path::{Path, PathBuf};
 
 use crate::paths;
-use crate::theme;
+use crate::{fonts, theme};
 
 /// 捆绑扩展的种类：决定它在配置目录下的落点与是否需要装载面镜像。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BundledKind {
     /// 主题组：管理面 + 装载面镜像。
     Theme,
+    /// 字体族：只有落点，没有镜像。
+    Font,
 }
 
 /// 一个捆绑扩展：稳定 id、种类、包内文件（相对包根的路径 → 内容）。
@@ -102,6 +106,44 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
             include_bytes!("../../../extensions/themes/vscode.json"),
         )],
     },
+    BundledExtension {
+        id: "lithe.ibmPlexMonoFont",
+        kind: BundledKind::Font,
+        files: &[
+            (
+                "ibm-plex-mono/IBMPlexMono-Bold.ttf",
+                include_bytes!("../../../extensions/fonts/ibm-plex-mono/IBMPlexMono-Bold.ttf"),
+            ),
+            (
+                "ibm-plex-mono/IBMPlexMono-Regular.ttf",
+                include_bytes!("../../../extensions/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf"),
+            ),
+            (
+                "ibm-plex-mono/LICENSE.txt",
+                include_bytes!("../../../extensions/fonts/ibm-plex-mono/LICENSE.txt"),
+            ),
+        ],
+    },
+    BundledExtension {
+        id: "lithe.sourceCodeProFont",
+        kind: BundledKind::Font,
+        files: &[
+            (
+                "source-code-pro/SourceCodePro-Bold.ttf",
+                include_bytes!("../../../extensions/fonts/source-code-pro/SourceCodePro-Bold.ttf"),
+            ),
+            (
+                "source-code-pro/SourceCodePro-Regular.ttf",
+                include_bytes!(
+                    "../../../extensions/fonts/source-code-pro/SourceCodePro-Regular.ttf"
+                ),
+            ),
+            (
+                "source-code-pro/LICENSE.md",
+                include_bytes!("../../../extensions/fonts/source-code-pro/LICENSE.md"),
+            ),
+        ],
+    },
 ];
 
 /// `id` → 捆绑扩展；`None` = 不是捆绑扩展（内置主题、内置字体、Java 支持等都不接受卸载）。
@@ -113,6 +155,7 @@ pub fn bundled_extension(id: &str) -> Option<&'static BundledExtension> {
 pub fn store_dir(kind: BundledKind) -> Option<PathBuf> {
     match kind {
         BundledKind::Theme => paths::theme_extensions_dir(),
+        BundledKind::Font => paths::font_extensions_dir(),
     }
 }
 
@@ -120,6 +163,7 @@ pub fn store_dir(kind: BundledKind) -> Option<PathBuf> {
 pub fn mirror_dir(kind: BundledKind) -> Option<PathBuf> {
     match kind {
         BundledKind::Theme => paths::themes_dir(),
+        BundledKind::Font => None,
     }
 }
 
@@ -179,7 +223,7 @@ pub fn prepare_bundled_extensions(uninstalled: &[String]) -> SyncReport {
 /// 按卸载清单同步全部捆绑扩展（用 [`paths`] 推导目录）。
 pub fn sync_bundled_extensions(uninstalled: &[String]) -> SyncReport {
     let mut report = SyncReport::default();
-    for kind in [BundledKind::Theme] {
+    for kind in [BundledKind::Theme, BundledKind::Font] {
         let (Some(store), mirror) = (store_dir(kind), mirror_dir(kind)) else {
             eprintln!("S1_EXTENSION sync_skipped reason=no_dirs kind={kind:?}");
             continue;
@@ -420,6 +464,15 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+/// 字体族名（清单里 `fonts[].family` 的取值）→ 捆绑扩展 id。
+///
+/// 扩展页/设置里的字体名要落到"该字体属于哪个可卸载的包"这一层才谈得上卸载。
+pub fn font_extension_for_family(family: &str) -> Option<&'static BundledExtension> {
+    BUNDLED_EXTENSIONS
+        .iter()
+        .find(|entry| entry.kind == BundledKind::Font && fonts::family_of(entry) == Some(family))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,6 +522,51 @@ mod tests {
         }
     }
 
+    /// 字体包的每个文件都必须与仓库 `extensions/fonts/` 里的实际文件一致，
+    /// 且**都带一份许可**（OFL 要求随字体分发许可原文）。
+    #[test]
+    fn font_entries_match_the_repository_files_and_ship_a_license() {
+        let dir = paths::repository_font_extensions_dir();
+        let fonts_in_registry: Vec<&BundledExtension> = BUNDLED_EXTENSIONS
+            .iter()
+            .filter(|entry| entry.kind == BundledKind::Font)
+            .collect();
+        assert!(
+            (1..=2).contains(&fonts_in_registry.len()),
+            "字体扩展保持一两个即可，当前 {}",
+            fonts_in_registry.len()
+        );
+        for entry in fonts_in_registry {
+            let mut has_ttf = false;
+            let mut has_license = false;
+            for (relative, bytes) in entry.files {
+                let on_disk = std::fs::read(dir.join(relative))
+                    .unwrap_or_else(|error| panic!("{}: {relative} 读不到：{error}", entry.id));
+                assert_eq!(
+                    *bytes, on_disk,
+                    "{} 的 {relative} 与仓库文件不一致",
+                    entry.id
+                );
+                if relative.ends_with(".ttf") {
+                    has_ttf = true;
+                    // TrueType 魔数：0x00010000（其余常见形态是 `true` / `OTTO`）。
+                    assert!(
+                        bytes.starts_with(&[0x00, 0x01, 0x00, 0x00])
+                            || bytes.starts_with(b"true")
+                            || bytes.starts_with(b"OTTO"),
+                        "{} 的 {relative} 不是字体文件",
+                        entry.id
+                    );
+                }
+                if relative.ends_with("LICENSE.txt") || relative.ends_with("LICENSE.md") {
+                    has_license = true;
+                }
+            }
+            assert!(has_ttf, "{} 没有字体文件", entry.id);
+            assert!(has_license, "{} 没有随包许可文件", entry.id);
+        }
+    }
+
     /// 同步（全装 → 全卸 → 重装）在管理面与装载面上的文件语义。
     #[test]
     fn sync_installs_uninstalls_and_restores_both_surfaces() {
@@ -509,6 +607,33 @@ mod tests {
         );
     }
 
+    /// 字体包同步到自己的子目录里，卸载时连空目录一起收掉。
+    #[test]
+    fn font_package_syncs_into_its_own_directory_and_cleans_up() {
+        let dir = TempDir::new("font-sync");
+        let store = dir.path().join("extensions/fonts");
+        let report = sync_kind_into(BundledKind::Font, &store, None, &[]);
+        assert!(report.failed.is_empty(), "{report:?}");
+        let fonts_in_registry: Vec<&BundledExtension> = BUNDLED_EXTENSIONS
+            .iter()
+            .filter(|entry| entry.kind == BundledKind::Font)
+            .collect();
+        let target = fonts_in_registry[0];
+        for (relative, content) in target.files {
+            assert_eq!(
+                std::fs::read(store.join(relative)).expect("字体包读不到"),
+                *content
+            );
+        }
+
+        sync_kind_into(BundledKind::Font, &store, None, &[target.id.to_string()]);
+        for (relative, _) in target.files {
+            assert!(!store.join(relative).exists(), "{relative} 应被删除");
+        }
+        let package_dir = store.join(Path::new(target.files[0].0).parent().expect("有父目录"));
+        assert!(!package_dir.exists(), "空目录要一并收掉：{package_dir:?}");
+    }
+
     /// 装载面是镜像：管理面被改过时跟随管理面，而不是回到内嵌内容。
     #[test]
     fn mirror_follows_the_store_copy() {
@@ -539,7 +664,7 @@ mod tests {
     fn uninstall_rejects_unknown_ids() {
         let dir = TempDir::new("ext-unknown");
         let store = dir.path().join("extensions/themes");
-        sync_kind_into(BundledKind::Theme, &store, None, &[]);
+        sync_kind_into(BundledKind::Font, &store, None, &[]);
         assert!(uninstall_into(&store, None, "lithe.notAnExtension").is_err());
         assert!(reinstall_into(&store, None, "lithe.notAnExtension").is_err());
     }

@@ -45,6 +45,9 @@ pub const THEMES_DIR_ENV: &str = "LITHE_GPUI_THEMES_DIR";
 /// 覆盖主题扩展目录完整路径的环境变量名。
 pub const THEME_EXTENSIONS_DIR_ENV: &str = "LITHE_GPUI_THEME_EXTENSIONS_DIR";
 
+/// 覆盖字体扩展目录完整路径的环境变量名。
+pub const FONT_EXTENSIONS_DIR_ENV: &str = "LITHE_GPUI_FONT_EXTENSIONS_DIR";
+
 /// 应用数据目录名（Windows 的 `Lithe`）。
 const APP_DIR_NAME: &str = "Lithe";
 /// Linux 惯例的目录名（XDG 规范建议小写）。只在非 Windows/macOS 的构建里用到，
@@ -63,6 +66,8 @@ const THEMES_DIRECTORY_NAME: &str = "themes";
 const EXTENSIONS_DIRECTORY_NAME: &str = "extensions";
 /// 扩展目录下的主题包目录名（`extensions/themes/`）。
 const THEME_EXTENSIONS_DIRECTORY_NAME: &str = "themes";
+/// 扩展目录下的字体包目录名（`extensions/fonts/`）。
+const FONT_EXTENSIONS_DIRECTORY_NAME: &str = "fonts";
 
 /// 解析设置文件的完整路径。
 ///
@@ -181,6 +186,31 @@ pub fn theme_extensions_dir() -> Option<PathBuf> {
         }
     }
     Some(extensions_dir()?.join(THEME_EXTENSIONS_DIRECTORY_NAME))
+}
+
+/// 仓库里的**捆绑字体扩展源目录**（`lithe-gpui/extensions/fonts`）。
+///
+/// 与 [`repository_themes_dir`] 同一条约束：构建树路径，只服务 `include_bytes!` 与测试。
+pub fn repository_font_extensions_dir() -> PathBuf {
+    PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../extensions/fonts"
+    ))
+}
+
+/// 解析**字体扩展目录**的完整路径：`<配置目录>/extensions/fonts`。
+///
+/// 与 [`theme_extensions_dir`] 同一形态；差别是字体**不需要装载面镜像** ——
+/// 文本系统在启动时由我们直接喂字节（见 [`crate::fonts::register_fonts`]），
+/// 没有"注册表只能监视一个目录"那条约束，所以扩展目录是它唯一的落点：
+/// 装 = 文件在里面，卸 = 文件不在里面（下次启动不再注册）。
+pub fn font_extensions_dir() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os(FONT_EXTENSIONS_DIR_ENV) {
+        if !path.is_empty() {
+            return Some(PathBuf::from(path));
+        }
+    }
+    Some(extensions_dir()?.join(FONT_EXTENSIONS_DIRECTORY_NAME))
 }
 
 #[cfg(target_os = "windows")]

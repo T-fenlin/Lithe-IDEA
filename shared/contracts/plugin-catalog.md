@@ -12,13 +12,21 @@ a listing cannot drift from the contributions that back it.
 | Kind | Meaning |
 | --- | --- |
 | `builtIn` | Host core capability compiled into the host. **Not uninstallable.** |
-| `bundled` | Shipped with the host, but **uninstallable by the user** (e.g. a bundled theme group). Same shape as `builtIn`: only `targetName` is accepted. |
+| `bundled` | Shipped with the host, but **uninstallable by the user** (bundled theme groups and font families). Same shape as `builtIn`: only `targetName` is accepted. |
 | `nativeBundle` | Third-party native package, referenced by bundle path. Not distributable yet. |
 
 Uninstall is a host-side lifecycle, not a catalog fact: Core serves the same
 catalog either way and the host records what the user removed. The host marks
 `bundled` entries uninstallable and keeps the ordered
 `uninstalledExtensions` list in its settings document.
+
+Removal takes effect differently per category, which the host surfaces in its
+extensions page:
+
+- **Themes** apply immediately — the theme registry watches the load directory
+  and re-applies the current theme on reload.
+- **Fonts** apply on the next start — GPUI's `TextSystem::add_fonts` only adds,
+  so an already registered family cannot be removed while the app runs.
 
 ## Catalog document
 
@@ -94,3 +102,9 @@ is no remote registry in v2 and no install/uninstall surface yet.
   `scripts/verify-shared-contracts.sh` and Core tests).
 - `plugins/language-support-v2.json` — language support + shared module
   ownership scenario.
+
+`fonts[].path` values follow the same rule as themes: `builtIn` families point
+at the host's bundled asset root (`assets/fonts/...`), `bundled` families at
+their package directory (`extensions/fonts/<package>/...`). Bundled font
+packages ship their license text as a package file (OFL requires the license to
+travel with the fonts).

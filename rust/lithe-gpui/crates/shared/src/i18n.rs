@@ -279,6 +279,10 @@ mod tests {
             ("lithe.extensions.uninstalled", "已卸载"),
             ("lithe.extensions.uninstall", "卸载"),
             ("lithe.extensions.reinstall", "重新安装"),
+            (
+                "lithe.extensions.fontRestartHint",
+                "字体在下次启动应用后生效。",
+            ),
             ("lithe.extensions.byPublisher", "作者：{publisher}"),
             ("lithe.extensions.contributions", "贡献项"),
             ("lithe.extensions.loadingExtension", "正在加载扩展"),

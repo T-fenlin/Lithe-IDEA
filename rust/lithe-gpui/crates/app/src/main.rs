@@ -983,13 +983,16 @@ fn main() {
             // 停下就淡出，`gpui-base/src/scrollbar.rs:48-56`），而 IDE 的观感是常显细条 + 可拖。
             Theme::set_scrollbar_mode(gpui_kit::component::scroll::ScrollbarMode::Always, cx);
 
-            // 设置：登记状态（含读文件结果与 `--theme` 覆盖）→ 捆绑扩展准备 →
+            // 设置：登记状态（含读文件结果与 `--theme` 覆盖）→ 捆绑扩展准备 → 字体注册 →
             // 主题目录装载/监听 → `Ctrl+,` 动作。
             //
             // ⚠️ 顺序有硬要求（见 `lithe_gpui_settings::lib.rs` 的启动顺序表）：
-            // `watch_lithe_themes` 的回调要用 `SettingsStore`，而主题的**应用**只在那个
-            // 回调里发生；捆绑扩展的同步（迁移老主题文件 + 写出主题包、镜像到装载面）必须
-            // 早于它 —— 装载面没有文件，注册表就看不到那些主题。
+            // ① `watch_lithe_themes` 的回调要用 `SettingsStore`，主题的**应用**只在那个回调里发生；
+            // ② 捆绑扩展的同步（迁移老主题文件 + 写出主题/字体包）必须早于**字体注册** ——
+            //    字体是从管理面目录读出来喂给文本系统的，同步没跑就一个字族都注册不上；
+            // ③ 字体注册必须早于**第一次主题应用** —— `theme::installed_font_names` 的
+            //    已装字族表是**进程内缓存一次**的，晚了会把内置的 `JetBrains Mono`
+            //    （默认代码字体）判成"没装"而拒绝写入（`S1_THEME font_family_rejected`）。
             let store: gpui_kit::Entity<SettingsStore> = lithe_gpui_settings::init_store(
                 cx,
                 Init {
@@ -1000,6 +1003,7 @@ fn main() {
             let uninstalled = store.read(cx).uninstalled_extensions().to_vec();
             let report = lithe_gpui_settings::prepare_bundled_extensions(&uninstalled);
             println!("S1_EXTENSIONS prepared {}", report.summary());
+            lithe_gpui_settings::register_fonts(cx);
             lithe_gpui_settings::watch_lithe_themes(cx);
             lithe_gpui_settings::install_actions(cx);
             let _ = store;
