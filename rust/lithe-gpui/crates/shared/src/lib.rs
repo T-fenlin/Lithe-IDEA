@@ -26,7 +26,9 @@ mod document;
 // `pub use`：调用点要写成 `shared::icons::idea::GEAR_ICON`，常量表本身就是一个命名空间，
 // 摊平到 crate 根只会让 79 个常量名污染 `shared::*`。理由与再生成命令见 `src/icons/mod.rs`。
 mod i18n;
+// 语言高亮的启用状态（被卸载的语言扩展 → 这些语言不高亮）。
 pub mod icons;
+pub mod languages;
 pub mod workspace_config;
 
 // 国际化：**`i18n!` 必须出现在持有 `locales/` 的那个 crate 的根**。

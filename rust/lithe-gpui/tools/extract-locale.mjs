@@ -371,6 +371,13 @@ const GPUI_ONLY_KEYS = [
       "同一个视图的空态。判据是 Core 的 spring.index 没给出任何事实（响应为 null 或集合全空），所以文案如实说「组件与端点」而不是「项目」——免得把「打开了一个没有 Spring 的 Java 项目」说成「没检测到项目」。句式沿用 maven.notDetected（「未检测到 X」），保持同一面板族的读感。",
   },
   {
+    key: "extensions.languageUninstallHint",
+    zh: "卸载后这些文件打开时是纯文本。",
+    en: "After uninstalling, these files open as plain text.",
+    reason:
+      "语言扩展卡片详情里的后果说明。与字体的「下次启动生效」是两件事：语言的启用状态在**打开文件时**判定（editor 的 buffer::language_for_file 查 shared::languages），所以卸载的效果是「下次打开这些文件不再高亮」，已经开着的标签页仍保留当前高亮。真源没有这个键（Windows 前端没有扩展页）。",
+  },
+  {
     key: "extensions.contributionLine",
     zh: "{label}：{items}",
     en: "{label}: {items}",

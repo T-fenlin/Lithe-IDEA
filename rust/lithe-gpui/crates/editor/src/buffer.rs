@@ -72,7 +72,16 @@ pub(crate) fn language_for_file(name: &str) -> Option<&'static str> {
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase);
 
-    match extension.as_deref() {
+    // 被卸载的语言扩展 → 这些语言不设进编辑器（文件按纯文本打开）。
+    // 判据在 `shared::languages`（由设置存储写入），见那里的模块文档。
+    let resolve = |language: Option<&'static str>| -> Option<&'static str> {
+        match language {
+            Some(name) if lithe_gpui_shared::languages::is_language_disabled(name) => None,
+            other => other,
+        }
+    };
+
+    let language = match extension.as_deref() {
         // `"java"` → `Language::Java`，grammar 来自 `tree-sitter-java`（Spring Boot 主场景）。
         Some("java") => Some("java"),
         // `"json"` → `Language::Json`，**不需要**额外 feature：`tree-sitter-java`
@@ -94,7 +103,8 @@ pub(crate) fn language_for_file(name: &str) -> Option<&'static str> {
             "mvnw" | "gradlew" | "mvnw.cmd" | "gradlew.bat" => Some("bash"),
             _ => None,
         },
-    }
+    };
+    resolve(language)
 }
 
 /// 读盘结果：正文 + **这份正文是不是文件的忠实副本**。

@@ -206,8 +206,8 @@
         "targetName": "lithe-gpui-java"
       },
       "moduleIDs": [
-        "lithe.java.languageServer",
-        "lithe.java.languageSupport"
+        "lithe.language.java",
+        "lithe.language.javaServer"
       ],
       "languageSupports": [
         {
@@ -223,7 +223,8 @@
             "pom.xml",
             "settings.gradle"
           ],
-          "languageServerModuleID": "lithe.java.languageServer"
+          "languageServerModuleID": "lithe.language.javaServer",
+          "highlighterModuleID": "lithe.language.java"
         }
       ]
     },
@@ -336,6 +337,115 @@
         {
           "name": "Pierre",
           "path": "icons/pierre/extension.json"
+        }
+      ]
+    },
+    {
+      "id": "lithe.projectLanguages",
+      "displayName": "工程文件语言支持",
+      "description": "随宿主内置的工程文件语法高亮：YAML / TOML / SQL / Markdown / Shell / Kotlin / XML（含 pom.xml 与 MyBatis mapper）。卸载后这些文件打开时是纯文本。",
+      "version": "0.0.1",
+      "apiVersion": 1,
+      "hostCompatibility": {
+        "minimum": "0.0.1"
+      },
+      "vendor": {
+        "id": "lithe",
+        "displayName": "Lithe Team",
+        "signatureRequirement": "sameTeamAsHost"
+      },
+      "entrypoint": {
+        "kind": "bundled",
+        "targetName": "lithe-gpui-app"
+      },
+      "moduleIDs": [
+        "lithe.language.bash",
+        "lithe.language.kotlin",
+        "lithe.language.markdown",
+        "lithe.language.sql",
+        "lithe.language.toml",
+        "lithe.language.xml",
+        "lithe.language.yaml"
+      ],
+      "languageSupports": [
+        {
+          "id": "yaml",
+          "displayName": "YAML",
+          "fileExtensions": [
+            "yaml",
+            "yml"
+          ],
+          "fileNames": [],
+          "projectFileNames": [],
+          "highlighterModuleID": "lithe.language.yaml"
+        },
+        {
+          "id": "toml",
+          "displayName": "TOML",
+          "fileExtensions": [
+            "toml"
+          ],
+          "fileNames": [],
+          "projectFileNames": [],
+          "highlighterModuleID": "lithe.language.toml"
+        },
+        {
+          "id": "sql",
+          "displayName": "SQL",
+          "fileExtensions": [
+            "sql"
+          ],
+          "fileNames": [],
+          "projectFileNames": [],
+          "highlighterModuleID": "lithe.language.sql"
+        },
+        {
+          "id": "markdown",
+          "displayName": "Markdown",
+          "fileExtensions": [
+            "markdown",
+            "md"
+          ],
+          "fileNames": [],
+          "projectFileNames": [],
+          "highlighterModuleID": "lithe.language.markdown"
+        },
+        {
+          "id": "bash",
+          "displayName": "Shell",
+          "fileExtensions": [
+            "bash",
+            "sh"
+          ],
+          "fileNames": [],
+          "projectFileNames": [],
+          "highlighterModuleID": "lithe.language.bash"
+        },
+        {
+          "id": "kotlin",
+          "displayName": "Kotlin",
+          "fileExtensions": [
+            "kt",
+            "ktm",
+            "kts"
+          ],
+          "fileNames": [],
+          "projectFileNames": [],
+          "highlighterModuleID": "lithe.language.kotlin"
+        },
+        {
+          "id": "xml",
+          "displayName": "XML",
+          "fileExtensions": [
+            "wsdl",
+            "xml",
+            "xsd",
+            "xsl",
+            "xslt"
+          ],
+          "fileNames": [],
+          "projectFileNames": [],
+          "highlighterModuleID": "lithe.language.xml"
         }
       ]
     },

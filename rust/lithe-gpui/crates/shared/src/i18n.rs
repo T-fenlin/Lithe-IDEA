@@ -272,7 +272,7 @@ mod tests {
             ("lithe.extensions.themes", "主题"),
             ("lithe.extensions.icons", "图标"),
             ("lithe.extensions.contributionLine", "{label}：{items}"),
-            ("lithe.extensions.icons", "图标主题"),
+            ("lithe.extensions.languageUninstallHint", "卸载后这些文件打开时是纯文本。"),
             ("lithe.extensions.category.fonts", "字体"),
             ("lithe.extensions.category.debug", "调试"),
             ("lithe.extensions.category.lsp", "LSP"),

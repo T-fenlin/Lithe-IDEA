@@ -582,6 +582,15 @@ impl SettingsStore {
         }
     }
 
+    /// 把"被卸载的语言扩展 → 应禁用的语言"推给 `shared`（编辑器据此按纯文本打开）。
+    ///
+    /// 只要设置里的卸载清单，不需要 `App`：语言状态是 `shared` 的进程内全局，
+    /// 而编辑器在 `language_for_file` 里同步读它。
+    fn apply_languages(&self) {
+        let disabled = crate::extensions::disabled_languages(&self.global.uninstalled_extensions);
+        lithe_gpui_shared::languages::set_disabled_languages(&disabled);
+    }
+
     /// 单个包的推送（不处理回落）。`cx.asset_source()` 是图标清单的读取入口
     /// —— 内置包与随包分发的图标集走同一条路径（见 `file_icon` 的模块文档）。
     fn apply_icons_package(&self, package: &str, cx: &App) -> bool {
@@ -1329,6 +1338,8 @@ impl SettingsStore {
         // 图标主题与配色主题一起收口：启动、切换主题、改设置三条路都会走到这里，
         // 所以文件图标不会出现"设置改了但树还是旧图标"的窗口期。
         self.apply_icons(cx);
+        // 语言同理：被卸载的语言扩展在这里收口（禁用的语言不再设进编辑器）。
+        self.apply_languages();
     }
 
     fn apply_font_size(&self, cx: &mut Context<Self>) {

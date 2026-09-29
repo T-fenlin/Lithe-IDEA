@@ -267,6 +267,11 @@ pub struct LanguageSupportManifest {
     /// Package-owned module providing debug integration.
     #[serde(rename = "debugModuleID")]
     pub debug_module_id: Option<String>,
+    /// Package-owned module providing **syntax highlighting** (the grammar/queries for
+    /// this language). A language may declare only this slot — a highlight-only
+    /// language needs no language server, runner, test, or debug integration.
+    #[serde(rename = "highlighterModuleID")]
+    pub highlighter_module_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -580,6 +585,7 @@ fn validate_language_supports(plugin: &PluginPackageManifest) -> Result<(), Plug
             support.execution_module_id.as_deref(),
             support.testing_module_id.as_deref(),
             support.debug_module_id.as_deref(),
+            support.highlighter_module_id.as_deref(),
         ]
         .into_iter()
         .flatten()

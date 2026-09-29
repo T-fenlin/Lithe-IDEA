@@ -193,7 +193,7 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
     let plugins = response["data"]["plugins"]
         .as_array()
         .expect("plugins array should encode");
-    assert_eq!(plugins.len(), 13);
+    assert_eq!(plugins.len(), 14);
     let by_id: Vec<(&str, Vec<&str>)> = plugins
         .iter()
         .map(|plugin| {
@@ -219,6 +219,7 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
             ("lithe.litheTheme", vec!["themes"]),
             ("lithe.nordTheme", vec!["themes"]),
             ("lithe.oneTheme", vec!["themes"]),
+            ("lithe.projectLanguages", vec!["languages"]),
             ("lithe.pierreIcons", vec!["icons"]),
             ("lithe.sourceCodeProFont", vec!["fonts"]),
             ("lithe.vscodeTheme", vec!["themes"]),
@@ -262,6 +263,30 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
     assert_eq!(pierre["id"], "lithe.pierreIcons");
     assert_eq!(pierre["entrypoint"]["kind"], "bundled");
     assert_eq!(pierre["icons"][0]["path"], "icons/pierre/extension.json");
+    // 语言包：7 门工程文件语言，每门只声明"高亮模块"（没有 LSP / 运行 / 测试 / 调试插槽）
+    // —— 这是 highlight-only 语言的形状，契约因此把 highlighterModuleID 也算作一个插槽。
+    let languages = &plugins[11];
+    assert_eq!(languages["id"], "lithe.projectLanguages");
+    assert_eq!(languages["entrypoint"]["kind"], "bundled");
+    let supported: Vec<&str> = languages["languageSupports"]
+        .as_array()
+        .expect("languageSupports")
+        .iter()
+        .map(|support| support["id"].as_str().expect("language id"))
+        .collect();
+    assert_eq!(
+        supported,
+        vec!["yaml", "toml", "sql", "markdown", "bash", "kotlin", "xml"]
+    );
+    assert!(
+        languages["languageSupports"][0]["highlighterModuleID"].is_string(),
+        "语言包每门语言都必须声明高亮模块"
+    );
+    // Java 那条两种能力都有：语言服务 + 高亮。
+    let java = &plugins[6];
+    assert_eq!(java["languageSupports"][0]["id"], "java");
+    assert!(java["languageSupports"][0]["languageServerModuleID"].is_string());
+    assert!(java["languageSupports"][0]["highlighterModuleID"].is_string());
     let idea = &plugins[4];
     assert_eq!(idea["displayName"], "IDEA 主题（内置）");
     assert_eq!(idea["entrypoint"]["kind"], "builtIn");

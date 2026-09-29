@@ -51,6 +51,10 @@ pub enum BundledKind {
     Theme,
     /// 字体族：只有落点，没有镜像。
     Font,
+    /// 语言：**没有落盘文件** —— 语法随宿主编译（Cargo feature）或由宿主自己注册，
+    /// 卸载的效果是"这些语言不再高亮（文件按纯文本打开）"，见
+    /// [\`BundledExtension::languages\`]。
+    Languages,
     /// 图标集：**没有落盘文件** —— 图标集随宿主编译（内嵌在 `assets/icons/` 里），
     /// 同步阶段不写任何文件；卸载的效果是"不可选 + 正在使用时回落内置包"
     /// （见 [`BundledExtension::icons_package`]）。这与主题/字体"卸载 = 删文件"
@@ -72,6 +76,9 @@ pub struct BundledExtension {
     /// 图标集的**包名**（`assets/icons/<包>/` 的目录名）；只有 `Icons` 有。
     /// 它就是设置键 `icons` 的取值（见 `crate::schema::DEFAULT_ICONS`）。
     pub icons_package: Option<&'static str>,
+    /// 这个包贡献的**语言 id**（`yaml` / `xml` …）；只有语言包有。
+    /// 卸载时这些语言被禁用（设置存储推给 `shared::languages`，编辑器据此按纯文本打开）。
+    pub languages: &'static [&'static str],
 }
 
 /// 全部捆绑扩展。顺序只影响同步报告的次序，不影响语义。
@@ -80,6 +87,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
         id: "lithe.gruvboxTheme",
         kind: BundledKind::Theme,
         icons_package: None,
+        languages: &[],
         files: &[(
             "gruvbox.json",
             include_bytes!("../../../extensions/themes/gruvbox.json"),
@@ -89,6 +97,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
         id: "lithe.litheTheme",
         kind: BundledKind::Theme,
         icons_package: None,
+        languages: &[],
         files: &[(
             "lithe.json",
             include_bytes!("../../../extensions/themes/lithe.json"),
@@ -98,6 +107,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
         id: "lithe.nordTheme",
         kind: BundledKind::Theme,
         icons_package: None,
+        languages: &[],
         files: &[(
             "nord.json",
             include_bytes!("../../../extensions/themes/nord.json"),
@@ -107,15 +117,27 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
         id: "lithe.oneTheme",
         kind: BundledKind::Theme,
         icons_package: None,
+        languages: &[],
         files: &[(
             "one.json",
             include_bytes!("../../../extensions/themes/one.json"),
         )],
     },
     BundledExtension {
+        id: "lithe.projectLanguages",
+        kind: BundledKind::Languages,
+        icons_package: None,
+        // 卸载后这些语言不再高亮（`buffer::language_for_file` 会给出 `None`）。
+        languages: &["yaml", "toml", "sql", "markdown", "bash", "kotlin", "xml"],
+        // 空 = 没有落盘文件：语法随宿主编译（yaml/toml/sql/md/bash/kotlin 是 gpui-kit 的
+        // feature，xml 由 `editor/src/languages.rs` 自己注册）。
+        files: &[],
+    },
+    BundledExtension {
         id: "lithe.pierreIcons",
         kind: BundledKind::Icons,
         icons_package: Some("pierre"),
+        languages: &[],
         // 空 = 没有落盘文件：图标集与内置包一起编译进二进制（见 BundledKind::Icons）。
         files: &[],
     },
@@ -123,6 +145,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
         id: "lithe.vscodeTheme",
         kind: BundledKind::Theme,
         icons_package: None,
+        languages: &[],
         files: &[(
             "vscode.json",
             include_bytes!("../../../extensions/themes/vscode.json"),
@@ -132,6 +155,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
         id: "lithe.ibmPlexMonoFont",
         kind: BundledKind::Font,
         icons_package: None,
+        languages: &[],
         files: &[
             (
                 "ibm-plex-mono/IBMPlexMono-Bold.ttf",
@@ -151,6 +175,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
         id: "lithe.sourceCodeProFont",
         kind: BundledKind::Font,
         icons_package: None,
+        languages: &[],
         files: &[
             (
                 "source-code-pro/SourceCodePro-Bold.ttf",
@@ -175,6 +200,23 @@ pub fn bundled_extension(id: &str) -> Option<&'static BundledExtension> {
     BUNDLED_EXTENSIONS.iter().find(|entry| entry.id == id)
 }
 
+/// 被卸载的语言扩展 → 应当禁用的语言 id 集合（排序去重）。
+///
+/// 设置存储把它推给 [\`lithe_gpui_shared::languages::set_disabled_languages\`]；
+/// 编辑器据此让这些文件按纯文本打开。
+#[must_use]
+pub fn disabled_languages(uninstalled: &[String]) -> Vec<String> {
+    let mut disabled: Vec<String> = BUNDLED_EXTENSIONS
+        .iter()
+        .filter(|entry| entry.kind == BundledKind::Languages)
+        .filter(|entry| uninstalled.iter().any(|id| id == entry.id))
+        .flat_map(|entry| entry.languages.iter().map(|id| (*id).to_string()))
+        .collect();
+    disabled.sort();
+    disabled.dedup();
+    disabled
+}
+
 /// 图标集包名 → 扩展条目；`None` = 不是捆绑图标集（内置包或认不出的名字）。
 ///
 /// 用途是"正在使用的图标包被卸载了吗"这条判断（[crate::store] 的回落逻辑）与扩展页的
@@ -190,8 +232,8 @@ pub fn store_dir(kind: BundledKind) -> Option<PathBuf> {
     match kind {
         BundledKind::Theme => paths::theme_extensions_dir(),
         BundledKind::Font => paths::font_extensions_dir(),
-        // 图标集没有落点：它随宿主编译，同步阶段不写文件。
-        BundledKind::Icons => None,
+        // 图标集与语言都没有落点：它们随宿主编译，同步阶段不写文件。
+        BundledKind::Icons | BundledKind::Languages => None,
     }
 }
 
@@ -199,7 +241,7 @@ pub fn store_dir(kind: BundledKind) -> Option<PathBuf> {
 pub fn mirror_dir(kind: BundledKind) -> Option<PathBuf> {
     match kind {
         BundledKind::Theme => paths::themes_dir(),
-        BundledKind::Font | BundledKind::Icons => None,
+        BundledKind::Font | BundledKind::Icons | BundledKind::Languages => None,
     }
 }
 
@@ -259,7 +301,11 @@ pub fn prepare_bundled_extensions(uninstalled: &[String]) -> SyncReport {
 /// 按卸载清单同步全部捆绑扩展（用 [`paths`] 推导目录）。
 pub fn sync_bundled_extensions(uninstalled: &[String]) -> SyncReport {
     let mut report = SyncReport::default();
-    for kind in [BundledKind::Theme, BundledKind::Font] {
+    for kind in [
+        BundledKind::Theme,
+        BundledKind::Font,
+        BundledKind::Languages,
+    ] {
         let (Some(store), mirror) = (store_dir(kind), mirror_dir(kind)) else {
             eprintln!("S1_EXTENSION sync_skipped reason=no_dirs kind={kind:?}");
             continue;
@@ -526,17 +572,13 @@ mod tests {
         ids.sort_unstable();
         assert_eq!(unique, ids, "捆绑扩展 id 不能重复");
         for entry in BUNDLED_EXTENSIONS {
-            // 图标集是**唯一**没有落盘文件的种类：它随宿主编译（见 `BundledKind::Icons`），
-            // 所以"非空文件"这条只对需要写出文件的种类成立。
-            if entry.kind == BundledKind::Icons {
+            // **随宿主编译的种类没有落盘文件**（图标集与语言）：它们的"安装"不写文件，
+            // 卸载的效果分别是"不可选"与"不再高亮"。所以"必须有文件"这条只对
+            // 需要写出文件的种类（主题、字体）成立。
+            if matches!(entry.kind, BundledKind::Icons | BundledKind::Languages) {
                 assert!(
                     entry.files.is_empty(),
-                    "{} 是图标集，不该有落盘文件",
-                    entry.id
-                );
-                assert!(
-                    entry.icons_package.is_some(),
-                    "{} 是图标集，必须声明包名（设置键 icons 的取值）",
+                    "{} 不需要落盘文件（随宿主编译）",
                     entry.id
                 );
                 continue;
@@ -551,6 +593,48 @@ mod tests {
                 assert!(!bytes.is_empty(), "{} 的 {relative} 是空内容", entry.id);
             }
         }
+    }
+
+    /// 语言包必须声明语言 id（卸载时按它禁用高亮），且这些 id 与目录里
+    /// `languageSupports` 贡献的东西是同一套取值。
+    #[test]
+    fn language_packages_declare_their_languages() {
+        let mut checked = 0;
+        for entry in BUNDLED_EXTENSIONS
+            .iter()
+            .filter(|entry| entry.kind == BundledKind::Languages)
+        {
+            assert!(
+                !entry.languages.is_empty(),
+                "{} 是语言包，必须声明它贡献的语言 id",
+                entry.id
+            );
+            let mut sorted: Vec<&str> = entry.languages.to_vec();
+            sorted.sort_unstable();
+            sorted.dedup();
+            assert_eq!(
+                sorted.len(),
+                entry.languages.len(),
+                "{} 的语言 id 必须唯一",
+                entry.id
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "至少要有一个语言包");
+        // 卸载计算：清单里有它 → 它的语言全被禁用；清单里没有 → 一个都不禁用。
+        let entry = BUNDLED_EXTENSIONS
+            .iter()
+            .find(|entry| entry.kind == BundledKind::Languages)
+            .expect("有语言包");
+        assert!(
+            disabled_languages(&[]).is_empty(),
+            "没卸载就不该禁用任何语言"
+        );
+        assert_eq!(
+            disabled_languages(&[entry.id.to_string()]).len(),
+            entry.languages.len(),
+            "卸载语言包 → 它声明的语言全部禁用"
+        );
     }
 
     /// 图标集的包名必须对应仓库 `assets/icons/<包>/` 里**真实存在的清单**：

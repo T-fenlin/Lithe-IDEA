@@ -106,6 +106,8 @@ struct Card {
     removable: bool,
     /// 这个包贡献了字体（详情里要写清「下次启动生效」—— 字体运行期摘不掉）。
     has_fonts: bool,
+    /// 这个包贡献了语言（详情里要写清卸载的后果：这些文件打开时是纯文本）。
+    has_languages: bool,
     /// 这个包贡献的是图标集时，它的**包名**（设置键 `icons` 的取值）；
     /// 卡片据此画「使用 / 当前」——图标主题与配色主题一样是"选一个生效"的东西。
     icons_package: Option<String>,
@@ -169,6 +171,7 @@ impl Card {
             built_in: entry.entrypoint_kind == "builtIn",
             removable: entry.entrypoint_kind == "bundled",
             has_fonts: !entry.font_families.is_empty(),
+            has_languages: !entry.language_supports.is_empty(),
             icons_package: if entry.categories.iter().any(|item| item == "icons") {
                 // 目录里的贡献路径形如 `icons/pierre/extension.json`，包名就是中间那段。
                 entry
@@ -598,6 +601,16 @@ impl ExtensionsPage {
                         &[("publisher", card.publisher.as_ref())],
                     )),
             );
+            // 可卸载的语言包要写清卸载的后果：这些文件下次打开就是纯文本
+            // （高亮状态在打开文件时判定，见 editor 的 buffer::language_for_file）。
+            if card.removable && card.has_languages {
+                details = details.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(tr("lithe.extensions.languageUninstallHint")),
+                );
+            }
             // 可卸载的字体包要写清生效时机：主题是热重载、字体要重启（见 fonts.rs 的模块文档）。
             if card.removable && card.has_fonts {
                 details = details.child(
