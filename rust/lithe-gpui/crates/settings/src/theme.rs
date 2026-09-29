@@ -79,39 +79,18 @@ pub const BUILTIN_THEMES: &[(&str, &str)] = &[(
     include_str!("../../../themes/jetbrains.json"),
 )];
 
-/// **捆绑主题扩展**：`(扩展 id, 文件名, 文件内容)`。捆绑 = 随宿主分发但**可卸载**
-/// （目录契约里 entrypoint `bundled`）；扩展 id 与 `official-v2.json` 里的清单一一对应。
-///
-/// 与 [`BUILTIN_THEMES`] 的差别是生命周期：捆绑扩展支持卸载（删除文件 +
-/// 记进 settings 的 `uninstalledExtensions`，防止下次启动又同步回来）与重装
-/// （从这里的内嵌内容重新写出去）。每份文件是一个主题组：浅色 + 深色各一。
-pub const BUNDLED_THEME_EXTENSIONS: &[(&str, &str, &str)] = &[
-    (
-        "lithe.gruvboxTheme",
-        "gruvbox.json",
-        include_str!("../../../extensions/themes/gruvbox.json"),
-    ),
-    (
-        "lithe.litheTheme",
-        "lithe.json",
-        include_str!("../../../extensions/themes/lithe.json"),
-    ),
-    (
-        "lithe.nordTheme",
-        "nord.json",
-        include_str!("../../../extensions/themes/nord.json"),
-    ),
-    (
-        "lithe.oneTheme",
-        "one.json",
-        include_str!("../../../extensions/themes/one.json"),
-    ),
-    (
-        "lithe.vscodeTheme",
-        "vscode.json",
-        include_str!("../../../extensions/themes/vscode.json"),
-    ),
-];
+/// **捆绑主题扩展**在 [`crate::extensions::BUNDLED_EXTENSIONS`] 里登记（与捆绑字体扩展
+/// 同一张表、同一套装/卸机制）。这里保留一个只读视图，供本模块的测试与"这个文件名是不是
+/// 主题包"的判据使用。
+pub fn bundled_theme_files() -> impl Iterator<Item = (&'static str, &'static str, &'static [u8])> {
+    crate::extensions::BUNDLED_EXTENSIONS
+        .iter()
+        .filter(|entry| entry.kind == crate::extensions::BundledKind::Theme)
+        .filter_map(|entry| {
+            let (relative, content) = entry.files.first()?;
+            Some((entry.id, *relative, *content))
+        })
+}
 
 /// 捆绑主题扩展的**老版本遗留文件名**（2026-09-29 之前它们被直接播种在 themes/ 里）。
 ///
@@ -221,126 +200,6 @@ pub fn seed_bundled_themes() -> Option<SeedReport> {
     Some(report)
 }
 
-/// 捆绑主题扩展的同步：管理面（`extensions/themes/`）与装载面（`themes/`）一次对齐。
-///
-/// - `id` **不在** `uninstalled` 里：管理面缺文件就从内嵌内容补（"重装"后的种子语义），
-///   然后把管理面内容**镜像**到装载面（缺或内容不同都写 —— 装载面是派生物，以管理面为准）。
-/// - `id` 在 `uninstalled` 里：两个目录里的文件都删掉（卸载标记可能在文件删除失败后写入，
-///   这里是幂等收口）。
-///
-/// 纯文件操作、不碰 GPUI，直接单测。原子写与"绝不覆盖已有管理面文件"的理由见
-/// [`seed_bundled_themes_into`]；装载面是镜像、允许覆盖，镜像走原子写让断电最坏
-/// 只留下 `.tmp`。
-pub fn sync_theme_extensions_into(
-    store_dir: &Path,
-    load_dir: &Path,
-    uninstalled: &[String],
-) -> SeedReport {
-    let mut report = SeedReport::default();
-    if let Err(error) = std::fs::create_dir_all(store_dir) {
-        eprintln!(
-            "S1_THEME ext_sync_failed dir={} error={error}",
-            store_dir.display()
-        );
-        report.failed.extend(
-            BUNDLED_THEME_EXTENSIONS
-                .iter()
-                .map(|(_, file, _)| (*file).to_string()),
-        );
-        return report;
-    }
-    if let Err(error) = std::fs::create_dir_all(load_dir) {
-        eprintln!(
-            "S1_THEME ext_sync_failed dir={} error={error}",
-            load_dir.display()
-        );
-        report.failed.extend(
-            BUNDLED_THEME_EXTENSIONS
-                .iter()
-                .map(|(_, file, _)| (*file).to_string()),
-        );
-        return report;
-    }
-
-    for (id, file, content) in BUNDLED_THEME_EXTENSIONS {
-        let store_path = store_dir.join(file);
-        let load_path = load_dir.join(file);
-        if uninstalled.iter().any(|value| value == id) {
-            remove_if_present(&load_path, file, &mut report);
-            remove_if_present(&store_path, file, &mut report);
-            continue;
-        }
-        if !store_path.exists() {
-            match write_atomically(&store_path, content.as_bytes()) {
-                Ok(()) => report.created.push((*file).to_string()),
-                Err(error) => {
-                    eprintln!(
-                        "S1_THEME ext_sync_write_failed path={} error={error}",
-                        store_path.display()
-                    );
-                    report.failed.push((*file).to_string());
-                    continue;
-                }
-            }
-        } else {
-            report.kept.push((*file).to_string());
-        }
-        // 装载面是镜像：以管理面为准（刚写出的管理面 = 内嵌内容；已存在的管理面
-        // 可能被用户改过，镜像跟随它）。
-        match std::fs::read_to_string(&store_path) {
-            Ok(store_content) if store_content == *content => {
-                mirror_if_needed(&load_path, content.as_bytes(), file, &mut report);
-            }
-            Ok(store_content) => {
-                mirror_if_needed(&load_path, store_content.as_bytes(), file, &mut report);
-            }
-            Err(error) => {
-                eprintln!(
-                    "S1_THEME ext_sync_read_failed path={} error={error}",
-                    store_path.display()
-                );
-                report.failed.push((*file).to_string());
-            }
-        }
-    }
-    report
-}
-
-/// 已卸载扩展在装载面的残留镜像（上次卸载时删除失败的兜底）。
-fn remove_if_present(path: &Path, file: &str, report: &mut SeedReport) {
-    match std::fs::remove_file(path) {
-        Ok(()) => report.removed.push(file.to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            eprintln!(
-                "S1_THEME ext_sync_remove_failed path={} error={error}",
-                path.display()
-            );
-            report.failed.push(file.to_string());
-        }
-    }
-}
-
-/// 装载面镜像：缺或内容不同就原子写（以管理面为准）。
-fn mirror_if_needed(load_path: &Path, bytes: &[u8], file: &str, report: &mut SeedReport) {
-    let differs = std::fs::read(load_path)
-        .map(|current| current != bytes)
-        .unwrap_or(true);
-    if !differs {
-        return;
-    }
-    match write_atomically(load_path, bytes) {
-        Ok(()) => report.created.push(format!("{file} (mirror)")),
-        Err(error) => {
-            eprintln!(
-                "S1_THEME ext_sync_mirror_failed path={} error={error}",
-                load_path.display()
-            );
-            report.failed.push(file.to_string());
-        }
-    }
-}
-
 /// 老版本迁移：把播种在 `themes/` 里的捆绑主题文件搬到扩展目录。
 ///
 /// 2026-09-29 之前捆绑主题（当时的 7 份）直接播种在 `themes/` 里；重组后它们归扩展目录管。
@@ -352,6 +211,10 @@ pub fn migrate_legacy_theme_files(load_dir: &Path, store_dir: &Path) -> SeedRepo
         return report;
     }
     let _ = std::fs::create_dir_all(store_dir);
+    // 今天仍由注册表管理的包文件名：它们在 `themes/` 里的那份是**装载面镜像**，不是老文件。
+    let current: std::collections::BTreeSet<&str> =
+        bundled_theme_files().map(|(_, file, _)| file).collect();
+
     for name in LEGACY_THEME_FILE_NAMES {
         let legacy_path = load_dir.join(name);
         if !legacy_path.exists() {
@@ -359,7 +222,14 @@ pub fn migrate_legacy_theme_files(load_dir: &Path, store_dir: &Path) -> SeedRepo
         }
         let store_path = store_dir.join(name);
         if store_path.exists() {
-            // 扩展目录已经有同名文件（同名族已就位）：装载面那份是旧播种的孤儿，删除。
+            if current.contains(name) {
+                // ⚠️ 这条是**镜像**（同步阶段写出来的），不是老版本残留：留着不动。
+                // 曾经这里无条件删除，结果是每次启动都先把镜像删掉、下一秒同步再写回来
+                // （2026-09-29 实机验证发现：`prepared created=3 removed=8` 里多出的那几次
+                // 读写就是它）—— 最终状态没错，但每启动一次白写 3 个文件。
+                continue;
+            }
+            // 扩展目录已有同名文件、而这个名字今天不再由注册表管理：装载面那份是孤儿，删除。
             match std::fs::remove_file(&legacy_path) {
                 Ok(()) => report.removed.push((*name).to_string()),
                 Err(error) => eprintln!(
@@ -369,6 +239,8 @@ pub fn migrate_legacy_theme_files(load_dir: &Path, store_dir: &Path) -> SeedRepo
             }
             continue;
         }
+        // 扩展目录还没有这份（老版本升级后的第一次启动）：把它搬过去，
+        // 保住用户在 `themes/` 里改过的那一份（同步阶段"缺就补"会用内嵌内容覆盖它）。
         match std::fs::rename(&legacy_path, &store_path) {
             Ok(()) => report.removed.push(format!("{name} (migrated)")),
             Err(error) => eprintln!(
@@ -391,68 +263,6 @@ pub fn migrate_legacy_theme_files(load_dir: &Path, store_dir: &Path) -> SeedRepo
         }
     }
     report
-}
-
-/// 卸载一个捆绑主题扩展：管理面与装载面的副本都删除。
-///
-/// settings 里 `uninstalledExtensions` 的记录由 [`crate::store::SettingsStore`] 负责
-/// （它要在同一次提交里落盘）；这里只做文件语义。`Err` = id 不是捆绑主题扩展或目录推导失败。
-pub fn uninstall_theme_extension(id: &str) -> Result<(), String> {
-    let store_dir = paths::theme_extensions_dir().ok_or_else(|| "无法推导扩展目录".to_string())?;
-    let load_dir = paths::themes_dir().ok_or_else(|| "无法推导主题目录".to_string())?;
-    uninstall_theme_extension_into(&store_dir, &load_dir, id)
-}
-
-/// [`uninstall_theme_extension`] 的目录显式形态（测试与工具用）。
-pub fn uninstall_theme_extension_into(
-    store_dir: &Path,
-    load_dir: &Path,
-    id: &str,
-) -> Result<(), String> {
-    let (_, file, _) =
-        bundled_theme_extension(id).ok_or_else(|| format!("未知捆绑主题扩展：{id}"))?;
-    for path in [store_dir.join(file), load_dir.join(file)] {
-        if let Err(error) = std::fs::remove_file(&path) {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                return Err(format!("删除 {} 失败：{error}", path.display()));
-            }
-        }
-    }
-    println!("S1_THEME extension_uninstalled id={id} file={file}");
-    Ok(())
-}
-
-/// 重装一个捆绑主题扩展：从内嵌内容写回管理面，并镜像到装载面。
-pub fn reinstall_theme_extension(id: &str) -> Result<(), String> {
-    let store_dir = paths::theme_extensions_dir().ok_or_else(|| "无法推导扩展目录".to_string())?;
-    let load_dir = paths::themes_dir().ok_or_else(|| "无法推导主题目录".to_string())?;
-    reinstall_theme_extension_into(&store_dir, &load_dir, id)
-}
-
-/// [`reinstall_theme_extension`] 的目录显式形态（测试与工具用）。
-pub fn reinstall_theme_extension_into(
-    store_dir: &Path,
-    load_dir: &Path,
-    id: &str,
-) -> Result<(), String> {
-    let (_, file, content) =
-        bundled_theme_extension(id).ok_or_else(|| format!("未知捆绑主题扩展：{id}"))?;
-    std::fs::create_dir_all(store_dir).map_err(|error| format!("建扩展目录失败：{error}"))?;
-    write_atomically(&store_dir.join(file), content.as_bytes())
-        .map_err(|error| format!("写 {} 失败：{error}", store_dir.join(file).display()))?;
-    write_atomically(&load_dir.join(file), content.as_bytes())
-        .map_err(|error| format!("写 {} 失败：{error}", load_dir.join(file).display()))?;
-    println!("S1_THEME extension_reinstalled id={id} file={file}");
-    Ok(())
-}
-
-/// 扩展 id → `(id, 文件名, 内容)`；`None` = 不是捆绑主题扩展。
-pub fn bundled_theme_extension(
-    id: &str,
-) -> Option<&'static (&'static str, &'static str, &'static str)> {
-    BUNDLED_THEME_EXTENSIONS
-        .iter()
-        .find(|(extension_id, _, _)| *extension_id == id)
 }
 
 /// 只由**内置主题**构成的索引（编译期内容，零文件 IO），缓存一份。
@@ -660,42 +470,16 @@ fn resolve_name_for_id(cx: &App, id: &str) -> String {
 /// 2. `ThemeRegistry::watch_dir` —— 它自己会先 `reload_themes` 再调回调
 ///    （`theme/registry.rs:104-115`），所以回调里 `themes()` 已经是新的一份。
 ///
+/// ⚠️ **捆绑扩展的同步不在这里**：迁移 + 同步（主题与字体两类）由
+/// [`crate::extensions::prepare_bundled_extensions`] 在启动早期一次做完，理由见那里
+/// —— 字体的注册（`fonts::register_fonts`）必须排在同步之后、本函数之前。
+///
 /// 回调不记住某一次的主题名，而是问 [`crate::store::SettingsStore`] "现在应该是什么主题"
 /// —— 这样设置界面改过主题之后再热改主题文件也不会退回旧主题。
 pub fn watch_lithe_themes(cx: &mut App) {
     // 播种失败也继续：用户目录里可能有他自己的主题，能装载多少算多少。
     if seed_bundled_themes().is_none() {
         eprintln!("S1_THEME seed_skipped reason=no_themes_dir");
-    }
-
-    // 捆绑主题扩展：先迁移老文件，再按"卸载清单"同步管理面与装载面。
-    // 卸载清单从设置存储读（`init_store` 先于本函数，见 `main.rs` 的启动顺序）；
-    // 读不到就当空清单 —— 播种面照常工作，卸载状态等下一次启动再收口。
-    if let (Some(load_dir), Some(store_dir)) = (paths::themes_dir(), paths::theme_extensions_dir())
-    {
-        let migrate = migrate_legacy_theme_files(&load_dir, &store_dir);
-        if !migrate.removed.is_empty() || !migrate.failed.is_empty() {
-            println!(
-                "S1_THEME migrated dir={} removed={} failed={}",
-                store_dir.display(),
-                migrate.removed.len(),
-                migrate.failed.len()
-            );
-        }
-        let uninstalled = crate::store::try_store(cx)
-            .map(|store| store.read(cx).uninstalled_extensions().to_vec())
-            .unwrap_or_default();
-        let synced = sync_theme_extensions_into(&store_dir, &load_dir, &uninstalled);
-        println!(
-            "S1_THEME extensions_synced dir={} created={} kept={} removed={} failed={}",
-            store_dir.display(),
-            synced.created.len(),
-            synced.kept.len(),
-            synced.removed.len(),
-            synced.failed.len()
-        );
-    } else {
-        eprintln!("S1_THEME ext_sync_skipped reason=no_dirs");
     }
 
     let Some(themes_dir) = paths::themes_dir() else {
@@ -1019,12 +803,12 @@ mod tests {
     }
 
     /// 内置主题清单必须覆盖仓库 `lithe-gpui/themes/` 里的**每一份** `*.json`，捆绑主题扩展
-    /// 清单必须覆盖 `lithe-gpui/extensions/themes/` 里的**每一份**；每份都能被真实的
-    /// `ThemeSet` 反序列化、每条主题都有非空且唯一的 id、每个组都是"浅色 + 深色"一对。
+    /// 必须覆盖 `lithe-gpui/extensions/themes/` 里的**每一份**；每份都能被真实的
+    /// `ThemeSet` 反序列化、每条主题都有非空且唯一的 id、每个捆绑组都是"浅色 + 深色"一对。
     ///
     /// 这条测试守几件**静默失效**：
-    /// 1. 往目录里丢了新主题文件却忘了登记进 [`BUILTIN_THEMES`] / [`BUNDLED_THEME_EXTENSIONS`]
-    ///    → 运行期看不到它（打包后更看不到）；
+    /// 1. 往目录里丢了新主题文件却忘了登记（内置进 [`BUILTIN_THEMES`]、捆绑进
+    ///    [`crate::extensions::BUNDLED_EXTENSIONS`]）→ 运行期看不到它（打包后更看不到）；
     /// 2. 忘了写 `id` → 运行期只能按名字派生 id，改名就会断开用户的引用；
     /// 3. 捆绑组少了深或浅的一侧 → 违反"一组有深色与浅色"的产品口径。
     #[test]
@@ -1032,14 +816,18 @@ mod tests {
         use gpui_kit::component::ThemeSet;
         use std::collections::BTreeMap;
 
-        let bundled: BTreeMap<&str, &str> = BUNDLED_THEME_EXTENSIONS
-            .iter()
-            .map(|(_, file, content)| (*file, *content))
+        let bundled: BTreeMap<&str, &str> = bundled_theme_files()
+            .map(|(_, file, content)| {
+                (
+                    file,
+                    std::str::from_utf8(content).expect("主题文件是 UTF-8 文本"),
+                )
+            })
             .collect();
         assert_eq!(
             bundled.len(),
-            BUNDLED_THEME_EXTENSIONS.len(),
-            "BUNDLED_THEME_EXTENSIONS 里有重复的文件名"
+            bundled_theme_files().count(),
+            "捆绑主题扩展里有重复的文件名"
         );
 
         for (dir, embedded, label) in [
@@ -1389,126 +1177,31 @@ mod tests {
         assert!(!system_is_dark(WindowAppearance::VibrantLight));
     }
 
-    /// 同步（全装）：管理面与装载面都出现每个捆绑组，内容与内嵌一致。
+    /// 回归：迁移**不能**把装载面的镜像当成老文件删掉。
+    ///
+    /// 曾经的 bug（2026-09-29 实机验证发现）：迁移无条件删除 `themes/` 里与扩展目录同名的
+    /// 文件，而同步阶段刚写出来的镜像正是同名的 —— 于是每次启动都"删镜像 → 再镜像"，
+    /// 白写若干文件（日志里表现为 `prepared created=3 removed=8`）。
     #[test]
-    fn sync_installs_every_bundled_theme_extension() {
-        let dir = TempDir::new("sync-install");
+    fn migration_leaves_the_load_surface_mirror_alone() {
+        let dir = TempDir::new("migrate-mirror");
         let store_dir = dir.path().join("extensions/themes");
         let load_dir = dir.path().join("themes");
+        std::fs::create_dir_all(&store_dir).expect("建管理面");
+        std::fs::create_dir_all(&load_dir).expect("建装载面");
 
-        let report = sync_theme_extensions_into(&store_dir, &load_dir, &[]);
-        assert_eq!(
-            report.created.len(),
-            BUNDLED_THEME_EXTENSIONS.len() * 2,
-            "{report:?}"
-        );
-        assert!(report.failed.is_empty(), "{report:?}");
-        for (_, file, content) in BUNDLED_THEME_EXTENSIONS {
-            assert_eq!(
-                std::fs::read_to_string(store_dir.join(file)).expect("管理面读不到"),
-                *content,
-                "{file} 的管理面内容不一致"
-            );
-            assert_eq!(
-                std::fs::read_to_string(load_dir.join(file)).expect("装载面读不到"),
-                *content,
-                "{file} 的装载面镜像不一致"
-            );
+        // 管理面与装载面都有同一份包（= 同步之后的稳态形状）。
+        for (_, file, content) in bundled_theme_files() {
+            let text = std::str::from_utf8(content).expect("主题文件是 UTF-8");
+            std::fs::write(store_dir.join(file), text).expect("写管理面");
+            std::fs::write(load_dir.join(file), text).expect("写镜像");
         }
-    }
 
-    /// 同步（已卸载）：两个目录都不写、已有残留删掉；重装（从卸载清单移除）后文件回来。
-    #[test]
-    fn sync_honors_the_uninstalled_list_and_reinstall_restores() {
-        let dir = TempDir::new("sync-uninstall");
-        let store_dir = dir.path().join("extensions/themes");
-        let load_dir = dir.path().join("themes");
-        sync_theme_extensions_into(&store_dir, &load_dir, &[]);
-        let (nord_id, nord_file, nord_content) = BUNDLED_THEME_EXTENSIONS
-            .iter()
-            .find(|(id, _, _)| *id == "lithe.nordTheme")
-            .expect("nord 一定在捆绑清单里");
-
-        // 卸载：装载面与管理面的文件都消失。
-        let report = sync_theme_extensions_into(&store_dir, &load_dir, &[(*nord_id).to_string()]);
-        assert!(
-            !store_dir.join(nord_file).exists(),
-            "管理面不该有已卸载的包"
-        );
-        assert!(
-            !load_dir.join(nord_file).exists(),
-            "装载面不该有已卸载的镜像"
-        );
-        assert_eq!(report.removed.len(), 2, "残留镜像要被收口：{report:?}");
-
-        // 重装（卸载清单里没有它）：两个文件都从内嵌内容回来。
-        sync_theme_extensions_into(&store_dir, &load_dir, &[]);
-        assert_eq!(
-            std::fs::read_to_string(store_dir.join(nord_file)).expect("管理面读不到"),
-            *nord_content
-        );
-        assert_eq!(
-            std::fs::read_to_string(load_dir.join(nord_file)).expect("装载面读不到"),
-            *nord_content
-        );
-    }
-
-    /// 装载面是镜像：管理面内容被改过时，镜像跟随管理面而不是内嵌内容。
-    #[test]
-    fn sync_mirrors_the_store_copy_over_the_load_copy() {
-        let dir = TempDir::new("sync-mirror");
-        let store_dir = dir.path().join("extensions/themes");
-        let load_dir = dir.path().join("themes");
-        sync_theme_extensions_into(&store_dir, &load_dir, &[]);
-
-        // 用户改了管理面那份（合法的编辑面），装载面要在下次同步时跟随。
-        let (_, gruvbox_file, _) = BUNDLED_THEME_EXTENSIONS
-            .iter()
-            .find(|(id, _, _)| *id == "lithe.gruvboxTheme")
-            .expect("gruvbox 一定在捆绑清单里");
-        let edited = r#"{"name":"Gruvbox","themes":[{"id":"gruvbox-dark","name":"My Gruvbox","mode":"dark"}]}"#;
-        std::fs::write(store_dir.join(gruvbox_file), edited).expect("改写管理面失败");
-
-        let report = sync_theme_extensions_into(&store_dir, &load_dir, &[]);
-        assert!(report.failed.is_empty(), "{report:?}");
-        assert_eq!(
-            std::fs::read_to_string(load_dir.join(gruvbox_file)).expect("装载面读不到"),
-            edited,
-            "装载面必须跟随管理面（用户的编辑面），而不是内嵌内容"
-        );
-    }
-
-    /// 卸载/重装原语：删两个目录的副本、重装从内嵌内容恢复；未知 id 报错。
-    #[test]
-    fn uninstall_and_reinstall_manage_both_copies() {
-        let dir = TempDir::new("uninstall-reinstall");
-        let store_dir = dir.path().join("extensions/themes");
-        let load_dir = dir.path().join("themes");
-        sync_theme_extensions_into(&store_dir, &load_dir, &[]);
-
-        let (one_id, one_file, one_content) = BUNDLED_THEME_EXTENSIONS
-            .iter()
-            .find(|(id, _, _)| *id == "lithe.oneTheme")
-            .expect("one 一定在捆绑清单里");
-
-        uninstall_theme_extension_into(&store_dir, &load_dir, one_id).expect("卸载应成功");
-        assert!(!store_dir.join(one_file).exists());
-        assert!(!load_dir.join(one_file).exists());
-
-        reinstall_theme_extension_into(&store_dir, &load_dir, one_id).expect("重装应成功");
-        assert_eq!(
-            std::fs::read_to_string(store_dir.join(one_file)).expect("管理面读不到"),
-            *one_content
-        );
-        assert_eq!(
-            std::fs::read_to_string(load_dir.join(one_file)).expect("装载面读不到"),
-            *one_content
-        );
-
-        assert!(
-            uninstall_theme_extension_into(&store_dir, &load_dir, "lithe.notATheme").is_err(),
-            "未知 id 必须报错而不是静默成功"
-        );
+        let report = migrate_legacy_theme_files(&load_dir, &store_dir);
+        assert!(report.removed.is_empty(), "镜像不该被动：{report:?}");
+        for (_, file, _) in bundled_theme_files() {
+            assert!(load_dir.join(file).exists(), "{file} 的镜像必须还在");
+        }
     }
 
     /// 迁移：老版本播种在 themes/ 里的捆绑主题搬到扩展目录（缺才搬）；

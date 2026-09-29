@@ -983,9 +983,13 @@ fn main() {
             // 停下就淡出，`gpui-base/src/scrollbar.rs:48-56`），而 IDE 的观感是常显细条 + 可拖。
             Theme::set_scrollbar_mode(gpui_kit::component::scroll::ScrollbarMode::Always, cx);
 
-            // 设置：登记状态（含读文件结果与 `--theme` 覆盖）→ 主题目录装载/监听 → `Ctrl+,` 动作。
-            // 顺序有要求：`watch_lithe_themes` 的回调要用到 `SettingsStore`，而主题的**应用**
-            // 只在那个回调里发生（见 `lithe_gpui_settings::lib.rs` 的启动顺序表）。
+            // 设置：登记状态（含读文件结果与 `--theme` 覆盖）→ 捆绑扩展准备 →
+            // 主题目录装载/监听 → `Ctrl+,` 动作。
+            //
+            // ⚠️ 顺序有硬要求（见 `lithe_gpui_settings::lib.rs` 的启动顺序表）：
+            // `watch_lithe_themes` 的回调要用 `SettingsStore`，而主题的**应用**只在那个
+            // 回调里发生；捆绑扩展的同步（迁移老主题文件 + 写出主题包、镜像到装载面）必须
+            // 早于它 —— 装载面没有文件，注册表就看不到那些主题。
             let store: gpui_kit::Entity<SettingsStore> = lithe_gpui_settings::init_store(
                 cx,
                 Init {
@@ -993,6 +997,9 @@ fn main() {
                     theme_override,
                 },
             );
+            let uninstalled = store.read(cx).uninstalled_extensions().to_vec();
+            let report = lithe_gpui_settings::prepare_bundled_extensions(&uninstalled);
+            println!("S1_EXTENSIONS prepared {}", report.summary());
             lithe_gpui_settings::watch_lithe_themes(cx);
             lithe_gpui_settings::install_actions(cx);
             let _ = store;

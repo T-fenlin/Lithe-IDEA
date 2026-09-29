@@ -47,6 +47,8 @@
 
 pub mod dialog;
 pub mod identity;
+// 捆绑扩展（主题组）的注册表与装/卸/同步。
+pub mod extensions;
 pub mod paths;
 pub mod persistence;
 pub mod project;
@@ -87,6 +89,8 @@ pub use recent_projects::{
 pub use restart::restart_application;
 pub use schema::Settings;
 pub use store::{AppearanceMode, Init, SettingsStore, init_store, store, try_store};
+// 启动顺序里的第一步：准备捆绑扩展（迁移老主题文件 + 同步管理面与装载面）。
+pub use extensions::prepare_bundled_extensions;
 pub use theme::watch_lithe_themes;
 pub use workspace::{
     AppearanceKey, AppearanceKeySource, AppearanceOverlay, AppearanceSource, AppearanceValue,

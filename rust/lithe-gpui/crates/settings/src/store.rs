@@ -519,41 +519,45 @@ impl SettingsStore {
         self.commit_global(cx, next, Effects::None);
     }
 
-    // ---------------------------------------------------------------- 扩展（捆绑主题扩展的卸载/重装）
+    // ---------------------------------------------------------------- 扩展（捆绑扩展的卸载/重装）
 
-    /// 已卸载的捆绑主题扩展 id 列表（设置键 `uninstalledExtensions`，排序去重后落盘）。
+    /// 已卸载的捆绑扩展 id 列表（设置键 `uninstalledExtensions`，排序去重后落盘）。
     ///
-    /// 扩展页用它判定「卸载」还是「重新安装」按钮；启动时的目录同步也按它跳过
-    /// （见 [`crate::theme::sync_theme_extensions_into`]）。
+    /// 扩展页用它判定「卸载」还是「重新安装」按钮；启动时的同步也按它跳过
+    /// （见 [`crate::extensions::prepare_bundled_extensions`]）。
     pub fn uninstalled_extensions(&self) -> &[String] {
         &self.global.uninstalled_extensions
     }
 
-    /// 卸载（`uninstalled = true`）或重装一个捆绑主题扩展 —— 扩展页两个按钮的唯一落点。
+    /// 卸载（`uninstalled = true`）或重装一个捆绑扩展 —— 扩展页两个按钮的唯一落点。
     ///
-    /// 文件操作（删/写扩展目录与主题目录的副本）与设置记录在这里一起完成，顺序是
-    /// **文件先动、清单后记**：失败路径上最坏的后果是"文件已删但清单没记"，下次启动
-    /// 同步会把包装回来（种子语义），不会出现"清单记了、文件还在却永远加载不了"的死结。
+    /// **主题组与字体族是同一套动作**（注册表见 [`crate::extensions::BUNDLED_EXTENSIONS`]）：
+    /// 文件操作与设置记录在这里一起完成，顺序是**文件先动、清单后记** —— 失败路径上最坏的
+    /// 后果是"文件已删但清单没记"，下次启动同步会把包装回来（种子语义），不会出现
+    /// "清单记了、文件还在却永远加载不了"的死结。
     ///
-    /// 主题的视觉切换由主题目录的 watcher 自动收口：装载面少/多了一个文件 → 注册表
-    /// 热重载 → [`Self::reapply_theme`]；被卸载的正是当前主题时，按既有规则回落默认主题
-    /// （`S1_SETTINGS theme_missing`，设置文件里的选择不抹掉，重装后自动回来）。
+    /// 生效时机两类不一样（如实登记）：
+    /// - **主题立即**：装载面少/多一个文件 → 注册表热重载 → 重新应用当前主题；
+    ///   卸载的正是当前主题时按既有规则回落默认主题（`S1_SETTINGS theme_missing`，
+    ///   设置文件里的选择不抹掉，重装后自动回来）。
+    /// - **字体下次启动**：`TextSystem::add_fonts` 只增不删，运行期摘不掉已注册的字族
+    ///   （见 [`crate::fonts`] 的模块文档）；扩展页在字体卡片的详情里写明了这一点。
     ///
-    /// 非 `bundled` 的 id（内置主题、字体、Java 等）在这里被拒：它们没有卸载语义。
+    /// 非 `bundled` 的 id（内置主题、内置字体、Java 支持等）在这里被拒：它们没有卸载语义。
     pub fn set_extension_uninstalled(
         &mut self,
         id: &str,
         uninstalled: bool,
         cx: &mut Context<Self>,
     ) {
-        if crate::theme::bundled_theme_extension(id).is_none() {
+        if crate::extensions::bundled_extension(id).is_none() {
             eprintln!("S1_SETTINGS extension_unknown id={id}");
             return;
         }
         let result = if uninstalled {
-            crate::theme::uninstall_theme_extension(id)
+            crate::extensions::uninstall(id)
         } else {
-            crate::theme::reinstall_theme_extension(id)
+            crate::extensions::reinstall(id)
         };
         if let Err(error) = result {
             eprintln!(
