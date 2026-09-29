@@ -1,0 +1,98 @@
+---
+url: /zh-CN/component/textarea.md
+description: 支持固定行数、软换行和自动增高的多行文本输入组件。
+---
+
+# Textarea
+
+`Textarea` 用于普通多行文本。单行输入请使用 [Input](./input.md)，源代码编辑请使用 [Editor](./editor.md)。
+
+## 导入
+
+```rust
+use gpui_kit::component::input::{Textarea, TextareaState};
+```
+
+## 基础用法
+
+```rust
+let notes = cx.new(|cx| {
+    TextareaState::new(window, cx)
+        .rows(5)
+        .placeholder("备注")
+});
+
+Textarea::new(&notes)
+```
+
+## 自动增高
+
+```rust
+let message = cx.new(|cx| {
+    TextareaState::new(window, cx)
+        .auto_grow(2, 8)
+        .placeholder("输入消息")
+});
+
+Textarea::new(&message)
+```
+
+组件最多增长到 `max_rows`，之后内容在内部滚动。
+
+## 值与事件
+
+```rust
+let value = notes.read(cx).value();
+
+notes.update(cx, |state, cx| {
+    state.set_value("更新后的备注", window, cx);
+});
+
+cx.subscribe(&notes, |this, state, event: &InputEvent, cx| {
+    if matches!(event, InputEvent::Change) {
+        this.notes = state.read(cx).value();
+        cx.notify();
+    }
+});
+```
+
+`TextareaState` 还提供 `insert`、`replace`、`cursor_position`、
+`soft_wrap`、`searchable` 和 `submit_on_enter`。
+
+## 尺寸
+
+```rust
+Textarea::new(&notes).large()
+Textarea::new(&notes) // medium（默认）
+Textarea::new(&notes).small()
+```
+
+尺寸会同时改变文字大小和文本四周的内边距，但不决定高度：固定高度用 `h` 设置，随内容增高的 Textarea 由 `rows` 或 `auto_grow` 决定高度。
+
+## 外观
+
+```rust
+Textarea::new(&notes)
+    .h(px(160.))
+    .bordered(true)
+    .disabled(false)
+    .readonly(false)
+    .aria_label("备注")
+```
+
+与 `disabled` 不同，只读 Textarea 保持正常外观，仍然可以聚焦、选中和复制，只是拒绝用户对内容的修改。
+
+`Textarea` 不提供只适用于单行 Input 的前后缀、密码显示切换和清除按钮；相关操作应组合在 Textarea 外部。
+
+## 原子行内 token
+
+在多行消息中加入人员提及、文件引用或命令时，可以使用 token。通过 `TextareaState::replace_with_token` 插入，或用 `set_value` 恢复已有草稿。默认标签可以直接使用，需要图标等自定义内容时再设置 renderer：
+
+```rust
+Textarea::new(&state)
+    .token(|token, _, _| InputToken::new(token).icon(IconName::File))
+```
+
+从 `gpui_kit::component::input` 导入 `InputToken`，从 `gpui_kit::component` 导入 `IconName`。token 会整块换到下一行，自动增高会相应调整输入框高度。换行符应放在 token 之间的普通文本中。编辑、激活、草稿保存、模式限制和 JavaScript API 见 [Input：原子行内 token](./input.md#原子行内-token)。
+
+> 文档许可：GPUI Kit 有权授权的原创正文与图示另以 CC BY 4.0 提供。复制或改编时请署名 GPUI Kit，链接原文（https://gpui-kit.com/zh-CN/component/textarea）及 https://creativecommons.org/licenses/by/4.0/，并注明修改。代码示例与软件源码采用 Apache-2.0；第三方内容保留原许可；既有 Apache-2.0 使用权不受影响。
