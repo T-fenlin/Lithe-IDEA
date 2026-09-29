@@ -46,12 +46,27 @@ use lithe_gpui_shared::{tr, tr_args};
 const FILTERS: [(Option<&'static str>, &'static str); 7] = [
     (None, "lithe.extensions.all"),
     (Some("themes"), "lithe.extensions.themes"),
-    (Some("icon-themes"), "lithe.extensions.iconThemes"),
+    (Some("icon-themes"), "lithe.extensions.icons"),
     (Some("fonts"), "lithe.extensions.category.fonts"),
     (Some("debug"), "lithe.extensions.category.debug"),
     (Some("lsp"), "lithe.extensions.category.lsp"),
     (Some("languages"), "lithe.extensions.languages"),
 ];
+
+/// 分类 id → 界面标签。id（ 等）是目录契约的协议面，界面按  键显示，
+/// 与筛选条共用同一批键 —— 否则同一件事会出现「图标」与「icon-themes」两种写法。
+fn category_label(category: &str) -> SharedString {
+    match category {
+        "themes" => tr("lithe.extensions.themes"),
+        "icon-themes" => tr("lithe.extensions.icons"),
+        "fonts" => tr("lithe.extensions.category.fonts"),
+        "debug" => tr("lithe.extensions.category.debug"),
+        "lsp" => tr("lithe.extensions.category.lsp"),
+        "languages" => tr("lithe.extensions.languages"),
+        // 目录里出现未知分类时原样显示（比空串诚实：至少说明数据里有这一档）。
+        other => SharedString::from(other.to_string()),
+    }
+}
 
 /// 目录加载状态。
 #[derive(Debug)]
@@ -124,7 +139,13 @@ impl Card {
             version: entry.version.clone().into(),
             description: entry.description.clone().map(Into::into),
             categories: entry.categories.clone(),
-            categories_label: entry.categories.join(" · ").into(),
+            categories_label: entry
+                .categories
+                .iter()
+                .map(|category| category_label(category).to_string())
+                .collect::<Vec<_>>()
+                .join(" · ")
+                .into(),
             publisher: entry.publisher.clone().into(),
             built_in: entry.entrypoint_kind == "builtIn",
             removable: entry.entrypoint_kind == "bundled",

@@ -117,9 +117,22 @@ impl FileIconTheme {
     /// 逐字段取值能让"某个字段缺失"退化成"该级查表不命中"，而不是整个解析失败。
     fn from_json(theme: &str, json: &str) -> Result<Self, serde_json::Error> {
         let root: serde_json::Value = serde_json::from_str(json)?;
+        // 一个包可以声明**多个** `icons[]` 条目（真机的 `pierre` 就是三档：
+        // `pierre-icons-minimal` 5 条 / `pierre-icons` 28 条 / `pierre-icons-complete` 57 条）。
+        // 这里取**定义最多**的那一条：它是这个包"最完整"的贡献，取第 0 条会只拿到最小集
+        // （`idea` / `symbols` / `lithe` 都只有一条，行为不变）。
         let icon = root
             .get("icons")
-            .and_then(|icons| icons.get(0))
+            .and_then(|icons| icons.as_array())
+            .and_then(|entries| {
+                entries.iter().max_by_key(|entry| {
+                    entry
+                        .get("iconDefinitions")
+                        .and_then(|defs| defs.as_object())
+                        .map(|defs| defs.len())
+                        .unwrap_or(0)
+                })
+            })
             .cloned()
             .unwrap_or(serde_json::Value::Null);
 
@@ -251,7 +264,7 @@ pub fn theme_icon_bytes(asset_path: &str, cx: &App) -> Option<Vec<u8>> {
         .map(|bytes| bytes.into_owned())
 }
 
-/// 把 [`theme_icon_path`] 查到的 SVG 路径画成一个**单色、锐利**的元素。
+/// 把 [`theme_icon_path`] 查到的 SVG 路径画成一个**保留原色**的图标元素。
 ///
 /// `side` 是边长，接受任何 `Into<Length>`：`rems(1.)`（16，文件树）、`rems(0.75)`（12，编辑器标签）
 /// 或 `px(..)` 都可以 —— 布局规范要求优先用 rem 档位，所以调用点通常传 `rems(..)`。
@@ -259,48 +272,53 @@ pub fn theme_icon_bytes(asset_path: &str, cx: &App) -> Option<Vec<u8>> {
 /// `None` 表示资源取不到（查找层算出来的路径在内嵌资源里不存在）：调用方回落到
 /// Lucide 字形（见 `crate::icons::FileIcon::render`），**不画空白**。
 ///
-/// ## 为什么是 `svg()`（单色）而不是 `img()`（保留原色）—— 实测结论
+/// ## 为什么是 `img()`（保留原色）而不是 `svg()`（单色）—— 源码结论（2026-09-29 复核）
 ///
 /// 真机的文件类型图标是**彩色**的（`.java` 橙、`.gitignore` 红、`pom.xml` 蓝），
-/// 理论上该走 `img()`（`Img` 把 SVG 渲成彩色位图）。**但在这台机器上实测不可行**：
+/// 我们搬进来的两套图标包也确实是彩色的（`idea/extension.json` 引用的 103 个 SVG 里
+/// 79 个带 `fill="#…"`，`pierre` 的 57 个**全部**带色）。而两条渲染路径的差别在 gpui 源码里是
+/// 明确的：
 ///
-/// | 现象 | 证据 |
-/// | --- | --- |
-/// | `Img` 在文件树里**时灵时不灵** | 同一个构建：`rems(1.)`（16px）时 9 行树里只有目录行有字形；改成 `rems(4.)`（64px）后 9 行全部有字形 |
-/// | `Img` 放进状态栏 chip **完全不画** | 同一帧里 `branch.svg` 那块区域一个非背景像素都没有（`.artifacts/p5/statuszoom-{before,after}.png`） |
-/// | 颜色也不是原色 | 64px 那次的像素直方图里没有 `#F34E29` / `#3574F0` 这类原色，只有被压暗、去饱和的近似值 |
+/// | 入口 | 走哪条路 | 结果 |
+/// | --- | --- | --- |
+/// | `svg()` | `Svg::paint` → `Window::paint_svg` → `SvgRenderer::render_alpha_mask`（`gpui-pre-0.3.7/src/elements/svg.rs:184`、`window.rs:4825`） | 把 SVG 渲成**alpha 遮罩**，再用**单一** `text.color` 上色 → 天生单色；且 `text.color` 为 `None` 时**根本不画**（`svg.rs:150,162,182` 三个分支都以 `style.text.color` 为条件） |
+/// | `img()` | `ImageAssetLoader`/`ImageDecoder` → `Resource::Embedded` 取字节 → `image::guess_format` 失败 → `SvgRenderer::render_single_frame`（`elements/img.rs:740`、`svg_renderer.rs:222`） | `parse_svg` + `render_parsed` → `rasterize_tree` 出**彩色 RGBA**（`svg_renderer.rs:195-219`）→ 原色保留 |
 ///
-/// 成因指向 gpui 的图片链路：`Img::request_layout` 只在有 `GlobalElementId` 时才 `use_data`
-/// （`gpui-pre-0.3.6/src/elements/img.rs:289-315`），而这条链路上的元素（`Tree` 的行内容、
-/// 状态栏 chip）没有稳定的全局 id；`svg()` 没有这个约束，在**所有**这些位置都稳定出图。
+/// 所以"彩色"只能走 `img()`；这不是参数开关，是两条不同的渲染管线。
 ///
-/// 取舍：**优先"画得出来 + 边缘锐利"，把"彩色"留作后续**（要补彩色得换掉 `Img` 这条链路，
-/// 例如预渲染成 `RenderImage` 后走 `ImageSource::Render`，或用 `gpui::canvas` 自绘 ——
-/// 都不是改一个参数能解决的）。单色也是旧实现的既有口径（`IconName` 一律单色），
-/// 所以换源**没有引入新的视觉回归**。
+/// ### 当年"`img()` 时灵时不灵"的结论已经过期（这份注释曾据此选单色）
 ///
-/// ## 颜色由谁给
+/// 旧结论的归因是"`Img::request_layout` 只在有 `GlobalElementId` 时才 `use_data`"。
+/// 复核 0.3.7 源码：那个 `global_id.is_some()` 只**门控多帧动画的续帧请求**
+/// （`elements/img.rs:382-387`：`global_id.is_some() && data.frame_count() > 1 && …`），
+/// 图像本身在 `paint` 阶段由 `source.use_data(..)` 取（`:480`），**不需要全局 id**。
+/// 当年的现象更可能是当时那条调用链喂的是 `Image`（`Image::to_image_data` 也是彩色路径）
+/// 或取样的是预乘 BGRA 像素 —— 与"元素有没有 id"无关。
 ///
-/// 取 [`Theme::muted_foreground`]：文件树与编辑器标签原本就用它画文件图标
-/// （`Icon::new(..).text_color(cx.theme().muted_foreground)`），所以换源前后明暗一致。
-/// 调用点要别的颜色可以自己再 `.text_color(..)` 覆盖（返回的是具体类型 `Svg`，`Styled`
-/// 方法都可用）。这也与 `idea_icon_svg` 的"helper 自己设色、调用点不要猜"同一口径。
+/// ## 已知代价（如实登记）
+///
+/// `img()` 在内嵌资源这条路上**固定按 `scale_factor = 1.0` 栅格化**
+/// （`elements/img.rs:740-742` 传的字面量 `1.0`，上游留着 `TODO: Can we make SVGs always rescale?`），
+/// 于是 16px 的图标在 125% / 150% DPI 下是把 16×16 位图放大到 20/24 物理像素 ——
+/// 比 `svg()` 的矢量遮罩**略软**。这一条是"原色 vs 边缘锐利"的取舍，选了原色（用户口径）：
+/// 图标主题里的图标本来就是按 16px 设计的彩色小图，放大一档仍在可接受范围。
+/// 要同时要"原色 + 任意 DPI 锐利"，得自己用 `cx.svg_renderer().render_single_frame(bytes, scale)`
+/// 预渲染成 `RenderImage` 再走 `ImageSource::Render`（需要自建缓存），属后续可做的优化。
 pub fn theme_file_icon(
     asset_path: &str,
     side: impl Into<gpui_kit::Length>,
     cx: &App,
 ) -> Option<AnyElement> {
     theme_icon_bytes(asset_path, cx)?;
-    let theme = Theme::global(cx);
     let side: gpui_kit::Length = side.into();
     Some(
-        gpui_kit::svg()
-            .path(SharedString::from(asset_path.to_string()))
-            .flex_shrink_0()
-            .text_color(theme.muted_foreground)
-            .w(side)
-            .h(side)
-            .into_any_element(),
+        gpui_kit::img(gpui_kit::ImageSource::Resource(
+            gpui_kit::Resource::Embedded(SharedString::from(asset_path.to_string())),
+        ))
+        .flex_shrink_0()
+        .w(side)
+        .h(side)
+        .into_any_element(),
     )
 }
 

@@ -270,6 +270,7 @@ mod tests {
             ("lithe.extensions.availableCount", "{count} 个可用"),
             ("lithe.extensions.all", "全部"),
             ("lithe.extensions.themes", "主题"),
+            ("lithe.extensions.icons", "图标"),
             ("lithe.extensions.iconThemes", "图标主题"),
             ("lithe.extensions.category.fonts", "字体"),
             ("lithe.extensions.category.debug", "调试"),

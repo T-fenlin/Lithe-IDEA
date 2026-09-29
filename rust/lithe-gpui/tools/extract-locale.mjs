@@ -371,6 +371,13 @@ const GPUI_ONLY_KEYS = [
       "同一个视图的空态。判据是 Core 的 spring.index 没给出任何事实（响应为 null 或集合全空），所以文案如实说「组件与端点」而不是「项目」——免得把「打开了一个没有 Spring 的 Java 项目」说成「没检测到项目」。句式沿用 maven.notDetected（「未检测到 X」），保持同一面板族的读感。",
   },
   {
+    key: "extensions.icons",
+    zh: "图标",
+    en: "Icons",
+    reason:
+      "扩展页分类筛选条与卡片上的分类标签（图标主题这一档）。用户口径：这一档就叫「图标」（2026-09-29 维护者：扩展里面的图标主题修改为图标）。它与 extensions.iconThemes（真源的「图标主题」）指向同一分类，保留旧键是因为它仍被其他文案使用。",
+  },
+  {
     key: "extensions.category.fonts",
     zh: "字体",
     en: "Fonts",
