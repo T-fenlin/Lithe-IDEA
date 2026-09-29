@@ -153,7 +153,7 @@ pub struct PluginPackageManifest {
     pub themes: Vec<ThemeContribution>,
     /// Icon themes contributed by this package, sorted by name then path.
     #[serde(default)]
-    pub icon_themes: Vec<IconThemeContribution>,
+    pub icons: Vec<IconsContribution>,
     /// Font families contributed by this package, sorted by family then path.
     #[serde(default)]
     pub fonts: Vec<FontContribution>,
@@ -178,8 +178,8 @@ impl PluginPackageManifest {
         if !self.fonts.is_empty() {
             categories.push("fonts");
         }
-        if !self.icon_themes.is_empty() {
-            categories.push("icon-themes");
+        if !self.icons.is_empty() {
+            categories.push("icons");
         }
         if !self.language_supports.is_empty() {
             categories.push("languages");
@@ -211,7 +211,7 @@ pub struct ThemeContribution {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// One icon theme contributed by a package.
-pub struct IconThemeContribution {
+pub struct IconsContribution {
     /// Human-readable icon theme name shown by the host.
     pub name: String,
     /// Bundle-relative path of the icon theme manifest.
@@ -508,20 +508,18 @@ fn validate_contributions(plugin: &PluginPackageManifest) -> Result<(), PluginVa
             category: "themes",
         });
     }
-    for icon_theme in &plugin.icon_themes {
-        if icon_theme.name.is_empty() || invalid_bundle_path(&icon_theme.path) {
+    for icons in &plugin.icons {
+        if icons.name.is_empty() || invalid_bundle_path(&icons.path) {
             return Err(PluginValidationError::InvalidContribution {
                 plugin: plugin.id.clone(),
-                category: "icon-themes",
+                category: "icons",
             });
         }
     }
-    if !strictly_sorted_by(&plugin.icon_themes, |icon_theme| {
-        (&icon_theme.name, &icon_theme.path)
-    }) {
+    if !strictly_sorted_by(&plugin.icons, |icons| (&icons.name, &icons.path)) {
         return Err(PluginValidationError::InvalidContribution {
             plugin: plugin.id.clone(),
-            category: "icon-themes",
+            category: "icons",
         });
     }
     for font in &plugin.fonts {

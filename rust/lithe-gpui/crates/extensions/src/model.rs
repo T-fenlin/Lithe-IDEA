@@ -7,14 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 /// 分类过滤器的稳定 id，与 Core 推导出的分类名一一对应，按规范顺序排列。
-pub const CATEGORIES: &[&str] = &[
-    "debug",
-    "fonts",
-    "icon-themes",
-    "languages",
-    "lsp",
-    "themes",
-];
+pub const CATEGORIES: &[&str] = &["debug", "fonts", "icons", "languages", "lsp", "themes"];
 
 /// 目录里一个扩展条目的展示快照。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,10 +29,10 @@ pub struct ExtensionSnapshot {
     /// 贡献的主题族名，按清单顺序。
     pub theme_names: Vec<String>,
     /// 贡献的图标主题名，按清单顺序。
-    pub icon_theme_names: Vec<String>,
-    /// 贡献的图标主题**清单路径**（`icon-themes/<包>/extension.json`）。
-    /// 扩展页从这里取包名 —— 它是设置键 `iconTheme` 的取值。
-    pub icon_theme_paths: Vec<String>,
+    pub icons_names: Vec<String>,
+    /// 贡献的图标主题**清单路径**（`icons/<包>/extension.json`）。
+    /// 扩展页从这里取包名 —— 它是设置键 `icons` 的取值。
+    pub icons_paths: Vec<String>,
     /// 贡献的字体家族，去重后按规范顺序。
     pub font_families: Vec<String>,
     /// 贡献的调试适配器名，按清单顺序。
@@ -101,7 +94,7 @@ struct WirePlugin {
     #[serde(default)]
     themes: Vec<WireNamed>,
     #[serde(default)]
-    icon_themes: Vec<WireNamed>,
+    icons: Vec<WireNamed>,
     #[serde(default)]
     fonts: Vec<WireFont>,
     #[serde(default)]
@@ -167,16 +160,8 @@ impl ExtensionSnapshot {
             entrypoint_kind: wire.entrypoint.kind.clone(),
             categories: wire.categories.clone(),
             theme_names: wire.themes.iter().map(|theme| theme.name.clone()).collect(),
-            icon_theme_names: wire
-                .icon_themes
-                .iter()
-                .map(|item| item.name.clone())
-                .collect(),
-            icon_theme_paths: wire
-                .icon_themes
-                .iter()
-                .map(|item| item.path.clone())
-                .collect(),
+            icons_names: wire.icons.iter().map(|item| item.name.clone()).collect(),
+            icons_paths: wire.icons.iter().map(|item| item.path.clone()).collect(),
             font_families,
             debug_adapter_names: wire
                 .debug_adapters
@@ -215,7 +200,7 @@ pub fn matches_query(entry: &ExtensionSnapshot, query: &str) -> bool {
             .iter()
             .any(|name| name.to_lowercase().contains(&query))
         || entry
-            .icon_theme_names
+            .icons_names
             .iter()
             .any(|name| name.to_lowercase().contains(&query))
         || entry

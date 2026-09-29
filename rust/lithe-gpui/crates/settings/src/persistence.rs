@@ -298,7 +298,7 @@ mod tests {
             // 卸载清单的"非默认值"：默认是空列表，这里放一个（校验往返）。
             uninstalled_extensions: vec!["lithe.nordTheme".to_string()],
             // 图标主题的"非默认值"：默认是内置的 idea。
-            icon_theme: "pierre".to_string(),
+            icons: "pierre".to_string(),
         }
     }
 
@@ -369,7 +369,7 @@ mod tests {
     /// 未知键不影响设置值，也不产生诊断。
     #[test]
     fn unknown_keys_are_ignored() {
-        let parsed = parse(r#"{"theme": "Lithe Light", "iconTheme": "idea-icons"}"#);
+        let parsed = parse(r#"{"theme": "Lithe Light", "icons": "idea-icons"}"#);
         assert_eq!(parsed.settings.theme, "Lithe Light");
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     }
@@ -559,7 +559,7 @@ mod tests {
 
         let original = r#"{
   "theme": "Lithe Light",
-  "iconTheme": "idea-icons",
+  "icons": "idea-icons",
   "thirdParty": { "keepMe": [1, 2, 3], "alsoKeep": "yes" },
   "version": 1
 }"#;
@@ -585,7 +585,7 @@ mod tests {
         assert_eq!(written.get("theme"), Some(&Value::from("Lithe Light")));
         assert_eq!(written.get("uiFontSize"), Some(&Value::from(17.0)));
         assert_eq!(
-            written.get("iconTheme"),
+            written.get("icons"),
             Some(&Value::from("idea-icons")),
             "未知键被吃掉了：{text}"
         );

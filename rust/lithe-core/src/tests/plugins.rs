@@ -42,12 +42,8 @@ fn official_plugin_catalog_is_valid_and_covers_every_builtin_category() {
         {
             covered.push("themes");
         }
-        if !plugin["iconThemes"]
-            .as_array()
-            .unwrap_or(&Vec::new())
-            .is_empty()
-        {
-            covered.push("icon-themes");
+        if !plugin["icons"].as_array().unwrap_or(&Vec::new()).is_empty() {
+            covered.push("icons");
         }
         if !plugin["fonts"].as_array().unwrap_or(&Vec::new()).is_empty() {
             covered.push("fonts");
@@ -75,14 +71,7 @@ fn official_plugin_catalog_is_valid_and_covers_every_builtin_category() {
             }
         }
     }
-    for category in [
-        "themes",
-        "icon-themes",
-        "fonts",
-        "debug",
-        "languages",
-        "lsp",
-    ] {
+    for category in ["themes", "icons", "fonts", "debug", "languages", "lsp"] {
         assert!(
             covered.contains(&category),
             "official catalog should cover the {category} category"
@@ -223,14 +212,14 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
             ("lithe.gruvboxTheme", vec!["themes"]),
             ("lithe.ibmPlexMonoFont", vec!["fonts"]),
             ("lithe.ideaFont", vec!["fonts"]),
-            ("lithe.ideaIconTheme", vec!["icon-themes"]),
+            ("lithe.ideaIcons", vec!["icons"]),
             ("lithe.ideaTheme", vec!["themes"]),
             ("lithe.javaDebugAdapter", vec!["debug"]),
             ("lithe.javaLanguageSupport", vec!["languages", "lsp"]),
             ("lithe.litheTheme", vec!["themes"]),
             ("lithe.nordTheme", vec!["themes"]),
             ("lithe.oneTheme", vec!["themes"]),
-            ("lithe.pierreIconTheme", vec!["icon-themes"]),
+            ("lithe.pierreIcons", vec!["icons"]),
             ("lithe.sourceCodeProFont", vec!["fonts"]),
             ("lithe.vscodeTheme", vec!["themes"]),
         ]
@@ -267,18 +256,12 @@ fn list_catalog_returns_validated_entries_with_derived_categories() {
     let pierre = &plugins[10];
     assert_eq!(pierre["displayName"], "Pierre 图标");
     assert_eq!(pierre["entrypoint"]["kind"], "bundled");
-    assert_eq!(
-        pierre["iconThemes"][0]["path"],
-        "icon-themes/pierre/extension.json"
-    );
+    assert_eq!(pierre["icons"][0]["path"], "icons/pierre/extension.json");
     // 图标集：一个内置（idea，不可卸载）与一个捆绑（pierre，可卸载、也可切换使用）。
     let pierre = &plugins[10];
-    assert_eq!(pierre["id"], "lithe.pierreIconTheme");
+    assert_eq!(pierre["id"], "lithe.pierreIcons");
     assert_eq!(pierre["entrypoint"]["kind"], "bundled");
-    assert_eq!(
-        pierre["iconThemes"][0]["path"],
-        "icon-themes/pierre/extension.json"
-    );
+    assert_eq!(pierre["icons"][0]["path"], "icons/pierre/extension.json");
     let idea = &plugins[4];
     assert_eq!(idea["displayName"], "IDEA 主题（内置）");
     assert_eq!(idea["entrypoint"]["kind"], "builtIn");

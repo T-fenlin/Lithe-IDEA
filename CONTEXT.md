@@ -55,7 +55,12 @@ VS Code）与两个字体族（Source Code Pro / IBM Plex Mono）。清单入口
 _Avoid_: 把两个目录说成"双目录加载"（做不到，见 `settings/src/theme.rs` 模块文档）
 
 **图标集（Icon set）**:
-文件与文件夹的图标主题（`assets/icon-themes/<包>/`）。**彩色**：图标按 SVG 原色渲染
+文件与文件夹的图标（一套一包，`assets/icons/<包>/extension.json`）。
+**一个词贯穿全部层**：界面标签「图标」、分类 id `icons`、清单字段 `icons`、
+设置键 `icons`、资产目录 `assets/icons/`、Rust 标识符 `icons_*`。
+_Avoid_: `icon-theme` / `iconThemes` / `iconTheme` 这些旧拼写（2026-09-29 统一掉了，
+留着会让人在两个词之间反复确认）；也注意 `assets/app-icon/` 是**应用图标**
+（exe 资源那份），与图标集是两件事**彩色**：图标按 SVG 原色渲染
 （`img()` 管线），不是单色遮罩。内置 `idea` 包不可卸载，捆绑的 `pierre` 包可卸载；
 同一时刻只有一个生效（设置键 `iconTheme`，扩展页的「使用」切换）。
 

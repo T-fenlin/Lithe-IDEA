@@ -1,12 +1,12 @@
-//! 文件类型图标主题的**查找层**：`lithe-gpui/assets/icon-themes/**` 的 `extension.json` → SVG 资源路径。
+//! 文件类型图标主题的**查找层**：`lithe-gpui/assets/icons/**` 的 `extension.json` → SVG 资源路径。
 //!
-//! 这一层是 Windows 前端 `ThemedFileIcon`（`windows/tauri/src/extensions/icon-themes/components/
+//! 这一层是 Windows 前端 `ThemedFileIcon`（`windows/tauri/src/extensions/icons/components/
 //! themed-file-icon.tsx`）在 gpui 侧的等价物。它回答的问题是：
 //! **"这个文件名 / 这个目录，在真机当前图标主题下应该画哪张 SVG？"**
 //!
 //! ## 为什么需要单独一层（而不是像 `icons::idea` 那样做成常量表）
 //!
-//! `ui-icons/idea/**` 是"一个显示名一张图"，可以直接生成常量表；`icon-themes/**` 是
+//! `ui-icons/idea/**` 是"一个显示名一张图"，可以直接生成常量表；`icons/**` 是
 //! **"按文件名 / 后缀 / 目录名查表"** 的另一套体系（与 VS Code 的 icon theme 同构）：
 //! 每套主题包带一个 `extension.json`，里面的 `iconDefinitions` 把**图标 id** 映射到 SVG 相对
 //! 路径，再由 `fileNames` / `fileExtensions` / `folders` / `expandedFolders` 把
@@ -14,11 +14,11 @@
 //!
 //! ## 选哪套主题、为什么
 //!
-//! 生效的包由**设置键 `iconTheme`** 决定（[\`set_active_icon_theme\`]），默认是内置的
-//! **`idea` 包**（`lithe-gpui/assets/icon-themes/idea/extension.json`，主题 id `idea-icons`）：
+//! 生效的包由**设置键 `icons`** 决定（[\`set_active_icons\`]），默认是内置的
+//! **`idea` 包**（`lithe-gpui/assets/icons/idea/extension.json`，主题 id `idea-icons`）：
 //!
 //! - 真机默认就是它 —— `windows/tauri/src/features/settings/config/default-settings.ts:100`
-//!   的 `iconTheme: "idea-icons"`。所以"还原真机截图里的文件树"要的就是这一套
+//!   的 `icons: "idea-icons"`。所以"还原真机截图里的文件树"要的就是这一套
 //!   （`.gitignore` 是 git 字形、`pom.xml` 是 Maven 的 `m`、`README.md` 是 `MD`、目录是文件夹）。
 //! - 它是**唯一**把明暗两套路径都写进同一个 `extension.json` 的包
 //!   （`idea/extension.json` 的 `iconDefinitions` = 深色、`lightIconDefinitions` = 浅色），
@@ -65,19 +65,19 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::Theme;
 use gpui_kit::{AnyElement, App, AssetSource, IntoElement as _, SharedString, Styled as _};
 
-/// 内置（不可卸载）图标主题的包名：`lithe-gpui/assets/icon-themes/idea/`。
+/// 内置（不可卸载）图标主题的包名：`lithe-gpui/assets/icons/idea/`。
 ///
-/// 它同时是设置键 `iconTheme` 的**默认值**（`schema::DEFAULT_ICON_THEME`）与 `icon-themes/`
+/// 它同时是设置键 `icons` 的**默认值**（`schema::DEFAULT_ICONS`）与 `icons/`
 /// 下的**目录名**——取值口径统一成"包名"，于是"设置里存的值 → 资源路径"是一次字符串拼接，
 /// 不需要再维护一张 id 映射表（真机存的是清单里的 `idea-icons`，本侧取目录名，理由见
 /// `.agents/notes/implemented/feature/2026-09-29-plugin-catalog-v2-and-extensions-page.md`）。
-pub const BUILTIN_FILE_ICON_THEME: &str = "idea";
+pub const BUILTIN_FILE_ICONS: &str = "idea";
 
 /// 兼容旧名（真机 `default-settings.ts:100` 的默认值口径）。
-pub const ACTIVE_FILE_ICON_THEME: &str = BUILTIN_FILE_ICON_THEME;
+pub const ACTIVE_FILE_ICONS: &str = BUILTIN_FILE_ICONS;
 
 /// 主题包目录（相对 `lithe-gpui/assets/`）的前缀；资源路径就是 `{THEMES_ROOT}/{包名}/{定义里的相对路径}`。
-const THEMES_ROOT: &str = "icon-themes";
+const THEMES_ROOT: &str = "icons";
 
 /// 真机 `FileIcon` 的 `defaultFile` / `defaultFolder` / `defaultFolderOpen`
 /// （`idea/extension.json` 的 `icons[0].defaultFile|defaultFolder|defaultFolderOpen`）。
@@ -86,24 +86,23 @@ const DEFAULT_FOLDER: &str = "idea-folder";
 
 /// 内置图标包（`idea`）的 `extension.json`，**编译期内嵌**。
 ///
-/// 用途只有一个：宿主还没把 `iconTheme` 推下来时（启动极早期）兜底 —— 见 [`active_theme`]。
-/// 正常路径（含内置包自己）都走 [`set_active_icon_theme`] 从 `AssetSource` 读，两者取的是
+/// 用途只有一个：宿主还没把 `icons` 推下来时（启动极早期）兜底 —— 见 [`active_theme`]。
+/// 正常路径（含内置包自己）都走 [`set_active_icons`] 从 `AssetSource` 读，两者取的是
 /// **同一份文件**（本常量与 `crates/app/src/assets.rs` 的 rust-embed 都指向
-/// `assets/icon-themes/idea/`），所以不会漂移。
+/// `assets/icons/idea/`），所以不会漂移。
 /// 路径相对本文件：`crates/shared/src/icons/` → 上溯四级到 `lithe-gpui/`。
-const BUILTIN_EXTENSION_JSON: &str =
-    include_str!("../../../../assets/icon-themes/idea/extension.json");
+const BUILTIN_EXTENSION_JSON: &str = include_str!("../../../../assets/icons/idea/extension.json");
 
 /// 生效的图标主题：`(包名, 已解析的表)`。
 ///
-/// 由 [`set_active_icon_theme`] 写入（调用方是设置存储：它是 `iconTheme` 的持有者，
+/// 由 [`set_active_icons`] 写入（调用方是设置存储：它是 `icons` 的持有者，
 /// 而依赖方向是 `settings → shared`，所以"读设置"这一动作只能由上层推下来）。
 /// 表本身用 `Box::leak` 泄漏一份：切换图标主题是**低频**动作（用户点一次「使用」），
 /// 代价是每次切换几十 KB，换来 `&'static` 的返回类型 —— 否则 `theme_icon_path` 的
 /// `&'static str` 契约要一路改成 `String`，`explorer` / `editor` / 状态栏的调用点全得跟着动。
-static ACTIVE_THEME: Mutex<Option<(&'static str, &'static FileIconTheme)>> = Mutex::new(None);
+static ACTIVE_THEME: Mutex<Option<(&'static str, &'static FileIcons)>> = Mutex::new(None);
 
-/// 切换生效的文件图标主题：从**注册的 `AssetSource`** 读 `icon-themes/<包>/extension.json` 并解析。
+/// 切换生效的文件图标主题：从**注册的 `AssetSource`** 读 `icons/<包>/extension.json` 并解析。
 ///
 /// 返回 `false` = 这个包不在内嵌资源里（包名写错、或该图标集没随宿主编译）：
 /// 此时**不改动**当前主题，由调用方决定回落策略（设置侧会回落到内置包）。
@@ -111,24 +110,24 @@ static ACTIVE_THEME: Mutex<Option<(&'static str, &'static FileIconTheme)>> = Mut
 /// 为什么从 `AssetSource` 读而不是 `include_str!`：图标主题现在是**可切换**的，
 /// 编译期常量只能表达"内置的那一套"；走资源源之后，内置的 `idea` 与随包分发的
 /// 其他图标集（如 `pierre`）走**同一条**路径解析，没有"两套加载方式"的分叉。
-pub fn set_active_icon_theme(package: &str, source: &dyn AssetSource) -> bool {
+pub fn set_active_icons(package: &str, source: &dyn AssetSource) -> bool {
     if active_theme_package() == Some(package) {
         return true;
     }
     let manifest_path = format!("{THEMES_ROOT}/{package}/extension.json");
     let Some(bytes) = source.load(&manifest_path).ok().flatten() else {
-        eprintln!("S1_ICON_THEME missing package={package} path={manifest_path}");
+        eprintln!("S1_ICONS missing package={package} path={manifest_path}");
         return false;
     };
     let Ok(json) = std::str::from_utf8(&bytes) else {
-        eprintln!("S1_ICON_THEME invalid_utf8 package={package}");
+        eprintln!("S1_ICONS invalid_utf8 package={package}");
         return false;
     };
-    match FileIconTheme::from_json(package, json) {
+    match FileIcons::from_json(package, json) {
         Ok(theme) => {
             // 包名同样泄漏成 `'static`（次数 = 用户切换次数，可忽略）。
             let package: &'static str = Box::leak(package.to_string().into_boxed_str());
-            let theme: &'static FileIconTheme = Box::leak(Box::new(theme));
+            let theme: &'static FileIcons = Box::leak(Box::new(theme));
             {
                 let mut guard = ACTIVE_THEME
                     .lock()
@@ -136,14 +135,14 @@ pub fn set_active_icon_theme(package: &str, source: &dyn AssetSource) -> bool {
                 *guard = Some((package, theme));
             }
             println!(
-                "S1_ICON_THEME applied package={package} definitions={} root={}",
+                "S1_ICONS applied package={package} definitions={} root={}",
                 theme.definition_count(),
                 theme.root()
             );
             true
         }
         Err(error) => {
-            eprintln!("S1_ICON_THEME parse_failed package={package} error={error}");
+            eprintln!("S1_ICONS parse_failed package={package} error={error}");
             false
         }
     }
@@ -155,7 +154,7 @@ pub fn active_theme_package() -> Option<&'static str> {
     lock_active_theme().map(|(package, _)| package)
 }
 
-fn lock_active_theme() -> Option<(&'static str, &'static FileIconTheme)> {
+fn lock_active_theme() -> Option<(&'static str, &'static FileIcons)> {
     *ACTIVE_THEME
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -165,8 +164,8 @@ fn lock_active_theme() -> Option<(&'static str, &'static FileIconTheme)> {
 ///
 /// 只在进程内构造一次（见 [`active_theme`]），之后只读。
 #[derive(Debug)]
-pub struct FileIconTheme {
-    /// 资源路径前缀，例如 `icon-themes/idea/`。
+pub struct FileIcons {
+    /// 资源路径前缀，例如 `icons/idea/`。
     root: String,
     /// 深色 `iconDefinitions`：图标 id → 相对主题根的资源路径。
     dark: HashMap<String, String>,
@@ -182,7 +181,7 @@ pub struct FileIconTheme {
     expanded_folders: HashMap<String, String>,
 }
 
-impl FileIconTheme {
+impl FileIcons {
     /// `extension.json` 里 `icons[0]` 的解析形状（只取本层用得到的字段）。
     ///
     /// 用 `serde_json::Value` 现取现转而不是给结构体加 `Deserialize`：这份 JSON 来自
@@ -220,7 +219,7 @@ impl FileIconTheme {
         })
     }
 
-    /// 主题包的资源路径前缀（`icon-themes/idea/`）。
+    /// 主题包的资源路径前缀（`icons/idea/`）。
     #[must_use]
     pub fn root(&self) -> &str {
         &self.root
@@ -236,7 +235,7 @@ impl FileIconTheme {
     /// 否则取 `lightIconDefinitions`（没有浅色定义时回落深色，与真机
     /// `getIconDefinitionsForAppearance` 的 `?? contribution.iconDefinitions` 同序）。
     ///
-    /// 返回的是**完整资源路径**（`icon-themes/idea/icons/expui/fileTypes/java.svg`），
+    /// 返回的是**完整资源路径**（`icons/idea/icons/expui/fileTypes/java.svg`），
     /// 可直接交给 [`theme_file_icon`] 渲染，或交给 `AssetSource::load` 探针。
     #[must_use]
     pub fn file_path(&self, file_name: &str, dark: bool) -> Option<&str> {
@@ -290,19 +289,19 @@ const SEMANTIC_PREFIX: char = '\0';
 
 /// 取当前生效的文件图标主题。
 ///
-/// 没被 [`set_active_icon_theme`] 设置过（启动极早期、或宿主没接这条设置）时返回内置的
+/// 没被 [`set_active_icons`] 设置过（启动极早期、或宿主没接这条设置）时返回内置的
 /// `idea` 那一份 —— 用 `include_str!` 的编译期常量兜底，所以"读不到任何主题"这条路径
 /// 不存在：最坏也只是回到内置包。
 ///
 /// 解析失败返回 `None`，调用方据此走 Lucide 回落 —— **这是"读不到时回落"的落地点**。
 #[must_use]
-pub fn active_theme() -> Option<&'static FileIconTheme> {
+pub fn active_theme() -> Option<&'static FileIcons> {
     if let Some((_, theme)) = lock_active_theme() {
         return Some(theme);
     }
-    static BUILTIN: OnceLock<Result<FileIconTheme, serde_json::Error>> = OnceLock::new();
+    static BUILTIN: OnceLock<Result<FileIcons, serde_json::Error>> = OnceLock::new();
     BUILTIN
-        .get_or_init(|| FileIconTheme::from_json(BUILTIN_FILE_ICON_THEME, BUILTIN_EXTENSION_JSON))
+        .get_or_init(|| FileIcons::from_json(BUILTIN_FILE_ICONS, BUILTIN_EXTENSION_JSON))
         .as_ref()
         .ok()
 }
@@ -329,7 +328,7 @@ pub fn theme_icon_path(name: &str, is_dir: bool, expanded: bool, cx: &App) -> Op
 /// `cx.asset_source()` 拿到的正是那个包装层（`AssetSource::load`）。
 ///
 /// 它是"查找层算出来的路径真的有资源"的唯一校验入口；启动诊断
-/// `S1_ASSETS probe path=icon-themes/… bytes=…`（`crates/app/src/main.rs`）走同一条
+/// `S1_ASSETS probe path=icons/… bytes=…`（`crates/app/src/main.rs`）走同一条
 /// `load` 路径，两者一起证明"路径对、字节取得到"。
 #[must_use]
 pub fn theme_icon_bytes(asset_path: &str, cx: &App) -> Option<Vec<u8>> {
@@ -523,9 +522,9 @@ mod tests {
     use super::*;
 
     /// 把完整资源路径削成"相对主题包根"的短形式，让断言只钉住**主题包内部**的相对路径
-    /// （`icon-themes/idea/` 这段前缀本身由 `active_theme_parses` 钉住）。
+    /// （`icons/idea/` 这段前缀本身由 `active_theme_parses` 钉住）。
     fn relative(path: Option<&str>) -> Option<&str> {
-        path.map(|path| path.trim_start_matches("icon-themes/idea/"))
+        path.map(|path| path.trim_start_matches("icons/idea/"))
     }
 
     /// 主题包必须能读进来 —— 这是"接线真的生效"的前置条件。
@@ -535,7 +534,7 @@ mod tests {
     #[test]
     fn active_theme_parses() {
         let theme = active_theme().expect("idea theme must parse");
-        assert_eq!(theme.root(), "icon-themes/idea/");
+        assert_eq!(theme.root(), "icons/idea/");
         assert_eq!(theme.definition_count(), 53);
     }
 
@@ -639,7 +638,7 @@ mod tests {
         let theme = active_theme().expect("idea theme must parse");
         // `CARGO_MANIFEST_DIR` = `lithe-gpui/crates/shared`，资源在 `lithe-gpui/assets`。
         // 表里存的是**主题包根之下的相对路径**（`icons/expui/…`），所以这里要补回
-        // `icon-themes/idea/` 那段前缀 —— 正好顺带钉住 `root()` 与定义表能拼成完整资源键。
+        // `icons/idea/` 那段前缀 —— 正好顺带钉住 `root()` 与定义表能拼成完整资源键。
         let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let missing = |table: &HashMap<String, String>| -> Vec<String> {
             table

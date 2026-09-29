@@ -29,7 +29,7 @@ extensions page:
   so an already registered family cannot be removed while the app runs.
 - **Icon sets** apply immediately — switching only swaps the lookup table. Unlike
   themes and fonts, an icon set has **no package files on disk**: it is compiled
-  into the host (`assets/icon-themes/<package>/`), so uninstalling one marks it
+  into the host (`assets/icons/<package>/`), so uninstalling one marks it
   unavailable (it disappears from the chooser and the active set falls back to
   the built-in `idea` package) rather than deleting files.
 
@@ -60,7 +60,7 @@ One entry per plugin package:
 | `entrypoint` | object | `builtIn` or `bundled` (both with `targetName`), or `nativeBundle` (with `bundleIdentifier`, `principalClass`, `bundlePath`). |
 | `moduleIDs` | array | Stable module identifiers owned by this package, sorted, globally unique. |
 | `themes` | array | Optional. `{ name, path }` sorted by `(name, path)`. |
-| `iconThemes` | array | Optional. `{ name, path }` sorted by `(name, path)`. |
+| `icons` | array | Optional. `{ name, path }` sorted by `(name, path)`. |
 | `fonts` | array | Optional. `{ family, path }` sorted by `(family, path)`; one family may list several weight files. |
 | `debugAdapters` | array | Optional. `{ id, name }` sorted by `(id, name)`. |
 | `languageSupports` | array | Optional. File recognition plus `languageServerModuleID` / `executionModuleID` / `testingModuleID` / `debugModuleID` slots that must reference owned modules. |
@@ -77,12 +77,12 @@ A plugin's categories are computed from its non-empty contributions:
 | --- | --- |
 | `debugAdapters` | `debug` |
 | `fonts` | `fonts` |
-| `iconThemes` | `icon-themes` |
+| `icons` | `icons` |
 | `languageSupports` | `languages` |
 | any `languageSupports[].languageServerModuleID` | `lsp` |
 | `themes` | `themes` |
 
-The canonical category order is `debug, fonts, icon-themes, languages, lsp,
+The canonical category order is `debug, fonts, icons, languages, lsp,
 themes`.
 
 ## Command surface

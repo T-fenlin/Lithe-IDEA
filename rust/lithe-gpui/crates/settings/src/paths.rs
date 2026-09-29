@@ -188,15 +188,12 @@ pub fn theme_extensions_dir() -> Option<PathBuf> {
     Some(extensions_dir()?.join(THEME_EXTENSIONS_DIRECTORY_NAME))
 }
 
-/// 仓库里的**图标主题源目录**（`lithe-gpui/assets/icon-themes`，构建树路径，只服务测试与诊断）。
+/// 仓库里的**图标主题源目录**（`lithe-gpui/assets/icons`，构建树路径，只服务测试与诊断）。
 ///
 /// ⚠️ 图标集由 `crates/app/src/assets.rs` 的 rust-embed **内嵌**，运行期读的是资源源
-/// （见 `shared::icons::file_icon` 的 `set_active_icon_theme`）；这个函数只给测试用。
-pub fn repository_icon_themes_dir() -> PathBuf {
-    PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../assets/icon-themes"
-    ))
+/// （见 `shared::icons::file_icon` 的 `set_active_icons`）；这个函数只给测试用。
+pub fn repository_icons_dir() -> PathBuf {
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons"))
 }
 
 /// 仓库里的**捆绑字体扩展源目录**（`lithe-gpui/extensions/fonts`）。

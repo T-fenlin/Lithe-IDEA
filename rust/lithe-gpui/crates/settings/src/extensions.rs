@@ -3,7 +3,7 @@
 //! ## 谁在这里
 //!
 //! - **主题组**（`BundledKind::Theme`）：一个 `.json` 一个包，例如 `gruvbox.json`。
-//! - **图标集**（`BundledKind::IconTheme`）：随宿主编译、**没有落盘文件**，
+//! - **图标集**（`BundledKind::Icons`）：随宿主编译、**没有落盘文件**，
 //!   卸载只改变"可选/不可选"（见该变体的说明）。
 //! - **字体族**（`BundledKind::Font`）：一个包一个目录（含字重文件与许可），
 //!   例如 `source-code-pro/SourceCodePro-Regular.ttf`。
@@ -51,11 +51,11 @@ pub enum BundledKind {
     Theme,
     /// 字体族：只有落点，没有镜像。
     Font,
-    /// 图标集：**没有落盘文件** —— 图标集随宿主编译（内嵌在 `assets/icon-themes/` 里），
+    /// 图标集：**没有落盘文件** —— 图标集随宿主编译（内嵌在 `assets/icons/` 里），
     /// 同步阶段不写任何文件；卸载的效果是"不可选 + 正在使用时回落内置包"
-    /// （见 [`BundledExtension::icon_theme_package`]）。这与主题/字体"卸载 = 删文件"
+    /// （见 [`BundledExtension::icons_package`]）。这与主题/字体"卸载 = 删文件"
     /// 的差别来自数据来源：那两类的数据是随包写出去的，图标集不是。
-    IconTheme,
+    Icons,
 }
 
 /// 一个捆绑扩展：稳定 id、种类、包内文件（相对包根的路径 → 内容）。
@@ -67,11 +67,11 @@ pub struct BundledExtension {
     pub id: &'static str,
     /// 种类（决定落点与镜像）。
     pub kind: BundledKind,
-    /// 包内文件：`(相对路径, 内容)`，路径按 `/` 分隔。图标集为空（见 [`BundledKind::IconTheme`]）。
+    /// 包内文件：`(相对路径, 内容)`，路径按 `/` 分隔。图标集为空（见 [`BundledKind::Icons`]）。
     pub files: &'static [(&'static str, &'static [u8])],
-    /// 图标集的**包名**（`assets/icon-themes/<包>/` 的目录名）；只有 `IconTheme` 有。
-    /// 它就是设置键 `iconTheme` 的取值（见 `crate::schema::DEFAULT_ICON_THEME`）。
-    pub icon_theme_package: Option<&'static str>,
+    /// 图标集的**包名**（`assets/icons/<包>/` 的目录名）；只有 `Icons` 有。
+    /// 它就是设置键 `icons` 的取值（见 `crate::schema::DEFAULT_ICONS`）。
+    pub icons_package: Option<&'static str>,
 }
 
 /// 全部捆绑扩展。顺序只影响同步报告的次序，不影响语义。
@@ -79,7 +79,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
     BundledExtension {
         id: "lithe.gruvboxTheme",
         kind: BundledKind::Theme,
-        icon_theme_package: None,
+        icons_package: None,
         files: &[(
             "gruvbox.json",
             include_bytes!("../../../extensions/themes/gruvbox.json"),
@@ -88,7 +88,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
     BundledExtension {
         id: "lithe.litheTheme",
         kind: BundledKind::Theme,
-        icon_theme_package: None,
+        icons_package: None,
         files: &[(
             "lithe.json",
             include_bytes!("../../../extensions/themes/lithe.json"),
@@ -97,7 +97,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
     BundledExtension {
         id: "lithe.nordTheme",
         kind: BundledKind::Theme,
-        icon_theme_package: None,
+        icons_package: None,
         files: &[(
             "nord.json",
             include_bytes!("../../../extensions/themes/nord.json"),
@@ -106,23 +106,23 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
     BundledExtension {
         id: "lithe.oneTheme",
         kind: BundledKind::Theme,
-        icon_theme_package: None,
+        icons_package: None,
         files: &[(
             "one.json",
             include_bytes!("../../../extensions/themes/one.json"),
         )],
     },
     BundledExtension {
-        id: "lithe.pierreIconTheme",
-        kind: BundledKind::IconTheme,
-        icon_theme_package: Some("pierre"),
-        // 空 = 没有落盘文件：图标集与内置包一起编译进二进制（见 BundledKind::IconTheme）。
+        id: "lithe.pierreIcons",
+        kind: BundledKind::Icons,
+        icons_package: Some("pierre"),
+        // 空 = 没有落盘文件：图标集与内置包一起编译进二进制（见 BundledKind::Icons）。
         files: &[],
     },
     BundledExtension {
         id: "lithe.vscodeTheme",
         kind: BundledKind::Theme,
-        icon_theme_package: None,
+        icons_package: None,
         files: &[(
             "vscode.json",
             include_bytes!("../../../extensions/themes/vscode.json"),
@@ -131,7 +131,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
     BundledExtension {
         id: "lithe.ibmPlexMonoFont",
         kind: BundledKind::Font,
-        icon_theme_package: None,
+        icons_package: None,
         files: &[
             (
                 "ibm-plex-mono/IBMPlexMono-Bold.ttf",
@@ -150,7 +150,7 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
     BundledExtension {
         id: "lithe.sourceCodeProFont",
         kind: BundledKind::Font,
-        icon_theme_package: None,
+        icons_package: None,
         files: &[
             (
                 "source-code-pro/SourceCodePro-Bold.ttf",
@@ -179,10 +179,10 @@ pub fn bundled_extension(id: &str) -> Option<&'static BundledExtension> {
 ///
 /// 用途是"正在使用的图标包被卸载了吗"这条判断（[crate::store] 的回落逻辑）与扩展页的
 /// 「使用 / 当前 / 已卸载」三态。
-pub fn icon_theme_extension(package: &str) -> Option<&'static BundledExtension> {
+pub fn icons_extension(package: &str) -> Option<&'static BundledExtension> {
     BUNDLED_EXTENSIONS
         .iter()
-        .find(|entry| entry.icon_theme_package == Some(package))
+        .find(|entry| entry.icons_package == Some(package))
 }
 
 /// 一种捆绑扩展的**管理面**目录（`<配置目录>/extensions/<kind>`）。
@@ -191,7 +191,7 @@ pub fn store_dir(kind: BundledKind) -> Option<PathBuf> {
         BundledKind::Theme => paths::theme_extensions_dir(),
         BundledKind::Font => paths::font_extensions_dir(),
         // 图标集没有落点：它随宿主编译，同步阶段不写文件。
-        BundledKind::IconTheme => None,
+        BundledKind::Icons => None,
     }
 }
 
@@ -199,7 +199,7 @@ pub fn store_dir(kind: BundledKind) -> Option<PathBuf> {
 pub fn mirror_dir(kind: BundledKind) -> Option<PathBuf> {
     match kind {
         BundledKind::Theme => paths::themes_dir(),
-        BundledKind::Font | BundledKind::IconTheme => None,
+        BundledKind::Font | BundledKind::Icons => None,
     }
 }
 
@@ -526,17 +526,17 @@ mod tests {
         ids.sort_unstable();
         assert_eq!(unique, ids, "捆绑扩展 id 不能重复");
         for entry in BUNDLED_EXTENSIONS {
-            // 图标集是**唯一**没有落盘文件的种类：它随宿主编译（见 `BundledKind::IconTheme`），
+            // 图标集是**唯一**没有落盘文件的种类：它随宿主编译（见 `BundledKind::Icons`），
             // 所以"非空文件"这条只对需要写出文件的种类成立。
-            if entry.kind == BundledKind::IconTheme {
+            if entry.kind == BundledKind::Icons {
                 assert!(
                     entry.files.is_empty(),
                     "{} 是图标集，不该有落盘文件",
                     entry.id
                 );
                 assert!(
-                    entry.icon_theme_package.is_some(),
-                    "{} 是图标集，必须声明包名（设置键 iconTheme 的取值）",
+                    entry.icons_package.is_some(),
+                    "{} 是图标集，必须声明包名（设置键 icons 的取值）",
                     entry.id
                 );
                 continue;
@@ -553,18 +553,18 @@ mod tests {
         }
     }
 
-    /// 图标集的包名必须对应仓库 `assets/icon-themes/<包>/` 里**真实存在的清单**：
+    /// 图标集的包名必须对应仓库 `assets/icons/<包>/` 里**真实存在的清单**：
     /// 注册了却没有这套资源 = "设置里选得出来、图标却画不出来"。
     #[test]
-    fn icon_theme_packages_have_a_real_manifest() {
-        let dir = crate::paths::repository_icon_themes_dir();
+    fn icons_packages_have_a_real_manifest() {
+        let dir = crate::paths::repository_icons_dir();
         let mut checked = 0;
         for entry in BUNDLED_EXTENSIONS
             .iter()
-            .filter(|entry| entry.kind == BundledKind::IconTheme)
+            .filter(|entry| entry.kind == BundledKind::Icons)
         {
             let package = entry
-                .icon_theme_package
+                .icons_package
                 .unwrap_or_else(|| panic!("{} 没有包名", entry.id));
             let manifest = dir.join(package).join("extension.json");
             let text = std::fs::read_to_string(&manifest).unwrap_or_else(|error| {
@@ -576,9 +576,9 @@ mod tests {
                 entry.id,
                 manifest.display()
             );
-            // 包名唯一（反查 iconTheme 取值靠它）。
+            // 包名唯一（反查 icons 取值靠它）。
             assert_eq!(
-                icon_theme_extension(package).map(|found| found.id),
+                icons_extension(package).map(|found| found.id),
                 Some(entry.id)
             );
             checked += 1;

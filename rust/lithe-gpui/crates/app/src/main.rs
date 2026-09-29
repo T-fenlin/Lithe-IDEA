@@ -908,10 +908,10 @@ fn main() {
         // 1. **我们自己搬进来的资源**（`lithe-gpui/assets/**`，用 `rust-embed` 编译期内嵌）。
         //    实测内嵌 **269 个文件**（根目录的 `README.md` 已由 `#[exclude]` 挡在二进制外），
         //    合计 **3 200 771 字节（约 3.05 MiB）**，按目录分四组：
-        //    `ui-icons/**`（157 个 IntelliJ `expui` SVG）、`icon-themes/idea/**`（104 个文件，
-        //    文件图标主题 id 是编译期常量 `ACTIVE_FILE_ICON_THEME = "idea"`）、`icons/**`
+        //    `ui-icons/**`（157 个 IntelliJ `expui` SVG）、`icons/idea/**`（104 个文件，
+        //    文件图标主题 id 是编译期常量 `ACTIVE_FILE_ICONS = "idea"`）、`icons/**`
         //    （7 个位图）、`images/logo.png`（品牌图）。
-        //    ⚠️ `icon-themes/{lithe,pierre,symbols}` 三套（459 + 149 + 325 = 933 个文件 /
+        //    ⚠️ `icons/{lithe,pierre,symbols}` 三套（459 + 149 + 325 = 933 个文件 /
         //    5 337 322 字节，约 5.09 MiB）已被 `#[exclude]` 挡在二进制外，**磁盘上一个文件
         //    都没删**（将来做图标主题切换还要用）；收窄前 `lithe-gpui/assets/**` 全量是 1 203 个文件 /
         //    8 567 891 字节。口径与理由见 `src/assets.rs` 的模块文档。

@@ -180,6 +180,30 @@ fixture 的 `hostVersion` 必须一致，否则 Core 以 `parse_failed` 拒绝�
      卸载兜底也在那里（与配色主题"当前主题被卸载 → 回落默认"同一条口径）。
    - 扩展页给图标集卡片加「使用 / 当前」（复用真源既有键），切换**立即**生效。
 
+### 第五批：图标相关命名统一成 `icons` 一个词
+
+维护者口径："就算是用户看不到也统一一下，不然修改代码都不好改"。
+
+此前同一件事有四个拼写：分类 id `icon-themes`、清单字段 `iconThemes`、设置键
+`iconTheme`、资产目录 `icon-themes/`（界面标签已经叫「图标」）。检索与改动时要在
+四个词之间反复确认，所以一次统一成 **`icons`**：
+
+| 层 | 之前 | 现在 |
+| --- | --- | --- |
+| 分类 id | `icon-themes` | `icons` |
+| 清单字段 | `iconThemes` | `icons` |
+| 设置键 | `iconTheme` | `icons` |
+| 资产目录 | `assets/icon-themes/` | `assets/icons/` |
+| Rust 标识符 | `icon_theme_*` / `IconTheme*` | `icons_*` / `Icons*` |
+| 扩展 id | `lithe.ideaIconTheme` / `lithe.pierreIconTheme` | `lithe.ideaIcons` / `lithe.pierreIcons` |
+
+**顺带腾了一次名字**：原来的 `assets/icons/` 装的是**应用图标**（`icon.ico` /
+`icon.icns` / 各尺寸 png，给 exe 资源与任务栏用），与"图标集"是两件事，却占着
+`icons` 这个最合适的名字。所以把它改成 `assets/app-icon/`（引用点只有 `build.rs`、
+`lithe.rc` 与 `assets.rs` 的探针，三处），`icons/` 让给图标集。
+`assets.rs` 的内嵌分组断言与字节总数断言同步更新（pierre 149 个文件随之进入二进制，
+这是"可切换"的必然代价 —— 内嵌总数 269 → 418）。
+
 ## 考虑过的备选方案
 
 - **在清单里声明 `categories` 数组**（最初共识里选的就是它）：看完 Zed 源码后否决

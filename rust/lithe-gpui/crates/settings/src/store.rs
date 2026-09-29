@@ -521,9 +521,9 @@ impl SettingsStore {
 
     // ---------------------------------------------------------------- 扩展（捆绑扩展的卸载/重装）
 
-    /// 当前生效的图标主题包名（设置键 `iconTheme`）。
-    pub fn icon_theme(&self) -> String {
-        self.settings.icon_theme.clone()
+    /// 当前生效的图标主题包名（设置键 `icons`）。
+    pub fn icons(&self) -> String {
+        self.settings.icons.clone()
     }
 
     /// 已卸载的捆绑扩展 id 列表（设置键 `uninstalledExtensions`，排序去重后落盘）。
@@ -537,18 +537,18 @@ impl SettingsStore {
     /// 切换文件图标主题（扩展页「使用」按钮 / 未来的设置项）。
     ///
     /// 只写设置并立即应用：图标主题的生效路径是
-    /// [`lithe_gpui_shared::icons::file_icon::set_active_icon_theme`]（由
-    /// [`Self::apply_icon_theme`] 调用），文件树 / 编辑器标签 / 状态栏下一次重绘就换图。
-    /// `id` 是**包名**（`lithe-gpui/assets/icon-themes/<包>/` 的目录名）。
+    /// [`lithe_gpui_shared::icons::file_icon::set_active_icons`]（由
+    /// [`Self::apply_icons`] 调用），文件树 / 编辑器标签 / 状态栏下一次重绘就换图。
+    /// `id` 是**包名**（`lithe-gpui/assets/icons/<包>/` 的目录名）。
     ///
-    /// 认不出的包名**不写入**（`S1_ICON_THEME missing`）：让设置文件保持一个能用的值，
+    /// 认不出的包名**不写入**（`S1_ICONS missing`）：让设置文件保持一个能用的值，
     /// 而不是存下一个渲染时才回落的值。
-    pub fn set_icon_theme(&mut self, package: &str, cx: &mut Context<Self>) {
-        if !self.apply_icon_theme_package(package, cx) {
+    pub fn set_icons(&mut self, package: &str, cx: &mut Context<Self>) {
+        if !self.apply_icons_package(package, cx) {
             return;
         }
         let mut next = self.global.clone();
-        next.icon_theme = package.to_string();
+        next.icons = package.to_string();
         self.commit_global(cx, next, Effects::None);
     }
 
@@ -558,10 +558,10 @@ impl SettingsStore {
     ///
     /// **卸载兜底**：正在使用的图标包被卸载时回落到内置包（与配色主题"当前主题被卸载 →
     /// 回落默认"同一条口径）。判断依据是设置里的 `uninstalledExtensions` 与
-    /// [`crate::extensions::icon_theme_extension`] 的映射。
-    fn apply_icon_theme(&mut self, cx: &mut Context<Self>) {
-        let mut package = self.settings.icon_theme.clone();
-        if let Some(extension) = crate::extensions::icon_theme_extension(&package) {
+    /// [`crate::extensions::icons_extension`] 的映射。
+    fn apply_icons(&mut self, cx: &mut Context<Self>) {
+        let mut package = self.settings.icons.clone();
+        if let Some(extension) = crate::extensions::icons_extension(&package) {
             if self
                 .global
                 .uninstalled_extensions
@@ -569,24 +569,24 @@ impl SettingsStore {
                 .any(|id| id == extension.id)
             {
                 eprintln!(
-                    "S1_SETTINGS icon_theme_uninstalled package={package} fallback={}",
-                    crate::schema::DEFAULT_ICON_THEME
+                    "S1_SETTINGS icons_uninstalled package={package} fallback={}",
+                    crate::schema::DEFAULT_ICONS
                 );
-                package = crate::schema::DEFAULT_ICON_THEME.to_string();
+                package = crate::schema::DEFAULT_ICONS.to_string();
             }
         }
-        if !self.apply_icon_theme_package(&package, cx) {
-            let fallback = crate::schema::DEFAULT_ICON_THEME;
-            eprintln!("S1_SETTINGS icon_theme_missing package={package} fallback={fallback}");
-            self.apply_icon_theme_package(fallback, cx);
+        if !self.apply_icons_package(&package, cx) {
+            let fallback = crate::schema::DEFAULT_ICONS;
+            eprintln!("S1_SETTINGS icons_missing package={package} fallback={fallback}");
+            self.apply_icons_package(fallback, cx);
         }
     }
 
     /// 单个包的推送（不处理回落）。`cx.asset_source()` 是图标清单的读取入口
     /// —— 内置包与随包分发的图标集走同一条路径（见 `file_icon` 的模块文档）。
-    fn apply_icon_theme_package(&self, package: &str, cx: &App) -> bool {
+    fn apply_icons_package(&self, package: &str, cx: &App) -> bool {
         let source = cx.asset_source();
-        lithe_gpui_shared::icons::file_icon::set_active_icon_theme(package, source.as_ref())
+        lithe_gpui_shared::icons::file_icon::set_active_icons(package, source.as_ref())
     }
 
     /// 卸载（`uninstalled = true`）或重装一个捆绑扩展 —— 扩展页两个按钮的唯一落点。
@@ -1328,7 +1328,7 @@ impl SettingsStore {
         self.apply_font_families(cx);
         // 图标主题与配色主题一起收口：启动、切换主题、改设置三条路都会走到这里，
         // 所以文件图标不会出现"设置改了但树还是旧图标"的窗口期。
-        self.apply_icon_theme(cx);
+        self.apply_icons(cx);
     }
 
     fn apply_font_size(&self, cx: &mut Context<Self>) {

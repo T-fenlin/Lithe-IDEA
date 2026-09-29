@@ -4489,7 +4489,7 @@ fn right_activity_items(store: &Entity<lithe_gpui_notify::Store>, cx: &App) -> V
         // ⚠️ 保持 Lucide：真机 `MavenIcon`（`features/maven/components/maven-icon.tsx`）是
         // **内联 React 组件**，只有一条 fill path、没有 SVG 文件。Lucide 没有 Maven 字形，
         // 与 `activity_bar.rs` 的对照表同一取舍：取「包 / 构建产物」语义的 `package`。
-        // （注意：Maven **文件类型**图标是有真源的 —— `icon-themes/idea` 的
+        // （注意：Maven **文件类型**图标是有真源的 —— `icons/idea` 的
         // `pom.xml` → `icons/expui/fileTypes/maven.svg`，所以文件树里 `pom.xml` 是真源。）
         ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
     ]

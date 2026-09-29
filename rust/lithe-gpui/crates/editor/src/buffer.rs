@@ -25,7 +25,7 @@ const MAX_EDITOR_BYTES: u64 = 2 * 1024 * 1024;
 /// 与 `crates/explorer/src/model.rs` 的同名函数**共用同一份实现**
 /// （`lithe_gpui_shared::icons::file_icon`），所以两处的判断不会再漂移：
 ///
-/// 1. **真源**：`lithe-gpui/assets/icon-themes/idea/**` —— 真机默认图标主题
+/// 1. **真源**：`lithe-gpui/assets/icons/idea/**` —— 真机默认图标主题
 ///    （`windows/tauri/src/features/settings/config/default-settings.ts:100` 的
 ///    `iconTheme: "idea-icons"`）。按 `filenames` → `fileExtensions` → `defaultFile` 顺序查，
 ///    明暗由 `Theme::global(cx).is_dark()` 决定。图标是彩色的，渲染走 `img()`。

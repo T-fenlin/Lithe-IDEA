@@ -104,7 +104,7 @@
       ]
     },
     {
-      "id": "lithe.ideaIconTheme",
+      "id": "lithe.ideaIcons",
       "displayName": "IDEA 图标（内置）",
       "description": "随宿主内置的 IDEA 风格文件图标集（彩色），也是默认图标主题。不可卸载。",
       "version": "0.0.1",
@@ -122,12 +122,12 @@
         "targetName": "lithe-gpui-shared"
       },
       "moduleIDs": [
-        "lithe.iconTheme.idea"
+        "lithe.icons.idea"
       ],
-      "iconThemes": [
+      "icons": [
         {
           "name": "IDEA",
-          "path": "icon-themes/idea/extension.json"
+          "path": "icons/idea/extension.json"
         }
       ]
     },
@@ -312,7 +312,7 @@
       ]
     },
     {
-      "id": "lithe.pierreIconTheme",
+      "id": "lithe.pierreIcons",
       "displayName": "Pierre 图标",
       "description": "随宿主捆绑的 Pierre 文件图标集（彩色，含浅色与深色两套）。可在扩展页卸载、也可切换使用。",
       "version": "0.0.1",
@@ -330,12 +330,12 @@
         "targetName": "lithe-gpui-app"
       },
       "moduleIDs": [
-        "lithe.iconTheme.pierre"
+        "lithe.icons.pierre"
       ],
-      "iconThemes": [
+      "icons": [
         {
           "name": "Pierre",
-          "path": "icon-themes/pierre/extension.json"
+          "path": "icons/pierre/extension.json"
         }
       ]
     },

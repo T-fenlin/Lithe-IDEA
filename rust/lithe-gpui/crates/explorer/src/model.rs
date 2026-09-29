@@ -264,7 +264,7 @@ pub(crate) fn load_snapshot(root: &Path) -> Result<Vec<String>, String> {
 ///
 /// ## 两个真源与优先关系
 ///
-/// 1. **真源**：`lithe-gpui/assets/icon-themes/idea/**` —— 真机默认图标主题
+/// 1. **真源**：`lithe-gpui/assets/icons/idea/**` —— 真机默认图标主题
 ///    （`windows/tauri/src/features/settings/config/default-settings.ts:100` 的
 ///    `iconTheme: "idea-icons"`）。查表在 `lithe_gpui_shared::icons::file_icon`：
 ///    文件名 → `filenames`、后缀 → `fileExtensions`、都没有 → `defaultFile`；

@@ -6,7 +6,7 @@
 //! 它把值 `Arc::new` 成 `Arc<dyn AssetSource>` 存进 `App`，重复调用只是覆盖。而
 //! `gpui_kit::assets::AllAssets` 只嵌了 `icons/**/*.svg`（1830 个 Lucide 字形，
 //! `gpui-kit-assets-0.6.6/src/native_assets.rs:8-11`），**看不到**我们从 Windows 前端搬进来的
-//! `lithe-gpui/assets/ui-icons/**` 与 `lithe-gpui/assets/icon-themes/**`。所以必须自己实现一个包装层，
+//! `lithe-gpui/assets/ui-icons/**` 与 `lithe-gpui/assets/icons/**`。所以必须自己实现一个包装层，
 //! 在里面做"先查自己的、再回落"的组合。官方 0.6.6 文档就是这么建议的
 //! （`lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/docs/assets.md` 的「自定义资源」一节），
 //! `gpui-kit-assets-0.6.6/examples/extra_assets.rs:23-37` 是同型例子。
@@ -32,7 +32,7 @@
 //!
 //! 嵌的是 `lithe-gpui/assets/**` **减去三套未接线的图标包，再减去根目录的 `README.md`**。
 //! `LitheAssets::iter().count()` 实测 **269 个文件** = **269 个资源文件**（`icons/**` 7 个位图
-//! + `images/logo.png` 1 个 + `ui-icons/**` 157 个 SVG + `icon-themes/idea/**` 104 个文件），
+//! + `images/logo.png` 1 个 + `ui-icons/**` 157 个 SVG + `icons/idea/**` 104 个文件），
 //! 合计 **3 200 771 字节（约 3.05 MiB）**。
 //!
 //! `README.md`（29 798 字节）由 `#[exclude]` 挡在二进制外：它是**文档不是资源**，
@@ -52,20 +52,20 @@
 //! 与 `ui-icons/idea/**` 的 expui 命名体系**不是同一套**）、`gutter-icons/`（行号旁运行/测试标记）、
 //! `database-icons/`（数据库品牌图标）、`feature-icons/`（MavenIcon / RunIcon / JavaCupIcon ——
 //! 旧前端只有内联 SVG 的 React 组件，没有文件对象，这里落成了 SVG）、
-//! `icon-themes/material/**`。全部由 `#[exclude]` 挡在二进制外：**磁盘文件保留，接线时再去掉
+//! `icons/material/**`。全部由 `#[exclude]` 挡在二进制外：**磁盘文件保留，接线时再去掉
 //! 对应的 `#[exclude]`**。理由与既有三套图标包完全一样（见下一节），本文件 `mod tests` 里的
 //! 回归测试会在有人误删这些 `#[exclude]` 时失败。
 //!
 //! `lithe-gpui/themes/legacy-builtin/` 同理：旧 schema 的 12 份主题真源（35 条主题）只作追溯用，
 //! 生效主题仍是 `lithe-gpui/themes/*.json` 那 7 份 gpui-kit schema 文件。
 //!
-//! ### 为什么 `icon-themes/{lithe,pierre,symbols}` 已从内嵌范围排除
+//! ### 为什么 `icons/{lithe,pierre,symbols}` 已从内嵌范围排除
 //!
 //! 这三套（459 + 149 + 325 = 933 个文件 / 5 337 322 字节 / 约 5.09 MiB）**没有任何代码路径能取到**：
 //! 文件图标主题 id 是编译期常量
-//! `lithe_gpui_shared::icons::file_icon::ACTIVE_FILE_ICON_THEME = "idea"`（`file_icon.rs:72`），
+//! `lithe_gpui_shared::icons::file_icon::ACTIVE_FILE_ICONS = "idea"`（`file_icon.rs:72`），
 //! 主题映射表由 `include_str!` 在编译期读入（`file_icon.rs:89,216`），仓库里也没有任何运行期
-//! 枚举 `icon-themes/` 的代码（唯一的 `.list("")` 是本文件 `fallback_count` 那类启动诊断，不按主题取文件）。
+//! 枚举 `icons/` 的代码（唯一的 `.list("")` 是本文件 `fallback_count` 那类启动诊断，不按主题取文件）。
 //! 所以那三套只是死载荷，用 `#[exclude]` 挡在二进制外。
 //! **磁盘上文件一个都没删**：将来做图标主题切换还要用它们。
 //!
@@ -89,7 +89,7 @@ use gpui_kit::{AssetSource, Result, SharedString};
 /// 内嵌 `lithe-gpui/assets/` 的 rust-embed 资产表。
 ///
 /// 路径键**相对 `lithe-gpui/assets/`**（例如 `ui-icons/idea/expui/general/search.svg`、
-/// `icons/icon.ico`、`icon-themes/idea/extension.json`、`images/logo.png`），可以直接传给
+/// `icons/icon.ico`、`icons/idea/extension.json`、`images/logo.png`），可以直接传给
 /// `svg().path(..)` 或 `img(..)`。
 ///
 /// `#[folder]` 必须是绝对路径字符串：crate 在 `lithe-gpui/crates/app`、资源在 `lithe-gpui/assets`，
@@ -109,9 +109,9 @@ use gpui_kit::{AssetSource, Result, SharedString};
 /// globset 对 `README.md` 这种不带通配符的模式就是**精确匹配**该相对路径。
 #[derive(rust_embed::RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../assets"]
-#[exclude = "icon-themes/lithe/**"]
-#[exclude = "icon-themes/symbols/**"]
-#[exclude = "icon-themes/material/**"]
+#[exclude = "icons/lithe/**"]
+#[exclude = "icons/symbols/**"]
+#[exclude = "icons/material/**"]
 #[exclude = "fonts/**"]
 #[exclude = "legacy-ide-icons/**"]
 #[exclude = "gutter-icons/**"]
@@ -182,17 +182,17 @@ pub fn probe_len(path: &str) -> Option<usize> {
 ///
 /// 1. `ui-icons/**`：IDE 图标，明暗两套都要能取到（`shared/src/icons/idea.rs` 按主题二选一）；
 /// 2. `icons/icon.ico`：应用图标（PE 资源那份走 `crates/app/build.rs`，这一份是 `AssetSource` 侧）；
-/// 3. `icon-themes/idea/extension.json`：文件类型图标主题的**清单**，由 `file_icon.rs` 的
+/// 3. `icons/idea/extension.json`：文件类型图标主题的**清单**，由 `file_icon.rs` 的
 ///    `include_str!` 在编译期读入；
-/// 4. `icon-themes/idea/icons/expui/fileTypes/gitignore.svg`：主题里的一个**具体图标** —— 这条是
+/// 4. `icons/idea/icons/expui/fileTypes/gitignore.svg`：主题里的一个**具体图标** —— 这条是
 ///    "查找层算出的路径确实能 `load` 到字节"的证据。没有它，主题图标取不到字节时界面会
 ///    **静默回落到 Lucide**（`FileIcon::render` 的 `else` 分支），截图上看不出区别。
 pub const PROBE_PATHS: &[&str] = &[
     "ui-icons/idea/expui/general/settings.svg",
     "ui-icons/idea/expui/general/settings_dark.svg",
-    "icons/icon.ico",
-    "icon-themes/idea/extension.json",
-    "icon-themes/idea/icons/expui/fileTypes/gitignore.svg",
+    "app-icon/icon.ico",
+    "icons/idea/extension.json",
+    "icons/idea/icons/expui/fileTypes/gitignore.svg",
 ];
 
 impl AssetSource for LitheAssets {
@@ -243,13 +243,14 @@ mod tests {
     /// 这两种情况都不会让任何测试或编译失败，只会让二进制静默多背死载荷
     /// （三套图标包约 5.09 MiB，加归档目录约 1.79 MiB）。
     #[test]
-    fn unwired_icon_themes_are_not_embedded() {
+    fn unwired_icons_are_not_embedded() {
         let paths = embedded_paths();
         for prefix in [
-            "icon-themes/lithe/",
-            "icon-themes/pierre/",
-            "icon-themes/symbols/",
-            "icon-themes/material/",
+            "icons/lithe/",
+            // ⚠️ `icons/pierre/` **不在这里**：它已被 [`crate::assets::LitheAssets`] 接线，
+            // 是随宿主分发的可卸载图标集（见 `settings::extensions` 的注册表）。
+            "icons/symbols/",
+            "icons/material/",
             "fonts/",
             "legacy-ide-icons/",
             "gutter-icons/",
@@ -280,11 +281,11 @@ mod tests {
         let paths = embedded_paths();
         for required in [
             // 文件图标主题：`shared/src/icons/file_icon.rs` 的 `include_str!` 读它。
-            "icon-themes/idea/extension.json",
+            "icons/idea/extension.json",
             // UI 图标：`shared/src/icons/idea.rs` 里的常量路径之一。
             "ui-icons/idea/expui/general/search.svg",
             // exe / 窗口 / 任务栏图标（PE 资源走 `build.rs`，这一份是 AssetSource 侧）。
-            "icons/icon.ico",
+            "app-icon/icon.ico",
             // 品牌 logo。
             "images/logo.png",
         ] {
@@ -312,16 +313,19 @@ mod tests {
         let count = LitheAssets::embedded_count();
         println!("LitheAssets::iter().count() = {count}");
         println!(
-            "ui-icons/ = {}, icon-themes/idea/ = {}, icons/ = {}, images/ = {}",
+            "ui-icons/ = {}, icons/idea/ = {}, icons/ = {}, images/ = {}",
             LitheAssets::embedded_count_under("ui-icons/"),
-            LitheAssets::embedded_count_under("icon-themes/idea/"),
+            LitheAssets::embedded_count_under("icons/idea/"),
             LitheAssets::embedded_count_under("icons/"),
             LitheAssets::embedded_count_under("images/"),
         );
 
-        // 内嵌范围只应是这四组：`README.md` 由 `#[exclude]` 挡在表外，所以这里**没有**例外项。
+        // 内嵌范围只应是这几组：`README.md` 由 `#[exclude]` 挡在表外，所以这里**没有**例外项。
         // 出现别的路径说明 `lithe-gpui/assets/` 下多了新目录，那要么该加 `#[exclude]`、要么该更新文档。
-        let known_groups = ["ui-icons/", "icon-themes/", "icons/", "images/"];
+        //
+        // 两组名字容易混（2026-09-29 按"图标/图标集"统一命名时分的）：
+        // `app-icon/` = **应用图标**（exe 资源与任务栏那份），`icons/` = **图标集**（文件类型图标）。
+        let known_groups = ["ui-icons/", "app-icon/", "icons/", "images/"];
         let paths = embedded_paths();
         let ungrouped: Vec<&str> = paths
             .iter()
@@ -334,9 +338,14 @@ mod tests {
         );
 
         assert_eq!(
-            LitheAssets::embedded_count_under("icon-themes/"),
+            LitheAssets::embedded_count_under("icons/idea/"),
             104,
-            "只应剩 `icon-themes/idea/**` 这 104 个文件"
+            "内置图标集（idea）应是 104 个文件"
+        );
+        assert_eq!(
+            LitheAssets::embedded_count_under("icons/pierre/"),
+            149,
+            "捆绑图标集（pierre）应是 149 个文件 —— 它随宿主编译、可卸载可切换"
         );
         assert_eq!(
             LitheAssets::embedded_count_under("ui-icons/"),
@@ -344,9 +353,9 @@ mod tests {
             "`ui-icons/**` 应当全量内嵌"
         );
         assert_eq!(
-            LitheAssets::embedded_count_under("icons/"),
+            LitheAssets::embedded_count_under("app-icon/"),
             7,
-            "`icons/**` 只有 7 个位图"
+            "`app-icon/**` 是应用图标的 7 个位图"
         );
         assert_eq!(
             LitheAssets::embedded_count_under("images/"),
@@ -354,8 +363,8 @@ mod tests {
             "`images/**` 只有品牌 logo 一个文件"
         );
         assert_eq!(
-            count, 269,
-            "排除 `README.md` 后的内嵌总数（7 + 1 + 157 + 104 = 269 个资源文件）"
+            count, 418,
+            "排除 `README.md` 后的内嵌总数（应用图标 7 + 品牌 1 + ui-icons 157 + idea 104 + pierre 149）"
         );
 
         // 本 crate 没有打开 rust-embed 的 `compression` 特性，所以内嵌字节数 == 源文件长度之和，
@@ -370,13 +379,16 @@ mod tests {
             "embedded resource bytes = {resource_bytes} ({:.2} MiB)",
             resource_bytes as f64 / 1_048_576.0
         );
-        // 三套图标包 + material 合计 5 864 529 字节，归档目录约 1.79 MiB：
-        // 精确钉住 3 200 771 已经蕴含"它们一个都不在里面"。
+        // 精确钉住字节数：它蕴含"内嵌表恰好是这几组、没有别的目录混进来"。
+        //
+        // 2026-09-29 起 pierre 图标集**接线**了（随宿主编译、可卸载可切换），所以它那约
+        // 407 KiB 是**应得**的增量；未接线的只剩 lithe / symbols / material 三套
+        // （合计约 5.46 MiB）与归档目录（约 1.79 MiB）—— 它们一个都不该在里面。
         assert_eq!(
-            resource_bytes, 3_200_771,
-            "内嵌资源字节数应精确等于 269 个资源文件之和；若变大，先查未接线的图标包\
-             （lithe/pierre/symbols/material 合计 5 864 529 字节）与归档目录是不是又进来了，\
-             再查是不是有资源被整体替换成了更大的版本"
+            resource_bytes, 3_323_186,
+            "内嵌资源字节数应精确等于 418 个资源文件之和；若变大，先查未接线的图标包\
+             （lithe/symbols/material 合计约 5.46 MiB，注意 pierre 已接线、**在**二进制里）\
+             与归档目录是不是又进来了，再查是不是有资源被整体替换成了更大的版本"
         );
     }
 
@@ -406,7 +418,7 @@ mod tests {
     /// 1. 探针路径写错 —— 历史上就有 `icons/settings.svg`（`lithe-gpui/assets/icons/**` 下只有
     ///    7 个位图，一个 `.svg` 都没有）；
     /// 2. `#[exclude]` / `#[include]` 改动把探针要用的那一批挡在了内嵌表外
-    ///    （例如把 `icon-themes/idea/**` 也排除掉）。
+    ///    （例如把 `icons/idea/**` 也排除掉）。
     ///
     /// ⚠️ **只断言 `load` 非空是不够的**（本轮反向验证实测踩到）：[`LitheAssets::load`] 会回落
     /// `gpui_kit::assets::AllAssets`，而 Lucide 那 1 830 个字形里**就有** `icons/settings.svg`

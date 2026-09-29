@@ -1,4 +1,4 @@
-//! 把 `lithe-gpui/assets/icons/icon.ico` 以资源 ID **1** 嵌进 `Lithe.exe`。
+//! 把 `lithe-gpui/assets/app-icon/icon.ico` 以资源 ID **1** 嵌进 `Lithe.exe`。
 //!
 //! Windows 上给窗口/任务栏设图标**唯一**可行的路就是嵌 exe 资源：gpui 的 Windows 后端
 //! 用 `LoadImageW(GetModuleHandleW(None), PCWSTR(1), IMAGE_ICON, ...)` 取图标，而
@@ -13,7 +13,7 @@
 fn main() {
     // `.rc` 本身与它引用的图标都要参与增量判断：换图标必须重新链接 exe。
     println!("cargo:rerun-if-changed=lithe.rc");
-    println!("cargo:rerun-if-changed=../../assets/icons/icon.ico");
+    println!("cargo:rerun-if-changed=../../assets/app-icon/icon.ico");
 
     // `manifest_optional()`：图标是装饰性资源，rc.exe "没尝试/非 Windows" 都算成功；
     // 只有**真的编译失败**才返回 `Err`。这种情况下必须让构建失败 —— 否则会静默产出一个

@@ -371,6 +371,13 @@ const GPUI_ONLY_KEYS = [
       "同一个视图的空态。判据是 Core 的 spring.index 没给出任何事实（响应为 null 或集合全空），所以文案如实说「组件与端点」而不是「项目」——免得把「打开了一个没有 Spring 的 Java 项目」说成「没检测到项目」。句式沿用 maven.notDetected（「未检测到 X」），保持同一面板族的读感。",
   },
   {
+    key: "extensions.contributionLine",
+    zh: "{label}：{items}",
+    en: "{label}: {items}",
+    reason:
+      "扩展卡片展开后每条贡献项那一行的格式（如「图标：Pierre」）。真源没有这个键（旧前端把贡献项拼在 JSX 里）。抽成一条格式键是为了让**标点与语序归各语言自己管**：中文用全角冒号、英文用半角冒号加空格，而不是在 Rust 里写死一个「：」。标签部分复用分类标签键（extensions.themes / extensions.icons / extensions.category.fonts 等）。",
+  },
+  {
     key: "extensions.icons",
     zh: "图标",
     en: "Icons",

@@ -19,4 +19,4 @@
 //
 // 路径相对 **crate 根目录**（`lithe-gpui/crates/app`）解析：build script 以 crate 根为当前目录
 // 调用 rc.exe（`embed-resource-3.0.11/src/windows_msvc.rs` 的 `compile_resource`）。
-1 ICON "../../assets/icons/icon.ico"
+1 ICON "../../assets/app-icon/icon.ico"

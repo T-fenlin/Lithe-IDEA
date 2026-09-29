@@ -48,7 +48,7 @@ use lithe_gpui_shared::{tr, tr_args};
 const FILTERS: [(Option<&'static str>, &'static str); 7] = [
     (None, "lithe.extensions.all"),
     (Some("themes"), "lithe.extensions.themes"),
-    (Some("icon-themes"), "lithe.extensions.icons"),
+    (Some("icons"), "lithe.extensions.icons"),
     (Some("fonts"), "lithe.extensions.category.fonts"),
     (Some("debug"), "lithe.extensions.category.debug"),
     (Some("lsp"), "lithe.extensions.category.lsp"),
@@ -56,11 +56,11 @@ const FILTERS: [(Option<&'static str>, &'static str); 7] = [
 ];
 
 /// 分类 id → 界面标签。id（ 等）是目录契约的协议面，界面按  键显示，
-/// 与筛选条共用同一批键 —— 否则同一件事会出现「图标」与「icon-themes」两种写法。
+/// 与筛选条共用同一批键 —— 否则同一件事会出现「图标」与「icons」两种写法。
 fn category_label(category: &str) -> SharedString {
     match category {
         "themes" => tr("lithe.extensions.themes"),
-        "icon-themes" => tr("lithe.extensions.icons"),
+        "icons" => tr("lithe.extensions.icons"),
         "fonts" => tr("lithe.extensions.category.fonts"),
         "debug" => tr("lithe.extensions.category.debug"),
         "lsp" => tr("lithe.extensions.category.lsp"),
@@ -106,28 +106,39 @@ struct Card {
     removable: bool,
     /// 这个包贡献了字体（详情里要写清「下次启动生效」—— 字体运行期摘不掉）。
     has_fonts: bool,
-    /// 这个包贡献的是图标集时，它的**包名**（设置键 `iconTheme` 的取值）；
+    /// 这个包贡献的是图标集时，它的**包名**（设置键 `icons` 的取值）；
     /// 卡片据此画「使用 / 当前」——图标主题与配色主题一样是"选一个生效"的东西。
-    icon_theme_package: Option<String>,
+    icons_package: Option<String>,
     /// 展开详情里的贡献项行（字体家族已去重）。
     contributions: Vec<SharedString>,
 }
 
 impl Card {
     fn from_snapshot(entry: &lithe_gpui_extensions::ExtensionSnapshot) -> Self {
+        // 贡献项行**全部走 tr**：标签复用分类标签键（与筛选条同一词汇），格式走
+        // extensions.contributionLine（标点归各语言自己管）。此前这里硬编码中文，
+        // 英文界面下会漏中文 —— 那是本页第一版留下的缺口。
+        let line = |category: &str, items: &str| -> SharedString {
+            tr_args(
+                "lithe.extensions.contributionLine",
+                &[
+                    ("label", category_label(category).as_ref()),
+                    ("items", items),
+                ],
+            )
+        };
         let mut contributions = Vec::new();
         if !entry.theme_names.is_empty() {
-            contributions.push(format!("主题：{}", entry.theme_names.join("、")).into());
+            contributions.push(line("themes", &entry.theme_names.join("、")));
         }
-        if !entry.icon_theme_names.is_empty() {
-            contributions.push(format!("图标主题：{}", entry.icon_theme_names.join("、")).into());
+        if !entry.icons_names.is_empty() {
+            contributions.push(line("icons", &entry.icons_names.join("、")));
         }
         if !entry.font_families.is_empty() {
-            contributions.push(format!("字体：{}", entry.font_families.join("、")).into());
+            contributions.push(line("fonts", &entry.font_families.join("、")));
         }
         if !entry.debug_adapter_names.is_empty() {
-            contributions
-                .push(format!("调试适配器：{}", entry.debug_adapter_names.join("、")).into());
+            contributions.push(line("debug", &entry.debug_adapter_names.join("、")));
         }
         for support in &entry.language_supports {
             let extensions = support
@@ -136,7 +147,10 @@ impl Card {
                 .map(|extension| format!(".{extension}"))
                 .collect::<Vec<_>>()
                 .join("、");
-            contributions.push(format!("语言：{}（{extensions}）", support.display_name).into());
+            contributions.push(line(
+                "languages",
+                &format!("{}（{extensions}）", support.display_name),
+            ));
         }
         Self {
             id: entry.id.clone(),
@@ -155,10 +169,10 @@ impl Card {
             built_in: entry.entrypoint_kind == "builtIn",
             removable: entry.entrypoint_kind == "bundled",
             has_fonts: !entry.font_families.is_empty(),
-            icon_theme_package: if entry.categories.iter().any(|item| item == "icon-themes") {
-                // 目录里的贡献路径形如 `icon-themes/pierre/extension.json`，包名就是中间那段。
+            icons_package: if entry.categories.iter().any(|item| item == "icons") {
+                // 目录里的贡献路径形如 `icons/pierre/extension.json`，包名就是中间那段。
                 entry
-                    .icon_theme_paths
+                    .icons_paths
                     .first()
                     .and_then(|path| path.split('/').nth(1))
                     .map(str::to_string)
@@ -192,7 +206,7 @@ fn card_matches_query(card: &Card, query: &str) -> bool {
 }
 
 /// 分类判据：`None` = 全部；分类是结构化字段，**不能**用子串匹配
-/// （`"icon-themes"` 包含 `"themes"`，子串会把两档混在一起）。
+/// （`"icons"` 包含 `"themes"`，子串会把两档混在一起）。
 fn card_matches_category(card: &Card, category: Option<&str>) -> bool {
     match category {
         None => true,
@@ -281,14 +295,14 @@ impl ExtensionsPage {
 
     /// 切换文件图标主题（图标集卡片上的「使用」）。
     ///
-    /// 落点是 `SettingsStore::set_icon_theme`（它负责"认不出的包名不写入"），
+    /// 落点是 `SettingsStore::set_icons`（它负责"认不出的包名不写入"），
     /// 本页只转交意图 —— 与卸载按钮同一条口径。
-    fn use_icon_theme(&mut self, package: &str, cx: &mut Context<Self>) {
+    fn use_icons(&mut self, package: &str, cx: &mut Context<Self>) {
         let Some(store) = self.settings.clone() else {
             eprintln!("S1_EXTENSIONS_PAGE action=use_no_settings package={package}");
             return;
         };
-        store.update(cx, |store, cx| store.set_icon_theme(package, cx));
+        store.update(cx, |store, cx| store.set_icons(package, cx));
         // 设置存储的订阅会让本页重绘（「当前」随之移动）。
     }
 
@@ -502,11 +516,10 @@ impl ExtensionsPage {
                         // 图标集：与配色主题一样"选一个生效" —— 当前那个显示「当前」（禁用），
                         // 其余显示「使用」。文案复用真源既有的 extensions.current / extensions.use。
                         .when_some(
-                            card.icon_theme_package.clone().filter(|_| !uninstalled),
+                            card.icons_package.clone().filter(|_| !uninstalled),
                             |this, package| {
                                 let is_current = package
-                                    == crate::extensions_page::active_icon_theme(cx)
-                                        .unwrap_or_default();
+                                    == crate::extensions_page::active_icons(cx).unwrap_or_default();
                                 let label = if is_current {
                                     tr("lithe.extensions.current")
                                 } else {
@@ -525,7 +538,7 @@ impl ExtensionsPage {
                                     .label(label)
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
-                                        this.use_icon_theme(&package_for_click, cx);
+                                        this.use_icons(&package_for_click, cx);
                                     })),
                                 )
                             },
@@ -662,13 +675,13 @@ impl ExtensionsPage {
     }
 }
 
-/// 当前生效的图标主题包名（设置键 `iconTheme`）；读不到设置时为 `None`。
+/// 当前生效的图标主题包名（设置键 `icons`）；读不到设置时为 `None`。
 ///
-/// 图标集卡片的「当前 / 使用」两态靠它判定 —— 判据来自设置存储（`iconTheme` 是它的键），
+/// 图标集卡片的「当前 / 使用」两态靠它判定 —— 判据来自设置存储（`icons` 是它的键），
 /// 不是"页面自己记一个选中项"：那样会出现"设置里换过、页面还显示旧的那个"。
-pub(crate) fn active_icon_theme(cx: &App) -> Option<String> {
+pub(crate) fn active_icons(cx: &App) -> Option<String> {
     let store = lithe_gpui_settings::try_store(cx)?;
-    Some(store.read(cx).icon_theme())
+    Some(store.read(cx).icons())
 }
 
 /// 筛选项的稳定元素 id 片段（`None` = 全部）。
@@ -676,7 +689,7 @@ fn filter_key(category: Option<&str>) -> &'static str {
     match category {
         None => "all",
         Some("themes") => "themes",
-        Some("icon-themes") => "icon-themes",
+        Some("icons") => "icons",
         Some("fonts") => "fonts",
         Some("debug") => "debug",
         Some("lsp") => "lsp",
@@ -799,14 +812,14 @@ mod tests {
         assert!(card_matches_query(&card, "   "));
     }
 
-    /// 分类判据是**结构化**等值：`"icon-themes"` 包含子串 `"themes"`，
+    /// 分类判据是**结构化**等值：`"icons"` 包含子串 `"themes"`，
     /// 子串匹配会把两档混在一起 —— 这条钉住等值判据。
     #[test]
     fn category_match_is_exact_not_substring() {
         let card = sample_card();
         assert!(card_matches_category(&card, None));
         assert!(card_matches_category(&card, Some("themes")));
-        assert!(!card_matches_category(&card, Some("icon-themes")));
+        assert!(!card_matches_category(&card, Some("icons")));
         assert!(!card_matches_category(&card, Some("fonts")));
     }
 }

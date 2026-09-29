@@ -12,7 +12,7 @@
 //!    [`idea::ALIASES`] 保留旧前端 TS 清单里的别名显示名。
 //!    文件 `src/icons/idea.rs` 由 `lithe-gpui/tools/generate-idea-icons.mjs` **生成**，不要手改。
 //!    **文件类型图标走另一条路**：[`file_icon`] 按文件名 / 后缀查
-//!    `lithe-gpui/assets/icon-themes/idea/extension.json`，再用 [`FileIcon::render`] 画出来。
+//!    `lithe-gpui/assets/icons/idea/extension.json`，再用 [`FileIcon::render`] 画出来。
 //! 3. **helper**：[`idea_icon_svg`] 按当前主题明暗挑路径，并设好 16×16 的尺寸与前景色。
 //!    **调用点只写图标名**，不要自己再调 `.size_4()` / `.text_color(..)`（理由见该函数的文档）。
 //! 4. **调用点**：`.child(idea_icon_svg(&idea::GEAR_ICON, cx))`。
@@ -40,7 +40,7 @@
 //!
 //! ## 还没接的部分
 //!
-//! - `lithe-gpui/assets/icon-themes/**`（4 套文件类型图标包，1 027 个 SVG）走**另一条路**
+//! - `lithe-gpui/assets/icons/**`（4 套文件类型图标包，1 027 个 SVG）走**另一条路**
 //!   （"按文件名 / 后缀查 `extension.json` 再取 SVG"，不是一个名字一张图），实现在
 //!   [`file_icon`] 子模块；`explorer` / `editor` 的 `icon_for_file` 已经接上它。
 //! - 因此 [`idea`] 子模块只覆盖 `ui-icons/idea/**` 的 157 个文件（79 个图标 × 明/暗变体）。
@@ -58,7 +58,7 @@ pub mod idea;
 ///
 /// 文件类型图标有**两个真源**，而且优先关系是固定的：
 ///
-/// 1. **`lithe-gpui/assets/icon-themes/idea/**`** —— 真机默认图标主题（`idea-icons`）的文件类型美术。
+/// 1. **`lithe-gpui/assets/icons/idea/**`** —— 真机默认图标主题（`idea-icons`）的文件类型美术。
 ///    它按文件名 / 后缀查 `extension.json`，是**彩色**的（见 [`file_icon`]）。
 /// 2. **全量 Lucide 目录**（`gpui_kit::assets::IconName`，`icons/*.svg`）—— 主题包里**没有**
 ///    对应条目时的回落。老的 `icon_for_file` 就是这一层。
@@ -74,7 +74,7 @@ pub mod idea;
 /// - `fallback`：Lucide 字形，**永远有值**（`IconName` 是全量目录的封闭枚举）。
 #[derive(Clone, Debug)]
 pub struct FileIcon {
-    /// 主题包（`icon-themes/idea/**`）里的 SVG 资源路径；`None` 时用 `fallback`。
+    /// 主题包（`icons/idea/**`）里的 SVG 资源路径；`None` 时用 `fallback`。
     pub themed: Option<&'static str>,
     /// 主题包没有对应条目时用的 Lucide 字形（`icons/*.svg`）。
     pub fallback: IconName,
