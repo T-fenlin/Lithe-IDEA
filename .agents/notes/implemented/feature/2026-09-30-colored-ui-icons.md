@@ -137,18 +137,18 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 维护者问到 Maven 与铃铛，逐个查了来源，结论是**这两处在真源里也不是彩色图标**，
 换管线换不出颜色：
 
-- **铃铛**（`icons/idea/icons/expui/toolwindows/notifications.svg`）：`stroke="#6C707E"`
+- **铃铛**（`icons/idea/icons/toolwindows/notifications.svg`）：`stroke="#6C707E"`
   （深色版 `#CED0D6`）—— IDEA 的工具窗图标都是灰描边。本批已经把它换到 `img()` 了，
   所以"看着没变"是**正确结果**，不是没切换。
 - **Maven**：真源 `features/maven/components/maven-icon.tsx` 那枚 16×16 字形是
   `fill="currentColor"`（**单色**，跟随文字色），所以 Windows 前端的轨道 Maven 也是单色的；
   IDEA 自己的 Maven **工具窗**图标（原 `legacy-ide-icons/maven/toolWindowMaven.svg`，`#CED0D6` 的灰；
   该归档目录已于同日从磁盘删除，文件在 git 历史里）是 `#CED0D6` 的灰。
-  我们**有**的那枚蓝色 Maven 标志（`icons/idea/icons/expui/fileTypes/maven.svg`，`#3574F0`）
+  我们**有**的那枚蓝色 Maven 标志（`icons/idea/icons/fileTypes/maven.svg`，`#3574F0`）
   是**文件类型**图标，已经用在文件树 / 编辑器标签的 `pom.xml` 上（那处是彩色的）。
   右栏 Maven 现在用 Lucide `package` 字形，是"真源只有内联组件、没有 SVG 可搬"时的既有取舍。
 - 想让右栏 Maven 显示**彩色蓝色 Maven 标志**（有意偏离真源与 IDEA 的灰轨道图标）：
-  一行就能换 —— 把 `icons/idea/icons/expui/fileTypes/maven.svg` 包成
+  一行就能换 —— 把 `icons/idea/icons/fileTypes/maven.svg` 包成
   `ActivityItem::idea`（该资产**已在内嵌资源里**）。
   ⚠️ 前提是接受"轨道图标不再与 IDEA 一致"。
 
@@ -187,8 +187,41 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 
 ### 验证
 
-`cargo test -p lithe-gpui-app`（内嵌口径 411 个文件 / 3 319 379 字节，由
+`cargo test -p lithe-gpui-app`（内嵌口径 411 个文件 / 3 319 379 字节，
+**这个 pin 的值已在追加三里更正为 3 318 863**，由
 `embedded_range_stays_within_the_documented_envelope` 精确钉住）、
 `node rust/lithe-gpui/tools/generate-idea-icons.mjs --check`、
 `cargo fmt --check` 与受影响 crate 的 `cargo test`。像素级复核仍受本机限制（抓不到 GPU 帧），
 彩色是否生效请维护者目验。
+
+## 追加三：`expui/` 一层拉平（2026-09-30 第三批，维护者决策）
+
+### 先说结论
+
+本地资产树不再镜像上游的目录名：`icons/idea/icons/expui/<分类>/` 的 253 个 SVG 整体上移一层，
+变成 `icons/idea/icons/<分类>/`（git 全部识别为重命名）。包根下直接就是分类目录，与
+`icons/{pierre,lithe,symbols}` 的"包根 = `extension.json` + 一个 `icons/` 子目录"这条约定一致。
+
+开发者要记住的：
+
+- **清单**：`icons/idea/extension.json` 的 106 条路径（82 `fileTypes` + 24 `nodes`）由
+  `./icons/expui/X` 改为 `./icons/X`；`tools/generate-idea-icons.mjs` 的扫描根
+  （`assets/icons/idea/icons/`）与输出前缀（`icons/idea/icons`）**没动**，产物路径自动跟随 ——
+  384 行 diff 全部只差 `expui/` 一段，128 个常量名与 16 个别名零变化（旧前端那 144 个显示名
+  = 128 个规范常量 + 16 个 `ALIASES` 别名，一个都没丢）。
+- **溯源与布局分家**：`tools/idea-icon-mappings.json` **一个字节都没改**，因为它的 `source`
+  记的是上游路径。生成器新增 `UPSTREAM_PREFIX = "expui"`，查显示名时把这一层拼回去。
+  要拿本地路径回上游核对，对应关系是 `<分类>/x.svg` ⇄ `platform/icons/src/expui/<分类>/x.svg`。
+- **文件数不变、字节数变了**：只改路径、不减文件，仍是 **411 个文件**；但清单是**文本**，106 条
+  路径去掉 `expui/` 后短了 **636 字节**，内嵌字节总数从 **3 319 499** 降到 **3 318 863**。这次实测
+  同时暴露了旧登记值 `3 319 379` 的偏差：它比合并提交当时的实测值少 **120**（`d76bd6ee` 改过清单
+  却没重测那个 pin），`embedded_range_stays_within_the_documented_envelope` 在本次改动**之前**
+  就是红的 —— 本次一并改成实测值。**开发者注意**：改 `assets/` 下任何文件（含清单这种纯文本）
+  都要重跑该测试，字节口径钉的是内嵌字节。包清单 `version` 0.2.0 → 0.3.0（延续第二批
+  `0.1.0 → 0.2.0` 的做法）。搬运记录见 `rust/lithe-gpui/assets/README.md` 第 9.5 节。
+
+### 验证
+
+`node rust/lithe-gpui/tools/generate-idea-icons.mjs --check`（产物与文件系统一致）、受影响的
+`cargo test -p lithe-gpui-shared -p lithe-gpui-app`（清单路径与内嵌口径）、以及全仓库残留
+`expui/` 路径引用的检索。

@@ -36,17 +36,17 @@
 //!
 //! | Windows 用途 | Windows 图标组件 | 现在用 | 真源文件 / 理由 |
 //! | --- | --- | --- | --- |
-//! | 项目 | `FilesIcon` | **真源** `idea::FILES_ICON` | `icons/idea/icons/expui/general/listFiles.svg`（+`_dark`） |
-//! | 搜索 | `MagnifyingGlassIcon` | **真源** `idea::MAGNIFYING_GLASS_ICON` | `expui/general/search.svg` |
+//! | 项目 | `FilesIcon` | **真源** `idea::FILES_ICON` | `icons/idea/icons/general/listFiles.svg`（+`_dark`） |
+//! | 搜索 | `MagnifyingGlassIcon` | **真源** `idea::MAGNIFYING_GLASS_ICON` | `general/search.svg` |
 //! | 更改（Git） | `GitBranchIcon` | **真源** `idea::GIT_BRANCH_ICON` | `vcs/branch.svg` |
 //! | 提交记录 | `GitGraphIcon` | `Lucide` `GitGraph` | 真源是 `Nucleo.IconGitGraphOutline18` → Lucide，**无文件** |
 //! | 终端 | `TerminalWindowIcon` | `Lucide` `SquareTerminal` | 同上（`Nucleo.IconSquareTerminalOutline18` → Lucide） |
-//! | 诊断 | `WarningIcon` | **真源** `idea::WARNING_CIRCLE_ICON` | `expui/general/warningDialog.svg` |
+//! | 诊断 | `WarningIcon` | **真源** `idea::WARNING_CIRCLE_ICON` | `general/warningDialog.svg` |
 //! | 运行 | `RunIcon` | `Lucide` `Play` | 真源是内联 React 组件 `run-icon.tsx`，**只有 path 没有 SVG 文件** |
 //! | Maven | `MavenIcon` | `Lucide` `Package` | 真源是内联 React 组件 `maven-icon.tsx`，同上 |
-//! | 设置 | `GearIcon` | **真源** `idea::GEAR_ICON` | `expui/general/settings.svg` |
+//! | 设置 | `GearIcon` | **真源** `idea::GEAR_ICON` | `general/settings.svg` |
 //! | 扩展（插件） | `PuzzlePieceIcon` | `Lucide` `Puzzle` | 真源经 `Nucleo` 代理解析到 Lucide `puzzle`，**已经是 1:1** |
-//! | 通知 | `BellIcon` | **真源** `idea::BELL_ICON` | `expui/toolwindows/notifications.svg` |
+//! | 通知 | `BellIcon` | **真源** `idea::BELL_ICON` | `toolwindows/notifications.svg` |
 //!
 //! 出处与被否方案见 `lithe-gpui/research/icon-asset-inventory.md` 第 3.1 节。
 //!

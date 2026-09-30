@@ -235,7 +235,7 @@ impl FileIcons {
     /// 否则取 `lightIconDefinitions`（没有浅色定义时回落深色，与真机
     /// `getIconDefinitionsForAppearance` 的 `?? contribution.iconDefinitions` 同序）。
     ///
-    /// 返回的是**完整资源路径**（`icons/idea/icons/expui/fileTypes/java.svg`），
+    /// 返回的是**完整资源路径**（`icons/idea/icons/fileTypes/java.svg`），
     /// 可直接交给 [`theme_file_icon`] 渲染，或交给 `AssetSource::load` 探针。
     #[must_use]
     pub fn file_path(&self, file_name: &str, dark: bool) -> Option<&str> {
@@ -549,28 +549,28 @@ mod tests {
         for (name, dark, light) in [
             (
                 ".gitignore",
-                "icons/expui/fileTypes/gitignore.svg",
-                "icons/expui/fileTypes/gitignore.svg",
+                "icons/fileTypes/gitignore.svg",
+                "icons/fileTypes/gitignore.svg",
             ),
             (
                 "pom.xml",
-                "icons/expui/fileTypes/maven_dark.svg",
-                "icons/expui/fileTypes/maven.svg",
+                "icons/fileTypes/maven_dark.svg",
+                "icons/fileTypes/maven.svg",
             ),
             (
                 "README.md",
-                "icons/expui/fileTypes/markdown_dark.svg",
-                "icons/expui/fileTypes/markdown.svg",
+                "icons/fileTypes/markdown_dark.svg",
+                "icons/fileTypes/markdown.svg",
             ),
             (
                 "A.java",
-                "icons/expui/fileTypes/java_dark.svg",
-                "icons/expui/fileTypes/java.svg",
+                "icons/fileTypes/java_dark.svg",
+                "icons/fileTypes/java.svg",
             ),
             (
                 "x.yml",
-                "icons/expui/fileTypes/yaml_dark.svg",
-                "icons/expui/fileTypes/yaml.svg",
+                "icons/fileTypes/yaml_dark.svg",
+                "icons/fileTypes/yaml.svg",
             ),
         ] {
             assert_eq!(
@@ -593,11 +593,11 @@ mod tests {
         let theme = active_theme().expect("idea theme must parse");
         assert_eq!(
             relative(theme.file_path("notes.unknownext", true)),
-            Some("icons/expui/fileTypes/text_dark.svg"),
+            Some("icons/fileTypes/text_dark.svg"),
         );
         assert_eq!(
             relative(theme.file_path("no-extension-at-all", true)),
-            Some("icons/expui/fileTypes/text_dark.svg"),
+            Some("icons/fileTypes/text_dark.svg"),
         );
     }
 
@@ -608,7 +608,7 @@ mod tests {
         let theme = active_theme().expect("idea theme must parse");
         assert_eq!(
             relative(theme.file_path("archive.tar.gz", true)),
-            Some("icons/expui/fileTypes/archive_dark.svg"),
+            Some("icons/fileTypes/archive_dark.svg"),
         );
     }
 
@@ -619,11 +619,11 @@ mod tests {
         let theme = active_theme().expect("idea theme must parse");
         assert_eq!(
             relative(theme.folder_path("src", false, true)),
-            Some("icons/expui/nodes/folder_dark.svg"),
+            Some("icons/nodes/folder_dark.svg"),
         );
         assert_eq!(
             relative(theme.folder_path("src", true, false)),
-            Some("icons/expui/nodes/folder.svg"),
+            Some("icons/nodes/folder.svg"),
         );
     }
 
@@ -637,7 +637,7 @@ mod tests {
     fn every_definition_exists_in_the_assets_tree() {
         let theme = active_theme().expect("idea theme must parse");
         // `CARGO_MANIFEST_DIR` = `lithe-gpui/crates/shared`，资源在 `lithe-gpui/assets`。
-        // 表里存的是**主题包根之下的相对路径**（`icons/expui/…`），所以这里要补回
+        // 表里存的是**主题包根之下的相对路径**（`icons/…`），所以这里要补回
         // `icons/idea/` 那段前缀 —— 正好顺带钉住 `root()` 与定义表能拼成完整资源键。
         let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let missing = |table: &HashMap<String, String>| -> Vec<String> {

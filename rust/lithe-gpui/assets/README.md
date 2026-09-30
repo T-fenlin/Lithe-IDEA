@@ -410,3 +410,28 @@ TOTAL src=1194 bad=0 extra=0
 | `icons/idea/**` | 254 |
 | `icons/pierre/**` | 149 |
 | **合计** | **411 个文件 / 3 319 379 字节（约 3.17 MiB）** |
+
+## 9.5 `expui/` 一层拉平（本地布局不再镜像上游层）
+
+同一批工作的第三步（2026-09-30）：`icons/idea/icons/expui/{actions,bookmarks,fileTypes,general,ide,image,javaee,nodes,run,toolwindows,vcs}/`
+的 **253 个 SVG 整体上移一层**，变成 `icons/idea/icons/<分类>/`。
+
+- **动机**：`expui` 是上游 intellij-community 的目录名（`platform/icons/src/expui/…`），对本地布局没有信息量。
+  上移后包根下直接就是分类目录，与 `icons/{pierre,lithe,symbols}` 的"包根 = `extension.json` + 一个 `icons/` 子目录"
+  这条跨包约定一致。
+- **同步改动**：`icons/idea/extension.json` 的 106 条路径（82 `fileTypes` + 24 `nodes`）由 `./icons/expui/X` 改为 `./icons/X`；
+  `tools/generate-idea-icons.mjs` 的扫描根（`assets/icons/idea/icons/`）与输出前缀（`icons/idea/icons`）**不变**，
+  产物 `idea.rs` 自动跟随 —— 384 行 diff 全部只差 `expui/` 一段，**128 个常量名与 16 个别名零变化**
+  （旧前端那 144 个显示名 = 128 个规范常量 + 16 个 `ALIASES` 别名，一个都没丢）。
+- **溯源不受影响**：`tools/idea-icon-mappings.json` **一个字节都没动**，因为它的 `source` 记的是**上游**路径。
+  生成器新增 `UPSTREAM_PREFIX = "expui"`，查显示名时把这一层拼回去，"上游溯源"与"本地布局"自此是两件事。
+  要用本地路径回上游核对时，对应关系是 `<分类>/x.svg` ⇄ `platform/icons/src/expui/<分类>/x.svg`。
+- **文件数不变，字节数变了**：只改路径、不减文件，`LitheAssets::iter().count()` 仍是 **411 个文件**；
+  但清单是**文本**，106 条路径去掉 `expui/` 段后短了 **636 字节**，内嵌字节总数因此从 **3 319 499**
+  降到 **3 318 863**（约 3.17 MiB）。9.4 表里登记的 `3 319 379` 比这次实测的旧值少 **120** —— 那是
+  合并提交 `d76bd6ee` 改过清单、却没重测 pin 留下的**既有偏差**，也就是说
+  `crates/app/src/assets.rs` 的 `embedded_range_stays_within_the_documented_envelope`
+  在本次改动之前就是红的；本次把它一并改成实测值。
+  **教训**：改 `assets/` 下任何文件（包括 `extension.json` 这种纯文本）都要重跑那个测试，
+  字节口径钉的是**内嵌字节**，不是"文件数不变就等于口径不变"。
+- 包清单 `version` 由 `0.2.0` 递进到 `0.3.0`（延续 9.1 那次 `0.1.0 → 0.2.0` 的做法，标识"内容结构变过"）。

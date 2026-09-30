@@ -74,8 +74,8 @@
 //!
 //! | 用途 | 采用 | 真源 / 理由 |
 //! | --- | --- | --- |
-//! | 标签左侧文件夹 | **真源** `idea::FOLDER_ICON` | `icons/idea/icons/expui/nodes/folder.svg`(+`_dark`) —— 真机 `FolderIcon`（`project-tab-bar.tsx:6,70`）。⚠️ 真源美术**自带颜色**（浅灰填充 + 灰描边），所以不再跟标签的 `text_color` 变（改前是 Lucide 单色、随选中态变色）—— 真机也是彩色图标，见 `icon_themes` 的取舍说明 |
-//! | 关闭按钮 | `IconName::X` | 真源 `expui/general/close.svg` 存在，但关闭按钮的字形与**活动栏按钮的交互色**（悬停/选中变前景色）绑得紧，换成单色 expui 会丢掉那层反馈；且 `x` 本来就是 Windows `XIcon` 的 Lucide 字形，**已经是 1:1**。保持 Lucide |
+//! | 标签左侧文件夹 | **真源** `idea::FOLDER_ICON` | `icons/idea/icons/nodes/folder.svg`(+`_dark`) —— 真机 `FolderIcon`（`project-tab-bar.tsx:6,70`）。⚠️ 真源美术**自带颜色**（浅灰填充 + 灰描边），所以不再跟标签的 `text_color` 变（改前是 Lucide 单色、随选中态变色）—— 真机也是彩色图标，见 `icon_themes` 的取舍说明 |
+//! | 关闭按钮 | `IconName::X` | 真源 `general/close.svg` 存在，但关闭按钮的字形与**活动栏按钮的交互色**（悬停/选中变前景色）绑得紧，换成单色 expui 会丢掉那层反馈；且 `x` 本来就是 Windows `XIcon` 的 Lucide 字形，**已经是 1:1**。保持 Lucide |
 //!
 //! # 本模块未实现的部分（见交付报告）
 //!
@@ -309,7 +309,7 @@ pub fn project_tabs(
                             }
                         })
                         .child(
-                            // 真源：`icons/idea/icons/expui/nodes/folder.svg(+_dark)` —— 真机
+                            // 真源：`icons/idea/icons/nodes/folder.svg(+_dark)` —— 真机
                             // `FolderIcon`（`project-tab-bar.tsx:6,70`）。14 = `rems(14. / 16.)`
                             // （与原来的 `size_3p5()` 同值；14 不在 rem 档位上，所以自己换算）。
                             // 颜色由真源 SVG 自带（浅灰填充 + 灰描边），不再随选中态变 ——

@@ -43,12 +43,12 @@
 //!
 //! | Windows 源字形 | 出处 | 本模块采用 | 说明 |
 //! | --- | --- | --- | --- |
-//! | `GitBranchIcon` | `features/git/components/git-branch-manager.tsx:647` | **真源** `idea::GIT_BRANCH_ICON` | `icons/idea/icons/expui/vcs/branch.svg`(+`_dark`) |
-//! | `LockIcon` / `LockOpenIcon` | `footer-editor-status.tsx:102` | **真源** `idea::LOCK_ICON` / `LOCK_OPEN_ICON` | `expui/general/locked.svg` / `unlocked.svg` |
-//! | `CheckCircleIcon` | `footer-editor-status.tsx:135` | **真源** `idea::CHECK_CIRCLE_ICON` | `expui/general/successDialog.svg`；Windows 带 `text-success` 上色（`--success: var(--primary)`，`theme.css:151`），本契约无颜色字段故未实现 |
+//! | `GitBranchIcon` | `features/git/components/git-branch-manager.tsx:647` | **真源** `idea::GIT_BRANCH_ICON` | `icons/idea/icons/vcs/branch.svg`(+`_dark`) |
+//! | `LockIcon` / `LockOpenIcon` | `footer-editor-status.tsx:102` | **真源** `idea::LOCK_ICON` / `LOCK_OPEN_ICON` | `general/locked.svg` / `unlocked.svg` |
+//! | `CheckCircleIcon` | `footer-editor-status.tsx:135` | **真源** `idea::CHECK_CIRCLE_ICON` | `general/successDialog.svg`；Windows 带 `text-success` 上色（`--success: var(--primary)`，`theme.css:151`），本契约无颜色字段故未实现 |
 //! | 文件类型图标 | `file-path-breadcrumb.tsx:196-202` 的 `ThemedFileIcon` | **真源**：当前活动文件名的图标主题查表 | 与文件树 / 标签同一条 `icons::FileIcon` 路线（`explorer` / `editor` 的 `icon_for_file`） |
 //! | `HardDrivesIcon` | `footer-editor-status.tsx:113` | `IconName::HardDrive` | 真源是 `Nucleo.IconHardDriveOutline18` → Lucide `hard-drive`，**已经是 1:1** |
-//! | `CaretRightIcon`（面包屑分隔符） | `ui/breadcrumb.tsx:78` | `IconName::ChevronRight` | 真源 `expui/general/chevronRight.svg` 存在，但面包屑分段本身还没实现（见「未实现」第 1 条），本轮不动 |
+//! | `CaretRightIcon`（面包屑分隔符） | `ui/breadcrumb.tsx:78` | `IconName::ChevronRight` | 真源 `general/chevronRight.svg` 存在，但面包屑分段本身还没实现（见「未实现」第 1 条），本轮不动 |
 //!
 //! 条目内的图标**不要**显式设尺寸：`Icon` 未设尺寸时会退回继承的字号
 //! （`gpui-component-0.6.6/src/icon.rs:169-180,218`），正好等于 Windows 图标默认的
