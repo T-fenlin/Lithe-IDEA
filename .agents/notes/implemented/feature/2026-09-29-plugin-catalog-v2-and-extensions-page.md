@@ -241,6 +241,47 @@ dlopen）。语法集是**编译期固定**的 35 个（\`Language\` 枚举按 f
 \`punctuation.delimiter\`→\`punctuation\`、\`string.escape\`→\`string\` 这类都能落到已有色上，
 所以非 Java 语言也能看；补齐那 25 个是观感优化项（未做）。
 
+### 第七批：图标集变成**叠加层**（缺的回落内置 `idea`）
+
+维护者的口径是："内置 idea 的图标集，其他图标集做成插件化，切换到下载的那一个就用那个包的，
+**缺少图标的直接使用内置的**。" 这条口径与改前的实际行为**不一致**，所以先改查找层。
+
+**改前是什么样**：`file_icon.rs` 只要有一个生效包就**只查它**，查不到会落到代码里硬编码的
+`DEFAULT_FILE = "idea-text"` / `DEFAULT_FOLDER = "idea-folder"`（清单自己的 `defaultFile` /
+`defaultFolder` 字段根本没被读）。而这个 id 属于**内置包的命名空间**，换到 `pierre` 上必然
+再 Miss 一次，最后画的是 **Lucide** 的细线文件图标 —— 于是"换图标集"在未覆盖的后缀上得到的
+是第三种图标语言：既不是包里的，也不是内置的。
+
+**这次的做法**（`file_icon::lookup_path`）：
+
+1. **专属条目**：生效包的"映射表 + 定义表"作为一个整体查；没命中就换内置 `idea` 包再来一遍；
+2. **默认值**：各自的 `defaultFile` / `defaultFolder` / `defaultFolderOpen`，
+   **生效包自己声明的那份优先**；
+3. 都落空才返回 `None`，调用方回落 Lucide（这一层没变）。
+
+两条容易踩的语义，写在这里免得以后当成 bug：
+
+- **具体优先于通用**：`idea` 有 `.java` 的专属条目、`pierre` 只有通用默认值时，`.java` 仍显示
+  `idea` 的 java 图标 —— "缺的用内置的"就是这个意思。
+- **id 是包内局部的**：每一级都在同一个包内完成"映射 → 定义"，**不跨包借 id**。所以两个包可以
+  给同一个 id 配不同的图，也可以各用各的命名习惯；清单里图标 id 的 `idea-` 前缀也趁这次去掉
+  （它是历史噪声，级联并不依赖 id 对齐）。
+
+**顺带**：`defaultFile` / `defaultFolder` / `defaultFolderOpen` 从"代码硬编码"变成"清单声明"，
+清单与代码不再能各说一套；`file_path` / `folder_path` 拆成"只查专属条目"的 `file_id` /
+`folder_id` + 默认值取值器，级联本身是纯函数（不依赖 gpui 的 `App`，所以测试能直接构造包）。
+
+**顺带修掉一个静默 bug**：`FileIcons::root()`（`icons/<包>/`）**从来没被拼到定义表的路径上**，
+而 `theme_file_icon` → `LitheAssets::load` 要的是**资源根路径**，于是清单里那 53 条定义
+**一条都 load 不到** —— 界面上文件类型图标一直是 **Lucide 细线字形**，不是 IDEA 的彩色美术，
+而且"截图上看不出区别"（这正是 `every_definition_exists_in_the_assets_tree` 的注释警告过的
+失败模式；两条旧测试都自己把根 join 上再比对，所以谁也没发现）。现在拼根发生在**解析清单时**
+（`definitions`），那条测试改成直接断言表里的原值 —— 它当场抓到了这个 bug。
+
+**验证**：`cargo test -p lithe-gpui-shared` 新增 `missing_entries_fall_back_to_the_builtin_pack`
+—— 合成一个"只登记文件夹图标"的部分包，钉住四种命中：包内专属 / 回落内置的具体图标 /
+生效包自己的默认值 / 内置默认值。
+
 ## 考虑过的备选方案
 
 - **在清单里声明 `categories` 数组**（最初共识里选的就是它）：看完 Zed 源码后否决

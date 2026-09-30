@@ -2641,7 +2641,7 @@ impl ShellWorkspace {
     ///   [`StatusEntry::with_file_icon`] —— 按**当前活动文件名**查真机默认图标主题
     ///   （`idea-icons`），查不到才落 Lucide。真机这一格就是 `ThemedFileIcon`
     ///   （`file-path-breadcrumb.tsx:196-202`），所以现在与文件树 / 标签条同一套美术。
-    ///   没有活动文件时传空名字，落到 `defaultFile`（`idea-text`）。
+    ///   没有活动文件时传空名字，落到 `defaultFile`（`text`）。
     /// - 第二项（分支）从构造期读一次改成每帧现读 `.git/HEAD`（[`read_branch`]）。
     ///   ⚠️ 分支名本身与工作区根目录无关的这一层没变：切分支后要等下一次
     ///   `cx.notify()` 才会更新（真机是 git 状态推送）。这是既有取舍，不是本轮引入的。

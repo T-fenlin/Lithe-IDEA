@@ -435,3 +435,16 @@ TOTAL src=1194 bad=0 extra=0
   **教训**：改 `assets/` 下任何文件（包括 `extension.json` 这种纯文本）都要重跑那个测试，
   字节口径钉的是**内嵌字节**，不是"文件数不变就等于口径不变"。
 - 包清单 `version` 由 `0.2.0` 递进到 `0.3.0`（延续 9.1 那次 `0.1.0 → 0.2.0` 的做法，标识"内容结构变过"）。
+
+## 9.6 清单 id 去前缀 + 字节数再校正（同日）
+
+`icons/idea/extension.json` 的图标 id 去掉 `idea-` 前缀（`idea-text` → `text`，`idea-java` →
+`java`，`defaultFile` → `text`、`defaultFolder` → `folder`）。id 是**包内局部**的（查找层每一级
+都在同一个包内完成"映射 → 定义"，不跨包借 id），前缀只是历史噪声。同一批还把查找层改成
+"生效包 → 内置 `idea`"的**级联回落**：换图标集只覆盖这个包真的定义了的图标，其余显示内置的，
+决策与理由见
+`.agents/notes/implemented/feature/2026-09-29-plugin-catalog-v2-and-extensions-page.md` 的「第七批」。
+
+代价是内嵌字节数又变了一次：**411 个文件不变，字节数 3 318 863 → 3 317 793**（清单文本短了
+1 070 字节）。`crates/app/src/assets.rs` 的 pin 与模块文档、`main.rs` 的注释已同步；
+9.4 表里那组数字是那一批的历史读数，以本节为准。

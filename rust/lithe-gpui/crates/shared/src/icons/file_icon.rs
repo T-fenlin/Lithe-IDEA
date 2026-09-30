@@ -34,21 +34,39 @@
 //! `getIconDefinitionsForAppearance` 读 `themeRegistry.getCurrentTheme().isDark`），
 //! 这一点两边一致。
 //!
-//! ## 匹配顺序（与真机逐条一致）
+//! ## 匹配顺序（与真机逐条一致，外加一层"回落内置包"）
 //!
 //! 来自 `extension-contribution-runtime.ts:116-138` 的 `getFileIcon`：
 //!
 //! - 目录：`isExpanded ? expandedFolders[名] : undefined` → `folders[名]` →
-//!   `isExpanded ? defaultFolderOpen : defaultFolder`（本包两者都是 `idea-folder`）。
+//!   `isExpanded ? defaultFolderOpen : defaultFolder`。
 //! - 文件：`filenames[名]` → **逐段后缀**（`archive.tar.gz` 依次试 `.tar.gz`、`.gz`）→ `defaultFile`。
 //!   ⚠️ 真机那几个 `"\0lithe:java.class"` 之类的**语义键**要与 Java 语言服务的结果配合
 //!   （`file-icon-semantics.ts`），gpui 侧还没有那个信息，所以**本层不查它们**：
-//!   带 `\0` 前缀的键在查表前就被跳过（见 [`lookup_definition`]），落到普通后缀规则上。
+//!   带 `\0` 前缀的键在查表前就被跳过（见 [`string_map`]），落到普通后缀规则上。
 //!
-//! ## 读不到时回落 Lucide（调用方的责任，但契约在这里）
+//! ### 逐级回落：生效包 → 内置 `idea`（2026-09-30 起）
 //!
-//! 本模块只负责**查**：查不到就返回 `None`，由调用方用 `gpui_kit::assets::IconName`（全量 Lucide
-//! 目录）兜底。`explorer` / `editor` 各自的 `icon_for_file` 就是这么用的（见
+//! 上面那套顺序**在每个包里各跑一遍**，先跑生效包，再跑内置 `idea` 包（见 [`lookup_path`]）：
+//!
+//! 1. **专属条目**：生效包的映射表 + 定义表**作为一个整体**查，命中即用；
+//! 2. 没命中 → 内置 `idea` 包的映射表 + 定义表，命中即用；
+//! 3. 都没命中 → 各自的**默认值**（`defaultFile` / `defaultFolder` / `defaultFolderOpen`），
+//!    生效包自己声明的那份优先；
+//! 4. 连默认值都解析不出路径 → 调用方回落 Lucide。
+//!
+//! 所以"换一个图标集"只会**覆盖这个包真的定义了的那些图标**，其余仍是内置 `idea` 的样子 ——
+//! 图标集是**叠加层**而不是替代品。**id 是包内局部的**：每一级都在同一个包内完成
+//! "映射 → 定义"两步，不会拿 A 包的 id 去查 B 包（所以两个包可以对同一个 id 给不同的图，
+//! 也可以各自用各自的后缀命名习惯）。
+//!
+//! 返回值一律是**资源根路径**（`icons/idea/icons/fileTypes/java.svg`），可以直接交给
+//! `AssetSource::load`：拼主题包根那一步发生在**解析清单时**（见 [`definitions`]），不在这里。
+//!
+//! ## 查不到时回落 Lucide（调用方的责任，但契约在这里）
+//!
+//! 本模块只负责**查**：上面四级都落空就返回 `None`，由调用方用 `gpui_kit::assets::IconName`
+//! （全量 Lucide 目录）兜底。`explorer` / `editor` 各自的 `icon_for_file` 就是这么用的（见
 //! [`crate::icons::FileIcon`]）。
 //!
 //! ## 缓存
@@ -78,11 +96,6 @@ pub const ACTIVE_FILE_ICONS: &str = BUILTIN_FILE_ICONS;
 
 /// 主题包目录（相对 `lithe-gpui/assets/`）的前缀；资源路径就是 `{THEMES_ROOT}/{包名}/{定义里的相对路径}`。
 const THEMES_ROOT: &str = "icons";
-
-/// 真机 `FileIcon` 的 `defaultFile` / `defaultFolder` / `defaultFolderOpen`
-/// （`idea/extension.json` 的 `icons[0].defaultFile|defaultFolder|defaultFolderOpen`）。
-const DEFAULT_FILE: &str = "idea-text";
-const DEFAULT_FOLDER: &str = "idea-folder";
 
 /// 内置图标包（`idea`）的 `extension.json`，**编译期内嵌**。
 ///
@@ -179,6 +192,12 @@ pub struct FileIcons {
     folders: HashMap<String, String>,
     /// `expandedFolders`（小写目录名 → 图标 id）。
     expanded_folders: HashMap<String, String>,
+    /// `defaultFile`：没有任何专属条目时用的图标 id（**清单声明**，不再由代码硬编码）。
+    default_file: Option<String>,
+    /// `defaultFolder`：目录没有专属条目、且**折叠**时用的图标 id。
+    default_folder: Option<String>,
+    /// `defaultFolderOpen`：目录没有专属条目、且**展开**时用的图标 id；缺失时回落 `defaultFolder`。
+    default_folder_open: Option<String>,
 }
 
 impl FileIcons {
@@ -189,6 +208,7 @@ impl FileIcons {
     /// 逐字段取值能让"某个字段缺失"退化成"该级查表不命中"，而不是整个解析失败。
     fn from_json(theme: &str, json: &str) -> Result<Self, serde_json::Error> {
         let root: serde_json::Value = serde_json::from_str(json)?;
+        let root_path = format!("{THEMES_ROOT}/{theme}/");
         // 一个包可以声明**多个** `icons[]` 条目（真机的 `pierre` 就是三档：
         // `pierre-icons-minimal` 5 条 / `pierre-icons` 28 条 / `pierre-icons-complete` 57 条）。
         // 这里取**定义最多**的那一条：它是这个包"最完整"的贡献，取第 0 条会只拿到最小集
@@ -209,13 +229,26 @@ impl FileIcons {
             .unwrap_or(serde_json::Value::Null);
 
         Ok(Self {
-            root: format!("{THEMES_ROOT}/{theme}/"),
-            dark: definitions(icon.get("iconDefinitions")),
-            light: definitions(icon.get("lightIconDefinitions")),
+            root: root_path.clone(),
+            dark: definitions(icon.get("iconDefinitions"), &root_path),
+            light: definitions(icon.get("lightIconDefinitions"), &root_path),
             file_names: string_map(icon.get("filenames")),
             file_extensions: string_map(icon.get("fileExtensions")),
             folders: string_map(icon.get("folders")),
             expanded_folders: string_map(icon.get("expandedFolders")),
+            // 只取字符串，不 trim `./`：这三级存的是**图标 id**，不是路径。
+            default_file: icon
+                .get("defaultFile")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            default_folder: icon
+                .get("defaultFolder")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            default_folder_open: icon
+                .get("defaultFolderOpen")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
         })
     }
 
@@ -231,45 +264,58 @@ impl FileIcons {
         self.dark.len()
     }
 
-    /// 查一个**文件**的资源路径。`dark` 为 `true` 时取 `iconDefinitions`，
-    /// 否则取 `lightIconDefinitions`（没有浅色定义时回落深色，与真机
-    /// `getIconDefinitionsForAppearance` 的 `?? contribution.iconDefinitions` 同序）。
+    /// 查一个**文件**在这个包里登记的**专属**图标 id（`filenames[名]` → 逐段后缀）。
     ///
-    /// 返回的是**完整资源路径**（`icons/idea/icons/fileTypes/java.svg`），
-    /// 可直接交给 [`theme_file_icon`] 渲染，或交给 `AssetSource::load` 探针。
+    /// `None` 表示"这个包没给这个文件登记专属条目"——与"登记了、但定义表里没有这个 id"是两件事：
+    /// 前者要接着去查回落包，后者说明这个包的清单自相矛盾（见 [`lookup_path`]）。
     #[must_use]
-    pub fn file_path(&self, file_name: &str, dark: bool) -> Option<&str> {
+    pub fn file_id(&self, file_name: &str) -> Option<&str> {
         let lower = file_name.to_ascii_lowercase();
-        let icon = lookup_definition(
-            &lower,
-            &self.file_names,
-            &self.file_extensions,
-            DEFAULT_FILE,
-        )?;
-        self.resolve(icon, dark)
+        lookup_mapped(&lower, &self.file_names).or_else(|| {
+            extension_candidates(&lower)
+                .into_iter()
+                .find_map(|candidate| lookup_mapped(candidate, &self.file_extensions))
+        })
     }
 
-    /// 查一个**目录**的资源路径；`expanded` 决定先查 `expandedFolders`。
+    /// 查一个**目录**在这个包里登记的**专属**图标 id；`expanded` 决定先查 `expandedFolders`。
     #[must_use]
-    pub fn folder_path(&self, folder_name: &str, expanded: bool, dark: bool) -> Option<&str> {
+    pub fn folder_id(&self, folder_name: &str, expanded: bool) -> Option<&str> {
         let lower = folder_name.to_ascii_lowercase();
-        let icon = if expanded {
+        let expanded_hit = if expanded {
             lookup_mapped(&lower, &self.expanded_folders)
         } else {
             None
-        }
-        .or_else(|| lookup_mapped(&lower, &self.folders))
-        .unwrap_or(DEFAULT_FOLDER);
-        self.resolve(icon, dark)
+        };
+        expanded_hit.or_else(|| lookup_mapped(&lower, &self.folders))
     }
 
-    /// 图标 id → 完整资源路径。
+    /// 这个包的 `defaultFile`（清单没声明就是 `None`）。
+    #[must_use]
+    pub fn default_file_id(&self) -> Option<&str> {
+        self.default_file.as_deref()
+    }
+
+    /// 这个包的 `defaultFolderOpen`（展开态）/ `defaultFolder`（折叠态）；两级都没声明就是 `None`。
+    #[must_use]
+    pub fn default_folder_id(&self, expanded: bool) -> Option<&str> {
+        if expanded {
+            self.default_folder_open
+                .as_deref()
+                .or(self.default_folder.as_deref())
+        } else {
+            self.default_folder.as_deref()
+        }
+    }
+
+    /// 图标 id → 资源路径。
     ///
     /// **逐条目回落**：浅色定义缺失时补深色那份（真机
     /// `getIconDefinitionsForAppearance` 的 `?? contribution.iconDefinitions` 是整个表级的回落，
-    /// 逐条目回落是它的更细版本 —— 本包的 53 个 id 明暗都齐，两者等价；
+    /// 逐条目回落是它的更细版本 —— `idea` 包的 53 个 id 明暗都齐，两者等价；
     /// 换成浅色定义不全的主题包时逐条目回落更稳）。
-    fn resolve(&self, icon: &str, dark: bool) -> Option<&str> {
+    #[must_use]
+    pub fn resolve(&self, icon: &str, dark: bool) -> Option<&str> {
         let (primary, secondary) = if dark {
             (&self.dark, &self.light)
         } else {
@@ -282,23 +328,65 @@ impl FileIcons {
     }
 }
 
+/// 逐级查表：**生效包 → 内置 `idea` 包**，返回可直接渲染的完整资源路径；都没命中返回 `None`
+/// （调用方据此回落 Lucide，见模块文档「查不到时回落 Lucide」）。
+///
+/// 顺序（模块文档「逐级回落」有完整理由）：
+///
+/// 1. **专属条目**：`[生效包, 内置包]` 逐个查"映射表 → 定义表"，两级在**同一个包内**完成，
+///    不跨包借 id —— 所以两个包可以给同一个 id 配不同的图，也可以各用各的命名习惯；
+/// 2. **默认值**：再逐个查各自的 `defaultFile` / `defaultFolder(Open)`，**生效包声明的那份优先**，
+///    这样"包自己认不出这个后缀"时显示的是这个包的通用文件图标，而不是另一个包的具体图标。
+///
+/// 它是**纯函数**（只吃两张表 + `dark`），不依赖 gpui 的 `App`，所以测试可以直接构造包来验级联；
+/// 返回值可能来自 `active` 也可能来自 `builtin`，所以两者共用同一个生命周期 `'a`。
+#[must_use]
+pub fn lookup_path<'a>(
+    active: &'a FileIcons,
+    builtin: &'a FileIcons,
+    name: &str,
+    is_dir: bool,
+    expanded: bool,
+    dark: bool,
+) -> Option<&'a str> {
+    let packs = [active, builtin];
+    for pack in packs {
+        let icon = if is_dir {
+            pack.folder_id(name, expanded)
+        } else {
+            pack.file_id(name)
+        };
+        if let Some(path) = icon.and_then(|icon| pack.resolve(icon, dark)) {
+            return Some(path);
+        }
+    }
+    for pack in packs {
+        let icon = if is_dir {
+            pack.default_folder_id(expanded)
+        } else {
+            pack.default_file_id()
+        };
+        if let Some(path) = icon.and_then(|icon| pack.resolve(icon, dark)) {
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// 语义键前缀：真机用 `"\0lithe:java.class"` 这类**不可由文件名推导**的键表示
 /// "Java class / 源码根目录"等语义（`file-icon-semantics.ts:16-28`）。gpui 侧还没有
 /// 对应的语义信息，所以查表时把它们全部跳过，让这些条目走普通后缀规则。
 const SEMANTIC_PREFIX: char = '\0';
 
-/// 取当前生效的文件图标主题。
+/// 内置包（`idea`）的表：**永远可用**。
 ///
-/// 没被 [`set_active_icons`] 设置过（启动极早期、或宿主没接这条设置）时返回内置的
-/// `idea` 那一份 —— 用 `include_str!` 的编译期常量兜底，所以"读不到任何主题"这条路径
-/// 不存在：最坏也只是回到内置包。
+/// 它有两个身份，这也是"内置"这个词在这里的全部含义：
+/// 1. 宿主还没把 `icons` 推下来时（启动极早期）它就是**生效包**；
+/// 2. 一切包的**回落底** —— 别的包没定义的图标一律显示它（见 [`lookup_path`]）。
 ///
-/// 解析失败返回 `None`，调用方据此走 Lucide 回落 —— **这是"读不到时回落"的落地点**。
+/// 用 `include_str!` 的编译期常量构造，所以"读不到任何主题"这条路径不存在：最坏也只是回到它。
 #[must_use]
-pub fn active_theme() -> Option<&'static FileIcons> {
-    if let Some((_, theme)) = lock_active_theme() {
-        return Some(theme);
-    }
+pub fn builtin_theme() -> Option<&'static FileIcons> {
     static BUILTIN: OnceLock<Result<FileIcons, serde_json::Error>> = OnceLock::new();
     BUILTIN
         .get_or_init(|| FileIcons::from_json(BUILTIN_FILE_ICONS, BUILTIN_EXTENSION_JSON))
@@ -306,19 +394,28 @@ pub fn active_theme() -> Option<&'static FileIcons> {
         .ok()
 }
 
-/// 查一个文件或目录在**当前主题 + 当前明暗**下的真源图标资源路径。
+/// 取当前**生效包**的表；没被 [`set_active_icons`] 设置过时就是内置包（见 [`builtin_theme`]）。
 ///
-/// 这是给渲染用的薄包装：调用方不用自己处理"主题没读进来"与"这个文件没有专属图标"
-/// 两种 `None`。`is_dir` / `expanded` 的语义与真机 `getFileIcon(fileName, isDir, isExpanded)` 一致。
+/// 解析失败返回 `None`，调用方据此走 Lucide 回落 —— **这是"读不到时回落"的落地点**。
+#[must_use]
+pub fn active_theme() -> Option<&'static FileIcons> {
+    if let Some((_, theme)) = lock_active_theme() {
+        return Some(theme);
+    }
+    builtin_theme()
+}
+
+/// 查一个文件或目录在**生效包 + 当前明暗**下该画哪张 SVG；缺的自动回落内置 `idea`（见 [`lookup_path`]）。
+///
+/// 这是给渲染用的薄包装：调用方不用自己处理"主题没读进来""这个文件没有专属图标"
+/// 这两种 `None` —— 只有**连内置包都查不到**才返回 `None`（调用方据此回落 Lucide）。
+/// `is_dir` / `expanded` 的语义与真机 `getFileIcon(fileName, isDir, isExpanded)` 一致。
 #[must_use]
 pub fn theme_icon_path(name: &str, is_dir: bool, expanded: bool, cx: &App) -> Option<&'static str> {
-    let theme = active_theme()?;
+    let active = active_theme()?;
+    let builtin = builtin_theme()?;
     let dark = Theme::global(cx).is_dark();
-    if is_dir {
-        theme.folder_path(name, expanded, dark)
-    } else {
-        theme.file_path(name, dark)
-    }
+    lookup_path(active, builtin, name, is_dir, expanded, dark)
 }
 
 /// 资源取字节：**只走注册的 `AssetSource`**；`None` = 这个路径在内嵌资源里不存在。
@@ -397,9 +494,35 @@ pub fn theme_file_icon(
     )
 }
 
-/// `iconDefinitions` / `lightIconDefinitions`：图标 id → 相对路径（去掉前导 `./`）。
-fn definitions(value: Option<&serde_json::Value>) -> HashMap<String, String> {
-    string_map(value)
+/// `iconDefinitions` / `lightIconDefinitions`：图标 id → **资源根路径**（可直接交给 `AssetSource`）。
+///
+/// ⚠️ 这里必须把主题包根（`icons/<包>/`）拼上。查找层的返回值会被直接送进
+/// [`theme_file_icon`] → `AssetSource::load`，而 `LitheAssets` 的键是**相对 `lithe-gpui/assets/`**
+/// 的完整路径（`icons/idea/icons/fileTypes/java.svg`）。只存清单里的包内相对路径
+/// （`icons/fileTypes/java.svg`）会**永远 load 不到**，界面上表现为"静默回落 Lucide"——
+/// 曾经就是这样：图标其实是 Lucide 细线字形，不是 IDEA 的彩色美术（2026-09-30 修）。
+///
+/// 例外：`material` 包的 `iconDefinitions` 里存的是**内联 SVG 文本**而不是路径，
+/// 这类值原样保留（它 `load` 不到 = "material 从未接线"的现状，本层不解决它）。
+fn definitions(value: Option<&serde_json::Value>, root: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let Some(object) = value.and_then(serde_json::Value::as_object) else {
+        return map;
+    };
+    for (key, value) in object {
+        let Some(text) = value.as_str() else {
+            continue;
+        };
+        map.insert(
+            key.clone(),
+            if text.starts_with('<') {
+                text.to_string()
+            } else {
+                format!("{root}{}", text.trim_start_matches("./"))
+            },
+        );
+    }
+    map
 }
 
 /// 把一份 `{键: 图标 id}` 的 JSON 对象转成表。
@@ -424,25 +547,6 @@ fn string_map(value: Option<&serde_json::Value>) -> HashMap<String, String> {
         }
     }
     map
-}
-
-/// 真机的文件匹配顺序：`filenames[名]` → 逐段后缀 → `defaultFile`。
-///
-/// 后缀按**从长到短**试（`archive.tar.gz` 先试 `.tar.gz` 再试 `.gz`），与
-/// `extension-contribution-runtime.ts:93-100` 的 `getFileExtensionCandidates` 同序。
-fn lookup_definition<'a>(
-    lower_name: &str,
-    file_names: &'a HashMap<String, String>,
-    file_extensions: &'a HashMap<String, String>,
-    default_file: &'a str,
-) -> Option<&'a str> {
-    if let Some(icon) = lookup_mapped(lower_name, file_names) {
-        return Some(icon);
-    }
-    extension_candidates(lower_name)
-        .into_iter()
-        .find_map(|candidate| lookup_mapped(candidate, file_extensions))
-        .or(Some(default_file))
 }
 
 /// 真机的后缀候选：`archive.tar.gz` → `[".tar.gz", ".gz"]`（长 → 短）。
@@ -527,6 +631,35 @@ mod tests {
         path.map(|path| path.trim_start_matches("icons/idea/"))
     }
 
+    /// 内置包**单独生效**时（宿主默认状态、还没切过图标集）查一个文件 / 目录。
+    fn idea_path(name: &str, is_dir: bool, expanded: bool, dark: bool) -> Option<&'static str> {
+        let builtin = builtin_theme().expect("idea theme must parse");
+        lookup_path(builtin, builtin, name, is_dir, expanded, dark)
+    }
+
+    /// 一个"只登记了文件夹图标"的**部分包**，用来证明级联回落。
+    ///
+    /// 它的 id 故意与 `idea` 包**不重名**（`demo-*`）：id 是包内局部的，级联靠的是
+    /// "每个包各自完成映射 → 定义"，不靠 id 对齐。
+    fn partial_pack() -> FileIcons {
+        FileIcons::from_json(
+            "demo",
+            r#"{
+              "icons": [{
+                "defaultFile": "demo-file",
+                "defaultFolder": "demo-folder",
+                "iconDefinitions": {
+                  "demo-file": "./icons/file.svg",
+                  "demo-folder": "./icons/folder.svg",
+                  "demo-src": "./icons/src.svg"
+                },
+                "folders": { "src": "demo-src" }
+              }]
+            }"#,
+        )
+        .expect("synthetic pack must parse")
+    }
+
     /// 主题包必须能读进来 —— 这是"接线真的生效"的前置条件。
     ///
     /// 它同时钉住内嵌资源的**数量级**：`idea/extension.json` 里有 53 条 `iconDefinitions`，
@@ -545,7 +678,6 @@ mod tests {
     /// 所以"查表把 `.java` 当成 `.jar`"这类顺序错误也会被抓到。
     #[test]
     fn idea_theme_matches_the_documented_files() {
-        let theme = active_theme().expect("idea theme must parse");
         for (name, dark, light) in [
             (
                 ".gitignore",
@@ -574,29 +706,28 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                relative(theme.file_path(name, true)),
+                relative(idea_path(name, false, false, true)),
                 Some(dark),
                 "dark: {name}"
             );
             assert_eq!(
-                relative(theme.file_path(name, false)),
+                relative(idea_path(name, false, false, false)),
                 Some(light),
                 "light: {name}"
             );
         }
     }
 
-    /// 没有专属条目的文件名要落到 `defaultFile`（`idea-text`），
-    /// **不是**随便挑一个后缀命中 —— 这是"全局回落 Lucide"之外的第二种回落地。
+    /// 没有专属条目的文件名要落到**清单声明的** `defaultFile`（`text`），
+    /// **不是**随便挑一个后缀命中 —— 这是"全局回落 Lucide"之前的最后一层。
     #[test]
     fn unknown_file_falls_back_to_default_file() {
-        let theme = active_theme().expect("idea theme must parse");
         assert_eq!(
-            relative(theme.file_path("notes.unknownext", true)),
+            relative(idea_path("notes.unknownext", false, false, true)),
             Some("icons/fileTypes/text_dark.svg"),
         );
         assert_eq!(
-            relative(theme.file_path("no-extension-at-all", true)),
+            relative(idea_path("no-extension-at-all", false, false, true)),
             Some("icons/fileTypes/text_dark.svg"),
         );
     }
@@ -605,25 +736,53 @@ mod tests {
     /// 所以 `archive.tar.gz` 应该命中 archive，而不是被"第一个点之后全当后缀"错配。
     #[test]
     fn multi_dot_names_use_the_longest_suffix_first() {
-        let theme = active_theme().expect("idea theme must parse");
         assert_eq!(
-            relative(theme.file_path("archive.tar.gz", true)),
+            relative(idea_path("archive.tar.gz", false, false, true)),
             Some("icons/fileTypes/archive_dark.svg"),
         );
     }
 
-    /// 目录名与展开态：`src` 没有专属条目 → 默认文件夹图标；
+    /// 目录名与展开态：`src` 没有专属条目 → 清单声明的默认文件夹图标；
     /// 展开用 `expandedFolders`（本包里只有语义键，所以与折叠时同值）。
     #[test]
     fn folders_use_default_folder_icon() {
-        let theme = active_theme().expect("idea theme must parse");
         assert_eq!(
-            relative(theme.folder_path("src", false, true)),
+            relative(idea_path("src", true, false, true)),
             Some("icons/nodes/folder_dark.svg"),
         );
         assert_eq!(
-            relative(theme.folder_path("src", true, false)),
+            relative(idea_path("src", true, true, false)),
             Some("icons/nodes/folder.svg"),
+        );
+    }
+
+    /// **级联回落**（本模块的核心契约，2026-09-30 起）：换上的包只覆盖它**真的定义了**的那些
+    /// 图标，其余一律显示内置 `idea` —— 既不是 Lucide，也不是"包里随便一个默认图"。
+    #[test]
+    fn missing_entries_fall_back_to_the_builtin_pack() {
+        let builtin = builtin_theme().expect("idea theme must parse");
+        let pack = partial_pack();
+
+        // 1) 包里登记过 → 用包里的（`folders["src"]` 命中）。
+        assert_eq!(
+            lookup_path(&pack, builtin, "src", true, false, true),
+            Some("icons/demo/icons/src.svg"),
+        );
+        // 2) 包没登记的文件 → **回落内置的具体图标**（`.java` 是 idea 的专属条目）。
+        //    这一条是这次改动的要点：改前它会掉到硬编码默认值再 Miss，最后画 Lucide。
+        assert_eq!(
+            lookup_path(&pack, builtin, "A.java", false, false, true),
+            Some("icons/idea/icons/fileTypes/java_dark.svg"),
+        );
+        // 3) 两个包都没有专属条目 → 用**生效包自己的** defaultFile（它的通用文件图）。
+        assert_eq!(
+            lookup_path(&pack, builtin, "notes.unknownext", false, false, true),
+            Some("icons/demo/icons/file.svg"),
+        );
+        // 4) 同上，目录走生效包自己的 defaultFolder。
+        assert_eq!(
+            lookup_path(&pack, builtin, "whatever", true, false, true),
+            Some("icons/demo/icons/folder.svg"),
         );
     }
 
@@ -631,19 +790,18 @@ mod tests {
     /// 只有这条能把"表对、资源不在"这种漂移钉住（`theme_file_icon` 会因此回落 Lucide，
     /// 界面上看起来只是"图标变了"，不会报错）。
     ///
-    /// 走**磁盘**而不是 `AssetSource`：本测试只覆盖"`extension.json` 里的相对路径是否指向
-    /// `lithe-gpui/assets/` 下真实存在的文件"，不需要起一个 gpui App。
+    /// ⚠️ 断言的是**表里存的原值**（必须已经是 `assets/` 下的完整相对路径，含 `icons/<包>/` 那层）——
+    /// 这条因此在 2026-09-30 抓到了"返回包内相对路径、永远 load 不到"的真 bug。
+    /// 走**磁盘**而不是 `AssetSource`：本测试不需要起一个 gpui App。
     #[test]
     fn every_definition_exists_in_the_assets_tree() {
         let theme = active_theme().expect("idea theme must parse");
         // `CARGO_MANIFEST_DIR` = `lithe-gpui/crates/shared`，资源在 `lithe-gpui/assets`。
-        // 表里存的是**主题包根之下的相对路径**（`icons/…`），所以这里要补回
-        // `icons/idea/` 那段前缀 —— 正好顺带钉住 `root()` 与定义表能拼成完整资源键。
         let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let missing = |table: &HashMap<String, String>| -> Vec<String> {
             table
                 .values()
-                .filter(|path| !assets.join(theme.root()).join(path).exists())
+                .filter(|path| !assets.join(path).exists())
                 .cloned()
                 .collect()
         };
