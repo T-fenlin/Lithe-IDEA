@@ -684,13 +684,15 @@ impl RunPane {
                     .cursor_pointer()
                     .when(selected, |this| this.bg(cx.theme().accent))
                     .on_click(cx.listener(move |this, _, _, cx| this.select(index, cx)))
-                    .child(idea_icon_mono(&idea::PLAY_ICON, cx.theme().is_dark())
-                        .size_3()
-                        .text_color(if selected {
-                        cx.theme().primary
-                    } else {
-                        cx.theme().muted_foreground
-                    }))
+                    .child(
+                        idea_icon_mono(&idea::PLAY_ICON, cx.theme().is_dark())
+                            .size_3()
+                            .text_color(if selected {
+                                cx.theme().primary
+                            } else {
+                                cx.theme().muted_foreground
+                            }),
+                    )
                     .child(
                         div()
                             .min_w_0()

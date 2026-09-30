@@ -108,12 +108,12 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, DefiniteLength, Entity, Focusable as _, FontWeight,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
 };
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
 use lithe_gpui_git::{BranchInfo, BranchSnapshot};
 use lithe_gpui_shared::{tr, tr_args};

@@ -65,11 +65,11 @@ use gpui_kit::component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
 // `when` / `children` 收在 `FluentBuilder` 上（与 `explorer_view.rs` 同一取法）。
 use gpui_kit::prelude::FluentBuilder as _;
-use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use gpui_kit::{
     AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
     Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
 };
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 
 use lithe_gpui_shared::tr;
 

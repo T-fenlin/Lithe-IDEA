@@ -20,8 +20,8 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AbsoluteLength, AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla, Length,
-    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, SharedString,
+    AbsoluteLength, AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla,
+    InteractiveElement as _, IntoElement, Length, ParentElement as _, Pixels, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, relative,
     rems,
 };
@@ -46,7 +46,11 @@ impl LogIcon {
                     cx.theme().muted_foreground
                 };
                 let side = side.into();
-                Icon::new(name).w(side).h(side).text_color(color).into_any_element()
+                Icon::new(name)
+                    .w(side)
+                    .h(side)
+                    .text_color(color)
+                    .into_any_element()
             }
             Self::Idea(icon) => idea_icon_image(icon, cx, side),
         }
@@ -1301,9 +1305,7 @@ impl BottomPane {
             } else {
                 cx.theme().muted_foreground
             })),
-            None if is_group => {
-                row.child(idea_icon_image(&idea::FOLDER_ICON, cx, rems(14. / 16.)))
-            }
+            None if is_group => row.child(idea_icon_image(&idea::FOLDER_ICON, cx, rems(14. / 16.))),
             None => row,
         };
 
@@ -1899,13 +1901,31 @@ impl BottomPane {
         // 文案逐字取自 `git.console.find/wrap/scrollToEnd/cancel/clear/copy`
         // （`locale.ts:4473,4493,4494,4557,4558,4559`）。
         for (index, (icon, label)) in [
-            (LogIcon::Idea(&idea::MAGNIFYING_GLASS_ICON), tr("lithe.git.console.find")),
+            (
+                LogIcon::Idea(&idea::MAGNIFYING_GLASS_ICON),
+                tr("lithe.git.console.find"),
+            ),
             // TextWrap / CircleSlash 在 expui 里没有等价字形，保留 Lucide。
-            (LogIcon::Lucide(IconName::TextWrap), tr("lithe.git.console.wrap")),
-            (LogIcon::Idea(&idea::ARROW_DOWN_ICON), tr("lithe.git.console.scrollToEnd")),
-            (LogIcon::Lucide(IconName::CircleSlash), tr("lithe.git.console.cancel")),
-            (LogIcon::Idea(&idea::TRASH_ICON), tr("lithe.git.console.clear")),
-            (LogIcon::Idea(&idea::COPY_ICON), tr("lithe.git.console.copy")),
+            (
+                LogIcon::Lucide(IconName::TextWrap),
+                tr("lithe.git.console.wrap"),
+            ),
+            (
+                LogIcon::Idea(&idea::ARROW_DOWN_ICON),
+                tr("lithe.git.console.scrollToEnd"),
+            ),
+            (
+                LogIcon::Lucide(IconName::CircleSlash),
+                tr("lithe.git.console.cancel"),
+            ),
+            (
+                LogIcon::Idea(&idea::TRASH_ICON),
+                tr("lithe.git.console.clear"),
+            ),
+            (
+                LogIcon::Idea(&idea::COPY_ICON),
+                tr("lithe.git.console.copy"),
+            ),
         ]
         .into_iter()
         .enumerate()

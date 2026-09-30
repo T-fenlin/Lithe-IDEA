@@ -59,12 +59,12 @@ use gpui_kit::prelude::FluentBuilder as _;
 // （`gpui-pre-0.3.6/src/elements/div.rs:1300`），而 `Div` 只实现前者
 // （`:1871`）—— 所以可点的 `div()` 必须先 `.id(..)` 变成 `Stateful<Div>`
 // （`Stateful` 的实现在 `:4074`）。忘了 `.id` 的表现是「no method named on_click」。
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, Hsla, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
     Styled as _, Subscription, WeakEntity, Window, div, rems,
 };
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
 use lithe_gpui_notify::{Entry, EntryId, Severity, Store, matches_text};
 use lithe_gpui_shared::{tr, tr_args};
@@ -441,9 +441,9 @@ impl NotificationPanel {
                     .gap_2()
                     .items_center()
                     .child(
-                    // 语义色由 expui 资产自带（img() 管线），不再靠 text_color 上色。
-                    idea_icon_image(severity_icon(row.severity), cx, rems(1.)),
-                )
+                        // 语义色由 expui 资产自带（img() 管线），不再靠 text_color 上色。
+                        idea_icon_image(severity_icon(row.severity), cx, rems(1.)),
+                    )
                     .child(
                         div()
                             .flex_1()

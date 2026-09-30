@@ -2846,12 +2846,15 @@ impl EditorPane {
                                                 .text_color(cx.theme().muted_foreground),
                                         )
                                         .child(
-                                            idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, cx.theme().is_dark())
-                                                .absolute()
-                                                .right_0()
-                                                .bottom_0()
-                                                .size_5()
-                                                .text_color(cx.theme().muted_foreground),
+                                            idea_icon_mono(
+                                                &idea::MAGNIFYING_GLASS_ICON,
+                                                cx.theme().is_dark(),
+                                            )
+                                            .absolute()
+                                            .right_0()
+                                            .bottom_0()
+                                            .size_5()
+                                            .text_color(cx.theme().muted_foreground),
                                         ),
                                 ),
                             )

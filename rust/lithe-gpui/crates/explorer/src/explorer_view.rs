@@ -32,7 +32,7 @@ use gpui_kit::{
     Styled as _, Subscription, WeakEntity, Window, div, relative, rems,
 };
 
-use lithe_gpui_shared::icons::{idea, idea_icon_image, FileIcon};
+use lithe_gpui_shared::icons::{FileIcon, idea, idea_icon_image};
 use lithe_gpui_shared::tr;
 
 use crate::model::{

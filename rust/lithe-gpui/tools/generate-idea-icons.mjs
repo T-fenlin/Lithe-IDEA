@@ -255,11 +255,10 @@ out += "\n";
 out += "impl IdeaIcon {\n";
 out += "    /// 按当前主题明暗挑路径。`dark` 为 `true` 时取深色变体，否则取浅色。\n";
 out += "    pub const fn path(&self, dark: bool) -> &'static str {\n";
-out += "        if dark {\n";
-out += "            self.dark\n";
-out += "        } else {\n";
-out += "            self.light\n";
-out += "        }\n";
+// 单行写法是**故意的**：`cargo fmt` 会把多行 if/else 折叠成这一行，若这里产出多行，
+// 那么"格式化产物"与"再生成产物"就会互相打架（`cargo fmt` 之后 `--check` 必红，
+// 再生成一次又把格式改回去）。所以产物必须**本身就是 fmt 稳定的形态**。
+out += "        if dark { self.dark } else { self.light }\n";
 out += "    }\n";
 out += "}\n";
 out += "\n";

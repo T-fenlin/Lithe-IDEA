@@ -3579,7 +3579,8 @@ impl SettingsDialog {
                                 .gap_3()
                                 .media(
                                     EmptyMedia::new().child(
-                                        self.category.icon(cx.theme().is_dark())
+                                        self.category
+                                            .icon(cx.theme().is_dark())
                                             .size_10()
                                             .text_color(cx.theme().muted_foreground),
                                     ),

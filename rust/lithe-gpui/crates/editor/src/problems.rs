@@ -521,17 +521,15 @@ impl ProblemsPane {
                     .py_1()
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_collapsed(&path, cx)))
-                    .child(
-                        idea_icon_image(
-                            if collapsed {
-                                &idea::CARET_RIGHT_ICON
-                            } else {
-                                &idea::CARET_DOWN_ICON
-                            },
-                            cx,
-                            rems(0.75),
-                        ),
-                    )
+                    .child(idea_icon_image(
+                        if collapsed {
+                            &idea::CARET_RIGHT_ICON
+                        } else {
+                            &idea::CARET_DOWN_ICON
+                        },
+                        cx,
+                        rems(0.75),
+                    ))
                     .child(
                         div()
                             .flex_shrink_0()
@@ -597,9 +595,11 @@ impl ProblemsPane {
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.open_problem(&path, &entry, window, cx);
             }))
-            .child(
-                idea_icon_image(severity_icon(problem.level), cx, rems(0.75)),
-            )
+            .child(idea_icon_image(
+                severity_icon(problem.level),
+                cx,
+                rems(0.75),
+            ))
             .child(
                 v_flex()
                     .min_w_0()

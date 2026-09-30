@@ -172,13 +172,13 @@ use gpui_kit::base::{Align, ElementExt as _, Placement, Positioner, h_flex, v_fl
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
-use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, DismissEvent, Entity,
     FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     MouseButton, ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _,
     Styled as _, Subscription, WeakEntity, Window, deferred, div, radians, rems, rgb,
 };
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 
 use lithe_gpui_settings::RecentProject;
 use lithe_gpui_shared::{tr, tr_args};

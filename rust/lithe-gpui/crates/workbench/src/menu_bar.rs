@@ -875,7 +875,9 @@ impl MenuAction {
             }
             Self::ToggleStatusBar => Icon::new(IconName::PanelBottom),
             Self::ToggleMaven => Icon::new(IconName::Package),
-            Self::OpenAppearanceSettings | Self::Preferences => idea_icon_mono(&idea::GEAR_ICON, is_dark),
+            Self::OpenAppearanceSettings | Self::Preferences => {
+                idea_icon_mono(&idea::GEAR_ICON, is_dark)
+            }
             // 跳转语义用「向右的箭头」：真源 `f12` 是"跳到定义处"。
             Self::GoToDefinition => idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
             Self::Minimize => Icon::new(IconName::WindowMinimize),
@@ -901,7 +903,9 @@ impl MenuAction {
             Self::ShowDiagnostics => Icon::new(IconName::SquareActivity),
             Self::ShowFileExplorer => idea_icon_mono(&idea::FILES_ICON, is_dark),
             Self::ShowSourceControl => idea_icon_mono(&idea::GIT_BRANCH_ICON, is_dark),
-            Self::ShowRunAndDebug | Self::StartDebugging => idea_icon_mono(&idea::PLAY_ICON, is_dark),
+            Self::ShowRunAndDebug | Self::StartDebugging => {
+                idea_icon_mono(&idea::PLAY_ICON, is_dark)
+            }
             Self::StopDebugging => idea_icon_mono(&idea::STOP_ICON, is_dark),
             Self::ZoomIn => idea_icon_mono(&idea::MAGNIFYING_GLASS_PLUS_ICON, is_dark),
             Self::ZoomOut => idea_icon_mono(&idea::MAGNIFYING_GLASS_MINUS_ICON, is_dark),
@@ -2709,15 +2713,12 @@ fn build_popup(
                         MenuIcon::Lucide(name) => Icon::new(name),
                     };
                     let item_handle = handle.clone();
-                    popup.item(
-                        PopupMenuItem::new(tr(label_key))
-                            .icon(icon)
-                            .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                                let _ = item_handle.update(cx, |bar, cx| {
-                                    bar.push_not_wired(label_key, missing, cx)
-                                });
-                            }),
-                    )
+                    popup.item(PopupMenuItem::new(tr(label_key)).icon(icon).on_click(
+                        move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                            let _ = item_handle
+                                .update(cx, |bar, cx| bar.push_not_wired(label_key, missing, cx));
+                        },
+                    ))
                 }
                 MenuItem::Theme => match &theme_menu {
                     Some(submenu) => popup.item(PopupMenuItem::submenu(

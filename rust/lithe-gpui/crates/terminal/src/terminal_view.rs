@@ -40,7 +40,6 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerState};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, Size};
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AbsoluteLength, AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _,
@@ -48,6 +47,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, WeakEntity,
     Window, div, img, px, relative, rems,
 };
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
 use crate::constants::new_terminal_label;
 use crate::constants::{
@@ -183,11 +183,7 @@ impl TerminalPane {
                 );
                 let close = Button::new(SharedString::from(format!("terminal-tab-close-{id}")))
                     .ghost()
-                    .child(
-                        img(close_icon_path.clone())
-                            .flex_shrink_0()
-                            .size_4(),
-                    )
+                    .child(img(close_icon_path.clone()).flex_shrink_0().size_4())
                     // 图标走 `child` 后 Button 退出"图标按钮"分支补 `px_2p5`；清掉保住方形命中区。
                     .px_0()
                     .tab_stop(false)

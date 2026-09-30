@@ -35,11 +35,7 @@ pub struct IdeaIcon {
 impl IdeaIcon {
     /// 按当前主题明暗挑路径。`dark` 为 `true` 时取深色变体，否则取浅色。
     pub const fn path(&self, dark: bool) -> &'static str {
-        if dark {
-            self.dark
-        } else {
-            self.light
-        }
+        if dark { self.dark } else { self.light }
     }
 }
 

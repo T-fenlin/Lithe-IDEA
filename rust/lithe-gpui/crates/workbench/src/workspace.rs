@@ -625,11 +625,7 @@ pub(crate) struct ActionFlags {
 /// 没有放进来的（有意）：`toggle-sidebar`（左栏可见性）—— 本侧左栏是常驻的、没有收起态，
 /// 放进来就是"点了没反应"；窗口 / 缩放 / pane / git / github / markdown 等动作对应的能力
 /// 在 gpui 侧还不存在，理由见 `lithe-gpui/PLAN.md` 的阶段 6 第二半。
-pub(crate) fn command_action(
-    id: CommandId,
-    flags: ActionFlags,
-    is_dark: bool,
-) -> CommandAction {
+pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -> CommandAction {
     use CommandId as C;
     // 只有命令面板里真的会出现的动作才需要分类与图标。
     // [`C::SaveBuffer`] / [`C::OpenCommandPalette`] / [`C::NavigateToDefinition`] /
@@ -637,16 +633,31 @@ pub(crate) fn command_action(
     // 见 `COMMAND_ORDER` 的说明），所以给它们一个中性分类与图标而不是把它们排除在
     // 动作表之外 —— 否则菜单项就得自己再写一份 label / description。
     let (category, icon) = match id {
-        C::OpenSettings | C::OpenAppearanceSettings => (Category::Settings, idea_icon_mono(&idea::GEAR_ICON, is_dark)),
+        C::OpenSettings | C::OpenAppearanceSettings => (
+            Category::Settings,
+            idea_icon_mono(&idea::GEAR_ICON, is_dark),
+        ),
         // 主题动作在两套界面里都用「调色板」字形（真源 `settings-actions.tsx` 的 `PaletteIcon`）。
-        C::SwitchToLightTheme | C::SwitchToDarkTheme => (Category::Settings, idea_icon_mono(&idea::PALETTE_ICON, is_dark)),
+        C::SwitchToLightTheme | C::SwitchToDarkTheme => (
+            Category::Settings,
+            idea_icon_mono(&idea::PALETTE_ICON, is_dark),
+        ),
         C::ToggleTerminal => (Category::View, Icon::new(IconName::SquareTerminal)),
         C::ToggleMaven => (Category::View, Icon::new(IconName::Package)),
         C::ToggleStatusBar => (Category::View, Icon::new(IconName::PanelBottom)),
         C::ToggleMenuBar => (Category::View, Icon::new(IconName::List)),
-        C::SaveBuffer => (Category::View, idea_icon_mono(&idea::FLOPPY_DISK_ICON, is_dark)),
-        C::OpenCommandPalette => (Category::View, idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark)),
-        C::NavigateToDefinition => (Category::View, idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark)),
+        C::SaveBuffer => (
+            Category::View,
+            idea_icon_mono(&idea::FLOPPY_DISK_ICON, is_dark),
+        ),
+        C::OpenCommandPalette => (
+            Category::View,
+            idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
+        ),
+        C::NavigateToDefinition => (
+            Category::View,
+            idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
+        ),
         // B1 的八条同样**不在面板里**（`COMMAND_ORDER` 没有它们，入口只有主菜单「文件」）。
         // 它们的可见图标在 `MenuAction::icon`（菜单那一份才是用户看得到的），
         // 这里给同一批字形只为保持"两处入口视觉同源"这条既有口径。
