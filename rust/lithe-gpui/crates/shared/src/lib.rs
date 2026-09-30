@@ -22,7 +22,7 @@
 
 mod core_client;
 mod document;
-// 图标资源路径清单（`lithe-gpui/assets/ui-icons/idea/**` 的 Rust 等价物）。**公开模块**而不是
+// 图标资源路径清单（`lithe-gpui/assets/icons/idea/icons/**` 的 Rust 等价物）。**公开模块**而不是
 // `pub use`：调用点要写成 `shared::icons::idea::GEAR_ICON`，常量表本身就是一个命名空间，
 // 摊平到 crate 根只会让 79 个常量名污染 `shared::*`。理由与再生成命令见 `src/icons/mod.rs`。
 mod i18n;

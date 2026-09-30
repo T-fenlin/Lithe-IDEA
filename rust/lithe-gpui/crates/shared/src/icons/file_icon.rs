@@ -6,7 +6,7 @@
 //!
 //! ## 为什么需要单独一层（而不是像 `icons::idea` 那样做成常量表）
 //!
-//! `ui-icons/idea/**` 是"一个显示名一张图"，可以直接生成常量表；`icons/**` 是
+//! `icons/idea/icons/**` 是"一个显示名一张图"，可以直接生成常量表；`icons/**` 是
 //! **"按文件名 / 后缀 / 目录名查表"** 的另一套体系（与 VS Code 的 icon theme 同构）：
 //! 每套主题包带一个 `extension.json`，里面的 `iconDefinitions` 把**图标 id** 映射到 SVG 相对
 //! 路径，再由 `fileNames` / `fileExtensions` / `folders` / `expandedFolders` 把

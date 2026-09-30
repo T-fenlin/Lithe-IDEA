@@ -37,13 +37,13 @@
 //!
 //! # 图标真源：真源 SVG 优先，缺真源的保持 Lucide
 //!
-//! 与活动栏同一口径（见 [`crate::activity_bar`] 的模块文档）：**有 `lithe-gpui/assets/ui-icons/idea/**`
+//! 与活动栏同一口径（见 [`crate::activity_bar`] 的模块文档）：**有 `lithe-gpui/assets/icons/idea/icons/**`
 //! 真源文件的用真源（[`StatusEntry::with_idea_icon`]），真源只有内联 React 组件或本来就是
 //! Lucide 的保持 `IconName`（[`StatusEntry::with_icon`]）**。
 //!
 //! | Windows 源字形 | 出处 | 本模块采用 | 说明 |
 //! | --- | --- | --- | --- |
-//! | `GitBranchIcon` | `features/git/components/git-branch-manager.tsx:647` | **真源** `idea::GIT_BRANCH_ICON` | `ui-icons/idea/vcs/branch.svg`(+`_dark`) |
+//! | `GitBranchIcon` | `features/git/components/git-branch-manager.tsx:647` | **真源** `idea::GIT_BRANCH_ICON` | `icons/idea/icons/expui/vcs/branch.svg`(+`_dark`) |
 //! | `LockIcon` / `LockOpenIcon` | `footer-editor-status.tsx:102` | **真源** `idea::LOCK_ICON` / `LOCK_OPEN_ICON` | `expui/general/locked.svg` / `unlocked.svg` |
 //! | `CheckCircleIcon` | `footer-editor-status.tsx:135` | **真源** `idea::CHECK_CIRCLE_ICON` | `expui/general/successDialog.svg`；Windows 带 `text-success` 上色（`--success: var(--primary)`，`theme.css:151`），本契约无颜色字段故未实现 |
 //! | 文件类型图标 | `file-path-breadcrumb.tsx:196-202` 的 `ThemedFileIcon` | **真源**：当前活动文件名的图标主题查表 | 与文件树 / 标签同一条 `icons::FileIcon` 路线（`explorer` / `editor` 的 `icon_for_file`） |
@@ -152,7 +152,7 @@ pub struct StatusEntry {
     /// 没有陈旧风险。这样 [`StatusEntry`] 仍然只是两个 `Copy` 字段，`status_bar` 的
     /// `use<>` 也不用跟着改。
     ///
-    /// 真源那一路存 `ui-icons/idea/**` 的路径；Lucide 那一路存 `None` 且用
+    /// 真源那一路存 `icons/idea/icons/**` 的路径；Lucide 那一路存 `None` 且用
     /// [`StatusEntry::lucide`] 记字形（两者互斥，同时给出时真源优先 —— 与
     /// [`FileIcon::render`] 的优先关系一致）。
     icon: Option<&'static str>,
@@ -198,7 +198,7 @@ impl StatusEntry {
         self
     }
 
-    /// 带**真源**前导图标的条目：`ui-icons/idea/**` 的 expui SVG（`idea::` 常量）。
+    /// 带**真源**前导图标的条目：`icons/idea/icons/**` 的 expui SVG（`idea::` 常量）。
     ///
     /// 明暗在这里就定（`cx` 是当帧的），见 [`StatusEntry::icon`] 的字段说明。
     pub fn with_idea_icon(mut self, icon: &'static idea::IdeaIcon, cx: &App) -> Self {
@@ -345,7 +345,7 @@ fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
 ///
 /// 走 `svg()` 的代价是丢掉原色、改由 `text_color` 上色 —— 对状态栏这正是想要的。
 ///
-/// - **真源**（`entry.icon` 有值）：`ui-icons/idea/**` 的 expui SVG，14 = `rems(14. / 16.)`
+/// - **真源**（`entry.icon` 有值）：`icons/idea/icons/**` 的 expui SVG，14 = `rems(14. / 16.)`
 ///   （与旧实现的 `with_size(px(14.))` 同值；14 不在 rem 档位上，所以自己换算）。
 /// - **Lucide**（`entry.lucide` 有值）：`Icon::new(..)`，**不设尺寸** ——
 ///   `Icon` 会退回继承的字号，正好等于 Windows 图标默认的 `size="1em"`（13×13）。

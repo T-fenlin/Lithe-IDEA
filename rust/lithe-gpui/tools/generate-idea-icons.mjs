@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * generate-idea-icons.mjs —— 把 `lithe-gpui/assets/ui-icons/**` 里的 SVG 真源，生成成 gpui 侧可用的
- * Rust 图标清单（资源路径常量表）。
+ * generate-idea-icons.mjs —— 把 `lithe-gpui/assets/icons/idea/**` 图标包里的 SVG 真源，生成成
+ * gpui 侧可用的 Rust 图标清单（资源路径常量表）。
  *
  * 背景：旧前端的 Vite 清单（`ui-icons/idea-assets.generated.ts`，用 `import x from
  * "./idea/.../x.svg?url"` 把每张 SVG 变成 URL，导出 `名称 → { light, dark }`）**已按维护者
@@ -12,7 +12,7 @@
  * `gpui::svg().path(..)` 用。名字与别名**由本脚本按文件名推导**（规则 3），不再读任何 TS。
  *
  * 真源（只读）：
- *   lithe-gpui/assets/ui-icons/idea/ 下的 *.svg
+ *   lithe-gpui/assets/icons/idea/icons/ 下的 *.svg
  *       —— 实际产出的依据。**每张 SVG 都必须出现在产物里**（脚本会校验无孤儿、无悬空引用）。
  *   lithe-gpui/tools/idea-icon-mappings.json
  *       —— 只读参考，**只用来取"旧前端那 95 个显示名"**（`SearchIcon` 这种），让 Rust 侧的
@@ -52,9 +52,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..");
 /** `lithe-gpui/assets` 的绝对路径；`RustEmbed` 里用的是同一目录（见 `crates/app/src/assets.rs`）。 */
 const ASSETS_DIR = resolve(REPO_ROOT, "lithe-gpui/assets");
-const SVG_ROOT = resolve(ASSETS_DIR, "ui-icons/idea");
+const SVG_ROOT = resolve(ASSETS_DIR, "icons/idea/icons");
 /** AssetSource 路径的命名空间前缀（规则 4）。 */
-const PATH_PREFIX = "ui-icons/idea";
+const PATH_PREFIX = "icons/idea/icons";
 /** 旧前端的显示名映射（只读参考，可选；见文件头「真源」）。 */
 const MAPPINGS_JSON = resolve(HERE, "idea-icon-mappings.json");
 const OUT_FILE = resolve(REPO_ROOT, "lithe-gpui/crates/shared/src/icons/idea.rs");
@@ -221,7 +221,7 @@ out += "//! 不是文件系统路径。渲染入口与主题选择见 `lithe-gpu
 out += "//! `lithe_gpui_shared::icons::idea_icon(icon, is_dark)`。\n";
 out += "//!\n";
 out += `//! 共 ${entries.length} 个图标（其中 ${darkCount} 个有真实的 \`_dark.svg\` 变体，其余 \`dark\` 回落 light，\n`;
-out += "//! 由 [`IdeaIcon::has_dark`] 区分）。路径全部以 `ui-icons/idea/` 为前缀，避免与 gpui-kit\n";
+out += "//! 由 [`IdeaIcon::has_dark`] 区分）。路径全部以 `icons/idea/icons/` 为前缀，避免与 gpui-kit\n";
 out += '//! `AllAssets` 的 `icons/…`（Lucide 字形）在同一 `AssetSource` 里撞名。\n';
 out += "//!\n";
 out += `//! **与旧前端命名的对应关系**：旧前端那份 Vite 清单（\`idea-assets.generated.ts\`，**已删除**）\n`;

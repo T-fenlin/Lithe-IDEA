@@ -320,7 +320,7 @@
     },
     {
       "icon": "FileIcon",
-      "source": "fileTypes/text.svg"
+      "source": "expui/fileTypes/text.svg"
     },
     {
       "icon": "FilePlusIcon",
@@ -328,7 +328,7 @@
     },
     {
       "icon": "FileTextIcon",
-      "source": "fileTypes/text.svg"
+      "source": "expui/fileTypes/text.svg"
     },
     {
       "icon": "FilesIcon",
@@ -384,7 +384,7 @@
     },
     {
       "icon": "GitBranchIcon",
-      "source": "vcs/branch.svg"
+      "source": "expui/vcs/branch.svg"
     },
     {
       "icon": "GitCommitIcon",

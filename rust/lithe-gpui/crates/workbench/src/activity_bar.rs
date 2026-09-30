@@ -28,7 +28,7 @@
 //!
 //! 每个项的画法由 [`ActivityIcon`] 决定，有两条路：
 //!
-//! 1. **真源**（[`ActivityIcon::Idea`]）—— `lithe-gpui/assets/ui-icons/idea/**` 的 IntelliJ `expui` SVG，
+//! 1. **真源**（[`ActivityIcon::Idea`]）—— `lithe-gpui/assets/icons/idea/icons/**` 的 IntelliJ `expui` SVG，
 //!    经 `lithe_gpui_shared::icons::idea_icon_svg` 按当前主题明暗挑路径渲染（单色，
 //!    颜色取 `theme.foreground`/`muted_foreground`，与旧实现的 `IconName` 同口径）。
 //! 2. **Lucide**（[`ActivityIcon::Lucide`]）—— 全量 Lucide 目录（1830 个字形）。
@@ -36,7 +36,7 @@
 //!
 //! | Windows 用途 | Windows 图标组件 | 现在用 | 真源文件 / 理由 |
 //! | --- | --- | --- | --- |
-//! | 项目 | `FilesIcon` | **真源** `idea::FILES_ICON` | `ui-icons/idea/expui/general/listFiles.svg`（+`_dark`） |
+//! | 项目 | `FilesIcon` | **真源** `idea::FILES_ICON` | `icons/idea/icons/expui/general/listFiles.svg`（+`_dark`） |
 //! | 搜索 | `MagnifyingGlassIcon` | **真源** `idea::MAGNIFYING_GLASS_ICON` | `expui/general/search.svg` |
 //! | 更改（Git） | `GitBranchIcon` | **真源** `idea::GIT_BRANCH_ICON` | `vcs/branch.svg` |
 //! | 提交记录 | `GitGraphIcon` | `Lucide` `GitGraph` | 真源是 `Nucleo.IconGitGraphOutline18` → Lucide，**无文件** |
@@ -132,7 +132,7 @@ pub enum ActivitySide {
 /// 两个变体对应两条真源路线（见模块文档的对照表）：
 ///
 /// - [`ActivityIcon::Lucide`]：全量 Lucide 目录（`gpui_kit::assets::IconName`）。
-/// - [`ActivityIcon::Idea`]：`lithe-gpui/assets/ui-icons/idea/**` 的 IntelliJ `expui` SVG，
+/// - [`ActivityIcon::Idea`]：`lithe-gpui/assets/icons/idea/icons/**` 的 IntelliJ `expui` SVG，
 ///   用 `lithe_gpui_shared::icons::idea::IdeaIcon` 常量引用（生成物，
 ///   见 `lithe-gpui/tools/generate-idea-icons.mjs`）。
 ///
@@ -144,7 +144,7 @@ pub enum ActivitySide {
 pub enum ActivityIcon {
     /// Lucide 字形（真源本来就没有文件的那 4 项）。
     Lucide(IconName),
-    /// IntelliJ `expui` 真源 SVG（`ui-icons/idea/**`）。
+    /// IntelliJ `expui` 真源 SVG（`icons/idea/icons/**`）。
     Idea(&'static idea::IdeaIcon),
 }
 
@@ -211,7 +211,7 @@ impl ActivityItem {
         }
     }
 
-    /// 用 `lithe-gpui/assets/ui-icons/idea/**` 真源 SVG 的项。
+    /// 用 `lithe-gpui/assets/icons/idea/icons/**` 真源 SVG 的项。
     ///
     /// 传的是 `idea::` 常量（生成物里的 `IdeaIcon`），**不要**手写资源路径字符串：
     /// 常量表由 `node lithe-gpui/tools/generate-idea-icons.mjs --check` 守着，路径写错会红。

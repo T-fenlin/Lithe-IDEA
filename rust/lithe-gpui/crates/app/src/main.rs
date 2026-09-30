@@ -929,13 +929,14 @@ fn main() {
         // 资源源分两层（`src/assets.rs`）：
         //
         // 1. **我们自己搬进来的资源**（`lithe-gpui/assets/**`，用 `rust-embed` 编译期内嵌）。
-        //    实测内嵌 **269 个文件**（根目录的 `README.md` 已由 `#[exclude]` 挡在二进制外），
-        //    合计 **3 200 771 字节（约 3.05 MiB）**，按目录分四组：
-        //    `ui-icons/**`（157 个 IntelliJ `expui` SVG）、`icons/idea/**`（104 个文件，
-        //    文件图标主题 id 是编译期常量 `ACTIVE_FILE_ICONS = "idea"`）、`icons/**`
-        //    （7 个位图）、`images/logo.png`（品牌图）。
-        //    ⚠️ `icons/{lithe,pierre,symbols}` 三套（459 + 149 + 325 = 933 个文件 /
-        //    5 337 322 字节，约 5.09 MiB）已被 `#[exclude]` 挡在二进制外，**磁盘上一个文件
+        //    实测内嵌 **411 个文件**（根目录的 `README.md` 与 `fonts/` 已由 `#[exclude]`
+        //    挡在二进制外），合计 **3 319 379 字节（约 3.17 MiB）**，按目录分三组：
+        //    `icons/idea/**`（254 个文件，2026-09-30 起 expui 界面图标已并入图标包，
+        //    界面图标与文件类型图标同源；文件图标主题 id 是编译期常量
+        //    `ACTIVE_FILE_ICONS = "idea"`）、`icons/pierre/**`（149 个文件）、
+        //    `app-icon/**`（7 个位图）、`images/logo.png`（品牌图）。
+        //    ⚠️ `icons/{lithe,symbols,material}` 三套（459 + 325 + 2 = 786 个文件，
+        //    约 4.97 MiB）已被 `#[exclude]` 挡在二进制外，**磁盘上一个文件
         //    都没删**（将来做图标主题切换还要用）；收窄前 `lithe-gpui/assets/**` 全量是 1 203 个文件 /
         //    8 567 891 字节。口径与理由见 `src/assets.rs` 的模块文档。
         // 2. **回落 gpui-kit 的全量 Lucide 字形**（1830 个，`gpui_kit::assets::AllAssets`）。
@@ -953,7 +954,7 @@ fn main() {
         .run(move |cx| {
             // S1_ASSETS：启动诊断，证明包装层被注册、并且两侧资源都能列出来。
             // 它同时是"回落没坏"的最早证据：`fallback_icons` 是 Lucide 一侧的数量，
-            // `embedded` 是我们自己嵌进来的文件数，`ui_icons` 是其中的图标子集。
+            // `embedded` 是我们自己嵌进来的文件数，`idea_icons` 是其中的图标集子集。
             //
             // ⚠️ 走 **stderr**（`eprintln!`），不走 stdout：stdout 在重定向到文件时是
             // **块缓冲**的，进程还在跑时日志文件里可能一行都看不到（本机实测：同一份
@@ -964,9 +965,9 @@ fn main() {
             #[cfg(debug_assertions)]
             {
                 eprintln!(
-                    "S1_ASSETS embedded={} ui_icons={} fallback_icons={}",
+                    "S1_ASSETS embedded={} idea_icons={} fallback_icons={}",
                     assets::LitheAssets::embedded_count(),
-                    assets::LitheAssets::embedded_count_under("ui-icons/"),
+                    assets::LitheAssets::embedded_count_under("icons/idea/"),
                     assets::LitheAssets::fallback_count()
                 );
                 // 关键路径探针：证明 `AssetSource::load` 真的能取到我们清单里写的那些键。

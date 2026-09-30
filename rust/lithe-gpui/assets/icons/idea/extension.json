@@ -6,13 +6,13 @@
   "categories": [
     "Icon Theme"
   ],
-  "version": "0.1.0",
-  "description": "File icons from the IntelliJ platform icon set (intellij-community, Apache-2.0, embedded per-file copyright notices preserved).",
+  "version": "0.2.0",
+  "description": "IDEA icon set: file-type icons plus the expui UI icon set (general/toolwindows/run/vcs), merged from ui-icons on 2026-09-30. From intellij-community (Apache-2.0, per-file copyright notices preserved).",
   "icons": [
     {
       "id": "idea-icons",
       "name": "IDEA Icons",
-      "description": "File icons from the IntelliJ platform icon set (intellij-community, Apache-2.0).",
+      "description": "IDEA icon set: file-type icons plus the expui UI icon set, merged from ui-icons on 2026-09-30 (intellij-community, Apache-2.0).",
       "defaultFile": "idea-text",
       "defaultFolder": "idea-folder",
       "defaultFolderOpen": "idea-folder",

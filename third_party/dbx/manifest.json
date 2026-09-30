@@ -8,11 +8,6 @@
   "buildDependency": false,
   "runtimeDependency": false,
   "packaged": false,
-  "retainedArtifacts": [
-    {
-      "path": "rust/lithe-gpui/assets/database-icons",
-      "notice": "rust/lithe-gpui/assets/database-icons/NOTICE.txt",
-      "license": "rust/lithe-gpui/assets/database-icons/LICENSE-APACHE-2.0.txt"
-    }
-  ]
+  "retainedArtifacts": [],
+  "retainedArtifactsNote": "database-icons 参考件于 2026-09-30 从 rust/lithe-gpui/assets/ 移除（未接线、未分发）；原文件与许可证文本可在 git 历史中追溯。"
 }

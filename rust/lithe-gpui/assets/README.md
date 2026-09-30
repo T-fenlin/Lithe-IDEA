@@ -367,3 +367,46 @@ TOTAL src=1194 bad=0 extra=0
    `LitheAssets::iter().count()` 的实测值（`assets.rs` 的回归测试会在数字对不上时失败，这是有意的）。
 
 在这三步做完之前去掉 `#[exclude]`，唯一的效果是二进制白多背 **5.09 MiB**。
+
+# 9. 2026-09-30 收敛：界面图标并入 idea 图标包，未接线归档删除
+
+本节是**第 1–8 节之后的新状态**，不改前面任何历史记录。当天做了三件事（维护者决策，
+口径见 `.agents/notes/implemented/feature/2026-09-30-colored-ui-icons.md` 追加二）：
+
+## 9.1 `ui-icons/` 并入 `icons/idea/icons/`，目录消失
+
+`ui-icons/idea/**` 的 157 个 expui 界面 SVG 全部搬入 `icons/idea/icons/**` 图标包：
+
+| 搬运规则 | 数量 | 说明 |
+| --- | ---: | --- |
+| `ui-icons/idea/expui/X` → `icons/idea/icons/expui/X` | 148 移动 + 6 去重 | 6 个（`expui/fileTypes/{archive,image}(+_dark)`、`expui/nodes/folder(+_dark)`）与包里已有文件逐字节相同，直接删 ui-icons 侧副本 |
+| `ui-icons/idea/fileTypes/text.svg` → `expui/fileTypes/text.svg` | 1（覆盖） | 包里原有 2022 版平条美术（与 expui 风格一致），**保留包里那份**；ui-icons 的 2021 版折角旧美术随合并丢弃（git 历史可溯）。本目录从"两个 text.svg"变成一个 |
+| `ui-icons/idea/vcs/branch(+_dark).svg` → `expui/vcs/` | 2 | 与包里 `expui/vcs/{commit,diff,merge}` 凑齐 vcs 族 |
+
+净效果：`icons/idea/` 104 → **254 个文件**；`ui-icons/` 不复存在；磁盘总文件数 1 203 → 1 008。
+
+## 9.2 清单与生成器
+
+`tools/generate-idea-icons.mjs` 的扫描根改为 `assets/icons/idea/icons/`、前缀改为
+`icons/idea/icons`，产物 `crates/shared/src/icons/idea.rs` 从 79 个常量变为 **128 个**
+（多出的是包里原有的 fileTypes 文件类型图标，自动获得常量；`tools/idea-icon-mappings.json`
+里 `fileTypes/text.svg`、`vcs/branch.svg` 两个键随搬迁改为 `expui/...`）。
+
+## 9.3 未接线归档目录从磁盘删除
+
+`legacy-ide-icons/`、`gutter-icons/`、`database-icons/`、`feature-icons/` 四个目录
+（长期零引用、不进二进制）**从磁盘删除**，git 历史可整体找回；
+`third_party/dbx/manifest.json` 的 `retainedArtifacts` 已清空并附追溯说明。
+`fonts/`（JetBrains Mono）**保留**：`settings/src/fonts.rs` 用 `include_bytes!` 直嵌，
+`#[exclude = "fonts/**"]` 只是不让它再进 rust-embed 表。
+`icons/{lithe,symbols,material}` 三套未接线包**保留**（将来图标主题切换用，见 8.4）。
+
+## 9.4 新的内嵌口径（`assets.rs` 测试逐字钉住）
+
+| 组 | 文件数 |
+| --- | ---: |
+| `app-icon/**` | 7 |
+| `images/logo.png` | 1 |
+| `icons/idea/**` | 254 |
+| `icons/pierre/**` | 149 |
+| **合计** | **411 个文件 / 3 319 379 字节（约 3.17 MiB）** |
