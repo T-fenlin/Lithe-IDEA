@@ -24,8 +24,13 @@ Lucide 那些单色字形继续走 `.icon(..)`（它们本来就没有颜色可�
 维护者口径（2026-09-30）："界面图标怎么还是单色的？" 查证结果：
 
 - `lithe-gpui/assets/ui-icons/idea/**` 的 **157 个 SVG，0 个**用 `currentColor`，
-  全是硬编码色值（`#3574F0` 蓝、`#E66D17` 橙、`#FFAF0F` 琥珀、`#55A76A` 绿……），
-  而且每个图标都有 `light` / `dark` 两套（深色下另一组色值，由 `IdeaIcon::path(is_dark)` 选）。
+  色值全是硬编码的，而且每个图标都有 `light` / `dark` 两套
+  （深色下另一组色值，由 `IdeaIcon::path(is_dark)` 选）。
+- ⚠️ **但"硬编码"不等于"彩色"**（2026-09-30 复核，第一版笔记在这里说过头了）：
+  expui 分两族 —— **内容类**（`general/warningDialog` 琥珀、`general/successDialog` 绿、
+  `fileTypes/**` 文件类型）**真有颜色**；**镶边类**（`general/listFiles` / `general/settings` /
+  `toolwindows/notifications` 等轨道与工具窗那一族）**是灰阶两档**：浅色 `#6C707E`、
+  深色 `#CED0D6` —— IDEA 的镶边图标本来就是"安静的灰"，不是彩色。
 - 而 `svg()` 这条管线把 SVG 当**形状遮罩**用：`SvgRenderer::render_alpha_mask` + 单一
   `style.text.color`（源码依据见 `shared/src/icons/file_icon.rs` 的 `theme_file_icon` 文档）。
   于是所有色值被抹掉，界面上就是"图标全是灰的"。
@@ -47,11 +52,13 @@ pub fn idea_icon_image(icon: &idea::IdeaIcon, cx: &App, side: impl Into<Length>)
 
 ### 2. 换掉的地方（本批）
 
-| 位置 | 图标 | 尺寸 |
-| --- | --- | --- |
-| 左/右活动栏轨道项（`workbench/src/activity_bar.rs`） | 项目 / 更改 / 搜索 / 诊断 / 设置 / 通知 | `rems(1.)` = 16 |
-| 项目标签头的文件夹（`workbench/src/project_tabs.rs`） | `FOLDER_ICON` | `rems(14. / 16.)` |
-| 设置对话框头部（`settings/src/dialog.rs`） | `GEAR_ICON` | `rems(1.)` = 16 |
+| 位置 | 图标 | 尺寸 | 换管线后看到的差别 |
+| --- | --- | --- | --- |
+| 左活动栏轨道项（`workbench/src/activity_bar.rs`） | 项目 / 更改 / 搜索 / 诊断 / 设置 | `rems(1.)` = 16 | **只有诊断明显变彩**（警告三角 → 琥珀 `#FFAF0F` / `#F2C55C`）；其余几张是镶边灰（`#6C707E` / `#CED0D6`），只是从"主题前景色"换成 IDEA 自己那两档灰 |
+| 右活动栏轨道项（同一文件） | 通知（铃铛） | `rems(1.)` = 16 | 铃铛资产是 `stroke="#6C707E"` / `#CED0D6` 的灰描边，**看着不变**（它本来就不是彩色图标） |
+| 项目标签头的文件夹（`workbench/src/project_tabs.rs`） | `FOLDER_ICON` | `rems(14. / 16.)` | 镶边灰（同上） |
+| 设置对话框头部（`settings/src/dialog.rs`） | `GEAR_ICON` | `rems(1.)` = 16 | 镶边灰（`#6C707E` / `#CED0D6`） |
+| 状态栏（`workbench/src/status_bar.rs`） | 分支 / 锁 / 对勾 | `rems(14. / 16.)` | **本批没换**（原因见下）；换上去才是真正"变色"的一处 —— `successDialog` 是绿 `#55A76A` |
 
 活动栏的 `ActivityIcon` 因此从 `button_icon(&self) -> Icon` 改成
 `apply(&self, button: Button, cx) -> Button`：expui 走 `.child(idea_icon_image(..))`、
@@ -89,8 +96,9 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 
 收益：
 
-- expui UI 图标恢复真源颜色（活动栏的项目 / 更改 / 搜索 / 诊断 / 设置 / 通知、
-  项目标签的文件夹、设置头部的齿轮）。
+- expui UI 图标不再被主题前景色统一重画：**内容类**恢复真源颜色（活动栏的诊断警告三角
+  从灰变琥珀；状态栏那个绿色对勾一旦也换过来同样会变绿）；**镶边类**换成 IDEA 自己的
+  两档灰（`#6C707E` / `#CED0D6`），比"跟着前景色"更贴近真源。
 - 彩色与单色两条路各有**一个**入口 helper，调用点选错的代价是"颜色不对"，不是"画不出来"
   （兜底在 helper 内部）。
 
@@ -123,3 +131,23 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 - `rust/lithe-gpui/crates/workbench/src/activity_bar.rs`、`project_tabs.rs`
 - `rust/lithe-gpui/crates/settings/src/dialog.rs`
 - 待办：`rust/lithe-gpui/crates/workbench/src/status_bar.rs`（`entry_icon`）
+
+## 追加：两处"以为它有色、其实没有"的地方（2026-09-30 复核）
+
+维护者问到 Maven 与铃铛，逐个查了来源，结论是**这两处在真源里也不是彩色图标**，
+换管线换不出颜色：
+
+- **铃铛**（`ui-icons/idea/expui/toolwindows/notifications.svg`）：`stroke="#6C707E"`
+  （深色版 `#CED0D6`）—— IDEA 的工具窗图标都是灰描边。本批已经把它换到 `img()` 了，
+  所以"看着没变"是**正确结果**，不是没切换。
+- **Maven**：真源 `features/maven/components/maven-icon.tsx` 那枚 16×16 字形是
+  `fill="currentColor"`（**单色**，跟随文字色），所以 Windows 前端的轨道 Maven 也是单色的；
+  IDEA 自己的 Maven **工具窗**图标（`legacy-ide-icons/maven/toolWindowMaven.svg`，当前被
+  `assets.rs` 的 `#[exclude]` 挡在包外）是 `#CED0D6` 的灰。
+  我们**有**的那枚蓝色 Maven 标志（`icons/idea/icons/expui/fileTypes/maven.svg`，`#3574F0`）
+  是**文件类型**图标，已经用在文件树 / 编辑器标签的 `pom.xml` 上（那处是彩色的）。
+  右栏 Maven 现在用 Lucide `package` 字形，是"真源只有内联组件、没有 SVG 可搬"时的既有取舍。
+- 想让右栏 Maven 显示**彩色蓝色 Maven 标志**（有意偏离真源与 IDEA 的灰轨道图标）：
+  一行就能换 —— 把 `icons/idea/icons/expui/fileTypes/maven.svg` 包成
+  `ActivityItem::idea`（该资产**已在内嵌资源里**，不需要解 `#[exclude]`、不增包体）。
+  ⚠️ 前提是接受"轨道图标不再与 IDEA 一致"。
