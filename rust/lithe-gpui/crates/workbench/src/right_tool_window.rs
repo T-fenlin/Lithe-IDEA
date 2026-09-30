@@ -66,10 +66,11 @@ use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
 // `when` / `children` 收在 `FluentBuilder` 上（与 `explorer_view.rs` 同一取法）。
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
-    Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
+    AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, Length,
+    ParentElement as _, Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window, div, rems,
 };
-use lithe_gpui_shared::icons::{idea, idea_icon_mono};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
 
 use lithe_gpui_shared::tr;
 
@@ -165,15 +166,26 @@ impl RightToolWindowView {
         }
     }
 
-    /// 头部图标。与右活动栏逐项同字形（`activity_bar.rs` 的对照表）。
-    fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
+    /// 头部 / 空态图标。与右活动栏逐项同字形（`activity_bar.rs` 的对照表）。
+    ///
+    /// `side` 由调用方给（头部 16、空态 32）。返回 `AnyElement` 而不是 `Icon`，因为 Maven 用的是
+    /// **彩色**的蓝色标志（`files/maven.svg`，`img()` 管线）——它不吃 `text_color`，塞不进
+    /// `Icon` 那个只收字形的槽位；通知与 Spring 仍是单色字形（`primary`）。
+    fn icon(self, cx: &App, side: impl Into<Length>) -> AnyElement {
+        let side: Length = side.into();
         match self {
-            Self::Notifications => idea_icon_mono(&idea::BELL_ICON, is_dark),
-            // Lucide 没有 Maven 字形，取「包 / 构建产物」语义的 `package`（与活动栏一致）。
-            Self::Maven => Icon::new(IconName::Package),
+            Self::Notifications => idea_icon_svg_px(&idea::BELL_ICON, cx, side)
+                .text_color(cx.theme().primary)
+                .into_any_element(),
+            // 真源：`icons/idea/icons/files/maven.svg(+_dark)` —— 与 IDEA 工具窗图标同物
+            // （2026-09-30 改：此前是 Lucide 的立方体）。
+            Self::Maven => idea_icon_image(&idea::MAVEN_ICON, cx, side),
             // Spring 的真源字形是品牌绿叶（`spring-icon.tsx` 内联 path，没有 SVG 文件），
-            // Lucide 里语义最近的是 `leaf` —— 与 Maven 用 `package` 同一取舍。
-            Self::Spring => Icon::new(IconName::Leaf),
+            // Lucide 里语义最近的是 `leaf`。
+            Self::Spring => Icon::new(IconName::Leaf)
+                .size(side)
+                .text_color(cx.theme().primary)
+                .into_any_element(),
         }
     }
 
@@ -616,10 +628,9 @@ fn header(
         .border_b_1()
         .border_color(cx.theme().border)
         .child(
-            view.icon(cx.theme().is_dark())
-                .size_4()
-                .flex_shrink_0()
-                .text_color(cx.theme().primary),
+            // 尺寸与前景色由 `icon()` 自己按字形决定（彩色标志不吃 `text_color`），
+            // 这里只给边长：头部 16 = `rems(1.)`。
+            view.icon(cx, rems(1.)),
         )
         .child(
             div()
@@ -674,7 +685,7 @@ fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
                 .border_color(cx.theme().transparent)
                 .header(
                     EmptyHeader::new()
-                        .media(EmptyMedia::new().child(view.icon(cx.theme().is_dark()).size_8()))
+                        .media(EmptyMedia::new().child(view.icon(cx, rems(2.))))
                         .title(EmptyTitle::new().text_sm().child(view.empty_title())),
                 ),
         )

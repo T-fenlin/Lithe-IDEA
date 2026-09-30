@@ -4534,9 +4534,10 @@ fn activity_items() -> Vec<ActivityItem> {
         ActivityItem::idea(&idea::GIT_BRANCH_ICON, tr("lithe.workbench.changes")),
         // 真源：`icons/idea/icons/ui/search.svg(+_dark)` —— 真机 `MagnifyingGlassIcon`。
         ActivityItem::idea(&idea::MAGNIFYING_GLASS_ICON, tr("lithe.workbench.search")),
-        // ⚠️ 保持 Lucide：真机 `RunIcon`（`features/run/components/run-icon.tsx`）是**内联
-        // React 组件**，只有一条 stroke path、没有 SVG 文件，搬不动（见
-        // `lithe-gpui/research/icon-asset-inventory.md` 第 4 节）。
+        // 真源：`icons/idea/icons/ui/run.svg(+_dark)` —— 真机 `RunIcon`
+        // （`features/run/components/run-icon.tsx`）是**内联 React 组件**，没有 SVG 文件可搬；
+        // 但图标包里有 `run/run.svg`（彩色运行三角），2026-09-30 起改用它 —— 与 IDEA 的运行
+        // 工具窗图标一致，也和终端 / 标题栏上那枚运行按钮同物。
         ActivityItem::idea(&idea::PLAY_ICON, tr("lithe.workbench.run")).bottom(true),
         // ⚠️ 保持 Lucide：真机 `TerminalWindowIcon` 走 `Nucleo.IconSquareTerminalOutline18`
         // → `lucide-react` 的 `square-terminal`，**本来就是 Lucide，已经是 1:1**。
@@ -4630,12 +4631,12 @@ fn right_activity_items(store: &Entity<lithe_gpui_notify::Store>, cx: &App) -> V
         // 真源：`icons/idea/icons/ui/notifications.svg(+_dark)` —— 真机
         // `BellIcon`（`features/notifications/components/notifications-trigger.tsx:43`）。
         bell,
-        // ⚠️ 保持 Lucide：真机 `MavenIcon`（`features/maven/components/maven-icon.tsx`）是
-        // **内联 React 组件**，只有一条 fill path、没有 SVG 文件。Lucide 没有 Maven 字形，
-        // 与 `activity_bar.rs` 的对照表同一取舍：取「包 / 构建产物」语义的 `package`。
-        // （注意：Maven **文件类型**图标是有真源的 —— `icons/idea` 的
-        // `pom.xml` → `icons/files/maven.svg`，所以文件树里 `pom.xml` 是真源。）
-        ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
+        // 真源：`icons/idea/icons/files/maven.svg(+_dark)` —— Maven 的蓝色标志（`#3574F0`），
+        // 与 IDEA 工具窗 / 轨道上的 Maven 图标同物（维护者 2026-09-30 对照 IDEA 后要求换掉立方体）。
+        // 此前用 Lucide `package`，理由是"真源 `MavenIcon` 只是内联 React 组件、没有 SVG 可搬"——
+        // 那条理由只说明**真源**没有，没注意到**图标包里早就有**这枚标志（它原先只按"文件类型图标"
+        // 用在 `pom.xml` 上），所以借口不再成立。
+        ActivityItem::idea(&idea::MAVEN_ICON, tr("lithe.workbench.maven")),
     ]
 }
 

@@ -230,7 +230,7 @@ impl AssetSource for LitheAssets {
 
 #[cfg(test)]
 mod tests {
-    use super::{LitheAssets, PROBE_PATHS};
+    use super::{LitheAssets, PROBE_PATHS, probe_len};
     use gpui_kit::AssetSource as _;
 
     /// 内嵌表的全部路径键（相对 `lithe-gpui/assets/`）。`iter()` 是编译期静态表，测试里读它很便宜。
@@ -451,5 +451,30 @@ mod tests {
                 .unwrap_or_else(|| panic!("`{path}` 在内嵌表里，但 `load` 取不到字节"));
             assert!(!bytes.is_empty(), "`{path}` 取到了 0 字节，等于取不到");
         }
+    }
+
+    /// 回归：`idea.rs` 里**每一个**常量路径都必须能在内嵌资源里取到字节。
+    ///
+    /// 这条钉的是"路径与文件不一致"那类事故：重排 / 搬家 / 改名资产目录时，只要 `idea.rs` 还是
+    /// 旧路径，界面上那批图标会**静默**变空白（`theme_file_icon` 取不到字节 → 回落单色 `svg()` →
+    /// 那条路径同样取不到 → 什么都不画），看起来就是"图标少了一大截"。2026-09-30 重划三类目录时
+    /// 维护者正是这么发现的（当时跑的是重排过程中的中间态二进制）。
+    ///
+    /// 逐条走 `idea::ALL`（128 个图标 × 明暗两条），而不是手写几个路径 —— [`PROBE_PATHS`] 那种
+    /// 手写清单覆盖不到"只有某一个常量写错了"。
+    #[test]
+    fn every_idea_constant_path_is_embedded() {
+        let mut missing = Vec::new();
+        for icon in lithe_gpui_shared::icons::idea::ALL {
+            for path in [icon.light, icon.dark] {
+                if probe_len(path).is_none() {
+                    missing.push(path);
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "这些 `idea.rs` 常量路径取不到内嵌字节（界面上会画空白）：{missing:?}"
+        );
     }
 }

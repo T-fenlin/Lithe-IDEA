@@ -146,11 +146,12 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
   该归档目录已于同日从磁盘删除，文件在 git 历史里）是 `#CED0D6` 的灰。
   我们**有**的那枚蓝色 Maven 标志（`icons/idea/icons/files/maven.svg`，`#3574F0`）
   是**文件类型**图标，已经用在文件树 / 编辑器标签的 `pom.xml` 上（那处是彩色的）。
-  右栏 Maven 现在用 Lucide `package` 字形，是"真源只有内联组件、没有 SVG 可搬"时的既有取舍。
-- 想让右栏 Maven 显示**彩色蓝色 Maven 标志**（有意偏离真源与 IDEA 的灰轨道图标）：
-  一行就能换 —— 把 `icons/idea/icons/files/maven.svg` 包成
-  `ActivityItem::idea`（该资产**已在内嵌资源里**）。
-  ⚠️ 前提是接受"轨道图标不再与 IDEA 一致"。
+  右栏 Maven 当时用 Lucide `package` 字形，是"真源只有内联组件、没有 SVG 可搬"时的既有取舍
+  —— **当天稍后已推翻，见追加五**。
+- 想让右栏 Maven 显示**彩色蓝色 Maven 标志**：一行就能换 —— 把
+  `icons/idea/icons/files/maven.svg` 包成 `ActivityItem::idea`（该资产**已在内嵌资源里**）。
+  当时写的"前提是接受轨道图标不再与 IDEA 一致"，**那个前提本身是错的**（IDEA 自己显示的就是这枚
+  标志），所以当天稍后就照做了 —— 见追加五。
 
 ## 追加二：界面图标全面 expui 化 + 资产归一（2026-09-30 第二批，维护者决策）
 
@@ -263,3 +264,42 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 `node rust/lithe-gpui/tools/generate-idea-icons.mjs --check`、`cargo test -p lithe-gpui-shared
 -p lithe-gpui-app`（清单路径、内嵌口径、级联用例），以及"映射表引用的每个 id 都有定义"的逐包
 核对（`idea` 0 断裂；`symbols` 有一条上游遗留的 `.less` 断裂，级联后它落到内置 css 图标，无害）。
+
+## 追加五：Maven 轨道图标换成包内真源，并给"空白图标"补守卫（2026-09-30 第五批）
+
+### 先说结论
+
+维护者对照 IDEA 截图指出"界面有些图标不正确，比如 Maven"。查下来属于**登记理由过期**那一类：
+
+- **Maven**（轨道项 + 右栏面板头部）改用 `idea::MAVEN_ICON`（`files/maven.svg`，蓝色 `#3574F0`，
+  与 IDEA 工具窗图标同物）。此前用 Lucide `Package` 立方体，理由是"真源 `MavenIcon` 只是内联
+  React 组件、没有 SVG 可搬"—— 那条理由只说明**真源**没有，没注意到**包里早就有**这枚标志
+  （它原先只按"文件类型图标"用在 `pom.xml` 上）。上面「追加」一节里"IDEA 自己的 Maven 工具窗图标
+  是 `#CED0D6` 的灰"来自**已删除的** `legacy-ide-icons/` 归档，与 IDEA 现在的界面不符：维护者
+  目验 IDEA，轨道与工具窗显示的就是这枚彩色标志。
+- **运行**：代码其实早在第二批就换成了 `idea::PLAY_ICON`（`ui/run.svg`），但 `workspace.rs` 的注释
+  与 `activity_bar.rs` 的对照表**还写着"保持 Lucide"** —— 已改成如实描述。**这类"注释落后于代码"
+  是登记式文档最主要的失效方式**，对照表尤其要看一眼代码再信。
+- 终端 / 提交记录 / 扩展三项继续用 Lucide：包内确实没有等价字形（真源本身就是 Lucide，或经
+  `Nucleo` 代理到 Lucide）。
+
+### "自定义图标少了一大截"是中间态二进制，不是路径错
+
+同批报告里的这个现象**不是**代码缺陷：重划三类目录期间（文件已 `git mv`、`idea.rs` 还没重生成）
+构建出来的二进制，常量路径指向已经搬走的文件 —— `theme_file_icon` 取不到字节 → 回落单色 `svg()` →
+那条路径同样取不到 → **什么都不画**；而设置对话框侧栏的图标是 Lucide（gpui-kit 自带资源，不经
+我们的资产表），所以"看着正常"。当前 HEAD 是自洽的：`idea.rs` 的 256 条与清单的 106 条路径
+**一条不缺**（逐条核对磁盘，0 缺失）。**结论：重新构建即可；目录重排后务必重跑生成器再构建。**
+
+### 教训与新守卫
+
+这类事故的表现是"静默空白"而**不是报错**，所以补一条守卫测试
+（`crates/app/src/assets.rs` 的 `every_idea_constant_path_is_embedded`）：逐条走 `idea::ALL`
+（128 个图标 × 明暗两条）确认都能从内嵌表取到字节。原来的 `PROBE_PATHS` 是手写清单，覆盖不到
+"只有某一个常量写错了"这种情况。
+
+### 验证
+
+`cargo test -p lithe-gpui-app`（新增守卫测试 + 内嵌口径）、
+`cargo test -p lithe-gpui-workbench`（轨道项构造与 `right_tool_window` 的头部图标）、
+`cargo fmt --all -- --check`。

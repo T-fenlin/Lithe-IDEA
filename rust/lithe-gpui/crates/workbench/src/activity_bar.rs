@@ -42,8 +42,8 @@
 //! | 提交记录 | `GitGraphIcon` | `Lucide` `GitGraph` | 真源是 `Nucleo.IconGitGraphOutline18` → Lucide，**无文件** |
 //! | 终端 | `TerminalWindowIcon` | `Lucide` `SquareTerminal` | 同上（`Nucleo.IconSquareTerminalOutline18` → Lucide） |
 //! | 诊断 | `WarningIcon` | **真源** `idea::WARNING_CIRCLE_ICON` | `ui/warningDialog.svg` |
-//! | 运行 | `RunIcon` | `Lucide` `Play` | 真源是内联 React 组件 `run-icon.tsx`，**只有 path 没有 SVG 文件** |
-//! | Maven | `MavenIcon` | `Lucide` `Package` | 真源是内联 React 组件 `maven-icon.tsx`，同上 |
+//! | 运行 | `RunIcon` | **真源** `idea::PLAY_ICON` | `ui/run.svg`（+`_dark`）—— 真源 `run-icon.tsx` 只有内联 path，但包里本来就有这张彩色运行三角，2026-09-30 起改用它（此前误登记为 Lucide `Play`） |
+//! | Maven | `MavenIcon` | **真源** `idea::MAVEN_ICON` | `files/maven.svg`（+`_dark`）—— Maven 蓝色标志（`#3574F0`），与 IDEA 工具窗同物；2026-09-30 改（此前用 Lucide `Package` 立方体） |
 //! | 设置 | `GearIcon` | **真源** `idea::GEAR_ICON` | `ui/settings.svg` |
 //! | 扩展（插件） | `PuzzlePieceIcon` | `Lucide` `Puzzle` | 真源经 `Nucleo` 代理解析到 Lucide `puzzle`，**已经是 1:1** |
 //! | 通知 | `BellIcon` | **真源** `idea::BELL_ICON` | `ui/notifications.svg` |

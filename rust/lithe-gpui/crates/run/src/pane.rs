@@ -41,7 +41,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, AppContext as _, Context, EventEmitter, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
-    Window, div, rems,
+    Window, div,
 };
 
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};

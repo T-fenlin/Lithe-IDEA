@@ -98,7 +98,7 @@ use gpui_kit::{
     WeakEntity, Window, div, point, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
-use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{tr, tr_args};
 
 /// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)` 的 `Pixels` 形式。
