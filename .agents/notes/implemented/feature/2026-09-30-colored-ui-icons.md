@@ -130,24 +130,65 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 - `rust/lithe-gpui/crates/shared/src/icons/file_icon.rs`（`theme_file_icon` 的管线依据）
 - `rust/lithe-gpui/crates/workbench/src/activity_bar.rs`、`project_tabs.rs`
 - `rust/lithe-gpui/crates/settings/src/dialog.rs`
-- 待办：`rust/lithe-gpui/crates/workbench/src/status_bar.rs`（`entry_icon`）
+- 已在第二批照换：`rust/lithe-gpui/crates/workbench/src/status_bar.rs`（`entry_icon`，见追加二）
 
 ## 追加：两处"以为它有色、其实没有"的地方（2026-09-30 复核）
 
 维护者问到 Maven 与铃铛，逐个查了来源，结论是**这两处在真源里也不是彩色图标**，
 换管线换不出颜色：
 
-- **铃铛**（`ui-icons/idea/expui/toolwindows/notifications.svg`）：`stroke="#6C707E"`
+- **铃铛**（`icons/idea/icons/expui/toolwindows/notifications.svg`）：`stroke="#6C707E"`
   （深色版 `#CED0D6`）—— IDEA 的工具窗图标都是灰描边。本批已经把它换到 `img()` 了，
   所以"看着没变"是**正确结果**，不是没切换。
 - **Maven**：真源 `features/maven/components/maven-icon.tsx` 那枚 16×16 字形是
   `fill="currentColor"`（**单色**，跟随文字色），所以 Windows 前端的轨道 Maven 也是单色的；
-  IDEA 自己的 Maven **工具窗**图标（`legacy-ide-icons/maven/toolWindowMaven.svg`，当前被
-  `assets.rs` 的 `#[exclude]` 挡在包外）是 `#CED0D6` 的灰。
+  IDEA 自己的 Maven **工具窗**图标（原 `legacy-ide-icons/maven/toolWindowMaven.svg`，`#CED0D6` 的灰；
+  该归档目录已于同日从磁盘删除，文件在 git 历史里）是 `#CED0D6` 的灰。
   我们**有**的那枚蓝色 Maven 标志（`icons/idea/icons/expui/fileTypes/maven.svg`，`#3574F0`）
   是**文件类型**图标，已经用在文件树 / 编辑器标签的 `pom.xml` 上（那处是彩色的）。
   右栏 Maven 现在用 Lucide `package` 字形，是"真源只有内联组件、没有 SVG 可搬"时的既有取舍。
 - 想让右栏 Maven 显示**彩色蓝色 Maven 标志**（有意偏离真源与 IDEA 的灰轨道图标）：
   一行就能换 —— 把 `icons/idea/icons/expui/fileTypes/maven.svg` 包成
-  `ActivityItem::idea`（该资产**已在内嵌资源里**，不需要解 `#[exclude]`、不增包体）。
+  `ActivityItem::idea`（该资产**已在内嵌资源里**）。
   ⚠️ 前提是接受"轨道图标不再与 IDEA 一致"。
+
+## 追加二：界面图标全面 expui 化 + 资产归一（2026-09-30 第二批，维护者决策）
+
+### 先说结论
+
+维护者拍板："所有图标都走 `img()`"。据此做了两件事：
+
+1. **资产归一**：`lithe-gpui/assets/ui-icons/idea/**`（157 个 expui 界面 SVG）**并入**
+   `assets/icons/idea/icons/**` 图标包，`ui-icons/` 目录删除。从此界面图标与文件类型图标
+   **同一个包、同一棵 expui 树**；`icons/idea` 现在还是 4 套里的 2 套（idea 内置 + pierre 可卸载）
+   之外未接线包（lithe/symbols/material）的邻居，但只有 idea+pierre 进二进制。
+2. **全量清扫**：凡 expui 有等价字形的 Lucide 用点（约 70 种字形：箭头/雪佛龙/关闭/加号/
+   撤销重做/运行停止/警告错对/文件夹/git 族…）全部换成 `idea_icon_image(&idea::CONST, cx, side)`；
+   expui **没有**等价物的（终端、窗口控制、Package、Puzzle、Panel*、GitGraph、各 save 变体等）
+   保留 Lucide 单色 `.icon(..)`。**两条管线的分工从此是"资产有没有"而不是"想不想"**：
+   有 expui 字形就必须走彩色管线，没有的才轮到 Lucide。
+
+开发者要记住的：
+
+- 替换尺寸口径：Icon 默认 → `rems(1.)`；`.small()` → `rems(14. / 16.)`；`.xsmall()` → `rems(0.75)`；
+  `.large()` → `rems(1.5)`。按钮槽位放彩色图标用 `.child(idea_icon_image(..))`
+  （gpui-kit 官方 image.md 画廊示例与 `ActivityIcon::apply` 同款），不再用 `.icon(IconName::..)`。
+- `ui-icons/` 已不存在，新代码引用界面图标一律 `idea::常量`（`shared/src/icons/idea.rs`，
+  由 `tools/generate-idea-icons.mjs` 从 `assets/icons/idea/icons/` 生成，128 个图标），
+  不要再手写字符串路径。
+- 上面"追加"一节提到的 `legacy-ide-icons/maven/toolWindowMaven.svg` 已随归档目录从磁盘删除
+  （`legacy-ide-icons/`、`gutter-icons/`、`database-icons/`、`feature-icons/` 四个未接线归档目录
+  于同日删除，git 历史可溯；`third_party/dbx/manifest.json` 的 retainedArtifacts 已清空）。
+
+### 与"状态栏没换"一节的关系
+
+第一批有意跳过状态栏（怕 `img()` 画空白）。第二批按维护者指令照换，风险已不存在：
+`idea_icon_image` 现在自带"资产取不到 → 回落单色 svg"的兜底，最坏结果是"灰"而不是"空白"。
+
+### 验证
+
+`cargo test -p lithe-gpui-app`（内嵌口径 411 个文件 / 3 319 379 字节，由
+`embedded_range_stays_within_the_documented_envelope` 精确钉住）、
+`node rust/lithe-gpui/tools/generate-idea-icons.mjs --check`、
+`cargo fmt --check` 与受影响 crate 的 `cargo test`。像素级复核仍受本机限制（抓不到 GPU 帧），
+彩色是否生效请维护者目验。
