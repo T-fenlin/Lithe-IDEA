@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::{ActiveTheme as _, Icon, IconName, StyledExt as _};
+use gpui_kit::component::{ActiveTheme as _, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 // 可点的 `div()` 必须先 `.id(..)`（`on_click` 在 `StatefulInteractiveElement` 上，
 // 细节见 `workbench/src/notifications.rs:57-61` 的同一条注释）。
@@ -56,10 +56,11 @@ use gpui_kit::prelude::FluentBuilder as _;
 // 不是 gpui-component 的 `ScrollableElement::overflow_y_scrollbar`。
 use gpui_kit::{
     AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems,
 };
 
 use lithe_gpui_java::{JavaDiagnostic, JavaFileDiagnostics, JavaLanguageService};
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{tr, tr_args};
 
 use crate::diagnostics::Level;
@@ -480,7 +481,7 @@ impl ProblemsPane {
                     .when(shown, |this| this.bg(cx.theme().accent))
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle(level, cx)))
-                    .child(Icon::new(severity_icon(level)).size_3().text_color(color))
+                    .child(idea_icon_image(severity_icon(level), cx, rems(0.75)))
                     .child(div().text_xs().text_color(color).child(tr_args(
                         "lithe.diagnostics.severityCount",
                         &[
@@ -521,13 +522,15 @@ impl ProblemsPane {
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_collapsed(&path, cx)))
                     .child(
-                        Icon::new(if collapsed {
-                            IconName::ChevronRight
-                        } else {
-                            IconName::ChevronDown
-                        })
-                        .size_3()
-                        .text_color(cx.theme().muted_foreground),
+                        idea_icon_image(
+                            if collapsed {
+                                &idea::CARET_RIGHT_ICON
+                            } else {
+                                &idea::CARET_DOWN_ICON
+                            },
+                            cx,
+                            rems(0.75),
+                        ),
                     )
                     .child(
                         div()
@@ -565,7 +568,6 @@ impl ProblemsPane {
 
     /// 一条问题：严重度图标 + 文案 + `行:列`（+ 来源）。
     fn problem_row(&self, path: &Path, problem: &Problem, cx: &Context<Self>) -> AnyElement {
-        let color = severity_color(problem.level, cx);
         // 显示用 1 基（`S1_EDITOR_CURSOR` 与状态栏都是 1 基，用户看的也是 1 基）；
         // 落地时要的是 0 基，所以换算只发生在 `EditorPane::open_at` 里 —— 这里不动数据。
         let location = format!("{}:{}", problem.line + 1, problem.utf16_column + 1);
@@ -596,9 +598,7 @@ impl ProblemsPane {
                 this.open_problem(&path, &entry, window, cx);
             }))
             .child(
-                Icon::new(severity_icon(problem.level))
-                    .size_3()
-                    .text_color(color),
+                idea_icon_image(severity_icon(problem.level), cx, rems(0.75)),
             )
             .child(
                 v_flex()
@@ -665,11 +665,11 @@ impl ProblemsPane {
 }
 
 /// 严重度 → 图标（与通知中心同一套字形：错误 `CircleX`、警告 `TriangleAlert`、信息 `Info`）。
-fn severity_icon(level: Level) -> IconName {
+fn severity_icon(level: Level) -> &'static idea::IdeaIcon {
     match level {
-        Level::Error => IconName::CircleX,
-        Level::Warning => IconName::TriangleAlert,
-        Level::Info | Level::Hint => IconName::Info,
+        Level::Error => &idea::XCIRCLE_ICON,
+        Level::Warning => &idea::WARNING_CIRCLE_ICON,
+        Level::Info | Level::Hint => &idea::INFO_ICON,
     }
 }
 

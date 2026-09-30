@@ -42,14 +42,13 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia};
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
@@ -57,6 +56,7 @@ use gpui_kit::{
     rems,
 };
 
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{tr, tr_args};
 
 use crate::CommitChanges;
@@ -752,7 +752,9 @@ impl ChangesView {
         // `From<Pixels>`），所以这里先按当前 rem 基准求值（见 [`rem_px`]）。
         let more = Button::new("changes-more")
             .ghost()
-            .icon(IconName::Ellipsis)
+            .child(idea_icon_image(&idea::DOTS_THREE_ICON, cx, rems(1.)))
+            // 同 `icon_button`：图标走 `child` 后清掉普通按钮分支的 `px_2p5`，保住方形命中区。
+            .px_0()
             .tab_stop(false)
             .size_6()
             .rounded(rem_px(cx.theme().font_size, ICON_BUTTON_RADIUS))
@@ -800,7 +802,7 @@ impl ChangesView {
             )
             .child(self.icon_button(
                 "changes-refresh",
-                IconName::RotateCw,
+                idea_icon_image(&idea::REFRESH_ICON, cx, rems(1.)),
                 tr(REFRESH_KEY),
                 !matches!(self.state, LoadState::Loading),
                 cx.theme().font_size,
@@ -814,18 +816,21 @@ impl ChangesView {
     ///
     /// 用 `Button` 而不是自绘 `div`（`log_view.rs` 偏差 5 走了另一条路）：这里的按钮
     /// **需要悬停 tooltip**（"暂存 / 取消暂存"的语义只有 tooltip 说得清），而真源给这些
-    /// 头部按钮的也正是 `tooltip`（`git-view.tsx:481-492`）。代价是图标会被
-    /// `Button` 按 `size` 算成 `24 × 0.75 = 18px`（`gpui-component-0.6.6/src/button/button.rs:580-583`）
-    /// 而不是真源的 14 —— 这是本视图已知的一处像素偏差。
+    /// 头部按钮的也正是 `tooltip`（`git-view.tsx:481-492`）。
+    ///
+    /// 图标由调用方**预先构建**后传入：expui 字形走 [`idea_icon_image`]（彩色 `img()`，
+    /// 自带 16px 尺寸与原色，需在调用处拿 `cx`），映射表没有的 Lucide 字形走
+    /// `Icon::new(..)`（单色，跟主题前景色）。`Button` 的 `.icon(..)` 槽只收单色 `Icon`，
+    /// 装不下 `img()` 元素，所以统一走 `.child(..)`（`workbench::activity_bar` 同款）。
     ///
     /// `rem` 是逐层传进来的 rem 基准（`cx.theme().font_size`）：圆角那一槽必须交出 `Pixels`
     /// —— `Button::rounded` 只吃 `ButtonRounded`，而 `ButtonRounded` 只有 `From<Pixels>`
     /// （`gpui-component-0.6.6/src/button/button.rs:29-33`），**没有** `From<Rems>`；
-    /// 顺带也省得 `icon_button` 收一个 `&App`（它其余部分不读主题）。
+    /// 图标在调用处构建，本函数本身仍不收 `&App`。
     fn icon_button(
         &self,
         id: &'static str,
-        icon: IconName,
+        icon: AnyElement,
         label: SharedString,
         enabled: bool,
         rem: Pixels,
@@ -833,7 +838,10 @@ impl ChangesView {
     ) -> AnyElement {
         let button = Button::new(id)
             .ghost()
-            .icon(icon)
+            .child(icon)
+            // 图标走 `child` 而不是 `.icon(..)` 槽后，`Button` 会落入"普通按钮"分支补
+            // `px_2p5` 内衬；这里清掉，保住 24×24 的方形命中区（size_6 已定宽高）。
+            .px_0()
             .tab_stop(false)
             .size_6()
             .rounded(rem_px(rem, ICON_BUTTON_RADIUS))
@@ -888,15 +896,13 @@ impl ChangesView {
             .text_sm()
             .text_color(cx.theme().danger)
             .child(
-                Icon::new(IconName::TriangleAlert)
-                    .size_3p5()
-                    .flex_shrink_0()
-                    .text_color(cx.theme().danger),
+                // expui 的 warningDialog 自带语义色（明暗两套），不再 `text_color` 重染。
+                idea_icon_image(&idea::WARNING_CIRCLE_ICON, cx, rems(14. / 16.)),
             )
             .child(div().flex_1().min_w_0().child(message))
             .child(self.icon_button(
                 "changes-error-dismiss",
-                IconName::X,
+                idea_icon_image(&idea::X_ICON, cx, rems(1.)),
                 tr(CANCEL_KEY),
                 true,
                 cx.theme().font_size,
@@ -923,15 +929,13 @@ impl ChangesView {
             .text_sm()
             .text_color(cx.theme().success)
             .child(
-                Icon::new(IconName::Check)
-                    .size_3p5()
-                    .flex_shrink_0()
-                    .text_color(cx.theme().success),
+                // expui 的 successDialog 自带语义绿，不再 `text_color` 重染。
+                idea_icon_image(&idea::CHECK_ICON, cx, rems(14. / 16.)),
             )
             .child(div().flex_1().min_w_0().child(message))
             .child(self.icon_button(
                 "changes-notice-dismiss",
-                IconName::X,
+                idea_icon_image(&idea::X_ICON, cx, rems(1.)),
                 tr(CANCEL_KEY),
                 true,
                 cx.theme().font_size,
@@ -970,14 +974,13 @@ impl ChangesView {
                     .items_center()
                     .gap_2()
                     .child(
-                        Icon::new(IconName::TriangleAlert)
-                            // rem 而不是固定 px：真源这一条就是 `size-3.5`（`git-operation-banner.tsx:71-84`），
-                            // 即 3.5 × base font —— 走 `size_3p5()` 后横幅的图标与同一行的
-                            // `text_sm()` 文字一起随主题字号缩放（《编码指南》「渲染与组合」：
-                            // 混用 rem-based text 与 fixed-px icon 必须记录理由，这里没有理由，
-                            // 因为值本身就在 rem 档位上）。
-                            .size_3p5()
-                            .text_color(cx.theme().warning),
+                        // rem 而不是固定 px：真源这一条就是 `size-3.5`（`git-operation-banner.tsx:71-84`），
+                        // 即 3.5 × base font —— 传 `rems(14./16.)` 后横幅的图标与同一行的
+                        // `text_sm()` 文字一起随主题字号缩放（《编码指南》「渲染与组合」：
+                        // 混用 rem-based text 与 fixed-px icon 必须记录理由，这里没有理由，
+                        // 因为值本身就在 rem 档位上）。expui 的 warningDialog 自带语义色
+                        // （琥珀警），不再 `text_color` 重染。
+                        idea_icon_image(&idea::WARNING_CIRCLE_ICON, cx, rems(14. / 16.)),
                     )
                     .child(
                         div()
@@ -1119,7 +1122,7 @@ impl ChangesView {
         if unstaged > 0 {
             row = row.child(self.icon_button(
                 "changes-stage-all",
-                IconName::Plus,
+                idea_icon_image(&idea::PLUS_ICON, cx, rems(1.)),
                 tr(STAGE_ALL_KEY),
                 !self.busy,
                 cx.theme().font_size,
@@ -1129,7 +1132,8 @@ impl ChangesView {
         if staged > 0 {
             row = row.child(self.icon_button(
                 "changes-unstage-all",
-                IconName::Minus,
+                // expui `general/remove` 就是一条横杠，与 Lucide `Minus` 等价。
+                idea_icon_image(&idea::MINUS_ICON, cx, rems(1.)),
                 tr(UNSTAGE_ALL_KEY),
                 !self.busy,
                 cx.theme().font_size,
@@ -1208,10 +1212,11 @@ impl ChangesView {
         } else {
             Button::new(stage_button_element_id(row))
                 .ghost()
-                .icon(if staged {
-                    IconName::Minus
+                // `Minus`→`general/remove`、`Plus`→`general/add`，都走 expui 彩色 `img()`。
+                .child(if staged {
+                    idea_icon_image(&idea::MINUS_ICON, cx, rems(1.))
                 } else {
-                    IconName::Plus
+                    idea_icon_image(&idea::PLUS_ICON, cx, rems(1.))
                 })
                 .tab_stop(false)
                 .size_5()
@@ -1369,12 +1374,8 @@ impl ChangesView {
                     // ④ 工作区干净（真源是 `Empty tone="success"` + Check 图标，
                     // `git-status-panel.tsx:1220-1226`）。
                     return self.centered(
-                        Some(
-                            Icon::new(IconName::Check)
-                                .size_3p5()
-                                .text_color(cx.theme().success)
-                                .into_any_element(),
-                        ),
+                        // expui 的 successDialog 自带语义绿，不再 `text_color` 重染。
+                        Some(idea_icon_image(&idea::CHECK_ICON, cx, rems(14. / 16.))),
                         tr(CLEAN_KEY),
                         None,
                         cx,

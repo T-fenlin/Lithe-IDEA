@@ -1,4 +1,4 @@
-//! IntelliJ `expui` 图标的**资源路径清单**（`lithe-gpui/assets/ui-icons/idea/**`）+ 渲染 helper。
+//! IntelliJ `expui` 图标的**资源路径清单**（`lithe-gpui/assets/icons/idea/icons/**`）+ 渲染 helper。
 //!
 //! 本模块回答一个问题："`lithe-gpui/assets/` 里这套从 Windows 前端搬进来的图标，在 gpui 里怎么引用？"
 //!
@@ -43,7 +43,7 @@
 //! - `lithe-gpui/assets/icons/**`（4 套文件类型图标包，1 027 个 SVG）走**另一条路**
 //!   （"按文件名 / 后缀查 `extension.json` 再取 SVG"，不是一个名字一张图），实现在
 //!   [`file_icon`] 子模块；`explorer` / `editor` 的 `icon_for_file` 已经接上它。
-//! - 因此 [`idea`] 子模块只覆盖 `ui-icons/idea/**` 的 157 个文件（79 个图标 × 明/暗变体）。
+//! - 因此 [`idea`] 子模块只覆盖 `icons/idea/icons/**` 的 157 个文件（79 个图标 × 明/暗变体）。
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Theme;
@@ -268,6 +268,23 @@ pub fn idea_icon_image(icon: &idea::IdeaIcon, cx: &App, side: impl Into<Length>)
         Some(element) => element,
         None => idea_icon_svg_px(icon, cx, side).into_any_element(),
     }
+}
+
+/// 把 expui 图标包成 gpui-kit 的 `Icon`（**单色** `svg()` 管线），给**只收 `Icon` 的槽位**用。
+///
+/// `PopupMenu` 的菜单项、`CommandItem`（命令面板）与 `Button::icon(..)` 的图标槽位都只收
+/// `impl Into<Icon>`，塞不进 [`idea_icon_image`] 的彩色元素 —— 这类场合用本函数：
+/// 形状来自 expui（按 `is_dark` 挑明/暗变体），颜色交给槽位自己的 `text_color`（主题前景）。
+/// 能放任意元素的场合**一律** [`idea_icon_image`]（`img()` 保留原色），不要用本函数。
+///
+/// ## 为什么单色下明暗变体仍然要挑
+///
+/// `svg()` 管线只取 alpha，SVG 里的 `fill` 色值会被丢掉，但 expui 有 12 对明暗变体
+/// **几何形状也不同**（见 [`idea_icon_svg`] 的文档），所以路径仍要按主题二选一。
+#[must_use]
+pub fn idea_icon_mono(icon: &idea::IdeaIcon, is_dark: bool) -> gpui_kit::component::Icon {
+    let path: SharedString = icon.path(is_dark).into();
+    gpui_kit::component::Icon::empty().path(path)
 }
 
 /// [`idea_icon_svg`] 的显式尺寸版本。

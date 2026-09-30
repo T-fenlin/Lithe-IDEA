@@ -92,7 +92,7 @@ use gpui_kit::base::{HandleEdge, h_flex, resize_handle, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::notification::{Notification, NotificationType};
-use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _, resize_handle_appearance};
+use gpui_kit::component::{ActiveTheme as _, Icon, Root, WindowExt as _, resize_handle_appearance};
 use gpui_kit::{
     Anchor, AnyElement, App, AppContext as _, Axis, ClickEvent, Context, Div, Empty, Entity,
     Global, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _,
@@ -128,7 +128,7 @@ use lithe_gpui_settings::{
     Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, Overrides,
     RecentProjects, resolve_overrides,
 };
-use lithe_gpui_shared::icons::idea;
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::workspace_config::{ToolchainPaths, load_local_toolchain};
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
@@ -625,7 +625,11 @@ pub(crate) struct ActionFlags {
 /// 没有放进来的（有意）：`toggle-sidebar`（左栏可见性）—— 本侧左栏是常驻的、没有收起态，
 /// 放进来就是"点了没反应"；窗口 / 缩放 / pane / git / github / markdown 等动作对应的能力
 /// 在 gpui 侧还不存在，理由见 `lithe-gpui/PLAN.md` 的阶段 6 第二半。
-pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction {
+pub(crate) fn command_action(
+    id: CommandId,
+    flags: ActionFlags,
+    is_dark: bool,
+) -> CommandAction {
     use CommandId as C;
     // 只有命令面板里真的会出现的动作才需要分类与图标。
     // [`C::SaveBuffer`] / [`C::OpenCommandPalette`] / [`C::NavigateToDefinition`] /
@@ -633,27 +637,27 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
     // 见 `COMMAND_ORDER` 的说明），所以给它们一个中性分类与图标而不是把它们排除在
     // 动作表之外 —— 否则菜单项就得自己再写一份 label / description。
     let (category, icon) = match id {
-        C::OpenSettings | C::OpenAppearanceSettings => (Category::Settings, IconName::Settings),
+        C::OpenSettings | C::OpenAppearanceSettings => (Category::Settings, idea_icon_mono(&idea::GEAR_ICON, is_dark)),
         // 主题动作在两套界面里都用「调色板」字形（真源 `settings-actions.tsx` 的 `PaletteIcon`）。
-        C::SwitchToLightTheme | C::SwitchToDarkTheme => (Category::Settings, IconName::Palette),
-        C::ToggleTerminal => (Category::View, IconName::SquareTerminal),
-        C::ToggleMaven => (Category::View, IconName::Package),
-        C::ToggleStatusBar => (Category::View, IconName::PanelBottom),
-        C::ToggleMenuBar => (Category::View, IconName::List),
-        C::SaveBuffer => (Category::View, IconName::Save),
-        C::OpenCommandPalette => (Category::View, IconName::Search),
-        C::NavigateToDefinition => (Category::View, IconName::ArrowRight),
+        C::SwitchToLightTheme | C::SwitchToDarkTheme => (Category::Settings, idea_icon_mono(&idea::PALETTE_ICON, is_dark)),
+        C::ToggleTerminal => (Category::View, Icon::new(IconName::SquareTerminal)),
+        C::ToggleMaven => (Category::View, Icon::new(IconName::Package)),
+        C::ToggleStatusBar => (Category::View, Icon::new(IconName::PanelBottom)),
+        C::ToggleMenuBar => (Category::View, Icon::new(IconName::List)),
+        C::SaveBuffer => (Category::View, idea_icon_mono(&idea::FLOPPY_DISK_ICON, is_dark)),
+        C::OpenCommandPalette => (Category::View, idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark)),
+        C::NavigateToDefinition => (Category::View, idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark)),
         // B1 的八条同样**不在面板里**（`COMMAND_ORDER` 没有它们，入口只有主菜单「文件」）。
         // 它们的可见图标在 `MenuAction::icon`（菜单那一份才是用户看得到的），
         // 这里给同一批字形只为保持"两处入口视觉同源"这条既有口径。
-        C::OpenFile => (Category::View, IconName::FolderOpen),
+        C::OpenFile => (Category::View, idea_icon_mono(&idea::FOLDER_ICON, is_dark)),
         C::CloseTab
         | C::CloseOtherTabs
         | C::CloseAllTabs
         | C::CloseSavedTabs
         | C::CloseTabsToLeft
-        | C::CloseTabsToRight => (Category::View, IconName::X),
-        C::ReopenClosedTab => (Category::View, IconName::RotateCcw),
+        | C::CloseTabsToRight => (Category::View, idea_icon_mono(&idea::X_ICON, is_dark)),
+        C::ReopenClosedTab => (Category::View, idea_icon_mono(&idea::REFRESH_ICON, is_dark)),
     };
 
     // 标签 / 描述：**能复用真源既有键就复用**（逐条的键与出处写在 `shared/src/i18n.rs`
@@ -2013,9 +2017,10 @@ impl ShellWorkspace {
     /// `right_visible && right_view == Maven` —— 这样面板里的标签朝向与界面上看到的一致。
     pub(crate) fn command_actions(&self, cx: &App) -> Vec<CommandAction> {
         let flags = self.action_flags(cx);
+        let is_dark = cx.theme().is_dark();
         visible_commands(flags)
             .into_iter()
-            .map(|id| command_action(id, flags))
+            .map(|id| command_action(id, flags, is_dark))
             .collect()
     }
 
@@ -2685,7 +2690,7 @@ impl ShellWorkspace {
         let branch = read_branch(&self.root).unwrap_or_else(|| "—".to_string());
 
         entries.push(StatusEntry::new(project_name).with_file_icon(&active_file, cx));
-        // 真源：`ui-icons/idea/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
+        // 真源：`icons/idea/icons/expui/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
         entries.push(
             StatusEntry::new(SharedString::from(branch)).with_idea_icon(&idea::GIT_BRANCH_ICON, cx),
         );
@@ -2794,14 +2799,14 @@ impl ShellWorkspace {
             // 闭锁字形。要变成真实值需要 `EditorState::is_readonly()` 接进来
             // （真源 `footer-editor-status.tsx:102` 用 `LockIcon` / `LockOpenIcon` 区分），
             // 属于阶段 9 范围外的状态栏打磨。
-            // 真源：`ui-icons/idea/expui/general/locked.svg(+_dark)` —— 真机 `LockIcon`。
+            // 真源：`icons/idea/icons/expui/general/locked.svg(+_dark)` —— 真机 `LockIcon`。
             StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::LOCK_ICON, cx),
             // ⚠️ 内存条目：真值来自 10s 轮询的原生命令 `get_application_memory_usage`
             // （`footer-editor-status.tsx:24,45-67`），属数据层，本阶段不做。
             StatusEntry::new(SharedString::from("总计 0.0 MB · Lithe 0.0 MB"))
                 .with_icon(IconName::HardDrive),
             // ⚠️ Git 更改数：要等 `git.*` 提供工作区状态，本轮仍是空占位（只有图标）。
-            // 真源：`ui-icons/idea/expui/general/successDialog.svg(+_dark)` —— 真机 `CheckCircleIcon`。
+            // 真源：`icons/idea/icons/expui/general/successDialog.svg(+_dark)` —— 真机 `CheckCircleIcon`。
             StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::CHECK_CIRCLE_ICON, cx),
         ]
     }
@@ -4496,7 +4501,7 @@ fn read_branch(root: &std::path::Path) -> Option<String> {
 /// 左侧活动栏的图标项。
 ///
 /// 图标来源逐项见 `activity_bar.rs` 模块文档的对照表：**有真源 SVG 的用
-/// `lithe-gpui/assets/ui-icons/idea/**`（`ActivityItem::idea`），真源只有内联 React 组件或
+/// `lithe-gpui/assets/icons/idea/icons/**`（`ActivityItem::idea`），真源只有内联 React 组件或
 /// 本来就是 Lucide 的保持 `IconName`（`ActivityItem::new`）**。
 ///
 /// ⚠️ **左栏没有 Maven 项**（阶段 6 第一半改）：真机的左栏底部组第一项是 maven
@@ -4511,21 +4516,21 @@ fn activity_items() -> Vec<ActivityItem> {
     // 顶部组：`sidebar-pane-selector.tsx:311-319` 的 files / git / search。
     // 底部组：上面的 `SIDEBAR_BOTTOM_ACTIVITY_ITEM_IDS` 去掉 maven。
     vec![
-        // 真源：`ui-icons/idea/expui/general/listFiles.svg(+_dark)` —— 真机 `FilesIcon`
+        // 真源：`icons/idea/icons/expui/general/listFiles.svg(+_dark)` —— 真机 `FilesIcon`
         // 的同一个文件（`windows/tauri/src/ui/icons/idea-assets.generated.ts:FilesIcon`）。
         ActivityItem::idea(&idea::FILES_ICON, tr("lithe.workbench.project")),
-        // 真源：`ui-icons/idea/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
+        // 真源：`icons/idea/icons/expui/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
         ActivityItem::idea(&idea::GIT_BRANCH_ICON, tr("lithe.workbench.changes")),
-        // 真源：`ui-icons/idea/expui/general/search.svg(+_dark)` —— 真机 `MagnifyingGlassIcon`。
+        // 真源：`icons/idea/icons/expui/general/search.svg(+_dark)` —— 真机 `MagnifyingGlassIcon`。
         ActivityItem::idea(&idea::MAGNIFYING_GLASS_ICON, tr("lithe.workbench.search")),
         // ⚠️ 保持 Lucide：真机 `RunIcon`（`features/run/components/run-icon.tsx`）是**内联
         // React 组件**，只有一条 stroke path、没有 SVG 文件，搬不动（见
         // `lithe-gpui/research/icon-asset-inventory.md` 第 4 节）。
-        ActivityItem::new(IconName::Play, tr("lithe.workbench.run")).bottom(true),
+        ActivityItem::idea(&idea::PLAY_ICON, tr("lithe.workbench.run")).bottom(true),
         // ⚠️ 保持 Lucide：真机 `TerminalWindowIcon` 走 `Nucleo.IconSquareTerminalOutline18`
         // → `lucide-react` 的 `square-terminal`，**本来就是 Lucide，已经是 1:1**。
         ActivityItem::new(IconName::SquareTerminal, tr("lithe.workbench.terminal")).bottom(true),
-        // 真源：`ui-icons/idea/expui/general/warningDialog.svg(+_dark)` —— 真机 `WarningIcon`。
+        // 真源：`icons/idea/icons/expui/general/warningDialog.svg(+_dark)` —— 真机 `WarningIcon`。
         ActivityItem::idea(
             &idea::WARNING_CIRCLE_ICON,
             tr("lithe.workbench.diagnostics"),
@@ -4534,7 +4539,7 @@ fn activity_items() -> Vec<ActivityItem> {
         // ⚠️ 保持 Lucide：真机 `GitGraphIcon` 走 `Nucleo.IconGitGraphOutline18` → Lucide
         // `git-graph`，同样是 1:1。
         ActivityItem::new(IconName::GitGraph, tr("lithe.workbench.gitLog")).bottom(true),
-        // 真源：`ui-icons/idea/expui/general/settings.svg(+_dark)` —— 真机 `GearIcon`
+        // 真源：`icons/idea/icons/expui/general/settings.svg(+_dark)` —— 真机 `GearIcon`
         // （与 `GearSixIcon` 同一张图，见生成器的别名表）。
         ActivityItem::idea(&idea::GEAR_ICON, tr("lithe.workbench.settings")).bottom(true),
     ]
@@ -4611,7 +4616,7 @@ fn right_activity_items(store: &Entity<lithe_gpui_notify::Store>, cx: &App) -> V
         // `legacyIconCompatibility.PuzzlePiece = lucideIcons.Puzzle`，**真源物就是 Lucide
         // `puzzle`**，没有 SVG 文件可搬；gpui 用的 `IconName::Puzzle` 是同一个字形。
         ActivityItem::new(IconName::Puzzle, tr("lithe.extensions.title")),
-        // 真源：`ui-icons/idea/expui/toolwindows/notifications.svg(+_dark)` —— 真机
+        // 真源：`icons/idea/icons/expui/toolwindows/notifications.svg(+_dark)` —— 真机
         // `BellIcon`（`features/notifications/components/notifications-trigger.tsx:43`）。
         bell,
         // ⚠️ 保持 Lucide：真机 `MavenIcon`（`features/maven/components/maven-icon.tsx`）是

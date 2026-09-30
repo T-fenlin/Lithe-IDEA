@@ -20,13 +20,38 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AbsoluteLength, AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla,
+    AbsoluteLength, AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla, Length,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, relative,
     rems,
 };
 
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{tr, tr_args};
+
+/// 图标双源：expui 有等价字形的走彩色 `img()`（`idea_icon_image`），没有的保留 Lucide 单色。
+/// 与 `workbench::activity_bar::ActivityIcon` 同一口径；尺寸由 `element` 的 `side` 决定。
+enum LogIcon {
+    Idea(&'static idea::IdeaIcon),
+    Lucide(IconName),
+}
+
+impl LogIcon {
+    fn element(self, cx: &App, side: impl Into<Length>, enabled: bool) -> AnyElement {
+        match self {
+            Self::Lucide(name) => {
+                let color = if enabled {
+                    cx.theme().foreground
+                } else {
+                    cx.theme().muted_foreground
+                };
+                let side = side.into();
+                Icon::new(name).w(side).h(side).text_color(color).into_any_element()
+            }
+            Self::Idea(icon) => idea_icon_image(icon, cx, side),
+        }
+    }
+}
 
 use crate::model::{
     AUTHOR_COLUMN_WIDTH, ButtonHandler, COMMIT_CONTENT_MIN_WIDTH, COMMIT_FILE_INDENT_BASE,
@@ -479,17 +504,12 @@ impl BottomPane {
     /// [`Tooltip`] 包成 `AnyView`；无障碍名继续用同一份文案（`aria_label`）。
     fn icon_button(
         id: (&'static str, usize),
-        icon: IconName,
+        icon: LogIcon,
         label: SharedString,
         enabled: bool,
         handler: ButtonHandler,
         cx: &App,
     ) -> impl IntoElement {
-        let color = if enabled {
-            cx.theme().foreground
-        } else {
-            cx.theme().muted_foreground
-        };
         let tooltip = label.clone();
 
         div()
@@ -507,7 +527,7 @@ impl BottomPane {
                     .on_click(move |event, window, cx| handler(event, window, cx))
             })
             .when(!enabled, |this| this.opacity(0.4))
-            .child(Icon::new(icon).size_3p5().text_color(color))
+            .child(icon.element(cx, rems(14. / 16.), enabled))
     }
 
     /// 引用树工具栏按钮：32×32、图标 16、圆角 4.8（`git-reference-tree.tsx:146`）。
@@ -515,17 +535,12 @@ impl BottomPane {
     /// 悬停提示与无障碍名的挂法与 [`Self::icon_button`] 相同（同样是自绘 `div`，不是 `Button`）。
     fn toolbar_button(
         id: (&'static str, usize),
-        icon: IconName,
+        icon: LogIcon,
         label: SharedString,
         enabled: bool,
         handler: ButtonHandler,
         cx: &App,
     ) -> impl IntoElement {
-        let color = if enabled {
-            cx.theme().foreground
-        } else {
-            cx.theme().muted_foreground
-        };
         let tooltip = label.clone();
         div()
             .id(id)
@@ -542,7 +557,7 @@ impl BottomPane {
                     .on_click(move |event, window, cx| handler(event, window, cx))
             })
             .when(!enabled, |this| this.opacity(0.3))
-            .child(Icon::new(icon).size_4().text_color(color))
+            .child(icon.element(cx, rems(1.), enabled))
     }
 
     /// 标题栏。`git-log-title-bar.tsx:28-72`。
@@ -593,11 +608,7 @@ impl BottomPane {
             // 底色 `bg-surface`（`git-log-title-bar.tsx:28`）；主题里最接近的是 `tab_bar`。
             .bg(cx.theme().tab_bar)
             .text_sm()
-            .child(
-                Icon::new(IconName::GitBranch)
-                    .size_3p5()
-                    .text_color(cx.theme().muted_foreground),
-            )
+            .child(idea_icon_image(&idea::GIT_BRANCH_ICON, cx, rems(14. / 16.)))
             // `workbench.gitLog` = 提交记录（`locale.ts:5910`）。
             .child(
                 div()
@@ -627,7 +638,7 @@ impl BottomPane {
             // 刷新（`git.log.refresh`，`locale.ts:7191`）。
             .child(Self::icon_button(
                 ("bottom-git-refresh", 0),
-                IconName::RotateCw,
+                LogIcon::Idea(&idea::REFRESH_ICON),
                 tr("lithe.git.log.refresh"),
                 self.load_state != LoadState::Loading,
                 refresh,
@@ -636,7 +647,7 @@ impl BottomPane {
             // 设置（`git.log.settings`，`locale.ts:7219`）：设置面板不属本步范围 → 禁用。
             .child(Self::icon_button(
                 ("bottom-git-settings", 0),
-                IconName::Settings,
+                LogIcon::Idea(&idea::GEAR_ICON),
                 tr("lithe.git.log.settings"),
                 false,
                 settings,
@@ -653,7 +664,7 @@ impl BottomPane {
             // 隐藏（`git.log.hide`，`locale.ts:7192`）。
             .child(Self::icon_button(
                 ("bottom-git-hide", 0),
-                IconName::Minus,
+                LogIcon::Idea(&idea::MINUS_ICON),
                 tr("lithe.git.log.hide"),
                 true,
                 hide,
@@ -784,19 +795,19 @@ impl BottomPane {
                     .flex_1()
                     .min_w(rems(FILTER_INPUT_MIN_WIDTH / 16.))
                     .max_w(rems(FILTER_INPUT_MAX_WIDTH / 16.))
-                    .prefix(
-                        Icon::new(IconName::Search)
-                            .size_3p5()
-                            .text_color(cx.theme().muted_foreground),
-                    ),
+                    .prefix(idea_icon_image(
+                        &idea::MAGNIFYING_GLASS_ICON,
+                        cx,
+                        rems(14. / 16.),
+                    )),
             )
             .child(self.scope_button(this, cx))
             .child(Self::icon_button(
                 ("bottom-git-decorations", 0),
                 if self.show_decorations {
-                    IconName::Eye
+                    LogIcon::Idea(&idea::EYE_ICON)
                 } else {
-                    IconName::EyeOff
+                    LogIcon::Idea(&idea::EYE_SLASH_ICON)
                 },
                 if self.show_decorations {
                     tr("lithe.git.log.hideDecorations")
@@ -1189,7 +1200,7 @@ impl BottomPane {
             .bg(cx.theme().tab_bar.opacity(0.6))
             .child(Self::toolbar_button(
                 ("bottom-git-ref-expand", 0),
-                IconName::UnfoldVertical,
+                LogIcon::Lucide(IconName::UnfoldVertical),
                 tr("lithe.git.expandAll"),
                 has_references,
                 expand,
@@ -1197,7 +1208,7 @@ impl BottomPane {
             ))
             .child(Self::toolbar_button(
                 ("bottom-git-ref-collapse", 0),
-                IconName::FoldVertical,
+                LogIcon::Lucide(IconName::FoldVertical),
                 tr("lithe.git.collapseAll"),
                 has_references,
                 collapse,
@@ -1213,7 +1224,7 @@ impl BottomPane {
             )
             .child(Self::toolbar_button(
                 ("bottom-git-ref-mine", 0),
-                IconName::ListFilter,
+                LogIcon::Idea(&idea::FUNNEL_ICON),
                 if show_my_branches_only {
                     tr("lithe.git.log.toolbar.showAllBranches")
                 } else {
@@ -1227,7 +1238,7 @@ impl BottomPane {
             // 新建分支要 `git.write`（不在 6 条命令里）→ 禁用占位。
             .child(Self::toolbar_button(
                 ("bottom-git-ref-create", 0),
-                IconName::Plus,
+                LogIcon::Idea(&idea::PLUS_ICON),
                 tr("lithe.git.log.toolbar.newBranch"),
                 false,
                 create_branch,
@@ -1290,11 +1301,9 @@ impl BottomPane {
             } else {
                 cx.theme().muted_foreground
             })),
-            None if is_group => row.child(
-                Icon::new(IconName::Folder)
-                    .size_3p5()
-                    .text_color(cx.theme().muted_foreground),
-            ),
+            None if is_group => {
+                row.child(idea_icon_image(&idea::FOLDER_ICON, cx, rems(14. / 16.)))
+            }
             None => row,
         };
 
@@ -1426,15 +1435,15 @@ impl BottomPane {
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| pane.toggle_section(kind, cx));
                     })
-                    .child(
-                        Icon::new(if collapsed {
-                            IconName::ChevronRight
+                    .child(idea_icon_image(
+                        if collapsed {
+                            &idea::CARET_RIGHT_ICON
                         } else {
-                            IconName::ChevronDown
-                        })
-                        .size_3()
-                        .text_color(cx.theme().muted_foreground),
-                    )
+                            &idea::CARET_DOWN_ICON
+                        },
+                        cx,
+                        rems(0.75),
+                    ))
                     .child(kind.title())
                     .child(div().flex_1())
                     .child(
@@ -1500,15 +1509,15 @@ impl BottomPane {
                                         let _ =
                                             this.update(cx, |pane, cx| pane.toggle_group(&id, cx));
                                     })
-                                    .child(
-                                        Icon::new(if collapsed_group {
-                                            IconName::ChevronRight
+                                    .child(idea_icon_image(
+                                        if collapsed_group {
+                                            &idea::CARET_RIGHT_ICON
                                         } else {
-                                            IconName::ChevronDown
-                                        })
-                                        .size_3()
-                                        .text_color(cx.theme().muted_foreground),
-                                    )
+                                            &idea::CARET_DOWN_ICON
+                                        },
+                                        cx,
+                                        rems(0.75),
+                                    ))
                                     .into_any_element(),
                             )
                         } else {
@@ -1660,7 +1669,7 @@ impl BottomPane {
                             // 「打开提交差异」要 `git.diff`（不在 6 条命令里）→ 禁用。
                             .child(Self::icon_button(
                                 ("bottom-git-open-diff", 0),
-                                IconName::GitCompare,
+                                LogIcon::Idea(&idea::GIT_DIFF_ICON),
                                 tr("lithe.git.log.openCommitDiff"),
                                 false,
                                 handler(|_event, _window, _cx| {}),
@@ -1890,12 +1899,13 @@ impl BottomPane {
         // 文案逐字取自 `git.console.find/wrap/scrollToEnd/cancel/clear/copy`
         // （`locale.ts:4473,4493,4494,4557,4558,4559`）。
         for (index, (icon, label)) in [
-            (IconName::Search, tr("lithe.git.console.find")),
-            (IconName::TextWrap, tr("lithe.git.console.wrap")),
-            (IconName::ArrowDown, tr("lithe.git.console.scrollToEnd")),
-            (IconName::CircleSlash, tr("lithe.git.console.cancel")),
-            (IconName::Trash, tr("lithe.git.console.clear")),
-            (IconName::Copy, tr("lithe.git.console.copy")),
+            (LogIcon::Idea(&idea::MAGNIFYING_GLASS_ICON), tr("lithe.git.console.find")),
+            // TextWrap / CircleSlash 在 expui 里没有等价字形，保留 Lucide。
+            (LogIcon::Lucide(IconName::TextWrap), tr("lithe.git.console.wrap")),
+            (LogIcon::Idea(&idea::ARROW_DOWN_ICON), tr("lithe.git.console.scrollToEnd")),
+            (LogIcon::Lucide(IconName::CircleSlash), tr("lithe.git.console.cancel")),
+            (LogIcon::Idea(&idea::TRASH_ICON), tr("lithe.git.console.clear")),
+            (LogIcon::Idea(&idea::COPY_ICON), tr("lithe.git.console.copy")),
         ]
         .into_iter()
         .enumerate()

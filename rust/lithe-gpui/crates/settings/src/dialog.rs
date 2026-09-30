@@ -59,7 +59,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, rems,
 };
 
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
 use lithe_gpui_shared::workspace_config::{
     OverrideOrigin, OverrideOrigins, ToolchainPaths, load_local_toolchain, save_local_toolchain,
 };
@@ -395,20 +395,20 @@ impl Category {
 
     /// 分类图标。Windows 用 `GearSixIcon` / `CodeBlockIcon` / `TerminalWindowIcon` 等
     /// **expui** 图标；本侧的分类图标继续走 Lucide（真源那几个字形已经搬进
-    /// `lithe-gpui/assets/ui-icons/`，但分类栏这一列的图标不在本次范围内），逐个取语义最近的一个。
-    fn icon(self) -> IconName {
+    /// `lithe-gpui/assets/icons/idea/icons/`，但分类栏这一列的图标不在本次范围内），逐个取语义最近的一个。
+    fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
         match self {
-            Self::General => IconName::Settings,
-            Self::Appearance => IconName::Palette,
-            Self::Editor => IconName::Code,
-            Self::Terminal => IconName::SquareTerminal,
-            Self::Project => IconName::FolderCog,
-            Self::Run => IconName::Play,
-            Self::Keyboard => IconName::Keyboard,
-            Self::Lsp => IconName::Braces,
-            Self::Git => IconName::GitBranch,
-            Self::Logs => IconName::ScrollText,
-            Self::Updates => IconName::CloudDownload,
+            Self::General => idea_icon_mono(&idea::GEAR_ICON, is_dark),
+            Self::Appearance => idea_icon_mono(&idea::PALETTE_ICON, is_dark),
+            Self::Editor => Icon::new(IconName::Code),
+            Self::Terminal => Icon::new(IconName::SquareTerminal),
+            Self::Project => Icon::new(IconName::FolderCog),
+            Self::Run => idea_icon_mono(&idea::PLAY_ICON, is_dark),
+            Self::Keyboard => idea_icon_mono(&idea::KEYBOARD_ICON, is_dark),
+            Self::Lsp => Icon::new(IconName::Braces),
+            Self::Git => idea_icon_mono(&idea::GIT_BRANCH_ICON, is_dark),
+            Self::Logs => Icon::new(IconName::ScrollText),
+            Self::Updates => idea_icon_mono(&idea::DOWNLOAD_ICON, is_dark),
         }
     }
 }
@@ -1293,9 +1293,9 @@ impl SettingsDialog {
             .bg(cx.theme().popover)
             .text_color(cx.theme().foreground)
             // 头部齿轮：改用**Windows 真源**的 IntelliJ `expui` 图标
-            // （`ui-icons/idea/expui/general/settings.svg`，深色另有 `settings_dark.svg`），
+            // （`icons/idea/icons/expui/general/settings.svg`，深色另有 `settings_dark.svg`），
             // 不再用 Lucide 的 `IconName::Settings`。这是"图标资源接线"的第一处真实调用点：
-            // 真源文件已在 `lithe-gpui/assets/ui-icons/`，注册（`LitheAssets`）与清单
+            // 真源文件已在 `lithe-gpui/assets/icons/idea/icons/`，注册（`LitheAssets`）与清单
             // （`shared::icons::idea`）已就位，helper 按主题挑明暗。
             // 详细的四步引用规范见 `lithe-gpui/research/icon-asset-inventory.md` 第 7 节。
             .child(idea_icon_image(&idea::GEAR_ICON, cx, rems(1.)))
@@ -1311,7 +1311,9 @@ impl SettingsDialog {
                 Button::new("settings-close")
                     .small()
                     .ghost()
-                    .icon(IconName::Close)
+                    .child(idea_icon_image(&idea::X_ICON, cx, rems(1.)))
+                    // 图标走 `child` 后 Button 退出"图标按钮"分支补内衬；清掉保住命中区。
+                    .px_0()
                     .accessibility_label(tr("lithe.tabs.close"))
                     .tooltip(tr("lithe.tabs.close"))
                     .on_click(|_, window, cx| window.close_dialog(cx)),
@@ -1346,7 +1348,7 @@ impl SettingsDialog {
                             .min_w_0()
                             .items_center()
                             .gap_2p5()
-                            .child(Icon::new(category.icon()).size_4())
+                            .child(category.icon(cx.theme().is_dark()).size_4())
                             .child(
                                 div()
                                     .min_w_0()
@@ -3577,7 +3579,7 @@ impl SettingsDialog {
                                 .gap_3()
                                 .media(
                                     EmptyMedia::new().child(
-                                        Icon::new(self.category.icon())
+                                        self.category.icon(cx.theme().is_dark())
                                             .size_10()
                                             .text_color(cx.theme().muted_foreground),
                                     ),

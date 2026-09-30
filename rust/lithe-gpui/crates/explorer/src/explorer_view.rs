@@ -24,7 +24,7 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tree::{Tree, TreeEvent};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, StyledExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
@@ -32,7 +32,7 @@ use gpui_kit::{
     Styled as _, Subscription, WeakEntity, Window, div, relative, rems,
 };
 
-use lithe_gpui_shared::icons::FileIcon;
+use lithe_gpui_shared::icons::{idea, idea_icon_image, FileIcon};
 use lithe_gpui_shared::tr;
 
 use crate::model::{
@@ -509,15 +509,15 @@ impl Explorer {
                     .mr_0p5()
                     .flex_shrink_0()
                     .justify_center()
-                    .child(
-                        Icon::new(if expanded {
-                            IconName::ChevronDown
+                    .child(idea_icon_image(
+                        if expanded {
+                            &idea::CARET_DOWN_ICON
                         } else {
-                            IconName::ChevronRight
-                        })
-                        .size_3()
-                        .text_color(cx.theme().muted_foreground),
-                    )
+                            &idea::CARET_RIGHT_ICON
+                        },
+                        cx,
+                        rems(0.75),
+                    ))
                     .into_any_element()
             } else {
                 div().size_4().mr_0p5().flex_shrink_0().into_any_element()

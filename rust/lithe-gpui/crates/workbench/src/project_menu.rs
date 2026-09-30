@@ -172,6 +172,7 @@ use gpui_kit::base::{Align, ElementExt as _, Placement, Positioner, h_flex, v_fl
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, DismissEvent, Entity,
     FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
@@ -354,11 +355,11 @@ impl PanelAction {
 
     /// 图标：真源三个 lucide 字形 `plus` / `folder-open` / `git-branch` 在 gpui-kit 的资源目录里
     /// **都在**（`gpui-kit-assets-0.6.6/assets/icons/`），所以 `IconName` 直接用同名变体。
-    fn icon(self) -> IconName {
+    fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
         match self {
-            Self::NewProject => IconName::Plus,
-            Self::OpenFolder => IconName::FolderOpen,
-            Self::CloneRepository => IconName::GitBranch,
+            Self::NewProject => idea_icon_mono(&idea::PLUS_ICON, is_dark),
+            Self::OpenFolder => idea_icon_mono(&idea::FOLDER_ICON, is_dark),
+            Self::CloneRepository => idea_icon_mono(&idea::GIT_BRANCH_ICON, is_dark),
         }
     }
 
@@ -526,7 +527,7 @@ fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) ->
             .rounded(rems(ROW_RADIUS_SPEC / 16.))
             // 图标 16×16：真源由 `[&_svg:not([class*='size-'])]:size-4` 决定
             // （`ui/dropdown.tsx:782`），`Icon` 侧显式 `.size_4()`（`Icon::xsmall()` 是 12）。
-            .child(Icon::new(action.icon()).size_4().text_color(color))
+            .child(action.icon(cx.theme().is_dark()).size_4().text_color(color))
             .child(
                 div()
                     .min_w_0()

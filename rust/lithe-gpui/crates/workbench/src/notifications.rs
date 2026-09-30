@@ -59,10 +59,11 @@ use gpui_kit::prelude::FluentBuilder as _;
 // （`gpui-pre-0.3.6/src/elements/div.rs:1300`），而 `Div` 只实现前者
 // （`:1871`）—— 所以可点的 `div()` 必须先 `.id(..)` 变成 `Stateful<Div>`
 // （`Stateful` 的实现在 `:4074`）。忘了 `.id` 的表现是「no method named on_click」。
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, Hsla, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, WeakEntity, Window, div,
+    Styled as _, Subscription, WeakEntity, Window, div, rems,
 };
 
 use lithe_gpui_notify::{Entry, EntryId, Severity, Store, matches_text};
@@ -147,11 +148,11 @@ fn severity_color(severity: Severity, cx: &App) -> Hsla {
 /// ⚠️ 中文文档镜像里写的 `IconName::AlertTriangle` / `CheckCircle` / `XCircle`
 /// **在 0.6.6 里都不存在**（`gpui-kit-assets-0.6.6/default-icons.txt` 只有 101 个默认
 /// 字形），别照抄那一页。
-fn severity_icon(severity: Severity) -> IconName {
+fn severity_icon(severity: Severity) -> &'static idea::IdeaIcon {
     match severity {
-        Severity::Info => IconName::Info,
-        Severity::Warning => IconName::TriangleAlert,
-        Severity::Error => IconName::CircleX,
+        Severity::Info => &idea::INFO_ICON,
+        Severity::Warning => &idea::WARNING_CIRCLE_ICON,
+        Severity::Error => &idea::XCIRCLE_ICON,
     }
 }
 
@@ -352,14 +353,20 @@ impl NotificationPanel {
                     .small()
                     .cleanable(true)
                     .flex_1()
-                    .prefix(Icon::new(IconName::Search).text_color(cx.theme().muted_foreground))
+                    .prefix(idea_icon_image(
+                        &idea::MAGNIFYING_GLASS_ICON,
+                        cx,
+                        rems(14. / 16.),
+                    ))
                     .aria_label(tr("lithe.notifications.search")),
             )
             .child(
                 Button::new("lithe-notifications-clear-all")
                     .ghost()
                     .small()
-                    .icon(IconName::Delete)
+                    .child(idea_icon_image(&idea::TRASH_ICON, cx, rems(1.)))
+                    // 图标走 `child` 后 Button 退出"图标按钮"分支补内衬；清掉保住命中区。
+                    .px_0()
                     .disabled(total == 0)
                     .tooltip(tr("lithe.notifications.clearAll"))
                     .accessibility_label(tr("lithe.notifications.clearAll"))
@@ -417,7 +424,6 @@ impl NotificationPanel {
     /// `cx.stop_propagation()`，否则「删除」会连带把整行也展开。这里选择不嵌套。
     fn row(&self, row: &Row, cx: &mut Context<Self>) -> AnyElement {
         let expanded = self.expanded == Some(row.id);
-        let color = severity_color(row.severity, cx);
         let id = row.id;
 
         let mut column = v_flex()
@@ -435,11 +441,9 @@ impl NotificationPanel {
                     .gap_2()
                     .items_center()
                     .child(
-                        Icon::new(severity_icon(row.severity))
-                            .size_4()
-                            .flex_shrink_0()
-                            .text_color(color),
-                    )
+                    // 语义色由 expui 资产自带（img() 管线），不再靠 text_color 上色。
+                    idea_icon_image(severity_icon(row.severity), cx, rems(1.)),
+                )
                     .child(
                         div()
                             .flex_1()

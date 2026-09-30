@@ -108,6 +108,7 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, DefiniteLength, Entity, Focusable as _, FontWeight,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
@@ -210,7 +211,7 @@ impl PanelTab {
     /// 图标：真源 `FolderOpenIcon` / `GitBranchIcon` / `NodesIcon`（`git-branch-manager.tsx:609-629`）。
     ///
     /// ⚠️ **`工作树` 那一颗是替代品**：真源的 `NodesIcon` 是 Windows 侧的图标代理
-    /// （`ui-icons` 的 `expui` 集或 React 内联组件），**Lucide 目录里没有 `nodes` 这个字形**
+    /// （`icons/idea/icons` 的 `expui` 集或 React 内联组件），**Lucide 目录里没有 `nodes` 这个字形**
     /// （`gpui-kit-assets-0.6.6/assets/icons/` 全量清单里没有 `nodes.svg`，
     /// 本轮实测 `IconName::Nodes` 这一变体不存在）。语义最近的是 `folder-tree`，所以取
     /// `IconName::FolderTree` —— 这是**已知的外观偏差**（研究 §6.2 的图标一栏没有提到它，
@@ -471,15 +472,10 @@ impl IntoBranchItem for BranchInfo {
                 .items_center()
                 .justify_center()
                 .size_5()
+                // 语义色由 expui 资产自带：绿勾（successDialog）与镶边灰分支图标。
                 .child(match is_current {
-                    // 当前分支：绿勾（真源 `CheckIcon size-3.5 text-success`，`:892-893`）。
-                    true => Icon::new(IconName::Check)
-                        .size_3p5()
-                        .text_color(theme.success),
-                    // 其它分支：分支图标（真源 `GitBranchIcon text-subtle-foreground`，`:894-896`）。
-                    false => Icon::new(IconName::GitBranch)
-                        .size_3p5()
-                        .text_color(theme.muted_foreground),
+                    true => idea_icon_image(&idea::CHECK_ICON, cx, rems(14. / 16.)),
+                    false => idea_icon_image(&idea::GIT_BRANCH_ICON, cx, rems(14. / 16.)),
                 });
 
             let mut row = h_flex()

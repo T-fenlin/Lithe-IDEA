@@ -86,7 +86,6 @@
 
 use std::cell::RefCell;
 
-use gpui_kit::assets::IconName;
 use gpui_kit::base::v_flex;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
@@ -286,7 +285,7 @@ pub(crate) struct CommandAction {
     pub(crate) category: Category,
     pub(crate) label: SharedString,
     pub(crate) description: SharedString,
-    pub(crate) icon: IconName,
+    pub(crate) icon: gpui_kit::component::Icon,
 }
 
 impl CommandAction {

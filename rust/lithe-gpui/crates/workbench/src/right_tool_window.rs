@@ -65,6 +65,7 @@ use gpui_kit::component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
 // `when` / `children` 收在 `FluentBuilder` 上（与 `explorer_view.rs` 同一取法）。
 use gpui_kit::prelude::FluentBuilder as _;
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use gpui_kit::{
     AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
     Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
@@ -165,14 +166,14 @@ impl RightToolWindowView {
     }
 
     /// 头部图标。与右活动栏逐项同字形（`activity_bar.rs` 的对照表）。
-    fn icon(self) -> IconName {
+    fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
         match self {
-            Self::Notifications => IconName::Bell,
+            Self::Notifications => idea_icon_mono(&idea::BELL_ICON, is_dark),
             // Lucide 没有 Maven 字形，取「包 / 构建产物」语义的 `package`（与活动栏一致）。
-            Self::Maven => IconName::Package,
+            Self::Maven => Icon::new(IconName::Package),
             // Spring 的真源字形是品牌绿叶（`spring-icon.tsx` 内联 path，没有 SVG 文件），
             // Lucide 里语义最近的是 `leaf` —— 与 Maven 用 `package` 同一取舍。
-            Self::Spring => IconName::Leaf,
+            Self::Spring => Icon::new(IconName::Leaf),
         }
     }
 
@@ -615,7 +616,7 @@ fn header(
         .border_b_1()
         .border_color(cx.theme().border)
         .child(
-            Icon::new(view.icon())
+            view.icon(cx.theme().is_dark())
                 .size_4()
                 .flex_shrink_0()
                 .text_color(cx.theme().primary),
@@ -673,7 +674,7 @@ fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
                 .border_color(cx.theme().transparent)
                 .header(
                     EmptyHeader::new()
-                        .media(EmptyMedia::new().child(Icon::new(view.icon()).size_8()))
+                        .media(EmptyMedia::new().child(view.icon(cx.theme().is_dark()).size_8()))
                         .title(EmptyTitle::new().text_sm().child(view.empty_title())),
                 ),
         )

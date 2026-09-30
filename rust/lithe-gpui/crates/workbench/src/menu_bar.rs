@@ -183,6 +183,7 @@ use gpui_kit::{
     Subscription, Window, deferred, div, rems,
 };
 
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::tr;
 
 use crate::command_palette::CommandId;
@@ -510,7 +511,7 @@ pub enum MenuItem {
         /// 这一项缺什么（同能力组共用同一个常量，见 [`MISSING_GROUPS`]）。
         missing: Missing,
         /// 左侧图标（与已实现项同一条口径：真源菜单项没有图标，这是本侧的有意偏离）。
-        icon: IconName,
+        icon: MenuIcon,
     },
     /// 分隔线（真源的 `<MenubarSeparator />`）。
     Separator,
@@ -762,6 +763,14 @@ pub enum MenuAction {
     ToggleFullscreen,
 }
 
+/// 菜单项图标双源：expui 有等价字形的走 `idea_icon_mono`（形状来自 expui、颜色随主题），
+/// 没有的保留 Lucide。两个变体都是 const 可构造 —— `items` 表是 `&[MenuItem]` 字面量。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MenuIcon {
+    Idea(&'static idea::IdeaIcon),
+    Lucide(IconName),
+}
+
 impl MenuAction {
     /// 文案键（`lithe.menu.*`，全部是真源既有键，见 `10-menu-bar.md` §4.7）。
     ///
@@ -841,63 +850,63 @@ impl MenuAction {
     /// （`crate::workspace::command_action` 的 `icon`）。**用同一批字形**既让"两处入口视觉同源"，
     /// 也让"这条到底能做什么"一眼可认 —— 这是**有意偏离真源**，
     /// 与"只列可执行项"同一性质，登记在 `.artifacts/p7/NOTES.md`。
-    pub fn icon(self) -> IconName {
+    pub fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
         match self {
             // 「打开文件夹」用「打开的文件夹」字形（真源菜单项没有图标，见本方法文档）。
-            Self::OpenFolder => IconName::FolderOpen,
+            Self::OpenFolder => idea_icon_mono(&idea::FOLDER_ICON, is_dark),
             // 「打开文件」改用一个**具体的文件**字形：B4 之前它借用了「打开的文件夹」，
             // 现在那一项真的存在了，两者再用同一个字形就分不出谁是谁。
-            Self::OpenFile => IconName::File,
-            Self::Save => IconName::Save,
+            Self::OpenFile => idea_icon_mono(&idea::FILE_ICON, is_dark),
+            Self::Save => idea_icon_mono(&idea::FLOPPY_DISK_ICON, is_dark),
             // 关闭系一律用「×」系字形：真机标签上的关闭就是 lucide `x`
             // （`windows/tauri/src/ui/tab-bar-item.tsx:150-180` 的关闭按钮）。
-            Self::CloseTab => IconName::X,
-            Self::CloseOtherTabs => IconName::Files,
-            Self::CloseAllTabs => IconName::SquareX,
+            Self::CloseTab => idea_icon_mono(&idea::X_ICON, is_dark),
+            Self::CloseOtherTabs => idea_icon_mono(&idea::FILES_ICON, is_dark),
+            Self::CloseAllTabs => Icon::new(IconName::SquareX),
             // 「关闭已保存」用 `save-check`：这条的判据正是"这份 buffer 已落盘"。
-            Self::CloseSavedTabs => IconName::SaveCheck,
-            Self::CloseTabsToLeft => IconName::PanelLeft,
-            Self::CloseTabsToRight => IconName::PanelRight,
+            Self::CloseSavedTabs => Icon::new(IconName::SaveCheck),
+            Self::CloseTabsToLeft => Icon::new(IconName::PanelLeft),
+            Self::CloseTabsToRight => Icon::new(IconName::PanelRight),
             // 「重新打开已关闭标签页」= 回退一步，用与「重新加载」同一个回头箭头。
-            Self::ReopenClosedTab => IconName::RotateCcw,
-            Self::CommandPalette => IconName::Search,
+            Self::ReopenClosedTab => idea_icon_mono(&idea::REFRESH_ICON, is_dark),
+            Self::CommandPalette => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
             Self::ToggleTerminal | Self::NewTerminalTab | Self::CloseTerminalTab => {
-                IconName::SquareTerminal
+                Icon::new(IconName::SquareTerminal)
             }
-            Self::ToggleStatusBar => IconName::PanelBottom,
-            Self::ToggleMaven => IconName::Package,
-            Self::OpenAppearanceSettings | Self::Preferences => IconName::Settings,
+            Self::ToggleStatusBar => Icon::new(IconName::PanelBottom),
+            Self::ToggleMaven => Icon::new(IconName::Package),
+            Self::OpenAppearanceSettings | Self::Preferences => idea_icon_mono(&idea::GEAR_ICON, is_dark),
             // 跳转语义用「向右的箭头」：真源 `f12` 是"跳到定义处"。
-            Self::GoToDefinition => IconName::ArrowRight,
-            Self::Minimize => IconName::WindowMinimize,
-            Self::Maximize => IconName::WindowMaximize,
-            Self::ToggleFullscreen => IconName::Maximize,
+            Self::GoToDefinition => idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
+            Self::Minimize => Icon::new(IconName::WindowMinimize),
+            Self::Maximize => Icon::new(IconName::WindowMaximize),
+            Self::ToggleFullscreen => Icon::new(IconName::Maximize),
             // B2 的 18 条：与 `crate::workspace::command_action` 同一条口径
             // （真源菜单项没有图标，这是**有意偏离**，用来让"这条到底能做什么"一眼可认）。
-            Self::Undo => IconName::Undo,
-            Self::Redo => IconName::Redo,
-            Self::Cut => IconName::Scissors,
-            Self::Copy => IconName::Copy,
-            Self::Paste => IconName::Clipboard,
+            Self::Undo => idea_icon_mono(&idea::ARROW_COUNTER_CLOCKWISE_ICON, is_dark),
+            Self::Redo => idea_icon_mono(&idea::ARROW_CLOCKWISE_ICON, is_dark),
+            Self::Cut => idea_icon_mono(&idea::SCISSORS_ICON, is_dark),
+            Self::Copy => idea_icon_mono(&idea::COPY_ICON, is_dark),
+            Self::Paste => Icon::new(IconName::Clipboard),
             // 「全选」用虚线方框：它就是"框住整段内容"那个语义（真源无图标）。
-            Self::SelectAll => IconName::SquareDashed,
-            Self::Find => IconName::Search,
-            Self::FindAndReplace => IconName::Replace,
+            Self::SelectAll => Icon::new(IconName::SquareDashed),
+            Self::Find => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
+            Self::FindAndReplace => Icon::new(IconName::Replace),
             // 「快速修复」用灯泡：与编辑器里那条 `Ctrl+.` 的语义一致。
-            Self::QuickFix => IconName::Lightbulb,
+            Self::QuickFix => idea_icon_mono(&idea::LIGHTBULB_ICON, is_dark),
             // 侧栏两条与「关闭左侧/右侧标签页」共用面板字形（图标允许重复，
             // 菜单动作不许重复 —— 那条由 `every_listed_action_is_executable` 钉住）。
-            Self::ToggleActivitySidebar => IconName::PanelLeft,
-            Self::ToggleSecondarySidebar => IconName::PanelRight,
-            Self::ShowDiagnostics => IconName::SquareActivity,
-            Self::ShowFileExplorer => IconName::Files,
-            Self::ShowSourceControl => IconName::GitBranch,
-            Self::ShowRunAndDebug | Self::StartDebugging => IconName::Play,
-            Self::StopDebugging => IconName::SquareStop,
-            Self::ZoomIn => IconName::ZoomIn,
-            Self::ZoomOut => IconName::ZoomOut,
-            Self::ResetZoom => IconName::RotateCcw,
-            Self::ToggleMenuBar => IconName::List,
+            Self::ToggleActivitySidebar => Icon::new(IconName::PanelLeft),
+            Self::ToggleSecondarySidebar => Icon::new(IconName::PanelRight),
+            Self::ShowDiagnostics => Icon::new(IconName::SquareActivity),
+            Self::ShowFileExplorer => idea_icon_mono(&idea::FILES_ICON, is_dark),
+            Self::ShowSourceControl => idea_icon_mono(&idea::GIT_BRANCH_ICON, is_dark),
+            Self::ShowRunAndDebug | Self::StartDebugging => idea_icon_mono(&idea::PLAY_ICON, is_dark),
+            Self::StopDebugging => idea_icon_mono(&idea::STOP_ICON, is_dark),
+            Self::ZoomIn => idea_icon_mono(&idea::MAGNIFYING_GLASS_PLUS_ICON, is_dark),
+            Self::ZoomOut => idea_icon_mono(&idea::MAGNIFYING_GLASS_MINUS_ICON, is_dark),
+            Self::ResetZoom => idea_icon_mono(&idea::REFRESH_ICON, is_dark),
+            Self::ToggleMenuBar => idea_icon_mono(&idea::FILES_ICON, is_dark),
         }
     }
 
@@ -1080,55 +1089,55 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.newTab",
                 missing: MISSING_FILE_LIFECYCLE,
-                icon: IconName::FilePlus,
+                icon: MenuIcon::Idea(&idea::FILE_PLUS_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.newWindow",
                 missing: MISSING_WINDOW_ROUTING,
-                icon: IconName::AppWindow,
+                icon: MenuIcon::Lucide(IconName::AppWindow),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.newFile",
                 missing: MISSING_FILE_LIFECYCLE,
-                icon: IconName::FilePlusCorner,
+                icon: MenuIcon::Lucide(IconName::FilePlusCorner),
             },
             MenuItem::Action(MenuAction::OpenFolder),
             MenuItem::Action(MenuAction::OpenFile),
             MenuItem::NotWired {
                 label_key: "lithe.menu.closeFolder",
                 missing: MISSING_PROJECT_LIFECYCLE,
-                icon: IconName::FolderX,
+                icon: MenuIcon::Lucide(IconName::FolderX),
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::Save),
             MenuItem::NotWired {
                 label_key: "lithe.menu.saveAs",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: IconName::SavePen,
+                icon: MenuIcon::Lucide(IconName::SavePen),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.saveAll",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: IconName::SaveAll,
+                icon: MenuIcon::Lucide(IconName::SaveAll),
             },
             // 真源第 9 项「还原文件」：能力在 `EditorPane::request_reload`，但它是 editor
             // crate 的**私有**方法（规格 §5 第 5 条：本批未授权动那个 crate）。
             MenuItem::NotWired {
                 label_key: "lithe.menu.revertFile",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: IconName::RotateCcw,
+                icon: MenuIcon::Idea(&idea::REFRESH_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.showLocalHistory",
                 missing: MISSING_LOCAL_HISTORY,
-                icon: IconName::Clock,
+                icon: MenuIcon::Idea(&idea::CLOCK_COUNTER_CLOCKWISE_ICON),
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::CloseTab),
             MenuItem::NotWired {
                 label_key: "lithe.menu.closeWindow",
                 missing: MISSING_WINDOW_ROUTING,
-                icon: IconName::WindowClose,
+                icon: MenuIcon::Lucide(IconName::WindowClose),
             },
             MenuItem::Separator,
             // ⚠️ 真源第 13/14 项的顺序是「关闭所有标签页」在「关闭其他标签页」之前，本侧这里是
@@ -1143,7 +1152,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.quit",
                 missing: MISSING_WINDOW_ROUTING,
-                icon: IconName::Power,
+                icon: MenuIcon::Lucide(IconName::Power),
             },
         ],
     },
@@ -1167,49 +1176,49 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleComment",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::Code,
+                icon: MenuIcon::Lucide(IconName::Code),
             },
             MenuItem::Action(MenuAction::QuickFix),
             MenuItem::NotWired {
                 label_key: "lithe.menu.triggerParameterHints",
                 missing: MISSING_LSP_REQUESTS,
-                icon: IconName::Parentheses,
+                icon: MenuIcon::Lucide(IconName::Parentheses),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.showHover",
                 missing: MISSING_LSP_REQUESTS,
-                icon: IconName::Info,
+                icon: MenuIcon::Idea(&idea::INFO_ICON),
             },
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.duplicateLine",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::CopyPlus,
+                icon: MenuIcon::Lucide(IconName::CopyPlus),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.deleteLine",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::Trash,
+                icon: MenuIcon::Idea(&idea::TRASH_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.moveLineUp",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::ArrowUp,
+                icon: MenuIcon::Idea(&idea::ARROW_UP_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.moveLineDown",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::ArrowDown,
+                icon: MenuIcon::Idea(&idea::ARROW_DOWN_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.formatDocument",
                 missing: MISSING_LSP_REQUESTS,
-                icon: IconName::Pilcrow,
+                icon: MenuIcon::Lucide(IconName::Pilcrow),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.formatSelection",
                 missing: MISSING_LSP_REQUESTS,
-                icon: IconName::SquarePilcrow,
+                icon: MenuIcon::Lucide(IconName::SquarePilcrow),
             },
             MenuItem::Action(MenuAction::CommandPalette),
         ],
@@ -1228,7 +1237,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.globalSearch",
                 missing: MISSING_INDEXER,
-                icon: IconName::Globe,
+                icon: MenuIcon::Idea(&idea::GLOBE_HEMISPHERE_WEST_ICON),
             },
             MenuItem::Action(MenuAction::ShowDiagnostics),
             MenuItem::Separator,
@@ -1237,7 +1246,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.github",
                 missing: MISSING_GITHUB,
-                icon: IconName::Github,
+                icon: MenuIcon::Lucide(IconName::Github),
             },
             MenuItem::Action(MenuAction::ShowRunAndDebug),
             MenuItem::Separator,
@@ -1246,12 +1255,12 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.splitEditor",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::SquareSplitHorizontal,
+                icon: MenuIcon::Idea(&idea::COLUMNS_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleMinimap",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::Map,
+                icon: MenuIcon::Lucide(IconName::Map),
             },
             // ⚠️ 「切换自动换行」是规格 §5 第 5 条点名的那 7 条之一：能力在
             // `EditorState::set_soft_wrap`（`pub`），但外壳够不到任何一个 `EditorState`
@@ -1259,17 +1268,17 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleWordWrap",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: IconName::TextWrap,
+                icon: MenuIcon::Lucide(IconName::TextWrap),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleLineNumbers",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::ListOrdered,
+                icon: MenuIcon::Lucide(IconName::ListOrdered),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleRenderWhitespace",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::Space,
+                icon: MenuIcon::Lucide(IconName::Space),
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::ZoomIn),
@@ -1292,56 +1301,56 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.quickOpen",
                 missing: MISSING_INDEXER,
-                icon: IconName::Zap,
+                icon: MenuIcon::Idea(&idea::LIGHTNING_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToLine",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: IconName::Hash,
+                icon: MenuIcon::Idea(&idea::HASH_ICON),
             },
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.goBack",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: IconName::ArrowLeft,
+                icon: MenuIcon::Idea(&idea::ARROW_LEFT_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.goForward",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: IconName::ArrowRight,
+                icon: MenuIcon::Idea(&idea::ARROW_RIGHT_ICON),
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::GoToDefinition),
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToImplementation",
                 missing: MISSING_LSP_REQUESTS,
-                icon: IconName::ArrowUpRight,
+                icon: MenuIcon::Lucide(IconName::ArrowUpRight),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToTypeDefinition",
                 missing: MISSING_LSP_REQUESTS,
-                icon: IconName::FileType,
+                icon: MenuIcon::Lucide(IconName::FileType),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToReferences",
                 missing: MISSING_LSP_REQUESTS,
-                icon: IconName::Network,
+                icon: MenuIcon::Lucide(IconName::Network),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.renameSymbol",
                 missing: MISSING_LSP_REQUESTS,
-                icon: IconName::Signature,
+                icon: MenuIcon::Lucide(IconName::Signature),
             },
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.nextTab",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: IconName::ChevronRight,
+                icon: MenuIcon::Idea(&idea::CARET_RIGHT_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.previousTab",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: IconName::ChevronLeft,
+                icon: MenuIcon::Idea(&idea::CARET_LEFT_ICON),
             },
         ],
     },
@@ -1353,12 +1362,12 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.splitTerminalRight",
                 missing: MISSING_TERMINAL_SPLIT,
-                icon: IconName::Columns2,
+                icon: MenuIcon::Idea(&idea::COLUMNS_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.splitTerminalDown",
                 missing: MISSING_TERMINAL_SPLIT,
-                icon: IconName::Rows2,
+                icon: MenuIcon::Idea(&idea::ROWS_ICON),
             },
             MenuItem::Action(MenuAction::CloseTerminalTab),
         ],
@@ -1376,7 +1385,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleBreakpoint",
                 missing: MISSING_DEBUGGER_HOST,
-                icon: IconName::CircleDot,
+                icon: MenuIcon::Lucide(IconName::CircleDot),
             },
         ],
     },
@@ -1392,13 +1401,13 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.databases",
                 missing: MISSING_SUBSYSTEM,
-                icon: IconName::Database,
+                icon: MenuIcon::Idea(&idea::DATABASE_ICON),
             },
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.webInspector",
                 missing: MISSING_SUBSYSTEM,
-                icon: IconName::Monitor,
+                icon: MenuIcon::Idea(&idea::MONITOR_ICON),
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::Preferences),
@@ -1407,7 +1416,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.keyboardShortcuts",
                 missing: MISSING_SHORTCUTS_VIEW,
-                icon: IconName::Keyboard,
+                icon: MenuIcon::Idea(&idea::KEYBOARD_ICON),
             },
             MenuItem::Action(MenuAction::OpenAppearanceSettings),
             MenuItem::Separator,
@@ -1437,39 +1446,39 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.documentation",
                 missing: MISSING_HELP_ABOUT,
-                icon: IconName::BookOpen,
+                icon: MenuIcon::Idea(&idea::BOOK_OPEN_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.keyboardShortcuts",
                 missing: MISSING_SHORTCUTS_VIEW,
-                icon: IconName::Keyboard,
+                icon: MenuIcon::Idea(&idea::KEYBOARD_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.whatsNew",
                 missing: MISSING_HELP_ABOUT,
-                icon: IconName::Sparkles,
+                icon: MenuIcon::Lucide(IconName::Sparkles),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.changelog",
                 missing: MISSING_HELP_ABOUT,
-                icon: IconName::ScrollText,
+                icon: MenuIcon::Lucide(IconName::ScrollText),
             },
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.reportBug",
                 missing: MISSING_HELP_ABOUT,
-                icon: IconName::Bug,
+                icon: MenuIcon::Idea(&idea::BUG_ICON),
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.requestFeature",
                 missing: MISSING_HELP_ABOUT,
-                icon: IconName::Lightbulb,
+                icon: MenuIcon::Idea(&idea::LIGHTBULB_ICON),
             },
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.checkForUpdates",
                 missing: MISSING_UPDATER,
-                icon: IconName::CloudDownload,
+                icon: MenuIcon::Idea(&idea::DOWNLOAD_ICON),
             },
         ],
     },
@@ -2362,7 +2371,7 @@ fn compact_bar(
         // （`ui/button.tsx:9` 的 `size-3.5`）；gpui-kit 的 `Sizable::small()` 给的正是 14。
         .ghost()
         .small()
-        .icon(IconName::List)
+        .icon(idea_icon_mono(&idea::FILES_ICON, cx.theme().is_dark()))
         .tooltip(tr("lithe.window.menu"))
         .accessibility_label(tr("lithe.window.menu"))
         .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
@@ -2672,7 +2681,7 @@ fn build_popup(
                     // ⚠️ 传了 `action` 也**不会**改点击行为：`PopupMenu::confirm` 先看
                     // `handler`，有它就只跑 handler（`popup_menu.rs:864-873`）。
                     let mut item =
-                        PopupMenuItem::new(action.label()).icon(Icon::new(action.icon()));
+                        PopupMenuItem::new(action.label()).icon(action.icon(cx.theme().is_dark()));
                     if let Some(bound) = action.keybind_action() {
                         item = item.action(bound);
                     }
@@ -2695,10 +2704,14 @@ fn build_popup(
                 } => {
                     let label_key = *label_key;
                     let missing = *missing;
+                    let icon = match *icon {
+                        MenuIcon::Idea(i) => idea_icon_mono(i, cx.theme().is_dark()),
+                        MenuIcon::Lucide(name) => Icon::new(name),
+                    };
                     let item_handle = handle.clone();
                     popup.item(
                         PopupMenuItem::new(tr(label_key))
-                            .icon(Icon::new(*icon))
+                            .icon(icon)
                             .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
                                 let _ = item_handle.update(cx, |bar, cx| {
                                     bar.push_not_wired(label_key, missing, cx)
@@ -2726,7 +2739,7 @@ fn build_popup(
 /// ⚠️ 与真源一致的两点：**不打勾**当前主题（真源没有勾选态，`10-menu-bar.md` §2.3），
 /// 也没有"跟随系统"那一项（真源同样没有）。
 fn theme_menu(names: Vec<String>, window: &mut Window, cx: &mut App) -> Entity<PopupMenu> {
-    PopupMenu::build(window, cx, move |popup, window, _cx| {
+    PopupMenu::build(window, cx, move |popup, window, cx| {
         let rem = window.rem_size();
         let mut popup = popup.min_w(crate::rem_px(rem, PANEL_MIN_WIDTH_SPEC));
         for name in names {
@@ -2734,7 +2747,7 @@ fn theme_menu(names: Vec<String>, window: &mut Window, cx: &mut App) -> Entity<P
             let value: SharedString = name.into();
             popup = popup.item(
                 PopupMenuItem::new(label)
-                    .icon(Icon::new(IconName::Palette))
+                    .icon(idea_icon_mono(&idea::PALETTE_ICON, cx.theme().is_dark()))
                     .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
                         // 与真源 `handleThemeChange` 同一条语义：用户点名要一个主题 =
                         // 别跟着系统了，所以走 `set_theme_explicit`

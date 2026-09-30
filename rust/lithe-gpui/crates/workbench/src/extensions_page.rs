@@ -34,10 +34,11 @@ use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, Selectable as _, Sizable as _,
 };
 use gpui_kit::prelude::FluentBuilder as _;
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, div,
+    Styled as _, Subscription, Window, div, rems,
 };
 
 use lithe_gpui_shared::{tr, tr_args};
@@ -419,7 +420,11 @@ impl ExtensionsPage {
                     .cleanable(true)
                     .flex_1()
                     .min_w_0()
-                    .prefix(Icon::new(IconName::Search).text_color(cx.theme().muted_foreground))
+                    .prefix(idea_icon_image(
+                        &idea::MAGNIFYING_GLASS_ICON,
+                        cx,
+                        rems(14. / 16.),
+                    ))
                     .aria_label(tr("lithe.extensions.searchPlaceholder")),
             )
             .child(

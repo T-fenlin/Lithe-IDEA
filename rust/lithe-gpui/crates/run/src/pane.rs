@@ -34,17 +34,17 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::mpsc::Receiver;
 
-use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, StyledExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, AppContext as _, Context, EventEmitter, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
-    Window, div,
+    Window, div, rems,
 };
 
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{core_json, tr, tr_args};
 
 use crate::model::{RunConfigurationView, load};
@@ -586,7 +586,7 @@ impl RunPane {
                 Button::new("run-pane-run")
                     .small()
                     .ghost()
-                    .icon(Icon::new(IconName::Play))
+                    .icon(idea_icon_mono(&idea::PLAY_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.run.run"))
                     .disabled(running)
                     .on_click(cx.listener(|this, _, _, cx| this.launch(false, cx))),
@@ -595,7 +595,7 @@ impl RunPane {
                 Button::new("run-pane-debug")
                     .small()
                     .ghost()
-                    .icon(Icon::new(IconName::Bug))
+                    .icon(idea_icon_mono(&idea::BUG_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.debugger.start"))
                     .disabled(running)
                     .on_click(cx.listener(|this, _, _, cx| this.launch(true, cx))),
@@ -604,7 +604,7 @@ impl RunPane {
                 Button::new("run-pane-stop")
                     .small()
                     .ghost()
-                    .icon(Icon::new(IconName::SquareStop))
+                    .icon(idea_icon_mono(&idea::STOP_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.run.stop"))
                     .disabled(!running)
                     .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
@@ -613,7 +613,7 @@ impl RunPane {
                 Button::new("run-pane-clear")
                     .small()
                     .ghost()
-                    .icon(Icon::new(IconName::Delete))
+                    .icon(idea_icon_mono(&idea::TRASH_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.run.clearOutput"))
                     .disabled(self.session.is_none())
                     .on_click(cx.listener(|this, _, _, cx| this.clear_output(cx))),
@@ -684,7 +684,9 @@ impl RunPane {
                     .cursor_pointer()
                     .when(selected, |this| this.bg(cx.theme().accent))
                     .on_click(cx.listener(move |this, _, _, cx| this.select(index, cx)))
-                    .child(Icon::new(IconName::Play).size_3().text_color(if selected {
+                    .child(idea_icon_mono(&idea::PLAY_ICON, cx.theme().is_dark())
+                        .size_3()
+                        .text_color(if selected {
                         cx.theme().primary
                     } else {
                         cx.theme().muted_foreground

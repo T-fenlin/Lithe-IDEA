@@ -90,7 +90,7 @@ use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedi
 use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, Rope, TabSize};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AbsoluteLength, AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity,
     InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels,
@@ -98,6 +98,7 @@ use gpui_kit::{
     WeakEntity, Window, div, point, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
 use lithe_gpui_shared::{tr, tr_args};
 
 /// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)` 的 `Pixels` 形式。
@@ -2437,7 +2438,7 @@ impl EditorPane {
                 }
             }))
             .context_menu(
-                move |mut menu: PopupMenu, window: &mut Window, _cx: &mut Context<PopupMenu>| {
+                move |mut menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
                     // 诊断：这条行**只在菜单真的被打开时**才打（闭包由右键按下触发），
                     // 所以它同时是"右键命中了这个标签"的证据。
                     let mut items = 0usize;
@@ -2446,7 +2447,7 @@ impl EditorPane {
                     // ---- 复制路径 / 复制相对路径 -------------------------------------
                     menu = menu.item(
                         PopupMenuItem::new(tr("lithe.files.copyPath"))
-                            .icon(IconName::Copy)
+                            .icon(idea_icon_mono(&idea::COPY_ICON, cx.theme().is_dark()))
                             .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
                                 pane.copy_path(index, cx);
                             })),
@@ -2455,7 +2456,7 @@ impl EditorPane {
 
                     menu = menu.item(
                         PopupMenuItem::new(tr("lithe.files.copyRelativePath"))
-                            .icon(IconName::Copy)
+                            .icon(idea_icon_mono(&idea::COPY_ICON, cx.theme().is_dark()))
                             .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
                                 pane.copy_relative_path(index, cx);
                             })),
@@ -2465,7 +2466,7 @@ impl EditorPane {
                     // ---- 在资源管理器中显示 -----------------------------------------
                     menu = menu.item(
                         PopupMenuItem::new(tr("lithe.files.reveal"))
-                            .icon(IconName::FolderOpen)
+                            .icon(idea_icon_mono(&idea::FOLDER_ICON, cx.theme().is_dark()))
                             .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
                                 pane.reveal_in_explorer(index, window, cx);
                             })),
@@ -2491,7 +2492,7 @@ impl EditorPane {
                     if on_disk {
                         menu = menu.item(
                             PopupMenuItem::new(tr("lithe.tabs.reload"))
-                                .icon(IconName::RotateCcw)
+                                .icon(idea_icon_mono(&idea::REFRESH_ICON, cx.theme().is_dark()))
                                 .on_click(window.listener_for(
                                     &pane,
                                     move |pane, _, window, cx| {
@@ -2509,7 +2510,7 @@ impl EditorPane {
                     // ---- 关闭（右键的那个标签；`Ctrl+W` 是"关闭当前"，两者不同）------
                     menu = menu.item(
                         PopupMenuItem::new(tr("lithe.tabs.close"))
-                            .icon(IconName::X)
+                            .icon(idea_icon_mono(&idea::X_ICON, cx.theme().is_dark()))
                             .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
                                 pane.request_close(index, window, cx);
                             })),
@@ -2710,7 +2711,7 @@ impl EditorPane {
     fn close_button(path: &Path, index: usize, cx: &mut Context<Self>) -> Button {
         Button::new(tab_close_element_id(path))
             // Windows 的关闭字形是 lucide `x`，`icons/x.svg` 在全量目录里确有该字形。
-            .icon(IconName::X)
+            .icon(idea_icon_mono(&idea::X_ICON, cx.theme().is_dark()))
             .ghost()
             .small()
             .tab_stop(false)
@@ -2840,12 +2841,12 @@ impl EditorPane {
                                         .justify_center()
                                         .size_12()
                                         .child(
-                                            Icon::new(IconName::FileText)
+                                            idea_icon_mono(&idea::FILE_ICON, cx.theme().is_dark())
                                                 .size_10()
                                                 .text_color(cx.theme().muted_foreground),
                                         )
                                         .child(
-                                            Icon::new(IconName::Search)
+                                            idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, cx.theme().is_dark())
                                                 .absolute()
                                                 .right_0()
                                                 .bottom_0()

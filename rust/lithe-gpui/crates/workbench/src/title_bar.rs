@@ -70,6 +70,7 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use gpui_kit::{
     AnyElement, App, Entity, Hsla, InteractiveElement as _, IntoElement, MouseButton,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
@@ -578,7 +579,7 @@ fn run_control(
         // 无障碍名 = 它复用的那一条菜单文案（图标按钮没有可见文字，必须给名字）。
         .aria_label(tr(control.label_key()))
         // 图标 14×14：`Sizable::small()` → `size_3p5()`（与窗口三键同一处换算）。
-        .child(Icon::new(control.icon()).small())
+        .child(control.icon(cx.theme().is_dark()).small())
 }
 
 /// 第二行右侧的两个运行控件。
@@ -605,10 +606,10 @@ impl RunControl {
     /// 字形：**只用 `gpui_kit::assets::IconName` 里已有的变体，不新增图标资源**
     /// （`▶` = `IconName::Play`，`🐞` = `IconName::Bug`；两个字形在本仓库里都已用过：
     /// `menu_bar.rs` 的「运行和调试」与「开始调试」）。
-    fn icon(self) -> IconName {
+    fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
         match self {
-            Self::Run => IconName::Play,
-            Self::Debug => IconName::Bug,
+            Self::Run => idea_icon_mono(&idea::PLAY_ICON, is_dark),
+            Self::Debug => idea_icon_mono(&idea::BUG_ICON, is_dark),
         }
     }
 

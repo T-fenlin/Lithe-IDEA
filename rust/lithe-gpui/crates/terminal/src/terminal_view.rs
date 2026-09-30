@@ -40,12 +40,13 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerState};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, Size};
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AbsoluteLength, AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _,
     IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
     StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, WeakEntity,
-    Window, div, px, relative, rems,
+    Window, div, img, px, relative, rems,
 };
 
 use crate::constants::new_terminal_label;
@@ -163,6 +164,10 @@ impl TerminalPane {
         // （`gpui-component-0.6.6/src/root.rs:582`），所以它就是本帧的 rem 基准。先取出来
         // 是因为下面的 `map` 闭包若再借一次 `cx`，会和后面的 `self.profile_menu_button(cx)` 打架。
         let rem = cx.theme().font_size;
+        // 页签关闭图标：expui `general/close`。路径在这里（闭包外）按当前帧明暗解析好，
+        // 下面的 `map` 闭包借不到 `cx`（见上），只能拿现成路径直接建 `img()`——
+        // 与 `idea_icon_image` 同一条彩色管线（存在性由 `assets.rs` 的回归测试钉住）。
+        let close_icon_path = SharedString::from(idea::X_ICON.path(cx.theme().is_dark()));
 
         let tabs: Vec<Tab> = self
             .tabs
@@ -178,7 +183,13 @@ impl TerminalPane {
                 );
                 let close = Button::new(SharedString::from(format!("terminal-tab-close-{id}")))
                     .ghost()
-                    .icon(IconName::Close)
+                    .child(
+                        img(close_icon_path.clone())
+                            .flex_shrink_0()
+                            .size_4(),
+                    )
+                    // 图标走 `child` 后 Button 退出"图标按钮"分支补 `px_2p5`；清掉保住方形命中区。
+                    .px_0()
                     .tab_stop(false)
                     .size_6()
                     .rounded(rem_px(rem, CHROME_RADIUS))
@@ -304,8 +315,9 @@ impl TerminalPane {
             line = line.child(
                 Button::new(SharedString::from(format!("terminal-retry-{id}")))
                     .ghost()
-                    .icon(IconName::Play)
-                    .label(retry())
+                    .child(idea_icon_image(&idea::PLAY_ICON, cx, rems(1.)))
+                    .child(retry())
+                    .accessibility_label(retry())
                     .tab_stop(false)
                     // 24 − 4 = 20（让出状态行的上下内边距）：运行时算术，没有档位 helper 可套，
                     // 所以写 helper 底层的 `rems(P / 16.)`（rem base = 16px，见 `constants.rs`）。
@@ -444,8 +456,9 @@ impl TerminalPane {
                     .content(
                         EmptyContent::new().child(
                             Button::new("terminal-empty-new")
-                                .icon(IconName::Plus)
-                                .label(new_terminal_label())
+                                .child(idea_icon_image(&idea::PLUS_ICON, cx, rems(1.)))
+                                .child(new_terminal_label())
+                                .accessibility_label(new_terminal_label())
                                 .h_6()
                                 .px_2()
                                 .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
@@ -490,8 +503,9 @@ impl TerminalPane {
                 )
                 .content(EmptyContent::new().child(
                     Button::new("terminal-failed-retry")
-                        .icon(IconName::Play)
-                        .label(retry())
+                        .child(idea_icon_image(&idea::PLAY_ICON, cx, rems(1.)))
+                        .child(retry())
+                        .accessibility_label(retry())
                         .h_6()
                         .px_2()
                         .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
@@ -550,7 +564,9 @@ impl TerminalPane {
     pub(crate) fn new_tab_button(&self, shell: WeakEntity<Self>, cx: &App) -> Button {
         Button::new("terminal-new-tab")
             .ghost()
-            .icon(IconName::Plus)
+            .child(idea_icon_image(&idea::PLUS_ICON, cx, rems(1.)))
+            // 图标走 `child` 后 Button 退出"图标按钮"分支补 `px_2p5`；清掉保住方形命中区。
+            .px_0()
             .tab_stop(false)
             .size_6()
             .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
@@ -572,7 +588,9 @@ impl TerminalPane {
     pub(crate) fn clear_button(&self, shell: WeakEntity<Self>, cx: &App) -> Button {
         Button::new("terminal-clear-output")
             .ghost()
-            .icon(IconName::Trash)
+            .child(idea_icon_image(&idea::TRASH_ICON, cx, rems(1.)))
+            // 图标走 `child` 后 Button 退出"图标按钮"分支补 `px_2p5`；清掉保住方形命中区。
+            .px_0()
             .tab_stop(false)
             .size_6()
             .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
@@ -601,7 +619,9 @@ impl TerminalPane {
 
         Button::new("terminal-profile-menu")
             .ghost()
-            .icon(IconName::ChevronDown)
+            .child(idea_icon_image(&idea::CARET_DOWN_ICON, cx, rems(1.)))
+            // 图标走 `child` 后 Button 退出"图标按钮"分支补 `px_2p5`；清掉保住方形命中区。
+            .px_0()
             .tab_stop(false)
             .size_6()
             .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
