@@ -16,8 +16,10 @@
  *       —— 实际产出的依据。**每张 SVG 都必须出现在产物里**（脚本会校验无孤儿、无悬空引用）。
  *   lithe-gpui/tools/idea-icon-mappings.json
  *       —— 只读参考，**只用来取"旧前端那 95 个显示名"**（`SearchIcon` 这种），让 Rust 侧的
- *           常量名与旧前端对齐。它的 `source` 是**上游**路径（带 `expui/` 一层，见
- *           [`UPSTREAM_PREFIX`]），不是本地资产路径。它随旧前端（`windows/`）删除而迁入本目录，
+ *           常量名与旧前端对齐。它的 `source` 是**本地**图标包内的相对路径
+ *           （`files/…` / `folders/…` / `ui/…`，与 [`SVG_ROOT`] 同一口径），
+ *           `upstream` 字段另记上游 intellij-community 的路径（只作溯源，代码不读）。
+ *           它随旧前端（`windows/`）删除而迁入本目录，
  *           所以是可选输入：文件缺失时脚本仍然成功，
  *           只是退化成"由文件名推导常量名"（见下）。它**不是**那份已删除的 `.ts`。
  *
@@ -56,13 +58,6 @@ const ASSETS_DIR = resolve(REPO_ROOT, "lithe-gpui/assets");
 const SVG_ROOT = resolve(ASSETS_DIR, "icons/idea/icons");
 /** AssetSource 路径的命名空间前缀（规则 4）。 */
 const PATH_PREFIX = "icons/idea/icons";
-/**
- * 上游 intellij-community `platform/icons/src/` 下的目录名。本地资产树 2026-09-30 起去掉了这一层
- * （`icons/idea/icons/expui/fileTypes/x.svg` → `icons/idea/icons/fileTypes/x.svg`，见
- * `assets/README.md` 第 9 节），但 [`MAPPINGS_JSON`] 的 `source` 仍按**上游**路径记录，
- * 所以查显示名时要把这一层拼回去 —— 溯源口径与本地目录布局各自独立，别把两者合并。
- */
-const UPSTREAM_PREFIX = "expui";
 /** 旧前端的显示名映射（只读参考，可选；见文件头「真源」）。 */
 const MAPPINGS_JSON = resolve(HERE, "idea-icon-mappings.json");
 const OUT_FILE = resolve(REPO_ROOT, "lithe-gpui/crates/shared/src/icons/idea.rs");
@@ -155,8 +150,7 @@ for (const rel of baseSvgs) {
   const hasDark = allSvgs.includes(darkRel);
 
   const stem = rel.slice(rel.lastIndexOf("/") + 1).replace(/\.svg$/, "");
-  // `displayNames` 的键是上游路径（带 `UPSTREAM_PREFIX`），查表时要拼回去。
-  const names = displayNames.get(`${UPSTREAM_PREFIX}/${rel}`) ?? [];
+  const names = displayNames.get(rel) ?? [];
   const display = names[0];
   const constStem = toConstStem(display ? display.replace(/Icon$/, "") : toPascal(stem));
   if (!constStem) {

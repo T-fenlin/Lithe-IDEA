@@ -35,7 +35,7 @@
 //! `settings/src/fonts.rs` 的 `include_bytes!` 直接编进二进制，再进 rust-embed 表就是双份），
 //! 再减去根目录的 `README.md`**。`LitheAssets::iter().count()` 实测 **411 个文件**
 //! （`app-icon/**` 7 个位图 + `images/logo.png` 1 个 + `icons/idea/**` 254 个文件 +
-//! `icons/pierre/**` 149 个文件），合计 **3 317 793 字节（约 3.17 MiB）**。
+//! `icons/pierre/**` 149 个文件），合计 **3 317 489 字节（约 3.16 MiB）**。
 //! 2026-09-30 起 expui 界面图标（原 `ui-icons/idea/**`，157 个文件）已并入 `icons/idea/icons/**`
 //! 图标包，`ui-icons/` 目录不复存在；界面图标与文件类型图标从此同源（见 `shared/src/icons`）。
 //!
@@ -94,7 +94,7 @@ use gpui_kit::{AssetSource, Result, SharedString};
 
 /// 内嵌 `lithe-gpui/assets/` 的 rust-embed 资产表。
 ///
-/// 路径键**相对 `lithe-gpui/assets/`**（例如 `icons/idea/icons/general/search.svg`、
+/// 路径键**相对 `lithe-gpui/assets/`**（例如 `icons/idea/icons/ui/search.svg`、
 /// `app-icon/icon.ico`、`icons/idea/extension.json`、`images/logo.png`），可以直接传给
 /// `svg().path(..)` 或 `img(..)`。
 ///
@@ -187,15 +187,15 @@ pub fn probe_len(path: &str) -> Option<usize> {
 /// 2. `app-icon/icon.ico`：应用图标（PE 资源那份走 `crates/app/build.rs`，这一份是 `AssetSource` 侧）；
 /// 3. `icons/idea/extension.json`：文件类型图标主题的**清单**，由 `file_icon.rs` 的
 ///    `include_str!` 在编译期读入；
-/// 4. `icons/idea/icons/fileTypes/gitignore.svg`：主题里的一个**具体图标** —— 这条是
+/// 4. `icons/idea/icons/files/gitignore.svg`：主题里的一个**具体图标** —— 这条是
 ///    "查找层算出的路径确实能 `load` 到字节"的证据。没有它，主题图标取不到字节时界面会
 ///    **静默回落到 Lucide**（`FileIcon::render` 的 `else` 分支），截图上看不出区别。
 pub const PROBE_PATHS: &[&str] = &[
-    "icons/idea/icons/general/settings.svg",
-    "icons/idea/icons/general/settings_dark.svg",
+    "icons/idea/icons/ui/settings.svg",
+    "icons/idea/icons/ui/settings_dark.svg",
     "app-icon/icon.ico",
     "icons/idea/extension.json",
-    "icons/idea/icons/fileTypes/gitignore.svg",
+    "icons/idea/icons/files/gitignore.svg",
 ];
 
 impl AssetSource for LitheAssets {
@@ -282,7 +282,7 @@ mod tests {
             // 文件图标主题：`shared/src/icons/file_icon.rs` 的 `include_str!` 读它。
             "icons/idea/extension.json",
             // UI 图标：`shared/src/icons/idea.rs` 里的常量路径之一。
-            "icons/idea/icons/general/search.svg",
+            "icons/idea/icons/ui/search.svg",
             // exe / 窗口 / 任务栏图标（PE 资源走 `build.rs`，这一份是 AssetSource 侧）。
             "app-icon/icon.ico",
             // 品牌 logo。
@@ -381,16 +381,18 @@ mod tests {
         // 去重），四个未接线归档目录从磁盘删除。未接线的只剩 lithe / symbols / material 三套
         // （合计约 4.97 MiB）—— 它们一个都不该在里面。
         //
-        // 同日稍后两笔清单改写（都只改**文本**，不动文件数）：
+        // 同日稍后三笔清单改写（都只改**文本**，不动文件数）：
         // ① `icons/idea/icons/expui/**` 上移一层（去掉上游那层目录名），106 条路径的 `expui/`
         //    段删除 → -636 字节；
         // ② 清单里的图标 id 去掉 `idea-` 前缀（`idea-text` → `text`，id 是包内局部的，前缀是噪声）
-        //    → -1 070 字节。
-        // 合计从 3 319 499 降到 3 317 793。这次实测同时暴露了旧登记值 3 319 379 的偏差：它比
+        //    → -1 070 字节；
+        // ③ 资产目录重划成三类（`fileTypes` + 符号族 → `files/`，目录族 → `folders/`，
+        //    其余界面字形 → `ui/`），清单里 106 条路径随之改写 → -304 字节。
+        // 合计从 3 319 499 降到 3 317 489。这次实测同时暴露了旧登记值 3 319 379 的偏差：它比
         // 合并提交当时的实测值少 120（d76bd6ee 改过清单但没重测这个 pin），也就是说这一条
         // 在本次改动前就是红的。教训：**只要改 `assets/` 下的文件（含清单这种文本），就要重测**。
         assert_eq!(
-            resource_bytes, 3_317_793,
+            resource_bytes, 3_317_489,
             "内嵌资源字节数应精确等于 411 个资源文件之和；若变大，先查未接线的图标包\
              （lithe/symbols/material 合计约 4.97 MiB，注意 pierre 已接线、**在**二进制里）\
              是不是又进来了，再查是不是有资源被整体替换成了更大的版本；\

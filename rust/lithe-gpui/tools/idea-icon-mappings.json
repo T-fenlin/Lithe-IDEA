@@ -1,5 +1,5 @@
 {
-  "description": "Lithe icon export name -> IntelliJ platform icon asset (relative to intellij-community platform/icons/src). Managed by scripts/generate-idea-icons.ts. Icons absent from this list keep their lucide fallback. colorPolicy defaults to 'fixed' (IDEA colors as-is); 'fallback' entries document why an IDEA asset was not used.",
+  "description": "Lithe icon export name -> icon asset in the local icon package (relative to lithe-gpui/assets/icons/idea/, i.e. `files/**` / `folders/**` / `ui/**`). `upstream` records the original intellij-community path under platform/icons/src. Managed by scripts/generate-idea-icons.ts. Icons absent from this list keep their lucide fallback. colorPolicy defaults to 'fixed' (IDEA colors as-is); 'fallback' entries document why an IDEA asset was not used.",
   "icons": [
     {
       "icon": "AiLoadingIcon",
@@ -8,7 +8,8 @@
     },
     {
       "icon": "ArchiveIcon",
-      "source": "expui/fileTypes/archive.svg"
+      "source": "files/archive.svg",
+      "upstream": "expui/fileTypes/archive.svg"
     },
     {
       "icon": "ArrowBendDownLeftIcon",
@@ -17,15 +18,18 @@
     },
     {
       "icon": "ArrowClockwiseIcon",
-      "source": "expui/general/redo.svg"
+      "source": "ui/redo.svg",
+      "upstream": "expui/general/redo.svg"
     },
     {
       "icon": "ArrowCounterClockwiseIcon",
-      "source": "expui/general/undo.svg"
+      "source": "ui/undo.svg",
+      "upstream": "expui/general/undo.svg"
     },
     {
       "icon": "ArrowDownIcon",
-      "source": "expui/general/down.svg"
+      "source": "ui/down.svg",
+      "upstream": "expui/general/down.svg"
     },
     {
       "icon": "ArrowFatLineDownIcon",
@@ -34,19 +38,23 @@
     },
     {
       "icon": "ArrowLeftIcon",
-      "source": "expui/general/left.svg"
+      "source": "ui/left.svg",
+      "upstream": "expui/general/left.svg"
     },
     {
       "icon": "ArrowRightIcon",
-      "source": "expui/general/right.svg"
+      "source": "ui/right.svg",
+      "upstream": "expui/general/right.svg"
     },
     {
       "icon": "ArrowSquareOutIcon",
-      "source": "expui/ide/externalLink.svg"
+      "source": "ui/externalLink.svg",
+      "upstream": "expui/ide/externalLink.svg"
     },
     {
       "icon": "ArrowUpIcon",
-      "source": "expui/general/up.svg"
+      "source": "ui/up.svg",
+      "upstream": "expui/general/up.svg"
     },
     {
       "icon": "ArrowsClockwiseIcon",
@@ -75,15 +83,18 @@
     },
     {
       "icon": "BellIcon",
-      "source": "expui/toolwindows/notifications.svg"
+      "source": "ui/notifications.svg",
+      "upstream": "expui/toolwindows/notifications.svg"
     },
     {
       "icon": "BookOpenIcon",
-      "source": "expui/toolwindows/documentation.svg"
+      "source": "ui/documentation.svg",
+      "upstream": "expui/toolwindows/documentation.svg"
     },
     {
       "icon": "BookmarkIcon",
-      "source": "expui/bookmarks/bookmark.svg"
+      "source": "ui/bookmark.svg",
+      "upstream": "expui/bookmarks/bookmark.svg"
     },
     {
       "icon": "BracketsCurlyIcon",
@@ -107,7 +118,8 @@
     },
     {
       "icon": "BugIcon",
-      "source": "expui/run/debug.svg"
+      "source": "ui/debug.svg",
+      "upstream": "expui/run/debug.svg"
     },
     {
       "icon": "CalendarIcon",
@@ -131,47 +143,58 @@
     },
     {
       "icon": "CaretDownIcon",
-      "source": "expui/general/chevronDown.svg"
+      "source": "ui/chevronDown.svg",
+      "upstream": "expui/general/chevronDown.svg"
     },
     {
       "icon": "CaretLeftIcon",
-      "source": "expui/general/chevronLeft.svg"
+      "source": "ui/chevronLeft.svg",
+      "upstream": "expui/general/chevronLeft.svg"
     },
     {
       "icon": "CaretRightIcon",
-      "source": "expui/general/chevronRight.svg"
+      "source": "ui/chevronRight.svg",
+      "upstream": "expui/general/chevronRight.svg"
     },
     {
       "icon": "CaretUpIcon",
-      "source": "expui/general/chevronUp.svg"
+      "source": "ui/chevronUp.svg",
+      "upstream": "expui/general/chevronUp.svg"
     },
     {
       "icon": "ChatCircleTextIcon",
-      "source": "expui/toolwindows/messages.svg"
+      "source": "ui/messages.svg",
+      "upstream": "expui/toolwindows/messages.svg"
     },
     {
       "icon": "CheckCircleIcon",
-      "source": "expui/general/successDialog.svg"
+      "source": "ui/successDialog.svg",
+      "upstream": "expui/general/successDialog.svg"
     },
     {
       "icon": "CheckIcon",
-      "source": "expui/general/greenCheckmark.svg"
+      "source": "ui/greenCheckmark.svg",
+      "upstream": "expui/general/greenCheckmark.svg"
     },
     {
       "icon": "ChevronDownIcon",
-      "source": "expui/general/chevronDown.svg"
+      "source": "ui/chevronDown.svg",
+      "upstream": "expui/general/chevronDown.svg"
     },
     {
       "icon": "ChevronLeftIcon",
-      "source": "expui/general/chevronLeft.svg"
+      "source": "ui/chevronLeft.svg",
+      "upstream": "expui/general/chevronLeft.svg"
     },
     {
       "icon": "ChevronRightIcon",
-      "source": "expui/general/chevronRight.svg"
+      "source": "ui/chevronRight.svg",
+      "upstream": "expui/general/chevronRight.svg"
     },
     {
       "icon": "ChevronUpIcon",
-      "source": "expui/general/chevronUp.svg"
+      "source": "ui/chevronUp.svg",
+      "upstream": "expui/general/chevronUp.svg"
     },
     {
       "icon": "CircleIcon",
@@ -195,7 +218,8 @@
     },
     {
       "icon": "ClockCounterClockwiseIcon",
-      "source": "expui/general/history.svg"
+      "source": "ui/history.svg",
+      "upstream": "expui/general/history.svg"
     },
     {
       "icon": "ClockIcon",
@@ -239,7 +263,8 @@
     },
     {
       "icon": "ColumnsIcon",
-      "source": "expui/general/splitVertically.svg"
+      "source": "ui/splitVertically.svg",
+      "upstream": "expui/general/splitVertically.svg"
     },
     {
       "icon": "CommandIcon",
@@ -248,11 +273,13 @@
     },
     {
       "icon": "CopyIcon",
-      "source": "expui/general/copy.svg"
+      "source": "ui/copy.svg",
+      "upstream": "expui/general/copy.svg"
     },
     {
       "icon": "CopySimpleIcon",
-      "source": "expui/general/copy.svg"
+      "source": "ui/copy.svg",
+      "upstream": "expui/general/copy.svg"
     },
     {
       "icon": "CornersInIcon",
@@ -281,7 +308,8 @@
     },
     {
       "icon": "DatabaseIcon",
-      "source": "expui/toolwindows/toolWindowDataView.svg"
+      "source": "ui/toolWindowDataView.svg",
+      "upstream": "expui/toolwindows/toolWindowDataView.svg"
     },
     {
       "icon": "DotOutlineIcon",
@@ -290,23 +318,28 @@
     },
     {
       "icon": "DotsThreeIcon",
-      "source": "expui/general/moreHorizontal.svg"
+      "source": "ui/moreHorizontal.svg",
+      "upstream": "expui/general/moreHorizontal.svg"
     },
     {
       "icon": "DownloadIcon",
-      "source": "expui/general/download.svg"
+      "source": "ui/download.svg",
+      "upstream": "expui/general/download.svg"
     },
     {
       "icon": "DownloadSimpleIcon",
-      "source": "expui/general/download.svg"
+      "source": "ui/download.svg",
+      "upstream": "expui/general/download.svg"
     },
     {
       "icon": "EyeIcon",
-      "source": "expui/general/show.svg"
+      "source": "ui/show.svg",
+      "upstream": "expui/general/show.svg"
     },
     {
       "icon": "EyeSlashIcon",
-      "source": "expui/general/hide.svg"
+      "source": "ui/hide.svg",
+      "upstream": "expui/general/hide.svg"
     },
     {
       "icon": "FadersHorizontalIcon",
@@ -320,19 +353,23 @@
     },
     {
       "icon": "FileIcon",
-      "source": "expui/fileTypes/text.svg"
+      "source": "files/text.svg",
+      "upstream": "expui/fileTypes/text.svg"
     },
     {
       "icon": "FilePlusIcon",
-      "source": "expui/actions/addFile.svg"
+      "source": "ui/addFile.svg",
+      "upstream": "expui/actions/addFile.svg"
     },
     {
       "icon": "FileTextIcon",
-      "source": "expui/fileTypes/text.svg"
+      "source": "files/text.svg",
+      "upstream": "expui/fileTypes/text.svg"
     },
     {
       "icon": "FilesIcon",
-      "source": "expui/general/listFiles.svg"
+      "source": "ui/listFiles.svg",
+      "upstream": "expui/general/listFiles.svg"
     },
     {
       "icon": "FlipHorizontalIcon",
@@ -346,11 +383,13 @@
     },
     {
       "icon": "FloppyDiskIcon",
-      "source": "expui/general/save.svg"
+      "source": "ui/save.svg",
+      "upstream": "expui/general/save.svg"
     },
     {
       "icon": "FolderIcon",
-      "source": "expui/nodes/folder.svg"
+      "source": "folders/folder.svg",
+      "upstream": "expui/nodes/folder.svg"
     },
     {
       "icon": "FolderOpenIcon",
@@ -359,7 +398,8 @@
     },
     {
       "icon": "FolderPlusIcon",
-      "source": "expui/actions/newFolder.svg"
+      "source": "ui/newFolder.svg",
+      "upstream": "expui/actions/newFolder.svg"
     },
     {
       "icon": "FolderSimpleStarIcon",
@@ -368,31 +408,38 @@
     },
     {
       "icon": "FunctionIcon",
-      "source": "expui/nodes/function.svg"
+      "source": "files/function.svg",
+      "upstream": "expui/nodes/function.svg"
     },
     {
       "icon": "FunnelIcon",
-      "source": "expui/general/filter.svg"
+      "source": "ui/filter.svg",
+      "upstream": "expui/general/filter.svg"
     },
     {
       "icon": "GearIcon",
-      "source": "expui/general/settings.svg"
+      "source": "ui/settings.svg",
+      "upstream": "expui/general/settings.svg"
     },
     {
       "icon": "GearSixIcon",
-      "source": "expui/general/settings.svg"
+      "source": "ui/settings.svg",
+      "upstream": "expui/general/settings.svg"
     },
     {
       "icon": "GitBranchIcon",
-      "source": "expui/vcs/branch.svg"
+      "source": "ui/branch.svg",
+      "upstream": "expui/vcs/branch.svg"
     },
     {
       "icon": "GitCommitIcon",
-      "source": "expui/vcs/commit.svg"
+      "source": "ui/commit.svg",
+      "upstream": "expui/vcs/commit.svg"
     },
     {
       "icon": "GitDiffIcon",
-      "source": "expui/vcs/diff.svg"
+      "source": "ui/diff.svg",
+      "upstream": "expui/vcs/diff.svg"
     },
     {
       "icon": "GitGraphIcon",
@@ -401,7 +448,8 @@
     },
     {
       "icon": "GitMergeIcon",
-      "source": "expui/vcs/merge.svg"
+      "source": "ui/merge.svg",
+      "upstream": "expui/vcs/merge.svg"
     },
     {
       "icon": "GitPullRequestIcon",
@@ -415,11 +463,13 @@
     },
     {
       "icon": "GlobeHemisphereWestIcon",
-      "source": "expui/toolwindows/web.svg"
+      "source": "ui/web.svg",
+      "upstream": "expui/toolwindows/web.svg"
     },
     {
       "icon": "GlobeIcon",
-      "source": "expui/toolwindows/web.svg"
+      "source": "ui/web.svg",
+      "upstream": "expui/toolwindows/web.svg"
     },
     {
       "icon": "HardDrivesIcon",
@@ -428,19 +478,23 @@
     },
     {
       "icon": "HashIcon",
-      "source": "expui/general/hashtag.svg"
+      "source": "ui/hashtag.svg",
+      "upstream": "expui/general/hashtag.svg"
     },
     {
       "icon": "HouseIcon",
-      "source": "expui/javaee/home.svg"
+      "source": "ui/home.svg",
+      "upstream": "expui/javaee/home.svg"
     },
     {
       "icon": "ImageIcon",
-      "source": "expui/fileTypes/image.svg"
+      "source": "files/image.svg",
+      "upstream": "expui/fileTypes/image.svg"
     },
     {
       "icon": "InfoIcon",
-      "source": "expui/general/informationDialog.svg"
+      "source": "ui/informationDialog.svg",
+      "upstream": "expui/general/informationDialog.svg"
     },
     {
       "icon": "KeyIcon",
@@ -449,7 +503,8 @@
     },
     {
       "icon": "KeyboardIcon",
-      "source": "expui/general/keyboard.svg"
+      "source": "ui/keyboard.svg",
+      "upstream": "expui/general/keyboard.svg"
     },
     {
       "icon": "LaptopIcon",
@@ -458,11 +513,13 @@
     },
     {
       "icon": "LightbulbIcon",
-      "source": "expui/actions/realIntentionBulb.svg"
+      "source": "ui/realIntentionBulb.svg",
+      "upstream": "expui/actions/realIntentionBulb.svg"
     },
     {
       "icon": "LightningIcon",
-      "source": "expui/actions/lightning.svg"
+      "source": "ui/lightning.svg",
+      "upstream": "expui/actions/lightning.svg"
     },
     {
       "icon": "LightningSlashIcon",
@@ -496,7 +553,8 @@
     },
     {
       "icon": "LockIcon",
-      "source": "expui/general/locked.svg"
+      "source": "ui/locked.svg",
+      "upstream": "expui/general/locked.svg"
     },
     {
       "icon": "LockKeyIcon",
@@ -505,7 +563,8 @@
     },
     {
       "icon": "LockOpenIcon",
-      "source": "expui/general/unlocked.svg"
+      "source": "ui/unlocked.svg",
+      "upstream": "expui/general/unlocked.svg"
     },
     {
       "icon": "MagicWandIcon",
@@ -514,15 +573,18 @@
     },
     {
       "icon": "MagnifyingGlassIcon",
-      "source": "expui/general/search.svg"
+      "source": "ui/search.svg",
+      "upstream": "expui/general/search.svg"
     },
     {
       "icon": "MagnifyingGlassMinusIcon",
-      "source": "expui/image/zoomOut.svg"
+      "source": "ui/zoomOut.svg",
+      "upstream": "expui/image/zoomOut.svg"
     },
     {
       "icon": "MagnifyingGlassPlusIcon",
-      "source": "expui/image/zoomIn.svg"
+      "source": "ui/zoomIn.svg",
+      "upstream": "expui/image/zoomIn.svg"
     },
     {
       "icon": "MegaphoneIcon",
@@ -541,7 +603,8 @@
     },
     {
       "icon": "MinusIcon",
-      "source": "expui/general/remove.svg"
+      "source": "ui/remove.svg",
+      "upstream": "expui/general/remove.svg"
     },
     {
       "icon": "MoneyIcon",
@@ -550,7 +613,8 @@
     },
     {
       "icon": "MonitorIcon",
-      "source": "expui/nodes/desktop.svg"
+      "source": "ui/desktop.svg",
+      "upstream": "expui/nodes/desktop.svg"
     },
     {
       "icon": "MoonIcon",
@@ -574,7 +638,8 @@
     },
     {
       "icon": "OpenExternalIcon",
-      "source": "expui/ide/externalLink.svg"
+      "source": "ui/externalLink.svg",
+      "upstream": "expui/ide/externalLink.svg"
     },
     {
       "icon": "PackageIcon",
@@ -588,7 +653,8 @@
     },
     {
       "icon": "PaletteIcon",
-      "source": "expui/toolwindows/palette.svg"
+      "source": "ui/palette.svg",
+      "upstream": "expui/toolwindows/palette.svg"
     },
     {
       "icon": "PaperPlaneTiltIcon",
@@ -597,27 +663,33 @@
     },
     {
       "icon": "PauseIcon",
-      "source": "expui/run/pause.svg"
+      "source": "ui/pause.svg",
+      "upstream": "expui/run/pause.svg"
     },
     {
       "icon": "PenIcon",
-      "source": "expui/general/edit.svg"
+      "source": "ui/edit.svg",
+      "upstream": "expui/general/edit.svg"
     },
     {
       "icon": "PencilIcon",
-      "source": "expui/general/edit.svg"
+      "source": "ui/edit.svg",
+      "upstream": "expui/general/edit.svg"
     },
     {
       "icon": "PencilLineIcon",
-      "source": "expui/general/edit.svg"
+      "source": "ui/edit.svg",
+      "upstream": "expui/general/edit.svg"
     },
     {
       "icon": "PencilSimpleIcon",
-      "source": "expui/general/edit.svg"
+      "source": "ui/edit.svg",
+      "upstream": "expui/general/edit.svg"
     },
     {
       "icon": "PencilSimpleLineIcon",
-      "source": "expui/general/edit.svg"
+      "source": "ui/edit.svg",
+      "upstream": "expui/general/edit.svg"
     },
     {
       "icon": "PlayCircleIcon",
@@ -626,7 +698,8 @@
     },
     {
       "icon": "PlayIcon",
-      "source": "expui/run/run.svg"
+      "source": "ui/run.svg",
+      "upstream": "expui/run/run.svg"
     },
     {
       "icon": "PlugsConnectedIcon",
@@ -640,7 +713,8 @@
     },
     {
       "icon": "PlusIcon",
-      "source": "expui/general/add.svg"
+      "source": "ui/add.svg",
+      "upstream": "expui/general/add.svg"
     },
     {
       "icon": "PulseIcon",
@@ -649,7 +723,8 @@
     },
     {
       "icon": "PushPinIcon",
-      "source": "expui/general/pin.svg"
+      "source": "ui/pin.svg",
+      "upstream": "expui/general/pin.svg"
     },
     {
       "icon": "PushPinSlashIcon",
@@ -663,7 +738,8 @@
     },
     {
       "icon": "QuestionIcon",
-      "source": "expui/general/questionDialog.svg"
+      "source": "ui/questionDialog.svg",
+      "upstream": "expui/general/questionDialog.svg"
     },
     {
       "icon": "RadioButtonIcon",
@@ -672,7 +748,8 @@
     },
     {
       "icon": "RefreshIcon",
-      "source": "expui/general/refresh.svg"
+      "source": "ui/refresh.svg",
+      "upstream": "expui/general/refresh.svg"
     },
     {
       "icon": "RobotIcon",
@@ -686,7 +763,8 @@
     },
     {
       "icon": "RowsIcon",
-      "source": "expui/general/splitHorizontally.svg"
+      "source": "ui/splitHorizontally.svg",
+      "upstream": "expui/general/splitHorizontally.svg"
     },
     {
       "icon": "RowsPlusTopIcon",
@@ -695,7 +773,8 @@
     },
     {
       "icon": "ScissorsIcon",
-      "source": "expui/general/cut.svg"
+      "source": "ui/cut.svg",
+      "upstream": "expui/general/cut.svg"
     },
     {
       "icon": "ShieldCheckIcon",
@@ -714,7 +793,8 @@
     },
     {
       "icon": "SidebarSimpleIcon",
-      "source": "expui/general/layout.svg"
+      "source": "ui/layout.svg",
+      "upstream": "expui/general/layout.svg"
     },
     {
       "icon": "SignInIcon",
@@ -723,7 +803,8 @@
     },
     {
       "icon": "SignOutIcon",
-      "source": "expui/general/exit.svg"
+      "source": "ui/exit.svg",
+      "upstream": "expui/general/exit.svg"
     },
     {
       "icon": "SlidersHorizontalIcon",
@@ -757,7 +838,8 @@
     },
     {
       "icon": "StopIcon",
-      "source": "expui/run/stop.svg"
+      "source": "ui/stop.svg",
+      "upstream": "expui/run/stop.svg"
     },
     {
       "icon": "SunIcon",
@@ -766,7 +848,8 @@
     },
     {
       "icon": "TableIcon",
-      "source": "expui/nodes/dataTables.svg"
+      "source": "ui/dataTables.svg",
+      "upstream": "expui/nodes/dataTables.svg"
     },
     {
       "icon": "TagIcon",
@@ -820,23 +903,28 @@
     },
     {
       "icon": "TranslateIcon",
-      "source": "expui/general/language.svg"
+      "source": "ui/language.svg",
+      "upstream": "expui/general/language.svg"
     },
     {
       "icon": "TrashIcon",
-      "source": "expui/general/delete.svg"
+      "source": "ui/delete.svg",
+      "upstream": "expui/general/delete.svg"
     },
     {
       "icon": "TreeStructureIcon",
-      "source": "expui/general/tree.svg"
+      "source": "ui/tree.svg",
+      "upstream": "expui/general/tree.svg"
     },
     {
       "icon": "UploadIcon",
-      "source": "expui/general/upload.svg"
+      "source": "ui/upload.svg",
+      "upstream": "expui/general/upload.svg"
     },
     {
       "icon": "UploadSimpleIcon",
-      "source": "expui/general/upload.svg"
+      "source": "ui/upload.svg",
+      "upstream": "expui/general/upload.svg"
     },
     {
       "icon": "UserCircleIcon",
@@ -845,19 +933,23 @@
     },
     {
       "icon": "UserIcon",
-      "source": "expui/general/user.svg"
+      "source": "ui/user.svg",
+      "upstream": "expui/general/user.svg"
     },
     {
       "icon": "UsersThreeIcon",
-      "source": "expui/general/groups.svg"
+      "source": "ui/groups.svg",
+      "upstream": "expui/general/groups.svg"
     },
     {
       "icon": "WarningCircleIcon",
-      "source": "expui/general/warningDialog.svg"
+      "source": "ui/warningDialog.svg",
+      "upstream": "expui/general/warningDialog.svg"
     },
     {
       "icon": "WarningIcon",
-      "source": "expui/general/warningDialog.svg"
+      "source": "ui/warningDialog.svg",
+      "upstream": "expui/general/warningDialog.svg"
     },
     {
       "icon": "WindowExpandIcon",
@@ -866,15 +958,18 @@
     },
     {
       "icon": "WrenchIcon",
-      "source": "expui/general/externalTools.svg"
+      "source": "ui/externalTools.svg",
+      "upstream": "expui/general/externalTools.svg"
     },
     {
       "icon": "XCircleIcon",
-      "source": "expui/general/errorDialog.svg"
+      "source": "ui/errorDialog.svg",
+      "upstream": "expui/general/errorDialog.svg"
     },
     {
       "icon": "XIcon",
-      "source": "expui/general/close.svg"
+      "source": "ui/close.svg",
+      "upstream": "expui/general/close.svg"
     }
   ]
 }

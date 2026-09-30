@@ -137,18 +137,18 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 维护者问到 Maven 与铃铛，逐个查了来源，结论是**这两处在真源里也不是彩色图标**，
 换管线换不出颜色：
 
-- **铃铛**（`icons/idea/icons/toolwindows/notifications.svg`）：`stroke="#6C707E"`
+- **铃铛**（`icons/idea/icons/ui/notifications.svg`）：`stroke="#6C707E"`
   （深色版 `#CED0D6`）—— IDEA 的工具窗图标都是灰描边。本批已经把它换到 `img()` 了，
   所以"看着没变"是**正确结果**，不是没切换。
 - **Maven**：真源 `features/maven/components/maven-icon.tsx` 那枚 16×16 字形是
   `fill="currentColor"`（**单色**，跟随文字色），所以 Windows 前端的轨道 Maven 也是单色的；
   IDEA 自己的 Maven **工具窗**图标（原 `legacy-ide-icons/maven/toolWindowMaven.svg`，`#CED0D6` 的灰；
   该归档目录已于同日从磁盘删除，文件在 git 历史里）是 `#CED0D6` 的灰。
-  我们**有**的那枚蓝色 Maven 标志（`icons/idea/icons/fileTypes/maven.svg`，`#3574F0`）
+  我们**有**的那枚蓝色 Maven 标志（`icons/idea/icons/files/maven.svg`，`#3574F0`）
   是**文件类型**图标，已经用在文件树 / 编辑器标签的 `pom.xml` 上（那处是彩色的）。
   右栏 Maven 现在用 Lucide `package` 字形，是"真源只有内联组件、没有 SVG 可搬"时的既有取舍。
 - 想让右栏 Maven 显示**彩色蓝色 Maven 标志**（有意偏离真源与 IDEA 的灰轨道图标）：
-  一行就能换 —— 把 `icons/idea/icons/fileTypes/maven.svg` 包成
+  一行就能换 —— 把 `icons/idea/icons/files/maven.svg` 包成
   `ActivityItem::idea`（该资产**已在内嵌资源里**）。
   ⚠️ 前提是接受"轨道图标不再与 IDEA 一致"。
 
@@ -225,3 +225,41 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 `node rust/lithe-gpui/tools/generate-idea-icons.mjs --check`（产物与文件系统一致）、受影响的
 `cargo test -p lithe-gpui-shared -p lithe-gpui-app`（清单路径与内嵌口径）、以及全仓库残留
 `expui/` 路径引用的检索。
+
+## 追加四：资产目录重划成三类 `files` / `folders` / `ui`（2026-09-30 第四批）
+
+### 先说结论
+
+上游 `expui/` 那 11 个目录收敛成三个按**使用者视角**命名的类别：`icons/files/`（93 个：文件类型
+与符号）、`icons/folders/`（12 个：目录与语义根）、`icons/ui/`（148 个：界面 chrome）。253 个 SVG
+全部 `git mv`。清单路径、生成器、`idea.rs` 产物、代码与文档里的引用同步改写；产物重生成后
+**128 个常量名与 16 个别名零变化**，这是"迁移规则精确"的最强证据。
+
+### 为什么
+
+`actions` / `bookmarks` / `general` / `nodes` / `toolwindows` … 是 JetBrains 内部的组织方式，
+对"我想换一套文件图标"的插件作者不是有意义的分类；`nodes/` 更是混了三种东西（符号 / 目录 /
+其他节点）。三类之后，插件包的形状一句话能说完："`files/` 管文件、`folders/` 管目录、`ui/` 管
+界面，缺的回落内置 `idea`。"**`ui/` 独立成目录**就是"界面字形默认不随包更新、但磁盘上有就生效"
+这条口径的落点。
+
+开发者要记住的：
+
+- 清单里只有 `files/` 与 `folders/` 两类路径；**界面字形不进清单**，它们由 `idea.rs` 常量引用。
+- `tools/idea-icon-mappings.json` 的 `source` 现在是**本地**路径，上游路径挪进 `upstream` 字段
+  （只作溯源、代码不读）。三类布局不再镜像上游，两者别再合并成一个字符串。
+- `nodes/` 的分派：`class/interface/enum/annotation/record/exception/function` → `files/`；
+  `folder/package/sourceRoot/testRoot/resourcesRoot/testResourcesRoot` → `folders/`；
+  `dataTables/desktop` → `ui/`（后两个既不是文件也不是目录图标）。
+
+### 代价
+
+内嵌字节 3 317 793 → **3 317 489**（清单文本变短 304 字节），文件数仍 411。
+`lithe` / `symbols`（本来就是 `files/` + `folders/` 形状）与 `pierre`（上游扁平 `icons/*.svg`）
+三套包这次不动，等第 3 步"磁盘包"落地时一并迁。
+
+### 验证
+
+`node rust/lithe-gpui/tools/generate-idea-icons.mjs --check`、`cargo test -p lithe-gpui-shared
+-p lithe-gpui-app`（清单路径、内嵌口径、级联用例），以及"映射表引用的每个 id 都有定义"的逐包
+核对（`idea` 0 断裂；`symbols` 有一条上游遗留的 `.less` 断裂，级联后它落到内置 css 图标，无害）。

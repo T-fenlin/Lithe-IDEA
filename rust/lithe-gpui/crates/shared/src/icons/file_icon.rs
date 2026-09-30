@@ -60,7 +60,7 @@
 //! "映射 → 定义"两步，不会拿 A 包的 id 去查 B 包（所以两个包可以对同一个 id 给不同的图，
 //! 也可以各自用各自的后缀命名习惯）。
 //!
-//! 返回值一律是**资源根路径**（`icons/idea/icons/fileTypes/java.svg`），可以直接交给
+//! 返回值一律是**资源根路径**（`icons/idea/icons/files/java.svg`），可以直接交给
 //! `AssetSource::load`：拼主题包根那一步发生在**解析清单时**（见 [`definitions`]），不在这里。
 //!
 //! ## 查不到时回落 Lucide（调用方的责任，但契约在这里）
@@ -498,8 +498,8 @@ pub fn theme_file_icon(
 ///
 /// ⚠️ 这里必须把主题包根（`icons/<包>/`）拼上。查找层的返回值会被直接送进
 /// [`theme_file_icon`] → `AssetSource::load`，而 `LitheAssets` 的键是**相对 `lithe-gpui/assets/`**
-/// 的完整路径（`icons/idea/icons/fileTypes/java.svg`）。只存清单里的包内相对路径
-/// （`icons/fileTypes/java.svg`）会**永远 load 不到**，界面上表现为"静默回落 Lucide"——
+/// 的完整路径（`icons/idea/icons/files/java.svg`）。只存清单里的包内相对路径
+/// （`icons/files/java.svg`）会**永远 load 不到**，界面上表现为"静默回落 Lucide"——
 /// 曾经就是这样：图标其实是 Lucide 细线字形，不是 IDEA 的彩色美术（2026-09-30 修）。
 ///
 /// 例外：`material` 包的 `iconDefinitions` 里存的是**内联 SVG 文本**而不是路径，
@@ -681,29 +681,25 @@ mod tests {
         for (name, dark, light) in [
             (
                 ".gitignore",
-                "icons/fileTypes/gitignore.svg",
-                "icons/fileTypes/gitignore.svg",
+                "icons/files/gitignore.svg",
+                "icons/files/gitignore.svg",
             ),
             (
                 "pom.xml",
-                "icons/fileTypes/maven_dark.svg",
-                "icons/fileTypes/maven.svg",
+                "icons/files/maven_dark.svg",
+                "icons/files/maven.svg",
             ),
             (
                 "README.md",
-                "icons/fileTypes/markdown_dark.svg",
-                "icons/fileTypes/markdown.svg",
+                "icons/files/markdown_dark.svg",
+                "icons/files/markdown.svg",
             ),
             (
                 "A.java",
-                "icons/fileTypes/java_dark.svg",
-                "icons/fileTypes/java.svg",
+                "icons/files/java_dark.svg",
+                "icons/files/java.svg",
             ),
-            (
-                "x.yml",
-                "icons/fileTypes/yaml_dark.svg",
-                "icons/fileTypes/yaml.svg",
-            ),
+            ("x.yml", "icons/files/yaml_dark.svg", "icons/files/yaml.svg"),
         ] {
             assert_eq!(
                 relative(idea_path(name, false, false, true)),
@@ -724,11 +720,11 @@ mod tests {
     fn unknown_file_falls_back_to_default_file() {
         assert_eq!(
             relative(idea_path("notes.unknownext", false, false, true)),
-            Some("icons/fileTypes/text_dark.svg"),
+            Some("icons/files/text_dark.svg"),
         );
         assert_eq!(
             relative(idea_path("no-extension-at-all", false, false, true)),
-            Some("icons/fileTypes/text_dark.svg"),
+            Some("icons/files/text_dark.svg"),
         );
     }
 
@@ -738,7 +734,7 @@ mod tests {
     fn multi_dot_names_use_the_longest_suffix_first() {
         assert_eq!(
             relative(idea_path("archive.tar.gz", false, false, true)),
-            Some("icons/fileTypes/archive_dark.svg"),
+            Some("icons/files/archive_dark.svg"),
         );
     }
 
@@ -748,11 +744,11 @@ mod tests {
     fn folders_use_default_folder_icon() {
         assert_eq!(
             relative(idea_path("src", true, false, true)),
-            Some("icons/nodes/folder_dark.svg"),
+            Some("icons/folders/folder_dark.svg"),
         );
         assert_eq!(
             relative(idea_path("src", true, true, false)),
-            Some("icons/nodes/folder.svg"),
+            Some("icons/folders/folder.svg"),
         );
     }
 
@@ -772,7 +768,7 @@ mod tests {
         //    这一条是这次改动的要点：改前它会掉到硬编码默认值再 Miss，最后画 Lucide。
         assert_eq!(
             lookup_path(&pack, builtin, "A.java", false, false, true),
-            Some("icons/idea/icons/fileTypes/java_dark.svg"),
+            Some("icons/idea/icons/files/java_dark.svg"),
         );
         // 3) 两个包都没有专属条目 → 用**生效包自己的** defaultFile（它的通用文件图）。
         assert_eq!(

@@ -171,772 +171,772 @@ pub const ALL: [IdeaIcon; 128] = [
     YAML_ICON,
 ];
 
-/// `icons/idea/icons/nodes/annotation.svg` / `icons/idea/icons/nodes/annotation_dark.svg`
+/// `icons/idea/icons/files/annotation.svg` / `icons/idea/icons/files/annotation_dark.svg`
 pub const ANNOTATION_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/annotation.svg",
-    dark: "icons/idea/icons/nodes/annotation_dark.svg",
+    light: "icons/idea/icons/files/annotation.svg",
+    dark: "icons/idea/icons/files/annotation_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/archive.svg` / `icons/idea/icons/fileTypes/archive_dark.svg`
+/// `icons/idea/icons/files/archive.svg` / `icons/idea/icons/files/archive_dark.svg`
 pub const ARCHIVE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/archive.svg",
-    dark: "icons/idea/icons/fileTypes/archive_dark.svg",
+    light: "icons/idea/icons/files/archive.svg",
+    dark: "icons/idea/icons/files/archive_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/redo.svg` / `icons/idea/icons/general/redo_dark.svg`
+/// `icons/idea/icons/ui/redo.svg` / `icons/idea/icons/ui/redo_dark.svg`
 pub const ARROW_CLOCKWISE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/redo.svg",
-    dark: "icons/idea/icons/general/redo_dark.svg",
+    light: "icons/idea/icons/ui/redo.svg",
+    dark: "icons/idea/icons/ui/redo_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/undo.svg` / `icons/idea/icons/general/undo_dark.svg`
+/// `icons/idea/icons/ui/undo.svg` / `icons/idea/icons/ui/undo_dark.svg`
 pub const ARROW_COUNTER_CLOCKWISE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/undo.svg",
-    dark: "icons/idea/icons/general/undo_dark.svg",
+    light: "icons/idea/icons/ui/undo.svg",
+    dark: "icons/idea/icons/ui/undo_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/down.svg` / `icons/idea/icons/general/down_dark.svg`
+/// `icons/idea/icons/ui/down.svg` / `icons/idea/icons/ui/down_dark.svg`
 pub const ARROW_DOWN_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/down.svg",
-    dark: "icons/idea/icons/general/down_dark.svg",
+    light: "icons/idea/icons/ui/down.svg",
+    dark: "icons/idea/icons/ui/down_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/left.svg` / `icons/idea/icons/general/left_dark.svg`
+/// `icons/idea/icons/ui/left.svg` / `icons/idea/icons/ui/left_dark.svg`
 pub const ARROW_LEFT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/left.svg",
-    dark: "icons/idea/icons/general/left_dark.svg",
+    light: "icons/idea/icons/ui/left.svg",
+    dark: "icons/idea/icons/ui/left_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/right.svg` / `icons/idea/icons/general/right_dark.svg`
+/// `icons/idea/icons/ui/right.svg` / `icons/idea/icons/ui/right_dark.svg`
 pub const ARROW_RIGHT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/right.svg",
-    dark: "icons/idea/icons/general/right_dark.svg",
+    light: "icons/idea/icons/ui/right.svg",
+    dark: "icons/idea/icons/ui/right_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/ide/externalLink.svg` / `icons/idea/icons/ide/externalLink_dark.svg`
+/// `icons/idea/icons/ui/externalLink.svg` / `icons/idea/icons/ui/externalLink_dark.svg`
 pub const ARROW_SQUARE_OUT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/ide/externalLink.svg",
-    dark: "icons/idea/icons/ide/externalLink_dark.svg",
+    light: "icons/idea/icons/ui/externalLink.svg",
+    dark: "icons/idea/icons/ui/externalLink_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/up.svg` / `icons/idea/icons/general/up_dark.svg`
+/// `icons/idea/icons/ui/up.svg` / `icons/idea/icons/ui/up_dark.svg`
 pub const ARROW_UP_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/up.svg",
-    dark: "icons/idea/icons/general/up_dark.svg",
+    light: "icons/idea/icons/ui/up.svg",
+    dark: "icons/idea/icons/ui/up_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/toolwindows/notifications.svg` / `icons/idea/icons/toolwindows/notifications_dark.svg`
+/// `icons/idea/icons/ui/notifications.svg` / `icons/idea/icons/ui/notifications_dark.svg`
 pub const BELL_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/toolwindows/notifications.svg",
-    dark: "icons/idea/icons/toolwindows/notifications_dark.svg",
+    light: "icons/idea/icons/ui/notifications.svg",
+    dark: "icons/idea/icons/ui/notifications_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/toolwindows/documentation.svg` / `icons/idea/icons/toolwindows/documentation_dark.svg`
+/// `icons/idea/icons/ui/documentation.svg` / `icons/idea/icons/ui/documentation_dark.svg`
 pub const BOOK_OPEN_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/toolwindows/documentation.svg",
-    dark: "icons/idea/icons/toolwindows/documentation_dark.svg",
+    light: "icons/idea/icons/ui/documentation.svg",
+    dark: "icons/idea/icons/ui/documentation_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/bookmarks/bookmark.svg` / `icons/idea/icons/bookmarks/bookmark_dark.svg`
+/// `icons/idea/icons/ui/bookmark.svg` / `icons/idea/icons/ui/bookmark_dark.svg`
 pub const BOOKMARK_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/bookmarks/bookmark.svg",
-    dark: "icons/idea/icons/bookmarks/bookmark_dark.svg",
+    light: "icons/idea/icons/ui/bookmark.svg",
+    dark: "icons/idea/icons/ui/bookmark_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/run/debug.svg` / `icons/idea/icons/run/debug_dark.svg`
+/// `icons/idea/icons/ui/debug.svg` / `icons/idea/icons/ui/debug_dark.svg`
 pub const BUG_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/run/debug.svg",
-    dark: "icons/idea/icons/run/debug_dark.svg",
+    light: "icons/idea/icons/ui/debug.svg",
+    dark: "icons/idea/icons/ui/debug_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/c.svg` / `icons/idea/icons/fileTypes/c_dark.svg`
+/// `icons/idea/icons/files/c.svg` / `icons/idea/icons/files/c_dark.svg`
 pub const C_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/c.svg",
-    dark: "icons/idea/icons/fileTypes/c_dark.svg",
+    light: "icons/idea/icons/files/c.svg",
+    dark: "icons/idea/icons/files/c_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/chevronDown.svg` / `icons/idea/icons/general/chevronDown_dark.svg`
+/// `icons/idea/icons/ui/chevronDown.svg` / `icons/idea/icons/ui/chevronDown_dark.svg`
 pub const CARET_DOWN_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/chevronDown.svg",
-    dark: "icons/idea/icons/general/chevronDown_dark.svg",
+    light: "icons/idea/icons/ui/chevronDown.svg",
+    dark: "icons/idea/icons/ui/chevronDown_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/chevronLeft.svg` / `icons/idea/icons/general/chevronLeft_dark.svg`
+/// `icons/idea/icons/ui/chevronLeft.svg` / `icons/idea/icons/ui/chevronLeft_dark.svg`
 pub const CARET_LEFT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/chevronLeft.svg",
-    dark: "icons/idea/icons/general/chevronLeft_dark.svg",
+    light: "icons/idea/icons/ui/chevronLeft.svg",
+    dark: "icons/idea/icons/ui/chevronLeft_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/chevronRight.svg` / `icons/idea/icons/general/chevronRight_dark.svg`
+/// `icons/idea/icons/ui/chevronRight.svg` / `icons/idea/icons/ui/chevronRight_dark.svg`
 pub const CARET_RIGHT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/chevronRight.svg",
-    dark: "icons/idea/icons/general/chevronRight_dark.svg",
+    light: "icons/idea/icons/ui/chevronRight.svg",
+    dark: "icons/idea/icons/ui/chevronRight_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/chevronUp.svg` / `icons/idea/icons/general/chevronUp_dark.svg`
+/// `icons/idea/icons/ui/chevronUp.svg` / `icons/idea/icons/ui/chevronUp_dark.svg`
 pub const CARET_UP_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/chevronUp.svg",
-    dark: "icons/idea/icons/general/chevronUp_dark.svg",
+    light: "icons/idea/icons/ui/chevronUp.svg",
+    dark: "icons/idea/icons/ui/chevronUp_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/toolwindows/messages.svg` / `icons/idea/icons/toolwindows/messages_dark.svg`
+/// `icons/idea/icons/ui/messages.svg` / `icons/idea/icons/ui/messages_dark.svg`
 pub const CHAT_CIRCLE_TEXT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/toolwindows/messages.svg",
-    dark: "icons/idea/icons/toolwindows/messages_dark.svg",
+    light: "icons/idea/icons/ui/messages.svg",
+    dark: "icons/idea/icons/ui/messages_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/greenCheckmark.svg` / `icons/idea/icons/general/greenCheckmark_dark.svg`
+/// `icons/idea/icons/ui/greenCheckmark.svg` / `icons/idea/icons/ui/greenCheckmark_dark.svg`
 pub const CHECK_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/greenCheckmark.svg",
-    dark: "icons/idea/icons/general/greenCheckmark_dark.svg",
+    light: "icons/idea/icons/ui/greenCheckmark.svg",
+    dark: "icons/idea/icons/ui/greenCheckmark_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/successDialog.svg` / `icons/idea/icons/general/successDialog_dark.svg`
+/// `icons/idea/icons/ui/successDialog.svg` / `icons/idea/icons/ui/successDialog_dark.svg`
 pub const CHECK_CIRCLE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/successDialog.svg",
-    dark: "icons/idea/icons/general/successDialog_dark.svg",
+    light: "icons/idea/icons/ui/successDialog.svg",
+    dark: "icons/idea/icons/ui/successDialog_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/class.svg` / `icons/idea/icons/nodes/class_dark.svg`
+/// `icons/idea/icons/files/class.svg` / `icons/idea/icons/files/class_dark.svg`
 pub const CLASS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/class.svg",
-    dark: "icons/idea/icons/nodes/class_dark.svg",
+    light: "icons/idea/icons/files/class.svg",
+    dark: "icons/idea/icons/files/class_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/history.svg` / `icons/idea/icons/general/history_dark.svg`
+/// `icons/idea/icons/ui/history.svg` / `icons/idea/icons/ui/history_dark.svg`
 pub const CLOCK_COUNTER_CLOCKWISE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/history.svg",
-    dark: "icons/idea/icons/general/history_dark.svg",
+    light: "icons/idea/icons/ui/history.svg",
+    dark: "icons/idea/icons/ui/history_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/splitVertically.svg` / `icons/idea/icons/general/splitVertically_dark.svg`
+/// `icons/idea/icons/ui/splitVertically.svg` / `icons/idea/icons/ui/splitVertically_dark.svg`
 pub const COLUMNS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/splitVertically.svg",
-    dark: "icons/idea/icons/general/splitVertically_dark.svg",
+    light: "icons/idea/icons/ui/splitVertically.svg",
+    dark: "icons/idea/icons/ui/splitVertically_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/copy.svg` / `icons/idea/icons/general/copy_dark.svg`
+/// `icons/idea/icons/ui/copy.svg` / `icons/idea/icons/ui/copy_dark.svg`
 pub const COPY_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/copy.svg",
-    dark: "icons/idea/icons/general/copy_dark.svg",
+    light: "icons/idea/icons/ui/copy.svg",
+    dark: "icons/idea/icons/ui/copy_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/cpp.svg` / `icons/idea/icons/fileTypes/cpp_dark.svg`
+/// `icons/idea/icons/files/cpp.svg` / `icons/idea/icons/files/cpp_dark.svg`
 pub const CPP_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/cpp.svg",
-    dark: "icons/idea/icons/fileTypes/cpp_dark.svg",
+    light: "icons/idea/icons/files/cpp.svg",
+    dark: "icons/idea/icons/files/cpp_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/Csharp.svg` / `icons/idea/icons/fileTypes/Csharp_dark.svg`
+/// `icons/idea/icons/files/Csharp.svg` / `icons/idea/icons/files/Csharp_dark.svg`
 pub const CSHARP_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/Csharp.svg",
-    dark: "icons/idea/icons/fileTypes/Csharp_dark.svg",
+    light: "icons/idea/icons/files/Csharp.svg",
+    dark: "icons/idea/icons/files/Csharp_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/css.svg` / `icons/idea/icons/fileTypes/css_dark.svg`
+/// `icons/idea/icons/files/css.svg` / `icons/idea/icons/files/css_dark.svg`
 pub const CSS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/css.svg",
-    dark: "icons/idea/icons/fileTypes/css_dark.svg",
+    light: "icons/idea/icons/files/css.svg",
+    dark: "icons/idea/icons/files/css_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/csv.svg` / `icons/idea/icons/fileTypes/csv_dark.svg`
+/// `icons/idea/icons/files/csv.svg` / `icons/idea/icons/files/csv_dark.svg`
 pub const CSV_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/csv.svg",
-    dark: "icons/idea/icons/fileTypes/csv_dark.svg",
+    light: "icons/idea/icons/files/csv.svg",
+    dark: "icons/idea/icons/files/csv_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/toolwindows/toolWindowDataView.svg` / `icons/idea/icons/toolwindows/toolWindowDataView_dark.svg`
+/// `icons/idea/icons/ui/toolWindowDataView.svg` / `icons/idea/icons/ui/toolWindowDataView_dark.svg`
 pub const DATABASE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/toolwindows/toolWindowDataView.svg",
-    dark: "icons/idea/icons/toolwindows/toolWindowDataView_dark.svg",
+    light: "icons/idea/icons/ui/toolWindowDataView.svg",
+    dark: "icons/idea/icons/ui/toolWindowDataView_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/docker.svg` / `icons/idea/icons/fileTypes/docker_dark.svg`
+/// `icons/idea/icons/files/docker.svg` / `icons/idea/icons/files/docker_dark.svg`
 pub const DOCKER_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/docker.svg",
-    dark: "icons/idea/icons/fileTypes/docker_dark.svg",
+    light: "icons/idea/icons/files/docker.svg",
+    dark: "icons/idea/icons/files/docker_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/moreHorizontal.svg` / `icons/idea/icons/general/moreHorizontal_dark.svg`
+/// `icons/idea/icons/ui/moreHorizontal.svg` / `icons/idea/icons/ui/moreHorizontal_dark.svg`
 pub const DOTS_THREE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/moreHorizontal.svg",
-    dark: "icons/idea/icons/general/moreHorizontal_dark.svg",
+    light: "icons/idea/icons/ui/moreHorizontal.svg",
+    dark: "icons/idea/icons/ui/moreHorizontal_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/download.svg` / `icons/idea/icons/general/download_dark.svg`
+/// `icons/idea/icons/ui/download.svg` / `icons/idea/icons/ui/download_dark.svg`
 pub const DOWNLOAD_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/download.svg",
-    dark: "icons/idea/icons/general/download_dark.svg",
+    light: "icons/idea/icons/ui/download.svg",
+    dark: "icons/idea/icons/ui/download_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/editorConfig.svg` / `icons/idea/icons/fileTypes/editorConfig_dark.svg`
+/// `icons/idea/icons/files/editorConfig.svg` / `icons/idea/icons/files/editorConfig_dark.svg`
 pub const EDITOR_CONFIG_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/editorConfig.svg",
-    dark: "icons/idea/icons/fileTypes/editorConfig_dark.svg",
+    light: "icons/idea/icons/files/editorConfig.svg",
+    dark: "icons/idea/icons/files/editorConfig_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/enum.svg` / `icons/idea/icons/nodes/enum_dark.svg`
+/// `icons/idea/icons/files/enum.svg` / `icons/idea/icons/files/enum_dark.svg`
 pub const ENUM_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/enum.svg",
-    dark: "icons/idea/icons/nodes/enum_dark.svg",
+    light: "icons/idea/icons/files/enum.svg",
+    dark: "icons/idea/icons/files/enum_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/exception.svg` / `icons/idea/icons/nodes/exception_dark.svg`
+/// `icons/idea/icons/files/exception.svg` / `icons/idea/icons/files/exception_dark.svg`
 pub const EXCEPTION_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/exception.svg",
-    dark: "icons/idea/icons/nodes/exception_dark.svg",
+    light: "icons/idea/icons/files/exception.svg",
+    dark: "icons/idea/icons/files/exception_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/show.svg` / `icons/idea/icons/general/show_dark.svg`
+/// `icons/idea/icons/ui/show.svg` / `icons/idea/icons/ui/show_dark.svg`
 pub const EYE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/show.svg",
-    dark: "icons/idea/icons/general/show_dark.svg",
+    light: "icons/idea/icons/ui/show.svg",
+    dark: "icons/idea/icons/ui/show_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/hide.svg` / `icons/idea/icons/general/hide_dark.svg`
+/// `icons/idea/icons/ui/hide.svg` / `icons/idea/icons/ui/hide_dark.svg`
 pub const EYE_SLASH_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/hide.svg",
-    dark: "icons/idea/icons/general/hide_dark.svg",
+    light: "icons/idea/icons/ui/hide.svg",
+    dark: "icons/idea/icons/ui/hide_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/text.svg` / `icons/idea/icons/fileTypes/text_dark.svg`
+/// `icons/idea/icons/files/text.svg` / `icons/idea/icons/files/text_dark.svg`
 pub const FILE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/text.svg",
-    dark: "icons/idea/icons/fileTypes/text_dark.svg",
+    light: "icons/idea/icons/files/text.svg",
+    dark: "icons/idea/icons/files/text_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/actions/addFile.svg` / `icons/idea/icons/actions/addFile_dark.svg`
+/// `icons/idea/icons/ui/addFile.svg` / `icons/idea/icons/ui/addFile_dark.svg`
 pub const FILE_PLUS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/actions/addFile.svg",
-    dark: "icons/idea/icons/actions/addFile_dark.svg",
+    light: "icons/idea/icons/ui/addFile.svg",
+    dark: "icons/idea/icons/ui/addFile_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/listFiles.svg` / `icons/idea/icons/general/listFiles_dark.svg`
+/// `icons/idea/icons/ui/listFiles.svg` / `icons/idea/icons/ui/listFiles_dark.svg`
 pub const FILES_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/listFiles.svg",
-    dark: "icons/idea/icons/general/listFiles_dark.svg",
+    light: "icons/idea/icons/ui/listFiles.svg",
+    dark: "icons/idea/icons/ui/listFiles_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/save.svg` / `icons/idea/icons/general/save_dark.svg`
+/// `icons/idea/icons/ui/save.svg` / `icons/idea/icons/ui/save_dark.svg`
 pub const FLOPPY_DISK_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/save.svg",
-    dark: "icons/idea/icons/general/save_dark.svg",
+    light: "icons/idea/icons/ui/save.svg",
+    dark: "icons/idea/icons/ui/save_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/folder.svg` / `icons/idea/icons/nodes/folder_dark.svg`
+/// `icons/idea/icons/folders/folder.svg` / `icons/idea/icons/folders/folder_dark.svg`
 pub const FOLDER_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/folder.svg",
-    dark: "icons/idea/icons/nodes/folder_dark.svg",
+    light: "icons/idea/icons/folders/folder.svg",
+    dark: "icons/idea/icons/folders/folder_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/actions/newFolder.svg` / `icons/idea/icons/actions/newFolder_dark.svg`
+/// `icons/idea/icons/ui/newFolder.svg` / `icons/idea/icons/ui/newFolder_dark.svg`
 pub const FOLDER_PLUS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/actions/newFolder.svg",
-    dark: "icons/idea/icons/actions/newFolder_dark.svg",
+    light: "icons/idea/icons/ui/newFolder.svg",
+    dark: "icons/idea/icons/ui/newFolder_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/font.svg` / `icons/idea/icons/fileTypes/font_dark.svg`
+/// `icons/idea/icons/files/font.svg` / `icons/idea/icons/files/font_dark.svg`
 pub const FONT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/font.svg",
-    dark: "icons/idea/icons/fileTypes/font_dark.svg",
+    light: "icons/idea/icons/files/font.svg",
+    dark: "icons/idea/icons/files/font_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/function.svg` / `icons/idea/icons/nodes/function_dark.svg`
+/// `icons/idea/icons/files/function.svg` / `icons/idea/icons/files/function_dark.svg`
 pub const FUNCTION_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/function.svg",
-    dark: "icons/idea/icons/nodes/function_dark.svg",
+    light: "icons/idea/icons/files/function.svg",
+    dark: "icons/idea/icons/files/function_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/filter.svg` / `icons/idea/icons/general/filter_dark.svg`
+/// `icons/idea/icons/ui/filter.svg` / `icons/idea/icons/ui/filter_dark.svg`
 pub const FUNNEL_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/filter.svg",
-    dark: "icons/idea/icons/general/filter_dark.svg",
+    light: "icons/idea/icons/ui/filter.svg",
+    dark: "icons/idea/icons/ui/filter_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/settings.svg` / `icons/idea/icons/general/settings_dark.svg`
+/// `icons/idea/icons/ui/settings.svg` / `icons/idea/icons/ui/settings_dark.svg`
 pub const GEAR_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/settings.svg",
-    dark: "icons/idea/icons/general/settings_dark.svg",
+    light: "icons/idea/icons/ui/settings.svg",
+    dark: "icons/idea/icons/ui/settings_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/vcs/branch.svg` / `icons/idea/icons/vcs/branch_dark.svg`
+/// `icons/idea/icons/ui/branch.svg` / `icons/idea/icons/ui/branch_dark.svg`
 pub const GIT_BRANCH_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/vcs/branch.svg",
-    dark: "icons/idea/icons/vcs/branch_dark.svg",
+    light: "icons/idea/icons/ui/branch.svg",
+    dark: "icons/idea/icons/ui/branch_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/vcs/commit.svg` / `icons/idea/icons/vcs/commit_dark.svg`
+/// `icons/idea/icons/ui/commit.svg` / `icons/idea/icons/ui/commit_dark.svg`
 pub const GIT_COMMIT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/vcs/commit.svg",
-    dark: "icons/idea/icons/vcs/commit_dark.svg",
+    light: "icons/idea/icons/ui/commit.svg",
+    dark: "icons/idea/icons/ui/commit_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/vcs/diff.svg` / `icons/idea/icons/vcs/diff_dark.svg`
+/// `icons/idea/icons/ui/diff.svg` / `icons/idea/icons/ui/diff_dark.svg`
 pub const GIT_DIFF_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/vcs/diff.svg",
-    dark: "icons/idea/icons/vcs/diff_dark.svg",
+    light: "icons/idea/icons/ui/diff.svg",
+    dark: "icons/idea/icons/ui/diff_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/vcs/merge.svg` / `icons/idea/icons/vcs/merge_dark.svg`
+/// `icons/idea/icons/ui/merge.svg` / `icons/idea/icons/ui/merge_dark.svg`
 pub const GIT_MERGE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/vcs/merge.svg",
-    dark: "icons/idea/icons/vcs/merge_dark.svg",
+    light: "icons/idea/icons/ui/merge.svg",
+    dark: "icons/idea/icons/ui/merge_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/gitignore.svg`（无 dark 变体）
+/// `icons/idea/icons/files/gitignore.svg`（无 dark 变体）
 pub const GITIGNORE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/gitignore.svg",
-    dark: "icons/idea/icons/fileTypes/gitignore.svg",
+    light: "icons/idea/icons/files/gitignore.svg",
+    dark: "icons/idea/icons/files/gitignore.svg",
     has_dark: false,
 };
-/// `icons/idea/icons/toolwindows/web.svg` / `icons/idea/icons/toolwindows/web_dark.svg`
+/// `icons/idea/icons/ui/web.svg` / `icons/idea/icons/ui/web_dark.svg`
 pub const GLOBE_HEMISPHERE_WEST_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/toolwindows/web.svg",
-    dark: "icons/idea/icons/toolwindows/web_dark.svg",
+    light: "icons/idea/icons/ui/web.svg",
+    dark: "icons/idea/icons/ui/web_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/gradle.svg` / `icons/idea/icons/fileTypes/gradle_dark.svg`
+/// `icons/idea/icons/files/gradle.svg` / `icons/idea/icons/files/gradle_dark.svg`
 pub const GRADLE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/gradle.svg",
-    dark: "icons/idea/icons/fileTypes/gradle_dark.svg",
+    light: "icons/idea/icons/files/gradle.svg",
+    dark: "icons/idea/icons/files/gradle_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/graphql.svg` / `icons/idea/icons/fileTypes/graphql_dark.svg`
+/// `icons/idea/icons/files/graphql.svg` / `icons/idea/icons/files/graphql_dark.svg`
 pub const GRAPHQL_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/graphql.svg",
-    dark: "icons/idea/icons/fileTypes/graphql_dark.svg",
+    light: "icons/idea/icons/files/graphql.svg",
+    dark: "icons/idea/icons/files/graphql_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/groovy.svg` / `icons/idea/icons/fileTypes/groovy_dark.svg`
+/// `icons/idea/icons/files/groovy.svg` / `icons/idea/icons/files/groovy_dark.svg`
 pub const GROOVY_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/groovy.svg",
-    dark: "icons/idea/icons/fileTypes/groovy_dark.svg",
+    light: "icons/idea/icons/files/groovy.svg",
+    dark: "icons/idea/icons/files/groovy_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/h.svg` / `icons/idea/icons/fileTypes/h_dark.svg`
+/// `icons/idea/icons/files/h.svg` / `icons/idea/icons/files/h_dark.svg`
 pub const H_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/h.svg",
-    dark: "icons/idea/icons/fileTypes/h_dark.svg",
+    light: "icons/idea/icons/files/h.svg",
+    dark: "icons/idea/icons/files/h_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/hashtag.svg` / `icons/idea/icons/general/hashtag_dark.svg`
+/// `icons/idea/icons/ui/hashtag.svg` / `icons/idea/icons/ui/hashtag_dark.svg`
 pub const HASH_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/hashtag.svg",
-    dark: "icons/idea/icons/general/hashtag_dark.svg",
+    light: "icons/idea/icons/ui/hashtag.svg",
+    dark: "icons/idea/icons/ui/hashtag_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/javaee/home.svg` / `icons/idea/icons/javaee/home_dark.svg`
+/// `icons/idea/icons/ui/home.svg` / `icons/idea/icons/ui/home_dark.svg`
 pub const HOUSE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/javaee/home.svg",
-    dark: "icons/idea/icons/javaee/home_dark.svg",
+    light: "icons/idea/icons/ui/home.svg",
+    dark: "icons/idea/icons/ui/home_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/html.svg` / `icons/idea/icons/fileTypes/html_dark.svg`
+/// `icons/idea/icons/files/html.svg` / `icons/idea/icons/files/html_dark.svg`
 pub const HTML_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/html.svg",
-    dark: "icons/idea/icons/fileTypes/html_dark.svg",
+    light: "icons/idea/icons/files/html.svg",
+    dark: "icons/idea/icons/files/html_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/http.svg`（无 dark 变体）
+/// `icons/idea/icons/files/http.svg`（无 dark 变体）
 pub const HTTP_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/http.svg",
-    dark: "icons/idea/icons/fileTypes/http.svg",
+    light: "icons/idea/icons/files/http.svg",
+    dark: "icons/idea/icons/files/http.svg",
     has_dark: false,
 };
-/// `icons/idea/icons/fileTypes/image.svg` / `icons/idea/icons/fileTypes/image_dark.svg`
+/// `icons/idea/icons/files/image.svg` / `icons/idea/icons/files/image_dark.svg`
 pub const IMAGE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/image.svg",
-    dark: "icons/idea/icons/fileTypes/image_dark.svg",
+    light: "icons/idea/icons/files/image.svg",
+    dark: "icons/idea/icons/files/image_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/informationDialog.svg` / `icons/idea/icons/general/informationDialog_dark.svg`
+/// `icons/idea/icons/ui/informationDialog.svg` / `icons/idea/icons/ui/informationDialog_dark.svg`
 pub const INFO_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/informationDialog.svg",
-    dark: "icons/idea/icons/general/informationDialog_dark.svg",
+    light: "icons/idea/icons/ui/informationDialog.svg",
+    dark: "icons/idea/icons/ui/informationDialog_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/interface.svg` / `icons/idea/icons/nodes/interface_dark.svg`
+/// `icons/idea/icons/files/interface.svg` / `icons/idea/icons/files/interface_dark.svg`
 pub const INTERFACE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/interface.svg",
-    dark: "icons/idea/icons/nodes/interface_dark.svg",
+    light: "icons/idea/icons/files/interface.svg",
+    dark: "icons/idea/icons/files/interface_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/java.svg` / `icons/idea/icons/fileTypes/java_dark.svg`
+/// `icons/idea/icons/files/java.svg` / `icons/idea/icons/files/java_dark.svg`
 pub const JAVA_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/java.svg",
-    dark: "icons/idea/icons/fileTypes/java_dark.svg",
+    light: "icons/idea/icons/files/java.svg",
+    dark: "icons/idea/icons/files/java_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/javaScript.svg` / `icons/idea/icons/fileTypes/javaScript_dark.svg`
+/// `icons/idea/icons/files/javaScript.svg` / `icons/idea/icons/files/javaScript_dark.svg`
 pub const JAVA_SCRIPT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/javaScript.svg",
-    dark: "icons/idea/icons/fileTypes/javaScript_dark.svg",
+    light: "icons/idea/icons/files/javaScript.svg",
+    dark: "icons/idea/icons/files/javaScript_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/json.svg` / `icons/idea/icons/fileTypes/json_dark.svg`
+/// `icons/idea/icons/files/json.svg` / `icons/idea/icons/files/json_dark.svg`
 pub const JSON_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/json.svg",
-    dark: "icons/idea/icons/fileTypes/json_dark.svg",
+    light: "icons/idea/icons/files/json.svg",
+    dark: "icons/idea/icons/files/json_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/jsp.svg` / `icons/idea/icons/fileTypes/jsp_dark.svg`
+/// `icons/idea/icons/files/jsp.svg` / `icons/idea/icons/files/jsp_dark.svg`
 pub const JSP_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/jsp.svg",
-    dark: "icons/idea/icons/fileTypes/jsp_dark.svg",
+    light: "icons/idea/icons/files/jsp.svg",
+    dark: "icons/idea/icons/files/jsp_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/keyboard.svg` / `icons/idea/icons/general/keyboard_dark.svg`
+/// `icons/idea/icons/ui/keyboard.svg` / `icons/idea/icons/ui/keyboard_dark.svg`
 pub const KEYBOARD_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/keyboard.svg",
-    dark: "icons/idea/icons/general/keyboard_dark.svg",
+    light: "icons/idea/icons/ui/keyboard.svg",
+    dark: "icons/idea/icons/ui/keyboard_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/actions/realIntentionBulb.svg` / `icons/idea/icons/actions/realIntentionBulb_dark.svg`
+/// `icons/idea/icons/ui/realIntentionBulb.svg` / `icons/idea/icons/ui/realIntentionBulb_dark.svg`
 pub const LIGHTBULB_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/actions/realIntentionBulb.svg",
-    dark: "icons/idea/icons/actions/realIntentionBulb_dark.svg",
+    light: "icons/idea/icons/ui/realIntentionBulb.svg",
+    dark: "icons/idea/icons/ui/realIntentionBulb_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/actions/lightning.svg` / `icons/idea/icons/actions/lightning_dark.svg`
+/// `icons/idea/icons/ui/lightning.svg` / `icons/idea/icons/ui/lightning_dark.svg`
 pub const LIGHTNING_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/actions/lightning.svg",
-    dark: "icons/idea/icons/actions/lightning_dark.svg",
+    light: "icons/idea/icons/ui/lightning.svg",
+    dark: "icons/idea/icons/ui/lightning_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/locked.svg` / `icons/idea/icons/general/locked_dark.svg`
+/// `icons/idea/icons/ui/locked.svg` / `icons/idea/icons/ui/locked_dark.svg`
 pub const LOCK_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/locked.svg",
-    dark: "icons/idea/icons/general/locked_dark.svg",
+    light: "icons/idea/icons/ui/locked.svg",
+    dark: "icons/idea/icons/ui/locked_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/unlocked.svg` / `icons/idea/icons/general/unlocked_dark.svg`
+/// `icons/idea/icons/ui/unlocked.svg` / `icons/idea/icons/ui/unlocked_dark.svg`
 pub const LOCK_OPEN_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/unlocked.svg",
-    dark: "icons/idea/icons/general/unlocked_dark.svg",
+    light: "icons/idea/icons/ui/unlocked.svg",
+    dark: "icons/idea/icons/ui/unlocked_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/search.svg` / `icons/idea/icons/general/search_dark.svg`
+/// `icons/idea/icons/ui/search.svg` / `icons/idea/icons/ui/search_dark.svg`
 pub const MAGNIFYING_GLASS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/search.svg",
-    dark: "icons/idea/icons/general/search_dark.svg",
+    light: "icons/idea/icons/ui/search.svg",
+    dark: "icons/idea/icons/ui/search_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/image/zoomOut.svg` / `icons/idea/icons/image/zoomOut_dark.svg`
+/// `icons/idea/icons/ui/zoomOut.svg` / `icons/idea/icons/ui/zoomOut_dark.svg`
 pub const MAGNIFYING_GLASS_MINUS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/image/zoomOut.svg",
-    dark: "icons/idea/icons/image/zoomOut_dark.svg",
+    light: "icons/idea/icons/ui/zoomOut.svg",
+    dark: "icons/idea/icons/ui/zoomOut_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/image/zoomIn.svg` / `icons/idea/icons/image/zoomIn_dark.svg`
+/// `icons/idea/icons/ui/zoomIn.svg` / `icons/idea/icons/ui/zoomIn_dark.svg`
 pub const MAGNIFYING_GLASS_PLUS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/image/zoomIn.svg",
-    dark: "icons/idea/icons/image/zoomIn_dark.svg",
+    light: "icons/idea/icons/ui/zoomIn.svg",
+    dark: "icons/idea/icons/ui/zoomIn_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/markdown.svg` / `icons/idea/icons/fileTypes/markdown_dark.svg`
+/// `icons/idea/icons/files/markdown.svg` / `icons/idea/icons/files/markdown_dark.svg`
 pub const MARKDOWN_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/markdown.svg",
-    dark: "icons/idea/icons/fileTypes/markdown_dark.svg",
+    light: "icons/idea/icons/files/markdown.svg",
+    dark: "icons/idea/icons/files/markdown_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/maven.svg` / `icons/idea/icons/fileTypes/maven_dark.svg`
+/// `icons/idea/icons/files/maven.svg` / `icons/idea/icons/files/maven_dark.svg`
 pub const MAVEN_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/maven.svg",
-    dark: "icons/idea/icons/fileTypes/maven_dark.svg",
+    light: "icons/idea/icons/files/maven.svg",
+    dark: "icons/idea/icons/files/maven_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/remove.svg` / `icons/idea/icons/general/remove_dark.svg`
+/// `icons/idea/icons/ui/remove.svg` / `icons/idea/icons/ui/remove_dark.svg`
 pub const MINUS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/remove.svg",
-    dark: "icons/idea/icons/general/remove_dark.svg",
+    light: "icons/idea/icons/ui/remove.svg",
+    dark: "icons/idea/icons/ui/remove_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/desktop.svg` / `icons/idea/icons/nodes/desktop_dark.svg`
+/// `icons/idea/icons/ui/desktop.svg` / `icons/idea/icons/ui/desktop_dark.svg`
 pub const MONITOR_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/desktop.svg",
-    dark: "icons/idea/icons/nodes/desktop_dark.svg",
+    light: "icons/idea/icons/ui/desktop.svg",
+    dark: "icons/idea/icons/ui/desktop_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/package.svg` / `icons/idea/icons/nodes/package_dark.svg`
+/// `icons/idea/icons/folders/package.svg` / `icons/idea/icons/folders/package_dark.svg`
 pub const PACKAGE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/package.svg",
-    dark: "icons/idea/icons/nodes/package_dark.svg",
+    light: "icons/idea/icons/folders/package.svg",
+    dark: "icons/idea/icons/folders/package_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/toolwindows/palette.svg` / `icons/idea/icons/toolwindows/palette_dark.svg`
+/// `icons/idea/icons/ui/palette.svg` / `icons/idea/icons/ui/palette_dark.svg`
 pub const PALETTE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/toolwindows/palette.svg",
-    dark: "icons/idea/icons/toolwindows/palette_dark.svg",
+    light: "icons/idea/icons/ui/palette.svg",
+    dark: "icons/idea/icons/ui/palette_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/patch.svg` / `icons/idea/icons/fileTypes/patch_dark.svg`
+/// `icons/idea/icons/files/patch.svg` / `icons/idea/icons/files/patch_dark.svg`
 pub const PATCH_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/patch.svg",
-    dark: "icons/idea/icons/fileTypes/patch_dark.svg",
+    light: "icons/idea/icons/files/patch.svg",
+    dark: "icons/idea/icons/files/patch_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/run/pause.svg` / `icons/idea/icons/run/pause_dark.svg`
+/// `icons/idea/icons/ui/pause.svg` / `icons/idea/icons/ui/pause_dark.svg`
 pub const PAUSE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/run/pause.svg",
-    dark: "icons/idea/icons/run/pause_dark.svg",
+    light: "icons/idea/icons/ui/pause.svg",
+    dark: "icons/idea/icons/ui/pause_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/edit.svg` / `icons/idea/icons/general/edit_dark.svg`
+/// `icons/idea/icons/ui/edit.svg` / `icons/idea/icons/ui/edit_dark.svg`
 pub const PEN_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/edit.svg",
-    dark: "icons/idea/icons/general/edit_dark.svg",
+    light: "icons/idea/icons/ui/edit.svg",
+    dark: "icons/idea/icons/ui/edit_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/perl.svg` / `icons/idea/icons/fileTypes/perl_dark.svg`
+/// `icons/idea/icons/files/perl.svg` / `icons/idea/icons/files/perl_dark.svg`
 pub const PERL_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/perl.svg",
-    dark: "icons/idea/icons/fileTypes/perl_dark.svg",
+    light: "icons/idea/icons/files/perl.svg",
+    dark: "icons/idea/icons/files/perl_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/run/run.svg` / `icons/idea/icons/run/run_dark.svg`
+/// `icons/idea/icons/ui/run.svg` / `icons/idea/icons/ui/run_dark.svg`
 pub const PLAY_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/run/run.svg",
-    dark: "icons/idea/icons/run/run_dark.svg",
+    light: "icons/idea/icons/ui/run.svg",
+    dark: "icons/idea/icons/ui/run_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/add.svg` / `icons/idea/icons/general/add_dark.svg`
+/// `icons/idea/icons/ui/add.svg` / `icons/idea/icons/ui/add_dark.svg`
 pub const PLUS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/add.svg",
-    dark: "icons/idea/icons/general/add_dark.svg",
+    light: "icons/idea/icons/ui/add.svg",
+    dark: "icons/idea/icons/ui/add_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/powershell.svg` / `icons/idea/icons/fileTypes/powershell_dark.svg`
+/// `icons/idea/icons/files/powershell.svg` / `icons/idea/icons/files/powershell_dark.svg`
 pub const POWERSHELL_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/powershell.svg",
-    dark: "icons/idea/icons/fileTypes/powershell_dark.svg",
+    light: "icons/idea/icons/files/powershell.svg",
+    dark: "icons/idea/icons/files/powershell_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/properties.svg` / `icons/idea/icons/fileTypes/properties_dark.svg`
+/// `icons/idea/icons/files/properties.svg` / `icons/idea/icons/files/properties_dark.svg`
 pub const PROPERTIES_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/properties.svg",
-    dark: "icons/idea/icons/fileTypes/properties_dark.svg",
+    light: "icons/idea/icons/files/properties.svg",
+    dark: "icons/idea/icons/files/properties_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/pin.svg` / `icons/idea/icons/general/pin_dark.svg`
+/// `icons/idea/icons/ui/pin.svg` / `icons/idea/icons/ui/pin_dark.svg`
 pub const PUSH_PIN_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/pin.svg",
-    dark: "icons/idea/icons/general/pin_dark.svg",
+    light: "icons/idea/icons/ui/pin.svg",
+    dark: "icons/idea/icons/ui/pin_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/questionDialog.svg` / `icons/idea/icons/general/questionDialog_dark.svg`
+/// `icons/idea/icons/ui/questionDialog.svg` / `icons/idea/icons/ui/questionDialog_dark.svg`
 pub const QUESTION_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/questionDialog.svg",
-    dark: "icons/idea/icons/general/questionDialog_dark.svg",
+    light: "icons/idea/icons/ui/questionDialog.svg",
+    dark: "icons/idea/icons/ui/questionDialog_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/record.svg` / `icons/idea/icons/nodes/record_dark.svg`
+/// `icons/idea/icons/files/record.svg` / `icons/idea/icons/files/record_dark.svg`
 pub const RECORD_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/record.svg",
-    dark: "icons/idea/icons/nodes/record_dark.svg",
+    light: "icons/idea/icons/files/record.svg",
+    dark: "icons/idea/icons/files/record_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/refresh.svg` / `icons/idea/icons/general/refresh_dark.svg`
+/// `icons/idea/icons/ui/refresh.svg` / `icons/idea/icons/ui/refresh_dark.svg`
 pub const REFRESH_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/refresh.svg",
-    dark: "icons/idea/icons/general/refresh_dark.svg",
+    light: "icons/idea/icons/ui/refresh.svg",
+    dark: "icons/idea/icons/ui/refresh_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/resourcesRoot.svg` / `icons/idea/icons/nodes/resourcesRoot_dark.svg`
+/// `icons/idea/icons/folders/resourcesRoot.svg` / `icons/idea/icons/folders/resourcesRoot_dark.svg`
 pub const RESOURCES_ROOT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/resourcesRoot.svg",
-    dark: "icons/idea/icons/nodes/resourcesRoot_dark.svg",
+    light: "icons/idea/icons/folders/resourcesRoot.svg",
+    dark: "icons/idea/icons/folders/resourcesRoot_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/splitHorizontally.svg` / `icons/idea/icons/general/splitHorizontally_dark.svg`
+/// `icons/idea/icons/ui/splitHorizontally.svg` / `icons/idea/icons/ui/splitHorizontally_dark.svg`
 pub const ROWS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/splitHorizontally.svg",
-    dark: "icons/idea/icons/general/splitHorizontally_dark.svg",
+    light: "icons/idea/icons/ui/splitHorizontally.svg",
+    dark: "icons/idea/icons/ui/splitHorizontally_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/rst.svg` / `icons/idea/icons/fileTypes/rst_dark.svg`
+/// `icons/idea/icons/files/rst.svg` / `icons/idea/icons/files/rst_dark.svg`
 pub const RST_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/rst.svg",
-    dark: "icons/idea/icons/fileTypes/rst_dark.svg",
+    light: "icons/idea/icons/files/rst.svg",
+    dark: "icons/idea/icons/files/rst_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/cut.svg` / `icons/idea/icons/general/cut_dark.svg`
+/// `icons/idea/icons/ui/cut.svg` / `icons/idea/icons/ui/cut_dark.svg`
 pub const SCISSORS_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/cut.svg",
-    dark: "icons/idea/icons/general/cut_dark.svg",
+    light: "icons/idea/icons/ui/cut.svg",
+    dark: "icons/idea/icons/ui/cut_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/shell.svg` / `icons/idea/icons/fileTypes/shell_dark.svg`
+/// `icons/idea/icons/files/shell.svg` / `icons/idea/icons/files/shell_dark.svg`
 pub const SHELL_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/shell.svg",
-    dark: "icons/idea/icons/fileTypes/shell_dark.svg",
+    light: "icons/idea/icons/files/shell.svg",
+    dark: "icons/idea/icons/files/shell_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/layout.svg` / `icons/idea/icons/general/layout_dark.svg`
+/// `icons/idea/icons/ui/layout.svg` / `icons/idea/icons/ui/layout_dark.svg`
 pub const SIDEBAR_SIMPLE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/layout.svg",
-    dark: "icons/idea/icons/general/layout_dark.svg",
+    light: "icons/idea/icons/ui/layout.svg",
+    dark: "icons/idea/icons/ui/layout_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/exit.svg` / `icons/idea/icons/general/exit_dark.svg`
+/// `icons/idea/icons/ui/exit.svg` / `icons/idea/icons/ui/exit_dark.svg`
 pub const SIGN_OUT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/exit.svg",
-    dark: "icons/idea/icons/general/exit_dark.svg",
+    light: "icons/idea/icons/ui/exit.svg",
+    dark: "icons/idea/icons/ui/exit_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/sourceRoot.svg` / `icons/idea/icons/nodes/sourceRoot_dark.svg`
+/// `icons/idea/icons/folders/sourceRoot.svg` / `icons/idea/icons/folders/sourceRoot_dark.svg`
 pub const SOURCE_ROOT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/sourceRoot.svg",
-    dark: "icons/idea/icons/nodes/sourceRoot_dark.svg",
+    light: "icons/idea/icons/folders/sourceRoot.svg",
+    dark: "icons/idea/icons/folders/sourceRoot_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/sql.svg` / `icons/idea/icons/fileTypes/sql_dark.svg`
+/// `icons/idea/icons/files/sql.svg` / `icons/idea/icons/files/sql_dark.svg`
 pub const SQL_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/sql.svg",
-    dark: "icons/idea/icons/fileTypes/sql_dark.svg",
+    light: "icons/idea/icons/files/sql.svg",
+    dark: "icons/idea/icons/files/sql_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/run/stop.svg` / `icons/idea/icons/run/stop_dark.svg`
+/// `icons/idea/icons/ui/stop.svg` / `icons/idea/icons/ui/stop_dark.svg`
 pub const STOP_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/run/stop.svg",
-    dark: "icons/idea/icons/run/stop_dark.svg",
+    light: "icons/idea/icons/ui/stop.svg",
+    dark: "icons/idea/icons/ui/stop_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/swiftLang.svg` / `icons/idea/icons/fileTypes/swiftLang_dark.svg`
+/// `icons/idea/icons/files/swiftLang.svg` / `icons/idea/icons/files/swiftLang_dark.svg`
 pub const SWIFT_LANG_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/swiftLang.svg",
-    dark: "icons/idea/icons/fileTypes/swiftLang_dark.svg",
+    light: "icons/idea/icons/files/swiftLang.svg",
+    dark: "icons/idea/icons/files/swiftLang_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/dataTables.svg` / `icons/idea/icons/nodes/dataTables_dark.svg`
+/// `icons/idea/icons/ui/dataTables.svg` / `icons/idea/icons/ui/dataTables_dark.svg`
 pub const TABLE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/dataTables.svg",
-    dark: "icons/idea/icons/nodes/dataTables_dark.svg",
+    light: "icons/idea/icons/ui/dataTables.svg",
+    dark: "icons/idea/icons/ui/dataTables_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/terraform.svg` / `icons/idea/icons/fileTypes/terraform_dark.svg`
+/// `icons/idea/icons/files/terraform.svg` / `icons/idea/icons/files/terraform_dark.svg`
 pub const TERRAFORM_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/terraform.svg",
-    dark: "icons/idea/icons/fileTypes/terraform_dark.svg",
+    light: "icons/idea/icons/files/terraform.svg",
+    dark: "icons/idea/icons/files/terraform_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/testResourcesRoot.svg` / `icons/idea/icons/nodes/testResourcesRoot_dark.svg`
+/// `icons/idea/icons/folders/testResourcesRoot.svg` / `icons/idea/icons/folders/testResourcesRoot_dark.svg`
 pub const TEST_RESOURCES_ROOT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/testResourcesRoot.svg",
-    dark: "icons/idea/icons/nodes/testResourcesRoot_dark.svg",
+    light: "icons/idea/icons/folders/testResourcesRoot.svg",
+    dark: "icons/idea/icons/folders/testResourcesRoot_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/nodes/testRoot.svg` / `icons/idea/icons/nodes/testRoot_dark.svg`
+/// `icons/idea/icons/folders/testRoot.svg` / `icons/idea/icons/folders/testRoot_dark.svg`
 pub const TEST_ROOT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/nodes/testRoot.svg",
-    dark: "icons/idea/icons/nodes/testRoot_dark.svg",
+    light: "icons/idea/icons/folders/testRoot.svg",
+    dark: "icons/idea/icons/folders/testRoot_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/toml.svg` / `icons/idea/icons/fileTypes/toml_dark.svg`
+/// `icons/idea/icons/files/toml.svg` / `icons/idea/icons/files/toml_dark.svg`
 pub const TOML_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/toml.svg",
-    dark: "icons/idea/icons/fileTypes/toml_dark.svg",
+    light: "icons/idea/icons/files/toml.svg",
+    dark: "icons/idea/icons/files/toml_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/language.svg` / `icons/idea/icons/general/language_dark.svg`
+/// `icons/idea/icons/ui/language.svg` / `icons/idea/icons/ui/language_dark.svg`
 pub const TRANSLATE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/language.svg",
-    dark: "icons/idea/icons/general/language_dark.svg",
+    light: "icons/idea/icons/ui/language.svg",
+    dark: "icons/idea/icons/ui/language_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/delete.svg` / `icons/idea/icons/general/delete_dark.svg`
+/// `icons/idea/icons/ui/delete.svg` / `icons/idea/icons/ui/delete_dark.svg`
 pub const TRASH_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/delete.svg",
-    dark: "icons/idea/icons/general/delete_dark.svg",
+    light: "icons/idea/icons/ui/delete.svg",
+    dark: "icons/idea/icons/ui/delete_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/tree.svg` / `icons/idea/icons/general/tree_dark.svg`
+/// `icons/idea/icons/ui/tree.svg` / `icons/idea/icons/ui/tree_dark.svg`
 pub const TREE_STRUCTURE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/tree.svg",
-    dark: "icons/idea/icons/general/tree_dark.svg",
+    light: "icons/idea/icons/ui/tree.svg",
+    dark: "icons/idea/icons/ui/tree_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/typeScript.svg` / `icons/idea/icons/fileTypes/typeScript_dark.svg`
+/// `icons/idea/icons/files/typeScript.svg` / `icons/idea/icons/files/typeScript_dark.svg`
 pub const TYPE_SCRIPT_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/typeScript.svg",
-    dark: "icons/idea/icons/fileTypes/typeScript_dark.svg",
+    light: "icons/idea/icons/files/typeScript.svg",
+    dark: "icons/idea/icons/files/typeScript_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/upload.svg` / `icons/idea/icons/general/upload_dark.svg`
+/// `icons/idea/icons/ui/upload.svg` / `icons/idea/icons/ui/upload_dark.svg`
 pub const UPLOAD_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/upload.svg",
-    dark: "icons/idea/icons/general/upload_dark.svg",
+    light: "icons/idea/icons/ui/upload.svg",
+    dark: "icons/idea/icons/ui/upload_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/user.svg` / `icons/idea/icons/general/user_dark.svg`
+/// `icons/idea/icons/ui/user.svg` / `icons/idea/icons/ui/user_dark.svg`
 pub const USER_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/user.svg",
-    dark: "icons/idea/icons/general/user_dark.svg",
+    light: "icons/idea/icons/ui/user.svg",
+    dark: "icons/idea/icons/ui/user_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/groups.svg` / `icons/idea/icons/general/groups_dark.svg`
+/// `icons/idea/icons/ui/groups.svg` / `icons/idea/icons/ui/groups_dark.svg`
 pub const USERS_THREE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/groups.svg",
-    dark: "icons/idea/icons/general/groups_dark.svg",
+    light: "icons/idea/icons/ui/groups.svg",
+    dark: "icons/idea/icons/ui/groups_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/vue.svg`（无 dark 变体）
+/// `icons/idea/icons/files/vue.svg`（无 dark 变体）
 pub const VUE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/vue.svg",
-    dark: "icons/idea/icons/fileTypes/vue.svg",
+    light: "icons/idea/icons/files/vue.svg",
+    dark: "icons/idea/icons/files/vue.svg",
     has_dark: false,
 };
-/// `icons/idea/icons/general/warningDialog.svg` / `icons/idea/icons/general/warningDialog_dark.svg`
+/// `icons/idea/icons/ui/warningDialog.svg` / `icons/idea/icons/ui/warningDialog_dark.svg`
 pub const WARNING_CIRCLE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/warningDialog.svg",
-    dark: "icons/idea/icons/general/warningDialog_dark.svg",
+    light: "icons/idea/icons/ui/warningDialog.svg",
+    dark: "icons/idea/icons/ui/warningDialog_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/externalTools.svg` / `icons/idea/icons/general/externalTools_dark.svg`
+/// `icons/idea/icons/ui/externalTools.svg` / `icons/idea/icons/ui/externalTools_dark.svg`
 pub const WRENCH_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/externalTools.svg",
-    dark: "icons/idea/icons/general/externalTools_dark.svg",
+    light: "icons/idea/icons/ui/externalTools.svg",
+    dark: "icons/idea/icons/ui/externalTools_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/wsdl.svg` / `icons/idea/icons/fileTypes/wsdl_dark.svg`
+/// `icons/idea/icons/files/wsdl.svg` / `icons/idea/icons/files/wsdl_dark.svg`
 pub const WSDL_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/wsdl.svg",
-    dark: "icons/idea/icons/fileTypes/wsdl_dark.svg",
+    light: "icons/idea/icons/files/wsdl.svg",
+    dark: "icons/idea/icons/files/wsdl_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/close.svg` / `icons/idea/icons/general/close_dark.svg`
+/// `icons/idea/icons/ui/close.svg` / `icons/idea/icons/ui/close_dark.svg`
 pub const X_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/close.svg",
-    dark: "icons/idea/icons/general/close_dark.svg",
+    light: "icons/idea/icons/ui/close.svg",
+    dark: "icons/idea/icons/ui/close_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/general/errorDialog.svg` / `icons/idea/icons/general/errorDialog_dark.svg`
+/// `icons/idea/icons/ui/errorDialog.svg` / `icons/idea/icons/ui/errorDialog_dark.svg`
 pub const XCIRCLE_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/general/errorDialog.svg",
-    dark: "icons/idea/icons/general/errorDialog_dark.svg",
+    light: "icons/idea/icons/ui/errorDialog.svg",
+    dark: "icons/idea/icons/ui/errorDialog_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/xhtml.svg` / `icons/idea/icons/fileTypes/xhtml_dark.svg`
+/// `icons/idea/icons/files/xhtml.svg` / `icons/idea/icons/files/xhtml_dark.svg`
 pub const XHTML_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/xhtml.svg",
-    dark: "icons/idea/icons/fileTypes/xhtml_dark.svg",
+    light: "icons/idea/icons/files/xhtml.svg",
+    dark: "icons/idea/icons/files/xhtml_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/xml.svg` / `icons/idea/icons/fileTypes/xml_dark.svg`
+/// `icons/idea/icons/files/xml.svg` / `icons/idea/icons/files/xml_dark.svg`
 pub const XML_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/xml.svg",
-    dark: "icons/idea/icons/fileTypes/xml_dark.svg",
+    light: "icons/idea/icons/files/xml.svg",
+    dark: "icons/idea/icons/files/xml_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/xsd.svg` / `icons/idea/icons/fileTypes/xsd_dark.svg`
+/// `icons/idea/icons/files/xsd.svg` / `icons/idea/icons/files/xsd_dark.svg`
 pub const XSD_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/xsd.svg",
-    dark: "icons/idea/icons/fileTypes/xsd_dark.svg",
+    light: "icons/idea/icons/files/xsd.svg",
+    dark: "icons/idea/icons/files/xsd_dark.svg",
     has_dark: true,
 };
-/// `icons/idea/icons/fileTypes/yaml.svg` / `icons/idea/icons/fileTypes/yaml_dark.svg`
+/// `icons/idea/icons/files/yaml.svg` / `icons/idea/icons/files/yaml_dark.svg`
 pub const YAML_ICON: IdeaIcon = IdeaIcon {
-    light: "icons/idea/icons/fileTypes/yaml.svg",
-    dark: "icons/idea/icons/fileTypes/yaml_dark.svg",
+    light: "icons/idea/icons/files/yaml.svg",
+    dark: "icons/idea/icons/files/yaml_dark.svg",
     has_dark: true,
 };
 

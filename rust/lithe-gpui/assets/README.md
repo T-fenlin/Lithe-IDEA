@@ -448,3 +448,30 @@ TOTAL src=1194 bad=0 extra=0
 代价是内嵌字节数又变了一次：**411 个文件不变，字节数 3 318 863 → 3 317 793**（清单文本短了
 1 070 字节）。`crates/app/src/assets.rs` 的 pin 与模块文档、`main.rs` 的注释已同步；
 9.4 表里那组数字是那一批的历史读数，以本节为准。
+
+## 9.7 资产目录重划成三类：`files` / `folders` / `ui`（同日）
+
+上游 `expui/` 的 11 个目录（`actions` `bookmarks` `fileTypes` `general` `ide` `image` `javaee`
+`nodes` `run` `toolwindows` `vcs`）是 JetBrains 内部的切法，对使用者与插件作者都不是有意义的
+分类。这次收敛成**三类**，253 个 SVG 全部 `git mv`（git 识别为重命名）：
+
+| 新目录 | 文件数 | 装什么 | 来自上游 |
+| --- | ---: | --- | --- |
+| `icons/files/` | 93 | 文件类型图标 + 符号（`class` / `interface` / `enum` / `annotation` / `record` / `exception` / `function`，即 `.java` 语义条那一族） | `fileTypes/**` + `nodes/` 的符号族 |
+| `icons/folders/` | 12 | 文件夹图标（含语义根：`sourceRoot` / `testRoot` / `resourcesRoot` / `testResourcesRoot` / `package`） | `nodes/` 的目录族 |
+| `icons/ui/` | 148 | 界面 chrome（工具条 / 菜单 / 状态栏 / 版本控制 / 运行 / 通知…） | `actions` `bookmarks` `general` `ide` `image` `javaee` `run` `toolwindows` `vcs` + `nodes/{dataTables,desktop}` |
+
+- **`ui/` 就是"chrome 图标独立成文件夹"的落点**：插件包可以只提供 `files/`、`folders/`（不碰界面），
+  也可以提供 `ui/` 覆盖界面字形；缺的一律回落内置 `idea`（级联规则见
+  `.agents/notes/implemented/feature/2026-09-29-plugin-catalog-v2-and-extensions-page.md` 第七批）。
+- **`extension.json` 的 106 条路径**按同一规则改写，并逐条校验过"新路径在磁盘上真实存在"。
+  注意清单里**没有 `ui/` 路径** —— 界面字形由 `crates/shared/src/icons/idea.rs` 的常量引用，
+  清单只服务文件 / 文件夹图标。
+- **生成器的查表键跟着迁**：`tools/idea-icon-mappings.json` 的 `source` 从"上游路径"改成
+  **本地路径**（`files/...`），上游路径挪进新加的 `upstream` 字段（只作溯源，代码不读）——
+  三类布局不再镜像上游，两者必须显式分开。产物重生成后 **128 个常量名与 16 个别名零变化**，
+  这是"迁移规则没错"的最强证据。
+- 内嵌字节再变一次：**411 个文件不变，3 317 793 → 3 317 489**（清单文本短 304 字节）。
+- `lithe`(459) / `symbols`(325) / `pierre`(149) 三套**这次不动**：前两套本来就是
+  `icons/files/**` + `icons/folders/**` 的形状（只差一个 `ui/`），`pierre` 是上游扁平
+  `icons/*.svg`；它们要走这条约定时再迁（第 3 步"磁盘包"落地时一并处理）。

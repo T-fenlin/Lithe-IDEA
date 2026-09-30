@@ -1293,7 +1293,7 @@ impl SettingsDialog {
             .bg(cx.theme().popover)
             .text_color(cx.theme().foreground)
             // 头部齿轮：改用**Windows 真源**的 IntelliJ `expui` 图标
-            // （`icons/idea/icons/general/settings.svg`，深色另有 `settings_dark.svg`），
+            // （`icons/idea/icons/ui/settings.svg`，深色另有 `settings_dark.svg`），
             // 不再用 Lucide 的 `IconName::Settings`。这是"图标资源接线"的第一处真实调用点：
             // 真源文件已在 `lithe-gpui/assets/icons/idea/icons/`，注册（`LitheAssets`）与清单
             // （`shared::icons::idea`）已就位，helper 按主题挑明暗。

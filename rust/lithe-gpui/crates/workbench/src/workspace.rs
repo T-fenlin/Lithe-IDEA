@@ -2701,7 +2701,7 @@ impl ShellWorkspace {
         let branch = read_branch(&self.root).unwrap_or_else(|| "—".to_string());
 
         entries.push(StatusEntry::new(project_name).with_file_icon(&active_file, cx));
-        // 真源：`icons/idea/icons/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
+        // 真源：`icons/idea/icons/ui/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
         entries.push(
             StatusEntry::new(SharedString::from(branch)).with_idea_icon(&idea::GIT_BRANCH_ICON, cx),
         );
@@ -2810,14 +2810,14 @@ impl ShellWorkspace {
             // 闭锁字形。要变成真实值需要 `EditorState::is_readonly()` 接进来
             // （真源 `footer-editor-status.tsx:102` 用 `LockIcon` / `LockOpenIcon` 区分），
             // 属于阶段 9 范围外的状态栏打磨。
-            // 真源：`icons/idea/icons/general/locked.svg(+_dark)` —— 真机 `LockIcon`。
+            // 真源：`icons/idea/icons/ui/locked.svg(+_dark)` —— 真机 `LockIcon`。
             StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::LOCK_ICON, cx),
             // ⚠️ 内存条目：真值来自 10s 轮询的原生命令 `get_application_memory_usage`
             // （`footer-editor-status.tsx:24,45-67`），属数据层，本阶段不做。
             StatusEntry::new(SharedString::from("总计 0.0 MB · Lithe 0.0 MB"))
                 .with_icon(IconName::HardDrive),
             // ⚠️ Git 更改数：要等 `git.*` 提供工作区状态，本轮仍是空占位（只有图标）。
-            // 真源：`icons/idea/icons/general/successDialog.svg(+_dark)` —— 真机 `CheckCircleIcon`。
+            // 真源：`icons/idea/icons/ui/successDialog.svg(+_dark)` —— 真机 `CheckCircleIcon`。
             StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::CHECK_CIRCLE_ICON, cx),
         ]
     }
@@ -4527,12 +4527,12 @@ fn activity_items() -> Vec<ActivityItem> {
     // 顶部组：`sidebar-pane-selector.tsx:311-319` 的 files / git / search。
     // 底部组：上面的 `SIDEBAR_BOTTOM_ACTIVITY_ITEM_IDS` 去掉 maven。
     vec![
-        // 真源：`icons/idea/icons/general/listFiles.svg(+_dark)` —— 真机 `FilesIcon`
+        // 真源：`icons/idea/icons/ui/listFiles.svg(+_dark)` —— 真机 `FilesIcon`
         // 的同一个文件（`windows/tauri/src/ui/icons/idea-assets.generated.ts:FilesIcon`）。
         ActivityItem::idea(&idea::FILES_ICON, tr("lithe.workbench.project")),
-        // 真源：`icons/idea/icons/vcs/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
+        // 真源：`icons/idea/icons/ui/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
         ActivityItem::idea(&idea::GIT_BRANCH_ICON, tr("lithe.workbench.changes")),
-        // 真源：`icons/idea/icons/general/search.svg(+_dark)` —— 真机 `MagnifyingGlassIcon`。
+        // 真源：`icons/idea/icons/ui/search.svg(+_dark)` —— 真机 `MagnifyingGlassIcon`。
         ActivityItem::idea(&idea::MAGNIFYING_GLASS_ICON, tr("lithe.workbench.search")),
         // ⚠️ 保持 Lucide：真机 `RunIcon`（`features/run/components/run-icon.tsx`）是**内联
         // React 组件**，只有一条 stroke path、没有 SVG 文件，搬不动（见
@@ -4541,7 +4541,7 @@ fn activity_items() -> Vec<ActivityItem> {
         // ⚠️ 保持 Lucide：真机 `TerminalWindowIcon` 走 `Nucleo.IconSquareTerminalOutline18`
         // → `lucide-react` 的 `square-terminal`，**本来就是 Lucide，已经是 1:1**。
         ActivityItem::new(IconName::SquareTerminal, tr("lithe.workbench.terminal")).bottom(true),
-        // 真源：`icons/idea/icons/general/warningDialog.svg(+_dark)` —— 真机 `WarningIcon`。
+        // 真源：`icons/idea/icons/ui/warningDialog.svg(+_dark)` —— 真机 `WarningIcon`。
         ActivityItem::idea(
             &idea::WARNING_CIRCLE_ICON,
             tr("lithe.workbench.diagnostics"),
@@ -4550,7 +4550,7 @@ fn activity_items() -> Vec<ActivityItem> {
         // ⚠️ 保持 Lucide：真机 `GitGraphIcon` 走 `Nucleo.IconGitGraphOutline18` → Lucide
         // `git-graph`，同样是 1:1。
         ActivityItem::new(IconName::GitGraph, tr("lithe.workbench.gitLog")).bottom(true),
-        // 真源：`icons/idea/icons/general/settings.svg(+_dark)` —— 真机 `GearIcon`
+        // 真源：`icons/idea/icons/ui/settings.svg(+_dark)` —— 真机 `GearIcon`
         // （与 `GearSixIcon` 同一张图，见生成器的别名表）。
         ActivityItem::idea(&idea::GEAR_ICON, tr("lithe.workbench.settings")).bottom(true),
     ]
@@ -4627,14 +4627,14 @@ fn right_activity_items(store: &Entity<lithe_gpui_notify::Store>, cx: &App) -> V
         // `legacyIconCompatibility.PuzzlePiece = lucideIcons.Puzzle`，**真源物就是 Lucide
         // `puzzle`**，没有 SVG 文件可搬；gpui 用的 `IconName::Puzzle` 是同一个字形。
         ActivityItem::new(IconName::Puzzle, tr("lithe.extensions.title")),
-        // 真源：`icons/idea/icons/toolwindows/notifications.svg(+_dark)` —— 真机
+        // 真源：`icons/idea/icons/ui/notifications.svg(+_dark)` —— 真机
         // `BellIcon`（`features/notifications/components/notifications-trigger.tsx:43`）。
         bell,
         // ⚠️ 保持 Lucide：真机 `MavenIcon`（`features/maven/components/maven-icon.tsx`）是
         // **内联 React 组件**，只有一条 fill path、没有 SVG 文件。Lucide 没有 Maven 字形，
         // 与 `activity_bar.rs` 的对照表同一取舍：取「包 / 构建产物」语义的 `package`。
         // （注意：Maven **文件类型**图标是有真源的 —— `icons/idea` 的
-        // `pom.xml` → `icons/fileTypes/maven.svg`，所以文件树里 `pom.xml` 是真源。）
+        // `pom.xml` → `icons/files/maven.svg`，所以文件树里 `pom.xml` 是真源。）
         ActivityItem::new(IconName::Package, tr("lithe.workbench.maven")),
     ]
 }
