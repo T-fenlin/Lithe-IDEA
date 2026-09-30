@@ -29,7 +29,8 @@
 //! 保持"窗口总高不变"（40 → 30+38 净增的 28 正好是 320-240），否则项目树底部会被挤出窗口。
 //! 本版用普通 `v_flex` + 固定高度表达这个分栏，**不用** gpui-kit 的 Dock：Windows 的
 //! `MainLayout` 本身就是 flex + `ResizablePane`，没有 dock 系统，用 Dock 反而会多出
-//! 一条 Windows 没有的标签头。
+//! 一条 Windows 没有的标签头。唯一的例外是**分隔条**：左侧栏那条可拖分界线用的是
+//! Dock 同款的上游手柄（[`drag_handle`]，2026-09-30，`docs/gpui kit/0.7.0/component/dock.md`）。
 //!
 //! 三个区域模块（[`super::shell`]）是**无状态渲染函数**；需要持有 `Entity` 的区域
 //! （项目树 / 编辑区）各自是一个 `Entity`。状态归属只有两个：本结构体（外壳）+ 各区域自己。
@@ -87,15 +88,15 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::assets::IconName;
-use gpui_kit::base::{h_flex, v_flex};
+use gpui_kit::base::{HandleEdge, h_flex, resize_handle, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::notification::{Notification, NotificationType};
-use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Root, WindowExt as _, resize_handle_appearance};
 use gpui_kit::{
-    Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Div, Entity, Global, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
-    Render, SharedString, Styled as _, Window, div, rems,
+    Anchor, AnyElement, App, AppContext as _, Axis, ClickEvent, Context, Div, Empty, Entity,
+    Global, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _,
+    PathPromptOptions, Render, SharedString, Styled as _, Window, div, rems,
 };
 
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
@@ -429,10 +430,10 @@ const DEFAULT_TOP_ACTIVITY: usize = 0;
 
 /// 左侧栏面板的**初始**宽度（规格像素，320 = 真源 `sidebarWidth`）。
 ///
-/// ⚠️ 这只是**初值**：2026-09-27 起运行期可以拖（[`drag_handle`] 写
-/// [`ShellWorkspace::left_sidebar_width`]，范围 [`SIDEBAR_MIN_WIDTH_SPEC`] …
-/// [`SIDEBAR_MAX_WIDTH_SPEC`]）。维护者口径：「workspace.rs 我还是改为 320 了，
-/// 到时候弄成拖动改宽窄」—— 即恢复真源默认值，宽度交给用户拖。
+/// ⚠️ 这只是**初值**：2026-09-27 起运行期可以拖（[`drag_handle`] 开始拖拽会话，
+/// [`drag_tracker`] 写 [`ShellWorkspace::left_sidebar_width`]，范围
+/// [`SIDEBAR_MIN_WIDTH_SPEC`] … [`SIDEBAR_MAX_WIDTH_SPEC`]）。维护者口径：
+/// 「workspace.rs 我还是改为 320 了，到时候弄成拖动改宽窄」—— 即恢复真源默认值，宽度交给用户拖。
 ///
 /// **不持久化**：会话文档（`workspace_config::session`）只有可见性字段，还没有宽度字段；
 /// 加字段要动那边手写的 `Deserialize`，属独立一批（登记在 `lithe-gpui/docs/ui-mockup-idea.md`）。
@@ -447,11 +448,6 @@ const SIDEBAR_WIDTH_SPEC: f32 = 320.;
 /// 吃成"直接连接"，靠的是负外边距 `rems(-WORKBENCH_GAP_SPEC / 16.)` ——
 /// 数值只有一个来源，免得"间距改了、负边距没跟着改"。
 const WORKBENCH_GAP_SPEC: f32 = 4.;
-
-/// 拖左侧栏宽度的那条热区宽度（规格像素）。取 4 与工作区间距同宽 ——
-/// 两条相邻面板之间的可拖分界线在真源里也是这一个量级
-/// （`ResizablePane` 的 4px 热区，`resizable-pane.tsx:203-206` 一带）。
-const DRAG_HANDLE_SPEC: f32 = 4.;
 
 /// 拖拽改宽的下界：再窄就连 `domain` 这样的目录名都放不下。
 const SIDEBAR_MIN_WIDTH_SPEC: f32 = 200.;
@@ -839,13 +835,22 @@ pub struct ShellWorkspace {
     /// 左侧栏面板宽度（规格像素，见 [`SIDEBAR_WIDTH_SPEC`] 与 [`SIDEBAR_MIN_WIDTH_SPEC`] /
     /// [`SIDEBAR_MAX_WIDTH_SPEC`]）。
     ///
-    /// 运行期可改：拖面板右边界那条 4px 热区（[`drag_handle`]）会写它。**不持久化** ——
+    /// 运行期可改：拖面板右边界那条分隔条（[`drag_handle`] 开始会话、[`drag_tracker`] 写入）
+    /// 会改它。**不持久化** ——
     /// 会话文档（`workspace_config::session`）目前只有可见性字段，没有宽度字段；
     /// 加字段要动那边的手写 `Deserialize`（它刻意不吃 `deny_unknown_fields`），属独立一批。
     left_sidebar_width: f32,
-    /// 正在拖左侧栏宽度时记下的「按下那一刻的 (鼠标 x, 面板宽)」；`None` = 没在拖。
+    /// 左侧栏拖拽**会话开关**：[`drag_handle`] 的 `.on_drag` 构造器在一次手势开始时置真，
+    /// [`drag_tracker`] 在 mouse up（或发现左键已不在按下态）时清掉。与 gpui-kit Dock 皮肤
+    /// `SkinShared.resizing_dock` 同一语义 —— 窗口级移动监听靠它区分"这次拖拽"与
+    /// "别处按住左键的普通拖动"（编辑器选文本等）。
+    left_sidebar_dragging: bool,
+    /// 拖拽进行中记下的锚点 `(鼠标 x, 起始面板宽)`；`None` = 还没记或没在拖。
     ///
-    /// 存**起点**而不是每帧累加 delta：累加会随事件频率漂移（一次快拖与一次慢拖结果不同），
+    /// 由 [`drag_tracker`] 在会话的**首个移动事件**记下（不是按下那刻 —— `.on_drag`
+    /// 构造器只拿到相对手柄原点的 offset，换算窗口坐标要多测一次手柄盒，不值得；
+    /// 首帧锚点与按下锚点只差 gpui 的 DRAG_THRESHOLD 几个像素）。存**起点**而不是
+    /// 每帧累加 delta：累加会随事件频率漂移（一次快拖与一次慢拖结果不同），
     /// 而 `起点 + (当前 x - 起点 x)` 与事件频率无关。
     left_sidebar_drag_origin: Option<(f32, f32)>,
     /// **右侧**工具窗当前显示的视图（真机 `activeRightSidebarView`，
@@ -1602,6 +1607,7 @@ impl ShellWorkspace {
             // IDEA 语义（2026-09-27）：活动栏常驻，面板默认展开、点当前项可单独收起。
             left_pane_visible: true,
             left_sidebar_width: SIDEBAR_WIDTH_SPEC,
+            left_sidebar_dragging: false,
             left_sidebar_drag_origin: None,
             // 右工具窗默认**隐藏**（`panel-slice.ts:28` 的 `isRightSidebarVisible: false`），
             // 视图字段的默认值理由见字段文档。
@@ -4148,17 +4154,19 @@ impl Render for ShellWorkspace {
                     // 可见性判据与 [`ShellWorkspace::is_activity_active`] 同源，见字段文档。
                     .children(left_sidebar_visible.then_some(left_rail))
                     .children((left_sidebar_visible && left_pane_visible).then(|| {
-                        // 面板内容 = 视图 Entity（填满）+ 右边界那条拖拽热区（绝对定位，不占布局）。
+                        // 面板内容 = 视图 Entity（填满）+ 右边界那条分隔条（[`drag_handle`]，
+                        // 绝对定位不占布局）+ 拖拽跟踪器（[`drag_tracker`]，同样不占布局）。
                         //
                         // 包装是 `relative().size_full()`：内容 Entity（`Explorer` / `ChangesView`）
                         // 的根是 `size_full` 的 `v_flex`，父级给满尺寸它就铺开 ——
                         // 这个形状与 2026-09-27 之前（树显示正常的那几版）完全一致，没动；
-                        // 热区是新加的，走绝对定位所以**不挤压**内容。
+                        // 分隔条与跟踪器都走绝对定位所以**不挤压**内容。
                         let pane = div()
                             .relative()
                             .size_full()
                             .child(left_content)
-                            .child(drag_handle(handle.downgrade(), cx));
+                            .child(drag_handle(handle.downgrade()))
+                            .child(drag_tracker(handle.downgrade()));
                         side_pane(
                             div().w(rems(left_sidebar_width / 16.)),
                             pane,
@@ -4219,7 +4227,9 @@ impl Render for ShellWorkspace {
 /// 左右两侧的面板外壳：固定宽、不参与收缩、`bg-background`、圆角 11.2 + 1px 边框。
 ///
 /// Windows 的左右面板是 `lithe-glass-island rounded-xl border-border`（`resizable-pane.tsx:203-206`）。
-/// **拖拽改宽还没接**（`ResizablePane` 的 4px 热区）。
+/// 左侧栏**可以拖拽改宽**：右边界那条分隔条是 gpui-kit Dock 同款的
+/// [`drag_handle`]（2026-09-27 接上、2026-09-30 换成上游组件），跟踪在 [`drag_tracker`]；
+/// 右侧工具窗目前定宽不可拖（真源的 `ResizablePane` 热区还没对应过来）。
 ///
 /// `outer` 由调用方给：宽度是布局度量，调用点用 gpui 的 rem 档位 helper（`w_80()`）或
 /// 档位外的 `rems(P / 16.)` 各自表达，这里只负责外壳剩下的部分。
@@ -4295,105 +4305,131 @@ fn clamped_drag_width(press_x: f32, press_width: f32, current_x: f32) -> f32 {
     (press_width + (current_x - press_x)).clamp(SIDEBAR_MIN_WIDTH_SPEC, SIDEBAR_MAX_WIDTH_SPEC)
 }
 
-/// 左侧栏面板**右边界**那条拖拽热区（2026-09-27，维护者口径「到时候弄成拖动改宽窄」）。
+/// 左侧栏面板**右边界**那条分隔条 —— gpui-kit **Dock 同款**（`docs/gpui kit/0.7.0/component/dock.md`；
+/// 2026-09-30 按 dock 文档把旧的自拼热区换成上游组件）。
 ///
-/// ## 为什么是一条真实的 4px 兄弟项，而不是绝对定位的浮层
+/// ## 组件与观感
 ///
-/// 面板内容是别人的 `Entity`（项目树 / 更改列表），把热区**叠**在它右边会挡住树最右侧
-/// 那几像素（树的行是整行可点的）。做成 `h_flex` 里的兄弟项就天然不挡点击，
-/// 代价是内容区窄了 4px —— 与"能拖"相比值得。
+/// 直接用 `gpui_kit::base::resize_handle` + 组件库的 `resize_handle_appearance()`，
+/// 与 Dock 组件每条边缘/分割手柄是同一份实现：
 ///
-/// ## 观感
+/// - 静止时常显一条 1px `border` 色细线，落在面板最右那一像素（`inside(HandleEdge::Trailing)`
+///   —— Dock 的左缘手柄同款贴法：面板壳有裁剪与 1px 边框，跨边界手柄的外半段会被裁掉、
+///   命中不到，只有整体收进面板内才是完整可抓的）；
+/// - 悬停/按下/拖动时细线上浮出一粒**圆角胶囊**：muted 前景色，长度 20/28/44、
+///   不透明度 0.35/0.6/0.9 随投入程度渐进，带过渡动画 —— 取代旧版"整条 4px 染主色"的
+///   悬停态；
+/// - 命中带宽 1px 线 + 4px 内侧 padding（upstream `HANDLE_SIZE`/`HANDLE_PADDING`），
+///   光标 col-resize。手柄 `.occlude()`，项目树最右 4px 的点击让给它 —— 与 Dock 自身
+///   "手柄住在 dock 里"的取舍一致。
 ///
-/// 平时与面板同底（看不见），悬停时右端画一条 1px 主色线 —— 与底部工具窗那条拖拽热区
-/// （`bottom_pane` 里的 `grip`）同一套"平时隐形、悬停才显"的做法。
+/// ## 与旧自拼热区的差别
 ///
-/// ## 与鼠标移动的关系
-///
-/// 这里只负责**开始**（按下时记下起点：鼠标 x + 当前面板宽）。
-/// 跟踪与结束在根元素那**一条** `on_mouse_event::<MouseMoveEvent>` 里，理由见那里的注释
-/// （拖动中光标会离开这条 4px 热区）。
-fn drag_handle(this: gpui_kit::WeakEntity<ShellWorkspace>, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    // 先按值取出来再进闭包：`cx.theme()` 借 `cx`，而 `.hover(..)` 的闭包要 `'static`。
-    let hover = theme.primary;
-    // 弱引用可以克隆进两个回调（强引用会形成"外壳 → 元素 → 外壳"的环，元素活一帧就够了）。
-    let pressed = this.clone();
-    let drag = this.clone();
-    div()
-        .id("lithe-left-pane-resize")
-        // **绝对定位**贴在面板右边界：不参与布局，所以不会挤压内容
-        // （见 `side_pane` 那条"不要再套一层 flex 包装"的理由）。
-        .absolute()
-        .right_0()
-        .top_0()
-        .bottom_0()
-        .w(rems(DRAG_HANDLE_SPEC / 16.))
-        .cursor_col_resize()
-        // 平时与面板同底（看不出有这条热区），悬停时整条染成主色。
-        .hover(move |style| style.bg(hover))
-        // 只记起点（鼠标 x + 按下那一刻的面板宽）。
-        .on_mouse_down(gpui_kit::MouseButton::Left, move |event, _window, cx| {
-            let press_x = f32::from(event.position.x);
-            let _ = pressed.update(cx, |shell, cx| {
-                shell.left_sidebar_drag_origin = Some((press_x, shell.left_sidebar_width));
-                cx.notify();
-            });
+/// 旧版是手写的绝对定位 `div`（平时隐形、悬停整条染主色、`on_mouse_down` 记起点）。
+/// 换组件后**这里不再记起点**：`.on_drag` 构造器在一次手势里只触发一次（gpui 以
+/// `active_drag` 记住会话归属），只把 [`ShellWorkspace::left_sidebar_dragging`] 置真；
+/// 起点与跟踪在 [`drag_tracker`]，与 Dock 的 `DockResizeTracker` 同一分层。
+fn drag_handle(this: gpui_kit::WeakEntity<ShellWorkspace>) -> impl IntoElement {
+    resize_handle("lithe-left-pane-resize", Axis::Horizontal)
+        .with_appearance(resize_handle_appearance())
+        .inside(HandleEdge::Trailing)
+        .on_drag(LeftSidebarDrag, move |_, _, _, cx| {
+            cx.stop_propagation();
+            let _ = this.update(cx, |shell, _| shell.left_sidebar_dragging = true);
+            cx.new(|_| LeftSidebarDrag)
         })
-        // 拖动跟踪：**窗口级**监听，在 `canvas` 的 paint 闭包里每帧注册一次。
-        //
-        // ## 为什么不能用元素级的 `on_mouse_move`
-        //
-        // 它内部要求 `hitbox.is_hovered(window)`（`gpui-pre-0.3.6/src/elements/div.rs:303-315`）——
-        // 只有光标**仍在这条 4px 热区上**才触发。维护者实测的正是这个症状：
-        // 「鼠标过快就不能拖动」—— 手一快光标就离开那 4px，拖动当场断线。
-        //
-        // ## 为什么必须在这里注册（而不是在 `on_mouse_down` 里）
-        //
-        // `Window::on_mouse_event` 有一条 `debug_assert_paint`（`window.rs:5258`），
-        // 文档明说 *"should only be called as part of the paint phase"*。
-        // 上一版我在鼠标按下的事件回调里调它，于是**点一下热区就崩**
-        // （维护者实测：`this method can only be called during paint`）。
-        // `canvas` 的第二个闭包就是 paint 闭包、签名带 `&mut Window`，是合法且**每帧都会重跑**
-        // 的注册点 —— 与 gpui-component 自己的 `carousel/scroll_mask.rs:125-155` 同一套做法。
-        //
-        // 拖动期间宽度每次变化都会让窗口重绘，所以监听会逐帧续上（与 `scroll_mask` 同机制）。
-        // 不在这里调 `cx.notify()`：paint 期不该再触发重绘。
-        //
-        // # 这条路的实测证据（2026-09-27，合成输入）
-        //
-        // 用 `SetCursorPos` + `mouse_event(LEFTDOWN/LEFTUP)` 合成一次"快拖"
-        // （热区按下后 6 步共 258px）复验：窗口收到 **1886** 条移动事件、宽度从 320 连续算到 576、
-        // 并在一路右拖下钳到上界 720 —— 期间**没有 panic**，手快也没有断线。
-        // （诊断行 `S1_SIDEBAR_DRAG` 是那次的临时脚手架，验完已拆；证据留在提交信息里。）
-        .child(
-            gpui_kit::canvas(
-                |_bounds, _window, _cx| {},
-                move |_bounds, _prepaint, window, _cx| {
-                    window.on_mouse_event(
-                        move |event: &gpui_kit::MouseMoveEvent, _phase, _window, cx| {
-                            if event.pressed_button != Some(gpui_kit::MouseButton::Left) {
-                                return;
-                            }
-                            let _ = drag.update(cx, |shell, cx| {
-                                let Some((press_x, press_width)) = shell.left_sidebar_drag_origin
-                                else {
-                                    return;
-                                };
+}
+
+/// [`drag_handle`] 拖拽会话的载荷：什么都不画 —— 手柄本身就是视觉反馈。与 Dock 的
+/// `ResizePanel` 同款：存在意义是让 gpui 的 `active_drag` 有类型可归属，
+/// [`drag_tracker`] 靠"会话开着"决定哪些移动事件算这次拖拽。
+struct LeftSidebarDrag;
+
+impl Render for LeftSidebarDrag {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
+
+/// 左侧栏拖拽的**跟踪与结束**：一块不画任何东西的 canvas，借 paint 闭包注册窗口级
+/// 鼠标监听（拖动期间宽度每次变化都重绘，监听逐帧续上）。
+///
+/// ## 为什么是窗口级监听，而不是手柄上的元素级 `on_mouse_move`
+///
+/// 元素级监听内部要求 `hitbox.is_hovered(window)` —— 光标一离开手柄就断线，维护者实测的
+/// 症状是「鼠标过快就不能拖动」。Dock 的 `DockResizeTracker` 注释给出同一理由：
+/// resize 由落在窗口**任何位置**的指针移动驱动，没法表达成手柄自己的监听。
+///
+/// ## 为什么必须在 paint 期注册
+///
+/// `Window::on_mouse_event` 有 `debug_assert_paint`，文档明说 *"should only be called
+/// as part of the paint phase"*；在事件回调里调它会 `this method can only be called
+/// during paint` 直接崩（旧版踩过）。canvas 的第二个闭包就是 paint 闭包、签名带
+/// `&mut Window`，是合法且每帧重跑的注册点 —— 与 gpui-component 自己的
+/// `carousel/scroll_mask.rs` 同一套做法。paint 期不调 `cx.notify()`。
+///
+/// ## 会话归属与清理
+///
+/// 只认 [`ShellWorkspace::left_sidebar_dragging`] 为真的移动事件：会话的首个移动记锚点
+/// [`ShellWorkspace::left_sidebar_drag_origin`]，之后每次移动用 [`clamped_drag_width`]
+/// 改宽；mouse up 清掉会话与锚点 —— **这是 2026-09-30 顺手修掉的旧 bug**：旧版只在
+/// mouse down 记起点、从不清理，拖过一次之后任何按住左键的窗口内拖动（编辑器选文本等）
+/// 都会拿旧起点继续改宽。另有一道自愈：会话开着却侦到左键已不在按下态（up 事件被吞，
+/// 例如拖拽中途面板被收起、监听随帧丢失），同样当场收尾，不留悬挂会话。
+fn drag_tracker(this: gpui_kit::WeakEntity<ShellWorkspace>) -> impl IntoElement {
+    let drag = this.clone();
+    let release = this;
+    gpui_kit::canvas(
+        |_bounds, _window, _cx| {},
+        move |_bounds, _prepaint, window, _cx| {
+            window.on_mouse_event(
+                move |event: &gpui_kit::MouseMoveEvent, phase, _window, cx| {
+                    if !phase.bubble() {
+                        return;
+                    }
+                    let _ = drag.update(cx, |shell, cx| {
+                        if !shell.left_sidebar_dragging {
+                            return;
+                        }
+                        if event.pressed_button != Some(gpui_kit::MouseButton::Left) {
+                            shell.left_sidebar_dragging = false;
+                            shell.left_sidebar_drag_origin = None;
+                            cx.notify();
+                            return;
+                        }
+                        match shell.left_sidebar_drag_origin {
+                            Some((press_x, press_width)) => {
                                 shell.left_sidebar_width = clamped_drag_width(
                                     press_x,
                                     press_width,
                                     f32::from(event.position.x),
                                 );
-                                cx.notify();
-                            });
-                        },
-                    );
+                            }
+                            None => {
+                                shell.left_sidebar_drag_origin =
+                                    Some((f32::from(event.position.x), shell.left_sidebar_width));
+                            }
+                        }
+                        cx.notify();
+                    });
                 },
-            )
-            .absolute()
-            .size_full(),
-        )
+            );
+            window.on_mouse_event(move |_: &gpui_kit::MouseUpEvent, phase, _window, cx| {
+                if !phase.bubble() {
+                    return;
+                }
+                let _ = release.update(cx, |shell, cx| {
+                    if shell.left_sidebar_dragging {
+                        shell.left_sidebar_dragging = false;
+                        shell.left_sidebar_drag_origin = None;
+                        cx.notify();
+                    }
+                });
+            });
+        },
+    )
+    .absolute()
+    .size_full()
 }
 
 /// 中央编辑器岛：`rounded-xl border-l bg-background`（`main-layout.tsx:313`）。
