@@ -86,7 +86,7 @@
 //!    （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 4.8 / 6.4；而把主题半径设成 8
 //!    会让**所有** gpui-kit 组件的圆角从 6 变成 8，反而离 Lithe 的 `rounded-md`(6.4) 更远。
 //!    所以圆角一律走应用层具名规格常量（`TAB_RADIUS_SPEC` / `CHIP_RADIUS_SPEC` /
-//!    `ISLAND_RADIUS_SPEC` / …），调用点写 `rems(C / 16.)`（`Styled::rounded*` 收
+//!    `CLOSE_BUTTON_RADIUS_SPEC` / …），调用点写 `rems(C / 16.)`（`Styled::rounded*` 收
 //!    `impl Into<AbsoluteLength>`，档位外的圆角也一样不需要 `px`）；
 //! 3. **运行时算术**（例如活动栏的 `38 + 4 = 42`、树行的 `10 + depth × 16`）：没有固定的档位
 //!    helper 可套；同样写成 helper 底层的 `rems(N / 16.)`（`rems(8. / 16.)` = 8px），

@@ -485,15 +485,15 @@ const SIDEBAR_MAX_WIDTH_SPEC: f32 = 720.;
 /// `rems(400. / 16.)` 与 `px(400.)` 逐像素相等（25rem × 16 = 400），但会随主题字号缩放。
 const RIGHT_TOOL_WINDOW_WIDTH: f32 = 400.;
 
-/// 编辑器岛 / 侧栏外壳圆角。真源 `theme.css:9,134`：`rounded-xl = calc(--radius * 1.4) = 11.2`。
-///
-/// 11.2 **不是** gpui 的 rem 档位（gpui 的 `rounded_xl()` 是 12px，
-/// `gpui-pre-macros-0.3.6/src/styles.rs:1255-1259`）；也不能从主题读 —— `ThemeConfig.radius`
-/// 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 Lithe 的
-/// `--radius × k` 阶梯（4.8 / 6.4 / 11.2），而把主题半径改大又会连带改掉所有 gpui-kit 组件。
-/// 挂在 `div` 上，`Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写
-/// `rems(ISLAND_RADIUS_SPEC / 16.)`。
-const ISLAND_RADIUS_SPEC: f32 = 11.2;
+// `ISLAND_RADIUS_SPEC = 11.2`（真源 `theme.css:9,134` 的 `rounded-xl = --radius × 1.4`）**2026-09-30 删除**。
+//
+// 真源那一层 `lithe-glass-island` 有自己的底色，圆角是个看得见的形体；本侧的岛底色与外层同色
+// （都是 `theme.background`），圆角就只剩边框上的一段弧 —— 它和相邻的直线接不上，维护者截图
+// 指认为"竖线顶端多出来的那一小截弯线"，要求改成直角。三个岛（`side_pane` / `editor_island` /
+// `bottom_pane`）现在都不写 `.rounded(..)`，四条边框都是直线。
+//
+// 真源仍是 `rounded-xl`；要恢复圆角，先让岛的底色与外层不同（真源那层是 `lithe-glass-island`），
+// 否则回来还是同一段弧。
 
 /// 底部工具窗（终端 / Git 提交记录 / 占位）的高度 **240**。
 ///
@@ -4240,9 +4240,10 @@ impl Render for ShellWorkspace {
     }
 }
 
-/// 左右两侧的面板外壳：固定宽、不参与收缩、`bg-background`、圆角 11.2 + 1px 边框。
+/// 左右两侧的面板外壳：固定宽、不参与收缩、`bg-background`、1px 直角边框。
 ///
-/// Windows 的左右面板是 `lithe-glass-island rounded-xl border-border`（`resizable-pane.tsx:203-206`）。
+/// Windows 的左右面板是 `lithe-glass-island rounded-xl border-border`（`resizable-pane.tsx:203-206`）；
+/// 本侧**不画那个圆角**（四个角是直角），理由见文件开头 `ISLAND_RADIUS_SPEC` 的墓碑注释。
 /// 左侧栏**可以拖拽改宽**：右边界那条分隔条是 gpui-kit Dock 同款的
 /// [`drag_handle`]（2026-09-27 接上、2026-09-30 换成上游组件），跟踪在 [`drag_tracker`]；
 /// 右侧工具窗目前定宽不可拖（真源的 `ResizablePane` 热区还没对应过来）。
@@ -4269,7 +4270,6 @@ fn side_pane(
         // `relative()` 是拖拽热区（[`drag_handle`]）绝对定位的定位上下文 ——
         // 热区贴在面板右边界上，而**不**参与布局（见那里"不套 flex 包装"的理由）。
         .relative()
-        .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
         .border_1()
         .border_color(cx.theme().border)
         .bg(cx.theme().background)
@@ -4448,14 +4448,15 @@ fn drag_tracker(this: gpui_kit::WeakEntity<ShellWorkspace>) -> impl IntoElement 
     .size_full()
 }
 
-/// 中央编辑器岛：`rounded-xl border-l bg-background`（`main-layout.tsx:313`）。
+/// 中央编辑器岛：`rounded-xl border-l bg-background`（`main-layout.tsx:313`）—— 本侧同样
+/// **不画圆角**（直角边框，理由见文件开头 `ISLAND_RADIUS_SPEC` 的墓碑注释）。
 ///
 /// 只收内容：原来还收一个「编辑区左边界收起侧栏」按钮（`collapse_sidebar_button:
 /// Option<AnyElement>`），2026-09-27 按维护者口径删除，见上方那段墓碑注释。
 ///
 /// 仍然保留 `.relative() + .overflow_hidden()`：岛是绝对定位子元素的定位上下文，
 /// 而且 gpui 0.6.6 没有 z-index、叠放只由绘制顺序决定 —— 将来要往岛的边界上贴浮层，
-/// 这两条是前提（`overflow_hidden` 会沿圆角裁边，这是有意的）。
+/// 这两条是前提（2026-09-30 前岛是圆角，`overflow_hidden` 沿圆角裁边；现在裁的是方角）。
 fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
     div()
         .relative()
@@ -4463,7 +4464,6 @@ fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
         .flex_1()
         .min_h_0()
         .overflow_hidden()
-        .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
         .border_1()
         .border_color(cx.theme().border)
         .bg(cx.theme().background)
@@ -4491,7 +4491,6 @@ fn bottom_pane(content: AnyElement, cx: &App) -> impl IntoElement {
                 .w_full()
                 // 240 不在 4px 档位上（没有 `h_60()`），所以走 rems —— 见 [`BOTTOM_PANE_HEIGHT_SPEC`]。
                 .h(rems(BOTTOM_PANE_HEIGHT_SPEC / 16.))
-                .rounded(rems(ISLAND_RADIUS_SPEC / 16.))
                 .border_1()
                 .border_color(cx.theme().border)
                 .bg(cx.theme().background)

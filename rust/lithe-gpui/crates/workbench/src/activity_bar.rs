@@ -110,11 +110,16 @@ const RIGHT_ITEM_SIZE: f32 = 28.;
 /// 4.8 不是 gpui 的 rem 档位（`rounded_sm()` 是 4），理由同上。它同样挂在 `Button::rounded`
 /// 上（固有方法、只吃 `Pixels`），所以调用点也走 [`crate::rem_px`]。
 const RIGHT_ITEM_RADIUS: f32 = 4.8;
-/// 右 rail 容器的右上/右下圆角 `rounded-r-xl`（`plugin-activity-rail.tsx:34`）= 11.2。
-///
-/// 11.2 不是 gpui 的 rem 档位（`rounded_xl()` 是 12），理由同上。这里挂在 `div` 上，
-/// `Styled::rounded_r` 收 `impl Into<AbsoluteLength>`，所以调用点直接写 `rems(11.2 / 16.)`。
-const RIGHT_RAIL_RADIUS: f32 = 11.2;
+// 右 rail 的 `rounded-r-xl`（`RIGHT_RAIL_RADIUS = 11.2`，真源 `plugin-activity-rail.tsx:34`）与
+// 它那条 `border-r` **2026-09-30 一并删除**（维护者截图口径）：
+//
+// 1. 先只去掉圆角 —— rail 没有上/下边框，圆角在右边界两端各留一段与直线接不上的弧，
+//    看上去像"线顶上多出来的一小截弯的"；
+// 2. 那条右边界本身也去掉 —— 它通高、右边只剩 4px 间隔就是窗口边缘，像桌面上多出来的一根线。
+//
+// 现在右 rail 没有任何边框（底色本来就不画，见 `activity_bar` 里那段说明），
+// 与左 rail 一致：图标条自己不画线，线由相邻面板的边框给。
+
 /// 悬停底色不透明度：左 rail 是 `hover:bg-accent/70`（`ui/sidebar.tsx:241`）。
 const HOVER_OPACITY: f32 = 0.7;
 
@@ -123,7 +128,8 @@ const HOVER_OPACITY: f32 = 0.7;
 pub enum ActivitySide {
     /// 左侧活动栏（Windows `SidebarActivityRail`）：透明底、无边框，图标列在 42 宽的盒内。
     Left,
-    /// 右侧活动栏（Windows `PluginActivityRail`）：38 宽 + 外侧 4 间隔、1px 右边框、右侧圆角。
+    /// 右侧活动栏（Windows `PluginActivityRail`）：38 宽 + 外侧 4 间隔、**无边框**
+    /// （真源是 `rounded-r-xl` + `border-r`，两条本侧都不画 —— 见上面 `RIGHT_RAIL_RADIUS` 的墓碑注释）。
     Right,
 }
 
@@ -161,12 +167,12 @@ impl ActivityIcon {
     /// （`ButtonCustomVariant::hover` / `Button::selected`），与 IDEA New UI 一致。
     /// 所以不要再给这一项加"图标变色表示选中"的样式 —— 那对 expui 图标不会生效。
     ///
-    /// 尺寸：expui 那条**自己带尺寸**（`rems(1.)` = 16，与 `Button` 按档位算出来的 16 一致），
+    /// 尺寸：expui 那条**自己带尺寸**（`rems(1.25)` = 20，与 `Button` 按档位算出来的 16 一致），
     /// 因为 `Button::child` 不会像 `.icon(..)` 那样替它设尺寸。
     fn apply(&self, button: Button, cx: &App) -> Button {
         match self {
             Self::Lucide(name) => button.icon(*name),
-            Self::Idea(icon) => button.child(idea_icon_image(icon, cx, rems(1.))),
+            Self::Idea(icon) => button.child(idea_icon_image(icon, cx, rems(1.25))),
         }
     }
 }
@@ -304,7 +310,6 @@ pub fn activity_bar(
         ActivitySide::Left => (COLLAPSED_WIDTH + WORKBENCH_GAP, rems(0.5), rems(0.)),
         ActivitySide::Right => (COLLAPSED_WIDTH, rems(0.), rems(0.25)),
     };
-    let border = cx.theme().border;
 
     // 顶部组：`flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto`（`sidebar-pane-selector.tsx:359`）。
     // 溢出按 `overflow_hidden` 处理：gpui-kit 的滚动条要自己挂，本阶段不做。
@@ -346,15 +351,10 @@ pub fn activity_bar(
     if has_bottom_group {
         rail = rail.child(bottom_group);
     }
-    if side == ActivitySide::Right {
-        // `rounded-r-xl border-border border-r`（`plugin-activity-rail.tsx:34`）。
-        // 底色不画：Windows 右 rail 的 `bg-surface` 与外壳底色同色（`main-layout.tsx:280`），
-        // 这里保持透明由调用方决定外壳底色，效果一致。
-        rail = rail
-            .border_r_1()
-            .border_color(border)
-            .rounded_r(rems(RIGHT_RAIL_RADIUS / 16.));
-    }
+    // 右 rail 的 `border-r` **不画**（真源 `plugin-activity-rail.tsx:34` 有 `border-border border-r`）：
+    // 它是窗口最右边的一条通高竖线，右边只剩 4px 间隔就是窗口边缘，看起来像桌面上多出来的一根线
+    // （2026-09-30 维护者截图圈出后去掉）。底色同样不画：真源 `bg-surface` 与外壳底色同色
+    // （`main-layout.tsx:280`），这里保持透明由调用方决定外壳底色，效果一致。
 
     // 外侧 4px 间隔：Windows 放在父 flex row 的 `pr-(--lithe-workbench-gap)` 上
     // （`main-layout.tsx:299`），这里自带，保证两条 rail 的对外盒宽都是 42。
@@ -448,6 +448,14 @@ fn item_button(
         .rounded(radius)
         .w(width)
         .h(height)
+        // ⚠️ 必须清掉"普通按钮"分支的内衬：expui 图标走 `Button::child`（见 [`ActivityIcon::apply`]），
+        // 于是 `Button` 不再把它当"图标按钮"，按默认 `Size::Medium` 补 `px_2p5`（左右各 10，
+        // `gpui-component-0.7.0/src/button/button.rs:646-671`）。项盒只有 26（左）/ 28（右）宽，
+        // 补完内衬内容层只剩 6 / 8，而图标是 `rems(1.25)` = 20 宽 —— 被内容层的 `overflow_hidden()`
+        // 左右各裁一刀，只剩中间一条窄缝（2026-09-30 维护者截图：Maven 标志只剩半个字形）。
+        // `.px_0()` 由 `Styled` 记进 `instance_style`，渲染期 `refine_style` 压在库内内衬之上，
+        // 所以盖得住（`button.rs:607,721`）。`changes_view` / `notifications` 那几处是同一条。
+        .px_0()
         .on_click(move |event, window, cx| on_select(index, event, window, cx));
 
     // 无角点时直接给 `Button`，不套一层盒子 —— 免得给另外几个项也白加一层。

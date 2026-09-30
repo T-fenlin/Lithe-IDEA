@@ -303,3 +303,58 @@ Lucide 走 `.icon(..)`（两条路各自用对的管线）。**几何与状态�
 `cargo test -p lithe-gpui-app`（新增守卫测试 + 内嵌口径）、
 `cargo test -p lithe-gpui-workbench`（轨道项构造与 `right_tool_window` 的头部图标）、
 `cargo fmt --all -- --check`。
+
+## 追加六：把 expui 图标塞进 `Button` 时必须 `.px_0()`（2026-09-30 第六批，维护者报告）
+
+### 先说结论
+
+维护者截图问"自定义的这个图标（右活动栏的 Maven 标志）为什么不显示全" —— 图标**被裁了**，
+既不是资产问题也不是路径问题。原因是彩色那条管线把图标放进 `Button::child(..)`，而
+gpui-component 的 `Button` **只在"图标按钮"分支才不补内衬**：判据是
+`label.is_none() && children.is_empty()`（`gpui-component-0.7.0/src/button/button.rs:646-671`）；
+带了 child 就落到普通按钮分支，按默认 `Size::Medium` 补 **`px_2p5`（左右各 10）**。
+活动栏的项盒只有 26（左轨）/ 28（右轨）宽，补完内衬**内容层只剩 6 / 8**，而 `Button` 的内容层是
+`h_flex().overflow_hidden()` —— 20 宽的图标被左右各裁一刀，只剩中间一条窄缝。
+
+**开发者要记住的**：给 `idea_icon_image(..)` 配**显式宽度**的 `Button`，必须再写 `.px_0()`。
+宽度由内容撑开的按钮不受影响（内衬只是把它变宽）。`.px_0()` 盖得住库内内衬，是因为调用点的
+`Styled` 改动被记进 `instance_style`（`button.rs:607`），渲染期 `refine_style` 压在库内
+`px_2p5` 之上（`button.rs:721`）—— 本仓此前已有同款做法，只是没写进本笔记：
+`git/changes_view.rs` 的 `more` / `icon_button`、`workbench/notifications.rs` 的 clear-all、
+`terminal/terminal_view.rs` 的三处，注释口径都是"图标走 `child` 后清掉普通按钮分支的 `px_2p5`"。
+
+### 证据（为什么是"裁"而不是"压扁"）
+
+- 截图实测：Maven 字形只有 **11×16 物理像素**（窗口 125% 缩放 → 逻辑 8.8×12.8）；
+  而真源 `files/maven_dark.svg` 那条 path 的包围盒是 14.69×9.96 —— **横长**的形状。
+  比例反了，所以先怀疑的"DPI 或比例算错"都被这条否掉。
+- 把真源 path 按四种几何假设（等比放进方框 / 非等比拉伸 / 等比到高后水平裁切 / 旋转 90°）
+  各自栅格化，再与截图字形求 IoU：**0.756（裁切）** ＞ 0.369（拉伸）＞ 0.134（放进方框）
+  ＞ 0.099（旋转）。最佳裁切窗口左右各去掉 25% / 29%，基本居中 —— 与"内容层 `overflow_hidden`
+  居中裁掉两侧"逐条吻合。所以修的是**布局宽度**，不是图标比例。
+- 左活动栏同样症状（expui 图标可见宽度只有 8 物理像素），说明这是共性问题，不是 Maven 特例；
+  Lucide 那几项因为走 `.icon(..)`（仍是"图标按钮"分支、无内衬）一直是对的 —— 同一个 rail 里
+  "puzzle 正常、Maven 半截"正是这条判据的直接后果。
+
+### 本批一起改的与未改的
+
+- 已改：`workbench/src/activity_bar.rs` 的 `item_button` 补 `.px_0()`（左右轨共用一处）。
+- **未改，同类**：`git/changes_view.rs` 的 stage / unstage 按钮（`.size_5()` = 20×20 是显式宽，
+  `Size::Size` 档内衬按 `px(size × 0.2)` = 左右各 4 → 内容层 12 宽，图标被裁掉两侧）。
+  要收尾就是给它也补 `.px_0()`；列在这里是因为本批只处理了维护者报告的那一处外观。
+- `terminal/terminal_view.rs` 三处（`.h_6().px_2()`，宽度由内容撑开）**不受影响**，无需改。
+
+### 同批维护者口径：运行控件的 `▶` / `🐞` 也换彩色
+
+`workbench/src/title_bar.rs` 的 `RunControl::icon` 从 `idea_icon_mono` 换成 `idea_icon_image`
+（原注释里"只用 `IconName` 里已有的变体"是更早一版的遗留说法）。那一项是**自绘 `div`**
+（不是 `Button`），没有内衬问题；换成彩色之后图标不再吃 `text_color`，于是
+`text_color(idle)` / `hover:text-foreground` 两行成为死样式并被删掉 —— 悬停反馈只由底色承担，
+与本笔记开头的第 1 条一致。
+
+### 验证
+
+`cargo test -p lithe-gpui-workbench`（83 通过）、`cargo fmt --all --check`。
+像素级复核仍受本机限制（抓不到 gpui 的 GPU 帧，见本笔记第 2 条代价），
+"图标显示完整"这一条由维护者目验。
+

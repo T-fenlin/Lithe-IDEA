@@ -141,7 +141,7 @@
 //!
 //! 圆角一律走应用层具名常量（Lithe 的圆角阶梯是 `--radius × k` = 4.8 / 6.4 / 11.2，
 //! 不在 4px 网格上，也不能从 `ThemeConfig.radius` 读 —— 那是 `usize`，理由见
-//! `crate::workspace` 的 `ISLAND_RADIUS_SPEC`）。颜色一律 `cx.theme()`，不写裸色值。
+//! `crate::project_tabs` 的 `TAB_RADIUS_SPEC`）。颜色一律 `cx.theme()`，不写裸色值。
 //!
 //! ## 键盘可达性（**如实说明，未做假**）
 //!
@@ -206,7 +206,7 @@ const FLOAT_RADIUS_SPEC: f32 = 14.4;
 // 组件内部的 `cx.theme().radius.min(px(8.))`（`popup_menu.rs:1460`，`RenderOptions` 的
 // `radius`），没有任何公开 setter 能覆盖它。所以面板圆角由 gpui-kit 主题决定（默认 6），
 // 这是本轮**已知且未解**的偏差 —— 硬要改只能改全局 `ThemeConfig.radius`，那会连带改掉
-// 所有 gpui-kit 组件的圆角（`crate::workspace` 的 `ISLAND_RADIUS_SPEC` 记过同一条）。
+// 所有 gpui-kit 组件的圆角（同一条理由见 `crate::project_tabs` 的 `TAB_RADIUS_SPEC`）。
 
 /// 下拉面板最小宽 240：`ui/menubar.tsx:126` 的 `min-w-60`（60 × 4 = 240）。
 ///
