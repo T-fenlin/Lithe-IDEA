@@ -2,7 +2,7 @@
 //!
 //! ## 为什么需要这一层
 //!
-//! 项目的文案真源是 `windows/tauri/src/i18n/locale.ts`（经 `lithe-gpui/tools/extract-locale.mjs`
+//! 项目的文案真源是 `crates/shared/locales/source/locale.ts`（经 `lithe-gpui/tools/extract-locale.mjs`
 //! 生成 `crates/app/locales/lithe.{zh-CN,en}.yml`），它沿用前端语法：**`{count} 个空格`**
 //! （`lithe.footer.spaces`）。
 //!
@@ -62,7 +62,7 @@
 //!    例：`explorer` 的「工作区根不是合法 UTF-8 路径」「响应缺少 data.files」、`git` 的
 //!    「响应缺少 files」、`core_client` 的「响应不是合法 JSON：{message}」「(无消息)」。
 //!    给它们建翻译键等于把内部契约形状当成用户可见文案，会让 locale 变成第二份诊断表。
-//! 2. **locale 里确实没有对应键**：逐字查过 `windows/tauri/src/i18n/locale.ts` 生成的两份
+//! 2. **locale 里确实没有对应键**：逐字查过 `crates/shared/locales/source/locale.ts` 生成的两份
 //!    yml，没有语义等价的键。例：`terminal` 的 `CAPABILITY_NOTICE`（"不能运行 vim/top 等
 //!    全屏程序；Ctrl+C 不可用"，`terminal.*` 全量 `:7503-7558` 里没有描述这两条限制的键）、
 //!    `editor` 的「文件超过 N MiB，暂不在编辑器中打开。」与「二进制文件不在编辑器中打开。」
@@ -424,7 +424,7 @@ mod tests {
             ("lithe.settings.tabs.updates", "更新"),
             ("lithe.settings.project.title", "项目 · JDK 与 Maven"),
             ("lithe.settings.run.title", "运行配置"),
-            // 下面 6 条真源（`windows/tauri/src/i18n/locale.ts`）里没有，由
+            // 下面 6 条真源（`crates/shared/locales/source/locale.ts`）里没有，由
             // `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 提供（每条都写了理由）。
             ("lithe.settings.gpui.languageEnglish", "英语"),
             ("lithe.settings.gpui.languageChinese", "简体中文"),
@@ -632,7 +632,7 @@ mod tests {
                 "有 {count} 个文件的修改尚未保存。",
             ),
             // 阶段 11（标签右键菜单）的 9 个菜单项 + 批量确认的"全部保存"按钮。
-            // 10 条全是**真源既有**键（`windows/tauri/src/i18n/locale.ts` 的 `files.*` /
+            // 10 条全是**真源既有**键（`crates/shared/locales/source/locale.ts` 的 `files.*` /
             // `tabs.*` / `menu.saveAll`，生成在 `locales/*.yml`）——本菜单**零新增真源键**，
             // 只新增上面那条 `editor.gpui.*`。
             ("lithe.files.copyPath", "复制路径"),
@@ -647,7 +647,7 @@ mod tests {
             ("lithe.menu.saveAll", "全部保存"),
             // 阶段 9 的编辑器侧复用的**真源既有**键：保存失败的两句反馈，以及
             // 关闭未保存文件时确认对话框的标题与两个按钮
-            // （`windows/tauri/src/i18n/locale.ts:4637-4638`、`:7872`、`:4617`、`:436`）。
+            // （`crates/shared/locales/source/locale.ts:4637-4638`、`:7872`、`:4617`、`:436`）。
             (
                 "lithe.editor.saveFailed",
                 "无法保存“{name}”。请检查文件是否可写，然后重试。",
@@ -660,7 +660,7 @@ mod tests {
             ("lithe.ui.save", "保存"),
             // 阶段 10 第一批（Java 代码跳转）复用的**真源既有**键：跳转失败时的提示
             // 「未找到{target}。」+ `{target}` 的取值「定义」
-            // （`windows/tauri/src/i18n/locale.ts:8435,8439`；英文侧同键 `:4137,4141`）。
+            // （`crates/shared/locales/source/locale.ts:8435,8439`；英文侧同键 `:4137,4141`）。
             ("lithe.navigation.definition", "定义"),
             ("lithe.navigation.noTargetFound", "未找到{target}。"),
             // 阶段 6 第一半（右侧工具窗）：三个视图的头部标题 + 各自空态，以及面板关闭按钮的
@@ -833,7 +833,7 @@ mod tests {
                 "尚未接入：终端没有拆分能力（一个终端面板只有一组页签，没有分栏）。",
             ),
             // 主菜单栏（`lithe-gpui/crates/workbench/src/menu_bar.rs`）。全部是**真源既有**键
-            // （`windows/tauri/src/i18n/locale.ts` 的 `menu.*` 段，本侧前缀 `lithe.`）：
+            // （`crates/shared/locales/source/locale.ts` 的 `menu.*` 段，本侧前缀 `lithe.`）：
             // 9 个顶级菜单名 + 本轮 v1 真的画出来的项的文案。
             // ⚠️ 99 条 `lithe.menu.*` 早就生成在 `locales/` 里（`extract-locale.mjs` 从真源
             // 抽的），但**没有进过这张表** —— 没进表就不会被测到，键写错只会静默回显键名。
@@ -878,7 +878,7 @@ mod tests {
             // `title-bar.tsx:209-219`；`locale.ts:7903`）。
             ("lithe.window.menu", "菜单"),
             // 标题栏项目下拉（`lithe-gpui/crates/workbench/src/project_menu.rs`）。7 条全是**真源既有**键
-            // （`windows/tauri/src/i18n/locale.ts:6171-6191` 的 `titleProject.*` 段，
+            // （`crates/shared/locales/source/locale.ts:6171-6191` 的 `titleProject.*` 段，
             // 生成在 `locales/*.yml:3538-3579`）；本轮**零新增键**。
             // 三条动作行 + 两个分组标题 + 空态 + 触发器的无障碍名（`项目：{project}`，带插值）。
             ("lithe.titleProject.newProject", "新建项目…"),
@@ -900,7 +900,7 @@ mod tests {
             ("lithe.projectOpen.newWindow", "新窗口"),
             ("lithe.projectOpen.thisWindow", "此窗口"),
             // 标题栏分支项 + 分支弹窗（`lithe-gpui/crates/workbench/src/branch_panel.rs`）。
-            // 9 条全是**真源既有**键（`windows/tauri/src/i18n/locale.ts:6836-6948` 的
+            // 9 条全是**真源既有**键（`crates/shared/locales/source/locale.ts:6836-6948` 的
             // `git.*` 段，生成在 `locales/*.yml`）——本轮**零新增键**，也没有动
             // `tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`（Windows 缺的键一条都没用到）。
             // 触发器无障碍名（`git.searchBranchesAria` = 搜索分支，`locale.ts:6917`）。
@@ -960,7 +960,7 @@ mod tests {
                 "在“更改”面板暂存文件、填写提交消息，然后创建首次提交。",
             ),
             // 阶段 15（设置 →「Git」页的**提交身份**）：全部是**真源既有**键
-            // （`windows/tauri/src/i18n/locale.ts` 的 `git.setup.*` 段，渲染点
+            // （`crates/shared/locales/source/locale.ts` 的 `git.setup.*` 段，渲染点
             // `components/git-identity-settings.tsx`）。本页**零新增 locale 键** ——
             // 包括那个会写回 Git 配置的开关（`settings.git.confirmDiscard*` 也在真源里）。
             ("lithe.git.setup.identity", "提交身份"),

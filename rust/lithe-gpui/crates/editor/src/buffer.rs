@@ -16,7 +16,7 @@ use lithe_gpui_shared::tr_args;
 ///
 /// 真机对大文件是"照常打开但关掉语言智能/Git Blame/CodeLens"并给一条
 /// 「仍然启用」横幅（`windows/tauri/src/features/editor/components/code-editor.tsx:664-675`、
-/// `windows/tauri/src/i18n/locale.ts:8408-8409`）；探针没有语言服务，
+/// `crates/shared/locales/source/locale.ts:8408-8409`）；探针没有语言服务，
 /// 读进来只是占内存，所以这里**整篇不读**，正文给一条说明（见 [`read_body`]）。
 const MAX_EDITOR_BYTES: u64 = 2 * 1024 * 1024;
 
@@ -122,11 +122,11 @@ pub(crate) struct Body {
 /// 读盘并按三种"不把内容交给编辑器"的情况给出正文说明。
 ///
 /// 与真机的差别：真机会把文件读进来再降级（大文件关语言服务、
-/// 二进制走二进制预览器 `windows/tauri/src/i18n/locale.ts:4680` 的 `panes.binaryFilePreview`）；
+/// 二进制走二进制预览器 `crates/shared/locales/source/locale.ts:4680` 的 `panes.binaryFilePreview`）；
 /// 探针三种情况都只在正文里留说明文案。文案出处：
 ///
 /// - 读不到：`无法打开 {name}` 取中文 i18n 的 `files.openFailed`
-///   （`windows/tauri/src/i18n/locale.ts:7386`），第二行补系统原始错误便于定位；
+///   （`crates/shared/locales/source/locale.ts:7386`），第二行补系统原始错误便于定位；
 /// - 超过 [`MAX_EDITOR_BYTES`] 与二进制两句沿用上一轮已验证实现
 ///   （git HEAD `lithe-gpui/shell/src/bin/shell_probe/panels.rs::open_document`，
 ///   该实现已删除，只在 git 历史里），因为 `locale.ts` 里没有对应文案：

@@ -3637,7 +3637,7 @@ impl SettingsDialog {
     ///
     /// ⚠️ **有意不照抄 Windows 的文案**：真源是
     /// `settings.mac.restoreDefaultsConfirm` = 「⚠️确认恢复所有配置吗？」
-    /// （`windows/tauri/src/i18n/locale.ts`，渲染点 `settings-dialog.tsx:99-107`），
+    /// （`crates/shared/locales/source/locale.ts`，渲染点 `settings-dialog.tsx:99-107`），
     /// 而设计指南 `docs/design-guides.md:434` 明确点名"您确定要……吗"这类套话是反例。
     /// 所以按指南写成"标题=决策、正文=后果、按钮=结果词"：
     /// 标题「恢复默认设置？」、正文「所有设置都会回到默认值。」、按钮「取消」+「恢复默认设置」。

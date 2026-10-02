@@ -40,7 +40,7 @@ use crate::model::{
 };
 
 // ---------------------------------------------------------------------------
-// 文案：全部走 `lithe_gpui_shared::tr`（key 逐字取 `windows/tauri/src/i18n/locale.ts`
+// 文案：全部走 `lithe_gpui_shared::tr`（key 逐字取 `crates/shared/locales/source/locale.ts`
 // 生成的 locale，不自己编中文）。下面每一条注释保留原文与成 key 的对应关系。
 // ---------------------------------------------------------------------------
 

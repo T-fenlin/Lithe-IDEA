@@ -108,7 +108,7 @@ pub fn normalize_terminal_font_size(value: f64) -> f64 {
 
 /// 「显示语言」的合法取值白名单（**枚举序即下拉顺序**）。
 ///
-/// 真源 `windows/tauri/src/i18n/locale.ts:2` 的 `DISPLAY_LANGUAGES = ["en-US", "zh-CN"]`：
+/// 真源 `crates/shared/locales/source/locale.ts:2` 的 `DISPLAY_LANGUAGES = ["en-US", "zh-CN"]`：
 /// 顺序照抄真源（英文在前），**不按"默认值在前"重排** —— 下拉里谁在上面是可见规格的一部分。
 /// 默认值是另一件事，由 [`DEFAULT_DISPLAY_LANGUAGE`]（`zh-CN`）决定。
 pub const DISPLAY_LANGUAGES: [&str; 2] = ["en-US", DEFAULT_DISPLAY_LANGUAGE];

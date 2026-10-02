@@ -11,15 +11,17 @@ Windows 前端的文案真源提取生成**，不手工维护；改文案请改�
 | `lithe.zh-CN.yml` | 4321 条 `lithe.*` 应用文案（真源 catalog）+ 13 条 gpui 侧自有 key + 2 条 `gpui_component.*` 覆盖（简体中文） |
 | `lithe.en.yml` | 同上（英文） |
 | 生成脚本 | `lithe-gpui/tools/extract-locale.mjs` |
-| 真源 | `windows/tauri/src/i18n/locale.ts`（`catalogs` 对象，内含 `"en-US"` 与 `"zh-CN"` 两套） |
-| 真源（展开） | `windows/tauri/src/i18n/ai-commit.ts`（`...aiCommitEnglish` / `...aiCommitChinese`，**不属于 locale.ts 但属于同一 catalog**） |
+| 真源 | `crates/shared/locales/source/locale.ts`（`catalogs` 对象，内含 `"en-US"` 与 `"zh-CN"` 两套） |
+| 真源（展开） | `crates/shared/locales/source/ai-commit.ts`（`...aiCommitEnglish` / `...aiCommitChinese`，**不属于 locale.ts 但属于同一 catalog**） |
 
 真源结构：`catalogs` 是**平面 key**（`"git.console.matches"` 这种点分字符串）的两语言对象，
 值全部是字符串字面量，无复数/上下文变体、无函数、无动态拼接。两套语言的 key 集合一致
-（`windows/tauri/src/i18n/locale.test.ts:99-104` 有断言），所以两个 YAML 的 key 集合也逐条相同。
+（原 Windows 前端有一份 `locale.test.ts` 对此断言；该前端已删除，`locale.test.ts` **未**随
+`locale.ts` / `ai-commit.ts` 迁入本仓库，所以这条一致性现在由生成脚本的 `--check` 与
+`every_wired_key_resolves_in_both_locales` 测试守住）。
 
-`windows/tauri/src/i18n/` 下没有按命名空间拆分的其它 locale 文件：`locale-provider.tsx` 只是 React context，
-`locale.test.ts` 只做断言。
+按命名空间拆分的其它 locale 文件本来就不存在：原前端的 `locale-provider.tsx` 只是 React context、
+`locale.test.ts` 只做断言，两者都与文案真源无关，故未迁入。
 
 ## 2. 重新生成
 
@@ -78,7 +80,7 @@ gpui_component:        # ← 只用于覆盖 gpui-kit 组件内置文案
 
 - **本项目的占位符语法是 `{name}`**（例：`{count}`、`{path}`、`{added}/{updated}/{deleted}`），
   由 Windows 侧 `createTranslator` 的 `translatedText.split("{name}").join(value)` 实现
-  （`windows/tauri/src/i18n/locale.ts:8765-8777`）。提取时**逐字保留**，未做任何改写。
+  （`crates/shared/locales/source/locale.ts:8765-8777`）。提取时**逐字保留**，未做任何改写。
 - ⚠️ 接线注意：`rust_i18n::t!` 自己的插值只识别 **`%{name}`**（`rust-i18n-4.2.2/src/lib.rs:45-91` 的
   `replace_patterns` 要求 `%` 前缀；宏在 `rust-i18n-macro-4.2.2/src/tr.rs:455` 调用它）。
   gpui-kit 组件内置文案用的也是 `%{}`（`gpui-component-0.6.6/locales/ui.yml:349`）。
@@ -121,7 +123,7 @@ Windows 目录里**没有**月份名/星期名/日期选择器文案（已全文
 以下是**不在 catalog 里、因此没有进入 YAML** 的界面文案/本地化逻辑，接线时需要单独处理：
 
 1. `DISPLAY_LANGUAGES = ["en-US", "zh-CN"]`、`DisplayLanguage`、`getLocaleCatalog`
-   （`windows/tauri/src/i18n/locale.ts:2-4`、`:8761-8763`）：语言清单与 catalog 访问器，是配置而非文案。
+   （`crates/shared/locales/source/locale.ts:2-4`、`:8761-8763`）：语言清单与 catalog 访问器，是配置而非文案。
 2. `createTranslator`（`:8765-8777`）：`catalog[key] ?? key` 的**缺 key 回退**，以及 `{name}` 插值循环。
    两者都是运行时逻辑，YAML 无法表达，必须在 GPUI 外壳里重新实现（回退行为见第 5 节）。
 3. `windows/tauri/src/config/backend-capabilities.ts:1`：`BACKEND_UNAVAILABLE_TOOLTIP = "待开发"`，

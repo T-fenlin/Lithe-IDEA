@@ -158,7 +158,7 @@ pub struct StatusEntry {
     icon: Option<&'static str>,
     /// `icon` 为 `None` 时用的 Lucide 字形。
     lucide: Option<IconName>,
-    /// 条目文字；中文一律逐字取 `windows/tauri/src/i18n/locale.ts` 的原文，不要自己编。
+    /// 条目文字；中文一律逐字取 `crates/shared/locales/source/locale.ts` 的原文，不要自己编。
     text: SharedString,
     /// 点击回调（`None` = 纯展示条目）。
     ///

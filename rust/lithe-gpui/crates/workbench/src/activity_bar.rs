@@ -185,7 +185,7 @@ impl ActivityIcon {
 pub struct ActivityItem {
     /// 图标来源，见 [`ActivityIcon`]。
     icon: ActivityIcon,
-    /// 文案：中文逐字取自 `windows/tauri/src/i18n/locale.ts`（`workbench.project` = 项目 …），
+    /// 文案：中文逐字取自 `crates/shared/locales/source/locale.ts`（`workbench.project` = 项目 …），
     /// 同时用作 tooltip 文本与无障碍名称。
     label: SharedString,
     /// `true` = 归入**底部组**。Windows 的底部组是

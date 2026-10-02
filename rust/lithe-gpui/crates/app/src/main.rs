@@ -22,7 +22,7 @@
 //! 而该函数由 `i18n!` 在**调用它的那个 crate** 里生成。本项目的 `t!` 包装
 //! （`tr` / `tr_args`，含 `{name}` 插值）住在 `lithe-gpui-shared`，所以 locale 与 loader
 //! 也落在那里（`lithe-gpui/crates/shared/locales/`，由 `lithe-gpui/tools/extract-locale.mjs` 从
-//! `windows/tauri/src/i18n/locale.ts` 生成）。**不要在这里再调一次 `i18n!`** —— 那会生成
+//! `crates/shared/locales/source/locale.ts` 生成）。**不要在这里再调一次 `i18n!`** —— 那会生成
 //! 第二份 backend，变成两个真相源。
 //!
 //! 运行：`cargo run --bin Lithe -- <workspace-root>`。位置参数可省略：省略时打开「最近项目」
@@ -987,7 +987,7 @@ fn main() {
                     );
                 }
             }
-            // 语言：Lithe 的产品默认是简体中文（`windows/tauri/src/i18n/locale.ts` 的 zh-CN
+            // 语言：Lithe 的产品默认是简体中文（`crates/shared/locales/source/locale.ts` 的 zh-CN
             // 目录就是本仓库的文案真源）。gpui-kit **组件自己**的文案用它自带的 zh-CN，
             // 所以这里不需要 `rust_i18n::extend!(gpui_component)` —— 那个宏要求把
             // `gpui-component` 加成**直接依赖**（它展开成 `gpui_component::_rust_i18n_extend(..)`，

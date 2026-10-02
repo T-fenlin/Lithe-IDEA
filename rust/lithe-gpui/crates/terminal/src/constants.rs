@@ -6,7 +6,7 @@
 //! ⚠️ **文案一律走函数，不再用 `&str` 常量**：`lithe_gpui_shared::tr` 必须在运行时读当前
 //! locale，`const` 装不下 `SharedString`。所以下面每个 `*_KEY` 常量只保留**翻译键**，
 //! 取文案的函数返回 `SharedString`；调用点写 `foo()`。键与原文的对应关系逐条登记在注释里
-//! （locale 真源是 `windows/tauri/src/i18n/locale.ts`，经 `lithe-gpui/tools/extract-locale.mjs` 生成）。
+//! （locale 真源是 `crates/shared/locales/source/locale.ts`，经 `lithe-gpui/tools/extract-locale.mjs` 生成）。
 
 use std::time::Duration;
 

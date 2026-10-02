@@ -50,7 +50,7 @@ use gpui_kit::{AbsoluteLength, Pixels, rems};
 //
 // 目录 `locales/` 相对 `CARGO_MANIFEST_DIR`（= `lithe-gpui/crates/shared`），文件是
 // `lithe.zh-CN.yml` / `lithe.en.yml`（`_version: 2`），由
-// `lithe-gpui/tools/extract-locale.mjs` 从 `windows/tauri/src/i18n/locale.ts` 生成。
+// `lithe-gpui/tools/extract-locale.mjs` 从 `crates/shared/locales/source/locale.ts` 生成。
 rust_i18n::i18n!("locales", fallback = "en");
 
 pub use core_client::{CoreClient, CoreError, CoreRequest, DEFAULT_TIMEOUT_MILLIS, core_json};

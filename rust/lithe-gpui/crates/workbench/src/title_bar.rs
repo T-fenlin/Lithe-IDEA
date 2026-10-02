@@ -20,7 +20,7 @@
 //!      取最近的 4px 档位 **44**（[`WINDOW_CONTROL_WIDTH_SPEC`]）。
 //!   图标尺寸 `windows/tauri/src/ui/button.tsx:9` 的 `[&_svg:not([class*='size-'])]:size-3.5` = **14×14**。
 //! - 高度 / 间距 / 内边距 / 字号令牌：`windows/tauri/src/styles/theme.css:115,118,126-133`。
-//! - 中文文案：`windows/tauri/src/i18n/locale.ts:6191`（`titleProject.trigger` = `项目：{project}`，
+//! - 中文文案：`crates/shared/locales/source/locale.ts:6191`（`titleProject.trigger` = `项目：{project}`，
 //!   本区域按可见规格只显示项目名本身，见 `title_bar` 的文档）。
 //!
 //! ## 两行的排布（2026-09-27 效果图口径）

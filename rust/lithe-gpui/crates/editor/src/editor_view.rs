@@ -1611,7 +1611,7 @@ impl EditorPane {
     /// 真机在这一档是 `toast.info("未找到" + 目标种类)`
     /// （`windows/tauri/src/features/keymaps/commands/navigation-command-actions.ts:449-456`），
     /// 文案与插值直接复用真源既有的两条键：`navigation.noTargetFound` +
-    /// `navigation.definition`（`windows/tauri/src/i18n/locale.ts:8435,8439`）。
+    /// `navigation.definition`（`crates/shared/locales/source/locale.ts:8435,8439`）。
     /// 静默失败会让用户以为 `F12` 坏了，所以这一条**要**给。
     ///
     /// 2026-09-27 从角落 toast 改成**通知中心**：toast 说完就没了，而「没找到定义」是用户
@@ -1769,7 +1769,7 @@ impl EditorPane {
     /// 失败**不静默**（《编码指南》「Handle failures explicitly」）：内容留在编辑器里、
     /// `is_dirty` 保持 `true`、打一行 `S1_EDITOR_SAVE_FAILED`，并推一条通知。
     /// 文案用 Windows 的 `editor.saveFailed` / `editor.autoSaveFailed`
-    /// （`windows/tauri/src/i18n/locale.ts:4637-4638`；英文侧同键 `:176-177`），
+    /// （`crates/shared/locales/source/locale.ts:4637-4638`；英文侧同键 `:176-177`），
     /// 手动保存与自动保存各用一条 —— 两句话说的是不同的后果（"重试"vs"更改仍在编辑器里"）。
     fn write_buffer(
         &mut self,
@@ -2248,7 +2248,7 @@ impl EditorPane {
                         .child(
                             Button::new("editor-unsaved-discard")
                                 // 真机的字是「不保存」（`unsavedChanges.doNotSave`，
-                                // `windows/tauri/src/i18n/locale.ts:7873`），但设计指南
+                                // `crates/shared/locales/source/locale.ts:7873`），但设计指南
                                 // `design-guides.md:421` 对"未保存修改"这一档明确推荐
                                 // **「放弃修改」**（"不保存"看不出放弃了什么），所以这里用
                                 // gpui 侧自有键，理由登记在 `extract-locale.mjs` 的
@@ -2637,7 +2637,7 @@ impl EditorPane {
         };
 
         // 无障碍名照真机拼「名称 +（未保存）」（`windows/tauri/src/features/tabs/components/tab-bar-item.tsx:137-141`、
-        // `windows/tauri/src/i18n/locale.ts:7860` 的 `tabs.ariaUnsavedSuffix`）；
+        // `crates/shared/locales/source/locale.ts:7860` 的 `tabs.ariaUnsavedSuffix`）；
         // 固定/预览后缀本轮没有这两种状态。必须在 `name` 被移进正文之前算好。
         let aria_label = if buffer.is_dirty {
             SharedString::from(format!("{name}（未保存）"))
@@ -2718,7 +2718,7 @@ impl EditorPane {
     /// 标签上的关闭按钮。
     ///
     /// 真机：ghost 图标按钮 `icon-xs`（24×24），tooltip `tabs.close`（"关闭"，
-    /// `windows/tauri/src/i18n/locale.ts:7845`），点击关闭该标签
+    /// `crates/shared/locales/source/locale.ts:7845`），点击关闭该标签
     /// （`windows/tauri/src/features/tabs/components/tab-bar-item.tsx:150-180`）。
     ///
     /// ⚠️ **订正一条曾经的错误注释**：这里原来写着"gpui-kit 的 `Button` 点击时会
@@ -2838,11 +2838,11 @@ impl EditorPane {
     /// 居中一列 = 图标块（48×48 的 `FileText` 40×40 + 右下角 20×20 放大镜）
     /// + 标题 + 说明（`:15-30`）。文案取**中文 i18n 原文，逐字**：
     ///
-    /// - 标题 `workbench.emptyEditorTitle` = "选择文件以查看"（`windows/tauri/src/i18n/locale.ts:6150`）；
+    /// - 标题 `workbench.emptyEditorTitle` = "选择文件以查看"（`crates/shared/locales/source/locale.ts:6150`）；
     /// - 说明 `workbench.emptyEditorDescription` = "外部工具产生的更改会自动显示。"
-    ///   （`windows/tauri/src/i18n/locale.ts:6151`）；
+    ///   （`crates/shared/locales/source/locale.ts:6151`）；
     /// - 右键菜单只有一项禁用项 `ui.noActionsHere` = "此处无任何内容"
-    ///   （`windows/tauri/src/i18n/locale.ts:4630`；空态菜单在
+    ///   （`crates/shared/locales/source/locale.ts:4630`；空态菜单在
     ///   `windows/tauri/src/features/panes/components/empty-editor-state.tsx:32-34`）。
     fn render_empty_state(cx: &App) -> AnyElement {
         // 外层用 `v_flex` 而不是裸 `div`：`Empty` 自己带 `flex_1`，

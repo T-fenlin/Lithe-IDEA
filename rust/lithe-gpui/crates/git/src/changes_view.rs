@@ -119,7 +119,7 @@ const CONFLICT_PATH_LIMIT: usize = 3;
 // 文案 key
 // ---------------------------------------------------------------------------
 //
-// 全部逐字取自 `windows/tauri/src/i18n/locale.ts` 生成的两份 locale
+// 全部逐字取自 `crates/shared/locales/source/locale.ts` 生成的两份 locale
 // （`lithe-gpui/crates/shared/locales/`），没有为此新增任何 `GPUI_ONLY_KEYS`：
 // 左栏「更改」视图用到的每一条键真源里都已经有了。
 

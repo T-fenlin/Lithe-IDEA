@@ -249,7 +249,7 @@ fn is_escape(keystroke: &Keystroke) -> bool {
 pub struct TopMenu {
     /// 诊断行 `S1_MENU_OPEN id=…` 的取值（真源顶级键去掉 `menu.` 前缀，可 grep）。
     pub id: &'static str,
-    /// 文案键（真源 `windows/tauri/src/i18n/locale.ts` 的 `menu.<id>`，本侧前缀 `lithe.`）。
+    /// 文案键（真源 `crates/shared/locales/source/locale.ts` 的 `menu.<id>`，本侧前缀 `lithe.`）。
     pub label_key: &'static str,
     /// 菜单里的项与分隔线。
     pub items: &'static [MenuItem],

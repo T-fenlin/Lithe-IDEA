@@ -487,7 +487,7 @@ const GPUI_ONLY_KEYS = [
     zh: "放弃修改",
     en: "Discard changes",
     reason:
-      "关闭未保存 buffer 的确认对话框（阶段 9 的 E）。真源的字是「不保存」（unsavedChanges.doNotSave，windows/tauri/src/i18n/locale.ts:7873），但 lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/docs/design-guides.md:421 对「未保存修改」这一档明确推荐「放弃修改」（『不保存』看不出放弃了什么），按指南改写；这与 settings.gpui.restoreDefaults* 同一类有意偏离。",
+      "关闭未保存 buffer 的确认对话框（阶段 9 的 E）。真源的字是「不保存」（unsavedChanges.doNotSave，crates/shared/locales/source/locale.ts:7873），但 lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/docs/design-guides.md:421 对「未保存修改」这一档明确推荐「放弃修改」（『不保存』看不出放弃了什么），按指南改写；这与 settings.gpui.restoreDefaults* 同一类有意偏离。",
   },
   {
     key: "editor.gpui.unsavedChangesBody",

@@ -384,7 +384,7 @@ pub fn project_tabs(
                                 // `From<Rems>`，所以这一处按当帧 rem 基准换算（见常量注释）。
                                 .with_size(crate::rem_px(rem, CLOSE_BUTTON_SIZE_SPEC))
                                 // 文案逐字取下 Windows 中文包：`titleProject.closeProject`
-                                // = "关闭项目 {name}"（`windows/tauri/src/i18n/locale.ts:6188`）。
+                                // = "关闭项目 {name}"（`crates/shared/locales/source/locale.ts:6188`）。
                                 .tooltip(tr_args(
                                     "lithe.titleProject.closeProject",
                                     &[("name", tooltip.as_ref())],
