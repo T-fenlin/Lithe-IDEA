@@ -181,7 +181,7 @@ fn is_java_source(file_path: &str) -> bool {
 ///
 /// 失败返回 Core 的错误码原文（`CoreError::code`）；信封级失败（响应不是合法 JSON）
 /// 没有错误码，退回 `CoreError` 的说明性文案 —— 与 `explorer` / `git` 两个 feature
-/// 的口径一致（`lithe-gpui/crates/explorer/src/model.rs:236-242`）。
+/// 的口径一致（`lithe-gpui/crates/explorer/src/model.rs` 的 `load_snapshot`）。
 pub(crate) fn definition_target(
     file_path: &str,
     text: &Rope,

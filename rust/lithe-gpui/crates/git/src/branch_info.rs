@@ -31,7 +31,7 @@
 //! # 非仓库 / 仓库在子目录
 //!
 //! 工作区根**不一定是仓库根**，所以本模块走与 `model::load_first` 完全相同的三步
-//! （`model.rs:750-767`）：`git.status` → `resolve_repository_root` → 仍找不到时
+//! （`model.rs` 的 `load_first`）：`git.status` → `resolve_repository_root` → 仍找不到时
 //! `discover_repository_root`（`workspace.snapshot` 一级目录 + `git.status` 探测，上限 6）。
 //! 这样"工作区里放了一个仓库"与"工作区本身就是仓库"给出同一份 [`BranchSnapshot`]。
 //! 三条命令都失败时快照是**空**的（`repository_root = None`、`branch = None`、`branches = []`），
@@ -156,7 +156,7 @@ impl BranchSnapshot {
 
 /// `git.status` 的完整读法：`(仓库根, 分支, ahead/behind)`。
 ///
-/// `model::read_status` 只取前两样（`model.rs:493-500`，底部提交记录用不到 ahead/behind），
+/// `model::read_status` 只取前两样（`model.rs` 的 `read_status`，底部提交记录用不到 ahead/behind），
 /// 标题栏要用，所以这里读同一份响应里多出来的两个字段。**不是第二条命令**：
 /// `execute_core("git.status", ..)` 只调一次。
 fn read_status_detailed(

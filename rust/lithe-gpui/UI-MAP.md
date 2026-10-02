@@ -130,7 +130,8 @@
 
    另外：`window.scale_factor()` 只与物理像素有关，**不参与**这套换算。
 
-   ⚠️ **现状未达标**：生产代码里仍有约 57 处直接 `px()`（`workbench` 22、`settings` 18、`terminal` 7 …），且 `rem_px` 换算助手被**复制在 5 个 crate**（`editor` / `git` / `settings` / `terminal` / `workbench`），`lithe-gpui-shared` 里并没有共享版。清理项 `D16` / `D17` 记在 `docs/tasks/gpui-core-first.md`。
+   ✅ **现状（2026-10-02 复测，本条已达标）**：`D16` / `D17` 已完成 —— `rem_px` 换算助手已收敛成 `lithe-gpui-shared` 的**唯一**实现（`crates/shared/src/lib.rs`，其余 crate 用 `pub(crate) use` 转发），生产代码里的直接 `px()` 由守卫实测 **exit 0 / 违规 0 处**（11 处命中全部落在 7 条平台 / token 例外白名单里）。
+   ⚠️ 顺带更正本文早先的口径：**"生产代码约 57 处 `px()`"是错的** —— 那是把注释 / 字符串里的 `px(` 与 `#[cfg(test)]` 断言一起数进去的结果；真正的 UI 代码调用只有 13 处。经过与更正见 `docs/tasks/gpui-core-first.md` §4.3 / §7。
 2. **颜色与字号一律走主题 token**（`cx.theme()` / `cx.theme().tokens`），不写裸色值；映射见 §1.2。
 3. **文案取 macOS 的本地化原文**（`macos/Resources/zh-Hans.lproj`），不要自己编中文。
 4. **图标**：应用注册的是**全量** `gpui_kit::assets::AllAssets`（0.7 仍在：`gpui-kit-assets-0.7.0/src/lib.rs`、`native_assets.rs`），嵌入 `assets/icons/` 下的 **1830 个 Lucide 字形**—— 所以**没有"缺字形"这回事**，也不需要近似替代。
@@ -220,7 +221,7 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 
 - **多行输入 / 代码编辑器必须显式给高度**：多行走 `.h_auto()`（高度按内容算），而内容高度来自 `LayoutMode::CodeEditor { rows }` 的 **`rows` 默认只有 2**。不写的话编辑区只有两行高、下面整片空白。正确写法 `Editor::new(&state).h(relative(1.))`，等价于组件自带的 `Input::full_height()`。
 - **滚动条要显式改成常显**：gpui-kit 默认是"滚动时出现、停下淡出"，IDE 观感要常显细条 + 可拖。用 `Theme::set_scrollbar_mode(ScrollbarMode::Always, cx)`（0.7 仍在：`gpui-component-0.7.0/src/theme/mod.rs`），否则"内容多了看不出来能滚、也抓不到滑块"。
-- ⚠️ **代码编辑器不吃滚轮，宿主必须自己接**：编辑器元素的样式只有 `position: absolute` + `100%`，**没有 `overflow: scroll`**；而 gpui 只把滚轮交给"命中元素样式里带 `Overflow::Scroll`"的那个。做法：在包裹层 `on_scroll_wheel`，把 `event.delta.pixel_delta(line_height)` 交给 `InputBaseState::set_scroll_offset`（0.7 仍在：`gpui-base-0.7.0/src/input/base/state.rs`，它自己 clamp、下一帧生效）。本项目已接，落点是 **`crates/editor/src/editor_view.rs` 的 `render_editor`**（本文早先引用的 `panels.rs::render_editor` 与 `.artifacts/p1/scrollbars.png` **都已不存在**）。
+- ⚠️ **代码编辑器不吃滚轮，宿主必须自己接**：编辑器元素的样式只有 `position: absolute` + `100%`，**没有 `overflow: scroll`**；而 gpui 只把滚轮交给"命中元素样式里带 `Overflow::Scroll`"的那个。做法：在包裹层 `on_scroll_wheel`，把 `event.delta.pixel_delta(line_height)` 交给 `InputBaseState::set_scroll_offset`（0.7 仍在：`gpui-base-0.7.0/src/input/base/state.rs`，它自己 clamp、下一帧生效）。本项目已接，落点是 **`crates/editor/src/editor_view.rs` 里 `EditorPane::render_body` 的编辑器包裹层（`on_scroll_wheel` 接线处）**（本文早先引用的 `panels.rs::render_editor` 与 `.artifacts/p1/scrollbars.png` **都已不存在**）。
 - 顺带一条：Dock 的每个面板外面那层 `tab-content` 是 `overflow_y_scroll`，所以面板内容比面板高时，滚的是**整块面板内容**（不是面板里某个列表）——列表要自己滚就得自己接滚轮/自己挂滚动条。
 - 深色主题要显式 `Theme::change(ThemeMode::Dark, None, cx)`（`gpui_kit::init` 默认浅色），macOS 真机默认深色。
 - `Tab::icon()` 会**丢掉 label**，图标+文字要走 `Tab::child(...)`；`TabBar::max_width()` 是标签文字能截断的前提。

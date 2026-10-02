@@ -871,8 +871,8 @@ impl EditorPane {
     /// 打开一个文件：读盘、判定类型、更新标签栏与正文。
     ///
     /// **同一路径重复打开只切换活动标签、不再读盘**（沿用上一轮已验证实现的约定，
-    /// git HEAD `panels.rs::open_document`）：正文已经在这个 [`Buffer`] 的
-    /// `EditorState` 里，重读会白白丢掉撤销栈与光标。
+    /// 旧 `shell_probe/panels.rs::open_document` —— 该文件已删除，只在 git 历史里）：
+    /// 正文已经在这个 [`Buffer`] 的 `EditorState` 里，重读会白白丢掉撤销栈与光标。
     /// 注意"同路径"是按传入的 `Path` 字面比较；调用方要保证同一个文件每次传同一种写法
     /// （绝对路径就一直绝对路径）。
     ///

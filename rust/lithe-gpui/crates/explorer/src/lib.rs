@@ -25,8 +25,11 @@
 //! - 树内搜索的**状态与查询通路保留、暂时没有界面**：`Explorer` 的 `search` / `search_open` /
 //!   `query` 字段与 `toggle_search` / `clear_search` / `set_query` 都留着，其中暂时不可达的那几项
 //!   标了 `#[allow(dead_code)]` 并写明为什么留着，等左活动栏「搜索」项与树内 `Mod+F` / `/` 键位接上；
-//! - 空目录挂一条禁用占位行「文件夹为空」，因为 `TreeItem::is_folder()` 是"有没有子节点"
-//!   推导出来的（`gpui-base-0.6.6/src/tree.rs:131-134`），没有子节点就会被当成文件行；
+//! - 根行没有可见子项时（空工作区，或过滤后没有命中）挂一条禁用占位行「文件夹为空」，因为
+//!   `TreeItem::is_folder()` 是"有没有子节点"推导出来的（`gpui-base-0.6.6/src/tree.rs:131-134`），
+//!   没有子节点就会被当成文件行。**它不覆盖磁盘上的空目录**：这棵树只从 `workspace.snapshot` 的
+//!   `data.files`（扁平**文件**路径，`rust/lithe-core/src/project/files.rs` 的 `snapshot` 只收非目录项）
+//!   聚出来，空目录不会成为树里的行，所以 `model.rs` 里"按目录挂占位行"那条分支当前不可达；
 //! - 未能实现的项逐条登记在文件末尾。
 //!
 //! ## 拆分来源与文件分工
