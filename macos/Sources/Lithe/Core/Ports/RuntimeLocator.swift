@@ -1,0 +1,110 @@
+import Foundation
+import LitheCoreContracts
+
+/// Where a tool candidate came from.  The value is intentionally platform
+/// neutral so the same run/DAP UI can explain a Windows registry entry or a
+/// macOS Homebrew/Xcode candidate without importing platform frameworks.
+struct RuntimeToolGuidance: Equatable, Sendable {
+    let command: String
+    let displayName: String
+    let summary: String
+    let recovery: String
+
+    init(
+        command: String,
+        displayName: String? = nil,
+        summary: String,
+        recovery: String
+    ) {
+        self.command = command
+        self.displayName = displayName ?? command
+        self.summary = summary
+        self.recovery = recovery
+    }
+
+    var message: String { summary + " " + recovery }
+}
+
+/// Platform adapters may provide richer candidates than a bare PATH scan.
+/// The core service only consumes this value and never touches the file system
+/// itself, which keeps the Windows implementation free to use its own rules.
+protocol RuntimeToolDiscovery: Sendable {
+    func candidates(
+        for command: String,
+        projectURL: URL?,
+        environment: [String: String]
+    ) -> [RuntimeToolCandidate]
+
+    func guidance(
+        for command: String,
+        projectURL: URL?,
+        environment: [String: String]
+    ) -> RuntimeToolGuidance
+}
+
+/// Safe no-op default used by non-platform composition roots.  The core
+/// service still performs the protocol-level PATH lookup through
+/// `RuntimeLocator`; richer discovery is injected by the platform adapter.
+struct DefaultRuntimeToolDiscovery: RuntimeToolDiscovery {
+    func candidates(
+        for command: String,
+        projectURL: URL?,
+        environment: [String: String]
+    ) -> [RuntimeToolCandidate] { [] }
+
+    func guidance(
+        for command: String,
+        projectURL: URL?,
+        environment: [String: String]
+    ) -> RuntimeToolGuidance {
+        RuntimeToolGuidance(
+            command: command,
+            summary: "\(command) is not available in the current toolchain.",
+            recovery: "Install it with your platform's package manager or add its executable directory to PATH."
+        )
+    }
+}
+
+protocol RuntimeLocator: Sendable {
+    func environment() -> [String: String]
+    func discover() -> RuntimeDiscoveryResult
+    /// Java-only probing for launch paths; never runs Maven or other tools.
+    func discoverJavaRuntimes() -> [JavaRuntimeCandidate]
+    func validJavaHome(path: String) -> URL?
+    /// Returns the candidate reached by PATH, resolving platform symlinks.
+    func javaHomeOnPath(in candidates: [JavaRuntimeCandidate]) -> URL?
+    func javaRuntime(at homeURL: URL) -> JavaRuntimeCandidate?
+    func isExecutable(at url: URL) -> Bool
+    func systemMavenExecutable() -> URL?
+    func mavenExecutable(forHomePath path: String) -> URL?
+    func mavenRuntime(at executableURL: URL) -> MavenRuntimeCandidate?
+    /// The JDTLS runtime JDK bundled with the application, if present.
+    /// Returns the home directory URL (containing `bin/java`). Returns `nil`
+    /// in development builds or on platforms that do not bundle a JDK.
+    func bundledJdkHome() -> URL?
+}
+
+extension RuntimeLocator {
+    func discoverJavaRuntimes() -> [JavaRuntimeCandidate] { discover().javaRuntimes }
+    func javaHomeOnPath(in candidates: [JavaRuntimeCandidate]) -> URL? { nil }
+    // Default implementation for test stubs and non-macOS locators that do
+    // not ship a bundled JDK.
+    func bundledJdkHome() -> URL? { nil }
+}
+
+/// Shared selection policy; platform locators still own executable validation
+/// and version probing. Requirements are read through Core's existing document.
+protocol JavaRuntimeSelecting: Sendable {
+    func selectJavaRuntime(at root: URL?, candidates: [AutomaticJavaCandidate], fallbackID: String?) -> Result<AutomaticJavaSelection, RustCoreBridge.CoreCallError>
+}
+
+struct AutomaticJavaCandidate: Codable, Sendable {
+    let id: String
+    let version: String
+    let priority: UInt32
+}
+
+struct AutomaticJavaSelection: Decodable, Sendable {
+    let id: String?
+    let warning: String?
+}

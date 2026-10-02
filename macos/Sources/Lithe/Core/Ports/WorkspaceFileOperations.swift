@@ -1,0 +1,11 @@
+import LitheCoreContracts
+
+typealias WorkspaceFileOperations = LitheCoreContracts.WorkspaceFileOperations
+
+typealias DocumentWriteResult = LitheCoreContracts.DocumentWriteResult
+typealias DocumentFileObservation = LitheCoreContracts.DocumentFileObservation
+
+typealias DocumentEncoding = LitheCoreContracts.DocumentEncoding
+typealias DocumentReadDetails = LitheCoreContracts.DocumentReadDetails
+typealias DocumentChangeReadResult = LitheCoreContracts.DocumentChangeReadResult
+typealias EncodedDocumentWriteResult = LitheCoreContracts.EncodedDocumentWriteResult

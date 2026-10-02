@@ -73,6 +73,32 @@ fn builtin_catalog_describes_market_lsp_providers() {
             .validation_arguments,
         vec!["--version".to_string()]
     );
+    // Intelephense only speaks LSP over stdio, so a bare launch would exit
+    // instead of serving the editor. The catalog is the only truth for the
+    // macOS language server settings, so the arguments are asserted here.
+    let php = catalog
+        .providers
+        .iter()
+        .find(|provider| provider.id == "php")
+        .expect("php provider should exist");
+    assert_eq!(
+        php.capabilities,
+        vec![
+            LspProviderCapability::Run,
+            LspProviderCapability::LanguageServer,
+            LspProviderCapability::Formatting,
+            LspProviderCapability::Testing,
+        ]
+    );
+    let php_launch = php
+        .language_server_launch
+        .as_ref()
+        .expect("php launch descriptor should exist");
+    assert_eq!(
+        php_launch.executable_names,
+        vec!["intelephense".to_string()]
+    );
+    assert_eq!(php_launch.arguments, vec!["--stdio".to_string()]);
 }
 
 #[test]
@@ -452,13 +478,27 @@ fn client_core_initializes_and_applies_server_capabilities() {
         true
     );
     assert_eq!(
+        client_capabilities["textDocument"]["completion"]["contextSupport"],
+        true
+    );
+    assert_eq!(
         client_capabilities["textDocument"]["completion"]["completionItem"]["snippetSupport"],
+        true
+    );
+    assert_eq!(
+        client_capabilities["textDocument"]["completion"]["completionItem"]["labelDetailsSupport"],
         true
     );
     assert_eq!(
         client_capabilities["textDocument"]["completion"]["completionItem"]["resolveSupport"]
             ["properties"],
-        json!(["detail", "documentation", "textEdit", "additionalTextEdits"])
+        json!([
+            "detail",
+            "documentation",
+            "textEdit",
+            "additionalTextEdits",
+            "labelDetails"
+        ])
     );
     assert_eq!(
         initialize_message["params"]["initializationOptions"]["ui.semanticTokens"],
@@ -946,6 +986,162 @@ fn client_core_closes_open_documents() {
 }
 
 #[test]
+fn client_core_matches_reencoded_windows_uris_from_published_diagnostics() {
+    // The host opens the document with an unencoded drive letter while servers
+    // using VS Code's URI library echo `d%3A` back; diagnostics must still land.
+    let opened_uri = "file:///D:/project/main.php";
+    let published_uri = "file:///d%3A/project/main.php";
+    let opened = client_open_document(ClientOpenDocumentRequest {
+        state: LspClientState::default(),
+        uri: opened_uri.to_string(),
+        language_id: "php".to_string(),
+        text: "<?php\n".to_string(),
+    })
+    .unwrap();
+    let diagnosed = client_apply_server_message(ClientApplyServerMessageRequest {
+        state: opened.state,
+        message: json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/publishDiagnostics",
+            "params": {
+                "uri": published_uri,
+                "version": 1,
+                "diagnostics": [{
+                    "range": {
+                        "start": { "line": 1, "character": 0 },
+                        "end": { "line": 1, "character": 1 }
+                    },
+                    "message": "Unexpected ';'"
+                }]
+            }
+        })
+        .to_string(),
+    })
+    .unwrap();
+    // Diagnostics are stored and emitted under the document's canonical URI so
+    // the frontend can resolve them back to the open file path.
+    assert!(diagnosed.state.diagnostics.contains_key(opened_uri));
+    assert_eq!(
+        diagnosed.state.diagnostic_versions.get(opened_uri),
+        Some(&1)
+    );
+    let diagnostics_event = diagnosed
+        .events
+        .iter()
+        .find(|event| event.kind == "diagnostics")
+        .expect("re-encoded publishDiagnostics should emit a diagnostics event");
+    assert_eq!(diagnostics_event.uri.as_deref(), Some(opened_uri));
+}
+
+#[test]
+fn client_core_preserves_class_completion_namespace_and_import_edits() {
+    // Incomplete class items carry the namespace in labelDetails; the import
+    // `use` edit arrives only after completionItem/resolve.
+    let opened = client_open_document(ClientOpenDocumentRequest {
+        state: LspClientState::default(),
+        uri: "file:///tmp/project/index.php".to_string(),
+        language_id: "php".to_string(),
+        text: "<?php\nnew Car".to_string(),
+    })
+    .unwrap();
+    let requested = client_feature_request(ClientFeatureRequest {
+        state: opened.state,
+        uri: "file:///tmp/project/index.php".to_string(),
+        method: "textDocument/completion".to_string(),
+        position: Some(LspPosition {
+            line: 1,
+            utf16_column: 7,
+        }),
+        new_name: None,
+        range: None,
+        diagnostics: Vec::new(),
+        completion_item: None,
+        code_action: None,
+        command: None,
+    })
+    .unwrap();
+    let completed = client_apply_server_message(ClientApplyServerMessageRequest {
+        state: requested.state,
+        message: r#"{
+                "jsonrpc": "2.0",
+                "id": "1",
+                "result": {
+                    "items": [{
+                        "label": "Carbon",
+                        "kind": 7,
+                        "labelDetails": { "description": "Carbon\\Carbon" },
+                        "insertText": "Carbon",
+                        "data": { "fqn": "Carbon\\Carbon" }
+                    }]
+                }
+            }"#
+        .to_string(),
+    })
+    .unwrap();
+    let completion = completed.events[0].result.as_ref().unwrap();
+    assert_eq!(completion["items"][0]["label"], "Carbon");
+    assert_eq!(completion["items"][0]["kind"], 7);
+    assert_eq!(
+        completion["items"][0]["labelDetails"]["description"],
+        "Carbon\\Carbon"
+    );
+    assert_eq!(completion["items"][0]["data"]["fqn"], "Carbon\\Carbon");
+    assert!(completion["items"][0].get("additionalTextEdits").is_none());
+
+    let resolve = client_feature_request(ClientFeatureRequest {
+        state: completed.state,
+        uri: "file:///tmp/project/index.php".to_string(),
+        method: "completionItem/resolve".to_string(),
+        position: None,
+        new_name: None,
+        range: None,
+        diagnostics: Vec::new(),
+        completion_item: Some(json!({
+            "label": "Carbon",
+            "kind": 7,
+            "insertText": "Carbon",
+            "data": { "fqn": "Carbon\\Carbon" }
+        })),
+        code_action: None,
+        command: None,
+    })
+    .unwrap();
+    let resolved = client_apply_server_message(ClientApplyServerMessageRequest {
+        state: resolve.state,
+        message: r#"{
+                "jsonrpc": "2.0",
+                "id": "2",
+                "result": {
+                    "label": "Carbon",
+                    "kind": 7,
+                    "detail": "class Carbon\\Carbon",
+                    "insertText": "Carbon",
+                    "additionalTextEdits": [{
+                        "range": {
+                            "start": { "line": 1, "character": 0 },
+                            "end": { "line": 1, "character": 0 }
+                        },
+                        "newText": "use Carbon\\Carbon;\n"
+                    }],
+                    "data": { "fqn": "Carbon\\Carbon" }
+                }
+            }"#
+        .to_string(),
+    })
+    .unwrap();
+    let item = &resolved.events[0].result.as_ref().unwrap()["item"];
+    assert_eq!(item["detail"], "class Carbon\\Carbon");
+    assert_eq!(
+        item["additionalTextEdits"][0]["newText"],
+        "use Carbon\\Carbon;\n"
+    );
+    assert_eq!(
+        item["additionalTextEdits"][0]["range"]["start"]["utf16Column"],
+        0
+    );
+}
+
+#[test]
 fn client_core_ignores_diagnostics_for_unopened_or_stale_document_versions() {
     let uri = "file:///tmp/project/main.rs";
     let unopened = client_apply_server_message(ClientApplyServerMessageRequest {
@@ -1073,237 +1269,6 @@ fn client_core_ignores_diagnostics_for_unopened_or_stale_document_versions() {
         .unwrap()
         .get("version")
         .is_none());
-}
-
-/// Client state as `initialize` leaves it for one workspace root.
-///
-/// The root is what decides whether a snapshot for a file nobody has open is
-/// retained, so every test below builds its state this way rather than through
-/// `LspClientState::default()`.
-fn initialized_state(root_uri: &str) -> LspClientState {
-    client_initialize(ClientInitializeRequest {
-        state: LspClientState::default(),
-        root_uri: root_uri.to_string(),
-        process_id: None,
-        initialization_options: None,
-    })
-    .expect("initialize should be constructible")
-    .state
-}
-
-/// Reduces one `publishDiagnostics` notification; `diagnostics` is the complete
-/// snapshot the server publishes for `uri`.
-fn publish(state: LspClientState, uri: &str, diagnostics: Value) -> LspClientResponse {
-    client_apply_server_message(ClientApplyServerMessageRequest {
-        state,
-        message: json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/publishDiagnostics",
-            "params": { "uri": uri, "diagnostics": diagnostics }
-        })
-        .to_string(),
-    })
-    .expect("publishing diagnostics should reduce")
-}
-
-/// One diagnostic entry, so the tests below do not repeat the LSP range shape.
-fn diagnostic(message: &str) -> Value {
-    json!({
-        "range": {
-            "start": { "line": 0, "character": 0 },
-            "end": { "line": 0, "character": 1 }
-        },
-        "severity": 1,
-        "message": message
-    })
-}
-
-/// A file inside the workspace keeps its snapshot even though nothing opened it:
-/// that is the problem a problems list exists to show, and it must reach the host
-/// as an event. An empty snapshot from the server retracts it, and a file that
-/// never had one produces no event at all — otherwise cleaning a large workspace
-/// would emit one event per clean file.
-#[test]
-fn client_core_retains_diagnostics_for_unopened_workspace_files() {
-    let uri = "file:///tmp/project/module/src/Main.java";
-    let state = initialized_state("file:///tmp/project");
-
-    let stored = publish(state, uri, json!([diagnostic("cannot resolve")]));
-    assert_eq!(stored.events.len(), 1);
-    assert_eq!(stored.events[0].kind, "diagnostics");
-    assert_eq!(stored.events[0].uri.as_deref(), Some(uri));
-    assert_eq!(stored.events[0].version, None);
-    assert_eq!(stored.state.diagnostics[uri].len(), 1);
-    assert!(
-        stored.state.diagnostic_versions.is_empty(),
-        "no open document owns that version, so none is recorded"
-    );
-
-    // The server retracts diagnostics with an empty snapshot.
-    let cleared = publish(stored.state, uri, json!([]));
-    assert_eq!(cleared.events.len(), 1);
-    assert_eq!(
-        cleared.events[0].diagnostics.as_ref().map(Vec::len),
-        Some(0)
-    );
-    assert!(!cleared.state.diagnostics.contains_key(uri));
-
-    // An untouched clean file stays silent: no snapshot was ever stored.
-    let untouched = publish(cleared.state, uri, json!([]));
-    assert!(untouched.events.is_empty());
-    assert!(!untouched.state.diagnostics.contains_key(uri));
-}
-
-/// Files outside the workspace are dropped, however they are spelled: JDK
-/// sources, dependency JARs and decompiled classes publish diagnostics that are
-/// noise. The sibling-prefix case is the one a string comparison gets wrong.
-#[test]
-fn client_core_drops_diagnostics_outside_the_workspace() {
-    let outside = "file:///tmp/other/src/Main.java";
-    let sibling = "file:///tmp/project-archive/src/Main.java";
-    let state = initialized_state("file:///tmp/project");
-
-    for uri in [outside, sibling] {
-        let dropped = publish(state.clone(), uri, json!([diagnostic("library noise")]));
-        assert!(
-            dropped.events.is_empty(),
-            "{uri} must not produce diagnostics events"
-        );
-        assert!(!dropped.state.diagnostics.contains_key(uri));
-    }
-
-    // Without a recorded workspace root nothing outside an open document is
-    // retained, which is how the state behaved before the root existed.
-    let rootless = publish(
-        LspClientState::default(),
-        "file:///tmp/project/src/Main.java",
-        json!([diagnostic("ignored")]),
-    );
-    assert!(rootless.events.is_empty());
-    assert!(rootless.state.diagnostics.is_empty());
-}
-
-/// A versioned snapshot for a file nobody has open is kept rather than refused:
-/// no open document owns that version, so there is nothing to compare it against,
-/// and the server processes messages in order, so the last snapshot wins.
-#[test]
-fn client_core_accepts_versioned_diagnostics_for_unopened_workspace_files() {
-    let uri = "file:///tmp/project/src/Main.java";
-    let state = initialized_state("file:///tmp/project");
-    let message = json!({
-        "jsonrpc": "2.0",
-        "method": "textDocument/publishDiagnostics",
-        "params": {
-            "uri": uri,
-            "version": 7,
-            "diagnostics": [diagnostic("unopened but versioned")]
-        }
-    })
-    .to_string();
-
-    let applied = client_apply_server_message(ClientApplyServerMessageRequest { state, message })
-        .expect("a versioned publish for an unopened file should reduce");
-    assert_eq!(applied.state.diagnostics[uri].len(), 1);
-    assert_eq!(applied.events.len(), 1);
-    assert!(
-        applied.state.diagnostic_versions.is_empty(),
-        "a version for a document we do not own is not bookkeeping we keep"
-    );
-}
-
-/// The retention is bounded, and the bound only refuses *new* files: a file
-/// already tracked keeps updating, so the list can never hold a snapshot that
-/// the server has already replaced.
-#[test]
-fn client_core_bounds_unopened_workspace_retention_without_freezing_tracked_files() {
-    let root = "file:///tmp/project";
-    let mut state = initialized_state(root);
-
-    for index in 0..WORKSPACE_DIAGNOSTIC_FILE_LIMIT {
-        let uri = format!("file:///tmp/project/src/File{index}.java");
-        state = publish(state, &uri, json!([diagnostic("tracked")])).state;
-    }
-    assert_eq!(state.diagnostics.len(), WORKSPACE_DIAGNOSTIC_FILE_LIMIT);
-
-    let overflow = "file:///tmp/project/src/Overflow.java";
-    let refused = publish(
-        state.clone(),
-        overflow,
-        json!([diagnostic("over the limit")]),
-    );
-    assert!(refused.events.is_empty(), "an untracked file is not listed");
-    assert!(!refused.state.diagnostics.contains_key(overflow));
-
-    let tracked = "file:///tmp/project/src/File0.java";
-    let updated = publish(state, tracked, json!([diagnostic("still updating")]));
-    assert_eq!(updated.events.len(), 1);
-    assert_eq!(
-        updated.state.diagnostics[tracked][0].message, "still updating",
-        "a tracked file must never be left holding a replaced snapshot"
-    );
-}
-
-/// Closing a document is about the document, not about the file: a snapshot
-/// whose file is still inside the workspace survives so a problems list keeps
-/// listing it, while the version bookkeeping goes with the document. A file
-/// outside the workspace is dropped, exactly as every closed document used to be.
-#[test]
-fn client_core_keeps_workspace_diagnostics_when_a_document_closes() {
-    let inside = "file:///tmp/project/src/Main.java";
-    let outside = "file:///tmp/other/src/Library.java";
-
-    let mut state = initialized_state("file:///tmp/project");
-    for uri in [inside, outside] {
-        state = client_open_document(ClientOpenDocumentRequest {
-            state,
-            uri: uri.to_string(),
-            language_id: "java".to_string(),
-            text: "class Main {}\n".to_string(),
-        })
-        .unwrap()
-        .state;
-        state = client_apply_server_message(ClientApplyServerMessageRequest {
-            state,
-            message: json!({
-                "jsonrpc": "2.0",
-                "method": "textDocument/publishDiagnostics",
-                "params": {
-                    "uri": uri,
-                    "version": 1,
-                    "diagnostics": [diagnostic("open document")]
-                }
-            })
-            .to_string(),
-        })
-        .unwrap()
-        .state;
-        assert_eq!(state.diagnostic_versions.get(uri), Some(&1));
-    }
-
-    let closed = client_close_document(ClientCloseDocumentRequest {
-        state,
-        uri: inside.to_string(),
-    })
-    .unwrap();
-    assert_eq!(
-        closed.state.diagnostics[inside].len(),
-        1,
-        "an in-workspace file keeps its snapshot after its tab closes"
-    );
-    assert!(
-        !closed.state.diagnostic_versions.contains_key(inside),
-        "the closed document's version bookkeeping must not survive it"
-    );
-
-    let closed = client_close_document(ClientCloseDocumentRequest {
-        state: closed.state,
-        uri: outside.to_string(),
-    })
-    .unwrap();
-    assert!(
-        !closed.state.diagnostics.contains_key(outside),
-        "a file outside the workspace is dropped when its document closes"
-    );
 }
 
 #[test]

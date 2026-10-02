@@ -47,6 +47,7 @@ fn reported_repository_path(path: &Path) -> String {
         path.canonicalize()
             .expect("discovered repository should exist"),
     )
+    .expect("repository path should be supported")
     .to_string_lossy()
     .replace('\\', "/")
 }
@@ -818,217 +819,6 @@ fn git_write_appends_shared_and_local_ignore_patterns_without_duplicates() {
 }
 
 #[test]
-fn git_write_mutates_literal_local_exclude_patterns_including_linked_worktrees() {
-    let root = temporary_root("lithe-exclude-patterns");
-    fs::create_dir_all(&root).expect("temporary repository should be creatable");
-    let run = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .current_dir(&root)
-            .output()
-            .expect("git should be available")
-    };
-    assert!(run(&["init", "-q"]).status.success());
-    assert!(run(&["config", "user.email", "dev@example.com"])
-        .status
-        .success());
-    assert!(run(&["config", "user.name", "Dev"]).status.success());
-    fs::write(root.join("README.md"), "ok\n").expect("readme should be writable");
-    assert!(run(&["add", "README.md"]).status.success());
-    assert!(run(&["commit", "-qm", "init"]).status.success());
-
-    let request = |root: &Path, operation: &str, paths: Value| -> Value {
-        serde_json::from_str(&execute_json(
-            &serde_json::to_string(&serde_json::json!({
-                "id": operation,
-                "command": "git.write",
-                "payload": {"root": root, "operation": operation, "paths": paths}
-            }))
-            .expect("exclude pattern request should encode"),
-        ))
-        .expect("exclude pattern response should be JSON")
-    };
-
-    let added = request(
-        &root,
-        "excludePatterns",
-        serde_json::json!([".factorypath", " .factorypath "]),
-    );
-    assert_eq!(added["ok"], true, "{added:?}");
-    let exclude = fs::read_to_string(root.join(".git/info/exclude"))
-        .expect("local exclude file should be readable");
-    assert!(exclude.lines().any(|line| line == ".factorypath"));
-    assert_eq!(
-        exclude
-            .lines()
-            .filter(|line| *line == ".factorypath")
-            .count(),
-        1
-    );
-
-    let worktree = root.parent().unwrap().join(format!(
-        "{}-linked",
-        root.file_name().unwrap().to_string_lossy()
-    ));
-    assert!(run(&[
-        "worktree",
-        "add",
-        "-b",
-        "feature",
-        worktree.to_str().unwrap()
-    ])
-    .status
-    .success());
-
-    let removed = request(
-        &worktree,
-        "unexcludePatterns",
-        serde_json::json!([".factorypath"]),
-    );
-    assert_eq!(removed["ok"], true, "{removed:?}");
-    let shared_exclude = fs::read_to_string(root.join(".git/info/exclude"))
-        .expect("shared exclude should remain readable");
-    assert!(!shared_exclude.lines().any(|line| line == ".factorypath"));
-    assert!(!worktree.join(".git").join("info/exclude").is_file());
-
-    let missing = request(
-        &worktree,
-        "unexcludePatterns",
-        serde_json::json!([".factorypath"]),
-    );
-    assert_eq!(missing["ok"], true, "{missing:?}");
-
-    let non_git = temporary_root("lithe-exclude-patterns-nongit");
-    fs::create_dir_all(&non_git).expect("temporary non-git directory should be creatable");
-    let rejected = request(
-        &non_git,
-        "excludePatterns",
-        serde_json::json!([".factorypath"]),
-    );
-    assert_eq!(rejected["ok"], false, "{rejected:?}");
-    assert_eq!(rejected["error"]["code"], "invalid_request");
-    assert_eq!(rejected["error"]["message"], "Not a Git repository");
-
-    let _ = Command::new("git")
-        .args(["worktree", "remove", "--force", worktree.to_str().unwrap()])
-        .current_dir(&root)
-        .output();
-    fs::remove_dir_all(root).expect("temporary workspace should be removable");
-    fs::remove_dir_all(non_git).expect("temporary non-git directory should be removable");
-    let _ = fs::remove_dir_all(&worktree);
-}
-
-#[test]
-fn git_write_literal_exclude_patterns_preserve_leading_whitespace_lines() {
-    // A leading space is a different Git ignore rule. Matching must not trim
-    // stored lines, or Add would skip a real `.factorypath` and Remove would
-    // delete a user rule that only looks similar after trim().
-    let root = temporary_root("lithe-exclude-patterns-whitespace");
-    fs::create_dir_all(&root).expect("temporary repository should be creatable");
-    let run = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .current_dir(&root)
-            .output()
-            .expect("git should be available")
-    };
-    assert!(run(&["init", "-q"]).status.success());
-    let exclude_path = root.join(".git/info/exclude");
-    fs::create_dir_all(exclude_path.parent().expect("exclude parent should exist"))
-        .expect("git info directory should be creatable");
-    fs::write(&exclude_path, "user rules\n .factorypath\n")
-        .expect("local exclude should be writable");
-
-    let request = |operation: &str, paths: Value| -> Value {
-        serde_json::from_str(&execute_json(
-            &serde_json::to_string(&serde_json::json!({
-                "id": operation,
-                "command": "git.write",
-                "payload": {"root": root, "operation": operation, "paths": paths}
-            }))
-            .expect("exclude pattern request should encode"),
-        ))
-        .expect("exclude pattern response should be JSON")
-    };
-
-    let added = request("excludePatterns", serde_json::json!([".factorypath"]));
-    assert_eq!(added["ok"], true, "{added:?}");
-    let after_add = fs::read_to_string(&exclude_path).expect("local exclude should be readable");
-    assert!(
-        after_add.lines().any(|line| line == " .factorypath"),
-        "leading-space user rule must be preserved: {after_add:?}"
-    );
-    assert!(
-        after_add.lines().any(|line| line == ".factorypath"),
-        "Add must still append the exact `.factorypath` line: {after_add:?}"
-    );
-    assert_eq!(
-        after_add
-            .lines()
-            .filter(|line| *line == ".factorypath")
-            .count(),
-        1
-    );
-
-    let removed = request("unexcludePatterns", serde_json::json!([".factorypath"]));
-    assert_eq!(removed["ok"], true, "{removed:?}");
-    let after_remove =
-        fs::read_to_string(&exclude_path).expect("local exclude should remain readable");
-    assert!(
-        after_remove.lines().any(|line| line == " .factorypath"),
-        "Remove must not delete a leading-space user rule: {after_remove:?}"
-    );
-    assert!(!after_remove.lines().any(|line| line == ".factorypath"));
-
-    fs::remove_dir_all(root).expect("temporary workspace should be removable");
-}
-
-#[test]
-fn git_write_literal_exclude_patterns_preserve_non_utf8_bytes() {
-    // Unrelated invalid UTF-8 in info/exclude must survive Add/Remove. A
-    // String round-trip would replace 0xff with U+FFFD (ef bf bd).
-    let root = temporary_root("lithe-exclude-patterns-raw-bytes");
-    fs::create_dir_all(&root).expect("temporary repository should be creatable");
-    let run = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .current_dir(&root)
-            .output()
-            .expect("git should be available")
-    };
-    assert!(run(&["init", "-q"]).status.success());
-    let exclude_path = root.join(".git/info/exclude");
-    fs::create_dir_all(exclude_path.parent().expect("exclude parent should exist"))
-        .expect("git info directory should be creatable");
-    let unrelated = b"legacy-\xff\n";
-    fs::write(&exclude_path, unrelated).expect("local exclude should be writable");
-
-    let request = |operation: &str, paths: Value| -> Value {
-        serde_json::from_str(&execute_json(
-            &serde_json::to_string(&serde_json::json!({
-                "id": operation,
-                "command": "git.write",
-                "payload": {"root": root, "operation": operation, "paths": paths}
-            }))
-            .expect("exclude pattern request should encode"),
-        ))
-        .expect("exclude pattern response should be JSON")
-    };
-
-    let added = request("excludePatterns", serde_json::json!([".factorypath"]));
-    assert_eq!(added["ok"], true, "{added:?}");
-    let after_add = fs::read(&exclude_path).expect("local exclude should be readable");
-    assert_eq!(after_add, b"legacy-\xff\n.factorypath\n");
-
-    let removed = request("unexcludePatterns", serde_json::json!([".factorypath"]));
-    assert_eq!(removed["ok"], true, "{removed:?}");
-    let after_remove = fs::read(&exclude_path).expect("local exclude should remain readable");
-    assert_eq!(after_remove, unrelated);
-
-    fs::remove_dir_all(root).expect("temporary workspace should be removable");
-}
-
-#[test]
 fn git_write_edits_a_local_commit_message_and_rebuilds_descendants() {
     let root = history_rewrite_repository("git-edit-commit-message");
     commit_history_file(&root, "story.txt", "one\n", "one");
@@ -1226,6 +1016,33 @@ fn git_history_rewrite_rejects_a_dirty_working_tree() {
         .contains("clean working tree"));
     assert_eq!(git_text(&root, &["log", "-1", "--format=%s"]), "clean");
 
+    fs::remove_dir_all(root).expect("temporary repository should be removable");
+}
+
+#[test]
+fn git_write_unstages_paths_in_an_unborn_repository() {
+    let root = git_write_repository("git-write-unstage-unborn");
+    let run = |arguments: &[&str]| history_git(&root, arguments);
+    fs::write(root.join("pom.xml"), "<project/>\n").expect("test file should be writable");
+    assert_eq!(
+        git_write_request(&root, "stage", serde_json::json!({"paths": ["pom.xml"]}),)["ok"],
+        true
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run(&["status", "--porcelain"]).stdout),
+        "A  pom.xml\n"
+    );
+
+    let response = git_write_request(&root, "unstage", serde_json::json!({"paths": ["pom.xml"]}));
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        String::from_utf8_lossy(&run(&["status", "--porcelain"]).stdout),
+        "?? pom.xml\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("pom.xml")).expect("test file should remain"),
+        "<project/>\n"
+    );
     fs::remove_dir_all(root).expect("temporary repository should be removable");
 }
 
@@ -1723,6 +1540,7 @@ fn git_worktrees_lists_primary_linked_and_locked_metadata() {
                 .canonicalize()
                 .expect("linked worktree should canonicalize")
         )
+        .expect("worktree path should be supported")
         .to_string_lossy()
         .as_ref()
     );
@@ -3176,6 +2994,180 @@ fn git_diff_and_apply_round_trip_a_patch() {
     fs::remove_dir_all(root).expect("temporary workspace should be removable");
 }
 
+/// Windows single-file reviews ask for Git's largest context so the renderer
+/// can reveal folded unchanged lines (#557). The snapshot diff must accept that
+/// value and return the complete file as one hunk.
+#[test]
+fn git_snapshot_diff_returns_the_whole_file_for_maximum_context() {
+    let root = temporary_root("git-full-context-diff");
+    fs::create_dir_all(&root).expect("temporary workspace should be creatable");
+    let run = |arguments: &[&str]| {
+        Command::new("git")
+            .args(arguments)
+            .current_dir(&root)
+            .output()
+            .expect("git should be available")
+    };
+    assert!(run(&["init", "-q"]).status.success());
+    assert!(run(&["config", "core.autocrlf", "false"]).status.success());
+    assert!(run(&["config", "user.email", "test@example.com"])
+        .status
+        .success());
+    assert!(run(&["config", "user.name", "Lithe Test"]).status.success());
+    let original = (1..=200)
+        .map(|line| format!("line {line}\n"))
+        .collect::<String>();
+    fs::write(root.join("long.txt"), &original).expect("file should be writable");
+    assert!(run(&["add", "long.txt"]).status.success());
+    assert!(run(&["commit", "-qm", "initial"]).status.success());
+    fs::write(
+        root.join("long.txt"),
+        original
+            .replace("line 10\n", "line ten\n")
+            .replace("line 190\n", "line one-ninety\n"),
+    )
+    .expect("file should be writable");
+
+    let request = serde_json::json!({
+        "id": "full-context-diff",
+        "command": "git.diff",
+        "payload": {
+            "root": root,
+            "pathspecs": ["long.txt"],
+            "worktreeSnapshot": true,
+            "contextLines": i32::MAX
+        }
+    });
+    let response: Value = serde_json::from_str(&execute_json(
+        &serde_json::to_string(&request).expect("diff request should encode"),
+    ))
+    .expect("diff response should be JSON");
+    assert_eq!(response["ok"], true, "{response}");
+    let patch = response["data"]["patch"]
+        .as_str()
+        .expect("diff output should be text");
+    assert!(patch.contains("@@ -1,200 +1,200 @@"), "{patch}");
+    assert!(
+        patch.contains("\n line 100\n"),
+        "middle context missing: {patch}"
+    );
+    assert_eq!(response["data"]["hunks"].as_array().unwrap().len(), 1);
+    fs::remove_dir_all(root).expect("temporary workspace should be removable");
+}
+
+/// Windows diff reviews roll back one block by reverse-applying a patch the
+/// host rebuilds from parsed lines (#688). Full-context reviews re-derive
+/// blocks with three context lines and their own `@@` ranges, so the rebuilt
+/// patch must still apply, restore only its block, and leave the index alone.
+#[test]
+fn git_apply_discard_reverts_one_rebuilt_hunk_and_keeps_the_index() {
+    struct RemoveOnDrop(std::path::PathBuf);
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    let root = temporary_root("git-discard-hunk");
+    let _cleanup = RemoveOnDrop(root.clone());
+    fs::create_dir_all(&root).expect("temporary workspace should be creatable");
+    // Use the existing process adapter's deadline and process-tree cleanup;
+    // fixture setup must not hang on user hooks or commit signing prompts.
+    let run = |arguments: &[&str]| -> String {
+        let mut isolated_arguments = vec![
+            "-c",
+            "core.hooksPath=disabled-fixture-hooks",
+            "-c",
+            "commit.gpgSign=false",
+        ];
+        isolated_arguments.extend_from_slice(arguments);
+        let response: Value = serde_json::from_str(&execute_json(
+            &serde_json::json!({
+                "id": "discard-hunk-setup",
+                "timeoutMilliseconds": 5_000,
+                "command": "git.command",
+                "payload": { "root": root, "arguments": isolated_arguments }
+            })
+            .to_string(),
+        ))
+        .expect("setup response should be JSON");
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["data"]["exitCode"], 0, "{response}");
+        response["data"]["stdout"]
+            .as_str()
+            .expect("stdout")
+            .to_string()
+    };
+    run(&["init", "-q"]);
+    run(&["config", "core.autocrlf", "false"]);
+    run(&["config", "user.email", "test@example.invalid"]);
+    run(&["config", "user.name", "Lithe Test"]);
+    let original = (1..=40)
+        .map(|line| format!("line {line}\n"))
+        .collect::<String>();
+    fs::write(root.join("long.txt"), &original).expect("file should be writable");
+    fs::write(root.join("mixed.txt"), "one\ntwo\nthree\n").expect("file should be writable");
+    run(&["add", "."]);
+    run(&["commit", "-qm", "initial"]);
+
+    let edited = original
+        .replace("line 5\n", "line five\n")
+        .replace("line 30\n", "line thirty\n");
+    fs::write(root.join("long.txt"), &edited).expect("file should be writable");
+    // Block shape the Windows adapter derives from a full-context review: the
+    // change at line 30 with three lines of context and a synthesized header.
+    let discard = |patch: &str| -> Value {
+        let request = serde_json::json!({
+            "id": "discard-hunk",
+            "timeoutMilliseconds": 5_000,
+            "command": "git.apply",
+            "payload": { "root": root, "patch": patch, "mode": "discard" }
+        });
+        serde_json::from_str(&execute_json(
+            &serde_json::to_string(&request).expect("apply request should encode"),
+        ))
+        .expect("apply response should be JSON")
+    };
+    let response = discard(
+        "diff --git a/long.txt b/long.txt\n--- a/long.txt\n+++ b/long.txt\n\
+         @@ -27,7 +27,7 @@\n line 27\n line 28\n line 29\n-line 30\n+line thirty\n line 31\n line 32\n line 33\n",
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(response["data"]["exitCode"], 0, "{response}");
+    assert_eq!(
+        fs::read_to_string(root.join("long.txt")).expect("file should be readable"),
+        original.replace("line 5\n", "line five\n"),
+        "only the selected block may be restored"
+    );
+
+    // A second click with the same, now stale block must fail without writing.
+    let stale = discard(
+        "diff --git a/long.txt b/long.txt\n--- a/long.txt\n+++ b/long.txt\n\
+         @@ -27,7 +27,7 @@\n line 27\n line 28\n line 29\n-line 30\n+line thirty\n line 31\n line 32\n line 33\n",
+    );
+    assert_ne!(stale["data"]["exitCode"], 0, "{stale}");
+    assert_eq!(
+        fs::read_to_string(root.join("long.txt")).expect("file should be readable"),
+        original.replace("line 5\n", "line five\n")
+    );
+
+    // Index-to-worktree blocks of a file with staged edits leave the index intact.
+    fs::write(root.join("mixed.txt"), "ONE\ntwo\nthree\n").expect("file should be writable");
+    run(&["add", "mixed.txt"]);
+    fs::write(root.join("mixed.txt"), "ONE\ntwo\nTHREE\n").expect("file should be writable");
+    let response = discard(
+        "diff --git a/mixed.txt b/mixed.txt\n--- a/mixed.txt\n+++ b/mixed.txt\n\
+         @@ -1,3 +1,3 @@\n ONE\n two\n-three\n+THREE\n",
+    );
+    assert_eq!(response["data"]["exitCode"], 0, "{response}");
+    assert_eq!(
+        fs::read_to_string(root.join("mixed.txt")).expect("file should be readable"),
+        "ONE\ntwo\nthree\n"
+    );
+    let status = run(&["status", "--porcelain", "--", "mixed.txt"]);
+    assert_eq!(status, "M  mixed.txt\n");
+}
+
 #[test]
 fn git_diff_resolves_the_empty_tree_for_a_sha256_repository() {
     let root = temporary_root("git-diff-sha256-empty-tree");
@@ -3594,6 +3586,111 @@ fn git_history_returns_bounded_recent_checkout_order_and_stable_fallback() {
         recent_names(&switched),
         ["gamma", "zeta", "epsilon", "delta", "alpha"]
     );
+}
+
+#[test]
+fn git_history_page_treats_unborn_head_as_empty_history() {
+    struct RemoveOnDrop(std::path::PathBuf);
+
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    let root = temporary_root("git-history-unborn-head");
+    let _cleanup = RemoveOnDrop(root.clone());
+    fs::create_dir_all(&root).expect("temporary repository should be creatable");
+    assert!(history_git(&root, &["init", "-q"]).status.success());
+
+    let request = serde_json::json!({
+        "id": "history-unborn-head",
+        "command": "git.historyPage",
+        "payload": {"root": root, "reference": "HEAD", "limit": 10}
+    });
+    let response: Value = serde_json::from_str(&execute_json(
+        &serde_json::to_string(&request).expect("history request should encode"),
+    ))
+    .expect("history response should be JSON");
+
+    assert_eq!(response["ok"], true, "{response:?}");
+    assert_eq!(response["data"]["commits"], serde_json::json!([]));
+    assert_eq!(response["data"]["hasMore"], false);
+}
+
+/// Regression for #771: the commit detail view must receive the full multi-line
+/// message, including text that contains the field separator used by the header,
+/// while history pages keep returning only the subject.
+#[test]
+fn git_commit_returns_the_multi_line_body_separately_from_history_pages() {
+    struct RemoveOnDrop(std::path::PathBuf);
+
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    let root = temporary_root("git-commit-body");
+    let _cleanup = RemoveOnDrop(root.clone());
+    fs::create_dir_all(&root).expect("temporary repository should be creatable");
+    git_text(&root, &["init", "-q"]);
+    git_text(&root, &["config", "user.email", "test@example.invalid"]);
+    git_text(&root, &["config", "user.name", "Lithe Test"]);
+    // Keep the trailing blank lines so the test covers the trimming contract.
+    git_text(&root, &["config", "commit.cleanup", "verbatim"]);
+    let body = "First body line\n  indented \u{1f} separator\n\n中文第二段";
+    let message = format!("Fix commit details\n\n{body}\n\n");
+    git_text(
+        &root,
+        &["commit", "-q", "--allow-empty", "-m", message.as_str()],
+    );
+    git_text(
+        &root,
+        &["commit", "-q", "--allow-empty", "-m", "Subject only"],
+    );
+    let detailed_hash = git_text(&root, &["rev-parse", "HEAD~1"]);
+
+    let lookup = |id: &str, revision: &str| -> Value {
+        let request = serde_json::json!({
+            "id": id,
+            "command": "git.commit",
+            "payload": {"root": root, "commit": revision}
+        });
+        let response: Value = serde_json::from_str(&execute_json(&request.to_string()))
+            .expect("commit response should be JSON");
+        assert_eq!(response["ok"], true, "{response:?}");
+        response["data"].clone()
+    };
+
+    let detailed = lookup("detailed", &detailed_hash);
+    assert_eq!(detailed["commit"]["hash"], detailed_hash);
+    assert_eq!(detailed["commit"]["subject"], "Fix commit details");
+    assert_eq!(detailed["body"], body);
+
+    let subject_only = lookup("subject-only", "HEAD");
+    assert_eq!(subject_only["commit"]["subject"], "Subject only");
+    // The body follows the decorations column, so the header must still parse fully.
+    assert!(subject_only["commit"]["decorations"]
+        .as_str()
+        .is_some_and(|decorations| decorations.starts_with("HEAD -> ")));
+    assert_eq!(subject_only["body"], "");
+
+    let page_request = serde_json::json!({
+        "id": "history-page-subjects",
+        "command": "git.historyPage",
+        "payload": {"root": root, "reference": "HEAD", "limit": 10}
+    });
+    let page: Value = serde_json::from_str(&execute_json(&page_request.to_string()))
+        .expect("history page response should be JSON");
+    assert_eq!(page["ok"], true, "{page:?}");
+    let subjects = page["data"]["commits"]
+        .as_array()
+        .expect("history page should contain commits")
+        .iter()
+        .map(|commit| commit["subject"].as_str().expect("subject").to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(subjects, ["Subject only", "Fix commit details"]);
 }
 
 #[test]

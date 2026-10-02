@@ -1,0 +1,7 @@
+import LitheCoreContracts
+
+typealias DirectoryWatchConfiguration = LitheCoreContracts.DirectoryWatchConfiguration
+typealias DirectoryChangeBatch = LitheCoreContracts.DirectoryChangeBatch
+typealias DirectoryChangeSource = LitheCoreContracts.DirectoryChangeSource
+typealias DirectoryWatcherFactory = LitheCoreContracts.DirectoryWatcherFactory
+typealias GitWatchContextProviding = LitheCoreContracts.GitWatchContextProviding

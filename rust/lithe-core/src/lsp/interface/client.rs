@@ -1,31 +1,4 @@
 //! Pure LSP client-state transitions and JSON-RPC message construction.
-//!
-//! ## Diagnostics retention: open documents plus the rest of the workspace
-//!
-//! `publishDiagnostics` is the server's complete snapshot for one URI, and this
-//! module is the only place that decides whether a snapshot is kept. Two cases
-//! are kept:
-//!
-//! 1. the URI belongs to a document the session has open. This is the
-//!    editor-driven case: the snapshot is version-gated against the open
-//!    document version, because a snapshot computed for an older revision would
-//!    underline the wrong range;
-//! 2. the URI names a file inside [`LspClientState::workspace_root_uri`] even
-//!    though nothing has it open. This is the problems-list case: a Java module
-//!    nobody opened can still fail to compile, and dropping those snapshots left
-//!    the product telling users to "fix the reported errors" while showing none
-//!    of them (`.agents/notes/implemented/bug-fix/2026-09-20-workspace-diagnostics-visibility.md`).
-//!
-//! Everything else is dropped: JDK sources, dependency JARs, and decompiled
-//! classes all publish diagnostics that are noise in a problems list. The
-//! retention for unopened files is capped by
-//! [`WORKSPACE_DIAGNOSTIC_FILE_LIMIT`], because the server may publish for a
-//! whole repository and this state lives for the session's lifetime.
-//!
-//! Closing a document therefore no longer removes its snapshot when the file is
-//! inside the workspace: the file still exists, so its reported problems do. The
-//! server remains the single owner of that truth — an empty snapshot (how a
-//! server retracts diagnostics) removes the entry in both cases.
 
 use super::types::*;
 use crate::lsp::{
@@ -35,27 +8,11 @@ use crate::lsp::{
 use crate::protocol::{CoreError, ErrorCode};
 use serde_json::{json, Value};
 
-/// How many files outside the open-document set may hold diagnostics at once.
-///
-/// The server publishes for the whole workspace, so without a bound this state
-/// grows with the repository for the lifetime of the session. Reaching the limit
-/// stops *new* files from being tracked; files already tracked keep updating, so
-/// a tracked file can never be left holding a stale snapshot while its
-/// replacement is refused. Open documents are never counted here: an editor that
-/// cannot see the errors of the file in front of it is worse than a truncated
-/// list. The limit is an order-of-magnitude guard rather than a measured
-/// threshold, so it is reported once through the session log instead of failing
-/// silently.
-pub(crate) const WORKSPACE_DIAGNOSTIC_FILE_LIMIT: usize = 2000;
-
 /// Creates an initialize request and records it as pending client state.
 pub fn client_initialize(request: ClientInitializeRequest) -> Result<LspClientResponse, CoreError> {
     validate_uri(&request.root_uri)?;
     let workspace_name = workspace_name_from_uri(&request.root_uri);
     let mut state = request.state;
-    // Recorded here, not passed per message: containment is a property of the
-    // session, and the reducer is the only place that decides what to retain.
-    state.workspace_root_uri = Some(request.root_uri.clone());
     let id = allocate_request(&mut state, "initialize");
     let message = json_rpc_request(
         &id,
@@ -76,15 +33,20 @@ pub fn client_initialize(request: ClientInitializeRequest) -> Result<LspClientRe
                     "synchronization": {},
                     "completion": {
                         "dynamicRegistration": true,
+                        "contextSupport": true,
                         "completionItem": {
                             "snippetSupport": true,
                             "documentationFormat": ["markdown", "plaintext"],
+                            // Intelephense and JDT LS omit typed class/namespace labels
+                            // unless the client advertises labelDetailsSupport.
+                            "labelDetailsSupport": true,
                             "resolveSupport": {
                                 "properties": [
                                     "detail",
                                     "documentation",
                                     "textEdit",
-                                    "additionalTextEdits"
+                                    "additionalTextEdits",
+                                    "labelDetails"
                                 ]
                             }
                         }
@@ -294,14 +256,7 @@ fn apply_content_changes_as_simultaneous_edits(
     .text)
 }
 
-/// Closes a document and clears document-scoped diagnostics state.
-///
-/// The document leaves the session, so its version bookkeeping goes with it. Its
-/// last snapshot stays when the file is inside the workspace: the file itself is
-/// still there, and a problems list that forgets the errors of a closed tab is
-/// the failure this retention exists to prevent. The server still owns that
-/// truth and retracts it with an empty snapshot. Files outside the workspace are
-/// dropped, which is what this function did for every document before.
+/// Closes a document and clears diagnostics owned by its URI.
 pub fn client_close_document(
     request: ClientCloseDocumentRequest,
 ) -> Result<LspClientResponse, CoreError> {
@@ -313,9 +268,7 @@ pub fn client_close_document(
             "Cannot close a document that is not open in the LSP client.",
         ));
     };
-    if !uri_within_workspace(&state, &request.uri) {
-        state.diagnostics.remove(&request.uri);
-    }
+    state.diagnostics.remove(&request.uri);
     state.diagnostic_versions.remove(&request.uri);
     let message = json_rpc_notification(
         "textDocument/didClose",
@@ -326,52 +279,6 @@ pub fn client_close_document(
         }),
     )?;
     Ok(client_response(state, vec![message], Vec::new()))
-}
-
-/// One `diagnostics` event carrying a complete snapshot for one URI.
-fn diagnostics_event(
-    uri: &str,
-    version: Option<i64>,
-    diagnostics: Vec<LspClientDiagnostic>,
-) -> LspClientEvent {
-    LspClientEvent {
-        kind: "diagnostics".to_string(),
-        request_id: None,
-        method: None,
-        uri: Some(uri.to_string()),
-        version,
-        diagnostics: Some(diagnostics),
-        result: None,
-        error: None,
-    }
-}
-
-/// Whether a published URI names a file inside this session's workspace.
-///
-/// Compared as paths rather than as strings, through the same URI decoding the
-/// rest of this module uses: `/project-b` must not count as inside `/project`,
-/// and a root spelled as a UNC share or with percent escapes must still line up
-/// with the files published under it. A URI that is not a `file:` URI (`jdt://`
-/// virtual sources, for example) has no filesystem path and never matches.
-pub(crate) fn uri_within_workspace(state: &LspClientState, uri: &str) -> bool {
-    let Some(root_uri) = state.workspace_root_uri.as_deref() else {
-        return false;
-    };
-    std::path::Path::new(&file_path_from_uri(uri))
-        .starts_with(std::path::Path::new(&file_path_from_uri(root_uri)))
-}
-
-/// Files holding diagnostics that no open document accounts for.
-///
-/// These are what [`WORKSPACE_DIAGNOSTIC_FILE_LIMIT`] bounds. Open documents are
-/// tracked however many there are, so an editor never loses the errors of the
-/// file in front of it.
-pub(crate) fn tracked_workspace_file_count(state: &LspClientState) -> usize {
-    state
-        .diagnostics
-        .keys()
-        .filter(|uri| !state.open_documents.contains_key(*uri))
-        .count()
 }
 
 /// Begins the two-step LSP shutdown and exit handshake.
@@ -445,59 +352,42 @@ pub fn client_apply_server_message(
                         .and_then(Value::as_str)
                         .unwrap_or_default();
                     validate_uri(uri)?;
-                    let diagnostics = parse_diagnostics(params.get("diagnostics"));
+                    // Servers may re-encode the URIs they echo back (VS Code's
+                    // URI library writes `d%3A` for a Windows drive while this
+                    // host opened the document as `d:`), so a raw map lookup
+                    // silently drops every published diagnostic on Windows.
+                    // Match through the normalized form and publish under the
+                    // document's own canonical URI.
+                    let document = open_document_for_published_uri(&state.open_documents, uri);
+                    let Some(document) = document else {
+                        return Ok(client_response(state, responses, events));
+                    };
+                    let document_uri = document.uri.clone();
                     let version = params.get("version").and_then(Value::as_i64);
-                    match state
-                        .open_documents
-                        .get(uri)
-                        .map(|document| document.version)
-                    {
-                        // Open documents: the snapshot describes the revision the
-                        // editor is showing, so a mismatching version is stale and
-                        // is dropped without touching the stored snapshot.
-                        Some(document_version) => {
-                            if version.is_some_and(|version| version != document_version) {
-                                return Ok(client_response(state, responses, events));
-                            }
-                            state
-                                .diagnostics
-                                .insert(uri.to_string(), diagnostics.clone());
-                            if let Some(version) = version {
-                                state.diagnostic_versions.insert(uri.to_string(), version);
-                            } else {
-                                state.diagnostic_versions.remove(uri);
-                            }
-                            events.push(diagnostics_event(uri, version, diagnostics));
-                        }
-                        // Unopened files: kept only for a file inside the session
-                        // workspace, and only while it stays within the file limit.
-                        // A version here describes no open document, so it is not
-                        // recorded and not compared; the engine applies server
-                        // messages in order, so the last snapshot wins.
-                        None => {
-                            if !uri_within_workspace(&state, uri) {
-                                return Ok(client_response(state, responses, events));
-                            }
-                            if diagnostics.is_empty() {
-                                // The server retracts diagnostics with an empty
-                                // snapshot. A file that never had any is left
-                                // untouched so cleaning a workspace does not emit
-                                // one event per clean file.
-                                if state.diagnostics.remove(uri).is_some() {
-                                    state.diagnostic_versions.remove(uri);
-                                    events.push(diagnostics_event(uri, None, Vec::new()));
-                                }
-                            } else if state.diagnostics.contains_key(uri)
-                                || tracked_workspace_file_count(&state)
-                                    < WORKSPACE_DIAGNOSTIC_FILE_LIMIT
-                            {
-                                state
-                                    .diagnostics
-                                    .insert(uri.to_string(), diagnostics.clone());
-                                events.push(diagnostics_event(uri, None, diagnostics));
-                            }
-                        }
+                    if version.is_some_and(|version| version != document.version) {
+                        return Ok(client_response(state, responses, events));
                     }
+                    let diagnostics = parse_diagnostics(params.get("diagnostics"));
+                    state
+                        .diagnostics
+                        .insert(document_uri.clone(), diagnostics.clone());
+                    if let Some(version) = version {
+                        state
+                            .diagnostic_versions
+                            .insert(document_uri.clone(), version);
+                    } else {
+                        state.diagnostic_versions.remove(&document_uri);
+                    }
+                    events.push(LspClientEvent {
+                        kind: "diagnostics".to_string(),
+                        request_id: None,
+                        method: None,
+                        uri: Some(document_uri),
+                        version,
+                        diagnostics: Some(diagnostics),
+                        result: None,
+                        error: None,
+                    });
                 }
             }
             "client/registerCapability" => {
@@ -723,6 +613,51 @@ fn validate_uri(value: &str) -> Result<(), CoreError> {
     } else {
         Ok(())
     }
+}
+
+/// Resolves a server-published document URI against the client's open
+/// documents, tolerating URI re-encoding differences.
+///
+/// Language servers frequently normalize the URIs a client sends them: VS
+/// Code's URI library (used by Intelephense, typescript-language-server, and
+/// others) percent-encodes the Windows drive colon (`d:` becomes `d%3A`) and
+/// lowercases the drive letter. A raw map lookup therefore misses even though
+/// the document is open. Comparison happens on the decoded form with the
+/// Windows drive letter case-folded, which keeps Unix URIs case-sensitive.
+fn open_document_for_published_uri<'a>(
+    documents: &'a std::collections::BTreeMap<String, LspClientDocument>,
+    uri: &str,
+) -> Option<&'a LspClientDocument> {
+    if let Some(document) = documents.get(uri) {
+        return Some(document);
+    }
+    let normalized = normalize_uri_for_comparison(uri);
+    documents
+        .iter()
+        .find(|(key, _)| normalize_uri_for_comparison(key) == normalized)
+        .map(|(_, document)| document)
+}
+
+fn normalize_uri_for_comparison(uri: &str) -> String {
+    let decoded = percent_decode(uri);
+    // Fold the Windows drive letter inside a file URI path (`file:///D:/...`)
+    // to lowercase; NTFS paths are case-insensitive and servers standardize on
+    // the lowercase form. The drive letter starts right after `file:///`.
+    const FILE_PREFIX: &str = "file:///";
+    if let Some(path) = decoded.strip_prefix(FILE_PREFIX) {
+        let bytes = path.as_bytes();
+        if bytes.len() >= 2
+            && bytes[1] == b':'
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[0].is_ascii_uppercase()
+        {
+            let mut normalized = decoded;
+            let drive_index = FILE_PREFIX.len();
+            normalized[drive_index..drive_index + 1].make_ascii_lowercase();
+            return normalized;
+        }
+    }
+    decoded
 }
 
 fn workspace_name_from_uri(uri: &str) -> String {
@@ -1070,23 +1005,52 @@ fn parse_completion_item(item: &Value) -> Option<Value> {
                 .and_then(Value::as_str)
         })
         .unwrap_or(label);
-    Some(json!({
+    let mut mapped = json!({
         "label": label,
         "insertText": insert_text,
-        "insertTextFormat": item.get("insertTextFormat").and_then(Value::as_u64).unwrap_or(1),
-        "kind": item.get("kind").and_then(Value::as_i64),
-        "detail": item.get("detail").and_then(Value::as_str),
-        "documentation": completion_documentation(item.get("documentation")),
-        "sortText": item.get("sortText").and_then(Value::as_str),
-        "filterText": item.get("filterText").and_then(Value::as_str),
-        "textEdit": item.get("textEdit").and_then(parse_lsp_text_edit_value),
-        "additionalTextEdits": item
-            .get("additionalTextEdits")
-            .and_then(Value::as_array)
-            .map(|edits| edits.iter().filter_map(parse_lsp_text_edit_value).collect::<Vec<_>>())
-            .unwrap_or_default(),
-        "data": item.get("data").cloned().unwrap_or(Value::Null)
-    }))
+        "insertTextFormat": item.get("insertTextFormat").and_then(Value::as_u64).unwrap_or(1)
+    });
+    if let Some(kind) = item.get("kind").and_then(Value::as_i64) {
+        mapped["kind"] = json!(kind);
+    }
+    if let Some(detail) = item.get("detail").and_then(Value::as_str) {
+        mapped["detail"] = json!(detail);
+    }
+    if let Some(documentation) = completion_documentation(item.get("documentation")) {
+        mapped["documentation"] = json!(documentation);
+    }
+    if let Some(sort_text) = item.get("sortText").and_then(Value::as_str) {
+        mapped["sortText"] = json!(sort_text);
+    }
+    if let Some(filter_text) = item.get("filterText").and_then(Value::as_str) {
+        mapped["filterText"] = json!(filter_text);
+    }
+    if let Some(edit) = item.get("textEdit").and_then(parse_lsp_text_edit_value) {
+        mapped["textEdit"] = edit;
+    }
+    if let Some(edits) = item
+        .get("additionalTextEdits")
+        .and_then(Value::as_array)
+        .map(|edits| {
+            edits
+                .iter()
+                .filter_map(parse_lsp_text_edit_value)
+                .collect::<Vec<_>>()
+        })
+        .filter(|edits| !edits.is_empty())
+    {
+        mapped["additionalTextEdits"] = json!(edits);
+    }
+    // `data: null` makes Intelephense/JDT LS treat resolve as a no-op, so only
+    // forward a real resolve token. Namespace display lives in labelDetails;
+    // import `use`/`import` edits usually arrive only from completionItem/resolve.
+    if let Some(data) = item.get("data").filter(|value| !value.is_null()) {
+        mapped["data"] = data.clone();
+    }
+    if let Some(details) = item.get("labelDetails").filter(|value| value.is_object()) {
+        mapped["labelDetails"] = details.clone();
+    }
+    Some(mapped)
 }
 
 fn completion_documentation(value: Option<&Value>) -> Option<String> {

@@ -135,17 +135,6 @@ pub struct LspClientState {
     pub diagnostics: BTreeMap<String, Vec<LspClientDiagnostic>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub diagnostic_versions: BTreeMap<String, i64>,
-    /// Workspace root this client was initialized for, spelled as the
-    /// `initialize` request spelled it.
-    ///
-    /// Diagnostics are accepted for documents the session has open, and for
-    /// files inside this root even when no editor has them open: a compile
-    /// error in a module nobody opened must still reach a problems list. Files
-    /// outside the root (JDK sources, dependency JARs, decompiled classes) are
-    /// never retained. Absent means "no workspace", so only open documents are
-    /// tracked.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workspace_root_uri: Option<String>,
 }
 
 impl Default for LspClientState {
@@ -162,7 +151,6 @@ impl Default for LspClientState {
             pending_semantic_legends: BTreeMap::new(),
             diagnostics: BTreeMap::new(),
             diagnostic_versions: BTreeMap::new(),
-            workspace_root_uri: None,
         }
     }
 }
