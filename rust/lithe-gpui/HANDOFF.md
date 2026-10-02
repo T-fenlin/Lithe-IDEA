@@ -29,6 +29,8 @@
 1. **cargo 只跑改动范围**：`cargo build --manifest-path rust/Cargo.toml -p lithe-gpui-app --bin Lithe`；
    测试用 `cargo test --manifest-path rust/Cargo.toml -p <只动过的 crate>`，能按测试名过滤就加过滤。
    **不要** `-p a -p b` 连带，更不要跑 workspace 全量。
+   改完 Rust 必须跑 **`cargo fmt --manifest-path rust/Cargo.toml --all -- --check`**
+   （`develop-lithe` 对 `rust/lithe-gpui/crates/*` 的必需验证项；rustfmt 现已可用，见 §2）。
 2. **绝不要把 cargo / 任何原生进程的输出接进 PowerShell 管道。**
    `cargo build … | Select-String`、`cargo test … 2>&1 | Select-Object -First N`、`| Tee-Object` **全算违规**
    （慢消费者会给仍在写输出的原生进程发停止信号，表现为"像卡了十分钟"，且 `$LASTEXITCODE` 不可信）。
@@ -79,8 +81,12 @@
   所以"投递点击触发重绘再截图"**不可靠**，用启动态探针拿新帧。
 - `Lithe.exe` 是**控制台子系统**程序（debug 保留控制台）→ 窗口枚举**必须排除控制台窗口**；
   gpui 的窗口类名是 **`Zed::Window`**。
-- **工具链没有 rustfmt**（`cargo fmt` 跑不了）；可用的那份在
-  `D:\ProgramData\rust\rustup\toolchains\1.95.0-x86_64-pc-windows-msvc\bin\rustfmt.exe`。
+- **rustfmt 可用**（2026-10-02 复测；早先记的"没有 rustfmt"已作废）：
+  `rustfmt` / `cargo fmt` 均为 **1.9.0-stable**，在 `D:\ProgramData\rust\cargo\bin\`。
+  `cargo fmt --manifest-path rust/Cargo.toml --all -- --check` 实测 **exit 0 / 零输出**
+  （整个 workspace，含 `lithe-core`，当前完全没有格式差异）。
+  ⚠️ 但**不要对全 workspace 跑 `cargo fmt`**：它会一并重写 `rust/lithe-core/`，而本分支不改那里。
+  只对自己的 crate 跑（`cargo fmt --manifest-path rust/Cargo.toml -p <crate>`），或跑 `--check` 后手工处理。
 - `scripts/verify-*.sh` 系列（除 Node 写的）**本机跑不了**：依赖 `rg`、`ruby`、`awk`，本机三者都缺
   （`find` 还是 Windows 自带的 `find.exe`）。`node scripts/verify-agent-notes.mjs` 可以跑。
 - `verify-rust-core.sh` 是 **zsh/macOS** 脚本（Swift 桥 / C ABI 部分需 macOS 侧）。
