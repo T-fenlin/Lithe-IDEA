@@ -23,7 +23,7 @@
 //! | 任务 | 内容 | 为什么 |
 //! | --- | --- | --- |
 //! | 取配置 | `workspace.snapshot` + `runConfig.generate` | 两步都是同步读盘 / 遍历，必须离开 UI 线程 |
-//! | 起进程 | `runConfig.createLaunchPlan` + 前置步骤（`javac`）+ `spawn` | 前置步骤要等完成，最长几分钟 |
+//! | 起进程 | `runConfig.createLaunchPlan` + 前置步骤（`javac`）+ `spawn` | 前置步骤要等完成，最长几分钟，**必须在后台**（`D10`） |
 //! | 泵 | `background_spawn(blocking_recv)` 的循环（借 `terminal/src/session.rs` 的形状） | 每来一块输出才醒一次，不轮询、不阻塞 UI |
 //!
 //! 三者都在 `.update(..)` 的失败分支上静默收工（gpui 的实体没了就是 `Err`）：
@@ -49,7 +49,7 @@ use lithe_gpui_shared::{core_json, tr, tr_args};
 
 use crate::model::{RunConfigurationView, load};
 use crate::plan::ToolchainResolver;
-use crate::session::{RunSession, RunState};
+use crate::session::{PreparedStart, RunSession, RunState, prepare};
 
 /// 面板向宿主播报的两件事（宿主拿它做**与面板内容无关的布局反应**）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,10 +62,10 @@ pub enum RunPaneEvent {
 
 /// 一次启动请求的结果（后台任务 → 前台的载荷）。
 struct LaunchOutcome {
-    root: PathBuf,
     id: String,
     name: String,
-    plan: serde_json::Value,
+    /// 已跑完前置步骤的启动计划（见 [`RunSession::prepare`]）。
+    prepared: PreparedStart,
     debug_port: Option<u16>,
 }
 
@@ -268,17 +268,25 @@ impl RunPane {
         let name = configuration.name.clone();
         let debug_port = self.debug_port;
         self.launch = Some(cx.spawn(async move |this, cx| {
+            // ⚠️ **前置步骤必须留在这个后台任务里**（`D10`）。
+            // `prepare_startup` 会先取启动计划（Core 调用），再跑完 `preLaunchSteps`
+            // （含 `javac`，等待上限 300 秒）。它原先是在 `this.update(..)` 里同步跑的 ——
+            // 那是在 UI 线程上，编译大工程期间整窗卡死。现在这里只搬 `Send` 的载荷
+            // （`PathBuf` / `String` / `ToolchainResolver`），回来的 `this.update(..)`
+            // 只做 `spawn` + 建读线程（毫秒级）。
             let planned = {
                 let task_root = root.clone();
                 let task_id = id.clone();
+                let task_resolve = resolve.clone();
                 cx.background_spawn(async move {
-                    launch_plan(&task_root, &task_id, debug_port).map(|plan| LaunchOutcome {
-                        root: task_root,
-                        id: task_id,
-                        name,
-                        plan,
-                        debug_port,
-                    })
+                    prepare_startup(&task_root, &task_id, debug_port, &task_resolve).map(
+                        |prepared| LaunchOutcome {
+                            id: task_id,
+                            name,
+                            prepared,
+                            debug_port,
+                        },
+                    )
                 })
                 .await
             };
@@ -287,11 +295,9 @@ impl RunPane {
                 match planned {
                     Ok(outcome) => {
                         match RunSession::start(
-                            &outcome.root,
                             &outcome.id,
                             &outcome.name,
-                            &outcome.plan,
-                            &resolve,
+                            outcome.prepared,
                             outcome.debug_port,
                         ) {
                             Ok(mut session) => {
@@ -425,6 +431,21 @@ fn blocking_recv(receiver: &Arc<Mutex<Receiver<()>>>) -> Option<()> {
         Err(poisoned) => poisoned.into_inner(),
     };
     guard.recv().ok()
+}
+
+/// 这一次运行的**全部后台准备**：取启动计划 → 落成命令行 → 跑完前置步骤。
+///
+/// 合成一个函数是为了让"必须离开 UI 线程"的那两件事**只有一条调用路径**：
+/// [`launch_plan`]（Core 调用）与 [`RunSession::prepare`]（等 `javac` 结束）。
+/// 它们原先一前一后分别落在 UI 线程上，现在一起在 `background_spawn` 里完成。
+fn prepare_startup(
+    root: &Path,
+    configuration_id: &str,
+    debug_port: Option<u16>,
+    resolve: &ToolchainResolver,
+) -> Result<PreparedStart, String> {
+    let plan = launch_plan(root, configuration_id, debug_port)?;
+    prepare(root, &plan, resolve)
 }
 
 /// 一次 `runConfig.createLaunchPlan`：拿平台无关的启动计划（`data`）。

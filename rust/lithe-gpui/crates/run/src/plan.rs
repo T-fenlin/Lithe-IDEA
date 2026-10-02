@@ -51,7 +51,12 @@ pub enum ToolchainPath {
 /// 参数是 Core 计划里的工具链引用 id（`"project-jdk"` / `"project-maven"` / `"java"` …）；
 /// 返回 `None` 表示这台机器上没有可用的那个工具链 —— 调用方把它变成一条**可执行的**
 /// 失败提示（"在设置里指定 JDK"），而不是静默换一个。
-pub type ToolchainResolver = Arc<dyn Fn(&str) -> Option<ToolchainPath> + 'static>;
+///
+/// ⚠️ `Send + Sync` 是必需的，不是装饰：解析工具链引用发生在
+/// [`crate::session::prepare`] 里，而那个函数**必须在后台线程跑**（它同时承载了
+/// `preLaunchSteps` 的等待，见 `D10`）。外壳的实现是纯查表（捕获五个 `String` 覆盖值 +
+/// 调 `settings::project::discover`），本来就满足这两条。
+pub type ToolchainResolver = Arc<dyn Fn(&str) -> Option<ToolchainPath> + Send + Sync + 'static>;
 
 /// 计划解析失败的原因（每条都直接给用户看，所以写清"缺什么、去哪补"）。
 #[derive(Clone, Debug, PartialEq, Eq)]

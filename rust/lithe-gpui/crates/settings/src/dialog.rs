@@ -53,9 +53,9 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AbsoluteLength, Anchor, App, AppContext as _, Context, ElementId, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
+    Anchor, App, AppContext as _, Context, ElementId, Entity, FontWeight, InteractiveElement as _,
+    IntoElement, KeyBinding, ParentElement as _, PathPromptOptions, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
     prelude::FluentBuilder as _, rems,
 };
 
@@ -195,13 +195,12 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
     });
 }
 
-/// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)`。
+/// 规格像素 → `Pixels` 的换算，**唯一实现在 [`lithe_gpui_shared::rem_px`]**。
 ///
-/// 写成 `/ 4.` 是错的 —— gpui 的档位 helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，
-/// 1rem = 16px（主题的 `font.size`，`lithe-gpui/themes/lithe-dark.json:9`）。
-fn rem_px(rem: gpui_kit::Pixels, spec_px: f32) -> gpui_kit::Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
-}
+/// 这里转发而不是自己实现：同一段 `rems(P / 16.)` 换算原先在五个 crate 里各有一份，
+/// 本文件那一份还曾被称为"仓库里唯一正确的换算"—— 收敛后由 `shared` 统一持有。
+/// 换算口径（为什么除 `16.` 而不是 `/ 4.`、为什么必须按运行时 rem 基准）见被转发的那个函数。
+pub(crate) use lithe_gpui_shared::rem_px;
 
 /// 同一个换算的 `Length` 形式（`Styled::w` / `Styled::h` 收 `Length`，由布局期按窗口 rem 求值）。
 fn rem_length(spec_px: f32) -> gpui_kit::Length {

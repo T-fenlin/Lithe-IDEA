@@ -30,6 +30,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use serde_json::Value;
+
 use crate::plan::CommandSpec;
 
 /// 输出保留的行数上限（超出的从头部丢）。
@@ -107,35 +109,67 @@ pub struct RunSession {
     suspends_for_debugger: bool,
 }
 
+/// 后台准备好的启动计划：命令行 + 可交给日志/状态的一段原文。
+///
+/// 拆出它是为了让**前置步骤（`javac` 一类）离开 UI 线程**：那一步要等子进程结束，
+/// 契约给的等待上限是 [`STEP_TIMEOUT`]（300 秒），放在 UI 线程上就是整窗卡死。
+/// 所以先由后台完成 [`prepare`]，再回前台做**只包含 `spawn` 与建读线程**的
+/// [`RunSession::start`] —— `spawn` 本身是毫秒级，不构成阻塞。
+pub struct PreparedStart {
+    /// 要起的程序与参数（工具链引用已经解析成真实路径）。
+    pub spec: CommandSpec,
+    /// `程序 + 参数`的一行描述（诊断行与面板标题用）。
+    pub command_line: String,
+}
+
+/// 解析启动计划并**跑完前置步骤**。**阻塞**：调用方必须放进 `background_spawn`。
+///
+/// 工具链引用在这里解析成真实路径，所以"找不到 JDK"这类失败在这一步就返回可执行的提示，
+/// 不会到起进程时才报。
+pub fn prepare(
+    root: &Path,
+    plan: &Value,
+    resolve: &crate::plan::ToolchainResolver,
+) -> Result<PreparedStart, String> {
+    let (steps, main) =
+        crate::plan::launch_command(root, plan, resolve).map_err(|error| error.0)?;
+    let command_line = describe(&main);
+    // 前置步骤：按序跑完，任一非零退出就中止（契约明说这是宿主的责任）。
+    run_steps(&steps)?;
+    Ok(PreparedStart {
+        spec: main,
+        command_line,
+    })
+}
+
+/// 按序跑完前置步骤；任一非零退出 / 起不来 / 超时就中止整次运行。**阻塞**。
+pub fn run_steps(steps: &[CommandSpec]) -> Result<(), String> {
+    for step in steps {
+        run_step(step)?;
+    }
+    Ok(())
+}
+
 impl RunSession {
-    /// 按启动计划起进程：先跑完前置步骤，再起主进程。
+    /// 起主进程。**调用方必须先跑完前置步骤**（[`prepare`]），
+    /// 本函数只做 `spawn` + 建两条读线程，是毫秒级的，可以在 UI 线程上调用。
     ///
     /// `debug_port` 是 `Some` 时状态进入 [`RunState::WaitingForDebugger`]
     /// （Core 已经在计划里给 JVM 加了 `suspend=y`，所以进程起来就停在那里等接入）。
-    ///
-    /// **阻塞**（前置步骤要等完成）：调用方必须放进 `background_spawn`。
     pub fn start(
-        root: &Path,
         configuration_id: &str,
         configuration_name: &str,
-        plan: &serde_json::Value,
-        resolve: &crate::plan::ToolchainResolver,
+        prepared: PreparedStart,
         debug_port: Option<u16>,
     ) -> Result<Self, String> {
-        let (steps, main) =
-            crate::plan::launch_command(root, plan, resolve).map_err(|error| error.0)?;
-        let command_line = describe(&main);
+        let PreparedStart { spec, command_line } = prepared;
+        let main = spec;
         // 计划里带没带 JWDP 参数（Core 只在 `debugPort` 存在且是 JVM 配置时前置
         // `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:<port>`）。
         let suspends_for_debugger = main
             .args
             .iter()
             .any(|argument| argument.starts_with("-agentlib:jdwp"));
-
-        // 前置步骤：按序跑完，任一非零退出就中止（契约明说这是宿主的责任）。
-        for step in &steps {
-            run_step(step)?;
-        }
 
         let mut command = Command::new(&main.program);
         command

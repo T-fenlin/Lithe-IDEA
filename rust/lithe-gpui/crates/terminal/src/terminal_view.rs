@@ -42,10 +42,9 @@ use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, Size};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AbsoluteLength, AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
-    StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, WeakEntity,
-    Window, div, img, px, relative, rems,
+    AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
+    StyleRefinement, Styled as _, Subscription, WeakEntity, Window, div, img, relative, rems,
 };
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
@@ -377,7 +376,10 @@ impl TerminalPane {
                     .font_family(row_mono.clone())
                     .text_sm()
                     // 设置里的终端字号覆盖默认档（`.text_sm()` 的 14px）；不覆盖时保持原样。
-                    .when_some(row_font_size, |this, size| this.text_size(px(size)))
+                    // 设置值是**规格像素**（`schema.rs` 的 `terminalFontSize`），而 `Styled::text_size`
+                    // 收 `AbsoluteLength`，所以写 `rems(size / 16.)`：16px 基准下与 `px(size)`
+                    // 逐像素相等，界面字号放大时随基准等比缩放（写死 `px(size)` 就不会缩放）。
+                    .when_some(row_font_size, |this, size| this.text_size(rems(size / 16.)))
                     .line_height(relative(TERMINAL_LINE_HEIGHT))
                     .text_color(cx.theme().foreground)
                     .child(text)
@@ -423,7 +425,11 @@ impl TerminalPane {
                         .pr_4()
                         .font_family(mono.clone())
                         .text_sm()
-                        .when_some(self.font_size, |this, size| this.text_size(px(size)))
+                        // 与上面 scroller 的行渲染同一条口径：设置值是规格像素，`Styled::text_size`
+                        // 收 `AbsoluteLength`，所以写 `rems(size / 16.)`（见那处的说明）。
+                        .when_some(self.font_size, |this, size| {
+                            this.text_size(rems(size / 16.))
+                        })
                         .line_height(relative(TERMINAL_LINE_HEIGHT))
                         .text_color(foreground)
                         .child(line),
@@ -686,27 +692,14 @@ impl Drop for TerminalPane {
     }
 }
 
-/// 把一个**规格像素值**按**当前 rem 基准**求值：`rems(P / 16.)` 再 `to_pixels(rem)`。
+/// 规格像素 → `Pixels` 的换算，**唯一实现在 [`lithe_gpui_shared::rem_px`]**。
 ///
-/// 与 `settings/src/dialog.rs:189-199` 的 `rem_px` 同形 —— 那个形态是仓库里**唯一**正确的换算：
-/// `/ 4.` 是错的（gpui 的档位 helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，
-/// 1rem = 16px，见 `constants.rs` 的「度量」一节），写成 `to_pixels(px(16.))` 也是错的
-/// （那是**假 rem**：写死 16 基准、不随字号缩放）。
-///
-/// **为什么圆角要绕这一圈**：`Button::rounded` 收 `impl Into<ButtonRounded>`，而 `ButtonRounded`
-/// 只实现了 `From<Pixels>`（`gpui-component-0.6.6/src/button/button.rs:29-33`），**没有**
-/// `From<Rems>` —— 实测在 `Button` 上写 `.rounded(rems(..))` 报
-/// `E0277: the trait bound ButtonRounded: From<Rems> is not satisfied`（`Button::rounded` 是
-/// 固有方法，它优先于 `Styled::rounded`，所以吃不到 `AbsoluteLength`）。`TabBar::max_width`
-/// 同理（`impl Into<Pixels>`，`tab_bar.rs:118`）。能吃 `AbsoluteLength` / `Length` 的调用点
-/// （`Input` 的 `Styled::rounded`、状态行按钮的 `Styled::h`）直接写 `rems(P / 16.)`，
-/// 由布局期按窗口 rem 基准求值，不必经过这里。
-///
-/// `rem` 从 `cx.theme().font_size` 取：`Root::render` 每帧把它写进 `window.set_rem_size`
-/// （`gpui-component-0.6.6/src/root.rs:582`），所以它就是本帧的 rem 基准。
-fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
-}
+/// 本 crate 原先自己持有一份实现（并把它说成"同形于 `settings/src/dialog.rs` 的那一份"）——
+/// 那正是五份重复换算之一。现已收敛到 `shared`，这里只做 `pub(crate)` 转发，
+/// 让本文件既有的裸 `rem_px(..)` 调用点与文档链接继续成立。
+/// 换算口径、`Button::rounded` / `TabBar::max_width` 这类槽为什么只能收 `Pixels`、
+/// 以及为什么 `rem` 必须取运行时基准，见被转发的那个函数。
+pub(crate) use lithe_gpui_shared::rem_px;
 
 ///
 /// 左右 16 = 真机终端内容左内边距（`pl-4`，`terminal.tsx:870`）；上下 0 = 终端行必须贴行显示。
@@ -795,7 +788,8 @@ fn output_row_style() -> StyleRefinement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_kit::px;
+    // `AbsoluteLength` 只在测试里用到（断言 `rems(P / 16.)` 的换算结果），归测试模块自己引。
+    use gpui_kit::{AbsoluteLength, px};
 
     /// rem 换算：`rems(P / 16.)` 在 16px 基准下必须等于规格像素值。
     ///

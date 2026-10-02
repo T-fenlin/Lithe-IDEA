@@ -48,4 +48,4 @@ pub use plan::{
     CommandSpec, PlanError, TOOLCHAIN_JAVA, TOOLCHAIN_MAVEN, ToolchainPath, ToolchainResolver,
     launch_command,
 };
-pub use session::{RunSession, RunState};
+pub use session::{PreparedStart, RunSession, RunState};

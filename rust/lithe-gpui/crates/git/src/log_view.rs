@@ -20,8 +20,8 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AbsoluteLength, AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, Length, ParentElement as _, Pixels, Render, SharedString,
+    AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla,
+    InteractiveElement as _, IntoElement, Length, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, relative,
     rems,
 };
@@ -74,25 +74,13 @@ use crate::model::{
     build_commit_files, build_reference_rows, handler, label_color, lane_color, layout_graph,
     load_commit_files, load_first, load_more, matches_filter, tracking_count,
 };
-/// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)` 的 `Pixels` 形式。
+/// 规格像素 → `Pixels` 的换算，**唯一实现在 [`lithe_gpui_shared::rem_px`]**。
 ///
-/// 只有当调用点**必须**交出 `Pixels` 时才走这里 —— 固有方法会**静默遮蔽** `Styled` 的同名方法：
-/// `Sizable::with_size(impl Into<Size>)` 的 `Size` 只实现了 `From<Pixels>`
-/// （`gpui-component-0.6.6/src/sizing.rs:169-183`，**没有** `From<Rems>`），所以在 `Button` /
-/// `Input` 上写 `rems(..)` 会得到 `error[E0277]: the trait bound Size: From<Rems> is not satisfied`。
-/// 能吃 `AbsoluteLength` / `Length` 的调用点（`Styled::rounded` / `w` / `h` / `min_w` / `max_w` /
-/// `text_size` / `min_h` / `line_height`）直接写 `rems(P / 16.)`，由布局期求值，不必经过这里。
-///
-/// 写成 `/ 4.` 是错的：helper 后缀 `N` = `N × 0.25rem`，而这里的 `P` 是**像素**，1rem = 16px
-/// （主题的 `font.size`，`lithe-gpui/crates/settings/src/theme.rs` 的 `font_size` token）。
-///
-/// `rem` 从 `cx.theme().font_size` 取：`Root::render` 每帧把它写进 `window.set_rem_size`
-/// （`gpui-component-0.6.6/src/root.rs:582`），所以它就是本帧的 rem 基准。
-///
-/// `pub(crate)`：[`crate::changes_view`] 的同名调用点也走这一份（同一个 crate 只该有一处换算）。
-pub(crate) fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
-}
+/// 这里保留 `pub(crate)` 转发是为了让 [`crate::changes_view`] 的调用点
+/// （`use crate::log_view::rem_px;`）与既有文档链接继续成立，同时本 crate 不再持有第二份实现。
+/// 换算口径（为什么 `Sizable::with_size` / `Button::rounded` 这类固有方法只能收 `Pixels`、
+/// 为什么除 `16.` 而不是 `/ 4.`、为什么 `rem` 必须是运行时基准）见被转发的那个函数。
+pub(crate) use lithe_gpui_shared::rem_px;
 
 // ---------------------------------------------------------------------------
 // 稳定标识（ElementId）
@@ -2127,9 +2115,9 @@ impl Render for BottomPane {
 
 #[cfg(test)]
 mod tests {
-    use super::{commit_element_id, panel_element_id, rem_px};
+    use super::{commit_element_id, panel_element_id};
     use crate::model::{Commit, Panel};
-    use gpui_kit::{SharedString, px};
+    use gpui_kit::SharedString;
 
     /// 一行提交的最小 fixture：只填渲染与身份用得到的字段，其余固定值，保持测试确定性
     /// （不读时钟、不读环境、不起窗口）。
@@ -2195,22 +2183,5 @@ mod tests {
         let mut rewritten = commit("1111111111111111111111111111111111111111");
         rewritten.subject = SharedString::from("另一个主题行");
         assert_eq!(commit_element_id(&rewritten), forward[0]);
-    }
-
-    /// [`rem_px`] 必须按**传入的 rem 基准**求值，而不是写死 16。
-    ///
-    /// 只断言"16px 基准下等于规格值"证明不了这一点 —— `AbsoluteLength::from(rems(P / 16.))
-    /// .to_pixels(px(16.))` 这种**假 rem**写法在 16px 基准下逐像素相等，却完全不随界面字号缩放。
-    /// 所以第二条断言把基准翻倍：真 rem 会跟着翻倍，假 rem 会原样不动。
-    #[test]
-    fn rem_px_scales_with_the_runtime_rem_base() {
-        // 默认基准（`uiFontSize = 13` → `theme_font_size_for(13) = 16.0`）：与规格值逐像素相等
-        // —— 这就是"本次改动默认外观不变"的判据。
-        assert_eq!(rem_px(px(16.), 14.), px(14.));
-        assert_eq!(rem_px(px(16.), 1.6), px(1.6));
-        // 基准翻倍 → 换算结果翻倍（假 rem 会得到 px(14.) 而失败）。
-        assert_eq!(rem_px(px(32.), 14.), px(28.));
-        // 基准 ×1.25（`uiFontSize = 20` → 25.0）：线性缩放。
-        assert_eq!(rem_px(px(20.), 14.), px(17.5));
     }
 }

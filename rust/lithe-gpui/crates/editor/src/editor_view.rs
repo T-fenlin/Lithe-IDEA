@@ -92,26 +92,22 @@ use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AbsoluteLength, AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity,
-    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels,
-    Render, ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
-    WeakEntity, Window, div, point, relative, rems,
+    AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity, InteractiveElement as _,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Render, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Task, WeakEntity, Window, div,
+    point, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{tr, tr_args};
 
-/// 把规格值（px）按**当前 rem 基准**求值：`rems(P / 16.)` 的 `Pixels` 形式。
+/// 规格像素 → `Pixels` 的换算，**唯一实现在 [`lithe_gpui_shared::rem_px`]**。
 ///
-/// 只有**必须**交出 `Pixels` 的槽才走这里（能做到 rem-based 的样式一律直接写 `rems(P / 16.)`）：
-/// 例如此处的滚轮增量换算 —— `event.delta.pixel_delta(line_height)` 吃的是 `Pixels`，
-/// 交不了 `AbsoluteLength`。写成 `/ 4.` 是错的：helper 后缀 `N` = `N × 0.25rem`，
-/// 而这里的 `P` 是**像素**，1rem = 16px（主题的 `font.size`）。
-///
-/// `pub(crate)`：[`crate::completion::install`] 的菜单宽度也走这一份（同一个 crate 只该有一处换算）。
-pub(crate) fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
-}
+/// 这里保留 `pub(crate)` 转发是为了让 [`crate::completion::install`] 的菜单宽度调用点
+/// （`crate::editor_view::rem_px`）与既有文档链接继续成立，同时本 crate 不再持有第二份实现。
+/// 换算口径（为什么除 `16.` 而不是 `/ 4.`、为什么 `rem` 必须是运行时基准、
+/// 以及"哪些槽才必须交出 `Pixels`"）见被转发的那个函数。
+pub(crate) use lithe_gpui_shared::rem_px;
 
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -936,11 +932,20 @@ impl EditorPane {
 
         // 一个标签一个 `EditorState`：先建状态再灌正文，然后才入列。
         let editor = cx.new(|cx| {
-            // `searchable` 上游默认就是 `true`
-            // （`gpui-base-0.6.6/src/input/base/state.rs:9233` 的 `EditorState::new`），
-            // 显式写出来是把 C（`Ctrl+F` 查找替换）依赖的前提钉在调用点：
-            // **不 searchable 的编辑器不拦截 `Ctrl-F`**，会冒泡到上层
-            // （`lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/component/editor.md:158-159`）。
+            // ⚠️ `EditorState::new` 的 `searchable` 上游默认**就是 `true`**
+            // （`gpui-base-0.7.0/src/input/base/state.rs:10085` 的 `EditorState::new`：
+            // 它先走 `new_in_mode`，那里经 `InputBaseState::default` 拿到 `searchable: false`
+            // （同文件 `:709`，那一档是给**单行 Input** 的），随后把 `state.searchable = true`
+            // （同文件 `:10088`）盖掉）。
+            //
+            // 所以这里的 `.searchable(true)` 是**把「Ctrl+F 查找替换」依赖的前提钉在调用点**，
+            // 不是上游本身就那样：**不 searchable 的编辑器不会截住 `Ctrl-F`，那条按键会冒泡给宿主**
+            // （上游为此有两条对照测试：`test_search_shortcut_reaches_the_host_when_not_searchable`
+            // 与 `test_search_shortcut_opens_the_panel_when_searchable`，同文件 `:5658` / `:5668`）。
+            // 后果是**静默**的：删掉这一句，`Ctrl+F` / `Ctrl+H` 就不再打开查找面板，
+            // 而是被上层的 `Input` 上下文接走 —— 界面看起来仍然正常，功能却没反应。
+            // ⚠️ 别把它当"冗余调用"清理掉；面板与快捷键的完整说明见
+            // `docs/gpui kit/0.7.0/base/primitives/editor.md:26-29`。
             let mut state = EditorState::new(window, cx).searchable(true);
             // 语法高亮：只有"语言名 + 该语言的 grammar feature"两件都齐才会真的上色
             // （grammar 开关在 `Cargo.toml`，名字表在 `buffer.rs::language_for_file`）。
@@ -1039,6 +1044,37 @@ impl EditorPane {
             .and_then(|index| self.buffers.get(index))
             .map(|buffer| buffer.name.to_string())
             .unwrap_or_default()
+    }
+
+    /// 当前生效的制表符宽度（空格数）—— 状态栏「缩进」那一格的真值。
+    ///
+    /// 与 [`Self::set_tab_size`] 是同一个字段，所以设置页改 `tabSize` 后这一格立刻跟着变
+    /// （外壳在设置变化时经 `set_tab_size` 转发进来）。
+    ///
+    /// **不需要 `&App`**：这个值本来就存在本结构体上，不从 `EditorState` 反查
+    /// （`gpui-base` 的 `TabSize` 只有写动作，没有公开读接口）。
+    pub fn tab_size(&self) -> usize {
+        self.tab_size
+    }
+
+    /// 活动 buffer 是不是**只读**的（状态栏「只读」那一格的真值）。
+    ///
+    /// 判据取 [`Buffer::writable`] 的取反 —— 那正是建 `EditorState` 时喂给
+    /// `set_readonly(!writable)` 的同一个值，所以状态栏显示的和编辑器实际接受输入的行为
+    /// **同源**，不会出现"显示可写、实际不响应"。
+    ///
+    /// 为什么不直接调上游的 `EditorState::is_readonly()`
+    /// （`gpui-base-0.7.0/src/input/base/state.rs:509`，它确实存在）：那个读接口要
+    /// `&App` + 逐个活动 buffer 的 `EditorState`，而只读性**在本视图里就是 `Buffer::writable`**，
+    /// 两者同源。从宿主已有的真值出发，比再问一遍组件更直接，也少一次 `read(cx)`。
+    ///
+    /// 没有活动 buffer 时返回 `true`：没有可编辑的东西，说"只读"是如实描述
+    /// （与状态栏在没有 buffer 时给 `1:1` 同一口径：取不到就报最保守的值）。
+    pub fn active_buffer_is_readonly(&self) -> bool {
+        self.active
+            .and_then(|index| self.buffers.get(index))
+            .map(|buffer| !buffer.writable)
+            .unwrap_or(true)
     }
 
     /// 打开着的**磁盘文件**的路径，顺序 = 标签顺序（`jdt://` 虚拟 buffer 不在其中）。
@@ -2975,8 +3011,7 @@ impl Render for EditorPane {
 
 #[cfg(test)]
 mod tests {
-    use super::{rem_px, tab_close_element_id, tab_element_id};
-    use gpui_kit::px;
+    use super::{tab_close_element_id, tab_element_id};
     use std::path::{Path, PathBuf};
 
     /// 回归判据（《编码指南》「稳定标识」）：同一批标签在两种顺序下算出的 id 必须相同，
@@ -3017,23 +3052,5 @@ mod tests {
             tab_close_element_id(path),
             "editor-tab-close:/workspace/src/main.rs"
         );
-    }
-
-    /// [`rem_px`] 必须按**传入的 rem 基准**求值，而不是写死 16。
-    ///
-    /// `AbsoluteLength::from(rems(P / 16.)).to_pixels(px(16.))` 这种**假 rem**写法在 16px 基准下
-    /// 与规格值逐像素相等，却完全不随界面字号缩放 —— 所以只断言"16px 基准下等于原值"证明不了
-    /// 它真在按基准缩放，必须再断言基准变化时结果跟着变。两个调用点
-    /// （`FALLBACK_LINE_HEIGHT` 兜底行高、`TAB_MAX_WIDTH` 标签宽上限）都靠这条保证语义。
-    #[test]
-    fn rem_px_scales_with_the_runtime_rem_base() {
-        // 默认基准（`uiFontSize = 13` → `theme_font_size_for(13) = 16.0`）：改动前后逐像素相等。
-        assert_eq!(rem_px(px(16.), 20.), px(20.));
-        assert_eq!(rem_px(px(16.), 200.), px(200.));
-        // 基准翻倍 → 换算结果翻倍（假 rem 会得到 px(20.) / px(200.) 而失败）。
-        assert_eq!(rem_px(px(32.), 20.), px(40.));
-        assert_eq!(rem_px(px(32.), 200.), px(400.));
-        // 基准 ×1.25（`uiFontSize = 20` → 25.0）：线性缩放。
-        assert_eq!(rem_px(px(20.), 20.), px(25.));
     }
 }

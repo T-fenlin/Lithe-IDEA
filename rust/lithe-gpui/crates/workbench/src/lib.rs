@@ -144,44 +144,13 @@ pub use workspace::{
     set_shell_startup,
 };
 
-use gpui_kit::{AbsoluteLength, Pixels, rems};
-
-/// 把规格值（px）按**运行时 rem 基准**求值成 `Pixels`。
+/// 规格像素 → `Pixels` 的换算，**唯一实现在 [`lithe_gpui_shared::rem_px`]**。
 ///
-/// 只用在**固有方法只吃 `Pixels`** 的位置（`Dialog::width` / `Dialog::margin_top`、
-/// `PopupMenu::min_w` / `max_w` / `max_h`、`Button::rounded`、`Sizable::with_size`、
-/// `Positioner::offset` / `margin`）：这些固有方法遮蔽了 `Styled` 上的同名方法，而 gpui 没有
-/// `impl From<Rems> for Pixels`，所以必须自己换算。`Styled` 上的方法（`.w()` / `.h()` /
-/// `.rounded()` / `.margin_top()` …）收 `impl Into<AbsoluteLength>`，**那些位置直接写
-/// `rems(P / 16.)`**，不要绕这里。
+/// 原先这段换算在 `editor` / `git` / `settings` / `terminal` / `workbench` 五个 crate 里
+/// 各有一份逐字相同的实现（外加三份重复单测），改口径就会分叉。现已收敛到 `shared`，
+/// 本 crate 只做 `pub(crate)` 转发，让既有的 `crate::rem_px(..)` 调用点与 `[`crate::rem_px`]`
+/// 文档链接继续成立。
 ///
-/// ⚠️ `spec_px` 是**规格像素值**，不是 rem 数：rem base = 16px，所以除的是 `16.`
-/// （档位 helper 的后缀 `N` = `N × 0.25rem` 才是 4px 一档，别照那个写 `/ 4.`）。
-///
-/// ⚠️ `rem` 必须是**运行时基准**（`window.rem_size()`，或等价的 `cx.theme().font_size`；
-/// `Root::render` 每帧把它写进 `window.set_rem_size`）。写成 `to_pixels(px(16.))` 就是
-/// **假 rem**：看起来合规，实际把基准写死，界面字号一放大就不再跟着缩放。
-pub(crate) fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
-    AbsoluteLength::from(rems(spec_px / 16.)).to_pixels(rem)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::rem_px;
-    use gpui_kit::px;
-
-    /// [`rem_px`] 必须**随传入的运行时基准缩放**，而不是把 16px 写死。
-    ///
-    /// 只断言"16px 基准下等于规格值"证明不了这一点 —— 那正是「假 rem」
-    /// （`AbsoluteLength::from(rems(P / 16.)).to_pixels(px(16.))`）也会通过的断言。
-    /// 所以这里额外钉住"基准翻倍 ⇒ 结果翻倍"。
-    #[test]
-    fn rem_px_scales_with_the_runtime_base() {
-        let spec = 26.;
-        assert_eq!(rem_px(px(16.), spec), px(26.));
-        // 32px 基准（界面字号翻倍）下等比放大到 2 倍。
-        assert_eq!(rem_px(px(32.), spec), px(spec * 2.));
-        // 20px 基准（125% DPI 的常见值）下是 20 / 16 倍。
-        assert_eq!(rem_px(px(20.), 32.), px(40.));
-    }
-}
+/// 换算口径、为什么必须按**运行时** rem 基准、以及"什么槽才需要绕这一层"的判据，
+/// 全部写在被转发的那个函数上（本 crate 不再重复一遍，避免两处说明漂移）。
+pub(crate) use lithe_gpui_shared::rem_px;

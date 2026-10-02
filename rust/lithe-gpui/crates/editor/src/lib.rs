@@ -230,10 +230,11 @@ gpui_kit::actions!(
 ///
 /// ⚠️ **这里没有 `Search` / `Replace` 的绑定，这是有意的**：`Ctrl+F` / `Ctrl+H`
 /// 由**组件自己**接管 —— `EditorState::new` 默认 `searchable = true`
-/// （`gpui-base-0.6.6/src/input/base/state.rs:9233`），而 `gpui_base::input::init`
+/// （`gpui-base-0.7.0/src/input/base/state.rs:10085`，见 `editor_view.rs` 调用点上的说明：
+/// 那是它显式盖掉 `InputBaseState::default` 的 `false` 得到的），而 `gpui_base::input::init`
 /// 已经在 `Input` 上下文里绑好 `ctrl-f` → `Search` / `ctrl-h` → `Replace`
-/// （同文件 `:296-302`），编辑器元素自己带 `key_context("Input")` 并有对应的
-/// `on_action`（`gpui-base-0.6.6/src/input/base/state.rs:4176,4229-4230`）。
+/// （同文件 `:299` / `:303`，macOS 侧是 `:297` / `:301`），编辑器元素自己带
+/// `key_context("Input")`（同文件 `:130`）并有对应的 `on_action`（同文件 `:5614`）。
 ///
 /// 曾经试过"在编辑区自己的键上下文里再绑一份 `ctrl-f` 作为兜底"，但实测**不可达**：
 /// 点标签栏不会让焦点离开编辑器（点完再敲字仍然进入编辑器，`S1_EDITOR_CURSOR` 照常推进），

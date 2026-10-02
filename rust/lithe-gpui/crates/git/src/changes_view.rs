@@ -342,6 +342,20 @@ impl ChangesView {
         .detach();
     }
 
+    /// 当前分支名（来自最近一次 `git.status` 的 `branch` 字段）；非仓库 / 还没读到是 `None`。
+    ///
+    /// 为什么由本视图交出去：工作台的状态栏要显示分支，而**本视图已经持有那份快照**
+    /// （[`ChangesView::refresh`] 把 `git.status` 的响应落进 `ChangesSnapshot`）。
+    /// 状态栏每帧都会向本视图要一次这个值 —— 这是一次**内存读取**，没有文件 I/O，
+    /// 也不会在 worktree / 分离 HEAD / 仓库根≠工作区根这三种情形下读错
+    /// （那三种正是直接读 `.git/HEAD` 会读错的场景；判定已由 Core 在 `git.status` 里做完）。
+    ///
+    /// 分离 HEAD 时 Core 给的是英文常量 `detached`（`model.rs` 的注释与契约
+    /// `protocol/contracts.rs:532-538`），这里原样透出，不猜分支名。
+    pub fn branch(&self) -> Option<&SharedString> {
+        self.snapshot.branch.as_ref()
+    }
+
     /// 切到本视图时调用：刷新一次并打一行诊断。
     ///
     /// 真源在"视图由不可见变可见"时后台整刷一次（`use-git-data-controller.ts:276-281`）。

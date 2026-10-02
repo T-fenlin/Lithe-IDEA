@@ -804,9 +804,9 @@ pub struct ShellWorkspace {
     projects: Vec<ProjectTab>,
     /// 工作区根目录。
     ///
-    /// 状态栏的 Git 分支项每帧要从 `.git/HEAD` 现读（见 [`ShellWorkspace::footer_left`]），
-    /// 所以根目录要留着；`read_branch` 只在状态栏重绘时被调用（不是每帧定时器），
-    /// 代价与真机前端的 `useGitBranch` 相当。
+    /// ⚠️ 状态栏的 Git 分支项**不再**从这里现读（D11 之前每帧读 `.git/HEAD`）：分支取自
+    /// [`ChangesView::branch`] 的 `git.status` 快照，见 [`ShellWorkspace::footer_left`]。
+    /// 根目录仍是本视图的其它用途（打开项目、相对路径换算）所需要的。
     root: PathBuf,
     /// 当前选中的项目标签（`None` = 一个都没选中）。
     active_project: Option<usize>,
@@ -1557,11 +1557,11 @@ impl ShellWorkspace {
             .unwrap_or_else(|| root.display().to_string())
             .into();
 
-        // 启动期读一次分支只为**诊断**：状态栏那一格现在每帧现算
-        // （见 `ShellWorkspace::footer_left`），但"这个工作区根本读不到 .git/HEAD"
-        // 这件事在无人值守验证里必须能看见，所以启动时打一行可 grep 的证据。
-        let branch = read_branch(&root).unwrap_or_else(|| "—".to_string());
-        eprintln!("S1_BRANCH name={branch}");
+        // 分支的启动期证据**不再由这里单独读一次**（原先是直接读 `.git/HEAD`，D11 已删）：
+        // 分支现在来自 Core `git.status` 的快照，而 `changes_view` 的
+        // `S1_SOURCE_CONTROL … branch=…` 诊断行已经把它打出来了
+        // （见 `changes_view.rs` 的 `println!`），所以无人值守验证仍旧 grep 得到，
+        // 而且那一行来自 Core 的判定 —— worktree / 分离 HEAD / 仓库根≠工作区根都不会读错。
 
         // 兜底焦点锚点：先建句柄，菜单栏与根元素**共用同一个**（菜单收起后焦点回到它，
         // 见 `crate::menu_bar` 的 `MenuBar::action_context`）。
@@ -2653,9 +2653,10 @@ impl ShellWorkspace {
     ///   （`idea-icons`），查不到才落 Lucide。真机这一格就是 `ThemedFileIcon`
     ///   （`file-path-breadcrumb.tsx:196-202`），所以现在与文件树 / 标签条同一套美术。
     ///   没有活动文件时传空名字，落到 `defaultFile`（`text`）。
-    /// - 第二项（分支）从构造期读一次改成每帧现读 `.git/HEAD`（[`read_branch`]）。
-    ///   ⚠️ 分支名本身与工作区根目录无关的这一层没变：切分支后要等下一次
-    ///   `cx.notify()` 才会更新（真机是 git 状态推送）。这是既有取舍，不是本轮引入的。
+    /// - 第二项（分支）取自 Git 视图的 `git.status` 快照（[`ChangesView::branch`]）——
+    ///   每帧只做一次**内存读取**，不再有文件 I/O（D11；此前是每帧读 `.git/HEAD`）。
+    ///   分支名的更新时机跟着快照走：Git 视图刷新一次（激活 / 手动刷新 / 写后刷新）
+    ///   这一格就跟着变（真机是 git 状态推送）。
     /// 状态栏左组（前导项）：**通知中心入口**（有未读时）+ 项目名 + 分支。
     ///
     /// 2026-09-27 改过。顺序真源仍是
@@ -2698,7 +2699,17 @@ impl ShellWorkspace {
             .map(|tab| tab.name().clone())
             .unwrap_or_default();
         let active_file = self.editor.read(cx).active_buffer_name();
-        let branch = read_branch(&self.root).unwrap_or_else(|| "—".to_string());
+        // 分支：走 Git 视图已经取到的 `git.status` 快照（`ChangesView::branch`），
+        // **不再每帧读 `.git/HEAD`**（D11）。那三处读错的场景 —— worktree（`.git` 是文件）、
+        // 分离 HEAD（没有 `ref: refs/heads/` 前缀）、仓库根≠工作区根 —— 都由 Core 的
+        // `git.status` 判定，前端只负责显示。这是一次内存读取，没有 I/O。
+        // 还没读到（首帧 / 非仓库）时显示 `—`，与原来"读不到就 `—`"同一口径。
+        let branch = self
+            .changes
+            .read(cx)
+            .branch()
+            .map(|branch| branch.to_string())
+            .unwrap_or_else(|| "—".to_string());
 
         entries.push(StatusEntry::new(project_name).with_file_icon(&active_file, cx));
         // 真源：`icons/idea/icons/ui/branch.svg(+_dark)` —— 真机 `GitBranchIcon`。
@@ -2782,6 +2793,9 @@ impl ShellWorkspace {
         // 没有任何 buffer 时编辑区给 `1:1`（真机同样：拿不到位置时用
         // `INITIAL_CURSOR_POSITION = {0,0}`，显示成 `1:1`）。
         let cursor = self.editor.read(cx).cursor_position(cx);
+        // 缩进格的文案要一个 `&str`：`tr_args` 借的是字符串，所以先绑成局部量，
+        // 不能在 `vec![..]` 的实参里现借一个马上析构的临时 `String`。
+        let tab_size = self.editor.read(cx).tab_size().to_string();
 
         vec![
             // 光标位置 chip。真机这一颗是**可点**的（点开变成输入框、回车跳行，
@@ -2797,21 +2811,24 @@ impl ShellWorkspace {
             // ⚠️ 非 UTF-8 的文件本轮**不打开成可写**（`read_body` 标成只读），所以不会出现
             // "显示 UTF-8 但保存时按别的编码写回"的不一致。
             StatusEntry::new(SharedString::from("UTF-8")),
-            // 缩进：编辑器的制表宽度**固定 2**。真机取的是编辑器的 `tabSize`
-            // （默认 2，`features/settings/config/default-settings.ts` 的 editor.tabSize），
-            // 而 gpui-kit 的 `EditorState` 不暴露 `tab_size` 读接口（`TabSize` 只有写动作），
-            // 本轮也没有"按语言取缩进"的语言配置，所以这里就是它真实的取值。
-            // 文案形如 `{count} 个空格`（`i18n/locale.ts` 的 `footer.spaces`），默认 2。
+            // 缩进：编辑器的制表宽度**取真值**（`EditorPane::tab_size`），
+            // 它由外壳在启动期与每次设置变化后经 `set_tab_size` 转发进编辑区，
+            // 所以设置页改 `tabSize` 会立刻反映到这一格（不再写死 2）。
+            // 文案形如 `{count} 个空格`（`i18n/locale.ts` 的 `footer.spaces`）。
             StatusEntry::new(lithe_gpui_shared::tr_args(
                 "lithe.footer.spaces",
-                &[("count", "2")],
+                &[("count", tab_size.as_str())],
             )),
-            // ⚠️ 只读态：本轮所有可写 buffer 都是可编辑的，占位值仍是"只读"语义的
-            // 闭锁字形。要变成真实值需要 `EditorState::is_readonly()` 接进来
-            // （真源 `footer-editor-status.tsx:102` 用 `LockIcon` / `LockOpenIcon` 区分），
-            // 属于阶段 9 范围外的状态栏打磨。
-            // 真源：`icons/idea/icons/ui/locked.svg(+_dark)` —— 真机 `LockIcon`。
-            StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::LOCK_ICON, cx),
+            // 只读态：取 `Buffer::writable` 的取反（`EditorPane::active_buffer_is_readonly`），
+            // 与建 `EditorState` 时 `set_readonly(!writable)` 用的是同一个值，所以状态栏
+            // 显示的和编辑器实际是否接受输入**同源**。
+            // 真源 `footer-editor-status.tsx:102` 用 `LockIcon` / `LockOpenIcon` 区分两态。
+            // 真源图标：`icons/idea/icons/ui/locked.svg(+_dark)` / `unlocked.svg(+_dark)`。
+            if self.editor.read(cx).active_buffer_is_readonly() {
+                StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::LOCK_ICON, cx)
+            } else {
+                StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::LOCK_OPEN_ICON, cx)
+            },
             // ⚠️ 内存条目：真值来自 10s 轮询的原生命令 `get_application_memory_usage`
             // （`footer-editor-status.tsx:24,45-67`），属数据层，本阶段不做。
             StatusEntry::new(SharedString::from("总计 0.0 MB · Lithe 0.0 MB"))
@@ -4496,16 +4513,6 @@ fn bottom_pane(content: AnyElement, cx: &App) -> impl IntoElement {
                 .bg(cx.theme().background)
                 .child(content),
         )
-}
-
-/// 读当前分支名。
-///
-/// ⚠️ **临时实现**：直接读 `.git/HEAD`。阶段 4 接 `git.status` 后应删掉
-/// （`git.status` 才是在 Core 里解析 worktree / 分离 HEAD / 符号链接的那一份）。
-fn read_branch(root: &std::path::Path) -> Option<String> {
-    let head = std::fs::read_to_string(root.join(".git/HEAD")).ok()?;
-    let head = head.trim().to_string();
-    head.strip_prefix("ref: refs/heads/").map(str::to_string)
 }
 
 /// 左侧活动栏的图标项。
