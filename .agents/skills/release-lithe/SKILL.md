@@ -7,8 +7,10 @@ description: Prepare and validate stable Lithe release notes and publishing work
 
 Apply this Skill after `develop-lithe` for stable releases.
 
-> **当前状态：没有可发布的产物。** 旧前端（macOS 的 `.app`/DMG 与 Windows 的
-> NSIS 安装包）连同它们的发布工作流已删除，`rust/lithe-gpui/` 宿主**还没有**发布流水线。
+> **当前状态：没有可发布的产物。** 发布的旧前端（macOS 的 `.app`/DMG 与 Windows 的
+> NSIS 安装包）连同它们的发布工作流已随 Windows 前端一起停用，`rust/lithe-gpui/` 宿主
+> **还没有**发布流水线。注意：`macos/` 源码**仍在仓库中**（它是界面规格真源），
+> 但**已不再是发布的产物**——不要因为能看到 Swift 工程就以为 macOS 还在发版。
 > 因此本 Skill 现在只约束两件事：写发布说明的**文风与校验**，以及"恢复发布前必须
 > 先补齐什么"。不要照着旧章节去引用已经不存在的安装包、Gatekeeper 提示或
 > Homebrew 配方；`docs/releases/v*.md` 里的下载链接属于**历史发布记录**，保留原样。

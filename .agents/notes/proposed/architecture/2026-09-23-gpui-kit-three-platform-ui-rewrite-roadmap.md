@@ -2,15 +2,25 @@
 
 状态：提议中
 
-> **状态变更（2026-09-25，维护者决定）**：
+> **状态变更（2026-10-02，维护者决定）：界面规格来源改回 macOS 前端。**
 > **实现框架不变：界面继续用 GPUI Kit 重写**（`rust/lithe-gpui/`）。变的是**界面规格来源** ——
-> 从 macOS SwiftUI 改回 **Windows 前端**（`windows/tauri/src/features/*`，Tauri v2 + React + Tailwind + shadcn）。
+> 以 **macOS 前端**（`macos/Sources/Lithe/Views/`，SwiftUI/AppKit，158 个 Swift 文件、约 6.0 万行）为准。
+>
+> 为什么改回来：`windows/tauri`（那份 React/Tauri 前端）**已经删除**，本仓库里没有任何 Windows 前端源码可读。
+> 规格如果指向不存在的源码，就一个尺寸都核对不了。macOS 前端则完整保留在 `macos/` 下，可以直接读源码。
 >
 > 直接影响：
-> - **尺寸、布局、观感一律以 Windows 前端为准**；macOS 那份调研（`rust/lithe-gpui/UI-MAP.md` 与 `.artifacts/ui-map/01..09`）降级为
->   **行为/功能对照**（它功能最全，用来查"这个交互原本怎么工作"），不再当视觉规格；
-> - `rust/lithe-gpui/UI-MAP.md` 需要**重新以 Windows 为源做一份逐区域对应表**；执行提示词见
->   `docs/development/gpui-ui-windows-prompt.md`；
+> - **尺寸、布局、观感一律以 macOS 前端为准**；Windows 那份调研随前端一起失效，不再作规格，也不再作旁证；
+> - 逐区域对应表继续落在 `rust/lithe-gpui/UI-MAP.md`（它 §2 原本就是以 macOS 为源写的，现在重新成为规格）；
+>   `lithe-gpui/PLAN.md`、`lithe-gpui/README.md`、`lithe-gpui/HANDOFF.md` 里指向 Windows 规格与
+>   `research/windows/` 的说法同步作废。
+>
+> 以下是被本次决定取代的上一版（2026-09-25「规格来源 = Windows 前端」），保留以便追溯：
+>
+> - ~~尺寸、布局、观感一律以 Windows 前端为准；macOS 那份调研降级为行为/功能对照~~；
+> - ~~`rust/lithe-gpui/UI-MAP.md` 需要重新以 Windows 为源做一份逐区域对应表~~（该表从未落地：源目录在写之前就被删了）。
+>
+> 仍然有效的部分：
 > - ~~仍然成立：已发布的 `gpui-kit 0.6.x` 与技能文档（描述 0.7.0）的差异~~
 >   **（2026-09-29 已解除）**：`gpui-kit 0.7.0` 已发布到 crates.io，宿主已升级并按 0.7 API 迁移
 >   （`Root` 变为"窗口内容 + 浮层宿主"，对话框 / 抽屉 / 通知由 `Root` 的 plugin 层每帧统一渲染，
@@ -21,7 +31,9 @@
 
 ## 先说结论
 
-Lithe 现在有两套界面实现：macOS 是 SwiftUI/AppKit，Windows 是 React/Tauri，同一件事要做两遍。**长期目标**是用 GPUI Kit（Rust 原生 UI 框架）重写界面层，让 macOS、Windows、Linux 共用一套 Rust 代码，最终删除 SwiftUI 视图层和 React 实现。
+Lithe 的界面层历史上由两套实现承担：macOS 是 SwiftUI/AppKit，Windows 是 React/Tauri，同一件事要做两遍。**长期目标**是用 GPUI Kit（Rust 原生 UI 框架）重写界面层，让 macOS、Windows、Linux 共用一套 Rust 代码。
+
+**当前状态（2026-10-02）**：React/Tauri 那份 Windows 前端**已经删除**，本仓库里只剩 `rust/lithe-gpui/` 一套界面实现；SwiftUI 那份 macOS 前端**仍然保留**，它的角色是**界面规格真源**（拿来做规格参考，不是要维护的第二套产品）。所以"同一件事做两遍"的成本已经不存在，剩下要补的是"gpui 宿主还没做完 macOS 已经有的功能"。
 
 **短期目标不是"开始写界面"，而是先证明两件事**：GPUI 宿主能直接驱动现有 Rust Core，以及 GPUI Kit 的编辑器能不能替代 Monaco。这两件事在头 10 周内用两个阶段验证完，任何一件不成立就应当停手，而不是继续投入。
 
@@ -33,19 +45,23 @@ Lithe 现在有两套界面实现：macOS 是 SwiftUI/AppKit，Windows 是 React
 
 仓库里两个产品各自实现了一遍界面，且不共享界面代码：
 
+> 下表是 2026-09-23 立项时**两个前端都还在**的体量统计，保留下来是为了说明当初为什么要做这件事。
+> `windows/tauri/*` 与 `frontend/` 这几行**已经不存在**（前端已删除），`macos/` 一行**仍然有效**。
+
 | 区域 | 文件数 | 行数 | 说明 |
 | --- | --- | --- | --- |
-| `macos/` Swift | 742 | 184,036 | SwiftUI/AppKit 界面、平台适配、服务编排 |
-| `windows/tauri/src` React/TS | 1,572 | 241,831 | Windows 工作台、功能状态与表现层 |
-| 界面层合计 | 2,314 | 约 425,900 | 换框架后必须重写的部分 |
+| `macos/` Swift | 742 | 184,036 | SwiftUI/AppKit 界面、平台适配、服务编排。**仍在仓库中，是当前的界面规格真源** |
+| `windows/tauri/src` React/TS | 1,572 | 241,831 | ~~Windows 工作台、功能状态与表现层~~ **已删除** |
+| 界面层合计 | 2,314 | 约 425,900 | 立项时"需要重写"的估算口径 |
 | `rust/lithe-core/src` | 122 | 76,922 | 确定性共享逻辑，**可复用** |
-| `windows/tauri/src-tauri` | 21 | 12,706 | Tauri 组合根与 Windows 平台适配，部分可复用 |
-| `windows/tauri/crates` | 14 | 3,103 | 平台 crate，可复用 |
-| `frontend/` | 32 | 3,794 | 共享 Monaco 编辑器包等 |
+| `windows/tauri/src-tauri` | 21 | 12,706 | ~~Tauri 组合根与 Windows 平台适配~~ **已删除** |
+| `windows/tauri/crates` | 14 | 3,103 | ~~平台 crate~~ **已删除** |
+| `frontend/` | 32 | 3,794 | ~~共享 Monaco 编辑器包等~~ **已删除** |
 
-macOS 是当前参考产品，Windows 是独立实现（见
+立项时 macOS 是参考产品，Windows 是独立实现（见
 [仓库所有权与共享边界](../../implemented/architecture/2026-09-13-repository-ownership-and-sharing-boundaries.md)）。
-一个新功能要在两端分别实现、分别测、分别修；这类重复本身就是长期成本。
+当时一个新功能要在两端分别实现、分别测、分别修；**这个重复现在只剩一半**：Windows 那份已经删掉，
+macOS 那份保留下来当规格，所以 gpui 宿主可以直接对着它复刻，而不必再维护两套产品。
 
 ### 为什么现在有可能做成
 
@@ -74,7 +90,7 @@ Rust Core 的边界已经是语言中立的，这一点决定了重写的性质�
 
 一年内得到一个**单套 Rust 界面代码覆盖 macOS、Windows、Linux** 的 Lithe：
 
-1. 界面层全部由 GPUI Kit 构成，`macos/Sources/Lithe/Views` 与 `windows/tauri/src` 被替换后删除。
+1. 界面层全部由 GPUI Kit 构成；`windows/tauri/src`（已删除）由 gpui 代码替代，**`macos/Sources/Lithe/Views` 保留为规格参考**，只在不做规格时停止维护，而不是被 gpui 代码替换掉。
 2. Rust Core 继续作为唯一业务真源，命令与事件契约不变；GPUI 宿主只是第三个消费者。
 3. 原生插件改为跨平台形态，Windows 与 Linux 也具备插件能力。
 4. 平台专属能力（进程、PTY、凭据、更新、对话框、文件监听）保留各自实现，但通过统一端口 trait 收敛，界面代码不出现平台分支。
@@ -96,17 +112,17 @@ P1 已完成（结果见阶段 1）。此后的短期目标按"**先界面、后
 
 **S1 期间确认的两条硬约束（都是踩过坑才拿到的）**：
 
-1. **`window.viewport_size()` 返回物理像素，而 `px()` 是逻辑像素**。本机 `scale_factor = 1.25`：视口返回 1444x812，逻辑实为 1155x650。直接用视口值给根视图设高度会多出 1/scale 的高度，**底部状态栏被切出窗口** —— 这是本阶段所有"状态栏消失"现象的共同真因。正确写法：`viewport.height / window.scale_factor()`。
+1. **~~`window.viewport_size()` 返回物理像素，而 `px()` 是逻辑像素~~ —— 这条结论是错的，已于 2026-09-25 作废**。`viewport_size()` 与 `px()` 是同一套 DPI 无关单位，**不要再 `÷ scale_factor()`**（那才真的会让内容只画到窗口的 78%）。正确写法是根视图直接用 `.size_full()`，完整推导与截图证据见 `rust/lithe-gpui/UI-MAP.md` §1.3「根视图尺寸」。
 2. **窗口尺寸必须从显示器算出来**：不设 `window_bounds` 时 GPUI 默认 1536x1095 逻辑像素，在 125% 缩放的显示器上桌面只有 1536x864 逻辑像素，窗口比屏幕高，底部同样落在屏幕外。
 
 **遗留（不影响 S1 判定）**：左栏文件列表尚未在面板内正确裁切与滚动（内容画出面板边界），应改用 gpui-kit 为长列表准备的 `List` / `v_virtual_list` 组件，而不是自己拼 `overflow_y_scroll` 的 div。归入 S2。
 
 **界面参考（2026-09-24 改定，取代此前"照搬 Windows"的决定）**：不做独立设计，**以 macOS 端源码为界面规格**，用 gpui-kit 一比一复刻。
 
-- 原因：macOS 端是功能最全、更新最快的实现（`macos/Sources/Lithe` 的 `Views/` 约 5.4 万行，覆盖编辑区、Git、数据库、运行调试、语言智能等），Windows 端是它的滞后镜像；拿最新最全的一端当规格，才不会把已经改掉的设计抄进来。
-- **两步走**：先把 macOS 界面逐区域逆向成 `rust/lithe-gpui/UI-MAP.md`（区域组成 + 度量 + 每个元素 → gpui-kit 组件 + 缺口 + 优化点），再照它实现。区域调研原文在 `.artifacts/ui-map/0X-*.md`（不入库）。
-- **实现只能用 gpui-kit 0.6.6 源码里真实存在的组件**（判断依据是已发布源码，不是在线文档——在线文档描述的是未发布的 0.7.0）。macOS 做得不好的地方允许用 gpui-kit 做得更好，但必须在 `UI-MAP.md` 的"优化"一栏写明理由。
-- **Windows 端与产品截图降为旁证**，只用来交叉验证同一功能在另一端的取舍。此前的 Windows 结构分析（`main-layout.tsx` / `footer/` / `main-sidebar.tsx`）保留在下一段，作为旁证材料，不再是规格来源。
+- 原因：macOS 端是功能最全、覆盖最广的实现（`macos/Sources/Lithe/Views/` 158 个 Swift 文件、约 6.0 万行，覆盖编辑区、Git、数据库、运行调试、语言智能等）；拿它当规格，才不会把已经改掉的设计抄进来。
+- **两步走**：先把 macOS 界面逐区域逆向成 `rust/lithe-gpui/UI-MAP.md`（区域组成 + 度量 + 每个元素 → gpui-kit 组件 + 缺口 + 优化点），再照它实现。
+- **实现只能用 gpui-kit 源码里真实存在的组件**（判断依据是已发布源码 + 提交的 `Cargo.lock`，不是在线文档）。macOS 做得不好的地方允许用 gpui-kit 做得更好，但必须在 `UI-MAP.md` 的"优化"一栏写明理由。
+- **Windows 端不再作为旁证**：那份前端连同它的源码与截图都已删除，任何以它为对照的结论都无法复核。需要交叉验证时，改用 gpui-kit 的 `gpui-kit-design-guides` 与 `UI-MAP.md` §1.3 的实测规则。
 
 已确认的 macOS 外壳结构（`11` 号子代理调研 `macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift` 等，细节见 `rust/lithe-gpui/UI-MAP.md` §2）：
 
@@ -126,7 +142,7 @@ VStack
 
 **这与 gpui-kit 的一个能力边界冲突，已定取舍**：gpui-kit 的 `DockPlacement::Bottom` 只横跨中心列（`gpui-base-0.6.6/src/dock/dock_area.rs:1415-1431` 把 bottom dock 挂在 center_frame 内），而 macOS 的底部工具窗横跨"左栏 + 编辑区"。因此本项目把底部工具窗放进 center 的 `v_split`（而不是用 Bottom dock）：结构上等价于 macOS，代价是失去 Dock 自带的底部停靠/拖拽能力，需要时再评估。
 
-**旁证（Windows 结构，不再是规格）**：`windows/tauri/src/features/layout/components/main-layout.tsx`（外壳）、`footer/`（状态栏）、`sidebar/main-sidebar.tsx`（侧栏）。旧结论：设计 token 名与 gpui-kit 的 `Theme` 高度对应（`--sidebar`、`--title-bar`、`--status-bar`、`--tab-bar`、`--border`、`--background`、`--primary`）；这条对 macOS 同样成立，但 macOS token 有两个语义陷阱（`accent` = primary、`selection` 不透明），映射表在 `rust/lithe-gpui/UI-MAP.md` §1.2。
+**旁证（历史，已作废）**：Windows 结构曾用来对照——`windows/tauri/src/features/layout/components/main-layout.tsx`（外壳）、`footer/`（状态栏）、`sidebar/main-sidebar.tsx`（侧栏）。这些文件已随前端删除，本条只作历史记录，**不要照它实现**。其中仍然成立的一条是它对 macOS token 的提醒：设计 token 名与 gpui-kit 的 `Theme` 高度对应（`--sidebar`、`--title-bar`、`--status-bar`、`--tab-bar`、`--border`、`--background`、`--primary`），但 macOS token 有两个语义陷阱（`accent` = primary、`selection` 不透明），映射表在 `rust/lithe-gpui/UI-MAP.md` §1.2。
 
 **已确认的一条硬约束**：不设 `window_bounds` 时 GPUI 默认窗口是 1536x1095 **逻辑**像素；在 125% 缩放的显示器上桌面只有 1536x864 逻辑像素，窗口比屏幕高 231px，**底部（状态栏）整体落在屏幕之外**。窗口尺寸必须从 `primary_display().visible_bounds()` 算出来。
 
@@ -195,7 +211,7 @@ gpui_kit::application().run(move |cx| {
   1. 统一命令入口：生成 `operationId`、超时、取消（`lithe_core::cancel_operation`）、陈旧结果丢弃。
   2. 事件回调路由：把 `lithe_core_execute_json_with_events` 的事件投递到 GPUI 实体状态。后台线程不得直接改 UI，必须经 GPUI 的异步任务回到前台。
   3. 模块生命周期状态机：9 个状态 `disabled`、`inactive`、`activating`、`active`、`idle`、`preparingToSleep`、`sleeping`、`sleepBlocked`、`failed`，以及租约与 provider 依赖规则，契约见
-     [应用边界契约](../../../../shared/contracts/application-boundary.md)。状态机原本照 Swift 侧那套模块运行时实现（该 Note 已随 macOS 旧前端归档，可在 git tag `legacy-frontends-final` 追溯）；9 个状态名与租约/依赖规则属于跨端契约，不随实现一起消失。。
+     [应用边界契约](../../../../shared/contracts/application-boundary.md)。状态机原本照 Swift 侧那套模块运行时实现（那套 `LitheModuleAPI` / `LitheApplicationKernel` 运行时的 Note 已归档，**但 Swift 源码仍在 `macos/Sources/` 下可读**，也可在 git tag `legacy-frontends-final` 追溯）；9 个状态名与租约/依赖规则属于跨端契约，不随实现一起消失。
   4. 内置模块注册表：`workspace`（唯一 required）、`terminal`、`search` 三个先接通，其余 7 个（`ai-assistance`、`database`、`debug`、`execution`、`git`、`language-intelligence`、`local-history`）先登记为 disabled。
   5. 平台端口 trait：进程、PTY、文件监听、凭据、对话框。先各给 macOS 与 Windows 一份最小实现，界面代码只依赖 trait。
 - **产出**：宿主骨架 crate、状态机测试、端口 trait 定义与两份平台实现。
@@ -409,5 +425,11 @@ Zed 是 GPUI 的创造者，它的扩展模型是本方向最直接的先例。�
 - `scripts/verify-rust-core.sh`
 - `scripts/verify-shared-contracts.sh`
 
-> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
-> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。
+> **历史标注（2026-10-02）**：下面"验证"里以 `windows/tauri/**`、`bun test`、Windows Tauri 宿主
+> `cargo test` 开头的命令，**随 Windows 前端删除而全部失效**，仅作历史记录；界面规格真源已改为
+> macOS 前端（`macos/Sources/Lithe/Views/`）。需要复跑等价验证时，用 `rust/` workspace 里对应的
+> `cargo test -p <crate>`，或本仓库真实的校验脚本（`scripts/verify-rust-core.sh`、`scripts/verify-shared-contracts.sh`）。
+> `windows/`、`frontend/editor/`、`Plugins/` 三个旧前端已删除，原先列在这里的路径不复存在。
+> **`macos/` 未删除**：它是本分支界面规格（UI 规格来源）的真源，路径仍然有效，见
+> `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`。
+> 正文引用的已删除前端类名与行号对应 git tag `legacy-frontends-final`。

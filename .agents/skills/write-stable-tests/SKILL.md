@@ -10,10 +10,13 @@ fail locally with a useful diagnostic instead of waiting for a CI job timeout.
 
 ## Scope
 
-Lithe is a pure Rust repository: `rust/lithe-core` (deterministic commands and
-contracts) plus the GPUI Kit host in `rust/lithe-gpui/`. The Swift macOS product, the
-React/Tauri Windows product, and the shared Monaco editor package were removed;
-there are no platform test lanes left to keep green.
+Sprint scope is the Rust surface: `rust/lithe-core` (deterministic commands and
+contracts) plus the GPUI Kit host in `rust/lithe-gpui/`. The React/Tauri Windows
+product, the shared Monaco editor package, and `Plugins/` were removed; there are no
+platform test lanes left to keep green. The `macos/` Swift sources are still in the
+repository as the **UI specification reference**, but they are not a test surface:
+do not add or maintain Swift tests for them, and do not cite them as lanes that must
+stay green.
 
 Two test surfaces remain, and they have different constraints:
 

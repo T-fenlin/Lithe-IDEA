@@ -2,7 +2,7 @@
 
 状态：已实现
 归档日期：2026-09-28
-归档原因：提案对象是 macOS 侧 `MacDirectoryWatcher` 的 FSEvents 监听缺口，随 macOS 旧前端删除。「文件事件可以合并但不能丢掉最后一次刷新」这条不变量仍然成立，gpui 侧尚未实现对应监听。
+归档原因：提案对象是 macOS 侧 `MacDirectoryWatcher` 的 FSEvents 监听缺口，随 macOS 产品退役（**Swift 源码仍保留为界面规格真源**）。「文件事件可以合并但不能丢掉最后一次刷新」这条不变量仍然成立，gpui 侧尚未实现对应监听。
 
 ## 先说结论
 

@@ -83,6 +83,11 @@
 
 ## 验证
 
+
+> **历史标注（2026-10-02）**：下面"验证"里以 `windows/tauri/**`、`bun test`、Windows Tauri 宿主
+> `cargo test` 开头的命令，**随 Windows 前端删除而全部失效**，仅作历史记录；界面规格真源已改为
+> macOS 前端（`macos/Sources/Lithe/Views/`）。需要复跑等价验证时，用 `rust/` workspace 里对应的
+> `cargo test -p <crate>`，或本仓库真实的校验脚本（`scripts/verify-rust-core.sh`、`scripts/verify-shared-contracts.sh`）。
 - `./scripts/verify-rust-core-comments.sh`
 - `./scripts/verify-agent-notes.sh`
 - `cargo test --manifest-path rust/Cargo.toml -p lithe-core`

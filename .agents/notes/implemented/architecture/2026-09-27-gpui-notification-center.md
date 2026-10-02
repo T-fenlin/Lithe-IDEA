@@ -197,7 +197,8 @@ tr_args(entry.code().as_ref(), &args)
 - **不要写整句英文文案进条目。** 领域层只返回稳定原因。写死文案会让 macOS 对齐时整份模型重做。
 - **不要用逐条 `read: bool`。** 水位线是按序号判定的，逐条 boolean 解决不了「正看着中心时
   新来的那条也标已读」。
-- **不要新增通知图标**，也不要复活 `windows/tauri/src/ui/toast.tsx`（224 行、零引用的死代码）。
+- **不要新增通知图标**，也不要复活 Windows 前端里那个 `ui/toast.tsx`（224 行、零引用的死代码；
+  该文件已随 `windows/tauri/` 删除，这里只作"别再犯"的提醒）。
 - **不要把 `Badge` 塞进 `Button` 的 children。** `Button` 的子元素落在
   `h_flex().overflow_hidden()` 里（`button.rs:698-733`）会被裁掉；必须由 `Badge` 包住 `Button`。
 - **不要给可点的 `div()` 忘了 `.id(..)`。** `on_click` 在 `StatefulInteractiveElement` 上
@@ -318,4 +319,6 @@ tr_args(entry.code().as_ref(), &args)
 - 交叉参考：`.agents/notes/implemented/bug-fix/2026-09-27-exclude-write-must-be-read-back.md`
 - 交叉参考：`.agents/notes/implemented/architecture/2026-09-13-macos-service-composition-boundaries.md`
 - 交叉参考：`.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`
-- 交叉参考（不改动，仅取真源）：`macos/Sources/Lithe/Application/Features/WorkbenchNotificationFeatureModel.swift`、`windows/tauri/src/features/notifications/`
+- 交叉参考（不改动，仅取真源）：`macos/Sources/Lithe/Application/Features/WorkbenchNotificationFeatureModel.swift`
+  —— 这是**界面规格真源**（macOS 前端）。原先并列的 `windows/tauri/src/features/notifications/` **已随 Windows 前端删除**，
+  不要再按它对齐。

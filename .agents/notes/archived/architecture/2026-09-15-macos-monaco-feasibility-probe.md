@@ -2,7 +2,7 @@
 
 状态：已实现
 归档日期：2026-09-28
-归档原因：结论是「macOS 可以承载 Monaco」，随 macOS 旧前端与 `frontend/editor/`（Monaco 表现层）一起删除；gpui 侧编辑器是原生 Rust 实现。
+归档原因：结论是「macOS 可以承载 Monaco」，随 macOS 产品退役（**Swift 源码仍保留为界面规格真源**）与 `frontend/editor/`（Monaco 表现层）删除而不再适用；gpui 侧编辑器是原生 Rust 实现。
 
 ## 先说结论
 

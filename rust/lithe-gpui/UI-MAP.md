@@ -1,40 +1,44 @@
-# Windows 界面 → gpui-kit 复刻对应表（UI-MAP）
+# macOS 界面 → gpui-kit 复刻对应表（UI-MAP）
 
-> ## 🔁 规格来源变更（2026-09-25，维护者决定）
+> ## 🔁 规格来源（2026-10-02 定版：**macOS 前端**）
 >
-> **界面规格来源改为 Windows 前端**（`windows/tauri/src/features/*`，Tauri v2 + React + Tailwind + shadcn）：
-> 尺寸、布局、层级、观感一律照 Windows。**实现框架不变，仍是 gpui-kit。**
+> **界面规格来源 = macOS 前端**（`macos/Sources/Lithe/Views/`，SwiftUI/AppKit，158 个 Swift 文件、约 6.0 万行）：
+> 尺寸、布局、层级、观感一律照 macOS。**实现框架不变，仍是 gpui-kit。**
 >
-> 因此本文件分两部分使用：
-> - **§1 硬规则与 gpui-kit 实现规则**：**继续有效**（单位、token 映射、行高、编辑器高度、滚动条、浮层挂层、DPI 与截图口径…都是真机踩出来的）；
-> - **§2 逐区域对应**：目前是以 **macOS** 为源写的，**降级为"行为/功能对照"**（查"这个交互原本怎么工作"）。
->   视觉与布局要改看 Windows —— 新的对应表落在 **`lithe-gpui/UI-MAP-WINDOWS.md`**（提示词：`docs/development/gpui-ui-windows-rewrite-prompt.md`）。
+> 这份结论曾经来回过一次，记在这里以免再翻：
+> - 2026-09-24：规格来源 = macOS（取代"照搬 Windows"）；
+> - 2026-09-25：改为 Windows 前端，macOS 降级为行为对照；
+> - **2026-10-02：改回 macOS** —— 因为 `windows/tauri/` 那份 React/Tauri 前端**已从仓库删除**，
+>   规格指向不存在的源码就一个尺寸都核对不了。当时计划的 `UI-MAP-WINDOWS.md` 与
+>   `research/windows/01..06-*.md` 从未落地，不必再找。
 >
-> `lithe-gpui/PLAN.md` 顶部的横幅与 `.agents/notes/.../2026-09-23-...roadmap.md` 的状态变更是同一件事的记录。
+> 决策记录：`.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`。
 
-这份文档是 GPUI 外壳的**界面规格**：左边是 macOS 端（`macos/Sources/Lithe`，SwiftUI/AppKit）的**真实界面**，右边是用 **gpui-kit 0.6.6** 复刻时"用哪个组件、怎么用、差在哪"。
+这份文档是 GPUI 外壳的**界面规格**：左边是 macOS 端（`macos/Sources/Lithe`，SwiftUI/AppKit）的**真实界面**，右边是用 **gpui-kit** 复刻时"用哪个组件、怎么用、差在哪"。
 
-工作方式（维护者 2026-09-24 定，2026-09-25 修订规格来源）：
+工作方式：
 
-- **界面规格取自 Windows 前端源码**（`windows/tauri/src/features/*`）；macOS 端只作行为/功能对照；
-- **实现只能用 gpui-kit 0.6.6 源码里真实存在的组件与基元**（判断依据是已发布源码，不是在线文档——在线文档描述的是未发布的 0.7.0）；
+- **界面规格取自 macOS 前端源码**（`macos/Sources/Lithe/Views/`）；
+- **实现只能用 gpui-kit 源码里真实存在的组件与基元**（判断依据是已发布版本的源码 + 提交的 `Cargo.lock`，不是在线文档）；
 - 做得不好的地方**允许**用 gpui-kit 做得更好，但必须在"优化"一栏写清理由。
 
-配套文件：
+同目录的现实配套文件只有这些：
 
 | 文件 | 作用 |
 | --- | --- |
-| `PLAN.md` | 执行计划：下一步做什么、怎么算做完、当前差距 |
-| 本文 `UI-MAP.md` | **§1 硬规则 + gpui-kit 实现规则**（仍然有效的部分）+ §2 指向 Windows 规格 + §3 验收清单 |
-| `research/windows/01..06-*.md` | **Windows 界面调研（规格真源，6 份）**：外壳 / 编辑区+侧栏 / Git+底部窗 / 主题+组件 / 终端+运行调试 / 数据库+AI+搜索 |
-| `research/gpui-kit-overlay-howto.md` | gpui-kit 浮层（Dialog/Sheet/Notification）怎么用的完整调研 |
-| `docs/archive/ui-map-macos.md` | macOS 界面调研，**只作行为/功能对照**（不是视觉规格） |
-| `docs/development/gpui-ui-windows-rewrite-prompt.md` | 交给新对话的**重写提示词**（决策 + 坑清单 + 分阶段 + 验收） |
+| 本文 `UI-MAP.md` | **§1 硬规则 + gpui-kit 实现规则** + **§2 逐区域对应（规格 = macOS）** + §3 验收清单 |
+| `README.md` | 怎么跑起来、已验证的接口事实、硬约束 |
+| `BLOCKERS.md` | 当前卡住的事 |
+| `HANDOFF.md` | 交接现状 |
+| `crates/` | gpui 宿主的实际实现（12 个 crate） |
+| `tools/` | `check-ui-px.mjs`（硬编码 px 守卫）、`generate-idea-icons.mjs`（图标生成） |
 | `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md` | 为什么这样做的决策记录 |
 
-> 清理说明（2026-09-25）：早期调试期的截图证据（`.artifacts/p1/*`）与 macOS 原始区域调研（`.artifacts/ui-map/01..08`）
-> 已删除 —— 前者里有**坏截图工具产出的误导性画面**（例如 `startup-max.png` 把"内容只占 78%"拍成"已铺满"），
-> 后者已被 `docs/archive/ui-map-macos.md` 汇总。本文的结论都以**文字 + 源码行号**写清，需要复现时按文中命令重跑即可。
+> 清理说明（2026-09-25 原始记录，2026-10-02 更新）：早期调试期的截图证据（`.artifacts/p1/*`）与 macOS 原始区域调研
+> （`.artifacts/ui-map/01..08`）已删除 —— 前者里有**坏截图工具产出的误导性画面**（例如 `startup-max.png`
+> 把"内容只占 78%"拍成"已铺满"）。本文的结论都以**文字 + 源码行号**写清，需要复现时按文中命令重跑即可。
+> **注意**：文中提到的 `lithe-gpui/capture-screenshot.ps1`、`lithe-gpui/PLAN.md`、`lithe-gpui/research/`、
+> `docs/archive/ui-map-macos.md` 这些路径**在当前工作区都不存在**；下面的正文已把这类引用改写为可执行的替代做法。
 
 ---
 
@@ -49,13 +53,23 @@
    仍然要记住的两点：① 有**两个** `IconName` —— `gpui_kit::component::IconName` 是只有 **101** 个变体的兼容子集（`gpui-component-0.6.6/src/icon.rs:18`，由 `build.rs` 按 `default-icons.txt` 过滤生成），要用真字形就得用 `gpui_kit::assets::IconName`（1830 个）；② `Icon::new` / `Button::icon` 收 `impl Into<Icon>`，`impl<T: IconNamed> From<T> for Icon`（`gpui-component-0.6.6/src/icon.rs:59`）对两者都成立，所以换类型即可、不用改写法。变体名 = svg 文件名的 PascalCase（`build.rs:20-51`）；`trash-2.svg` 不存在，所以没有 `Trash2`，用 `Trash`。
 5. **不写平台业务分支**：不给 macOS/Windows 写 `#[cfg]` 业务代码。平台差异（macOS 红绿灯留白 76pt、Windows 最小化/最大化/关闭按钮位置）由 gpui 平台层与 `TitleBar` 自身处理，界面结构三端统一。
 6. **一个区域一个模块**：外壳按区域拆分（`lithe-gpui/shell/src/bin/shell_probe/` 下每区域一个文件），便于并行与替换。
-7. **缺 API 先读源码**：`D:\ProgramData\rust\cargo\registry\src\rsproxy.cn-e3de039b2554c837\gpui-{kit,component,base}-0.6.6\src\`。
+7. **缺 API 先读源码**：读本机 cargo registry 里已解析的 `gpui-kit-*` / `gpui-component-*` / `gpui-base-*` 源码目录（版本以 `rust/Cargo.lock` 为准），不要凭在线文档猜。
 
-### 1.1.1 版本陷阱（0.7.0 文档 vs 0.6.6 实际）
+### 1.1.1 版本陷阱（⚠️ 本节写于 0.6.6 时期，宿主现已升到 0.7）
 
-在线文档与技能文档描述的是**未发布的 0.7.0**。下面这份清单是核对已发布源码后的结论，写代码前先看它：
+**先读这条再往下用**：本节的源码路径与行号来自 **gpui-kit 0.6.6**，而本分支各 crate 现在声明的是
+`gpui-kit = "0.7"`（`rust/lithe-gpui/crates/*/Cargo.toml`），`rust/Cargo.lock` 也已锁定 0.7。
+所以下面表格里的**结论大多仍然成立**（它们描述的是"某个 API 在不在"），但**行号与文件名必须按 0.7 重新核对**
+—— 不要直接引用这些行号。核对办法：读本机 cargo registry 里已解析的 `gpui-kit-0.7.*` / `gpui-component-0.7.*`
+源码，而不是这套 0.6.6 路径。
 
-| 结论 | API | 依据 |
+0.7 已知的一个重要变化（来自
+`.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md` 的状态记录）：
+`Root` 变成"窗口内容 + 浮层宿主"，对话框 / 抽屉 / 通知由 `Root` 的 plugin 层每帧统一渲染，
+**0.6.6 的 `Root::render_dialog_layer / render_sheet_layer / render_notification_layer` 三个手动挂层 API 已删除**
+—— 本文 §1.3 里"浮层必须先挂层"那一大段属于 0.6.6 的做法，在 0.7 上**不要照做**，先核对当前 API。
+
+| 结论（0.6.6 时期记录） | API | 依据 |
 | --- | --- | --- |
 | 0.6.6 **没有** | `gpui_kit::open_window` / `Window::open_window` | `open_window` 只在 `App`（`gpui-pre-0.3.6/src/app.rs:1347`）与 `AsyncApp` 上 |
 | 0.6.6 **没有** | `Task::then`、`Theme::tab_active_bg` | 源码内无此方法 |
@@ -117,7 +131,7 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 
 **为什么旧写法是错的（这是本项目的实际教训）**：`px()` 用的就是那套 DPI 无关单位，`viewport_size()` 已经是它（本机 1440×864），**再除一次 `scale_factor()` 就小了 1.25 倍**。曾经的错误结论"`size_full()` 会大 1.25 倍"来自一个**坏掉的截图工具**：DPI 不感知的进程调 `PrintWindow` 只会拿到虚拟化尺寸（1458×819），恰好把右侧和底部的空白裁掉，于是内容看起来"铺满了"，而 78% 的真相被掩盖。修好截图工具（先 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)`，抓到真实 1823×1024）后一眼就能看到空白。
 
-**截图工具要求（`lithe-gpui/capture-screenshot.ps1`）**：必须先声明 per-monitor-v2 DPI 感知，否则在 125% 缩放的机器上 `GetWindowRect`/`PrintWindow` 都返回虚拟化尺寸、**证据会缺一大截**。脚本现在也支持 `-WholeScreen`（抓整个虚拟屏幕，用来核对窗口占屏幕的比例与位置），默认抓窗口。
+**截图工具要求**：抓包必须用 **DPI 感知**的进程（先声明 per-monitor-v2 DPI 感知），否则在 125% 缩放的机器上 `GetWindowRect`/`PrintWindow` 都返回虚拟化尺寸、**证据会缺一大截**。需要抓整个虚拟屏幕来核对窗口占屏幕的比例与位置时，同样要在感知模式下取全屏矩形。⚠️ 本文早先引用的 `lithe-gpui/capture-screenshot.ps1` **当前工作区里不存在**，需要复现时自己写一个（或从 git 历史的对应提交里取回）。
 
 **单位对账**：真屏 1920×1080 物理 + 125% 缩放；窗口 1823×1024 物理；`viewport_size()` 报 1444×812；`scale_factor()` 报 1.25。**gpui 的布局单位是 `viewport_size()` 那一套（DPI 无关），直接用它或 `.size_full()` 即可，不要再乘/除缩放比。**
 
@@ -129,9 +143,13 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 - 深色主题要显式 `Theme::change(ThemeMode::Dark, None, cx)`（`gpui_kit::init` 默认浅色），macOS 真机默认深色。
 - `Tab::icon()` 会**丢掉 label**，图标+文字要走 `Tab::child(...)`；`TabBar::max_width()` 是标签文字能截断的前提。
 
-**浮层（对话框 / 抽屉 / 通知）：必须先挂层，否则静默不显示**
+**浮层（对话框 / 抽屉 / 通知）—— ⚠️ 本节是 0.6.6 的做法，0.7 上不适用**
 
-这是本项目**踩过的坑**（挂层之前 `shell-probe` 弹不出任何对话框，而且不报错）：
+下面整段记录的是 **gpui-kit 0.6.6** 时期"三层浮层要业务视图自己挂"的坑。**升级到 0.7 后这条前提变了**：
+`Root` 现在是"窗口内容 + 浮层宿主"，对话框 / 抽屉 / 通知由 `Root` 的 plugin 层**每帧统一渲染**，
+`Root::render_dialog_layer / render_sheet_layer / render_notification_layer` 三个手动挂层 API **已删除**。
+所以：**不要照抄下面的挂层写法**，先读本机 registry 里 0.7 的 `Root` 源码确认当前 API；下面保留的是
+当年的现象与排查结论，用来解释"为什么会静默不显示"。
 
 - `Root::render` 只内联了 tooltip、原生菜单兜底、触摸选择三层，**Dialog / Sheet / Notification 三层要业务视图自己挂**（`gpui-component-0.6.6/src/root.rs:185-295` 是静态方法，`:586-602` 的 render 里没有它们）。全仓 grep `render_dialog_layer|render_sheet_layer|render_notification_layer` 无匹配，源码注释直接写着：没挂层的对话框"looks exactly like one that does not open"（`dialog/dialog.rs:287-289`）。
 - 正确形态（官方测试就是这么写的）：在窗口最外层视图的 render 里补
@@ -140,7 +158,7 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 - 命令面板（macOS 没有这个功能，属"用 gpui-kit 优化"的补项）走 **`window.open_dialog` + `Command.bordered(false)`**：Dialog 水平居中（`dialog/dialog.rs:534`）、垂直默认 `viewport/10`（`:529`），Esc 关闭、点外关闭、焦点自动归还全部自带；`Command` 本身只是普通流式 `v_flex`（`command/state.rs:819-837`），**不能直接当浮层**，必须放进 Dialog 这类容器；确认项用 `on_confirm(|IndexPath{section,row,column}|, window, cx)`（`command.rs:157`）。
 - 键盘触发要挂在**有焦点**的根元素上：gpui 的键事件沿"焦点节点的祖先链"派发，焦点为空时只派发到窗口根节点（`gpui-pre-0.3.6/src/window.rs:6244-6252`），所以根 `div()` 要 `.track_focus(&handle)` 且开局 `window.focus(&handle, cx)`。另：Windows 平台对 ⇧ 这类修饰键**只发 `ModifiersChanged`、不构造 KeyDown/KeyUp**（`gpui-pre-windows-0.3.6/src/events.rs:1504-1518`），所以"双击 Shift"要用 `on_modifiers_changed` + 时间戳（阈值 350ms，对齐 macOS `MacShortcutDetector.swift:256-317`），不能用 `on_key_down`。
 - 其余路径的结论：`open_sheet` 是右侧 350px 抽屉（位置不对）；`Popover` 必须有 trigger 且锚在 trigger 上、不能居中；`PopupMenu/ContextMenu` 只挂右键菜单、项里放不了输入框；`Notification` 是角落 Toast 且无 Esc 绑定；自绘 `absolute` + `deferred()` 要自己写遮罩/焦点陷阱/Esc/点外关/焦点归还，等于重造 Dialog。
-- 细节与全部证据：`lithe-gpui/research/gpui-kit-overlay-howto.md`；实机证据：`.artifacts/p1/palette-autotest.png`（面板弹出、分组、首项高亮、背景遮罩都在）。
+- 细节与全部证据：`.artifacts/p1/palette-autotest.png`（面板弹出、分组、首项高亮、背景遮罩都在）。⚠️ 早先提到的 `lithe-gpui/research/gpui-kit-overlay-howto.md` **当前工作区里不存在**，浮层 API 请直接读 registry 里已解析版本的源码。
 
 **能力缺口（需要自研或引第三方 crate）**
 
@@ -163,17 +181,22 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 
 ---
 
-## 2. 逐区域对应（规格来源：Windows 前端）
+## 2. 逐区域对应（规格来源：macOS 前端）
 
-> 界面规格已改为 **Windows 前端**（`windows/tauri/src/features/*`，Tauri v2 + React + Tailwind + shadcn）。
-> 逐区域对应表在 **`UI-MAP-WINDOWS.md`**，由 `lithe-gpui/research/windows/` 六份调研汇总：
-> `01-shell.md`（外壳/标题栏/活动栏/状态栏）、`02-editor-sidebar.md`（编辑区/标签栏/侧栏）、
-> `03-git-and-bottom.md`（Git 工具窗/底部窗）、`04-theme-and-components.md`（token + 组件映射）、
-> `05-terminal-run-debug.md`（终端/运行/调试）、`06-database-ai-search.md`（数据库/AI/搜索）。
+> **界面规格 = macOS 前端**（`macos/Sources/Lithe/Views/`，SwiftUI/AppKit）。本节的区域组成、度量与
+> "macOS 出处 → gpui-kit 实现"对照表**重新成为规格**，不再降级为行为对照。
 >
-> macOS 那份逐区域调研已移到 **`docs/archive/ui-map-macos.md`**，**只作行为/功能对照**，不要当尺寸来源。
+> 写作时用到的 macOS 原始区域调研（`.artifacts/ui-map/01..08`）与它的汇总文档
+> （`docs/archive/ui-map-macos.md`）**在当前工作区都不存在**；需要核对某个区域时，直接读
+> `macos/Sources/Lithe/Views/` 下对应的 Swift 源码。
+>
+> ⚠️ 本节的部分"度量"是在 gpui-kit 0.6.6 时期量的，配合 §1.1.1 的版本提醒一起看：结论可用，行号要重核。
+>
+> 2026-09-25 曾把规格改为 Windows 前端，计划中的 `lithe-gpui/UI-MAP-WINDOWS.md` 与
+> `lithe-gpui/research/windows/01..06-*.md` **从未落地**（源目录在被写之前就删了），不要去找。
 
 ---
+
 ## 3. 验收清单（复刻完成时逐条过）
 
 1. 每个区域的**组成与层级**与 macOS 一致（区域清单逐项对照各节"组成"）。
@@ -182,4 +205,4 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 4. 状态齐全：空 / 加载 / 失败 / 禁用 / 选中 / 悬停，逐一可见（macOS 缺的按"优化"补上）。
 5. 文案与 macOS 本地化原文逐字一致（中文）。
 6. 没有裸色值、没有平台业务分支、没有默认图标集之外的字形。
-7. 证据：截图 + 日志落到 `.artifacts/p1/`，并在 `PLAN.md` 的当前状态里更新。
+7. 证据：截图 + 日志落到 `.artifacts/p1/`，并在 `HANDOFF.md` 的当前状态里更新（`PLAN.md` 已不存在）。

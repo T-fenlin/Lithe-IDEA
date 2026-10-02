@@ -160,5 +160,9 @@ Note 中；正式契约、源码、夹具和验证脚本分别作为各自表面
 - `infra/`
 - `third_party/`
 
-> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除；删除前的
-> 布局与决策记录见 git tag `legacy-frontends-final`。
+> **历史标注（2026-10-02）**：下面"验证"里以 `windows/tauri/**`、`bun test`、Windows Tauri 宿主
+> `cargo test` 开头的命令，**随 Windows 前端删除而全部失效**，仅作历史记录；界面规格真源已改为
+> macOS 前端（`macos/Sources/Lithe/Views/`）。需要复跑等价验证时，用 `rust/` workspace 里对应的
+> `cargo test -p <crate>`，或本仓库真实的校验脚本（`scripts/verify-rust-core.sh`、`scripts/verify-shared-contracts.sh`）。
+> `windows/`、`frontend/editor/`、`Plugins/` 三个旧前端已删除，删除前的布局与决策记录见
+> git tag `legacy-frontends-final`。**`macos/` 未删除**：它保留为本分支的界面规格（UI 规格来源）真源。

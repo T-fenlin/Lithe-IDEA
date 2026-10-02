@@ -1,10 +1,28 @@
 # GPUI 重写：会话交接提示词（HANDOFF）
 
 > 用法：新会话开场把本文件路径给代理即可，例如
-> 「读 `lithe-gpui/HANDOFF.md` 与 `lithe-gpui/PLAN.md`，按里面的队列继续做源代码管理之后的部分；
+> 「读 `lithe-gpui/HANDOFF.md` 与 `lithe-gpui/UI-MAP.md`，按里面的队列继续做源代码管理之后的部分；
 > 先跑一遍当前状态核查（`git log`/`git status`/构建），再动手。」
-> 本文件是**操作手册**（怎么做、坑在哪、状态在哪）；设计取舍的长期真源是 `PLAN.md` 与
-> `research/**`，不要重复记。
+> 本文件是**操作手册**（怎么做、坑在哪、状态在哪）；设计取舍的长期真源是
+> `UI-MAP.md`（界面规格，源 = macOS 前端）与
+> `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`
+> （路线图与决策），不要重复记。
+
+> ## ⚠️ 先读：本文件当前与工作区的三处不一致（2026-10-02 核对）
+>
+> 1. **界面规格来源 = macOS 前端**，不是 Windows。正文里凡是"Windows 真源""`research/windows/NN-*.md` 规格"
+>    的说法**一律作废**。规格真源现在是 `macos/Sources/Lithe/Views/`（SwiftUI/AppKit）；逐区域对应表在
+>    `UI-MAP.md`。
+> 2. **正文大量引用的 `lithe-gpui/PLAN.md`、`lithe-gpui/research/**`、`lithe-gpui/capture-screenshot.ps1`、
+>    `lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/**` 在当前工作区里都不存在**。因此"见 `PLAN.md` §X"这类索引
+>    现在无法跳转 —— 需要那段历史时从 git 历史取回对应提交，不要以为它们还在。
+> 3. **gpui-kit 版本已从 0.6.6 升到 0.7**（各 crate 声明 `gpui-kit = "0.7"`）。正文里带 `0.6.6` 的源码路径
+>    与行号只能当"当时的依据"，结论要按 registry 里已解析的 0.7 源码重新核对。
+> 4. **构建已修好并实测通过（2026-10-02）**：`lithe-core` 从 `main` 同步后依赖 `lithe-agent-host` 与
+>    `lithe-ide-host`（已一并同步并加入 `rust/Cargo.toml` 的 `members`）；另需把 `lithe-core` 的
+>    `tree-sitter` 从 `0.25` 升到 `0.26`（gpui-kit 0.7 要求 0.26.13，`links` 冲突不允许共存）并修一处
+>    `Node::child` 的 `usize`→`u32`。`shared/` 也已从 `main` 同步。`cargo build … --bin Lithe` 已通过；
+>    `lithe-core` 762 条测试 761 通过，1 条历史分页测试因本机临时目录权限失败。
 
 ---
 
@@ -484,19 +502,24 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `lithe-gpui/PLAN.md` | 执行计划；**§9 阶段 9 编辑器 / §10 Java 导航（两批）/ §11 协作纪律** 是本会话定的 |
-| `lithe-gpui/research/windows/01…12-*.md` | Windows 真源逐区域规格（01 shell / 02 explorer / 03 git+底部 / 04 主题与组件 / 05 终端运行调试 / 06 数据库 AI 搜索 / **07 设置界面** / **08 源代码管理** / **09 标签右键菜单** / **10 主菜单栏** / **11 项目下拉** / **12 分支弹窗**） |
-| `lithe-gpui/research/editor-syntax-highlighting.md` | 语法高亮的两处缺口、语言↔扩展名映射、判据与主题坑 |
-| `lithe-gpui/research/app-icon-and-assets.md` | `AssetSource` 机制、`WindowOptions.icon` 只对 X11 有效、exe 图标必须走资源 ID 1 |
-| `lithe-gpui/research/icon-asset-inventory.md` | 我们用的 27 个 Lucide 字形 ↔ 真源对应物（哪些能 1:1、哪两个只有内联组件） |
-| `lithe-gpui/research/legacy-frontend-removal-audit.md` | 删旧前端的分步流程、阻塞项、CI 影响、死链接清单 |
+| `lithe-gpui/UI-MAP.md` | **界面规格 + gpui-kit 实现规则 + 逐区域对应表（规格 = macOS 前端）**，接手第一份读它 |
+| `macos/Sources/Lithe/Views/` | **界面规格真源**（SwiftUI/AppKit，158 个 Swift 文件）；要改尺寸/布局/观感就查这里 |
+| `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md` | 为什么这样做、阶段划分、决策门 |
+| `lithe-gpui/README.md` | 怎么跑起来、已验证的接口事实、硬约束 |
+| `lithe-gpui/BLOCKERS.md` | 当前卡住的事 |
 | `lithe-gpui/assets/README.md` §7 | 图标资源来源 + 全量复核脚本 |
-| `lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/**` | gpui-kit **0.6.6** 本地文档镜像（**规格真源是 0.6.6，不是在线 `versions/main`**）；`docs/design-guides.md` 是界面验收的硬要求 |
+| `lithe-gpui/crates/shared/locales/README.md` | 界面文案真源（已内置到本仓库）与 `extract-locale.mjs` 的用法 |
+
+> ~~`lithe-gpui/PLAN.md`~~、~~`lithe-gpui/research/**`~~、~~`lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/**`~~、
+> ~~`lithe-gpui/capture-screenshot.ps1`~~：**这些文件在当前工作区都不存在**，本表原先列的行已删除。
+> 需要其中某一份时，从 git 历史（或 `legacy-frontends-final` 之前的提交）取回。
+> `research/windows/01…12-*.md` 那批 Windows 逐区域规格**随 Windows 前端一起失效**，不要再当规格用。
 
 ## 7. 可直接粘贴的开场提示（给自己或新会话）
 
-> 读 `lithe-gpui/HANDOFF.md`、`lithe-gpui/PLAN.md`（§9/§10/§11）与 `lithe-gpui/research/legacy-frontend-removal-audit.md`。
-> 先做状态核查：`git log --oneline -6`、`git status --short`、`cargo build --bin Lithe`（**重定向到
+> 读 `lithe-gpui/HANDOFF.md`（先看开头的"三处不一致"）与 `lithe-gpui/UI-MAP.md`；
+> 界面规格以 `macos/Sources/Lithe/Views/` 为准。
+> 先做状态核查：`git log --oneline -6`、`git status --short`、`cargo build --manifest-path rust/Cargo.toml -p lithe-gpui-app --bin Lithe`（**重定向到
 > `.artifacts/pN/build.log` 再 grep，不要用管道**）。若工作区有未提交的改动，判断属于队列里哪一项，
 > 按 HANDOFF §4 的验收方式复核后提交（**只 `git add` 需要的那几个路径**）。
 > 然后按 HANDOFF §4 的队列往下做：设置剩余页（除 AI）→ 删前端前置（gpui CI → 字体迁移 →

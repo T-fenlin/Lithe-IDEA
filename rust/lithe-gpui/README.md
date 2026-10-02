@@ -1,21 +1,26 @@
 # `lithe-gpui/` — GPUI Kit 宿主
 
-> **先读 [`UI-MAP.md`](./UI-MAP.md)**（界面规格：macOS 界面逐区域 → gpui-kit 组件的对应表）
-> 与 [`PLAN.md`](./PLAN.md)（执行计划：下一步做什么、怎么算做完、当前差距）。
+> **先读 [`UI-MAP.md`](./UI-MAP.md)**（界面规格：**macOS 前端**逐区域 → gpui-kit 组件的对应表，
+> 规格真源是 `macos/Sources/Lithe/Views/`）。
 > 本文件只讲**怎么跑**、**已经验证过的接口事实**和**硬约束**。
+> 交接现状见 [`HANDOFF.md`](./HANDOFF.md)，当前阻塞见 [`BLOCKERS.md`](./BLOCKERS.md)。
 
-这个目录是「用 GPUI Kit 统一三端界面」方向的落地起点。它**独立于现有产品**：不修改 `macos/`、`windows/`、`rust/`、`shared/`、`Plugins/` 的任何现有文件。
+这个目录是「用 GPUI Kit 统一三端界面」方向的落地实现。宿主与 `lithe-core` 同在
+`rust/` 这一个 Cargo workspace 里（`rust/Cargo.toml` 的 `members` 列出 `lithe-gpui/crates/*`）。
 
 决策依据见
 [`.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`](../.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md)。
 
+> ⚠️ **版本口径**：下面「已经验证过的接口事实」一节写于 **gpui-kit 0.6.6** 时期，而各 crate 现在声明的是
+> `gpui-kit = "0.7"`。带 `0.6.6` 的源码路径与行号只能当"当时的依据"读，**结论要按 registry 里已解析的
+> 0.7 源码重新核对**，尤其是 `Root` 与浮层挂载相关的部分（0.7 由 `Root` 的 plugin 层统一渲染浮层）。
+
 ## 跑起来
 
 ```powershell
-cd gpui
-cargo build --bin Lithe
+cargo build --manifest-path rust/Cargo.toml -p lithe-gpui-app --bin Lithe
 # 参数 = 工作区根
-.\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA
+.\rust\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA
 ```
 
 `--theme` / `--locale` 是**显式覆盖**（只作用于这一次启动、**不写回设置文件**，供 `.artifacts/` 的
@@ -23,17 +28,18 @@ cargo build --bin Lithe
 主题与界面语言的常规来源是**设置文件**（见下）：
 
 ```powershell
-.\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --theme "Lithe Light"
-.\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --locale en
-.\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --open-settings
+.\rust\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --theme "Lithe Light"
+.\rust\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --locale en
+.\rust\target\debug\Lithe.exe D:\developmentProjects\rust\Lithe-IDEA --open-settings
 ```
 
 - 窗口尺寸从主显示器的可见区域算（`startup_window_bounds`），**不写死机器路径**；
 - 界面数据来自 Rust Core（`core.ping` / `workspace.snapshot`），跑在后台线程，窗口期间保持可交互；
-- 截图证据（只抓目标窗口，不抓整个桌面）：
+- 截图证据必须用 **DPI 感知**的抓取方式（不感知只会拿到虚拟化尺寸，证据会缺一大截）。
+  ⚠️ 早先引用的 `lithe-gpui/capture-screenshot.ps1` **当前工作区里不存在**，需要时自己写一个：
 
   ```powershell
-  pwsh -File gpui\capture-screenshot.ps1 -OutputPath .artifacts\p1\shot.png -ProcessName Lithe
+  # 自备脚本，进程内先声明 per-monitor-v2 DPI 感知，再抓目标窗口
   ```
 
 ## 设置（`crates/settings`）
@@ -60,12 +66,14 @@ cargo build --bin Lithe
   写入是**原子写 + 300ms 防抖**（重置/恢复默认立即写）。
 - 入口：左侧活动栏第 9 项「设置」或 `Ctrl+,`；`--open-settings` 供机器验证。
 - v1 只有「常规」（语言，**重启后生效**）与「外观」（配色主题 / 外观模式 / 界面字号 / 显示状态栏，
-  全部立即生效）两页；其余 10 个分类的取舍与前置条件见 [`PLAN.md`](./PLAN.md) §8。
+  全部立即生效）两页；其余 10 个分类的取舍与前置条件原先记在 `PLAN.md` §8 —— **该文件已不在工作区**，
+  需要时从 git 历史取回。
 
 ## 目录结构
 
 按 gpui-kit《编码指南》"**按业务能力组织 crate、依赖只向下**"分层
-（`lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/docs/coding-guides.md`）。依赖图：
+（上游那份 `coding-guides.md` 的本地镜像 `lithe-gpui/docs/gpui-kit/**` **已不在工作区**；
+按需查 `https://gpui-kit.com` 或 registry 里的源码）。依赖图：
 
 ```text
 app → workbench → {editor, explorer, git, terminal} → shared
@@ -84,15 +92,20 @@ workbench → settings
 | `crates/settings/` | 设置：模型（`schema`）/ 路径（`paths`）/ 持久化（`persistence`）/ 主题应用（`theme`）/ 状态与副作用（`store`）/ 行与分组（`row`）/ 对话框（`dialog`）。**只向下依赖** `gpui-kit` + `shared` + serde |
 | `crates/shared/` | 跨 Feature 的稳定能力：Core 信封层（`core_client`）+ i18n 包装（`i18n`），`locales/` 也在这里 |
 
-`lithe-gpui/` 根下还有：`themes/`（运行时按目录加载并监听的 Lithe 主题）、`tools/extract-locale.mjs`
-（从 `windows/tauri/src/i18n/locale.ts` 提取 locale 的脚本）、`docs/`（文档索引 + 上游 0.6.6 文档镜像）、
-`research/`（Windows 调研原文）、`capture-screenshot.ps1`（DPI 感知截图）。
+`lithe-gpui/` 根下还有：`themes/`（运行时按目录加载并监听的 Lithe 主题）、`tools/`
+（`extract-locale.mjs` 从**仓库内置**的文案真源 `crates/shared/locales/source/*.ts` 生成 i18n 资源；
+`generate-idea-icons.mjs` + `idea-icon-mappings.json` 生成图标；`check-ui-px.mjs` 守硬编码 px）、
+`assets/`、`extensions/`。
 
-## 已经验证过的接口事实（0.6.6）
+> 早先这里还列过 `docs/`（上游 0.6.6 文档镜像）、`research/`（Windows 调研原文）与
+> `capture-screenshot.ps1`——**这三项目前都不在工作区里**，Windows 调研也已随前端失效。
 
-判断依据一律是**已发布源码**：`D:\ProgramData\rust\cargo\registry\src\rsproxy.cn-e3de039b2554c837\gpui-{kit,component,base}-0.6.6\src\`。
+## 已经验证过的接口事实（写于 0.6.6，宿主现已升到 0.7）
 
-### 启动顺序（0.6.6 只有这一种写法）
+判断依据一律是**已发布源码**，读本机 cargo registry 里已解析的版本（版本号以 `rust/Cargo.lock` 为准；
+本节的行号来自 0.6.6，升级到 0.7 后需要重新核对）。
+
+### 启动顺序（0.6.6 的写法，0.7 请核对 `Root` 的新行为）
 
 ```rust
 gpui_kit::application().with_assets(gpui_kit::assets::AllAssets).run(move |cx| {
@@ -137,7 +150,7 @@ div().size_full() /* ... */
 
 单位对账：真屏 1920×1080 物理 + 125% 缩放时，窗口是 1823×1024 物理，而 `viewport_size()` 报 1444×812、`scale_factor()` 报 1.25 —— **布局单位就用 `viewport_size()` 那一套，不乘不除**。
 
-截图必须用 **DPI 感知**的 `capture-screenshot.ps1`（脚本里已 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)`，并支持 `-WholeScreen`）；DPI 不感知的抓法只会拿到虚拟化尺寸（1458×819），**证据会缺一大截**，曾因此把"内容只占 78%"误判成"已经铺满"。
+截图必须用 **DPI 感知**的抓取方式（进程内先声明 per-monitor-v2 DPI 感知）；DPI 不感知的抓法只会拿到虚拟化尺寸（1458×819），**证据会缺一大截**，曾因此把"内容只占 78%"误判成"已经铺满"。⚠️ 早先引用的 `lithe-gpui/capture-screenshot.ps1` **当前工作区里不存在**，需要时自己写一个（或从 git 历史取回）。
 
 不清算会让根视图高 1/scale，**底部状态栏被切出窗口**（本项目反复踩过）。
 
@@ -182,7 +195,9 @@ macOS 端编辑内容是 WKWebView 里的 Monaco（`Platform/MacOS/MonacoWorkben
 ## 约束
 
 - **只以 `gpui-kit` 为准**。`gpui-elements`、`gpui-macros`（第三方）明确禁用：它们教的是裸 GPUI 写法，会跳过 `gpui-kit` 的 `Root` 挂载，浮层与弹窗失效。
-- **依赖精确钉版本**（`gpui-kit = "=0.6.6"`）并提交 `Cargo.lock`。上游窗口创建 API 近期变更过，宽松版本范围会让构建结果漂移。
+- **版本按实版声明 + 提交 `Cargo.lock` 保证可复现**。各 crate 现在写的是 `gpui-kit = "0.7"`（不是精确钉版本），
+  可复现性由**提交进仓库的 `rust/Cargo.lock`** 保证：只有显式 `cargo update` 才会移动版本。
+  上游窗口创建 API 变更过，升级时逐处复核。
 - **不写平台专属分支**：目标是一套代码三端用，`#[cfg]` 不进业务逻辑。
 - **架构观察**：编辑器内容宿主、终端、Core 状态机都在演化，任何"临时实现"都要在注释里写清归属与后续接线点。
 
@@ -190,7 +205,36 @@ macOS 端编辑内容是 WKWebView 里的 Monaco（`Platform/MacOS/MonacoWorkben
 
 | 平台 | 状态 |
 | --- | --- |
-| Windows | 可用：构建通过、真实 Core 数据、界面按 `UI-MAP.md` 逐区域对齐中；证据在 `.artifacts/p1/`。 |
-| macOS / Linux | **未验证**：本方向当前只在 Windows 上验证过；三端构建与 CI 属路线图 P6。**不要声称 macOS 已验证。** |
+| Windows | 历史上的构建通过、真实 Core 数据、界面按 `UI-MAP.md` 逐区域对齐；证据在 `.artifacts/p1/`（该目录不入库）。 |
+| macOS / Linux | **未验证**：本方向只在 Windows 上验证过；三端构建与 CI 属路线图 P6。**不要声称 macOS 已验证。** |
+
+> ⚠️ **当前构建状态（2026-10-02 实测）**：
+>
+> 1. **已构建通过**：
+>
+>    ```text
+>    cargo build --manifest-path rust/Cargo.toml -p lithe-gpui-app --bin Lithe
+>    → Finished `dev` profile [unoptimized + debuginfo] target(s) in 6m 26s
+>    → rust/target/debug/Lithe.exe（约 102 MB）
+>    ```
+>
+> 2. 为让"main 的 `lithe-core` + 本分支 gpui 宿主"能同时构建，本次动了四处（**都不改 `lithe-core` 的业务逻辑**）：
+>
+>    | 调整 | 原因 |
+>    | --- | --- |
+>    | `rust/Cargo.toml` 的 `members` 补上 `lithe-agent-host`、`lithe-ide-host` | 它们是 `lithe-core` 的 path 依赖，缺了连 manifest 都解析不了 |
+>    | `rust/lithe-core/Cargo.toml`：`tree-sitter` `0.25` → `0.26` | gpui-kit 0.7 依赖 `tree-sitter 0.26.13`，两者都声明 `links = "tree-sitter"`，0.25 与 0.26 不能共存 |
+>    | `rust/lithe-core/src/languages/mybatis.rs:220`：`node.child(index as u32)` | tree-sitter 0.26 的 `Node::child()` 收 `u32`（0.25 收 `usize`） |
+>    | `shared/` 从 `main` 同步（+22 个文件、改 9 个，未删任何分支独有文件） | `lithe-core` 的测试用 `include_str!` 引用 main 上才有的 fixture |
+>
+> 3. **`lithe-core` 测试：762 条里 761 条通过，1 条失败**。
+>    `git::history::tests::date_order_pages_interleave_branches_and_preserve_cursor_policy` 在
+>    `history.rs:952` 的 `create_dir_all` 报 `PermissionDenied (os error 5)`。已排除环境能力问题
+>    （独立的 Rust 程序能在同一临时目录建目录），判定为该测试的隔离/清理逻辑在本机受限，与本次
+>    `tree-sitter` 调整无关（涉及 tree-sitter 的 java / mybatis 测试全部通过）。
+>
+> 4. ⚠️ **仓库的 `scripts/verify-*.sh` 系列在本机跑不起来**：它们依赖 `rg`、`ruby`、`awk`，
+>    而本机三者都缺（`find` 还是 Windows 自带的 `find.exe`）。用 Node 写的
+>    `scripts/verify-agent-notes.mjs` 可以正常跑。
 
 `.artifacts/` 已被仓库根 `.gitignore` 忽略；构建日志、截图、Core 原始响应都写在那里。

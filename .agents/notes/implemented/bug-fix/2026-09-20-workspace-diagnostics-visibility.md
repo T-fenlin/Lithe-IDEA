@@ -158,6 +158,11 @@ if (!isDocumentOpen(published)) return;
 
 ## 验证
 
+
+> **历史标注（2026-10-02）**：下面"验证"里以 `windows/tauri/**`、`bun test`、Windows Tauri 宿主
+> `cargo test` 开头的命令，**随 Windows 前端删除而全部失效**，仅作历史记录；界面规格真源已改为
+> macOS 前端（`macos/Sources/Lithe/Views/`）。需要复跑等价验证时，用 `rust/` workspace 里对应的
+> `cargo test -p <crate>`，或本仓库真实的校验脚本（`scripts/verify-rust-core.sh`、`scripts/verify-shared-contracts.sh`）。
 - 旧前端（已删除）：`cd windows/tauri && bun test src/features/editor/lsp`
   （`diagnostics-file-path.test.ts` 覆盖工作区内保留、已知 buffer 优先、工作区外
   丢弃、同名前缀目录不算包含、分隔符归一、POSIX 大小写敏感；

@@ -334,6 +334,11 @@ dlopen）。语法集是**编译期固定**的 35 个（\`Language\` 枚举按 f
 
 ## 验证
 
+
+> **历史标注（2026-10-02）**：下面"验证"里以 `windows/tauri/**`、`bun test`、Windows Tauri 宿主
+> `cargo test` 开头的命令，**随 Windows 前端删除而全部失效**，仅作历史记录；界面规格真源已改为
+> macOS 前端（`macos/Sources/Lithe/Views/`）。需要复跑等价验证时，用 `rust/` workspace 里对应的
+> `cargo test -p <crate>`，或本仓库真实的校验脚本（`scripts/verify-rust-core.sh`、`scripts/verify-shared-contracts.sh`）。
 - `cargo test --manifest-path rust/Cargo.toml -p lithe-core`：plugins 用例全部通过
   （v2 校验、分类覆盖、v1 拒绝、`plugins.listCatalog` 信封级正反用例）。git/lsp
   引擎在本机有与本次无关的既有失败（干净基线同样失败，已复核）。

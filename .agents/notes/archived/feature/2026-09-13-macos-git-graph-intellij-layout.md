@@ -2,7 +2,7 @@
 
 状态：已实现
 归档日期：2026-09-28
-归档原因：布局实现在已删除的 macOS Git 图。
+归档原因：布局实现在已退役的 macOS Git 图（**Swift 源码仍保留为界面规格真源**）。
 
 关联需求：[Issue #410](https://github.com/1lck/Lithe-IDEA/issues/410)。
 

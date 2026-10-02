@@ -24,6 +24,10 @@ those notes, load `.agents/skills/agent-notes/SKILL.md`.
 - For resizable panels, splitters, continuous dragging, or other high-frequency
   UI interaction, also read
   `.agents/notes/implemented/architecture/2026-09-13-resizable-ui-performance-boundaries.md`.
+- For any UI size, layout, hierarchy, or visual change, the UI specification source of
+  truth is the **macOS front end** (`macos/Sources/Lithe/Views/`), with the per-region
+  mapping in `rust/lithe-gpui/UI-MAP.md`. Do not cite `windows/tauri/**`: that front end
+  was removed and its research notes are void.
 - Do not introduce a new architectural direction as part of an unrelated task.
 
 ## Reuse mature developer tooling before building replacements
@@ -66,12 +70,19 @@ individual upstream commands were called.
 
 ## Respect repository ownership
 
-Lithe is a pure Rust repository. The Swift macOS product, the React/Tauri Windows
-product, and the shared Monaco editor package were removed; `rust/lithe-gpui/` is the only
-host.
+Lithe 的界面层正在收敛为纯 Rust：`rust/lithe-gpui/` 是唯一的界面宿主。React/Tauri 那份
+Windows 前端（`windows/`）、共享 Monaco 包（`frontend/editor/`）与 `Plugins/` 已从本仓库删除。
+
+**`macos/` 仍然保留，而且它是界面规格真源**：查尺寸、布局、层级、观感一律读
+`macos/Sources/Lithe/Views/`（SwiftUI/AppKit）。它不再是要维护的第二套产品，但也不是"已删除"，
+不要把它当成不存在的路径。这条规格来源变更记在
+`.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`。
+
+界面逐区域对应表在 `rust/lithe-gpui/UI-MAP.md`；所有 `windows/tauri` 相关的调研与对照一律作废。
 
 | Path | Responsibility |
 | --- | --- |
+| `macos/` | **界面规格真源**（SwiftUI/AppKit 界面、平台适配、服务编排）。只读参考，不是要维护的产品 |
 | `rust/lithe-core/` | Deterministic commands, models, validation, and the JSON command envelope |
 | `rust/lithe-gpui/crates/app/` | App Shell: composition root, window sizing, startup order, settings load and theme application |
 | `rust/lithe-gpui/crates/workbench/` | Workbench shell: title bar, project tabs, activity bar, status bar, central column |
@@ -167,7 +178,7 @@ the existing stack can reasonably avoid.
 
 Apply the following comment standard to first-party code under
 `rust/lithe-core/`. It does not require comment coverage in the database helpers,
-Windows/Tauri Rust crates, generated code, or third-party sources.
+generated code, or third-party sources.
 
 - Write comments in English and keep them accurate when behavior changes.
 - Start each production module with a concise `//!` description of its

@@ -235,8 +235,8 @@ shutdown 在收到响应后发送 exit，超时则强制终止；`Content-Length
 生产 Swift 代码不再持有 LSP `Content-Length`、原始 JSON-RPC 请求 ID、
 frame 缓冲区、open-document 集合、pending LSP 请求或语言服务器子
 进程。
-真实 gopls 集成验证原本在 macOS 侧的 `RealGoplsIntegrationTests.swift`（随旧前端删除，
-运行方式见 git tag `legacy-frontends-final`）；gpui 侧目前只覆盖 Java，接入新语言服务器时
+真实 gopls 集成验证原本在 macOS 侧的 `RealGoplsIntegrationTests.swift`（**Swift 源码仍在
+`macos/` 下可读**，但该测试不随 CI 运行；历史运行方式见 git tag `legacy-frontends-final`）；gpui 侧目前只覆盖 Java，接入新语言服务器时
 需要补回等价验证。接入新语言服务器的检查清单见
 [`rust/lithe-core/src/lsp/languages/catalog.rs`](../../../../rust/lithe-core/src/lsp/languages/catalog.rs)
 头部注释。
@@ -249,5 +249,11 @@ frame 缓冲区、open-document 集合、pending LSP 请求或语言服务器子
 - `rust/lithe-core/resources/lsp/language-providers.json`
 - `docs/reference/language-providers.schema.json`
 
-> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
-> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。
+> **历史标注（2026-10-02）**：下面"验证"里以 `windows/tauri/**`、`bun test`、Windows Tauri 宿主
+> `cargo test` 开头的命令，**随 Windows 前端删除而全部失效**，仅作历史记录；界面规格真源已改为
+> macOS 前端（`macos/Sources/Lithe/Views/`）。需要复跑等价验证时，用 `rust/` workspace 里对应的
+> `cargo test -p <crate>`，或本仓库真实的校验脚本（`scripts/verify-rust-core.sh`、`scripts/verify-shared-contracts.sh`）。
+> `windows/`、`frontend/editor/`、`Plugins/` 三个旧前端已删除，原先列在这里的路径不复存在。
+> **`macos/` 未删除**：它是本分支界面规格（UI 规格来源）的真源，路径仍然有效，见
+> `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`。
+> 正文引用的已删除前端类名与行号对应 git tag `legacy-frontends-final`。

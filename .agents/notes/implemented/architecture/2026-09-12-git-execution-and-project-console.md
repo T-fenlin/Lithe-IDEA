@@ -201,5 +201,11 @@ Windows CI 使用同一计时工具执行生命周期日志回归并保留 HTML/
 - `shared/fixtures/git/`
 - `shared/contracts/rust-core-api.md`
 
-> 旧前端（`macos/`、`windows/`、`frontend/editor/`、`Plugins/`）已删除，原先列在这里的路径不复存在。
-> 正文引用的类名与行号对应 git tag `legacy-frontends-final`（最后一份含旧前端的提交）。
+> **历史标注（2026-10-02）**：下面"验证"里以 `windows/tauri/**`、`bun test`、Windows Tauri 宿主
+> `cargo test` 开头的命令，**随 Windows 前端删除而全部失效**，仅作历史记录；界面规格真源已改为
+> macOS 前端（`macos/Sources/Lithe/Views/`）。需要复跑等价验证时，用 `rust/` workspace 里对应的
+> `cargo test -p <crate>`，或本仓库真实的校验脚本（`scripts/verify-rust-core.sh`、`scripts/verify-shared-contracts.sh`）。
+> `windows/`、`frontend/editor/`、`Plugins/` 三个旧前端已删除，原先列在这里的路径不复存在。
+> **`macos/` 未删除**：它是本分支界面规格（UI 规格来源）的真源，路径仍然有效，见
+> `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md`。
+> 正文引用的已删除前端类名与行号对应 git tag `legacy-frontends-final`。
