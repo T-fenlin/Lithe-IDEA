@@ -629,8 +629,8 @@ fn header(
         .border_color(cx.theme().border)
         .child(
             // 尺寸与前景色由 `icon()` 自己按字形决定（彩色标志不吃 `text_color`），
-            // 这里只给边长：头部 16 = `rems(1.)`。
-            view.icon(cx, rems(1.)),
+            // 这里只给边长：头部 20 = `rems(1.25)`。
+            view.icon(cx, rems(1.25)),
         )
         .child(
             div()
