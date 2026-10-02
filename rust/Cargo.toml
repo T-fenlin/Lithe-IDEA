@@ -18,6 +18,10 @@ members = [
     "lithe-git-host",
     "lithe-db-sidecar",
     "lithe-db-mcp",
+    # `lithe-core` 的 path 依赖：agent 会话宿主与 IDE/MCP 宿主进程。
+    # 两者随 lithe-core 一起从 main 同步进来；缺任何一个整个 workspace 都解析不了 manifest。
+    "lithe-agent-host",
+    "lithe-ide-host",
     "lithe-gpui/crates/*",
 ]
 resolver = "3"

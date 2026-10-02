@@ -216,7 +216,9 @@ fn collect_types(
             }
         }
         // Reverse the push order to preserve the recursive walk's source preorder.
-        for index in (0..node.child_count()).rev() {
+        // tree-sitter 0.26 takes a `u32` child index (0.25 took `usize`); a node's
+        // child count cannot exceed `u32`, so the narrowing cast is lossless.
+        for index in (0..node.child_count() as u32).rev() {
             if let Some(child) = node.child(index) {
                 pending.push(child);
             }

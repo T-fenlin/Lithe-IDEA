@@ -1,34 +1,201 @@
 # Rust Core API
 
-The Rust core is the deterministic application runtime. The gpui host in `rust/lithe-gpui/`
-is its only consumer, and it **links the Rust crate directly**: there is no C
-bridge, no `staticlib` force-load, and no per-command host shim.
+The Rust core is the shared application runtime for macOS SwiftUI and Windows
+React/Tauri. macOS calls the stable C ABI while the Tauri host links the Rust
+crate directly. The C ABI remains:
 
-> **C ABI 已退役。** 旧 macOS 产品通过 `macos/Sources/LitheRustCore/bridge.c` 的稳定
-> C ABI 接入 Core。那条链路随旧前端一起删除后，`lithe_core.h` 与
-> `rust/lithe-core/src/runtime/ffi.rs` 里的 7 个导出函数**没有任何调用方**。它们仍是
-> 有效的导出，但已无消费者；删除前要先确认没有外部 crate 依赖该符号。退役记录见
-> git tag `legacy-frontends-final`。
+```c
+const char *lithe_core_version(void);
+char *lithe_core_execute_json(const char *request);
+char *lithe_core_execute_json_with_events(const char *request, void (*callback)(const char *, void *), void *context);
+int32_t lithe_core_git_askpass(const char *prompt);
+char *lithe_core_lsp_provider_catalog_json(const char *workspace_root);
+int32_t lithe_core_cancel(const char *operation_id);
+void lithe_core_free_string(char *value);
+void *lithe_agent_open_json(const char *configuration, void (*callback)(const char *, void *), void *context);
+int32_t lithe_agent_send_json(void *handle, const char *command);
+void lithe_agent_close(void *handle);
+```
 
-A Rust host calls `lithe_core::execute_json` and `lithe_core::cancel_operation`
-directly. It also calls `lithe_core::execution::plan_launch_command` before
-spawning a Java process. It estimates the Windows command-line limit and moves
-oversized classpath/module-path options into argument-file text. The planner
-requires a Java executable and a known JDK feature version of at least 9,
-obtained through `java_feature_version_from_release`; other launches remain
-unchanged. It stops at the application target (class, JAR, or module),
-preserving all program arguments. Core owns the Unicode argument-file text and
-quoting. The host encodes that text losslessly using the launcher's actual system
-code page, independently of the JDK feature version: JEP 400 does not make
-native launcher arguments UTF-8. An unrepresentable path is reported as an
-actionable failure, never substituted. The host also escapes backslash bytes
-introduced by multibyte encoding inside quoted values, since the native
-argument-file parser processes bytes. Every execution owns an exclusively
-created temporary file; partial writes and spawn failures clean it up, while
-successful launches retain it until that exact process exits. A replacement
-execution never shares its predecessor's file. Strings crossing the boundary are
-UTF-8 JSON allocated by Rust; in Rust they are ordinary `String`/`&str` and need
-no manual release.
+The macOS package uses the small C bridge in `macos/Sources/LitheRustCore/`. The
+canonical C declarations are in `rust/lithe-core/include/lithe_core.h`.
+Native clients can link the same `staticlib` or `cdylib`; Rust hosts call
+`lithe_core::execute_json` and `lithe_core::cancel_operation` directly. Hosts
+call `lithe_core::execution::plan_launch_command` (or the
+`execution.planLaunchCommand` JSON command) before spawning a Java process. It
+estimates the Windows command-line limit and moves oversized classpath/module-path
+options into argument-file text, so macOS can apply the same automatic behavior
+without a Windows-only setting. The planner requires a Java executable and a
+known JDK feature version of at least 9, obtained through
+`java_feature_version_from_release`; other launches remain unchanged. It stops
+at the application target (class, JAR, or module), preserving all program arguments.
+Core owns the Unicode argument-file text and quoting. The Windows host encodes
+that text losslessly using the launcher's actual system code page, independently
+of the JDK feature version: JEP 400 does not make native launcher arguments UTF-8.
+An unrepresentable path is reported as an actionable failure, never substituted.
+The host also escapes backslash bytes introduced by multibyte encoding inside
+quoted values, since the native argument-file parser processes bytes.
+Every execution owns an exclusively created temporary file; partial writes and
+spawn failures clean it up, while successful launches retain it until that exact
+process exits. A replacement execution never shares its predecessor's file.
+For a known JDK older than 9, Rust hosts call
+`lithe_core::execution::plan_classpath_jar_launch` instead. Under the same
+command-line budget it replaces the effective `-cp`/`-classpath` value with a
+host-owned JAR path and returns the ASCII `META-INF/MANIFEST.MF` text: the
+`Class-Path` header lists every entry, in order, as an absolute percent-encoded
+UTF-8 `file:` URL (directories end in `/`), wrapped at 72 bytes. The host
+answers whether each entry is a directory and writes the manifest-only JAR with
+the same exclusive temporary-file lifecycle. Wildcard entries, drive-relative
+Windows entries, `-jar` launches, and unknown JDK versions stay direct. This is
+a Rust API only; there is no JSON command yet because the macOS process
+argument limit (`ARG_MAX`) is far above the Windows cap, so a direct JDK 8
+launch already succeeds there.
+Strings returned by the core are UTF-8 JSON allocated by Rust. The caller must
+release response strings with `lithe_core_free_string`.
+
+The ACP Agent calls use an opaque handle for one agent process and connection
+per workspace and agent; one connection carries many conversation sessions.
+`lithe_agent_open_json` accepts `{ "agentId"?: string, "command"?: string,
+"args": string[], "cwd": absolutePath, "dataDirectory"?: absolutePath,
+"authentication"?: "apiKey" | "codexSubscription",
+"provider"?: { "protocol": "responses" | "chatCompletions" | "anthropicMessages",
+"baseUrl": string, "apiKey": string, "name"?: string, "model"?: string,
+"allowInsecureHttp"?: bool } }`. With `agentId`, the host starts the adapter
+installed by `agent.install` under `dataDirectory`. Omitted `authentication`
+defaults to `apiKey`, which requires `provider` and signs in through
+the ACP `gateway` method over stdio: Responses providers send
+`Authorization: Bearer <key>` and Anthropic providers send `x-api-key`. The
+user's own CLI is passed as `CODEX_PATH` or `CLAUDE_CODE_EXECUTABLE`, and a
+non-empty `model` as `CODEX_CONFIG` or `ANTHROPIC_MODEL`. Without `agentId`, `command` runs
+a user-provided agent that must support gateway sign-in with a Responses
+provider. Agents start with the executable's directory and the login shell's
+`PATH` first. API-key mode never falls back to account login. Invalid settings
+and launch failures are reported as a `stopped` event with a message.
+
+`codexSubscription` is accepted only for `agentId: "codex-acp"` with no
+`provider`. It reuses the locally installed Codex CLI and its own account storage
+(including `CODEX_HOME`). The child uses the official `openai` model provider;
+inherited API-key, endpoint, token and gateway overrides are removed for this
+child only. Session configuration also clears `openai_base_url` and selects the
+official `chatgpt_base_url`, preventing saved custom routes from overriding the
+subscription selection. The quota probe receives the same route overrides. No Lithe HTTP provider, stored API key or configured provider model
+is consulted. Codex owns login, token refresh and session model options.
+The pinned ACP adapter's `_auth/status_update` notification confirms the account.
+An existing account proceeds to `account` then `ready`; otherwise
+`authenticationRequired` waits for the user's `authenticate` command before
+`authenticating` opens the upstream ChatGPT browser login. Login is cancellable
+by closing the handle, with a five-minute deadline. Account loss or email change
+disconnects the connection rather than silently changing its billing identity.
+`account` exposes only nullable `email` and `plan`, never credentials.
+
+`refreshQuota` is ignored outside subscription mode, coalesced while in flight,
+and throttled to one read per connection per 60 seconds. The host uses a bounded
+20-second, short-lived official `codex app-server` process because codex-acp
+1.13.1 does not expose structured rate limits. It only initializes, checks
+`account/read`, reads `account/rateLimits/read`, and checks the account again;
+it never creates a thread or prompt. The process tree is owned by the connection
+and terminated after the query or cancellation. The account email must match
+the active ACP account; missing identity cannot prove a match. This is not a
+workspace/account-ID verification guarantee: the upstream ACP identity provides
+no stable account ID. Lithe reads no credential files for this path.
+
+`quota.snapshot` has `fetchedAt` (Unix seconds) and deterministic `windows` with
+`id`, `name`, `limitSeconds`, nullable `usedPercent` (0–100) and nullable
+`resetsAt` (Unix seconds). Actual window durations are preserved; primary does
+not imply five hours. Unknown usage remains null. `quotaFailed.code` is
+`unavailable`, `timeout`, `unparsable`, `unauthorized`, or `accountChanged`.
+Consumers retain the last snapshot as stale for transient errors, clear it on
+identity failures/disconnect, and never reinterpret unknown as zero. The macOS
+composer shows a small chip to the right of context usage, refreshes while
+visible and active, and requests a throttled refresh after turns. Hover details
+include all windows and reset times; API-key connections show no quota chip.
+
+`lithe_agent_send_json` queues one command: `newSession`, `loadSession`,
+`listSessions`, `setConfigOption`, `prompt`, `cancel`, `permission`, `authenticate`,
+or `refreshQuota`. Results arrive as events:
+`ready`, `sessionCreated`, `sessionLoaded`, `sessions`, `update`, `permission`,
+`sessionConfigured`, `turnCancelling`, `turnFinished`, `requestFailed`, `stopped`,
+`authenticationRequired`, `authenticating`, `account`, `quota`, and `quotaFailed`. Commands and events, including
+their camel-case field names, are fixed by
+`shared/fixtures/agent/acp-events-v1.json`; `token` values are echoed so a caller
+can correlate concurrent requests. `stopReason` uses ACP wire names such as
+`end_turn` and `cancelled`.
+
+`prompt` retains `text` and optionally carries ordered `files` entries with `uri`
+(a native `file://` URL) and `name` (the display filename). The host validates up to
+32 references and sends upstream ACP `resource_link` blocks after the text block;
+empty text is allowed when files are present. It never reads, copies, or embeds
+file bytes. These native resource URLs identify user-selected context, not portable
+workspace records; the agent owns reading, permissions, and history. Invalid
+references produce `requestFailed` before reserving a turn. Older text-only callers
+remain compatible by omitting `files`.
+
+`sessionCreated` and `sessionLoaded` optionally carry the agent's `configOptions`.
+`setConfigOption` carries `token`, `sessionId`, `configId`, and a select-option
+string `value`; the host uses ACP `session/set_config_option`. Its acknowledged
+full option list arrives as `sessionConfigured`. Consumers also accept ACP
+`config_option_update` notifications. Agent-provided IDs, choices and current
+values remain authoritative; unsupported controls are not synthesized.
+Configuration failure echoes the token and does not finish a prompt.
+
+For a new session, the host also preserves the adapter's optional legacy model
+catalog while decoding the ACP response and negotiates only the versioned
+`jetbrains.air.recommendedValue` extension. If the configured current model is
+absent from that catalog and the upstream recommendation is present in both the
+catalog and selector, the host requests that model before publishing
+`sessionCreated`. Only the acknowledged full configuration is exposed. Both
+requests share the session creation deadline; rejection, timeout, or an
+unconfirmed selection emits `requestFailed`. Valid configured models, loaded
+history, and global CLI files remain unchanged. Missing or malformed optional
+catalog/recommendation data leaves standard ACP behavior intact. The `upstream`
+scenarios in the agent fixture protect this workflow without changing the
+command/event JSON shape.
+
+A `cancel` answers pending permissions with `cancelled`, sends one
+ACP `session/cancel`, and reports `turnCancelling`. The session remains busy
+until its prompt response arrives. A second prompt and configuration changes
+are rejected while it is busy. If the agent fails to acknowledge within ten
+seconds, the connection fails and its process tree is stopped; clients retain
+the visible transcript and offer reconnect followed by `session/load`. This
+explicit recovery prevents another message from entering a lost cancelled turn.
+Other sessions on the same process are also detached on this failure.
+Normal cancellation does not restart the process.
+
+ACP `usage_update` notifications are forwarded unchanged in `update`, with
+`used` (tokens currently in context) and `size` (context window capacity), scoped
+by `sessionId`. Consumers replace the previous snapshot, allowing usage to drop
+after compaction; these values are not cumulative billing tokens. Missing or
+invalid data and a zero capacity represent unknown usage, not an empty window.
+The macOS indicator clears stale capacity on disconnect or confirmed model
+changes and waits for a new report; it does not infer limits from model names.
+
+`turnFinished` optionally includes the ACP prompt response's `usage` object:
+required unsigned `totalTokens`, `inputTokens`, `outputTokens`, and optional
+`thoughtTokens`, `cachedReadTokens`, `cachedWriteTokens`. The pinned SDK's
+`unstable_end_turn_token_usage` feature preserves these counters; absent, null
+or invalid usage is omitted without preventing completion. Zero is a reported
+value. Counters are Agent-owned: consumers must not infer a per-turn aggregate,
+session delta or billing amount, because the adapters' accounting scopes differ.
+They must not derive these counters from context occupancy or subscription quota.
+`acp-events-v1.json` covers completion both with and without usage.
+
+macOS keeps local turn statistics in memory. Elapsed time uses a monotonic clock
+from user submission (including queued session creation/loading, tools and
+permission waits) until completion, request failure or disconnect. Cancellation
+continues timing until acknowledged. Each observed turn keeps a frozen footer
+before the next user message; tab switches do not reset it. Replayed history
+does not fabricate timing or token measurements absent from the Agent's records.
+
+Tool updates preserve ACP `kind`, `locations`, `rawInput`, `rawOutput`, and
+`content` (including diffs). Partial updates replace only fields supplied by
+the agent. Permission displays combine already received tool details with the
+permission request, and distinguish allow/reject option kinds.
+
+The caller must close each handle
+exactly once; closing revokes callbacks and stops the process tree, force
+killing processes that do not exit after a short grace period. The callback
+context must remain valid until close returns. This API is owned by
+`lithe-agent-host` and is separate from the synchronous JSON command envelope.
 
 ## Envelope
 
@@ -72,6 +239,80 @@ stable error code and a user-facing message:
 
 ## Commands
 
+### Agent adapters
+
+`agent.parseProviderConfiguration` takes `{source, configuration}` with `source`
+equal to `codex` (TOML) or `claude` (JSON). It reuses the typed AI configuration
+parsers with an empty environment and returns provider metadata only, without
+credentials or credential-presence flags. Configuration text is limited to
+64 KiB UTF-8. Invalid source, malformed text and oversized input return
+`invalid_request` without raw input or parser diagnostics. The fixture is
+`shared/fixtures/agent/provider-configuration-v1.json`. Hosts extract explicit
+API keys, validate Agent protocol compatibility, and persist credentials in their
+native vault. This operation does not discover or write local CLI files.
+
+`agent.status`, `agent.install`, `agent.uninstall`, and `agent.installCli` manage ACP adapters in
+`<dataDirectory>/agents/<agentId>`, using the Node.js and npm the user installed.
+Lithe never installs Node.js or npm; the agents' own command-line tools are installed only through `agent.installCli` on an explicit user action. `agent.status`
+detects Node.js and npm through the login shell's `PATH` and lists every
+supported agent with its pinned version, installed version, provider protocol,
+and blocking issues. Adapters that drive the agent's own CLI (Codex, Claude Code) report the
+CLI found on that `PATH` with its minimum version; they are installed with
+`--omit=optional`, so their bundled CLI copy is not downloaded, and are launched
+with the user's CLI through the adapter's variable (`CODEX_PATH`,
+`CLAUDE_CODE_EXECUTABLE`). A missing or
+too old CLI is an issue for the user to resolve, never installed by Lithe.
+`agent.install` runs `npm install` into a staging directory
+and replaces the previous install only after the adapter executable exists; it
+honors `operationId` cancellation and `timeoutMilliseconds`. Failures use
+`runtime_missing` (Node.js or npm unusable), `process_failed` (npm failed, with
+its output tail), `invalid_request`, `cancelled`, or `timed_out`. Payloads and
+results are fixed by `shared/fixtures/agent/agent-management-v1.json`.
+
+`agent.installCli` resolves the current PATH executable and its installation
+owner again on each explicit action. A missing CLI uses npm; an existing npm CLI
+requires the selected npm's global root, package manifest/bin and active link
+to agree before `npm install -g <package>@latest`. Homebrew requires the active
+target to belong to its reported Caskroom/Cellar and an installed package receipt;
+it runs `brew upgrade --cask/--formula <owning-package>`, retaining the installed
+channel. A standard Claude native launcher uses `claude update`. Unknown,
+broken, unrecorded, or mismatched Node/npm installations require manual updating;
+there is no force overwrite, installer migration or automatic npm fallback.
+After completion, the host refreshes the login-shell PATH and requires the CLI
+selected there to meet the adapter's minimum version before returning `cliVersion`.
+The successful response also includes optional `updaterWarning` (null for a clean
+exit, a bounded output tail for a recovered installer failure). A nonzero exit
+can succeed only if the CLI is now present and usable, and its numeric version
+strictly increased compared with the pre-update CLI (or it was previously absent).
+An unchanged, downgraded, missing or still-too-old CLI remains `process_failed`;
+cancellation, timeout and process-start failure never recover through a version
+probe. Hosts show the verified version as success and keep any warning/log separate
+from errors. Older responses without `updaterWarning` decode as a clean result.
+Node.js and npm remain user-managed. Detection is read-only and locally bounded.
+
+`agent.status` includes optional `cli.installation` with `source` (`npm`,
+`homebrew`, `native`, `missing`, `unknown`), `canUpdate`, and display-only
+`updateHint`. Hosts show the source and guidance, and offer automatic update
+only when `canUpdate` is true. The hint is never executable input. Absent fields
+remain backward compatible with older hosts. Windows installer/shim ownership
+has not been verified; unrecognized installations use the manual path.
+
+`agent.install` and `agent.installCli` publish `agentInstallProgress` through the
+existing synchronous `execute_json_with_events`/C ABI event callback. Each event
+carries the request's `operationId` and a `progress` object: `stage` (`preparing`,
+`downloading`, `installing`, `updating`), `downloadedBytes` (received archive body bytes),
+`bytesPerSecond` (most recent sample), `elapsedMilliseconds`, and
+`idleMilliseconds` (since the last archive bytes). Counters contain no URLs,
+headers, credentials, or paths. npm still owns fetching, proxies, retries, cache,
+and extraction. A built-in Node observer counts bytes without consuming its
+stream and restores inherited `NODE_OPTIONS` before npm starts child scripts.
+No total or overall percentage is supplied: npm can discover additional packages
+and may use cached packages. Events stop before the final response, including
+failure, timeout, and cancellation. Hosts reject stale operation IDs and clear
+live counters at completion. Examples are in `agent-management-v1.json`.
+Homebrew and native updaters emit `updating` with zero transfer counters: their
+package manager owns the download and Lithe does not infer bytes from logs.
+
 | Command | Purpose |
 | --- | --- |
 | `core.ping` | Verify the ABI and protocol version |
@@ -100,8 +341,9 @@ stable error code and a user-facing message:
 | `history.delete` | Delete one history entry and its snapshot |
 | `maven.scan` | Parse a Maven project descriptor and recursively return modules/profiles |
 | `maven.launchPlan` | Produce a deterministic Maven invocation from a versioned project context |
+| `execution.planLaunchCommand` | Move oversized Java path-list options into a JDK argument file |
 | `maven.dependencyPlan` | Produce a bounded dependency-tree invocation for one Maven module |
-| `maven.dependencies` | Normalize bounded Maven dependency-plugin output into a deterministic tree |
+| `maven.dependencies` | Normalize the bounded dependency-tree file one plan wrote into a deterministic tree |
 | `maven.diagnostics` | Parse stable Maven compiler diagnostics from build output |
 | `maven.testResults` | Parse bounded JUnit/Surefire result summaries and failure locations |
 | `debug.createSession` | Create a transport-neutral DAP session and return its initialize frame |
@@ -134,10 +376,10 @@ stable error code and a user-facing message:
 | `java.jdtWorkspaceFingerprint` | Reduce platform build-file observations to the portable JDT LS workspace fingerprint |
 | `java.jdtCacheRetention` | Select expired inactive JDT LS workspace-state keys from platform metadata |
 | `lsp.stopServer` | Gracefully shut down a session, with a bounded force-stop fallback |
+| `lsp.updateMavenConfiguration` | Send a changed Maven context to a running Java session, or force JDT LS to re-resolve its Maven projects |
 | `lsp.syncDocument` | Open a document or apply a full-text or incremental `didChange` with monotonic versions |
 | `lsp.workspaceFilesChanged` | Publish normalized created, changed, or deleted workspace files to one session |
-| `lsp.closeDocument` | Close a document, keeping a snapshot whose file is inside the workspace root |
-| `lsp.clearDiagnostics` | Clear every diagnostic owned by a session, open or not |
+| `lsp.closeDocument` | Close a document and clear its diagnostics |
 | `lsp.request` | Submit a typed semantic request and return an opaque operation ID |
 | `java.navigationMarkers` | Resolve versioned Java gutter markers from bounded JDT LS semantic requests |
 | `java.resolveNavigation` | Resolve one Java gutter marker to normalized parent or implementation locations |
@@ -154,6 +396,7 @@ stable error code and a user-facing message:
 | `java.structure` | Parse Java editor folds, inlay hints, and portable syntax roles |
 | `spring.index` | Build a deterministic Spring configuration, bean, injection, and endpoint index |
 | `mybatis.index` | Build a deterministic MyBatis mapper-interface and XML statement index |
+| `runConfig.selectJava` | Select a project-compatible automatic JDK from platform-probed candidates |
 | `runConfig.inspect` | Inspect `.lithe` run documents, versions, and staleness without writing files |
 | `runConfig.generate` | Generate deterministic Java/Maven configurations and toolchain requirements |
 | `runConfig.resolve` | Merge generated, project, and local layers and return diagnostics |
@@ -165,10 +408,12 @@ stable error code and a user-facing message:
 | `git.initialize` | Initialize a directory outside existing repositories without staging or committing |
 | `git.configureIdentity` | Save or clear one local/global `user.name` or `user.email` override |
 | `git.status` | Resolve the repository, current branch, and working-tree changes |
+| `git.commitState` | Read exact HEAD, symbolic branch and index preconditions for a workspace commit |
 | `git.watchContext` | Resolve the repository and absolute Git metadata roots needed by native file watchers |
 | `git.worktrees` | Return deterministic registered-worktree metadata without scanning each checkout |
 | `git.pullRequestContext` | Resolve worktree-aware PR branch defaults, publication state, and uncommitted-change state |
 | `git.command` | Execute one argument-based Git operation and return its arguments, streams, exit code, and ordered subprocess invocations |
+| `git.repositoryRoot` | Resolve the repository root containing a workspace path without acquiring repository write coordination |
 | `git.write` | Validate and execute shared Git mutations such as stage, commit, branch, checkout, remote sync, clone, and stash |
 | `git.fetchPlan` | Validate Fetch choices; optionally inspect a repository to expand enabled per-remote commands |
 | `git.consolePresentation` | Pure IDEA-style configuration/progress folds, empty-output notices and search ranges over retained diagnostic snapshots |
@@ -185,10 +430,10 @@ stable error code and a user-facing message:
 | `git.apply` | Apply or check a patch in `stage`, `unstage`, `discard`, or Shelf restore mode |
 | `git.history` | Return the legacy combined reference snapshot and first bounded commit page |
 | `git.references` | Return deterministic refs, recent local branches, ahead/behind state, and effective Git identity without scanning commit history |
-| `git.historyPage` | Return one bounded commit page, parent hashes, decorations, and an opaque continuation cursor |
+| `git.historyPage` | Return one bounded commit page, parent hashes, decorations, author dates with their UTC offset (`dateUtcOffsetMinutes`, east positive, `null` when unknown), and an opaque continuation cursor |
 | `git.historyCursorClose` | Release an unfinished incremental history cursor and its Git process |
 | `git.pushPreview` | Resolve a local branch push destination and the bounded commits not present on that remote base |
-| `git.commit` | Return one structured commit by revision |
+| `git.commit` | Return one structured commit by revision with its full message body |
 | `git.commitFiles` | Return files changed by one commit |
 | `git.comparison` | Return files changed between a reference and the working tree |
 | `git.stashes` | Return structured stash references and messages |
@@ -286,8 +531,22 @@ workspace containment, depth, and path. Each entry contains an absolute native
 `path` because repository roots are platform boundary values and may be outside
 the opened folder when the folder is nested inside a checkout. Canonical paths
 are reported in plain native form: Core strips the Windows verbatim `\\?\`
-prefix so roots remain valid Git working directories and stay resolvable after
-consumers normalize separators. Core treats both
+prefix only for supported drive/UNC paths so roots remain valid Git working
+directories after consumers normalize separators. On Windows, path components
+ending in an ASCII dot or space, reserved DOS device basenames, verbatim dot
+segments, and non-drive/non-UNC device namespaces are
+unsupported: discovery, status, watch context and Git reads return
+`invalid_request` before filesystem lookup, rather than aliasing another path.
+The same validation applies after canonicalization and to Git-reported paths;
+missing-worktree fallbacks must not suppress it. Frontend file resolution
+normalizes native UNC/verbatim inputs before deciding whether to join a repository
+root, and rejects unsupported names before stripping their prefix. Remote/WSL
+identifiers retain their protocol and POSIX name semantics. Chinese names,
+embedded spaces and long paths are not rejected by length; native Git/filesystem
+errors remain visible. In particular, Windows may reject an over-MAX_PATH Git
+working directory at process creation even when filesystem lookup succeeds;
+this is reported as `process_start_failed`, not a missing repository. Shared examples live in `shared/fixtures/git/windows-paths.json`.
+Core treats both
 `.git` directories and `.git` files as repository markers. The default traversal
 visits the entire workspace tree, including build and dependency folders, and
 continues below discovered repositories. Git metadata itself is not traversed.
@@ -329,9 +588,11 @@ watchers, and native file I/O stay platform-owned; local keystrokes update the
 same revision semantics in-process and never cross the Rust boundary.
 `diskConflict` preserves the current editor revision and enters `conflict` from
 any state when a native guarded write rejects its expected disk baseline or a
-file is missing. Native document saves compare the last acknowledged UTF-8 bytes
-with disk inside the platform write operation; watchers are refresh hints, not
-write authorization. Conflict resolution acknowledges only the disk snapshot
+file is missing. Native document saves compare the last acknowledged raw disk
+bytes with disk inside the platform write operation; the editor may use UTF-8,
+UTF-8 with BOM, GBK, GB18030, Shift JIS, or Windows-1252 while the Core
+lifecycle remains encoding-agnostic. Watchers are refresh hints, not write
+authorization. Conflict resolution acknowledges only the disk snapshot
 observed by the user, and subsequent saves must validate that snapshot again. The
 portable examples are in `shared/fixtures/documents/lifecycle-v1.json`.
 
@@ -387,6 +648,10 @@ that occur before Git starts use the standard error envelope. If a follow-up
 validation or probe fails after at least one subprocess was recorded, the
 response retains the invocation trace and includes the failure as
 `operationError`.
+
+`git.repositoryRoot` accepts `{ "root": string }` and returns the normalized
+absolute repository root or `null` when the path is not inside a repository. It
+is read-only and does not acquire the repository write lease.
 
 `git.command` and typed Git writers share the repository's write lease, including
 linked worktrees. A competing request fails with `invalid_request` while a writer
@@ -536,7 +801,7 @@ Raw parser capture has an independent 32 MiB per-stream bound and fails on
 overflow. See `shared/fixtures/git/execution-events-v1.json`.
 
 `git.write` accepts a typed mutation request. Its required `operation` values are
-`stage`, `unstage`, `discard`, `discardAll`, `stageAll`, `commit`, `ignore`, `exclude`, `excludePatterns`, `unexcludePatterns`, `cherryPick`, `revert`,
+`stage`, `unstage`, `discard`, `discardAll`, `stageAll`, `commit`, `ignore`, `exclude`, `cherryPick`, `revert`,
 `reset`, `undoCommit`, `editCommitMessage`, `deleteCommit`, `squashCommits`, `createBranch`, `publishBranch`,
 `renameBranch`, `setUpstream`, `unsetUpstream`, `deleteBranch`, `updateBranch`, `merge`, `rebase`, `createWorktree`,
 `removeWorktree`, `lockWorktree`, `unlockWorktree`, `repairWorktrees`, `pruneWorktrees`,
@@ -673,19 +938,7 @@ the legacy behavior of committing the existing index. `ignore` appends root-anch
 repository's top-level `.gitignore`; `exclude` appends the same patterns to the
 worktree-aware Git metadata path for `info/exclude`. Both ignore operations
 preserve existing content, escape Git pattern characters, de-duplicate rules,
-and interpret a trailing `/` as a directory rule. `excludePatterns` and
-`unexcludePatterns` mutate exact literal lines in that same worktree-aware
-`info/exclude` file without root-anchoring or escaping, so recommended IDE
-patterns such as `.factorypath` can be added or removed once. Existing lines are
-compared as stored raw bytes, including leading and trailing whitespace and
-non-UTF-8 content; a leading space is a different Git ignore rule and is neither
-treated as a duplicate on add nor removed as the same rule. Unrelated lines keep
-their original bytes; add appends without rewriting the existing file, and
-remove rebuilds from the original line bytes and terminators rather than
-decoding the file as UTF-8. Request values are trimmed and rejected when empty or
-when they contain NULs or line breaks. Remove is a no-op when managed lines are
-absent. A non-repository root fails with `invalid_request` / `Not a Git
-repository`.
+and interpret a trailing `/` as a directory rule.
 
 `editCommitMessage` rebuilds the selected commit and its later first-parent
 descendants with the new `message`. `squashCommits` requires at least two
@@ -909,7 +1162,13 @@ For compatibility, a request that explicitly contains the deprecated numeric
 `offset`; repository size does not select
 between the two protocols.
 
-`git.commit` accepts `root` and a revision, returning one `commit` object.
+`git.commit` accepts `root` and a revision, returning one `commit` object with
+the same fields as a history page entry and a `body` string. `body` is the
+message after the subject paragraph (Git `%b`), keeps internal line breaks and
+indentation, has trailing whitespace removed, and is empty for a subject-only
+message. History pages carry only `subject`; a commit detail view reads the
+body on demand with `git.commit`. See
+`shared/fixtures/git/commit-lookup-response-v1.json`.
 `git.blame` accepts `root` and a workspace-relative `path`; its line numbers
 are one-based and author timestamps are Unix seconds.
 
@@ -1164,13 +1423,45 @@ initialize, post-initialize readiness, request, Java project build
 (`javaBuildTimeoutMilliseconds`), and shutdown deadlines.
 Java callers may also provide the versioned `mavenContext` accepted by
 `maven.launchPlan`. Core validates its reactor and recursively declared modules,
-publishes `settingsPath` through
-`java.configuration.maven.userSettings`, and, after `ServiceReady`, sends one
+publishes the user-level settings through
+`java.configuration.maven.userSettings` and the selected installation's
+`conf/settings.xml` through `java.configuration.maven.globalSettings`, and,
+after `ServiceReady`, sends one
 `java.project.updateSettings` command per Maven project with
 `org.eclipse.m2e.core.selectedProfiles`. Maven Java, test, and generated source
 roots are normalized to workspace-relative `java.project.sourcePaths` during
 the same configuration flow, so JDT LS receives the selected reactor's source
-model without platform-specific POM parsing. Maven profile application is a
+model without platform-specific POM parsing. Both settings documents are passed as content-addressed copies inside the
+session's JDT LS state directory (`<data>/.lithe/maven/`). The user-level copy
+comes from `settingsPath`, else Maven's default `~/.m2/settings.xml`, else an
+empty document when only `localRepositoryPath` is set, and carries that local
+repository override. JDT LS detects settings changes by comparing paths, so a
+content change must always produce a new path. An unreadable document is passed
+by its original path with a session warning instead of failing startup.
+Copies remain readable until JDT workspace cache eviction or index rebuilding;
+notification delivery is not an acknowledgement that the server read them.
+
+`lsp.updateMavenConfiguration` accepts `{ sessionId, mavenContext,
+reloadProjects? }` for a running Java session started with a `mavenContext`,
+and returns `{ settingsChanged, projectsReloaded, profilesUpdating }`. When the
+settings copies differ from the ones JDT LS holds, Core sends
+`workspace/didChangeConfiguration` and JDT LS force-updates every Maven project
+itself. When they are unchanged and `reloadProjects` is `true`, Core sends
+`java/projectConfigurationsUpdate` for the reactor's project URIs, which
+re-resolves dependencies even though no `pom.xml` changed. Changed profiles
+restart the profile task once the session is ready. Before the `initialized`
+handshake, the new configuration replaces the one the pending settings
+notification sends. Explicit reloads received before `ServiceReady` are coalesced
+and sent once projects are ready, even when settings are unchanged. Response
+booleans describe actions sent immediately, not queued work. A newer profile
+selection is applied after the preceding batch terminates, including failed
+batches; timed-out requests must all drain before that follow-up can start.
+The same failed selection is not automatically retried.
+A stopped or failed session returns `invalidRequest`.
+Resolution problems are not part of the response; JDT LS reports them as
+`pom.xml` diagnostics.
+
+Maven profile application is a
 bounded background task: at most eight project commands are in flight, remaining
 projects are queued, and each project reports `running`, `succeeded`, or
 `failed` with optional error details. Project results use a redacted stable
@@ -1207,7 +1498,17 @@ legacy optional `javaDebugBundlePath`, and ordered
 `runtimeExecutablePath`. Rust loads the legacy Debug bundle first when present,
 then appends the extension bundle paths with stable de-duplication. Rust
 then uses `runtimeExecutablePath` as the process executable and constructs the
-complete deterministic JDT LS JVM argument list. When the structured object is
+complete deterministic JDT LS JVM argument list. `configurationDirectory` names
+the packaged, read-only configuration; Rust never passes it to Equinox, which
+writes framework state into its `-configuration` directory. Rust copies the
+directory's `config.ini` into
+`cacheDirectory/jdtls-configuration/<config.ini SHA-256>/configuration`,
+rewrites a missing or damaged copy, and passes that directory instead. A
+`cacheDirectory` that resolves inside the JDT LS installation, including
+through a symbolic link, fails with `invalid_request` before anything is written;
+a missing `config.ini` fails with `process_start_failed`. Areas of other digests
+unused for the JDT cache retention period are removed after the area is
+prepared, and a removal failure is logged without failing the start. When the structured object is
 absent, the selected `executablePath` and legacy wrapper arguments remain the
 compatibility path. Rust owns the returned
 session's child process, stdin/stdout/stderr, framing buffer, JSON-RPC request
@@ -1241,6 +1542,21 @@ followed by a null separator and that opaque fingerprint to select
 Omitting the fingerprint preserves the legacy path-only key for older clients.
 Changing structure selects a new directory without deleting the old one, so a
 later switch back can reuse it.
+
+Core starts JDT LS with
+`-Djava.import.generatesMetadataFilesAtProjectRoot=false`, so the Eclipse
+project files JDT LS maintains (`.project`, `.classpath`, `.factorypath`, and
+`.settings/*.prefs`) live in that state directory instead of the user's
+modules. Before launch, Core removes such files that earlier versions left in a
+Maven or Gradle module directory when the enclosing Git repository does not
+track them; tracked files and workspaces outside Git are left alone because JDT
+LS keeps honoring files that already exist at a module root. Tracking is decided
+by the repository that owns each module, located through its `.git` entry, with
+one batched `git ls-files` query per repository; modules outside Git start no Git
+process. When any file is removed, Core also deletes the current state directory
+so the launch imports the modules afresh instead of reusing a model that points
+at the removed files, and records the removed workspace-relative paths in the
+session's `info` log event.
 
 `java.jdtWorkspaceFingerprint` accepts
 `{ buildFiles, directMavenModules, jdtlsVersion }`. Each build-file observation
@@ -1331,7 +1647,7 @@ and virtual-location representation as ordinary navigation.
 `lsp.request` accepts a semantic `operation` plus
 the operation-specific URI, position, range, diagnostics, item, action, or
 command fields, and returns `{ operationId }`. Supported operations include
-completion, hover, definition/declaration/type-definition, references,
+completion and resolve, hover, definition/declaration/type-definition, references,
 implementation, rename, formatting, code actions and resolve, execute command,
 inlay hints, full-document semantic tokens, folding ranges, code lens, provider
 virtual documents, `javaEntrypoints`, `javaTestItems`, and `javaMainMethods`.
@@ -1343,8 +1659,10 @@ projectName? }` entries plus diagnostics for unusable upstream records.
 `vscode.java.test.findTestTypesAndMethods`, and returns schema version 1 with a
 typed class/method tree. Each item carries the upstream identity, label, fully
 qualified name, project, test kind/level, optional JDT handler and sort text,
-optional zero-based UTF-16 range, and children. A malformed top-level result is
-an `invalidServerResult`, never an empty semantic answer.
+optional zero-based UTF-16 range, and children. A `null` upstream result means
+the file has no tests (Java Test leaves its root's children unset) and yields an
+empty item list; any other non-list top-level result is an
+`invalidServerResult`, never an empty semantic answer.
 `javaMainMethods` requires a file URI, invokes Java Debug Server's
 `vscode.java.resolveMainMethod`, and returns schema version 1 with
 `{ methods: [{ range, mainClass, projectName? }], diagnostics }`. `range` is the
@@ -1405,7 +1723,10 @@ Range-only providers are not advertised as supporting this operation. No delta
 result ID crosses the boundary. See `shared/fixtures/lsp/semantic-tokens-v1.json`.
 The `semanticTokensRefresh` event invalidates the host's semantic color cache
 when the server requests `workspace/semanticTokens/refresh`; the request receives
-a JSON-RPC null acknowledgment.
+a JSON-RPC null acknowledgment. Windows maps `lsp_get_semantic_tokens` to this
+existing operation and forwards refresh events as `lsp://semantic-tokens-refresh`
+with `{ sessionId, workspacePath }`; only the owning frontend session invalidates
+its Monaco provider. The shared payload and legend remain unchanged.
 The `virtualDocument` operation accepts `{ sessionId, operation,
 virtualUri }` without a document `uri`. Its terminal `requestCompleted` event
 returns `{ text }`, where `text` is the provider-resolved UTF-8 source for the
@@ -1421,17 +1742,8 @@ include `stateChanged`, `featuresChanged`, `diagnostics`,
 most once with either `result` or a structured runtime error containing
 provider/session, stage, optional method/document/request, stable code, and
 optional process-exit detail. Late responses after cancellation or deadline
-are ignored. Diagnostics are accepted for documents open in the current
-session, where a versioned snapshot must match the current document version,
-and for files inside the session's workspace root even when no document has
-them open. The second case exists so a problems list can show a compile error
-in a module nobody opened; such snapshots carry no version bookkeeping, are
-bounded to 2000 files outside the open documents, and that limit is reported
-once through a `log` event when it is reached. Files outside the workspace root
-(JDK sources, dependency JARs, decompiled classes) and non-`file:` URIs are
-never accepted. Closing a document keeps its snapshot only when its file is
-inside the workspace root, and the server retracts any snapshot by publishing
-an empty array.
+are ignored. Diagnostics are accepted only for documents open in the current
+session, and versioned diagnostics must match the current document version.
 
 The client reducer, raw JSON-RPC message, frame, and parser functions are
 internal Rust implementation seams; they are not public application commands.
@@ -1498,29 +1810,64 @@ expand or duplicate that file's arguments. Fixtures are in
 `shared/fixtures/maven/launch-plan-v1.json`.
 
 `maven.dependencyPlan` accepts the same workspace `root`, versioned `context`,
-and optional reactor-relative `module`. It returns a launch plan for the fixed
-`maven-dependency-plugin:3.8.1:tree` goal with verbose text output, disabled
-color, and an English locale. Module queries use `-pl <module>` without `-am`;
-the read-only query does not build reactor dependencies. Platform adapters own
-the child process, apply a bounded timeout, and keep it independent from an
-ordinary Maven build session.
+optional reactor-relative `module`, and a required absolute `outputFile`. It
+returns a launch plan for the fixed `maven-dependency-plugin:3.8.1:tree` goal
+that writes the verbose text tree to `outputFile` in UTF-8 with standard tree
+tokens, disabled color, and an English locale. Exactly one project runs because
+every project in the session would overwrite the same file: module queries use
+`-pl <module>` without `-am`, and reactor-root queries use `-N`. The read-only
+query does not build reactor dependencies. Platform adapters own the child
+process, apply a bounded timeout, and keep it independent from an ordinary Maven
+build session. They also own `outputFile`: each invocation receives a fresh
+path in a platform scratch directory, and the platform removes it after the
+result, cancellation, timeout, or failure. The process's console output is log
+text only and is never parsed as dependency data.
 
-`maven.dependencies` accepts `{ "modulePath": string, "output": string }` and
-returns the normalized module path plus a recursively nested `dependencies`
-array. Each node contains `modulePath`, `groupId`, `artifactId`, `version`,
-`type`, nullable `classifier`, `scope`, `resolution`, nullable
-`selectedVersion`, and `children`. Resolution is `resolved`,
-`omittedDuplicate`, or `omittedConflict`. Core removes ANSI control sequences
-and unrelated Maven log lines, then sorts every level deterministically. Input
-is limited to 500,000 Unicode scalar values, 10,000 dependency nodes, and 64
-levels; malformed or excessive output returns `parse_failed`. The compatibility
-fixture is `shared/fixtures/maven/dependency-tree-v1.json`.
+`maven.dependencies` accepts `{ "modulePath": string, "outputFile": string }`
+after the plan's process exits successfully and returns the normalized module
+path plus a recursively nested `dependencies` array. Each node contains
+`modulePath`, `groupId`, `artifactId`, `version`, `type`, nullable `classifier`,
+`scope`, `resolution`, nullable `selectedVersion`, nullable
+`premanagedVersion` and `premanagedScope` (values before dependency
+management), nullable `originalScope` (declared scope before mediation widened
+it), nullable `ignoredScope` (a wider scope mediation did not apply), and
+`children`. Resolution is `resolved`, `omittedDuplicate`, or `omittedConflict`;
+`selectedVersion` is the winning version of an omitted conflict. Every level is
+sorted deterministically.
+
+The first line of the file must name the module and every later line must be a
+node with only the annotations the pinned plugin writes; any other content,
+invalid UTF-8, a line over 4 KiB, more than 10,000 nodes, 64 levels, or a file
+over the byte limit derived from those bounds returns `parse_failed` instead of
+a partial tree. A missing file returns `process_failed`. The compatibility
+fixture is `shared/fixtures/maven/dependency-tree-v2.json`.
 
 `maven.diagnostics` accepts `{ "root": string, "output": string }` and returns
 `{ "issues": [] }`. Diagnostic paths may be absolute or workspace-relative;
 the response preserves the path text, uses one-based line and column values,
 and normalizes severity to `error` or `warning`. Duplicate issue lines are
 removed deterministically.
+
+`runConfig.selectJava` reads only the existing workspace
+`.lithe/toolchains/requirements.json` document. Its request contains optional
+`root`, `candidates` (`id`, probed `version`, numeric source `priority`), and
+`fallbackId`. IDs are opaque machine-local identities, never persisted or opened
+by this operation. Lower priority wins; equal-priority candidates use descending
+numeric Java versions (including legacy `1.8`), then ascending ID.
+
+When `project-jdk.minimumVersion` exists, selection first filters using the same
+Java version comparison as run-configuration diagnostics. The response is
+`{ id, warning }`: the compatible candidate, or the supplied usable fallback
+with an actionable warning if none qualifies. Missing requirements retain the
+platform's unconstrained choice; malformed/unsupported documents return the
+existing parse/version error. Explicit configured paths bypass automatic
+selection. The operation never generates requirements or probes executables.
+The cross-platform examples are in
+`shared/fixtures/run-configuration/automatic-java-selection.json`.
+
+Windows `run_resolve_toolchains` includes an optional `warning` on resolved
+JDKs, including inherited Maven JDKs. This warning remains visible even when no
+run configuration exists to carry a scoped `toolchainVersionMismatch` diagnostic.
 
 `runConfig.inspect` also returns the local document-level `toolchain`, including
 when no generated configuration exists (`status: "missing"`). Settings,
@@ -1529,6 +1876,20 @@ toolchain-only callers, and initial run-panel presentation may send
 project sources. Omission preserves full inspection. The Windows run panel
 publishes readable configurations first, then performs full inspection and
 reports freshness failures without discarding those configurations.
+The input fingerprint covers what generation reads: build and tool files and
+the sources of generated Java entries by content (`sha256:<hex>` in
+`generator.inputs`), and every other Java source by path only (`path`), so
+editing a class body is not a staleness. When the stored inputs no longer
+reproduce the stored fingerprint, the document came from another generator
+revision and the diagnostic says so instead of listing modified files.
+`runConfig.inspect` also accepts optional schema-versioned `javaEntrypoints`
+from the current `lsp.request` result, independent of `checkFingerprint`. Core
+then compares JDT's `(sourcePath, mainClass)` pairs, with a `module/` prefix
+removed and nested checkouts excluded, against the generated Java entries and
+reports a difference as a `staleFingerprint` diagnostic. Platforms send it
+after a project load once the Java service has prepared the project, never
+start that service for this check, and skip it while a regeneration already
+waits for the service.
 Project environment saves use the existing local `runConfig.updateOptions`
 toolchain payload with an empty `configurationId`; service overrides are untouched.
 
@@ -1567,6 +1928,10 @@ of an overridden effective `cwd`. Core derives this read-only ownership value
 when resolving existing generated documents as well; regeneration is not
 required. Overrides cannot move a configuration to another reactor. Current
 File and configurations without detected Maven ownership omit this field.
+Resolution checks that `extensions.maven.module` exists relative to this
+reactor, or relative to `root` when the field is absent, and never relative to
+an overridden `cwd`: setting a module's own directory as the working directory
+keeps the configuration available.
 Module menus first match reactor and module, then apply the default preference;
 they must not infer ownership from an overridden working directory. The shared
 `run-configuration/maven-module-ownership.json` fixture covers independent
@@ -1618,7 +1983,11 @@ document transformations. They validate scope, paths, supported types, stable
 IDs, main classes, modules, and argument parsing, then return UTF-8 JSON in the
 `document` field. The platform adapter selects the target project or local
 file and performs the atomic write. These commands never write files. An empty
-`workingDirectory` removes the layer's `cwd` override. Optional
+`workingDirectory` removes the layer's `cwd` override. A non-empty value must
+name an existing directory inside `root`, given relative to it or as an
+absolute path, and is stored project-relative. Values are literal paths; editor
+variables such as `${workspaceFolder}` are rejected rather than stored, because
+resolution disables and omits a configuration whose `cwd` does not exist. Optional
 `mavenSkipTests` writes `extensions.maven.skipTests`; omission removes the
 override so the project Maven context is inherited, while explicit `false`
 continues to run tests even when the project default skips them.
@@ -1815,7 +2184,12 @@ Completion items returned by the LSP client and runtime preserve `insertTextForm
 (`1` for plain text, `2` for snippets; absent values default to `1`). Hosts retain
 this field through completion resolution. Monaco applies snippet text with its
 snippet insertion rule so placeholders participate in selection and undo rather
-than being inserted as literal source text.
+
+than being inserted as literal source text. The initialize handshake advertises
+`completion.completionItem.labelDetailsSupport` and resolve support for
+`labelDetails` so language servers attach typed class/namespace labels on
+incomplete items. Core forwards `labelDetails` and omits null `data` so
+`completionItem/resolve` can still produce import `use`/`import` edits.
 
 ### Java preparation snapshot
 
@@ -1832,3 +2206,138 @@ failure is visible but does not globally block unrelated targets; callers still
 build the selected target before launching. A successful preparation does not
 promise compilation success. Shared examples live in
 `shared/fixtures/lsp/project-preparation-v1.json`.
+
+### Workspace commit preconditions
+
+`git.commitState` accepts `{ root }` and returns `{ head, branch, indexEntries,
+gitlinks, stagedPaths, conflictedPaths }`. `head` is null only for an unborn branch; `branch` is
+null for detached HEAD. `indexEntries` is Git's opaque NUL-delimited staged index
+listing, including blob IDs and conflict stages; clients compare it without
+parsing it. `gitlinks` lists stage-0 mode-160000 entries as `{ path, revision }`.
+Read failures are errors, never an empty relationship list.
+The requested root must still be Git's exact working-tree root. Removing a
+nested repository's metadata must fail instead of falling back to its parent;
+gitlink updates also verify the child boundary before reading its HEAD.
+
+`git.write` / `commit` optionally accepts `expectedCommitState` and
+`gitlinkUpdates: [{ path, revision }]`. Gitlink updates cannot accompany other
+operations or path-selected commits. Push also accepts `expectedCommitState`
+to reject a changed repository under its writer lease. Workspace pushes set
+`checkSubmodules: true`, invoking Git's `--recurse-submodules=check` so missing child
+commits block a parent push even when only the parent pointer was selected. Under the existing repository writer lease,
+Core verifies HEAD/index, validates all child HEAD revisions, then updates only
+those parent index entries in a single `update-index --index-info` transaction
+before the regular commit. Any changed precondition returns `invalid_request`
+through the existing operation error envelope. Unrelated unstaged parent files
+are not added. A failing hook may leave the pointer staged: clients must retain
+partial progress and re-read state before retrying. External Git processes do
+not participate in Lithe's lease; cross-repository commits are not atomic.
+
+`git.status.changes[]` additionally carries optional `submodule` with
+`commitChanged`, `trackedChanges`, and `untrackedChanges`, normalized from Git
+porcelain v2. The existing two-character `status` remains compatible. The optional request flag
+`includeIndexOnlyChanges` retains staged additions deleted only from the working
+tree (`AD`); both products enable it so every staged file remains visible. Omission
+preserves the legacy final-worktree projection. Child dirt
+alone is informational in the parent; only a changed commit pointer (or an
+already-staged change) is eligible for the parent's staging checkbox.
+
+`git.status` accepts optional `repositoryRoots` (native bindings of discovered
+repositories). Untracked paths owned by a nested root are excluded from the
+parent list. Each change returns `canToggleStaging`; platforms render that
+eligibility instead of reinterpreting submodule dirt.
+
+`git.workspaceCommitPrepare` owns the complete multi-repository policy. It accepts
+`repositories: [{ id, root }]`, `message`, `amend`, `push`,
+`includeParentReferences`, optional `previous` session for retry, and optional
+`reviewed` plan for confirmation. `id` is a workspace-relative path with `/`
+separators (`..` is allowed for enclosing repositories). Windows manually selected
+roots on another volume use a stable `external/<encoded-volume>/<path>` virtual
+workspace ID. `root` is the native
+execution binding, never a portable identity. The response is
+`{ session, reviewChanged, requiresConfirmation }`. Core reads all repositories,
+finds real gitlink relationships, includes clean parents when requested, orders
+children first, and adds push-only child work where needed. Cycles fail closed.
+A changed reviewed plan must be displayed and confirmed again before any step.
+
+`git.workspaceCommitStep` accepts `{ session }` and returns the next session,
+executing at most one commit or push. Session fields are `plan`, last observed
+`states`, per-ID `results`, `blocked`, `cursor`, `commandFailed`, `finished`,
+`succeeded`, and `canRetry`. They are Core-owned continuations: clients return
+them unchanged and must not independently choose roots, reorder work, or infer
+completion. `plan` includes bindings, options, `orderedIds`, propagation and
+dependency relations, reviewed states, `committedIds`, and `pendingPushIds`.
+Each result separates `committed`, `pushed`, stable `status`, and Git `detail`.
+Status keys are `pending`, `notIncluded`, `waitingForSubmodule`, `reviewRequired`,
+`committed`, `committedPushPending`, `committedAndPushed`, `commitFailed`,
+`pushFailed`, `headAdvanced`, and `outcomeUnknown`.
+
+Each step uses a fresh host operation ID and the existing Git writer lease,
+process runner, authentication and event stream. Cancellation blocks dependent
+parents while independent roots may continue under subsequent operation IDs.
+A read-only cleanup deadline of five seconds reconciles a commit whose HEAD may
+have advanced before cancellation. This command preserves the reconciled session
+instead of replacing it with a generic late-cancellation envelope. Transport
+errors before a continuation is returned must never be treated as success.
+Retry re-inspects current state, preserves completed commits, and re-pushes
+externally advanced completed branches before updating dependent parents.
+
+Sessions own no background resources and are retained only for the current
+workspace lifetime. Native clients discard old responses after workspace changes,
+show confirmation/progress, and drive steps until `finished`. macOS uses this
+shared workflow, as does Windows through its workspace-scoped continuation adapter
+and real staging checkboxes. The native products must not duplicate planning or retry policy.
+See `shared/fixtures/git/workspace-commit-v1.json` for primitive payloads and
+`shared/fixtures/git/workspace-commit-workflow-v1.json` for the complete planning
+and continuation fixture consumed by Rust, Swift, TypeScript and Tauri adapter tests.
+
+### Decoded document text classification
+
+`document.classifyText` accepts `{ text }` and returns `{ isPlainText }`.
+The input is already decoded Unicode, independent of the filename, language ID,
+or tokenizer availability. Core uses the same control-character policy as
+`file.read`: reject U+0000–U+0008, U+000E–U+001F, and U+007F; allow other scalars,
+including tabs, line breaks, form feed, Chinese, and emoji. The entire decoded
+text is inspected, not an arbitrary byte prefix. A missing or non-string `text`
+returns `invalid_request`. Hosts retain responsibility for size limits, I/O,
+encoding selection, and decode failures; a permission or decode error must not
+be relabeled as binary content.
+
+The synchronous C ABI `lithe_core_is_plain_text(const uint8_t *, size_t)` borrows
+UTF-8 bytes for the call, including embedded NUL, without allocating a JSON
+copy. It returns `1` for plain text, `0` for binary control characters, and `-1`
+for invalid UTF-8 or an invalid pointer/length combination. A zero-length input
+is plain text and may use a null pointer. Nonzero input must point to at least
+`length` readable bytes and `length` must not exceed `isize::MAX`. The Swift
+bridge exposes the same lifetime and result contract. Fixtures live in
+`shared/fixtures/editor/text-content-v1.json` and exercise both entry points.
+
+## Local IDE capability broker
+
+`ideHost.control` accepts `{action, arguments}` and delegates to the native
+`lithe-ide-host` adapter. This local host command is not remotely exposed. See
+[IDE API v1](ide-api/v1.md) for the allowlisted plugin/MCP capabilities, connection
+ownership, authorization, output cursors and shutdown semantics.
+
+### Java service hot replacement
+
+`debug.inspect` accepts the Java-provider extension `kind: "redefineClasses"`
+with a caller-owned `operationId`. Unlike the inspection kinds, this operation
+**mutates the running debuggee**; it requires a running or paused Java session,
+but no selected thread. Platforms save documents and complete a successful JDT
+`vscode.java.buildWorkspace` before submitting it. They must retain the original
+launch target and compare its runtime paths with JDT before compiling; changed
+paths require a restart instead of applying to a different output directory.
+
+The terminal result is `{ kind: "redefineClasses", changedClasses: [...] }`,
+sorted and deduplicated. Empty means no classes were replaced. Java Debug Server's
+`errorMessage` inside a successful DAP response becomes `operationFailed` with
+`adapterRejected`; the debug session remains usable. Malformed replacement
+results also fail only the operation. Replacement does not imply continue.
+The fixture is `shared/fixtures/debug/hot-code-replace-v1.json`.
+
+Java debug launches append `-Dspring.devtools.restart.enabled=false` (also for
+Core-planned direct JDT JDWP launches) so DevTools cannot restart the classloader during
+HotSwap. Attach to independently launched JVMs does not change their options.
+The Windows host maps `redefineClasses` to this operation and `cancelOperation`
+to `debug.cancelOperation` with a `timedOut` reason for its bounded result wait.
