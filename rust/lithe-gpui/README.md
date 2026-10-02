@@ -132,7 +132,10 @@ gpui_kit::application().with_assets(gpui_kit::assets::AllAssets).run(move |cx| {
 `window.open_dialog` 会 panic（`shell/overlays.md:203-213`）。`--open-settings` 用的是
 `window.on_next_frame`（首帧之后）。
 
-`gpui_kit::open_window`（技能文档里的 0.7.0 写法）**不存在**；`Registry` 里没有。`Application::with_assets` 存在（`gpui-pre-0.3.6/src/app.rs:199`）。
+> ⚠️ **本条已按 0.7 更正**：`gpui_kit::open_window` **在 0.7 里存在**（`gpui-kit-0.7.0/src/lib.rs:144`
+> 有 `pub fn open_window<V: Render>(...)`）。早先写的"它不存在"是 **0.6.6** 的事实；本项目现在用
+> `cx.open_window(...)` 仍然有效，但**不要再把"不存在"写进注释和文档**。
+> `Application::with_assets` 在 `gpui-pre-0.3.7/src/app.rs:202`（注意仍是 `impl AssetSource`，**重复调用是覆盖**）。
 
 ### 尺寸
 
@@ -159,8 +162,8 @@ div().size_full() /* ... */
 ```rust
 let (area, skin) = DockSkin::dock_area("lithe-workbench", Some(1), window, cx);
 let layout = DockLayout::h_split()
-    .child(DockLayout::tabs().panel_view(panel_handle(panel), cx), Some(px(320.)))
-    .child(DockLayout::v_split().child(a, None).child(b, Some(px(260.))), None);
+    .child(DockLayout::tabs().panel_view(panel_handle(panel), cx), Some(rems(320. / 16.)))
+    .child(DockLayout::v_split().child(a, None).child(b, Some(rems(260. / 16.))), None);
 area.update(cx, |area, cx| area.set_center(layout, window, cx));
 ```
 
@@ -178,7 +181,7 @@ area.update(cx, |area, cx| area.set_center(layout, window, cx));
 | `DataTable` 行高是表级值（默认 `Size::Medium ⇒ 32`），但表体行高同样受首行内容影响 | `sizing.rs:57-65` |
 | `render_td` 的返回值会被再包一层（固定列宽 + `overflow_hidden` + `whitespace_nowrap`） | `table/state.rs:1323-1329` |
 | `Column` 只有 `width/min_width/max_width`，**没有 flex**；列宽按给定值比例铺满表宽 | `table/column.rs:151-215` |
-| `TitleBar` / `StatusBar` 都实现 `Styled`，macOS 的 40 / 24 用 `.h(px(..))` 覆盖（默认 34 / 自定） | `title_bar.rs:15,335,343` |
+| `TitleBar` / `StatusBar` 都实现 `Styled`，macOS 的 40 / 24 用 `.h(rems(40. / 16.))` / `.h(rems(24. / 16.))` 覆盖（默认 34 / 自定）。**不要写 `px(40.)`** —— 见 `UI-MAP.md` §1.1 第 1 条：档位用 `h_10()` 之类助手，档位外用 `rems(P / 16.)` | `title_bar.rs` |
 | `Tab::icon()` 会丢掉 label，图标 + 文字要走 `Tab::child(..)`；`TabBar::max_width()` 是文字能截断的前提 | `tab/tab.rs:719-744` |
 | `Button::ghost()/disabled()/xsmall()` 存在，但分别在 `ButtonVariants`/`Disableable`/`Sizable` 三个 trait 上，**必须 `use ... as _`** | `button/button.rs:44-96,503-537` |
 | `IconName` 是 `Clone` 不是 `Copy` | `component/icon.rs:17-20` |
