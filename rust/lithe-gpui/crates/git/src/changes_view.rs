@@ -48,7 +48,7 @@ use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHea
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
@@ -87,6 +87,19 @@ use crate::log_view::rem_px;
 //
 // 字号：`ui-text-sm` = 13px（`theme.css:116`）不在 gpui 的档位（12 / 14）上，按《编码指南》用
 // **`text_sm()`（14px）**——与 `explorer_view.rs:80-81` 同一条已确认的有意改动。
+//
+// 密度（D18 ⑥ Git）：**组件按钮的外框高度由 `Sizable` 档位给出，不单独写 `.h_N()`**。指南原文
+// 「优先使用组件尺寸（`xsmall`、`small`、默认 `medium`、`large`），不要单独写高度」
+// （`design-guides.md:115`）、「使用组件 `Size` API，让字体、图标、padding 和 hit target 一起变化。
+// 只改外框高度通常是不完整的」（同上 `:208`）。**只**覆盖高度的写法会留下旧档位的字体与 gap：
+// `Button::with_size` 只写 `self.size`（`gpui-component-0.7.0/src/button/button.rs:559-562`），
+// 渲染时外框取该档位的 `h_*`/`px_*`（同文件 `:646-674`）、内容取 `button_text_size(self.size)` 与
+// `gap`（同文件 `:737-742`）、图标取 `icon_size`（同文件 `:611-614`、`:748`），而调用点的
+// `.h_N()` / `.px_N()` 经末尾的 `refine_style(&instance_style)`（同文件 `:721`）**只**压掉外框与
+// 内衬，压不掉字体与 gap ⇒ 出现"外框 24px、字号却是 Medium 的 `text_base`"。
+// 故本视图的按钮统一 `.small().compact()`：`small` 给 24px 外框（= 真源 `controlSize(.small)`、
+// `LitheTheme.Commit.compactButtonHeight = 24`），`compact` 给 `px_1p5` 内衬（与原来手写的
+// `.px_1p5()` **逐像素相同**），字体与 gap 则随档位落到 `text_sm()` / `gap_1()`。
 //
 // ⚠️ 圆角一律走应用层具名常量：Lithe 的 `--radius × k` 阶梯（4.8 / 6.4 / 11.2）与 gpui 的
 // 同名档位语义不同，也不能从主题读（`ThemeConfig.radius` 是 `usize`，
@@ -884,8 +897,9 @@ impl ChangesView {
             .child(
                 Button::new("changes-retry")
                     .label(tr(RETRY_KEY))
-                    .h_6()
-                    .px_1p5()
+                    // 密度走组件档位：`small` = 24px 外框 + `text_sm`，`compact` = `px_1p5` 内衬。
+                    .small()
+                    .compact()
                     .on_click(cx.listener(|view: &mut Self, _event, _window, cx| view.refresh(cx))),
             )
             .into_any_element()
@@ -1058,8 +1072,8 @@ impl ChangesView {
         let mut actions = h_flex().items_center().gap_2().child(
             Button::new("changes-operation-continue")
                 .label(tr(operation.kind.continue_key()))
-                .h_6()
-                .px_1p5()
+                .small()
+                .compact()
                 .disabled(!can_continue)
                 .on_click(cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.run_operation_action("operationContinue", cx)
@@ -1070,8 +1084,8 @@ impl ChangesView {
             actions = actions.child(
                 Button::new("changes-operation-skip")
                     .label(tr(SKIP_KEY))
-                    .h_6()
-                    .px_1p5()
+                    .small()
+                    .compact()
                     .disabled(self.busy)
                     .on_click(cx.listener(|view: &mut Self, _event, _window, cx| {
                         view.run_operation_action("operationSkip", cx)
@@ -1083,8 +1097,8 @@ impl ChangesView {
             Button::new("changes-operation-abort")
                 .label(tr(ABORT_KEY))
                 .ghost()
-                .h_6()
-                .px_1p5()
+                .small()
+                .compact()
                 .disabled(self.busy)
                 .on_click(cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.run_operation_action("operationAbort", cx)
@@ -1441,8 +1455,8 @@ impl ChangesView {
                 content = content.child(
                     Button::new("changes-empty-action")
                         .label(label)
-                        .h_6()
-                        .px_1p5()
+                        .small()
+                        .compact()
                         .disabled(!enabled),
                 );
             }

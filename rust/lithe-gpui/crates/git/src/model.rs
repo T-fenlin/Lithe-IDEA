@@ -78,14 +78,6 @@ use lithe_gpui_shared::{CoreClient, CoreRequest, tr, tr_args};
 pub(crate) const REFERENCE_PILL_MAX_WIDTH: f32 = 240.;
 /// 「引用名」胶囊圆角 6.4（`git-log-title-bar.tsx:32-39`）—— 见上方圆角说明。
 pub(crate) const REFERENCE_PILL_RADIUS: f32 = 6.4;
-/// 图标按钮 24×24（`git-log-title-bar.tsx:40-71`、`ui/button.tsx:9,27` 的 `icon-xs`）。
-///
-/// 该值走 `Sizable::with_size(impl Into<Size>)`，而 `Size` 只有 `From<Pixels>`
-/// （`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`；换成 `Size::XSmall`
-/// 会连带改掉按钮的内边距与图标尺寸，不是逐像素等价。所以调用点写
-/// `rem_px(cx.theme().font_size, ICON_BUTTON_SIZE)`（`log_view.rs` 的 `rem_px`）——
-/// 仍按当前 rem 基准求值，不是写死 16。
-pub(crate) const ICON_BUTTON_SIZE: f32 = 24.;
 /// 图标按钮圆角 6.4（`ui/button.tsx:9`）—— 见上方圆角说明。
 pub(crate) const ICON_BUTTON_RADIUS: f32 = 6.4;
 
@@ -124,9 +116,15 @@ pub(crate) const DATE_FONT_SIZE: f32 = 11.;
 pub(crate) const COMMIT_CONTENT_MIN_WIDTH: f32 = 520.;
 /// 「加载更多提交」按钮高 24（`git-commit-table.tsx:434` 的 `size="xs"`）。
 ///
-/// 与 [`ICON_BUTTON_SIZE`] 同因：它走 `Sizable::with_size(impl Into<Size>)`，而 `Size` 只有
-/// `From<Pixels>`（`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`。
+/// 它走 `Sizable::with_size(impl Into<Size>)`，而 `Size` 只有 `From<Pixels>`
+/// （`gpui-component-0.7.0/src/sizing.rs:169-173`），**没有** `From<Rems>`。
 /// 调用点（三处）都写 `rem_px(cx.theme().font_size, LOAD_MORE_BUTTON_HEIGHT)`。
+///
+/// ⚠️ **待裁决（D18 ⑥ Git 登记，未改）**：这个自定义 `Size::Size(px)` 不在 D18 的"手写 `.h_N()`"
+/// 盘点范围内，但它在 `Button` 上**只**产生 `px(size × 0.2)` 内衬、**不设外框高度**
+/// （`gpui-component-0.7.0/src/button/button.rs:657-658`），所以三处按钮的高度实际由内容与
+/// `text_base` 行高决定，并不等于注释所说的 24；要真正拿到 24 应换成 `Size::Small`
+/// （`h_6` + `text_sm`），但那会同时改字体与内衬，属"会改变可见外观"的一类，留给主代理裁决。
 pub(crate) const LOAD_MORE_BUTTON_HEIGHT: f32 = 24.;
 
 /// 泳道横向间距 13（`git-graph-row.tsx:4-6`）。调用点 `.w(rems(GRAPH_LANE_GAP / 16.))`。

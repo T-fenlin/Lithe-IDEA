@@ -62,17 +62,17 @@ use crate::model::{
     COMMIT_FILE_INDENT_STEP, COMMIT_FILE_STATUS_FONT_SIZE, COMMIT_PANE_FRACTION, COMMIT_ROW_HEIGHT,
     Commit, CommitFileRow, DATE_FONT_SIZE, Detail, FILTER_INPUT_MAX_WIDTH, FILTER_INPUT_MIN_WIDTH,
     FilesState, FilterScope, FirstLoad, GRAPH_LANE_GAP, GRAPH_LINE_WIDTH, GRAPH_MIN_WIDTH,
-    GRAPH_NODE_RADIUS, GraphRow, HistoryCursor, ICON_BUTTON_RADIUS, ICON_BUTTON_SIZE,
-    INSPECTOR_DETAILS_FRACTION, INSPECTOR_FILES_FRACTION, INSPECTOR_FILES_MIN_HEIGHT,
-    INSPECTOR_HASH_FONT_SIZE, INSPECTOR_MONO_FONT_SIZE, INSPECTOR_PANE_FRACTION,
-    INSPECTOR_PANE_MIN_WIDTH, LABEL_FONT_SIZE, LABEL_MAX_WIDTH, LABEL_PADDING_Y, LABEL_RADIUS,
-    LOAD_MORE_BUTTON_HEIGHT, Label, LoadState, MoreLoad, Panel, REFERENCE_BADGE_FONT_SIZE,
-    REFERENCE_HEAD_ROW_RADIUS, REFERENCE_INDENT_BASE, REFERENCE_INDENT_STEP,
-    REFERENCE_PANE_FRACTION, REFERENCE_PANE_MIN_WIDTH, REFERENCE_PILL_MAX_WIDTH,
-    REFERENCE_PILL_RADIUS, REFERENCE_ROW_RADIUS, REFERENCE_SECTION_RADIUS,
-    REFERENCE_TOOLBAR_BUTTON_RADIUS, RefKind, Reference, TRACKING_COUNT_FONT_SIZE,
-    build_commit_files, build_reference_rows, handler, label_color, lane_color, layout_graph,
-    load_commit_files, load_first, load_more, matches_filter, tracking_count,
+    GRAPH_NODE_RADIUS, GraphRow, HistoryCursor, ICON_BUTTON_RADIUS, INSPECTOR_DETAILS_FRACTION,
+    INSPECTOR_FILES_FRACTION, INSPECTOR_FILES_MIN_HEIGHT, INSPECTOR_HASH_FONT_SIZE,
+    INSPECTOR_MONO_FONT_SIZE, INSPECTOR_PANE_FRACTION, INSPECTOR_PANE_MIN_WIDTH, LABEL_FONT_SIZE,
+    LABEL_MAX_WIDTH, LABEL_PADDING_Y, LABEL_RADIUS, LOAD_MORE_BUTTON_HEIGHT, Label, LoadState,
+    MoreLoad, Panel, REFERENCE_BADGE_FONT_SIZE, REFERENCE_HEAD_ROW_RADIUS, REFERENCE_INDENT_BASE,
+    REFERENCE_INDENT_STEP, REFERENCE_PANE_FRACTION, REFERENCE_PANE_MIN_WIDTH,
+    REFERENCE_PILL_MAX_WIDTH, REFERENCE_PILL_RADIUS, REFERENCE_ROW_RADIUS,
+    REFERENCE_SECTION_RADIUS, REFERENCE_TOOLBAR_BUTTON_RADIUS, RefKind, Reference,
+    TRACKING_COUNT_FONT_SIZE, build_commit_files, build_reference_rows, handler, label_color,
+    lane_color, layout_graph, load_commit_files, load_first, load_more, matches_filter,
+    tracking_count,
 };
 /// 规格像素 → `Pixels` 的换算，**唯一实现在 [`lithe_gpui_shared::rem_px`]**。
 ///
@@ -714,18 +714,21 @@ impl BottomPane {
 
     /// 字段下拉按钮。`git-commit-table.tsx:229-238`（h 24、圆角 6.4、px 6）。
     ///
-    /// `cx` 只用来取 rem 基准（`cx.theme().font_size`）：`Sizable::with_size` 吃
-    /// `impl Into<Size>`，而 `Size` 只有 `From<Pixels>`（见 [`rem_px`]），所以这一个槽必须先
-    /// 求值成像素；按钮其余外观仍然全部来自 `Button` 自己的主题样式。
-    fn scope_button(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
+    /// 密度走 `Sizable` 档位（同 `changes_view.rs` 模块头的密度说明）。改前这里写的是
+    /// `.with_size(rem_px(cx.theme().font_size, ICON_BUTTON_SIZE)).h_6().px_1p5()`：先喂一个自定义
+    /// `Size::Size(24px)`，再用 `.h_6()` / `.px_1p5()` 把它算出的外框与内衬压掉（`Button` 末尾
+    /// `refine_style(&instance_style)` 让调用点**只**赢外框和内衬），于是外框 24px、字号却停在
+    /// `Medium` 的 `text_base` —— 正是指南说的「只改外框高度通常是不完整的」
+    /// （`design-guides.md:115,208`）。现在 `.small().compact()`：外框 24px、内衬 `px_1p5` 与改前
+    /// **逐像素相同**，字号与 gap 随档位落到 `text_sm()` / `gap_1()`。
+    fn scope_button(&self, this: &WeakEntity<Self>) -> impl IntoElement {
         let current = self.filter_scope;
         let this = this.clone();
 
         Button::new("bottom-git-filter-field")
             .ghost()
-            .with_size(rem_px(cx.theme().font_size, ICON_BUTTON_SIZE))
-            .h_6()
-            .px_1p5()
+            .small()
+            .compact()
             .label(current.label())
             // `git.log.filterField` = 「Git 日志筛选字段」（`locale.ts:7278`）：曾经硬编码中文，
             // 现在与其它文案一样走 `tr(..)`（键早就在 locale 与 WIRED 表里）。
@@ -793,7 +796,7 @@ impl BottomPane {
                         rems(14. / 16.),
                     )),
             )
-            .child(self.scope_button(this, cx))
+            .child(self.scope_button(this))
             .child(Self::icon_button(
                 ("bottom-git-decorations", 0),
                 if self.show_decorations {
