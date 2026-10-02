@@ -94,8 +94,8 @@ use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity, InteractiveElement as _,
     IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Render, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Task, WeakEntity, Window, div,
-    point, relative, rems,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task, WeakEntity,
+    Window, div, point, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
@@ -433,6 +433,14 @@ pub struct EditorPane {
     /// 只记**磁盘文件**：`jdt://` 虚拟源码没有"重新读盘"这条路（正文只来自 Core 的虚拟
     /// 文档请求），把它压进栈会让重开变成一份读盘失败的说明文案。
     closed: Vec<PathBuf>,
+    /// `Theme` 全局观察者：界面字号（= rem 基准）一变就把**已经打开**的 buffer 的补全菜单宽度
+    /// 按新基准重设（[`Self::sync_completion_menu_width`]）。
+    ///
+    /// 必须被持有：`Subscription` 一 drop 就取消（与 [`Buffer::_subscriptions`] 同一约定）。
+    /// 为什么这条不能省：菜单宽度那一槽由 `completion::install` 在 `open()` / `prepare_java()`
+    /// **一次性**写好，而上游每帧读它 —— 不重设的话，改字号后已经打开的弹层宽度会一直是
+    /// 旧 rem 基准换算出的像素（逐条论证见 [`Self::sync_completion_menu_width`]）。
+    _theme_subscription: Subscription,
 }
 
 /// 制表符宽度的默认值（= Windows `tabSize` 的默认值 2、也是组件默认档）。
@@ -464,6 +472,18 @@ impl EditorPane {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        // 界面字号（= rem 基准）变化 → 重设**已经打开**的 buffer 的补全菜单宽度。
+        //
+        // 为什么挂在 `Theme` 全局观察者上：`apply_theme_font_size` 走的是
+        // `Theme::global_mut(cx).font_size = ..`（`crates/settings/src/theme.rs:611`），而
+        // `App::global_mut` 会推 `NotifyGlobalObservers`（`gpui-pre-0.3.7/src/app.rs:2145-2147`），
+        // 所以这里收得到 —— 同一形状的既有写法是 `SettingsStore` 的
+        // `cx.observe_global::<Theme>(..)`（`crates/settings/src/store.rs:242`）。
+        // 那一处随后就 `refresh_windows()`，所以下一个（马上要画的）帧读到的就是新宽度，
+        // 本回调**不需要**再 `notify` —— 也不该在 `render` 里做这件事。
+        let theme_subscription = cx.observe_global::<gpui_kit::component::Theme>(|pane, cx| {
+            pane.sync_completion_menu_width(cx);
+        });
         Self {
             notifications,
             buffers: Vec::new(),
@@ -483,6 +503,44 @@ impl EditorPane {
             auto_completion: Rc::new(AtomicBool::new(true)),
             hovered_tab: None,
             closed: Vec::new(),
+            _theme_subscription: theme_subscription,
+        }
+    }
+
+    /// 界面字号（rem 基准）变化后，把**已经打开**的 buffer 的补全菜单宽度按新基准重设一遍。
+    ///
+    /// ## 为什么必须补这一步
+    ///
+    /// `completion_menu.max_width` 是 `Pixels` 字段，由 [`crate::completion::install`] 在
+    /// `open()` 与 `prepare_java()` 两个**一次性**时机写好，而上游**每帧**读它
+    /// （`gpui-component-0.7.0/src/input/popovers/completion_menu.rs:383`：`configured_max`
+    /// 直接来自 `editor.read(cx).lsp().completion_menu.max_width`，再 `min` 一次窗口剩余宽度）。
+    /// 所以"改字号"这条路径（`crates/settings/src/theme.rs:609-618` 只改
+    /// `Theme.font_size` + `refresh_windows()`）**不会**重新走那两处，弹层就会一直按旧 rem
+    /// 基准换算 —— 现象正是"已经打开的补全弹层宽度不跟随，重开文件才对"。
+    ///
+    /// `rem` 取 `cx.theme().font_size`：与 `Root::render` 每帧写进 `set_rem_size` 的是同一个值
+    /// （`gpui-component-0.7.0/src/root.rs:436`；[`Self::prepare_java`] 里为同一个槽取的也是它，
+    /// 理由见那里的注释）。
+    /// 只对**装了 provider** 的编辑器写（判据在 [`crate::completion::set_menu_width`] 里），
+    /// 非 Java 文件保持上游默认 320px —— 与 `install` 的早退口径一致。
+    fn sync_completion_menu_width(&mut self, cx: &mut Context<Self>) {
+        let rem = cx.theme().font_size;
+        let width = crate::completion::menu_width(rem);
+        let mut refreshed = 0usize;
+        for buffer in &self.buffers {
+            buffer.editor.update(cx, |state, _cx| {
+                if crate::completion::set_menu_width(state, width) {
+                    refreshed += 1;
+                }
+            });
+        }
+        // 诊断走 **stderr**（stdout 重定向到文件是块缓冲），且只在真的改了槽时打：
+        // 切配色这类不改字号的 `Theme` 变更不该刷屏。
+        if refreshed > 0 {
+            eprintln!(
+                "S1_EDITOR_COMPLETION_WIDTH max_width={width:?} rem={rem:?} buffers={refreshed}"
+            );
         }
     }
 

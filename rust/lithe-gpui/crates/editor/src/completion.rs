@@ -73,14 +73,43 @@ const COMPLETION_MENU_WIDTH_PX: f32 = 480.;
 /// （与 Core 自己的 300ms inline 补全防抖同一思路，只是我们更短：菜单比行内提示更依赖即时感）。
 const COMPLETION_DEBOUNCE_MS: u64 = 120;
 
+/// 当前 rem 基准下的菜单宽度（规格像素 → `Pixels`）。
+///
+/// 菜单宽度那一槽是 `Pixels` 字段（`lsp.completion_menu.max_width`），交不了 `AbsoluteLength`，
+/// 所以换算走 [`rem_px`](crate::editor_view::rem_px)。
+pub(crate) fn menu_width(rem: gpui_kit::Pixels) -> gpui_kit::Pixels {
+    crate::editor_view::rem_px(rem, COMPLETION_MENU_WIDTH_PX)
+}
+
+/// 把菜单宽度改成 `width`，返回**是否真的改过**（没装 provider 的编辑器一律返回 `false`：
+/// 它们不弹这个菜单，保持上游默认 320px —— 与 [`install`] 的早退同一条口径）。
+///
+/// ⚠️ 为什么必须有这条路，而不只是 [`install`] 里那一次赋值：`completion_menu.max_width`
+/// 被上游**每帧**读一次（`gpui-component-0.7.0/src/input/popovers/completion_menu.rs:383`），
+/// 而 [`install`] 只在两个**一次性**时机跑（`open()` / `prepare_java()`）—— 于是改界面字号后
+/// **已经打开**的弹层仍按旧 rem 基准换算，重新打开文件才正确。调用点在
+/// `EditorPane` 的 `Theme` 全局观察者（`crate::editor_view::EditorPane::sync_completion_menu_width`）：
+/// 界面字号一改就按新基准重写这一槽。
+pub(crate) fn set_menu_width(
+    state: &mut gpui_kit::component::input::EditorState,
+    width: gpui_kit::Pixels,
+) -> bool {
+    let lsp = state.lsp_mut();
+    if lsp.completion_provider.is_none() || lsp.completion_menu.max_width == width {
+        return false;
+    }
+    lsp.completion_menu.max_width = width;
+    true
+}
+
 /// 把补全装到一个 `EditorState` 上（`None` 时**什么都不做**：非 Java 文件不装）。
 ///
 /// 两件事一起做，因为它们总是成对出现：
 /// 1. 赋值 `Lsp.completion_provider`（挂载点见模块文档的表）；
-/// 2. 调宽菜单（[`COMPLETION_MENU_WIDTH_PX`]）——上游默认 320px 会把 Java 签名截断。
+/// 2. 按**当时**的 rem 基准调宽菜单（[`menu_width`]）——上游默认 320px 会把 Java 签名截断。
+///    ⚠️ 这一次赋值会随字号变化而过期，之后由 [`set_menu_width`] 在字号变化时重写（见它的文档）。
 ///
-/// `rem` 是本帧的 rem 基准（两处调用点都已有 `Window`，传 `window.rem_size()`）：菜单宽度那一槽
-/// 是 `Pixels` 字段（`lsp.completion_menu.max_width`），交不了 `AbsoluteLength`。
+/// `rem` 是本帧的 rem 基准（两处调用点都已有 `Window`，传 `window.rem_size()`）。
 ///
 /// 由 [`crate::editor_view`] 在两个位置调用：`open()`（新开的 Java buffer）与
 /// `prepare_java()`（服务就绪后给**已经打开**的 Java buffer 补装）。
@@ -94,7 +123,7 @@ pub(crate) fn install(
     };
     let lsp = state.lsp_mut();
     lsp.completion_provider = Some(provider);
-    lsp.completion_menu.max_width = crate::editor_view::rem_px(rem, COMPLETION_MENU_WIDTH_PX);
+    lsp.completion_menu.max_width = menu_width(rem);
 }
 
 /// Java 的补全数据源。
