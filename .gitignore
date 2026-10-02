@@ -9,3 +9,6 @@ design-qa-artifacts/
 .reasonix/
 reasonix.toml
 .codex/
+build.log
+.zcodeignore
+rust/.ferrograph
