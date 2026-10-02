@@ -186,7 +186,7 @@ Core 侧缺口**只上报，不在此分支修**。上报材料 = §0 的三处�
 | **D23** | 精确对齐不变量落地 | 「两条 edge 或两段 spacing 按设计应相等时，**相差一个 rendered pixel 也是缺陷**」；相等关系必须来自**同一个** rem helper / spacing token / shared inset，**不能用 raw pixel offset 修补** | 未核；§2.2 多处"度量与 macOS 不一致"应优先修共同 owner，而不是逐个调 offset |
 | **D24** | 界面文案过一遍用词规范 | 「入口/对象用名词、命令用动词、状态用形容词」；按钮说明**结果**；`OK` 只用于纯信息确认；打开对话框的命令加 `…`；英文 sentence case；单省略号 `…` | 文案真源是 `macos/Resources/zh-Hans.lproj`，复刻时顺带按此校对；§2.2 ①的"状态栏 4 项假值"也属这类 |
 | **D25** | 评估是否还需要嵌 `AllAssets`（**约 1.02 MiB**） | `assets.md` 的嵌入量对照：默认组件图标 **101 个 = 44.28 KiB（基线）**，**`AllAssets` 1830 个 = 731.45 KiB，+1.02 MiB**；并明确"**依赖图标 crate 不等于嵌入全部图标**，只有显式注册 `AllAssets` 才会" | 本项目 `application().with_assets(assets::LitheAssets)` 里把 `AllAssets` 当兜底。我们自己另嵌 411 个文件（3,317,489 B）。若界面实际只用到我们自己那批图标，用指南的 `icon_assets!(ExtraIcons, [...])` 按需选、或直接去掉 `AllAssets` 兜底，能省下这笔体积。**需要先统计"哪些图标名只有 Lucide 侧才有"**，否则会静默画空白 |
-| **D26** | **引入 gpui-kit 的 UI 集成测试层** | 上游 `test.md`：`#[gpui_kit::test]` + `TestAppContext` + `gpui_kit::test::{TestWindowExt, TestSupportExt}`，提供 `window.click/click_at/double_click/right_click/hover/scroll/drag_to/press/input`、`window.within(..)` 作用域、`ElementSnapshot`（role/label/value/bounds/focused/checked/selected/expanded）、`cx.wait_for(..)` 有界等待；需要 `test-support` feature。⚠️ **本项目 gpui 侧完全没有这一层**：`#[cfg(test)]` 73 处全是纯函数单测，注释多处写明"本 crate 拿不到 `TestAppContext` / `#[gpui::test]`，起不了窗口" | **收益最大的测试投入**：§2.2 里那批"只能靠真机手测"的交互缺口——底部工具窗拖拽热区（`drag_to`）、浮层焦点约束与归还（`overlays.rs` 写法）、菜单键盘路径（`menu.rs`）、Dock Tab 重排与跨分组拖放（`dock.rs`）、表格/树虚拟滚动（`collections.rs`）——**上游都有现成写法可抄**。落地要先解决"Cargo 里怎么把 `test-support` 与锁定版 gpui-kit 接起来"（`test.md §配置测试项目` 给了独立 `ui-tests/` crate 的完整写法） |
+| ~~**D26**~~ ✅ | **引入 gpui-kit 的 UI 集成测试层** | **已完成**：落点 `crates/workbench/tests/`（`ui.rs` + `common/mod.rs`，夹具形状照 `gpui-kit-0.7.0/tests/common/mod.rs` 抄）。**不用新建 `ui-tests/` crate**：上游 `test.md §配置测试项目` 里那个独立项目是因为上游要测自己的 Kit 源码检出；本仓库把 `gpui-kit = { version = "0.7", features = ["test-support"] }` 放进 `crates/workbench` 的 `[dev-dependencies]` 即可 —— 同一个 registry 来源与版本，feature 正常合并，**不需要 Cargo patch**（`Cargo.lock` 只多了 test-support 链上的 proptest 等 10 个包）。已验证**不泄漏**：`cargo tree -p lithe-gpui-app -e normal` 里 gpui-kit 的 feature 是 `assets,component,default,tree-sitter-*`，**没有 `test-support`**。首条测试用**真实** `EditorPane`：开真实临时文件 → 渲染一帧 → 断言 `tab_size()` / `active_buffer_is_readonly()` / `active_buffer_name()` / `set_tab_size(8)` 生效 | 见左列；后续 §2.2 那批"只能靠真机手测"的交互缺口（底部工具窗拖拽热区 `drag_to`、浮层焦点约束与归还、菜单键盘路径、Dock Tab 重排、表格/树虚拟滚动）现在有落点了 |
 
 ---
 
@@ -258,6 +258,7 @@ U23（Agent）───────────► 依赖"ACP 长连接 vs 同�
 | **D13** | ✅ 已完成 | `cargo test -p lithe-gpui-editor` 52 条 / `-p lithe-gpui-workbench` 82 条通过；两格改读 `EditorPane` 的真值 |
 | **D16** | ✅ 已完成 | `cargo test -p lithe-gpui-shared` 的 `tests::rem_px_scales_with_the_runtime_base` 通过；`cargo fmt --all -- --check` exit 0 |
 | **D17** | ✅ 已完成 | `node lithe-gpui/tools/check-ui-px.mjs` **exit 0 / 违规 0**；`--selftest` 仍报出样例里那 1 条真违规、放行白名单 2 处（判据没被改松） |
+| **D26** | ✅ 已完成 | `cargo test -p lithe-gpui-workbench --test ui` → **1 passed**；`-p lithe-gpui-workbench` 全量 82 单测 + 1 集成测试全绿；`cargo fmt --all -- --check` exit 0；生产图 `cargo tree -p lithe-gpui-app -e normal` 无 `test-support` |
 
 ⚠️ **D17 的口径更正**：原表"生产代码约 57 处"来自把注释/字符串里的 `px(` 与 `#[cfg(test)]` 断言一起计数，
 实测真正的 UI 代码调用是 **13 处**（白名单 11 + 违规 2），本次只改了那 2 处。见 §4.3 的更正说明。

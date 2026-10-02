@@ -20,6 +20,7 @@
 | 构建 | `cargo build --manifest-path rust/Cargo.toml -p lithe-gpui-app --bin Lithe` 通过（约 6m26s，debug exe ≈ 102 MB） |
 | `lithe-core` 测试 | 762 条 **761 通过**，1 条 `git::history` 分页测试因本机临时目录权限失败（既有问题） |
 | 界面宿主 | 12 个 crate；设置 8 页已实现，其余分类是明确空态 |
+| UI 测试 | `cargo test -p lithe-gpui-workbench --test ui` → 1 条通过（`D26` 的测试层，见 §4） |
 | 验证 | **只有 Windows**。macOS / Linux 未验证 —— 不要声称 macOS 已验证 |
 
 ⛔ **本分支不改 `rust/lithe-core/`**（它从 main 同步进来）。范围约束与任务归属见任务表顶部。
@@ -144,10 +145,13 @@ registry 里已解析的源码。
 - **会话状态**：`.lithe/session.local.json` 已落地，但**没有 watcher**（外部手改要重开项目）、
   没有 `directoryMarks`（gpui 侧没有"标记目录"这个交互）。
 - **`Ctrl+,` / `Ctrl+Shift+P` 的键盘入口始终没机器验证过**（注入侧 `SetForegroundWindow` 常被系统拒绝）；鼠标路径都验过。
+  ⚠️ **这条现在有解了**：`D26` 已接上 UI 集成测试层（`crates/workbench/tests/`），
+  `window.press(..)` / `window.click(..)` 走 GPUI 自己的事件派发，**不依赖窗口拿到前台焦点** ——
+  那批"只能靠真机手测"的条目（菜单键盘路径、底部工具窗拖拽热区、浮层焦点归还）应当改用这一层来钉。
 
 **技术债（小改动、高收益，可插队，见任务表 §4.3）**：✅ `rem_px` 已由 5 份收敛为 `shared` 一份（`D16`）；
 ✅ 生产代码的直接 `px()` 已清零（`D17`），守卫实测 **exit 0 / 违规 0 处**（余下 11 处是白名单里的 7 条平台/token 例外）；
-`searchable` 的注释与实际默认值相反。
+✅ `D26` 已接上 UI 集成测试层（见 §4 的 `ui` 测试）；
 
 ## 5. 文档索引（按此顺序读）
 

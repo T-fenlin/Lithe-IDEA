@@ -180,6 +180,24 @@ editor_gutter_background}` 可配。缺 minimap、overview ruler、sticky scroll
 | Windows | 构建通过、真实 Core 数据、界面按 `UI-MAP.md` 逐区域对齐 |
 | macOS / Linux | **未验证**。**不要声称 macOS 已验证。** |
 
+### UI 集成测试层（`D26`）
+
+`crates/workbench/tests/` 下是**能在无头窗口里跑真实交互**的测试层（此前 `#[cfg(test)]`
+只有纯函数单测）。由 `gpui-kit` 的 `test-support` feature 提供，按上游
+`docs/gpui kit/0.7.0/docs/test.md` 的口径接：
+
+```powershell
+cargo test --manifest-path rust/Cargo.toml -p lithe-gpui-workbench --test ui
+```
+
+- feature **只在 `[dev-dependencies]` 里打开**（`crates/workbench/Cargo.toml`），
+  这样生产制品不会被装上观察包装 —— 上游 `test.md` 的硬要求；
+- `tests/common/mod.rs` 是窗口夹具（形状照 `gpui-kit-0.7.0/tests/common/mod.rs` 抄）。
+  上游明确说这两个文件**必须成对**：只拷 `ui.rs` 会在 `mod common;` 处失败；
+- 断言走组件自己的公开访问器 +「窗口真的渲染出一帧」，**不为了好写而给生产渲染树加
+  `.test_support()` / `aria_label`**（`test.md` 明确劝阻"仅为让视觉断言通过而加 aria_label"）。
+  要在渲染树里查询控件时才加 `.test_support()`，它不增加布局盒子，且关闭 feature 时是空操作。
+
 **构建（2026-10-02 实测）**：
 
 ```text
