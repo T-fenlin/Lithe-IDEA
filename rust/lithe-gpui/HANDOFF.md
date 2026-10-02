@@ -14,9 +14,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| 分支 | `chore/sync-macos-and-lithe-core-from-main`（领先 main 约 212 个提交，**未推送**） |
-| 最近提交 | `f6973789` 任务表 · `d6997d34` UI-MAP 重写 · `29a5a771` 让 main 的 core 与本分支宿主能同时构建 |
-| 工作区 | 干净 |
+| 分支 | `chore/sync-macos-and-lithe-core-from-main`（领先 main 约 215 个提交，**未推送**） |
+| 最近提交 | `bedb41ca` BLOCKERS 复测更正 · `f5ae19d7` 工具链事实 · `a3abc3b6` HANDOFF/README 重写 · `f6973789` 任务表 · `d6997d34` UI-MAP 按 0.7 重写 |
+| 工作区 | 干净（截至 `bedb41ca`；文档改动均已成提交，无未提交文件） |
 | 构建 | `cargo build --manifest-path rust/Cargo.toml -p lithe-gpui-app --bin Lithe` 通过（约 6m26s，debug exe ≈ 102 MB） |
 | `lithe-core` 测试 | 762 条 **761 通过**，1 条 `git::history` 分页测试因本机临时目录权限失败（既有问题） |
 | 界面宿主 | 12 个 crate；设置 8 页已实现，其余分类是明确空态 |
@@ -127,9 +127,14 @@ registry 里已解析的源码。
 
 - **终端不是真终端**：`std::process::Command` + 三管道 + 丢控制序列，**无 PTY、无 resize、无 Ctrl+C、无 SGR**；
   shell 探测硬编码 Windows `["powershell","cmd"]` ⇒ macOS 上不可用。
-- **运行启动阻塞 UI 线程**：`run` crate 在 UI 线程闭包内同步跑完所有 `preLaunchSteps`（含 `javac`，上限 300s）。
-- 状态栏仍有硬编码/假值（内存 `"总计 0.0 MB"`、编码恒 `UTF-8`、缩进恒 `2`、只读图标恒锁定）；
-  `workbench` 每帧读 `.git/HEAD`；底部工具窗的拖拽热区是死的 `div`。
+- ✅ **运行启动不再阻塞 UI 线程**（D10）：`preLaunchSteps`（含 `javac`）移进 `background_spawn`，
+  回前台只剩 `spawn` + 建读线程。
+- ✅ **状态栏两格接上真值**（D13）：缩进取 `EditorPane::tab_size()`、只读态取
+  `EditorPane::active_buffer_is_readonly()`（图标在 `LOCK_ICON` / `LOCK_OPEN_ICON` 间切换）。
+  ✅ **分支项不再每帧读 `.git/HEAD`**（D11）：改读 Git 视图已持有的 `git.status` 快照
+  （`ChangesView::branch()`），worktree / 分离 HEAD / 仓库根≠工作区根都不再读错。
+  状态栏**仍剩**两处假值：内存 `"总计 0.0 MB · Lithe 0.0 MB"`、Git 更改数空格；
+  底部工具窗的拖拽热区仍是死的 `div`。
 - **主菜单栏没有键盘路径**（Tab 聚焦 + Enter 未实现；gpui 无 mnemonic 概念，`Alt` 助记键做不到）。
 - **分支弹窗两处偏差**：页签行在搜索框**上方**（真源在下方）、搜索行右侧没有关闭按钮。
 - **项目下拉**面板右侧有一条常显细滚动条（`scrollable(true)` 的 16 逻辑 px 占位）。
@@ -140,8 +145,9 @@ registry 里已解析的源码。
   没有 `directoryMarks`（gpui 侧没有"标记目录"这个交互）。
 - **`Ctrl+,` / `Ctrl+Shift+P` 的键盘入口始终没机器验证过**（注入侧 `SetForegroundWindow` 常被系统拒绝）；鼠标路径都验过。
 
-**技术债（小改动、高收益，可插队，见任务表 §4.3）**：`rem_px` 在 5 个 crate 里各一份；
-生产代码约 57 处直接写 `px()`；`searchable` 的注释与实际默认值相反。
+**技术债（小改动、高收益，可插队，见任务表 §4.3）**：✅ `rem_px` 已由 5 份收敛为 `shared` 一份（`D16`）；
+✅ 生产代码的直接 `px()` 已清零（`D17`），守卫实测 **exit 0 / 违规 0 处**（余下 11 处是白名单里的 7 条平台/token 例外）；
+`searchable` 的注释与实际默认值相反。
 
 ## 5. 文档索引（按此顺序读）
 

@@ -163,14 +163,14 @@ Core 侧缺口**只上报，不在此分支修**。上报材料 = §0 的三处�
 
 | ID | 任务 | 落点 | 为什么优先 |
 | --- | --- | --- | --- |
-| **D10** | 运行启动别阻塞 UI 线程 | `crates/run/src/pane.rs:286-296` → `session.rs:136-138,336-375` | `preLaunchSteps` 同步跑，javac 期间**整窗卡死最长 300s** |
-| **D11** | 状态栏别每帧读 `.git/HEAD` | `crates/workbench/src/workspace.rs:2701` → `:4501-4509` | 每帧一次文件 I/O，且 worktree/分离 HEAD/仓库根≠工作区根**全读错**；应改走 `git.status` |
-| **D12** | 修 `searchable` 反向注释 | `crates/editor/src/lib.rs:231-233`、`editor_view.rs:939-943` | 注释说"上游默认 true"，实际 0.7 是 `false`；后人"清理冗余调用"会**静默丢掉 Ctrl+F/H** |
-| **D13** | 状态栏只读/缩进格接真值 | `workspace.rs:2800-2814` | `is_readonly()` 上游已有（`gpui-base-0.7.0/.../state.rs:509`），`tab_size` 宿主自己有（`editor_view.rs:401`） |
+| ~~**D10**~~ ✅ | 运行启动别阻塞 UI 线程 | **已完成**：`RunSession::start` 拆成 `prepare`（取计划 + 跑 `preLaunchSteps`，**阻塞**，放进 `background_spawn`）+ `start`（只做 `spawn` + 建读线程，毫秒级，可在 UI 线程）；`ToolchainResolver` 因此补上 `Send + Sync`（外壳实现是纯查表，本来就满足） | `preLaunchSteps` 同步跑，javac 期间**整窗卡死最长 300s** |
+| ~~**D11**~~ ✅ | 状态栏别每帧读 `.git/HEAD` | **已完成**：删掉 `workbench::read_branch`，改用 `ChangesView::branch()` —— Git 视图已持有的 `git.status` 快照，**每帧只做内存读取、没有 I/O**；worktree / 分离 HEAD / 仓库根≠工作区根这三处读错交给 Core 判定 | 每帧一次文件 I/O，且 worktree/分离 HEAD/仓库根≠工作区根**全读错**；应改走 `git.status` |
+| ~~**D12**~~ ✅ | 修 `searchable` 反向注释 | **已完成，但本行原判断是反的**：0.7.0 的 `EditorState::new` **确实**把 `searchable` 设成 `true`（`gpui-base-0.7.0/src/input/base/state.rs:10085` → `:10088`；`:709` 的 `false` 属于 `InputBaseState::default`，是给单行 `Input` 用的），所以**原注释是对的**。本轮真正修的是：陈旧路径 `0.6.6` → 0.7.0 实测位置，并补上"删掉这一句会**静默**失去 Ctrl+F/H"的后果 | 后人"清理冗余调用"会**静默丢掉 Ctrl+F/H**（这一点原来就成立，只是理由写错了版本） |
+| ~~**D13**~~ ✅ | 状态栏只读/缩进格接真值 | **已完成**：新增 `EditorPane::tab_size()` 与 `EditorPane::active_buffer_is_readonly()`；`footer_right` 的缩进格与只读格改读它们，只读图标在 `LOCK_ICON` / `LOCK_OPEN_ICON` 之间切换 | `is_readonly()` 上游已有（`gpui-base-0.7.0/src/input/base/state.rs:509`），`tab_size` 宿主自己有（`editor_view.rs:397`） |
 | **D14** | 文档/注释里的死引用 | `UI-MAP.md:141`（`panels.rs` 不存在）、`explorer/src/lib.rs:28-29`（空目录分支不可达）、`model.rs:214`（行号漂移） | 一行级，收益是后续核对不再踩空 |
 | **D15** | 清掉 gpui 里的 `windows/tauri` 规格残留 | 约 178 处注释（workbench 49、git crate 头部整份、explorer、terminal、editor） | 规格已定 macOS；不清掉，阶段二/四每条都要重新论证一次 |
-| **D16** | **把重复的 `rem_px` 换算收敛成一份** | `crates/{editor,git,settings,terminal,workbench}/src/*.rs` 里各有一份实现（`editor_view.rs:112`、`log_view.rs:93`、`dialog.rs:202`、`terminal_view.rs:707`，外加 `workbench` 的 `rem_px`）；`crates/shared/` **没有**共享版 | 同一套换算写 5 遍，任何一处改口径（16 还是别的基准）都会分叉；`shared` 是跨 crate 原语该在的地方（`icons` / `i18n` / `core_client` 已在那里） |
-| **D17** | **清掉生产代码里直接写的 `px()`，改用 rem-based 助手** | 生产代码约 **57 处**：`workbench` 22、`settings` 18、`terminal` 7、`git` 6、`editor` 5、`explorer` 4、`shared` 2、`app` 8 | 口径已在 `editor_view.rs` 的度量段落写明"一律用 gpui 的 rem-based helper，不再直接写 `px(...)`"，但其它 crate 没跟上；写死 px 会让"用户改界面字号"时不缩放。**注意**：测试里的 `px()` 断言不算（约 65 处），且真需要 `Pixels` 的槽（如事件增量）应走 D16 的统一 `rem_px` |
+| ~~**D16**~~ ✅ | **把重复的 `rem_px` 换算收敛成一份** | **已完成**：唯一实现 `crates/shared/src/lib.rs` 的 `rem_px`（+ 随基准缩放的 5 条断言单测）；`editor` / `git` / `settings` / `terminal` / `workbench` 五处改为 `pub(crate) use lithe_gpui_shared::rem_px;` 转发（共 6 份定义、3 份重复单测 → 1 + 1） | 同一套换算原先写 5 遍，任何一处改口径（16 还是别的基准）都会分叉；`shared` 是跨 crate 原语该在的地方（`icons` / `i18n` / `core_client` 已在那里） |
+| ~~**D17**~~ ✅ | **清掉生产代码里直接写的 `px()`，改用 rem-based 助手** | **已完成**：终态 2 处违规（`terminal_view.rs` 的 `row_font_size` / `self.font_size`）改为 `rems(size / 16.)`（设置值是规格 px，`Styled::text_size` 收 `AbsoluteLength`）；守卫 `node lithe-gpui/tools/check-ui-px.mjs` 实测 **exit 0 / 违规 0**。║ **口径更正**：本表原写"生产代码约 57 处"，实测**不是** 57 —— 那是把注释/字符串里的 `px(` 与测试断言一起数进去的结果。守卫的实测分解（`--list`）：`px(` 子串 214 处（改动前）= 注释/字符串 66 + 形近调用 82 + `#[cfg(test)]` 内 53 + **真正的 UI 代码调用 13**（其中白名单 11、违规 2） | 写死 px 会让"用户改界面字号"时不缩放。守卫只认 `coding-guides.md:288` 的四类例外，白名单 7 条（4 条 OS 窗口平台边界 + 3 条 `Theme.font_size`/`mono_font_size` token 定义本身） |
 
 ### 4.4 官方指南衍生的债务（来源：`docs/gpui kit/0.7.0/docs/{coding,design}-guides.md`）
 
@@ -247,6 +247,21 @@ U23（Agent）───────────► 依赖"ACP 长连接 vs 同�
 ## 7. 每做完一条要更新这里
 
 - 状态：`待办` / `进行中` / `已完成` / `已否决（原因）`
+
+**已完成（本分支）**
+
+| ID | 状态 | 验证证据 |
+| --- | --- | --- |
+| **D10** | ✅ 已完成 | `cargo test -p lithe-gpui-run` 16 条通过；拆点判据：阻塞的只剩 `prepare`，`start` 只 `spawn` |
+| **D11** | ✅ 已完成 | `cargo test -p lithe-gpui-workbench` 82 条通过；`read_branch` 已从代码里消失（grep 0 命中） |
+| **D12** | ✅ 已完成 | 注释改为 0.7.0 实测行号；**并更正了本表原来写反的判断**（见 §4.3 的 D12 行） |
+| **D13** | ✅ 已完成 | `cargo test -p lithe-gpui-editor` 52 条 / `-p lithe-gpui-workbench` 82 条通过；两格改读 `EditorPane` 的真值 |
+| **D16** | ✅ 已完成 | `cargo test -p lithe-gpui-shared` 的 `tests::rem_px_scales_with_the_runtime_base` 通过；`cargo fmt --all -- --check` exit 0 |
+| **D17** | ✅ 已完成 | `node lithe-gpui/tools/check-ui-px.mjs` **exit 0 / 违规 0**；`--selftest` 仍报出样例里那 1 条真违规、放行白名单 2 处（判据没被改松） |
+
+⚠️ **D17 的口径更正**：原表"生产代码约 57 处"来自把注释/字符串里的 `px(` 与 `#[cfg(test)]` 断言一起计数，
+实测真正的 UI 代码调用是 **13 处**（白名单 11 + 违规 2），本次只改了那 2 处。见 §4.3 的更正说明。
+
 - ⛔ **本分支不改 `rust/lithe-core/`**：需要 Core 契约变更的条目，开工前先确认它已被 main 同步进来；
   否则记成"阻塞：等 main"，不要在本分支实现。
 - 涉及架构判定的，落一条 `.agents/notes/`；

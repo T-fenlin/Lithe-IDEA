@@ -273,7 +273,7 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 
 来源：`docs/gpui kit/0.7.0/docs/` 下的官方文档镜像（41 份，其中 `coding-guides.md` 607 行、`design-guides.md` 515 行是主指南）。
 **改界面前应先读它们**（编码指南开头就要求"请先阅读设计指南"）。
-下面只摘与本项目界面复刻直接相关、且容易违反的条文；**带 ⚑ 的是本项目现状**。共 21 组（A–U）。
+下面只摘与本项目界面复刻直接相关、且容易违反的条文；**带 ⚑ 的是本项目现状**。共 27 组（A–AA）。
 
 **怎么找**（按你正在做的事定位到组）：
 
@@ -304,7 +304,7 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 
 | 条文 | 出处 | ⚑ 本项目现状 |
 | --- | --- | --- |
-| application layout 用 rem-based helper 或 semantic component Size，**不得**直接 `px(...)`；fixed px 只允许 physical/raster 边界，且必须记录 | design §缩放 | 约 57 处待清（`D17`） |
+| application layout 用 rem-based helper 或 semantic component Size，**不得**直接 `px(...)`；fixed px 只允许 physical/raster 边界，且必须记录 | design §缩放 | ✅ 守卫 `node lithe-gpui/tools/check-ui-px.mjs` 实测 **exit 0 / 违规 0 处**：11 处命中全部落在白名单里（7 条：4 条 OS 窗口平台边界 + 3 条 `Theme.font_size`/`mono_font_size` token 定义本身） |
 | application code **不得**引入 raw hex / `rgb` / `rgba` / `hsla`；缺语义 role 时**在产品 theme/token 层定义**，不在 call site 嵌 palette 值 | coding §主题与样式、design §颜色与主题 | ✅ **没有** raw color 字面量，也**没有**自建颜色表；全部走 `cx.theme()`（实测复核过） |
 | 新 presentation 优先用 `Theme::semantic_tokens()`（通用 color/radius/spacing/typography/shadow）；legacy token 只作兼容 | coding §主题与样式 | 未核 —— 若有自建 token 层，宜迁到 semantic tokens |
 | `Theme::update(cx, …)` 才会把 `colors` / `tokens` / base 三份重新对齐；直接 `Theme::global_mut(cx)` 只改你碰的那个字段（会出现"文字新、背景旧"） | coding §主题与样式 | 改主题时注意 |
