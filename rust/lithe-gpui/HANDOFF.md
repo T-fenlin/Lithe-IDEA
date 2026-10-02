@@ -150,6 +150,6 @@ registry 里已解析的源码。
 | `rust/lithe-gpui/UI-MAP.md` | **接手第一份**：§1.1 度量规则 · §1.4 官方指南 27 组条文 + 逐条现状核查 · §2 17 个区域对照 · §3 验收清单 |
 | `docs/tasks/gpui-core-first.md` | 任务清单（69 条）+ **顶部范围约束** + §6 开工顺序 |
 | `rust/lithe-gpui/README.md` | 怎么跑、12 个 crate 的职责与依赖、已验证接口事实、硬约束 |
-| `rust/lithe-gpui/BLOCKERS.md` | 卡点登记册（**注意：它自己仍引用了已删除的 `PLAN.md`，待修**） |
+| `rust/lithe-gpui/BLOCKERS.md` | 卡点登记册（哪些做不了、为什么）。⚠️ **B4 的编号被 `crates/git/src/log_view.rs:958` 引用，不要改编号或删该条** |
 | `docs/gpui kit/0.7.0/` | 官方文档镜像 184 份（`docs/` 41 · `component/` 78 · `base/` 49 · `shell/` 15） |
 | `.agents/notes/` | 架构决策真源（中文）；`.agents/skills/develop-lithe/SKILL.md` 是编码与验证规则真源 |
