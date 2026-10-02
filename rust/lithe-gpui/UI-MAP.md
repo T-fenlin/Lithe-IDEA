@@ -333,7 +333,7 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 | 长集合必须 virtualize，只 render 可见 range；row identity 与可见位置分开；**width/typography/rem/row 内容变化要失效 item 测量** | coding §列表、表格与大数据集 | 提交表当前未虚拟化（见 §2.2 ⑥） |
 | 先绑键再建菜单栏：`cx.set_menus` 在调用那刻读取 keymap，之后注册的 binding 不会出现在菜单里 | coding §事件、Action 与焦点 | ✅ 本项目**不适用**：全仓零处 `cx.set_menus` 调用（菜单栏自绘 + `PopupMenu` 在渲染期反查 keymap），本条文的 native-menu 前提不存在。实测结论与六处 `bind_keys` 的调用链见 §1.4 N（`D20`） |
 | 一个逻辑命令只建模一次：工具栏按钮、菜单项、右键菜单、快捷键 dispatch **同一个 Action**，不复制五份 mutation | coding §事件、Action 与焦点 | 与 §2.2 ⑥ 的"引用行右键 17 项"实现方式相关 |
-| `Link` **只用于**交给浏览器/邮件客户端的外部目标；应用内导航与命令用 `Button`/`Action` | coding §事件、Action 与焦点、design §按钮与链接 | 未核 |
+| `Link` **只用于**交给浏览器/邮件客户端的外部目标；应用内导航与命令用 `Button`/`Action` | coding §事件、Action 与焦点、design §按钮与链接 | ✅ **零使用点，无违规可修**（`D22` 实测）：`crates/*/src/**` 全部 **99 个 `.rs`** 中 `Link`、`.href(`、`open_with`、`cx.open_url(` **均 0 处**。唯一 `Link` 字样是**图标名**（`shared/src/icons/idea.rs:216-219` 的 `externalLink.svg`，与元素无关）加两处**注释**（`editor/src/diagnostics.rs:222`、`notify/src/model.rs:56`）—— 既没有"应用内导航误用 `Link`"，也就没有外部目标接线点（全仓 `open_url` 调用点同样 0，仅本条与 §1.4 J 组提及）。⇒ 不修、无需替换为 `Button`/`Action`；"点开外部链接"若要落地属 U 系列新能力，不在本条 |
 
 **D. 文案与无障碍**
 
