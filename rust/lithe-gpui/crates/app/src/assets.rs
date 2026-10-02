@@ -35,7 +35,12 @@
 //! `settings/src/fonts.rs` 的 `include_bytes!` 直接编进二进制，再进 rust-embed 表就是双份），
 //! 再减去根目录的 `README.md`**。`LitheAssets::iter().count()` 实测 **411 个文件**
 //! （`app-icon/**` 7 个位图 + `images/logo.png` 1 个 + `icons/idea/**` 254 个文件 +
-//! `icons/pierre/**` 149 个文件），合计 **3 317 489 字节（约 3.16 MiB）**。
+//! `icons/pierre/**` 149 个文件），合计 **3 325 504 字节（约 3.17 MiB）**。
+//!
+//! ⚠️ 这个字节数的口径是**行尾无关**的（文本资源按 CRLF 归一到 LF 后计长，二进制资源原样计长）——
+//! rust-embed 嵌的是**检出工作区**的字节，而文本资源的行尾随 `core.autocrlf` 等**本地**设置变化，
+//! 本仓库又没有 `.gitattributes` 固定它，所以按原始检出字节求和会让同一个提交在不同机器上
+//! 算出不同的数。判据与逐条论证见 `mod tests` 里那条断言上方的注释。
 //! 2026-09-30 起 expui 界面图标（原 `ui-icons/idea/**`，157 个文件）已并入 `icons/idea/icons/**`
 //! 图标包，`ui-icons/` 目录不复存在；界面图标与文件类型图标从此同源（见 `shared/src/icons`）。
 //!
@@ -240,6 +245,44 @@ mod tests {
             .collect()
     }
 
+    /// 文本资源的扩展名白名单：这些资源按**行尾归一后**的字节长度计入总量。
+    ///
+    /// 判据必须是**显式扩展名**，不能靠"内容像不像文本"去猜（`from_utf8` 之类）：二进制资源
+    /// 里也可能出现合法的 `0x0D` 字节，猜错就会改掉它们的统计。白名单之外一律按原始字节长度计。
+    const CR_NORMALIZED_EXTENSIONS: &[&str] = &[
+        "json", "svg", "md", "txt", "toml", "yml", "yaml", "xml", "js", "css", "html",
+    ];
+
+    /// 没有扩展名、但确实是文本的内嵌资源，按**完整路径**点名（同样是显式白名单，不猜内容）。
+    ///
+    /// 目前只有 `icons/pierre/LICENSE`：git 把它当文本（`git ls-files --eol` 为 `i/lf`），
+    /// 所以 `core.autocrlf=true` 的检出会把它转成 CRLF。点名它，否则这条断言在这种检出上仍会漂移。
+    const CR_NORMALIZED_PATHS: &[&str] = &["icons/pierre/LICENSE"];
+
+    /// 该内嵌路径是否属于"行尾会随检出漂移的文本资源"。
+    fn is_cr_normalized_asset(name: &str) -> bool {
+        if CR_NORMALIZED_PATHS.contains(&name) {
+            return true;
+        }
+        match name.rsplit_once('.') {
+            Some((_, extension)) => CR_NORMALIZED_EXTENSIONS
+                .iter()
+                .any(|known| extension.eq_ignore_ascii_case(known)),
+            None => false,
+        }
+    }
+
+    /// 文本资源的行尾无关长度：只扣掉 CRLF 里那个 `\r`，孤立的 `\r` 原样保留。
+    ///
+    /// 于是同一份内容无论检出成 LF 还是 CRLF，算出的都是 LF 检出的长度（CRLF 长度 - 行数）。
+    fn crlf_normalized_len(data: &[u8]) -> usize {
+        data.len()
+            - data
+                .windows(2)
+                .filter(|pair| pair[0] == b'\r' && pair[1] == b'\n')
+                .count()
+    }
+
     /// 回归：未接线的图标包不得再进二进制。
     ///
     /// 保护的是"整包被拷回来"或 `#[exclude]` 被误删/写错（例如把 `lithe` 拼成 `light`）这类回归：
@@ -365,9 +408,23 @@ mod tests {
         // 本 crate 没有打开 rust-embed 的 `compression` 特性，所以内嵌字节数 == 源文件长度之和，
         // 可以直接用 `get()` 实测。`README.md` 已经不在表里，所以这里的和就是"资源总量"本身，
         // 不需要再按名字过滤。打印出来是为了让模块文档里那组数字可核对。
+        //
+        // ⚠️ 统计口径是**行尾无关**的：rust-embed 嵌的是**检出工作区**的字节，而文本资源的长度
+        // 随检出**行尾**变化（`core.autocrlf` 是本地/全局配置，本仓库没有 `.gitattributes` 固定它）。
+        // 所以这里按"是不是文本资源"分两类（判据见 `is_cr_normalized_asset`：扩展名白名单 +
+        // 无扩展名文本资源的路径白名单，**不猜内容**）：文本资源按"CRLF 归一到 LF 后"的长度计，
+        // 其余（PNG / ICO / ICNS / TTF 等二进制）**原样**计长 —— 实测这 9 个二进制资源里就有
+        // 10 513 个合法的 `0x0D` 字节，若全局去 `\r` 会直接误改它们的统计。这样同一个提交在
+        // LF 与 CRLF 检出上得到同一个数，断言不会因检出设置不同而红绿摇摆。
         let resource_bytes: usize = <LitheAssets as rust_embed::RustEmbed>::iter()
             .filter_map(|name| {
-                <LitheAssets as rust_embed::RustEmbed>::get(&name).map(|file| file.data.len())
+                <LitheAssets as rust_embed::RustEmbed>::get(&name).map(|file| {
+                    if is_cr_normalized_asset(&name) {
+                        crlf_normalized_len(&file.data)
+                    } else {
+                        file.data.len()
+                    }
+                })
             })
             .sum();
         println!(
@@ -391,12 +448,34 @@ mod tests {
         // 合计从 3 319 499 降到 3 317 489。这次实测同时暴露了旧登记值 3 319 379 的偏差：它比
         // 合并提交当时的实测值少 120（d76bd6ee 改过清单但没重测这个 pin），也就是说这一条
         // 在本次改动前就是红的。教训：**只要改 `assets/` 下的文件（含清单这种文本），就要重测**。
+        //
+        // 2026-10-02 b66dbd12 又一次改写了同一份清单：`iconDefinitions`/`lightIconDefinitions`
+        // 从"扁平 id → 路径"改成 files(48) / folders(6) / ui(74) 三分组并纳入 ui 字形，多出的
+        // 是**已有文件的引用**，没有新增资源（`git show --numstat b66dbd12` = 1 file changed，
+        // 无新增/删除）。清单本身由 9 333 涨到 17 348 字节（LF，+8 015）。b66dbd12 没有重测这个
+        // pin，于是这条断言红了 —— 又一次兑现了上一段的教训。本次实测（Windows 工作区）3 325 910。
+        //
+        // ⚠️ 旧口径曾经把"本机检出状态"钉进断言：`icons/idea/extension.json` 在 git 里是 LF
+        // （17 348 字节），而本机工作区检出的是 CRLF（17 754 字节，差值 406 == 该文件的行数）。
+        // `git ls-files --eol` 显示整个 `assets/` 下**只有这一个**文件的 w/eol 与 blob 不一致
+        //（`w/crlf 1`，其余 `w/lf 1041`、`w/none 148`、`w/-text 13`），所以两口径恰好差 406：
+        // 本机 CRLF 工作区 3 325 910，纯 LF 检出 3 325 504。本仓库没有 `.gitattributes`，
+        // `core.autocrlf=input`（本机全局配置，不随仓库走），因此"按检出字节求和"必然择一红。
+        //
+        // 2026-10-02 起改为**行尾无关**口径（判据 `is_cr_normalized_asset`，全部是显式白名单、
+        // 不猜内容）：扩展名白名单 `json` / `svg` / `md` / `txt` / `toml` / `yml` / `yaml` / `xml` /
+        // `js` / `css` / `html`，加上无扩展名文本资源 `icons/pierre/LICENSE`；命中的资源只扣掉
+        // CRLF 里的 `\r`（孤立的 `\r` 不动），其余资源（PNG / ICO / ICNS / TTF）原样计长。
+        // 下面这个数因此是"**文本资源归一 CR 后** 411 个内嵌文件的字节和"，
+        // 在 LF 与 CRLF 检出上是同一个值，等于 LF 检出/仓库口径。
         assert_eq!(
-            resource_bytes, 3_317_489,
-            "内嵌资源字节数应精确等于 411 个资源文件之和；若变大，先查未接线的图标包\
+            resource_bytes, 3_325_504,
+            "内嵌资源字节数应精确等于 411 个资源文件之和（文本资源行尾归一后的口径）；\
+             若变大，先查未接线的图标包\
              （lithe/symbols/material 合计约 4.97 MiB，注意 pierre 已接线、**在**二进制里）\
              是不是又进来了，再查是不是有资源被整体替换成了更大的版本；\
-             若变小，通常是清单 `icons/idea/extension.json` 被改写 —— 重测后再改这个数"
+             若变小，通常是清单 `icons/idea/extension.json` 被改写 —— 重测后再改这个数。\
+             另注意：清单改写也可能让这个数**变大**（2026-10-02 b66dbd12 的三分组改写 +8 015）"
         );
     }
 

@@ -267,6 +267,19 @@ U23（Agent）───────────► 依赖"ACP 长连接 vs 同�
 ⚠️ **D17 的口径更正**：原表"生产代码约 57 处"来自把注释/字符串里的 `px(` 与 `#[cfg(test)]` 断言一起计数，
 实测真正的 UI 代码调用是 **13 处**（白名单 11 + 违规 2），本次只改了那 2 处。见 §4.3 的更正说明。
 
+⚠️ **顺带修复（不在任务表编号内，做 D19/D25 时发现）**：`cargo test -p lithe-gpui-app` **在本轮之前是红的**。
+`assets.rs` 的 `embedded_range_stays_within_the_documented_envelope` 钉的内嵌资源字节数 `3_317_489`
+自 `b66dbd12`（改写 `icons/idea/extension.json` 为三分组、**只改引用不增文件**，+8 015 字节）之后就过期了，
+而那次提交没有重测这个 pin —— 与 `assets.rs` 里上一段"改 assets 就要重测"的教训是同一个坑，又踩了一次。
+修复同时纠正了一个更隐蔽的问题：**该断言原先按"检出工作区原始字节"求和，而文本资源行尾随
+`core.autocrlf` 等本地设置变化**（本机 `extension.json` 工作区是 CRLF 17 754 / blob 是 LF 17 348，差 406；
+`git ls-files --eol` 显示 `assets/` 下只有它 `w/crlf`），仓库又**没有 `.gitattributes`** 固定它，
+所以同一个提交在 LF 与 CRLF 检出上会算出不同的数（3 325 504 vs 3 325 910）⇒ **必然择一红**。
+现改为**行尾无关**口径：文本资源（显式扩展名白名单 + 无扩展名文本路径白名单，**不猜内容**）只扣 CRLF 里的 `\r`，
+二进制资源（PNG/ICO/ICNS/TTF，实测含 10 513 个合法 `0x0D` 字节）原样计长；pin = `3_325_504`。
+验证：`cargo test -p lithe-gpui-app` **10 通过** exit 0；`cargo fmt -p lithe-gpui-app -- --check` exit 0。
+**残留**：将来新增白名单外扩展名的文本资源（如 `.jsonc`）或无扩展名文本资源，CRLF 检出上仍会漂，需同时加进白名单。
+
 - ⛔ **本分支不改 `rust/lithe-core/`**：需要 Core 契约变更的条目，开工前先确认它已被 main 同步进来；
   否则记成"阻塞：等 main"，不要在本分支实现。
 - 涉及架构判定的，落一条 `.agents/notes/`；
