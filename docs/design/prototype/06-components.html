@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>组件画廊 · Int UI Kit 原型</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shell.css">
+<link rel="stylesheet" href="assets/dialogs.css">
+<link rel="stylesheet" href="assets/gallery.css">
+</head>
+<body>
+<div class="proto-head">
+  <b>Int UI Kit 原型</b>
+  <span>组件画廊</span>
+  <span>尺寸与色值取自 Figma 文档树 Components 页</span>
+  <code>?theme=light|lighthdr|dark&amp;bare=1</code>
+</div>
+<div class="stage" id="stage"></div>
+<nav class="dock" id="dock"></nav>
+<script src="assets/icons.js"></script>
+<script src="assets/gallery.js"></script>
+<script src="assets/shell.js"></script>
+<script>Shell.bootGallery({screen:'gallery', title:'组件画廊', build:function(){return GALLERY.render();}});</script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+/* =============================================================================
+   组件画廊 —— 通用组件的展示样式。
+   尺寸/色值取自 Figma 文档树 Components 页；每个分组下方标注了实测值。
+   ========================================================================== */
+
+.gallery{position:absolute;inset:0;overflow:auto;background:#1b1c1f;padding:0 28px 120px}
+:root[data-bare="1"] .gallery{background:var(--editor);padding:24px}
+.gallery-wrap{max-width:1180px;margin:0 auto}
+.gallery h2{
+  font-size:15px;font-weight:600;color:#f0f0f2;margin:30px 0 4px;
+  padding-bottom:8px;border-bottom:1px solid #2e3034;
+}
+.gallery h2:first-child{margin-top:8px}
+:root[data-bare="1"] .gallery h2{color:var(--fg);border-bottom-color:var(--border)}
+.gallery .note{color:#8a8d94;font-size:12px;margin:0 0 14px;line-height:18px}
+:root[data-bare="1"] .gallery .note{color:var(--fg-dim)}
+
+.gcard{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;color:var(--fg)}
+.gcard h5{margin:0 0 4px;font-size:13px;font-weight:600}
+.gcard .gsub{font-size:12px;color:var(--fg-dim);margin:0 0 14px}
+.grow{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+.gcol{display:flex;flex-direction:column;gap:14px}
+.glabel{font-size:11px;color:var(--fg-dim);min-width:74px}
+
+/* ---------- 勾选 / 单选 / 开关 ---------- */
+.chkbox{
+  width:16px;height:16px;border-radius:3px;border:1px solid var(--fg-dim);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;
+}
+.chkbox.on,.chkbox.ind{background:var(--accent);border-color:var(--accent)}
+.chkbox.invalid{border-color:var(--red);border-width:1.5px}
+.chkbox.focus{box-shadow:0 0 0 2px var(--accent)}
+.chkbox.disabled{opacity:.45}
+.chkbox.hover{background:var(--blue-soft)}
+.chkbox svg{width:11px;height:11px;stroke:#fff;stroke-width:2}
+.radio{
+  width:16px;height:16px;border-radius:50%;border:1px solid var(--fg-dim);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;
+}
+.radio.on{border-color:var(--accent)}
+.radio.on::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.radio.invalid{border-color:var(--red);border-width:1.5px}
+.toggle{width:28px;height:16px;border-radius:8px;background:var(--toggle-off);position:relative;flex:0 0 auto}
+.toggle.on{background:var(--toggle-on)}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff}
+.toggle.on::after{left:14px}
+
+/* ---------- 分段控件 ---------- */
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg div{padding:4px 12px;font-size:12px;border-right:1px solid var(--border)}
+.seg div:last-child{border-right:none}
+.seg div.on{background:var(--editor);box-shadow:inset 0 0 0 1px var(--border)}
+
+/* ---------- 进度 / 滚动条 / 加载 ---------- */
+.progress{width:232px;height:4px;border-radius:2px;background:var(--hover);overflow:hidden;position:relative}
+.progress i{position:absolute;left:0;top:0;bottom:0;width:62%;background:var(--accent);border-radius:2px}
+.scrollbox{
+  width:120px;height:120px;border:1px solid var(--border);border-radius:6px;position:relative;
+  padding:8px;font-size:12px;color:var(--fg-dim);
+}
+.scrollbox .sb{position:absolute;right:3px;top:8px;bottom:8px;width:8px;border-radius:4px;background:var(--hover)}
+.scrollbox .sb i{position:absolute;left:1px;width:6px;height:40px;top:10px;border-radius:3px;background:var(--scroll)}
+.spinner{width:24px;height:24px;border-radius:50%;border:2px solid var(--hover);border-top-color:var(--accent)}
+
+/* ---------- 快捷键 / 代码片段 ---------- */
+.kbd{
+  display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;
+  border-radius:4px;border:1px solid var(--border);background:var(--panel);font:12px var(--ui-font);color:var(--fg-dim);
+}
+.codechip{font:12px/16px var(--mono-font);background:var(--hover);border-radius:4px;padding:2px 6px;color:var(--fg)}
+
+/* ---------- 通知 / 警告 / 横幅 / 提示 ---------- */
+.notif{
+  display:block;width:300px;background:var(--panel);border:1px solid var(--border);border-radius:8px;
+  padding:10px 12px;font-size:13px;box-shadow:var(--shadow);
+}
+.notif .nt{display:block;font-weight:600;margin-bottom:2px}
+.notif .nb{display:block;color:var(--fg-dim);font-size:12px}
+.alert{display:block;width:100%;border:1px solid var(--red);border-radius:8px;overflow:hidden}
+.alert .ah{display:block;background:var(--red);color:#fff;padding:6px 12px;font-size:13px;font-weight:600}
+.alert .ab{display:block;padding:12px;font-size:13px}
+.banner{
+  display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border-radius:6px;
+  background:var(--orange);color:#fff;font-size:13px;
+}
+.tooltip{
+  display:inline-block;background:#2B2D30;color:#DFE1E5;border:1px solid #4E5157;
+  border-radius:6px;padding:6px 12px;font-size:13px;
+}
+
+/* ---------- 表格 / 弹窗单元格 ---------- */
+.tablebox{border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:13px;min-width:420px}
+.tablebox .tr{display:grid;grid-template-columns:1.4fr 1fr 1fr;height:28px;align-items:center}
+.tablebox .tr.th{background:var(--panel);color:var(--fg-dim);font-size:12px}
+.tablebox .tr td,.tablebox .tr div{padding:0 10px;white-space:nowrap}
+.treebox{width:292px;border:1px solid var(--border);border-radius:6px;padding:4px 0}

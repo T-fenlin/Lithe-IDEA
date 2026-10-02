@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Int UI Kit 原型 · 索引</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shell.css">
+</head>
+<body>
+<div class="proto-head">
+  <b>Int UI Kit 原型</b>
+  <span>索引</span>
+  <span>一次性原型，非产品代码</span>
+</div>
+
+<div class="stage">
+  <div class="index"><div class="index-wrap">
+    <h1>Int UI Kit 原型</h1>
+    <p class="lead">
+      按 JetBrains Int UI Kit / Int UI Icons（Figma Community）还原的界面原型。
+      所有尺寸与颜色来自 Figma REST API 导出的完整文档树，以及渲染图的像素采样 ——
+      没有一处是按名字猜的。
+    </p>
+
+    <a class="card" href="01-main-window.html" data-screen>
+      <div class="t"><span class="num">01</span>主窗口</div>
+      <div class="d">1536×960 完整 IDE：主工具栏 40 / 活动栏 41 / 项目树 360 / 编辑器 1094 / 终端 268 / 状态栏 29</div>
+    </a>
+    <a class="card" href="02-settings.html" data-screen>
+      <div class="t"><span class="num">02</span>设置</div>
+      <div class="d">891×653 = 头部 33 + 内容 563 + 底部 57，内容再分左树 283 与右区 608</div>
+    </a>
+    <a class="card" href="03-welcome.html" data-screen>
+      <div class="t"><span class="num">03</span>欢迎屏</div>
+      <div class="d">欢迎页左侧动作区与右侧卡片、最近项目</div>
+    </a>
+    <a class="card" href="04-search-everywhere.html" data-screen>
+      <div class="t"><span class="num">04</span>Search Everywhere</div>
+      <div class="d">650×382 弹窗：搜索输入、All/Classes/Files/Symbols/Actions 分组、结果行</div>
+    </a>
+    <a class="card" href="05-find-in-files.html" data-screen>
+      <div class="t"><span class="num">05</span>Find in Files</div>
+      <div class="d">677×624 弹窗：文件列表 + 命中结果，含高亮</div>
+    </a>
+    <a class="card" href="06-components.html" data-screen>
+      <div class="t"><span class="num">06</span>组件画廊</div>
+      <div class="d">按钮 / 勾选 / 单选 / 开关 / 输入 / 标签页 / 进度 / 通知 / 表格 等分组</div>
+    </a>
+
+    <div class="note">
+      <strong style="color:#c9ccd3">主题</strong>　
+      <span id="themeBtns"></span>
+      <div class="swatches">
+        <div class="sw" style="background:#F7F8FA" title="Light 面板 #F7F8FA"></div>
+        <div class="sw" style="background:#27282E" title="Light 标题栏 #27282E"></div>
+        <div class="sw" style="background:#FFFFFF" title="Light 编辑器 #FFFFFF"></div>
+        <div class="sw" style="background:#EBECF0" title="Light 边框 #EBECF0"></div>
+        <div class="sw" style="background:#3574F0" title="强调色 #3574F0"></div>
+        <div class="sw" style="background:#D4E2FF" title="选中 #D4E2FF"></div>
+        <div class="sw" style="background:#2B2D30" title="Dark 面板 #2B2D30"></div>
+        <div class="sw" style="background:#1E1F22" title="Dark 编辑器 #1E1F22"></div>
+        <div class="sw" style="background:#393B40" title="Dark 边框 #393B40"></div>
+      </div>
+      <p style="margin:10px 0 0">
+        三套主题的标题栏颜色是实测值，与名字给人的直觉相反：
+        <code>Light</code> 是浅色内容配<strong>深色</strong>标题栏 <code>#27282E</code>；
+        <code>Light with Light Header</code> 才是全浅色 <code>#F7F8FA</code>；
+        <code>Dark</code> 为 <code>#2B2D30</code>。
+      </p>
+      <p style="margin:10px 0 0">
+        另有 <code>?bare=1</code>：隐藏原型自身的页眉与切换条，画布按 1:1 输出，可直接用于截图或与设计稿逐像素比对。
+        例如 <code>01-main-window.html?bare=1&amp;theme=dark</code>。
+      </p>
+      <p style="margin:10px 0 0">
+        字体随包提供：Inter 与 JetBrains Mono（均可变字体，SIL Open Font License 1.1，
+        许可证原文见 <code>assets/fonts/</code>）。设计稿用的就是这两款，不打包的话会退回
+        Segoe UI / Consolas，字形宽度完全不同。
+      </p>
+    </div>
+  </div></div>
+</div>
+
+<script>
+(function () {
+  var THEMES = [['light','Light'],['lighthdr','Light + Light Header'],['dark','Dark']];
+  var KEY = 'intui-theme';
+  var params = new URLSearchParams(location.search);
+  var theme = params.get('theme');
+  if (!theme) { try { theme = localStorage.getItem(KEY); } catch (e) {} }
+  if (['light','lighthdr','dark'].indexOf(theme) < 0) theme = 'light';
+
+  function apply(t) {
+    theme = t;
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+    var url = new URL(location.href); url.searchParams.set('theme', t);
+    history.replaceState(null, '', url);
+    document.querySelectorAll('[data-screen]').forEach(function (a) {
+      a.setAttribute('href', a.getAttribute('data-screen-file') + '?theme=' + t);
+    });
+    document.querySelectorAll('#themeBtns button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.t === t);
+    });
+  }
+
+  document.querySelectorAll('[data-screen]').forEach(function (a) {
+    a.setAttribute('data-screen-file', a.getAttribute('href'));
+  });
+
+  var box = document.getElementById('themeBtns');
+  THEMES.forEach(function (p) {
+    var b = document.createElement('button');
+    b.textContent = p[1]; b.dataset.t = p[0];
+    b.style.cssText = 'font:12px var(--ui-font);color:#c9ccd3;background:#1c1e21;border:1px solid #33363b;'
+      + 'padding:4px 10px;border-radius:5px;cursor:pointer;margin-right:6px';
+    b.onclick = function () { apply(b.dataset.t); };
+    box.appendChild(b);
+  });
+  apply(theme);
+  document.querySelectorAll('#themeBtns button').forEach(function (b) {
+    if (b.dataset.t === theme) { b.style.background = '#3574F0'; b.style.borderColor = '#3574F0'; b.style.color = '#fff'; }
+  });
+})();
+</script>
+</body>
+</html>

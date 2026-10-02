@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search Everywhere · Int UI Kit 原型</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shell.css">
+<link rel="stylesheet" href="assets/ide.css">
+<link rel="stylesheet" href="assets/dialogs.css">
+</head>
+<body>
+<div class="proto-head">
+  <b>Int UI Kit 原型</b>
+  <span>Search Everywhere</span>
+  <span>取自 Popup / Navigation Popups &gt; Popup / Search Everywhere，650×382</span>
+  <code>?theme=light|lighthdr|dark&amp;bare=1</code>
+</div>
+<div class="stage" id="stage"></div>
+<nav class="dock" id="dock"></nav>
+<script src="assets/icons.js"></script>
+<script src="assets/content.js"></script>
+<script src="assets/ide.js"></script>
+<script src="assets/shell.js"></script>
+<script>Shell.boot({screen:'search', title:'Search Everywhere', build:function(){return IDE.mainWindow('search');}});</script>
+</body>
+</html>
