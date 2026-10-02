@@ -53,11 +53,9 @@ use lithe_gpui_workbench::right_tool_window::RightToolWindowView;
 /// "为什么必须包装而不是注册两次"的论证。
 mod assets;
 
-/// 首窗口尺寸：**与同目录的 Dodona 保持同一口径** —— 取显示器可见区域的 **94%**、居中、
+/// 首窗口尺寸： 取显示器可见区域的 **94%**、居中、
 /// 普通窗口（不最大化）。
 ///
-/// 出处：`D:\developmentProjects\rust\Dodona\crates\dodona\src\main.rs:91-108`
-/// （GPUI Kit 的成熟参考应用，本机验证过界面正常）：
 /// `visible = display.visible_bounds()`（排除任务栏，状态栏才够得着）→
 /// `wanted = visible * 0.94` → 夹在 `MIN_WINDOW(1024×680)` 与 `visible` 之间 → 居中。
 ///
