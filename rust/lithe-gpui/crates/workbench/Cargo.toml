@@ -33,3 +33,20 @@ lithe-gpui-terminal = { path = "../terminal" }
 # `maven.scan` 的请求与响应都是 JSON（`src/maven.rs`）；与 `editor` / `git` / `explorer`
 # 三个 feature 同一口径：`core_json` 收 `serde_json::Value`。
 serde_json = "1"
+
+# UI 集成测试层（`D26`）：`tests/` 下的测试把**真实视图**渲染进无头窗口，用
+# `window.find/click/input` 这套观察接口断言。它由 `gpui-kit` 的 `test-support`
+# feature 提供，而那个 feature **只能从 dev-dependency 打开**，否则生产制品也会被
+# 装上观察包装（上游 `test.md` §配置测试项目 明说"将 test-support 放在开发依赖中，
+# 让普通应用构建不启用观察功能"）。
+#
+# 版本必须与上面的 `gpui-kit = "0.7"` 解析到同一个来源与版本，feature 才会合并；
+# 这也是 §配置测试项目 强调的"普通 gpui-kit 依赖必须解析到相同来源和版本"。
+[dev-dependencies]
+gpui-kit = { version = "0.7", features = ["test-support"] }
+# 集成测试直接引用**真实视图类型**。`EditorPane` 已经是 workbench 的普通依赖
+# （`lithe-gpui-editor`，见上面的 `[dependencies]`），但 workbench **不 re-export**
+# 它（它的公开面只有 `ShellWorkspace` 与几个渲染函数）。生产代码不该为一个测试
+# 扩大公开面，所以这里按上游 `test.md` 的口径"从 library crate 导入生产视图及其构造函数"，
+# 在 dev-dependency 里显式声明同一个 path 依赖。
+lithe-gpui-editor = { path = "../editor" }
