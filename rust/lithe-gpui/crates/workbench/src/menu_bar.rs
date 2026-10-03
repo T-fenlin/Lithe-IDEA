@@ -2187,7 +2187,7 @@ impl MenuBar {
 }
 
 /// 主题子菜单里点一项时干的事（`theme_menu` 的 `on_click` 与
-/// [`MenuBar::run_theme_by_index`] **共用**这一段，不写两份）。
+/// [`MenuBar::run_theme_by`] **共用**这一段，不写两份）。
 ///
 /// 与真源 `handleThemeChange`（`use-menu-events-wrapper.ts:287-295`）同一条语义：用户从菜单里
 /// 点名要一个主题，意思就是**别跟着系统了**，所以走 `set_theme_explicit`

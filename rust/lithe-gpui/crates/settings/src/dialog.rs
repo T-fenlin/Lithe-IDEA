@@ -38,7 +38,7 @@
 //!
 //! 浮层只能在事件回调或任务里打开；`render` 阶段调 `window.open_dialog` 会 panic
 //! （`shell/overlays.md:203-213`、`lithe-gpui/crates/app/src/main.rs:14-16`）。本模块的两个入口
-//! ——活动栏「设置」的点击回调、`Ctrl+,` 的**全局 action**（[`init`]）——都在事件回调里；
+//! ——活动栏「设置」的点击回调、`Ctrl+,` 的**全局 action**（[`install_actions`]）——都在事件回调里；
 //! `--open-settings` 走 `window.on_next_frame`（首帧之后、非 render 阶段）。
 
 use std::path::PathBuf;
@@ -289,7 +289,7 @@ impl Category {
     ///
     /// ⚠️ **「Git」页不在表里，但它有真实页面**（阶段 15）：它的能力取决于宿主有没有通过
     /// [`crate::identity::set_git_identity_host`] 登记钩子——登记了就画提交身份表单，
-    /// 没登记（测试宿主 / 其它宿主）就退回 [`Self::empty_page`]。
+    /// 没登记（测试宿主 / 其它宿主）就退回 `empty_page`。
     /// 这张表是**编译期常量**，表达不了"条件实现"，所以它记的是"这句话在没有任何宿主时也成立"
     /// 的那一面（= 空态需要一句前置条件）。`git_page_degrades_to_the_empty_state_without_a_host`
     /// 那条测试把这件事同时钉在两边。

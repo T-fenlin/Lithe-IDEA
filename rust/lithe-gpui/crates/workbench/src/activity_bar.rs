@@ -32,7 +32,7 @@
 //!    经 `lithe_gpui_shared::icons::idea_icon_svg` 按当前主题明暗挑路径渲染（单色，
 //!    颜色取 `theme.foreground`/`muted_foreground`，与旧实现的 `IconName` 同口径）。
 //! 2. **Lucide**（[`ActivityIcon::Lucide`]）—— 全量 Lucide 目录（1830 个字形）。
-//!    留在这条路上的项都有明确理由，逐条写在 [`workspace`] 的 `activity_items()` 调用处。
+//!    留在这条路上的项都有明确理由，逐条写在 [`crate::workspace`] 的 `activity_items()` 调用处。
 //!
 //! | Windows 用途 | Windows 图标组件 | 现在用 | 真源文件 / 理由 |
 //! | --- | --- | --- | --- |

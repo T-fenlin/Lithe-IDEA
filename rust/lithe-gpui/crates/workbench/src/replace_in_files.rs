@@ -53,7 +53,7 @@
 //!    解析是 [`parse_replace_preview`]，四态是 [`ReplaceState`]，vintage 闸门与取消句柄是
 //!    三个搜索界面共用的 [`QueryTimeline`] —— **本模块没有任何匹配 / 替换 / 排序逻辑**，
 //!    那全在 Core 的 `project/files.rs:336-423`；
-//! 2. **选项的四个布尔只是 [`SearchOptions`] 的转发**：`case_sensitive` / `whole_words` /
+//! 2. **选项的四个布尔只是 `SearchOptions` 的转发**：`case_sensitive` / `whole_words` /
 //!    `regular_expression` / `file_mask` 复用查找面板那几个字段，只有 `preserve_case`
 //!    是替换独有（[`ReplaceOptions`]）。
 //!

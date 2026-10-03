@@ -7,7 +7,7 @@
 //! **不依赖** `lithe-gpui-workbench` / `lithe-gpui-app`：设置是"被别处读"的东西，
 //! 反过来依赖外壳会成环。`workbench` 读设置只有两条路：
 //!
-//! 1. [`store`] 拿到 [`SettingsStore`] 这个 `Entity`，`cx.observe(&store, ..)` 后重绘
+//! 1. [`store()`] 拿到 [`SettingsStore`] 这个 `Entity`，`cx.observe(&store, ..)` 后重绘
 //!    （状态栏的「显示状态栏」就是这么接的）；
 //! 2. [`Settings::show_status_bar`] 之类的纯字段读取。
 //!
@@ -20,7 +20,7 @@
 //! | [`persistence`] | 读（逐键容错）、**未知键原样保留**、顶层 `version`、原子写、300ms 防抖状态机（**纯数据，无 GPUI**） |
 //! | [`watch`] | 设置文件的**外部改动**监听（手改文件不必重启；监听父目录以避开 rename 让文件级监听失效） |
 //! | [`theme`] | 主题目录装载/监听、按名字应用主题、UI 字号 → rem 基准（真源是 `lithe-gpui/themes/`） |
-//! | [`store`] | 状态所有者 `SettingsStore`：改设置 → 立即生效 → 防抖落盘（唯一需要 `App` 的"逻辑"） |
+//! | [`mod@store`] | 状态所有者 `SettingsStore`：改设置 → 立即生效 → 防抖落盘（唯一需要 `App` 的"逻辑"） |
 //! | [`row`] | 行/分组零件（`SettingsGroup` / `SettingsRow` / 宽度档） |
 //! | [`identity`] | 「Git」页的数据边界：宿主钩子（`GitIdentityHost`）+ 身份值的纯判据 |
 //! | [`project`] | 「项目 · JDK 与 Maven」页的数据层：本机 JDK / Maven 的发现 + 生效值判据（纯数据） |

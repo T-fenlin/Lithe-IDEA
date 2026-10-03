@@ -331,7 +331,7 @@ struct RawTheme {
 /// 全部设置。
 ///
 /// **依赖方向**：本类型不引用任何 GPUI 类型，`App` / `Window` 只在
-/// [`crate::store`] 里出现；落盘格式与 UI 因此可以各自单测。
+/// [`mod@crate::store`] 里出现；落盘格式与 UI 因此可以各自单测。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {

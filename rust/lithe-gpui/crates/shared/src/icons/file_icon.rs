@@ -14,7 +14,7 @@
 //!
 //! ## 选哪套主题、为什么
 //!
-//! 生效的包由**设置键 `icons`** 决定（[\`set_active_icons\`]），默认是内置的
+//! 生效的包由**设置键 `icons`** 决定（[`set_active_icons`]），默认是内置的
 //! **`idea` 包**（`lithe-gpui/assets/icons/idea/extension.json`，主题 id `idea-icons`）：
 //!
 //! - 真机默认就是它 —— `windows/tauri/src/features/settings/config/default-settings.ts:100`
@@ -620,7 +620,7 @@ fn lookup_mapped<'a>(key: &str, table: &'a HashMap<String, String>) -> Option<&'
 /// `FileBraces`（`icons/file-braces.svg`）—— Lucide 里花括号就是 JSON 的通用符号。
 /// 这条例外在两张旧表里都有记录，这里保留同样的说明。
 ///
-/// ⚠️ 这一层只在**主题包查不到**时才生效（见 [`FileIcon::theme_icon`]）。主题包本身能认
+/// ⚠️ 这一层只在**主题包查不到**时才生效（见 [`super::FileIcon::with_theme_icon`]）。主题包本身能认
 /// `.java`、`.md`、`pom.xml`、`.gitignore` 等 79 个后缀 + 13 个文件名，所以实际界面上
 /// 绝大多数文件走的是真源图标；走到这里的是一些冷门后缀（如 `.unknownext`）
 /// 与"主题包没登记但 Lucide 有近似字形"的情况。

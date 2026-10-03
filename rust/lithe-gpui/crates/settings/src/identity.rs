@@ -19,7 +19,7 @@
 //! ```
 //!
 //! **钩子没登记时**（测试宿主、其它宿主、或登记之前的任何时刻）：
-//! [`git_identity_page_state`] 返回 `None`，Git 页退回**明确空态**
+//! [`git_identity_page`] 返回 `None`，Git 页退回**明确空态**
 //! （现在的 `settings.gpui.prerequisiteGit` 那一页）。**不 panic、也不假装成功**。
 //!
 //! ## 为什么回调收/发 JSON 而不是 `lithe_gpui_git` 的类型
@@ -31,11 +31,11 @@
 //! `rust/lithe-core/src/git/setup.rs:68-79`）：
 //!
 //! - `load(scope: &str) -> Task<()>`：scope 取 `"local"` / `"global"`；任务结束时调
-//!   [`GitIdentityPage::deliver_load`]，`Some(json)` = Core 的响应原文，`None` = 失败
+//!   [`GitIdentityPage::load`] 的 `deliver` 回调，`Some(json)` = Core 的响应原文，`None` = 失败
 //!   （本侧的约定：宿主在这里已经打过 `S1_GIT_IDENTITY` 诊断，设置页只画"读失败"）。
 //! - `save(scope, key, value) -> Task<()>`：`key` 取 `"name"` / `"email"`；
 //!   `value: None` = **清除覆盖**（Core 的 `value: null`）；任务结束时调
-//!   [`GitIdentityPage::deliver_save`]。
+//!   [`GitIdentityPage::save`] 的 `deliver` 回调。
 //!
 //! 取 JSON 的**字符串**而不是 `serde_json::Value`：线格式跨 crate 边界时用文本，
 //! 宿主与设置两侧可以各自独立单测自己的解析。

@@ -32,7 +32,8 @@
 //! 一条 Windows 没有的标签头。唯一的例外是**分隔条**：左侧栏那条可拖分界线用的是
 //! Dock 同款的上游手柄（[`drag_handle`]，2026-09-30，`docs/gpui kit/0.7.0/component/dock.md`）。
 //!
-//! 三个区域模块（[`super::shell`]）是**无状态渲染函数**；需要持有 `Entity` 的区域
+//! 四个区域模块（[`crate::title_bar`] / [`crate::project_tabs`] / [`crate::activity_bar`] /
+//! [`crate::status_bar`]）是**无状态渲染函数**；需要持有 `Entity` 的区域
 //! （项目树 / 编辑区）各自是一个 `Entity`。状态归属只有两个：本结构体（外壳）+ 各区域自己。
 //!
 //! ## 活动栏选中态：**左栏两组独立可同时高亮；右栏一组，面板收起时全灭**

@@ -3,7 +3,7 @@
 //! 再生成：`node lithe-gpui/tools/generate-idea-icons.mjs`（校验：加 `--check`，退出码 0 表示产物与
 //! 文件系统一致）。常量名沿用旧前端那份 Vite 清单（`idea-assets.generated.ts`，**已删除**，
 //! 内容见 git 历史 `d13b254a`）的历史命名，但名字与别名由生成器按文件名推导；值是
-//! [`AssetSource`] 的**资源路径**而不是打包器 URL。gpui 侧的等价物就是本文件。
+//! [`gpui_kit::AssetSource`] 的**资源路径**而不是打包器 URL。gpui 侧的等价物就是本文件。
 //!
 //! 常量的 `light` / `dark` 是**给 `gpui::svg().path(..)` 用的路径字符串**（AssetSource 键），
 //! 不是文件系统路径。渲染入口与主题选择见 `lithe-gpui-app` 的 `assets` 模块：

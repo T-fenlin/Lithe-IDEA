@@ -53,7 +53,7 @@ pub enum BundledKind {
     Font,
     /// 语言：**没有落盘文件** —— 语法随宿主编译（Cargo feature）或由宿主自己注册，
     /// 卸载的效果是"这些语言不再高亮（文件按纯文本打开）"，见
-    /// [\`BundledExtension::languages\`]。
+    /// [`BundledExtension::languages`]。
     Languages,
     /// 图标集：**没有落盘文件** —— 图标集随宿主编译（内嵌在 `assets/icons/` 里），
     /// 同步阶段不写任何文件；卸载的效果是"不可选 + 正在使用时回落内置包"
@@ -202,7 +202,7 @@ pub fn bundled_extension(id: &str) -> Option<&'static BundledExtension> {
 
 /// 被卸载的语言扩展 → 应当禁用的语言 id 集合（排序去重）。
 ///
-/// 设置存储把它推给 [\`lithe_gpui_shared::languages::set_disabled_languages\`]；
+/// 设置存储把它推给 [`lithe_gpui_shared::languages::set_disabled_languages`]；
 /// 编辑器据此让这些文件按纯文本打开。
 #[must_use]
 pub fn disabled_languages(uninstalled: &[String]) -> Vec<String> {
@@ -219,7 +219,7 @@ pub fn disabled_languages(uninstalled: &[String]) -> Vec<String> {
 
 /// 图标集包名 → 扩展条目；`None` = 不是捆绑图标集（内置包或认不出的名字）。
 ///
-/// 用途是"正在使用的图标包被卸载了吗"这条判断（[crate::store] 的回落逻辑）与扩展页的
+/// 用途是"正在使用的图标包被卸载了吗"这条判断（[mod@crate::store] 的回落逻辑）与扩展页的
 /// 「使用 / 当前 / 已卸载」三态。
 pub fn icons_extension(package: &str) -> Option<&'static BundledExtension> {
     BUNDLED_EXTENSIONS

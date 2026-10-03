@@ -1289,7 +1289,7 @@ impl EditorPane {
 
     /// `F12` / 菜单「转到 → 转到定义」：取光标处标识符的定义位置并跳过去。
     ///
-    /// 由 [`crate::NavigateToDefinition`] action 的处理器转发进来（见 [`install_actions`]），
+    /// 由 [`crate::NavigateToDefinition`] action 的处理器转发进来（见 [`crate::install_actions`]），
     /// 也由主菜单的同一项直接调（`crate::workspace::ShellWorkspace::run_command_id` 的
     /// `CommandId::NavigateToDefinition` 分支）—— 两条入口落到这**同一个**方法上。
     ///

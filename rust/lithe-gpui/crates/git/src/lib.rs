@@ -25,9 +25,9 @@
 //!   `centered_notice` / `console_pane` / `log_body`）。
 //!   度量常量集中在 `model.rs` 定义（单一真源），由 `log_view.rs` 导入使用。
 //! - `changes.rs`：**左栏「源代码管理」的数据层** —— `git.status` + `git.operationState` 合成
-//!   [`ChangesSnapshot`]（仓库根 / 分支 / ahead-behind / 变更行 / 进行中的操作），
+//!   `ChangesSnapshot`（仓库根 / 分支 / ahead-behind / 变更行 / 进行中的操作），
 //!   加文件级写操作（`stage` / `unstage` / `stageAll` / `commit` / `discard` / 操作continue-abort-skip）。
-//!   本文件把「Core 信封 `ok:true` 但 Git 退出码非 0」翻成 [`WriteOutcome::failure`]，
+//!   本文件把「Core 信封 `ok:true` 但 Git 退出码非 0」翻成 `WriteOutcome::failure`，
 //!   这是本侧对真源"写失败静默"那一条的正面修正；不渲染任何东西。
 //! - `changes_view.rs`：**左栏「源代码管理」的表现层** —— `ChangesView` 实体
 //!   （`new` / `refresh` / `activate` / `Render`）、五态空态、操作横幅、提交面板。
@@ -117,7 +117,7 @@
 //! 三个硬约束（都在真源里核对过）：
 //!
 //! 1. **`git.status.repositoryRoot` 可能是相对工作区根的路径**（`relative_or_absolute`，`git/mod.rs:6574`）：
-//!    直接当 `root` 用会按**进程 CWD** 解析，必须先与工作区根拼成绝对路径（[`resolve_repository_root`]）。
+//!    直接当 `root` 用会按**进程 CWD** 解析，必须先与工作区根拼成绝对路径（`resolve_repository_root`）。
 //! 2. **「非仓库」没有专用错误码**：`git.status` 返回 `ok:true` + `repositoryRoot: null`，其余 `git.*`
 //!    返回 `ok:false` + `process_failed`。所以**先探 `git.status`**，不是仓库就不再白跑后面三条。
 //! 3. **`nextCursor` 背后是一个活着的 `git log` 子进程**（`git/history.rs:242-257` 把 session 存回注册表；
@@ -125,7 +125,7 @@
 //!    并在三处归还：换引用 / 刷新时（交给后台任务先关）、面板 `Drop` 时。
 //!
 //! 调用形态照同目录既有实现：拼 `{id, operationId, timeoutMilliseconds, command, payload}` →
-//! `lithe_core::execute_json` → 判 `ok` 取 `data`（[`execute_core`]），整段放 `cx.background_spawn`。
+//! `lithe_core::execute_json` → 判 `ok` 取 `data`（`execute_core`），整段放 `cx.background_spawn`。
 //!
 //! ## 与 Windows 源码的刻意偏差（都写在这里，不藏在代码里）
 //!

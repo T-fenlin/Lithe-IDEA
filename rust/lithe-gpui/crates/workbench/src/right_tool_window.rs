@@ -139,7 +139,7 @@ impl RightToolWindowView {
 
     /// 右活动栏下标 → 视图；`None` = 该下标没有对应视图。
     ///
-    /// ⚠️ 下标必须与 [`crate::workspace::right_activity_items`] 的顺序一致
+    /// ⚠️ 下标必须与 `crate::workspace::right_activity_items()` 的顺序一致
     /// （0 扩展拼图 / 1 通知 / 2 Maven；照 `plugin-activity-rail.tsx:31-67`）。
     /// **下标 0 返回 `None`**：拼图项不是右工具窗视图，它开/关中央扩展页
     /// （`ShellWorkspace::toggle_extensions_page` 在派发前拦截下标 0）。
