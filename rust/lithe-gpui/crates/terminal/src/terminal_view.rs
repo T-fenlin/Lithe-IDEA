@@ -462,8 +462,17 @@ impl TerminalPane {
                                 .child(idea_icon_image(&idea::PLUS_ICON, cx, rems(1.)))
                                 .child(new_terminal_label())
                                 .accessibility_label(new_terminal_label())
-                                .h_6()
-                                .px_2()
+                                // 密度走组件 `Size` 档位，不手写外框高度（`design-guides.md:115`
+                                // 「优先使用组件尺寸……不要单独写高度」、`:208`「使用组件 `Size` API，
+                                // 让字体、图标、padding 和 hit target 一起变化。只改外框高度通常是
+                                // 不完整的」）。`.small()` = 外框 `h_6()`(24px) + 内衬 `px_2()`(8px)，
+                                // 与改前的 `.h_6().px_2()` 逐像素相同；字号 `text_base`(16px)→
+                                // `text_sm`(14px)、图标与文案间距 `gap_2`(8px)→`gap_1`(4px) 随档位一起
+                                // 落下——`Button` 的字体 / gap 吃 `self.size`，调用点的 `.h_N()` /
+                                // `.px_N()` 只能压外框与内衬（`gpui-component-0.7.0/src/button/
+                                // button.rs:646-674,737-748`）。图标由本文件按 rem 递给 `child`
+                                // （`idea_icon_image` 的 `side`），不走 `Button::icon_size`，故不随档位变。
+                                .small()
                                 .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
                                 .on_click(cx.listener(
                                     |this: &mut Self,
@@ -509,8 +518,10 @@ impl TerminalPane {
                         .child(idea_icon_image(&idea::PLAY_ICON, cx, rems(1.)))
                         .child(retry())
                         .accessibility_label(retry())
-                        .h_6()
-                        .px_2()
+                        // 同 `render_empty` 的 `terminal-empty-new`：`.small()` = 外框 `h_6()`(24px)
+                        // + 内衬 `px_2()`(8px)，与改前的 `.h_6().px_2()` 逐像素相同，字号与 gap
+                        // 随档位落下（依据与源码出处见那处的注释）。
+                        .small()
                         .rounded(rem_px(cx.theme().font_size, CHROME_RADIUS))
                         .on_click(cx.listener(
                             move |this: &mut Self, _event: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>| {
