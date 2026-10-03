@@ -120,7 +120,10 @@ pub(crate) fn set_shell(shell: WeakEntity<ShellWorkspace>) {
 }
 
 /// 取当前窗口的工作台句柄。
-fn shell() -> Option<WeakEntity<ShellWorkspace>> {
+///
+/// `pub(crate)`：`crate::quick_open` 的 `Ctrl+P` 处理器要的是**同一个**句柄
+/// （浮层的 builder 与回调都要求 `'static`，见 [`SHELL`]），不另建第二个线程局部。
+pub(crate) fn shell() -> Option<WeakEntity<ShellWorkspace>> {
     SHELL.with(|slot| slot.borrow().clone())
 }
 
@@ -206,6 +209,12 @@ pub enum CommandId {
     SaveBuffer,
     /// 打开命令面板（菜单「编辑 → 命令面板」也走它）。
     OpenCommandPalette,
+    /// 打开文件快速打开浮层（`Ctrl+P`；菜单「转到 → 快速打开」也走它）。
+    ///
+    /// **不在命令面板里**（[`crate::workspace`] 的 `COMMAND_ORDER` 没有它）：面板要的是
+    /// "一屏能扫完的高频动作"，而它有自己的快捷键与菜单项两个入口 —— 与
+    /// [`CommandId::OpenFile`] 那批同一处置。
+    OpenQuickOpen,
     /// 转到定义（`F12`；菜单「转到 → 转到定义」也走它）。
     NavigateToDefinition,
     /// 打开文件…（菜单「文件 → 打开文件」，**不绑键位**：`Ctrl+O` 留给「打开文件夹」，Q18）。
@@ -240,6 +249,7 @@ impl CommandId {
             Self::ToggleMenuBar => "toggle-menu-bar",
             Self::SaveBuffer => "save-buffer",
             Self::OpenCommandPalette => "open-command-palette",
+            Self::OpenQuickOpen => "open-quick-open",
             Self::NavigateToDefinition => "navigate-to-definition",
             // B1 的一批：全部**只由主菜单触发**（`COMMAND_ORDER` 里没有它们，所以命令面板
             // 不列）—— 面板要的是"一屏能扫完的高频动作"，而"关闭左侧/右侧标签页"这类

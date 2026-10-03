@@ -131,6 +131,10 @@ pub mod menu_bar;
 pub mod notifications;
 pub mod project_menu;
 pub mod project_tabs;
+// Quick Open 浮层（`Ctrl+P`；`workspace.searchEverywhere` 的 Files scope）。浮层形状照
+// `command_palette`（`Dialog` + `Command`，本地过滤关掉），请求 / 解析 / 代次复用
+// `search_model`；规格出处与有意差异见其模块文档。
+pub mod quick_open;
 pub mod right_tool_window;
 // 搜索索引在宿主侧的接线（warm / update / invalidate 三条 Core 命令的时机与代次）。
 // **不是**渲染模块：它只负责"索引什么时候建、什么时候更新"，界面在下面两个模块里。

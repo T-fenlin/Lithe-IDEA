@@ -52,7 +52,7 @@
 //!
 //! | | 真源 | 本侧 v1 | 本侧 B3（现在） |
 //! | --- | --- | --- | --- |
-//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：41 条已接线 + 51 条占位 |
+//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：42 条已接线 + 50 条占位 |
 //! | 没能力的项 | 恒可点（点下去做那件事） | 不画 | 画出来、可点、点了**如实**说缺什么 |
 //! | 灰化 | 4 处后端能力开关 | 不灰化 | 不灰化（占位项用提示表达"还没有"，不用颜色） |
 //!
@@ -64,7 +64,7 @@
 //!    `every_listed_item_is_wired_or_declares_what_is_missing` 逐条断言
 //!    "要么已接线（有 `CommandId` 或在 `NON_COMMAND` 里登记）、要么声明非空"——
 //!    谁想悄悄加一条永远不工作的项，这里就红。
-//! 2. **文案按能力分组**（Q14 粒度 `2d`）：51 条占位项只有 [`MISSING_GROUPS`] 那么多句话
+//! 2. **文案按能力分组**（Q14 粒度 `2d`）：50 条占位项只有 [`MISSING_GROUPS`] 那么多句话
 //!    （**17 条**，一种能力一句），每句都回答"缺什么"。文案键全部是 gpui 侧新增
 //!    （真源的菜单项恒可执行，catalog 里没有"尚未接入"这类句子），理由逐条写在
 //!    `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
@@ -306,7 +306,7 @@ impl Missing {
 // B3 的能力分组（**一种能力一句话**，Q14 的粒度 `2d`）
 // ---------------------------------------------------------------------------
 //
-// 51 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
+// 50 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
 // `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里（逐条写了理由：
 // 真源的菜单项**恒可执行**，catalog 里没有"尚未接入"这类文案）。
 //
@@ -343,7 +343,12 @@ pub const MISSING_LSP_REQUESTS: Missing = Missing {
     text_key: "lithe.gpui.menuMissing.lspRequests",
 };
 
-/// 还没有索引器（全局搜索 / 快速打开）。真源这两条都走跨文件索引。
+/// 还没有索引器（**全局搜索**）。
+///
+/// ⚠️ 这条声明**只剩「全局搜索」一个用户**：`lithe.menu.quickOpen`（「快速打开」）原来也挂着它，
+/// U17 第二件把浮层 / 键位 / 菜单项都接上之后就不再是占位项了。索引链本身早在 U18 就通了
+/// （`workspace.searchIndex.warm/update/invalidate`，见 `crate::search_index`），缺的是
+/// **Search Everywhere 那层浮层**（六个 scope），不是索引。
 pub const MISSING_INDEXER: Missing = Missing {
     id: "indexer",
     text_key: "lithe.gpui.menuMissing.indexer",
@@ -702,6 +707,11 @@ pub enum MenuAction {
     OpenAppearanceSettings,
     /// 转到 → 转到定义（`f12`）。
     GoToDefinition,
+    /// 转到 → 快速打开（`Ctrl+P`，本侧新绑）。
+    ///
+    /// 执行分支 = [`CommandId::OpenQuickOpen`]（`crate::workspace::run_command_id`），
+    /// 与快捷键 `Ctrl+P` dispatch 的是**同一个 Action**（`crate::quick_open::OpenQuickOpen`）。
+    QuickOpen,
     // -----------------------------------------------------------------------
     // B2：以下 18 条是"能力已经在、只缺菜单项"的那一批（侦察 §2 的 🟡）。
     // 每一条的执行落点写在 `ShellWorkspace::apply_menu_action` 各自的臂上。
@@ -808,6 +818,10 @@ impl MenuAction {
             Self::ToggleStatusBar => "lithe.settings.appearance.showStatusBar",
             Self::OpenAppearanceSettings => "lithe.settings.tabs.appearance",
             Self::GoToDefinition => "lithe.menu.goToDefinition",
+            // 「快速打开」= 真源 `menu.quickOpen`（zh「快速打开」/ en "Quick Open"，
+            // `locales/lithe.zh-CN.yml:6722`）—— 菜单里本来就摆着这一条（原来声明缺索引器），
+            // 本任务把它接上，文案键不动。
+            Self::QuickOpen => "lithe.menu.quickOpen",
             Self::NewTerminalTab => "lithe.menu.newTerminal",
             Self::CloseTerminalTab => "lithe.menu.closeTerminal",
             Self::Preferences => "lithe.menu.preferences",
@@ -882,6 +896,9 @@ impl MenuAction {
             }
             // 跳转语义用「向右的箭头」：真源 `f12` 是"跳到定义处"。
             Self::GoToDefinition => idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
+            // 「快速打开」用放大镜：与「命令面板」同一个字形（两者都是"敲名字找东西"），
+            // 图标允许重复、菜单动作不许重复（`every_listed_action_is_executable`）。
+            Self::QuickOpen => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
             Self::Minimize => Icon::new(IconName::WindowMinimize),
             Self::Maximize => Icon::new(IconName::WindowMaximize),
             Self::ToggleFullscreen => Icon::new(IconName::Maximize),
@@ -961,6 +978,8 @@ impl MenuAction {
             // `Ctrl+Shift+P` / `Ctrl+M`：`crate::command_palette::install_actions` 登记的。
             Self::CommandPalette => Box::new(OpenCommandPalette),
             Self::ToggleMenuBar => Box::new(ToggleMenuBarAction),
+            // `Ctrl+P`：`crate::quick_open::install_actions` 登记的（本任务新绑）。
+            Self::QuickOpen => Box::new(crate::quick_open::OpenQuickOpen),
             // B2 新绑的六条：`install_key_actions` 登记（键位常量见 `menu_key`）。
             Self::ReopenClosedTab => Box::new(ReopenTab),
             Self::ToggleActivitySidebar => Box::new(ToggleSidebar),
@@ -1028,6 +1047,9 @@ impl MenuAction {
             Self::ToggleStatusBar => Some(CommandId::ToggleStatusBar),
             Self::OpenAppearanceSettings => Some(CommandId::OpenAppearanceSettings),
             Self::GoToDefinition => Some(CommandId::NavigateToDefinition),
+            // 「快速打开」与 `Ctrl+P` 共用同一个执行点（`crate::quick_open` 的浮层）——
+            // 与命令面板同一条"一个逻辑命令只建模一次"。
+            Self::QuickOpen => Some(CommandId::OpenQuickOpen),
             Self::NewTerminalTab
             | Self::CloseTerminalTab
             | Self::Preferences
@@ -1067,8 +1089,8 @@ impl MenuAction {
 
 /// 9 个顶级菜单的静态表（**唯一真源**，两形态共用）。
 ///
-/// B3 起**真源 89 条一条不少**：能执行的走 [`MenuItem::Action`]（41 条），
-/// 没能力的走 [`MenuItem::NotWired`]（51 条占位）。顺序与分隔线位置**照真源**
+/// B3 起**真源 89 条一条不少**：能执行的走 [`MenuItem::Action`]（42 条），
+/// 没能力的走 [`MenuItem::NotWired`]（50 条占位）。顺序与分隔线位置**照真源**
 /// （`lithe-gpui/research/windows/10-menu-bar.md:114-259` 每张表的"分隔线"列：写在它出现在该项**之后**），
 /// 所以这张表可以与那份清单逐行比对。四条本侧新增项（⚪：打开文件 / 显示状态栏 /
 /// 外观设置 / Maven）插在同一族里，**不动真源的相对顺序**。
@@ -1301,14 +1323,13 @@ pub static MENUS: &[TopMenu] = &[
         id: "go",
         label_key: "lithe.menu.go",
         // 真源 11 条，3 条分隔线（在第 2 / 4 / 9 项之后，`window-menu-bar.tsx:365-410`）。
-        // 本侧只有「转到定义」已接线；其余 10 条是占位项 —— 其中后退 / 前进 / 下一个 /
-        // 上一个标签页是 B2 没接的那 5 条里的 4 条（规格 §5 第 5 条，理由见 MISSING_EDITOR_ENTRY）。
+        // 本侧「快速打开」与「转到定义」两条已接线；其余 9 条是占位项 —— 其中后退 / 前进 /
+        // 下一个 / 上一个标签页是 B2 没接的那 5 条里的 4 条（规格 §5 第 5 条，
+        // 理由见 MISSING_EDITOR_ENTRY）。
         items: &[
-            MenuItem::NotWired {
-                label_key: "lithe.menu.quickOpen",
-                missing: MISSING_INDEXER,
-                icon: MenuIcon::Idea(&idea::LIGHTNING_ICON),
-            },
+            // 「快速打开」原来是占位项（声明缺索引器）——U17 第二件把索引链与浮层都做完之后，
+            // 它接上了**同一个** `Ctrl+P` Action（本文件 `MenuAction::QuickOpen`）。
+            MenuItem::Action(MenuAction::QuickOpen),
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToLine",
                 missing: MISSING_EDITOR_FEATURES,
@@ -1505,8 +1526,8 @@ pub fn action_count() -> usize {
 /// 断言了它，改表时不会悄悄少画一条）：
 ///
 /// ```text
-/// action_count()    = 41   // 37 条真源动作 + 4 条本侧新增
-/// not_wired_count() = 51   // 47 条规格 ❌ + 4 条规格 🟡
+/// action_count()    = 42   // 41 + 「快速打开」（2026-10-01 从占位项转正）
+/// not_wired_count() = 50   // 51 - 同一条
 /// MenuItem::Theme   =  1   // 「视图 → 主题」子菜单：既不是 Action、也没有 missing 声明
 /// -------------------------
 /// 合计              = 93   = 真源 89 条 + 本侧新增 4 条
@@ -2793,14 +2814,18 @@ mod tests {
     /// | 档 | 条数 | 落点 |
     /// | --- | --- | --- |
     /// | ✅ 已实现 | 8 | 全部接线 |
-    /// | 🟡 能力已在 | 23 | 19 条接线（B1/B2/B4），**4 条**（后退 / 前进 / 上一个·下一个标签页）进占位表 |
+    /// | 🟡 能力已在 | 23 | 20 条接线（B1/B2/B4 + 「快速打开」，2026-10-01），**3 条**（后退 / 前进 / 上一个·下一个标签页）进占位表 |
     /// | ❌ 无能力 | 58 | 11 条被 B1/B2/B4 接掉（关闭所有·其他·已保存·左侧·右侧·重新打开 / 快速修复 / 放大·缩小·重置缩放 / 切换菜单栏），**47 条**进占位表 |
     ///
     /// ⚠️ 「还原文件」在规格里是 ❌（`10-menu-bar.md:126`），**不是** 🟡 —— 别被它跟
     /// 「后退 / 前进」摆在同一张表里的位置骗了。
     ///
-    /// ⇒ 本侧菜单 = 真源 89（37 个 Action + 「主题」子菜单 + **51 条占位项**）+ 本侧新增 4 条
-    /// = 93 个条目。
+    /// ⇒ 本侧菜单 = 真源 89（1 个「主题」子菜单 + 88 条 Action / 占位项）+ 本侧新增 4 条
+    /// = 93 个条目；其中 **42 条 Action + 50 条占位项**。
+    ///
+    /// ⚠️ 42 / 50 是同一件事的两面：真源那条「快速打开」在 U17 第二件里从占位项转成 Action
+    /// （`41 → 42` / `51 → 50`），条目总数不变 —— `SOURCE_MENU_ITEMS` 与 `LOCAL_ONLY_ITEMS`
+    /// 都不用改。
     const SOURCE_MENU_ITEMS: usize = 89;
     /// 本侧**新增**（真源 89 条里没有）的项数：4 条。
     ///
@@ -3180,7 +3205,7 @@ mod tests {
                             "{label_key} 的文案键不在 lithe.* 命名空间里"
                         );
                         // 文案键（真源既有键）必须解析得出：拼错时 rust-i18n 原样回显键名，
-                        // 界面上就会画出一串键名。⚠️ 本批新摆的 51 条标签全是手写的，
+                        // 界面上就会画出一串键名。⚠️ 本批新摆的 50 条标签全是手写的，
                         // 这条断言是它们唯一的机器判据（真源 `menu.*` 段本来就都在产物里）。
                         assert_ne!(
                             tr(label_key).as_ref(),
@@ -3236,8 +3261,57 @@ mod tests {
         );
     }
 
+    /// 「转到 → 快速打开」与 `Ctrl+P` 是**同一个逻辑命令**（U17 第二件）。
+    ///
+    /// 这条钉的是"一个逻辑命令只建模一次"这条指南条文在**菜单与快捷键**上的落点：菜单项
+    /// 映射到 `CommandId::OpenQuickOpen`（执行分支 = `ShellWorkspace::run_command_id` 那一支，
+    /// 与全局 action 处理器调的是**同一个** `ShellWorkspace::open_quick_open`），并且
+    /// `keybind_action()` 有值 —— 那是"菜单上会画出 `Ctrl+P` 胶囊"的判据
+    /// （`keybind_action` 返回 `Some` ⇔ keymap 里有一条能命中的绑定，
+    /// 见 `MenuAction::keybind_action` 的文档；`Ctrl+P` 由
+    /// `crate::quick_open::install_actions` 在 `ShellWorkspace::new` 里登记）。
+    ///
+    /// ⚠️ **它证明不了"真按键能打开浮层"**：那要一个真的 `ShellWorkspace` 窗口 + 键事件，
+    /// 而 `ShellWorkspace::new` 会起 JDTLS 预备、会话恢复与 Core 索引 warm（都不该进单测）。
+    /// 所以交互路径的证据是 stderr 锚点 `S1_QUICK_OPEN open/…`（见 `crate::quick_open` 的模块文档）。
+    #[test]
+    fn quick_open_menu_item_dispatches_the_same_command_as_the_shortcut() {
+        use crate::command_palette::CommandId;
+
+        let listed = MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .filter(|item| matches!(item, MenuItem::Action(MenuAction::QuickOpen)))
+            .count();
+        assert_eq!(
+            listed, 1,
+            "「快速打开」在菜单里必须恰好一条（不许两个入口两个动作）"
+        );
+
+        assert_eq!(MenuAction::QuickOpen.label_key(), "lithe.menu.quickOpen");
+        assert_ne!(
+            tr(MenuAction::QuickOpen.label_key()).as_ref(),
+            "lithe.menu.quickOpen",
+            "菜单文案解析不出来（键名拼错了？）"
+        );
+        assert_eq!(
+            MenuAction::QuickOpen.command_id(),
+            Some(CommandId::OpenQuickOpen),
+            "菜单项必须与 `Ctrl+P` 落到同一个 CommandId"
+        );
+        assert_eq!(
+            CommandId::OpenQuickOpen.id(),
+            "open-quick-open",
+            "诊断 id 是 `S1_COMMAND_RUN id=…` 的可 grep 契约"
+        );
+        assert!(
+            MenuAction::QuickOpen.keybind_action().is_some(),
+            "菜单上要显示 `Ctrl+P` 胶囊，这条动作就必须有一个真被登记的 Action"
+        );
+    }
+
     /// **一个能力一句话**（Q14 的粒度 `2d`）：占位项只许用 [`MISSING_GROUPS`] 里那些声明，
-    /// 而且每组都被真的用到；不许给 51 条占位项各写一句。
+    /// 而且每组都被真的用到；不许给 50 条占位项各写一句。
     ///
     /// 这条挡的是两类退化：① 有人给某一条占位项现编一个新 `Missing`
     /// （那会绕开 i18n 四处、也没有文案键）；② 有人加了一组却一条都没用（声明表虚胖）。

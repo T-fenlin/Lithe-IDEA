@@ -700,6 +700,12 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -
             Category::View,
             idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
         ),
+        // 「快速打开」同样**不在面板里**（`COMMAND_ORDER` 没有它，入口是 `Ctrl+P` 与主菜单）。
+        // 图标与菜单那一份同源（`MenuAction::icon` 也是放大镜）。
+        C::OpenQuickOpen => (
+            Category::View,
+            idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
+        ),
         C::NavigateToDefinition => (
             Category::View,
             idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
@@ -774,6 +780,9 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -
             tr("lithe.menu.commandPalette"),
             tr("lithe.commandPalette.placeholder"),
         ),
+        // 「快速打开」：label 与菜单项**同一个键**（`lithe.menu.quickOpen`），description 取
+        // 顶级菜单名「转到」—— 与上面四条同一条口径（它也不会被画进面板）。
+        C::OpenQuickOpen => (tr("lithe.menu.quickOpen"), tr("lithe.menu.go")),
         C::NavigateToDefinition => (
             tr("lithe.menu.goToDefinition"),
             tr("lithe.navigation.definition"),
@@ -1231,6 +1240,9 @@ impl ShellWorkspace {
         // 出处见 `crate::command_palette` 的模块文档）。同样登记成**全局 action**：
         // 挂在根元素上会有"启动后没点过任何地方时按不出来"的死角。
         install_command_palette(cx);
+        // Quick Open 的 `Ctrl+P`（U17 第二件）：同样是**全局 action**，理由与上一条逐字相同
+        // （挂在根元素上会有"启动后没点过任何地方时按不出来"的死角）。
+        crate::quick_open::install_actions(cx);
 
         // 设置里的「项目 · JDK 与 Maven」页把 JDK 覆盖值（`javaHomePath`）存进设置文件，
         // 而这条值**唯一的消费方是语言服务**（JDT LS 用哪个 JDK 起）：这条链路只有本 crate
@@ -2408,6 +2420,29 @@ impl ShellWorkspace {
         );
     }
 
+    /// 打开 Quick Open 浮层（`Ctrl+P` / 菜单「转到 → 快速打开」）。
+    ///
+    /// 两个入口落到**同一个方法**：键位经 `crate::quick_open::install_actions` 的全局处理器
+    /// 调它，菜单经 [`CommandId::OpenQuickOpen`] 在 [`Self::run_command_id`] 里调它
+    /// ——"一个逻辑命令只建模一次"。
+    ///
+    /// 外壳只做两件事：把 `root` 与"打开文件"的通路交给浮层（`EditorPane::open`，
+    /// Core 的路径命中 `line` 恒为 `null`，所以走 `open` 而不是 `open_at`），再
+    /// `window.open_dialog`。查询 / 结果 / 键盘全在 `crate::quick_open`。
+    ///
+    /// ⚠️ **只能从事件回调或任务里调用**：`render` 阶段调 `open_dialog` 会 panic。
+    pub(crate) fn open_quick_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let root = self.root.clone();
+        let editor = self.editor.clone();
+        let on_open: Rc<dyn Fn(PathBuf, &mut Window, &mut App) + 'static> =
+            Rc::new(move |path, window, cx| {
+                // 与资源管理器点文件 / 查找面板点结果同一条通路（`EditorPane::open`）。
+                let _ = editor.update(cx, |pane, cx| pane.open(&path, window, cx));
+            });
+        let quick_open = cx.new(|cx| crate::quick_open::QuickOpen::new(root, on_open, window, cx));
+        crate::quick_open::open_dialog(quick_open, window, cx);
+    }
+
     /// 执行命令面板的第 `row` 条动作（`row` = [`ShellWorkspace::command_actions`] 的行号）。
     ///
     /// **每一条都真的改到状态**：不是日志占位。越界行号直接返回（不 panic、不静默落到某项）。
@@ -2614,7 +2649,10 @@ impl ShellWorkspace {
             | MenuAction::ToggleStatusBar
             | MenuAction::OpenAppearanceSettings
             | MenuAction::ToggleMenuBar
-            | MenuAction::GoToDefinition => {
+            | MenuAction::GoToDefinition
+            // 「快速打开」走 `command_id()` 那一支（`CommandId::OpenQuickOpen`），
+            // 这里的臂与上面几条一样**不可达**，列出来只为让 match 穷尽。
+            | MenuAction::QuickOpen => {
                 diagnose_menu_run(action, "unreachable");
             }
         }
@@ -2714,6 +2752,12 @@ impl ShellWorkspace {
                 // 的全局处理器里那一句**是同一个函数**。
                 diagnose_run(id, "open");
                 crate::command_palette::open_command_palette(window, cx);
+            }
+            CommandId::OpenQuickOpen => {
+                // 接线点：[`Self::open_quick_open`] —— 与 `Ctrl+P` 的全局处理器
+                // （`crate::quick_open::install_actions`）落到**同一个方法**。
+                diagnose_run(id, "open");
+                self.open_quick_open(window, cx);
             }
             CommandId::OpenFile => {
                 // 接线点：gpui 自带的 `App::prompt_for_paths`
@@ -6069,6 +6113,7 @@ mod tests {
             CommandId::ToggleMenuBar,
             CommandId::SaveBuffer,
             CommandId::OpenCommandPalette,
+            CommandId::OpenQuickOpen,
             CommandId::NavigateToDefinition,
         ] {
             ids.push(other.id());

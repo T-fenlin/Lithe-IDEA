@@ -52,6 +52,7 @@
 //! | `workbench` 的分支弹窗（阶段 11 第三件） | `lithe.git.{searchBranchesAria,repositories,branches,worktrees,selectorSections,searchBranches,branchCount,branchesCount,noMatchingBranches,noBranchesFound,current,refresh}` |
 //! | `workbench` 的打开项目 / 最近项目（B4） | `lithe.menu.openFolder`、`lithe.projectOpen.{title,where,doNotAskAgain,cancel,newWindow,thisWindow}`（全部真源既有键）、`lithe.gpui.newWindowNotWired`（**唯一**一条 gpui 自有键，理由见 `extract-locale.mjs`） |
 //! | `workbench` 的菜单占位项（B3） | **17 条** `lithe.gpui.menuMissing.*`（一种能力一句："尚未接入：缺 X"），由 `menu_bar.rs` 的 `MISSING_GROUPS` 使用、状态栏左侧显示（其中 `cloneUi` / `newProjectScaffolding` 两条用在项目下拉那两行上）；全部是 gpui 自有键（真源的菜单项恒可执行，catalog 里没有这类句子），理由见 `extract-locale.mjs` |
+//! | `workbench` 的 Quick Open 浮层（U17 第二件） | `lithe.quickOpen.{searchFiles,noMatch}`（搜索框占位符 / 空态）、`lithe.menu.quickOpen`（「转到 → 快速打开」的菜单文案）—— 三条**全是真源既有键**，本任务零新增文案 |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
 //! **任何键拼错都会让测试失败**（缺键时 `rust-i18n` 原样回显键名，所以断言 `tr(key) != key`）。
@@ -177,6 +178,11 @@ mod tests {
             ("lithe.fileExplorer.preferences", "文件资源管理器偏好设置"),
             ("lithe.fileExplorer.ariaLabel", "文件资源管理器"),
             ("lithe.quickOpen.loadingFiles", "正在加载文件"),
+            // Quick Open 浮层（U17 第二件，`workbench/src/quick_open.rs`）：占位符与空态
+            // 都是真源既有键（`locales/lithe.zh-CN.yml:6786,6800`），它的菜单项同一批接线。
+            ("lithe.quickOpen.searchFiles", "输入以搜索文件..."),
+            ("lithe.quickOpen.noMatch", "未找到匹配的文件"),
+            ("lithe.menu.quickOpen", "快速打开"),
             ("lithe.ui.retry", "重试"),
             ("lithe.fileExplorer.noFolderOpen", "未打开文件夹"),
             ("lithe.titleProject.openFolder", "打开文件夹"),

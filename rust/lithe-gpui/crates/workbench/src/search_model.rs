@@ -46,6 +46,16 @@ use serde_json::{Value, json};
 /// `workspace.search`（`protocol/command.rs:360`）。
 pub(crate) const SEARCH_COMMAND: &str = "workspace.search";
 
+/// `workspace.searchEverywhere`（`protocol/command.rs:361`）。
+///
+/// **收的是同一个 `SearchRequest`**（`project/files.rs:272` 的
+/// `search_everywhere(request: SearchRequest)`），所以 Quick Open 直接复用本模块的
+/// [`payload`] / [`parse_matches`] / [`QueryTimeline`]，不另写第二份构造与解析。
+/// 它与 `workspace.search` 的差别只有一件事：响应里**多**了 `kind: "symbol"` / `"type"`
+/// 的命中（`files.rs:296-333` 的符号扫描），而 Quick Open 是 **Files scope**，只取
+/// `kind: "file"`（见 [`quick_open_rows`]）。
+pub(crate) const EVERYWHERE_COMMAND: &str = "workspace.searchEverywhere";
+
 /// 一次查询的结果上限。
 ///
 /// **显式传**而不是靠 Core 的 `#[serde(default)]`：面板要能说出"这一次最多取多少条"，
@@ -128,7 +138,10 @@ impl MatchKind {
 ///
 /// ⚠️ **不保留 `symbolName`**：`workspace.search` 的 `search_with_index` 把它恒置 `None`
 /// （`files.rs:222-260` 两处构造都没有它），留着就是一个永远为 `None`、只服务另一条命令的字段。
-/// `workspace.searchEverywhere` 落地时在这里加回来。
+/// `workspace.searchEverywhere` 的符号命中确实带它（`files.rs:311` 的
+/// `search_index::make_symbol_match`），但已落地的两个消费方都只用**路径命中**
+/// （Find in Files 用 `workspace.search`、Quick Open 用 `searchEverywhere` 的 Files scope），
+/// 所以它仍然没有读者；等 Search Everywhere 的 Classes / Symbols scope 落地时再加回来。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Match {
     /// `kind`。
@@ -273,6 +286,151 @@ pub(crate) fn group(matches: &[Match]) -> Vec<SearchRow> {
         rows.extend(hits[index].iter().cloned());
     }
     rows
+}
+
+// ---------------------------------------------------------------------------
+// Quick Open（`Ctrl+P`；`workspace.searchEverywhere` 的 Files scope）
+// ---------------------------------------------------------------------------
+
+/// Quick Open 的一行：**一个文件**（Core 的路径命中）。
+///
+/// 只有 [`MatchKind::File`] 会变成行 —— 这是 macos 真源里 `.files` scope 的取法
+/// （`SearchEverywhereView.swift:132-133` 把 `.files` 映射到
+/// `feature.searchEverywhereResults.fileMatches`），**不是**宿主侧的第二套匹配：
+/// "哪一条算文件命中、按什么顺序回来"全在 Core（`files.rs:209-231`）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct QuickOpenRow {
+    /// `path`：工作区相对、`/` 分隔。**这一行的身份**（`ElementId` 用它，不用下标）。
+    pub(crate) path: String,
+    /// 文件名（最后一段）。真源画的是 `url.lastPathComponent`
+    /// （`SearchEverywhereView.swift:376`）。
+    pub(crate) name: String,
+    /// 所在目录（去掉文件名那一段）；文件直接在工作区根下时为空串。真源的
+    /// `containerPath(for:)` 就是 `deletingLastPathComponent`（同文件 `:446-450`）。
+    pub(crate) parent: String,
+}
+
+impl QuickOpenRow {
+    /// 从工作区相对路径拆出「文件名 + 所在目录」。
+    ///
+    /// 按 `/` 拆（契约口径：相对路径一律 `/` 分隔），**不碰**平台分隔符。
+    fn new(path: String) -> Self {
+        let (parent, name) = match path.rsplit_once('/') {
+            Some((parent, name)) => (parent.to_string(), name.to_string()),
+            None => (String::new(), path.clone()),
+        };
+        Self { path, name, parent }
+    }
+}
+
+/// 把 Core 的命中折成 Quick Open 要画的文件行。
+///
+/// 三件事，各有出处：
+///
+/// 1. **只留路径命中**（`kind == "file"`）—— Files scope（见 [`QuickOpenRow`]）；
+/// 2. **保持 Core 的顺序**：不排序、不按相关度重排（"排序 / 匹配 / 模糊度属于 Core"）；
+/// 3. **同一路径只出现一次**（保留第一次出现的那一条）：与 [`group`] 同一个折叠口径。
+///    Core 今天对同一个文件只会给一条路径命中（`files.rs:209-231` 每个索引 id 一条），
+///    所以它是防御性的"一个文件不许占两行"，不是第二套去重策略。
+pub(crate) fn quick_open_rows(matches: &[Match]) -> Vec<QuickOpenRow> {
+    let mut rows: Vec<QuickOpenRow> = Vec::new();
+    for item in matches {
+        if !item.kind.is_file() {
+            continue;
+        }
+        if rows.iter().any(|row| row.path == item.path) {
+            continue;
+        }
+        rows.push(QuickOpenRow::new(item.path.clone()));
+    }
+    rows
+}
+
+/// 四态（与 [`SearchState`] 同一份契约：`idle` / `loading` / `ready` / `failed`）。
+///
+/// **为什么不直接复用 [`SearchState`]**：它的 `ready` 装的是查找面板的 [`SearchRow`]
+/// （文件头 + 命中行**两层**），而 Quick Open 只有文件行**一层**；硬塞进去会让查找面板的
+/// 渲染多一层无用 `match`。四态的**语义**与 [`SearchState`] 逐条一致 ——
+/// 尤其"空结果是 `Ready`，不是 `Failed`"这一条。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum QuickOpenState {
+    /// 查询串为空（或只有空白）：**不发 Core 调用**（`search_everywhere` 对空查询直接回空，
+    /// `files.rs:274-279`），列表空着，占位符负责说"输入以搜索文件"。
+    Idle,
+    /// 已发出查询、结果还没回来。
+    ///
+    /// ⚠️ `Loading` 与 `Ready { rows: [] }` **必须分开**：`Command` 只在非 loading 且零行时
+    /// 才画空态（`command/state.rs:989-993`），否则"在路上"会被画成"没有匹配"。
+    ///
+    /// `rows` = **上一次查询**留下的结果，继续留在屏幕上直到新结果到达（真机同样不清空
+    /// `visibleItems`，见 `SearchEverywhereView.swift:302-328`；打一个字就闪一下空列表是更差的观感）。
+    Loading {
+        /// 这一次查询的串。
+        query: String,
+        /// 上一次查询的文件行（可能为空）。
+        rows: Vec<QuickOpenRow>,
+    },
+    /// 结果到了；`rows` 可能是空的（"没有匹配的文件"）。
+    Ready {
+        /// 这一次查询的串。
+        query: String,
+        /// 文件行。
+        rows: Vec<QuickOpenRow>,
+    },
+    /// 失败了；`reason` 是可直接显示的原因（Core 的 `message` 或 [`ParseError::token`]）。
+    Failed {
+        /// 这一次查询的串。
+        query: String,
+        /// 可直接显示的原因。
+        reason: String,
+    },
+}
+
+impl QuickOpenState {
+    /// 进 `loading` 态，**带上上一次的行**（它们继续可见，见 [`QuickOpenState::Loading`]）。
+    pub(crate) fn loading(query: impl Into<String>, previous: &[QuickOpenRow]) -> Self {
+        Self::Loading {
+            query: query.into(),
+            rows: previous.to_vec(),
+        }
+    }
+
+    /// 进 `ready` 态（`matches` 在这里过 [`quick_open_rows`]；空列表 = 空结果，不是失败）。
+    pub(crate) fn ready(query: impl Into<String>, matches: &[Match]) -> Self {
+        Self::Ready {
+            query: query.into(),
+            rows: quick_open_rows(matches),
+        }
+    }
+
+    /// 进 `failed` 态。
+    pub(crate) fn failed(query: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::Failed {
+            query: query.into(),
+            reason: reason.into(),
+        }
+    }
+
+    /// 当前查询串（`idle` 时为空串）。
+    pub(crate) fn query(&self) -> &str {
+        match self {
+            Self::Idle => "",
+            Self::Loading { query, .. }
+            | Self::Ready { query, .. }
+            | Self::Failed { query, .. } => query,
+        }
+    }
+
+    /// 要画的文件行。
+    ///
+    /// `loading` **也算有行**：上一次的结果在等新结果时继续可见（见该变体的文档）。
+    /// `failed` 没有行 —— 失败态整块换成原因（`Command` 的空态槽）。
+    pub(crate) fn rows(&self) -> &[QuickOpenRow] {
+        match self {
+            Self::Loading { rows, .. } | Self::Ready { rows, .. } => rows,
+            Self::Idle | Self::Failed { .. } => &[],
+        }
+    }
 }
 
 /// 面板的四态（契约要求的 `idle` / `loading` / `ready` / `failed`）。
@@ -754,5 +912,146 @@ mod tests {
             root.join("src").join("A.java")
         );
         assert_eq!(absolute(root, ""), root.to_path_buf());
+    }
+
+    // ---- Quick Open（`workspace.searchEverywhere` 的 Files scope） ----
+
+    /// 两条命令是**同一个 payload 构造器**：Quick Open 换的只是命令名，请求形状一份。
+    /// （`files.rs:272` 的 `search_everywhere(request: SearchRequest)` 收的就是
+    /// `workspace.search` 那个类型。）
+    #[test]
+    fn quick_open_reuses_the_same_request_shape_as_find_in_files() {
+        // 默认选项 = 不区分大小写 / 不整词 / 不正则 / 无掩码：真机 Quick Open 也没有这三个开关。
+        assert_eq!(
+            payload("D:/proj", "needle", &SearchOptions::default()),
+            json!({
+                "root": "D:/proj",
+                "query": "needle",
+                "caseSensitive": false,
+                "wholeWords": false,
+                "regularExpression": false,
+                "maxResults": MAX_RESULTS,
+                "fileMask": "",
+            })
+        );
+        // 命令名是**兼容面**（`protocol/command.rs:360-361`）：拼错一位 Core 就用
+        // `unknown_command` 拒掉，只有跑起来才发现。
+        assert_eq!(SEARCH_COMMAND, "workspace.search");
+        assert_eq!(EVERYWHERE_COMMAND, "workspace.searchEverywhere");
+        assert_ne!(EVERYWHERE_COMMAND, SEARCH_COMMAND);
+        // 上限与真机 `SearchEverywhereResults.matchLimit = 200` 同值
+        // （`macos/Sources/LitheSearchModule/Models/SearchResults.swift:58`）。
+        assert_eq!(MAX_RESULTS, 200);
+    }
+
+    /// Files scope：**只留路径命中**，`content` / `symbol` / 未认识的 kind 一律不成行
+    /// —— 那三类属于别的 scope（`SearchEverywhereView.swift:130-137`）。
+    #[test]
+    fn quick_open_keeps_only_path_matches() {
+        let matches = vec![
+            path_match("src/A.java"),
+            content("src/A.java", 12, "class A {"),
+            Match {
+                kind: MatchKind::Other("symbol".to_string()),
+                path: "src/B.java".to_string(),
+                line: Some(3),
+                preview: "void b()".to_string(),
+            },
+            path_match("src/C.kt"),
+        ];
+        assert_eq!(
+            quick_open_rows(&matches),
+            vec![
+                QuickOpenRow {
+                    path: "src/A.java".to_string(),
+                    name: "A.java".to_string(),
+                    parent: "src".to_string(),
+                },
+                QuickOpenRow {
+                    path: "src/C.kt".to_string(),
+                    name: "C.kt".to_string(),
+                    parent: "src".to_string(),
+                },
+            ],
+            "只有路径命中成行，且保持 Core 给出的顺序"
+        );
+    }
+
+    /// 显示口径：文件名 = 最后一段、所在目录 = 前面的部分；根下的文件 `parent` 为空串
+    /// （真源 `SearchEverywhereView.swift:446-450` 的 `deletingLastPathComponent`）。
+    /// 深层路径只在**第一个** `/` 处留下全部前缀，不截断成"最后两段"。
+    #[test]
+    fn quick_open_splits_name_and_container_directory() {
+        let matches = vec![
+            path_match("A.java"),
+            path_match("src/deep/nested/B.java"),
+            path_match("src/C.java"),
+        ];
+        let rows = quick_open_rows(&matches);
+        assert_eq!(rows[0].name, "A.java");
+        assert_eq!(rows[0].parent, "", "根下的文件没有目录段");
+        assert_eq!(rows[1].name, "B.java");
+        assert_eq!(rows[1].parent, "src/deep/nested");
+        assert_eq!(rows[2].name, "C.java");
+        assert_eq!(rows[2].parent, "src");
+    }
+
+    /// 同一路径只占一行（保留第一次出现的那条）；`path` 是这一行的身份。
+    #[test]
+    fn quick_open_rows_are_unique_by_path() {
+        let rows = quick_open_rows(&[path_match("src/A.java"), path_match("src/A.java")]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].path, "src/A.java");
+    }
+
+    /// 四态：空结果是 `Ready`（0 行）而不是 `Failed`；`Loading` 与 `Ready { rows: [] }`
+    /// 必须分得开（`Command` 只在非 loading 时画空态），而且 `Loading` **带着上一次的行**
+    /// —— 搜索期间旧结果继续可见。
+    #[test]
+    fn quick_open_empty_result_is_ready_not_failed() {
+        let empty = QuickOpenState::ready("zzz", &[]);
+        assert!(matches!(empty, QuickOpenState::Ready { .. }), "{empty:?}");
+        assert!(empty.rows().is_empty());
+        assert_eq!(empty.query(), "zzz");
+        assert_eq!(QuickOpenState::Idle.query(), "");
+        assert_eq!(QuickOpenState::Idle.rows(), &[]);
+
+        let previous = quick_open_rows(&[path_match("src/A.java")]);
+        let loading = QuickOpenState::loading("q", &previous);
+        assert_eq!(loading.query(), "q");
+        assert_eq!(
+            loading.rows(),
+            previous.as_slice(),
+            "在路上 时上一次的结果要继续可见（真机不清空 visibleItems）"
+        );
+        assert_ne!(
+            loading,
+            QuickOpenState::Ready {
+                query: "q".to_string(),
+                rows: Vec::new(),
+            },
+            "在路上 与 没有匹配 是两个状态"
+        );
+        assert_eq!(QuickOpenState::failed("q", "invalid_request").query(), "q");
+        assert_eq!(
+            QuickOpenState::failed("q", "invalid_request").rows(),
+            &[],
+            "失败态没有行：整块换成原因"
+        );
+    }
+
+    /// `SearchEverywhere` 也会回符号命中：`quick_open_rows` 丢掉它们，但
+    /// `parse_matches` 照旧**一条都不丢**（解析层不因为不认识就扔条目）。
+    #[test]
+    fn quick_open_parses_the_everywhere_response_without_losing_symbol_rows() {
+        let data = json!({
+            "matches": [
+                { "kind": "file", "path": "src/A.java", "line": null, "preview": "src/A.java" },
+                { "kind": "symbol", "path": "src/A.java", "line": 3, "preview": "void a()", "symbolName": "a" },
+            ]
+        });
+        let matches = parse_matches(Some(&data)).expect("必须解析成功");
+        assert_eq!(matches.len(), 2);
+        assert_eq!(quick_open_rows(&matches).len(), 1);
     }
 }
