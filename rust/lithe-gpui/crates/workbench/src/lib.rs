@@ -142,8 +142,8 @@ pub mod quick_open;
 pub mod replace_in_files;
 pub mod right_tool_window;
 // Search Everywhere 浮层（菜单「视图 → 全局搜索」；`workspace.searchEverywhere` 的
-// All / Classes / Files / Symbols / Text 五个 scope）。浮层形状照 `command_palette` / `quick_open`
-// （`Dialog` + `Command`，本地过滤关掉），请求 / 解析 / 代次 / 五个 scope 的投影全部复用
+// All / Classes / Files / Symbols / Actions / Text 六个 scope）。浮层形状照 `command_palette` / `quick_open`
+// （`Dialog` + `Command`，本地过滤关掉），请求 / 解析 / 代次 / 六个 scope 的投影全部复用
 // `search_model`；规格出处、`maxResults` 的推导与有意差异见其模块文档。
 pub mod search_everywhere;
 // 搜索索引在宿主侧的接线（warm / update / invalidate 三条 Core 命令的时机与代次）。

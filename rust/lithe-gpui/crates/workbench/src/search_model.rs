@@ -27,7 +27,7 @@
 //! ## 唯一的例外：`Actions` / `/` 命令模式的候选**不在 Core**
 //!
 //! [`action_matches`] 是宿主侧的匹配规则，它与上面那条"匹配属于 Core"**不矛盾**：
-//! 这一档的候选目录是**宿主自己的命令表**（`crate::command_palette::CommandId` 的 24 个变体，
+//! 这一档的候选目录是**宿主自己的命令表**（`crate::command_palette::CommandId` 的 22 个变体，
 //! 投影见 [`action_rows`]），Core 不可能知道它 —— Core 只认识工作区文件与索引里的符号。
 //! 规则本身也不是新发明的，它逐条照真源 `LitheAction.matches`
 //! （`macos/Sources/Lithe/Models/LitheAction.swift:37-51`）：**去空白 + 转小写后的子序列匹配**，
@@ -490,8 +490,8 @@ pub(crate) fn quick_open_rows(matches: &[Match]) -> Vec<QuickOpenRow> {
 ///
 /// ⚠️ `Actions` **不是工作区搜索**：真源那一档的候选是 `LitheActionRegistry`
 /// （`macos/Sources/Lithe/Models/LitheAction.swift:56-102` 的 35 条动作），本侧的对应物是
-/// [`crate::command_palette::CommandId`] 的 **24 个变体**。所以这一档显示的**永远是子集**
-/// （宿主目录 24 条 vs 真源命令目录 `LitheCommandCatalog.swift:129-182` 的 39 条）——
+/// [`crate::command_palette::CommandId`] 的 **22 个变体**。所以这一档显示的**永远是子集**
+/// （宿主目录 22 条 vs 真源命令目录 `LitheCommandCatalog.swift:129-182` 的 39 条）——
 /// 不假装等价，UI-MAP 里同样写明。
 ///
 /// ## scope ↔ Core `kind`（只对五个 Core scope 成立）
@@ -825,7 +825,7 @@ pub(crate) fn action_matches(query: &str, title: &str, subtitle: &str, group: &s
 ///    `.map(SearchItem.action)`，不排序（`SearchEverywhereView.swift:138-139`）；
 /// 2. **过滤只看 [`action_matches`]**（候选串 = `label` + `description` + 分类名，对应真源的
 ///    title + subtitle + group），空 query 恒真；
-/// 3. **不重排、不去重、不截断**（宿主目录只有 24 条，截断与否由目录自己决定）。
+/// 3. **不重排、不去重、不截断**（宿主目录只有 22 条，截断与否由目录自己决定）。
 ///
 /// 行型**直接复用**命令面板的 [`CommandAction`]：同一个动作在两个入口里是同一份数据
 /// （label / description / category / icon 全都不复制），所以这里不为 Actions 档另定义一份

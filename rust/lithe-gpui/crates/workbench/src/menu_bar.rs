@@ -702,7 +702,7 @@ pub enum MenuAction {
     /// 执行分支 = [`CommandId::OpenQuickOpen`]（`crate::workspace::run_command_id`），
     /// 与快捷键 `Ctrl+P` dispatch 的是**同一个 Action**（`crate::quick_open::OpenQuickOpen`）。
     QuickOpen,
-    /// 视图 → 全局搜索（Search Everywhere 浮层，五个 scope）。
+    /// 视图 → 全局搜索（Search Everywhere 浮层，六个 scope）。
     ///
     /// 执行分支 = [`CommandId::OpenSearchEverywhere`]（`crate::workspace::run_command_id`），
     /// 落在 `ShellWorkspace::open_search_everywhere`。
@@ -2825,7 +2825,7 @@ fn theme_menu(names: Vec<String>, window: &mut Window, cx: &mut App) -> Entity<P
                         // 与真源 `handleThemeChange` 同一条语义：用户点名要一个主题 =
                         // 别跟着系统了，所以走 `set_theme_explicit`
                         // （它把 `syncSystemTheme` 一起关掉，`settings/src/store.rs:269`）。
-                        // 这一段与 `MenuBar::run_theme_by_index`（`--theme-probe`）
+                        // 这一段与 `MenuBar::run_theme_by`（`--theme-probe`）
                         // **共用** `apply_theme_choice`，不写两份。
                         apply_theme_choice(value.to_string(), cx);
                     }),
