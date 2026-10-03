@@ -702,7 +702,7 @@ pub enum MenuAction {
     /// 执行分支 = [`CommandId::OpenQuickOpen`]（`crate::workspace::run_command_id`），
     /// 与快捷键 `Ctrl+P` dispatch 的是**同一个 Action**（`crate::quick_open::OpenQuickOpen`）。
     QuickOpen,
-    /// 视图 → 全局搜索（Search Everywhere 浮层，四个 scope）。
+    /// 视图 → 全局搜索（Search Everywhere 浮层，五个 scope）。
     ///
     /// 执行分支 = [`CommandId::OpenSearchEverywhere`]（`crate::workspace::run_command_id`），
     /// 落在 `ShellWorkspace::open_search_everywhere`。

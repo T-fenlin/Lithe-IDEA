@@ -1,6 +1,6 @@
-//! Search Everywhere 浮层（菜单「视图 → 全局搜索」）：四个 scope —— All / Files / Symbols / Text。
+//! Search Everywhere 浮层（菜单「视图 → 全局搜索」）：五个 scope —— All / Classes / Files / Symbols / Text。
 //!
-//! ## 真源：`SearchEverywhereView.swift`，但只做四个 scope
+//! ## 真源：`SearchEverywhereView.swift`，但只做五个 scope
 //!
 //! | 规格 | 值 / 行为 | 出处 |
 //! | --- | --- | --- |
@@ -11,7 +11,7 @@
 //! | 结果行高 / 行内间距 | 24 / 8 | 同文件 `:423` / `:367` |
 //! | 结果行内容 | 图标 + 名字（`symbolName ?? 文件名`）+ `:行号` + 所在目录 + 预览（只有 content） | 同文件 `:364-397` |
 //! | 搜索中显示 spinner | `feature.isSearchingEverywhere` | 同文件 `:241-243` |
-//! | 四个 scope ↔ Core `kind` | 见 `crate::search_model::SearchEverywhereScope` 的表 | 同文件 `:120-141` |
+//! | 五个 scope ↔ Core `kind` | 见 `crate::search_model::SearchEverywhereScope` 的表 | 同文件 `:120-141` |
 //! | Tab / `←` / `→` **环绕**切 scope | `(i + offset + n) % n` | 同文件 `:523-529,542-547` |
 //! | 防抖 | 180ms | 同文件 `:212` |
 //! | 结果上限 | `EVERYWHERE_MAX_RESULTS`（1000，推导见该常量） | Core `project/files.rs:326-332` |
@@ -26,7 +26,7 @@
 //!    [`EVERYWHERE_MAX_RESULTS`]（**同一个** `json!`，见 `payload_with_limit` 的文档）。
 //!    **本模块不写任何匹配、模糊度或排序** —— 那是 Core 的 `search_with_index`
 //!    （`files.rs:190-268`）与符号扫描（`files.rs:296-320`），宿主只做"把结果画出来"。
-//! 2. **四个 scope 的投影是纯函数**，落在 `crate::search_model::everywhere_rows`
+//! 2. **五个 scope 的投影是纯函数**，落在 `crate::search_model::everywhere_rows`
 //!    （可确定性单测）；Files 那一档直接**复用 Quick Open 的 `quick_open_rows`** ——
 //!    Quick Open 与 Search Everywhere 的 Files scope 是同一份投影，不写第二份。
 //! 3. **浮层形状照 [`crate::quick_open`]**：同一个 `Dialog` + `Command` 组合，
@@ -40,9 +40,10 @@
 //!
 //! ## 与真源的有意差异（逐条）
 //!
-//! 1. **只做四个 scope**：真源六个。`Classes` 对应 `kind == "type"`，是**后续切片**；
-//!    `Actions` 是宿主自己的命令目录（另一件事）—— 两个都不在本切片（详见
-//!    `SearchEverywhereScope` 的文档）。`type` 行仍然**出现在 All** 里。
+//! 1. **只做五个 scope**：真源六个，`Actions` **仍不在本切片**（它是宿主自己的命令目录，
+//!    不是工作区搜索）。`Classes` 已做：它对应 Core 的 `kind == "type"`，取法与 Symbols
+//!    那一档**不同 kind**（详见 `SearchEverywhereScope` 的表）。`type` 行本来就**出现在 All**
+//!    里，所以这一档只是把同一批行**再单独给一个标签页**，不动 All 的口径。
 //! 2. **没有相关度重排**：真源 All 会按 `SearchRelevance.score` 重排
 //!    （`SearchEverywhereView.swift:11-90,158-170`），而 Core 的响应里**没有** relevance 字段
 //!    （`protocol/contracts.rs:94-105` 的 `SearchMatch` 只有 `kind/path/line/preview/symbolName`），
@@ -66,7 +67,7 @@
 //!    与 [`crate::quick_open`] / [`crate::command_palette`] 记的同一条；真源是一按就关。
 //! 7. **scope 标签行没有用上游 `TabBar`**：它的 `on_click` 回调只给**下标**
 //!    （`gpui-component-0.7.0/src/tab/tab_bar.rs:171-179`），标签自身的元素 id 由上游按下标发
-//!    （`:506-537`），与"`ElementId` 用业务身份"这条仓库口径冲突；而本侧只有四个固定标签，
+//!    （`:506-537`），与"`ElementId` 用业务身份"这条仓库口径冲突；而本侧只有五个固定标签，
 //!    自己画能同时满足业务 id 与真源的 40/38/2px 三个数。
 //!
 //! ## 诊断（stderr）
@@ -383,7 +384,7 @@ impl SearchEverywhere {
                 &format!("generation={generation} query={query} reason={reason}"),
             ),
             _ => {
-                // 四个 scope 各自的可画行数都报出来：B10（符号饥饿）是不是真的绕开了，
+                // 五个 scope 各自的可画行数都报出来：B10（符号饥饿）是不是真的绕开了，
                 // 靠的就是这一行里 `symbols=` 不为 0。
                 let counts = SearchEverywhereScope::ALL
                     .iter()
@@ -408,7 +409,7 @@ impl SearchEverywhere {
     /// 切 scope（点标签 / `Tab` / `Shift+Tab`）。
     ///
     /// ⚠️ **不打第二次 Core**：scope 是本地投影口径（真源的搜索任务只按查询串作 key，
-    /// `SearchEverywhereView.swift:207`），四个 scope 共用同一份命中。
+    /// `SearchEverywhereView.swift:207`），五个 scope 共用同一份命中。
     /// 高亮回到第一行这件事不在这里手工算：`Command` 在模型重装时若旧的选中项不在新集合里
     /// 会自己 `reset_selection()`（`gpui-component-0.7.0/src/command/state.rs:200-220`），
     /// 而切 scope 必然换掉整个行集合 —— 与真源 `onChange(of: scope) { selectedIndex = 0 }`

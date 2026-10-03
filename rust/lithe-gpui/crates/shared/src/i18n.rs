@@ -184,12 +184,14 @@ mod tests {
             ("lithe.quickOpen.searchFiles", "输入以搜索文件..."),
             ("lithe.quickOpen.noMatch", "未找到匹配的文件"),
             ("lithe.menu.quickOpen", "快速打开"),
-            // Search Everywhere 浮层（U17 第三件，`workbench/src/search_everywhere.rs`）：四个
-            // scope 标签与四句空态都是 macOS 真源的既有字面量（SwiftUI 的 rawValue 与
+            // Search Everywhere 浮层（U17 第三件 + 后续切片补 Classes）：五个
+            // scope 标签与五句空态都是 macOS 真源的既有字面量（SwiftUI 的 rawValue 与
             // `emptyResultsMessage`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings`
-            // （:194,884,885,887,1119,1164-1168），Windows catalog 里没有 —— 所以是 gpui 自有键。
+            // （:194,884,885,887,1119,1164-1168，其中 :884 与 :1166 就是 Classes），
+            // Windows catalog 里没有 —— 所以是 gpui 自有键。
             // 菜单那一项复用真源既有键 `lithe.menu.globalSearch`（与 `quick_open` 同一处置）。
             ("lithe.searchEverywhere.scope.all", "全部"),
+            ("lithe.searchEverywhere.scope.classes", "类"),
             ("lithe.searchEverywhere.scope.files", "文件"),
             ("lithe.searchEverywhere.scope.symbols", "符号"),
             ("lithe.searchEverywhere.scope.text", "文本"),
@@ -197,6 +199,7 @@ mod tests {
                 "lithe.searchEverywhere.noMatches.all",
                 "全部范围内没有匹配项",
             ),
+            ("lithe.searchEverywhere.noMatches.classes", "类中没有匹配项"),
             ("lithe.searchEverywhere.noMatches.files", "文件中没有匹配项"),
             (
                 "lithe.searchEverywhere.noMatches.symbols",

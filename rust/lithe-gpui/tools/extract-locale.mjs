@@ -859,6 +859,13 @@ const GPUI_ONLY_KEYS = [
       "scope 标签行的第一个标签（`lithe-gpui/crates/workbench/src/search_everywhere.rs`）。出处处：macOS 真源 `SearchEverywhereScope.all` 的 rawValue 是 \"All\"（`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:6`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings:1119`（\"All\" = \"全部\"）。真源 catalog 里没有任何 Search Everywhere 的 scope 键（那一版没有这个浮层的 scope 行），所以是 gpui 侧新增键。",
   },
   {
+    key: "searchEverywhere.scope.classes",
+    zh: "类",
+    en: "Classes",
+    reason:
+      "scope 标签行的第二个标签（`lithe-gpui/crates/workbench/src/search_model.rs` 的 `SearchEverywhereScope::ALL`；U17 后续切片补上 Classes 这一档）。出处：macOS 真源 `SearchEverywhereScope.classes` 的 rawValue 是 \"Classes\"（`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:7`，真源 `allCases` 里它就排在 All 之后），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings:884`（\"Classes\" = \"类\"）。`en.lproj` 里没有对应条目（英文回落到字面量本身，所以 en 逐字取那句）。**不借别的既有键**：`locale.ts` 里没有任何 \"Classes\"/scope 相关的键（grep 无命中），而本浮层的另外四个 scope 名已经各自有一条同族键，混用会漂移。",
+  },
+  {
     key: "searchEverywhere.scope.files",
     zh: "文件",
     en: "Files",
@@ -885,6 +892,13 @@ const GPUI_ONLY_KEYS = [
     en: "No matches in All",
     reason:
       "All scope 有查询但零命中时的空态。出处：真源 `SearchEverywhereResultSource.combinedWorkspaceNames.emptyResultsMessage` 返回字面量 \"No matches in All\"（`SearchEverywhereView.swift:79-80`），中文 `Localizable.strings:1164`。en 逐字取那句字面量（`en.lproj` 里没有这一条，英文回落到字面量本身）。",
+  },
+  {
+    key: "searchEverywhere.noMatches.classes",
+    zh: "类中没有匹配项",
+    en: "No matches in Classes",
+    reason:
+      "Classes scope 的空态（U17 后续切片）。出处：真源 `SearchEverywhereResultSource.classes.emptyResultsMessage` 返回字面量 \"No matches in Classes\"（`SearchEverywhereView.swift:81-82`），中文 `macos/Resources/zh-Hans.lproj/Localizable.strings:1166`（\"类中没有匹配项\"）；en 逐字取那句字面量（`en.lproj` 里没有这一条）。",
   },
   {
     key: "searchEverywhere.noMatches.files",

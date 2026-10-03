@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 125 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 127 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8861,6 +8861,8 @@ lithe:
     zh-CN: "搜索文件和内容"
   searchEverywhere.scope.all:
     zh-CN: "全部"
+  searchEverywhere.scope.classes:
+    zh-CN: "类"
   searchEverywhere.scope.files:
     zh-CN: "文件"
   searchEverywhere.scope.symbols:
@@ -8869,6 +8871,8 @@ lithe:
     zh-CN: "文本"
   searchEverywhere.noMatches.all:
     zh-CN: "全部范围内没有匹配项"
+  searchEverywhere.noMatches.classes:
+    zh-CN: "类中没有匹配项"
   searchEverywhere.noMatches.files:
     zh-CN: "文件中没有匹配项"
   searchEverywhere.noMatches.symbols:

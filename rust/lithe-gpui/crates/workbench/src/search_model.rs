@@ -443,7 +443,7 @@ pub(crate) fn quick_open_rows(matches: &[Match]) -> Vec<QuickOpenRow> {
 }
 
 // ---------------------------------------------------------------------------
-// Search Everywhere（`workspace.searchEverywhere` 的四个 scope）
+// Search Everywhere（`workspace.searchEverywhere` 的五个 scope）
 // ---------------------------------------------------------------------------
 
 /// Search Everywhere 的 scope。
@@ -451,29 +451,34 @@ pub(crate) fn quick_open_rows(matches: &[Match]) -> Vec<QuickOpenRow> {
 /// ## 真源与有意收窄
 ///
 /// 真源有**六个**（`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:5-14`：
-/// `All` / `Classes` / `Files` / `Symbols` / `Actions` / `Text`）。本切片只做**四个**：
+/// `All` / `Classes` / `Files` / `Symbols` / `Actions` / `Text`）。本侧做**五个**：
 ///
-/// - `Classes` **不在本切片**：它对应 Core 的 `kind == "type"`
-///   （`files.rs:312-315` 把类型单独攒进 `types`），留待后续切片；
-///   本切片里那些行仍然**出现在 All**（真源的 All 是 `fileMatches + classMatches + symbolMatches`，
-///   同文件 `:126-128`）。
-/// - `Actions` **不是工作区搜索**：它走宿主自己的命令目录，是另一件事。
+/// - `Actions` **不是工作区搜索**：它走宿主自己的命令目录，是另一件事（后续切片）。
 ///
-/// 与 Core `kind` 的映射（两者都不重排、不重筛，全部保持 Core 返回的顺序）：
+/// `Classes` 是 [U17 后续切片]：真源把它映射到 `classMatches`（同文件 `:130-131`），
+/// 而 Core 的符号扫描把 `kind == "type"`（类 / 接口 / 枚举 / record）单独攒进 `types`
+/// （`rust/lithe-core/src/project/files.rs:312-315`）—— 所以它的取法就是
+/// [`MatchKind::is_type`]，**不是** Symbols 那一档的另一个视图（两者在 Core 里是两种 kind）。
+///
+/// 与 Core `kind` 的映射（全都不重排、不重筛，保持 Core 返回的顺序）：
 ///
 /// | scope | Core `kind` | 真源出处 |
 /// | --- | --- | --- |
 /// | `All` | `file` + `type` + `symbol`（**不含 `content`**） | `SearchEverywhereView.swift:122-129` |
+/// | `Classes` | `type` | 同文件 `:130-131` |
 /// | `Files` | `file` | 同文件 `:132-133` |
 /// | `Symbols` | `symbol` | 同文件 `:134-135` |
 /// | `Text` | `content` | 同文件 `:136-137` |
 ///
 /// ⚠️ **All 不含 `content`** 是真源明写的取舍：正文命中只在 Text 标签页出现，
 /// 避免与 Find in Files 重叠（`SearchEverywhereView.swift:123-125` 的注释）。
+/// 这一条**没有**因为新增 Classes 而改变：All 仍是 `file + type + symbol` 三段。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SearchEverywhereScope {
     /// 名字类命中三段拼接：文件 + 类型 + 符号。
     All,
+    /// 类型声明名命中（Core 的 `kind == "type"`）。
+    Classes,
     /// 文件路径命中。
     Files,
     /// 非类型符号名命中。
@@ -484,13 +489,23 @@ pub(crate) enum SearchEverywhereScope {
 
 impl SearchEverywhereScope {
     /// 标签行里的顺序 = Tab / `←` / `→` 环绕的顺序（真源 `allCases` 的顺序，
-    /// `SearchEverywhereView.swift:5-14` 去掉本切片不做的两个）。
-    pub(crate) const ALL: [Self; 4] = [Self::All, Self::Files, Self::Symbols, Self::Text];
+    /// `SearchEverywhereView.swift:5-14`）。
+    ///
+    /// 真源是 `All` / `Classes` / `Files` / `Symbols` / `Actions` / `Text`；本侧去掉没做的
+    /// `Actions`，**其余相对顺序逐格照抄** —— 所以 `Classes` 排在**第二位**（下标 1）。
+    pub(crate) const ALL: [Self; 5] = [
+        Self::All,
+        Self::Classes,
+        Self::Files,
+        Self::Symbols,
+        Self::Text,
+    ];
 
     /// 稳定 token：诊断行与 `ElementId` 用它，**不用**显示名（显示名随语言变）。
     pub(crate) fn token(self) -> &'static str {
         match self {
             Self::All => "all",
+            Self::Classes => "classes",
             Self::Files => "files",
             Self::Symbols => "symbols",
             Self::Text => "text",
@@ -501,6 +516,7 @@ impl SearchEverywhereScope {
     pub(crate) fn label_key(self) -> &'static str {
         match self {
             Self::All => "lithe.searchEverywhere.scope.all",
+            Self::Classes => "lithe.searchEverywhere.scope.classes",
             Self::Files => "lithe.searchEverywhere.scope.files",
             Self::Symbols => "lithe.searchEverywhere.scope.symbols",
             Self::Text => "lithe.searchEverywhere.scope.text",
@@ -512,13 +528,14 @@ impl SearchEverywhereScope {
     pub(crate) fn empty_key(self) -> &'static str {
         match self {
             Self::All => "lithe.searchEverywhere.noMatches.all",
+            Self::Classes => "lithe.searchEverywhere.noMatches.classes",
             Self::Files => "lithe.searchEverywhere.noMatches.files",
             Self::Symbols => "lithe.searchEverywhere.noMatches.symbols",
             Self::Text => "lithe.searchEverywhere.noMatches.text",
         }
     }
 
-    /// 在四个 scope 上移动 `offset` 格并**环绕**。
+    /// 在五个 scope 上移动 `offset` 格并**环绕**。
     ///
     /// 真源 `moveScope(by:)` 就是 `(currentIndex + offset + count) % count`
     /// （`SearchEverywhereView.swift:542-547`），Tab / Shift-Tab 与 `←` / `→` 共用它
@@ -535,7 +552,7 @@ impl SearchEverywhereScope {
 
 /// Search Everywhere 结果列表的一行。
 ///
-/// **一种行型承载四个 scope**，因为真源就是一行型：`resultRow` 画的是
+/// **一种行型承载五个 scope**，因为真源就是一行型：`resultRow` 画的是
 /// 「名字 → `:行号` → 所在目录 → 预览（只有 content）」
 /// （`SearchEverywhereView.swift:364-397`），而"名字"取 `symbolName ?? 文件名`
 /// （同文件 `:376`）。所以这里不按 scope 分三种行型 —— 那会在视图层生出一层无用的 `match`。
@@ -588,7 +605,7 @@ fn everywhere_row(item: &Match) -> EverywhereRow {
 ///
 /// - `Files`：复用 [`quick_open_rows`]（只留 `kind == "file"`、同一路径只占一行），
 ///   Quick Open 与这个 scope 是**同一份投影**，不写第二份；
-/// - `Symbols` / `Text`：各按一个 `kind` 过滤，不排序、不去重
+/// - `Classes` / `Symbols` / `Text`：各按一个 `kind` 过滤，不排序、不去重
 ///   （Core 每个符号给一条，`search_index.rs:456-464`）；
 /// - `All`：`Files` 那一段 + `type` 一段 + `symbol` 一段，**不含 `content`**（见
 ///   [`SearchEverywhereScope`] 的表）。
@@ -609,6 +626,7 @@ pub(crate) fn everywhere_rows(
                 preview: String::new(),
             })
             .collect(),
+        SearchEverywhereScope::Classes => named_rows(matches, MatchKind::is_type),
         SearchEverywhereScope::Symbols => named_rows(matches, MatchKind::is_symbol),
         SearchEverywhereScope::Text => content_rows(matches),
         SearchEverywhereScope::All => {
@@ -660,7 +678,7 @@ pub(crate) enum EverywhereState {
     Ready {
         /// 这一次查询的串。
         query: String,
-        /// Core 的命中（四个 scope 共用这一份）。
+        /// Core 的命中（五个 scope 共用这一份）。
         matches: Vec<Match>,
     },
     /// 失败了；`reason` 是可显示的原因（Core 的 `message` 或 [`ParseError::token`]）。
@@ -1767,7 +1785,7 @@ mod tests {
         assert_eq!(quick_open_rows(&matches).len(), 1);
     }
 
-    // ---- Search Everywhere（四个 scope 的投影；全是纯函数，无时钟 / 无 I/O） ----
+    // ---- Search Everywhere（五个 scope 的投影；全是纯函数，无时钟 / 无 I/O） ----
 
     /// 一份典型的 `workspace.searchEverywhere` 响应，顺序就是 Core 的顺序
     /// （`files.rs:326-330`：file → types → symbols → content）。
@@ -1783,7 +1801,7 @@ mod tests {
         ]
     }
 
-    /// 四个 scope ↔ Core `kind` 的映射逐条钉住；**All 不含 content** 是真源明写的取舍
+    /// 五个 scope ↔ Core `kind` 的映射逐条钉住；**All 不含 content** 是真源明写的取舍
     /// （`SearchEverywhereView.swift:122-129`），也是本切片最容易写错的一格。
     #[test]
     fn scopes_project_the_core_kinds_exactly() {
@@ -1798,6 +1816,17 @@ mod tests {
             vec!["src/A.java", "docs/alpha.md"]
         );
         assert!(files.iter().all(|row| row.kind == MatchKind::File));
+
+        let classes = everywhere_rows(SearchEverywhereScope::Classes, &matches);
+        assert_eq!(
+            classes
+                .iter()
+                .map(|row| row.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Alpha"],
+            "Classes 只收 kind == type（类 / 接口 / 枚举 / record），且保持 Core 顺序"
+        );
+        assert!(classes.iter().all(|row| row.kind.is_type()));
 
         let symbols = everywhere_rows(SearchEverywhereScope::Symbols, &matches);
         assert_eq!(
@@ -1918,13 +1947,26 @@ mod tests {
         assert_eq!(matches[1].symbol_name.as_deref(), Some("A"));
     }
 
-    /// Tab / `←` / `→` 的环绕：`(i + offset) mod 4`，两个方向都要绕回来
+    /// Tab / `←` / `→` 的环绕：`(i + offset) mod 5`，两个方向都要绕回来
     /// （真源 `SearchEverywhereView.swift:542-547`）。
+    ///
+    /// 同时钉住**标签顺序**：真源 `allCases` 是
+    /// `All` / `Classes` / `Files` / `Symbols` / `Actions` / `Text`（`:5-14`），
+    /// 本侧去掉没做的 `Actions` 后相对顺序逐格不变 —— `Classes` 排**第二位**。
     #[test]
     fn scopes_cycle_with_wrap_around_in_both_directions() {
-        assert_eq!(SearchEverywhereScope::ALL.len(), 4);
+        assert_eq!(SearchEverywhereScope::ALL.len(), 5);
+        assert_eq!(
+            SearchEverywhereScope::ALL.map(|scope| scope.token()),
+            ["all", "classes", "files", "symbols", "text"],
+            "Tab 顺序照真源 allCases（去掉本侧没做的 Actions）"
+        );
         assert_eq!(
             SearchEverywhereScope::All.moved(1),
+            SearchEverywhereScope::Classes
+        );
+        assert_eq!(
+            SearchEverywhereScope::Classes.moved(1),
             SearchEverywhereScope::Files
         );
         assert_eq!(
@@ -1936,14 +1978,55 @@ mod tests {
             SearchEverywhereScope::Text
         );
         assert_eq!(
-            SearchEverywhereScope::All.moved(-5),
+            SearchEverywhereScope::All.moved(-6),
             SearchEverywhereScope::Text,
             "负偏移绕圈要落在合法档位上（rem_euclid，不是裸取模）"
         );
         assert_eq!(
-            SearchEverywhereScope::Files.moved(4),
+            SearchEverywhereScope::Files.moved(5),
             SearchEverywhereScope::Files,
             "整圈回到原处"
+        );
+    }
+
+    /// `Classes` 与 `Symbols` **不是同一个 kind 的两个视图**：Core 的符号扫描造两种 `kind`
+    /// （`files.rs:976-981` 造 `"type"`、`:993-998` 造 `"symbol"`），所以 `Classes` 只出
+    /// `kind == "type"`、`Symbols` 只出 `kind == "symbol"`，两边取值域不重叠；而 `All`
+    /// 仍然同时含这两段、且仍然**不含 `content`** —— 新增这一档没有改 All 的口径。
+    /// 每个 scope 的行数还要与 `All` 的计数对得上（诊断行 `S1_SEARCH_EVERYWHERE complete`
+    /// 报的就是这几个数）。
+    #[test]
+    fn classes_scope_only_projects_type_rows_without_changing_all() {
+        let matches = everywhere_fixture();
+        let classes = everywhere_rows(SearchEverywhereScope::Classes, &matches);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].kind, MatchKind::Type);
+        assert_eq!(classes[0].name, "Alpha");
+        assert_eq!(classes[0].parent, "src");
+        assert_eq!(classes[0].line, Some(1));
+        assert!(
+            classes.iter().all(|row| row.kind.is_type()),
+            "Classes 的行全部是 kind == type"
+        );
+
+        let symbols = everywhere_rows(SearchEverywhereScope::Symbols, &matches);
+        assert!(
+            symbols.iter().all(|row| row.kind.is_symbol()),
+            "Classes 与 Symbols 的 kind 取值域不重叠（一个只收 type、一个只收 symbol）"
+        );
+
+        let all = everywhere_rows(SearchEverywhereScope::All, &matches);
+        assert!(all.iter().any(|row| row.kind.is_type()), "All 仍然含 type");
+        assert!(
+            !all.iter().any(|row| row.kind.is_content()),
+            "All 仍然不含 content（真源 :123-125 明写的取舍）"
+        );
+        assert_eq!(
+            all.len(),
+            everywhere_rows(SearchEverywhereScope::Files, &matches).len()
+                + classes.len()
+                + symbols.len(),
+            "All = Files 段 + Classes 段 + Symbols 段"
         );
     }
 
