@@ -18,7 +18,7 @@
 //! - [`branch_panel`]：标题栏的分支项 + 分支弹窗（`Dialog` + `Command`；只读 v1 与三段自绘的理由
 //!   见其模块文档）；数据来自 `lithe-gpui-git` 的 `BranchSnapshot`（`git.status` + `git.references`）；
 //! - [`project_tabs`]：项目标签条；
-//! - [`activity_bar`]：左右活动栏（38px）；
+//! - [`activity_bar`]：左右活动栏（40px，真源 `WorkbenchView.swift:7`（右）/`:12`（左））；
 //! - [`right_tool_window`]：右侧工具窗（400px，可收起；Maven / 通知 / 扩展三个视图）；
 //! - [`spring`] / [`spring_paths`]：右侧「Spring」视图的数据层与它**必须**给出的输入清单
 //!   （`spring.index` 只索引请求里 `paths` 列出的文件；`paths` 缺省为空 =
@@ -60,7 +60,8 @@
 //! `window.set_rem_size(cx.theme().font_size)`）。**尺寸真源是 macOS**
 //! （`macos/Sources/Lithe/Views/`，`windows/tauri/**` 那份前端已删除、其数值一律作废）：
 //! 标题栏 **40**（单行，`LitheTheme.swift:478`）、项目标签条 **38**（条高）/ **30**（标签高，
-//! 见 `crate::project_tabs`）、活动栏 **38**、状态栏 **24**（`h_6()`）、左栏 **320**
+//! 见 `crate::project_tabs`）、活动栏 **40**（真源 `WorkbenchView.swift:7`（右）/`:12`（左）；
+//! B14 之前是 38）、状态栏 **24**（`h_6()`）、左栏 **320**
 //! （`WorkbenchLayoutStore.swift:21`；可拖区间 30…`min(520, 容器 − 400)`）、
 //! 右工具窗 **360**（`WorkbenchLayoutStore.swift:5`）、工作区间隔 **4**（`gap_1()`）、
 //! 底部窗 **260**（`WorkbenchView.swift:2019` 的最小高；2026-10-03 按真源把常量从 240
@@ -69,7 +70,7 @@
 //!
 //! **档位外的长度一律写 helper 底层的 `rems(P / 16.)`**（**不是** `/ 4.`）：gpui 的档位表是
 //! 编译期生成的固定列表（`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），例如
-//! 26 / 38 / 42 / 180 / 240 / 260 / 360 / 520 …Tailwind v4 的任意整数档在 gpui 里没有对应
+//! 26 / 180 / 240 / 260 / 360 / 520 …Tailwind v4 的任意整数档在 gpui 里没有对应
 //! helper，不能自己发明一个 `w_100()`；但 `rems(P / 16.)` 在默认 16px 基准下与 `px(P)`
 //! 逐像素相等，同时随主题字号缩放。**不在档位上从来不是保留 `px(...)` 的理由** ——
 //! 它正是该写 `rems(P / 16.)` 的理由（`coding-guides.md:288` 的四类例外里没有这一条）。
@@ -89,7 +90,7 @@
 //!    所以圆角一律走应用层具名规格常量（`TAB_RADIUS_SPEC` / `CHIP_RADIUS_SPEC` /
 //!    `CLOSE_BUTTON_RADIUS_SPEC` / …），调用点写 `rems(C / 16.)`（`Styled::rounded*` 收
 //!    `impl Into<AbsoluteLength>`，档位外的圆角也一样不需要 `px`）；
-//! 3. **运行时算术**（例如活动栏的 `38 + 4 = 42`、树行的 `10 + depth × 16`）：没有固定的档位
+//! 3. **运行时算术**（例如活动栏的 `40 + 4 = 44`、树行的 `10 + depth × 16`）：没有固定的档位
 //!    helper 可套；同样写成 helper 底层的 `rems(N / 16.)`（`rems(8. / 16.)` = 8px），
 //!    值随主题基准字号缩放。
 //!

@@ -171,6 +171,9 @@ fn theme_application_caps_simultaneous_notification_toasts_at_three(cx: &mut Tes
 ///
 /// 真源 `WorkbenchView.swift:517` 的 `.overlay(alignment: .bottomTrailing)` + `:553` 的
 /// `.padding(.trailing, rightActivityBarWidth + 12)`（40 + 12）+ `:554` 的 `.padding(.bottom, 38)`。
+/// 其中那个 40 现在是与宿主两条 rail **共用的 owner**
+/// `lithe_gpui_shared::design::ACTIVITY_RAIL_WIDTH_SPEC`（`BLOCKERS.md` B14 落地后；
+/// `activity_bar.rs` 的单测从 rail 侧钉同一个 owner）。
 /// 上游消费点每帧读 `Theme.notification.margins`（`gpui-component-0.7.0/src/notification.rs`
 /// `:1016-1017`，`:1062` 对 `Anchor::BottomRight` 只取 `bottom` / `right`），所以"字段是这两个值"
 /// 就是"内衬已对齐"的**全部**机器可验证内容。
@@ -195,6 +198,7 @@ fn theme_application_sets_notification_toast_insets_from_the_macos_source(cx: &m
     use lithe_gpui_settings::theme::{
         NOTIFICATION_MARGIN_BOTTOM_SPEC, NOTIFICATION_MARGIN_RIGHT_SPEC,
     };
+    use lithe_gpui_shared::design;
     use lithe_gpui_shared::rem_px;
 
     cx.update(gpui_kit::init);
@@ -203,6 +207,14 @@ fn theme_application_sets_notification_toast_insets_from_the_macos_source(cx: &m
     assert_eq!(
         NOTIFICATION_MARGIN_RIGHT_SPEC, 52.,
         "右内衬必须等于真源 `WorkbenchView.swift:553` 的 `rightActivityBarWidth(40) + 12`"
+    );
+    // ①' 而且这个 52 必须**派生自活动栏 rail 宽的 owner**（`BLOCKERS.md` B14 落地后，
+    // 宿主 rail 宽与通知内衬共用 `shared::design::ACTIVITY_RAIL_WIDTH_SPEC`）——
+    // owner 一改，这条与 `activity_bar` 的单测会一起红。
+    assert_eq!(
+        NOTIFICATION_MARGIN_RIGHT_SPEC,
+        design::ACTIVITY_RAIL_WIDTH_SPEC + 12.,
+        "右内衬必须派生自 rail 宽 owner，而不是在本侧另写一个孤立的 52"
     );
     assert_eq!(
         NOTIFICATION_MARGIN_BOTTOM_SPEC, 38.,

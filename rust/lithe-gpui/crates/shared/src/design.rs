@@ -6,7 +6,7 @@
 //! 两个 crate 各自硬写一份**字面相同**的数字不构成相等关系 —— 值相同只是巧合，任一侧被改动
 //! 就会静默分叉，而「差 1 个 rendered pixel 也是 defect」。本模块是这些值的共同 owner。
 //!
-//! 准入与 crate 根文档同一条：只收「已有清晰名称 + 两个以上真实使用方」的常量（本模块三条
+//! 准入与 crate 根文档同一条：只收「已有清晰名称 + 两个以上真实使用方」的常量（本模块五条
 //! 各有 2 个使用方）。值是**规格像素值**（`f32`），消费方式仍走 rem —— 能吃 `AbsoluteLength`
 //! 的调用点写 `rems(C / 16.)`，只吃 `Pixels` 的固有方法走 [`crate::rem_px`]（1 rem = 16px，
 //! 不是 4px）。放在宿主侧 `shared` 而不进 `lithe-core`：它们是界面规格，不是确定性业务语义。
@@ -67,3 +67,47 @@ pub const TAB_MAX_WIDTH: f32 = 200.;
 /// 与 Lithe 阶梯的 `6.4` **规格本身就不一致**，`settings` 又走第三条路（`cx.theme().radius` = 6px 且
 /// 是固定 `Pixels`、不随 rem 缩放）—— 三处口径没统一之前，**不要**擅自把任一处的数字改成另一处。
 pub const CONTROL_RADIUS: f32 = 6.4;
+
+/// 活动栏 rail 宽 **40** —— 真源里左右两条 rail **各自**都是这个值。
+///
+/// 真源（macOS 界面规格）出处两条，各自对应一条 rail（复核时**补正**了 `BLOCKERS.md` B14 原记的
+/// 「真源只定义右侧」—— 真源左侧也有一条 40）：
+///
+/// - **左 / leading**：`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:12`
+///   `static let width: CGFloat = 40`（类型是 `:11` 的 `ActivityBarMetrics`）—— 由 `:1263` 的
+///   `activityBar`（`:257` 那个 `HStack` 的**首个子视图** ⇒ 左侧）在 `:1342` / `:1345`
+///   以 `.frame(width: ActivityBarMetrics.width)` 使用；
+/// - **右 / trailing**：同文件 `:7`
+///   `static let rightActivityBarWidth: CGFloat = 40`（类型是 `WorkbenchLayoutMetrics`）——
+///   由 `:13` 的 `ActivityBarMetrics.rightWidth` 转发、在 `:1415` 的 `.frame(width:)` 使用
+///   （`:264` 的 `pluginActivityBar` 挂 `.overlay(alignment: .trailing)` ⇒ 右侧），
+///   `:553` 的通知 trailing 内衬 `rightActivityBarWidth + 12` 也用它。
+///
+/// **宿主侧只有一条常量管两侧**（`crates/workbench/src/activity_bar.rs` 的 `COLLAPSED_WIDTH`），
+/// 所以维护者 2026-10-03 裁决（`BLOCKERS.md` B14 选项 (a)）：承认宿主"左右同宽"，把原值
+/// **38 对齐到本条的 40**。改前的 38 出自**已作废**的 `windows/tauri` 前端
+/// （`main-sidebar.tsx:97`，与 `38 + 4 gap = 42` 一起进来）—— **本条出处不再是它**；
+/// 而 40 在真源里对**两条** rail 都成立，所以不需要给左侧另定值。
+///
+/// 使用方（引用方只写一次，不再各写一份数字）：
+/// `workbench` 的 `activity_bar`（`COLLAPSED_WIDTH` = 本条；左轨盒宽 = 本条 + `WORKBENCH_GAP`、
+/// 右轨盒宽 = 本条）、`settings` 的通知右内衬（`NOTIFICATION_MARGIN_RIGHT_SPEC` = 本条 + 12，
+/// 照真源 `:553` 的算式）。
+pub const ACTIVITY_RAIL_WIDTH_SPEC: f32 = 40.;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 活动栏 rail 宽 = 真源 `WorkbenchView.swift:7`（右）/`:12`（左）的 **40**。
+    ///
+    /// 钉住的是 owner 的**值**本身：宿主两条 rail 与通知右内衬都从它派生，所以这里被改成别的数
+    /// 会同时移动两处可见外观。`settings` 侧另有一条「内衬 = 本条 + 12」的断言
+    /// （`crates/settings/src/theme.rs`），两条一起才构成"跨 crate 同源"。
+    ///
+    /// 纯常量断言：不开窗口、不碰主题、无后台任务。
+    #[test]
+    fn activity_rail_width_matches_the_macos_source() {
+        assert_eq!(ACTIVITY_RAIL_WIDTH_SPEC, 40.);
+    }
+}

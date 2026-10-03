@@ -8,11 +8,11 @@
 //! ├─ 标题栏单行 40        LitheTheme.swift:478       2026-09-30 由"两行 30+38"回到真源单行
 //! ├─ 项目标签条 32        project-tab-bar.tsx:41     h-8
 //! ├─ 工作区 h_flex flex-1  main-layout.tsx:299       行尾 pr = 4（--lithe-workbench-gap）
-//! │  ├─ 左活动栏 38+4      main-sidebar.tsx:97,588   折叠态图标竖条
+//! │  ├─ 左活动栏 40+4      真源 WorkbenchView.swift:12  折叠态图标竖条
 //! │  ├─ 左侧栏 320         真源 WorkbenchLayoutStore.swift:21  可拖：30…min(520, 容器 − 400)
 //! │  ├─ 中央列 flex-1      本侧 v_flex 结构           v_flex[ 编辑器岛, 底部工具窗 260 ]
 //! │  ├─ 右侧工具窗 360    真源 WorkbenchLayoutStore.swift:5    默认宽（**可收起**）
-//! │  └─ 右活动栏 38+4     plugin-activity-rail.tsx:34
+//! │  └─ 右活动栏 40+4     真源 WorkbenchView.swift:7,13,1415
 //! └─ 状态栏 24            footer.tsx:45-49          24 = --lithe-footer-height（theme.css:119）
 //! ```
 //!
@@ -3431,18 +3431,20 @@ impl ShellWorkspace {
     /// （`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:517`）—— 改前是
     /// `BottomLeft`，与真源左右相反。
     ///
-    /// ⚠️ **还没对齐真源的精确内衬，但"缺入口"这个判断已更正**：真源那一摞还有
-    /// `padding(.trailing, rightActivityBarWidth + 12)`（= 52）、`padding(.bottom, 38)`、
+    /// ⚠️ **两条内衬已在 `settings` 侧接上（`U25`）**：真源那一摞还有
+    /// `padding(.trailing, rightActivityBarWidth + 12)`（= 52，现派生自
+    /// `shared::design::ACTIVITY_RAIL_WIDTH_SPEC` + 12，见 `BLOCKERS.md` B14）、
+    /// `padding(.bottom, 38)`、
     /// 单条 `minWidth 280 / maxWidth 360`、圆角 7、堆叠间距 8（`WorkbenchView.swift:519,543-554`）。
     /// 上游 `NotificationSettings` 的 `margins` 与 `width` **都是 pub**
     /// （`gpui-component-0.7.0/src/notification.rs:543,547`），经
     /// `Theme::global_mut(cx).notification`（`theme/mod.rs:184`）宿主**可设** —— 所以内衬不是
-    /// "没有入口"，只是本轮没接。真正缺的是 **280–360 的自适应宽度**（上游 `width` 是单值），
+    /// "没有入口"，它已经接在 `crates/settings/src/theme.rs` 的 `apply_theme_by_name` 里。
+    /// 真正缺的是 **280–360 的自适应宽度**（上游 `width` 是单值），
     /// 以及堆叠间距：上游 `expanded_gap` 固定 14（`gpui-base-0.7.0/src/toast.rs:51`，真源是 8），
     /// 而建栈处 `ToastStack::new(stack_id, stack.state.clone())`
     /// （`gpui-component-0.7.0/src/notification.rs:1048`）**没把 motion 传进去**，宿主改不到。
-    /// 本轮只接了"同时可见条数上限 = 3"（落点见 `crates/settings/src/theme.rs` 的
-    /// `apply_theme_by_name`）。
+    /// 同一落点还接了"同时可见条数上限 = 3"。
     fn show_notification_toast(
         &self,
         entry: &lithe_gpui_notify::Entry,
@@ -5366,9 +5368,12 @@ fn left_sidebar_max_width(available_width: f32) -> f32 {
 /// `HStack { activityBar; workspaceArea; pluginActivityBar }`），本侧两条活动栏是**同一行**
 /// 的兄弟（`render` 里那个 `h_flex`）。而 `ShellWorkspace::split_container` 那一格
 /// **已经**扣掉了右工具窗自己，拿它算会重复扣。
-/// 差额 = 两条活动栏 + 本侧 4px 间距 ≈ 88（左 42 + 右 42 + 4，`activity_bar.rs:310-311`），
+/// 差额 = 两条活动栏 + 本侧 4px 间距 = **92**（左 44 + 右 44 + 4；两条 rail 的盒宽见
+/// `activity_bar.rs` 的 `rail_width_spec`，rail 宽本身 = `shared::design::ACTIVITY_RAIL_WIDTH_SPEC`
+/// 的 40 —— B14 落地前这里记的是 38+4 = 42/条、差额 88），
 /// 方向是这里比真源**略松**；不会溢出：中央列至少还剩 640 − 活动栏宽。
-/// 要精确就得把两条活动栏的实测宽也量出来（本侧活动栏宽度正在另立一轮任务，故不在此接）。
+/// 要精确就得把这个差额从钳制里扣掉（会动可见的右栏上界）—— **本轮不接**：B14 只裁决了 rail 宽，
+/// 没有裁决"右栏上界要不要扣掉两条活动栏"。
 ///
 /// ⚠️ 窗口尺寸还不可知时（`viewport_size()` 在极端情况下会给 0，例如构造期还没量过一帧）
 /// 返回**静网上界**：那几帧宁可"不收敛"，也不能把恢复出来的宽度按"窗口只有 0 宽"钳到下界 ——

@@ -1,28 +1,37 @@
 //! 左右活动栏（图标竖条）。
 //!
 //! **无状态**：选中项由 `active` 传入，点击通过 `on_select` 交回调用方，本文件不持有任何状态。
-//! 度量与配色一律取自 **Windows 前端源码**（规格真源），行号写在对应常量/代码旁边。
+//! 各常量的出处写在它们旁边；**规格真源是 `macos/`**（`lithe-gpui/UI-MAP.md` §2）。其中不少
+//! 常量标的仍是**已作废**的 `windows/tauri` 前端 —— 那是本文件的历史出处，不再算真源；
+//! rail 宽已按真源对齐（见下）。
 //!
 //! ## 折叠 / 展开是两个宽度（容易混）
 //!
-//! - 折叠态 `COLLAPSED_ACTIVITY_RAIL_WIDTH = 38`
-//!   （`windows/tauri/src/features/layout/components/sidebar/main-sidebar.tsx:97`）；
-//! - 展开态默认 **160**、min **140**、max **320**（同文件 `:98-100`）；
-//! - `MainLayout` 固定传 `expanded={false}`（`windows/tauri/src/features/layout/components/main-layout.tsx:302`），
+//! - 折叠态 rail 宽 = [`design::ACTIVITY_RAIL_WIDTH_SPEC`] = **40**：真源
+//!   `macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:7`（右）与 `:12`（左）**各自**
+//!   都是 40；完整出处、对 B14 原记"真源只定义右侧"的补正、以及维护者 2026-10-03 的裁决
+//!   （选 (a)）都写在那个 owner 的文档里。**改前的 38 出自已作废的**
+//!   `windows/tauri/.../sidebar/main-sidebar.tsx:97`；
+//! - 展开态默认 **160**、min **140**、max **320**（同文件 `:98-100`，已作废前端）；
+//! - `MainLayout` 固定传 `expanded={false}`（`.../components/main-layout.tsx:302`），
 //!   所以 Windows 产品里只有折叠态。
 //!
 //! **本函数只画折叠态**：展开态还带项目圆点、拖拽热区（宽 4、悬停 `primary/8`）、横向轮播
 //! （`main-sidebar.tsx:689-708`、`sidebar-projects.tsx`），未实现。
 //!
-//! ## 盒宽算术（照抄源码，不要"顺手居中"）
+//! ## 盒宽算术
 //!
-//! - 左 rail 容器宽 `calc(<railPanelWidth>px + var(--lithe-workbench-gap))` = 38 + 4 = **42**
-//!   （`main-sidebar.tsx:588-590`）；其内容层左右内衬各 **8**（`:610-611`，`ACTIVITY_RAIL_HORIZONTAL_GUTTER`）
-//!   → 图标项盒 **26 宽**，图标（16）中心落在 x=21。
-//! - 右 rail 宽 `w-9.5` = **38**、`items-center`、`pt-1` = 4（`plugin-activity-rail.tsx:34`），
-//!   而外层 flex row 自带 `pr-(--lithe-workbench-gap)` = 4（`main-layout.tsx:299`）
-//!   → 图标项 **28×28 居中**，中心落在 x=19。
-//! - 因此两条 rail 的总宽都是 42，但图标中心一个 21、一个 19 —— 这是源码事实，不是笔误。
+//! - 左 rail 盒宽 = rail 宽 + `WORKBENCH_GAP` = 40 + 4 = **44**（改前 38 + 4 = 42）；其内容层
+//!   左右内衬各 **8**（`main-sidebar.tsx:610-611`，`ACTIVITY_RAIL_HORIZONTAL_GUTTER`）
+//!   → 图标项盒 **26 宽**（项盒本身属 `BLOCKERS.md` B12，见 `LEFT_ITEM_WIDTH`）。
+//! - 右 rail 盒宽 = rail 宽 = **40**（改前 38）；出处 `plugin-activity-rail.tsx:34` 的
+//!   `pt-1` = 4 与外层 flex row 的 `pr-(--lithe-workbench-gap)` = 4（`main-layout.tsx:299`）
+//!   在本侧由 `outer_pad_end` 自带 ⇒ 对外盒宽同为 **44**。
+//! - 因此两条 rail 的对外盒宽相等（都 44）—— 这是维护者裁决 (a) 的直接结果。
+//!   ⚠️ 这里早先写"图标中心一个 21、一个 19"：那两个数是**居中**假设下的坐标，而本文件的
+//!   项盒分组**没有** `items_center()`（只有最外层 rail 有，对 `w_full()` 的分组不起作用），
+//!   复核时无法在源码里确证居中从何而来，所以不再写死中心坐标（rail 宽一变它就会过期）。
+//!   项盒几何（含是否居中）归 B12。
 //!
 //! ## 图标：真源优先，缺真源的保持 Lucide（逐项登记）
 //!
@@ -76,18 +85,29 @@ use gpui_kit::{
     AnyElement, App, ClickEvent, ElementId, Hsla, IntoElement, Length, ParentElement as _, Pixels,
     SharedString, Styled as _, Window, div, rems,
 };
+use lithe_gpui_shared::design;
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
-/// 折叠态 rail 宽（`main-sidebar.tsx:97`）。展开态是 160（140–320），本函数不画。
+/// 折叠态 rail 宽 = [`design::ACTIVITY_RAIL_WIDTH_SPEC`]（**40**；真源
+/// `WorkbenchView.swift:7`（右）/`:12`（左））。
 ///
-/// 38 不在 gpui 的 rem 档位上（档位里 `_9()`=36、`_10()`=40），所以调用点写 helper 底层的
-/// `rems(38. / 16.)`（见 `column_width` 的算术：它先与 `WORKBENCH_GAP` 相加，再整体换算）。
-const COLLAPSED_WIDTH: f32 = 38.;
+/// 保留这个具名常量只为**锚定调用点**（同 `CONTROL_RADIUS` 在 `workbench` 各处的别名口径）：
+/// 数字本身只写在 owner 里，这里不再有第二份。展开态是 160（140–320），本函数不画。
+const COLLAPSED_WIDTH: f32 = design::ACTIVITY_RAIL_WIDTH_SPEC;
 /// 外壳里各栏之间的固定间隔 `--lithe-workbench-gap`
 /// （`windows/tauri/src/styles/theme.css:125`；rails 用 `main-sidebar.tsx:588-590`、
-/// `main-layout.tsx:299`）。只出现在 `column_width` 的算术里（见上）。
+/// `main-layout.tsx:299`）。只出现在左轨盒宽的算术里（见 `rail_width_spec`）。
+///
+/// ⚠️ 出处是**已作废**的 Windows 前端；真源 `WorkbenchView.swift:257` 那条
+/// `HStack(spacing: 0)` **没有**这个 4px 间隔（真源侧 rail 只有它自己那 40）⇒ 左轨多出的这 4px
+/// 是宿主的布局结构，**本轮 B14 不动它**（已记进 B14 的"仍未解决"）。
 const WORKBENCH_GAP: f32 = 4.;
-/// 左 rail 图标项盒宽：42（38 + 4）− 左右内衬 16 = 26（`main-sidebar.tsx:610-611`）。
+/// 左 rail 图标项盒宽 **26**：出自已作废的 Windows 前端 —— 内容层左右内衬各 8
+/// （`main-sidebar.tsx:610-611`），在**旧的** 42 宽盒（38 rail + 4 gap）里留出 42 − 16 = 26。
+///
+/// ⚠️ rail 对齐真源 40 之后（左盒 44），照同一算式应是 **28**；**本轮有意不改**：项盒宽与
+/// 图标裁切是 `BLOCKERS.md` **B12** 的题目（Lucide 图标可能被小盒裁切），要动它得先有真机观察。
+/// 所以 26 现在比算术值小 2，两条 rail 的项盒几何都归 B12。
 ///
 /// 26 不在 gpui 的 rem 档位上（档位里 `_6()`=24、`_7()`=28）—— 那正是调用点写
 /// `rems(26. / 16.)` 的理由，不是保留 `px(...)` 的理由。
@@ -126,11 +146,24 @@ const HOVER_OPACITY: f32 = 0.7;
 /// 活动栏所在的一侧。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActivitySide {
-    /// 左侧活动栏（Windows `SidebarActivityRail`）：透明底、无边框，图标列在 42 宽的盒内。
+    /// 左侧活动栏（Windows `SidebarActivityRail`）：透明底、无边框，图标列在 44 宽的盒内
+    /// （40 rail + 4 `WORKBENCH_GAP`）。
     Left,
-    /// 右侧活动栏（Windows `PluginActivityRail`）：38 宽 + 外侧 4 间隔、**无边框**
+    /// 右侧活动栏（Windows `PluginActivityRail`）：40 宽 + 外侧 4 间隔、**无边框**
     /// （真源是 `rounded-r-xl` + `border-r`，两条本侧都不画 —— 见上面 `RIGHT_RAIL_RADIUS` 的墓碑注释）。
     Right,
+}
+
+/// 一条 rail 的**盒宽**（规格像素，**不含**右轨外侧那个 `outer_pad_end` 的 4px 间隔）。
+///
+/// 左 = owner + `WORKBENCH_GAP`、右 = owner —— 两侧都从 [`design::ACTIVITY_RAIL_WIDTH_SPEC`]
+/// 派生（维护者 2026-10-03 裁决 B14 (a)：宿主左右同宽）。抽成函数只为让"左右两侧都来自同一个
+/// owner"这条关系**可被单测钉住**（见本文件末尾的 `tests`），不引入新的宽度概念。
+const fn rail_width_spec(side: ActivitySide) -> f32 {
+    match side {
+        ActivitySide::Left => COLLAPSED_WIDTH + WORKBENCH_GAP,
+        ActivitySide::Right => COLLAPSED_WIDTH,
+    }
 }
 
 /// 活动栏一项的图标来源。
@@ -300,15 +333,16 @@ pub fn activity_bar(
         .collect();
     let has_bottom_group = !bottom_items.is_empty();
 
-    // 左：42 宽的盒（38 + 4 gap）＋ 内衬 8 → 图标项 26 宽，图标中心 x=21。
-    // 右：38 宽的盒、无内衬、图标项 28 居中 → 中心 x=19；外侧再补 4px 间隔，总宽同样是 42。
+    // 左：44 宽的盒（40 rail + 4 gap）＋ 内衬 8 → 图标项 26 宽（项盒归 B12）。
+    // 右：40 宽的盒、无内衬、图标项 28；外侧再补 4px 间隔，对外盒宽同样是 44。
     //
     // `gutter` / `outer_pad_end` 的取值随 `side` 变化，套不了固定的 rem 档位 helper，所以用
     // helper 底层的 `rems()` 表达同一个单位：`rems(0.5)` = `px_2()` 的 8、`rems(0.25)` = `pr_1()` 的 4、
     // `rems(0.)` = 0。它们仍然随主题基准字号缩放（这正是换算成 rem 的目的）。
-    let (column_width, gutter, outer_pad_end) = match side {
-        ActivitySide::Left => (COLLAPSED_WIDTH + WORKBENCH_GAP, rems(0.5), rems(0.)),
-        ActivitySide::Right => (COLLAPSED_WIDTH, rems(0.), rems(0.25)),
+    let column_width = rail_width_spec(side);
+    let (gutter, outer_pad_end) = match side {
+        ActivitySide::Left => (rems(0.5), rems(0.)),
+        ActivitySide::Right => (rems(0.), rems(0.25)),
     };
 
     // 顶部组：`flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto`（`sidebar-pane-selector.tsx:359`）。
@@ -342,8 +376,10 @@ pub fn activity_bar(
         .flex_col()
         .items_center()
         .h_full()
-        // 42 = 38 + 4：运行时算出来的值，档位表里也没有 42，所以按 helper 底层的
-        // `rems(P / 16.)` 表达（基准 16px 时与 `px(42.)` 逐像素相等，且随主题字号缩放）。
+        // 44 = 40 + 4（右轨是 40 + 外侧 4）：两条 rail 的对外盒宽都是 44，但宽度随 `side`
+        // 由常量算出来（见 `rail_width_spec`），套不了固定 helper；44 虽在档位表上（`w_11()`），
+        // 仍按 helper 底层的 `rems(P / 16.)` 表达（基准 16px 时与 `px(44.)` 逐像素相等，
+        // 且随主题字号缩放）。
         .w(rems(column_width / 16.))
         .flex_shrink_0()
         .overflow_hidden()
@@ -357,7 +393,7 @@ pub fn activity_bar(
     // （`main-layout.tsx:280`），这里保持透明由调用方决定外壳底色，效果一致。
 
     // 外侧 4px 间隔：Windows 放在父 flex row 的 `pr-(--lithe-workbench-gap)` 上
-    // （`main-layout.tsx:299`），这里自带，保证两条 rail 的对外盒宽都是 42。
+    // （`main-layout.tsx:299`），这里自带，保证两条 rail 的对外盒宽都是 44。
     div()
         .flex()
         .flex_row()
@@ -471,5 +507,35 @@ fn item_button(
             .color(color)
             .child(button)
             .into_any_element(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 两条 rail 的盒宽都来自 [`design::ACTIVITY_RAIL_WIDTH_SPEC`]（真源
+    /// `WorkbenchView.swift:7`（右）/`:12`（左）的 40），而不是各自记一份数字。
+    ///
+    /// 断言守三件事：① owner 本身是 40；② 右轨盒宽 = owner；③ 左轨盒宽 = owner + `WORKBENCH_GAP`
+    /// ——并且左轨盒宽与"右轨盒宽 + 外侧那个 4px 间隔"相等（对外盒宽都是 44，即维护者裁决 (a)
+    /// 的"左右同宽"）。把任一侧写回字面量**不会**让这些断言变红；**改 owner** 会让它们一起红 ——
+    /// 这正是"共同 owner"能给的保证：数字只有一份，跨 crate 的引用方跟着一起动。
+    ///
+    /// 纯常量算术：不开窗口、不碰主题、无后台任务、无外部依赖。
+    #[test]
+    fn both_rails_take_their_width_from_the_shared_owner() {
+        assert_eq!(design::ACTIVITY_RAIL_WIDTH_SPEC, 40.);
+        assert_eq!(
+            COLLAPSED_WIDTH,
+            design::ACTIVITY_RAIL_WIDTH_SPEC,
+            "rail 宽只能来自 shared::design 的 owner，不得在本文件另写一份数字"
+        );
+        assert_eq!(rail_width_spec(ActivitySide::Right), 40.);
+        assert_eq!(rail_width_spec(ActivitySide::Left), 44.);
+        assert_eq!(
+            rail_width_spec(ActivitySide::Left),
+            rail_width_spec(ActivitySide::Right) + WORKBENCH_GAP
+        );
     }
 }

@@ -60,6 +60,7 @@ use std::time::SystemTime;
 use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::{ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry};
 use gpui_kit::{App, SharedString, WindowAppearance, px};
+use lithe_gpui_shared::design;
 use lithe_gpui_shared::rem_px;
 
 use crate::paths;
@@ -108,7 +109,7 @@ pub fn bundled_theme_files() -> impl Iterator<Item = (&'static str, &'static str
 /// 落点见 [`apply_theme_by_name`]（`Theme.notification.max_items`）。
 pub const NOTIFICATION_MAX_ITEMS: usize = 3;
 
-/// 通知 toast 距窗口**右边缘**的内衬（规格像素）：**52**。
+/// 通知 toast 距窗口**右边缘**的内衬（规格像素）：**52** = 活动栏 rail 宽 **40** + **12**。
 ///
 /// 真源是那条右下角 overlay 的 trailing padding：
 /// `.padding(.trailing, WorkbenchLayoutMetrics.rightActivityBarWidth + 12)`
@@ -116,15 +117,20 @@ pub const NOTIFICATION_MAX_ITEMS: usize = 3;
 /// `rightActivityBarWidth = 40`（同文件 `:7` 的 `WorkbenchLayoutMetrics`）⇒ 40 + 12 = **52**。
 /// 也就是说真源这一条是**派生量**（右活动栏宽 + 12），不是写死的数。
 ///
-/// ⚠️ **为什么这里固化算式而不是引用宿主的 rail 常量**：宿主右 rail 的宽是
-/// `crates/workbench/src/activity_bar.rs:85` 的 `COLLAPSED_WIDTH = 38.`，它有两个问题 ——
-/// (1) 不是 `pub`，而 `crates/settings` 与 `crates/workbench` 之间**没有依赖方向**
-/// （`app -> workbench`、`app -> settings -> shared`），`settings` 够不到它；
-/// (2) 它的取值来自**已作废**的 `windows/tauri` 前端（38 + 4 gap = 42），与真源的 40 本身就差
-/// 2px —— 引用它等于把"尚未对齐的 rail 宽"变成 toast 的基准，偏差会换个数继续存在。
-/// 所以这里按真源的算式固化成具名常量，两个操作数与出处都写在上面：rail 宽哪天对齐 40 时，
-/// 回来改这一个数即可（它在 `apply_theme_by_name` 里被换算进 `Theme.notification.margins`）。
-pub const NOTIFICATION_MARGIN_RIGHT_SPEC: f32 = 52.;
+/// **所以这里与 rail 宽共用同一个 owner**：
+/// [`lithe_gpui_shared::design::ACTIVITY_RAIL_WIDTH_SPEC`]（= 40；宿主两条 rail 与这条内衬都只认
+/// 它，完整出处见那个常量的文档）。真源的算式（rail + 12）于是逐字成立，而不再是把 52 固化成一个
+/// 孤立的数 —— rail 宽以后再改，内衬自动跟着对。依赖方向合法：`settings` 已直接依赖 `shared`
+/// （`crates/settings/Cargo.toml` 的 `lithe-gpui-shared`），而 `settings` 与 `workbench` 之间
+/// **没有**依赖方向（`app -> workbench`、`app -> settings -> shared`）—— 所以 owner 只能放 `shared`。
+///
+/// ⚠️ **值没有变**（40 + 12 仍是 52）⇒ 通知内衬的可见观感与本站改动之前一致。改前那段"为什么
+/// 固化算式而不是引用宿主常量"的理由（宿主 rail 宽**私有**为 `COLLAPSED_WIDTH = 38.`、取值又来自
+/// **已作废**的 `windows/tauri`）已随 `BLOCKERS.md` B14 落地而消失：38 已按真源对齐到 owner 的 40。
+///
+/// 消费点见 [`apply_theme_by_name`]（`Theme.notification.margins.right`）；它与 owner 的关系由本
+/// 模块 `tests` 的 `notification_right_inset_derives_from_the_activity_rail_owner` 钉住。
+pub const NOTIFICATION_MARGIN_RIGHT_SPEC: f32 = design::ACTIVITY_RAIL_WIDTH_SPEC + 12.;
 
 /// 通知 toast 距窗口**底边缘**的内衬（规格像素）：**38**。
 ///
@@ -832,6 +838,26 @@ pub fn system_is_dark(appearance: WindowAppearance) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 通知右内衬必须与活动栏 rail 宽**共享 owner**：`内衬 = owner + 12`（真源
+    /// `WorkbenchView.swift:553` 的算式 `rightActivityBarWidth + 12`），owner 就是
+    /// `shared::design::ACTIVITY_RAIL_WIDTH_SPEC`（真源 `:7`（右）/`:12`（左）= 40）。
+    ///
+    /// 两条断言守两件不同的事：① 值本身仍是 **52** —— 内衬的可见观感不变；② 它确实是 owner 的
+    /// 函数。⚠️ 诚实边界：② 在**值**上无法证明常量是"写算式"而不是"写 52"（owner = 40 时两者
+    /// 恒等）；它真正钉住的是"owner 一改，这里连它的测试必须一起改"。常量定义处那一行是算式，
+    /// 只能在源码里看。
+    ///
+    /// 纯常量算术：不碰主题、不开窗口、无后台任务、无外部依赖。
+    #[test]
+    fn notification_right_inset_derives_from_the_activity_rail_owner() {
+        assert_eq!(NOTIFICATION_MARGIN_RIGHT_SPEC, 52.);
+        assert_eq!(
+            NOTIFICATION_MARGIN_RIGHT_SPEC,
+            design::ACTIVITY_RAIL_WIDTH_SPEC + 12.,
+            "通知右内衬必须派生自活动栏 rail 宽 owner（真源 `WorkbenchView.swift:553` 的 `+ 12`）"
+        );
+    }
 
     /// 字体族校验：空串 = 不覆盖；`.SystemUIFont` 是虚拟家族，永远放行；
     /// 未安装的名字被拒（**这一条是防崩溃的**：GPUI 在字族缺失时首次布局就 panic）。
