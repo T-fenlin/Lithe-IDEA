@@ -14,13 +14,13 @@
 
 | 项 | 值 |
 | --- | --- |
-| 分支 | `chore/sync-macos-and-lithe-core-from-main`（领先 main 约 215 个提交，**未推送**） |
-| 最近提交 | `bedb41ca` BLOCKERS 复测更正 · `f5ae19d7` 工具链事实 · `a3abc3b6` HANDOFF/README 重写 · `f6973789` 任务表 · `d6997d34` UI-MAP 按 0.7 重写 |
+| 分支 | `chore/sync-macos-and-lithe-core-from-main`（领先 main 约 **257** 个提交 —— 2026-10-03 `git rev-list --count main..HEAD` 实测；**未推送**） |
+| 最近提交 | `86f915d4` 收尾"过期文字"线（生成器里的过期 scope 数） · `aa02d81e` 修过期 scope 数与 `CommandId` 变体数 · `673e071c` 修 gpui crates 的 27 处坏 rustdoc 链接 · 更早：`bedb41ca` BLOCKERS 复测更正 |
 | 工作区 | 干净（截至 `bedb41ca`；文档改动均已成提交，无未提交文件） |
 | 构建 | `cargo build --manifest-path rust/Cargo.toml -p lithe-gpui-app --bin Lithe` 通过（约 6m26s，debug exe ≈ 102 MB） |
 | `lithe-core` 测试 | 762 条 **761 通过**，1 条 `git::history` 分页测试因本机临时目录权限失败（既有问题） |
 | 界面宿主 | 12 个 crate；设置 8 页已实现，其余分类是明确空态 |
-| UI 测试 | `cargo test -p lithe-gpui-workbench --test ui` → 1 条通过（`D26` 的测试层，见 §4） |
+| UI 测试 | `cargo test -p lithe-gpui-workbench --test ui` → **3 条通过**（`D26` 的测试层 + 两条通知 toast 断言，见 §4；与任务表 §7「全量验收快照」里 `lithe-gpui-workbench` 那行同口径） |
 | 验证 | **只有 Windows**。macOS / Linux 未验证 —— 不要声称 macOS 已验证 |
 
 ⛔ **本分支不改 `rust/lithe-core/`**（它从 main 同步进来）。范围约束与任务归属见任务表顶部。
@@ -134,8 +134,8 @@ registry 里已解析的源码。
   `EditorPane::active_buffer_is_readonly()`（图标在 `LOCK_ICON` / `LOCK_OPEN_ICON` 间切换）。
   ✅ **分支项不再每帧读 `.git/HEAD`**（D11）：改读 Git 视图已持有的 `git.status` 快照
   （`ChangesView::branch()`），worktree / 分离 HEAD / 仓库根≠工作区根都不再读错。
-  状态栏**仍剩**两处假值：内存 `"总计 0.0 MB · Lithe 0.0 MB"`、Git 更改数空格；
-  底部工具窗的拖拽热区仍是死的 `div`。
+  状态栏**仍剩**两处假值：内存 `"总计 0.0 MB · Lithe 0.0 MB"`、Git 更改数空格。
+  ✅ **三块分栏都已能拖**（`U25`，2026-10-03）：左栏（既有手柄）、右工具窗（水平）、**底部工具窗（垂直 `resize_handle`）**，尺寸落进 `.lithe/session.local.json` 的三个可缺省字段。
 - **主菜单栏没有键盘路径**（Tab 聚焦 + Enter 未实现；gpui 无 mnemonic 概念，`Alt` 助记键做不到）。
 - **分支弹窗两处偏差**：页签行在搜索框**上方**（真源在下方）、搜索行右侧没有关闭按钮。
 - **项目下拉**面板右侧有一条常显细滚动条（`scrollable(true)` 的 16 逻辑 px 占位）。
@@ -161,5 +161,5 @@ registry 里已解析的源码。
 | `docs/tasks/gpui-core-first.md` | 任务清单（69 条）+ **顶部范围约束** + §6 开工顺序 |
 | `rust/lithe-gpui/README.md` | 怎么跑、12 个 crate 的职责与依赖、已验证接口事实、硬约束 |
 | `rust/lithe-gpui/BLOCKERS.md` | 卡点登记册（哪些做不了、为什么）。⚠️ **B4 的编号被 `crates/git/src/log_view.rs:958` 引用，不要改编号或删该条** |
-| `docs/gpui kit/0.7.0/` | 官方文档镜像 184 份（`docs/` 41 · `component/` 78 · `base/` 49 · `shell/` 15） |
+| `docs/gpui kit/0.7.0/` | 官方文档镜像 184 份（`docs/` 41 · `component/` 78 · `base/` 49 · `shell/` 15 = 183，+ 根目录 `README.md` 1） |
 | `.agents/notes/` | 架构决策真源（中文）；`.agents/skills/develop-lithe/SKILL.md` 是编码与验证规则真源 |
