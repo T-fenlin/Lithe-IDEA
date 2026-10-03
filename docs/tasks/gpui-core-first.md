@@ -286,6 +286,24 @@ U23（Agent）───────────► 依赖"ACP 长连接 vs 同�
 验证：`cargo test -p lithe-gpui-app` **10 通过** exit 0；`cargo fmt -p lithe-gpui-app -- --check` exit 0。
 **残留**：将来新增白名单外扩展名的文本资源（如 `.jsonc`）或无扩展名文本资源，CRLF 检出上仍会漂，需同时加进白名单。
 
+### 本轮（T2–T10）收口时的**全量验收快照**
+
+在 `d0ada795` 上跑了一遍**本会话动过的所有 crate** + 全局守卫，作为整批前端改动的验收基线：
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo fmt --manifest-path rust/Cargo.toml --all -- --check` | **exit 0**，日志 **0 字节**（全 workspace 无格式差异；只 `--check`，绝不重写） |
+| `lithe-gpui-app`（组合根） | **10 通过** |
+| `lithe-gpui-workbench` | **156 单测 + 3 条 UI 集成测试** 通过 |
+| `lithe-gpui-settings` | **169 通过** |
+| `lithe-gpui-editor` / `lithe-gpui-explorer` / `lithe-gpui-git` / `lithe-gpui-terminal` | **52 / 1 / 27 / 8 通过** |
+| `lithe-gpui-shared --lib -- --skip workspace_config` | **24 通过** |
+| `node lithe-gpui/tools/check-ui-px.mjs`（在 `rust/` 下跑） | **违规 0 处** |
+| `node lithe-gpui/tools/extract-locale.mjs --check` | **「产物与真源一致」** |
+
+⚠️ **这不是"全绿"**：`-p lithe-gpui-shared` 的**全量**仍有 16 条 `workspace_config` 红（= **B2** 的 Core 缺口，本分支修不了，见 `BLOCKERS.md` B8），本表按既有口径把它们 `--skip` 掉后看其余部分。
+⚠️ **这批改动全部未经真机视觉/键盘验证**（见各处"诚实边界"）—— 上面的绿只证明"编译 + 确定性单测 + 守卫"这一层，不证明"看起来对、按起来对"。真机验收的优先入口是 `BLOCKERS.md` 的 **B12**（活动栏图标可能被 26/28 盒裁切）与四个搜索界面的观感。
+
 - ⛔ **本分支不改 `rust/lithe-core/`**：需要 Core 契约变更的条目，开工前先确认它已被 main 同步进来；
   否则记成"阻塞：等 main"，不要在本分支实现。
 - 涉及架构判定的，落一条 `.agents/notes/`；
