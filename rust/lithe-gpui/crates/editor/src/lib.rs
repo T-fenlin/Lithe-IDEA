@@ -195,7 +195,9 @@ mod navigation;
 // 底部工具窗「诊断」页：跨文件的问题列表（数据来自 Java 语言服务，见模块文档）。
 mod problems;
 
-pub use editor_view::{CursorPosition, EditorPane, SessionRestore, TabMenuHostActions};
+pub use editor_view::{
+    BufferWriteHost, CursorPosition, EditorPane, SessionRestore, TabMenuHostActions,
+};
 pub use problems::ProblemsPane;
 
 use gpui_kit::{App, KeyBinding};

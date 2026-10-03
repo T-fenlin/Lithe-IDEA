@@ -117,10 +117,11 @@ use crate::right_tool_window::{
     ProbePoint, RightToolWindowView, diagnose as diagnose_right_panel, diagnose_extensions_page,
     resolve_click as resolve_right_click, right_tool_window,
 };
+use crate::search_index::SearchIndexWiring;
 use crate::session::{SessionPlan, SessionTracker};
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
-use lithe_gpui_editor::{EditorPane, SaveBuffer, TabMenuHostActions};
+use lithe_gpui_editor::{BufferWriteHost, EditorPane, SaveBuffer, TabMenuHostActions};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::{BottomPane, ChangesView};
 use lithe_gpui_run::{RunPane, RunPaneEvent, ToolchainPath, ToolchainResolver};
@@ -808,6 +809,15 @@ pub struct ShellWorkspace {
     /// [`ChangesView::branch`] 的 `git.status` 快照，见 [`ShellWorkspace::footer_left`]。
     /// 根目录仍是本视图的其它用途（打开项目、相对路径换算）所需要的。
     root: PathBuf,
+    /// 搜索索引的三条 Core 接线（`workspace.searchIndex.warm` / `.update` / `.invalidate`）。
+    ///
+    /// 与外壳同生命周期：换根＝重建外壳＝换一份接线（所以代次天然从新根的 0 起）。
+    /// 时机、请求形状、代次与诊断口径全在 [`crate::search_index`] 的模块文档里，这里只持有。
+    ///
+    /// `pub(crate)` 而不是私有：`crate::search_index` 排出的后台任务回来时要**读当前代次**
+    /// （`accepts`）决定采纳还是丢弃，而这件事必须看到外壳**当下**的那一份接线 ——
+    /// 排任务时克隆一份带走正是代次保护要防的错误。
+    pub(crate) search_index: SearchIndexWiring,
     /// 当前选中的项目标签（`None` = 一个都没选中）。
     active_project: Option<usize>,
     /// **左侧**活动栏的图标项（Windows `SidebarActivityRail`：顶部 3 + 底部 5 共 8 项）。
@@ -1248,6 +1258,9 @@ impl ShellWorkspace {
         // 「终端 → 新建终端」同一个 `TerminalPane::new_tab_in` / 同一个 `bottom_visible`。
         {
             let shell = cx.entity().downgrade();
+            // 「文件写盘成功」的宿主钩子要自己一份弱引用：下面 `open_terminal` 那个闭包会把
+            // `shell` 整个搬走（`Arc<dyn Fn>` 是 `'static` 的），不能再共用一份。
+            let shell_for_write = shell.clone();
             let terminal_handle = terminal.downgrade();
             let workspace_root = root.clone();
             editor.update(cx, |pane, _cx| {
@@ -1290,6 +1303,18 @@ impl ShellWorkspace {
                         );
                     }),
                 });
+                // 「文件写盘成功」→ 搜索索引增量更新（`workspace.searchIndex.update`）。
+                //
+                // 为什么必须经外壳：索引是**工作区级**资源，三条 `searchIndex.*` 命令的时机 /
+                // 请求形状 / 代次 / 诊断口径只有 `crate::search_index` 一份
+                // （编辑区自己调会变成第二份真相源）。编辑区只报"哪个文件落盘了"。
+                // 驱动只有"保存"这一条：宿主没有文件系统 watcher（`H12`），本任务不新建。
+                let write_host: BufferWriteHost = Arc::new(move |path: &Path, cx: &mut App| {
+                    // 外壳可能已经被换根丢掉：`update` 返回 `Err` 时静默忽略，不 panic。
+                    let _ =
+                        shell_for_write.update(cx, |shell, cx| shell.note_buffer_written(path, cx));
+                });
+                pane.set_buffer_write_host(write_host);
             });
         }
 
@@ -1609,6 +1634,8 @@ impl ShellWorkspace {
         let mut workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             root: root.clone(),
+            // 索引接线绑定这个根；`warm` 在下面 `S1_WORKSPACE` 之后立刻排（见那一行）。
+            search_index: SearchIndexWiring::new(root.clone()),
             // 单项目时 Windows 会隐藏整条标签条（`project-tab-bar-model.ts:12-13`）；
             // 阶段 1 只有一个项目，仍然把 `Some(0)` 选中，方便验收外观。
             active_project: Some(0),
@@ -1679,6 +1706,17 @@ impl ShellWorkspace {
         // —— 它是"换根真的发生了"的第一条证据，后面那些 `S1_EXPLORER` / `S1_JAVA_START`
         // / `S1_BRANCH_PANEL` 都应当指向同一个根。
         println!("S1_WORKSPACE root={}", root.display());
+        // 搜索索引：项目一打开就**后台**建好（`workspace.searchIndex.warm`）。
+        //
+        // 不排这一步的后果不是"少一个功能"，而是用户**第一次搜索会在调用线程上同步建全量
+        // 索引**。Core 调用是同步阻塞的，所以整段在 `background_spawn` 上（见
+        // `crate::search_index`）；这里只排任务、不等结果 —— 建索引失败也不影响开项目
+        // （降级为"第一次搜索时再建"，诊断行照常留痕）。
+        //
+        // 位置在这里而不是别处：`ShellWorkspace::new` 是**所有"打开"路径的公共收口**
+        // （argv 启动 + `replace_root`，与下面 `prepare_workspace_config` 同一处论证），
+        // 所以"每个根恰好 warm 一次"是结构性的，不需要额外的"已排过"状态。
+        workspace.search_index.schedule_warm(cx);
         // 启动期也留一行状态证据：右工具窗**默认隐藏**这件事要能被机器验证，
         // 而不是只靠截图比对（`S1_RIGHT_PANEL`，可 grep）。构造期不是指针输入，所以不带坐标。
         diagnose_right_panel(workspace.right_view, workspace.right_visible, None);
@@ -1950,6 +1988,16 @@ impl ShellWorkspace {
             "S1_WORKSPACE_CONFIG session_flush root={} force={force} wrote={wrote}",
             self.root.display()
         );
+    }
+
+    /// 编辑区报告"这个文件刚写回磁盘"（宿主钩子，见 [`BufferWriteHost`]）。
+    ///
+    /// 这是 `workspace.searchIndex.update` 的**唯一**驱动：宿主没有文件系统 watcher（`H12`），
+    /// 所以索引的增量更新只能由"已有的写盘路径"带动，而编辑器的 `write_buffer` 是全仓唯一的
+    /// "文件真的落盘了"收口（`Ctrl+S` / 去抖后的自动保存 / 关闭前的确认保存都汇到它）。
+    /// 传的是**这一条**路径，绝不退化成"每次保存就 invalidate 全量"。
+    pub(crate) fn note_buffer_written(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.search_index.schedule_update(path, cx);
     }
 
     /// 会话文档里的界面部分（外壳那六个值 → [`lithe_gpui_shared::workspace_config::SessionUiState`]）。
@@ -3283,6 +3331,8 @@ impl ShellWorkspace {
     ///
     /// 顺序（每一步都有理由，不能调换）：
     ///
+    /// 0. `search_index.schedule_invalidate`：把**旧根**的搜索索引缓存放掉。必须在
+    ///    `replace_root` **之前** —— 之后 `self` 已经不是窗口持有的那个外壳了。
     /// 1. `replace_root`：新根上的 `ShellWorkspace` + 新的 `Root`（**窗口根必须是 `Root`**，
     ///    它是对话框 / 浮层 / 通知的宿主，`main.rs:709` 同一句）。旧 `Root` 及其整棵视图树
     ///    （含旧 JDTLS 会话与终端进程）在外层 `App::update` 的 `flush_effects` 里级联 drop。
@@ -3311,6 +3361,13 @@ impl ShellWorkspace {
             target.display()
         );
         let old_root = self.root.display().to_string();
+        // ① 换根之前先把**旧根**的索引缓存放掉（Core `workspace.searchIndex.invalidate`）。
+        //
+        // 这是 `invalidate` 在全仓**唯一**的挂点：gpui 今天没有"关闭项目"这条生命周期
+        // （窗口关闭＝进程退出，内存里的索引跟着没），所以"离开一个工作区根"只剩换根这一条。
+        // 这个外壳随后被 `replace_root` 丢掉，所以调用只发出去、结果不回写实体（见
+        // `crate::search_index::SearchIndexWiring::schedule_invalidate`）。
+        self.search_index.schedule_invalidate(cx);
         // ⚠️ **先保存会话，再换根**：`replace_root` 会丢掉旧 `Root` → 旧 `ShellWorkspace`，
         // 连带丢掉它的 `SessionTracker`（内存里那份会话）。防抖窗口里还没落盘的那次改动
         // 就在这一步永久消失 —— 所以这里是 `crate::session` 文档里那条"换根前必须先写"的落点。

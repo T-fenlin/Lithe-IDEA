@@ -232,6 +232,18 @@ pub struct TabMenuHostActions {
     pub open_terminal: Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>,
 }
 
+/// 「这个文件刚写回磁盘」的宿主钩子（Core `workspace.searchIndex.update` 的驱动）。
+///
+/// **为什么归外壳而不是编辑区自己调 Core**：搜索索引是**工作区级**资源 ——
+/// `workbench::search_index` 是三条 `workspace.searchIndex.*` 命令（时机、请求形状、代次、
+/// 诊断口径）的唯一 owner，U17 的搜索界面也会读它。编辑区只该说"哪个文件落盘了"。
+/// 与 [`TabMenuHostActions`] 同一口径：低层 crate 定义注入点，外壳填实现。
+/// 比那两条更窄：外壳只排一个后台任务，所以**不需要** `&mut Window`。
+///
+/// ⚠️ **只有真的写成功才调**（`write_buffer` 的 `Ok` 分支）：写失败时磁盘与索引都没有变化，
+/// 调了只会白跑一次 Core 信封。
+pub type BufferWriteHost = Arc<dyn Fn(&Path, &mut App) + 'static>;
+
 /// 批量关闭类菜单项的作用范围。
 ///
 /// **锚点存路径不存下标**：确认对话框弹出期间标签可能增减、顺序可能变，
@@ -388,6 +400,9 @@ pub struct EditorPane {
     /// 外壳登记的两个"只有外壳做得了"的动作（见 [`TabMenuHostActions`]）。
     /// `None` = 外壳还没登记（例如组件在测试宿主里单独跑）→ 对应菜单项点了会留一行诊断。
     tab_menu_actions: Option<TabMenuHostActions>,
+    /// 外壳登记的回调：**每次写盘成功**报一次（见 [`BufferWriteHost`]）。
+    /// `None` = 外壳还没登记（例如组件在测试宿主里单独跑）→ 索引不更新，但保存照常成功。
+    buffer_write_host: Option<BufferWriteHost>,
     /// 制表符宽度（空格数）。真源是设置里的 `tabSize`（Windows 默认 2，
     /// `default-settings.ts:55`），由外壳在启动时与每次设置变化后经
     /// [`EditorPane::set_tab_size`] 登记进来。
@@ -500,6 +515,7 @@ impl EditorPane {
             problems: cx.new(|_| crate::problems::ProblemsPane::new()),
             workspace_root: None,
             tab_menu_actions: None,
+            buffer_write_host: None,
             tab_size: DEFAULT_TAB_SIZE,
             auto_completion: Rc::new(AtomicBool::new(true)),
             hovered_tab: None,
@@ -908,6 +924,14 @@ impl EditorPane {
     /// 捕获外壳自己的弱引用（终端实体 + 底部工具窗可见性）。
     pub fn set_tab_menu_host_actions(&mut self, actions: TabMenuHostActions) {
         self.tab_menu_actions = Some(actions);
+    }
+
+    /// 登记"文件写盘成功"的宿主钩子（见 [`BufferWriteHost`]）。
+    ///
+    /// 与 [`Self::set_tab_menu_host_actions`] 同一个调用点（`ShellWorkspace::new` 里那段
+    /// `editor.update(..)`）：它捕获的是外壳自己的弱引用。
+    pub fn set_buffer_write_host(&mut self, host: BufferWriteHost) {
+        self.buffer_write_host = Some(host);
     }
 
     /// 登记工作区根（标签右键菜单的「复制相对路径」要用它）。
@@ -1856,6 +1880,14 @@ impl EditorPane {
                     path.display(),
                     value.len()
                 );
+                // 写盘成功 → 报给外壳（搜索索引的增量更新由这条路径驱动，见 [`BufferWriteHost`]）。
+                // `Arc` 先抠出来再调：回调要 `&mut App`，而 `self.buffer_write_host` 还借着 `self`。
+                match self.buffer_write_host.as_ref().map(|host| host.clone()) {
+                    Some(host) => (host)(&path, cx),
+                    // 没登记（组件在测试宿主里单独跑）：保存照常成功，只留一行诊断 ——
+                    // 静默的话，"索引为什么没跟着更新"就没有任何线索。
+                    None => eprintln!("S1_EDITOR_WRITE_HOST missing=1 path={}", path.display()),
+                }
                 cx.notify();
                 true
             }

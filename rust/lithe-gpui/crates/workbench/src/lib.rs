@@ -132,6 +132,9 @@ pub mod notifications;
 pub mod project_menu;
 pub mod project_tabs;
 pub mod right_tool_window;
+// 搜索索引在宿主侧的接线（warm / update / invalidate 三条 Core 命令的时机与代次）。
+// **不是**渲染模块：U17 的搜索界面还没做，本模块只负责"索引什么时候建、什么时候更新"。
+pub mod search_index;
 pub mod session;
 pub mod spring;
 pub mod spring_paths;
