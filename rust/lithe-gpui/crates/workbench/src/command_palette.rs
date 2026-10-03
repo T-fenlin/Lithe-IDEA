@@ -215,6 +215,16 @@ pub enum CommandId {
     /// "一屏能扫完的高频动作"，而它有自己的快捷键与菜单项两个入口 —— 与
     /// [`CommandId::OpenFile`] 那批同一处置。
     OpenQuickOpen,
+    /// 打开 Search Everywhere 浮层（菜单「视图 → 全局搜索」）。
+    ///
+    /// **不绑键位**：真源 macOS 是**双击 Shift**（`SearchEverywhereView.swift:512-540` 的
+    /// NSEvent 监听），而本仓已登记 gpui 没有双击 Shift（`UI-MAP.md` §2.2 ⑬）；
+    /// 空闲的 `Ctrl+*` 里也没有一条有真源依据（`Ctrl+Shift+P` / `Ctrl+P` / `Ctrl+Shift+F`
+    /// 分别是命令面板 / 快速打开 / 查找，见 `Rust` 侧的键位清单），所以本切片**只接菜单项**。
+    ///
+    /// **也不在命令面板里**（`crate::workspace` 的 `COMMAND_ORDER` 没有它）：与
+    /// [`CommandId::OpenQuickOpen`] 同一处置 —— 它有自己的浮层入口。
+    OpenSearchEverywhere,
     /// 转到定义（`F12`；菜单「转到 → 转到定义」也走它）。
     NavigateToDefinition,
     /// 打开文件…（菜单「文件 → 打开文件」，**不绑键位**：`Ctrl+O` 留给「打开文件夹」，Q18）。
@@ -250,6 +260,7 @@ impl CommandId {
             Self::SaveBuffer => "save-buffer",
             Self::OpenCommandPalette => "open-command-palette",
             Self::OpenQuickOpen => "open-quick-open",
+            Self::OpenSearchEverywhere => "open-search-everywhere",
             Self::NavigateToDefinition => "navigate-to-definition",
             // B1 的一批：全部**只由主菜单触发**（`COMMAND_ORDER` 里没有它们，所以命令面板
             // 不列）—— 面板要的是"一屏能扫完的高频动作"，而"关闭左侧/右侧标签页"这类

@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 109 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 116 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8791,8 +8791,6 @@ lithe:
     en: "Not wired yet: the editor has none of these features (line editing, go to line, minimap / line numbers / whitespace toggles, split view)."
   gpui.menuMissing.lspRequests:
     en: "Not wired yet: the Java service does not expose this LSP request (only definition, completion and code actions are wired)."
-  gpui.menuMissing.indexer:
-    en: "Not wired yet: there is no indexer (cross-file search and quick open both need it)."
   gpui.menuMissing.debuggerHost:
     en: "Not wired yet: there is no process host (no debug adapter is wired)."
   gpui.menuMissing.subsystem:
@@ -8861,6 +8859,22 @@ lithe:
     en: "{count} d ago"
   search.gpui.queryPlaceholder:
     en: "Search files and contents"
+  searchEverywhere.scope.all:
+    en: "All"
+  searchEverywhere.scope.files:
+    en: "Files"
+  searchEverywhere.scope.symbols:
+    en: "Symbols"
+  searchEverywhere.scope.text:
+    en: "Text"
+  searchEverywhere.noMatches.all:
+    en: "No matches in All"
+  searchEverywhere.noMatches.files:
+    en: "No matches in Files"
+  searchEverywhere.noMatches.symbols:
+    en: "No matches in Symbols"
+  searchEverywhere.noMatches.text:
+    en: "No matches in Text"
 
 gpui_component:
   Dialog.ok:

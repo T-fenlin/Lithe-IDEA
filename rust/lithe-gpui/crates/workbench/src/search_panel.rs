@@ -783,12 +783,14 @@ mod tests {
                 path: "src/A.java".to_string(),
                 line: Some(12),
                 preview: "x".to_string(),
+                symbol_name: None,
             },
             Match {
                 kind: MatchKind::Content,
                 path: "src/B.java".to_string(),
                 line: Some(1),
                 preview: "y".to_string(),
+                symbol_name: None,
             },
         ]);
         let ids: Vec<String> = rows

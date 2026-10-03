@@ -706,6 +706,12 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -
             Category::View,
             idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
         ),
+        // 「全局搜索」同样**不在面板里**（`COMMAND_ORDER` 没有它，入口只有主菜单）。
+        // 图标与菜单那一份同源（`MenuAction::SearchEverywhere` 是地球）。
+        C::OpenSearchEverywhere => (
+            Category::View,
+            idea_icon_mono(&idea::GLOBE_HEMISPHERE_WEST_ICON, is_dark),
+        ),
         C::NavigateToDefinition => (
             Category::View,
             idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
@@ -783,6 +789,9 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -
         // 「快速打开」：label 与菜单项**同一个键**（`lithe.menu.quickOpen`），description 取
         // 顶级菜单名「转到」—— 与上面四条同一条口径（它也不会被画进面板）。
         C::OpenQuickOpen => (tr("lithe.menu.quickOpen"), tr("lithe.menu.go")),
+        // 「全局搜索」：label 与菜单项**同一个键**（`lithe.menu.globalSearch`），description 取
+        // 顶级菜单名「视图」—— 与上面几条同一口径（它也不会被画进面板）。
+        C::OpenSearchEverywhere => (tr("lithe.menu.globalSearch"), tr("lithe.menu.view")),
         C::NavigateToDefinition => (
             tr("lithe.menu.goToDefinition"),
             tr("lithe.navigation.definition"),
@@ -1243,6 +1252,10 @@ impl ShellWorkspace {
         // Quick Open 的 `Ctrl+P`（U17 第二件）：同样是**全局 action**，理由与上一条逐字相同
         // （挂在根元素上会有"启动后没点过任何地方时按不出来"的死角）。
         crate::quick_open::install_actions(cx);
+        // Search Everywhere 的 `Tab` / `Shift+Tab`（U17 第三件）：与前两条不同，它不是
+        // **开浮层**的键 —— 而是一条**只在浮层焦点路径上生效**的键（key context 判定，
+        // 见 `crate::search_everywhere::install_actions`），所以不存在"启动后按不出来"的死角。
+        crate::search_everywhere::install_actions(cx);
 
         // 设置里的「项目 · JDK 与 Maven」页把 JDK 覆盖值（`javaHomePath`）存进设置文件，
         // 而这条值**唯一的消费方是语言服务**（JDT LS 用哪个 JDK 起）：这条链路只有本 crate
@@ -2443,6 +2456,36 @@ impl ShellWorkspace {
         crate::quick_open::open_dialog(quick_open, window, cx);
     }
 
+    /// 打开 Search Everywhere 浮层（菜单「视图 → 全局搜索」）。
+    ///
+    /// 外壳只做两件事：把 `root` 与"打开结果"的通路交给浮层，再 `window.open_dialog`。
+    /// 查询 / 结果 / scope / 键盘全在 `crate::search_everywhere`。
+    ///
+    /// ⚠️ **只能从事件回调或任务里调用**：`render` 阶段调 `open_dialog` 会 panic。
+    ///
+    /// ⚠️ 这条动作**没有键位**（理由见 `CommandId::OpenSearchEverywhere` 的文档），
+    /// 所以它是本 crate 里唯一"只由主菜单触发"的浮层入口。
+    pub(crate) fn open_search_everywhere(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let root = self.root.clone();
+        let editor = self.editor.clone();
+        // 与资源管理器 / 查找面板**同一段**逻辑：有行号（符号 / 类型 / 正文命中）就跳那一行，
+        // 没有（文件路径命中）就只打开文件。`origin_kind` 用 `"search-everywhere"`，
+        // 与问题列表的 `"problems"` / 查找面板的 `"search"` 分开（列给 0，理由同查找面板：
+        // Core 的 `SearchMatch` 只有行号没有列）。
+        let on_open: Rc<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static> =
+            Rc::new(move |path, line, window, cx| {
+                let _ = editor.update(cx, |pane, cx| match line {
+                    Some(line) => {
+                        pane.open_at(&path, line, 0, "search-everywhere", window, cx);
+                    }
+                    None => pane.open(&path, window, cx),
+                });
+            });
+        let overlay =
+            cx.new(|cx| crate::search_everywhere::SearchEverywhere::new(root, on_open, window, cx));
+        crate::search_everywhere::open_dialog(overlay, window, cx);
+    }
+
     /// 执行命令面板的第 `row` 条动作（`row` = [`ShellWorkspace::command_actions`] 的行号）。
     ///
     /// **每一条都真的改到状态**：不是日志占位。越界行号直接返回（不 panic、不静默落到某项）。
@@ -2652,7 +2695,9 @@ impl ShellWorkspace {
             | MenuAction::GoToDefinition
             // 「快速打开」走 `command_id()` 那一支（`CommandId::OpenQuickOpen`），
             // 这里的臂与上面几条一样**不可达**，列出来只为让 match 穷尽。
-            | MenuAction::QuickOpen => {
+            | MenuAction::QuickOpen
+            // 「全局搜索」同理（`CommandId::OpenSearchEverywhere`）。
+            | MenuAction::SearchEverywhere => {
                 diagnose_menu_run(action, "unreachable");
             }
         }
@@ -2758,6 +2803,12 @@ impl ShellWorkspace {
                 // （`crate::quick_open::install_actions`）落到**同一个方法**。
                 diagnose_run(id, "open");
                 self.open_quick_open(window, cx);
+            }
+            CommandId::OpenSearchEverywhere => {
+                // 接线点：[`Self::open_search_everywhere`] —— 菜单「视图 → 全局搜索」的
+                // 唯一执行点（它没有键位，见 `CommandId::OpenSearchEverywhere` 的文档）。
+                diagnose_run(id, "open");
+                self.open_search_everywhere(window, cx);
             }
             CommandId::OpenFile => {
                 // 接线点：gpui 自带的 `App::prompt_for_paths`
@@ -6114,6 +6165,7 @@ mod tests {
             CommandId::SaveBuffer,
             CommandId::OpenCommandPalette,
             CommandId::OpenQuickOpen,
+            CommandId::OpenSearchEverywhere,
             CommandId::NavigateToDefinition,
         ] {
             ids.push(other.id());

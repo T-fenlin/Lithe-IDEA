@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 109 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 116 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8791,8 +8791,6 @@ lithe:
     zh-CN: "尚未接入：编辑器还没有这些功能（行级编辑、转到行、缩略图 / 行号 / 空白字符开关、分屏）。"
   gpui.menuMissing.lspRequests:
     zh-CN: "尚未接入：Java 服务侧还没有这条 LSP 请求（现在只接了定义 / 补全 / 快速修复）。"
-  gpui.menuMissing.indexer:
-    zh-CN: "尚未接入：还没有索引器（跨文件搜索与快速打开都依赖它）。"
   gpui.menuMissing.debuggerHost:
     zh-CN: "尚未接入：没有进程宿主（调试适配器还没接）。"
   gpui.menuMissing.subsystem:
@@ -8861,6 +8859,22 @@ lithe:
     zh-CN: "{count} 天前"
   search.gpui.queryPlaceholder:
     zh-CN: "搜索文件和内容"
+  searchEverywhere.scope.all:
+    zh-CN: "全部"
+  searchEverywhere.scope.files:
+    zh-CN: "文件"
+  searchEverywhere.scope.symbols:
+    zh-CN: "符号"
+  searchEverywhere.scope.text:
+    zh-CN: "文本"
+  searchEverywhere.noMatches.all:
+    zh-CN: "全部范围内没有匹配项"
+  searchEverywhere.noMatches.files:
+    zh-CN: "文件中没有匹配项"
+  searchEverywhere.noMatches.symbols:
+    zh-CN: "符号中没有匹配项"
+  searchEverywhere.noMatches.text:
+    zh-CN: "文本中没有匹配项"
 
 gpui_component:
   Dialog.ok:

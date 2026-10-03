@@ -591,13 +591,6 @@ const GPUI_ONLY_KEYS = [
       "B3（同上）。给「转到实现 / 转到类型定义 / 转到引用 / 重命名符号 / 显示悬停信息 / 触发参数提示 / 格式化文档 / 格式化所选内容」。事实依据：crates/java/src/service.rs 只暴露 definition / completion / code_actions / diagnostics / sync_document 五条请求，textDocument/implementation|typeDefinition|references|rename|hover|signatureHelp|formatting 一条都没有 —— 缺的是上一条链的请求，不是编辑器入口。真源这 8 条恒可执行，catalog 里没有这句。",
   },
   {
-    key: "gpui.menuMissing.indexer",
-    zh: "尚未接入：还没有索引器（跨文件搜索与快速打开都依赖它）。",
-    en: "Not wired yet: there is no indexer (cross-file search and quick open both need it).",
-    reason:
-      "B3（同上）。给「视图 → 全局搜索」与「转到 → 快速打开」。维护者口径（规格 §B3 的注）点名这两条写「没有索引器」：真源这两项都走跨文件索引，gpui 侧还没有索引层。真源恒可执行，catalog 里没有这句。",
-  },
-  {
     key: "gpui.menuMissing.debuggerHost",
     zh: "尚未接入：没有进程宿主（调试适配器还没接）。",
     en: "Not wired yet: there is no process host (no debug adapter is wired).",
@@ -848,6 +841,71 @@ const GPUI_ONLY_KEYS = [
     en: "Search files and contents",
     reason:
       "查找面板查询框的 placeholder（`lithe-gpui/crates/workbench/src/search_panel.rs`）。真源 catalog 里没有这一条：macOS 侧那句话是 SwiftUI 的字面量（`macos/Sources/Lithe/Views/Search/SearchSidebarView.swift:32` 的 `TextField(\"Search files and contents\", …)`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings:1155`（\"搜索文件和内容\"），而 `en.lproj` 里没有对应条目（英文回落到字面量本身，所以 en 逐字取那句）。**不借 `fileExplorer.searchFiles`（「搜索文件」）**：那句只说文件，而 `workspace.search` 同时搜文件路径与文件内容（`rust/lithe-core/src/project/files.rs:209-266`），照抄会少说一半。",
+  },
+  // ── Search Everywhere 浮层（U17 第三件）──────────────────────────────
+  //
+  // 八条全部来自 macOS 真源，但**不在 Windows catalog 里**：`SearchEverywhereView.swift`
+  // 用的是 SwiftUI 的 `LocalizedStringKey` 字面量（scope 的 `rawValue` 与
+  // `emptyResultsMessage`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings`，
+  // 英文在 `en.lproj` 里**没有对应条目**（回落到字面量本身）。所以 en 逐字取那句英文。
+  //
+  // 键名挂 `searchEverywhere.*` 而不是塞进 `search.*`：`search.*` 那一段是 Find in Files
+  // （侧栏）的键，两者是**两个界面**，混在一起改文案时容易串。
+  {
+    key: "searchEverywhere.scope.all",
+    zh: "全部",
+    en: "All",
+    reason:
+      "scope 标签行的第一个标签（`lithe-gpui/crates/workbench/src/search_everywhere.rs`）。出处处：macOS 真源 `SearchEverywhereScope.all` 的 rawValue 是 \"All\"（`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:6`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings:1119`（\"All\" = \"全部\"）。真源 catalog 里没有任何 Search Everywhere 的 scope 键（那一版没有这个浮层的 scope 行），所以是 gpui 侧新增键。",
+  },
+  {
+    key: "searchEverywhere.scope.files",
+    zh: "文件",
+    en: "Files",
+    reason:
+      "同上的第二个标签。出处：`SearchEverywhereView.swift:8` 的 rawValue \"Files\"，中文 `Localizable.strings:194`（\"Files\" = \"文件\"）。",
+  },
+  {
+    key: "searchEverywhere.scope.symbols",
+    zh: "符号",
+    en: "Symbols",
+    reason:
+      "同上的第三个标签。出处：`SearchEverywhereView.swift:9` 的 rawValue \"Symbols\"，中文 `Localizable.strings:885`（\"Symbols\" = \"符号\"）。",
+  },
+  {
+    key: "searchEverywhere.scope.text",
+    zh: "文本",
+    en: "Text",
+    reason:
+      "同上的第四个标签。出处：`SearchEverywhereView.swift:11` 的 rawValue \"Text\"，中文 `Localizable.strings:887`（\"Text\" = \"文本\"）。",
+  },
+  {
+    key: "searchEverywhere.noMatches.all",
+    zh: "全部范围内没有匹配项",
+    en: "No matches in All",
+    reason:
+      "All scope 有查询但零命中时的空态。出处：真源 `SearchEverywhereResultSource.combinedWorkspaceNames.emptyResultsMessage` 返回字面量 \"No matches in All\"（`SearchEverywhereView.swift:79-80`），中文 `Localizable.strings:1164`。en 逐字取那句字面量（`en.lproj` 里没有这一条，英文回落到字面量本身）。",
+  },
+  {
+    key: "searchEverywhere.noMatches.files",
+    zh: "文件中没有匹配项",
+    en: "No matches in Files",
+    reason:
+      "Files scope 的空态。出处：`SearchEverywhereView.swift:83-84` + `Localizable.strings:1165`；en 同上。",
+  },
+  {
+    key: "searchEverywhere.noMatches.symbols",
+    zh: "符号中没有匹配项",
+    en: "No matches in Symbols",
+    reason:
+      "Symbols scope 的空态。出处：`SearchEverywhereView.swift:86-87` + `Localizable.strings:1167`；en 同上。",
+  },
+  {
+    key: "searchEverywhere.noMatches.text",
+    zh: "文本中没有匹配项",
+    en: "No matches in Text",
+    reason:
+      "Text scope 的空态。出处：`SearchEverywhereView.swift:89-90` + `Localizable.strings:1168`；en 同上。",
   },
 ];
 

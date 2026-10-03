@@ -52,7 +52,7 @@
 //!
 //! | | 真源 | 本侧 v1 | 本侧 B3（现在） |
 //! | --- | --- | --- | --- |
-//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：42 条已接线 + 50 条占位 |
+//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：45 条已接线 + 47 条占位 |
 //! | 没能力的项 | 恒可点（点下去做那件事） | 不画 | 画出来、可点、点了**如实**说缺什么 |
 //! | 灰化 | 4 处后端能力开关 | 不灰化 | 不灰化（占位项用提示表达"还没有"，不用颜色） |
 //!
@@ -64,7 +64,7 @@
 //!    `every_listed_item_is_wired_or_declares_what_is_missing` 逐条断言
 //!    "要么已接线（有 `CommandId` 或在 `NON_COMMAND` 里登记）、要么声明非空"——
 //!    谁想悄悄加一条永远不工作的项，这里就红。
-//! 2. **文案按能力分组**（Q14 粒度 `2d`）：50 条占位项只有 [`MISSING_GROUPS`] 那么多句话
+//! 2. **文案按能力分组**（Q14 粒度 `2d`）：47 条占位项只有 [`MISSING_GROUPS`] 那么多句话
 //!    （**17 条**，一种能力一句），每句都回答"缺什么"。文案键全部是 gpui 侧新增
 //!    （真源的菜单项恒可执行，catalog 里没有"尚未接入"这类句子），理由逐条写在
 //!    `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
@@ -306,7 +306,7 @@ impl Missing {
 // B3 的能力分组（**一种能力一句话**，Q14 的粒度 `2d`）
 // ---------------------------------------------------------------------------
 //
-// 50 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
+// 47 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
 // `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里（逐条写了理由：
 // 真源的菜单项**恒可执行**，catalog 里没有"尚未接入"这类文案）。
 //
@@ -341,17 +341,6 @@ pub const MISSING_EDITOR_FEATURES: Missing = Missing {
 pub const MISSING_LSP_REQUESTS: Missing = Missing {
     id: "lsp_requests",
     text_key: "lithe.gpui.menuMissing.lspRequests",
-};
-
-/// 还没有索引器（**全局搜索**）。
-///
-/// ⚠️ 这条声明**只剩「全局搜索」一个用户**：`lithe.menu.quickOpen`（「快速打开」）原来也挂着它，
-/// U17 第二件把浮层 / 键位 / 菜单项都接上之后就不再是占位项了。索引链本身早在 U18 就通了
-/// （`workspace.searchIndex.warm/update/invalidate`，见 `crate::search_index`），缺的是
-/// **Search Everywhere 那层浮层**（六个 scope），不是索引。
-pub const MISSING_INDEXER: Missing = Missing {
-    id: "indexer",
-    text_key: "lithe.gpui.menuMissing.indexer",
 };
 
 /// 没有调试进程宿主（开始 / 停止调试、切换断点）。
@@ -457,15 +446,16 @@ pub const MISSING_TERMINAL_SPLIT: Missing = Missing {
 
 /// 全部分组（单测拿它守住"组数就是这么多"、"每组都被用到"、"组 id 不重复"）。
 ///
-/// ⚠️ 组数（**17**）不是随手写的数：它是 Q14 粒度 `2d`（"一种能力一句话"）的上界，
+/// ⚠️ 组数（**16**）不是随手写的数：它是 Q14 粒度 `2d`（"一种能力一句话"）的上界，
 /// `missing_declarations_are_grouped_by_capability` 拿它挡住"给每条占位项现编一句"的退化。
-/// 第 17 组 [`MISSING_NEW_PROJECT_SCAFFOLDING`] 是本轮为项目下拉的「新建项目…」补的
-/// （它原先因为"缺的是能力本身、说不成一句能力话"而留在真禁用态，见 `project_menu.rs` 模块头）。
-pub const MISSING_GROUPS: [Missing; 17] = [
+/// **17 → 16**：`indexer` 那一组随「视图 → 全局搜索」转正（U17 第三件）而**整组删掉** ——
+/// 它本来就只剩这一个用户，而那句"还没有索引器"与事实不符（索引链 U18 就通了，
+/// `crate::search_index` 是三条 `workspace.searchIndex.*` 的 owner），留着就是一句假话。
+/// 第 17 组 [`MISSING_NEW_PROJECT_SCAFFOLDING`] 是本轮之前为项目下拉的「新建项目…」补的。
+pub const MISSING_GROUPS: [Missing; 16] = [
     MISSING_EDITOR_ENTRY,
     MISSING_EDITOR_FEATURES,
     MISSING_LSP_REQUESTS,
-    MISSING_INDEXER,
     MISSING_DEBUGGER_HOST,
     MISSING_SUBSYSTEM,
     MISSING_GITHUB,
@@ -712,6 +702,15 @@ pub enum MenuAction {
     /// 执行分支 = [`CommandId::OpenQuickOpen`]（`crate::workspace::run_command_id`），
     /// 与快捷键 `Ctrl+P` dispatch 的是**同一个 Action**（`crate::quick_open::OpenQuickOpen`）。
     QuickOpen,
+    /// 视图 → 全局搜索（Search Everywhere 浮层，四个 scope）。
+    ///
+    /// 执行分支 = [`CommandId::OpenSearchEverywhere`]（`crate::workspace::run_command_id`），
+    /// 落在 `ShellWorkspace::open_search_everywhere`。
+    ///
+    /// ⚠️ **没有键位**：真源 macOS 是双击 Shift，而 gpui 侧没有这条通路（本仓已登记，
+    /// 见 `UI-MAP.md` §2.2 ⑬），空闲的 `Ctrl+*` 里也没有一条有真源依据 —— 所以这一项
+    /// **只由主菜单触发**（`keybind_action` 返回 `None`，菜单上不会画键位胶囊）。
+    SearchEverywhere,
     // -----------------------------------------------------------------------
     // B2：以下 18 条是"能力已经在、只缺菜单项"的那一批（侦察 §2 的 🟡）。
     // 每一条的执行落点写在 `ShellWorkspace::apply_menu_action` 各自的臂上。
@@ -822,6 +821,10 @@ impl MenuAction {
             // `locales/lithe.zh-CN.yml:6722`）—— 菜单里本来就摆着这一条（原来声明缺索引器），
             // 本任务把它接上，文案键不动。
             Self::QuickOpen => "lithe.menu.quickOpen",
+            // 「全局搜索」= 真源 `menu.globalSearch`（zh「全局搜索」，`locales/lithe.zh-CN.yml:6692`）。
+            // 这一项原来也声明"缺索引器"（`MISSING_INDEXER`）—— 索引链 U18 就通了、浮层本件做完，
+            // 所以它转正、文案键不动（与「快速打开」同一处置）。
+            Self::SearchEverywhere => "lithe.menu.globalSearch",
             Self::NewTerminalTab => "lithe.menu.newTerminal",
             Self::CloseTerminalTab => "lithe.menu.closeTerminal",
             Self::Preferences => "lithe.menu.preferences",
@@ -899,6 +902,8 @@ impl MenuAction {
             // 「快速打开」用放大镜：与「命令面板」同一个字形（两者都是"敲名字找东西"），
             // 图标允许重复、菜单动作不许重复（`every_listed_action_is_executable`）。
             Self::QuickOpen => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
+            // 「全局搜索」沿用原来那条占位项的图标（地球），不动 —— 它本来就摆在这里。
+            Self::SearchEverywhere => idea_icon_mono(&idea::GLOBE_HEMISPHERE_WEST_ICON, is_dark),
             Self::Minimize => Icon::new(IconName::WindowMinimize),
             Self::Maximize => Icon::new(IconName::WindowMaximize),
             Self::ToggleFullscreen => Icon::new(IconName::Maximize),
@@ -980,6 +985,10 @@ impl MenuAction {
             Self::ToggleMenuBar => Box::new(ToggleMenuBarAction),
             // `Ctrl+P`：`crate::quick_open::install_actions` 登记的（本任务新绑）。
             Self::QuickOpen => Box::new(crate::quick_open::OpenQuickOpen),
+            // 「全局搜索」**没有键位**（真源是双击 Shift，gpui 侧没有这条通路；
+            // 空闲的 `Ctrl+*` 也没有一条有真源依据）—— 所以不传 `.action(..)`，
+            // 菜单上不会画一个"显示了却按不出"的键位胶囊。
+            Self::SearchEverywhere => return None,
             // B2 新绑的六条：`install_key_actions` 登记（键位常量见 `menu_key`）。
             Self::ReopenClosedTab => Box::new(ReopenTab),
             Self::ToggleActivitySidebar => Box::new(ToggleSidebar),
@@ -1050,6 +1059,10 @@ impl MenuAction {
             // 「快速打开」与 `Ctrl+P` 共用同一个执行点（`crate::quick_open` 的浮层）——
             // 与命令面板同一条"一个逻辑命令只建模一次"。
             Self::QuickOpen => Some(CommandId::OpenQuickOpen),
+            // 「全局搜索」同样**只建模一次**：菜单项 → `CommandId::OpenSearchEverywhere`
+            // → `ShellWorkspace::open_search_everywhere`。它没有快捷键，所以没有第二处入口
+            // （不像「快速打开」那样有一个 Action 与本项指向同一个执行点）。
+            Self::SearchEverywhere => Some(CommandId::OpenSearchEverywhere),
             Self::NewTerminalTab
             | Self::CloseTerminalTab
             | Self::Preferences
@@ -1090,7 +1103,7 @@ impl MenuAction {
 /// 9 个顶级菜单的静态表（**唯一真源**，两形态共用）。
 ///
 /// B3 起**真源 89 条一条不少**：能执行的走 [`MenuItem::Action`]（42 条），
-/// 没能力的走 [`MenuItem::NotWired`]（50 条占位）。顺序与分隔线位置**照真源**
+/// 没能力的走 [`MenuItem::NotWired`]（47 条占位）。顺序与分隔线位置**照真源**
 /// （`lithe-gpui/research/windows/10-menu-bar.md:114-259` 每张表的"分隔线"列：写在它出现在该项**之后**），
 /// 所以这张表可以与那份清单逐行比对。四条本侧新增项（⚪：打开文件 / 显示状态栏 /
 /// 外观设置 / Maven）插在同一族里，**不动真源的相对顺序**。
@@ -1262,11 +1275,11 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::ToggleSecondarySidebar),
             MenuItem::Action(MenuAction::ToggleTerminal),
             MenuItem::Separator,
-            MenuItem::NotWired {
-                label_key: "lithe.menu.globalSearch",
-                missing: MISSING_INDEXER,
-                icon: MenuIcon::Idea(&idea::GLOBE_HEMISPHERE_WEST_ICON),
-            },
+            // 「全局搜索」原来是占位项（声明缺索引器）——U17 第三件把 Search Everywhere 四个
+            // scope 的浮层做完之后它转正：索引链 U18 就通了，缺的从来不是索引器。
+            // ⚠️ 这一项**没有键位**（真源是双击 Shift，gpui 侧没有这条通路），
+            // 所以它是本侧唯一"只由主菜单触发"的浮层入口。
+            MenuItem::Action(MenuAction::SearchEverywhere),
             MenuItem::Action(MenuAction::ShowDiagnostics),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::ShowFileExplorer),
@@ -1526,8 +1539,9 @@ pub fn action_count() -> usize {
 /// 断言了它，改表时不会悄悄少画一条）：
 ///
 /// ```text
-/// action_count()    = 42   // 41 + 「快速打开」（2026-10-01 从占位项转正）
-/// not_wired_count() = 50   // 51 - 同一条
+/// action_count()    = 45   // 43 + 「快速打开」（2026-10-01 从占位项转正）
+///                          //    + 「全局搜索」（U17 第三件，同一条路）
+/// not_wired_count() = 47   // 49 - 上面那两条
 /// MenuItem::Theme   =  1   // 「视图 → 主题」子菜单：既不是 Action、也没有 missing 声明
 /// -------------------------
 /// 合计              = 93   = 真源 89 条 + 本侧新增 4 条
@@ -2821,11 +2835,12 @@ mod tests {
     /// 「后退 / 前进」摆在同一张表里的位置骗了。
     ///
     /// ⇒ 本侧菜单 = 真源 89（1 个「主题」子菜单 + 88 条 Action / 占位项）+ 本侧新增 4 条
-    /// = 93 个条目；其中 **42 条 Action + 50 条占位项**。
+    /// = 93 个条目；其中 **45 条 Action + 47 条占位项**。
     ///
-    /// ⚠️ 42 / 50 是同一件事的两面：真源那条「快速打开」在 U17 第二件里从占位项转成 Action
-    /// （`41 → 42` / `51 → 50`），条目总数不变 —— `SOURCE_MENU_ITEMS` 与 `LOCAL_ONLY_ITEMS`
-    /// 都不用改。
+    /// ⚠️ 45 / 47 是同一件事的两面：两条真源项在 U17 里从占位项转成 Action ——
+    /// 「快速打开」（第二件，`43 → 44` / `49 → 48`）与「全局搜索」（第三件，
+    /// `44 → 45` / `48 → 47`），条目总数不变 —— `SOURCE_MENU_ITEMS` 与 `LOCAL_ONLY_ITEMS`
+    /// 都不用改。「全局搜索」那一转正还顺带删掉了 `indexer` 那一组 missing 声明（17 → 16）。
     const SOURCE_MENU_ITEMS: usize = 89;
     /// 本侧**新增**（真源 89 条里没有）的项数：4 条。
     ///
@@ -3255,7 +3270,7 @@ mod tests {
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
         );
         assert!(
-            declared.len() >= 48,
+            declared.len() >= 46,
             "占位项突然少了一半（现在 {}）？查一下是不是有人把没能力的项又删掉了",
             declared.len()
         );
@@ -3310,8 +3325,61 @@ mod tests {
         );
     }
 
+    /// 「视图 → 全局搜索」= Search Everywhere 浮层（U17 第三件），**只由主菜单触发**。
+    ///
+    /// 这条钉三件事：
+    ///
+    /// 1. 菜单里**恰好一条**（不许两个入口两个动作）；
+    /// 2. 它映射到 `CommandId::OpenSearchEverywhere`（执行分支 =
+    ///    `ShellWorkspace::run_command_id` 那一支 → `ShellWorkspace::open_search_everywhere`）；
+    /// 3. **它没有键位**（`keybind_action()` 返回 `None`）：真源是双击 Shift，而 gpui 侧
+    ///    没有这条通路（本仓已登记，`UI-MAP.md` §2.2 ⑬），空闲的 `Ctrl+*` 里也没有一条有
+    ///    真源依据 —— 所以这一项不许在菜单上显示一个"显示了却按不出"的键位胶囊。
+    ///
+    /// ⚠️ **它证明不了"点了真能开出浮层"**：那要一个真的 `ShellWorkspace` 窗口
+    /// （理由与 `quick_open_menu_item_dispatches_the_same_command_as_the_shortcut` 逐字相同）。
+    /// 所以交互路径的证据是 stderr 锚点 `S1_SEARCH_EVERYWHERE open/…`。
+    #[test]
+    fn search_everywhere_menu_item_is_wired_without_a_keybinding() {
+        use crate::command_palette::CommandId;
+
+        let listed = MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .filter(|item| matches!(item, MenuItem::Action(MenuAction::SearchEverywhere)))
+            .count();
+        assert_eq!(
+            listed, 1,
+            "「全局搜索」在菜单里必须恰好一条（不许两个入口两个动作）"
+        );
+
+        assert_eq!(
+            MenuAction::SearchEverywhere.label_key(),
+            "lithe.menu.globalSearch"
+        );
+        assert_ne!(
+            tr(MenuAction::SearchEverywhere.label_key()).as_ref(),
+            "lithe.menu.globalSearch",
+            "菜单文案解析不出来（键名拼错了？）"
+        );
+        assert_eq!(
+            MenuAction::SearchEverywhere.command_id(),
+            Some(CommandId::OpenSearchEverywhere),
+            "菜单项必须落到 Search Everywhere 那一个 CommandId"
+        );
+        assert_eq!(
+            CommandId::OpenSearchEverywhere.id(),
+            "open-search-everywhere",
+            "诊断 id 是 `S1_COMMAND_RUN id=…` 的可 grep 契约"
+        );
+        assert!(
+            MenuAction::SearchEverywhere.keybind_action().is_none(),
+            "本切片没有为它找出一条有真源依据的空闲键位，所以菜单上不许画键位胶囊"
+        );
+    }
+
     /// **一个能力一句话**（Q14 的粒度 `2d`）：占位项只许用 [`MISSING_GROUPS`] 里那些声明，
-    /// 而且每组都被真的用到；不许给 50 条占位项各写一句。
+    /// 而且每组都被真的用到；不许给 47 条占位项各写一句。
     ///
     /// 这条挡的是两类退化：① 有人给某一条占位项现编一个新 `Missing`
     /// （那会绕开 i18n 四处、也没有文案键）；② 有人加了一组却一条都没用（声明表虚胖）。
@@ -3368,20 +3436,19 @@ mod tests {
         }
         // Q14 的粒度上限：**一种能力一句话**，不许退化成"每项一句"。
         //
-        // 上界 = [`MISSING_GROUPS`] 的组数，**16 → 17**：本轮给项目下拉的「新建项目…」
-        // 补了 `new_project_scaffolding` 一组（理由见该常量与 `project_menu.rs` 模块头）。
-        // 它仍然远小于占位项条数（约 52 条），所以这条断言的保护力没变 ——
-        // 谁给每条占位项现编一句，`texts` 立刻超过 17。
+        // 上界 = [`MISSING_GROUPS`] 的组数，**17 → 16**：`indexer` 那一组随「全局搜索」转正
+        // 整组删掉（见该常量的文档）。它仍然远小于占位项条数（约 49 条），所以这条断言的
+        // 保护力没变 —— 谁给每条占位项现编一句，`texts` 立刻超过 16。
         assert!(
-            texts.len() <= 17,
-            "占位文案有 {} 句，超过了'按能力分组'的上限 17（= MISSING_GROUPS 的组数）",
+            texts.len() <= 16,
+            "占位文案有 {} 句，超过了'按能力分组'的上限 16（= MISSING_GROUPS 的组数）",
             texts.len()
         );
-        // 组数本身也钉住：加第 18 组必须同时改上面那行上界与本常量的文档，并说清是哪条新能力
+        // 组数本身也钉住：加第 17 组必须同时改上面那行上界与本常量的文档，并说清是哪条新能力
         // —— 不许为了让测试过就悄悄把上界放宽。
         assert_eq!(
             MISSING_GROUPS.len(),
-            17,
+            16,
             "能力组数变了就必须同步改上面的上界与 `MISSING_GROUPS` 的文档"
         );
     }

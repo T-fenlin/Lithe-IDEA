@@ -183,6 +183,26 @@ mod tests {
             ("lithe.quickOpen.searchFiles", "输入以搜索文件..."),
             ("lithe.quickOpen.noMatch", "未找到匹配的文件"),
             ("lithe.menu.quickOpen", "快速打开"),
+            // Search Everywhere 浮层（U17 第三件，`workbench/src/search_everywhere.rs`）：四个
+            // scope 标签与四句空态都是 macOS 真源的既有字面量（SwiftUI 的 rawValue 与
+            // `emptyResultsMessage`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings`
+            // （:194,884,885,887,1119,1164-1168），Windows catalog 里没有 —— 所以是 gpui 自有键。
+            // 菜单那一项复用真源既有键 `lithe.menu.globalSearch`（与 `quick_open` 同一处置）。
+            ("lithe.searchEverywhere.scope.all", "全部"),
+            ("lithe.searchEverywhere.scope.files", "文件"),
+            ("lithe.searchEverywhere.scope.symbols", "符号"),
+            ("lithe.searchEverywhere.scope.text", "文本"),
+            (
+                "lithe.searchEverywhere.noMatches.all",
+                "全部范围内没有匹配项",
+            ),
+            ("lithe.searchEverywhere.noMatches.files", "文件中没有匹配项"),
+            (
+                "lithe.searchEverywhere.noMatches.symbols",
+                "符号中没有匹配项",
+            ),
+            ("lithe.searchEverywhere.noMatches.text", "文本中没有匹配项"),
+            ("lithe.menu.globalSearch", "全局搜索"),
             ("lithe.ui.retry", "重试"),
             ("lithe.fileExplorer.noFolderOpen", "未打开文件夹"),
             ("lithe.titleProject.openFolder", "打开文件夹"),
@@ -781,10 +801,6 @@ mod tests {
             (
                 "lithe.gpui.menuMissing.lspRequests",
                 "尚未接入：Java 服务侧还没有这条 LSP 请求（现在只接了定义 / 补全 / 快速修复）。",
-            ),
-            (
-                "lithe.gpui.menuMissing.indexer",
-                "尚未接入：还没有索引器（跨文件搜索与快速打开都依赖它）。",
             ),
             (
                 "lithe.gpui.menuMissing.debuggerHost",
