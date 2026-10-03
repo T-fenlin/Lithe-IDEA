@@ -863,7 +863,7 @@ const GPUI_ONLY_KEYS = [
     zh: "类",
     en: "Classes",
     reason:
-      "scope 标签行的第二个标签（`lithe-gpui/crates/workbench/src/search_model.rs` 的 `SearchEverywhereScope::ALL`；U17 后续切片补上 Classes 这一档）。出处：macOS 真源 `SearchEverywhereScope.classes` 的 rawValue 是 \"Classes\"（`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:7`，真源 `allCases` 里它就排在 All 之后），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings:884`（\"Classes\" = \"类\"）。`en.lproj` 里没有对应条目（英文回落到字面量本身，所以 en 逐字取那句）。**不借别的既有键**：`locale.ts` 里没有任何 \"Classes\"/scope 相关的键（grep 无命中），而本浮层的另外四个 scope 名已经各自有一条同族键，混用会漂移。",
+      "scope 标签行的第二个标签（`lithe-gpui/crates/workbench/src/search_model.rs` 的 `SearchEverywhereScope::ALL`；U17 后续切片补上 Classes 这一档）。出处：macOS 真源 `SearchEverywhereScope.classes` 的 rawValue 是 \"Classes\"（`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:7`，真源 `allCases` 里它就排在 All 之后），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings:884`（\"Classes\" = \"类\"）。`en.lproj` 里没有对应条目（英文回落到字面量本身，所以 en 逐字取那句）。**不借别的既有键**：`locale.ts` 里没有任何 \"Classes\"/scope 相关的键（grep 无命中），而本浮层的另外五个 scope 名已经各自有一条同族键，混用会漂移。",
   },
   {
     key: "searchEverywhere.scope.files",
