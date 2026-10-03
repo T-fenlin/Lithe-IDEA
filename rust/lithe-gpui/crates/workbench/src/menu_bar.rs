@@ -1135,8 +1135,8 @@ impl MenuAction {
 /// B3 起**真源 89 条一条不少**：能执行的走 [`MenuItem::Action`]（42 条），
 /// 没能力的走 [`MenuItem::NotWired`]（47 条占位）。顺序与分隔线位置**照真源**
 /// （`lithe-gpui/research/windows/10-menu-bar.md:114-259` 每张表的"分隔线"列：写在它出现在该项**之后**），
-/// 所以这张表可以与那份清单逐行比对。四条本侧新增项（⚪：打开文件 / 显示状态栏 /
-/// 外观设置 / Maven）插在同一族里，**不动真源的相对顺序**。
+/// 所以这张表可以与那份清单逐行比对。五条本侧新增项（⚪：打开文件 / 显示状态栏 /
+/// 外观设置 / Maven / 在文件中替换）插在同一族里，**不动真源的相对顺序**。
 ///
 /// ⚠️ **"视图 → 外观设置" 与 "工具 → 首选项"** 指向同一个对话框的不同页：
 /// 真源 `menu.preferences` 开常规页（`settings-actions.tsx:155-163`），
@@ -1373,7 +1373,8 @@ pub static MENUS: &[TopMenu] = &[
             // 「快速打开」原来是占位项（声明缺索引器）——U17 第二件把索引链与浮层都做完之后，
             // 它接上了**同一个** `Ctrl+P` Action（本文件 `MenuAction::QuickOpen`）。
             MenuItem::Action(MenuAction::QuickOpen),
-            // 「在文件中替换」（U17 第四件）：真源的 macOS 导航菜单里就摆在「Find in Files…」
+            // ⚪「在文件中替换」是**本侧新增**（U17 第四件；见 `MenuAction::ReplaceInFiles` 的文档）：
+            // 真源的 macOS 导航菜单里就摆在「Find in Files…」
             // 的下一条（`LitheApp.swift:618-628`），本侧接在「快速打开」之后 —— 它与本菜单里
             // 另外两项一样属于"到处找东西"这一族，且与 `Ctrl+Shift+R` 是**同一个** Action。
             MenuItem::Action(MenuAction::ReplaceInFiles),
@@ -3302,7 +3303,7 @@ mod tests {
         }
         assert_eq!(action_count(), wired.len());
         assert_eq!(not_wired_count(), declared.len());
-        // 菜单项总数 = 真源 89 条 + 本侧新增 4 条（少画一条这里就红）。
+        // 菜单项总数 = 真源 89 条 + 本侧新增 5 条（少画一条这里就红）。
         assert_eq!(
             action_count() + not_wired_count() + 1, /* Theme 子菜单 */
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
