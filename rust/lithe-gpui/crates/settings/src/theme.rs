@@ -92,6 +92,21 @@ pub fn bundled_theme_files() -> impl Iterator<Item = (&'static str, &'static str
         })
 }
 
+/// 通知 toast **同时可见**的条数上限。
+///
+/// 真源是 `maximumVisibleCount = 3`
+/// （`macos/Sources/Lithe/Application/Features/WorkbenchNotificationFeatureModel.swift:6`）。
+/// 上游默认是 10（`gpui-component-0.7.0/src/notification.rs:545,565`），溢出策略两边一致：
+/// **丢最旧、保最新**（真源 `:38-41` 的 `removeFirst()`；上游
+/// `gpui-base-0.7.0/src/toast.rs:146-152` 的 `visible(limit)`）。
+///
+/// ⚠️ 与真源的**已知差异**（本轮不修）：真源 `removeFirst()` 是**永久移除**，
+/// 而上游只是**不渲染** —— 条目仍挂在 manager 里、超时计时照走，所以它会自己消失
+/// 而不是被立刻丢弃。
+///
+/// 落点见 [`apply_theme_by_name`]（`Theme.notification.max_items`）。
+pub const NOTIFICATION_MAX_ITEMS: usize = 3;
+
 /// 捆绑主题扩展的**老版本遗留文件名**（2026-09-29 之前它们被直接播种在 themes/ 里）。
 ///
 /// 迁移 = 搬到 `extensions/themes/`（缺才搬）；两个 Lithe 拆分文件（`lithe-dark.json` /
@@ -546,6 +561,24 @@ pub fn apply_theme_by_name(cx: &mut App, name: &str) -> bool {
 
     let mode = theme.mode;
     Theme::change(mode, None, cx);
+    // 通知 toast 的同时可见条数上限。真源是 `maximumVisibleCount = 3`
+    // （`macos/Sources/Lithe/Application/Features/WorkbenchNotificationFeatureModel.swift:6`，
+    // 溢出丢最旧的那条见同文件 `:38-41`）。
+    //
+    // 为什么落在这里：`notification` 不是主题文件的字段，没有主题 schema 入口，
+    // 上游唯一的落点是 `Theme` 的 `pub notification: NotificationSettings`
+    // （`gpui-component-0.7.0/src/theme/mod.rs:184`，默认 10 见
+    // `src/notification.rs:545,565`）。而本函数是宿主应用主题的**唯一通路**
+    // （`apply_theme_by_id` → 这里；启动 / 切主题 / 改设置三条路都经
+    // `crate::store` 的 `apply_theme_for`）。挂在通路上而不是每帧 / render 里设：
+    // 上游消费点 `grouped()` 每帧读 `cx.theme().notification.max_items`
+    // （`src/notification.rs:783-787`），所以在这里设一次即对后续每一帧生效。
+    //
+    // 切主题不会被冲掉：`Theme::change` 只写 `theme.mode`
+    // （`src/theme/mod.rs:369-379` 的 `edit` 闭包），`apply_config` 只写
+    // light/dark 槽、highlight、6 个字体/圆角/阴影 token、`tokens`、`mode`
+    // （`src/theme/schema.rs:1064-1108`）—— 两者都**不碰** `notification`。
+    Theme::global_mut(cx).notification.max_items = NOTIFICATION_MAX_ITEMS;
     stamp_builtin_highlight_if_absent(cx, &theme, mode);
     Theme::global_mut(cx).apply_config(&theme);
     Theme::sync_base(cx);

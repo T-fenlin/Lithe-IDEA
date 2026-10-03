@@ -106,3 +106,63 @@ fn editor_pane_renders_a_real_file_and_reports_its_indent(cx: &mut TestAppContex
         );
     });
 }
+
+/// 宿主把通知 toast 的**同时可见条数上限**设成 3。
+///
+/// 判据是**真实赋值**而不是常量本身：走生产入口 `theme::apply_theme_by_name`
+/// （它同时是启动、切主题、改设置三条路的路由），再读 `Theme` 的
+/// `notification.max_items` —— 上游消费点 `grouped()` 每帧读的正是这个字段
+/// （`gpui-component-0.7.0/src/notification.rs:783-787`），所以"字段是 3"就是
+/// UI-MAP 里"最多 3 条"已接的**全部**机器可验证内容。
+///
+/// 分两段断言，各自守一条独立的失效：
+/// 1. 设上之后是 3（常量被改错、或赋值被删掉都会失败）；
+/// 2. 再切一次主题后**仍然是 3**（`Theme::change` + `apply_config` 若哪天开始回写
+///    `notification`，这条会先炸 —— 那时"最多 3 条"会在每次切主题后静默退回 10）。
+///
+/// ⚠️ 范围说明：`lithe-gpui-settings` 这个 crate 没有 `gpui-kit` 的 `test-support`
+/// dev-dependency（settings 的 `#[cfg(test)]` 全是纯函数单测，理由见 `menu_bar.rs` 里
+/// "本 crate 拿不到 `TestAppContext`"那条），所以这条**路由真的跑起来**的测试放在
+/// 唯一拥有 `TestAppContext` 的 UI 测试 crate（本文件）里。测试**不开窗口、不 sleep**。
+///
+/// ⚠️ 这条只证明"上限值被设上了"，**真实观感未经真机视觉验证**。
+#[gpui_kit::test]
+fn theme_application_caps_simultaneous_notification_toasts_at_three(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme;
+    use lithe_gpui_settings::theme::NOTIFICATION_MAX_ITEMS;
+
+    // 组件库得先初始化：主题注册表在 `gpui_kit::init` 里建立。
+    cx.update(gpui_kit::init);
+
+    // 注册表里总会有主题（`gpui_component` 的 `ThemeRegistry::init` 会装内置那两份）。
+    // 用注册表的键而不是写死名字：本仓库有两套主题（内置 IDEA 一组 + 捆绑扩展），
+    // 写死哪个都会在主题改名时变成一条无关的失败。
+    let name = cx.update(|cx| {
+        gpui_kit::component::ThemeRegistry::global(cx)
+            .themes()
+            .keys()
+            .next()
+            .expect("组件库初始化后主题注册表必须非空")
+            .clone()
+    });
+
+    // ① 走生产入口应用一次主题。
+    let applied = cx.update(|cx| lithe_gpui_settings::theme::apply_theme_by_name(cx, &name));
+    assert!(applied, "主题 {name} 应当在注册表里并能被应用");
+    assert_eq!(
+        cx.update(|cx| Theme::global(cx).notification.max_items),
+        NOTIFICATION_MAX_ITEMS,
+        "应用主题后 toast 的同时可见条数上限必须是真源 macOS 的 maximumVisibleCount（3），实测 {}",
+        NOTIFICATION_MAX_ITEMS
+    );
+
+    // ② 再应用一次（= 用户切主题）：上限不能被主题配置冲掉。
+    cx.update(|cx| {
+        lithe_gpui_settings::theme::apply_theme_by_name(cx, &name);
+    });
+    assert_eq!(
+        cx.update(|cx| Theme::global(cx).notification.max_items),
+        NOTIFICATION_MAX_ITEMS,
+        "切主题会重跑 apply_config，上限必须仍然生效（`notification` 不是主题文件字段）"
+    );
+}

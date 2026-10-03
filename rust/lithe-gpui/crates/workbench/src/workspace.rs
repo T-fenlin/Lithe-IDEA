@@ -3333,12 +3333,18 @@ impl ShellWorkspace {
     /// （`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:517`）—— 改前是
     /// `BottomLeft`，与真源左右相反。
     ///
-    /// ⚠️ **只对齐到"右下"，没对齐到真源的精确内衬**：真源那一摞还有
+    /// ⚠️ **还没对齐真源的精确内衬，但"缺入口"这个判断已更正**：真源那一摞还有
     /// `padding(.trailing, rightActivityBarWidth + 12)`（= 52）、`padding(.bottom, 38)`、
-    /// 单条 `minWidth 280 / maxWidth 360`、圆角 7、堆叠间距 8（`WorkbenchView.swift:519,543-554`），
-    /// 而 gpui-kit 的通知层只收一个 `Anchor`（`gpui-component-0.7.0/src/window_ext.rs` 的
-    /// `push_notification`），表达不出这些内衬。要精确对齐得自绘那一层（属 U25 的"通知 toast"
-    /// 那一项，本轮未做，见交付报告）。
+    /// 单条 `minWidth 280 / maxWidth 360`、圆角 7、堆叠间距 8（`WorkbenchView.swift:519,543-554`）。
+    /// 上游 `NotificationSettings` 的 `margins` 与 `width` **都是 pub**
+    /// （`gpui-component-0.7.0/src/notification.rs:543,547`），经
+    /// `Theme::global_mut(cx).notification`（`theme/mod.rs:184`）宿主**可设** —— 所以内衬不是
+    /// "没有入口"，只是本轮没接。真正缺的是 **280–360 的自适应宽度**（上游 `width` 是单值），
+    /// 以及堆叠间距：上游 `expanded_gap` 固定 14（`gpui-base-0.7.0/src/toast.rs:51`，真源是 8），
+    /// 而建栈处 `ToastStack::new(stack_id, stack.state.clone())`
+    /// （`gpui-component-0.7.0/src/notification.rs:1048`）**没把 motion 传进去**，宿主改不到。
+    /// 本轮只接了"同时可见条数上限 = 3"（落点见 `crates/settings/src/theme.rs` 的
+    /// `apply_theme_by_name`）。
     fn show_notification_toast(
         &self,
         entry: &lithe_gpui_notify::Entry,
