@@ -24,7 +24,7 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tree::{Tree, TreeEvent};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, StyledExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
@@ -669,10 +669,24 @@ impl Explorer {
             );
 
         if let Some((label, disabled)) = action {
+            // 密度走组件 `Size` 档位，不手写外框高度（`design-guides.md:115`「优先使用组件尺寸
+            // （`xsmall`、`small`、默认 `medium`、`large`），不要单独写高度」、`:208`「使用组件
+            // `Size` API，让字体、图标、padding 和 hit target 一起变化。只改外框高度通常是不完整
+            // 的」）。改前的 `.h_6().px_1p5()` 只压外框与内衬：`Button::with_size` 只写 `self.size`
+            // （`gpui-component-0.7.0/src/button/button.rs:559-562`），字号 / gap 取
+            // `button_text_size(self.size)`（同文件 `:737-742`），调用点的 `.h_N()` / `.px_N()`
+            // 经末尾 `refine_style(&instance_style)`（同文件 `:721`）压不掉它们 ⇒ 会留下
+            // "外框 24px、字号却是默认档 `Medium` 的 `text_base`(16px)"。
+            // `.small().compact()`：外框 `h_6()`(24px) + 内衬 `px_1p5()`(6px)（同文件 `:660-663`）
+            // 与真源 `xs` 按钮的「高 24、`px-1.5`」（`ui/button.tsx:23`，见上方 `empty` 的文档）
+            // **逐像素相同**；字号随档位落到 `text_sm()`(14px)（`gpui-component-0.7.0/`
+            // `src/sizing.rs:327-333`），与上一行 `EmptyDescription` 的 `.text_sm()` 一致
+            // （13 → 14 是本文件顶部「字号」段已确认的有意改动）。口径同 ⑥ Git 的同一形状
+            // `.h_6().px_1p5()` → `.small().compact()`（`crates/git/src/changes_view.rs:102-104`）。
             let button = Button::new("explorer-empty-action")
                 .label(label)
-                .h_6()
-                .px_1p5();
+                .small()
+                .compact();
             let button = if disabled {
                 button.disabled(true)
             } else {
