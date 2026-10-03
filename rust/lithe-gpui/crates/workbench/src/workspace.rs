@@ -5,31 +5,30 @@
 //!
 //! ```text
 //! v_flex
-//! ├─ 标题栏第一行 30      ui-mockup-idea.md §1.3    只有菜单栏；2026-09-27 由单行 40 拆成两行
-//! ├─ 标题栏第二行 38      ui-mockup-idea.md §1.3    项目下拉 / 分支项 / 运行控件 / 窗口三键
+//! ├─ 标题栏单行 40        LitheTheme.swift:478       2026-09-30 由"两行 30+38"回到真源单行
 //! ├─ 项目标签条 32        project-tab-bar.tsx:41     h-8
 //! ├─ 工作区 h_flex flex-1  main-layout.tsx:299       行尾 pr = 4（--lithe-workbench-gap）
 //! │  ├─ 左活动栏 38+4      main-sidebar.tsx:97,588   折叠态图标竖条
-//! │  ├─ 左侧栏 480        2026-09-27 加宽（真源 320） settings.sidebarWidth
-//! │  ├─ 中央列 flex-1      main-layout.tsx:312       v_flex[ 编辑器岛, 底部工具窗 240 ]
-//! │  ├─ 右侧工具窗 400    default-settings.ts:139   settings.rightToolWindowWidth（**可收起**）
+//! │  ├─ 左侧栏 320         真源 WorkbenchLayoutStore.swift:21  可拖：30…min(520, 容器 − 400)
+//! │  ├─ 中央列 flex-1      本侧 v_flex 结构           v_flex[ 编辑器岛, 底部工具窗 260 ]
+//! │  ├─ 右侧工具窗 360    真源 WorkbenchLayoutStore.swift:5    默认宽（**可收起**）
 //! │  └─ 右活动栏 38+4     plugin-activity-rail.tsx:34
 //! └─ 状态栏 24            footer.tsx:45-49          24 = --lithe-footer-height（theme.css:119）
 //! ```
 //!
-//! ⚠️ **顶部两行合计 68，比上一版的单行 40 净增 28**（两块高度与理由见
-//! `crate::title_bar` 的 `TITLE_BAR_MENU_ROW_HEIGHT_SPEC` / `TITLE_BAR_MAIN_ROW_HEIGHT_SPEC`）
-//! —— 这 28px 从底部工具窗里让出来，见下面的 320 → 240。
+//! ⚠️ **顶部标题栏是单行 40**（真源 `LitheTheme.Metrics.toolbarHeight`，见 `crate::title_bar`）；
+//! 2026-09-27 那版"两行 30 + 38"已按真源回退。
 //!
-//! **底部窗不横跨工作台**（维护者 2026-09-25 拍板）：Windows 默认
-//! `terminalWidthMode === "editor"`（`features/terminal/store.ts:29`），`BottomPane` 就是
-//! 中央列里编辑器岛的下一个 flex 兄弟（`main-layout.tsx:318-322`），真源默认高 **320**
-//! （`bottom-pane/bottom-pane.tsx:47`），上面还有一条 4px 的拖拽热区（同文件 `:222-232`）。
-//! **本侧取 240**（[`BOTTOM_PANE_HEIGHT_SPEC`]）：2026-09-27 标题栏改两行后从 320 收到 240，
-//! 保持"窗口总高不变"（40 → 30+38 净增的 28 正好是 320-240），否则项目树底部会被挤出窗口。
-//! 本版用普通 `v_flex` + 固定高度表达这个分栏，**不用** gpui-kit 的 Dock：Windows 的
-//! `MainLayout` 本身就是 flex + `ResizablePane`，没有 dock 系统，用 Dock 反而会多出
-//! 一条 Windows 没有的标签头。唯一的例外是**分隔条**：左侧栏那条可拖分界线用的是
+//! **底部窗不横跨工作台**（维护者 2026-09-25 拍板）：它挂在**中央列**里，是编辑器岛的下一个
+//! flex 兄弟。高度真源是**可拖的纵向分割**：最小 **260**
+//! （`macos/.../Views/Workbench/WorkbenchView.swift:2019` 的 `minimumGitPaneHeight = 260`，
+//! 与同处 `:2018` 的 `minimumTopPaneHeight = 220` 一起定义可拖区间）。
+//! **本侧取 260**（[`BOTTOM_PANE_HEIGHT_SPEC`]）：2026-10-03 维护者裁决"U25 遗留 4 条全部按真源改"，
+//! 把原先那个 240 对齐到真源最小值 —— **视觉无变化**，因为 clamp 早就把它强制到 260
+//! （理由与证据写在 [`BOTTOM_PANE_HEIGHT_SPEC`] 的文档里）。
+//! 本版用普通 `v_flex` + 固定高度表达这个分栏，**不用** gpui-kit 的 Dock：本侧的中央列
+//! 就是 flex + 可拖手柄，没有 dock 系统，用 Dock 反而会多出一条真源没有的标签头。
+//! 唯一的例外是**分隔条**：三条可拖分界线用的都是
 //! Dock 同款的上游手柄（[`drag_handle`]，2026-09-30，`docs/gpui kit/0.7.0/component/dock.md`）。
 //!
 //! 四个区域模块（[`crate::title_bar`] / [`crate::project_tabs`] / [`crate::activity_bar`] /
@@ -89,14 +88,14 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::assets::IconName;
-use gpui_kit::base::{HandleEdge, h_flex, resize_handle, v_flex};
+use gpui_kit::base::{ElementExt as _, HandleEdge, h_flex, resize_handle, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::notification::{Notification, NotificationType};
 use gpui_kit::component::{ActiveTheme as _, Icon, Root, WindowExt as _, resize_handle_appearance};
 use gpui_kit::{
-    Anchor, AnyElement, App, AppContext as _, Axis, ClickEvent, Context, Div, Empty, Entity,
-    Global, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _,
+    Anchor, AnyElement, App, AppContext as _, Axis, Bounds, ClickEvent, Context, Div, Empty,
+    Entity, Global, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _,
     PathPromptOptions, Pixels, Point, Render, ScrollHandle, SharedString, Size, Styled as _,
     Window, div, rems,
 };
@@ -457,10 +456,39 @@ const SIDEBAR_WIDTH_SPEC: f32 = 320.;
 // 现在"直接连接"由 render 里那个 **`gap_0` 的内层组**（共同 owner）表达，边界只由
 // `editor_island` 的左边框**一个所有者**画，`side_pane` 也不再收水平外边距参数。
 
-/// 拖拽改宽的下界：再窄就连 `domain` 这样的目录名都放不下。
-const SIDEBAR_MIN_WIDTH_SPEC: f32 = 200.;
-/// 拖拽改宽的上界：留够编辑区，不至于把中央列压没。
-const SIDEBAR_MAX_WIDTH_SPEC: f32 = 720.;
+/// 左栏宽度的**下界** 30。
+///
+/// 真源（macOS）：`macos/Sources/Lithe/Services/Workbench/WorkbenchLayoutStore.swift:4`
+/// 的 `static let minimumSidebarWidth: Double = 30`；应用点是
+/// `macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:2006` 的
+/// `let minimumSidebarWidth = CGFloat(WorkbenchLayout.minimumSidebarWidth)`，
+/// 它同时是 `:2014` 的 `constrained(minimum:)` 与 `:2037` 分栏的 `minimum`。
+///
+/// 改前本侧是 **200**（2026-09-27 维护者口径："再窄就连 `domain` 这样的目录名都放不下"）。
+/// **2026-10-03 维护者裁决**：`U25` 遗留的 4 条全部按真源改 → 改成 30。这是**可见改动**
+/// （能拖的范围从 200 起变到 30 起），依据就是上面两行真源。
+const SIDEBAR_MIN_WIDTH_SPEC: f32 = 30.;
+
+/// 左栏宽度的**静网上界** 520。
+///
+/// 真源（macOS）：`WorkbenchView.swift:2010` 的 `min(520, availableTopWidth - minimumEditorWidth)`；
+/// `WorkbenchLayoutStore.swift:32` 的 `layout.sidebarWidth <= 520` 同样以 520 为合法上界
+/// （越界文档直接判为无效、回落默认布局）。真正的上界按分栏容器宽收敛，见
+/// [`left_sidebar_max_width`]。
+///
+/// 改前本侧是静网 **720**（`pane_span_range` 直接拿它当上界、没有自适应）→ 2026-10-03
+/// 按真源改成 520（与 `pane_span_range` 的自适应一起落地）。
+const SIDEBAR_MAX_WIDTH_SPEC: f32 = 520.;
+
+/// 拖左栏时给**同一横向分栏里编辑区那一半**留的最小宽度 400。
+///
+/// 真源（macOS）：`WorkbenchView.swift:2007` 的 `let minimumEditorWidth: CGFloat = 400`，
+/// 用在 `:2010` 的 `availableTopWidth - minimumEditorWidth`。
+///
+/// 这条回答"400 是什么"：**不是"给右侧栏保留的宽"**，而是"给分栏里 `flexible` 的那半
+/// （编辑区）保留的宽" —— 它的近邻是 `LitheSplitPaneView` 的 `sized:`（侧栏）与
+/// `flexible:`（编辑区），`WorkbenchView.swift:2033-2062`。
+const SIDEBAR_MIN_EDITOR_WIDTH_SPEC: f32 = 400.;
 
 // ---------------------------------------------------------------------------
 // 度量：应用布局一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
@@ -468,37 +496,42 @@ const SIDEBAR_MAX_WIDTH_SPEC: f32 = 720.;
 //
 // rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等：
 //
-// | 规格（Windows 真源） | 值 | 用到的 helper |
+// | 规格（macOS 真源） | 值 | 用到的 helper |
 // | --- | --- | --- |
-// | `sidebarWidth: 320`（`features/settings/config/default-settings.ts:138`） | **380**（2026-09-27 改默认值，见下） | `rems(SIDEBAR_WIDTH_SPEC / 16.)` |
+// | `sidebarWidth: 320`（`WorkbenchLayoutStore.swift:21` 的 `WorkbenchLayout(sidebarWidth: 320, …)`） | 320 | `rems(SIDEBAR_WIDTH_SPEC / 16.)` |
 // | `--lithe-workbench-gap: 4px`（`styles/theme.css:125`） | 4 | `gap_1()` / `pr_1()` / `h_1()` |
-// | 底部工具窗高 240（真源 320，`bottom-pane/bottom-pane.tsx:47`；2026-09-27 收窄） | 240 | `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)` |
+// | 底部工具窗高 **260**（真源**最小高**，`WorkbenchView.swift:2019` 的 `minimumGitPaneHeight`） | 260 | `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)` |
 // | 区域占位块内边距 8 | 8 | `p_2()` |
 // | 占位块字号 13（`--ui-text-chrome`） | 13 | `text_sm()`（14px，见下） |
 //
-// **左侧栏 320 → 380（2026-09-27，维护者口径「这个默认修改为 380 的」）**：320 是照 Lithe 自己的
-// Windows 前端搬来的值，在 1920 宽的窗口里只占 19.8%，连本项目自己的路径
-// `D:\developmentProjects\rust\Lithe-IDEA` 都放不下、项目名被截断成 `Lithe-IDEA…`。
-// 380 是本轮**有意偏离 Windows 规格**的一处，理由与截图证据见 `lithe-gpui/docs/ui-mockup-idea.md`。
+// **左侧栏默认宽 320**：2026-09-27 一度改到 380，同日后按维护者口径
+// 「workspace.rs 我还是改为 320 了」回退 —— 320 也正是 macOS 真源的默认
+// （`WorkbenchLayoutStore.swift:21`），见 [`SIDEBAR_WIDTH_SPEC`]。
 //
 // 字号：13 不在 gpui 的档位（`text_xs()`=12 / `text_sm()`=14）上，按《编码指南》用
 // `text_sm()`（14px）——13 → 14 是经维护者确认的**有意**视觉改动，不是等价换算。
 
-/// 右侧工具窗宽度 400。真源 `default-settings.ts:139`（`rightToolWindowWidth: 400`），
-/// 取值区间 140–600（`features/settings/lib/settings-normalization.ts:114-115`）。
+/// 右侧工具窗的**默认宽度 360**（真源 `WorkbenchLayoutStore.swift:5` 的
+/// `static let defaultMavenPaneWidth: Double = 360`）。
 ///
-/// ⚠️ **这条出处已作废**（`windows/tauri/**` 是已删除的 Windows 前端，`develop-lithe` 明令
-/// 不许再引用），但**默认值不改**：macOS 真源是 360（`macos/Sources/Lithe/Services/Workbench/
-/// WorkbenchLayoutStore.swift:5` 的 `defaultMavenPaneWidth = 360`），改 400 → 360 是可见的
-/// 观感改动，属维护者决策、不在"补拖拽 + 持久化"这一批里。本轮只用真源定**上下界**
-/// （[`RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC`] / [`RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC`]），默认值留待
-/// 下一批一并裁决。
+/// ⚠️ **它取代的 400 出自已作废的 `windows/tauri`**：400 的原出处是
+/// `features/settings/config/default-settings.ts:139` 的 `rightToolWindowWidth: 400`
+/// （区间 140–600 见 `features/settings/lib/settings-normalization.ts:114-115`），
+/// 而那份 Windows 前端**已从仓库删除**，`develop-lithe` 明令不许再引用它的任何数值。
+/// **2026-10-03 维护者裁决**：既然 400 没有有效出处、真源是 360，就按真源改成 360。
+/// 这是**可见改动**（右工具窗第一次展开时的宽度 400 → 360）。
 ///
-/// ⚠️ **不用 `px(...)`**：400 不在 gpui 的 rem 档位上（档位里 96 → 384、112 → 448，
-/// `gpui-pre-macros-0.3.6/src/styles.rs:1063-1077`），也不能自己发明一个 `w_100()`。
+/// ⚠️ **默认值与持久化值的关系**：这个常量只在**没有持久化值**时生效 ——
+/// `right_tool_window_width` 的初值取它，而 [`ShellWorkspace::restore_session`] 只在
+/// 会话文档里 `rightPaneWidth` 为 `Some` 时才覆盖（`Option<f32>`，缺键 = `None` =
+/// 保留外壳默认值，语义见 `crates/shared/src/workspace_config/session.rs:117-125`）。
+/// 所以**用户已经存过的宽度不会被 360 覆盖**。
+///
+/// ⚠️ **不用 `px(...)`**：360 不在 gpui 的 rem 档位上（档位里 88 → 352、96 → 384，
+/// `gpui-pre-macros-0.3.6/src/styles.rs:1063-1077`），也不能自己发明一个 `w_90()`。
 /// 按《编码指南》"档位外的值用 helper 底层的 `rems(P / 16.)`"写成 rem：基准 16px 时
-/// `rems(400. / 16.)` 与 `px(400.)` 逐像素相等（25rem × 16 = 400），但会随主题字号缩放。
-const RIGHT_TOOL_WINDOW_WIDTH_SPEC: f32 = 400.;
+/// `rems(360. / 16.)` 与 `px(360.)` 逐像素相等（22.5rem × 16 = 360），但会随主题字号缩放。
+const RIGHT_TOOL_WINDOW_WIDTH_SPEC: f32 = 360.;
 
 /// 右侧工具窗的**下界** 300（真源 `WorkbenchLayoutStore.swift:6` 的
 /// `minimumMavenPaneWidth = 300`）。
@@ -538,29 +571,34 @@ const BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC: f32 = 220.;
 // 真源仍是 `rounded-xl`；要恢复圆角，先让岛的底色与外层不同（真源那层是 `lithe-glass-island`），
 // 否则回来还是同一段弧。
 
-/// 底部工具窗（终端 / Git 提交记录 / 占位）的高度 **240**。
+/// 底部工具窗（终端 / Git 提交记录 / 占位）的**默认高度 260**。
 ///
-/// ## 240 的来历（以及 2026-09-30 为什么**不**跟着标题栏改回去）
+/// ## 2026-10-03 维护者裁决：240 → 260（按真源；**视觉无变化**）
+///
+/// 这个值现在**等于真源的最小高**：`macos/.../Views/Workbench/WorkbenchView.swift:2019`
+/// 的 `let minimumGitPaneHeight: CGFloat = 260`（同处 `:2018` 的 `minimumTopPaneHeight = 220`
+/// 是"上面那片"的下界，两份一起定义可拖区间）。维护者裁决 `U25` 遗留的 4 条全部按真源改，
+/// 于是默认值取真源的最小值 —— 即"默认就停在它最小能到的位置"，不再自造第三个数字。
+///
+/// ⚠️ **为什么这条是视觉无变化的**：`BOTTOM_PANE_HEIGHT_SPEC` 与
+/// [`BOTTOM_PANE_MIN_HEIGHT_SPEC`] 是**同一个值**（260），而后者早就被
+/// [`pane_span_range`] 当作下界、在**恢复会话**与**每一帧 render** 上各钳一次 ——
+/// 改前那个 240 一次都没能画出来过（首帧就被钳到 260）。改后 clamp 在默认值上
+/// **恒等**（`clamp_pane_span(260, 260, …) == 260`，有单测钉住），所以"只剩一个真源值
+/// 在起作用"：240 那条墓碑到此为止。
+///
+/// ## 240 的来历（墓碑，已作废）
 ///
 /// 2026-09-27 标题栏按效果图口径改成两行 30 + 38 = 68（比单行 40 净增 28），窗口总高不变的
-/// 前提下从底部工具窗让出 320 → 240。
+/// 前提下从底部工具窗让出 320 → 240。那 28px 的挤压前提已随标题栏 2026-09-30 回到单行 40
+/// 而消失；2026-10-03 维护者裁决按真源改到 260，**240 不再有任何作用**（只在
+/// `U25` 的报告与本节留下这段记录）。原先留下的"暂不还给底部工具窗"那段话因此删除 ——
+/// 它已经是自相矛盾的墓碑：既说"没有判据可抄"，又说"维持 240"。
 ///
-/// **2026-09-30 标题栏已回到单行 40**（真源 macOS `LitheTheme.swift:478`，见 `crate::title_bar`），
-/// 所以那 28px 的挤压理由消失了 —— 但那 28px **不还给**底部工具窗，理由有两条：
-///
-/// 1. 320 那个值来自已作废的 `windows/tauri` 前端，**不是** macOS 规格；
-/// 2. macOS 侧底部工具窗是**可拖的分割**（`WorkbenchView.swift:2018-2029`：最小 220 /
-///    260，默认 `max(255, 高度 × 0.40)`），没有一个"固定 240 或 320"的判据可抄；
-///    `U25` 的落点是"可拖 + 宽度持久化"，那才是接上真源行为的正确路径（本轮未做，见交付报告）。
-///
-/// 所以这 28px 暂时归**中央列**（内容更宽裕），底部工具窗维持 240。
-/// ⚠️ 已知与真源的差距：macOS 的最小高是 260（`WorkbenchView.swift:2019` 的
-/// `minimumGitPaneHeight`），本侧 240 比它小 20。
-///
-/// ⚠️ 240 不在 gpui 的 4px 档位上（档位里 56 → 224、64 → 256，没有 60，
-/// `gpui-pre-macros-0.3.7/src/styles.rs`），所以不用 `h_60()`（它不存在），
-/// 按《编码指南》写 `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)`（16px 基准下 = 240，且随字号缩放）。
-const BOTTOM_PANE_HEIGHT_SPEC: f32 = 240.;
+/// ⚠️ 260 不在 gpui 的 4px 档位上（档位里 56 → 224、64 → 256，没有 65，
+/// `gpui-pre-macros-0.3.7/src/styles.rs`），所以不用 `h_65()`（它不存在），
+/// 按《编码指南》写 `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)`（16px 基准下 = 260，且随字号缩放）。
+const BOTTOM_PANE_HEIGHT_SPEC: f32 = 260.;
 
 /// 底部工具窗当前显示哪一个内容。
 ///
@@ -943,6 +981,9 @@ pub struct ShellWorkspace {
     /// 左侧栏面板宽度（规格像素，见 [`SIDEBAR_WIDTH_SPEC`] 与 [`SIDEBAR_MIN_WIDTH_SPEC`] /
     /// [`SIDEBAR_MAX_WIDTH_SPEC`]）。
     ///
+    /// 允许区间 = `pane_span_range`：下界 30、上界 `min(520, 分栏容器宽 − 400)`
+    /// （真源 `WorkbenchLayoutStore.swift:4` / `WorkbenchView.swift:2008-2011`）。
+    ///
     /// 运行期可改：拖面板右边界那条分隔条（[`drag_handle`] 开始会话、[`drag_tracker`] 写入）。
     ///
     /// **持久化**：会话文档的 `leftPaneWidth`（写见 [`ShellWorkspace::session_ui_state`]，
@@ -952,13 +993,15 @@ pub struct ShellWorkspace {
     left_sidebar_width: f32,
     /// **右侧**工具窗宽度（规格像素）。
     ///
-    /// 默认 [`RIGHT_TOOL_WINDOW_WIDTH_SPEC`]；拖它的**左**边界那条分隔条可改（右栏是被右活动栏
-    /// 顶住的定宽面板，它的可变边界在前缘）。允许区间见 [`right_tool_window_max_width`] ——
+    /// 默认 [`RIGHT_TOOL_WINDOW_WIDTH_SPEC`]（**360**，真源 `WorkbenchLayoutStore.swift:5`；
+    /// 改前的 400 出自已作废的 `windows/tauri`）；拖它的**左**边界那条分隔条可改（右栏是被右
+    /// 活动栏顶住的定宽面板，它的可变边界在前缘）。允许区间见 [`right_tool_window_max_width`] ——
     /// 真源给的是最小 300 / 最大 760（`WorkbenchLayout.minimumMavenPaneWidth` /
     /// `maximumMavenPaneWidth`），并且**按可用宽度收敛**（真源 `WorkbenchRightToolSplitView`
     /// 的 `minimumWorkspaceWidth = 640`）。
     ///
-    /// 持久化：会话文档的 `rightPaneWidth`。
+    /// 持久化：会话文档的 `rightPaneWidth`（`Option<f32>`，缺键 = 保留上面这个默认值；
+    /// 判据见 [`pane_span_on_restore`]）。
     right_tool_window_width: f32,
     /// **底部**工具窗高度（规格像素）。
     ///
@@ -967,6 +1010,35 @@ pub struct ShellWorkspace {
     ///
     /// 持久化：会话文档的 `bottomPaneHeight`。
     bottom_pane_height: f32,
+    /// **分栏容器**的**实测尺寸**（逻辑 px，上一帧 prepaint 量的；`None` = 还没量到）。
+    ///
+    /// ## 为什么需要它（第 4 条遗留：上界用错了容器）
+    ///
+    /// 真源算上界用的是**分栏容器**的实测尺寸：`WorkbenchView.swift:1999` 的 `GeometryReader`
+    /// 给出 `geometry.size.width` / `.height`，`:2000-2005` 与 `:2022-2025` 再减掉内衬 / 间距。
+    /// 本侧原来拿 `window.viewport_size()`（**窗口内框**）代替容器 —— 那个盒子把标题栏、
+    /// 项目标签条、状态栏和两条活动栏全算进去了，于是上界一律**偏松**（实测差额见
+    /// [`Self::pane_span_range`]）。
+    ///
+    /// ## 为什么是"上一帧"（`on_prepaint` 而不是 render 里现读）
+    ///
+    /// gpui 的布局发生在 `render` **之后**，`render` 里没有任何 API 能读到某个子容器的
+    /// 已布局尺寸。本仓既有的做法是 `on_prepaint`（`project_menu.rs:1312` / `menu_bar.rs:2617`
+    /// 量触发器盒子同一套）：prepaint 闭包拿得到当帧 `Bounds<Pixels>`，存进 `Rc<Cell>` 供
+    /// **下一帧** render 读。量的是 `render` 里那个 **`gap_0` 内层组**
+    /// （`h_flex().flex_1().h_full().min_w_0()`，装 [左侧面板, 中央列]）——它正是真源那个
+    /// `GeometryReader` 的对应物：宽 = 窗口内宽减两条活动栏 / 右工具窗 / 各处 4px 间距，
+    /// 高 = 窗口内高减标题栏 / 标签条 / 状态栏。
+    ///
+    /// ⚠️ **只读、不改状态、不 notify**：prepaint 闭包里只写这个 `Rc<Cell>`（与
+    /// `project_menu` 同形），仅**第一次**量到时补一帧（`window.request_animation_frame()`，
+    /// 否则首帧没有可用的上界）。
+    ///
+    /// ⚠️ **右工具窗不用它**：真源给右工具窗的容器是 `WorkbenchRightToolSplitView` 的
+    /// `geometry`（= 窗口减两条活动栏，**包含**右工具窗自己），而本侧的两条活动栏是同一行
+    /// 的兄弟、不是那一层的外框 —— 那个容器在本侧的树里**没有对应元素**，所以右栏仍按
+    /// 窗口内宽近似（理由与差额写在 [`right_tool_window_max_width`]）。
+    split_container: Rc<Cell<Option<Size<Pixels>>>>,
     /// **正在被拖的面板** + 这次会话的锚点；`None` = 没在拖。
     ///
     /// 三块可拖面板共用**这一个**槽：同一时刻只有一个指针，物理上不可能同时拖两块，于是
@@ -1829,6 +1901,9 @@ impl ShellWorkspace {
             // 会按当时的窗口尺寸钳过之后覆盖掉（见那里的 `S1_SESSION_SIZES` 诊断）。
             right_tool_window_width: RIGHT_TOOL_WINDOW_WIDTH_SPEC,
             bottom_pane_height: BOTTOM_PANE_HEIGHT_SPEC,
+            // 分栏容器尺寸：构造期还没有任何一帧，`None` = 上界先按窗口内尺寸近似
+            // （与"窗口尺寸不可知时给静网上界"同一条口径，见 `pane_span_range`）。
+            split_container: Rc::new(Cell::new(None)),
             pane_resize_drag: None,
             // 右工具窗默认**隐藏**（`panel-slice.ts:28` 的 `isRightSidebarVisible: false`），
             // 视图字段的默认值理由见字段文档。
@@ -1982,17 +2057,18 @@ impl ShellWorkspace {
         // 三块面板的尺寸：**缺字段 = 保留外壳默认值**（旧 `session.local.json` 没有这三个键；
         // 文档层刻意不做上下界判定，钳制归这里）。存了值就按**当时**的窗口尺寸钳一遍 ——
         // 在一个 1920 宽的窗口里拖到 760 的右栏，换到 1000 宽的窗口必须收敛，不能把中央列压没。
+        //
+        // ⚠️ **默认值只在"没有持久化值"时生效**：判据是 `Option::is_some`（提取成
+        // [`pane_span_on_restore`]，有单测钉住 —— 右栏默认 360 不得覆盖用户存过的宽度）。
         let viewport = window.viewport_size();
         for (pane, stored) in [
             (ResizablePane::LeftSidebar, session.left_pane_width),
             (ResizablePane::RightToolWindow, session.right_pane_width),
             (ResizablePane::BottomPane, session.bottom_pane_height),
         ] {
-            let Some(stored) = stored else {
-                continue;
-            };
             let (min, max) = self.pane_span_range(pane, viewport);
-            self.set_pane_span(pane, clamp_pane_span(stored, min, max));
+            let resolved = pane_span_on_restore(stored, self.pane_span(pane), min, max);
+            self.set_pane_span(pane, resolved);
         }
         // 尺寸恢复成一行可 grep 的诊断（拖动交互本身没法确定性单测，最终值必须能被机器看到）。
         println!(
@@ -2244,24 +2320,45 @@ impl ShellWorkspace {
 
     /// 这块面板在给定窗口尺寸下允许的长度区间 `(min, max)`。
     ///
-    /// 左栏是**静网**区间 `SIDEBAR_MIN_WIDTH_SPEC`…`SIDEBAR_MAX_WIDTH_SPEC`（200…720）。
-    /// ⚠️ **与真源有出入，本轮没改**：macOS 真源是下界 30（`WorkbenchLayoutStore.swift:31` 的
-    /// `sidebarWidth >= 30`）与上界 `min(520, available − 400)`（`WorkbenchView.swift:2008-2011`
-    /// 的 `minimumEditorWidth = 400`）。200/720 是 2026-09-27 维护者口径（"再窄就连 `domain`
-    /// 这样的目录名都放不下"），改它属观感决策、不在"补拖拽 + 持久化"这一批里。
+    /// ## 左栏（2026-10-03 按真源改）
     ///
-    /// 右栏与底部窗的上界按可用宽度/高度收敛（真源给的就是这个形状，见
-    /// [`right_tool_window_max_width`] / [`bottom_pane_max_height`]）。
+    /// 下界 30（`WorkbenchLayoutStore.swift:4` 的 `minimumSidebarWidth`）、上界
+    /// `min(520, 分栏容器宽 − 400)`（`WorkbenchView.swift:2008-2011`，公式见
+    /// [`left_sidebar_max_width`]）。改前是静网 200…720（2026-09-27 维护者口径），
+    /// **这条会改可见行为**：能拖的范围从 200 起变到 30 起、上限也会随窗口宽收敛。
+    ///
+    /// ## 容器尺寸的取法（第 4 条遗留）
+    ///
+    /// 左右两个轴的上界都应该相对**分栏容器**，而不是 `window.viewport_size()`（窗口内框）。
+    /// 本侧能拿到容器的只有一处：`render` 里量到的 [`ShellWorkspace::split_container`]
+    /// （上一帧 prepaint 的实测尺寸），它是真源那个 `GeometryReader` 的对应物。
+    ///
+    /// - **左栏**用它的 `width`：真源同一个 `availableTopWidth`（`WorkbenchView.swift:2000-2010`）；
+    /// - **底部窗**用它的 `height`：真源同一个 `geometry.size.height`（`:2022-2025`）；
+    /// - **右工具窗**仍只能用窗口内宽，**是近似**：真源给它的容器
+    ///   （`WorkbenchRightToolSplitView` 的 `geometry` = 窗口减两条活动栏、**包含**右工具窗）
+    ///   在本侧的树里没有对应元素（两条活动栏是本侧那一行的**兄弟**，不是外框），
+    ///   而若改用 `split_container.width` 会**重复扣掉右工具窗自己**。差额与后果写在
+    ///   [`right_tool_window_max_width`]。
+    ///
+    /// ⚠️ `viewport` 仍是**兜底输入**：容器还没量到（构造期 / 恢复会话 / 首帧）时回落到它，
+    /// 与"窗口尺寸不可知时给静网上界"同一条口径 —— 宁可那几帧不收敛，也不能按 0 把用户
+    /// 存下来的尺寸钳到下界。
     fn pane_span_range(&self, pane: ResizablePane, viewport: Size<Pixels>) -> (f32, f32) {
+        // 容器实测尺寸（逻辑 px）；`None` = 还没 prepaint 过 ⇒ 回落窗口内尺寸。
+        let container = self.split_container.get().unwrap_or(viewport);
         match pane {
-            ResizablePane::LeftSidebar => (SIDEBAR_MIN_WIDTH_SPEC, SIDEBAR_MAX_WIDTH_SPEC),
+            ResizablePane::LeftSidebar => (
+                SIDEBAR_MIN_WIDTH_SPEC,
+                left_sidebar_max_width(f32::from(container.width)),
+            ),
             ResizablePane::RightToolWindow => (
                 RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
                 right_tool_window_max_width(f32::from(viewport.width)),
             ),
             ResizablePane::BottomPane => (
                 BOTTOM_PANE_MIN_HEIGHT_SPEC,
-                bottom_pane_max_height(f32::from(viewport.height)),
+                bottom_pane_max_height(f32::from(container.height)),
             ),
         }
     }
@@ -4694,13 +4791,20 @@ impl Render for ShellWorkspace {
         // 与面板可见性（点活动栏当前高亮项只收它）。活动栏画不画只看前者。
         let left_sidebar_visible = self.left_sidebar_visible;
         let left_pane_visible = self.left_pane_visible;
-        // 三块面板的长度是**变量**（拖拽会改），闭包按值捕获，所以先按**这一帧**的窗口尺寸算出来。
+        // 三块面板的长度是**变量**（拖拽会改），闭包按值捕获，所以先按**这一帧**的尺寸算出来。
         //
         // 为什么在 render 里再钳一次：拖拽中与恢复时都已经钳过，但**窗口本身会变窄**（用户拖窗口
-        // 边缘、换显示器）。render 是唯一"每帧都会跑"的地方，上界跟着当帧窗口走，于是
+        // 边缘、换显示器）。render 是唯一"每帧都会跑"的地方，上界跟着当帧尺寸走，于是
         // "在一个宽屏里拖到 760 的右栏、窗口缩到 1000 之后仍然不会把中央列压没"是结构性的，
         // 不需要任何 resize 回调。这里只读 + 算局部变量，**不改状态、不 notify、不起任务**。
+        //
+        // ⚠️ 上界的输入是 `pane_span_range`：左栏与底部窗读**分栏容器**的实测尺寸
+        // （[`ShellWorkspace::split_container`]，上一帧 prepaint 量的；还没量到时回落
+        // `viewport`），右栏只能读窗口内尺寸（理由见 `right_tool_window_max_width`）。
         let viewport = window.viewport_size();
+        // 分栏容器实测点的缓存句柄（理由与量法见 [`ShellWorkspace::split_container`] 与
+        // [`measure_split_container`]）：`on_prepaint` 闭包要 `'static`，所以克隆 `Rc` 再捕获。
+        let split_container = self.split_container.clone();
         let left_sidebar_width = {
             let (min, max) = self.pane_span_range(ResizablePane::LeftSidebar, viewport);
             clamp_pane_span(self.left_sidebar_width, min, max)
@@ -4829,10 +4933,25 @@ impl Render for ShellWorkspace {
                     // 修补"）。组外的 `gap_1()`（左活动栏 ↔ 侧栏、中央列 ↔ 右工具窗与右活动栏）
                     // 一概不动 —— 那几处 4px 是另外的观感，不该被这次改动连坐。
                     .child(
+                        // ⚠️ **这一格就是"分栏容器"的实测点**（第 4 条遗留）：`.id()` +
+                        // `.on_prepaint` 把它的当帧盒子写进 [`ShellWorkspace::split_container`]，
+                        // 供**下一帧**的上界计算读（`pane_span_range`）。它是真源
+                        // `WorkbenchView.swift:1999` 那个 `GeometryReader` 的对应物：装
+                        // [左侧面板, 中央列]，宽 = 窗口内宽减两条活动栏 / 右工具窗 / 各处间距，
+                        // 高 = 窗口内高减标题栏 / 标签条 / 状态栏。
+                        // 只写 `Rc<Cell>`、不改实体状态、不 notify（仅首次量到补一帧），
+                        // 见 [`measure_split_container`]。
                         h_flex()
+                            .id(SPLIT_CONTAINER_ID)
                             .flex_1()
                             .h_full()
                             .min_w_0()
+                            .on_prepaint({
+                                let container = split_container;
+                                move |bounds, window, _cx| {
+                                    measure_split_container(&container, bounds, window);
+                                }
+                            })
                             // 组内**没有** gap：相邻区域的边界线由**唯一所有者**画
                             // （`design-guides.md:196`「Hairline 由边界所有者绘制，相邻区域
                             // 不能各画一次同一条分隔线」）——那条线归中央列
@@ -5131,6 +5250,23 @@ fn clamp_pane_span(value: f32, min: f32, max: f32) -> f32 {
     value.clamp(min, max.max(min))
 }
 
+/// 恢复会话时这块面板该取哪个长度：**有持久化值就用它**（钳到区间内），
+/// **没有就保留外壳默认值**（`current`）。
+///
+/// 抽成纯函数是为了把"默认值不得覆盖用户存过的值"这条语义变成机器判据（见单测）：
+/// 三个尺寸字段在会话文档里都是 `Option<f32>`（`crates/shared/src/workspace_config/session.rs`
+/// 的 `left_pane_width` / `right_pane_width` / `bottom_pane_height`，缺键 = `None`），
+/// 文档层刻意不判上下界，`None` 与"越界值"的处置都归这里。
+///
+/// ⚠️ 这条与右栏默认值 400 → 360 的改动直接相关：360 是**初值**，用户一旦拖过、会话里存了
+/// `rightPaneWidth`，下次启动读到的就是存过的值（本函数 `Some` 分支），不会被 360 顶掉。
+fn pane_span_on_restore(stored: Option<f32>, current: f32, min: f32, max: f32) -> f32 {
+    match stored {
+        Some(value) => clamp_pane_span(value, min, max),
+        None => current,
+    }
+}
+
 /// 把一次拖动换算成新的面板长度：`起点长 + 方向 × 位移`，再钳到 `[min, max]`。
 ///
 /// 抽成纯函数是为了**能单测**（本 crate 拿不到 `TestAppContext`，起不了窗口，所以拖动链路里
@@ -5147,16 +5283,92 @@ fn clamped_drag_span(
     clamp_pane_span(start + direction * (current - press), min, max)
 }
 
+/// 分栏容器实测点的 `ElementId`（业务身份：这个窗口里只有一处分栏容器）。
+const SPLIT_CONTAINER_ID: &str = "lithe-workspace-split-container";
+
+/// 把当帧量到的分栏容器盒子写进缓存（`on_prepaint` 的回调体）。
+///
+/// 只做两件事：
+///
+/// 1. `Rc<Cell>` 覆盖成当帧的 `size`。**只改这个缓存、不改任何实体状态、不 notify** ——
+///    与 `project_menu.rs:1312` / `menu_bar.rs:2617` 量触发器盒子同一套写法（那两处也是
+///    "prepaint 写 `Rc<Cell>`，下一帧 render 读"）。
+/// 2. **第一次**量到时补一帧（`window.request_animation_frame()`）：上界读的是**上一帧**
+///    的值，不补这一帧的话首帧没有可用容器尺寸、只能按兜底输入（窗口内尺寸）算一次。
+///
+/// 值真的变了才打一行 `S1_SPLIT_CONTAINER` 到 **stderr**（真机核对"容器宽到底是多少"
+/// 的唯一证据，且不逐帧刷屏；`eprintln!` 是本仓的诊断通路）。
+fn measure_split_container(
+    cache: &Rc<Cell<Option<Size<Pixels>>>>,
+    bounds: Bounds<Pixels>,
+    window: &mut Window,
+) {
+    let size = bounds.size;
+    let previous = cache.get();
+    cache.set(Some(size));
+    if previous.is_none() {
+        window.request_animation_frame();
+    }
+    if previous != Some(size) {
+        eprintln!(
+            "S1_SPLIT_CONTAINER w={} h={}",
+            f32::from(size.width),
+            f32::from(size.height)
+        );
+    }
+}
+
+/// 左栏在给定**分栏容器宽**下的上界：`max(30, min(520, 容器宽 − 400))`。
+///
+/// ## 出处（真源 macOS，逐句对得上）
+///
+/// - `macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:2000-2005`：
+///   `let availableTopWidth = max(0, geometry.size.width - (paneInset * 2) - paneSpacing)`
+///   —— 本侧传进来的 `available_width` 就是这一项（`paneInset = 0`，见 `WorkbenchView.swift:23`；
+///   容器实测宽见 [`ShellWorkspace::split_container`]）。
+/// - `:2006`：`let minimumSidebarWidth = CGFloat(WorkbenchLayout.minimumSidebarWidth)` = 30。
+/// - `:2007`：`let minimumEditorWidth: CGFloat = 400`
+///   （[`SIDEBAR_MIN_EDITOR_WIDTH_SPEC`]）。
+/// - `:2008-2011`：
+///   `let maximumSidebarWidth = max(minimumSidebarWidth, min(520, availableTopWidth - minimumEditorWidth))`
+///   —— 本函数**逐字**照抄这个形状（`.max(SIDEBAR_MIN_WIDTH_SPEC)` 就是那个外层的 `max`，
+///   所以"容器比 400 还窄"时返回下界 30 而不是负数）。
+///
+/// ⚠️ **容器尺寸还不可知时返回静网上界 520**（`available_width` 非有限或 `<= 0`：
+/// 构造期、恢复会话、以及第一帧还没 prepaint 过）。那几帧宁可"不收敛"，也不能按
+/// "容器只有 0 宽"把用户存下来的宽度钳到下界 30 —— 后者会让存过的尺寸在启动瞬间被吃掉。
+/// 下一帧 `render` 会按真实容器宽收敛。
+///
+/// ⚠️ **与真源的已知差额**：真源的 `geometry` 是分栏容器的**精确**宽度；本侧量的是
+/// "装 [左侧面板, 中央列] 的那个 `gap_0` 组"的 prepaint 盒（`Bounds<Pixels>`），
+/// 它不含自己的 padding / border，所以等于该组的布局宽 —— 但本侧各处 `gap_1()` 的 4px
+/// 在真源里是 0（真源只有一条 `SplitHandleView.thickness`），因此仍差几个像素。
+/// 差额方向是"本侧容器略小"，即上界比真源**略紧**几像素，不是更松。
+fn left_sidebar_max_width(available_width: f32) -> f32 {
+    if !available_width.is_finite() || available_width <= 0. {
+        return SIDEBAR_MAX_WIDTH_SPEC;
+    }
+    (available_width - SIDEBAR_MIN_EDITOR_WIDTH_SPEC)
+        .min(SIDEBAR_MAX_WIDTH_SPEC)
+        .max(SIDEBAR_MIN_WIDTH_SPEC)
+}
+
 /// 右侧工具窗在给定**可用宽度**下的上界：`min(760, 可用宽 − 640)`，且不低过下界。
 ///
 /// 形状照真源 `WorkbenchRightToolSplitView.swift:7-16`（`maximumWidth(in:)` =
 /// `min(maximumMavenPaneWidth, availableWidth − minimumWorkspaceWidth − 热区厚)`，
 /// `minimumWidth(in:)` = `min(300, maximumWidth)`）—— 这就是"窗口窄了要收敛"那条规则。
 ///
-/// ⚠️ **`available` 的取法是近似**：本侧量的是**窗口内宽度**（`window.viewport_size()`），
-/// 真源量的是分栏容器（还要减掉左右活动栏与间距）。差那几十像素的后果是这里算出的上界比真源
-/// **略松**（绝不会更紧、也不会溢出：中央列至少还剩 640 − 活动栏宽）。要精确得把分栏容器的
-/// 实测宽度接出来，属另一批。
+/// ⚠️ **`available` 仍是近似（2026-10-03 复核后保留）**：本侧量的是**窗口内宽度**
+/// （`window.viewport_size()`），真源量的是 `WorkbenchRightToolSplitView` 的 `geometry`
+/// （= 窗口内宽 − 左活动栏 − 右活动栏）。**换不成容器**：那个容器在本侧的树里没有对应元素
+/// —— 真源把两条活动栏放在工作区容器**外面**做兄弟（`WorkbenchView.swift:257-264` 的
+/// `HStack { activityBar; workspaceArea; pluginActivityBar }`），本侧两条活动栏是**同一行**
+/// 的兄弟（`render` 里那个 `h_flex`）。而 `ShellWorkspace::split_container` 那一格
+/// **已经**扣掉了右工具窗自己，拿它算会重复扣。
+/// 差额 = 两条活动栏 + 本侧 4px 间距 ≈ 88（左 42 + 右 42 + 4，`activity_bar.rs:310-311`），
+/// 方向是这里比真源**略松**；不会溢出：中央列至少还剩 640 − 活动栏宽。
+/// 要精确就得把两条活动栏的实测宽也量出来（本侧活动栏宽度正在另立一轮任务，故不在此接）。
 ///
 /// ⚠️ 窗口尺寸还不可知时（`viewport_size()` 在极端情况下会给 0，例如构造期还没量过一帧）
 /// 返回**静网上界**：那几帧宁可"不收敛"，也不能把恢复出来的宽度按"窗口只有 0 宽"钳到下界 ——
@@ -5174,7 +5386,9 @@ fn right_tool_window_max_width(available_width: f32) -> f32 {
 ///
 /// 形状照真源 `WorkbenchView.swift:2018-2025`（`maximumTopPaneHeight` =
 /// `height − 间距 − minimumGitPaneHeight`，反过来读就是"底部窗最多占到上面只剩 220"）。
-/// ⚠️ `available` 同样取窗口内高度，是近似（理由见 [`right_tool_window_max_width`]）；
+/// `available` 现在来自 [`ShellWorkspace::split_container`] 的 `height`（真源同一个
+/// `geometry.size.height`）—— 改前取窗口内高，那会把标题栏 / 标签条 / 状态栏一起算进去，
+/// 比真源松；容器还没量到时才回落窗口内高。
 /// 尺寸还不可知时返回 `INFINITY`（= 这一帧不设上界，同样为了不误吃恢复出来的值）。
 fn bottom_pane_max_height(available_height: f32) -> f32 {
     if !available_height.is_finite() || available_height <= 0. {
@@ -5333,11 +5547,12 @@ fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
         .child(content)
 }
 
-/// 底部工具窗外框：高度由调用方给（默认 [`BOTTOM_PANE_HEIGHT_SPEC`] = 240，可拖改），
+/// 底部工具窗外框：高度由调用方给（默认 [`BOTTOM_PANE_HEIGHT_SPEC`] = 260，可拖改），
 /// **上边界**是一条真正的垂直轴分隔条（[`drag_handle`] + [`HandleEdge::Leading`]）。
 ///
-/// ⚠️ **2026-09-27：标题栏改两行后从 320 收到 240，保持总高不变**（40 → 30 + 38 净增 28），
-/// 理由与"为什么和标题栏那两个行高常量是一对"写在 [`BOTTOM_PANE_HEIGHT_SPEC`] 上。
+/// ⚠️ **2026-10-03：默认高按真源改成 260**（= 真源最小高，`WorkbenchView.swift:2019`），
+/// 改前那个 240 从来没画出来过（首帧就被下界 260 钳掉）—— 理由与证据写在
+/// [`BOTTOM_PANE_HEIGHT_SPEC`] 上。
 ///
 /// ⚠️ **2026-10-01 接上拖拽**：改前这里是一条"死"热区 —— 一个 `div().w_full().h_1()`，
 /// 画了一条 4px 的带子但**没有会话开关、没有跟踪器**，所以拖不动（`lithe-gpui/HANDOFF.md` §4
@@ -5355,7 +5570,7 @@ fn bottom_pane(
     cx: &App,
 ) -> impl IntoElement {
     // 面板本体：`relative()` 是手柄与跟踪器的定位上下文（两者都绝对定位、**不占布局**）。
-    // 高度走 `rems(P / 16.)`：240（以及拖出来的任意值）不在 4px 档位上，
+    // 高度走 `rems(P / 16.)`：260（以及拖出来的任意值）不在 4px 档位上，
     // 见 [`BOTTOM_PANE_HEIGHT_SPEC`]。
     let body = div()
         .relative()
@@ -5758,14 +5973,16 @@ fn register_java_toolchain(root: &Path, cx: &App) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionFlags, Axis, BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC, BOTTOM_PANE_MIN_HEIGHT_SPEC,
-        COMMAND_ORDER, CommandId, HandleEdge, OpenDestination, Overrides, ProjectOpenDecision,
-        RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC, RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
-        RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC, ResizablePane, RightScanState,
-        RightToolWindowView, SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_WIDTH_SPEC, ToolchainPaths,
-        bottom_pane_max_height, clamp_pane_span, clamped_drag_span, left_activity_index,
-        resolve_overrides, resolve_project_open_destination, right_scan_should_notify,
-        right_tool_window_max_width, visible_commands,
+        ActionFlags, Axis, BOTTOM_PANE_HEIGHT_SPEC, BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC,
+        BOTTOM_PANE_MIN_HEIGHT_SPEC, COMMAND_ORDER, CommandId, HandleEdge, OpenDestination,
+        Overrides, ProjectOpenDecision, RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC,
+        RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC, RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC,
+        RIGHT_TOOL_WINDOW_WIDTH_SPEC, ResizablePane, RightScanState, RightToolWindowView,
+        SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_EDITOR_WIDTH_SPEC, SIDEBAR_MIN_WIDTH_SPEC,
+        ToolchainPaths, bottom_pane_max_height, clamp_pane_span, clamped_drag_span,
+        left_activity_index, left_sidebar_max_width, pane_span_on_restore, resolve_overrides,
+        resolve_project_open_destination, right_scan_should_notify, right_tool_window_max_width,
+        visible_commands,
     };
 
     /// 侧栏拖动改宽的算术：起点 + 位移，并钳在允许范围内。
@@ -5778,15 +5995,17 @@ mod tests {
     /// 三条判据：**向右拖变宽**、**向左拖变窄**、**两端都被钳住**。
     #[test]
     fn drag_width_follows_the_pointer_and_stays_in_range() {
-        // 左栏走 [`clamped_drag_span`]：手柄在**后缘**（`drag_direction = +1`），区间是静网
-        // 的 200…720（既有行为，理由与真源偏差见 `pane_span_range`）。
+        // 左栏走 [`clamped_drag_span`]：手柄在**后缘**（`drag_direction = +1`），区间是
+        // **真源**的下界 30 与上界 `min(520, 容器宽 − 400)`（`pane_span_range`；这里取一个
+        // 1280 宽的容器 ⇒ 上界 = min(520, 880) = 520）。
+        let container_width = 1280.;
         let left = |press: f32, start: f32, current: f32| {
             clamped_drag_span(
                 press,
                 start,
                 current,
                 SIDEBAR_MIN_WIDTH_SPEC,
-                SIDEBAR_MAX_WIDTH_SPEC,
+                left_sidebar_max_width(container_width),
                 ResizablePane::LeftSidebar.drag_direction(),
             )
         };
@@ -5794,12 +6013,121 @@ mod tests {
         assert_eq!(left(100., 320., 200.), 420.);
         // 鼠标左移 100 → 220。
         assert_eq!(left(300., 320., 200.), 220.);
-        // 一路左拖到负无穷也只会停在最小宽。
+        // 一路左拖到负无穷也只会停在最小宽（真源 30）。
         assert_eq!(left(0., 320., -10_000.), SIDEBAR_MIN_WIDTH_SPEC);
-        // 一路右拖也只会停在最大宽。
-        assert_eq!(left(0., 320., 10_000.), SIDEBAR_MAX_WIDTH_SPEC);
+        // 一路右拖也只会停在最大宽（这个容器宽下 = 静网上界 520）。
+        assert_eq!(
+            left(0., 320., 10_000.),
+            left_sidebar_max_width(container_width)
+        );
         // 起点宽本身就是钳过的值：不动鼠标 ⇒ 结果等于起点宽（拖动不会自己漂移）。
         assert_eq!(left(500., 320., 500.), 320.);
+    }
+
+    /// 左栏上界 = 真源 `max(30, min(520, 容器宽 − 400))`（`WorkbenchView.swift:2008-2011`）。
+    ///
+    /// 逐条钉住四个边界（这是第 2 条遗留"按真源改"的机器判据）：
+    ///
+    /// 1. **容器宽刚好等于 400**（= 编辑区保留宽）⇒ `available − 400 = 0` ⇒ 收到下界 30；
+    /// 2. **容器宽小于 400** ⇒ 仍是 30（真源外层那个 `max(minimumSidebarWidth, …)`，不能出现负数）；
+    /// 3. **容器很宽** ⇒ 封顶静网上界 520；
+    /// 4. 中间区间线性 = `容器宽 − 400`。
+    #[test]
+    fn left_pane_max_width_is_the_macos_formula() {
+        assert_eq!(SIDEBAR_MIN_EDITOR_WIDTH_SPEC, 400., "400 本身是真源常量");
+        assert_eq!(
+            SIDEBAR_MIN_WIDTH_SPEC, 30.,
+            "下界 = 真源 minimumSidebarWidth"
+        );
+        assert_eq!(
+            SIDEBAR_MAX_WIDTH_SPEC, 520.,
+            "静网上界 = 真源那个 min(520, …)"
+        );
+
+        // ① 容器宽刚好 = 400：上界收到下界（不是 0，也不是负数）。
+        assert_eq!(left_sidebar_max_width(400.), SIDEBAR_MIN_WIDTH_SPEC);
+        // ② 容器比 400 还窄（真源 max(0, …) 之后仍要保证 min <= max）。
+        assert_eq!(left_sidebar_max_width(400. - 1.), SIDEBAR_MIN_WIDTH_SPEC);
+        assert_eq!(left_sidebar_max_width(30.), SIDEBAR_MIN_WIDTH_SPEC);
+        // ③ 很宽：封顶 520（1920 的窗口也只会给 520，不会给 1520）。
+        assert_eq!(left_sidebar_max_width(1920.), SIDEBAR_MAX_WIDTH_SPEC);
+        assert_eq!(left_sidebar_max_width(10_000.), SIDEBAR_MAX_WIDTH_SPEC);
+        assert_eq!(
+            left_sidebar_max_width(920.),
+            SIDEBAR_MAX_WIDTH_SPEC,
+            "正好封顶"
+        );
+        // ④ 中间区间就是 容器宽 − 400。
+        assert_eq!(left_sidebar_max_width(700.), 300.);
+        assert_eq!(left_sidebar_max_width(919.), 519.);
+        // ⑤ 容器尺寸还不可知（构造期 / 首帧 / 恢复会话）：给静网上界，
+        //    不能按"容器只有 0 宽"把用户存下来的宽度钳到下界。
+        assert_eq!(left_sidebar_max_width(0.), SIDEBAR_MAX_WIDTH_SPEC);
+        assert_eq!(left_sidebar_max_width(-1.), SIDEBAR_MAX_WIDTH_SPEC);
+        assert_eq!(left_sidebar_max_width(f32::NAN), SIDEBAR_MAX_WIDTH_SPEC);
+        assert_eq!(
+            left_sidebar_max_width(f32::INFINITY),
+            SIDEBAR_MAX_WIDTH_SPEC
+        );
+    }
+
+    /// 第 1 条遗留：底部工具窗的常量与 clamp **自洽**，所以"改常量"是**视觉无变化**的。
+    ///
+    /// 三条判据：
+    ///
+    /// 1. 默认常量 == 真源最小高（`WorkbenchView.swift:2019` 的 `minimumGitPaneHeight = 260`）；
+    /// 2. 默认值等于下界 ⇒ `pane_span_range` 的钳制在默认值上**恒等**（改前 240 < 260，
+    ///    所以首帧一渲染就被钳到 260 —— 这正是"240 从来没画出来过"的证明）；
+    /// 3. 默认值不低过下界这种"墓碑式自相矛盾"不会再出现。
+    #[test]
+    fn bottom_pane_default_matches_the_macos_minimum_so_the_clamp_is_identity() {
+        assert_eq!(
+            BOTTOM_PANE_HEIGHT_SPEC, 260.,
+            "默认高 = 真源 minimumGitPaneHeight（WorkbenchView.swift:2019）"
+        );
+        assert_eq!(
+            BOTTOM_PANE_HEIGHT_SPEC, BOTTOM_PANE_MIN_HEIGHT_SPEC,
+            "默认值必须等于下界，否则 clamp 会在首帧改掉它（改前 240 vs 260 就是那个不自洽）"
+        );
+        // 默认值经过完整区间（上界取一个正常窗口高度）钳制后不变 —— 视觉无变化的机器证据。
+        let (min, max) = (BOTTOM_PANE_MIN_HEIGHT_SPEC, bottom_pane_max_height(800.));
+        assert_eq!(
+            clamp_pane_span(BOTTOM_PANE_HEIGHT_SPEC, min, max),
+            BOTTOM_PANE_HEIGHT_SPEC
+        );
+    }
+
+    /// 第 3 条遗留：右栏默认 **360**（真源 `WorkbenchLayoutStore.swift:5`），
+    /// 并且**只在没有持久化值时生效** —— 用户存过的宽度不被默认值覆盖。
+    ///
+    /// 会话文档的三个尺寸都是 `Option<f32>`（缺键 = `None`），`pane_span_on_restore` 是
+    /// `restore_session` 的唯一判据：`None` ⇒ 保留初值；`Some` ⇒ 用存过的值（按**当前**
+    /// 容器/窗口尺寸钳一遍）。
+    #[test]
+    fn right_pane_default_is_macos_and_never_overrides_a_stored_width() {
+        assert_eq!(
+            RIGHT_TOOL_WINDOW_WIDTH_SPEC, 360.,
+            "400 出自已作废的 windows/tauri（default-settings.ts:139），真源是 360"
+        );
+        let (min, max) = (
+            RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
+            right_tool_window_max_width(1920.),
+        );
+        // 没有持久化值 ⇒ 用默认值（360 落在 300…760 内，不被钳）。
+        assert_eq!(
+            pane_span_on_restore(None, RIGHT_TOOL_WINDOW_WIDTH_SPEC, min, max),
+            RIGHT_TOOL_WINDOW_WIDTH_SPEC
+        );
+        // 存过值 ⇒ 用存过的值，不被 360 顶掉。
+        assert_eq!(pane_span_on_restore(Some(413.25), 360., min, max), 413.25);
+        assert_eq!(pane_span_on_restore(Some(500.), 360., min, max), 500.);
+        // 存过的值越界 ⇒ 收敛到区间（文档层刻意不判上下界，钳制在这里）。
+        assert_eq!(pane_span_on_restore(Some(9_999.), 360., min, max), max);
+        assert_eq!(pane_span_on_restore(Some(-5.), 360., min, max), min);
+        assert_eq!(pane_span_on_restore(Some(f32::NAN), 360., min, max), min);
+        // 左栏 / 底部窗同一判据（缺键保留初值）。
+        assert_eq!(pane_span_on_restore(None, 320., 30., 520.), 320.);
+        assert_eq!(pane_span_on_restore(None, 260., 260., 580.), 260.);
     }
 
     /// **方向**：右栏与底部窗的手柄在**前缘**，往左 / 往上拖才是变长。

@@ -57,18 +57,19 @@
 //!
 //! **换算规则**：helper 后缀 `N` = `N × 0.25rem` = `N × 4px`（rem base = 主题字号 16px，
 //! `lithe-gpui/themes/*.json` 的 `font.size` + `gpui-component-0.6.6/src/root.rs:582` 的
-//! `window.set_rem_size(cx.theme().font_size)`）。规格值来自 Windows 前端源码
-//! （`windows/tauri/src/styles/theme.css` 的 `--lithe-*` 令牌与各组件里的 Tailwind 值），
-//! 逐值搬过来才能与真机并排核对：标题栏 **30 + 38**（两行；2026-09-27 起改两行，此前是单行 40）、
-//! 项目标签条 **32**（`h_8()`）、
-//! 活动栏 **38**（`rems(38. / 16.)`）、状态栏 **24**（`h_6()`）、左栏 **320**（`w_80()`）、
-//! 右工具窗 **400**（`rems(400. / 16.)`）、工作区间隔 **4**（`gap_1()`）、底部窗 **240**（`rems(240. / 16.)`；
-//! 2026-09-27 起从 320 收窄 —— 标题栏拆两行净增 28，从底部窗让出来保持总高不变）。
+//! `window.set_rem_size(cx.theme().font_size)`）。**尺寸真源是 macOS**
+//! （`macos/Sources/Lithe/Views/`，`windows/tauri/**` 那份前端已删除、其数值一律作废）：
+//! 标题栏 **40**（单行，`LitheTheme.swift:478`）、项目标签条 **38**（条高）/ **30**（标签高，
+//! 见 `crate::project_tabs`）、活动栏 **38**、状态栏 **24**（`h_6()`）、左栏 **320**
+//! （`WorkbenchLayoutStore.swift:21`；可拖区间 30…`min(520, 容器 − 400)`）、
+//! 右工具窗 **360**（`WorkbenchLayoutStore.swift:5`）、工作区间隔 **4**（`gap_1()`）、
+//! 底部窗 **260**（`WorkbenchView.swift:2019` 的最小高；2026-10-03 按真源把常量从 240
+//! 对齐到它 —— 视觉无变化，因为 clamp 早已强制 260）。
 //! 每个值的出处写在使用点或 `crates/*/src/*.rs` 顶部的度量映射表里。
 //!
 //! **档位外的长度一律写 helper 底层的 `rems(P / 16.)`**（**不是** `/ 4.`）：gpui 的档位表是
 //! 编译期生成的固定列表（`gpui-pre-macros-0.3.6/src/styles.rs:926-1158`），例如
-//! 26 / 38 / 42 / 56 / 144 / 200 / 240 / 400 …Tailwind v4 的任意整数档在 gpui 里没有对应
+//! 26 / 38 / 42 / 180 / 240 / 260 / 360 / 520 …Tailwind v4 的任意整数档在 gpui 里没有对应
 //! helper，不能自己发明一个 `w_100()`；但 `rems(P / 16.)` 在默认 16px 基准下与 `px(P)`
 //! 逐像素相等，同时随主题字号缩放。**不在档位上从来不是保留 `px(...)` 的理由** ——
 //! 它正是该写 `rems(P / 16.)` 的理由（`coding-guides.md:288` 的四类例外里没有这一条）。
