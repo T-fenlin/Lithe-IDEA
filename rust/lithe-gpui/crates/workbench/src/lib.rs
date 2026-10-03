@@ -135,6 +135,11 @@ pub mod project_tabs;
 // `command_palette`（`Dialog` + `Command`，本地过滤关掉），请求 / 解析 / 代次复用
 // `search_model`；规格出处与有意差异见其模块文档。
 pub mod quick_open;
+// Replace in Files 浮层（菜单「转到 → 在文件中替换」/ `Ctrl+Shift+R`）：
+// `workspace.replacePreview` 的**替换预览**（只读，不写盘）。浮层形状照 `search_everywhere`，
+// 请求 / 解析 / 四态 / 代次复用 `search_model`；规格出处、以及"应用替换在本分支做不了
+// （Core 没有替换命令）"这条边界见其模块文档。
+pub mod replace_in_files;
 pub mod right_tool_window;
 // Search Everywhere 浮层（菜单「视图 → 全局搜索」；`workspace.searchEverywhere` 的
 // All / Files / Symbols / Text 四个 scope）。浮层形状照 `command_palette` / `quick_open`

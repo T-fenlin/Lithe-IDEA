@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 116 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 123 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8875,6 +8875,20 @@ lithe:
     zh-CN: "符号中没有匹配项"
   searchEverywhere.noMatches.text:
     zh-CN: "文本中没有匹配项"
+  search.gpui.replaceInFiles:
+    zh-CN: "在项目中替换"
+  search.gpui.replaceEmptyDescription:
+    zh-CN: "输入要查找的文本与替换文本，然后选择「预览」。"
+  search.gpui.replacePreviewCounts:
+    zh-CN: "{files} 个文件，{matches} 处匹配"
+  search.gpui.before:
+    zh-CN: "替换前"
+  search.gpui.after:
+    zh-CN: "替换后"
+  search.gpui.preserveCase:
+    zh-CN: "保留大小写"
+  search.gpui.preview:
+    zh-CN: "预览"
 
 gpui_component:
   Dialog.ok:

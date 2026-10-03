@@ -203,6 +203,30 @@ mod tests {
             ),
             ("lithe.searchEverywhere.noMatches.text", "文本中没有匹配项"),
             ("lithe.menu.globalSearch", "全局搜索"),
+            // Replace in Files 浮层（U17 第四件，`workbench/src/replace_in_files.rs`）：面板标题 /
+            // 空态说明 / 底栏计数 / before / after / 保留大小写 / 「预览」按钮。七条都是
+            // macOS 真源的既有字面量或 `Localizable.strings` 条目（中文落在
+            // `macos/Resources/zh-Hans.lproj/Localizable.strings:65,837`，其余是 SwiftUI 裸字面量、
+            // Windows catalog 里没有），所以是 gpui 自有键 —— 逐条出处与理由见
+            // `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
+            //
+            // ⚠️ 它**复用**的真源既有键（`lithe.search.{replaceWith,filesToInclude,matchCase,
+            // matchWholeWord,useRegex,failed,noResultsFor}`、`lithe.fileExplorer.searchingFiles`、
+            // `lithe.menu.go`）沿用 U17 第一件那一批的处置：它们一直在这张表之外的 catalog 里，
+            // 由 `extract-locale.mjs --check` 守"产物与真源一致"，本件不重复列举。
+            ("lithe.search.gpui.replaceInFiles", "在项目中替换"),
+            (
+                "lithe.search.gpui.replaceEmptyDescription",
+                "输入要查找的文本与替换文本，然后选择「预览」。",
+            ),
+            (
+                "lithe.search.gpui.replacePreviewCounts",
+                "{files} 个文件，{matches} 处匹配",
+            ),
+            ("lithe.search.gpui.before", "替换前"),
+            ("lithe.search.gpui.after", "替换后"),
+            ("lithe.search.gpui.preserveCase", "保留大小写"),
+            ("lithe.search.gpui.preview", "预览"),
             ("lithe.ui.retry", "重试"),
             ("lithe.fileExplorer.noFolderOpen", "未打开文件夹"),
             ("lithe.titleProject.openFolder", "打开文件夹"),

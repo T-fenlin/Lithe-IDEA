@@ -14,7 +14,8 @@
 //! （`rust/lithe-core/src/project/files.rs:190-268` 的 `search_with_index`）。本模块
 //! 只做四件宿主该做的事：
 //!
-//! 1. 把面板的选项翻成 `workspace.search` 的 payload（字段名是**兼容面**）；
+//! 1. 把面板的选项翻成 `workspace.search` / `workspace.replacePreview` 的 payload
+//!    （字段名是**兼容面**）；
 //! 2. 把响应翻成界面要画的行（**保持 Core 给出的顺序**，不重新排序、不重新匹配）；
 //! 3. 把 Core 的顺序折成"文件头 + 命中行"（纯展示分组，见 [`group`]）；
 //! 4. 用代次把过期结果挡掉（[`QueryTimeline`]），并把要取消的 `operationId` 交出来。
@@ -100,8 +101,9 @@ pub(crate) const EVERYWHERE_MAX_RESULTS: usize = 1000;
 
 /// 一次查询的选项（与 `SearchRequest` 的四个用户可选项一一对应）。
 ///
-/// `preserveCase` **不在**这里：它只服务替换（`ReplacementPreviewRequest`，
-/// `files.rs:110-136`），而 Replace in Files 不在本任务范围。
+/// `preserveCase` **不在这里**：它只服务替换（`ReplacementPreviewRequest`，
+/// `files.rs:110-136`），所以它挂在 [`ReplaceOptions`] 上 —— 两个命令的选项面
+/// 从类型上就分开，`workspace.search` 的 payload 不会多出一个 Core 不认的字段。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SearchOptions {
     /// `caseSensitive`。
@@ -245,9 +247,10 @@ pub(crate) enum ParseError {
     /// `ok:true` 但没有 `data`。`workspace.search` 一定回 `data`（`dispatcher` 的
     /// `SearchResponse` 分支），所以这是**契约异常**而不是"没有结果" —— 两者必须分开。
     MissingData,
-    /// `data` 不是对象、缺 `matches` 数组、或某个元素缺 `kind` / `preview`。
+    /// `data` 不是对象、缺 `matches` / `files` 数组，或某个元素缺
+    /// `kind` / `preview` / `before` / `after` / `line`。
     Malformed,
-    /// `matches[i]` 缺必填的 `path`。
+    /// `matches[i]` / `files[i]` 缺必填的 `path`（两类响应长得很像，共用这一个 token）。
     MissingPath(usize),
 }
 
@@ -890,6 +893,323 @@ impl SearchState {
             }
         }
         (files, hits)
+    }
+}
+
+// ===========================================================================
+// Replace in Files（U17 第四件）：`workspace.replacePreview` 的纯逻辑
+// ===========================================================================
+//
+// 契约出处（逐条行号，便于对着 Core 复核）：
+//
+// - 命令名 `workspace.replacePreview`：`rust/lithe-core/src/protocol/command.rs:362`
+//   （枚举变体 `WorkspaceReplacePreview` 在 `:77-78`）；
+// - 请求 `ReplacementPreviewRequest`：`rust/lithe-core/src/project/files.rs:110-136`
+//   —— 必填只有 `root` / `query` / `replacement`，其余**全部** `#[serde(default)]`：
+//   `caseSensitive` / `wholeWords` / `regularExpression` / `preserveCase` / `fileMask` /
+//   `paths` / `textOverrides` / `hiddenDirectoryNames` / `hiddenFilePatterns`（camelCase）；
+// - 处理函数 `replace_preview`：`files.rs:336-423`（**只读**：一行都不写盘）；
+// - 响应 `ReplacementPreviewResponse { files }`：`protocol/contracts.rs:133-138`；
+//   `ReplacementFile { path, matches, replacementText }`：`:124-131`；
+//   `ReplacementMatch { line, before, after, occurrenceCount }`：`:114-122`。
+//
+// ⚠️ **契约里没有的东西**（所以界面也不画）：
+//
+// 1. **没有 apply / replace 命令**：本分支与替换有关的命令**只有** `workspace.replacePreview`
+//    一条（`protocol/command.rs:77-78`）。所以"应用替换"在本分支**做不了**（等 main），
+//    宿主也**不许**自己写盘 —— 那会绕开 Core 的排除规则 / 可见性判断，变成第二个真相源；
+// 2. **没有上限**：请求里一个 `maxResults` 都没有（对比 `SearchRequest` 的 `files.rs:63`），
+//    所以一次查询可能回整个工作区的命中。别在宿主里自己截断（那是第二套上限）；
+// 3. **没有总数**：`files` / `matches` 都要宿主自己数（[`ReplaceState::counts`]）；
+// 4. **没有列号**：`line` 是 1 基行号（与 `SearchMatch::line` 同一口径），没有列；
+// 5. `operationId` 是**信封级**字段（`command.rs:14-15`），不在 payload 里 ——
+//    与 [`SEARCH_COMMAND`] 的说明完全同一处。
+
+/// `workspace.replacePreview`（`protocol/command.rs:362`）。
+pub(crate) const REPLACE_PREVIEW_COMMAND: &str = "workspace.replacePreview";
+
+/// Replace in Files 的选项：查找面板的四个选项 + `preserveCase`。
+///
+/// 为什么**包一层**而不是给 [`SearchOptions`] 加一个字段：`preserveCase` 只服务替换
+/// （`files.rs:123-125`），而 `SearchRequest` 里根本没有它（`files.rs:47-74`）。
+/// 加进 `SearchOptions` 会让 `workspace.search` 的 payload 多出一个 Core 不认的字段。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ReplaceOptions {
+    /// 复用的四个查询选项（大小写 / 全词 / 正则 / 文件掩码）。
+    pub(crate) search: SearchOptions,
+    /// `preserveCase`：**只在字面量替换时生效** —— 正则那一支直接返回
+    /// （`files.rs:890-901` 的 `replace_with_options`），所以视图把这一格在正则打开时置灰。
+    pub(crate) preserve_case: bool,
+}
+
+/// `workspace.replacePreview` 的 payload（**字段名是兼容面**）。
+///
+/// **故意不传** `paths` / `textOverrides`：真源 macOS 传的是编辑器里未保存的缓冲区
+/// （`macos/Sources/Lithe/Models/AppModel/AppModel+SearchModule.swift:53-58` 的
+/// `paths(root)` / `overrides(root)`），而 gpui 宿主今天没有"未保存缓冲区覆盖"这条通路。
+/// 少传时 Core 自己从索引出候选（`files.rs:361-366`）、从磁盘读正文（`:391-396`），
+/// 正是本切片要的语义：**预览的是磁盘上的内容**（有意的差异，记在 `UI-MAP.md` §2.2 ⑬）。
+///
+/// **不传** `hiddenDirectoryNames` / `hiddenFilePatterns`：与 [`payload`] 同一条论证
+/// （少一个会漂移的字段，且与 `searchIndex.warm` 共用同一个索引缓存键）。
+///
+/// **不传上限**：契约里没有这个字段（见本节的契约说明第 2 条）—— 不要自己发明一个。
+pub(crate) fn replace_payload(
+    root: &str,
+    query: &str,
+    replacement: &str,
+    options: &ReplaceOptions,
+) -> Value {
+    json!({
+        "root": root,
+        "query": query,
+        "replacement": replacement,
+        "caseSensitive": options.search.case_sensitive,
+        "wholeWords": options.search.whole_words,
+        "regularExpression": options.search.regular_expression,
+        "preserveCase": options.preserve_case,
+        "fileMask": options.search.file_mask,
+    })
+}
+
+/// 一行上的替换预览（`contracts.rs:114-122` 的 `ReplacementMatch`）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReplacementLine {
+    /// `line`：**1 基**行号（`files.rs:406` 的 `index + 1`）。
+    pub(crate) line: usize,
+    /// `before`：Core 给的原行正文（完整一行，不是片段）。
+    pub(crate) before: String,
+    /// `after`：**Core 算出的**替换后的行正文。宿主一个字符都不改它。
+    pub(crate) after: String,
+    /// `occurrenceCount`：这一行上被替换的次数（`files.rs:401-410`）。
+    pub(crate) occurrences: usize,
+}
+
+/// 一个文件的替换预览（`contracts.rs:124-131` 的 `ReplacementFile`）。
+///
+/// ⚠️ 响应里还有 `replacementText`（整份替换后的文件正文，Core 真的给了），本切片
+/// **不解析**它：真源那块是"文件预览编辑器"（`ProjectReplacementSourcePreview.swift:14-45`
+/// 挂 Monaco 编辑器 + 保存按钮），gpui 侧没有对应元素，解析一份画不出来的全文只会白占内存。
+/// 这是有意的省略，不是漏掉了 —— 见 `UI-MAP.md` §2.2 ⑬。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReplacementFile {
+    /// `path`：工作区相对、`/` 分隔（Core 已按路径升序排好，`files.rs:421`）。
+    pub(crate) path: String,
+    /// 这个文件里的命中行（行号升序，Core 给出的顺序）。
+    pub(crate) lines: Vec<ReplacementLine>,
+}
+
+impl ReplacementFile {
+    /// 这个文件里会被替换的总次数。
+    ///
+    /// **相加而不是重新匹配**：真源的 `matchCount` 就是同一个算法
+    /// （`macos/Sources/LitheSearchModule/Models/ProjectReplacementModels.swift:38` 的
+    /// `matches.reduce(0) { $0 + $1.occurrenceCount }`）。
+    pub(crate) fn occurrences(&self) -> usize {
+        self.lines.iter().map(|line| line.occurrences).sum()
+    }
+}
+
+/// 把 `CoreClient::execute` 的 `data` 解析成按文件分组的替换预览。
+///
+/// **空结果与失败是两件事**（与 [`parse_matches`] 同一条）：`Ok(vec![])` 是"没有任何命中"，
+/// `Err(..)` 是"这条响应不可用"。面板必须把两者画成不同的东西
+/// （`lithe.search.noResultsFor` vs `lithe.search.failed`）。
+///
+/// `occurrenceCount` 缺失按 `0` 算：它只进"这个文件替换了几处"的计数，
+/// 不影响这一行画不画（`before` / `after` 才是这一行的内容）。
+pub(crate) fn parse_replace_preview(
+    data: Option<&Value>,
+) -> Result<Vec<ReplacementFile>, ParseError> {
+    let Some(data) = data else {
+        return Err(ParseError::MissingData);
+    };
+    let Some(items) = data.get("files").and_then(Value::as_array) else {
+        return Err(ParseError::Malformed);
+    };
+    let mut files = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let Some(path) = item.get("path").and_then(Value::as_str) else {
+            return Err(ParseError::MissingPath(index));
+        };
+        let Some(matches) = item.get("matches").and_then(Value::as_array) else {
+            return Err(ParseError::Malformed);
+        };
+        let mut lines = Vec::with_capacity(matches.len());
+        for item in matches {
+            let (Some(line), Some(before), Some(after)) = (
+                item.get("line").and_then(Value::as_u64),
+                item.get("before").and_then(Value::as_str),
+                item.get("after").and_then(Value::as_str),
+            ) else {
+                return Err(ParseError::Malformed);
+            };
+            lines.push(ReplacementLine {
+                line: line as usize,
+                before: before.to_string(),
+                after: after.to_string(),
+                occurrences: item
+                    .get("occurrenceCount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0) as usize,
+            });
+        }
+        files.push(ReplacementFile {
+            path: path.to_string(),
+            lines,
+        });
+    }
+    Ok(files)
+}
+
+/// 替换预览列表的一行。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ReplaceRow {
+    /// 文件头：这个文件里有几处会被替换。
+    File {
+        /// 工作区相对路径（`/` 分隔）。
+        path: String,
+        /// 这个文件里会被替换的总次数。
+        occurrences: usize,
+    },
+    /// 一条 before / after。
+    Line {
+        /// 与它上面那个文件头同值。
+        path: String,
+        /// 1 基行号。
+        line: usize,
+        /// 原行正文（Core 给的）。
+        before: String,
+        /// 替换后的行正文（Core 给的）。
+        after: String,
+        /// 这一行的替换次数。
+        occurrences: usize,
+    },
+}
+
+/// 把 Core 的分组摊成"文件头 + 命中行"。
+///
+/// **不重排、不重分组、不重算**：Core 已经给出 `files`（路径升序，`files.rs:421`）
+/// 与每个文件里的行号升序（`:397-412`）。本函数只做展示需要的摊平，与 [`group`]
+/// 同一条口径 —— 而且要的是"**按文件**的 before/after"（真源同样按文件列，
+/// `ProjectReplaceView.swift:217-224` 是 `ForEach(files) { ForEach(matches) }`）。
+pub(crate) fn replace_rows(files: &[ReplacementFile]) -> Vec<ReplaceRow> {
+    let mut rows =
+        Vec::with_capacity(files.len() + files.iter().map(|f| f.lines.len()).sum::<usize>());
+    for file in files {
+        rows.push(ReplaceRow::File {
+            path: file.path.clone(),
+            occurrences: file.occurrences(),
+        });
+        rows.extend(file.lines.iter().map(|line| ReplaceRow::Line {
+            path: file.path.clone(),
+            line: line.line,
+            before: line.before.clone(),
+            after: line.after.clone(),
+            occurrences: line.occurrences,
+        }));
+    }
+    rows
+}
+
+/// Replace in Files 的四态（与 [`SearchState`] 同一份契约：`idle` / `loading` / `ready` /
+/// `failed`）。
+///
+/// **为什么不复用 [`SearchState`]**：它的 `ready` 装的是查找面板的 [`SearchRow`]
+/// （`kind` 分出来的路径命中 / 正文命中），而这一层要留着 Core 的 `files`
+/// —— before/after 是**成对的**、每个文件还带一个替换次数，行是渲染时现投影
+/// （与 [`EverywhereState`] 同一取舍）。四态的语义逐条一致，尤其
+/// "**空结果是 `Ready`，不是 `Failed`**"。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ReplaceState {
+    /// 还没有查询串（或查询串只有空白）：画空态，**不发 Core 调用**
+    /// （`files.rs:341-344` 对空查询直接回空 —— 发过去只是白跑一趟信封）。
+    Idle,
+    /// 已发出预览请求、结果还没回来；`files` 是**上一次**的预览，继续可见
+    /// （真源同样在结果到达前不清空 `projectReplacementFiles`，
+    /// `ProjectReplaceView.swift:207-259`）。
+    Loading {
+        /// 这一次预览的查询串。
+        query: String,
+        /// 上一次的预览（可能为空）。
+        files: Vec<ReplacementFile>,
+    },
+    /// 结果到了；`files` 可能是空的（"没有任何地方会变"）。
+    Ready {
+        /// 这一次预览的查询串。
+        query: String,
+        /// Core 给的分组。
+        files: Vec<ReplacementFile>,
+    },
+    /// 失败了；`reason` 是可直接显示的原因（Core 的 `message` 或 [`ParseError::token`]）。
+    Failed {
+        /// 这一次预览的查询串。
+        query: String,
+        /// 可直接显示的原因。
+        reason: String,
+    },
+}
+
+impl ReplaceState {
+    /// 进 `loading` 态（带上一次的预览）。
+    pub(crate) fn loading(query: impl Into<String>, previous: &[ReplacementFile]) -> Self {
+        Self::Loading {
+            query: query.into(),
+            files: previous.to_vec(),
+        }
+    }
+
+    /// 进 `ready` 态（空 `files` = 空结果，不是失败）。
+    pub(crate) fn ready(query: impl Into<String>, files: &[ReplacementFile]) -> Self {
+        Self::Ready {
+            query: query.into(),
+            files: files.to_vec(),
+        }
+    }
+
+    /// 进 `failed` 态。
+    pub(crate) fn failed(query: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::Failed {
+            query: query.into(),
+            reason: reason.into(),
+        }
+    }
+
+    /// 当前查询串（`idle` 时为空串）。
+    pub(crate) fn query(&self) -> &str {
+        match self {
+            Self::Idle => "",
+            Self::Loading { query, .. }
+            | Self::Ready { query, .. }
+            | Self::Failed { query, .. } => query,
+        }
+    }
+
+    /// 手上这一份 Core 分组（`failed` / `idle` 为空）。
+    ///
+    /// `loading` **也算有**：上一次的预览在新结果到达前继续可见（见该变体）。
+    pub(crate) fn files(&self) -> &[ReplacementFile] {
+        match self {
+            Self::Loading { files, .. } | Self::Ready { files, .. } => files,
+            Self::Idle | Self::Failed { .. } => &[],
+        }
+    }
+
+    /// 要画的行（**纯投影**，每次渲染现算 —— 与 [`EverywhereState::rows`] 同构）。
+    pub(crate) fn rows(&self) -> Vec<ReplaceRow> {
+        replace_rows(self.files())
+    }
+
+    /// `(文件数, 替换次数)`：真源底栏那句 "N files, M matches" 的两个数
+    /// （`ProjectReplaceView.swift:172`；`M` 是每个文件 `matchCount` 之和）。
+    ///
+    /// 给诊断行与底栏用 —— 这是这一件唯一的机器可核对锚点。**不是** `maxResults` 那种上限。
+    pub(crate) fn counts(&self) -> (usize, usize) {
+        let files = self.files();
+        (
+            files.len(),
+            files.iter().map(ReplacementFile::occurrences).sum(),
+        )
     }
 }
 
@@ -1677,5 +1997,248 @@ mod tests {
             everywhere_rows(SearchEverywhereScope::Text, &matches).len(),
             1
         );
+    }
+
+    // ---- Replace in Files（U17 第四件，`workspace.replacePreview`） ----
+
+    /// 请求的字段名与**取值**逐字钉住：拼错一位 Core 就用 `invalid_request` 拒掉整条命令，
+    /// 而这条命令**不写盘**（写盘的是不存在的 apply），所以"发出去的到底是什么"
+    /// 只能靠这里与诊断行核对。
+    #[test]
+    fn replace_payload_follows_the_core_contract_field_names() {
+        let options = ReplaceOptions {
+            search: SearchOptions {
+                case_sensitive: true,
+                whole_words: true,
+                regular_expression: false,
+                file_mask: "*.java, *.kt".to_string(),
+            },
+            preserve_case: true,
+        };
+        assert_eq!(
+            replace_payload("D:/proj", "needle", "replacement", &options),
+            json!({
+                "root": "D:/proj",
+                "query": "needle",
+                "replacement": "replacement",
+                "caseSensitive": true,
+                "wholeWords": true,
+                "regularExpression": false,
+                "preserveCase": true,
+                "fileMask": "*.java, *.kt",
+            })
+        );
+    }
+
+    /// **故意不传**的字段：`paths` / `textOverrides`（宿主没有未保存缓冲区通路）、
+    /// 可见性数组（索引缓存键）、以及**根本不存在的上限** —— 契约里没有 `maxResults`，
+    /// 宿主也不许自己发明一个（那会变成第二套上限）。
+    #[test]
+    fn replace_payload_omits_paths_overrides_and_any_invented_limit() {
+        let value = replace_payload("r", "q", "", &ReplaceOptions::default());
+        for key in [
+            "paths",
+            "textOverrides",
+            "hiddenDirectoryNames",
+            "hiddenFilePatterns",
+            "maxResults",
+            "maxFileResults",
+            "maxContentResults",
+        ] {
+            assert!(
+                value.get(key).is_none(),
+                "replacePreview 的 payload 里不该有 {key}：{value}"
+            );
+        }
+        // 默认选项：四个布尔全关、掩码空串（Core 的 `#[serde(default)]` 同值）。
+        assert_eq!(value["caseSensitive"], json!(false));
+        assert_eq!(value["wholeWords"], json!(false));
+        assert_eq!(value["regularExpression"], json!(false));
+        assert_eq!(value["preserveCase"], json!(false));
+        assert_eq!(value["fileMask"], json!(""));
+    }
+
+    /// 正常响应：按文件分组、`before` / `after` / 行号 / 次数全部原样带出，
+    /// **顺序就是 Core 给的顺序**（宿主不重排）。
+    #[test]
+    fn parses_the_replace_preview_grouped_by_file() {
+        let data = json!({
+            "files": [
+                {
+                    "path": "src/A.java",
+                    "matches": [
+                        { "line": 12, "before": "  int a = 1;", "after": "  int b = 1;", "occurrenceCount": 1 },
+                        { "line": 30, "before": "  int a = 2; int a = 3;", "after": "  int b = 2; int b = 3;", "occurrenceCount": 2 },
+                    ],
+                    "replacementText": "…整份文件正文（本层不解析，见类型文档）…",
+                },
+                { "path": "src/B.java", "matches": [], "replacementText": "" },
+            ]
+        });
+        let files = parse_replace_preview(Some(&data)).expect("必须解析成功");
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].path, "src/A.java");
+        assert_eq!(files[0].lines.len(), 2);
+        assert_eq!(files[0].lines[0].line, 12);
+        assert_eq!(files[0].lines[0].before, "  int a = 1;");
+        assert_eq!(files[0].lines[0].after, "  int b = 1;");
+        assert_eq!(files[0].lines[0].occurrences, 1);
+        assert_eq!(files[0].lines[1].line, 30, "顺序照 Core，不重排");
+        assert_eq!(files[0].occurrences(), 3, "1 + 2，与真源 matchCount 同算法");
+        assert_eq!(files[1].path, "src/B.java");
+        assert!(files[1].lines.is_empty());
+    }
+
+    /// 契约异常必须报出来，**不许被读成"没有命中"**（那会让界面画一句"没找到"，
+    /// 而真相是这条响应不可用）。`occurrenceCount` 缺失是例外：它只影响计数。
+    #[test]
+    fn replace_contract_anomalies_are_reported_not_silently_read_as_no_matches() {
+        assert_eq!(
+            parse_replace_preview(None).unwrap_err(),
+            ParseError::MissingData
+        );
+        assert_eq!(
+            parse_replace_preview(Some(&json!({ "matches": [] }))).unwrap_err(),
+            ParseError::Malformed,
+            "缺 files 数组"
+        );
+        assert_eq!(
+            parse_replace_preview(Some(&json!({ "files": [{ "matches": [] }] }))).unwrap_err(),
+            ParseError::MissingPath(0)
+        );
+        assert_eq!(
+            parse_replace_preview(Some(&json!({ "files": [{ "path": "a", "matches": {} }] })))
+                .unwrap_err(),
+            ParseError::Malformed
+        );
+        assert_eq!(
+            parse_replace_preview(Some(&json!({
+                "files": [{ "path": "a", "matches": [{ "line": 1, "before": "x" }] }]
+            })))
+            .unwrap_err(),
+            ParseError::Malformed,
+            "缺 after"
+        );
+        // 次数缺失：这一行照样画（before / after 才是内容），计数按 0。
+        let files = parse_replace_preview(Some(&json!({
+            "files": [{ "path": "a", "matches": [{ "line": 1, "before": "x", "after": "y" }] }]
+        })))
+        .expect("次数缺失不是契约异常");
+        assert_eq!(files[0].lines[0].occurrences, 0);
+    }
+
+    /// **空结果不是失败**：`files: []` 是 `Ready` 且零行（界面画"没找到"），
+    /// 不是 `Failed`（界面画 Core 的原因）。
+    #[test]
+    fn an_empty_replace_preview_is_ready_not_failed() {
+        let files = parse_replace_preview(Some(&json!({ "files": [] }))).expect("空结果是成功");
+        let state = ReplaceState::ready("needle", &files);
+        assert_eq!(state.rows(), Vec::new());
+        assert_eq!(state.counts(), (0, 0));
+        assert!(!matches!(state, ReplaceState::Failed { .. }));
+    }
+
+    /// 摊平只做"文件头 + 命中行"，顺序 = Core 的顺序；计数是 `occurrenceCount` 之和。
+    #[test]
+    fn replace_rows_fold_each_file_into_a_header_plus_lines() {
+        let files = vec![
+            ReplacementFile {
+                path: "src/B.java".to_string(),
+                lines: vec![ReplacementLine {
+                    line: 7,
+                    before: "b".to_string(),
+                    after: "B".to_string(),
+                    occurrences: 2,
+                }],
+            },
+            ReplacementFile {
+                path: "src/A.java".to_string(),
+                lines: vec![
+                    ReplacementLine {
+                        line: 1,
+                        before: "a".to_string(),
+                        after: "A".to_string(),
+                        occurrences: 1,
+                    },
+                    ReplacementLine {
+                        line: 2,
+                        before: "aa".to_string(),
+                        after: "AA".to_string(),
+                        occurrences: 1,
+                    },
+                ],
+            },
+        ];
+        // Core 给的就是这个顺序（`files.rs:421` 按路径升序），本层**不重排**：
+        // 换了顺序这里就该红，提示有人加了第二套排序。
+        let rows = replace_rows(&files);
+        assert_eq!(rows.len(), 5, "2 个文件头 + 3 条命中行");
+        assert_eq!(
+            rows,
+            vec![
+                ReplaceRow::File {
+                    path: "src/B.java".to_string(),
+                    occurrences: 2,
+                },
+                ReplaceRow::Line {
+                    path: "src/B.java".to_string(),
+                    line: 7,
+                    before: "b".to_string(),
+                    after: "B".to_string(),
+                    occurrences: 2,
+                },
+                ReplaceRow::File {
+                    path: "src/A.java".to_string(),
+                    occurrences: 2,
+                },
+                ReplaceRow::Line {
+                    path: "src/A.java".to_string(),
+                    line: 1,
+                    before: "a".to_string(),
+                    after: "A".to_string(),
+                    occurrences: 1,
+                },
+                ReplaceRow::Line {
+                    path: "src/A.java".to_string(),
+                    line: 2,
+                    before: "aa".to_string(),
+                    after: "AA".to_string(),
+                    occurrences: 1,
+                },
+            ]
+        );
+    }
+
+    /// 四态：`idle` 没有查询串；`loading` **带着上一次的预览**继续可见（换了查询就闪一下
+    /// 空列表是更差的观感）；`failed` 没有行；`counts()` 只在有结果时有数。
+    #[test]
+    fn replace_state_keeps_the_previous_preview_while_loading() {
+        let files = vec![ReplacementFile {
+            path: "src/A.java".to_string(),
+            lines: vec![ReplacementLine {
+                line: 3,
+                before: "x".to_string(),
+                after: "y".to_string(),
+                occurrences: 4,
+            }],
+        }];
+
+        assert_eq!(ReplaceState::Idle.query(), "");
+        assert!(ReplaceState::Idle.files().is_empty());
+        assert_eq!(ReplaceState::Idle.counts(), (0, 0));
+
+        let loading = ReplaceState::loading("next", &files);
+        assert_eq!(loading.query(), "next");
+        assert_eq!(loading.files().len(), 1, "上一次的预览继续可见");
+        assert_eq!(loading.counts(), (1, 4));
+
+        let ready = ReplaceState::ready("next", &files);
+        assert_eq!(ready.rows().len(), 2);
+        assert_eq!(ready.counts(), (1, 4));
+
+        let failed = ReplaceState::failed("next", "invalid_request: bad regex");
+        assert_eq!(failed.query(), "next");
+        assert!(failed.rows().is_empty());
+        assert_eq!(failed.counts(), (0, 0));
     }
 }

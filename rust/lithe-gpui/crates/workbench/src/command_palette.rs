@@ -225,6 +225,16 @@ pub enum CommandId {
     /// **也不在命令面板里**（`crate::workspace` 的 `COMMAND_ORDER` 没有它）：与
     /// [`CommandId::OpenQuickOpen`] 同一处置 —— 它有自己的浮层入口。
     OpenSearchEverywhere,
+    /// 打开 Replace in Files 浮层（菜单「转到 → 在文件中替换」/ `Ctrl+Shift+R`）。
+    ///
+    /// 两个入口落到**同一个方法**（`ShellWorkspace::open_replace_in_files`）：
+    /// 键位经 `crate::replace_in_files::install_actions` 的全局处理器，菜单经
+    /// `MenuAction::ReplaceInFiles` 的 `command_id()`。
+    ///
+    /// **不在命令面板里**（`crate::workspace` 的 `COMMAND_ORDER` 没有它）：与
+    /// [`CommandId::OpenQuickOpen`] / [`CommandId::OpenSearchEverywhere`] 同一处置 ——
+    /// 它有菜单与快捷键两个自己的入口。
+    OpenReplaceInFiles,
     /// 转到定义（`F12`；菜单「转到 → 转到定义」也走它）。
     NavigateToDefinition,
     /// 打开文件…（菜单「文件 → 打开文件」，**不绑键位**：`Ctrl+O` 留给「打开文件夹」，Q18）。
@@ -261,6 +271,7 @@ impl CommandId {
             Self::OpenCommandPalette => "open-command-palette",
             Self::OpenQuickOpen => "open-quick-open",
             Self::OpenSearchEverywhere => "open-search-everywhere",
+            Self::OpenReplaceInFiles => "open-replace-in-files",
             Self::NavigateToDefinition => "navigate-to-definition",
             // B1 的一批：全部**只由主菜单触发**（`COMMAND_ORDER` 里没有它们，所以命令面板
             // 不列）—— 面板要的是"一屏能扫完的高频动作"，而"关闭左侧/右侧标签页"这类

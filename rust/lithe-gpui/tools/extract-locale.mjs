@@ -907,6 +907,66 @@ const GPUI_ONLY_KEYS = [
     reason:
       "Text scope 的空态。出处：`SearchEverywhereView.swift:89-90` + `Localizable.strings:1168`；en 同上。",
   },
+  // ── Replace in Files 浮层（U17 第四件）──────────────────────────────
+  //
+  // 七条：面板标题 / 空态说明 / 底栏计数 / before / after / 保留大小写 / 「预览」按钮。
+  // 全部来自 macOS 真源，但**不在 Windows catalog 里** —— `ProjectReplaceView.swift` 用的是
+  // SwiftUI 的 `LocalizedStringKey` 或**裸字面量**，中文只落在
+  // `macos/Resources/zh-Hans.lproj/Localizable.strings`（有对应条目的那三条）或干脆没有条目
+  // （`Before` / `After` / 计数那句在真源里就是英文裸字面量，`en.lproj` 也没有）。
+  //
+  // 键名挂 `search.gpui.*`（与 `search.gpui.queryPlaceholder` 同一个 gpui 自有段）而不是
+  // `searchEverywhere.*`：这个浮层与查找面板同属"搜索 / 替换"这一族，而真源把两者放在同一个
+  // `Views/Search/` 目录下（`ProjectReplaceView.swift` 与 `SearchSidebarView.swift` 并列）。
+  {
+    key: "search.gpui.replaceInFiles",
+    zh: "在项目中替换",
+    en: "Replace in Files",
+    reason:
+      "Replace in Files 浮层的标题，也是菜单「转到 → 在文件中替换」的文案（`lithe-gpui/crates/workbench/src/replace_in_files.rs` 与 `menu_bar.rs` 的 `MenuAction::ReplaceInFiles`）。出处：真源 macOS 的菜单项 `Button(\"Replace in Files…\")`（`macos/Sources/Lithe/LitheApp.swift:624`），中文逐字取自 `macos/Resources/zh-Hans.lproj/Localizable.strings:65`（\"Replace in Files\" = \"在项目中替换\"）；`en.lproj` 里没有对应条目（英文回落到字面量本身，所以 en 逐字取）。**不借 `menu.findAndReplace`（「查找并替换」）**：那句是**编辑器内**那条命令（`CommandMenu` 的 Find and Replace），作用域与本条不同。",
+  },
+  {
+    key: "search.gpui.replaceEmptyDescription",
+    zh: "输入要查找的文本与替换文本，然后选择「预览」。",
+    en: "Enter the text to find and its replacement, then choose Preview.",
+    reason:
+      "浮层空态的那句说明（还没有预览结果时）。出处：真源 `ProjectReplaceView.swift:253` 的裸字面量 \"Enter text to preview project changes\" —— 它是 SwiftUI 字面量，`Localizable.strings` 与 `en.lproj` 里都没有这一条（英文回落到字面量本身）。本侧照本切片实际做得到的事改写：真源的按钮就叫 Preview（`:160`），而「项目会变」这句在只做预览的切片里不成立（应用替换要等 main），所以写成「选择预览」而不是「预览项目改动」。",
+  },
+  {
+    key: "search.gpui.replacePreviewCounts",
+    zh: "{files} 个文件，{matches} 处匹配",
+    en: "{files} files, {matches} matches",
+    reason:
+      "浮层底栏那行计数。出处：真源 `ProjectReplaceView.swift:172` 的插值字面量 \"\\(files) files, \\(matches) matches\" —— 裸字面量，没有 catalog 条目。`{matches}` 是每个文件 `matchCount`（= `occurrenceCount` 之和，`macos/Sources/LitheSearchModule/Models/ProjectReplacementModels.swift:38`）的总和，不是命中行数，所以中文写「处匹配」而不是「行」。",
+  },
+  {
+    key: "search.gpui.before",
+    zh: "替换前",
+    en: "Before",
+    reason:
+      "before/after 两行里第一行的行首标签。出处：真源 `ProjectReplaceView.swift:268` 的裸字面量 `Text(\"Before\")` —— 它没有进 `Localizable.strings`（那一版就没有这两条），所以中文是本侧补的：`替换前` / `替换后` 是替换预览里最不容易读错的一对词。**不在界面上写裸 \"Before\"**：本仓要求一切界面文案走 `tr`，裸英文在 zh-CN 界面里是漏译。",
+  },
+  {
+    key: "search.gpui.after",
+    zh: "替换后",
+    en: "After",
+    reason:
+      "before/after 两行里第二行的行首标签。出处与理由同上一条：`ProjectReplaceView.swift:272` 的裸字面量 `Text(\"After\")`。",
+  },
+  {
+    key: "search.gpui.preserveCase",
+    zh: "保留大小写",
+    en: "Preserve Case",
+    reason:
+      "替换框那一行的第四个选项开关的标签。出处：真源 `ProjectReplaceView.swift:119-123` 那颗 `ProjectReplaceOptionButton(title: \"Aa\")`，它的可访问名 / tooltip 是 `:392` 的裸字面量 \"Preserve Case\"（`Localizable.strings` 里只有同族的 Match Case / Whole Words / Regular Expression 三条，`:1140-1142`，没有这一条）。**不用 \"Aa\" 当标签**：那是图标式缩写，本侧的开关带文字标签（与查找面板那三个开关一致），所以需要一条真名。",
+  },
+  {
+    key: "search.gpui.preview",
+    zh: "预览",
+    en: "Preview",
+    reason:
+      "浮层底栏那颗主操作按钮（真源替换面板的**唯一**主操作）。出处：真源 `ProjectReplaceView.swift:160` 的 `Button(\"Preview\")`，中文逐字取自 `macos/Resources/zh-Hans.lproj/Localizable.strings:837`（\"Preview\" = \"预览\"）。**为什么不借 `svg.preview` / `editor.preview`**：那两条的键名各自绑在「SVG 预览」与「编辑器预览」两种视图模式上，借用会让以后改那两处的文案顺手改掉这颗按钮 —— 这一条明确归属替换面板。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);

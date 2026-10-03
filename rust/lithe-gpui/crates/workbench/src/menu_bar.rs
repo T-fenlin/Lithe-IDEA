@@ -711,6 +711,16 @@ pub enum MenuAction {
     /// 见 `UI-MAP.md` §2.2 ⑬），空闲的 `Ctrl+*` 里也没有一条有真源依据 —— 所以这一项
     /// **只由主菜单触发**（`keybind_action` 返回 `None`，菜单上不会画键位胶囊）。
     SearchEverywhere,
+    /// 转到 → 在文件中替换（`Ctrl+Shift+R`）。
+    ///
+    /// 执行分支 = [`CommandId::OpenReplaceInFiles`]（`crate::workspace::run_command_id`），
+    /// 与 `Ctrl+Shift+R` 那条全局 action 落到**同一个方法**
+    /// （`ShellWorkspace::open_replace_in_files`）——"一个逻辑命令只建模一次"。
+    ///
+    /// 键位有**真源依据**：真源的 Windows 平台表就是 `Ctrl+Shift+R`
+    /// （`macos/Sources/Lithe/Models/Keymap/LitheCommandCatalog.swift:61`；菜单项在
+    /// `LitheApp.swift:624-627`，位置是导航菜单里「Find in Files…」的下一条）。
+    ReplaceInFiles,
     // -----------------------------------------------------------------------
     // B2：以下 18 条是"能力已经在、只缺菜单项"的那一批（侦察 §2 的 🟡）。
     // 每一条的执行落点写在 `ShellWorkspace::apply_menu_action` 各自的臂上。
@@ -825,6 +835,12 @@ impl MenuAction {
             // 这一项原来也声明"缺索引器"（`MISSING_INDEXER`）—— 索引链 U18 就通了、浮层本件做完，
             // 所以它转正、文案键不动（与「快速打开」同一处置）。
             Self::SearchEverywhere => "lithe.menu.globalSearch",
+            // 「在文件中替换」是**本侧新增**的一条（真源的 Windows 菜单表里没有它，但 macOS 的
+            // 导航菜单里有：`LitheApp.swift:624-628`）。文案用 gpui 自有键
+            // `search.gpui.replaceInFiles`（zh「在项目中替换」逐字取自
+            // `macos/Resources/zh-Hans.lproj/Localizable.strings:65`）—— 同一个键同时是
+            // 浮层标题，理由写在 `tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里。
+            Self::ReplaceInFiles => "lithe.search.gpui.replaceInFiles",
             Self::NewTerminalTab => "lithe.menu.newTerminal",
             Self::CloseTerminalTab => "lithe.menu.closeTerminal",
             Self::Preferences => "lithe.menu.preferences",
@@ -904,6 +920,9 @@ impl MenuAction {
             Self::QuickOpen => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
             // 「全局搜索」沿用原来那条占位项的图标（地球），不动 —— 它本来就摆在这里。
             Self::SearchEverywhere => idea_icon_mono(&idea::GLOBE_HEMISPHERE_WEST_ICON, is_dark),
+            // 「在文件中替换」用与「编辑 → 查找并替换」**同一个**替换字形（图标允许重复，
+            // 菜单动作不许重复）：两件事都是"把 A 换成 B"，只是作用域一个是文件、一个是项目。
+            Self::ReplaceInFiles => Icon::new(IconName::Replace),
             Self::Minimize => Icon::new(IconName::WindowMinimize),
             Self::Maximize => Icon::new(IconName::WindowMaximize),
             Self::ToggleFullscreen => Icon::new(IconName::Maximize),
@@ -989,6 +1008,9 @@ impl MenuAction {
             // 空闲的 `Ctrl+*` 也没有一条有真源依据）—— 所以不传 `.action(..)`，
             // 菜单上不会画一个"显示了却按不出"的键位胶囊。
             Self::SearchEverywhere => return None,
+            // `Ctrl+Shift+R`：`crate::replace_in_files::install_actions` 登记（本任务新绑；
+            // 键位有真源依据，见 [`MenuAction::ReplaceInFiles`] 的文档）。
+            Self::ReplaceInFiles => Box::new(crate::replace_in_files::OpenReplaceInFiles),
             // B2 新绑的六条：`install_key_actions` 登记（键位常量见 `menu_key`）。
             Self::ReopenClosedTab => Box::new(ReopenTab),
             Self::ToggleActivitySidebar => Box::new(ToggleSidebar),
@@ -1063,6 +1085,10 @@ impl MenuAction {
             // → `ShellWorkspace::open_search_everywhere`。它没有快捷键，所以没有第二处入口
             // （不像「快速打开」那样有一个 Action 与本项指向同一个执行点）。
             Self::SearchEverywhere => Some(CommandId::OpenSearchEverywhere),
+            // 「在文件中替换」同样**只建模一次**：菜单项 → `CommandId::OpenReplaceInFiles`
+            // → `ShellWorkspace::open_replace_in_files`，而 `Ctrl+Shift+R` 的全局 action
+            // 处理器调的是**同一个方法**（本项 `keybind_action` 有值，菜单上会画键位胶囊）。
+            Self::ReplaceInFiles => Some(CommandId::OpenReplaceInFiles),
             Self::NewTerminalTab
             | Self::CloseTerminalTab
             | Self::Preferences
@@ -1343,6 +1369,10 @@ pub static MENUS: &[TopMenu] = &[
             // 「快速打开」原来是占位项（声明缺索引器）——U17 第二件把索引链与浮层都做完之后，
             // 它接上了**同一个** `Ctrl+P` Action（本文件 `MenuAction::QuickOpen`）。
             MenuItem::Action(MenuAction::QuickOpen),
+            // 「在文件中替换」（U17 第四件）：真源的 macOS 导航菜单里就摆在「Find in Files…」
+            // 的下一条（`LitheApp.swift:618-628`），本侧接在「快速打开」之后 —— 它与本菜单里
+            // 另外两项一样属于"到处找东西"这一族，且与 `Ctrl+Shift+R` 是**同一个** Action。
+            MenuItem::Action(MenuAction::ReplaceInFiles),
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToLine",
                 missing: MISSING_EDITOR_FEATURES,
@@ -1539,12 +1569,13 @@ pub fn action_count() -> usize {
 /// 断言了它，改表时不会悄悄少画一条）：
 ///
 /// ```text
-/// action_count()    = 45   // 43 + 「快速打开」（2026-10-01 从占位项转正）
+/// action_count()    = 46   // 43 + 「快速打开」（2026-10-01 从占位项转正）
 ///                          //    + 「全局搜索」（U17 第三件，同一条路）
-/// not_wired_count() = 47   // 49 - 上面那两条
+///                          //    + 「在文件中替换」（U17 第四件，本侧**新增**的一条）
+/// not_wired_count() = 47   // 49 - 上面那两条转正的
 /// MenuItem::Theme   =  1   // 「视图 → 主题」子菜单：既不是 Action、也没有 missing 声明
 /// -------------------------
-/// 合计              = 93   = 真源 89 条 + 本侧新增 4 条
+/// 合计              = 94   = 真源 89 条 + 本侧新增 5 条
 /// ```
 ///
 /// 档位分布见 `tests` 模块里那段逐条明细（规格逐条表是 ✅8 / 🟡23 / ❌58）。
@@ -2834,19 +2865,22 @@ mod tests {
     /// ⚠️ 「还原文件」在规格里是 ❌（`10-menu-bar.md:126`），**不是** 🟡 —— 别被它跟
     /// 「后退 / 前进」摆在同一张表里的位置骗了。
     ///
-    /// ⇒ 本侧菜单 = 真源 89（1 个「主题」子菜单 + 88 条 Action / 占位项）+ 本侧新增 4 条
-    /// = 93 个条目；其中 **45 条 Action + 47 条占位项**。
+    /// ⇒ 本侧菜单 = 真源 89（1 个「主题」子菜单 + 88 条 Action / 占位项）+ 本侧新增 5 条
+    /// = 94 个条目；其中 **46 条 Action + 47 条占位项**。
     ///
-    /// ⚠️ 45 / 47 是同一件事的两面：两条真源项在 U17 里从占位项转成 Action ——
+    /// ⚠️ 46 / 47 是同一件事的两面：两条真源项在 U17 里从占位项转成 Action ——
     /// 「快速打开」（第二件，`43 → 44` / `49 → 48`）与「全局搜索」（第三件，
-    /// `44 → 45` / `48 → 47`），条目总数不变 —— `SOURCE_MENU_ITEMS` 与 `LOCAL_ONLY_ITEMS`
-    /// 都不用改。「全局搜索」那一转正还顺带删掉了 `indexer` 那一组 missing 声明（17 → 16）。
+    /// `44 → 45` / `48 → 47`），条目总数不变；U17 第四件的「在文件中替换」是
+    /// **本侧新增**的一条（`45 → 46`，`LOCAL_ONLY_ITEMS` `4 → 5`），条目总数 +1。
+    /// 「全局搜索」那一转正还顺带删掉了 `indexer` 那一组 missing 声明（17 → 16）。
     const SOURCE_MENU_ITEMS: usize = 89;
-    /// 本侧**新增**（真源 89 条里没有）的项数：4 条。
+    /// 本侧**新增**（真源 89 条里没有）的项数：5 条。
     ///
     /// 侦察 §2.11 记的是 3 条（显示状态栏 / 外观设置 / Maven），第 4 条是 B1 加的
-    /// 「文件 → 打开文件…」（`lithe.outline.openFile` 复用真源文案键）—— 侦察写在 B1 之前。
-    const LOCAL_ONLY_ITEMS: usize = 4;
+    /// 「文件 → 打开文件…」（`lithe.outline.openFile` 复用真源文案键），第 5 条是 U17 第四件
+    /// 加的「转到 → 在文件中替换」（真源 macOS 的导航菜单里有、Windows 那份 89 条里没有，
+    /// 见 `MenuAction::ReplaceInFiles` 的文档）—— 侦察写在 B1 之前，B1 那条也写在 U17 之前。
+    const LOCAL_ONLY_ITEMS: usize = 5;
 
     /// `S1_MENU_CLOSE reason=…` 的取值域**正好是 Q17 那五个**（顺序也照那份规格写），
     /// 而且互不相同。
@@ -3375,6 +3409,67 @@ mod tests {
         assert!(
             MenuAction::SearchEverywhere.keybind_action().is_none(),
             "本切片没有为它找出一条有真源依据的空闲键位，所以菜单上不许画键位胶囊"
+        );
+    }
+
+    /// 「转到 → 在文件中替换」与 `Ctrl+Shift+R` 是**同一个逻辑命令**（U17 第四件）。
+    ///
+    /// 这条钉的是同一件事的三个面：
+    ///
+    /// 1. 菜单里**恰好一条**，文案键是 gpui 自有键 `search.gpui.replaceInFiles`，而且真的解析
+    ///    得出中文（`tr(..) != key`）—— 那条 key 由 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS`
+    ///    生成，中文逐字取自 `macos/Resources/zh-Hans.lproj/Localizable.strings:65`；
+    /// 2. 它映射到 `CommandId::OpenReplaceInFiles`，执行分支 =
+    ///    `ShellWorkspace::open_replace_in_files`；
+    /// 3. `keybind_action()` **有值** —— 那是"菜单上会画出 `Ctrl+Shift+R` 胶囊"的判据，
+    ///    也是"这条键位真的有绑定"的判据（`Ctrl+Shift+R` 由
+    ///    `crate::replace_in_files::install_actions` 在 `ShellWorkspace::new` 里登记，
+    ///    键位有真源依据：`LitheCommandCatalog.swift:61`）。
+    ///
+    /// ⚠️ **它证明不了"真按键能打开浮层"**：那要一个真的 `ShellWorkspace` 窗口 + 键事件
+    /// （理由与 `quick_open_menu_item_dispatches_the_same_command_as_the_shortcut` 逐字相同）。
+    /// 所以交互路径的证据是 stderr 锚点 `S1_REPLACE_PREVIEW open/…`。
+    #[test]
+    fn replace_in_files_menu_item_dispatches_the_same_command_as_the_shortcut() {
+        use crate::command_palette::CommandId;
+
+        let listed = MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .filter(|item| matches!(item, MenuItem::Action(MenuAction::ReplaceInFiles)))
+            .count();
+        assert_eq!(
+            listed, 1,
+            "「在文件中替换」在菜单里必须恰好一条（不许两个入口两个动作）"
+        );
+
+        assert_eq!(
+            MenuAction::ReplaceInFiles.label_key(),
+            "lithe.search.gpui.replaceInFiles"
+        );
+        assert_ne!(
+            tr(MenuAction::ReplaceInFiles.label_key()).as_ref(),
+            "lithe.search.gpui.replaceInFiles",
+            "菜单文案解析不出来（键名拼错了？或没进 GPUI_ONLY_KEYS / WIRED）"
+        );
+        assert_eq!(
+            MenuAction::ReplaceInFiles.command_id(),
+            Some(CommandId::OpenReplaceInFiles),
+            "菜单项必须落到 Replace in Files 那一个 CommandId"
+        );
+        assert_eq!(
+            CommandId::OpenReplaceInFiles.id(),
+            "open-replace-in-files",
+            "诊断 id 是 `S1_COMMAND_RUN id=…` 的可 grep 契约"
+        );
+        assert!(
+            MenuAction::ReplaceInFiles.keybind_action().is_some(),
+            "有键位的项必须给出 Action，否则菜单上会画一颗按不出效果的键（Q3 禁止）"
+        );
+        assert_eq!(
+            crate::replace_in_files::REPLACE_KEY,
+            "ctrl-shift-r",
+            "真源 Windows 平台表给的就是它（LitheCommandCatalog.swift:61）"
         );
     }
 

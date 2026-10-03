@@ -712,6 +712,10 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -
             Category::View,
             idea_icon_mono(&idea::GLOBE_HEMISPHERE_WEST_ICON, is_dark),
         ),
+        // 「在文件中替换」同样**不在面板里**（`COMMAND_ORDER` 没有它，入口是菜单与
+        // `Ctrl+Shift+R`）。图标与菜单那一份同源（`MenuAction::ReplaceInFiles` 用的是
+        // 与「编辑 → 查找并替换」同一个替换字形）。
+        C::OpenReplaceInFiles => (Category::View, Icon::new(IconName::Replace)),
         C::NavigateToDefinition => (
             Category::View,
             idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
@@ -792,6 +796,10 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -
         // 「全局搜索」：label 与菜单项**同一个键**（`lithe.menu.globalSearch`），description 取
         // 顶级菜单名「视图」—— 与上面几条同一口径（它也不会被画进面板）。
         C::OpenSearchEverywhere => (tr("lithe.menu.globalSearch"), tr("lithe.menu.view")),
+        // 「在文件中替换」：label 与菜单项**同一个键**（`lithe.search.gpui.replaceInFiles`，
+        // gpui 自有键，中文逐字取自 `macos/Resources/zh-Hans.lproj/Localizable.strings:65`），
+        // description 取它所在的顶级菜单名「转到」—— 与上面几条同一口径（它也不会被画进面板）。
+        C::OpenReplaceInFiles => (tr("lithe.search.gpui.replaceInFiles"), tr("lithe.menu.go")),
         C::NavigateToDefinition => (
             tr("lithe.menu.goToDefinition"),
             tr("lithe.navigation.definition"),
@@ -1256,6 +1264,11 @@ impl ShellWorkspace {
         // **开浮层**的键 —— 而是一条**只在浮层焦点路径上生效**的键（key context 判定，
         // 见 `crate::search_everywhere::install_actions`），所以不存在"启动后按不出来"的死角。
         crate::search_everywhere::install_actions(cx);
+        // Replace in Files 的 `Ctrl+Shift+R`（U17 第四件）：与 Quick Open 同一条 —— 它是
+        // **开浮层**的键，所以必须登记成全局 action（挂在根元素上会有"启动后没点过任何地方
+        // 时按不出来"的死角）。键位有真源依据：真源的 Windows 平台表就是 `Ctrl+Shift+R`
+        // （`macos/Sources/Lithe/Models/Keymap/LitheCommandCatalog.swift:61`）。
+        crate::replace_in_files::install_actions(cx);
 
         // 设置里的「项目 · JDK 与 Maven」页把 JDK 覆盖值（`javaHomePath`）存进设置文件，
         // 而这条值**唯一的消费方是语言服务**（JDT LS 用哪个 JDK 起）：这条链路只有本 crate
@@ -2486,6 +2499,27 @@ impl ShellWorkspace {
         crate::search_everywhere::open_dialog(overlay, window, cx);
     }
 
+    /// 打开 Replace in Files 浮层（`Ctrl+Shift+R` / 菜单「转到 → 在文件中替换」）。
+    ///
+    /// 两个入口落到**同一个方法**：键位经 `crate::replace_in_files::install_actions` 的全局
+    /// 处理器调它，菜单经 [`CommandId::OpenReplaceInFiles`] 在 [`Self::run_command_id`] 里调它
+    /// ——"一个逻辑命令只建模一次"。
+    ///
+    /// 外壳只做两件事：把 `root` 交给浮层，再 `window.open_dialog`。查询 / 选项 /
+    /// 预览结果 / 键盘全在 `crate::replace_in_files`。
+    ///
+    /// ⚠️ **这条界面只读、不写盘**：Core 在本分支**没有** apply / replace 命令
+    /// （`protocol/command.rs:77-78` 只有 `workspace.replacePreview`），所以这里没有
+    /// "点一下真的替换"的通路 —— 理由与它为什么不能在宿主里补，写在
+    /// `crate::replace_in_files` 的模块文档上。
+    ///
+    /// ⚠️ **只能从事件回调或任务里调用**：`render` 阶段调 `open_dialog` 会 panic。
+    pub(crate) fn open_replace_in_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let root = self.root.clone();
+        let panel = cx.new(|cx| crate::replace_in_files::ReplaceInFiles::new(root, window, cx));
+        crate::replace_in_files::open_dialog(panel, window, cx);
+    }
+
     /// 执行命令面板的第 `row` 条动作（`row` = [`ShellWorkspace::command_actions`] 的行号）。
     ///
     /// **每一条都真的改到状态**：不是日志占位。越界行号直接返回（不 panic、不静默落到某项）。
@@ -2697,7 +2731,9 @@ impl ShellWorkspace {
             // 这里的臂与上面几条一样**不可达**，列出来只为让 match 穷尽。
             | MenuAction::QuickOpen
             // 「全局搜索」同理（`CommandId::OpenSearchEverywhere`）。
-            | MenuAction::SearchEverywhere => {
+            | MenuAction::SearchEverywhere
+            // 「在文件中替换」同理（`CommandId::OpenReplaceInFiles`）。
+            | MenuAction::ReplaceInFiles => {
                 diagnose_menu_run(action, "unreachable");
             }
         }
@@ -2809,6 +2845,12 @@ impl ShellWorkspace {
                 // 唯一执行点（它没有键位，见 `CommandId::OpenSearchEverywhere` 的文档）。
                 diagnose_run(id, "open");
                 self.open_search_everywhere(window, cx);
+            }
+            CommandId::OpenReplaceInFiles => {
+                // 接线点：[`Self::open_replace_in_files`] —— 与 `Ctrl+Shift+R` 的全局处理器
+                // （`crate::replace_in_files::install_actions`）落到**同一个方法**。
+                diagnose_run(id, "open");
+                self.open_replace_in_files(window, cx);
             }
             CommandId::OpenFile => {
                 // 接线点：gpui 自带的 `App::prompt_for_paths`
@@ -6152,7 +6194,8 @@ mod tests {
                 expected
             );
         }
-        // 与本表之外的 id 也不能撞（面板那七条 + 三条只由快捷键/菜单触发的）。
+        // 与本表之外的 id 也不能撞（面板那七条 + 几条只由快捷键/菜单触发的：
+        // 切换菜单栏 / 保存 / 命令面板 / 快速打开 / 全局搜索 / 在文件中替换 / 转到定义）。
         for other in [
             CommandId::OpenSettings,
             CommandId::OpenAppearanceSettings,
@@ -6166,6 +6209,7 @@ mod tests {
             CommandId::OpenCommandPalette,
             CommandId::OpenQuickOpen,
             CommandId::OpenSearchEverywhere,
+            CommandId::OpenReplaceInFiles,
             CommandId::NavigateToDefinition,
         ] {
             ids.push(other.id());
