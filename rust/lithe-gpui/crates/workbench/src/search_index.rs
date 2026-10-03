@@ -32,7 +32,39 @@
 //!   （索引缓存在进程内存里，跟着一起没）。所以 `invalidate` 只落在换根上。
 //! - **Git 的写盘路径**（`git discard/checkout` 改文件）没有接：那是 `crates/git` 的写回路径，
 //!   要接得在那边再加一个宿主钩子。本任务范围只到编辑器的保存路径。
-//! - **界面仍缺**（`U17`）：本模块**没有**任何渲染，也不改左活动栏"搜索"项。
+//!
+//! ## 就绪状态（`U18` 收尾）：唯一 owner 在这里，界面只读
+//!
+//! `U17` 四个界面都记过同一条缺口：项目刚打开、`warm` 还没跑完就立刻搜索时，第一次
+//! `workspace.search` 会在后台等索引锁（`get_or_build` 持锁建索引，
+//! `rust/lithe-core/src/project/search_index.rs:80-93`）—— 界面不卡（Core 调用在
+//! `background_spawn` 上），但用户**不知道为什么慢**。补法只有一条：把"我们已经发起 /
+//! 完成了 `warm`"这件事做成可观察的，而**状态真源就是本模块的调用结果**。
+//!
+//! [`SearchIndexReadiness`] 三态的落点只有一个：`schedule_warm` 发出的那条任务回到前台、
+//! 过了代次闸门之后的 [`SearchIndexWiring::adopt`]。它是一条**从 `Pending` 出发的单向边**：
+//!
+//! | 事件 | 就绪状态 |
+//! | --- | --- |
+//! | `SearchIndexWiring::new`（项目打开 / 换根后的新外壳） | `Pending` |
+//! | `warm` 的 `adopt` 采纳且 `Ok(_)` | `Ready` |
+//! | `warm` 的 `adopt` 采纳且 `Err(_)` | `Failed` |
+//! | `update` 的 `adopt`（任何结果） | **不变**（它改索引内容，不回答"warm 完了没"） |
+//! | 代次不匹配（`accepts` 为假） | **不变**（旧根的结果不是当前根的状态） |
+//! | `schedule_invalidate`（换根） | **不变**，但随后整个外壳被丢掉、新外壳从 `Pending` 起 |
+//!
+//! **怎么流到界面（一条链，四个界面的口径一致）**：本模块出**一个纯判据**
+//! （[`SearchIndexReadiness::notice_key`]）与**一个共用元素**（[`readiness_notice`]），
+//! 外壳在 `adopt` 返回"真的变了"时把新值**推**给四个界面
+//! （`ShellWorkspace::broadcast_search_index_readiness`：常驻的左栏面板 + 三个**只在开着时**
+//! 有效的浮层句柄）。所以：
+//!
+//! - **不轮询**：没有任何定时器、没有任何"每帧问一次"；只有一次 `warm` 的结果回来时推一次。
+//! - **不在 `render` 里 mutate / notify / 起 task**：四个界面的 `render` 只读自己的一个字段。
+//! - **单一 owner**：四个界面都没有"索引里有什么"的判断，也没有第二份状态；它们只画
+//!   `notice_key()` 给的**一句**文案，`Ready` 时那一行整行消失。
+//! - **不阻塞搜索、不排队、不重试、不做进度百分比**（Core 不报进度）、**不取消 warm**：
+//!   提示是纯展示，`Failed` 也只说"索引没提前建好、第一次搜索可能慢"，不说成致命错误。
 //!
 //! ## 请求形状
 //!
@@ -55,13 +87,17 @@
 //! ⚠️ 诚实边界：换根走的是 `window.replace_root` —— 它**重建整个 `ShellWorkspace`**，
 //! 所以旧根的 warm 任务今天本来就更不回新外壳（`WeakEntity::update` 拿不到实体）。
 //! 也就是说"旧根结果不能被当成新根的"这条**今天首先由架构保证**，代次闸门是把那条结构性
-//! 保证变成**显式、可单测的判据**（见本文件末尾的单测），并在 U17 把索引状态显示出来时
-//! 成为同一个采纳点。不要把它读成"今天已经有过一次真实串台"。
+//! 保证变成**显式、可单测的判据**（见本文件末尾的单测），并在 `U18` 收尾把索引**就绪状态**
+//! 接给四个搜索界面时成为同一个采纳点（见上面的「就绪状态」）。不要把它读成"今天已经有过
+//! 一次真实串台"。
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{AppContext as _, Context};
-use lithe_gpui_shared::{CoreError, core_json};
+use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::{
+    AnyElement, App, AppContext as _, Context, IntoElement, ParentElement as _, Styled as _, div,
+};
+use lithe_gpui_shared::{CoreError, core_json, tr};
 use serde_json::{Value, json};
 
 use crate::workspace::ShellWorkspace;
@@ -76,6 +112,82 @@ const WARM_COMMAND: &str = "workspace.searchIndex.warm";
 const UPDATE_COMMAND: &str = "workspace.searchIndex.update";
 /// `workspace.searchIndex.invalidate`（`protocol/command.rs:359`）。
 const INVALIDATE_COMMAND: &str = "workspace.searchIndex.invalidate";
+
+/// `adopt` 的操作名：**只有它**的结果会改就绪状态（`update` 只改索引内容）。
+///
+/// 定义成常量而不是在两处各写一次字面量：`schedule_warm` 传进去的那个字符串，
+/// 与 `adopt` 内部"要不要落就绪状态"的判据**必须是同一个值**。
+const WARM_OP: &str = "warm";
+
+/// `Pending`（`warm` 已发出、结果还没回来）时那句提示的文案键。
+const PENDING_NOTICE_KEY: &str = "lithe.search.gpui.indexWarming";
+
+/// `Failed`（`warm` 没成功）时那句提示的文案键。**与上面那条不同**：不能说成同一件事。
+const FAILED_NOTICE_KEY: &str = "lithe.search.gpui.indexWarmFailed";
+
+/// 搜索索引的就绪状态。**唯一 owner 是 [`SearchIndexWiring`]** —— 四个搜索界面只读它，
+/// 各自**不**另建一份"索引里有什么"的判断（那就是第二个真相源）。
+///
+/// 它的含义严格限定为"**宿主已经把 `warm` 发出去、并且知道它怎么了**"，不是"索引里有多少
+/// 文件"（那是 Core 的 `fileCount`，归 `result_line` 的诊断行）。所以三个取值都不会让界面
+/// 去禁用 / 排队 / 重试任何搜索。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum SearchIndexReadiness {
+    /// 项目已打开、`warm` 已排进后台，但结果还没回来：第一次搜索可能要等索引锁。
+    #[default]
+    Pending,
+    /// `warm` 成功回来：索引已经建好（或复用），第一次搜索不再付建索引的钱。
+    Ready,
+    /// `warm` 没成功：索引没有提前建好。**不是致命错误** —— 第一次搜索会自己建，
+    /// 只是那一下慢。提示必须与"还在构建"分开说。
+    Failed,
+}
+
+impl SearchIndexReadiness {
+    /// 未就绪时那句提示的文案键；**`Ready` 时返回 `None`**（那一行整行消失）。
+    ///
+    /// 做成纯函数是本状态唯一可确定性单测的判据：gpui 的浮层与侧栏在本 crate 里没有
+    /// 渲染断言，而"未就绪显示 / 就绪隐藏 / 失败换一句"这三条分支全落在这一次 `match` 上。
+    pub(crate) fn notice_key(self) -> Option<&'static str> {
+        match self {
+            Self::Pending => Some(PENDING_NOTICE_KEY),
+            Self::Ready => None,
+            Self::Failed => Some(FAILED_NOTICE_KEY),
+        }
+    }
+
+    /// 诊断行里的短名（`S1_SEARCH_INDEX readiness=…`）。
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Ready => "ready",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// 未就绪时那一行提示的**唯一元素工厂**：四个搜索界面共用它，所以口径只有一份
+/// （能共用一个 helper 就共用，别写四份）。
+///
+/// `Ready` 时返回 `None`，调用方用 `.children(..)` 落进去 —— `Option<T: IntoElement>`
+/// 是 0 或 1 个孩子（`menu_bar.rs:2657` 是既有写法），所以就绪后那一行**真的不占位**。
+///
+/// 这是**纯展示**：不挡输入、不禁用搜索、不弹窗、不挡结果；`render` 里只读不写。
+pub(crate) fn readiness_notice(readiness: SearchIndexReadiness, cx: &App) -> Option<AnyElement> {
+    let key = readiness.notice_key()?;
+    Some(
+        div()
+            .w_full()
+            .flex_shrink_0()
+            // 提示行与界面其余部分同一档内衬（`px_3` / `py_2` 都是 rem 档位助手）。
+            .px_3()
+            .py_2()
+            .text_sm()
+            .text_color(cx.theme().muted_foreground)
+            .child(tr(key))
+            .into_any_element(),
+    )
+}
 
 /// `warm` / `invalidate` 的 payload（= `SearchIndexRequest`）。
 fn root_payload(root: &str) -> Value {
@@ -96,23 +208,35 @@ fn index_path(root: &Path, written: &Path) -> Option<String> {
     lithe_gpui_shared::workspace_config::workspace_relative(root, written)
 }
 
-/// 搜索索引接线：**一个工作区根 + 一个代次**。
+/// 搜索索引接线：**一个工作区根 + 一个代次 + 一个就绪状态**。
 ///
 /// 它是 `ShellWorkspace` 的一个字段，生命周期与外壳相同（换根＝换外壳＝换一份接线）。
+/// 就绪状态的**唯一 owner 也是它**（见模块文档的「就绪状态」）：界面拿到的值只有两条路
+/// —— 外壳在 `new` 时读一次给它，或者外壳在 `adopt` 说"变了"时推一次。
 pub(crate) struct SearchIndexWiring {
     /// 所有命令都发往这个根；诊断行也打它（**不用** `self.root` 之外的任何来源）。
     root: PathBuf,
     /// 代次：`invalidate`（换根）时 +1，之后回来的旧代次结果一律不采纳。
     generation: u64,
+    /// 就绪状态。`new` 起于 `Pending`，此后只有 `warm` 的**采纳**能改它。
+    readiness: SearchIndexReadiness,
 }
 
 impl SearchIndexWiring {
-    /// 绑定一个工作区根（代次从 0 起）。
+    /// 绑定一个工作区根（代次从 0 起，就绪状态从 [`SearchIndexReadiness::Pending`] 起）。
     pub(crate) fn new(root: PathBuf) -> Self {
         Self {
             root,
             generation: 0,
+            // 换根＝换外壳＝换一份接线，所以新外壳天然从 `Pending` 起，**不需要**在
+            // `schedule_invalidate` 里手动复位（那一步只是把旧根的 Core 缓存放掉）。
+            readiness: SearchIndexReadiness::default(),
         }
+    }
+
+    /// 当前就绪状态（界面唯一的读点）。
+    pub(crate) fn readiness(&self) -> SearchIndexReadiness {
+        self.readiness
     }
 
     /// 当前代次（排任务时带走的就是它）。
@@ -137,6 +261,9 @@ impl SearchIndexWiring {
     /// Core 调用是同步阻塞的，所以整段进 `background_spawn`（`shared/src/core_client.rs:27-28`），
     /// **不在 UI 线程上等**。失败只留 `S1_SEARCH_INDEX warm … status=failed`，**不影响开项目**
     /// （降级为"第一次搜索时再建"）。
+    ///
+    /// 这条任务的结果还是**就绪状态的唯一来源**：回到前台后被 [`SearchIndexWiring::adopt`]
+    /// 落成 `Ready` / `Failed`，再由外壳推给四个搜索界面（见模块文档的「就绪状态」）。
     pub(crate) fn schedule_warm(&self, cx: &mut Context<ShellWorkspace>) {
         let root_text = self.root.to_string_lossy().to_string();
         let issued = self.generation();
@@ -146,8 +273,11 @@ impl SearchIndexWiring {
             let result = cx
                 .background_spawn(async move { core_json(WARM_COMMAND, root_payload(&root_text)) })
                 .await;
-            let _ = this.update(cx, |shell, _cx| {
-                shell.search_index.adopt("warm", issued, result)
+            let _ = this.update(cx, |shell, cx| {
+                // 就绪状态只有这里会被翻；翻了才推给四个搜索界面（见 `adopt` 的返回值）。
+                if shell.search_index.adopt(WARM_OP, issued, result) {
+                    shell.broadcast_search_index_readiness(cx);
+                }
             });
         })
         .detach();
@@ -178,7 +308,9 @@ impl SearchIndexWiring {
                 })
                 .await;
             let _ = this.update(cx, |shell, _cx| {
-                shell.search_index.adopt("update", issued, result)
+                // `update` 的采纳只打诊断（`adopt` 对非 `warm` 恒返回 `false`），
+                // 所以这里不需要跟着广播 —— 写盘不改"warm 完了没"。
+                shell.search_index.adopt("update", issued, result);
             });
         })
         .detach();
@@ -214,16 +346,45 @@ impl SearchIndexWiring {
         .detach();
     }
 
-    /// 后台结果回到前台：**先过代次闸门**，再打一行可 grep 的诊断。
+    /// 后台结果回到前台：**先过代次闸门**，再打一行可 grep 的诊断；`warm` 的结果还要
+    /// 落**就绪状态**。
     ///
-    /// 唯一采纳动作就是这一行诊断 —— U17 把索引状态显示出来时，同一个闸门也是它的采纳点。
-    fn adopt(&self, op: &str, issued: u64, result: Result<Option<Value>, CoreError>) {
+    /// 返回"**就绪状态是否真的变了**"：调用方据此把新值**推**给四个搜索界面
+    /// （`ShellWorkspace::broadcast_search_index_readiness`）。返回 `bool` 而不是让每个
+    /// 调用点自己比较，是为了让"什么时候该重绘"只有这一处判据。
+    ///
+    /// 旧代次（`!accepts`）一律**不采纳**：既不落就绪状态，也不打"当前根"的结论。
+    fn adopt(&mut self, op: &str, issued: u64, result: Result<Option<Value>, CoreError>) -> bool {
         if !self.accepts(issued) {
             // 旧代次：这条结果描述的不是当前根的索引，不采纳、也不打"当前根"的结论。
             eprintln!("{TAG} {op} stale=1 root={}", self.root.display());
-            return;
+            return false;
         }
         eprintln!("{}", result_line(op, &self.root, &result));
+        if op != WARM_OP {
+            // `update` 改的是**索引内容**，不回答"warm 完了没"：它不该翻就绪状态。
+            return false;
+        }
+        // `Ok(_)` 都算就绪：Core 的信封说这条命令成功了。`Ok(None)`（`ok:true` 但没有
+        // `data`）是**计数字段**的契约异常（上面那行 `status=missing_data` 已经如实报出来），
+        // 但它不改变"warm 跑过了"这个事实 —— 翻成 `Failed` 会把契约异常说成"索引没建好"，
+        // 那是另一件事。这两种情况在诊断行里分得开，在界面上分不开也不该分（都不是致命错误）。
+        let next = if result.is_ok() {
+            SearchIndexReadiness::Ready
+        } else {
+            SearchIndexReadiness::Failed
+        };
+        let changed = self.readiness != next;
+        self.readiness = next;
+        if changed {
+            // 与 `S1_SEARCH_INDEX` 那一族同口径：状态变了才留一行，人工核对锚点 grep 它。
+            eprintln!(
+                "{TAG} readiness={} root={}",
+                next.as_str(),
+                self.root.display()
+            );
+        }
+        changed
     }
 }
 
@@ -344,6 +505,140 @@ mod tests {
         );
         assert!(failed.starts_with("S1_SEARCH_INDEX invalidate root="));
         assert!(failed.contains("status=failed"));
+    }
+
+    /// **状态机**：新外壳从 `Pending` 起；`warm` 成功采纳 → `Ready`，而且**只报一次变**
+    /// （重复采纳同一个结果不该再让四个界面重绘一次）。
+    #[test]
+    fn warm_success_moves_pending_to_ready_exactly_once() {
+        let mut wiring = SearchIndexWiring::new(PathBuf::from("proj-root"));
+        assert_eq!(
+            wiring.readiness(),
+            SearchIndexReadiness::Pending,
+            "项目刚打开、warm 结果还没回来：必须是 Pending"
+        );
+
+        let issued = wiring.generation();
+        let warm = || Ok(Some(json!({ "fileCount": 1, "rebuilt": true })));
+        assert!(
+            wiring.adopt(WARM_OP, issued, warm()),
+            "Pending → Ready 是**变**，调用方据此推一次新值"
+        );
+        assert_eq!(wiring.readiness(), SearchIndexReadiness::Ready);
+
+        assert!(
+            !wiring.adopt(WARM_OP, issued, warm()),
+            "已经是 Ready 再采纳一次不算变（不重复重绘）"
+        );
+        assert_eq!(wiring.readiness(), SearchIndexReadiness::Ready);
+    }
+
+    /// `warm` 失败 → `Failed`（**不是**另一个 `Pending`：界面要把"还在建"与"没建成"分开说），
+    /// 而且它**不**回退成 `Ready`（失败之后没有第二次 warm，这个任务不发第二次）。
+    #[test]
+    fn warm_failure_moves_pending_to_failed() {
+        let mut wiring = SearchIndexWiring::new(PathBuf::from("proj-root"));
+        let issued = wiring.generation();
+        let failed = Err(CoreError::MissingData {
+            command: WARM_COMMAND.to_string(),
+        });
+        assert!(wiring.adopt(WARM_OP, issued, failed));
+        assert_eq!(wiring.readiness(), SearchIndexReadiness::Failed);
+    }
+
+    /// `ok:true` 但没有 `data`（计数字段的契约异常）：诊断行报 `missing_data`，
+    /// 但**就绪状态仍然是 `Ready`** —— 那条命令确实跑过了，把它说成"索引没建好"是编事实。
+    /// 这条钉住的是一个**显式取舍**，不是顺手写下来的行为。
+    #[test]
+    fn missing_data_is_still_reported_as_ready() {
+        let mut wiring = SearchIndexWiring::new(PathBuf::from("proj-root"));
+        let issued = wiring.generation();
+        assert!(wiring.adopt(WARM_OP, issued, Ok(None)));
+        assert_eq!(wiring.readiness(), SearchIndexReadiness::Ready);
+    }
+
+    /// `update`（保存写盘）**不回答"warm 完了没"**：它采纳之后就绪状态一律不变。
+    /// 少了这条，`update` 会在 warm 还在飞的时候把状态提前写成 `Ready`。
+    #[test]
+    fn update_never_changes_readiness() {
+        let mut wiring = SearchIndexWiring::new(PathBuf::from("proj-root"));
+        let issued = wiring.generation();
+        assert!(!wiring.adopt(
+            "update",
+            issued,
+            Ok(Some(json!({ "fileCount": 2, "rebuilt": false })))
+        ));
+        assert_eq!(
+            wiring.readiness(),
+            SearchIndexReadiness::Pending,
+            "update 不该把 Pending 变成 Ready"
+        );
+    }
+
+    /// **代次不匹配的结果不采纳**（既有 `accepts` 语义不能破）：换根前发出的 warm 即使
+    /// 成功了，也不能把新根的索引说成"就绪"。
+    #[test]
+    fn a_superseded_generation_does_not_change_readiness() {
+        let mut wiring = SearchIndexWiring::new(PathBuf::from("proj-root"));
+        let superseded = wiring.generation();
+        let _current = wiring.next_generation();
+
+        assert!(
+            !wiring.adopt(
+                WARM_OP,
+                superseded,
+                Ok(Some(json!({ "fileCount": 9, "rebuilt": true })))
+            ),
+            "旧代次的 warm 结果不算变"
+        );
+        assert_eq!(
+            wiring.readiness(),
+            SearchIndexReadiness::Pending,
+            "旧根的结果不能把当前根标成就绪"
+        );
+
+        // 换根之后**新外壳**从 Pending 起：这条走的是 `new`，`schedule_invalidate`
+        // 本身不动就绪状态（见结构体文档）。
+        let fresh = SearchIndexWiring::new(PathBuf::from("other-root"));
+        assert_eq!(fresh.readiness(), SearchIndexReadiness::Pending);
+    }
+
+    /// **提示的判据**（纯函数）：未就绪 → 有文案；就绪 → **没有**那一行；失败 → **另一句**。
+    ///
+    /// 这是本任务里唯一能被确定性断言钉住的那一半（gpui 的浮层在本 crate 没有渲染断言），
+    /// 所以三条分支逐条断言，并额外钉住"失败不能与还在构建共用同一句"。
+    #[test]
+    fn the_notice_is_hidden_when_ready_and_differs_when_failed() {
+        assert_eq!(
+            SearchIndexReadiness::Pending.notice_key(),
+            Some(PENDING_NOTICE_KEY)
+        );
+        assert_eq!(
+            SearchIndexReadiness::Ready.notice_key(),
+            None,
+            "就绪后那一行要整行消失"
+        );
+        assert_eq!(
+            SearchIndexReadiness::Failed.notice_key(),
+            Some(FAILED_NOTICE_KEY)
+        );
+        assert_ne!(
+            PENDING_NOTICE_KEY, FAILED_NOTICE_KEY,
+            "「还在构建」与「没建成功」必须是两句不同的话"
+        );
+        // 两条都是 gpui 自有键（真源与本 catalog 都没有"第一次搜索可能慢"这种说法），
+        // 命名空间与 `search.gpui.queryPlaceholder` 同一段。
+        for key in [PENDING_NOTICE_KEY, FAILED_NOTICE_KEY] {
+            assert!(key.starts_with("lithe.search.gpui."), "{key}");
+        }
+    }
+
+    /// `adopt` 的操作名常量与 `schedule_warm` 实际发的命令**必须是同一个** `warm`：
+    /// 两边写岔 = 就绪状态永远停在 `Pending`（界面提示永远不消失），而这条不会编译报错。
+    #[test]
+    fn the_warm_operation_name_matches_the_wired_command() {
+        assert_eq!(WARM_OP, "warm");
+        assert!(WARM_COMMAND.ends_with(".warm"), "{WARM_COMMAND}");
     }
 
     /// **真实 Core 往返**：临时夹具上走一遍 `warm` → 新增一个文件 → `update`。

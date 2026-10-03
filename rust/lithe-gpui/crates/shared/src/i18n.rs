@@ -53,6 +53,7 @@
 //! | `workbench` 的打开项目 / 最近项目（B4） | `lithe.menu.openFolder`、`lithe.projectOpen.{title,where,doNotAskAgain,cancel,newWindow,thisWindow}`（全部真源既有键）、`lithe.gpui.newWindowNotWired`（**唯一**一条 gpui 自有键，理由见 `extract-locale.mjs`） |
 //! | `workbench` 的菜单占位项（B3） | **17 条** `lithe.gpui.menuMissing.*`（一种能力一句："尚未接入：缺 X"），由 `menu_bar.rs` 的 `MISSING_GROUPS` 使用、状态栏左侧显示（其中 `cloneUi` / `newProjectScaffolding` 两条用在项目下拉那两行上）；全部是 gpui 自有键（真源的菜单项恒可执行，catalog 里没有这类句子），理由见 `extract-locale.mjs` |
 //! | `workbench` 的 Quick Open 浮层（U17 第二件） | `lithe.quickOpen.{searchFiles,noMatch}`（搜索框占位符 / 空态）、`lithe.menu.quickOpen`（「转到 → 快速打开」的菜单文案）—— 三条**全是真源既有键**，本任务零新增文案 |
+//! | `workbench` 的四个搜索界面（U18 收尾） | `lithe.search.gpui.{indexWarming,indexWarmFailed}`（索引未就绪时那一行提示）—— 两条都是 **gpui 自有键**（真源与本 catalog 都没有这类可解释性说法，理由见 `extract-locale.mjs`），由 `search_index.rs` 的 `readiness_notice` 一处使用、四个界面共用 |
 //!
 //! 具体调用的键由本文件末尾的 `every_wired_key_resolves_in_both_locales` 测试守住：
 //! **任何键拼错都会让测试失败**（缺键时 `rust-i18n` 原样回显键名，所以断言 `tr(key) != key`）。
@@ -1097,6 +1098,20 @@ mod tests {
             // 这一条是**唯一的** gpui 侧自有键（真源只有 macOS 的 SwiftUI 字面量），
             // 出处与理由见 `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
             ("lithe.search.gpui.queryPlaceholder", "搜索文件和内容"),
+            // 搜索索引就绪提示（U18 收尾，`workbench/src/search_index.rs` 的
+            // `readiness_notice`，四个搜索界面共用）。两条都是 **gpui 自有键**：
+            // 真源（macOS SwiftUI 三份搜索视图）与两份 catalog 都没有"正在建立搜索索引 /
+            // 第一次搜索可能慢"这类**可解释性**说法 —— 最接近的既有键 `quickOpen.indexing`
+            // （「正在索引项目文件」）只陈述状态、不解释后果，且它属于 Quick Open 列文件
+            // 那条路径，所以不借。逐条理由与出处见 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
+            (
+                "lithe.search.gpui.indexWarming",
+                "正在建立搜索索引，首次搜索可能较慢。",
+            ),
+            (
+                "lithe.search.gpui.indexWarmFailed",
+                "搜索索引未提前建立完成，首次搜索可能较慢（搜索本身仍然可用）。",
+            ),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

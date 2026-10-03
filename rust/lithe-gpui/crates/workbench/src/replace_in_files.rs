@@ -141,6 +141,7 @@ use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr, tr_args};
 use serde_json::Value;
 
+use crate::search_index::SearchIndexReadiness;
 use crate::search_model::{
     QueryTimeline, REPLACE_PREVIEW_COMMAND, ReplaceOptions, ReplaceRow, ReplaceState,
     parse_replace_preview, replace_payload,
@@ -377,11 +378,23 @@ pub struct ReplaceInFiles {
     timeline: QueryTimeline,
     /// 输入框订阅。**必须持有**，掉了就取消订阅。
     _subscriptions: Vec<Subscription>,
+    /// 搜索索引的就绪状态（`U18` 收尾）。**只读的展示值**：owner 是 `crate::search_index`，
+    /// 浮层在**打开时**由外壳读一次推进来（构造参数），之后由外壳在状态变化时推
+    /// （[`Self::set_search_index_readiness`]）。浮层不据此禁用 / 排队 / 改预览语义。
+    search_index_readiness: SearchIndexReadiness,
 }
 
 impl ReplaceInFiles {
     /// 建浮层状态（`open_replace_in_files` 那条回调里建一次，之后由 `Entity` 跨帧持有）。
-    pub(crate) fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    ///
+    /// `search_index_readiness`：**打开这一刻**的索引就绪状态（外壳从 `search_index` 读，
+    /// 唯一 owner 是它）。
+    pub(crate) fn new(
+        root: PathBuf,
+        search_index_readiness: SearchIndexReadiness,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let query = cx.new(|cx| {
             InputState::new(window, cx).placeholder(tr("lithe.search.gpui.queryPlaceholder"))
         });
@@ -419,7 +432,21 @@ impl ReplaceInFiles {
             state: ReplaceState::Idle,
             timeline: QueryTimeline::default(),
             _subscriptions: subscriptions,
+            search_index_readiness,
         }
+    }
+
+    /// 外壳推来一个新的索引就绪状态（**只在真的变了时** `cx.notify()`）。
+    pub(crate) fn set_search_index_readiness(
+        &mut self,
+        readiness: SearchIndexReadiness,
+        cx: &mut Context<Self>,
+    ) {
+        if self.search_index_readiness == readiness {
+            return;
+        }
+        self.search_index_readiness = readiness;
+        cx.notify();
     }
 
     /// 把焦点交给查找框。`open_dialog` 之后必须调一次（理由见 [`open_dialog`] 的注释）。
@@ -986,11 +1013,15 @@ impl Render for ReplaceInFiles {
     /// ⚠️ 这里**只读**状态：不 mutate、不 notify、不起任务。
     /// 进 `loading` / 换代 / 取消都发生在事件回调与后台任务里（见模块文档）。
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 索引就绪那一行（`Ready` 时是 `None`）：判据与元素都归 `crate::search_index`，
+        // 这里只把它画在控件区与结果区之间。浮层不因此禁用 / 排队 / 改预览语义。
+        let index_notice = crate::search_index::readiness_notice(self.search_index_readiness, cx);
         v_flex()
             .id(OVERLAY_ID)
             .size_full()
             .child(self.header(cx))
             .child(self.controls(cx))
+            .children(index_notice)
             .child(self.results(cx))
             .child(self.footer(cx))
     }

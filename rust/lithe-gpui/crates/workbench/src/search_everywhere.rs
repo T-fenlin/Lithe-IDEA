@@ -94,6 +94,7 @@ use lithe_gpui_shared::icons::{FileIcon, file_icon, idea, idea_icon_image};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
 use serde_json::Value;
 
+use crate::search_index::SearchIndexReadiness;
 use crate::search_model::{
     EVERYWHERE_COMMAND, EVERYWHERE_MAX_RESULTS, EverywhereRow, EverywhereState, QueryTimeline,
     SearchEverywhereScope, SearchOptions, absolute, parse_matches, payload_with_limit,
@@ -214,13 +215,21 @@ pub struct SearchEverywhere {
     timeline: QueryTimeline,
     /// 防抖任务：**换掉旧的 = 取消旧的唤醒**（`Task` 一 drop 就取消）。
     debounce_task: Option<Task<()>>,
+    /// 搜索索引的就绪状态（`U18` 收尾）。**只读的展示值**：owner 是 `crate::search_index`，
+    /// 浮层在**打开时**由外壳读一次推进来（构造参数），之后由外壳在状态变化时推
+    /// （[`Self::set_search_index_readiness`]）。浮层不据此禁用 / 排队 / 改 scope 语义。
+    search_index_readiness: SearchIndexReadiness,
 }
 
 impl SearchEverywhere {
     /// 建浮层状态（`open_search_everywhere` 那条回调里建一次，之后由 `Entity` 跨帧持有）。
+    ///
+    /// `search_index_readiness`：**打开这一刻**的索引就绪状态（外壳从 `search_index` 读，
+    /// 唯一 owner 是它）。
     pub(crate) fn new(
         root: PathBuf,
         on_open: Rc<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static>,
+        search_index_readiness: SearchIndexReadiness,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -234,7 +243,21 @@ impl SearchEverywhere {
             state: EverywhereState::Idle,
             timeline: QueryTimeline::default(),
             debounce_task: None,
+            search_index_readiness,
         }
+    }
+
+    /// 外壳推来一个新的索引就绪状态（**只在真的变了时** `cx.notify()`）。
+    pub(crate) fn set_search_index_readiness(
+        &mut self,
+        readiness: SearchIndexReadiness,
+        cx: &mut Context<Self>,
+    ) {
+        if self.search_index_readiness == readiness {
+            return;
+        }
+        self.search_index_readiness = readiness;
+        cx.notify();
     }
 
     /// 查询串变了（`Command` 的 `on_query`，只在**真的变了**时来）。
@@ -576,6 +599,9 @@ impl Render for SearchEverywhere {
         let rows: Vec<EverywhereRow> = self.state.rows(scope);
         let empty_query = self.state.query().trim().is_empty();
         let empty_key = scope.empty_key();
+        // 索引就绪那一行（`Ready` 时是 `None`）：判据与元素都归 `crate::search_index`。
+        // 位置在 scope 标签行与列表之间 —— 它解释的是"下面这列为什么可能慢"，不是 scope 的一部分。
+        let index_notice = crate::search_index::readiness_notice(self.search_index_readiness, cx);
 
         v_flex()
             .id(OVERLAY_ID)
@@ -586,6 +612,7 @@ impl Render for SearchEverywhere {
             .on_action(cx.listener(Self::on_scope_next))
             .on_action(cx.listener(Self::on_scope_prev))
             .child(self.scope_tabs(cx))
+            .children(index_notice)
             .child(
                 Command::new(&self.command)
                     .bordered(false)

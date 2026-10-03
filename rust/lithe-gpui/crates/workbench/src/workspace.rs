@@ -895,6 +895,10 @@ pub struct ShellWorkspace {
     /// `pub(crate)` 而不是私有：`crate::search_index` 排出的后台任务回来时要**读当前代次**
     /// （`accepts`）决定采纳还是丢弃，而这件事必须看到外壳**当下**的那一份接线 ——
     /// 排任务时克隆一份带走正是代次保护要防的错误。
+    ///
+    /// 它还持有**索引就绪状态**（`U18` 收尾）：`warm` 的结果被采纳后，外壳从这里读一次并
+    /// 推给四个搜索界面（[`ShellWorkspace::broadcast_search_index_readiness`]）——
+    /// 界面不轮询、不另建状态，见 `crate::search_index` 的模块文档「就绪状态」。
     pub(crate) search_index: SearchIndexWiring,
     /// 当前选中的项目标签（`None` = 一个都没选中）。
     active_project: Option<usize>,
@@ -1036,6 +1040,22 @@ pub struct ShellWorkspace {
     /// ⚠️ 面板**不**进会话文档：查询与结果不入 `.lithe/session.local.json`
     /// （搜索历史持久化不在本件范围）。
     search: Entity<crate::search_panel::SearchPanel>,
+    /// 三个搜索浮层的句柄（**只在它们开着时**能 `upgrade` 成功）。
+    ///
+    /// 为什么外壳要持有它们：索引就绪状态的真源是 [`ShellWorkspace::search_index`]，而浮层是
+    /// **每次打开新建**的 `Entity`（`Ctrl+P` / 菜单 → `cx.new` → `window.open_dialog`），
+    /// 外壳要把状态变化**推**进那个**当下存在**的实例，否则"打开浮层时还在建索引、建完了
+    /// 提示不消失"。
+    ///
+    /// 存 `WeakEntity` 而不是 `Entity`：浮层关掉后最后一批强引用（对话框的 `content` /
+    /// `on_close` 闭包）一起 drop，`upgrade` 就从 `Some` 变 `None` —— **不需要**任何"关闭时
+    /// 清句柄"的生命周期记账，也不会把浮层留住。三个字段与 `search` 同一处置：外壳只为
+    /// "把宿主状态登记给子视图"而持有句柄（与 `BufferWriteHost` / `TabMenuHostActions`
+    /// 同一个口径），打开 / 渲染 / 关闭仍全归各自的模块。
+    quick_open_overlay: Option<gpui_kit::WeakEntity<crate::quick_open::QuickOpen>>,
+    search_everywhere_overlay:
+        Option<gpui_kit::WeakEntity<crate::search_everywhere::SearchEverywhere>>,
+    replace_in_files_overlay: Option<gpui_kit::WeakEntity<crate::replace_in_files::ReplaceInFiles>>,
     /// 中央列内容：编辑区（标签栏 + 正文 / 空状态）。
     editor: Entity<EditorPane>,
     /// 中央扩展页（`crate::extensions_page`，Zed 式独立页，2026-09-29 起）。
@@ -1819,6 +1839,10 @@ impl ShellWorkspace {
             explorer,
             changes,
             search,
+            // 三个搜索浮层都还没开（句柄在各自 `open_*` 里登记，见字段文档）。
+            quick_open_overlay: None,
+            search_everywhere_overlay: None,
+            replace_in_files_overlay: None,
             editor,
             // 中央扩展页：懒创建（首次打开才建实体），启动时关闭。
             extensions_page: None,
@@ -2452,8 +2476,9 @@ impl ShellWorkspace {
     /// 调它，菜单经 [`CommandId::OpenQuickOpen`] 在 [`Self::run_command_id`] 里调它
     /// ——"一个逻辑命令只建模一次"。
     ///
-    /// 外壳只做两件事：把 `root` 与"打开文件"的通路交给浮层（`EditorPane::open`，
-    /// Core 的路径命中 `line` 恒为 `null`，所以走 `open` 而不是 `open_at`），再
+    /// 外壳只做三件事：把 `root` 与"打开文件"的通路交给浮层（`EditorPane::open`，
+    /// Core 的路径命中 `line` 恒为 `null`，所以走 `open` 而不是 `open_at`）、把**当刻的**
+    /// 索引就绪状态推进去（并登记弱句柄，之后状态真的变了时继续推）、再
     /// `window.open_dialog`。查询 / 结果 / 键盘全在 `crate::quick_open`。
     ///
     /// ⚠️ **只能从事件回调或任务里调用**：`render` 阶段调 `open_dialog` 会 panic。
@@ -2465,13 +2490,19 @@ impl ShellWorkspace {
                 // 与资源管理器点文件 / 查找面板点结果同一条通路（`EditorPane::open`）。
                 let _ = editor.update(cx, |pane, cx| pane.open(&path, window, cx));
             });
-        let quick_open = cx.new(|cx| crate::quick_open::QuickOpen::new(root, on_open, window, cx));
+        // 就绪状态**在打开这一刻读一次**（真源仍是 `search_index`），浮层不做任何"索引怎么样"
+        // 的判断；之后的变化由外壳推（见 `broadcast_search_index_readiness`）。
+        let readiness = self.search_index.readiness();
+        let quick_open =
+            cx.new(|cx| crate::quick_open::QuickOpen::new(root, on_open, readiness, window, cx));
+        self.quick_open_overlay = Some(quick_open.downgrade());
         crate::quick_open::open_dialog(quick_open, window, cx);
     }
 
     /// 打开 Search Everywhere 浮层（菜单「视图 → 全局搜索」）。
     ///
-    /// 外壳只做两件事：把 `root` 与"打开结果"的通路交给浮层，再 `window.open_dialog`。
+    /// 外壳只做三件事：把 `root` 与"打开结果"的通路交给浮层、把**当刻的**索引就绪状态推进去
+    /// （并登记弱句柄，之后变化继续推）、再 `window.open_dialog`。
     /// 查询 / 结果 / scope / 键盘全在 `crate::search_everywhere`。
     ///
     /// ⚠️ **只能从事件回调或任务里调用**：`render` 阶段调 `open_dialog` 会 panic。
@@ -2494,8 +2525,12 @@ impl ShellWorkspace {
                     None => pane.open(&path, window, cx),
                 });
             });
-        let overlay =
-            cx.new(|cx| crate::search_everywhere::SearchEverywhere::new(root, on_open, window, cx));
+        // 与 Quick Open 同一处置：打开这一刻读一次就绪状态（真源是 `search_index`）。
+        let readiness = self.search_index.readiness();
+        let overlay = cx.new(|cx| {
+            crate::search_everywhere::SearchEverywhere::new(root, on_open, readiness, window, cx)
+        });
+        self.search_everywhere_overlay = Some(overlay.downgrade());
         crate::search_everywhere::open_dialog(overlay, window, cx);
     }
 
@@ -2505,8 +2540,9 @@ impl ShellWorkspace {
     /// 处理器调它，菜单经 [`CommandId::OpenReplaceInFiles`] 在 [`Self::run_command_id`] 里调它
     /// ——"一个逻辑命令只建模一次"。
     ///
-    /// 外壳只做两件事：把 `root` 交给浮层，再 `window.open_dialog`。查询 / 选项 /
-    /// 预览结果 / 键盘全在 `crate::replace_in_files`。
+    /// 外壳只做三件事：把 `root` 交给浮层、把**当刻的**索引就绪状态推进去（并登记弱句柄，
+    /// 之后变化继续推）、再 `window.open_dialog`。查询 / 选项 / 预览结果 / 键盘全在
+    /// `crate::replace_in_files`。
     ///
     /// ⚠️ **这条界面只读、不写盘**：Core 在本分支**没有** apply / replace 命令
     /// （`protocol/command.rs:77-78` 只有 `workspace.replacePreview`），所以这里没有
@@ -2516,8 +2552,48 @@ impl ShellWorkspace {
     /// ⚠️ **只能从事件回调或任务里调用**：`render` 阶段调 `open_dialog` 会 panic。
     pub(crate) fn open_replace_in_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let root = self.root.clone();
-        let panel = cx.new(|cx| crate::replace_in_files::ReplaceInFiles::new(root, window, cx));
+        // 与另两个浮层同一处置：打开这一刻读一次就绪状态（真源是 `search_index`）。
+        let readiness = self.search_index.readiness();
+        let panel =
+            cx.new(|cx| crate::replace_in_files::ReplaceInFiles::new(root, readiness, window, cx));
+        self.replace_in_files_overlay = Some(panel.downgrade());
         crate::replace_in_files::open_dialog(panel, window, cx);
+    }
+
+    /// 把索引的**就绪状态**推给四个搜索界面（索引链唯一的对外通知口）。
+    ///
+    /// 调用点只有一个：`crate::search_index` 的 `warm` 任务回到前台、`adopt` 说"真的变了"
+    /// 的那一处（`search_index.rs` 的 `schedule_warm`）。所以：
+    ///
+    /// - **不轮询**：没有定时器、没有"每帧问一次"，只有一次真实的 `warm` 结果回来时走这里；
+    /// - **不在 `render` 里做事**：本方法在任务回调里被调，四个界面的 `render` 只读自己那份值；
+    /// - **单一 owner**：值来自 [`ShellWorkspace::search_index`]，界面那四个字段是**只读的展示
+    ///   副本**（各自 `set_..` 只在真的变了时 `cx.notify()`），没有任何界面自己判"索引好了没"；
+    /// - 打开浮层时的那一次推**不在这里**：浮层构造时就拿到了当刻的值（见三个 `open_*`），
+    ///   这里只负责"开着的那一个"在状态变化后跟着变 —— 关掉的浮层 `upgrade` 失败，直接跳过。
+    ///
+    /// 左栏面板是常驻实体（与外壳同生命周期），所以它总是被推；三个浮层是**每次打开新建**的，
+    /// 所以只推当下还活着的那个（弱句柄一 upgrade 就失败＝没开着）。
+    pub(crate) fn broadcast_search_index_readiness(&mut self, cx: &mut Context<Self>) {
+        let readiness = self.search_index.readiness();
+        self.search.update(cx, |panel, cx| {
+            panel.set_search_index_readiness(readiness, cx)
+        });
+        if let Some(overlay) = &self.quick_open_overlay {
+            let _ = overlay.update(cx, |view, cx| {
+                view.set_search_index_readiness(readiness, cx)
+            });
+        }
+        if let Some(overlay) = &self.search_everywhere_overlay {
+            let _ = overlay.update(cx, |view, cx| {
+                view.set_search_index_readiness(readiness, cx)
+            });
+        }
+        if let Some(overlay) = &self.replace_in_files_overlay {
+            let _ = overlay.update(cx, |view, cx| {
+                view.set_search_index_readiness(readiness, cx)
+            });
+        }
     }
 
     /// 执行命令面板的第 `row` 条动作（`row` = [`ShellWorkspace::command_actions`] 的行号）。

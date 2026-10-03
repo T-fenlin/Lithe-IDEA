@@ -967,6 +967,33 @@ const GPUI_ONLY_KEYS = [
     reason:
       "浮层底栏那颗主操作按钮（真源替换面板的**唯一**主操作）。出处：真源 `ProjectReplaceView.swift:160` 的 `Button(\"Preview\")`，中文逐字取自 `macos/Resources/zh-Hans.lproj/Localizable.strings:837`（\"Preview\" = \"预览\"）。**为什么不借 `svg.preview` / `editor.preview`**：那两条的键名各自绑在「SVG 预览」与「编辑器预览」两种视图模式上，借用会让以后改那两处的文案顺手改掉这颗按钮 —— 这一条明确归属替换面板。",
   },
+  // ── 搜索索引就绪提示（U18 收尾，四个搜索界面共用）─────────────────────
+  //
+  // 两句都是**宿主侧新增的可解释性提示**：macOS 真源与 Windows catalog 里**没有**任何
+  // "正在建立搜索索引 / 第一次搜索可能慢"的说法（逐字查过 `SearchSidebarView.swift`、
+  // `SearchEverywhereView.swift`、`ProjectReplaceView.swift` 三份 SwiftUI 真源的裸字面量，
+  // 以及 `macos/Resources/zh-Hans.lproj/Localizable.strings` 与 `locale.ts` 两份 catalog）。
+  //
+  // 真源里最接近的一条是 catalog 既有键 `quickOpen.indexing`（zh「正在索引项目文件」，
+  // `locales/source/locale.ts:7834`；en `:3515`）—— **故意不借**，两个理由：
+  // (1) 它只陈述"正在索引"这个**状态**，不解释用户真正困惑的那件事（为什么这一下搜得慢），
+  //     而本任务的验收判据正是"一句可解释的提示"；
+  // (2) 它是 Quick Open 那个浮层**列文件列表**时的进度文案，借到这里会让以后改那一处文案顺手
+  //     改掉四个搜索界面的提示 —— 与上面 `preview` 不借 `editor.preview` 是同一条理由。
+  {
+    key: "search.gpui.indexWarming",
+    zh: "正在建立搜索索引，首次搜索可能较慢。",
+    en: "Building the search index; the first search may be slower.",
+    reason:
+      "四个搜索界面（`search_panel.rs` / `quick_open.rs` / `search_everywhere.rs` / `replace_in_files.rs`）在索引**未就绪**时共用的那一行提示。**这是宿主侧新增的可解释性提示，不是真源文案**：真源与 catalog 都没有这一句（见上面整段说明）。它解释的是 `U18` 链上那条**已知现象** —— 项目刚打开、`workspace.searchIndex.warm` 还没跑完就搜索时，第一次 `workspace.search` 会在后台等索引锁（`rust/lithe-core/src/project/search_index.rs:80-93`），界面不卡但第一下慢。提示是纯展示：不挡输入、不禁用搜索、不排队、不重试、不报进度（Core 不报进度）。",
+  },
+  {
+    key: "search.gpui.indexWarmFailed",
+    zh: "搜索索引未提前建立完成，首次搜索可能较慢（搜索本身仍然可用）。",
+    en: "The search index was not built ahead of time, so the first search may be slower. Search still works.",
+    reason:
+      "同上的**失败态**（`warm` 那条 Core 调用返回错误）。**必须与「还在构建」分开说**，而且**不能说成致命错误**：索引没提前建好只意味着第一次搜索要自己建（Core 的 `get_or_build` 照旧工作），搜索功能本身不受影响。**这是宿主侧新增的可解释性提示**（同整段说明，真源没有对应说法），所以括号里明写「搜索本身仍然可用」，避免用户把这一行读成「搜索坏了」。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);

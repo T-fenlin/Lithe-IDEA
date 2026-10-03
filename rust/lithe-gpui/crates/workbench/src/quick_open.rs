@@ -70,7 +70,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::base::h_flex;
+use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::{
@@ -82,6 +82,7 @@ use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
 use serde_json::Value;
 
+use crate::search_index::SearchIndexReadiness;
 use crate::search_model::{
     EVERYWHERE_COMMAND, QueryTimeline, QuickOpenRow, QuickOpenState, SearchOptions, absolute,
     parse_matches, payload,
@@ -190,13 +191,21 @@ pub struct QuickOpen {
     timeline: QueryTimeline,
     /// 防抖任务：**换掉旧的 = 取消旧的唤醒**（`Task` 一 drop 就取消）。
     debounce_task: Option<Task<()>>,
+    /// 搜索索引的就绪状态（`U18` 收尾）。**只读的展示值**：owner 是 `crate::search_index`，
+    /// 浮层在**打开时**由外壳读一次推进来（构造参数），之后由外壳在状态变化时推
+    /// （[`Self::set_search_index_readiness`]）。浮层不据此禁用 / 排队 / 改查询语义。
+    search_index_readiness: SearchIndexReadiness,
 }
 
 impl QuickOpen {
     /// 建浮层状态（`Ctrl+P` 那条回调里建一次，之后由 `Entity` 跨帧持有）。
+    ///
+    /// `search_index_readiness`：**打开这一刻**的索引就绪状态（外壳从 `search_index` 读，
+    /// 唯一 owner 是它）。传进来而不是在浮层里自己判：浮层不认识索引链，见模块文档。
     pub(crate) fn new(
         root: PathBuf,
         on_open: Rc<dyn Fn(PathBuf, &mut Window, &mut App) + 'static>,
+        search_index_readiness: SearchIndexReadiness,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -208,7 +217,21 @@ impl QuickOpen {
             state: QuickOpenState::Idle,
             timeline: QueryTimeline::default(),
             debounce_task: None,
+            search_index_readiness,
         }
+    }
+
+    /// 外壳推来一个新的索引就绪状态（**只在真的变了时** `cx.notify()`）。
+    pub(crate) fn set_search_index_readiness(
+        &mut self,
+        readiness: SearchIndexReadiness,
+        cx: &mut Context<Self>,
+    ) {
+        if self.search_index_readiness == readiness {
+            return;
+        }
+        self.search_index_readiness = readiness;
+        cx.notify();
     }
 
     /// 查询串变了（`Command` 的 `on_query`，只在**真的变了**时来）。
@@ -422,8 +445,11 @@ impl Render for QuickOpen {
         // 行也是先克隆出来（同一个理由）：`Command` 的 items 归 `CommandState`。
         let rows: Vec<QuickOpenRow> = self.state.rows().to_vec();
         let empty_query = self.state.query().trim().is_empty();
+        // 索引就绪那一行（`Ready` 时是 `None`）：判据与元素都归 `crate::search_index`，
+        // 这里只把它画在列表**上方** —— 浮层里不因此禁用搜索、不改查询语义。
+        let index_notice = crate::search_index::readiness_notice(self.search_index_readiness, cx);
 
-        Command::new(&self.command)
+        let command = Command::new(&self.command)
             .bordered(false)
             .w_full()
             .filterable(false)
@@ -473,7 +499,9 @@ impl Render for QuickOpen {
                     // 见 `Command::on_confirm` 的文档）。
                     let _ = quick.update(cx, |quick, cx| quick.confirm(index.row, window, cx));
                 }
-            })
+            });
+
+        v_flex().w_full().children(index_notice).child(command)
     }
 }
 

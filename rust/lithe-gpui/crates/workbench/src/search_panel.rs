@@ -90,6 +90,7 @@ use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr, tr_args};
 use serde_json::Value;
 
+use crate::search_index::SearchIndexReadiness;
 use crate::search_model::{
     QueryTimeline, SEARCH_COMMAND, SearchOptions, SearchRow, SearchState, absolute, parse_matches,
     payload,
@@ -199,6 +200,13 @@ pub struct SearchPanel {
     on_open: Rc<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static>,
     /// 输入框订阅。**必须持有**，掉了就取消订阅。
     _subscriptions: Vec<Subscription>,
+    /// 搜索索引的就绪状态（`U18` 收尾）。
+    ///
+    /// **只读的展示值，不是第二个真相源**：owner 是 `crate::search_index` 的
+    /// `SearchIndexWiring`，外壳在它变化时**推**进来（[`Self::set_search_index_readiness`]）。
+    /// 面板**不**据此禁用 / 排队 / 阻塞任何搜索，也不改请求形状 —— 只是未就绪时在结果区
+    /// 上方多一行说明（`crate::search_index::readiness_notice`）。
+    search_index_readiness: SearchIndexReadiness,
 }
 
 impl SearchPanel {
@@ -250,7 +258,25 @@ impl SearchPanel {
             debounce_task: None,
             on_open: Rc::from(on_open),
             _subscriptions: subscriptions,
+            // 面板与外壳的索引接线同一次构造：此刻 `warm` 还没排出去，所以起于 `Pending`
+            // （与 `SearchIndexWiring::new` 同一个默认值，别写第二个字面量）。
+            search_index_readiness: SearchIndexReadiness::default(),
         }
+    }
+
+    /// 外壳推来一个新的索引就绪状态（`U18` 收尾；唯一写者仍是 `search_index`）。
+    ///
+    /// **只在真的变了时 `cx.notify()`**：否则一次多余的推会让面板白重绘一次。
+    pub(crate) fn set_search_index_readiness(
+        &mut self,
+        readiness: SearchIndexReadiness,
+        cx: &mut Context<Self>,
+    ) {
+        if self.search_index_readiness == readiness {
+            return;
+        }
+        self.search_index_readiness = readiness;
+        cx.notify();
     }
 
     /// 面板被选中时调（外壳在活动栏点击那条事件回调里调）。
@@ -694,10 +720,14 @@ impl Render for SearchPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // ⚠️ 这里**只读**状态：不 mutate、不 notify、不起任务、不开浮层。
         // 进 `loading` / 换代 / 取消都发生在事件回调与后台任务里（见模块文档）。
+        // 索引就绪那一行同理：判据与元素都归 `crate::search_index`，这里只把它画出来
+        // （`Ready` 时它是 `None`，`.children(..)` 收 0 个孩子 ⇒ 整行消失）。
+        let index_notice = crate::search_index::readiness_notice(self.search_index_readiness, cx);
         v_flex()
             .size_full()
             .bg(cx.theme().background)
             .child(self.controls(cx))
+            .children(index_notice)
             .child(self.results(cx))
     }
 }
