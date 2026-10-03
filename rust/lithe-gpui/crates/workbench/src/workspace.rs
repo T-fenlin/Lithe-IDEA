@@ -96,7 +96,8 @@ use gpui_kit::component::{ActiveTheme as _, Icon, Root, WindowExt as _, resize_h
 use gpui_kit::{
     Anchor, AnyElement, App, AppContext as _, Axis, ClickEvent, Context, Div, Empty, Entity,
     Global, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _,
-    PathPromptOptions, Render, ScrollHandle, SharedString, Styled as _, Window, div, rems,
+    PathPromptOptions, Pixels, Point, Render, ScrollHandle, SharedString, Size, Styled as _,
+    Window, div, rems,
 };
 
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
@@ -485,11 +486,46 @@ const SIDEBAR_MAX_WIDTH_SPEC: f32 = 720.;
 /// 右侧工具窗宽度 400。真源 `default-settings.ts:139`（`rightToolWindowWidth: 400`），
 /// 取值区间 140–600（`features/settings/lib/settings-normalization.ts:114-115`）。
 ///
+/// ⚠️ **这条出处已作废**（`windows/tauri/**` 是已删除的 Windows 前端，`develop-lithe` 明令
+/// 不许再引用），但**默认值不改**：macOS 真源是 360（`macos/Sources/Lithe/Services/Workbench/
+/// WorkbenchLayoutStore.swift:5` 的 `defaultMavenPaneWidth = 360`），改 400 → 360 是可见的
+/// 观感改动，属维护者决策、不在"补拖拽 + 持久化"这一批里。本轮只用真源定**上下界**
+/// （[`RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC`] / [`RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC`]），默认值留待
+/// 下一批一并裁决。
+///
 /// ⚠️ **不用 `px(...)`**：400 不在 gpui 的 rem 档位上（档位里 96 → 384、112 → 448，
 /// `gpui-pre-macros-0.3.6/src/styles.rs:1063-1077`），也不能自己发明一个 `w_100()`。
 /// 按《编码指南》"档位外的值用 helper 底层的 `rems(P / 16.)`"写成 rem：基准 16px 时
 /// `rems(400. / 16.)` 与 `px(400.)` 逐像素相等（25rem × 16 = 400），但会随主题字号缩放。
-const RIGHT_TOOL_WINDOW_WIDTH: f32 = 400.;
+const RIGHT_TOOL_WINDOW_WIDTH_SPEC: f32 = 400.;
+
+/// 右侧工具窗的**下界** 300（真源 `WorkbenchLayoutStore.swift:6` 的
+/// `minimumMavenPaneWidth = 300`）。
+///
+/// 拖拽与恢复越界值时都钳到它 —— 再窄就放不下 Maven 树的"GroupId/ArtifactId"两级缩进。
+const RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC: f32 = 300.;
+
+/// 右侧工具窗的**静网上界** 760（真源 `WorkbenchLayoutStore.swift:7` 的
+/// `maximumMavenPaneWidth = 760`）。真正的上界还要按可用宽度收敛，见
+/// [`right_tool_window_max_width`]。
+const RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC: f32 = 760.;
+
+/// 拖右侧工具窗时给**中间那片工作区**留的最小宽度 640（真源
+/// `macos/.../Views/Workbench/WorkbenchRightToolSplitView.swift:5` 的
+/// `minimumWorkspaceWidth = 640`，`maximumWidth(in:)` 用 `availableWidth - 640 - 热区厚`）。
+///
+/// 本侧量的是**窗口内宽度**而不是真源那个分栏容器（见 [`right_tool_window_max_width`]），
+/// 所以留白比真源略松 —— 是近似，不是真源。
+const RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC: f32 = 640.;
+
+/// 底部工具窗的**下界** 260（真源 `macos/.../Views/Workbench/WorkbenchView.swift:2019` 的
+/// `minimumGitPaneHeight = 260` —— 纵向分割里它正是留给底部工具窗的那一段）。
+const BOTTOM_PANE_MIN_HEIGHT_SPEC: f32 = 260.;
+
+/// 拖底部工具窗时给**中央列上面那片**留的最小高度 220（真源
+/// `WorkbenchView.swift:2018` 的 `minimumTopPaneHeight = 220`，`:2020-2025` 的
+/// `maximumTopPaneHeight = height - 间距 - 260` 就是"两边各留自己的下界"）。
+const BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC: f32 = 220.;
 
 // `ISLAND_RADIUS_SPEC = 11.2`（真源 `theme.css:9,134` 的 `rounded-xl = --radius × 1.4`）**2026-09-30 删除**。
 //
@@ -876,24 +912,41 @@ pub struct ShellWorkspace {
     /// 左侧栏面板宽度（规格像素，见 [`SIDEBAR_WIDTH_SPEC`] 与 [`SIDEBAR_MIN_WIDTH_SPEC`] /
     /// [`SIDEBAR_MAX_WIDTH_SPEC`]）。
     ///
-    /// 运行期可改：拖面板右边界那条分隔条（[`drag_handle`] 开始会话、[`drag_tracker`] 写入）
-    /// 会改它。**不持久化** ——
-    /// 会话文档（`workspace_config::session`）目前只有可见性字段，没有宽度字段；
-    /// 加字段要动那边的手写 `Deserialize`（它刻意不吃 `deny_unknown_fields`），属独立一批。
-    left_sidebar_width: f32,
-    /// 左侧栏拖拽**会话开关**：[`drag_handle`] 的 `.on_drag` 构造器在一次手势开始时置真，
-    /// [`drag_tracker`] 在 mouse up（或发现左键已不在按下态）时清掉。与 gpui-kit Dock 皮肤
-    /// `SkinShared.resizing_dock` 同一语义 —— 窗口级移动监听靠它区分"这次拖拽"与
-    /// "别处按住左键的普通拖动"（编辑器选文本等）。
-    left_sidebar_dragging: bool,
-    /// 拖拽进行中记下的锚点 `(鼠标 x, 起始面板宽)`；`None` = 还没记或没在拖。
+    /// 运行期可改：拖面板右边界那条分隔条（[`drag_handle`] 开始会话、[`drag_tracker`] 写入）。
     ///
-    /// 由 [`drag_tracker`] 在会话的**首个移动事件**记下（不是按下那刻 —— `.on_drag`
-    /// 构造器只拿到相对手柄原点的 offset，换算窗口坐标要多测一次手柄盒，不值得；
-    /// 首帧锚点与按下锚点只差 gpui 的 DRAG_THRESHOLD 几个像素）。存**起点**而不是
-    /// 每帧累加 delta：累加会随事件频率漂移（一次快拖与一次慢拖结果不同），
-    /// 而 `起点 + (当前 x - 起点 x)` 与事件频率无关。
-    left_sidebar_drag_origin: Option<(f32, f32)>,
+    /// **持久化**：会话文档的 `leftPaneWidth`（写见 [`ShellWorkspace::session_ui_state`]，
+    /// 读回见 [`ShellWorkspace::restore_session`]）。落盘时机是**手势结束**那一次、
+    /// 且走既有的 300ms 去抖保存路径 —— 拖动中的每一帧都不落盘，理由见
+    /// `.agents/notes/implemented/architecture/2026-09-13-resizable-ui-performance-boundaries.md`。
+    left_sidebar_width: f32,
+    /// **右侧**工具窗宽度（规格像素）。
+    ///
+    /// 默认 [`RIGHT_TOOL_WINDOW_WIDTH_SPEC`]；拖它的**左**边界那条分隔条可改（右栏是被右活动栏
+    /// 顶住的定宽面板，它的可变边界在前缘）。允许区间见 [`right_tool_window_max_width`] ——
+    /// 真源给的是最小 300 / 最大 760（`WorkbenchLayout.minimumMavenPaneWidth` /
+    /// `maximumMavenPaneWidth`），并且**按可用宽度收敛**（真源 `WorkbenchRightToolSplitView`
+    /// 的 `minimumWorkspaceWidth = 640`）。
+    ///
+    /// 持久化：会话文档的 `rightPaneWidth`。
+    right_tool_window_width: f32,
+    /// **底部**工具窗高度（规格像素）。
+    ///
+    /// 默认 [`BOTTOM_PANE_HEIGHT_SPEC`]；拖它**上**边界那条分隔条可改（垂直轴，热区在面板顶边）。
+    /// 下界 [`BOTTOM_PANE_MIN_HEIGHT_SPEC`]，上界见 [`bottom_pane_max_height`]。
+    ///
+    /// 持久化：会话文档的 `bottomPaneHeight`。
+    bottom_pane_height: f32,
+    /// **正在被拖的面板** + 这次会话的锚点；`None` = 没在拖。
+    ///
+    /// 三块可拖面板共用**这一个**槽：同一时刻只有一个指针，物理上不可能同时拖两块，于是
+    /// "这次移动事件算不算我这次拖拽"只有一处判据 —— 不用给每块面板各留一对
+    /// `dragging` / `origin` 字段（那样三份状态迟早会漂移）。
+    ///
+    /// 会话开关由 [`drag_handle`] 的 `.on_drag` 构造器置上，[`drag_tracker`] 在
+    /// mouse up（或发现左键已不在按下态）时清掉**并落盘**。语义与 gpui-kit Dock 皮肤
+    /// `SkinShared.resizing_dock` 同源 —— 窗口级移动监听靠它区分"这次拖拽"与
+    /// "别处按住左键的普通拖动"（编辑器选文本等）。
+    pane_resize_drag: Option<PaneResizeDrag>,
     /// **右侧**工具窗当前显示的视图（真机 `activeRightSidebarView`，
     /// `stores/ui-state/view-slice.ts:12,26`）。
     ///
@@ -1713,8 +1766,11 @@ impl ShellWorkspace {
             // IDEA 语义（2026-09-27）：活动栏常驻，面板默认展开、点当前项可单独收起。
             left_pane_visible: true,
             left_sidebar_width: SIDEBAR_WIDTH_SPEC,
-            left_sidebar_dragging: false,
-            left_sidebar_drag_origin: None,
+            // 右栏与底部窗的初值 = 各自的规格默认值；恢复会话若存了尺寸，`restore_session`
+            // 会按当时的窗口尺寸钳过之后覆盖掉（见那里的 `S1_SESSION_SIZES` 诊断）。
+            right_tool_window_width: RIGHT_TOOL_WINDOW_WIDTH_SPEC,
+            bottom_pane_height: BOTTOM_PANE_HEIGHT_SPEC,
+            pane_resize_drag: None,
             // 右工具窗默认**隐藏**（`panel-slice.ts:28` 的 `isRightSidebarVisible: false`），
             // 视图字段的默认值理由见字段文档。
             right_view: RightToolWindowView::Maven,
@@ -1860,6 +1916,26 @@ impl ShellWorkspace {
         if let Some(visible) = session.left_sidebar_visible {
             self.left_sidebar_visible = visible;
         }
+        // 三块面板的尺寸：**缺字段 = 保留外壳默认值**（旧 `session.local.json` 没有这三个键；
+        // 文档层刻意不做上下界判定，钳制归这里）。存了值就按**当时**的窗口尺寸钳一遍 ——
+        // 在一个 1920 宽的窗口里拖到 760 的右栏，换到 1000 宽的窗口必须收敛，不能把中央列压没。
+        let viewport = window.viewport_size();
+        for (pane, stored) in [
+            (ResizablePane::LeftSidebar, session.left_pane_width),
+            (ResizablePane::RightToolWindow, session.right_pane_width),
+            (ResizablePane::BottomPane, session.bottom_pane_height),
+        ] {
+            let Some(stored) = stored else {
+                continue;
+            };
+            let (min, max) = self.pane_span_range(pane, viewport);
+            self.set_pane_span(pane, clamp_pane_span(stored, min, max));
+        }
+        // 尺寸恢复成一行可 grep 的诊断（拖动交互本身没法确定性单测，最终值必须能被机器看到）。
+        println!(
+            "S1_SESSION_SIZES left={} right={} bottom={}",
+            self.left_sidebar_width, self.right_tool_window_width, self.bottom_pane_height
+        );
         // 左右面板的当前视图：稳定 id 认不出时保留当前值（不静默落到某一项）。
         if let Some(index) = session.top_activity_view {
             if index < self.activity_items.len() {
@@ -2065,7 +2141,12 @@ impl ShellWorkspace {
         self.search_index.schedule_update(path, cx);
     }
 
-    /// 会话文档里的界面部分（外壳那六个值 → [`lithe_gpui_shared::workspace_config::SessionUiState`]）。
+    /// 会话文档里的界面部分（外壳那六个可见性/视图值 + 三块面板的尺寸 →
+    /// [`lithe_gpui_shared::workspace_config::SessionUiState`]）。
+    ///
+    /// ⚠️ 尺寸这里给的是**内存里的当前值**，不是钳制以后的值：调用点只在"真的改了会话内容"
+    /// 的路径上（含手势结束那一次），而手势结束时 [`Self::end_pane_resize`] 已经按当时的窗口
+    /// 钳过一遍。给原始值不会写出越界文档。
     fn session_ui_state(&self) -> lithe_gpui_shared::workspace_config::SessionUiState {
         lithe_gpui_shared::workspace_config::SessionUiState {
             left_sidebar_visible: Some(self.left_sidebar_visible),
@@ -2074,7 +2155,134 @@ impl ShellWorkspace {
             bottom_visible: Some(self.bottom_visible),
             right_view: Some(self.right_view.id().to_string()),
             right_visible: Some(self.right_visible),
+            left_pane_width: Some(self.left_sidebar_width),
+            right_pane_width: Some(self.right_tool_window_width),
+            bottom_pane_height: Some(self.bottom_pane_height),
         }
+    }
+
+    /// 这块面板的当前长度（规格像素）。
+    fn pane_span(&self, pane: ResizablePane) -> f32 {
+        match pane {
+            ResizablePane::LeftSidebar => self.left_sidebar_width,
+            ResizablePane::RightToolWindow => self.right_tool_window_width,
+            ResizablePane::BottomPane => self.bottom_pane_height,
+        }
+    }
+
+    /// 写回这块面板的长度。**只改内存值**，调用方决定要不要 `notify` / 落盘。
+    fn set_pane_span(&mut self, pane: ResizablePane, span: f32) {
+        match pane {
+            ResizablePane::LeftSidebar => self.left_sidebar_width = span,
+            ResizablePane::RightToolWindow => self.right_tool_window_width = span,
+            ResizablePane::BottomPane => self.bottom_pane_height = span,
+        }
+    }
+
+    /// 这块面板在给定窗口尺寸下允许的长度区间 `(min, max)`。
+    ///
+    /// 左栏是**静网**区间 `SIDEBAR_MIN_WIDTH_SPEC`…`SIDEBAR_MAX_WIDTH_SPEC`（200…720）。
+    /// ⚠️ **与真源有出入，本轮没改**：macOS 真源是下界 30（`WorkbenchLayoutStore.swift:31` 的
+    /// `sidebarWidth >= 30`）与上界 `min(520, available − 400)`（`WorkbenchView.swift:2008-2011`
+    /// 的 `minimumEditorWidth = 400`）。200/720 是 2026-09-27 维护者口径（"再窄就连 `domain`
+    /// 这样的目录名都放不下"），改它属观感决策、不在"补拖拽 + 持久化"这一批里。
+    ///
+    /// 右栏与底部窗的上界按可用宽度/高度收敛（真源给的就是这个形状，见
+    /// [`right_tool_window_max_width`] / [`bottom_pane_max_height`]）。
+    fn pane_span_range(&self, pane: ResizablePane, viewport: Size<Pixels>) -> (f32, f32) {
+        match pane {
+            ResizablePane::LeftSidebar => (SIDEBAR_MIN_WIDTH_SPEC, SIDEBAR_MAX_WIDTH_SPEC),
+            ResizablePane::RightToolWindow => (
+                RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
+                right_tool_window_max_width(f32::from(viewport.width)),
+            ),
+            ResizablePane::BottomPane => (
+                BOTTOM_PANE_MIN_HEIGHT_SPEC,
+                bottom_pane_max_height(f32::from(viewport.height)),
+            ),
+        }
+    }
+
+    /// 手柄按下：开一次拖拽会话。锚点等**首个移动事件**再记（理由见 [`PaneResizeDrag::origin`]）。
+    ///
+    /// 与拆分"按下"和"移动"两件事的理由：`.on_drag` 构造器只拿到相对手柄原点的 offset，
+    /// 而窗口级移动监听拿到的是窗口坐标 —— 后者才是可直接算的。
+    fn begin_pane_resize(&mut self, pane: ResizablePane) {
+        self.pane_resize_drag = Some(PaneResizeDrag { pane, origin: None });
+    }
+
+    /// 拖动中：改**内存值** + `notify`。**不落盘**（落盘在 [`Self::end_pane_resize`]）。
+    ///
+    /// 三条纪律（`.agents/notes/implemented/architecture/2026-09-13-resizable-ui-performance-boundaries.md`）：
+    ///
+    /// 1. 位移按"起点 + 位移"算，不逐帧累加（累加会随事件频率漂移，快拖与慢拖结果不同）；
+    /// 2. 每帧只改这一个 `f32` 并 `notify` 一次，**不重建任何实体、不重新布局整棵树**——
+    ///    面板长度是 render 里现读的局部变量，重绘范围就是这几块面板；
+    /// 3. **值没变就不 `notify`**：拖到上下界之后继续拖，指针仍在动而长度已经不动了，
+    ///    这时一次重绘都不该发生。
+    fn drag_pane_resize(
+        &mut self,
+        pane: ResizablePane,
+        along: f32,
+        viewport: Size<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let current = self.pane_span(pane);
+        let (min, max) = self.pane_span_range(pane, viewport);
+        let direction = pane.drag_direction();
+        let Some(session) = self.pane_resize_drag.as_mut() else {
+            return;
+        };
+        if session.pane != pane {
+            return;
+        }
+        let next = match session.origin {
+            Some((press, start)) => clamped_drag_span(press, start, along, min, max, direction),
+            None => {
+                // 会话的首个移动事件：只记锚点，这一帧不改长度（起点本身已经钳过）。
+                session.origin = Some((along, current));
+                return;
+            }
+        };
+        if next != current {
+            self.set_pane_span(pane, next);
+            cx.notify();
+        }
+    }
+
+    /// 手势结束（mouse up，或自愈发现左键已经松开）：收尾 + **在这里落盘**。
+    ///
+    /// ## 落盘点为什么在这里
+    ///
+    /// 那份 Note 的硬要求是"只在拖动结束时保存最终尺寸，不要在拖动过程中持续写入持久化存储"。
+    /// 这个函数是拖动链路上**唯一**碰持久化的地方：拖动中的每一帧只走
+    /// [`Self::drag_pane_resize`]（改内存值 + `notify`），一次文件操作都不做。
+    ///
+    /// 落盘本身也**不是同步写文件**：`schedule_session_save` 走既有的 [`SessionTracker`]
+    /// 通路（300ms 去抖 + `plan` 判"内容没变就不排计时器"），真正的 `std::fs` 调用发生在
+    /// 后台计时器醒来之后或进程退出前 —— UI 线程不做阻塞 IO。三块面板共用这一条通路，
+    /// 没有第二个写文件的地方。
+    ///
+    /// 收尾时按**当时**的窗口尺寸再钳一次：拖到一半把窗口缩小 / 把手柄拖出窗口，
+    /// 存下去的必须是"这个窗口放得下"的值（恢复时才不会越界）。
+    fn end_pane_resize(
+        &mut self,
+        pane: ResizablePane,
+        viewport: Size<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pane_resize_drag.as_ref().map(|session| session.pane) != Some(pane) {
+            return;
+        }
+        let (min, max) = self.pane_span_range(pane, viewport);
+        let resolved = clamp_pane_span(self.pane_span(pane), min, max);
+        self.pane_resize_drag = None;
+        self.set_pane_span(pane, resolved);
+        // 诊断锚点（stderr）：拖动交互本身没法确定性单测（要真窗口 + 真指针），
+        // 所以把"手势结束时的最终值"留成可 grep 的一行。
+        eprintln!("S1_PANE_RESIZE pane={} span={resolved}", pane.id());
+        self.schedule_session_save(cx);
+        cx.notify();
     }
 
     /// 选中左栏**顶部组**的第 `index` 项（项目 / 更改 / 搜索）。
@@ -4224,8 +4432,25 @@ impl Render for ShellWorkspace {
         // 与面板可见性（点活动栏当前高亮项只收它）。活动栏画不画只看前者。
         let left_sidebar_visible = self.left_sidebar_visible;
         let left_pane_visible = self.left_pane_visible;
-        // 面板宽度是**变量**（拖拽会改），闭包按值捕获，所以先拷出来。
-        let left_sidebar_width = self.left_sidebar_width;
+        // 三块面板的长度是**变量**（拖拽会改），闭包按值捕获，所以先按**这一帧**的窗口尺寸算出来。
+        //
+        // 为什么在 render 里再钳一次：拖拽中与恢复时都已经钳过，但**窗口本身会变窄**（用户拖窗口
+        // 边缘、换显示器）。render 是唯一"每帧都会跑"的地方，上界跟着当帧窗口走，于是
+        // "在一个宽屏里拖到 760 的右栏、窗口缩到 1000 之后仍然不会把中央列压没"是结构性的，
+        // 不需要任何 resize 回调。这里只读 + 算局部变量，**不改状态、不 notify、不起任务**。
+        let viewport = window.viewport_size();
+        let left_sidebar_width = {
+            let (min, max) = self.pane_span_range(ResizablePane::LeftSidebar, viewport);
+            clamp_pane_span(self.left_sidebar_width, min, max)
+        };
+        let right_tool_window_width = {
+            let (min, max) = self.pane_span_range(ResizablePane::RightToolWindow, viewport);
+            clamp_pane_span(self.right_tool_window_width, min, max)
+        };
+        let bottom_pane_height = {
+            let (min, max) = self.pane_span_range(ResizablePane::BottomPane, viewport);
+            clamp_pane_span(self.bottom_pane_height, min, max)
+        };
 
         // 底部工具窗的内容由活动栏 / 命令面板切换的单值 `bottomPaneActiveTab` 决定。
         //
@@ -4246,7 +4471,13 @@ impl Render for ShellWorkspace {
                 // 进程与输出都在那个实体里，外壳只把它放进来。
                 BottomPaneKind::Run => self.run.clone().into_any_element(),
             };
-            bottom_pane(content, cx)
+            bottom_pane(
+                content,
+                bottom_pane_height,
+                handle.downgrade(),
+                ResizablePane::BottomPane,
+                cx,
+            )
         });
 
         // ① 标题栏**单行 40**（真源 macOS：`LitheTheme.Metrics.toolbarHeight = 40`，
@@ -4359,8 +4590,14 @@ impl Render for ShellWorkspace {
                                     .relative()
                                     .size_full()
                                     .child(left_content)
-                                    .child(drag_handle(handle.downgrade()))
-                                    .child(drag_tracker(handle.downgrade()));
+                                    .child(drag_handle(
+                                        handle.downgrade(),
+                                        ResizablePane::LeftSidebar,
+                                    ))
+                                    .child(drag_tracker(
+                                        handle.downgrade(),
+                                        ResizablePane::LeftSidebar,
+                                    ));
                                 side_pane(
                                     div().w(rems(left_sidebar_width / 16.)),
                                     pane,
@@ -4375,18 +4612,36 @@ impl Render for ShellWorkspace {
                                 v_flex()
                                     .flex_1()
                                     .h_full()
+                                    // `min_*_0()` 是"窗口窄了要能收敛"那条：中央列可以收到 0，
+                                    // 于是左右面板被窗口挤到时，溢出的是可收缩的这一列而不是把
+                                    // 状态栏 / 右活动栏顶出窗口。
                                     .min_w_0()
+                                    .min_h_0()
                                     .child(center)
                                     .children(bottom),
                             ),
                     )
-                    // 右工具窗 400 —— **可收起**：真机整块 `ResizablePane` 的 `hidden` 由
-                    // `isRightToolWindowVisible`（= 通知或 Maven 可见）决定，
-                    // 收起时这一栏完全不占位。
+                    // 右工具窗 —— **可收起**（真机整块 `ResizablePane` 的 `hidden` 由
+                    // `isRightToolWindowVisible`（= 通知或 Maven 可见）决定，收起时这一栏完全不占位），
+                    // **可拖宽**：手柄贴它的**左**边界（`HandleEdge::Leading`），往左拖变宽 ——
+                    // 见 [`ResizablePane::RightToolWindow`] 与 [`drag_handle`]。
                     .children(right_tool_window_visible.then(|| {
+                        // 与左侧面板同一套包装：内容 + 手柄（绝对定位不占布局）+ 跟踪器。
+                        let pane = div()
+                            .relative()
+                            .size_full()
+                            .child(right_tool_window)
+                            .child(drag_handle(
+                                handle.downgrade(),
+                                ResizablePane::RightToolWindow,
+                            ))
+                            .child(drag_tracker(
+                                handle.downgrade(),
+                                ResizablePane::RightToolWindow,
+                            ));
                         side_pane(
-                            div().w(rems(RIGHT_TOOL_WINDOW_WIDTH / 16.)),
-                            right_tool_window,
+                            div().w(rems(right_tool_window_width / 16.)),
+                            pane,
                             // 右工具窗与右活动栏之间那 4px 是另一处观感：它自己四条边都画。
                             SidePaneEdge::All,
                             cx,
@@ -4502,63 +4757,226 @@ fn side_pane(
 /// `items_center()`**，否则内层 `flex()` 会被默认的 `align-items: stretch` 拉成竖长条
 /// （维护者截图复现过两次）。
 
-/// 把一次拖动换算成新的面板宽度：`起点宽 + (当前鼠标 x − 按下时鼠标 x)`，并钳到允许范围。
+/// 一块**可以拖拽改尺寸**的面板。
 ///
-/// 抽成纯函数是为了**能单测**（本 crate 拿不到 `TestAppContext`，起不了窗口，
-/// 所以拖动链路里唯一可测的就是这段算术）。允许范围见 [`SIDEBAR_MIN_WIDTH_SPEC`] /
-/// [`SIDEBAR_MAX_WIDTH_SPEC`]。
-fn clamped_drag_width(press_x: f32, press_width: f32, current_x: f32) -> f32 {
-    (press_width + (current_x - press_x)).clamp(SIDEBAR_MIN_WIDTH_SPEC, SIDEBAR_MAX_WIDTH_SPEC)
+/// 三个变体就是外壳里三块有独立尺寸的面板。用枚举而不是三个 bool：拖拽会话、算术、手柄的
+/// 轴与贴边方式都按它分支，一处 `match` 就能看清三块面板的差别在哪。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResizablePane {
+    /// 左侧栏（项目树 / 更改 / 搜索），拖**右**边界，水平轴。
+    LeftSidebar,
+    /// 右侧工具窗（Maven / 通知 / 扩展），拖**左**边界，水平轴。
+    RightToolWindow,
+    /// 底部工具窗（终端 / Git / 运行 / 诊断），拖**上**边界，**垂直**轴。
+    BottomPane,
 }
 
-/// 左侧栏面板**右边界**那条分隔条 —— gpui-kit **Dock 同款**（`docs/gpui kit/0.7.0/component/dock.md`；
-/// 2026-09-30 按 dock 文档把旧的自拼热区换成上游组件）。
+impl ResizablePane {
+    /// 手柄的轴。`Axis::Horizontal` = 竖直的那条分隔条（左右拖），
+    /// `Axis::Vertical` = 水平的那条分隔条（上下拖）—— 上游 `resize_handle` 的命名口径。
+    ///
+    /// 垂直轴**上游支持**（`gpui-base-0.7.0/src/resizable/resize_handle.rs:277-290`：
+    /// `(Some(HandleEdge::Leading), Axis::Vertical)` 给出 `top_0() + pb(HANDLE_PADDING)` 与
+    /// `cursor_row_resize()`），所以底部工具窗不需要自己画热区。
+    fn axis(self) -> Axis {
+        match self {
+            Self::LeftSidebar | Self::RightToolWindow => Axis::Horizontal,
+            Self::BottomPane => Axis::Vertical,
+        }
+    }
+
+    /// 手柄贴在面板的哪条边。左栏的可变边界是**后缘**（右边界），右栏与底部窗是**前缘**
+    /// （左边界 / 上边界）。
+    ///
+    /// 贴边不只是观感：面板壳有裁剪与 1px 边框，跨边界手柄的外半段会被裁掉、命中不到，
+    /// 只有整体收进面板内才是完整可抓的（上游 [`HandleEdge`] 文档）。
+    fn handle_edge(self) -> HandleEdge {
+        match self {
+            Self::LeftSidebar => HandleEdge::Trailing,
+            Self::RightToolWindow | Self::BottomPane => HandleEdge::Leading,
+        }
+    }
+
+    /// 手柄的 `ElementId`，**按面板（业务身份）取**，不按渲染顺序或下标。
+    ///
+    /// ⚠️ 三个**必须互不相同**：gpui-kit 官方 `element_id` 文档专门点了 Dock 那个坑 ——
+    /// 三个 `resize_handle` 落在同一个带 key 的祖先下、都叫 `"resize-handle"` 时会拿到同一个
+    /// `GlobalElementId`，"按住一个 handle 可能触发另一个的拖动"；上游自己的实现因此按方位取
+    /// `resize-handle-left/-right/-bottom`。这里沿用同一口径（`lithe-gpui/UI-MAP.md` §1.4 那条
+    /// 官方条文也写着"动手改分栏时应照此检查"）。
+    fn handle_id(self) -> &'static str {
+        match self {
+            Self::LeftSidebar => "lithe-left-pane-resize",
+            Self::RightToolWindow => "lithe-right-pane-resize",
+            Self::BottomPane => "lithe-bottom-pane-resize",
+        }
+    }
+
+    /// 诊断行里用的稳定名字（`S1_PANE_RESIZE pane=…`）。
+    fn id(self) -> &'static str {
+        match self {
+            Self::LeftSidebar => "left",
+            Self::RightToolWindow => "right",
+            Self::BottomPane => "bottom",
+        }
+    }
+
+    /// 拖拽要**加**还是**减**沿轴的位移。
+    ///
+    /// 手柄在**后缘**（左栏右边界）时，指针沿轴正方向移动 = 面板变长，取 `+1`；手柄在**前缘**
+    /// （右栏左边界 / 底部窗上边界）时反过来 —— 往左 / 往上拖才是变长，取 `-1`。写成常数而不是
+    /// "两次取反"，三块面板因此共用下面一段算术。
+    fn drag_direction(self) -> f32 {
+        match self {
+            Self::LeftSidebar => 1.,
+            Self::RightToolWindow | Self::BottomPane => -1.,
+        }
+    }
+
+    /// 指针**沿轴**的窗口坐标（水平轴取 x，垂直轴取 y）。
+    fn pointer_along(self, position: Point<Pixels>) -> f32 {
+        f32::from(match self.axis() {
+            Axis::Horizontal => position.x,
+            Axis::Vertical => position.y,
+        })
+    }
+}
+
+/// 一次拖拽会话：哪块面板 + 锚点。
+struct PaneResizeDrag {
+    pane: ResizablePane,
+    /// 会话**首个移动事件**记下的 `(指针沿轴坐标, 起始长度)`；`None` = 还没记。
+    ///
+    /// 为什么不按下那刻记：`.on_drag` 构造器只拿到相对手柄原点的 offset，换算窗口坐标要多测
+    /// 一次手柄盒，不值得；首帧锚点与按下锚点只差 gpui 的 `DRAG_THRESHOLD` 几个像素。
+    /// 为什么存**起点**而不是每帧累加 delta：累加会随事件频率漂移（一次快拖与一次慢拖结果
+    /// 不同），而 `起点 + 位移` 与事件频率无关。
+    origin: Option<(f32, f32)>,
+}
+
+/// 把一个长度钳到 `[min, max]`，并做两条"坏输入不许变成坏布局"的硬化。
+///
+/// 1. `max < min` 时**先收敛到下界**：`f32::clamp` 在 `min > max` 时**会 panic**，而
+///    "窗口比两端下界之和还窄"是 `available − reserve` 能算出来的真实结果（把一个在宽屏上
+///    存下来的尺寸恢复到窄窗口上也会走到这里）；
+/// 2. `NaN` 落回下界：尺寸字段是跨端文档里的值，`clamp(NaN, ..)` 返回 `NaN`，那一帧的布局会
+///    整片塌掉。真源 `WorkbenchLayoutStore.load` 同样按 `isFinite` 判一次（本侧只挡 `NaN`：
+///    `±inf` 交给 `clamp` 自己处理就是"顶到上/下界"，比落回下界更符合直觉）。
+fn clamp_pane_span(value: f32, min: f32, max: f32) -> f32 {
+    if value.is_nan() {
+        return min;
+    }
+    value.clamp(min, max.max(min))
+}
+
+/// 把一次拖动换算成新的面板长度：`起点长 + 方向 × 位移`，再钳到 `[min, max]`。
+///
+/// 抽成纯函数是为了**能单测**（本 crate 拿不到 `TestAppContext`，起不了窗口，所以拖动链路里
+/// 唯一可测的就是这段算术）。三块面板共用这一段，差别只有 `direction`（见
+/// [`ResizablePane::drag_direction`]）。
+fn clamped_drag_span(
+    press: f32,
+    start: f32,
+    current: f32,
+    min: f32,
+    max: f32,
+    direction: f32,
+) -> f32 {
+    clamp_pane_span(start + direction * (current - press), min, max)
+}
+
+/// 右侧工具窗在给定**可用宽度**下的上界：`min(760, 可用宽 − 640)`，且不低过下界。
+///
+/// 形状照真源 `WorkbenchRightToolSplitView.swift:7-16`（`maximumWidth(in:)` =
+/// `min(maximumMavenPaneWidth, availableWidth − minimumWorkspaceWidth − 热区厚)`，
+/// `minimumWidth(in:)` = `min(300, maximumWidth)`）—— 这就是"窗口窄了要收敛"那条规则。
+///
+/// ⚠️ **`available` 的取法是近似**：本侧量的是**窗口内宽度**（`window.viewport_size()`），
+/// 真源量的是分栏容器（还要减掉左右活动栏与间距）。差那几十像素的后果是这里算出的上界比真源
+/// **略松**（绝不会更紧、也不会溢出：中央列至少还剩 640 − 活动栏宽）。要精确得把分栏容器的
+/// 实测宽度接出来，属另一批。
+///
+/// ⚠️ 窗口尺寸还不可知时（`viewport_size()` 在极端情况下会给 0，例如构造期还没量过一帧）
+/// 返回**静网上界**：那几帧宁可"不收敛"，也不能把恢复出来的宽度按"窗口只有 0 宽"钳到下界 ——
+/// 后者会让用户存下来的尺寸在启动瞬间被吃掉。下一帧 `render` 会按真实尺寸收敛。
+fn right_tool_window_max_width(available_width: f32) -> f32 {
+    if !available_width.is_finite() || available_width <= 0. {
+        return RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC;
+    }
+    (available_width - RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC)
+        .min(RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC)
+        .max(RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC)
+}
+
+/// 底部工具窗在给定**可用高度**下的上界：`可用高 − 220`，且不低过下界。
+///
+/// 形状照真源 `WorkbenchView.swift:2018-2025`（`maximumTopPaneHeight` =
+/// `height − 间距 − minimumGitPaneHeight`，反过来读就是"底部窗最多占到上面只剩 220"）。
+/// ⚠️ `available` 同样取窗口内高度，是近似（理由见 [`right_tool_window_max_width`]）；
+/// 尺寸还不可知时返回 `INFINITY`（= 这一帧不设上界，同样为了不误吃恢复出来的值）。
+fn bottom_pane_max_height(available_height: f32) -> f32 {
+    if !available_height.is_finite() || available_height <= 0. {
+        return f32::INFINITY;
+    }
+    (available_height - BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC).max(BOTTOM_PANE_MIN_HEIGHT_SPEC)
+}
+
+/// 三块可拖面板的分隔条 —— gpui-kit **Dock 同款**（`docs/gpui kit/0.7.0/component/dock.md`；
+/// 2026-09-30 按 dock 文档把旧的自拼热区换成上游组件；2026-10-01 从"只有左栏"扩到三块面板）。
 ///
 /// ## 组件与观感
 ///
 /// 直接用 `gpui_kit::base::resize_handle` + 组件库的 `resize_handle_appearance()`，
 /// 与 Dock 组件每条边缘/分割手柄是同一份实现：
 ///
-/// - 静止时常显一条 1px `border` 色细线，落在面板最右那一像素（`inside(HandleEdge::Trailing)`
-///   —— Dock 的左缘手柄同款贴法：面板壳有裁剪与 1px 边框，跨边界手柄的外半段会被裁掉、
-///   命中不到，只有整体收进面板内才是完整可抓的）；
+/// - 静止时常显一条 1px `border` 色细线，落在面板可变边界那一像素上
+///   （`inside(HandleEdge::Trailing)` 用于左栏；右栏与底部窗的可变边界在前缘，用
+///   `HandleEdge::Leading`）—— Dock 的左缘手柄同款贴法：面板壳有裁剪与 1px 边框，
+///   跨边界手柄的外半段会被裁掉、命中不到，只有整体收进面板内才是完整可抓的；
 /// - 悬停/按下/拖动时细线上浮出一粒**圆角胶囊**：muted 前景色，长度 20/28/44、
 ///   不透明度 0.35/0.6/0.9 随投入程度渐进，带过渡动画 —— 取代旧版"整条 4px 染主色"的
 ///   悬停态；
 /// - 命中带宽 1px 线 + 4px 内侧 padding（upstream `HANDLE_SIZE`/`HANDLE_PADDING`），
-///   光标 col-resize。手柄 `.occlude()`，项目树最右 4px 的点击让给它 —— 与 Dock 自身
-///   "手柄住在 dock 里"的取舍一致。
+///   光标 col-resize / row-resize（由 `Axis` 决定）。手柄 `.occlude()`，热区那几像素上的
+///   点击让给它 —— 与 Dock 自身"手柄住在 dock 里"的取舍一致。
 ///
 /// ## 与旧自拼热区的差别
 ///
-/// 旧版是手写的绝对定位 `div`（平时隐形、悬停整条染主色、`on_mouse_down` 记起点）。
-/// 换组件后**这里不再记起点**：`.on_drag` 构造器在一次手势里只触发一次（gpui 以
-/// `active_drag` 记住会话归属），只把 [`ShellWorkspace::left_sidebar_dragging`] 置真；
-/// 起点与跟踪在 [`drag_tracker`]，与 Dock 的 `DockResizeTracker` 同一分层。
-fn drag_handle(this: gpui_kit::WeakEntity<ShellWorkspace>) -> impl IntoElement {
-    resize_handle("lithe-left-pane-resize", Axis::Horizontal)
+/// 旧版（底部工具窗那条，2026-09-30 之前）是手写的绝对定位 `div`：平时隐形、`on_mouse_down`
+/// 记起点、**没有任何会话开关**，于是它实际上什么都拖不动。换组件后**这里不记起点**：
+/// `.on_drag` 构造器在一次手势里只触发一次（gpui 以 `active_drag` 记住会话归属），只把
+/// [`ShellWorkspace::pane_resize_drag`] 开起来；起点与跟踪在 [`drag_tracker`]，
+/// 与 Dock 的 `DockResizeTracker` 同一分层。
+fn drag_handle(
+    this: gpui_kit::WeakEntity<ShellWorkspace>,
+    pane: ResizablePane,
+) -> impl IntoElement {
+    resize_handle(pane.handle_id(), pane.axis())
         .with_appearance(resize_handle_appearance())
-        .inside(HandleEdge::Trailing)
-        .on_drag(LeftSidebarDrag, move |_, _, _, cx| {
+        .inside(pane.handle_edge())
+        .on_drag(PaneResizeHandle, move |_, _, _, cx| {
             cx.stop_propagation();
-            let _ = this.update(cx, |shell, _| shell.left_sidebar_dragging = true);
-            cx.new(|_| LeftSidebarDrag)
+            let _ = this.update(cx, |shell, _| shell.begin_pane_resize(pane));
+            cx.new(|_| PaneResizeHandle)
         })
 }
 
 /// [`drag_handle`] 拖拽会话的载荷：什么都不画 —— 手柄本身就是视觉反馈。与 Dock 的
 /// `ResizePanel` 同款：存在意义是让 gpui 的 `active_drag` 有类型可归属，
-/// [`drag_tracker`] 靠"会话开着"决定哪些移动事件算这次拖拽。
-struct LeftSidebarDrag;
+/// [`drag_tracker`] 靠 [`ShellWorkspace::pane_resize_drag`] 里"哪块面板"决定这次拖拽算谁的。
+///
+/// 不带字段是**有意**的：一次会话的面板身份在 [`PaneResizeDrag::pane`]，两边各存一份只会漂移
+/// （载荷这份没人读）。
+struct PaneResizeHandle;
 
-impl Render for LeftSidebarDrag {
+impl Render for PaneResizeHandle {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         Empty
     }
 }
 
-/// 左侧栏拖拽的**跟踪与结束**：一块不画任何东西的 canvas，借 paint 闭包注册窗口级
-/// 鼠标监听（拖动期间宽度每次变化都重绘，监听逐帧续上）。
+/// 一块面板的分隔条**跟踪与结束**：一块不画任何东西的 canvas，借 paint 闭包注册窗口级
+/// 鼠标监听（拖动期间长度每次变化都重绘，监听逐帧续上）。
 ///
 /// ## 为什么是窗口级监听，而不是手柄上的元素级 `on_mouse_move`
 ///
@@ -4576,60 +4994,51 @@ impl Render for LeftSidebarDrag {
 ///
 /// ## 会话归属与清理
 ///
-/// 只认 [`ShellWorkspace::left_sidebar_dragging`] 为真的移动事件：会话的首个移动记锚点
-/// [`ShellWorkspace::left_sidebar_drag_origin`]，之后每次移动用 [`clamped_drag_width`]
-/// 改宽；mouse up 清掉会话与锚点 —— **这是 2026-09-30 顺手修掉的旧 bug**：旧版只在
-/// mouse down 记起点、从不清理，拖过一次之后任何按住左键的窗口内拖动（编辑器选文本等）
-/// 都会拿旧起点继续改宽。另有一道自愈：会话开着却侦到左键已不在按下态（up 事件被吞，
-/// 例如拖拽中途面板被收起、监听随帧丢失），同样当场收尾，不留悬挂会话。
-fn drag_tracker(this: gpui_kit::WeakEntity<ShellWorkspace>) -> impl IntoElement {
+/// 三块面板各有一块 tracker，但只认 [`ShellWorkspace::pane_resize_drag`] 里 `pane` 与**自己**
+/// 相同的那条会话：会话的首个移动记锚点，之后每次移动用 [`clamped_drag_span`] 改长度；
+/// mouse up 清掉会话 —— **这是 2026-09-30 顺手修掉的旧 bug**：旧版只在 mouse down 记起点、
+/// 从不清理，拖过一次之后任何按住左键的窗口内拖动（编辑器选文本等）都会拿旧起点继续改宽。
+/// 另有一道自愈：会话开着却侦到左键已不在按下态（up 事件被吞，例如拖拽中途面板被收起、
+/// 监听随帧丢失），同样当场收尾，不留悬挂会话。
+///
+/// ⚠️ **每帧最多重绘、绝不落盘**：拖动中只改内存值 + `notify`（且值没变就连 `notify` 都省）；
+/// 写盘只在手势结束那一次，见 [`ShellWorkspace::end_pane_resize`]。
+fn drag_tracker(
+    this: gpui_kit::WeakEntity<ShellWorkspace>,
+    pane: ResizablePane,
+) -> impl IntoElement {
     let drag = this.clone();
     let release = this;
     gpui_kit::canvas(
         |_bounds, _window, _cx| {},
         move |_bounds, _prepaint, window, _cx| {
-            window.on_mouse_event(
-                move |event: &gpui_kit::MouseMoveEvent, phase, _window, cx| {
-                    if !phase.bubble() {
-                        return;
-                    }
-                    let _ = drag.update(cx, |shell, cx| {
-                        if !shell.left_sidebar_dragging {
-                            return;
-                        }
-                        if event.pressed_button != Some(gpui_kit::MouseButton::Left) {
-                            shell.left_sidebar_dragging = false;
-                            shell.left_sidebar_drag_origin = None;
-                            cx.notify();
-                            return;
-                        }
-                        match shell.left_sidebar_drag_origin {
-                            Some((press_x, press_width)) => {
-                                shell.left_sidebar_width = clamped_drag_width(
-                                    press_x,
-                                    press_width,
-                                    f32::from(event.position.x),
-                                );
-                            }
-                            None => {
-                                shell.left_sidebar_drag_origin =
-                                    Some((f32::from(event.position.x), shell.left_sidebar_width));
-                            }
-                        }
-                        cx.notify();
-                    });
-                },
-            );
-            window.on_mouse_event(move |_: &gpui_kit::MouseUpEvent, phase, _window, cx| {
+            window.on_mouse_event(move |event: &gpui_kit::MouseMoveEvent, phase, window, cx| {
                 if !phase.bubble() {
                     return;
                 }
-                let _ = release.update(cx, |shell, cx| {
-                    if shell.left_sidebar_dragging {
-                        shell.left_sidebar_dragging = false;
-                        shell.left_sidebar_drag_origin = None;
-                        cx.notify();
+                // 先读窗口尺寸再 `update`：两个借用不能同时活着（`cx` 是 `&mut App`）。
+                let viewport = window.viewport_size();
+                let along = pane.pointer_along(event.position);
+                let released = event.pressed_button != Some(gpui_kit::MouseButton::Left);
+                let _ = drag.update(cx, |shell, cx| {
+                    if shell.pane_resize_drag.as_ref().map(|session| session.pane) != Some(pane) {
+                        return;
                     }
+                    if released {
+                        // 左键已经不在了（up 事件被吞）：当场收尾 + 落盘，不留悬挂会话。
+                        shell.end_pane_resize(pane, viewport, cx);
+                    } else {
+                        shell.drag_pane_resize(pane, along, viewport, cx);
+                    }
+                });
+            });
+            window.on_mouse_event(move |_: &gpui_kit::MouseUpEvent, phase, window, cx| {
+                if !phase.bubble() {
+                    return;
+                }
+                let viewport = window.viewport_size();
+                let _ = release.update(cx, |shell, cx| {
+                    shell.end_pane_resize(pane, viewport, cx);
                 });
             });
         },
@@ -4662,32 +5071,49 @@ fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
         .child(content)
 }
 
-/// 底部工具窗外框：**240** 高（[`BOTTOM_PANE_HEIGHT_SPEC`]），上面一条 **4px** 拖拽热区
-/// （真源 `bottom-pane/bottom-pane.tsx:47,222-232` —— 真源那里是 320）。
+/// 底部工具窗外框：高度由调用方给（默认 [`BOTTOM_PANE_HEIGHT_SPEC`] = 240，可拖改），
+/// **上边界**是一条真正的垂直轴分隔条（[`drag_handle`] + [`HandleEdge::Leading`]）。
 ///
 /// ⚠️ **2026-09-27：标题栏改两行后从 320 收到 240，保持总高不变**（40 → 30 + 38 净增 28），
 /// 理由与"为什么和标题栏那两个行高常量是一对"写在 [`BOTTOM_PANE_HEIGHT_SPEC`] 上。
 ///
-/// 内容由调用方给（终端 / Git 提交记录 / 占位），与真机"底部窗只有一个、内容由
-/// `bottomPaneActiveTab` 切换"的结构一致。
-fn bottom_pane(content: AnyElement, cx: &App) -> impl IntoElement {
+/// ⚠️ **2026-10-01 接上拖拽**：改前这里是一条"死"热区 —— 一个 `div().w_full().h_1()`，
+/// 画了一条 4px 的带子但**没有会话开关、没有跟踪器**，所以拖不动（`lithe-gpui/HANDOFF.md` §4
+/// 登记过）。现在换成上游 `resize_handle`（`Axis::Vertical` + `HandleEdge::Leading`：
+/// 热区整体收在面板**顶边内侧**，光标 `row-resize`，静止是一条 1px 细线、悬停浮出胶囊），
+/// 会话与跟踪复用与左栏完全相同的那一套（[`drag_handle`] / [`drag_tracker`]）。
+///
+/// 内容由调用方给（终端 / Git 提交记录 / 占位 / 运行 / 诊断），与真机"底部窗只有一个、
+/// 内容由 `bottomPaneActiveTab` 切换"的结构一致。
+fn bottom_pane(
+    content: AnyElement,
+    height: f32,
+    handle: gpui_kit::WeakEntity<ShellWorkspace>,
+    pane: ResizablePane,
+    cx: &App,
+) -> impl IntoElement {
+    // 面板本体：`relative()` 是手柄与跟踪器的定位上下文（两者都绝对定位、**不占布局**）。
+    // 高度走 `rems(P / 16.)`：240（以及拖出来的任意值）不在 4px 档位上，
+    // 见 [`BOTTOM_PANE_HEIGHT_SPEC`]。
+    let body = div()
+        .relative()
+        .w_full()
+        .h(rems(height / 16.))
+        .border_1()
+        .border_color(cx.theme().border)
+        .bg(cx.theme().background)
+        .child(content)
+        // `HandleEdge::Leading` + `Axis::Vertical` ⇒ 热区（1px 细线 + 4px 内侧 padding）
+        // 整体收在**顶边内侧**，细线正落在与中央列相接的那一像素上。
+        .child(drag_handle(handle.clone(), pane))
+        .child(drag_tracker(handle, pane));
+
     v_flex()
         .w_full()
+        // `flex_shrink_0`：长度是用户给定的（拖拽改），不接受 flex 再压一次 —— 收敛由
+        // [`bottom_pane_max_height`] 与中央列的 `min_h_0()` 一起保证，不靠隐式收缩。
         .flex_shrink_0()
-        .child(
-            // 拖拽热区：4px，悬停时中间那条 1px 主色线（`bottom-pane.tsx:226-231`）。
-            div().w_full().h_1(),
-        )
-        .child(
-            div()
-                .w_full()
-                // 240 不在 4px 档位上（没有 `h_60()`），所以走 rems —— 见 [`BOTTOM_PANE_HEIGHT_SPEC`]。
-                .h(rems(BOTTOM_PANE_HEIGHT_SPEC / 16.))
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().background)
-                .child(content),
-        )
+        .child(body)
 }
 
 /// 左侧活动栏的图标项。
@@ -5070,10 +5496,14 @@ fn register_java_toolchain(root: &Path, cx: &App) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionFlags, COMMAND_ORDER, CommandId, OpenDestination, Overrides, ProjectOpenDecision,
-        RightScanState, RightToolWindowView, SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_WIDTH_SPEC,
-        ToolchainPaths, clamped_drag_width, left_activity_index, resolve_overrides,
-        resolve_project_open_destination, right_scan_should_notify, visible_commands,
+        ActionFlags, Axis, BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC, BOTTOM_PANE_MIN_HEIGHT_SPEC,
+        COMMAND_ORDER, CommandId, HandleEdge, OpenDestination, Overrides, ProjectOpenDecision,
+        RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC, RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
+        RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC, ResizablePane, RightScanState,
+        RightToolWindowView, SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_WIDTH_SPEC, ToolchainPaths,
+        bottom_pane_max_height, clamp_pane_span, clamped_drag_span, left_activity_index,
+        resolve_overrides, resolve_project_open_destination, right_scan_should_notify,
+        right_tool_window_max_width, visible_commands,
     };
 
     /// 侧栏拖动改宽的算术：起点 + 位移，并钳在允许范围内。
@@ -5086,22 +5516,170 @@ mod tests {
     /// 三条判据：**向右拖变宽**、**向左拖变窄**、**两端都被钳住**。
     #[test]
     fn drag_width_follows_the_pointer_and_stays_in_range() {
+        // 左栏走 [`clamped_drag_span`]：手柄在**后缘**（`drag_direction = +1`），区间是静网
+        // 的 200…720（既有行为，理由与真源偏差见 `pane_span_range`）。
+        let left = |press: f32, start: f32, current: f32| {
+            clamped_drag_span(
+                press,
+                start,
+                current,
+                SIDEBAR_MIN_WIDTH_SPEC,
+                SIDEBAR_MAX_WIDTH_SPEC,
+                ResizablePane::LeftSidebar.drag_direction(),
+            )
+        };
         // 从 320 起拖：鼠标右移 100 → 420。
-        assert_eq!(clamped_drag_width(100., 320., 200.), 420.);
+        assert_eq!(left(100., 320., 200.), 420.);
         // 鼠标左移 100 → 220。
-        assert_eq!(clamped_drag_width(300., 320., 200.), 220.);
+        assert_eq!(left(300., 320., 200.), 220.);
         // 一路左拖到负无穷也只会停在最小宽。
-        assert_eq!(
-            clamped_drag_width(0., 320., -10_000.),
-            SIDEBAR_MIN_WIDTH_SPEC
-        );
+        assert_eq!(left(0., 320., -10_000.), SIDEBAR_MIN_WIDTH_SPEC);
         // 一路右拖也只会停在最大宽。
-        assert_eq!(
-            clamped_drag_width(0., 320., 10_000.),
-            SIDEBAR_MAX_WIDTH_SPEC
-        );
+        assert_eq!(left(0., 320., 10_000.), SIDEBAR_MAX_WIDTH_SPEC);
         // 起点宽本身就是钳过的值：不动鼠标 ⇒ 结果等于起点宽（拖动不会自己漂移）。
-        assert_eq!(clamped_drag_width(500., 320., 500.), 320.);
+        assert_eq!(left(500., 320., 500.), 320.);
+    }
+
+    /// **方向**：右栏与底部窗的手柄在**前缘**，往左 / 往上拖才是变长。
+    ///
+    /// 守的是最容易写反的一处：把右栏的 `drag_direction` 也写成 `+1`，拖右栏就会"往右拖变宽"——
+    /// 看上去像手柄没反应 / 反着走，而这类错误在纯算术里一眼能看穿，真机上要试半天。
+    #[test]
+    fn leading_edge_panes_grow_towards_the_window_edge() {
+        let right = |press: f32, start: f32, current: f32| {
+            clamped_drag_span(
+                press,
+                start,
+                current,
+                RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
+                RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC,
+                ResizablePane::RightToolWindow.drag_direction(),
+            )
+        };
+        // 指针往**左**移 60（400 → 340）⇒ 右栏变宽 60。
+        assert_eq!(right(500., 400., 440.), 460.);
+        // 指针往右移回去 ⇒ 变窄，且停在 300 下界。
+        assert_eq!(right(500., 400., 900.), RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC);
+
+        // 底部窗同一条判据，只是轴换成 y：往上拖（y 变小）才是变高。
+        let bottom = |press: f32, start: f32, current: f32| {
+            clamped_drag_span(
+                press,
+                start,
+                current,
+                BOTTOM_PANE_MIN_HEIGHT_SPEC,
+                bottom_pane_max_height(800.),
+                ResizablePane::BottomPane.drag_direction(),
+            )
+        };
+        assert_eq!(bottom(600., 300., 500.), 400., "往上拖 100 ⇒ 高 400");
+        assert_eq!(bottom(600., 300., 100.), bottom_pane_max_height(800.));
+    }
+
+    /// 三个手柄的 `ElementId` **必须互不相同**（gpui-kit 官方 `element_id` 那条坑）。
+    ///
+    /// 上游文档的原话是：三个 `resize_handle` 落在同一个带 key 的祖先下、都叫
+    /// `"resize-handle"` 时会拿到同一个 `GlobalElementId`，"按住一个 handle 可能触发另一个的
+    /// 拖动"。这条用例把它变成机器判据 —— 三个手柄现在确实住在同一个祖先下
+    /// （`render` 里最外层那个 `h_flex`），正是那个坑的形状。
+    #[test]
+    fn the_three_resize_handles_have_distinct_element_ids() {
+        let ids = [
+            ResizablePane::LeftSidebar.handle_id(),
+            ResizablePane::RightToolWindow.handle_id(),
+            ResizablePane::BottomPane.handle_id(),
+        ];
+        for (index, id) in ids.iter().enumerate() {
+            assert!(!id.is_empty(), "ElementId 不能是空串");
+            assert!(
+                !ids[..index].contains(id),
+                "ElementId 撞车：{id}（按住一个手柄可能触发另一个的拖动）"
+            );
+        }
+        // 贴边与轴：左栏在后缘 + 水平轴；右栏在前缘 + 水平轴；底部窗在前缘 + **垂直**轴。
+        assert_eq!(
+            ResizablePane::LeftSidebar.handle_edge(),
+            HandleEdge::Trailing
+        );
+        assert_eq!(
+            ResizablePane::RightToolWindow.handle_edge(),
+            HandleEdge::Leading
+        );
+        assert_eq!(ResizablePane::BottomPane.handle_edge(), HandleEdge::Leading);
+        assert_eq!(ResizablePane::BottomPane.axis(), Axis::Vertical);
+        assert_eq!(ResizablePane::RightToolWindow.axis(), Axis::Horizontal);
+    }
+
+    /// 右栏的上界**按可用宽度收敛**（真源 `WorkbenchRightToolSplitView.swift:7-16`）。
+    ///
+    /// 宽窗口里是静网上界 760；窗口窄到放不下 640 的中央列时，上界一路收到下界 300 ——
+    /// 这就是"窗口变窄时要能收敛"，而且**永远不会**返回小于下界的上界
+    /// （`min > max` 会让 `f32::clamp` 直接 panic）。
+    #[test]
+    fn the_right_pane_max_width_converges_on_a_narrow_window() {
+        assert_eq!(
+            right_tool_window_max_width(1920.),
+            RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC
+        );
+        assert_eq!(
+            right_tool_window_max_width(1280.),
+            1280. - RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC
+        );
+        assert_eq!(
+            right_tool_window_max_width(760.),
+            RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
+            "可用宽刚够放下 640 + 300 时，上界正好是下界"
+        );
+        assert_eq!(
+            right_tool_window_max_width(200.),
+            RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
+            "窗口比两边的下界之和还窄：上界收敛到下界，不产生 min > max"
+        );
+        // 窗口尺寸还不可知（构造期 `viewport_size()` 可能是 0）：给静网上界，
+        // 不能按"窗口 0 宽"把恢复出来的宽度钳到下界。
+        assert_eq!(
+            right_tool_window_max_width(0.),
+            RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC
+        );
+        assert_eq!(
+            right_tool_window_max_width(f32::NAN),
+            RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC
+        );
+    }
+
+    /// 底部窗的上界同理，且恢复一个**越界值**时收敛到区间内。
+    #[test]
+    fn spans_converge_for_narrow_windows_and_out_of_range_restores() {
+        assert_eq!(
+            bottom_pane_max_height(1200.),
+            1200. - BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC
+        );
+        assert_eq!(
+            bottom_pane_max_height(300.),
+            BOTTOM_PANE_MIN_HEIGHT_SPEC,
+            "窗口太矮：上界收到下界"
+        );
+        assert!(
+            bottom_pane_max_height(0.).is_infinite(),
+            "窗口尺寸还不可知时这一帧不设上界（别误吃恢复出来的值）"
+        );
+
+        // 恢复一个在宽屏上存下来的 760、当前窗口只有 800 高：收敛到上界而不是溢出。
+        let restored = clamp_pane_span(
+            760.,
+            BOTTOM_PANE_MIN_HEIGHT_SPEC,
+            bottom_pane_max_height(800.),
+        );
+        assert_eq!(restored, bottom_pane_max_height(800.));
+
+        // 恢复越界 / 坏值：负值、NaN、±inf 一律落回下界 / 顶到界内（`f32::clamp(NaN, ..)` 会
+        // 返回 NaN，那一帧布局会整片塌掉，所以 NaN 单独挡）。
+        assert_eq!(clamp_pane_span(-5., 260., 580.), 260.);
+        assert_eq!(clamp_pane_span(f32::NAN, 260., 580.), 260.);
+        assert_eq!(clamp_pane_span(f32::NEG_INFINITY, 260., 580.), 260.);
+        assert_eq!(clamp_pane_span(f32::INFINITY, 260., 580.), 580.);
+        // 区间本身反了（窗口比两端下界之和还窄）：收敛到下界，不 panic。
+        assert_eq!(clamp_pane_span(500., 300., 120.), 300.);
     }
 
     /// B2：`menu_bar::install_key_actions` 绑的六条键位，逐条对着 `MENUS` 与 keymap 语法定一遍。

@@ -69,6 +69,21 @@ pub enum SessionPlan {
     ReadOnly,
 }
 
+/// [`SessionTracker::plan`] 快判的键：**打开的文件 + 当前文件 + 外壳界面状态**。
+///
+/// ⚠️ 界面状态必须在这个键里。`plan` 的调用点不只有"编辑区观察回调"（那条路上文件列表才是
+/// 变量），还有"切视图 / 收起侧栏 / 拖完面板"这些**只改界面状态**的路径；键里少一项，这些
+/// 改动就会被快判吞掉 —— 具体症状是"切了视图、拖完面板，`session.local.json` 一个字节没改"。
+type PlanKey = (Vec<PathBuf>, Option<PathBuf>, SessionUiState);
+
+/// 这一次的 `(打开的文件, 当前文件, 界面状态)` 与上一次是否不同。
+///
+/// 抽成纯函数是为了**能单测**：`plan` 自己要 `Entity<EditorPane>`（本 crate 的测试拿不到
+/// `TestAppContext`，起不了实体），而"改动被快判吞掉"正是这条快判最容易出的错。
+fn plan_key_changed(previous: Option<&PlanKey>, current: &PlanKey) -> bool {
+    previous != Some(current)
+}
+
 /// 外壳的会话状态：当前文档 + 磁盘上那一份 + 防抖代数。
 ///
 /// **一个工作区一个实例**：换项目会重建整个 `ShellWorkspace`，新外壳的
@@ -87,12 +102,15 @@ pub struct SessionTracker {
     debounce: DebounceState,
     /// 会话文件比本程序更新时不再尝试写入（与其余文档同一条口径：不静默降级覆盖）。
     read_only: bool,
-    /// 上一次 `plan` 看到的"打开的文件 + 当前文件"。
+    /// 上一次 `plan` 看到的 [`PlanKey`]（打开的文件 + 当前文件 + 界面状态）。
     ///
     /// 它挡的是**每帧级别的观察**：编辑区的观察回调在光标移动时也会跑（一次按键一次），
-    /// 而 `session_from_paths` 要对每个打开的文件做一次磁盘存在性检查。这一对值没变时
-    /// 直接返回"没变"，连检查都省掉（内容变了才走那条慢路径）。
-    last_seen: Option<(Vec<PathBuf>, Option<PathBuf>)>,
+    /// 而 `session_from_paths` 要对每个打开的文件做一次磁盘存在性检查。键没变时直接返回
+    /// "没变"，连检查都省掉（内容变了才走那条慢路径）。
+    ///
+    /// ⚠️ 键里**必须**含界面状态：少了它，"只改界面状态"的改动（切视图 / 收起侧栏 /
+    /// 拖动改宽）会被这里判成"没变"而永远不落盘。见 [`plan_key_changed`]。
+    last_seen: Option<PlanKey>,
     /// 装载期的诊断（由 [`Self::new`] 打出 stderr，同时留在这里便于测试读取）。
     pub(crate) load_diagnostics: Vec<String>,
     /// 装载期诊断是否已经报过（[`Self::plan`] 第一次被调时补打一次，避免一次启动刷十几行）。
@@ -152,12 +170,14 @@ impl SessionTracker {
             let pane = editor.read(cx);
             (pane.open_disk_files(), pane.active_disk_file())
         };
-        // 快判：打开的文件与当前文件都没变 → 一份文档都不必重算（连磁盘检查都省掉）。
+        // 快判：打开的文件、当前文件与界面状态都没变 → 一份文档都不必重算（连磁盘检查都省掉）。
         // 编辑区的观察回调在光标移动时也会跑，这一句是"每帧级观察不变成每帧级 stat"的闸。
-        if self.last_seen.as_ref() == Some(&(open.clone(), active.clone())) {
+        // ⚠️ 界面状态在键里（见 [`PlanKey`]）：否则"只改界面状态"的调用会被这一句吞掉。
+        let key: PlanKey = (open.clone(), active.clone(), ui.clone());
+        if !plan_key_changed(self.last_seen.as_ref(), &key) {
             return SessionPlan::Unchanged;
         }
-        self.last_seen = Some((open.clone(), active.clone()));
+        self.last_seen = Some(key);
         self.current = session::session_from_paths(&self.root, &open, active.as_deref(), ui);
         if self.last_saved.as_ref() == Some(&self.current) {
             return SessionPlan::Unchanged;
@@ -310,6 +330,46 @@ pub struct SessionOutcome {
 mod tests {
     use super::*;
     use lithe_gpui_shared::workspace_config::session::MAX_OPEN_FILES;
+
+    /// `plan` 的快判键必须**含界面状态**：只改面板宽度 / 可见性的调用不能被判成"没变"。
+    ///
+    /// 守的是 2026-09-30 那轮加"拖动改宽 + 宽度持久化"时暴露的既有缺陷：快判键原来只有
+    /// `(打开的文件, 当前文件)`，于是"切视图 / 收起侧栏 / 拖完面板"这些**只改界面状态**的
+    /// 路径全被判成 `Unchanged`，一个字节都不会落盘（拖动改宽会"拖完就丢"）。
+    ///
+    /// 纯值用例，不碰磁盘、不起实体（`plan` 自己要 `Entity<EditorPane>`，本 crate 拿不到
+    /// `TestAppContext`）—— 能测的正好就是这段判据。
+    #[test]
+    fn a_ui_only_change_is_not_swallowed_by_the_plan_fast_path() {
+        let key = |width: Option<f32>, visible: bool| -> PlanKey {
+            (
+                vec![PathBuf::from("a.txt")],
+                None,
+                SessionUiState {
+                    left_sidebar_visible: Some(visible),
+                    left_pane_width: width,
+                    ..SessionUiState::default()
+                },
+            )
+        };
+
+        assert!(
+            plan_key_changed(None, &key(Some(320.), true)),
+            "第一次看必然算变了"
+        );
+        assert!(
+            !plan_key_changed(Some(&key(Some(320.), true)), &key(Some(320.), true)),
+            "三样完全一样才算没变"
+        );
+        assert!(
+            plan_key_changed(Some(&key(Some(320.), true)), &key(Some(360.), true)),
+            "只有面板宽度变了也必须算变（否则拖完的宽度永远写不出去）"
+        );
+        assert!(
+            plan_key_changed(Some(&key(Some(320.), true)), &key(Some(320.), false)),
+            "只有可见性变了也必须算变"
+        );
+    }
 
     /// 一个独立的临时目录（**不含 Git 仓库**），用完删掉。
     ///

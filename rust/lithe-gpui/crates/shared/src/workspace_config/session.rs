@@ -12,11 +12,26 @@
 //! | `activeFile` | `EditorPane::active` | 存**下标**，见下面的"为什么是下标" |
 //! | `leftSidebarVisible` | `ShellWorkspace::left_sidebar_visible` | B2 的侧栏收起态 |
 //! | `topActivityView` / `bottomKind` / `bottomVisible` / `rightView` / `rightVisible` | `ShellWorkspace` 的五个字段 | 当前视图 id + 可见性 |
+//! | `leftPaneWidth` / `rightPaneWidth` / `bottomPaneHeight` | `ShellWorkspace` 的三个尺寸字段 | 三块可拖面板的**最终尺寸**（规格像素），见下 |
 //!
 //! **没有落点的**（因此本模块**不建模**，也不给它们编字段）：光标与滚动位置（只在
-//! `EditorState` 内部，没有读出口）、展开的树节点（资源管理器不记录展开态）、面板 / 分栏
-//! 尺寸（gpui 侧没有可拖动分隔条那套状态）、断点与监视表达式（gpui 侧没有调试器）。
-//! 给没有消费方的字段建模只会造出假契约：写进去、没人读、还得为它写测试。
+//! `EditorState` 内部，没有读出口）、展开的树节点（资源管理器不记录展开态）、
+//! 断点与监视表达式（gpui 侧没有调试器）。给没有消费方的字段建模只会造出假契约：
+//! 写进去、没人读、还得为它写测试。
+//!
+//! ## 尺寸字段：本层只**搬运**，不判定"多大算合理"
+//!
+//! 三个尺寸字段是宿主（`crates/workbench/src/workspace.rs`）拖拽会话结束时写下来的最终值。
+//! 本层**刻意不做**上下界判定、也不在读取时钳制：钳制规则（每个面板的 min/max、按窗口
+//! 自适应、`available - reserve` 那套）是**确定性的规格**，真源在 macOS 前端，将来若两端
+//! 共用应当整体归 `rust/lithe-core/`，不能在这里长出第二份。
+//!
+//! 由此定下两条：
+//!
+//! 1. 读回来的值**原样**交给调用方（`Some(-5.0)` 也照给），由外壳按自己的规则钳制或丢弃；
+//! 2. 字段是 `Option<f32>` 且**可缺省**：旧文档 / 别端写的文档没有这三个键时读到 `None`，
+//!    调用方回落到外壳的默认值。文档版本号不动（加可选键不是破坏性变更，见
+//!    [`SESSION_DOCUMENT_VERSION`]）。
 //!
 //! ## 为什么 `openFiles` 存工作区相对路径而不是绝对路径
 //!
@@ -99,6 +114,15 @@ pub struct SessionState {
     pub right_view: Option<String>,
     /// 右工具窗是否可见。
     pub right_visible: Option<bool>,
+    /// 左侧栏面板宽度，单位是**规格像素**（1 单位 = 主题字号 16px 下的 1px）。
+    ///
+    /// `None` = 这份文档里没有这个键（旧文件，或用户从没拖过），调用方**必须**回落到
+    /// 外壳自己的默认宽度 —— 本层不认识"合理宽度"，钳制规则归宿主（见下）。
+    pub left_pane_width: Option<f32>,
+    /// 右侧工具窗（Maven / 通知 / 扩展）宽度，单位同 [`Self::left_pane_width`]。
+    pub right_pane_width: Option<f32>,
+    /// 底部工具窗（终端 / Git / 运行 / 诊断）高度，单位同 [`Self::left_pane_width`]。
+    pub bottom_pane_height: Option<f32>,
 }
 
 /// 一次读取的结论。
@@ -393,14 +417,20 @@ pub fn session_from_paths(
         bottom_visible: ui.bottom_visible,
         right_view: ui.right_view,
         right_visible: ui.right_visible,
+        left_pane_width: ui.left_pane_width,
+        right_pane_width: ui.right_pane_width,
+        bottom_pane_height: ui.bottom_pane_height,
     }
 }
 
 /// 外壳提供的界面状态（会话文档里除打开文件之外的那几项）。
 ///
-/// 单独一个结构体而不是把六个参数摊在 [`session_from_paths`] 的签名上：调用点只有一处，
-/// 但六个裸参数读起来无法分辨谁是谁（`Some(true)` 出现两次就该有人搞反）。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// 单独一个结构体而不是把九个参数摊在 [`session_from_paths`] 的签名上：调用点只有一处，
+/// 但九个裸参数读起来无法分辨谁是谁（`Some(true)` 出现两次就该有人搞反）。
+///
+/// **只有 `PartialEq`、没有 `Eq`**：三个尺寸字段是 `f32`，浮点没有全序（加尺寸之前这里
+/// 是 `Eq`）。它只用于"文档内容有没有变"的比较，`PartialEq` 足够。
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionUiState {
     /// 左侧栏（活动栏 + 面板整块）是否可见。
     pub left_sidebar_visible: Option<bool>,
@@ -414,6 +444,12 @@ pub struct SessionUiState {
     pub right_view: Option<String>,
     /// 右工具窗是否可见。
     pub right_visible: Option<bool>,
+    /// 左侧栏面板宽度（规格像素），见 [`SessionState::left_pane_width`]。
+    pub left_pane_width: Option<f32>,
+    /// 右侧工具窗宽度（规格像素）。
+    pub right_pane_width: Option<f32>,
+    /// 底部工具窗高度（规格像素）。
+    pub bottom_pane_height: Option<f32>,
 }
 
 #[cfg(test)]
@@ -453,6 +489,11 @@ mod tests {
             bottom_visible: Some(false),
             right_view: Some("maven".to_string()),
             right_visible: Some(false),
+            // 三个尺寸都用**不在默认值上**的数：往返测试里 `Some(320.)` 之类的值与外壳默认值
+            // 撞车时，读回 `None` 也能"看起来相等"，那就测不出丢字段。
+            left_pane_width: Some(268.5),
+            right_pane_width: Some(413.25),
+            bottom_pane_height: Some(287.75),
         }
     }
 
@@ -702,7 +743,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 落盘 → 读回的往返：界面七值逐条回来。
+    /// 落盘 → 读回的往返：界面九值逐条回来（含三块可拖面板的尺寸）。
     #[test]
     fn a_saved_session_round_trips_through_disk() {
         let repo = TempRepo::new("round-trip");
@@ -729,6 +770,113 @@ mod tests {
         assert_eq!(loaded.session.left_sidebar_visible, Some(false));
         assert_eq!(loaded.session.top_activity_view, Some(1));
         assert_eq!(loaded.session.bottom_kind.as_deref(), Some("terminal"));
+        // 尺寸逐条回来，且**键名是 camelCase**（跨端文档的兼容面）。
+        assert_eq!(loaded.session.left_pane_width, Some(268.5));
+        assert_eq!(loaded.session.right_pane_width, Some(413.25));
+        assert_eq!(loaded.session.bottom_pane_height, Some(287.75));
+        let text = repo.read(".lithe/session.local.json");
+        for key in ["leftPaneWidth", "rightPaneWidth", "bottomPaneHeight"] {
+            assert!(text.contains(key), "缺少键 {key}：{text}");
+        }
+        assert!(
+            text.contains("\"version\": 1"),
+            "版本号不该因为加可选键而变：{text}"
+        );
+    }
+
+    /// **兼容性**：旧文档（没有三个尺寸键）照样能读，三个字段回落成 `None`（由外壳给默认值），
+    /// 其余字段一字不丢；再写回时也不会因为缺键而变成非法文档。
+    ///
+    /// ⚠️ 写回走 [`crate::document::save_document`]（原子写 + 版本判据）而**不是**
+    /// [`save_session`]：后者要先 `sharing::ensure_project_dir_excluded`，而那条路今天在
+    /// `git.write` 缺失时整体失败（登记在 `lithe-gpui/BLOCKERS.md` B2，与本改动无关）。
+    /// 这条用例要验的是**文档层的键**，把排除守卫摘掉才能在这台机器上真的跑起来。
+    #[test]
+    fn a_legacy_document_without_size_keys_still_loads() {
+        let repo = TempRepo::new("legacy-sizes");
+        repo.write(
+            ".lithe/session.local.json",
+            r#"{"version":1,"openFiles":["alpha.txt"],"activeFile":0,
+                "leftSidebarVisible":true,"topActivityView":2,"bottomKind":"git",
+                "bottomVisible":true,"rightView":"maven","rightVisible":true}"#,
+        );
+
+        let loaded = load_session(repo.root());
+        assert!(!loaded.read_only, "同版本号的旧文档不是只读");
+        assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+        assert_eq!(loaded.session.left_pane_width, None, "缺键必须回落成 None");
+        assert_eq!(loaded.session.right_pane_width, None);
+        assert_eq!(loaded.session.bottom_pane_height, None);
+        assert_eq!(
+            loaded.session.top_activity_view,
+            Some(2),
+            "其余字段不受影响"
+        );
+        assert_eq!(loaded.session.right_view.as_deref(), Some("maven"));
+
+        // 读进来再原样写回去：文档仍然合法、版本号不变、已知键不丢。
+        let path = session_path(repo.root());
+        let previous = document::previous_object(&path);
+        document::save_document(
+            &path,
+            &loaded.session,
+            previous.as_ref(),
+            SESSION_DOCUMENT_VERSION,
+        )
+        .expect("写回旧文档失败");
+        let reloaded = load_session(repo.root());
+        assert_eq!(reloaded.session, loaded.session);
+        assert!(
+            reloaded.diagnostics.is_empty(),
+            "{:?}",
+            reloaded.diagnostics
+        );
+        let text = repo.read(".lithe/session.local.json");
+        assert!(text.contains("\"version\": 1"), "版本号不该变：{text}");
+        assert!(text.contains("\"topActivityView\": 2"), "{text}");
+    }
+
+    /// **往返**：三块面板的尺寸写出去 → 读回来逐条相等，且键名是 camelCase。
+    ///
+    /// 与 [`a_saved_session_round_trips_through_disk`] 的分工：那条走完整的 [`save_session`]
+    /// （含 Git 排除守卫，今天因 B2 红），这条只验**文档层的键与数值**，因此不受 B2 影响。
+    #[test]
+    fn the_three_pane_sizes_round_trip_through_the_document() {
+        let repo = TempRepo::new("size-round-trip");
+        let session = session_from_paths(repo.root(), &[], None, ui_hidden());
+        let path = session_path(repo.root());
+        document::save_document(&path, &session, None, SESSION_DOCUMENT_VERSION)
+            .expect("写会话文档失败");
+
+        let text = repo.read(".lithe/session.local.json");
+        for key in ["leftPaneWidth", "rightPaneWidth", "bottomPaneHeight"] {
+            assert!(text.contains(key), "缺少键 {key}：{text}");
+        }
+
+        let loaded = load_session(repo.root());
+        assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+        assert_eq!(loaded.session.left_pane_width, Some(268.5));
+        assert_eq!(loaded.session.right_pane_width, Some(413.25));
+        assert_eq!(loaded.session.bottom_pane_height, Some(287.75));
+        assert_eq!(loaded.session, session, "整份文档逐字段相等");
+    }
+
+    /// 尺寸是**宿主**的规格：文档层原样搬运，不做上下界判定。
+    ///
+    /// 守的是"钳制规则不做成第二份真相源"：`session.local.json` 可能被别端（或手改）写成
+    /// 越界 / 非有限值，本层**不在这里**钳制也不在这里改数值 —— 拿到值的宿主自己决定
+    /// （`ShellWorkspace` 会钳到真源区间，见 `crates/workbench/src/workspace.rs`）。
+    #[test]
+    fn size_keys_are_carried_verbatim_without_clamping() {
+        let mut ui = ui_hidden();
+        ui.left_pane_width = Some(-5.0);
+        ui.right_pane_width = Some(9_999.0);
+        ui.bottom_pane_height = Some(f32::INFINITY);
+
+        let session = session_from_paths(std::env::temp_dir().as_path(), &[], None, ui);
+        assert_eq!(session.left_pane_width, Some(-5.0), "越界值原样搬运");
+        assert_eq!(session.right_pane_width, Some(9_999.0));
+        assert_eq!(session.bottom_pane_height, Some(f32::INFINITY));
     }
 
     /// 只读文档（版本过新）照样能读回来 —— 恢复不因为"版本新"就丢掉整个会话。
