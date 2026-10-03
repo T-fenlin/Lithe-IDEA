@@ -58,8 +58,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
 use gpui_kit::component::highlighter::HighlightTheme;
-use gpui_kit::component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
+use gpui_kit::component::{ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry};
 use gpui_kit::{App, SharedString, WindowAppearance, px};
+use lithe_gpui_shared::rem_px;
 
 use crate::paths;
 use crate::schema::{ThemeIndex, slugify_theme_id, theme_font_size_for};
@@ -106,6 +107,32 @@ pub fn bundled_theme_files() -> impl Iterator<Item = (&'static str, &'static str
 ///
 /// 落点见 [`apply_theme_by_name`]（`Theme.notification.max_items`）。
 pub const NOTIFICATION_MAX_ITEMS: usize = 3;
+
+/// 通知 toast 距窗口**右边缘**的内衬（规格像素）：**52**。
+///
+/// 真源是那条右下角 overlay 的 trailing padding：
+/// `.padding(.trailing, WorkbenchLayoutMetrics.rightActivityBarWidth + 12)`
+/// （`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:553`），其中
+/// `rightActivityBarWidth = 40`（同文件 `:7` 的 `WorkbenchLayoutMetrics`）⇒ 40 + 12 = **52**。
+/// 也就是说真源这一条是**派生量**（右活动栏宽 + 12），不是写死的数。
+///
+/// ⚠️ **为什么这里固化算式而不是引用宿主的 rail 常量**：宿主右 rail 的宽是
+/// `crates/workbench/src/activity_bar.rs:85` 的 `COLLAPSED_WIDTH = 38.`，它有两个问题 ——
+/// (1) 不是 `pub`，而 `crates/settings` 与 `crates/workbench` 之间**没有依赖方向**
+/// （`app -> workbench`、`app -> settings -> shared`），`settings` 够不到它；
+/// (2) 它的取值来自**已作废**的 `windows/tauri` 前端（38 + 4 gap = 42），与真源的 40 本身就差
+/// 2px —— 引用它等于把"尚未对齐的 rail 宽"变成 toast 的基准，偏差会换个数继续存在。
+/// 所以这里按真源的算式固化成具名常量，两个操作数与出处都写在上面：rail 宽哪天对齐 40 时，
+/// 回来改这一个数即可（它在 `apply_theme_by_name` 里被换算进 `Theme.notification.margins`）。
+pub const NOTIFICATION_MARGIN_RIGHT_SPEC: f32 = 52.;
+
+/// 通知 toast 距窗口**底边缘**的内衬（规格像素）：**38**。
+///
+/// 真源：`.padding(.bottom, 38)`（`WorkbenchView.swift:554`，与上面那条 trailing 是同一处
+/// `.overlay(alignment: .bottomTrailing)`，见同文件 `:517`）。38 在那里是**写死的常量**，
+/// **不是**从 `statusBarHeight`（24，`Theme/LitheTheme.swift:480`）派生的：没有状态栏的
+/// 欢迎页也独立写了同一个 38（`Views/App/WelcomeView.swift:61`）。
+pub const NOTIFICATION_MARGIN_BOTTOM_SPEC: f32 = 38.;
 
 /// 捆绑主题扩展的**老版本遗留文件名**（2026-09-29 之前它们被直接播种在 themes/ 里）。
 ///
@@ -581,6 +608,36 @@ pub fn apply_theme_by_name(cx: &mut App, name: &str) -> bool {
     Theme::global_mut(cx).notification.max_items = NOTIFICATION_MAX_ITEMS;
     stamp_builtin_highlight_if_absent(cx, &theme, mode);
     Theme::global_mut(cx).apply_config(&theme);
+    // 通知 toast 的**内衬**（= 真源那条 overlay 的 padding，取值见
+    // [`NOTIFICATION_MARGIN_RIGHT_SPEC`] / [`NOTIFICATION_MARGIN_BOTTOM_SPEC`]）。
+    // 字段类型是 `Edges<Pixels>`（`gpui-component-0.7.0/src/notification.rs:543`），**只吃
+    // `Pixels`**，所以不能直接写规格数字：走 [`rem_px`]（唯一实现在
+    // `lithe_gpui_shared`），`rem` 取**当刻**的 rem 基准 `cx.theme().font_size`
+    // （= `Theme::global(cx).font_size`）—— 它与 `WindowState::prepare` 每帧写进
+    // `window.set_rem_size` 的是同一个值（`gpui-component-0.7.0/src/root.rs:436`）。
+    // 主题应用函数里没有 `Window`，所以这是仓库既有的等价取法
+    // （`crates/terminal/src/terminal_view.rs:321`、`crates/git/src/changes_view.rs:1253` 等）。
+    //
+    // ⚠️ 位置必须在 `apply_config` **之后**：apply_config 会把主题文件里的 `font.size`
+    // 写回 `Theme.font_size`（`src/theme/schema.rs:1064-1108` 的 6 个 token 之一），而内衬是
+    // 按 rem 基准换算出来的 `Pixels`；排在它前面就会拿"下一行即被作废"的基准去换算。
+    // 放在它之后，函数返回时"内衬 = 当刻基准下的规格值"这条不变量**按构造**成立。
+    //
+    // 上游每帧读的就是这个字段本身（`src/notification.rs:1016-1017` 取 `settings.margins`、
+    // `:1062` 对 `Anchor::BottomRight` 只用 `bottom` / `right`），所以在这里设一次即对后续每帧
+    // 生效，**不在 render 里设**。只写有真源依据的两条边：`Anchor::BottomRight` 读不到
+    // `top` / `left`，它们保留上游默认（`offset = px(16.)`，`src/notification.rs:556,559-564`），
+    // 锚点若哪天改成 Top*/Left* 再按真源补。
+    //
+    // ⚠️ 已知边界（本轮不修）：字段类型是 `Pixels` 而不是 rem，所以这个值在**本次应用主题的
+    // 那一刻**定死。之后用户改「界面字体大小」只走 `apply_theme_font_size`（它改的是
+    // `Theme.font_size`，见 `crate::store::SettingsStore::apply_font_size`），内衬不会跟着
+    // 重新换算，要等下一次应用主题；默认档（`uiFontSize = 13` ⇒ 基准 16px，
+    // `schema.rs:38`）下两条路等价，所以默认观感不受影响。
+    let rem = cx.theme().font_size;
+    let notification = &mut Theme::global_mut(cx).notification;
+    notification.margins.right = rem_px(rem, NOTIFICATION_MARGIN_RIGHT_SPEC);
+    notification.margins.bottom = rem_px(rem, NOTIFICATION_MARGIN_BOTTOM_SPEC);
     Theme::sync_base(cx);
     cx.refresh_windows();
     println!("S1_THEME applied={name} dark={}", mode.is_dark());

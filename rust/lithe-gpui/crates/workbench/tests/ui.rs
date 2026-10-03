@@ -166,3 +166,98 @@ fn theme_application_caps_simultaneous_notification_toasts_at_three(cx: &mut Tes
         "切主题会重跑 apply_config，上限必须仍然生效（`notification` 不是主题文件字段）"
     );
 }
+
+/// 宿主把通知 toast 的**内衬**设成真源右下 overlay 的 padding：右 **52** / 底 **38**（规格像素）。
+///
+/// 真源 `WorkbenchView.swift:517` 的 `.overlay(alignment: .bottomTrailing)` + `:553` 的
+/// `.padding(.trailing, rightActivityBarWidth + 12)`（40 + 12）+ `:554` 的 `.padding(.bottom, 38)`。
+/// 上游消费点每帧读 `Theme.notification.margins`（`gpui-component-0.7.0/src/notification.rs`
+/// `:1016-1017`，`:1062` 对 `Anchor::BottomRight` 只取 `bottom` / `right`），所以"字段是这两个值"
+/// 就是"内衬已对齐"的**全部**机器可验证内容。
+///
+/// 三段断言，各自守一条独立的失效：
+/// 1. 规格数字本身（常量被改成别的数会失败）；
+/// 2. 走生产入口 `theme::apply_theme_by_name` 之后，两条边等于**按当刻 rem 基准**换算的规格值
+///    —— 赋值点被删掉时会红，因为上游默认是 `px(16.)`（`notification.rs:556`），
+///    与 52 / 38 不同（同时钉住"走的是 rem 换算、不是写死 `px(...)`"）；
+/// 3. 再应用一次主题后仍然成立（`apply_config` 不会把它冲回上游默认）。
+///
+/// 期望值用 `rem_px(Theme::global(cx).font_size, 规格)` 现算而不是写死 `px(52.)`：宿主是在
+/// 应用主题那一刻用 `cx.theme().font_size` 换算的，而该换算点排在 `apply_config` **之后**
+/// （基准此刻已定），所以两边用的是同一个基准，断言是确定的、不是巧合。
+///
+/// ⚠️ 确定性：不开窗口、不 sleep、无后台任务（同本文件另一条通知测试）。这条只证明"内衬值被设上
+/// 了且切主题后仍在"，**真实观感未经真机视觉验证**；`margins` 是 `Pixels` 字段，改「界面字体大小」
+/// 后不会重新换算（默认档 uiFontSize = 13 ⇒ 基准 16px，两条路等价），这条也不覆盖。
+#[gpui_kit::test]
+fn theme_application_sets_notification_toast_insets_from_the_macos_source(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme;
+    use lithe_gpui_settings::theme::{
+        NOTIFICATION_MARGIN_BOTTOM_SPEC, NOTIFICATION_MARGIN_RIGHT_SPEC,
+    };
+    use lithe_gpui_shared::rem_px;
+
+    cx.update(gpui_kit::init);
+
+    // ① 规格数字：右 = 真源 `rightActivityBarWidth(40) + 12`，底 = 真源写死的 38。
+    assert_eq!(
+        NOTIFICATION_MARGIN_RIGHT_SPEC, 52.,
+        "右内衬必须等于真源 `WorkbenchView.swift:553` 的 `rightActivityBarWidth(40) + 12`"
+    );
+    assert_eq!(
+        NOTIFICATION_MARGIN_BOTTOM_SPEC, 38.,
+        "底内衬必须等于真源 `WorkbenchView.swift:554` 的 `.padding(.bottom, 38)`"
+    );
+
+    // 与另一条通知测试同一取法：用注册表的键而不是写死主题名。
+    let name = cx.update(|cx| {
+        gpui_kit::component::ThemeRegistry::global(cx)
+            .themes()
+            .keys()
+            .next()
+            .expect("组件库初始化后主题注册表必须非空")
+            .clone()
+    });
+
+    // 读一次当前 `(rem 基准, 内衬)`。基准由宿主的换算点决定，所以两边同源。
+    let insets = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            let theme = Theme::global(cx);
+            (theme.font_size, theme.notification.margins.clone())
+        })
+    };
+
+    // ② 走生产入口应用一次主题。
+    let applied = cx.update(|cx| lithe_gpui_settings::theme::apply_theme_by_name(cx, &name));
+    assert!(applied, "主题 {name} 应当在注册表里并能被应用");
+    let (rem, margins) = insets(cx);
+    assert_eq!(
+        margins.right,
+        rem_px(rem, NOTIFICATION_MARGIN_RIGHT_SPEC),
+        "应用主题后 toast 距右边缘的内衬应当是 {NOTIFICATION_MARGIN_RIGHT_SPEC} 规格像素（当刻基准 {rem:?}）；\
+         上游默认是 px(16.)，实测 {:?} —— 排在 rem 换算之前的赋值点被删掉、或基准取错都会在这里红",
+        margins.right
+    );
+    assert_eq!(
+        margins.bottom,
+        rem_px(rem, NOTIFICATION_MARGIN_BOTTOM_SPEC),
+        "应用主题后 toast 距底边缘的内衬应当是 {NOTIFICATION_MARGIN_BOTTOM_SPEC} 规格像素（当刻基准 {rem:?}）；实测 {:?}",
+        margins.bottom
+    );
+
+    // ③ 再应用一次（= 用户切主题）：apply_config 不能把内衬冲回上游默认。
+    cx.update(|cx| {
+        lithe_gpui_settings::theme::apply_theme_by_name(cx, &name);
+    });
+    let (rem, margins) = insets(cx);
+    assert_eq!(
+        margins.right,
+        rem_px(rem, NOTIFICATION_MARGIN_RIGHT_SPEC),
+        "切主题会重跑 apply_config，右内衬必须仍然生效（`notification` 不是主题文件字段）"
+    );
+    assert_eq!(
+        margins.bottom,
+        rem_px(rem, NOTIFICATION_MARGIN_BOTTOM_SPEC),
+        "切主题会重跑 apply_config，底内衬必须仍然生效（`notification` 不是主题文件字段）"
+    );
+}
