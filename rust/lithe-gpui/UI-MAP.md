@@ -402,8 +402,8 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 
 | 条文 | 出处 | ⚑ 本项目现状 |
 | --- | --- | --- |
-| **嵌入量对照**（原生、release、去符号）：默认组件图标 **101 个 = 44.28 KiB（基线）**；+2 个 = 45.04 KiB；+10 个 = 48.09 KiB；**`AllAssets` 1830 个 = 731.45 KiB，相对基线 +1.02 MiB** | assets §NOTE | ⚠️ 本项目注册的是 `AllAssets`；而我们**自己**另嵌 411 个文件 / 3,317,489 字节（idea 254 + pierre 149 + app-icon 7 + logo 1）。**这 1.02 MiB 只为兜底 Lucide 那批**，值得评估是否需要 |
-| 指南给的更省做法：用 **`icon_assets!(ExtraIcons, [Accessibility, AlarmClock]);`** 按需选目录图标，再组合成一个 `AssetSource` | assets §用 `icon_assets!` 选择更多目录图标 | ⚠️ 本项目未用该宏。若真要收窄，这条是现成路径（与 `D18`/`D17` 同属"减少无谓体积"） |
+| **嵌入量对照**（原生、release、去符号）：默认组件图标 **101 个 = 44.28 KiB（基线）**；+2 个 = 45.04 KiB；+10 个 = 48.09 KiB；**`AllAssets` 1830 个 = 731.45 KiB，相对基线 +1.02 MiB** | assets §NOTE | ✅ **已评估并明确否决收窄（`D25`，2026-10-02）**。口径更正：0.7 的默认子集实测是 **104 个 / 46 349 B**（指南表里的 101 / 44.28 KiB 是 0.6 旧数未同步），`AllAssets` 实测 **1830 个 / 749 008 B = 731.45 KiB**（与指南逐位吻合）。本项目自嵌 **411 个文件 / 3 325 504 字节**（行尾无关口径，idea 254 + pierre 149 + app-icon 7 + logo 1）。**保留兜底的理由**：界面实际引用 **70 个图标名**，其中 **26 个在组件子集里、44 个只有完整 Lucide 目录才有**（`default-icons.txt` 里没有）—— 换句话说这 1.02 MiB **现在是承重的**，不是纯浪费；且全部 70 个名**静态可枚举**（无运行期拼出来的图标名），收窄在技术上可行，但那属于**改内嵌资源**的独立改动，本次按维护者决定**不做** |
+| 指南给的更省做法：用 **`icon_assets!(ExtraIcons, [Accessibility, AlarmClock]);`** 按需选目录图标，再组合成一个 `AssetSource` | assets §用 `icon_assets!` 选择更多目录图标 | ⚠️ 本项目**未用**该宏，且**已否决**收窄方案（`D25`，2026-10-02 维护者定）：要走这条路，就必须把那 44 个"只有 Lucide 侧才有"的变体名逐个写进宏里 —— 而**漏登记任何一个都不会有任何编译或测试失败，只会静默画空白**。真要收窄，先补一条"界面用到的 70 个名逐个 `LitheAssets.load(name.path())` 必须 `Some`"的回归判据，把漏登记变成可执行失败，再动 `assets.rs` |
 | `with_assets` **只能注册一个资源源**（重复调用是覆盖）；**必须在打开窗口前注册** | assets §从默认资源源开始、§自定义资源 | ✅ 本项目 `application().with_assets(assets::LitheAssets)`，`main.rs:951` |
 | **组合资源源必须先查自定义源、再回退内置**：原生平台内置 `Assets`/`AllAssets` 对**未知非空路径返回错误**，会让后续回退失效（`load` 要先 `ExtraIcons` 后 `ComponentAssets`） | assets §用 `icon_assets!` 选择更多目录图标、§自定义资源 | ✅ 本项目正是这个顺序（`assets.rs`：先查自己的 rust-embed 表，再 `AllAssets`），并把 `AllAssets` 的 `Err` **折叠成 `Ok(None)`** |
 | `list(prefix)` 要**合并 + 排序 + 去重**两个来源，使列出的键与 `load` 能提供的键一致；空路径返回 `Ok(None)` | assets §用 `icon_assets!` 选择更多目录图标 | ✅ 本项目 `list` 已合并+排序+去重（`assets.rs`） |
