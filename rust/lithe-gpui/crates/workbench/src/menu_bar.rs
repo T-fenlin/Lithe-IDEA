@@ -193,9 +193,11 @@ use crate::command_palette::CommandId;
 // ---------------------------------------------------------------------------/// 顶级项圆角 6.4：`ui/menubar.tsx:86` 的 `rounded-md` = `--radius × 0.8`（`theme.css:7`）。
 ///
 /// 6.4 不是 gpui 的 rem 档位（`rounded_md()` 是 6），且 Lithe 的圆角阶梯一律走应用层具名常量
-/// —— 与 `crate::right_tool_window` 的 `CLOSE_BUTTON_RADIUS_SPEC` 同一条理由。挂在 `div` 上，
-/// `Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写 `rems(6.4 / 16.)`。
-const ITEM_RADIUS_SPEC: f32 = 6.4;
+/// —— 值的唯一 owner 是 [`lithe_gpui_shared::design::CONTROL_RADIUS`]（与
+/// `crate::right_tool_window` 的 `CLOSE_BUTTON_RADIUS_SPEC`、`crate::title_bar` 的
+/// `TITLE_BAR_CONTROL_RADIUS_SPEC` 同一条）。挂在 `div` 上，`Styled::rounded` 收
+/// `impl Into<AbsoluteLength>`，所以调用点写 `rems(ITEM_RADIUS_SPEC / 16.)`。
+const ITEM_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 
 /// 浮动胶囊圆角 14.4：`window-menu-bar.tsx:549` 的 `rounded-2xl` = `--radius × 1.8`（`theme.css:10`）。
 ///

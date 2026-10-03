@@ -175,7 +175,23 @@ const FOOTER_BUTTON_HEIGHT_SPEC: f32 = 32.;
 /// 只给 [`trigger`] 用；`Dialog` 的 `margin_top` / `width` 那一侧走 [`crate::rem_px`]，
 /// 因为它们是**固有方法**（只吃 `Pixels`）。这里挂在 `div` 上，`Styled::rounded` 收
 /// `impl Into<AbsoluteLength>`，所以调用点直接写 `rems(TRIGGER_RADIUS_SPEC / 16.)`。
-const TRIGGER_RADIUS_SPEC: f32 = 6.4;
+/// 值的唯一 owner 是 [`lithe_gpui_shared::design::CONTROL_RADIUS`]。
+const TRIGGER_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
+
+/// 触发器高度 **32**。
+///
+/// 真源（macOS 界面规格）：分支项 `.frame(height: 32)`
+/// （`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:798`）。
+/// 原来是 24（`h_6()`，照已作废的 `windows/tauri` 前端），本轮随标题栏改单行一起对齐。
+/// 32 在 gpui 档位上（`h_8()`），但本文件的规格值一律以具名常量 + `rems(..)` 表达，
+/// 与相邻的 36 / 32 / 28 那几条保持同一种写法。
+const TRIGGER_HEIGHT_SPEC: f32 = 32.;
+
+/// 触发器水平内边距 **9**（真源 `WorkbenchView.swift:797` 的 `padding(.horizontal, 9)`）。
+///
+/// 9 不在 4px 档位上（`px_2()` = 8、`px_2p5()` = 10），所以调用点写
+/// `px(rems(TRIGGER_HORIZONTAL_INSET_SPEC / 16.))`。
+const TRIGGER_HORIZONTAL_INSET_SPEC: f32 = 9.;
 
 // ---------------------------------------------------------------------------
 // 页签行（自绘：`Command` 没有这个槽位）
@@ -1009,8 +1025,10 @@ pub(crate) fn trigger(panel: &Entity<BranchPanel>, cx: &App) -> Option<AnyElemen
             .flex()
             .flex_shrink_0()
             .items_center()
-            .h_6()
-            .px_2()
+            // 高 32（真源 `WorkbenchView.swift:798`）。
+            .h(rems(TRIGGER_HEIGHT_SPEC / 16.))
+            // 左右各 9（真源 `WorkbenchView.swift:797`）；9 不在档位上 → `rems(..)`。
+            .px(rems(TRIGGER_HORIZONTAL_INSET_SPEC / 16.))
             .gap_1()
             .max_w(rems(BRANCH_NAME_MAX_WIDTH_SPEC / 16.))
             .rounded(rems(TRIGGER_RADIUS_SPEC / 16.))

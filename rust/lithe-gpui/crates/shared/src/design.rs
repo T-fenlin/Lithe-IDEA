@@ -40,3 +40,30 @@ pub const ROW_LINE_HEIGHT: f32 = 1.35;
 /// [`crate::rem_px`]（= `rems(200 / 16.)`），按当帧 rem 基准求值。
 /// 使用方：`editor`（编辑器页签）、`terminal`（终端页签）。
 pub const TAB_MAX_WIDTH: f32 = 200.;
+
+/// 控件圆角 **6.4** —— Lithe 圆角阶梯里的 `rounded-md`（`--radius × 0.8` = `8 × 0.8`）。
+///
+/// 判据同模块头：这条值此前由 **7 处**各自硬写一份字面量 `6.4`（`workbench` 的
+/// `title_bar.rs` / `project_menu.rs` / `branch_panel.rs` / `menu_bar.rs` / `status_bar.rs` /
+/// `right_tool_window.rs` 六个具名常量 + `git/src/model.rs` 的 `RADIUS_MD`），
+/// 值相同只是巧合，任一侧被改动就会静默分叉。现在**只在这里写一次**；各处保留自己的具名
+/// 常量作为「锚定调用点」的别名（`const X: f32 = design::CONTROL_RADIUS;`），
+/// 名字仍说明它用在哪一处，数字不再重复。
+///
+/// ⚠️ 6.4 **不是** gpui 的 rem 档位（`rounded_md()` 是 6，
+/// `gpui-pre-macros-0.3.7/src/styles.rs`），也不能从主题读 —— `ThemeConfig.radius` 是
+/// `usize`，装不下 6.4；而把主题半径调成 8 会让**所有** gpui-kit 组件的圆角从 6 变成 8，
+/// 离 6.4 反而更远。`Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以能写 `rems(..)`
+/// 的调用点写 `rems(CONTROL_RADIUS / 16.)`；`Button::rounded` 这类只吃 `Pixels` 的固有方法
+/// 走 [`crate::rem_px`]。
+///
+/// 使用方：`workbench` 的六个区域（上述六个具名常量各自 `= CONTROL_RADIUS`）。
+///
+/// ⚠️ **残留一处重复，未合并**：`git/src/model.rs` 的 `RADIUS_MD` **数值相同（也是 6.4）但仍是
+/// 它自己 `--radius × k` 阶梯里的独立定义**（`RADIUS_BASE × 0.8`），并不引用本条。没合成一条是因为
+/// `git` 那一族要保住"整族从同一个基准派生"（`SM` / `MD` / `XL` 三条都由 `RADIUS_BASE` 算出），
+/// 而本条服务的是"跨 crate 的同一个 6.4"。**要不要让其中一侧引用另一侧，连同下面这条冲突，
+/// 留给维护者裁决**（`D23` 已登记）：macOS `LitheTheme.swift:484` 的 `controlCornerRadius = 6`
+/// 与 Lithe 阶梯的 `6.4` **规格本身就不一致**，`settings` 又走第三条路（`cx.theme().radius` = 6px 且
+/// 是固定 `Pixels`、不随 rem 缩放）—— 三处口径没统一之前，**不要**擅自把任一处的数字改成另一处。
+pub const CONTROL_RADIUS: f32 = 6.4;

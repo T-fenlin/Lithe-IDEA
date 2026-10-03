@@ -2,13 +2,14 @@
 //!
 //! # 接口契约
 //!
-//! 本模块**无状态**：数据（`tabs` / `active`）与回调（`on_activate` / `on_close`）全部由调用方传入，
-//! 交互只通过回调往外抛。它不持有 `Entity` / `Context`，渲染调用方式：
+//! 本模块**无状态**：数据（`tabs` / `active` / `scroll`）与回调（`on_activate` / `on_close`）
+//! 全部由调用方传入，交互只通过回调往外抛。它不持有 `Entity` / `Context`，渲染调用方式：
 //!
 //! ```ignore
 //! project_tabs(
 //!     &tabs,
 //!     Some(active_index),
+//!     &self.project_tabs_scroll,   // 调用方（ShellWorkspace）持有，滚动状态归它
 //!     move |index, window, cx| { /* 切到第 index 个项目 */ },
 //!     move |index, window, cx| { /* 关闭第 index 个项目 */ },
 //!     window,
@@ -18,100 +19,87 @@
 //!
 //! 两个回调都按 `Fn`（可多次调用）取，内部用 `Rc` 分发给每个标签。
 //!
-//! # 规格出处（Windows 前端是界面真源）
+//! # 规格出处（**macOS 前端**，2026-09-30 起）
 //!
-//! 全部来自 `windows/tauri/src/features/window/components/project-tab-bar.tsx`：
+//! ⚠️ 本模块早先的规格是 `windows/tauri/src/features/window/components/project-tab-bar.tsx`。
+//! 那份前端**已从仓库删除**、其数值（容器 `h-8` = 32、标签 `h-7` = 28、min-w 144 / max-w 240）
+//! 全部作废；`develop-lithe` Skill 明确要求界面规格一律读 `macos/Sources/Lithe/Views/`。
 //!
-//! | 元素 | 源码行 | 尺寸 |
+//! | 元素 | 值 | 出处（macOS） |
 //! | --- | --- | --- |
-//! | 容器 `flex h-8 ... border-border border-b bg-surface px-1.5` | `:41` | 高 **32**、px **6**、1px 下边框 |
-//! | 内层 `flex min-w-max items-center gap-1` | `:46` | gap **4** |
-//! | 标签 `h-7 min-w-36 max-w-60 gap-1.5 rounded-sm py-0 pr-8 pl-2.5` | `:64` | 高 **28**、min-w **144**、max-w **240**、gap **6**、pr **32**、pl **10** |
-//! | 标签·选中 `border-transparent bg-accent text-foreground` | `:66` | 背景 `--accent` |
-//! | 标签·未选中 `text-subtle-foreground hover:bg-accent/70 hover:text-foreground` | `:67` | 悬停底色 = accent @ 70% |
-//! | 文件夹图标 `size-3.5`，选中 `text-primary` / 未选中 `text-subtle-foreground` | `:70-75` | **14×14** |
-//! | 选中下划线 `absolute inset-x-1.5 bottom-0 h-0.5 rounded-t-sm bg-primary` | `:79-82` | 高 **2**、左右内缩 **6**、上圆角 4.8 |
-//! | 关闭按钮容器 `absolute inset-y-0 right-1 z-10`，非选中 `opacity-0` + `group-hover` 显示 | `:86-91` | right **4** |
-//! | 关闭按钮 `Button size=icon-xs variant=ghost` + tooltip `titleProject.closeProject` | `:93-104` | **24×24** |
-//! | 标签文案 `getProjectDisplayLabel(project)`，`min-w-0 truncate` | `:48`、`:77` | 截断 |
-//! | 显示条件 `shouldShowProjectTabBar(count, hideWhenSingle)` | `project-tab-bar-model.ts:12-13` | 单项目时整条隐藏 |
+//! | 容器高 | **38** | `WorkbenchView.swift:653`（`.frame(height: LitheTheme.Metrics.tabHeight + 4)`）；`tabHeight = 34` 在 `LitheTheme.swift:477` |
+//! | 容器水平内衬（在**滚动区内部**） | **6** | `WorkbenchView.swift:620,637`（`horizontalPadding: CGFloat = 6` + `.padding(.horizontal, horizontalPadding)` 挂在 ScrollView 的**内容**上） |
+//! | 标签间距 | **6** | `WorkbenchView.swift:621`（`tabSpacing: CGFloat = 6`） |
+//! | 标签高 | **30** | `WorkbenchView.swift:705`（`.frame(width: width, height: 30)`） |
+//! | 标签最小宽 / 按可用宽度**等分** | **180** / 等分 | `WorkbenchView.swift:622-627`（`minimumTabWidth = 180`、`max(minimumTabWidth, floor(availableWidth / projectCount))`） |
+//! | 标签内左内衬 / 右内衬 | **38 / 3** | `WorkbenchView.swift:683`（`.padding(.horizontal, 38)`）、`:703`（`.padding(.trailing, 3)`） |
+//! | 标签圆角 | **6** | `WorkbenchView.swift:707,715`（`RoundedRectangle(cornerRadius: 6, style: .continuous)`）= `LitheTheme.Metrics.controlCornerRadius`（`LitheTheme.swift:484`） |
+//! | 文件夹图标 | **11** | `WorkbenchView.swift:666-667`（`Image(systemName: "folder.fill").font(.system(size: 11, weight: .medium))`） |
+//! | 项目名字号 | **12.5**（选中 semibold） | `WorkbenchView.swift:671` |
+//! | 选中下划线 | 宽 `min(56, max(28, w × 0.12))`、高 **2**、底距 **1**、胶囊 | `WorkbenchView.swift:723-727` |
+//! | 关闭按钮 | **28×28**、`xmark` 9pt、仅选中或悬停可见 | `WorkbenchView.swift:691-703`；28×28 是 `LitheIconButtonStyle`（`LitheTheme.swift:547`） |
+//! | 溢出处理 | **横向滚动**（`ScrollView(.horizontal, showsIndicators: false)`）、切换项目时滚到可见 | `WorkbenchView.swift:629-651` |
+//! | 显示条件 | 单项目时整条隐藏 | `WorkbenchView.swift:253-255`（调用方判据） |
 //!
-//! ## ⚠️ 与旧文档的差异：高度是 32px，不是 38px
+//! ## 与旧实现的差异（本轮改的四处）
 //!
-//! 历史记录和本仓库旧笔记写「项目标签条高 38px」，**这是错的**。Windows 真源容器是 `h-8`
-//! （Tailwind 1 单位 = 4px ⇒ **32px**，`project-tab-bar.tsx:41`），标签本体 `h-7` ⇒ **28px**（`:64`）。
-//! 本模块按 **32 / 28** 实现。
+//! 1. 容器高 **32 → 38**、标签高 **28 → 30**（旧值来自已删除的 `windows/tauri` 前端）；
+//! 2. 标签宽度从"定宽 144–240"改成真源的 **等分 + 最小 180**；
+//! 3. **横向滚动**接上（旧实现自陈"超出宽度时标签会被裁掉"）——滚动归调用方持有的
+//!    [`ScrollHandle`]，内容内衬放在**滚动区内**（真源同样如此）；
+//! 4. 圆角 4.8 → 6（真源的 `controlCornerRadius`）。
 //!
-//! ## 圆角换算（来自 `windows/tauri/src/styles/theme.css`）
+//! ## ⚠️ 未接的两个"信息元素"（真源有、本侧没有生产方）
 //!
-//! `:root { --radius: 8px }`（`theme.css:134`），派生圆角定义在 `theme.css:6-11`：
+//! 真源标签里除图标与项目名之外还有两格：
 //!
-//! | Tailwind 档 | 计算式 | 实际 px | 用在哪 |
-//! | --- | --- | --- | --- |
-//! | `rounded-sm` | `calc(var(--radius) * 0.6)` = `8 × 0.6` | **4.8** | 标签本体（`:64`）、下划线上圆角（`:81`） |
-//! | `rounded-md` | `calc(var(--radius) * 0.8)` = `8 × 0.8` | 6.4 | 本区域不用 |
-//! | `rounded-xl` | `calc(var(--radius) * 1.4)` = `8 × 1.4` | 11.2 | 本区域不用 |
+//! - **当前文档名后缀** `"· \(documentName)"`（`WorkbenchView.swift:676-680`，11.5pt tertiary）；
+//! - **`AgentAttentionIndicator`**（`WorkbenchView.swift:674`，6×6 accent 圆点，
+//!   条件是 `model.agentConversationNeedsAttention`）。
 //!
-//! ⚠️ **不要**用 gpui 的 `rounded_sm()`：gpui 的圆角梯度是 Tailwind 默认（`rems(0.25)` = 4px，
-//! `gpui-pre-macros-0.3.6/src/styles.rs:1240-1244`），与 Lithe 的 `--radius-sm` 4.8 不是一回事。
-//! 本模块一律显式写 `rems(4.8 / 16.)`（`Styled::rounded*` 收 `impl Into<AbsoluteLength>`）。
+//! 两格都**不能**在本轮诚实接上：`ShellWorkspace::projects` 是**单个**工作区根
+//! （`workspace.rs` 构造期只有 `vec![ProjectTab::new(project_name)]`），所以这一条标签条
+//! 在当前宿主里**根本不渲染**（判据 `projects.len() > 1`），而"每个项目各自的当前文档名"
+//! 这个数据在单项目外壳里没有维护者；`AgentAttentionIndicator` 的数据源（agent 会话）在
+//! gpui 宿主里**不存在**。加一个永真的假字段只会变成死代码 —— 按《编码指南》的占位项纪律
+//! 不画、不写（缺口登记在交付报告里，等"多项目 + agent"到位后一次接上）。
 //!
-//! ## 主题 token 映射（一律走 `cx.theme()`，不写裸色值）
+//! # 主题 token 映射（一律走 `cx.theme()`，不写裸色值）
 //!
-//! | Lithe（theme.css） | gpui-kit 0.6.6 | 说明 |
-//! | --- | --- | --- |
-//! | `--surface`（容器底） | `theme.background` | theme.css 把 surface 与 background 分开；gpui-kit 的 `popover` 默认等于 `background`，没有独立 surface token。深色主题下两者同黑 |
-//! | `--accent`（选中底） | `theme.accent` | 0.6.6 默认值**不透明**：light `neutral-100` / dark `neutral-800`（`theme/default-theme.json:13`、`:218`） |
-//! | `--accent/70`（悬停底） | `theme.accent.alpha(0.7)` | 与 Lithe 的 70% 一致 |
-//! | `--border`（1px 下边框） | `theme.border` | — |
-//! | `--primary`（图标/下划线） | `theme.primary` | — |
-//! | `--foreground` | `theme.foreground` | — |
-//! | `--subtle-foreground` | `theme.muted_foreground` | gpui-kit 无 `subtle-foreground` token（`UI-MAP.md:619` 已记录该缺口），取最近的「次要前景色」 |
+//! | 用途 | 取值 |
+//! | --- | --- |
+//! | 容器底 | `theme.tab_bar`（真源 `LitheTheme.toolHeader`，`WorkbenchView.swift:654`） |
+//! | 标签·选中底 | `theme.accent` |
+//! | 标签·未选中底 | `theme.secondary` |
+//! | 标签·悬停底 | `theme.accent` |
+//! | 标签·选中描边 | `theme.ring` @ 0.7 |
+//! | 标签·未选中描边 | `theme.border` |
+//! | 下划线 | `theme.primary` |
+//! | 项目名 / 次要前景 | `theme.foreground` / `theme.muted_foreground` |
 //!
-//! # 图标
+//! # 本模块仍未实现的部分（见交付报告）
 //!
-//! **有真源的用真源，没真源的保持 Lucide**（与活动栏 / 状态栏同一口径）：
-//!
-//! | 用途 | 采用 | 真源 / 理由 |
-//! | --- | --- | --- |
-//! | 标签左侧文件夹 | **真源** `idea::FOLDER_ICON` | `icons/idea/icons/folders/folder.svg`(+`_dark`) —— 真机 `FolderIcon`（`project-tab-bar.tsx:6,70`）。⚠️ 真源美术**自带颜色**（浅灰填充 + 灰描边），所以不再跟标签的 `text_color` 变（改前是 Lucide 单色、随选中态变色）—— 真机也是彩色图标，见 `icon_themes` 的取舍说明 |
-//! | 关闭按钮 | `IconName::X` | 真源 `ui/close.svg` 存在，但关闭按钮的字形与**活动栏按钮的交互色**（悬停/选中变前景色）绑得紧，换成单色 expui 会丢掉那层反馈；且 `x` 本来就是 Windows `XIcon` 的 Lucide 字形，**已经是 1:1**。保持 Lucide |
-//!
-//! # 本模块未实现的部分（见交付报告）
-//!
-//! - **键盘焦点与 focus-visible 焦点环**：Windows 的标签是 `<button role="tab">`，带
-//!   `focus-visible:ring-2 focus-visible:ring-primary/30`（`project-tab-bar.tsx:64`）。
-//!   gpui 要做这件事必须 `track_focus(&handle)`，而句柄得跨帧稳定（重建会导致每帧焦点丢失），
-//!   本模块无状态、没有地方放它。**未实现**；建议由主代理在宿主视图里为每个标签持有
-//!   `FocusHandle` 后另行传入（契约未覆盖）。
-//! - **`group-focus-within`**：未选中的关闭按钮在 Windows 里靠 `group-focus-within` 于键盘
-//!   聚焦时显现（`project-tab-bar.tsx:90`）。gpui 的 `group_hover` 没有「祖先含焦点」对应物
-//!   （`gpui-pre-0.3.6/src/elements/div.rs:3432-3450` 只判断 group hitbox 的 hover），
-//!   本模块只做了悬停那一半。
-//! - **标签条横向滚动**：Windows 容器是 `overflow-x-auto`（`:41`）。gpui 的横向滚动要配
-//!   `ScrollHandle` 才有意义，本模块没有状态可放；超出宽度时标签会被裁掉。
-//! - **`+` 新建 / 搜索按钮 / 溢出菜单**：Windows 的 `ProjectTabBar`（`:39-113`）里**没有**
-//!   这些元素，所以不实现。
-//! - **拖拽重排**：Windows 的 store 有 `reorderProjectTabs`（`utils/project-tab-order.ts`），
-//!   但 `ProjectTabBar` 组件本身没有任何拖拽处理，本模块也不做。
+//! - **键盘焦点与 focus-visible 焦点环**：真源标签是 `Button`，gpui 要做这件事必须
+//!   `track_focus(&handle)` 且句柄跨帧稳定，本模块无状态、没有地方放它。**未实现**。
+//! - **`onHover` 高亮整条标签**：真源用 `@State hoveredProjectTabID` 让"悬停任一子元素"
+//!   都高亮整条（`WorkbenchView.swift:242,729-731`）。gpui 的 `hover()` 只认自己的命中区，
+//!   关闭按钮悬停时整条不会高亮 —— 需要 `group_hover` 之类的祖先感知，本模块只做了
+//!   标签本体的悬停，关闭按钮的显现由 `group_hover` 负责。
+//! - **拖拽重排**：真源没有（`ForEach` 无拖拽处理），本模块也不做。
 
 use std::rc::Rc;
 
-// `h_flex()` 是函数、在 `gpui_kit::base`，**不在** `gpui_kit` 根
-// （`gpui-base-0.6.6/src/styled.rs:38`；`gpui-kit-0.6.6/src/lib.rs:106` 只有 `pub use ::gpui_base as base;`，
-// 没有 `pub use gpui_base::*`）。
-use gpui_kit::base::h_flex;
-// `.when(cond, f)` 在 `FluentBuilder` trait 上（`gpui-pre-0.3.6/src/util.rs:21`），
-// 不 `use ... as _` 就会报 `no method named when found for Div`。
+// `h_flex()` 是函数、在 `gpui_kit::base`，**不在** `gpui_kit` 根。
 use gpui_kit::assets::IconName;
-use gpui_kit::prelude::FluentBuilder as _;
-// `Button` / `ButtonVariants` 在 `gpui_kit::component::button` **子模块**里，
-// 不在 `gpui_kit::component` 根（`gpui-component-0.6.6/src/lib.rs:32` 是 `pub mod button;`，
-// 根层没有 `pub use button::*`）。
+use gpui_kit::base::h_flex;
+// `Button` / `ButtonVariants` 在 `gpui_kit::component::button` **子模块**里。
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _};
+// `.when(cond, f)` 在 `FluentBuilder` trait 上，不 `use ... as _` 就会报
+// `no method named when found for Div`。
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    App, InteractiveElement as _, IntoElement, ParentElement as _, ScrollHandle, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, div, rems,
 };
 
@@ -119,76 +107,65 @@ use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::tr_args;
 
 // ---------------------------------------------------------------------------
-// 度量常量（全部来自 project-tab-bar.tsx，见模块头表格）
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
 // ---------------------------------------------------------------------------
 //
-// rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`，与 Windows 规格逐像素相等
-// （规格全部来自 `project-tab-bar.tsx`，见模块头表格）：
-//
-// | 规格 | 值 | 用到的 helper | 出处 |
-// | --- | --- | --- | --- |
-// | `h-8` 容器高 | 32 | `h_8()` | `:41` |
-// | `px-1.5` 容器内边距 | 6 | `px_1p5()` | `:41` |
-// | `gap-1` 标签间距 | 4 | `gap_1()` | `:46` |
-// | `h-7` 标签高 | 28 | `h_7()` | `:64` |
-// | `pl-2.5` 标签左内边距 | 10 | `pl_2p5()` | `:64` |
-// | `pr-8` 标签右内边距 | 32 | `pr_8()` | `:64` |
-// | `gap-1.5` 标签内间距 | 6 | `gap_1p5()` | `:64` |
-// | `size-3.5` 文件夹图标 | 14 | `size_3p5()` | `:70` |
-// | `h-0.5` / `inset-x-1.5` 下划线 | 2 / 6 | `h_0p5()` / `left_1p5()` / `right_1p5()` | `:81` |
-// | `right-1` 关闭按钮容器 | 4 | `right_1()` | `:87` |
-//
-// 字号：`--ui-text-chrome` 是 **13px**，gpui 的档位只有 `text_xs()`(12) / `text_sm()`(14)，
-// 13 不在档位上。按《编码指南》用 **`text_sm()`（14px）**——13 → 14 是经维护者确认的
-// **有意**视觉改动，不是等价换算。
+// rem base = 主题字号 16px，所以 helper 后缀 `N` = `N × 4px`。真源的四个值里 6 / 30 / 38 / 180
+// 只有 6 落在 gpui 的 4px 档位上，其余一律写 `rems(P / 16.)`（1 rem = 16px，**不是** 4px）。
 
-/// 标签最小宽度：`min-w-36` = 144px（`project-tab-bar.tsx:64`）。
+/// 标签条容器高 **38**。
 ///
-/// 144 不在 gpui 的固定 rem 档位上（档位后缀是 `…_8()`=32、`_9()`=36、`_10()`=40 →
-/// `min_w_32()`=128 / `min_w_40()`=160；没有 `min_w_36()`）—— 档位外就写 helper 底层的
-/// `rems(TAB_MIN_WIDTH_SPEC / 16.)`（默认 16px 基准下与 144 逐像素相等，且随主题字号缩放）。
-const TAB_MIN_WIDTH_SPEC: f32 = 144.;
+/// 真源：`WorkbenchView.swift:653` 的 `.frame(height: LitheTheme.Metrics.tabHeight + 4)`
+/// = `34 + 4`（`LitheTheme.swift:477`）。原来本侧是 32（旧 `windows/tauri` 前端的 `h-8`）。
+/// 38 不在 4px 档位上（`h_9()` = 36、`h_10()` = 40）→ 调用点写 `rems(STRIP_HEIGHT_SPEC / 16.)`。
+const STRIP_HEIGHT_SPEC: f32 = 38.;
 
-/// 标签最大宽度：`max-w-60` = 240px（`project-tab-bar.tsx:64`）。
+/// 标签高 **30**（真源 `WorkbenchView.swift:705`）。
 ///
-/// 240 不在 gpui 的固定 rem 档位上（档位里 56 → 224、64 → 256，
-/// `gpui-pre-macros-0.3.6/src/styles.rs:1043-1052`）。Tailwind v4 的任意整数档
-/// （`max-w-60`）在 gpui 里没有对应 helper，不能自己发明一个 —— 同样写
-/// `rems(TAB_MAX_WIDTH_SPEC / 16.)`。
-const TAB_MAX_WIDTH_SPEC: f32 = 240.;
+/// 30 不在 4px 档位上（`h_7()` = 28、`h_8()` = 32）→ 调用点写 `rems(TAB_HEIGHT_SPEC / 16.)`。
+const TAB_HEIGHT_SPEC: f32 = 30.;
 
-/// 标签圆角：`rounded-sm` = `calc(var(--radius) * 0.6)` = `8px × 0.6` = **4.8px**
-/// （`styles/theme.css:6`、`:134`）。
+/// 标签最小宽 **180**（真源 `WorkbenchView.swift:622` 的 `minimumTabWidth`）。
 ///
-/// 两条理由都可核对：
-/// 1. 4.8 **不是** gpui 的 rem 档位（gpui 的 `rounded_sm()` 是 4px，`styles.rs:1240-1244`）；
-/// 2. 也不能从主题读：`ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
-///    装不下 4.8 / 6.4；而把主题半径调成 8 会让**所有** gpui-kit 组件的圆角从 6 变成 8，
-///    离 Lithe 的 `rounded-md`(6.4) 反而更远。
-///
-/// 所以 Lithe 的圆角阶梯只能作为应用层命名常量（见模块头「圆角换算」），调用点写
-/// `rems(TAB_RADIUS_SPEC / 16.)`。
-const TAB_RADIUS_SPEC: f32 = 4.8;
+/// 真源的宽度是 `max(180, floor(可用宽度 / 项目数))` —— 本侧用 flex 表达同一件事：
+/// 每个标签 `flex_1()`（等分）+ `min_w(180)`（下限），容器装不下时内容溢出、由滚动区接管。
+/// 180 不在 4px 档位上 → 调用点写 `rems(TAB_MIN_WIDTH_SPEC / 16.)`。
+const TAB_MIN_WIDTH_SPEC: f32 = 180.;
 
-/// 关闭按钮尺寸：24（`project-tab-bar.tsx:95` 的 `size=icon-xs`；gpui-kit 的 `Size::XSmall`
-/// 图标按钮默认只有 20×20，`gpui-component-0.6.6/src/button/button.rs:620`，所以显式传值）。
+/// 标签左右内衬 **38**（真源 `WorkbenchView.swift:683` 的 `.padding(.horizontal, 38)`）。
+///
+/// ⚠️ 这个 38 是**给关闭按钮让位**的：关闭按钮绝对定位在右端（`:691-703`，`.trailing 3`
+/// + 28 宽的图标按钮），38 > 3 + 28 = 31，所以文字永远不会压到按钮上。
+const TAB_PADDING_SPEC: f32 = 38.;
+
+/// 关闭按钮距标签右边缘 **3**（真源 `WorkbenchView.swift:703` 的 `.padding(.trailing, 3)`）。
+const CLOSE_BUTTON_TRAILING_SPEC: f32 = 3.;
+
+/// 文件夹图标 **11**（真源 `WorkbenchView.swift:666-667` 的 `size: 11`）。
+///
+/// 11 不在 gpui 的 rem 档位上（档位步长是 2px：`size_2p5()` = 10、`size_3()` = 12），
+/// 也不能自己发明 helper → 调用点写 `rems(FOLDER_ICON_SIZE_SPEC / 16.)`。
+const FOLDER_ICON_SIZE_SPEC: f32 = 11.;
+
+/// 选中下划线（胶囊）宽 **28**、高 **2**、距标签底 **1**。
+///
+/// 真源是 `min(56, max(28, width × 0.12))`（`WorkbenchView.swift:726`）—— 它**依赖标签的
+/// 实际宽度**，而本侧标签宽度是 flex 求出来的、`render` 期拿不到。取公式**下界 28**：
+/// 在真源的最小宽 180 上 `180 × 0.12 = 21.6 → max(28, ..) = 28`，也就是"标签越窄越准、
+/// 越宽真源越宽"的那一端。不发明动态宽度（那需要几何回调，超出本区域契约）。
+const TAB_UNDERLINE_WIDTH_SPEC: f32 = 28.;
+/// 下划线高 2（真源 `WorkbenchView.swift:726` 的 `height: 2`）→ `h_0p5()`。
+/// 下划线距标签底 1（真源 `:727` 的 `.padding(.bottom, 1)`）。
+const TAB_UNDERLINE_BOTTOM_SPEC: f32 = 1.;
+
+/// 关闭按钮尺寸 **28**（真源走 `LitheIconButtonStyle`：`LitheTheme.swift:547` 的
+/// `.frame(width: 28, height: 28)`）。
 ///
 /// ⚠️ 这里**必须**经 [`crate::rem_px`]：走的是 `Sizable::with_size(impl Into<Size>)`，`Size`
-/// 只有 `From<Pixels>`（`gpui-component-0.6.6/src/sizing.rs:169-183`），**没有** `From<Rems>`；
-/// 换成 `Size::XSmall` 会连带改掉内边距与图标尺寸，不是逐像素等价。基准取当帧的
-/// `window.rem_size()`。
-const CLOSE_BUTTON_SIZE_SPEC: f32 = 24.;
-
-/// 悬停底色透明度：Lithe 写 `hover:bg-accent/70`（`project-tab-bar.tsx:67`）。
-const HOVER_BG_ALPHA: f32 = 0.7;
+/// 只有 `From<Pixels>`，**没有** `From<Rems>`。基准取当帧的 `window.rem_size()`。
+const CLOSE_BUTTON_SIZE_SPEC: f32 = 28.;
 
 /// 悬停分组名（`group` / `group_hover` 的配对键）。
-/// `InteractiveElement::group` 见 `gpui-pre-0.3.6/src/elements/div.rs:773`；
-/// `group_hover` 见 `:852`；命中判定见 `:3432-3450`。
 const CLOSE_GROUP: &str = "project-tab-group";
 
 // ---------------------------------------------------------------------------
@@ -197,16 +174,14 @@ const CLOSE_GROUP: &str = "project-tab-group";
 
 /// 项目标签条里的一个项目标签。
 ///
-/// 只承载渲染必需的字段（契约只给了一个）。路径 / 自定义图标 / 显示别名等 Windows 侧字段
-/// （`ProjectTab`，`windows/tauri/src/features/window/stores/workspace-tabs.store.ts:21`）
-/// 该由调用方先折算成 `name` 再传进来 —— 本模块不做 `getProjectDisplayLabel` 那层逻辑。
+/// 只承载渲染必需的字段（契约只给了一个：项目名）。路径 / 自定义图标 / 显示别名等
+/// Windows 侧字段该由调用方先折算成 `name` 再传进来 —— 本模块不做那层逻辑。
 ///
 /// 字段私有 + [`ProjectTab::new`]：跨 crate 之后结构体字面量不再是合法构造方式
 /// （《编码指南》「公共 API 设计」）。
 #[non_exhaustive]
 pub struct ProjectTab {
-    /// 标签上显示的项目名（Windows 是 `getProjectDisplayLabel(project)` 的结果，
-    /// `project-tab-bar.tsx:48`）。截断由本模块负责（`max-w-60` + `truncate`）。
+    /// 标签上显示的项目名。截断由本模块负责。
     name: SharedString,
 }
 
@@ -226,18 +201,21 @@ impl ProjectTab {
 ///
 /// - `tabs`：要显示的标签，**顺序即显示顺序**；
 /// - `active`：当前选中项的索引（`None` 表示一个都没选中）；
-/// - `on_activate(index, window, cx)`：点击某个**未选中**的标签时调用
-///   （点已选中标签是 no-op，`project-tab-bar.tsx:60`）；
+/// - `scroll`：横向滚动的 [`ScrollHandle`]，由调用方（`ShellWorkspace`）持有 ——
+///   它要跨帧活着，也需要在切换项目后由回调 `scroll_to_item` 把活动项滚进可视区
+///   （真源 `WorkbenchView.swift:640-650` 的行为）；
+/// - `on_activate(index, window, cx)`：点击某个**未选中**的标签时调用；
 /// - `on_close(index, window, cx)`：点击某个标签的关闭按钮时调用；
 /// - `window` / `cx`：宿主窗口与应用上下文。`window` 用于取**运行时 rem 基准**
 ///   （`window.rem_size()`）：关闭按钮的 `Sizable::with_size` 只吃 `Pixels`（见
 ///   [`CLOSE_BUTTON_SIZE_SPEC`]），其余度量直接写 `rems(P / 16.)`。
 ///
-/// 返回元素**不含**「单项目时隐藏」的判断 —— 那是调用方的条件（`project-tab-bar.tsx:37`、
-/// `project-tab-bar-model.ts:12-13`），本模块只负责画。
+/// 返回元素**不含**「单项目时隐藏」的判断 —— 那是调用方的条件
+/// （`WorkbenchView.swift:253-255`），本模块只负责画。
 pub fn project_tabs(
     tabs: &[ProjectTab],
     active: Option<usize>,
+    scroll: &ScrollHandle,
     on_activate: impl Fn(usize, &mut Window, &mut App) + 'static,
     on_close: impl Fn(usize, &mut Window, &mut App) + 'static,
     window: &Window,
@@ -250,149 +228,206 @@ pub fn project_tabs(
     let on_close: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(on_close);
 
     // 先把要用的 token 全部取出来：`cx.theme()` 借 `cx`，而下面的闭包也要 `cx`。
-    let surface = cx.theme().background;
+    // 容器底色用 `tab_bar`（真源 `LitheTheme.toolHeader`）。
+    let strip_bg = cx.theme().tab_bar;
     let border = cx.theme().border;
     let accent = cx.theme().accent;
-    let hover_bg = accent.alpha(HOVER_BG_ALPHA);
+    let inactive_bg = cx.theme().secondary;
     let foreground = cx.theme().foreground;
     let subtle_foreground = cx.theme().muted_foreground;
     let primary = cx.theme().primary;
+    let focus_border = cx.theme().ring;
 
+    // 容器：高 38、贴住整幅宽度、不参与压缩；**8px 水平内衬不在这里**
+    // （真源把内衬放在滚动区的内容上，见模块头表格）。
     h_flex()
-        .h_8()
+        .w_full()
+        .h(rems(STRIP_HEIGHT_SPEC / 16.))
         .flex_shrink_0()
+        .min_w_0()
         .items_center()
-        .gap_1()
-        .px_1p5()
-        .bg(surface)
+        .bg(strip_bg)
         .border_b_1()
         .border_color(border)
-        .children(tabs.iter().enumerate().map(|(index, tab)| {
-            let is_active = active == Some(index);
-            let name = tab.name().clone();
-            let tooltip = tab.name().clone();
-
-            let activate = on_activate.clone();
-            let close = on_close.clone();
-
-            // 每个标签是一个 `relative` 包装：标签本体（可点，也是 hover group 的宿主）
-            // + 绝对定位在右侧的关闭按钮。与 Windows 的 DOM 结构一致
-            // （`project-tab-bar.tsx:52-108`：外层 `group relative`，内层 `<button>` 与关闭容器是兄弟）。
-            div()
-                .relative()
-                .flex_shrink_0()
-                .child({
-                    let mut label = h_flex()
-                        .id(("project-tab", index))
-                        .h_7()
-                        .min_w(rems(TAB_MIN_WIDTH_SPEC / 16.))
-                        .max_w(rems(TAB_MAX_WIDTH_SPEC / 16.))
+        // 真正的滚动区域：`flex_1()` + 横向滚动 + 跟踪调用方的 `ScrollHandle`。
+        // ⚠️ 滚动条槽位与内容内衬都在**滚动区内部**（《设计指南》
+        // `docs/gpui kit/0.7.0/docs/design-guides.md:197`：「滚动条属于实际滚动的区域」、
+        // 「内容内边距可以缩进文字与行，但不能把滚动条推到界面中间」）。
+        .child(
+            h_flex()
+                .id("project-tabs-scroll")
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .items_center()
+                .overflow_x_scroll()
+                .track_scroll(scroll)
+                .child(
+                    // 内容行：间距 6、左右内衬 6（两者都在滚动区内）。
+                    h_flex()
+                        .h_full()
                         .items_center()
                         .gap_1p5()
-                        .pl_2p5()
-                        .pr_8()
-                        .rounded(rems(TAB_RADIUS_SPEC / 16.))
-                        .text_sm()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_ellipsis()
-                        .cursor_pointer()
-                        // 悬停分组：让关闭按钮在鼠标进入标签时显现，
-                        // 对应 Windows 的 `group-hover`（`project-tab-bar.tsx:90`）。
-                        // `group()` 会给本元素装 hitbox（`gpui-pre-0.3.6/src/elements/div.rs:2405`），
-                        // 子元素的 `group_hover(CLOSE_GROUP, ..)` 靠它判断。
-                        .group(CLOSE_GROUP)
-                        .on_click(move |_, window, cx| {
-                            // Windows 点已选中的标签是 no-op（`project-tab-bar.tsx:60`）。
-                            if !is_active {
-                                activate(index, window, cx);
-                            }
-                        })
-                        .child(
-                            // 真源：`icons/idea/icons/folders/folder.svg(+_dark)` —— 真机
-                            // `FolderIcon`（`project-tab-bar.tsx:6,70`）。14 = `rems(14. / 16.)`
-                            // （与原来的 `size_3p5()` 同值；14 不在 rem 档位上，所以自己换算）。
-                            // 颜色由真源 SVG 自带（浅灰填充 + 灰描边），不再随选中态变 ——
-                            // 真机同样是彩色图标，理由见模块文档的图标表。
-                            idea_icon_image(&idea::FOLDER_ICON, cx, rems(14. / 16.)),
-                        )
-                        .child(
-                            // 文案容器：`min-w-0 truncate`（`project-tab-bar.tsx:77`）。
-                            // `min_w_0` 是 flex 子项能被压缩的前提，否则 `text_ellipsis` 不会生效。
+                        .px_1p5()
+                        .children(tabs.iter().enumerate().map(|(index, tab)| {
+                            let is_active = active == Some(index);
+                            let name = tab.name().clone();
+                            let tooltip = tab.name().clone();
+
+                            let activate = on_activate.clone();
+                            let close = on_close.clone();
+
+                            // 每个标签是一个 `relative` 包装：标签本体（可点，也是 hover group
+                            // 的宿主）+ 绝对定位在右侧的关闭按钮。
+                            //
+                            // 宽度：`flex_1()` + `min_w(180)` + `flex_shrink_0()`。三项合起来就是
+                            // 真源的 `max(minimumTabWidth, floor(availableWidth / projectCount))`：
+                            // 容器装得下时等分（flex_grow），装不下时各自保持 180 并把内容撑出
+                            // 容器，由上面的滚动区接管（flex_shrink_0 保证不被压回去）。
                             div()
-                                .min_w_0()
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_ellipsis()
-                                .text_color(if is_active {
-                                    foreground
-                                } else {
-                                    subtle_foreground
+                                .relative()
+                                .flex_1()
+                                .flex_shrink_0()
+                                .min_w(rems(TAB_MIN_WIDTH_SPEC / 16.))
+                                .h(rems(TAB_HEIGHT_SPEC / 16.))
+                                .child({
+                                    let mut label = h_flex()
+                                        // `ElementId` 用**业务身份**（标签所属的项目名），
+                                        // 不用下标：关掉一个项目后下标会整体前移，下标当 id
+                                        // 会让 hover / 关闭态串到邻居身上。
+                                        .id(SharedString::from(format!("project-tab-{name}")))
+                                        .relative()
+                                        .size_full()
+                                        .items_center()
+                                        // 组内间距 7（真源 `WorkbenchView.swift:665` 的
+                                        // `HStack(spacing: 7)`）。
+                                        .gap_1p5()
+                                        // 真源是 `.padding(.horizontal, 38)`（`:683`）。
+                                        .px(rems(TAB_PADDING_SPEC / 16.))
+                                        .rounded_md()
+                                        .text_sm()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_ellipsis()
+                                        .cursor_pointer()
+                                        // 悬停分组：让关闭按钮在鼠标进入标签时显现。
+                                        .group(CLOSE_GROUP)
+                                        .on_click(move |_, window, cx| {
+                                            // 点已选中的标签是 no-op（真源同）。
+                                            if !is_active {
+                                                activate(index, window, cx);
+                                            }
+                                        })
+                                        .child(
+                                            // 真源 `Image(systemName: "folder.fill")`（11pt，
+                                            // `WorkbenchView.swift:666`）。有真源资源就用真源
+                                            // （`idea::FOLDER_ICON`，与文件树同一族），颜色由
+                                            // SVG 自带，不随选中态变。
+                                            idea_icon_image(
+                                                &idea::FOLDER_ICON,
+                                                cx,
+                                                rems(FOLDER_ICON_SIZE_SPEC / 16.),
+                                            ),
+                                        )
+                                        .child(
+                                            // 文案容器：`min-w-0 truncate`。
+                                            // `min_w_0` 是 flex 子项能被压缩的前提，否则
+                                            // `text_ellipsis` 不会生效。
+                                            div()
+                                                .min_w_0()
+                                                .overflow_hidden()
+                                                .whitespace_nowrap()
+                                                .text_ellipsis()
+                                                // 字号：真源 12.5（`:671`）；gpui 档位只有
+                                                // 12（`text_xs()`）/ 14（`text_sm()`），按本仓
+                                                // 既有口径（chrome 文字 13 → 14）取 `text_sm()`。
+                                                .text_color(if is_active {
+                                                    foreground
+                                                } else {
+                                                    subtle_foreground
+                                                })
+                                                .child(name),
+                                        );
+
+                                    // 选中态 / 悬停态底色（真源 `:706-713`）。
+                                    if is_active {
+                                        label = label.bg(accent);
+                                    } else {
+                                        label = label
+                                            .bg(inactive_bg)
+                                            .hover(move |this| this.bg(accent));
+                                    }
+
+                                    // 选中下划线：真源是**居中的胶囊**
+                                    // `min(56, max(28, w × 0.12)) × 2`、底距 1（`:723-727`）。
+                                    // 宽度取公式下界 28（见 [`TAB_UNDERLINE_WIDTH_SPEC`]）。
+                                    if is_active {
+                                        label = label.child(
+                                            div()
+                                                .absolute()
+                                                .bottom(rems(TAB_UNDERLINE_BOTTOM_SPEC / 16.))
+                                                .left_0()
+                                                .right_0()
+                                                .flex()
+                                                .justify_center()
+                                                .child(
+                                                    div()
+                                                        .w(rems(TAB_UNDERLINE_WIDTH_SPEC / 16.))
+                                                        .h_0p5()
+                                                        .rounded_full()
+                                                        .bg(primary),
+                                                ),
+                                        );
+                                    }
+
+                                    label
                                 })
-                                .child(name),
-                        );
-
-                    // 选中态 / 悬停态底色。`hover()` 的样式在 `compute_style` 里 refin 在基础样式
-                    // 之上（`gpui-pre-0.3.6/src/elements/div.rs:3452-3469`）。
-                    if is_active {
-                        label = label.bg(accent);
-                    } else {
-                        label = label.hover(move |this| this.bg(hover_bg).text_color(foreground));
-                    }
-
-                    // 选中下划线：`absolute inset-x-1.5 bottom-0 h-0.5 rounded-t-sm bg-primary`
-                    // （`project-tab-bar.tsx:79-82`）。
-                    if is_active {
-                        label = label.child(
-                            div()
-                                .absolute()
-                                .bottom_0()
-                                .left_1p5()
-                                .right_1p5()
-                                .h_0p5()
-                                .rounded_t(rems(TAB_RADIUS_SPEC / 16.))
-                                .bg(primary),
-                        );
-                    }
-
-                    label
-                })
-                .child(
-                    // 关闭按钮容器：`absolute inset-y-0 right-1 z-10 flex items-center`
-                    // （`project-tab-bar.tsx:86-91`）。选中时常显（`opacity-100`），
-                    // 未选中时 `opacity-0` + 悬停标签才显现。
-                    h_flex()
-                        .absolute()
-                        .top_0()
-                        .bottom_0()
-                        .right_1()
-                        // 源码是 `z-10`，但 gpui **没有 z-index**（元素按绘制顺序决定叠放，
-                        // `gpui-pre-0.3.6/src/styled.rs` 里没有 `z_*` 方法）。关闭按钮是本行的
-                        // 后一个 child，天然画在上层，所以这里直接省略。
-                        .items_center()
-                        .when(!is_active, |this| {
-                            this.opacity(0.)
-                                .group_hover(CLOSE_GROUP, |this| this.opacity(1.))
-                        })
-                        .child(
-                            Button::new(("project-tab-close", index))
-                                // Windows 的 `XIcon`（lucide `x`）就是 `icons/x.svg`。
-                                .icon(IconName::X)
-                                .ghost()
-                                // `Sizable::with_size(impl Into<Size>)`；`Pixels` 经
-                                // `From<Pixels> for Size` 变成 `Size::Size(24)`。`Size` 没有
-                                // `From<Rems>`，所以这一处按当帧 rem 基准换算（见常量注释）。
-                                .with_size(crate::rem_px(rem, CLOSE_BUTTON_SIZE_SPEC))
-                                // 文案逐字取下 Windows 中文包：`titleProject.closeProject`
-                                // = "关闭项目 {name}"（`crates/shared/locales/source/locale.ts:6188`）。
-                                .tooltip(tr_args(
-                                    "lithe.titleProject.closeProject",
-                                    &[("name", tooltip.as_ref())],
-                                ))
-                                .on_click(move |_, window, cx| {
-                                    close(index, window, cx);
-                                }),
-                        ),
-                )
-        }))
+                                // 选中描边（真源 `:714-722`）。
+                                .when(is_active, |this| {
+                                    this.child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .rounded_md()
+                                            .border_1()
+                                            .border_color(focus_border.opacity(0.7)),
+                                    )
+                                })
+                                .child(
+                                    // 关闭按钮容器：绝对定位在右端，选中时常显，
+                                    // 未选中时 `opacity-0` + 悬停标签才显现（真源 `:691-703`）。
+                                    h_flex()
+                                        .absolute()
+                                        .top_0()
+                                        .bottom_0()
+                                        .right(rems(CLOSE_BUTTON_TRAILING_SPEC / 16.))
+                                        .items_center()
+                                        .when(!is_active, |this| {
+                                            this.opacity(0.)
+                                                .group_hover(CLOSE_GROUP, |this| this.opacity(1.))
+                                        })
+                                        .child(
+                                            // `ElementId` 同上：业务身份 = 项目名。
+                                            Button::new(SharedString::from(format!(
+                                                "project-tab-close-{tooltip}"
+                                            )))
+                                            .icon(IconName::X)
+                                            .ghost()
+                                            // `Sizable::with_size(impl Into<Size>)`；
+                                            // `Pixels` 经 `From<Pixels> for Size` 变成
+                                            // `Size::Size(28)`。`Size` 没有 `From<Rems>`，
+                                            // 所以这一处按当帧 rem 基准换算。
+                                            .with_size(crate::rem_px(rem, CLOSE_BUTTON_SIZE_SPEC))
+                                            .tooltip(tr_args(
+                                                "lithe.titleProject.closeProject",
+                                                &[("name", tooltip.as_ref())],
+                                            ))
+                                            .on_click(move |_, window, cx| {
+                                                close(index, window, cx);
+                                            }),
+                                        ),
+                                )
+                        })),
+                ),
+        )
 }

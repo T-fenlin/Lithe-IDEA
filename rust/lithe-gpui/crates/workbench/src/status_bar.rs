@@ -132,11 +132,10 @@ const CHIP_MAX_WIDTH_SPEC: f32 = 200.;
 
 /// 条目圆角：`rounded-md` = `--radius-md` = `calc(8px * 0.8)` = 6.4px（`styles/theme.css:7,134`）。
 ///
-/// 6.4 **不是** gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px，
-/// `gpui-pre-macros-0.3.6/src/styles.rs:1245-1249`）；也不能从主题读 —— `ThemeConfig.radius`
-/// 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 6.4。同样写
-/// `rems(CHIP_RADIUS_SPEC / 16.)`。
-const CHIP_RADIUS_SPEC: f32 = 6.4;
+/// 6.4 **不是** gpui 的 rem 档位（gpui 的 `rounded_md()` 是 6px）；也不能从主题读 —— `ThemeConfig.radius`
+/// 是 `usize`（`gpui-component-0.7.0/src/theme/schema.rs`），装不下 6.4。
+/// 值的唯一 owner 是 [`lithe_gpui_shared::design::CONTROL_RADIUS`]（同一条阶梯的跨 crate 收敛）。
+const CHIP_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 
 /// 状态栏里的一个条目。
 ///

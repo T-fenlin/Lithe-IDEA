@@ -96,7 +96,7 @@ use gpui_kit::component::{ActiveTheme as _, Icon, Root, WindowExt as _, resize_h
 use gpui_kit::{
     Anchor, AnyElement, App, AppContext as _, Axis, ClickEvent, Context, Div, Empty, Entity,
     Global, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _,
-    PathPromptOptions, Render, SharedString, Styled as _, Window, div, rems,
+    PathPromptOptions, Render, ScrollHandle, SharedString, Styled as _, Window, div, rems,
 };
 
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
@@ -443,12 +443,16 @@ const DEFAULT_TOP_ACTIVITY: usize = 0;
 /// 表达：宽度现在是**变量**（拖拽会改），用 helper 只会把常量与变量两种写法混在一起。
 const SIDEBAR_WIDTH_SPEC: f32 = 320.;
 
-/// 工作区各岛之间的间距（真源 `--lithe-workbench-gap: 4px`，`styles/theme.css:125`）。
-///
-/// 单独提成常量是因为它**不只用于 `gap_1()`**：左侧栏与编辑区之间的那 4px 要按维护者口径
-/// 吃成"直接连接"，靠的是负外边距 `rems(-WORKBENCH_GAP_SPEC / 16.)` ——
-/// 数值只有一个来源，免得"间距改了、负边距没跟着改"。
-const WORKBENCH_GAP_SPEC: f32 = 4.;
+// 工作区各岛之间的间距是 **4**（真源 `--lithe-workbench-gap: 4px`，`styles/theme.css:125`），
+// 在 render 里由 `gap_1()` / `pr_1()` 表达 —— 度量是 rem 档位上的 1，不需要另立常量。
+//
+// ⚠️ **`WORKBENCH_GAP_SPEC` / 负外边距（2026-09-30 删除）**：此前左侧栏与编辑区之间那 4px
+// 要按维护者口径"吃成直接连接"，靠的是 `rems(-WORKBENCH_GAP_SPEC / 16.)` 经 `side_pane` 的
+// `.ml()/.mr()` 抵消父级 `gap_1()`。那违反了《设计指南》
+// （`docs/gpui kit/0.7.0/docs/design-guides.md:188`「不能用 raw pixel offset 修补」、
+// `:196`「Hairline 由边界所有者绘制，相邻区域不能各画一次同一条分隔线」）。
+// 现在"直接连接"由 render 里那个 **`gap_0` 的内层组**（共同 owner）表达，边界只由
+// `editor_island` 的左边框**一个所有者**画，`side_pane` 也不再收水平外边距参数。
 
 /// 拖拽改宽的下界：再窄就连 `domain` 这样的目录名都放不下。
 const SIDEBAR_MIN_WIDTH_SPEC: f32 = 200.;
@@ -498,21 +502,25 @@ const RIGHT_TOOL_WINDOW_WIDTH: f32 = 400.;
 
 /// 底部工具窗（终端 / Git 提交记录 / 占位）的高度 **240**。
 ///
-/// ## 为什么是 240，而不是真源的 320
+/// ## 240 的来历（以及 2026-09-30 为什么**不**跟着标题栏改回去）
 ///
-/// Windows 真源是 **320**（`bottom-pane/bottom-pane.tsx:47`，`terminalWidthMode === "editor"`
-/// 下的默认高），本侧到 2026-09-27 之前也一直是 320。
+/// 2026-09-27 标题栏按效果图口径改成两行 30 + 38 = 68（比单行 40 净增 28），窗口总高不变的
+/// 前提下从底部工具窗让出 320 → 240。
 ///
-/// 2026-09-27 标题栏按效果图口径改成**两行**（`crate::title_bar` 的
-/// `TITLE_BAR_MENU_ROW_HEIGHT_SPEC` = 30 与 `TITLE_BAR_MAIN_ROW_HEIGHT_SPEC` = 38，合计 68），
-/// 比上一版单行 40 **净增 28px**。窗口总高不变的前提下，这 28px 只能从别处让出来 ——
-/// 从底部工具窗让 320 → 240 是维护者这一轮的口径（否则中央列会超出窗口，
-/// 表现为项目树底部被挤出可视区）。
+/// **2026-09-30 标题栏已回到单行 40**（真源 macOS `LitheTheme.swift:478`，见 `crate::title_bar`），
+/// 所以那 28px 的挤压理由消失了 —— 但那 28px **不还给**底部工具窗，理由有两条：
 ///
-/// ⚠️ 与 `crate::title_bar` 那两个行高常量是**一对**：只改一处就会出现"窗口装不下"。
+/// 1. 320 那个值来自已作废的 `windows/tauri` 前端，**不是** macOS 规格；
+/// 2. macOS 侧底部工具窗是**可拖的分割**（`WorkbenchView.swift:2018-2029`：最小 220 /
+///    260，默认 `max(255, 高度 × 0.40)`），没有一个"固定 240 或 320"的判据可抄；
+///    `U25` 的落点是"可拖 + 宽度持久化"，那才是接上真源行为的正确路径（本轮未做，见交付报告）。
+///
+/// 所以这 28px 暂时归**中央列**（内容更宽裕），底部工具窗维持 240。
+/// ⚠️ 已知与真源的差距：macOS 的最小高是 260（`WorkbenchView.swift:2019` 的
+/// `minimumGitPaneHeight`），本侧 240 比它小 20。
 ///
 /// ⚠️ 240 不在 gpui 的 4px 档位上（档位里 56 → 224、64 → 256，没有 60，
-/// `gpui-pre-macros-0.3.6/src/styles.rs:1043-1052`），所以不用 `h_60()`（它不存在），
+/// `gpui-pre-macros-0.3.7/src/styles.rs`），所以不用 `h_60()`（它不存在），
 /// 按《编码指南》写 `rems(BOTTOM_PANE_HEIGHT_SPEC / 16.)`（16px 基准下 = 240，且随字号缩放）。
 const BOTTOM_PANE_HEIGHT_SPEC: f32 = 240.;
 
@@ -803,6 +811,13 @@ fn visible_commands(flags: ActionFlags) -> Vec<CommandId> {
 pub struct ShellWorkspace {
     /// 项目标签条的数据。
     projects: Vec<ProjectTab>,
+    /// 项目标签条的**横向滚动**状态（`ScrollHandle`）。
+    ///
+    /// 归外壳持有而不是 `crate::project_tabs`：那个模块是无状态的，而滚动状态必须跨帧活着，
+    /// 而且切换项目后要由这里（回调里）把活动项滚进可视区 —— 真源
+    /// `WorkbenchView.swift:640-650` 的 `proxy.scrollTo(.., anchor: .center)` 就是这个动作。
+    /// ⚠️ **不在 `render` 里滚**：`render` 只登记 `track_scroll`，滚动请求只从事件回调发出。
+    project_tabs_scroll: ScrollHandle,
     /// 工作区根目录。
     ///
     /// ⚠️ 状态栏的 Git 分支项**不再**从这里现读（D11 之前每帧读 `.git/HEAD`）：分支取自
@@ -1633,6 +1648,9 @@ impl ShellWorkspace {
 
         let mut workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
+            // 滚动状态从 0 偏移开始；真源在 `onAppear` 时把活动项滚到中间
+            // （`WorkbenchView.swift:640-642`），本侧等价动作在切项目的回调里做。
+            project_tabs_scroll: ScrollHandle::new(),
             root: root.clone(),
             // 索引接线绑定这个根；`warm` 在下面 `S1_WORKSPACE` 之后立刻排（见那一行）。
             search_index: SearchIndexWiring::new(root.clone()),
@@ -2800,6 +2818,17 @@ impl ShellWorkspace {
 
     /// 单条 toast：文案与通知中心**同一份**（[`crate::notifications::render_message`]），
     /// 类型按严重性档位映射（`Severity` 没有"成功"档，`NotificationType::Success` 用不到）。
+    ///
+    /// 位置：**右下角**（`Anchor::BottomRight`）。真源是 `.overlay(alignment: .bottomTrailing)`
+    /// （`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:517`）—— 改前是
+    /// `BottomLeft`，与真源左右相反。
+    ///
+    /// ⚠️ **只对齐到"右下"，没对齐到真源的精确内衬**：真源那一摞还有
+    /// `padding(.trailing, rightActivityBarWidth + 12)`（= 52）、`padding(.bottom, 38)`、
+    /// 单条 `minWidth 280 / maxWidth 360`、圆角 7、堆叠间距 8（`WorkbenchView.swift:519,543-554`），
+    /// 而 gpui-kit 的通知层只收一个 `Anchor`（`gpui-component-0.7.0/src/window_ext.rs` 的
+    /// `push_notification`），表达不出这些内衬。要精确对齐得自绘那一层（属 U25 的"通知 toast"
+    /// 那一项，本轮未做，见交付报告）。
     fn show_notification_toast(
         &self,
         entry: &lithe_gpui_notify::Entry,
@@ -2812,7 +2841,7 @@ impl ShellWorkspace {
                 lithe_gpui_notify::Severity::Warning => NotificationType::Warning,
                 lithe_gpui_notify::Severity::Error => NotificationType::Error,
             })
-            .placement(Anchor::BottomLeft);
+            .placement(Anchor::BottomRight);
         window.push_notification(note, cx);
     }
 
@@ -3909,6 +3938,10 @@ impl Render for ShellWorkspace {
             move |index: usize, _window: &mut Window, cx: &mut App| {
                 handle.update(cx, |this, cx| {
                     this.active_project = Some(index);
+                    // 切项目后把活动标签滚进可视区（真源
+                    // `WorkbenchView.swift:643-650` 的 `proxy.scrollTo(.., anchor: .center)`）。
+                    // ⚠️ 放在**事件回调**里而不是 `render` 里：`render` 只登记 `track_scroll`。
+                    this.project_tabs_scroll.scroll_to_item(index);
                     cx.notify();
                 });
             }
@@ -4149,13 +4182,14 @@ impl Render for ShellWorkspace {
             bottom_pane(content, cx)
         });
 
-        // ① 标题栏**两行** 30 + 38（第一行：菜单栏；第二行：项目下拉 / 分支项 /
-        // 运行控件 / 自绘窗口三键 56×38），行高见 `crate::title_bar` 的两个 `*_ROW_HEIGHT_SPEC`。
+        // ① 标题栏**单行 40**（真源 macOS：`LitheTheme.Metrics.toolbarHeight = 40`，
+        // `macos/Sources/Lithe/Theme/LitheTheme.swift:478` → `WorkbenchView.swift:829`）。
+        // 菜单栏 / 项目下拉 / 分支项 / 拖拽区 / 运行控件 / 账号槽位 / 窗口三键全在这一行里，
+        // 顺序与理由见 `crate::title_bar` 的模块头。
         //
-        // 两行里除各自的 `drag_region` 之外的可点元素都是它的**兄弟节点**（由 `title_bar`
-        // 分别挂在两个行容器上）：祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单 / 运行控件
-        // 放进拖拽区就会变成"点菜单只拖窗口"（理由与源码行号见 `crate::title_bar` 的
-        // `title_bar` 文档）。
+        // 行内除 `drag_region` 之外的可点元素都是它的**兄弟节点**（由 `title_bar` 挂在行容器
+        // 与左段上）：祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单 / 运行控件放进拖拽区
+        // 就会变成"点菜单只拖窗口"（见 `crate::title_bar` 的 `title_bar` 文档）。
         //
         // ⚠️ `cx.lease()` 是必须的：`menu_bar()` 要 `&mut App`（它要新造 `PopupMenu`
         // 实体），而 `cx` 在同一帧里还要用来画后面的区域；`lease` 把这一帧的 `&mut App`
@@ -4178,7 +4212,7 @@ impl Render for ShellWorkspace {
             // `Ctrl+S`：绑定登记在 `lithe_gpui_editor::install_actions`，动作转发给编辑区。
             // 放在**外壳根元素**而不是编辑区根元素：焦点落在资源管理器 / 终端 / 标签栏时
             // `Ctrl+S` 也应该保存当前文件，而它们在元素树里都是这个根元素的后代
-            // （gpui 的 action 冒泡沿"焦点节点 → 祖先"走，`gpui-pre-0.3.6/src/window.rs:6333`）。
+            // （gpui 的 action 冒泡沿"焦点节点 → 祖先"走）。
             // 唯一够不到的情形是"窗口里一个焦点元素都没有"（启动后没点过任何地方），
             // 那时也没有可保存的内容。
             .on_action(cx.listener(|this, _: &SaveBuffer, window, cx| {
@@ -4186,21 +4220,6 @@ impl Render for ShellWorkspace {
                     .editor
                     .update(cx, |pane, cx| pane.save_active(window, cx));
             }))
-            // ① 标题栏**两行** 30 + 38（第一行：菜单栏；第二行：项目下拉 / 分支项 /
-            // 运行控件 / 自绘窗口三键 56×38），行高见 `crate::title_bar` 的两个 `*_ROW_HEIGHT_SPEC`。
-            //
-            // 两行里除各自的 `drag_region` 之外的可点元素都是它的**兄弟节点**（由 `title_bar`
-            // 分别挂在两个行容器上）：祖先的 `Drag` 会赢下 Windows 的命中测试，把菜单 / 运行控件
-            // 放进拖拽区就会变成"点菜单只拖窗口"（理由与源码行号见 `crate::title_bar` 的
-            // `title_bar` 文档）。
-            //
-            // ⚠️ `cx.lease()` 是必须的：`menu_bar()` 要 `&mut App`（它要新造 `PopupMenu`
-            // 实体），而 `cx` 在同一帧里还要用来画后面的区域；`lease` 把这一帧的 `&mut App`
-            // 借出来，避免 "cannot borrow `*cx` as mutable more than once"。
-            // ⚠️ 菜单栏元素必须在**这一帧的布局链**里，所以它由上面算好的 `menu` 给；
-            // `render_bar` 拿不到时会返回 `None`（窗口正在关），那时标题栏里就没有菜单栏
-            // （`Some` 恒为真：`ShellWorkspace::new` 建视图时就把句柄登记好了），
-            // 其余部分照画。
             .child(title_bar(
                 menu.unwrap_or_else(|| div().into_any_element()),
                 project_menu.unwrap_or_else(|| div().into_any_element()),
@@ -4211,15 +4230,14 @@ impl Render for ShellWorkspace {
                 window,
                 cx,
             ))
-            // ② 项目标签条 32 —— **只有一个项目时整条隐藏**。
-            // 真机规则：`count > 0 && (!hideWhenSingle || count > 1)`
-            // （`features/window/components/project-tab-bar/utils/project-tab-bar-model.ts:12-13`，
-            // `main-layout.tsx:293` 传 `hideWhenSingle`）。
-            // 2026-09-25 与真机并排对照时确认：单个项目时看不到这条标签条。
+            // ② 项目标签条 38 —— **只有一个项目时整条隐藏**（真源
+            // `macos/.../WorkbenchView.swift:253-255` 的 `count > 1` 判据）。
+            // 度量与横向滚动见 `crate::project_tabs` 的模块头；滚动状态归外壳持有。
             .children((self.projects.len() > 1).then(|| {
                 project_tabs(
                     &self.projects,
                     self.active_project,
+                    &self.project_tabs_scroll,
                     on_activate,
                     on_close,
                     window,
@@ -4243,56 +4261,67 @@ impl Render for ShellWorkspace {
                     // - 面板：还要 `left_pane_visible`（点当前高亮的活动栏项只收这一个）。
                     // 可见性判据与 [`ShellWorkspace::is_activity_active`] 同源，见字段文档。
                     .children(left_sidebar_visible.then_some(left_rail))
-                    .children((left_sidebar_visible && left_pane_visible).then(|| {
-                        // 面板内容 = 视图 Entity（填满）+ 右边界那条分隔条（[`drag_handle`]，
-                        // 绝对定位不占布局）+ 拖拽跟踪器（[`drag_tracker`]，同样不占布局）。
-                        //
-                        // 包装是 `relative().size_full()`：内容 Entity（`Explorer` / `ChangesView`）
-                        // 的根是 `size_full` 的 `v_flex`，父级给满尺寸它就铺开 ——
-                        // 这个形状与 2026-09-27 之前（树显示正常的那几版）完全一致，没动；
-                        // 分隔条与跟踪器都走绝对定位所以**不挤压**内容。
-                        let pane = div()
-                            .relative()
-                            .size_full()
-                            .child(left_content)
-                            .child(drag_handle(handle.downgrade()))
-                            .child(drag_tracker(handle.downgrade()));
-                        side_pane(
-                            div().w(rems(left_sidebar_width / 16.)),
-                            pane,
-                            // **把左侧栏与编辑区"直接连接"**（维护者 2026-09-27 口径：
-                            // 「这个中间可以直接连接吗？现在这样还有空细」）。
-                            // 原来这一行与中央列之间是工作区的 4px 间距（`gap_1()`），两侧又各有一条
-                            // 1px 边框，于是在两个同色 #1e1f23 面板之间画出"两条平行线夹一条缝"。
-                            // 用**负外边距吃掉这一侧的两段间距**，而不是把全局 `gap_1()` 改成 0 ——
-                            // 右侧工具窗与右活动栏之间那 4px 是另一处观感，不该被这次改动连坐。
-                            -WORKBENCH_GAP_SPEC,
-                            cx,
-                        )
-                        .into_any_element()
-                    }))
+                    // ★ 侧栏 + 中央列是**同一个 `gap_0` 组**：维护者 2026-09-27 的口径是
+                    // 「这个中间可以直接连接吗？现在这样还有空细」——"直接连接"这件事由
+                    // **这个共同 owner** 表达（组内 gap = 0），不再靠 `-WORKBENCH_GAP_SPEC`
+                    // 的负外边距去吃掉父级的 `gap_1()`（那正是《设计指南》
+                    // `docs/gpui kit/0.7.0/docs/design-guides.md:188` 禁止的"raw pixel offset
+                    // 修补"）。组外的 `gap_1()`（左活动栏 ↔ 侧栏、中央列 ↔ 右工具窗与右活动栏）
+                    // 一概不动 —— 那几处 4px 是另外的观感，不该被这次改动连坐。
                     .child(
-                        // 中央列 = 中央页（扩展页，开着时）/ 编辑器岛 + 底部工具窗（默认口径：
-                        // 嵌在中央列内）。2026-09-27：原来这里还给 `editor_island` 传一个
-                        // 「编辑区左边界收起侧栏」按钮（`left_sidebar_visible.then(..)`），
-                        // 按维护者口径删除 —— 它与标签栏那对导航箭头挤在同一个角上，两个都去掉了。
-                        v_flex()
+                        h_flex()
                             .flex_1()
                             .h_full()
                             .min_w_0()
-                            .child(center)
-                            .children(bottom),
+                            // 组内**没有** gap：相邻区域的边界线由**唯一所有者**画
+                            // （`design-guides.md:196`「Hairline 由边界所有者绘制，相邻区域
+                            // 不能各画一次同一条分隔线」）——那条线归中央列
+                            // （`editor_island` 的左边框），所以左侧面板走
+                            // [`SidePaneEdge::WithoutTrailing`] **不画右边框**。
+                            // 改前两侧各画一条 1px、中间还有 4px 缝。
+                            .children((left_sidebar_visible && left_pane_visible).then(|| {
+                                // 面板内容 = 视图 Entity（填满）+ 右边界那条分隔条
+                                // （[`drag_handle`]，绝对定位不占布局）+ 拖拽跟踪器
+                                // （[`drag_tracker`]，同样不占布局）。
+                                //
+                                // 包装是 `relative().size_full()`：内容 Entity
+                                // （`Explorer` / `ChangesView`）的根是 `size_full` 的 `v_flex`，
+                                // 父级给满尺寸它就铺开；分隔条与跟踪器都走绝对定位所以
+                                // **不挤压**内容。
+                                let pane = div()
+                                    .relative()
+                                    .size_full()
+                                    .child(left_content)
+                                    .child(drag_handle(handle.downgrade()))
+                                    .child(drag_tracker(handle.downgrade()));
+                                side_pane(
+                                    div().w(rems(left_sidebar_width / 16.)),
+                                    pane,
+                                    SidePaneEdge::WithoutTrailing,
+                                    cx,
+                                )
+                                .into_any_element()
+                            }))
+                            .child(
+                                // 中央列 = 中央页（扩展页，开着时）/ 编辑器岛 + 底部工具窗
+                                // （默认口径：嵌在中央列内）。
+                                v_flex()
+                                    .flex_1()
+                                    .h_full()
+                                    .min_w_0()
+                                    .child(center)
+                                    .children(bottom),
+                            ),
                     )
                     // 右工具窗 400 —— **可收起**：真机整块 `ResizablePane` 的 `hidden` 由
                     // `isRightToolWindowVisible`（= 通知或 Maven 可见）决定，
-                    // 收起时这一栏完全不占位（`main-layout.tsx:101-105,328`）。
+                    // 收起时这一栏完全不占位。
                     .children(right_tool_window_visible.then(|| {
                         side_pane(
                             div().w(rems(RIGHT_TOOL_WINDOW_WIDTH / 16.)),
                             right_tool_window,
-                            // 右侧工具窗**不吃间距**：它与右活动栏之间的 4px 是另一处观感，
-                            // 本轮只按维护者口径处理"左侧栏与编辑区直接连接"。
-                            0.,
+                            // 右工具窗与右活动栏之间那 4px 是另一处观感：它自己四条边都画。
+                            SidePaneEdge::All,
                             cx,
                         )
                         .into_any_element()
@@ -4314,40 +4343,60 @@ impl Render for ShellWorkspace {
     }
 }
 
-/// 左右两侧的面板外壳：固定宽、不参与收缩、`bg-background`、1px 直角边框。
+/// 侧栏外壳**画哪几条竖边**。
 ///
-/// Windows 的左右面板是 `lithe-glass-island rounded-xl border-border`（`resizable-pane.tsx:203-206`）；
-/// 本侧**不画那个圆角**（四个角是直角），理由见文件开头 `ISLAND_RADIUS_SPEC` 的墓碑注释。
-/// 左侧栏**可以拖拽改宽**：右边界那条分隔条是 gpui-kit Dock 同款的
-/// [`drag_handle`]（2026-09-27 接上、2026-09-30 换成上游组件），跟踪在 [`drag_tracker`]；
-/// 右侧工具窗目前定宽不可拖（真源的 `ResizablePane` 热区还没对应过来）。
+/// 存在的唯一理由（2026-09-30）：侧栏与中央列是"直接连接"的邻居（见 `render` 里那个
+/// `gap_0` 内层组），而《设计指南》`docs/gpui kit/0.7.0/docs/design-guides.md:196` 要求
+/// 「Hairline 由边界所有者绘制，相邻区域不能各画一次同一条分隔线」。那条边界的所有者是
+/// **中央列**（[`editor_island`] 的 `border_1()` 左边框），所以左侧面板不再画自己的右边框。
 ///
-/// `outer` 由调用方给：宽度是布局度量，调用点用 gpui 的 rem 档位 helper（`w_80()`）或
-/// 档位外的 `rems(P / 16.)` 各自表达，这里只负责外壳剩下的部分。
+/// 改前是"两侧各画一条 1px + 中间 4px 缝"，再用 `-WORKBENCH_GAP_SPEC` 的负外边距把缝吃掉
+/// —— 那既重复画了同一条线，又是 raw pixel offset 修补（`:188` 明令禁止）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SidePaneEdge {
+    /// 四条边都画。用于右侧工具窗：它的右邻是 4px 间距 + 右活动栏，那条边界归它自己。
+    All,
+    /// 不画右边框。用于左侧面板：右邻中央列，那条线归 [`editor_island`]。
+    WithoutTrailing,
+}
+
+/// 左右两侧的面板外壳：固定宽、不参与收缩、`bg-background`、直角边框。
 ///
-/// `horizontal_margin`（**2026-09-27 新增**）是这一侧要**额外施加的水平外边距**，单位是规格像素，
-/// 允许负值。存在的唯一理由：左侧栏与编辑区之间的工作区间距要"吃成直接连接"（维护者口径），
-/// 而 `side_pane` 返回 `impl IntoElement`，调用点**拿不到 `Styled` 的方法**去补 `.ml()` / `.mr()`
-/// —— 所以由这个函数把外边距一起贴上。传 `0.` 表示不额外施加（右侧工具窗现在是这一档）。
+/// 本侧**不画圆角**（四个角是直角），理由见文件开头 `ISLAND_RADIUS_SPEC` 的墓碑注释。
+/// 左侧栏**可以拖拽改宽**：右边界那条分隔条是 gpui-kit Dock 同款的 [`drag_handle`]，
+/// 跟踪在 [`drag_tracker`]；右侧工具窗目前定宽不可拖（真源的 `ResizablePane` 热区还没
+/// 对应过来）。
+///
+/// `outer` 由调用方给：宽度是布局度量，调用点用 gpui 的 rem 档位 helper 或档位外的
+/// `rems(P / 16.)` 各自表达，这里只负责外壳剩下的部分。
+///
+/// `edge` 决定四条边画几条 —— 见 [`SidePaneEdge`]（相邻边界的 hairline 只能有一个所有者）。
 fn side_pane(
     outer: Div,
     content: impl IntoElement,
-    horizontal_margin: f32,
+    edge: SidePaneEdge,
     cx: &App,
 ) -> impl IntoElement {
-    let margin = crate::rem_px(cx.theme().font_size, horizontal_margin);
-    outer
+    let border_color = cx.theme().border;
+    let outer = outer
         .h_full()
         .flex_shrink_0()
-        .ml(margin)
-        .mr(margin)
         // `relative()` 是拖拽热区（[`drag_handle`]）绝对定位的定位上下文 ——
         // 热区贴在面板右边界上，而**不**参与布局（见那里"不套 flex 包装"的理由）。
         .relative()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().background)
-        .child(content)
+        .bg(cx.theme().background);
+    let outer = match edge {
+        // 四条边一起给：`border_1()` + `border_color(..)`。
+        SidePaneEdge::All => outer.border_1().border_color(border_color),
+        // 三条边（不含右）：逐边给，**不用** `border_1()` 再清右 —— 那样会写出
+        // `border_r(0)` 这类"先画再抹"的修补，与本次修掉的负外边距是同一类坏味道。
+        SidePaneEdge::WithoutTrailing => outer
+            .border_t_1()
+            .border_b_1()
+            .border_l_1()
+            .border_color(border_color),
+    };
+    outer.child(content)
 }
 
 /// 编辑区左边界那个「收起侧栏」按钮 —— **2026-09-27 按维护者口径删除**。
@@ -4522,15 +4571,17 @@ fn drag_tracker(this: gpui_kit::WeakEntity<ShellWorkspace>) -> impl IntoElement 
     .size_full()
 }
 
-/// 中央编辑器岛：`rounded-xl border-l bg-background`（`main-layout.tsx:313`）—— 本侧同样
-/// **不画圆角**（直角边框，理由见文件开头 `ISLAND_RADIUS_SPEC` 的墓碑注释）。
+/// 中央编辑器岛：直角边框（理由见文件开头 `ISLAND_RADIUS_SPEC` 的墓碑注释）。
+///
+/// ⚠️ **它的左边框是"侧栏 ↔ 中央列"那条 hairline 的唯一所有者**（2026-09-30）：侧栏走
+/// [`SidePaneEdge::WithoutTrailing`] 不画右边框，两个区域之间也**没有** gap（render 里那个
+/// `gap_0` 内层组）。所以这里必须保持 `border_1()`（四条边）——把左边框去掉会让那条边界
+/// 一条线都不剩。
 ///
 /// 只收内容：原来还收一个「编辑区左边界收起侧栏」按钮（`collapse_sidebar_button:
 /// Option<AnyElement>`），2026-09-27 按维护者口径删除，见上方那段墓碑注释。
 ///
-/// 仍然保留 `.relative() + .overflow_hidden()`：岛是绝对定位子元素的定位上下文，
-/// 而且 gpui 0.6.6 没有 z-index、叠放只由绘制顺序决定 —— 将来要往岛的边界上贴浮层，
-/// 这两条是前提（2026-09-30 前岛是圆角，`overflow_hidden` 沿圆角裁边；现在裁的是方角）。
+/// 仍然保留 `.relative() + .overflow_hidden()`：岛是绝对定位子元素的定位上下文。
 fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
     div()
         .relative()

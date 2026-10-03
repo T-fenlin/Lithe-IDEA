@@ -51,8 +51,10 @@
 //! | 关闭按钮 | 24×24、圆角 6.4 | `size="icon-xs"`（`notifications-tool-window.tsx:353`）、`rounded-md`（`ui/button.tsx:9`） | `size_6()` + `crate::rem_px(cx.theme().font_size, CLOSE_BUTTON_RADIUS_SPEC)`（`Button::rounded` 是固有方法，只吃 `Pixels`） |
 //!
 //! 颜色一律 `cx.theme()`；圆角走应用层具名规格常量，按运行时 rem 基准换算
-//! （Lithe 的圆角阶梯不在 gpui 档位上，见 `explorer_view.rs` 的 `ROW_RADIUS` 文档 ——
-//! 原来这里指向 `explorer_view.rs:87-93`，该处随「项目」树头一起删除后移到 `:113-120`）。
+//! （Lithe 的圆角阶梯不在 gpui 档位上：见符号式出处
+//! [`lithe_gpui_shared::design::CONTROL_RADIUS`]（6.4，本文件的关闭按钮）与
+//! `explorer_view.rs` 的 `ROW_RADIUS`（4，选中面那一族）—— **不再钉行号**：
+//! `explorer` 的常量早已移到 `shared::design`，行号引用会随下一次编辑漂移）。
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -77,12 +79,13 @@ use lithe_gpui_shared::tr;
 /// 关闭按钮圆角 6.4（`ui/button.tsx:9` 的 `rounded-md` = `--radius × 0.8`，`theme.css:7,134`）。
 ///
 /// 6.4 不是 gpui 的 rem 档位（`rounded_md()` 是 6），且 Lithe 的圆角阶梯一律走应用层具名常量
-/// —— 与 `explorer_view.rs:113-120` 的 `ROW_RADIUS` 同一条理由（那里原本写的是
-/// `HEADER_BUTTON_RADIUS`，该常量 2026-09-27 随「项目」树头一起删除）。这一处挂在
-/// `Button::rounded` 上，它是**固有方法**（只吃 `Pixels`，`ButtonRounded` 只有 `From<Pixels>`），
-/// 所以调用点经 [`crate::rem_px`] 按运行时 rem 基准换算；本函数拿不到 `Window`，
-/// 基准取等价的 `cx.theme().font_size`（`Root::render` 每帧把它写进 `window.set_rem_size`）。
-const CLOSE_BUTTON_RADIUS_SPEC: f32 = 6.4;
+/// —— 同一条阶梯的**符号式**出处是 [`lithe_gpui_shared::design::CONTROL_RADIUS`]
+/// （`explorer_view.rs` 里那个 `ROW_RADIUS` 不是这一条，勿互换：它是 4，属选中面那一族）。
+/// 这一处挂在 `Button::rounded` 上，它是**固有方法**（只吃 `Pixels`，`ButtonRounded` 只有
+/// `From<Pixels>`），所以调用点经 [`crate::rem_px`] 按运行时 rem 基准换算；本函数拿不到
+/// `Window`，基准取等价的 `cx.theme().font_size`（`Root::render` 每帧把它写进
+/// `window.set_rem_size`）。
+const CLOSE_BUTTON_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 
 /// 右侧工具窗当前显示哪一个视图。
 ///
@@ -670,9 +673,9 @@ fn header(
 /// 成熟组件已经负责居中、间距与标题层级，与 `terminal_view.rs:402-435` 的空态同一用法。
 ///
 /// ⚠️ 外面必须套一层 `v_flex().flex_1()`：`Empty` 的根是 `v_flex().flex_1()`
-/// （`gpui-component-0.6.6/src/empty.rs:63-82`），父级不是 flex 容器时它不生效
-/// （`explorer_view.rs:722-724` 记过同一个坑；该行号随 2026-09-27 删除树头/搜索行而下移，
-/// 原来是 `:765-768`）。
+/// （`gpui-component-0.7.0/src/empty.rs`），父级不是 flex 容器时它不生效
+/// （`explorer_view.rs` 里的 `Empty` 空态函数记过同一个坑 —— **不钉行号**，该函数会随
+/// 编辑漂移）。
 fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
     v_flex()
         .w_full()

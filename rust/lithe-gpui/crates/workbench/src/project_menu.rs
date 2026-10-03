@@ -207,6 +207,21 @@ const PANEL_MAX_HEIGHT_SPEC: f32 = 520.;
 /// 触发器最大宽 224：`max-w-56`（`title-project-menu.tsx:146`）。
 const TRIGGER_MAX_WIDTH_SPEC: f32 = 224.;
 
+/// 触发器高度 **30**。
+///
+/// 真源（macOS 界面规格）：项目下拉触发器
+/// `.frame(height: 30)`（`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:761`）。
+/// 原来是 24（`h_6()`，照已作废的 `windows/tauri` 前端），本轮随标题栏改单行一起对齐。
+/// 30 不在 4px 档位上（`h_7()` = 28、`h_8()` = 32）→ 调用点写 `rems(TRIGGER_HEIGHT_SPEC / 16.)`。
+const TRIGGER_HEIGHT_SPEC: f32 = 30.;
+
+/// 触发器左侧内边距 **6**（真源 `WorkbenchView.swift:759`
+/// `padding(.leading, WorkbenchTopBarMetrics.projectAvatarLeadingInset)`，该常量 = 6）。
+const TRIGGER_LEADING_INSET_SPEC: f32 = 6.;
+
+/// 触发器右侧内边距 **10**（真源 `WorkbenchView.swift:760` 的 `padding(.trailing, 10)`）。
+const TRIGGER_TRAILING_INSET_SPEC: f32 = 10.;
+
 /// 徽标字号 10：`text-[10px]`（`title-project-menu.tsx:62`）。档位外的值，写 `rems(10./16.)`。
 const BADGE_FONT_SIZE_SPEC: f32 = 10.;
 
@@ -222,7 +237,7 @@ const PANEL_WINDOW_MARGIN_SPEC: f32 = 8.;
 /// 也不能从 `ThemeConfig.radius` 读（那是 `usize`，装不下 6.4）。与 `crate::project_tabs` 的
 /// `TAB_RADIUS_SPEC`、`crate::menu_bar` 的 `ITEM_RADIUS_SPEC` 同一条。
 /// `Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写 `rems(ROW_RADIUS_SPEC / 16.)`。
-const ROW_RADIUS_SPEC: f32 = 6.4;
+const ROW_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 
 /// 动作行高 32：`min-h-8`（`title-project-menu.tsx:174,181,188`）。
 ///
@@ -1153,8 +1168,12 @@ fn trigger(
         .flex()
         .flex_shrink_0()
         .items_center()
-        .h_6()
-        .px_2()
+        // 高 30（真源 `WorkbenchView.swift:761`）；30 不在档位上 → `rems(..)`。
+        .h(rems(TRIGGER_HEIGHT_SPEC / 16.))
+        // 左 6 / 右 10（真源 `WorkbenchView.swift:759-760`）：原来是两边各 8（`px_2()`）。
+        .pl(rems(TRIGGER_LEADING_INSET_SPEC / 16.))
+        .pr(rems(TRIGGER_TRAILING_INSET_SPEC / 16.))
+        // 组内间距 6：真源 `WorkbenchView.swift:743`（`HStack(spacing: 6)`）—— 与原来一致。
         .gap_1p5()
         .max_w(rems(TRIGGER_MAX_WIDTH_SPEC / 16.))
         .rounded(rems(ROW_RADIUS_SPEC / 16.))

@@ -1,63 +1,50 @@
-//! 标题栏区域（Windows 规格）。
+//! 标题栏区域。**高度与排布的真源是 macOS 前端**（不是本文早先引的 `windows/tauri/**`
+//! —— 那份前端已被删除、其调研笔记作废，见 `develop-lithe` Skill 的「Read the relevant
+//! source of truth」）。
 //!
-//! 规格真源（一手源码，逐条核对过行号）：
-//!
-//! - 容器：`windows/tauri/src/features/window/components/title-bar/title-bar.tsx:332-360`
-//!   —— `h-(--lithe-title-bar-height)` = **40**、`items-center justify-between`、
-//!   `gap-(--lithe-chrome-gap)` = **4**、`px-(--lithe-chrome-padding-inline)` = **8**、
-//!   `bg-surface`、`text-muted-foreground`、`ui-text-chrome` = **13px**。
-//!   ⚠️ **高度已不照这一条**（2026-09-27）：按效果图定稿口径
-//!   （`lithe-gpui/docs/ui-mockup-idea.md` §1.3「标题栏：**两行**」）把单行 40 拆成
-//!   **两行 30 + 38 = 68**，取值与理由写在 [`TITLE_BAR_MENU_ROW_HEIGHT_SPEC`] 与
-//!   [`TITLE_BAR_MAIN_ROW_HEIGHT_SPEC`] 上；内边距 / 间距 / 底色 / 字色仍照上面这条真源。
-//! - 窗口三键：`.../title-bar/window-controls.tsx:51-96` —— 顺序「最小化 → 最大化/还原 → 关闭」，
-//!   每个 `h-full w-14 min-w-14 rounded-none` = **56×40、直角**；组内 `gap="none"` = 0；
-//!   最小化/最大化 `variant=ghost`、关闭 `variant=danger` + `hover:bg-destructive hover:text-white`。
-//!   ⚠️ **两处有意偏离真源**（2026-09-30 维护者口径）：
-//!   1. **挂第一行、贴窗口右边缘**：真源只有一行标题栏，三键就在那一行的右端；本侧第一行才是
-//!      窗口最上面那一行，三键放第一行且右端与窗口边缘齐平，才与 Windows / IDEA 的手感一致；
-//!   2. 宽度按新行高重算：真源那条 56 配的是 40 高（比例 1.4），第一行是 30 高 → 同比例得 42，
-//!      取最近的 4px 档位 **44**（[`WINDOW_CONTROL_WIDTH_SPEC`]）。
-//!   图标尺寸 `windows/tauri/src/ui/button.tsx:9` 的 `[&_svg:not([class*='size-'])]:size-3.5` = **14×14**。
-//! - 高度 / 间距 / 内边距 / 字号令牌：`windows/tauri/src/styles/theme.css:115,118,126-133`。
-//! - 中文文案：`crates/shared/locales/source/locale.ts:6191`（`titleProject.trigger` = `项目：{project}`，
-//!   本区域按可见规格只显示项目名本身，见 `title_bar` 的文档）。
-//!
-//! ## 两行的排布（2026-09-27 效果图口径）
+//! ## 单行 **40**（2026-09-30 对齐 macOS）
 //!
 //! ```text
-//! 第一行 30：菜单栏（文件 编辑 视图 转到 终端 Git 工具 窗口 帮助）｜……拖拽区……｜ 窗口三键
-//! 第二行 38：项目下拉 ▾ ｜ 分支项 ｜…………拖拽区…………｜ 运行配置 ▾ ▶ 🐞 ｜ 账号槽位
+//! 唯一一行 40：菜单栏 ｜ 项目下拉 ▾ ｜ 分支项 ｜ ……拖拽区…… ｜ 运行配置 ▾ ▶ 🐞 ｜ 账号槽位 ｜ 窗口三键
 //! ```
 //!
-//! **第一行是菜单栏 + 右端的窗口三键**（效果图 §1.3 的定稿表格只写菜单栏；三键上移到这一行、
-//! 并贴住窗口右边缘是 2026-09-30 维护者口径，理由见上面的窗口三键条目）。真源把菜单栏画在
-//! **标题栏同一行里**：
-//! 常驻形态 `title-bar.tsx:230-232`、紧凑形态是左上角的 `ListIcon` 按钮 + 一行浮动胶囊
-//! （`:207-229`）。两种形态都走 [`crate::menu_bar::menu_bar`]，本文件只负责给它一个位置 ——
-//! 2026-09-27 起这个位置变成**独占第一行**。
+//! - 高度 **40**：`LitheTheme.Metrics.toolbarHeight = 40`
+//!   （`macos/Sources/Lithe/Theme/LitheTheme.swift:478`），应用点是 topBar 的
+//!   `.frame(height: LitheTheme.Metrics.toolbarHeight)`
+//!   （`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:829`）。
+//!   ⚠️ **本轮改的是"两行 30 + 38 = 68"**（那是 2026-09-27 按效果图 `ui-mockup-idea.md` §1.3
+//!   拍板的临时口径，`docs/tasks/gpui-core-first.md` §4.2 的 U25 行也把它写作缺口）。
+//! - 左右内边距 **8**、组内间距 **4**：本文件早先按 Windows 令牌
+//!   `--lithe-chrome-padding-inline: 8px` / `--lithe-chrome-gap: 4px` 取值，与 macOS 的
+//!   `topBar` 同量级（macOS 是 `padding(.trailing, 10)` + `HStack(spacing: 9)`，
+//!   `WorkbenchView.swift:736,828`，那是**含右侧账号槽位在内**的整体间距；本侧右端收尾是
+//!   自绘窗口三键，`px_2` 的 8 更稳）。这一条**保持不改**，理由见下面的"平台差异"。
+//! - 左侧**不预留** macOS 的 83pt 红绿灯内衬（`WorkbenchTopBarMetrics.leadingInset = 83`，
+//!   `WorkbenchView.swift:30`，原注释自陈是照 IDEA 的 78pt + 一点余量）：
+//!   本侧窗口键在**右上角**且由本文件自绘（`WindowControlArea`），左上角没有要避让的系统控件，
+//!   照抄 83 只会在左侧留一段死白。按 `UI-MAP.md` §1.1 第 5 条「不写平台业务分支」——
+//!   平台差异交给 gpui 平台层与自绘的窗口键，**业务代码里没有 `#[cfg]`**。
 //!
-//! **第二行的左侧组**是真源 `ChromeGroup grow min-w-0 { menuItem, projectControls }`
-//! （`title-bar.tsx:339-343`）里去掉菜单栏之后剩下的两项：项目名下拉在前、分支项紧跟其后
-//! （真源同一个 `ChromeGroup gap="tight"`，gap = 2px，`title-bar.tsx:236-238`），
-//! 所以参数顺序是「项目下拉 → 分支项」。项目名本身**画在触发器里**
-//! （`title-project-menu.tsx:157`），所以本文件的拖拽区不再重复画一遍。
-//! ⚠️ 分支触发器上**没有** `▾`：真源的子节点只有分支图标 / 分支名 / ahead-behind 箭头
-//! （`git-branch-manager.tsx:646-661`），维护者截图里的那个 caret 是左邻项目下拉的
-//! `ChevronDownIcon`（`title-project-menu.tsx:157-163`），两者只隔 2px
-//! （研究 `lithe-gpui/research/windows/12-branch-manager.md` §1.2 与 §7.2 第 1 条）。
+//! ## 菜单栏为什么在同一行
 //!
-//! **第二行的右侧组**是本轮新增的运行控件（[`run_controls`]）＋「账号 / 设置」槽位
-//! （[`account_slot`]），顺序照效果图 §1.3；窗口三键（[`window_controls`]）**不在这一行**，
-//! 它在第一行的右端（见上面的两行排布）。
+//! macOS 把菜单栏画在**系统菜单栏**上（窗口内只有 topBar），而 Windows 没有可用的等价物，
+//! 菜单必须留在窗口内 —— 所以它和 topBar 的内容共用这**唯一一行**，顺序照真源从左到右：
+//! 菜单栏（[`crate::menu_bar`]，形态由它自己决定）→ 项目下拉 → 分支项 → 拖拽区 →
+//! 运行配置 ▾ ▶ 🐞 → 账号槽位。窗口三键在右端（见下）。
+//! ⚠️ 代价是真的：一行里放得下的东西比两行少，窗口很窄时菜单栏 / 运行配置槽位会先被挤到
+//! 边界。本文件**不**为它写宽度分支（那会变成第二套排布），窄窗表现属未经真机验证的已知风险。
 //!
-//! ⚠️ **两行里除拖拽区自己以外的可点元素都必须是 `drag_region` 的兄弟节点**：Windows 的
-//! 命中测试取 `window_control_hitboxes` 里第一个命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
-//! 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢 —— 把它们放进 `drag_region` 里面，
-//! 点它们只会拖窗口。这条与下面窗口三键的坑同源：**`Drag` 不能做任何可点元素的祖先**。
-//! 两行结构下的落法：**每一行各有一个 `drag_region()`**（各占"这一行剩下的宽度"），
-//! 菜单栏与窗口三键挂在第一行容器上，项目下拉 / 分支项 / 运行控件 / 账号槽位挂在第二行
-//! 容器上 —— 它们都是**行容器的儿子**，`drag_region` 只是它们的兄弟。
+//! ## 窗口三键（唯一一处"平台自有量"）
+//!
+//! 顺序「最小化 → 最大化/还原 → 关闭」、直角、无点击回调（由平台命中测试交给系统）。
+//! 真源（macOS）**没有**这个界面点：它的红绿灯由 AppKit 画、在窗口左上。所以三键的宽度
+//! [`WINDOW_CONTROL_WIDTH_SPEC`] 是**平台层的量**，本文件只保证它贴住窗口右边缘。
+//!
+//! ⚠️ **除拖拽区自己以外的可点元素都必须是 `drag_region` 的兄弟节点**：Windows 的命中测试取
+//! `window_control_hitboxes` 里第一个命中项（`gpui-pre-0.3.7/src/window.rs`，按绘制顺序 =
+//! 祖先在前），祖先的 `Drag` 会赢 —— 把它们放进 `drag_region` 里面，点它们只会拖窗口。
+//! 这条与窗口三键的坑同源：**`Drag` 不能做任何可点元素的祖先**。单行结构下它们全是
+//! **行容器的儿子**，`drag_region` 只是它们的兄弟。
 //!
 //! 为什么**不用** gpui-kit 的 `component::TitleBar`：
 //!
@@ -91,101 +78,76 @@ use crate::menu_bar::{MenuAction, push_show_run_pane};
 // 度量：一律用 gpui 的 rem-based helper，不再直接写 `px(...)`
 // ---------------------------------------------------------------------------
 //
-// rem base = 主题字号 16px（`lithe-gpui/themes/*.json` 的 `font.size` + `root.rs:582` 的
-// `set_rem_size`），所以 helper 后缀 `N` = `N × 4px`。**内边距 / 间距 / 字号**仍与 Windows
-// 规格逐像素相等；**行高**是 2026-09-27 效果图口径（30 + 38），不在 4px 档位上，见常量：
+// rem base = 主题字号 16px（`lithe-gpui/themes/*.json` 的 `font.size` + `root.rs` 的
+// `set_rem_size`），所以 helper 后缀 `N` = `N × 4px`。
 //
-// | 规格（Windows 真源 / 效果图） | 值 | 用到的 helper |
-// | --- | --- | --- |
-// | 第一行高（效果图 §1.3「标题栏：两行」，第一行是菜单 + 右端窗口三键） | 30 | `rems(TITLE_BAR_MENU_ROW_HEIGHT_SPEC / 16.)` |
-// | 第二行高（效果图 §1.3 的第二行） | 38 | `rems(TITLE_BAR_MAIN_ROW_HEIGHT_SPEC / 16.)` |
-// | `--lithe-chrome-padding-inline: 8px`（`styles/theme.css:132`） | 8 | `px_2()` |
-// | `--lithe-chrome-gap: 4px`（`styles/theme.css:130`） | 4 | `gap_1()` |
-// | `--ui-text-chrome: 13px`（`styles/theme.css:115`） | 13 | `text_sm()`（14px，见下） |
-// | 运行控件 / 账号槽位尺寸（`icon-xs` = `size_6()`，`ui/button.tsx:27`） | 24 | `size_6()` / `h_6()` / `w_6()` |
+// | 规格（macOS 真源） | 值 | 出处 | 用到的 helper |
+// | --- | --- | --- | --- |
+// | 标题栏高 | **40** | `LitheTheme.swift:478`（`Metrics.toolbarHeight`）→ `WorkbenchView.swift:829` | `h_10()` |
+// | 左右内边距 8 / 组内间距 4 | 8 / 4 | Windows 令牌（本侧保留，见模块头"平台差异"） | `px_2()` / `gap_1()` |
+// | 运行控件按钮（▶ / 🐞） | **28×28** | `WorkbenchView.swift:1079,1101`（`.frame(width: 28, height: 28)`） | `size_7()` |
+// | 运行控件按钮的图标 | **16** | `WorkbenchView.swift:1073,1097`（`LitheIDEAIcon(size: 16)`） | `rems(16. / 16.)` |
+// | 运行配置槽位：高 / 最小宽 / 最大宽 | **30 / 160 / 190** | `WorkbenchView.swift:1163,1164` | `rems(30. / 16.)` / `rems(160. / 16.)` / `rems(190. / 16.)` |
+// | 运行配置槽位内边距 / 组内间距 | 4 / 8 | `WorkbenchView.swift:1147,1162`（`spacing: 8`、`padding(.horizontal, 4)`） | `px_1()` / `gap_2()` |
+// | 账号槽位宽 | 28 | 与运行控件同档（真源这一段是 `UpdateControl` + 背景选择器） | `w_7()` |
 //
-// ⚠️ 不在此表的 `w-14` = **56** 见下方常量：56 不在 gpui 的 rem 档位上。
+// ⚠️ 编辑区文字档位：真源那几格是 11.5 / 12.5 / 13，gpui 的档位只有 `text_xs()`(12) /
+// `text_sm()`(14)。按本仓既有口径用 **`text_sm()`（14px）**（13 → 14 是经维护者确认的**有意**
+// 视觉改动，应用里所有 chrome 文字同步 +1px），槽位里的小字走 `text_xs()`（12）。
 //
-// 字号：`--ui-text-chrome` 是 **13px**，gpui 的档位只有 `text_xs()`(12) 与 `text_sm()`(14)，
-// 13 不在档位上。按《编码指南》这里用 **`text_sm()`（14px）**——Lithe 原基准是 13px，
-// 13 → 14 是经维护者确认的**有意**视觉改动（应用里所有 chrome 文字同步 +1px），不是等价换算。
-//
-// ⚠️ gpui-kit 的 `TitleBar` 默认高度是硬编码的 34px
-// （`gpui-component-0.6.6/src/title_bar.rs:15` `TITLE_BAR_HEIGHT`），所以这里必须给两行各自
-// 显式的高度（下面两个常量），不能靠它的默认值。
+// ⚠️ gpui-kit 的 `TitleBar` 默认高度是硬编码的 34px，**用不了**（它内部无条件再画一组自带
+// 窗口三键，理由见下）；本文件自建容器，高度用下面的常量显式表达。
 
-/// 单个窗口控件的宽度 **44**。
+/// 单个窗口控件（最小化 / 最大化 / 关闭）的宽度 **44**。
 ///
-/// ## 为什么不是真源的 56
+/// ## 这是**平台层的量**，不与 macOS 对齐
 ///
-/// 真源是 `w-14` = 56（`windows/tauri/src/features/window/components/title-bar/window-controls.tsx:59,71,85`），
-/// 但它那里配的是**单行 40 高**的标题栏，比例 56 : 40 = **1.4**。本侧三键 2026-09-30 起挂在
-/// **30 高**的第一行（见模块头的窗口三键条目），按同一比例应得 42 —— 42 不在 4px 档位上
-/// （`_10()`=40、`_11()`=44），取最近的 **44**，比例 1.47 与真源的 1.4 基本持平。
+/// 真源（macOS）没有这个界面点：红绿灯由 AppKit 画在窗口**左上角**，规格里根本没有
+/// 窗口内的窗口键。按 `UI-MAP.md` §1.1 第 5 条「不写平台业务分支」，本侧的三键是
+/// 平台差异的承载者（`WindowControlArea`，命中后交给系统），**宽度由平台手感定**：
+/// 维持上一版的 **44**，本轮只把它从"两行里的第一行"挪到"唯一一行的右端"。
 ///
-/// ## 为什么仍然写成 `rems(C / 16.)`
-///
-/// 44 虽然在档位上（`w_11()`），但这里与同组其它度量（行高 30 / 38）保持同一种写法：
-/// 档位外的值只能这样写，档位内的值这样写也不会错，且不随 gpui 档位表变化 —— 见《编码指南》
-/// 「档位外的值用 helper 底层的 `rems(P / 16.)`」。默认 16px 基准下 `rems(44. / 16.)` = 44。
+/// 44 在档位上（`w_11()`），但仍写 `rems(C / 16.)`：与同文件既有写法一致，且不随 gpui
+/// 档位表变化（默认 16px 基准下 `rems(44. / 16.)` = 44）。
 const WINDOW_CONTROL_WIDTH_SPEC: f32 = 44.;
 
-/// 标题栏**第一行**（菜单栏独占）的高度 30。
+/// 标题栏的高度 **40**。
 ///
-/// ## 为什么是 30
+/// 真源（macOS）：`LitheTheme.Metrics.toolbarHeight = 40`
+/// （`macos/Sources/Lithe/Theme/LitheTheme.swift:478`），应用点是 topBar 的
+/// `.frame(height: LitheTheme.Metrics.toolbarHeight)`
+/// （`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:829`）。
 ///
-/// 出处是效果图定稿口径 `lithe-gpui/docs/ui-mockup-idea.md` §1.3 的表格（「标题栏：**两行**。
-/// 第一行菜单（中文）：文件 / 编辑 / 视图 / 转到 / 终端 / Git / 工具 / 窗口 / 帮助」），
-/// 同一份文档 §4 记着 IDEA New UI 的工具栏目测值 ≈**30**（那一行标了"待量"）——
-/// 本轮就按它落值。
-///
-/// ⚠️ **这不是 Windows 真源的值**：真源只有**一条** 40 高的标题栏
-/// （`--lithe-title-bar-height`，`windows/tauri/src/features/window/components/title-bar/title-bar.tsx:337`
-/// 与 `windows/tauri/src/styles/theme.css:118`），两行是 2026-09-27 维护者拍板的结构改动
-/// （`ui-mockup-idea.md` §7 的 D-1「尺寸真源以谁为准」**仍未决**，本轮只在标题栏这一处按效果图）。
-///
-/// ⚠️ 30 不在 gpui 的 4px 档位上（`h_7()` = 28、`h_8()` = 32；档位表见
-/// `gpui-pre-macros-0.3.6/src/styles.rs:983-992`），也不能自己发明 helper —— 按《编码指南》
-/// 写档位外的 `rems(TITLE_BAR_MENU_ROW_HEIGHT_SPEC / 16.)`（16px 基准下 = 30，且随字号缩放）。
-const TITLE_BAR_MENU_ROW_HEIGHT_SPEC: f32 = 30.;
+/// 40 在 gpui 的 4px 档位上（`h_10()`），但仍走 `rems(TITLE_BAR_HEIGHT_SPEC / 16.)`：
+/// 本文件的度量一律以具名常量表达（值 + 出处 + 理由放在一起），免得"档位内用 helper、
+/// 档位外用 rems"两套写法在同一处漂移。
+const TITLE_BAR_HEIGHT_SPEC: f32 = 40.;
 
-/// 标题栏**第二行**（项目下拉 / 分支项 / 拖拽区 / 运行控件 / 账号槽位）的高度 38。
+/// 运行配置槽位里的图标 / 文字 / 计数用的高度 **30**。
 ///
-/// ## 为什么是 38（以及两行为什么必须成对看）
-///
-/// 出处同 [`TITLE_BAR_MENU_ROW_HEIGHT_SPEC`]（效果图 §1.3 的第二行）。取 38 的直接后果是
-/// **两行合计 68**，比上一版单行 40 **净增 28px** —— 这 28px 是这一轮唯一新增的纵向占用，
-/// 所以底部工具窗同步从 320 收到 240（`crate::workspace` 里的 `BOTTOM_PANE_HEIGHT_SPEC`），
-/// 保证"窗口总高不变、项目树底部不被挤出窗口"。
-/// 两处是**一对**：只改这里不改底部工具窗，中央列就会把内容顶出窗口。
-///
-/// ⚠️ 窗口三键**不在这一行**：2026-09-30 起它们挂第一行（30 高），宽度随之重算为 44 ——
-/// 见 [`WINDOW_CONTROL_WIDTH_SPEC`] 与模块头的窗口三键条目。这一行的高度只影响
-/// 项目下拉 / 分支项 / 运行控件 / 账号槽位的可用高度。
-///
-/// ⚠️ 38 同样不在 4px 档位上（`h_9()` = 36、`h_10()` = 40，
-/// `gpui-pre-macros-0.3.6/src/styles.rs:993-1002`），所以也写
-/// `rems(TITLE_BAR_MAIN_ROW_HEIGHT_SPEC / 16.)`。
-const TITLE_BAR_MAIN_ROW_HEIGHT_SPEC: f32 = 38.;
+/// 真源 `WorkbenchView.swift:1164`（`.frame(height: 30)`，`runConfigurationPicker`）。
+/// 30 不在 4px 档位上（`h_7()` = 28、`h_8()` = 32），所以调用点写 `rems(30. / 16.)` ——
+/// 见《编码指南》「档位外的值用 helper 底层的 `rems(P / 16.)`」。
+const RUN_SLOT_HEIGHT_SPEC: f32 = 30.;
 
-/// 第二行右侧小控件（运行控件按钮 / 运行配置槽位）的圆角 6.4。
-///
-/// 真源 `rounded-md` = `--radius × 0.8`（`windows/tauri/src/styles/theme.css:7,134`），
-/// 与 [`crate::project_menu`] 的 `ROW_RADIUS_SPEC`、[`crate::branch_panel`] 的
-/// `TRIGGER_RADIUS_SPEC` 同一个值 —— 标题栏第二行里的小控件共用一个圆角，避免同一行里
-/// 出现两种圆角。`Styled::rounded` 收 `impl Into<AbsoluteLength>`，所以调用点写
-/// `rems(TITLE_BAR_CONTROL_RADIUS_SPEC / 16.)`。
-const TITLE_BAR_CONTROL_RADIUS_SPEC: f32 = 6.4;
+/// 运行配置槽位的最小宽度 **160**（真源 `WorkbenchView.swift:1163` 的 `minWidth: 160`）。
+const RUN_SLOT_MIN_WIDTH_SPEC: f32 = 160.;
 
-/// 运行配置槽位的最大宽度 180。
+/// 运行配置槽位的最大宽度 **190**（真源 `WorkbenchView.swift:1163` 的 `maxWidth: 190`）。
 ///
-/// 真源那一段按内容宽度铺开、只受标题栏余量限制；本侧给它一个上界，免得一个超长配置名
-/// （Maven 的 `artifactId` 可以很长）把第二行的右组顶出窗口。180 是"看得见一截、截断处有省略号"
-/// 的量级（一行约 20 个中文字符），`truncate()` 负责省略号。
-const TITLE_BAR_RUN_SLOT_MAX_WIDTH_SPEC: f32 = 180.;
+/// 同时是"超长配置名截断"的上界（Maven 的 `artifactId` 可以很长），`truncate()` 负责省略号。
+const RUN_SLOT_MAX_WIDTH_SPEC: f32 = 190.;
 
-/// 标题栏（无状态）：**两行**的高度与排布、第二行右侧的运行控件、第一行右端的自绘窗口三键
-/// 都在这里，不持有 `Entity`。只依赖传入的**已渲染好的**菜单栏、项目下拉与分支项、当前主题与窗口状态。
+/// 运行配置槽位 / 运行控件按钮的圆角 **6.4**。
+///
+/// 与 [`crate::project_menu`] 的 `TRIGGER_RADIUS_SPEC`、[`crate::branch_panel`] 的
+/// `TRIGGER_RADIUS_SPEC` 同一个值 —— 标题栏里的这一组小控件共用一个圆角，避免同一行里
+/// 出现两种圆角。值的**唯一 owner** 是 [`lithe_gpui_shared::design::CONTROL_RADIUS`]
+/// （`rounded-md` = `--radius × 0.8` = 6.4），本常量只是把它锚定到本文件的调用点。
+const TITLE_BAR_CONTROL_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
+
+/// 标题栏（无状态）：**单行 40** 的高度与排布、右端的运行控件与自绘窗口三键都在这里，
+/// 不持有 `Entity`。只依赖传入的**已渲染好的**菜单栏、项目下拉与分支项、当前主题与窗口状态。
 ///
 /// `menu_bar` / `project_menu` / `branch_item` 是调用方（[`crate::workspace::ShellWorkspace::render`]）
 /// 先渲染好的元素，收 `AnyElement` 而不是收 `Entity<..>` + `&mut App` 有四个原因：
@@ -197,25 +159,24 @@ const TITLE_BAR_RUN_SLOT_MAX_WIDTH_SPEC: f32 = 180.;
 /// 3. 项目下拉要读 `Entity<ProjectMenu>` 并新建 `PopupMenu`（要 `&mut App`），
 ///    那一步必须发生在调用方，而不是这个只读的区域函数里；
 /// 4. 分支项同样要读 `Entity<BranchPanel>`（开合态决定 hover / 展开外观），
-///    而且它**可以不存在**（没有仓库 / 没有分支名时真源整项不渲染，研究 §5），
+///    而且它**可以不存在**（没有仓库 / 没有分支名时真源整项不渲染），
 ///    所以调用方给 `AnyElement`（缺省时是一块空 `div`）。
 ///
-/// ⚠️ **项目名不再由本函数画**：Windows 的项目名就在项目下拉的触发器里
-/// （`title-project-menu.tsx:157`），所以本函数收的是**已经带名字的触发器元素**，
-/// 拖拽区因此只是一块空的剩余宽度（真源 `ChromeGroup grow min-w-0`，`title-bar.tsx:339-343`）。
+/// ⚠️ **项目名不由本函数画**：它画在项目下拉的触发器里，所以本函数收的是**已经带名字的
+/// 触发器元素**，拖拽区因此只是一块空的剩余宽度。
 ///
-/// ⚠️ **落位（两行，2026-09-27 起）**：
+/// ⚠️ **落位（单行，2026-09-30 对齐 macOS）**，从左到右：
 ///
-/// - `menu_bar` → **第一行**（30，[`TITLE_BAR_MENU_ROW_HEIGHT_SPEC`]）的左侧，
-///   右边接该行的拖拽区，该行右端是 [`window_controls`]（窗口三键，贴窗口右边缘）；
-/// - `project_menu` → `branch_item` → **第二行**（38，[`TITLE_BAR_MAIN_ROW_HEIGHT_SPEC`]）
-///   的左侧，顺序不可调换（真源 `ChromeGroup { menuItem, projectControls }` + 同组的分支项，
-///   `title-bar.tsx:236-238,339-343`），之后是该行的拖拽区；
-/// - 第二行拖拽区的右边依次是 [`run_controls`]（本轮新增的运行控件）与 [`account_slot`]
-///   （账号 / 设置槽位，只留空隙）。
+/// 1. `menu_bar`（菜单栏——macOS 在系统菜单栏上，Windows 必须画在窗内，所以共用这一行）；
+/// 2. `project_menu`（项目下拉触发器）；
+/// 3. `branch_item`（分支项，可以不存在）；
+/// 4. [`drag_region`]（该行剩下的宽度全是它）；
+/// 5. [`run_controls`]（`运行配置 ▾ ▶ 🐞`）；
+/// 6. [`account_slot`]（账号 / 设置槽位，只留空隙）；
+/// 7. [`window_controls`]（窗口三键，贴窗口右边缘）。
 ///
 /// ⚠️ **上述可点元素全都是 `drag_region` 的兄弟节点，不能放进它内部**：Windows 的命中测试取
-/// `window_control_hitboxes` 里**第一个**命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
+/// `window_control_hitboxes` 里**第一个**命中项（`gpui-pre-0.3.7/src/window.rs`，
 /// 按绘制顺序 = 祖先在前），祖先的 `Drag` 会赢，那时点它们只会拖窗口
 /// （"点菜单只拖窗口"那个真 bug 的成因）。本条与本文件窗口三键的 `Drag` 祖先坑同源（见下）。
 pub fn title_bar(
@@ -227,31 +188,23 @@ pub fn title_bar(
     cx: &App,
 ) -> impl IntoElement {
     v_flex()
-        // ChromeBar 基线带 `shrink-0`（`windows/tauri/src/ui/chrome.tsx:6`），标题栏不参与压缩。
+        // 标题栏不参与压缩。
         .flex_shrink_0()
         .w_full()
-        // `bg-surface`（`title-bar.tsx:337`）：gpui-kit 的 `ThemeColor` **没有** `surface`
-        // 这一项，语义上最贴近「标题栏专用底色」的是主题自己的 `title_bar`
-        // （`gpui-component-0.6.6/src/theme/theme_color.rs:293`）。
-        // 底色 / 字色 / 字号写在**两行的公共父节点**上而不是每行各写一遍：两行同底同色是效果图
-        // 的定稿外观，写两处迟早漂移。
+        // 底色走主题自己的 `title_bar`（gpui-kit 的 `ThemeColor` 没有 `surface` 这一项，
+        // 语义上最贴近「标题栏专用底色」的就是它）。
         .bg(cx.theme().title_bar)
         .text_sm()
-        // `text-muted-foreground`（`title-bar.tsx:337`）→ `theme.muted_foreground`
-        // （`gpui-component-0.6.6/src/theme/theme_color.rs:195`）。
         .text_color(cx.theme().muted_foreground)
-        // ① 第一行 30：菜单栏 + 拖拽区 + 右端窗口三键（效果图 §1.3 只写菜单栏；
-        //    三键上移是 2026-09-30 维护者口径，理由见模块头的窗口三键条目）。
-        //    ⚠️ 菜单栏是 `drag_region` 的**兄弟**：它挂在行容器上，不在 `drag_region` 里面。
-        //    常驻形态占这一行左侧一段（真源 `title-bar.tsx:230-232`），
-        //    图标形态只占一个 24×24 按钮 + 一层浮动胶囊。
-        //    ⚠️ 三键是**行容器的儿子**、不在左段里面：本行的 8px 水平内衬只加在左段上，
-        //    三键才能像 Windows / IDEA 那样贴住窗口右上角（hover 底色一路铺到边缘）。
+        // 唯一一行 **40**（[`TITLE_BAR_HEIGHT_SPEC`]，macOS `LitheTheme.swift:478`）。
         .child(
             h_flex()
                 .w_full()
-                .h(rems(TITLE_BAR_MENU_ROW_HEIGHT_SPEC / 16.))
+                .h(rems(TITLE_BAR_HEIGHT_SPEC / 16.))
                 .child(
+                    // 左段：菜单栏 → 项目下拉 → 分支项 → 拖拽区 → 运行控件 → 账号槽位。
+                    // `flex_1` 撑开，右端的三键因此被推到窗口最右；**8px 水平内衬只加在这一段**，
+                    // 三键才能贴住窗口右上角（hover 底色一路铺到边缘）。
                     h_flex()
                         // 左段独占剩余宽度：`flex_1` 撑开，三键因此被推到最右端。
                         .flex_1()
@@ -259,48 +212,38 @@ pub fn title_bar(
                         .h_full()
                         .gap_1()
                         .px_2()
+                        // ① 菜单栏：`drag_region` 的**兄弟**（挂在左段上，不在 `drag_region` 里）。
+                        // 常驻形态占左侧一段，图标形态只占一个按钮 + 一层浮动胶囊 —— 由它自己决定。
                         .child(menu_bar)
-                        // 这一行剩下的宽度全是拖拽区（每行一个，见 [`drag_region`]）。
-                        .child(drag_region()),
+                        // ② 项目下拉触发器：`drag_region` 的**兄弟**（见 [`crate::project_menu`] 模块头）。
+                        .child(project_menu)
+                        // ③ 分支项：仍是 `drag_region` 的**兄弟**（见 [`crate::branch_panel`] 模块头）；
+                        // 没有仓库 / 没有分支名时调用方传一块空 `div`，与真源"整项不渲染"一致。
+                        .child(branch_item)
+                        // ④ 拖拽区独占剩余宽度（`flex_1`）—— 所以这一行**不需要** `justify_between()`：
+                        // 左右两组各自按内容宽度贴在两端，中间全归拖拽区。
+                        .child(drag_region())
+                        // ⑤ 运行控件（`运行配置 ▾ ▶ 🐞`）：见 [`run_controls`]。
+                        .child(run_controls(run, cx))
+                        // ⑥ 「账号 / 设置」槽位：只留空隙，见 [`account_slot`]。
+                        .child(account_slot()),
                 )
+                // ⑦ 窗口三键：**行容器的儿子**、不在左段里面，所以那一行的 8px 内衬不会把它
+                // 推离窗口边缘（见模块头的"窗口三键"条目）。
                 .child(window_controls(window, cx)),
-        )
-        // ② 第二行 38：左组（项目下拉 → 分支项）｜拖拽区｜右组（运行控件 → 账号槽位）。
-        .child(
-            h_flex()
-                .w_full()
-                .h(rems(TITLE_BAR_MAIN_ROW_HEIGHT_SPEC / 16.))
-                .gap_1()
-                .px_2()
-                // 项目下拉触发器：`drag_region` 的**兄弟**（见 [`crate::project_menu`] 模块头）。
-                .child(project_menu)
-                // 分支项：仍是 `drag_region` 的**兄弟**（见 [`crate::branch_panel`] 模块头）。
-                // 真源里它与项目下拉同在 `ChromeGroup gap="tight"`（2px）内、紧跟其后
-                // （`title-bar.tsx:236-238`）；没有仓库时调用方传一块空 `div`，真源同样整项不渲染。
-                .child(branch_item)
-                // 拖拽区独占剩余宽度（`flex_1`）—— 所以两行都**不需要** `justify_between()`：
-                // 左右两组各自按内容宽度贴在两端，中间全归拖拽区（真源 `ChromeGroup grow`）。
-                .child(drag_region())
-                // 运行控件（`运行配置 ▾ ▶ 🐞`）：本轮新增，见 [`run_controls`]。
-                .child(run_controls(run, cx))
-                // 「账号 / 设置」槽位：只留空隙，见 [`account_slot`]。
-                .child(account_slot()),
         )
 }
 
-/// 拖拽区：**某一行**里除该行其它子元素之外的**剩余宽度**（两行各调一次）。
+/// 拖拽区：**唯一一行**里除其它子元素之外的**剩余宽度**（每帧调一次）。
 ///
-/// 由左组独占剩余宽度（`ChromeGroup grow min-w-0`，`title-bar.tsx:339`），该行其它元素
-/// （第一行的菜单栏与窗口三键、第二行的项目下拉 / 分支项 / 运行控件 / 账号槽位）都是它的
+/// 该行其它元素（菜单栏 / 项目下拉 / 分支项 / 运行控件 / 账号槽位 / 窗口三键）都是它的
 /// **兄弟节点**而不是子节点 —— 这一点必须保持：平台命中测试取
-/// `window_control_hitboxes` 里**第一个**命中项（`gpui-pre-0.3.6/src/window.rs:1952-1956`，
+/// `window_control_hitboxes` 里**第一个**命中项（`gpui-pre-0.3.7/src/window.rs`，
 /// 按绘制顺序 = 祖先在前），若把 `Drag` 挂在整条标题栏（或整个行容器）的祖先上，
 /// 它会盖住子节点的 `Min` / `Max` / `Close`，三键就永远点不动了
-/// （gpui-kit 自己也是把 `Drag` 挂在三键的兄弟 `h_flex` 上：
-/// `gpui-component-0.6.6/src/title_bar.rs:371-379`）。
+/// （gpui-kit 自己也是把 `Drag` 挂在三键的兄弟 `h_flex` 上）。
 ///
-/// ⚠️ **不再画项目名**：项目名归项目下拉的触发器（`title-project-menu.tsx:157`），
-/// 本区域只提供可拖动的空白（真源同一层的 `grow` 部分本来就是空白）。
+/// ⚠️ **不画项目名**：项目名归项目下拉的触发器，本区域只提供可拖动的空白。
 fn drag_region() -> impl IntoElement {
     h_flex()
         .flex_1()
@@ -320,13 +263,10 @@ fn drag_region() -> impl IntoElement {
         .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
 }
 
-/// 窗口三键组：`ChromeGroup gap="none" h-(--lithe-title-bar-height)`
-/// （`window-controls.tsx:52-55`）—— 三键之间 0 间距、整组 `h_full()` 撑满**第一行**。
+/// 窗口三键组：三键之间 0 间距、整组 `h_full()` 撑满**唯一一行**（40）。
 ///
-/// ⚠️ 高度因此是**第一行的 30**（[`TITLE_BAR_MENU_ROW_HEIGHT_SPEC`]），不是真源的 40：
-/// 2026-09-30 起三键挂第一行（维护者口径），见模块头的窗口三键条目。
-/// 宽度 [`WINDOW_CONTROL_WIDTH_SPEC`] 随行高重算（44），整组贴住窗口右边缘 ——
-/// 它挂在行容器上、不在那一行的左段里，所以行内衬 8 不会把它推离边缘。
+/// 整组贴住窗口右边缘 —— 它挂在行容器上、不在那一行的左段里，所以左段的 8px 内衬
+/// 不会把它推离边缘。宽度 [`WINDOW_CONTROL_WIDTH_SPEC`]（平台自有的量，见该常量文档）。
 fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
     h_flex()
         .flex_shrink_0()
@@ -334,7 +274,7 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
         .gap_0()
         .child(window_control(WindowControl::Minimize, cx))
         .child(window_control(
-            // 最大化/还原二选一：`window-controls.tsx:73-78`。
+            // 最大化/还原二选一。
             if window.is_maximized() {
                 WindowControl::Restore
             } else {
@@ -345,12 +285,11 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
         .child(window_control(WindowControl::Close, cx))
 }
 
-/// 单个窗口控件：宽 [`WINDOW_CONTROL_WIDTH_SPEC`]（44）× **第一行高 30**、直角、无点击回调
+/// 单个窗口控件：宽 [`WINDOW_CONTROL_WIDTH_SPEC`]（44）× **整行高 40**、直角、无点击回调
 /// （见文件头说明），只有悬停态。
 ///
-/// ⚠️ 真源是 56×40（`window-controls.tsx:51-96` 的 `h-full` 撑标题栏那唯一一行）；
-/// 这里 `h_full()` 撑的是**第一行**，所以高 30、宽按同一比例收到 44。宽度为什么不是 56
-/// 写在那个常量的文档里。
+/// ⚠️ 尺寸是**平台自有的量**（真源 macOS 没有这个界面点，见 [`WINDOW_CONTROL_WIDTH_SPEC`]）：
+/// 这里只有"撑满整行、贴右边缘、直角"三条是外观约束。
 fn window_control(control: WindowControl, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
     let hover_background = control.hover_background(cx);
@@ -473,47 +412,51 @@ impl WindowControl {
 }
 
 // ---------------------------------------------------------------------------
-// 第二行右侧的运行控件（2026-09-27 新增：`运行配置 ▾ ▶ 🐞`）
+// 右侧的运行控件（`运行配置 ▾ ▶ 🐞`）
 // ---------------------------------------------------------------------------
 //
-// ⚠️ **本节三个元素都是 `drag_region` 的兄弟**（[`title_bar`] 把它们挂在第二行容器上），
+// ⚠️ **本节三个元素都是 `drag_region` 的兄弟**（[`title_bar`] 把它们挂在行容器上），
 // 不是它的后代 —— 原因见本文件模块头：`Drag` 做了可点元素的祖先，Windows 命中测试里
 // 祖先先命中，点按钮只会拖窗口。
 
-/// 标题栏第二行右侧的运行控件组：`运行配置 ▾` ＋ `▶` ＋ `🐞`（效果图 §1.3 的定稿形状）。
+/// 运行控件组：`运行配置 ▾` ＋ `▶` ＋ `🐞`。
 ///
-/// 真源 Windows 标题栏**没有**这一组（它把运行 / 调试挂在编辑区标签栏右侧，
-/// `lithe-gpui/docs/ui-mockup-idea.md` §1.2 的图注 A1「后续把启动、debug 放这里」正是这一轮要做的搬迁），
-/// 所以这里没有 `title-bar.tsx` 的行号可引；形状与顺序取自效果图 §1.3。
+/// 形状与顺序照 macOS topBar 的右组：`runConfigurationPicker` → `runLaunchButton` →
+/// `debugLaunchButton`（`macos/Sources/Lithe/Views/Workbench/WorkbenchView.swift:814-821`
+/// 的 `HStack(spacing: 8)`），尺寸各自见那两个函数的文档。
 fn run_controls(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> impl IntoElement {
     h_flex()
         .flex_shrink_0()
         .h_full()
-        // 组内 4（`--lithe-chrome-gap`，`styles/theme.css:130`）：与第二行其它子元素同一个间距。
-        .gap_1()
+        // 组内 8：真源 `WorkbenchView.swift:814`（`HStack(spacing: 8)`）。
+        .gap_2()
         .child(run_configuration_slot(run.clone(), cx))
         .child(run_control(RunControl::Run, run.clone(), cx))
         .child(run_control(RunControl::Debug, run, cx))
 }
 
-/// 第二行右端的「账号 / 设置」槽位：**只留空隙、不画控件**。
+/// 右端的「账号 / 设置」槽位：**只留空隙、不画控件**。
 ///
-/// 效果图 §1.3 的第二行右端还有「账号 + 设置」（IDEA New UI 的
-/// 账号头像与齿轮），本轮**不接**这两个入口：
+/// macOS topBar 的右端是 `UpdateControl(compact: true)` + `backgroundPickerButton`
+/// （`WorkbenchView.swift:823-824`）。本侧**不接**这两个入口：
 ///
 /// - 「设置」在 Lithe 已有两个入口（左活动栏底部组的「设置」项，`crate::workspace` 的
 ///   `SETTINGS_ACTIVITY_IX`，以及 `Ctrl+,` 的 `MenuAction::Preferences`），再画一个第三入口
 ///   只会多一处状态；
 /// - 「账号」在本侧没有任何数据源（没有登录 / 同步子系统）。
 ///
-/// 所以这里只保留那一段**固定宽度的空隙**（24 = `w_6()`，与运行控件按钮同宽），
-/// 让第二行右端的留白与效果图一致（窗口三键已上移到第一行，这一段现在是第二行右组的收尾）
-/// —— **不画一个点了没反应的按钮**（《编码指南》的占位项纪律：不许假装能用）。
+/// 所以这里只保留那一段**固定宽度的空隙**（28 = `w_7()`，与运行控件按钮同宽），
+/// 让右端的留白与真源一致 —— **不画一个点了没反应的按钮**（《编码指南》的占位项纪律：
+/// 不许假装能用）。
 fn account_slot() -> impl IntoElement {
-    div().flex_shrink_0().w_6()
+    div().flex_shrink_0().w_7()
 }
 
-/// `运行配置 ▾`：第二行右端的文字槽位（效果图 §1.3）。
+/// `运行配置 ▾`：右端的文字槽位。
+///
+/// ## 度量（真源 `WorkbenchView.swift:1143-1170` 的 `runConfigurationPicker`）
+///
+/// 高 30、最小宽 160、最大宽 190、左右内边距 4、组内间距 8、图标 14、文字档位见下。
 ///
 /// ## 显示的是**真实**的当前配置名
 ///
@@ -523,10 +466,11 @@ fn account_slot() -> impl IntoElement {
 ///
 /// ## 点它 = 打开运行工具窗（那里才是配置列表）
 ///
-/// 真源这一格点开是一个下拉清单。本侧**不画假下拉**：列表在底部「运行」工具窗里
-/// （`lithe_gpui_run::RunPane`，点一行即选中），所以这里的落点是把那个工具窗切过来并显示
-/// —— 与「视图 → 运行和调试」走同一条 `MenuAction::ShowRunAndDebug`（同一个待执行队列）。
-/// 等这一格真的有了弹出菜单组件（`Entity<ProjectMenu>` 那种），再把它换成内联下拉。
+/// 真源这一格点开是一个下拉清单（`isRunConfigurationPickerPresented` → popover）。
+/// 本侧**不画假下拉**：列表在底部「运行」工具窗里（`lithe_gpui_run::RunPane`，点一行即选中），
+/// 所以这里的落点是把那个工具窗切过来并显示 —— 与「视图 → 运行和调试」走同一条
+/// `MenuAction::ShowRunAndDebug`（同一个待执行队列）。等这一格真的有了弹出菜单组件
+/// （`Entity<ProjectMenu>` 那种），再把它换成内联下拉。
 fn run_configuration_slot(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
     let idle = theme.muted_foreground;
@@ -542,10 +486,14 @@ fn run_configuration_slot(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> imp
     h_flex()
         .id("title-bar-run-configuration")
         .flex_shrink_0()
-        .h_6()
-        .px_2()
-        .gap_1()
-        .max_w(rems(TITLE_BAR_RUN_SLOT_MAX_WIDTH_SPEC / 16.))
+        // 高 30（不在 4px 档位上：`h_7()`=28、`h_8()`=32）→ `rems(30. / 16.)`。
+        .h(rems(RUN_SLOT_HEIGHT_SPEC / 16.))
+        // `padding(.horizontal, 4)`（`WorkbenchView.swift:1162`）→ `px_1()`。
+        .px_1()
+        // `HStack(spacing: 8)`（`WorkbenchView.swift:1147`）→ `gap_2()`。
+        .gap_2()
+        .min_w(rems(RUN_SLOT_MIN_WIDTH_SPEC / 16.))
+        .max_w(rems(RUN_SLOT_MAX_WIDTH_SPEC / 16.))
         .rounded(rems(TITLE_BAR_CONTROL_RADIUS_SPEC / 16.))
         .text_color(idle)
         .cursor_pointer()
@@ -559,19 +507,20 @@ fn run_configuration_slot(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> imp
             push_show_run_pane(cx);
         })
         .aria_label(tr("lithe.run.configurations"))
-        .child(div().min_w_0().truncate().child(label))
-        .child(Icon::new(IconName::ChevronDown).small())
+        // 文字档位：真源 11.5（`WorkbenchView.swift:1153`）→ gpui 最近的档位 `text_xs()`（12）。
+        .child(div().min_w_0().truncate().text_xs().child(label))
+        // chevron 9（`WorkbenchView.swift:1157-1159` 的 `size: 9, weight: .semibold`）→
+        // `size_2p5()`（10px，gpui 档位里离 9 最近的一档；9 不在档位上，不能发明 helper）。
+        // 不用 `small()`（=14）：那会让 chevron 比旁边的 12px 文字还高。
+        .child(Icon::new(IconName::ChevronDown).size_2p5())
 }
 
-/// 一个运行控件按钮（`▶` / `🐞`）：24×24 的 ghost 按钮。
+/// 一个运行控件按钮（`▶` / `🐞`）：**28×28**、圆角 6.4、悬停底色。
 ///
-/// 尺寸与底色照标题栏里既有的两个触发器（`crate::project_menu::trigger` /
-/// `crate::branch_panel::trigger`）：悬停 `bg-accent`
-/// （真源 ghost 按钮的 `hover:bg-accent`，`windows/tauri/src/ui/button.tsx:17,19`）。
-/// ⚠️ **前景色那一半不照抄**：图标是彩色 `img()`（见 [`RunControl::icon`]），不吃 `text_color`，
+/// 尺寸照真源 `WorkbenchView.swift:1079,1101,1125`（`.frame(width: 28, height: 28)`），
+/// 图标照 `:1073,1097`（`LitheIDEAIcon(size: 16)`）。
+/// ⚠️ **前景色不吃 `text_color`**：图标是彩色 `img()`（见 [`RunControl::icon`]），
 /// 所以这里没有"未悬停 muted、悬停 foreground"那对颜色 —— 反馈只有底色。
-/// 尺寸 24 = `icon-xs`（`windows/tauri/src/ui/button.tsx:27`），与右工具窗的关闭按钮、
-/// 终端页签的关闭按钮同档（`right_tool_window.rs` / `terminal/src/constants.rs` 的同一处对照）。
 fn run_control(
     control: RunControl,
     run: Entity<lithe_gpui_run::RunPane>,
@@ -582,18 +531,17 @@ fn run_control(
     let hover_bg = theme.accent;
 
     div()
-        // 必须有 `id`：`hover` 态要元素状态（`gpui-pre-0.3.6/src/elements/div.rs:2844-2849`）。
+        // 必须有 `id`：`hover` 态要元素状态。
         .id(control.id())
         .flex()
         .flex_shrink_0()
         .items_center()
         .justify_center()
-        .size_6()
+        // 28×28（`size_7()`）：真源 `WorkbenchView.swift:1079,1101`。
+        .size_7()
         .rounded(rems(TITLE_BAR_CONTROL_RADIUS_SPEC / 16.))
         .cursor_pointer()
-        // 悬停反馈**只有底色**：图标是彩色 `img()` 管线，不吃 `text_color`
-        // （原来那两行 `text_color(idle)` / `text_color(hover_fg)` 因此删掉 —— 留着是死样式，
-        // 还会让下一个人以为"图标会跟着变亮"；见 [`RunControl::icon`]）
+        // 悬停反馈**只有底色**：图标是彩色 `img()` 管线，不吃 `text_color`。
         .hover(move |style| style.bg(hover_bg))
         // 与项目下拉 / 分支项触发器逐字相同的第二道保险：本元素此刻**不在** `Drag` 命中区里
         // （它是 `drag_region` 的兄弟），这两行挡的是"将来有人把它挪进拖拽区"这类回归。
@@ -611,11 +559,11 @@ fn run_control(
         })
         // 无障碍名 = 它复用的那一条菜单文案（图标按钮没有可见文字，必须给名字）。
         .aria_label(tr(control.label_key()))
-        // 图标 14×14：彩色那条自带尺寸（见 [`RunControl::icon`]）。
+        // 图标 **16×16**：真源 `WorkbenchView.swift:1073,1097`（`LitheIDEAIcon(size: 16)`）。
         .child(control.icon(cx))
 }
 
-/// 第二行右侧的两个运行控件。
+/// 右侧的两个运行控件。
 ///
 /// 只 derive `Clone, Copy`（与 [`WindowControl`] 同一口径）：本枚举只用来**选一行**分支，
 /// 不参与比较，多 derive 一个 `PartialEq` 只会让"将来有人拿它当状态比较"看起来可行。
@@ -639,17 +587,16 @@ impl RunControl {
     /// 字形：`▶` = `idea::PLAY_ICON`、`🐞` = `idea::BUG_ICON`，两条都走**彩色** `img()` 管线
     /// （[`idea_icon_image`]）。
     ///
-    /// ⚠️ **2026-09-30 维护者口径**：此前走的是 `idea_icon_mono`（单色，跟随 `text_color`）。
-    /// 换成彩色之后：图标保留资产自带的颜色，**不再跟随 `text_color`** —— 这一项本来就有
-    /// 悬停底色（`.hover(.. bg(hover_bg))`），反馈由底色承担，与活动栏轨道项同一条口径
+    /// ⚠️ **彩色 → 不吃 `text_color`**：图标保留资产自带的颜色，悬停反馈由底色承担
     /// （见 `.agents/notes/implemented/feature/2026-09-30-colored-ui-icons.md`）。
     ///
-    /// 尺寸 `rems(14. / 16.)` = 14：与原来 `.small()`（`size_3p5()`）逐像素相同，
-    /// 也是本仓库对 `.small()` 的统一换算——彩色那条**自己带尺寸**，`.child(..)` 不会替它设。
+    /// 尺寸 **16**：真源 `WorkbenchView.swift:1073,1097`（`LitheIDEAIcon(size: 16)`）——
+    /// 原来是 14（照 Windows 的 `size-3.5`），本轮随按钮 24 → 28 一起放大到真源的 16。
+    /// 彩色那条**自己带尺寸**，`.child(..)` 不会替它设。
     fn icon(self, cx: &App) -> AnyElement {
         match self {
-            Self::Run => idea_icon_image(&idea::PLAY_ICON, cx, rems(14. / 16.)),
-            Self::Debug => idea_icon_image(&idea::BUG_ICON, cx, rems(14. / 16.)),
+            Self::Run => idea_icon_image(&idea::PLAY_ICON, cx, rems(16. / 16.)),
+            Self::Debug => idea_icon_image(&idea::BUG_ICON, cx, rems(16. / 16.)),
         }
     }
 
