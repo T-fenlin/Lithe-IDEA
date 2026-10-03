@@ -216,15 +216,7 @@ impl FileIcons {
         let icon = root
             .get("icons")
             .and_then(|icons| icons.as_array())
-            .and_then(|entries| {
-                entries.iter().max_by_key(|entry| {
-                    entry
-                        .get("iconDefinitions")
-                        .and_then(|defs| defs.as_object())
-                        .map(|defs| defs.len())
-                        .unwrap_or(0)
-                })
-            })
+            .and_then(|entries| entries.iter().max_by_key(|entry| definition_weight(entry)))
             .cloned()
             .unwrap_or(serde_json::Value::Null);
 
@@ -312,7 +304,7 @@ impl FileIcons {
     ///
     /// **逐条目回落**：浅色定义缺失时补深色那份（真机
     /// `getIconDefinitionsForAppearance` 的 `?? contribution.iconDefinitions` 是整个表级的回落，
-    /// 逐条目回落是它的更细版本 —— `idea` 包的 53 个 id 明暗都齐，两者等价；
+    /// 逐条目回落是它的更细版本 —— `idea` 包的 128 个 id 明暗都齐，两者等价；
     /// 换成浅色定义不全的主题包时逐条目回落更稳）。
     #[must_use]
     pub fn resolve(&self, icon: &str, dark: bool) -> Option<&str> {
@@ -496,6 +488,18 @@ pub fn theme_file_icon(
 
 /// `iconDefinitions` / `lightIconDefinitions`：图标 id → **资源根路径**（可直接交给 `AssetSource`）。
 ///
+/// 支持**两种清单形状**，因为真机两代都用过：
+///
+/// - **扁平**：`{id: "./icons/files/java_dark.svg"}`（`lithe` / `symbols` / `pierre` 现在都是这种）；
+/// - **一层分组**：`{"files": {id: 路径}, "folders": {…}, "ui": {…}}` —— `idea` 包自 2026-10-02
+///   （`b66dbd12`）起由 `.artifacts/group-manifest.py` 按 `icons/idea/icons/{files,folders,ui}`
+///   的目录布局生成，分组名只有"这份清单怎么组织"的信息，**不参与查表**：`filenames` /
+///   `fileExtensions` / `folderNames` / `defaultFile` 里存的一直是**不带组名的 id**
+///   （`"pom.xml" → "maven"`），所以要做的只是把分组**展平一层**。
+///
+/// 只展平**一层**：再深就不是"分组"而是别的东西了，多展平会把语义不明的嵌套也当成定义。
+/// 遇到非字符串的叶子（分组里还套对象）一律跳过，与扁平表上的行为一致。
+///
 /// ⚠️ 这里必须把主题包根（`icons/<包>/`）拼上。查找层的返回值会被直接送进
 /// [`theme_file_icon`] → `AssetSource::load`，而 `LitheAssets` 的键是**相对 `lithe-gpui/assets/`**
 /// 的完整路径（`icons/idea/icons/files/java.svg`）。只存清单里的包内相对路径
@@ -510,19 +514,54 @@ fn definitions(value: Option<&serde_json::Value>, root: &str) -> HashMap<String,
         return map;
     };
     for (key, value) in object {
-        let Some(text) = value.as_str() else {
+        // 扁平表：这一层的键就是 id。
+        if let Some(text) = value.as_str() {
+            insert_definition(&mut map, key, text, root);
+            continue;
+        }
+        // 一层分组：这一层的键是组名，下一层的键才是 id。组名不进表。
+        let Some(group) = value.as_object() else {
             continue;
         };
-        map.insert(
-            key.clone(),
-            if text.starts_with('<') {
-                text.to_string()
-            } else {
-                format!("{root}{}", text.trim_start_matches("./"))
-            },
-        );
+        for (id, definition) in group {
+            if let Some(text) = definition.as_str() {
+                insert_definition(&mut map, id, text, root);
+            }
+        }
     }
     map
+}
+
+/// 把一条定义写进表：路径拼上主题包根，内联 SVG 文本原样保留（见 [`definitions`]）。
+fn insert_definition(map: &mut HashMap<String, String>, id: &str, text: &str, root: &str) {
+    map.insert(
+        id.to_string(),
+        if text.starts_with('<') {
+            text.to_string()
+        } else {
+            format!("{root}{}", text.trim_start_matches("./"))
+        },
+    );
+}
+
+/// 一条 `icons[]` 条目的"定义条数"权重，供 [`FileIcons::from_json`] 选**最完整**的那一条。
+///
+/// 必须在分组表上按**展平后**的 id 数算：直接数 `iconDefinitions` 的键在分组表上只会数到
+/// `files` / `folders` / `ui` 三个组名，于是"取定义最多的那一条"会在多条目包里选错
+/// （`pierre` 的三档就是这样比较出来的：5 / 28 / 57）。只看 `iconDefinitions`，口径与改动前一致。
+fn definition_weight(entry: &serde_json::Value) -> usize {
+    entry
+        .get("iconDefinitions")
+        .and_then(serde_json::Value::as_object)
+        .map(|defs| {
+            defs.values()
+                .map(|value| match value.as_object() {
+                    Some(group) => group.values().filter(|leaf| leaf.is_string()).count(),
+                    None => usize::from(value.is_string()),
+                })
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 /// 把一份 `{键: 图标 id}` 的 JSON 对象转成表。
@@ -662,13 +701,15 @@ mod tests {
 
     /// 主题包必须能读进来 —— 这是"接线真的生效"的前置条件。
     ///
-    /// 它同时钉住内嵌资源的**数量级**：`idea/extension.json` 里有 53 条 `iconDefinitions`，
+    /// 它同时钉住内嵌资源的**数量级**：`idea/extension.json` 里有 128 条 `iconDefinitions`
+    /// （`files` 48 + `folders` 6 + `ui` 74；`b66dbd12` 起清单按三组存放、解析层展平一层，
+    /// 改前是 53 条扁平条目 —— 那次改动新增了 `ui` 组），
     /// 生成脚本或搬运步骤把文件弄丢/弄空时这里会立刻红。
     #[test]
     fn active_theme_parses() {
         let theme = active_theme().expect("idea theme must parse");
         assert_eq!(theme.root(), "icons/idea/");
-        assert_eq!(theme.definition_count(), 53);
+        assert_eq!(theme.definition_count(), 128);
     }
 
     /// 真机默认图标主题下，这几个文件必须命中**专属**图标（不是 defaultFile）。
