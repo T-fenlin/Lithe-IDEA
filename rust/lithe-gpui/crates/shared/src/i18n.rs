@@ -184,16 +184,33 @@ mod tests {
             ("lithe.quickOpen.searchFiles", "输入以搜索文件..."),
             ("lithe.quickOpen.noMatch", "未找到匹配的文件"),
             ("lithe.menu.quickOpen", "快速打开"),
-            // Search Everywhere 浮层（U17 第三件 + 后续切片补 Classes）：五个
-            // scope 标签与五句空态都是 macOS 真源的既有字面量（SwiftUI 的 rawValue 与
-            // `emptyResultsMessage`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings`
-            // （:194,884,885,887,1119,1164-1168，其中 :884 与 :1166 就是 Classes），
+            // Search Everywhere 浮层（U17 第三件 + 后续切片补 Classes / Actions / `/` 模式）：
+            // 六个 scope 标签与六句空态，外加 `/` 命令模式的空态与输入框提示，都是 macOS 真源的
+            // 既有字面量（SwiftUI 的 rawValue 与 `emptyResultsMessage`），中文落在
+            // `macos/Resources/zh-Hans.lproj/Localizable.strings`
+            // （:194,884,885,886,887,1119,1139,1164-1169，其中 :884 是 Classes、:886 是 Actions、
+            // :1166/:1169 是这两档的空态、:1139 是那句 `/` 提示、:48 是命令模式空态），
             // Windows catalog 里没有 —— 所以是 gpui 自有键。
             // 菜单那一项复用真源既有键 `lithe.menu.globalSearch`（与 `quick_open` 同一处置）。
             ("lithe.searchEverywhere.scope.all", "全部"),
             ("lithe.searchEverywhere.scope.classes", "类"),
             ("lithe.searchEverywhere.scope.files", "文件"),
             ("lithe.searchEverywhere.scope.symbols", "符号"),
+            // Actions 档与 `/` 命令模式（U17 后续切片）：这两档的候选是**宿主命令目录**
+            // （`CommandId::ALL`），不是工作区搜索 —— 但文案仍是 macOS 真源的既有字面量，
+            // 出处逐条写在 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里
+            // （`SearchEverywhereView.swift:10,48,77-78,87-88,267` →
+            // `Localizable.strings:48,886,1139,1169`）。
+            ("lithe.searchEverywhere.scope.actions", "操作"),
+            (
+                "lithe.searchEverywhere.noMatches.actions",
+                "操作中没有匹配项",
+            ),
+            (
+                "lithe.searchEverywhere.noMatchingCommands",
+                "没有匹配的命令",
+            ),
+            ("lithe.searchEverywhere.typeSlash", "输入 / 查看命令"),
             ("lithe.searchEverywhere.scope.text", "文本"),
             (
                 "lithe.searchEverywhere.noMatches.all",

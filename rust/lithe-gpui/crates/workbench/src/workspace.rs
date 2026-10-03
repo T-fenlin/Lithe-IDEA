@@ -2418,6 +2418,28 @@ impl ShellWorkspace {
             .collect()
     }
 
+    /// Search Everywhere 的 `Actions` 档要列的**宿主命令目录**（顺序 = [`CommandId::ALL`]）。
+    ///
+    /// 与 [`Self::command_actions`] 的唯一区别是"取哪些 id"：命令面板要的是
+    /// [`visible_commands`] 那份 7 条短名单（主题那一对还要按当前配色二选一），
+    /// 而 `Actions` 档是**整个可执行命令目录**（22 条，含只由菜单 / 快捷键进入的那批）——
+    /// 真源的 Actions 档同样列 `LitheActionRegistry.actions(for:)` 的全部 35 条动作
+    /// （`macos/Sources/Lithe/Models/LitheAction.swift:56-102`），不是命令面板的短名单。
+    ///
+    /// 朝向快照、主题深浅、以及每一条的 label / description / icon 全部走同一个
+    /// [`command_action`]，所以**同一个动作在两个入口里的字面与字形逐字相同** ——
+    /// 不是第二份动作表，只是同一份表取不同的行集合。
+    ///
+    /// 纯读：不改状态、不生成界面元素（与 [`Self::command_actions`] 同一口径）。
+    pub(crate) fn action_catalog(&self, cx: &App) -> Vec<CommandAction> {
+        let flags = self.action_flags(cx);
+        let is_dark = cx.theme().is_dark();
+        CommandId::ALL
+            .into_iter()
+            .map(|id| command_action(id, flags, is_dark))
+            .collect()
+    }
+
     /// 动作表需要的朝向快照（理由见 [`ActionFlags`]）。
     fn action_flags(&self, cx: &App) -> ActionFlags {
         // 状态栏：没有设置状态时按默认值（显示）处理 —— 与 `render` 里那条判据一致，
@@ -2501,8 +2523,8 @@ impl ShellWorkspace {
 
     /// 打开 Search Everywhere 浮层（菜单「视图 → 全局搜索」）。
     ///
-    /// 外壳只做三件事：把 `root` 与"打开结果"的通路交给浮层、把**当刻的**索引就绪状态推进去
-    /// （并登记弱句柄，之后变化继续推）、再 `window.open_dialog`。
+    /// 外壳只做四件事：把 `root` 与"打开结果"的通路交给浮层、把"执行动作"的通路也交给它、
+    /// 把**当刻的**索引就绪状态推进去（并登记弱句柄，之后变化继续推）、再 `window.open_dialog`。
     /// 查询 / 结果 / scope / 键盘全在 `crate::search_everywhere`。
     ///
     /// ⚠️ **只能从事件回调或任务里调用**：`render` 阶段调 `open_dialog` 会 panic。
@@ -2525,10 +2547,30 @@ impl ShellWorkspace {
                     None => pane.open(&path, window, cx),
                 });
             });
+        // `Actions` 档与 `/` 命令模式按 `Enter` 时要执行的**动作 id**：浮层只报"用户选了这条"，
+        // 执行点仍是唯一的那一个 [`Self::run_command_id`]（菜单与命令面板也走它）——
+        // 与 `crate::command_palette::CommandPalette::confirm` 完全同一处置
+        // （`'static` 回调捕获不了 `&self`，所以同样经 [`crate::command_palette::shell`] 拿句柄）。
+        //
+        // ⚠️ 浮层**先关自己再调它**：被选中的动作里就有「打开命令面板 / 全局搜索」这类
+        // 会再开一个对话框的动作，而 `open_*` 都有"已经开着对话框就不叠第二层"的保护，
+        // 留着本浮层就会静默什么都不发生（同 `CommandPalette::confirm` 的顺序理由）。
+        let on_action: Rc<dyn Fn(CommandId, &mut Window, &mut App) + 'static> =
+            Rc::new(|id, window, cx| {
+                let Some(shell) =
+                    crate::command_palette::shell().and_then(|handle| handle.upgrade())
+                else {
+                    // 工作台已经销毁（窗口正在关）：浮层已经关了，什么都不用做。
+                    return;
+                };
+                shell.update(cx, |shell, cx| shell.run_command_id(id, window, cx));
+            });
         // 与 Quick Open 同一处置：打开这一刻读一次就绪状态（真源是 `search_index`）。
         let readiness = self.search_index.readiness();
         let overlay = cx.new(|cx| {
-            crate::search_everywhere::SearchEverywhere::new(root, on_open, readiness, window, cx)
+            crate::search_everywhere::SearchEverywhere::new(
+                root, on_open, on_action, readiness, window, cx,
+            )
         });
         self.search_everywhere_overlay = Some(overlay.downgrade());
         crate::search_everywhere::open_dialog(overlay, window, cx);
@@ -6294,6 +6336,75 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), total, "全部 CommandId 的 id 必须互不相同");
+    }
+
+    /// Search Everywhere 的 `Actions` 档列的是 [`CommandId::ALL`]（**整个**命令目录 22 条），
+    /// 不是命令面板那份 7 条短名单。这条测试钉住三件事：
+    ///
+    /// 1. `ALL` 覆盖全部 22 个变体、顺序 = 声明顺序、id 互不相同；
+    /// 2. 它是 `COMMAND_ORDER` 的**超集**（面板里有的每一条都必须能在 Actions 档里搜到）；
+    /// 3. 每一条都能被 [`command_action`] 投影出非空文案（Actions 档的行就是这么来的）——
+    ///    顺带证明这套投影在纯单测里可跑（不依赖 `Window` / `App`）。
+    #[test]
+    fn the_actions_catalog_covers_the_whole_command_table() {
+        assert_eq!(
+            CommandId::ALL.len(),
+            22,
+            "宿主命令目录的条数变了要同步改注释与 UI-MAP"
+        );
+        let ids: Vec<&str> = CommandId::ALL.iter().map(|id| id.id()).collect();
+        assert_eq!(
+            ids,
+            [
+                "open-settings",
+                "open-appearance-settings",
+                "switch-theme-light",
+                "switch-theme-dark",
+                "toggle-terminal",
+                "toggle-maven",
+                "toggle-status-bar",
+                "toggle-menu-bar",
+                "save-buffer",
+                "open-command-palette",
+                "open-quick-open",
+                "open-search-everywhere",
+                "open-replace-in-files",
+                "navigate-to-definition",
+                "open-file",
+                "close-tab",
+                "close-other-tabs",
+                "close-all-tabs",
+                "close-saved-tabs",
+                "close-tabs-to-left",
+                "close-tabs-to-right",
+                "reopen-closed-tab",
+            ],
+            "顺序 = 枚举声明顺序（Actions 档的行序），id 来自 `CommandId::id()`"
+        );
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), ids.len(), "目录里不许有重复 id");
+
+        for id in COMMAND_ORDER {
+            assert!(
+                CommandId::ALL.contains(&id),
+                "命令面板里的 {} 必须也能在 Actions 档里搜到",
+                id.id()
+            );
+        }
+
+        // 每一条都能投影出可画的文案（label / description 非空）。
+        for id in CommandId::ALL {
+            let action = super::command_action(id, dark(), true);
+            assert_eq!(action.id, id);
+            assert!(!action.label.is_empty(), "{} 的 label 为空", id.id());
+            assert!(
+                !action.description.is_empty(),
+                "{} 的 description 为空",
+                id.id()
+            );
+        }
     }
 
     /// 懒扫**延后之后**仍然"每个视图只扫一次"：登记在派发栈内就落下，所以同一项连点两次

@@ -256,6 +256,51 @@ pub enum CommandId {
 }
 
 impl CommandId {
+    /// **宿主命令目录**的顺序：Search Everywhere 的 `Actions` 档按这个顺序列动作
+    /// （真源 `SearchEverywhereView.swift:138-139` 的 `actionMatches` 也只做 `.map`，不排序）。
+    ///
+    /// ## 与 `COMMAND_ORDER` 是两件事，别混
+    ///
+    /// | | 内容 | 用途 |
+    /// | --- | --- | --- |
+    /// | `COMMAND_ORDER`（7 条，`crate::workspace`） | "一屏能扫完的高频动作" | 命令面板（`Ctrl+Shift+P`）的行序 |
+    /// | [`Self::ALL`]（22 条，全部变体） | **整个命令目录** | Search Everywhere 的 `Actions` 档 |
+    ///
+    /// 真源的 Actions 档列的是 `LitheActionRegistry.actions(for:)` 全部动作
+    /// （`macos/Sources/Lithe/Models/LitheAction.swift:56-102`，35 条），不是命令面板那份短名单；
+    /// 所以这里也取全部变体 —— 包括只由菜单 / 快捷键进入的那批
+    /// （[`Self::OpenFile`]…[`Self::ReopenClosedTab`]、[`Self::ToggleMenuBar`] 等）。
+    /// 它们每一条都能被 `ShellWorkspace::run_command_id` 执行（那个 `match` 覆盖全部变体），
+    /// 所以列出来不会出现"点了没反应"的动作。
+    ///
+    /// ⚠️ **这是子集**：真源命令目录 `LitheCommandCatalog.swift:129-182` 有 39 条，
+    /// 本侧只有 22 条（缺的能力在 gpui 侧还不存在）。**顺序 = 变体声明顺序**，
+    /// 所以新增变体时把它加在枚举末尾、并同步补进这里。
+    pub const ALL: [CommandId; 22] = [
+        Self::OpenSettings,
+        Self::OpenAppearanceSettings,
+        Self::SwitchToLightTheme,
+        Self::SwitchToDarkTheme,
+        Self::ToggleTerminal,
+        Self::ToggleMaven,
+        Self::ToggleStatusBar,
+        Self::ToggleMenuBar,
+        Self::SaveBuffer,
+        Self::OpenCommandPalette,
+        Self::OpenQuickOpen,
+        Self::OpenSearchEverywhere,
+        Self::OpenReplaceInFiles,
+        Self::NavigateToDefinition,
+        Self::OpenFile,
+        Self::CloseTab,
+        Self::CloseOtherTabs,
+        Self::CloseAllTabs,
+        Self::CloseSavedTabs,
+        Self::CloseTabsToLeft,
+        Self::CloseTabsToRight,
+        Self::ReopenClosedTab,
+    ];
+
     /// 诊断行与搜索关键词用的稳定 id（**改了就是改可 grep 的契约**）。
     pub const fn id(self) -> &'static str {
         match self {

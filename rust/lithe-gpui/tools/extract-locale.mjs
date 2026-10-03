@@ -844,7 +844,7 @@ const GPUI_ONLY_KEYS = [
   },
   // ── Search Everywhere 浮层（U17 第三件）──────────────────────────────
   //
-  // 八条全部来自 macOS 真源，但**不在 Windows catalog 里**：`SearchEverywhereView.swift`
+  // 十二条全部来自 macOS 真源，但**不在 Windows catalog 里**：`SearchEverywhereView.swift`
   // 用的是 SwiftUI 的 `LocalizedStringKey` 字面量（scope 的 `rawValue` 与
   // `emptyResultsMessage`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings`，
   // 英文在 `en.lproj` 里**没有对应条目**（回落到字面量本身）。所以 en 逐字取那句英文。
@@ -920,6 +920,34 @@ const GPUI_ONLY_KEYS = [
     en: "No matches in Text",
     reason:
       "Text scope 的空态。出处：`SearchEverywhereView.swift:89-90` + `Localizable.strings:1168`；en 同上。",
+  },
+  {
+    key: "searchEverywhere.scope.actions",
+    zh: "操作",
+    en: "Actions",
+    reason:
+      "scope 标签行的第五个标签（`lithe-gpui/crates/workbench/src/search_model.rs` 的 `SearchEverywhereScope::ALL`；U17 后续切片补上 Actions 这一档）。出处：macOS 真源 `SearchEverywhereScope.actions` 的 rawValue 是 \"Actions\"（`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:10`，真源 `allCases` 里它排在 Symbols 之后、Text 之前），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings:886`（\"Actions\" = \"操作\"）。`en.lproj` 里没有对应条目（英文回落到字面量本身，所以 en 逐字取那句）。**不借 `menu.*` 里的任何键**：`locale.ts` 里没有 scope 名，而本浮层另外五个 scope 名各自已有一条同族键，混用会漂移。",
+  },
+  {
+    key: "searchEverywhere.noMatches.actions",
+    zh: "操作中没有匹配项",
+    en: "No matches in Actions",
+    reason:
+      "Actions scope 的空态（U17 后续切片）。出处：真源 `SearchEverywhereResultSource.actions.emptyResultsMessage` 返回字面量 \"No matches in Actions\"（`SearchEverywhereView.swift:87-88`），中文 `macos/Resources/zh-Hans.lproj/Localizable.strings:1169`（\"操作中没有匹配项\"）；en 逐字取那句字面量（`en.lproj` 里没有这一条）。",
+  },
+  {
+    key: "searchEverywhere.noMatchingCommands",
+    zh: "没有匹配的命令",
+    en: "No matching commands",
+    reason:
+      "`/` 命令模式的空态（U17 后续切片补上 `/` 模式）。出处：真源 `SearchEverywhereResultSource.commands.emptyResultsMessage` 返回字面量 \"No matching commands\"（`SearchEverywhereView.swift:77-78`）—— 它与六个 scope 的空态是**两个来源**（真源的 `resultSource` 把 `.commands` 单列），所以另起一条键而不是复用 `noMatches.actions`；中文 `macos/Resources/zh-Hans.lproj/Localizable.strings:48`（\"没有匹配的命令\"），en 逐字取那句字面量。",
+  },
+  {
+    key: "searchEverywhere.typeSlash",
+    zh: "输入 / 查看命令",
+    en: "Type / to see commands",
+    reason:
+      "查询框为空时那句 `/` 命令模式的提示（U17 后续切片）。出处：真源 `SearchEverywhereView.swift:266-270` 的 `Text(\"Type / to see commands\")`（只在 `query.isEmpty()` 时叠在输入框里）；中文 `macos/Resources/zh-Hans.lproj/Localizable.strings:1139`（\"输入 / 查看命令\"），en 逐字取那句。本侧把它接进 `Command` 的 placeholder —— 位置与显隐条件（查询为空时才可见）与真源一致，所以**替换**了原先借用查找面板的 `search.gpui.queryPlaceholder`（真源这一档本来就没有 placeholder）。",
   },
   // ── Replace in Files 浮层（U17 第四件）──────────────────────────────
   //

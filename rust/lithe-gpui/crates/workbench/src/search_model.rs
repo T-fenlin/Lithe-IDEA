@@ -24,6 +24,27 @@
 //! `node_modules` —— 那都该改 Core，不该在这里加一层。宿主今天连可见性数组都不传
 //! （与 `crate::search_index` 同一个理由：少一个会漂移的字段）。
 //!
+//! ## 唯一的例外：`Actions` / `/` 命令模式的候选**不在 Core**
+//!
+//! [`action_matches`] 是宿主侧的匹配规则，它与上面那条"匹配属于 Core"**不矛盾**：
+//! 这一档的候选目录是**宿主自己的命令表**（`crate::command_palette::CommandId` 的 24 个变体，
+//! 投影见 [`action_rows`]），Core 不可能知道它 —— Core 只认识工作区文件与索引里的符号。
+//! 规则本身也不是新发明的，它逐条照真源 `LitheAction.matches`
+//! （`macos/Sources/Lithe/Models/LitheAction.swift:37-51`）：**去空白 + 转小写后的子序列匹配**，
+//! 候选串 = `title + subtitle + group`（同文件 `:35` 的 `searchText`），空 query 恒真。
+//!
+//! 上游那两套匹配器**都不可复用**，这也是"只能自己写一个"的证据：
+//!
+//! 1. Core 的 `search_with_index`（`rust/lithe-core/src/project/files.rs:190-268`）的输入是
+//!    工作区内容，压根没有"命令目录"这一项；
+//! 2. 命令面板的谓词**私有**：`gpui-component-0.7.0/src/command/state.rs:332` 的
+//!    `fn item_matches(&self, …)` 不是 `pub fn`，宿主拿不到；而且它匹配的是 `CommandItem`
+//!    的 label / keywords，与真源的"title + subtitle + group"不是同一条规则。
+//!
+//! 所以本仓有三处匹配，**判据来源不同、取值域互不重叠**：Core（文件 / 内容 / 类型 / 符号）、
+//! 上游命令面板（label / keywords，私有）、以及这里的宿主命令目录（[`action_matches`]）。
+//! 前两处本模块一点都不碰。
+//!
 //! ## 契约出处（写成字段名与行号，便于对着 Core 复核）
 //!
 //! - 命令名 `workspace.search`：`rust/lithe-core/src/protocol/command.rs:360`；
@@ -43,6 +64,12 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+
+// `CommandAction` 是**数据**（`id` / `category` / `label` / `description` / `icon`），由
+// `crate::workspace::command_action` 这个无副作用的纯函数产出；它身上唯一与界面有关的只有
+// `icon` 这个字形的句柄。Actions 档的行型**直接复用它**，不为这一档再定义一份字段重复的
+// 行型（那正是"不要第二份目录"的另一面）—— 同一个动作在命令面板与 Actions 档里是同一份数据。
+use crate::command_palette::CommandAction;
 
 /// `workspace.search`（`protocol/command.rs:360`）。
 pub(crate) const SEARCH_COMMAND: &str = "workspace.search";
@@ -443,24 +470,31 @@ pub(crate) fn quick_open_rows(matches: &[Match]) -> Vec<QuickOpenRow> {
 }
 
 // ---------------------------------------------------------------------------
-// Search Everywhere（`workspace.searchEverywhere` 的五个 scope）
+// Search Everywhere（`workspace.searchEverywhere` 的四个 Core scope + Actions）
 // ---------------------------------------------------------------------------
 
 /// Search Everywhere 的 scope。
 ///
-/// ## 真源与有意收窄
+/// ## 真源六个，本侧六个（`Actions` 是 U17 后续切片补上的）
 ///
-/// 真源有**六个**（`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:5-14`：
-/// `All` / `Classes` / `Files` / `Symbols` / `Actions` / `Text`）。本侧做**五个**：
+/// 真源 `allCases`：`All` / `Classes` / `Files` / `Symbols` / `Actions` / `Text`
+/// （`macos/Sources/Lithe/Views/Search/SearchEverywhereView.swift:5-14`）。本侧逐格照抄，
+/// 一个不少、相对顺序也不变。
 ///
-/// - `Actions` **不是工作区搜索**：它走宿主自己的命令目录，是另一件事（后续切片）。
+/// ## 两种来源，判据是 [`Self::is_core_backed`]
 ///
-/// `Classes` 是 [U17 后续切片]：真源把它映射到 `classMatches`（同文件 `:130-131`），
-/// 而 Core 的符号扫描把 `kind == "type"`（类 / 接口 / 枚举 / record）单独攒进 `types`
-/// （`rust/lithe-core/src/project/files.rs:312-315`）—— 所以它的取法就是
-/// [`MatchKind::is_type`]，**不是** Symbols 那一档的另一个视图（两者在 Core 里是两种 kind）。
+/// | scope | 数据源 | 真源出处 |
+/// | --- | --- | --- |
+/// | `All` / `Classes` / `Files` / `Symbols` / `Text` | Core `workspace.searchEverywhere` 的命中投影 | `SearchEverywhereView.swift:120-137` |
+/// | `Actions` | **宿主命令目录**（[`action_rows`]），与 Core 无关 | 同文件 `:138-139`（`actionMatches(query)`） |
 ///
-/// 与 Core `kind` 的映射（全都不重排、不重筛，保持 Core 返回的顺序）：
+/// ⚠️ `Actions` **不是工作区搜索**：真源那一档的候选是 `LitheActionRegistry`
+/// （`macos/Sources/Lithe/Models/LitheAction.swift:56-102` 的 35 条动作），本侧的对应物是
+/// [`crate::command_palette::CommandId`] 的 **24 个变体**。所以这一档显示的**永远是子集**
+/// （宿主目录 24 条 vs 真源命令目录 `LitheCommandCatalog.swift:129-182` 的 39 条）——
+/// 不假装等价，UI-MAP 里同样写明。
+///
+/// ## scope ↔ Core `kind`（只对五个 Core scope 成立）
 ///
 /// | scope | Core `kind` | 真源出处 |
 /// | --- | --- | --- |
@@ -472,7 +506,7 @@ pub(crate) fn quick_open_rows(matches: &[Match]) -> Vec<QuickOpenRow> {
 ///
 /// ⚠️ **All 不含 `content`** 是真源明写的取舍：正文命中只在 Text 标签页出现，
 /// 避免与 Find in Files 重叠（`SearchEverywhereView.swift:123-125` 的注释）。
-/// 这一条**没有**因为新增 Classes 而改变：All 仍是 `file + type + symbol` 三段。
+/// 这一条**没有**因为新增 Classes 或 Actions 而改变：All 仍是 `file + type + symbol` 三段。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SearchEverywhereScope {
     /// 名字类命中三段拼接：文件 + 类型 + 符号。
@@ -483,6 +517,8 @@ pub(crate) enum SearchEverywhereScope {
     Files,
     /// 非类型符号名命中。
     Symbols,
+    /// **宿主命令目录**里的动作（**不发 Core 调用**，见 [`Self::is_core_backed`]）。
+    Actions,
     /// 文件正文行命中。
     Text,
 }
@@ -491,13 +527,14 @@ impl SearchEverywhereScope {
     /// 标签行里的顺序 = Tab / `←` / `→` 环绕的顺序（真源 `allCases` 的顺序，
     /// `SearchEverywhereView.swift:5-14`）。
     ///
-    /// 真源是 `All` / `Classes` / `Files` / `Symbols` / `Actions` / `Text`；本侧去掉没做的
-    /// `Actions`，**其余相对顺序逐格照抄** —— 所以 `Classes` 排在**第二位**（下标 1）。
-    pub(crate) const ALL: [Self; 5] = [
+    /// 真源六个，本侧六个、相对顺序逐格照抄 —— 所以 `Actions` 排在 **`Symbols` 之后、
+    /// `Text` 之前**（下标 4），这是本切片最容易写错的一格。
+    pub(crate) const ALL: [Self; 6] = [
         Self::All,
         Self::Classes,
         Self::Files,
         Self::Symbols,
+        Self::Actions,
         Self::Text,
     ];
 
@@ -508,6 +545,7 @@ impl SearchEverywhereScope {
             Self::Classes => "classes",
             Self::Files => "files",
             Self::Symbols => "symbols",
+            Self::Actions => "actions",
             Self::Text => "text",
         }
     }
@@ -519,6 +557,7 @@ impl SearchEverywhereScope {
             Self::Classes => "lithe.searchEverywhere.scope.classes",
             Self::Files => "lithe.searchEverywhere.scope.files",
             Self::Symbols => "lithe.searchEverywhere.scope.symbols",
+            Self::Actions => "lithe.searchEverywhere.scope.actions",
             Self::Text => "lithe.searchEverywhere.scope.text",
         }
     }
@@ -531,11 +570,22 @@ impl SearchEverywhereScope {
             Self::Classes => "lithe.searchEverywhere.noMatches.classes",
             Self::Files => "lithe.searchEverywhere.noMatches.files",
             Self::Symbols => "lithe.searchEverywhere.noMatches.symbols",
+            Self::Actions => "lithe.searchEverywhere.noMatches.actions",
             Self::Text => "lithe.searchEverywhere.noMatches.text",
         }
     }
 
-    /// 在五个 scope 上移动 `offset` 格并**环绕**。
+    /// 这一档的行**是不是来自 Core**（`workspace.searchEverywhere`）。
+    ///
+    /// 只有 `Actions` 是 `false`：它的行来自宿主命令目录（真源 `:138-139`），与工作区搜索
+    /// 无关。这个谓词是"**Actions 档不发 Core 调用**"这条约束的**单一判据**
+    /// —— 浮层的查询 / 防抖 / 采纳三条路径都只看它（配合 [`issues_core_request`]），
+    /// 而不各自 `match scope` 一遍。
+    pub(crate) fn is_core_backed(self) -> bool {
+        !matches!(self, Self::Actions)
+    }
+
+    /// 在六个 scope 上移动 `offset` 格并**环绕**。
     ///
     /// 真源 `moveScope(by:)` 就是 `(currentIndex + offset + count) % count`
     /// （`SearchEverywhereView.swift:542-547`），Tab / Shift-Tab 与 `←` / `→` 共用它
@@ -550,12 +600,18 @@ impl SearchEverywhereScope {
     }
 }
 
-/// Search Everywhere 结果列表的一行。
+/// Search Everywhere 结果列表的一行（**Core 命中**的行）。
 ///
-/// **一种行型承载五个 scope**，因为真源就是一行型：`resultRow` 画的是
+/// **一种行型承载五个 Core scope**，因为真源就是一行型：`resultRow` 画的是
 /// 「名字 → `:行号` → 所在目录 → 预览（只有 content）」
 /// （`SearchEverywhereView.swift:364-397`），而"名字"取 `symbolName ?? 文件名`
 /// （同文件 `:376`）。所以这里不按 scope 分三种行型 —— 那会在视图层生出一层无用的 `match`。
+///
+/// ⚠️ `Actions` 档的行**不是这一种**：它没有路径 / 行号 / 目录，画的是
+/// 「图标 + title + subtitle + group」（同文件 `:457-495` 的 `actionRow`），
+/// 行型是宿主命令目录的 `CommandAction`（见 [`action_rows`]）。两种行型在视图层由一个
+/// 二选一的枚举装在一起（与真源 `SearchItem` 的 `case result / case action`
+/// 同构，同文件 `:115-118`）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct EverywhereRow {
     /// 这一条来自哪一类命中（决定画不画行号、画不画预览）。
@@ -608,7 +664,12 @@ fn everywhere_row(item: &Match) -> EverywhereRow {
 /// - `Classes` / `Symbols` / `Text`：各按一个 `kind` 过滤，不排序、不去重
 ///   （Core 每个符号给一条，`search_index.rs:456-464`）；
 /// - `All`：`Files` 那一段 + `type` 一段 + `symbol` 一段，**不含 `content`**（见
-///   [`SearchEverywhereScope`] 的表）。
+///   [`SearchEverywhereScope`] 的表）；
+/// - `Actions`：**恒为空**。它的行来自宿主命令目录（[`action_rows`]），与 Core 命中无关 ——
+///   真源在 `resultSource` 那一层就把两条来源分开了（`SearchEverywhereView.swift:120-141`：
+///   `case .actions/.commands` 走 `actionMatches`，其余走 `feature.searchEverywhereResults`）。
+///   这里给一个空分支而不是 `unreachable!()`：调用方可能遍历 [`SearchEverywhereScope::ALL`]
+///   （诊断行就是这么数的），那时 `actions=` 报 0 是**正确**的读数（本函数不产生动作行）。
 pub(crate) fn everywhere_rows(
     scope: SearchEverywhereScope,
     matches: &[Match],
@@ -629,6 +690,7 @@ pub(crate) fn everywhere_rows(
         SearchEverywhereScope::Classes => named_rows(matches, MatchKind::is_type),
         SearchEverywhereScope::Symbols => named_rows(matches, MatchKind::is_symbol),
         SearchEverywhereScope::Text => content_rows(matches),
+        SearchEverywhereScope::Actions => Vec::new(),
         SearchEverywhereScope::All => {
             let mut rows = everywhere_rows(SearchEverywhereScope::Files, matches);
             rows.extend(named_rows(matches, MatchKind::is_type));
@@ -656,12 +718,146 @@ fn content_rows(matches: &[Match]) -> Vec<EverywhereRow> {
         .collect()
 }
 
-/// Search Everywhere 的四态。
+// ---------------------------------------------------------------------------
+// Actions scope 与 `/` 命令模式：候选目录在**宿主**，不在 Core
+// ---------------------------------------------------------------------------
+
+/// `/` 命令模式的空态键（真源 `.commands` 的 `emptyResultsMessage`，
+/// `SearchEverywhereView.swift:77-78`）。
+///
+/// **不是**任何一个 scope 的空态：真源给命令模式单独一句 "No matching commands"。
+pub(crate) const COMMANDS_EMPTY_KEY: &str = "lithe.searchEverywhere.noMatchingCommands";
+
+/// 这一串查询是不是真源的 `/` 命令模式
+/// （`SearchEverywhereView.swift:20-26` 的 `query.hasPrefix("/")`）。
+///
+/// 判据在**原始**查询串上（不去空白）：真源也是先 `hasPrefix` 再 `dropFirst`。
+pub(crate) fn is_command_query(query: &str) -> bool {
+    query.starts_with('/')
+}
+
+/// `/` 之后的命令查询串；不是命令模式时 `None`
+/// （`SearchEverywhereView.swift:20-26` 的 `String(query.dropFirst())`）。
+pub(crate) fn command_query(query: &str) -> Option<&str> {
+    query.strip_prefix('/')
+}
+
+/// 这一档 + 这个查询串走的是**宿主命令目录**吗（`Actions` 档或 `/` 命令模式）。
+///
+/// 真源的判据就是这两条（`SearchEverywhereView.swift:59-63` 先判 `commandQuery`、
+/// `:70` 再按 `scope == .actions`），本侧把它们合成一个谓词，浮层拿它决定"行从哪来"。
+///
+/// ⚠️ 它与 [`issues_core_request`] 的否定**不等价**：空查询同样不发 Core，但那是 Core 档
+/// 自己的 `idle` 态（列表空着、占位符说话），与命令目录无关 —— 所以两个谓词分开写，
+/// 免得"空查询"被当成"命令目录"。
+pub(crate) fn uses_command_catalog(scope: SearchEverywhereScope, query: &str) -> bool {
+    !scope.is_core_backed() || is_command_query(query)
+}
+
+/// 这一刻该不该发 `workspace.searchEverywhere`（**单一判据**）。
+///
+/// 三条一起成立才发：
+///
+/// 1. 这一档是 Core 档（[`SearchEverywhereScope::is_core_backed`]）—— `Actions` 的行来自
+///    宿主命令目录（真源 `:138-139`），一个 Core 请求都不该发；
+/// 2. 不是 `/` 命令模式 —— 真源把 `/` 判在 scope **之前**（`:59-63` 的 `commandQuery`
+///    非 nil 就直接走 `.commands`），那一档的候选同样是宿主命令目录；
+/// 3. 查询串不是空白 —— `search_everywhere` 对空查询直接回空（`files.rs:274-279`），
+///    发出去只是白跑一次跨进程往返。
+///
+/// ⚠️ 浮层的查询 / 防抖 / 采纳三条路径**都调它**（而不是各自 `match scope` 一遍），
+/// 所以"Actions 档不发 Core"这条约束只有一个判据、一处可测。
+pub(crate) fn issues_core_request(scope: SearchEverywhereScope, query: &str) -> bool {
+    !uses_command_catalog(scope, query) && !query.trim().is_empty()
+}
+
+/// 真源 `LitheAction.matches` 的逐条翻译：**去空白 + 转小写后的子序列匹配**。
+///
+/// ## 规则（照抄，不发明）
+///
+/// 出处 `macos/Sources/Lithe/Models/LitheAction.swift:37-51`：
+///
+/// 1. `query.lowercased().filter { !$0.isWhitespace }`（`:38-40`）；
+/// 2. 空 query **恒真**（`:41`）—— 所以 `/` 后面什么都不写时列出全部命令；
+/// 3. 候选串 `searchText = "\(title) \(subtitle) \(group.rawValue)"`，再 `lowercased()`
+///    （`:35`、`:42`）；
+/// 4. 顺着候选串走一遍，能按顺序把查询串的每个字符都匹配掉就成立（`:43-50`）。
+///
+/// ⚠️ 这里是**子序列**而不是子串：`"ose"` 能命中 `"Open Settings"`（`O`…`S`…`E`）。
+/// 真源就是这条规则，所以不许"顺手换成更聪明的模糊度打分" —— 那是另一件事、另一个切片。
+///
+/// ## 为什么它不能复用上游那两套（见模块文档的同名小节）
+///
+/// Core 的匹配只认工作区内容；命令面板的 `item_matches`
+/// （`gpui-component-0.7.0/src/command/state.rs:332`）是**私有** `fn`，宿主拿不到，
+/// 而且它匹配的是 `CommandItem` 的 label / keywords。所以这一套只能落在宿主侧。
+pub(crate) fn action_matches(query: &str, title: &str, subtitle: &str, group: &str) -> bool {
+    let normalized: Vec<char> = query
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect();
+    if normalized.is_empty() {
+        return true;
+    }
+    // 候选串与真源 `searchText` 逐字同构：三段用空格连起来（`LitheAction.swift:35`）。
+    let candidates = format!("{title} {subtitle} {group}").to_lowercase();
+    let mut wanted = normalized.into_iter().peekable();
+    for character in candidates.chars() {
+        match wanted.peek() {
+            // 查询串匹配完了：后面的字符不用再看。
+            None => break,
+            Some(&expected) if character == expected => {
+                wanted.next();
+            }
+            Some(_) => {}
+        }
+    }
+    wanted.peek().is_none()
+}
+
+/// Actions scope 的行：宿主命令目录按真源规则过滤后的那一段。
+///
+/// 三件事，全都不发明：
+///
+/// 1. **顺序 = 目录顺序**（`catalog` 进来的顺序；宿主侧是
+///    `crate::command_palette::CommandId::ALL` 的顺序）—— 真源 `actionMatches` 也只是
+///    `.map(SearchItem.action)`，不排序（`SearchEverywhereView.swift:138-139`）；
+/// 2. **过滤只看 [`action_matches`]**（候选串 = `label` + `description` + 分类名，对应真源的
+///    title + subtitle + group），空 query 恒真；
+/// 3. **不重排、不去重、不截断**（宿主目录只有 24 条，截断与否由目录自己决定）。
+///
+/// 行型**直接复用**命令面板的 [`CommandAction`]：同一个动作在两个入口里是同一份数据
+/// （label / description / category / icon 全都不复制），所以这里不为 Actions 档另定义一份
+/// 字段重复的行型，也不建第二份目录。
+///
+/// ⚠️ `catalog` 按值收：目录每帧由 [`crate::workspace::ShellWorkspace::action_catalog`] 现取
+/// （朝向 / 主题会变，缓存一份就会过期），过滤后直接交给视图，中间不做第二次克隆。
+pub(crate) fn action_rows(catalog: Vec<CommandAction>, query: &str) -> Vec<CommandAction> {
+    catalog
+        .into_iter()
+        .filter(|action| {
+            action_matches(
+                query,
+                &action.label,
+                &action.description,
+                &action.category_label(),
+            )
+        })
+        .collect()
+}
+
+/// Search Everywhere 的四态（**只描述 Core 那一侧**）。
 ///
 /// 与 [`QuickOpenState`] 的差别只有一处：`ready` / `loading` 装的是 **Core 的原始命中**
 /// 而不是投影后的行 —— 因为 scope 是**本地**开关（真源的搜索任务只按查询串作 key，
 /// `SearchEverywhereView.swift:207` 的 `.task(id: "\(queryMode.workspaceSearchTaskID)|…")`
-/// **不含 scope**），切 scope 不该再打一次 Core。
+/// **不含 scope**），切 Core scope 不该再打一次 Core。
+///
+/// ⚠️ `Actions` 档 / `/` 命令模式**不用这个枚举**：它们的行由 [`action_rows`] 现算
+/// （宿主命令目录，没有"在飞 / 过期 / 失败"这三个 Core 才有的状态）。
+/// 进 Actions 时这里的状态**保持不动**（上一次 Core 查询的命中留着），
+/// 这样切回 Core 档如果是同一个查询串就能立刻复用 —— 与真源"任务不因切 scope 重跑"同效。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum EverywhereState {
     /// 查询串为空：**不发 Core 调用**（`search_everywhere` 对空查询直接回空，`files.rs:274-279`）。
@@ -678,7 +874,7 @@ pub(crate) enum EverywhereState {
     Ready {
         /// 这一次查询的串。
         query: String,
-        /// Core 的命中（五个 scope 共用这一份）。
+        /// Core 的命中（五个 Core scope 共用这一份）。
         matches: Vec<Match>,
     },
     /// 失败了；`reason` 是可显示的原因（Core 的 `message` 或 [`ParseError::token`]）。
@@ -736,8 +932,23 @@ impl EverywhereState {
     }
 
     /// 这个 scope 下要画的行（**纯投影**，每次渲染现算 —— 与真源的 `visibleItems` 同构）。
+    ///
+    /// ⚠️ `Actions` 恒返回空（见 [`everywhere_rows`]）：那一档的行来自 [`action_rows`]。
     pub(crate) fn rows(&self, scope: SearchEverywhereScope) -> Vec<EverywhereRow> {
         everywhere_rows(scope, self.matches())
+    }
+
+    /// 手上这份命中**就是这个查询串**的 `ready` 结果吗。
+    ///
+    /// 用途只有一个：从 `Actions` / `/` 模式切**回** Core 档时，决定要不要补发一次查询。
+    ///
+    /// - 同一个查询串 + 已经是 `Ready` ⇒ 复用，不重发（真源的搜索任务不因切 scope 重跑，
+    ///   `SearchEverywhereView.swift:207` 的任务 id 只有查询串，没有 scope）；
+    /// - `Loading` 不算：进 `Actions` 时在飞的请求已经被 `timeline.abandon()` 撤掉
+    ///   （`Actions` 档不发 Core），那一份**没有**在跑的请求，必须重发；
+    /// - `Idle` / `Failed` 也不算（手上的 `query()` 分别是空串与失败的那个串）。
+    pub(crate) fn is_ready_for(&self, query: &str) -> bool {
+        matches!(self, Self::Ready { query: ready, .. } if ready == query.trim())
     }
 }
 
@@ -1785,7 +1996,7 @@ mod tests {
         assert_eq!(quick_open_rows(&matches).len(), 1);
     }
 
-    // ---- Search Everywhere（五个 scope 的投影；全是纯函数，无时钟 / 无 I/O） ----
+    // ---- Search Everywhere（五个 Core scope 的投影 + Actions 档；全是纯函数，无时钟 / 无 I/O） ----
 
     /// 一份典型的 `workspace.searchEverywhere` 响应，顺序就是 Core 的顺序
     /// （`files.rs:326-330`：file → types → symbols → content）。
@@ -1864,6 +2075,11 @@ mod tests {
         assert!(
             !all.iter().any(|row| row.kind.is_content()),
             "All **不含** content：正文命中只在 Text 标签页出现，避免与 Find in Files 重叠"
+        );
+
+        assert!(
+            everywhere_rows(SearchEverywhereScope::Actions, &matches).is_empty(),
+            "Actions 不是 Core 投影：它的行来自宿主命令目录（`action_rows`），这里恒为空"
         );
     }
 
@@ -1947,19 +2163,19 @@ mod tests {
         assert_eq!(matches[1].symbol_name.as_deref(), Some("A"));
     }
 
-    /// Tab / `←` / `→` 的环绕：`(i + offset) mod 5`，两个方向都要绕回来
+    /// Tab / `←` / `→` 的环绕：`(i + offset) mod 6`，两个方向都要绕回来
     /// （真源 `SearchEverywhereView.swift:542-547`）。
     ///
     /// 同时钉住**标签顺序**：真源 `allCases` 是
     /// `All` / `Classes` / `Files` / `Symbols` / `Actions` / `Text`（`:5-14`），
-    /// 本侧去掉没做的 `Actions` 后相对顺序逐格不变 —— `Classes` 排**第二位**。
+    /// 本侧六档逐格照抄 —— `Actions` 排**第五位**（下标 4，在 `Symbols` 之后、`Text` 之前）。
     #[test]
     fn scopes_cycle_with_wrap_around_in_both_directions() {
-        assert_eq!(SearchEverywhereScope::ALL.len(), 5);
+        assert_eq!(SearchEverywhereScope::ALL.len(), 6);
         assert_eq!(
             SearchEverywhereScope::ALL.map(|scope| scope.token()),
-            ["all", "classes", "files", "symbols", "text"],
-            "Tab 顺序照真源 allCases（去掉本侧没做的 Actions）"
+            ["all", "classes", "files", "symbols", "actions", "text"],
+            "Tab 顺序照真源 allCases（Actions 在 Symbols 之后、Text 之前）"
         );
         assert_eq!(
             SearchEverywhereScope::All.moved(1),
@@ -1970,20 +2186,32 @@ mod tests {
             SearchEverywhereScope::Files
         );
         assert_eq!(
+            SearchEverywhereScope::Symbols.moved(1),
+            SearchEverywhereScope::Actions
+        );
+        assert_eq!(
+            SearchEverywhereScope::Actions.moved(1),
+            SearchEverywhereScope::Text
+        );
+        assert_eq!(
             SearchEverywhereScope::Text.moved(1),
             SearchEverywhereScope::All
+        );
+        assert_eq!(
+            SearchEverywhereScope::Text.moved(-1),
+            SearchEverywhereScope::Actions
         );
         assert_eq!(
             SearchEverywhereScope::All.moved(-1),
             SearchEverywhereScope::Text
         );
         assert_eq!(
-            SearchEverywhereScope::All.moved(-6),
+            SearchEverywhereScope::All.moved(-7),
             SearchEverywhereScope::Text,
             "负偏移绕圈要落在合法档位上（rem_euclid，不是裸取模）"
         );
         assert_eq!(
-            SearchEverywhereScope::Files.moved(5),
+            SearchEverywhereScope::Files.moved(6),
             SearchEverywhereScope::Files,
             "整圈回到原处"
         );
@@ -2028,6 +2256,251 @@ mod tests {
                 + symbols.len(),
             "All = Files 段 + Classes 段 + Symbols 段"
         );
+    }
+
+    // ---- Actions 档 / `/` 命令模式（U17 后续切片；候选目录在宿主，不在 Core）----
+    //
+    // 这一组全是纯函数、无时钟、无 I/O、**不依赖语言**：合成目录里的 label / description
+    // 都是测试字面量（`action_rows` 会去取分类名，而那是 `tr(..)` 出来的 —— 所以断言只挑
+    // 与语言无关的查询串，见每条测试的说明）。
+
+    /// 一份**合成**的宿主命令目录（3 条，字段都是测试字面量）。
+    ///
+    /// 用合成数据而不是真源文案：`action_rows` 的过滤要读 `label` / `description` / 分类名，
+    /// 真源文案会随 locale 变，测试就会"在英文下过、在中文下挂"。
+    fn action_fixture() -> Vec<CommandAction> {
+        use gpui_kit::SharedString;
+        use gpui_kit::component::Icon;
+
+        use crate::command_palette::{Category, CommandId};
+
+        let entry = |id, category, label: &str, description: &str| CommandAction {
+            id,
+            category,
+            label: SharedString::from(label),
+            description: SharedString::from(description),
+            icon: Icon::default(),
+        };
+        vec![
+            entry(
+                CommandId::OpenSettings,
+                Category::Settings,
+                "Open Settings",
+                "Configure editor",
+            ),
+            entry(
+                CommandId::ToggleTerminal,
+                Category::View,
+                "Toggle Terminal",
+                "Show or hide terminal",
+            ),
+            entry(
+                CommandId::SaveBuffer,
+                Category::View,
+                "Save Buffer",
+                "Write the active buffer",
+            ),
+        ]
+    }
+
+    /// 真源 `LitheAction.matches`（`LitheAction.swift:37-51`）的五类用例：
+    /// 大小写、空白、子序列、非子序列、空 query。
+    #[test]
+    fn action_matcher_is_a_case_insensitive_whitespace_stripped_subsequence() {
+        // 1. 大小写不敏感（两边都 lowercased）。
+        assert!(action_matches("OPENSET", "Open Settings", "", ""));
+        assert!(action_matches("openseT", "Open Settings", "", ""));
+        assert!(action_matches("open", "OPEN", "", ""));
+        // 2. 查询串里的空白被去掉（`filter { !$0.isWhitespace }`）。
+        assert!(action_matches("open set", "Open Settings", "", ""));
+        assert!(action_matches("  o p e n  ", "Open Settings", "", ""));
+        // 3. 子序列（不要求连续、不要求词边界）。
+        assert!(action_matches("ose", "Open Settings", "", ""));
+        assert!(action_matches("tgle", "Toggle Terminal", "", ""));
+        // 4. 非子序列：缺字符 / 顺序反了 / 多一个字符。
+        assert!(!action_matches("openz", "Open Settings", "", ""));
+        assert!(
+            !action_matches("gnittes", "Open Settings", "", ""),
+            "顺序必须一致：反过来不算命中"
+        );
+        assert!(
+            !action_matches("openq", "Open Settings", "", ""),
+            "候选串里没有的字符永远不命中（`openn` 反而**会**命中：`settings` 里还有 n）"
+        );
+        // 5. 空 query 恒真（含全是空白的 query）—— `/` 后面什么都不写时列出全部命令。
+        assert!(action_matches("", "Open Settings", "", ""));
+        assert!(action_matches("   ", "Open Settings", "", ""));
+        assert!(action_matches("\t\n", "any", "thing", "here"));
+
+        // 候选串是 `title + subtitle + group` 三段拼接（真源 `searchText`，`:35`）：
+        // 只写在 subtitle / group 里的词同样要能命中。
+        assert!(action_matches("configure", "Open", "Configure editor", ""));
+        assert!(action_matches("editor", "Open", "Configure editor", ""));
+        assert!(action_matches("navigation", "Back", "", "Navigation"));
+        assert!(
+            !action_matches("navigation", "Back", "", ""),
+            "group 真的进了候选串：去掉它之后同一个查询就不命中"
+        );
+        assert!(
+            !action_matches("editor", "Open", "", ""),
+            "subtitle 真的进了候选串：去掉它之后同一个查询就不命中"
+        );
+    }
+
+    /// Actions 档的行 = 宿主目录按真源规则过滤后的那一段：**顺序照目录**、
+    /// 空 query 恒真、命中的一定是子序列。
+    #[test]
+    fn action_rows_keep_the_catalog_order_and_the_source_matching() {
+        let ids = |rows: &[CommandAction]| {
+            rows.iter()
+                .map(|action| action.id.id().to_string())
+                .collect::<Vec<_>>()
+        };
+
+        // 空 query：三条全在，顺序 = 目录顺序（真源 `actionMatches` 也只 `.map`，不排序）。
+        assert_eq!(
+            ids(&action_rows(action_fixture(), "")),
+            ["open-settings", "toggle-terminal", "save-buffer"]
+        );
+
+        // 命中的那条留在原位；`opense` 只可能是 "Open Settings"（另外两条的候选串里
+        // 没有能在 `o` 之后接上 `p` 的字符，与分类名是中文还是英文无关）。
+        assert_eq!(
+            ids(&action_rows(action_fixture(), "opense")),
+            ["open-settings"],
+            "过滤不许改变顺序、也不许命中别的条目"
+        );
+
+        // 没有命中就是空表（不是"退回全部"）。
+        assert!(action_rows(action_fixture(), "zzzz").is_empty());
+
+        // 行型就是宿主目录的那一条本身：label / description / 分类都不复制、不重写。
+        // 查询串刻意挑 `buffer`：它是第三条独有的词（子序列匹配会跨词、跨 subtitle 与
+        // 分类名，所以"看起来只属于某一条"的词不一定真的只命中那一条 —— 例如 `save`
+        // 也会被 "Toggle Terminal Show or hide terminal View" 命中）。
+        let rows = action_rows(action_fixture(), "buffer");
+        assert_eq!(rows.len(), 1, "只有 Save Buffer 的候选串里有 b…u…f…f…e…r");
+        assert_eq!(rows[0].label.as_ref(), "Save Buffer");
+        assert_eq!(rows[0].description.as_ref(), "Write the active buffer");
+        assert_eq!(rows[0].id.id(), "save-buffer");
+    }
+
+    /// `/` 命令模式的判定在**原始**查询串上（真源 `hasPrefix("/")` → `dropFirst()`）。
+    #[test]
+    fn command_mode_is_decided_on_the_raw_query_before_the_scope() {
+        assert!(is_command_query("/"));
+        assert!(is_command_query("/open"));
+        assert!(is_command_query("/ open"));
+        assert!(!is_command_query("open"), "没有斜杠就是工作区查询");
+        assert!(
+            !is_command_query(" open"),
+            "真源不去空白：前导空格之后就不再是命令模式"
+        );
+        assert!(!is_command_query(""));
+
+        assert_eq!(command_query("/open"), Some("open"));
+        assert_eq!(
+            command_query("/"),
+            Some(""),
+            "只有斜杠时命令查询串是空的 ⇒ 空 query 恒真 ⇒ 列出全部命令"
+        );
+        assert_eq!(command_query("open"), None);
+        assert_eq!(command_query(""), None);
+    }
+
+    /// **"Actions 档不发 Core"** 的纯函数判据：`Actions` 档（任何查询串）与 `/` 命令模式
+    /// （任何 scope）都不发 Core 请求，其余五档 + 非空非 `/` 查询才发。
+    #[test]
+    fn actions_and_command_mode_never_issue_a_core_request() {
+        // 只有 Actions 一档不是 Core 档。
+        assert!(!SearchEverywhereScope::Actions.is_core_backed());
+        assert_eq!(
+            SearchEverywhereScope::ALL
+                .iter()
+                .filter(|scope| !scope.is_core_backed())
+                .count(),
+            1,
+            "六个档里只有 Actions 走宿主命令目录"
+        );
+
+        // 1. Actions 档：**任何**查询串都不发（含非空、含 `/`、含空白）。
+        for query in ["", "open", "/open", "   ", "open settings"] {
+            assert!(
+                !issues_core_request(SearchEverywhereScope::Actions, query),
+                "Actions 档不许发 Core 请求（query={query:?}）"
+            );
+            assert!(
+                uses_command_catalog(SearchEverywhereScope::Actions, query),
+                "Actions 档的行一律来自宿主命令目录（query={query:?}）"
+            );
+        }
+
+        // 2. `/` 命令模式：**任何** scope 下都不发（真源把 `/` 判在 scope 之前）。
+        for scope in SearchEverywhereScope::ALL {
+            for query in ["/", "/open", "/open settings"] {
+                assert!(
+                    !issues_core_request(scope, query),
+                    "{scope:?} 在 `/` 模式下不许发 Core 请求（query={query:?}）"
+                );
+                assert!(uses_command_catalog(scope, query));
+            }
+        }
+
+        // 3. 其余五档：非空、非 `/` 查询才发；空查询与全空白不发。
+        for scope in SearchEverywhereScope::ALL {
+            if !scope.is_core_backed() {
+                continue;
+            }
+            assert!(issues_core_request(scope, "open"), "{scope:?}");
+            assert!(issues_core_request(scope, "  open  "), "{scope:?}");
+            assert!(!issues_core_request(scope, ""), "{scope:?} 空查询不发");
+            assert!(!issues_core_request(scope, "   "), "{scope:?} 全空白不发");
+            assert!(!uses_command_catalog(scope, "open"));
+            assert!(
+                !uses_command_catalog(scope, " "),
+                "空查询是 Core 档自己的 idle 态，**不是**命令目录"
+            );
+        }
+    }
+
+    /// `Actions` 档的行与 Core 命中**完全无关**：Core 有命中时它也是空的，而且它不影响
+    /// 其余五档的投影（`All` 仍是 file + type + symbol、仍不含 content）。
+    #[test]
+    fn the_actions_scope_never_projects_core_matches() {
+        let matches = everywhere_fixture();
+        assert!(everywhere_rows(SearchEverywhereScope::Actions, &matches).is_empty());
+        // 即使 `Ready` 里躺着 Core 命中，Actions 档也一行都不取。
+        assert!(rows_ready(SearchEverywhereScope::Actions).is_empty());
+        // 其余五档不受影响（同一份命中，投影照旧）。
+        assert_eq!(rows_ready(SearchEverywhereScope::Files).len(), 2);
+        assert_eq!(rows_ready(SearchEverywhereScope::Classes).len(), 1);
+        assert_eq!(rows_ready(SearchEverywhereScope::Symbols).len(), 2);
+        assert_eq!(rows_ready(SearchEverywhereScope::Text).len(), 2);
+    }
+
+    /// `Ready` 态下某个 scope 能画出的行（`Actions` 恒空）。
+    fn rows_ready(scope: SearchEverywhereScope) -> Vec<EverywhereRow> {
+        EverywhereState::ready("alpha", &everywhere_fixture()).rows(scope)
+    }
+
+    /// 从 `Actions` 档切回 Core 档时"要不要补一次查询"的判据：只有**同一个查询串的
+    /// `Ready`** 才能复用。
+    #[test]
+    fn a_ready_result_is_reused_only_for_the_same_query() {
+        let state = EverywhereState::ready("alpha", &everywhere_fixture());
+        assert!(state.is_ready_for("alpha"));
+        assert!(
+            state.is_ready_for("  alpha  "),
+            "比较前 trim（查询一律 trim 后发出去）"
+        );
+        assert!(!state.is_ready_for("beta"), "换了查询串就得重发");
+        assert!(!state.is_ready_for(""), "空查询不是这一次的命中");
+
+        // `Loading` 不算：进 Actions 时在飞的请求已经被 `timeline.abandon()` 撤掉，
+        // 那一份**没有**在跑的请求，切回来必须重发。
+        assert!(!EverywhereState::loading("alpha", &[]).is_ready_for("alpha"));
+        assert!(!EverywhereState::Idle.is_ready_for("alpha"));
+        assert!(!EverywhereState::failed("alpha", "invalid_request").is_ready_for("alpha"));
     }
 
     /// Search Everywhere 的 `maxResults` **显式抬高**（B10 的符号饥饿绕行）：
