@@ -32,6 +32,7 @@ use gpui_kit::{
     Styled as _, Subscription, WeakEntity, Window, div, relative, rems,
 };
 
+use lithe_gpui_shared::design::{ROW_LINE_HEIGHT, ROW_RADIUS};
 use lithe_gpui_shared::icons::{FileIcon, idea, idea_icon_image};
 use lithe_gpui_shared::tr;
 
@@ -112,17 +113,14 @@ const NO_MATCHING_FILES_KEY: &str = "lithe.fileExplorer.noMatchingFiles";
 /// `10 + depth × 16`），不是测量几何，所以 rem 化后缩进随界面字号缩放。
 const BASE_INDENT: f32 = 10.;
 const INDENT_STEP: f32 = 16.;
-/// 行圆角 4px（`file-explorer-tree.css:7` `--file-tree-row-radius: 4px`）。
-///
-/// 与已随头部行删除的 `HEADER_BUTTON_RADIUS`（6.4）同因保留应用层具名常量：它不在 gpui 的
-/// rem 档位上，也不能从主题读 —— `ThemeConfig.radius` 是 `Option<usize>`
-/// （`gpui-component-0.6.6/src/theme/schema.rs:66-68`），装不下 Lithe 的 `--radius × k` 阶梯
-/// （4.8 / 6.4 / 11.2）。消费方式仍是 rem：`div` 上的 `Styled::rounded` 吃 `AbsoluteLength`，
-/// 调用点直接写 `rems(ROW_RADIUS / 16.)` ——「不在档位上」不是保留 `px(...)` 的理由。
-const ROW_RADIUS: f32 = 4.;
-/// 行高倍数 1.35（`theme.css:4` `--leading-row: 1.35`；`sidebar-tree.tsx:241` 的 `leading-row`）——
-/// 是倍数不是长度，`line_height(relative(..))` 原样保留。
-const ROW_LINE_HEIGHT: f32 = 1.35;
+// 行圆角与行高倍数的**共同 owner 不在这里**：`ROW_RADIUS`（4）与 `ROW_LINE_HEIGHT`（1.35）
+// 同时被 `git` 的更改列表行消费，两条原先各自硬写一份字面相同的数字（值相同纯属巧合）。
+// 现按《设计指南》§「对齐细节」（`design-guides.md:188`）"相等关系来自同一个 spacing token"
+// 收敛到 `lithe_gpui_shared::design`，本文件只 import。
+//
+// 消费方式仍是 rem：`div` 上的 `Styled::rounded` 吃 `AbsoluteLength`，调用点写
+// `rems(ROW_RADIUS / 16.)`（rem base = 16px）——「不在 gpui 档位上」不是保留 `px(...)` 的理由；
+// 也不能从主题读（`ThemeConfig.radius` 是 `Option<usize>`，装不下 Lithe 的 `--radius × k` 阶梯）。
 
 // ---------------------------------------------------------------------------
 // 状态：树体的加载状态（本 Entity 自己保留）

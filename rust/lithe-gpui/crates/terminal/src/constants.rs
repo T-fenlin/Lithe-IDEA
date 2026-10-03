@@ -147,7 +147,8 @@ pub(crate) fn terminals_aria() -> SharedString {
 // | 终端内容左右内边距 `pl-4` | 16 | `pl_4()` / `pr_4()` | `features/terminal/components/terminal.tsx:870` |
 // | 输入行外框上下 6 / 左右 12、行内间距 6、输入框高 28 | 6 / 12 / 6 / 28 | `py_1p5()` / `px_3()` / `gap_1p5()` / `h_7()` | `features/run/components/run-pane.tsx:454,462` |
 //
-// **档位外的值**（页签最大宽 200、chrome 圆角 4、状态行 24 − 4 = 20）不在上面那张 helper 表里，
+// **档位外的值**（chrome 圆角 4、状态行 24 − 4 = 20；页签最大宽 200 已移到
+// `lithe_gpui_shared::design`）不在上面那张 helper 表里，
 // 按《编码指南》写成 helper 底层的 `rems(P / 16.)`（`lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/docs/coding-guides.md:253,288`）；
 // 消费方只收 `Pixels` 的那几处（`Button::rounded` / `TabBar::max_width`）走 `terminal_view.rs`
 // 的 `rem_px(rem, P)` —— 同形于 `settings/src/dialog.rs:189-199`，按**当前** rem 基准求值。
@@ -156,13 +157,14 @@ pub(crate) fn terminals_aria() -> SharedString {
 // gpui 的档位是 `text_xs()`=12 / `text_sm()`=14：12 → `text_xs()`（等价）、
 // 13 → `text_sm()`（14px，经维护者确认的**有意**视觉改动）、终端字号 14 → `text_sm()`（等价）。
 
-/// 单个页签最大宽 200（`ui/tab-bar.tsx:257-267`）。
-///
-/// 200 不在 gpui 的固定 rem 档位上（档位里 48 → 192、56 → 224），没有 `max_w_50()`，所以它保持
-/// **规格像素值**这个身份，由调用点换算成 rem：`TabBar::max_width` 只收 `Pixels`，所以走
-/// `terminal_view.rs` 的 `rem_px(rem, TAB_MAX_WIDTH)`（= `rems(TAB_MAX_WIDTH / 16.)`）。
-/// 写成 `/ 4.` 就错了 —— 1rem = 16px，不是 4px。
-pub(crate) const TAB_MAX_WIDTH: f32 = 200.;
+// 单个页签最大宽 200 的**共同 owner 已在 `lithe_gpui_shared::design`**：终端页签与编辑器页签
+// （`editor/src/editor_view.rs`）用的是同一条页签规格（`ui/tab-bar.tsx:257-267`），两条原先各自
+// 硬写 200。按《设计指南》§「对齐细节」（`design-guides.md:188`）"相等关系来自同一个 spacing
+// token"，值只留一份；`terminal_view.rs` 直接 `use lithe_gpui_shared::design::TAB_MAX_WIDTH`。
+//
+// 消费方式不变：`TabBar::max_width` 只收 `Pixels`，所以走 `terminal_view.rs` 的
+// `rem_px(rem, TAB_MAX_WIDTH)`（= `rems(TAB_MAX_WIDTH / 16.)`）——写成 `/ 4.` 就错了，
+// 1rem = 16px，不是 4px。
 /// chrome 圆角 4px（`styles/theme.css:133` 的 `--lithe-chrome-radius: 4px`）。
 ///
 /// Lithe 的圆角阶梯（`--radius × k`）一律走应用层具名常量，不套 gpui 的 `rounded_sm()`/

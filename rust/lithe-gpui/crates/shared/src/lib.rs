@@ -11,6 +11,8 @@
 //! - [`i18n`]：`rust_i18n::t!` 的包装 + `{name}` 插值（前端文案语法是 `{count}`，
 //!   而 `rust-i18n` 4.2 只认 `%{count}`）。
 //! - [`rem_px`]：规格像素 → `Pixels` 的换算（只在固有方法只吃 `Pixels` 时用）。
+//! - `design`：跨 Feature 的**设计规格常量**的共同 owner（同一个设计量不再让每个视图各写一份
+//!   字面相同的数字）。**公开模块**：常量表本身就是一个命名空间（同 `icons` 的理由）。
 //! - `document`：版本化 JSON 文档的通用原语（解析、未知键保留、原子写）。由设置文档与
 //!   `.lithe/project.json` 两个真实使用方共享，**原样 `pub use` 到 crate 根**。
 //! - `workspace_config`：`.lithe/` 的路径真源、项目身份、"默认不共享"守卫。
@@ -22,6 +24,10 @@
 //! 所以直接发布 `pub use`，不让 `shared::core_client::CoreRequest` 这类实现路径成为契约）。
 
 mod core_client;
+// 跨 Feature 的设计规格常量（同一个设计量只定义一次）。**公开模块**而不是 `pub use`：
+// 调用点要写成 `lithe_gpui_shared::design::ROW_RADIUS`，常量表是命名空间，摊平到 crate 根
+// 只会让 `ROW_RADIUS` / `TAB_MAX_WIDTH` 这类短名污染 `shared::*`。理由见 `src/design.rs`。
+pub mod design;
 mod document;
 mod i18n;
 // 图标资源路径清单（`lithe-gpui/assets/icons/idea/icons/**` 的 Rust 等价物）。**公开模块**而不是

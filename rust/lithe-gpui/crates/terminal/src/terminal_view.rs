@@ -46,11 +46,12 @@ use gpui_kit::{
     ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
     StyleRefinement, Styled as _, Subscription, WeakEntity, Window, div, img, relative, rems,
 };
+use lithe_gpui_shared::design::TAB_MAX_WIDTH;
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
 use crate::constants::new_terminal_label;
 use crate::constants::{
-    CAPABILITY_NOTICE, CHROME_RADIUS, STATUS_LINE_HEIGHT, TAB_MAX_WIDTH, TERMINAL_LINE_HEIGHT,
+    CAPABILITY_NOTICE, CHROME_RADIUS, STATUS_LINE_HEIGHT, TERMINAL_LINE_HEIGHT,
     TERMINAL_PADDING_INLINE, choose_profile, clear_terminal, error_fallback, error_title,
     exit_code, failed, no_terminals, retry, running, scroll_to_end, succeeded, terminals_aria,
 };

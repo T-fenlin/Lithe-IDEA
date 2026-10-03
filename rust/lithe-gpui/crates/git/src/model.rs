@@ -69,6 +69,21 @@ use lithe_gpui_shared::{CoreClient, CoreRequest, tr, tr_args};
 // 也不能从主题读 —— `ThemeConfig.radius` 是 `usize`
 // （`gpui-component-0.6.6/src/theme/schema.rs:67-68`），装不下 4.8 / 6.4。
 // 这条只约束"用哪个数"，不约束"怎么写"：消费方式仍然是 `rems(半径 / 16.)`。
+//
+// ⚠️ **阶梯本身只定义一次**（下面的 `RADIUS_*`）：本文件里 7 个具名圆角常量原先各自硬写
+// `6.4` / `4.8`，值相同纯属巧合 —— 任一处被改动，两侧就静默分叉。《设计指南》§「对齐细节」
+// （`docs/gpui kit/0.7.0/docs/design-guides.md:188`）要求"相等关系来自同一个 spacing token"，
+// 所以它们全部从 `RADIUS_BASE` 派生。具名常量保留（每个名字锚定它的调用点），但**值不再独立**。
+
+/// Lithe 圆角阶梯的基准 `--radius: 8px`（真源 `theme.css:9`；`11.2 = × 1.4`、
+/// `6.4 = × 0.8`、`4.8 = × 0.6` 三条都能反推出 8）。
+pub(crate) const RADIUS_BASE: f32 = 8.;
+/// `rounded-sm` = `--radius × 0.6` = **4.8**。
+pub(crate) const RADIUS_SM: f32 = RADIUS_BASE * 0.6;
+/// `rounded-md` = `--radius × 0.8` = **6.4**。
+pub(crate) const RADIUS_MD: f32 = RADIUS_BASE * 0.8;
+/// `rounded-xl` = `--radius × 1.4` = **11.2**。
+pub(crate) const RADIUS_XL: f32 = RADIUS_BASE * 1.4;
 
 /// 「引用名」胶囊最大宽 240（`git-log-title-bar.tsx:32-39` 的 `max-w-60`）。
 ///
@@ -76,10 +91,10 @@ use lithe_gpui_shared::{CoreClient, CoreRequest, tr, tr_args};
 /// —— 这正是「档位外写 helper 底层的 `rems(P / 16.)`」的场合（`coding-guides.md:288` 的例外里
 /// **没有**"值不在档位上"这一类）。调用点：`.max_w(rems(REFERENCE_PILL_MAX_WIDTH / 16.))`。
 pub(crate) const REFERENCE_PILL_MAX_WIDTH: f32 = 240.;
-/// 「引用名」胶囊圆角 6.4（`git-log-title-bar.tsx:32-39`）—— 见上方圆角说明。
-pub(crate) const REFERENCE_PILL_RADIUS: f32 = 6.4;
-/// 图标按钮圆角 6.4（`ui/button.tsx:9`）—— 见上方圆角说明。
-pub(crate) const ICON_BUTTON_RADIUS: f32 = 6.4;
+/// 「引用名」胶囊圆角 `rounded-md`（`git-log-title-bar.tsx:32-39`）—— 见上方圆角说明。
+pub(crate) const REFERENCE_PILL_RADIUS: f32 = RADIUS_MD;
+/// 图标按钮圆角 `rounded-md`（`ui/button.tsx:9`）—— 见上方圆角说明。
+pub(crate) const ICON_BUTTON_RADIUS: f32 = RADIUS_MD;
 
 /// 筛选输入框最小宽 144（`git-commit-table.tsx:201` 的 `min-w-36`）。
 ///
@@ -154,8 +169,8 @@ pub(crate) const LABEL_MAX_WIDTH: f32 = 112.;
 /// 标签徽章字号 10（`git-graph-row.tsx:87-88`）：不在 gpui 的字号档位上；
 /// 调用点 `.text_size(rems(LABEL_FONT_SIZE / 16.))`。
 pub(crate) const LABEL_FONT_SIZE: f32 = 10.;
-/// 标签徽章圆角 6.4（`git-graph-row.tsx:87-88`）—— 见上方圆角说明。
-pub(crate) const LABEL_RADIUS: f32 = 6.4;
+/// 标签徽章圆角 `rounded-md`（`git-graph-row.tsx:87-88`）—— 见上方圆角说明。
+pub(crate) const LABEL_RADIUS: f32 = RADIUS_MD;
 /// 标签徽章纵向内边距 2（`git-graph-row.tsx:87-88`）—— 参与徽章高度的算术
 /// （`LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.`）；调用点
 /// `.h(rems((LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.) / 16.))`。
@@ -177,14 +192,14 @@ pub(crate) const REFERENCE_PANE_MIN_WIDTH: f32 = 140.;
 /// `.min_w(rems(INSPECTOR_PANE_MIN_WIDTH / 16.))`。
 pub(crate) const INSPECTOR_PANE_MIN_WIDTH: f32 = 220.;
 
-/// 引用栏工具栏按钮圆角 4.8（`git-reference-tree.tsx:357,371`）—— 见上方圆角说明。
-pub(crate) const REFERENCE_TOOLBAR_BUTTON_RADIUS: f32 = 4.8;
-/// HEAD 行圆角 6.4（`git-reference-tree.tsx:853`）—— 见上方圆角说明。
-pub(crate) const REFERENCE_HEAD_ROW_RADIUS: f32 = 6.4;
-/// 分区头圆角 6.4（`git-reference-tree.tsx:876`）—— 见上方圆角说明。
-pub(crate) const REFERENCE_SECTION_RADIUS: f32 = 6.4;
-/// 引用行圆角 4.8（`git-reference-tree.tsx:599`）—— 见上方圆角说明。
-pub(crate) const REFERENCE_ROW_RADIUS: f32 = 4.8;
+/// 引用栏工具栏按钮圆角 `rounded-sm`（`git-reference-tree.tsx:357,371`）—— 见上方圆角说明。
+pub(crate) const REFERENCE_TOOLBAR_BUTTON_RADIUS: f32 = RADIUS_SM;
+/// HEAD 行圆角 `rounded-md`（`git-reference-tree.tsx:853`）—— 见上方圆角说明。
+pub(crate) const REFERENCE_HEAD_ROW_RADIUS: f32 = RADIUS_MD;
+/// 分区头圆角 `rounded-md`（`git-reference-tree.tsx:876`）—— 见上方圆角说明。
+pub(crate) const REFERENCE_SECTION_RADIUS: f32 = RADIUS_MD;
+/// 引用行圆角 `rounded-sm`（`git-reference-tree.tsx:599`）—— 见上方圆角说明。
+pub(crate) const REFERENCE_ROW_RADIUS: f32 = RADIUS_SM;
 /// 引用树缩进基准 10 / 步长 14（`git-reference-tree.tsx:594`）—— 逐层缩进的算术
 /// （`.pl(rems((REFERENCE_INDENT_BASE + depth × REFERENCE_INDENT_STEP) / 16.))`）。
 ///

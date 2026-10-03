@@ -56,6 +56,7 @@ use gpui_kit::{
     rems,
 };
 
+use lithe_gpui_shared::design::{ROW_LINE_HEIGHT, ROW_RADIUS};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{tr, tr_args};
 
@@ -65,6 +66,7 @@ use crate::changes::{
     operation_action, stage, stage_all, unstage,
 };
 use crate::log_view::rem_px;
+use crate::model::{ICON_BUTTON_RADIUS, RADIUS_MD, RADIUS_XL};
 
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper
@@ -107,17 +109,17 @@ use crate::log_view::rem_px;
 // 调用点写 `rems(半径 / 16.)`（rem base = 16px，写 `/ 4.` 就错）——`div` 上的 `rounded` 是
 // `Styled::rounded(impl Into<AbsoluteLength>)`，能吃 `Rems`；`Button::rounded` 只吃
 // `ButtonRounded`（只有 `From<Pixels>`），那里走 `rem_px`。
+//
+// ⚠️ **圆角值的共同 owner 是 [`crate::model`]**：`--radius × k` 阶梯只在 `model.rs` 里定义
+// （`RADIUS_BASE` / `RADIUS_SM` / `RADIUS_MD` / `RADIUS_XL`），这里与 `log_view.rs` 的具名圆角
+// 全部从它派生 —— 原先 `ICON_BUTTON_RADIUS` 在本文件与 `model.rs` 各写了一份 `6.4`（同名同值
+// 两处定义），靠巧合相等；现在只有一份。行圆角与行高倍数（`ROW_RADIUS` / `ROW_LINE_HEIGHT`）
+// 与 `explorer` 的项目树行是同一个设计量，已收敛到 `lithe_gpui_shared::design`。
 
-/// 行 / 分类头圆角 4（`sidebar-tree.css` 的 `--file-tree-row-radius: 4px`）。
-const ROW_RADIUS: f32 = 4.;
-/// 行高倍数 1.35（`theme.css:4` `--leading-row`）—— 是倍数不是长度，原样保留。
-const ROW_LINE_HEIGHT: f32 = 1.35;
-/// 图标按钮圆角 6.4（`ui/button.tsx:9` 的 `rounded-md` = `--radius × 0.8`）。
-const ICON_BUTTON_RADIUS: f32 = 6.4;
-/// 提交面板外壳圆角 11.2（`ui/sidebar.tsx:75` 的 `rounded-xl` = `--radius × 1.4`）。
-const COMMIT_PANEL_RADIUS: f32 = 11.2;
-/// 提交面板内错误块圆角 6.4（`git-commit-panel.tsx:264-274` 的 `rounded-md`）。
-const COMMIT_ERROR_RADIUS: f32 = 6.4;
+/// 提交面板外壳圆角 `rounded-xl` = `--radius × 1.4`（`ui/sidebar.tsx:75`）。
+const COMMIT_PANEL_RADIUS: f32 = RADIUS_XL;
+/// 提交面板内错误块圆角 `rounded-md` = `--radius × 0.8`（`git-commit-panel.tsx:264-274`）。
+const COMMIT_ERROR_RADIUS: f32 = RADIUS_MD;
 /// 提交说明框最小高 64（`git-commit-panel.tsx:54-55` 的 `min-h-64`）。
 ///
 /// ⚠️ 走 `rems(64. / 16.)` 而不是 `px(64.)`：`Textarea::h` 吃 `DefiniteLength`

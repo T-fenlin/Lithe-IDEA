@@ -98,6 +98,7 @@ use gpui_kit::{
     Window, div, point, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
+use lithe_gpui_shared::design::TAB_MAX_WIDTH;
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{tr, tr_args};
 
@@ -134,14 +135,14 @@ pub(crate) use lithe_gpui_shared::rem_px;
 // 档位（`text_xs()`=12 / `text_sm()`=14）上，按《编码指南》用 **`text_sm()`（14px）**——
 // 13 → 14 是经维护者确认的**有意**视觉改动。
 
-/// 单个标签宽度上限 200px：`--lithe-tab-max-width`（12.5rem，`windows/tauri/src/styles/theme.css:123`，
-/// 用在 `windows/tauri/src/ui/tab-bar.tsx:260`）。**这是标签文字能截断的前提**。
-///
-/// 常量保持**规格像素值身份**（`f32`，值不变）。消费方式：`TabBar::max_width(impl Into<Pixels>)`
-/// （`gpui-component-0.6.6/src/tab/tab_bar.rs:118`）只吃 `Pixels`，所以调用点走
-/// `rem_px(cx.theme().font_size, TAB_MAX_WIDTH)`（见 [`rem_px`]）——「200 不在 rem 档位上」
-/// 不构成保留 `px(...)` 的理由，档位外本来就该写 helper 底层的 `rems(P / 16.)`。
-const TAB_MAX_WIDTH: f32 = 200.;
+// 单个标签宽度上限 200px 的**共同 owner 在 `lithe_gpui_shared::design`**：`TAB_MAX_WIDTH`
+// 不只编辑器页签用，终端页签（`terminal/src/constants.rs`）用的是同一条页签规格
+// （`ui/tab-bar.tsx:257-267`），两条原先各自硬写 200。《设计指南》§「对齐细节」
+// （`design-guides.md:188`）要求"相等关系来自同一个 spacing token"，所以收敛到一处、这里只 import。
+//
+// 消费方式：`TabBar::max_width(impl Into<Pixels>)`（`gpui-component-0.6.6/src/tab/tab_bar.rs:118`）
+// 只吃 `Pixels`，所以调用点走 `rem_px(cx.theme().font_size, TAB_MAX_WIDTH)`（见 [`rem_px`]）
+// ——「200 不在 rem 档位上」不构成保留 `px(...)` 的理由，档位外本来就该写 `rems(P / 16.)`。
 
 /// 滚轮增量换算用的行高兜底值：真机默认行高就是 **20**
 /// （`windows/tauri/src/features/editor/config/constants.ts:5` 的 `DEFAULT_LINE_HEIGHT: 20`；
