@@ -190,6 +190,15 @@ pub fn configure_request(
 /// 缺字段**不报错**：Core 的响应字段都是必填的（`git/setup.rs:68-79` 没有 `Option` 包裹
 /// 的 `#[serde(default)]`），但本侧按既有口径逐字段容错（同 `changes.rs::parse_changes`），
 /// 免得将来 Core 加字段/改形状时整个页面变成错误态。
+///
+/// ⚠️ **保留项**：生产路径不经过这里 —— [`inspect_identity`] / [`configure_identity`] 把
+/// Core 响应的**原文**交给设置侧，由设置侧自己按线格式解析
+/// （`crates/settings/src/identity.rs:180-182` 的 `IdentitySetup::from_json`，走 `serde`），
+/// 所以这个逐字段容错解析器现在只被三条单测消费（`response_parses_every_field` /
+/// `non_repository_is_a_normal_state` / `missing_fields_fall_back_per_field`）。
+/// `#[allow(dead_code)]` 是显式的保留说明：那三条测试钉住的是 Core 响应的 camelCase 键名
+/// 与本侧的容错口径（缺字段/类型坏掉不 panic），删这个方法就得连它们一起删。
+#[allow(dead_code)]
 pub fn parse_setup(data: &serde_json::Value) -> IdentitySetup {
     let text = |key: &str| {
         data.get(key)

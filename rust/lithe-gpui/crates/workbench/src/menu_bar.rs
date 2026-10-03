@@ -786,8 +786,12 @@ pub enum MenuAction {
 
 /// 菜单项图标双源：expui 有等价字形的走 `idea_icon_mono`（形状来自 expui、颜色随主题），
 /// 没有的保留 Lucide。两个变体都是 const 可构造 —— `items` 表是 `&[MenuItem]` 字面量。
+///
+/// `pub` 不能比承载它的路更窄：[`MenuItem::NotWired`] 的 `icon` 字段是公开枚举变体的字段
+/// （变体字段没有独立可见性，它随 [`MenuItem`] 一起公开），所以本类型取 `pub`
+/// （否则 `private_interfaces` 会报"类型比字段更私有"）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MenuIcon {
+pub enum MenuIcon {
     Idea(&'static idea::IdeaIcon),
     Lucide(IconName),
 }

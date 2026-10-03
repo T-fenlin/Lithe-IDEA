@@ -60,7 +60,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 // （`:1871`）—— 所以可点的 `div()` 必须先 `.id(..)` 变成 `Stateful<Div>`
 // （`Stateful` 的实现在 `:4074`）。忘了 `.id` 的表现是「no method named on_click」。
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, Hsla, InteractiveElement as _,
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
     Styled as _, Subscription, WeakEntity, Window, div, rems,
 };
@@ -127,21 +127,16 @@ pub fn render_message(entry: &Entry) -> SharedString {
     tr_args(entry.code().as_ref(), &args)
 }
 
-/// 严重性 → 主题色。
-///
-/// 与 gpui-kit 自己的映射一致（`gpui-component-0.6.6/src/notification.rs:41-46`：
-/// Info→`info` / Warning→`warning` / Error→`danger`），不另发明一套。
-fn severity_color(severity: Severity, cx: &App) -> Hsla {
-    match severity {
-        Severity::Info => cx.theme().info,
-        Severity::Warning => cx.theme().warning,
-        Severity::Error => cx.theme().danger,
-    }
-}
-
 /// 严重性 → 图标。
 ///
-/// 同上，与 `notification.rs:41-46` 一致。`IconName` 从 `component` **平铺**导出
+/// 同上，与 `notification.rs:41-46` 一致。
+///
+/// ⚠️ 原先与它并列的 `severity_color`（Info→`info` / Warning→`warning` / Error→`danger`，
+/// 真源同为 `gpui-component-0.6.6/src/notification.rs:41-46`，当时给文字上色）已随图标
+/// expui 化删除：语义色现在由 expui 资产自带，[`NotificationPanel::row`] 不再用 `text_color` 上色
+/// （原因写在那里的注释），所以那张配色表在本面板再无消费者。要恢复行内语义色时照上面
+/// 三档取 `cx.theme()` 的同名 token，别另发明一套。
+/// `IconName` 从 `component` **平铺**导出
 /// （`component::icon` 是私有模块，`lib.rs:7,112`），所以路径是
 /// `gpui_kit::component::IconName`，没有 `component::icon::IconName` 这条路。
 ///

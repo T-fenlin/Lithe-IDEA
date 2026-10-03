@@ -107,6 +107,14 @@ pub(crate) const SHELL_SYSTEM_DEFAULT: &str = "";
 /// 四个 `<option>`：`""`（系统默认）/ `powershell` / `cmd` / `wsl`。
 /// 设置 crate 的 `TERMINAL_SHELL_IDS` 是同一份表的另一份声明，两边的**取值**必须一致
 /// （那边是白名单、这边是"能不能真的起一个进程"）。
+///
+/// ⚠️ **保留项**：生产路径今天不读这张表（[`detected_profiles`] 只硬编码默认顺序的
+/// `powershell` / `cmd`，[`profile_for_shell_id`] 也只认字面量），唯一读它的是单测
+/// `shell_id_table_matches_the_settings_whitelist` —— 那条测试钉的正是"设置页里能选的值
+/// = 终端认识的值"，删表就要连它一起删，所以 `#[allow(dead_code)]` 是显式的保留说明。
+/// C19（`docs/tasks/gpui-core-first.md`：终端 shell 探测与 profile 发现移出 gpui —— 候选
+/// 清单与选择规则进 Core）落地时本常量随那次迁移退场；该迁移要改 Core，不在本分支。
+#[allow(dead_code)]
 pub(crate) const SHELL_IDS: [&str; 4] = [SHELL_SYSTEM_DEFAULT, "powershell", "cmd", "wsl"];
 
 /// 把设置里的 shell id 解析成一个可执行的配置文件；`None` = 「系统默认」（保持探测顺序）。

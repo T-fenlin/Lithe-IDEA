@@ -236,7 +236,8 @@ pub struct ExtensionsPage {
     ///
     /// `Option` 而不是必填：设置存储比本页更早建立（`main.rs` 的启动顺序），
     /// 但页面构造在**换根重建**时也可能跑，那时句柄一定在；拿不到就按"全部在装"
-    /// 渲染（不画卸载按钮会撒谎，所以只影响状态判定，见 [`Self::is_uninstalled`]）。
+    /// 渲染（不画卸载按钮会撒谎，所以只影响状态判定，判据见 [`Render::render`] 里
+    /// 先取出的卸载清单）。
     settings: Option<Entity<lithe_gpui_settings::SettingsStore>>,
     /// 盯住搜索框：查询一变就重画。必须持有（`Subscription` 是 RAII）。
     _search_subscription: Subscription,
@@ -308,17 +309,6 @@ impl ExtensionsPage {
         };
         store.update(cx, |store, cx| store.set_icons(package, cx));
         // 设置存储的订阅会让本页重绘（「当前」随之移动）。
-    }
-
-    /// 这个扩展此刻是不是"已卸载"（设置里的 `uninstalledExtensions`）。
-    fn is_uninstalled(&self, id: &str, cx: &App) -> bool {
-        self.settings.as_ref().is_some_and(|store| {
-            store
-                .read(cx)
-                .uninstalled_extensions()
-                .iter()
-                .any(|value| value == id)
-        })
     }
 
     /// 卸载 / 重新安装一个捆绑扩展（卡片上那个按钮的唯一动作）。
