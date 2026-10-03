@@ -242,6 +242,23 @@ pub fn core_json(command: &str, payload: Value) -> Result<Option<Value>, CoreErr
     CoreClient::new().execute(&CoreRequest::command(command).with_payload(payload))
 }
 
+/// 请求 `lithe-core` 取消一条**在飞**操作（信封级 `operationId` 的取消面）。
+///
+/// 与 [`CoreRequest::with_operation_id`] 是一对：那个把 `operationId` 放进信封，这个用同一个值
+/// 让 Core 的协作式取消生效（`lithe_core::cancel_operation`，
+/// `rust/lithe-core/src/lib.rs:34` → `protocol/cancellation.rs:83`）。Core 的搜索循环会
+/// 逐文件 / 逐行调 `cancellation::check()`（`project/files.rs:210,235,251`），所以取消是
+/// "尽早停下"而不是"立刻中断"。
+///
+/// 返回 `false` 表示这个 id **没有在飞的操作**（已经跑完、或从来没登记过）—— 那是正常情况，
+/// 不是错误，调用方不该把它当失败报给用户。
+///
+/// ⚠️ 它要拿 Core 的操作注册表锁（`cancellation.rs:84`），所以调用方该把它放进
+/// `cx.background_spawn`（与 [`CoreClient::execute`] 同一条"UI 线程不做阻塞工作"的规矩）。
+pub fn cancel_operation(operation_id: &str) -> bool {
+    lithe_core::cancel_operation(operation_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +300,16 @@ mod tests {
             }
             .is_not_a_repository()
         );
+    }
+
+    /// 取消面：**没有在飞操作**时返回 `false`，而且不 panic。
+    ///
+    /// 这条钉的是本层的语义而不是 Core 的实现：调用方（查找面板）要能区分"取消请求发出去了"
+    /// 与"那个 id 早就跑完了"，而后者的正常返回值是 `false` —— 它不该被当成失败。
+    /// 真实注册 / 取消的那一半由 Core 自己的用例覆盖
+    /// （`rust/lithe-core/src/protocol/cancellation.rs` 的 `cancellation_is_visible_to_the_active_scope`）。
+    #[test]
+    fn cancelling_an_unknown_operation_reports_false_instead_of_failing() {
+        assert!(!cancel_operation("lithe-gpui-test-never-registered"));
     }
 }

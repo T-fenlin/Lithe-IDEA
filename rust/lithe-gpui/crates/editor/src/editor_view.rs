@@ -655,7 +655,7 @@ impl EditorPane {
                     return;
                 };
                 view.update(cx, |pane, cx| {
-                    pane.open_at(path, line, utf16_column, window, cx);
+                    pane.open_at(path, line, utf16_column, "problems", window, cx);
                 });
             }));
         });
@@ -859,7 +859,7 @@ impl EditorPane {
         self.problems.update(cx, |pane, cx| pane.refresh(cx));
     }
 
-    /// 打开 `path` 并把光标落到服务端给的位置（问题列表点一行时调）。
+    /// 打开 `path` 并把光标落到服务端给的位置（问题列表 / 查找面板点一行时调）。
     ///
     /// 这是 [`Self::apply_definition`] 的"跨文件落地"那一段去掉解析那一半：调用方手里已经
     /// 有目标了（服务端报的位置）。两条约定与 `F12` 完全一致：
@@ -870,6 +870,11 @@ impl EditorPane {
     /// 2. **历史**：跳转前的位置进 `←` 的历史（`apply_definition` 同样是先记 origin 再落地），
     ///    所以从问题列表跳过去之后按 `←` 回得来。
     ///
+    /// `origin_kind` 是**调用方**这一跳的来源，只进 `S1_NAV_JUMP` 那一行的 `kind=`：
+    /// 这一行是"跳转真的发生了"的唯一机器证据，所以来源不能由编辑区猜
+    /// （问题列表传 `"problems"`、查找面板传 `"search"`）。没有行的来源（例如按文件名命中
+    /// 只打开文件不跳行）走 [`Self::open`]，它不发这一行。
+    ///
     /// 目标打不开（文件被删、二进制、超大）时返回 `false`：`open()` 自己已经留了
     /// `S1_*` 诊断行，这里不重复报错。
     pub fn open_at(
@@ -877,6 +882,7 @@ impl EditorPane {
         path: &Path,
         line: u32,
         utf16_column: u32,
+        origin_kind: &'static str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -907,10 +913,13 @@ impl EditorPane {
         self.active = Some(index);
 
         // 位置是 1 基显示口径（与 `S1_NAV_JUMP` 的其它来源一致，便于对日志）。
+        // `kind` 取调用方给的来源（`origin_kind`），见本函数的说明 —— 它**不是**
+        // 上面那个同名的历史锚点（那个叫 `origin`，只进 `history`）。
         println!(
-            "S1_NAV_JUMP to={}:{} kind=problems file={}",
+            "S1_NAV_JUMP to={}:{} kind={} file={}",
             to.line + 1,
             to.character + 1,
+            origin_kind,
             self.buffers[index].path.display()
         );
         self.sync_cursor(cx);

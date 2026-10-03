@@ -59,7 +59,9 @@ use gpui_kit::{AbsoluteLength, Pixels, rems};
 // `lithe-gpui/tools/extract-locale.mjs` 从 `crates/shared/locales/source/locale.ts` 生成。
 rust_i18n::i18n!("locales", fallback = "en");
 
-pub use core_client::{CoreClient, CoreError, CoreRequest, DEFAULT_TIMEOUT_MILLIS, core_json};
+pub use core_client::{
+    CoreClient, CoreError, CoreRequest, DEFAULT_TIMEOUT_MILLIS, cancel_operation, core_json,
+};
 pub use document::{
     DOCUMENT_VERSION_KEY, Parsed, declared_version, known_keys, merge_document, parse,
     preserve_unknown, previous_object, read_document_text, save_document, save_json, tmp_path,

@@ -1046,6 +1046,11 @@ mod tests {
                 "丢弃所有未暂存的更改吗？此操作无法撤销。",
             ),
             ("lithe.git.rollback", "回滚"),
+            // 查找面板（U17 第一件，`workbench/src/search_panel.rs`）：查询框的 placeholder。
+            // 其余文案全部复用真源既有的 `lithe.search.*` / `lithe.fileExplorer.searchingFiles`，
+            // 这一条是**唯一的** gpui 侧自有键（真源只有 macOS 的 SwiftUI 字面量），
+            // 出处与理由见 `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
+            ("lithe.search.gpui.queryPlaceholder", "搜索文件和内容"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

@@ -841,6 +841,14 @@ const GPUI_ONLY_KEYS = [
     reason:
       "通知中心相对时间的第四档（≥1 天）。同 macOS 中心用绝对时刻（`WorkbenchView.swift:1900` 的 `date: .omitted, time: .shortened`）是同一层信息，跨天再折成天数比显示时刻更好比较。",
   },
+  // ── 查找面板（U17 第一件）────────────────────────────────────────────
+  {
+    key: "search.gpui.queryPlaceholder",
+    zh: "搜索文件和内容",
+    en: "Search files and contents",
+    reason:
+      "查找面板查询框的 placeholder（`lithe-gpui/crates/workbench/src/search_panel.rs`）。真源 catalog 里没有这一条：macOS 侧那句话是 SwiftUI 的字面量（`macos/Sources/Lithe/Views/Search/SearchSidebarView.swift:32` 的 `TextField(\"Search files and contents\", …)`），中文落在 `macos/Resources/zh-Hans.lproj/Localizable.strings:1155`（\"搜索文件和内容\"），而 `en.lproj` 里没有对应条目（英文回落到字面量本身，所以 en 逐字取那句）。**不借 `fileExplorer.searchFiles`（「搜索文件」）**：那句只说文件，而 `workspace.search` 同时搜文件路径与文件内容（`rust/lithe-core/src/project/files.rs:209-266`），照抄会少说一半。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);

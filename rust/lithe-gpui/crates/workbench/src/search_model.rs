@@ -1,0 +1,758 @@
+//! 查找面板的**模型层**：请求 payload、四态状态机、响应解析、结果分组、查询代次。
+//!
+//! ## 为什么单独一层（U17 第一件）
+//!
+//! `crate::search_panel` 那一层要拿 `Context` / `Window` / `Entity<InputState>`，单测里
+//! 既起不了窗口也不该起；而查找面板真正容易出错的地方全在**纯逻辑**里：字段名拼错一个字
+//! Core 就用 `invalid_request` 拒掉整条命令、结果按 `kind` 分组的顺序会决定用户看到什么、
+//! 旧查询的结果回来时算不算数。这些都可以用普通 `#[test]` 钉住，所以它们在本模块，
+//! 视图层只做"把状态画出来"。
+//!
+//! ## 归属：确定性逻辑归 Core，本层只做"信封翻译"
+//!
+//! **排在哪个文件、按什么排序、怎么匹配（大小写 / 全词 / 正则）全部是 Core 的事**
+//! （`rust/lithe-core/src/project/files.rs:190-268` 的 `search_with_index`）。本模块
+//! 只做四件宿主该做的事：
+//!
+//! 1. 把面板的选项翻成 `workspace.search` 的 payload（字段名是**兼容面**）；
+//! 2. 把响应翻成界面要画的行（**保持 Core 给出的顺序**，不重新排序、不重新匹配）；
+//! 3. 把 Core 的顺序折成"文件头 + 命中行"（纯展示分组，见 [`group`]）；
+//! 4. 用代次把过期结果挡掉（[`QueryTimeline`]），并把要取消的 `operationId` 交出来。
+//!
+//! ⚠️ **本模块不许出现"第二套匹配/排序"**：想按相关度排序、想自己判 regex、想过滤
+//! `node_modules` —— 那都该改 Core，不该在这里加一层。宿主今天连可见性数组都不传
+//! （与 `crate::search_index` 同一个理由：少一个会漂移的字段）。
+//!
+//! ## 契约出处（写成字段名与行号，便于对着 Core 复核）
+//!
+//! - 命令名 `workspace.search`：`rust/lithe-core/src/protocol/command.rs:360`；
+//! - 请求 `SearchRequest`：`rust/lithe-core/src/project/files.rs:47-74`
+//!   （`root` / `query` / `caseSensitive` / `wholeWords` / `regularExpression` /
+//!   `maxResults`（默认 200，`files.rs:155-157`）/ `maxFileResults` / `maxContentResults` /
+//!   `maxSymbolResults` / `hiddenDirectoryNames` / `hiddenFilePatterns` / `fileMask`，camelCase）；
+//! - 响应 `SearchResponse { matches }`：`rust/lithe-core/src/protocol/contracts.rs:107-112`；
+//! - 命中 `SearchMatch { kind, path, line, preview, symbolName? }`：同文件 `:94-105`，
+//!   `kind` 取 `"file"` / `"content"` / `"symbol"`（`files.rs:222,253`），
+//!   `line` 是 **1 基**行号（`Option`，路径命中为 `null`）；
+//! - `operationId` 是**信封级**字段（`rust/lithe-core/src/protocol/command.rs:14-15`），
+//!   不在 payload 里：`rust/lithe-gpui/crates/shared/src/core_client.rs:169-183` 把它同时
+//!   当 `id` 与 `operationId`；取消面是 `lithe_core::cancel_operation`
+//!   （`rust/lithe-core/src/lib.rs:34` → `protocol/cancellation.rs:83`）。
+
+use std::path::{Path, PathBuf};
+
+use serde_json::{Value, json};
+
+/// `workspace.search`（`protocol/command.rs:360`）。
+pub(crate) const SEARCH_COMMAND: &str = "workspace.search";
+
+/// 一次查询的结果上限。
+///
+/// **显式传**而不是靠 Core 的 `#[serde(default)]`：面板要能说出"这一次最多取多少条"，
+/// 而"上限是多少"不该藏在 Core 的默认值里。值与 Core 的默认一致
+/// （`files.rs:155-157` 的 `default_max_results`），所以显式传不改变行为。
+/// ⚠️ Core 里 `maxResults` 是**总上限**：路径命中与内容命中共享它
+/// （`files.rs:203-212`），本层不拆成 `maxContentResults` —— 那是 Core 的语义，别在这里改。
+pub(crate) const MAX_RESULTS: usize = 200;
+
+/// 一次查询的选项（与 `SearchRequest` 的四个用户可选项一一对应）。
+///
+/// `preserveCase` **不在**这里：它只服务替换（`ReplacementPreviewRequest`，
+/// `files.rs:110-136`），而 Replace in Files 不在本任务范围。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SearchOptions {
+    /// `caseSensitive`。
+    pub(crate) case_sensitive: bool,
+    /// `wholeWords`。
+    pub(crate) whole_words: bool,
+    /// `regularExpression`。
+    pub(crate) regular_expression: bool,
+    /// `fileMask`：逗号分隔的 glob（`*.java, *.kt`）；空串 = 不过滤（`files.rs:71-73`）。
+    pub(crate) file_mask: String,
+}
+
+/// `workspace.search` 的 payload。
+///
+/// **不传** `hiddenDirectoryNames` / `hiddenFilePatterns`：Core 会把它们并进内置的
+/// 隐藏规则（`files.rs:530-539`），而宿主侧今天没有任何一条 Core 调用传过它们
+/// （`explorer` 的 `workspace.snapshot` 也只传 `root`）。少传 = 与 `searchIndex.warm`
+/// **同一个索引缓存键**（`project/search_index.rs:72-78` 的键含可见性规则），
+/// 不会让同一次搜索再建第二份索引 —— 与 `crate::search_index` 的口径一致。
+///
+/// **不传**三个 `max*Results`：留空时 Core 让它们各自回落到 `maxResults`
+/// （`files.rs:204-205`），那正是我们要的"总上限"语义。
+pub(crate) fn payload(root: &str, query: &str, options: &SearchOptions) -> Value {
+    json!({
+        "root": root,
+        "query": query,
+        "caseSensitive": options.case_sensitive,
+        "wholeWords": options.whole_words,
+        "regularExpression": options.regular_expression,
+        "maxResults": MAX_RESULTS,
+        "fileMask": options.file_mask,
+    })
+}
+
+/// 命中类别（Core 的 `kind` 字段）。
+///
+/// `Other` 兜住契约以后新增的类别：**解析层不因为不认识就丢掉一整条结果**
+/// （丢的是"这条怎么归类"，不是"这条存在"）。`symbol` 今天不会出现在本命令里
+/// —— 它属于 `workspace.searchEverywhere`（`files.rs:272-333`），而那条命令不在本任务内。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum MatchKind {
+    /// `"file"`：**文件路径**本身命中查询。
+    File,
+    /// `"content"`：文件内容某一行命中查询。
+    Content,
+    /// 其它类别（原样保留）。
+    Other(String),
+}
+
+impl MatchKind {
+    /// 从 `kind` 字段解析。
+    fn parse(value: &str) -> Self {
+        match value {
+            "file" => Self::File,
+            "content" => Self::Content,
+            other => Self::Other(other.to_string()),
+        }
+    }
+
+    /// 这一条是"路径命中"吗（分组时的判据）。
+    fn is_file(&self) -> bool {
+        matches!(self, Self::File)
+    }
+}
+
+/// 一条命中（`contracts.rs:94-105`）。
+///
+/// ⚠️ **不保留 `symbolName`**：`workspace.search` 的 `search_with_index` 把它恒置 `None`
+/// （`files.rs:222-260` 两处构造都没有它），留着就是一个永远为 `None`、只服务另一条命令的字段。
+/// `workspace.searchEverywhere` 落地时在这里加回来。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Match {
+    /// `kind`。
+    pub(crate) kind: MatchKind,
+    /// `path`：**工作区相对**、`/` 分隔（`application-boundary.md` 的路径口径）。
+    pub(crate) path: String,
+    /// `line`：1 基行号；路径命中为 `None`（Core 序列化成 `null`）。
+    pub(crate) line: Option<usize>,
+    /// `preview`：命中的那一行正文（Core 已经 `trim` 过，`files.rs:257`）。
+    pub(crate) preview: String,
+}
+
+/// 响应解析失败。
+///
+/// **只给稳定 token，不给句子**：这句话最终会显示在失败态里，而界面文案一律走 `tr`
+/// （`shared/src/i18n.rs` 的规矩），宿主不许自己编一句中文/英文。token 与 Core 的错误码
+/// 同一个口径（机器可读、可 grep、可进诊断行），显示时由
+/// `lithe.search.gpui.failedDetail` 的 `{reason}` 承接。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ParseError {
+    /// `ok:true` 但没有 `data`。`workspace.search` 一定回 `data`（`dispatcher` 的
+    /// `SearchResponse` 分支），所以这是**契约异常**而不是"没有结果" —— 两者必须分开。
+    MissingData,
+    /// `data` 不是对象、缺 `matches` 数组、或某个元素缺 `kind` / `preview`。
+    Malformed,
+    /// `matches[i]` 缺必填的 `path`。
+    MissingPath(usize),
+}
+
+impl ParseError {
+    /// 稳定 token（进诊断行，也进失败态）。
+    pub(crate) fn token(self) -> String {
+        match self {
+            Self::MissingData => "missing_data".to_string(),
+            Self::Malformed => "malformed_response".to_string(),
+            Self::MissingPath(index) => format!("missing_path_at_{index}"),
+        }
+    }
+}
+
+/// 把 `CoreClient::execute` 的 `data` 解析成命中列表。
+///
+/// **空结果与失败是两件事**：`Ok(vec![])` 是"真的没有命中"，`Err(..)` 是"这条响应不可用"。
+/// 面板必须把两者画成不同的东西（`lithe.search.noResultsFor` vs
+/// `lithe.search.gpui.failedDetail`）。
+pub(crate) fn parse_matches(data: Option<&Value>) -> Result<Vec<Match>, ParseError> {
+    let Some(data) = data else {
+        return Err(ParseError::MissingData);
+    };
+    let Some(items) = data.get("matches").and_then(Value::as_array) else {
+        return Err(ParseError::Malformed);
+    };
+    let mut matches = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let Some(path) = item.get("path").and_then(Value::as_str) else {
+            return Err(ParseError::MissingPath(index));
+        };
+        let (Some(kind), Some(preview)) = (
+            item.get("kind").and_then(Value::as_str),
+            item.get("preview").and_then(Value::as_str),
+        ) else {
+            return Err(ParseError::Malformed);
+        };
+        matches.push(Match {
+            kind: MatchKind::parse(kind),
+            path: path.to_string(),
+            line: item.get("line").and_then(Value::as_u64).map(|l| l as usize),
+            preview: preview.to_string(),
+        });
+    }
+    Ok(matches)
+}
+
+/// 结果列表的一行。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SearchRow {
+    /// 文件头：这个文件有命中（或**路径本身**命中了查询）。
+    ///
+    /// `hits` = 这个文件下的命中**行**数；`0` 只可能出现在"路径命中"的
+    /// 文件上（查询匹配了文件名，但正文里没有那一行）。
+    File {
+        /// 工作区相对路径（`/` 分隔）。
+        path: String,
+        /// 这个文件下的命中行数。
+        hits: usize,
+    },
+    /// 一条命中行。
+    Hit {
+        /// 工作区相对路径（与它上面那个文件头同值）。
+        path: String,
+        /// 1 基行号；Core 没给就是 `None`。
+        line: Option<usize>,
+        /// 命中行的预览正文。
+        preview: String,
+    },
+}
+
+/// 把 Core 的顺序折成"文件头 + 命中行"。
+///
+/// ## 为什么不重排
+///
+/// Core 的输出顺序是：**先**全部 `kind: "file"` 的路径命中（按索引 id，`files.rs:209-231`）、
+/// **再**按索引 id + 行号输出的内容命中（`files.rs:233-266`）。本函数只做**折叠**：
+///
+/// - 文件之间的顺序 = 该文件**第一次出现**的顺序；
+/// - 同一文件内命中行的顺序 = Core 给出的顺序（即行号升序）。
+///
+/// 两者都不引入第二套排序口径（"确定性逻辑属于 Core"）。分组是**展示**需要：
+/// IDEA 与真机的结果区都是"文件头 + 该文件的命中行"，而不是把路径与正文平铺成一行一条。
+///
+/// 只有内容命中的文件也会有文件头（否则那些行没有归属）；只有路径命中的文件得到一个
+/// `hits: 0` 的文件头。**不会**出现的路径不会凭空建头。
+pub(crate) fn group(matches: &[Match]) -> Vec<SearchRow> {
+    // 路径 → 在 `paths` / `hits` 里的下标。用线性查找而不是 `HashMap`：
+    // 上界是 `MAX_RESULTS`（200），而且**顺序即输出顺序**，线性表最直白。
+    let mut paths: Vec<String> = Vec::new();
+    let mut hits: Vec<Vec<SearchRow>> = Vec::new();
+    for item in matches {
+        let index = match paths.iter().position(|path| path == &item.path) {
+            Some(index) => index,
+            None => {
+                paths.push(item.path.clone());
+                hits.push(Vec::new());
+                paths.len() - 1
+            }
+        };
+        if !item.kind.is_file() {
+            hits[index].push(SearchRow::Hit {
+                path: item.path.clone(),
+                line: item.line,
+                preview: item.preview.clone(),
+            });
+        }
+    }
+
+    let mut rows = Vec::with_capacity(paths.len() + matches.len());
+    for (index, path) in paths.into_iter().enumerate() {
+        rows.push(SearchRow::File {
+            path: path.clone(),
+            hits: hits[index].len(),
+        });
+        rows.extend(hits[index].iter().cloned());
+    }
+    rows
+}
+
+/// 面板的四态（契约要求的 `idle` / `loading` / `ready` / `failed`）。
+///
+/// ⚠️ **空结果属于 `Ready`**（`rows` 为空），不是 `Failed`：契约要求"空结果与失败必须区分"。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SearchState {
+    /// 没有查询串（或查询串只有空白）：画"在项目中搜索"的空态，**不发 Core 调用**。
+    Idle,
+    /// 已发出查询、结果还没回来。
+    Loading {
+        /// 这一次查询的串（诊断与"结果属于谁"的判据）。
+        query: String,
+    },
+    /// 结果到了；`rows` 可能是空的（"没有命中"）。
+    Ready {
+        /// 这一次查询的串。
+        query: String,
+        /// 分组后的行。
+        rows: Vec<SearchRow>,
+    },
+    /// 失败了；`reason` 是可直接显示的原因（Core 的 `message` 或 [`ParseError::token`]）。
+    Failed {
+        /// 这一次查询的串。
+        query: String,
+        /// 可直接显示的原因。
+        reason: String,
+    },
+}
+
+impl SearchState {
+    /// 进 `loading` 态。
+    pub(crate) fn loading(query: impl Into<String>) -> Self {
+        Self::Loading {
+            query: query.into(),
+        }
+    }
+
+    /// 进 `ready` 态（`matches` 在这里分组；空 `matches` = 空结果，不是失败）。
+    pub(crate) fn ready(query: impl Into<String>, matches: &[Match]) -> Self {
+        Self::Ready {
+            query: query.into(),
+            rows: group(matches),
+        }
+    }
+
+    /// 进 `failed` 态。
+    pub(crate) fn failed(query: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::Failed {
+            query: query.into(),
+            reason: reason.into(),
+        }
+    }
+
+    /// 当前查询串（`idle` 时为空串）。
+    pub(crate) fn query(&self) -> &str {
+        match self {
+            Self::Idle => "",
+            Self::Loading { query } | Self::Ready { query, .. } | Self::Failed { query, .. } => {
+                query
+            }
+        }
+    }
+
+    /// 分组后的行（只有 `ready` 有；其余态画别的东西）。
+    pub(crate) fn rows(&self) -> &[SearchRow] {
+        match self {
+            Self::Ready { rows, .. } => rows,
+            _ => &[],
+        }
+    }
+
+    /// `(文件数, 命中行数)`：文件数 = 文件头数。
+    ///
+    /// 给诊断行用（`S1_SEARCH complete files=… hits=…`）—— 那是这一件唯一的机器可核对锚点。
+    pub(crate) fn counts(&self) -> (usize, usize) {
+        let mut files = 0;
+        let mut hits = 0;
+        for row in self.rows() {
+            match row {
+                SearchRow::File { .. } => files += 1,
+                SearchRow::Hit { .. } => hits += 1,
+            }
+        }
+        (files, hits)
+    }
+}
+
+/// 一次排定的查询：调用方拿这三个值去发 Core 调用。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Scheduled {
+    /// 这一次查询的代次（结果回来时要原样交回 [`QueryTimeline::accepts`]）。
+    pub(crate) generation: u64,
+    /// 这一次查询的 `operationId`（信封级；同时是 Core 的取消句柄）。
+    pub(crate) operation_id: String,
+    /// **被这次取代**的在飞请求的 `operationId`：调用方要把它交给
+    /// [`lithe_gpui_shared::cancel_operation`]，让那一次扫描尽早停下。
+    pub(crate) superseded: Option<String>,
+}
+
+/// 查询代次：**stale 结果保护与"取消/取代前一次"的唯一判据**。
+///
+/// 形状与 `crate::search_index::SearchIndexWiring` 的代次闸门同源（那里管"索引状态属于哪个根"，
+/// 这里管"结果属于哪一次查询"），只是这里的换代时机是**输入变化**而不是换根。
+///
+/// 两条不变量：
+///
+/// 1. 代次**只增不减**，`operationId` 由代次拼出来，所以同一次会话里不重复；
+/// 2. 结果只有在 `accepts(issued)` 为真时才采纳 —— 旧查询的结果回来时**一律丢弃**
+///    （打一行 `stale=1`，不采纳）。这一条不依赖"取消真的生效"：取消是尽力而为的
+///    优化，代次闸门才是正确性保证（Core 的 `check()` 是协作式的，
+///    见 `protocol/cancellation.rs:96`）。
+#[derive(Debug, Default)]
+pub(crate) struct QueryTimeline {
+    generation: u64,
+    /// 当前在飞请求的 `operationId`；结果落地或被放弃后清空。
+    in_flight: Option<String>,
+}
+
+impl QueryTimeline {
+    /// 排一次新查询：换代（旧结果从此一律丢弃），并把在飞的旧 `operationId` 交回来。
+    pub(crate) fn schedule(&mut self) -> Scheduled {
+        let superseded = self.in_flight.take();
+        self.generation = self.generation.wrapping_add(1);
+        let operation_id = operation_id(self.generation);
+        self.in_flight = Some(operation_id.clone());
+        Scheduled {
+            generation: self.generation,
+            operation_id,
+            superseded,
+        }
+    }
+
+    /// 这条完成于 `issued` 代次的结果还算不算当前查询。
+    pub(crate) fn accepts(&self, issued: u64) -> bool {
+        self.generation == issued
+    }
+
+    /// 当前代次的请求已经落地（成功或失败）：不再需要取消它。
+    ///
+    /// 只清当前代次的那一条：旧代次的 `in_flight` 早就在换代时被取走了。
+    pub(crate) fn settle(&mut self, issued: u64) {
+        if self.accepts(issued) {
+            self.in_flight = None;
+        }
+    }
+
+    /// 放弃当前查询（清空输入 / 面板被换掉）：换代（在飞结果从此作废）并把它的
+    /// `operationId` 交回来交给 Core 取消。
+    pub(crate) fn abandon(&mut self) -> Option<String> {
+        self.generation = self.generation.wrapping_add(1);
+        self.in_flight.take()
+    }
+}
+
+/// `operationId` 的形状：代次单调递增，所以同一次会话里不重复。
+pub(crate) fn operation_id(generation: u64) -> String {
+    format!("lithe-gpui-search-{generation}")
+}
+
+/// 工作区相对路径（`/` 分隔）→ 绝对路径。
+///
+/// **逐段 `push`**，不写 `root.join(text)`：Windows 上 `join("src/a.java")` 恰好也能跑
+/// （`/` 也被当分隔符），但那是平台旁路行为；逐段 push 让分隔符语义不依赖它，同时顺手
+/// 挡掉空段。Core 的路径来自索引（`relative_path`），这里不做额外的安全假设 ——
+/// 不在根之下的路径由 Core 保证不会出现。
+pub(crate) fn absolute(root: &Path, relative: &str) -> PathBuf {
+    let mut path = root.to_path_buf();
+    for segment in relative.split('/').filter(|segment| !segment.is_empty()) {
+        path.push(segment);
+    }
+    path
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// payload 的字段名是**契约面**（`rename_all = "camelCase"`）：拼错一位 Core 就用
+    /// `invalid_request` 拒掉整条命令，而且只有跑起来才知道。这里逐字钉住，并钉住
+    /// "**故意不传**那些字段"这件事（它们会改变索引缓存键，见 `payload` 的文档）。
+    #[test]
+    fn payload_follows_the_core_contract_field_names() {
+        let options = SearchOptions {
+            case_sensitive: true,
+            whole_words: true,
+            regular_expression: true,
+            file_mask: "*.java, *.kt".to_string(),
+        };
+        assert_eq!(
+            payload("D:/proj", "needle", &options),
+            json!({
+                "root": "D:/proj",
+                "query": "needle",
+                "caseSensitive": true,
+                "wholeWords": true,
+                "regularExpression": true,
+                "maxResults": 200,
+                "fileMask": "*.java, *.kt",
+            })
+        );
+    }
+
+    /// 三个选项默认全关、掩码默认空：默认 payload 与 Core 的默认行为逐字段一致。
+    #[test]
+    fn default_options_match_the_core_defaults() {
+        let value = payload("r", "q", &SearchOptions::default());
+        assert_eq!(value["caseSensitive"], json!(false));
+        assert_eq!(value["wholeWords"], json!(false));
+        assert_eq!(value["regularExpression"], json!(false));
+        assert_eq!(value["fileMask"], json!(""));
+        assert_eq!(value["maxResults"], json!(MAX_RESULTS));
+    }
+
+    /// 可见性与三个 `max*Results` **不出现在** payload 里：
+    /// 前者由 Core 的内置规则兜底（并且保证与 `searchIndex.warm` 同一个缓存键），
+    /// 后者留空让 Core 回落到 `maxResults`。
+    #[test]
+    fn payload_omits_fields_that_would_drift_or_split_the_index_cache_key() {
+        let value = payload("r", "q", &SearchOptions::default());
+        for key in [
+            "hiddenDirectoryNames",
+            "hiddenFilePatterns",
+            "maxFileResults",
+            "maxContentResults",
+            "maxSymbolResults",
+        ] {
+            assert!(value.get(key).is_none(), "payload 里不该有 {key}：{value}");
+        }
+        // 上限是显式传的（不是靠 Core 的 default），这是"面板说得清上限"的前提。
+        assert_eq!(value["maxResults"], json!(MAX_RESULTS));
+    }
+
+    /// 正常响应：三种 `kind`、`line` 的 `null`、以及**未认识的 kind 不丢条目**。
+    #[test]
+    fn parses_the_three_match_shapes_and_keeps_unknown_kinds() {
+        let data = json!({
+            "matches": [
+                { "kind": "file", "path": "src/A.java", "line": null, "preview": "src/A.java" },
+                { "kind": "content", "path": "src/A.java", "line": 12, "preview": "class A {" },
+                { "kind": "symbol", "path": "src/B.java", "line": 3, "preview": "void b()", "symbolName": "b" },
+                { "kind": "future", "path": "src/C.java", "line": 1, "preview": "x" },
+            ]
+        });
+        let matches = parse_matches(Some(&data)).expect("必须解析成功");
+        assert_eq!(
+            matches.len(),
+            4,
+            "不认识的 kind 也要留下（丢的是归类，不是条目）"
+        );
+        assert_eq!(matches[0].kind, MatchKind::File);
+        assert_eq!(matches[0].line, None);
+        assert_eq!(matches[1].kind, MatchKind::Content);
+        assert_eq!(matches[1].line, Some(12));
+        assert_eq!(matches[2].kind, MatchKind::Other("symbol".to_string()));
+        assert_eq!(matches[3].kind, MatchKind::Other("future".to_string()));
+        assert_eq!(matches[1].preview, "class A {");
+    }
+
+    /// `ok:true` 但没有 `data`、`matches` 不是数组、元素缺 `path` —— 三种都要**报错**
+    /// （不能悄悄当成"没有命中"），而且 token 稳定。
+    #[test]
+    fn contract_anomalies_are_reported_not_silently_read_as_no_matches() {
+        assert_eq!(parse_matches(None), Err(ParseError::MissingData));
+        assert_eq!(
+            parse_matches(Some(&json!({ "total": 3 }))),
+            Err(ParseError::Malformed)
+        );
+        assert_eq!(
+            parse_matches(Some(&json!({ "matches": {} }))),
+            Err(ParseError::Malformed)
+        );
+        assert_eq!(
+            parse_matches(Some(
+                &json!({ "matches": [ { "kind": "content", "preview": "x" } ] })
+            )),
+            Err(ParseError::MissingPath(0))
+        );
+        assert_eq!(
+            parse_matches(Some(
+                &json!({ "matches": [ { "path": "a.java", "preview": "x" } ] })
+            )),
+            Err(ParseError::Malformed)
+        );
+
+        assert_eq!(ParseError::MissingData.token(), "missing_data");
+        assert_eq!(ParseError::Malformed.token(), "malformed_response");
+        assert_eq!(ParseError::MissingPath(7).token(), "missing_path_at_7");
+    }
+
+    /// **空结果是 `Ok(vec![])`，不是错误** —— 这是"空结果与失败必须区分"的判据。
+    #[test]
+    fn an_empty_match_list_is_a_successful_empty_result() {
+        assert_eq!(
+            parse_matches(Some(&json!({ "matches": [] }))),
+            Ok(Vec::new())
+        );
+        let state = SearchState::ready("needle", &[]);
+        assert_eq!(state.counts(), (0, 0));
+        assert!(state.rows().is_empty());
+        assert!(matches!(state, SearchState::Ready { .. }), "{state:?}");
+    }
+
+    fn content(path: &str, line: usize, preview: &str) -> Match {
+        Match {
+            kind: MatchKind::Content,
+            path: path.to_string(),
+            line: Some(line),
+            preview: preview.to_string(),
+        }
+    }
+
+    fn path_match(path: &str) -> Match {
+        Match {
+            kind: MatchKind::File,
+            path: path.to_string(),
+            line: None,
+            preview: path.to_string(),
+        }
+    }
+
+    /// 分组：文件头 + 命中行；文件顺序 = **第一次出现**的顺序（不重排）；
+    /// 文件内顺序 = Core 给出的顺序。
+    #[test]
+    fn grouping_keeps_the_core_order_and_folds_it_by_file() {
+        let rows = group(&[
+            content("b.java", 10, "ten"),
+            content("a.java", 3, "three"),
+            content("b.java", 2, "two"),
+        ]);
+        assert_eq!(
+            rows,
+            vec![
+                SearchRow::File {
+                    path: "b.java".to_string(),
+                    hits: 2
+                },
+                SearchRow::Hit {
+                    path: "b.java".to_string(),
+                    line: Some(10),
+                    preview: "ten".to_string()
+                },
+                SearchRow::Hit {
+                    path: "b.java".to_string(),
+                    line: Some(2),
+                    preview: "two".to_string()
+                },
+                SearchRow::File {
+                    path: "a.java".to_string(),
+                    hits: 1
+                },
+                SearchRow::Hit {
+                    path: "a.java".to_string(),
+                    line: Some(3),
+                    preview: "three".to_string()
+                },
+            ],
+            "文件按第一次出现的顺序、文件内按 Core 的顺序，都不许重排"
+        );
+    }
+
+    /// 只有路径命中的文件得到一个 `hits: 0` 的文件头；同一路径的路径命中 + 内容命中
+    /// **只出现一个文件头**（否则界面上会出现两个同名分组）。
+    #[test]
+    fn a_path_match_and_content_matches_share_one_file_header() {
+        let rows = group(&[
+            path_match("src/A.java"),
+            content("src/A.java", 5, "five"),
+            path_match("src/Other.java"),
+        ]);
+        assert_eq!(
+            rows,
+            vec![
+                SearchRow::File {
+                    path: "src/A.java".to_string(),
+                    hits: 1
+                },
+                SearchRow::Hit {
+                    path: "src/A.java".to_string(),
+                    line: Some(5),
+                    preview: "five".to_string()
+                },
+                SearchRow::File {
+                    path: "src/Other.java".to_string(),
+                    hits: 0
+                },
+            ]
+        );
+    }
+
+    /// 结果里的文件头是**展示分组**，而 `counts` 报的也是这两个数 —— 诊断行依赖它。
+    #[test]
+    fn counts_report_files_and_hit_rows() {
+        let state = SearchState::ready(
+            "q",
+            &[path_match("a"), content("a", 1, "x"), content("b", 2, "y")],
+        );
+        assert_eq!(state.counts(), (2, 2));
+        assert_eq!(state.query(), "q");
+        assert_eq!(SearchState::Idle.query(), "");
+        assert!(SearchState::Idle.rows().is_empty());
+        assert_eq!(SearchState::failed("q", "invalid_request").query(), "q");
+    }
+
+    /// 代次闸门：换代之后旧代次的结果**必须**被丢弃；当前代次的仍然采纳。
+    #[test]
+    fn a_superseded_generation_is_not_adopted() {
+        let mut timeline = QueryTimeline::default();
+        let first = timeline.schedule();
+        assert_eq!(first.generation, 1);
+        assert_eq!(first.operation_id, "lithe-gpui-search-1");
+        assert_eq!(first.superseded, None);
+        assert!(timeline.accepts(first.generation));
+
+        let second = timeline.schedule();
+        assert_eq!(second.generation, 2);
+        assert_eq!(second.operation_id, "lithe-gpui-search-2");
+        assert_eq!(
+            second.superseded.as_deref(),
+            Some("lithe-gpui-search-1"),
+            "换代要把上一条在飞请求交出来取消"
+        );
+        assert!(!timeline.accepts(first.generation), "旧代次不能被采纳");
+        assert!(timeline.accepts(second.generation));
+    }
+
+    /// 落地之后不再重复交出同一个 `operationId`；换代后旧的那条也不再被取消。
+    #[test]
+    fn a_settled_query_is_no_longer_handed_back_for_cancellation() {
+        let mut timeline = QueryTimeline::default();
+        let first = timeline.schedule();
+        timeline.settle(first.generation);
+        let second = timeline.schedule();
+        assert_eq!(second.superseded, None, "已经落地的请求不需要取消");
+
+        // 旧代次的 `settle` 不能清掉当前在飞的那一条。
+        timeline.settle(first.generation);
+        let third = timeline.schedule();
+        assert_eq!(third.superseded.as_deref(), Some("lithe-gpui-search-2"));
+    }
+
+    /// 放弃（清空输入）：换代并把在飞请求交出来取消；之后再放弃就没有可取消的了。
+    #[test]
+    fn abandoning_a_query_supersedes_it_and_returns_the_operation_to_cancel() {
+        let mut timeline = QueryTimeline::default();
+        let scheduled = timeline.schedule();
+        assert_eq!(
+            timeline.abandon().as_deref(),
+            Some(scheduled.operation_id.as_str())
+        );
+        assert!(!timeline.accepts(scheduled.generation));
+        assert_eq!(timeline.abandon(), None, "没有在飞请求时不该凭空造一个");
+    }
+
+    /// `operationId` 由代次拼出：单调、不重复（Core 用它做取消与陈旧判定的句柄）。
+    #[test]
+    fn operation_ids_are_unique_per_generation() {
+        let mut timeline = QueryTimeline::default();
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            let scheduled = timeline.schedule();
+            assert_eq!(scheduled.operation_id, operation_id(scheduled.generation));
+            assert!(!seen.contains(&scheduled.operation_id), "{seen:?}");
+            seen.push(scheduled.operation_id);
+        }
+    }
+
+    /// 相对路径 → 绝对路径：`/` 分段、忽略空段（`a//b`）。
+    /// 用 `join` 拼期望值，测试在 Windows / Unix 上都成立。
+    #[test]
+    fn relative_paths_become_absolute_by_segments() {
+        let root = Path::new("proj-root");
+        assert_eq!(
+            absolute(root, "src/main/A.java"),
+            root.join("src").join("main").join("A.java")
+        );
+        assert_eq!(
+            absolute(root, "//src//A.java"),
+            root.join("src").join("A.java")
+        );
+        assert_eq!(absolute(root, ""), root.to_path_buf());
+    }
+}

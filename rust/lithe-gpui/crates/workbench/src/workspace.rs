@@ -118,6 +118,7 @@ use crate::right_tool_window::{
     resolve_click as resolve_right_click, right_tool_window,
 };
 use crate::search_index::SearchIndexWiring;
+use crate::search_panel::SearchPanel;
 use crate::session::{SessionPlan, SessionTracker};
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
@@ -411,8 +412,8 @@ const CHANGES_ACTIVITY_IX: usize = 1;
 
 /// 左侧活动栏「搜索」项的下标 = 2（顶部组第 3 项，`item-order.ts:3` 的 `files, git, search`）。
 ///
-/// 只给 `--left-view search` 用：本侧搜索视图还没有内容（点它只切选中态），
-/// 所以 `--left-view search` 是"证明探针能切到顶部组任意一项"的对照，不是产品功能。
+/// 选中它时左栏画 [`crate::search_panel::SearchPanel`]（U17 第一件，2026-10-03 起；
+/// 在此之前点它只切选中态、内容仍是项目树）。
 const SEARCH_ACTIVITY_IX: usize = 2;
 
 /// 右侧活动栏「扩展」拼图项的下标 = 0。
@@ -947,6 +948,15 @@ pub struct ShellWorkspace {
     /// 本侧用 [`ShellWorkspace::top_activity_view`] 当下标做同一件事。
     /// 两个实体都常驻（不按需创建）：切换视图不该丢掉对方的滚动位置与展开状态。
     changes: Entity<ChangesView>,
+    /// 左侧栏的**第三个**内容视图：查找面板（活动栏「搜索」项，下标 [`SEARCH_ACTIVITY_IX`]）。
+    ///
+    /// 与上面两个同一个左栏槽位三选一渲染。面板的**状态**（查询串 / 选项 / 结果 / 代次）
+    /// 全在它自己那边（`crate::search_panel` 的模块文档），外壳只负责"什么时候把它画出来"
+    /// 与"把打开文件的回调接上编辑区"——`workspace.rs` 已经 4000+ 行，这是最后一处新增。
+    ///
+    /// ⚠️ 面板**不**进会话文档：查询与结果不入 `.lithe/session.local.json`
+    /// （搜索历史持久化不在本件范围）。
+    search: Entity<crate::search_panel::SearchPanel>,
     /// 中央列内容：编辑区（标签栏 + 正文 / 空状态）。
     editor: Entity<EditorPane>,
     /// 中央扩展页（`crate::extensions_page`，Zed 式独立页，2026-09-29 起）。
@@ -1263,6 +1273,42 @@ impl ShellWorkspace {
         });
 
         let terminal = cx.new(|cx| TerminalPane::new(window, cx));
+
+        // 左栏「搜索」（查找面板，U17 第一件）。**构造期不发 Core 调用**：面板默认是
+        // `idle` 空态（没有查询串就不搜），第一次 `workspace.search` 发生在用户输入之后。
+        //
+        // 打开通路的接线与资源管理器同源（`on_open` 那个回调）：外壳是唯一够得到编辑区的那层，
+        // 面板自己不 import `lithe-gpui-editor`。两条分支对应真机的两种结果：
+        // `Some(line)` → 跳到那一行（`open_at`，与问题列表同一个落地函数，只是 `kind=search`）；
+        // `None` → 只打开文件（按文件名命中的结果没有行可跳，`SearchSidebarView.swift:99-103`）。
+        let search = {
+            let editor_handle = editor.downgrade();
+            let shell_for_open = cx.entity().downgrade();
+            let on_open: Box<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static> =
+                Box::new(
+                    move |path: PathBuf, line: Option<u32>, window: &mut Window, cx: &mut App| {
+                        // 中央区让位回编辑器：与资源管理器点文件同一条（扩展页若开着就收掉）。
+                        let _ = shell_for_open.update(cx, |this, cx| {
+                            this.close_extensions_page(None, cx);
+                        });
+                        // 编辑区可能已经被关掉：`update` 返回 `Err` 时静默忽略，不 panic。
+                        let _ = editor_handle.update(cx, |pane, cx| match line {
+                            Some(line) => {
+                                // 列口径：Core 的搜索结果**只有行号没有列**
+                                // （`contracts.rs:101-102` 的 `SearchMatch`），所以列给 0
+                                // —— 与"落到行首"一致，也与问题列表的调用形状相同。
+                                pane.open_at(&path, line, 0, "search", window, cx);
+                            }
+                            None => pane.open(&path, window, cx),
+                        });
+                    },
+                );
+            let search_root = root.clone();
+            cx.new({
+                let window = &mut *window;
+                move |cx| SearchPanel::new(search_root, on_open, window, cx)
+            })
+        };
 
         // 标签右键菜单（`lithe-gpui/research/windows/09-tab-context-menu.md`）：把工作区根与
         // 两件"只有外壳做得了"的动作登记给编辑区。
@@ -1678,6 +1724,7 @@ impl ShellWorkspace {
             right_scan: RightScanState::default(),
             explorer,
             changes,
+            search,
             editor,
             // 中央扩展页：懒创建（首次打开才建实体），启动时关闭。
             extensions_page: None,
@@ -4004,6 +4051,20 @@ impl Render for ShellWorkspace {
                     // 切到「诊断」页时补一次刷新：面板自己不知道"用户什么时候打开了我"，
                     // 而诊断可能是在它不可见的那段时间里变多的（见 `editor::problems` 的表）。
                     this.refresh_problems_if_visible(cx);
+                    // 切到「搜索」时把焦点交给查询框（真机 `SearchSidebarView.swift:146`
+                    // 的 `onAppear { searchFocused = true }`）。**只有这一条事件回调能调**：
+                    // 焦点要 `&mut Window`，而 `render` 里不许 mutate / 起任务。
+                    //
+                    // 判据与渲染**同源**：既要选中「搜索」这一项，也要面板真的可见
+                    // （`left_pane_visible` 为假时面板没画出来，把焦点交给一个不可见的
+                    // 输入框会让用户"按键打到了看不见的地方"）。
+                    if index == SEARCH_ACTIVITY_IX
+                        && this.top_activity_view == Some(SEARCH_ACTIVITY_IX)
+                        && this.left_pane_visible
+                    {
+                        let search = this.search.clone();
+                        search.update(cx, |panel, cx| panel.activate(window, cx));
+                    }
                     cx.notify();
                     this.bottom_visible && this.bottom_kind == BottomPaneKind::Terminal
                 });
@@ -4127,8 +4188,14 @@ impl Render for ShellWorkspace {
         // `main-sidebar.tsx:777-816` 的 `activePaneId` 单选；本侧的下标来源是
         // `top_activity_view`，与活动栏高亮同源 —— 两处不同源会出现"图标亮着但内容不对"）。
         // 两个实体都常驻，切换只换渲染谁，不销毁对方的状态。
+        //
+        // 三个视图（项目树 / 更改 / 搜索）三选一：搜索面板是 U17 第一件接上的第三个，
+        // 判据与活动栏高亮**同源**（`top_activity_view`）—— 两处不同源会出现
+        // "图标亮着但内容不对"（真机 `main-sidebar.tsx:777-816` 的 `activePaneId` 单选）。
         let left_content: AnyElement = if self.top_activity_view == Some(CHANGES_ACTIVITY_IX) {
             self.changes.clone().into_any_element()
+        } else if self.top_activity_view == Some(SEARCH_ACTIVITY_IX) {
+            self.search.clone().into_any_element()
         } else {
             explorer.into_any_element()
         };
