@@ -501,6 +501,32 @@ impl DebugSessionHandle {
         result
     }
 
+    pub fn auto_advance_inspects(&mut self) {
+        if std::env::var_os("LITHE_DEBUG_VARIABLES_PROBE").is_none() {
+            return;
+        }
+        let snapshot = self.snapshot();
+        if snapshot.state.as_deref() != Some("paused") {
+            return;
+        }
+        let frame_id = first_frame_id(&snapshot);
+        let scope_ref = result_for(&snapshot, "scopes")
+            .and_then(|value| value.get("scopes"))
+            .and_then(Value::as_array)
+            .and_then(|scopes| scopes.first())
+            .and_then(|scope| scope.get("variablesReference"))
+            .and_then(Value::as_i64);
+        if let Some(scope_ref) = scope_ref {
+            if result_for(&snapshot, "variables").is_none() {
+                let _ = self.request_variables(scope_ref, frame_id, DEBUG_INSPECT_TIMEOUT);
+            }
+            return;
+        }
+        if let Some(frame_id) = frame_id {
+            let _ =
+                self.request_inspect("scopes", None, Some(frame_id), None, DEBUG_INSPECT_TIMEOUT);
+        }
+    }
     pub fn request_variables(
         &mut self,
         variables_reference: i64,

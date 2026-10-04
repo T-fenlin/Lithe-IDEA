@@ -2669,6 +2669,7 @@ impl DebugPane {
             return false;
         };
         let outcome = session.drain();
+        session.auto_advance_inspects();
         let snapshot = session.snapshot();
         copy_new_output(snapshot, &mut self.session_output_seen, &mut self.output);
         if let Some(error) = snapshot.last_error.clone() {
