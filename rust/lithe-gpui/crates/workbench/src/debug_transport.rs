@@ -17,6 +17,7 @@ const CREATE_SESSION_COMMAND: &str = "debug.createSession";
 const LAUNCH_COMMAND: &str = "debug.launch";
 const RECEIVE_COMMAND: &str = "debug.receive";
 const EXECUTE_COMMAND: &str = "debug.execute";
+const INSPECT_COMMAND: &str = "debug.inspect";
 const DISCONNECT_COMMAND: &str = "debug.disconnect";
 const DESTROY_SESSION_COMMAND: &str = "debug.destroySession";
 
@@ -824,6 +825,44 @@ impl DebugTransport {
         self.execute_with_operation(&operation_id, execution, thread_id)
     }
 
+    pub fn inspect_with_operation(
+        &mut self,
+        operation_id: &str,
+        kind: &str,
+        thread_id: Option<i64>,
+        frame_id: Option<i64>,
+        variables_reference: Option<i64>,
+    ) -> Result<Vec<Value>, String> {
+        self.command(
+            INSPECT_COMMAND,
+            json!({
+                "sessionId": self.session_id,
+                "operationId": operation_id,
+                "kind": kind,
+                "threadId": thread_id,
+                "frameId": frame_id,
+                "variablesReference": variables_reference,
+            }),
+        )
+    }
+
+    pub fn inspect(
+        &mut self,
+        kind: &str,
+        thread_id: Option<i64>,
+        frame_id: Option<i64>,
+        variables_reference: Option<i64>,
+    ) -> Result<Vec<Value>, String> {
+        let operation_id = self.take_operation_id(kind);
+        self.inspect_with_operation(
+            &operation_id,
+            kind,
+            thread_id,
+            frame_id,
+            variables_reference,
+        )
+    }
+
     pub fn execute_and_wait(
         &mut self,
         execution: &str,
@@ -1481,6 +1520,28 @@ mod tests {
     }
 
     #[test]
+    fn inspect_returns_the_operation_result_for_threads() {
+        let (mut transport, _adapter) = responding_transport("session-inspect");
+        drive_to_paused(&mut transport);
+
+        let immediate = transport
+            .inspect("threads", Some(1), None, None)
+            .expect("paused 之后应当能查线程");
+        assert!(
+            immediate.is_empty(),
+            "inspect 只是把请求发出去，结果要等 adapter 回包后由下一轮 poll 归约"
+        );
+        let matched = transport
+            .wait_for_event(Duration::from_secs(5), &|event| {
+                event.get("type").and_then(Value::as_str) == Some("operationCompleted")
+            })
+            .expect("等 inspect 结果不该报错")
+            .expect("adapter 应答之后必须归约出 operationCompleted 事件");
+        let text = serde_json::to_string(&matched).unwrap_or_default();
+        assert!(text.contains("main"), "线程名要出现在结果里，实得：{text}");
+    }
+
+    #[test]
     fn java_attach_configuration_points_at_the_lockback_debug_port() {
         let configuration =
             java_attach_configuration("Attach App", 5005, Some("demo")).expect("端口合法");
@@ -1742,6 +1803,16 @@ mod tests {
                         "type": "event",
                         "event": "stopped",
                         "body": { "reason": "step", "threadId": 1 }
+                    })));
+                }
+                "threads" => {
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 104,
+                        "type": "response",
+                        "request_seq": seq,
+                        "success": true,
+                        "command": "threads",
+                        "body": { "threads": [ { "id": 1, "name": "main" } ] }
                     })));
                 }
                 _ => {}
