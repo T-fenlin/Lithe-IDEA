@@ -93,6 +93,27 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
 **仍未做**（下一轮起手）：① UI 调用点 —— 工具栏三个按钮接 `execute_command`、"开始调试"菜单项接
 `start_java_session`；② 线程/调用栈/变量三块的渲染；③ 真机端到端（本机环境不具备，见下节）。
 
+### "开始调试"入口的现状与接线点（2026-10-04 实测）
+
+- **工具栏已经接上会话**：`DebugPane::press_toolbar_action` 的兜底分支在**有会话**时把
+  `DebugControl::command()`（本来就是 Core/DAP 的 camelCase 名：`continue`/`pause`/`next`/`stepIn`/
+  `stepOut`/`restart`/`terminate`）交给 `DebugSessionHandle::request_command`（**非阻塞**，UI 线程不等回执）；
+  没会话时仍打 `execute control=… status=skipped reason=no-session`。
+- **"开始调试"还没接**：`DebugPane::start_session`（`debug.rs:1631`）现在只做两件事 ——
+  有 blocker 就打 `start status=blocked reason=…` 并 `cx.notify()`，没有 blocker 就打
+  `start status=ready_to_dispatch`（**什么都不启动**）。
+- 面板**已经有一套现成的 blocker 模型**可复用：`DebugStartBlocker::{NoTransport, NoSession,
+  NoTransportAndNoSession}`，由 `start_blocker(self.transport(), self.session())` 组合得出
+  （`debug.rs:1380`），并带三条 i18n 文案 `lithe.debugger.gpui.startBlocked{NoTransport,NoSession,Both}`
+  —— 也就是说"起不来时告诉用户为什么"这条早有设计，接线时不要新造一套。
+- **接线需要两个面板现在没有的输入**（这是下一轮要确认的第一件事，别猜）：
+  ① **当前 Java LSP 会话 id**（`java_debug_session_port` 要它去向 JDTLS 要调试端口）——
+     它在 `crates/java` / workbench 层，需要确认由谁传给面板（`attach_session` 之前）；
+  ② **`DebugLaunchConfiguration`**（形状已实测：`{ name, request, arguments }`）——
+     应由 Core 的 `runConfig.*` 生成而不是宿主手拼，需确认用哪条命令（`runConfig.createLaunchPlan` 起步）。
+  拿到这两个输入后，入口就是三步：`start_java_session(...)` → `DebugSessionHandle::start(transport, 20ms)`
+  → `DebugPane::attach_session(handle)`，再把 `start_session` 的 `None` 分支接到这三步上。
+
 至此目标点名的 6 条 `debug.*`（`createSession` / `launch` / `receive` / `execute` / `disconnect` /
 `destroySession`）**全部有调用路径**，宿主离线用例共 35 条（transport 25 + 会话层 10）。
 
