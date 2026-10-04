@@ -1043,6 +1043,9 @@ fn main() {
             lithe_gpui_settings::register_fonts(cx);
             lithe_gpui_settings::watch_lithe_themes(cx);
             lithe_gpui_settings::install_actions(cx);
+            // 子视图 crate（explorer 等）的键位登记：app 不直接依赖它们，所以经 workbench 转出
+            // （理由见 `lithe_gpui_workbench::install_actions` 的文档）。
+            lithe_gpui_workbench::install_actions(cx);
             let _ = store;
 
             // 外壳的启动期形态登记成 `App::Global`：换项目会**重建整个 `ShellWorkspace`**，

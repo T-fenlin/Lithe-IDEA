@@ -179,6 +179,18 @@ pub use workspace::{
     set_shell_startup,
 };
 
+/// 登记本 crate（及其子视图 crate）的快捷键。
+///
+/// **为什么由 workbench 转出**：`crates/app` 只依赖 `lithe-gpui-workbench` 与
+/// `lithe-gpui-settings`（`app/Cargo.toml:36`），不直接依赖 `explorer` / `editor` 这些
+/// 子视图 crate。所以子 crate 的 `install_actions` 要经由本函数转到 app，
+/// 而不是给 app 新增依赖边。
+pub fn install_actions(cx: &mut gpui_kit::App) {
+    // 项目树：`⌘A` / `Ctrl+A` = 真源 `ProjectTreeSelection.selectAll`
+    // （选**焦点行的同级兄弟**，`ProjectTreeSelection.swift:59-70`）。
+    lithe_gpui_explorer::install_actions(cx);
+}
+
 /// 规格像素 → `Pixels` 的换算，**唯一实现在 [`lithe_gpui_shared::rem_px`]**。
 ///
 /// 原先这段换算在 `editor` / `git` / `settings` / `terminal` / `workbench` 五个 crate 里
