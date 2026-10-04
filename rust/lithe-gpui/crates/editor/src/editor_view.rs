@@ -545,6 +545,10 @@ impl EditorPane {
         self.buffer_write_host = Some(host);
     }
 
+    pub fn java_service(&self) -> Option<Arc<JavaLanguageService>> {
+        self.java.clone()
+    }
+
     pub fn set_gutter_breakpoints(
         &mut self,
         breakpoints: BTreeMap<PathBuf, Vec<GutterBreakpoint>>,
