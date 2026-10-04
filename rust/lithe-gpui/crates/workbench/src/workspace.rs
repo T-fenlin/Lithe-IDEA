@@ -1282,6 +1282,14 @@ impl ShellWorkspace {
             std::time::Duration::from_secs(10),
         ) {
             Ok(mut transport) => {
+                let seeded = self
+                    .debug
+                    .update(cx, |pane, _| pane.seed_probe_breakpoints());
+                let breakpoints_sent = self.debug.read(cx).resend_breakpoints(&session_id);
+                println!("{DEBUG_TAG} setBreakpoints seeded={seeded}");
+                println!(
+                    "{DEBUG_TAG} setBreakpoints_before_attach session={session_id} count={breakpoints_sent}"
+                );
                 let jdwp_port = self.run.read(cx).debug_port();
                 match jdwp_port {
                     Some(port) => {

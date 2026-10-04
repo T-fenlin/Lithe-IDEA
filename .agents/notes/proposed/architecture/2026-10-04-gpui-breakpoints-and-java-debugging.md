@@ -542,3 +542,14 @@ S1_DEBUG setBreakpoints session=java-debug path=src/main/java/demo/App.java stat
 `initialize → setBreakpoints → configurationDone/attach`），即 `start_debug_session` 里
 `start_java_session` → **先发断点** → `launch_with_configuration` → 再建句柄；
 另外我们的快照忽略了 `breakpoint` 事件（含 `verified` 标志），加一条诊断打印就能确认断点是否"已验证"。
+
+### 第 14/15 次实跑：断点顺序修复到位，但第 15 次撞上取端口超时（2026-10-04）
+
+改动（`debug.rs` + `workspace.rs`）：把探针断点播种抽成 `DebugPane::seed_probe_breakpoints()`，
+工作台在**下发 attach 之前**先播种再 `resend_breakpoints(session_id)`，并删掉 `attach_session` 里
+原来那段"attach 时再 toggle 一次"的旧代码（它会**反向 toggle** 掉刚设的断点）。
+
+- 第 14 次：`setBreakpoints_before_attach session=java-debug count=0` —— 顺序对了但当时断点还没播种（已修）；
+- 第 15 次：`start status=failed error=… start_debug_session_timeout … operation=java-debug-port timeout_ms=10000`
+  —— **取端口 10s 超时**：这次 JDT LS 还没导入完就来要端口了（前几次同一命令是成功的），属时序抖动，
+  与断点改动无关。应对：把取端口超时从 10s 提到 30s（或等 `S1_JAVA_SESSION` 后再触发调试启动）。

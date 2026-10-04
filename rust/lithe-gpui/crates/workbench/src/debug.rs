@@ -1618,6 +1618,39 @@ impl DebugPane {
         cx.notify();
     }
 
+    pub fn seed_probe_breakpoints(&mut self) -> usize {
+        let Ok(spec) = std::env::var("LITHE_DEBUG_BREAKPOINTS") else {
+            return 0;
+        };
+        let mut seeded = 0;
+        for item in spec
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+        {
+            let Some((path, line)) = item.rsplit_once(':') else {
+                continue;
+            };
+            let Ok(line) = line.trim().parse::<i64>() else {
+                continue;
+            };
+            self.breakpoints.toggle(path.trim(), line);
+            seeded += 1;
+        }
+        seeded
+    }
+
+    pub fn resend_breakpoints(&self, session_id: &str) -> usize {
+        let mut sent = 0;
+        for path in self.breakpoints.files().cloned().collect::<Vec<_>>() {
+            let payload = self.breakpoints.set_breakpoints_payload(session_id, &path);
+            if core_json(SET_BREAKPOINTS_COMMAND, payload).is_ok() {
+                sent += 1;
+            }
+        }
+        sent
+    }
+
     fn sync_breakpoints(&mut self, path: &str) {
         match self
             .session
@@ -2612,19 +2645,6 @@ impl DebugPane {
             session.session_id()
         );
         self.session = Some(session);
-        if let Ok(spec) = std::env::var("LITHE_DEBUG_BREAKPOINTS") {
-            for item in spec
-                .split(',')
-                .map(str::trim)
-                .filter(|item| !item.is_empty())
-            {
-                if let Some((path, line)) = item.rsplit_once(':') {
-                    if let Ok(line) = line.trim().parse::<i64>() {
-                        self.breakpoints.toggle(path.trim(), line);
-                    }
-                }
-            }
-        }
         let session_id = self
             .session
             .as_ref()
