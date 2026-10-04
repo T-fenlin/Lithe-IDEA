@@ -62,9 +62,26 @@ per workspace and agent; one connection carries many conversation sessions.
 "baseUrl": string, "apiKey": string, "name"?: string, "model"?: string,
 "allowInsecureHttp"?: bool } }`. With `agentId`, the host starts the adapter
 installed by `agent.install` under `dataDirectory`. Omitted `authentication`
-defaults to `apiKey`, which requires `provider` and signs in through
-the ACP `gateway` method over stdio: Responses providers send
-`Authorization: Bearer <key>` and Anthropic providers send `x-api-key`. The
+defaults to `apiKey`, which requires `provider`. Credentials travel over ACP
+stdio, never in Lithe's adapter launch arguments, environment, or files.
+This guarantee covers Lithe launching the ACP adapter, not the entire child
+process tree. The pinned Claude SDK serializes object-valued `options.settings`
+into the Claude Code CLI's `--settings` argument. Consequently,
+`settings.env.ANTHROPIC_API_KEY` is visible in that child process's arguments;
+SDK debug output may also record those arguments. This route does not eliminate
+that upstream exposure. Moving the key solely to `options.env` requires separate
+validation of precedence against user/project settings to preserve the selected
+provider's credentials.
+Responses providers use `gateway` authentication with `Authorization: Bearer
+<key>`. Claude uses the pinned adapter's public `_meta.claudeCode.options` on
+both `session/new` and `session/load`: its native API-key route is supplied in
+SDK `env` and programmatic `settings.env`, with `apiKeyHelper` and competing
+Bearer/OAuth/custom-header/cloud routes cleared. This avoids the adapter's
+gateway placeholder Bearer token overriding a valid `x-api-key`; it does not
+patch the adapter or change native CLI configuration files. Missing Claude
+credentials fail before session creation instead of falling back to an account.
+The route fixture is `shared/fixtures/agent/acp-events-v1.json`'s
+`upstream.claudeSessionRouting`. The
 user's own CLI is passed as `CODEX_PATH` or `CLAUDE_CODE_EXECUTABLE`, and a
 non-empty `model` as `CODEX_CONFIG` or `ANTHROPIC_MODEL`. Without `agentId`, `command` runs
 a user-provided agent that must support gateway sign-in with a Responses
@@ -160,6 +177,17 @@ the visible transcript and offer reconnect followed by `session/load`. This
 explicit recovery prevents another message from entering a lost cancelled turn.
 Other sessions on the same process are also detached on this failure.
 Normal cancellation does not restart the process.
+
+Every `prompt` also has a ten-minute absolute wall-clock limit, including tool
+execution and permission waits. This is a safety bound for an upstream request
+that stops responding; it is not an inactivity timer and progress updates do not
+extend it. On expiry the host sends the same `session/cancel`, emits
+`turnCancelling`, then waits up to the existing ten-second cancellation grace
+period before emitting `requestFailed` with an actionable timeout message. An
+acknowledged cancellation releases the session; otherwise the connection and its
+process tree are stopped. No terminal event is emitted during the grace period,
+so consumers keep the session busy. A late response cannot overlap a new prompt
+or turn an expired request into a successful completion.
 
 ACP `usage_update` notifications are forwarded unchanged in `update`, with
 `used` (tokens currently in context) and `size` (context window capacity), scoped
@@ -296,6 +324,11 @@ Node.js and npm remain user-managed. Detection is read-only and locally bounded.
 only when `canUpdate` is true. The hint is never executable input. Absent fields
 remain backward compatible with older hosts. Windows installer/shim ownership
 has not been verified; unrecognized installations use the manual path.
+The minimum CLI version is a compatibility requirement, not a latest-version
+check. macOS keeps an explicit update action available for compatible CLIs whose
+installation owner permits it, including when the preflight row is collapsed.
+After a successful update, users reconnect the Agent to start the updated CLI
+and obtain its model catalog; existing conversations are not interrupted automatically.
 
 `agent.install` and `agent.installCli` publish `agentInstallProgress` through the
 existing synchronous `execute_json_with_events`/C ABI event callback. Each event
@@ -2214,6 +2247,8 @@ gitlinks, stagedPaths, conflictedPaths }`. `head` is null only for an unborn bra
 null for detached HEAD. `indexEntries` is Git's opaque NUL-delimited staged index
 listing, including blob IDs and conflict stages; clients compare it without
 parsing it. `gitlinks` lists stage-0 mode-160000 entries as `{ path, revision }`.
+`stagedPaths` disables rename detection so both deleted and added paths are listed;
+local selection guards must not miss the old side of a rename.
 Read failures are errors, never an empty relationship list.
 The requested root must still be Git's exact working-tree root. Removing a
 nested repository's metadata must fail instead of falling back to its parent;
@@ -2259,6 +2294,18 @@ execution binding, never a portable identity. The response is
 finds real gitlink relationships, includes clean parents when requested, orders
 children first, and adds push-only child work where needed. Cycles fail closed.
 A changed reviewed plan must be displayed and confirmed again before any step.
+
+An optional `pathScope: { include, paths: { <repository-id>: [<relative-path>] } }`
+restricts local changelist commits. With `include: true`, only the listed literal
+paths are allowed; with `include: false`, the listed paths are excluded. Missing
+repository entries mean an empty set, not unrestricted access in inclusion mode.
+This is an exact-path guard, not a Git pathspec and not a second staging index.
+Core rejects any staged file or automatic parent-reference update outside the
+scope before executing mutations. It never silently unstages other lists. Scope
+changes invalidate a reviewed plan; retries inherit the original scope and may
+not replace it. Continuations retain the scope and validate it before writes,
+alongside the existing exact HEAD/index checks. Omitted scopes preserve existing
+clients' behavior. Shared examples: `shared/fixtures/git/local-changelist-scope-v1.json`.
 
 `git.workspaceCommitStep` accepts `{ session }` and returns the next session,
 executing at most one commit or push. Session fields are `plan`, last observed
