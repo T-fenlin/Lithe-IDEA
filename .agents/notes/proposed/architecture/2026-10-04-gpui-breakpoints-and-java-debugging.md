@@ -427,3 +427,24 @@ Java main-class 配置在用户层里的完整形状（provider + extensions）�
 
 至此这处改动**零未知数**：run 侧 `pane.rs` 加字段/`set_active_file`/`launch_plan` 的 `currentFile` 参数
 + 工作台两处喂值 + 一条单测（`launch_plan` 带 currentFile 时请求里出现该字段）。
+
+### 第 11 次实跑：DAP 会话被触发，暴露出取端口的语义错误（2026-10-04）
+
+给 `rust/lithe-gpui/crates/workbench/src/workspace.rs:789` 的 run 面板订阅补了
+"debug 启动后调用 `start_debug_session`"（`debug_port` 为 Some 时）后，链路第一次走到 DAP 侧：
+
+```
+S1_RUN_START … jdwp=suspended address=127.0.0.1:43761        ← 调试目标按 JDWP 挂起
+S1_DEBUG start status=failed error=S1_DEBUG_TRANSPORT start_debug_session_no_port
+  session=lsp-session-1 data={"operationId":"java-debug-port"}   ← 取端口失败
+```
+
+**根因（新）**：Core 的 `lsp.request` 是**排队**语义（文档注释就是 "Queues one semantic server request"），
+它的返回值只是回执元数据；`vscode.java.startDebugSession` 的真正结果（端口）要等事件回来
+（与 `debug.inspect` 得到 `operationCompleted` 的形态一致）。而 `java_debug_session_port`
+现在把返回值当结果解析 ⇒ 永远拿不到端口。
+
+**下一处改动**：`java_debug_session_port`（`rust/lithe-gpui/crates/workbench/src/debug_transport.rs`）
+改成"发 `lsp.request` → 用 `operationId` 等对应事件（`lsp.waitEvents`/`pollEvents` 或 Core 的语义操作完成事件）
+→ 再从事件里解析端口"，并把 `parse_debug_port` 的用例扩到事件形态。做完这一步，就能看到
+`start status=ok` 与 `launch status=sent jdwp=…`。

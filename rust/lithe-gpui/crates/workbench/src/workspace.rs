@@ -789,6 +789,9 @@ impl ShellWorkspace {
                 this.bottom_kind = BottomPaneKind::Run;
                 this.bottom_visible = true;
                 this.schedule_session_save(cx);
+                if this.run.read(cx).debug_port().is_some() {
+                    this.start_debug_session(cx);
+                }
                 cx.notify();
             }
         });
