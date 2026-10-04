@@ -33,6 +33,7 @@ lithe-gpui-terminal = { path = "../terminal" }
 # `maven.scan` 的请求与响应都是 JSON（`src/maven.rs`）；与 `editor` / `git` / `explorer`
 # 三个 feature 同一口径：`core_json` 收 `serde_json::Value`。
 serde_json = "1"
+base64 = "0.22"
 
 # UI 集成测试层（`D26`）：`tests/` 下的测试把**真实视图**渲染进无头窗口，用
 # `window.find/click/input` 这套观察接口断言。它由 `gpui-kit` 的 `test-support`

@@ -4760,6 +4760,7 @@ dependencies = [
 name = "lithe-gpui-workbench"
 version = "0.0.1"
 dependencies = [
+ "base64 0.22.1",
  "gpui-kit",
  "lithe-gpui-editor",
  "lithe-gpui-explorer",

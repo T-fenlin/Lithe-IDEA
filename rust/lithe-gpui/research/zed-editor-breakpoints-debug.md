@@ -300,6 +300,7 @@ Core 的 DAP 契约已经把边界划死了：`ReceiveRequest { session_id, data
 | gutter 位置与真源不一致 | `BLOCKERS.md` B18；真源 `CodeEditorView.swift:410-468` 是「行号列→断点列→代码」，而 gpui-component 无 gutter 缝（`registry.rs:446` 只有主题 token） | 宿主覆盖层 |
 | 逐请求超时 + 陈旧回包保护 | Zed 只有 TCP 建连超时（`transport.rs:605`）；Core 已有 `operationID` + `debug.cancelOperation` | 宿主 |
 | "Core 有、宿主没接"的 `debug.*` 命令守卫 | 18 条命令里宿主只调了 3 条（`debug.rs:22-25`） | 守卫脚本 |
+| **`debug.disconnect` 会让宿主进程 abort（新发现，2026-10-04）** | 接上传输层后实测：调用 `debug.disconnect` 后进程以 `STATUS_STACK_BUFFER_OVERRUN (0xC0000409)` 结束、栈里有 `std::panic::catch_unwind`（panic 穿过 C ABI 边界）；与是否先完成 `initialize`/`initialized` 握手无关（两种顺序都试过）。宿主 `DebugTransport` 的该用例已 `#[ignore]` 隔离并写明原因 | **Core `rust/lithe-core/src/debug/engine.rs:734`（待单独定位修复）** |
 
 ### 3.4 落地顺序（每步都能单独验证）
 
