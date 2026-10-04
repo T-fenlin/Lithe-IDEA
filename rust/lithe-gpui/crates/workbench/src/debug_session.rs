@@ -58,6 +58,25 @@ impl DebugSessionSnapshot {
                 self.state = Some(state);
                 changed
             }
+            "breakpoint" => {
+                println!(
+                    "{} breakpoint_event verified={} reason={} source={}",
+                    DEBUG_SESSION_TAG,
+                    event
+                        .pointer("/body/breakpoint/verified")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    event
+                        .pointer("/body/reason")
+                        .and_then(Value::as_str)
+                        .unwrap_or("-"),
+                    event
+                        .pointer("/body/breakpoint/source/path")
+                        .and_then(Value::as_str)
+                        .unwrap_or("-"),
+                );
+                false
+            }
             "stopped" => {
                 let reason = text(event, "reason");
                 let thread_id = event.get("threadId").and_then(Value::as_i64);

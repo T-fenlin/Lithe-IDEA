@@ -665,3 +665,19 @@ java-debug 依赖 `projectName`（来自 JDT LS 的工程）把 `source.path` �
 （`LITHE_DEBUG_DUMP_FRAMES=1` 时把 `poll_bounded` 拿到的每帧 JSON 打出来）。
 一看就能定性：是路径未被 adapter 接受、请求体形状不对、还是 adapter 压根没收到。
 在此之前不要盲改路径或 payload —— 前五个假设已证明盲改无效。
+
+### 第 22 轮实跑：adapter 不回 breakpoint 事件 ⇒ 关键信息在响应里，我们看不到（2026-10-04）
+
+给 `DebugSessionSnapshot::apply_one` 加了 `breakpoint` 事件诊断（打印 `verified`/`reason`/`source.path`）后，
+第 21 次实跑（日志编号 run21）**一条 `breakpoint_event` 都没有**。这本身是重要线索：
+
+- DAP 的 `setBreakpoints` **响应**（`body.breakpoints[].verified`）才是验证状态的权威来源；
+  `breakpoint` **事件**只在之后验证状态发生变化时才发 —— 所以"没有事件"是正常的，不代表断点有效或无效；
+- 而我们的链路**只消费事件**（`DebugSessionUpdate.events`），**从不看响应**：Core 把响应消耗在
+  `handle_response` 的 `PendingRequest` 分支里（`engine.rs` 附近），多数不转成事件 ⇒ 宿主的快照里
+  永远看不到 `verified`、也看不到 `setBreakpoints` 的错误。
+
+**下一步（唯一有效）**：在**传输层**加原始帧 dump —— `LITHE_DEBUG_DUMP_FRAMES=1` 时把驱动器
+`poll` 路径上收到的每一帧 JSON 打出来（含 `type=response` 的 `setBreakpoints` 响应）。
+看到 `body.breakpoints[0].verified` 与 `source.path` 就能立刻定性：路径没被接受？请求体形状不对？
+还是 adapter 压根没收到？没有这层 dump，前面的五个假设已经证明盲改无效。
