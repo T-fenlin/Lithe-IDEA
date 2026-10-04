@@ -930,3 +930,25 @@ let scope_ref = result_for(&snapshot, "scopes")                 // 或 result_fo
    这样一次调用内就能走完四步，且完全不依赖渲染循环。
 
 ②更贴合"探针/无头"场景，且改动只在一个方法内。推荐先做 ②。
+
+### ✅ 第 35 轮实跑：真机变量链打通，目标五步全部达成（2026-10-04）
+
+在有界自旋 pump 之后（每步之后 `self.drain()` 直到该步结果出现，`DEBUG_INSPECT_TIMEOUT` 兜底），
+第 36 次实跑的原始帧：
+
+```
+S1_DEBUG start status=ok session=java-debug
+inspect_requested kind=threads / kind=stackTrace / kind=scopes
+seq15 operationCompleted …-stackTrace {"kind":"stackTrace","stackFrames":[{"id":1,"name":"App.main(String[])",…}]}
+seq16 operationCompleted …-scopes     {"kind":"scopes","scopes":[{"name":"Local","variablesReference":2,…}]}
+seq18 operationCompleted …-variables  {"kind":"variables","variables":[{"name":"arg0","value":"String[0]@9","type":"String[]",…}]}
+```
+
+⇒ **真机 Java 端到端五步全部拿到证据**：
+启动（JDWP 挂起 → 端口 → adapter → createSession → attach）→ 断点命中（`verified:true` → paused →
+`stopped reason=breakpoint`）→ 单步（`next` → `stopped reason=step`）→ **变量（threads → stackTrace →
+scopes → variables，含真实局部变量值 `arg0 = String[0]@9`）** → 停止（disconnect/destroy + 杀 adapter）。
+
+**整段排查的关键教训**（值得进规范）：宿主 inspect 的回复**不在调用返回时就可见**，
+必须在有界时间内"泵"（drain）到结果出现；否则任何"一步接一步"的链都会在第一步卡住。
+真机验证这类"请求-响应 + 事件"混合协议时，先加原始帧 dump（`LITHE_DEBUG_DUMP_FRAMES=1`）再谈行为。

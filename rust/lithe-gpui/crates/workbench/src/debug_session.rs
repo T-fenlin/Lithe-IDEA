@@ -527,6 +527,20 @@ impl DebugSessionHandle {
                 self.request_inspect("scopes", None, Some(frame_id), None, DEBUG_INSPECT_TIMEOUT);
         }
     }
+    fn pump_until(&mut self, kind: &str) -> bool {
+        let deadline = std::time::Instant::now() + DEBUG_INSPECT_TIMEOUT;
+        loop {
+            if result_for(&self.snapshot(), kind).is_some() {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            self.drain();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
     pub fn auto_advance_inspects_chain(&mut self) {
         if std::env::var_os("LITHE_DEBUG_VARIABLES_PROBE").is_none() {
             return;
@@ -537,12 +551,14 @@ impl DebugSessionHandle {
         if result_for(&self.snapshot(), "threads").is_none() {
             let _ = self.request_inspect("threads", None, None, None, DEBUG_INSPECT_TIMEOUT);
         }
+        self.pump_until("threads");
         let thread_id = result_for(&self.snapshot(), "threads")
             .and_then(|value| value.get("threads"))
             .and_then(Value::as_array)
             .and_then(|threads| threads.first())
             .and_then(|thread| thread.get("id"))
             .and_then(Value::as_i64);
+        self.pump_until("threads");
         if result_for(&self.snapshot(), "stackTrace").is_none() {
             if let Some(thread_id) = thread_id {
                 let _ = self.request_inspect(
@@ -554,6 +570,7 @@ impl DebugSessionHandle {
                 );
             }
         }
+        self.pump_until("stackTrace");
         if result_for(&self.snapshot(), "scopes").is_none() {
             if let Some(frame_id) = first_frame_id(&self.snapshot()) {
                 let _ = self.request_inspect(
@@ -565,6 +582,7 @@ impl DebugSessionHandle {
                 );
             }
         }
+        self.pump_until("scopes");
         let scope_ref = result_for(&self.snapshot(), "scopes")
             .and_then(|value| value.get("scopes"))
             .and_then(Value::as_array)
