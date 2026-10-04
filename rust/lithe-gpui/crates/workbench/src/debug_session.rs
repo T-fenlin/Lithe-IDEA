@@ -213,10 +213,11 @@ pub fn next_inspect(snapshot: &DebugSessionSnapshot, stage: &InspectStage) -> Op
         });
     }
     if !stage.scopes_requested {
+        let frame_id = first_frame_id(snapshot)?;
         return Some(InspectSpec {
             kind: "scopes",
             thread_id,
-            frame_id: first_frame_id(snapshot),
+            frame_id: Some(frame_id),
             variables_reference: None,
         });
     }
@@ -232,6 +233,7 @@ pub fn first_frame_id(snapshot: &DebugSessionSnapshot) -> Option<i64> {
             .and_then(|frames| frames.first())
             .and_then(|frame| frame.get("id"))
             .and_then(Value::as_i64)
+            .filter(|id| *id > 0)
         {
             return Some(id);
         }
@@ -239,12 +241,16 @@ pub fn first_frame_id(snapshot: &DebugSessionSnapshot) -> Option<i64> {
     None
 }
 
+pub const DEBUG_INSPECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub struct DebugSessionHandle {
     session_id: String,
     driver: crate::debug_transport::DebugSessionDriver,
     snapshot: DebugSessionSnapshot,
     last_exit: Option<String>,
     total_events: u64,
+    inspect_stage: InspectStage,
+    last_state: Option<String>,
 }
 
 impl DebugSessionHandle {
@@ -259,6 +265,8 @@ impl DebugSessionHandle {
             snapshot: DebugSessionSnapshot::default(),
             last_exit: None,
             total_events: 0,
+            inspect_stage: InspectStage::default(),
+            last_state: None,
         }
     }
 
@@ -292,6 +300,37 @@ impl DebugSessionHandle {
         self.total_events += outcome.events;
         if outcome.exited.is_some() {
             self.last_exit = outcome.exited.clone();
+        }
+        if self.snapshot.state != self.last_state {
+            println!(
+                "{DEBUG_SESSION_TAG} inspect_stage_reset from={:?} to={:?}",
+                self.last_state, self.snapshot.state
+            );
+            self.inspect_stage = InspectStage::default();
+            self.last_state = self.snapshot.state.clone();
+        }
+        if let Some(spec) = next_inspect(&self.snapshot, &self.inspect_stage) {
+            match spec.kind {
+                "threads" => self.inspect_stage.threads_requested = true,
+                "stackTrace" => self.inspect_stage.stack_requested = true,
+                "scopes" => self.inspect_stage.scopes_requested = true,
+                _ => {}
+            }
+            let kind = spec.kind;
+            match self.request_inspect(
+                kind,
+                spec.thread_id,
+                spec.frame_id,
+                spec.variables_reference,
+                DEBUG_INSPECT_TIMEOUT,
+            ) {
+                Ok(()) => println!("{DEBUG_SESSION_TAG} inspect_requested kind={kind}"),
+                Err(error) => {
+                    eprintln!(
+                        "{DEBUG_SESSION_TAG} inspect_request_failed kind={kind} error={error}"
+                    )
+                }
+            }
         }
         outcome
     }
@@ -484,6 +523,26 @@ mod tests {
                         "success": true,
                         "command": "threads",
                         "body": { "threads": [ { "id": 1, "name": "main" } ] }
+                    })));
+                }
+                "stackTrace" => {
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 105,
+                        "type": "response",
+                        "request_seq": seq,
+                        "success": true,
+                        "command": "stackTrace",
+                        "body": { "stackFrames": [ { "id": 42, "name": "main", "line": 3 } ] }
+                    })));
+                }
+                "scopes" => {
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 106,
+                        "type": "response",
+                        "request_seq": seq,
+                        "success": true,
+                        "command": "scopes",
+                        "body": { "scopes": [ { "name": "Locals", "variablesReference": 9 } ] }
                     })));
                 }
                 _ => {}
@@ -702,6 +761,46 @@ mod tests {
         assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
     }
     #[test]
+    fn paused_session_fetches_threads_stack_and_scopes_without_being_asked() {
+        use crate::debug_transport::DebugTransport;
+        use std::time::{Duration, Instant};
+
+        let adapter = FrameQueue {
+            incoming: Vec::new(),
+        };
+        let transport = DebugTransport::start(
+            "session-auto-inspect",
+            "java",
+            r"D:\proj",
+            false,
+            Box::new(adapter),
+        )
+        .expect("起会话");
+        let mut handle = DebugSessionHandle::start(transport, Duration::from_millis(20));
+
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline && handle.snapshot().results.len() < 2 {
+            handle.drain();
+        }
+        let kinds: Vec<&str> = handle
+            .snapshot()
+            .results
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert!(
+            kinds.contains(&"threads") && kinds.contains(&"stackTrace"),
+            "暂停后应当自动拉到线程与调用栈，实得：{kinds:?}"
+        );
+        println!(
+            "{DEBUG_SESSION_TAG} auto_inspect_kinds={kinds:?} first_frame={:?}",
+            first_frame_id(handle.snapshot())
+        );
+
+        assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
+    }
+
+    #[test]
     fn next_inspect_walks_threads_stack_and_scopes_once_each() {
         let mut snapshot = DebugSessionSnapshot::default();
         let mut stage = InspectStage::default();
@@ -721,20 +820,18 @@ mod tests {
         assert_eq!(second.thread_id, Some(1));
         stage.stack_requested = true;
 
+        snapshot.results.insert(
+            "stackTrace".to_string(),
+            json!({ "kind": "stackTrace", "frames": [ { "id": 42, "name": "main" } ] }),
+        );
         let third = next_inspect(&snapshot, &stage).expect("最后拉作用域");
         assert_eq!(third.kind, "scopes");
-        assert_eq!(third.frame_id, None, "还没有栈帧结果时 frame_id 只能是空");
+        assert_eq!(third.frame_id, Some(42), "作用域必须带可用帧 id");
         stage.scopes_requested = true;
         assert!(
             next_inspect(&snapshot, &stage).is_none(),
             "三步都拉过之后不该重复拉"
         );
-
-        snapshot.results.insert(
-            "stackTrace".to_string(),
-            json!({ "kind": "stackTrace", "frames": [ { "id": 42, "name": "main" } ] }),
-        );
-        assert_eq!(first_frame_id(&snapshot), Some(42));
 
         snapshot.results.insert(
             "stackTrace".to_string(),
@@ -744,6 +841,21 @@ mod tests {
             first_frame_id(&snapshot),
             Some(7),
             "DAP 原生字段名 stackFrames 也要认"
+        );
+
+        snapshot.results.insert(
+            "stackTrace".to_string(),
+            json!({ "kind": "stackTrace", "frames": [ { "id": 0, "name": "synthetic" } ] }),
+        );
+        assert_eq!(
+            first_frame_id(&snapshot),
+            None,
+            "0/负数不是可用帧 id（Core 会拒 frameId<0），此时不许发 scopes"
+        );
+        stage.scopes_requested = false;
+        assert!(
+            next_inspect(&snapshot, &stage).is_none(),
+            "拿不到正数帧 id 时应当停下，而不是发一个 Core 必然拒绝的请求"
         );
 
         snapshot.state = Some("running".to_string());
