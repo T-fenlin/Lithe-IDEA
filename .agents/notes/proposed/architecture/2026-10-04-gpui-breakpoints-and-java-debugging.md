@@ -833,3 +833,19 @@ fn advance_probe_inspects(&mut self, snapshot: &DebugSessionSnapshot) {
 然后只改 `drain_session` 的**尾部**加一行 `self.advance_probe_inspects(&snapshot);`。
 方法内部只有一次 `self.session.as_mut()`，与外层的借用互不重叠 ⇒ 不会再 E0499。
 （注意 `snapshot` 是 `drain_session` 里已取好的 `DebugSessionSnapshot` 值，直接传引用即可。）
+
+### 第 30 轮：更优解法 —— 把自动推进放进 DebugSessionHandle，而不是面板（2026-10-04）
+
+上一条"抽成面板方法"仍要面对面板里 `self.session` 的借用次序问题。更干净的落点是
+**`rust/lithe-gpui/crates/workbench/src/debug_session.rs` 的 `DebugSessionHandle`**：
+
+- `drain_session` 每帧都会调用 `session.drain()`（`DebugSessionHandle` 自己的方法），
+  而 handle **天然持有 `&mut self`**，可以直接读自己的 `snapshot()`（`results` 键 `stackTrace#…`/`scopes#…`/`variables#…`）；
+- 于是在 handle 里加一个 `fn auto_advance_inspects(&mut self)`（或直接在 `drain()` 里推进一步）：
+  paused 且无 `scopes#` → 发 `request_inspect("scopes", None, Some(frame_id), None, 5s)`；
+  有 `scopes#` 且无 `variables#` → 发 `request_variables(scope_ref, Some(frame_id), 5s)`；
+  用 `LITHE_DEBUG_VARIABLES_PROBE` 门控（与其它探针输入一致）；
+- **面板一行都不用改**，也就不存在 `self.session` 的双重可变借用 ⇒ 不会再有 E0499。
+
+配合已有的 `LITHE_DEBUG_DUMP_FRAMES=1`，跑一次即可看到 `scopes`/`variables` 的 operationCompleted 帧，
+若结果符合预期，本目标即可标完成（真机五步全绿）。
