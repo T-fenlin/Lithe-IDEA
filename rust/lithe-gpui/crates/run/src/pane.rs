@@ -108,6 +108,10 @@ impl RunPane {
                 .is_some_and(|session| !session.suspends_for_debugger())
     }
 
+    pub fn debug_port(&self) -> Option<u16> {
+        self.debug_port
+    }
+
     pub fn is_running(&self) -> bool {
         self.session
             .as_ref()
