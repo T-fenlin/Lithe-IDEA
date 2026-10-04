@@ -735,6 +735,39 @@ mod tests {
             // （`crates/shared/locales/source/locale.ts:8435,8439`；英文侧同键 `:4137,4141`）。
             ("lithe.navigation.definition", "定义"),
             ("lithe.navigation.noTargetFound", "未找到{target}。"),
+            // U20（编辑器补缺）新接线的 11 条 —— **全部是真源 / catalog 既有键**，
+            // 所以这一批零新增文案（两份 yml 与 `GPUI_ONLY_KEYS` 都不用动）：
+            //
+            // ①「转到行:列」对话框（`editor/src/go_to_line.rs` + `editor_view.rs` 的
+            //    `open_go_to_line`）：标题用真源面板自己的标题 "Go to Line:Column"
+            //    （`macos/Sources/Lithe/Views/Editor/GoToLineDialog.swift:62`），
+            //    输入框提示复用导航菜单那一项的字面量（`LitheApp.swift:587`），
+            //    两个按钮是通用词（`lithe.ui.ok` 是本批新用到的既有键；`lithe.ui.cancel`
+            //    已在上面阶段 9 那段接过）。
+            ("lithe.editor.goToLineColumn", "转到行和列"),
+            ("lithe.navigation.goToLinePrompt", "转到行"),
+            ("lithe.ui.ok", "确定"),
+            // ②「编辑器」页新增的两个开关（`settings/src/dialog.rs` 的 `editor_page`）：
+            //    自动换行用 catalog 既有键（macOS 真源里**没有**这个设置项，出处见
+            //    `schema::Settings::word_wrap` 的字段文档）；自动保存那一行的标签用
+            //    **macOS 真源自己那一句**（`SettingsView.swift:553-557` 的 "Save changed files
+            //    automatically"），描述用 catalog 既有键。
+            ("lithe.settings.editor.wordWrap", "自动换行"),
+            (
+                "lithe.settings.editor.wordWrapDescription",
+                "换行显示超出视口宽度的行",
+            ),
+            ("lithe.settings.mac.files", "文件"),
+            ("lithe.settings.mac.autoSave", "自动保存更改的文件"),
+            (
+                "lithe.settings.editor.autoSaveDescription",
+                "编辑时自动保存文件",
+            ),
+            // ③ U20 从占位项转正的三条菜单项：文案键**一条都没换**（转正只换执行分支），
+            //    它们原来在占位态就已解析得出，这里补登记是因为它们现在被真的执行。
+            ("lithe.menu.goToLine", "转到行"),
+            ("lithe.menu.toggleWordWrap", "切换自动换行"),
+            ("lithe.menu.showHover", "显示悬停信息"),
             // 阶段 6 第一半（右侧工具窗）：三个视图的头部标题 + 各自空态，以及面板关闭按钮的
             // 无障碍名 / tooltip。全部是**真源既有**键：
             // `maven.title`（`maven-pane.tsx:602`；`locale.ts:6043` / en `:1623`）、

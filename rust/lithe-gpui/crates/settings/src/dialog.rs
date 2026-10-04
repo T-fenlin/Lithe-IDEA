@@ -1780,6 +1780,31 @@ impl SettingsDialog {
                         None,
                         cx,
                     ),
+                    // 「自动换行」：**不是**照抄某个真源面板 —— macOS 真源里没有这个设置项
+                    // （`macos/Sources/Lithe/Models/Settings/` 全量 grep `wordWrap` 零命中），
+                    // 文案取自 catalog 既有键（Windows 前端的 `settings.editor.wordWrap`）。
+                    // 它是"上游能力已经在那儿、宿主缺公开入口"那一档的对偶：
+                    // 菜单「视图 → 切换自动换行」原来是占位项，理由正是
+                    // "能力在 `EditorState::set_soft_wrap`（`pub`），但外壳够不到任何一个
+                    // `EditorState`"（`menu_bar.rs:1348-1354`）—— 现在两个入口都写这个键。
+                    settings_row(
+                        "settings-row-editor-word-wrap",
+                        tr("lithe.settings.editor.wordWrap"),
+                        Some(tr("lithe.settings.editor.wordWrapDescription")),
+                        {
+                            let store = self.store.clone();
+                            Switch::new("settings-editor-word-wrap")
+                                .small()
+                                .checked(settings.word_wrap)
+                                .on_change(move |checked, _, cx| {
+                                    let checked = *checked;
+                                    store.update(cx, |store, cx| store.set_word_wrap(checked, cx));
+                                })
+                                .into_any_element()
+                        },
+                        None,
+                        cx,
+                    ),
                 ],
                 cx,
             )
@@ -1810,6 +1835,40 @@ impl SettingsDialog {
                             })
                         },
                     ),
+                    None,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+            // 「文件」分组：真源是 macOS「设置 → 通用 → Files」那一组
+            // （`SettingsView.swift:553-569`），组里那个勾选框就是「自动保存更改的文件」
+            // （`:554-557`，文案键 `lithe.settings.mac.autoSave`）。
+            //
+            // ⚠️ 真源同组还有一条「Save after」（`:558-568`，档位 0.5 / 1.5 / 3.0 秒）
+            // **不画**：gpui 的防抖是 `editor_view.rs` 里一个与真源三档都不等的常量
+            // （`AUTO_SAVE_DEBOUNCE` = 150ms），改它是可见的行为变化、需要维护者裁定 ——
+            // 理由逐条写在 `schema::Settings::auto_save` 的字段文档里。画一个改不动生效值的
+            // 延迟下拉违反"不画假控件"，所以连置灰都不画。
+            settings_group(
+                tr("lithe.settings.mac.files"),
+                vec![settings_row(
+                    "settings-row-editor-auto-save",
+                    tr("lithe.settings.mac.autoSave"),
+                    Some(tr("lithe.settings.editor.autoSaveDescription")),
+                    {
+                        let store = self.store.clone();
+                        Switch::new("settings-editor-auto-save")
+                            .small()
+                            .checked(settings.auto_save)
+                            .on_change(move |checked, _, cx| {
+                                let checked = *checked;
+                                // 只写设置：推给编辑区是**外壳**的事（订阅 `SettingsStore` 后调
+                                // `EditorPane::set_auto_save`），口径与 `autoCompletion` 逐字相同。
+                                store.update(cx, |store, cx| store.set_auto_save(checked, cx));
+                            })
+                            .into_any_element()
+                    },
                     None,
                     cx,
                 )],

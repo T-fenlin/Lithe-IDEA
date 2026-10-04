@@ -567,6 +567,50 @@ pub struct Settings {
     #[serde(rename = "autoCompletion")]
     pub auto_completion: bool,
 
+    /// 软换行（超出视口宽度的行是否折行显示）。键 `wordWrap`，默认 `true`。
+    ///
+    /// ## 文案出处与 macOS 真源的关系
+    ///
+    /// ⚠️ macOS 的 `AppSettings` 里**没有**这个键（`macos/Sources/Lithe/Models/Settings/`
+    /// 全量 grep `wordWrap` 零命中）—— 所以本行的文案取自 catalog 既有键
+    /// `lithe.settings.editor.wordWrap` / `...Description`（Windows 前端的产物，仍然是本仓
+    /// `crates/shared/locales/` 的既有真相）。界面上真有这个开关的理由不是"照抄某一端"，
+    /// 而是**上游能力已经给了默认值**：`EditorState` 的软换行默认就是开
+    /// （`gpui-base-0.7.0/src/input/base/state.rs:9963` 的文档原句 "Set the soft wrap mode,
+    /// default is true"），而菜单「视图 → 切换自动换行」在本仓被登记为占位项时给的缺项理由
+    /// 正是"能力是 `pub` 的、缺的是**外壳够得到的公开入口**"（`workbench/src/menu_bar.rs:1348-1354`）。
+    ///
+    /// ## 生效方式：**立即**，且**单一真相源**
+    ///
+    /// 落到 `lithe-gpui-editor` 的每个 `EditorState`（`EditorPane::set_soft_wrap`），由外壳在
+    /// 启动时与每次设置变化后转发 —— 与 `tabSize` / `autoCompletion` 同一条"值型设置经外壳
+    /// 转发"的路子（依赖方向：`workbench` → `editor`，见 `lib.rs` 的模块文档）。
+    ///
+    /// ⚠️ 菜单「切换自动换行」**写的就是这个键**（而不是一份会话内的临时状态）：
+    /// 真源那边根本没有这个设置项，如果菜单只翻会话状态、设置页又画一个开关，同一个概念就
+    /// 有了两个值、并且会互相覆盖（改设置→菜单显示旧态，点菜单→设置页显示旧态）。
+    /// 一个键 + 一个 owner 是这里唯一不会分叉的形态。
+    #[serde(rename = "wordWrap")]
+    pub word_wrap: bool,
+
+    /// 自动保存（编辑时是否把改动写回磁盘）。键 `autoSave`，默认 `true`
+    /// （macOS 真源 `AppSettings.swift:193` 的 `defaults.object(forKey:) as? Bool ?? true`）。
+    ///
+    /// 真源的落点是 `DocumentFeatureModel.autoSaveEnabledProvider` 那道闸门
+    /// （`macos/.../DocumentFeatureModel.swift:1033`：关掉就 `cancel` 待执行的自动保存并返回）；
+    /// 本仓对应 `lithe-gpui-editor` 的 `EditorPane::set_auto_save`
+    /// （`editor/src/editor_view.rs` 的 `schedule_auto_save` 守卫）。
+    ///
+    /// ⚠️ **只做"开/关"**，真源还有一个「Save after」延迟下拉
+    /// （`SettingsView.swift:558-568`，档位 0.5 / 1.5 / 3.0 秒）—— 本批**不做**：gpui 现在的防抖
+    /// 是一个与真源三个档位都不等的常量（`editor_view.rs` 的 `AUTO_SAVE_DEBOUNCE` = 150ms），
+    /// 把它改成 1.5s 是**可见的行为变化**（等于"自动保存变慢了"），属于需要维护者裁定的产品口径，
+    /// 不是接一个开关就能顺带决定的。这条差异已如实登记在交付报告里。
+    ///
+    /// 关掉时**不是"不脏"**：正文照旧标脏、`Ctrl+S` 照旧可存，只是不再有防抖自动落盘。
+    #[serde(rename = "autoSave")]
+    pub auto_save: bool,
+
     /// 选择打开其他项目时是否**每次询问**（弹「你想在哪里打开项目"X"？」）。
     /// Windows 键 `askWhereToOpenProjects`，默认 `true`（`default-settings.ts:111`）。
     ///
@@ -633,6 +677,10 @@ impl Default for Settings {
             maven_local_repository_path: String::new(),
             // 真源默认 `true`（`default-settings.ts:153`）—— 默认就该"打字有提示"。
             auto_completion: true,
+            // 软换行默认开：与上游 `EditorState` 的默认档一致（理由见字段文档）。
+            word_wrap: true,
+            // 自动保存默认开：macOS 真源 `AppSettings.swift:193` 的默认就是 `true`。
+            auto_save: true,
             // 「打开其他项目」的两个键都照真源默认 `true`（`default-settings.ts:111-112`）：
             // 默认每次询问，且（真源口径下）默认在新窗口打开。
             ask_where_to_open_projects: true,
@@ -833,6 +881,11 @@ mod tests {
         assert_eq!(settings.maven_local_repository_path, "");
         // LSP 页的 `autoCompletion` 默认 `true`（真源 `default-settings.ts:153`）。
         assert!(settings.auto_completion);
+        // 软换行与自动保存默认都开：软换行对齐上游 `EditorState` 的默认档
+        // （`gpui-base-0.7.0/src/input/base/state.rs:9963`），自动保存对齐 macOS
+        // `AppSettings.swift:193` 的 `?? true`。两条都是"默认不该让用户觉得功能坏了"。
+        assert!(settings.word_wrap);
+        assert!(settings.auto_save);
         // 「打开其他项目」的两个键默认都是 `true`（真源 `default-settings.ts:111-112`）：
         // 默认每次询问在哪打开，且真源默认偏好"新窗口"。
         assert!(settings.ask_where_to_open_projects);

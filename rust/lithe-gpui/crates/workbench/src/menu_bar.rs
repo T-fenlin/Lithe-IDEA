@@ -52,7 +52,7 @@
 //!
 //! | | 真源 | 本侧 v1 | 本侧 B3（现在） |
 //! | --- | --- | --- | --- |
-//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：47 条已接线 + 46 条占位 |
+//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：50 条已接线 + 43 条占位（U20 又转正 3 条） |
 //! | 没能力的项 | 恒可点（点下去做那件事） | 不画 | 画出来、可点、点了**如实**说缺什么 |
 //! | 灰化 | 4 处后端能力开关 | 不灰化 | 不灰化（占位项用提示表达"还没有"，不用颜色） |
 //!
@@ -64,7 +64,7 @@
 //!    `every_listed_item_is_wired_or_declares_what_is_missing` 逐条断言
 //!    "要么已接线（有 `CommandId` 或在 `NON_COMMAND` 里登记）、要么声明非空"——
 //!    谁想悄悄加一条永远不工作的项，这里就红。
-//! 2. **文案按能力分组**（Q14 粒度 `2d`）：46 条占位项只有 [`MISSING_GROUPS`] 那么多句话
+//! 2. **文案按能力分组**（Q14 粒度 `2d`）：43 条占位项只有 [`MISSING_GROUPS`] 那么多句话
 //!    （**16 条**，一种能力一句），每句都回答"缺什么"。文案键全部是 gpui 侧新增
 //!    （真源的菜单项恒可执行，catalog 里没有"尚未接入"这类句子），理由逐条写在
 //!    `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
@@ -306,7 +306,7 @@ impl Missing {
 // B3 的能力分组（**一种能力一句话**，Q14 的粒度 `2d`）
 // ---------------------------------------------------------------------------
 //
-// 46 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
+// 43 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
 // `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里（逐条写了理由：
 // 真源的菜单项**恒可执行**，catalog 里没有"尚未接入"这类文案）。
 //
@@ -563,6 +563,12 @@ pub const KEY_ZOOM_IN: &str = "ctrl-=";
 pub const KEY_ZOOM_OUT: &str = "ctrl--";
 /// 视图 → 重置缩放：`Ctrl+0`（真源 `menu.resetZoom` 的 `mod+0`）。
 pub const KEY_RESET_ZOOM: &str = "ctrl-0";
+/// 转到 → 转到行：`Ctrl+G`（真源 Windows 平台表 `LitheCommandCatalog.swift:56` 的
+/// `shortcut("g", [.control])`；macOS 那档是 `Cmd+L`，`:94`）。
+///
+/// ⚠️ `ctrl-g` 在整个依赖树里**没有生产绑定**（`gpui-component-0.7.0/src/command/state.rs:1269`
+/// 与 `gpui-pre-0.3.7/src/interactive.rs:923` 两处都在 `#[cfg(test)]` 里），所以绑定是安全的。
+pub const KEY_GO_TO_LINE: &str = "ctrl-g";
 
 // B2 那六条键位各自的 action（`Ctrl+Shift+T` / `Ctrl+B` / `Ctrl+J` / `Ctrl+=` / `Ctrl+-` / `Ctrl+0`）。
 //
@@ -578,7 +584,11 @@ gpui_kit::actions!(
         ToggleTerminalPane,
         ZoomIn,
         ZoomOut,
-        ResetZoom
+        ResetZoom,
+        // U20：`Ctrl+G` 的 action。与上面六条同一处置（键位常量在上面、登记在
+        // [`install_key_actions`]）：按下它 = 把 `MenuAction::GoToLine` 压进菜单栏的执行队列，
+        // 下一帧与"点菜单里那一项"走**逐字同一条链**。
+        OpenGoToLine
     ]
 );
 
@@ -647,6 +657,8 @@ pub fn install_key_actions(cx: &mut App) {
     install_menu_key(cx, KEY_ZOOM_IN, ZoomIn, MenuAction::ZoomIn);
     install_menu_key(cx, KEY_ZOOM_OUT, ZoomOut, MenuAction::ZoomOut);
     install_menu_key(cx, KEY_RESET_ZOOM, ResetZoom, MenuAction::ResetZoom);
+    // U20：「转到行」`Ctrl+G`（键位与文档见 `KEY_GO_TO_LINE` / `MenuAction::GoToLine`）。
+    install_menu_key(cx, KEY_GO_TO_LINE, OpenGoToLine, MenuAction::GoToLine);
 }
 
 /// v1 里**真的能执行**的菜单动作。
@@ -764,6 +776,41 @@ pub enum MenuAction {
     /// （`crate::debug::DebugBreakpointStore`）+ 编辑器行号槽，
     /// 走 `ShellWorkspace::toggle_breakpoint_at_caret`（与点行号槽同一条路）。
     ToggleBreakpoint,
+    /// 转到 → 转到行…（`Ctrl+G`，U20）。
+    ///
+    /// **U20 起从占位项转正**（原来声明缺编辑区公开入口）。落点是编辑区的
+    /// `EditorPane::open_go_to_line`（对话框 + 纯逻辑在 `lithe_gpui_editor`），
+    /// 执行分支在 [`crate::workspace::ShellWorkspace::apply_menu_action`] 里。
+    ///
+    /// 键位有真源依据：真源的 Windows 平台表就是 `Ctrl+G`
+    /// （`macos/Sources/Lithe/Models/Keymap/LitheCommandCatalog.swift:56` 的 `shortcut("g", [.control])`；
+    /// macOS 那档是 `Cmd+L`，`:94`），而整个依赖树里 `ctrl-g` **只在测试里出现过**
+    /// （`gpui-component-0.7.0/src/command/state.rs:1269`、`gpui-pre-0.3.7/src/interactive.rs:923`
+    /// 都在 `#[cfg(test)]` 里），没有生产绑定 —— 所以给它绑定是安全的。
+    GoToLine,
+    /// 视图 → 切换自动换行（U20）。
+    ///
+    /// **U20 起从占位项转正**：它原来是规格 §5 第 5 条点名的那 7 条之一，缺项声明的理由
+    /// 是"能力在 `EditorState::set_soft_wrap`（`pub`），但外壳够不到任何一个 `EditorState`"
+    /// —— U20 给编辑区加了 [`lithe_gpui_editor::EditorPane::set_soft_wrap`]，这个理由不再成立。
+    ///
+    /// 执行分支**写设置里的同一个键** `wordWrap`（`crate::workspace::ShellWorkspace::apply_menu_action`），
+    /// 而不是翻一份会话内的临时状态：设置页那个开关与这一项共用一个真相源，
+    /// 两个值必然分叉的理由见 `settings::schema::Settings::word_wrap` 的字段文档。
+    ///
+    /// ⚠️ **没有键位**：真源的命令目录里没有 `toggle-word-wrap`
+    /// （`LitheCommandCatalog.swift` 全量 grep 零命中），所以不绑、菜单上也不画胶囊。
+    ToggleWordWrap,
+    /// 编辑 → 显示悬停信息（U20）。
+    ///
+    /// **U20 起从占位项转正**：原来声明 `MISSING_LSP_REQUESTS`（"缺 LSP 请求"），
+    /// 而 U20 把 `textDocument/hover` 接上了（`lithe_gpui_editor::hover`）—— 缺项理由不再成立。
+    /// 落点是 [`lithe_gpui_editor::EditorPane::show_hover_at_caret`]：上游的浮层只由**鼠标移动**
+    /// 触发（`gpui-base-0.7.0/src/input/editor/lsp/hover.rs:88-110`），这一项是"不移动鼠标也能看文档"。
+    ///
+    /// ⚠️ **没有键位**：真源那边是 VS Code 的 `Ctrl+K Ctrl+I` 两段式和弦，gpui 的 keymap 表达不了；
+    /// macOS 的命令目录里也没有 `show-hover`（全量 grep 零命中），所以不绑、不画胶囊。
+    ShowHover,
     /// 视图 → 放大（`Ctrl+=`）。真源 `menu.zoomIn`。
     ZoomIn,
     /// 视图 → 缩小（`Ctrl+-`）。真源 `menu.zoomOut`。
@@ -873,6 +920,11 @@ impl MenuAction {
             Self::StartDebugging => "lithe.menu.startDebugging",
             Self::StopDebugging => "lithe.menu.stopDebugging",
             Self::ToggleBreakpoint => "lithe.menu.toggleBreakpoint",
+            // U20 转正的三条：**文案键一律不动**（它们本来就是真源既有键，
+            // `lithe.zh-CN.yml:6662-6786` 一带）—— 转正只换执行分支，不换用户看到的字。
+            Self::GoToLine => "lithe.menu.goToLine",
+            Self::ToggleWordWrap => "lithe.menu.toggleWordWrap",
+            Self::ShowHover => "lithe.menu.showHover",
             Self::ZoomIn => "lithe.menu.zoomIn",
             Self::ZoomOut => "lithe.menu.zoomOut",
             Self::ResetZoom => "lithe.menu.resetZoom",
@@ -960,6 +1012,12 @@ impl MenuAction {
             // 「切换断点」用圆点（改前那条占位项用的就是 `CircleDot`，转正时不变，
             // 免得"同一件事换了个图标"变成一次无意义的可见改动）。
             Self::ToggleBreakpoint => Icon::new(IconName::CircleDot),
+            // U20 转正的三条**沿用它们当占位项时的图标**（免得"同一件事换了个图标"
+            // 变成一次无意义的可见改动）：「转到行」是 `#`、切换自动换行是 `TextWrap`、
+            // 「显示悬停信息」是信息圆圈。
+            Self::GoToLine => idea_icon_mono(&idea::HASH_ICON, is_dark),
+            Self::ToggleWordWrap => Icon::new(IconName::TextWrap),
+            Self::ShowHover => idea_icon_mono(&idea::INFO_ICON, is_dark),
             Self::ZoomIn => idea_icon_mono(&idea::MAGNIFYING_GLASS_PLUS_ICON, is_dark),
             Self::ZoomOut => idea_icon_mono(&idea::MAGNIFYING_GLASS_MINUS_ICON, is_dark),
             Self::ResetZoom => idea_icon_mono(&idea::REFRESH_ICON, is_dark),
@@ -981,6 +1039,11 @@ impl MenuAction {
             Self::ZoomIn => Some(KEY_ZOOM_IN),
             Self::ZoomOut => Some(KEY_ZOOM_OUT),
             Self::ResetZoom => Some(KEY_RESET_ZOOM),
+            // U20：「转到行」有真源键位（Windows 平台表 `Ctrl+G`，见 [`Self::GoToLine`] 的文档），
+            // 登记在 [`install_key_actions`]。
+            Self::GoToLine => Some(KEY_GO_TO_LINE),
+            // 「切换自动换行」/「显示悬停信息」**没有键位**（真源命令目录里没有这两条，
+            // 见两个变体的文档）—— 所以不在这里给值，菜单上也不会画胶囊。
             _ => None,
         }
     }
@@ -1063,6 +1126,12 @@ impl MenuAction {
             // 「切换断点」没有键位（真源是 `Ctrl+F8`，本侧不绑 —— [`Self::menu_key`] 返回
             // `None`），所以这里也返回 `None`：菜单上不会画一个"显示了却按不出"的胶囊。
             | Self::ToggleBreakpoint => return None,
+            // U20：`Ctrl+G`（真源 Windows 平台表的键位）—— 登记在 [`install_key_actions`]，
+            // 所以菜单上会画 `Ctrl+G` 胶囊。
+            Self::GoToLine => Box::new(OpenGoToLine),
+            // U20 另两条**没有键位**（真源命令目录里没有它们，见两个变体的文档）：
+            // 不传 `.action(..)`，菜单上不画"显示了却按不出"的胶囊。
+            Self::ToggleWordWrap | Self::ShowHover => return None,
         })
     }
 
@@ -1137,15 +1206,20 @@ impl MenuAction {
             | Self::ToggleBreakpoint
             | Self::ZoomIn
             | Self::ZoomOut
-            | Self::ResetZoom => None,
+            | Self::ResetZoom
+            // U20 转正的三条也不进命令面板（同一处置；执行分支在
+            // `ShellWorkspace::apply_menu_action` 的臂上，`NON_COMMAND` 里也登记了它们）。
+            | Self::GoToLine
+            | Self::ToggleWordWrap
+            | Self::ShowHover => None,
         }
     }
 }
 
 /// 9 个顶级菜单的静态表（**唯一真源**，两形态共用）。
 ///
-/// B3 起**真源 89 条一条不少**：能执行的走 [`MenuItem::Action`]（42 条），
-/// 没能力的走 [`MenuItem::NotWired`]（46 条占位）。顺序与分隔线位置**照真源**
+/// B3 起**真源 89 条一条不少**：能执行的走 [`MenuItem::Action`]（50 条），
+/// 没能力的走 [`MenuItem::NotWired`]（43 条占位）。顺序与分隔线位置**照真源**
 /// （`lithe-gpui/research/windows/10-menu-bar.md:114-259` 每张表的"分隔线"列：写在它出现在该项**之后**），
 /// 所以这张表可以与那份清单逐行比对。五条本侧新增项（⚪：打开文件 / 显示状态栏 /
 /// 外观设置 / Maven / 在文件中替换）插在同一族里，**不动真源的相对顺序**。
@@ -1267,11 +1341,11 @@ pub static MENUS: &[TopMenu] = &[
                 missing: MISSING_LSP_REQUESTS,
                 icon: MenuIcon::Lucide(IconName::Parentheses),
             },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.showHover",
-                missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Idea(&idea::INFO_ICON),
-            },
+            // U20 转正：原来声明 `MISSING_LSP_REQUESTS`（"缺 LSP 请求"）—— `textDocument/hover`
+            // 已经接上（`lithe_gpui_editor::hover` 装 provider，浮层归上游），所以这一项转 Action。
+            // ⚠️ 它**不是**"鼠标悬停"那条路（那条不需要菜单项）：本项是"不移动鼠标也能看文档"，
+            // 落点 `EditorPane::show_hover_at_caret`。
+            MenuItem::Action(MenuAction::ShowHover),
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.duplicateLine",
@@ -1345,14 +1419,11 @@ pub static MENUS: &[TopMenu] = &[
                 missing: MISSING_EDITOR_FEATURES,
                 icon: MenuIcon::Lucide(IconName::Map),
             },
-            // ⚠️ 「切换自动换行」是规格 §5 第 5 条点名的那 7 条之一：能力在
-            // `EditorState::set_soft_wrap`（`pub`），但外壳够不到任何一个 `EditorState`
-            // （`EditorPane::buffers` 在 editor crate 内部）—— 所以缺的是**公开入口**。
-            MenuItem::NotWired {
-                label_key: "lithe.menu.toggleWordWrap",
-                missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Lucide(IconName::TextWrap),
-            },
+            // U20 转正：原来是规格 §5 第 5 条点名的那 7 条之一，缺项理由是"能力在
+            // `EditorState::set_soft_wrap`（`pub`），但外壳够不到任何一个 `EditorState`"
+            // —— 编辑区补了公开入口，所以这条缺项理由不再成立。执行分支翻 `wordWrap` 设置
+            // （与设置页那个开关共用一个真相源）。
+            MenuItem::Action(MenuAction::ToggleWordWrap),
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleLineNumbers",
                 missing: MISSING_EDITOR_FEATURES,
@@ -1390,11 +1461,10 @@ pub static MENUS: &[TopMenu] = &[
             // 的下一条（`LitheApp.swift:618-628`），本侧接在「快速打开」之后 —— 它与本菜单里
             // 另外两项一样属于"到处找东西"这一族，且与 `Ctrl+Shift+R` 是**同一个** Action。
             MenuItem::Action(MenuAction::ReplaceInFiles),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.goToLine",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Idea(&idea::HASH_ICON),
-            },
+            // U20 转正：原来声明 `MISSING_EDITOR_FEATURES`。真源只有行号 / 文件行这几个字
+            // 里的一条 "Go to Line…"（`LitheApp.swift:587-591`），落点是编辑区的
+            // `EditorPane::open_go_to_line`（对话框），键位 `Ctrl+G` 来自真源 Windows 平台表。
+            MenuItem::Action(MenuAction::GoToLine),
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.goBack",
@@ -1583,10 +1653,10 @@ pub fn action_count() -> usize {
 /// 断言了它，改表时不会悄悄少画一条）：
 ///
 /// ```text
-/// action_count()    = 46   // 43 + 「快速打开」（2026-10-01 从占位项转正）
+/// action_count()    = 50   // 47 + U20 转正的三条（转到行 / 切换自动换行 / 显示悬停信息）
 ///                          //    + 「全局搜索」（U17 第三件，同一条路）
 ///                          //    + 「在文件中替换」（U17 第四件，本侧**新增**的一条）
-/// not_wired_count() = 47   // 49 - 上面那两条转正的
+/// not_wired_count() = 43   // 46 - 上面那三条转正的（快速打开 / 全局搜索 / 在文件中替换是 U17 的，不是本轮）
 /// MenuItem::Theme   =  1   // 「视图 → 主题」子菜单：既不是 Action、也没有 missing 声明
 /// -------------------------
 /// 合计              = 94   = 真源 89 条 + 本侧新增 5 条
@@ -2848,10 +2918,10 @@ fn theme_menu(names: Vec<String>, window: &mut Window, cx: &mut App) -> Entity<P
 #[cfg(test)]
 mod tests {
     use super::{
-        CloseReason, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM, KEY_TOGGLE_ACTIVITY_SIDEBAR,
-        KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS, MISSING_GROUPS, MenuAction,
-        MenuBarMode, MenuItem, NOT_WIRED_OUTSIDE_MENUS, NavState, action_count, mode_for,
-        not_wired_count, resolve_menu_toggle,
+        CloseReason, KEY_GO_TO_LINE, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM,
+        KEY_TOGGLE_ACTIVITY_SIDEBAR, KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS,
+        MISSING_GROUPS, MenuAction, MenuBarMode, MenuItem, NOT_WIRED_OUTSIDE_MENUS, NavState,
+        action_count, mode_for, not_wired_count, resolve_menu_toggle,
     };
     use lithe_gpui_shared::tr;
     use std::collections::BTreeSet;
@@ -2874,19 +2944,26 @@ mod tests {
     /// | --- | --- | --- |
     /// | ✅ 已实现 | 8 | 全部接线 |
     /// | 🟡 能力已在 | 23 | 20 条接线（B1/B2/B4 + 「快速打开」，2026-10-01），**3 条**（后退 / 前进 / 上一个·下一个标签页）进占位表 |
-    /// | ❌ 无能力 | 58 | 11 条被 B1/B2/B4 接掉（关闭所有·其他·已保存·左侧·右侧·重新打开 / 快速修复 / 放大·缩小·重置缩放 / 切换菜单栏），**47 条**进占位表 |
+    /// | ❌ 无能力 | 58 | 11 条被 B1/B2/B4 接掉（关闭所有·其他·已保存·左侧·右侧·重新打开 / 快速修复 / 放大·缩小·重置缩放 / 切换菜单栏）+ U20 的 3 条（转到行 / 切换自动换行 / 显示悬停信息）；**这一档里剩下的都进了占位表**（占位表**总数**见 [`not_wired_count`]，不要在这里做减法 —— 上一版那行减法写错了 1 条） |
     ///
     /// ⚠️ 「还原文件」在规格里是 ❌（`10-menu-bar.md:126`），**不是** 🟡 —— 别被它跟
     /// 「后退 / 前进」摆在同一张表里的位置骗了。
     ///
     /// ⇒ 本侧菜单 = 真源 89（1 个「主题」子菜单 + 88 条 Action / 占位项）+ 本侧新增 5 条
-    /// = 94 个条目；其中 **46 条 Action + 47 条占位项**。
+    /// = 94 个条目；其中 **50 条 Action + 43 条占位项**。
     ///
     /// ⚠️ 46 / 47 是同一件事的两面：两条真源项在 U17 里从占位项转成 Action ——
     /// 「快速打开」（第二件，`43 → 44` / `49 → 48`）与「全局搜索」（第三件，
     /// `44 → 45` / `48 → 47`），条目总数不变；U17 第四件的「在文件中替换」是
     /// **本侧新增**的一条（`45 → 46`，`LOCAL_ONLY_ITEMS` `4 → 5`），条目总数 +1。
     /// 「全局搜索」那一转正还顺带删掉了 `indexer` 那一组 missing 声明（17 → 16）。
+    ///
+    /// **U20 又转正 3 条**（`47 → 50` / `46 → 43`，条目总数不变）：「转到行」「切换自动换行」
+    /// 「显示悬停信息」—— 三条都补上了真入口（见各自的 `MenuAction` 文档）。
+    ///
+    /// ⚠️ 上面那串 `43 → 44` 一带的**绝对值是 U17 当时写的，不是今天实测的**：本文件里
+    /// 唯一有机器判据的是 `not_wired_count()` / `action_count()` 那两个函数（`declared.len()`
+    /// 与它们逐条对齐），U20 收尾时按实测把「50 / 43」写进了 [`action_count`] 的文档块。
     const SOURCE_MENU_ITEMS: usize = 89;
     /// 本侧**新增**（真源 89 条里没有）的项数：5 条。
     ///
@@ -3156,7 +3233,9 @@ mod tests {
                 .unwrap_or_else(|error| panic!("{action:?} 的键位 {key:?} 解析不了：{error}"));
         }
 
-        // 本批真实绑定的六条键位（= `menu_key()` 的非 `None` 项），逐条点名。
+        // 真实绑定的七条键位（= `menu_key()` 的非 `None` 项），逐条点名。
+        // ⚠️ U20 把「转到行」的 `Ctrl+G` 加进来（第 7 条）：它同样"有键位字面量就必须有
+        // 对应的 Action 且能解析"，所以本清单跟着变 —— 改它就是改验证脚本。
         let bound: Vec<&str> = MENUS
             .iter()
             .flat_map(|menu| menu.items.iter())
@@ -3174,8 +3253,9 @@ mod tests {
                 KEY_ZOOM_IN,
                 KEY_ZOOM_OUT,
                 KEY_RESET_ZOOM,
+                KEY_GO_TO_LINE,
             ],
-            "B2 的键位清单变了（改它就是改验证脚本）"
+            "键位清单变了（改它就是改验证脚本）"
         );
     }
 
@@ -3194,13 +3274,95 @@ mod tests {
     ///    保证它不会越攒越假）。
     ///
     /// 验证手法（本批交付报告里有原文）：临时插一条声明为空的占位项 → 这条测试红 → 撤掉 → 绿。
+    /// U20 从占位项转正的三条（「转到行」/「切换自动换行」/「显示悬停信息」）。
+    ///
+    /// 这条钉四件事，每一件都是**转正最容易漏掉的一半**：
+    ///
+    /// 1. 菜单里各**恰好一条** `Action`（不许"转了一半"：Action 加了、占位项没撤）；
+    /// 2. **没有任何占位项还挂在它们原来的文案键上**（转正就是"这条文案不再是占位项"）；
+    /// 3. 文案键解析得出（拼错时 `tr()` 原样回显键名，界面上就是一行键名）；
+    /// 4. 执行分支落在 `apply_menu_action` 而不是 `CommandId`（`command_id()` 为 `None`）——
+    ///    与本批的 `NON_COMMAND` 登记是同一件事的两面。
+    ///
+    /// ⚠️ 它证明不了"点了真能打开对话框 / 真的换了换行"：那要一个真的 `ShellWorkspace`
+    /// 窗口 + 焦点事件（理由与 `quick_open_menu_item_dispatches_the_same_command_as_the_shortcut`
+    /// 逐字相同）。交互路径的证据是 stderr 锚点
+    /// `S1_EDITOR_GO_TO_LINE` / `S1_EDITOR_SOFT_WRAP` / `S1_EDITOR_HOVER`。
+    #[test]
+    fn u20_items_are_wired_and_left_no_placeholder_behind() {
+        let table: &[(MenuAction, &str)] = &[
+            (MenuAction::GoToLine, "lithe.menu.goToLine"),
+            (MenuAction::ToggleWordWrap, "lithe.menu.toggleWordWrap"),
+            (MenuAction::ShowHover, "lithe.menu.showHover"),
+        ];
+
+        for (action, label) in table {
+            assert_eq!(action.label_key(), *label, "{action:?} 的文案键变了");
+            assert_ne!(
+                tr(label).as_ref(),
+                *label,
+                "{label} 的菜单文案解析不出来（键名拼错了？）"
+            );
+
+            let listed = MENUS
+                .iter()
+                .flat_map(|menu| menu.items.iter())
+                .filter(|item| matches!(item, MenuItem::Action(a) if a == action))
+                .count();
+            assert_eq!(listed, 1, "{action:?} 在菜单里必须恰好一条 Action");
+
+            // 反向：同一个文案键**不许**还留在任何占位项上（那就是"转了一半"）。
+            let placeholders = MENUS
+                .iter()
+                .flat_map(|menu| menu.items.iter())
+                .filter(|item| item.label_key() == Some(*label))
+                .count();
+            assert_eq!(
+                placeholders, 1,
+                "{label} 还挂在别的项上（占位项没撤干净，或同一文案键有两条）"
+            );
+
+            assert!(
+                action.command_id().is_none(),
+                "{action:?} 的执行分支在 apply_menu_action 里，不该同时有 CommandId"
+            );
+        }
+    }
+
+    /// U20 三条的**键位**：只有「转到行」有（`Ctrl+G`，真源 Windows 平台表
+    /// `LitheCommandCatalog.swift:56`），另两条没有 —— 而"有没有"必须与"菜单上画不画胶囊"
+    /// 一致（Q3：不许显示一颗按不出效果的键）。
+    ///
+    /// ⚠️ `keybind_action()` 只回答"这一项**该**用哪个 action 去反查 keymap"，
+    /// 不回答"keymap 里真的登记了吗" —— 后者由 `main.rs` 调
+    /// [`install_key_actions`] 做，单测里没有 `App`。所以这条是**结构断言**，
+    /// 真按键的取证靠 `S1_MENU_KEY id=lithe.menu.goToLine`（安装期）与
+    /// `S1_MENU action=goToLine`（执行期）两行锚点。
+    #[test]
+    fn only_go_to_line_of_the_u20_items_carries_a_key() {
+        assert_eq!(KEY_GO_TO_LINE, "ctrl-g");
+        assert_eq!(MenuAction::GoToLine.menu_key(), Some(KEY_GO_TO_LINE));
+        assert!(
+            MenuAction::GoToLine.keybind_action().is_some(),
+            "菜单上要画 `Ctrl+G` 胶囊，这条动作就必须有一个真被登记的 Action"
+        );
+
+        for action in [MenuAction::ToggleWordWrap, MenuAction::ShowHover] {
+            assert_eq!(action.menu_key(), None, "{action:?} 不该有键位");
+            assert!(
+                action.keybind_action().is_none(),
+                "{action:?} 没有键位，就不许画一颗按不出的胶囊"
+            );
+        }
+    }
+
     #[test]
     fn every_listed_item_is_wired_or_declares_what_is_missing() {
         // 6 条不走 `CommandId` 的动作 —— 它们的执行分支在
         // `ShellWorkspace::apply_menu_action` 里，逐条接线点写在那里。
         // 这是**清单**而不是白名单：新增一条就得在这里显式登记一次。
         // 第 7 条（`OpenFolder`）是 B4 加的「打开文件夹」。
-        const NON_COMMAND: [MenuAction; 28] = [
+        const NON_COMMAND: [MenuAction; 31] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -3233,6 +3395,11 @@ mod tests {
             // U19：「运行 → 切换断点」从占位项转正，落点是宿主断点模型 + 编辑器行号槽
             // （ShellWorkspace::toggle_breakpoint_at_caret）。
             MenuAction::ToggleBreakpoint,
+            // U20 转正的三条：执行分支同样在 `ShellWorkspace::apply_menu_action` 里，
+            // 逐条接线点写在那里（`GoToLine` 的键位 `Ctrl+G` 走 `install_menu_key` 压进同一队列）。
+            MenuAction::GoToLine,
+            MenuAction::ToggleWordWrap,
+            MenuAction::ShowHover,
             MenuAction::ZoomIn,
             MenuAction::ZoomOut,
             MenuAction::ResetZoom,
@@ -3321,7 +3488,7 @@ mod tests {
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
         );
         assert!(
-            declared.len() >= 46,
+            declared.len() >= 43,
             "占位项突然少了一半（现在 {}）？查一下是不是有人把没能力的项又删掉了",
             declared.len()
         );
@@ -3491,7 +3658,7 @@ mod tests {
     }
 
     /// **一个能力一句话**（Q14 的粒度 `2d`）：占位项只许用 [`MISSING_GROUPS`] 里那些声明，
-    /// 而且每组都被真的用到；不许给 47 条占位项各写一句。
+    /// 而且每组都被真的用到；不许给 43 条占位项各写一句。
     ///
     /// 这条挡的是两类退化：① 有人给某一条占位项现编一个新 `Missing`
     /// （那会绕开 i18n 四处、也没有文案键）；② 有人加了一组却一条都没用（声明表虚胖）。
@@ -3549,7 +3716,7 @@ mod tests {
         // Q14 的粒度上限：**一种能力一句话**，不许退化成"每项一句"。
         //
         // 上界 = [`MISSING_GROUPS`] 的组数，**17 → 16 → 15**：`indexer` 随「全局搜索」转正、`debugger_host` 随「运行 → 切换断点」转正
-        // 各自整组删掉（见该常量的文档）。它仍然远小于占位项条数（约 46 条），所以这条断言的
+        // 各自整组删掉（见该常量的文档）。它仍然远小于占位项条数（约 43 条），所以这条断言的
         // 保护力没变 —— 谁给每条占位项现编一句，`texts` 立刻超过 15。
         assert!(
             texts.len() <= 15,

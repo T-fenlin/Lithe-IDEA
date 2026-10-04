@@ -9,7 +9,7 @@
 //! | --- | --- |
 //! | A 脏标记 | [`EditorPane::on_input_change`]（订阅 `InputEvent::Change`）→ [`crate::buffer::Buffer::is_dirty`] |
 //! | A `Ctrl+S` | [`crate::SaveBuffer`] action + [`EditorPane::save_active`] → [`EditorPane::write_buffer`] |
-//! | A 防抖自动保存 | [`EditorPane::schedule_auto_save`] / [`EditorPane::run_auto_save`]（默认开启，见 [`AUTO_SAVE_ENABLED`]） |
+//! | A 防抖自动保存 | [`EditorPane::schedule_auto_save`] / [`EditorPane::run_auto_save`]（开关见 [`EditorPane::auto_save`]，默认值见 [`AUTO_SAVE_DEFAULT`]） |
 //! | B 状态栏光标 | [`EditorPane::sync_cursor`]（`CursorPosition` + `S1_EDITOR_CURSOR` 诊断） |
 //! | C 查找替换 | [`EditorPane::open`] 里显式写出的 `searchable(true)` —— 面板与 `Ctrl+F` / `Ctrl+H` 都归组件（见该处注释） |
 //! | E 关闭确认 | [`EditorPane::request_close`]（`保存` / `放弃修改` / `取消`） |
@@ -88,10 +88,12 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
-use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, Rope, TabSize};
+use gpui_kit::component::input::{
+    Editor, EditorState, Input, InputEvent, InputState, Position, Rope, RopeExt as _, TabSize,
+};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity, InteractiveElement as _,
     IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Render, ScrollWheelEvent,
@@ -164,17 +166,27 @@ const FALLBACK_LINE_HEIGHT: f32 = 20.;
 /// （`windows/tauri/src/features/editor/stores/editor-app.store.ts:567`）。
 const AUTO_SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
 
-/// 自动保存总开关，**默认开启**。
+/// 自动保存总开关的**默认值**（**开**）。
 ///
-/// Windows 的真源是设置项 `editor.autoSave`，默认值就是 `true`
-/// （`windows/tauri/src/features/settings/config/default-settings.ts:49`）；语义是"编辑时
-/// 防抖自动保存"，脏标记与手动 `Ctrl+S` 是**独立**的另一条路径（同文件 `:503-570`）。
+/// 语义是"编辑时防抖自动保存"，脏标记与手动 `Ctrl+S` 是**独立**的另一条路径
+/// （`windows/tauri/src/features/editor/stores/editor-app.store.ts:503-570`）。
+/// 默认开的两个真源：Windows 的设置项 `editor.autoSave` 默认 `true`
+/// （`windows/tauri/src/features/settings/config/default-settings.ts:49`），
+/// macOS 的 `AppSettings.autoSave` 默认也是 `true`
+/// （`macos/Sources/Lithe/Models/Settings/AppSettings.swift:193` 的 `?? true`）。
 ///
-/// ⚠️ **这里是常量而不是读设置**：阶段 9 的范围由维护者定稿为"只做编辑器侧"，
-/// gpui 的设置文件（`lithe-gpui/crates/settings/src/schema.rs` 目前只有主题 / 字号 / 状态栏 /
-/// 语言）与设置页这一轮不扩。接设置页时把它改成 `Settings` 的对应字段即可，
-/// 调用点只有 [`EditorPane::on_input_change`] 一处。
-const AUTO_SAVE_ENABLED: bool = true;
+/// ⚠️ 阶段 9 这里曾经是 `const AUTO_SAVE_ENABLED: bool = true`（"接设置页时改成 `Settings`
+/// 的对应字段即可，调用点只有一处"）。U20 把它**兑现**成 [`EditorPane::auto_save`]：
+/// 真值由外壳经 [`EditorPane::set_auto_save`] 从 `Settings::auto_save` 推进来，
+/// 本常量退回"字段的默认值"，仍然只有 [`EditorPane::on_input_change`] 一处消费。
+const AUTO_SAVE_DEFAULT: bool = true;
+
+/// 软换行总开关的**默认值**（**开**）。
+///
+/// 与上游 `EditorState` 的默认档一致：`gpui-base-0.7.0/src/input/base/state.rs:9963`
+/// 的文档原句 "Set the soft wrap mode, default is true"。真值由外壳经
+/// [`EditorPane::set_soft_wrap`] 从 `Settings::word_wrap` 推进来。
+const SOFT_WRAP_DEFAULT: bool = true;
 
 /// 断点行号槽的列宽（真源 `EditorDebugBreakpointAppearance.markerSize = 14`，
 /// `macos/Sources/Lithe/Views/Editor/CodeEditorView.swift:254`；真源 gutter 里
@@ -403,6 +415,18 @@ pub struct SessionRestore {
     pub active_index: Option<usize>,
 }
 
+/// 打开着的「转到行:列」对话框的两样东西（输入框 + 它的 Enter 订阅）。
+///
+/// 为什么订阅要**被持有**：gpui 的 `Subscription` 一 drop 就取消（与 [`Buffer::_subscriptions`]
+/// 同一约定），丢掉它就等于"Enter 不再提交"——而且不报错、只是没反应。
+struct GoToLinePrompt {
+    /// 单行输入框，初始值 = 当前光标的 `行:列`（1 基，见 [`GoToLineInput::prefill`]）。
+    input: Entity<InputState>,
+    /// `PressEnter` → 提交。`Change` **不**订阅：确定键的可用性由对话框每帧重建时现算
+    /// （见 [`EditorPane::open_go_to_line`] 的文档），不需要在这里额外存一份"当前能不能提交"。
+    _enter: Subscription,
+}
+
 /// 编辑区视图：标签栏 + 正文（正文没有活动 buffer 时是空状态）。
 pub struct EditorPane {
     /// 通知中心的**弱引用**（`lithe_gpui_notify::Store`）。
@@ -522,6 +546,31 @@ pub struct EditorPane {
     /// 只记**磁盘文件**：`jdt://` 虚拟源码没有"重新读盘"这条路（正文只来自 Core 的虚拟
     /// 文档请求），把它压进栈会让重开变成一份读盘失败的说明文案。
     closed: Vec<PathBuf>,
+    /// 自动保存开关（设置里的 `autoSave`，U20）。
+    ///
+    /// 与 [`Self::tab_size`] 同形（`bool` 字段，外壳推值）而不是 [`Self::auto_completion`]
+    /// 的 `Rc<AtomicBool>`：那个共享原子存在的理由是"provider 已经被装进每个 `EditorState`，
+    /// 而判据只拿得到 `&self`"（见那个字段的文档）。自动保存的判据就在本结构体自己的
+    /// [`Self::on_input_change`] 里，拿得到 `&mut self`，**不需要**跨线程共享 ——
+    /// 多一层原子只会多一个可以忘记同步的地方。
+    ///
+    /// 由外壳在启动时与每次设置变化后经 [`Self::set_auto_save`] 登记（默认见
+    /// [`AUTO_SAVE_DEFAULT`]）。
+    auto_save: bool,
+    /// 软换行开关（设置里的 `wordWrap`，U20）。默认见 [`SOFT_WRAP_DEFAULT`]。
+    ///
+    /// 与 [`Self::auto_save`] 同一个形状，但**多一件事**：软换行是每个 `EditorState` 自己的
+    /// 渲染属性（`EditorState::set_soft_wrap` 会重算 `display_map` 并回滚横向滚动），
+    /// 所以 [`Self::set_soft_wrap`] 除了记这个值，还要把它推给**已经打开的每个** buffer；
+    /// 而这份字段是"菜单显示什么"的判据（[`Self::soft_wrap_enabled`]）。
+    soft_wrap: bool,
+    /// 打开着的「转到行:列」对话框（`None` = 没开）。
+    ///
+    /// 状态放在 `Entity` 里而不是对话框闭包里：`WindowExt::open_dialog` 的 builder
+    /// **每帧重跑**（`crate::quick_open::open_dialog` 的文档原句），闭包里放不住状态。
+    /// 输入框与它对 `PressEnter` 的订阅都归这里所有 —— 订阅一 drop 就取消（与
+    /// [`Buffer::_subscriptions`] 同一约定），所以必须被持有。
+    go_to_line: Option<GoToLinePrompt>,
     /// `Theme` 全局观察者：界面字号（= rem 基准）一变就把**已经打开**的 buffer 的补全菜单宽度
     /// 按新基准重设（[`Self::sync_completion_menu_width`]）。
     ///
@@ -595,6 +644,11 @@ impl EditorPane {
             last_text: BTreeMap::new(),
             tab_size: DEFAULT_TAB_SIZE,
             auto_completion: Rc::new(AtomicBool::new(true)),
+            // 两个开关的起点都是各自真源的默认值；外壳随后会按设置文件里的值推一次
+            // （`ShellWorkspace` 的 `SettingsStore` 订阅），所以这里填的是"设置还没读到"那一档。
+            auto_save: AUTO_SAVE_DEFAULT,
+            soft_wrap: SOFT_WRAP_DEFAULT,
+            go_to_line: None,
             hovered_tab: None,
             closed: Vec::new(),
             _theme_subscription: theme_subscription,
@@ -665,6 +719,85 @@ impl EditorPane {
         if changed {
             cx.notify();
         }
+    }
+
+    /// 登记「软换行」（设置里的 `wordWrap`，U20）。**对所有已打开的 buffer 立即生效**，
+    /// 之后新开的 buffer 也按这个值建。
+    ///
+    /// 落点是 `EditorState::set_soft_wrap`（`gpui-base-0.7.0/src/input/base/state.rs:9971`）：
+    /// 它除了记这个布尔值，还会重算 `display_map` 的换行（`on_layout_changed(Some(wrap_width))`
+    /// / `None`）并在**打开**换行时把横向滚动回零（同文件 `:9973-9988`）—— 所以这个开关
+    /// 必须逐个 buffer 推，不能只记一个宿主字段当"以后新开的按它建"。
+    ///
+    /// ⚠️ 上游签名要 `&mut Window`（`set_soft_wrap(.., _: &mut Window, cx)`）：它内部要拿
+    /// "当帧的换行宽度"，没有窗口就算不出折行位置。所以本方法也要 `window` —— 这也是它
+    /// 与 [`Self::set_auto_completion`] / [`Self::set_tab_size`]（都只要 `cx`）签名不同的唯一原因。
+    ///
+    /// 由外壳调用（`ShellWorkspace` 订阅设置实体后转发），所以编辑区不需要认识设置 crate。
+    pub fn set_soft_wrap(&mut self, enabled: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let changed = self.soft_wrap != enabled;
+        self.soft_wrap = enabled;
+        let mut applied = 0usize;
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_soft_wrap(enabled, window, cx));
+            applied += 1;
+        }
+        // 诊断每次打（值没变也打）：外壳启动时与每次设置变化都会喂一次，所以这一行同时是
+        // "外壳确实转发过"的证据；`buffers=` 是这一刻受了影响的编辑器数（软换行是**逐 buffer**
+        // 的渲染属性，所以这个数就是"多少个已打开的文件跟着变了"）。
+        println!("S1_EDITOR_SOFT_WRAP enabled={enabled} changed={changed} buffers={applied}");
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// 菜单「视图 → 切换自动换行」的显示判据（也是它的翻转依据）。
+    ///
+    /// 为什么编辑区自己留一份值而不是每帧去读 `Settings`：编辑区**不认识设置 crate**
+    /// （依赖方向：`workbench` → `editor`，反向会成环，见 `lib.rs` 的模块文档），
+    /// 而菜单要画"当前是开还是关"。这份字段就是"外壳最后一次推过来的值"，
+    /// 与推给每个 `EditorState` 的是同一个数（[`Self::set_soft_wrap`] 里两者一起写）。
+    pub fn soft_wrap_enabled(&self) -> bool {
+        self.soft_wrap
+    }
+
+    /// 登记「自动保存」（设置里的 `autoSave`，U20）。
+    ///
+    /// 闸门只有一处：[`Self::on_input_change`] 在排防抖保存之前读 [`Self::auto_save`]。
+    /// 关掉时**顺手丢掉所有 buffer 待执行的自动保存任务**（`Task` 一 drop 就取消）：
+    /// 不丢的话"关开关之前敲的那一下"仍会在 150ms 后落盘，用户会看到"关了还在存"。
+    /// 真源是同一处置（`DocumentFeatureModel.swift:1032-1034`：先 `cancel` 再判开关）。
+    ///
+    /// 关掉**不影响**脏标记与 `Ctrl+S`（[`Self::save_active`] 不看这个开关）——
+    /// 这是真源口径（"手动保存是独立的另一条路径"）。
+    pub fn set_auto_save(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let changed = self.auto_save != enabled;
+        self.auto_save = enabled;
+        let mut cancelled = 0usize;
+        if !enabled {
+            for buffer in &mut self.buffers {
+                if buffer.auto_save_task.take().is_some() {
+                    cancelled += 1;
+                }
+            }
+        }
+        println!(
+            "S1_EDITOR_AUTO_SAVE enabled={enabled} changed={changed} cancelled={cancelled} buffers={}",
+            self.buffers.len()
+        );
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// 「自动保存」的当前值（状态栏 / 菜单要显示"现在是开还是关"时读它）。
+    ///
+    /// 与 [`Self::soft_wrap_enabled`] 同一口径：编辑区不认识设置 crate，
+    /// 所以这里回的是"外壳最后一次推过来的值"。
+    pub fn auto_save_enabled(&self) -> bool {
+        self.auto_save
     }
 
     /// 登记「制表符宽度」（设置里的 `tabSize`）。**对所有已打开的 buffer 立即生效**，
@@ -761,12 +894,18 @@ impl EditorPane {
                 service.clone(),
                 buffer.path.clone(),
             );
+            // 悬停（U20）：`open()` 时装的那一份拿到的是 `self.java == None`，所以它只有
+            // 轻量悬停那一路；这里补装一次，让"先打开的文件"也能拿到 javadoc
+            // （与补全/快速修复同一条补装路径、同一个理由）。
+            let hover =
+                crate::hover::LitheHoverProvider::new(Some(service.clone()), buffer.path.clone());
             // `Entity::update` 的两参闭包只给 `(state, cx)`（不给 `Window`），所以 rem 基准
             // 从闭包外取好（`cx.theme().font_size`，与 `Root::render` 写进 `set_rem_size` 的是同一个值）。
             let rem = cx.theme().font_size;
             buffer.editor.update(cx, |state, _cx| {
                 crate::completion::install(state, Some(provider), rem);
                 crate::code_actions::install(state, Some(code_actions));
+                crate::hover::install(state, Some(hover));
             });
             patched += 1;
         }
@@ -1125,6 +1264,23 @@ impl EditorPane {
             .flatten()
             .map(|service| crate::code_actions::JavaCodeActionProvider::new(service, path.clone()));
 
+        // 悬停 provider（U20）：与上面两个的判据**不同** —— **每个 buffer 都装**。
+        //
+        // 差别来自数据源：补全 / 快速修复在非 Java 文件上只有"当前文件标识符"这一档，
+        // 装了纯属打扰（`lithe.menu.showHover` 在真源里也只在编辑器上下文里出现）；
+        // 而悬停是"用户主动把鼠标停在某个词上"的动作 —— 那时给出**那个词本身**
+        // （Core 的 `lsp.builtinHover`，不起任何进程）是有用且不打扰的回答，
+        // 也是"语言服务起不来时当作能力降级"这条产品口径（见 `crate::hover` 的模块文档）。
+        //
+        // 语言服务句柄**只给 Java 文件**：`JavaLanguageService::hover` 里写死了 `"java"`
+        // 语言名，给别的文件装上只会让每次悬停多一次必然失败的请求。
+        let hover_provider = Some(crate::hover::LitheHoverProvider::new(
+            (language == Some("java"))
+                .then(|| self.java.clone())
+                .flatten(),
+            path.clone(),
+        ));
+
         // 一个标签一个 `EditorState`：先建状态再灌正文，然后才入列。
         let editor = cx.new(|cx| {
             // ⚠️ `EditorState::new` 的 `searchable` 上游默认**就是 `true`**
@@ -1157,6 +1313,11 @@ impl EditorPane {
             // 我们只给 provider，并且**由我们把编辑落进 buffer**（上游不处理 `edit`，
             // 见 `crate::code_actions` 的模块文档）。
             crate::code_actions::install(&mut state, code_action_provider);
+            // 悬停文档（U20）：浮层、150ms 触发防抖、指针离开/失焦清空全归上游
+            // （`gpui-base-0.7.0/src/input/editor/lsp/hover.rs` + `gpui-component-0.7.0/src/input/
+            // popovers/hover_popover.rs`），我们只给 provider —— 本行之后**没有**第二处
+            // 渲染代码（见 `crate::hover` 的模块文档）。
+            crate::hover::install(&mut state, hover_provider);
             if !writable {
                 // 说明性正文（读不到 / 超大 / 二进制 / 非 UTF-8）不可写：只读能避免
                 // "用户以为改了、其实保存的是说明文案"这种更坏的结果。
@@ -1167,6 +1328,14 @@ impl EditorPane {
             state
         });
         editor.update(cx, |state, cx| state.set_value(body.text, window, cx));
+        // 软换行：新开的 buffer 跟上当前设置（U20）。**只在"关"时才显式设一次**：
+        // 上游 `EditorState` 的默认档本来就是开（`gpui-base-0.7.0/src/input/base/state.rs:9963`
+        // "default is true"），而 `set_soft_wrap(true, ..)` 在**还没有布局**的状态上会把换行
+        // 宽度写成 `input_bounds.size.width`（此刻是 0，见同文件 `:9973-9985`）——
+        // 关的那一支只做 `on_layout_changed(None)`，没有这个副作用。
+        if !self.soft_wrap {
+            editor.update(cx, |state, cx| state.set_soft_wrap(false, window, cx));
+        }
         // 诊断：这条读的是 `EditorState` 里**真正存着**的语言名，所以它证明 `.language(..)`
         // 落到了状态上（`None` = 认不出的扩展名，走纯文本）；但它证明不了"正文真的亮了"
         // —— 那要 grammar feature 也开着，靠截图与像素统计取证（`S1_EDITOR_CURSOR` 同一套口径）。
@@ -1668,6 +1837,16 @@ impl EditorPane {
         // 与磁盘 buffer 同一条口径：注册必须早于设语言（幂等）。
         crate::languages::ensure_extra_languages();
         let tab = self.tab();
+        // 悬停文档（U20）：`jdt://` 虚拟源码（反编译出来的 JDK 类）同样装 —— 它正是最需要
+        // javadoc 的那一档，而语言服务此刻**一定**在（虚拟文档本来就是问 JDTLS 要来的）。
+        // 路径是 `jdt://…`：Core 的轻量悬停不看这个字段（它只按正文算标识符），
+        // 而 JDTLS 那一路走的是它的 `virtualDocument` 语义（见 `java/src/service.rs`）。
+        let hover_provider = Some(crate::hover::LitheHoverProvider::new(
+            (language == Some("java"))
+                .then(|| self.java.clone())
+                .flatten(),
+            path.clone(),
+        ));
 
         let editor = cx.new(|cx| {
             let mut state = EditorState::new(window, cx).searchable(true);
@@ -1677,9 +1856,14 @@ impl EditorPane {
             state.set_readonly(true, cx);
             // 只读的 `jdt://` 库源码同样按当前缩进宽度显示（与磁盘上的 buffer 一致）。
             state.set_tab_size(tab, cx);
+            crate::hover::install(&mut state, hover_provider);
             state
         });
         editor.update(cx, |state, cx| state.set_value(text, window, cx));
+        // 软换行与磁盘 buffer 同一条口径、同一个"只在关时才设"的理由（见 `Self::open`）。
+        if !self.soft_wrap {
+            editor.update(cx, |state, cx| state.set_soft_wrap(false, window, cx));
+        }
         println!(
             "S1_EDITOR_LANG name={} file={name} virtual=true",
             editor.read(cx).language_name()
@@ -1920,7 +2104,7 @@ impl EditorPane {
         // 防抖窗口把连打合并成一次（见 `crate::diagnostics::CHANGE_DEBOUNCE`）。
         self.schedule_diagnostics(index, crate::diagnostics::CHANGE_DEBOUNCE, cx);
 
-        if AUTO_SAVE_ENABLED {
+        if self.auto_save {
             self.schedule_auto_save(index, window, cx);
         }
 
@@ -2578,6 +2762,280 @@ impl EditorPane {
                 saved
             }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // U20：转到行:列（纯逻辑在 `crate::go_to_line`，这里只做对话框与落地）
+    // -----------------------------------------------------------------------
+
+    /// 打开「转到行:列」对话框。
+    ///
+    /// ⚠️ 调用时机与 `quick_open` / `search_everywhere` 同一个约束：**窗口根还是 `Root`
+    /// 之前不能开浮层**（`ShellWorkspace::new` 的文档原句："`Root::new` 之前不得打开任何浮层
+    /// —— 那时窗口根还不是 `Root`，`window.open_dialog` 会 panic"）。本方法的真实入口都满足：
+    /// 菜单项与 `Ctrl+G` 都走 `ShellWorkspace::apply_menu_action`（在**已渲染**的外壳那一帧的
+    /// 菜单队列分流里，与 U17 的 Search Everywhere 逐字同一条路），将来的状态栏光标格入口
+    /// 是事件回调。
+    ///
+    /// 真源是 `GoToLineDialog.present`（`macos/Sources/Lithe/Views/Editor/GoToLineDialog.swift:20-47`）：
+    /// 一个单输入框的模态面板，预填**当前光标的 1 基 `行:列`** 并全选，回车 / 确定则跳，
+    /// `Esc` / 取消则什么都不做。三个入口都落到这里：菜单「转到 → 转到行」（原来是占位项）、
+    /// `Ctrl+G`、以及（真源还有的）状态栏光标格点击 —— 前两个本批接了，第三个没接
+    /// （状态栏那一格目前只有显示职责，见交付报告）。
+    ///
+    /// ## 没有活动文件时不画对话框
+    ///
+    /// 真源同一条判据（`GoToLineDialog.swift:21` 的 `guard model.activeDocument != nil`）。
+    /// 本侧多打一行诊断：没有文件时"点了菜单没反应"必须留下线索，所以走 stderr 的
+    /// `S1_EDITOR_GO_TO_LINE open=false reason=no-active-buffer`。
+    ///
+    /// ## 输入框只有 `PressEnter` 一个订阅，确定键的可用性**每帧现算**
+    ///
+    /// `WindowExt::open_dialog` 的 builder 每帧重跑（`crate::quick_open::open_dialog` 的文档
+    /// 原句），所以 builder 里读 `input.read(cx).value()` 拿到的就是当帧文本：
+    /// 确定键的 `disabled` 与真源的"输入不合法就置灰"同效（`GoToLineDialog.swift:154-158`）。
+    /// ⚠️ 但**不能只靠这个视觉状态**：提交路径自己再 parse 一次（[`Self::submit_go_to_line`]），
+    /// 所以即使某一帧的置灰没刷新，非法输入也**不会**跳（真源原句 "Invalid input keeps Return
+    /// from jumping"）。
+    pub fn open_go_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_GO_TO_LINE open=false reason=no-active-buffer");
+            return;
+        };
+        // 已经开着别的对话框就不叠第二层 —— 与 `open_unsaved_dialog` / `quick_open` 同口径，
+        // 也免得 `Esc` 的"只关最上层"语义被两个面板搞乱。
+        if window.has_active_dialog(cx) {
+            eprintln!("S1_EDITOR_GO_TO_LINE open=false reason=active-dialog");
+            return;
+        }
+
+        // 预填用**Core 口径**的列（UTF-16），与 `go_to_line_column` 的入参同一口径。
+        // `CursorPosition` 的列是上游 `Position.character`（字符列），与本模块的列口径
+        // **不是**同一个数，所以这里从 byte offset 走 `core_position` 现算一次
+        // （三套列的坑见 `crate::navigation` 的模块文档）。
+        let text = self.buffers[index].editor.read(cx).text().clone();
+        let offset = self.buffers[index].editor.read(cx).cursor();
+        let (line, utf16_column) = crate::navigation::core_position(&text, offset);
+        let initial = crate::go_to_line::GoToLineInput::prefill(line as usize, utf16_column);
+
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(initial)
+                // 真源面板的字段标签是 `[Line] [:column]:`；catalog 里最贴的一句是
+                // `lithe.navigation.goToLinePrompt`（「转到行」）—— 它同时是这一项的菜单文案。
+                .placeholder(tr("lithe.navigation.goToLinePrompt"))
+        });
+        // 回车 = 确定。订阅必须存进 `self.go_to_line`（一 drop 就取消）。
+        let enter = cx.subscribe_in(
+            &input,
+            window,
+            |pane: &mut Self, _input: &Entity<InputState>, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    pane.submit_go_to_line(window, cx);
+                }
+            },
+        );
+        self.go_to_line = Some(GoToLinePrompt {
+            input: input.clone(),
+            _enter: enter,
+        });
+
+        println!(
+            "S1_EDITOR_GO_TO_LINE open=true line={} col={}",
+            line + 1,
+            utf16_column + 1
+        );
+
+        let pane = cx.weak_entity();
+        window.open_dialog(cx, move |dialog, _window, cx| {
+            // 每帧重算：文本没变就等价于"不合法"，与真源的 delegate 同一判据。
+            let valid =
+                crate::go_to_line::GoToLineInput::parse(input.read(cx).value().as_ref()).is_some();
+            let confirm_pane = pane.clone();
+            dialog
+                // 标题用真源面板自己的标题（"Go to Line:Column" → `lithe.editor.goToLineColumn`）。
+                .title(tr("lithe.editor.goToLineColumn"))
+                .child(Input::new(&input))
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_end()
+                        // 按钮顺序照设计指南「操作使用"取消"和结果词」：破坏性/次要的在前，
+                        // 主操作最右且 primary（与 `open_unsaved_dialog` 同一套排法）。
+                        .child(
+                            Button::new("editor-go-to-line-cancel")
+                                .label(tr("lithe.ui.cancel"))
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("editor-go-to-line-ok")
+                                .primary()
+                                .label(tr("lithe.ui.ok"))
+                                .disabled(!valid)
+                                .on_click(move |_, window, cx| {
+                                    // 提交路径**自己再 parse**（不信任上面那个视觉状态）：
+                                    // 见 `open_go_to_line` 的文档。
+                                    let _ = confirm_pane
+                                        .update(cx, |pane, cx| pane.submit_go_to_line(window, cx));
+                                }),
+                        ),
+                )
+        });
+    }
+
+    /// 提交一次「转到行:列」：解析输入框 → 跳 → 关对话框。
+    ///
+    /// 非法输入**不关对话框、不跳**（真源 `GoToLineDialog.swift:189-194`），只留一行
+    /// `S1_EDITOR_GO_TO_LINE submit=false reason=unparsable` —— 静默返回会让"输错了没反应"
+    /// 与"功能坏了"看起来一样。
+    pub fn submit_go_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(prompt) = self.go_to_line.as_ref() else {
+            return;
+        };
+        let text = prompt.input.read(cx).value().to_string();
+        let Some(parsed) = crate::go_to_line::GoToLineInput::parse(&text) else {
+            eprintln!("S1_EDITOR_GO_TO_LINE submit=false reason=unparsable input={text:?}");
+            return;
+        };
+        let jumped = self.go_to_line_column(
+            parsed.line,
+            parsed.column,
+            parsed.has_explicit_column,
+            window,
+            cx,
+        );
+        if jumped {
+            self.go_to_line = None;
+            window.close_dialog(cx);
+        }
+    }
+
+    /// 把光标放到 `(0 基行, 0 基 UTF-16 列)`；落到磁盘文件上，且这一跳进 `←` 历史。
+    ///
+    /// 两条口径都照真源：
+    ///
+    /// 1. **跳之前按当时的正文重新收敛**（`GoToLineInput::clamped`）—— 真源原句
+    ///    "converged against the current document text right before jumping, without caching
+    ///    stale line counts"（`AppModel+GoToLine.swift:24-28`）；
+    /// 2. **进导航历史**：跳转前的位置压进 `history`，所以跳完按 `←` 回得来
+    ///    （真源同句 "the jump enters the navigation history so Cmd+[ returns to the
+    ///    departure position"）。记录形状与 [`Self::open_at`] 完全一致。
+    ///
+    /// ⚠️ **与真源的一处差异（如实登记）**：真源在"只输了行号"时**选中整行**
+    /// （`selectsWholeLine: !target.has_explicit_column`），本侧只把光标放到行首 ——
+    /// 上游 `gpui-base-0.7.0` 没有公开的选区 setter（`selected_range` 只有 getter，
+    /// `state.rs:2992`；`select_to` 是 `pub(crate)`，`:3181`），所以这一半落不了地。
+    /// 两档的**光标位置**逐字相同，差别只在"有没有选中"。
+    ///
+    /// 返回 `false` = 没有活动 buffer（调用方据此不关对话框）。
+    pub fn go_to_line_column(
+        &mut self,
+        line: usize,
+        column: usize,
+        has_explicit_column: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_GO_TO_LINE jump=false reason=no-active-buffer");
+            return false;
+        };
+        let text = self.buffers[index].editor.read(cx).text().clone();
+        let target = crate::go_to_line::GoToLineInput::clamped(
+            line,
+            column,
+            has_explicit_column,
+            &text.to_string(),
+        );
+        let origin = JumpEntry {
+            path: self.buffers[index].path.clone(),
+            position: self.buffers[index].editor.read(cx).cursor_position(),
+        };
+        let position = editor_position(&text, target.line, target.column);
+        let to = self.buffers[index].editor.update(cx, |state, cx| {
+            state.set_cursor_position(position, window, cx);
+            state.cursor_position()
+        });
+        self.history.record(origin);
+
+        // 跳完把焦点还给编辑器：对话框是**自己的 focus handle**（`dialog.rs:332`
+        // `focus_handle: cx.focus_handle()`）且关闭时不还原焦点（全量 grep `dialog/` 没有
+        // "previous focus" 那套），不还焦点的话跳完之后键盘就敲不进去了。
+        self.buffers[index].editor.update(cx, |state, cx| {
+            state.focus(window, cx);
+        });
+
+        // 位置是 1 基显示口径（与 `S1_NAV_JUMP` / `S1_EDITOR_CURSOR` 一致，便于对日志）；
+        // `requested` 是用户**输入**的，`to` 是**收敛后**真的落点 —— 两个都打出来，
+        // "越界被夹"才看得出是设计而不是 bug。
+        println!(
+            "S1_EDITOR_GO_TO_LINE jump=true requested={}:{} explicit={} to={}:{}",
+            target.line + 1,
+            target.column + 1,
+            target.has_explicit_column,
+            to.line + 1,
+            to.character + 1
+        );
+        self.sync_cursor(cx);
+        cx.notify();
+        true
+    }
+
+    /// 「编辑 → 显示悬停信息」（真源 `editor.showHover`）：把**光标处**的悬停文档弹出来。
+    ///
+    /// 为什么需要这条：上游的悬停浮层只由**鼠标移动**触发
+    /// （`gpui-base-0.7.0/src/input/editor/lsp/hover.rs:88-110` 的 `handle_mouse_move`），
+    /// 键盘够不到 —— 而真源菜单里这一项就是"不移动鼠标也能看文档"。
+    /// 上游给了公开的 `EditorState::present_hover`（`overlay.rs:98-109`），
+    /// 所以本方法只做三件事：取光标 → 走**同一个** provider（数据源只有一份，见
+    /// [`crate::hover`]）→ 交给上游渲染。
+    ///
+    /// 异步是必须的：`HoverProvider::hover` 返回 `Task`（LSP 请求在飞），落地要
+    /// `update_in` 回到 UI 线程。这里 detach 的是"await 它"的那层 `spawn_in`，
+    /// 内层任务由它持有，所以不会出现"请求发出去就没人管"。
+    ///
+    /// ⚠️ 没有活动 buffer 时**不静默**（留一行 `S1_EDITOR_HOVER menu=false`）：
+    /// "点了菜单没反应"与"这个位置没有文档"必须能分开。
+    pub fn show_hover_at_caret(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_HOVER menu=false reason=no-active-buffer");
+            return;
+        };
+        let editor = self.buffers[index].editor.clone();
+        let java = (language_for_file(&self.buffers[index].name) == Some("java"))
+            .then(|| self.java.clone())
+            .flatten();
+        // 现场建一份 provider（与 `open()` 装进 `EditorState` 的那份**同类型、同数据源**）：
+        // 不把 provider 存到 `Buffer` 上只是为了少一个字段 —— 它无状态，构造就是 `Rc::new`。
+        let provider =
+            crate::hover::LitheHoverProvider::new(java, self.buffers[index].path.clone());
+        let text = editor.read(cx).text().clone();
+        let offset = editor.read(cx).cursor();
+        println!("S1_EDITOR_HOVER menu=true offset={offset}");
+        let task = provider.hover(&text, offset, window, cx);
+
+        cx.spawn_in(window, async move |pane, cx| {
+            let Ok(Some(hover)) = task.await else {
+                // `Err` / `None` 都已经在 provider 里留了 `S1_EDITOR_HOVER source=…` 诊断。
+                return;
+            };
+            let _ = pane.update_in(cx, |_pane, _window, cx| {
+                // 正文可能已经变了：用**当下**的 rope 算范围（与 provider 里那次换算同一条
+                // `editor_position` 口径），拿不到服务端 range 就退化成"光标下那个词"
+                // —— 与上游鼠标那条路的回退逐字相同（`hover.rs:47`）。
+                let text = editor.read(cx).text().clone();
+                let range = hover
+                    .range
+                    .as_ref()
+                    .map(|range| {
+                        text.position_to_offset(&range.start)..text.position_to_offset(&range.end)
+                    })
+                    .unwrap_or_else(|| text.word_range(offset).unwrap_or(offset..offset));
+                editor.update(cx, |state, cx| state.present_hover(range, hover, cx));
+            });
+        })
+        .detach();
     }
 
     /// 标签栏：左侧 `← →` 导航组 + 各文件的标签。

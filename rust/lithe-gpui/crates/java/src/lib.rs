@@ -51,8 +51,8 @@ mod workspace;
 
 pub use events::{JavaDiagnostic, JavaDiagnosticRange};
 pub use service::{
-    JavaCodeAction, JavaCompletionItem, JavaFileDiagnostics, JavaLanguageService, JavaPosition,
-    JavaTarget, JavaTextEdit, file_uri,
+    JavaCodeAction, JavaCompletionItem, JavaFileDiagnostics, JavaHover, JavaLanguageService,
+    JavaPosition, JavaTarget, JavaTextEdit, file_uri, parse_hover,
 };
 pub use toolchain::{
     JavaToolchainOverride, set_java_toolchain_override, set_maven_settings_override,

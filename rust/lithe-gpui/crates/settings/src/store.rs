@@ -772,6 +772,30 @@ impl SettingsStore {
         self.commit_global(cx, next, Effects::None);
     }
 
+    /// 改「自动换行」（软换行）。**本 store 不自己应用**：落点是每个 `EditorState` 的
+    /// `set_soft_wrap`，由外壳订阅本实体后转发给 `EditorPane::set_soft_wrap`
+    /// （与 [`Self::set_auto_completion`] 同一条路子，依赖方向：`workbench` → `editor`）。
+    ///
+    /// 两个入口写**同一个键**：「编辑器」页的开关，与「视图 → 切换自动换行」菜单项
+    /// （`workbench/src/menu_bar.rs` 的 `MenuAction::ToggleWordWrap`）—— 理由见
+    /// [`crate::schema::Settings::word_wrap`] 的字段文档（两个值必然分叉）。
+    pub fn set_word_wrap(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.word_wrap = enabled;
+        self.commit_global(cx, next, Effects::None);
+    }
+
+    /// 改「自动保存」。**本 store 不自己应用**：闸门在编辑区的防抖自动保存路径上
+    /// （`EditorPane::set_auto_save`），由外壳转发（同 [`Self::set_auto_completion`]）。
+    ///
+    /// 关掉只停"防抖自动落盘"：正文照旧标脏、`Ctrl+S` 照旧可存（真源口径见
+    /// `crate::schema::Settings::auto_save` 的字段文档）。
+    pub fn set_auto_save(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.auto_save = enabled;
+        self.commit_global(cx, next, Effects::None);
+    }
+
     /// 记住「这次项目是怎么打开的」（真源 `executeProjectOpenDecision`，
     /// `windows/tauri/src/features/file-system/controllers/project-open-destination.ts:112-131`）。
     ///

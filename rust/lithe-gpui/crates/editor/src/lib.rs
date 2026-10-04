@@ -189,6 +189,12 @@ mod code_actions;
 mod completion;
 mod diagnostics;
 mod editor_view;
+// U20「转到行:列」的**纯逻辑层**（输入解析 + 按当前正文收敛行列），14 条边界单测照
+// macOS 真源 `GoToLineInputTests.swift` 逐条搬（见模块文档）。
+mod go_to_line;
+// U20「悬停文档」：把 `textDocument/hover`（含 Core 的 `lsp.builtinHover` 兜底）接到上游
+// 自带的悬停浮层上。这里**只有数据**，一行渲染都没有（见模块文档）。
+mod hover;
 // 注册 gpui-kit 没内置、我们自己带的语法（目前只有 XML，见模块文档）。
 mod languages;
 mod navigation;

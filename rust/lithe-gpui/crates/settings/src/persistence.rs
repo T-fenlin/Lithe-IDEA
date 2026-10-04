@@ -291,6 +291,9 @@ mod tests {
             // 同上：这两个键的默认值也是 `true`，所以"非默认值"必须写 `false`。
             ask_where_to_open_projects: false,
             open_folders_in_new_window: false,
+            // `wordWrap` / `autoSave` 的默认值同样都是 `true`（见 `schema::Settings` 的字段文档）。
+            word_wrap: false,
+            auto_save: false,
             // 字体三键的"非默认值"：两个字族默认空串（不覆盖），终端字号默认 `0`（不覆盖）。
             font_family: "Inter".to_string(),
             mono_font_family: "JetBrains Mono".to_string(),
@@ -485,6 +488,35 @@ mod tests {
         let parsed = parse(&json);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         assert_eq!(parsed.settings, settings, "有字段没被读回来");
+    }
+
+    /// `wordWrap` / `autoSave` 两个键的**落盘名与"缺键即默认开"**逐个钉住。
+    ///
+    /// 键名是兼容面（手改过设置文件的用户 + 上个版本写下的文件都要能读回来），而
+    /// "缺键回落哪个值"决定了升级后的默认观感：两个键都该是**开**（理由见
+    /// `schema::Settings::word_wrap` / `::auto_save` 的字段文档）。上面那条全字段往返测的是
+    /// "值能读回来"，这条测的是"键名写对了、缺键时是开"。两条缺一条都会静默走偏。
+    #[test]
+    fn word_wrap_and_auto_save_use_the_documented_keys_and_default_on() {
+        let json = serde_json::to_value(Settings {
+            word_wrap: false,
+            auto_save: false,
+            ..Settings::default()
+        })
+        .expect("序列化失败");
+        assert_eq!(json["wordWrap"], serde_json::json!(false));
+        assert_eq!(json["autoSave"], serde_json::json!(false));
+
+        // 文件里没有这两个键（老文件 / 手写文件）→ 两个都回落"开"。
+        let parsed = parse(r#"{"theme": "Lithe Light"}"#);
+        assert!(parsed.settings.word_wrap, "缺 wordWrap 应回落 true");
+        assert!(parsed.settings.auto_save, "缺 autoSave 应回落 true");
+
+        // 文件里写了 false → 逐字读回来。
+        let parsed = parse(r#"{"wordWrap": false, "autoSave": false}"#);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        assert!(!parsed.settings.word_wrap);
+        assert!(!parsed.settings.auto_save);
     }
 
     /// 一个键的类型坏掉时，**只有那个键**回默认值，其余键照常生效。

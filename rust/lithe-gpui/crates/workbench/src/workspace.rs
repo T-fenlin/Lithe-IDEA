@@ -1903,6 +1903,11 @@ impl ShellWorkspace {
             editor.update(cx, |pane, cx| {
                 pane.set_tab_size(initial.tab_size as usize, cx);
                 pane.set_auto_completion(initial.auto_completion, cx);
+                // U20 的两个开关：`autoSave` 与 `tabSize` 同一形状，`wordWrap` 多要一个窗口
+                // （`EditorState::set_soft_wrap` 要拿当帧的换行宽度）—— 这里在 `new()` 里，
+                // `window` 在手上。
+                pane.set_auto_save(initial.auto_save, cx);
+                pane.set_soft_wrap(initial.word_wrap, window, cx);
             });
             terminal.update(cx, |pane, cx| {
                 pane.set_default_shell(&initial.terminal_default_shell_id, cx);
@@ -1911,7 +1916,13 @@ impl ShellWorkspace {
             changes_for_settings.update(cx, |view, cx| {
                 view.set_confirm_before_discard(initial.confirm_before_discard, cx);
             });
-            cx.observe(&store, |this, store, cx| {
+            // ⚠️ 用 `observe_in` 而**不是** `observe`：U20 的「软换行」是唯一一个
+            // **必须拿到窗口**才推得动的值型设置 —— `EditorState::set_soft_wrap` 要当帧的
+            // 换行宽度（`gpui-base-0.7.0/src/input/base/state.rs:9971-9989`），而
+            // `cx.observe` 的回调拿不到 `Window`（只有 `(this, observed, cx)`）。
+            // 本视图与它观察的设置实体在同一个窗口里（`new()` 的 `window` 就是它），
+            // 所以 `observe_in` 的窗口绑定在这里是成立的、不是权宜之计。
+            cx.observe_in(&store, window, |this, store, window, cx| {
                 let settings = store.read(cx).settings().clone();
                 this.editor.update(cx, |pane, cx| {
                     pane.set_tab_size(settings.tab_size as usize, cx);
@@ -1919,6 +1930,11 @@ impl ShellWorkspace {
                     // 转发"的路子。落点是编辑区那份共享的原子开关，所以**已打开的** Java
                     // buffer 与之后新开的都立刻跟上（见 `EditorPane::set_auto_completion`）。
                     pane.set_auto_completion(settings.auto_completion, cx);
+                    // U20「自动保存」：与上面两条同一条路子，落点是编辑区自己的闸门
+                    // （`EditorPane::set_auto_save`，关掉时顺手取消待执行的自动保存任务）。
+                    pane.set_auto_save(settings.auto_save, cx);
+                    // U20「软换行」：逐 buffer 推（它是每个 `EditorState` 自己的渲染属性）。
+                    pane.set_soft_wrap(settings.word_wrap, window, cx);
                 });
                 this.terminal.update(cx, |pane, cx| {
                     pane.set_default_shell(&settings.terminal_default_shell_id, cx);
@@ -3170,6 +3186,44 @@ impl ShellWorkspace {
                 // 落点与点行号槽完全同一条（`toggle_breakpoint_at_caret` → `toggle_breakpoint`）。
                 self.toggle_breakpoint_at_caret(cx);
                 diagnose_menu_run(action, "toggleBreakpoint");
+            }
+            MenuAction::GoToLine => {
+                // 「转到 → 转到行…」：U20 起**真的能用**（改前声明缺编辑区公开入口）。
+                // 对话框与落地都在编辑区（`EditorPane::open_go_to_line`）：它同时要
+                // "当前光标"（预填）与"按当时的正文收敛"，两样都在编辑区手上。
+                // `Ctrl+G` 走 `menu_bar::install_key_actions` → 压进本队列 → 落到**这里**，
+                // 所以键与菜单是逐字同一条链。
+                self.editor
+                    .update(cx, |pane, cx| pane.open_go_to_line(window, cx));
+                diagnose_menu_run(action, "goToLine");
+            }
+            MenuAction::ToggleWordWrap => {
+                // 「视图 → 切换自动换行」：U20 起**真的能用**（改前声明缺编辑区公开入口）。
+                //
+                // 写的是**设置里的同一个键** `wordWrap`，不是一份会话内的临时状态：
+                // 设置页那个开关与这一项必须共用一个真相源（两个值会互相覆盖 ——
+                // 理由逐条写在 `lithe_gpui_settings::schema::Settings::word_wrap` 的字段文档里）。
+                // 设置一变，上面的 `observe_in` 订阅立刻把它推给编辑区（含**已打开的**每个 buffer），
+                // 所以这里**不**再自己调 `set_soft_wrap`（那会变成两处写入）。
+                match lithe_gpui_settings::try_store(cx) {
+                    Some(store) => {
+                        let next = !store.read(cx).settings().word_wrap;
+                        store.update(cx, |store, cx| store.set_word_wrap(next, cx));
+                        diagnose_menu_run(action, "toggleWordWrap");
+                    }
+                    // 没有设置实体（测试宿主 / 将来别的宿主）：**不静默**，留一行诊断。
+                    None => eprintln!("S1_MENU notWired id=lithe.menu.toggleWordWrap missing=no_settings_store"),
+                }
+            }
+            MenuAction::ShowHover => {
+                // 「编辑 → 显示悬停信息」：U20 起**真的能用**（改前声明缺 LSP 请求）。
+                //
+                // ⚠️ 这不是"鼠标悬停"那条路（那条由上游在 `handle_mouse_move` 里自动触发，
+                // 不需要菜单项）：本项是**键盘**入口 —— 把光标处的悬停文档弹出来，
+                // 落点 `EditorPane::show_hover_at_caret`（用上游公开的 `present_hover`）。
+                self.editor
+                    .update(cx, |pane, cx| pane.show_hover_at_caret(window, cx));
+                diagnose_menu_run(action, "showHover");
             }
             MenuAction::ShowDiagnostics | MenuAction::ShowRunAndDebug => {
                 // 接线点：底部工具窗的**同一份状态**（`bottom_kind` + `bottom_visible`）——
@@ -6579,6 +6633,8 @@ mod tests {
             MenuAction::ZoomIn,
             MenuAction::ZoomOut,
             MenuAction::ResetZoom,
+            // U20：「转到行」的 `Ctrl+G`（真源 Windows 平台表，见 `MenuAction::GoToLine`）。
+            MenuAction::GoToLine,
         ] {
             let key = action
                 .menu_key()
@@ -6592,7 +6648,8 @@ mod tests {
             );
         }
 
-        // 反向：`MENUS` 里**只有**这六条带键位字面量（B2 的清单，改它就是改验证脚本）。
+        // 反向：`MENUS` 里**只有**这七条带键位字面量（B2 的六条 + U20 的 `Ctrl+G`；
+        // 改它就是改验证脚本）。
         let with_key: Vec<&'static str> = listed
             .iter()
             .filter_map(|action| action.menu_key())
@@ -6606,6 +6663,7 @@ mod tests {
                 crate::menu_bar::KEY_ZOOM_IN,
                 crate::menu_bar::KEY_ZOOM_OUT,
                 crate::menu_bar::KEY_RESET_ZOOM,
+                crate::menu_bar::KEY_GO_TO_LINE,
             ]
         );
     }

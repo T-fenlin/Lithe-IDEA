@@ -42,6 +42,13 @@ const DEFINITION_TIMEOUT: Duration = Duration::from_secs(60);
 /// （`lsp.builtinCompletions`），用户至少能看到当前文件的标识符，而不是"什么都没有"。
 const COMPLETION_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// 单次悬停文档（`textDocument/hover`）的死线。
+///
+/// 与补全同一个量级、比跳转短：鼠标停一下就想要结果。但它**有兜底**（编辑器侧会回落到
+/// Core 的轻量悬停 `lsp.builtinHover`，那条路不起任何进程），所以超时不会让功能消失 ——
+/// 只是那一次拿到的是"标识符本身"而不是 javadoc。
+const HOVER_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// 单次快速修复（code action）的死线。与补全同一个量级：它也是**交互式**请求
 /// （用户按下 `Ctrl+.` 正等着菜单弹出来），只是没有兜底 —— 超时就是"菜单不弹"。
 /// 15s 是上限而不是预期值：JDT 在已经 reconcile 过的文档上算一批 quick fix 是毫秒级
@@ -139,6 +146,26 @@ pub struct JavaPosition {
     pub line: u32,
     /// 0 基 UTF-16 码元列。
     pub utf16_column: u32,
+}
+
+/// 一次 `textDocument/hover` 的结果（U20「悬停文档」）。
+///
+/// 字段与 Core `lsp.request{operation:"hover"}` **归一化后**的信封一一对应
+/// （`rust/lithe-core/src/lsp/interface/client.rs:1067-1078` 的 `parse_hover`：
+/// `{ contents, isMarkdown, range }`）—— `range` 为 `null` 表示服务端没给符号范围。
+///
+/// 为什么把 `range` 留在 **UTF-16** 口径（[`JavaPosition`]）而不是在这里转成上游的字符列：
+/// 换算要用**目标 buffer 自己的** `Rope`（非 BMP 行上两套列不相等），而这里只有
+/// `&str`。上游 `HoverProvider` 拿到的 `&Rope` 才是唯一算得准的地方 —— 同一口径的完整论证
+/// 写在 `editor/src/code_actions.rs` 的模块文档（"列口径"一节）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JavaHover {
+    /// 悬停内容（Core 已把 `string | MarkupContent | MarkedString[]` 归一成单个字符串）。
+    pub contents: String,
+    /// 内容是不是 Markdown（`MarkupContent.kind == "markdown"`，或者它其实是一段代码块）。
+    pub is_markdown: bool,
+    /// 这段内容描述的符号范围（**UTF-16** 列）；`None` = 服务端没给。
+    pub range: Option<(JavaPosition, JavaPosition)>,
 }
 
 /// 语义跳转的目标。
@@ -278,6 +305,80 @@ impl JavaLanguageService {
             return Ok(Some(target));
         }
         self.virtual_target(session, first).map(Some)
+    }
+
+    /// 取光标处的**悬停文档**（`textDocument/hover`，U20）。
+    ///
+    /// 形状与 [`Self::definition`] 逐条相同：`ensure_session` → 同步文档 → 发语义请求 → 解析结果
+    /// （三段各自的理由见 [`Self::definition`] 的文档，这里不重复）。
+    ///
+    /// 与 `definition` 的两点差别：
+    ///
+    /// 1. **死线是 [`HOVER_TIMEOUT`]**：悬停是"鼠标停一下就想要"的交互，但它**有兜底**
+    ///    （Core 的 `lsp.builtinHover` 不需要任何进程），所以超时不是"什么都没有"；
+    /// 2. **`Ok(None)` 的两种含义分开打诊断**：服务端答了但那个位置没有可悬停的符号
+    ///    （例如空白处 / 关键字）是**正常**的，调用方据此回落到轻量悬停；服务不可用才回 `Err`。
+    ///
+    /// ⚠️ `range` 原样保留 **UTF-16** 口径（见 [`JavaHover`] 的文档）：换成上游的字符列要用
+    /// 目标 buffer 的 `Rope`，那是编辑器侧的事。
+    pub fn hover(
+        &self,
+        file_path: &Path,
+        text: &str,
+        line: u32,
+        utf16_column: u32,
+    ) -> Result<Option<JavaHover>, String> {
+        // 与 `definition` 同口径：契约说"用户打开 .java 文件时可以按需起服务"，所以不再问策略。
+        self.ensure_session()?;
+
+        let uri = file_uri(file_path)?;
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let session = match &*state {
+            State::Ready(session) => &**session,
+            State::Failed(reason) => return Err(reason.clone()),
+            State::Closed => return Err("Java 语言服务已关闭".to_string()),
+            State::Idle => return Err("Java 语言服务尚未启动".to_string()),
+        };
+
+        let (version, changed) = session.sync_document(&uri, "java", text)?;
+        println!(
+            "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+            text.len()
+        );
+
+        let started = Instant::now();
+        let result = session.request(
+            "hover",
+            json!({
+                "uri": uri,
+                "position": { "line": line, "utf16Column": utf16_column },
+            }),
+            Instant::now() + HOVER_TIMEOUT,
+        )?;
+
+        // Core 的信封是 `{ "hover": { contents, isMarkdown, range } | null }`
+        // （`rust/lithe-core/src/lsp/interface/client.rs:942-943` → `parse_hover`，
+        // 定义在 `:1067-1078`）。
+        let hover = result.get("hover").and_then(parse_hover);
+        match hover.as_ref() {
+            Some(hover) => println!(
+                "S1_JAVA_HOVER uri={uri} line={line} col={utf16_column} markdown={} range={} chars={} ms={}",
+                hover.is_markdown,
+                hover.range.is_some(),
+                hover.contents.len(),
+                started.elapsed().as_millis()
+            ),
+            // 正常情况之一（光标在空白处 / 关键字上）：不是失败，但必须留一行 ——
+            // "悬停没弹出来"要么是服务端说"这里没有"，要么是链路坏了，两者得能分开。
+            None => println!(
+                "S1_JAVA_HOVER uri={uri} line={line} col={utf16_column} contents=0 ms={}",
+                started.elapsed().as_millis()
+            ),
+        }
+        Ok(hover)
     }
 
     /// 取光标处的补全候选（`textDocument/completion`，走 JDTLS 的**项目感知**结果）。
@@ -1235,6 +1336,37 @@ pub(crate) fn parse_position(value: &Value) -> Option<JavaPosition> {
     })
 }
 
+/// 把 Core 归一化后的 `hover` 值解析成 [`JavaHover`]（U20）。
+///
+/// 入参是 `lsp.request{operation:"hover"}` 信封里的 **`hover` 那一格**
+/// （`{ contents, isMarkdown, range }`，定义见 `rust/lithe-core/src/lsp/interface/client.rs:1067-1078`），
+/// 或者 `lsp.builtinHover` 信封里的同一格（`rust/lithe-core/src/lsp/lightweight/symbols.rs:52-63`
+/// 的 `BuiltinHoverResponse`）—— **两条数据源的归一化形状逐字段相同**，所以这里只有一份解析：
+/// 这正是"语言服务不可用时回落到轻量悬停"（`editor/src/hover.rs`）能不写第二个解析器的原因。
+///
+/// 反证：`contents` 缺失 / 是空串 / 不是字符串时返回 `None`（而不是空串）—— 返回 `Some("")`
+/// 会让上游弹出一个**空白浮层**，比不弹更让人以为功能坏了。
+pub fn parse_hover(value: &Value) -> Option<JavaHover> {
+    let contents = value.get("contents").and_then(Value::as_str)?.to_string();
+    if contents.is_empty() {
+        return None;
+    }
+    let range = value.get("range").and_then(|range| {
+        Some((
+            parse_position(range.get("start")?)?,
+            parse_position(range.get("end")?)?,
+        ))
+    });
+    Some(JavaHover {
+        contents,
+        is_markdown: value
+            .get("isMarkdown")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        range,
+    })
+}
+
 /// 把 LSP snippet 还原成可插入的纯文本（`System.out.println(${1:msg})` → `System.out.println(msg)`）。
 ///
 /// **走 Core 的 `lsp.plainSnippet`，不在这里自己写规则**：那是 Core 拥有的转换
@@ -1287,6 +1419,55 @@ mod tests {
         assert!(uri.starts_with("file:///"), "{uri}");
         assert!(uri.ends_with('/'), "{uri}");
         assert!(uri.contains("lithe%20java%20ws"), "{uri}");
+    }
+
+    /// **悬停文档**的解析（U20）：`lsp.request{operation:"hover"}` 与 `lsp.builtinHover`
+    /// 两条数据源的归一化形状**逐字段相同**，所以这里同时钉住"两条路都解析得出来"。
+    ///
+    /// 反证：`contents` 为空串时返回 `None` —— 返回 `Some("")` 会让上游弹出一个空白浮层。
+    #[test]
+    fn hover_reads_the_normalized_fields() {
+        // ① 语言服务那条路（Core `parse_hover`）：Markdown + 符号范围。
+        let hover = parse_hover(&json!({
+            "contents": "**greet**(String name) — 打招呼",
+            "isMarkdown": true,
+            "range": {
+                "start": { "line": 3, "utf16Column": 28 },
+                "end": { "line": 3, "utf16Column": 33 }
+            }
+        }))
+        .expect("带 contents 的悬停必须能解析");
+        assert_eq!(hover.contents, "**greet**(String name) — 打招呼");
+        assert!(hover.is_markdown);
+        let (start, end) = hover.range.expect("给了 range 就必须解析出来");
+        assert_eq!(start.line, 3);
+        assert_eq!(start.utf16_column, 28);
+        assert_eq!(end.utf16_column, 33);
+
+        // ② 轻量悬停那条路（Core `lsp.builtinHover`）：纯文本 + 标识符范围。
+        let hover = parse_hover(&json!({
+            "contents": "`launch`",
+            "isMarkdown": false,
+            "range": {
+                "start": { "line": 0, "utf16Column": 3 },
+                "end": { "line": 0, "utf16Column": 9 }
+            }
+        }))
+        .expect("轻量悬停同一份解析");
+        assert_eq!(hover.contents, "`launch`");
+        assert!(!hover.is_markdown);
+        assert_eq!(hover.range.map(|(start, _)| start.utf16_column), Some(3));
+
+        // ③ 服务端没给 range（合法）→ `contents` 留着、`range` 是 `None`。
+        let hover =
+            parse_hover(&json!({ "contents": "x", "range": null })).expect("没有 range 也要能解析");
+        assert_eq!(hover.range, None);
+        assert!(!hover.is_markdown, "缺 isMarkdown 时按纯文本处理");
+
+        // ④ 空内容的三种形状都不该变成"空白浮层"。
+        assert_eq!(parse_hover(&json!({ "contents": "" })), None);
+        assert_eq!(parse_hover(&json!({ "contents": 3 })), None);
+        assert_eq!(parse_hover(&json!({ "hover": null })), None);
     }
 
     /// **补全条目**的解析：字段与 Core 的归一化输出一一对应，尤其是 `textEdit` 的
