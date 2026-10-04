@@ -595,3 +595,24 @@ S1_DEBUG attach_session=java-debug / start status=ok
 ① 读 `rust/lithe-core/src/debug/engine.rs` 里 `did_receive_initialized` 的处理，确认是丢弃还是暂存；
 ② 若是丢弃，就在会话进入 `initialized`/`Running` 时**补发一次断点**（`DebugPane::drain_session` 里看到
    `session_state` 首次变为 Running/Paused 时触发 `resend_breakpoints`）；同时给取端口加有界重试（3×20s）。
+
+### 第 19 轮查证：Core 侧无问题，嫌疑转向 attach 配置缺 projectName（2026-10-04）
+
+逐条排除后的事实：
+
+1. **闸门不是丢弃**（`rust/lithe-core/src/debug/engine.rs:201`）：未 initialized 时是
+   `session.breakpoints.insert(...)` **先存**，只有已 initialized 才立即 `send_breakpoints`；
+2. **flush 确实存在**（同文件 L1190 `did_receive_initialized = true;` → L1201 `self.send_breakpoints(&source)?;`），
+   即 `initialized` 到达后会把已存断点全部发出去；
+3. 日志里**完全没有** `paused/stopped/inspect/threads/stackTrace/scopes` 的痕迹 ⇒ 会话确实从未进入 Paused；
+4. 路径形态（相对/绝对）都已试过，均 `status=sent` 但不命中。
+
+⇒ Core 的断点存储/下发逻辑是对的，问题更可能在**适配器侧无法把源码映射到工程**：
+`java_attach_configuration("Java", port, None)` —— 第三个参数是 **`projectName`，我们传的是 `None`**。
+java-debug 依赖 `projectName`（来自 JDT LS 的工程）把 `source.path` 映射到 classpath；
+缺它时断点会被判为未验证（unverified）而永不命中 —— 这与"路径形态无关、已发送但不命中"的全部证据吻合。
+
+**下一步（就很可能是最后一步）**：把 JDT LS 的工程名（夹具是 `java-e2e`）填进 attach 配置
+（`java_attach_configuration("Java", port, Some(project_name))`，工程名可从 run 配置的
+`extensions.maven.module`/工程根目录名推导或由 JDT LS 的 project import 结果提供），然后重跑。
+另外仍建议给取端口加 3×20s 有界重试以消除时序抖动。
