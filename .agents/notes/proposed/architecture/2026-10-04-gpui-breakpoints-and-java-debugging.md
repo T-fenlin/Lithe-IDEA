@@ -141,8 +141,16 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
   `com.microsoft.java.debug.plugin-0.53.2`，放进 jdtls 根下的 `java-debug/`
   —— `crates/java/src/jdtls.rs:120` 就是按 `java-debug/` 目录 + `com.microsoft.java.debug.plugin-`
   前缀找的（找不到就报"选中的 JDTLS 安装缺少 … java-debug …"）。
-- 本机 JDK 只有 **1.8**（`java -version` → 1.8.0_221），而 manifest 写明
-  `minimumJavaVersion: 21` ⇒ 即便下载了 JDTLS 也起不来。
+- 本机 **PATH 上的 `java` 是 1.8**（`JAVA_HOME=D:\ProgramData\java\jdk1.8.0_221`），
+  但机器上**其实装了更高版本**：`D:\ProgramData\java\openjdk-21`、`openjdk-17`、`open-25`
+  （2026-10-04 复核更正；此前只跑 `java -version` 就下"只有 JDK 8"的结论是**错的**）。
+  宿主本来就留了覆盖口：`crates/java/src/jdtls.rs:13` 的 `LITHE_JDTLS_JAVA` —— 指到 openjdk-21 的
+  `bin\java.exe` 即可满足 `minimumJavaVersion: 21`。
+- 剩下的真缺口只有**第三方载荷**：`third_party/jdtls/` 只有 manifest，JDTLS 1.61.0 与
+  java-debug 0.59.0（plugin 0.53.2）的包都在网络（URL 与 SHA256 都在 manifest 里），
+  仓库里**没有本地物化脚本**（`scripts/verify-download-cache.mjs` 只做 CI 缓存校验）。
+  ⇒ 真机 E2E 需要：① 按 manifest 下载并解包 JDTLS + java-debug（约几十 MB）；
+  ② 设 `LITHE_JDTLS_JAVA` 指向 openjdk-21；③ 一个真实 Java 工程。
 - 结论：**真机「启动→断点命中→单步→变量→停止」在本机无法验证**；等价的代码侧验证是
   scripted adapter 的离线用例（transport 22 条 + 会话层 8 条）。要跑真机，先把上面三件事补齐。
 
