@@ -107,6 +107,27 @@ pub fn connect_java_debug_session(
     TcpDebugAdapter::connect(&format!("127.0.0.1:{port}"), timeout)
 }
 
+pub fn start_tcp_session(
+    session_id: &str,
+    root_path: &str,
+    port: u16,
+    connect_timeout: Duration,
+) -> Result<DebugTransport, String> {
+    let adapter = TcpDebugAdapter::connect(&format!("127.0.0.1:{port}"), connect_timeout)?;
+    DebugTransport::start(session_id, "java", root_path, false, Box::new(adapter))
+}
+
+pub fn start_java_session(
+    session_id: &str,
+    operation_id: &str,
+    lsp_session_id: &str,
+    root_path: &str,
+    timeout: Duration,
+) -> Result<DebugTransport, String> {
+    let port = java_debug_session_port(lsp_session_id, operation_id, timeout)?;
+    start_tcp_session(session_id, root_path, port, timeout)
+}
+
 pub struct DebugAdapterSpec {
     pub executable: PathBuf,
     pub arguments: Vec<String>,
@@ -1304,6 +1325,40 @@ mod tests {
             .recv_bounded(Duration::from_secs(10))
             .expect("应当读得到 adapter 发来的字节");
         assert_eq!(String::from_utf8_lossy(&read), "adapter-says-hi");
+        server.join().expect("服务端线程应当结束");
+    }
+
+    #[test]
+    fn start_tcp_session_connects_and_writes_the_initialize_frame() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("绑回环端口");
+        let address = listener.local_addr().expect("读本地地址");
+        let (sender, received) = channel();
+        let server = std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut buffer = [0_u8; 4096];
+            if let Ok(read) = stream.read(&mut buffer) {
+                let _ = sender.send(buffer[..read].to_vec());
+            }
+        });
+
+        let mut transport = start_tcp_session(
+            "session-tcp-start",
+            r"D:\proj",
+            address.port(),
+            Duration::from_secs(5),
+        )
+        .expect("按端口起 TCP 会话");
+        assert_eq!(transport.session_id(), "session-tcp-start");
+        let written = received
+            .recv_timeout(Duration::from_secs(10))
+            .expect("adapter 侧应当收到 initialize 帧");
+        assert!(
+            String::from_utf8_lossy(&written).contains(r#""command":"initialize""#),
+            "起会话必须把 initialize 帧写出去"
+        );
+        transport.disconnect().expect("断开");
         server.join().expect("服务端线程应当结束");
     }
 
