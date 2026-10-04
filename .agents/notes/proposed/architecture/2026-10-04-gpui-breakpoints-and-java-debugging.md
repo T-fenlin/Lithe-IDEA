@@ -85,7 +85,7 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
 | --- | --- |
 | `poll_until` | 有界轮询并**全量返回**本轮事件 + 报告谓词是否命中（命令通道要"转发全部事件、只等回执"，不能像 `wait_for_event` 那样吞掉非匹配事件） |
 | **驱动命令通道** | `DebugDriverCommand::Execute` + 待决 `operationId` + deadline：期间事件全量转发给 UI，命中回执成功、超时 `cancel(operationId)` 并回执失败；句柄暴露 `execute_command` |
-| `DebugPane` 接线 | 持 `Option<DebugSessionHandle>`；`attach_session` / `drain_session`（变化或退出返回真）/ `stop_session`；`Render` 开头 `if drain_session() { cx.notify() }`（靠变化标志避免自旋）；退出时打 `session_exited reason=…` 并清句柄 |
+| `DebugPane` 接线 | 持 `Option<DebugSessionHandle>`；`attach_session` / drain_session（变化或退出返回真）/ `stop_session`；`Render` 开头 `if drain_session() { cx.notify() }`（靠变化标志避免自旋）；退出时打 `session_exited reason=…` 并清句柄 |
 | 控制台接快照 | `copy_new_output(snapshot, seen, target)` 增量搬运（游标记账、快照丢旧行时不重放），面板**已有**的控制台与错误位直接显示调试输出与操作失败 |
 | 会话入口 | `start_tcp_session` / `start_java_session`：拿端口 → 连 loopback TCP → `debug.createSession`；UI 流程 = `start_java_session` → `DebugSessionHandle::start` → `attach_session` |
 | `debug.launch` 路径 | `launch_with_configuration`；**Core 的 `DebugLaunchConfiguration` 实测形状**是 `{ name, request: "launch"/"attach", arguments: {…适配器参数…}, steppingFilters? }`，适配器参数走 `arguments` 原样透传（第一版按 `{type,name,mainClass}` 传会被拒为 `invalid request`） |
@@ -708,14 +708,14 @@ java-debug 依赖 `projectName`（来自 JDT LS 的工程）把 `source.path` �
 
 ### 第 24 轮：为什么面板级诊断一直是空的（2026-10-04，重要）
 
-读 `rust/lithe-gpui/crates/workbench/src/debug.rs:2667` 的 `drain_session` 发现：**它本来就会在状态变化时打印**
+读 `rust/lithe-gpui/crates/workbench/src/debug.rs:2667` 的 drain_session 发现：**它本来就会在状态变化时打印**
 
 ```
 S1_DEBUG session_state={state:?} reason={reason:?} thread={thread_id:?}
 ```
 
 而第 12~22 次实跑的日志里**这一行从未出现过** —— 即使原始帧已经证明 `stateChanged paused` + `stopped reason=breakpoint`。
-结合 `drain_session` 的调用点（`DebugPane` 的 `Render::render` 开头），结论是：
+结合 drain_session 的调用点（`DebugPane` 的 `Render::render` 开头），结论是：
 
 ⇒ **无头探针运行下 `DebugPane` 根本没有被渲染/drain**（探针把底部面板设成 `BottomPaneKind::Run`，
 调试面板不可见 ⇒ 不渲染 ⇒ 不 drain）⇒ 面板侧的一切（状态锚点、`on_stopped`、
@@ -724,8 +724,8 @@ S1_DEBUG session_state={state:?} reason={reason:?} thread={thread_id:?}
 这一条同时解释了此前所有"看不到"的现象，也说明**变量证据缺的不是 DAP 链路，而是工作台没有在无头/后台情况下驱动调试面板**。
 
 **下一步（小且有界）**：在工作台层加一次"泵"—— 例如 `ShellWorkspace` 的渲染/帧回调里
-`self.debug.update(cx, |pane, cx| { if pane.drain_session() { cx.notify(); } })`（`drain_session` 已是 `pub`），
-再在 `drain_session` 的 `Some("paused")` 分支里补一次
+`self.debug.update(cx, |pane, cx| { if pane.drain_session() { cx.notify(); } })`（drain_session 已是 `pub`），
+再在 drain_session 的 `Some("paused")` 分支里补一次
 `request_inspect("threads", None, None, None, DEBUG_INSPECT_TIMEOUT)`（链条 L469 会自动推进到
 stackTrace → scopes → variables）。之后用 `LITHE_DEBUG_DUMP_FRAMES=1` 一次跑就能看到四步真实帧 + `next`。
 
@@ -733,7 +733,7 @@ stackTrace → scopes → variables）。之后用 `LITHE_DEBUG_DUMP_FRAMES=1` �
 
 两处改动：
 1. `ShellWorkspace::start_debug_session` 在 attach 之后把底部面板切到 **Debug**（`bottom_kind = Debug; bottom_visible = true`）
-   ⇒ 调试面板参与渲染 ⇒ `drain_session` 真正执行；
+   ⇒ 调试面板参与渲染 ⇒ drain_session 真正执行；
 2. `DebugPane::drain_session` 的 `Some("paused")` 分支补一次 `request_inspect("threads", …)`。
 
 第 23 次实跑日志（真实组件，帧 dump 佐证）：
@@ -760,7 +760,7 @@ seq13 operationCompleted …-stackTrace result={"kind":"stackTrace","stackFrames
 属于**按需展开**（用户在变量树里点开某一帧/某个作用域时才请求）—— 无头探针不会去点。
 
 ⇒ 真机"变量"证据需要**一次程序化展开**，两条路：
-① 探针输入（例如 `LITHE_DEBUG_EXPAND_FIRST_FRAME=1`）在 `drain_session` 看到 paused 且
+① 探针输入（例如 `LITHE_DEBUG_EXPAND_FIRST_FRAME=1`）在 drain_session 看到 paused 且
    `snapshot.results` 已有 stackTrace 时，对第一帧调 `expand_variables`/`request_variables`；
 ② 或产品侧决定"停止时自动展开顶层帧"（不少 IDE 这么做；属于产品取舍，需先确认设计意图）。
 无论哪条，`LITHE_DEBUG_DUMP_FRAMES=1` 都能直接看到 `scopes`/`variables` 的 operationCompleted 帧。
@@ -778,7 +778,7 @@ seq13 operationCompleted …-stackTrace result={"kind":"stackTrace","stackFrames
   （同文件 `:530`）：拉 `scopes` 需要 **frame_id**（来自已拉到的 stackTrace），
   拿到某个 scope 的 `variablesReference` 后再 `request_variables`。
 
-⇒ **变量**这条链要在 `drain_session` 里分两步推进：paused → `request_inspect("scopes", None, Some(first_frame_id), …)`
+⇒ **变量**这条链要在 drain_session 里分两步推进：paused → `request_inspect("scopes", None, Some(first_frame_id), …)`
 → 从 `snapshot.results`（键形如 `kind#reference`）取首个 scope 的 `variablesReference` → `request_variables`。
 所需小工具（`first_frame_id`、`result_for_reference`、`result_array`、`variable_labels_for`）都已存在于
 `debug_session.rs`，只是还没有被"停止后自动推进"这条路径调用。
@@ -789,7 +789,7 @@ seq13 operationCompleted …-stackTrace result={"kind":"stackTrace","stackFrames
 
 ### 🎉 第 28 轮实跑：真机「单步」验证通过（2026-10-04）
 
-在 `drain_session` 的 `Some("paused")` 分支加了一处探针输入门控的单步
+在 drain_session 的 `Some("paused")` 分支加了一处探针输入门控的单步
 （`DebugControl::StepOver.command()` → `request_command(..., thread_id, 5s)`），第 24 次实跑：
 
 ```
@@ -808,11 +808,11 @@ seq18 operationCompleted …-threads（重新拉线程）
 ### 第 29 轮：变量探针的借用死结与正确解法（2026-10-04）
 
 两次尝试（新块用 `self.session.as_mut()` / 新块用外层 `session` 绑定）都在
-`drain_session`（`rust/lithe-gpui/crates/workbench/src/debug.rs:2667`）里得到
+drain_session（`rust/lithe-gpui/crates/workbench/src/debug.rs:2667`）里得到
 `E0499: cannot borrow self.session as mutable more than once at a time`（各 2 处）。两次都已自动还原，
 HEAD 仍是 `9a5871bc`，`cargo build -p lithe-gpui-app` 绿。
 
-根因：`drain_session` 开头是 `let Some(session) = self.session.as_mut() else { … };`，
+根因：drain_session 开头是 `let Some(session) = self.session.as_mut() else { … };`，
 而第 81 轮我在 `Some("paused")` 分支里又写了一次 `self.session.as_mut()`（拉线程那次）。
 现在要在**状态分支之外、每帧**再推进一次 inspect（scopes → variables），第三个访问点无法用
 "就地加代码"的方式与这两个借用共存。
@@ -830,16 +830,16 @@ fn advance_probe_inspects(&mut self, snapshot: &DebugSessionSnapshot) {
 }
 ```
 
-然后只改 `drain_session` 的**尾部**加一行 `self.advance_probe_inspects(&snapshot);`。
+然后只改 drain_session 的**尾部**加一行 `self.advance_probe_inspects(&snapshot);`。
 方法内部只有一次 `self.session.as_mut()`，与外层的借用互不重叠 ⇒ 不会再 E0499。
-（注意 `snapshot` 是 `drain_session` 里已取好的 `DebugSessionSnapshot` 值，直接传引用即可。）
+（注意 `snapshot` 是 drain_session 里已取好的 `DebugSessionSnapshot` 值，直接传引用即可。）
 
 ### 第 30 轮：更优解法 —— 把自动推进放进 DebugSessionHandle，而不是面板（2026-10-04）
 
 上一条"抽成面板方法"仍要面对面板里 `self.session` 的借用次序问题。更干净的落点是
 **`rust/lithe-gpui/crates/workbench/src/debug_session.rs` 的 `DebugSessionHandle`**：
 
-- `drain_session` 每帧都会调用 `session.drain()`（`DebugSessionHandle` 自己的方法），
+- 面板每帧都会调用 `session.drain()`（`DebugSessionHandle` 自己的方法），
   而 handle **天然持有 `&mut self`**，可以直接读自己的 `snapshot()`（`results` 键 `stackTrace#…`/`scopes#…`/`variables#…`）；
 - 于是在 handle 里加一个 `fn auto_advance_inspects(&mut self)`（或直接在 `drain()` 里推进一步）：
   paused 且无 `scopes#` → 发 `request_inspect("scopes", None, Some(frame_id), None, 5s)`；
