@@ -20,6 +20,91 @@ const DESTROY_SESSION_COMMAND: &str = "debug.destroySession";
 
 const STDERR_TAIL_BYTES: usize = 4096;
 
+const LSP_REQUEST_COMMAND: &str = "lsp.request";
+const EXECUTE_COMMAND_OPERATION: &str = "executeCommand";
+const JAVA_START_DEBUG_SESSION: &str = "vscode.java.startDebugSession";
+
+pub fn java_start_debug_session_payload(session_id: &str, operation_id: &str) -> Value {
+    json!({
+        "sessionId": session_id,
+        "operationId": operation_id,
+        "operation": EXECUTE_COMMAND_OPERATION,
+        "command": { "command": JAVA_START_DEBUG_SESSION },
+    })
+}
+
+pub fn parse_debug_port(value: &Value) -> Option<u16> {
+    match value {
+        Value::Number(number) => number.as_u64().and_then(valid_port),
+        Value::String(text) => text
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .and_then(valid_port)
+            .or_else(|| {
+                serde_json::from_str::<Value>(text)
+                    .ok()
+                    .and_then(|inner| parse_debug_port(&inner))
+            }),
+        Value::Object(map) => {
+            for key in ["value", "port", "debugPort", "debug_port"] {
+                if let Some(found) = map.get(key).and_then(parse_debug_port) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Value::Array(items) => items.iter().find_map(parse_debug_port),
+        Value::Null | Value::Bool(_) => None,
+    }
+}
+
+fn valid_port(port: u64) -> Option<u16> {
+    u16::try_from(port).ok().filter(|port| *port > 0)
+}
+
+pub fn java_debug_session_port(
+    session_id: &str,
+    operation_id: &str,
+    timeout: Duration,
+) -> Result<u16, String> {
+    let payload = java_start_debug_session_payload(session_id, operation_id);
+    let data = match core_json(LSP_REQUEST_COMMAND, payload) {
+        Ok(Some(data)) => data,
+        Ok(None) => {
+            return Err(format!(
+                "{DEBUG_TRANSPORT_TAG} start_debug_session_no_data session={session_id}"
+            ));
+        }
+        Err(error) => {
+            return Err(format!(
+                "{DEBUG_TRANSPORT_TAG} start_debug_session_failed session={session_id} error={error}"
+            ));
+        }
+    };
+    parse_debug_port(&data).ok_or_else(|| {
+        format!(
+            "{DEBUG_TRANSPORT_TAG} start_debug_session_no_port session={session_id} data={data}"
+        )
+    })
+    .map(|port| {
+        println!(
+            "{DEBUG_TRANSPORT_TAG} start_debug_session session={session_id} port={port} timeout_ms={}",
+            timeout.as_millis()
+        );
+        port
+    })
+}
+
+pub fn connect_java_debug_session(
+    session_id: &str,
+    operation_id: &str,
+    timeout: Duration,
+) -> Result<TcpDebugAdapter, String> {
+    let port = java_debug_session_port(session_id, operation_id, timeout)?;
+    TcpDebugAdapter::connect(&format!("127.0.0.1:{port}"), timeout)
+}
+
 pub struct DebugAdapterSpec {
     pub executable: PathBuf,
     pub arguments: Vec<String>,
@@ -864,5 +949,44 @@ mod tests {
             "错误要能看出是写失败：{error}"
         );
         server.join().expect("服务端线程应当结束");
+    }
+
+    #[test]
+    fn java_start_debug_session_payload_pins_the_core_contract() {
+        let payload = java_start_debug_session_payload("session-9", "op-1");
+        assert_eq!(payload["sessionId"], json!("session-9"));
+        assert_eq!(payload["operationId"], json!("op-1"));
+        assert_eq!(
+            payload["operation"],
+            json!("executeCommand"),
+            "Core 的 LspSemanticOperation 是 camelCase 反序列化，字符串必须是 executeCommand"
+        );
+        assert_eq!(
+            payload["command"]["command"],
+            json!("vscode.java.startDebugSession"),
+            "executeCommand 的载荷就是要交给 workspace/executeCommand 的 params"
+        );
+    }
+
+    #[test]
+    fn parse_debug_port_accepts_the_shapes_jdt_can_return() {
+        assert_eq!(parse_debug_port(&json!(56789)), Some(56789));
+        assert_eq!(parse_debug_port(&json!({ "value": 56789 })), Some(56789));
+        assert_eq!(parse_debug_port(&json!({ "port": "56789" })), Some(56789));
+        assert_eq!(parse_debug_port(&json!({ "value": "56789" })), Some(56789));
+        assert_eq!(
+            parse_debug_port(&json!({ "value": "{\"port\":56789}" })),
+            Some(56789),
+            "java-debug 有时把结果再包一层 JSON 字符串"
+        );
+    }
+
+    #[test]
+    fn parse_debug_port_rejects_values_that_are_not_a_port() {
+        assert_eq!(parse_debug_port(&json!(0)), None, "端口 0 不是可连的端口");
+        assert_eq!(parse_debug_port(&json!(70000)), None, "超出 u16 的不是端口");
+        assert_eq!(parse_debug_port(&json!({})), None);
+        assert_eq!(parse_debug_port(&json!(null)), None);
+        assert_eq!(parse_debug_port(&json!("not-a-port")), None);
     }
 }
