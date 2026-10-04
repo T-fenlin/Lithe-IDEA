@@ -1293,8 +1293,15 @@ impl ShellWorkspace {
                 let jdwp_port = self.run.read(cx).debug_port();
                 match jdwp_port {
                     Some(port) => {
-                        match crate::debug_transport::java_attach_configuration("Java", port, None)
-                        {
+                        let project_name = std::env::var("LITHE_DEBUG_PROJECT_NAME")
+                            .ok()
+                            .map(|value| value.trim().to_string())
+                            .filter(|value| !value.is_empty());
+                        match crate::debug_transport::java_attach_configuration(
+                            "Java",
+                            port,
+                            project_name.as_deref(),
+                        ) {
                             Ok(configuration) => {
                                 match transport.launch_with_configuration(configuration) {
                                     Ok(_) => println!(

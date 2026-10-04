@@ -616,3 +616,20 @@ java-debug 依赖 `projectName`（来自 JDT LS 的工程）把 `source.path` �
 （`java_attach_configuration("Java", port, Some(project_name))`，工程名可从 run 配置的
 `extensions.maven.module`/工程根目录名推导或由 JDT LS 的 project import 结果提供），然后重跑。
 另外仍建议给取端口加 3×20s 有界重试以消除时序抖动。
+
+### 第 20 次实跑：projectName 假设也证否；嫌疑转向 Core 的断点 flush 循环（2026-10-04）
+
+加了探针输入 `LITHE_DEBUG_PROJECT_NAME`（默认不设 = 原来的 `None`）并把 `java-e2e` 填进 attach 配置，
+第 20 次实跑仍是 `start status=ok` + `setBreakpoints … status=sent`，**依旧没有 `stopped`** ⇒
+"attach 缺 projectName 导致断点 unverified"这个假设也不成立（至少这个工程名不解决）。
+
+**剩余最可疑的一处（可直接查证）**：`rust/lithe-core/src/debug/engine.rs` L1190-1201 ——
+`did_receive_initialized = true;` 之后那一行是 `self.send_breakpoints(&source)?;`，
+但 **`source` 变量从哪来**没确认：如果它来自"遍历 exception filters"的循环，
+那么**普通断点（`self.breakpoints`）在 initialized 时根本不会被 flush** —— 而我们的两次下发
+（attach 前、attach 后紧接）都早于 `initialized` 事件到达 ⇒ 断点只被存下、从未真正发给 adapter。
+这与全部证据（路径无关、已发送日志、永不命中、无任何 adapter 事件）完全吻合。
+
+**下一步（一轮内可完成）**：读 `debug/engine.rs` L1175-1215 确认 flush 的循环源；
+若只 flush exception filters，就在 Core 里补上对 `self.breakpoints` 的 flush
+（并在 `debug.rs` 里补"会话就绪后重发一次断点"作为宿主的双保险），然后重跑。
