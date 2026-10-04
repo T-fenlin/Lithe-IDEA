@@ -936,7 +936,7 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 
 #### ⑫ 语言智能与诊断列表
 
-- **macOS 组成**：问题视图（按文件分组 / 严重度筛选 / 计数 / 四种空态 / 点击打开）+ Java 引用视图 + 实现选择器 + LSP 控制中心 + 语言服务器安装向导 + 语言测试视图 + 诊断导出对话框。
+- **macOS 组成**：问题视图（**扁平列表** —— 真源 `macos/Sources/Lithe/Views/Language/JavaProblemsView.swift:17-24` 是 `LazyVStack(alignment: .leading, spacing: 2)` + `ForEach(diagnostics) { diagnosticRow($0) }`，**不按文件分组**；**⚠️ 2026-10-04 更正：原文写"按文件分组"有误**。注意 gpui 侧**反倒是**分组 + 可折叠 ⇒ 这是一处**可见偏离**，不是"照真源实现" / 严重度筛选 / 计数 / 四种空态 / 点击打开）+ Java 引用视图 + 实现选择器 + LSP 控制中心 + 语言服务器安装向导 + 语言测试视图 + 诊断导出对话框。
 - **关键类型**：`ProblemsView`、`LanguageReferencesView`、`LanguageImplementationChooserView`、`LSPControlCenterView`、`LanguageServerSetupView`、`LanguageTestsView`、`DiagnosticsExportSheet`。
 - **gpui 落点**：`crates/editor/src/problems.rs`（`ProblemsPane`，底部工具窗「诊断」页）、`diagnostics.rs`（波浪线）、`crates/java/src/`（JDTLS 会话 `session.rs` / 事件泵 `events.rs` / 服务 `service.rs` / `jdtls.rs` 载荷发现 / `workspace.rs` 指纹与缓存键）、`crates/editor/src/completion.rs`、`code_actions.rs`、`navigation.rs`。
 - **组件替换**：问题列表用 `List` / `v_flex` + 折叠组头；严重度筛选用 `Select` / 分段控件；诊断导出用 `Dialog`。
