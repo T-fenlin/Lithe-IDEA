@@ -3780,6 +3780,15 @@ impl ShellWorkspace {
             .map(|tab| tab.name().clone())
             .unwrap_or_default();
         let active_file = self.editor.read(cx).active_buffer_name();
+        // 活动文档变化 ⇒ 项目树的单选跟随（真源 `ProjectSidebarView.swift:113-118`）。
+        // 渲染期读就够了：外壳已经 `cx.observe(&editor_pane, ..)`（`editor_view.rs:1416`），
+        // 活动 buffer 一变就会重渲染到这一行；而入口**幂等**，不会每帧改选择。
+        {
+            let active_path = self.editor.read(cx).active_buffer_path();
+            self.explorer.update(cx, |explorer, cx| {
+                explorer.follow_active_document_path(active_path.as_deref(), cx);
+            });
+        }
         // 分支：走 Git 视图已经取到的 `git.status` 快照（`ChangesView::branch`），
         // **不再每帧读 `.git/HEAD`**（D11）。那三处读错的场景 —— worktree（`.git` 是文件）、
         // 分离 HEAD（没有 `ref: refs/heads/` 前缀）、仓库根≠工作区根 —— 都由 Core 的

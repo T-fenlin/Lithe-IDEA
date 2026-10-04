@@ -654,11 +654,8 @@ impl Explorer {
     /// （`workspace.rs:3782` 的 `active_buffer_name()`，editor 侧不发事件），每帧都会调到这里；
     /// 不比较就会每帧改一次选择、每帧 `notify`。
     ///
-    /// ⚠️ **还没有调用方**。接线还差两步：
-    /// 1. `EditorPane` 只有 `active_buffer_name()`（**文件名**，`editor_view.rs:1420`），
-    ///    要的是**工作区相对路径** ⇒ editor 侧要补一个路径访问器（或在工作区做相对化）；
-    /// 2. `ShellWorkspace` 在渲染期拿到那个相对路径后转进来（它已经持有
-    ///    `explorer: Entity<Explorer>`，`workspace.rs:1154`）。
+    /// ⚠️ 调用方是 [`Self::follow_active_document_path`]（由 `ShellWorkspace` 在渲染期调用），
+    /// 一般不需要直接调本方法 —— 直接调就得自己保证传的是**工作区相对路径**。
     pub fn follow_active_document(&mut self, path: Option<&str>, cx: &mut Context<Self>) {
         let next = path.map(SharedString::from);
         if self.active == next {
@@ -668,6 +665,20 @@ impl Explorer {
         if self.selection.follow_active_document(path) {
             cx.notify();
         }
+    }
+
+    /// 同上，但收**绝对路径**：编辑器给的是 `Buffer::path`（绝对），而树里的口径是
+    /// **工作区相对路径**，所以这里用 [`Self::root`] 相对化 + 把 `\` 归一成 `/`。
+    ///
+    /// 相对化失败（不在工作区内 —— 例如打开了仓库外的文件）⇒ 传 `None`：
+    /// 只清掉行底色，**不动选择**（真源那条 `guard let path` 同）。
+    pub fn follow_active_document_path(&mut self, path: Option<&Path>, cx: &mut Context<Self>) {
+        let relative = path.and_then(|path| {
+            path.strip_prefix(&self.root)
+                .ok()
+                .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        });
+        self.follow_active_document(relative.as_deref(), cx);
     }
 
     /// 工作区里**有没有**任何可见项（决定画树还是画空态）。

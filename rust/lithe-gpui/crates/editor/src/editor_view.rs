@@ -1424,6 +1424,18 @@ impl EditorPane {
             .unwrap_or_default()
     }
 
+    /// 活动 buffer 的**文件系统路径**（`Buffer::path`，正是打开时用的那个路径）。
+    ///
+    /// 与 [`Self::active_buffer_name`] 同一口径：只读、不触发重绘、不需要 `&App`。
+    /// 消费者是项目树的"活动文档跟随"（真源 `ProjectSidebarView.swift:113-118`）——
+    /// 它要的是工作区相对路径，而相对化的基准（工作区根）在 explorer 手里，所以这里给绝对路径。
+    /// 没有活动 buffer 时返回 `None`。
+    pub fn active_buffer_path(&self) -> Option<PathBuf> {
+        self.active
+            .and_then(|index| self.buffers.get(index))
+            .map(|buffer| buffer.path.clone())
+    }
+
     /// 当前生效的制表符宽度（空格数）—— 状态栏「缩进」那一格的真值。
     ///
     /// 与 [`Self::set_tab_size`] 是同一个字段，所以设置页改 `tabSize` 后这一格立刻跟着变
