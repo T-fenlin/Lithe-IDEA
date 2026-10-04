@@ -575,3 +575,23 @@ S1_DEBUG attach_session=java-debug / start status=ok
 （含 `verified` 与 adapter 返回的 `source`），一眼就能区分上面两种；若是路径问题，把 `set_breakpoints_payload`
 里的 `sourcePath` 换成绝对路径（或按 java-debug 期望的形态）即可。
 注：本轮把 `start_debug_session` 的取端口超时从 10s 提到 **30s**（第 15 次那种时序抖动不再触发）。
+
+### 第 17/18 次实跑：路径形态假设被证否，嫌疑集中到 DAP 引擎的断点闸门（2026-10-04）
+
+- 第 17 次：`start_debug_session_timeout … timeout_ms=30000`（JDT LS 在忙，端口请求不应答）——
+  绝对路径实验没评上；
+- 第 18 次：先跑一次预热（预热那次也超时），紧接着正式那次**全链路成功**（`start status=ok`），
+  断点用**绝对路径** `…\.artifacts\java-e2e\src\main\java\demo\App.java` 也照样 `status=sent`，
+  **但仍然没有 `stopped`** ⇒ **"路径形态导致断点未被验证"这个假设被证否**。
+- 两次相邻运行一次超时一次成功，说明取端口的问题确实是**时序抖动**（JDT LS 忙时不应答），不是缓存冷热。
+
+**剩下的唯一嫌疑**：断点在 DAP 的 `initialized` 之前就发出去了，而 Core 的 debug 引擎对
+"未 initialized 时收到的 breakpoints"可能是不暂存（丢弃）——第 16/18 次都是
+`setBreakpoints_before_attach count=1` → `launch status=sent` → `attach_session`（attach 后的那次重发
+同样很可能早于 `initialized` 事件回来）。**修正我上一节的引用**：闸门在
+`rust/lithe-core/src/debug/engine.rs`（DAP reducer）里，不是 LSP 引擎的 `engine.rs`。
+
+**下一步（两条，都小）**：
+① 读 `rust/lithe-core/src/debug/engine.rs` 里 `did_receive_initialized` 的处理，确认是丢弃还是暂存；
+② 若是丢弃，就在会话进入 `initialized`/`Running` 时**补发一次断点**（`DebugPane::drain_session` 里看到
+   `session_state` 首次变为 Running/Paused 时触发 `resend_breakpoints`）；同时给取端口加有界重试（3×20s）。
