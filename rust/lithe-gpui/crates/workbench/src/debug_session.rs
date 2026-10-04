@@ -120,6 +120,35 @@ fn text(event: &Value, key: &str) -> Option<String> {
     event.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DrainOutcome {
+    pub changed: bool,
+    pub exited: Option<String>,
+    pub events: u64,
+}
+
+pub fn drain_driver(
+    driver: &crate::debug_transport::DebugSessionDriver,
+    snapshot: &mut DebugSessionSnapshot,
+) -> DrainOutcome {
+    use crate::debug_transport::DebugDriverEvent;
+
+    let mut outcome = DrainOutcome::default();
+    while let Some(event) = driver.try_recv() {
+        match event {
+            DebugDriverEvent::Events(events) => {
+                outcome.events += events.len() as u64;
+                outcome.changed |= snapshot.apply(&events);
+            }
+            DebugDriverEvent::Exited { reason } => {
+                outcome.exited = Some(reason);
+                break;
+            }
+        }
+    }
+    outcome
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,5 +235,94 @@ mod tests {
         let changed = snapshot.apply(&[json!({ "type": "capabilities", "capabilities": {} })]);
         assert!(!changed);
         assert_eq!(snapshot.applied_events, 1, "未知事件也要计数，便于诊断");
+    }
+
+    struct FrameQueue {
+        incoming: Vec<Vec<u8>>,
+    }
+
+    impl crate::debug_transport::DebugAdapterPort for FrameQueue {
+        fn write_frame(&mut self, _frame: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            if self.incoming.is_empty() {
+                None
+            } else {
+                Some(self.incoming.remove(0))
+            }
+        }
+
+        fn kill(&mut self) {}
+    }
+
+    fn dap_frame(message: Value) -> Vec<u8> {
+        let body = serde_json::to_vec(&message).expect("序列化 DAP 消息");
+        let mut frame = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+        frame.extend(body);
+        frame
+    }
+
+    #[test]
+    fn drain_driver_applies_events_then_reports_exit() {
+        use crate::debug_transport::{DebugSessionDriver, DebugTransport};
+        use std::time::{Duration, Instant};
+
+        let adapter = FrameQueue {
+            incoming: vec![dap_frame(json!({
+                "seq": 1,
+                "type": "event",
+                "event": "output",
+                "body": { "category": "stdout", "output": "hello from the debuggee\n" }
+            }))],
+        };
+        let transport = DebugTransport::start(
+            "session-drain",
+            "java",
+            r"D:\proj",
+            false,
+            Box::new(adapter),
+        )
+        .expect("起会话");
+        let mut driver = DebugSessionDriver::spawn(transport, Duration::from_millis(20));
+        let mut snapshot = DebugSessionSnapshot::default();
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut outcome = DrainOutcome::default();
+        while Instant::now() < deadline && !outcome.changed {
+            outcome = drain_driver(&driver, &mut snapshot);
+        }
+        assert!(
+            outcome.changed,
+            "adapter 发来的 output 事件必须变成快照变化"
+        );
+        assert!(
+            snapshot
+                .output
+                .iter()
+                .any(|line| line.contains("hello from the debuggee")),
+            "控制台输出应当进入快照，实得：{:?}",
+            snapshot.output
+        );
+
+        let quiet = drain_driver(&driver, &mut snapshot);
+        assert!(!quiet.changed, "没有新事件时不该报告变化");
+        assert!(quiet.exited.is_none(), "会话还在跑时不该报退出");
+
+        assert!(
+            driver.stop(Duration::from_secs(10)),
+            "stop 必须在有界时间内停住读循环"
+        );
+        let mut exited = DrainOutcome::default();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && exited.exited.is_none() {
+            exited = drain_driver(&driver, &mut snapshot);
+        }
+        assert_eq!(
+            exited.exited.as_deref(),
+            Some("stopped"),
+            "主动停止之后必须能收到带原因的退出事件"
+        );
     }
 }
