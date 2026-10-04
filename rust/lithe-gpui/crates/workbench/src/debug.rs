@@ -1324,6 +1324,7 @@ pub struct DebugPane {
     session: Option<DebugSessionHandle>,
     session_output_seen: usize,
     session_state_seen: Option<String>,
+    expanded_reference: Option<i64>,
     execution: DebugExecution,
     inspection: DebugInspection,
     tree: DebugVariableTree,
@@ -1360,6 +1361,7 @@ impl DebugPane {
             session: None,
             session_output_seen: 0,
             session_state_seen: None,
+            expanded_reference: None,
             error_message: None,
             output: Vec::new(),
             filters_task: None,
@@ -2402,6 +2404,36 @@ impl DebugPane {
         column.into_any_element()
     }
 
+    fn expand_variables(&mut self, reference: i64, cx: &mut Context<Self>) {
+        self.expanded_reference = if self.expanded_reference == Some(reference) {
+            None
+        } else {
+            Some(reference)
+        };
+        if let Some(reference) = self.expanded_reference {
+            let timeout = crate::debug_session::DEBUG_INSPECT_TIMEOUT;
+            let outcome = self
+                .session
+                .as_mut()
+                .map(|session| session.request_variables(reference, None, timeout));
+            match outcome {
+                Some(Ok(())) => println!(
+                    "{DEBUG_DIAGNOSTIC_TAG} expand_variables reference={reference} status=sent"
+                ),
+                Some(Err(error)) => {
+                    eprintln!(
+                        "{DEBUG_DIAGNOSTIC_TAG} expand_variables reference={reference} status=failed error={error}"
+                    );
+                    self.error_message = Some(error);
+                }
+                None => eprintln!(
+                    "{DEBUG_DIAGNOSTIC_TAG} expand_variables reference={reference} status=skipped reason=no-session"
+                ),
+            }
+        }
+        cx.notify();
+    }
+
     fn live_variables(&self, cx: &Context<Self>) -> AnyElement {
         let Some(session) = self.session.as_ref() else {
             return div().into_any_element();
@@ -2420,13 +2452,32 @@ impl DebugPane {
             .py_1()
             .border_b_1()
             .border_color(cx.theme().border);
-        for (name, reference) in scopes {
+        for (index, (name, reference)) in scopes.into_iter().enumerate() {
+            let expanded = self.expanded_reference == Some(reference);
             column = column.child(
                 div()
+                    .id(SharedString::from(format!("debug-scope-{index}")))
+                    .on_click(cx.listener(move |pane, _, _, cx| {
+                        pane.expand_variables(reference, cx);
+                    }))
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(SharedString::from(format!("{name} • {reference}"))),
+                    .child(SharedString::from(format!(
+                        "{} {name} • {reference}",
+                        if expanded { "▾" } else { "▸" }
+                    ))),
             );
+            if expanded {
+                for variable in crate::debug_session::variable_labels_for(snapshot, reference) {
+                    column = column.child(
+                        div()
+                            .pl_3()
+                            .text_sm()
+                            .text_color(cx.theme().foreground)
+                            .child(SharedString::from(variable)),
+                    );
+                }
+            }
         }
         for variable in variables {
             column = column.child(
