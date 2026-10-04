@@ -1,0 +1,118 @@
+# Agent 笔记：编辑器断点与 Java 调试的分层与落地顺序
+
+状态：提议中
+
+## 先说结论
+
+调研完同目录的 Zed（`D:\developmentProjects\rust\zed`，非 git 仓库）后，结论是 **Lithe 不需要、也不能照搬 Zed**：
+Zed 的 `editor`/`dap`/`debugger_ui`/`project` 全是 **GPL-3.0-or-later**（只有 `gpui`/`gpui_platform` 是 Apache-2.0），
+而 Lithe 是 Apache-2.0（仓库根 `LICENSE`）⇒ 只能借鉴架构与调用顺序，不能复制代码。
+
+真正要做的是**接上 Lithe 自己已经写好的那半截**：Core 已经有 DAP reducer
+（`rust/lithe-core/src/debug/engine.rs:1`：**"Stateful DAP reducer whose byte transport and process lifecycle
+remain platform owned"**，18 条 `debug.*` 命令、分帧、断点迁移、初始化顺序都在里面），
+而宿主只做了断点 store、一个 `DebugPane` 骨架与左侧 14pt 断点列 —— **传输层与会话生命周期是空的**
+（`debug.createSession`/`receive`/`execute` 在 `rust/lithe-gpui/crates/**` 零命中）。
+
+完整调研与证据（三路只读调研 + 我自己对 Lithe 的实测）见
+`rust/lithe-gpui/research/zed-editor-breakpoints-debug.md`。
+
+## 问题
+
+Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状态机做完（18 条 `debug.*` 命令、
+分帧、断点迁移、初始化顺序），宿主侧也有断点 store 与一个 `DebugPane` 骨架，
+但**没有任何地方真正起过 debug adapter、也没有搬过 DAP 字节** ——
+全仓 `debug.createSession`/`debug.receive`/`debug.execute` 零调用点，所以断点永远停在"本地状态"，
+用户看不到线程、调用栈与变量。另外三处缺口：断点**不落盘**（重启即丢）、
+断点列只能画在正文**左侧**（与真源"行号列右侧"不符，已登记 `BLOCKERS.md` B18）、
+以及 Java 侧缺一条 `vscode.java.startDebugSession`（拿不到调试端口）。
+
+## 提案
+
+1. **传输与进程归宿主**（不是归 Core）：Core 的契约就是 `ReceiveRequest{data_base64}` 进、
+   `DebugSessionUpdate{outbound_frames(base64), events}` 出（`lithe-core/src/debug/types.rs:438/492`），
+   所以宿主新增 `DebugTransport`：spawn/连 adapter、双向搬字节、把事件交给 UI。
+   形状照抄同仓两个先例，不发明新写法：
+   - 进程端口形状 ← LSP 的 `rust/lithe-core/src/lsp/interface/process.rs:35-68`
+     （`LspProcessHandle`/`LspProcessStreams`/`LspProcessLauncher` + 可脚本化替身 `scripted.rs:283`）；
+   - 阻塞 IO 形状 ← 终端的 `rust/lithe-gpui/crates/terminal/src/session.rs:71/78/81/154/182/502`
+     （reader/writer 线程 + mpsc + `cx.spawn` 泵回 UI 线程）。
+2. **Java 走 JDTLS 的 `vscode.java.startDebugSession` + loopback TCP**（Zed 没有 Java 适配器，没有可抄的拼装）：
+   Core 的 JDT 命令层已有 `buildWorkspace`/`resolveClasspath`/`resolveMainClass`（`lsp/interface/engine.rs:573/7829`），
+   **缺这一条 `startDebugSession`**，这是第 1 步的第一个具体改动。
+3. **UI 真源分层**：`DebugWorkspaceState`（= Zed 的 `RunningState`）是唯一订阅 Core 事件、
+   持"选中线程/栈帧、变量树展开态、面板显隐、活动会话"的实体；面板订阅它，不各自订阅 Core。
+   分层理由与 Zed 一致（UI 不反向拥有协议状态）。
+4. **面板用 gpui-kit `DockArea` + 一面板一 `Panel`**，**不要**照搬 Zed"外层一个 dock 面板、内部自造 `PaneGroup`"
+   那层；布局持久化 key 用稳定字符串、按 adapter 分 key；能力门控（无 `modules`/`loadedSources` 就不显示）。
+5. **断点**：数据模型已经齐（`workbench/src/debug.rs:30` 已有 `enabled/verified/condition/hit_condition/log_message`），
+   保持"写 store → 反向订阅"的方向（不塞进编辑器事件枚举）；补三件缺的：**落盘**（现在没有）、
+   四态图标与右键菜单、以及 gutter 位置（真源是行号列右侧，现在只能放正文左侧，B18）。
+6. **命令单一入口**：统一 `Action` + `register_action!`，Toolbar 只 dispatch
+   （Zed 是"按钮直调 + Action 渲染器"双通道，别学）。
+
+## 落地顺序
+
+1. `DebugTransport` + 会话生命周期（含 Core 补 `vscode.java.startDebugSession`）；
+2. 事件进现有 `DebugPane`（线程/栈/变量懒加载/控制台拉取）；
+3. 面板化（DockArea + 持久化 + 能力门控）；
+4. gutter 与真源对齐（覆盖层 + 四态 + 右键菜单）。
+
+每步的验收判据见研报 §3.4；实测缺口清单见 §3.3。
+
+## 考虑过的备选方案
+
+- **直接依赖 Zed 的 `dap` crate**：不行 —— GPL-3.0-or-later，与 Apache-2.0 分发不兼容。
+  要现成类型只能用 MIT/Apache 的 `dap-types`（Zed 自己固定的那个 fork rev 许可未确证）。
+- **把传输放进 Core**（像 LSP 那样由 Core 起进程）：与现有 DAP 契约冲突（契约明说进程/字节归平台侧），
+  也会把平台 spawn 塞进 Core；如果将来要，应走"Core 定 trait + 宿主注入 launcher"的 LSP 式改造，属独立决定。
+- **照抄 Zed 的 `DisplayMap`/`BlockMap` 地基来做 gutter**：那套"多 buffer + 折叠 + inlay 融成显示空间"的
+  172 KB 地基只为"行号 + 行高"服务，gpui-component 的 `Editor` 里没有对应物，引入即重写编辑器。
+- **在编辑器事件枚举里加 `ToggleBreakpoint`**：与 Zed 的做法相反，会让编辑器 crate 反向依赖调试语义。
+
+## 后果
+
+- 收益：Java 调试能从"零"到"能停、能单步、能看变量"，且不新增一套与 Core 重复的协议层。
+- 代价/风险：`vscode.java.startDebugSession` 与 java-debug 的实际行为要真机验证；
+  gutter 覆盖层与 gpui-component `Editor` 的行高/滚动口径必须一致，否则标记会漂。
+- 需要重新评估的触发条件：gpui-kit 若提供 gutter API，第 4 步可改为走上游能力。
+
+## 验收标准
+
+1. **传输层**：scripted adapter 单测（不依赖真进程）覆盖 `initialize → launch → configurationDone → stopped`、
+   一个**有界超时**用例、一个**陈旧回包被丢弃**用例；真机对 java-debug 起会话成功。
+2. **事件到 UI**：断点命中后能看到线程 / 调用栈 / 变量；变量树按需懒加载；控制台输出走拉模式且有界。
+3. **面板**：`DockArea` 下各面板可拆可拖，布局按 adapter 跨重启保持；不支持的能力不显示空面板。
+4. **断点**：启用/禁用/条件/日志/命中次数五类状态可编辑、可落盘、重启后仍在；重复下发是幂等的全量替换。
+5. **gutter**：断点标记出现在行号列**右侧**（与 `macos/.../CodeEditorView.swift:410-468` 一致），
+   同一行只画一个标记，滚动/缩放/换主题不漂。
+6. **守卫**：一条脚本列出"Core 有 `debug.*` 命令、宿主没有调用点"的清单（当前 18 条里只用 3 条），
+   该清单为空或只剩明确不做的条目。
+7. **端到端**：Java 项目上跑通"启动调试 → 断点命中 → 单步 → 查看变量 → 停止"，无残留 adapter 进程。
+
+## 风险
+
+- **java-debug 的真实行为未验证**：`vscode.java.startDebugSession` 的返回（端口形态）、
+  JDTLS 与 java-debug 版本搭配、attach 模式差异，都要真机实测；Zed 没有 Java 适配器可对照。
+- **gutter 覆盖层与编辑器口径不一致会漂**：行高、软换行、折叠、滚动偏移任一处口径不同，标记就会错行；
+  需要一条"标记 y 坐标 vs 编辑器行 y 坐标"的判据。
+- **逐请求超时缺失会让会话悬挂**（Zed 的既有缺口）：adapter 卡住时必须能取消，
+  否则 UI 会永久停在"加载中"。
+- **断点落盘与工作区配置的写入时机**：沿用 `.lithe/**` 口径时要防抖，避免每次点击都写盘。
+- **范围蔓延**：这一步只做"能调试"，`debugger_ui` 那 8 个面板、REPL、inline values、
+  data breakpoints 都要按能力门控分批做，不要一次全铺。
+
+## 验证
+
+- 调研阶段：三路只读调研（编辑器 gutter、DAP 客户端、调试 UI）结论均带 `zed/...:行号` 证据；
+  Lithe 现状为实测（`debug.rs`、`engine.rs`、`types.rs` 的命令与字段清单）。
+- 实现阶段（待做）：scripted adapter 单测不依赖真进程；一个有界超时 + 陈旧回包丢弃用例；
+  真机 Java 端到端"启动 → 断点命中 → 单步 → 查看变量 → 停止"；
+  `debug.*` 命令接线守卫（列出 Core 有、宿主未接的命令）。
+
+## 适用范围
+
+- `rust/lithe-gpui/research/zed-editor-breakpoints-debug.md`（调研真源）
+- `rust/lithe-core/src/debug/**`（reducer 与契约）、`rust/lithe-core/src/lsp/interface/engine.rs`（JDT 命令层）
+- `rust/lithe-gpui/crates/workbench/src/debug.rs`、`crates/editor/src/editor_view.rs`（断点列）、
+  `crates/terminal/src/session.rs`（IO 形状先例）、`crates/java/src/{jdtls,session}.rs`（java-debug 路径）
