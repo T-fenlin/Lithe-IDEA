@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 155 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 156 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8765,6 +8765,8 @@ lithe:
     zh-CN: "对“{name}”的修改尚未保存。"
   editor.gpui.unsavedChangesBatchBody:
     zh-CN: "有 {count} 个文件的修改尚未保存。"
+  editor.gpui.revealInProjectTree:
+    zh-CN: "在项目树中显示"
   appearance.gpui.switchThemeLight:
     zh-CN: "首选项：切换到浅色主题"
   appearance.gpui.switchThemeLightDescription:

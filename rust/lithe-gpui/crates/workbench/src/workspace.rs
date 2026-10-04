@@ -1509,6 +1509,20 @@ impl ShellWorkspace {
         });
         // 构造期不取数据，第一帧之后立刻去拉 `workspace.snapshot`。
         explorer.update(cx, |this, cx| this.refresh(window, cx));
+        // U24：右键菜单「在资源管理器中显示」的宿主钩子。起系统文件管理器属平台层，
+        // 落点在外壳（与下面编辑区那条 `TabMenuHostActions::reveal` 同一个函数、同一条约束：
+        // `lithe-gpui/crates/explorer/src/lib.rs` 未实现清单里登记过"reveal 不该由 UI 模块做"）。
+        explorer.update(cx, |this, _cx| {
+            this.set_reveal_in_file_manager_host(Arc::new(|path: &Path, _cx: &mut App| {
+                if let Err(error) = reveal_in_file_manager(path) {
+                    // 失败不静默：与 `S1_TAB_MENU run=reveal result=failed` 同口径走 stderr。
+                    eprintln!(
+                        "S1_EXPLORER reveal_in_file_manager result=failed path={} error={error}",
+                        path.display()
+                    );
+                }
+            }));
+        });
 
         // 左栏「更改」（源代码管理）。**构造期不取数据**：顶部组默认选「项目」
         // （`DEFAULT_TOP_ACTIVITY`），所以这个视图在第一帧不可见；它的第一次读取发生在
@@ -1636,6 +1650,18 @@ impl ShellWorkspace {
                             );
                         }
                     }),
+                    // U24：编辑区标签右键菜单的「在项目树中显示」（真源
+                    // `macos/Sources/Lithe/Views/Editor/EditorAreaView.swift:1206-1213`）。
+                    // 项目树归 `explorer` crate，编辑区不认识它，所以落点在这里：切到项目视图 +
+                    // 在树里定位。外壳自己一份弱引用（下面 `open_terminal` 会把 `shell` 整个搬走）。
+                    reveal_in_tree: {
+                        let shell_for_reveal = shell.clone();
+                        Arc::new(move |path: &Path, cx: &mut App| {
+                            let _ = shell_for_reveal.update(cx, |shell, cx| {
+                                shell.reveal_in_project_tree(path, cx);
+                            });
+                        })
+                    },
                     // 「在终端中打开」：以文件**所在目录**新开一个终端页签 + 显示底部工具窗。
                     open_terminal: Arc::new(move |path, window, cx| {
                         let directory = path
@@ -2746,6 +2772,27 @@ impl ShellWorkspace {
         // 所以把"手势结束时的最终值"留成可 grep 的一行。
         eprintln!("S1_PANE_RESIZE pane={} span={resolved}", pane.id());
         self.schedule_session_save(cx);
+        cx.notify();
+    }
+
+    /// 把一个文件在**项目树**里定位（选中那一行并滚动到可见）。
+    ///
+    /// 真源 `AppModel+FeatureState.swift:61` 的 `revealInProjectTree` —— 它只管发一个带 id 的
+    /// 定位请求，真正做事的项目树在**当前内容必须是「项目」**的前提下消费它
+    /// （`ProjectSidebarView.swift:218-228` 那颗 `scope` 按钮就带 `selectedContent == .project` 这个
+    /// 前提）。所以这里先把左栏切到项目视图并放出来：否则"定位"会发生在一个看不见的视图里。
+    ///
+    /// 不调 [`ShellWorkspace::select_top_activity`]：那个方法的 IDEA 语义是"点当前项 = 收/放面板"
+    /// （`top_activity_view` 不变、`left_pane_visible` 取反），对"程序化地切到项目视图"是错的。
+    fn reveal_in_project_tree(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.top_activity_view = Some(DEFAULT_TOP_ACTIVITY);
+        self.left_pane_visible = true;
+        // 整块侧栏（活动栏 + 面板）也要放出来：真源只切 `selectedSidebar = .project`
+        // （`AppModel+FeatureState.swift:66`），而本侧把活动栏算在那块可见性里 —— 不放开的话
+        // `Ctrl+B` 收掉侧栏之后"定位"会落在一个谁也看不见的地方。
+        self.left_sidebar_visible = true;
+        let explorer = self.explorer.clone();
+        let _ = explorer.update(cx, |explorer, cx| explorer.reveal(path, cx));
         cx.notify();
     }
 

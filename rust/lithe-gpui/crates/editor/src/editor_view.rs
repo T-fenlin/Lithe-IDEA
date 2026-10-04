@@ -260,6 +260,16 @@ struct NavRequest {
 pub struct TabMenuHostActions {
     /// 在系统文件管理器里定位 `path`（Windows = `explorer /select,`）。
     pub reveal: Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>,
+    /// 在**项目树**里定位 `path`（选中那一行并滚动到可见）。
+    ///
+    /// 与 [`Self::reveal`] **不是**同一件事：真源 macOS 的同一个右键菜单里这两条各占一行 ——
+    /// `Reveal in Project Tree`（`macos/Sources/Lithe/Views/Editor/EditorAreaView.swift:1206-1213`）
+    /// 与 `Show in Finder`（同文件 `:1215`）。项目树归 `explorer` crate，编辑区不认识它，
+    /// 所以照 [`TabMenuHostActions`] 的既有口径把落点留给外壳。
+    ///
+    /// 不需要 `&mut Window`：外壳要做的只是"切到项目视图 + 在树里定位"，
+    /// 与 `BufferWriteHost` 同为最窄的那一档（见 `set_buffer_write_host` 的注释）。
+    pub reveal_in_tree: Arc<dyn Fn(&Path, &mut App) + 'static>,
     /// 在 `path` **所在目录**新开一个终端页签，并让外壳把底部工具窗切到终端且显示。
     pub open_terminal: Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>,
 }
@@ -2406,8 +2416,10 @@ impl EditorPane {
     // 标签右键菜单（`lithe-gpui/research/windows/09-tab-context-menu.md`）
     //
     // 真源是 `windows/tauri/src/features/tabs/components/tab-context-menu.tsx`（13 项 +
-    // 4 条分隔线）。本侧画 **9 项 + 1 条分隔线**，缺的 4 项按"条件不满足就整项不出现"落地
-    // （真源本身就是 spread 掉的，且**整份菜单没有任何禁用项**，所以这里也不置灰）：
+    // 4 条分隔线）。本侧画 **10 项 + 1 条分隔线**（U24 加了「在项目树中显示」，
+    // 出处 `macos/Sources/Lithe/Views/Editor/EditorAreaView.swift:1206-1213`），缺的 4 项按
+    // "条件不满足就整项不出现"落地（真源本身就是 spread 掉的，且**整份菜单没有任何禁用项**，
+    // 所以这里也不置灰）：
     //
     // | 真源项 | 本侧 | 理由 |
     // | --- | --- | --- |
@@ -2440,6 +2452,34 @@ impl EditorPane {
         let text = relative_to_workspace(&buffer.path, self.workspace_root.as_deref());
         cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
         eprintln!("S1_TAB_MENU run=copyRelativePath value={text}");
+    }
+
+    /// 「在项目树中显示」：交给外壳（项目树归 `explorer` crate，编辑区不认识它）。
+    ///
+    /// 真源 `macos/Sources/Lithe/Views/Editor/EditorAreaView.swift:1206-1213`：这一条与
+    /// 「Show in Finder」相邻但作用不同 —— 前者在**项目树里选中**，后者在**系统文件管理器里**打开。
+    ///
+    /// ⚠️ 与真源的一处差异（如实登记）：真源在定位前先 `model.activeDocumentID = document.id`
+    /// （同文件 `:1209`），而本侧的标签右键菜单只拿到"右键命中的那个下标"，`EditorPane` 又**没有**
+    /// 公开的"切到第 N 个标签"入口（`pub fn` 列表里只有 `open` / `open_at`，两者都会重开 buffer）。
+    /// 所以本侧定位的是**你右键的那一个文件**：右键活动标签时与真源完全一致，右键非活动标签时
+    /// 少一次"顺带切过去"。
+    fn reveal_in_project_tree(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(buffer) = self.buffers.get(index) else {
+            return;
+        };
+        let path = buffer.path.clone();
+        // 先把 `Arc` 抠出来：调用它要 `&mut App`，而 `self.tab_menu_actions` 还借着 `self`。
+        let Some(reveal) = self
+            .tab_menu_actions
+            .as_ref()
+            .map(|actions| actions.reveal_in_tree.clone())
+        else {
+            eprintln!("S1_TAB_MENU run=revealInTree result=no-host");
+            return;
+        };
+        (reveal)(&path, cx);
+        eprintln!("S1_TAB_MENU run=revealInTree path={}", path.display());
     }
 
     /// 「在资源管理器中显示」：交给外壳（起 `explorer.exe` 属平台层）。
@@ -3179,6 +3219,23 @@ impl EditorPane {
                             .icon(idea_icon_mono(&idea::COPY_ICON, cx.theme().is_dark()))
                             .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
                                 pane.copy_relative_path(index, cx);
+                            })),
+                    );
+                    items += 1;
+
+                    // ---- 在项目树中显示（真源 `EditorAreaView.swift:1206-1213`）------------
+                    //
+                    // 位置照真源：`Copy Path / Reference` 那个子菜单之后、`Show in Finder` 之前
+                    // （`EditorAreaView.swift:1200-1215`）。文案是 gpui 自有键
+                    // （`editor.gpui.revealInProjectTree`）：真源把这一条**硬编码**在 Swift 里
+                    // （`EditorAreaView.swift:1208` 的 `.action("Reveal in Project Tree", ...)`），
+                    // catalog 与 `Localizable.strings` 里都没有它，理由见
+                    // `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
+                    menu = menu.item(
+                        PopupMenuItem::new(tr("lithe.editor.gpui.revealInProjectTree"))
+                            .icon(idea_icon_mono(&idea::FILES_ICON, cx.theme().is_dark()))
+                            .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
+                                pane.reveal_in_project_tree(index, cx);
                             })),
                     );
                     items += 1;

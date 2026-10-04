@@ -709,6 +709,9 @@ mod tests {
             // 只新增上面那条 `editor.gpui.*`。
             ("lithe.files.copyPath", "复制路径"),
             ("lithe.files.copyRelativePath", "复制相对路径"),
+            // U24（Reveal Active File）：真源把这一条硬编码在 Swift 里，catalog 与 macOS 的
+            // `Localizable.strings` 都没有它（出处与理由写在脚本的 `GPUI_ONLY_KEYS`）。
+            ("lithe.editor.gpui.revealInProjectTree", "在项目树中显示"),
             ("lithe.files.reveal", "在资源管理器中显示"),
             ("lithe.files.openInTerminal", "在终端中打开"),
             ("lithe.tabs.reload", "重新加载"),

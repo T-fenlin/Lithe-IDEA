@@ -504,6 +504,13 @@ const GPUI_ONLY_KEYS = [
       "标签右键菜单的三个批量关闭（关闭其他 / 关闭右侧 / 全部关闭）的确认正文（阶段 11）。真源是「逐个发现脏标签、只弹一次确认」，但弹窗正文只取 pendingClose.bufferId 那**一个**文件名（pending-buffer-close-dialog.tsx:9-12 + buffer.store.ts:1746 的 find），用户看到「是否要保存对 A 所做的更改？」却会连带关掉 B、C —— 读起来像 bug。维护者口径：正文改为如实显示**有几个**文件未保存，所以本侧需要一条自己的键（真源没有「N 个文件」这种句式）。",
   },
   {
+    key: "editor.gpui.revealInProjectTree",
+    zh: "在项目树中显示",
+    en: "Reveal in Project Tree",
+    reason:
+      "编辑区标签右键菜单的「在项目树中定位」这一条（U24 的 Reveal Active File）。真源把它**硬编码**在 Swift 里（macos/Sources/Lithe/Views/Editor/EditorAreaView.swift:1208 的 .action(\"Reveal in Project Tree\", ...)），catalog（locale.ts）与 macOS 的 Localizable.strings 都查不到这条；侧栏的同一个动作（ProjectSidebarView.swift:227 的 .help(\"Reveal Active File in Project Tree\")）同样是硬编码。中文按 catalog 既有族措辞取「显示」：files.reveal 是「在资源管理器中显示」，这一条是「在项目树中显示」。",
+  },
+  {
     key: "appearance.gpui.switchThemeLight",
     zh: "首选项：切换到浅色主题",
     en: "Preferences: Switch to Light Theme",
