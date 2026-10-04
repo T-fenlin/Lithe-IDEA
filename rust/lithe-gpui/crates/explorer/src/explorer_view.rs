@@ -645,6 +645,31 @@ impl Explorer {
         &self.focus_handle
     }
 
+    /// 活动文档变化 ⇒ 单选跟随（真源 `ProjectSidebarView.swift:113-118`）。
+    ///
+    /// 判定本身在 [`crate::selection::ProjectTreeSelection::follow_active_document`]：
+    /// **选择 ≤ 1 项时**跟随，**显式多选保持不动**。
+    ///
+    /// **幂等**：与当前 `active` 相同就直接返回。这条不是可选的 —— 工作区是在**渲染期**轮询活动文档
+    /// （`workspace.rs:3782` 的 `active_buffer_name()`，editor 侧不发事件），每帧都会调到这里；
+    /// 不比较就会每帧改一次选择、每帧 `notify`。
+    ///
+    /// ⚠️ **还没有调用方**。接线还差两步：
+    /// 1. `EditorPane` 只有 `active_buffer_name()`（**文件名**，`editor_view.rs:1420`），
+    ///    要的是**工作区相对路径** ⇒ editor 侧要补一个路径访问器（或在工作区做相对化）；
+    /// 2. `ShellWorkspace` 在渲染期拿到那个相对路径后转进来（它已经持有
+    ///    `explorer: Entity<Explorer>`，`workspace.rs:1154`）。
+    pub fn follow_active_document(&mut self, path: Option<&str>, cx: &mut Context<Self>) {
+        let next = path.map(SharedString::from);
+        if self.active == next {
+            return;
+        }
+        self.active = next;
+        if self.selection.follow_active_document(path) {
+            cx.notify();
+        }
+    }
+
     /// 工作区里**有没有**任何可见项（决定画树还是画空态）。
     fn has_entries(&self) -> bool {
         self.snapshot
