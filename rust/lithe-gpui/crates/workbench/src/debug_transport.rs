@@ -368,6 +368,30 @@ pub fn java_launch_configuration(name: &str, java_launch: &Value) -> Result<Valu
     }))
 }
 
+pub fn java_attach_configuration(
+    name: &str,
+    port: u16,
+    project_name: Option<&str>,
+) -> Result<Value, String> {
+    if port == 0 {
+        return Err(format!(
+            "{DEBUG_TRANSPORT_TAG} attach_configuration_invalid_port name={name} port=0"
+        ));
+    }
+    let mut arguments = serde_json::Map::new();
+    arguments.insert("type".to_string(), json!("java"));
+    arguments.insert("hostName".to_string(), json!("127.0.0.1"));
+    arguments.insert("port".to_string(), json!(port));
+    if let Some(project_name) = project_name.filter(|value| !value.trim().is_empty()) {
+        arguments.insert("projectName".to_string(), json!(project_name));
+    }
+    Ok(json!({
+        "name": name,
+        "request": "attach",
+        "arguments": Value::Object(arguments),
+    }))
+}
+
 pub struct TcpDebugAdapter {
     stream: std::net::TcpStream,
     chunks: Receiver<Vec<u8>>,
@@ -1454,6 +1478,28 @@ mod tests {
             error.contains("missing_main_class"),
             "错误要能看出缺的是 mainClass：{error}"
         );
+    }
+
+    #[test]
+    fn java_attach_configuration_points_at_the_lockback_debug_port() {
+        let configuration =
+            java_attach_configuration("Attach App", 5005, Some("demo")).expect("端口合法");
+        assert_eq!(configuration["request"], json!("attach"));
+        assert_eq!(configuration["arguments"]["hostName"], json!("127.0.0.1"));
+        assert_eq!(configuration["arguments"]["port"], json!(5005));
+        assert_eq!(configuration["arguments"]["projectName"], json!("demo"));
+
+        let without_project =
+            java_attach_configuration("Attach App", 5005, None).expect("端口合法");
+        assert!(
+            without_project["arguments"].get("projectName").is_none(),
+            "没有项目名时不许塞空字符串进配置"
+        );
+
+        let error = java_attach_configuration("Attach App", 0, None)
+            .err()
+            .expect("端口 0 必须报错");
+        assert!(error.contains("invalid_port"), "{error}");
     }
 
     #[test]
