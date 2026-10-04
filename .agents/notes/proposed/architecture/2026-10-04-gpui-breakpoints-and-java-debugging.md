@@ -294,3 +294,20 @@ MAVEN_OPTS=-Dmaven.repo.local=<工作区内的可写目录>     # 关键：沙�
 - `rust/lithe-core/src/debug/**`（reducer 与契约）、`rust/lithe-core/src/lsp/interface/engine.rs`（JDT 命令层）
 - `rust/lithe-gpui/crates/workbench/src/debug.rs`、`crates/editor/src/editor_view.rs`（断点列）、
   `crates/terminal/src/session.rs`（IO 形状先例）、`crates/java/src/{jdtls,session}.rs`（java-debug 路径）
+
+### DAP 真机端到端的程序化通路（2026-10-04 实测，已找到路）
+
+不需要点界面：app 自带 `--run-probe-debug`（`main.rs` 的 `run_probe_debug` → `ShellWorkspace`），
+会自己挑第一个生成的运行配置并以 debug 启动。三次实跑各暴露一个可修项：
+
+1. 只传项目目录 ⇒ `S1_JAVA_FAILED 未找到 jdtls`：宿主按 `EXECUTABLE_NAMES`（`jdtls.bat` 等）找，
+   把 `<payload>/bin` 加进 `PATH` 即可（载荷里有 `bin/jdtls.bat`）。
+2. 把 `.java` 文件当位置参数 ⇒ 宿主把它当成工作区根，`Workspace root must be a directory`（整条链路失败）。
+3. 项目目录用**相对路径** ⇒ `无法把工作区路径转成 file URI`（java crate 要绝对路径）。
+
+仍未解决的一步：探针挑中的配置是 **current-file 作用域**，而探针不打开任何缓冲区，
+于是 `S1_RUN_PLAN result=failed error=Current File requires a Java source path`。
+下一轮做法：用**绝对**项目路径重跑，让 JDTLS 先导入工程、Core 生成 main-class 配置（而不仅是 current-file），
+再让探针启动 —— 之后就能在 `S1_DEBUG start/launch/session_state/inspect_requested` 锚点上验证
+「启动→断点命中→单步→变量→停止」的真机链路。
+（本轮三次运行的 app 进程与 JDTLS 子进程都已清理，`leftover Lithe=0`。）
