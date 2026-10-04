@@ -79,6 +79,19 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
 逐请求超时与取消（Core 已有 `operationID` + `debug.cancelOperation`）、真机 Java 端到端。
 `java_debug_session_port` 本身需要活着的 JDTLS 会话，单测不覆盖（契约由载荷用例钉住），留给真机那一步。
 
+### 真机端到端的前置（2026-10-04 实测，**本机不具备**）
+
+- `third_party/jdtls/` 里**只有 `manifest.json`**，JDTLS 载荷不在位；manifest 指明需要
+  JDTLS **1.61.0**（tarball 与 SHA256 都在 manifest 里）与 lombok 1.18.46。
+- java-debug 也不在位：需要 `vscjava.vscode-java-debug` **0.59.0** 的 VSIX（open-vsx）解出的
+  `com.microsoft.java.debug.plugin-0.53.2`，放进 jdtls 根下的 `java-debug/`
+  —— `crates/java/src/jdtls.rs:120` 就是按 `java-debug/` 目录 + `com.microsoft.java.debug.plugin-`
+  前缀找的（找不到就报"选中的 JDTLS 安装缺少 … java-debug …"）。
+- 本机 JDK 只有 **1.8**（`java -version` → 1.8.0_221），而 manifest 写明
+  `minimumJavaVersion: 21` ⇒ 即便下载了 JDTLS 也起不来。
+- 结论：**真机「启动→断点命中→单步→变量→停止」在本机无法验证**；等价的代码侧验证是
+  scripted adapter 的离线用例（transport 22 条 + 会话层 8 条）。要跑真机，先把上面三件事补齐。
+
 ### 这一段实测出来的四条教训（写进这里，避免后人重踩）
 
 1. **DAP 的 `stopped` 只会在 `configurationDone`/`launch` 之后到达**。脚本化 adapter 只应答
