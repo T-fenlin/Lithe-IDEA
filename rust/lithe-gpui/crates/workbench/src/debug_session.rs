@@ -599,6 +599,46 @@ mod tests {
     }
 
     #[test]
+    fn request_inspect_returns_immediately_and_the_result_lands_in_the_snapshot() {
+        use crate::debug_transport::DebugTransport;
+        use std::time::{Duration, Instant};
+
+        let adapter = FrameQueue {
+            incoming: Vec::new(),
+        };
+        let transport = DebugTransport::start(
+            "session-inspect-command",
+            "java",
+            r"D:\proj",
+            false,
+            Box::new(adapter),
+        )
+        .expect("起会话");
+        let mut handle = DebugSessionHandle::start(transport, Duration::from_millis(20));
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && !handle.snapshot().is_paused() {
+            handle.drain();
+        }
+        assert!(handle.snapshot().is_paused(), "先把会话推到 paused");
+
+        handle
+            .request_inspect("threads", Some(1), None, None, Duration::from_secs(5))
+            .expect("非阻塞 inspect 必须能发出");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && !handle.snapshot().results.contains_key("threads") {
+            handle.drain();
+        }
+        assert!(
+            handle.snapshot().results.contains_key("threads"),
+            "inspect 结果必须按 kind 落进快照，实得 kinds={:?}",
+            handle.snapshot().results.keys().collect::<Vec<_>>()
+        );
+
+        assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
+    }
+    #[test]
     fn operation_completed_results_are_stored_per_kind() {
         let mut snapshot = DebugSessionSnapshot::default();
         let changed = snapshot.apply(&[json!({

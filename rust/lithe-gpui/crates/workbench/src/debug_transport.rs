@@ -564,65 +564,85 @@ impl DebugSessionDriver {
             )> = None;
             while !stop_flag.load(Ordering::Relaxed) && !transport.is_terminated() {
                 if pending.is_none() {
-                    if let Ok(DebugDriverCommand::Execute {
-                        command,
-                        thread_id,
-                        timeout,
-                        reply,
-                    }) = command_queue.try_recv()
-                    {
-                        let operation_id = transport.take_operation_id(&command);
-                        match transport.execute_with_operation(&operation_id, &command, thread_id) {
-                            Ok(immediate) => {
-                                if !immediate.is_empty()
-                                    && sender.send(DebugDriverEvent::Events(immediate)).is_err()
-                                {
-                                    reason = String::from("consumer_closed");
-                                    break;
+                    if let Ok(command) = command_queue.try_recv() {
+                        match command {
+                            DebugDriverCommand::Execute {
+                                command,
+                                thread_id,
+                                timeout,
+                                reply,
+                            } => {
+                                let operation_id = transport.take_operation_id(&command);
+                                match transport.execute_with_operation(
+                                    &operation_id,
+                                    &command,
+                                    thread_id,
+                                ) {
+                                    Ok(immediate) => {
+                                        if !immediate.is_empty()
+                                            && sender
+                                                .send(DebugDriverEvent::Events(immediate))
+                                                .is_err()
+                                        {
+                                            reason = String::from("consumer_closed");
+                                            break;
+                                        }
+                                        pending = Some((
+                                            operation_id,
+                                            false,
+                                            Instant::now() + timeout,
+                                            reply,
+                                        ));
+                                    }
+                                    Err(error) => {
+                                        eprintln!(
+                                            "{DEBUG_TRANSPORT_TAG} execute_failed command={command} session={} error={error}",
+                                            transport.session_id()
+                                        );
+                                        let _ = reply.send(Err(error));
+                                    }
                                 }
-                                pending =
-                                    Some((operation_id, false, Instant::now() + timeout, reply));
                             }
-                            Err(error) => {
-                                let _ = reply.send(Err(error));
-                            }
-                        }
-                    }
-                }
-                if pending.is_none() {
-                    if let Ok(DebugDriverCommand::Inspect {
-                        kind,
-                        thread_id,
-                        frame_id,
-                        variables_reference,
-                        timeout,
-                        reply,
-                    }) = command_queue.try_recv()
-                    {
-                        let operation_id = transport.take_operation_id(&kind);
-                        match transport.inspect_with_operation(
-                            &operation_id,
-                            &kind,
-                            thread_id,
-                            frame_id,
-                            variables_reference,
-                        ) {
-                            Ok(immediate) => {
-                                if !immediate.is_empty()
-                                    && sender.send(DebugDriverEvent::Events(immediate)).is_err()
-                                {
-                                    reason = String::from("consumer_closed");
-                                    break;
+                            DebugDriverCommand::Inspect {
+                                kind,
+                                thread_id,
+                                frame_id,
+                                variables_reference,
+                                timeout,
+                                reply,
+                            } => {
+                                let operation_id = transport.take_operation_id(&kind);
+                                match transport.inspect_with_operation(
+                                    &operation_id,
+                                    &kind,
+                                    thread_id,
+                                    frame_id,
+                                    variables_reference,
+                                ) {
+                                    Ok(immediate) => {
+                                        if !immediate.is_empty()
+                                            && sender
+                                                .send(DebugDriverEvent::Events(immediate))
+                                                .is_err()
+                                        {
+                                            reason = String::from("consumer_closed");
+                                            break;
+                                        }
+                                        pending = Some((
+                                            operation_id,
+                                            true,
+                                            Instant::now() + timeout,
+                                            reply,
+                                        ));
+                                    }
+                                    Err(error) => {
+                                        eprintln!(
+                                            "{DEBUG_TRANSPORT_TAG} inspect_failed kind={kind} session={} error={error}",
+                                            transport.session_id()
+                                        );
+                                        let _ = reply.send(Err(error));
+                                    }
                                 }
-                                pending =
-                                    Some((operation_id, true, Instant::now() + timeout, reply));
-                            }
-                            Err(error) => {
-                                eprintln!(
-                                    "{DEBUG_TRANSPORT_TAG} inspect_failed kind={kind} session={} error={error}",
-                                    transport.session_id()
-                                );
-                                let _ = reply.send(Err(error));
                             }
                         }
                     }
