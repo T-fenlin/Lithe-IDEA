@@ -12,3 +12,8 @@ reasonix.toml
 build.log
 .zcodeignore
 rust/.ferrograph
+
+# 由 third_party/jdtls/manifest.json 指明的上游载荷（本地/CI 拉取，不进仓库）
+/third_party/jdtls/*
+!/third_party/jdtls/manifest.json
+
