@@ -211,6 +211,17 @@ impl DebugSessionHandle {
         self.drain();
         stopped
     }
+
+    pub fn execute_command(
+        &mut self,
+        command: &str,
+        thread_id: Option<i64>,
+        timeout: std::time::Duration,
+    ) -> Result<(), String> {
+        let result = self.driver.execute(command, thread_id, timeout);
+        self.drain();
+        result
+    }
 }
 
 #[cfg(test)]
@@ -306,7 +317,51 @@ mod tests {
     }
 
     impl crate::debug_transport::DebugAdapterPort for FrameQueue {
-        fn write_frame(&mut self, _frame: &[u8]) -> Result<(), String> {
+        fn write_frame(&mut self, frame: &[u8]) -> Result<(), String> {
+            let text = String::from_utf8_lossy(frame).to_string();
+            let Some(start) = text.find("\r\n\r\n").map(|index| index + 4) else {
+                return Ok(());
+            };
+            let Ok(message) = serde_json::from_str::<Value>(&text[start..]) else {
+                return Ok(());
+            };
+            let command = message
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let seq = message.get("seq").and_then(Value::as_i64).unwrap_or(1);
+            match command.as_str() {
+                "initialize" => {
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 100,
+                        "type": "response",
+                        "request_seq": seq,
+                        "success": true,
+                        "command": "initialize",
+                        "body": { "supportsConfigurationDoneRequest": true }
+                    })));
+                    self.incoming.push(dap_frame(
+                        json!({ "seq": 101, "type": "event", "event": "initialized" }),
+                    ));
+                }
+                "launch" | "configurationDone" | "next" | "continue" | "stepIn" | "stepOut" => {
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 102,
+                        "type": "response",
+                        "request_seq": seq,
+                        "success": true,
+                        "command": command
+                    })));
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 103,
+                        "type": "event",
+                        "event": "stopped",
+                        "body": { "reason": "step", "threadId": 1 }
+                    })));
+                }
+                _ => {}
+            }
             Ok(())
         }
 
@@ -439,5 +494,44 @@ mod tests {
             Some("stopped"),
             "stop 之后句柄要记住退出原因"
         );
+    }
+
+    #[test]
+    fn handle_sends_a_step_command_and_still_forwards_events() {
+        use crate::debug_transport::DebugTransport;
+        use std::time::{Duration, Instant};
+
+        let adapter = FrameQueue {
+            incoming: Vec::new(),
+        };
+        let transport =
+            DebugTransport::start("session-step", "java", r"D:\proj", false, Box::new(adapter))
+                .expect("起会话");
+        let mut handle = DebugSessionHandle::start(transport, Duration::from_millis(20));
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && !handle.snapshot().is_paused() {
+            handle.drain();
+        }
+        assert!(
+            handle.snapshot().is_paused(),
+            "自动应答的 adapter 应当把会话推到 paused"
+        );
+        let events_before = handle.total_events();
+
+        handle
+            .execute_command("next", Some(1), Duration::from_secs(5))
+            .expect("单步命令必须拿到回执");
+        assert!(
+            handle.total_events() > events_before,
+            "命令期间的事件仍要被转发（不能只拿回执丢事件）"
+        );
+        assert!(
+            handle.snapshot().is_paused(),
+            "单步之后脚本化 adapter 又停在了断点，快照应仍是 paused"
+        );
+
+        assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
+        assert_eq!(handle.last_exit(), Some("stopped"));
     }
 }

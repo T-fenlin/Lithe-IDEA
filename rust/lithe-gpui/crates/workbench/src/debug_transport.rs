@@ -431,11 +431,30 @@ pub enum DebugDriverEvent {
     Exited { reason: String },
 }
 
+pub enum DebugDriverCommand {
+    Execute {
+        command: String,
+        thread_id: Option<i64>,
+        timeout: Duration,
+        reply: std::sync::mpsc::Sender<Result<Option<Value>, String>>,
+    },
+}
+
+pub const DEBUG_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub fn is_reply_event(event: &Value) -> bool {
+    matches!(
+        event.get("type").and_then(Value::as_str),
+        Some("stopped" | "continued" | "terminated" | "operationFailed")
+    )
+}
+
 pub struct DebugSessionDriver {
     stop: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
     handle: Option<std::thread::JoinHandle<()>>,
     events: Receiver<DebugDriverEvent>,
+    commands: std::sync::mpsc::Sender<DebugDriverCommand>,
 }
 
 impl DebugSessionDriver {
@@ -443,6 +462,7 @@ impl DebugSessionDriver {
         let stop = Arc::new(AtomicBool::new(false));
         let running = Arc::new(AtomicBool::new(true));
         let (sender, events) = channel();
+        let (commands, command_queue) = channel();
         let stop_flag = stop.clone();
         let running_flag = running.clone();
         println!(
@@ -452,8 +472,74 @@ impl DebugSessionDriver {
         );
         let handle = std::thread::spawn(move || {
             let mut reason = String::from("terminated");
+            let mut pending: Option<(
+                String,
+                std::time::Instant,
+                std::sync::mpsc::Sender<Result<Option<Value>, String>>,
+            )> = None;
             while !stop_flag.load(Ordering::Relaxed) && !transport.is_terminated() {
-                match transport.poll_bounded(poll_interval) {
+                if pending.is_none() {
+                    if let Ok(DebugDriverCommand::Execute {
+                        command,
+                        thread_id,
+                        timeout,
+                        reply,
+                    }) = command_queue.try_recv()
+                    {
+                        let operation_id = transport.take_operation_id(&command);
+                        match transport.execute_with_operation(&operation_id, &command, thread_id) {
+                            Ok(immediate) => {
+                                if !immediate.is_empty()
+                                    && sender.send(DebugDriverEvent::Events(immediate)).is_err()
+                                {
+                                    reason = String::from("consumer_closed");
+                                    break;
+                                }
+                                pending = Some((operation_id, Instant::now() + timeout, reply));
+                            }
+                            Err(error) => {
+                                let _ = reply.send(Err(error));
+                            }
+                        }
+                    }
+                }
+
+                let outcome = match pending.take() {
+                    Some((command, deadline, reply)) => {
+                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        let slice = std::cmp::min(Duration::from_millis(20), remaining);
+                        let waited = transport.poll_until(slice, &is_reply_event);
+                        match waited {
+                            Ok((events, matched)) => {
+                                if !events.is_empty()
+                                    && sender.send(DebugDriverEvent::Events(events)).is_err()
+                                {
+                                    reason = String::from("consumer_closed");
+                                    break;
+                                }
+                                if matched {
+                                    let _ = reply.send(Ok(None));
+                                } else if Instant::now() >= deadline {
+                                    transport.cancel(&command);
+                                    let _ = reply.send(Err(format!(
+                                        "{DEBUG_TRANSPORT_TAG} command_timeout session={} operation={command}",
+                                        transport.session_id()
+                                    )));
+                                } else {
+                                    pending = Some((command, deadline, reply));
+                                }
+                                continue;
+                            }
+                            Err(error) => {
+                                let _ = reply.send(Err(error.clone()));
+                                reason = error;
+                                break;
+                            }
+                        }
+                    }
+                    None => transport.poll_bounded(poll_interval),
+                };
+                match outcome {
                     Ok(new_events) => {
                         if !new_events.is_empty()
                             && sender.send(DebugDriverEvent::Events(new_events)).is_err()
@@ -484,6 +570,33 @@ impl DebugSessionDriver {
             running,
             handle: Some(handle),
             events,
+            commands,
+        }
+    }
+
+    pub fn execute(
+        &self,
+        command: &str,
+        thread_id: Option<i64>,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        let (reply, answer) = channel();
+        self.commands
+            .send(DebugDriverCommand::Execute {
+                command: command.to_string(),
+                thread_id,
+                timeout,
+                reply,
+            })
+            .map_err(|error| {
+                format!("{DEBUG_TRANSPORT_TAG} command_send_failed command={command} error={error}")
+            })?;
+        match answer.recv_timeout(timeout + DEBUG_REPLY_TIMEOUT) {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(error)) => Err(error),
+            Err(error) => Err(format!(
+                "{DEBUG_TRANSPORT_TAG} command_reply_failed command={command} error={error}"
+            )),
         }
     }
 
@@ -583,12 +696,12 @@ impl DebugTransport {
         self.command(LAUNCH_COMMAND, configuration)
     }
 
-    pub fn execute(
+    pub fn execute_with_operation(
         &mut self,
+        operation_id: &str,
         execution: &str,
         thread_id: Option<i64>,
     ) -> Result<Vec<Value>, String> {
-        let operation_id = self.take_operation_id(execution);
         self.command(
             EXECUTE_COMMAND,
             json!({
@@ -598,6 +711,15 @@ impl DebugTransport {
                 "threadId": thread_id,
             }),
         )
+    }
+
+    pub fn execute(
+        &mut self,
+        execution: &str,
+        thread_id: Option<i64>,
+    ) -> Result<Vec<Value>, String> {
+        let operation_id = self.take_operation_id(execution);
+        self.execute_with_operation(&operation_id, execution, thread_id)
     }
 
     pub fn execute_and_wait(
@@ -683,7 +805,7 @@ impl DebugTransport {
         self.cancelled_operations
     }
 
-    fn cancel(&mut self, operation_id: &str) {
+    pub fn cancel(&mut self, operation_id: &str) {
         self.cancelled_operations += 1;
         let accepted = cancel_operation(operation_id);
         println!(
@@ -692,7 +814,7 @@ impl DebugTransport {
         );
     }
 
-    fn take_operation_id(&mut self, execution: &str) -> String {
+    pub fn take_operation_id(&mut self, execution: &str) -> String {
         let sequence = self.next_operation;
         self.next_operation += 1;
         format!(
