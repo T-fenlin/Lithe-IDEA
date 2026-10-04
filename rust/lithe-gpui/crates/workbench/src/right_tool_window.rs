@@ -87,6 +87,23 @@ use lithe_gpui_shared::tr;
 /// `window.set_rem_size`）。
 const CLOSE_BUTTON_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 
+/// 工具窗头部的高度（真源 `LitheTheme.swift:479` 的 `toolWindowHeaderHeight = 30`，
+/// 由 `LitheToolWindowHeader.swift:65` 与 `TerminalView.swift:127` 使用）。
+///
+/// ⚠️ **改前是 `h_8()` = 32**，出处是**已作废**的 Windows 前端
+/// （`notifications-tool-window.tsx:346`、`maven-pane.tsx:599` 的 `h-8`）。
+///
+/// ⚠️ **暂不提升到 `shared::design`**：那个模块的准入判据是「已有清晰名称 + **两个以上**真实
+/// 使用方」（见其模块文档），本条现在只有右工具窗一个调用方。批 9 让终端工具窗复用同一规格时，
+/// 三条一起按该判据提升为共同 owner。
+const TOOL_WINDOW_HEADER_HEIGHT_SPEC: f32 = 30.;
+/// 头部前导图标边长 **13**（真源 `LitheToolWindowHeader.swift:34-36` 的 `size: 13`）。
+/// 改前是 20（Windows 前端的值）。
+const TOOL_WINDOW_HEADER_ICON_SPEC: f32 = 13.;
+/// 头部**尾部**内衬 **7**：真源内衬是 leading 12 / trailing 7
+/// （`LitheToolWindowHeader.swift:63-64`），不是左右各 12。前导侧的 12 直接用 `pl_3()`。
+const TOOL_WINDOW_HEADER_TRAILING_INSET_SPEC: f32 = 7.;
+
 /// 右侧工具窗当前显示哪一个视图。
 ///
 /// 取值与真机 `activeRightSidebarView` 的子集对应（`SidebarView` 见
@@ -625,24 +642,33 @@ fn header(
     h_flex()
         .w_full()
         .flex_shrink_0()
-        .h_8()
+        .h(rems(TOOL_WINDOW_HEADER_HEIGHT_SPEC / 16.))
         .gap_2()
-        .px_3()
+        // 真源内衬是 leading 12 / trailing 7（`LitheToolWindowHeader.swift:63-64`），
+        // 不是左右各 12；前导侧的 12 就是 `pl_3()`。
+        .pl_3()
+        .pr(rems(TOOL_WINDOW_HEADER_TRAILING_INSET_SPEC / 16.))
+        // ⚠️ 真源头部的表面是 `litheWorkbenchSurface(LitheTheme.toolHeader)`
+        // （`LitheToolWindowHeader.swift:66`），本侧**没有** `toolHeader` 这条语义 role，
+        // 所以仍用一条下边框分隔 —— 缺 role 时不在调用点拼颜色（UI-MAP §1.2）。
+        // 这条缺口登记进 UI-MAP 校正专章，等主题 role 收敛那一批一起做。
         .border_b_1()
         .border_color(cx.theme().border)
         .child(
             // 尺寸与前景色由 `icon()` 自己按字形决定（彩色标志不吃 `text_color`），
-            // 这里只给边长：头部 20 = `rems(1.25)`。
-            view.icon(cx, rems(1.25)),
+            // 这里只给边长：真源头部图标 13。
+            view.icon(cx, rems(TOOL_WINDOW_HEADER_ICON_SPEC / 16.)),
         )
         .child(
             div()
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_sm()
-                // 真机标题字重：通知是 `font-semibold`（`notifications-tool-window.tsx:347`）、
-                // Maven 是 `font-medium`（`maven-pane.tsx:601`）。取较粗的那一档统一。
+                // 真源标题是 12.5 semibold（`LitheToolWindowHeader.swift:48-50`）。gpui 的字号档位
+                // 只有 12 / 14 / 16（`text_xs` / `text_sm` / `text_base`），12.5 取最近的 **12**。
+                // ⚠️ 真源另有 11.5 medium 的副标题槽（`:51-55`），本侧**未实现** —— 当前三个视图
+                // 都没有副标题，不先加一个没有调用方的参数（缺口已登记）。
+                .text_xs()
                 .font_semibold()
                 .text_color(cx.theme().foreground)
                 .child(title),
