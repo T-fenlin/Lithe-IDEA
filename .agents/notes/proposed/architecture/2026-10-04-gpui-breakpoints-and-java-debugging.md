@@ -786,3 +786,21 @@ seq13 operationCompleted …-stackTrace result={"kind":"stackTrace","stackFrames
 **单步**更简单：在 paused 分支（或一个探针输入门控下）调用
 `session.request_command(DebugControl::StepOver.command(), thread_id, Duration::from_secs(5))`。
 两者都能用 `LITHE_DEBUG_DUMP_FRAMES=1` 直接看到 `scopes`/`variables`/`next` 的真实帧。
+
+### 🎉 第 28 轮实跑：真机「单步」验证通过（2026-10-04）
+
+在 `drain_session` 的 `Some("paused")` 分支加了一处探针输入门控的单步
+（`DebugControl::StepOver.command()` → `request_command(..., thread_id, 5s)`），第 24 次实跑：
+
+```
+seq11 stopped reason=breakpoint threadId=1
+seq14 stateChanged running
+seq15 operationCompleted operationId=java-debug-1-4-next result={"kind":"acknowledged","command":"next"}
+seq16 stateChanged paused
+seq17 stopped reason="step" threadId=1
+seq18 operationCompleted …-threads（重新拉线程）
+```
+
+⇒ 真机链表现已覆盖：**启动 → 断点命中（breakpoint）→ 暂停 → 单步（next → stopped reason=step）→ 停止**。
+唯一还缺的是**变量叶子**（`scopes`/`variables`）—— 停止后已自动拉到 threads/stackTrace，
+但作用域/变量属于按需展开，需要再补一次"取 scopes → 取 variables"的推进（API 见上一节）。

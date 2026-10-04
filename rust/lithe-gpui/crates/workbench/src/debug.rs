@@ -2682,6 +2682,15 @@ impl DebugPane {
                 Some("paused") => {
                     self.execution
                         .on_stopped(reason.as_deref().unwrap_or("breakpoint"), thread_id);
+                    if std::env::var_os("LITHE_DEBUG_STEP_PROBE").is_some() {
+                        if let Some(session) = self.session.as_mut() {
+                            let _ = session.request_command(
+                                DebugControl::StepOver.command(),
+                                thread_id,
+                                std::time::Duration::from_secs(5),
+                            );
+                        }
+                    }
                     if let Some(session) = self.session.as_mut() {
                         let _ = session.request_inspect(
                             "threads",
