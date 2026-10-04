@@ -766,3 +766,23 @@ seq13 operationCompleted …-stackTrace result={"kind":"stackTrace","stackFrames
 无论哪条，`LITHE_DEBUG_DUMP_FRAMES=1` 都能直接看到 `scopes`/`variables` 的 operationCompleted 帧。
 
 **单步（step）**同样只差一次触发：探针里发一次 `DebugControl::StepOver`（面板工具栏那条路径）即可。
+
+### 第 27 轮：剩下两个触发所需的 API 已定位（2026-10-04）
+
+- `DebugSessionHandle::request_command(&mut self, command: &str, thread_id: Option<i64>, timeout: Duration) -> Result<(), String>`
+  （`rust/lithe-gpui/crates/workbench/src/debug_session.rs:519`）→ 单步用它，命令串取
+  `DebugControl::StepOver.command()`（`debug.rs:485` 的枚举，`press_toolbar_action` 已在用）；
+- `DebugSessionHandle::request_variables(&mut self, variables_reference: i64, frame_id: Option<i64>, timeout: Duration)`
+  （同文件 `:504`）；
+- `DebugSessionHandle::request_inspect(&mut self, kind, thread_id, frame_id, variables_reference, timeout)`
+  （同文件 `:530`）：拉 `scopes` 需要 **frame_id**（来自已拉到的 stackTrace），
+  拿到某个 scope 的 `variablesReference` 后再 `request_variables`。
+
+⇒ **变量**这条链要在 `drain_session` 里分两步推进：paused → `request_inspect("scopes", None, Some(first_frame_id), …)`
+→ 从 `snapshot.results`（键形如 `kind#reference`）取首个 scope 的 `variablesReference` → `request_variables`。
+所需小工具（`first_frame_id`、`result_for_reference`、`result_array`、`variable_labels_for`）都已存在于
+`debug_session.rs`，只是还没有被"停止后自动推进"这条路径调用。
+
+**单步**更简单：在 paused 分支（或一个探针输入门控下）调用
+`session.request_command(DebugControl::StepOver.command(), thread_id, Duration::from_secs(5))`。
+两者都能用 `LITHE_DEBUG_DUMP_FRAMES=1` 直接看到 `scopes`/`variables`/`next` 的真实帧。
