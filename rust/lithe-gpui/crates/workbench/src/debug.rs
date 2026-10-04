@@ -2402,6 +2402,43 @@ impl DebugPane {
         column.into_any_element()
     }
 
+    fn live_variables(&self, cx: &Context<Self>) -> AnyElement {
+        let Some(session) = self.session.as_ref() else {
+            return div().into_any_element();
+        };
+        let snapshot = session.snapshot();
+        let scopes = crate::debug_session::scope_labels(snapshot);
+        let variables = crate::debug_session::variable_labels(snapshot);
+        if scopes.is_empty() && variables.is_empty() {
+            return div().into_any_element();
+        }
+        let mut column = v_flex()
+            .w_full()
+            .flex_shrink_0()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .border_b_1()
+            .border_color(cx.theme().border);
+        for (name, reference) in scopes {
+            column = column.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(SharedString::from(format!("{name} • {reference}"))),
+            );
+        }
+        for variable in variables {
+            column = column.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .child(SharedString::from(variable)),
+            );
+        }
+        column.into_any_element()
+    }
+
     fn debugger_content(&self, cx: &Context<Self>) -> AnyElement {
         h_flex()
             .size_full()
@@ -2420,6 +2457,7 @@ impl DebugPane {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scrollbar()
+                    .child(self.live_variables(cx))
                     .child(self.data_column(cx)),
             )
             .into_any_element()
