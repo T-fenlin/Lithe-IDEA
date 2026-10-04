@@ -728,3 +728,25 @@ S1_DEBUG session_state={state:?} reason={reason:?} thread={thread_id:?}
 再在 `drain_session` 的 `Some("paused")` 分支里补一次
 `request_inspect("threads", None, None, None, DEBUG_INSPECT_TIMEOUT)`（链条 L469 会自动推进到
 stackTrace → scopes → variables）。之后用 `LITHE_DEBUG_DUMP_FRAMES=1` 一次跑就能看到四步真实帧 + `next`。
+
+### 🎉 第 25 轮实跑：真机拿到 threads/stackTrace 帧（2026-10-04）—— 面板 drain 是最后一把钥匙
+
+两处改动：
+1. `ShellWorkspace::start_debug_session` 在 attach 之后把底部面板切到 **Debug**（`bottom_kind = Debug; bottom_visible = true`）
+   ⇒ 调试面板参与渲染 ⇒ `drain_session` 真正执行；
+2. `DebugPane::drain_session` 的 `Some("paused")` 分支补一次 `request_inspect("threads", …)`。
+
+第 23 次实跑日志（真实组件，帧 dump 佐证）：
+
+```
+seq10 stateChanged paused
+seq11 stopped reason=breakpoint threadId=1
+S1_DEBUG session_state=Some("paused") reason=Some("breakpoint") thread=Some(1)
+S1_DEBUG_SESSION inspect_requested kind=threads
+S1_DEBUG_SESSION inspect_requested kind=stackTrace
+seq12 operationCompleted …-threads    result={"kind":"threads","threads":[{"id":1,"name":"Thread [main]"},…]}
+seq13 operationCompleted …-stackTrace result={"kind":"stackTrace","stackFrames":[{"id":1,"name":"App.main(String[])",…}]}
+```
+
+⇒ 真机端到端已覆盖：**启动 → 断点命中（verified:true）→ paused → 线程与调用栈拉取**。
+剩下的只有 `scopes/variables`（链条已在推进，seq14 仍在继续）与 `单步`（从未发 `next`）。

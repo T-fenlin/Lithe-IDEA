@@ -1325,6 +1325,8 @@ impl ShellWorkspace {
                     transport,
                     std::time::Duration::from_millis(20),
                 );
+                self.bottom_kind = BottomPaneKind::Debug;
+                self.bottom_visible = true;
                 self.debug.update(cx, |pane, cx| {
                     pane.attach_session(handle);
                     cx.notify();

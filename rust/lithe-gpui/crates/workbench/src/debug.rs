@@ -2679,9 +2679,19 @@ impl DebugPane {
         let thread_id = snapshot.paused_thread_id;
         if state != self.session_state_seen {
             match state.as_deref() {
-                Some("paused") => self
-                    .execution
-                    .on_stopped(reason.as_deref().unwrap_or("breakpoint"), thread_id),
+                Some("paused") => {
+                    self.execution
+                        .on_stopped(reason.as_deref().unwrap_or("breakpoint"), thread_id);
+                    if let Some(session) = self.session.as_mut() {
+                        let _ = session.request_inspect(
+                            "threads",
+                            None,
+                            None,
+                            None,
+                            std::time::Duration::from_secs(5),
+                        );
+                    }
+                }
                 Some("running") => self.execution.on_continued(),
                 Some("terminated") => self.execution.on_terminated(),
                 _ => {}
