@@ -1,0 +1,210 @@
+use serde_json::Value;
+
+pub const DEBUG_SESSION_TAG: &str = "S1_DEBUG_SESSION";
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DebugSessionSnapshot {
+    pub state: Option<String>,
+    pub paused_reason: Option<String>,
+    pub paused_thread_id: Option<i64>,
+    pub paused_description: Option<String>,
+    pub output: Vec<String>,
+    pub terminated: bool,
+    pub exit_code: Option<i64>,
+    pub last_error: Option<String>,
+    pub applied_events: u64,
+}
+
+impl DebugSessionSnapshot {
+    pub const MAX_OUTPUT_LINES: usize = 500;
+
+    pub fn apply(&mut self, events: &[Value]) -> bool {
+        let mut changed = false;
+        for event in events {
+            changed |= self.apply_one(event);
+        }
+        if changed {
+            println!(
+                "{DEBUG_SESSION_TAG} snapshot_changed state={:?} terminated={} output_lines={} error={:?}",
+                self.state,
+                self.terminated,
+                self.output.len(),
+                self.last_error
+            );
+        }
+        changed
+    }
+
+    #[must_use]
+    pub fn is_paused(&self) -> bool {
+        self.state.as_deref() == Some("paused")
+    }
+
+    fn apply_one(&mut self, event: &Value) -> bool {
+        self.applied_events += 1;
+        let Some(kind) = text(event, "type") else {
+            return false;
+        };
+        match kind.as_str() {
+            "stateChanged" => {
+                let Some(state) = text(event, "state") else {
+                    return false;
+                };
+                let terminated = state == "terminated" || self.terminated;
+                let changed =
+                    self.state.as_deref() != Some(state.as_str()) || self.terminated != terminated;
+                self.terminated = terminated;
+                self.state = Some(state);
+                changed
+            }
+            "stopped" => {
+                let reason = text(event, "reason");
+                let thread_id = event.get("threadId").and_then(Value::as_i64);
+                let description = text(event, "description");
+                let changed = self.state.as_deref() != Some("paused")
+                    || self.paused_reason != reason
+                    || self.paused_thread_id != thread_id
+                    || self.paused_description != description;
+                self.state = Some("paused".to_string());
+                self.paused_reason = reason;
+                self.paused_thread_id = thread_id;
+                self.paused_description = description;
+                changed
+            }
+            "continued" => {
+                let changed = self.state.as_deref() != Some("running")
+                    || self.paused_reason.is_some()
+                    || self.paused_thread_id.is_some()
+                    || self.paused_description.is_some();
+                self.state = Some("running".to_string());
+                self.paused_reason = None;
+                self.paused_thread_id = None;
+                self.paused_description = None;
+                changed
+            }
+            "terminated" => {
+                let exit_code = event.get("exitCode").and_then(Value::as_i64);
+                let changed = !self.terminated
+                    || self.state.as_deref() != Some("terminated")
+                    || self.exit_code != exit_code;
+                self.terminated = true;
+                self.state = Some("terminated".to_string());
+                self.exit_code = exit_code;
+                changed
+            }
+            "output" => {
+                let Some(line) = text(event, "output") else {
+                    return false;
+                };
+                self.output.push(line);
+                let overflow = self.output.len().saturating_sub(Self::MAX_OUTPUT_LINES);
+                if overflow > 0 {
+                    self.output.drain(..overflow);
+                }
+                true
+            }
+            "operationFailed" => {
+                let command = text(event, "command").unwrap_or_default();
+                let message = text(event, "message").unwrap_or_default();
+                let error = format!("{command}: {message}");
+                let changed = self.last_error.as_deref() != Some(error.as_str());
+                self.last_error = Some(error);
+                changed
+            }
+            _ => false,
+        }
+    }
+}
+
+fn text(event: &Value, key: &str) -> Option<String> {
+    event.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn stopped_moves_the_snapshot_to_paused_and_reports_a_change() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        let changed = snapshot.apply(&[json!({
+            "sequence": 1,
+            "type": "stopped",
+            "reason": "breakpoint",
+            "threadId": 7,
+            "description": "Main.java:12"
+        })]);
+        assert!(changed, "第一次 stopped 必须报告变化，UI 才会重绘");
+        assert!(snapshot.is_paused());
+        assert_eq!(snapshot.paused_reason.as_deref(), Some("breakpoint"));
+        assert_eq!(snapshot.paused_thread_id, Some(7));
+        assert_eq!(snapshot.paused_description.as_deref(), Some("Main.java:12"));
+
+        let unchanged = snapshot.apply(&[json!({
+            "sequence": 2,
+            "type": "stopped",
+            "reason": "breakpoint",
+            "threadId": 7,
+            "description": "Main.java:12"
+        })]);
+        assert!(!unchanged, "内容相同的 stopped 不该触发无谓重绘");
+    }
+
+    #[test]
+    fn continued_clears_the_paused_frame() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        snapshot.apply(&[json!({ "type": "stopped", "reason": "step", "threadId": 1 })]);
+        snapshot.apply(&[json!({ "type": "continued", "threadId": 1 })]);
+        assert_eq!(snapshot.state.as_deref(), Some("running"));
+        assert!(snapshot.paused_reason.is_none());
+        assert!(snapshot.paused_thread_id.is_none());
+    }
+
+    #[test]
+    fn output_is_bounded_and_keeps_the_newest_lines() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        let events = (0..DebugSessionSnapshot::MAX_OUTPUT_LINES + 10)
+            .map(|index| json!({ "type": "output", "category": "stdout", "output": format!("line {index}") }))
+            .collect::<Vec<_>>();
+        snapshot.apply(&events);
+        assert_eq!(
+            snapshot.output.len(),
+            DebugSessionSnapshot::MAX_OUTPUT_LINES
+        );
+        assert_eq!(
+            snapshot.output.last().map(String::as_str),
+            Some(format!("line {}", DebugSessionSnapshot::MAX_OUTPUT_LINES + 9).as_str())
+        );
+        assert_eq!(snapshot.output.first().map(String::as_str), Some("line 10"));
+    }
+
+    #[test]
+    fn terminated_records_the_exit_code_and_operation_failures_surface_as_errors() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        snapshot.apply(&[json!({ "type": "terminated", "exitCode": 3 })]);
+        assert!(snapshot.terminated);
+        assert_eq!(snapshot.exit_code, Some(3));
+        assert_eq!(snapshot.state.as_deref(), Some("terminated"));
+
+        snapshot.apply(&[json!({
+            "type": "operationFailed",
+            "operationId": "op-1",
+            "command": "stackTrace",
+            "code": "timedOut",
+            "message": "The adapter did not answer."
+        })]);
+        assert_eq!(
+            snapshot.last_error.as_deref(),
+            Some("stackTrace: The adapter did not answer.")
+        );
+    }
+
+    #[test]
+    fn unknown_event_kinds_are_ignored_without_reporting_a_change() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        let changed = snapshot.apply(&[json!({ "type": "capabilities", "capabilities": {} })]);
+        assert!(!changed);
+        assert_eq!(snapshot.applied_events, 1, "未知事件也要计数，便于诊断");
+    }
+}
