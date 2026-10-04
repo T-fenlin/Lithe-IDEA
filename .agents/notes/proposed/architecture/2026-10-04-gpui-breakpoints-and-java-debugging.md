@@ -490,3 +490,33 @@ S1_DEBUG_TRANSPORT driver_exited reason=terminated / adapter_killed transport=tc
 **未在本次窗口内捕获**：paused 之后的断点命中/单步/变量（本次会话很快 terminated，且探针跑完就被收尾）。
 要看到 `session_state=Some("paused")` 与 `inspect_requested kind=threads|stackTrace|scopes`，
 需要让会话保持存活并触发一次停止（例如给夹具加断点或让探针在 attach 后单步）。
+
+### 断点为何从不命中（第 12 次实跑后定位，2026-10-04）
+
+`DebugPane::sync_breakpoints`（`rust/lithe-gpui/crates/workbench/src/debug.rs:1621`）是这样写的：
+
+```rust
+fn sync_breakpoints(&mut self, path: &str) {
+    match self.gate.session_id() {
+        Some(session_id) => {
+            let payload = self.breakpoints.set_breakpoints_payload(session_id, path);
+            eprintln!("... setBreakpoints session={session_id} path={path} status=dispatch");
+            let _ = payload;            // <-- 载荷造完就丢了，什么都没发出去
+        }
+        None => eprintln!("... status=skipped reason=no-session (H10/H11)"),
+    }
+}
+```
+
+两个问题叠加：
+1. 载荷**被丢弃**（`let _ = payload;`），从未调用 `debug.setBreakpoints`；
+2. 它看的 `self.gate.session_id()` 是面板自己的 gate，**不是**我们挂上去的 `DebugSessionHandle` 的会话。
+
+⇒ 真机上即使目标已 attach，也**没有任何断点**被设进会话，自然不会有 `stopped`（断点命中）。
+
+**修法**：`DebugSessionHandle` 增加 `set_breakpoints(payload)`（经驱动命令通道发 `debug.setBreakpoints`，
+与 `request_inspect` 同形；需要给 `DebugDriverCommand` 加一个通用/断点变体），
+`sync_breakpoints` 改成优先走 `self.session`（会话存在时下发真实载荷，不存在时保留原来的诊断），
+并在 `attach_session` 之后**补发一次全量断点**（新建会话不会自动带上旧断点）。
+做完这一步，第 12 次那份日志才会出现 `session_state=Some("paused")` 与
+`inspect_requested kind=threads|stackTrace|scopes` —— 也就是目标里"断点命中→单步→变量"的真机证据。
