@@ -824,8 +824,17 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 | 16 | 可复用组件层 | `Components/` 11 / 1998 | `LitheSplitPaneView`、`LitheToolWindowHeader`、`LitheUnavailableView`、`LitheContextMenu`、`LitheSettings*`、`LitheScrollViewChrome`、`WorkbenchHoverTooltip` | 无对应层 —— gpui **直接用 gpui-kit** | 🟡 部分 |
 | 17 | 主题 | `macos/Sources/Lithe/Theme/LitheTheme.swift` | `LitheTheme`、`Metrics`（15 刻度） | `crates/settings/src/theme.rs`、`themes/*.json` | 🟡 部分 |
 
-> 表里的文件数/行数是 `macos/Sources/Lithe/Views/` 下按目录实测的（合计 **158 个 Swift 文件 / 60,198 行**），
-> 可以直接用 `Get-ChildItem <目录> -Recurse -Filter *.swift | Get-Content | Measure-Object -Line` 复核。
+> ⚠️ **2026-10-04 复核：这段的旧数字与旧命令都错了，已作废**。原写「合计 158 个 Swift 文件 /
+> 60,198 行」，并让人用 `... | Get-Content | Measure-Object -Line` 复核 —— 而
+> **`Measure-Object -Line` 只数非空行**：实测该目录 `Get-ChildItem ... -Recurse -Filter *.swift`
+> 下 **164 个文件 / 65,864 行（其中非空 61,139 行）**，而旧命令恰好给出 61,139
+> —— 也就是**旧命令与旧总数都偏低**，且文件数也过期（158 → 164）。
+>
+> **正确的复核命令**（数**全部**行）：
+> `(Get-ChildItem <目录> -Recurse -Filter *.swift | Get-Content).Count`
+>
+> ⇒ 表内**各区域的**文件数/行数是用旧口径得出的，**只能当量级参考**，不要直接引用为精确值；
+> 需要精确值时按上面的命令重测。
 
 **统计（17 个区域，逐行核对过）**：✅ 0 · 🟡 部分 10 · ⚪ 缺界面 5 · ❌ 缺 Core 2。
 没有"✅ 已接通"的区域不是坏消息——它说明**还没有任何区域算做完**，也提醒这张表不能当"已完成"用。
