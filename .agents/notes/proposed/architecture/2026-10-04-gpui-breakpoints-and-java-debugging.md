@@ -415,3 +415,15 @@ S1_RUN_PLAN result=failed error=Current File requires a Java source path   ← �
 ⇒ 想走"不改代码"的路只剩手写**用户层**配置（`.lithe/run/{project,local}.json`），但那需要知道
 Java main-class 配置在用户层里的完整形状（provider + extensions），属于盲猜，不值得试。
 **结论：必须改代码**（传 `currentFile`，落点见上一节）。
+
+### 最后一处未知也补齐（2026-10-04）：编辑器侧取活动文件
+
+`rust/lithe-gpui/crates/editor/src/editor_view.rs:685` 有现成访问器
+`pub fn active_buffer_path(&self) -> Option<PathBuf>`（同处还有 `active_buffer_name()`、`active_buffer_is_readonly()`）。
+
+⇒ 工作台侧只需：`self.editor.read(cx).active_buffer_path()` → 用 `self.root` 做 `strip_prefix` 相对化 →
+（Windows 反斜杠换成 `/`，符合 Core 的"workspace 相对、正斜杠"契约）→ `run.update(cx, |pane, _| pane.set_active_file(rel))`。
+两个调用点（`rust/lithe-gpui/crates/workbench/src/workspace.rs:783` 的探针路径、`:1730` 的标题栏路径）都补这一次喂值即可。
+
+至此这处改动**零未知数**：run 侧 `pane.rs` 加字段/`set_active_file`/`launch_plan` 的 `currentFile` 参数
++ 工作台两处喂值 + 一条单测（`launch_plan` 带 currentFile 时请求里出现该字段）。
