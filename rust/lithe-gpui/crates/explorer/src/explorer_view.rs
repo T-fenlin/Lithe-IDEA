@@ -966,8 +966,17 @@ impl Explorer {
         // [`Explorer::run_row_action`]。`context_menu` 的 builder 拿到的是
         // `&mut Context<TreeState>`（`gpui-component-0.7.0/src/tree.rs:26-27`），够不到
         // `Context<Explorer>`，所以照 `changes_view.rs:905-907` 的现成取法用弱引用。
-        .context_menu(move |_index, entry, menu, _window, _cx| {
+        .context_menu(move |_index, entry, menu, _window, cx| {
             let (kind, relative_path) = RowKind::parse(entry.item().id.as_ref());
+            // 右键**先**按真源把选择切到这一行（`selectForContextMenu`，`:43-49`）：
+            // 该行已在选中集内、或（多选且被 `covers`）⇒ **保留**整份选择，否则只选该行。
+            // 真机是在菜单**弹出时**做这件事，所以这里也在构建菜单之前做，而不是等某个菜单项被点。
+            // `cx` 是 `&mut Context<TreeState>`，`&mut *cx` 退到 `App` 才能更新 `Explorer` 实体
+            // （与下面菜单项里那份弱引用是同一条路）。
+            let _ = menu_explorer.update(&mut *cx, |this, cx| {
+                this.selection.select_for_context_menu(&relative_path);
+                cx.notify();
+            });
             let mut menu: PopupMenu = menu;
             for action in row_menu_entries(kind) {
                 let Some(action) = action else {
