@@ -79,6 +79,23 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
 逐请求超时与取消（Core 已有 `operationID` + `debug.cancelOperation`）、真机 Java 端到端。
 `java_debug_session_port` 本身需要活着的 JDTLS 会话，单测不覆盖（契约由载荷用例钉住），留给真机那一步。
 
+**追记（第 15–20 轮，均已落地并有离线用例）**：
+
+| 能力 | 说明 |
+| --- | --- |
+| `poll_until` | 有界轮询并**全量返回**本轮事件 + 报告谓词是否命中（命令通道要"转发全部事件、只等回执"，不能像 `wait_for_event` 那样吞掉非匹配事件） |
+| **驱动命令通道** | `DebugDriverCommand::Execute` + 待决 `operationId` + deadline：期间事件全量转发给 UI，命中回执成功、超时 `cancel(operationId)` 并回执失败；句柄暴露 `execute_command` |
+| `DebugPane` 接线 | 持 `Option<DebugSessionHandle>`；`attach_session` / `drain_session`（变化或退出返回真）/ `stop_session`；`Render` 开头 `if drain_session() { cx.notify() }`（靠变化标志避免自旋）；退出时打 `session_exited reason=…` 并清句柄 |
+| 控制台接快照 | `copy_new_output(snapshot, seen, target)` 增量搬运（游标记账、快照丢旧行时不重放），面板**已有**的控制台与错误位直接显示调试输出与操作失败 |
+| 会话入口 | `start_tcp_session` / `start_java_session`：拿端口 → 连 loopback TCP → `debug.createSession`；UI 流程 = `start_java_session` → `DebugSessionHandle::start` → `attach_session` |
+| `debug.launch` 路径 | `launch_with_configuration`；**Core 的 `DebugLaunchConfiguration` 实测形状**是 `{ name, request: "launch"/"attach", arguments: {…适配器参数…}, steppingFilters? }`，适配器参数走 `arguments` 原样透传（第一版按 `{type,name,mainClass}` 传会被拒为 `invalid request`） |
+
+**仍未做**（下一轮起手）：① UI 调用点 —— 工具栏三个按钮接 `execute_command`、"开始调试"菜单项接
+`start_java_session`；② 线程/调用栈/变量三块的渲染；③ 真机端到端（本机环境不具备，见下节）。
+
+至此目标点名的 6 条 `debug.*`（`createSession` / `launch` / `receive` / `execute` / `disconnect` /
+`destroySession`）**全部有调用路径**，宿主离线用例共 35 条（transport 25 + 会话层 10）。
+
 ### 真机端到端的前置（2026-10-04 实测，**本机不具备**）
 
 - `third_party/jdtls/` 里**只有 `manifest.json`**，JDTLS 载荷不在位；manifest 指明需要
