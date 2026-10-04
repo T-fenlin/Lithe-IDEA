@@ -12,7 +12,7 @@ use gpui_kit::{
     Window, div, rems,
 };
 
-use crate::debug_session::DebugSessionHandle;
+use crate::debug_session::{DebugSessionHandle, copy_new_output};
 use lithe_gpui_editor::GutterBreakpoint;
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{core_json, tr, tr_args};
@@ -1321,6 +1321,7 @@ impl DebugContent {
 pub struct DebugPane {
     breakpoints: DebugBreakpointStore,
     session: Option<DebugSessionHandle>,
+    session_output_seen: usize,
     execution: DebugExecution,
     inspection: DebugInspection,
     tree: DebugVariableTree,
@@ -1355,6 +1356,7 @@ impl DebugPane {
             evaluate_input: String::new(),
             content: DebugContent::Debugger,
             session: None,
+            session_output_seen: 0,
             error_message: None,
             output: Vec::new(),
             filters_task: None,
@@ -2457,9 +2459,15 @@ impl DebugPane {
             return false;
         };
         let outcome = session.drain();
+        let snapshot = session.snapshot();
+        copy_new_output(snapshot, &mut self.session_output_seen, &mut self.output);
+        if let Some(error) = snapshot.last_error.clone() {
+            self.error_message = Some(error);
+        }
         if let Some(reason) = outcome.exited.clone() {
             println!("{DEBUG_DIAGNOSTIC_TAG} session_exited reason={reason}");
             self.session = None;
+            self.session_output_seen = 0;
             true
         } else {
             outcome.changed

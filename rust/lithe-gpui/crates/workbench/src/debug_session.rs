@@ -127,6 +127,21 @@ pub struct DrainOutcome {
     pub events: u64,
 }
 
+pub fn copy_new_output(
+    snapshot: &DebugSessionSnapshot,
+    seen: &mut usize,
+    target: &mut Vec<String>,
+) -> usize {
+    if *seen > snapshot.output.len() {
+        *seen = snapshot.output.len();
+        return 0;
+    }
+    let start = *seen;
+    target.extend(snapshot.output[start..].iter().cloned());
+    *seen = snapshot.output.len();
+    snapshot.output.len() - start
+}
+
 pub fn drain_driver(
     driver: &crate::debug_transport::DebugSessionDriver,
     snapshot: &mut DebugSessionSnapshot,
@@ -533,5 +548,36 @@ mod tests {
 
         assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
         assert_eq!(handle.last_exit(), Some("stopped"));
+    }
+
+    #[test]
+    fn copy_new_output_only_copies_the_unseen_tail() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        let mut seen = 0;
+        let mut target = Vec::new();
+        snapshot.apply(&[
+            json!({ "type": "output", "output": "line 1" }),
+            json!({ "type": "output", "output": "line 2" }),
+        ]);
+        assert_eq!(copy_new_output(&snapshot, &mut seen, &mut target), 2);
+        assert_eq!(target, vec!["line 1".to_string(), "line 2".to_string()]);
+        assert_eq!(
+            copy_new_output(&snapshot, &mut seen, &mut target),
+            0,
+            "重复 drain 不许把已经搬走的行再搬一遍"
+        );
+        assert_eq!(target.len(), 2);
+
+        snapshot.apply(&[json!({ "type": "output", "output": "line 3" })]);
+        assert_eq!(copy_new_output(&snapshot, &mut seen, &mut target), 1);
+        assert_eq!(target.last().map(String::as_str), Some("line 3"));
+
+        seen = snapshot.output.len() + 10;
+        assert_eq!(
+            copy_new_output(&snapshot, &mut seen, &mut target),
+            0,
+            "快照丢过旧行时不许重放"
+        );
+        assert_eq!(seen, snapshot.output.len(), "游标只夹回快照末尾");
     }
 }
