@@ -98,6 +98,14 @@ impl JavaLanguageService {
         }
     }
 
+    pub fn lsp_session_id(&self) -> Option<String> {
+        let state = self.state.lock().ok()?;
+        match &*state {
+            State::Ready(session) => Some(session.session_id().to_string()),
+            _ => None,
+        }
+    }
+
     pub fn prepare(&self) -> Result<bool, String> {
         if !self.is_java_workspace()? {
             println!("S1_JAVA_SKIPPED reason=not-a-java-workspace");

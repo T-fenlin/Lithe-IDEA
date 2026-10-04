@@ -54,6 +54,12 @@ pub(crate) struct Session {
     pump: EventPump,
 }
 
+impl Session {
+    pub(crate) fn session_id(&self) -> &str {
+        &self.id
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct ReadyReport {
     pub(crate) elapsed: Duration,
