@@ -111,8 +111,12 @@ impl DebugSessionSnapshot {
                 let Some(kind) = result.get("kind").and_then(Value::as_str) else {
                     return false;
                 };
-                let changed = self.results.get(kind) != Some(result);
-                self.results.insert(kind.to_string(), result.clone());
+                let key = match result.get("reference").and_then(Value::as_i64) {
+                    Some(reference) if reference > 0 => format!("{kind}#{reference}"),
+                    _ => kind.to_string(),
+                };
+                let changed = self.results.get(&key) != Some(result);
+                self.results.insert(key, result.clone());
                 changed
             }
             "operationFailed" => {
@@ -243,14 +247,40 @@ pub fn first_frame_id(snapshot: &DebugSessionSnapshot) -> Option<i64> {
 
 pub const DEBUG_INSPECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-pub fn result_array<'a>(snapshot: &'a DebugSessionSnapshot, kind: &str, key: &str) -> &'a [Value] {
+pub fn result_for<'a>(snapshot: &'a DebugSessionSnapshot, kind: &str) -> Option<&'a Value> {
+    if let Some(result) = snapshot.results.get(kind) {
+        return Some(result);
+    }
+    let prefix = format!("{kind}#");
     snapshot
         .results
-        .get(kind)
+        .iter()
+        .find(|(key, _)| key.starts_with(&prefix))
+        .map(|(_, result)| result)
+}
+
+pub fn result_for_reference<'a>(
+    snapshot: &'a DebugSessionSnapshot,
+    kind: &str,
+    reference: i64,
+) -> Option<&'a Value> {
+    snapshot.results.get(&format!("{kind}#{reference}"))
+}
+
+pub fn result_array<'a>(snapshot: &'a DebugSessionSnapshot, kind: &str, key: &str) -> &'a [Value] {
+    result_for(snapshot, kind)
         .and_then(|result| result.get(key))
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or(&[])
+}
+
+pub fn variable_labels_for(snapshot: &DebugSessionSnapshot, reference: i64) -> Vec<String> {
+    result_for_reference(snapshot, "variables", reference)
+        .and_then(|result| result.get("variables"))
+        .and_then(Value::as_array)
+        .map(|variables| variables.iter().map(variable_label).collect())
+        .unwrap_or_default()
 }
 
 pub fn thread_labels(snapshot: &DebugSessionSnapshot) -> Vec<String> {
@@ -319,26 +349,28 @@ pub fn scope_labels(snapshot: &DebugSessionSnapshot) -> Vec<(String, i64)> {
 pub fn variable_labels(snapshot: &DebugSessionSnapshot) -> Vec<String> {
     result_array(snapshot, "variables", "variables")
         .iter()
-        .map(|variable| {
-            let name = variable
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let value = variable
-                .get("value")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let reference = variable
-                .get("variablesReference")
-                .and_then(Value::as_i64)
-                .unwrap_or_default();
-            match (value.is_empty(), reference > 0) {
-                (false, true) => format!("{name} = {value} ›"),
-                (false, false) => format!("{name} = {value}"),
-                (true, _) => name.to_string(),
-            }
-        })
+        .map(variable_label)
         .collect()
+}
+
+fn variable_label(variable: &Value) -> String {
+    let name = variable
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let value = variable
+        .get("value")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let reference = variable
+        .get("variablesReference")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    match (value.is_empty(), reference > 0) {
+        (false, true) => format!("{name} = {value} ›"),
+        (false, false) => format!("{name} = {value}"),
+        (true, _) => name.to_string(),
+    }
 }
 
 pub struct DebugSessionHandle {
@@ -948,6 +980,31 @@ mod tests {
     }
 
     #[test]
+    fn variables_of_different_references_do_not_overwrite_each_other() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        snapshot.apply(&[json!({
+            "type": "operationCompleted",
+            "result": { "kind": "variables", "reference": 9, "variables": [
+                { "name": "outer", "value": "1", "variablesReference": 0 }
+            ] }
+        })]);
+        snapshot.apply(&[json!({
+            "type": "operationCompleted",
+            "result": { "kind": "variables", "reference": 12, "variables": [
+                { "name": "inner", "value": "2", "variablesReference": 0 }
+            ] }
+        })]);
+
+        assert_eq!(snapshot.results.len(), 2, "两个引用各存一份，互不覆盖");
+        assert_eq!(variable_labels_for(&snapshot, 9), vec!["outer = 1"]);
+        assert_eq!(variable_labels_for(&snapshot, 12), vec!["inner = 2"]);
+        assert!(
+            variable_labels_for(&snapshot, 99).is_empty(),
+            "没拉过的引用必须是空，不能拿别的引用的结果冒充"
+        );
+    }
+
+    #[test]
     fn labels_render_threads_and_frames_for_the_ui() {
         let mut snapshot = DebugSessionSnapshot::default();
         assert!(thread_labels(&snapshot).is_empty());
@@ -1083,7 +1140,16 @@ mod tests {
             "result": { "kind": "variables", "reference": 7, "variables": [] }
         })]);
         assert_eq!(snapshot.results.len(), 2, "不同 kind 各留一份最新结果");
-        assert!(snapshot.results.contains_key("variables"));
+        assert!(
+            snapshot.results.contains_key("variables#7"),
+            "带引用的结果按键 kind#reference 存，多个引用才不会互相覆盖"
+        );
+        assert!(
+            result_for(&snapshot, "variables").is_some(),
+            "按 kind 也要能找到"
+        );
+        assert!(result_for_reference(&snapshot, "variables", 7).is_some());
+        assert!(result_for_reference(&snapshot, "variables", 99).is_none());
 
         let ignored = snapshot.apply(&[json!({
             "sequence": 6,
