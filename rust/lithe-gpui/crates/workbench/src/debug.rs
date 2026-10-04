@@ -1619,13 +1619,24 @@ impl DebugPane {
     }
 
     fn sync_breakpoints(&mut self, path: &str) {
-        match self.gate.session_id() {
+        match self
+            .session
+            .as_ref()
+            .map(|session| session.session_id().to_string())
+        {
             Some(session_id) => {
-                let payload = self.breakpoints.set_breakpoints_payload(session_id, path);
+                let payload = self.breakpoints.set_breakpoints_payload(&session_id, path);
                 eprintln!(
                     "{DEBUG_DIAGNOSTIC_TAG} setBreakpoints session={session_id} path={path} status=dispatch"
                 );
-                let _ = payload;
+                match core_json(SET_BREAKPOINTS_COMMAND, payload) {
+                    Ok(_) => println!(
+                        "{DEBUG_DIAGNOSTIC_TAG} setBreakpoints session={session_id} path={path} status=sent"
+                    ),
+                    Err(error) => eprintln!(
+                        "{DEBUG_DIAGNOSTIC_TAG} setBreakpoints path={path} status=failed error={error}"
+                    ),
+                }
             }
             None => eprintln!(
                 "{DEBUG_DIAGNOSTIC_TAG} setBreakpoints path={path} status=skipped reason=no-session (H10/H11)"
@@ -2601,6 +2612,36 @@ impl DebugPane {
             session.session_id()
         );
         self.session = Some(session);
+        if let Ok(spec) = std::env::var("LITHE_DEBUG_BREAKPOINTS") {
+            for item in spec
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+            {
+                if let Some((path, line)) = item.rsplit_once(':') {
+                    if let Ok(line) = line.trim().parse::<i64>() {
+                        self.breakpoints.toggle(path.trim(), line);
+                    }
+                }
+            }
+        }
+        let session_id = self
+            .session
+            .as_ref()
+            .map(|session| session.session_id().to_string());
+        if let Some(session_id) = session_id {
+            for path in self.breakpoints.files().cloned().collect::<Vec<_>>() {
+                let payload = self.breakpoints.set_breakpoints_payload(&session_id, &path);
+                match core_json(SET_BREAKPOINTS_COMMAND, payload) {
+                    Ok(_) => println!(
+                        "{DEBUG_DIAGNOSTIC_TAG} setBreakpoints session={session_id} path={path} status=sent"
+                    ),
+                    Err(error) => eprintln!(
+                        "{DEBUG_DIAGNOSTIC_TAG} setBreakpoints path={path} status=failed error={error}"
+                    ),
+                }
+            }
+        }
     }
 
     pub fn drain_session(&mut self) -> bool {

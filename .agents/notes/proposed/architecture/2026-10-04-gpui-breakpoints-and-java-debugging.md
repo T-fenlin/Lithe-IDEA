@@ -520,3 +520,25 @@ fn sync_breakpoints(&mut self, path: &str) {
 并在 `attach_session` 之后**补发一次全量断点**（新建会话不会自动带上旧断点）。
 做完这一步，第 12 次那份日志才会出现 `session_state=Some("paused")` 与
 `inspect_requested kind=threads|stackTrace|scopes` —— 也就是目标里"断点命中→单步→变量"的真机证据。
+
+### 第 13 次实跑：断点第一次真的下发，但顺序不对（2026-10-04）
+
+改动（`rust/lithe-gpui/crates/workbench/src/debug.rs`）：
+1. `sync_breakpoints` 不再丢弃载荷 —— 改走 `core_json("debug.setBreakpoints", payload)`，并且用
+   **DAP 会话 id**（`self.session.session_id()`）而不是面板自己的 `gate.session_id()`；
+2. `attach_session` 里补发全量断点，并支持探针输入 `LITHE_DEBUG_BREAKPOINTS=path:line[,…]` 播种断点。
+
+日志首次出现：
+
+```
+S1_DEBUG launch status=sent session=java-debug jdwp=44003
+S1_DEBUG attach_session=java-debug
+S1_DEBUG setBreakpoints session=java-debug path=src/main/java/demo/App.java status=sent
+```
+
+**但仍是 `stopped` 未出现**。原因（按 DAP 顺序推断）：`attach` 对 `suspend=y` 的 JVM 会立刻恢复它，
+而我们的 `setBreakpoints` 发生在 **attach 之后** ⇒ 目标可能已经跑过断点行（或在断点注册前就跑完），
+所以从未命中。**下一步**：把断点下发挪到 attach/launch **之前**（DAP 正确顺序是
+`initialize → setBreakpoints → configurationDone/attach`），即 `start_debug_session` 里
+`start_java_session` → **先发断点** → `launch_with_configuration` → 再建句柄；
+另外我们的快照忽略了 `breakpoint` 事件（含 `verified` 标志），加一条诊断打印就能确认断点是否"已验证"。
