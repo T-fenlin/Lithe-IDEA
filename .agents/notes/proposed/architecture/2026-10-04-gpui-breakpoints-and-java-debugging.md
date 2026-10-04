@@ -705,3 +705,26 @@ java-debug 依赖 `projectName`（来自 JDT LS 的工程）把 `source.path` �
 **仍未验证**：序列 11 之后**没有任何帧** ⇒ 宿主在 `stopped` 之后没有自动去问 threads/stackTrace/scopes
 （`inspect` 未触发），"单步（step）"也没发过。目标里"单步→变量"的真实机证据还差：在停止后自动
 `request_inspect(threads|stackTrace|scopes)`（并可在探针里补一条 `next`）。这一处很小，且现在有帧 dump 兜底。
+
+### 第 24 轮：为什么面板级诊断一直是空的（2026-10-04，重要）
+
+读 `rust/lithe-gpui/crates/workbench/src/debug.rs:2667` 的 `drain_session` 发现：**它本来就会在状态变化时打印**
+
+```
+S1_DEBUG session_state={state:?} reason={reason:?} thread={thread_id:?}
+```
+
+而第 12~22 次实跑的日志里**这一行从未出现过** —— 即使原始帧已经证明 `stateChanged paused` + `stopped reason=breakpoint`。
+结合 `drain_session` 的调用点（`DebugPane` 的 `Render::render` 开头），结论是：
+
+⇒ **无头探针运行下 `DebugPane` 根本没有被渲染/drain**（探针把底部面板设成 `BottomPaneKind::Run`，
+调试面板不可见 ⇒ 不渲染 ⇒ 不 drain）⇒ 面板侧的一切（状态锚点、`on_stopped`、
+自动 inspect、变量树刷新）在真机探针里都**没有执行**。
+
+这一条同时解释了此前所有"看不到"的现象，也说明**变量证据缺的不是 DAP 链路，而是工作台没有在无头/后台情况下驱动调试面板**。
+
+**下一步（小且有界）**：在工作台层加一次"泵"—— 例如 `ShellWorkspace` 的渲染/帧回调里
+`self.debug.update(cx, |pane, cx| { if pane.drain_session() { cx.notify(); } })`（`drain_session` 已是 `pub`），
+再在 `drain_session` 的 `Some("paused")` 分支里补一次
+`request_inspect("threads", None, None, None, DEBUG_INSPECT_TIMEOUT)`（链条 L469 会自动推进到
+stackTrace → scopes → variables）。之后用 `LITHE_DEBUG_DUMP_FRAMES=1` 一次跑就能看到四步真实帧 + `next`。
