@@ -77,6 +77,40 @@ fn editor_pane_renders_a_real_file_and_reports_its_indent(cx: &mut TestAppContex
 }
 
 #[gpui_kit::test]
+fn editor_body_host_fills_the_pane_below_the_tab_bar(cx: &mut TestAppContext) {
+    let file = TempFile::new("host.md", "# 标题\n\n正文\n");
+
+    cx.update(gpui_kit::init);
+
+    let (handle, pane) = common::open_window(cx, Some(size(px(640.), px(480.))), |window, cx| {
+        cx.new(|cx| lithe_gpui_editor::EditorPane::new(None, window, cx))
+    });
+
+    let path = file.path.clone();
+    common::update_content(handle, &pane, cx, |pane, window, cx| {
+        pane.open(&path, window, cx);
+    })
+    .unwrap();
+
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        let host = window.find(lithe_gpui_editor::EDITOR_HOST_ELEMENT_ID);
+        println!(
+            "EDITOR_HOST bounds={:?} size={:?}",
+            host.bounds().origin,
+            host.bounds().size
+        );
+        assert!(
+            host.bounds().size.height >= px(100.),
+            "编辑器正文容器必须在标签栏下面拿到真实高度（实测 {:?}）：\
+             高度为 0 时 gpui-component 的 Editor 什么都不画，用户看到的就是'打开文件后一片黑'",
+            host.bounds().size.height
+        );
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
 fn theme_application_caps_simultaneous_notification_toasts_at_three(cx: &mut TestAppContext) {
     use gpui_kit::component::Theme;
     use lithe_gpui_settings::theme::NOTIFICATION_MAX_ITEMS;

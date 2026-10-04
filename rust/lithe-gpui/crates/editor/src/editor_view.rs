@@ -20,8 +20,8 @@ use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, Wind
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity, InteractiveElement as _,
     IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Render, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task, WeakEntity,
-    Window, div, point, relative, rems,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
+    TestSupportExt as _, WeakEntity, Window, div, point, relative, rems,
 };
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::design::TAB_MAX_WIDTH;
@@ -31,6 +31,8 @@ use lithe_gpui_shared::{tr, tr_args};
 pub(crate) use lithe_gpui_shared::rem_px;
 
 const FALLBACK_LINE_HEIGHT: f32 = 20.;
+
+pub const EDITOR_HOST_ELEMENT_ID: &str = "lithe-editor-host";
 
 const AUTO_SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
 
@@ -2102,7 +2104,10 @@ impl EditorPane {
             .child(self.breakpoint_gutter(&path, cx))
             .child(
                 div()
+                    .id(EDITOR_HOST_ELEMENT_ID)
+                    .test_support()
                     .flex_1()
+                    .h_full()
                     .min_h_0()
                     .overflow_hidden()
                     .on_mouse_down(

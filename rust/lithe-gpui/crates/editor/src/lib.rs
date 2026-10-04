@@ -10,8 +10,8 @@ mod navigation;
 mod problems;
 
 pub use editor_view::{
-    BufferWriteHost, CursorPosition, DebugGutterHost, EditorPane, GutterBreakpoint, SessionRestore,
-    TabMenuHostActions,
+    BufferWriteHost, CursorPosition, DebugGutterHost, EDITOR_HOST_ELEMENT_ID, EditorPane,
+    GutterBreakpoint, SessionRestore, TabMenuHostActions,
 };
 pub use problems::ProblemsPane;
 
