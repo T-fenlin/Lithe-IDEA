@@ -229,6 +229,104 @@ pub fn stdio_spec(
     }
 }
 
+pub struct TcpDebugAdapter {
+    stream: std::net::TcpStream,
+    chunks: Receiver<Vec<u8>>,
+    child: Option<Child>,
+    exited: bool,
+}
+
+impl TcpDebugAdapter {
+    pub fn connect(address: &str, timeout: Duration) -> Result<Self, String> {
+        let socket: std::net::SocketAddr = address.parse().map_err(|error| {
+            format!("{DEBUG_TRANSPORT_TAG} bad_address address={address} error={error}")
+        })?;
+        let stream = std::net::TcpStream::connect_timeout(&socket, timeout).map_err(|error| {
+            format!("{DEBUG_TRANSPORT_TAG} connect_failed address={address} error={error}")
+        })?;
+        let read_half = stream.try_clone().map_err(|error| {
+            format!("{DEBUG_TRANSPORT_TAG} clone_failed address={address} error={error}")
+        })?;
+        let (sender, chunks) = channel();
+        std::thread::spawn(move || {
+            let mut half = read_half;
+            let mut buffer = [0_u8; 8192];
+            loop {
+                match half.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(read) => {
+                        if sender.send(buffer[..read].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        println!("{DEBUG_TRANSPORT_TAG} adapter_connected address={address}");
+        Ok(Self {
+            stream,
+            chunks,
+            child: None,
+            exited: false,
+        })
+    }
+
+    #[must_use]
+    pub fn is_exited(&self) -> bool {
+        self.exited
+    }
+
+    pub fn try_recv(&self) -> Option<Vec<u8>> {
+        match self.chunks.try_recv() {
+            Ok(chunk) => Some(chunk),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
+        }
+    }
+
+    pub fn recv_bounded(&self, timeout: Duration) -> Option<Vec<u8>> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(chunk) = self.try_recv() {
+                return Some(chunk);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+impl DebugAdapterPort for TcpDebugAdapter {
+    fn write_frame(&mut self, frame: &[u8]) -> Result<(), String> {
+        self.stream.write_all(frame).map_err(|error| {
+            format!("{DEBUG_TRANSPORT_TAG} write_failed transport=tcp error={error}")
+        })?;
+        self.stream.flush().map_err(|error| {
+            format!("{DEBUG_TRANSPORT_TAG} flush_failed transport=tcp error={error}")
+        })
+    }
+
+    fn kill(&mut self) {
+        if self.exited {
+            return;
+        }
+        let _ = self.stream.shutdown(std::net::Shutdown::Both);
+        self.exited = true;
+        if let Some(child) = self.child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        println!("{DEBUG_TRANSPORT_TAG} adapter_killed transport=tcp");
+    }
+}
+
+impl Drop for TcpDebugAdapter {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
+
 pub struct DebugTransport {
     session_id: String,
     adapter: Box<dyn DebugAdapterPort>,
@@ -687,5 +785,84 @@ mod tests {
         let adapter = StdioDebugAdapter::spawn(&live_child_spec(&dir)).expect("起长驻子进程");
         assert!(!adapter.is_exited());
         drop(adapter);
+    }
+
+    fn loopback_server() -> (String, Receiver<Vec<u8>>, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("绑回环端口");
+        let address = listener.local_addr().expect("读本地地址").to_string();
+        let (sender, received) = channel();
+        let handle = std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut buffer = [0_u8; 4096];
+            if let Ok(read) = stream.read(&mut buffer) {
+                let _ = sender.send(buffer[..read].to_vec());
+            }
+            let _ = stream.write_all(b"adapter-says-hi");
+            let _ = stream.flush();
+            std::thread::sleep(Duration::from_millis(200));
+        });
+        (address, received, handle)
+    }
+
+    #[test]
+    fn tcp_adapter_writes_frames_and_reads_adapter_output() {
+        let (address, received, server) = loopback_server();
+        let mut adapter =
+            TcpDebugAdapter::connect(&address, Duration::from_secs(5)).expect("连上回环 adapter");
+        assert!(!adapter.is_exited());
+        adapter
+            .write_frame(b"Content-Length: 2\r\n\r\n{}")
+            .expect("写帧应当成功");
+
+        let written = received
+            .recv_timeout(Duration::from_secs(10))
+            .expect("服务端应当收到写出的帧");
+        assert_eq!(
+            String::from_utf8_lossy(&written),
+            "Content-Length: 2\r\n\r\n{}",
+            "TCP 传输必须原样搬运 Core 分好的帧"
+        );
+        let read = adapter
+            .recv_bounded(Duration::from_secs(10))
+            .expect("应当读得到 adapter 发来的字节");
+        assert_eq!(String::from_utf8_lossy(&read), "adapter-says-hi");
+        server.join().expect("服务端线程应当结束");
+    }
+
+    #[test]
+    fn tcp_adapter_reports_a_refused_connection() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("绑回环端口");
+        let address = listener.local_addr().expect("读本地地址").to_string();
+        drop(listener);
+
+        let error = TcpDebugAdapter::connect(&address, Duration::from_secs(5))
+            .err()
+            .expect("没人监听时必须报错");
+        assert!(
+            error.contains("connect_failed"),
+            "错误要能看出是建连失败：{error}"
+        );
+    }
+
+    #[test]
+    fn tcp_kill_closes_the_socket_and_is_idempotent() {
+        let (address, _received, server) = loopback_server();
+        let mut adapter =
+            TcpDebugAdapter::connect(&address, Duration::from_secs(5)).expect("连上回环 adapter");
+        adapter.kill();
+        assert!(adapter.is_exited());
+        adapter.kill();
+        assert!(adapter.is_exited(), "第二次 kill 必须幂等");
+        let error = adapter
+            .write_frame(b"after-kill")
+            .err()
+            .expect("关掉之后写帧必须失败");
+        assert!(
+            error.contains("write_failed"),
+            "错误要能看出是写失败：{error}"
+        );
+        server.join().expect("服务端线程应当结束");
     }
 }
