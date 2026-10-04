@@ -229,13 +229,18 @@ lombok 1.18.46（`01f7b1a0…`）、java-test 0.46.0 VSIX（`56c1e14d…`，含 
 返回结构化 `JavaBuildReport`。也就是说 **Core 的 JDT 命令层 + 我们准备的载荷在真机上端到端可用**。
 
 **卡在哪**：该用例在夹具工程编译处失败（`javaBuildCompilationErrors`，`underlying_message: "2"`，
-`elapsed_milliseconds: 9` —— 9 毫秒说明是**工程配置级**失败而不是真的在编译）。
-用例文档注释说夹具由 `scripts/prepare-jdtls.{sh,ps1}` 准备，但**这个脚本在仓库里不存在**
+`elapsed_milliseconds: 9` —— 9 毫秒说明是**工程配置级**失败而不是真的在编译）。用例文档注释说夹具由 `scripts/prepare-jdtls.{sh,ps1}` 准备，但**这个脚本在仓库里不存在**
 （`glob **/prepare-jdtls*` 无命中）⇒ 夹具的工程 JDK/`.classpath`/本地 maven 仓库需要人来铺，
 这是**仓库自身的缺口**（文档引用了不存在的脚本），不是 DAP 代码的问题。
 
-**仍未做**：DAP 那半边的真机端到端（启动→断点命中→单步→变量→停止）—— 它需要 GUI 驱动
-（点工具栏/打断点），当前只能靠人工或 UI 自动化；DAP 链路本身已有 43 条离线用例覆盖。
+已排除的两个假设（2026-10-04 实测，失败完全一致：仍是 `2` 个错误、约 11ms）：
+① 本地 Maven 仓库缺 junit-jupiter 5.14.0 —— 跑 `mvn dependency:go-offline` 之后仍失败；
+② JDTLS 运行在 JDK 21 上编译不了 `maven.compiler.release=25` —— 把 `LITHE_JDTLS_SMOKE_JAVA`
+换成 `open-25` 之后仍失败。
+⇒ 更像 JDTLS 的**工程配置**（project JDK / classpath 绑定）压根没就绪；要定位得先把 JDTLS 的
+编译 marker 取出来看，这一步需要比"跑一次用例"更多的上下文。
+
+**仍未做**：DAP 那半边的真机端到端（启动→断点命中→单步→变量→停止）—— 它需要 GUI 驱动（点工具栏/打断点），当前只能靠人工或 UI 自动化；DAP 链路本身已有 43 条离线用例覆盖。
 
 ## 风险
 
