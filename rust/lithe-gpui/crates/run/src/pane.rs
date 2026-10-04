@@ -348,6 +348,18 @@ fn prepare_startup(
     prepare(root, &plan, resolve)
 }
 
+/// Workspace-relative Java file a probe run should treat as the current file.
+///
+/// The launch path otherwise takes the current file from the editor, which a
+/// headless probe does not have; naming it through the environment lets the
+/// run/debug probe exercise the real launch plan.
+fn current_file_for_probe() -> Option<String> {
+    std::env::var("LITHE_RUN_CURRENT_FILE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn launch_plan(
     root: &Path,
     configuration_id: &str,
@@ -362,6 +374,9 @@ fn launch_plan(
     });
     if let Some(port) = debug_port {
         request["debugPort"] = serde_json::json!(port);
+    }
+    if let Some(current_file) = current_file_for_probe() {
+        request["currentFile"] = serde_json::json!(current_file);
     }
 
     let plan = core_json("runConfig.createLaunchPlan", request)
