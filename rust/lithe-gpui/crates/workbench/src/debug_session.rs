@@ -243,6 +243,62 @@ pub fn first_frame_id(snapshot: &DebugSessionSnapshot) -> Option<i64> {
 
 pub const DEBUG_INSPECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+pub fn result_array<'a>(snapshot: &'a DebugSessionSnapshot, kind: &str, key: &str) -> &'a [Value] {
+    snapshot
+        .results
+        .get(kind)
+        .and_then(|result| result.get(key))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+}
+
+pub fn thread_labels(snapshot: &DebugSessionSnapshot) -> Vec<String> {
+    result_array(snapshot, "threads", "threads")
+        .iter()
+        .map(|thread| {
+            let name = thread
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let id = thread.get("id").and_then(Value::as_i64).unwrap_or_default();
+            if name.is_empty() {
+                format!("#{id}")
+            } else {
+                format!("{name} (#{id})")
+            }
+        })
+        .collect()
+}
+
+pub fn frame_labels(snapshot: &DebugSessionSnapshot) -> Vec<String> {
+    let frames = if result_array(snapshot, "stackTrace", "frames").is_empty() {
+        result_array(snapshot, "stackTrace", "stackFrames")
+    } else {
+        result_array(snapshot, "stackTrace", "frames")
+    };
+    frames
+        .iter()
+        .map(|frame| {
+            let name = frame
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let source = frame
+                .get("source")
+                .and_then(|source| source.get("path").or_else(|| source.get("name")))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let line = frame.get("line").and_then(Value::as_i64);
+            match (source.is_empty(), line) {
+                (false, Some(line)) => format!("{name} — {source}:{line}"),
+                (false, None) => format!("{name} — {source}"),
+                (true, _) => name.to_string(),
+            }
+        })
+        .collect()
+}
+
 pub struct DebugSessionHandle {
     session_id: String,
     driver: crate::debug_transport::DebugSessionDriver,
@@ -798,6 +854,46 @@ mod tests {
         );
 
         assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
+    }
+
+    #[test]
+    fn labels_render_threads_and_frames_for_the_ui() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        assert!(thread_labels(&snapshot).is_empty());
+        assert!(frame_labels(&snapshot).is_empty());
+
+        snapshot.results.insert(
+            "threads".to_string(),
+            json!({ "kind": "threads", "threads": [
+                { "id": 1, "name": "main" },
+                { "id": 2 }
+            ] }),
+        );
+        assert_eq!(thread_labels(&snapshot), vec!["main (#1)", "#2"]);
+
+        snapshot.results.insert(
+            "stackTrace".to_string(),
+            json!({ "kind": "stackTrace", "frames": [
+                { "id": 42, "name": "main", "source": { "path": "src/Main.java" }, "line": 12 },
+                { "id": 43, "name": "run" }
+            ] }),
+        );
+        assert_eq!(
+            frame_labels(&snapshot),
+            vec!["main — src/Main.java:12", "run"]
+        );
+
+        snapshot.results.insert(
+            "stackTrace".to_string(),
+            json!({ "kind": "stackTrace", "stackFrames": [
+                { "id": 7, "name": "tick", "source": { "name": "Clock.java" }, "line": 3 }
+            ] }),
+        );
+        assert_eq!(
+            frame_labels(&snapshot),
+            vec!["tick — Clock.java:3"],
+            "DAP 原生 stackFrames + source.name 也要能渲染"
+        );
     }
 
     #[test]
