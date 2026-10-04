@@ -40,7 +40,7 @@ use lithe_gpui_shared::icons::{FileIcon, idea, idea_icon_image};
 use lithe_gpui_shared::tr;
 
 use crate::model::{
-    GitTreeStatus, RENDER_LIMIT, ROOT_ID, RowKind, Snapshot, TreeNode, build_tree_items,
+    BuiltTree, GitTreeStatus, RENDER_LIMIT, ROOT_ID, RowKind, Snapshot, TreeNode, build_tree_items,
     icon_for_file, load_git_status, load_snapshot,
 };
 
@@ -332,12 +332,18 @@ impl Explorer {
         // （`gpui-base-0.7.0/src/tree.rs:93-96`），所以这里能直接取里面的 id。
         let tree_events = cx.subscribe(
             &tree,
-            |this, _tree, event: &TreeEvent, _cx: &mut Context<Self>| match event {
+            |this, _tree, event: &TreeEvent, cx: &mut Context<Self>| match event {
                 TreeEvent::Expanded(id) => {
                     this.expanded.insert(id.clone());
                 }
                 TreeEvent::Collapsed(id) => {
                     this.expanded.remove(id);
+                    // 折叠会让被折叠子树的行**不再可见**：选择集与可见集求交，锚点/焦点不可见就清掉
+                    // （真源 `ProjectTreeSelection.retain`，`:51-56`）—— 否则"选中的东西看不见了，
+                    // 批量操作却还作用在它身上"。
+                    let visible = this.visible_paths();
+                    this.selection.retain(&visible);
+                    cx.notify();
                 }
             },
         );
@@ -532,12 +538,12 @@ impl Explorer {
         .detach();
     }
 
-    /// 按当前的 `snapshot` / `expanded` / `query` 重建树。
+    /// 按当前的 `snapshot` / `expanded` / `query` 铺一次树。
     ///
-    /// `TreeState::set_items` 会**清空选中**（`gpui-base-0.7.0/src/tree.rs:221-226`），这是刻意的：
-    /// 可见行被换掉之后旧行号已经没有意义（真机搜索时也是重新定位；[`Explorer::reveal`]
-    /// 在重建之后自己把选中放回去）。
-    fn rebuild(&mut self, cx: &mut Context<Self>) {
+    /// [`Explorer::rebuild`] 与 [`Explorer::visible_paths`] 共用它 —— 这样"真正铺进树里的行"与
+    /// "选择用的可见顺序"**永远同源**（真源也是同一份 `visibleNodes`，
+    /// `ProjectTreeSelection.swift:72-77`）。
+    fn built_tree(&self) -> BuiltTree {
         let filter: Option<String> = if self.query.is_empty() {
             None
         } else {
@@ -556,7 +562,27 @@ impl Explorer {
             .as_ref()
             .map(|snapshot| &snapshot.root)
             .unwrap_or(&empty);
-        let built = build_tree_items(&label, root, &self.expanded, filter.as_deref());
+        build_tree_items(&label, root, &self.expanded, filter.as_deref())
+    }
+
+    /// **显示顺序**的可见路径表（真源 `ProjectTreeSelection.visibleNodes`，`:72-77`）。
+    ///
+    /// 区间选择按这个顺序切片，**不是**路径字典序；含根行（真源同样把根节点算作可见）。
+    fn visible_paths(&self) -> Vec<String> {
+        self.built_tree()
+            .items
+            .iter()
+            .map(|item| RowKind::parse(item.id.as_ref()).1)
+            .collect()
+    }
+
+    /// 按当前的 `snapshot` / `expanded` / `query` 重建树。
+    ///
+    /// `TreeState::set_items` 会**清空选中**（`gpui-base-0.7.0/src/tree.rs:221-226`），这是刻意的：
+    /// 可见行被换掉之后旧行号已经没有意义（真机搜索时也是重新定位；[`Explorer::reveal`]
+    /// 在重建之后自己把选中放回去）。
+    fn rebuild(&mut self, cx: &mut Context<Self>) {
+        let built = self.built_tree();
         self.rows = built.rows;
         self.truncated = built.truncated;
         self.tree
@@ -903,15 +929,24 @@ impl Explorer {
                 .overflow_hidden()
                 .child(row)
                 .on_click(
-                    move |_event: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    move |event: &ClickEvent, window: &mut Window, cx: &mut App| {
                         // 选择**先于**打开：目录行不打开文件，但照样要能被选中
                         // （真源 `ProjectTreeSelection` 对目录与文件一视同仁）。
-                        // ⚠️ 目前只接了普通点击（选择集 = 该行）：⌘ / Shift 要"显示顺序的可见路径表"
-                        // 与两个修饰键，和键盘动作一起在下一步接。
+                        // 修饰键沿用仓库既有取法（`editor_view.rs:1785` 的 `modifiers.secondary()`）：
+                        // 在 macOS 是 ⌘、其它平台是 Ctrl —— 正好就是真源 `:11-28` 的 `toggling`。
+                        let extending = event.modifiers().shift;
+                        let toggling = event.modifiers().secondary();
                         let is_file_row = row_path.is_some();
                         let _ = row_explorer.update(cx, |this, cx| {
-                            this.selection
-                                .select(row_relative_path.as_str(), &[], false, false);
+                            // 可见顺序在实体上现算：与真正铺进树里的行**同源**（见 `built_tree`），
+                            // 区间选择按它切片 —— 真源 `visibleNodes`（`:72-77`）的同一条口径。
+                            let visible = this.visible_paths();
+                            this.selection.select(
+                                row_relative_path.as_str(),
+                                &visible,
+                                extending,
+                                toggling,
+                            );
                             if is_file_row {
                                 // 记住这次打开的文件，给这一行加底色（目录行不设，免得"点一下目录"
                                 // 看起来像打开了它）。
