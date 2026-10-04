@@ -628,6 +628,14 @@ impl Explorer {
         cx.notify();
     }
 
+    /// 当前多选集（**确定性有序**）。
+    ///
+    /// 给"批量操作要处理哪些条目"与 UI 测试读（真源里对应的就是
+    /// `ProjectTreeSelection.paths`）。返回 owned `Vec` —— `selection.rs` 的内部类型不出公开 API。
+    pub fn selected_paths(&self) -> Vec<String> {
+        self.selection.paths().iter().cloned().collect()
+    }
+
     /// 工作区里**有没有**任何可见项（决定画树还是画空态）。
     fn has_entries(&self) -> bool {
         self.snapshot
