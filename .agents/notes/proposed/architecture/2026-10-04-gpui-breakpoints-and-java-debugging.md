@@ -633,3 +633,35 @@ java-debug 依赖 `projectName`（来自 JDT LS 的工程）把 `source.path` �
 **下一步（一轮内可完成）**：读 `debug/engine.rs` L1175-1215 确认 flush 的循环源；
 若只 flush exception filters，就在 Core 里补上对 `self.breakpoints` 的 flush
 （并在 `debug.rs` 里补"会话就绪后重发一次断点"作为宿主的双保险），然后重跑。
+
+### 第 21 轮：读代码确认 Core 的 flush 覆盖普通断点（第五个假设也证否，2026-10-04）
+
+`rust/lithe-core/src/debug/engine.rs:1189-1209` 的 `initialized` 处理：
+
+```rust
+"initialized" => {
+    self.did_receive_initialized = true;
+    self.emit(DebugEventBody::Initialized);
+    self.send_exception_breakpoints()?;
+    if self.capabilities.supports_function_breakpoints { self.send_function_breakpoints()?; }
+    if self.capabilities.supports_data_breakpoints { self.send_data_breakpoints()?; }
+    let sources: Vec<String> = self.breakpoints.keys().cloned().collect();
+    for source in sources { self.send_breakpoints(&source)?; }      // ← 普通断点确实在此 flush
+    if self.supports_configuration_done { self.send_request("configurationDone", ...)?; }
+}
+```
+
+⇒ 普通断点在 `initialized` 后被**逐个 flush**，顺序也正确（在 `configurationDone` 之前）。
+**"flush 不覆盖普通断点"这个假设证否。** 至此 Core 侧三个环节（存储、flush、顺序）都验证正确。
+
+**因此剩下的问题只可能在"我们发的内容/我们没看的东西"里**，而后者是明确的：
+`DebugSessionSnapshot::apply_one` **完全不处理 `breakpoint` 事件**（adapter 会回
+`event=breakpoint`，带 `breakpoint.verified` 与 `breakpoint.source.path`）—— 所以：
+- 我们**从未看过**断点是否 `verified`；
+- 也从未看过 `setBreakpoints` 的**响应错误**（若我们的请求体形状不对，adapter 会报错而不是沉默）。
+
+**下一步（唯一，且必须先做诊断再改代码）**：给 `breakpoint` 事件加一条诊断打印
+（`verified` + adapter 回的 `source.path` + `reason`），必要时再加一条"原始帧 dump"环境变量
+（`LITHE_DEBUG_DUMP_FRAMES=1` 时把 `poll_bounded` 拿到的每帧 JSON 打出来）。
+一看就能定性：是路径未被 adapter 接受、请求体形状不对、还是 adapter 压根没收到。
+在此之前不要盲改路径或 payload —— 前五个假设已证明盲改无效。
