@@ -1024,6 +1024,7 @@ impl ShellWorkspace {
             _quit_subscription: None,
         };
         println!("S1_WORKSPACE root={}", root.display());
+        workspace.record_opened_project(&root, None, cx);
         workspace.search_index.schedule_warm(cx);
         diagnose_right_panel(workspace.right_view, workspace.right_visible, None);
         let (startup_right_view, startup_extensions, startup_left_view) = startup_views(cx);

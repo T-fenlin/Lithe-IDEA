@@ -4,7 +4,9 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, StyledExt as _, WindowExt as _};
+use gpui_kit::component::{
+    ActiveTheme as _, Sizable as _, StyledExt as _, TitleBar, WindowExt as _,
+};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, ImageSource,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Resource, SharedString,
@@ -18,6 +20,8 @@ use lithe_gpui_shared::{HOST_VERSION, tr, tr_args};
 use crate::project_menu::{ProjectBadge, badge_view};
 
 pub const WELCOME_TAG: &str = "S1_WELCOME";
+
+pub const WELCOME_TITLE_BAR_HEIGHT_SPEC: f32 = 40.;
 
 const SIDEBAR_WIDTH_SPEC: f32 = 224.;
 const SEPARATOR_THICKNESS_SPEC: f32 = 1.;
@@ -566,20 +570,39 @@ impl Render for WelcomeView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let me = cx.entity().downgrade();
         let border = cx.theme().border;
-        h_flex()
+        v_flex()
             .w_full()
             .h_full()
             .bg(cx.theme().background)
-            .child(self.sidebar(cx))
+            .child(welcome_title_bar(cx))
             .child(
-                div()
-                    .w(rems(SEPARATOR_THICKNESS_SPEC / 16.))
-                    .h_full()
-                    .flex_shrink_0()
-                    .bg(border),
+                h_flex()
+                    .w_full()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.sidebar(cx))
+                    .child(
+                        div()
+                            .w(rems(SEPARATOR_THICKNESS_SPEC / 16.))
+                            .h_full()
+                            .flex_shrink_0()
+                            .bg(border),
+                    )
+                    .child(self.projects_content(&me, _window, cx)),
             )
-            .child(self.projects_content(&me, _window, cx))
     }
+}
+
+fn welcome_title_bar(cx: &App) -> impl IntoElement {
+    div()
+        .id("lithe-welcome-title-bar")
+        .test_support()
+        .w_full()
+        .child(
+            TitleBar::new()
+                .h(rems(WELCOME_TITLE_BAR_HEIGHT_SPEC / 16.))
+                .bg(cx.theme().title_bar),
+        )
 }
 
 #[cfg(test)]

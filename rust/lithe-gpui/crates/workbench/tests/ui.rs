@@ -253,3 +253,53 @@ fn welcome_view_lists_recent_projects_and_a_row_click_calls_the_opener(cx: &mut 
         assert_eq!(view.empty_state(), None);
     });
 }
+
+#[gpui_kit::test]
+fn welcome_window_renders_the_title_bar_above_its_content(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme;
+    use lithe_gpui_settings::RecentProjects;
+    use lithe_gpui_shared::rem_px;
+    use lithe_gpui_workbench::welcome::{
+        WELCOME_TITLE_BAR_HEIGHT_SPEC, WelcomeView, welcome_row_element_id,
+    };
+
+    cx.update(gpui_kit::init);
+
+    let mut projects = RecentProjects::new();
+    projects.record_open(r"D:\proj\alpha", 1_000, None);
+
+    let (handle, _welcome) =
+        common::open_window(cx, Some(size(px(800.), px(650.))), |window, cx| {
+            cx.new(|cx| WelcomeView::new(projects, None, window, cx))
+        });
+
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+
+        let bar = window.try_find("lithe-welcome-title-bar").expect(
+            "欢迎窗口必须自己画一条标题栏 —— gpui 的窗口在 Windows 上没有原生标题栏，\
+             少了这一条就没有窗口键（min/max/close）也没有标题栏拖拽区，用户只能靠 Alt+F4 或任务栏代替",
+        );
+        assert_eq!(
+            bar.bounds().size.height,
+            rem_px(Theme::global(cx).font_size, WELCOME_TITLE_BAR_HEIGHT_SPEC),
+            "标题栏必须占住规格高度 {WELCOME_TITLE_BAR_HEIGHT_SPEC}pt（工作区窗口的标题栏同高）"
+        );
+        assert_eq!(
+            bar.bounds().top(),
+            px(0.),
+            "标题栏必须贴在窗口最顶上（实测 top={:?}）：它是窗口壳，不是内容列里的一条工具栏",
+            bar.bounds().top()
+        );
+
+        let row = window.find(welcome_row_element_id(r"D:\proj\alpha"));
+        assert!(
+            row.bounds().top() >= bar.bounds().bottom(),
+            "最近项目列表必须落在标题栏下面（行 top={:?} < 标题栏 bottom={:?}）：\
+             说明标题栏真的占了布局高度，而不是浮在内容上",
+            row.bounds().top(),
+            bar.bounds().bottom()
+        );
+    })
+    .unwrap();
+}
