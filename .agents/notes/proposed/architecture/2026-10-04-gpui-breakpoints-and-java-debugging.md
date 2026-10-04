@@ -114,6 +114,22 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
   拿到这两个输入后，入口就是三步：`start_java_session(...)` → `DebugSessionHandle::start(transport, 20ms)`
   → `DebugPane::attach_session(handle)`，再把 `start_session` 的 `None` 分支接到这三步上。
 
+**输入 ① 的追查结果（2026-10-04 第二轮实测）**：
+
+- Java 的 LSP 会话是 **`crates/java` 自己起的**：`crates/java/src/session.rs:109` 发 `lsp.startServer`，
+  从响应里取 `sessionId`（`:116-120`，取不到就报"lsp.startServer 的响应缺少 sessionId"），
+  之后所有请求（含 `lsp.request`，`:247`）都带 `self.id`（`:211`）。**也就是说调试端口该由 java crate 去要**，
+  它本来就知道该用哪个会话。
+- 对外入口是 **`lithe_gpui_java::JavaLanguageService`**（`service.rs:93` `new(workspace_root)` 起实例；
+  编辑器侧的补全/悬浮/跳转/诊断都在用它）。但它**没有暴露 LSP 会话 id**（`service.rs` 的 pub 方法里没有
+  `session_id()` 之类），所以接线第一步要么加一个 `JavaLanguageService::lsp_session_id()` 访问器，
+  要么更干净 —— 直接在 java crate 上加 `start_debug_session()`：由它 `lsp.request` + `executeCommand`
+  发 `vscode.java.startDebugSession` 拿端口，宿主再 `start_tcp_session`。**两种做法都要先确认谁持有
+  `JavaLanguageService` 实例**（app/workbench 谁创建、是否全局共享），这一步下一轮用一次全仓检索确认。
+- 结论：目标里"补 Core 的 JDT 命令 `vscode.java.startDebugSession`"在 Core 侧**不需要改动**
+  （`lsp.request` 的 `ExecuteCommand` 已支持调用方载荷，宿主侧 `java_start_debug_session_payload` 已就位）；
+  真正待补的是**宿主 java crate 的取端口入口**与它的持有者。
+
 至此目标点名的 6 条 `debug.*`（`createSession` / `launch` / `receive` / `execute` / `disconnect` /
 `destroySession`）**全部有调用路径**，宿主离线用例共 35 条（transport 25 + 会话层 10）。
 
