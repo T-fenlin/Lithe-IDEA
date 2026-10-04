@@ -363,3 +363,25 @@ S1_RUN_PLAN result=failed error=Current File requires a Java source path
    探针自然会挑到它；③ 让探针优先挑非 current-file 配置。
 
 跑通这一条后，`S1_DEBUG start/launch/session_state/inspect_requested` 就是 DAP 真机链路的判据。
+
+### 第 7/8 次实跑：文件能打开并激活，但探针不喂"当前文件"（2026-10-04 收口）
+
+```
+S1_JAVA_SESSION started sessionId=lsp-session-1 processId=2704     ← JDT LS 正常
+S1_SESSION_PROBE opened=1 active=Some(0)                           ← --session-probe <file> + --session-active 0 生效
+S1_RUN_PROBE launching=first-configuration debug=true
+S1_RUN_PLAN result=failed error=Current File requires a Java source path   ← 仍失败
+```
+
+⇒ 剩下的**不是环境问题，是一处代码缺口**：探针（`--run-probe-debug` → `ShellWorkspace`）发起
+`runConfig.createLaunchPlan` 时没有把"当前文件"作为 `currentFile` 传进去（配置 id 又是 `current-file` 作用域），
+所以 Core 报 `Current File requires a Java source path`。两条修法：
+
+① **让探针/工作台把活动文件的 workspace 相对路径当 `currentFile` 传**（最小改动，且对真实用户路径也正确 ——
+   用户点"运行/调试"时本来就该用当前打开的文件）；
+② 让 Core 的 `runConfig` 生成器为 Maven 工程产出 **main-class 配置**（探针自然会挑到它）。
+
+做完任一条，第 7/8 次实跑的日志就会继续往后走：`S1_RUN_PLAN result=ok` → `S1_DEBUG start status=ok`
+→ `launch status=sent jdwp=…` → `session_state=…` → `inspect_requested kind=threads|stackTrace|scopes`，
+那就是目标最后一项的真机证据。当前环境配方（载荷 + PATH + `LITHE_JDTLS_JAVA` + `LITHE_GPUI_CACHE_DIR`
++ `MAVEN_OPTS` + `--session-probe`/`--session-active`）已经完整，不再有环境未知数。
