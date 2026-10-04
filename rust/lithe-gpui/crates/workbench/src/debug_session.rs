@@ -299,6 +299,48 @@ pub fn frame_labels(snapshot: &DebugSessionSnapshot) -> Vec<String> {
         .collect()
 }
 
+pub fn scope_labels(snapshot: &DebugSessionSnapshot) -> Vec<(String, i64)> {
+    result_array(snapshot, "scopes", "scopes")
+        .iter()
+        .filter_map(|scope| {
+            let reference = scope.get("variablesReference").and_then(Value::as_i64)?;
+            if reference <= 0 {
+                return None;
+            }
+            let name = scope
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            Some((name.to_string(), reference))
+        })
+        .collect()
+}
+
+pub fn variable_labels(snapshot: &DebugSessionSnapshot) -> Vec<String> {
+    result_array(snapshot, "variables", "variables")
+        .iter()
+        .map(|variable| {
+            let name = variable
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let value = variable
+                .get("value")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let reference = variable
+                .get("variablesReference")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            match (value.is_empty(), reference > 0) {
+                (false, true) => format!("{name} = {value} ›"),
+                (false, false) => format!("{name} = {value}"),
+                (true, _) => name.to_string(),
+            }
+        })
+        .collect()
+}
+
 pub struct DebugSessionHandle {
     session_id: String,
     driver: crate::debug_transport::DebugSessionDriver,
@@ -406,6 +448,21 @@ impl DebugSessionHandle {
         let result = self.driver.execute(command, thread_id, timeout);
         self.drain();
         result
+    }
+
+    pub fn request_variables(
+        &mut self,
+        variables_reference: i64,
+        frame_id: Option<i64>,
+        timeout: std::time::Duration,
+    ) -> Result<(), String> {
+        self.request_inspect(
+            "variables",
+            None,
+            frame_id,
+            Some(variables_reference),
+            timeout,
+        )
     }
 
     pub fn request_command(
@@ -854,6 +911,40 @@ mod tests {
         );
 
         assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
+    }
+
+    #[test]
+    fn scope_and_variable_labels_feed_the_tree() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        assert!(scope_labels(&snapshot).is_empty());
+        assert!(variable_labels(&snapshot).is_empty());
+
+        snapshot.results.insert(
+            "scopes".to_string(),
+            json!({ "kind": "scopes", "scopes": [
+                { "name": "Locals", "variablesReference": 9 },
+                { "name": "Statics", "variablesReference": 0 }
+            ] }),
+        );
+        assert_eq!(
+            scope_labels(&snapshot),
+            vec![("Locals".to_string(), 9)],
+            "variablesReference 为 0 的作用域没有子项，不该进树"
+        );
+
+        snapshot.results.insert(
+            "variables".to_string(),
+            json!({ "kind": "variables", "variables": [
+                { "name": "count", "value": "3", "variablesReference": 0 },
+                { "name": "user", "value": "User@1", "variablesReference": 12 },
+                { "name": "hidden" }
+            ] }),
+        );
+        assert_eq!(
+            variable_labels(&snapshot),
+            vec!["count = 3", "user = User@1 ›", "hidden"],
+            "可展开的变量要带 › 提示，缺值只显示名字"
+        );
     }
 
     #[test]
