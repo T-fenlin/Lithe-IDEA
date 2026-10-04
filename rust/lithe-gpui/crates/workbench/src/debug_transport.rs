@@ -1,6 +1,8 @@
 use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
@@ -424,6 +426,100 @@ impl Drop for TcpDebugAdapter {
     }
 }
 
+pub enum DebugDriverEvent {
+    Events(Vec<Value>),
+    Exited { reason: String },
+}
+
+pub struct DebugSessionDriver {
+    stop: Arc<AtomicBool>,
+    running: Arc<AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+    events: Receiver<DebugDriverEvent>,
+}
+
+impl DebugSessionDriver {
+    pub fn spawn(mut transport: DebugTransport, poll_interval: Duration) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let running = Arc::new(AtomicBool::new(true));
+        let (sender, events) = channel();
+        let stop_flag = stop.clone();
+        let running_flag = running.clone();
+        println!(
+            "{DEBUG_TRANSPORT_TAG} driver_started session={} poll_ms={}",
+            transport.session_id(),
+            poll_interval.as_millis()
+        );
+        let handle = std::thread::spawn(move || {
+            let mut reason = String::from("terminated");
+            while !stop_flag.load(Ordering::Relaxed) && !transport.is_terminated() {
+                match transport.poll_bounded(poll_interval) {
+                    Ok(new_events) => {
+                        if !new_events.is_empty()
+                            && sender.send(DebugDriverEvent::Events(new_events)).is_err()
+                        {
+                            reason = String::from("consumer_closed");
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        reason = error;
+                        break;
+                    }
+                }
+            }
+            if stop_flag.load(Ordering::Relaxed) {
+                reason = String::from("stopped");
+            }
+            if !transport.is_terminated() {
+                let _ = transport.disconnect();
+            }
+            let _ = transport.destroy();
+            running_flag.store(false, Ordering::Relaxed);
+            println!("{DEBUG_TRANSPORT_TAG} driver_exited reason={reason}");
+            let _ = sender.send(DebugDriverEvent::Exited { reason });
+        });
+        Self {
+            stop,
+            running,
+            handle: Some(handle),
+            events,
+        }
+    }
+
+    #[must_use]
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::Relaxed)
+    }
+
+    pub fn try_recv(&self) -> Option<DebugDriverEvent> {
+        self.events.try_recv().ok()
+    }
+
+    pub fn recv_bounded(&self, timeout: Duration) -> Option<DebugDriverEvent> {
+        self.events.recv_timeout(timeout).ok()
+    }
+
+    pub fn stop(&mut self, timeout: Duration) -> bool {
+        self.stop.store(true, Ordering::Relaxed);
+        let deadline = Instant::now() + timeout;
+        while self.running.load(Ordering::Relaxed) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if self.running.load(Ordering::Relaxed) {
+            eprintln!(
+                "{DEBUG_TRANSPORT_TAG} driver_stop_timeout timeout_ms={}",
+                timeout.as_millis()
+            );
+            return false;
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+        true
+    }
+}
+
 pub struct DebugTransport {
     session_id: String,
     adapter: Box<dyn DebugAdapterPort>,
@@ -516,8 +612,6 @@ impl DebugTransport {
         self.deliver(&update)
     }
 
-    /// Reads one bounded round of adapter output: waits up to `timeout` for the
-    /// first chunk, then drains whatever has already arrived.
     pub fn poll_bounded(&mut self, timeout: Duration) -> Result<Vec<Value>, String> {
         if self.terminated {
             if self.adapter.try_recv().is_some() {
@@ -1137,6 +1231,160 @@ mod tests {
             transport.dropped_after_termination(),
             1,
             "丢掉的输入必须计数，便于诊断"
+        );
+    }
+
+    #[derive(Default)]
+    struct RespondingAdapter {
+        incoming: Vec<Vec<u8>>,
+        frames: Vec<Vec<u8>>,
+        killed: bool,
+    }
+
+    impl RespondingAdapter {
+        fn respond_to(&mut self, frame: &[u8]) {
+            let text = String::from_utf8_lossy(frame).to_string();
+            let Some(body_start) = text.find("\r\n\r\n").map(|index| index + 4) else {
+                return;
+            };
+            let Ok(message) = serde_json::from_str::<Value>(&text[body_start..]) else {
+                return;
+            };
+            let command = message
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let seq = message.get("seq").and_then(Value::as_i64).unwrap_or(1);
+            match command.as_str() {
+                "initialize" => {
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 100,
+                        "type": "response",
+                        "request_seq": seq,
+                        "success": true,
+                        "command": "initialize",
+                        "body": { "supportsConfigurationDoneRequest": true }
+                    })));
+                    self.incoming.push(dap_frame(
+                        json!({ "seq": 101, "type": "event", "event": "initialized" }),
+                    ));
+                }
+                "continue" | "next" | "stepIn" | "stepOut" | "launch" | "configurationDone" => {
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 102,
+                        "type": "response",
+                        "request_seq": seq,
+                        "success": true,
+                        "command": command
+                    })));
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 103,
+                        "type": "event",
+                        "event": "stopped",
+                        "body": { "reason": "step", "threadId": 1 }
+                    })));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    impl DebugAdapterPort for RespondingAdapter {
+        fn write_frame(&mut self, frame: &[u8]) -> Result<(), String> {
+            self.frames.push(frame.to_vec());
+            self.respond_to(frame);
+            Ok(())
+        }
+
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            if self.incoming.is_empty() {
+                None
+            } else {
+                Some(self.incoming.remove(0))
+            }
+        }
+
+        fn kill(&mut self) {
+            self.killed = true;
+        }
+    }
+
+    struct SharedResponder(Arc<std::sync::Mutex<RespondingAdapter>>);
+
+    impl SharedResponder {
+        fn locked(&self) -> std::sync::MutexGuard<'_, RespondingAdapter> {
+            self.0
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+        }
+    }
+
+    impl DebugAdapterPort for SharedResponder {
+        fn write_frame(&mut self, frame: &[u8]) -> Result<(), String> {
+            self.locked().write_frame(frame)
+        }
+
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            self.locked().try_recv()
+        }
+
+        fn kill(&mut self) {
+            self.locked().kill();
+        }
+    }
+
+    fn events_mention(events: &[Value], needle: &str) -> bool {
+        serde_json::to_string(events)
+            .map(|text| text.contains(needle))
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn driver_runs_a_scripted_session_and_stops_within_the_deadline() {
+        let adapter = Arc::new(std::sync::Mutex::new(RespondingAdapter::default()));
+        let handle = adapter.clone();
+        let transport = DebugTransport::start(
+            "session-driver",
+            "java",
+            r"D:\proj",
+            false,
+            Box::new(SharedResponder(adapter)),
+        )
+        .expect("起会话");
+
+        let mut driver = DebugSessionDriver::spawn(transport, Duration::from_millis(20));
+        assert!(driver.is_running());
+
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut saw_stopped = false;
+        while Instant::now() < deadline && !saw_stopped {
+            match driver.recv_bounded(Duration::from_millis(200)) {
+                Some(DebugDriverEvent::Events(events)) => {
+                    saw_stopped = events_mention(&events, "stopped");
+                }
+                Some(DebugDriverEvent::Exited { reason }) => {
+                    panic!("会话提前退出：{reason}");
+                }
+                None => {}
+            }
+        }
+        assert!(
+            saw_stopped,
+            "脚本化 adapter 应答 initialized 之后应当送达 stopped 事件"
+        );
+
+        assert!(
+            driver.stop(Duration::from_secs(10)),
+            "stop 必须在有界时间内把读循环停住"
+        );
+        assert!(!driver.is_running());
+        assert!(
+            handle
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .killed,
+            "驱动器收尾必须杀掉 adapter"
         );
     }
 }
