@@ -59,6 +59,38 @@ impl SpringEndpointView {
     }
 }
 
+/// 按查询串筛选端点：真源 `SpringEndpointsView.swift:69-76` 的判据**逐条照搬**。
+///
+/// 真源是：`query` 去掉首尾空白后，若为空则返回全部；否则保留**任一**字段
+/// （`route` / `controller` / `method` / 方法集以空格连接）**大小写不敏感包含**查询串的端点。
+///
+/// 抽成纯函数是为了能被确定性单测钉住（视图与输入框在本仓库没有确定性单测，
+/// 与 `replace_in_files.rs` 的 `preview_enabled` 同一取法）。返回借用切片，不复制端点。
+pub fn filter_endpoints<'a>(
+    endpoints: &'a [SpringEndpointView],
+    query: &str,
+) -> Vec<&'a SpringEndpointView> {
+    let query = query.trim();
+    if query.is_empty() {
+        return endpoints.iter().collect();
+    }
+    let needle = query.to_lowercase();
+    endpoints
+        .iter()
+        .filter(|endpoint| {
+            let methods = endpoint.http_methods.join(" ");
+            [
+                &endpoint.route,
+                &endpoint.controller,
+                &endpoint.method,
+                &methods,
+            ]
+            .iter()
+            .any(|field| field.to_lowercase().contains(&needle))
+        })
+        .collect()
+}
+
 /// 一次索引的结论。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpringIndexView {
@@ -280,6 +312,37 @@ mod tests {
         // 没有 httpMethods 时不 panic，方法列退化成空串（路由照旧单独成列）。
         assert_eq!(view.endpoints[0].methods_label(), "");
         assert_eq!(view.endpoints[0].id, "/ok", "缺 id 时用 route 兜底");
+    }
+
+    /// 筛选判据逐条照真源（`SpringEndpointsView.swift:69-76`）：四个字段任一命中、
+    /// 大小写不敏感、查询串先 trim、空查询返回全部。
+    #[test]
+    fn filtering_matches_route_controller_method_or_methods() {
+        let view = parse(&json!({
+            "endpoints": [
+                { "route": "/api/users", "controller": "UserController", "method": "list", "httpMethods": ["GET"] },
+                { "route": "/api/orders", "controller": "OrderController", "method": "create", "httpMethods": ["POST"] },
+            ]
+        }))
+        .expect("视图");
+        let endpoints = &view.endpoints;
+
+        // 空查询（含只有空白的）返回全部。
+        assert_eq!(filter_endpoints(endpoints, "").len(), 2);
+        assert_eq!(filter_endpoints(endpoints, "   ").len(), 2);
+        // 路由命中。
+        assert_eq!(
+            filter_endpoints(endpoints, "orders")[0].route,
+            "/api/orders"
+        );
+        // 控制器命中，且大小写不敏感。
+        assert_eq!(filter_endpoints(endpoints, "usercontroller").len(), 1);
+        // 方法名命中。
+        assert_eq!(filter_endpoints(endpoints, "CREATE").len(), 1);
+        // HTTP 方法集命中。
+        assert_eq!(filter_endpoints(endpoints, "post").len(), 1);
+        // 查不到就是空 —— 视图按真源画「没有端点」那一档。
+        assert!(filter_endpoints(endpoints, "nonexistent").is_empty());
     }
 
     /// 级联临时目录：断言失败也会在 `Drop` 里删掉，不留工作区残骸。

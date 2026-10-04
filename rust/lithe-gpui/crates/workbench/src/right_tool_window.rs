@@ -416,7 +416,9 @@ pub fn right_tool_window(
             (RightToolWindowView::Maven, Some(project), _) => maven_content(project, cx),
             // Spring 同理：Core 的 `spring.index` 给到事实才画，否则空态（`is_empty` 也算没有事实）。
             (RightToolWindowView::Spring, _, Some(index)) if !index.is_empty() => {
-                spring_content(index, cx)
+                // 查询串先传空：筛选行还没做（见 `spring_content` 的文档）。
+                // 空查询按真源判据返回全部，所以行为与"没有筛选框"一致。
+                spring_content(index, "", cx)
             }
             // 通知中心：面板自己管搜索 / 筛选 / 展开，所以这里只转交实体。
             (RightToolWindowView::Notifications, _, _) => notifications.clone().into_any_element(),
@@ -435,14 +437,18 @@ pub fn right_tool_window(
 ///
 /// 真源那套（配置属性补全、注入链、`@Value` 引用跳转）要各自的 UI，本侧**不画假控件**；
 /// 逐条渲染属于后续批次（`spring.rs` 的模块文档里登记了）。
-fn spring_content(index: &crate::spring::SpringIndexView, cx: &App) -> AnyElement {
-    // 索引到了项目、但**一个端点都没有**：真源这一档是居中的一句弱化文字
+fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App) -> AnyElement {
+    // 真源在渲染前先过一遍筛选（`SpringEndpointsView.swift:69-76`），判据落在
+    // `crate::spring::filter_endpoints`（纯函数、有单测）。
+    let visible = crate::spring::filter_endpoints(&index.endpoints, query);
+    // 索引到了项目、但**一个端点都没有**（或筛选后一条不剩 —— 真源这两种情况用**同一句**文案）：
+    // 真源这一档是居中的一句弱化文字
     // （`SpringEndpointsView.swift:27-31`：`Text("No Spring MVC endpoints found")` +
     // `LitheTheme.uiFont` + `secondaryText` + `frame(maxWidth/maxHeight: .infinity)`），
     // **不是** `LitheUnavailableView` 那套「图标 + 粗标题」，所以这里照它画裸文字，
     // 不套 `empty_state::unavailable`（套了就给真源没有的图标与字重）。
     // 它也与 `spring.notDetected`（根本没有可索引的事实）是两回事。
-    if index.endpoints.is_empty() {
+    if visible.is_empty() {
         return v_flex()
             .w_full()
             .flex_1()
@@ -472,7 +478,7 @@ fn spring_content(index: &crate::spring::SpringIndexView, cx: &App) -> AnyElemen
         .gap(rems(1. / 16.))
         .p(rems(6. / 16.));
 
-    for endpoint in &index.endpoints {
+    for endpoint in &visible {
         // 真源行（`SpringEndpointsView.swift:37-56`）：`HStack(spacing: 9)`、方法列定宽 58 且左侧对齐、
         // 行内衬左右 10、最小高 30；方法色按**第一个** HTTP 方法取
         // （`:78-85`：GET success / POST accent / DELETE error / 其余 warning）。
