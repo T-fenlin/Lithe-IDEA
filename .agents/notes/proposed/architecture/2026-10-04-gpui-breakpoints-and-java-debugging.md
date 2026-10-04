@@ -104,6 +104,26 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
 4. **`poll_bounded` 这类循环要有"第一块等多久 / 之后还等不等"的明确语义**，否则要么空转要么每次
    白白等满超时；终止之后的输入要**丢弃并计数**（`dropped_after_termination`）而不是继续喂给已结束的会话。
 
+### 已知的下一个缺口：UI 动作到 transport 没有通路（2026-10-04 盘点）
+
+`DebugSessionDriver::spawn` 把 `DebugTransport` **move 进驱动线程**，线程只做 `poll_bounded` → 事件出队。
+于是 `DebugSessionHandle` 能读状态（`snapshot()` / `is_running()` / `last_exit()`）却不能发指令 ——
+工具栏的**继续 / 单步 / 暂停 / 断开现在没有可调的路径**。这不是环境问题，是接口缺口，接线前必须先补。
+
+打算这么做（下一轮实现）：
+
+1. 驱动器新增**命令通道**：`spawn` 时建一对 `mpsc`，线程每轮除 `poll_bounded` 外再 `try_recv` 命令；
+   命令形如 `Execute { command, thread_id, timeout, reply }` / `Stop { reply }`。
+2. 宿主侧 API：`DebugSessionHandle::{continue_program, step_over, step_in, step_out, pause, stop}`，
+   内部发命令并在**有界时间**内等 `reply`（超时返回错误，不阻塞 UI 线程）。
+3. 语义要点：现在 `DebugTransport::execute_and_wait` 会把**不匹配的事件吞掉**（只返回匹配的那一条），
+   而 UI 需要看到全部事件 ⇒ 驱动线程里要改成"**全量转发事件** + 单独记录待决操作"：
+   发完请求后把 `operationId` 记成 pending，收到 `stopped`/`continued`/`terminated`/`operationFailed`
+   时给 reply 回成功，到 deadline 则 `cancel_operation` 并回失败。
+   这需要把 `DebugTransport` 里生成 `operationId` 的那步暴露出来（现在 `take_operation_id` 是私有的）。
+4. 验收：用 `RespondingAdapter` 跑离线用例 —— `handle.step_over()` 之后必须收到一次响应回执、
+   并且 UI 侧仍能看到中途的全部事件；静默 adapter 时该调用必须**有界超时**且触发 `cancel_operation`。
+
 ## 考虑过的备选方案
 
 - **直接依赖 Zed 的 `dap` crate**：不行 —— GPL-3.0-or-later，与 Apache-2.0 分发不兼容。
