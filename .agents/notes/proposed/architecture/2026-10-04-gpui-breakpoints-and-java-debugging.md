@@ -750,3 +750,19 @@ seq13 operationCompleted …-stackTrace result={"kind":"stackTrace","stackFrames
 
 ⇒ 真机端到端已覆盖：**启动 → 断点命中（verified:true）→ paused → 线程与调用栈拉取**。
 剩下的只有 `scopes/variables`（链条已在推进，seq14 仍在继续）与 `单步`（从未发 `next`）。
+
+### 第 26 轮：自动链条停在 stackTrace，scopes/variables 需要一次"展开"（2026-10-04）
+
+复查第 23 次日志的**全部**行（不是只有前 22 条）：`inspect_requested` 只有 `threads` 与 `stackTrace` 两种，
+**没有 `scopes`/`variables`**。
+
+这与设计一致：停止后自动拉的是"线程 + 调用栈"（面板上直接可见），而 `scopes`/`variables`
+属于**按需展开**（用户在变量树里点开某一帧/某个作用域时才请求）—— 无头探针不会去点。
+
+⇒ 真机"变量"证据需要**一次程序化展开**，两条路：
+① 探针输入（例如 `LITHE_DEBUG_EXPAND_FIRST_FRAME=1`）在 `drain_session` 看到 paused 且
+   `snapshot.results` 已有 stackTrace 时，对第一帧调 `expand_variables`/`request_variables`；
+② 或产品侧决定"停止时自动展开顶层帧"（不少 IDE 这么做；属于产品取舍，需先确认设计意图）。
+无论哪条，`LITHE_DEBUG_DUMP_FRAMES=1` 都能直接看到 `scopes`/`variables` 的 operationCompleted 帧。
+
+**单步（step）**同样只差一次触发：探针里发一次 `DebugControl::StepOver`（面板工具栏那条路径）即可。
