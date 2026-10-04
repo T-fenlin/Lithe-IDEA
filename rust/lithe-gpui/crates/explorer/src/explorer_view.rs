@@ -341,7 +341,8 @@ impl Explorer {
                     // 折叠会让被折叠子树的行**不再可见**：选择集与可见集求交，锚点/焦点不可见就清掉
                     // （真源 `ProjectTreeSelection.retain`，`:51-56`）—— 否则"选中的东西看不见了，
                     // 批量操作却还作用在它身上"。
-                    let visible = this.visible_paths();
+                    // `&**cx`：读实体要 `&App`，而这里是 `&mut Context<Self>`（同 `:350` 的取法）。
+                    let visible = this.visible_paths(&**cx);
                     this.selection.retain(&visible);
                     cx.notify();
                 }
@@ -568,12 +569,23 @@ impl Explorer {
     /// **显示顺序**的可见路径表（真源 `ProjectTreeSelection.visibleNodes`，`:72-77`）。
     ///
     /// 区间选择按这个顺序切片，**不是**路径字典序；含根行（真源同样把根节点算作可见）。
-    fn visible_paths(&self) -> Vec<String> {
-        self.built_tree()
-            .items
-            .iter()
-            .map(|item| RowKind::parse(item.id.as_ref()).1)
-            .collect()
+    ///
+    /// ⚠️ 取自 `TreeState` **自己的**扁平可见表：用 `entry(ix)` 从 0 向后逐项取到 `None`
+    /// （`gpui-base-0.7.0/src/tree.rs:259`，那份表由 `rebuild_entries` 摊平，`:321-331`）。
+    /// 它**就是**渲染那份顺序，所以不会出现"我算一份、树铺另一份"的偏差。
+    ///
+    /// 改前这里走 `built_tree().items`，而那是**嵌套**结构（`items = vec![根 TreeItem]`，
+    /// 见 `model.rs:228-232`）⇒ 那份"可见顺序"里只有根一项，Shift 区间实际上是**失效**的。
+    fn visible_paths(&self, cx: &App) -> Vec<String> {
+        let state = self.tree.read(cx);
+        let mut paths = Vec::new();
+        let mut ix = 0;
+        while let Some(entry) = state.entry(ix) {
+            let (_, relative_path) = RowKind::parse(entry.item().id.as_ref());
+            paths.push(relative_path);
+            ix += 1;
+        }
+        paths
     }
 
     /// 按当前的 `snapshot` / `expanded` / `query` 重建树。
@@ -938,9 +950,9 @@ impl Explorer {
                         let toggling = event.modifiers().secondary();
                         let is_file_row = row_path.is_some();
                         let _ = row_explorer.update(cx, |this, cx| {
-                            // 可见顺序在实体上现算：与真正铺进树里的行**同源**（见 `built_tree`），
-                            // 区间选择按它切片 —— 真源 `visibleNodes`（`:72-77`）的同一条口径。
-                            let visible = this.visible_paths();
+                            // 可见顺序取 `TreeState` 自己那份扁平表（见 `visible_paths`）——
+                            // 与真正铺进树里的行**同源**，区间选择按它切片。
+                            let visible = this.visible_paths(&**cx);
                             this.selection.select(
                                 row_relative_path.as_str(),
                                 &visible,
