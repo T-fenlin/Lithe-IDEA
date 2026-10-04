@@ -553,3 +553,25 @@ S1_DEBUG setBreakpoints session=java-debug path=src/main/java/demo/App.java stat
 - 第 15 次：`start status=failed error=… start_debug_session_timeout … operation=java-debug-port timeout_ms=10000`
   —— **取端口 10s 超时**：这次 JDT LS 还没导入完就来要端口了（前几次同一命令是成功的），属时序抖动，
   与断点改动无关。应对：把取端口超时从 10s 提到 30s（或等 `S1_JAVA_SESSION` 后再触发调试启动）。
+
+### 第 16 次实跑：断点确在 attach 前发出（count=1），但仍未命中（2026-10-04）
+
+```
+S1_DEBUG setBreakpoints seeded=1
+S1_DEBUG setBreakpoints_before_attach session=java-debug count=1
+S1_DEBUG launch status=sent session=java-debug jdwp=44172
+S1_DEBUG attach_session=java-debug / start status=ok
+```
+
+即：播种 ✓、attach 前下发 ✓（这正是 DAP 的正确顺序），但**依然没有 `stopped`**。
+剩下最可能的两个原因：
+1. **断点未被 adapter 验证**（`verified=false`）—— java-debug 用 `source.path` 映射到 classpath，
+   而我们发的是 **workspace 相对路径**（`src/main/java/demo/App.java`）；若要绝对路径/URI 才能映射，
+   断点就永远不会命中；
+2. 引擎在 `initialized` 之前收到的断点被忽略（`engine.rs` 的 `did_receive_initialized` 闸门）——
+   我们确实在 attach 之前发，需确认「未 initialized 时是暂存还是丢弃」。
+
+**下一步诊断（最小）**：在 `DebugSessionSnapshot::apply_one` 里给 `breakpoint` 事件加一条诊断打印
+（含 `verified` 与 adapter 返回的 `source`），一眼就能区分上面两种；若是路径问题，把 `set_breakpoints_payload`
+里的 `sourcePath` 换成绝对路径（或按 java-debug 期望的形态）即可。
+注：本轮把 `start_debug_session` 的取端口超时从 10s 提到 **30s**（第 15 次那种时序抖动不再触发）。

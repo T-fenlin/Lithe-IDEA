@@ -1279,7 +1279,7 @@ impl ShellWorkspace {
             &operation_id,
             &lsp_session,
             &root,
-            std::time::Duration::from_secs(10),
+            std::time::Duration::from_secs(30),
         ) {
             Ok(mut transport) => {
                 let seeded = self
