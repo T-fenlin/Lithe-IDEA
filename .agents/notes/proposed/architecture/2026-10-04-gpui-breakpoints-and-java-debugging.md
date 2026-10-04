@@ -466,3 +466,27 @@ Core 内部的做法见 `rust/lithe-core/src/lsp/interface/engine_real_jdt_tests
 剩下唯一的未知是 `lsp.waitEvents` 的**载荷字段名**与响应里事件数组的键名 —— 下一轮用一次检索确认即可
 （参考 `lsp.pollEvents` 的用法，或 Core dispatcher 里 `LspWaitEvents` 的分支）。
 改完这一步，第 11 次那份日志就会从 `start_debug_session_no_port` 变成 `start status=ok` + `launch status=sent jdwp=…`。
+
+### 第 12 次实跑：DAP 全链路真机跑通（2026-10-04，目标最后一项达成）
+
+修掉取端口语义后（`java_debug_session_port` 改成排队 + 有界等 `operationId` 匹配事件，
+新增纯函数 `port_from_event` 并配用例），第 12 次实跑日志：
+
+```
+S1_RUN_START ... jdwp=suspended address=127.0.0.1:43864              <- 真调试目标挂起等调试器
+S1_DEBUG_TRANSPORT start_debug_session session=lsp-session-1 operation=java-debug-port port=43865
+S1_DEBUG_TRANSPORT adapter_connected address=127.0.0.1:43865          <- 我们的 TCP transport 连上真 java-debug
+S1_DEBUG_TRANSPORT start session=java-debug adapter=java generation=1 <- debug.createSession
+S1_DEBUG launch status=sent session=java-debug jdwp=43864             <- attach 配置下发
+S1_DEBUG_TRANSPORT driver_started session=java-debug poll_ms=20       <- 驱动器读循环
+S1_DEBUG attach_session=java-debug / start status=ok                  <- 会话挂到面板
+S1_DEBUG_TRANSPORT driver_exited reason=terminated / adapter_killed transport=tcp  <- 收尾清理
+```
+
+真实组件全在环上：真 JDT LS（`lsp-session-1`）→ 真 java-debug adapter（43865）→ 我们的
+`TcpDebugAdapter`/`DebugTransport`/驱动器 → `debug.createSession` → 带真 JDWP 端口（43864）的 attach 配置
+→ 会话挂到 `DebugPane` → 收尾时 `disconnect`/`destroySession` 并杀 adapter。
+
+**未在本次窗口内捕获**：paused 之后的断点命中/单步/变量（本次会话很快 terminated，且探针跑完就被收尾）。
+要看到 `session_state=Some("paused")` 与 `inspect_requested kind=threads|stackTrace|scopes`，
+需要让会话保持存活并触发一次停止（例如给夹具加断点或让探针在 attach 后单步）。

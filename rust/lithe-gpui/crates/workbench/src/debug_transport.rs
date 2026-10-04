@@ -24,6 +24,7 @@ const DESTROY_SESSION_COMMAND: &str = "debug.destroySession";
 const STDERR_TAIL_BYTES: usize = 4096;
 
 const LSP_REQUEST_COMMAND: &str = "lsp.request";
+const LSP_WAIT_EVENTS_COMMAND: &str = "lsp.waitEvents";
 const EXECUTE_COMMAND_OPERATION: &str = "executeCommand";
 const JAVA_START_DEBUG_SESSION: &str = "vscode.java.startDebugSession";
 
@@ -66,14 +67,27 @@ fn valid_port(port: u64) -> Option<u16> {
     u16::try_from(port).ok().filter(|port| *port > 0)
 }
 
+pub fn port_from_event(event: &Value, operation_id: &str) -> Result<Option<u16>, String> {
+    if event.get("operationId").and_then(Value::as_str) != Some(operation_id) {
+        return Ok(None);
+    }
+    if let Some(error) = event.get("error").filter(|error| !error.is_null()) {
+        return Err(format!(
+            "{DEBUG_TRANSPORT_TAG} start_debug_session_error error={error}"
+        ));
+    }
+    let payload = event.get("result").unwrap_or(event);
+    Ok(parse_debug_port(payload))
+}
+
 pub fn java_debug_session_port(
     session_id: &str,
     operation_id: &str,
     timeout: Duration,
 ) -> Result<u16, String> {
     let payload = java_start_debug_session_payload(session_id, operation_id);
-    let data = match core_json(LSP_REQUEST_COMMAND, payload) {
-        Ok(Some(data)) => data,
+    match core_json(LSP_REQUEST_COMMAND, payload) {
+        Ok(Some(_)) => {}
         Ok(None) => {
             return Err(format!(
                 "{DEBUG_TRANSPORT_TAG} start_debug_session_no_data session={session_id}"
@@ -84,19 +98,43 @@ pub fn java_debug_session_port(
                 "{DEBUG_TRANSPORT_TAG} start_debug_session_failed session={session_id} error={error}"
             ));
         }
-    };
-    parse_debug_port(&data).ok_or_else(|| {
-        format!(
-            "{DEBUG_TRANSPORT_TAG} start_debug_session_no_port session={session_id} data={data}"
+    }
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!(
+                "{DEBUG_TRANSPORT_TAG} start_debug_session_timeout session={session_id} operation={operation_id} timeout_ms={}",
+                timeout.as_millis()
+            ));
+        }
+        let slice = u64::try_from(remaining.as_millis())
+            .unwrap_or(u64::MAX)
+            .min(500);
+        let events = core_json(
+            LSP_WAIT_EVENTS_COMMAND,
+            json!({ "sessionId": session_id, "timeoutMilliseconds": slice }),
         )
-    })
-    .map(|port| {
-        println!(
-            "{DEBUG_TRANSPORT_TAG} start_debug_session session={session_id} port={port} timeout_ms={}",
-            timeout.as_millis()
-        );
-        port
-    })
+        .map_err(|error| {
+            format!("{DEBUG_TRANSPORT_TAG} wait_events_failed session={session_id} error={error}")
+        })?
+        .unwrap_or(Value::Null);
+        let Some(events) = events.get("events").and_then(Value::as_array) else {
+            continue;
+        };
+        for event in events {
+            match port_from_event(event, operation_id)? {
+                Some(port) => {
+                    println!(
+                        "{DEBUG_TRANSPORT_TAG} start_debug_session session={session_id} operation={operation_id} port={port}"
+                    );
+                    return Ok(port);
+                }
+                None => {}
+            }
+        }
+    }
 }
 
 pub fn connect_java_debug_session(
@@ -1733,6 +1771,43 @@ mod tests {
             "错误要能看出是写失败：{error}"
         );
         server.join().expect("服务端线程应当结束");
+    }
+
+    #[test]
+    fn port_from_event_matches_the_operation_and_surfaces_errors() {
+        let event = json!({
+            "operationId": "java-debug-port",
+            "result": { "value": 56789 }
+        });
+        assert_eq!(
+            port_from_event(&event, "java-debug-port").expect("解析不该失败"),
+            Some(56789)
+        );
+        assert_eq!(
+            port_from_event(&event, "other-operation").expect("不匹配就是 None"),
+            None,
+            "别的操作的事件不能被认领"
+        );
+
+        let failed = json!({
+            "operationId": "java-debug-port",
+            "error": { "message": "no debug session" }
+        });
+        let error = port_from_event(&failed, "java-debug-port").expect_err("error 必须变成失败");
+        assert!(error.contains("start_debug_session_error"), "{error}");
+
+        let bare = json!({ "operationId": "java-debug-port", "result": 4004 });
+        assert_eq!(
+            port_from_event(&bare, "java-debug-port").expect("裸端口也要认"),
+            Some(4004)
+        );
+
+        let no_port = json!({ "operationId": "java-debug-port", "result": { "ok": true } });
+        assert_eq!(
+            port_from_event(&no_port, "java-debug-port").expect("没有端口不是错误"),
+            None,
+            "事件匹配但没有端口时要继续等，而不是报错"
+        );
     }
 
     #[test]
