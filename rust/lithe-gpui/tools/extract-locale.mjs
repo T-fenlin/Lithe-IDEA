@@ -1220,6 +1220,34 @@ const GPUI_ONLY_KEYS = [
     reason:
       "状态胶囊在“停在某个原因上”时的形状，逐字照真源的 `\"Paused · \\(stopReasonLabel(reason))\"`（`DebugToolbarPresentation.swift:49-51`）。`{reason}` 由 `crates/workbench/src/debug.rs` 的 `stop_reason_label` 只填**catalog 里有词**的那几档（`breakpoint` → `debugger.breakpoints`、`pause` → `debugger.paused`），其余不编造。",
   },
+  {
+    key: "spring.gpui.filterPlaceholder",
+    zh: "筛选路由、控制器或方法",
+    en: "Filter route, controller, or method",
+    reason:
+      "真源 Spring 面板筛选框的占位文案是**硬编码英文**（`SpringEndpointsView.swift:18`），`macos/Resources/zh-Hans.lproj/Localizable.strings` 里没有对应条目（该文件只有 `\"Spring Endpoints\" = \"Spring 接口\";`），所以中文按同批 `debugger.gpui.*` 的既定做法自行给出。",
+  },
+  {
+    key: "spring.gpui.indexing",
+    zh: "正在索引 Spring 项目…",
+    en: "Indexing Spring project…",
+    reason:
+      "真源索引中态的 `ProgressView(\"Indexing Spring project…\")`（`SpringEndpointsView.swift:25`），同样是硬编码英文、zh-Hans 无条目。⚠️ 本侧目前**没有**这个状态的数据源（`crate::spring::index` 是同步返回），所以这条键先落库、界面暂不消费。",
+  },
+  {
+    key: "spring.gpui.noEndpoints",
+    zh: "未找到 Spring MVC 端点",
+    en: "No Spring MVC endpoints found",
+    reason:
+      "真源「一个端点都没有」时的文案（`SpringEndpointsView.swift:28`），与 `spring.notDetected`（“没检测到 Spring 项目”）**不是同一件事**：前者说明索引到了项目但没有端点，后者说明根本没有可索引的事实。硬编码英文、zh-Hans 无条目。",
+  },
+  {
+    key: "spring.gpui.routeCount",
+    zh: "{count} 条路由",
+    en: "{count} routes",
+    reason:
+      "真源头部的副标题是 `\"\\(filteredEndpoints.count) routes\"`（`SpringEndpointsView.swift:12`），硬编码英文、zh-Hans 无条目。`{count}` 由面板按**筛选后**的条数填（与真源一致）。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);
