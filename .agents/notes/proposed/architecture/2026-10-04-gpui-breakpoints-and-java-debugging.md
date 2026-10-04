@@ -849,3 +849,28 @@ fn advance_probe_inspects(&mut self, snapshot: &DebugSessionSnapshot) {
 
 配合已有的 `LITHE_DEBUG_DUMP_FRAMES=1`，跑一次即可看到 `scopes`/`variables` 的 operationCompleted 帧，
 若结果符合预期，本目标即可标完成（真机五步全绿）。
+
+### 第 31 轮：handle 方案解决了借用问题，但键查找用错了助手（2026-10-04）
+
+按上一轮方案落地（`DebugSessionHandle::auto_advance_inspects()` + 面板在 `session.drain()` 后调用一次）
+**编译通过、无 E0499** ✓，跑两次（先是 `starts_with("stackTrace#")`，后改模糊 `contains("stackTrace")`）
+**仍未发出 scopes** ⇒ 假设错了：`snapshot.results` 的键并不是 `kind#reference` 这种可字符串匹配的形态。
+
+正确做法：`debug_session.rs` 里**本来就有**我早先写好的读取助手 ——
+`result_for` / `result_for_reference` / `result_array`（面板的 `live_debug_summary`、
+`live_variables` 用的就是它们）。下一轮应改成：
+
+```rust
+let frame_id = first_frame_id(&snapshot);                       // 已有助手
+let scope_ref = result_for(&snapshot, "scopes")                 // 或 result_for_reference(...)
+    .and_then(|value| value.get("scopes"))
+    .and_then(Value::as_array)
+    .and_then(|scopes| scopes.first())
+    .and_then(|scope| scope.get("variablesReference"))
+    .and_then(Value::as_i64);
+```
+
+也就是说：**不要手搓键匹配，直接用现成助手**（它们知道真实的键/结构）。
+若仍定位不到，就在探针门控下先 `println!` 一次 `snapshot.results.keys()` 看清格式，再写映射。
+
+两次尝试都已 `git checkout` 还原（避免留下无效代码）；HEAD 仍为 `f71cf1f7`。
