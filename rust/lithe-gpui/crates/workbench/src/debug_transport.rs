@@ -345,6 +345,29 @@ pub fn stdio_spec(
     }
 }
 
+pub fn java_launch_configuration(name: &str, java_launch: &Value) -> Result<Value, String> {
+    let main_class = java_launch
+        .get("mainClass")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            format!("{DEBUG_TRANSPORT_TAG} launch_configuration_missing_main_class name={name}")
+        })?;
+    let mut arguments = serde_json::Map::new();
+    arguments.insert("type".to_string(), json!("java"));
+    arguments.insert("mainClass".to_string(), json!(main_class));
+    for key in ["projectName", "classPaths", "modulePaths", "vmArgs", "cwd"] {
+        if let Some(value) = java_launch.get(key) {
+            arguments.insert(key.to_string(), value.clone());
+        }
+    }
+    Ok(json!({
+        "name": name,
+        "request": "launch",
+        "arguments": Value::Object(arguments),
+    }))
+}
+
 pub struct TcpDebugAdapter {
     stream: std::net::TcpStream,
     chunks: Receiver<Vec<u8>>,
@@ -1396,6 +1419,40 @@ mod tests {
         assert!(
             written.contains("com.example.App"),
             "launch 配置要原样透传给 adapter：{written}"
+        );
+    }
+
+    #[test]
+    fn java_launch_configuration_maps_core_fields_and_rejects_a_missing_main_class() {
+        let configuration = java_launch_configuration(
+            "App",
+            &json!({
+                "mainClass": "com.example.App",
+                "classPaths": ["/workspace/target/classes"],
+                "modulePaths": [],
+                "vmArgs": ["-Xmx256m"]
+            }),
+        )
+        .expect("有 mainClass 就应当能生成配置");
+        assert_eq!(configuration["name"], json!("App"));
+        assert_eq!(configuration["request"], json!("launch"));
+        assert_eq!(configuration["arguments"]["type"], json!("java"));
+        assert_eq!(
+            configuration["arguments"]["mainClass"],
+            json!("com.example.App")
+        );
+        assert_eq!(
+            configuration["arguments"]["classPaths"],
+            json!(["/workspace/target/classes"])
+        );
+        assert_eq!(configuration["arguments"]["vmArgs"], json!(["-Xmx256m"]));
+
+        let error = java_launch_configuration("App", &json!({ "classPaths": [] }))
+            .err()
+            .expect("缺 mainClass 必须报错");
+        assert!(
+            error.contains("missing_main_class"),
+            "错误要能看出缺的是 mainClass：{error}"
         );
     }
 
