@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use lithe_gpui_shared::core_json;
+use lithe_gpui_shared::{cancel_operation, core_json};
 use serde_json::{Value, json};
 
 pub const DEBUG_TRANSPORT_TAG: &str = "S1_DEBUG_TRANSPORT";
@@ -526,6 +526,8 @@ pub struct DebugTransport {
     generation: u64,
     terminated: bool,
     dropped_after_termination: u64,
+    next_operation: u64,
+    cancelled_operations: u64,
 }
 
 impl DebugTransport {
@@ -551,6 +553,8 @@ impl DebugTransport {
             generation: 1,
             terminated: false,
             dropped_after_termination: 0,
+            next_operation: 1,
+            cancelled_operations: 0,
         };
         transport.deliver(&update)?;
         println!(
@@ -584,14 +588,92 @@ impl DebugTransport {
         execution: &str,
         thread_id: Option<i64>,
     ) -> Result<Vec<Value>, String> {
+        let operation_id = self.take_operation_id(execution);
         self.command(
             EXECUTE_COMMAND,
             json!({
                 "sessionId": self.session_id,
-                "operationId": format!("{}-{}", self.session_id, self.generation),
+                "operationId": operation_id,
                 "command": execution,
                 "threadId": thread_id,
             }),
+        )
+    }
+
+    pub fn execute_and_wait(
+        &mut self,
+        execution: &str,
+        thread_id: Option<i64>,
+        timeout: Duration,
+        matches: impl Fn(&Value) -> bool,
+    ) -> Result<Option<Value>, String> {
+        let operation_id = self.take_operation_id(execution);
+        self.command(
+            EXECUTE_COMMAND,
+            json!({
+                "sessionId": self.session_id,
+                "operationId": operation_id,
+                "command": execution,
+                "threadId": thread_id,
+            }),
+        )?;
+        match self.wait_for_event(timeout, &matches)? {
+            Some(event) => Ok(Some(event)),
+            None => {
+                self.cancel(operation_id.as_str());
+                Err(format!(
+                    "{DEBUG_TRANSPORT_TAG} execute_timeout session={} command={execution} operation={operation_id} timeout_ms={}",
+                    self.session_id,
+                    timeout.as_millis()
+                ))
+            }
+        }
+    }
+
+    pub fn wait_for_event(
+        &mut self,
+        timeout: Duration,
+        matches: &dyn Fn(&Value) -> bool,
+    ) -> Result<Option<Value>, String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let slice = std::cmp::min(
+                Duration::from_millis(20),
+                deadline.saturating_duration_since(Instant::now()),
+            );
+            if let Some(found) = self
+                .poll_bounded(slice)?
+                .into_iter()
+                .find(|event| matches(event))
+            {
+                return Ok(Some(found));
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn cancelled_operations(&self) -> u64 {
+        self.cancelled_operations
+    }
+
+    fn cancel(&mut self, operation_id: &str) {
+        self.cancelled_operations += 1;
+        let accepted = cancel_operation(operation_id);
+        println!(
+            "{DEBUG_TRANSPORT_TAG} cancel_operation operation={operation_id} accepted={accepted} total={}",
+            self.cancelled_operations
+        );
+    }
+
+    fn take_operation_id(&mut self, execution: &str) -> String {
+        let sequence = self.next_operation;
+        self.next_operation += 1;
+        format!(
+            "{}-{}-{sequence}-{execution}",
+            self.session_id, self.generation
         )
     }
 
@@ -953,6 +1035,8 @@ mod tests {
             generation: 1,
             terminated: false,
             dropped_after_termination: 0,
+            next_operation: 1,
+            cancelled_operations: 0,
         };
         let error = foreign
             .feed(b"Content-Length: 2\r\n\r\n{}")
@@ -1386,5 +1470,130 @@ mod tests {
                 .killed,
             "驱动器收尾必须杀掉 adapter"
         );
+    }
+
+    fn responding_transport(
+        session: &str,
+    ) -> (DebugTransport, Arc<std::sync::Mutex<RespondingAdapter>>) {
+        let adapter = Arc::new(std::sync::Mutex::new(RespondingAdapter::default()));
+        let handle = adapter.clone();
+        let transport = DebugTransport::start(
+            session,
+            "java",
+            r"D:\proj",
+            false,
+            Box::new(SharedResponder(adapter)),
+        )
+        .expect("起会话");
+        (transport, handle)
+    }
+
+    fn handshake(transport: &mut DebugTransport) {
+        transport
+            .feed(&dap_frame(json!({
+                "seq": 1,
+                "type": "response",
+                "request_seq": 1,
+                "success": true,
+                "command": "initialize",
+                "body": { "supportsConfigurationDoneRequest": true }
+            })))
+            .expect("initialize 响应");
+        transport
+            .feed(&dap_frame(
+                json!({ "seq": 2, "type": "event", "event": "initialized" }),
+            ))
+            .expect("initialized 事件");
+    }
+
+    fn is_stopped(event: &Value) -> bool {
+        serde_json::to_string(event)
+            .map(|text| text.contains("stopped"))
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn execute_and_wait_returns_the_matching_event() {
+        let (mut transport, _adapter) = responding_transport("session-exec-ok");
+        handshake(&mut transport);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut found = None;
+        while Instant::now() < deadline && found.is_none() {
+            found = transport
+                .wait_for_event(Duration::from_secs(2), &is_stopped)
+                .expect("等待事件不该报错");
+        }
+        assert!(found.is_some(), "脚本化 adapter 应当送来 stopped 事件");
+
+        let matched = transport
+            .execute_and_wait("continue", Some(1), Duration::from_secs(5), is_stopped)
+            .expect("单步请求在有 stopped 应答时不该超时");
+        assert!(matched.is_some(), "continue 之后应当等来新的 stopped");
+        assert_eq!(transport.cancelled_operations(), 0);
+    }
+
+    fn drive_to_paused(transport: &mut DebugTransport) {
+        handshake(transport);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            let stopped = transport
+                .wait_for_event(Duration::from_millis(200), &is_stopped)
+                .expect("等待 stopped 不该报错");
+            if stopped.is_some() {
+                return;
+            }
+        }
+        panic!("脚本化 adapter 没能在有界时间内送达 stopped");
+    }
+
+    #[test]
+    fn execute_and_wait_times_out_and_cancels_the_operation() {
+        let (mut transport, _adapter) = responding_transport("session-exec-timeout");
+        drive_to_paused(&mut transport);
+
+        let started = Instant::now();
+        let error = transport
+            .execute_and_wait("next", Some(1), Duration::from_millis(120), |_| false)
+            .expect_err("没有任何事件能满足谓词时必须超时");
+        let elapsed = started.elapsed();
+        assert!(
+            error.contains("execute_timeout"),
+            "错误要能看出是请求超时：{error}"
+        );
+        assert!(
+            error.contains("operation=session-exec-timeout-1-"),
+            "错误里要带上 operationId，便于对照 Core 的取消：{error}"
+        );
+        assert_eq!(
+            transport.cancelled_operations(),
+            1,
+            "超时必须尝试取消那次在途请求（错误：{error}）"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(120) && elapsed < Duration::from_secs(5),
+            "等待必须真有界，实得：{elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn operation_ids_are_unique_per_request() {
+        let (mut transport, _adapter) = responding_transport("session-op-ids");
+        drive_to_paused(&mut transport);
+
+        let first = transport
+            .execute_and_wait("next", Some(1), Duration::from_millis(60), |_| false)
+            .expect_err("第一次必须超时");
+        let second = transport
+            .execute_and_wait("next", Some(1), Duration::from_millis(60), |_| false)
+            .expect_err("第二次必须超时");
+        assert!(
+            first.contains("operation=session-op-ids-1-1-next"),
+            "第一次的 operationId 形如 session-generation-序号-命令：{first}"
+        );
+        assert!(
+            second.contains("operation=session-op-ids-1-2-next"),
+            "第二次的 operationId 必须与第一次不同：{second}"
+        );
+        assert_eq!(transport.cancelled_operations(), 2);
     }
 }
