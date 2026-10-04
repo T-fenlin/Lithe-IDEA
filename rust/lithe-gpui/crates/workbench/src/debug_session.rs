@@ -149,6 +149,70 @@ pub fn drain_driver(
     outcome
 }
 
+pub struct DebugSessionHandle {
+    session_id: String,
+    driver: crate::debug_transport::DebugSessionDriver,
+    snapshot: DebugSessionSnapshot,
+    last_exit: Option<String>,
+    total_events: u64,
+}
+
+impl DebugSessionHandle {
+    pub fn start(
+        transport: crate::debug_transport::DebugTransport,
+        poll_interval: std::time::Duration,
+    ) -> Self {
+        let session_id = transport.session_id().to_string();
+        Self {
+            session_id,
+            driver: crate::debug_transport::DebugSessionDriver::spawn(transport, poll_interval),
+            snapshot: DebugSessionSnapshot::default(),
+            last_exit: None,
+            total_events: 0,
+        }
+    }
+
+    #[must_use]
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    #[must_use]
+    pub fn snapshot(&self) -> &DebugSessionSnapshot {
+        &self.snapshot
+    }
+
+    #[must_use]
+    pub fn last_exit(&self) -> Option<&str> {
+        self.last_exit.as_deref()
+    }
+
+    #[must_use]
+    pub fn total_events(&self) -> u64 {
+        self.total_events
+    }
+
+    #[must_use]
+    pub fn is_running(&self) -> bool {
+        self.driver.is_running()
+    }
+
+    pub fn drain(&mut self) -> DrainOutcome {
+        let outcome = drain_driver(&self.driver, &mut self.snapshot);
+        self.total_events += outcome.events;
+        if outcome.exited.is_some() {
+            self.last_exit = outcome.exited.clone();
+        }
+        outcome
+    }
+
+    pub fn stop(&mut self, timeout: std::time::Duration) -> bool {
+        let stopped = self.driver.stop(timeout);
+        self.drain();
+        stopped
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,6 +387,57 @@ mod tests {
             exited.exited.as_deref(),
             Some("stopped"),
             "主动停止之后必须能收到带原因的退出事件"
+        );
+    }
+
+    #[test]
+    fn session_handle_owns_the_snapshot_and_reports_exit() {
+        use crate::debug_transport::DebugTransport;
+        use std::time::{Duration, Instant};
+
+        let adapter = FrameQueue {
+            incoming: vec![dap_frame(json!({
+                "seq": 1,
+                "type": "event",
+                "event": "output",
+                "body": { "category": "stdout", "output": "handle says hi\n" }
+            }))],
+        };
+        let transport = DebugTransport::start(
+            "session-handle",
+            "java",
+            r"D:\proj",
+            false,
+            Box::new(adapter),
+        )
+        .expect("起会话");
+        let mut handle = DebugSessionHandle::start(transport, Duration::from_millis(20));
+        assert_eq!(handle.session_id(), "session-handle");
+        assert!(handle.is_running());
+        assert!(handle.last_exit().is_none());
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut changed = false;
+        while Instant::now() < deadline && !changed {
+            changed = handle.drain().changed;
+        }
+        assert!(changed, "句柄必须把 adapter 事件变成快照变化");
+        assert!(
+            handle
+                .snapshot()
+                .output
+                .iter()
+                .any(|line| line.contains("handle says hi")),
+            "快照里应当有控制台输出"
+        );
+        assert!(handle.total_events() >= 1);
+
+        assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
+        assert!(!handle.is_running());
+        assert_eq!(
+            handle.last_exit(),
+            Some("stopped"),
+            "stop 之后句柄要记住退出原因"
         );
     }
 }
