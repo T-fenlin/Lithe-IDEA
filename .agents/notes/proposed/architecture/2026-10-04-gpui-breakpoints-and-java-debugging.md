@@ -319,3 +319,25 @@ MAVEN_OPTS=-Dmaven.repo.local=<工作区内的可写目录>     # 关键：沙�
 ⇒ 下一步：把 JDT LS 的 configuration/data/cache 指到工作区内（看 `crates/java` 的 `cache_directory` 从哪来、
 有没有环境变量口子），或让运行环境放开工作区外的写权限。之后才轮得到 `Current File requires a Java source path`
 那一步（探针挑中 current-file 配置而它不打开缓冲区）。
+
+### 第 4 次实跑的路径级根因（2026-10-04，证据完整）
+
+日志给出了确切路径：
+
+```
+S1_JAVA_CACHE directory=C:\Users\admin\AppData\Local\Lithe\cache\language-servers ...
+S1_SETTINGS watch_failed dir=C:\Users\admin\AppData\Roaming\Lithe error=拒绝访问。 (os error 5)
+S1_THEME seeded dir=C:\Users\admin\AppData\Roaming\Lithe\themes ... failed=1
+S1_EXTENSION sync_failed dir=C:\Users\admin\AppData\Roaming\Lithe\extensions\... error=拒绝访问。 (os error 5)
+```
+
+⇒ JDT LS 的 **data/configuration 目录落在 `%LOCALAPPDATA%\Lithe\cache\language-servers`（工作区外）**，
+而当前沙箱**拒绝一切对 `%APPDATA%`/`%LOCALAPPDATA%` 的写入**（同一批日志里 themes/settings/extensions 全部
+`拒绝访问 os error 5`）⇒ `Could not create the Java language-server configuration area`。
+这与 Maven 的 `.part.lock` 写失败、`extension` 同步失败是**同一个根因**：子进程只能写工作区内路径。
+
+⇒ 两条出路，二选一：
+① 给宿主加"状态目录可否覆盖"的口子（例如 `LITHE_CONFIG_HOME` / `LITHE_CACHE_HOME`，或便携模式让
+   settings/cache/extensions 都落到 `<workspace>/.lithe/...`）—— 这本身也是个真实需求（便携/沙箱/CI 场景）；
+② 在沙箱外（或放开 `%APPDATA%`/`%LOCALAPPDATA%` 写权限）跑那一次真机端到端。
+在此之前，DAP 真机实跑无法继续（`S1_JAVA_FAILED` 之后整条语言服务链路都不成立）。
