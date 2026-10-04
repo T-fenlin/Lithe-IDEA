@@ -927,7 +927,10 @@ macOS 侧**不存在**的 token 类别（照搬会落空，直接用 gpui-kit �
 
 - **macOS 组成**：通用调试视图（调用栈 / 变量树 / 监视 / 求值控制台 / 线程）+ 调试工具栏（三真按钮，未启动时禁用）+ 断点管理对话框 + 步进过滤器设置 + 多会话选择器。
 - **关键类型**：`GenericDebugView`（2564 行）、`DebugToolbarPresentation` + `DebugToolbarActionID`、`DebugBreakpointManagerView` / `BreakpointEditorView`、`EditorInlineDebugValue`（内联值）。
-- **gpui 落点**：**无**。运行面板只有 ▶ / 🐞 / ■ / ⌫ 四个按钮；菜单里"切换断点"是占位项。
+- **gpui 落点**：**有**（原文写「**无**」，2026-10-04 实测证伪 —— `crates/workbench/src/debug.rs`
+  存在且 **3566 行**）。运行面板另有 ▶ / 🐞 / ■ / ⌫ 四个按钮。
+  ⚠️ 本行只核实了"**有实现**"这一半（文件存在 + 行数）；**残留清单尚未逐项复核**，
+  引用本段前请按 `debug.rs` 实测，别沿用旧结论。
 - **组件替换**：[建议] 调用栈与变量用 `Tree`；执行控制用 `Toolbar` + `Button`；断点表用 `DataTable`；求值输入用 `input::Editor`；内联值用编辑器 decoration。
 - **缺口与优化**：⚪ **Core 侧已经完全就绪**：`debug/engine.rs` 是完整的有状态 DAP reducer，**18 条 `debug.*` 命令**全部在 `protocol/command.rs` 注册（`createSession` / `launch` / `javaTestLaunch` / `steppingFilters` / `relocateBreakpoints` / `setBreakpoints` / `setExceptionBreakpoints` / `setFunctionBreakpoints` / `dataBreakpointInfo` / `setDataBreakpoints` / `setVariable` / `cancelOperation` / `execute` / `inspect` / `receive` / `runInTerminalResponse` / `disconnect` / `destroySession`），并有 `debug/java_test.rs`、`debug/breakpoint_relocation.rs`。**而 gpui 的 `debug.*` 调用点是 0。** ⚠️ macOS 自己也**一行 DAP 都没写**：它只做 socket / 子进程 transport，协议归约全在 Core。所以这块是**纯 UI + transport 工程量**。🚧 **前置阻断（不在 Core 范围）**：进程/socket transport 与 `vscode.java.startDebugSession` 的启动、端口协商，Core 明确不管（`debug/engine.rs` 模块文档写明 "byte transport and process lifecycle remain platform owned"）。
 
