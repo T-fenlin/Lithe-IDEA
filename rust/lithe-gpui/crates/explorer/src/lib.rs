@@ -150,7 +150,7 @@ mod selection;
 
 pub use explorer_view::{Explorer, RevealInFileManagerHost};
 
-gpui_kit::actions!(lithe_gpui_explorer, [SelectAllInTree]);
+gpui_kit::actions!(lithe_gpui_explorer, [SelectAllInTree, CopySelection]);
 
 /// 项目树的键位上下文：绑定的 key context 与视图根元素上设的必须一致。
 ///
@@ -169,5 +169,21 @@ pub fn install_actions(cx: &mut gpui_kit::App) {
     cx.bind_keys([
         gpui_kit::KeyBinding::new("cmd-a", SelectAllInTree, Some(EXPLORER_KEY_CONTEXT)),
         gpui_kit::KeyBinding::new("ctrl-a", SelectAllInTree, Some(EXPLORER_KEY_CONTEXT)),
+        gpui_kit::KeyBinding::new("cmd-c", CopySelection, Some(EXPLORER_KEY_CONTEXT)),
+        gpui_kit::KeyBinding::new("ctrl-c", CopySelection, Some(EXPLORER_KEY_CONTEXT)),
     ]);
+}
+
+/// 文件剪贴板的**平台端口**：只负责"把路径搬进 / 搬出系统剪贴板"，不判语义。
+///
+/// 为什么需要这个抽象：真源用 `MacFileClipboard`（`Platform/MacOS/UI/MacFileClipboard.swift`）
+/// 与 Finder 互通 file URL；Windows 侧对应 CF_HDROP，而 **gpui 自带的剪贴板只到"文本/图片"**
+/// （`ClipboardItem`），没有文件列表 —— 拿文本通道假装文件复制，粘到资源管理器里只会得到一行
+/// 路径文本。所以文件剪贴板必须走平台端口，而**平台实现不能进 explorer crate**
+/// （本 crate 目前对 Win32 零依赖，这条边界要守住）。
+///
+/// "复制哪些条目"的语义不在实现里：载荷由 [`crate::model::selected_in_display_order`] 算好再交给它。
+pub trait FileClipboardPort: 'static {
+    /// 把一批**绝对路径**写进系统剪贴板；成功返回 `true`。
+    fn write_paths(&self, paths: &[std::path::PathBuf]) -> bool;
 }

@@ -277,6 +277,12 @@ pub struct Explorer {
     /// （`Platform/MacOS/UI/ProjectTreeKeyboardCommands.swift:4,44-62`），所以行被点击时
     /// 主动 `window.focus(..)`（见 `render_tree` 的点击处理）。
     focus_handle: gpui_kit::FocusHandle,
+    /// 文件剪贴板的**平台端口**（`⌘C` 用）。
+    ///
+    /// 由外壳注入（[`Explorer::set_file_clipboard`]），**不在本 crate 实现** —— explorer 对 Win32
+    /// 零依赖，这条边界要守住（理由见 [`crate::FileClipboardPort`] 的文档）。
+    /// 没注入时 `⌘C` 什么都不做（不是假装成功）。
+    file_clipboard: Option<Box<dyn crate::FileClipboardPort>>,
     /// `git.status` 投影到树行上的状态装饰（工作区不是 git 仓库时是空的）。
     decorations: GitTreeStatus,
     /// 树内搜索的输入状态（placeholder 在 [`Explorer::new`] 里设置）。
@@ -379,6 +385,7 @@ impl Explorer {
             active: None,
             selection: crate::selection::ProjectTreeSelection::default(),
             focus_handle: cx.focus_handle(),
+            file_clipboard: None,
             decorations: GitTreeStatus::default(),
             search,
             search_open: false,
@@ -643,6 +650,44 @@ impl Explorer {
     /// 测试可以先把焦点交给树，再模拟键击 —— 这**不覆盖**"点击确实给了焦点"那一步（已在文件里注明）。
     pub fn focus_handle(&self) -> &gpui_kit::FocusHandle {
         &self.focus_handle
+    }
+
+    /// 注入文件剪贴板的平台端口（`⌘C` 用）。外壳在构造本视图后调一次。
+    pub fn set_file_clipboard(&mut self, port: Box<dyn crate::FileClipboardPort>) {
+        self.file_clipboard = Some(port);
+    }
+
+    /// `⌘C`：把**选择集**按真源口径写进系统剪贴板。
+    ///
+    /// 载荷 = [`crate::model::selected_in_display_order`]（真源 `ProjectSidebarView.selectedURLs`，
+    /// `:41-46`）：**可见**节点里**恰被选中**的、排除工作区根、按显示顺序 —— 选中文件夹时复制的是
+    /// 文件夹本身（OS 侧递归），不是它的子孙。这里再转成**绝对路径**（端口要的是绝对路径）。
+    ///
+    /// 没有端口（外壳没注入）或载荷为空 ⇒ 什么都不做，**不假装成功**。
+    /// 返回值（写剪贴板成不成）不影响选择态，所以这里不 `notify`。
+    fn copy_selection(
+        &mut self,
+        _: &crate::CopySelection,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        let (Some(port), Some(snapshot)) = (self.file_clipboard.as_ref(), self.snapshot.as_ref())
+        else {
+            return;
+        };
+        let payload = crate::model::selected_in_display_order(
+            &snapshot.root,
+            &self.expanded,
+            self.selection.paths(),
+        );
+        if payload.is_empty() {
+            return;
+        }
+        let absolute: Vec<PathBuf> = payload
+            .iter()
+            .map(|relative| join_relative(&self.root, relative))
+            .collect();
+        port.write_paths(&absolute);
     }
 
     /// 活动文档变化 ⇒ 单选跟随（真源 `ProjectSidebarView.swift:113-118`）。
@@ -1112,6 +1157,7 @@ impl Explorer {
             .track_focus(&self.focus_handle)
             .key_context(crate::EXPLORER_KEY_CONTEXT)
             .on_action(cx.listener(Self::select_all_in_tree))
+            .on_action(cx.listener(Self::copy_selection))
             .child(tree)
             .into_any_element()
     }
