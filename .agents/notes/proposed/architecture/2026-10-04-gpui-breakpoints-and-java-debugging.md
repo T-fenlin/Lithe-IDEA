@@ -311,3 +311,11 @@ MAVEN_OPTS=-Dmaven.repo.local=<工作区内的可写目录>     # 关键：沙�
 再让探针启动 —— 之后就能在 `S1_DEBUG start/launch/session_state/inspect_requested` 锚点上验证
 「启动→断点命中→单步→变量→停止」的真机链路。
 （本轮三次运行的 app 进程与 JDTLS 子进程都已清理，`leftover Lithe=0`。）
+
+第 4 次实跑（绝对路径 + PATH 里有 jdtls）的新卡点：
+`S1_JAVA_FAILED reason=process_start_failed: Could not create the Java language-server configuration area.`
+—— JDT LS 起来了但**建不了它自己的配置区**（要把 `config_win` 拷进 cache/configuration 目录），
+与 Maven 那次 `.part.lock` 写失败同源：**沙箱不让子进程写工作区外的目录**。
+⇒ 下一步：把 JDT LS 的 configuration/data/cache 指到工作区内（看 `crates/java` 的 `cache_directory` 从哪来、
+有没有环境变量口子），或让运行环境放开工作区外的写权限。之后才轮得到 `Current File requires a Java source path`
+那一步（探针挑中 current-file 配置而它不打开缓冲区）。
