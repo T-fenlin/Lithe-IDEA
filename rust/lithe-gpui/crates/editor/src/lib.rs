@@ -196,7 +196,8 @@ mod navigation;
 mod problems;
 
 pub use editor_view::{
-    BufferWriteHost, CursorPosition, EditorPane, SessionRestore, TabMenuHostActions,
+    BufferWriteHost, CursorPosition, DebugGutterHost, EditorPane, GutterBreakpoint, SessionRestore,
+    TabMenuHostActions,
 };
 pub use problems::ProblemsPane;
 

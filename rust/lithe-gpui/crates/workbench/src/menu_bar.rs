@@ -52,7 +52,7 @@
 //!
 //! | | 真源 | 本侧 v1 | 本侧 B3（现在） |
 //! | --- | --- | --- | --- |
-//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：46 条已接线 + 47 条占位 |
+//! | 89 条菜单项 | 全画 | 只画 13 条能执行的 | **全画**：47 条已接线 + 46 条占位 |
 //! | 没能力的项 | 恒可点（点下去做那件事） | 不画 | 画出来、可点、点了**如实**说缺什么 |
 //! | 灰化 | 4 处后端能力开关 | 不灰化 | 不灰化（占位项用提示表达"还没有"，不用颜色） |
 //!
@@ -64,7 +64,7 @@
 //!    `every_listed_item_is_wired_or_declares_what_is_missing` 逐条断言
 //!    "要么已接线（有 `CommandId` 或在 `NON_COMMAND` 里登记）、要么声明非空"——
 //!    谁想悄悄加一条永远不工作的项，这里就红。
-//! 2. **文案按能力分组**（Q14 粒度 `2d`）：47 条占位项只有 [`MISSING_GROUPS`] 那么多句话
+//! 2. **文案按能力分组**（Q14 粒度 `2d`）：46 条占位项只有 [`MISSING_GROUPS`] 那么多句话
 //!    （**16 条**，一种能力一句），每句都回答"缺什么"。文案键全部是 gpui 侧新增
 //!    （真源的菜单项恒可执行，catalog 里没有"尚未接入"这类句子），理由逐条写在
 //!    `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
@@ -272,7 +272,7 @@ impl TopMenu {
 /// - [`Missing::text_key`] 进状态栏左侧那句话（Q2："尚未接入：缺 X"）。
 ///
 /// ⚠️ **文案按能力分组**（Q14 的粒度 `2d`）：同一种能力的所有项共用**同一个常量**，
-/// 所以占位项只有 [`MISSING_GROUPS`] 那么多句话（16 条），不会退化成"每项一句"。
+/// 所以占位项只有 [`MISSING_GROUPS`] 那么多句话（15 条），不会退化成"每项一句"。
 /// 每句话都必须回答"缺什么" —— 单测逐条断言声明非空、且文案键真的解析得出。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Missing {
@@ -306,7 +306,7 @@ impl Missing {
 // B3 的能力分组（**一种能力一句话**，Q14 的粒度 `2d`）
 // ---------------------------------------------------------------------------
 //
-// 47 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
+// 46 条占位项按"缺什么"归到下面这些组里。每条 `text_key` 都在
 // `lithe-gpui/tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 里（逐条写了理由：
 // 真源的菜单项**恒可执行**，catalog 里没有"尚未接入"这类文案）。
 //
@@ -341,14 +341,6 @@ pub const MISSING_EDITOR_FEATURES: Missing = Missing {
 pub const MISSING_LSP_REQUESTS: Missing = Missing {
     id: "lsp_requests",
     text_key: "lithe.gpui.menuMissing.lspRequests",
-};
-
-/// 没有调试进程宿主（开始 / 停止调试、切换断点）。
-///
-/// 真源这三条走 DAP；本侧连"能挂载调试器的进程宿主"都还没有（`BottomPaneKind::Run` 只是占位）。
-pub const MISSING_DEBUGGER_HOST: Missing = Missing {
-    id: "debugger_host",
-    text_key: "lithe.gpui.menuMissing.debuggerHost",
 };
 
 /// 还没有对应子系统（数据库 / Web 检查器）。
@@ -451,12 +443,16 @@ pub const MISSING_TERMINAL_SPLIT: Missing = Missing {
 /// **17 → 16**：`indexer` 那一组随「视图 → 全局搜索」转正（U17 第三件）而**整组删掉** ——
 /// 它本来就只剩这一个用户，而那句"还没有索引器"与事实不符（索引链 U18 就通了，
 /// `crate::search_index` 是三条 `workspace.searchIndex.*` 的 owner），留着就是一句假话。
+/// **16 → 15**：`debugger_host` 那一组随「运行 → 切换断点」转正（U19）而**整组删掉** ——
+/// 它只剩那一个用户，而那句"没有进程宿主（调试适配器还没接）"在 U19 之后**不再成立**
+/// 到能当占位理由的程度：宿主真的有了断点模型 + 编辑器行号槽，缺的只是 transport（H10）
+/// 与 JDT 会话启动（H11），那两件事写在调试工具窗的**空态正文**里（`crate::debug`），
+/// 比挂在一条菜单项上准确得多。留着就是一句与事实不符的话。
 /// 第 17 组 [`MISSING_NEW_PROJECT_SCAFFOLDING`] 是本轮之前为项目下拉的「新建项目…」补的。
-pub const MISSING_GROUPS: [Missing; 16] = [
+pub const MISSING_GROUPS: [Missing; 15] = [
     MISSING_EDITOR_ENTRY,
     MISSING_EDITOR_FEATURES,
     MISSING_LSP_REQUESTS,
-    MISSING_DEBUGGER_HOST,
     MISSING_SUBSYSTEM,
     MISSING_GITHUB,
     MISSING_UPDATER,
@@ -762,6 +758,12 @@ pub enum MenuAction {
     StartDebugging,
     /// 运行 → 停止调试。真源 `menu.stopDebugging`（Shift+F5，本侧不绑）。
     StopDebugging,
+    /// 运行 → 切换断点。真源 `menu.toggleBreakpoint`（Ctrl+F8，本侧不绑）。
+    ///
+    /// **U19 起从占位项转正**：落点是宿主侧断点模型
+    /// （`crate::debug::DebugBreakpointStore`）+ 编辑器行号槽，
+    /// 走 `ShellWorkspace::toggle_breakpoint_at_caret`（与点行号槽同一条路）。
+    ToggleBreakpoint,
     /// 视图 → 放大（`Ctrl+=`）。真源 `menu.zoomIn`。
     ZoomIn,
     /// 视图 → 缩小（`Ctrl+-`）。真源 `menu.zoomOut`。
@@ -870,6 +872,7 @@ impl MenuAction {
             Self::ShowRunAndDebug => "lithe.menu.runAndDebug",
             Self::StartDebugging => "lithe.menu.startDebugging",
             Self::StopDebugging => "lithe.menu.stopDebugging",
+            Self::ToggleBreakpoint => "lithe.menu.toggleBreakpoint",
             Self::ZoomIn => "lithe.menu.zoomIn",
             Self::ZoomOut => "lithe.menu.zoomOut",
             Self::ResetZoom => "lithe.menu.resetZoom",
@@ -954,6 +957,9 @@ impl MenuAction {
                 idea_icon_mono(&idea::PLAY_ICON, is_dark)
             }
             Self::StopDebugging => idea_icon_mono(&idea::STOP_ICON, is_dark),
+            // 「切换断点」用圆点（改前那条占位项用的就是 `CircleDot`，转正时不变，
+            // 免得"同一件事换了个图标"变成一次无意义的可见改动）。
+            Self::ToggleBreakpoint => Icon::new(IconName::CircleDot),
             Self::ZoomIn => idea_icon_mono(&idea::MAGNIFYING_GLASS_PLUS_ICON, is_dark),
             Self::ZoomOut => idea_icon_mono(&idea::MAGNIFYING_GLASS_MINUS_ICON, is_dark),
             Self::ResetZoom => idea_icon_mono(&idea::REFRESH_ICON, is_dark),
@@ -1053,7 +1059,10 @@ impl MenuAction {
             | Self::ShowSourceControl
             | Self::ShowRunAndDebug
             | Self::StartDebugging
-            | Self::StopDebugging => return None,
+            | Self::StopDebugging
+            // 「切换断点」没有键位（真源是 `Ctrl+F8`，本侧不绑 —— [`Self::menu_key`] 返回
+            // `None`），所以这里也返回 `None`：菜单上不会画一个"显示了却按不出"的胶囊。
+            | Self::ToggleBreakpoint => return None,
         })
     }
 
@@ -1123,6 +1132,9 @@ impl MenuAction {
             // 不进命令面板（面板行序由 `COMMAND_ORDER` 定）。
             | Self::StartDebugging
             | Self::StopDebugging
+            // 「运行 → 切换断点」也不进命令面板（同一处置；执行分支在
+            // `ShellWorkspace::apply_menu_action` 的臂上）。
+            | Self::ToggleBreakpoint
             | Self::ZoomIn
             | Self::ZoomOut
             | Self::ResetZoom => None,
@@ -1133,7 +1145,7 @@ impl MenuAction {
 /// 9 个顶级菜单的静态表（**唯一真源**，两形态共用）。
 ///
 /// B3 起**真源 89 条一条不少**：能执行的走 [`MenuItem::Action`]（42 条），
-/// 没能力的走 [`MenuItem::NotWired`]（47 条占位）。顺序与分隔线位置**照真源**
+/// 没能力的走 [`MenuItem::NotWired`]（46 条占位）。顺序与分隔线位置**照真源**
 /// （`lithe-gpui/research/windows/10-menu-bar.md:114-259` 每张表的"分隔线"列：写在它出现在该项**之后**），
 /// 所以这张表可以与那份清单逐行比对。五条本侧新增项（⚪：打开文件 / 显示状态栏 /
 /// 外观设置 / Maven / 在文件中替换）插在同一族里，**不动真源的相对顺序**。
@@ -1450,18 +1462,15 @@ pub static MENUS: &[TopMenu] = &[
     TopMenu {
         id: "run",
         label_key: "lithe.menu.run",
-        // 真源 3 条（`window-menu-bar.tsx:427-439`）。2026-09-30 起前两条**真的能用**：
+        // 真源 3 条（`window-menu-bar.tsx:427-439`）。**三条现在都能用了**（2026-10-03，U19）：
         // 「开始调试」按当前运行配置以 JDWP 方式起进程（Core 的 `debugPort` 计划），
-        // 「停止调试」停掉它。**「切换断点」仍是占位项**：断点要编辑器 gutter 与 DAP 会话的
-        // 行级联动，本侧还没有那两样（`MISSING_DEBUGGER_HOST` 现在只剩它一个使用方）。
+        // 「停止调试」停掉它，「切换断点」翻转光标所在行的断点 —— 改前第三条是
+        // `NotWired { missing: MISSING_DEBUGGER_HOST }` 占位项，而 U19 落了宿主侧断点模型
+        // 与编辑器行号槽，所以它转正（`MenuAction::ToggleBreakpoint`）。
         items: &[
             MenuItem::Action(MenuAction::StartDebugging),
             MenuItem::Action(MenuAction::StopDebugging),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.toggleBreakpoint",
-                missing: MISSING_DEBUGGER_HOST,
-                icon: MenuIcon::Lucide(IconName::CircleDot),
-            },
+            MenuItem::Action(MenuAction::ToggleBreakpoint),
         ],
     },
     TopMenu {
@@ -3191,7 +3200,7 @@ mod tests {
         // `ShellWorkspace::apply_menu_action` 里，逐条接线点写在那里。
         // 这是**清单**而不是白名单：新增一条就得在这里显式登记一次。
         // 第 7 条（`OpenFolder`）是 B4 加的「打开文件夹」。
-        const NON_COMMAND: [MenuAction; 27] = [
+        const NON_COMMAND: [MenuAction; 28] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -3221,6 +3230,9 @@ mod tests {
             // （`lithe_gpui_run::RunPane::launch(true)` / `stop`）。
             MenuAction::StartDebugging,
             MenuAction::StopDebugging,
+            // U19：「运行 → 切换断点」从占位项转正，落点是宿主断点模型 + 编辑器行号槽
+            // （ShellWorkspace::toggle_breakpoint_at_caret）。
+            MenuAction::ToggleBreakpoint,
             MenuAction::ZoomIn,
             MenuAction::ZoomOut,
             MenuAction::ResetZoom,
@@ -3536,19 +3548,19 @@ mod tests {
         }
         // Q14 的粒度上限：**一种能力一句话**，不许退化成"每项一句"。
         //
-        // 上界 = [`MISSING_GROUPS`] 的组数，**17 → 16**：`indexer` 那一组随「全局搜索」转正
-        // 整组删掉（见该常量的文档）。它仍然远小于占位项条数（约 49 条），所以这条断言的
-        // 保护力没变 —— 谁给每条占位项现编一句，`texts` 立刻超过 16。
+        // 上界 = [`MISSING_GROUPS`] 的组数，**17 → 16 → 15**：`indexer` 随「全局搜索」转正、`debugger_host` 随「运行 → 切换断点」转正
+        // 各自整组删掉（见该常量的文档）。它仍然远小于占位项条数（约 46 条），所以这条断言的
+        // 保护力没变 —— 谁给每条占位项现编一句，`texts` 立刻超过 15。
         assert!(
-            texts.len() <= 16,
-            "占位文案有 {} 句，超过了'按能力分组'的上限 16（= MISSING_GROUPS 的组数）",
+            texts.len() <= 15,
+            "占位文案有 {} 句，超过了'按能力分组'的上限 15（= MISSING_GROUPS 的组数）",
             texts.len()
         );
-        // 组数本身也钉住：加第 17 组必须同时改上面那行上界与本常量的文档，并说清是哪条新能力
+        // 组数本身也钉住：加第 16 组必须同时改上面那行上界与本常量的文档，并说清是哪条新能力
         // —— 不许为了让测试过就悄悄把上界放宽。
         assert_eq!(
             MISSING_GROUPS.len(),
-            16,
+            15,
             "能力组数变了就必须同步改上面的上界与 `MISSING_GROUPS` 的文档"
         );
     }

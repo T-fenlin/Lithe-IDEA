@@ -125,6 +125,12 @@
 pub mod activity_bar;
 pub mod branch_panel;
 pub mod command_palette;
+// 调试工具窗（U19）：宿主断点模型 + 调用栈 / 变量树 / 监视 / 求值 / 单步控制五块 + 诚实空态。
+// **为什么在 workbench 而不在新 crate**：本仓不许新建 crate（本任务硬约束），而调试面板
+// 要放进底部工具窗、还要读编辑区的行号槽事件 —— 那两样都归 `ShellWorkspace`。
+// 真接上的 Core 命令只有 `debug.steppingFilters` 与 `debug.relocateBreakpoints`（都无会话依赖）；
+// 缺什么、为什么缺，逐条写在模块文档上。
+pub mod debug;
 // 中央扩展页（`ShellWorkspace` 的中央页槽位，Zed 式扩展管理入口）。
 // 数据层在 `lithe-gpui-extensions`（model + Core 桥），本模块只做视图。
 pub mod extensions_page;

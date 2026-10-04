@@ -849,10 +849,6 @@ mod tests {
                 "尚未接入：Java 服务侧还没有这条 LSP 请求（现在只接了定义 / 补全 / 快速修复）。",
             ),
             (
-                "lithe.gpui.menuMissing.debuggerHost",
-                "尚未接入：没有进程宿主（调试适配器还没接）。",
-            ),
-            (
                 "lithe.gpui.menuMissing.subsystem",
                 "尚未接入：还没有对应子系统。",
             ),
@@ -1221,6 +1217,67 @@ mod tests {
             // `welcome.*` 族里没有。出处与"为什么不借 `ui.noMatchingOptions`"见
             // `extract-locale.mjs` 的那条条目。
             ("lithe.welcome.gpui.noMatchingProjects", "没有匹配的项目"),
+            // 调试工具窗（U19，`workbench/src/debug.rs`）。catalog 的 `debugger.*` 族已经
+            // 覆盖了这个面板的绝大部分文案（栈 / 变量 / 监视 / 控制台 / 断点 / 单步 / 状态 /
+            // 各段空态），所以这里只列**真源没有的那些** —— 分三类，逐条出处写在本表下方：
+            // (a) 真源硬编码英文、catalog 里确实没有的（工具窗标题 + 步进过滤器那五条）；
+            // (b) H10 / H11 的诚实说明（真源没有，因为真源的 transport 与 JDT 会话都在）；
+            // (c) “会话 / 通道”两个状态的词（真源把它们画在同一行状态文字里，没有分列）。
+            // 全部是 gpui 自有键，理由逐条在 `extract-locale.mjs` 的 `GPUI_ONLY_KEYS`。
+            ("lithe.debugger.gpui.toolWindowTitle", "调试"),
+            ("lithe.debugger.gpui.transportLabel", "适配器通道"),
+            ("lithe.debugger.gpui.sessionLabel", "调试会话"),
+            ("lithe.debugger.gpui.absent", "未实现"),
+            ("lithe.debugger.gpui.present", "已在"),
+            (
+                "lithe.debugger.gpui.startBlockedNoTransport",
+                "已有会话，但平台侧的调试适配器通道尚未实现（H10）：收不到任何 DAP 事件，所以启动没有意义。",
+            ),
+            (
+                "lithe.debugger.gpui.startBlockedNoSession",
+                "已有适配器通道，但还没有调试会话（H11）：需要 `vscode.java.startDebugSession` 给出的适配器与端口。",
+            ),
+            (
+                "lithe.debugger.gpui.startBlockedBoth",
+                "调试会话与适配器通道都还没有：平台侧的 transport（H10）与 JDT 调试会话启动（H11）都未接。",
+            ),
+            (
+                "lithe.debugger.gpui.h10Note",
+                "缺 H10：平台侧调试适配器 transport（socket / 子进程 / 适配器进程生命周期）。Core 明确它归平台所有（`debug/engine.rs:1`），而 gpui 侧一个实现都没有。",
+            ),
+            (
+                "lithe.debugger.gpui.h11Note",
+                "缺 H11：Java Debug Server 的启动与端口协商（`vscode.java.startDebugSession`）。它不在 Core 的命令面里（`run/src/lib.rs:34` 把它列为下一步入口）。",
+            ),
+            ("lithe.debugger.gpui.emptyTitle", "调试"),
+            (
+                "lithe.debugger.gpui.breakpointSummary",
+                "已设 {count} 个断点",
+            ),
+            ("lithe.debugger.gpui.steppingFilters", "步进过滤器"),
+            ("lithe.debugger.gpui.filtersIdle", "尚未读取步进过滤器。"),
+            ("lithe.debugger.gpui.filtersLoading", "正在读取步进过滤器…"),
+            ("lithe.debugger.gpui.filtersFailed", "读取步进过滤器失败："),
+            (
+                "lithe.debugger.gpui.filtersShapeUnknown",
+                "Core 返回的步进过滤器形状不认识（契约可能变了）。",
+            ),
+            (
+                "lithe.debugger.gpui.filtersMissingData",
+                "Core 说成功但没有返回数据。",
+            ),
+            ("lithe.debugger.gpui.filterClassPatterns", "类名模式"),
+            ("lithe.debugger.gpui.skipSynthetics", "跳过合成方法"),
+            ("lithe.debugger.gpui.skipConstructors", "跳过构造方法"),
+            (
+                "lithe.debugger.gpui.skipStaticInitializers",
+                "跳过静态初始化块",
+            ),
+            (
+                "lithe.debugger.gpui.hideFilteredStackFrames",
+                "折叠匹配的栈帧",
+            ),
+            ("lithe.debugger.gpui.pausedWithReason", "已暂停 · {reason}"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

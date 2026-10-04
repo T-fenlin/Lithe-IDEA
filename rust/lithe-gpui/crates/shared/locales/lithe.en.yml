@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 132 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 155 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8791,8 +8791,6 @@ lithe:
     en: "Not wired yet: the editor has none of these features (line editing, go to line, minimap / line numbers / whitespace toggles, split view)."
   gpui.menuMissing.lspRequests:
     en: "Not wired yet: the Java service does not expose this LSP request (only definition, completion and code actions are wired)."
-  gpui.menuMissing.debuggerHost:
-    en: "Not wired yet: there is no process host (no debug adapter is wired)."
   gpui.menuMissing.subsystem:
     en: "Not wired yet: the corresponding subsystem does not exist."
   gpui.menuMissing.github:
@@ -8907,6 +8905,54 @@ lithe:
     en: "The search index was not built ahead of time, so the first search may be slower. Search still works."
   welcome.gpui.noMatchingProjects:
     en: "No matching projects"
+  debugger.gpui.toolWindowTitle:
+    en: "Debug"
+  debugger.gpui.transportLabel:
+    en: "Adapter transport"
+  debugger.gpui.sessionLabel:
+    en: "Debug session"
+  debugger.gpui.absent:
+    en: "not implemented"
+  debugger.gpui.present:
+    en: "present"
+  debugger.gpui.startBlockedNoTransport:
+    en: "A session exists, but the platform-side debug adapter transport is not implemented yet (H10): no DAP event can arrive, so starting would do nothing."
+  debugger.gpui.startBlockedNoSession:
+    en: "The adapter transport exists, but there is no debug session yet (H11): it needs the adapter and port from `vscode.java.startDebugSession`."
+  debugger.gpui.startBlockedBoth:
+    en: "Neither a debug session nor an adapter transport exists: the platform transport (H10) and the JDT debug session start (H11) are both unwired."
+  debugger.gpui.h10Note:
+    en: "Missing H10: the platform debug adapter transport (socket / child process / adapter process lifecycle). Core states it is platform-owned (`debug/engine.rs:1`), and the gpui host has no implementation."
+  debugger.gpui.h11Note:
+    en: "Missing H11: starting the Java Debug Server and negotiating its port (`vscode.java.startDebugSession`). It is not part of Core's command surface (`run/src/lib.rs:34` lists it as the next entry point)."
+  debugger.gpui.emptyTitle:
+    en: "Debug"
+  debugger.gpui.breakpointSummary:
+    en: "{count} breakpoints set"
+  debugger.gpui.steppingFilters:
+    en: "Stepping filters"
+  debugger.gpui.filtersIdle:
+    en: "Stepping filters have not been loaded yet."
+  debugger.gpui.filtersLoading:
+    en: "Loading stepping filters…"
+  debugger.gpui.filtersFailed:
+    en: "Loading stepping filters failed:"
+  debugger.gpui.filtersShapeUnknown:
+    en: "Core returned stepping filters in an unrecognized shape (the contract may have changed)."
+  debugger.gpui.filtersMissingData:
+    en: "Core reported success without returning data."
+  debugger.gpui.filterClassPatterns:
+    en: "Class patterns"
+  debugger.gpui.skipSynthetics:
+    en: "Skip synthetic methods"
+  debugger.gpui.skipConstructors:
+    en: "Skip constructors"
+  debugger.gpui.skipStaticInitializers:
+    en: "Skip static initializers"
+  debugger.gpui.hideFilteredStackFrames:
+    en: "Collapse matching stack frames"
+  debugger.gpui.pausedWithReason:
+    en: "Paused · {reason}"
 
 gpui_component:
   Dialog.ok:

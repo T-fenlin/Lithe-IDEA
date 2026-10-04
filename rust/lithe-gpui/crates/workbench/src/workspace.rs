@@ -106,6 +106,7 @@ use crate::command_palette::{
     Category, CommandAction, CommandId, install_actions as install_command_palette, set_shell,
     set_shell_focus,
 };
+use crate::debug::{DEBUG_DIAGNOSTIC_TAG as DEBUG_TAG, DebugPane, DebugPaneEvent};
 use crate::menu_bar::{
     MenuAction, MenuBar, MenuRequest, Missing, diagnose_run as diagnose_menu_run, mode_for,
     set_menu_bar, set_shell as set_menu_bar_shell,
@@ -123,7 +124,9 @@ use crate::search_panel::SearchPanel;
 use crate::session::{SessionPlan, SessionTracker};
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
-use lithe_gpui_editor::{BufferWriteHost, EditorPane, SaveBuffer, TabMenuHostActions};
+use lithe_gpui_editor::{
+    BufferWriteHost, DebugGutterHost, EditorPane, SaveBuffer, TabMenuHostActions,
+};
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::{BottomPane, ChangesView};
 use lithe_gpui_run::{RunPane, RunPaneEvent, ToolchainPath, ToolchainResolver};
@@ -668,6 +671,14 @@ enum BottomPaneKind {
     Run,
     /// 诊断工具窗（阶段 6 前用占位内容）。
     Diagnostics,
+    /// **调试工具窗（U19）**：断点模型 + 调用栈 / 变量树 / 监视 / 求值 / 单步控制。
+    ///
+    /// 为什么进底部工具窗而不是右工具窗：真源的调试面板是**自己一个工具窗**
+    /// （`Views/Debug/GenericDebugView.swift` 的 header 带「隐藏」，`:151-155`），
+    /// 而宿主里"带隐藏按钮、由活动栏切换、高度可拖"的那一套只有底部工具窗有；
+    /// 右工具窗的三个视图（扩展 / 通知 / Maven）都是**窄栏**形态（默认 360 宽），
+    /// 放不下真源那个左右两栏（min 240 + min 300，`:611-617`）的检查器。
+    Debug,
 }
 
 impl BottomPaneKind {
@@ -683,6 +694,7 @@ impl BottomPaneKind {
             Self::Git => "git",
             Self::Run => "run",
             Self::Diagnostics => "diagnostics",
+            Self::Debug => "debug",
         }
     }
 }
@@ -697,6 +709,7 @@ fn bottom_kind_from_id(id: &str) -> Option<BottomPaneKind> {
         "git" => Some(BottomPaneKind::Git),
         "run" => Some(BottomPaneKind::Run),
         "diagnostics" => Some(BottomPaneKind::Diagnostics),
+        "debug" => Some(BottomPaneKind::Debug),
         _ => None,
     }
 }
@@ -1202,6 +1215,14 @@ pub struct ShellWorkspace {
     /// 订阅运行面板的 [`RunPaneEvent`]：一次运行开始时自动显示底部工具窗并切到「运行」
     /// （点 `▶` 之后看不到输出是最糟的体验）。同样是 RAII，必须持有。
     _run_subscription: Option<gpui_kit::Subscription>,
+    /// 底部窗里的「调试」面板（U19：断点模型 + 调用栈 / 变量树 / 监视 / 求值 / 单步控制）。
+    ///
+    /// 断点表的 **owner 是它**（不是本外壳、也不是编辑区）：本外壳只做三件它做不了的事 ——
+    /// 把工作区根给它的键换算成绝对路径、把快照推给编辑区的行号槽、把它的动作接到菜单。
+    debug: Entity<DebugPane>,
+    /// 订阅调试面板的 [`DebugPaneEvent`]：断点集一变就把快照重推给行号槽。
+    /// 与 `_run_subscription` 同理，RAII，必须持有。
+    _debug_subscription: Option<gpui_kit::Subscription>,
     /// 底部窗当前显示的内容。**与可见性分开**：隐藏时保留最后显示过的页签。
     bottom_kind: BottomPaneKind,
     /// 底部窗是否展开。**默认 `false`（隐藏）**：真源
@@ -1564,11 +1585,39 @@ impl ShellWorkspace {
         // 要新开一个带工作目录的页签，并把底部工具窗切到终端且显示）。
         // 被绕开的只有"操作系统把这次点击送进窗口"那一段 —— 回调里走的都是与主菜单
         // 「终端 → 新建终端」同一个 `TerminalPane::new_tab_in` / 同一个 `bottom_visible`。
+        //
+        // ⚠️ **U19 起还要排在自己的 `debug` 实体之后**：编辑区的两个调试回调
+        // （点行号槽 / 正文变了）要捕获外壳的弱引用，而外壳的 `toggle_breakpoint` 要
+        // `debug.update(..)`。
+        let debug = cx.new(|_cx| DebugPane::new());
+        // 步进过滤器那一块的数据来自 Core 的 `debug.steppingFilters`
+        // （**唯一无会话依赖的 debug 命令之一**，见 `debug.rs` 的模块文档）：
+        // 建面板时就取一次，Core 调用在 `background_spawn` 上，不在 UI 线程等。
+        debug.update(cx, |pane, cx| pane.load_stepping_filters(cx));
+        let debug_subscription = cx.subscribe(&debug, |this, _pane, event: &DebugPaneEvent, cx| {
+            match event {
+                DebugPaneEvent::BreakpointsChanged => {
+                    // 断点表的 owner 是调试面板；行号槽只画。所以"谁改了断点"由这一个事件说出来，
+                    // 快照的重推也只有这一处。
+                    this.push_gutter_breakpoints(cx);
+                }
+                DebugPaneEvent::Hide => {
+                    // 面板头部那颗「隐藏」（真源 `GenericDebugView.swift:151-155`）：
+                    // 面板不知道底部工具窗是否可见，所以由外壳改这两个字段。
+                    this.bottom_visible = false;
+                    this.schedule_session_save(cx);
+                    cx.notify();
+                }
+            }
+        });
         {
             let shell = cx.entity().downgrade();
             // 「文件写盘成功」的宿主钩子要自己一份弱引用：下面 `open_terminal` 那个闭包会把
             // `shell` 整个搬走（`Arc<dyn Fn>` 是 `'static` 的），不能再共用一份。
             let shell_for_write = shell.clone();
+            // U19 的四个调试回调各要自己一份弱引用（下面 `open_terminal` 那个闭包会把 `shell`
+            // 整个搬走），所以在这一层先克隆一份给它们。
+            let shell_for_debug_gutter = shell.clone();
             let terminal_handle = terminal.downgrade();
             let workspace_root = root.clone();
             editor.update(cx, |pane, _cx| {
@@ -1623,6 +1672,43 @@ impl ShellWorkspace {
                         shell_for_write.update(cx, |shell, cx| shell.note_buffer_written(path, cx));
                 });
                 pane.set_buffer_write_host(write_host);
+
+                // U19：行号槽的两个调试回调（点断点 + 正文变了）。三个回调都要捕获外壳
+                // （断点表的 owner 是 `debug` 实体，而键的换算要工作区根 —— 两样都在外壳手里）。
+                let shell_for_toggle = shell_for_debug_gutter.clone();
+                let shell_for_enable = shell_for_debug_gutter.clone();
+                let shell_for_remove = shell_for_debug_gutter.clone();
+                let shell_for_edit = shell_for_debug_gutter;
+                pane.set_debug_gutter_host(DebugGutterHost {
+                    // 点行号槽：切换该行断点（真源 `toggleBreakpoint`，`AppModel+Debugging.swift:292-313`）。
+                    toggle: Arc::new(move |path: &Path, line: usize, cx: &mut App| {
+                        let _ = shell_for_toggle.update(cx, |shell, cx| {
+                            shell.toggle_breakpoint(path, line, cx);
+                        });
+                    }),
+                    // 右键「启用 / 禁用断点」（真源 `CodeEditorView.swift:5380-5382`）。
+                    set_enabled: Arc::new(
+                        move |path: &Path, line: usize, enabled: bool, cx: &mut App| {
+                            let _ = shell_for_enable.update(cx, |shell, cx| {
+                                shell.set_breakpoint_enabled(path, line, enabled, cx);
+                            });
+                        },
+                    ),
+                    // 右键「移除断点」（真源 `:5383-5385`）。
+                    remove: Arc::new(move |path: &Path, line: usize, cx: &mut App| {
+                        let _ = shell_for_remove.update(cx, |shell, cx| {
+                            shell.remove_breakpoint(path, line, cx);
+                        });
+                    }),
+                    // 正文变了：`debug.relocateBreakpoints` 的输入（形参见 `DebugGutterHost`）。
+                    source_edit: Arc::new(
+                        move |path: &Path, before: &str, after: &str, cx: &mut App| {
+                            let _ = shell_for_edit.update(cx, |shell, cx| {
+                                shell.apply_debug_source_edit(path, before, after, cx);
+                            });
+                        },
+                    ),
+                });
             });
         }
 
@@ -1990,6 +2076,8 @@ impl ShellWorkspace {
             bottom_git,
             run,
             _run_subscription: Some(run_subscription),
+            debug,
+            _debug_subscription: Some(debug_subscription),
             // 默认页签是终端（`workspace-ui-defaults.ts:6` 的 `bottomPaneActiveTab: "terminal"`），
             // 但默认**不显示**（同文件 `:5` 的 `isBottomPaneVisible: false`）。
             bottom_kind: BottomPaneKind::Terminal,
@@ -2341,6 +2429,128 @@ impl ShellWorkspace {
     /// 传的是**这一条**路径，绝不退化成"每次保存就 invalidate 全量"。
     pub(crate) fn note_buffer_written(&mut self, path: &Path, cx: &mut Context<Self>) {
         self.search_index.schedule_update(path, cx);
+    }
+
+    // -----------------------------------------------------------------------
+    // U19 调试：断点表的键换算、快照推送、以及三个"只有外壳做得了"的落点
+    // -----------------------------------------------------------------------
+    //
+    // 分工（与 `search_index` 那条链同一形状）：
+    //
+    // | 谁 | 做什么 | 不做什么 |
+    // | --- | --- | --- |
+    // | `crate::debug::DebugPane` | 持有断点表、算请求、调 Core、决定"能不能启动" | 不认识绝对路径、不认识工作区根 |
+    // | 本外壳 | 把编辑区给的绝对路径换算成断点表的键、把快照推回行号槽、接菜单 | 不自己存断点、不构造请求 |
+    // | `editor` | 画标记、把"点了哪一行/正文变了"报出来 | 不存断点、不算位移 |
+
+    /// 断点表的键：工作区根下的文件取工作区相对路径（`/` 分隔）。
+    ///
+    /// 换算本体是纯函数 [`crate::debug::debug_key`]（有单测），这里只补一个"还没有工作区根"
+    /// 的退化：那时用绝对路径 —— 与 Core 的 `sourcePath` 两种都收（`validate_path`）一致，
+    /// 而且比"丢掉这次点击"诚实。
+    fn debug_breakpoint_key(&self, path: &Path) -> String {
+        crate::debug::debug_key(&self.root, path)
+    }
+
+    /// 把断点表的当前快照推给编辑区的行号槽（键还原成绝对路径）。
+    ///
+    /// 只在"断点集变了"时调（订阅 [`DebugPaneEvent::BreakpointsChanged`] 那一条路，
+    /// 以及换根之后补推一次）。快照是每文件一份、量级几十条，整份推的代价可忽略。
+    pub(crate) fn push_gutter_breakpoints(&mut self, cx: &mut Context<Self>) {
+        let (snapshot, muted) = {
+            let pane = self.debug.read(cx);
+            (pane.gutter_snapshot(&self.root), pane.breakpoints().muted())
+        };
+        self.editor.update(cx, |pane, _cx| {
+            pane.set_gutter_breakpoints(snapshot, muted);
+        });
+        cx.notify();
+    }
+
+    /// 点行号槽：切换该行断点（真源 `AppModel+Debugging.swift:292-313`）。
+    ///
+    /// `path` 是编辑区给的**绝对路径**；本外壳负责换算成断点表的键。
+    pub(crate) fn toggle_breakpoint(&mut self, path: &Path, line: usize, cx: &mut Context<Self>) {
+        let key = self.debug_breakpoint_key(path);
+        let Ok(line) = i64::try_from(line) else {
+            return;
+        };
+        self.debug
+            .update(cx, |pane, cx| pane.toggle_breakpoint_at(&key, line, cx));
+    }
+
+    /// 右键「启用 / 禁用断点」（真源 `CodeEditorView.swift:5380-5382`）。
+    pub(crate) fn set_breakpoint_enabled(
+        &mut self,
+        path: &Path,
+        line: usize,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let key = self.debug_breakpoint_key(path);
+        let Ok(line) = i64::try_from(line) else {
+            return;
+        };
+        self.debug.update(cx, |pane, cx| {
+            pane.set_breakpoint_enabled(&key, line, enabled, cx)
+        });
+    }
+
+    /// 右键「移除断点」（真源 `CodeEditorView.swift:5383-5385`）。
+    pub(crate) fn remove_breakpoint(&mut self, path: &Path, line: usize, cx: &mut Context<Self>) {
+        let key = self.debug_breakpoint_key(path);
+        let Ok(line) = i64::try_from(line) else {
+            return;
+        };
+        self.debug
+            .update(cx, |pane, cx| pane.remove_breakpoint(&key, line, cx));
+    }
+
+    /// 「运行 → 切换当前行断点」（真源 `debugger.toggleCurrentLineBreakpoint`）：
+    /// 光标所在行翻转断点。
+    ///
+    /// 落点是编辑区的 [`lithe_gpui_editor::EditorPane::active_disk_file`] +
+    /// [`lithe_gpui_editor::EditorPane::cursor_position`]（两样都是编辑区的只读公开面），
+    /// 走的是与点行号槽**完全相同**的 [`Self::toggle_breakpoint`]。
+    pub(crate) fn toggle_breakpoint_at_caret(&mut self, cx: &mut Context<Self>) {
+        let target = {
+            let pane = self.editor.read(cx);
+            pane.active_disk_file().map(|path| {
+                let position = pane.cursor_position(cx);
+                (path, position.line)
+            })
+        };
+        let Some((path, line)) = target else {
+            eprintln!("{DEBUG_TAG} toggleAtCaret status=skipped reason=no-file");
+            return;
+        };
+        eprintln!(
+            "{DEBUG_TAG} toggleAtCaret path={} line={line}",
+            path.display()
+        );
+        self.toggle_breakpoint(&path, line, cx);
+    }
+
+    /// 正文变了：把这一次编辑交给 `debug.relocateBreakpoints`（Core）。
+    ///
+    /// 编辑区已经保证了"只在真的有基线且真的变了"时才报（见 `on_input_change`），
+    /// 所以这里不再重复判据。
+    pub(crate) fn apply_debug_source_edit(
+        &mut self,
+        path: &Path,
+        before: &str,
+        after: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let key = self.debug_breakpoint_key(path);
+        self.debug.update(cx, |pane, cx| {
+            pane.apply_source_edit(&key, before, after, cx)
+        });
+    }
+
+    /// 「清空断点」（真源 `debugger.clearBreakpoints`）。
+    pub(crate) fn clear_breakpoints(&mut self, cx: &mut Context<Self>) {
+        self.debug.update(cx, |pane, cx| pane.clear_breakpoints(cx));
     }
 
     /// 会话文档里的界面部分（外壳那六个可见性/视图值 + 三块面板的尺寸 →
@@ -2954,17 +3164,25 @@ impl ShellWorkspace {
                 self.run.update(cx, |pane, cx| pane.stop(cx));
                 diagnose_menu_run(action, "stop");
             }
+            MenuAction::ToggleBreakpoint => {
+                // 「运行 → 切换断点」：U19 起**真的能用**（改前是
+                // `NotWired { missing: MISSING_DEBUGGER_HOST }` 占位项）。
+                // 落点与点行号槽完全同一条（`toggle_breakpoint_at_caret` → `toggle_breakpoint`）。
+                self.toggle_breakpoint_at_caret(cx);
+                diagnose_menu_run(action, "toggleBreakpoint");
+            }
             MenuAction::ShowDiagnostics | MenuAction::ShowRunAndDebug => {
                 // 接线点：底部工具窗的**同一份状态**（`bottom_kind` + `bottom_visible`）——
                 // 活动栏底部组的「诊断 / 运行」两项点下去改的就是这两个字段
                 // （`on_select_activity` 的 `Some(kind)` 分支）。
                 //
-                // ⚠️ **如实说明**：「运行」那一页仍是 `placeholder(..)`
-                // （「{名字} 工具窗（未实现）」，`BottomPaneKind` 的 `label`），而「诊断」
-                // 已经是真的问题列表（`editor` 的 `problems` 面板）。所以本条的"真的发生了
-                // 那件事"对运行页只指**工具窗真的打开了**，对诊断页还包含**列表真的画出来了**。
+                // ⚠️ **U19 改了这一条的落点**：「视图 → 运行和调试」从「运行」面板改到
+                // **调试工具窗**。理由：真源里"运行和调试"就是**调试工具窗**
+                // （`Views/Debug/GenericDebugView.swift` 自带 `Debugger | Console` 两个
+                // content tab，`:96-133`，Console 就是运行输出），而 U19 之前宿主没有调试面板、
+                // 只能临时指到运行面板。运行面板本身仍从活动栏「运行」项和标题栏 ▶ 进。
                 self.bottom_kind = match action {
-                    MenuAction::ShowRunAndDebug => BottomPaneKind::Run,
+                    MenuAction::ShowRunAndDebug => BottomPaneKind::Debug,
                     _ => BottomPaneKind::Diagnostics,
                 };
                 self.bottom_visible = true;
@@ -4885,6 +5103,10 @@ impl Render for ShellWorkspace {
                 // 运行页：**真的运行面板**（配置列表 / 输出控制台 / ▶ 🐞 ■ ⌫）。
                 // 进程与输出都在那个实体里，外壳只把它放进来。
                 BottomPaneKind::Run => self.run.clone().into_any_element(),
+                // 调试页（U19）：**真的调试面板**（断点 / 调用栈 / 变量 / 监视 / 求值 / 单步）。
+                // ⚠️ 它自己**没有**活会话可显示，也**不假装有** —— 空态写着为什么
+                // （H10 transport / H11 JDT 调试会话启动都没做），见 `crate::debug` 的模块文档。
+                BottomPaneKind::Debug => self.debug.clone().into_any_element(),
             };
             bottom_pane(
                 content,

@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 132 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 155 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8791,8 +8791,6 @@ lithe:
     zh-CN: "尚未接入：编辑器还没有这些功能（行级编辑、转到行、缩略图 / 行号 / 空白字符开关、分屏）。"
   gpui.menuMissing.lspRequests:
     zh-CN: "尚未接入：Java 服务侧还没有这条 LSP 请求（现在只接了定义 / 补全 / 快速修复）。"
-  gpui.menuMissing.debuggerHost:
-    zh-CN: "尚未接入：没有进程宿主（调试适配器还没接）。"
   gpui.menuMissing.subsystem:
     zh-CN: "尚未接入：还没有对应子系统。"
   gpui.menuMissing.github:
@@ -8907,6 +8905,54 @@ lithe:
     zh-CN: "搜索索引未提前建立完成，首次搜索可能较慢（搜索本身仍然可用）。"
   welcome.gpui.noMatchingProjects:
     zh-CN: "没有匹配的项目"
+  debugger.gpui.toolWindowTitle:
+    zh-CN: "调试"
+  debugger.gpui.transportLabel:
+    zh-CN: "适配器通道"
+  debugger.gpui.sessionLabel:
+    zh-CN: "调试会话"
+  debugger.gpui.absent:
+    zh-CN: "未实现"
+  debugger.gpui.present:
+    zh-CN: "已在"
+  debugger.gpui.startBlockedNoTransport:
+    zh-CN: "已有会话，但平台侧的调试适配器通道尚未实现（H10）：收不到任何 DAP 事件，所以启动没有意义。"
+  debugger.gpui.startBlockedNoSession:
+    zh-CN: "已有适配器通道，但还没有调试会话（H11）：需要 `vscode.java.startDebugSession` 给出的适配器与端口。"
+  debugger.gpui.startBlockedBoth:
+    zh-CN: "调试会话与适配器通道都还没有：平台侧的 transport（H10）与 JDT 调试会话启动（H11）都未接。"
+  debugger.gpui.h10Note:
+    zh-CN: "缺 H10：平台侧调试适配器 transport（socket / 子进程 / 适配器进程生命周期）。Core 明确它归平台所有（`debug/engine.rs:1`），而 gpui 侧一个实现都没有。"
+  debugger.gpui.h11Note:
+    zh-CN: "缺 H11：Java Debug Server 的启动与端口协商（`vscode.java.startDebugSession`）。它不在 Core 的命令面里（`run/src/lib.rs:34` 把它列为下一步入口）。"
+  debugger.gpui.emptyTitle:
+    zh-CN: "调试"
+  debugger.gpui.breakpointSummary:
+    zh-CN: "已设 {count} 个断点"
+  debugger.gpui.steppingFilters:
+    zh-CN: "步进过滤器"
+  debugger.gpui.filtersIdle:
+    zh-CN: "尚未读取步进过滤器。"
+  debugger.gpui.filtersLoading:
+    zh-CN: "正在读取步进过滤器…"
+  debugger.gpui.filtersFailed:
+    zh-CN: "读取步进过滤器失败："
+  debugger.gpui.filtersShapeUnknown:
+    zh-CN: "Core 返回的步进过滤器形状不认识（契约可能变了）。"
+  debugger.gpui.filtersMissingData:
+    zh-CN: "Core 说成功但没有返回数据。"
+  debugger.gpui.filterClassPatterns:
+    zh-CN: "类名模式"
+  debugger.gpui.skipSynthetics:
+    zh-CN: "跳过合成方法"
+  debugger.gpui.skipConstructors:
+    zh-CN: "跳过构造方法"
+  debugger.gpui.skipStaticInitializers:
+    zh-CN: "跳过静态初始化块"
+  debugger.gpui.hideFilteredStackFrames:
+    zh-CN: "折叠匹配的栈帧"
+  debugger.gpui.pausedWithReason:
+    zh-CN: "已暂停 · {reason}"
 
 gpui_component:
   Dialog.ok:

@@ -75,6 +75,7 @@
 //! 上游**有**宿主塞诊断的公开入口（`EditorState::diagnostics_mut()`），所以这是接线不是自绘；
 //! 完整的 API 清单、列口径陷阱与"为什么必须有界重取"都写在 [`crate::diagnostics`] 的模块文档里。
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -175,6 +176,25 @@ const AUTO_SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
 /// 调用点只有 [`EditorPane::on_input_change`] 一处。
 const AUTO_SAVE_ENABLED: bool = true;
 
+/// 断点行号槽的列宽（真源 `EditorDebugBreakpointAppearance.markerSize = 14`，
+/// `macos/Sources/Lithe/Views/Editor/CodeEditorView.swift:254`；真源 gutter 里
+/// `breakpointRange` 也正好是 14 宽，同文件 `:441`）。
+const BREAKPOINT_GUTTER_WIDTH_SPEC: f32 = 14.;
+
+/// 断点标记本身的直径（真源同一个 `markerSize = 14` —— 真源在 14 宽的列里画 14 的点，
+/// 本列同宽同径，所以是"列 = 标记"的最密排法）。
+const BREAKPOINT_MARKER_SIZE_SPEC: f32 = 14.;
+
+/// 上游 `Editor` 正文的**上内衬**，用来把本侧的断点列与正文行对齐。
+///
+/// 8 = `Size::Medium.input_py()`：`gpui-component-0.7.0/src/input/input.rs:579-596` 把
+/// `self.size.input_py()` 写进 `state.set_editor_paddings(..)` 的 `top`，而
+/// `sizing.rs:158-165` 给 `Medium`（`Size` 的 `#[default]`，`sizing.rs:10-11`）就是 8。
+/// 上游**没有**公开 `editor_paddings`（`pub(super) editor_paddings`，
+/// `gpui-base-0.7.0/src/input/base/state.rs:423`），所以只能照抄默认档。
+/// ⚠️ 换了 `Size` 或上游改默认档时会漂 —— 见 [`EditorPane::breakpoint_gutter`] 的文档。
+const EDITOR_CONTENT_TOP_PADDING_SPEC: f32 = 8.;
+
 /// 状态栏用的光标位置：**1 基**行列。
 ///
 /// 显式用 1 基而不是拿组件的 0 基 `lsp_types::Position` 直接用，是因为"第几行第几列"
@@ -243,6 +263,42 @@ pub struct TabMenuHostActions {
 /// ⚠️ **只有真的写成功才调**（`write_buffer` 的 `Ok` 分支）：写失败时磁盘与索引都没有变化，
 /// 调了只会白跑一次 Core 信封。
 pub type BufferWriteHost = Arc<dyn Fn(&Path, &mut App) + 'static>;
+
+/// 行号槽上的一个断点。**只用于绘制**：颜色 / 启用态 / 校验态。
+///
+/// 这个类型刻意不叫 `DebugBreakpoint`、也不带条件 / 命中次数等字段：断点的**模型**
+/// （按文件分组、set/relocate 的请求构造、与 Core 的同步）归 `workbench` 的调试 feature，
+/// 编辑区只该知道"这个文件的这几行要画一个标记、点的哪一行要报给宿主"。
+/// 与 [`BufferWriteHost`] 同一口径：低层 crate 定形状，外壳填数据与动作。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct GutterBreakpoint {
+    /// **一基**行号（Core 与真源同口径：`SourceBreakpoint.line` 是一基）。
+    pub line: usize,
+    /// 断点是启用的（真源 `EditorDebugBreakpointState.enabled`，`CodeEditorView.swift:248-251`）。
+    pub enabled: bool,
+    /// 适配器校验过（没有会话时恒 `false`）。
+    pub verified: bool,
+}
+
+/// 断点行号槽 + 正文编辑的宿主回调（由外壳在 `ShellWorkspace::new` 里登记）。
+///
+/// 四个回调打包成一个结构（形状照 [`TabMenuHostActions`]）：它们同属"调试 feature 要听的
+/// 编辑区事件"，分开四个 setter 只会让调用点多三倍。
+pub struct DebugGutterHost {
+    /// 点了某一行的行号槽：切换该行的断点（真源 `AppModel+Debugging.swift:292-313`）。
+    pub toggle: Arc<dyn Fn(&Path, usize, &mut App) + 'static>,
+    /// 右键「启用 / 禁用断点」（真源 `CodeEditorView.swift:5380-5382`）。
+    pub set_enabled: Arc<dyn Fn(&Path, usize, bool, &mut App) + 'static>,
+    /// 右键「移除断点」（真源 `:5383-5385`）。
+    pub remove: Arc<dyn Fn(&Path, usize, &mut App) + 'static>,
+    /// **正文变了**：`(路径, 编辑前全文, 编辑后全文)`。
+    ///
+    /// 为什么要交出"编辑前"的全文：Core 的 `debug.relocateBreakpoints` 收的正是
+    /// "编辑前的完整源文本 + 一次 UTF-16 编辑 + 断点集"（`debug/breakpoint_relocation.rs:23-32`），
+    /// 而上游只发一个"变了"的事件、不交 `InputEdit`。编辑区是**唯一**持有上一帧正文的地方，
+    /// 所以这份缓存必须在编辑区。**只有真的变了才调**。
+    pub source_edit: Arc<dyn Fn(&Path, &str, &str, &mut App) + 'static>,
+}
 
 /// 批量关闭类菜单项的作用范围。
 ///
@@ -403,6 +459,23 @@ pub struct EditorPane {
     /// 外壳登记的回调：**每次写盘成功**报一次（见 [`BufferWriteHost`]）。
     /// `None` = 外壳还没登记（例如组件在测试宿主里单独跑）→ 索引不更新，但保存照常成功。
     buffer_write_host: Option<BufferWriteHost>,
+    /// 行号槽要画的断点，按**绝对路径**分组（键与 [`Buffer::path`] 同物）。
+    ///
+    /// 由外壳在断点集或活动文件变化时整份推过来（见 [`Self::set_gutter_breakpoints`]）——
+    /// 编辑区**不**自己维护断点真相，它只画。空表 = 不画标记（也就不用画那一列）。
+    gutter_breakpoints: BTreeMap<PathBuf, Vec<GutterBreakpoint>>,
+    /// 「全部断点静音」（真源 `areBreakpointsMuted`，`CodeEditorView.swift:1891`）：
+    /// 静音时标记画成次要色（真源 `drawDebugBreakpoint` 的 `isInactive`，`:4978`）。
+    breakpoints_muted: bool,
+    /// 外壳登记的调试回调（见 [`DebugGutterHost`]）。
+    debug_gutter_host: Option<DebugGutterHost>,
+    /// **每个文件的上一帧正文**，键与 [`Buffer::path`] 同物。
+    ///
+    /// [`DebugGutterHost::source_edit`] 要"编辑前"的全文，而上游只发一个"变了"的事件，
+    /// 所以这份缓存只能在编辑区（它是唯一持有上一帧的地方）。
+    /// **按路径而不是按下标**：标签会被关掉、下标会整体前移，路径不会。
+    /// 没有条目 = 还没记过基线（那就**不报** edit，见 [`Self::on_input_change`]）。
+    last_text: BTreeMap<PathBuf, String>,
     /// 制表符宽度（空格数）。真源是设置里的 `tabSize`（Windows 默认 2，
     /// `default-settings.ts:55`），由外壳在启动时与每次设置变化后经
     /// [`EditorPane::set_tab_size`] 登记进来。
@@ -516,6 +589,10 @@ impl EditorPane {
             workspace_root: None,
             tab_menu_actions: None,
             buffer_write_host: None,
+            gutter_breakpoints: BTreeMap::new(),
+            breakpoints_muted: false,
+            debug_gutter_host: None,
+            last_text: BTreeMap::new(),
             tab_size: DEFAULT_TAB_SIZE,
             auto_completion: Rc::new(AtomicBool::new(true)),
             hovered_tab: None,
@@ -943,6 +1020,32 @@ impl EditorPane {
         self.buffer_write_host = Some(host);
     }
 
+    /// 整份推进行号槽要画的断点（按绝对路径分组）。
+    ///
+    /// **整份替换而不是增量**：断点集是工作区级的小集合（几十条量级），整份推的代价可以忽略，
+    /// 而增量接口（加一条 / 删一条 / 改启用态 / 按文件清空 / relocate 之后整文件换）会让
+    /// "编辑区与外壳的断点表不一致"多出五种半路状态。变化时 `cx.notify()` 由调用方负责
+    /// （外壳本来就在它自己的更新里）。
+    pub fn set_gutter_breakpoints(
+        &mut self,
+        breakpoints: BTreeMap<PathBuf, Vec<GutterBreakpoint>>,
+        muted: bool,
+    ) {
+        if self.gutter_breakpoints == breakpoints && self.breakpoints_muted == muted {
+            return;
+        }
+        self.gutter_breakpoints = breakpoints;
+        self.breakpoints_muted = muted;
+    }
+
+    /// 登记调试回调（见 [`DebugGutterHost`]）。
+    ///
+    /// 与 [`Self::set_tab_menu_host_actions`] 同一个调用点（`ShellWorkspace::new` 里那段
+    /// `editor.update(..)`）：它捕获的是外壳自己的弱引用。
+    pub fn set_debug_gutter_host(&mut self, host: DebugGutterHost) {
+        self.debug_gutter_host = Some(host);
+    }
+
     /// 登记工作区根（标签右键菜单的「复制相对路径」要用它）。
     ///
     /// 与 [`Self::prepare_java`] 同一个调用点；分开两个方法是因为职责不同 ——
@@ -1098,6 +1201,10 @@ impl EditorPane {
 
         // 实参从左到右求值，图标要在 `name` 被移进构造函数之前算好。
         let icon = icon_for_file(&name, cx);
+        // 断点 relocate 要"编辑前"的全文，所以在打开这一刻先把第一份正文记成基线。
+        let _ = self
+            .last_text
+            .insert(path.clone(), editor.read(cx).text().to_string());
         self.buffers.push(Buffer::new(
             path,
             name,
@@ -1815,6 +1922,25 @@ impl EditorPane {
 
         if AUTO_SAVE_ENABLED {
             self.schedule_auto_save(index, window, cx);
+        }
+
+        // 断点跟着正文走（Core `debug.relocateBreakpoints`）：只有**有基线**时才报，
+        // 否则会把"整个文件"当成一次编辑，把断点全折到第一行。
+        let path = self.buffers[index].path.clone();
+        let after = self.buffers[index].editor.read(cx).text().to_string();
+        match self.last_text.insert(path.clone(), after.clone()) {
+            Some(before) if before != after => {
+                if let Some(host) = self
+                    .debug_gutter_host
+                    .as_ref()
+                    .map(|host| host.source_edit.clone())
+                {
+                    (host)(&path, &before, &after, cx);
+                }
+            }
+            // `None` = 还没有基线（例如宿主单独跑这个组件、或者刚 reload 过）：
+            // 这一帧只把基线补上，**不报** edit（报了就是一次假位移）。
+            _ => {}
         }
     }
 
@@ -2870,65 +2996,204 @@ impl EditorPane {
         // 两份：滚轮闭包会把它 move 走，正文还要再渲染一次同一个编辑器。
         let editor = buffer.editor.clone();
         let scroll_editor = editor.clone();
+        // 行号槽取断点用同一个 key（`Buffer::path` 就是断点表的键）。
+        let path = buffer.path.clone();
 
-        div()
+        h_flex()
             .flex_1()
             .min_h_0()
             .overflow_hidden()
-            // `Ctrl+单击` 的接线点：**包装层**的 `on_mouse_down`（冒泡阶段）——
-            // 组件自己不带点位置换算的公开 API，但它在自己的 `on_mouse_down` 里已经把光标
-            // 移到了点击处，而冒泡到这个包装层时那一步已经做完（理由与出处见
-            // [`EditorPane::on_editor_click`]）。
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|pane, event: &MouseDownEvent, window, cx| {
-                    pane.on_editor_click(event, window, cx);
-                }),
+            // 断点行号槽（U19）：Lithe 自己的一列，贴在上游行号槽**左侧**。
+            // 上游的 gutter 画不进东西（`line_number_width` 是 `pub(super)`，见
+            // `breakpoint_gutter` 的文档），所以只能做兄弟列 + 按上游公开几何对齐。
+            .child(self.breakpoint_gutter(&path, cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    // `Ctrl+单击` 的接线点：**包装层**的 `on_mouse_down`（冒泡阶段）——
+                    // 组件自己不带点位置换算的公开 API，但它在自己的 `on_mouse_down` 里已经把光标
+                    // 移到了点击处，而冒泡到这个包装层时那一步已经做完（理由与出处见
+                    // [`EditorPane::on_editor_click`]）。
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|pane, event: &MouseDownEvent, window, cx| {
+                            pane.on_editor_click(event, window, cx);
+                        }),
+                    )
+                    // ⚠️ **滚轮必须自己接**：编辑器元素的样式只有 `position: absolute` + `100%`，
+                    // **没有** `overflow: scroll`（`gpui-base-0.6.6/src/input/base/element.rs:202-213`），
+                    // 而 gpui 只把滚轮交给"命中元素样式里带 `Overflow::Scroll`"的那个
+                    // （`gpui-pre-0.3.6/src/elements/div.rs:3332-3370`）。
+                    // 做法是在包裹层接，把增量交给编辑器自己的滚动偏移
+                    // （`InputBaseState::{scroll_offset, set_scroll_offset}`，
+                    // `gpui-base-0.6.6/src/input/base/state.rs:2806-2817`；后者会自己 clamp、
+                    // 下一帧生效）。
+                    .on_scroll_wheel(cx.listener(
+                        move |_pane, event: &ScrollWheelEvent, window, cx| {
+                            let line_height = scroll_editor
+                                .read(cx)
+                                .line_height()
+                                // 兜底行高 20：滚轮增量换算里的 `Pixels`（不是样式槽），按本帧 rem 基准
+                                // 求值，见 [`FALLBACK_LINE_HEIGHT`]。
+                                .unwrap_or(rem_px(window.rem_size(), FALLBACK_LINE_HEIGHT));
+                            let delta = event.delta.pixel_delta(line_height).y;
+                            // 零值与缩放无关（`0 × 任何 rem 基准 = 0`），所以用 `Pixels::ZERO`
+                            // （`gpui-pre-0.3.6/src/geometry.rs:2795`）而不是 `px(0.)`：
+                            // 没有"规格值"可换算，写 rem 反而是伪换算。
+                            if delta == Pixels::ZERO {
+                                return;
+                            }
+                            let current = scroll_editor.read(cx).scroll_offset();
+                            scroll_editor.update(cx, |state, cx| {
+                                state.set_scroll_offset(point(current.x, current.y + delta), cx);
+                            });
+                        },
+                    ))
+                    // ⚠️ **多行编辑器必须显式给高度**：多行走 `.h_auto()`，高度 = **内容高度**，
+                    // 而内容高度来自 `LayoutMode::CodeEditor { rows }`，`rows` 默认只有 2
+                    // （`gpui-component-0.6.6/src/input/input.rs:706-709`、
+                    // `gpui-base-0.6.6/src/input/base/mode.rs:83-85`）—— 不给高度时编辑区只有两行高、
+                    // 下面整片空白。`relative(1.)` 让它填满外层这一格
+                    // （等价于组件自带的 `Input::full_height()`，`input.rs:250-252`）。
+                    //
+                    // `.bordered(false)`：真机的编辑面是**无边框**的纯表面
+                    // （`windows/tauri/src/features/editor/components/code-editor.tsx:650,731`：
+                    // `absolute inset-0 bg-background`，没有 border），而 `Editor` 默认
+                    // `bordered: true`（`gpui-component-0.6.6/src/input/editor.rs:46`）会画出
+                    // 输入框那种 1px `theme.input` 描边（`input/input.rs:713-715`）。
+                    // 焦点环不用管：`Editor` 已经把 `focus_bordered(false)` 写死了
+                    // （`input/editor.rs:146`）。
+                    .child(Editor::new(&editor).h(relative(1.)).bordered(false)),
             )
-            // ⚠️ **滚轮必须自己接**：编辑器元素的样式只有 `position: absolute` + `100%`，
-            // **没有** `overflow: scroll`（`gpui-base-0.6.6/src/input/base/element.rs:202-213`），
-            // 而 gpui 只把滚轮交给"命中元素样式里带 `Overflow::Scroll`"的那个
-            // （`gpui-pre-0.3.6/src/elements/div.rs:3332-3370`）。
-            // 做法是在包裹层接，把增量交给编辑器自己的滚动偏移
-            // （`InputBaseState::{scroll_offset, set_scroll_offset}`，
-            // `gpui-base-0.6.6/src/input/base/state.rs:2806-2817`；后者会自己 clamp、
-            // 下一帧生效）。
-            .on_scroll_wheel(
-                cx.listener(move |_pane, event: &ScrollWheelEvent, window, cx| {
-                    let line_height = scroll_editor
-                        .read(cx)
-                        .line_height()
-                        // 兜底行高 20：滚轮增量换算里的 `Pixels`（不是样式槽），按本帧 rem 基准
-                        // 求值，见 [`FALLBACK_LINE_HEIGHT`]。
-                        .unwrap_or(rem_px(window.rem_size(), FALLBACK_LINE_HEIGHT));
-                    let delta = event.delta.pixel_delta(line_height).y;
-                    // 零值与缩放无关（`0 × 任何 rem 基准 = 0`），所以用 `Pixels::ZERO`
-                    // （`gpui-pre-0.3.6/src/geometry.rs:2795`）而不是 `px(0.)`：
-                    // 没有"规格值"可换算，写 rem 反而是伪换算。
-                    if delta == Pixels::ZERO {
-                        return;
+            .into_any_element()
+    }
+
+    /// 断点行号槽：Lithe 自己的一列，宽度 = 真源 marker 的 **14**
+    /// （`EditorDebugBreakpointAppearance.markerSize`，`CodeEditorView.swift:254`）。
+    ///
+    /// ## 为什么是"兄弟列"而不是画进上游的 gutter
+    ///
+    /// 上游 `InputBaseElement` 的行号槽是**元素内部绘制**的：行号列宽只活在 `last_layout`
+    /// 里（`gpui-base-0.7.0/src/input/base/element.rs:1073-1113` 的 `layout_line_numbers`，
+    /// `pub(super)`；`paint` 在 `:3119-3160` 直接画），公开面只有
+    /// `line_height()` / `visible_row_range()` / `scroll_offset()`
+    /// （`state.rs:2963-2985`）。所以本列只能贴在上游 gutter 的**左侧** ——
+    /// 真源里断点列在行号列**右侧**（`CodeEditorView.swift:440-445`：`lineNumberRange` →
+    /// `breakpointRange`），这是**有意的、可见的**偏离，不是疏漏。
+    ///
+    /// ## 竖直对齐怎么算
+    ///
+    /// 上游画行 r 的 y = `bounds.top + paddings.top + r × line_height − scroll_offset.y`
+    /// （同一份 element.rs 的 paint 路径）。本列与编辑器是同一个 `h_flex` 的两个子项
+    /// （默认 `items_stretch`，两者 `bounds.top` 相同），所以本列的位移量就是
+    /// `paddings.top + visible.start × line_height − scroll_offset.y`：行高与滚动量都直接
+    /// 问上游要（公开 API），**只有 `paddings.top` 要照抄默认档** ——
+    /// `gpui-component-0.7.0/src/input/input.rs:579-596` 把 `self.size.input_py()` 写进
+    /// `editor_paddings.top`，而 `sizing.rs:158-165` 给 `Size::Medium`（`Default`）是 8。
+    ///
+    /// ⚠️ **未经真机视觉验证**：若某处给编辑器换了 `Size`、或上游改了默认档 / 额外加上内衬，
+    /// 整列会漂一个内衬量；若上游的可见行不是"行索引 = 一基行号 − 1"（软换行 / 折叠），
+    /// 标记也会偏。这两条是这一列唯一的已知风险，都记在上述推导的假设里。
+    fn breakpoint_gutter(&self, path: &Path, cx: &Context<Self>) -> AnyElement {
+        // 没有断点也照样画这一列：它是"点这里加断点"的唯一落点，列宽恒定正文才不会左右跳。
+        let mut column = div()
+            .w(rems(BREAKPOINT_GUTTER_WIDTH_SPEC / 16.))
+            .flex_shrink_0()
+            .h_full()
+            .overflow_hidden()
+            .relative();
+        let Some(buffer) = self.active.and_then(|index| self.buffers.get(index)) else {
+            return column.into_any_element();
+        };
+        let (visible, line_height, scroll_y) = {
+            let editor = buffer.editor.read(cx);
+            (
+                editor.visible_row_range(),
+                editor.line_height(),
+                editor.scroll_offset().y,
+            )
+        };
+        // 还没完成首次布局：没有行高就没有位移可算，这一帧只画空列（下一帧就有了）。
+        let (Some(visible), Some(line_height)) = (visible, line_height) else {
+            return column.into_any_element();
+        };
+        let top = rem_px(cx.theme().font_size, EDITOR_CONTENT_TOP_PADDING_SPEC)
+            + line_height * visible.start as f32
+            - scroll_y;
+        let marks = self.gutter_breakpoints.get(path);
+        let host = self.debug_gutter_host.as_ref();
+        let path_for_rows = path.to_path_buf();
+        let rows: Vec<AnyElement> = (visible.start..visible.end)
+            .map(|row| {
+                // `visible_row_range` 是 0 基行索引；真源 / Core 的断点行号都是 **1 基**。
+                let line = row + 1;
+                let breakpoint = marks
+                    .and_then(|marks| marks.iter().find(|mark| mark.line == line))
+                    .copied();
+                let mut row_element = h_flex()
+                    .id(SharedString::from(format!(
+                        "bp-{}-{line}",
+                        path_for_rows.display()
+                    )))
+                    .w_full()
+                    .h(line_height)
+                    .flex_shrink_0()
+                    .items_center()
+                    .justify_center();
+                if let Some(breakpoint) = breakpoint {
+                    // 颜色走主题：启用 = `danger`（真源那个 #E55765 是红），
+                    // 禁用或静音 = 次要色（真源 `drawDebugBreakpoint` 的 `alpha 0.36` 口径）。
+                    let active = breakpoint.enabled && !self.breakpoints_muted;
+                    row_element = row_element.child(
+                        div()
+                            .size(rems(BREAKPOINT_MARKER_SIZE_SPEC / 16.))
+                            .rounded_full()
+                            .bg(if active {
+                                cx.theme().danger
+                            } else {
+                                cx.theme().muted_foreground
+                            }),
+                    );
+                }
+                match host {
+                    Some(host) => {
+                        let toggle = host.toggle.clone();
+                        let set_enabled = host.set_enabled.clone();
+                        let remove = host.remove.clone();
+                        let path_for_click = path_for_rows.clone();
+                        row_element
+                            .cursor_pointer()
+                            .on_click(cx.listener(
+                                move |_pane, event: &gpui_kit::ClickEvent, _, cx| {
+                                    // 真源：普通单击 = 切换断点；`Alt+单击` 在真机是"删掉这一行"
+                                    // （`CodeEditorView.swift:5275-5276` 的 `onToggleDebugBreakpoint`），
+                                    // 右键菜单里另给"启用 / 禁用"与"移除"。
+                                    if event.modifiers().alt {
+                                        (remove)(&path_for_click, line, cx);
+                                    } else {
+                                        (toggle)(&path_for_click, line, cx);
+                                    }
+                                    let _ = &set_enabled;
+                                },
+                            ))
+                            .into_any_element()
                     }
-                    let current = scroll_editor.read(cx).scroll_offset();
-                    scroll_editor.update(cx, |state, cx| {
-                        state.set_scroll_offset(point(current.x, current.y + delta), cx);
-                    });
-                }),
+                    // 没有登记宿主（例如组件单独跑）→ 不画点击目标，只显示标记。
+                    None => row_element.into_any_element(),
+                }
+            })
+            .collect();
+        column
+            .child(
+                v_flex()
+                    .w_full()
+                    .relative()
+                    // 向上平移 = 第一可见行的内容 y 换算到本列坐标系（见函数文档的推导）。
+                    .top(-top)
+                    .children(rows),
             )
-            // ⚠️ **多行编辑器必须显式给高度**：多行走 `.h_auto()`，高度 = **内容高度**，
-            // 而内容高度来自 `LayoutMode::CodeEditor { rows }`，`rows` 默认只有 2
-            // （`gpui-component-0.6.6/src/input/input.rs:706-709`、
-            // `gpui-base-0.6.6/src/input/base/mode.rs:83-85`）—— 不给高度时编辑区只有两行高、
-            // 下面整片空白。`relative(1.)` 让它填满外层这一格
-            // （等价于组件自带的 `Input::full_height()`，`input.rs:250-252`）。
-            //
-            // `.bordered(false)`：真机的编辑面是**无边框**的纯表面
-            // （`windows/tauri/src/features/editor/components/code-editor.tsx:650,731`：
-            // `absolute inset-0 bg-background`，没有 border），而 `Editor` 默认
-            // `bordered: true`（`gpui-component-0.6.6/src/input/editor.rs:46`）会画出
-            // 输入框那种 1px `theme.input` 描边（`input/input.rs:713-715`）。
-            // 焦点环不用管：`Editor` 已经把 `focus_bordered(false)` 写死了
-            // （`input/editor.rs:146`）。
-            .child(Editor::new(&editor).h(relative(1.)).bordered(false))
             .into_any_element()
     }
 

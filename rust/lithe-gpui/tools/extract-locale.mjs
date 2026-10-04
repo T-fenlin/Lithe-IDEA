@@ -591,13 +591,6 @@ const GPUI_ONLY_KEYS = [
       "B3（同上）。给「转到实现 / 转到类型定义 / 转到引用 / 重命名符号 / 显示悬停信息 / 触发参数提示 / 格式化文档 / 格式化所选内容」。事实依据：crates/java/src/service.rs 只暴露 definition / completion / code_actions / diagnostics / sync_document 五条请求，textDocument/implementation|typeDefinition|references|rename|hover|signatureHelp|formatting 一条都没有 —— 缺的是上一条链的请求，不是编辑器入口。真源这 8 条恒可执行，catalog 里没有这句。",
   },
   {
-    key: "gpui.menuMissing.debuggerHost",
-    zh: "尚未接入：没有进程宿主（调试适配器还没接）。",
-    en: "Not wired yet: there is no process host (no debug adapter is wired).",
-    reason:
-      "B3（同上）。给「运行 → 开始调试 / 停止调试 / 切换断点」三条。维护者口径点名调试类写「没有进程宿主」：真源走 DAP，本侧连能挂调试器的进程宿主都没有（BottomPaneKind::Run 只是占位文案）。真源恒可执行，catalog 里没有这句。",
-  },
-  {
     key: "gpui.menuMissing.subsystem",
     zh: "尚未接入：还没有对应子系统。",
     en: "Not wired yet: the corresponding subsystem does not exist.",
@@ -1052,6 +1045,173 @@ const GPUI_ONLY_KEYS = [
     en: "No matching projects",
     reason:
       "真源 `macos/Sources/Lithe/Views/App/WelcomeView.swift:166` 的 `\"No matching projects\"`（`welcome.*` 族里唯一缺的那一支）。宿主用法：`crates/workbench/src/welcome.rs` 的空态第二个分支（`EmptyState::NoMatchingProjects`）。",
+  },
+  // ---------------------------------------------------------------------------
+  // U19 调试工具窗（`crates/workbench/src/debug.rs`）
+  //
+  // catalog 里的 `debugger.*` 已经覆盖了这个面板的绝大部分文案（栈 / 变量 / 监视 / 控制台 /
+  // 断点 / 单步 / 状态 / 各段空态），所以下面只补**真源没有**的那些 —— 分三类：
+  //   (a) 真源硬编码英文、catalog 里确实没有的（工具窗标题、步进过滤器对话框的五条开关与标题）；
+  //   (b) H10 / H11 的**诚实说明**（真源没有这两条，因为真源的 transport 与 JDT 调试会话都在）；
+  //   (c) "会话 / transport 两个事实"这两个状态词（真源把它们画在同一行状态文字里，没有分列）。
+  // 每一条都写清出处，中文按真源语义译（不自创说法）。
+  // ---------------------------------------------------------------------------
+  {
+    key: "debugger.gpui.toolWindowTitle",
+    zh: "调试",
+    en: "Debug",
+    reason:
+      "真源工具窗头部就是硬编码的 `Text(\"Debug\")`（`macos/Sources/Lithe/Views/Debug/GenericDebugView.swift:137`，同文件 `:151` 的隐藏按钮 help 是 `\"Hide Debug tool window\"`）。catalog 的 `debugger.*` 族里最接近的是 `debugger.runAndDebug`（“运行和调试”），那是**菜单项**名不是工具窗名，借过来会让头部与菜单同名。",
+  },
+  {
+    key: "debugger.gpui.transportLabel",
+    zh: "适配器通道",
+    en: "Adapter transport",
+    reason:
+      "U19 的诚实状态把头部分成两个事实（见 `crates/workbench/src/debug.rs` 的模块文档）：这一条是平台的 DAP byte transport（`docs/tasks/gpui-core-first.md:135` 的 H10）。真源没有这个词，因为它的 transport 在（`Mac*DebugAdapterTransport.swift` 五个实现）。",
+  },
+  {
+    key: "debugger.gpui.sessionLabel",
+    zh: "调试会话",
+    en: "Debug session",
+    reason:
+      "同上的第二个事实：Core 的 `debug.createSession` 建出来的协议会话（`rust/lithe-core/src/protocol/command.rs:115-116`）。单独列出来是为了让“有会话”与“有通道”在界面上不混成一件事。",
+  },
+  {
+    key: "debugger.gpui.absent",
+    zh: "未实现",
+    en: "not implemented",
+    reason:
+      "两个事实胶囊的“缺失”态。真源的对应概念是 `DebugToolbarPresentation.statusText` 的 `Ready`（`GenericDebugView.swift:54-57`），那是**会话内**的状态，套不到“平台能力还没做”这件事上。",
+  },
+  {
+    key: "debugger.gpui.present",
+    zh: "已在",
+    en: "present",
+    reason: "两个事实胶囊的“存在”态（与 `debugger.gpui.absent` 成对；当前运行期不可达，留给 H10/H11 落地）。",
+  },
+  {
+    key: "debugger.gpui.startBlockedNoTransport",
+    zh: "已有会话，但平台侧的调试适配器通道尚未实现（H10）：收不到任何 DAP 事件，所以启动没有意义。",
+    en: "A session exists, but the platform-side debug adapter transport is not implemented yet (H10): no DAP event can arrive, so starting would do nothing.",
+    reason:
+      "`start_blocker` 的“只有通道缺”分支（`crates/workbench/src/debug.rs` 的 `DebugStartBlocker::NoTransport`）。H10 = `docs/tasks/gpui-core-first.md:135`；Core 侧依据是 `rust/lithe-core/src/debug/engine.rs:1` 的 “byte transport and process lifecycle remain platform owned”。",
+  },
+  {
+    key: "debugger.gpui.startBlockedNoSession",
+    zh: "已有适配器通道，但还没有调试会话（H11）：需要 `vscode.java.startDebugSession` 给出的适配器与端口。",
+    en: "The adapter transport exists, but there is no debug session yet (H11): it needs the adapter and port from `vscode.java.startDebugSession`.",
+    reason:
+      "`start_blocker` 的“只有会话缺”分支（`DebugStartBlocker::NoSession`）。H11 = `docs/tasks/gpui-core-first.md:136`；入口见 `rust/lithe-gpui/crates/run/src/lib.rs:34`。",
+  },
+  {
+    key: "debugger.gpui.startBlockedBoth",
+    zh: "调试会话与适配器通道都还没有：平台侧的 transport（H10）与 JDT 调试会话启动（H11）都未接。",
+    en: "Neither a debug session nor an adapter transport exists: the platform transport (H10) and the JDT debug session start (H11) are both unwired.",
+    reason:
+      "`start_blocker` 的“两个都缺”分支（`DebugStartBlocker::NoTransportAndNoSession`）—— **当前运行期的真实状态**，也是空态默认显示的那一句。",
+  },
+  {
+    key: "debugger.gpui.h10Note",
+    zh: "缺 H10：平台侧调试适配器 transport（socket / 子进程 / 适配器进程生命周期）。Core 明确它归平台所有（`debug/engine.rs:1`），而 gpui 侧一个实现都没有。",
+    en: "Missing H10: the platform debug adapter transport (socket / child process / adapter process lifecycle). Core states it is platform-owned (`debug/engine.rs:1`), and the gpui host has no implementation.",
+    reason:
+      "空态里把两条缺口**分开**写（H10 与 H11 不是一件事）。出处：`docs/tasks/gpui-core-first.md:135`；Core 原句在 `rust/lithe-core/src/debug/engine.rs:1`。",
+  },
+  {
+    key: "debugger.gpui.h11Note",
+    zh: "缺 H11：Java Debug Server 的启动与端口协商（`vscode.java.startDebugSession`）。它不在 Core 的命令面里（`run/src/lib.rs:34` 把它列为下一步入口）。",
+    en: "Missing H11: starting the Java Debug Server and negotiating its port (`vscode.java.startDebugSession`). It is not part of Core's command surface (`run/src/lib.rs:34` lists it as the next entry point).",
+    reason: "同上第二条。出处：`docs/tasks/gpui-core-first.md:136`、`rust/lithe-gpui/crates/run/src/lib.rs:34`。",
+  },
+  {
+    key: "debugger.gpui.emptyTitle",
+    zh: "调试",
+    en: "Debug",
+    reason:
+      "空态标题。真源的标题是**动态**的（`emptyStateTitle`：`\"Debug \\(configuration.name)\"` 或 `\"Debug the current \\(language) file\"`，`GenericDebugView.swift:1353-1359`），而宿主没有“当前调试配置”这个事实（运行配置归 `run` crate 且没有 adapterId，见 `crates/workbench/src/debug.rs` 的模块文档）⇒ 只能给一个不带配置名的静态标题，不假装知道配置名。",
+  },
+  {
+    key: "debugger.gpui.breakpointSummary",
+    zh: "已设 {count} 个断点",
+    en: "{count} breakpoints set",
+    reason:
+      "空态里报告宿主断点表的规模（真源的空态没有这一行，因为它的断点管理是独立对话框 `DebugBreakpointManagerDialog`，`GenericDebugView.swift:1492-1533`）。宿主没有那个对话框，所以在空态里给出这个数 —— 它回答的是“我点的那些行号槽有没有真的记下来”。",
+  },
+  {
+    key: "debugger.gpui.steppingFilters",
+    zh: "步进过滤器",
+    en: "Stepping filters",
+    reason:
+      "真源对话框的标题是硬编码英文 `\"Java Stepping Filters\"`（`GenericDebugView.swift:2140`），`macos/Resources/zh-Hans.lproj/Localizable.strings` 里没有对应条目（只有 `:779-781` 的 Step over/into/out「单步跳过/进入/跳出」）。宿主这里只是**读**默认档并显示，所以标题不带 `Java` —— 适配器是请求参数（`crates/workbench/src/debug.rs` 的 `STEPPING_FILTERS_ADAPTER`）。",
+  },
+  {
+    key: "debugger.gpui.filtersIdle",
+    zh: "尚未读取步进过滤器。",
+    en: "Stepping filters have not been loaded yet.",
+    reason: "四态里的 `Idle`（与仓库既有 `idle` / `loading` / `ready` / `failed` 口径一致；真源是 `feature.javaSteppingFilters` 的 `Optional`，`GenericDebugView.swift:58`）。",
+  },
+  {
+    key: "debugger.gpui.filtersLoading",
+    zh: "正在读取步进过滤器…",
+    en: "Loading stepping filters…",
+    reason: "四态里的 `Loading`（`debug.steppingFilters` 在后台任务上跑，见 `crates/workbench/src/debug.rs` 的 `load_stepping_filters`）。",
+  },
+  {
+    key: "debugger.gpui.filtersFailed",
+    zh: "读取步进过滤器失败：",
+    en: "Loading stepping filters failed:",
+    reason: "四态里的 `Failed`（后面接 Core 的错误原文；真源没有这一态，因为它的过滤器是本地状态）。",
+  },
+  {
+    key: "debugger.gpui.filtersShapeUnknown",
+    zh: "Core 返回的步进过滤器形状不认识（契约可能变了）。",
+    en: "Core returned stepping filters in an unrecognized shape (the contract may have changed).",
+    reason: "`ok: true` 但字段对不上时的**如实**说明：不静默降级成“没有过滤器”（那会让用户以为默认档是空的），见 `crates/workbench/src/debug.rs` 的 `SteppingFiltersView::from_payload`。",
+  },
+  {
+    key: "debugger.gpui.filtersMissingData",
+    zh: "Core 说成功但没有返回数据。",
+    en: "Core reported success without returning data.",
+    reason: "`Ok(None)`（`ok: true`、无 `data`）时的契约异常说明 —— 与 `crates/workbench/src/search_index.rs` 的 `status=missing_data` 同一口径。",
+  },
+  {
+    key: "debugger.gpui.filterClassPatterns",
+    zh: "类名模式",
+    en: "Class patterns",
+    reason:
+      "真源 `\"Additional class patterns\"`（`GenericDebugView.swift:2165`）。宿主这一格只**显示**（不编辑：编辑要写回适配器启动参数，而启动不存在）⇒ 用短标签而不是真源那句对话框内标题。",
+  },
+  {
+    key: "debugger.gpui.skipSynthetics",
+    zh: "跳过合成方法",
+    en: "Skip synthetic methods",
+    reason: "真源硬编码英文 `Toggle(\"Skip synthetic methods\", ..)`（`GenericDebugView.swift:2153`），macOS `zh-Hans.lproj` 无对应条目。",
+  },
+  {
+    key: "debugger.gpui.skipConstructors",
+    zh: "跳过构造方法",
+    en: "Skip constructors",
+    reason: "真源 `Toggle(\"Skip constructors\", ..)`（`GenericDebugView.swift:2157`），同上无中文条目。",
+  },
+  {
+    key: "debugger.gpui.skipStaticInitializers",
+    zh: "跳过静态初始化块",
+    en: "Skip static initializers",
+    reason: "真源 `Toggle(\"Skip static initializers\", ..)`（`GenericDebugView.swift:2154`），同上无中文条目。",
+  },
+  {
+    key: "debugger.gpui.hideFilteredStackFrames",
+    zh: "折叠匹配的栈帧",
+    en: "Collapse matching stack frames",
+    reason: "真源 `Toggle(\"Collapse matching stack frames\", ..)`（`GenericDebugView.swift:2158`），同上无中文条目。",
+  },
+  {
+    key: "debugger.gpui.pausedWithReason",
+    zh: "已暂停 · {reason}",
+    en: "Paused · {reason}",
+    reason:
+      "状态胶囊在“停在某个原因上”时的形状，逐字照真源的 `\"Paused · \\(stopReasonLabel(reason))\"`（`DebugToolbarPresentation.swift:49-51`）。`{reason}` 由 `crates/workbench/src/debug.rs` 的 `stop_reason_label` 只填**catalog 里有词**的那几档（`breakpoint` → `debugger.breakpoints`、`pause` → `debugger.paused`），其余不编造。",
   },
 ];
 
