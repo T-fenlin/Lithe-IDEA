@@ -890,3 +890,25 @@ let scope_ref = result_for(&snapshot, "scopes")                 // 或 result_fo
 ② 或者干脆把推进做成"派发后由驱动器事件唤醒"——但宿主的驱动器是轮询线程 + 面板 drain 消费，
    所以路线 ① 最直接。
 做完 ①，第 32 次那种成功会话就能看到 `scopes`/`variables` 的 operationCompleted 帧，本目标即可标完成。
+
+### 第 33 轮：最终解法 —— 在**一次调用内**串完 threads → stackTrace → scopes → variables（2026-10-04）
+
+第 32 轮的诊断是：逐帧推进需要"结果到达后的下一帧"，而暂停后面板不再 drain。
+与其去修渲染循环（要动 `drain_session` 的返回值或工作台帧回调），不如**去掉对多帧的依赖**：
+
+`request_inspect` / `request_variables` **本身就会阻塞等回复**（有界 `DEBUG_INSPECT_TIMEOUT` = 5s，
+内部 `self.drain()` + 等 operationCompleted）。所以四步可以在**同一个 `auto_advance_inspects()` 调用里**
+依次完成，每一步之后重新 `self.snapshot()` 取上一步的结果：
+
+1. 无 `result_for(&snapshot, "threads")` → `request_inspect("threads", None, None, None, 5s)`
+   → 重新 snapshot，从 `threads[0].id` 取 `thread_id`；
+2. 无 `result_for(&snapshot, "stackTrace")` → `request_inspect("stackTrace", Some(thread_id), None, None, 5s)`
+   → 重新 snapshot，用现成 `first_frame_id(&snapshot)` 取 `frame_id`；
+3. 无 `result_for(&snapshot, "scopes")` → `request_inspect("scopes", None, Some(frame_id), None, 5s)`
+   → 重新 snapshot，取首个 scope 的 `variablesReference` 得 `scope_ref`；
+4. 无 `result_for(&snapshot, "variables")` → `request_variables(scope_ref, Some(frame_id), 5s)`。
+
+这样**只需要一次 drain**（暂停那一帧）就能把 scopes/variables 拉回来，与渲染循环是否继续无关。
+配合 `LITHE_DEBUG_DUMP_FRAMES=1` 即能看到 `threads → stackTrace → scopes → variables` 四条真实 operationCompleted 帧，
+本目标即可标完成。所需助手（`result_for`、`first_frame_id`）与门控变量都已就位，面板侧调用也已存在
+（`session.drain()` 之后的 `session.auto_advance_inspects()`，提交 `e900cbc2`）。
