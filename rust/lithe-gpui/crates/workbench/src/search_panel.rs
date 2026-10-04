@@ -705,6 +705,8 @@ impl SearchPanel {
             }),
             title,
             description,
+            // 本面板没有空态下方的额外内容。
+            None,
             cx,
         )
     }

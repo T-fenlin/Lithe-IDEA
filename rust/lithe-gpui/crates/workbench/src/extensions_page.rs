@@ -27,7 +27,6 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::StyledExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{
@@ -649,6 +648,11 @@ impl ExtensionsPage {
     }
 
     /// 列表区空态：加载中 / 失败 / 筛完没剩 三种文案。
+    ///
+    /// 结构与度量由 [`lithe_gpui_shared::empty_state`] 这个**共同 owner** 提供
+    /// （真源 `LitheUnavailableView.swift:19-35`）—— 图标从改前的 `size_8()` = 32 收到真源的 28、
+    /// 标题补上真源本来就有的 `font_semibold()`；失败详情那一行改走 owner 的 `extra` 槽，
+    /// 所以外层的 `w_full().flex_1().min_h_0()` 也不再由本函数拼。
     fn empty_state(&self, cx: &App) -> AnyElement {
         let (title, failure): (SharedString, Option<SharedString>) = match &self.status {
             CatalogStatus::Loading => (tr("lithe.extensions.loadingExtension"), None),
@@ -657,29 +661,23 @@ impl ExtensionsPage {
             }
             CatalogStatus::Loaded(_) => (tr("lithe.extensions.noneFound"), None),
         };
-        v_flex()
-            .w_full()
-            .flex_1()
-            .min_h_0()
-            .child(
-                Empty::new()
-                    // `Empty` 硬编码了虚线边框，产品界面统一关掉（其余空态同一招）。
-                    .border_color(cx.theme().transparent)
-                    .header(
-                        EmptyHeader::new()
-                            .media(EmptyMedia::new().child(Icon::new(IconName::Puzzle).size_8()))
-                            .title(EmptyTitle::new().text_sm().child(title)),
-                    ),
-            )
-            .children(failure.map(|error| {
+        lithe_gpui_shared::empty_state::unavailable(
+            Some(Icon::new(IconName::Puzzle).size(rems(
+                lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.,
+            ))),
+            title,
+            None,
+            failure.map(|error| {
                 div()
                     .w_full()
                     .px_3()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(error)
-            }))
-            .into_any_element()
+                    .into_any_element()
+            }),
+            cx,
+        )
     }
 }
 

@@ -61,7 +61,10 @@ pub const UNAVAILABLE_DESCRIPTION_OPACITY: f32 = 0.72;
 /// - `icon`：**已按 [`UNAVAILABLE_ICON_SIZE_SPEC`] 设好尺寸**的图标元素（来源由调用点决定）。
 ///   真源必给图标，但本仓已有两处调用点在无图标时也走同一条路径，所以这里收 `Option`。
 /// - `title`：标题（真源 13 semibold → 见模块文档的档位取舍）；
-/// - `description`：可选描述（真源 11.5 @ 0.72）。
+/// - `description`：可选描述（真源 11.5 @ 0.72）；
+/// - `extra`：可选的一块**额外内容**，渲染在空态下方（同一列）。真源组件没有这个槽，
+///   但本仓已有一处调用点要在空态下再挂一行失败详情（`extensions_page::empty_state`）；
+///   既然包裹层由本函数拥有，这个槽也归这里，免得调用点又各自拼一遍外层。
 ///
 /// 返回的容器已经带 `w_full().flex_1().min_h_0()` —— 这是 11 处调用点此前各自重复的那层
 /// 包裹（父级不是 flex 容器时 `Empty` 的 `flex_1` 不生效，见 `explorer_view.rs` 记过的坑），
@@ -70,6 +73,7 @@ pub fn unavailable(
     icon: Option<impl IntoElement>,
     title: impl Into<SharedString>,
     description: Option<SharedString>,
+    extra: Option<AnyElement>,
     cx: &App,
 ) -> AnyElement {
     let mut header = EmptyHeader::new();
@@ -109,6 +113,8 @@ pub fn unavailable(
                 .text_center()
                 .header(header),
         )
+        // `Option` 本身就是 `IntoIterator`，所以 `None` 时这一句不产生任何孩子。
+        .children(extra)
         .into_any_element()
 }
 

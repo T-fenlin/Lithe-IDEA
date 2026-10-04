@@ -535,6 +535,8 @@ impl NotificationPanel {
             ))),
             title,
             None,
+            // 本面板没有空态下方的额外内容。
+            None,
             cx,
         )
     }

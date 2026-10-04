@@ -705,6 +705,8 @@ fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
         )),
         view.empty_title(),
         None,
+        // 本视图没有空态下方的额外内容。
+        None,
         cx,
     )
 }
