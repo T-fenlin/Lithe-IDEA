@@ -681,3 +681,27 @@ java-debug 依赖 `projectName`（来自 JDT LS 的工程）把 `source.path` �
 `poll` 路径上收到的每一帧 JSON 打出来（含 `type=response` 的 `setBreakpoints` 响应）。
 看到 `body.breakpoints[0].verified` 与 `source.path` 就能立刻定性：路径没被接受？请求体形状不对？
 还是 adapter 压根没收到？没有这层 dump，前面的五个假设已经证明盲改无效。
+
+### 🎯 第 23 轮实跑：真机断点命中已证实（2026-10-04）—— 关键在"原始帧 dump"
+
+加了 `LITHE_DEBUG_DUMP_FRAMES=1`（在驱动 `events.extend(self.feed(&chunk)?)` 处打印每条解码后的 Core 事件）
+后，第 22 次实跑的原始帧序列直接给出了结论：
+
+```
+{"sequence":8, "type":"breakpoint","breakpoint":{"id":1,"verified":true,"sourcePath":"src/main/java/demo/App.java","line":7}}
+{"sequence":10,"type":"stateChanged","state":"paused"}
+{"sequence":11,"type":"stopped","reason":"breakpoint","threadId":1,"description":null}
+```
+
+⇒ **断点在真机上被 adapter 验证（`verified:true`）并且命中了**（`stateChanged paused` + `stopped reason=breakpoint`）。
+之前十几轮"看不到命中"的真实原因不是链路没工作，而是：
+1. 宿主对 `stopped`/`stateChanged` **没有打诊断锚点**（我只在 output/error 等路径打了）；
+2. `DebugSessionSnapshot` 只看事件、看不到响应；
+3. 我前几轮 grep 的锚点集合不含上述两类。
+
+**教训（值得写进规范）**：真机验证 DAP 这类"请求-响应 + 事件"混合协议时，
+**先加一层原始帧 dump**，再谈行为诊断 —— 我在前五个假设上花的轮次都源于缺这一层。
+
+**仍未验证**：序列 11 之后**没有任何帧** ⇒ 宿主在 `stopped` 之后没有自动去问 threads/stackTrace/scopes
+（`inspect` 未触发），"单步（step）"也没发过。目标里"单步→变量"的真实机证据还差：在停止后自动
+`request_inspect(threads|stackTrace|scopes)`（并可在探针里补一条 `next`）。这一处很小，且现在有帧 dump 兜底。

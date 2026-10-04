@@ -1141,7 +1141,16 @@ impl DebugTransport {
             match self.adapter.try_recv() {
                 Some(chunk) => {
                     received = true;
-                    events.extend(self.feed(&chunk)?);
+                    let decoded = self.feed(&chunk)?;
+                    if std::env::var_os("LITHE_DEBUG_DUMP_FRAMES").is_some() {
+                        for message in &decoded {
+                            println!(
+                                "{DEBUG_TRANSPORT_TAG} frame session={} message={message}",
+                                self.session_id
+                            );
+                        }
+                    }
+                    events.extend(decoded);
                 }
                 None if received || Instant::now() >= deadline => break,
                 None => std::thread::sleep(Duration::from_millis(5)),
