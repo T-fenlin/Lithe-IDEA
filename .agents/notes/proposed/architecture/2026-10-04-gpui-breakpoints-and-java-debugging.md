@@ -405,3 +405,13 @@ S1_RUN_PLAN result=failed error=Current File requires a Java source path   ← �
 - 验收：跑第 7 次那份配方，日志里 `S1_RUN_PLAN result=failed ... Current File requires a Java source path`
   必须变成 `result=ok`，随后出现 `S1_DEBUG start status=ok` → `launch status=sent jdwp=…`
   → `session_state=…` → `inspect_requested kind=…`。
+
+### 已证否：手写 generated.json 绕不过 current-file（第 9 次实跑，2026-10-04）
+
+试过把 `<fixture>/.lithe/run/generated.json` 换成 `provider: "java.main"` 的配置（合法 provider 之一，
+见 `rust/lithe-core/src/execution/configuration.rs:553`），并**保留原 fingerprint/inputs**，期望生成器跳过。
+结果：`S1_RUN_GENERATED … bytes=767 configs=1` —— **文件被无条件重写**（bytes 与原来一致），
+探针依旧拿到 current-file 配置并报 `Current File requires a Java source path`。
+⇒ 想走"不改代码"的路只剩手写**用户层**配置（`.lithe/run/{project,local}.json`），但那需要知道
+Java main-class 配置在用户层里的完整形状（provider + extensions），属于盲猜，不值得试。
+**结论：必须改代码**（传 `currentFile`，落点见上一节）。
