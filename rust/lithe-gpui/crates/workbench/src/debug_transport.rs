@@ -621,6 +621,25 @@ impl DebugSessionDriver {
         }
     }
 
+    pub fn request(
+        &self,
+        command: &str,
+        thread_id: Option<i64>,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        let (reply, _answer) = channel();
+        self.commands
+            .send(DebugDriverCommand::Execute {
+                command: command.to_string(),
+                thread_id,
+                timeout,
+                reply,
+            })
+            .map_err(|error| {
+                format!("{DEBUG_TRANSPORT_TAG} command_send_failed command={command} error={error}")
+            })
+    }
+
     #[must_use]
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)

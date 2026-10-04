@@ -237,6 +237,17 @@ impl DebugSessionHandle {
         self.drain();
         result
     }
+
+    pub fn request_command(
+        &mut self,
+        command: &str,
+        thread_id: Option<i64>,
+        timeout: std::time::Duration,
+    ) -> Result<(), String> {
+        let result = self.driver.request(command, thread_id, timeout);
+        self.drain();
+        result
+    }
 }
 
 #[cfg(test)]
@@ -579,5 +590,52 @@ mod tests {
             "快照丢过旧行时不许重放"
         );
         assert_eq!(seen, snapshot.output.len(), "游标只夹回快照末尾");
+    }
+
+    #[test]
+    fn request_command_returns_immediately_and_events_still_arrive() {
+        use crate::debug_transport::DebugTransport;
+        use std::time::{Duration, Instant};
+
+        let adapter = FrameQueue {
+            incoming: Vec::new(),
+        };
+        let transport = DebugTransport::start(
+            "session-request",
+            "java",
+            r"D:\proj",
+            false,
+            Box::new(adapter),
+        )
+        .expect("起会话");
+        let mut handle = DebugSessionHandle::start(transport, Duration::from_millis(20));
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && !handle.snapshot().is_paused() {
+            handle.drain();
+        }
+        assert!(handle.snapshot().is_paused(), "先把会话推到 paused");
+
+        let started = Instant::now();
+        handle
+            .request_command("next", Some(1), Duration::from_secs(5))
+            .expect("非阻塞命令必须能发出");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "UI 线程调用的命令不许等回执，实得：{elapsed:?}"
+        );
+
+        let events_before = handle.total_events();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && handle.total_events() == events_before {
+            handle.drain();
+        }
+        assert!(
+            handle.total_events() > events_before,
+            "命令发出后事件仍必须由驱动器转发过来"
+        );
+
+        assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
     }
 }
