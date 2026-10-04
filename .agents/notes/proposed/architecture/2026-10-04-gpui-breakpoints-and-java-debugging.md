@@ -804,3 +804,32 @@ seq18 operationCompleted …-threads（重新拉线程）
 ⇒ 真机链表现已覆盖：**启动 → 断点命中（breakpoint）→ 暂停 → 单步（next → stopped reason=step）→ 停止**。
 唯一还缺的是**变量叶子**（`scopes`/`variables`）—— 停止后已自动拉到 threads/stackTrace，
 但作用域/变量属于按需展开，需要再补一次"取 scopes → 取 variables"的推进（API 见上一节）。
+
+### 第 29 轮：变量探针的借用死结与正确解法（2026-10-04）
+
+两次尝试（新块用 `self.session.as_mut()` / 新块用外层 `session` 绑定）都在
+`drain_session`（`rust/lithe-gpui/crates/workbench/src/debug.rs:2667`）里得到
+`E0499: cannot borrow self.session as mutable more than once at a time`（各 2 处）。两次都已自动还原，
+HEAD 仍是 `9a5871bc`，`cargo build -p lithe-gpui-app` 绿。
+
+根因：`drain_session` 开头是 `let Some(session) = self.session.as_mut() else { … };`，
+而第 81 轮我在 `Some("paused")` 分支里又写了一次 `self.session.as_mut()`（拉线程那次）。
+现在要在**状态分支之外、每帧**再推进一次 inspect（scopes → variables），第三个访问点无法用
+"就地加代码"的方式与这两个借用共存。
+
+**正确解法（下一轮直接照做）**：把探针推进逻辑抽成**独立方法**，例如
+
+```rust
+fn advance_probe_inspects(&mut self, snapshot: &DebugSessionSnapshot) {
+    if std::env::var_os("LITHE_DEBUG_VARIABLES_PROBE").is_none() { return; }
+    if self.session_state_seen.as_deref() != Some("paused") { return; }
+    // frame_id / scope_ref / has_variables 从 snapshot.results 取（键 `stackTrace#…`、`scopes#…`、`variables#…`）
+    let Some(session) = self.session.as_mut() else { return; };
+    // 没有 scopes# → request_inspect("scopes", None, Some(frame_id), None, 5s)
+    // 有 scopes# 且没有 variables# → request_variables(scope_ref, Some(frame_id), 5s)
+}
+```
+
+然后只改 `drain_session` 的**尾部**加一行 `self.advance_probe_inspects(&snapshot);`。
+方法内部只有一次 `self.session.as_mut()`，与外层的借用互不重叠 ⇒ 不会再 E0499。
+（注意 `snapshot` 是 `drain_session` 里已取好的 `DebugSessionSnapshot` 值，直接传引用即可。）
