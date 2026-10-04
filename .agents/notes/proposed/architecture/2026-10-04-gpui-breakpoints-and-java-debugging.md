@@ -874,3 +874,19 @@ let scope_ref = result_for(&snapshot, "scopes")                 // 或 result_fo
 若仍定位不到，就在探针门控下先 `println!` 一次 `snapshot.results.keys()` 看清格式，再写映射。
 
 两次尝试都已 `git checkout` 还原（避免留下无效代码）；HEAD 仍为 `f71cf1f7`。
+
+### 第 32 轮：逐帧推进没跑，是因为暂停后面板不再 drain（2026-10-04）
+
+连跑两次（第 32/33 次）规避取端口抖动：第 32 次成功建立会话（`S1_DEBUG start status=ok`），
+日志里有 `inspect_requested kind=threads|stackTrace`，**但仍无 `scopes`/`variables`**（第 33 次又撞抖动超时）。
+
+判定：`auto_advance_inspects()` 需要"**结果到达后的下一帧**"才能发出 scopes（第一帧暂停时
+`results` 里还没有 stackTrace）。而面板的渲染入口是 `if self.drain_session() { cx.notify(); }` ——
+暂停那一帧之后再没有触发渲染，`drain_session` 不再被调用 ⇒ 逐帧推进根本没有机会执行。
+
+**下一步（两选一，都很小）**：
+① 让 `drain_session` 在"暂停且还在等 inspect 结果"时返回 `true`（从而 `cx.notify()` 继续渲染），
+   或在 await 期间由工作台泵一次（`ShellWorkspace` 的帧回调里 `self.debug.update(cx, |pane, cx| { if pane.drain_session() { cx.notify(); } })`）；
+② 或者干脆把推进做成"派发后由驱动器事件唤醒"——但宿主的驱动器是轮询线程 + 面板 drain 消费，
+   所以路线 ① 最直接。
+做完 ①，第 32 次那种成功会话就能看到 `scopes`/`variables` 的 operationCompleted 帧，本目标即可标完成。
