@@ -115,6 +115,10 @@ pub struct DebugAdapterSpec {
 pub trait DebugAdapterPort: Send {
     fn write_frame(&mut self, frame: &[u8]) -> Result<(), String>;
 
+    fn try_recv(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+
     fn kill(&mut self);
 }
 
@@ -272,6 +276,10 @@ impl DebugAdapterPort for StdioDebugAdapter {
         })
     }
 
+    fn try_recv(&mut self) -> Option<Vec<u8>> {
+        StdioDebugAdapter::try_recv(self)
+    }
+
     fn kill(&mut self) {
         self.stdin = None;
         if !self.exited {
@@ -392,6 +400,10 @@ impl DebugAdapterPort for TcpDebugAdapter {
         })
     }
 
+    fn try_recv(&mut self) -> Option<Vec<u8>> {
+        TcpDebugAdapter::try_recv(self)
+    }
+
     fn kill(&mut self) {
         if self.exited {
             return;
@@ -417,6 +429,7 @@ pub struct DebugTransport {
     adapter: Box<dyn DebugAdapterPort>,
     generation: u64,
     terminated: bool,
+    dropped_after_termination: u64,
 }
 
 impl DebugTransport {
@@ -441,6 +454,7 @@ impl DebugTransport {
             adapter,
             generation: 1,
             terminated: false,
+            dropped_after_termination: 0,
         };
         transport.deliver(&update)?;
         println!(
@@ -500,6 +514,41 @@ impl DebugTransport {
             }),
         )?;
         self.deliver(&update)
+    }
+
+    /// Reads one bounded round of adapter output: waits up to `timeout` for the
+    /// first chunk, then drains whatever has already arrived.
+    pub fn poll_bounded(&mut self, timeout: Duration) -> Result<Vec<Value>, String> {
+        if self.terminated {
+            if self.adapter.try_recv().is_some() {
+                self.dropped_after_termination += 1;
+                println!(
+                    "{DEBUG_TRANSPORT_TAG} poll_dropped session={} reason=terminated total={}",
+                    self.session_id, self.dropped_after_termination
+                );
+            }
+            return Ok(Vec::new());
+        }
+
+        let deadline = Instant::now() + timeout;
+        let mut events = Vec::new();
+        let mut received = false;
+        loop {
+            match self.adapter.try_recv() {
+                Some(chunk) => {
+                    received = true;
+                    events.extend(self.feed(&chunk)?);
+                }
+                None if received || Instant::now() >= deadline => break,
+                None => std::thread::sleep(Duration::from_millis(5)),
+            }
+        }
+        Ok(events)
+    }
+
+    #[must_use]
+    pub fn dropped_after_termination(&self) -> u64 {
+        self.dropped_after_termination
     }
 
     pub fn disconnect(&mut self) -> Result<Vec<Value>, String> {
@@ -602,6 +651,7 @@ mod tests {
     #[derive(Default)]
     struct ScriptedAdapter {
         frames: Vec<Vec<u8>>,
+        incoming: Vec<Vec<u8>>,
         killed: bool,
         fail_with: Option<io::ErrorKind>,
     }
@@ -614,6 +664,10 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         }
+
+        fn push_incoming(&mut self, chunk: Vec<u8>) {
+            self.incoming.push(chunk);
+        }
     }
 
     impl DebugAdapterPort for ScriptedAdapter {
@@ -623,6 +677,14 @@ mod tests {
             }
             self.frames.push(frame.to_vec());
             Ok(())
+        }
+
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            if self.incoming.is_empty() {
+                None
+            } else {
+                Some(self.incoming.remove(0))
+            }
         }
 
         fn kill(&mut self) {
@@ -662,6 +724,10 @@ mod tests {
     impl DebugAdapterPort for SharedAdapter {
         fn write_frame(&mut self, frame: &[u8]) -> Result<(), String> {
             locked(&self.0).write_frame(frame)
+        }
+
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            locked(&self.0).try_recv()
         }
 
         fn kill(&mut self) {
@@ -792,6 +858,7 @@ mod tests {
             adapter: Box::new(Discard),
             generation: 1,
             terminated: false,
+            dropped_after_termination: 0,
         };
         let error = foreign
             .feed(b"Content-Length: 2\r\n\r\n{}")
@@ -988,5 +1055,88 @@ mod tests {
         assert_eq!(parse_debug_port(&json!({})), None);
         assert_eq!(parse_debug_port(&json!(null)), None);
         assert_eq!(parse_debug_port(&json!("not-a-port")), None);
+    }
+
+    #[test]
+    fn poll_bounded_feeds_adapter_bytes_and_returns_core_events() {
+        let (mut transport, adapter) = start("session-poll");
+        transport
+            .feed(&dap_frame(json!({
+                "seq": 1,
+                "type": "response",
+                "request_seq": 1,
+                "success": true,
+                "command": "initialize",
+                "body": { "supportsConfigurationDoneRequest": true }
+            })))
+            .expect("initialize 响应");
+        transport
+            .feed(&dap_frame(
+                json!({ "seq": 2, "type": "event", "event": "initialized" }),
+            ))
+            .expect("initialized 事件");
+
+        adapter.lock().expect("锁").push_incoming(dap_frame(json!({
+            "seq": 3,
+            "type": "event",
+            "event": "stopped",
+            "body": { "reason": "breakpoint", "threadId": 1 }
+        })));
+
+        let events = transport
+            .poll_bounded(Duration::from_secs(5))
+            .expect("读一轮 adapter 输出应当成功");
+        assert!(
+            !events.is_empty(),
+            "adapter 发来 stopped 之后必须归约出事件，实得：{events:?}"
+        );
+        let text = serde_json::to_string(&events).unwrap_or_default();
+        assert!(
+            text.contains("stopped") || text.contains("Stopped"),
+            "事件里应当能看出是 stopped：{text}"
+        );
+        assert!(
+            adapter.lock().expect("锁").frames.len() >= 2,
+            "initialize 与 initialized 都应当已经写给 adapter"
+        );
+    }
+
+    #[test]
+    fn poll_bounded_returns_empty_when_the_adapter_is_silent() {
+        let (mut transport, _adapter) = start("session-silent");
+        let started = Instant::now();
+        let events = transport
+            .poll_bounded(Duration::from_millis(120))
+            .expect("静默 adapter 不算错误");
+        let elapsed = started.elapsed();
+        assert!(events.is_empty(), "没有输入时不该产生事件");
+        assert!(
+            elapsed >= Duration::from_millis(120),
+            "必须真的等满 deadline，实得：{elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "等待必须是有界的，实得：{elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn poll_after_termination_drops_input_and_counts_it() {
+        let (mut transport, adapter) = start("session-stale");
+        transport.disconnect().expect("断开");
+        adapter
+            .lock()
+            .expect("锁")
+            .push_incoming(b"Content-Length: 2\r\n\r\n{}".to_vec());
+
+        let events = transport
+            .poll_bounded(Duration::from_millis(50))
+            .expect("终止后的 poll 不该报错，只是丢掉输入");
+        assert!(events.is_empty(), "终止之后的 adapter 输入不许再产生事件");
+        assert_eq!(
+            transport.dropped_after_termination(),
+            1,
+            "丢掉的输入必须计数，便于诊断"
+        );
     }
 }
