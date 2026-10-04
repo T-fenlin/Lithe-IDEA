@@ -341,3 +341,25 @@ S1_EXTENSION sync_failed dir=C:\Users\admin\AppData\Roaming\Lithe\extensions\...
    settings/cache/extensions 都落到 `<workspace>/.lithe/...`）—— 这本身也是个真实需求（便携/沙箱/CI 场景）；
 ② 在沙箱外（或放开 `%APPDATA%`/`%LOCALAPPDATA%` 写权限）跑那一次真机端到端。
 在此之前，DAP 真机实跑无法继续（`S1_JAVA_FAILED` 之后整条语言服务链路都不成立）。
+
+### 第 5/6 次实跑的突破与最后一步（2026-10-04）
+
+**沙箱写权限卡点已清除**：宿主本来就有缓存目录覆盖口 `LITHE_GPUI_CACHE_DIR`
+（`crates/java/src/workspace.rs:10` 的 `CACHE_DIR_ENV`，`cache_root()` 优先读它）。
+把它指到工作区内（`.artifacts/state/cache`）后：
+
+```
+S1_JAVA_CACHE directory=...\.artifacts\state\cache\language-servers ...
+S1_JAVA_SESSION started sessionId=lsp-session-1 processId=16072      ← 真实 JDT LS 在 app 里起来了
+S1_RUN_CONFIGS configs=1 selected=0
+S1_RUN_PROBE launching=first-configuration debug=true
+S1_RUN_PLAN result=failed error=Current File requires a Java source path
+```
+
+⇒ 现在只剩**一步**：探针挑中的唯一配置是 **current-file 作用域**，而它不打开任何文件。
+`--session-active <App.java>` 试过：app 立刻 exit 2（该旗标期望的不是文件路径），需要换路子。
+可选做法：① 搞清 `--session-active` 的正确取值（`main.rs:219`）让它激活该文件；
+② 让 Core 的 `runConfig` 为这个 Maven 工程生成 **main-class 配置**（而不只是 current-file），
+   探针自然会挑到它；③ 让探针优先挑非 current-file 配置。
+
+跑通这一条后，`S1_DEBUG start/launch/session_state/inspect_requested` 就是 DAP 真机链路的判据。
