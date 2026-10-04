@@ -39,7 +39,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{
@@ -520,28 +519,24 @@ impl NotificationPanel {
     }
 
     /// 空态：分「一条都没有」与「筛完没剩下」两种，文案不同。
+    ///
+    /// 结构与度量由 [`lithe_gpui_shared::empty_state`] 这个**共同 owner** 提供
+    /// （真源 `LitheUnavailableView.swift:19-35`）—— 图标从改前的 `size_8()` = 32 收到真源的 28，
+    /// 标题补上真源本来就有的 `font_semibold()`。
     fn empty_state(&self, filtered: bool, cx: &App) -> AnyElement {
         let title = if filtered {
             tr("lithe.notifications.noMatch")
         } else {
             tr("lithe.notifications.empty")
         };
-        v_flex()
-            .w_full()
-            .flex_1()
-            .min_h_0()
-            .child(
-                Empty::new()
-                    // `Empty` 硬编码了 `.border_dashed()`（`empty.rs:74-75`），真机界面没有
-                    // 这圈虚线；改边框色为透明关掉（与本模块外那两个空态同一招）。
-                    .border_color(cx.theme().transparent)
-                    .header(
-                        EmptyHeader::new()
-                            .media(EmptyMedia::new().child(Icon::new(IconName::Inbox).size_8()))
-                            .title(EmptyTitle::new().text_sm().child(title)),
-                    ),
-            )
-            .into_any_element()
+        lithe_gpui_shared::empty_state::unavailable(
+            Some(Icon::new(IconName::Inbox).size(rems(
+                lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.,
+            ))),
+            title,
+            None,
+            cx,
+        )
     }
 }
 

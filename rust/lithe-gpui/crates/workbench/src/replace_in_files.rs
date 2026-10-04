@@ -123,7 +123,6 @@ use std::path::PathBuf;
 
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::spinner::Spinner;
@@ -969,34 +968,28 @@ impl ReplaceInFiles {
             .into_any_element()
     }
 
-    /// 空态 / 失败态（同一个壳：可选的图标 + 标题 + 可选的一行说明）。
+    /// 空态 / 失败态 —— 结构与度量由 [`lithe_gpui_shared::empty_state`] 这个**共同 owner** 提供
+    /// （真源 `LitheUnavailableView.swift:19-35`），这里只把本面板的参数转过去。
     ///
-    /// `Empty` 硬编码了 `.border_dashed()`，真源没有那圈虚线，所以边框色改成透明
-    /// （与 `crate::search_panel::SearchPanel::empty_state` 同一招）。
+    /// 改前本函数与 `crate::search_panel::SearchPanel::empty_state` 里那一份**逐字相同**
+    /// （图标 `size_8()` = 32 而真源 28、标题漏 `font_semibold()`、描述还错用了标题档 `text_sm`）
+    /// —— 同一个设计量被复制成两份，任一侧改动都会静默分叉。现在两份都只写一次。
     fn empty_state(
         icon: Option<IconName>,
         title: SharedString,
         description: Option<SharedString>,
         cx: &App,
     ) -> AnyElement {
-        let mut header = EmptyHeader::new();
-        if let Some(icon) = icon {
-            header = header.media(EmptyMedia::new().child(Icon::new(icon).size_8()));
-        }
-        header = header.title(EmptyTitle::new().text_sm().child(title));
-        if let Some(description) = description {
-            header = header.description(EmptyDescription::new().text_sm().child(description));
-        }
-        v_flex()
-            .w_full()
-            .flex_1()
-            .min_h_0()
-            .child(
-                Empty::new()
-                    .border_color(cx.theme().transparent)
-                    .header(header),
-            )
-            .into_any_element()
+        lithe_gpui_shared::empty_state::unavailable(
+            icon.map(|icon| {
+                Icon::new(icon).size(rems(
+                    lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.,
+                ))
+            }),
+            title,
+            description,
+            cx,
+        )
     }
 }
 

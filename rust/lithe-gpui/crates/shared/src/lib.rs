@@ -29,6 +29,9 @@ mod core_client;
 // 只会让 `ROW_RADIUS` / `TAB_MAX_WIDTH` 这类短名污染 `shared::*`。理由见 `src/design.rs`。
 pub mod design;
 mod document;
+// 「功能不可用 / 空态」的**共同 owner**（结构 + 度量 + 关掉 gpui-kit `Empty` 硬编码的虚线）。
+// **公开模块**：调用点写 `lithe_gpui_shared::empty_state::unavailable(..)`。理由与真源见该模块文档。
+pub mod empty_state;
 mod i18n;
 // 图标资源路径清单（`lithe-gpui/assets/icons/idea/icons/**` 的 Rust 等价物）。**公开模块**而不是
 // `pub use`：调用点要写成 `shared::icons::idea::GEAR_ICON`，常量表本身就是一个命名空间，
@@ -39,7 +42,8 @@ pub mod languages;
 pub mod workspace_config;
 
 // `rem_px` 用 `AbsoluteLength` / `rems` / `Pixels` 这三个类型，所以这里引 gpui-kit。
-// 与 `i18n` 只取 `SharedString` 同一条口径：本 crate 不做任何 GPUI 渲染。
+// 本 crate 的边界**不是**"不产出元素"（`icons` 与 `empty_state` 都是无状态元素助手），而是
+// "不持有视图状态、不起任务、不做主题决策"：状态与主题属于各 feature，这里只给共用的形状与规格。
 use gpui_kit::{AbsoluteLength, Pixels, rems};
 
 // 国际化：**`i18n!` 必须出现在持有 `locales/` 的那个 crate 的根**。

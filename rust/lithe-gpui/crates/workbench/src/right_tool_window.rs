@@ -63,7 +63,6 @@ use std::time::Instant;
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::empty::{Empty, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
 // `when` / `children` 收在 `FluentBuilder` 上（与 `explorer_view.rs` 同一取法）。
 use gpui_kit::prelude::FluentBuilder as _;
@@ -693,32 +692,21 @@ fn header(
         .into_any_element()
 }
 
-/// 视图内容区：本轮三个视图都是空态。
+/// 视图内容区：本轮三个视图都是空态，结构与度量由 [`lithe_gpui_shared::empty_state`] 这个
+/// **共同 owner** 提供（真源 `LitheUnavailableView.swift:19-35`）—— 它已经负责外层包裹、
+/// 居中、间距与标题层级，所以这里只给图标与标题。
 ///
-/// 用 gpui-kit 的 `Empty`（`lithe-gpui/docs/gpui-kit/0.6.6/zh-CN/component/empty.md`）——
-/// 成熟组件已经负责居中、间距与标题层级，与 `terminal_view.rs:402-435` 的空态同一用法。
-///
-/// ⚠️ 外面必须套一层 `v_flex().flex_1()`：`Empty` 的根是 `v_flex().flex_1()`
-/// （`gpui-component-0.7.0/src/empty.rs`），父级不是 flex 容器时它不生效
-/// （`explorer_view.rs` 里的 `Empty` 空态函数记过同一个坑 —— **不钉行号**，该函数会随
-/// 编辑漂移）。
+/// 图标从改前的 `rems(2.)` = 32 收到真源的 **28**，标题补上真源本来就有的 `font_semibold()`。
 fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
-    v_flex()
-        .w_full()
-        .flex_1()
-        .min_h_0()
-        .child(
-            Empty::new()
-                // `Empty` 硬编码了 `.border_dashed()`（`gpui-component-0.6.6/src/empty.rs:74-75`），
-                // 真机界面没有这圈虚线；改边框色为透明关掉（与编辑器空态同一招，2026-09-27 统一）。
-                .border_color(cx.theme().transparent)
-                .header(
-                    EmptyHeader::new()
-                        .media(EmptyMedia::new().child(view.icon(cx, rems(2.))))
-                        .title(EmptyTitle::new().text_sm().child(view.empty_title())),
-                ),
-        )
-        .into_any_element()
+    lithe_gpui_shared::empty_state::unavailable(
+        Some(view.icon(
+            cx,
+            rems(lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.),
+        )),
+        view.empty_title(),
+        None,
+        cx,
+    )
 }
 
 #[cfg(test)]
