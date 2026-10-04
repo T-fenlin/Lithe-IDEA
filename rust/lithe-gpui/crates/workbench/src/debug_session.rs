@@ -176,6 +176,69 @@ pub fn drain_driver(
     outcome
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct InspectStage {
+    pub threads_requested: bool,
+    pub stack_requested: bool,
+    pub scopes_requested: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InspectSpec {
+    pub kind: &'static str,
+    pub thread_id: Option<i64>,
+    pub frame_id: Option<i64>,
+    pub variables_reference: Option<i64>,
+}
+
+pub fn next_inspect(snapshot: &DebugSessionSnapshot, stage: &InspectStage) -> Option<InspectSpec> {
+    if snapshot.state.as_deref() != Some("paused") {
+        return None;
+    }
+    if !stage.threads_requested {
+        return Some(InspectSpec {
+            kind: "threads",
+            thread_id: None,
+            frame_id: None,
+            variables_reference: None,
+        });
+    }
+    let thread_id = snapshot.paused_thread_id;
+    if !stage.stack_requested {
+        return Some(InspectSpec {
+            kind: "stackTrace",
+            thread_id,
+            frame_id: None,
+            variables_reference: None,
+        });
+    }
+    if !stage.scopes_requested {
+        return Some(InspectSpec {
+            kind: "scopes",
+            thread_id,
+            frame_id: first_frame_id(snapshot),
+            variables_reference: None,
+        });
+    }
+    None
+}
+
+pub fn first_frame_id(snapshot: &DebugSessionSnapshot) -> Option<i64> {
+    let result = snapshot.results.get("stackTrace")?;
+    for key in ["frames", "stackFrames"] {
+        if let Some(id) = result
+            .get(key)
+            .and_then(Value::as_array)
+            .and_then(|frames| frames.first())
+            .and_then(|frame| frame.get("id"))
+            .and_then(Value::as_i64)
+        {
+            return Some(id);
+        }
+    }
+    None
+}
+
 pub struct DebugSessionHandle {
     session_id: String,
     driver: crate::debug_transport::DebugSessionDriver,
@@ -638,6 +701,59 @@ mod tests {
 
         assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
     }
+    #[test]
+    fn next_inspect_walks_threads_stack_and_scopes_once_each() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        let mut stage = InspectStage::default();
+        assert!(
+            next_inspect(&snapshot, &stage).is_none(),
+            "没有暂停时不该拉任何东西"
+        );
+
+        snapshot.state = Some("paused".to_string());
+        snapshot.paused_thread_id = Some(1);
+        let first = next_inspect(&snapshot, &stage).expect("暂停后先拉线程");
+        assert_eq!(first.kind, "threads");
+        stage.threads_requested = true;
+
+        let second = next_inspect(&snapshot, &stage).expect("再拉调用栈");
+        assert_eq!(second.kind, "stackTrace");
+        assert_eq!(second.thread_id, Some(1));
+        stage.stack_requested = true;
+
+        let third = next_inspect(&snapshot, &stage).expect("最后拉作用域");
+        assert_eq!(third.kind, "scopes");
+        assert_eq!(third.frame_id, None, "还没有栈帧结果时 frame_id 只能是空");
+        stage.scopes_requested = true;
+        assert!(
+            next_inspect(&snapshot, &stage).is_none(),
+            "三步都拉过之后不该重复拉"
+        );
+
+        snapshot.results.insert(
+            "stackTrace".to_string(),
+            json!({ "kind": "stackTrace", "frames": [ { "id": 42, "name": "main" } ] }),
+        );
+        assert_eq!(first_frame_id(&snapshot), Some(42));
+
+        snapshot.results.insert(
+            "stackTrace".to_string(),
+            json!({ "kind": "stackTrace", "stackFrames": [ { "id": 7 } ] }),
+        );
+        assert_eq!(
+            first_frame_id(&snapshot),
+            Some(7),
+            "DAP 原生字段名 stackFrames 也要认"
+        );
+
+        snapshot.state = Some("running".to_string());
+        stage = InspectStage::default();
+        assert!(
+            next_inspect(&snapshot, &stage).is_none(),
+            "继续运行之后不该再拉"
+        );
+    }
+
     #[test]
     fn operation_completed_results_are_stored_per_kind() {
         let mut snapshot = DebugSessionSnapshot::default();
