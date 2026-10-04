@@ -717,6 +717,21 @@ impl DebugTransport {
         self.command(LAUNCH_COMMAND, configuration)
     }
 
+    pub fn launch_with_configuration(
+        &mut self,
+        configuration: Value,
+    ) -> Result<Vec<Value>, String> {
+        let operation_id = self.take_operation_id("launch");
+        self.command(
+            LAUNCH_COMMAND,
+            json!({
+                "sessionId": self.session_id,
+                "operationId": operation_id,
+                "configuration": configuration,
+            }),
+        )
+    }
+
     pub fn execute_with_operation(
         &mut self,
         operation_id: &str,
@@ -1326,6 +1341,43 @@ mod tests {
             .expect("应当读得到 adapter 发来的字节");
         assert_eq!(String::from_utf8_lossy(&read), "adapter-says-hi");
         server.join().expect("服务端线程应当结束");
+    }
+
+    #[test]
+    fn launch_with_configuration_sends_the_dap_launch_request() {
+        let (mut transport, adapter) = responding_transport("session-launch");
+        transport
+            .feed(&dap_frame(json!({
+                "seq": 1,
+                "type": "response",
+                "request_seq": 1,
+                "success": true,
+                "command": "initialize",
+                "body": { "supportsConfigurationDoneRequest": true }
+            })))
+            .expect("initialize 响应");
+
+        transport
+            .launch_with_configuration(json!({
+                "name": "App",
+                "request": "launch",
+                "arguments": {
+                    "type": "java",
+                    "mainClass": "com.example.App"
+                }
+            }))
+            .expect("握手之后必须能下发 launch");
+
+        let written = adapter.lock().expect("锁").frames.concat();
+        let written = String::from_utf8_lossy(&written);
+        assert!(
+            written.contains(r#""command":"launch""#),
+            "Core 必须把 launch 请求写到 adapter，实得：{written}"
+        );
+        assert!(
+            written.contains("com.example.App"),
+            "launch 配置要原样透传给 adapter：{written}"
+        );
     }
 
     #[test]
