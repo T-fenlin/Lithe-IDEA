@@ -3556,7 +3556,7 @@ impl EditorPane {
     /// 标记也会偏。这两条是这一列唯一的已知风险，都记在上述推导的假设里。
     fn breakpoint_gutter(&self, path: &Path, cx: &Context<Self>) -> AnyElement {
         // 没有断点也照样画这一列：它是"点这里加断点"的唯一落点，列宽恒定正文才不会左右跳。
-        let mut column = div()
+        let column = div()
             .w(rems(BREAKPOINT_GUTTER_WIDTH_SPEC / 16.))
             .flex_shrink_0()
             .h_full()

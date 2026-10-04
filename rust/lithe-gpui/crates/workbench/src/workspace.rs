@@ -2565,6 +2565,21 @@ impl ShellWorkspace {
     }
 
     /// 「清空断点」（真源 `debugger.clearBreakpoints`）。
+    ///
+    /// ⚠️ **保留项**：外壳侧这个入口本身是好的 —— 它只是把动作交给断点表的 owner
+    /// （`debug` 实体；键的换算要工作区根，两样都在外壳手里），与
+    /// `toggle_breakpoint` / `remove_breakpoint` 是同一个形状。它现在没有调用方，
+    /// 是因为**界面还没有这个入口**：工具栏只有「查看断点 / 静音断点」，断点面板、
+    /// 行号槽右键、运行菜单（`menu_bar.rs` 只有 `ToggleBreakpoint` 一项）都没有「清空断点」。
+    /// 真源那一项在断点编辑器里，本侧还没有对应控件 —— 补控件是新行为，不属于"收警告"，
+    /// 所以这里按既有先例保留并写明原因，而不是现造一个假入口或删掉已完成的动作实现。
+    ///
+    /// ⚠️ 顺带钉住一个容易搞错的边界：**清空本身不需要会话**。
+    /// `DebugPane::clear_breakpoints` 先把宿主断点表清掉、让行号槽重画，只有"每个文件发一条
+    /// 空集"的 DAP 通知走派发闸门；无会话时那一步只留诊断（`reason=no-session (H10/H11)`，
+    /// 没有 transport 就没有会话 ⇒ `debug.setBreakpoints` 的 `with_session` 路径必然
+    /// `session_not_found`），清空在界面上仍然是生效的。
+    #[allow(dead_code)]
     pub(crate) fn clear_breakpoints(&mut self, cx: &mut Context<Self>) {
         self.debug.update(cx, |pane, cx| pane.clear_breakpoints(cx));
     }

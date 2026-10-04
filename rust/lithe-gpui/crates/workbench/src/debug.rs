@@ -87,6 +87,16 @@ const STEPPING_FILTERS_COMMAND: &str = "debug.steppingFilters";
 /// `debug.relocateBreakpoints`（`protocol/command.rs:123-124`）。
 const RELOCATE_BREAKPOINTS_COMMAND: &str = "debug.relocateBreakpoints";
 /// `debug.setBreakpoints`（`protocol/command.rs:125-126`）。
+///
+/// ⚠️ **保留项**：它唯一的去向是 `DebugPane::sync_breakpoints` 里闸门**开着**的那条分支
+/// （今天那里是 `let _ = payload;`，见该处注释）—— 把那一行换成
+/// `core_json(SET_BREAKPOINTS_COMMAND, payload)` 就是这条常量上岗的时机。而闸门开 =
+/// `DebugDispatchGate::session_id()` 有值，会话要 **H10（平台侧 DAP transport）** 与
+/// **H11（Java Debug Server 的启动 / 端口协商）** 都落地才可能存在；在那之前
+/// `debug.setBreakpoints` 在 Core 里走 `with_session`（`engine.rs:197`），没有 transport
+/// 就没有会话 ⇒ 必然 `session_not_found`，所以这个符号现在被闸门挡在门外。
+/// `#[allow(dead_code)]` 是显式的保留说明：删掉就等于丢掉"派发只差一行"的既有工作。
+#[allow(dead_code)]
 const SET_BREAKPOINTS_COMMAND: &str = "debug.setBreakpoints";
 
 /// 步进过滤器默认取哪个适配器的（`DebugSteppingFilters::defaults_for_adapter`，
@@ -509,6 +519,18 @@ impl SteppingFilterToggle {
         }
     }
 
+    /// 写一条开关的值（真源那张带 Save 的过滤器表单用它把控件绑回 `DebugSteppingFilters`，
+    /// `GenericDebugView.swift:2120-2134` 的 `_skipSynthetics = State(...)` 一族）。
+    ///
+    /// ⚠️ **保留项**：它与 **H10 / H11 无关** —— 步进过滤器走 `debug.steppingFilters`
+    /// （`engine.rs:163-172`），那条命令**不用 `with_session`**，无会话也能调。
+    /// 它现在没有调用方，是因为本侧那一块是**只读**的：`filters_block` 只画 `✓` / `—`，
+    /// 既没有可点的控件，也没有真源表单的 Save 那条路（真源是带
+    /// `Reset Defaults / Cancel / Save` 的 sheet，`GenericDebugView.swift:2137-2206`；
+    /// 写回后由平台侧 `MacDebugSteppingFilterStore.swift:35-38` 持久化）。
+    /// 可编辑表单与本侧的过滤器持久化都还没做，`set` 就是那张表单的第一个消费者。
+    /// `#[allow(dead_code)]` 是显式的保留说明：删掉就要连着表单的绑定逻辑一起重写。
+    #[allow(dead_code)]
     fn set(self, filters: &mut SteppingFiltersView, value: bool) {
         match self {
             Self::SkipSynthetics => filters.skip_synthetics = value,
