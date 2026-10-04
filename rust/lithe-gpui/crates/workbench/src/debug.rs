@@ -1907,14 +1907,32 @@ impl DebugPane {
                 let Some(control) = toolbar_control(action) else {
                     return;
                 };
-                let blocker = self.start_blocker();
-                eprintln!(
-                    "{DEBUG_DIAGNOSTIC_TAG} execute control={} status=skipped reason={}",
-                    control.command(),
-                    blocker
-                        .map(DebugStartBlocker::as_str)
-                        .unwrap_or("no-session")
-                );
+                let command = control.command();
+                let outcome = {
+                    let Some(session) = self.session.as_mut() else {
+                        let blocker = self.start_blocker();
+                        eprintln!(
+                            "{DEBUG_DIAGNOSTIC_TAG} execute control={command} status=skipped reason={}",
+                            blocker
+                                .map(DebugStartBlocker::as_str)
+                                .unwrap_or("no-session")
+                        );
+                        return;
+                    };
+                    let thread_id = session.snapshot().paused_thread_id;
+                    session.request_command(command, thread_id, std::time::Duration::from_secs(10))
+                };
+                match outcome {
+                    Ok(()) => {
+                        println!("{DEBUG_DIAGNOSTIC_TAG} execute control={command} status=sent");
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "{DEBUG_DIAGNOSTIC_TAG} execute control={command} status=failed error={error}"
+                        );
+                        self.error_message = Some(error);
+                    }
+                }
             }
         }
     }
