@@ -31,7 +31,7 @@
 | `BLOCKERS.md` | 当前卡住的事 |
 | `HANDOFF.md` | 交接现状 |
 | `crates/` | gpui 宿主的实际实现（12 个 crate） |
-| `tools/` | `check-ui-px.mjs`（硬编码 px 守卫）、`generate-idea-icons.mjs`（图标生成） |
+| `tools/` | `check-ui-px.mjs`（硬编码 px 守卫）、`sync-macos-idea-icons.mjs`（图标真源同步：macOS 文件夹 → gpui 副本）、`sync-gpui-kit-icons.mjs`（登记实际用到的 gpui-kit 图标名） |
 | `.agents/notes/proposed/architecture/2026-09-23-gpui-kit-three-platform-ui-rewrite-roadmap.md` | 为什么这样做的决策记录 |
 
 > 清理说明（2026-09-25 原始记录，2026-10-02 更新）：早期调试期的截图证据（`.artifacts/p1/*`）与 macOS 原始区域调研
@@ -134,10 +134,11 @@
    ⚠️ 顺带更正本文早先的口径：**"生产代码约 57 处 `px()`"是错的** —— 那是把注释 / 字符串里的 `px(` 与 `#[cfg(test)]` 断言一起数进去的结果；真正的 UI 代码调用只有 13 处。经过与更正见 `docs/tasks/gpui-core-first.md` §4.3 / §7。
 2. **颜色与字号一律走主题 token**（`cx.theme()` / `cx.theme().tokens`），不写裸色值；映射见 §1.2。
 3. **文案取 macOS 的本地化原文**（`macos/Resources/zh-Hans.lproj`），不要自己编中文。
-4. **图标**：应用注册的是**全量** `gpui_kit::assets::AllAssets`（0.7 仍在：`gpui-kit-assets-0.7.0/src/lib.rs`、`native_assets.rs`），嵌入 `assets/icons/` 下的 **1830 个 Lucide 字形**—— 所以**没有"缺字形"这回事**，也不需要近似替代。
-   仍然要记住的两点：
-   ① 有**两个** `IconName`。`gpui_kit::component::IconName` 是**为源码兼容保留的组件子集**（0.7 的源码注释写得很直白："Default component icon names, retained for source compatibility. For the complete Lucide catalog, use `gpui_kit_assets::IconName`"），完整目录归 `gpui_kit_assets::IconName`（1830 个）。二者之间有**显式 `From` 转换**（`impl From<component::IconName> for gpui_kit_assets::IconName`），所以换类型即可、不用改写法。
-   ② `Icon::new` / `Button::icon` 收 `impl Into<Icon>`，且 `impl<T: IconNamed> From<T> for Icon` 对两者都成立。变体名 = svg 文件名的 PascalCase（`trash-2.svg` 不存在，所以没有 `Trash2`，用 `Trash`）。
+4. **图标**（2026-10-04 口径已变，见 `.agents/notes/implemented/architecture/2026-10-04-icon-source-macos-folder-and-gpui-kit-subset.md`）：应用**不再**注册全量 `gpui_kit::assets::AllAssets`（1830 个 Lucide 字形 / 731 KiB 已从二进制移除），改为**只登记实际会被请求的 106 个名字**（`crates/app/src/assets.rs` 的 `gpui_kit::assets::icon_assets!(GpuiKitFallbackIcons, [...])`）；图标真源是 **macOS 图标文件夹的副本**（`macos/Resources/IDEAIcons/**` → `assets/icons/idea/**`，外加并集补充的 `legacy/**`）。
+   仍然要记住的三点：
+   ① **新增 `IconName::X` 之后必须登记**，否则界面上静默画空白、没有编译错误：跑 `node rust/lithe-gpui/tools/sync-gpui-kit-icons.mjs --apply`，`--check` 是 CI 判据。
+   ② 有**两个** `IconName`。`gpui_kit::component::IconName` 是**为源码兼容保留的组件子集**（0.7 的源码注释写得很直白："Default component icon names, retained for source compatibility. For the complete catalog, use `gpui_kit_assets::IconName`"），完整目录归 `gpui_kit_assets::IconName`（1830 个，**已不内嵌**）。二者之间有**显式 `From` 转换**，所以换类型即可、不用改写法。
+   ③ `Icon::new` / `Button::icon` 收 `impl Into<Icon>`，且 `impl<T: IconNamed> From<T> for Icon` 对两者都成立。变体名 = svg 文件名的 PascalCase（`trash-2.svg` 不存在，所以没有 `Trash2`，用 `Trash`）。
    ⚠️ 组件子集清单来自 `gpui-kit-assets-0.7.0/default-icons.txt`（0.7 是 **104 行**，0.6.6 时期是 101，见 §4.1）。
 5. **不写平台业务分支**：不给 macOS/Windows 写 `#[cfg]` 业务代码。平台差异（macOS 红绿灯留白 76pt、Windows 最小化/最大化/关闭按钮位置）由 gpui 平台层与 `TitleBar` 自身处理，界面结构三端统一。
 6. **一个区域一个模块**：外壳按区域拆分，便于并行与替换。<br>⚠️ 本文早先举的 `lithe-gpui/shell/src/bin/shell_probe/` **已不存在**（旧 P1 冒烟宿主的 bin 已删除，职责被 `crates/app` 覆盖）。现在的实际结构是 `crates/{app,workbench,editor,explorer,extensions,git,java,notify,run,settings,shared,terminal}` —— 见 §2.1 总表的"gpui 落点"一列。

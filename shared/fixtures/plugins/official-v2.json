@@ -313,34 +313,6 @@
       ]
     },
     {
-      "id": "lithe.pierreIcons",
-      "displayName": "Pierre 图标",
-      "description": "随宿主捆绑的 Pierre 文件图标集（彩色，含浅色与深色两套）。可在扩展页卸载、也可切换使用。",
-      "version": "0.0.1",
-      "apiVersion": 1,
-      "hostCompatibility": {
-        "minimum": "0.0.1"
-      },
-      "vendor": {
-        "id": "lithe",
-        "displayName": "Lithe Team",
-        "signatureRequirement": "sameTeamAsHost"
-      },
-      "entrypoint": {
-        "kind": "bundled",
-        "targetName": "lithe-gpui-app"
-      },
-      "moduleIDs": [
-        "lithe.icons.pierre"
-      ],
-      "icons": [
-        {
-          "name": "Pierre",
-          "path": "icons/pierre/extension.json"
-        }
-      ]
-    },
-    {
       "id": "lithe.projectLanguages",
       "displayName": "工程文件语言支持",
       "description": "随宿主内置的工程文件语法高亮：YAML / TOML / SQL / Markdown / Shell / Kotlin / XML（含 pom.xml 与 MyBatis mapper）。卸载后这些文件打开时是纯文本。",

@@ -68,13 +68,6 @@ pub const BUNDLED_EXTENSIONS: &[BundledExtension] = &[
         files: &[],
     },
     BundledExtension {
-        id: "lithe.pierreIcons",
-        kind: BundledKind::Icons,
-        icons_package: Some("pierre"),
-        languages: &[],
-        files: &[],
-    },
-    BundledExtension {
         id: "lithe.vscodeTheme",
         kind: BundledKind::Theme,
         icons_package: None,
@@ -530,7 +523,12 @@ mod tests {
             );
             checked += 1;
         }
-        assert!(checked > 0, "至少要有一个捆绑图标集");
+        assert_eq!(
+            checked, 0,
+            "当前没有可卸载的捆绑图标集 —— pierre 图标主题已随 2026-10-04 的图标真源切换删除\
+             （图标真源改为 macOS 图标文件夹的副本，只保留内置的 idea 包）；\
+             将来新增捆绑图标集时，把这里改回 `checked > 0` 并保证清单真实存在"
+        );
     }
 
     #[test]

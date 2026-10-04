@@ -121,6 +121,13 @@ $pairs | ForEach-Object {
 
 # 7. 图标资源批量提取（`ui-icons/` 与 `icon-themes/`）
 
+> ⚠️ **2026-10-04 起本节描述的口径已被取代**：图标真源改为 **`macos/Resources/IDEAIcons/**` 的副本**
+> （`node rust/lithe-gpui/tools/sync-macos-idea-icons.mjs --apply` 生成 `assets/icons/idea/`，
+> 含并集补充的 `legacy/**`），`assets/icons/` 下 `lithe/ symbols/ material/ pierre/` 四个图标主题
+> 文件夹已删除；gpui-kit 的整份图标目录（`AllAssets`）也不再内嵌，只登记实际用到的 106 个名字。
+> 现状与本节的差异以 `.agents/notes/implemented/architecture/2026-10-04-icon-source-macos-folder-and-gpui-kit-subset.md`
+> 与 `assets/icons/idea/SOURCES.md` 为准；下面第 7 节保留为**当时那次搬迁的取证记录**。
+
 第 1–6 节处理的是**应用图标 / logo**（8 个位图）。本节是同一件事的**第二批**：把 Windows 前端
 界面里真正用来画图标的 **SVG 资源**搬到 gpui 名下。做法与第 1 节一致——**只读复制，不改名、不转码、
 不重压缩、不改 `viewBox`**；真源 `windows/tauri/**` 未做任何修改。
