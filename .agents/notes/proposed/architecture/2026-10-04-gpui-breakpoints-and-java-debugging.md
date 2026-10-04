@@ -388,15 +388,15 @@ S1_RUN_PLAN result=failed error=Current File requires a Java source path   ← �
 
 ### 传 currentFile 的精确落点（2026-10-04 查清，下一轮照此实现）
 
-- `crates/run/src/` **没有"当前文件"概念**（grep `current_file|active_file|currentFile` 零命中）
+- `rust/lithe-gpui/crates/run/src/` **没有"当前文件"概念**（grep `current_file|active_file|currentFile` 零命中）
   ⇒ 要新加一个入口，建议 `RunPane::set_active_file(Option<String>)`（存 **workspace 相对路径**，
   与 Core 契约一致）。
-- 计划请求在 `crates/run/src/pane.rs:347` 的 `launch_plan(root, configuration_id, debug_port)`：
+- 计划请求在 `rust/lithe-gpui/crates/run/src/pane.rs:347` 的 `launch_plan(root, configuration_id, debug_port)`：
   它现在发 `{root, configurationId}`（+ 可选 `debugPort`）—— 在这里补 `currentFile`。
   调用链：`RunPane::launch`（`pane.rs:173`）→ `prepare_startup`/`prepare_debug_start`（`pane.rs:338`）
   → `launch_plan`。
 - 两个调用点：① 探针 —— `ShellWorkspace` 构造时 `pane.set_probe(run_probe, run_probe_debug)`
-  （`crates/workbench/src/workspace.rs:783`），探针随后在 `RunPane::launch` 内自己启动；
+  （`rust/lithe-gpui/crates/workbench/src/workspace.rs:783`），探针随后在 `RunPane::launch` 内自己启动；
   ② 用户路径 —— 标题栏"运行/调试"→ `workspace.rs:1730`
   `self.run.update(cx, |pane, cx| pane.launch(true, cx))`。
 - 因此工作台在两种情况下都要先把活动文件喂给 RunPane：从编辑器面板取当前 buffer 的路径
