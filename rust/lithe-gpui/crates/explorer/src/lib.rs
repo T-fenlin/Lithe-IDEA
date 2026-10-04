@@ -149,3 +149,25 @@ mod model;
 mod selection;
 
 pub use explorer_view::{Explorer, RevealInFileManagerHost};
+
+gpui_kit::actions!(lithe_gpui_explorer, [SelectAllInTree]);
+
+/// 项目树的键位上下文：绑定的 key context 与视图根元素上设的必须一致。
+///
+/// 树只内建 `↑↓←→` / `Enter`，其余键由本 crate 登记（`install_actions`）。
+pub const EXPLORER_KEY_CONTEXT: &str = "Explorer";
+
+/// 登记项目树的快捷键。**只登记绑定，处理在视图根元素上**
+/// （与 `search_everywhere::install_actions` 同一条约定：绑定是应用级、只登记一次，
+/// "当前在不在树里"由 key context 判定）。
+///
+/// 目前只有一条：`⌘A` / `Ctrl+A` = 真源 `ProjectTreeSelection.selectAll`
+/// （`ProjectTreeSelection.swift:59-70`）—— 选**焦点行的同级兄弟**。
+///
+/// ⚠️ 真源**没有**"Esc 清空选择"这一档，所以本侧也不绑 Esc。
+pub fn install_actions(cx: &mut gpui_kit::App) {
+    cx.bind_keys([
+        gpui_kit::KeyBinding::new("cmd-a", SelectAllInTree, Some(EXPLORER_KEY_CONTEXT)),
+        gpui_kit::KeyBinding::new("ctrl-a", SelectAllInTree, Some(EXPLORER_KEY_CONTEXT)),
+    ]);
+}

@@ -271,6 +271,12 @@ pub struct Explorer {
     /// 返回后覆盖调用方设的 `.selected(..)`（`gpui-component-0.7.0/src/tree.rs:89-92`），
     /// 所以行的选中态由本文件**自己画**（见 `render_tree` 里的选中底色）。
     selection: crate::selection::ProjectTreeSelection,
+    /// 树的**焦点句柄**：`⌘A` 这类键要先让树拿到焦点才生效。
+    ///
+    /// 真源的规矩是"**树内发生过指针交互之后**才接管快捷键"
+    /// （`Platform/MacOS/UI/ProjectTreeKeyboardCommands.swift:4,44-62`），所以行被点击时
+    /// 主动 `window.focus(..)`（见 `render_tree` 的点击处理）。
+    focus_handle: gpui_kit::FocusHandle,
     /// `git.status` 投影到树行上的状态装饰（工作区不是 git 仓库时是空的）。
     decorations: GitTreeStatus,
     /// 树内搜索的输入状态（placeholder 在 [`Explorer::new`] 里设置）。
@@ -372,6 +378,7 @@ impl Explorer {
             expanded: BTreeSet::new(),
             active: None,
             selection: crate::selection::ProjectTreeSelection::default(),
+            focus_handle: cx.focus_handle(),
             decorations: GitTreeStatus::default(),
             search,
             search_open: false,
@@ -601,6 +608,26 @@ impl Explorer {
             .update(cx, |state, cx| state.set_items(built.items, cx));
     }
 
+    /// 真源 ⌘A（`ProjectTreeSelection.selectAll`，`ProjectTreeSelection.swift:59-70`）：
+    /// 选**焦点行的同级兄弟**，不是整棵可见树（文件夹的子孙由 `covers` 覆盖）。
+    ///
+    /// 兄弟表由**显示树**算（[`crate::model::displayed_siblings`]）—— 父级不是文件系统父级，
+    /// 因为压缩的 Java 包在显示上挂在并非文件系统父级的祖先下（真源 `:62-69`）。
+    fn select_all_in_tree(
+        &mut self,
+        _: &crate::SelectAllInTree,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // 没有快照（还没加载完 / 加载失败）时没有树可言。
+        let Some(snapshot) = self.snapshot.as_ref() else {
+            return;
+        };
+        let siblings = crate::model::displayed_siblings(&snapshot.root, self.selection.focused());
+        self.selection.select_all_in_siblings(&siblings);
+        cx.notify();
+    }
+
     /// 工作区里**有没有**任何可见项（决定画树还是画空态）。
     fn has_entries(&self) -> bool {
         self.snapshot
@@ -810,6 +837,9 @@ impl Explorer {
         // 拿不到 `Context<Explorer>`，所以带一个弱引用进来。
         let explorer: WeakEntity<Self> = cx.entity().downgrade();
         let menu_explorer = explorer.clone();
+        // 行点击要主动把焦点交给树（真源：**树内发生过指针交互之后**才接管快捷键，
+        // `ProjectTreeKeyboardCommands.swift:4,44-62`）。
+        let focus_handle = self.focus_handle.clone();
 
         let tree = Tree::new(&self.tree, move |_index, entry, selected, _window, cx| {
             let id = entry.item().id.clone();
@@ -926,6 +956,7 @@ impl Explorer {
             // 每行都要现克隆一份（`relative_path` / `opening` 是本次调用新建的局部量，可以直接移）。
             let row_on_open = on_open.clone();
             let row_explorer = explorer.clone();
+            let row_focus = focus_handle.clone();
             let row_relative_path = relative_path;
             let row_path = opening;
 
@@ -948,6 +979,8 @@ impl Explorer {
                         // 在 macOS 是 ⌘、其它平台是 Ctrl —— 正好就是真源 `:11-28` 的 `toggling`。
                         let extending = event.modifiers().shift;
                         let toggling = event.modifiers().secondary();
+                        // 焦点交给树：此后 ⌘A 才落在树这个 key context 上（真源的规矩同）。
+                        window.focus(&row_focus, cx);
                         let is_file_row = row_path.is_some();
                         let _ = row_explorer.update(cx, |this, cx| {
                             // 可见顺序取 `TreeState` 自己那份扁平表（见 `visible_paths`）——
@@ -1020,6 +1053,12 @@ impl Explorer {
             .px_1p5()
             .role(Role::Tree)
             .aria_label(tr(TREE_ARIA_LABEL_KEY))
+            // 键位：`⌘A` 的**绑定**登记在 `crate::install_actions`（应用级、只登记一次），
+            // **处理**放这里 —— "当前在不在树里"由 key context 判定
+            // （与 `search_everywhere.rs:861-862` 同一条约定）。
+            .track_focus(&self.focus_handle)
+            .key_context(crate::EXPLORER_KEY_CONTEXT)
+            .on_action(cx.listener(Self::select_all_in_tree))
             .child(tree)
             .into_any_element()
     }
