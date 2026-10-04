@@ -264,6 +264,13 @@ pub struct Explorer {
     expanded: BTreeSet<SharedString>,
     /// 最后一次点击打开 / 定位的文件（相对路径），用来给那一行加底色。
     active: Option<SharedString>,
+    /// 多选状态（选择集 + Shift 锚点 + 焦点），真源 `ProjectTreeSelection`。
+    ///
+    /// ⚠️ 它**不**喂 `TreeState`：上游只有单个 `selected_ix`
+    /// （`gpui-base-0.7.0/src/tree.rs:195`），而 `Tree::new` 的 wrapper 又会在 `render_item`
+    /// 返回后覆盖调用方设的 `.selected(..)`（`gpui-component-0.7.0/src/tree.rs:89-92`），
+    /// 所以行的选中态由本文件**自己画**（见 `render_tree` 里的选中底色）。
+    selection: crate::selection::ProjectTreeSelection,
     /// `git.status` 投影到树行上的状态装饰（工作区不是 git 仓库时是空的）。
     decorations: GitTreeStatus,
     /// 树内搜索的输入状态（placeholder 在 [`Explorer::new`] 里设置）。
@@ -357,6 +364,7 @@ impl Explorer {
             tree,
             expanded: BTreeSet::new(),
             active: None,
+            selection: crate::selection::ProjectTreeSelection::default(),
             decorations: GitTreeStatus::default(),
             search,
             search_open: false,
@@ -757,6 +765,9 @@ impl Explorer {
         // 行渲染要读当前 git 装饰：渲染闭包是 `Fn`，借用 `&self` 活不过这一次调用，所以这里
         // 把装饰表整体按值捕获一次（`Rc` 共享一份不可变快照，不是每行查一次实体）。
         let decorations = Rc::new(self.decorations.clone());
+        // 多选集同样按值捕获一次（渲染闭包是 `Fn`，借用 `&self` 活不过这一次调用）。
+        // `covers` 让"被选中的文件夹**连带其子孙**"都显示为选中（真源 `:32-41`）。
+        let selection = self.selection.clone();
         // 点击时要把"当前打开的文件"记回来给行加底色，但 `ListItem::on_click` 只给 `&mut App`，
         // 拿不到 `Context<Explorer>`，所以带一个弱引用进来。
         let explorer: WeakEntity<Self> = cx.entity().downgrade();
@@ -856,11 +867,11 @@ impl Explorer {
                 );
             }
 
-            // 「当前打开的文件」加一层选中底色。真机把"活动文件"与"右键菜单定位的那一行"都用
-            // `LitheTheme.subtleSelection`（`ProjectSidebarView.swift:495-500,541-548`），两者在
-            // 真机上不可区分（`lithe-gpui/UI-MAP.md` §2.3 的"优化"一条），这里直接用选中色
-            // `list_active`。
-            if is_active {
+            // 「当前打开的文件」与「被选中的行」都加底色。真机把它们分成**两个** token
+            // （活动文件 `subtleSelection`、选中 `selection`，`ProjectSidebarView.swift:495-500,541-548`；
+            // 两者在真机上不可区分 —— `lithe-gpui/UI-MAP.md` §2.3 的"优化"一条），而本侧只有
+            // `list_active` 一条（同一条缺口），所以先用同一个色，待主题 role 收敛那一批再分开。
+            if is_active || selection.covers(&relative_path) {
                 row = row.bg(cx.theme().list_active);
             }
 
@@ -893,15 +904,25 @@ impl Explorer {
                 .child(row)
                 .on_click(
                     move |_event: &ClickEvent, window: &mut Window, cx: &mut App| {
-                        let Some(path) = row_path.clone() else {
-                            return;
-                        };
-                        row_on_open(path, window, cx);
-                        // 记住这次打开的文件，给这一行加底色；实体已经没了就跳过（不影响打开）。
+                        // 选择**先于**打开：目录行不打开文件，但照样要能被选中
+                        // （真源 `ProjectTreeSelection` 对目录与文件一视同仁）。
+                        // ⚠️ 目前只接了普通点击（选择集 = 该行）：⌘ / Shift 要"显示顺序的可见路径表"
+                        // 与两个修饰键，和键盘动作一起在下一步接。
+                        let is_file_row = row_path.is_some();
                         let _ = row_explorer.update(cx, |this, cx| {
-                            this.active = Some(SharedString::from(row_relative_path.clone()));
+                            this.selection
+                                .select(row_relative_path.as_str(), &[], false, false);
+                            if is_file_row {
+                                // 记住这次打开的文件，给这一行加底色（目录行不设，免得"点一下目录"
+                                // 看起来像打开了它）。
+                                this.active = Some(SharedString::from(row_relative_path.clone()));
+                            }
                             cx.notify();
                         });
+                        // 闭包是 `Fn`（可被多次调用），所以路径必须**克隆**出来再用，不能 move。
+                        if let Some(path) = row_path.clone() {
+                            row_on_open(path, window, cx);
+                        }
                     },
                 )
         })
