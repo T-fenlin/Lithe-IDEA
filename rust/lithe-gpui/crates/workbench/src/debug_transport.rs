@@ -1,4 +1,8 @@
-use std::io;
+use std::io::{self, Read as _, Write as _};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -14,10 +18,215 @@ const EXECUTE_COMMAND: &str = "debug.execute";
 const DISCONNECT_COMMAND: &str = "debug.disconnect";
 const DESTROY_SESSION_COMMAND: &str = "debug.destroySession";
 
+const STDERR_TAIL_BYTES: usize = 4096;
+
+pub struct DebugAdapterSpec {
+    pub executable: PathBuf,
+    pub arguments: Vec<String>,
+    pub working_directory: PathBuf,
+    pub environment: Vec<(String, String)>,
+}
+
 pub trait DebugAdapterPort: Send {
     fn write_frame(&mut self, frame: &[u8]) -> Result<(), String>;
 
     fn kill(&mut self);
+}
+
+pub struct StdioDebugAdapter {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    chunks: Receiver<Vec<u8>>,
+    stderr_tail: std::sync::Arc<std::sync::Mutex<String>>,
+    exited: bool,
+}
+
+impl StdioDebugAdapter {
+    pub fn spawn(spec: &DebugAdapterSpec) -> Result<Self, String> {
+        let mut command = Command::new(&spec.executable);
+        command
+            .args(&spec.arguments)
+            .current_dir(&spec.working_directory)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        for (key, value) in &spec.environment {
+            command.env(key, value);
+        }
+        let mut child = command.spawn().map_err(|error| {
+            format!(
+                "{DEBUG_TRANSPORT_TAG} spawn_failed executable={} error={error}",
+                spec.executable.display()
+            )
+        })?;
+
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let (sender, chunks) = channel();
+        if let Some(mut stdout) = stdout {
+            std::thread::spawn(move || {
+                let mut buffer = [0_u8; 8192];
+                loop {
+                    match stdout.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(read) => {
+                            if sender.send(buffer[..read].to_vec()).is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        let stderr_tail = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        if let Some(mut stderr) = stderr {
+            let tail = stderr_tail.clone();
+            std::thread::spawn(move || {
+                let mut text = String::new();
+                let _ = stderr.read_to_string(&mut text);
+                if let Ok(mut guard) = tail.lock() {
+                    let start = text.len().saturating_sub(STDERR_TAIL_BYTES);
+                    *guard = text[start..].to_string();
+                }
+            });
+        }
+
+        println!(
+            "{DEBUG_TRANSPORT_TAG} adapter_spawned executable={} pid={}",
+            spec.executable.display(),
+            child.id()
+        );
+        Ok(Self {
+            child,
+            stdin,
+            chunks,
+            stderr_tail,
+            exited: false,
+        })
+    }
+
+    #[must_use]
+    pub fn process_id(&self) -> u32 {
+        self.child.id()
+    }
+
+    #[must_use]
+    pub fn stderr_tail(&self) -> String {
+        self.stderr_tail
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn try_recv(&self) -> Option<Vec<u8>> {
+        match self.chunks.try_recv() {
+            Ok(chunk) => Some(chunk),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
+        }
+    }
+
+    pub fn recv_bounded(&self, timeout: Duration) -> Option<Vec<u8>> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(chunk) = self.try_recv() {
+                return Some(chunk);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    pub fn wait_exit(&mut self, timeout: Duration) -> Option<i32> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(status)) => {
+                    self.exited = true;
+                    return status.code();
+                }
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Ok(None) => return None,
+                Err(error) => {
+                    eprintln!("{DEBUG_TRANSPORT_TAG} wait_failed error={error}");
+                    return None;
+                }
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn is_exited(&self) -> bool {
+        self.exited
+    }
+}
+
+impl DebugAdapterPort for StdioDebugAdapter {
+    fn write_frame(&mut self, frame: &[u8]) -> Result<(), String> {
+        let Some(stdin) = self.stdin.as_mut() else {
+            return Err(format!(
+                "{DEBUG_TRANSPORT_TAG} write_failed reason=stdin_closed pid={}",
+                self.child.id()
+            ));
+        };
+        stdin.write_all(frame).map_err(|error| {
+            format!(
+                "{DEBUG_TRANSPORT_TAG} write_failed pid={} error={error}",
+                self.child.id()
+            )
+        })?;
+        stdin.flush().map_err(|error| {
+            format!(
+                "{DEBUG_TRANSPORT_TAG} flush_failed pid={} error={error}",
+                self.child.id()
+            )
+        })
+    }
+
+    fn kill(&mut self) {
+        self.stdin = None;
+        if !self.exited {
+            match self.child.kill() {
+                Ok(()) => {
+                    let _ = self.child.wait();
+                    self.exited = true;
+                    println!(
+                        "{DEBUG_TRANSPORT_TAG} adapter_killed pid={}",
+                        self.child.id()
+                    );
+                }
+                Err(error) => {
+                    eprintln!(
+                        "{DEBUG_TRANSPORT_TAG} adapter_kill_failed pid={} error={error}",
+                        self.child.id()
+                    );
+                }
+            }
+        }
+    }
+}
+
+impl Drop for StdioDebugAdapter {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
+
+pub fn stdio_spec(
+    executable: impl Into<PathBuf>,
+    arguments: impl IntoIterator<Item = impl Into<String>>,
+    working_directory: impl AsRef<Path>,
+) -> DebugAdapterSpec {
+    DebugAdapterSpec {
+        executable: executable.into(),
+        arguments: arguments.into_iter().map(Into::into).collect(),
+        working_directory: working_directory.as_ref().to_path_buf(),
+        environment: Vec::new(),
+    }
 }
 
 pub struct DebugTransport {
@@ -409,5 +618,74 @@ mod tests {
             "错误里要带上是哪条命令失败的：{error}"
         );
         transport.disconnect().expect("收尾");
+    }
+
+    fn current_test_binary() -> PathBuf {
+        std::env::current_exe().expect("当前测试可执行文件路径")
+    }
+
+    #[cfg(windows)]
+    fn live_child_spec(dir: &Path) -> DebugAdapterSpec {
+        stdio_spec("cmd", ["/C", "more"], dir)
+    }
+
+    #[cfg(unix)]
+    fn live_child_spec(dir: &Path) -> DebugAdapterSpec {
+        stdio_spec("sh", ["-c", "cat"], dir)
+    }
+
+    #[test]
+    fn stdio_adapter_spawns_reads_and_reports_exit() {
+        let dir = std::env::temp_dir();
+        let mut adapter =
+            StdioDebugAdapter::spawn(&stdio_spec(current_test_binary(), ["--list"], &dir))
+                .expect("应当能起子进程");
+
+        assert!(adapter.process_id() > 0, "子进程必须有 pid");
+        let chunk = adapter
+            .recv_bounded(Duration::from_secs(20))
+            .expect("有界等待内应当读得到子进程 stdout");
+        assert!(!chunk.is_empty(), "读到的 stdout 块不能是空的");
+        let code = adapter
+            .wait_exit(Duration::from_secs(20))
+            .expect("子进程应当自己退出");
+        assert_eq!(code, 0, "`--list` 应当以 0 退出");
+        assert!(adapter.is_exited(), "退出之后 is_exited 必须为真");
+    }
+
+    #[test]
+    fn stdio_adapter_reports_a_missing_executable() {
+        let dir = std::env::temp_dir();
+        let error = StdioDebugAdapter::spawn(&stdio_spec(
+            dir.join("lithe-no-such-debug-adapter"),
+            Vec::<String>::new(),
+            &dir,
+        ))
+        .err()
+        .expect("不存在的可执行文件必须报错");
+        assert!(
+            error.contains("spawn_failed"),
+            "错误要能看出是起进程失败：{error}"
+        );
+    }
+
+    #[test]
+    fn kill_is_idempotent_and_marks_the_child_exited() {
+        let dir = std::env::temp_dir();
+        let mut adapter = StdioDebugAdapter::spawn(&live_child_spec(&dir)).expect("起长驻子进程");
+        assert!(!adapter.is_exited(), "刚起来的长驻子进程不该已经被判定退出");
+
+        adapter.kill();
+        assert!(adapter.is_exited(), "kill 之后必须标记为已退出");
+        adapter.kill();
+        assert!(adapter.is_exited(), "第二次 kill 必须幂等，不许 panic");
+    }
+
+    #[test]
+    fn dropping_a_live_child_does_not_hang() {
+        let dir = std::env::temp_dir();
+        let adapter = StdioDebugAdapter::spawn(&live_child_spec(&dir)).expect("起长驻子进程");
+        assert!(!adapter.is_exited());
+        drop(adapter);
     }
 }
