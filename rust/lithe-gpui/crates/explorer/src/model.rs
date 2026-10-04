@@ -250,12 +250,132 @@ fn subtree_matches(node: &TreeNode, query: &str) -> bool {
             .any(|child| subtree_matches(child, query))
 }
 
-/// 把一层节点转成 `TreeItem` 列表。
+/// 显示顺序：目录在前、两边都按**小写**比较。
 ///
-/// 排序照 Core 自己的 `folders-first` 规则（目录在前、两边都按**小写**比较，
-/// `rust/lithe-core/src/project/files.rs:608-624`；界面口径同 macOS 的
-/// `ForEach(node.children ?? [])`）—— 这里再排一次是为了不依赖"Core 恰好排好了"这个隐含前提，
-/// 两边的比较规则一致，所以顺序不会打架。
+/// 排序照 Core 自己的 `folders-first` 规则（`rust/lithe-core/src/project/files.rs:608-624`；
+/// 界面口径同 macOS 的 `ForEach(node.children ?? [])`）—— 这里再排一次是为了不依赖"Core 恰好
+/// 排好了"这个隐含前提。[`to_items`] 与 [`displayed_siblings`] **共用**它，所以"树里铺出来的
+/// 顺序"与"⌘A 选中的兄弟顺序"不会打架。
+fn sort_for_display(nodes: &mut [&TreeNode]) {
+    nodes.sort_by(|left, right| {
+        right
+            .is_directory
+            .cmp(&left.is_directory)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+}
+
+/// 真源 `selectAll`（`ProjectTreeSelection.swift:59-70`）里"焦点行的**同级兄弟**"那一半。
+///
+/// 用**显示树**找父级（真源 `displayedParent`，`:62-69`）而不是文件系统父级 —— 压缩的 Java 包
+/// 在显示上挂在并非文件系统父级的祖先下。没有焦点、焦点就是根、或焦点在树里找不到时，取根的子项
+/// （真源 `?? root` 同）。
+///
+/// ⚠️ 返回的是**全部**直接子项（不按展开态过滤）：焦点行既然可见，它的父级必是展开的，所以它的
+/// 兄弟此刻也都可见 —— 真源同样直接取 `parent.children`。
+///
+/// 顺序与树里铺出来的一致（走 [`sort_for_display`]），这样"选中集的顺序"与用户看到的对得上。
+///
+/// 接线（焦点 + action 管道）还没做，所以先 `allow(dead_code)` —— 与 `workspace.rs` 里
+/// `clear_breakpoints`「实现了、入口未接」同一处置。
+#[allow(dead_code)]
+pub(crate) fn displayed_siblings(root: &TreeNode, focused: Option<&str>) -> Vec<String> {
+    let parent = focused
+        .and_then(|path| displayed_parent_of(root, path))
+        .unwrap_or(root);
+    let mut children: Vec<&TreeNode> = parent.children.iter().collect();
+    sort_for_display(&mut children);
+    children.into_iter().map(|node| node.path.clone()).collect()
+}
+
+/// 真源 `displayedParent`（`:62-69`）：按**树结构**递归找 `path` 的父节点。
+fn displayed_parent_of<'a>(node: &'a TreeNode, path: &str) -> Option<&'a TreeNode> {
+    for child in &node.children {
+        if child.path == path {
+            return Some(node);
+        }
+        if let Some(parent) = displayed_parent_of(child, path) {
+            return Some(parent);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod displayed_siblings_tests {
+    use super::*;
+
+    fn node(path: &str, is_directory: bool, children: Vec<TreeNode>) -> TreeNode {
+        let name = match path.rsplit('/').next() {
+            Some(name) if !name.is_empty() => name.to_string(),
+            _ => "proj".to_string(),
+        };
+        TreeNode {
+            path: path.to_string(),
+            name,
+            is_directory,
+            children,
+        }
+    }
+
+    /// 固定形状：`src/`（两个子项）+ `a.rs` + `B.rs`，构造顺序故意不是显示顺序。
+    fn tree() -> TreeNode {
+        node(
+            "",
+            true,
+            vec![
+                node(
+                    "src",
+                    true,
+                    vec![
+                        node("src/lib.rs", false, vec![]),
+                        node("src/main.rs", false, vec![]),
+                    ],
+                ),
+                node("a.rs", false, vec![]),
+                node("B.rs", false, vec![]),
+            ],
+        )
+    }
+
+    /// 没有焦点、或焦点在树里找不到 ⇒ 取**根的子项**（真源 `?? root`）；
+    /// 顺序是"目录在前 + 小写名升序"。
+    #[test]
+    fn without_focus_the_top_level_items_are_taken() {
+        let root = tree();
+        assert_eq!(displayed_siblings(&root, None), ["src", "a.rs", "B.rs"]);
+        assert_eq!(
+            displayed_siblings(&root, Some("does/not/exist")),
+            ["src", "a.rs", "B.rs"],
+            "焦点找不到时回落根"
+        );
+    }
+
+    /// 焦点在子项上 ⇒ 取**它的同级兄弟**（不是它的子项、也不是整棵可见树）—— 真源 ⌘A 的判据。
+    #[test]
+    fn focus_inside_a_folder_takes_that_folder_siblings() {
+        let root = tree();
+        assert_eq!(
+            displayed_siblings(&root, Some("src/lib.rs")),
+            ["src/lib.rs", "src/main.rs"],
+            "焦点在 src/lib.rs ⇒ 兄弟是 src 的两个子项"
+        );
+        assert_eq!(
+            displayed_siblings(&root, Some("src")),
+            ["src", "a.rs", "B.rs"],
+            "焦点在顶层项 src ⇒ 兄弟是顶层那一层"
+        );
+    }
+
+    /// 根行自己的焦点（`path` 是**空串**）⇒ 顶层的项（根没有兄弟）。
+    #[test]
+    fn focus_on_the_root_takes_the_top_level_items() {
+        let root = tree();
+        assert_eq!(displayed_siblings(&root, Some("")), ["src", "a.rs", "B.rs"]);
+    }
+}
+
+/// 把一层节点转成 `TreeItem` 列表。
 fn to_items(
     nodes: &[TreeNode],
     expanded: &BTreeSet<SharedString>,
@@ -267,12 +387,7 @@ fn to_items(
         .iter()
         .filter(|node| query.is_none_or(|needle| subtree_matches(node, needle)))
         .collect();
-    visible.sort_by(|left, right| {
-        right
-            .is_directory
-            .cmp(&left.is_directory)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-    });
+    sort_for_display(&mut visible);
 
     let mut items = Vec::new();
     for node in visible {
