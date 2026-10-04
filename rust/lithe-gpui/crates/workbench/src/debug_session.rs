@@ -12,6 +12,7 @@ pub struct DebugSessionSnapshot {
     pub terminated: bool,
     pub exit_code: Option<i64>,
     pub last_error: Option<String>,
+    pub results: std::collections::BTreeMap<String, Value>,
     pub applied_events: u64,
 }
 
@@ -102,6 +103,17 @@ impl DebugSessionSnapshot {
                     self.output.drain(..overflow);
                 }
                 true
+            }
+            "operationCompleted" => {
+                let Some(result) = event.get("result") else {
+                    return false;
+                };
+                let Some(kind) = result.get("kind").and_then(Value::as_str) else {
+                    return false;
+                };
+                let changed = self.results.get(kind) != Some(result);
+                self.results.insert(kind.to_string(), result.clone());
+                changed
             }
             "operationFailed" => {
                 let command = text(event, "command").unwrap_or_default();
@@ -559,6 +571,46 @@ mod tests {
 
         assert!(handle.stop(Duration::from_secs(10)), "stop 必须有界成功");
         assert_eq!(handle.last_exit(), Some("stopped"));
+    }
+
+    #[test]
+    fn operation_completed_results_are_stored_per_kind() {
+        let mut snapshot = DebugSessionSnapshot::default();
+        let changed = snapshot.apply(&[json!({
+            "sequence": 3,
+            "type": "operationCompleted",
+            "operationId": "op-1",
+            "result": { "kind": "threads", "threads": [ { "id": 1, "name": "main" } ] }
+        })]);
+        assert!(changed, "第一次结果必须报告变化");
+        assert_eq!(
+            snapshot.results["threads"]["threads"][0]["name"],
+            json!("main")
+        );
+
+        let unchanged = snapshot.apply(&[json!({
+            "sequence": 4,
+            "type": "operationCompleted",
+            "operationId": "op-1",
+            "result": { "kind": "threads", "threads": [ { "id": 1, "name": "main" } ] }
+        })]);
+        assert!(!unchanged, "同一个 kind 的相同结果不该触发无谓重绘");
+
+        snapshot.apply(&[json!({
+            "sequence": 5,
+            "type": "operationCompleted",
+            "operationId": "op-2",
+            "result": { "kind": "variables", "reference": 7, "variables": [] }
+        })]);
+        assert_eq!(snapshot.results.len(), 2, "不同 kind 各留一份最新结果");
+        assert!(snapshot.results.contains_key("variables"));
+
+        let ignored = snapshot.apply(&[json!({
+            "sequence": 6,
+            "type": "operationCompleted",
+            "operationId": "op-3"
+        })]);
+        assert!(!ignored, "没有 result 的事件要忽略而不是 panic");
     }
 
     #[test]
