@@ -12,6 +12,7 @@ use gpui_kit::{
     Window, div, rems,
 };
 
+use crate::debug_session::DebugSessionHandle;
 use lithe_gpui_editor::GutterBreakpoint;
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{core_json, tr, tr_args};
@@ -1319,6 +1320,7 @@ impl DebugContent {
 
 pub struct DebugPane {
     breakpoints: DebugBreakpointStore,
+    session: Option<DebugSessionHandle>,
     execution: DebugExecution,
     inspection: DebugInspection,
     tree: DebugVariableTree,
@@ -1352,6 +1354,7 @@ impl DebugPane {
             filters: SteppingFiltersState::Idle,
             evaluate_input: String::new(),
             content: DebugContent::Debugger,
+            session: None,
             error_message: None,
             output: Vec::new(),
             filters_task: None,
@@ -2439,8 +2442,45 @@ fn toolbar_tooltip(action: DebugToolbarAction) -> SharedString {
     })
 }
 
+impl DebugPane {
+    pub fn attach_session(&mut self, session: DebugSessionHandle) {
+        println!(
+            "{} attach_session={}",
+            DEBUG_DIAGNOSTIC_TAG,
+            session.session_id()
+        );
+        self.session = Some(session);
+    }
+
+    pub fn drain_session(&mut self) -> bool {
+        let Some(session) = self.session.as_mut() else {
+            return false;
+        };
+        let outcome = session.drain();
+        if let Some(reason) = outcome.exited.clone() {
+            println!("{DEBUG_DIAGNOSTIC_TAG} session_exited reason={reason}");
+            self.session = None;
+            true
+        } else {
+            outcome.changed
+        }
+    }
+
+    pub fn stop_session(&mut self, timeout: std::time::Duration) -> bool {
+        let Some(session) = self.session.as_mut() else {
+            return true;
+        };
+        let stopped = session.stop(timeout);
+        self.session = None;
+        stopped
+    }
+}
+
 impl Render for DebugPane {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.drain_session() {
+            cx.notify();
+        }
         v_flex()
             .size_full()
             .min_h_0()
