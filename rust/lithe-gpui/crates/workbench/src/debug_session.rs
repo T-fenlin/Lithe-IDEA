@@ -527,6 +527,60 @@ impl DebugSessionHandle {
                 self.request_inspect("scopes", None, Some(frame_id), None, DEBUG_INSPECT_TIMEOUT);
         }
     }
+    pub fn auto_advance_inspects_chain(&mut self) {
+        if std::env::var_os("LITHE_DEBUG_VARIABLES_PROBE").is_none() {
+            return;
+        }
+        if self.snapshot().state.as_deref() != Some("paused") {
+            return;
+        }
+        if result_for(&self.snapshot(), "threads").is_none() {
+            let _ = self.request_inspect("threads", None, None, None, DEBUG_INSPECT_TIMEOUT);
+        }
+        let thread_id = result_for(&self.snapshot(), "threads")
+            .and_then(|value| value.get("threads"))
+            .and_then(Value::as_array)
+            .and_then(|threads| threads.first())
+            .and_then(|thread| thread.get("id"))
+            .and_then(Value::as_i64);
+        if result_for(&self.snapshot(), "stackTrace").is_none() {
+            if let Some(thread_id) = thread_id {
+                let _ = self.request_inspect(
+                    "stackTrace",
+                    Some(thread_id),
+                    None,
+                    None,
+                    DEBUG_INSPECT_TIMEOUT,
+                );
+            }
+        }
+        if result_for(&self.snapshot(), "scopes").is_none() {
+            if let Some(frame_id) = first_frame_id(&self.snapshot()) {
+                let _ = self.request_inspect(
+                    "scopes",
+                    None,
+                    Some(frame_id),
+                    None,
+                    DEBUG_INSPECT_TIMEOUT,
+                );
+            }
+        }
+        let scope_ref = result_for(&self.snapshot(), "scopes")
+            .and_then(|value| value.get("scopes"))
+            .and_then(Value::as_array)
+            .and_then(|scopes| scopes.first())
+            .and_then(|scope| scope.get("variablesReference"))
+            .and_then(Value::as_i64);
+        if let Some(scope_ref) = scope_ref {
+            if result_for(&self.snapshot(), "variables").is_none() {
+                let _ = self.request_variables(
+                    scope_ref,
+                    first_frame_id(&self.snapshot()),
+                    DEBUG_INSPECT_TIMEOUT,
+                );
+            }
+        }
+    }
     pub fn request_variables(
         &mut self,
         variables_reference: i64,

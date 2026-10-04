@@ -912,3 +912,21 @@ let scope_ref = result_for(&snapshot, "scopes")                 // 或 result_fo
 配合 `LITHE_DEBUG_DUMP_FRAMES=1` 即能看到 `threads → stackTrace → scopes → variables` 四条真实 operationCompleted 帧，
 本目标即可标完成。所需助手（`result_for`、`first_frame_id`）与门控变量都已就位，面板侧调用也已存在
 （`session.drain()` 之后的 `session.auto_advance_inspects()`，提交 `e900cbc2`）。
+
+### 第 34 轮：决定性发现 —— request_inspect 并不真正阻塞等回复（2026-10-04）
+
+把链条改成"一次调用内串四步"（提交见下）后，第 35 次实跑（`start status=ok`）显示：
+链条只发出了 `threads`（seq15 `java-debug-1-5-threads`），**之后没有任何 stackTrace/scopes/variables 请求**。
+
+⇒ 说明 `request_inspect` / `request_variables` **并没有阻塞到收到回复为止**（内部只是 `self.drain()` pump 一次，
+回复通常在下一次 drain 才可见）。所以我以为的"调用返回后结果就在 snapshot 里"是错的：
+每一步之后 `result_for(...)` 仍是 None，链条就一步也走不下去 —— 而面板暂停后又不再 drain，
+于是整条链卡在第一步。
+
+**唯一正确的修法**（也是第 32 轮结论的强化）：**让会话在暂停期间持续被 drain**，两条路：
+① 面板侧：`drain_session` 在"暂停中"返回 true（保持 `cx.notify()` → 持续渲染 → 持续 drain）；
+② handle 侧：在 `auto_advance_inspects_chain()` 里做**有界自旋 pump** —— 每发一步后
+   `for _ in 0..N { self.drain(); if result_for(...).is_some() { break; } }`（用 `DEBUG_INSPECT_TIMEOUT` 兜底），
+   这样一次调用内就能走完四步，且完全不依赖渲染循环。
+
+②更贴合"探针/无头"场景，且改动只在一个方法内。推荐先做 ②。
