@@ -163,6 +163,7 @@ pub mod search_model;
 pub mod search_panel;
 pub mod session;
 pub mod spring;
+pub mod spring_panel;
 pub mod spring_paths;
 pub mod status_bar;
 pub mod title_bar;

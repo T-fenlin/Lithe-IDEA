@@ -386,17 +386,21 @@ pub fn right_tool_window(
     maven: Option<&crate::maven::MavenProjectView>,
     spring: Option<&crate::spring::SpringIndexView>,
     notifications: &Entity<crate::notifications::NotificationPanel>,
+    spring_panel: &Entity<crate::spring_panel::SpringPanel>,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
     let title = view.title();
+    // Spring 的筛选查询串由面板实体持有（其余视图用不到，取出来也只是个空串）。
+    let spring_query = spring_panel.read(cx).query().clone();
     // 真源头部的副标题槽（`LitheToolWindowHeader.swift:51-55`，11.5 medium + `secondaryText`）。
-    // 目前只有 Spring 面板用它：真源是 `"\(filteredEndpoints.count) routes"`
-    // （`SpringEndpointsView.swift:12`）。本侧还没有筛选框，所以这里的 count 就是全部端点数；
-    // 筛选行落地后改成"筛选后"的条数即可（真源取的就是 filtered 的那个）。
+    // Spring 的副标题是 `"\(filteredEndpoints.count) routes"`（`SpringEndpointsView.swift:12`）——
+    // 它取的是**筛选后**的条数，所以这里也过一遍同一条判据，与列表画的条数永远一致。
     let subtitle = match (view, spring) {
         (RightToolWindowView::Spring, Some(index)) => {
-            let count = index.endpoints.len().to_string();
+            let count = crate::spring::filter_endpoints(&index.endpoints, &spring_query)
+                .len()
+                .to_string();
             Some(lithe_gpui_shared::tr_args(
                 "lithe.spring.gpui.routeCount",
                 &[("count", count.as_str())],
@@ -411,14 +415,19 @@ pub fn right_tool_window(
         .aria_label(title.clone())
         .size_full()
         .child(header(view, title, subtitle, on_close, cx))
+        // 真源的 Spring 面板在头部与列表之间有一行筛选（`SpringEndpointsView.swift:15-22`）。
+        .children(match view {
+            RightToolWindowView::Spring => {
+                Some(spring_panel.read(cx).filter_row(cx).into_any_element())
+            }
+            _ => None,
+        })
         .child(match (view, maven, spring) {
             // 扫到了 Maven 项目就画项目结构；没扫到（或还没扫）保持真源的「未检测到 Maven 项目」。
             (RightToolWindowView::Maven, Some(project), _) => maven_content(project, cx),
             // Spring 同理：Core 的 `spring.index` 给到事实才画，否则空态（`is_empty` 也算没有事实）。
             (RightToolWindowView::Spring, _, Some(index)) if !index.is_empty() => {
-                // 查询串先传空：筛选行还没做（见 `spring_content` 的文档）。
-                // 空查询按真源判据返回全部，所以行为与"没有筛选框"一致。
-                spring_content(index, "", cx)
+                spring_content(index, &spring_query, cx)
             }
             // 通知中心：面板自己管搜索 / 筛选 / 展开，所以这里只转交实体。
             (RightToolWindowView::Notifications, _, _) => notifications.clone().into_any_element(),

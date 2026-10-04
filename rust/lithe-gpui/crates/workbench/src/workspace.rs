@@ -1345,6 +1345,10 @@ pub struct ShellWorkspace {
     /// 刻意不做成 `right_tool_window` 的自由函数参数：面板要持有自己的视图状态，而
     /// `ShellWorkspace` 已经 287KB 了。
     notification_panel: Entity<crate::notifications::NotificationPanel>,
+    /// Spring 面板的**筛选状态宿主**（真源 `SpringEndpointsView.swift:15-22` 的筛选框）。
+    /// 内容仍由 `right_tool_window::spring_content` 画；实体只持 `InputState` 与查询串，
+    /// 理由见 [`crate::spring_panel`] 的模块文档。
+    spring_panel: Entity<crate::spring_panel::SpringPanel>,
     /// 订阅通知 store：**每记一条就弹一条左下角 toast**。
     ///
     /// 订阅必须**被持有**：`Subscription` 一 drop 就取消（gpui 的 RAII 语义），
@@ -2067,6 +2071,11 @@ impl ShellWorkspace {
         let notification_panel =
             cx.new(|cx| crate::notifications::NotificationPanel::new(&notifications, window, cx));
 
+        // Spring 面板的筛选状态：输入一变面板自己 `notify()`，这里把它接到本实体的重渲染上
+        // （订阅在 drop 时退订，所以必须 `detach` —— 否则这一行下一句就失效）。
+        let spring_panel = cx.new(|cx| crate::spring_panel::SpringPanel::new(window, cx));
+        cx.observe(&spring_panel, |_, _, cx| cx.notify()).detach();
+
         let mut workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             // 滚动状态从 0 偏移开始；真源在 `onAppear` 时把活动项滚到中间
@@ -2142,6 +2151,7 @@ impl ShellWorkspace {
             project_open_do_not_ask: Rc::new(Cell::new(false)),
             notifications,
             notification_panel,
+            spring_panel,
             // toast 水位线从 0 起：新 store 的第一条 seq 是 1，必然 > 0，必然被弹。
             notification_toast_seq: 0,
             _notification_toast_subscription: notification_toast_subscription,
@@ -5167,6 +5177,7 @@ impl Render for ShellWorkspace {
             self.maven_project.as_ref(),
             self.spring_index.as_ref(),
             &self.notification_panel,
+            &self.spring_panel,
             on_close_right_activity,
             cx,
         );
