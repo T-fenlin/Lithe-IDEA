@@ -204,7 +204,6 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
 - 需要重新评估的触发条件：gpui-kit 若提供 gutter API，第 4 步可改为走上游能力。
 
 ## 验收标准
-
 1. **传输层**：scripted adapter 单测（不依赖真进程）覆盖 `initialize → launch → configurationDone → stopped`、
    一个**有界超时**用例、一个**陈旧回包被丢弃**用例；真机对 java-debug 起会话成功。
 2. **事件到 UI**：断点命中后能看到线程 / 调用栈 / 变量；变量树按需懒加载；控制台输出走拉模式且有界。
@@ -215,6 +214,28 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
 6. **守卫**：一条脚本列出"Core 有 `debug.*` 命令、宿主没有调用点"的清单（当前 18 条里只用 3 条），
    该清单为空或只剩明确不做的条目。
 7. **端到端**：Java 项目上跑通"启动调试 → 断点命中 → 单步 → 查看变量 → 停止"，无残留 adapter 进程。
+
+### 真机环境现状与真机验证进展（2026-10-04 实测）
+
+**载荷已按 manifest 的 SHA256 全部就位**（不进仓库，`.gitignore` 已忽略 `/third_party/jdtls/*`，保留 manifest）：
+JDTLS 1.61.0（48.7 MB，`338e7e73…`）、java-debug 插件 0.53.2（`69128beb…`）、
+lombok 1.18.46（`01f7b1a0…`）、java-test 0.46.0 VSIX（`56c1e14d…`，含 runner `8ea737ab…`），
+铺好 `java-debug/`、`lombok/lombok.jar`、`java-test/extensions.txt` + `extensions/*.jar`。
+机器上 JDK：`openjdk-21`（`21.0.8` 实测可跑，配 `LITHE_JDTLS_JAVA` 用）、`open-25`（配 `LITHE_JDTLS_SMOKE_PROJECT_JDK`）。
+
+**已用真实 JDTLS 跑通到哪一步**：`cargo test -p lithe-core --lib real_jdtls`（三个 `LITHE_JDTLS_SMOKE_*`
+环境变量门控）现在**不再被跳过**，能起来真实 JDTLS 会话并执行我们的 JDT 命令 ——
+实测 `session_id="lsp-session-1"`、`workspace/executeCommand` → `vscode.java.buildWorkspace`
+返回结构化 `JavaBuildReport`。也就是说 **Core 的 JDT 命令层 + 我们准备的载荷在真机上端到端可用**。
+
+**卡在哪**：该用例在夹具工程编译处失败（`javaBuildCompilationErrors`，`underlying_message: "2"`，
+`elapsed_milliseconds: 9` —— 9 毫秒说明是**工程配置级**失败而不是真的在编译）。
+用例文档注释说夹具由 `scripts/prepare-jdtls.{sh,ps1}` 准备，但**这个脚本在仓库里不存在**
+（`glob **/prepare-jdtls*` 无命中）⇒ 夹具的工程 JDK/`.classpath`/本地 maven 仓库需要人来铺，
+这是**仓库自身的缺口**（文档引用了不存在的脚本），不是 DAP 代码的问题。
+
+**仍未做**：DAP 那半边的真机端到端（启动→断点命中→单步→变量→停止）—— 它需要 GUI 驱动
+（点工具栏/打断点），当前只能靠人工或 UI 自动化；DAP 链路本身已有 43 条离线用例覆盖。
 
 ## 风险
 
