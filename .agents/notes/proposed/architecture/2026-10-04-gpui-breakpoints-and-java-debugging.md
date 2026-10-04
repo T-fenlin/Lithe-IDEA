@@ -60,6 +60,37 @@ Lithe 的调试能力现在是**半截**的：Core 已经把 DAP 的协议与状
 
 每步的验收判据见研报 §3.4；实测缺口清单见 §3.3。
 
+## 进展（截至 2026-10-04，第 1 步做了约一半）
+
+已落地（都在 `rust/lithe-gpui/crates/workbench/src/debug_transport.rs`，共 19 条单测）：
+
+| 能力 | 说明 |
+| --- | --- |
+| `DebugTransport` | 驱动 Core 的 `debug.createSession/launch/execute/receive/disconnect/destroySession`；分帧仍归 Core（`lithe-core/src/debug/protocol.rs`），宿主只搬 base64 字节 |
+| `StdioDebugAdapter` | spawn + 读线程 + mpsc、stderr 尾巴、`write_frame`、幂等 `kill`、kill-on-drop、有界 `recv_bounded`/`wait_exit` |
+| `TcpDebugAdapter` | `connect_timeout` + 读写分离 + 幂等 `kill`（Java 路径用） |
+| `poll_bounded` | 有界读一轮：先等第一块（≤timeout），再排空已到的；终止后的迟到输入被丢弃并计入 `dropped_after_termination` |
+| `DebugSessionDriver` | 专用线程跑 `poll_bounded` → 事件经 mpsc 给 UI；收尾统一做 disconnect → destroySession → 杀 adapter；`stop(timeout)` 有界 |
+| Java 端口 | **不需要改 Core**：`lsp.request` 的 `ExecuteCommand` 操作接受调用方 `command` 载荷，宿主用它发 `vscode.java.startDebugSession` 并解析端口 |
+
+提交：`2446f78d` → `a1f23351`（更正）→ `eb989a3d` → `bf53a4bb` → `994cac2b` → `2adc7d3d` → `ec71c3c2`。
+
+**还没做**：把驱动器接进工作台（发起入口 + `DebugWorkspaceState`/`DebugPane` 消费事件）、
+逐请求超时与取消（Core 已有 `operationID` + `debug.cancelOperation`）、真机 Java 端到端。
+`java_debug_session_port` 本身需要活着的 JDTLS 会话，单测不覆盖（契约由载荷用例钉住），留给真机那一步。
+
+### 这一段实测出来的四条教训（写进这里，避免后人重踩）
+
+1. **DAP 的 `stopped` 只会在 `configurationDone`/`launch` 之后到达**。脚本化 adapter 只应答
+   `initialize` 时，等 15 s 也不会来事件；用例要按真实顺序脚本化。
+2. **trait 给了默认实现，转发型测试替身最容易漏转发**：`SharedAdapter` 漏了 `try_recv`（默认返回 `None`），
+   于是 `poll_bounded` 永远"什么都看不见"，两条用例静默失败。替身的每个方法都要转发。
+3. **测试替身不许对中毒锁 `.expect()`**：断言在持有 `MutexGuard` 时失败 → guard 在 unwinding 中 drop →
+   锁中毒 → 之后（如 `Drop` 里）再 `.expect()` → **panic 中再 panic → 进程 abort（0xC0000409）**，
+   一次普通断言失败会被放大成整条测试进程崩掉。替身一律用 `unwrap_or_else(|p| p.into_inner())`。
+4. **`poll_bounded` 这类循环要有"第一块等多久 / 之后还等不等"的明确语义**，否则要么空转要么每次
+   白白等满超时；终止之后的输入要**丢弃并计数**（`dropped_after_termination`）而不是继续喂给已结束的会话。
+
 ## 考虑过的备选方案
 
 - **直接依赖 Zed 的 `dap` crate**：不行 —— GPL-3.0-or-later，与 Apache-2.0 分发不兼容。
