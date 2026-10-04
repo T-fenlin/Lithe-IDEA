@@ -422,33 +422,78 @@ pub fn right_tool_window(
 /// 真源那套（配置属性补全、注入链、`@Value` 引用跳转）要各自的 UI，本侧**不画假控件**；
 /// 逐条渲染属于后续批次（`spring.rs` 的模块文档里登记了）。
 fn spring_content(index: &crate::spring::SpringIndexView, cx: &App) -> AnyElement {
+    // 真源把路由 / 方法 / 控制器都画成**等宽**（`SpringEndpointsView.swift:39,43`），
+    // 本侧沿用仓库既有取法（`explorer_view.rs` / `git/log_view.rs`）。
+    let mono = cx.theme().mono_font_family.clone();
     let mut column = v_flex()
         .id("spring-index")
         .w_full()
         .flex_1()
         .min_h_0()
-        .gap_1()
-        .p_3();
+        // 真源列表是 `LazyVStack(spacing: 1)` + `.padding(6)`
+        // （`SpringEndpointsView.swift:34,62`）；1 与 6 都不在 gpui 的档位上，按 `rems(P / 16.)` 写。
+        .gap(rems(1. / 16.))
+        .p(rems(6. / 16.));
 
     for endpoint in &index.endpoints {
+        // 真源行（`SpringEndpointsView.swift:37-56`）：`HStack(spacing: 9)`、方法列定宽 58 且左侧对齐、
+        // 行内衬左右 10、最小高 30；方法色按**第一个** HTTP 方法取
+        // （`:78-85`：GET success / POST accent / DELETE error / 其余 warning）。
+        let method_color = match endpoint.http_methods.first().map(String::as_str) {
+            Some("GET") => cx.theme().success,
+            // 真源 `POST` 用的是 `LitheTheme.accent`（强调色）。gpui 的 `theme.accent` 语义是
+            // **悬停底**（UI-MAP §1.2 记的 token 陷阱），强调色的前景对应 `theme.primary`。
+            Some("POST") => cx.theme().primary,
+            Some("DELETE") => cx.theme().danger,
+            _ => cx.theme().warning,
+        };
         column = column.child(
             h_flex()
                 .w_full()
-                .gap_2()
+                .gap(rems(9. / 16.))
+                .px(rems(10. / 16.))
+                .min_h(rems(30. / 16.))
                 .child(
+                    // 方法列：真源 10.5 bold monospaced、宽 58、左对齐。
+                    // 10.5 不在 gpui 的档位（12 / 14 / 16）上，取最近的 **12**。
                     div()
-                        .min_w_0()
-                        .truncate()
+                        .flex_shrink_0()
+                        .w(rems(58. / 16.))
                         .text_xs()
-                        .text_color(cx.theme().foreground)
-                        .child(endpoint.label()),
+                        .font_bold()
+                        .font_family(mono.clone())
+                        .text_color(method_color)
+                        .child(endpoint.methods_label()),
                 )
                 .child(
+                    // 路由：真源 12.5 medium monospaced。12.5 与档位 12 / 14 等距，取 **14** ——
+                    // 这样它与上一列的 12 之间仍保有真源那 2pt 的层级差。
+                    div()
+                        .flex_shrink_0()
+                        .text_sm()
+                        .font_medium()
+                        .font_family(mono.clone())
+                        .text_color(cx.theme().foreground)
+                        .child(endpoint.route.clone()),
+                )
+                .child(
+                    // 控制器.方法：真源 10.5 弱化（同上取 12）。
                     div()
                         .flex_shrink_0()
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
                         .child(format!("{}.{}", endpoint.controller, endpoint.method)),
+                )
+                // 真源的 `Spacer()`：把相对路径推到行尾。
+                .child(div().flex_1())
+                .child(
+                    // 相对路径：真源 10.5 弱化 + `lineLimit(1)`。`path` 是 Core 给的工作区相对路径。
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(endpoint.path.clone()),
                 ),
         );
     }

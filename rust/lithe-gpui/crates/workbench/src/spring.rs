@@ -48,13 +48,14 @@ pub struct SpringEndpointView {
 }
 
 impl SpringEndpointView {
-    /// 显示用的一行文本（HTTP 方法 + 路由）。渲染层直接用它，避免各画各的。
-    pub fn label(&self) -> String {
-        if self.http_methods.is_empty() {
-            self.route.clone()
-        } else {
-            format!("{} {}", self.http_methods.join("/"), self.route)
-        }
+    /// 方法列的显示串：真源是 `httpMethods.joined(separator: ",")`
+    /// （`SpringEndpointsView.swift:38`）。
+    ///
+    /// 抽成纯函数是为了能被确定性单测钉住。改前这里叫 `label()`、把方法与路由拼成
+    /// `"GET/POST /api/users"` 一整行，且分隔符用的是 `/` —— 与真源的分隔符和分列都不符；
+    /// 现在路由自成一列（见 `right_tool_window.rs` 的 `spring_content`），这里只负责方法列。
+    pub fn methods_label(&self) -> String {
+        self.http_methods.join(",")
     }
 }
 
@@ -236,7 +237,7 @@ mod tests {
         assert!(!view.is_empty(), "有 properties 就不算空");
     }
 
-    /// 端点：HTTP 方法集、路由、控制器、1 基行列原样落位；`label()` 拼出显示串。
+    /// 端点：HTTP 方法集、路由、控制器、1 基行列原样落位；`methods_label()` 拼出方法列的显示串。
     #[test]
     fn endpoints_keep_methods_route_and_location() {
         let view = parse(&json!({
@@ -254,7 +255,9 @@ mod tests {
         .expect("有 endpoints 就是视图");
 
         let endpoint = &view.endpoints[0];
-        assert_eq!(endpoint.label(), "GET/POST /api/users");
+        // 方法列按真源用 `,` 连接（`SpringEndpointsView.swift:38`），路由自成一列。
+        assert_eq!(endpoint.methods_label(), "GET,POST");
+        assert_eq!(endpoint.route, "/api/users");
         assert_eq!(endpoint.controller, "UserController");
         assert_eq!(endpoint.path, "src/main/java/demo/UserController.java");
         // 契约是**1 基**行列：本层不换算（换算是编辑器侧的事）。
@@ -274,8 +277,8 @@ mod tests {
         .expect("视图");
         assert_eq!(view.endpoints.len(), 1);
         assert_eq!(view.endpoints[0].route, "/ok");
-        // 没有 httpMethods 时不 panic，`label()` 退化成纯路由。
-        assert_eq!(view.endpoints[0].label(), "/ok");
+        // 没有 httpMethods 时不 panic，方法列退化成空串（路由照旧单独成列）。
+        assert_eq!(view.endpoints[0].methods_label(), "");
         assert_eq!(view.endpoints[0].id, "/ok", "缺 id 时用 route 兜底");
     }
 
