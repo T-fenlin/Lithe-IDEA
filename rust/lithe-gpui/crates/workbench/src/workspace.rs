@@ -1278,7 +1278,31 @@ impl ShellWorkspace {
             &root,
             std::time::Duration::from_secs(10),
         ) {
-            Ok(transport) => {
+            Ok(mut transport) => {
+                let jdwp_port = self.run.read(cx).debug_port();
+                match jdwp_port {
+                    Some(port) => {
+                        match crate::debug_transport::java_attach_configuration("Java", port, None)
+                        {
+                            Ok(configuration) => {
+                                match transport.launch_with_configuration(configuration) {
+                                    Ok(_) => println!(
+                                        "{DEBUG_TAG} launch status=sent session={session_id} jdwp={port}"
+                                    ),
+                                    Err(error) => eprintln!(
+                                        "{DEBUG_TAG} launch status=failed jdwp={port} error={error}"
+                                    ),
+                                }
+                            }
+                            Err(error) => {
+                                eprintln!("{DEBUG_TAG} launch status=invalid error={error}");
+                            }
+                        }
+                    }
+                    None => eprintln!(
+                        "{DEBUG_TAG} launch status=pending-jdwp-port session={session_id}"
+                    ),
+                }
                 let handle = crate::debug_session::DebugSessionHandle::start(
                     transport,
                     std::time::Duration::from_millis(20),
@@ -1288,7 +1312,6 @@ impl ShellWorkspace {
                     cx.notify();
                 });
                 println!("{DEBUG_TAG} start status=ok session={session_id} lsp={lsp_session}");
-                eprintln!("{DEBUG_TAG} launch status=pending-configuration session={session_id}");
             }
             Err(error) => {
                 eprintln!("{DEBUG_TAG} start status=failed error={error}");
