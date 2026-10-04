@@ -145,5 +145,7 @@
 
 mod explorer_view;
 mod model;
+// 项目树的**多选模型**（真源 `ProjectTreeSelection` 的逐条移植；接线在下一步，见该模块文档）。
+mod selection;
 
 pub use explorer_view::{Explorer, RevealInFileManagerHost};
