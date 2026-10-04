@@ -1496,7 +1496,27 @@ impl ShellWorkspace {
         let changes_root = root.clone();
         let changes = cx.new({
             let window = &mut *window;
-            move |cx| ChangesView::new(changes_root, window, cx)
+            // 「更改」视图里冲突文件列表的打开通路：与 `explorer` / 搜索面板**同一个落地函数**
+            // （`pane.open_at`），只是本路没有行号可跳（Core 的 `git.conflictMarkers` 只回路径）。
+            let editor_handle = editor.downgrade();
+            let shell_for_open = cx.entity().downgrade();
+            let on_open: Box<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static> =
+                Box::new(
+                    move |path: PathBuf, line: Option<u32>, window: &mut Window, cx: &mut App| {
+                        let _ = shell_for_open.update(cx, |this, cx| {
+                            this.close_extensions_page(None, cx);
+                        });
+                        let _ = editor_handle.update(cx, |pane, cx| match line {
+                            Some(line) => {
+                                pane.open_at(&path, line, 0, "source-control", window, cx);
+                            }
+                            None => {
+                                pane.open(&path, window, cx);
+                            }
+                        });
+                    },
+                );
+            move |cx| ChangesView::new(changes_root, on_open, window, cx)
         });
 
         let terminal = cx.new(|cx| TerminalPane::new(window, cx));

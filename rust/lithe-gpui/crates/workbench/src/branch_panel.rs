@@ -43,18 +43,38 @@
 //! 3. **`.max_h` 仍然给 512**：列表上限与真源的面板最大高一致（研究 §1.8），
 //!    `Command` 的默认值是 300（`command/command.rs:34`），不放开只会用到一半。
 //!
-//! # v1 = 只读面板（研究 §7.1 的 A 档）
+//! # v1 = 只读面板（研究 §7.1 的 A 档）+ **U11 的远程动作与检出闸门**
 //!
-//! 能做的（**零新 Core 命令**）：标题栏分支项（图标 + 分支名 + ahead/behind 箭头）、
-//! 搜索框、本地分支列表（前导勾 / 分支图标 + 分支名 + 右侧「当前」徽章）、空态两句、
-//! 底栏刷新、页签行。
+//! ⚠️ **本节的历史与现状**：v1 落地时是**纯只读**的（点列表行只记一行诊断）。U11 把
+//! 「取回 / 更新项目 / 推送」与「点分支行真的切分支」接上了，两者都走 `git.write`
+//! **唯一**那条网关（`lithe-gpui-git` 的 `changes.rs:517`），没有第二条写通路。
 //!
-//! 做不到的（**不画可点控件**，逐条给前置条件）：
+//! ## U11 接上的（三条写操作 + 两道前置检查闸门）
+//!
+//! | 动作 | 走什么 | 前置检查（闸门） | 真源 |
+//! | --- | --- | --- | --- |
+//! | 取回 | `git.write{operation:"fetch"}` | **无**（不改工作区，也就没有"会不会丢改动"） | `BranchSwitcherPopover.swift:111-116` |
+//! | 更新项目（拉取） | `fetch` → `git.pullPreflight` → `git.write{operation:"pull", mode}` | **有**：没有上游 ⇒ 停；已最新 ⇒ 停；历史偏离 ⇒ **问**合并/变基；读不到 ⇒ 拦 | `GitFeatureModel.swift:3114-3160` |
+//! | 推送 | `git.write{operation:"push", reference}` | **无**（本切片不带 push 预览，见下） | `BranchSwitcherPopover.swift:132-138` |
+//! | 切分支（点列表行） | `git.checkoutPreflight` → `git.write{operation:"checkout", reference, referenceKind}` | **有**：干净 ⇒ 直接走；会丢改动 ⇒ **问**（贮藏后检出 / 强制检出）；读不到 ⇒ 拦 | `GitFeatureModel.swift:3233-3267` |
+//!
+//! 三条闸门共用的口径（`lithe-gpui-git::remote`）：
+//!
+//! - **能拦就拦**：前置检查报出阻塞就**不发**那条写请求；
+//! - **该问就问**：会丢改动的检出、历史偏离的拉取，都要用户先选；
+//! - **不许假装**：读失败（`Probe::Failed`）与"一切正常"（`Ready` 空集）在**类型上**分开，
+//!   失败时走 `Unavailable` 那一支，给的是"重试"而不是默默放行；
+//! - 结果条（成功绿 / 失败红 / "停下"也用红）常驻在面板里，**不做 toast**：真源的远程动作
+//!   只 `notify?(...)`（`GitFeatureModel` 的 `notify?`），本侧承接"失败不再静默"的既有偏离。
+//!
+//! ## 仍然做不到的（**不画可点控件**，逐条给前置条件）
 //!
 //! | 缺的 | 缺什么（都**没有**写进界面） |
 //! | --- | --- |
-//! | 切分支（点列表行） | `git.checkoutPreflight` + `git.write{checkout}` 两条命令本侧都没有调用点（研究 §6.2） |
-//! | 新建分支（底栏那一颗） | `git.write{createBranch}`；真源「创建后不检出」（`:442-456`） |
+//! | 推送预览对话框 | 真源 `Push…` 先开 `GitPushDialog`（`pushPreview` + 提交列表 + 标签范围）；本切片直接推当前分支 |
+//! | 取回对话框与取回设置 | `GitFetchDialog.swift:1-89` 的 `fetchOptions`（远程 / 标签 / 剪枝 / 子模块）与 `git.fetchPlan`；本侧取回不带任何选项 |
+//! | 新建分支（底栏那一颗） | `git.write{createBranch}` + 一个输入框对话框；真源「创建后不检出」（`:442-456`） |
+//! | 「检出标签或修订…」动作行 | `git.write{checkoutRevision}` + 一个输入框对话框（命令本身已经在本 crate 的写集里） |
 //! | 「…」行内菜单（合并 / 变基 / 删除） | `git.write{merge\|rebase\|deleteBranch}`（研究 §4.3-4.4） |
 //! | 工作树页签 | `git.worktrees` + `git.write{createWorktree\|removeWorktree}` |
 //! | 仓库页签 | `workspace.repositories`（**非 git 命名空间**，本侧没有调用点） |
@@ -105,6 +125,7 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
@@ -115,7 +136,11 @@ use gpui_kit::{
 };
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
-use lithe_gpui_git::{BranchInfo, BranchSnapshot};
+use lithe_gpui_git::{
+    BranchInfo, BranchSnapshot, CheckoutGate, CheckoutPreflight, Preflight, PullGate,
+    PullPreflight, PullStrategy, checkout, checkout_gate, checkout_preflight, fetch, pull,
+    pull_gate, pull_preflight, push,
+};
 use lithe_gpui_shared::{tr, tr_args};
 
 // ---------------------------------------------------------------------------
@@ -192,6 +217,233 @@ const TRIGGER_HEIGHT_SPEC: f32 = 32.;
 /// 9 不在 4px 档位上（`px_2()` = 8、`px_2p5()` = 10），所以调用点写
 /// `px(rems(TRIGGER_HORIZONTAL_INSET_SPEC / 16.))`。
 const TRIGGER_HORIZONTAL_INSET_SPEC: f32 = 9.;
+
+// ---------------------------------------------------------------------------
+// 动作行（U11：取回 / 更新项目 / 推送）
+// ---------------------------------------------------------------------------
+
+/// 动作行高 **30**。真源 `BranchSwitcherPopover.Metrics.actionRowHeight = 30`
+/// （`macos/Sources/Lithe/Views/Git/BranchSwitcherPopover.swift:8`）。
+///
+/// 30 不在 4px 档位上 ⇒ 调用点写 `rems(PANEL_ACTION_ROW_HEIGHT_SPEC / 16.)`。
+const ACTION_ROW_HEIGHT_SPEC: f32 = 30.;
+
+/// 动作行前导图标槽宽 **18**。真源 `Image(systemName:).frame(width: 18)`
+/// （`BranchSwitcherPopover.swift:239` 区间的 `actionRow`：图标 12、槽 18）。
+const ACTION_ICON_SLOT_SPEC: f32 = 18.;
+
+/// 动作行行内左右内边距 **8** 与图标—文字间距 **10**（同上 `actionRow` 的
+/// `.padding(.horizontal, 8)` 与 `HStack(spacing: 10)`）。
+///
+/// 8 在档位上（`px_2()`），10 不在（`gap_2p5()` 恰是 10）—— 后者直接用档位 helper。
+const ACTION_ROW_HORIZONTAL_INSET_SPEC: f32 = 8.;
+
+/// 动作行 hover 圆角 **6**（同上 `litheRowHover(cornerRadius: 6)`）。
+///
+/// 6 不在 gpui 的圆角常量表里（Lithe 是 `--radius × k` 阶梯：4.8 / 6.4 / 8），
+/// 所以调用点写 `rems(ACTION_ROW_RADIUS_SPEC / 16.)`。
+const ACTION_ROW_RADIUS_SPEC: f32 = 6.;
+
+/// 快捷键提示字号 **11.5**（同上 `Text(shortcut).font(.system(size: 11.5))`）。
+///
+/// 11.5 既不在 gpui 的 `text_*` 档位上、也不在 4px 栅格上 ⇒ `rems(..)`。
+const ACTION_SHORTCUT_FONT_SPEC: f32 = 11.5;
+
+/// 动作行图标边长 **12**（同上 `Image(systemName:).font(.system(size: 12))`）。
+const ACTION_ICON_SIZE_SPEC: f32 = 12.;
+
+/// 检出确认框正文里最多列几个路径（其余折成 `(+n)`）。
+///
+/// 与 `changes_view` 的 `CONFLICT_PATH_LIMIT` 同一个取舍：一行文案不能因为几百个脏文件
+/// 撑爆面板；`git.uncommittedWouldOverwrite` 的 `{listed}{more}` 两个占位符就是为这件事留的。
+const CHECKOUT_CONFIRM_PATH_LIMIT: usize = 5;
+
+// ---------------------------------------------------------------------------
+// 远程动作状态（U11）
+// ---------------------------------------------------------------------------
+
+/// 三条远程动作。文案键**全部复用 catalog 既有键**（真源 `GitFeatureModel` 的
+/// `notify?(...)` 与 `git-branch-manager` 的按钮名在 catalog 里都已经有对应条目）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RemoteAction {
+    /// `git.fetch` = 「Fetch」（`BranchSwitcherPopover.swift:112`）。
+    Fetch,
+    /// `git.log.updateBranch` = 「Update」（`BranchSwitcherPopover.swift:120` 的
+    /// `"Update Project…"`，catalog 里同义的既有键是 `git.log.updateBranch`）。
+    Pull,
+    /// `git.push` = 「Push」（`BranchSwitcherPopover.swift:133`）。
+    Push,
+    /// 检出（点列表行 / 确认框之后真正执行）。它**不是**一条动作行，但同样要占住
+    /// "在途 ⇒ 动作行全禁用"这一档（真源 `isPerformingBranchOperation` 是同一个布尔）。
+    Checkout,
+}
+
+impl RemoteAction {
+    /// 诊断行里的稳定标识（可 grep）。
+    fn id(self) -> &'static str {
+        match self {
+            Self::Fetch => "fetch",
+            Self::Pull => "pull",
+            Self::Push => "push",
+            Self::Checkout => "checkout",
+        }
+    }
+
+    /// 动作行文案键。
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Fetch => "lithe.git.fetch",
+            Self::Pull => "lithe.git.log.updateBranch",
+            Self::Push => "lithe.git.push",
+            Self::Checkout => "lithe.git.checkout",
+        }
+    }
+
+    /// 运行中文案键（按在途状态区分，与真源的 `isPerformingBranchOperation` 转圈同源）。
+    fn running_key(self) -> &'static str {
+        match self {
+            Self::Fetch => "lithe.git.fetchingChanges",
+            Self::Pull => "lithe.git.pulling",
+            Self::Push => "lithe.git.pushingChanges",
+            Self::Checkout => "lithe.git.checkout",
+        }
+    }
+
+    /// 成功文案键。
+    fn success_key(self) -> &'static str {
+        match self {
+            Self::Fetch => "lithe.git.changesFetched",
+            Self::Pull => "lithe.git.pulledChanges",
+            Self::Push => "lithe.git.changesPushed",
+            Self::Checkout => "lithe.git.checkout",
+        }
+    }
+
+    /// 失败文案键（`Pull` 走 `git.pullResult.gitRejectedPull` 这一句；
+    /// 带 `{error}` 的版本由调用点用 `tr_args` 填）。
+    ///
+    /// ⚠️ **不带占位符**：这一栏只用来给"一句话结果"配一个动作名，真正的失败细节在
+    /// `WriteOutcome::failure`（Core 错误码 / Git stderr 首行）里，由调用点拼在后面。
+    fn failure_key(self) -> &'static str {
+        match self {
+            Self::Fetch => "lithe.git.fetchFailed",
+            Self::Pull => "lithe.git.pullResult.gitRejectedPull",
+            Self::Push => "lithe.git.pushFailed",
+            Self::Checkout => "lithe.git.operationFailed",
+        }
+    }
+}
+
+/// 一条远程动作的四态（`idle / running / done`；失败在 `Done` 的 `failure` 里）。
+///
+/// 为什么不做成 `Probe<WriteOutcome>`：这里的"读"就是"写"本身 —— 只有一次，
+/// 没有分代问题；真正的分代在前置检查那边（`Preflight`）。
+#[derive(Clone, Debug, PartialEq)]
+enum RemoteRun {
+    Idle,
+    Running(RemoteAction),
+    Done {
+        action: RemoteAction,
+        failure: Option<SharedString>,
+    },
+}
+
+impl RemoteRun {
+    /// 在途 ⇒ 三颗动作按钮全部禁用（真源 `isPerformingBranchOperation`，`:116,125,137`）。
+    fn is_busy(&self) -> bool {
+        matches!(self, Self::Running(_))
+    }
+
+    fn running_action(&self) -> Option<RemoteAction> {
+        match self {
+            Self::Running(action) => Some(*action),
+            _ => None,
+        }
+    }
+}
+
+/// 「更新项目」被前置检查拦下、需要用户选策略时的那份事实
+/// （真源 `GitPullStrategyRequest`，`GitFeatureModel.swift:3146-3151`）。
+#[derive(Clone, Debug, PartialEq)]
+struct PullDivergence {
+    upstream: SharedString,
+    ahead: usize,
+    behind: usize,
+    has_local_changes: bool,
+}
+
+// ---------------------------------------------------------------------------
+// 纯判定（可单测：文案拼接 / 按钮禁用 / 结果措辞）
+// ---------------------------------------------------------------------------
+
+/// 动作行是否禁用：没有仓库、或已经有一条远程动作在途（真源 `:116,125,137` 三处
+/// `.disabled(feature.gitRepositoryRoot == nil || feature.isPerformingBranchOperation)`）。
+fn remote_actions_disabled(snapshot: &BranchSnapshot, run: &RemoteRun) -> bool {
+    snapshot.repository_root.is_none() || run.is_busy()
+}
+
+/// 「更新项目」按钮的**额外**禁用条件：连当前分支都读不出来（真源 `:125` 的
+/// `feature.currentGitReference == nil`）。
+fn update_project_disabled(snapshot: &BranchSnapshot, run: &RemoteRun) -> bool {
+    remote_actions_disabled(snapshot, run) || snapshot.branch.is_none()
+}
+
+/// 检出确认框的正文：`git.uncommittedWouldOverwrite` =
+/// 「Uncommitted changes would be overwritten: {listed}{more}. Stash or commit them first.」
+///
+/// 逐字对真源：`GitCheckoutConflictDialog` 的说法就是"这些文件会被覆盖"
+/// （真源入口 `GitFeatureModel.swift:3245-3251`；`git.log.operationBlocked` 是集成那一路的
+/// 同一件事，本侧检出用前一条键）。
+fn checkout_confirm_message(paths: &[SharedString], limit: usize) -> SharedString {
+    let (listed, more) = lithe_gpui_git::join_paths(paths, limit);
+    let more = if more == 0 {
+        String::new()
+    } else {
+        format!(" (+{more})")
+    };
+    tr_args(
+        "lithe.git.uncommittedWouldOverwrite",
+        &[("listed", &listed), ("more", &more)],
+    )
+}
+
+/// 拉取策略框的正文：`git.pullDivergedMessage` =
+/// 「The current branch and {upstream} have diverged. Choose how to reconcile them.」
+/// （真源 `GitPullStrategyDialog`；字段来源 `GitFeatureModel.swift:3146-3151`）。
+fn pull_diverged_message(divergence: &PullDivergence) -> SharedString {
+    tr_args(
+        "lithe.git.pullDivergedMessage",
+        &[("upstream", divergence.upstream.as_ref())],
+    )
+}
+
+/// 拉取策略框里那句 ahead/behind 计数（`git.aheadOfRemote` / `git.behindRemote` 两条既有键
+/// 的计数形态；真源把 `ahead` / `behind` 两个数交给同一个对话框）。
+fn pull_divergence_counts(divergence: &PullDivergence) -> SharedString {
+    SharedString::from(format!("↑{} ↓{}", divergence.ahead, divergence.behind))
+}
+
+/// 一次远程动作结束后要给用户看的那句话：`(是否错误, 文案)`。
+///
+/// 四条分支都有话可说（`Idle` 除外）—— 这正是不允许"点了没反应"的落点。
+fn remote_message(run: &RemoteRun) -> Option<(bool, SharedString)> {
+    match run {
+        RemoteRun::Idle | RemoteRun::Running(_) => None,
+        RemoteRun::Done {
+            action,
+            failure: Some(failure),
+        } => Some((
+            true,
+            // 动作名在前、**Git / Core 自己的那句在后**：前者说清是哪件事失败，
+            // 后者是可操作的原因（与 `changes_view` 的红条同一口径）。
+            SharedString::from(format!("{}：{failure}", tr(action.failure_key()))),
+        )),
+        RemoteRun::Done {
+            action,
+            failure: None,
+        } => Some((false, tr(action.success_key()))),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // 页签行（自绘：`Command` 没有这个槽位）
@@ -397,6 +649,155 @@ fn render_search(input: &Entity<InputState>, total: usize, cx: &App) -> impl Int
                     &[("count", &total.to_string())],
                 )),
         )
+}
+
+// ---------------------------------------------------------------------------
+// 动作行（`BranchSwitcherPopover` 的 `actions` 段，U11）
+// ---------------------------------------------------------------------------
+
+/// 动作段：**取回 / 更新项目… / 推送…** 三行。
+///
+/// 结构逐条对 `macos/Sources/Lithe/Views/Git/BranchSwitcherPopover.swift`：
+///
+/// - 位置：`searchBar → divider → actions → divider → branchList`（`:31-37`）；
+/// - 行高 30（`Metrics.actionRowHeight`，`:8`）、图标 12 放在 18 宽的槽里、文字 13、
+///   右侧快捷键 11.5、左右内边距 8、图标—文字间距 10、hover 圆角 6（`:239` 区间的 `actionRow`）；
+/// - 三行的禁用条件：没有仓库或正在跑分支操作（`:116,125,137`）；「更新项目」多一条
+///   "没有当前分支"（`:125`）；
+/// - 真源还有 `Commit… / New Branch… / Checkout Tag or Revision…` 三行，本侧**不画**：
+///   提交在左栏「更改」视图里（真入口），新建分支与检出修订各要一个输入框对话框，
+///   不在本切片范围（见汇报的"没做"）。**不画死按钮**是本 crate 的既有口径
+///   （模块头「v1 = 只读面板」那一节的判据：点了没用不如不画）。
+fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
+    let (snapshot, run) = {
+        let panel = panel.read(cx);
+        (panel.branches.clone(), panel.remote.clone())
+    };
+    let disabled = remote_actions_disabled(&snapshot, &run);
+    let pull_disabled = update_project_disabled(&snapshot, &run);
+
+    let mut section = v_flex().w_full().flex_shrink_0().gap_0p5().px_2().py_1();
+
+    for action in [RemoteAction::Fetch, RemoteAction::Pull, RemoteAction::Push] {
+        // 在途的那一行换成"正在…"并且也禁用（真源同一处转圈）。
+        let running = run.running_action() == Some(action);
+        let label = if running {
+            tr(action.running_key())
+        } else {
+            tr(action.label_key())
+        };
+        let row_disabled = if action == RemoteAction::Pull {
+            pull_disabled
+        } else {
+            disabled
+        };
+        let icon = match action {
+            RemoteAction::Fetch => IconName::ArrowDownToLine,
+            // 真源这一行是 `arrow.down.left`（`:120`）—— 落点是"把远程更新拿下来"。
+            RemoteAction::Pull => IconName::ArrowDownLeft,
+            RemoteAction::Push => IconName::ArrowUpRight,
+            RemoteAction::Checkout => IconName::GitBranch,
+        };
+        let shortcut = match action {
+            RemoteAction::Pull => Some("⌘T"),
+            RemoteAction::Push => Some("⇧⌘K"),
+            _ => None,
+        };
+        let handle = panel.downgrade();
+        let mut row = div()
+            .id(SharedString::from(format!("branch-action-{}", action.id())))
+            .flex()
+            .w_full()
+            .items_center()
+            .gap_2p5()
+            .px(rems(ACTION_ROW_HORIZONTAL_INSET_SPEC / 16.))
+            .h(rems(ACTION_ROW_HEIGHT_SPEC / 16.))
+            .rounded(rems(ACTION_ROW_RADIUS_SPEC / 16.))
+            .text_sm()
+            .text_color(if row_disabled {
+                cx.theme().muted_foreground
+            } else {
+                cx.theme().foreground
+            });
+        // 禁用的行**不挂 hover、也不挂点击处理器**：这才是真的禁用，
+        // 而不是"看着能点、点了没反应"（本 crate 的既有口径）。
+        if !row_disabled {
+            row = row.hover(|style| style.bg(cx.theme().accent));
+        }
+        row = row.child(
+            div()
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .w(rems(ACTION_ICON_SLOT_SPEC / 16.))
+                .child(
+                    Icon::new(icon)
+                        .text_color(cx.theme().muted_foreground)
+                        .w(rems(ACTION_ICON_SIZE_SPEC / 16.))
+                        .h(rems(ACTION_ICON_SIZE_SPEC / 16.)),
+                ),
+        );
+        row = row.child(div().min_w_0().truncate().child(label));
+        if let Some(shortcut) = shortcut {
+            row = row.child(
+                div()
+                    .ml_auto()
+                    .flex_shrink_0()
+                    .text_color(cx.theme().muted_foreground)
+                    .text_size(rems(ACTION_SHORTCUT_FONT_SPEC / 16.))
+                    .child(SharedString::from(shortcut)),
+            );
+        }
+        row = row.aria_label(tr(action.label_key()));
+        if !row_disabled {
+            row = row.on_click(move |_event, window, cx| {
+                let _ = handle.update(cx, |panel, cx| match action {
+                    RemoteAction::Fetch => panel.run_fetch(cx),
+                    RemoteAction::Push => panel.run_push(cx),
+                    RemoteAction::Pull => panel.update_project(window, cx),
+                    // 检出没有动作行（它由分支列表行触发），这一档不可达。
+                    RemoteAction::Checkout => {}
+                });
+            });
+        }
+        section = section.child(row);
+    }
+
+    section
+}
+
+/// 远程动作 / 检出的结果条：成功绿、失败红、"停下"也用红（它同样需要用户动手）。
+///
+/// 与 [`render_error_bar`]（读失败）分开画：两者可以同时存在（例如读列表失败、推送也失败），
+/// 合成一条会让"到底是哪件事失败了"看不出来。
+fn render_remote_message(message: &(bool, SharedString), cx: &App) -> impl IntoElement {
+    let (is_error, text) = message;
+    let color = if *is_error {
+        cx.theme().danger
+    } else {
+        cx.theme().success
+    };
+    h_flex()
+        .w_full()
+        .flex_shrink_0()
+        .items_start()
+        .gap_2()
+        .px_2()
+        .py_1p5()
+        .text_sm()
+        .text_color(color)
+        .bg(color.opacity(0.12))
+        .child(idea_icon_image(
+            if *is_error {
+                &idea::WARNING_CIRCLE_ICON
+            } else {
+                &idea::CHECK_ICON
+            },
+            cx,
+            rems(14. / 16.),
+        ))
+        .child(div().flex_1().min_w_0().child(text.clone()))
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +1030,25 @@ pub struct BranchPanel {
     branches: BranchSnapshot,
     /// `InputEvent::Change` 的订阅（`Subscription` 一 drop 就取消，所以必须持有）。
     _search_subscription: Option<Subscription>,
+    /// 「取回 / 更新项目 / 推送」的运行态（U11）。
+    remote: RemoteRun,
+    /// 「更新项目」的**拉取前置检查**（四态 + 分代）。
+    ///
+    /// 它的结果决定三件事（真源 `GitFeatureModel.swift:3129-3153`）：没有上游 ⇒ 停；
+    /// 已最新 ⇒ 停；历史偏离 ⇒ **问**策略。⚠️ 它是在 `fetch` **之后**读的 —— 先取回
+    /// 才不会拿过期 ref 判偏离（同一条注释在真源 `:3119-3120`）。
+    pull: Preflight<PullPreflight>,
+    /// **检出前置检查**（四态 + 分代，`git.checkoutPreflight`）。
+    ///
+    /// 非空 `blocking_paths` ⇒ **必须问**（真源 `:3245-3251`：不问就不往下走）。
+    checkout: Preflight<CheckoutPreflight>,
+    /// 远程动作 / 检出的**用户可见一句话**：`(是否错误, 文案)`。
+    ///
+    /// 真源的远程动作只 `notify?(...)`（toast，看完就没）；本侧不照抄，做成面板内常驻条
+    /// （与 [`render_error_bar`] 的读失败条同一口径：失败与"停下"都必须看得见）。
+    remote_message: Option<(bool, SharedString)>,
+    /// 需要用户选合并 / 变基的那份偏离事实（`Some` ⇒ 策略框已经开着）。
+    pending_pull: Option<PullDivergence>,
 }
 
 impl BranchPanel {
@@ -665,6 +1085,13 @@ impl BranchPanel {
                 query: SharedString::default(),
                 branches,
                 _search_subscription: Some(subscription),
+                // 三条远程动作与两条前置检查都从"没做过"起步：构造期**不读 Core**
+                // （与 `ChangesView::new` 同一条口径：构造期读 Core 会把首帧卡住）。
+                remote: RemoteRun::Idle,
+                pull: Preflight::new(),
+                checkout: Preflight::new(),
+                remote_message: None,
+                pending_pull: None,
             }
         })
     }
@@ -731,8 +1158,538 @@ impl BranchPanel {
         cx.notify();
     }
 
-    /// 把焦点交给自绘的搜索框。
+    // -----------------------------------------------------------------------
+    // U11：取回 / 更新项目 / 推送（三条写操作 + 两条前置检查闸门）
+    // -----------------------------------------------------------------------
+
+    /// 取回：`git.write{operation:"fetch"}`（真源 `BranchSwitcherPopover.swift:111-116`）。
     ///
+    /// 取回**没有**前置检查：它不改工作区，也就没有"会不会丢改动"这个问题
+    /// （真源同样直接 `await feature.fetchGit()`，没有闸门）。
+    fn run_fetch(&mut self, cx: &mut Context<Self>) {
+        let Some(repository_root) = self.repository_root_text() else {
+            return;
+        };
+        if self.remote.is_busy() {
+            return;
+        }
+        self.begin_remote(RemoteAction::Fetch, cx);
+        self.spawn_remote(
+            repository_root,
+            RemoteAction::Fetch,
+            move |root| fetch(&root),
+            cx,
+        );
+    }
+
+    /// 推送当前分支：`git.write{operation:"push", reference}`（真源 `:132-138`）。
+    ///
+    /// ⚠️ **本切片不带 push 预览**：真源的 `Push…` 先开 `GitPushDialog`
+    /// （`pushPreview` + 提交列表 + 标签范围），那是一个独立的大视图，不在本切片范围
+    /// （见汇报的"没做"）。这里推的就是**当前分支**，请求里显式写 `reference`，
+    /// 所以"推的是哪一个分支"不含糊。
+    fn run_push(&mut self, cx: &mut Context<Self>) {
+        let Some(repository_root) = self.repository_root_text() else {
+            return;
+        };
+        if self.remote.is_busy() {
+            return;
+        }
+        let Some(branch) = self.branches.branch.clone() else {
+            return;
+        };
+        self.begin_remote(RemoteAction::Push, cx);
+        let reference = branch.to_string();
+        self.spawn_remote(
+            repository_root,
+            RemoteAction::Push,
+            move |root| push(&root, Some(&reference)),
+            cx,
+        );
+    }
+
+    /// 「更新项目」：**先取回 → 再读 `git.pullPreflight` → 按闸门走**
+    /// （真源 `GitFeatureModel.updateCurrentBranch`，`:3114-3160`）。
+    ///
+    /// 三步的顺序与真源逐条对齐，理由是那条注释：先取回才能让偏离判定基于**现在**的远程，
+    /// 否则过期 ref 会把拉取送进错的那条路（`:3119-3120`）。
+    fn update_project(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repository_root) = self.repository_root_text() else {
+            return;
+        };
+        if self.remote.is_busy() {
+            return;
+        }
+        if self.branches.branch.is_none() {
+            return;
+        }
+        self.begin_remote(RemoteAction::Pull, cx);
+        // 前置检查的代次：连点两次时，第一次的回包会被 `apply` 丢掉。
+        let serial = self.pull.begin();
+        let workspace_root = self.root.clone();
+
+        cx.spawn_in(window, async move |this, cx| {
+            let (fetch_failure, probe, snapshot) = cx
+                .background_spawn(async move {
+                    let fetch_failure = fetch(&repository_root).failure;
+                    // 取回失败就**不再**读前置检查：拿一份基于旧 ref 的偏离结论去问用户，
+                    // 是在用假的证据做决定（真源同样在 `:3123-3127` 直接停）。
+                    let probe = match fetch_failure {
+                        Some(_) => None,
+                        None => Some(pull_preflight(&repository_root)),
+                    };
+                    (fetch_failure, probe, BranchSnapshot::load(&workspace_root))
+                })
+                .await;
+
+            let _ = this.update_in(cx, |panel, window, cx| {
+                panel.branches = snapshot;
+                if let Some(failure) = fetch_failure {
+                    eprintln!(
+                        "S1_BRANCH_PANEL remote=pull step=fetch result=failed error={failure}"
+                    );
+                    panel.remote = RemoteRun::Done {
+                        action: RemoteAction::Pull,
+                        failure: Some(SharedString::from(failure.clone())),
+                    };
+                    panel.remote_message = Some((
+                        true,
+                        tr_args("lithe.git.pullResult.fetchFailed", &[("error", &failure)]),
+                    ));
+                    cx.notify();
+                    return;
+                }
+                // 这一步必到：`fetch_failure` 为 `None` 时 `probe` 一定被读了。
+                let probe = probe.unwrap_or_else(|| Err("pull preflight was not read".to_string()));
+                if !panel.pull.apply(serial, probe) {
+                    eprintln!("S1_BRANCH_PANEL remote=pull step=preflight result=stale_reply");
+                    return;
+                }
+                panel.finish_pull_gate(window, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// 拉取闸门的三条出路（拦 / 问 / 走），逐条对应真源 `:3130-3153`。
+    fn finish_pull_gate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let action = RemoteAction::Pull;
+        match pull_gate(self.pull.state()) {
+            // `Proceed`：落后但不偏离 ⇒ `--ff-only`（真源的默认策略，`:3155-3157`）。
+            PullGate::Proceed => {
+                let Some(repository_root) = self.repository_root_text() else {
+                    return;
+                };
+                eprintln!("S1_BRANCH_PANEL remote=pull step=preflight state=proceed");
+                self.spawn_remote(
+                    repository_root,
+                    action,
+                    move |root| pull(&root, PullStrategy::FfOnly),
+                    cx,
+                );
+            }
+            // `Stop`：**能拦就拦**，并且说清楚是哪一种"拉不了"。
+            PullGate::Stop(stop) => {
+                eprintln!("S1_BRANCH_PANEL remote=pull step=preflight state=stop reason={stop:?}");
+                self.remote = RemoteRun::Idle;
+                self.remote_message = Some((false, tr(stop.message_key())));
+                cx.notify();
+            }
+            // `AskStrategy`：**该问就问** —— 两种策略只有用户能选（真源 `:3144-3152`）。
+            PullGate::AskStrategy {
+                upstream,
+                ahead,
+                behind,
+                has_local_changes,
+            } => {
+                eprintln!(
+                    "S1_BRANCH_PANEL remote=pull step=preflight state=ask_strategy ahead={ahead} behind={behind}"
+                );
+                self.remote = RemoteRun::Idle;
+                self.pending_pull = Some(PullDivergence {
+                    upstream,
+                    ahead,
+                    behind,
+                    has_local_changes,
+                });
+                self.open_pull_strategy_dialog(window, cx);
+            }
+            // `Unavailable`：**不许假装** —— 拿不到前置检查就是"没查",不是"没事"。
+            PullGate::Unavailable { reason } => {
+                eprintln!(
+                    "S1_BRANCH_PANEL remote=pull step=preflight state=unavailable error={reason}"
+                );
+                self.remote = RemoteRun::Done {
+                    action,
+                    failure: Some(reason.clone()),
+                };
+                self.remote_message = Some((
+                    true,
+                    tr_args(
+                        "lithe.git.pullResult.preflightFailed",
+                        &[("error", reason.as_ref())],
+                    ),
+                ));
+                cx.notify();
+            }
+            PullGate::Wait => {}
+        }
+    }
+
+    /// 策略框：合并 / 变基 / 取消（真源 `GitPullStrategyDialog` + `resolvePullStrategy`，`:3163-3177`）。
+    fn open_pull_strategy_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(divergence) = self.pending_pull.clone() else {
+            return;
+        };
+        let handle = cx.entity().downgrade();
+        let body = pull_diverged_message(&divergence);
+        let counts = pull_divergence_counts(&divergence);
+        window.open_dialog(cx, move |dialog, _window, _cx| {
+            let cancel_handle = handle.clone();
+            let merge_handle = handle.clone();
+            let rebase_handle = handle.clone();
+            dialog
+                .title(tr("lithe.git.choosePullStrategy"))
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .text_sm()
+                        .child(body.clone())
+                        .child(counts.clone())
+                        .child(
+                            div()
+                                .text_color(_cx.theme().muted_foreground)
+                                .child(tr("lithe.git.pullStrategyHint")),
+                        ),
+                )
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_end()
+                        .child(
+                            Button::new("branch-pull-cancel")
+                                .label(tr("lithe.ui.cancel"))
+                                .on_click(move |_, window, cx| {
+                                    if let Some(panel) = cancel_handle.upgrade() {
+                                        let _ = panel.update(cx, |panel, cx| {
+                                            panel.pending_pull = None;
+                                            panel.remote_message = Some((
+                                                false,
+                                                tr("lithe.git.pullResult.strategyRequired"),
+                                            ));
+                                            cx.notify();
+                                        });
+                                    }
+                                    window.close_dialog(cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("branch-pull-merge")
+                                .label(tr("lithe.git.merge"))
+                                .on_click(move |_, window, cx| {
+                                    if let Some(panel) = merge_handle.upgrade() {
+                                        let _ = panel.update(cx, |panel, cx| {
+                                            panel.pending_pull = None;
+                                            panel.resolve_pull(PullStrategy::Merge, cx);
+                                        });
+                                    }
+                                    window.close_dialog(cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("branch-pull-rebase")
+                                .label(tr("lithe.git.rebase"))
+                                .on_click(move |_, window, cx| {
+                                    if let Some(panel) = rebase_handle.upgrade() {
+                                        let _ = panel.update(cx, |panel, cx| {
+                                            panel.pending_pull = None;
+                                            panel.resolve_pull(PullStrategy::Rebase, cx);
+                                        });
+                                    }
+                                    window.close_dialog(cx);
+                                }),
+                        ),
+                )
+        });
+    }
+
+    /// 用户在策略框里选完之后真正跑拉取（真源 `resolvePullStrategy`，`:3163-3173`）。
+    fn resolve_pull(&mut self, strategy: PullStrategy, cx: &mut Context<Self>) {
+        let Some(repository_root) = self.repository_root_text() else {
+            return;
+        };
+        self.begin_remote(RemoteAction::Pull, cx);
+        self.spawn_remote(
+            repository_root,
+            RemoteAction::Pull,
+            move |root| pull(&root, strategy),
+            cx,
+        );
+    }
+
+    /// 点分支行：**先查前置检查，再决定放行 / 问 / 拦**
+    /// （真源 `checkoutReference`，`GitFeatureModel.swift:3233-3253`）。
+    fn request_checkout(
+        &mut self,
+        name: SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repository_root) = self.repository_root_text() else {
+            eprintln!("S1_BRANCH_PANEL action=checkout state=no_repository");
+            return;
+        };
+        if self.remote.is_busy() {
+            return;
+        }
+        // 真源第一道：点的就是当前分支 ⇒ 什么都不做（`:3235-3238`）。
+        // 但仍然给一句反馈（复用既有键 `git.current` = 「当前」），不留"点了没反应"。
+        if self.branches.branch.as_ref() == Some(&name) {
+            eprintln!("S1_BRANCH_PANEL action=checkout state=already_current branch={name}");
+            self.remote_message = Some((
+                false,
+                SharedString::from(format!("{name} · {}", tr("lithe.git.current"))),
+            ));
+            cx.notify();
+            return;
+        }
+
+        let serial = self.checkout.begin();
+        let workspace_root = self.root.clone();
+        let branch = name.clone();
+        // 后台那次读要用分支名；`branch` 本身在后面（放行 / 提问）还要用，所以单独克隆一份。
+        let probe_branch = branch.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let (probe, snapshot) = cx
+                .background_spawn(async move {
+                    let probe = checkout_preflight(&repository_root, probe_branch.as_ref());
+                    (probe, BranchSnapshot::load(&workspace_root))
+                })
+                .await;
+            let _ = this.update_in(cx, |panel, window, cx| {
+                panel.branches = snapshot;
+                if !panel.checkout.apply(serial, probe) {
+                    eprintln!("S1_BRANCH_PANEL action=checkout step=preflight result=stale_reply");
+                    return;
+                }
+                match checkout_gate(panel.checkout.state()) {
+                    CheckoutGate::Proceed => {
+                        eprintln!("S1_BRANCH_PANEL action=checkout step=preflight state=proceed");
+                        panel.perform_checkout(branch.clone(), false, false, cx);
+                    }
+                    // **该问就问**：会丢改动 ⇒ 弹确认，用户确认才继续。
+                    CheckoutGate::Confirm { blocking_paths } => {
+                        eprintln!(
+                            "S1_BRANCH_PANEL action=checkout step=preflight state=confirm paths={}",
+                            blocking_paths.len()
+                        );
+                        panel.ask_checkout(branch.clone(), blocking_paths, window, cx);
+                    }
+                    // **拿不到 ≠ 一切正常**：不许盲执行。
+                    CheckoutGate::Unavailable { reason } => {
+                        eprintln!(
+                            "S1_BRANCH_PANEL action=checkout step=preflight state=unavailable error={reason}"
+                        );
+                        panel.remote_message = Some((
+                            true,
+                            SharedString::from(format!(
+                                "{}：{reason}",
+                                tr_args(
+                                    "lithe.git.actionFailed",
+                                    &[("action", tr("lithe.git.checkout").as_ref())]
+                                )
+                            )),
+                        ));
+                        cx.notify();
+                    }
+                    CheckoutGate::Wait => {}
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// 检出确认框（真源 `GitCheckoutConflictDialog` 的两个出路 + 取消，
+    /// `GitFeatureModel.swift:3255-3267`）：`.smart` ⇒ 自动暂存后检出，`.force` ⇒ 强制检出。
+    fn ask_checkout(
+        &mut self,
+        name: SharedString,
+        blocking_paths: Vec<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let handle = cx.entity().downgrade();
+        let body = checkout_confirm_message(&blocking_paths, CHECKOUT_CONFIRM_PATH_LIMIT);
+        window.open_dialog(cx, move |dialog, _window, _cx| {
+            let cancel_handle = handle.clone();
+            let stash_handle = handle.clone();
+            let force_handle = handle.clone();
+            let stash_branch = name.clone();
+            let force_branch = name.clone();
+            dialog
+                .title(tr("lithe.git.checkout"))
+                .child(
+                    v_flex().gap_2().text_sm().child(body.clone()).child(
+                        div()
+                            .text_color(_cx.theme().muted_foreground)
+                            .child(tr("lithe.git.pullResult.dirty")),
+                    ),
+                )
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_end()
+                        .child(
+                            Button::new("branch-checkout-cancel")
+                                .label(tr("lithe.ui.cancel"))
+                                .on_click(move |_, window, cx| {
+                                    if let Some(panel) = cancel_handle.upgrade() {
+                                        let _ = panel.update(cx, |_panel, cx| {
+                                            eprintln!(
+                                                "S1_BRANCH_PANEL action=checkout state=cancelled"
+                                            );
+                                            cx.notify();
+                                        });
+                                    }
+                                    window.close_dialog(cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("branch-checkout-stash")
+                                .label(tr("lithe.git.stashChanges"))
+                                .on_click(move |_, window, cx| {
+                                    if let Some(panel) = stash_handle.upgrade() {
+                                        let branch = stash_branch.clone();
+                                        let _ = panel.update(cx, |panel, cx| {
+                                            panel.perform_checkout(branch, false, true, cx);
+                                        });
+                                    }
+                                    window.close_dialog(cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("branch-checkout-force")
+                                .label(tr("lithe.git.checkout"))
+                                .on_click(move |_, window, cx| {
+                                    if let Some(panel) = force_handle.upgrade() {
+                                        let branch = force_branch.clone();
+                                        let _ = panel.update(cx, |panel, cx| {
+                                            panel.perform_checkout(branch, true, false, cx);
+                                        });
+                                    }
+                                    window.close_dialog(cx);
+                                }),
+                        ),
+                )
+        });
+    }
+
+    /// 真正执行检出（`git.write{operation:"checkout", reference, referenceKind:"local"}`）。
+    fn perform_checkout(
+        &mut self,
+        name: SharedString,
+        force: bool,
+        auto_stash: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repository_root) = self.repository_root_text() else {
+            return;
+        };
+        let workspace_root = self.root.clone();
+        self.remote = RemoteRun::Running(RemoteAction::Checkout);
+        self.remote_message = None;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let branch_text = name.to_string();
+            let (outcome, snapshot) = cx
+                .background_spawn(async move {
+                    let outcome = checkout(&repository_root, &branch_text, force, auto_stash);
+                    (outcome, BranchSnapshot::load(&workspace_root))
+                })
+                .await;
+            let _ = this.update(cx, |panel, cx| {
+                panel.branches = snapshot;
+                panel.remote = RemoteRun::Idle;
+                match outcome.failure {
+                    Some(failure) => {
+                        eprintln!("S1_BRANCH_PANEL action=checkout result=failed error={failure}");
+                        // Git / Core 自己那句已经是可读的一行，直接给用户看（不再包一层
+                        // `checkoutFailed` 的 `{branch}` 模板 —— 那会把仓库根路径与分支名说两遍）。
+                        panel.remote_message = Some((true, SharedString::from(failure)));
+                    }
+                    None => {
+                        eprintln!("S1_BRANCH_PANEL action=checkout result=ok branch={name}");
+                        panel.remote_message = Some((
+                            false,
+                            tr_args("lithe.git.switchingTo", &[("branch", name.as_ref())]),
+                        ));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// 一条远程动作的公共起手：置在途、清上一条提示。
+    fn begin_remote(&mut self, action: RemoteAction, cx: &mut Context<Self>) {
+        self.remote = RemoteRun::Running(action);
+        self.remote_message = None;
+        eprintln!("S1_BRANCH_PANEL remote={} state=running", action.id());
+        cx.notify();
+    }
+
+    /// 跑一次写操作并在后台把刷新也做掉。
+    ///
+    /// ⚠️ **Core 调用与 `BranchSnapshot::load` 都在 `background_spawn` 里**：
+    /// `BranchSnapshot::load` 是同步的两条 Core 命令（`branch_info.rs` 的文档），放 UI 线程
+    /// 会把整帧挡住 —— 这是本任务对新增代码的硬约束（老代码的同步读不在本次改动范围）。
+    fn spawn_remote(
+        &mut self,
+        repository_root: String,
+        action: RemoteAction,
+        run: impl FnOnce(String) -> lithe_gpui_git::WriteOutcome + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let workspace_root = self.root.clone();
+        cx.spawn(async move |this, cx| {
+            let (outcome, snapshot) = cx
+                .background_spawn(async move {
+                    let outcome = run(repository_root);
+                    (outcome, BranchSnapshot::load(&workspace_root))
+                })
+                .await;
+            let _ = this.update(cx, |panel, cx| {
+                panel.branches = snapshot;
+                panel.remote = RemoteRun::Done {
+                    action,
+                    failure: outcome.failure.clone().map(SharedString::from),
+                };
+                if let Some(failure) = &outcome.failure {
+                    eprintln!(
+                        "S1_BRANCH_PANEL remote={} result=failed error={failure}",
+                        action.id()
+                    );
+                } else {
+                    eprintln!("S1_BRANCH_PANEL remote={} result=ok", action.id());
+                }
+                panel.remote_message = remote_message(&panel.remote);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn repository_root_text(&self) -> Option<String> {
+        self.branches
+            .repository_root
+            .as_ref()
+            .map(|root| root.to_string())
+    }
+
+    /// 把焦点交给自绘的搜索框。
     /// **必须有这一步**：`window.open_dialog` 把焦点给了 `Dialog` 自己
     /// （`root.rs:309-310`），不显式要一次的话 `WM_CHAR` 会被丢掉 —— Windows 的字符输入走
     /// **已安装的输入处理器**（`gpui-pre-windows-0.3.6/src/events.rs:477-484` 的
@@ -900,6 +1857,9 @@ fn render_panel(panel: &Entity<BranchPanel>, cx: &App) -> AnyElement {
     let failures = snapshot.failures.clone();
     let empty_query = query.clone();
     let confirm_handle = panel.downgrade();
+    // `Command` 的 `on_confirm` 只给**可见行号**（本面板 `filterable(false)`，行号 = 过滤后下标，
+    // 见模块头）。这里把可见行的分支名单独留一份，处理器按行号取回它要切的那一个。
+    let visible_names: Vec<SharedString> = rows.iter().map(|row| row.name.clone()).collect();
 
     let command_element = Command::new(&command)
         .bordered(false)
@@ -914,15 +1874,25 @@ fn render_panel(panel: &Entity<BranchPanel>, cx: &App) -> AnyElement {
         .items(rows.into_iter().map(IntoBranchItem::into_branch_item))
         .empty(move |_, _, cx| render_empty(empty_query.as_ref(), cx).into_any_element())
         .on_confirm(move |index, window, cx| {
-            // v1 只读：列表行的语义是"切分支"，而 `git.checkoutPreflight` + `git.write{checkout}`
-            // 本侧没有调用点，所以**不执行任何写操作**。这里显式记一行诊断（可 grep），
-            // 并关掉面板 —— 真源点**当前**分支是不关面板的（`:282`），点别的分支才关（切完就关）；
-            // 本侧两条都走"关面板"，因为两条都做不到切换，留着面板只会让人以为点漏了。
+            // U11：点的这一行**真的**切分支，但先走 `git.checkoutPreflight` 那道闸门
+            // （真源 `checkoutReference`，`GitFeatureModel.swift:3233-3253`）：
+            // 干净 ⇒ 直接检出；会丢改动 ⇒ 弹确认框；拿不到结论 ⇒ 拦下并说明。
+            //
+            // ⚠️ 面板**不在这里关**：闸门可能是"问"或者"拦"，那两种都要让用户看着面板里的
+            // 结果条（真源同样是先 `pendingCheckoutConflict` / 提示，由用户动作收尾）。
             eprintln!(
-                "S1_BRANCH_PANEL action=checkout row={} state=read_only",
+                "S1_BRANCH_PANEL action=checkout row={} state=preflight",
                 index.row
             );
-            let _ = confirm_handle.update(cx, |panel, cx| panel.close(window, cx));
+            let Some(branch) = visible_names.get(index.row).cloned() else {
+                eprintln!(
+                    "S1_BRANCH_PANEL action=checkout row={} state=missing_row",
+                    index.row
+                );
+                return;
+            };
+            let _ =
+                confirm_handle.update(cx, |panel, cx| panel.request_checkout(branch, window, cx));
         })
         .footer({
             let panel = panel.clone();
@@ -933,11 +1903,17 @@ fn render_panel(panel: &Entity<BranchPanel>, cx: &App) -> AnyElement {
     if !failures.is_empty() {
         container = container.child(render_error_bar(&failures, cx));
     }
-    container
+    let remote_message = panel.read(cx).remote_message.clone();
+    container = container
         .child(render_tabs(cx))
         .child(render_search(&search, total, cx))
-        .child(command_element)
-        .into_any_element()
+        // U11：动作段的位置照真源 `searchBar → divider → actions → divider → branchList`
+        // （`BranchSwitcherPopover.swift:31-37`）。
+        .child(render_actions(panel, cx));
+    if let Some(message) = &remote_message {
+        container = container.child(render_remote_message(message, cx).into_any_element());
+    }
+    container.child(command_element).into_any_element()
 }
 
 /// 打开分支弹窗（**只能从事件回调 / 任务 / 首帧之后的 render 里调用**）。
@@ -1137,11 +2113,14 @@ fn trigger_icon_names() -> [IconName; 1] {
 mod tests {
     use super::{
         BRANCH_ROW_HEIGHT_SPEC, IconName, PANEL_MAX_HEIGHT_SPEC, PANEL_TOP_INSET_SPEC,
-        PANEL_WIDTH_SPEC, PanelTab, SEARCH_ROW_HEIGHT_SPEC, branch_row_height, matches_query,
-        trigger_icon_names, visible_rows,
+        PANEL_WIDTH_SPEC, PanelTab, PullDivergence, RemoteAction, RemoteRun,
+        SEARCH_ROW_HEIGHT_SPEC, branch_row_height, checkout_confirm_message, matches_query,
+        pull_diverged_message, pull_divergence_counts, remote_actions_disabled, remote_message,
+        trigger_icon_names, update_project_disabled, visible_rows,
     };
     use gpui_kit::{SharedString, px};
-    use lithe_gpui_git::BranchInfo;
+    use lithe_gpui_git::{BranchInfo, BranchSnapshot};
+    use lithe_gpui_shared::tr;
 
     fn branch(name: &str, is_current: bool) -> BranchInfo {
         BranchInfo {
@@ -1243,5 +2222,136 @@ mod tests {
         // 所以两者会不同 —— 真源同样如此，`:679`）。
         let none = visible_rows(&branches, "zzz");
         assert!(none.is_empty());
+    }
+
+    // ---- U11：远程动作与闸门的纯判定 ----
+
+    fn snapshot_with_repo() -> BranchSnapshot {
+        BranchSnapshot {
+            repository_root: Some(SharedString::from("/tmp/lithe-repo")),
+            branch: Some(SharedString::from("main")),
+            ..BranchSnapshot::default()
+        }
+    }
+
+    /// 没有仓库 ⇒ 三颗动作全禁用（真源 `:116,125,137` 的第一个条件）。
+    #[test]
+    fn remote_actions_are_disabled_without_a_repository() {
+        let empty = BranchSnapshot::default();
+        assert!(remote_actions_disabled(&empty, &RemoteRun::Idle));
+        assert!(update_project_disabled(&empty, &RemoteRun::Idle));
+    }
+
+    /// 有仓库 ⇒ 可点；**在途 ⇒ 又全禁用**（真源的 `isPerformingBranchOperation`）。
+    #[test]
+    fn remote_actions_are_disabled_while_a_branch_operation_runs() {
+        let snapshot = snapshot_with_repo();
+        assert!(!remote_actions_disabled(&snapshot, &RemoteRun::Idle));
+        assert!(!update_project_disabled(&snapshot, &RemoteRun::Idle));
+
+        let running = RemoteRun::Running(RemoteAction::Fetch);
+        assert!(remote_actions_disabled(&snapshot, &running));
+        assert!(update_project_disabled(&snapshot, &running));
+    }
+
+    /// 「更新项目」比另两颗多一条禁用条件：**读不出当前分支**（真源 `:125` 的
+    /// `currentGitReference == nil`）。
+    #[test]
+    fn update_project_needs_a_current_branch() {
+        let mut snapshot = snapshot_with_repo();
+        snapshot.branch = None;
+        assert!(!remote_actions_disabled(&snapshot, &RemoteRun::Idle));
+        assert!(update_project_disabled(&snapshot, &RemoteRun::Idle));
+    }
+
+    /// 只有 `Running` 算"在途"：`Done` 之后按钮必须回到可点状态（否则一次失败会把面板
+    /// 永久锁死 —— 那正是"永远转圈"这一类缺陷）。
+    #[test]
+    fn a_finished_run_is_not_busy() {
+        let done = RemoteRun::Done {
+            action: RemoteAction::Push,
+            failure: Some(SharedString::from("boom")),
+        };
+        assert!(!done.is_busy());
+        assert_eq!(done.running_action(), None);
+        assert_eq!(
+            RemoteRun::Running(RemoteAction::Pull).running_action(),
+            Some(RemoteAction::Pull)
+        );
+    }
+
+    /// 结果文案四条通路：在途/空闲没有话，成功一句、失败带原因。
+    #[test]
+    fn remote_messages_cover_success_failure_and_in_flight() {
+        assert_eq!(remote_message(&RemoteRun::Idle), None);
+        assert_eq!(
+            remote_message(&RemoteRun::Running(RemoteAction::Fetch)),
+            None
+        );
+
+        let success = remote_message(&RemoteRun::Done {
+            action: RemoteAction::Fetch,
+            failure: None,
+        })
+        .expect("成功后必须有一句话");
+        assert!(!success.0, "成功不该标成错误");
+        assert_eq!(success.1, tr("lithe.git.changesFetched"));
+
+        let failure = remote_message(&RemoteRun::Done {
+            action: RemoteAction::Push,
+            failure: Some(SharedString::from("fatal: no upstream")),
+        })
+        .expect("失败后必须有一句话");
+        assert!(failure.0, "失败必须标成错误");
+        // 动作名 + Git 自己的那句都在。
+        // ⚠️ **不断言中文原文**：`tr` 的默认 locale 由进程决定（测试里是 en），断言中文字面量
+        // 会让测试依赖 locale 而不是本函数的行为。判据改成"动作名那一半真的解析成了文案"
+        // —— 缺键时 `rust-i18n` 原样回显键名，所以 `starts_with("lithe.")` 就是"没接上"。
+        assert!(failure.1.contains("fatal: no upstream"), "{}", failure.1);
+        assert!(!failure.1.starts_with("lithe."), "{}", failure.1);
+        assert!(
+            failure
+                .1
+                .starts_with(tr(RemoteAction::Push.failure_key()).as_ref()),
+            "结果里应当以动作名开头：{}",
+            failure.1
+        );
+    }
+
+    /// 检出确认框正文：`{listed}` 是前 N 个路径、`{more}` 是省略数，两者都要落到文案里
+    /// （`git.uncommittedWouldOverwrite`，`GitFeatureModel.swift:3250` 的用户可见落点）。
+    #[test]
+    fn the_checkout_confirm_message_lists_paths_and_counts_the_rest() {
+        let paths = vec![
+            SharedString::from("src/a.rs"),
+            SharedString::from("src/b.rs"),
+            SharedString::from("src/c.rs"),
+        ];
+        let message = checkout_confirm_message(&paths, 2);
+        assert!(message.contains("src/a.rs, src/b.rs"), "{message}");
+        assert!(message.contains("(+1)"), "{message}");
+        // ⚠️ 占位符必须被替换干净：漏一个就会在界面上看见 `{listed}`。
+        assert!(!message.contains("{listed}"), "{message}");
+        assert!(!message.contains("{more}"), "{message}");
+
+        // 全部装得下时不留 `(+0)`。
+        let short = checkout_confirm_message(&paths, 9);
+        assert!(!short.contains("(+0)"), "{short}");
+        assert!(short.contains("src/c.rs"), "{short}");
+    }
+
+    /// 拉取偏离框的正文与计数：`{upstream}` 必须被替换（真源 `GitPullStrategyRequest`）。
+    #[test]
+    fn the_pull_strategy_message_names_the_upstream() {
+        let divergence = PullDivergence {
+            upstream: SharedString::from("origin/main"),
+            ahead: 2,
+            behind: 3,
+            has_local_changes: true,
+        };
+        let message = pull_diverged_message(&divergence);
+        assert!(message.contains("origin/main"), "{message}");
+        assert!(!message.contains("{upstream}"), "{message}");
+        assert_eq!(pull_divergence_counts(&divergence).as_ref(), "↑2 ↓3");
     }
 }

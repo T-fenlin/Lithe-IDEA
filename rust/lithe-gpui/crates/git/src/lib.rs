@@ -32,6 +32,11 @@
 //! - `changes_view.rs`：**左栏「源代码管理」的表现层** —— `ChangesView` 实体
 //!   （`new` / `refresh` / `activate` / `Render`）、五态空态、操作横幅、提交面板。
 //!   变更列表的行是**本文件自写的最小行**，不复用 `explorer` 的树行（理由写在文件头）。
+//! - `remote.rs`：**Git 写操作闭环**（U11）—— 取回 / 拉取 / 推送 / 检出的请求构造与
+//!   写字段合法性自查、`git.checkoutPreflight` / `git.pullPreflight` /
+//!   `git.integrationPreflight` / `git.conflictMarkers` 四条前置检查的读取与解析、
+//!   四态 [`Probe`] + 分代读取器 [`Preflight`] + 四组**纯函数闸门**。所有写仍走
+//!   `changes.rs` 那一条 `git.write` 网关，本模块不另起第二条。
 //!
 //! > 拆分后**没有做任何布局、尺寸、颜色、文案、交互或数据接线的改动**：两个文件里的代码都是
 //! > 从旧文件逐字搬迁，只加了 `pub(crate)` 可见性与 `use crate::…` / `use lithe_gpui_shared::…`
@@ -195,13 +200,24 @@ mod changes_view;
 mod identity;
 mod log_view;
 mod model;
+mod remote;
 
 pub use branch_info::{BranchInfo, BranchSnapshot, TrackingCounts};
+pub use changes::WriteOutcome;
 pub use changes_view::ChangesView;
 pub use identity::{
     IdentityField, IdentityScope, IdentitySetup, configure_identity, inspect_identity,
 };
 pub use log_view::BottomPane;
+pub use remote::{
+    CheckoutGate, CheckoutPreflight, ConflictGate, IntegrationGate, IntegrationOperation,
+    IntegrationPreflight, Preflight, Probe, PullGate, PullPreflight, PullStop, PullStrategy,
+    ReferenceKind, WriteFieldError, WriteFields, WriteOperation, checkout, checkout_gate,
+    checkout_preflight, conflict_gate, conflict_markers, fetch, integration_gate,
+    integration_preflight, join_paths, parse_checkout_preflight, parse_conflict_markers,
+    parse_integration_preflight, parse_pull_preflight, pull, pull_gate, pull_preflight, push,
+    validate_fields,
+};
 
 use gpui_kit::{App, KeyBinding};
 

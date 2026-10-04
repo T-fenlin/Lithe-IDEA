@@ -1,6 +1,8 @@
 //! 左栏「源代码管理」视图的**表现层**：`ChangesView` 实体与它的各段渲染。
 //!
-//! 数据、纯函数与写操作在 `changes.rs`；本文件只负责画。
+//! 数据、纯函数与写操作在 `changes.rs`；前置检查与闸门判定在 `remote.rs`；本文件只负责画
+//! （唯一的例外是"提交前先过一遍冲突标记闸门"那一段编排，它在 [`ChangesView::commit`] 里，
+//! 因为它要在**同一个** `busy` 生命周期里串起"读 → 判定 → 写"）。
 //!
 //! 规格真源：`lithe-gpui/research/windows/08-source-control.md`（结构 §2、交互 §3、空态 §5），
 //! 对应 Windows 前端 `windows/tauri/src/features/git/components/git-view.tsx`。
@@ -38,9 +40,15 @@
 //!    本侧标题栏已由 `crate::branch_panel` 做完，这里只在工具行画 `↑n ↓n` 纯文本，
 //!    避免同一个事实出现两个入口、又完全不显示。
 //! 5. **写操作失败是常驻红条，不是 toast**：见 [`ChangesView::render_write_error`]。
+//! 6. **提交前多一道 `git.conflictMarkers` 闸门**（U11）：真源在提交前也会查
+//!    （`GitFeatureModel.swift:147` 的 `conflictMarkerPaths`，`git.verifyConflictMarkersFailed`
+//!    的原句就是"Retry before committing."），本侧把它做成**可见**的一道：
+//!    暂存区里还有残留标记 ⇒ **不提交**，并在工具栏下方列出那些文件（可点击打开，
+//!    走与 `explorer` 同一条 `on_open` 链路）。读不到结论时**也拦**，换一句"请重试"。
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -67,6 +75,7 @@ use crate::changes::{
 };
 use crate::log_view::rem_px;
 use crate::model::{ICON_BUTTON_RADIUS, RADIUS_MD, RADIUS_XL};
+use crate::remote::{self, ConflictGate, Preflight};
 
 // ---------------------------------------------------------------------------
 // 度量：一律用 gpui 的 rem-based helper
@@ -218,6 +227,17 @@ const DISCARD_CONFIRM_KEY: &str = "lithe.git.discardChangesConfirm";
 const ROLLBACK_KEY: &str = "lithe.git.rollback";
 /// `ui.cancel` → 「取消」（`locale.ts:4631`）。
 const CANCEL_KEY: &str = "lithe.ui.cancel";
+/// `git.conflictMarkersRemain` → 「Conflict markers remain in: {paths}」
+/// （真源 `GitFeatureModel.swift:147` 的冲突标记检查；这句是它的用户可见落点，
+/// 也是提交闸门的**拦截理由**）。
+const CONFLICT_MARKERS_KEY: &str = "lithe.git.conflictMarkersRemain";
+/// `git.verifyConflictMarkersFailed` → 「Unable to verify conflict markers. Retry before committing.」
+///
+/// ⚠️ **这一句就是"拿不到 ≠ 一切正常"的落点**：`git.conflictMarkers` 失败时**不许**按"没有
+/// 残留标记"放行，必须停下来让用户重试。
+const VERIFY_MARKERS_KEY: &str = "lithe.git.verifyConflictMarkersFailed";
+/// `git.openFile` → 「Open File」：冲突文件行的**动作**名（无障碍名 + tooltip）。
+const OPEN_FILE_KEY: &str = "lithe.git.openFile";
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -287,12 +307,34 @@ pub struct ChangesView {
     /// `lithe-gpui-settings`（依赖方向 `workbench` → `git`，反向会成环），
     /// 与 `terminal/src/session.rs` 的 `default_shell` 同一条路子。
     confirm_before_discard: bool,
+    /// **提交前的冲突标记闸门**（`git.conflictMarkers`，`git/mod.rs:2297-2308`）。
+    ///
+    /// 它是 U11 的第 3 条真实闸门：刷新时读一次只为让列表**可见**，提交时**再读一次**才作数
+    /// （判据在 [`ChangesView::commit`]）。四态 + 分代由 [`Preflight`] 提供，所以"晚到的旧回包"
+    /// 与"读失败"都不会被误当成"没有残留标记"。
+    conflict: Preflight<Vec<SharedString>>,
+    /// 打开一个工作区文件的回调（与 `explorer` 的 `on_open` **同一条链路**：
+    /// 外壳是唯一够得到编辑区的那层，本 crate 不 import `lithe-gpui-editor`）。
+    ///
+    /// `Some(line)` = 跳到那一行；冲突标记这一路只给 `None`（Core 的 `git.conflictMarkers`
+    /// 只回路径、不回行号，`protocol/contracts.rs:784-786`）—— 这是**已知的能力缺口**，
+    /// 不是"忘了传行号"：不猜行号就不会跳错行。
+    on_open: Rc<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static>,
 }
 
 impl ChangesView {
     /// 建立视图。**构造期不取数据**，由外壳在第一帧之后调 [`ChangesView::refresh`]
     /// （与 `Explorer::new` 同一口径：构造期读 Core 会把首帧卡住）。
-    pub fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    ///
+    /// `on_open` 的形状与 `Explorer::new` 的**完全相同**（`PathBuf` + 可选行号 + 窗口 + App），
+    /// 所以外壳可以用同一个闭包把两个视图的"打开文件"接到编辑区的那一个函数上
+    /// （`workspace.rs` 的 `pane.open_at`，与搜索面板同源）。
+    pub fn new(
+        root: PathBuf,
+        on_open: Box<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let message =
             cx.new(|cx| TextareaState::new(window, cx).placeholder(tr(COMMIT_PLACEHOLDER_KEY)));
         let message_subscription = cx.subscribe_in(
@@ -320,6 +362,9 @@ impl ChangesView {
             // 真源默认 `true`（`default-settings.ts:194`）：**先按真源默认值起步**，
             // 外壳拿到设置后立刻用 `set_confirm_before_discard` 覆盖它。
             confirm_before_discard: true,
+            // 构造期**不读**：第一次读在 `refresh`（与快照同一次刷新）。
+            conflict: Preflight::new(),
+            on_open: Rc::from(on_open),
         }
     }
 
@@ -347,12 +392,30 @@ impl ChangesView {
         if self.snapshot.repository_root.is_none() {
             self.state = LoadState::Loading;
         }
+        // 冲突标记也跟着刷新一次：它让"暂存区里还有残留标记"这件事**看得见**，
+        // 而不是等用户点了提交才发现。⚠️ 提交时会**重新读一遍**再判（[`Self::commit`]）——
+        // 这一次读只负责"可见"，不作判据（判据不能用可能已经过期的快照）。
+        let conflict_serial = self.conflict.begin();
         let root = self.root.clone();
         cx.notify();
 
         cx.spawn(async move |this, cx| {
-            let snapshot = cx.background_spawn(async move { load(&root) }).await;
-            let _ = this.update(cx, |view, cx| view.apply(serial, snapshot, cx));
+            let (snapshot, markers) = cx
+                .background_spawn(async move {
+                    let snapshot = load(&root);
+                    // 不是仓库就别白跑第三条命令（`changes.rs` 硬约束 2 的同一条）。
+                    let markers = match snapshot.repository_root.as_ref() {
+                        Some(repository_root) => remote::conflict_markers(repository_root.as_ref()),
+                        None => Ok(Vec::new()),
+                    };
+                    (snapshot, markers)
+                })
+                .await;
+            let _ = this.update(cx, |view, cx| {
+                view.apply(serial, snapshot, cx);
+                view.conflict.apply(conflict_serial, markers);
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -557,6 +620,81 @@ impl ChangesView {
         self.notice = None;
         cx.notify();
 
+        // ② **提交前的冲突标记闸门**（U11 第 1 条）：`git.conflictMarkers` 报出还有残留标记
+        //    就**不许提交**（真源 `GitFeatureModel.swift:147`；`git.verifyConflictMarkersFailed`
+        //    的原句就是"Retry before committing."）。
+        //
+        //    ⚠️ 这里**重新读一次**，不用 `refresh` 那一次的结果：判据必须尽量新
+        //    （用户可能刚在编辑器里删掉了标记，也可能刚引入新的）。
+        //    ⚠️ 读**失败**时也不放行 —— 它与"没有残留标记"是两件事，分别给两句文案
+        //    （`CONFLICT_MARKERS_KEY` vs `VERIFY_MARKERS_KEY`）。
+        let serial = self.conflict.begin();
+        let gate_root = root.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let markers = cx
+                .background_spawn(async move { remote::conflict_markers(&gate_root) })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                // 晚到的旧回包整份丢掉（用户可能又点了一次提交 / 又刷新了一次）。
+                if !view.conflict.apply(serial, markers) {
+                    eprintln!("S1_SOURCE_CONTROL commit_gate=stale_reply action=drop");
+                    return;
+                }
+                match remote::conflict_gate(view.conflict.state()) {
+                    ConflictGate::Clear => {
+                        eprintln!("S1_SOURCE_CONTROL commit_gate=conflict_markers state=clear");
+                        view.run_commit(root, staged, text, window, cx);
+                    }
+                    ConflictGate::Present { paths } => {
+                        // **能拦就拦**：把文件列出来（列表由 `render_conflict_markers` 画，
+                        // 可点击跳到文件），并且**不执行** `git.write commit`。
+                        let (listed, more) = remote::join_paths(&paths, CONFLICT_PATH_LIMIT);
+                        let more = if more == 0 {
+                            String::new()
+                        } else {
+                            format!(" (+{more})")
+                        };
+                        eprintln!(
+                            "S1_SOURCE_CONTROL commit_gate=conflict_markers state=blocked paths={}",
+                            paths.len()
+                        );
+                        view.busy = false;
+                        view.error = Some(tr_args(
+                            CONFLICT_MARKERS_KEY,
+                            &[("paths", &format!("{listed}{more}"))],
+                        ));
+                        cx.notify();
+                    }
+                    // **不许假装**：拿不到结论也拦，但换成"重试"那一句。
+                    ConflictGate::Unavailable { reason } => {
+                        eprintln!(
+                            "S1_SOURCE_CONTROL commit_gate=conflict_markers state=unavailable error={reason}"
+                        );
+                        view.busy = false;
+                        view.error = Some(tr(VERIFY_MARKERS_KEY));
+                        cx.notify();
+                    }
+                    // `apply` 之后不可能是 `Wait`；真出现就按"不放行"处理（宁可不动）。
+                    ConflictGate::Wait => {
+                        eprintln!("S1_SOURCE_CONTROL commit_gate=conflict_markers state=wait");
+                        view.busy = false;
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// 冲突标记闸门放行之后**真正**跑提交（原来 `commit` 里那一段原样搬过来）。
+    fn run_commit(
+        &mut self,
+        root: String,
+        staged: usize,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn_in(window, async move |this, cx| {
             let outcome = cx
                 .background_spawn(async move { write_commit(&root, &text) })
@@ -1297,6 +1435,103 @@ impl ChangesView {
     }
 
     /// 变更列表（两个分类：已跟踪 / 未跟踪）。
+    /// 冲突标记闸门的**可见证据**：一句红条 + 可点击的文件列表。
+    ///
+    /// 只有在 [`crate::remote::conflict_gate`] 判成 `Present` 时才画任何东西 —— `Clear` /
+    /// `Wait` / `Unavailable` 三态都返回 `None`：`Unavailable` 那一档的错误条已经由提交闸门
+    /// 写成 [`ChangesView::error`]（同一句话不画两遍）。
+    ///
+    /// 每一行点击后走**与 `explorer` 完全相同**的那条打开链路（`self.on_open`），
+    /// 只传路径、不传行号：Core 的 `git.conflictMarkers` 只回路径
+    /// （`protocol/contracts.rs:784-786`），猜一个行号会把用户送到错的地方。
+    fn render_conflict_markers(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let ConflictGate::Present { paths } = remote::conflict_gate(self.conflict.state()) else {
+            return None;
+        };
+        let (listed, more) = remote::join_paths(&paths, CONFLICT_PATH_LIMIT);
+        let more = if more == 0 {
+            String::new()
+        } else {
+            format!(" (+{more})")
+        };
+        let root = self.repository_root_text().map(PathBuf::from);
+        let on_open = self.on_open.clone();
+        let open_label = tr(OPEN_FILE_KEY);
+
+        let mut rows: Vec<AnyElement> = Vec::with_capacity(paths.len().min(CONFLICT_PATH_LIMIT));
+        for path in paths.iter().take(CONFLICT_PATH_LIMIT) {
+            let absolute = root.as_ref().map(|root| root.join(path.as_ref()));
+            let open = on_open.clone();
+            let label = open_label.clone();
+            let path_text = path.clone();
+            rows.push(
+                h_flex()
+                    .id(SharedString::from(format!("changes-conflict-open-{path}")))
+                    .w_full()
+                    .h_6()
+                    .items_center()
+                    .gap_1()
+                    .px_1p5()
+                    .rounded(rems(RADIUS_MD / 16.))
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .hover(|style| style.bg(cx.theme().accent))
+                    .child(div().min_w_0().truncate().child(path.clone()))
+                    .aria_label(SharedString::from(format!(
+                        "{} {}",
+                        label,
+                        path_text.as_ref()
+                    )))
+                    .on_click(
+                        move |_event: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            let Some(absolute) = absolute.clone() else {
+                                return;
+                            };
+                            // 与 `Explorer` 的点击同一条：只把路径抛给外壳，本 crate 不碰编辑器。
+                            eprintln!(
+                                "S1_SOURCE_CONTROL conflict_open path={} line=none",
+                                path_text.as_ref()
+                            );
+                            open(absolute, None, window, cx);
+                        },
+                    )
+                    .into_any_element(),
+            );
+        }
+
+        Some(
+            v_flex()
+                .w_full()
+                .flex_shrink_0()
+                .gap_1()
+                .px_1p5()
+                .pb_2()
+                .child(
+                    h_flex()
+                        .w_full()
+                        .items_start()
+                        .gap_2()
+                        .px_1p5()
+                        .py_1()
+                        .rounded(rems(RADIUS_MD / 16.))
+                        .bg(cx.theme().danger.opacity(0.12))
+                        .text_sm()
+                        .text_color(cx.theme().danger)
+                        .child(idea_icon_image(
+                            &idea::WARNING_CIRCLE_ICON,
+                            cx,
+                            rems(14. / 16.),
+                        ))
+                        .child(div().flex_1().min_w_0().child(tr_args(
+                            CONFLICT_MARKERS_KEY,
+                            &[("paths", &format!("{listed}{more}"))],
+                        ))),
+                )
+                .children(rows)
+                .into_any_element(),
+        )
+    }
+
     fn render_list(&self, cx: &mut Context<Self>) -> AnyElement {
         let tracked = self.snapshot.tracked_rows();
         let untracked = self.snapshot.untracked_rows();
@@ -1344,6 +1579,7 @@ impl ChangesView {
             .min_h_0()
             .w_full()
             .child(self.render_toolbar(cx))
+            .children(self.render_conflict_markers(cx))
             .child(
                 v_flex()
                     .id("changes-scroll")

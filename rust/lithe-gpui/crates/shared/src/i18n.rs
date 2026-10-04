@@ -50,6 +50,7 @@
 //! | `workbench` 的命令面板（阶段 6 第二半） | `lithe.commandPalette.{title, placeholder, noCommands, categories.*}`、`lithe.commandPalette.actions.toggle-*`、`lithe.commandPalette.actions.color-theme.label`、`lithe.settings.appearance.theme`、`lithe.settings.appearance.showStatusBar`、`lithe.settings.appearance.showStatusBarDescription`、`lithe.settings.tabs.*`、`lithe.appearance.gpui.*`、`lithe.maven.gpui.*` |
 //! | `settings`（设置对话框：分类名 / 行标签 / 描述 / 按钮 / 确认对话框） | `lithe.settings.*`（含 26 条 `lithe.settings.gpui.*` 自有文案 —— 全部 26 条自有键都已接线）、`lithe.ui.cancel` |
 //! | `workbench` 的分支弹窗（阶段 11 第三件） | `lithe.git.{searchBranchesAria,repositories,branches,worktrees,selectorSections,searchBranches,branchCount,branchesCount,noMatchingBranches,noBranchesFound,current,refresh}` |
+//! | `workbench` 分支弹窗的**写操作闭环**（U11：取回 / 更新项目 / 推送 + 检出 / 拉取前置检查闸门 + 冲突标记） | `lithe.git.{fetch,log.updateBranch,push,fetchingChanges,pulling,pushingChanges,changesFetched,pulledChanges,changesPushed,fetchFailed,pushFailed,operationFailed,checkout,stashChanges,switchingTo,actionFailed,choosePullStrategy,pullDivergedMessage,pullStrategyHint,merge,rebase,uncommittedWouldOverwrite,conflictMarkersRemain,verifyConflictMarkersFailed,openFile}` 与 `lithe.git.pullResult.*`（**全部真源既有键，零新增**） |
 //! | `workbench` 的打开项目 / 最近项目（B4） | `lithe.menu.openFolder`、`lithe.projectOpen.{title,where,doNotAskAgain,cancel,newWindow,thisWindow}`（全部真源既有键）、`lithe.gpui.newWindowNotWired`（**唯一**一条 gpui 自有键，理由见 `extract-locale.mjs`） |
 //! | `workbench` 的菜单占位项（B3） | **17 条** `lithe.gpui.menuMissing.*`（一种能力一句："尚未接入：缺 X"），由 `menu_bar.rs` 的 `MISSING_GROUPS` 使用、状态栏左侧显示（其中 `cloneUi` / `newProjectScaffolding` 两条用在项目下拉那两行上）；全部是 gpui 自有键（真源的菜单项恒可执行，catalog 里没有这类句子），理由见 `extract-locale.mjs` |
 //! | `workbench` 的 Quick Open 浮层（U17 第二件） | `lithe.quickOpen.{searchFiles,noMatch}`（搜索框占位符 / 空态）、`lithe.menu.quickOpen`（「转到 → 快速打开」的菜单文案）—— 三条**全是真源既有键**，本任务零新增文案 |
@@ -989,6 +990,74 @@ mod tests {
             // 行内「当前」徽章（`locale.ts:6948`）与底栏「刷新」（`:6944`）。
             ("lithe.git.current", "当前"),
             ("lithe.git.refresh", "刷新"),
+            // U11（Git 写操作闭环：取回 / 更新项目 / 推送 + 前置检查闸门 + 冲突标记）。
+            // 全部是**真源既有**键（`crates/shared/locales/source/locale.ts` 的 `git.*` 段，
+            // 生成在 `locales/lithe.zh-CN.yml`），所以 `tools/extract-locale.mjs` 的
+            // `GPUI_ONLY_KEYS` **一条都没动**，yml 也没有重新生成。
+            //
+            // 三条动作行（`BranchSwitcherPopover.swift:111-138`）与四种运行态文案：
+            ("lithe.git.fetch", "获取"),
+            ("lithe.git.log.updateBranch", "更新"),
+            ("lithe.git.push", "推送"),
+            ("lithe.git.fetchingChanges", "正在获取更改..."),
+            ("lithe.git.pulling", "正在拉取"),
+            ("lithe.git.pushingChanges", "正在推送更改..."),
+            ("lithe.git.changesFetched", "已成功获取。"),
+            ("lithe.git.pulledChanges", "更改已成功拉取。"),
+            ("lithe.git.changesPushed", "更改已成功推送。"),
+            ("lithe.git.fetchFailed", "获取更改失败。"),
+            ("lithe.git.pushFailed", "推送更改失败。"),
+            ("lithe.git.operationFailed", "Git 操作失败"),
+            // 拉取闸门的四种结局：没有上游 / 已最新 / 偏离要选策略 / 前置检查失败。
+            (
+                "lithe.git.pullResult.noUpstream",
+                "当前分支没有上游分支，请先设置上游分支。",
+            ),
+            ("lithe.git.pullResult.upToDate", "当前分支已是最新状态。"),
+            (
+                "lithe.git.pullResult.gitRejectedPull",
+                "Git 拒绝了此次拉取。",
+            ),
+            ("lithe.git.pullResult.fetchFailed", "获取失败：{error}"),
+            (
+                "lithe.git.pullResult.preflightFailed",
+                "拉取安全检查失败：{error}",
+            ),
+            (
+                "lithe.git.pullResult.strategyRequired",
+                "分支已经分叉，请打开源代码管理并选择合并或变基。",
+            ),
+            ("lithe.git.choosePullStrategy", "选择拉取策略"),
+            (
+                "lithe.git.pullDivergedMessage",
+                "当前分支与 {upstream} 已经分叉。请选择如何协调它们。",
+            ),
+            (
+                "lithe.git.pullStrategyHint",
+                "合并会创建一个合并提交；变基会在上游分支上重放本地提交。",
+            ),
+            ("lithe.git.merge", "合并"),
+            ("lithe.git.rebase", "变基"),
+            // 检出闸门：确认框正文（`{listed}` / `{more}`）、两个出路与就地结果。
+            (
+                "lithe.git.uncommittedWouldOverwrite",
+                "未提交的更改会被覆盖：{listed}{more}。请先贮藏或提交。",
+            ),
+            (
+                "lithe.git.pullResult.dirty",
+                "拉取前请先提交或贮藏本地更改。",
+            ),
+            ("lithe.git.checkout", "检出"),
+            ("lithe.git.stashChanges", "贮藏更改"),
+            ("lithe.git.switchingTo", "正在切换到 {branch}"),
+            ("lithe.git.actionFailed", "{action} 失败"),
+            // 提交前的冲突标记闸门 + 冲突文件列表的跳转动作。
+            ("lithe.git.conflictMarkersRemain", "仍存在冲突标记：{paths}"),
+            (
+                "lithe.git.verifyConflictMarkersFailed",
+                "无法验证冲突标记。请重试后再提交。",
+            ),
+            ("lithe.git.openFile", "打开文件"),
             // 左栏「源代码管理」（`lithe-gpui/crates/git/src/changes_view.rs`，阶段 11）。
             // 同样**零新增键**：视图用到的每一条真源里都已经有（`locale.ts` 的 `git.*` 段与
             // `git.setup.*` 段），所以 `tools/extract-locale.mjs` 的 `GPUI_ONLY_KEYS` 没有动。
