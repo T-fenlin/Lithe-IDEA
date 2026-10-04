@@ -654,6 +654,30 @@ impl DebugTransport {
         }
     }
 
+    pub fn poll_until(
+        &mut self,
+        timeout: Duration,
+        matches: &dyn Fn(&Value) -> bool,
+    ) -> Result<(Vec<Value>, bool), String> {
+        let deadline = Instant::now() + timeout;
+        let mut events = Vec::new();
+        loop {
+            let slice = std::cmp::min(
+                Duration::from_millis(20),
+                deadline.saturating_duration_since(Instant::now()),
+            );
+            let batch = self.poll_bounded(slice)?;
+            let matched = batch.iter().any(matches);
+            events.extend(batch);
+            if matched {
+                return Ok((events, true));
+            }
+            if Instant::now() >= deadline {
+                return Ok((events, false));
+            }
+        }
+    }
+
     #[must_use]
     pub fn cancelled_operations(&self) -> u64 {
         self.cancelled_operations
@@ -1595,5 +1619,37 @@ mod tests {
             "第二次的 operationId 必须与第一次不同：{second}"
         );
         assert_eq!(transport.cancelled_operations(), 2);
+    }
+
+    #[test]
+    fn poll_until_returns_every_event_plus_whether_the_predicate_matched() {
+        let (mut transport, _adapter) = responding_transport("session-poll-until");
+        drive_to_paused(&mut transport);
+
+        transport.execute("next", Some(1)).expect("单步请求");
+        let (events, matched) = transport
+            .poll_until(Duration::from_secs(5), &is_stopped)
+            .expect("等回执不该报错");
+        assert!(matched, "adapter 应答了 stopped，谓词必须命中");
+        assert!(
+            !events.is_empty(),
+            "命中谓词时也要把这一轮收到的全部事件交出来，UI 才不会丢中间态"
+        );
+        assert!(
+            events.iter().any(is_stopped),
+            "返回的事件里必须包含那条命中的 stopped"
+        );
+
+        let started = Instant::now();
+        let (silent, matched) = transport
+            .poll_until(Duration::from_millis(120), &|_| false)
+            .expect("静默等待不该报错");
+        let elapsed = started.elapsed();
+        assert!(!matched, "没有事件能满足谓词时不该报命中");
+        assert!(silent.is_empty(), "静默 adapter 不该凭空产生事件");
+        assert!(
+            elapsed >= Duration::from_millis(120) && elapsed < Duration::from_secs(5),
+            "等待必须真有界，实得：{elapsed:?}"
+        );
     }
 }
