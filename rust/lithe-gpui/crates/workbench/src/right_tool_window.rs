@@ -390,13 +390,27 @@ pub fn right_tool_window(
     cx: &App,
 ) -> AnyElement {
     let title = view.title();
+    // 真源头部的副标题槽（`LitheToolWindowHeader.swift:51-55`，11.5 medium + `secondaryText`）。
+    // 目前只有 Spring 面板用它：真源是 `"\(filteredEndpoints.count) routes"`
+    // （`SpringEndpointsView.swift:12`）。本侧还没有筛选框，所以这里的 count 就是全部端点数；
+    // 筛选行落地后改成"筛选后"的条数即可（真源取的就是 filtered 的那个）。
+    let subtitle = match (view, spring) {
+        (RightToolWindowView::Spring, Some(index)) => {
+            let count = index.endpoints.len().to_string();
+            Some(lithe_gpui_shared::tr_args(
+                "lithe.spring.gpui.routeCount",
+                &[("count", count.as_str())],
+            ))
+        }
+        _ => None,
+    };
     v_flex()
         .id("lithe-right-tool-window")
         // 真机是 `<section aria-label={t("maven.title")}>`（`maven-pane.tsx:597`）；
         // gpui 侧 `.aria_label()` 挂在 `StatefulInteractiveElement` 上，所以根元素带 `id`。
         .aria_label(title.clone())
         .size_full()
-        .child(header(view, title, on_close, cx))
+        .child(header(view, title, subtitle, on_close, cx))
         .child(match (view, maven, spring) {
             // 扫到了 Maven 项目就画项目结构；没扫到（或还没扫）保持真源的「未检测到 Maven 项目」。
             (RightToolWindowView::Maven, Some(project), _) => maven_content(project, cx),
@@ -422,6 +436,29 @@ pub fn right_tool_window(
 /// 真源那套（配置属性补全、注入链、`@Value` 引用跳转）要各自的 UI，本侧**不画假控件**；
 /// 逐条渲染属于后续批次（`spring.rs` 的模块文档里登记了）。
 fn spring_content(index: &crate::spring::SpringIndexView, cx: &App) -> AnyElement {
+    // 索引到了项目、但**一个端点都没有**：真源这一档是居中的一句弱化文字
+    // （`SpringEndpointsView.swift:27-31`：`Text("No Spring MVC endpoints found")` +
+    // `LitheTheme.uiFont` + `secondaryText` + `frame(maxWidth/maxHeight: .infinity)`），
+    // **不是** `LitheUnavailableView` 那套「图标 + 粗标题」，所以这里照它画裸文字，
+    // 不套 `empty_state::unavailable`（套了就给真源没有的图标与字重）。
+    // 它也与 `spring.notDetected`（根本没有可索引的事实）是两回事。
+    if index.endpoints.is_empty() {
+        return v_flex()
+            .w_full()
+            .flex_1()
+            .min_h_0()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    // `LitheTheme.uiFont` 在本侧就是默认 UI 字号（档位 14 = `text_sm`）。
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(tr("lithe.spring.gpui.noEndpoints")),
+            )
+            .into_any_element();
+    }
+
     // 真源把路由 / 方法 / 控制器都画成**等宽**（`SpringEndpointsView.swift:39,43`），
     // 本侧沿用仓库既有取法（`explorer_view.rs` / `git/log_view.rs`）。
     let mono = cx.theme().mono_font_family.clone();
@@ -676,6 +713,8 @@ fn maven_module_row(module: &crate::maven::MavenModuleView, cx: &App) -> AnyElem
 fn header(
     view: RightToolWindowView,
     title: SharedString,
+    // 真源的副标题槽（`LitheToolWindowHeader.swift:51-55`）：`nil` 时不画。
+    subtitle: Option<SharedString>,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -704,18 +743,36 @@ fn header(
             view.icon(cx, rems(TOOL_WINDOW_HEADER_ICON_SPEC / 16.)),
         )
         .child(
-            div()
+            // 标题 + 副标题同一段：真源是 `Text(title)` 之后紧跟可选的 `Text(subtitle)`
+            // （`LitheToolWindowHeader.swift:48-55`），两者都在 `Spacer(minLength: 12)` 之前。
+            // 所以这里用一层 `h_flex`：标题可截断、副标题 `shrink_0` 且单行。
+            h_flex()
                 .flex_1()
                 .min_w_0()
-                .truncate()
-                // 真源标题是 12.5 semibold（`LitheToolWindowHeader.swift:48-50`）。gpui 的字号档位
-                // 只有 12 / 14 / 16（`text_xs` / `text_sm` / `text_base`），12.5 取最近的 **12**。
-                // ⚠️ 真源另有 11.5 medium 的副标题槽（`:51-55`），本侧**未实现** —— 当前三个视图
-                // 都没有副标题，不先加一个没有调用方的参数（缺口已登记）。
-                .text_xs()
-                .font_semibold()
-                .text_color(cx.theme().foreground)
-                .child(title),
+                .gap_2()
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        // 真源标题是 12.5 semibold（`LitheToolWindowHeader.swift:48-50`）。gpui 的字号档位
+                        // 只有 12 / 14 / 16（`text_xs` / `text_sm` / `text_base`），12.5 取最近的 **12**。
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(cx.theme().foreground)
+                        .child(title),
+                )
+                .children(subtitle.map(|subtitle| {
+                    // 真源副标题：11.5 medium + `secondaryText`、`lineLimit(1)`
+                    // （`LitheToolWindowHeader.swift:51-55`）；11.5 同样取最近的 **12**，
+                    // 与标题的差别由字重（medium vs semibold）与颜色（弱化 vs 正常）承担。
+                    div()
+                        .flex_shrink_0()
+                        .truncate()
+                        .text_xs()
+                        .font_medium()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(subtitle)
+                })),
         )
         .child(
             // `Button variant=ghost size=icon-xs`：24×24（`ui/button.tsx:27`）。
