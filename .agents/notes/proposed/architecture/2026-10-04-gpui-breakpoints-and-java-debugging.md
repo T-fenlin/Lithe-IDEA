@@ -247,14 +247,24 @@ lombok 1.18.46（`01f7b1a0…`）、java-test 0.46.0 VSIX（`56c1e14d…`，含 
 与我们的 DAP 代码、与已铺好的 JDTLS/java-debug/lombok 载荷无关。
 （此前排除的两个假设——Maven 离线缓存、JDTLS 运行在 JDK 21——也都不是原因。）
 
-**处置与后续卡点（2026-10-04）**：给夹具 pom 的 junit 版本加了环境变量口子
-`LITHE_JDTLS_SMOKE_JUNIT`（默认仍是 `5.14.0`，CI 行为不变）。本机用 `5.10.5` 重跑后：
-**`vscode.java.buildWorkspace` 那一步已经通过**（原来的 2 个错误消失），用例推进到"发现 Java 测试"阶段，
-改为卡在 Maven 编译夹具：`maven-compiler-plugin:3.1`（Maven 3.6.3 的默认版本，夹具只固定了 surefire）
-处理不了 Java 25 的紧凑源文件 `Compact.java`（报 `-source 8 does not support compact source files`；
-把 `JAVA_HOME` 指到 `open-25` 后该提示消失，但编译仍失败）。
-⇒ 剩下的是**夹具构建工具链**问题（需要现代 compiler plugin / 明确 `source`+`target`），
-仍与 DAP 代码无关。
+**已解决（2026-10-04，真机冒烟变绿）**：夹具 pom 补 `maven-compiler-plugin:3.13.0` + `<release>25</release>`
+（Maven 3.6.3 默认的 3.1 处理不了 Java 25 紧凑源文件 `Compact.java`）后，
+`real_jdtls_discovers_builds_and_launches_java_25_entrypoints` **通过**（80s，`2 passed; 0 failed`）。
+
+跑通需要这一整套环境（本机验证过的配方）：
+
+```
+LITHE_JDTLS_SMOKE_ROOT=<repo>/third_party/jdtls      # 载荷按 manifest 的 SHA256 铺好
+LITHE_JDTLS_SMOKE_JAVA=<JDK21>/bin/java.exe          # JDT LS 自身跑在 21 上
+LITHE_JDTLS_SMOKE_PROJECT_JDK=<JDK25>                # 夹具工程 target 是 release 25
+LITHE_JDTLS_SMOKE_MAVEN=<maven>/bin/mvn.cmd
+LITHE_JDTLS_SMOKE_JUNIT=5.10.5                       # 5.14.0 在本机 Maven 源拿不到
+JAVA_HOME=<JDK25>                                    # 否则 Maven 用 -source 8 编夹具
+MAVEN_OPTS=-Dmaven.repo.local=<工作区内的可写目录>     # 关键：沙箱下 Maven 写不进 ~/.m2 与发行版目录
+```
+
+最后一条是最隐蔽的：不指到工作区内的仓库时，Maven 会在
+`~/.m2`/发行版目录里因为写 `.part.lock` 失败而报 "could not be resolved"（看起来像网络问题，其实是写权限）。
 
 **仍未做**：DAP 那半边的真机端到端（启动→断点命中→单步→变量→停止）—— 它需要 GUI 驱动（点工具栏/打断点），当前只能靠人工或 UI 自动化；DAP 链路本身已有 43 条离线用例覆盖。
 
