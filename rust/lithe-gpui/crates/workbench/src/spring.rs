@@ -1,25 +1,3 @@
-//! 右侧「Spring」视图的**数据层**：Core 的 `spring.index` → 可渲染的端点 / 计数视图。
-//!
-//! ## 为什么用 Core 的索引而不是自己找注解
-//!
-//! `spring.index` 已经在 Core 里做了整套 Spring 语义索引
-//! （契约 `shared/contracts/rust-core-api.md:1737-1758`）：读工作区 JSON 元数据与依赖 JAR 里的
-//! `spring-configuration-metadata.json`、索引配置文档与 Java 源码，产出**确定性有序**的
-//! `properties` / `values` / `propertyReferences` / `diagnostics` / `beans` / `injections` / `endpoints`。
-//! 依赖元数据在 Rust 进程里缓存，`refreshDependencyMetadata` 只在"打开项目"时置真。
-//! 所以这里**一行注解解析都不写**（那正是仓库"复用成熟上游"红线：
-//! `scripts/verify-java-semantic-ownership.mjs` 把 `is_main_method` 一类 token 都列成了禁区）。
-//!
-//! ## 本层只做三件事
-//!
-//! 1. **收集要索引哪些文件**（[`crate::spring_paths`]）—— `spring.index` 只索引请求里
-//!    `paths` 给出的路径，`paths` 缺省是空 `Vec`，所以"扫哪些文件"必须由本层给出；
-//! 2. 把 `endpoints[]` 摊成能直接画的行（HTTP 方法集 / 路由 / 控制器 / 方法 / 源码位置）；
-//! 3. 把其余集合**只报条数** —— 它们是"索引是否健康"的直观信号，
-//!    而逐条渲染（属性补全、注入链、`@Value` 引用）需要各自的 UI，属于后续批次。
-//!
-//! 位置口径照契约：**相对路径 + 1 基行列**（不是 LSP 的 0 基），本层原样保留，不换算。
-
 use std::path::Path;
 
 use lithe_gpui_shared::core_json;
@@ -27,45 +5,24 @@ use serde_json::{Value, json};
 
 use crate::spring_paths::collect_spring_source_paths;
 
-/// 一条 Spring 端点（`SpringEndpointResponse`，`protocol/contracts.rs:931-941`）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpringEndpointView {
-    /// 稳定 id（Core 给的，用于去重与选中态）。
     pub id: String,
-    /// 声明的 HTTP 方法集（契约：**保留精确集合**，所以是 `GET+POST` 这种多值情形也要能显示）。
     pub http_methods: Vec<String>,
-    /// 路由（`route`）——用户最想看的那一列。
     pub route: String,
-    /// 控制器类名。
     pub controller: String,
-    /// 处理方法名。
     pub method: String,
-    /// 源码相对路径。
     pub path: String,
-    /// **1 基**行 / 列（契约口径，本层不换算成编辑器口径）。
     pub line: usize,
     pub column: usize,
 }
 
 impl SpringEndpointView {
-    /// 方法列的显示串：真源是 `httpMethods.joined(separator: ",")`
-    /// （`SpringEndpointsView.swift:38`）。
-    ///
-    /// 抽成纯函数是为了能被确定性单测钉住。改前这里叫 `label()`、把方法与路由拼成
-    /// `"GET/POST /api/users"` 一整行，且分隔符用的是 `/` —— 与真源的分隔符和分列都不符；
-    /// 现在路由自成一列（见 `right_tool_window.rs` 的 `spring_content`），这里只负责方法列。
     pub fn methods_label(&self) -> String {
         self.http_methods.join(",")
     }
 }
 
-/// 按查询串筛选端点：真源 `SpringEndpointsView.swift:69-76` 的判据**逐条照搬**。
-///
-/// 真源是：`query` 去掉首尾空白后，若为空则返回全部；否则保留**任一**字段
-/// （`route` / `controller` / `method` / 方法集以空格连接）**大小写不敏感包含**查询串的端点。
-///
-/// 抽成纯函数是为了能被确定性单测钉住（视图与输入框在本仓库没有确定性单测，
-/// 与 `replace_in_files.rs` 的 `preview_enabled` 同一取法）。返回借用切片，不复制端点。
 pub fn filter_endpoints<'a>(
     endpoints: &'a [SpringEndpointView],
     query: &str,
@@ -91,46 +48,28 @@ pub fn filter_endpoints<'a>(
         .collect()
 }
 
-/// 一次索引的结论。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpringIndexView {
-    /// 端点（顺序照 Core 给的确定性序，**不重排**）。
     pub endpoints: Vec<SpringEndpointView>,
-    /// 配置属性条数。
     pub properties: usize,
-    /// 配置值条数。
     pub values: usize,
-    /// `@Value` 引用条数。
     pub property_references: usize,
-    /// 依赖注入点条数。
     pub injections: usize,
-    /// Bean 条数。
     pub beans: usize,
-    /// 索引自带的诊断条数（例如元数据缺失）。
     pub diagnostics: usize,
 }
 
 impl SpringIndexView {
-    /// 有没有任何 Spring 事实 —— 面板据此决定显示内容还是"未检测到"。
     pub fn is_empty(&self) -> bool {
         self.endpoints.is_empty() && self.beans == 0 && self.properties == 0
     }
 }
 
-/// 索引一个工作区。返回 `None` = Core 明确说这里没有 Spring 事实（响应为 `null`）。
 pub fn index(root: &Path) -> Option<SpringIndexView> {
-    // **`paths` 必须显式给出**：`spring.index` 只索引请求里 `paths` 列出的工作区相对路径
-    // （`rust/lithe-core/src/languages/spring.rs:82-89` 取 `.java` 进 `endpoint_index`，
-    // `:93-111` 取 `application*` 进 `values`），而 `paths` 是 `#[serde(default)] Vec<String>`
-    // （同文件 `:36-51`）：**不传 = 一个文件都不扫**，响应里只剩 `built_in_properties()`
-    // （`:324-386`）那批内置属性，于是诊断行显示成 `endpoints=0 properties=10`——
-    // "索引成功"却什么都没扫。收集口径见 [`crate::spring_paths`]（对齐 Windows 参考实现）。
     let collected = collect_spring_source_paths(root);
     let path_count = collected.paths.len();
     let truncated = collected.truncated;
 
-    // `refreshDependencyMetadata: true` 只在"打开项目"这条路径上置真（契约原话），
-    // 所以本函数应该**每次打开面板调一次**，不要挂在每次按键上。
     let response = core_json(
         "spring.index",
         json!({
@@ -160,9 +99,6 @@ pub fn index(root: &Path) -> Option<SpringIndexView> {
             view
         }
         Err(error) => {
-            // 失败不静默也不 panic：面板回到空态，日志留下可追的原因。
-            // `paths` 一起打出来：失败时"到底有没有收集到输入"是第一个要排除的变量
-            // （工作区为空与 Core 报错长得完全不同，但两者都会让面板空掉）。
             println!(
                 "S1_SPRING index=failed paths={path_count} truncated={truncated} error={error}"
             );
@@ -171,10 +107,6 @@ pub fn index(root: &Path) -> Option<SpringIndexView> {
     }
 }
 
-/// `spring.index` 的响应 → 视图（纯函数，便于单测）。
-///
-/// 关键字段缺失时**不猜**：端点没有 `route` 就整条丢掉（画一条没有路由的端点没有意义）；
-/// 计数缺了就是 0。Core 的字段名逐字见 `protocol/contracts.rs:931-941` 与 `:943+`。
 pub(crate) fn parse(response: &Value) -> Option<SpringIndexView> {
     if response.is_null() {
         return None;
@@ -229,7 +161,6 @@ pub(crate) fn parse(response: &Value) -> Option<SpringIndexView> {
     })
 }
 
-/// 取一个可选字符串字段（空串当没有）。
 fn text(value: &Value, key: &str) -> Option<String> {
     value
         .get(key)
@@ -245,13 +176,11 @@ mod tests {
 
     use crate::spring_paths::collect_spring_source_paths;
 
-    /// 空响应：`null` = 没有 Spring 事实（面板显示空态），不是错误。
     #[test]
     fn null_response_means_no_spring_facts() {
         assert!(parse(&Value::Null).is_none());
     }
 
-    /// 只有计数、没有端点：视图仍然成立（索引健康度也要能显示），并报 `is_empty`。
     #[test]
     fn counts_only_response_is_still_a_view() {
         let view = parse(&json!({
@@ -269,7 +198,6 @@ mod tests {
         assert!(!view.is_empty(), "有 properties 就不算空");
     }
 
-    /// 端点：HTTP 方法集、路由、控制器、1 基行列原样落位；`methods_label()` 拼出方法列的显示串。
     #[test]
     fn endpoints_keep_methods_route_and_location() {
         let view = parse(&json!({
@@ -287,17 +215,14 @@ mod tests {
         .expect("有 endpoints 就是视图");
 
         let endpoint = &view.endpoints[0];
-        // 方法列按真源用 `,` 连接（`SpringEndpointsView.swift:38`），路由自成一列。
         assert_eq!(endpoint.methods_label(), "GET,POST");
         assert_eq!(endpoint.route, "/api/users");
         assert_eq!(endpoint.controller, "UserController");
         assert_eq!(endpoint.path, "src/main/java/demo/UserController.java");
-        // 契约是**1 基**行列：本层不换算（换算是编辑器侧的事）。
         assert_eq!(endpoint.line, 42);
         assert_eq!(endpoint.column, 5);
     }
 
-    /// 没有 `route` 的端点整条丢掉（画一条没有路由的端点没意义）；缺字段不 panic。
     #[test]
     fn endpoints_without_a_route_are_dropped() {
         let view = parse(&json!({
@@ -309,13 +234,10 @@ mod tests {
         .expect("视图");
         assert_eq!(view.endpoints.len(), 1);
         assert_eq!(view.endpoints[0].route, "/ok");
-        // 没有 httpMethods 时不 panic，方法列退化成空串（路由照旧单独成列）。
         assert_eq!(view.endpoints[0].methods_label(), "");
         assert_eq!(view.endpoints[0].id, "/ok", "缺 id 时用 route 兜底");
     }
 
-    /// 筛选判据逐条照真源（`SpringEndpointsView.swift:69-76`）：四个字段任一命中、
-    /// 大小写不敏感、查询串先 trim、空查询返回全部。
     #[test]
     fn filtering_matches_route_controller_method_or_methods() {
         let view = parse(&json!({
@@ -327,27 +249,18 @@ mod tests {
         .expect("视图");
         let endpoints = &view.endpoints;
 
-        // 空查询（含只有空白的）返回全部。
         assert_eq!(filter_endpoints(endpoints, "").len(), 2);
         assert_eq!(filter_endpoints(endpoints, "   ").len(), 2);
-        // 路由命中。
         assert_eq!(
             filter_endpoints(endpoints, "orders")[0].route,
             "/api/orders"
         );
-        // 控制器命中，且大小写不敏感。
         assert_eq!(filter_endpoints(endpoints, "usercontroller").len(), 1);
-        // 方法名命中。
         assert_eq!(filter_endpoints(endpoints, "CREATE").len(), 1);
-        // HTTP 方法集命中。
         assert_eq!(filter_endpoints(endpoints, "post").len(), 1);
-        // 查不到就是空 —— 视图按真源画「没有端点」那一档。
         assert!(filter_endpoints(endpoints, "nonexistent").is_empty());
     }
 
-    /// 级联临时目录：断言失败也会在 `Drop` 里删掉，不留工作区残骸。
-    ///
-    /// 名字里的进程号 + 建目录前先删一次，让上次崩溃留下的同名目录不会污染本次结果。
     struct TempDir(PathBuf);
 
     impl TempDir {
@@ -372,16 +285,6 @@ mod tests {
         }
     }
 
-    /// 空工作区：`paths` 收集结果是空，但**请求仍然要发**。
-    ///
-    /// 为什么这条必须守：`paths: []` 时 Core 依然会回 `built_in_properties()`
-    /// （`rust/lithe-core/src/languages/spring.rs:324-386`）那批内置属性，于是响应非 `null`、
-    /// 面板拿到"有权重"的视图（`is_empty() == false`）。如果哪天为了"省一次调用"
-    /// 在空 `paths` 时提前 return `None`，面板就会从"显示内置属性"静默退化成
-    /// "未检测到 Spring 组件与端点" —— 那是与本次修复反向的回归。
-    ///
-    /// 这条是**真实往返**（进程内调 `spring.index`），但没有外部依赖：
-    /// 只用一个空的临时目录，不扫任何工作区源码，所以是例行测试而不是 opt-in。
     #[test]
     fn an_empty_workspace_still_sends_the_request_and_keeps_a_view() {
         let root = TempDir::new("empty-workspace");
@@ -399,32 +302,11 @@ mod tests {
         assert!(view.endpoints.is_empty(), "空工作区不可能有端点");
     }
 
-    // -----------------------------------------------------------------------
-    // 选定式（opt-in）真实往返：`spring::index` → `spring.index` → Core
-    // -----------------------------------------------------------------------
-
-    /// 开关环境变量。设了它才会跑真实夹具 —— 与 `lithe-gpui-java` 的
-    /// `LITHE_GPUI_JDTLS_SMOKE`（`crates/java/src/service.rs:839`）同一约定：
-    /// 需要机器上的本地夹具，CI 与例行 `cargo test` 上不跑。
-    ///
-    /// 与 JDTLS 那条不同的是：这条**不 spawn 任何 java/JDTLS 进程**，
-    /// Core 的 `spring.index` 是纯正则 + 文本的进程内调用（`endpoint_index`），
-    /// 所以没有需要 watchdog 的子进程，退出时也没有残留进程要清。
     const SMOKE_ENV: &str = "LITHE_GPUI_SPRING_SMOKE";
 
-    /// 真实夹具的**仓库相对**候选路径，按优先级排列。
-    ///
-    /// 夹具由本轮的验证批次生成、位于不入库的 `.artifacts/`，所以路径只允许出现在这条
-    /// opt-in 测试里（不能进例行单测：那是"机器相关硬编码"），而且**找不到就跳过、不失败**。
     const FIXTURE_CANDIDATES: [&str; 2] =
         [".artifacts/p15/spring-fixture", ".artifacts/p14/fixture"];
 
-    /// 从当前目录与测试可执行文件所在目录向上找仓库根（各最多 8 层），
-    /// 返回第一个"确实能收集到 `.java`"的候选夹具目录。
-    ///
-    /// 走两个锚点是因为 `cargo test` 的工作目录是包根
-    /// （`lithe-gpui/crates/workbench`），而直接跑测试二进制时不是；两个锚点各向上找，
-    /// 都不用把仓库根写死。
     fn find_fixture_root() -> Option<PathBuf> {
         let mut anchors = Vec::new();
         if let Ok(current) = std::env::current_dir() {
@@ -438,8 +320,6 @@ mod tests {
         for anchor in anchors {
             for ancestor in anchor.ancestors().take(8) {
                 for candidate in FIXTURE_CANDIDATES {
-                    // 候选写成 `/` 分隔的仓库相对路径（可读、跨平台一致），拼到锚点上时换成
-                    // 平台分隔符，免得诊断行里出现 `….artifacts/p15/spring-fixture` 这种混用形式。
                     let root = ancestor.join(candidate.replace('/', std::path::MAIN_SEPARATOR_STR));
                     if collect_spring_source_paths(&root)
                         .paths
@@ -454,15 +334,6 @@ mod tests {
         None
     }
 
-    /// 本 bug 的验收点：同一个夹具，**不带 `paths`** 与 **带 `paths`** 的对照。
-    ///
-    /// ① 旧 payload（只有 `root` + `refreshDependencyMetadata`）必须给出 `endpoints == 0`：
-    ///    这是把"`paths` 才是扫源码的开关"钉成回归断言 —— 一旦哪天又有人把 `paths` 从
-    ///    payload 里去掉，这条测试会直接失败，而不是等到实机截图才发现端点恒为 0；
-    /// ② 修复后的 `spring::index` 必须给出 `endpoints > 0`，且端点里能看到夹具的路由。
-    ///
-    /// 断言用 `.contains("/api/users")` 而不是全等：两个夹具（p15 / p14）的控制器方法名不同，
-    /// 但它们都声明了 `@GetMapping("/api/users")` + `@PostMapping("/api/users")`。
     #[test]
     fn real_core_round_trip_indexes_endpoints_from_a_fixture() {
         if std::env::var_os(SMOKE_ENV).is_none_or(|value| value.is_empty()) {
@@ -485,7 +356,6 @@ mod tests {
             collected.paths
         );
 
-        // ① 复现旧 payload（就是修复前的 `index()`）：只给 root。
         let legacy = core_json(
             "spring.index",
             json!({
@@ -500,7 +370,6 @@ mod tests {
             .map_or(0, |view| view.endpoints.len());
         println!("S1_SPRING_BEFORE payload=root-only endpoints={legacy_endpoints}");
 
-        // ② 修复后的路径（`index()` 自己会打 `S1_SPRING index=ok … paths=… endpoints=…`）。
         let view = index(&root).expect("夹具里有 Spring 事实，响应不该是 null");
         println!(
             "S1_SPRING_AFTER endpoints={} paths={}",

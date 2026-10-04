@@ -1,41 +1,3 @@
-//! `Lithe` bin 目标的 crate 根，也是 **App Shell**（应用外壳）。
-//!
-//! ## 职责（《编码指南》「架构总览」）
-//!
-//! App Shell **只组合窗口与 Feature**，不承载任何具体 Feature 逻辑：命令行参数、首窗口尺寸、
-//! 应用启动顺序、主题加载，以及把 `lithe-gpui-workbench` 的 `ShellWorkspace` 挂到 `Root` 下。
-//!
-//! 旧的 P1 冒烟宿主（`lithe-gpui/shell/src/main.rs`，bin 目标 `lithe-gpui-shell`）已删除：
-//! 它的职责被本文件完全覆盖，而指南要求「一个应用一个 shell」。
-//!
-//! ## 启动顺序（0.6.6 只有这一种写法，顺序错会静默失败或 panic）
-//!
-//! `application().with_assets(..).run` → `gpui_kit::init` → `Theme::change` →
-//! `cx.spawn` → `open_window` → `Root::new`。`Root` **必须是窗口的第一层**：它负责对话框、
-//! 抽屉、通知与焦点归还；`Root::new` 之前不得打开任何浮层（那时窗口根还不是 `Root`，
-//! `window.open_dialog` 会 panic）。
-//!
-//! ## 国际化（i18n）不在本文件
-//!
-//! `rust_i18n::i18n!` **必须出现在持有 `locales/` 的那个 crate 的根**：`rust_i18n::t!` 展开成
-//! `crate::_rust_i18n_try_translate(..)`（`rust-i18n-macro-4.2.2/src/tr.rs:438,454`），
-//! 而该函数由 `i18n!` 在**调用它的那个 crate** 里生成。本项目的 `t!` 包装
-//! （`tr` / `tr_args`，含 `{name}` 插值）住在 `lithe-gpui-shared`，所以 locale 与 loader
-//! 也落在那里（`lithe-gpui/crates/shared/locales/`，由 `lithe-gpui/tools/extract-locale.mjs` 从
-//! `crates/shared/locales/source/locale.ts` 生成）。**不要在这里再调一次 `i18n!`** —— 那会生成
-//! 第二份 backend，变成两个真相源。
-//!
-//! 运行：`cargo run --bin Lithe -- <workspace-root>`。位置参数可省略：省略时打开「最近项目」
-//! 里最近且仍然存在的那个；**一个都没有时打开欢迎页**（U10，见 [`resolve_launch_plan`]）——
-//! 资源管理器里双击 exe 走的就是这一条。欢迎态的窗口是 800×650（真源
-//! `RootView.swift:350` 的 `welcomeContentSize`），窗口根是 `Root` + `WelcomeView`
-//! （**不建** `ShellWorkspace`，理由见那段分支的注释）。
-
-// Windows 发布构建**不要弹控制台窗口**：GUI 程序带一个黑底控制台是明显的产品缺陷
-// （Explorer 里双击会多出一个窗口，实测抓到的那个控制台是 1239x647）。
-// **只在 release 关掉**，debug 保留控制台：`S1_*` 诊断行、`--help` 与 `parse_options`
-// 的错误都走 stdout/stderr，开发和机器验证都要看得见；即使关掉控制台，只要启动方把
-// stdout/stderr 重定向到文件，`println!` 仍然照常写入。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
@@ -47,42 +9,15 @@ use gpui_kit::{
 };
 use lithe_gpui_settings::{Init, SettingsStore};
 use lithe_gpui_workbench::ShellWorkspace;
-// `RightToolWindowView` 走模块路径引入（`workbench` 的根只重导出 `ShellWorkspace`，
-// 见 `crates/workbench/src/lib.rs:121`）。
-use lithe_gpui_workbench::right_tool_window::RightToolWindowView;
-// 欢迎页（U10）：窗口根的另一支。`WelcomeView` 从 workbench 的根重导出。
 use lithe_gpui_workbench::WelcomeView;
+use lithe_gpui_workbench::right_tool_window::RightToolWindowView;
 
-/// 资源源与图标 helper（`lithe-gpui/assets/**` 的接线）。模块文档里有 `AssetSource` 委托顺序与
-/// "为什么必须包装而不是注册两次"的论证。
 mod assets;
 
-/// 工作区窗口能用的最小尺寸（与 Dodona 一致）。
-///
-/// 提到模块作用域是因为**两个**落点要用它：工作区首窗口的 `window_bounds` 夹紧，以及
-/// `WindowOptions::window_min_size`（欢迎态那一档用 [`WELCOME_WINDOW_SIZE`]）。
 const MIN_WINDOW: Size<Pixels> = size(px(1024.), px(680.));
 
-/// 欢迎态窗口的内容尺寸：**800×650**（真源 `RootView.swift:350` 的
-/// `LitheWindowLayout.welcomeContentSize`；`LitheApp.swift:480-483` 的 `.defaultSize` 用它）。
-///
-/// ⚠️ 它**同时是最小尺寸**：真源 `RootView.swift:367` 的 `minimumContentSize` 在
-/// `case .welcome` 上返回的是同一个常量 ⇒ 欢迎窗口不可缩放。宿主照这条，所以 `main` 里
-/// 欢迎那一档把 `window_min_size` 也传这个值 —— 只改 `window_bounds` 的话，平台会按
-/// 工作区那一档的 1024×680 把它顶回去，"800×650"在真机上根本不成立。
 const WELCOME_WINDOW_SIZE: Size<Pixels> = size(px(800.), px(650.));
 
-/// 工作区首窗口尺寸： 取显示器可见区域的 **94%**、居中、
-/// 普通窗口（不最大化）。
-///
-/// `visible = display.visible_bounds()`（排除任务栏，状态栏才够得着）→
-/// `wanted = visible * 0.94` → 夹在 [`MIN_WINDOW`](1024×680) 与 `visible` 之间 → 居中。
-///
-/// 为什么不用别的两种写法：
-/// - **照抄 macOS 常量（1440×900）**：那是 macOS 的窗口习惯（带交通灯、不最大化），搬到 Windows
-///   会得到一个比屏幕小的窗口，四周露出桌面；
-/// - **启动即最大化**（`WindowBounds::Maximized` / `zoom_window()`）：`Maximized` 在这个 gpui
-///   版本上只把 bounds 当还原尺寸、并不会真的最大化；Dodona 验证过的口径是"94% 的普通窗口"。
 fn startup_window_bounds(cx: &App) -> WindowBounds {
     let fallback = size(px(1280.), px(800.));
 
@@ -90,17 +25,12 @@ fn startup_window_bounds(cx: &App) -> WindowBounds {
         return WindowBounds::Windowed(Bounds::new(point(px(60.), px(40.)), fallback));
     };
 
-    // `visible_bounds` 已经排除任务栏，所以状态栏始终够得着。
     let visible = display.visible_bounds();
     let wanted = size(visible.size.width * 0.94, visible.size.height * 0.94);
     let size = wanted.max(&MIN_WINDOW).min(&visible.size);
     centered_window_bounds(&visible, size)
 }
 
-/// 欢迎态首窗口尺寸：真源那一条 **800×650、居中、不可缩放**（[`WELCOME_WINDOW_SIZE`]）。
-///
-/// 与工作区那一档的唯一差别是"不夹到 [`MIN_WINDOW`]、也不取屏幕的 94%"——欢迎页是
-/// 一张固定尺寸的表单式首屏（真源连 `minimumContentSize` 都等于它）。
 fn welcome_window_bounds(cx: &App) -> WindowBounds {
     let Some(display) = cx.primary_display() else {
         return WindowBounds::Windowed(Bounds::new(point(px(60.), px(40.)), WELCOME_WINDOW_SIZE));
@@ -109,9 +39,6 @@ fn welcome_window_bounds(cx: &App) -> WindowBounds {
     centered_window_bounds(&visible, WELCOME_WINDOW_SIZE.min(&visible.size))
 }
 
-/// 把窗口放进可见区域的**中央**（真源 `LitheWindowLayout.frame(_:fitting:)` 的居中那一步，
-/// `RootView.swift:385-402`；真源还会 `insetBy(dx: 12, dy: 12)` —— 这里由调用方已经把 `size`
-/// 夹进 `visible`，等价于"不会超出可见区域"）。
 fn centered_window_bounds(visible: &Bounds<Pixels>, size: Size<Pixels>) -> WindowBounds {
     let origin = point(
         visible.origin.x + (visible.size.width - size.width) / 2.0,
@@ -120,173 +47,35 @@ fn centered_window_bounds(visible: &Bounds<Pixels>, size: Size<Pixels>) -> Windo
     WindowBounds::Windowed(Bounds::new(origin, size))
 }
 
-/// 命令行参数。
-///
-/// ⚠️ `--theme` / `--locale` / `--palette-keys` 是**显式覆盖**，不是设置的常规入口：
-/// 「配色主题」与「显示语言」的正规来源是设置文件（`lithe-gpui/crates/settings`，设置界面的
-/// 「外观 / 常规」两页）。这些开关的作用域只有"这一次启动"，**不写回设置文件**，
-/// 保留它们是为了让主题 / 语言 / 键盘交互能在一个进程里被可复现地指定
-/// （`.artifacts/verify-visual.ps1` 的 4 配置视觉验证依赖后者；
-/// `--palette-keys` 的理由见下）。
 struct Options {
-    /// 工作区根，传给 `workspace.snapshot` 与 `git.*`。
-    ///
-    /// `Some` = 命令行**显式**给了位置参数（`Lithe <root>`，既有行为一字不改，包括"路径不存在
-    /// 也照原样传给外壳"）；`None` = 一个位置参数都没有 —— 这正是资源管理器里双击
-    /// `Lithe.exe` 的情形（Explorer 不传任何参数），由 [`resolve_launch_plan`] 补上根
-    /// （挑不到可用根时是**欢迎页**，不是工作区）。
     root: Option<PathBuf>,
-    /// 本次启动要应用的主题：**主题 id 或显示名都收**（覆盖设置文件；
-    /// id 是 `themes[].id`，如 `lithe-dark`；显示名是 `themes[].name`，如 `Lithe Dark`）。
     theme_override: Option<SharedString>,
-    /// 本次启动的界面语言（覆盖设置文件）。gpui-kit 组件自带 `en` / `zh-CN` / `zh-HK`。
     locale_override: Option<String>,
-    /// 启动后自动打开设置对话框（**验证/诊断用**：让机器能截到设置界面的图）。
     open_settings: bool,
-    /// 启动后自动打开**命令面板**（**验证/诊断用**）。
-    ///
-    /// 为什么需要它：本机锁屏导致键盘注入到不了应用（理由见 [`Options::palette_keys`]），
-    /// 而命令面板的**唯一**入口就是 `Ctrl+Shift+P`；没有这个开关，"面板打开长什么样"
-    /// 这件事在无人值守环境里无法取证。它调的是与按键同一条链：
-    /// `window.dispatch_action(OpenCommandPalette)` → `App::on_action` 的全局处理器
-    /// （`crate::command_palette::install_actions`）→ `open_command_palette`。
-    /// 与已有的 `--open-settings` 同一性质，不是产品能力。
     open_palette: bool,
-    /// 启动后按顺序派发的一串串按键（**验证/诊断用**，可重复给多次 = 多串）。
-    ///
-    /// 用途与实测边界见 [`dispatch_next_key`] 的文档：这台工作站当前**锁屏**，
-    /// `PostMessage` 投递的 `WM_KEYDOWN` 到不了 GPUI 的按键回调（同一通路上的
-    /// `WM_LBUTTONDOWN` / `WM_CHAR` 照常生效，5 组对照实验见
-    /// `.artifacts/command-palette/NOTES.md` §2），所以真实按键既打不开面板、也做不了
-    /// 过滤。这个开关把按键交给 **gpui 自己的按键派发**
-    /// （`Window::dispatch_keystroke`，`gpui-pre-0.3.6/src/window.rs:5373` 起：
-    /// 构造成 `KeyDownEvent` 后走 `dispatch_event` 的完整路径）。
-    ///
-    /// ⚠️ 它**不能**代替真机验证"操作系统把 Ctrl+Shift+P 送进窗口"这一段；本轮实测连
-    /// 已登记的 `ctrl-,` 都不命中（原因见上），所以本轮的键盘验证改走鼠标（`CommandItem`
-    /// 的行点击与 `Enter` 在 gpui 里是同一个 `confirm`）。
     palette_keys: Vec<Vec<gpui_kit::Keystroke>>,
-    /// 菜单栏走"左上角图标 + 浮动胶囊"形态（**验证/诊断用**）。
-    ///
-    /// 真源的默认值就是这一支（`default-settings.ts:105` 的 `compactMenuBar: true`），
-    /// 而本侧默认取常驻（维护者要求"固定在界面上"）。两种形态是同一份菜单表、
-    /// 只差容器与定位，所以这个开关让"两种形态长什么样"都能在无人值守环境里截到图
-    /// （与 `--open-palette` 同一性质，不是产品能力）。
     compact_menu_bar: bool,
-    /// `--menu-probe <顶级菜单 id> [动作名]`（**验证/诊断用**，见 [`run_menu_probe`]）。
     menu_probe: Option<(String, Option<String>)>,
-    /// `--menu-probe` 里"打开菜单"与"执行动作"之间的等待毫秒数。
-    ///
-    /// 默认 2500：够截图脚本在**动作执行之前**抓到"下拉面板真的画出来了"那一帧。
     menu_probe_delay_ms: u64,
-    /// `--menu-probe` 打开菜单之前等多久（默认 0 = 首帧就打开）。
-    ///
-    /// **为什么需要它**：无人值守环境里窗口不是前台窗口（工作站锁屏），GPUI 只在自己
-    /// 认为脏的时候画一帧，而 `PrintWindow` 只把**上一次绘制的那一帧**画进位图 ——
-    /// 首帧就打开的菜单会出现在首帧里（能截到），但"下一秒才打开"的菜单在窗口没有新
-    /// 输入时**永远画不出来**（`.artifacts/p7/NOTES.md` §4 有实测对照）。
-    /// 所以要把"菜单打开"对齐到**启动时的某一帧**上，让那一帧就是打开态。
     menu_probe_open_ms: u64,
-    /// `--theme-probe <下标|主题名>`：执行「视图 → 主题」子菜单的一项（**验证/诊断用**）。
-    ///
-    /// 主题项是**动态生成**的（`lithe-gpui/themes/*.json` 与 gpui-kit 内置主题合起来才是注册表），
-    /// 没有固定动作名，[`lithe_gpui_workbench::menu_bar::lookup_action`] 覆盖不到它。
-    /// 走的仍是主题项 `on_click` 里那段同一份代码（见 `menu_bar::apply_theme_choice`）。
     theme_probe: Option<String>,
-    /// `--project-menu-probe`：启动后把标题栏的**项目下拉**打开（**验证/诊断用**）。
-    ///
-    /// 见 [`run_project_menu_probe`]：走的是与"点触发器"完全相同的那段状态迁移。
     project_menu_probe: bool,
-    /// `--branch-panel-probe`：启动后把标题栏的**分支弹窗**打开（**验证/诊断用**）。
-    ///
-    /// 见 `lithe_gpui_workbench::branch_panel::open_branch_panel`：走的是与"点标题栏分支项"
-    /// 完全相同的那段代码（先 `BranchPanel::open` 重读数据，再 `window.open_dialog`），
-    /// 被绕开的只有"操作系统把这次点击送进窗口"那一段。
     branch_panel_probe: bool,
-    /// `--run-probe`：启动后**自动跑第一条运行配置**（**验证/诊断用**）。
-    ///
-    /// 走的是与"点标题栏 ▶"完全相同的那段代码（`RunPane::launch(false)`），被绕开的只有
-    /// "操作系统把这次点击送进窗口"那一段 —— 无人值守的机器上注入不可靠，这个开关是拿到
-    /// `S1_RUN_START` / `S1_RUN_EXIT`（真进程、真输出、真退出码）的唯一确定性路径。
-    /// 它会**真的启动项目里识别到的第一个可运行目标**，所以只在验证/诊断时用。
     run_probe: bool,
-    /// `--run-probe-debug`：与 `--run-probe` 同一条路，但按 `🐞`（调试方式）起。
-    ///
-    /// 用来验证"请求调试"这条链在真机上真的走到了 —— 对非 JVM 配置（npm / cargo）计划里
-    /// 不会有 `-agentlib:jdwp`，那时状态必须如实停在「运行中」并给一句解释，而不是假装在等调试器。
     run_probe_debug: bool,
-    /// `--right-view <id>`：启动后把**右侧工具窗**切到指定视图并展开；`extensions`
-    /// 是例外 —— 它打开**中央扩展页**（2026-09-29 起，扩展不是右工具窗视图）。
-    /// （**验证/诊断用**。）
-    ///
-    /// 见 [`lithe_gpui_workbench::ShellWorkspace::show_right_view_probe`]：走的是与"点右活动栏
-    /// 那一项"完全相同的状态迁移（含懒扫与 `S1_RIGHT_PANEL` 诊断），被绕开的只有"操作系统把
-    /// 那一下点击送进窗口"那一段。
-    ///
-    /// **为什么需要它**：本机（125% DPI）右活动栏一次点击会被处理成两次
-    /// （`S1_RIGHT_PANEL … visible=true` 紧跟一行 `visible=false`，见 `lithe-gpui/HANDOFF.md` §2），
-    /// 面板随即被自己收起 —— 于是"Spring 面板里到底画出了什么"在无人值守环境里无法取证。
     right_view: Option<String>,
-    /// `--open-project-probe <目录>`：启动后走一遍「打开其他文件夹」的链路（**验证/诊断用**）。
-    ///
-    /// 见 [`lithe_gpui_workbench::ShellWorkspace::open_project_probe`]：它调的是与"在选择器里
-    /// 选完一个文件夹"**同一个** `request_open_project` —— 被绕开的只有"操作系统把这次选择
-    /// 送回来"那一段（那一段要真的弹 `IFileOpenDialog`，本机锁屏时点不了）。
     open_project_probe: Option<PathBuf>,
-    /// `--open-project-destination <this-window|new-window>`：给 `--open-project-probe`
-    /// 指定目的地（= 真源的 `explicitDestination`），于是**不弹对话框**、直接执行。
-    ///
-    /// **为什么需要它**：不指定时（照真源默认设置）`--open-project-probe` 会弹换项目对话框
-    /// —— 那正是"截对话框那一帧"要的；而"换根真的生效"这条验收线要在无人值守下**点掉**那个
-    /// 对话框，只能靠这个参数把它显式定下来。取值拼错时当场报错退出（与 `--palette-keys` 同口径）。
     open_project_destination: Option<String>,
-    /// `--open-project-remember`：配合 `--open-project-probe`，把"用户勾了「不再询问」"这件事
-    /// 写进对话框那个字段（**验证/诊断用**）。
-    ///
-    /// 本机工作站锁屏、点不了 checkbox，而"勾上之后点「此窗口」→ 换根 → 两个偏好键落盘 →
-    /// 下一次不再弹对话框"这条链是要逐环取证的。它写的字段与 checkbox 的 `on_change`
-    /// 写的是**同一个**（不是另一套状态）。
     open_project_remember: bool,
-    /// `--open-project-delay-ms <毫秒>`：`--open-project-probe` 等多久才真的走那条链路。
-    ///
-    /// 与 `--menu-probe-delay` 同一个用途：给"换根**之前**先制造出要被释放的东西"留出窗口
-    /// （验证无残留进程时，先让 `--menu-probe terminal …` 起一个终端页签 + JDTLS 会话，
-    /// 再换根，然后对照进程数）。
     open_project_delay_ms: u64,
-    /// `--left-view <下标|id>`：启动后把**左侧栏**切到指定视图（**验证/诊断用**）。
-    ///
-    /// 见 [`lithe_gpui_workbench::ShellWorkspace::show_left_view_probe`]。存在理由同
-    /// `right_view`：验收要证明"换根后 Git 变更视图指向新根"，而
-    /// `S1_SOURCE_CONTROL files=… root=…` 只在变更视图 `activate` 时打一行。
     left_view: Option<String>,
-    /// `--appearance-revert <键名>`：启动后执行一次「改回我的全局外观」（**验证/诊断用**）。
-    ///
-    /// 见 [`run_appearance_revert_probe`]：它调的是与设置页那个按钮**同一个**
-    /// `SettingsStore::revert_appearance_group_to_global`。存在理由与 `--theme-probe` 完全一样
-    /// —— 本机工作站锁屏、鼠标注入到不了应用，而"一键改回之后生效值真的回落到全局值"是一条
-    /// 必须逐字取证的验收线（工作区外观覆盖的三条缓解措施之一）。
     appearance_revert: Option<String>,
-    /// `--session-probe <文件>[,<文件>]*`：启动后打开这些文件（**验证/诊断用**）。
-    ///
-    /// 见 [`Options::session_assert`] 与 `ShellWorkspace::session_probe`：它走的是与
-    /// "资源管理器里点文件"完全相同的 `EditorPane::open`。
     session_probe: Option<Vec<PathBuf>>,
-    /// `--session-active <下标>`：配合 `--session-probe`，把第 N 个打开的文件设为当前文件。
     session_active: Option<usize>,
-    /// `--session-hide-sidebar`：配合 `--session-probe`，把左侧栏收起来。
     session_hide_sidebar: bool,
-    /// `--session-assert`：把恢复出来的会话状态打成一行可 grep 的断言证据。
-    ///
-    /// 恢复本身发生在 `ShellWorkspace::new`（构造期），所以这个开关只负责"把结果打出来"——
-    /// 存在理由是端到端验证要断言"三个文件回来了、当前文件是第二个、侧栏仍是隐藏"。
     session_assert: bool,
 }
 
-/// 解析 `[<workspace-root>] [--theme <id|名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
-///
-/// ⚠️ 位置参数**可省略**（2026-09-27 起）：省略时由 [`resolve_launch_plan`] 决定开什么，
-/// 于是"双击 exe"也能开出一个窗口。`--help` / 未知参数仍然返回 `Err(USAGE)`，
-/// `main` 照旧把它打到 stderr 并以退出码 2 退出。
 fn parse_options() -> Result<Options, String> {
     const USAGE: &str = "用法：Lithe [<workspace-root>] [--theme <主题 id 或名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
          \x20 省略 <workspace-root> 时：打开「最近项目」里最近且仍然存在的那个（已失效的条目标为失效）；\n\
@@ -378,19 +167,12 @@ fn parse_options() -> Result<Options, String> {
             "--compact-menu-bar" => compact_menu_bar = true,
             "--menu-probe" => {
                 let menu = args.next().ok_or("--menu-probe 缺少顶级菜单 id")?;
-                // 第二段是**可选**的：`--menu-probe view` 只打开菜单（用来截"下拉面板"那一帧），
-                // `--menu-probe view lithe.menu.toggleTerminal` 才会接着执行动作。
-                // 判据是"下一个参数看起来像不像一个动作名"（动作名一律以 `lithe.` 开头）；
-                // 这里先把 `next()` 的**所有权**取出来，是 `libgit2` 之外唯一的读法 ——
-                // `std::env::Args` 不实现 `Clone`（本轮实测 `args.clone()` 报 E0599）。
                 let next = args.next();
                 let action = match next {
                     Some(ref candidate) if candidate.starts_with("lithe.") => {
                         Some(candidate.clone())
                     }
                     Some(candidate) => {
-                        // 不像动作名 → 它一定是别的参数：迭代器是单向的、**放不回去**，
-                        // 所以直接报错退出，避免把一个拼错的参数静默吃掉。
                         return Err(format!(
                             "--menu-probe 的第二个参数 {candidate:?} 不像动作名（应以 lithe. 开头）"
                         ));
@@ -443,13 +225,9 @@ fn parse_options() -> Result<Options, String> {
             }
             "--session-hide-sidebar" => session_hide_sidebar = true,
             "--session-assert" => session_assert = true,
-            // `--right-view` 只**收下**这串字符，解析成视图放到窗口建好之后的那一段做：
-            // 未知 id 要在启动状态还没被改动时报错（见 `main` 里的 `on_next_frame`）。
             "--right-view" => {
                 right_view = Some(args.next().ok_or("--right-view 缺少视图 id")?);
             }
-            // `--open-project-probe` 只**收下**路径，真正走的那一段放到窗口建好之后
-            // （`on_next_frame`）：对话框只能在 `Root` 就位之后开。
             "--open-project-probe" => {
                 open_project_probe = Some(PathBuf::from(
                     args.next().ok_or("--open-project-probe 缺少目录")?,
@@ -457,7 +235,6 @@ fn parse_options() -> Result<Options, String> {
             }
             "--open-project-destination" => {
                 let raw = args.next().ok_or("--open-project-destination 缺少取值")?;
-                // 取值先在这里校验：拼错时当场退出，别让探针静默弹出一个没人点的对话框。
                 if raw != "this-window" && raw != "new-window" {
                     return Err(format!(
                         "--open-project-destination 的 {raw:?} 不是 this-window / new-window"
@@ -476,7 +253,6 @@ fn parse_options() -> Result<Options, String> {
                 left_view = Some(args.next().ok_or("--left-view 缺少视图 id")?);
             }
             "--appearance-revert" => {
-                // 键名先在这里校验：拼错时当场退出，别让探针静默什么都不做。
                 let raw = args.next().ok_or("--appearance-revert 缺少键名")?;
                 if lithe_gpui_settings::AppearanceKey::from_json_key(&raw).is_none() {
                     return Err(format!(
@@ -493,7 +269,6 @@ fn parse_options() -> Result<Options, String> {
                     if token.is_empty() {
                         continue;
                     }
-                    // 解析失败**直接报错退出**：静默跳过一个键会让验证脚本得出错误结论。
                     let keystroke = gpui_kit::Keystroke::parse(token)
                         .map_err(|error| format!("--palette-keys 里解析不了 {token:?}：{error}"))?;
                     sequence.push(keystroke);
@@ -538,38 +313,17 @@ fn parse_options() -> Result<Options, String> {
     })
 }
 
-/// `--palette-keys` 的派发计划：若干串按键 + 派发前要聚焦的根节点。
-///
-/// **为什么必须先聚焦**：`dispatch_key_event`（`gpui-pre-0.3.6/src/window.rs:5815-5816`）拿
-/// `focus_node_id_in_rendered_frame(self.focus)` 定出派发路径，`self.focus` 为 `None` 时路径
-/// 为空，`dispatch_tree.dispatch_key(..)`（同文件 `:5880`）就匹配不到任何 keymap 绑定。
-/// 真机上这个焦点由"用户点过界面里的某个元素"建立，无人值守启动必须自己给
-/// （`ShellWorkspace` 的根元素就是那个兜底锚点）。
-///
-/// ⚠️ 实测结论：**键盘派发没有让 keymap 命中** —— 同一个进程里 `ctrl-,`
-/// （已登记的 `lithe_settings::OpenSettings`）与 `ctrl-shift-p` 都不触发 action，
-/// 5 组对照实验（scan code / 直接投 `WM_GPUI_KEYDOWN` / `AttachThreadInput` / 显式聚焦）
-/// 见 `.artifacts/command-palette/NOTES.md` §2。所以本轮验证**不依赖**这条路径，
-/// 它只保留成"复现实验"的入口。
 struct KeyPlan {
     focus: gpui_kit::FocusHandle,
     rounds: std::collections::VecDeque<std::collections::VecDeque<gpui_kit::Keystroke>>,
 }
 
-/// 派发 `--palette-keys` 里的下一个按键，并把自己排到下一帧（**每帧一个**）。
-///
-/// `Window::dispatch_keystroke`（`gpui-pre-0.3.6/src/window.rs:5373-5396`）把按键交给
-/// gpui 自己的派发路径；每帧一个是为了让上一个键的 `InputState` 变更（以及它触发的重绘）
-/// 在这一帧结束前落地，与真实敲键的时序一致。
-///
-/// 计划是**按值传递**的（`on_next_frame` 的回调要 `'static`，借用逃不出去）。
 fn dispatch_next_key(window: &mut Window, cx: &mut App, mut plan: KeyPlan) {
     if window.focused(cx).is_none() {
         window.focus(&plan.focus, cx);
     }
 
     let Some(keystroke) = plan.rounds.front_mut().and_then(|round| round.pop_front()) else {
-        // 当前这一串发完了；还有下一串就继续（每帧一个键，串与串之间自然有帧间隔）。
         if plan.rounds.pop_front().is_none() || plan.rounds.is_empty() {
             println!("S1_KEYS done");
             return;
@@ -591,17 +345,6 @@ fn dispatch_next_key(window: &mut Window, cx: &mut App, mut plan: KeyPlan) {
     window.on_next_frame(move |window, cx| dispatch_next_key(window, cx, plan));
 }
 
-/// `--menu-probe` 的驱动函数：打开指定顶级菜单，并在 `delay_ms` 之后执行指定动作。
-///
-/// **为什么需要这个入口**（不是产品能力）：本机的工作站当前**锁屏**，鼠标注入的**两条路都无效**
-/// —— `PostMessage(WM_LBUTTONDOWN/UP)` 与 `SetCursorPos + mouse_event` 实测都到不了应用
-/// （`.artifacts/p7/NOTES.md` §3 有对照实验）。而"主菜单栏"这件东西的要紧处正好是
-/// "点下去会不会开、会不会真的改到状态"，没有这个入口就无法在无人值守环境里取证。
-///
-/// ⚠️ 它**不绕开**菜单：打开走 [`gpui::WeakEntity<MenuBar>`] 上那个与点击回调同一个
-/// `MenuBar::toggle`，执行走 `MenuBar::run_action` → `push_run`（点击回调里唯一干的事）
-/// → 外壳下一帧 `drain_runs` + `apply_menu_action`。被绕开的只有"操作系统把这次点击
-/// 送进窗口"那一段，与 `--open-palette` 绕开 `Ctrl+Shift+P` 是同一条口径。
 fn run_menu_probe(
     menu_id: String,
     action_id: Option<String>,
@@ -610,7 +353,6 @@ fn run_menu_probe(
     window: &mut Window,
     cx: &mut App,
 ) {
-    // 动作名先解析：拼错时**当场报错退出**，不静默跑一半（与 `--palette-keys` 同一条口径）。
     let action = match action_id {
         Some(id) => match lithe_gpui_workbench::menu_bar::lookup_action(&id) {
             Some(action) => Some(action),
@@ -621,13 +363,9 @@ fn run_menu_probe(
         },
         None => None,
     };
-    // `handle()` 返回的是句柄本身（不是 `Option`）：登记在 `ShellWorkspace::new` 里发生，
-    // 而 `--menu-probe` 只在窗口建好之后才跑，走到这里一定已经登记过。
     let bar = lithe_gpui_workbench::menu_bar::handle();
 
     if open_ms == 0 {
-        // 默认：**首帧**就打开。这样"菜单打开"会出现在启动时画的头几帧里，
-        // 而无人值守环境里那几帧正是唯一能被 `PrintWindow` 拿到的新帧。
         let open_bar = bar.clone();
         window.on_next_frame(move |_window, cx| {
             let menu_id = menu_id.clone();
@@ -638,8 +376,6 @@ fn run_menu_probe(
             });
         });
     } else {
-        // `--menu-probe-open-ms N`：第 N 毫秒才打开。给"先截基线、再让菜单出现"这种
-        // 需要**两次新鲜绘制**的场景用（此时截图脚本要在 N 之后先戳一次重绘再截）。
         let open_bar = bar.clone();
         let executor = cx.background_executor().clone();
         let opened = cx.spawn(async move |cx| {
@@ -660,13 +396,6 @@ fn run_menu_probe(
     let Some(action) = action else {
         return;
     };
-    // 再等 `delay_ms` 才执行动作：给截图脚本留出"下拉面板已经画出来"的取证窗口。
-    //
-    // ⚠️ 这里用 `App::spawn` 而**不是** `Context::spawn_in`：本函数在 `Root::new` **之前**
-    // 被调用，那时还没有任何视图可以挂这个任务（`spawn_in` 定义在 `Context<T>` 上，
-    // `App` 一侧只有 `spawn`；本轮实测 `cx.spawn_in(..)` 在 `&mut App` 上报 E0599）。
-    // 计时器取 `background_spawn` 的池（**不能在 `foreground_spawn` 上阻塞地
-    // `block_on` 一个 timer** —— 前台线程被占住时定时器永远不触发，任务会静默死掉）。
     let executor = cx.background_executor().clone();
     let delayed = cx.spawn(async move |cx| {
         executor
@@ -680,21 +409,8 @@ fn run_menu_probe(
     delayed.detach();
 }
 
-/// `--appearance-revert <键名>` 的驱动函数：首帧之后执行一次「改回我的全局外观」。
-///
-/// **为什么需要这个入口**（不是产品能力）：与 `--theme-probe` / `--open-settings` 完全同因 ——
-/// 本机工作站锁屏，鼠标注入到不了应用，而"工作区覆盖被清掉之后生效值真的回落到全局值"
-/// 是增量 5 的验收线之一（设计 Note 第四节的三条缓解措施里那条"一键改回"）。
-///
-/// ⚠️ 它**不绕开**产品路径：调的是与设置页那个按钮**同一个**
-/// `SettingsStore::revert_appearance_group_to_global`（按钮只是把键名换成那一行的键）。
-/// 被绕开的只有"操作系统把这次点击送进窗口"那一段。
-///
-/// 主题那一组（`theme` / `syncSystemTheme` / `autoThemeLight` / `autoThemeDark`）要一次清四个
-/// —— 只清一个的话生效主题可能仍被同组另一个工作区键决定；其余键各自一组。
 fn run_appearance_revert_probe(key: String, window: &mut Window, _cx: &mut App) {
     let Some(key) = lithe_gpui_settings::AppearanceKey::from_json_key(&key) else {
-        // 命令行解析已经挡过一次；这里只兜住"解析表被改坏"的极端情况，不 panic。
         eprintln!("--appearance-revert：未知外观键 {key}");
         return;
     };
@@ -729,20 +445,6 @@ fn run_appearance_revert_probe(key: String, window: &mut Window, _cx: &mut App) 
     });
 }
 
-/// `--project-menu-probe` 的驱动函数：**首帧之后**把标题栏的项目下拉打开。
-///
-/// **为什么需要这个入口**（不是产品能力）：与 [`run_menu_probe`] 完全同因 —— 本机工作站
-/// 当前**锁屏**，鼠标/键盘注入到不了应用，而"项目下拉长什么样、当前项目行有没有高亮打勾、
-/// 空态文案对不对"这些正是本任务的要紧处；没有它就无法在无人值守环境里取证。
-///
-/// ⚠️ 它**不绕开**面板：调的是 [`lithe_gpui_workbench::project_menu::ProjectMenu::open_by_probe`]，
-/// 它写的那个 `open` 字段与"点触发器"回调（`ProjectMenu::toggle`）写的是**同一个**，
-/// 渲染也是同一段代码。被绕开的只有"操作系统把这次点击送进窗口"那一段，
-/// 与 `--menu-probe` 绕开点击、`--open-palette` 绕开 `Ctrl+Shift+P` 是同一条口径。
-///
-/// ⚠️ 必须等**首帧之后**：`Root::new` 还没返回时窗口根不是 `Root`，浮层只能在事件回调或
-/// 任务里打开（`render` 阶段会 panic）；而 `PrintWindow` 只能拿到"已经画出来的帧"，
-/// 启动期画的头几帧正是无人值守环境里唯一能截到的新帧（理由见 `menu_probe_open_ms` 的文档）。
 fn run_project_menu_probe(window: &mut Window) {
     let menu = lithe_gpui_workbench::project_menu::handle();
     window.on_next_frame(move |_window, cx| {
@@ -750,72 +452,28 @@ fn run_project_menu_probe(window: &mut Window) {
     });
 }
 
-/// 「无参数启动」这条链的诊断前缀（可 grep）。
-///
-/// ⚠️ 走 **stderr**（`eprintln!`）：release 是 GUI 子系统，没有控制台，只有把
-/// stdout/stderr 重定向到文件才看得见；而 stdout 在被重定向时是**块缓冲**的，
-/// 进程还在跑（窗口开着）时它可能一行都没落盘。stderr 是无缓冲的，验证脚本 grep 它才稳定
-/// （与本文件开头的 `S1_ASSETS` 同一条理由）。
 const LAUNCH_TAG: &str = "S1_WORKSPACE_LAUNCH";
 
-/// 这一次启动开出什么。
-///
-/// 两支的判据是纯函数 [`choose_launch_root`]（`None` = 欢迎页）；这一层只负责把它
-/// 与"读最近项目文件 / 探测目录 / 标记失效条目"接起来。
 enum LaunchPlan {
-    /// 有可用根：开工作区（`Lithe <root>` 与"双击且最近项目里有可用根"两条既有行为）。
     Workspace(PathBuf),
-    /// 没有活动项目：开欢迎页（U10）。带上**已经读好、并且已经把失效条目标过**的那一份列表
-    /// —— 欢迎页不需要再读一次文件（两次读之间也不可能看到不同的内容）。
     Welcome(lithe_gpui_settings::LoadedRecentProjects),
 }
 
-/// 启动根的**纯选择**：显式路径 > 最近且存在的项目 > `None`（= 欢迎页）。
-///
-/// 两个候选都由调用方准备好，所以这条优先级规则只有一个落点、也就能直接单测
-/// （见本文件底部的 `mod tests`）。真正的"读文件 / 探测目录"都在 [`resolve_launch_plan`]。
-///
-/// ⚠️ `None` 在 U10 之前**不存在**：那时第三支是"回落当前工作目录"
-/// （`fallback_directory`，为了让双击启动"窗口一定开得出来"）。现在那个目的由**欢迎页**
-/// 承担 —— 它同样是一个真的开出来的窗口，而语义与真源一致（没有活动项目 ⇒ 欢迎页，
-/// 见 `lithe_gpui_workbench::welcome` 的模块文档）。`fallback_directory` 随之删除：
-/// 留着它就是一段永远走不到、但读起来像还有兜底的死代码。
 fn choose_launch_root(explicit: Option<PathBuf>, recent_root: Option<String>) -> Option<PathBuf> {
     explicit.or_else(|| recent_root.map(PathBuf::from))
 }
 
-/// 没给位置参数时决定开什么：**读最近项目 → 挑第一条存在的 → 标记失效条目 → 有根开工作区 /
-/// 没根开欢迎页**。
-///
-/// 为什么双击 `Lithe.exe` 会走到这里（根因，别再踩）：位置参数在原实现里是
-/// `root.ok_or_else(|| USAGE.to_string())?` —— **必填**；解析失败走
-/// `std::process::exit(2)`，而 release 是 GUI 子系统（`windows_subsystem = "windows"`），
-/// **没有控制台**，那段用法说明写到哪里都看不见，于是双击的表现就是"毫无反应地静默退出"。
-///
-/// U10 起第三支从"回落当前工作目录"改成**欢迎页**：`select_launch_root` 已经把
-/// "一条可用的都没有"如实报成 `pick.root = None`，继续拿 CWD 当根就会开出一个
-/// 用户从没选过的工作区（真源没有这一态）。
 fn resolve_launch_plan(explicit: Option<PathBuf>) -> LaunchPlan {
-    // 显式路径这一支**故意不读最近项目文件**：`Lithe <root>` 的既有行为一字不改
-    // （不产生新的诊断行，也不会去动 `recent-projects.json`）。
     if explicit.is_some() {
         let root = choose_launch_root(explicit, None).expect("刚判过 explicit 是 Some");
         return LaunchPlan::Workspace(root);
     }
 
-    // 与项目菜单**同一份**数据（`%APPDATA%\Lithe\recent-projects.json`，或
-    // `LITHE_GPUI_SETTINGS_FILE` 指到的那个目录里的同名文件）。
     let mut loaded = lithe_gpui_settings::load_recent_projects();
     let pick = loaded
         .projects
         .select_launch_root(|path| std::path::Path::new(path).is_dir());
 
-    // 顺手把失效条目标成 `missing` 并落盘 —— 与项目菜单里点一条失效项目的行为一致
-    // （`ShellWorkspace::request_open_project` 的 `set_missing` + `save_recent_projects`）。
-    // `pick.missing` 里的每条路径都来自列表本身，所以 `set_missing` 必然命中（不需要判返回值）。
-    //
-    // ⚠️ 直接改 `loaded.projects`（2026-09-27 那版是改一个 clone）：落盘内容逐字节相同，
-    // 但 U10 之后这份列表会**交给欢迎页**，改 clone 会让界面上的 `missing` 与文件里的不一致。
     let missing = pick.missing.len();
     if missing > 0 {
         for path in &pick.missing {
@@ -827,14 +485,12 @@ fn resolve_launch_plan(explicit: Option<PathBuf>) -> LaunchPlan {
                     "{LAUNCH_TAG} recent_marked_missing={missing} saved bytes={bytes} path={}",
                     file.display()
                 ),
-                // 写失败不 panic：选根照常继续，下一次打开项目会再写一次。
                 Err(error) => eprintln!("{LAUNCH_TAG} recent_save_failed error={error}"),
             },
             None => eprintln!("{LAUNCH_TAG} recent_mark_skipped reason=no_path"),
         }
     }
 
-    // 一行可 grep 的启动证据：选了谁、候选有几条、跳过了几条失效的。
     let candidates = loaded.projects.len();
     match choose_launch_root(None, pick.root) {
         Some(root) => {
@@ -845,20 +501,12 @@ fn resolve_launch_plan(explicit: Option<PathBuf>) -> LaunchPlan {
             LaunchPlan::Workspace(root)
         }
         None => {
-            // 挑不到可用根：**开欢迎页**（U10）。诊断词表里的 `source=welcome` 就是
-            // "这一次走的是欢迎态"的机器判据（`source=recent` 是老的那一支）。
             eprintln!("{LAUNCH_TAG} source=welcome candidates={candidates} missing={missing}");
             LaunchPlan::Welcome(loaded)
         }
     }
 }
 
-/// bin 目标的入口点。
-/// 启动顺序（0.6.6 只有这一种写法，顺序错会静默失败或 panic）：
-/// `application().with_assets(..).run` → `set_locale` → `gpui_kit::init` → `Theme::change` →
-/// 设置（读文件 + 主题监听 + 动作）→ `cx.spawn` → `open_window` → `Root::new`。
-/// `Root` **必须是窗口的第一层**：它负责对话框、抽屉、通知与焦点归还；`Root::new` 之前不得
-/// 打开任何浮层（那时窗口根还不是 `Root`，`window.open_dialog` 会 panic）。
 fn main() {
     let Options {
         root,
@@ -895,18 +543,8 @@ fn main() {
         }
     };
 
-    // 开什么：显式给了位置参数就用它（既有行为一字不改）；一个位置参数都没给就挑一个
-    // —— 资源管理器里双击 `Lithe.exe` 走的正是后者（见 [`resolve_launch_plan`] 的根因说明），
-    // 挑不到可用根时这一支是**欢迎页**（U10）。
     let plan = resolve_launch_plan(root);
 
-    // `--right-view <id>`：**先解析**，未知 id 在这里就报一行错并**不改动启动状态**
-    // （解析成 `None` 之后，窗口那段 `if let Some(view)` 整段不执行，右工具窗保持
-    // "隐藏 + `Maven`"的默认值，与不带这个参数时完全一样）。
-    // 例外：`extensions` 是**中央扩展页**（2026-09-29 起，不是右工具窗视图 ——
-    // `RightToolWindowView::from_id` 已不认它），走 `ShellStartup` 的独立开关。
-    // 报错走 stderr：stdout 重定向到文件时是块缓冲的，进程还在跑时可能一行都看不到
-    // （理由与本文件开头的 `S1_ASSETS` 一致）。
     let extensions_page_probe = right_view.as_deref() == Some("extensions");
     let right_view_probe = right_view
         .as_deref()
@@ -920,7 +558,6 @@ fn main() {
                 None
             }
         });
-    // `--left-view <id>`：同一套（未知取值报一行错，不改动启动状态）。
     let left_view_probe = left_view.as_deref().and_then(|selector| {
         match lithe_gpui_workbench::left_activity_index(selector) {
             Some(index) => Some(index),
@@ -931,50 +568,14 @@ fn main() {
         }
     });
 
-    // 设置文件必须在 `set_locale` 之前读：界面语言的常规来源就是它
-    // （`--locale` 只是本次启动的显式覆盖）。这一步是纯文件读取，不需要 `App`。
     let loaded = lithe_gpui_settings::load();
     let locale = locale_override
         .clone()
         .unwrap_or_else(|| loaded.settings.gpui_locale().to_string());
 
     gpui_kit::application()
-        // 资源源分两层（`src/assets.rs`）：
-        //
-        // 1. **我们自己搬进来的资源**（`lithe-gpui/assets/**`，用 `rust-embed` 编译期内嵌）。
-        //    实测内嵌 **411 个文件**（根目录的 `README.md` 与 `fonts/` 已由 `#[exclude]`
-        //    挡在二进制外），合计 **3 317 489 字节（约 3.16 MiB）**，按目录分三组：
-        //    `icons/idea/**`（254 个文件，2026-09-30 起 expui 界面图标已并入图标包，
-        //    界面图标与文件类型图标同源；文件图标主题 id 是编译期常量
-        //    `ACTIVE_FILE_ICONS = "idea"`）、`icons/pierre/**`（149 个文件）、
-        //    `app-icon/**`（7 个位图）、`images/logo.png`（品牌图）。
-        //    ⚠️ `icons/{lithe,symbols,material}` 三套（459 + 325 + 2 = 786 个文件，
-        //    约 4.97 MiB）已被 `#[exclude]` 挡在二进制外，**磁盘上一个文件
-        //    都没删**（将来做图标主题切换还要用）；收窄前 `lithe-gpui/assets/**` 全量是 1 203 个文件 /
-        //    8 567 891 字节。口径与理由见 `src/assets.rs` 的模块文档。
-        // 2. **回落 gpui-kit 的全量 Lucide 字形**（1830 个，`gpui_kit::assets::AllAssets`）。
-        //
-        // ⚠️ 只能 `with_assets` **一次**：它签名是 `impl AssetSource`，第二次调用是**覆盖**
-        // 而不是叠加（`gpui-pre-0.3.6/src/app.rs:198-206`）。所以两者由 `LitheAssets` 组合。
-        //
-        // 为什么必须是 `AllAssets`（全量）而不是默认的 `Assets`（101 个字形子集）：
-        // `Assets` 由 `gpui-kit-assets-0.6.6/build.rs` 按 `default-icons.txt` 过滤生成
-        // （`native_assets.rs:5` 的 `include!(default_assets.rs)`），里面**没有任何 `git-*`
-        // 字形**；而 Windows 规格的源码管理 / 提交记录 / 分支全要 git 字形
-        // （`IconName::GitBranch`、`IconName::GitGraph`）。`AllAssets` 是同一 crate 的
-        // `#[folder = "assets"]` 全量嵌入（`native_assets.rs:9-11`、`lib.rs:36`）。
         .with_assets(assets::LitheAssets)
         .run(move |cx| {
-            // S1_ASSETS：启动诊断，证明包装层被注册、并且两侧资源都能列出来。
-            // 它同时是"回落没坏"的最早证据：`fallback_icons` 是 Lucide 一侧的数量，
-            // `embedded` 是我们自己嵌进来的文件数，`idea_icons` 是其中的图标集子集。
-            //
-            // ⚠️ 走 **stderr**（`eprintln!`），不走 stdout：stdout 在重定向到文件时是
-            // **块缓冲**的，进程还在跑时日志文件里可能一行都看不到（本机实测：同一份
-            // 二进制 + 同一个参数，日志里出现过 3 行、也出现过 0 行，纯粹取决于缓冲区
-            // 有没有被填满/刷新）。stderr 是无缓冲的，验证脚本 grep 它才稳定。
-            // 这也与 `crates/settings` 的 `S1_SETTINGS` 诊断同一口径
-            // （`persistence.rs:13` 记的就是"统一走 stderr"）。
             #[cfg(debug_assertions)]
             {
                 eprintln!(
@@ -983,17 +584,6 @@ fn main() {
                     assets::LitheAssets::embedded_count_under("icons/idea/"),
                     assets::LitheAssets::fallback_count()
                 );
-                // 关键路径探针：证明 `AssetSource::load` 真的能取到我们清单里写的那些键。
-                // 只是 print 一批路径名是不够的 —— 名字对但 `load` 语义错（例如回落把 Err 折叠成
-                // Ok(None) 之后上层当成"空 SVG"）时，界面会**静默画不出东西**。
-                //
-                // ⚠️ 路径清单的真源是 `assets::PROBE_PATHS`（**唯一一处**）：这里遍历它，
-                // `src/assets.rs` 的 `probe_paths_are_loadable_from_the_embedded_table`
-                // 也用它做回归输入 —— 那条测试同时要求"路径在我们内嵌的表里"与"`load`
-                // 拿得到非空字节"。只钉后者是不够的：`LitheAssets::load` 会回落 Lucide，
-                // 而 Lucide 里恰好也有 `icons/settings.svg` —— 那条写错的探针当年就是
-                // **经回落拿到 586 字节**（`lithe-gpui/research/icon-asset-inventory.md:531`），
-                // 日志看着正常，其实一点都没证明我们的键能用。
                 for &probe in assets::PROBE_PATHS {
                     let hit = assets::probe_len(probe);
                     eprintln!(
@@ -1002,34 +592,11 @@ fn main() {
                     );
                 }
             }
-            // 语言：Lithe 的产品默认是简体中文（`crates/shared/locales/source/locale.ts` 的 zh-CN
-            // 目录就是本仓库的文案真源）。gpui-kit **组件自己**的文案用它自带的 zh-CN，
-            // 所以这里不需要 `rust_i18n::extend!(gpui_component)` —— 那个宏要求把
-            // `gpui-component` 加成**直接依赖**（它展开成 `gpui_component::_rust_i18n_extend(..)`，
-            // 并用 `stringify!($target)` 当 namespace，见 `rust-i18n-4.2.2/src/lib.rs:214-219`），
-            // 而 gpui-kit 的编码规范要求"应用只依赖 gpui-kit 一个 crate"。两者冲突以规范为准；
-            // 我们自己的文案走 `lithe_gpui_shared::{tr, tr_args}`。
             gpui_kit::component::set_locale(&locale);
             gpui_kit::init(cx);
-            // `gpui_kit::init` 默认给**浅色**主题，而 Lithe 产品默认是深色，所以显式切一次。
-            // 主题文件加载是异步的（`ThemeRegistry::watch_dir` 内部 `cx.spawn`），真正生效的主题
-            // 由下面 `watch_lithe_themes` 的回调按设置里的值应用；这一句只是让"主题还没到位"
-            // 的那一帧也是产品默认的深色，而不是浅色。
             Theme::change(ThemeMode::Dark, None, cx);
-            // **滚动条常显**：gpui-kit 默认是 `ScrollbarMode::Scrolling`（滚动时才出现、
-            // 停下就淡出，`gpui-base/src/scrollbar.rs:48-56`），而 IDE 的观感是常显细条 + 可拖。
             Theme::set_scrollbar_mode(gpui_kit::component::scroll::ScrollbarMode::Always, cx);
 
-            // 设置：登记状态（含读文件结果与 `--theme` 覆盖）→ 捆绑扩展准备 → 字体注册 →
-            // 主题目录装载/监听 → `Ctrl+,` 动作。
-            //
-            // ⚠️ 顺序有硬要求（见 `lithe_gpui_settings::lib.rs` 的启动顺序表）：
-            // ① `watch_lithe_themes` 的回调要用 `SettingsStore`，主题的**应用**只在那个回调里发生；
-            // ② 捆绑扩展的同步（迁移老主题文件 + 写出主题/字体包）必须早于**字体注册** ——
-            //    字体是从管理面目录读出来喂给文本系统的，同步没跑就一个字族都注册不上；
-            // ③ 字体注册必须早于**第一次主题应用** —— `theme::installed_font_names` 的
-            //    已装字族表是**进程内缓存一次**的，晚了会把内置的 `JetBrains Mono`
-            //    （默认代码字体）判成"没装"而拒绝写入（`S1_THEME font_family_rejected`）。
             let store: gpui_kit::Entity<SettingsStore> = lithe_gpui_settings::init_store(
                 cx,
                 Init {
@@ -1043,18 +610,9 @@ fn main() {
             lithe_gpui_settings::register_fonts(cx);
             lithe_gpui_settings::watch_lithe_themes(cx);
             lithe_gpui_settings::install_actions(cx);
-            // 子视图 crate（explorer 等）的键位登记：app 不直接依赖它们，所以经 workbench 转出
-            // （理由见 `lithe_gpui_workbench::install_actions` 的文档）。
             lithe_gpui_workbench::install_actions(cx);
             let _ = store;
 
-            // 外壳的启动期形态登记成 `App::Global`：换项目会**重建整个 `ShellWorkspace`**，
-            // 而重建点在 `window.replace_root` 的闭包里 —— 那里捕获不到下面的局部值
-            // （理由见 `lithe_gpui_workbench::ShellStartup` 的文档）。
-            //
-            // `--right-view` / `--left-view` 也一起登记：它们在 `ShellWorkspace::new` 里应用，
-            // 于是**换根重建出来的外壳也会应用** —— 那正是"换根后右栏面板与 Git 变更视图
-            // 指向新根"这条验收线要的证据（视图不打开就不会去扫 / 去读）。
             lithe_gpui_workbench::set_shell_startup(
                 cx,
                 compact_menu_bar,
@@ -1062,26 +620,9 @@ fn main() {
                 extensions_page_probe,
                 left_view_probe,
             );
-            // `Ctrl+O` = 「文件 → 打开文件夹」（真源 `file.open`，Q18）。
-            // ⚠️ 在**这里**登记（App 级、一次），不在 `ShellWorkspace::new` 里：
-            // `App::on_action` 是累加的，而 `new` 每次换根都会再跑一遍 ——
-            // 换一次项目就多一个处理器，同一个键会被处理多次。
             lithe_gpui_workbench::install_open_project_action(cx);
-            // B2 的六条「菜单项也有的键位入口」：`Ctrl+Shift+T` 重新打开已关闭标签页 /
-            // `Ctrl+B` 侧栏 / `Ctrl+J` 终端 / `Ctrl+=` `Ctrl+-` `Ctrl+0` 缩放。
-            //
-            // ⚠️ 与上面那条**同一条理由**（也必须在这里、只在这里）：`App::on_action` 是累加的，
-            // 而 `ShellWorkspace::new` 每换一次项目就会再跑一遍 —— 放那里会让同一个键
-            // 被处理 N 次。键位字面量在 `lithe_gpui_workbench::menu_bar` 的常量里
-            // （与菜单项显示的那颗键同一份），登记时逐条读它们。
             lithe_gpui_workbench::menu_bar::install_key_actions(cx);
 
-            // 窗口尺寸按形态给（U10）：欢迎态 800×650 且**最小尺寸同值**（真源
-            // `RootView.swift:350`/`:367`），工作区那档仍是"94% 的普通窗口 + 1024×680 下限"。
-            //
-            // ⚠️ 最小尺寸必须跟着形态变：工作区那档的 1024×680 比 800×650 大，只改
-            // `window_bounds` 会被平台按最小尺寸顶回去。窗口**位置**两档都由
-            // `centered_window_bounds` 居中（同一条真源）。
             let (bounds, min_size) = match &plan {
                 LaunchPlan::Welcome(_) => (welcome_window_bounds(cx), WELCOME_WINDOW_SIZE),
                 LaunchPlan::Workspace(_) => (startup_window_bounds(cx), MIN_WINDOW),
@@ -1095,28 +636,14 @@ fn main() {
                 };
 
                 cx.open_window(window_options, move |window, cx| {
-                    // U10：窗口根有两支，先分流。
-                    //
-                    // 欢迎态**不建** `ShellWorkspace`：它的构造期要建 `.lithe/`、读会话、
-                    // 发 `workspace.snapshot` / `git.status` / `maven.scan`，全部以"根是一个
-                    // 真实项目"为前提；而且下面那一整段启动探针（会话恢复、外观回退、
-                    // 菜单/项目下拉探针、`--open-project-probe`）都要外壳的实体或工作区根
-                    // —— 欢迎态下它们没有意义，也没有落点，所以整段不跑。
-                    // 设置 / 语言 / 主题在这一刻之前就装好了（上面 `init_store` 那段），
-                    // 所以欢迎页里的设置按钮与 `--theme` / `--locale` 照常生效。
                     let workspace_root = match plan {
                         LaunchPlan::Welcome(loaded) => {
                             let content = cx.new(|cx| {
                                 let welcome = cx.new(|cx| {
                                     WelcomeView::new(loaded.projects, loaded.path, window, cx)
                                 });
-                                // 窗口根**必须**是 `Root`（对话框 / 浮层 / 通知的宿主），
-                                // 欢迎页也不例外 —— 设置对话框与「打开文件夹」的系统选择器
-                                // 都挂在它上面。
                                 Root::new(welcome, window, cx)
                             });
-                            // 「跟随系统外观」要在有窗口之后登记（收 `&mut Window`）——
-                            // 与工作区那一支同一句，否则欢迎页在切换系统明暗时不跟随。
                             if let Some(store) = lithe_gpui_settings::try_store(cx) {
                                 store.update(cx, |store, cx| store.attach_window(window, cx));
                             }
@@ -1136,39 +663,19 @@ fn main() {
                             cx,
                         )
                     });
-                    // 系统外观监听要在有窗口之后注册（`Context::observe_window_appearance`
-                    // 收 `&mut Window`）；设置里的「跟随系统」才需要它。
                     if let Some(store) = lithe_gpui_settings::try_store(cx) {
                         store.update(cx, |store, cx| store.attach_window(window, cx));
                     }
-                    // `--open-settings`：**首帧之后**再开对话框。这里用 `on_next_frame`
-                    // （`gpui-pre-0.3.6/src/window.rs:2610`）而不是立即调用，因为
-                    // `Root::new` 还没返回、窗口根还不是 `Root`，而浮层只能在事件回调或任务里
-                    // 打开（`render` 阶段会 panic）。
                     if open_settings {
                         window.on_next_frame(|window, cx| {
                             lithe_gpui_settings::open_settings_dialog(window, cx);
                         });
                     }
-                    // `--open-palette`：同上，只是换成命令面板。它调的是**按键最终落到的那
-                    // 同一个函数**（`open_command_palette`，也就是 `OpenCommandPalette` 全局
-                    // 处理器里面的那句）；被绕开的只有"操作系统把 `Ctrl+Shift+P` 送进窗口"这一段。
-                    //
-                    // ⚠️ 这里**不用** `window.dispatch_action(..)`：`Window::dispatch_action`
-                    // 走的是 `dispatch_action_on_node(node_id, ..)`（`window.rs:2442-2454`），
-                    // 只派发给**焦点节点及其祖先**上的处理器，**不触发** `App::on_action` 注册的
-                    // 全局监听器 —— 本轮实测它一次都没进 `open_command_palette`（无
-                    // `S1_COMMAND_PALETTE` 行）。全局 action 的官方路径是按键派发
-                    // （`dispatch_key_event` → `dispatch_action_on_node` 后冒泡到全局），
-                    // 或直接调用处理函数本身。
                     if open_palette {
                         window.on_next_frame(|window, cx| {
                             lithe_gpui_workbench::command_palette::open_command_palette(window, cx);
                         });
                     }
-                    // `--menu-probe`：打开某个顶级菜单，必要时再执行一条菜单动作。
-                    // 同样放在首帧之后（理由同上），并且**不经过命令行之外任何新通路**
-                    // （见 [`run_menu_probe`] 的说明）。
                     if let Some((menu_id, action_id)) = menu_probe {
                         run_menu_probe(
                             menu_id,
@@ -1179,7 +686,6 @@ fn main() {
                             cx,
                         );
                     }
-                    // `--theme-probe`：执行「视图 → 主题」子菜单的一项。同样在首帧之后。
                     if let Some(selector) = theme_probe {
                         window.on_next_frame(move |_window, cx| {
                             let bar = lithe_gpui_workbench::menu_bar::handle();
@@ -1190,26 +696,12 @@ fn main() {
                             });
                         });
                     }
-                    // `--project-menu-probe`：打开标题栏的项目下拉。同样在首帧之后。
                     if project_menu_probe {
                         run_project_menu_probe(window);
                     }
-                    // `--appearance-revert <键名>`：执行一次「改回我的全局外观」。
-                    // 同样在首帧之后（那时 `ShellWorkspace::new` 已经把工作区根登记进设置状态）。
                     if let Some(key) = appearance_revert.clone() {
                         run_appearance_revert_probe(key, window, cx);
                     }
-                    // `--right-view` / `--left-view`：**不在这里**处理。
-                    // 它们已经在 `set_shell_startup` 里登记进 `ShellStartup`，由
-                    // `ShellWorkspace::new` 在构造期应用 —— 那样**换根重建出来的外壳也会应用**，
-                    // 而这里的一次性 `on_next_frame` 只够得着第一个外壳（理由见那个 Global 的文档）。
-                    //
-                    // `--open-project-probe`：**首帧之后**走一遍「打开文件夹」。
-                    //
-                    // ⚠️ 必须在 `Root` 就位前后都行（这里在 `Root::new` **之前**）：它只是
-                    // "请求打开"，真正的对话框 / 换根发生在 `request_open_project` 里 ——
-                    // 而那一段要 `window.open_dialog`，所以它会经由 `on_next_frame` 再排一帧，
-                    // 那时 `Root` 已经装好了。
                     if let Some(target) = open_project_probe {
                         let workspace = workspace.clone();
                         let explicit = open_project_destination.clone();
@@ -1230,14 +722,6 @@ fn main() {
                                 });
                                 return;
                             }
-                            // 延时档：与 `--menu-probe-delay` 同一实现（**后台执行器**上的
-                            // timer；不能在前台线程 `block_on` 一个 timer —— 前台被占住时
-                            // 定时器永远不触发，任务会静默死掉）。
-                            //
-                            // ⚠️ 这里只能用 `WeakEntity` + `App::active_window()` 拿回
-                            // `&mut Window`：`cx.update(..)` 给的是 `&mut App`，
-                            // 而换项目那条链要窗口（弹对话框 / 换根）。与
-                            // `install_open_project_action` 的取窗口方式同一条路。
                             println!("S1_OPEN_PROJECT_PROBE delay_ms={open_project_delay_ms}");
                             let shell = workspace.downgrade();
                             let executor = cx.background_executor().clone();
@@ -1266,16 +750,6 @@ fn main() {
                             .detach();
                         });
                     }
-                    // `--session-probe` / `--session-assert`：会话的**恢复**已经在
-                    // `ShellWorkspace::new`（构造期）做完了 —— 这里只做两件事：
-                    // ① 探针把"点开三个文件、把第二个设为当前、收起侧栏"这段迁移真的走一遍
-                    //    并立刻 flush（强杀不会走 `on_app_quit` 的补写，所以必须显式写）；
-                    // ② `--session-assert` 把恢复出来的状态打成一行可 grep 的证据。
-                    //
-                    // ⚠️ **不能放进 `window.on_next_frame`**：本轮实测 —— 无人值守启动里
-                    // 帧回调一次都不跑（窗口在、`MainWindowHandle` 非零、`Responding=true`，
-                    // 但探针一行都没有）。所以这一段在**窗口建好之后立刻**执行：那时 `Root`
-                    // 还没建，但它只用编辑区（打开文件）与外壳的几个字段，不碰任何浮层。
                     if session_probe.is_some() || session_assert {
                         let _ = workspace.update(cx, |this, cx| {
                             if let Some(paths) = session_probe.clone() {
@@ -1292,16 +766,8 @@ fn main() {
                             }
                         });
                     }
-                    // `Root` 必须是窗口的第一层：它负责对话框、浮层与通知。
                     let root_entity = cx.new(|cx| Root::new(workspace, window, cx));
 
-                    // `--palette-keys`：**在 `Root` 装好之后**、首帧之后再开始派发按键。
-                    //
-                    // ⚠️ 两个"不能更早"都有实测理由：
-                    // 1. `dispatch_keystroke` 会同步走一次 `Window::draw`（`window.rs:5810-5813`），
-                    //    而 `draw` 里 `self.root.as_ref().unwrap()`（`window.rs:3540`）**要求窗口
-                    //    根已就位** —— 本轮第一次尝试就是在这里 panic 的（`None` unwrap）；
-                    // 2. `on_next_frame`（`window.rs:2610`）保证不在 render 阶段改窗口状态。
                     if !palette_keys.is_empty() {
                         println!("S1_KEYS plan={}", palette_keys.len());
                         let Some(focus) = lithe_gpui_workbench::command_palette::shell_focus()
@@ -1318,7 +784,6 @@ fn main() {
                         };
                         root_entity.update(cx, |_root, cx| {
                             cx.spawn_in(window, async move |_root, cx| {
-                                // 首帧之后再开始：与 `--open-settings` 同一条理由。
                                 cx.background_executor()
                                     .timer(std::time::Duration::from_millis(400))
                                     .await;
@@ -1336,35 +801,13 @@ fn main() {
                 .expect("failed to open window");
             })
             .detach();
-
-            // ⚠️ **这里不能加"驻留循环"**（曾经有一个 `--session-keep-alive`，已删除）：
-            // `application().run(..)` 的 `run` 之后**必须让 `run` 进入事件循环**，上面那次
-            // `cx.spawn`（建窗口的那一段）才会被轮询 —— 本轮实测：在 `main` 里睡一秒的循环
-            // 会把窗口创建任务整个饿死（窗口不存在、`ShellWorkspace::new` 一行都不打、
-            // `Get-Process` 报的 `MainWindowHandle` 其实是进程的控制台窗口）。
-            // 探针的验证改为"由脚本在后台启动 + 轮询磁盘上刚落盘的会话文件"（见
-            // `.artifacts/session-e2e.ps1`），不需要驻留。
         });
 }
 
-/// 启动形态判定的单测。
-///
-/// 只测**纯函数**（[`choose_launch_root`]）与另一条纯函数
-/// （`lithe_gpui_settings::RecentProjects::select_launch_root`，在 settings crate 里测）：
-/// 这两条合起来就是"无参数启动开什么"的全部判断，不需要构造 GPUI、不需要真的建目录。
-///
-/// ⚠️ U10 起第三支（两个候选都没有）= **欢迎页**，不再是"回落当前工作目录"：
-/// 后者的两条测试（`fallback_directory_is_used_when_there_is_no_recent_project` /
-/// `fallback_directory_is_a_real_directory`）随 `fallback_directory` 一起删除 ——
-/// "窗口一定会开出来"这条口径改由欢迎页承担（它同样是一个真的开出来的窗口），
-/// 留着那两条断言会钉一个已经不存在的行为。本文件的测试数因此从 4 变成 4
-/// （删 2 条、加 2 条：`no_root_at_all_shows_the_welcome_page` 与真值表那条）。
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// **显式路径优先**：`Lithe <root>` 的既有行为一字不改 —— 即使最近项目里有一条存在的，
-    /// 命令行给的那个也必须赢。
     #[test]
     fn explicit_root_wins_over_the_recent_project() {
         let root = choose_launch_root(
@@ -1374,25 +817,17 @@ mod tests {
         assert_eq!(root, Some(PathBuf::from(r"D:\explicit")));
     }
 
-    /// 没有显式路径时用**最近且存在的项目**（那一支就是双击启动的既有行为）。
     #[test]
     fn recent_project_is_used_when_there_is_no_explicit_root() {
         let root = choose_launch_root(None, Some(r"D:\recent".to_string()));
         assert_eq!(root, Some(PathBuf::from(r"D:\recent")));
     }
 
-    /// **U10 的触发条件**：没有位置参数、最近项目里也没有可用根 ⇒ `None` = 欢迎页。
-    ///
-    /// 反证：把这一支改回 U10 之前的行为（`unwrap_or(fallback_directory())`）就立刻变红。
     #[test]
     fn no_root_at_all_shows_the_welcome_page() {
         assert_eq!(choose_launch_root(None, None), None);
     }
 
-    /// 真值表：**只有**两个候选都缺席时才是欢迎页。
-    ///
-    /// 与上面三条各自的单点断言互补 —— 这条挡的是"判据被写成 `&&` / 顺序被调换"
-    /// 这类把某一支并进欢迎页的改动（那种改动会让"双击有最近项目的人"直接落到欢迎页）。
     #[test]
     fn welcome_page_requires_both_candidates_missing() {
         let explicit = PathBuf::from(r"D:\explicit");

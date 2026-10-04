@@ -1,27 +1,3 @@
-//! JDT LS **工作区索引缓存**的宿主侧：指纹输入、缓存键、目录、过期回收。
-//!
-//! 移植自 Windows host 的 `windows/tauri/src-tauri/src/lsp/jdt_workspace.rs`。
-//!
-//! ## 分工（契约 `shared/contracts/rust-core-api.md:1239-1301`）
-//!
-//! | 谁 | 做什么 |
-//! | --- | --- |
-//! | 平台（本模块） | 观察根构建描述符的时间戳/大小与直接 Maven 模块名；枚举缓存目录；读写 last-used 标记；删除目录 |
-//! | Rust Core | `java.jdtWorkspaceFingerprint` 归一化 + 哈希；`lsp.jdtWorkspaceKey` 算目录名；`java.jdtCacheRetention` 选过期项（固定 30 天） |
-//!
-//! Core 里那句"Omitting the fingerprint preserves the legacy path-only key for older clients"
-//! 说的是兼容路径：**我们总是带指纹**，否则同一路径换了项目结构会复用一份陈旧的项目模型。
-//!
-//! ## 目录形状
-//!
-//! ```text
-//! <cacheDirectory>/jdtls/<workspaceKey>/      ← Core 自己拼的后两级（jdt.rs 的 JDTLS_DATA_DIRECTORY）
-//! ```
-//!
-//! 所以宿主只需要给出 `cacheDirectory`，`lsp.startServer` 会把 `-data` 指到
-//! `cacheDirectory/jdtls/<workspaceKey>`。本模块额外**自己算一遍**同一个键，用途只有两个：
-//! 回收时排除"正在用的那个"，以及给验证链路一个可以 `dir` 的稳定路径。
-
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,34 +5,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use lithe_gpui_shared::core_json;
 use serde_json::{Value, json};
 
-/// 根构建描述符（与 Windows 同一份列表；**不递归**遍历，递归是 JDT 自己的事）。
 const WORKSPACE_BUILD_FILES: &[&str] = &["pom.xml", "build.gradle", "build.gradle.kts"];
-/// last-used 标记文件名（Windows 的 `JDT_CACHE_LAST_USED_MARKER`）。
 pub(crate) const LAST_USED_MARKER: &str = ".lithe-last-used";
-/// 缓存根目录的显式覆盖（验证链路用；与 `LITHE_GPUI_SETTINGS_FILE` 同一口径）。
 pub(crate) const CACHE_DIR_ENV: &str = "LITHE_GPUI_CACHE_DIR";
 
-/// 一次启动要用的 JDT 索引缓存计划。
 #[derive(Clone, Debug)]
 pub(crate) struct JdtIndexCache {
-    /// 送进 `lsp.startServer` 的 `cacheDirectory`（**不含** `jdtls/<key>` 两级）。
     pub(crate) cache_directory: PathBuf,
-    /// `lsp.jdtWorkspaceKey` 返回的 64 位小写十六进制键。
     pub(crate) workspace_key: String,
-    /// `java.jdtWorkspaceFingerprint` 返回的不透明指纹，原样回传、**不解析**。
     pub(crate) workspace_fingerprint: String,
-    /// 本次启动前该工作区状态目录是否已经存在（"重开复用"的直接证据）。
     pub(crate) state_directory_existed: bool,
 }
 
 impl JdtIndexCache {
-    /// Core 为这次会话选择的状态目录（`cacheDirectory/jdtls/<workspaceKey>`）。
     pub(crate) fn state_directory(&self) -> PathBuf {
         self.cache_directory.join("jdtls").join(&self.workspace_key)
     }
 }
 
-/// 算这次启动的缓存计划：观察 → Core 指纹 → Core 键 → 目录。
 pub(crate) fn plan(workspace_root: &Path, jdtls_version: &str) -> Result<JdtIndexCache, String> {
     let inputs = collect_fingerprint_inputs(workspace_root)?;
     let workspace_fingerprint = resolve_fingerprint(&inputs, jdtls_version)?;
@@ -74,15 +40,6 @@ pub(crate) fn plan(workspace_root: &Path, jdtls_version: &str) -> Result<JdtInde
     })
 }
 
-/// 平台缓存根（**不含** `language-servers`）。
-///
-/// gpui 没有 `app_cache_dir`（Windows host 用的是 Tauri 的），所以平台分支在这里：
-///
-/// | 平台 | 路径 |
-/// | --- | --- |
-/// | Windows | `%LOCALAPPDATA%\Lithe\cache`（Tauri `app_cache_dir` 的同口径） |
-/// | macOS | `~/Library/Caches/Lithe` |
-/// | Linux | `$XDG_CACHE_HOME/lithe`，回落 `~/.cache/lithe` |
 fn cache_root() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os(CACHE_DIR_ENV) {
         if !path.is_empty() {
@@ -117,12 +74,10 @@ fn platform_cache_root() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache").join("lithe"))
 }
 
-/// 语言服务器的缓存根：Windows host 用 `language-servers` 这一层，逐字照搬。
 pub(crate) fn language_server_cache(cache_root: &Path) -> PathBuf {
     cache_root.join("language-servers")
 }
 
-/// 指纹输入：根构建描述符 + 直接含 `pom.xml` 的子目录名（**不递归**）。
 struct FingerprintInputs {
     build_files: Vec<Value>,
     direct_maven_modules: Vec<String>,
@@ -199,7 +154,6 @@ fn collect_fingerprint_inputs(workspace_root: &Path) -> Result<FingerprintInputs
     })
 }
 
-/// 观察 → Core：归一化、排序、去重、哈希全在 Core（`java.jdtWorkspaceFingerprint`）。
 fn resolve_fingerprint(inputs: &FingerprintInputs, jdtls_version: &str) -> Result<String, String> {
     let data = core_json(
         "java.jdtWorkspaceFingerprint",
@@ -218,7 +172,6 @@ fn resolve_fingerprint(inputs: &FingerprintInputs, jdtls_version: &str) -> Resul
         .ok_or_else(|| "java.jdtWorkspaceFingerprint 的响应缺少 workspaceFingerprint".to_string())
 }
 
-/// `lsp.jdtWorkspaceKey`：与 `lsp.startServer` 内部**同一个**归一化 + SHA-256。
 pub(crate) fn resolve_workspace_key(
     workspace_root: &Path,
     workspace_fingerprint: &str,
@@ -243,22 +196,12 @@ pub(crate) fn resolve_workspace_key(
     Ok(key)
 }
 
-/// 回收结果，只用于诊断行。
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CleanupOutcome {
-    /// Core 给出的固定保留天数（30）。
     pub(crate) retention_days: u64,
-    /// 真正删掉的目录数。
     pub(crate) removed: usize,
 }
 
-/// 按 `java.jdtCacheRetention` 回收过期的工作区状态目录。
-///
-/// 判据照 Windows：只处理 64 位小写十六进制的目录名、拒绝符号链接、**永不删活动键**、
-/// 删除前重新校验、活动目录写一次 last-used 标记（`metadata.modified` 会被 `-data` 里的
-/// 索引写坏，所以标记时间是权威的"最后一次使用"）。
-///
-/// 失败不致命（回收只是省磁盘）：调用方把它降级成一条 `S1_JAVA_CACHE_RECLAIM` 警告。
 pub(crate) fn cleanup_expired(
     cache_directory: &Path,
     active_workspace_key: &str,
@@ -355,8 +298,6 @@ pub(crate) fn cleanup_expired(
 
     let mut removed = 0usize;
     for key in expired.iter().filter_map(Value::as_str) {
-        // Core 已经保证"不选活动键"，这里再判一次是**纵深防御**：一个坏掉的响应不该删掉
-        // 正在被 JDTLS 写着的目录（Windows host 同样这么做）。
         if key == active_workspace_key || !is_workspace_key(key) || !observed.contains(key) {
             return Err(format!("Core 返回了未观察到的回收目标：{key}"));
         }
@@ -380,7 +321,6 @@ pub(crate) fn cleanup_expired(
     })
 }
 
-/// 契约里的目录名判据：64 位小写十六进制（`rust-core-api.md:1294-1296`）。
 fn is_workspace_key(value: &str) -> bool {
     value.len() == 64
         && value
@@ -399,7 +339,6 @@ fn system_time_unix_seconds(value: SystemTime) -> Result<u64, String> {
         .map_err(|error| format!("系统时钟早于 Unix 纪元：{error}"))
 }
 
-/// 信封级失败统一成一条可读文本 —— 诊断行要的是原因，不是分层。
 fn core_error(error: lithe_gpui_shared::CoreError) -> String {
     match error.code() {
         Some(code) => format!("{code}：{error}"),
@@ -407,50 +346,18 @@ fn core_error(error: lithe_gpui_shared::CoreError) -> String {
     }
 }
 
-/// **Maven 项目上下文**（`lsp.startServer` 的 `mavenContext`）。
-///
-/// 为什么值得做：Core **已经**接受这个字段（`rust/lithe-core/src/project/maven.rs:63-78` 的结构体，
-/// 契约 `shared/contracts/rust-core-api.md:1170-1178`），拿到之后它会
-/// ① 把 reactor 的 main / test / generated 四类源根归一成 `java.project.sourcePaths`
-/// （**生成源根因此生效**：注解处理器产出的代码也能被补全与跳转看到）；
-/// ② 在 `ServiceReady` 之后按项目下发 `org.eclipse.m2e.core.selectedProfiles`；
-/// ③ 把 `settingsPath` 发布成 `java.configuration.maven.userSettings`。
-///
-/// gpui 侧此前**完全没传**（`session.rs` 的 startServer payload 里没有这个字段），这些能力一直空着。
-/// **而且完全不需要我们解析 pom.xml**：`maven.scan` 直接给出 `relativePath` 与 `profiles`。
-///
-/// `settingsPath` 有两个来源，**设置页选的那份优先**：`mavenSettingsPath` 覆盖值
-/// （`crate::toolchain::maven_settings_override`，由 `workbench` 登记）→ 否则用 `maven.scan`
-/// 给的那一份。用户明确选过就按他选的走，这也正是那个设置键唯一的消费点。
-///
-/// 返回 `None` = 工作区里没有可读的 `pom.xml`（`maven.scan` 明确返回 `null`）：
-/// 那就**不带**这个字段 —— 带一个空 reactor 只会让 Core 去做无意义的校验。
 pub(crate) fn maven_context(root: &Path) -> Option<Value> {
     let scan = match core_json("maven.scan", json!({ "root": root.to_string_lossy() })) {
         Ok(scan) => scan?,
         Err(error) => {
-            // 失败**不静默**，也**不挡启动**：Maven 上下文只是"更完整的项目模型"，
-            // 缺了它补全/跳转照样能用（只是看不到生成源根与 profile）。
             println!("S1_JAVA_MAVEN could not scan: error={error}");
             return None;
         }
     };
-    // 设置页选的那份 `settings.xml`（`mavenSettingsPath`）优先于 `maven.scan` 给出的那一份：
-    // 用户明确选过就按他选的走，这是这个覆盖值唯一的消费点。
     let overridden = crate::toolchain::maven_settings_override();
     maven_context_from_scan(&scan, overridden.as_deref())
 }
 
-/// 从 `maven.scan` 的响应构造 `mavenContext`（纯函数，便于单测）。
-///
-/// 只带**有证据的**字段：`reactorPath`（scan 的 `relativePath`）、
-/// `profiles`（scan 的 `profiles[].id`）、`settingsPath`（`settings_override` 优先，
-/// 其次 scan 给了才带）。
-/// `localRepositoryPath` / `mavenExecutablePath` / `javaHomePath` **留空**：
-/// 那三个字段只有 `maven.launchPlan` / `runConfig.createLaunchPlan` 会读
-/// （`shared/contracts/rust-core-api.md:1477-1487` 的 `-Dmaven.repo.local=` 那一类），
-/// 而 gpui 侧还没有执行 Maven 的通路 —— 宁可不传，也不传一个 JDT LS 读都不读的值
-/// （同一个判据写在 `toolchain.rs` 的模块文档里）。
 fn maven_context_from_scan(scan: &Value, settings_override: Option<&Path>) -> Option<Value> {
     if scan.is_null() {
         return None;
@@ -496,16 +403,12 @@ fn maven_context_from_scan(scan: &Value, settings_override: Option<&Path>) -> Op
 mod tests {
     use super::*;
 
-    /// 没有 Maven 项目时**不传**这个字段（`maven.scan` 给 `null`）。
     #[test]
     fn no_scan_result_means_no_context() {
         assert!(maven_context_from_scan(&Value::Null, None).is_none());
-        // 就算选了 `settings.xml`，没有 Maven 项目也**不带**这个字段：
-        // 空 reactor 只会让 Core 去做无意义的校验。
         assert!(maven_context_from_scan(&Value::Null, Some(Path::new("ci.xml"))).is_none());
     }
 
-    /// 根 pom：`reactorPath` 是 `.`，profiles 取 `id`，`settingsPath` 原样带过去。
     #[test]
     fn root_project_maps_to_a_versioned_context() {
         let context = maven_context_from_scan(
@@ -525,13 +428,10 @@ mod tests {
         assert_eq!(context["profiles"], json!(["dev", "prod"]));
         assert_eq!(context["settingsPath"], "/home/u/.m2/settings.xml");
         assert_eq!(context["skipTests"], false);
-        // 没有数据源的字段**不许出现**（宁可不传，也不猜一个值）。
         assert!(context.get("localRepositoryPath").is_none());
         assert!(context.get("mavenExecutablePath").is_none());
     }
 
-    /// 设置页选了 `settings.xml` → **覆盖** `maven.scan` 给的那一份（这是 `mavenSettingsPath`
-    /// 唯一的生效路径）；scan 没给而覆盖值给了时也要带上。
     #[test]
     fn a_selected_settings_file_overrides_the_scanned_one() {
         let scanned = json!({
@@ -546,7 +446,6 @@ mod tests {
             json!(Path::new("D:/ci/settings.xml").to_string_lossy())
         );
 
-        // scan 没给 settingsPath、覆盖值给了 → 仍然带上（覆盖值本身就是数据源）。
         let without = json!({ "relativePath": "projects/demo", "profiles": [] });
         let context = maven_context_from_scan(&without, Some(Path::new("D:/ci/settings.xml")))
             .expect("子模块也是 Maven 项目");
@@ -556,7 +455,6 @@ mod tests {
         );
     }
 
-    /// 子模块 reactor：`relativePath` 原样作为 `reactorPath`；没有 profiles 时给空表。
     #[test]
     fn nested_reactor_and_empty_profiles() {
         let context = maven_context_from_scan(
@@ -581,8 +479,6 @@ mod tests {
         assert!(!is_workspace_key(&"a".repeat(63)));
     }
 
-    /// 状态目录必须是 `cacheDirectory/jdtls/<key>`：Core 自己拼的就是这两级，
-    /// 对不上就会"报告一个目录、实际用另一个目录"。
     #[test]
     fn state_directory_is_cache_directory_plus_two_levels() {
         let cache = JdtIndexCache {
@@ -599,7 +495,6 @@ mod tests {
         );
     }
 
-    /// 语言服务器缓存根就是宿主缓存下加一层 `language-servers`（Windows 同款）。
     #[test]
     fn language_server_cache_adds_one_level() {
         assert_eq!(
