@@ -173,8 +173,23 @@ const JAVA_TEST_SOURCES: &[(&str, &str)] = &[
     ),
 ];
 
-const JAVA_25_POM: &str = r#"<project xmlns="http://maven.apache.org/POM/4.0.0">
-  <modelVersion>4.0.0</modelVersion>
+/// JUnit version the java25 fixture declares. It matches the CI toolchain, but a
+/// machine whose Maven repository cannot resolve it can name another version in
+/// `LITHE_JDTLS_SMOKE_JUNIT`; otherwise the fixture's test sources fail to compile
+/// and the whole smoke test dies on a dependency-availability problem instead of
+/// on JDT LS behaviour.
+const FIXTURE_JUNIT_VERSION: &str = "5.14.0";
+
+fn java_25_pom() -> String {
+    let version = std::env::var("LITHE_JDTLS_SMOKE_JUNIT")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| FIXTURE_JUNIT_VERSION.to_string());
+    JAVA_25_POM.replace(FIXTURE_JUNIT_VERSION, &version)
+}
+
+const JAVA_25_POM: &str = r#"<project xmlns="http://maven.apache.org/POM/4.0.0">  <modelVersion>4.0.0</modelVersion>
   <groupId>smoke</groupId>
   <artifactId>java25-entrypoints</artifactId>
   <version>1.0.0</version>
@@ -340,7 +355,7 @@ fn real_jdtls_discovers_builds_and_launches_java_25_entrypoints() {
             .expect("fixture test source directory");
         std::fs::write(&path, source).expect("fixture test source");
     }
-    std::fs::write(workspace.join("pom.xml"), JAVA_25_POM).expect("fixture pom");
+    std::fs::write(workspace.join("pom.xml"), java_25_pom()).expect("fixture pom");
     let canonical_workspace = workspace.canonicalize().expect("workspace canonicalizes");
     let root_uri = url::Url::from_directory_path(&canonical_workspace)
         .expect("workspace converts to a file URI")
