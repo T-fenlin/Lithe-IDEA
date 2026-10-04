@@ -260,6 +260,21 @@ impl DebugSessionHandle {
         self.drain();
         result
     }
+
+    pub fn request_inspect(
+        &mut self,
+        kind: &str,
+        thread_id: Option<i64>,
+        frame_id: Option<i64>,
+        variables_reference: Option<i64>,
+        timeout: std::time::Duration,
+    ) -> Result<(), String> {
+        let result =
+            self.driver
+                .request_inspect(kind, thread_id, frame_id, variables_reference, timeout);
+        self.drain();
+        result
+    }
 }
 
 #[cfg(test)]
@@ -396,6 +411,16 @@ mod tests {
                         "type": "event",
                         "event": "stopped",
                         "body": { "reason": "step", "threadId": 1 }
+                    })));
+                }
+                "threads" => {
+                    self.incoming.push(dap_frame(json!({
+                        "seq": 104,
+                        "type": "response",
+                        "request_seq": seq,
+                        "success": true,
+                        "command": "threads",
+                        "body": { "threads": [ { "id": 1, "name": "main" } ] }
                     })));
                 }
                 _ => {}

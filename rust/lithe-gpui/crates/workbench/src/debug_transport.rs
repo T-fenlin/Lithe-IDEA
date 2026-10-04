@@ -507,6 +507,14 @@ pub enum DebugDriverCommand {
         timeout: Duration,
         reply: std::sync::mpsc::Sender<Result<Option<Value>, String>>,
     },
+    Inspect {
+        kind: String,
+        thread_id: Option<i64>,
+        frame_id: Option<i64>,
+        variables_reference: Option<i64>,
+        timeout: Duration,
+        reply: std::sync::mpsc::Sender<Result<Option<Value>, String>>,
+    },
 }
 
 pub const DEBUG_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -515,6 +523,13 @@ pub fn is_reply_event(event: &Value) -> bool {
     matches!(
         event.get("type").and_then(Value::as_str),
         Some("stopped" | "continued" | "terminated" | "operationFailed")
+    )
+}
+
+pub fn is_inspection_reply(event: &Value) -> bool {
+    matches!(
+        event.get("type").and_then(Value::as_str),
+        Some("operationCompleted" | "operationFailed")
     )
 }
 
@@ -543,6 +558,7 @@ impl DebugSessionDriver {
             let mut reason = String::from("terminated");
             let mut pending: Option<(
                 String,
+                bool,
                 std::time::Instant,
                 std::sync::mpsc::Sender<Result<Option<Value>, String>>,
             )> = None;
@@ -564,7 +580,8 @@ impl DebugSessionDriver {
                                     reason = String::from("consumer_closed");
                                     break;
                                 }
-                                pending = Some((operation_id, Instant::now() + timeout, reply));
+                                pending =
+                                    Some((operation_id, false, Instant::now() + timeout, reply));
                             }
                             Err(error) => {
                                 let _ = reply.send(Err(error));
@@ -572,12 +589,55 @@ impl DebugSessionDriver {
                         }
                     }
                 }
+                if pending.is_none() {
+                    if let Ok(DebugDriverCommand::Inspect {
+                        kind,
+                        thread_id,
+                        frame_id,
+                        variables_reference,
+                        timeout,
+                        reply,
+                    }) = command_queue.try_recv()
+                    {
+                        let operation_id = transport.take_operation_id(&kind);
+                        match transport.inspect_with_operation(
+                            &operation_id,
+                            &kind,
+                            thread_id,
+                            frame_id,
+                            variables_reference,
+                        ) {
+                            Ok(immediate) => {
+                                if !immediate.is_empty()
+                                    && sender.send(DebugDriverEvent::Events(immediate)).is_err()
+                                {
+                                    reason = String::from("consumer_closed");
+                                    break;
+                                }
+                                pending =
+                                    Some((operation_id, true, Instant::now() + timeout, reply));
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "{DEBUG_TRANSPORT_TAG} inspect_failed kind={kind} session={} error={error}",
+                                    transport.session_id()
+                                );
+                                let _ = reply.send(Err(error));
+                            }
+                        }
+                    }
+                }
 
                 let outcome = match pending.take() {
-                    Some((command, deadline, reply)) => {
+                    Some((command, inspection, deadline, reply)) => {
                         let remaining = deadline.saturating_duration_since(Instant::now());
                         let slice = std::cmp::min(Duration::from_millis(20), remaining);
-                        let waited = transport.poll_until(slice, &is_reply_event);
+                        let matches: fn(&Value) -> bool = if inspection {
+                            is_inspection_reply
+                        } else {
+                            is_reply_event
+                        };
+                        let waited = transport.poll_until(slice, &matches);
                         match waited {
                             Ok((events, matched)) => {
                                 if !events.is_empty()
@@ -595,7 +655,7 @@ impl DebugSessionDriver {
                                         transport.session_id()
                                     )));
                                 } else {
-                                    pending = Some((command, deadline, reply));
+                                    pending = Some((command, inspection, deadline, reply));
                                 }
                                 continue;
                             }
@@ -685,6 +745,29 @@ impl DebugSessionDriver {
             })
             .map_err(|error| {
                 format!("{DEBUG_TRANSPORT_TAG} command_send_failed command={command} error={error}")
+            })
+    }
+
+    pub fn request_inspect(
+        &self,
+        kind: &str,
+        thread_id: Option<i64>,
+        frame_id: Option<i64>,
+        variables_reference: Option<i64>,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        let (reply, _answer) = channel();
+        self.commands
+            .send(DebugDriverCommand::Inspect {
+                kind: kind.to_string(),
+                thread_id,
+                frame_id,
+                variables_reference,
+                timeout,
+                reply,
+            })
+            .map_err(|error| {
+                format!("{DEBUG_TRANSPORT_TAG} command_send_failed kind={kind} error={error}")
             })
     }
 
