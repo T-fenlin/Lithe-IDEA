@@ -1323,6 +1323,7 @@ pub struct DebugPane {
     breakpoints: DebugBreakpointStore,
     session: Option<DebugSessionHandle>,
     session_output_seen: usize,
+    session_state_seen: Option<String>,
     execution: DebugExecution,
     inspection: DebugInspection,
     tree: DebugVariableTree,
@@ -1358,6 +1359,7 @@ impl DebugPane {
             content: DebugContent::Debugger,
             session: None,
             session_output_seen: 0,
+            session_state_seen: None,
             error_message: None,
             output: Vec::new(),
             filters_task: None,
@@ -2484,10 +2486,29 @@ impl DebugPane {
         if let Some(error) = snapshot.last_error.clone() {
             self.error_message = Some(error);
         }
+        let state = snapshot.state.clone();
+        let reason = snapshot.paused_reason.clone();
+        let thread_id = snapshot.paused_thread_id;
+        if state != self.session_state_seen {
+            match state.as_deref() {
+                Some("paused") => self
+                    .execution
+                    .on_stopped(reason.as_deref().unwrap_or("breakpoint"), thread_id),
+                Some("running") => self.execution.on_continued(),
+                Some("terminated") => self.execution.on_terminated(),
+                _ => {}
+            }
+            println!(
+                "{DEBUG_DIAGNOSTIC_TAG} session_state={:?} reason={:?} thread={:?}",
+                state, reason, thread_id
+            );
+            self.session_state_seen = state;
+        }
         if let Some(reason) = outcome.exited.clone() {
             println!("{DEBUG_DIAGNOSTIC_TAG} session_exited reason={reason}");
             self.session = None;
             self.session_output_seen = 0;
+            self.session_state_seen = None;
             true
         } else {
             outcome.changed
