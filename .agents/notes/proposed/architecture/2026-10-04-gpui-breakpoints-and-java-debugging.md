@@ -235,12 +235,17 @@ lombok 1.18.46（`01f7b1a0…`）、java-test 0.46.0 VSIX（`56c1e14d…`，含 
 + `extensions/*.jar`，然后打印三个 `LITHE_JDTLS_SMOKE_*` 的值）。⇒ 夹具之外的部分现在可复现；
 夹具工程本身的编译失败仍未解决。
 
-已排除的两个假设（2026-10-04 实测，失败完全一致：仍是 `2` 个错误、约 11ms）：
-① 本地 Maven 仓库缺 junit-jupiter 5.14.0 —— 跑 `mvn dependency:go-offline` 之后仍失败；
-② JDTLS 运行在 JDK 21 上编译不了 `maven.compiler.release=25` —— 把 `LITHE_JDTLS_SMOKE_JAVA`
-换成 `open-25` 之后仍失败。
-⇒ 更像 JDTLS 的**工程配置**（project JDK / classpath 绑定）压根没就绪；要定位得先把 JDTLS 的
-编译 marker 取出来看，这一步需要比"跑一次用例"更多的上下文。
+**根因（2026-10-04 继续定位，已找到）**：夹具的**主源码编译是好的** —— 把
+`workspace/src/main/java` 的 8 个文件直接交给 `open-25` 的 `javac --release 25 --enable-preview`
+编，**exit 0**。所以那 `2` 个错误来自**测试源**：`src/test/java/demo/{BaseBehavior,FastTest}.java`
+都 `import org.junit.jupiter.api.Test`，而夹具 `pom.xml` 要求
+`org.junit.jupiter:junit-jupiter:5.14.0`，本机 `~/.m2/repository` 里**只有 5.10.5**，
+且 `mvn dependency:get -Dartifact=org.junit.jupiter:junit-jupiter:5.14.0` **拉不到任何东西**
+（版本仍只有 5.10.5）⇒ JDTLS 无法为这两个测试类解析 JUnit，于是报 2 个编译错误。
+
+⇒ 这是**夹具依赖可用性**问题（pom 写了一个本机 Maven 源拿不到的 junit 版本），
+与我们的 DAP 代码、与已铺好的 JDTLS/java-debug/lombok 载荷无关。
+（此前排除的两个假设——Maven 离线缓存、JDTLS 运行在 JDK 21——也都不是原因。）
 
 **仍未做**：DAP 那半边的真机端到端（启动→断点命中→单步→变量→停止）—— 它需要 GUI 驱动（点工具栏/打断点），当前只能靠人工或 UI 自动化；DAP 链路本身已有 43 条离线用例覆盖。
 
