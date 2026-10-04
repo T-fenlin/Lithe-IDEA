@@ -3878,7 +3878,12 @@ impl ShellWorkspace {
     /// 与上一轮的差别：光标位置原来是写死的 `"1:1"`，现在是**真实值**
     /// （[`EditorPane::cursor_position`]）；编码与缩进这两格按当前编辑器/读盘口径核过，
     /// 写出来的就是真值（理由见下面各自的注释），不再是"随手填的占位"。
-    /// 其余四项（只读态 / 内存 / 更改数）仍是占位值，理由各自写在旁边。
+    /// 只读态取的是真实值；**更改数**仍是占位（只有图标，理由写在旁边）。
+    ///
+    /// ⚠️ **内存格已撤除，不是修好**：它原先写死 `"总计 0.0 MB · Lithe 0.0 MB"`，
+    /// 而真值要平台侧 10s 轮询的内存读数（真源 `WorkbenchStatusViews.swift:31-41`）。
+    /// 显示一个编造的数字比不显示更糟，所以这一格先不画；平台端口落地后再接回
+    /// （缺口登记在 `lithe-gpui/UI-MAP.md` 的校正专章）。
     fn footer_right(&self, cx: &App) -> Vec<StatusEntry> {
         // 没有任何 buffer 时编辑区给 `1:1`（真机同样：拿不到位置时用
         // `INITIAL_CURSOR_POSITION = {0,0}`，显示成 `1:1`）。
@@ -3919,10 +3924,6 @@ impl ShellWorkspace {
             } else {
                 StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::LOCK_OPEN_ICON, cx)
             },
-            // ⚠️ 内存条目：真值来自 10s 轮询的原生命令 `get_application_memory_usage`
-            // （`footer-editor-status.tsx:24,45-67`），属数据层，本阶段不做。
-            StatusEntry::new(SharedString::from("总计 0.0 MB · Lithe 0.0 MB"))
-                .with_icon(IconName::HardDrive),
             // ⚠️ Git 更改数：要等 `git.*` 提供工作区状态，本轮仍是空占位（只有图标）。
             // 真源：`icons/idea/icons/ui/successDialog.svg(+_dark)` —— 真机 `CheckCircleIcon`。
             StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::CHECK_CIRCLE_ICON, cx),

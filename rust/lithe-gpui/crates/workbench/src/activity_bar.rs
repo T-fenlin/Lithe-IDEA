@@ -21,17 +21,15 @@
 //!
 //! ## 盒宽算术
 //!
-//! - 左 rail 盒宽 = rail 宽 + `WORKBENCH_GAP` = 40 + 4 = **44**（改前 38 + 4 = 42）；其内容层
-//!   左右内衬各 **8**（`main-sidebar.tsx:610-611`，`ACTIVITY_RAIL_HORIZONTAL_GUTTER`）
-//!   → 图标项盒 **26 宽**（项盒本身属 `BLOCKERS.md` B12，见 `LEFT_ITEM_WIDTH`）。
-//! - 右 rail 盒宽 = rail 宽 = **40**（改前 38）；出处 `plugin-activity-rail.tsx:34` 的
-//!   `pt-1` = 4 与外层 flex row 的 `pr-(--lithe-workbench-gap)` = 4（`main-layout.tsx:299`）
-//!   在本侧由 `outer_pad_end` 自带 ⇒ 对外盒宽同为 **44**。
-//! - 因此两条 rail 的对外盒宽相等（都 44）—— 这是维护者裁决 (a) 的直接结果。
-//!   ⚠️ 这里早先写"图标中心一个 21、一个 19"：那两个数是**居中**假设下的坐标，而本文件的
-//!   项盒分组**没有** `items_center()`（只有最外层 rail 有，对 `w_full()` 的分组不起作用），
-//!   复核时无法在源码里确证居中从何而来，所以不再写死中心坐标（rail 宽一变它就会过期）。
-//!   项盒几何（含是否居中）归 B12。
+//! - 左 rail 盒宽 = rail 宽 + `WORKBENCH_GAP` = 40 + 4 = **44**（改前 38 + 4 = 42）；右 rail
+//!   盒宽 = **40**，外侧再补 4 ⇒ 两条 rail 的对外盒宽都是 **44**（维护者裁决 (a) 的直接结果，
+//!   见 `BLOCKERS.md` B14）。
+//! - **项盒几何照真源**（2026-10-04 换源，见 [`ITEM_SIZE`]）：30×30、圆角 6，装在 37×40 的槽里
+//!   （`WorkbenchView.swift:11-20` 的 `ActivityBarMetrics`），槽之间无间隙 ⇒ 纵向节距 **40**。
+//!   此前那套"左内衬 8 → 项盒 26、右项盒 28"出自**已作废**的 Windows 前端
+//!   （`main-sidebar.tsx:610-611`、`plugin-activity-rail.tsx:39`），已删除。
+//!   因此 `BLOCKERS.md` B12 里"要动项盒得先有真机观察"这条**前置不再需要** —— 真源源码已给足数值。
+//! - 左 rail 比真源宽 4px（B14），所以左侧图标比真源偏右约 2px；这是那条决定的已知代价。
 //!
 //! ## 图标：真源优先，缺真源的保持 Lucide（逐项登记）
 //!
@@ -102,34 +100,26 @@ const COLLAPSED_WIDTH: f32 = design::ACTIVITY_RAIL_WIDTH_SPEC;
 /// `HStack(spacing: 0)` **没有**这个 4px 间隔（真源侧 rail 只有它自己那 40）⇒ 左轨多出的这 4px
 /// 是宿主的布局结构，**本轮 B14 不动它**（已记进 B14 的"仍未解决"）。
 const WORKBENCH_GAP: f32 = 4.;
-/// 左 rail 图标项盒宽 **26**：出自已作废的 Windows 前端 —— 内容层左右内衬各 8
-/// （`main-sidebar.tsx:610-611`），在**旧的** 42 宽盒（38 rail + 4 gap）里留出 42 − 16 = 26。
+/// 图标项盒 **30×30**、圆角 **6**：真源 `WorkbenchView.swift:11-20` 的 `ActivityBarMetrics`
+/// （`buttonWidth` / `buttonHeight` = 30）与 `:1283-1287`（左）/ `:1489-1493`（右）的
+/// `.litheRowHover(cornerRadius: 6, activeBackground: LitheTheme.selection)`。
 ///
-/// ⚠️ rail 对齐真源 40 之后（左盒 44），照同一算式应是 **28**；**本轮有意不改**：项盒宽与
-/// 图标裁切是 `BLOCKERS.md` **B12** 的题目（Lucide 图标可能被小盒裁切），要动它得先有真机观察。
-/// 所以 26 现在比算术值小 2，两条 rail 的项盒几何都归 B12。
+/// ⚠️ **2026-10-04 换源**：此前两条 rail 各有一套数字（左 26×24 / 圆角 4，右 28×28 / 圆角 4.8），
+/// 出处是**已作废**的 Windows 前端（`main-sidebar.tsx:610-611`、`plugin-activity-rail.tsx:39,45`）。
+/// 真源两条 rail 的项盒与圆角**完全相同**，所以这里收敛成一份，不再按 `side` 分叉。
+/// 30 不在 gpui 的 rem 档位上（档位是 28 / 32），所以调用点写 `rems(30. / 16.)`；
+/// 圆角走 [`crate::rem_px`]（`Button::rounded` 是**固有方法**、只吃 `Pixels`）。
+const ITEM_SIZE: f32 = 30.;
+/// 图标项圆角 = 6（真源 `WorkbenchView.swift:1285` / `:1491` 的 `cornerRadius: 6`）。
 ///
-/// 26 不在 gpui 的 rem 档位上（档位里 `_6()`=24、`_7()`=28）—— 那正是调用点写
-/// `rems(26. / 16.)` 的理由，不是保留 `px(...)` 的理由。
-const LEFT_ITEM_WIDTH: f32 = 26.;
-/// 左 rail 图标项盒高 `min-h-6`（`main-sidebar.tsx:332` 覆盖掉组件的 `--lithe-tab-height`）= 24。
-/// 24 在 rem 档位上（见 `item_button` 里的 `rems(LEFT_ITEM_HEIGHT / 16.)`，与 `h_6()` 同值）。
-const LEFT_ITEM_HEIGHT: f32 = 24.;
-/// 左 rail 圆角 `--lithe-chrome-radius`（`theme.css:133`，= 4）。
-///
-/// 这是 Lithe 自己的圆角规格（不是 gpui 的 rem 档位）—— 见 [`crate::project_tabs`] 模块头
-/// 「圆角换算」；`ThemeConfig.radius` 是 `usize`（`gpui-component-0.6.6/src/theme/schema.rs:67-68`），
-/// 也表达不了 Lithe 的 `--radius × k` 阶梯。调用点走 [`crate::rem_px`]（**不是**直接写
-/// `rems(4. / 16.)`）：`Button::rounded` 是**固有方法**、只吃 `Pixels`。
-const LEFT_ITEM_RADIUS: f32 = 4.;
-/// 右 rail 图标项 `Button variant=ghost size=icon-sm`（`plugin-activity-rail.tsx:39`）= 28×28。
-/// 28 在 rem 档位上，调用点写 `rems(1.75)`（= `size_7()`，值随 `side` 变化所以套不了固定 helper）。
-const RIGHT_ITEM_SIZE: f32 = 28.;
-/// 右 rail 图标项圆角 `rounded-sm`（`plugin-activity-rail.tsx:45`）= 4.8。
-///
-/// 4.8 不是 gpui 的 rem 档位（`rounded_sm()` 是 4），理由同上。它同样挂在 `Button::rounded`
-/// 上（固有方法、只吃 `Pixels`），所以调用点也走 [`crate::rem_px`]。
-const RIGHT_ITEM_RADIUS: f32 = 4.8;
+/// 6 与 `design::CONTROL_RADIUS`(6.4) 不是同一个值：后者是从作废 Windows 的 `--radius × k`
+/// 阶梯推出来的。把真源那 4 条圆角（5 / 10 / 9 / 6）收敛成语义 role 是**同一批的后续项**，
+/// 本处先按真源取值，不提前发明 role。
+const ITEM_RADIUS: f32 = 6.;
+/// 真源槽位 `slotWidth × slotHeight`（`WorkbenchView.swift:19-20`）：30×30 的按钮居中在槽里，
+/// 槽之间是 `VStack(spacing: 0)`（`:1265-1266`）⇒ **项的纵向节距 = 40**，不另加 gap。
+const SLOT_WIDTH: f32 = 37.;
+const SLOT_HEIGHT: f32 = 40.;
 // 右 rail 的 `rounded-r-xl`（`RIGHT_RAIL_RADIUS = 11.2`，真源 `plugin-activity-rail.tsx:34`）与
 // 它那条 `border-r` **2026-09-30 一并删除**（维护者截图口径）：
 //
@@ -333,42 +323,44 @@ pub fn activity_bar(
         .collect();
     let has_bottom_group = !bottom_items.is_empty();
 
-    // 左：44 宽的盒（40 rail + 4 gap）＋ 内衬 8 → 图标项 26 宽（项盒归 B12）。
-    // 右：40 宽的盒、无内衬、图标项 28；外侧再补 4px 间隔，对外盒宽同样是 44。
+    // 槽位在 rail 里的横向内衬 =（rail 宽 − 槽宽）/ 2：左 rail 44 → 3.5，右 rail 40 → 1.5。
+    // 真源 `WorkbenchView.swift:1342` 的左 rail 只有 40、槽 37 居中 ⇒ 内衬 1.5；本侧左 rail
+    // 多出的 4px 是 **B14「左右对外盒宽同宽」** 的既定决定，所以左侧图标比真源偏右约 2px ——
+    // 这条偏差归 B14，不在这里私自改算术。
     //
-    // `gutter` / `outer_pad_end` 的取值随 `side` 变化，套不了固定的 rem 档位 helper，所以用
-    // helper 底层的 `rems()` 表达同一个单位：`rems(0.5)` = `px_2()` 的 8、`rems(0.25)` = `pr_1()` 的 4、
-    // `rems(0.)` = 0。它们仍然随主题基准字号缩放（这正是换算成 rem 的目的）。
+    // 内衬随 `side` 变化，套不了固定 rem 档位 helper，所以用 helper 底层的 `rems()`：
+    // `rems(3.5 / 16.)` 在基准 16px 下与 `px(3.5)` 逐像素相等，且随主题字号缩放。
     let column_width = rail_width_spec(side);
-    let (gutter, outer_pad_end) = match side {
-        ActivitySide::Left => (rems(0.5), rems(0.)),
-        ActivitySide::Right => (rems(0.), rems(0.25)),
+    let slot_inset = rems(((column_width - SLOT_WIDTH) / 2.) / 16.);
+    // 外侧 4px：左 rail 的 gap 记在它的盒宽里（见 `rail_width_spec`），右 rail 记在尾部内衬上，
+    // 两者对外盒宽都是 44（B14）。
+    let outer_pad_end = match side {
+        ActivitySide::Left => rems(0.),
+        ActivitySide::Right => rems(0.25),
     };
 
-    // 顶部组：`flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto`（`sidebar-pane-selector.tsx:359`）。
-    // 溢出按 `overflow_hidden` 处理：gpui-kit 的滚动条要自己挂，本阶段不做。
+    // 顶部组：真源是 `VStack(spacing: 0)`（`WorkbenchView.swift:1265-1266`）—— 槽之间**无间隙**，
+    // 也没有顶部内衬。真源 `ScrollView` 那一段（`:1310-1332`）在本侧换成 `overflow_hidden`：
+    // gpui-kit 的滚动条要自己挂，本阶段不做。
     let top_group = div()
         .flex()
         .flex_col()
         .flex_1()
         .min_h_0()
         .w_full()
-        .gap_1()
-        .pt_1p5()
-        .px(gutter)
+        .px(slot_inset)
         .overflow_hidden()
         .children(top_items);
 
-    // 底部组：`flex shrink-0 flex-col gap-1 pt-1`（`sidebar-pane-selector.tsx:363`）。
+    // 底部组：真源里紧随其后的是 `ScrollView`（贡献项，`minHeight: 280`）与末位的设置按钮，
+    // 同样是 `spacing: 0`（`WorkbenchView.swift:1310-1341`）。本侧分组结构保持不变，只把已作废
+    // Windows 前端的 `gap-1` / `pt-1` / `pb-1.5` 去掉 —— 否则项距会大于真源，与槽高 40 的节距冲突。
     let bottom_group = div()
         .flex()
         .flex_col()
         .flex_shrink_0()
         .w_full()
-        .gap_1()
-        .pt_1()
-        .pb_1p5()
-        .px(gutter)
+        .px(slot_inset)
         .children(bottom_items);
 
     let mut rail = div()
@@ -429,6 +421,10 @@ fn item_button(
 ) -> AnyElement {
     let theme = cx.theme();
     let accent = theme.accent;
+    // 选中底 = **不透明的强调色**：真源 `LitheTheme.swift:143` 就是 `selection: accent`，
+    // 而 gpui 的 `theme.accent` 语义是**悬停**底（UI-MAP §1.2 那条 token 陷阱：直搬会把强调色
+    // 变成一层灰）。所以选中走 `theme.primary`（实心强调色），悬停才走 `accent`。
+    let selected_background = theme.primary;
 
     let (foreground, hover_background) = match side {
         ActivitySide::Left => (theme.foreground, accent.opacity(HOVER_OPACITY)),
@@ -440,26 +436,17 @@ fn item_button(
     // 值本身走 helper 底层的 `rems(P / 16.)`（`Length: From<Rems>`，与 `_N()` 同一条口径）。
     // 圆角不能这样写 —— `Button::rounded` 是**固有方法**（只吃 `Pixels`），会遮蔽
     // `Styled::rounded`，所以经 [`crate::rem_px`] 按运行时基准换算。
-    let (id_name, placement, width, height, radius): (&str, Placement, Length, Length, Pixels) =
-        match side {
-            // 26×24：26 不在 gpui 的 rem 档位上（档位里 24 / 28）→ `rems(26. / 16.)`；
-            // 24 在档位上 → `rems(24. / 16.)` 与 `h_6()` 同值。
-            ActivitySide::Left => (
-                "lithe-activity-bar-left",
-                Placement::Right,
-                rems(LEFT_ITEM_WIDTH / 16.).into(),
-                rems(LEFT_ITEM_HEIGHT / 16.).into(),
-                crate::rem_px(rem, LEFT_ITEM_RADIUS),
-            ),
-            // 28 = `w-7` → `rems(28. / 16.)` 与 `size_7()` 同值。
-            ActivitySide::Right => (
-                "lithe-activity-bar-right",
-                Placement::Left,
-                rems(RIGHT_ITEM_SIZE / 16.).into(),
-                rems(RIGHT_ITEM_SIZE / 16.).into(),
-                crate::rem_px(rem, RIGHT_ITEM_RADIUS),
-            ),
-        };
+    // 两条 rail 的项盒与圆角相同（真源 `WorkbenchView.swift:1279-1288` 左 / `:1485-1494` 右），
+    // 只有 ElementId 前缀与 tooltip 方向按 `side` 变。
+    let (id_name, placement): (&str, Placement) = match side {
+        ActivitySide::Left => ("lithe-activity-bar-left", Placement::Right),
+        ActivitySide::Right => ("lithe-activity-bar-right", Placement::Left),
+    };
+    let (width, height, radius): (Length, Length, Pixels) = (
+        rems(ITEM_SIZE / 16.).into(),
+        rems(ITEM_SIZE / 16.).into(),
+        crate::rem_px(rem, ITEM_RADIUS),
+    );
 
     let is_active = is_active(index);
     // 图标先装（expui 走彩色 `img()`、Lucide 走单色 `.icon(..)`，见 [`ActivityIcon::apply`]），
@@ -470,8 +457,13 @@ fn item_button(
                 ButtonCustomVariant::new(cx)
                     .foreground(foreground)
                     .hover(hover_background)
-                    .active(accent),
+                    // 自定义变体的**选中底**就是这里的 `active`（`button.rs:1283`）。
+                    .active(selected_background),
             )
+            // ⚠️ 仍未对齐：`ButtonCustomVariant` 只有一个前景色，所以选中态的文字/单色图标
+            // 不会像真源那样切到 `toolWindowSelectedText`（`WorkbenchView.swift:1293`），
+            // 彩色 expui 图标在实心强调色底上仍是原色。要完全对齐得给选中态单开一条
+            // 前景/图标路径（缺口已登记，见 `UI-MAP.md` 的校正专章）。
             // `Selectable::selected` 出选中底色；`toggled` 只补 `aria-pressed`（`button.rs:477-486`）。
             .selected(is_active)
             .toggled(is_active),
@@ -494,18 +486,29 @@ fn item_button(
         .px_0()
         .on_click(move |event, window, cx| on_select(index, event, window, cx));
 
-    // 无角点时直接给 `Button`，不套一层盒子 —— 免得给另外几个项也白加一层。
-    //
+    // 真源里按钮外面还有一层 `.frame(slotWidth, slotHeight)`（`WorkbenchView.swift:1288` / `:1494`）：
+    // 按钮在槽里居中、槽之间 `VStack(spacing: 0)` 无间隙 ⇒ 项的纵向节距由槽高（40）决定。
+    // gpui 的 `Button` 自己就是那个可点区域，所以这里只补一层负责几何的槽，交互仍留在 `Button` 上。
+    let slot = div()
+        .w(rems(SLOT_WIDTH / 16.))
+        .h(rems(SLOT_HEIGHT / 16.))
+        .flex()
+        .items_center()
+        .justify_center();
+
     // 有角点时是 **`Badge` 包住 `Button`**，不能反过来：`Badge` 的根是 `div().relative()`
     // 而角点自己绝对定位到 `top_0().right_0()`（`badge.rs:114-163`）；而 `Button` 的子元素
     // 落在 `h_flex().overflow_hidden()` 里（`button.rs:698-733`），塞进去会被裁掉。
     match item.badge {
-        None => button.into_any_element(),
-        Some(color) => Badge::new()
-            .dot()
-            // `Badge` 的默认色是 `theme().red`（`badge.rs:125`），所以必须显式给色。
-            .color(color)
-            .child(button)
+        None => slot.child(button).into_any_element(),
+        Some(color) => slot
+            .child(
+                Badge::new()
+                    .dot()
+                    // `Badge` 的默认色是 `theme().red`（`badge.rs:125`），所以必须显式给色。
+                    .color(color)
+                    .child(button),
+            )
             .into_any_element(),
     }
 }
