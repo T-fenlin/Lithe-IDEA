@@ -636,6 +636,15 @@ impl Explorer {
         self.selection.paths().iter().cloned().collect()
     }
 
+    /// 树的焦点句柄。
+    ///
+    /// 真机路径是"**树内发生过指针交互之后**才接管快捷键"（行点击里 `window.focus`），
+    /// 而 UI 测试**读不到行的元素 id**（`explorer_row_element_id` 是私有的），所以给它一个读口：
+    /// 测试可以先把焦点交给树，再模拟键击 —— 这**不覆盖**"点击确实给了焦点"那一步（已在文件里注明）。
+    pub fn focus_handle(&self) -> &gpui_kit::FocusHandle {
+        &self.focus_handle
+    }
+
     /// 工作区里**有没有**任何可见项（决定画树还是画空态）。
     fn has_entries(&self) -> bool {
         self.snapshot
