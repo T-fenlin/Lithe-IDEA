@@ -160,8 +160,13 @@ pub mod spring;
 pub mod spring_paths;
 pub mod status_bar;
 pub mod title_bar;
+// 欢迎页 / 无项目状态（U10）：窗口根的另一支（`Root` + `WelcomeView`），真源是
+// `macos/Sources/Lithe/Views/App/WelcomeView.swift`。触发条件（`choose_launch_root` 的
+// `None` 支）在 `crates/app/src/main.rs` 里判。
+pub mod welcome;
 pub mod workspace;
 
+pub use welcome::{ProjectOpener, WelcomeRow, WelcomeView};
 pub use workspace::{
     OpenDestination, ShellWorkspace, install_open_project_action, left_activity_index,
     set_shell_startup,

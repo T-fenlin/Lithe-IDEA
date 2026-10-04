@@ -26,8 +26,10 @@
 //! 第二份 backend，变成两个真相源。
 //!
 //! 运行：`cargo run --bin Lithe -- <workspace-root>`。位置参数可省略：省略时打开「最近项目」
-//! 里最近且仍然存在的那个，一个都没有时回落到当前工作目录 —— 资源管理器里双击 exe 走的就是
-//! 这一条（见 [`resolve_launch_root`]）。
+//! 里最近且仍然存在的那个；**一个都没有时打开欢迎页**（U10，见 [`resolve_launch_plan`]）——
+//! 资源管理器里双击 exe 走的就是这一条。欢迎态的窗口是 800×650（真源
+//! `RootView.swift:350` 的 `welcomeContentSize`），窗口根是 `Root` + `WelcomeView`
+//! （**不建** `ShellWorkspace`，理由见那段分支的注释）。
 
 // Windows 发布构建**不要弹控制台窗口**：GUI 程序带一个黑底控制台是明显的产品缺陷
 // （Explorer 里双击会多出一个窗口，实测抓到的那个控制台是 1239x647）。
@@ -48,16 +50,33 @@ use lithe_gpui_workbench::ShellWorkspace;
 // `RightToolWindowView` 走模块路径引入（`workbench` 的根只重导出 `ShellWorkspace`，
 // 见 `crates/workbench/src/lib.rs:121`）。
 use lithe_gpui_workbench::right_tool_window::RightToolWindowView;
+// 欢迎页（U10）：窗口根的另一支。`WelcomeView` 从 workbench 的根重导出。
+use lithe_gpui_workbench::WelcomeView;
 
 /// 资源源与图标 helper（`lithe-gpui/assets/**` 的接线）。模块文档里有 `AssetSource` 委托顺序与
 /// "为什么必须包装而不是注册两次"的论证。
 mod assets;
 
-/// 首窗口尺寸： 取显示器可见区域的 **94%**、居中、
+/// 工作区窗口能用的最小尺寸（与 Dodona 一致）。
+///
+/// 提到模块作用域是因为**两个**落点要用它：工作区首窗口的 `window_bounds` 夹紧，以及
+/// `WindowOptions::window_min_size`（欢迎态那一档用 [`WELCOME_WINDOW_SIZE`]）。
+const MIN_WINDOW: Size<Pixels> = size(px(1024.), px(680.));
+
+/// 欢迎态窗口的内容尺寸：**800×650**（真源 `RootView.swift:350` 的
+/// `LitheWindowLayout.welcomeContentSize`；`LitheApp.swift:480-483` 的 `.defaultSize` 用它）。
+///
+/// ⚠️ 它**同时是最小尺寸**：真源 `RootView.swift:367` 的 `minimumContentSize` 在
+/// `case .welcome` 上返回的是同一个常量 ⇒ 欢迎窗口不可缩放。宿主照这条，所以 `main` 里
+/// 欢迎那一档把 `window_min_size` 也传这个值 —— 只改 `window_bounds` 的话，平台会按
+/// 工作区那一档的 1024×680 把它顶回去，"800×650"在真机上根本不成立。
+const WELCOME_WINDOW_SIZE: Size<Pixels> = size(px(800.), px(650.));
+
+/// 工作区首窗口尺寸： 取显示器可见区域的 **94%**、居中、
 /// 普通窗口（不最大化）。
 ///
 /// `visible = display.visible_bounds()`（排除任务栏，状态栏才够得着）→
-/// `wanted = visible * 0.94` → 夹在 `MIN_WINDOW(1024×680)` 与 `visible` 之间 → 居中。
+/// `wanted = visible * 0.94` → 夹在 [`MIN_WINDOW`](1024×680) 与 `visible` 之间 → 居中。
 ///
 /// 为什么不用别的两种写法：
 /// - **照抄 macOS 常量（1440×900）**：那是 macOS 的窗口习惯（带交通灯、不最大化），搬到 Windows
@@ -65,8 +84,6 @@ mod assets;
 /// - **启动即最大化**（`WindowBounds::Maximized` / `zoom_window()`）：`Maximized` 在这个 gpui
 ///   版本上只把 bounds 当还原尺寸、并不会真的最大化；Dodona 验证过的口径是"94% 的普通窗口"。
 fn startup_window_bounds(cx: &App) -> WindowBounds {
-    // 窗口能用的最小尺寸（与 Dodona 一致）。
-    const MIN_WINDOW: Size<Pixels> = size(px(1024.), px(680.));
     let fallback = size(px(1280.), px(800.));
 
     let Some(display) = cx.primary_display() else {
@@ -77,11 +94,29 @@ fn startup_window_bounds(cx: &App) -> WindowBounds {
     let visible = display.visible_bounds();
     let wanted = size(visible.size.width * 0.94, visible.size.height * 0.94);
     let size = wanted.max(&MIN_WINDOW).min(&visible.size);
+    centered_window_bounds(&visible, size)
+}
+
+/// 欢迎态首窗口尺寸：真源那一条 **800×650、居中、不可缩放**（[`WELCOME_WINDOW_SIZE`]）。
+///
+/// 与工作区那一档的唯一差别是"不夹到 [`MIN_WINDOW`]、也不取屏幕的 94%"——欢迎页是
+/// 一张固定尺寸的表单式首屏（真源连 `minimumContentSize` 都等于它）。
+fn welcome_window_bounds(cx: &App) -> WindowBounds {
+    let Some(display) = cx.primary_display() else {
+        return WindowBounds::Windowed(Bounds::new(point(px(60.), px(40.)), WELCOME_WINDOW_SIZE));
+    };
+    let visible = display.visible_bounds();
+    centered_window_bounds(&visible, WELCOME_WINDOW_SIZE.min(&visible.size))
+}
+
+/// 把窗口放进可见区域的**中央**（真源 `LitheWindowLayout.frame(_:fitting:)` 的居中那一步，
+/// `RootView.swift:385-402`；真源还会 `insetBy(dx: 12, dy: 12)` —— 这里由调用方已经把 `size`
+/// 夹进 `visible`，等价于"不会超出可见区域"）。
+fn centered_window_bounds(visible: &Bounds<Pixels>, size: Size<Pixels>) -> WindowBounds {
     let origin = point(
         visible.origin.x + (visible.size.width - size.width) / 2.0,
         visible.origin.y + (visible.size.height - size.height) / 2.0,
     );
-
     WindowBounds::Windowed(Bounds::new(origin, size))
 }
 
@@ -98,7 +133,8 @@ struct Options {
     ///
     /// `Some` = 命令行**显式**给了位置参数（`Lithe <root>`，既有行为一字不改，包括"路径不存在
     /// 也照原样传给外壳"）；`None` = 一个位置参数都没有 —— 这正是资源管理器里双击
-    /// `Lithe.exe` 的情形（Explorer 不传任何参数），由 [`resolve_launch_root`] 补上根。
+    /// `Lithe.exe` 的情形（Explorer 不传任何参数），由 [`resolve_launch_plan`] 补上根
+    /// （挑不到可用根时是**欢迎页**，不是工作区）。
     root: Option<PathBuf>,
     /// 本次启动要应用的主题：**主题 id 或显示名都收**（覆盖设置文件；
     /// id 是 `themes[].id`，如 `lithe-dark`；显示名是 `themes[].name`，如 `Lithe Dark`）。
@@ -248,13 +284,14 @@ struct Options {
 
 /// 解析 `[<workspace-root>] [--theme <id|名>] [--locale <tag>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <串>] [--right-view <id>]`。
 ///
-/// ⚠️ 位置参数**可省略**（2026-09-27 起）：省略时由 [`resolve_launch_root`] 决定根，
+/// ⚠️ 位置参数**可省略**（2026-09-27 起）：省略时由 [`resolve_launch_plan`] 决定开什么，
 /// 于是"双击 exe"也能开出一个窗口。`--help` / 未知参数仍然返回 `Err(USAGE)`，
 /// `main` 照旧把它打到 stderr 并以退出码 2 退出。
 fn parse_options() -> Result<Options, String> {
     const USAGE: &str = "用法：Lithe [<workspace-root>] [--theme <主题 id 或名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
          \x20 省略 <workspace-root> 时：打开「最近项目」里最近且仍然存在的那个（已失效的条目标为失效）；\n\
-         \x20 一个都没有时回落到当前工作目录 —— 双击启动走的就是这一条，窗口一定会开出来。\n\
+         \x20 一个都没有时打开**欢迎页**（800×650；挑一个文件夹或点一条最近项目即进入工作区）——\n\
+         \x20 双击启动走的就是这一条，窗口一定会开出来。\n\
          \x20 --theme <id|名>      本次启动使用的主题（id 如 lithe-dark，名如 Lithe Dark；覆盖设置文件；验证/诊断用）\n\
          \x20 --locale <语言>      本次启动使用的界面语言（覆盖设置文件；验证/诊断用）\n\
          \x20 --open-settings     启动后自动打开设置对话框（验证/诊断用）\n\
@@ -721,37 +758,54 @@ fn run_project_menu_probe(window: &mut Window) {
 /// （与本文件开头的 `S1_ASSETS` 同一条理由）。
 const LAUNCH_TAG: &str = "S1_WORKSPACE_LAUNCH";
 
-/// 启动根的**纯选择**：显式路径 > 最近且仍然存在的项目 > 兜底目录。
+/// 这一次启动开出什么。
 ///
-/// 三个候选都由调用方准备好，所以这条优先级规则只有一个落点、也就能直接单测
-/// （见本文件底部的 `mod tests`）。真正的"读文件 / 探测目录"都在 [`resolve_launch_root`]。
-fn choose_launch_root(
-    explicit: Option<PathBuf>,
-    recent_root: Option<String>,
-    fallback: PathBuf,
-) -> PathBuf {
-    explicit
-        .or_else(|| recent_root.map(PathBuf::from))
-        .unwrap_or(fallback)
+/// 两支的判据是纯函数 [`choose_launch_root`]（`None` = 欢迎页）；这一层只负责把它
+/// 与"读最近项目文件 / 探测目录 / 标记失效条目"接起来。
+enum LaunchPlan {
+    /// 有可用根：开工作区（`Lithe <root>` 与"双击且最近项目里有可用根"两条既有行为）。
+    Workspace(PathBuf),
+    /// 没有活动项目：开欢迎页（U10）。带上**已经读好、并且已经把失效条目标过**的那一份列表
+    /// —— 欢迎页不需要再读一次文件（两次读之间也不可能看到不同的内容）。
+    Welcome(lithe_gpui_settings::LoadedRecentProjects),
 }
 
-/// 没给位置参数时决定打开哪个根：**读最近项目 → 挑第一条存在的 → 标记失效条目 → 兜底**。
+/// 启动根的**纯选择**：显式路径 > 最近且存在的项目 > `None`（= 欢迎页）。
+///
+/// 两个候选都由调用方准备好，所以这条优先级规则只有一个落点、也就能直接单测
+/// （见本文件底部的 `mod tests`）。真正的"读文件 / 探测目录"都在 [`resolve_launch_plan`]。
+///
+/// ⚠️ `None` 在 U10 之前**不存在**：那时第三支是"回落当前工作目录"
+/// （`fallback_directory`，为了让双击启动"窗口一定开得出来"）。现在那个目的由**欢迎页**
+/// 承担 —— 它同样是一个真的开出来的窗口，而语义与真源一致（没有活动项目 ⇒ 欢迎页，
+/// 见 `lithe_gpui_workbench::welcome` 的模块文档）。`fallback_directory` 随之删除：
+/// 留着它就是一段永远走不到、但读起来像还有兜底的死代码。
+fn choose_launch_root(explicit: Option<PathBuf>, recent_root: Option<String>) -> Option<PathBuf> {
+    explicit.or_else(|| recent_root.map(PathBuf::from))
+}
+
+/// 没给位置参数时决定开什么：**读最近项目 → 挑第一条存在的 → 标记失效条目 → 有根开工作区 /
+/// 没根开欢迎页**。
 ///
 /// 为什么双击 `Lithe.exe` 会走到这里（根因，别再踩）：位置参数在原实现里是
 /// `root.ok_or_else(|| USAGE.to_string())?` —— **必填**；解析失败走
 /// `std::process::exit(2)`，而 release 是 GUI 子系统（`windows_subsystem = "windows"`），
 /// **没有控制台**，那段用法说明写到哪里都看不见，于是双击的表现就是"毫无反应地静默退出"。
-fn resolve_launch_root(explicit: Option<PathBuf>) -> PathBuf {
+///
+/// U10 起第三支从"回落当前工作目录"改成**欢迎页**：`select_launch_root` 已经把
+/// "一条可用的都没有"如实报成 `pick.root = None`，继续拿 CWD 当根就会开出一个
+/// 用户从没选过的工作区（真源没有这一态）。
+fn resolve_launch_plan(explicit: Option<PathBuf>) -> LaunchPlan {
     // 显式路径这一支**故意不读最近项目文件**：`Lithe <root>` 的既有行为一字不改
     // （不产生新的诊断行，也不会去动 `recent-projects.json`）。
-    // 传 `None` / 空 `PathBuf` 只是为了让"显式优先"这条规则只写在 `choose_launch_root` 里。
     if explicit.is_some() {
-        return choose_launch_root(explicit, None, PathBuf::new());
+        let root = choose_launch_root(explicit, None).expect("刚判过 explicit 是 Some");
+        return LaunchPlan::Workspace(root);
     }
 
     // 与项目菜单**同一份**数据（`%APPDATA%\Lithe\recent-projects.json`，或
     // `LITHE_GPUI_SETTINGS_FILE` 指到的那个目录里的同名文件）。
-    let loaded = lithe_gpui_settings::load_recent_projects();
+    let mut loaded = lithe_gpui_settings::load_recent_projects();
     let pick = loaded
         .projects
         .select_launch_root(|path| std::path::Path::new(path).is_dir());
@@ -759,16 +813,18 @@ fn resolve_launch_root(explicit: Option<PathBuf>) -> PathBuf {
     // 顺手把失效条目标成 `missing` 并落盘 —— 与项目菜单里点一条失效项目的行为一致
     // （`ShellWorkspace::request_open_project` 的 `set_missing` + `save_recent_projects`）。
     // `pick.missing` 里的每条路径都来自列表本身，所以 `set_missing` 必然命中（不需要判返回值）。
-    if !pick.missing.is_empty() {
-        let mut projects = loaded.projects.clone();
+    //
+    // ⚠️ 直接改 `loaded.projects`（2026-09-27 那版是改一个 clone）：落盘内容逐字节相同，
+    // 但 U10 之后这份列表会**交给欢迎页**，改 clone 会让界面上的 `missing` 与文件里的不一致。
+    let missing = pick.missing.len();
+    if missing > 0 {
         for path in &pick.missing {
-            projects.set_missing(path, true);
+            loaded.projects.set_missing(path, true);
         }
         match loaded.path.as_deref() {
-            Some(file) => match lithe_gpui_settings::save_recent_projects(file, &projects) {
+            Some(file) => match lithe_gpui_settings::save_recent_projects(file, &loaded.projects) {
                 Ok(bytes) => eprintln!(
-                    "{LAUNCH_TAG} recent_marked_missing={} saved bytes={bytes} path={}",
-                    pick.missing.len(),
+                    "{LAUNCH_TAG} recent_marked_missing={missing} saved bytes={bytes} path={}",
                     file.display()
                 ),
                 // 写失败不 panic：选根照常继续，下一次打开项目会再写一次。
@@ -778,63 +834,21 @@ fn resolve_launch_root(explicit: Option<PathBuf>) -> PathBuf {
         }
     }
 
-    let root = choose_launch_root(None, pick.root.clone(), fallback_directory());
     // 一行可 grep 的启动证据：选了谁、候选有几条、跳过了几条失效的。
-    let source = if pick.root.is_some() {
-        "recent"
-    } else {
-        "current_dir"
-    };
-    eprintln!(
-        "{LAUNCH_TAG} source={source} root={} candidates={} missing={}",
-        root.display(),
-        loaded.projects.len(),
-        pick.missing.len()
-    );
-    root
-}
-
-/// 「最近项目列表为空 / 所有条目都已失效」时的兜底目录：**当前工作目录**。
-///
-/// 取舍（维护者口径："双击之后窗口一定会开出来"，不允许静默什么都不发生）：
-///
-/// - **为什么不选"弹一个真正的消息框然后退出"**：那只把"静默"换成"点一下确认"，点完还是
-///   什么都开不出来，用户仍然到不了任何工作区；而且 GUI 子系统要加平台调用
-///   （`MessageBoxW`），`app` crate 虽是平台宿主层、放得下，但为一个只起提示作用的兜底
-///   引入新依赖不划算。
-/// - **为什么 CWD 合适**：从资源管理器双击时 CWD 就是 exe 所在目录（例如
-///   `gpui\target\release`），它**一定是个真实存在的目录**，所以外壳一定建得出来；
-///   用户随即能用项目菜单 / `Ctrl+O` 打开真正的项目。要是这个目录不可写
-///   （例如将来装进 `C:\Program Files\…`），`.lithe/` 建不出来这件事会走已经落地的
-///   常驻红条路径 —— 失败仍然是**可见**的，不是静默。
-/// - 从终端启动时这条兜底同样合理：CWD 就是用户当前所在的目录。
-///
-/// CWD 拿不到（被删掉 / 探测失败）时退到 **exe 所在目录**；连它都拿不到时才用 `.`
-/// —— 无论如何都返回一个路径，**不在这里退出**（宁可带着一个可疑的根开出来、让外壳
-/// 自己的诊断说话，也不静默退出）。
-fn fallback_directory() -> PathBuf {
-    if let Ok(cwd) = std::env::current_dir() {
-        if cwd.is_dir() {
-            return cwd;
-        }
-    }
-
-    match std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
-    {
-        Some(dir) => {
-            if !dir.is_dir() {
-                eprintln!(
-                    "{LAUNCH_TAG} fallback_warning source=exe_dir path={} reason=not_a_directory",
-                    dir.display()
-                );
-            }
-            dir
+    let candidates = loaded.projects.len();
+    match choose_launch_root(None, pick.root) {
+        Some(root) => {
+            eprintln!(
+                "{LAUNCH_TAG} source=recent root={} candidates={candidates} missing={missing}",
+                root.display()
+            );
+            LaunchPlan::Workspace(root)
         }
         None => {
-            eprintln!("{LAUNCH_TAG} fallback_warning source=dot reason=no_exe_path");
-            PathBuf::from(".")
+            // 挑不到可用根：**开欢迎页**（U10）。诊断词表里的 `source=welcome` 就是
+            // "这一次走的是欢迎态"的机器判据（`source=recent` 是老的那一支）。
+            eprintln!("{LAUNCH_TAG} source=welcome candidates={candidates} missing={missing}");
+            LaunchPlan::Welcome(loaded)
         }
     }
 }
@@ -881,9 +895,10 @@ fn main() {
         }
     };
 
-    // 工作区根：显式给了位置参数就用它（既有行为一字不改）；一个位置参数都没给就挑一个
-    // —— 资源管理器里双击 `Lithe.exe` 走的正是后者（见 [`resolve_launch_root`] 的根因说明）。
-    let root = resolve_launch_root(root);
+    // 开什么：显式给了位置参数就用它（既有行为一字不改）；一个位置参数都没给就挑一个
+    // —— 资源管理器里双击 `Lithe.exe` 走的正是后者（见 [`resolve_launch_plan`] 的根因说明），
+    // 挑不到可用根时这一支是**欢迎页**（U10）。
+    let plan = resolve_launch_plan(root);
 
     // `--right-view <id>`：**先解析**，未知 id 在这里就报一行错并**不改动启动状态**
     // （解析成 `None` 之后，窗口那段 `if let Some(view)` 整段不执行，右工具窗保持
@@ -1058,19 +1073,58 @@ fn main() {
             // （与菜单项显示的那颗键同一份），登记时逐条读它们。
             lithe_gpui_workbench::menu_bar::install_key_actions(cx);
 
-            let bounds = startup_window_bounds(cx);
+            // 窗口尺寸按形态给（U10）：欢迎态 800×650 且**最小尺寸同值**（真源
+            // `RootView.swift:350`/`:367`），工作区那档仍是"94% 的普通窗口 + 1024×680 下限"。
+            //
+            // ⚠️ 最小尺寸必须跟着形态变：工作区那档的 1024×680 比 800×650 大，只改
+            // `window_bounds` 会被平台按最小尺寸顶回去。窗口**位置**两档都由
+            // `centered_window_bounds` 居中（同一条真源）。
+            let (bounds, min_size) = match &plan {
+                LaunchPlan::Welcome(_) => (welcome_window_bounds(cx), WELCOME_WINDOW_SIZE),
+                LaunchPlan::Workspace(_) => (startup_window_bounds(cx), MIN_WINDOW),
+            };
 
             cx.spawn(async move |cx| {
                 let window_options = WindowOptions {
                     window_bounds: Some(bounds),
-                    window_min_size: Some(size(px(1024.), px(680.))),
+                    window_min_size: Some(min_size),
                     ..TitleBar::window_options()
                 };
 
                 cx.open_window(window_options, move |window, cx| {
+                    // U10：窗口根有两支，先分流。
+                    //
+                    // 欢迎态**不建** `ShellWorkspace`：它的构造期要建 `.lithe/`、读会话、
+                    // 发 `workspace.snapshot` / `git.status` / `maven.scan`，全部以"根是一个
+                    // 真实项目"为前提；而且下面那一整段启动探针（会话恢复、外观回退、
+                    // 菜单/项目下拉探针、`--open-project-probe`）都要外壳的实体或工作区根
+                    // —— 欢迎态下它们没有意义，也没有落点，所以整段不跑。
+                    // 设置 / 语言 / 主题在这一刻之前就装好了（上面 `init_store` 那段），
+                    // 所以欢迎页里的设置按钮与 `--theme` / `--locale` 照常生效。
+                    let workspace_root = match plan {
+                        LaunchPlan::Welcome(loaded) => {
+                            let content = cx.new(|cx| {
+                                let welcome = cx.new(|cx| {
+                                    WelcomeView::new(loaded.projects, loaded.path, window, cx)
+                                });
+                                // 窗口根**必须**是 `Root`（对话框 / 浮层 / 通知的宿主），
+                                // 欢迎页也不例外 —— 设置对话框与「打开文件夹」的系统选择器
+                                // 都挂在它上面。
+                                Root::new(welcome, window, cx)
+                            });
+                            // 「跟随系统外观」要在有窗口之后登记（收 `&mut Window`）——
+                            // 与工作区那一支同一句，否则欢迎页在切换系统明暗时不跟随。
+                            if let Some(store) = lithe_gpui_settings::try_store(cx) {
+                                store.update(cx, |store, cx| store.attach_window(window, cx));
+                            }
+                            return content;
+                        }
+                        LaunchPlan::Workspace(root) => root,
+                    };
+
                     let workspace = cx.new(|cx| {
                         ShellWorkspace::new(
-                            root,
+                            workspace_root,
                             compact_menu_bar,
                             branch_panel_probe,
                             run_probe,
@@ -1290,11 +1344,18 @@ fn main() {
         });
 }
 
-/// 启动根选择逻辑的单测。
+/// 启动形态判定的单测。
 ///
 /// 只测**纯函数**（[`choose_launch_root`]）与另一条纯函数
 /// （`lithe_gpui_settings::RecentProjects::select_launch_root`，在 settings crate 里测）：
-/// 这两条合起来就是"无参数启动打开哪个根"的全部判断，不需要构造 GPUI、不需要真的建目录。
+/// 这两条合起来就是"无参数启动开什么"的全部判断，不需要构造 GPUI、不需要真的建目录。
+///
+/// ⚠️ U10 起第三支（两个候选都没有）= **欢迎页**，不再是"回落当前工作目录"：
+/// 后者的两条测试（`fallback_directory_is_used_when_there_is_no_recent_project` /
+/// `fallback_directory_is_a_real_directory`）随 `fallback_directory` 一起删除 ——
+/// "窗口一定会开出来"这条口径改由欢迎页承担（它同样是一个真的开出来的窗口），
+/// 留着那两条断言会钉一个已经不存在的行为。本文件的测试数因此从 4 变成 4
+/// （删 2 条、加 2 条：`no_root_at_all_shows_the_welcome_page` 与真值表那条）。
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1306,40 +1367,45 @@ mod tests {
         let root = choose_launch_root(
             Some(PathBuf::from(r"D:\explicit")),
             Some(r"D:\recent".to_string()),
-            PathBuf::from(r"D:\fallback"),
         );
-        assert_eq!(root, PathBuf::from(r"D:\explicit"));
+        assert_eq!(root, Some(PathBuf::from(r"D:\explicit")));
     }
 
-    /// 没有显式路径时用**最近且存在的项目**（用兜底目录会开错工作区）。
+    /// 没有显式路径时用**最近且存在的项目**（那一支就是双击启动的既有行为）。
     #[test]
-    fn recent_project_wins_over_the_fallback_directory() {
-        let root = choose_launch_root(
-            None,
-            Some(r"D:\recent".to_string()),
-            PathBuf::from(r"D:\fallback"),
-        );
-        assert_eq!(root, PathBuf::from(r"D:\recent"));
+    fn recent_project_is_used_when_there_is_no_explicit_root() {
+        let root = choose_launch_root(None, Some(r"D:\recent".to_string()));
+        assert_eq!(root, Some(PathBuf::from(r"D:\recent")));
     }
 
-    /// 最近项目列表为空 / 全部失效（这一层拿到的是 `None`）时回落到兜底目录 ——
-    /// 这条守着"绝不允许仍然静默什么都不发生"：兜底目录一定是个真实目录，窗口一定开得出来。
-    #[test]
-    fn fallback_directory_is_used_when_there_is_no_recent_project() {
-        let root = choose_launch_root(None, None, PathBuf::from(r"D:\fallback"));
-        assert_eq!(root, PathBuf::from(r"D:\fallback"));
-    }
-
-    /// 兜底目录本身必须是**真实存在的目录**（它是"窗口一定开得出来"这条口径的最后一环）。
+    /// **U10 的触发条件**：没有位置参数、最近项目里也没有可用根 ⇒ `None` = 欢迎页。
     ///
-    /// 不比对具体路径（那会依赖跑测试的机器）：只断言"探测出来的东西确实是个目录"。
+    /// 反证：把这一支改回 U10 之前的行为（`unwrap_or(fallback_directory())`）就立刻变红。
     #[test]
-    fn fallback_directory_is_a_real_directory() {
-        let dir = fallback_directory();
-        assert!(
-            dir.is_dir(),
-            "兜底目录必须是真实目录，否则外壳又会开不出来：{}",
-            dir.display()
-        );
+    fn no_root_at_all_shows_the_welcome_page() {
+        assert_eq!(choose_launch_root(None, None), None);
+    }
+
+    /// 真值表：**只有**两个候选都缺席时才是欢迎页。
+    ///
+    /// 与上面三条各自的单点断言互补 —— 这条挡的是"判据被写成 `&&` / 顺序被调换"
+    /// 这类把某一支并进欢迎页的改动（那种改动会让"双击有最近项目的人"直接落到欢迎页）。
+    #[test]
+    fn welcome_page_requires_both_candidates_missing() {
+        let explicit = PathBuf::from(r"D:\explicit");
+        let recent = r"D:\recent".to_string();
+        let cases = [
+            (None, None, None),
+            (Some(explicit.clone()), None, Some(explicit.clone())),
+            (None, Some(recent.clone()), Some(PathBuf::from(&recent))),
+            (Some(explicit.clone()), Some(recent), Some(explicit)),
+        ];
+        for (explicit, recent, expected) in cases {
+            assert_eq!(
+                choose_launch_root(explicit, recent),
+                expected,
+                "启动根判定的真值表在这一格上不对"
+            );
+        }
     }
 }

@@ -69,32 +69,33 @@ const WHITELIST = [
   {
     file: "lithe-gpui/crates/app/src/main.rs",
     match: "const MIN_WINDOW",
-    line: 69,
+    line: 64,
     category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
     reason:
-      "const MIN_WINDOW: Size<Pixels> = size(px(1024.), px(680.)) —— OS 窗口的最小尺寸，属于窗口平台边界；此刻窗口还不存在，没有 rem 基准可换算。",
+      "const MIN_WINDOW: Size<Pixels> = size(px(1024.), px(680.)) —— OS 窗口的最小尺寸，属于窗口平台边界；此刻窗口还不存在，没有 rem 基准可换算。U10 起它在模块作用域（两处落点：工作区首窗口的夹紧与 WindowOptions::window_min_size）。",
+  },
+  {
+    file: "lithe-gpui/crates/app/src/main.rs",
+    match: "const WELCOME_WINDOW_SIZE",
+    line: 73,
+    category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
+    reason:
+      "const WELCOME_WINDOW_SIZE: Size<Pixels> = size(px(800.), px(650.)) —— 欢迎态窗口的内容尺寸与最小尺寸（真源 macos/Sources/Lithe/Views/App/RootView.swift:350 的 welcomeContentSize，以及 :367 的 minimumContentSize 在 case .welcome 上返回同一个值）。它是 WindowBounds/WindowOptions 的平台边界值（真源是 SwiftUI 的 .defaultSize 点数），此刻窗口还不存在、没有 rem 基准。",
   },
   {
     file: "lithe-gpui/crates/app/src/main.rs",
     match: "fallback = size(px(1280.)",
-    line: 70,
+    line: 87,
     category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
     reason: "let fallback = size(px(1280.), px(800.)) —— 兜底窗口尺寸，同上（WindowOptions/Size<Pixels> 的平台边界）。",
   },
   {
     file: "lithe-gpui/crates/app/src/main.rs",
-    match: "WindowBounds::Windowed(Bounds::new(point(px(60.)",
-    line: 73,
+    match: "point(px(60.), px(40.))",
+    line: 90,
     category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
     reason:
-      "return WindowBounds::Windowed(Bounds::new(point(px(60.), px(40.)), fallback)) —— 窗口在屏幕上的位置与尺寸，同属 OS 窗口平台边界。",
-  },
-  {
-    file: "lithe-gpui/crates/app/src/main.rs",
-    match: "window_min_size: Some(size(px(1024.)",
-    line: 753,
-    category: "documented physical/platform boundary（coding-guides.md:288 第 1 类）",
-    reason: "window_min_size: Some(size(px(1024.), px(680.))) —— WindowOptions 的最小窗口尺寸，同上。",
+      "拿不到主显示器时的兜底窗口位置与尺寸：WindowBounds::Windowed(Bounds::new(point(px(60.), px(40.)), …)) —— 窗口在屏幕上的位置与尺寸，属 OS 窗口平台边界。U10 起有两处（工作区的 startup_window_bounds 与欢迎态的 welcome_window_bounds），同一个 60/40 常量、同一类例外，所以这条 match 同时覆盖两行。",
   },
   {
     file: "lithe-gpui/crates/settings/src/theme.rs",

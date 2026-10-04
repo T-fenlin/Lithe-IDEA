@@ -20,7 +20,7 @@ use std::path::PathBuf;
 // `TestAppContextExt` —— 那个在 0.7.0 里只提供 `wait_for`，本测试是同步的用不到）；
 // `TestWindowExt` 提供 `window.render_frame(..)`。
 use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{AppContext as _, TestAppContext, px, size};
+use gpui_kit::{App, AppContext as _, TestAppContext, Window, px, size};
 
 /// 建一个临时文件并在测试结束时删掉它（断言失败也要删，所以用 `Drop` 而不是结尾手动 remove）。
 struct TempFile {
@@ -272,4 +272,103 @@ fn theme_application_sets_notification_toast_insets_from_the_macos_source(cx: &m
         rem_px(rem, NOTIFICATION_MARGIN_BOTTOM_SPEC),
         "切主题会重跑 apply_config，底内衬必须仍然生效（`notification` 不是主题文件字段）"
     );
+}
+
+/// 欢迎页（U10）：无可用根时它是窗口内容，点一条最近项目**真的走到打开链路**。
+///
+/// 这条钉住的是"触发条件 + 内容 + 交互"三件事里**唯一**机器可验证的那一段：
+///
+/// 1. `WelcomeView` 能在无头窗口里渲染（渲染树不 panic、不依赖真实窗口 / 真实设置状态）；
+/// 2. 最近项目真的被**行化**了 —— 行 id 是业务身份
+///    （`lithe-welcome-project:<path>`，见 `welcome.rs` 的 `welcome_row_element_id`），
+///    按 id 找得到，且**过滤顺序 = 数据层顺序**（最近在前）；
+/// 3. 点这一行 ⇒ 打开链路被调用，且拿到的是**数据层那条原始路径**。
+///
+/// 打开链路在这里是**注入的记录实现**（`ProjectOpener` 端口）：真实现
+/// （`WorkspaceOpener`）会 `replace_root` 出一个 `ShellWorkspace` —— 那要建 `.lithe/`、
+/// 读会话、发 `workspace.snapshot` / `git.status`，属于本测试**明确不碰**的边界
+/// （`write-stable-tests`：单测不起真进程、不写真实工作区）。
+///
+/// ⚠️ 不测「移除一行」：那条会真的写 `recent-projects.json`（`save_recent_projects`）。
+/// 它的数据层行为（`RecentProjects::remove`）在 `settings` crate 里已有单测。
+#[gpui_kit::test]
+fn welcome_view_lists_recent_projects_and_a_row_click_calls_the_opener(cx: &mut TestAppContext) {
+    use std::sync::{Arc, Mutex};
+
+    use lithe_gpui_settings::RecentProjects;
+    use lithe_gpui_workbench::welcome::{ProjectOpener, WelcomeView, welcome_row_element_id};
+
+    /// 记录用的打开实现：把"被要求打开的路径"原样收下来（不建外壳、不碰磁盘）。
+    struct RecordingOpener {
+        opened: Arc<Mutex<Vec<PathBuf>>>,
+    }
+
+    impl ProjectOpener for RecordingOpener {
+        fn open_project(&mut self, target: PathBuf, _window: &mut Window, _cx: &mut App) {
+            self.opened.lock().expect("记录锁没中毒").push(target);
+        }
+    }
+
+    // 组件库得先初始化（主题、字体、组件注册），否则渲染期取主题会 panic。
+    cx.update(gpui_kit::init);
+
+    // 数据层：两条最近项目，时间戳递减 ⇒ 顺序是 beta 在前（`record_open` + `normalize`）。
+    let mut projects = RecentProjects::new();
+    projects.record_open(r"D:\proj\alpha", 1_000, None);
+    projects.record_open(r"D:\proj\beta", 2_000, None);
+    assert_eq!(projects.entries()[0].path, r"D:\proj\beta");
+
+    let opened = Arc::new(Mutex::new(Vec::new()));
+    let recorder = RecordingOpener {
+        opened: opened.clone(),
+    };
+    // 真源 `welcomeContentSize` = 800×650（`RootView.swift:350`）：窗口尺寸也照它开，
+    // 于是"这一页真的画得进那个尺寸"一起被覆盖。
+    let (handle, welcome) =
+        common::open_window(cx, Some(size(px(800.), px(650.))), |window, cx| {
+            cx.new(|cx| WelcomeView::with_opener(projects, None, Box::new(recorder), window, cx))
+        });
+
+    // ② 真的画出一帧（首帧之前查 `window.find` 会 panic），并按业务 id 找到两行。
+    //
+    // ⚠️ `find` / `click` 收的是 `Into<ElementId>`；传 `&str` 会要求借用活到 `'static`，
+    // 所以这里每次都现调 `welcome_row_element_id(..)`（它就是 `ElementId::Name(SharedString)`，
+    // 生产渲染用的是同一个构造）。
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+
+        let beta = welcome_row_element_id(r"D:\proj\beta");
+        let alpha = welcome_row_element_id(r"D:\proj\alpha");
+        assert!(
+            window.find(beta.clone()).bounds().size.height > px(0.),
+            "最近项目 beta 那一行必须真的画出来（高度 > 0）"
+        );
+        assert!(
+            window.find(alpha.clone()).bounds().size.height > px(0.),
+            "最近项目 alpha 那一行必须真的画出来"
+        );
+        // 顺序 = 数据层顺序（最近在前）：beta 的顶边不得低于 alpha 的顶边。
+        assert!(
+            window.find(beta.clone()).bounds().top() <= window.find(alpha.clone()).bounds().top(),
+            "行顺序必须与数据层一致（最近的项目在前，真源 `filteredProjects` 不重排）"
+        );
+
+        // ③ 点一行（原生鼠标移动 / 按下 / 抬起）⇒ 打开链路被调用。
+        window.click(beta, cx);
+    })
+    .unwrap();
+
+    let recorded = opened.lock().expect("记录锁没中毒").clone();
+    assert_eq!(
+        recorded,
+        vec![PathBuf::from(r"D:\proj\beta")],
+        "点第二条（最近的那条）必须把**数据层那条原始路径**交给打开链路"
+    );
+
+    // 视图的公开真值：过滤串为空时有 2 行、没有空态。
+    cx.update(|cx| {
+        let view = welcome.read(cx);
+        assert_eq!(view.rows().len(), 2);
+        assert_eq!(view.empty_state(), None);
+    });
 }

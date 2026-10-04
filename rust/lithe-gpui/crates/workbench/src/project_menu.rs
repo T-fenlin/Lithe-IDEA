@@ -334,7 +334,10 @@ impl ProjectBadge {
 ///
 /// ⚠️ **必须自绘**：`PopupMenuItem` 的 `icon` 槽只收 `Icon` 字形（`popup_menu.rs:40`），
 /// 渲染时还被硬编码 `.xsmall()`（`:1172`），装不下彩色方块（研究 §5.4 第 3 行）。
-fn badge_view(badge: &ProjectBadge, size: Pixels) -> impl IntoElement {
+///
+/// `pub(crate)`：欢迎页的最近项目行画的是**同一个**徽标组件（真源两处都是
+/// `ProjectAvatarBadge`），尺寸由调用方给（面板 28、欢迎页 20，真源 `WelcomeView.swift:186`）。
+pub(crate) fn badge_view(badge: &ProjectBadge, size: Pixels) -> impl IntoElement {
     div()
         .flex_shrink_0()
         .flex()

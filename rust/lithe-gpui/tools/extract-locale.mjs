@@ -1036,6 +1036,23 @@ const GPUI_ONLY_KEYS = [
     reason:
       "同上的**失败态**（`warm` 那条 Core 调用返回错误）。**必须与「还在构建」分开说**，而且**不能说成致命错误**：索引没提前建好只意味着第一次搜索要自己建（Core 的 `get_or_build` 照旧工作），搜索功能本身不受影响。**这是宿主侧新增的可解释性提示**（同整段说明，真源没有对应说法），所以括号里明写「搜索本身仍然可用」，避免用户把这一行读成「搜索坏了」。",
   },
+  // ── 欢迎页「过滤后无匹配」（U10）────────────────────────────────────
+  //
+  // 这一条**不是**"宿主侧新增的说法"：真源有这句话，只是 catalog 里没有。
+  // 真源 `macos/Sources/Lithe/Views/App/WelcomeView.swift:166` 的空态是三元的：
+  // `model.recentProjects.isEmpty ? "No recent projects" : "No matching projects"`，
+  // 其中第一支在 catalog 里有（`welcome.noRecentProjects`，`locales/source/locale.ts:1749`），
+  // 第二支没有 —— 逐字查过 `locale.ts` 的 `welcome.*` 族（`:1740-1750`、`:4448-4466`）与
+  // 全部 `*.noMatching*` 键：最接近的 `ui.noMatchingOptions`（`:204`）说的是"选项"不是"项目"，
+  // 借过来会在有 12 个项目、只是过滤没匹配时说"没有匹配的选项"。
+  // 所以按 GPUI_ONLY_KEYS 补一条，中文也照真源语义写（不自创说法）。
+  {
+    key: "welcome.gpui.noMatchingProjects",
+    zh: "没有匹配的项目",
+    en: "No matching projects",
+    reason:
+      "真源 `macos/Sources/Lithe/Views/App/WelcomeView.swift:166` 的 `\"No matching projects\"`（`welcome.*` 族里唯一缺的那一支）。宿主用法：`crates/workbench/src/welcome.rs` 的空态第二个分支（`EmptyState::NoMatchingProjects`）。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);
@@ -1136,7 +1153,7 @@ function renderFile({ yamlLocale, entries, overrides, sourceLabel }) {
   const lines = [
     "# 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。",
     `# 真源：${sourceLabel}`,
-    `# 另有 ${GPUI_ONLY_KEYS.length} 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.*）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
+    `# 另有 ${GPUI_ONLY_KEYS.length} 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。`,
     "# 重新生成：node lithe-gpui/tools/extract-locale.mjs",
     "#",
     `# rust-i18n 4.2 约定：_version: ${FILE_VERSION}（key 在前、locale 在后）。`,

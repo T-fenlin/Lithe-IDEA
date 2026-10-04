@@ -1132,6 +1132,26 @@ mod tests {
                 "lithe.search.gpui.indexWarmFailed",
                 "搜索索引未提前建立完成，首次搜索可能较慢（搜索本身仍然可用）。",
             ),
+            // 欢迎页（U10，`workbench/src/welcome.rs`）。前五条都**复用 catalog 里已有的
+            // `welcome.*` 键**（`locales/source/locale.ts:1743-1750`），中文原文与
+            // `macos/Sources/Lithe/Views/App/WelcomeView.swift` 的裸字面量逐条对照过：
+            // `:65` 的 `Projects`、`:108` 的 `Search projects`、`:125` 的 `Open`、
+            // `:166` 的 `No recent projects`、`:169` 的 hint（**措辞不同**，见下）。
+            ("lithe.welcome.projects", "项目"),
+            ("lithe.welcome.searchProjects", "搜索项目"),
+            ("lithe.welcome.open", "打开"),
+            ("lithe.welcome.noRecentProjects", "暂无最近项目"),
+            // ⚠️ 真源 `:169` 的字面量是 "Open a local folder to start working."，
+            // 而 catalog 这条是「打开文件夹以开始使用。」—— 同一句意思、措辞不同。
+            // U10 硬约束是"优先复用 catalog 里已有的 `welcome.*` 键"，所以复用而不是新造；
+            // 这处措辞差异已登记在任务汇报里（不是漏改）。
+            ("lithe.welcome.openFolderHint", "打开文件夹以开始使用。"),
+            // `{name}` 占位符：`tr_args` 负责替换（`i18n.rs:108-111`）。
+            ("lithe.welcome.removeRecent", "从最近项目中移除 {name}"),
+            // 唯一新增的键（GPUI_ONLY_KEYS）：真源 `:166` 空态的**第二支**，catalog 的
+            // `welcome.*` 族里没有。出处与"为什么不借 `ui.noMatchingOptions`"见
+            // `extract-locale.mjs` 的那条条目。
+            ("lithe.welcome.gpui.noMatchingProjects", "没有匹配的项目"),
         ];
 
         // locale 是进程级全局状态，而 `cargo test` 默认并行跑同一个二进制里的测试。

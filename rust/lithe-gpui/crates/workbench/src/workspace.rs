@@ -218,6 +218,49 @@ fn startup_views(cx: &App) -> (Option<RightToolWindowView>, bool, Option<usize>)
         .unwrap_or((None, false, None))
 }
 
+/// 把窗口根换成 `target` 上的新外壳：`window.replace_root` + 新的 `Root`（**窗口根必须是
+/// `Root`** —— 它是对话框 / 浮层 / 通知的宿主，`crates/app/src/main.rs` 同一句）。
+///
+/// 两个调用点共用它，被绕开的差别只在调用方那一侧：
+///
+/// - [`ShellWorkspace::rebuild_project_window`]（换项目）：旧根要先"放掉索引缓存 + 写会话"；
+/// - [`crate::welcome::WorkspaceOpener`]（欢迎页点一条项目）：**还没有**旧外壳，所以没有
+///   那两步 —— 换根之后要补的那两步（记最近项目 / 写「不再询问」偏好）也各自在调用方。
+///
+/// 菜单栏形态在 `ShellStartup` 这个 `App::Global` 里（应用级启动参数，`main.rs` 的局部
+/// 变量活不到这里），所以本函数自己取一次（`startup_compact_menu`）。
+///
+/// 返回 `None` 只可能发生在 `replace_root` 的实现被换掉时（它今天同步执行 `build_view`，
+/// `gpui-pre-0.3.6/src/window.rs:2242-2254`，所以闭包**一定**跑过）。调用方按既有口径打
+/// 一行 `state=rebuild_failed reason=no_view` 的诊断，不 panic。
+pub(crate) fn replace_root_with_workspace(
+    target: &Path,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<Entity<ShellWorkspace>> {
+    let compact_menu = startup_compact_menu(cx);
+    let mut created: Option<Entity<ShellWorkspace>> = None;
+    let new_root = window.replace_root(cx, |window, cx| {
+        let workspace = cx.new(|cx| {
+            ShellWorkspace::new(
+                target.to_path_buf(),
+                compact_menu,
+                false,
+                false,
+                false,
+                window,
+                cx,
+            )
+        });
+        created = Some(workspace.clone());
+        Root::new(workspace, window, cx)
+    });
+    // `replace_root` 已经把新 `Root` 装成窗口根；这里只留一行回执，
+    // 免得读者以为返回值没用上。
+    let _ = new_root;
+    created
+}
+
 /// 「这次项目在哪儿打开」。真源 `ProjectOpenDestination`
 /// （`windows/tauri/src/features/file-system/controllers/project-open-destination.ts:6`）。
 ///
@@ -249,7 +292,7 @@ pub(crate) struct ProjectOpenDecision {
 /// | 真源 | 这里 |
 /// | --- | --- |
 /// | ① `explicitDestination` 直接用 | `explicit` 参数（`--open-project-destination` / 菜单里点名的那一支） |
-/// | ② `!hasOpenWorkspace` → `this-window`，不询问 | **不适用**：本侧 `ShellWorkspace` 恒有一个工作区根（启动参数给的），不会有"没有工作区"这一态 |
+/// | ② `!hasOpenWorkspace` → `this-window`，不询问 | **只在欢迎页成立**（U10 之前本侧 `ShellWorkspace` 恒有一个工作区根，所以这一支一直是"不适用"）。欢迎页那一侧不经过本函数：`crate::welcome::WorkspaceOpener` 直接照这一段定死"此窗口、不询问"（宿主又没有多窗口，见 `report_new_window_not_wired`） |
 /// | ③ `!askWhereToOpenProjects` → 按 `openFoldersInNewWindow` 直接定 | `ask == false` 那一支 |
 /// | ④ 否则弹对话框 | `None` |
 ///
@@ -3999,8 +4042,8 @@ impl ShellWorkspace {
         cx: &mut Context<Self>,
     ) {
         // 菜单栏形态在重建时要取回来：它是应用级启动参数（`ShellStartup`），
-        // 不能捕获 `main.rs` 的局部变量（理由见该 Global 的文档）。
-        let compact_menu = startup_compact_menu(cx);
+        // 不能捕获 `main.rs` 的局部变量（理由见该 Global 的文档）。取回那一步在
+        // [`replace_root_with_workspace`] 里（欢迎页那条路也要它）。
         eprintln!(
             "S1_OPEN_PROJECT destination=this-window path={} state=rebuilding",
             target.display()
@@ -4026,28 +4069,9 @@ impl ShellWorkspace {
         //
         // 换根前到达的通知会跟着旧 store 一起没 —— 但那一刻旧 `EditorPane` 的异步任务本身
         // 也被 drop 了，原来那条 toast 同样发不出来，所以没有回归。
-        // 闭包是 `FnOnce`，用这个槽把新建出来的外壳句柄带出来（重建之后它才是所有者）。
-        let mut created: Option<Entity<ShellWorkspace>> = None;
-        let new_root = window.replace_root(cx, |window, cx| {
-            let workspace = cx.new(|cx| {
-                ShellWorkspace::new(
-                    target.clone(),
-                    compact_menu,
-                    false,
-                    false,
-                    false,
-                    window,
-                    cx,
-                )
-            });
-            created = Some(workspace.clone());
-            Root::new(workspace, window, cx)
-        });
-        // `replace_root` 已经把新 `Root` 装成窗口根；这里只留一行回执，
-        // 免得读者以为返回值没用上。
-        let _ = new_root;
-
-        let Some(workspace) = created else {
+        // 闭包是 `FnOnce`（`replace_root` 的 build_view），新建出来的外壳句柄由
+        // [`replace_root_with_workspace`] 带出来（重建之后它才是所有者）。
+        let Some(workspace) = replace_root_with_workspace(&target, window, cx) else {
             // 只可能发生在 `replace_root` 的实现被换掉时；如实登记，不静默。
             eprintln!("S1_OPEN_PROJECT state=rebuild_failed reason=no_view");
             return;
@@ -4214,7 +4238,10 @@ impl ShellWorkspace {
     ///
     /// `open_in_new_window` 传的总是 `Some(false)`：本侧唯一真的打开成功的形态就是「此窗口」
     /// （新窗口还没做）。真源记的是"用户选了哪一边"，这里如实记 `false`。
-    fn record_opened_project(
+    ///
+    /// `pub(crate)`：欢迎页的打开链路（[`crate::welcome::WorkspaceOpener`]）也要在换根
+    /// **之后**记这一次打开 —— 那时它手里只有新外壳的 `Entity`，走的正是这个方法。
+    pub(crate) fn record_opened_project(
         &mut self,
         target: &Path,
         open_in_new_window: Option<bool>,
