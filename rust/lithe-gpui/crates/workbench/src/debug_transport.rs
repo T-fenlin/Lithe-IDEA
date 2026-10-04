@@ -259,16 +259,21 @@ mod tests {
 
     struct SharedAdapter(std::sync::Arc<std::sync::Mutex<ScriptedAdapter>>);
 
+    fn locked(
+        adapter: &std::sync::Mutex<ScriptedAdapter>,
+    ) -> std::sync::MutexGuard<'_, ScriptedAdapter> {
+        adapter
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     impl DebugAdapterPort for SharedAdapter {
         fn write_frame(&mut self, frame: &[u8]) -> Result<(), String> {
-            self.0
-                .lock()
-                .expect("脚本 adapter 锁没中毒")
-                .write_frame(frame)
+            locked(&self.0).write_frame(frame)
         }
 
         fn kill(&mut self) {
-            self.0.lock().expect("脚本 adapter 锁没中毒").kill();
+            locked(&self.0).kill();
         }
     }
 
@@ -336,8 +341,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Core 的 debug.disconnect 目前在 ABI 边界让宿主进程 abort（STATUS_STACK_BUFFER_OVERRUN），\
-                待单独定位修复后去掉 ignore；传输层自身的 terminated 守卫由 feed 的拒绝分支覆盖"]
     fn feed_after_disconnect_is_rejected_and_stops_writing() {
         let (mut transport, adapter) = start("session-2");
         transport
@@ -356,7 +359,6 @@ mod tests {
             ))
             .expect("initialized 事件应当被 Core 接受");
 
-        let before = adapter.lock().expect("锁").frames.len();
         transport.disconnect().expect("握手完成后应当能断开");
         assert!(transport.is_terminated());
         assert!(
@@ -364,6 +366,7 @@ mod tests {
             "disconnect 必须杀 adapter 进程"
         );
 
+        let after_disconnect = adapter.lock().expect("锁").frames.len();
         let error = transport
             .feed(b"Content-Length: 2\r\n\r\n{}")
             .expect_err("断开之后的字节必须被拒绝");
@@ -373,8 +376,8 @@ mod tests {
         );
         assert_eq!(
             adapter.lock().expect("锁").frames.len(),
-            before,
-            "拒绝之后不许再写 adapter"
+            after_disconnect,
+            "断开之后的字节被拒绝，也不许再往 adapter 写任何帧"
         );
         transport
             .destroy()
