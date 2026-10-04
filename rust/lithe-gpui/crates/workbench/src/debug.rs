@@ -2365,6 +2365,43 @@ impl DebugPane {
             .into_any_element()
     }
 
+    fn live_debug_summary(&self, cx: &Context<Self>) -> AnyElement {
+        let Some(session) = self.session.as_ref() else {
+            return div().into_any_element();
+        };
+        let snapshot = session.snapshot();
+        let threads = crate::debug_session::thread_labels(snapshot);
+        let frames = crate::debug_session::frame_labels(snapshot);
+        if threads.is_empty() && frames.is_empty() {
+            return div().into_any_element();
+        }
+        let mut column = v_flex()
+            .w_full()
+            .flex_shrink_0()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .border_b_1()
+            .border_color(cx.theme().border);
+        if !threads.is_empty() {
+            column = column.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(SharedString::from(threads.join("  "))),
+            );
+        }
+        for frame in frames {
+            column = column.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .child(SharedString::from(frame)),
+            );
+        }
+        column.into_any_element()
+    }
+
     fn debugger_content(&self, cx: &Context<Self>) -> AnyElement {
         h_flex()
             .size_full()
@@ -2374,6 +2411,7 @@ impl DebugPane {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scrollbar()
+                    .child(self.live_debug_summary(cx))
                     .child(self.stack_column(cx)),
             )
             .child(div().w(rems(1. / 16.)).h_full().bg(cx.theme().border))
