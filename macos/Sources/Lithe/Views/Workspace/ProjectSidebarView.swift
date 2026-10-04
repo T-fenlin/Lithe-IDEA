@@ -34,8 +34,15 @@ struct ProjectSidebarView: View {
     @State private var expandedDirectoryPaths: Set<String> = []
     @State private var expandedTreeRootPath: String?
     @State private var contextMenuPath: String?
+    @State private var selection = ProjectTreeSelection()
     @State private var selectedContent: ProjectSidebarContent = .project
     @State private var dependencyRefreshRevision = 0
+
+    private func selectedURLs(in root: FileNode) -> [URL] {
+        ProjectTreeSelection.visibleNodes(in: root, expandedPaths: expandedDirectoryPaths)
+            .filter { selection.paths.contains($0.url.path) && $0.url != root.url }
+            .map(\.url)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -72,6 +79,9 @@ struct ProjectSidebarView: View {
                                     ),
                                     directoryMarks: model.projectDirectoryMarks,
                                     actions: ProjectTreeActions(model: model),
+                                    selectionSnapshot: selection,
+                                    selection: $selection,
+                                    visibleNodes: ProjectTreeSelection.visibleNodes(in: root, expandedPaths: expandedDirectoryPaths),
                                     expandedDirectoryPathsSnapshot: expandedDirectoryPaths,
                                     expandedDirectoryPaths: $expandedDirectoryPaths,
                                     contextMenuPath: $contextMenuPath
@@ -85,6 +95,27 @@ struct ProjectSidebarView: View {
                                 alignment: .topLeading
                             )
                         }
+                        .background(ProjectTreeKeyboardCommands(
+                            copy: { model.copyProjectItems(selectedURLs(in: root)) },
+                            paste: {
+                                let nodes = ProjectTreeSelection.visibleNodes(in: root, expandedPaths: expandedDirectoryPaths)
+                                let focused = nodes.first { $0.url.path == selection.focusedPath }
+                                let destination = focused.map { $0.isDirectory ? $0.url : $0.url.deletingLastPathComponent() } ?? root.url
+                                Task { await model.pasteProjectItems(in: destination) }
+                            },
+                            selectAll: {
+                                selection.selectAll(in: root)
+                            }
+                        ).frame(maxWidth: .infinity, maxHeight: .infinity))
+                        .onChange(of: ProjectTreeSelection.visibleNodes(in: root, expandedPaths: expandedDirectoryPaths).map { $0.url.path }) { paths in
+                            selection.retain(visiblePaths: paths)
+                        }
+                        .onChange(of: model.activeDocument?.url.standardizedFileURL.path) { path in
+                            // A single selection follows the editor, as it did before
+                            // multi-selection; an explicit group stays until changed.
+                            guard let path, selection.paths.count <= 1 else { return }
+                            selection.select(path, visiblePaths: [], extending: false, toggling: false)
+                        }
                         .scrollContentBackground(.hidden)
                         .litheScrollViewChrome(usesCompactScrollers: true)
                         .task(
@@ -97,6 +128,7 @@ struct ProjectSidebarView: View {
                             let revealRequest = model.projectTreeRevealRequest
                             let shouldRefreshGit = expandedTreeRootPath != rootPath
                             if shouldRefreshGit {
+                                selection = ProjectTreeSelection()
                                 expandedTreeRootPath = rootPath
                                 expandedDirectoryPaths = [rootPath]
                             }
@@ -162,7 +194,11 @@ struct ProjectSidebarView: View {
                 .allowsHitTesting(false)
         }
         .confirmationDialog(
-            "Move '\(model.pendingProjectItemDeletion?.url.lastPathComponent ?? "")' to Trash?",
+            model.pendingProjectItemDeletion.map { request -> LocalizedStringKey in
+                request.additionalItems.isEmpty
+                    ? "Move '\(request.url.lastPathComponent)' to Trash?"
+                    : "Move \(request.additionalItems.count + 1) items to Trash?"
+            } ?? "Move to Trash?",
             isPresented: Binding(
                 get: { model.pendingProjectItemDeletion != nil },
                 set: { if !$0 { model.cancelProjectItemDeletion() } }
@@ -320,6 +356,18 @@ private final class ProjectTreeActions: @unchecked Sendable {
     nonisolated func copyPath(_ url: URL, relative: Bool) {
         Task { @MainActor in self.model.copyProjectItemPath(url, relative: relative) }
     }
+    nonisolated func copyFiles(_ urls: [URL]) {
+        Task { @MainActor in self.model.copyProjectItems(urls) }
+    }
+    nonisolated func duplicateFiles(_ urls: [URL]) {
+        Task { await self.model.duplicateProjectItems(urls) }
+    }
+    nonisolated func deleteFiles(_ urls: [URL]) {
+        Task { @MainActor in self.model.requestDeleteProjectItems(urls) }
+    }
+    nonisolated func pasteFiles(in directory: URL) {
+        Task { await self.model.pasteProjectItems(in: directory) }
+    }
     nonisolated func duplicate(_ url: URL) {
         Task { await self.model.duplicateProjectItem(at: url) }
     }
@@ -342,6 +390,15 @@ private final class ProjectTreeActions: @unchecked Sendable {
     }
     nonisolated func selectChange(_ change: GitChange) {
         Task { @MainActor in self.model.selectChange(change) }
+    }
+    nonisolated func stageChange(_ change: GitChange) {
+        Task { @MainActor in self.model.setStaging([change], staged: true, includeWorkingTreeChanges: true) }
+    }
+    nonisolated func stageAndOpenCommit(_ change: GitChange) {
+        Task { @MainActor in
+            self.model.setStaging([change], staged: true, includeWorkingTreeChanges: true)
+            self.model.selectedSidebar = .changes
+        }
     }
     nonisolated func showLocalHistory(_ url: URL) {
         Task { @MainActor in self.model.showLocalHistory(for: url) }
@@ -369,6 +426,9 @@ private struct ProjectFileTreeContent: View, Equatable {
     let gitStatus: ProjectGitStatusSnapshot
     let directoryMarks: [String: WorkspaceDirectoryMark]
     let actions: ProjectTreeActions
+    let selectionSnapshot: ProjectTreeSelection
+    @Binding var selection: ProjectTreeSelection
+    let visibleNodes: [FileNode]
     let expandedDirectoryPathsSnapshot: Set<String>
     @Binding var expandedDirectoryPaths: Set<String>
     @Binding var contextMenuPath: String?
@@ -382,6 +442,7 @@ private struct ProjectFileTreeContent: View, Equatable {
             && lhs.directoryMarks == rhs.directoryMarks
             && lhs.expandedDirectoryPathsSnapshot == rhs.expandedDirectoryPathsSnapshot
             && lhs.contextMenuPath == rhs.contextMenuPath
+            && lhs.selectionSnapshot == rhs.selectionSnapshot
     }
 
     var body: some View {
@@ -395,6 +456,8 @@ private struct ProjectFileTreeContent: View, Equatable {
             projectRootURL: root.url,
             directoryMarks: directoryMarks,
             actions: actions,
+            selection: $selection,
+            visibleNodes: visibleNodes,
             expandedDirectoryPaths: $expandedDirectoryPaths,
             contextMenuPath: $contextMenuPath
         )
@@ -412,6 +475,8 @@ private struct FileNodeRow: View {
     let projectRootURL: URL
     let directoryMarks: [String: WorkspaceDirectoryMark]
     let actions: ProjectTreeActions
+    @Binding var selection: ProjectTreeSelection
+    let visibleNodes: [FileNode]
     @Binding var expandedDirectoryPaths: Set<String>
     @Binding var contextMenuPath: String?
     @State private var resolvedJavaIconKind: LitheIconKind?
@@ -448,6 +513,8 @@ private struct FileNodeRow: View {
                             projectRootURL: projectRootURL,
                             directoryMarks: directoryMarks,
                             actions: actions,
+                            selection: $selection,
+                            visibleNodes: visibleNodes,
                             expandedDirectoryPaths: $expandedDirectoryPaths,
                             contextMenuPath: $contextMenuPath
                         )
@@ -463,6 +530,7 @@ private struct FileNodeRow: View {
     private var directoryRow: some View {
         Button {
             contextMenuPath = nil
+            selectRow()
             if isExpanded {
                 expandedDirectoryPaths.remove(node.url.path)
                 node.collapsedAncestorPaths.forEach { expandedDirectoryPaths.remove($0) }
@@ -493,7 +561,7 @@ private struct FileNodeRow: View {
             .frame(height: rowHeight)
             .contentShape(Rectangle())
             .litheRowHover(
-                isActive: contextMenuPath == node.url.standardizedFileURL.path,
+                isActive: selection.covers(node.url.path) || contextMenuPath == node.url.standardizedFileURL.path,
                 cornerRadius: LitheTheme.Metrics.projectTreeSelectionCornerRadius,
                 activeBackground: LitheTheme.subtleSelection,
                 animation: nil
@@ -502,15 +570,25 @@ private struct FileNodeRow: View {
         .buttonStyle(.litheNoPress)
         .lithePointer()
         .padding(.horizontal, LitheTheme.Metrics.projectTreeContentHorizontalInset)
+        .overlay {
+            ProjectTreeModifiedClick { flags in
+                contextMenuPath = nil
+                selectRow(flags: flags)
+            }
+        }
         .litheContextMenu(
-            items: { directoryContextMenuItems },
-            onRightClick: { contextMenuPath = node.url.standardizedFileURL.path }
+            items: { selection.paths.count > 1 ? batchMenuItems : clipboardMenuItems + [.separator] + directoryContextMenuItems },
+            onRightClick: {
+                selection.selectForContextMenu(node.url.path)
+                contextMenuPath = node.url.standardizedFileURL.path
+            }
         )
     }
 
     private var fileRow: some View {
         Button {
             contextMenuPath = nil
+            selectRow()
             ProjectFileRowActivation.performPrimary(isExecutableBinary: isExecutableFile) {
                 actions.openFile(node.url)
             }
@@ -539,8 +617,8 @@ private struct FileNodeRow: View {
             .frame(height: rowHeight)
             .contentShape(Rectangle())
             .litheRowHover(
-                isActive: activeDocumentURL?.standardizedFileURL.path
-                    == node.url.standardizedFileURL.path
+                isActive: selection.covers(node.url.path)
+                    || (selection.paths.isEmpty && activeDocumentURL?.standardizedFileURL.path == node.url.standardizedFileURL.path)
                     || contextMenuPath == node.url.standardizedFileURL.path,
                 cornerRadius: LitheTheme.Metrics.projectTreeSelectionCornerRadius,
                 activeBackground: LitheTheme.subtleSelection,
@@ -550,9 +628,18 @@ private struct FileNodeRow: View {
         .buttonStyle(.litheNoPress)
         .lithePointer()
         .padding(.horizontal, LitheTheme.Metrics.projectTreeContentHorizontalInset)
+        .overlay {
+            ProjectTreeModifiedClick { flags in
+                contextMenuPath = nil
+                selectRow(flags: flags)
+            }
+        }
         .litheContextMenu(
-            items: { fileContextMenuItems },
-            onRightClick: { contextMenuPath = node.url.standardizedFileURL.path }
+            items: { selection.paths.count > 1 ? batchMenuItems : clipboardMenuItems + [.separator] + fileContextMenuItems },
+            onRightClick: {
+                selection.selectForContextMenu(node.url.path)
+                contextMenuPath = node.url.standardizedFileURL.path
+            }
         )
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
@@ -569,6 +656,43 @@ private struct FileNodeRow: View {
                 resolvedJavaIconKind = await actions.javaIconKind(node.url)
             }
         }
+    }
+
+    /// Modified clicks update selection without opening files or folding directories.
+    /// Control-click stays the macOS secondary click and opens the context menu.
+    private func selectRow(flags: NSEvent.ModifierFlags = []) {
+        selection.select(
+            node.url.path,
+            visiblePaths: visibleNodes.map { $0.url.path },
+            extending: flags.contains(.shift),
+            toggling: flags.contains(.command)
+        )
+    }
+
+    private var selectedItemURLs: [URL] {
+        visibleNodes.filter { selection.paths.contains($0.url.path) && $0.url != projectRootURL }.map(\.url)
+    }
+
+    private var batchMenuItems: [LitheContextMenuItem] {
+        let urls = selectedItemURLs
+        return clipboardMenuItems + [
+            .separator,
+            .action("Duplicate", isEnabled: !urls.isEmpty) { actions.duplicateFiles(urls) },
+            .action("Move to Trash", systemImage: "trash", role: .destructive, isEnabled: !urls.isEmpty) {
+                actions.deleteFiles(urls)
+            }
+        ]
+    }
+
+    private var clipboardMenuItems: [LitheContextMenuItem] {
+        let urls = selectedItemURLs
+        let destination = node.isDirectory ? node.url : node.url.deletingLastPathComponent()
+        return [
+            .action("Copy Files", systemImage: "doc.on.doc", shortcut: "⌘C", isEnabled: !urls.isEmpty) {
+                actions.copyFiles(urls)
+            },
+            .action("Paste", shortcut: "⌘V") { actions.pasteFiles(in: destination) }
+        ]
     }
 
     private var directoryContextMenuItems: [LitheContextMenuItem] {
@@ -714,6 +838,32 @@ private struct FileNodeRow: View {
                     actions.selectChange(change)
                 }
             ]
+        }
+
+        // Windows parity: a Git submenu with the remaining single-file actions.
+        // Show Diff stays as the standalone item above, so it is not repeated.
+        if let change = gitStatus.change(for: node.url) {
+            let plan = GitFileContextMenuPlan(change: change)
+            var gitItems: [LitheContextMenuItem] = []
+            if plan.showsAdd {
+                gitItems.append(
+                    .action("Add", systemImage: "plus") {
+                        actions.stageChange(change)
+                    }
+                )
+            }
+            if plan.showsStageAndOpenCommit {
+                gitItems.append(
+                    .action("Stage and Open Commit…", systemImage: "checkmark.circle") {
+                        actions.stageAndOpenCommit(change)
+                    }
+                )
+            }
+            if !gitItems.isEmpty {
+                items += [
+                    .submenu("Git", systemImage: "arrow.triangle.branch", items: gitItems)
+                ]
+            }
         }
 
         items += [

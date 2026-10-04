@@ -276,17 +276,12 @@ final class AppModel: ObservableObject, Identifiable, UnsavedDocumentHandling {
     var javaFeature: JavaFeatureModel { featureGraph.java }
     var springFeature: SpringFeatureModel { featureGraph.spring }
     var mybatisFeature: MybatisFeatureModel { featureGraph.mybatis }
-    private var activeDatabaseFeature: DatabaseFeatureModel? {
+    // Views retain this instance in their environment so a final SwiftUI update
+    // remains safe after module shutdown clears the capability cache.
+    var databaseFeatureIfActive: DatabaseFeatureModel? {
         let capability: LitheDatabaseModule.DatabaseModuleCapability? = cachedModuleCapability(.databaseWorkspace)
         return capability?.feature
     }
-    var databaseFeature: DatabaseFeatureModel {
-        guard let activeDatabaseFeature else {
-            preconditionFailure("Database UI accessed before the Database module was activated.")
-        }
-        return activeDatabaseFeature
-    }
-    var isDatabaseModuleActive: Bool { activeDatabaseFeature != nil }
     var moduleSnapshots: [ModuleSnapshot] { services.moduleRuntime.snapshots() }
     var availableSidebarDestinations: [SidebarDestination] {
         SidebarDestination.allCases.filter { destination in
@@ -1046,6 +1041,14 @@ final class AppModel: ObservableObject, Identifiable, UnsavedDocumentHandling {
         await workspaceFeature.duplicateProjectItem(at: sourceURL)
     }
 
+    func duplicateProjectItems(_ urls: [URL]) async {
+        await workspaceFeature.duplicateProjectItems(urls)
+    }
+
+    func requestDeleteProjectItems(_ urls: [URL]) {
+        workspaceFeature.requestDeleteProjectItems(urls)
+    }
+
     func requestDeleteProjectItem(at url: URL, isDirectory: Bool) {
         workspaceFeature.requestDeleteProjectItem(at: url, isDirectory: isDirectory)
     }
@@ -1060,6 +1063,14 @@ final class AppModel: ObservableObject, Identifiable, UnsavedDocumentHandling {
 
     func revealProjectItemInFinder(_ url: URL) {
         platformUI.revealInFileBrowser(url)
+    }
+
+    func copyProjectItems(_ urls: [URL]) {
+        if platformUI.copyFilesToClipboard(urls) { showNotification("Copied files") }
+    }
+
+    func pasteProjectItems(in directory: URL) async {
+        await workspaceFeature.pasteProjectItems(platformUI.fileURLsFromClipboard(), in: directory)
     }
 
     func copyProjectItemPath(_ url: URL, relative: Bool) {
@@ -1385,9 +1396,9 @@ final class AppModel: ObservableObject, Identifiable, UnsavedDocumentHandling {
         Task { await gitFeature.finishToggleStaging(change, staged: staged) }
     }
 
-    func setStaging(_ changes: [GitChange], staged: Bool) {
+    func setStaging(_ changes: [GitChange], staged: Bool, includeWorkingTreeChanges: Bool = false) {
         guard let gitFeature = gitFeatureIfActive else { return }
-        let pendingChanges = gitFeature.beginSetStaging(changes, staged: staged)
+        let pendingChanges = gitFeature.beginSetStaging(changes, staged: staged, includeWorkingTreeChanges: includeWorkingTreeChanges)
         Task { await gitFeature.finishSetStaging(pendingChanges, staged: staged) }
     }
 
