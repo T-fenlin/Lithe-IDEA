@@ -448,3 +448,21 @@ S1_DEBUG start status=failed error=S1_DEBUG_TRANSPORT start_debug_session_no_por
 改成"发 `lsp.request` → 用 `operationId` 等对应事件（`lsp.waitEvents`/`pollEvents` 或 Core 的语义操作完成事件）
 → 再从事件里解析端口"，并把 `parse_debug_port` 的用例扩到事件形态。做完这一步，就能看到
 `start status=ok` 与 `launch status=sent jdwp=…`。
+
+### 取端口的正确形态（机制已查清，2026-10-04）
+
+Core 内部的做法见 `rust/lithe-core/src/lsp/interface/engine_real_jdt_tests.rs:258-283` 的 `await_operation`：
+发请求时带 `operation_id` → 循环 `session.wait_events(remaining)` → **只认 `event.operation_id == 我们的 id` 的事件**
+→ 有 `event.error` 就当失败，否则用 `event.result`（`Value`）作为结果。
+
+宿主的等价物是 Core 的 **`lsp.waitEvents`** 命令（命令清单里已有），所以
+`java_debug_session_port`（`rust/lithe-gpui/crates/workbench/src/debug_transport.rs`）应改成：
+
+1. `lsp.request` 排队（返回值只用来看是否受理，不看结果）；
+2. 有界循环 `lsp.waitEvents`，在事件里找 `operationId == 我们那次请求` 的那条；
+3. 有 `error` → 返回失败；否则把 `result`（必要时整个事件）交给**现成的容错解析器 `parse_debug_port`**（它本来就会递归找数字/`value`/`port` 字段）；
+4. 到 deadline 仍未匹配 → 返回带 operationId 的超时错误。
+
+剩下唯一的未知是 `lsp.waitEvents` 的**载荷字段名**与响应里事件数组的键名 —— 下一轮用一次检索确认即可
+（参考 `lsp.pollEvents` 的用法，或 Core dispatcher 里 `LspWaitEvents` 的分支）。
+改完这一步，第 11 次那份日志就会从 `start_debug_session_no_port` 变成 `start status=ok` + `launch status=sent jdwp=…`。
