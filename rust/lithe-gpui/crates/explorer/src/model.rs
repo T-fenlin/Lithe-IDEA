@@ -301,6 +301,92 @@ fn displayed_parent_of<'a>(node: &'a TreeNode, path: &str) -> Option<&'a TreeNod
     None
 }
 
+/// 真源 `ProjectTreeSelection.visibleNodes`（`:72-77`）：**根 + 已展开子树的递归序**。
+///
+/// 展开判据与建树时**同一套 id**：根用 `ROOT_ID`、其余目录用 `dir:<相对路径>`
+/// （见 [`to_items`]）—— 两处若分叉，"可见顺序"就会与实际铺出来的行不一致。
+///
+/// 接线（⌘C / 删除等批量动作）还没做，所以先 `allow(dead_code)`。
+#[allow(dead_code)]
+pub(crate) fn visible_nodes<'a>(
+    root: &'a TreeNode,
+    expanded: &BTreeSet<SharedString>,
+) -> Vec<&'a TreeNode> {
+    fn walk<'a>(
+        node: &'a TreeNode,
+        expanded: &BTreeSet<SharedString>,
+        is_root: bool,
+        out: &mut Vec<&'a TreeNode>,
+    ) {
+        out.push(node);
+        if !node.is_directory {
+            return;
+        }
+        let id = if is_root {
+            SharedString::new_static(ROOT_ID)
+        } else {
+            SharedString::from(format!("dir:{}", node.path))
+        };
+        if !expanded.contains(&id) {
+            return;
+        }
+        for child in &node.children {
+            walk(child, expanded, false, out);
+        }
+    }
+
+    let mut out = Vec::new();
+    walk(root, expanded, true, &mut out);
+    out
+}
+
+/// 真源 `ProjectSidebarView.selectedURLs(in:)`（`:41-46`）：**可见节点**里路径**恰在**选择集内、
+/// 且**不是工作区根**的那些，按**显示顺序**返回。
+///
+/// ⚠️ 判据是"恰在集合内"，**不是** [`crate::selection::ProjectTreeSelection::covers`]：
+/// 选中一个文件夹时，复制的是**文件夹本身**（OS 侧递归），而不是把子孙一个个列出来。
+/// 这两条经常被混为一谈，所以这里与 `covers`（只管"显示成选中"）分开实现。
+#[allow(dead_code)]
+pub(crate) fn selected_in_display_order(
+    root: &TreeNode,
+    expanded: &BTreeSet<SharedString>,
+    selected: &BTreeSet<String>,
+) -> Vec<String> {
+    visible_nodes(root, expanded)
+        .into_iter()
+        // `path` 为空串的就是工作区根 —— 真源用 `$0.url != root.url` 把它排除。
+        .filter(|node| !node.path.is_empty() && selected.contains(&node.path))
+        .map(|node| node.path.clone())
+        .collect()
+}
+
+/// 真源粘贴的目的地（`ProjectSidebarView.swift:100-104`）：焦点节点**是目录就取自身、
+/// 是文件就取父目录**；没有焦点、或焦点在可见树里找不到 ⇒ 工作区根（空串）。
+#[allow(dead_code)]
+pub(crate) fn paste_destination(
+    root: &TreeNode,
+    expanded: &BTreeSet<SharedString>,
+    focused: Option<&str>,
+) -> String {
+    let Some(focused) = focused else {
+        return String::new();
+    };
+    let Some(node) = visible_nodes(root, expanded)
+        .into_iter()
+        .find(|node| node.path == focused)
+    else {
+        return String::new();
+    };
+    if node.is_directory {
+        return node.path.clone();
+    }
+    // 文件 ⇒ 父目录；顶层文件（没有 `/`）⇒ 工作区根。
+    match node.path.rsplit_once('/') {
+        Some((parent, _)) => parent.to_string(),
+        None => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod displayed_siblings_tests {
     use super::*;
@@ -372,6 +458,76 @@ mod displayed_siblings_tests {
     fn focus_on_the_root_takes_the_top_level_items() {
         let root = tree();
         assert_eq!(displayed_siblings(&root, Some("")), ["src", "a.rs", "B.rs"]);
+    }
+
+    // ── 剪贴板片：复制载荷与粘贴目的地（真源 `ProjectSidebarView.swift:41-46,100-104`） ──
+
+    /// 展开集合（与建树**同一套 id**：根 `ROOT_ID`、其余 `dir:<相对路径>`）。
+    fn expanded_set(paths: &[&str]) -> BTreeSet<SharedString> {
+        let mut set = BTreeSet::new();
+        set.insert(SharedString::new_static(ROOT_ID));
+        for path in paths {
+            set.insert(SharedString::from(format!("dir:{path}")));
+        }
+        set
+    }
+
+    fn selected(paths: &[&str]) -> BTreeSet<String> {
+        paths.iter().map(|path| (*path).to_string()).collect()
+    }
+
+    /// 复制载荷：只取**恰被选中**的可见节点、排除工作区根、按显示顺序。
+    /// 选中文件夹时**不**把子孙列出来 —— 复制的是文件夹本身（OS 侧递归）。
+    #[test]
+    fn copy_payload_takes_exactly_the_selected_visible_items() {
+        let root = tree();
+        let expanded = expanded_set(&["src"]);
+        assert_eq!(
+            selected_in_display_order(&root, &expanded, &selected(&["src"])),
+            ["src"],
+            "选中文件夹 ⇒ 载荷只有文件夹本身，不含 src/lib.rs、src/main.rs"
+        );
+        // 折叠 `src` ⇒ 它的子项不可见；即便（理论上）在集合里也不该进载荷。
+        let collapsed = expanded_set(&[]);
+        assert_eq!(
+            selected_in_display_order(&root, &collapsed, &selected(&["src/lib.rs"])),
+            Vec::<String>::new(),
+            "不可见的项不进载荷"
+        );
+        assert_eq!(
+            selected_in_display_order(&root, &expanded, &selected(&["a.rs", "src", "B.rs"])),
+            ["src", "a.rs", "B.rs"],
+            "混合选择按显示顺序（目录在前）"
+        );
+        assert_eq!(
+            selected_in_display_order(&root, &expanded, &selected(&[""])),
+            Vec::<String>::new(),
+            "工作区根永远不进载荷（真源 `$0.url != root.url`）"
+        );
+    }
+
+    /// 粘贴目的地：焦点是目录取自身、是文件取父目录、没有焦点 / 找不到 ⇒ 根（空串）。
+    #[test]
+    fn paste_destination_follows_the_focused_node() {
+        let root = tree();
+        let expanded = expanded_set(&["src"]);
+        assert_eq!(paste_destination(&root, &expanded, Some("src")), "src");
+        assert_eq!(
+            paste_destination(&root, &expanded, Some("src/lib.rs")),
+            "src",
+            "文件 ⇒ 它所在的目录"
+        );
+        assert_eq!(
+            paste_destination(&root, &expanded, Some("a.rs")),
+            "",
+            "顶层文件 ⇒ 工作区根"
+        );
+        assert_eq!(paste_destination(&root, &expanded, None), "");
+        assert_eq!(
+            paste_destination(&root, &expanded, Some("nope/x")),
+            "",
+            "焦点在可见树里找不到 ⇒ 根"
+        );
     }
 }
 
