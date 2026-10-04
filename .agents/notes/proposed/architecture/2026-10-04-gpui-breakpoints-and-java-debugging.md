@@ -229,9 +229,11 @@ lombok 1.18.46（`01f7b1a0…`）、java-test 0.46.0 VSIX（`56c1e14d…`，含 
 返回结构化 `JavaBuildReport`。也就是说 **Core 的 JDT 命令层 + 我们准备的载荷在真机上端到端可用**。
 
 **卡在哪**：该用例在夹具工程编译处失败（`javaBuildCompilationErrors`，`underlying_message: "2"`，
-`elapsed_milliseconds: 9` —— 9 毫秒说明是**工程配置级**失败而不是真的在编译）。用例文档注释说夹具由 `scripts/prepare-jdtls.{sh,ps1}` 准备，但**这个脚本在仓库里不存在**
-（`glob **/prepare-jdtls*` 无命中）⇒ 夹具的工程 JDK/`.classpath`/本地 maven 仓库需要人来铺，
-这是**仓库自身的缺口**（文档引用了不存在的脚本），不是 DAP 代码的问题。
+`elapsed_milliseconds: 9` —— 9 毫秒说明是**工程配置级**失败而不是真的在编译）。用例文档注释说夹具由 `scripts/prepare-jdtls.{sh,ps1}` 准备，但**这个脚本此前在仓库里不存在**
+（`glob **/prepare-jdtls*` 无命中）；2026-10-04 已补上 `scripts/prepare-jdtls.ps1`
+（不下载、只校验并按 manifest 铺 `java-debug/`、`lombok/lombok.jar`、`java-test/extensions.txt`
++ `extensions/*.jar`，然后打印三个 `LITHE_JDTLS_SMOKE_*` 的值）。⇒ 夹具之外的部分现在可复现；
+夹具工程本身的编译失败仍未解决。
 
 已排除的两个假设（2026-10-04 实测，失败完全一致：仍是 `2` 个错误、约 11ms）：
 ① 本地 Maven 仓库缺 junit-jupiter 5.14.0 —— 跑 `mvn dependency:go-offline` 之后仍失败；
