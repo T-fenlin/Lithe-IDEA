@@ -648,6 +648,9 @@ impl ShellWorkspace {
                     DebugPaneEvent::BreakpointsChanged => {
                         this.push_gutter_breakpoints(cx);
                     }
+                    DebugPaneEvent::StartRequested => {
+                        this.start_debug_session(cx);
+                    }
                     DebugPaneEvent::Hide => {
                         this.bottom_visible = false;
                         this.schedule_session_save(cx);
@@ -1253,6 +1256,44 @@ impl ShellWorkspace {
             pane.set_gutter_breakpoints(snapshot, muted);
         });
         cx.notify();
+    }
+
+    pub(crate) fn start_debug_session(&mut self, cx: &mut Context<Self>) {
+        let service = self.editor.read(cx).java_service();
+        let Some(service) = service else {
+            eprintln!("{DEBUG_TAG} start status=blocked reason=no-java-service");
+            return;
+        };
+        let Some(lsp_session) = service.lsp_session_id() else {
+            eprintln!("{DEBUG_TAG} start status=blocked reason=no-lsp-session");
+            return;
+        };
+        let root = self.root.to_string_lossy().to_string();
+        let session_id = "java-debug".to_string();
+        let operation_id = format!("{session_id}-port");
+        match crate::debug_transport::start_java_session(
+            &session_id,
+            &operation_id,
+            &lsp_session,
+            &root,
+            std::time::Duration::from_secs(10),
+        ) {
+            Ok(transport) => {
+                let handle = crate::debug_session::DebugSessionHandle::start(
+                    transport,
+                    std::time::Duration::from_millis(20),
+                );
+                self.debug.update(cx, |pane, cx| {
+                    pane.attach_session(handle);
+                    cx.notify();
+                });
+                println!("{DEBUG_TAG} start status=ok session={session_id} lsp={lsp_session}");
+                eprintln!("{DEBUG_TAG} launch status=pending-configuration session={session_id}");
+            }
+            Err(error) => {
+                eprintln!("{DEBUG_TAG} start status=failed error={error}");
+            }
+        }
     }
 
     pub(crate) fn toggle_breakpoint(&mut self, path: &Path, line: usize, cx: &mut Context<Self>) {

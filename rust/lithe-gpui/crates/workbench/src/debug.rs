@@ -1241,6 +1241,7 @@ impl DebugWatches {
 pub enum DebugPaneEvent {
     Hide,
     BreakpointsChanged,
+    StartRequested,
 }
 
 pub fn debug_key(root: &std::path::Path, path: &std::path::Path) -> String {
@@ -1638,7 +1639,8 @@ impl DebugPane {
                 cx.notify();
             }
             None => {
-                eprintln!("{DEBUG_DIAGNOSTIC_TAG} start status=ready_to_dispatch");
+                println!("{DEBUG_DIAGNOSTIC_TAG} start status=ready_to_dispatch");
+                cx.emit(DebugPaneEvent::StartRequested);
             }
         }
     }
