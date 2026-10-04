@@ -165,6 +165,29 @@ impl ProjectTreeSelection {
         self.anchor = None;
         self.focused = None;
     }
+
+    /// 编辑器的活动文档变化时，单选是否跟随 —— 真源 `ProjectSidebarView.swift:113-118`：
+    ///
+    /// ```swift
+    /// guard let path, selection.paths.count <= 1 else { return }
+    /// selection.select(path, visiblePaths: [], extending: false, toggling: false)
+    /// ```
+    ///
+    /// 即：**只在选择 ≤ 1 项时**把选择换成该文档（"单选跟随编辑器，和多选之前一样"）；
+    /// **显式多选（> 1 项）保持不动**，直到用户自己改。`path` 为 `None`（没有活动文档）时什么都不做。
+    ///
+    /// 返回是否真的改了（调用点据此决定要不要重渲染）。
+    pub(crate) fn follow_active_document(&mut self, path: Option<&str>) -> bool {
+        let Some(path) = path else {
+            return false;
+        };
+        if self.paths.len() > 1 {
+            return false;
+        }
+        // `visiblePaths: []`：真源这里传空表 —— `select` 的普通分支不用它（区间分支才用）。
+        self.select(path, &[], false, false);
+        true
+    }
 }
 
 #[cfg(test)]
@@ -337,5 +360,51 @@ mod tests {
         empty.select("README.md", &visible(), false, false);
         empty.select_all_in_siblings(&[]);
         assert_eq!(empty.paths().len(), 1);
+    }
+
+    /// 活动文档跟随（真源 `ProjectSidebarView.swift:113-118`）：**只在选择 ≤ 1 项时**跟随。
+    #[test]
+    fn a_single_selection_follows_the_active_document() {
+        // 空选择：跟随，并把它当成单选（锚点与焦点都落到它）。
+        let mut empty = ProjectTreeSelection::default();
+        assert!(empty.follow_active_document(Some("src/a.rs")));
+        assert_eq!(
+            empty.paths().iter().cloned().collect::<Vec<_>>(),
+            vec!["src/a.rs"]
+        );
+        assert_eq!(empty.anchor(), Some("src/a.rs"));
+        assert_eq!(empty.focused(), Some("src/a.rs"));
+
+        // 已经是单选：换成新文档。
+        assert!(empty.follow_active_document(Some("src/b.rs")));
+        assert_eq!(
+            empty.paths().iter().cloned().collect::<Vec<_>>(),
+            vec!["src/b.rs"]
+        );
+
+        // 没有活动文档：什么都不做。
+        let mut none = ProjectTreeSelection::default();
+        assert!(!none.follow_active_document(None));
+        assert!(none.paths().is_empty());
+    }
+
+    /// **显式多选保持不动** —— 真源那句 `selection.paths.count <= 1` 的去反例。
+    #[test]
+    fn an_explicit_group_ignores_the_active_document() {
+        let mut group = ProjectTreeSelection::default();
+        group.select("src", &visible(), false, false);
+        group.select("README.md", &visible(), false, true);
+        assert_eq!(group.paths().len(), 2);
+        assert!(
+            !group.follow_active_document(Some("src/a.rs")),
+            "多选不该被跟随改掉"
+        );
+        assert_eq!(
+            group.paths().iter().cloned().collect::<Vec<_>>(),
+            vec!["README.md", "src"],
+            "选择集原样保留"
+        );
+        // 焦点也不该被改写（真源在这条分支上直接 return）。
+        assert_eq!(group.focused(), Some("README.md"));
     }
 }
