@@ -355,13 +355,13 @@ impl RenderOnce for TrackChanges {
                     )))
                     .when(pending, |bar| {
                         bar.child(
-                            Button::new((self.id.clone(), "reject-all"), "Reject all")
+                            Button::new((self.id.clone(), "reject-all")).label("Reject all")
                                 .variant(ButtonVariant::Ghost)
                                 .size(ControlSize::Sm)
                                 .on_click(decide(Decision::RejectAll)),
                         )
                         .child(
-                            Button::new((self.id.clone(), "accept-all"), "Accept all")
+                            Button::new((self.id.clone(), "accept-all")).label("Accept all")
                                 .size(ControlSize::Sm)
                                 .on_click(decide(Decision::AcceptAll)),
                         )

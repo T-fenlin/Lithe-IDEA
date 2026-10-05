@@ -179,7 +179,7 @@ impl RenderOnce for LoginForm {
                     .map(|error| InlineMessage::new(Severity::Danger, error)),
             )
             .child(
-                Button::new((id.clone(), "submit"), "Sign in")
+                Button::new((id.clone(), "submit")).label("Sign in")
                     .variant(ButtonVariant::Primary)
                     .full_width()
                     .loading(self.busy)

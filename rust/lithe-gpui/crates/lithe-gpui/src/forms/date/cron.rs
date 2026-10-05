@@ -63,7 +63,7 @@ impl RenderOnce for CronEditor {
         let colors = &theme.colors;
         let presets = PRESETS.iter().enumerate().map(|(ix, (label, preset))| {
             let state = self.state.clone();
-            Button::new(("preset", ix), *label)
+            Button::new(("preset", ix)).label(*label)
                 .variant(ButtonVariant::Outline)
                 .size(ControlSize::Sm)
                 .on_click(move |_, _, cx| {

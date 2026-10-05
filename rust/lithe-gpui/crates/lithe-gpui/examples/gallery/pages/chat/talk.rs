@@ -190,7 +190,7 @@ pub fn streaming(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
             )
             .child(
                 div().flex().child(
-                    Button::new("chat-replay", "Replay the stream")
+                    Button::new("chat-replay").label("Replay the stream")
                         .variant(ButtonVariant::Secondary)
                         .icon(IconName::RefreshCw)
                         .on_click(move |_, window, cx| {

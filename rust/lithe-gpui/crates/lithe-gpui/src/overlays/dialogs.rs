@@ -101,7 +101,7 @@ impl RenderOnce for AlertDialog {
             .held()
             .child(said(&id, Some(self.severity), self.message, cx))
             .action(move |close| {
-                Button::new(ok, label)
+                Button::new(ok).label(label)
                     .primary()
                     .on_click(move |_, window, cx| close(window, cx))
             })
@@ -170,12 +170,12 @@ impl RenderOnce for ConfirmDialog {
         Dialog::new(self.id, self.title, move |window, cx| on_close(window, cx))
             .child(said(&id, None, self.message, cx))
             .action(move |close| {
-                Button::new(cancel_id, cancel)
+                Button::new(cancel_id).label(cancel)
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| close(window, cx))
             })
             .action(move |close| {
-                Button::new(confirm_id, label)
+                Button::new(confirm_id).label(label)
                     .variant(variant)
                     .on_click(move |_, window, cx| {
                         log::info!("confirm dialog {id:?}: confirmed");
@@ -327,12 +327,12 @@ impl RenderOnce for PromptDialog {
             .on_enter(move |close| Rc::new(move |window, cx| lifted(&close, window, cx)))
             .child(field)
             .action(move |close| {
-                Button::new(cancel_id, cancel)
+                Button::new(cancel_id).label(cancel)
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| close(window, cx))
             })
             .action(move |close| {
-                Button::new(submit_id, label)
+                Button::new(submit_id).label(label)
                     .primary()
                     .disabled(!ready)
                     .on_click(move |_, window, cx| button(&close, window, cx))

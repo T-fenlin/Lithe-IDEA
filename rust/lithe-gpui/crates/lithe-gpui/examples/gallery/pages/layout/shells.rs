@@ -75,10 +75,7 @@ pub fn sidebar(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 div().flex_1().p_4().flex().items_start().child(probe(
                     "sidebar-toggle",
-                    Button::new(
-                        "sidebar-toggle",
-                        if collapsed { "Expand" } else { "Collapse" },
-                    )
+                    Button::new("sidebar-toggle").label(if collapsed { "Expand" } else { "Collapse" })
                     .variant(ButtonVariant::Outline)
                     .icon(IconName::PanelLeft)
                     .on_click(move |_, _, cx| flip(&state, cx)),
@@ -99,7 +96,7 @@ pub fn drawer(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "drawer-open",
-                Button::new("drawer-open", "Open drawer")
+                Button::new("drawer-open").label("Open drawer")
                     .on_click(move |_, _, cx| flip(&state, cx)),
             ))
             .when(open, |row| {
@@ -124,7 +121,7 @@ pub fn sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "sheet-open",
-                Button::new("sheet-open", "Open sheet").on_click(move |_, _, cx| flip(&state, cx)),
+                Button::new("sheet-open").label("Open sheet").on_click(move |_, _, cx| flip(&state, cx)),
             ))
             .when(open, |row| {
                 row.child(
@@ -152,7 +149,7 @@ pub fn page(cx: &App) -> impl IntoElement + use<> {
             Page::new("Projects")
                 .subtitle("Everything your team is shipping.")
                 .action(
-                    Button::new("page-new", "New project")
+                    Button::new("page-new").label("New project")
                         .primary()
                         .icon(IconName::Plus),
                 )

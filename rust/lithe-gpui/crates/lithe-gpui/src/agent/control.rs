@@ -67,7 +67,7 @@ impl RenderOnce for HumanInputRequest {
                 .gap_2()
                 .children(self.choices.iter().enumerate().map(|(ix, choice)| {
                     let (answer, picked) = (self.on_answer.clone(), choice.clone());
-                    Button::new((self.id.clone(), format!("choice-{ix}")), choice.clone())
+                    Button::new((self.id.clone(), format!("choice-{ix}"))).label(choice.clone())
                         .variant(ButtonVariant::Secondary)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {
@@ -79,7 +79,7 @@ impl RenderOnce for HumanInputRequest {
         let line = asking.then(|| {
             send_line(
                 &self.field,
-                Button::new((self.id.clone(), "reply"), "Reply").variant(ButtonVariant::Primary),
+                Button::new((self.id.clone(), "reply")).label("Reply").variant(ButtonVariant::Primary),
                 self.on_answer.clone(),
                 "human input",
                 cx,

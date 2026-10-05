@@ -113,7 +113,7 @@ impl RenderOnce for EventPopover {
             let action = |label: &'static str, variant, handler: Option<OnValue>| {
                 handler.map(|handler| {
                     let (key, close) = (key.clone(), close.clone());
-                    Button::new((self.id.clone(), label), label)
+                    Button::new((self.id.clone(), label)).label(label)
                         .variant(variant)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {

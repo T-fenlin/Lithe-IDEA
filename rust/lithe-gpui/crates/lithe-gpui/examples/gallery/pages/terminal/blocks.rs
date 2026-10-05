@@ -96,7 +96,7 @@ pub fn blocks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 CommandState::Running,
             )),
     )
-    .child(row().child(Button::new("terminal-history-open", "Search history…").on_click(move |_, _, cx| set(&opener, true, cx))))
+    .child(row().child(Button::new("terminal-history-open").label("Search history…").on_click(move |_, _, cx| set(&opener, true, cx))))
     .children(told.map(Caption::new))
     .children(now_open.then(|| {
         CommandHistory::new("terminal-history-palette", history(), move |_, cx| set(&close, false, cx))

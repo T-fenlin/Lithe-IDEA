@@ -40,7 +40,7 @@ pub fn popovers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .on_change(move |next, _, cx| set(&public, next, cx)),
             )
             .child(
-                Button::new("share-copy", "Copy link")
+                Button::new("share-copy").label("Copy link")
                     .icon(IconName::Link)
                     .full_width(),
             )
@@ -123,7 +123,7 @@ fn profile(cx: &App) -> AnyElement {
                 .text_color(colors.fg_muted)
                 .child("Writes the first programs for machines not yet built."),
         )
-        .child(Button::new("ada-follow", "Follow").primary())
+        .child(Button::new("ada-follow").label("Follow").primary())
         .into_any_element()
 }
 

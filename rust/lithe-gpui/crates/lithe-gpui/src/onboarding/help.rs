@@ -129,7 +129,7 @@ fn foot_button(
     icon: IconName,
     run: Run,
 ) -> Button {
-    Button::new((id.clone(), key), label)
+    Button::new((id.clone(), key)).label(label)
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Sm)
         .icon(icon)
@@ -188,7 +188,7 @@ impl RenderOnce for HelpPanel {
                     .gap_3()
                     .child(
                         div().flex().child(
-                            Button::new((id.clone(), "back"), "All articles")
+                            Button::new((id.clone(), "back")).label("All articles")
                                 .variant(ButtonVariant::Ghost)
                                 .size(ControlSize::Sm)
                                 .icon(IconName::ChevronLeft)

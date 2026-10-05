@@ -317,10 +317,7 @@ impl RenderOnce for Wizard {
                 },
             )
         });
-        let forward = Button::new(
-            (id.clone(), "advance"),
-            if current == last { "Finish" } else { "Next" },
-        )
+        let forward = Button::new((id.clone(), "advance")).label(if current == last { "Finish" } else { "Next" })
         .primary()
         .disabled(!self.ready)
         .focus_handle(&advance)
@@ -350,7 +347,7 @@ impl RenderOnce for Wizard {
                     .items_center()
                     .justify_between()
                     .child(
-                        Button::new((id.clone(), "back"), "Back")
+                        Button::new((id.clone(), "back")).label("Back")
                             .variant(ButtonVariant::Ghost)
                             .disabled(current == 0)
                             .on_click(move |_, window, cx| {

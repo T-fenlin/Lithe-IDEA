@@ -299,7 +299,7 @@ impl RenderOnce for FindWidget {
                             .child(Input::new(field).size(ControlSize::Sm)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "replace"), "Replace")
+                        Button::new((self.id.clone(), "replace")).label("Replace")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .disabled(!found)
@@ -308,7 +308,7 @@ impl RenderOnce for FindWidget {
                             }),
                     )
                     .child(
-                        Button::new((self.id.clone(), "all"), "Replace all")
+                        Button::new((self.id.clone(), "all")).label("Replace all")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .disabled(!found)

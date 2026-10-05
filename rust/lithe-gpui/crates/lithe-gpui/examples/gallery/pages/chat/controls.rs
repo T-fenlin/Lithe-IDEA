@@ -69,7 +69,7 @@ pub fn actions(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(div().child(now_sent))
             .child(probe(
                 "chat-edit-open",
-                Button::new("chat-edit", "Edit")
+                Button::new("chat-edit").label("Edit")
                     .variant(ButtonVariant::Ghost)
                     .icon(IconName::Pencil)
                     .on_click(move |_, _, cx| set(&open, true, cx)),

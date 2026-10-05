@@ -128,7 +128,7 @@ impl RenderOnce for ApiKeyManager {
                                 .gap_2()
                                 .child(CopyButton::new((id.clone(), "copy"), secret))
                                 .child(
-                                    Button::new((id.clone(), "done"), "Done")
+                                    Button::new((id.clone(), "done")).label("Done")
                                         .size(ControlSize::Sm)
                                         .on_click(move |_, window, cx| dismiss(window, cx)),
                                 ),
@@ -221,7 +221,7 @@ impl RenderOnce for ApiKeyManager {
                             .child(Input::new(&name)),
                     )
                     .child(
-                        Button::new((id.clone(), "create"), "Create key")
+                        Button::new((id.clone(), "create")).label("Create key")
                             .variant(ButtonVariant::Primary)
                             .disabled(!ready)
                             .on_click(move |_, window, cx| create(window, cx)),

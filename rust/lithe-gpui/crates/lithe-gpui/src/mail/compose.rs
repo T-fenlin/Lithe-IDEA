@@ -262,7 +262,7 @@ impl RenderOnce for MailComposer {
         };
         let showing = state.clone();
         let copies_button = (!copies).then(|| {
-            Button::new((self.id.clone(), "copies"), "Cc Bcc")
+            Button::new((self.id.clone(), "copies")).label("Cc Bcc")
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .on_click(move |_, _, cx| {

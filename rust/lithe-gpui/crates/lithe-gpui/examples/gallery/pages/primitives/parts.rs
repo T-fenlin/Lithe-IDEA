@@ -178,7 +178,7 @@ pub fn backdrop(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 .child("Click outside to close."),
         )
         .child(div().flex().justify_end().child(
-            Button::new("backdrop-close", "Close").on_click(move |_, _, cx| set(&close, false, cx)),
+            Button::new("backdrop-close").label("Close").on_click(move |_, _, cx| set(&close, false, cx)),
         ));
     section(
         "Overlay / Backdrop",
@@ -189,7 +189,7 @@ pub fn backdrop(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "backdrop-open",
-                Button::new("backdrop-open", "Show backdrop")
+                Button::new("backdrop-open").label("Show backdrop")
                     .on_click(move |_, _, cx| set(&show, true, cx)),
             ))
             .when(shown, |row| {
@@ -328,7 +328,7 @@ pub fn measure(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row()
             .child(
-                Button::new("measure-toggle", if is_wide { "Narrow" } else { "Widen" }).on_click(
+                Button::new("measure-toggle").label(if is_wide { "Narrow" } else { "Widen" }).on_click(
                     move |_, _, cx| {
                         wide.update(cx, |wide, cx| {
                             *wide = !*wide;

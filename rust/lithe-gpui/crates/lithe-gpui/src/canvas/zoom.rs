@@ -53,7 +53,7 @@ impl RenderOnce for ZoomIndicator {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let words = format!("{}%", (self.zoom * 100.0).round());
         let on_zoom = self.on_zoom;
-        Button::new(self.id, words)
+        Button::new(self.id).label(words)
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Sm)
             .on_click(move |_, window, cx| {

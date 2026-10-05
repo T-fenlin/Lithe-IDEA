@@ -262,7 +262,7 @@ impl RenderOnce for SignaturePad {
             .gap_1()
             .child(pad)
             .child(
-                Button::new((self.id, "clear"), "Clear")
+                Button::new((self.id, "clear")).label("Clear")
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)
                     .disabled(empty)

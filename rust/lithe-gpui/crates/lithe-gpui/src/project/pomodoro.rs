@@ -221,10 +221,7 @@ impl RenderOnce for PomodoroTimer {
         let running = current.since.is_some();
         let toggle = {
             let cycle = cycle.clone();
-            Button::new(
-                (self.id.clone(), "toggle"),
-                if running { "Pause" } else { "Start" },
-            )
+            Button::new((self.id.clone(), "toggle")).label(if running { "Pause" } else { "Start" })
             .variant(ButtonVariant::Primary)
             .icon(if running {
                 IconName::Pause

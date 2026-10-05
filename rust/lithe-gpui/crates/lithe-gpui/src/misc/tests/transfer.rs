@@ -240,7 +240,7 @@ impl Render for Opener {
             .root()
             .size_full()
             .child(
-                Button::new("open", "Open")
+                Button::new("open").label("Open")
                     .focus_handle(&self.button)
                     .on_click(move |_, _, cx| {
                         OPEN.set(true);

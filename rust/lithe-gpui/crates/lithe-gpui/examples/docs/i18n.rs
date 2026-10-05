@@ -43,7 +43,7 @@ impl Render for Words {
             .text_color(theme.colors.fg)
             .child(row)
             .child(
-                Button::new("locale", i18n.text("switch", &[]))
+                Button::new("locale").label(i18n.text("switch", &[]))
                     .on_click(move |_, _, cx| I18n::set_locale(next, cx)),
             )
     }

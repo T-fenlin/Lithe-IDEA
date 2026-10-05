@@ -101,10 +101,7 @@ pub fn collapsible(window: &mut Window, cx: &mut App) -> impl IntoElement + use<
             .gap_2()
             .child(probe(
                 "collapse-toggle",
-                Button::new(
-                    "collapse-toggle",
-                    if is_open { "Collapse" } else { "Expand" },
-                )
+                Button::new("collapse-toggle").label(if is_open { "Collapse" } else { "Expand" })
                 .variant(ButtonVariant::Outline)
                 .trailing_icon(if is_open {
                     IconName::ChevronUp
@@ -176,8 +173,8 @@ pub fn card(cx: &App) -> impl IntoElement + use<> {
                 div()
                     .flex()
                     .gap_2()
-                    .child(Button::new("card-cancel", "Later").variant(ButtonVariant::Ghost))
-                    .child(Button::new("card-go", "Manage").primary()),
+                    .child(Button::new("card-cancel").label("Later").variant(ButtonVariant::Ghost))
+                    .child(Button::new("card-go").label("Manage").primary()),
             ),
     )
 }
@@ -216,7 +213,7 @@ pub fn section_demo(cx: &App) -> impl IntoElement + use<> {
         Section::new("Members")
             .w(px(520.0))
             .description("People who can open this workspace.")
-            .action(Button::new("invite", "Invite").icon(IconName::Plus))
+            .action(Button::new("invite").label("Invite").icon(IconName::Plus))
             .child(
                 row()
                     .child(tile("Ada", cx))

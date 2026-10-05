@@ -114,7 +114,7 @@ impl RenderOnce for DuplicateFinder {
         let small = theme.text_size(TextSize::Sm);
         let freed = freed(&self.groups, &self.marked);
         let marked: Rc<[SharedString]> = self.marked.into();
-        let remove = Button::new((self.id.clone(), "remove"), "Remove marked")
+        let remove = Button::new((self.id.clone(), "remove")).label("Remove marked")
             .variant(ButtonVariant::Danger)
             .size(ControlSize::Sm)
             .disabled(marked.is_empty() || self.on_remove.is_none());

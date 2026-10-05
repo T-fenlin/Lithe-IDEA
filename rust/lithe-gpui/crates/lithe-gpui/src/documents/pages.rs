@@ -95,7 +95,7 @@ impl RenderOnce for PageCover {
                         .variant(ButtonVariant::Secondary),
                     )
                     .child(
-                        Button::new((self.id.clone(), "remove"), "Remove")
+                        Button::new((self.id.clone(), "remove")).label("Remove")
                             .variant(ButtonVariant::Secondary)
                             .size(ControlSize::Sm)
                             .on_click(move |_, window, cx| {

@@ -35,7 +35,7 @@ fn opener(
     let state = state.clone();
     probe(
         id,
-        Button::new(id, label).on_click(move |_, _, cx| set(&state, Some(open), cx)),
+        Button::new(id).label(label).on_click(move |_, _, cx| set(&state, Some(open), cx)),
     )
 }
 
@@ -84,12 +84,12 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .child(Input::new(&email)),
                 )
                 .action(|close| {
-                    Button::new("profile-cancel", "Cancel")
+                    Button::new("profile-cancel").label("Cancel")
                         .variant(ButtonVariant::Ghost)
                         .on_click(move |_, window, cx| close(window, cx))
                 })
                 .action(move |close| {
-                    Button::new("profile-save", "Save")
+                    Button::new("profile-save").label("Save")
                         .primary()
                         .on_click(move |_, window, cx| {
                             set(&saved, Some("profile saved".into()), cx);
@@ -162,7 +162,7 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 let (open, rename) = (open.clone(), rename.clone());
                 probe(
                     "prompt",
-                    Button::new("prompt", "Rename").on_click(move |_, _, cx| {
+                    Button::new("prompt").label("Rename").on_click(move |_, _, cx| {
                         rename.update(cx, |input, cx| input.set_text("Roadmap", cx));
                         set(&open, Some(Open::Prompt), cx);
                     }),

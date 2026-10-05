@@ -122,7 +122,7 @@ impl RenderOnce for FineTuneJobCard {
         let live = matches!(self.phase, TunePhase::Queued(_) | TunePhase::Running(..));
         let action = |key: &'static str, label: &'static str, run: Option<Run>| {
             run.map(|run| {
-                Button::new((self.id.clone(), key), label)
+                Button::new((self.id.clone(), key)).label(label)
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| {

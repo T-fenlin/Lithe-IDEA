@@ -143,10 +143,10 @@ pub struct Button {
 }
 
 impl Button {
-    pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
+    pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
-            label: label.into(),
+            label: SharedString::default(),
             icon: None,
             trailing_icon: None,
             shortcut: None,
@@ -159,6 +159,13 @@ impl Button {
             slot: None,
             on_click: None,
         }
+    }
+
+    /// The button's text. A builder rather than a `new` argument, matching the
+    /// gpui-kit shape (`Button::new(id).label("Save")`).
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = label.into();
+        self
     }
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {

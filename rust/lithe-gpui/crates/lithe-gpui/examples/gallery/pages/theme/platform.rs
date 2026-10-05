@@ -40,7 +40,7 @@ pub fn platform(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "Vibrancy",
                 probe(
                         "frosted-open",
-                        Button::new("frosted-open", "Open a frosted window")
+                        Button::new("frosted-open").label("Open a frosted window")
                             .on_click(|_, _, cx| frosted(cx)),
                     ),
                 cx,

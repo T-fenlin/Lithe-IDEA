@@ -78,7 +78,7 @@ pub(crate) fn grouped(
 
 /// Opens a new conversation; it shows Command-N, which the host binds.
 pub fn new_chat_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id, "New chat")
+    Button::new(id).label("New chat")
         .variant(ButtonVariant::Secondary)
         .icon(IconName::SquarePen)
         .shortcut("secondary-n")

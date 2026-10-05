@@ -155,7 +155,7 @@ pub(super) fn read_row(
                 ),
         )
         .child(
-            Button::new((id.clone(), "apply"), "Apply")
+            Button::new((id.clone(), "apply")).label("Apply")
                 .variant(ButtonVariant::Primary)
                 .on_click(move |_, window, cx| {
                     log::info!("theme importer: apply");

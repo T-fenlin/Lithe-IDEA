@@ -347,7 +347,7 @@ fn panel(
                 .child(div().font_weight(FontWeight::SEMIBOLD).child("Inspector"))
                 .children((!picking).then(|| {
                     div().debug_selector(|| "inspector-pick".into()).child(
-                        Button::new("lithe-inspector-pick", "Pick")
+                        Button::new("lithe-inspector-pick").label("Pick")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .on_click(move |_, window, cx| {

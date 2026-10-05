@@ -102,7 +102,7 @@ pub fn approval(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .gap_3()
             .child(probe(
                 "agent-approve-open",
-                Button::new("agent-approve", "Review the call…")
+                Button::new("agent-approve").label("Review the call…")
                     .variant(ButtonVariant::Secondary)
                     .on_click(move |_, _, cx| set(&opener, true, cx)),
             ))

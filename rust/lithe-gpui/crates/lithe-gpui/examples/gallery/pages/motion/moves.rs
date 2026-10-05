@@ -66,7 +66,7 @@ pub fn transitions(window: &mut Window, cx: &mut App) -> impl IntoElement + use<
     .child(
         row().child(probe(
             "transition-toggle",
-            Button::new("transition-toggle", if now { "Hide" } else { "Show" })
+            Button::new("transition-toggle").label(if now { "Hide" } else { "Show" })
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| set(&toggle, !now, cx)),
         )),
@@ -91,7 +91,7 @@ pub fn stagger(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row().child(probe(
             "stagger-replay",
-            Button::new("stagger-replay", "Replay")
+            Button::new("stagger-replay").label("Replay")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| set(&replay, now + 1, cx)),
         )),
@@ -160,7 +160,7 @@ pub fn presence(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row().child(probe(
             "presence-add",
-            Button::new("presence-add", "Add a tag")
+            Button::new("presence-add").label("Add a tag")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| {
                     let mut then = add.read(cx).clone();
@@ -192,7 +192,7 @@ pub fn flip(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row().child(probe(
             "flip-shuffle",
-            Button::new("flip-shuffle", "Shuffle")
+            Button::new("flip-shuffle").label("Shuffle")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| {
                     let mut then = shuffle.read(cx).clone();

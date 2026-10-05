@@ -128,13 +128,13 @@ impl RenderOnce for ExportDialog {
         .action({
             let id = id.clone();
             move |close| {
-                Button::new((id, "cancel"), "Cancel")
+                Button::new((id, "cancel")).label("Cancel")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| close(window, cx))
             }
         })
         .action(move |close| {
-            Button::new((id, "export"), "Export")
+            Button::new((id, "export")).label("Export")
                 .primary()
                 .on_click(move |_, window, cx| {
                     log::info!("export dialog {exported:?}: {format:?}");

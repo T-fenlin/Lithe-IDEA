@@ -153,7 +153,7 @@ impl Render for Column {
             .child(
                 EmptyState::new("empty", IconName::Inbox, "Nothing yet")
                     .body(self.body)
-                    .action(Button::new("act", "Act")),
+                    .action(Button::new("act").label("Act")),
             ),
         )
     }

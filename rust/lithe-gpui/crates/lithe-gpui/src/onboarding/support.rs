@@ -107,7 +107,7 @@ impl RenderOnce for ContactSupport {
             )
             .child(
                 div().flex().child(
-                    Button::new((id.clone(), "send"), "Send message")
+                    Button::new((id.clone(), "send")).label("Send message")
                         .variant(ButtonVariant::Primary)
                         .loading(self.busy)
                         .disabled(!ready)
@@ -165,7 +165,7 @@ impl RenderOnce for InlineHelp {
         let id = self.id;
         let more = self.on_more.map(|run| {
             div().flex().child(
-                Button::new((id.clone(), "more"), "Learn more")
+                Button::new((id.clone(), "more")).label("Learn more")
                     .variant(ButtonVariant::Link)
                     .on_click(move |_, window, cx| {
                         log::info!("inline help: learn more");

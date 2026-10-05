@@ -396,10 +396,7 @@ impl RenderOnce for ApiRequestBuilder {
                             .child(Input::new(&url)),
                     )
                     .child(
-                        Button::new(
-                            (id.clone(), "send"),
-                            if self.sending { "Sending…" } else { "Send" },
-                        )
+                        Button::new((id.clone(), "send")).label(if self.sending { "Sending…" } else { "Send" })
                         .variant(ButtonVariant::Primary)
                         .disabled(!ready)
                         .on_click(move |_, window, cx| {

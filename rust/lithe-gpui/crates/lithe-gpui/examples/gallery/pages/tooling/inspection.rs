@@ -23,7 +23,7 @@ impl Render for Apart {
             .gap_3()
             .child(RenderCounter::new("apart-renders", "This view"))
             .child(
-                Button::new("apart-redraw", "Redraw this view")
+                Button::new("apart-redraw").label("Redraw this view")
                     .variant(ButtonVariant::Outline)
                     .on_click(cx.listener(|_, _, _, cx| cx.notify())),
             )
@@ -34,7 +34,7 @@ impl Render for Apart {
 fn inspect() -> AnyElement {
     probe(
         "inspect-button",
-        Button::new("inspect", "Inspect").on_click(|_, window, cx| window.toggle_inspector(cx)),
+        Button::new("inspect").label("Inspect").on_click(|_, window, cx| window.toggle_inspector(cx)),
     )
     .into_any_element()
 }

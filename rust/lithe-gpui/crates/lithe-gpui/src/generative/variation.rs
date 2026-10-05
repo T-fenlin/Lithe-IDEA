@@ -109,7 +109,7 @@ impl RenderOnce for VariationPicker {
         };
         let vary = |strong: bool, label: &'static str| {
             self.on_vary.clone().map(|vary| {
-                Button::new((self.id.clone(), label), label)
+                Button::new((self.id.clone(), label)).label(label)
                     .variant(ButtonVariant::Secondary)
                     .size(ControlSize::Sm)
                     .icon(IconName::Shuffle)
@@ -177,7 +177,7 @@ impl RenderOnce for VariationPicker {
                     .children(vary(false, "Vary subtly"))
                     .children(vary(true, "Vary strongly"))
                     .children(self.on_upscale.clone().map(|upscale| {
-                        Button::new((self.id.clone(), "upscale"), "Upscale")
+                        Button::new((self.id.clone(), "upscale")).label("Upscale")
                             .variant(ButtonVariant::Secondary)
                             .size(ControlSize::Sm)
                             .icon(IconName::Maximize2)

@@ -324,7 +324,7 @@ impl RenderOnce for DropZone {
             })
             .child(
                 div().pt_2().child(
-                    Button::new((self.id, "browse"), "Browse…")
+                    Button::new((self.id, "browse")).label("Browse…")
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {
                             let take = chosen.clone();

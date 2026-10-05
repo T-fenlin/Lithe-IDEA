@@ -103,7 +103,7 @@ impl RenderOnce for WhatsNewDialog {
         )
         .action(move |close| {
             div().debug_selector(|| "whats-new-done".into()).child(
-                Button::new(done, "Got it")
+                Button::new(done).label("Got it")
                     .primary()
                     .on_click(move |_, window, cx| close(window, cx)),
             )

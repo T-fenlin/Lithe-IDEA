@@ -137,7 +137,7 @@ pub fn shimmer(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row().child(probe(
             "shimmer-load",
-            Button::new("shimmer-load", if now { "Reload" } else { "Load" })
+            Button::new("shimmer-load").label(if now { "Reload" } else { "Load" })
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| set(&toggle, !now, cx)),
         )),
@@ -157,7 +157,7 @@ pub fn buttons(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "save",
-                Button::new("save", "Save changes")
+                Button::new("save").label("Save changes")
                     .primary()
                     .loading(save_now)
                     .on_click(move |_, _, cx| {
@@ -166,7 +166,7 @@ pub fn buttons(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     }),
             ))
             .child(
-                Button::new("export", "Export")
+                Button::new("export").label("Export")
                     .loading(export_now)
                     .on_click(move |_, _, cx| {
                         set(&exporting, true, cx);

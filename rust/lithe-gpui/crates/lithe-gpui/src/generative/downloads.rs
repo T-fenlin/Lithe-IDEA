@@ -184,7 +184,7 @@ impl RenderOnce for ModelDownloadManager {
                 DownloadState::Failed(_) => vec![
                     self.on_retry.clone().map(|retry| {
                         let key = key.clone();
-                        Button::new((self.id.clone(), format!("retry-{key}")), "Retry")
+                        Button::new((self.id.clone(), format!("retry-{key}"))).label("Retry")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .on_click(move |_, window, cx| {

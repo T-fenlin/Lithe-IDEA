@@ -75,7 +75,7 @@ impl RenderOnce for JsonEditor {
         };
         let button = |label: &'static str, pretty: bool| {
             let editor = self.editor.clone();
-            Button::new((self.id.clone(), label), label)
+            Button::new((self.id.clone(), label)).label(label)
                 .variant(ButtonVariant::Secondary)
                 .disabled(read.is_err())
                 .on_click(move |_, _, cx| {

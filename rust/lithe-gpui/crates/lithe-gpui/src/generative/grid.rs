@@ -171,10 +171,7 @@ impl RenderOnce for GenerationGrid {
                                     )
                                     .child(div().text_center().child(reason))
                                     .children(retry.map(|retry| {
-                                        Button::new(
-                                            (self.id.clone(), format!("retry-{ix}")),
-                                            "Retry",
-                                        )
+                                        Button::new((self.id.clone(), format!("retry-{ix}"))).label("Retry")
                                         .variant(ButtonVariant::Secondary)
                                         .size(ControlSize::Sm)
                                         .on_click(

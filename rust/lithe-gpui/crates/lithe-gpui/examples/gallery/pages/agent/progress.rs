@@ -114,7 +114,7 @@ pub fn steps(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(probe(
         "agent-advance",
-        Button::new("agent-advance", "Finish the next item")
+        Button::new("agent-advance").label("Finish the next item")
             .variant(ButtonVariant::Secondary)
             .disabled(now == PLAN.len())
             .on_click(move |_, _, cx| {

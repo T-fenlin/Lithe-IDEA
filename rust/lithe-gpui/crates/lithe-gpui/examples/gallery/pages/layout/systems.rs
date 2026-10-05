@@ -109,10 +109,7 @@ pub fn floating(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "floating-open",
-                Button::new(
-                    "floating-open",
-                    if shown { "Hide panel" } else { "Show panel" },
-                )
+                Button::new("floating-open").label(if shown { "Hide panel" } else { "Show panel" })
                 .on_click(move |_, _, cx| {
                     open.update(cx, |open, cx| {
                         *open = !*open;
@@ -158,7 +155,7 @@ pub fn workspace(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         row()
             .child(probe(
                 "workspace-save",
-                Button::new("workspace-save", "Save layout")
+                Button::new("workspace-save").label("Save layout")
                     .icon(IconName::Save)
                     .on_click(move |_, _, cx| {
                         let json =
@@ -171,7 +168,7 @@ pub fn workspace(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
             ))
             .child(probe(
                 "workspace-restore",
-                Button::new("workspace-restore", "Restore")
+                Button::new("workspace-restore").label("Restore")
                     .variant(ButtonVariant::Ghost)
                     .icon(IconName::RotateCcw)
                     .disabled(preview.is_none())

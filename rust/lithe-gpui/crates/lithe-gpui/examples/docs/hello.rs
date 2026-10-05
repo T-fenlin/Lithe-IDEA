@@ -25,7 +25,7 @@ impl Render for Hello {
             .text_color(colors.fg)
             .child(format!("Pressed {} times", self.presses))
             .child(
-                Button::new("press", "Press")
+                Button::new("press").label("Press")
                     .primary()
                     .on_click(move |_, _, cx| {
                         this.update(cx, |hello, cx| {

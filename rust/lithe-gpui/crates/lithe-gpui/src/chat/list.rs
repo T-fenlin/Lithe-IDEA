@@ -202,7 +202,7 @@ impl RenderOnce for ScrollToBottomButton {
             .rounded_full()
             .shadow(cx.theme().elevation(Elevation::Floating))
             .child(
-                Button::new(self.id, label)
+                Button::new(self.id).label(label)
                     .variant(ButtonVariant::Secondary)
                     .size(ControlSize::Sm)
                     .icon(IconName::ArrowDown)

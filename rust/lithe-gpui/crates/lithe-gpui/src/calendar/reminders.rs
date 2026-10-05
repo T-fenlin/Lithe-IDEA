@@ -126,7 +126,7 @@ impl RenderOnce for ReminderPicker {
             .find(|minute| !minutes.contains(minute));
         let add = {
             let (set, minutes) = (set.clone(), minutes.clone());
-            Button::new((self.id.clone(), "add"), "Add reminder")
+            Button::new((self.id.clone(), "add")).label("Add reminder")
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .icon(IconName::Plus)

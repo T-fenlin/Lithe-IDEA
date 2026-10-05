@@ -51,7 +51,7 @@ impl Render for Moves {
                     .flex()
                     .gap_2()
                     .child(
-                        Button::new("show", if self.shown { "Hide" } else { "Show" }).on_click(
+                        Button::new("show").label(if self.shown { "Hide" } else { "Show" }).on_click(
                             move |_, _, cx| {
                                 toggle.update(cx, |moves, cx| {
                                     moves.shown = !moves.shown;
@@ -60,21 +60,18 @@ impl Render for Moves {
                             },
                         ),
                     )
-                    .child(Button::new("add", "Add one").on_click(move |_, _, cx| {
+                    .child(Button::new("add").label("Add one").on_click(move |_, _, cx| {
                         add.update(cx, |moves, cx| {
                             moves.count += 1;
                             cx.notify();
                         })
                     }))
                     .child(
-                        Button::new(
-                            "still",
-                            if still {
+                        Button::new("still").label(if still {
                                 "Allow motion"
                             } else {
                                 "Reduce motion"
-                            },
-                        )
+                            })
                         .on_click(move |_, _, cx| {
                             Theme::update(cx, |theme| theme.reduced_motion = !still)
                         }),

@@ -370,7 +370,7 @@ impl RenderOnce for ReviewComment {
                         .gap_2()
                         .child(div().flex_1().child(Input::new(&self.reply)))
                         .child(
-                            Button::new((self.id.clone(), "reply"), "Reply")
+                            Button::new((self.id.clone(), "reply")).label("Reply")
                                 .variant(ButtonVariant::Primary)
                                 .size(ControlSize::Sm)
                                 .when_some(reply, |button, reply| {
@@ -381,14 +381,11 @@ impl RenderOnce for ReviewComment {
             })
             .child(
                 div().flex().child(
-                    Button::new(
-                        (self.id.clone(), "resolve"),
-                        if resolved {
+                    Button::new((self.id.clone(), "resolve")).label(if resolved {
                             "Reopen conversation"
                         } else {
                             "Resolve conversation"
-                        },
-                    )
+                        })
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
                     .when_some(resolve, |button, resolve| {

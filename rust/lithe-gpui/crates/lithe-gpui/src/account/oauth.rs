@@ -71,10 +71,7 @@ impl RenderOnce for OAuthButtons {
             .children(self.providers.into_iter().map(|(key, name)| {
                 let mine = busy.as_ref() == Some(&key);
                 let pick = on_pick.clone();
-                Button::new(
-                    (id.clone(), format!("provider-{key}")),
-                    format!("Continue with {name}"),
-                )
+                Button::new((id.clone(), format!("provider-{key}"))).label(format!("Continue with {name}"))
                 .variant(ButtonVariant::Outline)
                 .full_width()
                 .loading(mine)

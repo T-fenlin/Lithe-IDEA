@@ -109,7 +109,7 @@ impl RenderOnce for OnboardingWizard {
         let reached = current + 1;
         let place = format!("Step {reached} of {count}");
         let skip = self.on_skip.map(|run| {
-            Button::new((id.clone(), "skip"), "Skip for now")
+            Button::new((id.clone(), "skip")).label("Skip for now")
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .on_click(move |_, window, cx| {

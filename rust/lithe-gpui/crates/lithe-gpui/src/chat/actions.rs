@@ -17,7 +17,7 @@ type OnRate = Rc<dyn Fn(Option<bool>, &mut Window, &mut App)>;
 
 /// Asks for another answer to the same message.
 pub fn regenerate_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id, "Regenerate")
+    Button::new(id).label("Regenerate")
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Sm)
         .icon(IconName::RefreshCw)
@@ -25,7 +25,7 @@ pub fn regenerate_button(id: impl Into<ElementId>) -> Button {
 
 /// Stops an answer while it streams.
 pub fn stop_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id, "Stop")
+    Button::new(id).label("Stop")
         .variant(ButtonVariant::Secondary)
         .size(ControlSize::Sm)
         .icon(IconName::CircleStop)
@@ -33,7 +33,7 @@ pub fn stop_button(id: impl Into<ElementId>) -> Button {
 
 /// Picks an answer up where it was cut off.
 pub fn continue_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id, "Continue")
+    Button::new(id).label("Continue")
         .variant(ButtonVariant::Secondary)
         .size(ControlSize::Sm)
         .icon(IconName::StepForward)
@@ -284,13 +284,13 @@ impl RenderOnce for MessageEditor {
                     .justify_end()
                     .gap_2()
                     .child(
-                        Button::new((self.id.clone(), "cancel"), "Cancel")
+                        Button::new((self.id.clone(), "cancel")).label("Cancel")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .on_click(move |_, window, cx| cancel(window, cx)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "save"), "Save")
+                        Button::new((self.id.clone(), "save")).label("Save")
                             .variant(ButtonVariant::Primary)
                             .size(ControlSize::Sm)
                             .shortcut("secondary-enter")

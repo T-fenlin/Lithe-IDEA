@@ -174,7 +174,7 @@ impl RenderOnce for LinkEditor {
                             ),
                         )
                         .child(
-                            Button::new((self.id.clone(), "apply"), "Apply")
+                            Button::new((self.id.clone(), "apply")).label("Apply")
                                 .variant(ButtonVariant::Primary)
                                 .size(ControlSize::Sm)
                                 .disabled(!valid)

@@ -42,7 +42,7 @@ impl Render for Stripes {
                     .revision(u64::from(count)),
             )
             .child(
-                Button::new("more", "More stripes").on_click(move |_, _, cx| {
+                Button::new("more").label("More stripes").on_click(move |_, _, cx| {
                     this.update(cx, |stripes, cx| {
                         stripes.count += 2;
                         cx.notify();

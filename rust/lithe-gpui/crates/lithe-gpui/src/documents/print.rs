@@ -292,12 +292,12 @@ impl RenderOnce for PrintPreview {
                             .justify_end()
                             .gap_2()
                             .child(
-                                Button::new((self.id.clone(), "cancel"), "Cancel")
+                                Button::new((self.id.clone(), "cancel")).label("Cancel")
                                     .variant(ButtonVariant::Ghost)
                                     .on_click(move |_, window, cx| cancel(window, cx)),
                             )
                             .child(
-                                Button::new((self.id.clone(), "print"), "Print")
+                                Button::new((self.id.clone(), "print")).label("Print")
                                     .variant(ButtonVariant::Primary)
                                     .on_click(move |_, window, cx| {
                                         log::info!("print preview: print {settings:?}");

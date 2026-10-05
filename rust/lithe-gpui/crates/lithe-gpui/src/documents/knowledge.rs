@@ -389,7 +389,7 @@ impl RenderOnce for TrashBin {
                             ),
                     )
                     .child(
-                        Button::new((self.id.clone(), format!("restore-{key}")), "Restore")
+                        Button::new((self.id.clone(), format!("restore-{key}"))).label("Restore")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .when_some(restore, |button, restore| {

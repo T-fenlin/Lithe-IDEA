@@ -31,10 +31,10 @@ impl Render for Layers {
             })
             .detail("It leaves the trash after 30 days.")
             .action(|close| {
-                Button::new("cancel", "Cancel").on_click(move |_, window, cx| close(window, cx))
+                Button::new("cancel").label("Cancel").on_click(move |_, window, cx| close(window, cx))
             })
             .action(move |close| {
-                Button::new("confirm", "Delete")
+                Button::new("confirm").label("Delete")
                     .primary()
                     .on_click(move |_, window, cx| {
                         close(window, cx);
@@ -61,7 +61,7 @@ impl Render for Layers {
                         div().p_3().child("Size 4 KB · Edited today")
                     }))
                     .child(
-                        Button::new("delete-open", "Delete…").on_click(move |_, _, cx| {
+                        Button::new("delete-open").label("Delete…").on_click(move |_, _, cx| {
                             opener.update(cx, |layers, cx| {
                                 layers.open = true;
                                 cx.notify();

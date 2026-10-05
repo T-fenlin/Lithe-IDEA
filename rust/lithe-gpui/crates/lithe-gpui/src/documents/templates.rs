@@ -191,7 +191,7 @@ impl RenderOnce for TemplatePicker {
                                     .child(self.templates[ix].name.clone()),
                             )
                             .child(
-                                Button::new((self.id.clone(), "use"), "Use template")
+                                Button::new((self.id.clone(), "use")).label("Use template")
                                     .variant(ButtonVariant::Primary)
                                     .size(ControlSize::Sm)
                                     .disabled(take.is_none())

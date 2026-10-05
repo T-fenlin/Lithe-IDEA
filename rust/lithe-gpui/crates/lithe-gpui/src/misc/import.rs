@@ -242,13 +242,13 @@ impl RenderOnce for ImportDialog {
         .action({
             let id = id.clone();
             move |close| {
-                Button::new((id, "cancel"), "Cancel")
+                Button::new((id, "cancel")).label("Cancel")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| close(window, cx))
             }
         })
         .action(move |close| {
-            Button::new((id, "import"), "Import")
+            Button::new((id, "import")).label("Import")
                 .primary()
                 .on_click(move |_, window, cx| {
                     if !missing.is_empty() {

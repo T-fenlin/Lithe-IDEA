@@ -275,7 +275,7 @@ impl RenderOnce for ScreenShareView {
             ),
         };
         let stop = self.on_stop.map(|run| {
-            Button::new((self.id.clone(), "stop"), "Stop presenting")
+            Button::new((self.id.clone(), "stop")).label("Stop presenting")
                 .icon(IconName::ScreenShareOff)
                 .variant(ButtonVariant::Danger)
                 .size(ControlSize::Sm)

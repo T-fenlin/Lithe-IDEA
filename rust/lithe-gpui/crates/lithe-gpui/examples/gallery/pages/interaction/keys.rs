@@ -126,13 +126,13 @@ pub fn undo(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .items_center()
             .gap_2()
             .child(div().w(px(64.)).text_size(theme.text_size(TextSize::Lg)).child(count.to_string()))
-            .child(Button::new("interaction-add", "Add one").on_click(move |_, _, cx| {
+            .child(Button::new("interaction-add").label("Add one").on_click(move |_, _, cx| {
                 change(&add, cx, |tally| {
                     tally.history.record(tally.count, false);
                     tally.count += 1;
                 })
             }))
-            .child(Button::new("interaction-take", "Take one").on_click(move |_, _, cx| {
+            .child(Button::new("interaction-take").label("Take one").on_click(move |_, _, cx| {
                 change(&take, cx, |tally| {
                     tally.history.record(tally.count, false);
                     tally.count -= 1;
@@ -293,7 +293,7 @@ pub fn focus(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(specimen(
                 "Autofocus",
                 div().w(px(240.)).flex().flex_col().gap_2().child(
-                    Button::new("interaction-show-field", if shown { "Hide the field" } else { "Show a field" })
+                    Button::new("interaction-show-field").label(if shown { "Hide the field" } else { "Show a field" })
                         .variant(ButtonVariant::Secondary)
                         .on_click(move |_, window, cx| {
                             change(&show, cx, |focusing| focusing.field = !focusing.field);

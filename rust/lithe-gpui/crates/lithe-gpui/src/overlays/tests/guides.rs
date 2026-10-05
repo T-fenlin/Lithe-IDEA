@@ -99,7 +99,7 @@ impl Render for Guides {
         FocusScope::new(&self.root)
             .size_full()
             .child(
-                Button::new("target", "Target").on_click(move |_, window, cx| pressed(window, cx)),
+                Button::new("target").label("Target").on_click(move |_, window, cx| pressed(window, cx)),
             )
             .child(div().id("before").track_focus(&self.before))
             .child(div().h(px(if self.lower { 260.0 } else { 160.0 })))

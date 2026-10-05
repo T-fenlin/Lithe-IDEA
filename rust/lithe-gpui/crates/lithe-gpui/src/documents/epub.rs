@@ -222,19 +222,13 @@ impl RenderOnce for EpubReader {
                                         .border_color(colors.border)
                                         .child(div().children(chapter.checked_sub(1).map(
                                             |previous| {
-                                                Button::new(
-                                                    (self.id.clone(), "previous"),
-                                                    format!("← {}", self.chapters[previous].title),
-                                                )
+                                                Button::new((self.id.clone(), "previous")).label(format!("← {}", self.chapters[previous].title))
                                                 .variant(ButtonVariant::Ghost)
                                                 .on_click(turn(previous))
                                             },
                                         )))
                                         .child(div().children((chapter + 1 < count).then(|| {
-                                            Button::new(
-                                                (self.id.clone(), "next"),
-                                                format!("{} →", self.chapters[chapter + 1].title),
-                                            )
+                                            Button::new((self.id.clone(), "next")).label(format!("{} →", self.chapters[chapter + 1].title))
                                             .variant(ButtonVariant::Ghost)
                                             .on_click(turn(chapter + 1))
                                         }))),

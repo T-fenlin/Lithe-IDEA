@@ -31,7 +31,7 @@ impl Render for Handoff {
                     }),
             )
             .child(
-                Button::new("after", "After")
+                Button::new("after").label("After")
                     .focus_handle(&self.button)
                     .on_click(move |_, _, cx| {
                         clicked.update(cx, |view, _| view.heard.push("click"))

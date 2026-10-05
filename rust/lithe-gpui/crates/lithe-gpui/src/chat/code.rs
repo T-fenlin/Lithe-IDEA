@@ -150,13 +150,10 @@ impl RenderOnce for CodeBlock {
                         .border_t_1()
                         .border_color(colors.border)
                         .child(
-                            Button::new(
-                                (self.id.clone(), "fold"),
-                                match hidden {
+                            Button::new((self.id.clone(), "fold")).label(match hidden {
                                     Some(hidden) => format!("Show {hidden} more lines"),
                                     None => "Show less".to_string(),
-                                },
-                            )
+                                })
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .on_click(move |_, _, cx| {

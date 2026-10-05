@@ -150,7 +150,7 @@ impl RenderOnce for CsvImporter {
                             )),
                     )
                     .action(move |close| {
-                        Button::new((id, "cancel"), "Cancel")
+                        Button::new((id, "cancel")).label("Cancel")
                             .variant(ButtonVariant::Ghost)
                             .on_click(move |_, window, cx| close(window, cx))
                     })

@@ -166,7 +166,7 @@ impl RenderOnce for ScreenRecorderControls {
         };
         let body = match self.state {
             Recording::Idle => div().children(self.on_record.map(|run| {
-                Button::new((id.clone(), "record"), "Record")
+                Button::new((id.clone(), "record")).label("Record")
                     .icon(IconName::CircleDot)
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)

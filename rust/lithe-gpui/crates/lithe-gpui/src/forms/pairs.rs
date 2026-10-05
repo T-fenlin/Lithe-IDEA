@@ -161,7 +161,7 @@ impl RenderOnce for FieldArray {
             .children(lines)
             .child(
                 div().flex().child(
-                    Button::new(("add-row", 0usize), self.add_label)
+                    Button::new(("add-row", 0usize)).label(self.add_label)
                         .size(ControlSize::Sm)
                         .variant(ButtonVariant::Ghost)
                         .icon(IconName::Plus)

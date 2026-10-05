@@ -290,7 +290,7 @@ impl RenderOnce for InviteInput {
                         ))
                     }))
                     .child(
-                        Button::new((self.id.clone(), "invite"), "Invite")
+                        Button::new((self.id.clone(), "invite")).label("Invite")
                             .variant(ButtonVariant::Primary)
                             .icon(IconName::UserPlus)
                             .disabled(!ready(&self.emails))
@@ -492,7 +492,7 @@ impl RenderOnce for ShareDialog {
                 .children(section("General access", self.link)),
         )
         .action(move |close| {
-            Button::new(done, "Done")
+            Button::new(done).label("Done")
                 .variant(ButtonVariant::Primary)
                 .on_click(move |_, window, cx| close(window, cx))
         })

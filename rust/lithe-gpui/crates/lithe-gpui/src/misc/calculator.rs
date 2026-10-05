@@ -235,8 +235,8 @@ impl RenderOnce for Calculator {
         };
         let keys = PAD.iter().map(|&(key, label)| {
             let button = match key {
-                Key::Back => Button::new((id.clone(), "back"), "").icon(IconName::Delete),
-                _ => Button::new((id.clone(), label), label),
+                Key::Back => Button::new((id.clone(), "back")).label("").icon(IconName::Delete),
+                _ => Button::new((id.clone(), label)).label(label),
             };
             let tape = tape.clone();
             div()

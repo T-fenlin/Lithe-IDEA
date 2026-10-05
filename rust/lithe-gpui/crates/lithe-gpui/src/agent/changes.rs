@@ -57,13 +57,13 @@ fn verdict(id: &ElementId, state: ChangeState, on_decide: Option<OnFlag>, cx: &A
                 .gap_1()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(
-                    Button::new((id.clone(), "reject"), "Reject")
+                    Button::new((id.clone(), "reject")).label("Reject")
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| reject(false, window, cx)),
                 )
                 .child(
-                    Button::new((id.clone(), "accept"), "Accept")
+                    Button::new((id.clone(), "accept")).label("Accept")
                         .variant(ButtonVariant::Secondary)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| accept(true, window, cx)),
@@ -250,7 +250,7 @@ impl RenderOnce for MultiFileDiffReview {
                 .items_center()
                 .gap_1()
                 .child(
-                    Button::new((self.id.clone(), "reject-all"), "Reject all")
+                    Button::new((self.id.clone(), "reject-all")).label("Reject all")
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {
@@ -259,7 +259,7 @@ impl RenderOnce for MultiFileDiffReview {
                         }),
                 )
                 .child(
-                    Button::new((self.id.clone(), "accept-all"), "Accept all")
+                    Button::new((self.id.clone(), "accept-all")).label("Accept all")
                         .variant(ButtonVariant::Primary)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {

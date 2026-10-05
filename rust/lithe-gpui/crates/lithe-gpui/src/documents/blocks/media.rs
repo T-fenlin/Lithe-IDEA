@@ -113,7 +113,7 @@ pub(super) fn media(
                             .child(media.source.clone()),
                     )
                     .child(
-                        Button::new((id.clone(), format!("open-{key}")), "Open")
+                        Button::new((id.clone(), format!("open-{key}"))).label("Open")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .on_click(move |_, _, cx| cx.open_url(&address)),

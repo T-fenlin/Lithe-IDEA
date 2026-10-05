@@ -288,7 +288,7 @@ impl RenderOnce for SystemPromptEditor {
                             .child("System prompt"),
                     )
                     .children(self.on_reset.map(|reset| {
-                        Button::new((self.id.clone(), "reset"), "Reset")
+                        Button::new((self.id.clone(), "reset")).label("Reset")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .on_click(move |_, window, cx| {

@@ -97,7 +97,7 @@ impl RenderOnce for Pagination {
             .map(move |(ix, entry)| match entry {
                 Some(number) => {
                     let go = go.clone();
-                    Button::new(("page", number), number.to_string())
+                    Button::new(("page", number)).label(number.to_string())
                         .size(ControlSize::Sm)
                         .variant(if number == page {
                             ButtonVariant::Secondary
@@ -215,7 +215,7 @@ impl RenderOnce for LoadMore {
             .py_4()
             .when(!done, |more| {
                 more.child(
-                    Button::new((self.id.clone(), "button"), "Load more")
+                    Button::new((self.id.clone(), "button")).label("Load more")
                         .loading(self.loading)
                         .on_click(move |_, window, cx| {
                             log::info!("load more {id:?}: asked");

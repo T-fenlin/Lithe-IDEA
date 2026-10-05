@@ -56,7 +56,7 @@ impl RenderOnce for ErrorMessage {
         };
         match self.on_retry {
             Some(retry) => alert.action(
-                Button::new((self.id.clone(), "retry"), "Try again")
+                Button::new((self.id.clone(), "retry")).label("Try again")
                     .size(ControlSize::Sm)
                     .icon(IconName::RefreshCw)
                     .on_click(move |_, window, cx| {
@@ -141,7 +141,7 @@ impl RenderOnce for RateLimitNotice {
                     .child(countdown),
             )
             .children(self.on_upgrade.map(|upgrade| {
-                Button::new((self.id.clone(), "upgrade"), "Raise the limit")
+                Button::new((self.id.clone(), "upgrade")).label("Raise the limit")
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| upgrade(window, cx))
@@ -227,13 +227,13 @@ impl RenderOnce for FeedbackForm {
                     .justify_end()
                     .gap_2()
                     .children(self.on_cancel.map(|cancel| {
-                        Button::new((self.id.clone(), "cancel"), "Cancel")
+                        Button::new((self.id.clone(), "cancel")).label("Cancel")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .on_click(move |_, window, cx| cancel(window, cx))
                     }))
                     .child(
-                        Button::new((self.id.clone(), "send"), "Send feedback")
+                        Button::new((self.id.clone(), "send")).label("Send feedback")
                             .variant(ButtonVariant::Primary)
                             .size(ControlSize::Sm)
                             .disabled(!ready)

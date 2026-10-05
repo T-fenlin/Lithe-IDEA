@@ -153,17 +153,17 @@ pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
                     ActionBar::new()
                         .floating()
                         .child(
-                            Button::new("bar-reply", "Reply")
+                            Button::new("bar-reply").label("Reply")
                                 .variant(ButtonVariant::Ghost)
                                 .icon(IconName::Reply),
                         )
                         .child(
-                            Button::new("bar-forward", "Forward")
+                            Button::new("bar-forward").label("Forward")
                                 .variant(ButtonVariant::Ghost)
                                 .icon(IconName::Forward),
                         )
                         .child(
-                            Button::new("bar-archive", "Archive")
+                            Button::new("bar-archive").label("Archive")
                                 .primary()
                                 .icon(IconName::Archive),
                         ),
@@ -172,8 +172,8 @@ pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
             .child(
                 ActionBar::new()
                     .w_full()
-                    .child(Button::new("bar-cancel", "Cancel").variant(ButtonVariant::Ghost))
-                    .child(Button::new("bar-save", "Save changes").primary()),
+                    .child(Button::new("bar-cancel").label("Cancel").variant(ButtonVariant::Ghost))
+                    .child(Button::new("bar-save").label("Save changes").primary()),
             ),
     )
 }
@@ -191,7 +191,7 @@ pub fn bulk(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "bulk-select",
-                Button::new("bulk-select", "Select one more")
+                Button::new("bulk-select").label("Select one more")
                     .variant(ButtonVariant::Outline)
                     .on_click(move |_, _, cx| {
                         add.update(cx, |count, cx| {
@@ -208,12 +208,12 @@ pub fn bulk(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 BulkActionBar::new("bulk-bar", count)
                     .action(
-                        Button::new("bulk-move", "Move")
+                        Button::new("bulk-move").label("Move")
                             .variant(ButtonVariant::Ghost)
                             .icon(IconName::Folder),
                     )
                     .action(
-                        Button::new("bulk-delete", "Delete")
+                        Button::new("bulk-delete").label("Delete")
                             .variant(ButtonVariant::Danger)
                             .icon(IconName::Trash2),
                     )
@@ -238,7 +238,7 @@ pub fn action_sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use
     )
     .child(probe(
         "action-sheet-open",
-        Button::new("action-sheet-open", "Photo options")
+        Button::new("action-sheet-open").label("Photo options")
             .variant(ButtonVariant::Outline)
             .on_click(move |_, _, cx| {
                 show.update(cx, |shown, cx| {

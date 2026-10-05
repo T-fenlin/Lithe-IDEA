@@ -165,10 +165,7 @@ impl RenderOnce for Stopwatch {
                     .flex_wrap()
                     .gap_2()
                     .child(
-                        Button::new(
-                            (id.clone(), "start"),
-                            if running { "Pause" } else { "Start" },
-                        )
+                        Button::new((id.clone(), "start")).label(if running { "Pause" } else { "Start" })
                         .variant(if running {
                             ButtonVariant::Secondary
                         } else {
@@ -181,14 +178,11 @@ impl RenderOnce for Stopwatch {
                         }),
                     )
                     .child(
-                        Button::new(
-                            (id.clone(), "side"),
-                            if running || elapsed.is_zero() {
+                        Button::new((id.clone(), "side")).label(if running || elapsed.is_zero() {
                                 "Lap"
                             } else {
                                 "Reset"
-                            },
-                        )
+                            })
                         .focus_handle(&side)
                         .disabled(!running && elapsed.is_zero())
                         .on_click(match running {

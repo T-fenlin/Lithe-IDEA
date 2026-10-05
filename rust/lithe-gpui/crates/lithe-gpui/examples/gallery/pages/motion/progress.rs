@@ -59,7 +59,7 @@ pub fn bars(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(row().child(probe(
         "progress-step",
-        Button::new("progress-step", "Step")
+        Button::new("progress-step").label("Step")
             .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| set(&step, (now + 1) % STEPS.len(), cx)),
     )))
@@ -88,7 +88,7 @@ pub fn overlay(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(row().child(probe(
         "overlay-reload",
-        Button::new("overlay-reload", "Reload")
+        Button::new("overlay-reload").label("Reload")
             .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| {
                 set(&start, true, cx);
@@ -164,7 +164,7 @@ pub fn suspense(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .child(
             row()
                 .child(
-                    Button::new("report-reload", "Reload")
+                    Button::new("report-reload").label("Reload")
                         .variant(ButtonVariant::Ghost)
                         .on_click({
                             let view = view.clone();
@@ -172,7 +172,7 @@ pub fn suspense(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         }),
                 )
                 .child(
-                    Button::new("report-fail", "Reload and fail")
+                    Button::new("report-fail").label("Reload and fail")
                         .variant(ButtonVariant::Ghost)
                         .on_click({
                             let view = view.clone();
@@ -243,7 +243,7 @@ pub fn refresh(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "refresh-run",
-                Button::new("refresh-run", "Refresh").on_click(move |_, _, cx| {
+                Button::new("refresh-run").label("Refresh").on_click(move |_, _, cx| {
                     set(&go, Refresh::Refreshing, cx);
                     later(&go, Refresh::Done, Duration::from_millis(1200), cx);
                     later(&go, Refresh::Idle, Duration::from_millis(2600), cx);
@@ -322,7 +322,7 @@ pub fn uploads(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(row().child(probe(
         "uploads-tick",
-        Button::new("uploads-tick", "Send more")
+        Button::new("uploads-tick").label("Send more")
             .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| {
                 let next = tick

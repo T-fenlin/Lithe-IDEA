@@ -109,10 +109,7 @@ impl RenderOnce for InlineChat {
                             .child(Input::new(&self.field).size(ControlSize::Sm)),
                     )
                     .child(
-                        Button::new(
-                            (self.id.clone(), "send"),
-                            if self.working { "Working" } else { "Send" },
-                        )
+                        Button::new((self.id.clone(), "send")).label(if self.working { "Working" } else { "Send" })
                         .variant(ButtonVariant::Primary)
                         .size(ControlSize::Sm)
                         .loading(self.working)

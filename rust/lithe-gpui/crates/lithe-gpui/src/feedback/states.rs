@@ -287,7 +287,7 @@ impl RenderOnce for ErrorBoundary {
             .detail(chain)
             .when_some(self.on_retry, |view, run| {
                 view.action(
-                    Button::new(retry, "Try again").on_click(move |_, window, cx| run(window, cx)),
+                    Button::new(retry).label("Try again").on_click(move |_, window, cx| run(window, cx)),
                 )
             })
             .into_any_element()

@@ -77,7 +77,7 @@ impl RenderOnce for ChannelHeader {
         let counted =
             |key: &'static str, icon: IconName, tip: &'static str, what: Option<(usize, Run)>| {
                 what.map(|(count, run)| {
-                    Button::new((self.id.clone(), key), count.to_string())
+                    Button::new((self.id.clone(), key)).label(count.to_string())
                         .icon(icon)
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)

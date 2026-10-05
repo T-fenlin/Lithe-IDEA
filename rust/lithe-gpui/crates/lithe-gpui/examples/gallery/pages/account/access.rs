@@ -129,8 +129,8 @@ pub fn profile(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .bio(now.bio.clone())
                         .detail(IconName::Mail, now.email.clone())
                         .detail(IconName::MapPin, now.location.clone())
-                        .action(Button::new("account-card-message", "Message").primary())
-                        .action(Button::new("account-card-profile", "View profile")),
+                        .action(Button::new("account-card-message").label("Message").primary())
+                        .action(Button::new("account-card-profile").label("View profile")),
                 ),
             )
             .child(div().w(px(400.)).child(ProfileEditor::new("account-editor", now).on_save(move |profile, _, cx| {

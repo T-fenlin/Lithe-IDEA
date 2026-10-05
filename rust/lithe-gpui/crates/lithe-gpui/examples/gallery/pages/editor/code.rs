@@ -276,14 +276,11 @@ pub fn changes(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     });
     let open = editor.read(cx).chat_line().is_some();
     let chat_editor = editor.clone();
-    let toggle = Button::new(
-        "editor-chat",
-        if open {
+    let toggle = Button::new("editor-chat").label(if open {
             "Close inline chat"
         } else {
             "Open inline chat"
-        },
-    )
+        })
     .on_click(move |_, window, cx| {
         chat_editor.update(cx, |editor, cx| {
             let next = editor.chat_line().is_none().then_some(3);

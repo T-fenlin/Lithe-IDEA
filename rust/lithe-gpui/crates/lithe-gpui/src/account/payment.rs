@@ -278,7 +278,7 @@ impl RenderOnce for PaymentMethodForm {
                     .map(|error| InlineMessage::new(Severity::Danger, error)),
             )
             .child(
-                Button::new((id.clone(), "save"), "Save card")
+                Button::new((id.clone(), "save")).label("Save card")
                     .variant(ButtonVariant::Primary)
                     .full_width()
                     .loading(self.busy)

@@ -136,7 +136,7 @@ impl RenderOnce for Popover {
             })
         };
         let trigger = match self.opener {
-            Opener::Button(face) => Button::new((self.id.clone(), "trigger"), face.label)
+            Opener::Button(face) => Button::new((self.id.clone(), "trigger")).label(face.label)
                 .variant(face.variant)
                 .size(face.size)
                 .when_some(face.icon, |button, icon| button.icon(icon))

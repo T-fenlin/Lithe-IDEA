@@ -51,7 +51,7 @@ pub fn toolbar(cx: &App) -> impl IntoElement + use<> {
                     )
                     .child(div().flex_1())
                     .child(
-                        Button::new("tb-share", "Share")
+                        Button::new("tb-share").label("Share")
                             .size(ControlSize::Sm)
                             .icon(IconName::Share2),
                     ),

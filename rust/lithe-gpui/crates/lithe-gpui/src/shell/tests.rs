@@ -25,7 +25,7 @@ impl Render for Desk {
         let (opener, closer, above) = (cx.entity(), cx.entity(), cx.entity());
         let scope = FocusScope::new(&self.root)
             .size_full()
-            .child(Button::new("opener", "Windows").on_click(move |_, _, cx| {
+            .child(Button::new("opener").label("Windows").on_click(move |_, _, cx| {
                 opener.update(cx, |desk, cx| {
                     desk.open = true;
                     cx.notify();
@@ -430,12 +430,12 @@ impl Render for NarrowShell {
                         .action(
                             div()
                                 .debug_selector(|| "edit".into())
-                                .child(Button::new("edit", "Edit")),
+                                .child(Button::new("edit").label("Edit")),
                         )
                         .action(
                             div()
                                 .debug_selector(|| "share".into())
-                                .child(Button::new("share", "Share")),
+                                .child(Button::new("share").label("Share")),
                         )
                         .child(long),
                 ),

@@ -44,9 +44,9 @@ impl Render for Panel {
             .p_8()
             .bg(theme.colors.bg)
             .text_color(theme.colors.fg)
-            .child(Button::new("first", "First"))
+            .child(Button::new("first").label("First"))
             .child(tile)
-            .child(Button::new("last", "Last"))
+            .child(Button::new("last").label("Last"))
     }
 }
 

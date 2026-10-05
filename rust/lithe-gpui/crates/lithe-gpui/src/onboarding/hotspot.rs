@@ -109,7 +109,7 @@ impl RenderOnce for Hotspot {
                     .child(prose(body).text_color(theme.colors.fg_muted))
                     .child(
                         div().flex().justify_end().pt_1().child(
-                            Button::new(got_it, "Got it")
+                            Button::new(got_it).label("Got it")
                                 .variant(ButtonVariant::Primary)
                                 .size(ControlSize::Sm)
                                 .on_click(move |_, window, cx| {

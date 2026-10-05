@@ -45,12 +45,12 @@ pub fn errors(cx: &mut App) -> impl IntoElement + use<> {
             .flex()
             .gap_3()
             .child(frame(cx).child(
-                ErrorView::not_found("error-404").action(Button::new("error-home", "Go home")),
+                ErrorView::not_found("error-404").action(Button::new("error-home").label("Go home")),
             ))
             .child(
                 frame(cx).child(
                     ErrorView::no_permission("error-403")
-                        .action(Button::new("error-ask", "Request access").primary()),
+                        .action(Button::new("error-ask").label("Request access").primary()),
                 ),
             ),
     )
@@ -60,7 +60,7 @@ pub fn errors(cx: &mut App) -> impl IntoElement + use<> {
             .gap_3()
             .child(frame(cx).child(ErrorView::maintenance("error-maintenance")))
             .child(frame(cx).child(
-                ErrorView::offline("error-offline").action(Button::new("error-retry", "Try again")),
+                ErrorView::offline("error-offline").action(Button::new("error-retry").label("Try again")),
             )),
     )
 }
@@ -96,7 +96,7 @@ pub fn boundary(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row().child(probe(
             "boundary-break",
-            Button::new("boundary-toggle", if now { "Fix it" } else { "Break it" })
+            Button::new("boundary-toggle").label(if now { "Fix it" } else { "Break it" })
                 .on_click(move |_, _, cx| set(&toggle, !now, cx)),
         )),
     )
@@ -118,22 +118,22 @@ pub fn results(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 frame(cx).child(
                     ResultView::success(("result-ok", now), "Payment sent")
                         .body("€240.00 to Studio Ottanta. A receipt is on its way.")
-                        .action(Button::new("result-done", "Done").primary())
-                        .action(Button::new("result-receipt", "View receipt")),
+                        .action(Button::new("result-done").label("Done").primary())
+                        .action(Button::new("result-receipt").label("View receipt")),
                 ),
             )
             .child(
                 frame(cx).child(
                     ResultView::failure(("result-no", now), "Payment declined")
                         .body("Your bank declined the charge. No money moved.")
-                        .action(Button::new("result-again", "Try again")),
+                        .action(Button::new("result-again").label("Try again")),
                 ),
             ),
     )
     .child(
         row().child(probe(
             "result-replay",
-            Button::new("result-replay", "Replay")
+            Button::new("result-replay").label("Replay")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| set(&replay, now + 1, cx)),
         )),
@@ -224,7 +224,7 @@ pub fn statuses(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 row()
                     .child(probe(
                         "saving-next",
-                        Button::new("saving-next", "Next").on_click(next(0, SAVES.len())),
+                        Button::new("saving-next").label("Next").on_click(next(0, SAVES.len())),
                     ))
                     .child(
                         SavingIndicator::new("saving", SAVES[now[0]]).on_retry(move |_, cx| {
@@ -240,7 +240,7 @@ pub fn statuses(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 row()
                     .child(probe(
                         "sync-next",
-                        Button::new("sync-next", "Next").on_click(next(1, SYNCS.len())),
+                        Button::new("sync-next").label("Next").on_click(next(1, SYNCS.len())),
                     ))
                     .child(SyncStatus::new("sync", SYNCS[now[1]])),
                 cx,
@@ -250,7 +250,7 @@ pub fn statuses(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 row()
                     .child(probe(
                         "connection-next",
-                        Button::new("connection-next", "Next").on_click(next(2, LINKS.len())),
+                        Button::new("connection-next").label("Next").on_click(next(2, LINKS.len())),
                     ))
                     .child(ConnectionStatus::new("connection", LINKS[now[2]])),
                 cx,
@@ -299,7 +299,7 @@ pub fn clocks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     )
                     .child(probe(
                         "countdown-restart",
-                        Button::new("countdown-restart", "Restart")
+                        Button::new("countdown-restart").label("Restart")
                             .variant(ButtonVariant::Ghost)
                             .on_click(move |_, _, cx| {
                                 set(&restart, Instant::now() + Duration::from_secs(10), cx);
@@ -316,10 +316,7 @@ pub fn clocks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .gap_3()
                     .child(Timer::new("timer", since).stopped(halt))
                     .child(
-                        Button::new(
-                            "timer-toggle",
-                            if halt.is_some() { "Reset" } else { "Stop" },
-                        )
+                        Button::new("timer-toggle").label(if halt.is_some() { "Reset" } else { "Stop" })
                         .variant(ButtonVariant::Ghost)
                         .on_click(move |_, _, cx| match halt {
                             Some(_) => {

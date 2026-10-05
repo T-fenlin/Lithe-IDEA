@@ -130,7 +130,7 @@ pub fn watermark(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
                     .items_center()
                     .gap_3()
                     .child(
-                        Button::new("watermark-read", "Mark as read")
+                        Button::new("watermark-read").label("Mark as read")
                             .variant(ButtonVariant::Secondary)
                             .on_click(move |_, _, cx| set(&mark, true, cx)),
                     )

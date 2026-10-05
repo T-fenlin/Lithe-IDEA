@@ -266,7 +266,7 @@ impl RenderOnce for DashboardFilterBar {
         });
         let clear = (!picked.is_empty()).then(|| {
             let on_filter = on_filter.clone();
-            Button::new((id.clone(), "clear"), "Clear")
+            Button::new((id.clone(), "clear")).label("Clear")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, window, cx| {
                     log::info!("filter bar: clear");

@@ -149,7 +149,7 @@ impl Render for Host {
         };
         FocusScope::new(&self.root)
             .size_full()
-            .child(Button::new("opener", "Open").on_click(move |_, _, cx| {
+            .child(Button::new("opener").label("Open").on_click(move |_, _, cx| {
                 opener.update(cx, |host, cx| {
                     host.open = true;
                     cx.notify();

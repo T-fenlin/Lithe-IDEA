@@ -141,7 +141,7 @@ impl RenderOnce for Captcha {
                 .into_any_element(),
             false => {
                 let answer = answer.clone();
-                Button::new((id.clone(), "verify-button"), "Verify")
+                Button::new((id.clone(), "verify-button")).label("Verify")
                     .variant(ButtonVariant::Primary)
                     .focus_handle(&verify)
                     .loading(checking)

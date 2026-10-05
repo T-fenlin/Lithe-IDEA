@@ -114,7 +114,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
                                 "Lg" => ControlSize::Lg,
                                 other => panic!("gallery playground: no size {other}"),
                             };
-                            Button::new("played", "Save changes")
+                            Button::new("played").label("Save changes")
                                 .variant(variant)
                                 .size(size)
                                 .disabled(settings.on("disabled"))

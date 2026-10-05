@@ -83,7 +83,7 @@ impl RenderOnce for SessionList {
                     .into_any_element(),
                 false => {
                     let (key, out) = (session.key.clone(), on_sign_out.clone());
-                    Button::new((id.clone(), format!("out-{}", session.key)), "Sign out")
+                    Button::new((id.clone(), format!("out-{}", session.key))).label("Sign out")
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {

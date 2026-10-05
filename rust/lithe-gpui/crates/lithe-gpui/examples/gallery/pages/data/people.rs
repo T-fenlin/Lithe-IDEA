@@ -48,7 +48,7 @@ pub fn badges(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(row().child(probe(
         "badge-more",
-        Button::new("badge-more", "One more")
+        Button::new("badge-more").label("One more")
             .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| set(&more, count + 1, cx)),
     )))
@@ -92,7 +92,7 @@ pub fn tags(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 )
             }))
             .child(
-                Button::new("tags-reset", "Reset")
+                Button::new("tags-reset").label("Reset")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, _, cx| set(&reset, START.to_vec(), cx)),
             ),
@@ -233,7 +233,7 @@ pub fn numbers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(row().child(probe(
         "stats-next",
-        Button::new("stats-next", "Next week")
+        Button::new("stats-next").label("Next week")
             .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| set(&next, now + 1, cx)),
     )))

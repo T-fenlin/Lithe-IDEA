@@ -156,7 +156,7 @@ impl RenderOnce for DownloadManager {
             )
         };
         let clear = self.on_clear.map(|clear| {
-            Button::new((self.id.clone(), "clear"), "Clear")
+            Button::new((self.id.clone(), "clear")).label("Clear")
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .on_click(move |_, window, cx| {

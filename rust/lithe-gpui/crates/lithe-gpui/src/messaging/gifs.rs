@@ -178,10 +178,7 @@ impl RenderOnce for GifPicker {
                 .gap_1()
                 .children(self.categories.iter().map(|category| {
                     let (field, words) = (input.clone(), category.clone());
-                    Button::new(
-                        (self.id.clone(), format!("category-{category}")),
-                        category.clone(),
-                    )
+                    Button::new((self.id.clone(), format!("category-{category}"))).label(category.clone())
                     .variant(ButtonVariant::Subtle)
                     .size(ControlSize::Sm)
                     .on_click(move |_, _, cx| {

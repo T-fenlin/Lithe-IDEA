@@ -249,7 +249,7 @@ impl RenderOnce for Survey {
                     .debug_selector(|| "survey-action".into())
                     .flex()
                     .child(
-                        Button::new((id, "submit-button"), "Submit")
+                        Button::new((id, "submit-button")).label("Submit")
                             .variant(ButtonVariant::Primary)
                             .focus_handle(&action)
                             .on_click(move |_, window, cx| {

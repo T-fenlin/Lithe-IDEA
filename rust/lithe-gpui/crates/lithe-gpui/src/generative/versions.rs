@@ -182,7 +182,7 @@ impl RenderOnce for PromptVersionHistory {
             .clone()
             .filter(|_| chosen > 0)
             .map(|restore| {
-                Button::new((self.id.clone(), "restore"), "Restore")
+                Button::new((self.id.clone(), "restore")).label("Restore")
                     .variant(ButtonVariant::Secondary)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| {

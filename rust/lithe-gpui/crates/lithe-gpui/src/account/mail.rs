@@ -76,7 +76,7 @@ fn email_step(step: Step, window: &mut Window, cx: &mut App) -> AnyElement {
     });
     if sent {
         let other = other.map(|(label, run)| {
-            Button::new((id.clone(), "other"), label)
+            Button::new((id.clone(), "other")).label(label)
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, window, cx| run(window, cx))
         });
@@ -108,7 +108,7 @@ fn email_step(step: Step, window: &mut Window, cx: &mut App) -> AnyElement {
                     .flex_wrap()
                     .gap_2()
                     .child(
-                        Button::new((id.clone(), "resend"), "Send again")
+                        Button::new((id.clone(), "resend")).label("Send again")
                             .loading(busy)
                             .disabled(busy)
                             .on_click(move |_, window, cx| send(window, cx)),
@@ -132,7 +132,7 @@ fn email_step(step: Step, window: &mut Window, cx: &mut App) -> AnyElement {
         .child(muted(words.intro.into()))
         .child(FormField::new((id.clone(), "email-field"), "Email").child(EmailInput::new(&email)))
         .child(
-            Button::new((id.clone(), "send"), words.send)
+            Button::new((id.clone(), "send")).label(words.send)
                 .variant(ButtonVariant::Primary)
                 .full_width()
                 .loading(busy)

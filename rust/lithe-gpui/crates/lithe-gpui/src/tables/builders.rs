@@ -223,7 +223,7 @@ impl RenderOnce for FilterBuilder {
                 .items_center()
                 .justify_between()
                 .child(
-                    Button::new((self.id.clone(), "add"), "Add rule")
+                    Button::new((self.id.clone(), "add")).label("Add rule")
                         .icon(IconName::Plus)
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
@@ -394,7 +394,7 @@ impl RenderOnce for SortBuilder {
             .gap_1()
             .child(list)
             .children(unused.map(|column| {
-                Button::new((self.id.clone(), "add"), "Add sort")
+                Button::new((self.id.clone(), "add")).label("Add sort")
                     .icon(IconName::Plus)
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)

@@ -141,7 +141,7 @@ impl RenderOnce for SuggestionChips {
                 .enumerate()
                 .map(|(ix, (text, icon))| {
                     let pick = self.on_pick.clone();
-                    Button::new((self.id.clone(), format!("prompt-{ix}")), text)
+                    Button::new((self.id.clone(), format!("prompt-{ix}"))).label(text)
                         .variant(ButtonVariant::Secondary)
                         .icon(icon)
                         .on_click(move |_, window, cx| {

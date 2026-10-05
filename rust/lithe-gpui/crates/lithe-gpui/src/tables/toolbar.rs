@@ -150,7 +150,7 @@ impl RenderOnce for TableToolbar {
                 } else {
                     format!("Filter · {rules}").into()
                 };
-                Button::new((id.clone(), "filter"), label)
+                Button::new((id.clone(), "filter")).label(label)
                     .icon(IconName::Filter)
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
@@ -160,7 +160,7 @@ impl RenderOnce for TableToolbar {
             .children(columns)
             .children(density)
             .children(self.on_export.map(|on_export| {
-                Button::new((id.clone(), "export"), "Export")
+                Button::new((id.clone(), "export")).label("Export")
                     .icon(IconName::Download)
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)

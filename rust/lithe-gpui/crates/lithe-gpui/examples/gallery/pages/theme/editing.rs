@@ -52,7 +52,7 @@ pub fn editor(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(ThemeEditor::new("theme-editor", draft).on_change(|draft, _, cx| apply(draft, cx)))
             .child(
                 div().flex().child(
-                    Button::new("theme-restore", "Back to Ely's theme")
+                    Button::new("theme-restore").label("Back to Ely's theme")
                         .variant(ButtonVariant::Secondary)
                         .on_click(|_, _, cx| restore(cx)),
                 ),

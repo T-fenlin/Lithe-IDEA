@@ -170,7 +170,7 @@ fn form(
         .child(Input::new(&note))
         .child(
             div().flex().justify_end().child(
-                Button::new((id.clone(), "send"), "Send")
+                Button::new((id.clone(), "send")).label("Send")
                     .variant(ButtonVariant::Primary)
                     .size(ControlSize::Sm)
                     .disabled(sentiment.is_none())

@@ -85,7 +85,7 @@ pub fn ripple(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .justify_center()
                     .child(probe(
                         "celebrate",
-                        Button::new("celebrate", "Celebrate")
+                        Button::new("celebrate").label("Celebrate")
                             .primary()
                             .on_click(move |_, _, cx| set(&more, now + 1, cx)),
                     ))
@@ -164,7 +164,7 @@ pub fn cues(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     )
                     .child(probe(
                         "flash-tick",
-                        Button::new("flash-tick", "Tick")
+                        Button::new("flash-tick").label("Tick")
                             .variant(ButtonVariant::Ghost)
                             .on_click(move |_, _, cx| set(&tick, value + 37, cx)),
                     )),
@@ -187,7 +187,7 @@ pub fn cues(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     )
                     .child(probe(
                         "shake-try",
-                        Button::new("shake-try", "Sign in").on_click(move |_, _, cx| set(&again, count + 1, cx)),
+                        Button::new("shake-try").label("Sign in").on_click(move |_, _, cx| set(&again, count + 1, cx)),
                     ))
                     .when(count > 0, |line| line.child(InlineMessage::new(Severity::Danger, "Wrong password"))),
                 cx,

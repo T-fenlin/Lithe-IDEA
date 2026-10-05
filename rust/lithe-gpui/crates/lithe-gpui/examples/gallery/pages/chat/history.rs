@@ -323,7 +323,7 @@ pub fn shared_section(
     )
     .child(probe(
         "chat-export-open",
-        Button::new("chat-export", "Export…")
+        Button::new("chat-export").label("Export…")
             .variant(ButtonVariant::Secondary)
             .icon(IconName::Download)
             .on_click(move |_, _, cx| set(&opener, true, cx)),

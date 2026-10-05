@@ -20,7 +20,7 @@ impl Render for Bench {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity();
         FocusScope::new(&self.root).root().size_full().child(
-            Button::new("save", "Save")
+            Button::new("save").label("Save")
                 .loading(self.loading)
                 .on_click(move |_, _, cx| view.update(cx, |bench, _| bench.presses += 1)),
         )

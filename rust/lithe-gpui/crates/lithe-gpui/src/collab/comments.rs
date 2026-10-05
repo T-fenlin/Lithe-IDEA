@@ -86,7 +86,7 @@ impl RenderOnce for Reply {
                     .child(Input::new(&self.field).size(ControlSize::Sm)),
             )
             .child(
-                Button::new((self.id.clone(), "send"), "Reply")
+                Button::new((self.id.clone(), "send")).label("Reply")
                     .variant(ButtonVariant::Primary)
                     .size(ControlSize::Sm)
                     .disabled(empty)
@@ -164,10 +164,7 @@ impl RenderOnce for CommentThread {
         let colors = theme.colors.clone();
         let resolved = self.thread.resolved;
         let resolve = self.on_resolve.clone().map(|resolve| {
-            Button::new(
-                (self.id.clone(), "resolve"),
-                if resolved { "Reopen" } else { "Resolve" },
-            )
+            Button::new((self.id.clone(), "resolve")).label(if resolved { "Reopen" } else { "Resolve" })
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Sm)
             .icon(if resolved {

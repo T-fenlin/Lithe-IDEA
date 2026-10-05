@@ -400,10 +400,7 @@ impl RenderOnce for InvitationList {
                             .flex_none()
                             .gap_1()
                             .child(
-                                Button::new(
-                                    (id.clone(), format!("resend-{}", invitation.key)),
-                                    "Resend",
-                                )
+                                Button::new((id.clone(), format!("resend-{}", invitation.key))).label("Resend")
                                 .variant(ButtonVariant::Ghost)
                                 .size(ControlSize::Sm)
                                 .on_click(move |_, window, cx| {
@@ -412,10 +409,7 @@ impl RenderOnce for InvitationList {
                                 }),
                             )
                             .child(
-                                Button::new(
-                                    (id.clone(), format!("revoke-{}", invitation.key)),
-                                    "Revoke",
-                                )
+                                Button::new((id.clone(), format!("revoke-{}", invitation.key))).label("Revoke")
                                 .variant(ButtonVariant::Ghost)
                                 .size(ControlSize::Sm)
                                 .on_click(move |_, window, cx| {
@@ -464,7 +458,7 @@ impl RenderOnce for InvitationList {
                         ),
                     )
                     .child(
-                        Button::new((id.clone(), "invite"), "Invite")
+                        Button::new((id.clone(), "invite")).label("Invite")
                             .variant(ButtonVariant::Primary)
                             .disabled(!ready)
                             .on_click(move |_, window, cx| invite(window, cx)),

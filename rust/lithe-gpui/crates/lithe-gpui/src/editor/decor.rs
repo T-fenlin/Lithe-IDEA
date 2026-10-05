@@ -109,7 +109,7 @@ impl RenderOnce for ReadOnlyBanner {
             )
             .child(div().flex_1().child(self.message))
             .children(self.action.map(|(label, handler)| {
-                Button::new(self.id, label)
+                Button::new(self.id).label(label)
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| handler(window, cx))

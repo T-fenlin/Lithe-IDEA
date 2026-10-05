@@ -286,7 +286,7 @@ impl RenderOnce for SubtitleEditor {
         });
         let add = self.on_change.clone().map(|change| {
             let cues = cues.clone();
-            Button::new((self.id.clone(), "add"), "Add a cue")
+            Button::new((self.id.clone(), "add")).label("Add a cue")
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .icon(IconName::Plus)

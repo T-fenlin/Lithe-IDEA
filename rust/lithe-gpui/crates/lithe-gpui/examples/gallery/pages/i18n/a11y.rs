@@ -22,7 +22,7 @@ pub fn skip_link(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
     let theme = cx.theme();
     let nav = NAV.map(|name| {
         let id = ElementId::Name(SharedString::from(format!("skip-nav-{name}")));
-        Button::new(id, name).variant(ButtonVariant::Ghost)
+        Button::new(id).label(name).variant(ButtonVariant::Ghost)
     });
     section(
         "SkipLink · KeyboardNavigationHelper",
@@ -60,7 +60,7 @@ pub fn skip_link(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
                         .p_4()
                         .text_color(theme.colors.fg_muted)
                         .child("The main part starts here.")
-                        .child(Button::new("skip-read", "Read the guide")),
+                        .child(Button::new("skip-read").label("Read the guide")),
                 ),
         ),
     )

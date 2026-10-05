@@ -71,7 +71,7 @@ impl RenderOnce for SavingIndicator {
                 self.on_retry.filter(|_| self.state == SaveState::Failed),
                 |line, run| {
                     line.child(
-                        Button::new(retry, "Retry")
+                        Button::new(retry).label("Retry")
                             .variant(ButtonVariant::Link)
                             .on_click(move |_, window, cx| run(window, cx)),
                     )

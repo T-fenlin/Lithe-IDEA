@@ -110,13 +110,13 @@ impl RenderOnce for SubscriptionCard {
         let canceled = matches!(plan.standing, Standing::Canceled { .. });
         let period = if plan.yearly { "per year" } else { "per month" };
         let change = self.on_change.map(|run| {
-            Button::new((id.clone(), "change"), "Change plan")
+            Button::new((id.clone(), "change")).label("Change plan")
                 .on_click(move |_, window, cx| run(window, cx))
                 .into_any_element()
         });
         let end = match canceled {
             true => self.on_resume.map(|run| {
-                Button::new((id.clone(), "resume"), "Keep plan")
+                Button::new((id.clone(), "resume")).label("Keep plan")
                     .variant(ButtonVariant::Primary)
                     .on_click(move |_, window, cx| run(window, cx))
                     .into_any_element()

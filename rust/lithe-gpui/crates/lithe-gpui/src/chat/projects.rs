@@ -177,7 +177,7 @@ impl RenderOnce for ProjectKnowledgePanel {
                             .child("Project knowledge"),
                     )
                     .children(self.on_add.map(|add| {
-                        Button::new((self.id.clone(), "add"), "Add files")
+                        Button::new((self.id.clone(), "add")).label("Add files")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .icon(IconName::Plus)
@@ -308,7 +308,7 @@ impl RenderOnce for SharedConversationView {
                     .child(RelativeTime::new((self.id.clone(), "when"), self.at))
                     .child(div().flex_1())
                     .children(self.on_continue.map(|carry| {
-                        Button::new((self.id.clone(), "continue"), "Continue this conversation")
+                        Button::new((self.id.clone(), "continue")).label("Continue this conversation")
                             .variant(ButtonVariant::Primary)
                             .size(ControlSize::Sm)
                             .on_click(move |_, window, cx| carry(window, cx))
@@ -397,12 +397,12 @@ impl RenderOnce for ConversationExport {
                 })),
         )
         .action(move |close| {
-            Button::new(cancel, "Cancel")
+            Button::new(cancel).label("Cancel")
                 .variant(ButtonVariant::Secondary)
                 .on_click(move |_, window, cx| close(window, cx))
         })
         .action(move |close| {
-            Button::new(done, "Export")
+            Button::new(done).label("Export")
                 .variant(ButtonVariant::Primary)
                 .on_click(move |_, window, cx| {
                     log::info!("export: {format}");

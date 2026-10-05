@@ -134,7 +134,7 @@ fn hidden_hotspot(bench: &Bench, owner: Entity<Bench>) -> AnyElement {
         .root()
         .children(spot)
         .child(
-            Button::new("after", "After").on_click(move |_, _, cx| say(&after, "after".into(), cx)),
+            Button::new("after").label("After").on_click(move |_, _, cx| say(&after, "after".into(), cx)),
         )
         .into_any_element()
 }

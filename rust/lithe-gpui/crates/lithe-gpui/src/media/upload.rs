@@ -125,7 +125,7 @@ impl RenderOnce for ImageUpload {
         let colors = theme.colors.clone();
         let replace = pick.map(|pick| {
             let what = SharedString::from(format!("image upload {:?}", self.id));
-            Button::new((self.id.clone(), "replace"), "Replace")
+            Button::new((self.id.clone(), "replace")).label("Replace")
                 .size(ControlSize::Sm)
                 .on_click(move |_, window, cx| {
                     let pick = pick.clone();
@@ -140,7 +140,7 @@ impl RenderOnce for ImageUpload {
                 })
         });
         let remove = self.on_remove.map(|remove| {
-            Button::new((self.id.clone(), "remove"), "Remove")
+            Button::new((self.id.clone(), "remove")).label("Remove")
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .on_click(move |_, window, cx| {

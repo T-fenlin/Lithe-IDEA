@@ -172,10 +172,7 @@ pub fn portal(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .border_color(theme.colors.border)
                     .child(probe(
                         "portal-toggle",
-                        Button::new(
-                            "portal-toggle",
-                            if shown { "Hide note" } else { "Show note" },
-                        )
+                        Button::new("portal-toggle").label(if shown { "Hide note" } else { "Show note" })
                         .on_click(move |_, _, cx| {
                             open.update(cx, |open, cx| {
                                 *open = !*open;
@@ -225,7 +222,7 @@ pub fn slot(cx: &App) -> impl IntoElement + use<> {
             .child(framed("slot: icon", Icon::new(IconName::Sparkles), cx))
             .child(framed(
                 "slot: button",
-                Button::new("slot-button", "Save").primary(),
+                Button::new("slot-button").label("Save").primary(),
                 cx,
             ))
             .child(code("fn framed(body: impl IntoElement)", cx)),
@@ -245,7 +242,7 @@ pub fn show(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .gap_4()
             .child(
-                Button::new("show-toggle", if shown { "Hide" } else { "Show" }).on_click(
+                Button::new("show-toggle").label(if shown { "Hide" } else { "Show" }).on_click(
                     move |_, _, cx| {
                         on.update(cx, |on, cx| {
                             *on = !*on;
@@ -325,7 +322,7 @@ pub fn click_outside(window: &mut Window, cx: &mut App) -> impl IntoElement + us
         row()
             .gap_4()
             .child(
-                Button::new("outside-open", "Open panel")
+                Button::new("outside-open").label("Open panel")
                     .disabled(shown)
                     .on_click(move |_, _, cx| {
                         open.update(cx, |open, cx| {
@@ -449,14 +446,14 @@ pub fn clipboard(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         row()
             .gap_3()
             .child(
-                Button::new("clip-copy", "Copy “Ely”")
+                Button::new("clip-copy").label("Copy “Ely”")
                     .icon(IconName::Copy)
                     .on_click(|_, _, cx| {
                         cx.write_to_clipboard(ClipboardItem::new_string("Ely".into()))
                     }),
             )
             .child(
-                Button::new("clip-paste", "Paste")
+                Button::new("clip-paste").label("Paste")
                     .variant(ButtonVariant::Ghost)
                     .icon(IconName::Clipboard)
                     .on_click(move |_, _, cx| {

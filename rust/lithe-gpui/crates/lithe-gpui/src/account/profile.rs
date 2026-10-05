@@ -305,7 +305,7 @@ impl RenderOnce for ProfileEditor {
                     .justify_end()
                     .gap_2()
                     .child(
-                        Button::new((id.clone(), "discard"), "Discard")
+                        Button::new((id.clone(), "discard")).label("Discard")
                             .variant(ButtonVariant::Ghost)
                             .disabled(!changed)
                             .on_click(move |_, window, cx| {
@@ -318,7 +318,7 @@ impl RenderOnce for ProfileEditor {
                             }),
                     )
                     .child(
-                        Button::new((id.clone(), "save"), "Save")
+                        Button::new((id.clone(), "save")).label("Save")
                             .variant(ButtonVariant::Primary)
                             .disabled(!ready)
                             .on_click(move |_, window, cx| {

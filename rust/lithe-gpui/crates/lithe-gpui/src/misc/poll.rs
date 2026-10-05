@@ -182,7 +182,7 @@ impl RenderOnce for Poll {
         let button = match self.voted {
             None => {
                 let (focus, on_vote) = (action.clone(), on_vote.clone());
-                Button::new((id.clone(), "vote"), "Vote")
+                Button::new((id.clone(), "vote")).label("Vote")
                     .variant(ButtonVariant::Primary)
                     .focus_handle(&action)
                     .disabled(picked.is_none())
@@ -193,7 +193,7 @@ impl RenderOnce for Poll {
                         window.focus(&focus, cx);
                     })
             }
-            Some(_) => Button::new((id.clone(), "change"), "Change vote")
+            Some(_) => Button::new((id.clone(), "change")).label("Change vote")
                 .focus_handle(&action)
                 .on_click(move |_, window, cx| {
                     log::info!("poll: vote taken back");

@@ -108,7 +108,7 @@ impl RenderOnce for ScheduleSend {
                     }
                 })
                 .into_any_element(),
-            None => Button::new((self.id.clone(), "send"), "Send")
+            None => Button::new((self.id.clone(), "send")).label("Send")
                 .variant(ButtonVariant::Primary)
                 .disabled(self.disabled)
                 .on_click(move |_, window, cx| {

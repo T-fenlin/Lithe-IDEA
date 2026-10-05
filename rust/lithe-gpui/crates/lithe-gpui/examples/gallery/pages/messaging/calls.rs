@@ -205,7 +205,7 @@ pub fn incoming(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .items_center()
             .gap_4()
             .child(
-                Button::new("messaging-ring", "Ring")
+                Button::new("messaging-ring").label("Ring")
                     .on_click(move |_, _, cx| change(&ring, cx, |ringing| *ringing = true)),
             )
             .children(said.map(|said| {

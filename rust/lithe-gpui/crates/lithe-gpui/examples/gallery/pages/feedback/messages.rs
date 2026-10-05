@@ -22,7 +22,7 @@ pub fn toasts(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         let toaster = toaster.clone();
         probe(
             key,
-            Button::new(key, label).on_click(move |_, _, cx| {
+            Button::new(key).label(label).on_click(move |_, _, cx| {
                 toaster.update(cx, |toaster, cx| {
                     toaster.push(make(), cx);
                 })
@@ -110,8 +110,8 @@ pub fn center(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     "Hana asked you to review #482, toast motion.",
                     "18m",
                 )
-                .action(Button::new("note-review", "Review").primary())
-                .action(Button::new("note-later", "Later").variant(ButtonVariant::Ghost)),
+                .action(Button::new("note-review").label("Review").primary())
+                .action(Button::new("note-later").label("Later").variant(ButtonVariant::Ghost)),
                 item(
                     2,
                     IconName::CalendarDays,
@@ -172,7 +172,7 @@ pub fn center(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             ))
             .child(probe(
                 "center-reset",
-                Button::new("center-reset", "Reset")
+                Button::new("center-reset").label("Reset")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, _, cx| set(&reset, Inbox::fresh(), cx)),
             )),
@@ -208,16 +208,16 @@ pub fn alerts(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     "Your trial ends in 3 days",
                 )
                 .body("Add a payment method to keep your projects.")
-                .action(Button::new("alert-pay", "Add payment method")),
+                .action(Button::new("alert-pay").label("Add payment method")),
             )
             .child(if *shown.read(cx) {
                 Alert::new("alert-danger", Severity::Danger, "Couldn't publish")
                     .body("Two pages link to files that no longer exist.")
-                    .action(Button::new("alert-show", "Show pages"))
+                    .action(Button::new("alert-show").label("Show pages"))
                     .on_dismiss(move |_, cx| set(&hide, false, cx))
                     .into_any_element()
             } else {
-                Button::new("alert-again", "Show the closed alert")
+                Button::new("alert-again").label("Show the closed alert")
                     .variant(ButtonVariant::Link)
                     .on_click(move |_, _, cx| set(&show, true, cx))
                     .into_any_element()
@@ -263,7 +263,7 @@ pub fn banner(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .child(Caption::new("The window's content sits under it."))
                     .when(!shown, |content| {
                         content.child(
-                            Button::new("banner-again", "Show the banner")
+                            Button::new("banner-again").label("Show the banner")
                                 .variant(ButtonVariant::Link)
                                 .on_click(move |_, _, cx| set(&again, true, cx)),
                         )
@@ -343,7 +343,7 @@ pub fn lines(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "status",
-                Button::new("status-step", "Next status")
+                Button::new("status-step").label("Next status")
                     .on_click(move |_, _, cx| set(&step, (now + 1) % STEPS.len(), cx)),
             ))
             .child(StatusMessage::new("status", STEPS[now]).icon(IconName::Upload)),
@@ -377,7 +377,7 @@ pub fn empties(cx: &mut App) -> impl IntoElement + use<> {
                 frame().child(
                     EmptyState::new("empty-inbox", IconName::Inbox, "No messages yet")
                         .body("When someone writes to you, it lands here, newest first, until you archive it.")
-                        .action(Button::new("empty-compose", "Write a message")),
+                        .action(Button::new("empty-compose").label("Write a message")),
                 ),
             )
             .child(
@@ -388,7 +388,7 @@ pub fn empties(cx: &mut App) -> impl IntoElement + use<> {
                         "No results for “quarterly”",
                     )
                     .body("Try fewer words, or check the spelling.")
-                    .action(Button::new("empty-clear", "Clear search")),
+                    .action(Button::new("empty-clear").label("Clear search")),
                 ),
             )
             .child(
@@ -399,7 +399,7 @@ pub fn empties(cx: &mut App) -> impl IntoElement + use<> {
                         "Start your first project",
                     )
                     .body("Projects keep files, people and tasks together.")
-                    .action(Button::new("empty-new", "New project").primary()),
+                    .action(Button::new("empty-new").label("New project").primary()),
                 ),
             ),
     )

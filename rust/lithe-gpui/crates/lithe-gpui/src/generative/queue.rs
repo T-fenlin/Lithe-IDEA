@@ -172,7 +172,7 @@ impl RenderOnce for GenerationQueue {
                 .gap_1()
                 .when(failed, |row| {
                     row.children(action("retry", &job.key, &self.on_retry).map(|retry| {
-                        Button::new((self.id.clone(), format!("retry-{}", job.key)), "Retry")
+                        Button::new((self.id.clone(), format!("retry-{}", job.key))).label("Retry")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .on_click(retry)

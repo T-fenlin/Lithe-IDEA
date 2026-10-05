@@ -55,7 +55,7 @@ fn takes(
         ]
         .map(|(take, words)| {
             let on_take = on_take.clone();
-            Button::new((id.clone(), format!("take-{conflict}-{take:?}")), words)
+            Button::new((id.clone(), format!("take-{conflict}-{take:?}"))).label(words)
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .when_some(on_take, |button, on_take| {

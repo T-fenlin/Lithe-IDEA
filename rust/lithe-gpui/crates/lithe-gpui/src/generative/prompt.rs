@@ -112,7 +112,7 @@ impl RenderOnce for PromptEnhancer {
         let theme = cx.theme();
         let colors = theme.colors.clone();
         let enhance = self.on_enhance.map(|enhance| {
-            Button::new((self.id.clone(), "enhance"), "Enhance")
+            Button::new((self.id.clone(), "enhance")).label("Enhance")
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .icon(IconName::Sparkles)
@@ -184,14 +184,14 @@ impl RenderOnce for PromptEnhancer {
                     .flex_wrap()
                     .gap_2()
                     .child(
-                        Button::new((self.id.clone(), "take"), "Use this")
+                        Button::new((self.id.clone(), "take")).label("Use this")
                             .variant(ButtonVariant::Primary)
                             .size(ControlSize::Sm)
                             .disabled(!shown)
                             .on_click(answer(true)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "keep"), "Keep mine")
+                        Button::new((self.id.clone(), "keep")).label("Keep mine")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .disabled(!shown)

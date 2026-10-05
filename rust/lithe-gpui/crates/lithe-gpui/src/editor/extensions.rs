@@ -100,7 +100,7 @@ impl RenderOnce for ExtensionsPanel {
             let button = match action {
                 Some((action, label, variant)) => {
                     let (on_action, id) = (self.on_action.clone(), extension.id.clone());
-                    Button::new((self.id.clone(), format!("action-{ix}")), label)
+                    Button::new((self.id.clone(), format!("action-{ix}"))).label(label)
                         .variant(variant)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {
@@ -110,7 +110,7 @@ impl RenderOnce for ExtensionsPanel {
                             }
                         })
                 }
-                None => Button::new((self.id.clone(), format!("action-{ix}")), "Installing")
+                None => Button::new((self.id.clone(), format!("action-{ix}"))).label("Installing")
                     .variant(ButtonVariant::Secondary)
                     .size(ControlSize::Sm)
                     .loading(true),

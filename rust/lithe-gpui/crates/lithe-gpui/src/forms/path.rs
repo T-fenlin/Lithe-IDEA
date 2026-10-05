@@ -86,7 +86,7 @@ impl RenderOnce for PathInput {
         Input::new(&self.state)
             .prefix(Icon::new(icon).size(IconSize::Sm).color(subtle))
             .suffix(
-                Button::new(self.id, "Browse…")
+                Button::new(self.id).label("Browse…")
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| {

@@ -150,13 +150,13 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .child(DirtyIndicator::new("form-dirty", dirty))
                         .child(div().flex_1())
                         .child(
-                            Button::new("form-discard", "Discard")
+                            Button::new("form-discard").label("Discard")
                                 .variant(ButtonVariant::Ghost)
                                 .disabled(!dirty)
                                 .on_click(move |_, window, cx| discard(window, cx)),
                         )
                         .child(
-                            Button::new("form-save", "Save")
+                            Button::new("form-save").label("Save")
                                 .primary()
                                 .disabled(!dirty || !ready(&now))
                                 .on_click(move |_, window, cx| save_click(window, cx)),
@@ -184,7 +184,7 @@ pub fn inline(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 .child(div().flex_1().child(
                     FormField::new("inline-newsletter", "Newsletter").child(Input::new(&email)),
                 ))
-                .child(Button::new("inline-join", "Subscribe").primary()),
+                .child(Button::new("inline-join").label("Subscribe").primary()),
         ),
     )
 }

@@ -88,7 +88,7 @@ impl RenderOnce for ABCompareView {
         let decided = self.verdict.is_some();
         let judge = |verdict: Verdict, label: SharedString, key: String| {
             self.on_verdict.clone().map(|judge| {
-                Button::new((self.id.clone(), key), label)
+                Button::new((self.id.clone(), key)).label(label)
                     .variant(ButtonVariant::Secondary)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| {

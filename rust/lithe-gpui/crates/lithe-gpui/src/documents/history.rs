@@ -251,7 +251,7 @@ impl RenderOnce for VersionHistory {
             .filter(|_| self.selected > 0)
             .map(|restore| {
                 let at = self.selected;
-                Button::new((self.id.clone(), "restore"), "Restore this version")
+                Button::new((self.id.clone(), "restore")).label("Restore this version")
                     .variant(ButtonVariant::Primary)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| {

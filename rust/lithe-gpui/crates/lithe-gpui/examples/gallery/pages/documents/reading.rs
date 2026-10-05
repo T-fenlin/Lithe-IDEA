@@ -267,7 +267,7 @@ pub fn reading(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                             })
                             .chrome(
                                 div().p_2().flex().child(
-                                    lithe_gpui::buttons::Button::new("read-zen-on", "Focus on the text")
+                                    lithe_gpui::buttons::Button::new("read-zen-on").label("Focus on the text")
                                         .on_click(move |_, _, cx| set(&zen, true, cx)),
                                 ),
                             )

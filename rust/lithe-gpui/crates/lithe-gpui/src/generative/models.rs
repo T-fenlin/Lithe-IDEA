@@ -86,7 +86,7 @@ impl RenderOnce for ModelCard {
             });
         let (name, in_use) = (self.name.clone(), self.in_use);
         let choose = self.on_use.filter(|_| !in_use).map(|choose| {
-            Button::new((self.id.clone(), "use"), "Use")
+            Button::new((self.id.clone(), "use")).label("Use")
                 .variant(ButtonVariant::Secondary)
                 .size(ControlSize::Sm)
                 .on_click(move |_, window, cx| {

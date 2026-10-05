@@ -202,10 +202,7 @@ impl RenderOnce for GraphQLExplorer {
                             }))
                             .child(
                                 div().flex().child(
-                                    Button::new(
-                                        (id, "run"),
-                                        if self.running { "Running…" } else { "Run" },
-                                    )
+                                    Button::new((id, "run")).label(if self.running { "Running…" } else { "Run" })
                                     .variant(ButtonVariant::Primary)
                                     .disabled(rests)
                                     .on_click(

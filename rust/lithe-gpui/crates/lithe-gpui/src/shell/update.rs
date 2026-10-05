@@ -52,17 +52,17 @@ fn buttons(state: UpdateState, actions: &Actions, size: ControlSize) -> Vec<Butt
         })
     };
     let later = wire(
-        Button::new("update-later", "Later").variant(ButtonVariant::Ghost),
+        Button::new("update-later").label("Later").variant(ButtonVariant::Ghost),
         &actions.later,
     );
     let main = match state {
         UpdateState::Available => wire(
-            Button::new("update-download", "Download").primary(),
+            Button::new("update-download").label("Download").primary(),
             &actions.download,
         ),
         UpdateState::Downloading(_) => None,
         UpdateState::Ready => wire(
-            Button::new("update-restart", "Restart to update").primary(),
+            Button::new("update-restart").label("Restart to update").primary(),
             &actions.restart,
         ),
     };

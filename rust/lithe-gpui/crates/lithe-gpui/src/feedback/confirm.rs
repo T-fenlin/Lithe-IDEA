@@ -127,12 +127,12 @@ impl RenderOnce for ConfirmationCard {
                     .justify_end()
                     .gap_2()
                     .child(
-                        Button::new((self.id.clone(), "cancel"), "Cancel")
+                        Button::new((self.id.clone(), "cancel")).label("Cancel")
                             .variant(ButtonVariant::Ghost)
                             .on_click(run(cancel, "cancelled")),
                     )
                     .child(
-                        Button::new((self.id.clone(), "confirm"), self.confirm)
+                        Button::new((self.id.clone(), "confirm")).label(self.confirm)
                             .variant(variant)
                             .on_click(run(confirm, "confirmed")),
                     ),

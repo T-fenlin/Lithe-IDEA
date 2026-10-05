@@ -72,7 +72,7 @@ impl RenderOnce for UpgradePrompt {
             .flex_wrap()
             .gap_2()
             .child(
-                Button::new((id.clone(), "upgrade"), "Upgrade")
+                Button::new((id.clone(), "upgrade")).label("Upgrade")
                     .variant(ButtonVariant::Primary)
                     .on_click(move |_, window, cx| {
                         log::info!("upgrade prompt: upgrade");
@@ -80,7 +80,7 @@ impl RenderOnce for UpgradePrompt {
                     }),
             )
             .children(self.on_dismiss.map(|run| {
-                Button::new((id.clone(), "dismiss"), "Not now")
+                Button::new((id.clone(), "dismiss")).label("Not now")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| run(window, cx))
             }));

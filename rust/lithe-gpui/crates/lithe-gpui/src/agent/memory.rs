@@ -77,7 +77,7 @@ impl RenderOnce for MemoryPanel {
         let adding = self.on_add.map(|add| {
             send_line(
                 &self.field,
-                Button::new((self.id.clone(), "add"), "Remember").variant(ButtonVariant::Secondary),
+                Button::new((self.id.clone(), "add")).label("Remember").variant(ButtonVariant::Secondary),
                 add,
                 "memory",
                 cx,
@@ -212,7 +212,7 @@ impl RenderOnce for CheckpointList {
                     .clone()
                     .filter(|_| ix != current)
                     .map(|rewind| {
-                        Button::new((self.id.clone(), format!("rewind-{ix}")), "Rewind to here")
+                        Button::new((self.id.clone(), format!("rewind-{ix}"))).label("Rewind to here")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .icon(IconName::RotateCcw)

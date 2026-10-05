@@ -121,7 +121,7 @@ impl RenderOnce for SetupChecklist {
                     );
                 let start = (!task.done).then(|| {
                     let (key, start) = (task.key.clone(), on_start.clone());
-                    Button::new((id.clone(), format!("start-{}", task.key)), "Start")
+                    Button::new((id.clone(), format!("start-{}", task.key))).label("Start")
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {
@@ -176,7 +176,7 @@ impl RenderOnce for SetupChecklist {
                         .child("All set."),
                 )
                 .children(self.on_dismiss.map(|run| {
-                    Button::new((id.clone(), "hide"), "Hide")
+                    Button::new((id.clone(), "hide")).label("Hide")
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| {
                             log::info!("setup checklist: hidden");

@@ -173,7 +173,7 @@ pub fn thread(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     } else {
         let opening = open.clone();
         frame.flex().items_center().justify_center().child(
-            Button::new("messaging-thread-reopen", "Open the thread")
+            Button::new("messaging-thread-reopen").label("Open the thread")
                 .on_click(move |_, _, cx| change(&opening, cx, |open| *open = true)),
         )
     };

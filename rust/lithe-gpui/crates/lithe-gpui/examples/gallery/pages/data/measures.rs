@@ -77,7 +77,7 @@ pub fn measures(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(row().child(probe(
         "measures-next",
-        Button::new("measures-next", "Next reading")
+        Button::new("measures-next").label("Next reading")
             .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| set(&next, now + 1, cx)),
     )))

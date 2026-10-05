@@ -280,7 +280,7 @@ impl RenderOnce for StatusSetter {
         });
         let blank = now.emoji.is_none() && now.text.trim().is_empty();
         let clear = self.on_clear.filter(|_| self.status.is_some()).map(|run| {
-            Button::new((self.id.clone(), "remove"), "Clear status")
+            Button::new((self.id.clone(), "remove")).label("Clear status")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, window, cx| {
                     log::info!("status setter: clear");
@@ -289,7 +289,7 @@ impl RenderOnce for StatusSetter {
         });
         let save = self.on_save.map(|save| {
             let saving = draft.clone();
-            Button::new((self.id.clone(), "save"), "Save")
+            Button::new((self.id.clone(), "save")).label("Save")
                 .variant(ButtonVariant::Primary)
                 .disabled(blank)
                 .on_click(move |_, window, cx| {

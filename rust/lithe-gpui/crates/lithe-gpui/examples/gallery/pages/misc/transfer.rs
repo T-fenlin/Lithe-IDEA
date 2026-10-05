@@ -47,7 +47,7 @@ pub fn render(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         let open = open.clone();
         probe(
             key,
-            div().child(Button::new(key, label).on_click(move |_, _, cx| {
+            div().child(Button::new(key).label(label).on_click(move |_, _, cx| {
                 open.update(cx, |open, cx| {
                     *open = which;
                     cx.notify();

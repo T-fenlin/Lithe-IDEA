@@ -81,7 +81,7 @@ pub fn typewriter(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
             .gap_6()
             .child(div().min_w_80().child(Typewriter::new("typewriter", line)))
             .child(
-                Button::new("type-again", "Next line")
+                Button::new("type-again").label("Next line")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, _, cx| {
                         take.update(cx, |take, cx| {

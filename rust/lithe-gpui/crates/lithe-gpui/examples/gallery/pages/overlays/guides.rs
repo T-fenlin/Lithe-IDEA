@@ -116,19 +116,19 @@ pub fn tour(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(
         row()
-            .child(target(&boxes, 0, Button::new("tour-search", "Search").icon(IconName::Search)))
-            .child(target(&boxes, 1, Button::new("tour-invite", "Invite").icon(IconName::Users)))
+            .child(target(&boxes, 0, Button::new("tour-search").label("Search").icon(IconName::Search)))
+            .child(target(&boxes, 1, Button::new("tour-invite").label("Invite").icon(IconName::Users)))
             .child(target(&boxes, 2, IconButton::new("tour-settings", IconName::Settings)))
             .child(div().w_8())
             .child(probe(
                 "tour",
-                Button::new("tour-start", "Take the tour")
+                Button::new("tour-start").label("Take the tour")
                     .primary()
                     .on_click(move |_, _, cx| set(&start, Some(0), cx)),
             ))
             .child(probe(
                 "coach",
-                Button::new("coach-start", "Show a coachmark")
+                Button::new("coach-start").label("Show a coachmark")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, _, cx| set(&show, true, cx)),
             )),
@@ -194,7 +194,7 @@ pub fn peek(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 div().flex().child("let colors = cx.").child(probe(
                     "peek",
-                    Button::new("peek-theme", "theme()")
+                    Button::new("peek-theme").label("theme()")
                         .variant(ButtonVariant::Link)
                         .on_click(move |_, _, cx| set(&toggle, !shown, cx)),
                 )),

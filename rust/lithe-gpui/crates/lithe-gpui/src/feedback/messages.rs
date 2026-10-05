@@ -182,7 +182,7 @@ impl RenderOnce for Banner {
             .child(self.message)
             .when_some(self.action, |banner, (label, run)| {
                 banner.child(
-                    Button::new(link, label)
+                    Button::new(link).label(label)
                         .variant(ButtonVariant::Link)
                         .on_click(move |_, window, cx| run(window, cx)),
                 )

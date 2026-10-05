@@ -305,7 +305,7 @@ pub fn feed(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(div().max_w(px(560.)).child(feed))
     .child(div().flex().child(probe(
         "feed-post",
-        Button::new("feed-post", "Something happens")
+        Button::new("feed-post").label("Something happens")
             .variant(ButtonVariant::Ghost)
             .icon(IconName::Plus)
             .on_click(move |_, _, cx| {

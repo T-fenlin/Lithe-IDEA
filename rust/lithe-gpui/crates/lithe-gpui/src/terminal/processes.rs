@@ -136,7 +136,7 @@ impl RenderOnce for ProcessList {
                         busy
                     )))
                     .children(self.on_end.map(|on_end| {
-                        Button::new((self.id.clone(), "end"), "End process")
+                        Button::new((self.id.clone(), "end")).label("End process")
                             .variant(ButtonVariant::Danger)
                             .size(ControlSize::Sm)
                             .disabled(chosen.is_empty())

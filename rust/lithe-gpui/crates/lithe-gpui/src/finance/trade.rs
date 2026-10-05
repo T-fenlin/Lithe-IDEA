@@ -210,7 +210,7 @@ impl RenderOnce for OrderEntry {
         } else {
             ButtonVariant::Danger
         };
-        let submit = Button::new((self.id.clone(), "place"), order.words(2))
+        let submit = Button::new((self.id.clone(), "place")).label(order.words(2))
             .variant(variant)
             .full_width();
         let placed = (order.clone(), self.on_submit.clone());
@@ -285,7 +285,7 @@ impl RenderOnce for QuickTradeButtons {
             };
             let trade = self.on_trade.clone();
             div().flex_1().child(
-                Button::new((self.id.clone(), name), format!("{name} {}", price(at, 2)))
+                Button::new((self.id.clone(), name)).label(format!("{name} {}", price(at, 2)))
                     .variant(variant)
                     .size(ControlSize::Lg)
                     .full_width()

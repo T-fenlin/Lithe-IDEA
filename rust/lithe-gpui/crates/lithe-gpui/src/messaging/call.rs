@@ -19,7 +19,7 @@ use crate::{
 };
 
 fn leave(id: &ElementId, owner: &'static str, run: Run) -> Button {
-    Button::new((id.clone(), "leave"), "Leave")
+    Button::new((id.clone(), "leave")).label("Leave")
         .icon(IconName::PhoneOff)
         .variant(ButtonVariant::Danger)
         .size(ControlSize::Sm)

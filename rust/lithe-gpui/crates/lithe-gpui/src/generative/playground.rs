@@ -136,7 +136,7 @@ impl RenderOnce for PromptPlayground {
         };
         let sent = filled.clone();
         let run = self.on_run.map(|run| {
-            Button::new((self.id.clone(), "run"), "Run")
+            Button::new((self.id.clone(), "run")).label("Run")
                 .variant(ButtonVariant::Primary)
                 .size(ControlSize::Sm)
                 .icon(IconName::Play)

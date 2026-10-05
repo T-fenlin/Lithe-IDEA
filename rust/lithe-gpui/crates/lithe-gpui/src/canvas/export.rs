@@ -234,7 +234,7 @@ impl RenderOnce for ExportPanel {
                     .children(files.into_iter().map(Ellipsis::new)),
             )
             .child(
-                Button::new((id, "export"), format!("Export {}", self.name))
+                Button::new((id, "export")).label(format!("Export {}", self.name))
                     .variant(ButtonVariant::Primary)
                     .disabled(exported.is_empty())
                     .on_click(move |_, window, cx| {

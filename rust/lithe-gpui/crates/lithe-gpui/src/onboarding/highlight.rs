@@ -72,7 +72,7 @@ impl RenderOnce for FeatureHighlight {
             .gap_2()
             .mt_3()
             .child(
-                Button::new((id.clone(), "try"), "Try it")
+                Button::new((id.clone(), "try")).label("Try it")
                     .variant(ButtonVariant::Primary)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| {
@@ -81,7 +81,7 @@ impl RenderOnce for FeatureHighlight {
                     }),
             )
             .child(
-                Button::new((id.clone(), "dismiss"), "Not now")
+                Button::new((id.clone(), "dismiss")).label("Not now")
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| dismiss(window, cx)),

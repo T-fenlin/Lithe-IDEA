@@ -190,7 +190,7 @@ pub(crate) fn plot(plot: Plot, base: Div, window: &mut Window, cx: &mut App) -> 
     let zoomable = plot.zoom && !plot.horizontal && plot.pick != Pick::Dot && count >= 3;
     let show_all = zoomed.filter(|_| zoomable).map(|_| {
         let reset = state.clone();
-        let button = Button::new((id.clone(), "show-all"), "Show all")
+        let button = Button::new((id.clone(), "show-all")).label("Show all")
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Sm);
         div()

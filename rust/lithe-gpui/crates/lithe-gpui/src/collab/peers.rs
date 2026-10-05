@@ -319,7 +319,7 @@ impl RenderOnce for FollowMode {
                             .child(format!("Following {}", peer.name)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "stop"), "Stop following")
+                        Button::new((self.id.clone(), "stop")).label("Stop following")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
                             .shortcut("escape")

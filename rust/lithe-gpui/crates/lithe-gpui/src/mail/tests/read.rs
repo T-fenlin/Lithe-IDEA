@@ -130,7 +130,7 @@ fn answered(owner: Entity<Mailing>) -> gpui::AnyElement {
     };
     div()
         .child(
-            Button::new("before", "Before")
+            Button::new("before").label("Before")
                 .on_click(move |_, _, cx| note(&before, "before".into(), cx)),
         )
         .child(

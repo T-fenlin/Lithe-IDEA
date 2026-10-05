@@ -171,10 +171,7 @@ impl RenderOnce for TimeTracker {
                     .into_any_element()
             }
         };
-        let action = Button::new(
-            (id.clone(), "action"),
-            if running { "Stop" } else { "Start" },
-        )
+        let action = Button::new((id.clone(), "action")).label(if running { "Stop" } else { "Start" })
         .focus_handle(&action)
         .variant(if running {
             ButtonVariant::default()

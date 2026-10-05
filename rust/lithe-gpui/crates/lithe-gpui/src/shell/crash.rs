@@ -96,10 +96,7 @@ impl RenderOnce for CrashReporter {
                     .items_center()
                     .justify_between()
                     .child(
-                        Button::new(
-                            "crash-details",
-                            if open { "Hide report" } else { "Show report" },
-                        )
+                        Button::new("crash-details").label(if open { "Hide report" } else { "Show report" })
                         .variant(ButtonVariant::Link)
                         .trailing_icon(if open {
                             IconName::ChevronUp
@@ -115,7 +112,7 @@ impl RenderOnce for CrashReporter {
                     )
                     .child({
                         let report = self.report.clone();
-                        Button::new("crash-copy", "Copy report")
+                        Button::new("crash-copy").label("Copy report")
                             .variant(ButtonVariant::Ghost)
                             .icon(IconName::Copy)
                             .on_click(move |_, _, cx| {
@@ -151,11 +148,11 @@ impl RenderOnce for CrashReporter {
                     .justify_end()
                     .gap_2()
                     .children(action(
-                        Button::new("crash-dismiss", "Don't send").variant(ButtonVariant::Ghost),
+                        Button::new("crash-dismiss").label("Don't send").variant(ButtonVariant::Ghost),
                         self.on_dismiss,
                     ))
                     .children(action(
-                        Button::new("crash-send", "Send report").primary(),
+                        Button::new("crash-send").label("Send report").primary(),
                         self.on_send,
                     )),
             )

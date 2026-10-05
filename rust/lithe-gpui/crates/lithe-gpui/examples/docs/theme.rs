@@ -41,32 +41,26 @@ impl Render for Tokens {
             .flex_wrap()
             .gap_2()
             .child(
-                Button::new("mode", if dark { "Light mode" } else { "Dark mode" }).on_click(
+                Button::new("mode").label(if dark { "Light mode" } else { "Dark mode" }).on_click(
                     move |_, _, cx| {
                         Theme::set_mode(if dark { Mode::Light } else { Mode::Dark }, cx)
                     },
                 ),
             )
             .child(
-                Button::new(
-                    "contrast",
-                    if contrast {
+                Button::new("contrast").label(if contrast {
                         "Usual contrast"
                     } else {
                         "High contrast"
-                    },
-                )
+                    })
                 .on_click(move |_, _, cx| Theme::set_high_contrast(!contrast, cx)),
             )
             .child(
-                Button::new(
-                    "density",
-                    if compact {
+                Button::new("density").label(if compact {
                         "Standard density"
                     } else {
                         "Compact"
-                    },
-                )
+                    })
                 .on_click(move |_, _, cx| {
                     Theme::update(cx, |theme| {
                         theme.density = if compact {
@@ -77,7 +71,7 @@ impl Render for Tokens {
                     })
                 }),
             )
-            .child(Button::new("accent", "Green accent").on_click(|_, _, cx| {
+            .child(Button::new("accent").label("Green accent").on_click(|_, _, cx| {
                 let mode = cx.theme().mode();
                 let mut palette = cx.theme().palette();
                 *palette.token_mut("accent") = rgb(0x2f7d4f).into();

@@ -313,14 +313,14 @@ fn card(
         )
         .when_some(toast.undo, |card, undo| {
             card.child(
-                Button::new((key.clone(), "undo"), "Undo")
+                Button::new((key.clone(), "undo")).label("Undo")
                     .size(ControlSize::Sm)
                     .on_click(send(Some(undo))),
             )
         })
         .when_some(toast.action, |card, (label, run)| {
             card.child(
-                Button::new((key.clone(), "action"), label)
+                Button::new((key.clone(), "action")).label(label)
                     .size(ControlSize::Sm)
                     .on_click(send(Some(run))),
             )

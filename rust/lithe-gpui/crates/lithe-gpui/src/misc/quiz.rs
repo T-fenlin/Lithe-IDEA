@@ -263,7 +263,7 @@ impl RenderOnce for Quiz {
             .child(body)
             .child(
                 div().debug_selector(|| "quiz-action".into()).flex().child(
-                    Button::new((id.clone(), "action"), label)
+                    Button::new((id.clone(), "action")).label(label)
                         .variant(ButtonVariant::Primary)
                         .focus_handle(&action)
                         .on_click(move |_, window, cx| {

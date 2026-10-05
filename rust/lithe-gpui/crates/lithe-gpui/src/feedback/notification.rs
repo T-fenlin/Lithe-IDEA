@@ -230,7 +230,7 @@ impl RenderOnce for NotificationCenter {
             .child(div().flex_1())
             .when_some(self.on_read_all.filter(|_| unread > 0), |header, run| {
                 header.child(
-                    Button::new((self.id.clone(), "read-all"), "Mark all read")
+                    Button::new((self.id.clone(), "read-all")).label("Mark all read")
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| run(window, cx)),
@@ -238,7 +238,7 @@ impl RenderOnce for NotificationCenter {
             })
             .when_some(self.on_clear.filter(|_| !empty), |header, run| {
                 header.child(
-                    Button::new((self.id.clone(), "clear"), "Clear")
+                    Button::new((self.id.clone(), "clear")).label("Clear")
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| run(window, cx)),

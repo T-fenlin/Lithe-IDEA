@@ -280,7 +280,7 @@ impl RenderOnce for Spotlight {
                 .child(words(self.step.title, self.step.body, cx))
                 .child(
                     div().flex().justify_end().child(
-                        Button::new((self.id.clone(), "done"), self.label)
+                        Button::new((self.id.clone(), "done")).label(self.label)
                             .primary()
                             .on_click(move |_, window, cx| button(window, cx)),
                     ),
@@ -384,21 +384,18 @@ impl RenderOnce for Tour {
                     .child(format!("{} of {count}", at + 1)),
             )
             .child(
-                Button::new((self.id.clone(), "skip"), "Skip")
+                Button::new((self.id.clone(), "skip")).label("Skip")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| skip(window, cx)),
             )
             .when_some(back, |row, to| {
                 row.child(
-                    Button::new((self.id.clone(), "back"), "Back")
+                    Button::new((self.id.clone(), "back")).label("Back")
                         .on_click(move |_, window, cx| back_step(to, window, cx)),
                 )
             })
             .child(
-                Button::new(
-                    (self.id.clone(), "primary"),
-                    if next.is_some() { "Next" } else { "Done" },
-                )
+                Button::new((self.id.clone(), "primary")).label(if next.is_some() { "Next" } else { "Done" })
                 .primary()
                 .on_click(move |_, window, cx| match next {
                     Some(to) => next_step(to, window, cx),

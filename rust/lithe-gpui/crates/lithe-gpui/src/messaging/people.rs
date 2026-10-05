@@ -147,7 +147,7 @@ impl RenderOnce for UserProfileCard {
         let name = self.name.clone();
         let message = self.on_message.map(|run| {
             let name = name.clone();
-            Button::new((self.id.clone(), "message"), "Message")
+            Button::new((self.id.clone(), "message")).label("Message")
                 .icon(IconName::MessageSquare)
                 .variant(ButtonVariant::Primary)
                 .size(ControlSize::Sm)

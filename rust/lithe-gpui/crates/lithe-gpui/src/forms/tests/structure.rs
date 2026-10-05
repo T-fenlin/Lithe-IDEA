@@ -34,7 +34,7 @@ impl Render for Signup {
                     .required()
                     .child(Input::new(&self.name)),
             )
-            .child(Button::new("signup-save", "Save"))
+            .child(Button::new("signup-save").label("Save"))
     }
 }
 

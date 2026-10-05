@@ -169,7 +169,7 @@ pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .flex_col()
                         .gap_2()
                         .child(
-                            Button::new("gen-generate", "Generate")
+                            Button::new("gen-generate").label("Generate")
                                 .variant(ButtonVariant::Primary)
                                 .full_width()
                                 .shortcut("secondary-enter")

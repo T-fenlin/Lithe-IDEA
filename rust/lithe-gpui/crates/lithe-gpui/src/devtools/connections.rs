@@ -274,7 +274,7 @@ impl RenderOnce for ConnectionManager {
                             .child("Connections"),
                     )
                     .child(
-                        Button::new((id, "new"), "New")
+                        Button::new((id, "new")).label("New")
                             .variant(ButtonVariant::Secondary)
                             .on_click(move |_, window, cx| {
                                 if let Some(on_new) = &on_new {

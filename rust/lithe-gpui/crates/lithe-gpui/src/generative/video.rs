@@ -277,7 +277,7 @@ impl RenderOnce for VideoGenerationTimeline {
         );
         let playhead = (self.at.as_secs_f64() / total.max(1.0)).clamp(0.0, 1.0) as f32;
         let extend = self.on_extend.map(|extend| {
-            Button::new((self.id.clone(), "extend"), "Extend")
+            Button::new((self.id.clone(), "extend")).label("Extend")
                 .variant(ButtonVariant::Secondary)
                 .size(ControlSize::Sm)
                 .icon(IconName::Plus)

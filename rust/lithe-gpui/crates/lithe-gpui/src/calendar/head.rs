@@ -33,7 +33,7 @@ pub(crate) fn head(
     };
     let today = {
         let step = step.clone();
-        Button::new((id.clone(), "today"), "Today")
+        Button::new((id.clone(), "today")).label("Today")
             .variant(ButtonVariant::Secondary)
             .size(ControlSize::Sm)
             .on_click(move |_, window, cx| step(0, window, cx))
