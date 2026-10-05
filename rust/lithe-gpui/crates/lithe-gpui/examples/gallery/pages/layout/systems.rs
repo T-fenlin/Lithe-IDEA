@@ -46,6 +46,8 @@ fn demo_dock(cx: &mut App) -> Dock {
         },
         cx,
     );
+    // The gallery has no activity bar, so the dock draws its own way back.
+    dock = dock.closed_strip(true);
     dock.add(panel("files", "Files", IconName::Folder), DockSide::Left);
     dock.add(
         panel("outline", "Outline", IconName::Layers),

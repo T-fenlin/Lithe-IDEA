@@ -303,6 +303,7 @@ impl Render for Dock {
             .map(|(ix, start)| self.floating(ix, start, window, cx))
             .collect();
         let showing_zones = self.dragging && cx.has_active_drag();
+        let closed = self.closed(cx);
         let rem = window.rem_size();
         let own = cx.entity_id();
         div()
@@ -310,6 +311,7 @@ impl Render for Dock {
             .relative()
             .size_full()
             .flex()
+            .flex_col()
             .on_drag_move(
                 cx.listener(move |dock, event: &DragMoveEvent<DockResize>, _, cx| {
                     let resize = event.drag(cx);
@@ -359,20 +361,27 @@ impl Render for Dock {
                 MouseButton::Left,
                 cx.listener(|dock, _, _, _| dock.dragging = false),
             )
-            .children(left)
             .child(
                 div()
                     .flex_1()
-                    .min_w_0()
+                    .min_h_0()
                     .flex()
-                    .flex_col()
-                    .children(top)
-                    .child(div().flex_1().min_h_0().child(center))
-                    .children(bottom),
+                    .children(left)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .children(top)
+                            .child(div().flex_1().min_h_0().child(center))
+                            .children(bottom),
+                    )
+                    .children(right)
+                    .children(floating)
+                    .when(showing_zones, |dock| dock.child(self.zones(cx))),
             )
-            .children(right)
-            .children(floating)
-            .when(showing_zones, |dock| dock.child(self.zones(cx)))
+            .children(closed)
             .into_any_element()
     }
 }
@@ -405,5 +414,44 @@ impl Dock {
         }))
         .child(body)
         .into_any_element()
+    }
+}
+
+impl Dock {
+    /// The closed panels as buttons that open them again, when the strip is on.
+    ///
+    /// An application with an activity bar leaves this off: a toggle there is the
+    /// usual way back, and a second one would be noise.
+    fn closed(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let closed: Vec<usize> = (0..self.panels.len())
+            .filter(|ix| self.hidden[*ix])
+            .collect();
+        if !self.closed_strip || closed.is_empty() {
+            return None;
+        }
+        let theme = cx.theme();
+        Some(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_1()
+                .px_2()
+                .py_1()
+                .border_t_1()
+                .border_color(theme.colors.border)
+                .bg(theme.colors.sunken)
+                .children(closed.into_iter().map(|ix| {
+                    let panel = &self.panels[ix];
+                    let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
+                    Button::new(SharedString::from(format!("dock-closed-{id}")))
+                        .icon(icon)
+                        .label(title)
+                        .variant(ButtonVariant::Ghost)
+                        .size(Size::Small)
+                        .on_click(cx.listener(move |dock, _, _, cx| dock.show(&id, cx)))
+                }))
+                .into_any_element(),
+        )
     }
 }

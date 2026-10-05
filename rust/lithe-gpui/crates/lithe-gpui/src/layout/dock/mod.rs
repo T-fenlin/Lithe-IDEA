@@ -150,6 +150,10 @@ pub struct Dock {
     zoomed: Option<usize>,
     /// The side each panel was last docked to, so a floated panel has a way home.
     last_docked: Vec<DockSide>,
+    /// Whether a strip of closed panels is drawn, so they can be opened again.
+    /// An application with an activity bar turns this off: a toggle there is the
+    /// usual way back, and a second one would be noise.
+    closed_strip: bool,
     sizes: [Rems; 4],
     limits: [SideLimits; 4],
     center: Center,
@@ -176,6 +180,7 @@ impl Dock {
             active: [None; 4],
             zoomed: None,
             last_docked: Vec::new(),
+            closed_strip: false,
             sizes: [side, side, strip, strip],
             limits: [limits; 4],
             center: Rc::new(center),
@@ -201,6 +206,13 @@ impl Dock {
             },
             cx,
         )
+    }
+
+    /// Draws a strip of closed panels, each a button that opens it again.
+    /// Off by default.
+    pub fn closed_strip(mut self, on: bool) -> Self {
+        self.closed_strip = on;
+        self
     }
 
     /// Panics on a repeated id.
