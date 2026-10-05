@@ -113,6 +113,8 @@ pub struct Dock {
     /// Closed but still docked: `hidden[ix]` matches `panels[ix]`.
     hidden: Vec<bool>,
     active: [Option<usize>; 4],
+    /// The panel filling the dock on its own, until it is restored.
+    zoomed: Option<usize>,
     sizes: [Rems; 4],
     limits: [SideLimits; 4],
     center: Center,
@@ -137,6 +139,7 @@ impl Dock {
             spots: Vec::new(),
             hidden: Vec::new(),
             active: [None; 4],
+            zoomed: None,
             sizes: [side, side, strip, strip],
             limits: [limits; 4],
             center: Rc::new(center),
@@ -270,6 +273,40 @@ impl Dock {
         }
         log::info!("dock: {id} {from:?} -> {spot:?}");
         cx.notify();
+    }
+
+    /// Whether `id` is the panel filling the dock on its own.
+    pub fn is_zoomed(&self, id: &str) -> bool {
+        self.zoomed
+            .is_some_and(|ix| self.panels[ix].id.as_ref() == id)
+    }
+
+    /// Fills the dock with one panel; a closed panel is opened first.
+    pub fn zoom(&mut self, id: &str, cx: &mut Context<Self>) {
+        let ix = self
+            .find(id)
+            .unwrap_or_else(|| panic!("no dock panel {id}"));
+        self.hidden[ix] = false;
+        self.zoomed = Some(ix);
+        log::info!("dock: {id} zoomed");
+        cx.notify();
+    }
+
+    /// Gives the dock back to its arrangement.
+    pub fn unzoom(&mut self, cx: &mut Context<Self>) {
+        if self.zoomed.take().is_some() {
+            log::info!("dock: restored from zoom");
+            cx.notify();
+        }
+    }
+
+    /// Zooms the panel, or restores the dock when it is the zoomed one.
+    pub fn toggle_zoom(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.is_zoomed(id) {
+            self.unzoom(cx);
+        } else {
+            self.zoom(id, cx);
+        }
     }
 
     pub fn layout(&self) -> DockLayout {
@@ -456,6 +493,28 @@ mod tests {
                 Some(1),
                 "a closed panel never leads"
             );
+        });
+    }
+
+    /// Zooming fills the dock with one panel; restoring gives the arrangement back,
+    /// and zooming a closed panel opens it.
+    #[gpui::test]
+    fn zooming_fills_the_dock_and_restoring_returns_it(cx: &mut TestAppContext) {
+        let dock = bench(cx);
+        dock.update(cx, |dock, cx| {
+            dock.zoom("terminal", cx);
+            assert!(dock.is_zoomed("terminal"));
+            dock.toggle_zoom("terminal", cx);
+            assert!(!dock.is_zoomed("terminal"));
+            assert_eq!(
+                dock.active[DockSide::Left.index()],
+                Some(0),
+                "the arrangement is back"
+            );
+            dock.hide("outline", cx);
+            dock.zoom("outline", cx);
+            assert!(dock.is_zoomed("outline"));
+            assert!(!dock.is_hidden("outline"), "zooming opens the panel");
         });
     }
 

@@ -6,8 +6,9 @@ use gpui::{
 
 use super::{Dock, DockSide, Spot};
 use crate::{
+    buttons::{Button, ButtonVariant},
     layout::{FloatingPanel, resize_handle},
-    primitives::{DragGhost, Icon},
+    primitives::{DragGhost, Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
@@ -25,51 +26,66 @@ impl Dock {
     fn tabs(&self, side: DockSide, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let active = self.active[side.index()];
+        let zoom = active.map(|ix| self.panels[ix].id.clone());
         div()
             .flex()
             .items_center()
-            .gap_0p5()
+            .justify_between()
             .h(theme.control_height(Size::Large))
             .px_1()
             .border_b_1()
             .border_color(theme.colors.border)
-            .children(self.shown_on_side(side).into_iter().map(|ix| {
-                let panel = &self.panels[ix];
-                let selected = active == Some(ix);
-                let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
-                let drag = DraggedPanel {
-                    dock: cx.entity_id(),
-                    id: id.clone(),
-                };
-                div()
-                    .id(SharedString::from(format!("tab-{id}")))
-                    .flex()
-                    .items_center()
-                    .gap_1p5()
-                    .px_2()
-                    .h(theme.control_height(Size::Small))
-                    .rounded(theme.radius(Radius::Md))
-                    .cursor_pointer()
-                    .text_size(theme.text_size(TextSize::Sm))
-                    .text_color(if selected {
-                        theme.colors.fg
+            .child(div().flex().items_center().gap_0p5().children(
+                self.shown_on_side(side).into_iter().map(|ix| {
+                    let panel = &self.panels[ix];
+                    let selected = active == Some(ix);
+                    let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
+                    let drag = DraggedPanel {
+                        dock: cx.entity_id(),
+                        id: id.clone(),
+                    };
+                    div()
+                        .id(SharedString::from(format!("tab-{id}")))
+                        .flex()
+                        .items_center()
+                        .gap_1p5()
+                        .px_2()
+                        .h(theme.control_height(Size::Small))
+                        .rounded(theme.radius(Radius::Md))
+                        .cursor_pointer()
+                        .text_size(theme.text_size(TextSize::Sm))
+                        .text_color(if selected {
+                            theme.colors.fg
+                        } else {
+                            theme.colors.fg_subtle
+                        })
+                        .when(selected, |tab| {
+                            tab.bg(theme.colors.hover).font_weight(FontWeight::MEDIUM)
+                        })
+                        .hover(|style| style.text_color(theme.colors.fg))
+                        .child(Icon::new(icon).size(IconSize::Sm).color(if selected {
+                            theme.colors.fg
+                        } else {
+                            theme.colors.fg_subtle
+                        }))
+                        .child(title.clone())
+                        .on_click(cx.listener(move |dock, _, _, cx| dock.activate(&id, cx)))
+                        .on_drag(drag, move |_, _, _, cx| {
+                            DragGhost::new(title.clone(), Some(icon), cx)
+                        })
+                }),
+            ))
+            .children(zoom.map(|id| {
+                let off = self.is_zoomed(&id);
+                Button::new("dock-zoom")
+                    .icon(if off {
+                        IconName::Minimize2
                     } else {
-                        theme.colors.fg_subtle
+                        IconName::Maximize2
                     })
-                    .when(selected, |tab| {
-                        tab.bg(theme.colors.hover).font_weight(FontWeight::MEDIUM)
-                    })
-                    .hover(|style| style.text_color(theme.colors.fg))
-                    .child(Icon::new(icon).size(IconSize::Sm).color(if selected {
-                        theme.colors.fg
-                    } else {
-                        theme.colors.fg_subtle
-                    }))
-                    .child(title.clone())
-                    .on_click(cx.listener(move |dock, _, _, cx| dock.activate(&id, cx)))
-                    .on_drag(drag, move |_, _, _, cx| {
-                        DragGhost::new(title.clone(), Some(icon), cx)
-                    })
+                    .variant(ButtonVariant::Ghost)
+                    .size(Size::Small)
+                    .on_click(cx.listener(move |dock, _, _, cx| dock.toggle_zoom(&id, cx)))
             }))
             .into_any_element()
     }
@@ -213,6 +229,26 @@ impl Dock {
 
 impl Render for Dock {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // A zoomed panel takes the whole dock until it is restored, tabs and all.
+        if let Some(ix) = self.zoomed.filter(|ix| !self.hidden[*ix]) {
+            let id = self.panels[ix].id.clone();
+            let body = (self.content)(&id, window, cx);
+            let side = match self.spots[ix] {
+                Spot::Docked(side) => side,
+                Spot::Floating { .. } => DockSide::Left,
+            };
+            return div()
+                .id("dock")
+                .relative()
+                .size_full()
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .bg(cx.theme().colors.surface)
+                .child(self.tabs(side, cx))
+                .child(div().flex_1().min_h_0().child(body))
+                .into_any_element();
+        }
         let left = self.side(DockSide::Left, window, cx);
         let right = self.side(DockSide::Right, window, cx);
         let top = self.side(DockSide::Top, window, cx);
@@ -296,6 +332,7 @@ impl Render for Dock {
             .children(right)
             .children(floating)
             .when(showing_zones, |dock| dock.child(self.zones(cx)))
+            .into_any_element()
     }
 }
 
