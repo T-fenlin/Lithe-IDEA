@@ -4,6 +4,7 @@ use gpui::{
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
+    i18n::text,
     layout::{
         Dock, DockPanel, DockSide, FloatingPanel, PaneGroup, PanelTitle, Transform, Viewport,
         Workspace,
@@ -20,9 +21,10 @@ use crate::{
 };
 
 fn demo_dock(cx: &mut App) -> Dock {
-    let panel = |id: &str, title: &str, icon| DockPanel {
+    // Panel titles are catalogue keys, so they follow the shown language.
+    let panel = |id: &str, key: &str, icon| DockPanel {
         id: SharedString::from(id.to_string()),
-        title: PanelTitle::Text(SharedString::from(title.to_string())),
+        title: PanelTitle::Key(SharedString::from(key.to_string())),
         icon,
     };
     let mut dock = Dock::new(
@@ -33,7 +35,7 @@ fn demo_dock(cx: &mut App) -> Dock {
                 .items_center()
                 .justify_center()
                 .text_color(cx.theme().colors.fg_subtle)
-                .child("Center. Drag a tab onto a zone.")
+                .child(text(cx, "demo_dock_copy.center", &[]))
                 .into_any_element()
         },
         |id, _, cx| {
@@ -41,21 +43,27 @@ fn demo_dock(cx: &mut App) -> Dock {
                 .p_3()
                 .text_size(cx.theme().text_size(TextSize::Sm))
                 .text_color(cx.theme().colors.fg_muted)
-                .child(SharedString::from(format!("{id} panel")))
+                .child(text(cx, "demo_dock_copy.body", &[("id", id.as_ref())]))
                 .into_any_element()
         },
         cx,
     );
     // The gallery has no activity bar, so the dock draws its own way back.
     dock = dock.closed_strip(true);
-    dock.add(panel("files", "Files", IconName::Folder), DockSide::Left);
     dock.add(
-        panel("outline", "Outline", IconName::Layers),
+        panel("files", "demo_dock_copy.files", IconName::Folder),
         DockSide::Left,
     );
-    dock.add(panel("search", "Search", IconName::Search), DockSide::Right);
     dock.add(
-        panel("terminal", "Terminal", IconName::Terminal),
+        panel("outline", "demo_dock_copy.outline", IconName::Layers),
+        DockSide::Left,
+    );
+    dock.add(
+        panel("search", "demo_dock_copy.search", IconName::Search),
+        DockSide::Right,
+    );
+    dock.add(
+        panel("terminal", "demo_dock_copy.terminal", IconName::Terminal),
         DockSide::Bottom,
     );
     dock
@@ -85,7 +93,7 @@ pub fn dock(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let (dock, _) = systems(window, cx);
     section(
         "Dock / DockPanel",
-        "Panels dock on any edge, tab together, and float.",
+        text(cx, "demo_dock_copy.summary", &[]),
         cx,
     )
     .child(probe("dock", frame(760.0, 380.0, cx).child(dock)))
@@ -94,12 +102,10 @@ pub fn dock(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 pub fn dock_zones(cx: &App) -> impl IntoElement + use<> {
     section(
         "DockZone / DropIndicator",
-        "While a tab drags, the drop zones appear and the one below lights.",
+        text(cx, "demo_dock_copy.zones", &[]),
         cx,
     )
-    .child(Caption::new(
-        "Drag a tab across the dock above to see them.",
-    ))
+    .child(Caption::new(text(cx, "demo_dock_copy.zones_hint", &[])))
 }
 
 pub fn floating(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {

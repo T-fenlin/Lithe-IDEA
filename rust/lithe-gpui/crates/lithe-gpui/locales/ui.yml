@@ -56,3 +56,13 @@ dock:
   zoom: {en-US: "Maximize", en-GB: "Maximize", de-DE: "Maximieren", fr-FR: "Agrandir", ja-JP: "最大化", he-IL: "הגדל", zh-CN: "最大化"}
   dock: {en-US: "Dock", en-GB: "Dock", de-DE: "Andocken", fr-FR: "Ancrer", ja-JP: "ドッキング", he-IL: "עגן", zh-CN: "停靠"}
   restore: {en-US: "Restore", en-GB: "Restore", de-DE: "Wiederherstellen", fr-FR: "Restaurer", ja-JP: "元に戻す", he-IL: "שחזר", zh-CN: "还原"}
+demo_dock_copy:
+  summary: {en-US: "Panels dock on any edge, tab together, and float.", en-GB: "Panels dock on any edge, tab together, and float.", de-DE: "Panels docken an jeder Kante, bündeln sich in Tabs und schweben.", fr-FR: "Les panneaux s'ancrent sur n'importe quel bord, se regroupent en onglets et flottent.", ja-JP: "パネルはどの辺にもドッキングでき、タブでまとまり、フロートできます。", he-IL: "חלוניות נעגנות בכל קצה, מתקבצות ללשוניות וצפות.", zh-CN: "面板可停靠到任意边、成组为标签页，也可浮动。"}
+  center: {en-US: "Center. Drag a tab onto a zone.", en-GB: "Center. Drag a tab onto a zone.", de-DE: "Mitte. Ziehe einen Tab auf eine Zone.", fr-FR: "Centre. Glissez un onglet sur une zone.", ja-JP: "中央。タブをゾーンへドラッグ。", he-IL: "מרכז. גרור לשונית לאזור.", zh-CN: "中间区。把标签拖到落点区。"}
+  files: {en-US: "Files", en-GB: "Files", de-DE: "Dateien", fr-FR: "Fichiers", ja-JP: "ファイル", he-IL: "קבצים", zh-CN: "文件"}
+  outline: {en-US: "Outline", en-GB: "Outline", de-DE: "Gliederung", fr-FR: "Plan", ja-JP: "アウトライン", he-IL: "מתאר", zh-CN: "大纲"}
+  search: {en-US: "Search", en-GB: "Search", de-DE: "Suche", fr-FR: "Recherche", ja-JP: "検索", he-IL: "חיפוש", zh-CN: "搜索"}
+  terminal: {en-US: "Terminal", en-GB: "Terminal", de-DE: "Terminal", fr-FR: "Terminal", ja-JP: "ターミナル", he-IL: "מסוף", zh-CN: "终端"}
+  body: {en-US: "%{id} panel", en-GB: "%{id} panel", de-DE: "%{id}-Panel", fr-FR: "panneau %{id}", ja-JP: "%{id} パネル", he-IL: "חלונית %{id}", zh-CN: "%{id} 面板"}
+  zones: {en-US: "While a tab drags, the drop zones appear and the one below lights.", en-GB: "While a tab drags, the drop zones appear and the one below lights.", de-DE: "Beim Ziehen eines Tabs erscheinen die Zonen; die darunterliegende leuchtet auf.", fr-FR: "Pendant le glisser d'un onglet, les zones apparaissent et celle en dessous s'illumine.", ja-JP: "タブのドラッグ中にドロップゾーンが現れ、下にあるものが光ります。", he-IL: "בעת גרירת לשונית מופיעים אזורי השחרור, וזה שמתחתם מאיר.", zh-CN: "拖动标签时出现落点区，指针下的那个会高亮。"}
+  zones_hint: {en-US: "Drag a tab across the dock above to see them.", en-GB: "Drag a tab across the dock above to see them.", de-DE: "Ziehe einen Tab durch das Dock oben, um sie zu sehen.", fr-FR: "Glissez un onglet dans le dock ci-dessus pour les voir.", ja-JP: "上の Dock でタブをドラッグすると見られます。", he-IL: "גרור לשונית ב-Dock שלמעלה כדי לראותם.", zh-CN: "把上面 Dock 里的标签拖一下就能看到。"}
