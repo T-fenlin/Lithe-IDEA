@@ -2,7 +2,7 @@
 //! `GalleryView` 上，经 WeakEntity 在回调里回写。
 
 use gpui_kit::prelude::*;
-use gpui_kit::{AnyElement, App, Context, WeakEntity, div, px, rems};
+use gpui_kit::{AnyElement, App, WeakEntity, div, px, rems};
 
 use lithe_gpui::{
     ActiveTheme as _, Alert, Avatar, Badge, BadgeVariant, Breadcrumb, Button, ButtonVariant, Card,
@@ -29,53 +29,70 @@ fn row(content: impl IntoElement) -> AnyElement {
         .into_any_element()
 }
 
-/// 组装全部章节段落。段头是"章号 · 名称"。
-pub fn all(view: &mut GalleryView, cx: &mut Context<GalleryView>) -> Vec<AnyElement> {
-    let state = cx.entity().downgrade();
+/// 章节清单（与切换侧栏一致）。下标即 `GalleryView::chapter`。
+pub const CHAPTERS: [&str; 13] = [
+    "1 · Primitives",
+    "2 · Typography",
+    "3 · Layout",
+    "4 · Window & Shell",
+    "5 · Buttons & Actions",
+    "6 · Forms",
+    "7 · Navigation",
+    "8 · Menus",
+    "9 · Overlays",
+    "10 · Feedback",
+    "17 · Editor",
+    "19 · Git",
+    "20 · Debug",
+];
+
+/// 渲染单个章节（切换器选中哪章就渲染哪章）。
+pub fn chapter(
+    ix: usize,
+    view: &mut GalleryView,
+    state: &WeakEntity<GalleryView>,
+    cx: &App,
+) -> AnyElement {
+    let title = CHAPTERS.get(ix).copied().unwrap_or(CHAPTERS[0]);
+    let sections = match ix {
+        0 => ch01_primitives(cx),
+        1 => ch02_typography(),
+        2 => ch03_layout(),
+        3 => ch04_shell(cx),
+        4 => ch05_buttons(),
+        5 => ch06_forms(view, state, cx),
+        6 => ch07_navigation(view, state, cx),
+        7 => ch08_menus(),
+        8 => ch09_overlays(),
+        9 => ch10_feedback(),
+        10 => ch17_editor(),
+        11 => ch19_git(state),
+        _ => ch20_debug(),
+    };
     let primary = cx.theme().primary;
     let muted = cx.theme().muted_foreground;
-    let mut out: Vec<AnyElement> = Vec::new();
-    let mut push = |chapter: &'static str, elements: Vec<(&'static str, AnyElement)>| {
-        out.push(
+    div()
+        .flex()
+        .flex_col()
+        .gap_5()
+        .w_full()
+        .child(
+            div()
+                .text_lg()
+                .font_weight(gpui_kit::FontWeight::MEDIUM)
+                .text_color(primary)
+                .child(title),
+        )
+        .children(sections.into_iter().map(|(name, content)| {
             div()
                 .flex()
                 .flex_col()
-                .gap_4()
+                .gap_2()
                 .w_full()
-                .child(
-                    div()
-                        .text_base()
-                        .font_weight(gpui_kit::FontWeight::MEDIUM)
-                        .text_color(primary)
-                        .child(chapter),
-                )
-                .children(elements.into_iter().map(|(name, content)| {
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .w_full()
-                        .child(div().text_sm().text_color(muted).child(name))
-                        .child(content)
-                }))
-                .into_any_element(),
-        );
-    };
-
-    push("1 · Primitives", ch01_primitives(cx));
-    push("2 · Typography", ch02_typography());
-    push("3 · Layout", ch03_layout());
-    push("4 · Window & Shell", ch04_shell(cx));
-    push("5 · Buttons & Actions", ch05_buttons());
-    push("6 · Forms", ch06_forms(view, &state, cx));
-    push("7 · Navigation", ch07_navigation(view, &state, cx));
-    push("8 · Menus", ch08_menus());
-    push("9 · Overlays", ch09_overlays());
-    push("10 · Feedback", ch10_feedback());
-    push("17 · Editor", ch17_editor());
-    push("19 · Git", ch19_git(&state));
-    push("20 · Debug", ch20_debug());
-    out
+                .child(div().text_sm().text_color(muted).child(name))
+                .child(content)
+        }))
+        .into_any_element()
 }
 
 fn ch01_primitives(cx: &App) -> Vec<(&'static str, AnyElement)> {
@@ -342,9 +359,8 @@ fn ch05_buttons() -> Vec<(&'static str, AnyElement)> {
 fn ch06_forms(
     view: &mut GalleryView,
     state: &WeakEntity<GalleryView>,
-    cx: &mut Context<GalleryView>,
+    _cx: &App,
 ) -> Vec<(&'static str, AnyElement)> {
-    let _ = cx;
     let checked = view.checked;
     let switch_on = view.switch_on;
     let radio_ix = view.radio_ix;
@@ -408,9 +424,8 @@ fn ch06_forms(
 fn ch07_navigation(
     view: &mut GalleryView,
     state: &WeakEntity<GalleryView>,
-    cx: &mut Context<GalleryView>,
+    _cx: &App,
 ) -> Vec<(&'static str, AnyElement)> {
-    let _ = cx;
     let tab_state = state.clone();
     let page_state = state.clone();
     let tab_ix = view.tab_ix;

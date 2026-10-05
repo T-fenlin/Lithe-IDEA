@@ -1,20 +1,24 @@
 //! 组件画廊（dev-only）：`cargo run -p lithe-gpui --example gallery`。
 //!
-//! 内嵌了最小 SVG 资产集合，演示 Icon 的注入式图标约定——库本体不内嵌
-//! 图标，正式应用走 app crate 的 `LitheAssets`。各章组件在这里以
-//! light/dark 双模式展示；分章 story 见同目录 `stories.rs`。
+//! 左侧是章节切换侧栏，右侧内容区单章展示、可滚动。内嵌了最小 SVG 资产
+//! 集合，演示 Icon 的注入式图标约定——库本体不内嵌图标，正式应用走
+//! app crate 的 `LitheAssets`。分章 story 见同目录 `stories.rs`。
 
 mod stories;
 
 use std::borrow::Cow;
 
 use gpui_kit::prelude::*;
+
 use gpui_kit::{
     AssetSource, Bounds, Context, Point, Render, SharedString, Window, WindowBounds, WindowOptions,
-    div, px, size,
+    div, px, rems, size,
 };
 
-use lithe_gpui::{ActiveTheme as _, Entity, InputState, Theme, ThemeMode, init, open_window};
+use lithe_gpui::{
+    ActiveTheme as _, Button, Entity, InputState, Sidebar, Sizable as _, Theme, ThemeMode, init,
+    open_window,
+};
 
 /// 最小图标集合：手绘几何路径，专供 gallery。
 static GALLERY_ASSETS: &[(&str, &str)] = &[
@@ -76,8 +80,9 @@ fn main() {
         });
 }
 
-/// 画廊状态：受控组件（表单/标签页/分页）的值都持在这里。
+/// 画廊状态：当前章节 + 受控组件（表单/标签页/分页）的值。
 struct GalleryView {
+    chapter: usize,
     input: Entity<InputState>,
     checked: bool,
     switch_on: bool,
@@ -90,6 +95,7 @@ struct GalleryView {
 impl GalleryView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
+            chapter: 0,
             input: cx.new(|cx| InputState::new(window, cx).placeholder("Search files…")),
             checked: false,
             switch_on: true,
@@ -105,61 +111,95 @@ impl Render for GalleryView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let toggle_label = if theme.is_dark() { "Light" } else { "Dark" };
+        let chapter = self.chapter;
+        let state = cx.entity().downgrade();
+        let sidebar_state = state.clone();
+
         div()
             .size_full()
             .flex()
-            .flex_col()
             .bg(theme.background)
             .text_color(theme.foreground)
             .child(
-                // 画廊自己的标题栏（不是 TitleBar 组件 story）
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_6()
-                    .py_3()
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .child(div().text_lg().child(format!(
-                        "lithe-gpui gallery ({})",
-                        if theme.is_dark() { "dark" } else { "light" }
-                    )))
-                    .child(
-                        div()
-                            .id("toggle-mode")
-                            .px_3()
-                            .h_8()
-                            .flex()
-                            .items_center()
-                            .rounded_full()
-                            .border_1()
-                            .border_color(theme.border_strong)
-                            .bg(theme.surface)
-                            .text_sm()
-                            .cursor_pointer()
-                            .hover(|style| style.bg(theme.hover))
-                            .child(format!("Switch to {toggle_label}"))
-                            .on_click(|_, _, cx| {
-                                let target = if cx.theme().is_dark() {
-                                    ThemeMode::Light
-                                } else {
-                                    ThemeMode::Dark
-                                };
-                                Theme::set_mode(target, cx);
-                            }),
+                // 章节切换侧栏
+                Sidebar::new("chapter-sidebar").w(rems(11.0)).child(
+                    div().flex().flex_col().gap_1().p_3().pt_4().children(
+                        stories::CHAPTERS.iter().enumerate().map(move |(ix, name)| {
+                            let sidebar_state = sidebar_state.clone();
+                            let name = *name;
+                            Button::new(("chapter", ix))
+                                .label(name)
+                                .ghost()
+                                .small()
+                                .selected(chapter == ix)
+                                .on_click(move |_, _, cx| {
+                                    let _ = sidebar_state.update(cx, |v, cx| {
+                                        v.chapter = ix;
+                                        cx.notify();
+                                    });
+                                })
+                        }),
                     ),
+                ),
             )
             .child(
+                // 右列：画廊头 + 可滚动内容区（Stateful div 才能滚）
                 div()
                     .flex_1()
-                    .overflow_hidden()
-                    .px_6()
-                    .py_5()
+                    .min_w_0()
                     .flex()
                     .flex_col()
-                    .gap_6()
-                    .children(stories::all(self, cx)),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px_6()
+                            .py_3()
+                            .border_b_1()
+                            .border_color(theme.border)
+                            .child(div().text_lg().child(format!(
+                                "lithe-gpui gallery ({})",
+                                if theme.is_dark() { "dark" } else { "light" }
+                            )))
+                            .child(
+                                div()
+                                    .id("toggle-mode")
+                                    .px_3()
+                                    .h_8()
+                                    .flex()
+                                    .items_center()
+                                    .rounded_full()
+                                    .border_1()
+                                    .border_color(theme.border_strong)
+                                    .bg(theme.surface)
+                                    .text_sm()
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(theme.hover))
+                                    .child(format!("Switch to {toggle_label}"))
+                                    .on_click(|_, _, cx| {
+                                        let target = if cx.theme().is_dark() {
+                                            ThemeMode::Light
+                                        } else {
+                                            ThemeMode::Dark
+                                        };
+                                        Theme::set_mode(target, cx);
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("gallery-content")
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .px_6()
+                            .py_5()
+                            .flex()
+                            .flex_col()
+                            .gap_5()
+                            .child(stories::chapter(chapter, self, &state, cx)),
+                    ),
             )
     }
 }
