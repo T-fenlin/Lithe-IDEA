@@ -2,15 +2,15 @@
 //! `GalleryView` 上，经 WeakEntity 在回调里回写。
 
 use gpui_kit::prelude::*;
-use gpui_kit::{AnyElement, App, WeakEntity, div, px, rems};
+use gpui_kit::{AnyElement, App, Entity, WeakEntity, div, px, rems};
 
 use lithe_gpui::{
     ActiveTheme as _, Alert, Avatar, Badge, BadgeVariant, Breadcrumb, Button, ButtonVariant, Card,
     CardTitle, Checkbox, Code, CodeBlock, CommitList, CommitSummary, DiffLine, DiffLineKind,
-    DiffStats, DiffView, Empty, FrameList, Heading, Icon, IconButton, Input, Kbd, Label, Link,
-    Menu, MenuItem, Notification, Pagination, Progress, Radio, SectionHeader, Separator, Severity,
-    Sidebar, Sizable as _, Spinner, StackFrame, StatusBar, Switch, Tab, Tabs, Tag, Text, TitleBar,
-    Variable, VariableList, open_menu, push_notification,
+    DiffStats, DiffView, DockPanel, Empty, FrameList, Heading, Icon, IconButton, Input, Kbd, Label,
+    Link, Menu, MenuItem, Notification, Pagination, Progress, Radio, ResizableState, SectionHeader,
+    Separator, Severity, Sidebar, Sizable as _, Spinner, StackFrame, StatusBar, Switch, Tab, Tabs,
+    Tag, Text, TitleBar, Variable, VariableList, h_dock, open_menu, push_notification,
 };
 
 use super::GalleryView;
@@ -58,7 +58,7 @@ pub fn chapter(
         0 => ch01_primitives(cx),
         1 => ch02_typography(),
         2 => ch03_layout(),
-        3 => ch04_shell(cx),
+        3 => ch04_shell(cx, &view.dock_state),
         4 => ch05_buttons(),
         5 => ch06_forms(view, state, cx),
         6 => ch07_navigation(view, state, cx),
@@ -264,50 +264,119 @@ fn ch03_layout() -> Vec<(&'static str, AnyElement)> {
     )]
 }
 
-fn ch04_shell(cx: &App) -> Vec<(&'static str, AnyElement)> {
-    vec![(
-        "TitleBar / Sidebar / StatusBar（示意框内）",
-        el(div()
-            .w_full()
-            .max_w(rems(42.0))
-            .rounded(rems(0.5))
-            .border_1()
-            .border_color(cx.theme().border)
-            .overflow_hidden()
+fn ch04_shell(cx: &App, dock_state: &Entity<ResizableState>) -> Vec<(&'static str, AnyElement)> {
+    let file_rows = ["src/main.rs", "src/lib.rs", "pom.xml", "README.md"];
+    let explorer =
+        div()
+            .h_full()
+            .p_2()
             .flex()
             .flex_col()
-            .child(TitleBar::new("shell-titlebar").child(Text::new("shell-title", "Lithe").small()))
-            .child(
+            .gap_1()
+            .children(file_rows.iter().enumerate().map(|(ix, name)| {
                 div()
-                    .flex()
-                    .items_stretch()
-                    .h(rems(8.0))
-                    .child(
-                        Sidebar::new("shell-sidebar").child(
-                            div()
-                                .p_3()
-                                .text_sm()
-                                .text_color(cx.theme().sidebar_foreground)
-                                .child("Explorer"),
-                        ),
-                    )
-                    .child(
+                    .id(("dock-file", ix))
+                    .px_2()
+                    .py_1()
+                    .rounded(rems(0.25))
+                    .text_sm()
+                    .text_color(cx.theme().foreground)
+                    .hover(move |style| style.bg(cx.theme().hover))
+                    .cursor_pointer()
+                    .child(*name)
+            }));
+    let editor_area = div()
+        .h_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_sm()
+        .text_color(cx.theme().subtle_foreground)
+        .child("Editor");
+    let inspector = div()
+        .h_full()
+        .p_3()
+        .text_sm()
+        .text_color(cx.theme().muted_foreground)
+        .child("Inspector");
+
+    // 外壳示意：固定 240px 侧栏 + 编辑区（旧布局，供对照）。
+    let shell_mock = div()
+        .w_full()
+        .max_w(rems(42.0))
+        .rounded(rems(0.5))
+        .border_1()
+        .border_color(cx.theme().border)
+        .overflow_hidden()
+        .flex()
+        .flex_col()
+        .child(TitleBar::new("shell-titlebar").child(Text::new("shell-title", "Lithe").small()))
+        .child(
+            div()
+                .flex()
+                .items_stretch()
+                .h(rems(8.0))
+                .child(
+                    Sidebar::new("shell-sidebar").child(
                         div()
-                            .flex_1()
-                            .flex()
-                            .items_center()
-                            .justify_center()
+                            .p_3()
                             .text_sm()
-                            .text_color(cx.theme().subtle_foreground)
-                            .child("Editor area"),
+                            .text_color(cx.theme().sidebar_foreground)
+                            .child("Explorer"),
                     ),
-            )
-            .child(
-                StatusBar::new("shell-status")
-                    .child(Text::new("shell-status-1", "main").small())
-                    .child(Text::new("shell-status-2", "UTF-8").small()),
-            )),
-    )]
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_sm()
+                        .text_color(cx.theme().subtle_foreground)
+                        .child("Editor area"),
+                ),
+        )
+        .child(
+            StatusBar::new("shell-status")
+                .child(Text::new("shell-status-1", "main").small())
+                .child(Text::new("shell-status-2", "UTF-8").small()),
+        );
+
+    // Dock：左右两根分隔条都可拖拽，min/max 钳制住面板尺寸。
+    let dock_demo = div()
+        .w_full()
+        .h(rems(20.0))
+        .rounded(rems(0.5))
+        .border_1()
+        .border_color(cx.theme().border)
+        .overflow_hidden()
+        .flex()
+        .child(
+            h_dock("gallery-dock", dock_state)
+                .panel(
+                    DockPanel::new()
+                        .size(px(220.))
+                        .size_range(px(160.)..px(420.))
+                        .bg(cx.theme().sidebar)
+                        .child(explorer),
+                )
+                .panel(DockPanel::new().bg(cx.theme().surface).child(editor_area))
+                .panel(
+                    DockPanel::new()
+                        .size(px(200.))
+                        .size_range(px(140.)..px(360.))
+                        .bg(cx.theme().card)
+                        .child(inspector),
+                ),
+        );
+
+    vec![
+        ("TitleBar / Sidebar / StatusBar（示意框内）", el(shell_mock)),
+        (
+            "Dock（左右拖拽分隔；分隔条悬停加深、拖动显主色）",
+            el(dock_demo),
+        ),
+    ]
 }
 
 fn ch05_buttons() -> Vec<(&'static str, AnyElement)> {

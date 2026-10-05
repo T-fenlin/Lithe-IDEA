@@ -16,8 +16,8 @@ use gpui_kit::{
 };
 
 use lithe_gpui::{
-    ActiveTheme as _, Button, Entity, InputState, Sidebar, Sizable as _, Theme, ThemeMode, init,
-    open_window,
+    ActiveTheme as _, Button, Entity, InputState, ResizableState, Sidebar, Sizable as _, Theme,
+    ThemeMode, init, open_window,
 };
 
 /// 最小图标集合：手绘几何路径，专供 gallery。
@@ -83,6 +83,7 @@ fn main() {
 /// 画廊状态：当前章节 + 受控组件（表单/标签页/分页）的值。
 struct GalleryView {
     chapter: usize,
+    dock_state: Entity<ResizableState>,
     input: Entity<InputState>,
     checked: bool,
     switch_on: bool,
@@ -96,6 +97,7 @@ impl GalleryView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             chapter: 0,
+            dock_state: cx.new(|_| ResizableState::default()),
             input: cx.new(|cx| InputState::new(window, cx).placeholder("Search files…")),
             checked: false,
             switch_on: true,

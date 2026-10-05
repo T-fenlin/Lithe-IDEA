@@ -63,12 +63,15 @@
 | 43 | Library Tooling | 待做 | — | |
 | 44 | Rendering | 待做 | — | |
 
-## Dock 备忘（章 3/4 的遗留大件）
+## Dock 备忘（章 3/4）
 
-base 的 `dock` 模块（Panel trait、DockArea、TabGroup、拖拽落点、panel registry）是
-"面板可复用"目标的承载层。放在 8/9 章 overlay 稳定之后单独成批实现：它依赖
-Menu/Tooltip/DnD 与拖拽性能边界（见
-`.agents/notes/implemented/architecture/2026-09-13-resizable-ui-performance-boundaries.md`）。
+**v1 已交付**（`src/dock.rs`）：`h_dock`/`v_dock`/`Dock`/`DockPanel` + Ely 分隔条外观
+（静止 hairline / 悬停加深 / 拖动主色），行为层完全复用 base `resizable`（min/max 钳制、
+局部容器承载拖动、高频事件内部合并，符合 2026-09-13 性能边界 Note）；调用方持有
+`ResizableState`，`on_resize` 回调供持久化（只在拖动结束时写）。gallery 第 4 章有
+三面板演示（explorer / editor / inspector），集成测试覆盖真实拖拽加宽。
+**仍待做**：完整停靠系统——标签拖拽成组、落点指示器、panel registry（base `dock`
+模块的 TabGroup/DockArea 一层）；与 ch13/14 一同排。
 
 ## 第 1 章对账（本批之前已交付）
 

@@ -11,9 +11,9 @@ use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{App, Entity, Render, TestAppContext, Window, div, point, px, rems};
 use lithe_gpui::{
     Button, Checkbox, CommitList, CommitSummary, DiffLine, DiffLineKind, DiffStats, DiffView,
-    Empty, FrameList, Heading, Input, InputState, Menu, MenuItem, Notification, Pagination,
-    StackFrame, Switch, Tab, Tabs, Text, Variable, VariableList, init, open_menu,
-    push_notification,
+    DockPanel, Empty, FrameList, Heading, Input, InputState, Menu, MenuItem, Notification,
+    Pagination, ResizableState, StackFrame, Switch, Tab, Tabs, Text, Variable, VariableList,
+    h_dock, init, open_menu, push_notification,
 };
 
 /// 观测夹具：所有要交互/断言的组件都在这一屏上。
@@ -321,4 +321,64 @@ impl Render for OverlayHarness {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div().size(rems(8.0))
     }
+}
+
+struct DockHarness {
+    state: Entity<ResizableState>,
+}
+
+impl Render for DockHarness {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(
+            h_dock("dock", &self.state)
+                .panel(
+                    DockPanel::new()
+                        .size(px(240.))
+                        .size_range(px(160.)..px(480.))
+                        .child(div().child("Left")),
+                )
+                .panel(DockPanel::new().child(div().child("Center"))),
+        )
+    }
+}
+
+#[gpui_kit::test]
+fn dock_handle_drag_resizes_left_panel(cx: &mut TestAppContext) {
+    cx.update(init);
+    let dock_state = cx.update(|cx| cx.new(|_| ResizableState::default()));
+    let harness_state = dock_state.clone();
+    let handle = common::open_window(cx, px(800.), px(600.), move |_, cx| {
+        cx.new(|_| DockHarness {
+            state: harness_state,
+        })
+    });
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+    })
+    .unwrap();
+    let size_at = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            f32::from(
+                dock_state
+                    .read(cx)
+                    .sizes()
+                    .first()
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        })
+    };
+    let before = size_at(cx);
+    // 分隔条位于左面板右缘（≈240px），向右拖 100px。
+    cx.update_window(handle, |_, window, cx| {
+        window.drag(point(px(244.), px(300.)), point(px(344.), px(300.)), cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    let after = size_at(cx);
+    assert!(
+        after - before > 40.0,
+        "拖动分隔条应加宽左面板（受 min/max 钳制）：{before} -> {after}"
+    );
 }
