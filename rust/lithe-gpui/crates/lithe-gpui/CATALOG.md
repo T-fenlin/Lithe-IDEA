@@ -29,7 +29,7 @@
 | --- | --- | --- | --- | --- |
 | 1 | Primitives | ✅ | Icon, Separator, Avatar, Badge, Tag, Label, Kbd, Spinner, Progress, Severity | 36 变体见 gallery |
 | 2 | Typography | ✅ | Heading(5 级), Text(4 变体), Code | |
-| 3 | Layout | ✅（部分） | Card, CardTitle, SectionHeader, Spacer | Resizable 样式化、Grid 助手待做；Dock 见章 3/4 备注 |
+| 3 | Layout | ✅（部分） | Card, CardTitle, SectionHeader, Spacer | Resizable 样式化、Grid 助手、**可滚动容器/Scrollbar 样式化**（base `Scrollbar`+`ScrollbarStyles`，gallery 暂用原生 `overflow_y_scroll`）待做；Dock 见章 3/4 备注 |
 | 4 | Window & Shell | ✅（部分） | TitleBar, StatusBar, Sidebar | Dock/面板系统（base dock 全套）按计划单独成批，见下"Dock 备忘" |
 | 5 | Buttons & Actions | ✅ | Button(5 变体×4 尺寸), IconButton, ButtonVariant, Link | Toggle/ToggleGroup 包装待做 |
 | 6 | Forms | ✅（部分） | Checkbox, Switch, Radio, Input(+InputState/InputEvent 再导出) | Textarea/NumberInput/Slider 包装待做 |
