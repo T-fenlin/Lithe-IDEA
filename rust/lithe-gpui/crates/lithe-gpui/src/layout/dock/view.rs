@@ -7,6 +7,7 @@ use gpui::{
 use super::{Dock, DockSide, Spot};
 use crate::{
     buttons::{Button, ButtonVariant},
+    i18n::text,
     layout::{FloatingPanel, resize_handle},
     primitives::{DragGhost, Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -77,15 +78,48 @@ impl Dock {
             ))
             .children(zoom.map(|id| {
                 let off = self.is_zoomed(&id);
-                Button::new("dock-zoom")
-                    .icon(if off {
-                        IconName::Minimize2
-                    } else {
-                        IconName::Maximize2
-                    })
-                    .variant(ButtonVariant::Ghost)
-                    .size(Size::Small)
-                    .on_click(cx.listener(move |dock, _, _, cx| dock.toggle_zoom(&id, cx)))
+                let close_id = id.clone();
+                let float_id = id.clone();
+                // The heading of the panel a side is showing: close it, float it, or
+                // fill the dock with it.
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_0p5()
+                    .child(
+                        Button::new("dock-close")
+                            .icon(IconName::X)
+                            .variant(ButtonVariant::Ghost)
+                            .size(Size::Small)
+                            .tooltip(text(cx, "dock.close", &[]))
+                            .on_click(cx.listener(move |dock, _, _, cx| dock.hide(&close_id, cx))),
+                    )
+                    .child(
+                        Button::new("dock-float")
+                            .icon(IconName::PictureInPicture2)
+                            .variant(ButtonVariant::Ghost)
+                            .size(Size::Small)
+                            .tooltip(text(cx, "dock.float", &[]))
+                            .on_click(
+                                cx.listener(move |dock, _, _, cx| dock.toggle_float(&float_id, cx)),
+                            ),
+                    )
+                    .child(
+                        Button::new("dock-zoom")
+                            .icon(if off {
+                                IconName::Minimize2
+                            } else {
+                                IconName::Maximize2
+                            })
+                            .variant(ButtonVariant::Ghost)
+                            .size(Size::Small)
+                            .tooltip(text(
+                                cx,
+                                if off { "dock.restore" } else { "dock.zoom" },
+                                &[],
+                            ))
+                            .on_click(cx.listener(move |dock, _, _, cx| dock.toggle_zoom(&id, cx))),
+                    )
             }))
             .into_any_element()
     }

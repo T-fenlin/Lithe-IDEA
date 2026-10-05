@@ -50,3 +50,8 @@ demo:
   change: {en-US: "%{change}% since yesterday", en-GB: "%{change}% since yesterday", de-DE: "%{change} % seit gestern", fr-FR: "%{change} % depuis hier", ja-JP: "昨日から%{change}%", zh-CN: "较昨日%{change}%", he-IL: "%{change}% מאז אתמול"}
 gallery:
   tagline: {en-US: "Component gallery", en-GB: "Component gallery", de-DE: "Komponentengalerie", fr-FR: "Galerie de composants", ja-JP: "コンポーネントギャラリー", he-IL: "גלריית רכיבים", zh-CN: "组件画廊"}
+dock:
+  close: {en-US: "Close", en-GB: "Close", de-DE: "Schließen", fr-FR: "Fermer", ja-JP: "閉じる", he-IL: "סגור", zh-CN: "关闭"}
+  float: {en-US: "Float", en-GB: "Float", de-DE: "Schweben lassen", fr-FR: "Détacher", ja-JP: "フロート", he-IL: "רחף", zh-CN: "浮动"}
+  zoom: {en-US: "Maximize", en-GB: "Maximize", de-DE: "Maximieren", fr-FR: "Agrandir", ja-JP: "最大化", he-IL: "הגדל", zh-CN: "最大化"}
+  restore: {en-US: "Restore", en-GB: "Restore", de-DE: "Wiederherstellen", fr-FR: "Restaurer", ja-JP: "元に戻す", he-IL: "שחזר", zh-CN: "还原"}

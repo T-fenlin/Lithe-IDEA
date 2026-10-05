@@ -115,6 +115,8 @@ pub struct Dock {
     active: [Option<usize>; 4],
     /// The panel filling the dock on its own, until it is restored.
     zoomed: Option<usize>,
+    /// The side each panel was last docked to, so a floated panel has a way home.
+    last_docked: Vec<DockSide>,
     sizes: [Rems; 4],
     limits: [SideLimits; 4],
     center: Center,
@@ -140,6 +142,7 @@ impl Dock {
             hidden: Vec::new(),
             active: [None; 4],
             zoomed: None,
+            last_docked: Vec::new(),
             sizes: [side, side, strip, strip],
             limits: [limits; 4],
             center: Rc::new(center),
@@ -158,6 +161,7 @@ impl Dock {
         self.panels.push(panel);
         self.spots.push(Spot::Docked(side));
         self.hidden.push(false);
+        self.last_docked.push(side);
         let slot = &mut self.active[side.index()];
         if slot.is_none() {
             *slot = Some(self.panels.len() - 1);
@@ -269,6 +273,7 @@ impl Dock {
             self.active[side.index()] = self.shown_on_side(side).first().copied();
         }
         if let Spot::Docked(side) = spot {
+            self.last_docked[ix] = side;
             self.active[side.index()] = Some(ix);
         }
         log::info!("dock: {id} {from:?} -> {spot:?}");
@@ -298,6 +303,18 @@ impl Dock {
             log::info!("dock: restored from zoom");
             cx.notify();
         }
+    }
+
+    /// Sends a docked panel afloat, and a floating one back where it was docked.
+    pub fn toggle_float(&mut self, id: &str, cx: &mut Context<Self>) {
+        let ix = self
+            .find(id)
+            .unwrap_or_else(|| panic!("no dock panel {id}"));
+        let spot = match self.spots[ix] {
+            Spot::Docked(_) => Spot::Floating { x: 160.0, y: 120.0 },
+            Spot::Floating { .. } => Spot::Docked(self.last_docked[ix]),
+        };
+        self.move_panel(id, spot, cx);
     }
 
     /// Zooms the panel, or restores the dock when it is the zoomed one.
@@ -370,6 +387,12 @@ impl Dock {
         for (id, spot) in &layout.spots {
             spots[self.find(id).expect("checked above")] = *spot;
         }
+        let mut last_docked = vec![DockSide::Left; self.panels.len()];
+        for (ix, spot) in spots.iter().enumerate() {
+            if let Spot::Docked(side) = spot {
+                last_docked[ix] = *side;
+            }
+        }
         let mut hidden = vec![false; self.panels.len()];
         for id in &layout.hidden {
             hidden[self.find(id).expect("checked above")] = true;
@@ -392,6 +415,7 @@ impl Dock {
             });
         }
         self.spots = spots;
+        self.last_docked = last_docked;
         self.hidden = hidden;
         self.active = active;
         self.sizes = layout.sizes.map(gpui::rems);
@@ -493,6 +517,19 @@ mod tests {
                 Some(1),
                 "a closed panel never leads"
             );
+        });
+    }
+
+    /// A floated panel has a way home: it returns to the side it was docked to.
+    #[gpui::test]
+    fn a_floated_panel_returns_to_the_side_it_was_docked_to(cx: &mut TestAppContext) {
+        let dock = bench(cx);
+        dock.update(cx, |dock, cx| {
+            dock.toggle_float("terminal", cx);
+            assert!(matches!(dock.spots[2], Spot::Floating { .. }));
+            dock.toggle_float("terminal", cx);
+            assert_eq!(dock.spots[2], Spot::Docked(DockSide::Bottom));
+            assert_eq!(dock.active[DockSide::Bottom.index()], Some(2));
         });
     }
 
