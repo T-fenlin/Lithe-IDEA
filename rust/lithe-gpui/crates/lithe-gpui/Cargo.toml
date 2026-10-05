@@ -34,6 +34,7 @@ log = "0.4"
 pulldown-cmark = { version = "0.13", default-features = false }
 qrcode = { version = "0.14", default-features = false }
 regex = "1"
+rust-i18n = "4.2"
 rqrr = { version = "0.11", default-features = false }
 rust-embed = "8.12"
 serde = { version = "1", features = ["derive"] }

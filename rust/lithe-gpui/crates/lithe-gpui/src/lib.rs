@@ -20,6 +20,8 @@ pub mod finance;
 pub mod forms;
 pub mod generative;
 pub mod git;
+rust_i18n::i18n!("locales", fallback = "en");
+
 pub mod i18n;
 pub mod interaction;
 pub mod layout;

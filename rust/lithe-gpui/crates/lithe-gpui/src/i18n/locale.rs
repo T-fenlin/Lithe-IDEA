@@ -87,10 +87,12 @@ pub const LOCALES: [Locale; 7] = [
 impl Locale {
     /// The locale with this tag; fails on one Ely does not list.
     pub fn of(tag: &str) -> Locale {
-        *LOCALES
-            .iter()
-            .find(|locale| locale.tag == tag)
-            .unwrap_or_else(|| panic!("no locale {tag:?}"))
+        Self::find(tag).unwrap_or_else(|| panic!("no locale {tag:?}"))
+    }
+
+    /// The locale with this tag, `None` when this crate does not list it.
+    pub fn find(tag: &str) -> Option<Locale> {
+        LOCALES.iter().copied().find(|locale| locale.tag == tag)
     }
 
     /// `value` with this locale's separators; a right-to-left locale leads its sign with a left-to-right mark, as CLDR does.

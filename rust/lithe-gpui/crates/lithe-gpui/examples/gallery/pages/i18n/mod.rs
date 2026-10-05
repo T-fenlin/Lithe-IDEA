@@ -2,7 +2,7 @@ use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px}
 use jiff::{Timestamp, tz::TimeZone};
 use lithe_gpui::{
     forms::{Choice, Select},
-    i18n::{I18n, LOCALES},
+    i18n::{Direction, LOCALES, Locale, locale, set_locale, text},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, Radius},
     typography::Ellipsis,
@@ -50,76 +50,6 @@ pub const PAGE: Page = Page {
 /// 1 September 2026, when the demo's folder was saved.
 const SAVED: i64 = 1_788_220_800;
 
-/// The gallery's messages, one catalog per listed locale.
-pub fn install(cx: &mut App) {
-    cx.set_global(
-        I18n::new("en-US")
-            .catalog(
-                "en-US",
-                &[
-                    ("welcome", "Welcome back, {name}"),
-                    ("files", "{count} files in {folder}"),
-                    ("saved", "Last saved {date}"),
-                    ("change", "{change}% since yesterday"),
-                ],
-            )
-            .catalog(
-                "en-GB",
-                &[
-                    ("welcome", "Welcome back, {name}"),
-                    ("files", "{count} files in {folder}"),
-                    ("saved", "Last saved {date}"),
-                    ("change", "{change}% since yesterday"),
-                ],
-            )
-            .catalog(
-                "de-DE",
-                &[
-                    ("welcome", "Willkommen zurück, {name}"),
-                    ("files", "{count} Dateien in {folder}"),
-                    ("saved", "Zuletzt gespeichert am {date}"),
-                    ("change", "{change} % seit gestern"),
-                ],
-            )
-            .catalog(
-                "fr-FR",
-                &[
-                    ("welcome", "Bon retour, {name}"),
-                    ("files", "{count} fichiers dans {folder}"),
-                    ("saved", "Enregistré le {date}"),
-                    ("change", "{change}\u{202f}% depuis hier"),
-                ],
-            )
-            .catalog(
-                "ja-JP",
-                &[
-                    ("welcome", "おかえりなさい、{name}さん"),
-                    ("files", "{folder}に{count}個のファイル"),
-                    ("saved", "最終保存：{date}"),
-                    ("change", "昨日から{change}%"),
-                ],
-            )
-            .catalog(
-                "zh-CN",
-                &[
-                    ("welcome", "欢迎回来，{name}"),
-                    ("files", "{folder}中有{count}个文件"),
-                    ("saved", "上次保存于{date}"),
-                    ("change", "较昨日{change}%"),
-                ],
-            )
-            .catalog(
-                "he-IL",
-                &[
-                    ("welcome", "ברוך שובך, {name}"),
-                    ("files", "{count} קבצים ב־{folder}"),
-                    ("saved", "נשמר לאחרונה ב־{date}"),
-                    ("change", "{change}% מאז אתמול"),
-                ],
-            ),
-    );
-}
-
 fn render(window: &mut Window, cx: &mut App) -> AnyElement {
     div()
         .child(messages(cx))
@@ -131,21 +61,25 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
 }
 
 fn messages(cx: &App) -> impl IntoElement + use<> {
-    let i18n = cx.global::<I18n>();
-    let locale = i18n.locale();
+    let locale = Locale::find(&locale()).unwrap_or(Locale::of("en-US"));
     let saved = Timestamp::from_second(SAVED).expect("a time");
     let lines = [
-        i18n.text("welcome", &[("name", "Ada")]),
-        i18n.text(
-            "files",
+        text(cx, "demo.welcome", &[("name", "Ada")]),
+        text(
+            cx,
+            "demo.files",
             &[("count", &locale.number(1204.0, 0)), ("folder", "Docs")],
         ),
-        i18n.text("saved", &[("date", &locale.date(saved, &TimeZone::UTC))]),
-        i18n.text("change", &[("change", &locale.number(-3.5, 1))]),
+        text(
+            cx,
+            "demo.saved",
+            &[("date", &locale.date(saved, &TimeZone::UTC))],
+        ),
+        text(cx, "demo.change", &[("change", &locale.number(-3.5, 1))]),
     ];
     section(
-        "I18nProvider · Trans / LocalizedText",
-        "One locale for the app, a catalog of messages per locale. Every catalog holds the same keys; a missing key or argument fails.",
+        "rust_i18n · messages read from locales/ui.yml",
+        "One global locale, one catalogue per language, read through the same rust_i18n the host uses. A message with an unfilled argument fails; an unknown key falls back to English.",
         cx,
     )
     .child(
@@ -160,7 +94,7 @@ fn messages(cx: &App) -> impl IntoElement + use<> {
                             LOCALES.map(|locale| Choice::new(locale.tag, locale.name)),
                         )
                         .selected(locale.tag)
-                        .on_change(|tag, _, cx| I18n::set_locale(tag, cx)),
+                        .on_change(|tag, _, cx| set_locale(tag, cx)),
                     ),
                 ),
                 cx,
@@ -207,7 +141,9 @@ fn formats(cx: &App) -> impl IntoElement + use<> {
 
 fn mirrored(cx: &App) -> impl IntoElement + use<> {
     let theme = cx.theme();
-    let direction = cx.global::<I18n>().locale().direction;
+    let direction = Locale::find(&locale())
+        .map(|locale| locale.direction)
+        .unwrap_or(Direction::Ltr);
     let file = |name: &'static str, size: &'static str| {
         direction
             .row(div())

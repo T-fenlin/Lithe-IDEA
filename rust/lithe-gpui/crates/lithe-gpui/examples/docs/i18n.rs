@@ -1,3 +1,9 @@
+//! One locale for the window: component copy, numbers and dates all follow it.
+//!
+//! Messages live in the crate's `locales/ui.yml` and are read through
+//! `rust_i18n`, the same mechanism gpui-kit and the Lithe host use, so
+//! `set_locale` moves everything at once.
+
 use gpui::{
     App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Window,
     WindowOptions, div,
@@ -5,7 +11,7 @@ use gpui::{
 use lithe_gpui::{
     Assets,
     buttons::Button,
-    i18n::{Direction, I18n},
+    i18n::{Direction, Locale, locale, set_locale, text},
     primitives::FocusScope,
     theme::ActiveTheme,
 };
@@ -17,14 +23,22 @@ struct Words {
 impl Render for Words {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let i18n = cx.global::<I18n>();
-        let locale = i18n.locale();
-        let greeting = i18n.text("greeting", &[("name", "Ada")]);
-        let files = i18n.text("files", &[("count", &locale.number(1234.0, 0))]);
+        let locale = Locale::find(&locale()).unwrap_or(Locale::of("en-US"));
+        let greeting = text(cx, "demo.welcome", &[("name", "Ada")]);
+        let files = text(
+            cx,
+            "demo.files",
+            &[("count", &locale.number(1234.0, 0)), ("folder", "Docs")],
+        );
         let next = if locale.direction == Direction::Rtl {
             "en-US"
         } else {
             "he-IL"
+        };
+        let switcher = if locale.direction == Direction::Rtl {
+            "English"
+        } else {
+            "עברית"
         };
         let row = locale
             .direction
@@ -44,8 +58,8 @@ impl Render for Words {
             .child(row)
             .child(
                 Button::new("locale")
-                    .label(i18n.text("switch", &[]))
-                    .on_click(move |_, _, cx| I18n::set_locale(next, cx)),
+                    .label(switcher)
+                    .on_click(move |_, _, cx| set_locale(next, cx)),
             )
     }
 }
@@ -55,25 +69,6 @@ fn main() {
         .with_assets(Assets)
         .run(|cx: &mut App| {
             lithe_gpui::init(cx);
-            cx.set_global(
-                I18n::new("en-US")
-                    .catalog(
-                        "en-US",
-                        &[
-                            ("greeting", "Hello, {name}"),
-                            ("files", "{count} files"),
-                            ("switch", "עברית"),
-                        ],
-                    )
-                    .catalog(
-                        "he-IL",
-                        &[
-                            ("greeting", "שלום, {name}"),
-                            ("files", "{count} קבצים"),
-                            ("switch", "English"),
-                        ],
-                    ),
-            );
             cx.open_window(WindowOptions::default(), |window, cx| {
                 cx.new(|cx| {
                     let focus = cx.focus_handle();

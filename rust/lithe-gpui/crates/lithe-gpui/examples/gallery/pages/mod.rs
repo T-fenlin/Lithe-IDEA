@@ -105,7 +105,6 @@ pub const ALL: &[Page] = &[
     rendering::PAGE,
 ];
 
-pub use i18n::install as install_i18n;
 pub use interaction::bind_keys;
 pub use shell::{open_about, open_managed};
 

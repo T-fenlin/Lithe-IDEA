@@ -118,7 +118,6 @@ fn launch(start: Start, cx: &mut App) -> WindowHandle<shell::Gallery> {
     #[cfg(debug_assertions)]
     lithe_gpui::tooling::install_inspector(cx);
     pages::bind_keys(cx);
-    pages::install_i18n(cx);
     cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
     cx.on_action(|_: &Quit, cx| cx.quit());
     menus(cx);
