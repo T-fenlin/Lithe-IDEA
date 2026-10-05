@@ -7,7 +7,7 @@ use gpui::{
 use crate::{
     buttons::Button,
     data_display::{Changelog, Release},
-    forms::{Run, TextInput},
+    forms::{InputState, Run},
     overlays::Dialog,
     settings::{KeyboardShortcutsList, Shortcut},
 };
@@ -17,7 +17,7 @@ use crate::{
 pub struct KeyboardShortcutCheatsheet {
     id: ElementId,
     shortcuts: Vec<Shortcut>,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     on_close: Run,
 }
 
@@ -26,7 +26,7 @@ impl KeyboardShortcutCheatsheet {
     pub fn new(
         id: impl Into<ElementId>,
         shortcuts: impl IntoIterator<Item = Shortcut>,
-        search: &Entity<TextInput>,
+        search: &Entity<InputState>,
         on_close: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {

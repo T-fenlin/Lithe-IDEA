@@ -11,7 +11,7 @@ use crate::{
         SocketState, TypeKind, WebSocketConsole,
     },
     editor::CodeEditor,
-    forms::TextInput,
+    forms::InputState,
 };
 
 fn builder(bench: &Bench, _: &mut Window, _: &mut App, owner: Entity<Bench>) -> AnyElement {
@@ -93,7 +93,7 @@ fn send_rests_without_an_address_and_while_sending(cx: &mut TestAppContext) {
 }
 
 fn console(bench: &Bench, window: &mut Window, cx: &mut App, owner: Entity<Bench>) -> AnyElement {
-    let draft = window.use_keyed_state("draft", cx, TextInput::new);
+    let draft = window.use_keyed_state("draft", cx, InputState::new);
     let now: jiff::Timestamp = "2026-09-27T12:00:00Z".parse().expect("a time");
     let state = match bench.choice {
         0 => SocketState::Open,
@@ -178,7 +178,7 @@ fn graph(bench: &Bench, window: &mut Window, cx: &mut App, owner: Entity<Bench>)
     ) else {
         return div().into_any_element();
     };
-    let search = window.use_keyed_state("search", cx, TextInput::new);
+    let search = window.use_keyed_state("search", cx, InputState::new);
     GraphQLExplorer::new("graph", [], &query, &variables, &search)
         .on_run(move |query, variables, _, cx| say(&owner, format!("{query} {variables}"), cx))
         .into_any_element()
@@ -259,7 +259,7 @@ fn schema(_: &Bench, window: &mut Window, cx: &mut App, owner: Entity<Bench>) ->
     let variables = window.use_keyed_state("variables", cx, |window, cx| {
         CodeEditor::new("", window, cx)
     });
-    let search = window.use_keyed_state("search", cx, TextInput::new);
+    let search = window.use_keyed_state("search", cx, InputState::new);
     let order = SchemaType {
         name: "Order".into(),
         kind: TypeKind::Object,
@@ -283,7 +283,7 @@ fn enter_on_a_field_hands_its_path(cx: &mut TestAppContext) {
 }
 
 fn log(_: &Bench, window: &mut Window, cx: &mut App, owner: Entity<Bench>) -> AnyElement {
-    let draft = window.use_keyed_state("draft", cx, TextInput::new);
+    let draft = window.use_keyed_state("draft", cx, InputState::new);
     let now: jiff::Timestamp = "2026-09-27T12:00:00Z".parse().expect("a time");
     let messages = (0..12).map(|ix| SocketMessage {
         direction: Direction::Received,

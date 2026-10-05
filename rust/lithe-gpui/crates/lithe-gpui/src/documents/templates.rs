@@ -9,7 +9,7 @@ use gpui::{
 use super::render::MarkdownRenderer;
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Choice, ChoiceChips, Input, Pick, TextInput},
+    forms::{Choice, ChoiceChips, Input, InputState, Pick},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
@@ -29,7 +29,7 @@ pub struct Template {
 
 /// What the picker holds: its search, the category, and the template in view.
 struct Picking {
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     category: SharedString,
     highlighted: usize,
 }
@@ -82,7 +82,7 @@ impl RenderOnce for TemplatePicker {
             (self.id.clone(), "picking"),
             cx,
             |window, cx: &mut Context<Picking>| Picking {
-                search: cx.new(|cx| TextInput::new(window, cx).placeholder("Find a template")),
+                search: cx.new(|cx| InputState::new(window, cx).placeholder("Find a template")),
                 category: ALL.into(),
                 highlighted: 0,
             },

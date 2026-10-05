@@ -5,7 +5,7 @@ use gpui::{
     prelude::*,
 };
 
-use super::{Highlight, Input, TextInput};
+use super::{Highlight, Input, InputState};
 use crate::{
     theme::{ActiveTheme, Size, TextSize},
     typography::format::{self, Separators},
@@ -245,13 +245,13 @@ pub fn expression_highlights(source: &str, cx: &App) -> Vec<(Range<usize>, Highl
 /// A formula field: colored as you type, with its value or its problem below.
 #[derive(IntoElement)]
 pub struct ExpressionInput {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     variables: Vec<(SharedString, f64)>,
 }
 
 impl ExpressionInput {
     /// Give the state `expression_highlights` as its highlighter.
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
             variables: Vec::new(),

@@ -6,7 +6,7 @@ use lithe_gpui::{
         EditMode, Reaction, Suggestion, SuggestionMode, Thread, TrackChanges, accept, suggested,
         toggled,
     },
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     theme::ActiveTheme,
 };
 
@@ -90,7 +90,7 @@ fn change(
 }
 
 /// Adds the field's words to the thread keyed `key` as yours, and clears it.
-fn answer(all: &Entity<Vec<Thread>>, key: &SharedString, field: &Entity<TextInput>, cx: &mut App) {
+fn answer(all: &Entity<Vec<Thread>>, key: &SharedString, field: &Entity<InputState>, cx: &mut App) {
     let body = field.read(cx).text().trim().to_string();
     field.update(cx, |field, cx| field.set_text("", cx));
     change(all, key, cx, |thread| {
@@ -103,9 +103,9 @@ fn answer(all: &Entity<Vec<Thread>>, key: &SharedString, field: &Entity<TextInpu
     });
 }
 
-fn reply_field(key: &'static str, window: &mut Window, cx: &mut App) -> Entity<TextInput> {
+fn reply_field(key: &'static str, window: &mut Window, cx: &mut App) -> Entity<InputState> {
     window.use_keyed_state(key, cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Reply")
+        InputState::new(window, cx).placeholder("Reply")
     })
 }
 
@@ -272,7 +272,7 @@ pub fn changes(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let base = keep("collab-base", || BASE.to_string(), window, cx);
     let now_base = base.read(cx).clone();
     let draft = window.use_keyed_state("collab-suggesting", cx, |window, cx| {
-        let mut input = TextInput::new(window, cx);
+        let mut input = InputState::new(window, cx);
         input.set_text(
             "A tint blends every color toward white. Half a lift sits midway.",
             cx,

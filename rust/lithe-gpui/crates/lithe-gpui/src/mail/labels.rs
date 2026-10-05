@@ -9,7 +9,7 @@ use gpui::{
 use crate::{
     data_display::color_mark,
     forms::{
-        Choice, Down, Enter, OnValue, OnValues, Pick, SearchInput, TextInput, Up, marked_row,
+        Choice, Down, Enter, InputState, OnValue, OnValues, Pick, SearchInput, Up, marked_row,
         reveal, revealer,
     },
     layout::on_axis,
@@ -42,7 +42,7 @@ pub(super) fn hue_dot(name: &str, hue: usize, cx: &App) -> Div {
 
 /// The search field, the row under the keyboard, the query it was set for, and the list's scroll.
 struct Finding {
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     at: usize,
     query: String,
     revealed: Option<usize>,
@@ -126,7 +126,8 @@ impl RenderOnce for LabelPicker {
             (self.id.clone(), "finding"),
             cx,
             |window, cx: &mut Context<Finding>| Finding {
-                search: cx.new(|cx| TextInput::new(window, cx).placeholder("Find or make a label")),
+                search: cx
+                    .new(|cx| InputState::new(window, cx).placeholder("Find or make a label")),
                 at: 0,
                 query: String::new(),
                 revealed: None,

@@ -4,7 +4,7 @@ use gpui::{
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
-    forms::{History, Input, TextInput},
+    forms::{History, Input, InputState},
     interaction::{RovingFocus, ScrollSync},
     lists::{ListItem, SelectableList},
     primitives::{FocusRing, Icon, IconName},
@@ -232,7 +232,7 @@ pub fn focus(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     );
     let field = window.use_keyed_state("interaction-autofocus", cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Focused as it appears")
+        InputState::new(window, cx).placeholder("Focused as it appears")
     });
     let now = state.read(cx);
     let (shown, tool, fruit) = (now.field, now.tool.clone(), now.fruit.clone());

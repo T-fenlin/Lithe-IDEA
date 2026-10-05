@@ -4,7 +4,7 @@ use gpui::{
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
-    forms::{Choice, TextInput},
+    forms::{Choice, InputState},
     layout::Sidebar,
     navigation::{
         Anchor, BackForwardNavigation, GoToLine, NavGroup, NavItem, NavigationMenu, Sections,
@@ -212,8 +212,8 @@ pub fn contents(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 }
 
 pub fn go_to_line(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
-    let state: Entity<TextInput> = window.use_keyed_state("goto-line", cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Line or line:column")
+    let state: Entity<InputState> = window.use_keyed_state("goto-line", cx, |window, cx| {
+        InputState::new(window, cx).placeholder("Line or line:column")
     });
     let went = keep("goto-went", || None::<(usize, Option<usize>)>, window, cx);
     let caption = match *went.read(cx) {

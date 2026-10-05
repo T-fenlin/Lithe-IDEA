@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     forms::{
-        Choice, EmojiPicker, Face, Input, InputEvent, Run, Select, TextInput, dropdown,
+        Choice, EmojiPicker, Face, Input, InputEvent, InputState, Run, Select, dropdown,
         float_height, picker_field, surface,
     },
     lists::{ListItem, SelectableList},
@@ -71,7 +71,7 @@ struct Draft {
     seed: Option<Status>,
     emoji: Option<SharedString>,
     clear: ClearAfter,
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     _changes: Subscription,
 }
 
@@ -141,7 +141,7 @@ impl RenderOnce for StatusSetter {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let seed = self.status.clone();
         let draft = window.use_keyed_state((self.id.clone(), "draft"), cx, |window, cx| {
-            let input = cx.new(|cx| TextInput::new(window, cx).placeholder("What's your status?"));
+            let input = cx.new(|cx| InputState::new(window, cx).placeholder("What's your status?"));
             let changes = cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
                 if *event == InputEvent::Changed {
                     cx.notify();

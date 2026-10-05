@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     feedback::InlineMessage,
-    forms::{Enter, Input, TextInput},
+    forms::{Enter, Input, InputState},
     primitives::{FocusRing, Icon, IconName, Image, Severity, checked_ratio, framed, tab_stop},
     theme::{ActiveTheme, IconSize, Radius, Size},
 };
@@ -81,7 +81,7 @@ impl RenderOnce for Captcha {
             .on_answer
             .unwrap_or_else(|| panic!("captcha {id:?} has no on_answer"));
         let field = window.use_keyed_state((id.clone(), "field"), cx, |window, cx| {
-            TextInput::new(window, cx).placeholder("Type the characters")
+            InputState::new(window, cx).placeholder("Type the characters")
         });
         let passed = self.state == CaptchaState::Passed;
         if field.read(cx).is_disabled() != passed {

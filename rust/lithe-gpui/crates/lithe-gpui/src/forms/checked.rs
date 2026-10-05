@@ -6,7 +6,7 @@ use gpui::{
 };
 use regex::Regex;
 
-use super::{Input, TextInput};
+use super::{Input, InputState};
 use crate::{
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Size, TextSize},
@@ -30,7 +30,7 @@ pub fn is_url(text: &str) -> bool {
 
 /// A field checked once focus leaves it; a note explains a miss.
 fn checked(
-    state: &Entity<TextInput>,
+    state: &Entity<InputState>,
     icon: IconName,
     valid: fn(&str) -> bool,
     note: &'static str,
@@ -66,12 +66,12 @@ fn checked(
 /// An email field, checked when focus leaves it.
 #[derive(IntoElement)]
 pub struct EmailInput {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     size: Size,
 }
 
 impl EmailInput {
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
             size: Size::default(),
@@ -101,12 +101,12 @@ impl RenderOnce for EmailInput {
 /// A link field, checked when focus leaves it.
 #[derive(IntoElement)]
 pub struct UrlInput {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     size: Size,
 }
 
 impl UrlInput {
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
             size: Size::default(),

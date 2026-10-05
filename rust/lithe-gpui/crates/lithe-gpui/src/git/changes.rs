@@ -8,7 +8,7 @@ use gpui::{
 use super::badges::GitStatusBadge;
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Checkbox, Input, Submit, TextInput},
+    forms::{Checkbox, Input, InputState, Submit},
     lists::GitStatus,
     primitives::IconName,
     theme::{ActiveTheme, Radius, Size, TextSize},
@@ -250,8 +250,8 @@ type Run = Rc<dyn Fn(&mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct CommitInput {
     id: ElementId,
-    subject: Entity<TextInput>,
-    body: Entity<TextInput>,
+    subject: Entity<InputState>,
+    body: Entity<InputState>,
     branch: SharedString,
     staged: usize,
     amend: bool,
@@ -262,8 +262,8 @@ pub struct CommitInput {
 impl CommitInput {
     pub fn new(
         id: impl Into<ElementId>,
-        subject: &Entity<TextInput>,
-        body: &Entity<TextInput>,
+        subject: &Entity<InputState>,
+        body: &Entity<InputState>,
         branch: impl Into<SharedString>,
         staged: usize,
     ) -> Self {

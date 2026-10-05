@@ -11,7 +11,7 @@ use lithe_gpui::{
         TooltipTerm, ZenMode, markdown_highlights, outline,
     },
     editor::FindWidget,
-    forms::TextInput,
+    forms::InputState,
     navigation::{Sections, TableOfContents},
     theme::{ActiveTheme, Radius},
 };
@@ -74,9 +74,9 @@ fn field(
     hint: &'static str,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     window.use_keyed_state(key, cx, move |window, cx| {
-        TextInput::new(window, cx).placeholder(hint)
+        InputState::new(window, cx).placeholder(hint)
     })
 }
 
@@ -128,7 +128,7 @@ pub fn reading(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let zen = keep("read-zen", || false, window, cx);
     let now_zen = *zen.read(cx);
     let draft = window.use_keyed_state("read-draft", cx, |window, cx| {
-        let mut draft = TextInput::new(window, cx).multi_line(6, 18).highlighter(markdown_highlights);
+        let mut draft = InputState::new(window, cx).multi_line(6, 18).highlighter(markdown_highlights);
         draft.set_text("# A quiet page\n\nEverything else folds away while you write. Press Escape to come back.", cx);
         draft
     });

@@ -4,7 +4,7 @@ use gpui::{
 use lithe_gpui::{
     buttons::{ActionBar, Button, ButtonVariant},
     forms::{
-        DirtyIndicator, FieldArray, Form, FormField, FormSection, InlineForm, Input, TextInput,
+        DirtyIndicator, FieldArray, Form, FormField, FormSection, InlineForm, Input, InputState,
         is_email,
     },
 };
@@ -21,15 +21,15 @@ fn ready(now: &Saved) -> bool {
     !now.0.trim().is_empty() && is_email(&now.1)
 }
 
-fn snapshot(fields: &[Entity<TextInput>; 3], links: &[Entity<TextInput>], cx: &App) -> Saved {
-    let text = |field: &Entity<TextInput>| field.read(cx).text().to_string();
+fn snapshot(fields: &[Entity<InputState>; 3], links: &[Entity<InputState>], cx: &App) -> Saved {
+    let text = |field: &Entity<InputState>| field.read(cx).text().to_string();
     let [a, b, c] = fields.each_ref().map(text);
     (a, b, c, links.iter().map(text).collect())
 }
 
-fn link(text: String, window: &mut Window, cx: &mut App) -> Entity<TextInput> {
+fn link(text: String, window: &mut Window, cx: &mut App) -> Entity<InputState> {
     cx.new(|cx| {
-        let mut input = TextInput::new(window, cx).placeholder("https://");
+        let mut input = InputState::new(window, cx).placeholder("https://");
         input.set_text(text, cx);
         input
     })
@@ -45,7 +45,7 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let bio = field("form-bio", window, cx, |input| {
         input.multi_line(3, 5).placeholder("A line about you")
     });
-    let links = keep("form-links", Vec::<Entity<TextInput>>::new, window, cx);
+    let links = keep("form-links", Vec::<Entity<InputState>>::new, window, cx);
     let saved = keep("form-saved", Saved::default, window, cx);
     let sent = keep("form-sent", || 0usize, window, cx);
     let fields = [name.clone(), email.clone(), bio.clone()];

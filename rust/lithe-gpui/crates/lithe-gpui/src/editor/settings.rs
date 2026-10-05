@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant, SegmentedControl},
-    forms::{Choice, JsonInput, NumberInput, Select, Switch, TextInput},
+    forms::{Choice, InputState, JsonInput, NumberInput, Select, Switch},
     primitives::IconName,
     theme::{ActiveTheme, Radius, Size, TextSize},
     typography::format::decimals,
@@ -78,7 +78,7 @@ pub struct SettingsEditor {
     id: ElementId,
     groups: Vec<(SharedString, Vec<Setting>)>,
     section: usize,
-    json: Option<Entity<TextInput>>,
+    json: Option<Entity<InputState>>,
     on_change: Option<OnChange>,
     on_section: Option<OnIndex>,
     on_json: Option<OnFlag>,
@@ -111,7 +111,7 @@ impl SettingsEditor {
     }
 
     /// Shows the JSON, held in `field`; seed it with `settings_json`.
-    pub fn json(mut self, field: &Entity<TextInput>) -> Self {
+    pub fn json(mut self, field: &Entity<InputState>) -> Self {
         self.json = Some(field.clone());
         self
     }

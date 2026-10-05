@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant, SegmentedControl},
-    forms::{FormField, Input, TextInput},
+    forms::{FormField, Input, InputState},
 };
 
 /// How requests reach the network: straight, through the system's proxy, or through one given here.
@@ -42,9 +42,9 @@ pub fn manual(host: &str, port: &str, bypass: &str) -> Option<Proxy> {
 struct Fields {
     seed: Proxy,
     way: SharedString,
-    host: Entity<TextInput>,
-    port: Entity<TextInput>,
-    bypass: Entity<TextInput>,
+    host: Entity<InputState>,
+    port: Entity<InputState>,
+    bypass: Entity<InputState>,
 }
 
 type OnProxy = Rc<dyn Fn(Proxy, &mut Window, &mut App)>;
@@ -92,7 +92,7 @@ impl RenderOnce for ProxySettings {
             };
             let mut field = |text: String| {
                 cx.new(|cx| {
-                    let mut input = TextInput::new(window, cx);
+                    let mut input = InputState::new(window, cx);
                     input.set_text(text, cx);
                     input
                 })
@@ -122,7 +122,7 @@ impl RenderOnce for ProxySettings {
                 fields.bypass.clone(),
             )
         };
-        let text = |input: &Entity<TextInput>| input.read(cx).text().to_string();
+        let text = |input: &Entity<InputState>| input.read(cx).text().to_string();
         let read = match way.as_ref() {
             "off" => Some(Proxy::Off),
             "system" => Some(Proxy::System),

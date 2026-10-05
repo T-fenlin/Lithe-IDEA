@@ -3,7 +3,7 @@ use gpui::{
 };
 use lithe_gpui::{
     collab::{FollowMode, LiveIndicator, Peer, PresenceAvatars, RemoteCursor, RemoteSelection},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     theme::{ActiveTheme, TextSize},
 };
 
@@ -38,9 +38,9 @@ pub fn you() -> Peer {
 
 const DRAFT: &str = "A lift blends a color toward white.\nHalf a lift sits midway; a full lift is white itself.\nIn dark, accents lift further so they read with the same weight.";
 
-fn draft(window: &mut Window, cx: &mut App) -> Entity<TextInput> {
+fn draft(window: &mut Window, cx: &mut App) -> Entity<InputState> {
     window.use_keyed_state("collab-draft", cx, |window, cx| {
-        let mut input = TextInput::new(window, cx).multi_line(3, 6);
+        let mut input = InputState::new(window, cx).multi_line(3, 6);
         input.set_text(DRAFT, cx);
         input
     })

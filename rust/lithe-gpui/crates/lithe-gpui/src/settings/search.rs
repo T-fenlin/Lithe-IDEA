@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     lists::{ListItem, SelectableList},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, TextSize},
@@ -45,7 +45,7 @@ type OnKey = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 pub struct SettingsSearch {
     id: ElementId,
     entries: Vec<SettingEntry>,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     on_pick: Option<OnKey>,
 }
 
@@ -54,7 +54,7 @@ impl SettingsSearch {
     pub fn new(
         id: impl Into<ElementId>,
         entries: impl IntoIterator<Item = SettingEntry>,
-        search: &Entity<TextInput>,
+        search: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),

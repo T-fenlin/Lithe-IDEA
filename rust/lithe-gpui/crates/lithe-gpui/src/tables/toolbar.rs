@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Run, SearchInput, TextInput},
+    forms::{InputState, Run, SearchInput},
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
     theme::{ActiveTheme, Density, Size},
@@ -20,7 +20,7 @@ type OnDensity = Rc<dyn Fn(Density, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct TableToolbar {
     id: ElementId,
-    search: Option<Entity<TextInput>>,
+    search: Option<Entity<InputState>>,
     filter: Option<(usize, Run)>,
     columns: Vec<(SharedString, SharedString)>,
     hidden: Vec<SharedString>,
@@ -44,7 +44,7 @@ impl TableToolbar {
     }
 
     /// A search field over the owner's text; hand its text to the table's `query`.
-    pub fn search(mut self, field: &Entity<TextInput>) -> Self {
+    pub fn search(mut self, field: &Entity<InputState>) -> Self {
         self.search = Some(field.clone());
         self
     }

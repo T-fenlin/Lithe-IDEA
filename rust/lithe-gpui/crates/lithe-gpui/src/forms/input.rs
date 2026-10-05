@@ -3,7 +3,7 @@ use gpui::{
     RenderOnce, Styled, Window, div, prelude::*,
 };
 
-use super::TextInput;
+use super::InputState;
 use crate::{
     buttons::Button,
     primitives::{Icon, IconName},
@@ -13,7 +13,7 @@ use crate::{
 /// A text field's frame: border, focus, and room for things before and after.
 #[derive(IntoElement)]
 pub struct Input {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     size: Size,
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
@@ -22,7 +22,7 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
             size: Size::default(),
@@ -156,13 +156,13 @@ impl RenderOnce for Input {
 /// A masked field with a lock before it and an eye that shows the text.
 #[derive(IntoElement)]
 pub struct PasswordInput {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     size: Size,
 }
 
 impl PasswordInput {
-    /// Build the state with `TextInput::masked`.
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    /// Build the state with `InputState::masked`.
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
             size: Size::default(),

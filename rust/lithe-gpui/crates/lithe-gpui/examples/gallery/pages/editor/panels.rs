@@ -4,7 +4,7 @@ use lithe_gpui::{
         ConsoleEntry, DebugConsole, Extension, ExtensionAction, ExtensionState, ExtensionsPanel,
         OutputPanel, Problem, ProblemsPanel,
     },
-    forms::TextInput,
+    forms::InputState,
     primitives::Severity,
     typography::Caption,
 };
@@ -135,7 +135,7 @@ pub fn problems_and_output(window: &mut Window, cx: &mut App) -> impl IntoElemen
 }
 
 pub fn console_and_extensions(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
-    let field = window.use_keyed_state("panels-console-field", cx, TextInput::new);
+    let field = window.use_keyed_state("panels-console-field", cx, InputState::new);
     let entries = keep(
         "panels-console",
         || {

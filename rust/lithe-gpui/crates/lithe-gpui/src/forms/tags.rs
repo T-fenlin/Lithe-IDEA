@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use super::{
-    Choice, InputEvent, TextInput,
+    Choice, InputEvent, InputState,
     combobox::matching,
     options::{Pick, Popup, step},
     select::{Picker, measure_anchor},
@@ -20,7 +20,7 @@ use crate::{
 type OnChange = Rc<dyn Fn(Vec<SharedString>, &mut Window, &mut App)>;
 
 struct Tags {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     tags: Vec<SharedString>,
     on_change: Option<OnChange>,
     dismissed: bool,
@@ -113,7 +113,7 @@ impl RenderOnce for TagInput {
         let placeholder = self.placeholder.clone();
         let state =
             window.use_keyed_state(self.id.clone(), cx, |window, cx: &mut Context<Tags>| {
-                let input = cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder));
+                let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
                 let events = cx.subscribe_in(&input, window, |tags, input, event, window, cx| {
                     if *event == InputEvent::Changed {
                         tags.dismissed = false;

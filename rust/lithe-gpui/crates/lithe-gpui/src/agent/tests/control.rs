@@ -6,14 +6,14 @@ use gpui::{
 use super::{press, settle};
 use crate::{
     agent::{CostBreakdown, HumanInputRequest},
-    forms::{self, TextInput},
+    forms::{self, InputState},
     primitives::FocusNext,
     theme::Theme,
 };
 
 /// A question with two answers to pick, and the answers given; once answered, it shows the first.
 struct Asked {
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     answers: Vec<String>,
 }
 
@@ -47,7 +47,7 @@ fn asked(cx: &mut TestAppContext) -> (Entity<Asked>, &mut VisualTestContext) {
         cx.bind_keys([KeyBinding::new("tab", FocusNext, None)]);
     });
     let (view, cx) = cx.add_window_view(|window, cx| Asked {
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         answers: Vec::new(),
     });
     cx.update(|window, _| window.activate_window());

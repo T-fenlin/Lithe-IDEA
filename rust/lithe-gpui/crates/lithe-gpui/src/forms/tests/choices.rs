@@ -6,7 +6,7 @@ use gpui::{
 use super::setup;
 use crate::{
     forms::{
-        Checkbox, Choice, Combobox, MultiSelect, RadioGroup, Rating, Select, Slider, TextInput,
+        Checkbox, Choice, Combobox, InputState, MultiSelect, RadioGroup, Rating, Select, Slider,
     },
     motion,
     theme::{ActiveTheme, Size, Theme},
@@ -100,7 +100,7 @@ enum Kind {
 /// A list of thirty rows with r25 chosen, low in the window, and what each press picked.
 struct Long {
     kind: Kind,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     picks: Vec<String>,
 }
 
@@ -138,7 +138,7 @@ fn press_the_foot(kind: Kind, cx: &mut TestAppContext) -> Vec<String> {
     cx.update(|cx| Theme::update(cx, |theme| theme.reduced_motion = true));
     let (view, cx) = cx.add_window_view(|window, cx| Long {
         kind,
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         picks: Vec::new(),
     });
     cx.update(|window, _| window.activate_window());
@@ -289,7 +289,7 @@ fn a_full_enter_press_opens_a_multi_select_and_keeps_it_open(cx: &mut TestAppCon
 }
 
 struct Typed {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     chosen: Option<SharedString>,
 }
 
@@ -325,7 +325,7 @@ fn typed<'a>(
     setup(cx);
     let chosen = chosen.map(|value| SharedString::from(value.to_string()));
     cx.add_window_view(move |window, cx| Typed {
-        state: cx.new(|cx| TextInput::new(window, cx)),
+        state: cx.new(|cx| InputState::new(window, cx)),
         chosen,
     })
 }
@@ -396,7 +396,7 @@ fn a_disabled_rating_ignores_the_arrows(cx: &mut TestAppContext) {
 }
 
 struct Free {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
 }
 
 impl Render for Free {
@@ -410,7 +410,7 @@ fn a_free_combobox_keeps_the_text_it_mounts_with(cx: &mut TestAppContext) {
     setup(cx);
     let (view, cx) = cx.add_window_view(|window, cx| Free {
         state: cx.new(|cx| {
-            let mut input = TextInput::new(window, cx);
+            let mut input = InputState::new(window, cx);
             input.set_text("custom label", cx);
             input
         }),

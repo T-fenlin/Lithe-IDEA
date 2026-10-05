@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     data_display::{Avatar, Presence},
-    forms::{AvatarUpload, EmailInput, FormField, Input, TextInput, is_email},
+    forms::{AvatarUpload, EmailInput, FormField, Input, InputState, is_email},
     layout::Card,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, AvatarSize, IconSize, TextSize},
@@ -157,11 +157,11 @@ type OnProfile = Rc<dyn Fn(&Profile, &mut Window, &mut App)>;
 /// The editor's own fields, filled from the profile they started as.
 struct Fields {
     seed: Profile,
-    name: Entity<TextInput>,
-    username: Entity<TextInput>,
-    email: Entity<TextInput>,
-    bio: Entity<TextInput>,
-    location: Entity<TextInput>,
+    name: Entity<InputState>,
+    username: Entity<InputState>,
+    email: Entity<InputState>,
+    bio: Entity<InputState>,
+    location: Entity<InputState>,
     picture: Option<PathBuf>,
 }
 
@@ -170,7 +170,7 @@ impl Fields {
         let mut field = |text: &SharedString, lines: bool| {
             let text = text.to_string();
             cx.new(|cx| {
-                let input = TextInput::new(window, cx);
+                let input = InputState::new(window, cx);
                 let mut input = if lines { input.multi_line(3, 6) } else { input };
                 input.set_text(text, cx);
                 input
@@ -188,7 +188,7 @@ impl Fields {
     }
 
     fn read(&self, cx: &App) -> Profile {
-        let text = |input: &Entity<TextInput>| {
+        let text = |input: &Entity<InputState>| {
             SharedString::from(input.read(cx).text().trim().to_string())
         };
         Profile {

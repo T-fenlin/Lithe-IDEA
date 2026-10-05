@@ -5,7 +5,7 @@ use gpui::{
     prelude::*,
 };
 
-use super::{Highlight, Input, TextInput};
+use super::{Highlight, Input, InputState};
 use crate::theme::{ActiveTheme, Size, TextSize};
 
 /// What a span of source is.
@@ -148,12 +148,12 @@ pub fn json_highlights(source: &str, cx: &App) -> Vec<(Range<usize>, Highlight)>
 /// A one-line code field in the mono face. Give its state `code_highlights`.
 #[derive(IntoElement)]
 pub struct CodeInput {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     size: Size,
 }
 
 impl CodeInput {
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
             size: Size::default(),
@@ -181,11 +181,11 @@ impl RenderOnce for CodeInput {
 /// A JSON field, checked as you type. Give its state `json_highlights`.
 #[derive(IntoElement)]
 pub struct JsonInput {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
 }
 
 impl JsonInput {
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
         }

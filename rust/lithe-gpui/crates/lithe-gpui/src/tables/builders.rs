@@ -8,7 +8,7 @@ use gpui::{
 use super::{FilterRule, SortKey, Test};
 use crate::{
     buttons::{Button, ButtonVariant, SegmentedControl},
-    forms::{Choice, Input, InputEvent, Select, TextInput},
+    forms::{Choice, Input, InputEvent, InputState, Select},
     motion::Reorder,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Size},
@@ -23,7 +23,7 @@ type Latest = Rc<RefCell<(Vec<FilterRule>, bool, Option<OnFilters>)>>;
 /// A builder's value fields, one per rule in the rules' order, and what their edits report to.
 #[derive(Default)]
 struct Fields {
-    fields: Vec<(Entity<TextInput>, Subscription)>,
+    fields: Vec<(Entity<InputState>, Subscription)>,
     latest: Latest,
 }
 
@@ -99,7 +99,7 @@ impl RenderOnce for FilterBuilder {
         let latest = fields.read(cx).latest.clone();
         *latest.borrow_mut() = (self.rules.clone(), self.any, self.on_change.clone());
         while fields.read(cx).fields.len() < self.rules.len() {
-            let field = cx.new(|cx| TextInput::new(window, cx));
+            let field = cx.new(|cx| InputState::new(window, cx));
             let (latest, owner) = (latest.clone(), fields.downgrade());
             let heard = window.subscribe(&field, cx, move |field, event, window, cx| {
                 if !matches!(event, InputEvent::Changed) {
@@ -124,7 +124,7 @@ impl RenderOnce for FilterBuilder {
             fields.update(cx, |fields, _| fields.fields.push((field, heard)));
         }
         fields.update(cx, |fields, _| fields.fields.truncate(self.rules.len()));
-        let entities: Vec<Entity<TextInput>> = fields
+        let entities: Vec<Entity<InputState>> = fields
             .read(cx)
             .fields
             .iter()

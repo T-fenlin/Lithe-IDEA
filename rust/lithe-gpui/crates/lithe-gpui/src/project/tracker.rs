@@ -8,7 +8,7 @@ use web_time::Instant;
 
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Enter, Input, Run, TextInput},
+    forms::{Enter, Input, InputState, Run},
     primitives::{IconName, tab_stop},
     theme::{ActiveTheme, TextSize},
     typography::{Ellipsis, format, tabular},
@@ -95,7 +95,7 @@ impl RenderOnce for TimeTracker {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let id = self.id.clone();
         let field = window.use_keyed_state((id.clone(), "task"), cx, |window, cx| {
-            TextInput::new(window, cx).placeholder("What are you working on?")
+            InputState::new(window, cx).placeholder("What are you working on?")
         });
         if self.running.is_some() {
             window.use_keyed_state((id.clone(), "tick"), cx, |window, cx| -> Task<()> {

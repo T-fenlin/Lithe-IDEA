@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Run, TextInput, surface},
+    forms::{InputState, Run, surface},
     layout::Collapsible,
     motion,
     primitives::{IconName, raise},
@@ -20,12 +20,12 @@ use crate::{
 #[derive(IntoElement)]
 pub struct FloatingToolbar {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     tools: SmallVec<[AnyElement; 4]>,
 }
 
 impl FloatingToolbar {
-    pub fn new(id: impl Into<ElementId>, field: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             field: field.clone(),

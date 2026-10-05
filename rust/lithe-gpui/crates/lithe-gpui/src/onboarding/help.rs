@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     documents::MarkdownRenderer,
-    forms::{Input, Run, TextInput},
+    forms::{Input, InputState, Run},
     layout::on_axis,
     lists::{ListItem, SelectableList},
     primitives::{Icon, IconName, tab_stop},
@@ -58,7 +58,7 @@ type OnOpen = Rc<dyn Fn(Option<&SharedString>, &mut Window, &mut App)>;
 pub struct HelpPanel {
     id: ElementId,
     articles: Vec<HelpArticle>,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     open: Option<SharedString>,
     on_open: Option<OnOpen>,
     on_close: Option<Run>,
@@ -71,7 +71,7 @@ impl HelpPanel {
     pub fn new(
         id: impl Into<ElementId>,
         articles: impl IntoIterator<Item = HelpArticle>,
-        search: &Entity<TextInput>,
+        search: &Entity<InputState>,
         open: Option<SharedString>,
     ) -> Self {
         let articles: Vec<HelpArticle> = articles.into_iter().collect();

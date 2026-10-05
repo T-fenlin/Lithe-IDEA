@@ -7,7 +7,7 @@ use gpui::{
 use jiff::Timestamp;
 
 use crate::{
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     layout::on_axis,
     lists::{ListItem, SelectableList},
     primitives::{Icon, IconName},
@@ -40,7 +40,7 @@ type OnKey = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 pub struct QueryHistory {
     id: ElementId,
     runs: Vec<QueryRun>,
-    search: gpui::Entity<TextInput>,
+    search: gpui::Entity<InputState>,
     now: Timestamp,
     on_run: Option<OnKey>,
 }
@@ -50,7 +50,7 @@ impl QueryHistory {
     pub fn new(
         id: impl Into<ElementId>,
         runs: impl IntoIterator<Item = QueryRun>,
-        search: &gpui::Entity<TextInput>,
+        search: &gpui::Entity<InputState>,
         now: Timestamp,
     ) -> Self {
         Self {

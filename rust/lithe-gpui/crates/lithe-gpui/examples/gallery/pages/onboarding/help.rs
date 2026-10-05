@@ -6,7 +6,7 @@ use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     data_display::{Change, Release},
     feedback::EmptyState,
-    forms::{Choice, FormField, Input, TextInput},
+    forms::{Choice, FormField, Input, InputState},
     onboarding::{
         ContactSupport, FeedbackWidget, HelpArticle, HelpPanel, InlineHelp,
         KeyboardShortcutCheatsheet, WhatsNewDialog,
@@ -41,9 +41,9 @@ fn field(
     hint: &'static str,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     window.use_keyed_state(key, cx, move |window, cx| {
-        TextInput::new(window, cx).placeholder(hint)
+        InputState::new(window, cx).placeholder(hint)
     })
 }
 

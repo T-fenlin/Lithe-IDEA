@@ -11,7 +11,7 @@ use crate::{
         FoundFile, RecentFile, RecentFiles, archive::saving, duplicates::freed, preview::kind,
         recent::day_label,
     },
-    forms::TextInput,
+    forms::InputState,
     lists::DirEntry,
 };
 
@@ -146,7 +146,7 @@ fn days_list_the_newest_first_and_enter_opens(cx: &mut TestAppContext) {
 
 /// A file search over a field it owns, finding what the test says, and what it opened.
 struct Seeking {
-    query: Entity<TextInput>,
+    query: Entity<InputState>,
     found: Vec<FoundFile>,
     opened: Vec<SharedString>,
 }
@@ -171,7 +171,7 @@ fn seeking<'a>(
     let text = text.to_string();
     let (host, cx) = cx.add_window_view(move |window, cx| {
         let query = cx.new(|cx| {
-            let mut field = TextInput::new(window, cx);
+            let mut field = InputState::new(window, cx);
             field.set_text(text, cx);
             field
         });

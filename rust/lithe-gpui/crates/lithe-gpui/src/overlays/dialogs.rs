@@ -8,7 +8,7 @@ use gpui::{
 use super::{Close, Dialog};
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, Run, TextInput},
+    forms::{Input, InputState, Run},
     i18n,
     primitives::{Icon, Severity},
     theme::{ActiveTheme, IconSize, Size, TextSize},
@@ -200,7 +200,7 @@ type Send = Rc<dyn Fn(&Close, &mut Window, &mut App)>;
 pub struct PromptDialog {
     id: ElementId,
     title: SharedString,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     label: Option<SharedString>,
     submit: SharedString,
     check: Option<Check>,
@@ -212,7 +212,7 @@ impl PromptDialog {
     pub fn new(
         id: impl Into<ElementId>,
         title: impl Into<SharedString>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         on_close: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {

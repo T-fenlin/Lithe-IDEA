@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{App, ElementId, Entity, SharedString, Window};
 
 use crate::forms::{
-    Choice, Pick, Suggestions, TextInput, active_trigger, emoji_found, handles_matching, one_word,
+    Choice, InputState, Pick, Suggestions, active_trigger, emoji_found, handles_matching, one_word,
     replace_trigger,
 };
 
@@ -27,7 +27,7 @@ fn nothing() -> (Vec<Choice>, Pick) {
 /// What `@` and `:` offer at the field's caret: people by handle, emoji by name; `extra` adds a trigger of the owner's, such as `/` in blocks.
 pub(crate) fn offers(
     id: ElementId,
-    field: &Entity<TextInput>,
+    field: &Entity<InputState>,
     people: &[SharedString],
     extra: Option<(char, Offer)>,
     cx: &App,

@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{self, TextInput},
+    forms::{self, InputState},
     primitives::FocusNext,
     theme::Theme,
 };
@@ -27,7 +27,7 @@ struct Bench {
     open: Option<SharedString>,
     dialog: bool,
     busy: bool,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
 }
 
 impl Render for Bench {
@@ -57,7 +57,7 @@ fn bench(part: Part, cx: &mut TestAppContext) -> (Entity<Bench>, &mut VisualTest
         open: None,
         dialog: false,
         busy: false,
-        search: cx.new(|cx| TextInput::new(window, cx)),
+        search: cx.new(|cx| InputState::new(window, cx)),
     });
     settle(cx);
     (host, cx)

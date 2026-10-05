@@ -6,7 +6,7 @@ use gpui::{
 use super::datum::{Datum, Unread, read_json, read_yaml};
 use crate::{
     feedback::InlineMessage,
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     lists::{Tree, TreeNode},
     primitives::{Icon, IconName, Severity},
     theme::{ActiveTheme, IconSize, TextSize},
@@ -94,7 +94,7 @@ struct Copied(Option<SharedString>);
 fn document(
     id: ElementId,
     read: Result<Datum, Unread>,
-    search: &Entity<TextInput>,
+    search: &Entity<InputState>,
     window: &mut Window,
     cx: &mut App,
 ) -> gpui::AnyElement {
@@ -147,7 +147,7 @@ fn document(
 pub struct JsonViewer {
     id: ElementId,
     text: SharedString,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
 }
 
 impl JsonViewer {
@@ -155,7 +155,7 @@ impl JsonViewer {
     pub fn new(
         id: impl Into<ElementId>,
         text: impl Into<SharedString>,
-        search: &Entity<TextInput>,
+        search: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),
@@ -176,7 +176,7 @@ impl RenderOnce for JsonViewer {
 pub struct YamlViewer {
     id: ElementId,
     text: SharedString,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
 }
 
 impl YamlViewer {
@@ -184,7 +184,7 @@ impl YamlViewer {
     pub fn new(
         id: impl Into<ElementId>,
         text: impl Into<SharedString>,
-        search: &Entity<TextInput>,
+        search: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),

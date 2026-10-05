@@ -7,7 +7,7 @@ use gpui::{
 use iso_currency::{Currency, IntoEnumIterator};
 use isocountry::CountryCode;
 
-use super::{Choice, Combobox, TextInput, options::OnValue};
+use super::{Choice, Combobox, InputState, options::OnValue};
 use crate::theme::{ActiveTheme, TextSize};
 
 /// The flag emoji of a two-letter region code.
@@ -50,12 +50,12 @@ fn languages() -> Vec<Choice> {
 
 impl Combobox {
     /// ISO 639-1 languages under their own names; a name in either tongue or the code finds one.
-    pub fn languages(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn languages(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         Self::new(id, state, languages())
     }
 
     /// ISO 3166-1 countries and territories, flagged, with their codes.
-    pub fn countries(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn countries(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         let mut named: Vec<(&str, &str)> = CountryCode::iter()
             .map(|country| (country.name(), country.alpha2()))
             .collect();
@@ -67,7 +67,7 @@ impl Combobox {
     }
 
     /// ISO 4217 currencies in use, without funds, metals or retired codes.
-    pub fn currencies(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn currencies(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         let choices = Currency::iter()
             .filter(|currency| {
                 !currency.is_fund() && !currency.is_special() && currency.is_superseded().is_none()
@@ -84,13 +84,13 @@ impl Combobox {
 #[derive(IntoElement)]
 pub struct FontPicker {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     selected: Option<SharedString>,
     on_change: Option<OnValue>,
 }
 
 impl FontPicker {
-    pub fn new(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             state: state.clone(),

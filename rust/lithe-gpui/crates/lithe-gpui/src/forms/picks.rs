@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use super::{
-    Input, TextInput,
+    Input, InputState,
     text::{Down, Enter},
 };
 use crate::{
@@ -76,7 +76,7 @@ pub(crate) fn stepped(rows: &[Row], at: usize, key: &str) -> Option<usize> {
 
 /// A grid's search field, its cursor, and where its list has scrolled.
 pub(crate) struct Finder {
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     pub query: String,
     cursor: usize,
     scroll: UniformListScrollHandle,
@@ -92,7 +92,7 @@ pub(crate) fn finder(
         (id.clone(), "finder"),
         cx,
         |window, cx: &mut Context<Finder>| Finder {
-            search: cx.new(|cx| TextInput::new(window, cx).placeholder(hint)),
+            search: cx.new(|cx| InputState::new(window, cx).placeholder(hint)),
             query: String::new(),
             cursor: 0,
             scroll: UniformListScrollHandle::new(),

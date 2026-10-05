@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use super::{
-    Choice, Input, InputEvent, TextInput,
+    Choice, Input, InputEvent, InputState,
     options::{OnValue, Pick, Popup, step},
     select::{Picker, measure_anchor},
     text::{Down, Enter, Up},
@@ -40,7 +40,7 @@ struct Typing {
 #[derive(IntoElement)]
 pub struct Combobox {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     choices: Vec<Choice>,
     selected: Option<SharedString>,
     free: bool,
@@ -51,7 +51,7 @@ pub struct Combobox {
 impl Combobox {
     pub fn new(
         id: impl Into<ElementId>,
-        state: &Entity<TextInput>,
+        state: &Entity<InputState>,
         choices: impl IntoIterator<Item = Choice>,
     ) -> Self {
         Self {

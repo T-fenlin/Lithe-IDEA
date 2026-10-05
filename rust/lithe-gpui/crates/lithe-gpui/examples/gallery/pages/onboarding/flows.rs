@@ -2,7 +2,7 @@ use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, prelude
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     data_display::{Badge, Tone},
-    forms::{FormField, Input, TextInput},
+    forms::{FormField, Input, InputState},
     lists::{List, ListItem},
     onboarding::{
         FeatureHighlight, Hotspot, OnboardingStep, OnboardingWizard, SetupChecklist, SetupTask,
@@ -28,9 +28,9 @@ fn field(
     hint: &'static str,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     window.use_keyed_state(key, cx, move |window, cx| {
-        TextInput::new(window, cx).placeholder(hint)
+        InputState::new(window, cx).placeholder(hint)
     })
 }
 

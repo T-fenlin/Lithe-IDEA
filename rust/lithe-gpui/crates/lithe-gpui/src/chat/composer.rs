@@ -9,8 +9,8 @@ use smallvec::SmallVec;
 use crate::{
     buttons::{Button, ButtonVariant},
     forms::{
-        Choice, Enter, OnValue, Pick, Run, Suggestions, TextInput, active_trigger, choose, dropped,
-        replace_trigger,
+        Choice, Enter, InputState, OnValue, Pick, Run, Suggestions, active_trigger, choose,
+        dropped, replace_trigger,
     },
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -208,7 +208,7 @@ impl RenderOnce for DragDropOverlay {
 /// The rows a composer offers at `/` or `@`, and what a pick does.
 fn offers(
     id: ElementId,
-    field: &Entity<TextInput>,
+    field: &Entity<InputState>,
     commands: &[Choice],
     context: &[Choice],
     on_command: Option<OnValue>,
@@ -262,7 +262,7 @@ fn offers(
 #[derive(IntoElement)]
 pub struct PromptInput {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     on_send: Run,
     on_stop: Option<Run>,
     above: SmallVec<[AnyElement; 2]>,
@@ -276,7 +276,7 @@ impl PromptInput {
     /// `field` is the owner's multi-line text; `on_send` sends it.
     pub fn new(
         id: impl Into<ElementId>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {

@@ -4,7 +4,7 @@ use gpui::{
     App, ElementId, Entity, IntoElement, PathPromptOptions, RenderOnce, SharedString, Window,
 };
 
-use super::{Input, TextInput};
+use super::{Input, InputState};
 use crate::{
     buttons::{Button, ButtonVariant},
     primitives::{Icon, IconName},
@@ -54,12 +54,12 @@ pub(crate) fn choose(
 #[derive(IntoElement)]
 pub struct PathInput {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     directories: bool,
 }
 
 impl PathInput {
-    pub fn new(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             state: state.clone(),

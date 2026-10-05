@@ -12,7 +12,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{Down, Enter, OnValue, Pick, Run, TextInput, Up},
+    forms::{Down, Enter, InputState, OnValue, Pick, Run, Up},
     motion,
     primitives::{Backdrop, FocusScope, Icon, IconName, give_back, take_focus},
     theme::{ActiveTheme, Elevation, IconSize, Radius, Size, TextSize},
@@ -130,16 +130,16 @@ pub(crate) fn query_field(
     placeholder: SharedString,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     window.use_keyed_state((id.clone(), "query"), cx, |window, cx| {
-        TextInput::new(window, cx).placeholder(placeholder)
+        InputState::new(window, cx).placeholder(placeholder)
     })
 }
 
 /// A query field over grouped rows. Arrows move, Enter or a click picks, Escape closes.
 pub(crate) struct Palette {
     pub id: ElementId,
-    pub input: Entity<TextInput>,
+    pub input: Entity<InputState>,
     pub groups: Vec<Group>,
     /// The row marked whenever the query changes.
     pub start: usize,

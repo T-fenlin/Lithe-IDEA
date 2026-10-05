@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     data_display::color_mark,
-    forms::{ColorPalette, Enter, FormError, InlineEdit, Input, OnValue, Run, TextInput},
+    forms::{ColorPalette, Enter, FormError, InlineEdit, Input, InputState, OnValue, Run},
     mail::Label,
     overlays::Popover,
     primitives::{Icon, IconName},
@@ -115,7 +115,7 @@ impl RenderOnce for LabelManager {
             None::<(SharedString, &'static str)>
         });
         let field = window.use_keyed_state((id.clone(), "new"), cx, |window, cx| {
-            TextInput::new(window, cx).placeholder("New label")
+            InputState::new(window, cx).placeholder("New label")
         });
         let refuse = {
             let refused = refused.clone();

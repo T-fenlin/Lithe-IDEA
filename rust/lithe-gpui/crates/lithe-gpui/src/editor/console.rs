@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant, ToggleButton, ToggleItem},
-    forms::{Choice, Enter, Input, Select, TextInput},
+    forms::{Choice, Enter, Input, InputState, Select},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Palette, Radius, Size, TextSize},
 };
@@ -187,14 +187,14 @@ pub enum ConsoleEntry {
 pub struct DebugConsole {
     id: ElementId,
     entries: Vec<ConsoleEntry>,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     on_eval: Option<OnText>,
 }
 
 impl DebugConsole {
     pub fn new(
         id: impl Into<ElementId>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         entries: impl IntoIterator<Item = ConsoleEntry>,
     ) -> Self {
         Self {

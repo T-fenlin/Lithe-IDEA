@@ -10,7 +10,7 @@ use super::{reader::Contact, send::ScheduleSend, signature::signature_block};
 use crate::{
     buttons::{Button, ButtonVariant},
     chat::{Attachment, AttachmentChip},
-    forms::{Choice, Input, OnValue, Run, TagInput, TextInput, is_email},
+    forms::{Choice, Input, InputState, OnValue, Run, TagInput, is_email},
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
 };
@@ -49,8 +49,8 @@ struct Composing {
     cc: Vec<SharedString>,
     bcc: Vec<SharedString>,
     copies: bool,
-    subject: Entity<TextInput>,
-    body: Entity<TextInput>,
+    subject: Entity<InputState>,
+    body: Entity<InputState>,
 }
 
 impl Composing {
@@ -188,9 +188,9 @@ impl RenderOnce for MailComposer {
             (self.id.clone(), "draft"),
             cx,
             |window, cx: &mut Context<Composing>| {
-                let subject = cx.new(|cx| TextInput::new(window, cx).placeholder("Subject"));
+                let subject = cx.new(|cx| InputState::new(window, cx).placeholder("Subject"));
                 let body = cx.new(|cx| {
-                    TextInput::new(window, cx)
+                    InputState::new(window, cx)
                         .multi_line(6, 16)
                         .placeholder("Write your message")
                 });

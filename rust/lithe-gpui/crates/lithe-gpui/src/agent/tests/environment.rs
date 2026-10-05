@@ -10,7 +10,7 @@ use crate::{
         Checkpoint, CheckpointList, McpServer, McpServerList, Memory, MemoryPanel, SandboxState,
         SandboxStatus, ServerState,
     },
-    forms::{self, TextInput},
+    forms::{self, InputState},
     primitives::FocusNext,
     theme::Theme,
 };
@@ -25,7 +25,7 @@ fn setup(cx: &mut TestAppContext) {
 
 /// A memory panel over a field, and the words it kept.
 struct Memories {
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     kept: Vec<String>,
 }
 
@@ -51,7 +51,7 @@ impl Render for Memories {
 fn memories(cx: &mut TestAppContext) -> (Entity<Memories>, &mut VisualTestContext) {
     setup(cx);
     let (view, cx) = cx.add_window_view(|window, cx| Memories {
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         kept: Vec::new(),
     });
     cx.update(|window, _| window.activate_window());

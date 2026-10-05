@@ -8,7 +8,7 @@ use gpui::{
 use super::quotes::{PriceChangeBadge, moves, price};
 use crate::{
     data_display::{Avatar, Sparkline},
-    forms::{Choice, Combobox, TextInput},
+    forms::{Choice, Combobox, InputState},
     lists::{ListItem, SelectableList},
     tables::{Column, DataTable, FilterBuilder, FilterRule, Row},
     theme::{ActiveTheme, AvatarSize, TextSize},
@@ -76,7 +76,7 @@ impl RenderOnce for SymbolBadge {
 #[derive(IntoElement)]
 pub struct SymbolSearch {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     symbols: Vec<(SharedString, SharedString, SharedString)>,
     on_pick: Option<OnSymbol>,
 }
@@ -85,7 +85,7 @@ impl SymbolSearch {
     /// Symbols to find, each with its name and where it trades; `field` holds the query.
     pub fn new(
         id: impl Into<ElementId>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         symbols: impl IntoIterator<Item = (SharedString, SharedString, SharedString)>,
     ) -> Self {
         Self {

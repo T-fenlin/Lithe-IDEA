@@ -9,7 +9,7 @@ use gpui::{
 use super::OnIndex;
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     primitives::{Disclosure, IconName},
     theme::{ActiveTheme, Palette, Radius, Size, TextSize},
     typography::Ellipsis,
@@ -212,7 +212,7 @@ pub struct Watch {
 pub struct WatchPanel {
     id: ElementId,
     watches: Vec<Watch>,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     on_remove: Option<OnIndex>,
 }
 
@@ -221,7 +221,7 @@ impl WatchPanel {
     pub fn new(
         id: impl Into<ElementId>,
         watches: impl IntoIterator<Item = Watch>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),

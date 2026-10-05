@@ -8,7 +8,7 @@ use gpui::{
 use super::markdown::link_at;
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Enter, Input, Run, TextInput, float, is_url, surface},
+    forms::{Enter, Input, InputState, Run, float, is_url, surface},
     primitives::{FocusScope, IconName, give_back, take_focus},
     theme::{ActiveTheme, Size},
 };
@@ -52,12 +52,12 @@ impl Linking {
 
 /// The address field and whether it took focus yet.
 struct Editing {
-    address: Entity<TextInput>,
+    address: Entity<InputState>,
     seeded: bool,
 }
 
 /// Replaces `range` of the field's text with `text` as one undo step, and closes.
-fn write(field: &Entity<TextInput>, range: Range<usize>, text: &str, cx: &mut App) {
+fn write(field: &Entity<InputState>, range: Range<usize>, text: &str, cx: &mut App) {
     field.update(cx, |input, cx| {
         input.select(range, cx);
         input.insert(text, cx);
@@ -68,14 +68,14 @@ fn write(field: &Entity<TextInput>, range: Range<usize>, text: &str, cx: &mut Ap
 #[derive(IntoElement)]
 pub struct LinkEditor {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     on_close: Run,
 }
 
 impl LinkEditor {
     pub fn new(
         id: impl Into<ElementId>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         on_close: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
@@ -96,7 +96,7 @@ impl RenderOnce for LinkEditor {
             (self.id.clone(), "editing"),
             cx,
             |window, cx: &mut Context<Editing>| Editing {
-                address: cx.new(|cx| TextInput::new(window, cx).placeholder("https://")),
+                address: cx.new(|cx| InputState::new(window, cx).placeholder("https://")),
                 seeded: false,
             },
         );

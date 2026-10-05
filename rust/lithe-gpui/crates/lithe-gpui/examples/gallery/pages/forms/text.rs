@@ -1,7 +1,7 @@
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::Button,
-    forms::{Input, InputAddon, InputGroup, PasswordInput, SearchInput, TextInput},
+    forms::{Input, InputAddon, InputGroup, InputState, PasswordInput, SearchInput},
     primitives::IconName,
     theme::Size,
     typography::Caption,
@@ -16,9 +16,11 @@ pub fn field(
     key: &'static str,
     window: &mut Window,
     cx: &mut App,
-    build: impl FnOnce(TextInput) -> TextInput,
-) -> Entity<TextInput> {
-    window.use_keyed_state(key, cx, move |window, cx| build(TextInput::new(window, cx)))
+    build: impl FnOnce(InputState) -> InputState,
+) -> Entity<InputState> {
+    window.use_keyed_state(key, cx, move |window, cx| {
+        build(InputState::new(window, cx))
+    })
 }
 
 pub fn input(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
@@ -82,7 +84,7 @@ pub fn text_area(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         "textarea",
         div().w(px(420.0)).child(Input::new(&notes)),
     ))
-    .child(code("TextInput::new(window, cx).multi_line(3, 6)", cx))
+    .child(code("InputState::new(window, cx).multi_line(3, 6)", cx))
 }
 
 pub fn password(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {

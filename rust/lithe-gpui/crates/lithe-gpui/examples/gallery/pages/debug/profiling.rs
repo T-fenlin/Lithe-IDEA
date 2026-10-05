@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     debug::{Flamegraph, NetworkInspector, ProfileFrame, Request, Span, TimelineProfiler},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
 };
 
 use crate::ui::{keep, section, set};
@@ -224,7 +224,7 @@ fn requests() -> Vec<Request> {
 pub fn network(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let picked = keep("debug-request", || Some(4usize), window, cx);
     let query = window.use_keyed_state("debug-network-query", cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Filter addresses")
+        InputState::new(window, cx).placeholder("Filter addresses")
     });
     let now = *picked.read(cx);
     let text: SharedString = query.read(cx).text().to_string().into();

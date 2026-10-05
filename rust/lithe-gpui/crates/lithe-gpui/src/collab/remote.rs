@@ -7,7 +7,7 @@ use gpui::{
 
 use super::peers::Peer;
 use crate::{
-    forms::TextInput,
+    forms::InputState,
     theme::{ActiveTheme, Radius, TextSize},
     typography::LEADING,
 };
@@ -27,12 +27,12 @@ pub(crate) fn in_view(field: Bounds<Pixels>, caret: Bounds<Pixels>) -> bool {
 #[derive(IntoElement)]
 pub struct RemoteCursor {
     peer: Peer,
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     offset: usize,
 }
 
 impl RemoteCursor {
-    pub fn new(peer: &Peer, input: &Entity<TextInput>, offset: usize) -> Self {
+    pub fn new(peer: &Peer, input: &Entity<InputState>, offset: usize) -> Self {
         Self {
             peer: peer.clone(),
             input: input.clone(),
@@ -113,12 +113,12 @@ impl RenderOnce for RemoteCursor {
 #[derive(IntoElement)]
 pub struct RemoteSelection {
     peer: Peer,
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     range: Range<usize>,
 }
 
 impl RemoteSelection {
-    pub fn new(peer: &Peer, input: &Entity<TextInput>, range: Range<usize>) -> Self {
+    pub fn new(peer: &Peer, input: &Entity<InputState>, range: Range<usize>) -> Self {
         Self {
             peer: peer.clone(),
             input: input.clone(),

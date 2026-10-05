@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{self, TextInput},
+    forms::{self, InputState},
     primitives::{FocusNext, FocusPrev, FocusScope},
     theme::Theme,
     tooling::{EventLogger, FpsMeter, RenderCounter, install_inspector},
@@ -191,7 +191,7 @@ fn the_counter_counts_renders(cx: &mut TestAppContext) {
 struct Logged {
     root: FocusHandle,
     target: FocusHandle,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
 }
 
 impl Render for Logged {
@@ -224,7 +224,7 @@ fn the_logger_lists_events(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(|window, cx| Logged {
         root: cx.focus_handle(),
         target: cx.focus_handle(),
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
     });
     let target = view.read_with(cx, |logged, _| logged.target.clone());
     cx.update(|window, cx| window.focus(&target, cx));

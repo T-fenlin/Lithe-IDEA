@@ -8,7 +8,7 @@ use similar::{ChangeTag, TextDiff};
 
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, OnFlag, TextInput},
+    forms::{Input, InputState, OnFlag},
     motion::{Entrance, Transition},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -49,7 +49,7 @@ pub(crate) fn added_words(old: &str, new: &str) -> Vec<Range<usize>> {
 #[derive(IntoElement)]
 pub struct PromptEnhancer {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     enhancing: bool,
     suggestion: Option<SharedString>,
     on_enhance: Option<OnText>,
@@ -58,7 +58,7 @@ pub struct PromptEnhancer {
 
 impl PromptEnhancer {
     /// `field` is the owner's prompt.
-    pub fn new(id: impl Into<ElementId>, field: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             field: field.clone(),

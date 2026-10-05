@@ -8,7 +8,7 @@ use gpui::{
 use super::{Picks, enter, picks, row, settle, setup};
 use crate::{
     buttons::Button,
-    forms::{Enter, Input, TextInput},
+    forms::{Enter, Input, InputState},
     lists::{ListItem, SelectableList},
 };
 
@@ -59,7 +59,7 @@ fn an_open_that_moves_focus_leaves_the_release_alone(cx: &mut TestAppContext) {
 
 /// A field whose Enter moves focus on to a list, and what the list opened.
 struct Relay {
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     heard: Vec<&'static str>,
 }
 
@@ -85,7 +85,7 @@ fn a_release_that_began_elsewhere_opens_nothing(cx: &mut TestAppContext) {
     setup(cx);
     cx.update(crate::forms::bind_keys);
     let (view, cx) = cx.add_window_view(|window, cx| Relay {
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         heard: Vec::new(),
     });
     settle(cx);

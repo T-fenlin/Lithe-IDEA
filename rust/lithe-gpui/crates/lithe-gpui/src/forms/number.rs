@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use super::{
-    Input, InputEvent, TextInput,
+    Input, InputEvent, InputState,
     text::{Down, Up},
 };
 use crate::{
@@ -60,7 +60,7 @@ fn on_grid(bound: f64, scale: f64, inward: fn(f64) -> f64) -> f64 {
 
 /// A number's live settings, read by its input's event handler.
 struct Numeric {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     on_change: Option<OnChange>,
     on_commit: Option<OnChange>,
     value: f64,
@@ -77,7 +77,7 @@ impl Numeric {
 
 /// Shows `value` in the field, then tells the owner.
 fn show(
-    input: &Entity<TextInput>,
+    input: &Entity<InputState>,
     (on_change, on_commit): (Option<&OnChange>, Option<&OnChange>),
     value: f64,
     precision: usize,
@@ -115,7 +115,7 @@ fn commit(state: &Entity<Numeric>, next: f64, window: &mut Window, cx: &mut App)
 fn numeric(id: &ElementId, window: &mut Window, cx: &mut App) -> Entity<Numeric> {
     window.use_keyed_state(id.clone(), cx, |window, cx: &mut Context<Numeric>| {
         let input = cx.new(|cx| {
-            TextInput::new(window, cx)
+            InputState::new(window, cx)
                 .filter(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ',' | '-' | format::MINUS))
         });
         let events = cx.subscribe_in(&input, window, |numeric, input, event, window, cx| {

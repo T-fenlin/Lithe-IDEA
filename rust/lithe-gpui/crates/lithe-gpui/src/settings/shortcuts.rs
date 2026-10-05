@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, TextSize},
     typography::{Ellipsis, KbdCombo},
@@ -22,12 +22,12 @@ pub struct Shortcut {
 #[derive(IntoElement)]
 pub struct KeyboardShortcutsList {
     shortcuts: Vec<Shortcut>,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
 }
 
 impl KeyboardShortcutsList {
     /// `search` is the find field's text, which the owner keeps.
-    pub fn new(shortcuts: impl IntoIterator<Item = Shortcut>, search: &Entity<TextInput>) -> Self {
+    pub fn new(shortcuts: impl IntoIterator<Item = Shortcut>, search: &Entity<InputState>) -> Self {
         Self {
             shortcuts: shortcuts.into_iter().collect(),
             search: search.clone(),

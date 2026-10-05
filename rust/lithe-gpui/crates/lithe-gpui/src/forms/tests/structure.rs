@@ -8,13 +8,13 @@ use crate::{
     buttons::Button,
     forms::{
         Choice, DatePicker, EmailInput, FieldArray, Form, FormField, Input, InputEvent, InputGroup,
-        MentionInput, NumberInput, Select, Slider, TagInput, TextInput,
+        InputState, MentionInput, NumberInput, Select, Slider, TagInput,
     },
     layout::tests::narrow_width,
 };
 
 struct Signup {
-    name: Entity<TextInput>,
+    name: Entity<InputState>,
     sent: usize,
     field_submits: usize,
 }
@@ -41,7 +41,7 @@ impl Render for Signup {
 fn signup(cx: &mut TestAppContext) -> (Entity<Signup>, &mut VisualTestContext) {
     setup(cx);
     cx.add_window_view(|window, cx| {
-        let name = cx.new(|cx| TextInput::new(window, cx));
+        let name = cx.new(|cx| InputState::new(window, cx));
         cx.subscribe(&name, |view: &mut Signup, _, event, _| {
             if *event == InputEvent::Submit {
                 view.field_submits += 1;
@@ -204,7 +204,7 @@ fn a_field_keeps_inside_its_cards_padding(cx: &mut TestAppContext) {
 fn fields_fill_a_column_their_block_measures_by_content(cx: &mut TestAppContext) {
     setup(cx);
     let field =
-        |window: &mut Window, cx: &mut App| window.use_keyed_state("field", cx, TextInput::new);
+        |window: &mut Window, cx: &mut App| window.use_keyed_state("field", cx, InputState::new);
     let widths = [
         narrow_width(cx, "field-root", |_, _| {
             Select::new("select", [Choice::new("a", "A")]).into_any_element()

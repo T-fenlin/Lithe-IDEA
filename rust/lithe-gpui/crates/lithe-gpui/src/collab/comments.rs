@@ -13,7 +13,7 @@ use super::{
 use crate::{
     buttons::{Button, ButtonVariant, SegmentedControl},
     feedback::EmptyState,
-    forms::{Enter, Input, OnFlag, OnValue, Run, TextInput},
+    forms::{Enter, Input, InputState, OnFlag, OnValue, Run},
     overlays::Popover,
     primitives::IconName,
     theme::{ActiveTheme, AvatarSize, Radius, Size, TextSize},
@@ -46,14 +46,14 @@ type OnThreadReact = Rc<dyn Fn(&SharedString, usize, &SharedString, &mut Window,
 #[derive(IntoElement)]
 pub struct Reply {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     on_send: Run,
 }
 
 impl Reply {
     pub fn new(
         id: impl Into<ElementId>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
@@ -105,7 +105,7 @@ pub struct CommentThread {
     id: ElementId,
     thread: Thread,
     active: bool,
-    reply: Option<(Entity<TextInput>, Run)>,
+    reply: Option<(Entity<InputState>, Run)>,
     on_resolve: Option<OnFlag>,
     on_react: Option<OnReact>,
 }
@@ -136,7 +136,7 @@ impl CommentThread {
     /// Answers in `field`; `on_send` takes its text.
     pub fn reply(
         mut self,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         self.reply = Some((field.clone(), Rc::new(on_send)));
@@ -292,7 +292,7 @@ impl RenderOnce for CommentThread {
 pub struct CommentMarker {
     id: ElementId,
     thread: Thread,
-    reply: Option<(Entity<TextInput>, Run)>,
+    reply: Option<(Entity<InputState>, Run)>,
     on_resolve: Option<OnFlag>,
 }
 
@@ -308,7 +308,7 @@ impl CommentMarker {
 
     pub fn reply(
         mut self,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         self.reply = Some((field.clone(), Rc::new(on_send)));
@@ -349,7 +349,7 @@ pub struct CommentSidebar {
     id: ElementId,
     threads: Vec<Thread>,
     active: Option<SharedString>,
-    reply: Option<(Entity<TextInput>, Run)>,
+    reply: Option<(Entity<InputState>, Run)>,
     on_select: Option<OnValue>,
     on_resolve: Option<OnThreadFlag>,
     on_react: Option<OnThreadReact>,
@@ -382,7 +382,7 @@ impl CommentSidebar {
     /// Answers the picked thread in `field`.
     pub fn reply(
         mut self,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         self.reply = Some((field.clone(), Rc::new(on_send)));

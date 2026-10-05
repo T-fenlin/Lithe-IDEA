@@ -7,7 +7,7 @@ use gpui::{
 
 use super::FileIcon;
 use crate::{
-    forms::{SearchInput, TextInput},
+    forms::{InputState, SearchInput},
     lists::{ListItem, SelectableList},
     theme::{ActiveTheme, TextSize},
 };
@@ -32,7 +32,7 @@ impl FoundFile {
 #[derive(IntoElement)]
 pub struct FileSearch {
     id: ElementId,
-    query: Entity<TextInput>,
+    query: Entity<InputState>,
     found: Vec<FoundFile>,
     on_open: Option<OnFound>,
 }
@@ -40,7 +40,7 @@ pub struct FileSearch {
 impl FileSearch {
     pub fn new(
         id: impl Into<ElementId>,
-        query: &Entity<TextInput>,
+        query: &Entity<InputState>,
         found: impl IntoIterator<Item = FoundFile>,
     ) -> Self {
         let found: Vec<FoundFile> = found.into_iter().collect();

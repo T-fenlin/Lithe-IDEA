@@ -9,7 +9,7 @@ use super::line::{OnText, send_line};
 use crate::{
     buttons::{Button, ButtonVariant},
     data_display::UsageBar,
-    forms::TextInput,
+    forms::InputState,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{format::currency, tabular},
@@ -20,7 +20,7 @@ use crate::{
 pub struct HumanInputRequest {
     id: ElementId,
     question: SharedString,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     choices: Vec<SharedString>,
     answered: Option<SharedString>,
     on_answer: OnText,
@@ -31,7 +31,7 @@ impl HumanInputRequest {
     pub fn new(
         id: impl Into<ElementId>,
         question: impl Into<SharedString>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         on_answer: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
         Self {

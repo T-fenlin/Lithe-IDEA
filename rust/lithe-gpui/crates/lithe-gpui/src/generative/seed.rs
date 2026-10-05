@@ -8,7 +8,7 @@ use gpui::{App, ElementId, Entity, IntoElement, RenderOnce, Window};
 
 use crate::{
     buttons::Button,
-    forms::{InputAddon, InputGroup, TextInput},
+    forms::{InputAddon, InputGroup, InputState},
     primitives::IconName,
 };
 
@@ -32,11 +32,11 @@ fn roll() -> u32 {
 #[derive(IntoElement)]
 pub struct SeedInput {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
 }
 
 impl SeedInput {
-    pub fn new(id: impl Into<ElementId>, field: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             field: field.clone(),
@@ -44,7 +44,7 @@ impl SeedInput {
     }
 
     /// The seed in `field`; none while it is empty.
-    pub fn read(field: &Entity<TextInput>, cx: &App) -> Option<u32> {
+    pub fn read(field: &Entity<InputState>, cx: &App) -> Option<u32> {
         let text = field.read(cx).text();
         (!text.is_empty()).then(|| text.parse().expect("a seed field holds digits"))
     }

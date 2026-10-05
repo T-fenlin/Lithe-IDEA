@@ -5,7 +5,7 @@ use gpui::{
     SharedString, Styled, Subscription, Window, div, prelude::*,
 };
 
-use super::{Input, InputEvent, TextInput, options::Run};
+use super::{Input, InputEvent, InputState, options::Run};
 use crate::{
     buttons::{Button, ButtonVariant},
     primitives::IconName,
@@ -17,7 +17,7 @@ type OnRows = Rc<dyn Fn(Vec<Vec<String>>, &mut Window, &mut App)>;
 /// Rows of fields: `columns` wide, each row removable, more rows on demand.
 struct Rows {
     columns: usize,
-    rows: Vec<Vec<(Entity<TextInput>, Subscription)>>,
+    rows: Vec<Vec<(Entity<InputState>, Subscription)>>,
     placeholders: Vec<SharedString>,
     on_change: Option<OnRows>,
 }
@@ -47,7 +47,7 @@ impl Rows {
                 let placeholder = self.placeholders[column].clone();
                 let text = seed.get(column).cloned().unwrap_or_default();
                 let field = cx.new(|cx| {
-                    let mut input = TextInput::new(window, cx).placeholder(placeholder);
+                    let mut input = InputState::new(window, cx).placeholder(placeholder);
                     input.set_text(text, cx);
                     input
                 });

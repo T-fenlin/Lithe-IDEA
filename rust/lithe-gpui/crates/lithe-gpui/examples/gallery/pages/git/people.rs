@@ -1,6 +1,6 @@
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
-    forms::TextInput,
+    forms::InputState,
     git::{
         Blame, BlameView, DiffStat, FileHistory, GitStatusBadge, PullRequest, PullRequestCard,
         PullState, ReviewComment, ReviewNote,
@@ -77,7 +77,7 @@ pub fn blame(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn review(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let reply = window.use_keyed_state("git-reply", cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Reply")
+        InputState::new(window, cx).placeholder("Reply")
     });
     let resolved = keep("git-resolved", || false, window, cx);
     let notes = keep(

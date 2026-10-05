@@ -5,11 +5,11 @@ use gpui::{
 };
 
 use super::{
-    TextInput,
+    InputState,
     edit::{from_utf16, to_utf16},
 };
 
-impl TextInput {
+impl InputState {
     fn range_from_utf16(&self, range: &Range<usize>) -> Range<usize> {
         from_utf16(&self.text, range.start)..from_utf16(&self.text, range.end)
     }
@@ -19,7 +19,7 @@ impl TextInput {
     }
 }
 
-impl EntityInputHandler for TextInput {
+impl EntityInputHandler for InputState {
     fn paste(&mut self, item: ClipboardItem, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = item.text() {
             self.replace(self.selection.clone(), &text, false, cx);

@@ -7,15 +7,15 @@ use gpui::{
     TextRun, UnderlineStyle, Window, WrappedLine, fill, point, relative, size,
 };
 
-use super::{Highlight, Layout, TextInput};
+use super::{Highlight, InputState, Layout};
 use crate::theme::ActiveTheme;
 
 pub(crate) struct TextElement {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
 }
 
 impl TextElement {
-    pub fn new(input: Entity<TextInput>) -> Self {
+    pub fn new(input: Entity<InputState>) -> Self {
         Self { input }
     }
 }
@@ -37,7 +37,7 @@ pub(crate) struct Prepaint {
 }
 
 /// What to show, and whether it is the placeholder.
-fn shown(input: &TextInput) -> (String, bool) {
+fn shown(input: &InputState) -> (String, bool) {
     if input.is_empty() {
         (input.placeholder_text().to_string(), true)
     } else {
@@ -110,7 +110,7 @@ fn runs(
 }
 
 /// What to show, whether it is the placeholder, and its runs, the same for measure and paint.
-fn shown_runs(input: &TextInput, window: &Window, cx: &App) -> (String, bool, Vec<TextRun>) {
+fn shown_runs(input: &InputState, window: &Window, cx: &App) -> (String, bool, Vec<TextRun>) {
     let theme = cx.theme();
     let (text, placeholder) = shown(input);
     let color = window.text_style().color;
@@ -323,7 +323,7 @@ impl Element for TextElement {
 
 /// Scroll that keeps the caret inside the box, clamped to the text.
 fn keep_in_view(
-    input: &TextInput,
+    input: &InputState,
     lines: &[(usize, WrappedLine)],
     caret: Point<Pixels>,
     caret_width: Pixels,

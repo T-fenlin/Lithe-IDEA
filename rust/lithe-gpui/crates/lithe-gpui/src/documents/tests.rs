@@ -9,7 +9,7 @@ use gpui::{
 use super::{DocPage, DocumentViewer, PageHit, ZenMode};
 use crate::{
     editor::FindWidget,
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     theme::{ActiveTheme, Size, Theme},
 };
 
@@ -25,7 +25,7 @@ fn hit(page: usize) -> PageHit {
 
 /// Three tall pages and the hits found; a press while pinning records the note asked.
 struct Reader {
-    query: Entity<TextInput>,
+    query: Entity<InputState>,
     width: f32,
     hits: Vec<PageHit>,
     current: Option<usize>,
@@ -70,7 +70,7 @@ fn open_with(
     let noted = Noted::default();
     let seen = noted.clone();
     let (reader, cx) = cx.add_window_view(move |window, cx| Reader {
-        query: cx.new(|cx| TextInput::new(window, cx)),
+        query: cx.new(|cx| InputState::new(window, cx)),
         width,
         hits: vec![hit(1)],
         current,
@@ -203,7 +203,7 @@ fn a_hit_current_from_the_first_frame_comes_into_view(cx: &mut TestAppContext) {
 
 /// A field outside a zen view, and how often Escape left zen.
 struct Zen {
-    outside: Entity<TextInput>,
+    outside: Entity<InputState>,
     on: bool,
     left: usize,
 }
@@ -232,7 +232,7 @@ fn escape_leaves_zen_turned_on_from_outside_and_hands_focus_back(cx: &mut TestAp
         crate::forms::bind_keys(cx);
     });
     let (zen, cx) = cx.add_window_view(|window, cx| Zen {
-        outside: cx.new(|cx| TextInput::new(window, cx)),
+        outside: cx.new(|cx| InputState::new(window, cx)),
         on: false,
         left: 0,
     });

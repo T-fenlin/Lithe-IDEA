@@ -9,7 +9,7 @@ use super::connections::{Connection, Engine};
 use crate::{
     buttons::{Button, ButtonVariant},
     feedback::InlineMessage,
-    forms::{Choice, FormField, Input, PasswordInput, Select, Switch, TextInput},
+    forms::{Choice, FormField, Input, InputState, PasswordInput, Select, Switch},
     primitives::Severity,
 };
 
@@ -29,7 +29,7 @@ pub(crate) fn parse_port(text: &str) -> Option<u16> {
     text.trim().parse().ok().filter(|port| *port > 0)
 }
 
-fn port(field: &Entity<TextInput>, cx: &App) -> Option<u16> {
+fn port(field: &Entity<InputState>, cx: &App) -> Option<u16> {
     parse_port(field.read(cx).text())
 }
 
@@ -46,12 +46,12 @@ pub(crate) fn ready(name: &str, engine: Engine, host: &str, database: &str, port
 /// The form's own fields, filled from the connection named by `seed`.
 struct Fields {
     seed: SharedString,
-    name: Entity<TextInput>,
-    host: Entity<TextInput>,
-    database: Entity<TextInput>,
-    user: Entity<TextInput>,
-    password: Entity<TextInput>,
-    port: Entity<TextInput>,
+    name: Entity<InputState>,
+    host: Entity<InputState>,
+    database: Entity<InputState>,
+    user: Entity<InputState>,
+    password: Entity<InputState>,
+    port: Entity<InputState>,
     engine: Engine,
     tls: bool,
 }
@@ -61,7 +61,7 @@ impl Fields {
         let mut field = |text: &SharedString| {
             let text = text.to_string();
             cx.new(|cx| {
-                let mut input = TextInput::new(window, cx);
+                let mut input = InputState::new(window, cx);
                 input.set_text(text, cx);
                 input
             })
@@ -86,7 +86,7 @@ impl Fields {
     }
 
     fn read(&self, from: &Connection, cx: &App) -> Connection {
-        let text = |input: &Entity<TextInput>| {
+        let text = |input: &Entity<InputState>| {
             SharedString::from(input.read(cx).text().trim().to_string())
         };
         Connection {
@@ -170,7 +170,7 @@ impl RenderOnce for ConnectionForm {
             now.port.clone(),
         );
         let file = engine == Engine::Sqlite;
-        let text = |input: &Entity<TextInput>| input.read(cx).text().to_string();
+        let text = |input: &Entity<InputState>| input.read(cx).text().to_string();
         let good_port = file || port(&port_field, cx).is_some();
         let ready = ready(
             &text(&name),

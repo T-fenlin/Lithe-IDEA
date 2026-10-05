@@ -4,14 +4,14 @@ use gpui::{App, Div, Entity, InteractiveElement, ParentElement, Styled, Window, 
 
 use crate::{
     buttons::Button,
-    forms::{Enter, Input, TextInput},
+    forms::{Enter, Input, InputState},
 };
 
 pub(super) type OnText = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 
 /// Hands the field's words to `send` and empties it; blank words are kept out.
 fn send(
-    field: &Entity<TextInput>,
+    field: &Entity<InputState>,
     on_send: &OnText,
     what: &str,
     window: &mut Window,
@@ -28,7 +28,7 @@ fn send(
 
 /// The owner's field beside `button`: Enter or a press sends its words, and the button waits for some.
 pub(super) fn send_line(
-    field: &Entity<TextInput>,
+    field: &Entity<InputState>,
     button: Button,
     on_send: OnText,
     what: &'static str,

@@ -4,7 +4,7 @@ use gpui::{App, ElementId, Entity, IntoElement, ParentElement, RenderOnce, Style
 
 use crate::{
     buttons::{ToggleButton, ToggleItem},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
 };
@@ -49,8 +49,8 @@ type OnBool = Rc<dyn Fn(bool, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct SearchFilters {
     id: ElementId,
-    include: Entity<TextInput>,
-    exclude: Entity<TextInput>,
+    include: Entity<InputState>,
+    exclude: Entity<InputState>,
     ignore: bool,
     on_ignore: Option<OnBool>,
 }
@@ -58,8 +58,8 @@ pub struct SearchFilters {
 impl SearchFilters {
     pub fn new(
         id: impl Into<ElementId>,
-        include: &Entity<TextInput>,
-        exclude: &Entity<TextInput>,
+        include: &Entity<InputState>,
+        exclude: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),

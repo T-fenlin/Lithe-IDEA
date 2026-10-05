@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant, ToggleGroup, ToggleItem},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     overlays::Popover,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Size, TextSize},
@@ -116,7 +116,7 @@ fn form(
 ) -> impl IntoElement + use<> {
     let draft = window.use_keyed_state((id.clone(), "draft"), cx, |_, _| Draft::default());
     let note = window.use_keyed_state((id.clone(), "note"), cx, |window, cx| {
-        TextInput::new(window, cx)
+        InputState::new(window, cx)
             .multi_line(2, 5)
             .placeholder("Tell us more (optional)")
     });

@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     buttons::SegmentedControl,
-    forms::{Down, InputEvent, TextInput, Up},
+    forms::{Down, InputEvent, InputState, Up},
     theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
@@ -52,7 +52,7 @@ type OnMode = Rc<dyn Fn(MarkdownMode, &mut Window, &mut App)>;
 /// The block open as its source: where it came from, its own field, and whether it adds a block at the end.
 struct Open {
     range: Range<usize>,
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     append: bool,
     _blur: Subscription,
 }
@@ -88,7 +88,7 @@ fn joint(document: &str) -> &'static str {
 /// Writes the open block back over its range as one undo step, and closes it; the range replaced and the bytes written.
 fn commit(
     state: &Entity<Visual>,
-    field: &Entity<TextInput>,
+    field: &Entity<InputState>,
     cx: &mut App,
 ) -> Option<(Range<usize>, usize)> {
     let open = state.update(cx, |visual, cx| {
@@ -115,7 +115,7 @@ fn commit(
 /// Opens the block at `range` in a field of its own, so undo stays with it; the caret at its start or end.
 fn open(
     state: &Entity<Visual>,
-    field: &Entity<TextInput>,
+    field: &Entity<InputState>,
     range: Range<usize>,
     append: bool,
     at_start: bool,
@@ -125,7 +125,7 @@ fn open(
     let source = field.read(cx).text()[range.clone()].to_string();
     log::info!("markdown editor: block {range:?} opens");
     let input = cx.new(|cx| {
-        TextInput::new(window, cx)
+        InputState::new(window, cx)
             .multi_line(1, usize::MAX)
             .highlighter(markdown_highlights)
     });
@@ -156,7 +156,7 @@ fn open(
 }
 
 /// Whether the caret sits on the field's first line, or with `last` its last.
-pub(crate) fn at_edge(input: &TextInput, last: bool) -> bool {
+pub(crate) fn at_edge(input: &InputState, last: bool) -> bool {
     let edge = if last { input.text().len() } else { 0 };
     match (input.bounds_for(input.cursor()), input.bounds_for(edge)) {
         (Some(caret), Some(edge)) => caret.top() == edge.top(),
@@ -168,7 +168,7 @@ pub(crate) fn at_edge(input: &TextInput, last: bool) -> bool {
 #[derive(IntoElement)]
 pub struct MarkdownEditor {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     mode: MarkdownMode,
     people: Vec<SharedString>,
     on_mode: Option<OnMode>,
@@ -176,7 +176,7 @@ pub struct MarkdownEditor {
 
 impl MarkdownEditor {
     /// Give the field several lines and `markdown_highlights` as its highlighter.
-    pub fn new(id: impl Into<ElementId>, field: &Entity<TextInput>, mode: MarkdownMode) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>, mode: MarkdownMode) -> Self {
         Self {
             id: id.into(),
             field: field.clone(),
@@ -270,7 +270,7 @@ fn visual(
         .as_ref()
         .map(|open| (open.range.clone(), open.input.clone(), open.append));
     let field = editor.field.clone();
-    let source = |input: &Entity<TextInput>, window: &mut Window, cx: &mut App| {
+    let source = |input: &Entity<InputState>, window: &mut Window, cx: &mut App| {
         div()
             .px_3()
             .py_2()

@@ -10,7 +10,7 @@ use super::line::{OnText, send_line};
 use crate::{
     buttons::{Button, ButtonVariant},
     data_display::{Timeline, TimelineItem, Tone},
-    forms::{Pick, TextInput},
+    forms::{InputState, Pick},
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
     typography::{RelativeTime, format::plural},
@@ -31,7 +31,7 @@ type OnForget = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct MemoryPanel {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     memories: Vec<Memory>,
     on_add: Option<OnText>,
     on_forget: Option<OnForget>,
@@ -41,7 +41,7 @@ impl MemoryPanel {
     /// `field` is the owner's line for a new memory.
     pub fn new(
         id: impl Into<ElementId>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         memories: impl IntoIterator<Item = Memory>,
     ) -> Self {
         Self {

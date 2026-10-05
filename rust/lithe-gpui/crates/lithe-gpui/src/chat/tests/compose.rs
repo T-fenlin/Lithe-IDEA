@@ -7,14 +7,14 @@ use gpui::{
 use super::settle;
 use crate::{
     chat::PromptInput,
-    forms::{self, Choice, TextInput},
+    forms::{self, Choice, InputState},
     motion,
     theme::{ActiveTheme, Theme},
 };
 
 /// A composer over a field, and what it asked: sends, commands and context.
 struct Compose {
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     busy: bool,
     commands: Vec<Choice>,
     sent: usize,
@@ -58,7 +58,7 @@ fn open(
         forms::bind_keys(cx);
     });
     let (compose, cx) = cx.add_window_view(move |window, cx| Compose {
-        field: cx.new(|cx| TextInput::new(window, cx).multi_line(1, 8)),
+        field: cx.new(|cx| InputState::new(window, cx).multi_line(1, 8)),
         busy,
         commands,
         sent: 0,

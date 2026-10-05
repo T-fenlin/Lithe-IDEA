@@ -3,7 +3,7 @@ use std::ops::Range;
 use gpui::{App, Entity};
 
 use super::markdown::{Mark, edge, marks};
-use crate::forms::TextInput;
+use crate::forms::InputState;
 
 /// A format the toolbars apply to markdown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -191,7 +191,7 @@ fn changed<'a>(old: &str, new: &'a str) -> (Range<usize>, &'a str) {
 }
 
 /// Applies `format` to the field's selection as one undo step, then selects what it formatted.
-pub fn format(field: &Entity<TextInput>, format: Format, cx: &mut App) {
+pub fn format(field: &Entity<InputState>, format: Format, cx: &mut App) {
     field.update(cx, |input, cx| {
         let text = input.text().to_string();
         let (next, selection) = apply(&text, input.selection(), format);

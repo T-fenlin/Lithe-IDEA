@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
@@ -20,14 +20,14 @@ type OnClose = Rc<dyn Fn(&mut Window, &mut App)>;
 pub struct InlineChat {
     base: Div,
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     working: bool,
     on_ask: Option<OnAsk>,
     on_close: Option<OnClose>,
 }
 
 impl InlineChat {
-    pub fn new(id: impl Into<ElementId>, field: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>) -> Self {
         Self {
             base: div(),
             id: id.into(),

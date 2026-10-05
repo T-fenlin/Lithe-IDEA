@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant, CopyButton, ToggleButton, ToggleItem},
-    forms::{Input, Pick, Run, Submit, TextInput},
+    forms::{Input, InputState, Pick, Run, Submit},
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
     typography::{Ellipsis, tabular},
@@ -223,7 +223,7 @@ impl RenderOnce for MessageActions {
 #[derive(IntoElement)]
 pub struct MessageEditor {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     original: SharedString,
     on_save: Run,
     on_cancel: Run,
@@ -233,7 +233,7 @@ impl MessageEditor {
     /// `field` holds the words being changed, `original` what was sent.
     pub fn new(
         id: impl Into<ElementId>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         original: impl Into<SharedString>,
         on_save: impl Fn(&mut Window, &mut App) + 'static,
         on_cancel: impl Fn(&mut Window, &mut App) + 'static,

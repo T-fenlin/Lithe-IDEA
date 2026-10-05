@@ -8,7 +8,7 @@ use lithe_gpui::{
         ConstraintsEditor, Dash, ExportFormat, ExportPanel, ExportSetting, Flow, Frame, Pin, Place,
         Shadow, ShadowEditor, TypeStyle, TypographyPanel,
     },
-    forms::{GradientEditor, GradientStop, TextInput},
+    forms::{GradientEditor, GradientStop, InputState},
     theme::{ActiveTheme, TextSize},
 };
 
@@ -74,7 +74,7 @@ const SWATCHES: [(&str, u32); 6] = [
 pub fn styles(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let look = keep("canvas-look", Look::new, window, cx);
     let search = window.use_keyed_state("canvas-type-search", cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Font")
+        InputState::new(window, cx).placeholder("Font")
     });
     let now = look.read(cx);
     let (color, stops, shadows, border, style) = (

@@ -10,7 +10,7 @@ use super::quotes::price;
 use crate::{
     buttons::{Button, ButtonVariant},
     data_display::{Badge, QrCode, Tone},
-    forms::{Combobox, NumberInput, TextInput},
+    forms::{Combobox, InputState, NumberInput},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, TextSize},
     typography::{
@@ -61,10 +61,10 @@ impl RenderOnce for CurrencyConverter {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let from_field =
             window.use_keyed_state((self.id.clone(), "from-field"), cx, |window, cx| {
-                TextInput::new(window, cx)
+                InputState::new(window, cx)
             });
         let to_field = window.use_keyed_state((self.id.clone(), "to-field"), cx, |window, cx| {
-            TextInput::new(window, cx)
+            InputState::new(window, cx)
         });
         let theme = cx.theme();
         let colors = theme.colors.clone();

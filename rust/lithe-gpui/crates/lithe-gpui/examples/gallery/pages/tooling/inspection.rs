@@ -4,7 +4,7 @@ use gpui::{
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
-    forms::{Switch, TextInput},
+    forms::{InputState, Switch},
     theme::{ActiveTheme, Radius},
     tooling::{EventLogger, FpsMeter, RenderCounter},
 };
@@ -53,7 +53,7 @@ pub fn sections(window: &mut Window, cx: &mut App) -> Vec<AnyElement> {
     let measuring = window.use_keyed_state("fps-measuring", cx, |_, _| false);
     let on = *measuring.read(cx);
     let apart = window.use_keyed_state("renders-apart", cx, |_, _| Apart);
-    let field = window.use_keyed_state("events-field", cx, TextInput::new);
+    let field = window.use_keyed_state("events-field", cx, InputState::new);
     let theme = cx.theme();
     let colors = &theme.colors;
     let boxed = |element: gpui::Div| {

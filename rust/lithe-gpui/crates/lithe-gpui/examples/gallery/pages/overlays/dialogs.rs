@@ -4,7 +4,7 @@ use gpui::{
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     overlays::{AlertDialog, ConfirmDialog, Dialog, PromptDialog},
     primitives::Severity,
     theme::ActiveTheme,
@@ -48,7 +48,7 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         let make = |window: &mut Window, cx: &mut App, text: &str| {
             let text = text.to_string();
             cx.new(|cx| {
-                let mut input = TextInput::new(window, cx);
+                let mut input = InputState::new(window, cx);
                 input.set_text(text, cx);
                 input
             })

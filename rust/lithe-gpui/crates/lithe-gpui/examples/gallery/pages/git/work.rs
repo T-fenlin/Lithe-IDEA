@@ -1,7 +1,7 @@
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::Button,
-    forms::TextInput,
+    forms::InputState,
     git::{
         Branch, BranchList, BranchSelector, ChangeAction, Changed, ChangesList, Commit,
         CommitInput, CommitList, GitTag, Stash, StashAction, StashList, TagList,
@@ -30,9 +30,9 @@ fn field(
     lines: Option<(usize, usize)>,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     window.use_keyed_state(key, cx, move |window, cx| {
-        let field = TextInput::new(window, cx).placeholder(placeholder);
+        let field = InputState::new(window, cx).placeholder(placeholder);
         match lines {
             Some((min, max)) => field.multi_line(min, max),
             None => field,

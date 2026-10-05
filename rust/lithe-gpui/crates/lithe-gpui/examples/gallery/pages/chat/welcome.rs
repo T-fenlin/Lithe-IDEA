@@ -7,7 +7,7 @@ use lithe_gpui::{
     },
     documents::{Template, TemplatePicker},
     feedback::{Toast, Toaster},
-    forms::TextInput,
+    forms::InputState,
     primitives::{IconName, Severity},
     theme::{ActiveTheme, Radius},
 };
@@ -18,16 +18,16 @@ use crate::{
 };
 
 /// The welcome composer's text, which starters and saved prompts fill.
-pub fn welcome_draft(window: &mut Window, cx: &mut App) -> Entity<TextInput> {
+pub fn welcome_draft(window: &mut Window, cx: &mut App) -> Entity<InputState> {
     window.use_keyed_state("chat-welcome-draft", cx, |window, cx| {
-        TextInput::new(window, cx)
+        InputState::new(window, cx)
             .multi_line(1, 6)
             .placeholder("How can I help?")
     })
 }
 
 pub fn welcome_section(
-    draft: &Entity<TextInput>,
+    draft: &Entity<InputState>,
     toaster: &Entity<Toaster>,
     _: &mut Window,
     cx: &mut App,
@@ -138,7 +138,7 @@ fn prompts() -> Vec<Template> {
 }
 
 pub fn library_section(
-    draft: &Entity<TextInput>,
+    draft: &Entity<InputState>,
     _: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement + use<> {

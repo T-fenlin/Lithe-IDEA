@@ -8,7 +8,7 @@ use lithe_gpui::{
         MessageEditor, QuoteReply, RateLimitNotice, Role, ThinkingBlock, ThinkingDuration,
         ThinkingIndicator, continue_button, regenerate_button, stop_button,
     },
-    forms::TextInput,
+    forms::InputState,
     primitives::IconName,
 };
 use web_time::Instant;
@@ -26,10 +26,10 @@ fn field(
     hint: &str,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     let (text, hint) = (text.to_string(), hint.to_string());
     window.use_keyed_state(key, cx, move |window, cx| {
-        let mut input = TextInput::new(window, cx)
+        let mut input = InputState::new(window, cx)
             .multi_line(2, 6)
             .placeholder(hint);
         input.set_text(text, cx);

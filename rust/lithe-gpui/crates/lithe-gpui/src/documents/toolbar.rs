@@ -3,7 +3,7 @@ use gpui::{App, ElementId, Entity, IntoElement, ParentElement, RenderOnce, Windo
 use super::format::{Format, active, format};
 use crate::{
     buttons::{ToggleButton, ToggleItem, shortcut_text},
-    forms::{Run, TextInput},
+    forms::{InputState, Run},
     primitives::IconName,
     shell::{Toolbar, ToolbarGroup, ToolbarSeparator},
     theme::{ActiveTheme, Platform, Size},
@@ -52,7 +52,7 @@ const BLOCKS: &[Tool] = &[
 /// One tool as a toggle: pressed while `on`; a press applies its format, or opens the link editor.
 pub(crate) fn tool(
     id: &ElementId,
-    field: &Entity<TextInput>,
+    field: &Entity<InputState>,
     (format_of, icon, name, key): Tool,
     on: bool,
     on_link: Option<Run>,
@@ -79,12 +79,12 @@ pub(crate) fn tool(
 #[derive(IntoElement)]
 pub struct FixedFormatToolbar {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     on_link: Option<Run>,
 }
 
 impl FixedFormatToolbar {
-    pub fn new(id: impl Into<ElementId>, field: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             field: field.clone(),

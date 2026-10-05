@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use super::{
-    Highlight, Input, TextInput,
+    Highlight, Input, InputState,
     options::{Choice, Pick, Popup, reveal, step},
     text::{Down, Enter, Up},
 };
@@ -39,7 +39,7 @@ pub(crate) fn active_trigger(
 
 /// Replaces the trigger and its query, `at..caret`, with `text`, as one undo step.
 pub(crate) fn replace_trigger(
-    field: &Entity<TextInput>,
+    field: &Entity<InputState>,
     at: usize,
     caret: usize,
     text: &str,
@@ -127,7 +127,7 @@ fn move_cursor(picking: &Entity<Picking>, rows: &[Choice], by: isize, cx: &mut A
 /// Rows offered at a trigger in a field's text, and what a pick does: arrows choose past disabled rows, the cursor stays in view, Enter or a press picks, Escape dismisses until the trigger ends.
 pub(crate) struct Suggestions {
     pub id: ElementId,
-    pub state: Entity<TextInput>,
+    pub state: Entity<InputState>,
     /// Where the trigger being typed starts.
     pub trigger: Option<usize>,
     pub rows: Vec<Choice>,
@@ -231,13 +231,13 @@ impl Suggestions {
 #[derive(IntoElement)]
 pub struct MentionInput {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     triggers: Vec<(char, Vec<SharedString>)>,
 }
 
 impl MentionInput {
     /// Give the state `mention_highlights` as its highlighter.
-    pub fn new(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             state: state.clone(),

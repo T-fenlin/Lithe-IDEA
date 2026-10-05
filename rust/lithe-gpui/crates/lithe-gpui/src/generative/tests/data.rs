@@ -6,7 +6,7 @@ use jiff::Timestamp;
 
 use super::{press, settle, setup, tab};
 use crate::{
-    forms::TextInput,
+    forms::InputState,
     generative::{
         Embedded, EmbeddingVisualizer, PromptPlayground, PromptVersion, PromptVersionHistory,
         lens::{DRAG, Lens, START, STEP, radius, turned},
@@ -149,7 +149,7 @@ fn a_point_past_the_cube_fails_loud() {
 
 /// A playground over a template with two names, and the prompts it ran.
 struct Trying {
-    template: Entity<TextInput>,
+    template: Entity<InputState>,
     ran: Vec<String>,
 }
 
@@ -174,7 +174,7 @@ fn run_waits_for_every_value_then_sends_the_filled_prompt(cx: &mut TestAppContex
     setup(cx);
     let (view, cx) = cx.add_window_view(|window, cx| {
         let template = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx);
+            let mut input = InputState::new(window, cx);
             input.set_text("Notes on {topic} in a {tone} voice", cx);
             input
         });

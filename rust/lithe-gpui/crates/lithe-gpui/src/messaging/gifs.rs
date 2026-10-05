@@ -8,7 +8,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, InputEvent, OnValue, TextInput},
+    forms::{Input, InputEvent, InputState, OnValue},
     layout::{Masonry, bring_into_view, on_axis},
     motion::Skeleton,
     primitives::{FocusRing, Icon, IconName, Image, Tooltip, checked_ratio, framed, tab_stop},
@@ -52,7 +52,7 @@ pub enum Gifs {
 
 /// The search field, the words last reported, and who gets them.
 struct Search {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     words: SharedString,
     on_query: Option<OnValue>,
     _changes: Subscription,
@@ -119,7 +119,7 @@ impl RenderOnce for GifPicker {
             (self.id.clone(), "search"),
             cx,
             |window, cx: &mut Context<Search>| {
-                let input = cx.new(|cx| TextInput::new(window, cx).placeholder("Search GIFs"));
+                let input = cx.new(|cx| InputState::new(window, cx).placeholder("Search GIFs"));
                 let changes =
                     cx.subscribe_in(&input, window, |search, input, event, window, cx| {
                         if *event != InputEvent::Changed {

@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant, CopyButton},
-    forms::{Choice, FormField, Input, Run, Select, TextInput},
+    forms::{Choice, FormField, Input, InputState, Run, Select},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, TextSize},
     typography::{MiddleEllipsis, literal},
@@ -68,7 +68,7 @@ impl RenderOnce for ContactSupport {
             .unwrap_or_else(|| panic!("contact support {id:?} has no on_send"));
         let topic = window.use_keyed_state((id.clone(), "topic"), cx, |_, _| None::<SharedString>);
         let message = window.use_keyed_state((id.clone(), "message"), cx, |window, cx| {
-            TextInput::new(window, cx)
+            InputState::new(window, cx)
                 .multi_line(4, 8)
                 .placeholder("What happened, and what you expected")
         });

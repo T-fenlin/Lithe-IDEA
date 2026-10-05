@@ -12,7 +12,7 @@ mod guides;
 use super::{AlertDialog, ConfirmDialog, Dialog, HoverCard, Popover, PromptDialog};
 use crate::{
     buttons::Button,
-    forms::TextInput,
+    forms::InputState,
     primitives::{FocusNext, FocusScope, IconName, Severity},
     theme::{ActiveTheme, Size, Theme},
 };
@@ -30,7 +30,7 @@ enum Open {
 struct Stage {
     root: FocusHandle,
     before: FocusHandle,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     open: Option<Open>,
     log: Vec<String>,
     tall: Rc<Cell<Bounds<Pixels>>>,
@@ -190,7 +190,7 @@ fn stage(cx: &mut TestAppContext) -> (Entity<Stage>, &mut VisualTestContext) {
     let (view, cx) = cx.add_window_view(|window, cx| Stage {
         root: cx.focus_handle(),
         before: cx.focus_handle(),
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         open: None,
         log: Vec::new(),
         tall: Rc::new(Cell::new(Bounds::default())),

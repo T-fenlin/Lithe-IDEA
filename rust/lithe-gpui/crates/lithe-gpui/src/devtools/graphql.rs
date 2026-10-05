@@ -10,7 +10,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     editor::CodeEditor,
     feedback::{EmptyState, InlineMessage},
-    forms::TextInput,
+    forms::InputState,
     lists::{Tree, TreeNode},
     primitives::{IconName, Severity},
     theme::{ActiveTheme, Radius, TextSize},
@@ -55,7 +55,7 @@ pub struct GraphQLExplorer {
     query: Entity<CodeEditor>,
     variables: Entity<CodeEditor>,
     answer: Option<SharedString>,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     running: bool,
     on_run: Option<OnRun>,
     on_pick: Option<OnKey>,
@@ -68,7 +68,7 @@ impl GraphQLExplorer {
         types: impl IntoIterator<Item = SchemaType>,
         query: &Entity<CodeEditor>,
         variables: &Entity<CodeEditor>,
-        search: &Entity<TextInput>,
+        search: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),

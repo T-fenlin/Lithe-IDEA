@@ -20,7 +20,7 @@ pub(crate) use kind::{matching, shortcut};
 pub(crate) use media::source;
 
 use super::markdown::markdown_highlights;
-use crate::forms::{History, InputEvent, TextInput, code_highlights};
+use crate::forms::{History, InputEvent, InputState, code_highlights};
 
 /// A block as the editor gives it out and takes it in: its kind and the text of each of its fields.
 #[derive(Clone, Debug, PartialEq)]
@@ -60,7 +60,7 @@ impl Global for SyncedTexts {}
 pub(crate) struct Block {
     pub key: u64,
     pub kind: BlockKind,
-    pub fields: Vec<Entity<TextInput>>,
+    pub fields: Vec<Entity<InputState>>,
     _changes: Vec<Subscription>,
 }
 
@@ -141,14 +141,14 @@ impl BlockEditor {
         text: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Entity<TextInput> {
+    ) -> Entity<InputState> {
         let code = *kind == BlockKind::Code;
         let field = cx.new(|cx| {
             let hint = match kind {
                 BlockKind::Paragraph | BlockKind::Table { .. } => "",
                 kind => kind.placeholder(),
             };
-            let field = TextInput::new(window, cx)
+            let field = InputState::new(window, cx)
                 .multi_line(1, usize::MAX)
                 .placeholder(hint);
             match (code, kind.is_source()) {
@@ -193,7 +193,7 @@ impl BlockEditor {
                 }
             }
         }
-        let fields: Vec<Entity<TextInput>> = texts
+        let fields: Vec<Entity<InputState>> = texts
             .iter()
             .map(|text| Self::field(&data.kind, text, window, cx))
             .collect();
@@ -211,7 +211,7 @@ impl BlockEditor {
 
     fn watch(
         key: u64,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Subscription {
@@ -254,7 +254,7 @@ impl BlockEditor {
     fn on_field(
         &mut self,
         key: u64,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         event: InputEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -315,7 +315,7 @@ impl BlockEditor {
 
     /// Takes in synced text written elsewhere.
     fn pull(&mut self, cx: &mut Context<Self>) {
-        let shared: Vec<(Entity<TextInput>, String)> = self
+        let shared: Vec<(Entity<InputState>, String)> = self
             .blocks
             .iter()
             .filter_map(|block| match &block.kind {

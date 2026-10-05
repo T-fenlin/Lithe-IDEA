@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, Run, Slider, TextInput},
+    forms::{Input, InputState, Run, Slider},
     primitives::Tooltip,
     theme::{ActiveTheme, Size, TextSize},
     typography::{
@@ -239,7 +239,7 @@ impl RenderOnce for CostEstimator {
 #[derive(IntoElement)]
 pub struct SystemPromptEditor {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     tokens: usize,
     limit: usize,
     on_reset: Option<Run>,
@@ -249,7 +249,7 @@ impl SystemPromptEditor {
     /// `tokens` counts the field's text, as the model's tokenizer does.
     pub fn new(
         id: impl Into<ElementId>,
-        field: &Entity<TextInput>,
+        field: &Entity<InputState>,
         tokens: usize,
         limit: usize,
     ) -> Self {

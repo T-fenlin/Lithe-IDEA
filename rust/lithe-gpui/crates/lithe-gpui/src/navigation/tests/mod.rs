@@ -9,7 +9,7 @@ use super::{
     BackForwardNavigation, Breadcrumb, Crumb, GoToLine, LoadMore, NavigationMenu, Steps, Wizard,
 };
 use crate::{
-    forms::{Choice, TextInput},
+    forms::{Choice, InputState},
     layout::tests::narrow_width,
     theme::Theme,
 };
@@ -268,7 +268,7 @@ fn back_steps_once_and_the_list_jumps_anywhere(cx: &mut TestAppContext) {
 }
 
 struct Jump {
-    field: gpui::Entity<TextInput>,
+    field: gpui::Entity<InputState>,
     to: Option<(usize, Option<usize>)>,
 }
 
@@ -285,7 +285,7 @@ impl Render for Jump {
 fn enter_jumps_to_a_line_and_column(cx: &mut TestAppContext) {
     setup(cx);
     let (view, cx) = cx.add_window_view(|window, cx| Jump {
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         to: None,
     });
     cx.update(|window, cx| window.focus_next(cx));

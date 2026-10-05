@@ -16,7 +16,7 @@ use super::{
     DateSeparator, ImageGrid, ImageMessage, MessageAvatar, MessageBubble, MessageEditor,
     MessageList, Role, ThinkingBlock, VideoMessage,
 };
-use crate::{forms, forms::TextInput, theme::Theme};
+use crate::{forms, forms::InputState, theme::Theme};
 
 type Seen = Rc<RefCell<Vec<usize>>>;
 
@@ -103,7 +103,7 @@ fn the_list_follows_the_newest_until_the_reader_scrolls_away(cx: &mut TestAppCon
 
 /// A sent message open to change, and what the reader asked.
 struct Edit {
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     saved: usize,
     cancelled: usize,
 }
@@ -129,7 +129,7 @@ fn an_edit_saves_only_a_change_and_escape_cancels(cx: &mut TestAppContext) {
     });
     let (edit, cx) = cx.add_window_view(|window, cx| Edit {
         field: cx.new(|cx| {
-            let mut input = TextInput::new(window, cx);
+            let mut input = InputState::new(window, cx);
             input.set_text("Lift blends toward white.", cx);
             input
         }),
@@ -165,7 +165,7 @@ fn the_editor_takes_focus_as_it_opens(cx: &mut TestAppContext) {
         forms::bind_keys(cx);
     });
     let (edit, cx) = cx.add_window_view(|window, cx| Edit {
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         saved: 0,
         cancelled: 0,
     });

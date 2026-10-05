@@ -7,7 +7,7 @@ use lithe_gpui::{
     chat::{continue_button, stop_button},
     data_display::Tone,
     debug::{Span, TimelineProfiler},
-    forms::TextInput,
+    forms::InputState,
     tables::{Cell, Column, DataTable, Row},
 };
 
@@ -20,7 +20,7 @@ pub fn interrupt_section(window: &mut Window, cx: &mut App) -> impl IntoElement 
     let state = keep("agent-run", || AgentState::Working, window, cx);
     let answer = keep("agent-answer", || None::<String>, window, cx);
     let field = window.use_keyed_state("agent-answer-field", cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Or write an answer")
+        InputState::new(window, cx).placeholder("Or write an answer")
     });
     let (now_state, now_answer) = (*state.read(cx), answer.read(cx).clone());
     let (stop, go) = (state.clone(), state);

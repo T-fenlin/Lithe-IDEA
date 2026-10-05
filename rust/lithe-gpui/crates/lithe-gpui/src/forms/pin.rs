@@ -5,13 +5,13 @@ use gpui::{
     SharedString, Styled, Subscription, Window, div, prelude::*,
 };
 
-use super::{InputEvent, TextInput};
+use super::{InputEvent, InputState};
 use crate::theme::{ActiveTheme, Radius, Size, TextSize};
 
 type OnCode = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 
 struct Pin {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     length: usize,
     attempt: usize,
     on_complete: Option<OnCode>,
@@ -72,7 +72,7 @@ impl RenderOnce for PinInput {
         let (length, letters, attempt) = (self.length, self.letters, self.attempt);
         let state = window.use_keyed_state(self.id.clone(), cx, |window, cx: &mut Context<Pin>| {
             let input = cx.new(|cx| {
-                TextInput::new(window, cx)
+                InputState::new(window, cx)
                     .max_len(length)
                     .filter(move |ch| ch.is_ascii_digit() || (letters && ch.is_ascii_alphabetic()))
             });

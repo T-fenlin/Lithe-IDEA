@@ -12,7 +12,7 @@ use super::{
     view::Frame,
 };
 use crate::{
-    forms::{History, InputEvent, TextInput},
+    forms::{History, InputEvent, InputState},
     theme::ActiveTheme,
 };
 
@@ -114,7 +114,7 @@ pub struct CodeEditor {
     pub(crate) caret_on: bool,
     /// Blink runs only while focused, or unseen cursors redraw forever.
     focused: bool,
-    pub(crate) chat_field: gpui::Entity<TextInput>,
+    pub(crate) chat_field: gpui::Entity<InputState>,
     pub(crate) frame: Frame,
     blink_epoch: u64,
     _blink: Option<Task<()>>,
@@ -133,7 +133,7 @@ impl CodeEditor {
     pub fn new(text: impl Into<String>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle().tab_stop(true);
         let chat_field =
-            cx.new(|cx| TextInput::new(window, cx).placeholder("Ask to change this code"));
+            cx.new(|cx| InputState::new(window, cx).placeholder("Ask to change this code"));
         let subscriptions = vec![
             cx.on_focus(&focus, window, |editor, _, cx| {
                 editor.focused = true;

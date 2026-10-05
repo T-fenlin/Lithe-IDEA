@@ -11,11 +11,11 @@ use gpui::{
     Keystroke, ParentElement, Render, TestAppContext, VisualTestContext, Window, div, px,
 };
 
-use super::{Input, MaskedInput, NumberInput, PinInput, TextInput, bind_keys};
+use super::{Input, InputState, MaskedInput, NumberInput, PinInput, bind_keys};
 use crate::theme::Theme;
 
 struct Fields {
-    fields: Vec<Entity<TextInput>>,
+    fields: Vec<Entity<InputState>>,
     clearable: bool,
 }
 
@@ -43,20 +43,20 @@ fn open(
     count: usize,
     clearable: bool,
     cx: &mut TestAppContext,
-) -> (Vec<Entity<TextInput>>, &mut VisualTestContext) {
+) -> (Vec<Entity<InputState>>, &mut VisualTestContext) {
     open_with(count, clearable, |input| input, cx)
 }
 
 fn open_with(
     count: usize,
     clearable: bool,
-    build: impl Fn(TextInput) -> TextInput + 'static,
+    build: impl Fn(InputState) -> InputState + 'static,
     cx: &mut TestAppContext,
-) -> (Vec<Entity<TextInput>>, &mut VisualTestContext) {
+) -> (Vec<Entity<InputState>>, &mut VisualTestContext) {
     setup(cx);
     let (view, cx) = cx.add_window_view(|window, cx| Fields {
         fields: (0..count)
-            .map(|_| cx.new(|cx| build(TextInput::new(window, cx))))
+            .map(|_| cx.new(|cx| build(InputState::new(window, cx))))
             .collect(),
         clearable,
     });
@@ -64,11 +64,11 @@ fn open_with(
     (fields, cx)
 }
 
-fn text(field: &Entity<TextInput>, cx: &mut VisualTestContext) -> String {
+fn text(field: &Entity<InputState>, cx: &mut VisualTestContext) -> String {
     field.read_with(cx, |input, _| input.text().to_string())
 }
 
-fn focus(field: &Entity<TextInput>, cx: &mut VisualTestContext) {
+fn focus(field: &Entity<InputState>, cx: &mut VisualTestContext) {
     cx.update(|window, cx| window.focus(&field.read(cx).focus().clone(), cx));
 }
 
@@ -279,7 +279,7 @@ fn select_all_then_typing_replaces_the_pin(cx: &mut TestAppContext) {
 }
 
 struct Masked {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     mask: &'static str,
 }
 
@@ -292,10 +292,10 @@ impl Render for Masked {
 fn masked<'a>(
     mask: &'static str,
     cx: &'a mut TestAppContext,
-) -> (Entity<TextInput>, &'a mut VisualTestContext) {
+) -> (Entity<InputState>, &'a mut VisualTestContext) {
     setup(cx);
     let (view, cx) = cx.add_window_view(|window, cx| Masked {
-        state: cx.new(|cx| TextInput::new(window, cx)),
+        state: cx.new(|cx| InputState::new(window, cx)),
         mask,
     });
     let state = view.read_with(cx, |view, _| view.state.clone());

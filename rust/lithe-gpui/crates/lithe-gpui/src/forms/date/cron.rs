@@ -5,7 +5,7 @@ use gpui::{
 use jiff::civil::DateTime;
 
 use super::{
-    super::{Input, TextInput},
+    super::{Input, InputState},
     CronRule, zoned_now,
 };
 use crate::{
@@ -25,13 +25,13 @@ const PRESETS: [(&str, &str); 5] = [
 #[derive(IntoElement)]
 pub struct CronEditor {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     now: Option<DateTime>,
     runs: usize,
 }
 
 impl CronEditor {
-    pub fn new(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             state: state.clone(),

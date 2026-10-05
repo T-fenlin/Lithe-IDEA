@@ -4,7 +4,7 @@ use lithe_gpui::{
         CodeEditor, FileHits, FindOptions, FindWidget, Hit, SearchFilters, SearchPanel, find_all,
         passes,
     },
-    forms::TextInput,
+    forms::InputState,
     theme::ActiveTheme,
     typography::Caption,
 };
@@ -17,10 +17,10 @@ fn field(
     text: &str,
     window: &mut Window,
     cx: &mut App,
-) -> gpui::Entity<TextInput> {
+) -> gpui::Entity<InputState> {
     let seed = text.to_string();
     window.use_keyed_state(key, cx, move |window, cx| {
-        let mut field = TextInput::new(window, cx);
+        let mut field = InputState::new(window, cx);
         field.set_text(seed, cx);
         field
     })

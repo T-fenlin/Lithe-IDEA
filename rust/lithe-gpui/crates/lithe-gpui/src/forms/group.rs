@@ -3,7 +3,7 @@ use gpui::{
     RenderOnce, SharedString, Styled, Window, div, prelude::*,
 };
 
-use super::{TextInput, input::text_size};
+use super::{InputState, input::text_size};
 use crate::theme::{ActiveTheme, Radius, Size};
 
 /// A block joined to a field's side: text such as `https://`, or a control.
@@ -35,14 +35,14 @@ impl RenderOnce for InputAddon {
 /// A field with addons joined before and after it, in one frame.
 #[derive(IntoElement)]
 pub struct InputGroup {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     before: Vec<InputAddon>,
     after: Vec<InputAddon>,
     size: Size,
 }
 
 impl InputGroup {
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
             before: Vec::new(),

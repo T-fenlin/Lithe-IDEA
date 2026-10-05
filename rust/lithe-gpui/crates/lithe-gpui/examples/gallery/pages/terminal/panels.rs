@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     terminal::{LogLevel, LogLine, LogViewer, Process, ProcessList},
     theme::{ActiveTheme, Radius},
     typography::Caption,
@@ -59,9 +59,9 @@ fn field(
     placeholder: &'static str,
     window: &mut Window,
     cx: &mut App,
-) -> gpui::Entity<TextInput> {
+) -> gpui::Entity<InputState> {
     window.use_keyed_state(key, cx, move |window, cx| {
-        TextInput::new(window, cx).placeholder(placeholder)
+        InputState::new(window, cx).placeholder(placeholder)
     })
 }
 

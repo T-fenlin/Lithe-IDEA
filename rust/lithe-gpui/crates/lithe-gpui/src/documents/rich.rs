@@ -13,7 +13,7 @@ use super::{
     toolbar::{FixedFormatToolbar, INLINE, tool},
 };
 use crate::{
-    forms::{Run, TextInput},
+    forms::{InputState, Run},
     overlays::FloatingToolbar,
     theme::{ActiveTheme, Radius, TextSize},
 };
@@ -35,7 +35,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
 #[derive(IntoElement)]
 pub struct RichTextEditor {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     people: Vec<SharedString>,
     end: Option<AnyElement>,
     beside: Option<AnyElement>,
@@ -43,7 +43,7 @@ pub struct RichTextEditor {
 
 impl RichTextEditor {
     /// Give the field several lines and `markdown_highlights` as its highlighter.
-    pub fn new(id: impl Into<ElementId>, field: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             field: field.clone(),

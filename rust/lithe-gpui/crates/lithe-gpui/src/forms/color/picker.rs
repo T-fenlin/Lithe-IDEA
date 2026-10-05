@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use super::{
-    super::{InputEvent, TextInput},
+    super::{InputEvent, InputState},
     ColorSwatch, EyeDropper, Hsva,
     fields::{Commit, Format, SetFormat, format_select, typed_fields},
     hex, parse_hex,
@@ -53,7 +53,7 @@ struct Grip {
 struct Picking {
     color: Hsva,
     committed: Hsla,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     format: Format,
     opaque: bool,
     on_change: Option<OnColor>,
@@ -84,7 +84,7 @@ fn picking(id: &ElementId, value: Hsla, window: &mut Window, cx: &mut App) -> En
         (id.clone(), "picking"),
         cx,
         |window, cx: &mut Context<Picking>| {
-            let field = cx.new(|cx| TextInput::new(window, cx).max_len(9));
+            let field = cx.new(|cx| InputState::new(window, cx).max_len(9));
             let events = cx.subscribe_in(&field, window, |picking, field, event, window, cx| {
                 if !matches!(event, InputEvent::Submit | InputEvent::Blur) {
                     return;

@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     editor::CodeEditor,
     feedback::InlineMessage,
-    forms::{Choice, FormField, Input, KeyValueInput, PasswordInput, Select, TextInput},
+    forms::{Choice, FormField, Input, InputState, KeyValueInput, PasswordInput, Select},
     navigation::Tabs,
     primitives::Severity,
     theme::{ActiveTheme, Radius, TextSize},
@@ -151,14 +151,14 @@ type OnRequest = Rc<dyn Fn(ApiRequest, &mut Window, &mut App)>;
 struct Draft {
     seed: SharedString,
     method: Method,
-    url: Entity<TextInput>,
+    url: Entity<InputState>,
     params: Vec<(String, String)>,
     headers: Vec<(String, String)>,
     body: Entity<CodeEditor>,
     auth: SharedString,
-    token: Entity<TextInput>,
-    user: Entity<TextInput>,
-    password: Entity<TextInput>,
+    token: Entity<InputState>,
+    user: Entity<InputState>,
+    password: Entity<InputState>,
     tab: SharedString,
 }
 
@@ -167,7 +167,7 @@ impl Draft {
         let mut field = |text: &str| {
             let text = text.to_string();
             cx.new(|cx| {
-                let mut input = TextInput::new(window, cx);
+                let mut input = InputState::new(window, cx);
                 input.set_text(text, cx);
                 input
             })
@@ -201,7 +201,7 @@ impl Draft {
 
     fn read(&self, key: &SharedString, cx: &App) -> ApiRequest {
         let text =
-            |input: &Entity<TextInput>| SharedString::from(input.read(cx).text().to_string());
+            |input: &Entity<InputState>| SharedString::from(input.read(cx).text().to_string());
         ApiRequest {
             key: key.clone(),
             method: self.method,

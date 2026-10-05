@@ -134,7 +134,7 @@ pub fn conversation(window: &mut Window, cx: &mut App) -> impl IntoElement + use
 pub fn thread(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let open = thread_open(window, cx);
     let reply = window.use_keyed_state("messaging-thread-reply", cx, |window, cx| {
-        lithe_gpui::forms::TextInput::new(window, cx).placeholder("Reply…")
+        lithe_gpui::forms::InputState::new(window, cx).placeholder("Reply…")
     });
     let shown = *open.read(cx);
     let theme = cx.theme();

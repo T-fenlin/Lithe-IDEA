@@ -6,7 +6,7 @@ use gpui::{
     Window, div, prelude::*,
 };
 
-use super::{Input, InputEvent, TextInput};
+use super::{Input, InputEvent, InputState};
 use crate::{
     primitives::{FocusRing, Icon, IconName, tab_stop},
     theme::{ActiveTheme, IconSize, Radius, Size},
@@ -18,7 +18,7 @@ pub(crate) type OnCommit = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 /// A text being edited in place: its field while open, who hears the kept text, and where focus goes back after Enter or Escape. An edit that hands focus back keeps its text on Enter's release, so the release does not open it again.
 #[derive(Default)]
 pub(crate) struct Editing {
-    field: Option<(Entity<TextInput>, Subscription)>,
+    field: Option<(Entity<InputState>, Subscription)>,
     pub on_commit: Option<OnCommit>,
     back: Option<FocusHandle>,
 }
@@ -27,7 +27,7 @@ impl Editing {
     /// Opens a field on `value`, all of it selected and focused; Enter or leaving keeps it.
     pub(crate) fn begin(state: &Entity<Editing>, value: String, window: &mut Window, cx: &mut App) {
         let field = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx);
+            let mut input = InputState::new(window, cx);
             input.set_text(value, cx);
             input
         });
@@ -65,7 +65,7 @@ impl Editing {
         }
     }
 
-    pub(crate) fn field(&self) -> Option<Entity<TextInput>> {
+    pub(crate) fn field(&self) -> Option<Entity<InputState>> {
         self.field.as_ref().map(|(field, _)| field.clone())
     }
 

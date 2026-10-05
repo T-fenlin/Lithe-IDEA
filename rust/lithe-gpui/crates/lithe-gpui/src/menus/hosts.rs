@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     buttons::{Button, ButtonGroup, ButtonVariant},
-    forms::TextInput,
+    forms::InputState,
     primitives::IconName,
 };
 
@@ -41,7 +41,7 @@ fn host(
     trigger: impl IntoElement,
     menu: &Menu,
     state: &Entity<Open>,
-    field: Option<&Entity<TextInput>>,
+    field: Option<&Entity<InputState>>,
     window: &mut Window,
     cx: &mut App,
 ) -> Stateful<Div> {
@@ -329,7 +329,7 @@ impl RenderOnce for SearchableMenu {
         let field = state.read(cx).is_open().then(|| {
             let placeholder = self.placeholder.clone();
             window.use_keyed_state((self.id.clone(), "filter"), cx, move |window, cx| {
-                TextInput::new(window, cx).placeholder(placeholder)
+                InputState::new(window, cx).placeholder(placeholder)
             })
         });
         let query = field

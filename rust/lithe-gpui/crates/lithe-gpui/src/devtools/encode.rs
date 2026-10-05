@@ -7,7 +7,7 @@ use super::request::percent;
 use crate::{
     buttons::{Button, SegmentedControl},
     feedback::InlineMessage,
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     primitives::{IconName, Severity},
     theme::{ActiveTheme, Radius, TextSize},
     typography::literal,
@@ -157,7 +157,7 @@ impl Code {
 
 /// The encoder's own field, code and way.
 struct Desk {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     code: Code,
     encode: bool,
 }
@@ -184,7 +184,7 @@ impl RenderOnce for Encoder {
         let text = self.text.to_string();
         let desk = window.use_keyed_state((self.id.clone(), "desk"), cx, move |window, cx| Desk {
             input: cx.new(|cx| {
-                let mut input = TextInput::new(window, cx).multi_line(3, 8);
+                let mut input = InputState::new(window, cx).multi_line(3, 8);
                 input.set_text(text, cx);
                 input
             }),

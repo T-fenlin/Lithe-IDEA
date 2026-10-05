@@ -10,7 +10,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     canvas::{OnEdit, caption, editing},
     data_display::{Badge, Tone},
-    forms::{Checkbox, Choice, InlineEdit, Input, MultiSelect, Select, Switch, TextInput},
+    forms::{Checkbox, Choice, InlineEdit, Input, InputState, MultiSelect, Select, Switch},
     primitives::IconName,
     theme::{ActiveTheme, Radius, TextSize},
     typography::Ellipsis,
@@ -293,7 +293,7 @@ type OnIndex = Rc<dyn Fn(Index, &mut Window, &mut App)>;
 
 /// A new index being drawn up: its name field, fields, uniqueness and method.
 struct Draft {
-    name: Entity<TextInput>,
+    name: Entity<InputState>,
     fields: Vec<SharedString>,
     unique: bool,
     method: SharedString,
@@ -345,7 +345,7 @@ impl RenderOnce for IndexManager {
         let on_drop = self.on_drop.expect("an index manager needs on_drop");
         let id = self.id;
         let draft = window.use_keyed_state((id.clone(), "draft"), cx, |window, cx| Draft {
-            name: cx.new(|cx| TextInput::new(window, cx).placeholder("Index name")),
+            name: cx.new(|cx| InputState::new(window, cx).placeholder("Index name")),
             fields: Vec::new(),
             unique: false,
             method: "btree".into(),

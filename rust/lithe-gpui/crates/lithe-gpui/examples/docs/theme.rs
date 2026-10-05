@@ -1,4 +1,7 @@
-use gpui::{App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Window, WindowOptions, div, rgb};
+use gpui::{
+    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Window,
+    WindowOptions, div, rgb,
+};
 use lithe_gpui::{
     Assets,
     buttons::Button,

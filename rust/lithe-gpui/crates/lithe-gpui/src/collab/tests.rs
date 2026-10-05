@@ -6,14 +6,14 @@ use gpui::{
 use super::{FollowMode, Peer, Reply};
 use crate::{
     forms,
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     theme::Theme,
 };
 
 /// A field outside a followed view and one inside it, with what they asked: replies sent, follows stopped.
 struct Desk {
-    outside: Entity<TextInput>,
-    field: Entity<TextInput>,
+    outside: Entity<InputState>,
+    field: Entity<InputState>,
     following: bool,
     sent: usize,
     stopped: usize,
@@ -40,8 +40,8 @@ fn open(following: bool, cx: &mut TestAppContext) -> (Entity<Desk>, &mut VisualT
         forms::bind_keys(cx);
     });
     let (desk, cx) = cx.add_window_view(move |window, cx| Desk {
-        outside: cx.new(|cx| TextInput::new(window, cx)),
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        outside: cx.new(|cx| InputState::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         following,
         sent: 0,
         stopped: 0,

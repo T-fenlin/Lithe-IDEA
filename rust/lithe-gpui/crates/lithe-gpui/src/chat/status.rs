@@ -11,7 +11,7 @@ use super::stream::StreamingText;
 use crate::{
     buttons::{Button, ButtonVariant},
     feedback::{Alert, Countdown},
-    forms::{Choice, ChoiceChips, Input, OnValues, Run, TextInput},
+    forms::{Choice, ChoiceChips, Input, InputState, OnValues, Run},
     primitives::{Disclosure, FocusRing, Icon, IconName, Severity},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::ShimmerText,
@@ -157,7 +157,7 @@ pub struct FeedbackForm {
     id: ElementId,
     reasons: Vec<SharedString>,
     picked: Vec<SharedString>,
-    note: Entity<TextInput>,
+    note: Entity<InputState>,
     on_pick: OnValues,
     on_send: Run,
     on_cancel: Option<Run>,
@@ -169,7 +169,7 @@ impl FeedbackForm {
         id: impl Into<ElementId>,
         reasons: impl IntoIterator<Item = impl Into<SharedString>>,
         picked: impl IntoIterator<Item = impl Into<SharedString>>,
-        note: &Entity<TextInput>,
+        note: &Entity<InputState>,
         on_pick: impl Fn(&[SharedString], &mut Window, &mut App) + 'static,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {

@@ -3,7 +3,7 @@ use std::{rc::Rc, time::Duration};
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
-    forms::{Form, FormField, TagInput, TextInput},
+    forms::{Form, FormField, InputState, TagInput},
     generative::{AspectRatioPicker, PromptEnhancer, SeedInput, StylePreset, StylePresetPicker},
     typography::Caption,
 };
@@ -61,14 +61,14 @@ fn edit(settings: &Entity<Settings>, cx: &mut App, change: impl FnOnce(&mut Sett
 
 pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let prompt = window.use_keyed_state("gen-prompt-field", cx, |window, cx| {
-        let mut input = TextInput::new(window, cx)
+        let mut input = InputState::new(window, cx)
             .multi_line(3, 6)
             .placeholder("Describe a picture");
         input.set_text("a spiral staircase in a white atrium", cx);
         input
     });
     let seed = window.use_keyed_state("gen-seed-field", cx, |window, cx| {
-        let mut input = TextInput::new(window, cx);
+        let mut input = InputState::new(window, cx);
         input.set_text("2710", cx);
         input
     });

@@ -10,7 +10,7 @@ use super::badges::DiffStat;
 use crate::{
     buttons::{Button, ButtonVariant},
     data_display::{Avatar, AvatarGroup, Tag, Tone},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, AvatarSize, IconSize, Palette, Radius, Size, TextSize},
     typography::{Ellipsis, LEADING, format},
@@ -221,7 +221,7 @@ pub struct ReviewComment {
     code: SharedString,
     notes: Vec<ReviewNote>,
     resolved: bool,
-    reply: Entity<TextInput>,
+    reply: Entity<InputState>,
     on_reply: Option<Run>,
     on_resolve: Option<OnBool>,
 }
@@ -234,7 +234,7 @@ impl ReviewComment {
         line: usize,
         code: impl Into<SharedString>,
         notes: impl IntoIterator<Item = ReviewNote>,
-        reply: &Entity<TextInput>,
+        reply: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),

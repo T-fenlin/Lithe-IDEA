@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use super::{
-    Input, TextInput,
+    Input, InputState,
     options::{Choice, Popup},
 };
 use crate::{
@@ -20,14 +20,14 @@ type OnPick = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct SearchInput {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     history: Vec<SharedString>,
     size: Size,
     on_pick: Option<OnPick>,
 }
 
 impl SearchInput {
-    pub fn new(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             state: state.clone(),

@@ -10,7 +10,7 @@ use lithe_gpui::{
         RedisValue,
     },
     editor::CodeEditor,
-    forms::TextInput,
+    forms::InputState,
     tables::DataGrid,
     theme::{ActiveTheme, Radius},
 };
@@ -76,7 +76,7 @@ fn plan() -> PlanStep {
 struct Console {
     editor: gpui::Entity<CodeEditor>,
     rows: Rc<Vec<Vec<SharedString>>>,
-    search: gpui::Entity<TextInput>,
+    search: gpui::Entity<InputState>,
     now: Timestamp,
     runs: Vec<QueryRun>,
 }
@@ -98,7 +98,7 @@ pub fn queries(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .map(|row| row.iter().map(|cell| SharedString::from(*cell)).collect())
                     .collect(),
             ),
-            search: cx.new(|cx| TextInput::new(window, cx).placeholder("Find a query")),
+            search: cx.new(|cx| InputState::new(window, cx).placeholder("Find a query")),
             now,
             runs: runs(now),
         }
@@ -160,7 +160,7 @@ pub fn queries(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn redis(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let pattern = window.use_keyed_state("devtools-redis-pattern", cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Pattern, such as user:*")
+        InputState::new(window, cx).placeholder("Pattern, such as user:*")
     });
     let picked = keep(
         "devtools-redis-picked",

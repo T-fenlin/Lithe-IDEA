@@ -6,7 +6,7 @@ use gpui::{
 };
 use lithe_gpui::{
     editor::{FindOptions, FindWidget},
-    forms::TextInput,
+    forms::InputState,
     layout::{PaneGroup, PaneId},
     navigation::{EditorTab, EditorTabs},
     primitives::IconName,
@@ -75,10 +75,10 @@ fn session(
     terminal
 }
 
-fn field(key: &'static str, text: &str, window: &mut Window, cx: &mut App) -> Entity<TextInput> {
+fn field(key: &'static str, text: &str, window: &mut Window, cx: &mut App) -> Entity<InputState> {
     let seed = text.to_string();
     window.use_keyed_state(key, cx, move |window, cx| {
-        let mut field = TextInput::new(window, cx);
+        let mut field = InputState::new(window, cx);
         field.set_text(seed, cx);
         field
     })

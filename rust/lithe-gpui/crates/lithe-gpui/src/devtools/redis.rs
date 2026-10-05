@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     data_display::{Badge, Tone},
     feedback::EmptyState,
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     lists::{ListItem, SelectableList},
     primitives::{Icon, IconName},
     tables::Table,
@@ -79,7 +79,7 @@ type OnKey = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 pub struct RedisKeyBrowser {
     id: ElementId,
     keys: Vec<RedisKey>,
-    pattern: Entity<TextInput>,
+    pattern: Entity<InputState>,
     selected: Option<SharedString>,
     on_select: Option<OnKey>,
 }
@@ -89,7 +89,7 @@ impl RedisKeyBrowser {
     pub fn new(
         id: impl Into<ElementId>,
         keys: impl IntoIterator<Item = RedisKey>,
-        pattern: &Entity<TextInput>,
+        pattern: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),

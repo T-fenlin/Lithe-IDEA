@@ -15,8 +15,8 @@ use super::{
 use crate::{
     buttons::{Button, ButtonVariant},
     forms::{
-        ColorPalette, DatePicker, DateTimePicker, FormError, FormField, Input, InputEvent, Run,
-        Switch, TextInput,
+        ColorPalette, DatePicker, DateTimePicker, FormError, FormField, Input, InputEvent,
+        InputState, Run, Switch,
     },
     theme::{ActiveTheme, HUE_NAMES},
     typography::format,
@@ -103,9 +103,9 @@ fn moved(when: When, start: Timestamp) -> When {
 struct Editing {
     seed: EventDraft,
     draft: EventDraft,
-    title: Entity<TextInput>,
-    place: Entity<TextInput>,
-    notes: Entity<TextInput>,
+    title: Entity<InputState>,
+    place: Entity<InputState>,
+    notes: Entity<InputState>,
     _title: Subscription,
 }
 
@@ -125,7 +125,7 @@ impl Editing {
     /// The draft as it stands, its words read from the fields.
     fn current(&self, cx: &App) -> EventDraft {
         let words =
-            |input: &Entity<TextInput>| SharedString::from(input.read(cx).text().to_string());
+            |input: &Entity<InputState>| SharedString::from(input.read(cx).text().to_string());
         EventDraft {
             title: words(&self.title).trim().to_string().into(),
             place: words(&self.place).trim().to_string().into(),
@@ -197,7 +197,7 @@ impl RenderOnce for EventEditor {
             |window, cx: &mut Context<Editing>| {
                 let mut field = |placeholder: &'static str, text: &SharedString, lines: bool| {
                     cx.new(|cx| {
-                        let input = TextInput::new(window, cx).placeholder(placeholder);
+                        let input = InputState::new(window, cx).placeholder(placeholder);
                         let mut input = match lines {
                             true => input.multi_line(3, 6),
                             false => input,

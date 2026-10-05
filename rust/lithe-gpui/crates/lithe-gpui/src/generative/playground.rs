@@ -8,7 +8,7 @@ use gpui::{
 use super::prompt::OnText;
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     motion::Spinner,
     primitives::IconName,
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -59,7 +59,7 @@ pub(crate) fn fill(template: &str, values: &[(String, String)]) -> (String, Vec<
 #[derive(IntoElement)]
 pub struct PromptPlayground {
     id: ElementId,
-    template: Entity<TextInput>,
+    template: Entity<InputState>,
     running: bool,
     output: Option<SharedString>,
     stats: Option<(usize, Duration)>,
@@ -68,7 +68,7 @@ pub struct PromptPlayground {
 
 impl PromptPlayground {
     /// `template` is the owner's field for the prompt.
-    pub fn new(id: impl Into<ElementId>, template: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, template: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             template: template.clone(),
@@ -103,14 +103,14 @@ impl RenderOnce for PromptPlayground {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let template = self.template.read(cx).text().to_string();
         let names = variables(&template);
-        let fields: Vec<(String, Entity<TextInput>)> = names
+        let fields: Vec<(String, Entity<InputState>)> = names
             .into_iter()
             .map(|name| {
                 let placeholder = name.clone();
                 let field = window.use_keyed_state(
                     (self.id.clone(), format!("var-{name}")),
                     cx,
-                    |window, cx| TextInput::new(window, cx).placeholder(placeholder),
+                    |window, cx| InputState::new(window, cx).placeholder(placeholder),
                 );
                 (name, field)
             })

@@ -6,7 +6,7 @@ use gpui::{
 };
 use regex::Regex;
 
-use super::{Highlight, Input, TextInput};
+use super::{Highlight, Input, InputState};
 use crate::theme::{ActiveTheme, Size, TextSize};
 
 /// Token spans of a regex, by kind.
@@ -98,13 +98,13 @@ pub fn regex_highlights(pattern: &str, cx: &App) -> Vec<(Range<usize>, Highlight
 /// A regular expression field: colored as you type, checked as you type.
 #[derive(IntoElement)]
 pub struct RegexInput {
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     size: Size,
 }
 
 impl RegexInput {
     /// Give the state `regex_highlights` as its highlighter.
-    pub fn new(state: &Entity<TextInput>) -> Self {
+    pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
             size: Size::default(),

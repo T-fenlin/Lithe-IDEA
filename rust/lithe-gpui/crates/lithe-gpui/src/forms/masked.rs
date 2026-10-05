@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use super::{
-    Input, TextInput,
+    Input, InputState,
     options::{Choice, Popup},
 };
 use crate::{
@@ -89,7 +89,7 @@ pub(crate) fn mask_hint(mask: &str) -> String {
 
 fn masking(
     id: &ElementId,
-    state: &Entity<TextInput>,
+    state: &Entity<InputState>,
     mask: &SharedString,
     window: &mut Window,
     cx: &mut App,
@@ -121,7 +121,7 @@ fn masking(
 #[derive(IntoElement)]
 pub struct MaskedInput {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     mask: SharedString,
     size: Size,
     prefix: Option<AnyElement>,
@@ -130,7 +130,7 @@ pub struct MaskedInput {
 impl MaskedInput {
     pub fn new(
         id: impl Into<ElementId>,
-        state: &Entity<TextInput>,
+        state: &Entity<InputState>,
         mask: impl Into<SharedString>,
     ) -> Self {
         Self {
@@ -180,14 +180,18 @@ type OnCountry = Rc<dyn Fn(&'static str, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct PhoneInput {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     country: &'static str,
     on_country: Option<OnCountry>,
 }
 
 impl PhoneInput {
     /// `country` is a code from `COUNTRIES`.
-    pub fn new(id: impl Into<ElementId>, state: &Entity<TextInput>, country: &'static str) -> Self {
+    pub fn new(
+        id: impl Into<ElementId>,
+        state: &Entity<InputState>,
+        country: &'static str,
+    ) -> Self {
         assert!(
             COUNTRIES.iter().any(|(code, ..)| *code == country),
             "phone input has no country {country}"

@@ -10,7 +10,7 @@ use super::{
     StartupSettings, StorageSettings, Store, ThemeSelector,
 };
 use crate::{
-    forms::{self, Choice, TextInput},
+    forms::{self, Choice, InputState},
     primitives::{FocusNext, IconName},
     theme::Theme,
 };
@@ -82,7 +82,7 @@ fn tap(key: &str, cx: &mut VisualTestContext) {
 }
 
 fn search(window: &mut Window, cx: &mut App, owner: Entity<Desk>) -> AnyElement {
-    let field = window.use_keyed_state("search", cx, TextInput::new);
+    let field = window.use_keyed_state("search", cx, InputState::new);
     let entry = |key: &str, name: &str, words: &[&str]| SettingEntry {
         key: key.to_string().into(),
         section: "Appearance".into(),
@@ -141,7 +141,7 @@ fn a_row_goes_back_alone_and_reset_all_asks_twice(cx: &mut TestAppContext) {
 }
 
 fn flags(window: &mut Window, cx: &mut App, owner: Entity<Desk>) -> AnyElement {
-    let field = window.use_keyed_state("flags-search", cx, TextInput::new);
+    let field = window.use_keyed_state("flags-search", cx, InputState::new);
     let flag = |key: &str, on| Flag {
         key: key.to_string().into(),
         name: key.to_string().into(),

@@ -5,7 +5,7 @@ use gpui::{
 
 use crate::{
     buttons::Button,
-    forms::{Choice, Input, Select, TextInput, parse_number},
+    forms::{Choice, Input, InputState, Select, parse_number},
     primitives::IconName,
     theme::{ActiveTheme, Radius, Size},
     typography::{
@@ -151,7 +151,7 @@ fn read(amount: f64, from: &Unit, to: &Unit) -> String {
 
 /// The converter's own field, kind and units.
 struct Desk {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     kind: usize,
     from: usize,
     to: usize,
@@ -182,7 +182,7 @@ impl RenderOnce for UnitConverter {
         let id = self.id;
         let desk = window.use_keyed_state((id.clone(), "desk"), cx, |window, cx| Desk {
             input: cx.new(|cx| {
-                let mut input = TextInput::new(window, cx)
+                let mut input = InputState::new(window, cx)
                     .filter(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ',' | '-' | MINUS));
                 input.set_text("1", cx);
                 input

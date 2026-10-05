@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{Enter, Input, TextInput},
+    forms::{Enter, Input, InputState},
     menus::{Menu, MenuItem, OverflowMenu},
     primitives::IconName,
     theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
@@ -117,14 +117,14 @@ type OnCancel = Rc<dyn Fn(&mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct RenameInput {
     id: ElementId,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     on_rename: Option<OnName>,
     on_cancel: Option<OnCancel>,
 }
 
 impl RenameInput {
     /// `field` holds the new name; seed it with the current one.
-    pub fn new(id: impl Into<ElementId>, field: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             field: field.clone(),

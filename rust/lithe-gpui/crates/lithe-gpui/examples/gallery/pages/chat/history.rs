@@ -8,7 +8,7 @@ use lithe_gpui::{
         StreamingMarkdown, new_chat_button,
     },
     feedback::{Toast, Toaster},
-    forms::{SearchInput, TextInput},
+    forms::{InputState, SearchInput},
     overlays::PromptDialog,
     primitives::{IconName, Severity},
     theme::{ActiveTheme, Radius},
@@ -83,10 +83,10 @@ pub fn conversations_section(
         .to_zoned(TimeZone::try_system().expect("the gallery reads the system time zone"))
         .date();
     let query = window.use_keyed_state("chat-find-conversation", cx, |window, cx| {
-        TextInput::new(window, cx).placeholder("Search conversations")
+        InputState::new(window, cx).placeholder("Search conversations")
     });
     let naming = window.use_keyed_state("chat-rename-field", cx, |window, cx| {
-        TextInput::new(window, cx)
+        InputState::new(window, cx)
     });
     let renaming = keep("chat-renaming", || None::<SharedString>, window, cx);
     let (now_all, now_active, now_query, now_renaming) = (

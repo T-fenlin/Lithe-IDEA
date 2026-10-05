@@ -47,7 +47,7 @@ const BULLET: char = '•';
 const BLINK: Duration = Duration::from_millis(530);
 
 /// Editable text: one line or many, with selection, undo, IME and clipboard.
-pub struct TextInput {
+pub struct InputState {
     focus: FocusHandle,
     text: String,
     placeholder: SharedString,
@@ -76,15 +76,15 @@ pub struct TextInput {
     _subscriptions: Vec<Subscription>,
 }
 
-impl EventEmitter<InputEvent> for TextInput {}
+impl EventEmitter<InputEvent> for InputState {}
 
-impl Focusable for TextInput {
+impl Focusable for InputState {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus.clone()
     }
 }
 
-impl TextInput {
+impl InputState {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle().tab_stop(true);
         let subscriptions = vec![

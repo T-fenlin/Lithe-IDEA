@@ -8,7 +8,7 @@ use gpui::{
 use super::{Tree, TreeNode};
 use crate::{
     data_display::Tone,
-    forms::{SearchInput, TextInput},
+    forms::{InputState, SearchInput},
     primitives::{IconName, IconTheme, icon_theme},
     theme::Size,
 };
@@ -205,7 +205,7 @@ impl Styled for FileTree {
 impl RenderOnce for FileTree {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let filter = window.use_keyed_state((self.id.clone(), "filter"), cx, |window, cx| {
-            TextInput::new(window, cx)
+            InputState::new(window, cx)
         });
         let picked = window.use_keyed_state((self.id.clone(), "picked"), cx, |_, _| {
             Vec::<SharedString>::new()

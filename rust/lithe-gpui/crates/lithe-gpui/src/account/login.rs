@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     feedback::InlineMessage,
-    forms::{Checkbox, EmailInput, Enter, FormField, PasswordInput, TextInput, is_email},
+    forms::{Checkbox, EmailInput, Enter, FormField, InputState, PasswordInput, is_email},
     primitives::Severity,
     theme::{ActiveTheme, TextSize},
     typography::Link,
@@ -24,9 +24,9 @@ pub(super) fn field(
     masked: bool,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     window.use_keyed_state((id.clone(), key), cx, move |window, cx| {
-        let field = TextInput::new(window, cx).placeholder(hint);
+        let field = InputState::new(window, cx).placeholder(hint);
         if masked { field.masked() } else { field }
     })
 }

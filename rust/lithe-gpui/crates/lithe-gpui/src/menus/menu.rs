@@ -10,7 +10,7 @@ use super::{
     model::{Kind, Menu},
 };
 use crate::{
-    forms::{Down, Enter, Run, TextInput, Up, float},
+    forms::{Down, Enter, InputState, Run, Up, float},
     motion,
     primitives::{Icon, IconName, Takeover, give_back, raise, take_focus},
     theme::{ActiveTheme, IconSize},
@@ -270,7 +270,7 @@ pub(crate) fn hang(
     id: &ElementId,
     menu: &Menu,
     state: &Entity<Open>,
-    field: Option<&Entity<TextInput>>,
+    field: Option<&Entity<InputState>>,
     window: &mut Window,
     cx: &mut App,
 ) -> Option<AnyElement> {

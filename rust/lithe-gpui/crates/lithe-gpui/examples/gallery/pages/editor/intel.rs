@@ -6,7 +6,7 @@ use lithe_gpui::{
         CompletionMenu, FileHits, GoToSymbol, Hit, HoverInfo, ReferencesPanel, RenameInput,
         Signature, SignatureHelp, Symbol, SymbolKind, SymbolOutline, completions,
     },
-    forms::TextInput,
+    forms::InputState,
     primitives::Severity,
     typography::Caption,
 };
@@ -116,7 +116,7 @@ pub fn navigate(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let incoming = keep("intel-incoming", || true, window, cx);
     let rename_open = keep("intel-rename", || false, window, cx);
     let field = window.use_keyed_state("intel-rename-field", cx, |window, cx| {
-        let mut field = TextInput::new(window, cx);
+        let mut field = InputState::new(window, cx);
         field.set_text("lookup", cx);
         field
     });

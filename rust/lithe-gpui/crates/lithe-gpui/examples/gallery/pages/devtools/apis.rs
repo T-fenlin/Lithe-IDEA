@@ -9,7 +9,7 @@ use lithe_gpui::{
         SocketMessage, SocketState, TypeKind, WebSocketConsole, moved,
     },
     editor::CodeEditor,
-    forms::TextInput,
+    forms::InputState,
     theme::{ActiveTheme, Radius},
 };
 
@@ -208,7 +208,7 @@ pub fn requests(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 struct Line {
     state: SocketState,
     messages: Vec<SocketMessage>,
-    draft: gpui::Entity<TextInput>,
+    draft: gpui::Entity<InputState>,
     now: Timestamp,
 }
 
@@ -240,7 +240,7 @@ pub fn socket(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     120,
                 ),
             ],
-            draft: cx.new(|cx| TextInput::new(window, cx).placeholder("A message to send")),
+            draft: cx.new(|cx| InputState::new(window, cx).placeholder("A message to send")),
             now,
         }
     });
@@ -280,7 +280,7 @@ pub fn socket(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 struct Graph {
     query: gpui::Entity<CodeEditor>,
     variables: gpui::Entity<CodeEditor>,
-    search: gpui::Entity<TextInput>,
+    search: gpui::Entity<InputState>,
     answer: Option<SharedString>,
 }
 
@@ -292,7 +292,7 @@ pub fn graphql(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let graph = window.use_keyed_state("devtools-graphql", cx, |window, cx| Graph {
         query: cx.new(|cx| CodeEditor::new("query Order($id: ID!) {\n  order(id: $id) {\n    id\n    total\n    customer { name }\n  }\n}", window, cx).language("GraphQL")),
         variables: cx.new(|cx| CodeEditor::new(r#"{"id": "1009"}"#, window, cx).language("JSON")),
-        search: cx.new(|cx| TextInput::new(window, cx).placeholder("Find in the answer")),
+        search: cx.new(|cx| InputState::new(window, cx).placeholder("Find in the answer")),
         answer: Some(ANSWER.into()),
     });
     let now = graph.read(cx);

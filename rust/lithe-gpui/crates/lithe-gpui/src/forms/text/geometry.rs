@@ -2,9 +2,9 @@ use std::ops::Range;
 
 use gpui::{Bounds, Pixels, Point};
 
-use super::{TextInput, element::selection_rects};
+use super::{InputState, element::selection_rects};
 
-impl TextInput {
+impl InputState {
     /// The caret's box in window coordinates, once laid out.
     pub fn caret_bounds(&self) -> Option<Bounds<Pixels>> {
         self.bounds_for(self.cursor())

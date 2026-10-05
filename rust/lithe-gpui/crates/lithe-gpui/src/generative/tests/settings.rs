@@ -7,13 +7,13 @@ use gpui::{
 
 use super::{press, settle, setup, tab};
 use crate::{
-    forms::TextInput,
+    forms::InputState,
     generative::{AspectRatioPicker, PromptEnhancer, SeedInput, StylePreset, StylePresetPicker},
 };
 
 /// A prompt with its enhancer, a suggestion the test sets, and what it heard.
 struct Enhancing {
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     suggestion: Option<SharedString>,
     heard: Vec<String>,
 }
@@ -42,7 +42,7 @@ impl Render for Enhancing {
 fn enhancing(cx: &mut TestAppContext) -> (Entity<Enhancing>, &mut VisualTestContext) {
     setup(cx);
     let (view, cx) = cx.add_window_view(|window, cx| Enhancing {
-        field: cx.new(|cx| TextInput::new(window, cx)),
+        field: cx.new(|cx| InputState::new(window, cx)),
         suggestion: None,
         heard: Vec::new(),
     });
@@ -97,7 +97,7 @@ fn keep_mine_leaves_the_prompt_as_written(cx: &mut TestAppContext) {
 
 /// Three presets, two ratios, a seed, and every pick heard.
 struct Picks {
-    seed: Entity<TextInput>,
+    seed: Entity<InputState>,
     style: SharedString,
     heard: Rc<RefCell<Vec<String>>>,
 }
@@ -144,7 +144,7 @@ fn picks(
     let heard = Rc::new(RefCell::new(Vec::new()));
     let store = heard.clone();
     let (view, cx) = cx.add_window_view(|window, cx| Picks {
-        seed: cx.new(|cx| TextInput::new(window, cx)),
+        seed: cx.new(|cx| InputState::new(window, cx)),
         style: "a".into(),
         heard: store,
     });

@@ -4,7 +4,7 @@ use lithe_gpui::{
         BlockData, BlockEditor, BlockKind, Checklist, MarkdownEditor, MarkdownMode, Media,
         RichTextEditor, markdown_highlights,
     },
-    forms::TextInput,
+    forms::InputState,
 };
 
 use crate::{
@@ -27,9 +27,9 @@ fn markdown(
     rows: usize,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     window.use_keyed_state(key, cx, move |window, cx| {
-        let mut field = TextInput::new(window, cx)
+        let mut field = InputState::new(window, cx)
             .multi_line(rows, rows * 3)
             .highlighter(markdown_highlights);
         field.set_text(text, cx);

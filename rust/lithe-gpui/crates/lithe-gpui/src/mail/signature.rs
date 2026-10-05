@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{Input, InputEvent, OnValue, TextInput},
+    forms::{Input, InputEvent, InputState, OnValue},
     theme::{ActiveTheme, TextSize},
 };
 
@@ -32,7 +32,7 @@ pub(super) fn signature_block(text: &str, cx: &App) -> Div {
 
 /// The field and what it last told the owner, so an echo is known from a new signature.
 struct Signed {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     seed: SharedString,
     sent: Option<SharedString>,
     on_change: Option<OnValue>,
@@ -74,7 +74,7 @@ impl RenderOnce for SignatureEditor {
             cx,
             |window, cx: &mut Context<Signed>| {
                 let input = cx.new(|cx| {
-                    let mut input = TextInput::new(window, cx)
+                    let mut input = InputState::new(window, cx)
                         .multi_line(3, 6)
                         .placeholder("Your name, your role, a way to reach you");
                     input.set_text(seed.to_string(), cx);

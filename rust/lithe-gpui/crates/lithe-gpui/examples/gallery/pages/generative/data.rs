@@ -4,7 +4,7 @@ use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, p
 use jiff::{SignedDuration, Timestamp};
 use lithe_gpui::{
     data_display::{DescriptionList, Tone},
-    forms::TextInput,
+    forms::InputState,
     generative::{
         Embedded, EmbeddingVisualizer, PromptPlayground, PromptVersion, PromptVersionHistory,
     },
@@ -188,7 +188,7 @@ struct Play {
 
 pub fn playground(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let template = window.use_keyed_state("gen-play-template", cx, |window, cx| {
-        let mut input = TextInput::new(window, cx).multi_line(2, 5);
+        let mut input = InputState::new(window, cx).multi_line(2, 5);
         input.set_text("Write three short notes on {topic} in a {tone} voice.", cx);
         input
     });

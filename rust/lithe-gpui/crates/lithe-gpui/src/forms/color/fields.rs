@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{App, Div, ElementId, Entity, ParentElement, SharedString, Styled, Window, div};
 
 use super::{
-    super::{Choice, Input, ScrubInput, Select, TextInput},
+    super::{Choice, Input, InputState, ScrubInput, Select},
     Hsva,
 };
 use crate::theme::{ActiveTheme, Size};
@@ -69,7 +69,7 @@ pub(crate) fn typed_fields(
     id: &ElementId,
     format: Format,
     color: Hsva,
-    hex_field: &Entity<TextInput>,
+    hex_field: &Entity<InputState>,
     commit: Commit,
     cx: &App,
 ) -> Div {

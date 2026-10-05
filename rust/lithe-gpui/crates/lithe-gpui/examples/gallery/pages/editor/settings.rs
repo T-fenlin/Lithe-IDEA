@@ -4,7 +4,7 @@ use lithe_gpui::{
         KeySource, Keybinding, KeybindingsEditor, Setting, SettingValue, SettingsEditor,
         settings_json,
     },
-    forms::{TextInput, json_highlights},
+    forms::{InputState, json_highlights},
 };
 
 use crate::ui::{keep, section, set};
@@ -79,7 +79,7 @@ pub fn settings_and_keys(window: &mut Window, cx: &mut App) -> impl IntoElement 
     let section_now = keep("panels-section", || 0usize, window, cx);
     let json = keep("panels-json", || false, window, cx);
     let json_field = window.use_keyed_state("panels-json-field", cx, |window, cx| {
-        TextInput::new(window, cx)
+        InputState::new(window, cx)
             .multi_line(6, 12)
             .highlighter(json_highlights)
     });

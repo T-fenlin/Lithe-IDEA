@@ -11,7 +11,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     chat::MessageList,
     data_display::{Badge, Tone},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, TextSize},
     typography::{Ellipsis, format},
@@ -51,7 +51,7 @@ pub struct WebSocketConsole {
     url: SharedString,
     state: SocketState,
     messages: Vec<SocketMessage>,
-    draft: Entity<TextInput>,
+    draft: Entity<InputState>,
     now: Timestamp,
     on_send: Option<OnText>,
     on_toggle: Option<Run>,
@@ -64,7 +64,7 @@ impl WebSocketConsole {
         url: impl Into<SharedString>,
         state: SocketState,
         messages: impl IntoIterator<Item = SocketMessage>,
-        draft: &Entity<TextInput>,
+        draft: &Entity<InputState>,
         now: Timestamp,
     ) -> Self {
         Self {

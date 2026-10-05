@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{Enter, Input, TextInput},
+    forms::{Enter, Input, InputState},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, TextSize},
 };
@@ -37,13 +37,13 @@ type OnJump = Rc<dyn Fn(usize, Option<usize>, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct GoToLine {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     lines: usize,
     on_jump: Option<OnJump>,
 }
 
 impl GoToLine {
-    pub fn new(id: impl Into<ElementId>, state: &Entity<TextInput>, lines: usize) -> Self {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<InputState>, lines: usize) -> Self {
         assert!(lines >= 1, "a file to jump in has a line");
         Self {
             id: id.into(),

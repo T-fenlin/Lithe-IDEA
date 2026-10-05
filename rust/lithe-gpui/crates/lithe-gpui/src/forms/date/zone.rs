@@ -6,7 +6,7 @@ use jiff::{
     tz::{self, Offset, TimeZone},
 };
 
-use super::super::{Choice, Combobox, TextInput, options::OnValue};
+use super::super::{Choice, Combobox, InputState, options::OnValue};
 use crate::typography::format::MINUS;
 
 /// An offset as "UTC+09:00", with a true minus sign west of Greenwich.
@@ -38,13 +38,13 @@ static ZONES: LazyLock<Vec<(SharedString, TimeZone)>> = LazyLock::new(|| {
 #[derive(IntoElement)]
 pub struct TimezoneSelect {
     id: ElementId,
-    state: Entity<TextInput>,
+    state: Entity<InputState>,
     selected: Option<SharedString>,
     on_change: Option<OnValue>,
 }
 
 impl TimezoneSelect {
-    pub fn new(id: impl Into<ElementId>, state: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             state: state.clone(),

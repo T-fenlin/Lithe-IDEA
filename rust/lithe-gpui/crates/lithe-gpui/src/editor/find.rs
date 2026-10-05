@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant, ToggleButton, ToggleItem},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     primitives::IconName,
     theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
 };
@@ -59,8 +59,8 @@ type OnClose = Rc<dyn Fn(&mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct FindWidget {
     id: ElementId,
-    find: Entity<TextInput>,
-    replace: Option<Entity<TextInput>>,
+    find: Entity<InputState>,
+    replace: Option<Entity<InputState>>,
     options: FindOptions,
     matches: Result<(Option<usize>, usize), SharedString>,
     on_options: Option<OnOptions>,
@@ -74,7 +74,7 @@ impl FindWidget {
     /// `find` holds the query; `current` is the chosen match among `total`.
     pub fn new(
         id: impl Into<ElementId>,
-        find: &Entity<TextInput>,
+        find: &Entity<InputState>,
         current: Option<usize>,
         total: usize,
     ) -> Self {
@@ -104,7 +104,7 @@ impl FindWidget {
     }
 
     /// Shows the replace row, its text in `field`.
-    pub fn replace(mut self, field: &Entity<TextInput>) -> Self {
+    pub fn replace(mut self, field: &Entity<InputState>) -> Self {
         self.replace = Some(field.clone());
         self
     }

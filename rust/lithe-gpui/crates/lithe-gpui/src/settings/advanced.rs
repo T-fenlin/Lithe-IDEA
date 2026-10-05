@@ -9,7 +9,7 @@ use super::section::SettingsRow;
 use crate::{
     data_display::{Badge, Tone},
     feedback::Callout,
-    forms::{Input, Switch, TextInput},
+    forms::{Input, InputState, Switch},
     primitives::{Icon, IconName, Severity},
     theme::{ActiveTheme, IconSize, TextSize},
 };
@@ -39,7 +39,7 @@ type OnFlag = Rc<dyn Fn(&SharedString, bool, &mut Window, &mut App)>;
 pub struct FeatureFlags {
     id: ElementId,
     flags: Vec<Flag>,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     on_toggle: Option<OnFlag>,
 }
 
@@ -48,7 +48,7 @@ impl FeatureFlags {
     pub fn new(
         id: impl Into<ElementId>,
         flags: impl IntoIterator<Item = Flag>,
-        search: &Entity<TextInput>,
+        search: &Entity<InputState>,
     ) -> Self {
         Self {
             id: id.into(),

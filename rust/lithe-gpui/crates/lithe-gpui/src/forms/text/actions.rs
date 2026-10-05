@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use super::{
-    InputEvent, TextInput,
+    InputEvent, InputState,
     edit::{self, next_grapheme, prev_grapheme},
     element::TextElement,
 };
@@ -107,7 +107,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys(bindings);
 }
 
-impl TextInput {
+impl InputState {
     fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
         let range = if self.selection.is_empty() {
             prev_grapheme(&self.text, self.cursor())..self.cursor()
@@ -355,7 +355,7 @@ impl TextInput {
     }
 }
 
-impl Render for TextInput {
+impl Render for InputState {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("lithe-text-input")

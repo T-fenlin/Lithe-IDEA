@@ -4,7 +4,7 @@ use gpui::{
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     overlays::{FloatingToolbar, Lightbox, Peek, Slide, Spotlight, Tour, TourStep},
     primitives::{IconName, Image, Measure},
     theme::ActiveTheme,
@@ -138,8 +138,8 @@ pub fn tour(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 }
 
 pub fn toolbar(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
-    let field: Entity<TextInput> = window.use_keyed_state("toolbar-field", cx, |window, cx| {
-        let mut input = TextInput::new(window, cx);
+    let field: Entity<InputState> = window.use_keyed_state("toolbar-field", cx, |window, cx| {
+        let mut input = InputState::new(window, cx);
         input.set_text("Select some of these words to see the tools.", cx);
         input
     });

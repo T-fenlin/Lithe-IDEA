@@ -9,7 +9,7 @@ use lithe_gpui::{
         ArchiveEntry, ArchiveViewer, DuplicateFinder, Duplicates, FileGrid, FilePreview,
         FileSearch, FoundFile, RecentFile, RecentFiles,
     },
-    forms::TextInput,
+    forms::InputState,
     lists::DirEntry,
     overlays::Dialog,
 };
@@ -168,7 +168,7 @@ fn matching(text: &str) -> Vec<FoundFile> {
 
 pub fn search(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let query = window.use_keyed_state("files-search-query", cx, |window, cx| {
-        TextInput::new(window, cx)
+        InputState::new(window, cx)
     });
     let found = matching(query.read(cx).text());
     section(

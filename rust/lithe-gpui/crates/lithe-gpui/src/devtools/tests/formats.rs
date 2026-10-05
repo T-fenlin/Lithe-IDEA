@@ -7,11 +7,11 @@ use super::{Bench, bench, settle, tab, tap};
 use crate::{
     devtools::{JsonEditor, JsonViewer},
     editor::CodeEditor,
-    forms::TextInput,
+    forms::InputState,
 };
 
 fn viewer(_: &Bench, window: &mut Window, cx: &mut App, _: Entity<Bench>) -> AnyElement {
-    let search = window.use_keyed_state("search", cx, TextInput::new);
+    let search = window.use_keyed_state("search", cx, InputState::new);
     JsonViewer::new(
         "viewer",
         r#"{"spec": {"replicas": 3}, "kind": "Deployment"}"#,

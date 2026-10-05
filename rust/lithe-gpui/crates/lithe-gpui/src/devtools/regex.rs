@@ -9,7 +9,7 @@ use regex::RegexBuilder;
 use crate::{
     buttons::{ToggleGroup, ToggleItem},
     feedback::InlineMessage,
-    forms::{Highlight, Input, RegexInput, TextInput, regex_highlights},
+    forms::{Highlight, Input, InputState, RegexInput, regex_highlights},
     primitives::Severity,
     theme::{ActiveTheme, TextSize},
 };
@@ -99,8 +99,8 @@ pub fn find(pattern: &str, flags: &[RegexFlag], text: &str) -> Result<Vec<Found>
 
 /// The tester's own fields and flags.
 struct Bench {
-    pattern: Entity<TextInput>,
-    sample: Entity<TextInput>,
+    pattern: Entity<InputState>,
+    sample: Entity<InputState>,
     flags: Entity<Vec<RegexFlag>>,
 }
 
@@ -133,13 +133,13 @@ impl RenderOnce for RegexTester {
         let bench = window.use_keyed_state((self.id.clone(), "bench"), cx, move |window, cx| {
             let flags = cx.new(|_| Vec::new());
             let pattern = cx.new(|cx| {
-                let mut input = TextInput::new(window, cx).highlighter(regex_highlights);
+                let mut input = InputState::new(window, cx).highlighter(regex_highlights);
                 input.set_text(pattern, cx);
                 input
             });
             let (read, read_flags) = (pattern.clone(), flags.clone());
             let sample = cx.new(|cx| {
-                let mut input = TextInput::new(window, cx).multi_line(4, 10).highlighter(
+                let mut input = InputState::new(window, cx).multi_line(4, 10).highlighter(
                     move |text: &str, cx: &App| {
                         let wash = cx.theme().colors.accent.alpha(0.18);
                         let (pattern, flags) = (

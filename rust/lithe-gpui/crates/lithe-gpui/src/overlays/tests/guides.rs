@@ -9,7 +9,7 @@ use gpui::{
 use super::{click, press, settle};
 use crate::{
     buttons::Button,
-    forms::{Input, TextInput},
+    forms::{Input, InputState},
     overlays::{FloatingToolbar, Lightbox, Peek, Slide, Spotlight, Tour, TourStep},
     primitives::{FocusNext, FocusScope, IconName},
     theme::Theme,
@@ -28,7 +28,7 @@ enum Open {
 struct Guides {
     root: FocusHandle,
     before: FocusHandle,
-    field: Entity<TextInput>,
+    field: Entity<InputState>,
     open: Option<Open>,
     at: usize,
     log: Vec<String>,
@@ -128,7 +128,7 @@ fn guides(cx: &mut TestAppContext) -> (Entity<Guides>, &mut VisualTestContext) {
         root: cx.focus_handle(),
         before: cx.focus_handle(),
         field: cx.new(|cx| {
-            let mut input = TextInput::new(window, cx);
+            let mut input = InputState::new(window, cx);
             input.set_text("hello world", cx);
             input
         }),

@@ -1,6 +1,6 @@
 use gpui::{App, Entity, Hsla, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
-    forms::TextInput,
+    forms::InputState,
     primitives::IconName,
     settings::{
         Appearance, Flag, Notices, Privacy, Proxy, SettingEntry, SettingsLayout, SettingsSearch,
@@ -148,10 +148,10 @@ impl Prefs {
 
 /// The window's text fields, each kept across frames.
 pub(super) struct Fields {
-    pub font: Entity<TextInput>,
-    pub language: Entity<TextInput>,
-    pub shortcuts: Entity<TextInput>,
-    pub flags: Entity<TextInput>,
+    pub font: Entity<InputState>,
+    pub language: Entity<InputState>,
+    pub shortcuts: Entity<InputState>,
+    pub flags: Entity<InputState>,
 }
 
 fn field(
@@ -159,9 +159,9 @@ fn field(
     hint: &'static str,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<TextInput> {
+) -> Entity<InputState> {
     window.use_keyed_state(key, cx, move |window, cx| {
-        TextInput::new(window, cx).placeholder(hint)
+        InputState::new(window, cx).placeholder(hint)
     })
 }
 

@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::{Button, ButtonVariant},
-    forms::{CheckboxGroup, Choice, Input, RadioGroup, TextInput},
+    forms::{CheckboxGroup, Choice, Input, InputState, RadioGroup},
     primitives::{FocusRing, Icon, IconName, tab_stop},
     theme::{ActiveTheme, IconSize, Radius, TextSize},
 };
@@ -46,7 +46,7 @@ pub enum Answer {
 /// What the survey holds: the answers picked, a field for each question in words, whether it was sent, and whether Submit came with an answer missing.
 struct Sheet {
     picked: Vec<Option<Answer>>,
-    fields: Vec<Option<Entity<TextInput>>>,
+    fields: Vec<Option<Entity<InputState>>>,
     sent: bool,
     nudged: bool,
 }
@@ -122,7 +122,7 @@ impl RenderOnce for Survey {
                     .iter()
                     .map(|question| {
                         matches!(question, Question::Text(_))
-                            .then(|| cx.new(|cx| TextInput::new(window, cx).multi_line(2, 5)))
+                            .then(|| cx.new(|cx| InputState::new(window, cx).multi_line(2, 5)))
                     })
                     .collect(),
                 sent: false,

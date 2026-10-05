@@ -8,7 +8,7 @@ use gpui::{
 use super::panel::{OnEdit, editing, pair};
 use crate::{
     buttons::SegmentedControl,
-    forms::{Choice, FontPicker, ScrubInput, Select, TextInput},
+    forms::{Choice, FontPicker, InputState, ScrubInput, Select},
     primitives::IconName,
     theme::{ActiveTheme, Radius},
 };
@@ -47,13 +47,13 @@ const ALIGNS: [(TextAlign, &str, IconName); 3] = [
 pub struct TypographyPanel {
     id: ElementId,
     style: TypeStyle,
-    search: Entity<TextInput>,
+    search: Entity<InputState>,
     on_change: Option<OnEdit<TypeStyle>>,
 }
 
 impl TypographyPanel {
     /// `search` is the family field's text, which the owner keeps.
-    pub fn new(id: impl Into<ElementId>, style: TypeStyle, search: &Entity<TextInput>) -> Self {
+    pub fn new(id: impl Into<ElementId>, style: TypeStyle, search: &Entity<InputState>) -> Self {
         Self {
             id: id.into(),
             style,

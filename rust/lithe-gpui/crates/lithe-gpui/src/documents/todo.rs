@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    forms::{Checkbox, Enter, Input, OnFlag, OnValue, TextInput},
+    forms::{Checkbox, Enter, Input, InputState, OnFlag, OnValue},
     motion::ProgressBar,
     theme::{ActiveTheme, TextSize},
     typography::tabular,
@@ -111,7 +111,7 @@ impl RenderOnce for Checklist {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let add = self.adding.map(|(placeholder, on_add)| {
             let field = window.use_keyed_state((self.id.clone(), "add"), cx, |window, cx| {
-                TextInput::new(window, cx).placeholder(placeholder)
+                InputState::new(window, cx).placeholder(placeholder)
             });
             let (id, typed) = (self.id.clone(), field.clone());
             div()

@@ -7,7 +7,7 @@ use lithe_gpui::{
         VoiceWaveform,
     },
     data_display::UsageBar,
-    forms::{Choice, Select, TextInput},
+    forms::{Choice, InputState, Select},
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
 };
@@ -21,9 +21,9 @@ use crate::{
 const SYSTEM: &str = "You answer about color in plain words. Cite sources.";
 
 /// The composer's text, which the prompt menu fills.
-pub fn draft(window: &mut Window, cx: &mut App) -> Entity<TextInput> {
+pub fn draft(window: &mut Window, cx: &mut App) -> Entity<InputState> {
     window.use_keyed_state("chat-compose", cx, |window, cx| {
-        let mut input = TextInput::new(window, cx)
+        let mut input = InputState::new(window, cx)
             .multi_line(1, 8)
             .placeholder("Ask anything, / for commands, @ for context");
         input.set_text("Compare these two lifts in dark mode", cx);
@@ -56,7 +56,7 @@ fn attachments() -> Vec<Attachment> {
 }
 
 pub fn composer(
-    draft: &Entity<TextInput>,
+    draft: &Entity<InputState>,
     window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement + use<> {
@@ -185,7 +185,7 @@ fn levels() -> Vec<f32> {
 }
 
 pub fn pickers(
-    draft: &Entity<TextInput>,
+    draft: &Entity<InputState>,
     window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement + use<> {
@@ -209,7 +209,7 @@ pub fn pickers(
             set(&tools, (web, code, images), cx)
         }
     };
-    let fill = |draft: &Entity<TextInput>, prompt: &'static str| {
+    let fill = |draft: &Entity<InputState>, prompt: &'static str| {
         let draft = draft.clone();
         move |_: &mut Window, cx: &mut App| {
             log::info!("gallery: prompt template");
@@ -272,7 +272,7 @@ pub fn tuning(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let values = keep("chat-params", || (0.7, 0.95, 1024.0), window, cx);
     let (temperature, top_p, longest) = *values.read(cx);
     let system = window.use_keyed_state("chat-system", cx, |window, cx| {
-        let mut input = TextInput::new(window, cx).multi_line(3, 8);
+        let mut input = InputState::new(window, cx).multi_line(3, 8);
         input.set_text(SYSTEM, cx);
         input
     });
