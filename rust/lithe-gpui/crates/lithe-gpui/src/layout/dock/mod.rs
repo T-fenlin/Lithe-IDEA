@@ -2,7 +2,7 @@ mod view;
 
 use std::rc::Rc;
 
-use gpui::{AnyElement, App, Context, Rems, SharedString, Window};
+use gpui::{AnyElement, App, Context, IntoElement as _, Rems, SharedString, Window};
 use serde::{Deserialize, Serialize};
 
 use crate::{primitives::IconName, theme::ActiveTheme};
@@ -103,6 +103,39 @@ pub struct DockLayout {
     pub hidden: Vec<String>,
 }
 
+/// The views a dock shows, by panel id.
+///
+/// This is what keeps a shell from growing one `match` over every panel it owns:
+/// adding a panel becomes one `register` call beside that panel, and the
+/// dock asks the registry for whatever it is about to draw.
+#[derive(Default)]
+pub struct PanelRegistry {
+    views: std::collections::HashMap<SharedString, gpui::AnyView>,
+}
+
+impl PanelRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Shows `view` for the panel called `id`; a later call for the same id wins.
+    pub fn register(&mut self, id: impl Into<SharedString>, view: impl Into<gpui::AnyView>) {
+        self.views.insert(id.into(), view.into());
+    }
+
+    /// The ids that have a view, for a test or a diagnostic.
+    pub fn ids(&self) -> impl Iterator<Item = &SharedString> {
+        self.views.keys()
+    }
+
+    /// Draws `id`. `None` means the panel is docked but nothing draws it.
+    pub fn render(&self, id: &str) -> Option<AnyElement> {
+        self.views
+            .get(id)
+            .map(|view| view.clone().into_any_element())
+    }
+}
+
 type Center = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 type Content = Rc<dyn Fn(&SharedString, &mut Window, &mut App) -> AnyElement>;
 
@@ -149,6 +182,25 @@ impl Dock {
             content: Rc::new(content),
             dragging: false,
         }
+    }
+
+    /// A dock whose panel views come from a registry, so the caller never writes a
+    /// match over ids. A panel with no registered view draws empty, and says so once.
+    pub fn from_registry(
+        registry: PanelRegistry,
+        center: impl Fn(&mut Window, &mut App) -> AnyElement + 'static,
+        cx: &App,
+    ) -> Self {
+        Self::new(
+            center,
+            move |id, _, _| {
+                registry.render(id).unwrap_or_else(|| {
+                    log::warn!("dock: no view registered for panel {id}");
+                    gpui::div().into_any_element()
+                })
+            },
+            cx,
+        )
     }
 
     /// Panics on a repeated id.
@@ -517,6 +569,23 @@ mod tests {
                 Some(1),
                 "a closed panel never leads"
             );
+        });
+    }
+
+    /// A registry holds nothing until a view is registered, and a dock built from
+    /// one takes the panels the caller names without a match of its own.
+    /// (A registered view needs a window-backed entity to be drawn, so the drawing
+    /// side is exercised by the shell rather than here.)
+    #[gpui::test]
+    fn a_registry_holds_nothing_until_a_view_is_registered(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            let registry = PanelRegistry::new();
+            assert!(registry.render("search").is_none(), "nothing registered");
+            assert_eq!(registry.ids().count(), 0);
+            let mut dock = Dock::from_registry(registry, |_, _| div().into_any_element(), cx);
+            dock.add(panel("files"), DockSide::Left);
+            assert_eq!(dock.active[DockSide::Left.index()], Some(0));
         });
     }
 
