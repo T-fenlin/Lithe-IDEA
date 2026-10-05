@@ -180,17 +180,20 @@ pub fn switches(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .flex_col()
             .gap_3()
             .child(
-                Switch::new("switch-wifi", wifi_now)
+                Switch::new("switch-wifi")
+                    .checked(wifi_now)
                     .label("Wi-Fi")
                     .on_change(move |on, _, cx| set(&wifi, on, cx)),
             )
             .child(
-                Switch::new("switch-sync", sync_now)
+                Switch::new("switch-sync")
+                    .checked(sync_now)
                     .label("Sync over cellular")
                     .on_change(move |on, _, cx| set(&sync, on, cx)),
             )
             .child(
-                Switch::new("switch-locked", true)
+                Switch::new("switch-locked")
+                    .checked(true)
                     .label("Managed by your admin")
                     .disabled(true),
             ),

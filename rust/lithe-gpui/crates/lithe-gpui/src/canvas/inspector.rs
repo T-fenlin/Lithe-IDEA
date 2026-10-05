@@ -131,12 +131,14 @@ impl RenderOnce for InspectorPanel {
                     .flex_col()
                     .gap_2()
                     .child(
-                        Switch::new((id.clone(), "visible"), !shape.hidden)
+                        Switch::new((id.clone(), "visible"))
+                            .checked(!shape.hidden)
                             .label("Visible")
                             .on_change(shown),
                     )
                     .child(
-                        Switch::new((id, "locked"), shape.locked)
+                        Switch::new((id, "locked"))
+                            .checked(shape.locked)
                             .label("Locked")
                             .on_change(locked),
                     ),

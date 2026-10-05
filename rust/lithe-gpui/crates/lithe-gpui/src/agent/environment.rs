@@ -246,14 +246,12 @@ impl RenderOnce for McpServerList {
                 };
                 let toggle = self.on_toggle.clone().map(|toggle| {
                     let key = server.key.clone();
-                    Switch::new(
-                        (self.id.clone(), format!("switch-{}", server.key)),
-                        server.state != ServerState::Off,
-                    )
-                    .on_change(move |on, window, cx| {
-                        log::info!("mcp server {key}: {}", if on { "on" } else { "off" });
-                        toggle(&key, on, window, cx)
-                    })
+                    Switch::new((self.id.clone(), format!("switch-{}", server.key)))
+                        .checked(server.state != ServerState::Off)
+                        .on_change(move |on, window, cx| {
+                            log::info!("mcp server {key}: {}", if on { "on" } else { "off" });
+                            toggle(&key, on, window, cx)
+                        })
                 });
                 ListItem::new(
                     (self.id.clone(), format!("server-{}", server.key)),

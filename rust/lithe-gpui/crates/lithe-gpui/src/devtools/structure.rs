@@ -455,7 +455,8 @@ impl RenderOnce for IndexManager {
                             .justify_between()
                             .gap_2()
                             .child(
-                                Switch::new((id.clone(), "unique"), unique)
+                                Switch::new((id.clone(), "unique"))
+                                    .checked(unique)
                                     .label("Unique")
                                     .on_change(move |on, _, cx| {
                                         flipped.update(cx, |draft, cx| {

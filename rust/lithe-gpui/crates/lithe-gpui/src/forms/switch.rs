@@ -24,14 +24,21 @@ pub struct Switch {
 }
 
 impl Switch {
-    pub fn new(id: impl Into<ElementId>, on: bool) -> Self {
+    pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
-            on,
+            on: false,
             label: None,
             disabled: false,
             on_change: None,
         }
+    }
+
+    /// Whether the switch is on. A builder rather than a `new` argument,
+    /// matching the gpui-kit shape (`Switch::new(id).checked(true)`).
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.on = checked;
+        self
     }
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {

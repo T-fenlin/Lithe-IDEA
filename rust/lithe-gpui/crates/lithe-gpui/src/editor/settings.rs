@@ -223,7 +223,8 @@ impl RenderOnce for SettingsEditor {
                 let control = match &setting.value {
                     SettingValue::Bool(on) => {
                         let tell = tell.clone();
-                        Switch::new(id.clone(), *on)
+                        Switch::new(id.clone())
+                            .checked(*on)
                             .on_change(move |on, window, cx| {
                                 tell(SettingValue::Bool(on), window, cx)
                             })

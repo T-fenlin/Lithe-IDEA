@@ -161,7 +161,8 @@ impl RenderOnce for Playground {
             let (name, set) = (knob.name().clone(), settings.clone());
             let key = (id.clone(), format!("knob-{name}"));
             let control = match knob {
-                Knob::Toggle(..) => Switch::new(key, now.on(&name))
+                Knob::Toggle(..) => Switch::new(key)
+                    .checked(now.on(&name))
                     .on_change(move |on, _, cx| {
                         set.update(cx, |settings, cx| {
                             settings.value.1.set(&name, Setting::On(on));

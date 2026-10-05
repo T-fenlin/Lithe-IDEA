@@ -136,7 +136,8 @@ pub fn properties(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
                 )
                 .row(
                     "Visible",
-                    Switch::new("prop-visible", now.visible)
+                    Switch::new("prop-visible")
+                        .checked(now.visible)
                         .on_change(edit(&props, |p, v| p.visible = v)),
                 ),
         )

@@ -93,7 +93,7 @@ pub fn color_blind(cx: &App) -> impl IntoElement + use<> {
     )
     .child(probe(
         "color-blind",
-        Switch::new("color-blind", on)
+        Switch::new("color-blind").checked(on)
             .label("Color-blind safe charts")
             .on_change(|on, _, cx| Theme::set_color_blind_safe(on, cx)),
     ))

@@ -95,7 +95,7 @@ pub fn sections(window: &mut Window, cx: &mut App) -> Vec<AnyElement> {
                 .gap_4()
                 .child(probe(
                     "fps-switch",
-                    Switch::new("fps-measure", on)
+                    Switch::new("fps-measure").checked(on)
                         .label("Measure")
                         .on_change(move |on, _, cx| {
                             measuring.update(cx, |measuring, cx| {

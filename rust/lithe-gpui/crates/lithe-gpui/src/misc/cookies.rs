@@ -89,7 +89,8 @@ impl RenderOnce for CookieBanner {
             let rows = self.kinds.iter().enumerate().map(|(ix, (name, detail))| {
                 let turned = choosing.clone();
                 row(
-                    Switch::new((id.clone(), format!("kind-{ix}")), on[ix])
+                    Switch::new((id.clone(), format!("kind-{ix}")))
+                        .checked(on[ix])
                         .label(name.clone())
                         .on_change(move |next, _, cx| {
                             turned.update(cx, |choosing, cx| {
@@ -110,7 +111,8 @@ impl RenderOnce for CookieBanner {
                     div()
                         .debug_selector(|| format!("cookie-necessary-{on}-{rests}"))
                         .child(row(
-                            Switch::new((id.clone(), "necessary"), on)
+                            Switch::new((id.clone(), "necessary"))
+                                .checked(on)
                                 .label("Necessary")
                                 .disabled(rests),
                             "Keeps the site working; always on.".into(),

@@ -56,7 +56,8 @@ impl RenderOnce for PrivacySettings {
                    on: bool,
                    set: fn(&mut Privacy, bool)| {
             SettingsRow::new(title).description(text).control(
-                Switch::new((id.clone(), key), on)
+                Switch::new((id.clone(), key))
+                    .checked(on)
                     .on_change(editing("privacy", &privacy, on_change, set)),
             )
         };
@@ -188,7 +189,11 @@ impl RenderOnce for NotificationSettings {
             .row(
                 SettingsRow::new("Do not disturb")
                     .description("Hold every notice back until it is off.")
-                    .control(Switch::new((id.clone(), "quiet"), notices.quiet).on_change(quiet)),
+                    .control(
+                        Switch::new((id.clone(), "quiet"))
+                            .checked(notices.quiet)
+                            .on_change(quiet),
+                    ),
             )
             .row(div().pt_3().children(rows))
     }
@@ -239,7 +244,8 @@ impl RenderOnce for StartupSettings {
             .unwrap_or_else(|| panic!("startup settings {:?} has no on_change", self.id));
         let (id, startup, on_change) = (self.id, self.startup, &on_change);
         let switch = |key: &'static str, on: bool, set: fn(&mut Startup, bool)| {
-            Switch::new((id.clone(), key), on)
+            Switch::new((id.clone(), key))
+                .checked(on)
                 .on_change(editing("startup", &startup, on_change, set))
         };
         let open = editing(

@@ -162,7 +162,7 @@ impl Render for Worded {
                 "worded-radios",
                 [Choice::new("one", label)],
             ))
-            .child(Switch::new("worded-switch", false).label(label))
+            .child(Switch::new("worded-switch").checked(false).label(label))
     }
 }
 

@@ -369,7 +369,8 @@ impl RenderOnce for EventEditor {
                     .child(Input::new(&title)),
             )
             .child(
-                Switch::new((self.id.clone(), "all-day"), whole)
+                Switch::new((self.id.clone(), "all-day"))
+                    .checked(whole)
                     .label("All day")
                     .on_change(move |_, _, cx| toggle(cx)),
             )

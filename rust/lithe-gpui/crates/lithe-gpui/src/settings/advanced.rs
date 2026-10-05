@@ -104,7 +104,8 @@ impl RenderOnce for FeatureFlags {
                         .gap_2()
                         .child(Badge::new(words).tone(tone))
                         .child(
-                            Switch::new((self.id.clone(), format!("flag-{}", flag.key)), flag.on)
+                            Switch::new((self.id.clone(), format!("flag-{}", flag.key)))
+                                .checked(flag.on)
                                 .on_change(move |on, window, cx| {
                                     log::info!("feature flag: {key} {on}");
                                     on_toggle(&key, on, window, cx);
@@ -165,12 +166,12 @@ impl RenderOnce for DeveloperModeToggle {
             .child(
                 SettingsRow::new("Developer mode")
                     .description("Shows the inspector, logs and debug menus.")
-                    .control(
-                        Switch::new(self.id, self.on).on_change(move |on, window, cx| {
+                    .control(Switch::new(self.id).checked(self.on).on_change(
+                        move |on, window, cx| {
                             log::info!("developer mode: {on}");
                             on_change(on, window, cx);
-                        }),
-                    ),
+                        },
+                    )),
             )
             .children(self.on.then(|| {
                 Callout::new(Severity::Warning)

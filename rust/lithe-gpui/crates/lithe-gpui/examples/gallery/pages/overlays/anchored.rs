@@ -35,7 +35,8 @@ pub fn popovers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .child("Anyone with the link can view it."),
             )
             .child(
-                Switch::new("share-switch", on)
+                Switch::new("share-switch")
+                    .checked(on)
                     .label("Public link")
                     .on_change(move |next, _, cx| set(&public, next, cx)),
             )

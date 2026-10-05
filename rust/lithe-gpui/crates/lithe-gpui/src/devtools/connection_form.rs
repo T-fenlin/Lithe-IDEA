@@ -264,7 +264,8 @@ impl RenderOnce for ConnectionForm {
                 )
             }))
             .children((!file).then(|| {
-                Switch::new((id.clone(), "tls"), tls)
+                Switch::new((id.clone(), "tls"))
+                    .checked(tls)
                     .label("Use TLS")
                     .on_change(move |on, _, cx| {
                         switched.update(cx, |fields, cx| {

@@ -108,7 +108,8 @@ fn icons(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .flex_col()
         .gap_2()
         .child(
-            Switch::new("icon-theme", on)
+            Switch::new("icon-theme")
+                .checked(on)
                 .label("The owner's icons")
                 .on_change(move |on, _, cx| {
                     let theme = if on {

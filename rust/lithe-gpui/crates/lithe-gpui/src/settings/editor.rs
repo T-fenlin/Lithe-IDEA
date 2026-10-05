@@ -144,7 +144,8 @@ impl RenderOnce for ThemeEditor {
             ))
             .row(row(
                 "High contrast",
-                Switch::new((id.clone(), "contrast"), draft.high_contrast)
+                Switch::new((id.clone(), "contrast"))
+                    .checked(draft.high_contrast)
                     .on_change(move |on, window, cx| {
                         contrast(&|d: &mut ThemeDraft| d.high_contrast = on, window, cx)
                     })
@@ -152,7 +153,8 @@ impl RenderOnce for ThemeEditor {
             ))
             .row(row(
                 "Reduce motion",
-                Switch::new((id.clone(), "motion"), draft.reduced_motion)
+                Switch::new((id.clone(), "motion"))
+                    .checked(draft.reduced_motion)
                     .on_change(move |on, window, cx| {
                         motion(&|d: &mut ThemeDraft| d.reduced_motion = on, window, cx)
                     })
