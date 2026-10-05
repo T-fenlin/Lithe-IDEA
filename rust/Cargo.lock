@@ -4646,6 +4646,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lithe-gpui"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+]
+
+[[package]]
 name = "lithe-gpui-app"
 version = "0.0.1"
 dependencies = [

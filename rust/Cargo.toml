@@ -48,6 +48,10 @@ opt-level = 3
 # 不会为 GPUI 付出编译代价。
 [profile.dev.package.gpui-pre]
 opt-level = 3
+# gpui-base 含真实布局/行为热路径（交互状态、拖拽算术、dock/滚动），与 gpui-pre
+# 同理不能按未优化编译；lithe-gpui 组件库建在它之上，此项成为必列。
+[profile.dev.package.gpui-base]
+opt-level = 3
 [profile.dev.package.gpui-component]
 opt-level = 3
 [profile.dev.package.gpui-kit]

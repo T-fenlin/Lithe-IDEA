@@ -1,0 +1,17 @@
+[package]
+name = "lithe-gpui"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+# 唯一上游：gpui-kit 关闭默认 feature（component/assets），只保留 gpui-base 行为层。
+# gpui-pre（gpui 本体）、gpui-base、gpui_platform 由 gpui-kit 自动引入并钉在同一版本线，
+# 本 crate 不单独声明 gpui / gpui-base。
+# 分层决策见 .agents/notes/implemented/architecture/2026-10-05-lithe-gpui-component-library.md
+[dependencies]
+gpui-kit = { version = "0.7", default-features = false }
+
+# UI 集成测试（#[gpui_kit::test]）只需要 test-support，不需要 component。
+# cargo test 时该 feature 与上面的依赖按 crate 统一合并，不影响常规构建。
+[dev-dependencies]
+gpui-kit = { version = "0.7", default-features = false, features = ["test-support"] }
