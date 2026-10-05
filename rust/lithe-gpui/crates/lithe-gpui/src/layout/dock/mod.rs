@@ -35,6 +35,24 @@ pub enum Spot {
     Floating { x: f32, y: f32 },
 }
 
+/// How far a side.s size may go. `max` of `None` keeps the cap the drag applies
+/// (a little under half the dock); a side that must not grow past a fixed height
+/// — a terminal, say — sets one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SideLimits {
+    pub min: Rems,
+    pub max: Option<Rems>,
+}
+
+impl SideLimits {
+    /// `size` brought inside this range; `cap` is the fallback a `None` max uses.
+    pub fn clamp(&self, size: Rems, cap: Rems) -> Rems {
+        // A max under the min would make the range empty; the min wins.
+        let max = self.max.unwrap_or(cap).0.max(self.min.0);
+        Rems(size.0.max(self.min.0).min(max))
+    }
+}
+
 /// A panel's heading: fixed text, or a catalogue key resolved as it is drawn.
 ///
 /// The key form follows the shown locale, which is what an application wants for
@@ -96,6 +114,7 @@ pub struct Dock {
     hidden: Vec<bool>,
     active: [Option<usize>; 4],
     sizes: [Rems; 4],
+    limits: [SideLimits; 4],
     center: Center,
     content: Content,
     dragging: bool,
@@ -109,12 +128,17 @@ impl Dock {
     ) -> Self {
         let theme = cx.theme();
         let (side, strip) = (theme.sidebar_width(false), theme.pane_min());
+        let limits = SideLimits {
+            min: theme.pane_min(),
+            max: None,
+        };
         Self {
             panels: Vec::new(),
             spots: Vec::new(),
             hidden: Vec::new(),
             active: [None; 4],
             sizes: [side, side, strip, strip],
+            limits: [limits; 4],
             center: Rc::new(center),
             content: Rc::new(content),
             dragging: false,
@@ -139,6 +163,20 @@ impl Dock {
 
     fn find(&self, id: &str) -> Option<usize> {
         self.panels.iter().position(|panel| panel.id.as_ref() == id)
+    }
+
+    /// The range a side.s size may take. A size already outside it is brought in.
+    pub fn set_side_limits(
+        &mut self,
+        side: DockSide,
+        min: Rems,
+        max: Option<Rems>,
+        cx: &mut Context<Self>,
+    ) {
+        self.limits[side.index()] = SideLimits { min, max };
+        let cap = Rems(f32::MAX);
+        self.sizes[side.index()] = self.limits[side.index()].clamp(self.sizes[side.index()], cap);
+        cx.notify();
     }
 
     fn on_side(&self, side: DockSide) -> Vec<usize> {
@@ -328,7 +366,7 @@ impl Dock {
 
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
-    use gpui::{AnyElement, Entity, TestAppContext, div, prelude::*};
+    use gpui::{AnyElement, Entity, TestAppContext, div, prelude::*, rems};
 
     use crate::theme::Theme;
 
@@ -418,6 +456,21 @@ mod tests {
                 Some(1),
                 "a closed panel never leads"
             );
+        });
+    }
+
+    /// A side.s limit brings a size that sits outside it back into range, and a
+    /// maximum below the minimum still leaves room for the minimum.
+    #[gpui::test]
+    fn a_side_limit_brings_the_size_into_range(cx: &mut TestAppContext) {
+        let dock = bench(cx);
+        dock.update(cx, |dock, cx| {
+            let left = DockSide::Left.index();
+            dock.sizes[left] = rems(40.0);
+            dock.set_side_limits(DockSide::Left, rems(10.0), Some(rems(20.0)), cx);
+            assert_eq!(dock.sizes[left], rems(20.0), "brought down to the maximum");
+            dock.set_side_limits(DockSide::Left, rems(30.0), Some(rems(5.0)), cx);
+            assert_eq!(dock.sizes[left], rems(30.0), "the minimum wins");
         });
     }
 

@@ -227,7 +227,6 @@ impl Render for Dock {
             .collect();
         let showing_zones = self.dragging && cx.has_active_drag();
         let rem = window.rem_size();
-        let min = cx.theme().pane_min();
         let own = cx.entity_id();
         div()
             .id("dock")
@@ -249,11 +248,20 @@ impl Render for Dock {
                         DockSide::Top => pointer.y - bounds.top(),
                         DockSide::Bottom => bounds.bottom() - pointer.y,
                     };
-                    let limit = match side {
+                    let cap = match side {
                         DockSide::Left | DockSide::Right => bounds.size.width * 0.45,
                         DockSide::Top | DockSide::Bottom => bounds.size.height * 0.45,
                     };
-                    let size = span.max(min.to_pixels(rem)).min(limit);
+                    // The side.s own range, with the four-fifths cap standing in for a
+                    // side that sets no maximum.
+                    let limits = dock.limits[side.index()];
+                    let low = limits.min.to_pixels(rem);
+                    let high = limits
+                        .max
+                        .map(|max| max.to_pixels(rem))
+                        .unwrap_or(cap)
+                        .max(low);
+                    let size = span.max(low).min(high);
                     dock.sizes[side.index()] = gpui::rems(f32::from(size) / f32::from(rem));
                     cx.notify();
                 }),
