@@ -4884,6 +4884,7 @@ dependencies = [
  "regex",
  "rqrr",
  "rust-embed",
+ "rust-i18n",
  "rustix 1.1.5",
  "serde",
  "serde_json",
