@@ -56,7 +56,12 @@ MIT 允许衍生与再分发，**前提是保留版权声明与许可文本**。
 | `ely_live_` / `ely_icon` / `ely_terminal` / `ely-theme-` | `lithe_*` | 内部标识 |
 | `elyPicked` / `elyRoute` | `lithePicked` / `litheRoute` | macOS 原生桥标识 |
 | `ELY_GALLERY_ASSETS` | `LITHE_GALLERY_ASSETS` | 画廊构建期环境变量 |
-| 测试夹具里的 `ely`（URL、临时目录、console 文本、高亮样本） | `lithe` | 保持一致性 |
+
+**只改标识符，不改任意字符串数据。** 测试夹具里的 URL、示例文本、临时目录名
+（如 `ely.dev`、`"Ely, ely, ELY and élan"`）**一律保持上游原样**：它们是被解析/断言的
+数据，改了会连带改坏硬编码的 range 断言，却没有命名收益。（初版移植曾一并改掉，
+被 Ely 自带测试抓出 3 处 range 偏差后回退——这也是本副本第一次用上游测试
+验证自身改动的记录。）
 
 ### 3. 未改动（有意）
 

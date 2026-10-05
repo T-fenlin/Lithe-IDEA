@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn blocks_nest_as_written() {
         let nodes = parse(
-            "# Lift\n\nBlend **toward** [white](https://lithe.dev).\n\n- [x] clamp\n- [ ] gamma\n\n> quoted\n\n```rust\nfn main() {}\n```\n\n---\n",
+            "# Lift\n\nBlend **toward** [white](https://ely.dev).\n\n- [x] clamp\n- [ ] gamma\n\n> quoted\n\n```rust\nfn main() {}\n```\n\n---\n",
         );
         assert!(matches!(&nodes[0], Node::Heading(1, text) if text.text == "Lift"));
         let Node::Paragraph(line) = &nodes[1] else {
@@ -276,7 +276,7 @@ mod tests {
         };
         assert_eq!(line.text, "Blend toward white.");
         assert_eq!(line.styles, [(6..12, Style::Strong), (13..18, Style::Link)]);
-        assert_eq!(line.links, [(13..18, "https://lithe.dev".to_string())]);
+        assert_eq!(line.links, [(13..18, "https://ely.dev".to_string())]);
         let Node::List { start: None, items } = &nodes[2] else {
             panic!("a list, not {:?}", nodes[2])
         };

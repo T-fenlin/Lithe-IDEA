@@ -64,7 +64,7 @@ impl Render for Guides {
         let slides = ["a", "b", "c"]
             .into_iter()
             .take(self.pictures)
-            .map(|name| Slide::new(Path::new("/missing/lithe.png"), name));
+            .map(|name| Slide::new(Path::new("/missing/ely.png"), name));
         let steps = [
             TourStep::new(target(), "Here", "The first stop"),
             TourStep::new(

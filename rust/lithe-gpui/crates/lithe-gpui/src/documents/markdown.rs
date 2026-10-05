@@ -241,11 +241,11 @@ mod tests {
         use Mark::*;
         assert_eq!(found("`x`"), [("`x`", Code), ("`", Syntax), ("`", Syntax)]);
         assert_eq!(
-            found("see [the docs](https://lithe.dev)"),
+            found("see [the docs](https://ely.dev)"),
             [
-                ("[the docs](https://lithe.dev)", Link),
+                ("[the docs](https://ely.dev)", Link),
                 ("[", Syntax),
-                ("](https://lithe.dev)", Syntax)
+                ("](https://ely.dev)", Syntax)
             ]
         );
         assert_eq!(found("## Lift"), [("## Lift", Heading(2)), ("## ", Syntax)]);
@@ -253,10 +253,10 @@ mod tests {
 
     #[test]
     fn a_link_gives_its_range_text_and_address() {
-        let text = "see [the docs](https://lithe.dev) or <https://x.dev>";
+        let text = "see [the docs](https://ely.dev) or <https://x.dev>";
         assert_eq!(
             link_at(text, 6),
-            Some((4..31, "the docs".to_string(), "https://lithe.dev".to_string()))
+            Some((4..31, "the docs".to_string(), "https://ely.dev".to_string()))
         );
         assert_eq!(link_at(text, 1), None);
         assert_eq!(link_at(text, 40), None, "an autolink has no text to edit");

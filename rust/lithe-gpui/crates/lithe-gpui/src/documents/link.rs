@@ -210,11 +210,11 @@ mod tests {
 
     #[test]
     fn a_link_is_edited_whole_and_a_selection_becomes_one() {
-        let text = "see [the docs](https://lithe.dev) here";
+        let text = "see [the docs](https://ely.dev) here";
         let inside = Linking::at(text, 8..8);
         assert_eq!(
             (inside.range, inside.address.as_deref()),
-            (4..31, Some("https://lithe.dev"))
+            (4..31, Some("https://ely.dev"))
         );
         let plain = Linking::at(text, 32..36);
         assert_eq!(
