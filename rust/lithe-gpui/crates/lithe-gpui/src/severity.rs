@@ -3,7 +3,7 @@
 
 use gpui_kit::Hsla;
 
-use crate::Theme;
+use crate::ThemeColors;
 
 /// 语义严重级别。语义保持稀缺：Neutral 用于普通元数据。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -16,7 +16,7 @@ pub enum Severity {
     Danger,
 }
 
-impl Theme {
+impl ThemeColors {
     /// 语义色（文字/图标用）。
     pub fn severity(&self, severity: Severity) -> Hsla {
         match severity {

@@ -36,6 +36,8 @@ pub struct Syntax {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct ThemeColors {
+    /// 全透明色（Ghost 等静止态不占色用）。
+    pub transparent: Hsla,
     /// Ely `bg`。
     pub background: Hsla,
     /// Ely `surface`。
@@ -183,6 +185,12 @@ impl ThemeColors {
 
     pub fn light(high_contrast: bool) -> Self {
         let mut colors = Self {
+            transparent: Hsla {
+                h: 0.0,
+                s: 0.0,
+                l: 0.0,
+                a: 0.0,
+            },
             background: c(0xfcfaf7),
             surface: c(0xffffff),
             sunken: c(0xf6f4f1),
@@ -315,6 +323,12 @@ impl ThemeColors {
 
     pub fn dark(high_contrast: bool) -> Self {
         let mut colors = Self {
+            transparent: Hsla {
+                h: 0.0,
+                s: 0.0,
+                l: 0.0,
+                a: 0.0,
+            },
             background: c(0x131110),
             surface: c(0x1b1917),
             sunken: c(0x0e0d0b),

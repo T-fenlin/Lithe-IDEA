@@ -59,9 +59,10 @@ gpui-component。最终目标是全量替换宿主里的 gpui-component；迁移
 
 ## 验证
 
-- `cargo test -p lithe-gpui`：10 项全绿（5 单元 + 2 Primitives UI + 3 主题 UI）。
+- `cargo test -p lithe-gpui`：15 项全绿（5 单元 + 3 主题语义 + 2 第 1 章 UI 集成
+  + 5 第 2–20 章 UI 集成：按钮/表单/导航/数据列表/overlay 层）。
 - `powershell .agents/skills/write-stable-tests/scripts/verify-test-stability.ps1`：通过。
-- timing 报告：`.artifacts/test-stability/lithe-gpui.json`（最慢 173ms）。
+- timing 报告：`.artifacts/test-stability/lithe-gpui.json`（15 项，最慢 <200ms）。
 - gallery 冒烟：`cargo run -p lithe-gpui --example gallery` 正常开启、干净退出。
 
 ## 适用范围

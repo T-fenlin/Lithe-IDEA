@@ -138,6 +138,7 @@ impl Theme {
 /// 注册全局主题（默认 light）。必须在打开窗口前调用一次。
 pub fn init(cx: &mut App) {
     gpui_kit::base::init(cx);
+    crate::overlay::init(cx);
     cx.set_global(Theme::light(false));
 }
 
