@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ely Gallery</title>
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #fcfaf7; }
+      html.dark, html.dark body { background: #131110; }
+    </style>
+    <script>
+      // Ely's ground under the canvas until the first frame.
+      if (new URLSearchParams(location.search).get("theme") === "dark") {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
+    <script>
+      // Embedded, gpui's hidden field waits for a press or key.
+      if (window.parent !== window) {
+        let touched = false;
+        // Until then its focus calls leave the host's focus alone.
+        const focus = HTMLElement.prototype.focus;
+        HTMLElement.prototype.focus = function (options) {
+          if (touched) focus.call(this, options);
+        };
+        const touch = () => {
+          if (touched) return;
+          touched = true;
+          document.querySelector("textarea")?.focus({ preventScroll: true });
+        };
+        addEventListener("pointerdown", touch, true);
+        addEventListener("keydown", touch, true);
+      }
+    </script>
+    <script type="module">
+      import init, { set_theme } from "./gallery.js";
+      // The host sets the mode by setTheme or a message.
+      let early = null;
+      let apply = (theme) => { early = theme; };
+      const setTheme = (theme) => {
+        apply(theme);
+        document.documentElement.classList.toggle("dark", theme === "dark");
+      };
+      window.gallery = { setTheme };
+      addEventListener("message", ({ data }) => {
+        if (data && data.lithe === "theme") setTheme(data.theme);
+      });
+      // Frames that fetch the wasm at once can fail one; the next try finds it cached.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await init();
+          break;
+        } catch (error) {
+          console.warn(`gallery: start failed, try ${attempt}`, error);
+          if (attempt === 3) {
+            window.parent.postMessage({ lithe: "failed", error: String(error) }, "*");
+            throw error;
+          }
+          await new Promise((wake) => setTimeout(wake, 1000 * attempt));
+        }
+      }
+      apply = set_theme;
+      if (early) set_theme(early);
+      // Tells the host that a mode it sends now lands.
+      window.parent.postMessage({ ely: "ready" }, "*");
+    </script>
+  </head>
+  <body></body>
+</html>

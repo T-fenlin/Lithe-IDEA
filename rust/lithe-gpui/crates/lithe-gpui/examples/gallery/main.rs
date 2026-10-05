@@ -1,207 +1,213 @@
-//! 组件画廊（dev-only）：`cargo run -p lithe-gpui --example gallery`。
-//!
-//! 左侧是章节切换侧栏，右侧内容区单章展示、可滚动。内嵌了最小 SVG 资产
-//! 集合，演示 Icon 的注入式图标约定——库本体不内嵌图标，正式应用走
-//! app crate 的 `LitheAssets`。分章 story 见同目录 `stories.rs`。
+#![cfg_attr(target_family = "wasm", no_main)]
 
-mod stories;
+/// A file under the gallery's assets, by name.
+#[cfg(not(target_family = "wasm"))]
+macro_rules! asset {
+    ($name:literal) => {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/gallery/assets/",
+            $name
+        )
+    };
+}
 
-use std::borrow::Cow;
+/// On the web, the build names the pictures' address.
+#[cfg(target_family = "wasm")]
+macro_rules! asset {
+    ($name:literal) => {
+        concat!(env!("LITHE_GALLERY_ASSETS"), $name)
+    };
+}
 
-use gpui_kit::prelude::*;
+mod assets;
+#[cfg(not(target_family = "wasm"))]
+mod capture;
+mod pages;
+mod probe;
+#[cfg(not(target_family = "wasm"))]
+mod script;
+mod shell;
+// Native capture alone plays the scripts.
+#[cfg_attr(target_family = "wasm", allow(dead_code))]
+mod step;
+#[cfg(not(target_family = "wasm"))]
+mod swipe;
+mod ui;
+#[cfg(target_family = "wasm")]
+mod web;
 
-use gpui_kit::{
-    AssetSource, Bounds, Context, Point, Render, SharedString, Window, WindowBounds, WindowOptions,
-    div, px, rems, size,
+#[cfg(not(target_family = "wasm"))]
+use std::path::PathBuf;
+
+#[cfg(not(target_family = "wasm"))]
+use anyhow::{Context as _, Result, bail};
+#[cfg(not(target_family = "wasm"))]
+use assets::GalleryAssets;
+use lithe_gpui::theme::{Mode, Theme};
+use gpui::{
+    App, AppContext, Bounds, KeyBinding, Menu, MenuItem, SharedString, TitlebarOptions,
+    WindowBounds, WindowHandle, WindowOptions, actions, point, px, size,
 };
 
-use lithe_gpui::{
-    ActiveTheme as _, Button, Entity, InputState, ResizableState, Sidebar, Sizable as _, Theme,
-    ThemeMode, init, open_window,
-};
+actions!(gallery, [Quit, About, LightMode, DarkMode, NewWindow]);
 
-/// 最小图标集合：手绘几何路径，专供 gallery。
-static GALLERY_ASSETS: &[(&str, &str)] = &[
-    (
-        "icons/check.svg",
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>"##,
-    ),
-    (
-        "icons/x.svg",
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>"##,
-    ),
-    (
-        "icons/chevron-down.svg",
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>"##,
-    ),
-    (
-        "icons/plus.svg",
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>"##,
-    ),
-];
-
-struct GalleryAssets;
-
-impl AssetSource for GalleryAssets {
-    fn load(&self, path: &str) -> gpui_kit::Result<Option<Cow<'static, [u8]>>> {
-        Ok(GALLERY_ASSETS
-            .iter()
-            .find(|(name, _)| *name == path)
-            .map(|(_, svg)| Cow::Borrowed(svg.as_bytes())))
+/// The gallery's menu bar, drawn natively and by MenuBar.
+pub fn app_menus() -> Vec<Menu> {
+    let view = Menu {
+        name: "View".into(),
+        items: vec![
+            MenuItem::action("Light", LightMode),
+            MenuItem::action("Dark", DarkMode),
+        ],
+        disabled: false,
+    };
+    // A page opens no second window and cannot quit.
+    if cfg!(target_family = "wasm") {
+        return vec![view];
     }
+    let lithe = Menu {
+        name: "Ely".into(),
+        items: vec![
+            MenuItem::action("About Ely", About),
+            MenuItem::separator(),
+            MenuItem::action("Quit Ely", Quit),
+        ],
+        disabled: false,
+    };
+    vec![lithe, view]
+}
 
-    fn list(&self, path: &str) -> gpui_kit::Result<Vec<SharedString>> {
-        Ok(GALLERY_ASSETS
-            .iter()
-            .map(|(name, _)| SharedString::from(*name))
-            .filter(|name| name.starts_with(path))
-            .collect())
+/// Menu bar and Dock menu, set before the window opens.
+fn menus(cx: &mut App) {
+    cx.set_menus(app_menus());
+    cx.set_dock_menu(vec![MenuItem::action("New Window", NewWindow)]);
+}
+
+/// What the menus' actions do; the theme ones need the window.
+fn menu_actions(window: WindowHandle<shell::Gallery>, cx: &mut App) {
+    cx.on_action(|_: &About, cx| pages::open_about(cx));
+    cx.on_action(|_: &NewWindow, cx| pages::open_managed(cx));
+    cx.on_action(move |_: &LightMode, cx| choose(window, shell::Choice::Light, cx));
+    cx.on_action(move |_: &DarkMode, cx| choose(window, shell::Choice::Dark, cx));
+}
+
+fn choose(window: WindowHandle<shell::Gallery>, choice: shell::Choice, cx: &mut App) {
+    if let Err(error) = window.update(cx, |gallery, window, cx| gallery.choose(choice, window, cx))
+    {
+        log::error!("gallery: menu could not reach the window: {error:#}");
     }
 }
 
-fn main() {
-    lithe_gpui::application()
-        .with_assets(GalleryAssets)
-        .run(|cx| {
-            init(cx);
-            let bounds = Bounds {
-                origin: Point::default(),
-                size: size(px(1040.), px(860.)),
-            };
-            open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    ..Default::default()
-                },
-                cx,
-                |window, cx| cx.new(|cx| GalleryView::new(window, cx)),
-            )
-            .expect("failed to open gallery window");
-        });
+/// What the gallery opens on.
+#[derive(Default)]
+pub struct Start {
+    pub page: usize,
+    /// One section, by title or slug, drawn alone.
+    pub story: Option<SharedString>,
+    pub choice: shell::Choice,
+    /// Narrow check width, if any.
+    pub narrow: Option<f32>,
+    /// Why the start could not be read, shown instead.
+    pub failure: Option<SharedString>,
 }
 
-/// 画廊状态：当前章节 + 受控组件（表单/标签页/分页）的值。
-struct GalleryView {
-    chapter: usize,
-    dock_state: Entity<ResizableState>,
-    input: Entity<InputState>,
-    checked: bool,
-    switch_on: bool,
-    radio_ix: usize,
-    tab_ix: usize,
-    page: usize,
-    selected_commit: Option<usize>,
+/// Sets Ely up and opens the gallery's window.
+fn launch(start: Start, cx: &mut App) -> WindowHandle<shell::Gallery> {
+    lithe_gpui::init(cx);
+    #[cfg(debug_assertions)]
+    lithe_gpui::tooling::install_inspector(cx);
+    pages::bind_keys(cx);
+    pages::install_i18n(cx);
+    cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+    cx.on_action(|_: &Quit, cx| cx.quit());
+    menus(cx);
+    if start.choice == shell::Choice::Dark {
+        Theme::set_mode_now(Mode::Dark, cx);
+    }
+    let bounds = Bounds::centered(None, size(px(1280.0), px(820.0)), cx);
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        titlebar: Some(TitlebarOptions {
+            title: Some("Ely".into()),
+            appears_transparent: true,
+            traffic_light_position: Some(point(px(16.0), px(18.0))),
+        }),
+        window_min_size: Some(size(px(880.0), px(560.0))),
+        // Keeps drawing while a demo window is key.
+        inactive_frame_interval: None,
+        ..Default::default()
+    };
+    let window = cx
+        .open_window(options, |window, cx| {
+            cx.new(|cx| shell::Gallery::new(start, window, cx))
+        })
+        .expect("gallery window failed to open");
+    menu_actions(window, cx);
+    cx.activate(true);
+    window
 }
 
-impl GalleryView {
-    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self {
-            chapter: 0,
-            dock_state: cx.new(|_| ResizableState::default()),
-            input: cx.new(|cx| InputState::new(window, cx).placeholder("Search files…")),
-            checked: false,
-            switch_on: true,
-            radio_ix: 1,
-            tab_ix: 0,
-            page: 2,
-            selected_commit: None,
+#[cfg(not(target_family = "wasm"))]
+struct Args {
+    start: Start,
+    /// The page asked for, which a capture shoots alone.
+    page: Option<usize>,
+    capture: Option<PathBuf>,
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn parse_args() -> Result<Args> {
+    let mut args = Args {
+        start: Start::default(),
+        page: None,
+        capture: None,
+    };
+    let mut iter = std::env::args().skip(1);
+    while let Some(flag) = iter.next() {
+        let value = iter
+            .next()
+            .with_context(|| format!("{flag} needs a value"))?;
+        match flag.as_str() {
+            "--page" => {
+                args.page = Some(pages::find(&value).with_context(|| format!("no page {value}"))?)
+            }
+            "--story" => args.start.story = Some(value.into()),
+            "--capture" => args.capture = Some(PathBuf::from(value)),
+            "--narrow" => {
+                args.start.narrow = Some(
+                    value
+                        .parse()
+                        .with_context(|| format!("bad width {value}"))?,
+                )
+            }
+            other => bail!("unknown flag {other}"),
         }
     }
+    if args.start.story.is_some() && args.page.is_none() {
+        bail!("--story needs --page");
+    }
+    args.start.page = args.page.unwrap_or(0);
+    Ok(args)
 }
 
-impl Render for GalleryView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let toggle_label = if theme.is_dark() { "Light" } else { "Dark" };
-        let chapter = self.chapter;
-        let state = cx.entity().downgrade();
-        let sidebar_state = state.clone();
-
-        div()
-            .size_full()
-            .flex()
-            .bg(theme.background)
-            .text_color(theme.foreground)
-            .child(
-                // 章节切换侧栏
-                Sidebar::new("chapter-sidebar").w(rems(11.0)).child(
-                    div().flex().flex_col().gap_1().p_3().pt_4().children(
-                        stories::CHAPTERS.iter().enumerate().map(move |(ix, name)| {
-                            let sidebar_state = sidebar_state.clone();
-                            let name = *name;
-                            Button::new(("chapter", ix))
-                                .label(name)
-                                .ghost()
-                                .small()
-                                .selected(chapter == ix)
-                                .on_click(move |_, _, cx| {
-                                    let _ = sidebar_state.update(cx, |v, cx| {
-                                        v.chapter = ix;
-                                        cx.notify();
-                                    });
-                                })
-                        }),
-                    ),
-                ),
-            )
-            .child(
-                // 右列：画廊头 + 可滚动内容区（Stateful div 才能滚）
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .px_6()
-                            .py_3()
-                            .border_b_1()
-                            .border_color(theme.border)
-                            .child(div().text_lg().child(format!(
-                                "lithe-gpui gallery ({})",
-                                if theme.is_dark() { "dark" } else { "light" }
-                            )))
-                            .child(
-                                div()
-                                    .id("toggle-mode")
-                                    .px_3()
-                                    .h_8()
-                                    .flex()
-                                    .items_center()
-                                    .rounded_full()
-                                    .border_1()
-                                    .border_color(theme.border_strong)
-                                    .bg(theme.surface)
-                                    .text_sm()
-                                    .cursor_pointer()
-                                    .hover(|style| style.bg(theme.hover))
-                                    .child(format!("Switch to {toggle_label}"))
-                                    .on_click(|_, _, cx| {
-                                        let target = if cx.theme().is_dark() {
-                                            ThemeMode::Light
-                                        } else {
-                                            ThemeMode::Dark
-                                        };
-                                        Theme::set_mode(target, cx);
-                                    }),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .id("gallery-content")
-                            .flex_1()
-                            .min_h_0()
-                            .overflow_y_scroll()
-                            .px_6()
-                            .py_5()
-                            .flex()
-                            .flex_col()
-                            .gap_5()
-                            .child(stories::chapter(chapter, self, &state, cx)),
-                    ),
-            )
-    }
+#[cfg(not(target_family = "wasm"))]
+fn main() -> Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let Args {
+        start,
+        page,
+        capture,
+    } = parse_args()?;
+    // A script aims across its page; stories hold part.
+    let scripted = start.narrow.is_none() && start.story.is_none();
+    gpui_platform::application()
+        .with_assets(GalleryAssets)
+        .run(move |cx: &mut App| {
+            let window = launch(start, cx);
+            if let Some(dir) = capture {
+                capture::run(window, dir, page, scripted, cx);
+            }
+        });
+    Ok(())
 }
