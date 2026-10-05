@@ -297,8 +297,11 @@ impl Render for Dock {
         let center = (self.center)(window, cx);
         let floating: Vec<AnyElement> = (0..self.panels.len())
             .filter_map(|ix| match self.spots[ix] {
-                Spot::Floating { x, y } => Some((ix, point(Pixels::from(x), Pixels::from(y)))),
-                Spot::Docked(_) => None,
+                // A closed panel is gone from the window too, not only from its side.
+                Spot::Floating { x, y } if !self.hidden[ix] => {
+                    Some((ix, point(Pixels::from(x), Pixels::from(y))))
+                }
+                _ => None,
             })
             .map(|(ix, start)| self.floating(ix, start, window, cx))
             .collect();
@@ -398,11 +401,30 @@ impl Dock {
         let id = panel.id.clone();
         let body = (self.content)(&id, window, cx);
         let dock_id = id.clone();
+        let back_id = id.clone();
+        let close_id = id.clone();
+        let actions = [
+            Button::new(SharedString::from(format!("float-dock-{id}")))
+                .icon(IconName::PictureInPicture2)
+                .variant(ButtonVariant::Ghost)
+                .size(Size::Small)
+                .tooltip(text(cx, "dock.dock", &[]))
+                .on_click(cx.listener(move |dock, _, _, cx| dock.toggle_float(&back_id, cx)))
+                .into_any_element(),
+            Button::new(SharedString::from(format!("float-close-{id}")))
+                .icon(IconName::X)
+                .variant(ButtonVariant::Ghost)
+                .size(Size::Small)
+                .tooltip(text(cx, "dock.close", &[]))
+                .on_click(cx.listener(move |dock, _, _, cx| dock.hide(&close_id, cx)))
+                .into_any_element(),
+        ];
         FloatingPanel::new(
             SharedString::from(format!("float-{id}")),
             panel.title.resolve(cx),
             start,
         )
+        .actions(actions)
         .w(cx.theme().sidebar_width(false))
         .h(cx.theme().sheet_size())
         .on_move(cx.listener(move |dock, at: &Point<Pixels>, _, _| {

@@ -54,4 +54,5 @@ dock:
   close: {en-US: "Close", en-GB: "Close", de-DE: "Schließen", fr-FR: "Fermer", ja-JP: "閉じる", he-IL: "סגור", zh-CN: "关闭"}
   float: {en-US: "Float", en-GB: "Float", de-DE: "Schweben lassen", fr-FR: "Détacher", ja-JP: "フロート", he-IL: "רחף", zh-CN: "浮动"}
   zoom: {en-US: "Maximize", en-GB: "Maximize", de-DE: "Maximieren", fr-FR: "Agrandir", ja-JP: "最大化", he-IL: "הגדל", zh-CN: "最大化"}
+  dock: {en-US: "Dock", en-GB: "Dock", de-DE: "Andocken", fr-FR: "Ancrer", ja-JP: "ドッキング", he-IL: "עגן", zh-CN: "停靠"}
   restore: {en-US: "Restore", en-GB: "Restore", de-DE: "Wiederherstellen", fr-FR: "Restaurer", ja-JP: "元に戻す", he-IL: "שחזר", zh-CN: "还原"}

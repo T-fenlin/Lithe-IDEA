@@ -41,6 +41,7 @@ pub struct FloatingPanel {
     start: Point<Pixels>,
     base: gpui::Div,
     on_move: Option<OnMove>,
+    actions: SmallVec<[AnyElement; 2]>,
     body: SmallVec<[AnyElement; 2]>,
 }
 
@@ -57,8 +58,15 @@ impl FloatingPanel {
             start,
             base: div(),
             on_move: None,
+            actions: SmallVec::new(),
             body: SmallVec::new(),
         }
+    }
+
+    /// Controls drawn at the end of the title bar, beside the drag grip.
+    pub fn actions(mut self, elements: impl IntoIterator<Item = AnyElement>) -> Self {
+        self.actions.extend(elements);
+        self
     }
 
     /// Reports each new top-left corner while dragging.
@@ -137,6 +145,7 @@ impl RenderOnce for FloatingPanel {
                     .id("floating-title")
                     .flex()
                     .items_center()
+                    .justify_between()
                     .h(theme.control_height(Size::Medium))
                     .px_3()
                     .border_b_1()
@@ -146,7 +155,8 @@ impl RenderOnce for FloatingPanel {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.colors.fg_muted)
                     .on_drag(carry, |_, _, _, cx| cx.new(|_| EmptyView))
-                    .child(self.title),
+                    .child(self.title)
+                    .children(self.actions),
             )
             .child(div().p_3().children(self.body));
         raise((self.id, "raised"), anchored().position(at).child(panel))
