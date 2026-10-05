@@ -49,7 +49,7 @@ fn demo_dock(cx: &mut App) -> Dock {
         cx,
     );
     // The gallery has no activity bar, so the dock draws its own way back.
-    dock = dock.closed_strip(true);
+    dock = dock.closed_strip(true).rail(true);
     dock.add(
         panel("files", "demo_dock_copy.files", IconName::Folder),
         DockSide::Left,

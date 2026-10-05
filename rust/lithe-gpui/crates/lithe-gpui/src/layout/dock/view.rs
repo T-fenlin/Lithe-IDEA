@@ -251,10 +251,12 @@ impl Dock {
         )
         .on_drag(resize, |_, _, _, cx| cx.new(|_| EmptyView));
         let row = div().flex().flex_none();
+        // The rail sits outside the panels, on the side.s own edge.
+        let rail = self.rail_for(side, cx);
         Some(
             match side {
-                DockSide::Left => row.h_full().child(pane).child(handle),
-                DockSide::Right => row.h_full().child(handle).child(pane),
+                DockSide::Left => row.h_full().children(rail).child(pane).child(handle),
+                DockSide::Right => row.h_full().child(handle).child(pane).children(rail),
                 DockSide::Top => row.w_full().flex_col().child(pane).child(handle),
                 DockSide::Bottom => row.w_full().flex_col().child(handle).child(pane),
             }
@@ -536,6 +538,47 @@ impl Dock {
         }))
         .child(body)
         .into_any_element()
+    }
+
+    /// The icon rail for `side`: one button per panel docked there, closed or not,
+    /// so a click is also how a closed one comes back. `None` when the rail is off.
+    fn rail_for(&self, side: DockSide, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let docked: Vec<usize> = (0..self.panels.len())
+            .filter(|ix| matches!(self.spots[*ix], Spot::Docked { side: s, .. } if s == side))
+            .collect();
+        if !self.rail || docked.is_empty() {
+            return None;
+        }
+        let theme = cx.theme();
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .flex_none()
+                .items_center()
+                .gap_0p5()
+                .w(theme.rail_width())
+                .py_1()
+                .border_color(theme.colors.border)
+                .when(side == DockSide::Left, |el| el.border_r_1())
+                .when(side == DockSide::Right, |el| el.border_l_1())
+                .children(docked.into_iter().map(|ix| {
+                    let panel = &self.panels[ix];
+                    let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
+                    let shown = self.is_active_in(ix) && !self.hidden[ix];
+                    Button::new(SharedString::from(format!("rail-{side:?}-{id}")))
+                        .icon(icon)
+                        .variant(if shown {
+                            ButtonVariant::Subtle
+                        } else {
+                            ButtonVariant::Ghost
+                        })
+                        .size(Size::Small)
+                        .tooltip(title)
+                        .on_click(cx.listener(move |dock, _, _, cx| dock.activate(&id, cx)))
+                }))
+                .into_any_element(),
+        )
     }
 
     /// The closed panels as buttons that open them again, when the strip is on.

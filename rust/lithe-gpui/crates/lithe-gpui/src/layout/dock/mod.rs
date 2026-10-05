@@ -172,6 +172,10 @@ pub struct Dock {
     zoomed: Option<usize>,
     /// The side each panel was last docked to, so a floated panel has a way home.
     last_docked: Vec<DockSide>,
+    /// Whether a rail of icons is drawn along the left and right edges, one per
+    /// panel docked there; a click opens that panel. An application with its own
+    /// activity bar leaves this off.
+    rail: bool,
     /// Whether a strip of closed panels is drawn, so they can be opened again.
     /// An application with an activity bar turns this off: a toggle there is the
     /// usual way back, and a second one would be noise.
@@ -203,6 +207,7 @@ impl Dock {
             active: [[None; GROUPS]; 4],
             zoomed: None,
             last_docked: Vec::new(),
+            rail: false,
             closed_strip: false,
             sizes: [side, side, strip, strip],
             split: even_split(),
@@ -230,6 +235,12 @@ impl Dock {
             },
             cx,
         )
+    }
+
+    /// Draws an icon rail along the left and right edges. Off by default.
+    pub fn rail(mut self, on: bool) -> Self {
+        self.rail = on;
+        self
     }
 
     /// Draws a strip of closed panels, each a button that opens it again.
@@ -308,6 +319,16 @@ impl Dock {
             .into_iter()
             .filter(|ix| !self.hidden[*ix])
             .collect()
+    }
+
+    /// Whether `ix` is the panel its own group is showing.
+    pub fn is_active_in(&self, ix: usize) -> bool {
+        match self.spots[ix] {
+            Spot::Docked { side, group } => {
+                self.active[side.index()][usize::from(group)] == Some(ix)
+            }
+            Spot::Floating { .. } => false,
+        }
     }
 
     pub fn is_hidden(&self, id: &str) -> bool {
@@ -670,6 +691,23 @@ mod tests {
             dock.zoom("outline", cx);
             assert!(dock.is_zoomed("outline"));
             assert!(!dock.is_hidden("outline"), "zooming opens the panel");
+        });
+    }
+
+    /// The rail marks the panel a group is showing, and a closed panel stops being
+    /// the marked one (the rail lists it so a click can bring it back).
+    #[gpui::test]
+    fn a_panel_is_the_shown_one_only_while_it_is_open(cx: &mut TestAppContext) {
+        let dock = bench(cx);
+        dock.update(cx, |dock, cx| {
+            dock.move_to_group("outline", DockSide::Left, 1, cx);
+            assert!(dock.is_active_in(0), "files leads its group");
+            assert!(dock.is_active_in(1), "outline leads its group");
+            dock.hide("outline", cx);
+            assert!(
+                !dock.is_active_in(1),
+                "a closed panel is not the one its group shows"
+            );
         });
     }
 
