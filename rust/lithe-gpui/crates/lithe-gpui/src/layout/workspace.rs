@@ -64,11 +64,17 @@ mod tests {
             version: WORKSPACE_VERSION,
             dock: DockLayout {
                 spots: vec![
-                    ("files".into(), Spot::Docked(DockSide::Left)),
+                    ("files".into(), Spot::docked(DockSide::Left)),
                     ("outline".into(), Spot::Floating { x: 40.0, y: 60.0 }),
                 ],
-                active: [Some("files".into()), None, None, None],
+                active: [
+                    [Some("files".into()), None],
+                    [None, None],
+                    [None, None],
+                    [None, None],
+                ],
                 sizes: [15.0, 17.5, 12.0, 13.75],
+                split: [0.5; 4],
                 hidden: Vec::new(),
             },
             panes: PaneLayout::Split {

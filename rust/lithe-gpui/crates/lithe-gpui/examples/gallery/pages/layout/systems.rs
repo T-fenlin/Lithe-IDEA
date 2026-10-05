@@ -54,9 +54,11 @@ fn demo_dock(cx: &mut App) -> Dock {
         panel("files", "demo_dock_copy.files", IconName::Folder),
         DockSide::Left,
     );
-    dock.add(
+    // The left side stacks two groups, as an editor puts a tree above an outline.
+    dock.add_to(
         panel("outline", "demo_dock_copy.outline", IconName::Layers),
         DockSide::Left,
+        1,
     );
     dock.add(
         panel("search", "demo_dock_copy.search", IconName::Search),
