@@ -42,27 +42,9 @@ dialog:
   close: {en-US: "Close", en-GB: "Close", de-DE: "Schließen", fr-FR: "Fermer", ja-JP: "閉じる", he-IL: "סגור", zh-CN: "关闭"}
 state:
   unavailable: {en-US: "Unavailable", en-GB: "Unavailable", de-DE: "Nicht verfügbar", fr-FR: "Indisponible", ja-JP: "利用不可", he-IL: "לא זמין", zh-CN: "不可用"}
-# Copy the gallery's i18n page demonstrates with; kept out of the component keys above.
-demo:
-  welcome: {en-US: "Welcome back, %{name}", en-GB: "Welcome back, %{name}", de-DE: "Willkommen zurück, %{name}", fr-FR: "Bon retour, %{name}", ja-JP: "おかえりなさい、%{name}さん", zh-CN: "欢迎回来，%{name}", he-IL: "ברוך שובך, %{name}"}
-  files: {en-US: "%{count} files in %{folder}", en-GB: "%{count} files in %{folder}", de-DE: "%{count} Dateien in %{folder}", fr-FR: "%{count} fichiers dans %{folder}", ja-JP: "%{folder}に%{count}個のファイル", zh-CN: "%{folder}中有%{count}个文件", he-IL: "%{count} קבצים ב־%{folder}"}
-  saved: {en-US: "Last saved %{date}", en-GB: "Last saved %{date}", de-DE: "Zuletzt gespeichert am %{date}", fr-FR: "Enregistré le %{date}", ja-JP: "最終保存：%{date}", zh-CN: "上次保存于%{date}", he-IL: "נשמר לאחרונה ב־%{date}"}
-  change: {en-US: "%{change}% since yesterday", en-GB: "%{change}% since yesterday", de-DE: "%{change} % seit gestern", fr-FR: "%{change} % depuis hier", ja-JP: "昨日から%{change}%", zh-CN: "较昨日%{change}%", he-IL: "%{change}% מאז אתמול"}
-gallery:
-  tagline: {en-US: "Component gallery", en-GB: "Component gallery", de-DE: "Komponentengalerie", fr-FR: "Galerie de composants", ja-JP: "コンポーネントギャラリー", he-IL: "גלריית רכיבים", zh-CN: "组件画廊"}
 dock:
   close: {en-US: "Close", en-GB: "Close", de-DE: "Schließen", fr-FR: "Fermer", ja-JP: "閉じる", he-IL: "סגור", zh-CN: "关闭"}
   float: {en-US: "Float", en-GB: "Float", de-DE: "Schweben lassen", fr-FR: "Détacher", ja-JP: "フロート", he-IL: "רחף", zh-CN: "浮动"}
   zoom: {en-US: "Maximize", en-GB: "Maximize", de-DE: "Maximieren", fr-FR: "Agrandir", ja-JP: "最大化", he-IL: "הגדל", zh-CN: "最大化"}
   dock: {en-US: "Dock", en-GB: "Dock", de-DE: "Andocken", fr-FR: "Ancrer", ja-JP: "ドッキング", he-IL: "עגן", zh-CN: "停靠"}
   restore: {en-US: "Restore", en-GB: "Restore", de-DE: "Wiederherstellen", fr-FR: "Restaurer", ja-JP: "元に戻す", he-IL: "שחזר", zh-CN: "还原"}
-demo_dock_copy:
-  summary: {en-US: "Panels dock on any edge, tab together, and float.", en-GB: "Panels dock on any edge, tab together, and float.", de-DE: "Panels docken an jeder Kante, bündeln sich in Tabs und schweben.", fr-FR: "Les panneaux s'ancrent sur n'importe quel bord, se regroupent en onglets et flottent.", ja-JP: "パネルはどの辺にもドッキングでき、タブでまとまり、フロートできます。", he-IL: "חלוניות נעגנות בכל קצה, מתקבצות ללשוניות וצפות.", zh-CN: "面板可停靠到任意边、成组为标签页，也可浮动。"}
-  center: {en-US: "Center. Drag a tab onto a zone.", en-GB: "Center. Drag a tab onto a zone.", de-DE: "Mitte. Ziehe einen Tab auf eine Zone.", fr-FR: "Centre. Glissez un onglet sur une zone.", ja-JP: "中央。タブをゾーンへドラッグ。", he-IL: "מרכז. גרור לשונית לאזור.", zh-CN: "中间区。把标签拖到落点区。"}
-  files: {en-US: "Files", en-GB: "Files", de-DE: "Dateien", fr-FR: "Fichiers", ja-JP: "ファイル", he-IL: "קבצים", zh-CN: "文件"}
-  outline: {en-US: "Outline", en-GB: "Outline", de-DE: "Gliederung", fr-FR: "Plan", ja-JP: "アウトライン", he-IL: "מתאר", zh-CN: "大纲"}
-  search: {en-US: "Search", en-GB: "Search", de-DE: "Suche", fr-FR: "Recherche", ja-JP: "検索", he-IL: "חיפוש", zh-CN: "搜索"}
-  terminal: {en-US: "Terminal", en-GB: "Terminal", de-DE: "Terminal", fr-FR: "Terminal", ja-JP: "ターミナル", he-IL: "מסוף", zh-CN: "终端"}
-  body: {en-US: "%{id} panel", en-GB: "%{id} panel", de-DE: "%{id}-Panel", fr-FR: "panneau %{id}", ja-JP: "%{id} パネル", he-IL: "חלונית %{id}", zh-CN: "%{id} 面板"}
-  zones: {en-US: "While a tab drags, the drop zones appear and the one below lights.", en-GB: "While a tab drags, the drop zones appear and the one below lights.", de-DE: "Beim Ziehen eines Tabs erscheinen die Zonen; die darunterliegende leuchtet auf.", fr-FR: "Pendant le glisser d'un onglet, les zones apparaissent et celle en dessous s'illumine.", ja-JP: "タブのドラッグ中にドロップゾーンが現れ、下にあるものが光ります。", he-IL: "בעת גרירת לשונית מופיעים אזורי השחרור, וזה שמתחתם מאיר.", zh-CN: "拖动标签时出现落点区，指针下的那个会高亮。"}
-  zones_hint: {en-US: "Drag a tab across the dock above to see them.", en-GB: "Drag a tab across the dock above to see them.", de-DE: "Ziehe einen Tab durch das Dock oben, um sie zu sehen.", fr-FR: "Glissez un onglet dans le dock ci-dessus pour les voir.", ja-JP: "上の Dock でタブをドラッグすると見られます。", he-IL: "גרור לשונית ב-Dock שלמעלה כדי לראותם.", zh-CN: "把上面 Dock 里的标签拖一下就能看到。"}

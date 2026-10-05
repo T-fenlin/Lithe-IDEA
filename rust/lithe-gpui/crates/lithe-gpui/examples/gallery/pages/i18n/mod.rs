@@ -64,18 +64,20 @@ fn messages(cx: &App) -> impl IntoElement + use<> {
     let locale = Locale::find(&locale()).unwrap_or(Locale::of("en-US"));
     let saved = Timestamp::from_second(SAVED).expect("a time");
     let lines = [
-        text(cx, "demo.welcome", &[("name", "Ada")]),
+        // The catalogue the library ships: plain messages, one with an argument,
+        // and the locale's own number and date spelling beside them.
+        text(cx, "palette.recent", &[]),
         text(
             cx,
-            "demo.files",
-            &[("count", &locale.number(1204.0, 0)), ("folder", "Docs")],
+            "palette.search.empty",
+            &[("query", &locale.number(1204.0, 0))],
         ),
         text(
             cx,
-            "demo.saved",
-            &[("date", &locale.date(saved, &TimeZone::UTC))],
+            "palette.branch.create",
+            &[("query", &locale.date(saved, &TimeZone::UTC))],
         ),
-        text(cx, "demo.change", &[("change", &locale.number(-3.5, 1))]),
+        text(cx, "state.unavailable", &[]),
     ];
     section(
         "rust_i18n · messages read from locales/ui.yml",

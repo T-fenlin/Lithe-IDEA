@@ -74,7 +74,7 @@ fn every_locale_holds_the_same_keys() {
             );
         }
     }
-    assert!(leaves >= 34, "the catalogue shrank to {leaves} messages");
+    assert!(leaves >= 30, "the catalogue shrank to {leaves} messages");
 }
 
 /// The catalogue declares the rust-i18n schema version it is written in.

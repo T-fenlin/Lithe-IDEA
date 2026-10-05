@@ -7,7 +7,7 @@ use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     feedback::Alert,
     forms::{Choice as FormChoice, Select},
-    i18n::{LOCALES, Locale, locale, set_locale, text},
+    i18n::{LOCALES, Locale, locale, set_locale},
     layout::on_axis,
     primitives::{FocusScope, IconName, Severity},
     theme::{ActiveTheme, Mode, Radius, Size, TextSize, Theme},
@@ -142,7 +142,7 @@ impl Gallery {
                         div()
                             .text_size(theme.text_size(TextSize::Sm))
                             .text_color(colors.fg_subtle)
-                            .child(text(cx, "gallery.tagline", &[])),
+                            .child(crate::i18n::gallery("Component gallery")),
                     ),
             )
             .child(
@@ -174,7 +174,7 @@ impl Gallery {
                                     .text_color(colors.fg_subtle)
                                     .child(SharedString::from(format!("{:02}", page.number))),
                             )
-                            .child(page.title)
+                            .child(crate::i18n::gallery(page.title))
                             .on_click(cx.listener(move |gallery, _, _, cx| gallery.select(ix, cx)))
                     })),
             )
@@ -357,13 +357,13 @@ impl Render for Gallery {
                                                 div()
                                                     .text_size(theme.text_size(TextSize::Xxl))
                                                     .font_weight(FontWeight::SEMIBOLD)
-                                                    .child(page.title),
+                                                    .child(crate::i18n::gallery(page.title)),
                                             )
                                             .child(
                                                 div()
                                                     .text_size(theme.text_size(TextSize::Md))
                                                     .text_color(colors.fg_muted)
-                                                    .child(page.summary),
+                                                    .child(crate::i18n::gallery(page.summary)),
                                             ),
                                     )
                                     .child(

@@ -23,6 +23,7 @@ macro_rules! asset {
 mod assets;
 #[cfg(not(target_family = "wasm"))]
 mod capture;
+mod i18n;
 mod pages;
 mod probe;
 #[cfg(not(target_family = "wasm"))]

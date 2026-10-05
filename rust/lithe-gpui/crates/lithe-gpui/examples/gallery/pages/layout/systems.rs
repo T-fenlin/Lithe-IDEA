@@ -4,7 +4,6 @@ use gpui::{
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
-    i18n::text,
     layout::{
         Dock, DockPanel, DockSide, FloatingPanel, PaneGroup, PanelTitle, Transform, Viewport,
         Workspace,
@@ -35,7 +34,7 @@ fn demo_dock(cx: &mut App) -> Dock {
                 .items_center()
                 .justify_center()
                 .text_color(cx.theme().colors.fg_subtle)
-                .child(text(cx, "demo_dock_copy.center", &[]))
+                .child(crate::i18n::gallery("Center. Drag a tab onto a zone."))
                 .into_any_element()
         },
         |id, _, cx| {
@@ -43,29 +42,23 @@ fn demo_dock(cx: &mut App) -> Dock {
                 .p_3()
                 .text_size(cx.theme().text_size(TextSize::Sm))
                 .text_color(cx.theme().colors.fg_muted)
-                .child(text(cx, "demo_dock_copy.body", &[("id", id.as_ref())]))
+                .child(crate::i18n::gallery("%{id} panel").replace("%{id}", id.as_ref()))
                 .into_any_element()
         },
         cx,
     );
     // The gallery has no activity bar, so the dock draws its own way back.
     dock = dock.closed_strip(true).rail(true);
-    dock.add(
-        panel("files", "demo_dock_copy.files", IconName::Folder),
-        DockSide::Left,
-    );
+    dock.add(panel("files", "Files", IconName::Folder), DockSide::Left);
     // The left side stacks two groups, as an editor puts a tree above an outline.
     dock.add_to(
-        panel("outline", "demo_dock_copy.outline", IconName::Layers),
+        panel("outline", "Outline", IconName::Layers),
         DockSide::Left,
         1,
     );
+    dock.add(panel("search", "Search", IconName::Search), DockSide::Right);
     dock.add(
-        panel("search", "demo_dock_copy.search", IconName::Search),
-        DockSide::Right,
-    );
-    dock.add(
-        panel("terminal", "demo_dock_copy.terminal", IconName::Terminal),
+        panel("terminal", "Terminal", IconName::Terminal),
         DockSide::Bottom,
     );
     dock
@@ -95,7 +88,7 @@ pub fn dock(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let (dock, _) = systems(window, cx);
     section(
         "Dock / DockPanel",
-        text(cx, "demo_dock_copy.summary", &[]),
+        crate::i18n::gallery("Panels dock on any edge, tab together, and float."),
         cx,
     )
     .child(probe("dock", frame(760.0, 380.0, cx).child(dock)))
@@ -104,10 +97,12 @@ pub fn dock(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 pub fn dock_zones(cx: &App) -> impl IntoElement + use<> {
     section(
         "DockZone / DropIndicator",
-        text(cx, "demo_dock_copy.zones", &[]),
+        crate::i18n::gallery("While a tab drags, the drop zones appear and the one below lights."),
         cx,
     )
-    .child(Caption::new(text(cx, "demo_dock_copy.zones_hint", &[])))
+    .child(Caption::new(crate::i18n::gallery(
+        "Drag a tab across the dock above to see them.",
+    )))
 }
 
 pub fn floating(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {

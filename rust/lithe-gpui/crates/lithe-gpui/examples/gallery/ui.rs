@@ -70,6 +70,10 @@ pub fn slug(title: &str) -> String {
 /// Titled block of demos; a story draws one, untitled.
 pub fn section(title: impl Into<SharedString>, note: impl Into<SharedString>, cx: &App) -> Section {
     let title = title.into();
+    // A capture asks for a story by its English name, so the key stays the source
+    // text; only what is drawn is translated.
+    let drawn_title = crate::i18n::gallery(&title);
+    let drawn_note = crate::i18n::gallery(&note.into());
     let theme = cx.theme();
     let story = cx.try_global::<Story>();
     let shown = story.is_none_or(|story| {
@@ -96,14 +100,14 @@ pub fn section(title: impl Into<SharedString>, note: impl Into<SharedString>, cx
                         .text_size(theme.text_size(TextSize::Md))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.colors.fg)
-                        .child(title),
+                        .child(drawn_title),
                 )
             })
             .child(
                 div()
                     .text_size(theme.text_size(TextSize::Sm))
                     .text_color(theme.colors.fg_muted)
-                    .child(note.into()),
+                    .child(drawn_note),
             ),
     )
 }
