@@ -8,7 +8,7 @@ use gpui::{
 
 use super::marks::{Look, Mark, Tool, mark_at, paint, pin_numbers};
 use crate::{
-    buttons::{IconButton, ToggleGroup, ToggleItem},
+    buttons::{Button, ToggleGroup, ToggleItem},
     forms::{ColorSwatch, Drawing, History, pen},
     layout::seeded::{Seeded, use_seeded},
     primitives::{FocusRing, IconName, Image, checked_ratio, framed, tab_stop},
@@ -233,7 +233,8 @@ impl RenderOnce for ImageAnnotator {
                       enabled: bool,
                       run: fn(&Board, &mut Window, &mut App)| {
             let board = board.clone();
-            IconButton::new((self.id.clone(), key), icon)
+            Button::new((self.id.clone(), key))
+                .icon(icon)
                 .size(Size::Small)
                 .tooltip(tip)
                 .disabled(!enabled)

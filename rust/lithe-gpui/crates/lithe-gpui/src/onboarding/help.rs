@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     documents::MarkdownRenderer,
     forms::{Input, Run, TextInput},
     layout::on_axis,
@@ -158,7 +158,8 @@ impl RenderOnce for HelpPanel {
         });
         let theme = cx.theme();
         let close = self.on_close.map(|run| {
-            IconButton::new((id.clone(), "close"), IconName::X)
+            Button::new((id.clone(), "close"))
+                .icon(IconName::X)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip("Close help")

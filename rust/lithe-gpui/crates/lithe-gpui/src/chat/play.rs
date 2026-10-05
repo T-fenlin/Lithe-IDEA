@@ -8,7 +8,7 @@ use gpui::{
 
 use super::media::shaped;
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     documents::source,
     forms::OnFlag,
     primitives::{FocusRing, Icon, IconName, Image, tab_stop},
@@ -108,20 +108,18 @@ impl RenderOnce for AudioMessage {
             .border_color(colors.border)
             .bg(colors.surface)
             .children(self.on_toggle.map(|toggle| {
-                IconButton::new(
-                    (self.id.clone(), "toggle"),
-                    if playing {
+                Button::new((self.id.clone(), "toggle"))
+                    .icon(if playing {
                         IconName::Pause
                     } else {
                         IconName::Play
-                    },
-                )
-                .variant(ButtonVariant::Ghost)
-                .tooltip(if playing { "Pause" } else { "Play" })
-                .on_click(move |_, window, cx| {
-                    log::info!("audio message: playing {}", !playing);
-                    toggle(!playing, window, cx)
-                })
+                    })
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip(if playing { "Pause" } else { "Play" })
+                    .on_click(move |_, window, cx| {
+                        log::info!("audio message: playing {}", !playing);
+                        toggle(!playing, window, cx)
+                    })
             }))
             .child(
                 div()

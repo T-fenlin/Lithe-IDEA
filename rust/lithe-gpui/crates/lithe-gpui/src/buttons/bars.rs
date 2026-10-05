@@ -6,7 +6,7 @@ use gpui::{
 };
 use smallvec::SmallVec;
 
-use super::IconButton;
+use super::Button;
 use crate::{
     motion,
     primitives::IconName,
@@ -147,7 +147,8 @@ impl RenderOnce for BulkActionBar {
             .children(self.actions)
             .when_some(self.on_clear, |bar, clear| {
                 bar.child(
-                    IconButton::new("bulk-clear", IconName::X)
+                    Button::new("bulk-clear")
+                        .icon(IconName::X)
                         .size(Size::Small)
                         .tooltip("Clear selection")
                         .on_click(move |_, window, cx| {

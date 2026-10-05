@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{reading::ReadingProgress, render::MarkdownRenderer};
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton, ToggleButton, ToggleItem},
+    buttons::{Button, ButtonVariant, ToggleButton, ToggleItem},
     primitives::IconName,
     theme::{ActiveTheme, ContainerSize, Radius, Size, TextSize},
     typography::tabular,
@@ -92,7 +92,8 @@ impl RenderOnce for EpubReader {
         };
         let sized = |to: Option<usize>, icon: IconName, tip: &'static str| {
             let place = place.clone();
-            IconButton::new((self.id.clone(), tip), icon)
+            Button::new((self.id.clone(), tip))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(tip)

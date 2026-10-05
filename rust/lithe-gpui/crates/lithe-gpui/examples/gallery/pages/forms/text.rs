@@ -1,6 +1,6 @@
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
-    buttons::IconButton,
+    buttons::Button,
     forms::{Input, InputAddon, InputGroup, PasswordInput, SearchInput, TextInput},
     primitives::IconName,
     theme::Size,
@@ -155,7 +155,8 @@ pub fn group(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "control addon",
                 div().w(px(200.0)).child(
                     InputGroup::new(&share).after(InputAddon::new(
-                        IconButton::new("group-copy", IconName::Copy)
+                        Button::new("group-copy")
+                            .icon(IconName::Copy)
                             .size(Size::Small)
                             .tooltip("Copy"),
                     )),

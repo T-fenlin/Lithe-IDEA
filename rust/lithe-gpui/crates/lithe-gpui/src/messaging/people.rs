@@ -7,7 +7,7 @@ use gpui::{
 use jiff::{Timestamp, tz::TimeZone};
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::{Avatar, Presence},
     forms::Run,
     primitives::{Icon, IconName},
@@ -158,7 +158,8 @@ impl RenderOnce for UserProfileCard {
                 })
         });
         let call = self.on_call.map(|run| {
-            IconButton::new((self.id.clone(), "call"), IconName::Phone)
+            Button::new((self.id.clone(), "call"))
+                .icon(IconName::Phone)
                 .variant(ButtonVariant::Outline)
                 .size(Size::Small)
                 .tooltip("Call")

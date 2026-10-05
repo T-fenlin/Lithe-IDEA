@@ -4,7 +4,7 @@ use gpui::{App, Div, ElementId, FontWeight, ParentElement, Styled, Window, div};
 use jiff::civil::Date;
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
 };
@@ -25,7 +25,8 @@ pub(crate) fn head(
     let theme = cx.theme();
     let button = |name: &str, icon: IconName, tip: &str, by: i32| {
         let step = step.clone();
-        IconButton::new((id.clone(), name.to_string()), icon)
+        Button::new((id.clone(), name.to_string()))
+            .icon(icon)
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .tooltip(tip.to_string())

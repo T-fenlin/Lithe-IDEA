@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     documents::source,
     forms::OnValue,
     motion::{AnimatePresence, ProgressRing},
@@ -181,22 +181,18 @@ impl RenderOnce for GenerationQueue {
                 })
                 .children(match ended {
                     true => action("remove", &job.key, &self.on_remove).map(|remove| {
-                        IconButton::new(
-                            (self.id.clone(), format!("remove-{}", job.key)),
-                            IconName::X,
-                        )
-                        .size(Size::Small)
-                        .tooltip("Remove")
-                        .on_click(remove)
+                        Button::new((self.id.clone(), format!("remove-{}", job.key)))
+                            .icon(IconName::X)
+                            .size(Size::Small)
+                            .tooltip("Remove")
+                            .on_click(remove)
                     }),
                     false => action("cancel", &job.key, &self.on_cancel).map(|cancel| {
-                        IconButton::new(
-                            (self.id.clone(), format!("cancel-{}", job.key)),
-                            IconName::X,
-                        )
-                        .size(Size::Small)
-                        .tooltip("Cancel")
-                        .on_click(cancel)
+                        Button::new((self.id.clone(), format!("cancel-{}", job.key)))
+                            .icon(IconName::X)
+                            .size(Size::Small)
+                            .tooltip("Cancel")
+                            .on_click(cancel)
                     }),
                 });
             let row = div()

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{AnyWindowHandle, App, AsyncApp, ElementId, Hsla, IntoElement, RenderOnce, Window};
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::IconName,
 };
 
@@ -34,7 +34,8 @@ impl RenderOnce for EyeDropper {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let on_pick = self.on_pick;
         let available = cfg!(target_os = "macos");
-        IconButton::new(self.id, IconName::Pipette)
+        Button::new(self.id)
+            .icon(IconName::Pipette)
             .variant(ButtonVariant::Ghost)
             .tooltip(if available {
                 "Pick a color from the screen"

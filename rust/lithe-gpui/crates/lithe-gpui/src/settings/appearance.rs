@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{IconButton, SegmentedControl},
+    buttons::{Button, SegmentedControl},
     canvas::color_well,
     forms::{ColorPalette, Slider},
     primitives::IconName,
@@ -230,7 +230,8 @@ impl RenderOnce for FontSizeControl {
                             .child(format!("{} px", self.size)),
                     )
                     .child(
-                        IconButton::new((self.id, "reset"), IconName::RotateCcw)
+                        Button::new((self.id, "reset"))
+                            .icon(IconName::RotateCcw)
                             .tooltip("Back to the default size")
                             .disabled(self.size == default)
                             .on_click(move |_, window, cx| {

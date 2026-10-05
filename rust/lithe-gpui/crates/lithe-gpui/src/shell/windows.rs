@@ -8,7 +8,7 @@ use gpui::{
 
 use super::drag_region;
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     primitives::{FocusScope, IconName},
     theme::{ActiveTheme, Size, TextSize},
 };
@@ -244,7 +244,8 @@ impl Render for MiniWindow {
                     .child(div().flex_1().child(self.title.clone()))
                     .when_some(back, |bar, back| {
                         bar.child(
-                            IconButton::new("mini-expand", IconName::Maximize2)
+                            Button::new("mini-expand")
+                                .icon(IconName::Maximize2)
                                 .size(Size::Small)
                                 .on_click(move |_, window, cx| {
                                     window.remove_window();
@@ -259,7 +260,8 @@ impl Render for MiniWindow {
                         )
                     })
                     .child(
-                        IconButton::new("mini-close", IconName::X)
+                        Button::new("mini-close")
+                            .icon(IconName::X)
                             .size(Size::Small)
                             .on_click(|_, window, _| window.remove_window()),
                     ),

@@ -7,7 +7,7 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{
         Choice, Enter, OnValue, Pick, Run, Suggestions, TextInput, active_trigger, choose, dropped,
         replace_trigger,
@@ -41,7 +41,8 @@ impl AttachmentButton {
 impl RenderOnce for AttachmentButton {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let pick = self.on_pick;
-        IconButton::new(self.id, IconName::Paperclip)
+        Button::new(self.id)
+            .icon(IconName::Paperclip)
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .tooltip("Attach files")
@@ -97,7 +98,8 @@ impl SendButton {
 impl RenderOnce for SendButton {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         match self.on_stop {
-            Some(stop) => IconButton::new(self.id, IconName::Square)
+            Some(stop) => Button::new(self.id)
+                .icon(IconName::Square)
                 .variant(ButtonVariant::Secondary)
                 .size(Size::Small)
                 .tooltip("Stop")
@@ -107,7 +109,8 @@ impl RenderOnce for SendButton {
                 }),
             None => {
                 let send = self.on_send;
-                IconButton::new(self.id, IconName::ArrowUp)
+                Button::new(self.id)
+                    .icon(IconName::ArrowUp)
                     .variant(ButtonVariant::Primary)
                     .size(Size::Small)
                     .tooltip("Send")

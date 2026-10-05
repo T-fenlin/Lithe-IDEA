@@ -1,6 +1,6 @@
 use gpui::{App, Axis, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     layout::{
         Accordion, AccordionItem, Card, CardHeader, Collapsible, Fieldset, Frame, Panel, Section,
         SplitPane, Well, resize_handle,
@@ -166,7 +166,11 @@ pub fn card(cx: &App) -> impl IntoElement + use<> {
             .header(
                 CardHeader::new("Storage")
                     .description("Across all workspaces")
-                    .action(IconButton::new("card-more", IconName::Ellipsis).size(Size::Small)),
+                    .action(
+                        Button::new("card-more")
+                            .icon(IconName::Ellipsis)
+                            .size(Size::Small),
+                    ),
             )
             .child(Label::new("42.8 GB of 100 GB"))
             .child(Caption::new("Media takes the most room."))
@@ -194,8 +198,16 @@ pub fn panel(cx: &App) -> impl IntoElement + use<> {
         Panel::new("Outline")
             .w(px(320.0))
             .h(px(160.0))
-            .action(IconButton::new("panel-filter", IconName::Filter).size(Size::Small))
-            .action(IconButton::new("panel-more", IconName::Ellipsis).size(Size::Small))
+            .action(
+                Button::new("panel-filter")
+                    .icon(IconName::Filter)
+                    .size(Size::Small),
+            )
+            .action(
+                Button::new("panel-more")
+                    .icon(IconName::Ellipsis)
+                    .size(Size::Small),
+            )
             .child(
                 div()
                     .p_3()

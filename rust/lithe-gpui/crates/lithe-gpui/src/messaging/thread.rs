@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use smallvec::SmallVec;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::{Avatar, AvatarGroup},
     forms::Run,
     layout::on_axis,
@@ -164,7 +164,8 @@ impl RenderOnce for ThreadPanel {
         let count = self.replies.len();
         let close = self.on_close.map(|close| {
             let id = self.id.clone();
-            IconButton::new((self.id.clone(), "close"), IconName::X)
+            Button::new((self.id.clone(), "close"))
+                .icon(IconName::X)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip("Close thread")

@@ -7,7 +7,7 @@ use gpui::{
 
 use super::login::Run;
 use crate::{
-    buttons::{Button, ButtonVariant, ConfirmButton, ConfirmMode, IconButton},
+    buttons::{Button, ButtonVariant, ConfirmButton, ConfirmMode},
     data_display::{Badge, Meter, Tone},
     layout::Card,
     primitives::IconName,
@@ -330,16 +330,14 @@ impl RenderOnce for BillingHistory {
             let download = self.on_download.clone().map(|run| {
                 let key = invoice.key.clone();
                 div().flex_none().child(
-                    IconButton::new(
-                        (id.clone(), format!("download-{}", invoice.key)),
-                        IconName::Download,
-                    )
-                    .size(Size::Small)
-                    .tooltip("Download")
-                    .on_click(move |_, window, cx| {
-                        log::info!("billing history: download {key}");
-                        run(&key, window, cx);
-                    }),
+                    Button::new((id.clone(), format!("download-{}", invoice.key)))
+                        .icon(IconName::Download)
+                        .size(Size::Small)
+                        .tooltip("Download")
+                        .on_click(move |_, window, cx| {
+                            log::info!("billing history: download {key}");
+                            run(&key, window, cx);
+                        }),
                 )
             });
             div()

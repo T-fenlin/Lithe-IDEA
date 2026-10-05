@@ -4,7 +4,7 @@ use gpui::{
     Subscription, Window, div, point, prelude::*, px,
 };
 use lithe_gpui::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     feedback::Alert,
     layout::on_axis,
     primitives::{FocusScope, IconName, Severity},
@@ -199,7 +199,8 @@ impl Gallery {
                 } else {
                     ButtonVariant::Ghost
                 };
-                IconButton::new(id, icon)
+                Button::new(id)
+                    .icon(icon)
                     .variant(variant)
                     .size(Size::Small)
                     .on_click(

@@ -8,7 +8,7 @@ use jiff::Timestamp;
 
 use super::line::{OnText, send_line};
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::{Timeline, TimelineItem, Tone},
     forms::{Pick, TextInput},
     primitives::IconName,
@@ -110,17 +110,15 @@ impl RenderOnce for MemoryPanel {
             .children(self.memories.into_iter().map(|memory| {
                 let forget = self.on_forget.clone().map(|forget| {
                     let key = memory.key.clone();
-                    IconButton::new(
-                        (self.id.clone(), format!("forget-{}", memory.key)),
-                        IconName::Trash2,
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(Size::Small)
-                    .tooltip("Forget")
-                    .on_click(move |_, window, cx| {
-                        log::info!("memory: forget {key}");
-                        forget(&key, window, cx)
-                    })
+                    Button::new((self.id.clone(), format!("forget-{}", memory.key)))
+                        .icon(IconName::Trash2)
+                        .variant(ButtonVariant::Ghost)
+                        .size(Size::Small)
+                        .tooltip("Forget")
+                        .on_click(move |_, window, cx| {
+                            log::info!("memory: forget {key}");
+                            forget(&key, window, cx)
+                        })
                 });
                 div()
                     .flex()

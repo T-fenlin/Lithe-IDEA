@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     motion,
     primitives::{FocusRing, IconName, tab_stop},
     theme::{ActiveTheme, Radius, TextSize},
@@ -145,7 +145,8 @@ impl RenderOnce for Flashcards {
                     .justify_between()
                     .gap_2()
                     .child(
-                        IconButton::new((id.clone(), "previous"), IconName::ChevronLeft)
+                        Button::new((id.clone(), "previous"))
+                            .icon(IconName::ChevronLeft)
                             .tooltip("Previous card")
                             .on_click(go(-1)),
                     )
@@ -156,7 +157,8 @@ impl RenderOnce for Flashcards {
                             .child(format!("{} of {count}", at + 1)),
                     )
                     .child(
-                        IconButton::new((id, "next"), IconName::ChevronRight)
+                        Button::new((id, "next"))
+                            .icon(IconName::ChevronRight)
                             .tooltip("Next card")
                             .on_click(go(1)),
                     ),

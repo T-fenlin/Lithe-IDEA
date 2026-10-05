@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, ConfirmButton, ConfirmMode, IconButton},
+    buttons::{Button, ButtonVariant, ConfirmButton, ConfirmMode},
     data_display::UsageBar,
     forms::DropZone,
     primitives::IconName,
@@ -209,15 +209,13 @@ impl RenderOnce for ResetToDefault {
                         ),
                 )
                 .child(
-                    IconButton::new(
-                        (self.id.clone(), format!("reset-{}", changed.key)),
-                        IconName::RotateCcw,
-                    )
-                    .tooltip("Back to the default")
-                    .on_click(move |_, window, cx| {
-                        log::info!("reset: {key}");
-                        on_reset(&key, window, cx);
-                    }),
+                    Button::new((self.id.clone(), format!("reset-{}", changed.key)))
+                        .icon(IconName::RotateCcw)
+                        .tooltip("Back to the default")
+                        .on_click(move |_, window, cx| {
+                            log::info!("reset: {key}");
+                            on_reset(&key, window, cx);
+                        }),
                 )
         });
         let on_reset_all = on_reset_all;

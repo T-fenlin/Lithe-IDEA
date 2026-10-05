@@ -4,7 +4,7 @@ use gpui::{App, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Windo
 use web_time::Instant;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     feedback::Timer,
     forms::OnFlag,
     motion::Pulse,
@@ -38,29 +38,27 @@ impl VoiceInputButton {
 impl RenderOnce for VoiceInputButton {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let (recording, toggle) = (self.recording, self.on_toggle);
-        IconButton::new(
-            self.id,
-            if recording {
+        Button::new(self.id)
+            .icon(if recording {
                 IconName::Square
             } else {
                 IconName::Mic
-            },
-        )
-        .variant(if recording {
-            ButtonVariant::Secondary
-        } else {
-            ButtonVariant::Ghost
-        })
-        .size(Size::Small)
-        .tooltip(if recording {
-            "Stop dictation"
-        } else {
-            "Dictate"
-        })
-        .on_click(move |_, window, cx| {
-            log::info!("voice input: recording {}", !recording);
-            toggle(!recording, window, cx)
-        })
+            })
+            .variant(if recording {
+                ButtonVariant::Secondary
+            } else {
+                ButtonVariant::Ghost
+            })
+            .size(Size::Small)
+            .tooltip(if recording {
+                "Stop dictation"
+            } else {
+                "Dictate"
+            })
+            .on_click(move |_, window, cx| {
+                log::info!("voice input: recording {}", !recording);
+                toggle(!recording, window, cx)
+            })
     }
 }
 

@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     forms::{Choice, Select},
     primitives::IconName,
     theme::{ActiveTheme, TextSize},
@@ -129,25 +129,23 @@ impl RenderOnce for EnvironmentSelector {
                         .child(Ellipsis::new(shown_value(value, secret, open))),
                 )
                 .children(secret.then(|| {
-                    IconButton::new(
-                        (id.clone(), format!("reveal-{name}")),
-                        if open {
+                    Button::new((id.clone(), format!("reveal-{name}")))
+                        .icon(if open {
                             IconName::EyeOff
                         } else {
                             IconName::Eye
-                        },
-                    )
-                    .tooltip(if open {
-                        "Hide the value"
-                    } else {
-                        "Show the value"
-                    })
-                    .on_click(move |_, _, cx| {
-                        flip.update(cx, |shown, cx| {
-                            flipped(shown, &key);
-                            cx.notify();
                         })
-                    })
+                        .tooltip(if open {
+                            "Hide the value"
+                        } else {
+                            "Show the value"
+                        })
+                        .on_click(move |_, _, cx| {
+                            flip.update(cx, |shown, cx| {
+                                flipped(shown, &key);
+                                cx.notify();
+                            })
+                        })
                 }))
         });
         div()

@@ -8,7 +8,7 @@ use gpui::{
 
 use super::OnIndex;
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Input, TextInput},
     primitives::{Disclosure, IconName},
     theme::{ActiveTheme, Palette, Radius, Size, TextSize},
@@ -283,19 +283,14 @@ impl RenderOnce for WatchPanel {
                             .opacity(0.)
                             .group_hover(group, |actions| actions.opacity(1.))
                             .child(
-                                IconButton::new(
-                                    (self.id.clone(), format!("remove-{ix}")),
-                                    IconName::X,
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .size(Size::Small)
-                                .tooltip("Stop watching")
-                                .when_some(
-                                    remove,
-                                    |button, remove| {
+                                Button::new((self.id.clone(), format!("remove-{ix}")))
+                                    .icon(IconName::X)
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(Size::Small)
+                                    .tooltip("Stop watching")
+                                    .when_some(remove, |button, remove| {
                                         button.on_click(move |_, window, cx| remove(ix, window, cx))
-                                    },
-                                ),
+                                    }),
                             ),
                     )
             }))

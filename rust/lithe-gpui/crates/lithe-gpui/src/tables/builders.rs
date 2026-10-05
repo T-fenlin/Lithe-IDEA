@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{FilterRule, SortKey, Test};
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton, SegmentedControl},
+    buttons::{Button, ButtonVariant, SegmentedControl},
     forms::{Choice, Input, InputEvent, Select, TextInput},
     motion::Reorder,
     primitives::{Icon, IconName},
@@ -202,7 +202,8 @@ impl RenderOnce for FilterBuilder {
                         slot.child(Input::new(&entities[ix]).size(Size::Small))
                     }))
                     .child(
-                        IconButton::new((id.clone(), format!("remove-{ix}")), IconName::X)
+                        Button::new((id.clone(), format!("remove-{ix}")))
+                            .icon(IconName::X)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Remove")
@@ -375,7 +376,8 @@ impl RenderOnce for SortBuilder {
                             }),
                         )
                         .child(
-                            IconButton::new((id.clone(), format!("sort-remove-{ix}")), IconName::X)
+                            Button::new((id.clone(), format!("sort-remove-{ix}")))
+                                .icon(IconName::X)
                                 .variant(ButtonVariant::Ghost)
                                 .size(Size::Small)
                                 .tooltip("Remove")

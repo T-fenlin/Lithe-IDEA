@@ -9,7 +9,7 @@ use gpui::{
 
 use super::turn::{Turn, Turned};
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     documents::zoom_step,
     motion::Spinner,
     primitives::{FocusRing, Icon, IconName, tab_stop},
@@ -158,7 +158,8 @@ impl RenderOnce for ImageViewer {
         };
         let button = |key: &'static str, icon: IconName, tip: &'static str, act: Act| {
             let (acted, pixels) = (view.clone(), pixels);
-            IconButton::new((self.id.clone(), key), icon)
+            Button::new((self.id.clone(), key))
+                .icon(icon)
                 .size(Size::Small)
                 .tooltip(tip)
                 .disabled(pixels.is_none())

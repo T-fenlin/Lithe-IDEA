@@ -1,6 +1,6 @@
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
-    buttons::{Button, IconButton},
+    buttons::Button,
     primitives::IconName,
     shell::{
         ActivityBar, ActivityItem, StatusBar, StatusBarItem, TabBar, Toolbar, ToolbarGroup,
@@ -13,8 +13,8 @@ use lithe_gpui::{
 use super::chrome::window_frame;
 use crate::{probe::probe, ui::section};
 
-fn tool(id: &'static str, icon: IconName) -> IconButton {
-    IconButton::new(id, icon).size(Size::Small)
+fn tool(id: &'static str, icon: IconName) -> Button {
+    Button::new(id).icon(icon).size(Size::Small)
 }
 
 pub fn toolbar(cx: &App) -> impl IntoElement + use<> {

@@ -7,7 +7,7 @@ use gpui::{
 
 use super::ansi::{AnsiText, printed};
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     motion::Spinner,
     primitives::{Disclosure, Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -105,7 +105,8 @@ impl RenderOnce for CommandBlock {
             ),
         };
         let copy = |key: &'static str, icon, words: &'static str, text: String| {
-            IconButton::new((self.id.clone(), key), icon)
+            Button::new((self.id.clone(), key))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(words)
@@ -166,7 +167,8 @@ impl RenderOnce for CommandBlock {
                         plain,
                     ))
                     .children(self.on_rerun.map(|rerun| {
-                        IconButton::new((self.id.clone(), "rerun"), IconName::RotateCcw)
+                        Button::new((self.id.clone(), "rerun"))
+                            .icon(IconName::RotateCcw)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Run again")

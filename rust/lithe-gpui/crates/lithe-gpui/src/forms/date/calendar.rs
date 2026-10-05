@@ -9,7 +9,7 @@ use jiff::{ToSpan, civil::Date};
 
 use super::{super::options::Run, zoned_now};
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     layout::seeded::use_seeded,
     motion,
     primitives::{IconName, tab_stop},
@@ -218,7 +218,8 @@ impl RenderOnce for Calendar {
                     .gap_0p5()
                     .child({
                         let (turn, cursor) = (turn.clone(), cursor.clone());
-                        IconButton::new((self.id.clone(), "prev"), IconName::ChevronLeft)
+                        Button::new((self.id.clone(), "prev"))
+                            .icon(IconName::ChevronLeft)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Previous month")
@@ -230,7 +231,8 @@ impl RenderOnce for Calendar {
                     })
                     .child({
                         let (turn, cursor) = (turn.clone(), cursor.clone());
-                        IconButton::new((self.id.clone(), "next"), IconName::ChevronRight)
+                        Button::new((self.id.clone(), "next"))
+                            .icon(IconName::ChevronRight)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Next month")

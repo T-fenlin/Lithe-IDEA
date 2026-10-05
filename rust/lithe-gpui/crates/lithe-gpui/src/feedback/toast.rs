@@ -9,7 +9,7 @@ use gpui::{
 use web_time::Instant;
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::Run,
     motion,
     primitives::{Icon, IconName, Severity, raise},
@@ -328,7 +328,8 @@ fn card(
             )
         })
         .child(
-            IconButton::new((key.clone(), "close"), IconName::X)
+            Button::new((key.clone(), "close"))
+                .icon(IconName::X)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .on_click(send(None)),

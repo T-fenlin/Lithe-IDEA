@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::OnValue,
     motion::ProgressBar,
     primitives::IconName,
@@ -157,7 +157,8 @@ impl RenderOnce for ModelDownloadManager {
                     handler: &Option<OnValue>| {
             handler.clone().map(|handler| {
                 let key = key.clone();
-                IconButton::new((self.id.clone(), format!("{what}-{key}")), glyph)
+                Button::new((self.id.clone(), format!("{what}-{key}")))
+                    .icon(glyph)
                     .size(Size::Small)
                     .tooltip(tip)
                     .on_click(move |_, window, cx| {

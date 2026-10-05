@@ -7,7 +7,7 @@ use gpui::{
 
 use super::FileIcon;
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     motion::ProgressBar,
     primitives::{FocusRing, Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -84,7 +84,8 @@ pub(super) fn row(id: ElementId, transfer: &Transfer, asks: &Asks, cx: &App) -> 
     let action = |name: &'static str, icon: IconName, tip: &'static str, ask: &Option<OnKey>| {
         ask.clone().map(|ask| {
             let key = key.clone();
-            IconButton::new((id.clone(), name), icon)
+            Button::new((id.clone(), name))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(tip)

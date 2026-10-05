@@ -6,7 +6,7 @@ use gpui::{
 use jiff::Timestamp;
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Choice, Select},
     primitives::IconName,
     theme::{ActiveTheme, TextSize},
@@ -100,7 +100,8 @@ impl RenderOnce for RefreshIntervalSelector {
             .items_center()
             .gap_2()
             .child(
-                IconButton::new((id.clone(), "now"), IconName::RefreshCw)
+                Button::new((id.clone(), "now"))
+                    .icon(IconName::RefreshCw)
                     .tooltip("Refresh now")
                     .on_click(move |_, window, cx| {
                         log::info!("refresh: now");

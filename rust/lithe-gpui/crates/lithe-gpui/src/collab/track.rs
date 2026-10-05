@@ -9,7 +9,7 @@ use similar::{ChangeTag, TextDiff};
 
 use super::peers::Peer;
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton, SegmentedControl},
+    buttons::{Button, ButtonVariant, SegmentedControl},
     documents::Change,
     primitives::IconName,
     theme::{ActiveTheme, AvatarSize, Radius, Size, TextSize},
@@ -323,14 +323,16 @@ impl RenderOnce for TrackChanges {
                 )
                 .when(self.on_decide.is_some(), |row| {
                     row.child(
-                        IconButton::new(id("accept"), IconName::Check)
+                        Button::new(id("accept"))
+                            .icon(IconName::Check)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Accept")
                             .on_click(decide(Decision::Accept(ix))),
                     )
                     .child(
-                        IconButton::new(id("reject"), IconName::X)
+                        Button::new(id("reject"))
+                            .icon(IconName::X)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Reject")

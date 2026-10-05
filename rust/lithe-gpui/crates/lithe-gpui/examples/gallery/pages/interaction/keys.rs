@@ -3,7 +3,7 @@ use gpui::{
     SharedString, Styled, Subscription, Window, actions, div, prelude::*, px, uniform_list,
 };
 use lithe_gpui::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{History, Input, TextInput},
     interaction::{RovingFocus, ScrollSync},
     lists::{ListItem, SelectableList},
@@ -139,7 +139,7 @@ pub fn undo(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 })
             }))
             .child(
-                IconButton::new("interaction-undo", IconName::Undo2)
+                Button::new("interaction-undo").icon(IconName::Undo2)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Undo")
                     .disabled(!can_undo)
@@ -151,7 +151,7 @@ pub fn undo(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     }),
             )
             .child(
-                IconButton::new("interaction-redo", IconName::Redo2)
+                Button::new("interaction-redo").icon(IconName::Redo2)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Redo")
                     .disabled(!can_redo)

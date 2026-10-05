@@ -7,7 +7,7 @@ use gpui::{
 use web_time::Instant;
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton, ToggleButton, ToggleItem},
+    buttons::{Button, ButtonVariant, ToggleButton, ToggleItem},
     data_display::tone,
     feedback::Timer,
     forms::{OnFlag, Run},
@@ -139,7 +139,8 @@ impl RenderOnce for ScreenRecorderControls {
         let id = self.id.clone();
         let action = |key: &'static str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
-                IconButton::new((id.clone(), key), icon)
+                Button::new((id.clone(), key))
+                    .icon(icon)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip(tip)

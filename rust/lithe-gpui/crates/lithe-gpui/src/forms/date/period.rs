@@ -13,7 +13,7 @@ use super::{
     zoned_now,
 };
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     layout::seeded::use_seeded,
     primitives::IconName,
     theme::{ActiveTheme, Radius, Size, TextSize},
@@ -62,7 +62,8 @@ fn period_grid(id: &ElementId, page: Page, grid: Grid, window: &mut Window, cx: 
     let colors = &theme.colors;
     let arrow = |key: &'static str, icon: IconName, by: i16| {
         let turn = turn.clone();
-        IconButton::new((id.clone(), key), icon)
+        Button::new((id.clone(), key))
+            .icon(icon)
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .on_click(move |_, window, cx| turn(by, window, cx))

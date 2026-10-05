@@ -5,7 +5,7 @@ use gpui::{
 
 use super::request::percent;
 use crate::{
-    buttons::{IconButton, SegmentedControl},
+    buttons::{Button, SegmentedControl},
     feedback::InlineMessage,
     forms::{Input, TextInput},
     primitives::{IconName, Severity},
@@ -218,7 +218,8 @@ impl RenderOnce for Encoder {
                             .child(text),
                     )
                     .child(
-                        IconButton::new((self.id.clone(), "copy"), IconName::Copy)
+                        Button::new((self.id.clone(), "copy"))
+                            .icon(IconName::Copy)
                             .tooltip("Copy the result")
                             .on_click(move |_, _, cx| {
                                 log::info!("encoder: copied");

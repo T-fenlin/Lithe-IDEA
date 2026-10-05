@@ -7,7 +7,7 @@ use gpui::{
 
 use super::schema::{Field, FieldKey};
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     canvas::{OnEdit, caption, editing},
     data_display::{Badge, Tone},
     forms::{Checkbox, Choice, InlineEdit, Input, MultiSelect, Select, Switch, TextInput},
@@ -220,7 +220,8 @@ impl RenderOnce for TableStructureEditor {
                 .placeholder("None")
                 .on_commit(move |value, window, cx| defaulted(value.clone(), window, cx))
                 .into_any_element(),
-                IconButton::new((id.clone(), format!("remove-{ix}")), IconName::Minus)
+                Button::new((id.clone(), format!("remove-{ix}")))
+                    .icon(IconName::Minus)
                     .tooltip("Remove the field")
                     .on_click(move |_, window, cx| remove((), window, cx))
                     .into_any_element(),
@@ -390,15 +391,13 @@ impl RenderOnce for IndexManager {
                         )
                         .child(Badge::new(index.method.clone()))
                         .child(
-                            IconButton::new(
-                                (id.clone(), format!("drop-{}", index.name)),
-                                IconName::Trash2,
-                            )
-                            .tooltip("Drop the index")
-                            .on_click(move |_, window, cx| {
-                                log::info!("index manager: drop {name}");
-                                on_drop(&name, window, cx);
-                            }),
+                            Button::new((id.clone(), format!("drop-{}", index.name)))
+                                .icon(IconName::Trash2)
+                                .tooltip("Drop the index")
+                                .on_click(move |_, window, cx| {
+                                    log::info!("index manager: drop {name}");
+                                    on_drop(&name, window, cx);
+                                }),
                         ),
                 )
         });

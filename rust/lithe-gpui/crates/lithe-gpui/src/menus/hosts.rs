@@ -12,7 +12,7 @@ use super::{
     model::Menu,
 };
 use crate::{
-    buttons::{Button, ButtonGroup, ButtonVariant, IconButton},
+    buttons::{Button, ButtonGroup, ButtonVariant},
     forms::TextInput,
     primitives::IconName,
 };
@@ -147,7 +147,8 @@ impl RenderOnce for OverflowMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = state(&self.id, window, cx);
         let click = toggle(&state, &self.menu, cx);
-        let button = IconButton::new((self.id.clone(), "button"), self.icon)
+        let button = Button::new((self.id.clone(), "button"))
+            .icon(self.icon)
             .variant(ButtonVariant::Ghost)
             .tooltip(self.tooltip)
             .on_click(move |event, window, cx| click(event, window, cx));

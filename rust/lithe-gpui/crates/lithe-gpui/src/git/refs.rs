@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     i18n,
     navigation::{Group, Palette, Row, fuzzy, marked, query_field},
     primitives::{Icon, IconName},
@@ -250,7 +250,8 @@ pub(super) fn action(
     words: impl Into<SharedString>,
     run: Option<Run>,
 ) -> AnyElement {
-    IconButton::new(id, icon)
+    Button::new(id)
+        .icon(icon)
         .variant(ButtonVariant::Ghost)
         .size(Size::Small)
         .tooltip(words)

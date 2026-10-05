@@ -8,7 +8,7 @@ use jiff::{Timestamp, tz::TimeZone};
 use smallvec::SmallVec;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     chat::FileMessage,
     data_display::Avatar,
     forms::OnValue,
@@ -124,7 +124,8 @@ pub(super) fn open_letter(
     let act = |name: &'static str, icon, tip: &'static str, ask: Option<OnValue>| {
         ask.map(|ask| {
             let key = key.clone();
-            IconButton::new((id.clone(), format!("{name}-{key}")), icon)
+            Button::new((id.clone(), format!("{name}-{key}")))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(tip)

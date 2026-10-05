@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Input, TextInput},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -118,7 +118,8 @@ impl RenderOnce for InlineChat {
                             .on_click(move |_, window, cx| send(window, cx)),
                     )
                     .children(self.on_close.map(|close| {
-                        IconButton::new((self.id.clone(), "close"), IconName::X)
+                        Button::new((self.id.clone(), "close"))
+                            .icon(IconName::X)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Close")

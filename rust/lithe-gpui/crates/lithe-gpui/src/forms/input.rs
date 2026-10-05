@@ -5,7 +5,7 @@ use gpui::{
 
 use super::TextInput;
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
@@ -139,7 +139,8 @@ impl RenderOnce for Input {
             )
             .when(self.clearable && !empty && !disabled, |frame| {
                 frame.child(
-                    IconButton::new(("input-clear", clear_id), IconName::CircleX)
+                    Button::new(("input-clear", clear_id))
+                        .icon(IconName::CircleX)
                         .size(Size::Small)
                         .tooltip("Clear")
                         .on_click(move |_, window, cx| {
@@ -182,30 +183,28 @@ impl RenderOnce for PasswordInput {
             .size(self.size)
             .prefix(Icon::new(IconName::Lock).size(IconSize::Sm).color(subtle))
             .suffix(
-                IconButton::new(
-                    ("password-eye", self.state.entity_id()),
-                    if masked {
+                Button::new(("password-eye", self.state.entity_id()))
+                    .icon(if masked {
                         IconName::Eye
                     } else {
                         IconName::EyeOff
-                    },
-                )
-                .size(Size::Small)
-                .tooltip(if masked {
-                    "Show password"
-                } else {
-                    "Hide password"
-                })
-                .on_click(move |_, _, cx| {
-                    toggle.update(cx, |input, cx| {
-                        let masked = input.is_masked();
-                        log::info!(
-                            "password input: {}",
-                            if masked { "shown" } else { "hidden" }
-                        );
-                        input.set_masked(!masked, cx);
                     })
-                }),
+                    .size(Size::Small)
+                    .tooltip(if masked {
+                        "Show password"
+                    } else {
+                        "Hide password"
+                    })
+                    .on_click(move |_, _, cx| {
+                        toggle.update(cx, |input, cx| {
+                            let masked = input.is_masked();
+                            log::info!(
+                                "password input: {}",
+                                if masked { "shown" } else { "hidden" }
+                            );
+                            input.set_masked(!masked, cx);
+                        })
+                    }),
             )
     }
 }

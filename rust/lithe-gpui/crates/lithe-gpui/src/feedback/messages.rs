@@ -7,7 +7,7 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::Run,
     motion,
     primitives::{Icon, IconName, Severity},
@@ -17,7 +17,8 @@ use crate::{
 /// A ghost close button that keeps its row's height.
 fn dismiss(id: ElementId, run: Run) -> impl IntoElement {
     div().my_neg_1().child(
-        IconButton::new(id, IconName::X)
+        Button::new(id)
+            .icon(IconName::X)
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .on_click(move |_, window, cx| run(window, cx)),

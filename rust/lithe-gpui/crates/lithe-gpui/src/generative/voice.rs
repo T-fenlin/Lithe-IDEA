@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::Badge,
     forms::OnValue,
     primitives::{Icon, IconName, tab_stop},
@@ -120,27 +120,25 @@ impl RenderOnce for TTSVoicePicker {
                 );
                 let sample = play.map(|play| {
                     let key = key.clone();
-                    IconButton::new(
-                        (self.id.clone(), format!("play-{}", voice.key)),
-                        if sounding {
+                    Button::new((self.id.clone(), format!("play-{}", voice.key)))
+                        .icon(if sounding {
                             IconName::CircleStop
                         } else {
                             IconName::Play
-                        },
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(Size::Small)
-                    .tooltip(if sounding {
-                        "Stop the sample"
-                    } else {
-                        "Play a sample"
-                    })
-                    .on_click(move |_, window, cx| {
-                        cx.stop_propagation();
-                        let next = (!sounding).then(|| key.clone());
-                        log::info!("voice picker: sample {next:?}");
-                        play(next, window, cx)
-                    })
+                        })
+                        .variant(ButtonVariant::Ghost)
+                        .size(Size::Small)
+                        .tooltip(if sounding {
+                            "Stop the sample"
+                        } else {
+                            "Play a sample"
+                        })
+                        .on_click(move |_, window, cx| {
+                            cx.stop_propagation();
+                            let next = (!sounding).then(|| key.clone());
+                            log::info!("voice picker: sample {next:?}");
+                            play(next, window, cx)
+                        })
                 });
                 div()
                     .id((self.id.clone(), format!("voice-{}", voice.key)))

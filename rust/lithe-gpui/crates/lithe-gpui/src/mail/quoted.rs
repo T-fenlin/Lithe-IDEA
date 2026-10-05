@@ -5,7 +5,7 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     layout::Collapsible,
     primitives::IconName,
     theme::{ActiveTheme, Size},
@@ -45,7 +45,8 @@ impl RenderOnce for QuotedText {
             .gap_2()
             .child(
                 div().flex().child(
-                    IconButton::new((self.id.clone(), "toggle"), IconName::Ellipsis)
+                    Button::new((self.id.clone(), "toggle"))
+                        .icon(IconName::Ellipsis)
                         .variant(ButtonVariant::Subtle)
                         .size(Size::Small)
                         .tooltip(if shown {

@@ -7,7 +7,7 @@ use gpui::{
 use crate::{
     i18n,
     motion::Spinner,
-    primitives::{FocusRing, Icon, IconName},
+    primitives::{FocusRing, Icon, IconName, Tooltip},
     theme::{ActiveTheme, IconSize, Mix, Palette, Platform, Radius, Size, TextSize},
     typography::keys::{keystroke, keystroke_labels},
 };
@@ -147,6 +147,7 @@ pub struct Button {
     loading: bool,
     full_width: bool,
     focus: Option<FocusHandle>,
+    tooltip: Option<SharedString>,
     pub(crate) slot: Option<Slot>,
     on_click: Option<ClickHandler>,
 }
@@ -165,6 +166,7 @@ impl Button {
             loading: false,
             full_width: false,
             focus: None,
+            tooltip: None,
             slot: None,
             on_click: None,
         }
@@ -174,6 +176,12 @@ impl Button {
     /// gpui-kit shape (`Button::new(id).label("Save")`).
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = label.into();
+        self
+    }
+
+    /// A hover tooltip; names an icon-only button that has no visible label.
+    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(text.into());
         self
     }
 
@@ -245,6 +253,9 @@ impl RenderOnce for Button {
         let tone = tone(self.variant, &theme.colors);
         let (text, icon_size) = label_size(self.size);
         let link = self.variant == ButtonVariant::Link;
+        // An icon with no label is a square button: the shape Button used to draw.
+        let square = self.label.is_empty() && self.icon.is_some();
+        let tooltip = self.tooltip.clone();
         let icon = |name| Icon::new(name).size(icon_size).color(tone.fg);
         let radius = theme.radius(Radius::Md);
         let platform = cx.theme().platform;
@@ -277,8 +288,11 @@ impl RenderOnce for Button {
             .items_center()
             .justify_center()
             .gap_1p5()
-            .h(theme.control_height(self.size))
-            .when(!link, |el| el.px(theme.control_padding(self.size)))
+            .when(square, |el| el.size(theme.control_height(self.size)))
+            .when(!square, |el| el.h(theme.control_height(self.size)))
+            .when(!square && !link, |el| {
+                el.px(theme.control_padding(self.size))
+            })
             .border_1()
             .border_color(tone.border)
             .map(|el| match self.slot {
@@ -291,6 +305,7 @@ impl RenderOnce for Button {
             .font_weight(FontWeight::MEDIUM)
             .text_color(tone.fg)
             .bg(tone.bg)
+            .when_some(tooltip, |el, text| el.tooltip(Tooltip::text(text)))
             .when(self.full_width, |el| el.w_full())
             .map(|el| {
                 if !self.loading {

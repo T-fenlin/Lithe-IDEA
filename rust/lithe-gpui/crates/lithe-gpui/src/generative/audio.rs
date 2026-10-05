@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     chat::AudioMessage,
     forms::{OnFlag, Run},
     motion::ProgressBar,
@@ -111,7 +111,8 @@ impl RenderOnce for AudioGenerationPlayer {
         let making = self.making;
         let action = |key: &'static str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
-                IconButton::new((self.id.clone(), key), icon)
+                Button::new((self.id.clone(), key))
+                    .icon(icon)
                     .size(Size::Small)
                     .tooltip(tip)
                     .disabled(making.is_some())

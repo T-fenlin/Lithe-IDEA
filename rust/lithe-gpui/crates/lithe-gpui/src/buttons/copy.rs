@@ -6,7 +6,7 @@ use gpui::{
     prelude::*,
 };
 
-use super::IconButton;
+use super::Button;
 use crate::{
     motion,
     primitives::{Icon, IconName, Tooltip},
@@ -45,7 +45,8 @@ impl RenderOnce for CopyButton {
         let theme = cx.theme();
         let success = theme.colors.success;
         let text = self.text;
-        let button = IconButton::new("copy", IconName::Copy)
+        let button = Button::new("copy")
+            .icon(IconName::Copy)
             .size(Size::Small)
             .on_click(move |_, window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));

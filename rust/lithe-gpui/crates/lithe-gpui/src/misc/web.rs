@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     primitives::{Icon, IconName, checked_ratio, framed},
     theme::{ActiveTheme, IconSize, Radius, TextSize},
     typography::{Ellipsis, literal},
@@ -224,7 +224,8 @@ impl RenderOnce for IframeEmbed {
                     )
                     .child(literal(div()).flex_1().min_w_0().child(Ellipsis::new(url)))
                     .child(
-                        IconButton::new((id, "open"), IconName::ExternalLink)
+                        Button::new((id, "open"))
+                            .icon(IconName::ExternalLink)
                             .tooltip("Open in browser")
                             .on_click(move |_, _, cx| {
                                 log::info!("iframe embed: opened {opened}");

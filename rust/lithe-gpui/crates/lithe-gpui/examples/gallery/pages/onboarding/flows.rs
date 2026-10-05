@@ -1,6 +1,6 @@
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::*, px};
 use lithe_gpui::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::{Badge, Tone},
     forms::{FormField, Input, TextInput},
     lists::{List, ListItem},
@@ -118,7 +118,7 @@ pub fn highlights(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
     let [spot, card, reset] = [(); 3].map(|_| state.clone());
     let theme = cx.theme();
     let tool =
-        |id: &'static str, icon: IconName| IconButton::new(id, icon).variant(ButtonVariant::Ghost);
+        |id: &'static str, icon: IconName| Button::new(id).icon(icon).variant(ButtonVariant::Ghost);
     let pin = div()
         .relative()
         .child(tool("onboarding-pin", IconName::Pin))

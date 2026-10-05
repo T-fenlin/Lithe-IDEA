@@ -9,7 +9,7 @@ use regex::Regex;
 
 use super::{Align, Block, BlockEditor, BlockKind, Media, view::Look};
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::{Icon, IconName, Measure},
     theme::{IconSize, Size},
 };
@@ -152,7 +152,8 @@ pub(super) fn media(
             })
     };
     let aligned = |align_to: Align, icon: IconName, cx: &mut Context<BlockEditor>| {
-        IconButton::new((id.clone(), format!("align-{key}-{align_to:?}")), icon)
+        Button::new((id.clone(), format!("align-{key}-{align_to:?}")))
+            .icon(icon)
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .tooltip(format!("Align {align_to:?}").to_lowercase())

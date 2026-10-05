@@ -6,7 +6,7 @@ use gpui::{
 use jiff::Timestamp;
 
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     data_display::{Badge, Tone},
     forms::{Choice, Select},
     lists::{ListItem, SelectableList, row_action},
@@ -141,7 +141,8 @@ impl RenderOnce for ContainerList {
                     handler.clone().map(|handler| {
                         let key = key.clone();
                         row_action(
-                            IconButton::new((id.clone(), format!("{tip}-{key}")), icon)
+                            Button::new((id.clone(), format!("{tip}-{key}")))
+                                .icon(icon)
                                 .tooltip(tip)
                                 .on_click(move |_, window, cx| {
                                     log::info!("container list: {tip} {key}");

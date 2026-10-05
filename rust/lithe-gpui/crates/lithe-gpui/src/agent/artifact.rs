@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton, SegmentedControl},
+    buttons::{Button, ButtonVariant, SegmentedControl},
     chat::BranchNavigator,
     forms::{Pick, Run},
     primitives::{Icon, IconName},
@@ -88,7 +88,8 @@ impl RenderOnce for ArtifactPanel {
         let theme = cx.theme();
         let colors = theme.colors.clone();
         let action = |key: &'static str, icon: IconName, tip: &'static str, run: Run| {
-            IconButton::new((self.id.clone(), key), icon)
+            Button::new((self.id.clone(), key))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(tip)

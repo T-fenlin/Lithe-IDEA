@@ -4,7 +4,7 @@ use gpui::{App, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Windo
 
 use super::player::SPEEDS;
 use crate::{
-    buttons::{ButtonVariant, IconButton, ToggleButton, ToggleItem},
+    buttons::{Button, ButtonVariant, ToggleButton, ToggleItem},
     forms::{OnFlag, OnNumber, Run, Slider},
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
@@ -61,7 +61,8 @@ impl VolumeControl {
 impl RenderOnce for VolumeControl {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let muted = self.muted;
-        let speaker = IconButton::new((self.id.clone(), "mute"), speaker(self.level, muted))
+        let speaker = Button::new((self.id.clone(), "mute"))
+            .icon(speaker(self.level, muted))
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .tooltip(if muted { "Unmute" } else { "Mute" })
@@ -237,7 +238,8 @@ impl RenderOnce for MediaControls {
         let id = self.id.clone();
         let step = |key: &'static str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
-                IconButton::new((id.clone(), key), icon)
+                Button::new((id.clone(), key))
+                    .icon(icon)
                     .variant(ButtonVariant::Ghost)
                     .tooltip(tip)
                     .on_click(move |_, window, cx| {
@@ -253,7 +255,8 @@ impl RenderOnce for MediaControls {
             } else {
                 IconName::Play
             };
-            IconButton::new((id.clone(), "play"), icon)
+            Button::new((id.clone(), "play"))
+                .icon(icon)
                 .variant(ButtonVariant::Primary)
                 .size(Size::Large)
                 .tooltip(if playing { "Pause" } else { "Play" })

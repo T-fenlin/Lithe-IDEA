@@ -8,7 +8,7 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     motion,
     primitives::{Backdrop, IconName, Place},
     theme::{ActiveTheme, Elevation, Radius, TextSize},
@@ -30,7 +30,9 @@ fn title_row(title: SharedString, close: Close, cx: &App) -> impl IntoElement + 
                 .child(title),
         )
         .child(
-            IconButton::new("close", IconName::X).on_click(move |_, window, cx| close(window, cx)),
+            Button::new("close")
+                .icon(IconName::X)
+                .on_click(move |_, window, cx| close(window, cx)),
         )
 }
 

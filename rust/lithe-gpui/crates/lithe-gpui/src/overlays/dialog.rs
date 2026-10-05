@@ -8,7 +8,7 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Enter, Run},
     i18n, motion,
     primitives::{Backdrop, FocusScope, IconName, give_back, raise, take_focus},
@@ -184,7 +184,8 @@ impl RenderOnce for Dialog {
                         .border_color(colors.border)
                         .child(heading)
                         .child(
-                            IconButton::new((self.id.clone(), "close"), IconName::X)
+                            Button::new((self.id.clone(), "close"))
+                                .icon(IconName::X)
                                 .variant(ButtonVariant::Ghost)
                                 .tooltip(i18n::text(cx, "dialog.close", &[]))
                                 .on_click(move |_, window, cx| button(window, cx)),

@@ -8,7 +8,7 @@ use jiff::{Timestamp, tz::TimeZone};
 
 use super::quotes::price;
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::{Badge, QrCode, Tone},
     forms::{Combobox, NumberInput, TextInput},
     primitives::{Icon, IconName},
@@ -121,7 +121,8 @@ impl RenderOnce for CurrencyConverter {
                         ),
                     )
                     .child(
-                        IconButton::new((self.id.clone(), "swap"), IconName::ChevronsLeftRight)
+                        Button::new((self.id.clone(), "swap"))
+                            .icon(IconName::ChevronsLeftRight)
                             .variant(ButtonVariant::Ghost)
                             .tooltip("Swap")
                             .on_click({
@@ -275,7 +276,8 @@ impl RenderOnce for CryptoWalletCard {
                                     .child(shortened(&self.address)),
                             )
                             .child(
-                                IconButton::new((self.id.clone(), "copy"), IconName::Copy)
+                                Button::new((self.id.clone(), "copy"))
+                                    .icon(IconName::Copy)
                                     .variant(ButtonVariant::Ghost)
                                     .tooltip("Copy the address")
                                     .on_click(move |_, _, cx| {

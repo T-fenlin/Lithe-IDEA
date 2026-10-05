@@ -1,6 +1,6 @@
 use gpui::{App, Div, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
-    buttons::IconButton,
+    buttons::Button,
     primitives::IconName,
     shell::{TitleBar, WindowControls, drag_region},
     theme::{ActiveTheme, Elevation, Platform, Radius, Size, TextSize},
@@ -30,8 +30,16 @@ fn demo_bar(id: &'static str, style: Platform) -> TitleBar {
         .platform(style)
         .title("Ely — Projects")
         .on_close(|_, _| log::info!("gallery: demo close refused"))
-        .child(IconButton::new((id, 1usize), IconName::PanelLeft).size(Size::Small))
-        .action(IconButton::new((id, 2usize), IconName::Search).size(Size::Small))
+        .child(
+            Button::new((id, 1usize))
+                .icon(IconName::PanelLeft)
+                .size(Size::Small),
+        )
+        .action(
+            Button::new((id, 2usize))
+                .icon(IconName::Search)
+                .size(Size::Small),
+        )
 }
 
 pub fn title_bar(cx: &App) -> impl IntoElement + use<> {

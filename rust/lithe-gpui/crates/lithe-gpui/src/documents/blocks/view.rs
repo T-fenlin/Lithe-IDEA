@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{Block, BlockData, BlockEditor, BlockKind, matching};
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     documents::suggest::{Offer, offers},
     forms::replace_trigger,
     forms::{Backspace, Choice, Down, Enter, Pick, Redo, Submit, Undo, Up},
@@ -192,7 +192,8 @@ impl Render for BlockEditor {
             let key = block.key;
             let group = SharedString::from(format!("block-{key}"));
             let entity = cx.entity();
-            let plus = IconButton::new((id.clone(), format!("plus-{key}")), IconName::Plus)
+            let plus = Button::new((id.clone(), format!("plus-{key}")))
+                .icon(IconName::Plus)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip("Add a block below")

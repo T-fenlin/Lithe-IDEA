@@ -14,7 +14,7 @@ use super::{
     tile::laid_tile,
 };
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     layout::seeded::use_seeded,
     primitives::{FocusRing, IconName, Takeover, give_back, tab_stop, take_focus},
     theme::{ActiveTheme, Radius, TextSize},
@@ -243,7 +243,8 @@ impl RenderOnce for MapView {
             } else {
                 view.zoom <= least
             };
-            IconButton::new((id.clone(), key), icon)
+            Button::new((id.clone(), key))
+                .icon(icon)
                 .variant(ButtonVariant::Secondary)
                 .tooltip(words)
                 .disabled(spent)

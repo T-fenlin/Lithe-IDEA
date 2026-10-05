@@ -3,7 +3,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, px,
 };
 use lithe_gpui::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Choice, TextInput},
     layout::Sidebar,
     navigation::{
@@ -70,7 +70,7 @@ pub fn sidebar(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             )
             .child(
                 div().p_3().child(
-                    IconButton::new("nav-fold", IconName::PanelLeft)
+                    Button::new("nav-fold").icon(IconName::PanelLeft)
                         .variant(ButtonVariant::Ghost)
                         .tooltip(if fold { "Unfold" } else { "Fold" })
                         .on_click(move |_, _, cx| set(&toggle, !fold, cx)),

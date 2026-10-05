@@ -4,7 +4,7 @@ use gpui::{App, ElementId, IntoElement, ParentElement, RenderOnce, Window};
 
 use super::view::Frame;
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     primitives::IconName,
     shell::{Toolbar, ToolbarGroup, ToolbarSeparator},
 };
@@ -148,7 +148,8 @@ impl RenderOnce for AlignmentToolbar {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let button = |align: Align| {
             let on_align = self.on_align.clone();
-            IconButton::new((self.id.clone(), align.words()), align.icon())
+            Button::new((self.id.clone(), align.words()))
+                .icon(align.icon())
                 .tooltip(align.words())
                 .disabled(self.count < align.least())
                 .on_click(move |_, window, cx| {

@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, CopyButton, IconButton},
+    buttons::{Button, ButtonVariant, CopyButton},
     data_display::Avatar,
     documents::source,
     forms::{Choice, OnValues, Pick, Run, Select, TagInput, is_email},
@@ -177,7 +177,8 @@ impl RenderOnce for AccessList {
                                 .into_any_element(),
                         })
                         .children(on_remove.map(|on_remove| {
-                            IconButton::new(id("remove"), IconName::X)
+                            Button::new(id("remove"))
+                                .icon(IconName::X)
                                 .variant(ButtonVariant::Ghost)
                                 .size(Size::Small)
                                 .tooltip("Remove access")

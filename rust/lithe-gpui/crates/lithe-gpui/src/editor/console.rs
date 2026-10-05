@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton, ToggleButton, ToggleItem},
+    buttons::{Button, ButtonVariant, ToggleButton, ToggleItem},
     forms::{Choice, Enter, Input, Select, TextInput},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Palette, Radius, Size, TextSize},
@@ -148,7 +148,8 @@ impl RenderOnce for OutputPanel {
                     .child(div().flex_1())
                     .child(follow)
                     .children(self.on_clear.map(|clear| {
-                        IconButton::new((self.id.clone(), "clear"), IconName::Eraser)
+                        Button::new((self.id.clone(), "clear"))
+                            .icon(IconName::Eraser)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Clear")

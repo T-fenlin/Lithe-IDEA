@@ -8,7 +8,7 @@ use jiff::{Timestamp, tz::TimeZone};
 
 use super::{reader::Contact, send::ScheduleSend, signature::signature_block};
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     chat::{Attachment, AttachmentChip},
     forms::{Choice, Input, OnValue, Run, TagInput, TextInput, is_email},
     primitives::IconName,
@@ -312,7 +312,8 @@ impl RenderOnce for MailComposer {
             None => send,
         };
         let attach = self.on_attach.map(|attach| {
-            IconButton::new((self.id.clone(), "attach"), IconName::Paperclip)
+            Button::new((self.id.clone(), "attach"))
+                .icon(IconName::Paperclip)
                 .variant(ButtonVariant::Ghost)
                 .tooltip("Attach files")
                 .on_click(move |_, window, cx| {
@@ -321,7 +322,8 @@ impl RenderOnce for MailComposer {
                 })
         });
         let discard = self.on_discard.map(|discard| {
-            IconButton::new((self.id.clone(), "discard"), IconName::Trash2)
+            Button::new((self.id.clone(), "discard"))
+                .icon(IconName::Trash2)
                 .variant(ButtonVariant::Ghost)
                 .tooltip("Discard")
                 .on_click(move |_, window, cx| {

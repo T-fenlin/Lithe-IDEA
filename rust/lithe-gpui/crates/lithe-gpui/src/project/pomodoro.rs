@@ -6,7 +6,7 @@ use gpui::{
 use web_time::Instant;
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     motion::ProgressRing,
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
@@ -250,7 +250,8 @@ impl RenderOnce for PomodoroTimer {
         };
         let skip = {
             let (cycle, on_phase) = (cycle.clone(), self.on_phase.clone());
-            IconButton::new((self.id.clone(), "skip"), IconName::SkipForward)
+            Button::new((self.id.clone(), "skip"))
+                .icon(IconName::SkipForward)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip("Skip to the next phase")
@@ -258,7 +259,8 @@ impl RenderOnce for PomodoroTimer {
                     advance(&cycle, lengths, on_phase.clone(), window, cx)
                 })
         };
-        let reset = IconButton::new((self.id.clone(), "reset"), IconName::RotateCcw)
+        let reset = Button::new((self.id.clone(), "reset"))
+            .icon(IconName::RotateCcw)
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .tooltip("Start over")

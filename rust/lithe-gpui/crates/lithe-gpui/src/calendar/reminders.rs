@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Choice, Select},
     primitives::IconName,
     theme::Size,
@@ -106,7 +106,8 @@ impl RenderOnce for ReminderPicker {
                     ),
                 )
                 .child(
-                    IconButton::new((self.id.clone(), format!("remove-{minute}")), IconName::X)
+                    Button::new((self.id.clone(), format!("remove-{minute}")))
+                        .icon(IconName::X)
                         .variant(ButtonVariant::Ghost)
                         .size(Size::Small)
                         .tooltip("Remove reminder")

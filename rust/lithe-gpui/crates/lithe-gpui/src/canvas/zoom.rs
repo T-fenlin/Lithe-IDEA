@@ -4,7 +4,7 @@ use gpui::{App, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Windo
 
 use super::view::Viewport;
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::Run,
     primitives::IconName,
     theme::Size,
@@ -107,7 +107,8 @@ impl RenderOnce for ZoomControls {
                 true => (IconName::ZoomIn, "Zoom in"),
                 false => (IconName::ZoomOut, "Zoom out"),
             };
-            IconButton::new((id.clone(), words), icon)
+            Button::new((id.clone(), words))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(words)
@@ -129,7 +130,8 @@ impl RenderOnce for ZoomControls {
             })
         };
         let fit = self.on_fit.map(|on_fit| {
-            IconButton::new((id.clone(), "fit"), IconName::Maximize2)
+            Button::new((id.clone(), "fit"))
+                .icon(IconName::Maximize2)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip("Fit to screen")

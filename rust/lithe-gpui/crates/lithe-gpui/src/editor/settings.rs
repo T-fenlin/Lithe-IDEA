@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton, SegmentedControl},
+    buttons::{Button, ButtonVariant, SegmentedControl},
     forms::{Choice, JsonInput, NumberInput, Select, Switch, TextInput},
     primitives::IconName,
     theme::{ActiveTheme, Radius, Size, TextSize},
@@ -287,14 +287,12 @@ impl RenderOnce for SettingsEditor {
                 };
                 let reset = setting.modified().then(|| {
                     let (tell, default) = (tell.clone(), setting.default.clone());
-                    IconButton::new(
-                        (self.id.clone(), format!("reset-{section}-{ix}")),
-                        IconName::RotateCcw,
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(Size::Small)
-                    .tooltip("Reset to default")
-                    .on_click(move |_, window, cx| tell(default.clone(), window, cx))
+                    Button::new((self.id.clone(), format!("reset-{section}-{ix}")))
+                        .icon(IconName::RotateCcw)
+                        .variant(ButtonVariant::Ghost)
+                        .size(Size::Small)
+                        .tooltip("Reset to default")
+                        .on_click(move |_, window, cx| tell(default.clone(), window, cx))
                 });
                 div()
                     .flex()

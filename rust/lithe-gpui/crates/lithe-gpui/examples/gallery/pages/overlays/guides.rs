@@ -3,7 +3,7 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
 use lithe_gpui::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Input, TextInput},
     overlays::{FloatingToolbar, Lightbox, Peek, Slide, Spotlight, Tour, TourStep},
     primitives::{IconName, Image, Measure},
@@ -118,7 +118,7 @@ pub fn tour(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(target(&boxes, 0, Button::new("tour-search").label("Search").icon(IconName::Search)))
             .child(target(&boxes, 1, Button::new("tour-invite").label("Invite").icon(IconName::Users)))
-            .child(target(&boxes, 2, IconButton::new("tour-settings", IconName::Settings)))
+            .child(target(&boxes, 2, Button::new("tour-settings").icon(IconName::Settings)))
             .child(div().w_8())
             .child(probe(
                 "tour",
@@ -152,7 +152,8 @@ pub fn toolbar(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         });
     let tool = |name: &'static str, icon: IconName| {
         let used = used.clone();
-        IconButton::new(SharedString::from(format!("tool-{name}")), icon)
+        Button::new(SharedString::from(format!("tool-{name}")))
+            .icon(icon)
             .tooltip(name)
             .on_click(move |_, _, cx| set(&used, Some(name.into()), cx))
     };

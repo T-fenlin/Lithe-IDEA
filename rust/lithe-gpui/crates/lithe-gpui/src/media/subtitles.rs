@@ -7,7 +7,7 @@ use gpui::{
 
 use super::scrubber::OnTime;
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::InlineEdit,
     primitives::IconName,
     theme::{ActiveTheme, Radius, Size, TextSize},
@@ -222,14 +222,16 @@ impl RenderOnce for SubtitleEditor {
             };
             let seek = self.on_seek.clone().map(|seek| {
                 let start = cue.start;
-                IconButton::new((self.id.clone(), format!("{key}-seek")), IconName::Play)
+                Button::new((self.id.clone(), format!("{key}-seek")))
+                    .icon(IconName::Play)
                     .size(Size::Small)
                     .tooltip("Play from here")
                     .on_click(move |_, window, cx| seek(start, window, cx))
             });
             let remove = self.on_change.clone().map(|change| {
                 let (cues, key) = (cues.clone(), key.clone());
-                IconButton::new((self.id.clone(), format!("{key}-remove")), IconName::X)
+                Button::new((self.id.clone(), format!("{key}-remove")))
+                    .icon(IconName::X)
                     .size(Size::Small)
                     .tooltip("Remove")
                     .on_click(move |_, window, cx| {

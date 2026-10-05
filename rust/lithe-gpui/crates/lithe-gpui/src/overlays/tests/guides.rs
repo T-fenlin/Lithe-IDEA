@@ -8,7 +8,7 @@ use gpui::{
 
 use super::{click, press, settle};
 use crate::{
-    buttons::{Button, IconButton},
+    buttons::Button,
     forms::{Input, TextInput},
     overlays::{FloatingToolbar, Lightbox, Peek, Slide, Spotlight, Tour, TourStep},
     primitives::{FocusNext, FocusScope, IconName},
@@ -108,7 +108,8 @@ impl Render for Guides {
             .child(
                 div().w(px(300.0)).child(Input::new(&self.field)).child(
                     FloatingToolbar::new("tools", &self.field).child(
-                        IconButton::new("bold", IconName::Bold)
+                        Button::new("bold")
+                            .icon(IconName::Bold)
                             .on_click(move |_, window, cx| bold(window, cx)),
                     ),
                 ),

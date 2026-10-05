@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     menus::{Menu, MenuItem, SplitButton},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Size, TextSize},
@@ -185,7 +185,8 @@ impl RenderOnce for TerminalToolbar {
             }))
             .children(self.shells)
             .children(self.actions.into_iter().map(|(key, icon, words, run)| {
-                IconButton::new((self.id.clone(), key), icon)
+                Button::new((self.id.clone(), key))
+                    .icon(icon)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip(words)

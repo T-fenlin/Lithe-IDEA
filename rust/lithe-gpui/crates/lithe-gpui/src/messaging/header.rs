@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::Run,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Size, TextSize},
@@ -89,7 +89,8 @@ impl RenderOnce for ChannelHeader {
                 })
             };
         let call = self.on_call.map(|run| {
-            IconButton::new((self.id.clone(), "call"), IconName::Phone)
+            Button::new((self.id.clone(), "call"))
+                .icon(IconName::Phone)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip("Start a call")

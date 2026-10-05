@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     documents::source,
     forms::{Pick, Run},
     primitives::{Icon, IconName, Image, file_icon},
@@ -281,7 +281,8 @@ impl RenderOnce for FileMessage {
                     ),
             )
             .children(self.on_download.map(|download| {
-                IconButton::new((self.id.clone(), "download"), IconName::Download)
+                Button::new((self.id.clone(), "download"))
+                    .icon(IconName::Download)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Download")
                     .on_click(move |_, window, cx| download(window, cx))

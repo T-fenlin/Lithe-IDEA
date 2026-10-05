@@ -5,7 +5,7 @@ use gpui::{
 
 use super::{Block, BlockEditor, BlockKind, view::Look};
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::IconName,
     theme::Size,
 };
@@ -181,7 +181,8 @@ pub(super) fn table(
                 run: fn(&mut BlockEditor, u64, usize, &mut Window, &mut Context<BlockEditor>),
                 cell: usize,
                 cx: &mut Context<BlockEditor>| {
-        IconButton::new((id.clone(), format!("table-{key}-{name}")), icon)
+        Button::new((id.clone(), format!("table-{key}-{name}")))
+            .icon(icon)
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .tooltip(name)

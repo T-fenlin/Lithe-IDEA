@@ -7,7 +7,7 @@ use gpui::{
 
 use super::markdown::link_at;
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Enter, Input, Run, TextInput, float, is_url, surface},
     primitives::{FocusScope, IconName, give_back, take_focus},
     theme::{ActiveTheme, Size},
@@ -183,7 +183,8 @@ impl RenderOnce for LinkEditor {
                         )
                         .when_some(opened, |row, url| {
                             row.child(
-                                IconButton::new((self.id.clone(), "open"), IconName::ExternalLink)
+                                Button::new((self.id.clone(), "open"))
+                                    .icon(IconName::ExternalLink)
                                     .size(Size::Small)
                                     .tooltip("Open link")
                                     .on_click(move |_, _, cx| cx.open_url(&url)),
@@ -191,7 +192,8 @@ impl RenderOnce for LinkEditor {
                         })
                         .when_some(remove, |row, remove| {
                             row.child(
-                                IconButton::new((self.id.clone(), "remove"), IconName::Trash2)
+                                Button::new((self.id.clone(), "remove"))
+                                    .icon(IconName::Trash2)
                                     .size(Size::Small)
                                     .tooltip("Remove link")
                                     .on_click(move |_, window, cx| remove(window, cx)),

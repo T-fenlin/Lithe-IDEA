@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     motion,
     primitives::{DragGhost, Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -209,7 +209,8 @@ impl RenderOnce for TabBar {
                                 slot.invisible().group_hover(group, |style| style.visible())
                             })
                             .child(
-                                IconButton::new(("close", ix), IconName::X)
+                                Button::new(("close", ix))
+                                    .icon(IconName::X)
                                     .size(Size::Small)
                                     .on_click(move |_, window, cx| {
                                         cx.stop_propagation();
@@ -234,7 +235,8 @@ impl RenderOnce for TabBar {
             .children(tabs)
             .when_some(self.on_add, |bar, add| {
                 bar.child(
-                    IconButton::new("new-tab", IconName::Plus)
+                    Button::new("new-tab")
+                        .icon(IconName::Plus)
                         .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("tab bar: new tab");

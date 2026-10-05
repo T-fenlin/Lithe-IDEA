@@ -8,7 +8,7 @@ use gpui::{
 
 use super::{symbols::SymbolKind, syntax};
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     navigation::{fuzzy, marked},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, Elevation, IconSize, Radius, Size, TextSize},
@@ -289,7 +289,8 @@ impl RenderOnce for SignatureHelp {
         let step = |by: usize, icon: IconName, key: &'static str| {
             let on_step = self.on_step.clone();
             let next = (active + by) % count;
-            IconButton::new((self.id.clone(), key), icon)
+            Button::new((self.id.clone(), key))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .disabled(count < 2)

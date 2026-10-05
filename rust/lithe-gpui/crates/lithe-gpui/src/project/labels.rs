@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::color_mark,
     forms::{ColorPalette, Enter, FormError, InlineEdit, Input, OnValue, Run, TextInput},
     mail::Label,
@@ -212,7 +212,8 @@ impl RenderOnce for LabelManager {
             };
             let delete = {
                 let (key, on_delete) = (key.clone(), self.on_delete.clone());
-                IconButton::new((id.clone(), format!("delete-{key}")), IconName::X)
+                Button::new((id.clone(), format!("delete-{key}")))
+                    .icon(IconName::X)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip("Delete label")

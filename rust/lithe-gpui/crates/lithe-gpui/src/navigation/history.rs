@@ -4,7 +4,7 @@ use gpui::{App, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Windo
 
 use super::overflow::list_button;
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::Choice,
     primitives::IconName,
     theme::Size,
@@ -92,7 +92,8 @@ impl RenderOnce for BackForwardNavigation {
             .items_center()
             .gap_0p5()
             .child(
-                IconButton::new((self.id.clone(), "back"), IconName::ArrowLeft)
+                Button::new((self.id.clone(), "back"))
+                    .icon(IconName::ArrowLeft)
                     .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Back")
@@ -100,7 +101,8 @@ impl RenderOnce for BackForwardNavigation {
                     .on_click(move |_, window, cx| back(current - 1, window, cx)),
             )
             .child(
-                IconButton::new((self.id, "forward"), IconName::ArrowRight)
+                Button::new((self.id, "forward"))
+                    .icon(IconName::ArrowRight)
                     .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Forward")

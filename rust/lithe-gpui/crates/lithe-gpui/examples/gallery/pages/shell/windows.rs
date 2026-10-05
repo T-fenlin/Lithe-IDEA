@@ -3,7 +3,7 @@ use gpui::{
     Window, div, prelude::*, px, size,
 };
 use lithe_gpui::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::{IconName, Image},
     shell::{
         AboutDialog, Corner, MiniWindow, SplashScreen, TitleBar, WindowManager, WindowSwitcher,
@@ -292,18 +292,16 @@ impl Render for Player {
                     .child(Caption::new("Low Tide · 2:41")),
             )
             .child(
-                IconButton::new(
-                    "player-toggle",
-                    if playing {
+                Button::new("player-toggle")
+                    .icon(if playing {
                         IconName::Pause
                     } else {
                         IconName::Play
-                    },
-                )
-                .on_click(cx.listener(|player, _, _, cx| {
-                    player.playing = !player.playing;
-                    cx.notify();
-                })),
+                    })
+                    .on_click(cx.listener(|player, _, _, cx| {
+                        player.playing = !player.playing;
+                        cx.notify();
+                    })),
             )
     }
 }

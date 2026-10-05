@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{Choice, ListBox, options::OnValues};
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::IconName,
     theme::{ActiveTheme, TextSize},
 };
@@ -164,14 +164,16 @@ impl RenderOnce for TransferList {
             .justify_center()
             .gap_2()
             .child(
-                IconButton::new((self.id.clone(), "add"), IconName::ChevronRight)
+                Button::new((self.id.clone(), "add"))
+                    .icon(IconName::ChevronRight)
                     .variant(ButtonVariant::Outline)
                     .tooltip("Move to chosen")
                     .disabled(left.is_empty())
                     .on_click(shift(true)),
             )
             .child(
-                IconButton::new((self.id.clone(), "remove"), IconName::ChevronLeft)
+                Button::new((self.id.clone(), "remove"))
+                    .icon(IconName::ChevronLeft)
                     .variant(ButtonVariant::Outline)
                     .tooltip("Move back")
                     .disabled(right.is_empty())

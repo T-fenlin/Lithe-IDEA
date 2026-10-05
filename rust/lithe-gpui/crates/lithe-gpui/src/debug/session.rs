@@ -7,7 +7,7 @@ use gpui::{
 
 use super::OnIndex;
 use crate::{
-    buttons::{ButtonVariant, IconButton, shortcut_text},
+    buttons::{Button, ButtonVariant, shortcut_text},
     forms::Checkbox,
     primitives::IconName,
     theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
@@ -71,7 +71,8 @@ impl RenderOnce for DebugToolbar {
         let button =
             |command: DebugCommand, icon: IconName, words: &str, key: &str, enabled: bool| {
                 let run = self.on_command.clone();
-                IconButton::new((self.id.clone(), format!("{command:?}")), icon)
+                Button::new((self.id.clone(), format!("{command:?}")))
+                    .icon(icon)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip(format!("{words}  {}", shortcut_text(key, platform)))
@@ -276,22 +277,17 @@ impl RenderOnce for BreakpointList {
                             .opacity(0.)
                             .group_hover(group, |actions| actions.opacity(1.))
                             .child(
-                                IconButton::new(
-                                    (self.id.clone(), format!("remove-{ix}")),
-                                    IconName::X,
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .size(Size::Small)
-                                .tooltip("Remove breakpoint")
-                                .when_some(
-                                    remove,
-                                    |button, remove| {
+                                Button::new((self.id.clone(), format!("remove-{ix}")))
+                                    .icon(IconName::X)
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(Size::Small)
+                                    .tooltip("Remove breakpoint")
+                                    .when_some(remove, |button, remove| {
                                         button.on_click(move |_, window, cx| {
                                             cx.stop_propagation();
                                             remove(ix, window, cx)
                                         })
-                                    },
-                                ),
+                                    }),
                             ),
                     )
                     .into_any_element()

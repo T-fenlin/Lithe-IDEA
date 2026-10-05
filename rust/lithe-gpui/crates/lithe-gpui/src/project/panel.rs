@@ -11,7 +11,7 @@ use super::{
     work::{Person, Priority, Task},
 };
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     documents::Checklist,
     forms::{Choice, DatePicker, InlineEdit, OnValue, Run, Select},
     primitives::{Icon, IconName},
@@ -158,7 +158,8 @@ impl RenderOnce for TaskDetailPanel {
                     .children(task.issue.clone().map(IssueIdBadge::new)),
             )
             .children(self.on_close.map(|close| {
-                IconButton::new((id.clone(), "close"), IconName::X)
+                Button::new((id.clone(), "close"))
+                    .icon(IconName::X)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip("Close")

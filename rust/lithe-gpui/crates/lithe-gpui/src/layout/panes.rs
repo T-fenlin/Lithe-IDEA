@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{SplitPane, split::check_weights};
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
 };
@@ -262,21 +262,24 @@ impl PaneGroup {
                     .flex()
                     .gap_0p5()
                     .child(
-                        IconButton::new(("split-right", id), IconName::PanelRight)
+                        Button::new(("split-right", id))
+                            .icon(IconName::PanelRight)
                             .size(Size::Small)
                             .on_click(cx.listener(move |group, _, _, cx| {
                                 group.split(id, Axis::Horizontal, cx);
                             })),
                     )
                     .child(
-                        IconButton::new(("split-down", id), IconName::PanelBottom)
+                        Button::new(("split-down", id))
+                            .icon(IconName::PanelBottom)
                             .size(Size::Small)
                             .on_click(cx.listener(move |group, _, _, cx| {
                                 group.split(id, Axis::Vertical, cx);
                             })),
                     )
                     .child(
-                        IconButton::new(("close", id), IconName::X)
+                        Button::new(("close", id))
+                            .icon(IconName::X)
                             .size(Size::Small)
                             .disabled(lone)
                             .on_click(cx.listener(move |group, _, _, cx| group.close(id, cx))),

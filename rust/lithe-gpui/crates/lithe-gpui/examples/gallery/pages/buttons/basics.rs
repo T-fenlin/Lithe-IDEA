@@ -1,6 +1,6 @@
 use gpui::{AnyElement, App, ElementId, IntoElement, ParentElement, Styled, div};
 use lithe_gpui::{
-    buttons::{Button, ButtonGroup, ButtonVariant, IconButton},
+    buttons::{Button, ButtonGroup, ButtonVariant},
     primitives::IconName,
     theme::Size,
 };
@@ -90,34 +90,26 @@ pub fn basics(cx: &App) -> AnyElement {
                         row()
                             .gap_1()
                             .child(
-                                IconButton::new(
-                                    ElementId::Name(format!("{name}-a").into()),
-                                    IconName::Bold,
-                                )
-                                .size(size),
+                                Button::new(ElementId::Name(format!("{name}-a").into()))
+                                    .icon(IconName::Bold)
+                                    .size(size),
                             )
                             .child(
-                                IconButton::new(
-                                    ElementId::Name(format!("{name}-b").into()),
-                                    IconName::Italic,
-                                )
-                                .size(size),
+                                Button::new(ElementId::Name(format!("{name}-b").into()))
+                                    .icon(IconName::Italic)
+                                    .size(size),
                             )
                             .child(
-                                IconButton::new(
-                                    ElementId::Name(format!("{name}-c").into()),
-                                    IconName::Underline,
-                                )
-                                .size(size)
-                                .variant(ButtonVariant::Subtle),
+                                Button::new(ElementId::Name(format!("{name}-c").into()))
+                                    .icon(IconName::Underline)
+                                    .size(size)
+                                    .variant(ButtonVariant::Subtle),
                             )
                             .child(
-                                IconButton::new(
-                                    ElementId::Name(format!("{name}-d").into()),
-                                    IconName::Link,
-                                )
-                                .size(size)
-                                .variant(ButtonVariant::Outline),
+                                Button::new(ElementId::Name(format!("{name}-d").into()))
+                                    .icon(IconName::Link)
+                                    .size(size)
+                                    .variant(ButtonVariant::Outline),
                             ),
                         cx,
                     )

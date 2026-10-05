@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::Run,
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
@@ -125,7 +125,8 @@ impl RenderOnce for Pagination {
             .items_center()
             .gap_1()
             .child(
-                IconButton::new("previous", IconName::ChevronLeft)
+                Button::new("previous")
+                    .icon(IconName::ChevronLeft)
                     .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Previous page")
@@ -134,7 +135,8 @@ impl RenderOnce for Pagination {
             )
             .children(cells)
             .child(
-                IconButton::new("next", IconName::ChevronRight)
+                Button::new("next")
+                    .icon(IconName::ChevronRight)
                     .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Next page")

@@ -7,7 +7,7 @@ use gpui::{
 
 use super::panel::{OnEdit, caption, color_well, editing, heading, pair};
 use crate::{
-    buttons::{IconButton, SegmentedControl, ToggleButton, ToggleItem},
+    buttons::{Button, SegmentedControl, ToggleButton, ToggleItem},
     forms::{ColorPalette, ColorPicker, ScrubInput},
     primitives::IconName,
     theme::{ActiveTheme, Elevation},
@@ -184,7 +184,8 @@ impl RenderOnce for ShadowEditor {
                                 .child(Ellipsis::new(format!("Shadow {}", ix + 1))),
                         )
                         .child(
-                            IconButton::new((id.clone(), format!("remove-{ix}")), IconName::Minus)
+                            Button::new((id.clone(), format!("remove-{ix}")))
+                                .icon(IconName::Minus)
                                 .tooltip("Remove the shadow")
                                 .on_click(move |_, window, cx| remove((), window, cx)),
                         ),
@@ -204,7 +205,8 @@ impl RenderOnce for ShadowEditor {
             .gap_3()
             .child(heading(
                 "Shadows",
-                IconButton::new((id.clone(), "add"), IconName::Plus)
+                Button::new((id.clone(), "add"))
+                    .icon(IconName::Plus)
                     .tooltip("Add a shadow")
                     .on_click(move |_, window, cx| add((), window, cx)),
                 cx,

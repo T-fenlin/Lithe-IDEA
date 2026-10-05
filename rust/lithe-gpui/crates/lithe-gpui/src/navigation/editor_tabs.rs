@@ -8,7 +8,7 @@ use gpui::{
 
 use super::TabOverflowMenu;
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::Choice,
     i18n,
     primitives::{DragGhost, Icon, IconName},
@@ -192,7 +192,8 @@ impl RenderOnce for EditorTabs {
                 let slot_id = tab.id.clone();
                 let slot: AnyElement = if tab.pinned {
                     let pin = self.on_pin.clone();
-                    IconButton::new(("pin", ix), IconName::Pin)
+                    Button::new(("pin", ix))
+                        .icon(IconName::Pin)
                         .size(Size::Small)
                         .variant(ButtonVariant::Ghost)
                         .tooltip("Unpin")
@@ -204,7 +205,8 @@ impl RenderOnce for EditorTabs {
                 } else {
                     let close_button = {
                         let close = self.on_close.clone();
-                        IconButton::new(("close", ix), IconName::X)
+                        Button::new(("close", ix))
+                            .icon(IconName::X)
                             .size(Size::Small)
                             .variant(ButtonVariant::Ghost)
                             .tooltip(i18n::text(cx, "dialog.close", &[]))

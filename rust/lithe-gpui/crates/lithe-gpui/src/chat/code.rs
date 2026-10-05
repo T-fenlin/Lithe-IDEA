@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, CopyButton, IconButton},
+    buttons::{Button, ButtonVariant, CopyButton},
     editor::code_colors,
     forms::Run,
     layout::on_axis,
@@ -84,7 +84,8 @@ impl RenderOnce for CodeBlock {
         let styles: Vec<(Range<usize>, HighlightStyle)> = code_colors(&shown, cx);
         let action = |key: &str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
-                IconButton::new((self.id.clone(), key.to_string()), icon)
+                Button::new((self.id.clone(), key.to_string()))
+                    .icon(icon)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip(tip)

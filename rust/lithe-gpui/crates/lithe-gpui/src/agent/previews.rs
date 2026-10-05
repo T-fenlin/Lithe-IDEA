@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     documents::source,
     forms::{Pick, Run, reveal, revealer},
     layout::on_axis,
@@ -384,7 +384,8 @@ impl LivePreview {
 impl RenderOnce for LivePreview {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let reload = self.on_reload.map(|reload| {
-            IconButton::new((self.id.clone(), "reload"), IconName::RotateCw)
+            Button::new((self.id.clone(), "reload"))
+                .icon(IconName::RotateCw)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip("Reload")

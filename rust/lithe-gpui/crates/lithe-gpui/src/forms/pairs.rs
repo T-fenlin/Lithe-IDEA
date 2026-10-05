@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{Input, InputEvent, TextInput, options::Run};
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::IconName,
     theme::Size,
 };
@@ -141,7 +141,8 @@ impl RenderOnce for FieldArray {
                 .gap_2()
                 .child(div().flex_1().min_w_0().child(row))
                 .child(
-                    IconButton::new(("remove-row", ix), IconName::Minus)
+                    Button::new(("remove-row", ix))
+                        .icon(IconName::Minus)
                         .size(Size::Small)
                         .tooltip("Remove")
                         .on_click(move |_, window, cx| {

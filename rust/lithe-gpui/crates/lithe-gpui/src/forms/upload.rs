@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     motion::ProgressBar,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Size, TextSize},
@@ -93,7 +93,8 @@ impl RenderOnce for UploadList {
                       handler: &Option<OnRow>,
                       ix: usize| {
             handler.clone().map(|run| {
-                IconButton::new((self.id.clone(), SharedString::from(name)), icon)
+                Button::new((self.id.clone(), SharedString::from(name)))
+                    .icon(icon)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip(tip)

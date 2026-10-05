@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{Hosted, open_hosted};
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     layout::ScrollArea,
     motion::ProgressBar,
     primitives::{Icon, IconName},
@@ -160,7 +160,8 @@ impl RenderOnce for UpdateBanner {
             ))
             .when_some(dismiss, |banner, dismiss| {
                 banner.child(
-                    IconButton::new("update-dismiss", IconName::X)
+                    Button::new("update-dismiss")
+                        .icon(IconName::X)
                         .size(Size::Small)
                         .on_click(move |_, window, cx| dismiss(window, cx)),
                 )

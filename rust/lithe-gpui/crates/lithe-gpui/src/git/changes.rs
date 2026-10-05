@@ -7,7 +7,7 @@ use gpui::{
 
 use super::badges::GitStatusBadge;
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Checkbox, Input, Submit, TextInput},
     lists::GitStatus,
     primitives::IconName,
@@ -87,19 +87,17 @@ impl ChangesList {
         let group = SharedString::from(format!("change-{staged}-{}", file.path));
         let action = |key: &str, icon, words: &'static str, act: ChangeAction| {
             let (on_action, path) = (self.on_action.clone(), file.path.clone());
-            IconButton::new(
-                (self.id.clone(), format!("{key}-{staged}-{}", file.path)),
-                icon,
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(Size::Small)
-            .tooltip(words)
-            .when_some(on_action, |button, on_action| {
-                button.on_click(move |_, window, cx| {
-                    cx.stop_propagation();
-                    on_action(&path, act, window, cx)
+            Button::new((self.id.clone(), format!("{key}-{staged}-{}", file.path)))
+                .icon(icon)
+                .variant(ButtonVariant::Ghost)
+                .size(Size::Small)
+                .tooltip(words)
+                .when_some(on_action, |button, on_action| {
+                    button.on_click(move |_, window, cx| {
+                        cx.stop_propagation();
+                        on_action(&path, act, window, cx)
+                    })
                 })
-            })
         };
         let (open, path) = (self.on_action.clone(), file.path.clone());
         div()
@@ -210,7 +208,8 @@ impl ChangesList {
                         .child(div().flex_1().font_weight(FontWeight::MEDIUM).child(title))
                         .child(tabular(div()).child(files.len().to_string()))
                         .child(
-                            IconButton::new((self.id.clone(), format!("all-{staged}")), icon)
+                            Button::new((self.id.clone(), format!("all-{staged}")))
+                                .icon(icon)
                                 .variant(ButtonVariant::Ghost)
                                 .size(Size::Small)
                                 .tooltip(words)

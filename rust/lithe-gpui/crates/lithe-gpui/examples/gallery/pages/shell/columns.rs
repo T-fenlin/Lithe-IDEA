@@ -1,6 +1,6 @@
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, div, px};
 use lithe_gpui::{
-    buttons::IconButton,
+    buttons::Button,
     navigation::NavItem,
     primitives::IconName,
     shell::{ColumnShell, ShellColumn},
@@ -11,8 +11,8 @@ use lithe_gpui::{
 use super::chrome::window_frame;
 use crate::ui::{code, section, specimen};
 
-fn icon(id: &'static str, ix: usize, name: IconName) -> IconButton {
-    IconButton::new((id, ix), name).size(Size::Small)
+fn icon(id: &'static str, ix: usize, name: IconName) -> Button {
+    Button::new((id, ix)).icon(name).size(Size::Small)
 }
 
 fn shell(id: &'static str, cx: &App) -> ColumnShell {

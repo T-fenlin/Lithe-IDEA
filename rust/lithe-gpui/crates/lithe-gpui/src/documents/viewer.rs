@@ -11,7 +11,7 @@ use super::{
     thumbs::PageThumbnailList,
 };
 use crate::{
-    buttons::{ButtonVariant, IconButton, ToggleButton, ToggleItem},
+    buttons::{Button, ButtonVariant, ToggleButton, ToggleItem},
     documents::blocks::source,
     editor::FindWidget,
     overlays::HoverCard,
@@ -199,7 +199,8 @@ impl RenderOnce for DocumentViewer {
         };
         let zoom_to = |next: Option<f32>, icon: IconName, tip: &'static str| {
             let on_zoom = self.on_zoom.clone();
-            IconButton::new((self.id.clone(), tip), icon)
+            Button::new((self.id.clone(), tip))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(tip)
@@ -227,7 +228,8 @@ impl RenderOnce for DocumentViewer {
                     .child(self.title.clone()),
             )
             .child(
-                IconButton::new((self.id.clone(), "previous"), IconName::ChevronUp)
+                Button::new((self.id.clone(), "previous"))
+                    .icon(IconName::ChevronUp)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip("Previous page")
@@ -239,7 +241,8 @@ impl RenderOnce for DocumentViewer {
                     .child(format!("{} of {count}", page_now + 1)),
             )
             .child(
-                IconButton::new((self.id.clone(), "next"), IconName::ChevronDown)
+                Button::new((self.id.clone(), "next"))
+                    .icon(IconName::ChevronDown)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip("Next page")

@@ -1,6 +1,6 @@
 use gpui::{App, Div, IntoElement, ParentElement, SharedString, Styled, Window, div};
 use lithe_gpui::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     motion::{AnimatePresence, Entrance, Flip, Reorder, Stagger, Transition},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size},
@@ -129,26 +129,24 @@ pub fn presence(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 SharedString::from(format!("tag-{number}")),
                 *shown,
                 line(*name, cx).justify_between().child(
-                    IconButton::new(
-                        SharedString::from(format!("presence-remove-{number}")),
-                        IconName::X,
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(Size::Small)
-                    .on_click(move |_, _, cx| {
-                        let then: Vec<Tag> = hide
-                            .read(cx)
-                            .iter()
-                            .map(|tag| {
-                                if tag.0 == number {
-                                    (tag.0, tag.1, false)
-                                } else {
-                                    *tag
-                                }
-                            })
-                            .collect();
-                        set(&hide, then, cx)
-                    }),
+                    Button::new(SharedString::from(format!("presence-remove-{number}")))
+                        .icon(IconName::X)
+                        .variant(ButtonVariant::Ghost)
+                        .size(Size::Small)
+                        .on_click(move |_, _, cx| {
+                            let then: Vec<Tag> = hide
+                                .read(cx)
+                                .iter()
+                                .map(|tag| {
+                                    if tag.0 == number {
+                                        (tag.0, tag.1, false)
+                                    } else {
+                                        *tag
+                                    }
+                                })
+                                .collect();
+                            set(&hide, then, cx)
+                        }),
                 ),
             )
         },

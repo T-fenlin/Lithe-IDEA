@@ -7,7 +7,7 @@ use gpui::{
 use jiff::Timestamp;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::Avatar,
     forms::OnValue,
     lists::{ListItem, SelectableList},
@@ -99,17 +99,15 @@ impl RenderOnce for PinnedMessages {
                             }
                         })
                         .child(
-                            IconButton::new(
-                                (self.id.clone(), format!("unpin-{key}")),
-                                IconName::PinOff,
-                            )
-                            .variant(ButtonVariant::Ghost)
-                            .size(Size::Small)
-                            .tooltip("Unpin")
-                            .on_click(move |_, window, cx| {
-                                log::info!("pinned messages: unpin {key}");
-                                unpin(&key, window, cx)
-                            }),
+                            Button::new((self.id.clone(), format!("unpin-{key}")))
+                                .icon(IconName::PinOff)
+                                .variant(ButtonVariant::Ghost)
+                                .size(Size::Small)
+                                .tooltip("Unpin")
+                                .on_click(move |_, window, cx| {
+                                    log::info!("pinned messages: unpin {key}");
+                                    unpin(&key, window, cx)
+                                }),
                         )
                 });
                 let who = format!("{} · {}", message.author, format::relative(message.at, now));

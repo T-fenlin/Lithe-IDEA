@@ -14,7 +14,7 @@ use super::{
     select::{field_button, field_text},
 };
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::{Icon, IconName, tab_stop},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
@@ -214,7 +214,8 @@ impl RenderOnce for FileInput {
             ))
             .when(!self.paths.is_empty(), |field| {
                 field.child(
-                    IconButton::new((self.id.clone(), "clear"), IconName::X)
+                    Button::new((self.id.clone(), "clear"))
+                        .icon(IconName::X)
                         .size(Size::Small)
                         .variant(ButtonVariant::Ghost)
                         .tooltip("Clear")

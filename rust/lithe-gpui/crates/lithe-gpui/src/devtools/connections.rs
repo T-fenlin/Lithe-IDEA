@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::{Badge, Tone},
     lists::{ListItem, SelectableList, row_action},
     primitives::{Icon, IconName},
@@ -215,7 +215,8 @@ impl RenderOnce for ConnectionManager {
                 let action = |icon: IconName, tip: &'static str, handler: &Option<OnKey>| {
                     let (key, handler) = (key.clone(), handler.clone());
                     row_action(
-                        IconButton::new((id.clone(), format!("{tip}-{key}")), icon)
+                        Button::new((id.clone(), format!("{tip}-{key}")))
+                            .icon(icon)
                             .tooltip(tip)
                             .on_click(move |_, window, cx| {
                                 if let Some(handler) = &handler {

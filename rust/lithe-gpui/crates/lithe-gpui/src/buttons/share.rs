@@ -3,7 +3,7 @@ use gpui::{
     Window, canvas, div,
 };
 
-use super::IconButton;
+use super::Button;
 use crate::primitives::IconName;
 
 /// What to share: text, a link, or both.
@@ -59,7 +59,7 @@ impl RenderOnce for ShareButton {
         });
         let (measure, open) = (anchor.clone(), anchor);
         let items = self.items;
-        let button = IconButton::new(self.id, IconName::Share2).tooltip("Share");
+        let button = Button::new(self.id).icon(IconName::Share2).tooltip("Share");
         #[cfg(target_os = "macos")]
         let button = button.on_click(move |_, window, cx| {
             let bounds = open.read(cx).bounds;

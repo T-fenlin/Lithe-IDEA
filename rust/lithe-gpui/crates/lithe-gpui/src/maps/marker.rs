@@ -7,7 +7,7 @@ use gpui::{
 
 use super::LatLon;
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     primitives::{FocusRing, Icon, IconName},
     theme::{ActiveTheme, Elevation, IconSize, Radius, TextSize},
     typography::Ellipsis,
@@ -181,7 +181,8 @@ impl MapPopup {
             )
             .when_some(self.on_close, |head, on_close| {
                 head.child(
-                    IconButton::new((owner.clone(), "popup-close"), IconName::X)
+                    Button::new((owner.clone(), "popup-close"))
+                        .icon(IconName::X)
                         .variant(ButtonVariant::Ghost)
                         .tooltip("Close")
                         .on_click(move |_, window, cx| on_close(window, cx)),

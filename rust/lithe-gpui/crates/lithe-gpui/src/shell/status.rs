@@ -7,7 +7,7 @@ use gpui::{
 use web_time::Instant;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     motion,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Size, TextSize},
@@ -195,7 +195,8 @@ impl RenderOnce for ZoomControl {
             .items_center()
             .gap_0p5()
             .child(
-                IconButton::new("zoom-out", IconName::ZoomOut)
+                Button::new("zoom-out")
+                    .icon(IconName::ZoomOut)
                     .size(Size::Small)
                     .disabled(down.is_none())
                     .when_some(down, |button, next| {
@@ -218,7 +219,8 @@ impl RenderOnce for ZoomControl {
                     .child(div().text_size(theme.text_size(TextSize::Sm)).child("%")),
             )
             .child(
-                IconButton::new("zoom-in", IconName::ZoomIn)
+                Button::new("zoom-in")
+                    .icon(IconName::ZoomIn)
                     .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .disabled(up.is_none())

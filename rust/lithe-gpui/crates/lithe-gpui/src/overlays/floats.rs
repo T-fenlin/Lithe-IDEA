@@ -8,7 +8,7 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::{Run, TextInput, surface},
     layout::Collapsible,
     motion,
@@ -155,7 +155,8 @@ impl RenderOnce for Peek {
                         .font_weight(FontWeight::MEDIUM)
                         .child(self.title)
                         .child(
-                            IconButton::new((self.id.clone(), "close"), IconName::X)
+                            Button::new((self.id.clone(), "close"))
+                                .icon(IconName::X)
                                 .variant(ButtonVariant::Ghost)
                                 .size(Size::Small)
                                 .tooltip("Close")

@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton, ToggleButton, ToggleItem},
+    buttons::{Button, ButtonVariant, ToggleButton, ToggleItem},
     forms::{Input, TextInput},
     primitives::IconName,
     theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
@@ -183,7 +183,8 @@ impl RenderOnce for FindWidget {
                            enabled: bool,
                            action: Option<OnBool>,
                            value: bool| {
-            IconButton::new((self.id.clone(), key), icon)
+            Button::new((self.id.clone(), key))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(words)
@@ -279,7 +280,8 @@ impl RenderOnce for FindWidget {
                         true,
                     ))
                     .children(self.on_close.clone().map(|close| {
-                        IconButton::new((self.id.clone(), "close"), IconName::X)
+                        Button::new((self.id.clone(), "close"))
+                            .icon(IconName::X)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip("Close")

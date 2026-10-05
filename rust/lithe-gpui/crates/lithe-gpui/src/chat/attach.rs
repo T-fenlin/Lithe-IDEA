@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::Tag,
     documents::source,
     forms::{Pick, Run},
@@ -133,7 +133,8 @@ impl RenderOnce for AttachmentChip {
                     .child(detail),
             )
             .children(self.on_remove.map(|remove| {
-                IconButton::new((self.id.clone(), "remove"), IconName::X)
+                Button::new((self.id.clone(), "remove"))
+                    .icon(IconName::X)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip("Remove")

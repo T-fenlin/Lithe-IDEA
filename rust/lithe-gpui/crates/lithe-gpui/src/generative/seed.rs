@@ -7,7 +7,7 @@ use std::{
 use gpui::{App, ElementId, Entity, IntoElement, RenderOnce, Window};
 
 use crate::{
-    buttons::IconButton,
+    buttons::Button,
     forms::{InputAddon, InputGroup, TextInput},
     primitives::IconName,
 };
@@ -64,7 +64,8 @@ impl RenderOnce for SeedInput {
         }
         let field = self.field.clone();
         InputGroup::new(&self.field).after(InputAddon::new(
-            IconButton::new((self.id.clone(), "roll"), IconName::Dices)
+            Button::new((self.id.clone(), "roll"))
+                .icon(IconName::Dices)
                 .tooltip("Roll a seed")
                 .on_click(move |_, _, cx| {
                     let seed = roll();

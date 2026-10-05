@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     feedback::InlineMessage,
     forms::{Enter, Input, TextInput},
     primitives::{FocusRing, Icon, IconName, Image, Severity, checked_ratio, framed, tab_stop},
@@ -151,7 +151,8 @@ impl RenderOnce for Captcha {
             }
         };
         let refresh = self.on_refresh.map(|on_refresh| {
-            IconButton::new((id.clone(), "refresh"), IconName::RefreshCw)
+            Button::new((id.clone(), "refresh"))
+                .icon(IconName::RefreshCw)
                 .tooltip("New picture")
                 .on_click(move |_, window, cx| {
                     log::info!("captcha: asked for a new picture");

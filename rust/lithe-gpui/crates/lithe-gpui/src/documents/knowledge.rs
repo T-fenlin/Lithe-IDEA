@@ -8,7 +8,7 @@ use gpui::{
 use jiff::Timestamp;
 
 use crate::{
-    buttons::{Button, ButtonVariant, ConfirmButton, ConfirmMode, IconButton},
+    buttons::{Button, ButtonVariant, ConfirmButton, ConfirmMode},
     feedback::EmptyState,
     forms::{OnValue, Pick, Run},
     motion::Reorder,
@@ -219,22 +219,17 @@ impl RenderOnce for Favorites {
                                 .opacity(0.0)
                                 .group_hover(group, |star| star.opacity(1.0))
                                 .child(
-                                    IconButton::new(
-                                        (self.id.clone(), format!("unpin-{unpin_key}")),
-                                        IconName::Star,
-                                    )
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(Size::Small)
-                                    .tooltip("Remove from favorites")
-                                    .when_some(
-                                        unpin,
-                                        |button, unpin| {
+                                    Button::new((self.id.clone(), format!("unpin-{unpin_key}")))
+                                        .icon(IconName::Star)
+                                        .variant(ButtonVariant::Ghost)
+                                        .size(Size::Small)
+                                        .tooltip("Remove from favorites")
+                                        .when_some(unpin, |button, unpin| {
                                             button.on_click(move |_, window, cx| {
                                                 cx.stop_propagation();
                                                 unpin(&unpin_key, window, cx)
                                             })
-                                        },
-                                    ),
+                                        }),
                                 ),
                         ),
                 )

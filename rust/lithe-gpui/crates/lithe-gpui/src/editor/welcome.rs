@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     forms::Checkbox,
     i18n,
     navigation::{Group, Palette, Row, fuzzy, marked, query_field},
@@ -86,7 +86,8 @@ impl RenderOnce for RecentProjects {
                           icon: IconName,
                           words: SharedString,
                           action: Option<OnIndex>| {
-                IconButton::new((self.id.clone(), format!("{key}-{ix}")), icon)
+                Button::new((self.id.clone(), format!("{key}-{ix}")))
+                    .icon(icon)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip(words)

@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{Button, ButtonVariant, CopyButton, IconButton, ToggleButton, ToggleItem},
+    buttons::{Button, ButtonVariant, CopyButton, ToggleButton, ToggleItem},
     forms::{Input, Pick, Run, Submit, TextInput},
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
@@ -105,7 +105,8 @@ impl RenderOnce for QuoteReply {
                     ),
             )
             .children(self.on_remove.map(|remove| {
-                IconButton::new((self.id.clone(), "remove"), IconName::X)
+                Button::new((self.id.clone(), "remove"))
+                    .icon(IconName::X)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip("Remove quote")
@@ -164,7 +165,8 @@ impl RenderOnce for MessageActions {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let button = |key: &str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
-                IconButton::new((self.id.clone(), key.to_string()), icon)
+                Button::new((self.id.clone(), key.to_string()))
+                    .icon(icon)
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .tooltip(tip)
@@ -341,7 +343,8 @@ impl RenderOnce for BranchNavigator {
         let (current, total) = (self.current, self.total);
         let step = |key: &str, icon: IconName, tip: &'static str, to: Option<usize>| {
             let change = self.on_change.clone();
-            IconButton::new((self.id.clone(), key.to_string()), icon)
+            Button::new((self.id.clone(), key.to_string()))
+                .icon(icon)
                 .variant(ButtonVariant::Ghost)
                 .size(Size::Small)
                 .tooltip(tip)

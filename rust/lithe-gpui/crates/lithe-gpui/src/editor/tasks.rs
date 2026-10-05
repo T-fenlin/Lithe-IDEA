@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     motion::Spinner,
     primitives::{Disclosure, Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
@@ -194,7 +194,8 @@ impl RenderOnce for TaskRunner {
                                 .child(outcome),
                         )
                         .child(
-                            IconButton::new((self.id.clone(), format!("run-{ix}")), icon)
+                            Button::new((self.id.clone(), format!("run-{ix}")))
+                                .icon(icon)
                                 .variant(ButtonVariant::Ghost)
                                 .size(Size::Small)
                                 .tooltip(words)

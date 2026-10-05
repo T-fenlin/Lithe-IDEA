@@ -8,7 +8,7 @@ use gpui::{
 use jiff::Timestamp;
 
 use crate::{
-    buttons::{Button, ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant},
     data_display::Meter,
     forms::{CheckState, Checkbox, Choice, OnFlag, OnValue, Pick, RadioGroup, Run},
     overlays::Dialog,
@@ -225,19 +225,15 @@ impl RenderOnce for ProjectKnowledgePanel {
                                         .child(file_size(bytes, false)),
                                     )
                                     .children(remove.map(|remove| {
-                                        IconButton::new(
-                                            (self.id.clone(), format!("remove-{ix}")),
-                                            IconName::X,
-                                        )
-                                        .variant(ButtonVariant::Ghost)
-                                        .size(Size::Small)
-                                        .tooltip("Remove")
-                                        .on_click(
-                                            move |_, window, cx| {
+                                        Button::new((self.id.clone(), format!("remove-{ix}")))
+                                            .icon(IconName::X)
+                                            .variant(ButtonVariant::Ghost)
+                                            .size(Size::Small)
+                                            .tooltip("Remove")
+                                            .on_click(move |_, window, cx| {
                                                 log::info!("project knowledge: remove {ix}");
                                                 remove(ix, window, cx)
-                                            },
-                                        )
+                                            })
                                     }))
                             }),
                     ),

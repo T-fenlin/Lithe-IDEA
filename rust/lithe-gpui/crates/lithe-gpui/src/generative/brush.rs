@@ -4,7 +4,7 @@ use gpui::{App, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Windo
 
 use super::mask::{OnBrush, REACH};
 use crate::{
-    buttons::{IconButton, SegmentedControl},
+    buttons::{Button, SegmentedControl},
     forms::{Run, Slider},
     primitives::IconName,
     theme::{ActiveTheme, Size, TextSize},
@@ -69,7 +69,8 @@ impl RenderOnce for MaskBrush {
         let (mode, size) = (self.on_brush.clone(), self.on_brush);
         let back = |key: &'static str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
-                IconButton::new((self.id.clone(), key), icon)
+                Button::new((self.id.clone(), key))
+                    .icon(icon)
                     .size(Size::Small)
                     .tooltip(tip)
                     .disabled(empty)
