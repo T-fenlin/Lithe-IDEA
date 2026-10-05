@@ -44,7 +44,7 @@ fn the_viewer_names_each_token_with_its_value(cx: &mut TestAppContext) {
             &[11, 12, 13, 14, 16, 20, 24, 32],
         ),
         ("Radius::", &["Sm", "Md", "Lg", "Xl"], &[4, 6, 8, 12]),
-        ("Size::", &["Sm", "Md", "Lg"], &[24, 28, 32]),
+        ("Size::", &["Small", "Medium", "Large"], &[24, 28, 32]),
         (
             "IconSize::",
             &["Xs", "Sm", "Md", "Lg", "Xl", "Xxl"],

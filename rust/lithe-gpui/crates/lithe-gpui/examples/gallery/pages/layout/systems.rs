@@ -4,7 +4,10 @@ use gpui::{
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
-    layout::{Dock, DockPanel, DockSide, FloatingPanel, PaneGroup, Transform, Viewport, Workspace},
+    layout::{
+        Dock, DockPanel, DockSide, FloatingPanel, PaneGroup, PanelTitle, Transform, Viewport,
+        Workspace,
+    },
     primitives::IconName,
     theme::{ActiveTheme, Radius, TextSize},
     typography::{Caption, Paragraph},
@@ -19,7 +22,7 @@ use crate::{
 fn demo_dock(cx: &mut App) -> Dock {
     let panel = |id: &str, title: &str, icon| DockPanel {
         id: SharedString::from(id.to_string()),
-        title: SharedString::from(title.to_string()),
+        title: PanelTitle::Text(SharedString::from(title.to_string())),
         icon,
     };
     let mut dock = Dock::new(

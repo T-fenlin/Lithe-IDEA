@@ -69,6 +69,7 @@ mod tests {
                 ],
                 active: [Some("files".into()), None, None, None],
                 sizes: [15.0, 17.5, 12.0, 13.75],
+                hidden: Vec::new(),
             },
             panes: PaneLayout::Split {
                 axis: Axis::Horizontal,

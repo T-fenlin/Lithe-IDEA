@@ -33,10 +33,10 @@ impl Dock {
             .px_1()
             .border_b_1()
             .border_color(theme.colors.border)
-            .children(self.on_side(side).into_iter().map(|ix| {
+            .children(self.shown_on_side(side).into_iter().map(|ix| {
                 let panel = &self.panels[ix];
                 let selected = active == Some(ix);
-                let (id, title, icon) = (panel.id.clone(), panel.title.clone(), panel.icon);
+                let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
                 let drag = DraggedPanel {
                     dock: cx.entity_id(),
                     id: id.clone(),
@@ -80,7 +80,14 @@ impl Dock {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let active = self.active[side.index()]?;
+        // The side shows the chosen panel when it is open, else its first open
+        // panel, and nothing at all once every panel on it is closed.
+        let shown = self.shown_on_side(side);
+        let active = shown
+            .iter()
+            .copied()
+            .find(|ix| Some(*ix) == self.active[side.index()])
+            .or_else(|| shown.first().copied())?;
         let size = self.sizes[side.index()];
         let panel_id = self.panels[active].id.clone();
         let body = (self.content)(&panel_id, window, cx);
@@ -298,7 +305,7 @@ impl Dock {
         let dock_id = id.clone();
         FloatingPanel::new(
             SharedString::from(format!("float-{id}")),
-            panel.title.clone(),
+            panel.title.resolve(cx),
             start,
         )
         .w(cx.theme().sidebar_width(false))

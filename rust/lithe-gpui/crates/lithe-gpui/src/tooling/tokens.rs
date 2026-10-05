@@ -199,9 +199,9 @@ impl RenderOnce for DesignTokenViewer {
             )
         });
         let controls = [
-            (Size::Small, "Sm"),
-            (Size::Medium, "Md"),
-            (Size::Large, "Lg"),
+            (Size::Small, "Small"),
+            (Size::Medium, "Medium"),
+            (Size::Large, "Large"),
         ]
         .map(|(size, name)| {
             let height = theme.control_height(size);
