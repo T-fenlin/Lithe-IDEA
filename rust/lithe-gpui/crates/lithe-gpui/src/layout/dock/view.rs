@@ -80,6 +80,13 @@ impl Dock {
                 let off = self.is_zoomed(&id);
                 let close_id = id.clone();
                 let float_id = id.clone();
+                // One strip per side, so the controls.sc ids name the side: two sides
+                // sharing an id would collide in the accessibility tree.
+                let (close_el, float_el, zoom_el) = (
+                    SharedString::from(format!("dock-close-{side:?}")),
+                    SharedString::from(format!("dock-float-{side:?}")),
+                    SharedString::from(format!("dock-zoom-{side:?}")),
+                );
                 // The heading of the panel a side is showing: close it, float it, or
                 // fill the dock with it.
                 div()
@@ -87,7 +94,7 @@ impl Dock {
                     .items_center()
                     .gap_0p5()
                     .child(
-                        Button::new("dock-close")
+                        Button::new(close_el.clone())
                             .icon(IconName::X)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
@@ -95,7 +102,7 @@ impl Dock {
                             .on_click(cx.listener(move |dock, _, _, cx| dock.hide(&close_id, cx))),
                     )
                     .child(
-                        Button::new("dock-float")
+                        Button::new(float_el.clone())
                             .icon(IconName::PictureInPicture2)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
@@ -105,7 +112,7 @@ impl Dock {
                             ),
                     )
                     .child(
-                        Button::new("dock-zoom")
+                        Button::new(zoom_el.clone())
                             .icon(if off {
                                 IconName::Minimize2
                             } else {
