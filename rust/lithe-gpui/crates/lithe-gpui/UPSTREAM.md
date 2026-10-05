@@ -1,7 +1,12 @@
 # 上游来源与改动记录
 
-本 crate 是 **Ely GPUI Components** 的衍生副本（vendored fork）。移植决策见
-`.agents/notes/implemented/architecture/` 下记录该决策的 Agent Note。
+本 crate 起步于 **Ely GPUI Components** 的源码拷贝。决策见
+`.agents/notes/implemented/architecture/2026-10-05-lithe-gpui-vendored-from-ely.md`。
+
+> **维护政策（2026-10-05 定）：本 crate 不与上游对接、不跟踪上游。**
+> 这是一次性 fork，此后按 Lithe 自己的需要维护；上游只作为**组件参考**。
+> 因此本文档的作用是**来源署名与改动留痕**，不再是"同步流程"。
+> 上游仅 5 天历史、每天约 20 次提交，跟踪它没有收益。
 
 ## 来源
 
@@ -77,17 +82,15 @@ MIT 允许衍生与再分发，**前提是保留版权声明与许可文本**。
   未对齐 gpui-kit 的 `Sizable`/路径注入等约定。
 - **语义差异**：仅修到能编译为止；同名 API 的行为差异需靠测试逐步暴露。
 
-## 同步上游
+## 与上游的关系
 
-上游仍在演进。同步时：
+**不跟踪。** 本 crate 是 Lithe 自己的代码，上游只作**组件参考**：需要某处做法时
+照抄思路或拿它做对照，不采用 git 依赖、不做定期 diff 同步、不为对齐上游而改动。
 
-```bash
-# 在 .artifacts 下拉取上游
-git -C .artifacts/ely fetch --depth 1 origin main
-git -C .artifacts/ely log -1 --format='%H %ad %s' --date=short
+若将来确实要取上游某一处改动，人工比对后手工合入，并在下面留一行记录。
 
-# 对照差异（先看改了什么，再决定是否跟进）
-git -C .artifacts/ely diff <旧rev> HEAD --stat -- src/
-```
+## 改动记录
 
-跟进后更新本文件的**提交**行，并重跑上面的标识符替换（上游可能新增 `ely_*` 标识）。
+| 日期 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| 2026-10-05 | 移植：包重命名、标识符改名、数据串保持原样 | 见上文"本副本的改动清单" |
