@@ -201,7 +201,8 @@ impl RenderOnce for CsvImporter {
         )
         .preview(records.iter().cloned())
         .child(
-            Checkbox::new((id, "headed"), first_names)
+            Checkbox::new((id, "headed"))
+                .checked(first_names)
                 .label("The first row names the columns")
                 .on_change(move |on, _, cx| {
                     turned.update(cx, |headed, cx| {

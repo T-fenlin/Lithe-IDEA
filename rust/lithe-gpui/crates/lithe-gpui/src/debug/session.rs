@@ -212,7 +212,8 @@ impl RenderOnce for BreakpointList {
                 let group = SharedString::from(format!("breakpoint-{ix}"));
                 let toggle = self.on_toggle.clone();
                 let (open, remove) = (self.on_open.clone(), self.on_remove.clone());
-                let check = Checkbox::new((self.id.clone(), format!("on-{ix}")), point.enabled);
+                let check =
+                    Checkbox::new((self.id.clone(), format!("on-{ix}"))).checked(point.enabled);
                 let check = match toggle {
                     Some(toggle) => check.on_change(move |on, window, cx| {
                         cx.stop_propagation();

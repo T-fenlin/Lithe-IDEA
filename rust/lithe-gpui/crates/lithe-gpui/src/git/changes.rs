@@ -313,8 +313,9 @@ impl RenderOnce for CommitInput {
         } else {
             format!("Commit to {}", self.branch)
         };
-        let amend =
-            Checkbox::new((self.id.clone(), "amend"), self.amend).label("Amend last commit");
+        let amend = Checkbox::new((self.id.clone(), "amend"))
+            .checked(self.amend)
+            .label("Amend last commit");
         let amend = match self.on_amend {
             Some(on_amend) => amend.on_change(move |on, window, cx| on_amend(on, window, cx)),
             None => amend,

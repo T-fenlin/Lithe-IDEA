@@ -77,7 +77,8 @@ impl RenderOnce for ConsentDialog {
             ),
         )
         .child(
-            Checkbox::new((id.clone(), "agree"), agreed)
+            Checkbox::new((id.clone(), "agree"))
+                .checked(agreed)
                 .label(self.agreement)
                 .on_change(move |on, _, cx| {
                     ticked.update(cx, |state, cx| {

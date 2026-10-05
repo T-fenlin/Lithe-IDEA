@@ -194,12 +194,10 @@ impl RenderOnce for TableStructureEditor {
                         .tone(Tone::Info)
                         .into_any_element()
                 }
-                key => Checkbox::new(
-                    (id.clone(), format!("primary-{ix}")),
-                    *key == Some(FieldKey::Primary),
-                )
-                .on_change(move |on, window, cx| primary(on, window, cx))
-                .into_any_element(),
+                key => Checkbox::new((id.clone(), format!("primary-{ix}")))
+                    .checked(*key == Some(FieldKey::Primary))
+                    .on_change(move |on, window, cx| primary(on, window, cx))
+                    .into_any_element(),
             };
             let parts = [
                 InlineEdit::new((id.clone(), format!("name-{ix}")), field.name.clone())
@@ -209,7 +207,8 @@ impl RenderOnce for TableStructureEditor {
                     .selected(field.ty.clone())
                     .on_change(move |ty, window, cx| typed(ty.clone(), window, cx))
                     .into_any_element(),
-                Checkbox::new((id.clone(), format!("empty-{ix}")), field.nullable)
+                Checkbox::new((id.clone(), format!("empty-{ix}")))
+                    .checked(field.nullable)
                     .on_change(move |on, window, cx| empty(on, window, cx))
                     .into_any_element(),
                 key,

@@ -404,7 +404,8 @@ impl RenderOnce for WelcomePage {
                 .child(div().flex_1().child(action.label.clone()))
                 .children(action.keys.as_ref().map(|keys| KbdCombo::new(keys)))
         });
-        let show = Checkbox::new((self.id.clone(), "show"), self.show_at_start)
+        let show = Checkbox::new((self.id.clone(), "show"))
+            .checked(self.show_at_start)
             .label("Show this page at startup");
         let show = match self.on_show {
             Some(on_show) => show.on_change(move |on, window, cx| on_show(on, window, cx)),

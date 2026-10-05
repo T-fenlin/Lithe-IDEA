@@ -227,7 +227,8 @@ struct Agree {
 impl Render for Agree {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity();
-        Checkbox::new("agree", self.on)
+        Checkbox::new("agree")
+            .checked(self.on)
             .label("Agree")
             .on_change(move |on, _, cx| {
                 view.update(cx, |view, cx| {

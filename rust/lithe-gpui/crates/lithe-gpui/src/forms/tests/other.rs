@@ -157,7 +157,7 @@ impl Render for Worded {
         let label = "Projects/Atrium/Recordings/Walkthrough of the atrium at noon.mov";
         div()
             .w(px(200.0))
-            .child(Checkbox::new("worded", false).label(label))
+            .child(Checkbox::new("worded").checked(false).label(label))
             .child(RadioGroup::new(
                 "worded-radios",
                 [Choice::new("one", label)],

@@ -158,7 +158,8 @@ impl RenderOnce for SignupForm {
                     .child(rules),
             )
             .children(self.terms.map(|terms| {
-                Checkbox::new((id.clone(), "terms"), agreed)
+                Checkbox::new((id.clone(), "terms"))
+                    .checked(agreed)
                     .label(terms)
                     .on_change(move |on, _, cx| {
                         accepted.update(cx, |accepted, cx| {

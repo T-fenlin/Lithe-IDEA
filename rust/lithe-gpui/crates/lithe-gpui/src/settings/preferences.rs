@@ -149,7 +149,8 @@ impl RenderOnce for NotificationSettings {
                         }
                     },
                 );
-                Checkbox::new((id.clone(), format!("{kind}-{channel}")), on)
+                Checkbox::new((id.clone(), format!("{kind}-{channel}")))
+                    .checked(on)
                     .label(channel.clone())
                     .on_change(set)
             });

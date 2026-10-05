@@ -166,7 +166,8 @@ impl RenderOnce for DuplicateFinder {
                 .count();
             let copies = group.paths.iter().enumerate().map(|(c, path)| {
                 let on = marked.contains(path);
-                let check = Checkbox::new((self.id.clone(), format!("copy-{g}-{c}")), on)
+                let check = Checkbox::new((self.id.clone(), format!("copy-{g}-{c}")))
+                    .checked(on)
                     .label(path.clone())
                     .disabled(self.on_mark.is_none() || (!on && left == 1));
                 match self.on_mark.clone() {

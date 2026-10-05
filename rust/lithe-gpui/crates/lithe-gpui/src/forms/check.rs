@@ -107,14 +107,21 @@ pub struct Checkbox {
 }
 
 impl Checkbox {
-    pub fn new(id: impl Into<ElementId>, state: impl Into<CheckState>) -> Self {
+    pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
-            state: state.into(),
+            state: CheckState::default(),
             label: None,
             disabled: false,
             on_change: None,
         }
+    }
+
+    /// Whether the box is on. Accepts a bool (gpui-kit.s `.checked(true)`) or a
+    /// [`CheckState`] when the box can also be mixed.
+    pub fn checked(mut self, checked: impl Into<CheckState>) -> Self {
+        self.state = checked.into();
+        self
     }
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
@@ -260,7 +267,8 @@ impl RenderOnce for CheckboxGroup {
                 let (choices, selected, on_change) =
                     (choices.clone(), selected.clone(), on_change.clone());
                 let value = choice.value.clone();
-                Checkbox::new(("check", ix), selected.contains(&choice.value))
+                Checkbox::new(("check", ix))
+                    .checked(selected.contains(&choice.value))
                     .label(choice.label.clone())
                     .disabled(choice.disabled)
                     .on_change(move |on, window, cx| {

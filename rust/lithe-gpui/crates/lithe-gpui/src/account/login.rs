@@ -160,7 +160,8 @@ impl RenderOnce for LoginForm {
                     .justify_between()
                     .gap_2()
                     .child(
-                        Checkbox::new((id.clone(), "remember"), remembered)
+                        Checkbox::new((id.clone(), "remember"))
+                            .checked(remembered)
                             .label("Keep me signed in")
                             .on_change(move |on, _, cx| {
                                 remember.update(cx, |remember, cx| {

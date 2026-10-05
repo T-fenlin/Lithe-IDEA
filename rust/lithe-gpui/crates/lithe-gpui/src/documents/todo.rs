@@ -42,7 +42,7 @@ impl TodoItem {
 impl RenderOnce for TodoItem {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let colors = &cx.theme().colors;
-        let check = Checkbox::new(self.id, self.done);
+        let check = Checkbox::new(self.id).checked(self.done);
         let check = match self.on_toggle {
             Some(on_toggle) => check.on_change(move |done, window, cx| on_toggle(done, window, cx)),
             None => check,

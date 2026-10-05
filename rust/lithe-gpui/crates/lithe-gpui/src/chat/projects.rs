@@ -389,7 +389,8 @@ impl RenderOnce for ConversationExport {
                     }),
                 )
                 .children(self.thinking.map(|(included, change)| {
-                    Checkbox::new((self.id.clone(), "thinking"), CheckState::from(included))
+                    Checkbox::new((self.id.clone(), "thinking"))
+                        .checked(CheckState::from(included))
                         .label("Include the thinking behind each answer")
                         .on_change(move |on, window, cx| change(on, window, cx))
                 })),

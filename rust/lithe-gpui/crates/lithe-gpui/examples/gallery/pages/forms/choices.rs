@@ -49,7 +49,8 @@ pub fn checkboxes(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
             .gap_2()
             .w(px(280.0))
             .child(
-                Checkbox::new("check-all", parent)
+                Checkbox::new("check-all")
+                    .checked(parent)
                     .label("All notifications")
                     .on_change(move |on, _, cx| {
                         set(&all, if on { open.clone() } else { Vec::new() }, cx)
@@ -63,7 +64,7 @@ pub fn checkboxes(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
                 ),
             ),
     ))
-    .child(code("Checkbox::new(id, CheckState::Mixed)", cx))
+    .child(code("Checkbox::new(id).checked(CheckState::Mixed)", cx))
 }
 
 pub fn radios(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {

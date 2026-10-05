@@ -58,13 +58,13 @@ impl BlockEditor {
             .into_any_element(),
             BlockKind::Todo(done) => {
                 let (entity, done) = (cx.entity(), *done);
-                let check = Checkbox::new((id.clone(), format!("todo-{key}")), done).on_change(
-                    move |on, _, cx| {
+                let check = Checkbox::new((id.clone(), format!("todo-{key}")))
+                    .checked(done)
+                    .on_change(move |on, _, cx| {
                         entity.update(cx, |editor, cx| {
                             editor.set_kind(key, BlockKind::Todo(on), cx)
                         })
-                    },
-                );
+                    });
                 row(
                     check.into_any_element(),
                     self.field_view(block, 0, window, cx),
