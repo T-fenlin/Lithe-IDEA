@@ -118,52 +118,54 @@ pub(super) fn time_dialog(
                 "That time has passed.",
             ))
     });
-    let dialog = Dialog::new((id.clone(), "dialog"), ask.title, move |_, cx| {
-        closing.update(cx, |picking, cx| {
-            *picking = Picking::default();
-            cx.notify();
-        })
-    })
-    .detail(ask.detail)
-    .child(
-        div()
-            .debug_selector(|| "time-dialog".into())
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(
-                DateTimePicker::new((id.clone(), "when"), chosen).on_change(move |at, _, cx| {
-                    choosing.update(cx, |picking, cx| {
-                        picking.chosen = Some(at);
-                        cx.notify();
-                    })
-                }),
-            )
-            .children(late),
-    )
-    .action({
-        let id = id.clone();
-        move |close| {
-            Button::new((id, "cancel"))
-                .label("Cancel")
-                .variant(ButtonVariant::Ghost)
-                .on_click(move |_, window, cx| close(window, cx))
-        }
-    })
-    .action(move |close| {
-        Button::new((id.clone(), "take"))
-            .label(SharedString::from(ask.action))
-            .variant(ButtonVariant::Primary)
-            .disabled(ahead.is_none())
-            .on_click(move |_, window, cx| {
-                let at = ahead.expect("the action waits for a time ahead");
-                log::info!("time dialog {id:?}: {at}");
-                close(window, cx);
-                if let Some(on_time) = &on_time {
-                    on_time(at, window, cx);
-                }
+    let dialog = Dialog::new((id.clone(), "dialog"))
+        .title(ask.title)
+        .on_close(move |_, cx| {
+            closing.update(cx, |picking, cx| {
+                *picking = Picking::default();
+                cx.notify();
             })
-    });
+        })
+        .detail(ask.detail)
+        .child(
+            div()
+                .debug_selector(|| "time-dialog".into())
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(DateTimePicker::new((id.clone(), "when"), chosen).on_change(
+                    move |at, _, cx| {
+                        choosing.update(cx, |picking, cx| {
+                            picking.chosen = Some(at);
+                            cx.notify();
+                        })
+                    },
+                ))
+                .children(late),
+        )
+        .action({
+            let id = id.clone();
+            move |close| {
+                Button::new((id, "cancel"))
+                    .label("Cancel")
+                    .variant(ButtonVariant::Ghost)
+                    .on_click(move |_, window, cx| close(window, cx))
+            }
+        })
+        .action(move |close| {
+            Button::new((id.clone(), "take"))
+                .label(SharedString::from(ask.action))
+                .variant(ButtonVariant::Primary)
+                .disabled(ahead.is_none())
+                .on_click(move |_, window, cx| {
+                    let at = ahead.expect("the action waits for a time ahead");
+                    log::info!("time dialog {id:?}: {at}");
+                    close(window, cx);
+                    if let Some(on_time) = &on_time {
+                        on_time(at, window, cx);
+                    }
+                })
+        });
     Some(dialog)
 }
 

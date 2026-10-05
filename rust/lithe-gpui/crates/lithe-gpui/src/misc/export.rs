@@ -118,32 +118,34 @@ impl RenderOnce for ExportDialog {
         let (cancelled, exported) = (id.clone(), id.clone());
         let answered = Rc::new(Cell::new(false));
         let answer = answered.clone();
-        Dialog::new(id.clone(), self.title, move |window, cx| {
-            if !answered.get() {
-                log::info!("export dialog {cancelled:?}: cancelled");
-                cancel(window, cx)
-            }
-        })
-        .child(div().flex().flex_col().gap_2().children(cards))
-        .action({
-            let id = id.clone();
-            move |close| {
-                Button::new((id, "cancel"))
-                    .label("Cancel")
-                    .variant(ButtonVariant::Ghost)
-                    .on_click(move |_, window, cx| close(window, cx))
-            }
-        })
-        .action(move |close| {
-            Button::new((id, "export"))
-                .label("Export")
-                .primary()
-                .on_click(move |_, window, cx| {
-                    log::info!("export dialog {exported:?}: {format:?}");
-                    answer.set(true);
-                    close(window, cx);
-                    export(format, window, cx);
-                })
-        })
+        Dialog::new(id.clone())
+            .title(self.title)
+            .on_close(move |window, cx| {
+                if !answered.get() {
+                    log::info!("export dialog {cancelled:?}: cancelled");
+                    cancel(window, cx)
+                }
+            })
+            .child(div().flex().flex_col().gap_2().children(cards))
+            .action({
+                let id = id.clone();
+                move |close| {
+                    Button::new((id, "cancel"))
+                        .label("Cancel")
+                        .variant(ButtonVariant::Ghost)
+                        .on_click(move |_, window, cx| close(window, cx))
+                }
+            })
+            .action(move |close| {
+                Button::new((id, "export"))
+                    .label("Export")
+                    .primary()
+                    .on_click(move |_, window, cx| {
+                        log::info!("export dialog {exported:?}: {format:?}");
+                        answer.set(true);
+                        close(window, cx);
+                        export(format, window, cx);
+                    })
+            })
     }
 }

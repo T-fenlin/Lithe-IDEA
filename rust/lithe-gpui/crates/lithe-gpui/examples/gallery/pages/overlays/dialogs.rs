@@ -75,7 +75,9 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let overlay: Option<AnyElement> = (*open.read(cx)).map(|which| {
         let (saved, confirmed, renamed) = (said.clone(), said.clone(), said.clone());
         match which {
-            Open::Profile => Dialog::new("profile", "Edit profile", shut.clone())
+            Open::Profile => Dialog::new("profile")
+                .title("Edit profile")
+                .on_close(shut.clone())
                 .detail("How others see you across the workspace.")
                 .child(
                     div()
@@ -132,7 +134,9 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     set(&renamed, Some(format!("renamed to {text}").into()), cx)
                 })
                 .into_any_element(),
-            Open::Fullscreen => Dialog::new("notes", "Release notes", shut.clone())
+            Open::Fullscreen => Dialog::new("notes")
+                .title("Release notes")
+                .on_close(shut.clone())
                 .detail("Version 0.9 · September 2026")
                 .fullscreen()
                 .child(

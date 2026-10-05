@@ -369,47 +369,47 @@ impl RenderOnce for ConversationExport {
         let (pick, export, close) = (self.on_format, self.on_export, self.on_close.clone());
         let format = self.format.clone();
         let (cancel, done) = ((self.id.clone(), "cancel"), (self.id.clone(), "export"));
-        Dialog::new(self.id.clone(), "Export conversation", move |window, cx| {
-            close(window, cx)
-        })
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_4()
-                .child(
-                    RadioGroup::new(
-                        (self.id.clone(), "format"),
-                        FORMATS.map(|(value, label)| Choice::new(value, label)),
+        Dialog::new(self.id.clone())
+            .title("Export conversation")
+            .on_close(move |window, cx| close(window, cx))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_4()
+                    .child(
+                        RadioGroup::new(
+                            (self.id.clone(), "format"),
+                            FORMATS.map(|(value, label)| Choice::new(value, label)),
+                        )
+                        .selected(self.format)
+                        .on_change(move |next, window, cx| {
+                            log::info!("export: format {next}");
+                            pick(next, window, cx)
+                        }),
                     )
-                    .selected(self.format)
-                    .on_change(move |next, window, cx| {
-                        log::info!("export: format {next}");
-                        pick(next, window, cx)
-                    }),
-                )
-                .children(self.thinking.map(|(included, change)| {
-                    Checkbox::new((self.id.clone(), "thinking"))
-                        .checked(CheckState::from(included))
-                        .label("Include the thinking behind each answer")
-                        .on_change(move |on, window, cx| change(on, window, cx))
-                })),
-        )
-        .action(move |close| {
-            Button::new(cancel)
-                .label("Cancel")
-                .variant(ButtonVariant::Secondary)
-                .on_click(move |_, window, cx| close(window, cx))
-        })
-        .action(move |close| {
-            Button::new(done)
-                .label("Export")
-                .variant(ButtonVariant::Primary)
-                .on_click(move |_, window, cx| {
-                    log::info!("export: {format}");
-                    export(window, cx);
-                    close(window, cx)
-                })
-        })
+                    .children(self.thinking.map(|(included, change)| {
+                        Checkbox::new((self.id.clone(), "thinking"))
+                            .checked(CheckState::from(included))
+                            .label("Include the thinking behind each answer")
+                            .on_change(move |on, window, cx| change(on, window, cx))
+                    })),
+            )
+            .action(move |close| {
+                Button::new(cancel)
+                    .label("Cancel")
+                    .variant(ButtonVariant::Secondary)
+                    .on_click(move |_, window, cx| close(window, cx))
+            })
+            .action(move |close| {
+                Button::new(done)
+                    .label("Export")
+                    .variant(ButtonVariant::Primary)
+                    .on_click(move |_, window, cx| {
+                        log::info!("export: {format}");
+                        export(window, cx);
+                        close(window, cx)
+                    })
+            })
     }
 }

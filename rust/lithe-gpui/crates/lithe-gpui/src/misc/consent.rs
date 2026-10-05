@@ -60,68 +60,70 @@ impl RenderOnce for ConsentDialog {
         let (declined, accepted) = (id.clone(), id.clone());
         let answered = Rc::new(Cell::new(false));
         let answer = answered.clone();
-        Dialog::new(id.clone(), self.title, move |window, cx| {
-            if !answered.get() {
-                log::info!("consent dialog {declined:?}: declined");
-                decline(window, cx)
-            }
-        })
-        .child(
-            div().flex().child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(theme.text_size(TextSize::Sm))
-                    .text_color(colors.fg)
-                    .child(self.terms),
-            ),
-        )
-        .child(
-            Checkbox::new((id.clone(), "agree"))
-                .checked(agreed)
-                .label(self.agreement)
-                .on_change(move |on, _, cx| {
-                    ticked.update(cx, |state, cx| {
-                        *state = (on, false);
-                        cx.notify();
-                    })
-                }),
-        )
-        .when(nudged, |dialog| {
-            dialog.child(
-                div()
-                    .debug_selector(|| "consent-tick-first".into())
-                    .text_size(theme.text_size(TextSize::Sm))
-                    .text_color(colors.danger)
-                    .child("Tick the box to agree first."),
+        Dialog::new(id.clone())
+            .title(self.title)
+            .on_close(move |window, cx| {
+                if !answered.get() {
+                    log::info!("consent dialog {declined:?}: declined");
+                    decline(window, cx)
+                }
+            })
+            .child(
+                div().flex().child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(theme.text_size(TextSize::Sm))
+                        .text_color(colors.fg)
+                        .child(self.terms),
+                ),
             )
-        })
-        .action({
-            let id = id.clone();
-            move |close| {
-                Button::new((id, "decline"))
-                    .label("Decline")
-                    .variant(ButtonVariant::Ghost)
-                    .on_click(move |_, window, cx| close(window, cx))
-            }
-        })
-        .action(move |close| {
-            Button::new((id, "accept"))
-                .label("Accept")
-                .primary()
-                .on_click(move |_, window, cx| {
-                    if !agreed {
-                        asked.update(cx, |state, cx| {
-                            state.1 = true;
+            .child(
+                Checkbox::new((id.clone(), "agree"))
+                    .checked(agreed)
+                    .label(self.agreement)
+                    .on_change(move |on, _, cx| {
+                        ticked.update(cx, |state, cx| {
+                            *state = (on, false);
                             cx.notify();
-                        });
-                        return;
-                    }
-                    log::info!("consent dialog {accepted:?}: accepted");
-                    answer.set(true);
-                    close(window, cx);
-                    accept(window, cx);
-                })
-        })
+                        })
+                    }),
+            )
+            .when(nudged, |dialog| {
+                dialog.child(
+                    div()
+                        .debug_selector(|| "consent-tick-first".into())
+                        .text_size(theme.text_size(TextSize::Sm))
+                        .text_color(colors.danger)
+                        .child("Tick the box to agree first."),
+                )
+            })
+            .action({
+                let id = id.clone();
+                move |close| {
+                    Button::new((id, "decline"))
+                        .label("Decline")
+                        .variant(ButtonVariant::Ghost)
+                        .on_click(move |_, window, cx| close(window, cx))
+                }
+            })
+            .action(move |close| {
+                Button::new((id, "accept"))
+                    .label("Accept")
+                    .primary()
+                    .on_click(move |_, window, cx| {
+                        if !agreed {
+                            asked.update(cx, |state, cx| {
+                                state.1 = true;
+                                cx.notify();
+                            });
+                            return;
+                        }
+                        log::info!("consent dialog {accepted:?}: accepted");
+                        answer.set(true);
+                        close(window, cx);
+                        accept(window, cx);
+                    })
+            })
     }
 }

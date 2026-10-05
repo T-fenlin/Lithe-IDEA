@@ -478,26 +478,24 @@ impl RenderOnce for ShareDialog {
             })
         };
         let (on_close, done) = (self.on_close.clone(), (self.id.clone(), "done"));
-        Dialog::new(
-            self.id.clone(),
-            format!("Share “{}”", self.title),
-            move |window, cx| on_close(window, cx),
-        )
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .gap_5()
-                .children(self.invite)
-                .children(section("People with access", self.access))
-                .children(section("General access", self.link)),
-        )
-        .action(move |close| {
-            Button::new(done)
-                .label("Done")
-                .variant(ButtonVariant::Primary)
-                .on_click(move |_, window, cx| close(window, cx))
-        })
+        Dialog::new(self.id.clone())
+            .title(format!("Share “{}”", self.title))
+            .on_close(move |window, cx| on_close(window, cx))
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .gap_5()
+                    .children(self.invite)
+                    .children(section("People with access", self.access))
+                    .children(section("General access", self.link)),
+            )
+            .action(move |close| {
+                Button::new(done)
+                    .label("Done")
+                    .variant(ButtonVariant::Primary)
+                    .on_click(move |_, window, cx| close(window, cx))
+            })
     }
 }

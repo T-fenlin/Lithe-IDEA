@@ -75,40 +75,42 @@ impl RenderOnce for IncomingCallDialog {
         // Every way out runs this close; only Accept answers first.
         let answered = Rc::new(Cell::new(false));
         let answer = answered.clone();
-        Dialog::new(self.id, self.caller, move |window, cx| {
-            if !answered.get() {
-                log::info!("incoming call {caller}: declined");
-                decline(window, cx)
-            }
-        })
-        .detail(kind)
-        .held()
-        .child(
-            div()
-                .debug_selector(|| "incoming-call".into())
-                .flex()
-                .justify_center()
-                .py_4()
-                .child(Pulse::new((id, "ring")).rounded_full().child(avatar)),
-        )
-        .action(move |close| {
-            Button::new((decline_id, "decline"))
-                .label("Decline")
-                .icon(IconName::PhoneOff)
-                .variant(ButtonVariant::Danger)
-                .on_click(move |_, window, cx| close(window, cx))
-        })
-        .action(move |close| {
-            Button::new((accept_id, "accept"))
-                .label("Accept")
-                .icon(icon)
-                .variant(ButtonVariant::Success)
-                .on_click(move |_, window, cx| {
-                    log::info!("incoming call {told}: accepted");
-                    answer.set(true);
-                    close(window, cx);
-                    accept(window, cx)
-                })
-        })
+        Dialog::new(self.id)
+            .title(self.caller)
+            .on_close(move |window, cx| {
+                if !answered.get() {
+                    log::info!("incoming call {caller}: declined");
+                    decline(window, cx)
+                }
+            })
+            .detail(kind)
+            .held()
+            .child(
+                div()
+                    .debug_selector(|| "incoming-call".into())
+                    .flex()
+                    .justify_center()
+                    .py_4()
+                    .child(Pulse::new((id, "ring")).rounded_full().child(avatar)),
+            )
+            .action(move |close| {
+                Button::new((decline_id, "decline"))
+                    .label("Decline")
+                    .icon(IconName::PhoneOff)
+                    .variant(ButtonVariant::Danger)
+                    .on_click(move |_, window, cx| close(window, cx))
+            })
+            .action(move |close| {
+                Button::new((accept_id, "accept"))
+                    .label("Accept")
+                    .icon(icon)
+                    .variant(ButtonVariant::Success)
+                    .on_click(move |_, window, cx| {
+                        log::info!("incoming call {told}: accepted");
+                        answer.set(true);
+                        close(window, cx);
+                        accept(window, cx)
+                    })
+            })
     }
 }

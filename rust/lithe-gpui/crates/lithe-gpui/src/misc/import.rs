@@ -208,64 +208,66 @@ impl RenderOnce for ImportDialog {
         let (cancelled, imported, asked) = (id.clone(), id.clone(), mapping.clone());
         let answered = Rc::new(Cell::new(false));
         let answer = answered.clone();
-        Dialog::new(id.clone(), self.title, move |window, cx| {
-            if !answered.get() {
-                log::info!("import dialog {cancelled:?}: cancelled");
-                cancel(window, cx)
-            }
-        })
-        .children(self.body)
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_3()
-                .text_size(theme.text_size(TextSize::Sm))
-                .children(rows),
-        )
-        .when(!self.rows.is_empty(), |dialog| {
-            dialog.child(
+        Dialog::new(id.clone())
+            .title(self.title)
+            .on_close(move |window, cx| {
+                if !answered.get() {
+                    log::info!("import dialog {cancelled:?}: cancelled");
+                    cancel(window, cx)
+                }
+            })
+            .children(self.body)
+            .child(
                 div()
-                    .debug_selector(|| "import-preview".into())
-                    .child(preview),
-            )
-        })
-        .when(nudged && !missing.is_empty(), |dialog| {
-            dialog.child(
-                div()
-                    .debug_selector(|| format!("import-missing-{}", missing.join(",")))
+                    .flex()
+                    .flex_col()
+                    .gap_3()
                     .text_size(theme.text_size(TextSize::Sm))
-                    .text_color(colors.danger)
-                    .child(format!("Choose a column for {}.", missing.join(", "))),
+                    .children(rows),
             )
-        })
-        .action({
-            let id = id.clone();
-            move |close| {
-                Button::new((id, "cancel"))
-                    .label("Cancel")
-                    .variant(ButtonVariant::Ghost)
-                    .on_click(move |_, window, cx| close(window, cx))
-            }
-        })
-        .action(move |close| {
-            Button::new((id, "import"))
-                .label("Import")
-                .primary()
-                .on_click(move |_, window, cx| {
-                    if !missing.is_empty() {
-                        asked.update(cx, |mapping, cx| {
-                            mapping.nudged = true;
-                            cx.notify();
-                        });
-                        return;
-                    }
-                    log::info!("import dialog {imported:?}: imported with {picked:?}");
-                    answer.set(true);
-                    close(window, cx);
-                    import(&picked, window, cx);
-                })
-        })
+            .when(!self.rows.is_empty(), |dialog| {
+                dialog.child(
+                    div()
+                        .debug_selector(|| "import-preview".into())
+                        .child(preview),
+                )
+            })
+            .when(nudged && !missing.is_empty(), |dialog| {
+                dialog.child(
+                    div()
+                        .debug_selector(|| format!("import-missing-{}", missing.join(",")))
+                        .text_size(theme.text_size(TextSize::Sm))
+                        .text_color(colors.danger)
+                        .child(format!("Choose a column for {}.", missing.join(", "))),
+                )
+            })
+            .action({
+                let id = id.clone();
+                move |close| {
+                    Button::new((id, "cancel"))
+                        .label("Cancel")
+                        .variant(ButtonVariant::Ghost)
+                        .on_click(move |_, window, cx| close(window, cx))
+                }
+            })
+            .action(move |close| {
+                Button::new((id, "import"))
+                    .label("Import")
+                    .primary()
+                    .on_click(move |_, window, cx| {
+                        if !missing.is_empty() {
+                            asked.update(cx, |mapping, cx| {
+                                mapping.nudged = true;
+                                cx.notify();
+                            });
+                            return;
+                        }
+                        log::info!("import dialog {imported:?}: imported with {picked:?}");
+                        answer.set(true);
+                        close(window, cx);
+                        import(&picked, window, cx);
+                    })
+            })
     }
 }
 

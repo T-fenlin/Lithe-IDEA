@@ -42,12 +42,14 @@ impl RenderOnce for KeyboardShortcutCheatsheet {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let first = self.search.read(cx).focus().clone();
         let on_close = self.on_close;
-        Dialog::new(self.id, "Keyboard shortcuts", move |window, cx| {
-            log::info!("shortcut cheatsheet: closed");
-            on_close(window, cx)
-        })
-        .focus_first(first)
-        .child(KeyboardShortcutsList::new(self.shortcuts, &self.search))
+        Dialog::new(self.id)
+            .title("Keyboard shortcuts")
+            .on_close(move |window, cx| {
+                log::info!("shortcut cheatsheet: closed");
+                on_close(window, cx)
+            })
+            .focus_first(first)
+            .child(KeyboardShortcutsList::new(self.shortcuts, &self.search))
     }
 }
 
@@ -92,22 +94,24 @@ impl RenderOnce for WhatsNewDialog {
             .fold(Changelog::new(), Changelog::release);
         let on_close = self.on_close;
         let done = (id.clone(), "done");
-        Dialog::new(id, "What's new", move |window, cx| {
-            log::info!("what's new: closed");
-            on_close(window, cx)
-        })
-        .child(
-            div()
-                .debug_selector(|| "whats-new-releases".into())
-                .child(changelog),
-        )
-        .action(move |close| {
-            div().debug_selector(|| "whats-new-done".into()).child(
-                Button::new(done)
-                    .label("Got it")
-                    .primary()
-                    .on_click(move |_, window, cx| close(window, cx)),
+        Dialog::new(id)
+            .title("What's new")
+            .on_close(move |window, cx| {
+                log::info!("what's new: closed");
+                on_close(window, cx)
+            })
+            .child(
+                div()
+                    .debug_selector(|| "whats-new-releases".into())
+                    .child(changelog),
             )
-        })
+            .action(move |close| {
+                div().debug_selector(|| "whats-new-done".into()).child(
+                    Button::new(done)
+                        .label("Got it")
+                        .primary()
+                        .on_click(move |_, window, cx| close(window, cx)),
+                )
+            })
     }
 }

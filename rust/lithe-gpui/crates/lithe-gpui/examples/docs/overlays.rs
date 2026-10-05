@@ -23,29 +23,30 @@ impl Render for Layers {
         let (opener, closer) = (cx.entity(), cx.entity());
         let toaster = self.toaster.clone();
         let dialog = self.open.then(|| {
-            Dialog::new("delete", "Delete notes.txt?", move |_, cx| {
-                closer.update(cx, |layers, cx| {
-                    layers.open = false;
-                    cx.notify();
-                })
-            })
-            .detail("It leaves the trash after 30 days.")
-            .action(|close| {
-                Button::new("cancel")
-                    .label("Cancel")
-                    .on_click(move |_, window, cx| close(window, cx))
-            })
-            .action(move |close| {
-                Button::new("confirm")
-                    .label("Delete")
-                    .primary()
-                    .on_click(move |_, window, cx| {
-                        close(window, cx);
-                        toaster.update(cx, |toaster, cx| {
-                            toaster.push(Toast::new("Deleted").severity(Severity::Success), cx);
-                        });
+            Dialog::new("delete")
+                .title("Delete notes.txt?")
+                .on_close(move |_, cx| {
+                    closer.update(cx, |layers, cx| {
+                        layers.open = false;
+                        cx.notify();
                     })
-            })
+                })
+                .detail("It leaves the trash after 30 days.")
+                .action(|close| {
+                    Button::new("cancel")
+                        .label("Cancel")
+                        .on_click(move |_, window, cx| close(window, cx))
+                })
+                .action(move |close| {
+                    Button::new("confirm").label("Delete").primary().on_click(
+                        move |_, window, cx| {
+                            close(window, cx);
+                            toaster.update(cx, |toaster, cx| {
+                                toaster.push(Toast::new("Deleted").severity(Severity::Success), cx);
+                            });
+                        },
+                    )
+                })
         });
         FocusScope::new(&self.focus)
             .root()

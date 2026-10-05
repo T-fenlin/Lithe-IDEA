@@ -97,7 +97,9 @@ impl RenderOnce for AlertDialog {
         let (ok, label) = ((self.id.clone(), "ok"), self.label);
         let id = self.id.clone();
         let on_close = self.on_close;
-        Dialog::new(self.id, self.title, move |window, cx| on_close(window, cx))
+        Dialog::new(self.id)
+            .title(self.title)
+            .on_close(move |window, cx| on_close(window, cx))
             .held()
             .child(said(&id, Some(self.severity), self.message, cx))
             .action(move |close| {
@@ -168,7 +170,9 @@ impl RenderOnce for ConfirmDialog {
         let (cancel_id, confirm_id) = ((self.id.clone(), "cancel"), (self.id.clone(), "confirm"));
         let on_close = self.on_close;
         let cancel = i18n::text(cx, "dialog.cancel", &[]);
-        Dialog::new(self.id, self.title, move |window, cx| on_close(window, cx))
+        Dialog::new(self.id)
+            .title(self.title)
+            .on_close(move |window, cx| on_close(window, cx))
             .child(said(&id, None, self.message, cx))
             .action(move |close| {
                 Button::new(cancel_id)
@@ -325,7 +329,9 @@ impl RenderOnce for PromptDialog {
         );
         let cancel = i18n::text(cx, "dialog.cancel", &[]);
         let on_close = self.on_close;
-        Dialog::new(self.id, self.title, move |window, cx| on_close(window, cx))
+        Dialog::new(self.id)
+            .title(self.title)
+            .on_close(move |window, cx| on_close(window, cx))
             .focus_first(self.field.read(cx).focus().clone())
             .on_enter(move |close| Rc::new(move |window, cx| lifted(&close, window, cx)))
             .child(field)

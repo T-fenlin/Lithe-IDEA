@@ -38,14 +38,10 @@ pub struct Dialog {
 
 impl Dialog {
     /// Render it while open; `on_close` runs on Escape, a press on the scrim, or the close button.
-    pub fn new(
-        id: impl Into<ElementId>,
-        title: impl Into<SharedString>,
-        on_close: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
-            title: title.into(),
+            title: SharedString::default(),
             detail: None,
             body: SmallVec::new(),
             actions: SmallVec::new(),
@@ -53,8 +49,20 @@ impl Dialog {
             scrim_closes: true,
             fullscreen: false,
             first: None,
-            on_close: Rc::new(on_close),
+            on_close: Rc::new(|_, _| {}),
         }
+    }
+
+    /// The dialog.s heading.
+    pub fn title(mut self, title: impl Into<SharedString>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    /// Runs on Escape, a press on the scrim, or the close button.
+    pub fn on_close(mut self, on_close: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_close = Rc::new(on_close);
+        self
     }
 
     pub fn detail(mut self, text: impl Into<SharedString>) -> Self {

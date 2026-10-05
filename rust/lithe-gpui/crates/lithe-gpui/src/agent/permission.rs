@@ -53,35 +53,33 @@ impl RenderOnce for ToolApprovalDialog {
         let approved = Rc::new(Cell::new(false));
         let (answer, tool, chosen) = (self.on_answer, self.tool.clone(), approved.clone());
         let (deny, run) = ((self.id.clone(), "deny"), (self.id.clone(), "run"));
-        Dialog::new(
-            self.id.clone(),
-            format!("Run {}?", self.tool),
-            move |window, cx| {
+        Dialog::new(self.id.clone())
+            .title(format!("Run {}?", self.tool))
+            .on_close(move |window, cx| {
                 let approved = chosen.get();
                 log::info!(
                     "tool approval: {tool} {}",
                     if approved { "runs" } else { "denied" }
                 );
                 answer(approved, window, cx)
-            },
-        )
-        .when_some(self.detail, |dialog, detail| dialog.detail(detail))
-        .child(CodeBlock::new((self.id.clone(), "arguments"), self.arguments).language("json"))
-        .action(move |close| {
-            Button::new(deny)
-                .label("Deny")
-                .variant(ButtonVariant::Secondary)
-                .on_click(move |_, window, cx| close(window, cx))
-        })
-        .action(move |close| {
-            Button::new(run)
-                .label("Run")
-                .variant(ButtonVariant::Primary)
-                .on_click(move |_, window, cx| {
-                    approved.set(true);
-                    close(window, cx)
-                })
-        })
+            })
+            .when_some(self.detail, |dialog, detail| dialog.detail(detail))
+            .child(CodeBlock::new((self.id.clone(), "arguments"), self.arguments).language("json"))
+            .action(move |close| {
+                Button::new(deny)
+                    .label("Deny")
+                    .variant(ButtonVariant::Secondary)
+                    .on_click(move |_, window, cx| close(window, cx))
+            })
+            .action(move |close| {
+                Button::new(run)
+                    .label("Run")
+                    .variant(ButtonVariant::Primary)
+                    .on_click(move |_, window, cx| {
+                        approved.set(true);
+                        close(window, cx)
+                    })
+            })
     }
 }
 

@@ -78,7 +78,7 @@ pub fn previews(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(grid),
     ))
     .children(shown.map(|name| {
-        Dialog::new("files-quick-look", name.clone(), move |_, cx| {
+        Dialog::new("files-quick-look").title(name.clone()).on_close(move |_, cx| {
             change(&close, cx, |now| *now = None)
         })
         .child(div().w(px(420.)).child(preview(&name)))

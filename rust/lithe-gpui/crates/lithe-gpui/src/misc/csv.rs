@@ -137,27 +137,28 @@ impl RenderOnce for CsvImporter {
         let headed = window.use_keyed_state((id.clone(), "headed"), cx, |_, _| true);
         let rows = reading.read(cx).rows.clone();
         let cancel = self.on_cancel;
-        let rows = match rows {
-            Ok(rows) => rows,
-            Err(why) => {
-                return Dialog::new(id.clone(), self.title, move |window, cx| cancel(window, cx))
-                    .child(
-                        div()
-                            .debug_selector(|| "csv-unread".into())
-                            .child(InlineMessage::new(
+        let rows =
+            match rows {
+                Ok(rows) => rows,
+                Err(why) => {
+                    return Dialog::new(id.clone())
+                        .title(self.title)
+                        .on_close(move |window, cx| cancel(window, cx))
+                        .child(div().debug_selector(|| "csv-unread".into()).child(
+                            InlineMessage::new(
                                 Severity::Danger,
                                 format!("This file does not read as CSV: {why}."),
-                            )),
-                    )
-                    .action(move |close| {
-                        Button::new((id, "cancel"))
-                            .label("Cancel")
-                            .variant(ButtonVariant::Ghost)
-                            .on_click(move |_, window, cx| close(window, cx))
-                    })
-                    .into_any_element();
-            }
-        };
+                            ),
+                        ))
+                        .action(move |close| {
+                            Button::new((id, "cancel"))
+                                .label("Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .on_click(move |_, window, cx| close(window, cx))
+                        })
+                        .into_any_element();
+                }
+            };
         let first_names = *headed.read(cx);
         let width = rows[0].len();
         let (columns, data): (Vec<SharedString>, Vec<Vec<SharedString>>) = {

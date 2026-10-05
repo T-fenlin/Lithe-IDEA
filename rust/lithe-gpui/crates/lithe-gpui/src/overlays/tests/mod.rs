@@ -104,7 +104,9 @@ impl Render for Stage {
         );
         let sent = cx.entity();
         let overlay = self.open.map(|open| match open {
-            Open::Plain => Dialog::new("plain", "Plain", shut)
+            Open::Plain => Dialog::new("plain")
+                .title("Plain")
+                .on_close(shut)
                 .detail("A line of detail")
                 .into_any_element(),
             Open::Alert => AlertDialog::new("alert", Severity::Warning, "Alert", "Look", shut)
@@ -125,7 +127,9 @@ impl Render for Stage {
                     sent.update(cx, |stage, _| stage.log.push(text));
                 })
                 .into_any_element(),
-            Open::Tall => Dialog::new("tall", "Tall", shut)
+            Open::Tall => Dialog::new("tall")
+                .title("Tall")
+                .on_close(shut)
                 .child(div().relative().h(px(2000.0)).child({
                     let tall = self.tall.clone();
                     canvas(move |bounds, _, _| tall.set(bounds), |_, _, _, _| {})
@@ -446,7 +450,9 @@ struct Rising;
 impl Render for Rising {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div().size_full().child(
-            Dialog::new("rising", "Rising", |_, _| {})
+            Dialog::new("rising")
+                .title("Rising")
+                .on_close(|_, _| {})
                 .child(div().debug_selector(|| "rising-body".into()).h(px(40.0))),
         )
     }
