@@ -10,7 +10,7 @@ use super::button::{ButtonVariant, label_size, tone};
 use crate::{
     motion,
     primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
 };
 
 /// How long a hold takes to confirm.
@@ -45,7 +45,7 @@ pub struct ConfirmButton {
     label: SharedString,
     armed_label: SharedString,
     mode: ConfirmMode,
-    size: ControlSize,
+    size: Size,
     on_confirm: Option<OnConfirm>,
 }
 
@@ -64,7 +64,7 @@ impl ConfirmButton {
             },
             label,
             mode,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_confirm: None,
         }
     }
@@ -75,7 +75,7 @@ impl ConfirmButton {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -286,4 +286,10 @@ fn let_go(state: &gpui::Entity<Confirm>, cx: &mut App) {
         confirm._timer = None;
         cx.notify();
     });
+}
+
+impl crate::theme::Sizable for ConfirmButton {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
+    }
 }

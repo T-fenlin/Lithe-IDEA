@@ -9,7 +9,7 @@ use gpui::{
 use super::super::options::Run;
 use crate::{
     primitives::{FocusRing, Tooltip},
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
 };
 
 /// Checker cells over `bounds`, at least `round` wide; odd counts keep the corners light.
@@ -68,7 +68,7 @@ pub(crate) fn checker(radius: Rems, cx: &App) -> impl IntoElement + use<> {
 pub struct ColorSwatch {
     id: ElementId,
     color: Hsla,
-    size: ControlSize,
+    size: Size,
     selected: bool,
     tooltip: Option<SharedString>,
     on_click: Option<Run>,
@@ -79,14 +79,14 @@ impl ColorSwatch {
         Self {
             id: id.into(),
             color: color.into(),
-            size: ControlSize::Sm,
+            size: Size::Small,
             selected: false,
             tooltip: None,
             on_click: None,
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -195,7 +195,7 @@ impl RenderOnce for ColorPalette {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let gap = rems(0.375); // gap_1p5
-        let widest = (theme.control_height(ControlSize::Sm) + gap) * f32::from(self.columns) - gap;
+        let widest = (theme.control_height(Size::Small) + gap) * f32::from(self.columns) - gap;
         let swatches: Vec<_> = self
             .colors
             .into_iter()
@@ -264,5 +264,11 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+impl crate::theme::Sizable for ColorSwatch {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

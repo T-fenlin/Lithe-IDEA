@@ -6,7 +6,7 @@ use gpui::{
 use crate::{
     layout::{Collapsible, seeded::use_seeded},
     primitives::Disclosure,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// Labels and their values, one pair a row with the labels in a quiet column, or stacked with each label above its value. A value short of room drops under its label.
@@ -152,7 +152,7 @@ impl RenderOnce for PropertyGrid {
             .collect();
         let theme = cx.theme();
         let colors = &theme.colors;
-        let row_height = theme.control_height(ControlSize::Md);
+        let row_height = theme.control_height(Size::Medium);
         let id = self.id.clone();
         div()
             .id(self.id)

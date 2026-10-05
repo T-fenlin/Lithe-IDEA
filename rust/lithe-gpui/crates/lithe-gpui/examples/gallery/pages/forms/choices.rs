@@ -1,10 +1,10 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     forms::{
         CheckState, Checkbox, CheckboxCard, CheckboxGroup, Choice, RadioCard, RadioGroup, Switch,
     },
     primitives::IconName,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

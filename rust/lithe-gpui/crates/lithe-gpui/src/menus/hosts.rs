@@ -103,7 +103,8 @@ impl RenderOnce for DropdownMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = state(&self.id, window, cx);
         let click = toggle(&state, &self.menu, cx);
-        let button = Button::new((self.id.clone(), "button")).label(self.label)
+        let button = Button::new((self.id.clone(), "button"))
+            .label(self.label)
             .variant(self.variant)
             .trailing_icon(IconName::ChevronDown)
             .when_some(self.icon, |button, icon| button.icon(icon))
@@ -195,7 +196,8 @@ impl RenderOnce for SplitButton {
         let state = state(&self.id, window, cx);
         let click = toggle(&state, &self.menu, cx);
         let (shut, run) = (state.clone(), self.on_click);
-        let main = Button::new((self.id.clone(), "main")).label(self.label)
+        let main = Button::new((self.id.clone(), "main"))
+            .label(self.label)
             .variant(self.variant)
             .on_click(move |event, window, cx| {
                 if shut.read(cx).is_open() {
@@ -205,7 +207,8 @@ impl RenderOnce for SplitButton {
                     run(event, window, cx);
                 }
             });
-        let more = Button::new((self.id.clone(), "more")).label("")
+        let more = Button::new((self.id.clone(), "more"))
+            .label("")
             .variant(self.variant)
             .icon(IconName::ChevronDown)
             .on_click(move |event, window, cx| click(event, window, cx));
@@ -348,7 +351,8 @@ impl RenderOnce for SearchableMenu {
             }
         }
         let click = toggle(&state, &shown, cx);
-        let button = Button::new((self.id.clone(), "button")).label(self.label)
+        let button = Button::new((self.id.clone(), "button"))
+            .label(self.label)
             .trailing_icon(IconName::ChevronDown)
             .when_some(self.icon, |button, icon| button.icon(icon))
             .on_click(move |event, window, cx| click(event, window, cx));

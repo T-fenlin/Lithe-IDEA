@@ -9,7 +9,7 @@ use gpui::{
 use super::{Input, InputEvent, TextInput};
 use crate::{
     primitives::{FocusRing, Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius},
+    theme::{ActiveTheme, IconSize, Radius, Size},
     typography::Ellipsis,
 };
 
@@ -147,7 +147,7 @@ impl RenderOnce for InlineEdit {
                         });
                     }
                 })
-                .child(Input::new(&field).size(ControlSize::Sm))
+                .child(Input::new(&field).size(Size::Small))
                 .into_any_element();
         }
         let theme = cx.theme();
@@ -170,8 +170,8 @@ impl RenderOnce for InlineEdit {
             .flex()
             .items_center()
             .gap_2()
-            .h(theme.control_height(ControlSize::Sm))
-            .px(theme.control_padding(ControlSize::Sm))
+            .h(theme.control_height(Size::Small))
+            .px(theme.control_padding(Size::Small))
             .rounded(theme.radius(Radius::Md))
             .border_1()
             .border_color(gpui::transparent_black())

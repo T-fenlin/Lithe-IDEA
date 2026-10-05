@@ -1,8 +1,8 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     settings::{SyntaxThemePicker, ThemeImporter},
     theme::{ActiveTheme, Theme, syntax_themes},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::ui::{change, keep, section, specimen, specimens};
 

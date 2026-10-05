@@ -1,8 +1,8 @@
+use gpui::{App, IntoElement, ParentElement, Styled, div, px};
+use jiff::civil::date;
 use lithe_gpui::charts::{
     CalendarHeatmap, HeatmapChart, PieChart, RadarChart, Series, Slice, Sunburst, Treemap,
 };
-use gpui::{App, IntoElement, ParentElement, Styled, div, px};
-use jiff::civil::date;
 
 use crate::{
     probe::probe,

@@ -10,7 +10,7 @@ use super::{DocPage, DocumentViewer, PageHit, ZenMode};
 use crate::{
     editor::FindWidget,
     forms::{Input, TextInput},
-    theme::{ActiveTheme, ControlSize, Theme},
+    theme::{ActiveTheme, Size, Theme},
 };
 
 type Noted = Rc<RefCell<Option<(usize, Point<f32>)>>>;
@@ -112,7 +112,7 @@ fn pin_at(at: Point<Pixels>, cx: &mut VisualTestContext, noted: &Noted) -> (usiz
     let toggle = cx.update(|window, cx| {
         let header = cx
             .theme()
-            .control_height(ControlSize::Lg)
+            .control_height(Size::Large)
             .to_pixels(window.rem_size());
         point(
             window.viewport_size().width - px(17.0),

@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 
 use crate::{
     primitives::{Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// A row of tools, grouped and divided.
@@ -51,7 +51,7 @@ impl RenderOnce for Toolbar {
             .flex_none()
             .items_center()
             .gap_1()
-            .h(cx.theme().control_height(ControlSize::Lg))
+            .h(cx.theme().control_height(Size::Large))
             .px_1()
             .children(self.children)
     }
@@ -149,7 +149,7 @@ impl RenderOnce for StatusBar {
             .flex_none()
             .items_center()
             .justify_between()
-            .h(theme.control_height(ControlSize::Sm))
+            .h(theme.control_height(Size::Small))
             .px_1()
             .bg(theme.colors.bg)
             .border_t_1()

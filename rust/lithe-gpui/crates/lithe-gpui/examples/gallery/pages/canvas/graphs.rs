@@ -1,10 +1,10 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     canvas::{
         Board, Edge, Frame, Link, Node, NodeGraph, Port, Shape, ShapeKind, Viewport, Whiteboard,
     },
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

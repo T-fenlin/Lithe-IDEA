@@ -6,7 +6,7 @@ use gpui::{
 
 use crate::{
     primitives::{FocusRing, Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, Elevation, IconSize},
+    theme::{ActiveTheme, Elevation, IconSize, Size},
 };
 
 /// A drag of one comparison's divider.
@@ -68,7 +68,7 @@ impl RenderOnce for BeforeAfter {
         let owner = split.entity_id();
         let theme = cx.theme();
         let colors = &theme.colors;
-        let handle = theme.control_height(ControlSize::Lg);
+        let handle = theme.control_height(Size::Large);
         let inset = handle.to_pixels(window.rem_size()) / 2.0;
         let width = bounds.size.width;
         let x = inset + (width - inset * 2.0) * share;

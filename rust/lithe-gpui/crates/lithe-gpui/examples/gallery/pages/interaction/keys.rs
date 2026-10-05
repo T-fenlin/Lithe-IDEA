@@ -1,3 +1,7 @@
+use gpui::{
+    App, Axis, Context, Focusable, InteractiveElement, IntoElement, KeyBinding, ParentElement,
+    SharedString, Styled, Subscription, Window, actions, div, prelude::*, px, uniform_list,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant, IconButton},
     forms::{History, Input, TextInput},
@@ -6,10 +10,6 @@ use lithe_gpui::{
     primitives::{FocusRing, Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, TextSize},
     typography::{KbdCombo, format::plural},
-};
-use gpui::{
-    App, Axis, Context, Focusable, InteractiveElement, IntoElement, KeyBinding, ParentElement,
-    SharedString, Styled, Subscription, Window, actions, div, prelude::*, px, uniform_list,
 };
 
 use crate::{

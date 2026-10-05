@@ -1,3 +1,4 @@
+use gpui::{AnyElement, App, FontWeight, IntoElement, ParentElement, Styled, Window, div};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     forms::Switch,
@@ -5,7 +6,6 @@ use lithe_gpui::{
     primitives::IconName,
     theme::{ActiveTheme, TextSize},
 };
-use gpui::{AnyElement, App, FontWeight, IntoElement, ParentElement, Styled, Window, div};
 
 use crate::{
     probe::probe,
@@ -40,7 +40,8 @@ pub fn popovers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .on_change(move |next, _, cx| set(&public, next, cx)),
             )
             .child(
-                Button::new("share-copy").label("Copy link")
+                Button::new("share-copy")
+                    .label("Copy link")
                     .icon(IconName::Link)
                     .full_width(),
             )

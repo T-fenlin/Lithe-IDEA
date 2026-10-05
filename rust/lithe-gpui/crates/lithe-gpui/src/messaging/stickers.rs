@@ -9,7 +9,7 @@ use crate::{
     buttons::SegmentedControl,
     forms::{Grid, OnValue, finder, grid, rows},
     primitives::Image,
-    theme::{ActiveTheme, ControlSize},
+    theme::{ActiveTheme, Size},
 };
 
 /// Stickers across a picker's row, so it fits a narrow window.
@@ -112,7 +112,7 @@ impl RenderOnce for StickerPicker {
                     SegmentedControl::new((self.id.clone(), "packs"), pack.clone()),
                     |packs, each| packs.segment(each.name.clone(), each.name.clone(), None),
                 )
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_change(move |name, _, cx| {
                     log::info!("sticker picker {id}: pack {name}");
                     choose.update(cx, |chosen, cx| {

@@ -8,7 +8,7 @@ use super::{Input, TextInput};
 use crate::{
     buttons::{Button, ButtonVariant},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
 
 /// Opens the system's file dialog; `then` gets the chosen paths back in the window.
@@ -86,8 +86,9 @@ impl RenderOnce for PathInput {
         Input::new(&self.state)
             .prefix(Icon::new(icon).size(IconSize::Sm).color(subtle))
             .suffix(
-                Button::new(self.id).label("Browse…")
-                    .size(ControlSize::Sm)
+                Button::new(self.id)
+                    .label("Browse…")
+                    .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| {
                         let state = state.clone();

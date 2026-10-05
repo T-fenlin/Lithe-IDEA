@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     forms::{Choice, Listing, OnValue, listing},
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius},
+    theme::{ActiveTheme, IconSize, Radius, Size},
 };
 
 /// A small icon button that lists `rows`; picking one runs `on_pick`.
@@ -33,7 +33,7 @@ pub(crate) fn list_button(
         .flex_none()
         .items_center()
         .justify_center()
-        .size(theme.control_height(ControlSize::Sm))
+        .size(theme.control_height(Size::Small))
         .rounded(theme.radius(Radius::Md))
         .border_1()
         .border_color(if focused {

@@ -12,7 +12,7 @@ use crate::{
     mail::Label,
     overlays::Popover,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, HUE_NAMES, IconSize, Radius},
+    theme::{ActiveTheme, HUE_NAMES, IconSize, Radius, Size},
 };
 
 type OnRename = Rc<dyn Fn(&SharedString, &SharedString, &mut Window, &mut App)>;
@@ -214,7 +214,7 @@ impl RenderOnce for LabelManager {
                 let (key, on_delete) = (key.clone(), self.on_delete.clone());
                 IconButton::new((id.clone(), format!("delete-{key}")), IconName::X)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Delete label")
                     .on_click(move |_, window, cx| {
                         log::info!("label manager: delete {key}");

@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use super::{Highlight, Input, TextInput};
-use crate::theme::{ActiveTheme, ControlSize, TextSize};
+use crate::theme::{ActiveTheme, Size, TextSize};
 
 /// What a span of source is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,18 +149,18 @@ pub fn json_highlights(source: &str, cx: &App) -> Vec<(Range<usize>, Highlight)>
 #[derive(IntoElement)]
 pub struct CodeInput {
     state: Entity<TextInput>,
-    size: ControlSize,
+    size: Size,
 }
 
 impl CodeInput {
     pub fn new(state: &Entity<TextInput>) -> Self {
         Self {
             state: state.clone(),
-            size: ControlSize::default(),
+            size: Size::default(),
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -261,5 +261,11 @@ mod tests {
     fn an_open_string_stops_at_the_line_end() {
         assert_eq!(kinds("'open"), [("'open", Kind::Text)]);
         assert_eq!(kinds("\"a\n1"), [("\"a", Kind::Text), ("1", Kind::Number)]);
+    }
+}
+
+impl crate::theme::Sizable for CodeInput {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

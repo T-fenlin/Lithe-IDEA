@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, Styled, div, px};
 use lithe_gpui::{
     theme::{ActiveTheme, Radius},
     typography::{
@@ -5,7 +6,6 @@ use lithe_gpui::{
         Kbd, KbdCombo, Label, Link, MiddleEllipsis, Overline, Paragraph, Subtitle, Title,
     },
 };
-use gpui::{App, IntoElement, ParentElement, Styled, div, px};
 
 use crate::{
     probe::probe,

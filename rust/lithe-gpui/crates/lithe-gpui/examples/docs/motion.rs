@@ -1,13 +1,13 @@
+use gpui::{
+    Animation, AnimationExt, App, AppContext, Context, FocusHandle, IntoElement, ParentElement,
+    Render, Styled, Window, WindowOptions, div,
+};
 use lithe_gpui::{
     Assets,
     buttons::Button,
     motion::{self, Entrance, Flash, Spinner, Transition},
     primitives::FocusScope,
     theme::{ActiveTheme, Radius, Theme},
-};
-use gpui::{
-    Animation, AnimationExt, App, AppContext, Context, FocusHandle, IntoElement, ParentElement,
-    Render, Styled, Window, WindowOptions, div,
 };
 
 struct Moves {
@@ -51,30 +51,35 @@ impl Render for Moves {
                     .flex()
                     .gap_2()
                     .child(
-                        Button::new("show").label(if self.shown { "Hide" } else { "Show" }).on_click(
-                            move |_, _, cx| {
+                        Button::new("show")
+                            .label(if self.shown { "Hide" } else { "Show" })
+                            .on_click(move |_, _, cx| {
                                 toggle.update(cx, |moves, cx| {
                                     moves.shown = !moves.shown;
                                     cx.notify();
                                 })
-                            },
-                        ),
+                            }),
                     )
-                    .child(Button::new("add").label("Add one").on_click(move |_, _, cx| {
-                        add.update(cx, |moves, cx| {
-                            moves.count += 1;
-                            cx.notify();
-                        })
-                    }))
                     .child(
-                        Button::new("still").label(if still {
+                        Button::new("add")
+                            .label("Add one")
+                            .on_click(move |_, _, cx| {
+                                add.update(cx, |moves, cx| {
+                                    moves.count += 1;
+                                    cx.notify();
+                                })
+                            }),
+                    )
+                    .child(
+                        Button::new("still")
+                            .label(if still {
                                 "Allow motion"
                             } else {
                                 "Reduce motion"
                             })
-                        .on_click(move |_, _, cx| {
-                            Theme::update(cx, |theme| theme.reduced_motion = !still)
-                        }),
+                            .on_click(move |_, _, cx| {
+                                Theme::update(cx, |theme| theme.reduced_motion = !still)
+                            }),
                     ),
             )
             .child(

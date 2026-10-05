@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, ToSpan};
 use lithe_gpui::{
     agent::{
         Checkpoint, CheckpointList, McpServer, McpServerList, Memory, MemoryPanel, RegisteredTool,
@@ -7,8 +9,6 @@ use lithe_gpui::{
     },
     forms::{SearchInput, TextInput},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, ToSpan};
 
 use crate::{
     probe::probe,

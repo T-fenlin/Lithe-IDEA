@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     data_display::BeforeAfter,
     generative::{
@@ -8,7 +9,6 @@ use lithe_gpui::{
     },
     primitives::Image,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

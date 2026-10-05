@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
 
 /// Rows whose label or note holds `query`, ignoring case. All rows for an empty query.
@@ -44,7 +44,7 @@ pub struct Combobox {
     choices: Vec<Choice>,
     selected: Option<SharedString>,
     free: bool,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnValue>,
 }
 
@@ -60,7 +60,7 @@ impl Combobox {
             choices: choices.into_iter().collect(),
             selected: None,
             free: false,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -76,7 +76,7 @@ impl Combobox {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -297,5 +297,11 @@ mod tests {
         assert_eq!(labels(""), ["Berlin", "Lisbon", "Oslo"]);
         assert!(labels("xyz").is_empty());
         assert_eq!(labels("no"), ["Oslo"]);
+    }
+}
+
+impl crate::theme::Sizable for Combobox {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

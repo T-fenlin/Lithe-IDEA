@@ -10,7 +10,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     forms::Run,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Elevation, TextSize},
+    theme::{ActiveTheme, Elevation, Size, TextSize},
 };
 
 type RenderItem = Rc<dyn Fn(usize, &mut Window, &mut App) -> AnyElement>;
@@ -202,9 +202,10 @@ impl RenderOnce for ScrollToBottomButton {
             .rounded_full()
             .shadow(cx.theme().elevation(Elevation::Floating))
             .child(
-                Button::new(self.id).label(label)
+                Button::new(self.id)
+                    .label(label)
                     .variant(ButtonVariant::Secondary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .icon(IconName::ArrowDown)
                     .on_click(move |_, window, cx| press(window, cx)),
             )

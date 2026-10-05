@@ -14,7 +14,7 @@ use crate::{
     buttons::Button,
     forms::TextInput,
     primitives::{FocusNext, FocusScope, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, Theme},
+    theme::{ActiveTheme, Size, Theme},
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -75,11 +75,13 @@ impl Render for Stage {
                         .flex()
                         .gap_2()
                         .child(
-                            Button::new("copy").label("Copy link")
+                            Button::new("copy")
+                                .label("Copy link")
                                 .on_click(move |_, window, cx| copy(window, cx)),
                         )
                         .child(
-                            Button::new("mail").label("Email")
+                            Button::new("mail")
+                                .label("Email")
                                 .on_click(move |_, window, cx| mail(window, cx)),
                         ),
                 )
@@ -90,7 +92,9 @@ impl Render for Stage {
             div().id("ada-name").w(px(120.0)).h(px(24.0)).child("Ada"),
             move |_, _| {
                 let follow = follow.clone();
-                Button::new("follow").label("Follow").on_click(move |_, window, cx| follow(window, cx))
+                Button::new("follow")
+                    .label("Follow")
+                    .on_click(move |_, window, cx| follow(window, cx))
             },
         );
         let (shut, confirmed, done) = (
@@ -131,7 +135,9 @@ impl Render for Stage {
                         .size_full()
                 }))
                 .action(move |_| {
-                    Button::new("tall-done").label("Done").on_click(move |_, window, cx| done(window, cx))
+                    Button::new("tall-done")
+                        .label("Done")
+                        .on_click(move |_, window, cx| done(window, cx))
                 })
                 .into_any_element(),
         });
@@ -140,7 +146,8 @@ impl Render for Stage {
             .child(popover)
             .child(div().h(px(52.0)))
             .child(
-                Button::new("beneath").label("Beneath")
+                Button::new("beneath")
+                    .label("Beneath")
                     .on_click(move |_, window, cx| beneath(window, cx)),
             )
             .child(div().h(px(80.0)))
@@ -386,7 +393,7 @@ fn a_tall_dialog_keeps_its_actions_in_the_window(cx: &mut TestAppContext) {
             window.viewport_size(),
             theme.titlebar_height().to_pixels(rem),
             theme.dialog_width().to_pixels(rem),
-            theme.control_height(ControlSize::Md).to_pixels(rem),
+            theme.control_height(Size::Medium).to_pixels(rem),
         )
     });
     let padding = px(24.0);

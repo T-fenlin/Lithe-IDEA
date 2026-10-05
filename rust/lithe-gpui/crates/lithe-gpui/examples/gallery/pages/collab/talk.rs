@@ -1,3 +1,5 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, ToSpan};
 use lithe_gpui::{
     collab::{
         AnnotatedText, Annotation, Comment, CommentMarker, CommentSidebar, CommentThread, Decision,
@@ -7,8 +9,6 @@ use lithe_gpui::{
     forms::{Input, TextInput},
     theme::ActiveTheme,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, ToSpan};
 
 use super::people::{peers, you};
 use crate::{

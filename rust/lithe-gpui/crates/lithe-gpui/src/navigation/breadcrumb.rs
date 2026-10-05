@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     forms::{Choice, Listing, listing},
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// One level of a path, and the siblings a click on it lists.
@@ -107,7 +107,7 @@ impl RenderOnce for Breadcrumb {
                 .flex()
                 .items_center()
                 .gap_1()
-                .h(theme.control_height(ControlSize::Sm))
+                .h(theme.control_height(Size::Small))
                 .px_1p5()
                 .rounded(theme.radius(Radius::Md))
                 .border_1()

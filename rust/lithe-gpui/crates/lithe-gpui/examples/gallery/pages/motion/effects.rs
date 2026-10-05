@@ -1,3 +1,6 @@
+use gpui::{
+    App, FontWeight, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     feedback::InlineMessage,
@@ -8,9 +11,6 @@ use lithe_gpui::{
     primitives::Severity,
     theme::{ActiveTheme, Radius, TextSize},
     typography::tabular,
-};
-use gpui::{
-    App, FontWeight, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder,
 };
 
 use crate::{

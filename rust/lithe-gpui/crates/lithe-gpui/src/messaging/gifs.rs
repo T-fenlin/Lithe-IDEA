@@ -12,7 +12,7 @@ use crate::{
     layout::{Masonry, bring_into_view, on_axis},
     motion::Skeleton,
     primitives::{FocusRing, Icon, IconName, Image, Tooltip, checked_ratio, framed, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// Shapes the loading tiles take, so the wait looks like GIFs.
@@ -178,14 +178,15 @@ impl RenderOnce for GifPicker {
                 .gap_1()
                 .children(self.categories.iter().map(|category| {
                     let (field, words) = (input.clone(), category.clone());
-                    Button::new((self.id.clone(), format!("category-{category}"))).label(category.clone())
-                    .variant(ButtonVariant::Subtle)
-                    .size(ControlSize::Sm)
-                    .on_click(move |_, _, cx| {
-                        log::info!("gif picker: category {words}");
-                        let words = words.clone();
-                        field.update(cx, |input, cx| input.set_text(words.to_string(), cx));
-                    })
+                    Button::new((self.id.clone(), format!("category-{category}")))
+                        .label(category.clone())
+                        .variant(ButtonVariant::Subtle)
+                        .size(Size::Small)
+                        .on_click(move |_, _, cx| {
+                            log::info!("gif picker: category {words}");
+                            let words = words.clone();
+                            field.update(cx, |input, cx| input.set_text(words.to_string(), cx));
+                        })
                 }))
         });
         let tiles: Vec<gpui::AnyElement> = match self.gifs {

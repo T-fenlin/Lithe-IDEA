@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{
     Animation, AnimationExt, App, Div, ElementId, ImageSource, InteractiveElement, IntoElement,
-    MouseButton, ObjectFit, ParentElement, Pixels, Point, RenderOnce, SharedString, Size, Stateful,
+    MouseButton, ObjectFit, ParentElement, Pixels, Point, RenderOnce, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Window, anchored, canvas, div, prelude::*,
 };
 
@@ -11,7 +11,7 @@ use crate::{
     forms::Run,
     motion,
     primitives::{FocusRing, FocusScope, Icon, IconName, Image, give_back, raise, take_focus},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// One picture in a lightbox, and the line under it.
@@ -36,7 +36,7 @@ type OnStep = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 pub(crate) fn media_button(
     id: (ElementId, &'static str),
     icon: IconName,
-    size: ControlSize,
+    size: Size,
     enabled: bool,
     run: impl Fn(&mut Window, &mut App) + 'static,
     cx: &App,
@@ -124,7 +124,7 @@ impl RenderOnce for Lightbox {
         let takeover = take_focus((self.id.clone(), "takeover"), window, cx);
         let focus = takeover.read(cx).focus.clone();
         let area = window.use_keyed_state((self.id.clone(), "area"), cx, |_, _| {
-            Size::<Pixels>::default()
+            gpui::Size::<Pixels>::default()
         });
         let room = *area.read(cx);
         let close: Run = {
@@ -155,7 +155,7 @@ impl RenderOnce for Lightbox {
             media_button(
                 (self.id.clone(), name),
                 icon,
-                ControlSize::Lg,
+                Size::Large,
                 to.is_some(),
                 move |window, cx| {
                     if let Some(to) = to {
@@ -215,7 +215,7 @@ impl RenderOnce for Lightbox {
                     .child(div().flex().justify_end().p_3().child(media_button(
                         (self.id.clone(), "close"),
                         IconName::X,
-                        ControlSize::Lg,
+                        Size::Large,
                         true,
                         move |window, cx| button(window, cx),
                         cx,

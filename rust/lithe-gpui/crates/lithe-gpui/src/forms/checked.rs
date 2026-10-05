@@ -9,7 +9,7 @@ use regex::Regex;
 use super::{Input, TextInput};
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 static EMAIL: LazyLock<Regex> =
@@ -34,7 +34,7 @@ fn checked(
     icon: IconName,
     valid: fn(&str) -> bool,
     note: &'static str,
-    size: ControlSize,
+    size: Size,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
@@ -67,18 +67,18 @@ fn checked(
 #[derive(IntoElement)]
 pub struct EmailInput {
     state: Entity<TextInput>,
-    size: ControlSize,
+    size: Size,
 }
 
 impl EmailInput {
     pub fn new(state: &Entity<TextInput>) -> Self {
         Self {
             state: state.clone(),
-            size: ControlSize::default(),
+            size: Size::default(),
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -102,18 +102,18 @@ impl RenderOnce for EmailInput {
 #[derive(IntoElement)]
 pub struct UrlInput {
     state: Entity<TextInput>,
-    size: ControlSize,
+    size: Size,
 }
 
 impl UrlInput {
     pub fn new(state: &Entity<TextInput>) -> Self {
         Self {
             state: state.clone(),
-            size: ControlSize::default(),
+            size: Size::default(),
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -146,5 +146,17 @@ mod tests {
         assert!(is_url("http://localhost.test"));
         assert!(!is_url("ely.dev"));
         assert!(!is_url("https://nodot"));
+    }
+}
+
+impl crate::theme::Sizable for EmailInput {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
+    }
+}
+
+impl crate::theme::Sizable for UrlInput {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

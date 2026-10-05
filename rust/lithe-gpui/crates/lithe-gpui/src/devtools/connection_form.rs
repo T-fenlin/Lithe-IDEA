@@ -280,13 +280,15 @@ impl RenderOnce for ConnectionForm {
                     .justify_end()
                     .gap_2()
                     .child(
-                        Button::new((id.clone(), "test")).label("Test")
+                        Button::new((id.clone(), "test"))
+                            .label("Test")
                             .variant(ButtonVariant::Secondary)
                             .disabled(!ready || testing)
                             .on_click(ask(self.on_test, "test")),
                     )
                     .child(
-                        Button::new((id, "save")).label("Save")
+                        Button::new((id, "save"))
+                            .label("Save")
                             .variant(ButtonVariant::Primary)
                             .disabled(!ready)
                             .on_click(ask(self.on_save, "save")),

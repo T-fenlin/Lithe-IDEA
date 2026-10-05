@@ -10,7 +10,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     motion,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::AnimatedNumber,
 };
 
@@ -196,7 +196,7 @@ impl RenderOnce for ZoomControl {
             .gap_0p5()
             .child(
                 IconButton::new("zoom-out", IconName::ZoomOut)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .disabled(down.is_none())
                     .when_some(down, |button, next| {
                         button.on_click(move |_, window, cx| apply(next, window, cx))
@@ -208,8 +208,8 @@ impl RenderOnce for ZoomControl {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .min_w(theme.control_height(ControlSize::Lg) * 1.5)
-                    .h(theme.control_height(ControlSize::Sm))
+                    .min_w(theme.control_height(Size::Large) * 1.5)
+                    .h(theme.control_height(Size::Small))
                     .rounded_full()
                     .cursor_pointer()
                     .hover(|style| style.bg(theme.colors.hover))
@@ -219,7 +219,7 @@ impl RenderOnce for ZoomControl {
             )
             .child(
                 IconButton::new("zoom-in", IconName::ZoomIn)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .disabled(up.is_none())
                     .when_some(up, |button, next| {

@@ -1,4 +1,4 @@
-use gpui::{BoxShadow, Hsla, Pixels, Point, Rems, Size, point, px, rems, size};
+use gpui::{BoxShadow, Hsla, Pixels, Point, Rems, point, px, rems, size};
 
 use super::{Mode, Theme};
 
@@ -10,12 +10,18 @@ pub enum Density {
     Comfortable,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ControlSize {
-    Sm,
+/// A control's size tier, matching gpui-kit's `Size`: four named tiers plus an
+/// explicit pixel size. When Lithe took the library over, `Sm`/`Md`/`Lg` became
+/// `Small`/`Medium`/`Large` and `XSmall` plus `Size(Pixels)` were added.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Size {
+    /// An explicit edge length, for a size the named tiers do not cover.
+    Size(Pixels),
+    XSmall,
+    Small,
     #[default]
-    Md,
-    Lg,
+    Medium,
+    Large,
 }
 
 /// How large an avatar is.
@@ -80,11 +86,14 @@ pub(super) fn px_to_rems(value: f32) -> Rems {
 }
 
 impl Theme {
-    pub fn control_height(&self, size: ControlSize) -> Rems {
+    pub fn control_height(&self, size: Size) -> Rems {
         let base = match size {
-            ControlSize::Sm => 24.0,
-            ControlSize::Md => 28.0,
-            ControlSize::Lg => 32.0,
+            // An explicit size states its own height; density does not scale it.
+            Size::Size(height) => return px_to_rems(f32::from(height)),
+            Size::XSmall => 20.0,
+            Size::Small => 24.0,
+            Size::Medium => 28.0,
+            Size::Large => 32.0,
         };
         let delta = match self.density {
             Density::Compact => -4.0,
@@ -94,11 +103,14 @@ impl Theme {
         px_to_rems(base + delta)
     }
 
-    pub fn control_padding(&self, size: ControlSize) -> Rems {
+    pub fn control_padding(&self, size: Size) -> Rems {
         let base = match size {
-            ControlSize::Sm => 8.0,
-            ControlSize::Md => 12.0,
-            ControlSize::Lg => 16.0,
+            // Proportional to an explicit height, and unscaled by density.
+            Size::Size(height) => return px_to_rems(f32::from(height) * 0.4),
+            Size::XSmall => 6.0,
+            Size::Small => 8.0,
+            Size::Medium => 12.0,
+            Size::Large => 16.0,
         };
         let delta = match self.density {
             Density::Compact => -2.0,
@@ -197,16 +209,16 @@ impl Theme {
         px_to_rems(48.0)
     }
 
-    pub fn about_window(&self) -> Size<Pixels> {
+    pub fn about_window(&self) -> gpui::Size<Pixels> {
         size(px(360.0), px(400.0))
     }
 
     /// Update and crash windows.
-    pub fn dialog_window(&self) -> Size<Pixels> {
+    pub fn dialog_window(&self) -> gpui::Size<Pixels> {
         size(px(400.0), px(480.0))
     }
 
-    pub fn splash_window(&self) -> Size<Pixels> {
+    pub fn splash_window(&self) -> gpui::Size<Pixels> {
         size(px(480.0), px(300.0))
     }
 
@@ -314,7 +326,7 @@ impl Theme {
     }
 
     /// A sparkline beside text.
-    pub fn spark_size(&self) -> Size<Rems> {
+    pub fn spark_size(&self) -> gpui::Size<Rems> {
         size(px_to_rems(64.0), px_to_rems(18.0))
     }
 
@@ -358,7 +370,7 @@ impl Theme {
     }
 
     /// One repeat of a watermark's text.
-    pub fn watermark_tile(&self) -> Size<Rems> {
+    pub fn watermark_tile(&self) -> gpui::Size<Rems> {
         size(px_to_rems(200.0), px_to_rems(96.0))
     }
 
@@ -378,12 +390,12 @@ impl Theme {
     }
 
     /// A palette's card; its list scrolls inside.
-    pub fn palette_size(&self) -> Size<Rems> {
+    pub fn palette_size(&self) -> gpui::Size<Rems> {
         size(px_to_rems(600.0), px_to_rems(400.0))
     }
 
     /// Grab bar on a drawer.
-    pub fn grip(&self) -> Size<Rems> {
+    pub fn grip(&self) -> gpui::Size<Rems> {
         size(px_to_rems(36.0), px_to_rems(4.0))
     }
 
@@ -413,7 +425,7 @@ impl Theme {
     }
 
     /// A switch's track; its thumb fills the height inside a small inset.
-    pub fn switch_track(&self) -> Size<Rems> {
+    pub fn switch_track(&self) -> gpui::Size<Rems> {
         size(px_to_rems(32.0), px_to_rems(18.0))
     }
 
@@ -492,4 +504,36 @@ impl Theme {
 
 fn shadow(color: Hsla, y: f32, blur: f32) -> BoxShadow {
     BoxShadow::new(px(0.0), px(y), color).blur_radius(px(blur))
+}
+
+impl From<Pixels> for Size {
+    fn from(length: Pixels) -> Self {
+        Size::Size(length)
+    }
+}
+
+/// A control that takes a size tier, matching gpui-kit's `Sizable`.
+///
+/// Components keep their own `size(Size)` setter; this adds the named-tier
+/// shorthands and the pixel-length form so call sites read the same as they
+/// would against gpui-kit.
+pub trait Sizable: Sized {
+    /// Sets the size; also accepts a raw length (`px(30.)`).
+    fn with_size(self, size: impl Into<Size>) -> Self;
+
+    fn xsmall(self) -> Self {
+        self.with_size(Size::XSmall)
+    }
+
+    fn small(self) -> Self {
+        self.with_size(Size::Small)
+    }
+
+    fn medium(self) -> Self {
+        self.with_size(Size::Medium)
+    }
+
+    fn large(self) -> Self {
+        self.with_size(Size::Large)
+    }
 }

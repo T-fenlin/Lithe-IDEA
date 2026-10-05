@@ -12,7 +12,7 @@ use crate::{
     forms::OnFlag,
     git::{DiffStat, DiffViewer, stat},
     primitives::{Disclosure, FocusRing, Icon, IconName, file_icon},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -57,15 +57,17 @@ fn verdict(id: &ElementId, state: ChangeState, on_decide: Option<OnFlag>, cx: &A
                 .gap_1()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(
-                    Button::new((id.clone(), "reject")).label("Reject")
+                    Button::new((id.clone(), "reject"))
+                        .label("Reject")
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| reject(false, window, cx)),
                 )
                 .child(
-                    Button::new((id.clone(), "accept")).label("Accept")
+                    Button::new((id.clone(), "accept"))
+                        .label("Accept")
                         .variant(ButtonVariant::Secondary)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| accept(true, window, cx)),
                 )
                 .into_any_element()
@@ -250,18 +252,20 @@ impl RenderOnce for MultiFileDiffReview {
                 .items_center()
                 .gap_1()
                 .child(
-                    Button::new((self.id.clone(), "reject-all")).label("Reject all")
+                    Button::new((self.id.clone(), "reject-all"))
+                        .label("Reject all")
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("file changes: reject all");
                             reject(Decision::RejectAll, window, cx)
                         }),
                 )
                 .child(
-                    Button::new((self.id.clone(), "accept-all")).label("Accept all")
+                    Button::new((self.id.clone(), "accept-all"))
+                        .label("Accept all")
                         .variant(ButtonVariant::Primary)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("file changes: accept all");
                             accept(Decision::AcceptAll, window, cx)

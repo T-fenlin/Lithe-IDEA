@@ -1,12 +1,12 @@
+use gpui::{
+    App, AppContext, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::*, px,
+};
 use lithe_gpui::{
     buttons::{ActionBar, Button, ButtonVariant},
     forms::{
         DirtyIndicator, FieldArray, Form, FormField, FormSection, InlineForm, Input, TextInput,
         is_email,
     },
-};
-use gpui::{
-    App, AppContext, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::*, px,
 };
 
 use super::text::field;

@@ -12,7 +12,7 @@ use jiff::{
 use super::repeat::{Ends, Frequency, Recurrence};
 use crate::{
     forms::{Choice, ChoiceChips, DatePicker, NumberInput, RadioGroup, Select},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 type OnRecurrence = Rc<dyn Fn(Option<Recurrence>, &mut Window, &mut App)>;
@@ -132,7 +132,7 @@ impl RenderOnce for RecurrenceEditor {
             let (set, rule) = (set.clone(), rule.clone());
             NumberInput::new((self.id.clone(), "interval"), f64::from(rule.interval))
                 .range(1.0, 99.0)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_change(move |value, window, cx| {
                     let interval = value as u16;
                     set(
@@ -229,7 +229,7 @@ impl RenderOnce for RecurrenceEditor {
                 Some(
                     NumberInput::new((self.id.clone(), "count"), f64::from(count))
                         .range(1.0, 999.0)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_change(move |value, window, cx| {
                             let ends = Ends::After(value as u16);
                             set(

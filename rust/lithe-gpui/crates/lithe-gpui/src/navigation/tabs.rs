@@ -10,7 +10,7 @@ use crate::{
     forms::{Choice, Pick, step},
     motion::{self, Axis, Marker, glide, measure_item, measure_origin, slide},
     primitives::{Icon, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// Where a tab strip sits against its panel.
@@ -173,7 +173,7 @@ impl RenderOnce for Tabs {
                     .flex()
                     .items_center()
                     .gap_1p5()
-                    .h(theme.control_height(ControlSize::Md))
+                    .h(theme.control_height(Size::Medium))
                     .px_3()
                     .rounded(theme.radius(Radius::Md))
                     .border_1()

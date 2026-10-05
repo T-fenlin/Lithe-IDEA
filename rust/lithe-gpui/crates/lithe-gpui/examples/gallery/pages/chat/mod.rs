@@ -6,8 +6,8 @@ mod history;
 mod talk;
 mod welcome;
 
-use lithe_gpui::feedback::{ToastViewport, Toaster};
 use gpui::{AnyElement, App, IntoElement, ParentElement, Window, div};
+use lithe_gpui::feedback::{ToastViewport, Toaster};
 
 use super::Page;
 use crate::{step::Step, ui::keep};

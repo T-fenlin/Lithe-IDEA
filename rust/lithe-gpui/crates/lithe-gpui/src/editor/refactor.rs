@@ -9,7 +9,7 @@ use crate::{
     forms::{Enter, Input, TextInput},
     menus::{Menu, MenuItem, OverflowMenu},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Elevation, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
 };
 
 /// What a code action does.
@@ -183,7 +183,7 @@ impl RenderOnce for RenameInput {
                     }
                 }
             })
-            .child(Input::new(&self.field).size(ControlSize::Sm))
+            .child(Input::new(&self.field).size(Size::Small))
             .child(
                 div()
                     .px_0p5()

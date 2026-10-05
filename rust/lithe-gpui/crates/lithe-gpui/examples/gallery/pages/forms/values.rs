@@ -1,5 +1,5 @@
-use lithe_gpui::forms::{Choice, ChoiceChips, Knob, RangeSlider, Rating, Slider, Stepper};
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use lithe_gpui::forms::{Choice, ChoiceChips, Knob, RangeSlider, Rating, Slider, Stepper};
 
 use crate::{
     probe::probe,

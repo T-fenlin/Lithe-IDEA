@@ -1,12 +1,12 @@
+use gpui::{
+    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
+};
+use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 use lithe_gpui::{
     mail::Label,
     project::{IssueId, Person, Priority, Status, Task},
     theme::{ActiveTheme, TextSize},
 };
-use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
-};
-use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 
 mod boards;
 mod plans;

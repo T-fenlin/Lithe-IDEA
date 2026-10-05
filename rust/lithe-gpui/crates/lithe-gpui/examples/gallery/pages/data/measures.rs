@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     data_display::{Barcode, Comparison, Gauge, Meter, QrCode, Stars, UsageBar},
     theme::{ActiveTheme, IconSize, TextSize},
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

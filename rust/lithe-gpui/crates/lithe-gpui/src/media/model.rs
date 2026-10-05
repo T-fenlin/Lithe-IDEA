@@ -12,7 +12,7 @@ use crate::{
     motion::Spinner,
     overlays::media_button,
     primitives::{FocusRing, IconName, checked_ratio, framed, tab_stop},
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
 };
 
 type OnOrbit = Rc<dyn Fn(Orbit, &mut Window, &mut App)>;
@@ -152,7 +152,7 @@ impl RenderOnce for ModelViewer {
             media_button(
                 (self.id.clone(), key),
                 icon,
-                ControlSize::Sm,
+                Size::Small,
                 next != now,
                 move |window, cx| {
                     log::info!("model viewer: {key}");

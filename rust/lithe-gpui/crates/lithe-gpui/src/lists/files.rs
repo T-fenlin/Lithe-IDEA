@@ -10,7 +10,7 @@ use crate::{
     data_display::Tone,
     forms::{SearchInput, TextInput},
     primitives::{IconName, IconTheme, icon_theme},
-    theme::ControlSize,
+    theme::Size,
 };
 
 /// A file's state in git.
@@ -239,7 +239,7 @@ impl RenderOnce for FileTree {
             .flex()
             .flex_col()
             .gap_2()
-            .child(SearchInput::new((self.id, "search"), &filter).size(ControlSize::Sm))
+            .child(SearchInput::new((self.id, "search"), &filter).size(Size::Small))
             .child(tree)
     }
 }

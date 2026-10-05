@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     canvas::{
         FlowChart, Frame, Link, MindMap, Step, StepKind, Tool, ToolLayer, ToolPalette, Topic,
@@ -5,7 +6,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

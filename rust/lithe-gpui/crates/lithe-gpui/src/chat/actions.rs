@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant, CopyButton, IconButton, ToggleButton, ToggleItem},
     forms::{Input, Pick, Run, Submit, TextInput},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{Ellipsis, tabular},
 };
 
@@ -17,25 +17,28 @@ type OnRate = Rc<dyn Fn(Option<bool>, &mut Window, &mut App)>;
 
 /// Asks for another answer to the same message.
 pub fn regenerate_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id).label("Regenerate")
+    Button::new(id)
+        .label("Regenerate")
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .icon(IconName::RefreshCw)
 }
 
 /// Stops an answer while it streams.
 pub fn stop_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id).label("Stop")
+    Button::new(id)
+        .label("Stop")
         .variant(ButtonVariant::Secondary)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .icon(IconName::CircleStop)
 }
 
 /// Picks an answer up where it was cut off.
 pub fn continue_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id).label("Continue")
+    Button::new(id)
+        .label("Continue")
         .variant(ButtonVariant::Secondary)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .icon(IconName::StepForward)
 }
 
@@ -104,7 +107,7 @@ impl RenderOnce for QuoteReply {
             .children(self.on_remove.map(|remove| {
                 IconButton::new((self.id.clone(), "remove"), IconName::X)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Remove quote")
                     .on_click(move |_, window, cx| remove(window, cx))
             }))
@@ -163,7 +166,7 @@ impl RenderOnce for MessageActions {
             run.map(|run| {
                 IconButton::new((self.id.clone(), key.to_string()), icon)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(tip)
                     .on_click(move |_, window, cx| run(window, cx))
             })
@@ -181,7 +184,7 @@ impl RenderOnce for MessageActions {
                     ToggleItem::new(key).icon(icon).tooltip(tip),
                     on,
                 )
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_toggle(move |now, window, cx| {
                     let next = now.then_some(good);
                     log::info!("message actions: rated {next:?}");
@@ -284,15 +287,17 @@ impl RenderOnce for MessageEditor {
                     .justify_end()
                     .gap_2()
                     .child(
-                        Button::new((self.id.clone(), "cancel")).label("Cancel")
+                        Button::new((self.id.clone(), "cancel"))
+                            .label("Cancel")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(move |_, window, cx| cancel(window, cx)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "save")).label("Save")
+                        Button::new((self.id.clone(), "save"))
+                            .label("Save")
                             .variant(ButtonVariant::Primary)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .shortcut("secondary-enter")
                             .disabled(!changed)
                             .on_click(move |_, window, cx| {
@@ -338,7 +343,7 @@ impl RenderOnce for BranchNavigator {
             let change = self.on_change.clone();
             IconButton::new((self.id.clone(), key.to_string()), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(tip)
                 .disabled(to.is_none())
                 .when_some(to, |button, to| {

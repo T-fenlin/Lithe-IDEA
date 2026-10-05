@@ -6,7 +6,7 @@ use jiff::civil::Date;
 use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 pub(crate) type OnDay = Rc<dyn Fn(Date, &mut Window, &mut App)>;
@@ -27,15 +27,16 @@ pub(crate) fn head(
         let step = step.clone();
         IconButton::new((id.clone(), name.to_string()), icon)
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .tooltip(tip.to_string())
             .on_click(move |_, window, cx| step(by, window, cx))
     };
     let today = {
         let step = step.clone();
-        Button::new((id.clone(), "today")).label("Today")
+        Button::new((id.clone(), "today"))
+            .label("Today")
             .variant(ButtonVariant::Secondary)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_click(move |_, window, cx| step(0, window, cx))
     };
     div()

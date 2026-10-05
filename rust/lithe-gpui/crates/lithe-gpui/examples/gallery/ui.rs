@@ -1,10 +1,10 @@
 use std::cell::RefCell;
 
-use lithe_gpui::theme::{ActiveTheme, TextSize};
 use gpui::{
     AnyElement, App, Div, Entity, FontWeight, Global, ImageSource, IntoElement, ParentElement,
     Resource, SharedString, Styled, Window, div, prelude::*,
 };
+use lithe_gpui::theme::{ActiveTheme, TextSize};
 
 /// The one section a story draws while its page renders.
 pub struct Story {

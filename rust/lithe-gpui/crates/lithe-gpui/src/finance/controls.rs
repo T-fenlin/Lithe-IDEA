@@ -10,7 +10,7 @@ use crate::{
     buttons::SegmentedControl,
     forms::{Choice, Select},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize},
+    theme::{ActiveTheme, Size},
 };
 
 type OnPick = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
@@ -65,7 +65,7 @@ impl TimeRangeSelector {
 impl RenderOnce for TimeRangeSelector {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let control = RANGES.iter().fold(
-            SegmentedControl::new(self.id, self.selected).size(ControlSize::Sm),
+            SegmentedControl::new(self.id, self.selected).size(Size::Small),
             |control, range| control.segment(*range, *range, None),
         );
         match self.on_change {
@@ -116,7 +116,7 @@ impl RenderOnce for IntervalSelector {
             .map(|(key, words)| Choice::new(*key, *words));
         let select = Select::new(self.id, choices)
             .selected(self.selected)
-            .size(ControlSize::Sm);
+            .size(Size::Small);
         let select = match self.on_change {
             Some(on_change) => select.on_change(move |key, window, cx| on_change(key, window, cx)),
             None => select,
@@ -184,7 +184,7 @@ impl RenderOnce for ChartTypeSwitcher {
             .expect("every kind is listed");
         let select = Select::new(self.id, choices)
             .selected(selected)
-            .size(ControlSize::Sm);
+            .size(Size::Small);
         let select = match self.on_change {
             Some(on_change) => select.on_change(move |key, window, cx| {
                 let kind = KINDS
@@ -280,7 +280,7 @@ impl RenderOnce for MultiChartLayout {
             .map(|(_, key, _)| *key)
             .expect("listed");
         let switcher = Arrangement::ALL.iter().fold(
-            SegmentedControl::new((self.id.clone(), "arrange"), key).size(ControlSize::Sm),
+            SegmentedControl::new((self.id.clone(), "arrange"), key).size(Size::Small),
             |control, (_, key, icon)| control.segment(*key, "", Some(*icon)),
         );
         let switcher = match self.on_arrange {

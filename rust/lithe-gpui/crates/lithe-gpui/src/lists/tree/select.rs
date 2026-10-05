@@ -8,7 +8,7 @@ use super::{Shown, TreeNode, rows};
 use crate::{
     forms::{Choice, Listing, field_button, field_text, listing},
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
 
 type OnPick = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
@@ -93,7 +93,7 @@ impl RenderOnce for TreeSelect {
             .and_then(|key| rows.iter().find(|row| row.value == *key))
             .cloned();
         let colors = &cx.theme().colors;
-        let trigger = field_button(self.id.clone(), &focus, ControlSize::Md, false, window, cx)
+        let trigger = field_button(self.id.clone(), &focus, Size::Medium, false, window, cx)
             .when_some(shown.as_ref().and_then(|row| row.icon), |trigger, icon| {
                 trigger.child(Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted))
             })

@@ -14,15 +14,16 @@ use crate::{
     media::device_toggle,
     motion::Pulse,
     primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
 fn leave(id: &ElementId, owner: &'static str, run: Run) -> Button {
-    Button::new((id.clone(), "leave")).label("Leave")
+    Button::new((id.clone(), "leave"))
+        .label("Leave")
         .icon(IconName::PhoneOff)
         .variant(ButtonVariant::Danger)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .on_click(move |_, window, cx| {
             log::info!("{owner}: leave");
             run(window, cx)

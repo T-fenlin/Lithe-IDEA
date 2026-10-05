@@ -1,5 +1,5 @@
-use lithe_gpui::misc::{Flashcards, Poll, Question, Quiz, QuizQuestion, Survey};
 use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
+use lithe_gpui::misc::{Flashcards, Poll, Question, Quiz, QuizQuestion, Survey};
 
 use crate::probe::probe;
 use crate::ui::{section, specimen, specimens};

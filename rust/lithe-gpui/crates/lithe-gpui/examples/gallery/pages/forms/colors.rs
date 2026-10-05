@@ -1,8 +1,8 @@
+use gpui::{App, Hsla, IntoElement, ParentElement, Styled, Window, div, px, rgb, rgba};
 use lithe_gpui::{
     forms::{ColorPalette, ColorPicker, ColorSwatch, EyeDropper, GradientEditor, GradientStop},
-    theme::{ActiveTheme, ControlSize},
+    theme::{ActiveTheme, Size},
 };
-use gpui::{App, Hsla, IntoElement, ParentElement, Styled, Window, div, px, rgb, rgba};
 
 use crate::{
     probe::probe,
@@ -75,11 +75,11 @@ pub fn swatches(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 div()
                     .flex()
                     .gap_2()
-                    .child(ColorSwatch::new("swatch-solid", rgb(0x181613)).size(ControlSize::Md))
-                    .child(ColorSwatch::new("swatch-glass", rgba(0x3772bb66)).size(ControlSize::Md))
+                    .child(ColorSwatch::new("swatch-solid", rgb(0x181613)).size(Size::Medium))
+                    .child(ColorSwatch::new("swatch-glass", rgba(0x3772bb66)).size(Size::Medium))
                     .child(
                         ColorSwatch::new("swatch-chosen", rgb(0x267b4c))
-                            .size(ControlSize::Md)
+                            .size(Size::Medium)
                             .selected(true),
                     ),
                 cx,
@@ -96,8 +96,7 @@ pub fn swatches(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                             .on_pick(move |next, _, cx| set(&picked, Some(next), cx)),
                     ))
                     .children(
-                        dropped
-                            .map(|color| ColorSwatch::new("dropped", color).size(ControlSize::Md)),
+                        dropped.map(|color| ColorSwatch::new("dropped", color).size(Size::Medium)),
                     ),
                 cx,
             )),

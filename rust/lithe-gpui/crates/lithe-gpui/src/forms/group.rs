@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use super::{TextInput, input::text_size};
-use crate::theme::{ActiveTheme, ControlSize, Radius};
+use crate::theme::{ActiveTheme, Radius, Size};
 
 /// A block joined to a field's side: text such as `https://`, or a control.
 #[derive(IntoElement)]
@@ -38,7 +38,7 @@ pub struct InputGroup {
     state: Entity<TextInput>,
     before: Vec<InputAddon>,
     after: Vec<InputAddon>,
-    size: ControlSize,
+    size: Size,
 }
 
 impl InputGroup {
@@ -47,7 +47,7 @@ impl InputGroup {
             state: state.clone(),
             before: Vec::new(),
             after: Vec::new(),
-            size: ControlSize::default(),
+            size: Size::default(),
         }
     }
 
@@ -61,7 +61,7 @@ impl InputGroup {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -116,5 +116,11 @@ impl RenderOnce for InputGroup {
             .children(self.before.into_iter().map(|block| addon(block, true)))
             .child(div().flex_1().min_w_0().px(pad).child(self.state))
             .children(self.after.into_iter().map(|block| addon(block, false)))
+    }
+}
+
+impl crate::theme::Sizable for InputGroup {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

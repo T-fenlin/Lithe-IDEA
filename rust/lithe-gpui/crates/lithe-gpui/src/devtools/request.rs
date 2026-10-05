@@ -396,20 +396,21 @@ impl RenderOnce for ApiRequestBuilder {
                             .child(Input::new(&url)),
                     )
                     .child(
-                        Button::new((id.clone(), "send")).label(if self.sending { "Sending…" } else { "Send" })
-                        .variant(ButtonVariant::Primary)
-                        .disabled(!ready)
-                        .on_click(move |_, window, cx| {
-                            let request = sent.read(cx).read(&key, cx);
-                            log::info!(
-                                "request builder: send {} {}",
-                                request.method.name(),
-                                request.address()
-                            );
-                            if let Some(on_send) = &on_send {
-                                on_send(request, window, cx);
-                            }
-                        }),
+                        Button::new((id.clone(), "send"))
+                            .label(if self.sending { "Sending…" } else { "Send" })
+                            .variant(ButtonVariant::Primary)
+                            .disabled(!ready)
+                            .on_click(move |_, window, cx| {
+                                let request = sent.read(cx).read(&key, cx);
+                                log::info!(
+                                    "request builder: send {} {}",
+                                    request.method.name(),
+                                    request.address()
+                                );
+                                if let Some(on_send) = &on_send {
+                                    on_send(request, window, cx);
+                                }
+                            }),
                     ),
             )
             .child(

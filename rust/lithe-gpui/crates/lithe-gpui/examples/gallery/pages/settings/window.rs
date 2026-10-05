@@ -1,3 +1,4 @@
+use gpui::{App, Entity, Hsla, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     forms::TextInput,
     primitives::IconName,
@@ -7,7 +8,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, Density},
 };
-use gpui::{App, Entity, Hsla, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::pages;
 use crate::{

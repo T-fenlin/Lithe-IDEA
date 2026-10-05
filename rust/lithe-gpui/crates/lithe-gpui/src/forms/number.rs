@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::format::{self, Separators},
 };
 
@@ -220,7 +220,7 @@ pub struct NumberInput {
     precision: usize,
     prefix: Option<SharedString>,
     suffix: Option<AnyElement>,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnChange>,
     on_commit: Option<OnChange>,
     scrub_label: Option<SharedString>,
@@ -237,7 +237,7 @@ impl NumberInput {
             precision: 0,
             prefix: None,
             suffix: None,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
             on_commit: None,
             scrub_label: None,
@@ -288,7 +288,7 @@ impl NumberInput {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -334,7 +334,7 @@ impl RenderOnce for NumberInput {
             let theme = cx.theme();
             let face = div()
                 .flex_none()
-                .min_w(theme.control_height(ControlSize::Md))
+                .min_w(theme.control_height(Size::Medium))
                 .whitespace_nowrap()
                 .text_size(theme.text_size(TextSize::Sm))
                 .text_color(theme.colors.fg_muted)
@@ -482,3 +482,9 @@ impl RenderOnce for ScrubInput {
 
 #[cfg(test)]
 mod tests;
+
+impl crate::theme::Sizable for NumberInput {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
+    }
+}

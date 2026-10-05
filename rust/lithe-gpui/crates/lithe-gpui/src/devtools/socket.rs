@@ -197,17 +197,18 @@ impl RenderOnce for WebSocketConsole {
                             ),
                     )
                     .children(on_toggle.map(|on_toggle| {
-                        Button::new((self.id.clone(), "toggle")).label(if self.state == SocketState::Closed {
+                        Button::new((self.id.clone(), "toggle"))
+                            .label(if self.state == SocketState::Closed {
                                 "Connect"
                             } else {
                                 "Disconnect"
                             })
-                        .variant(ButtonVariant::Secondary)
-                        .disabled(self.state == SocketState::Opening)
-                        .on_click(move |_, window, cx| {
-                            log::info!("websocket console: connect or disconnect");
-                            on_toggle(window, cx);
-                        })
+                            .variant(ButtonVariant::Secondary)
+                            .disabled(self.state == SocketState::Opening)
+                            .on_click(move |_, window, cx| {
+                                log::info!("websocket console: connect or disconnect");
+                                on_toggle(window, cx);
+                            })
                     })),
             )
             .child(
@@ -241,7 +242,8 @@ impl RenderOnce for WebSocketConsole {
                             .child(Input::new(&self.draft)),
                     )
                     .child(
-                        Button::new((self.id, "send")).label("Send")
+                        Button::new((self.id, "send"))
+                            .label("Send")
                             .variant(ButtonVariant::Primary)
                             .disabled(!ready)
                             .on_click(move |_, window, cx| pressed(window, cx)),

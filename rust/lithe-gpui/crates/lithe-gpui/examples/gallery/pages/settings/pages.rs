@@ -1,3 +1,4 @@
+use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, div, px};
 use lithe_gpui::{
     forms::{Choice, Combobox, FontPicker},
     settings::{
@@ -8,7 +9,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, HUE_NAMES},
 };
-use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, div, px};
 
 use super::window::{Fields, Prefs, SIZE};
 use crate::ui::change;

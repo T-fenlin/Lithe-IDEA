@@ -11,7 +11,7 @@ use crate::{
     forms::OnValue,
     lists::{DirEntry, DirectoryListing, OnClimb, listed, path_bar},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -181,7 +181,7 @@ impl RenderOnce for FileExplorer {
         let switch = VIEWS
             .iter()
             .fold(
-                SegmentedControl::new((id.clone(), "view"), key).size(ControlSize::Sm),
+                SegmentedControl::new((id.clone(), "view"), key).size(Size::Small),
                 |switch, (_, key, label, icon)| switch.segment(*key, *label, Some(*icon)),
             )
             .on_change(move |key, window, cx| {

@@ -17,7 +17,7 @@ use crate::{
     overlays::HoverCard,
     primitives::{Icon, IconName},
     shell::ToolbarSeparator,
-    theme::{ActiveTheme, ControlSize, Elevation, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, IconSize, Radius, Size, TextSize},
     typography::tabular,
 };
 
@@ -201,7 +201,7 @@ impl RenderOnce for DocumentViewer {
             let on_zoom = self.on_zoom.clone();
             IconButton::new((self.id.clone(), tip), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(tip)
                 .disabled(next.is_none() || on_zoom.is_none())
                 .when_some(next.zip(on_zoom), |button, (next, on_zoom)| {
@@ -216,7 +216,7 @@ impl RenderOnce for DocumentViewer {
             .items_center()
             .gap_2()
             .px_3()
-            .h(theme.control_height(ControlSize::Lg))
+            .h(theme.control_height(Size::Large))
             .border_b_1()
             .border_color(colors.border)
             .child(
@@ -229,7 +229,7 @@ impl RenderOnce for DocumentViewer {
             .child(
                 IconButton::new((self.id.clone(), "previous"), IconName::ChevronUp)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Previous page")
                     .disabled(page_now == 0)
                     .on_click(go(page_now.saturating_sub(1), &scroll)),
@@ -241,7 +241,7 @@ impl RenderOnce for DocumentViewer {
             .child(
                 IconButton::new((self.id.clone(), "next"), IconName::ChevronDown)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Next page")
                     .disabled(page_now + 1 >= count)
                     .on_click(go((page_now + 1).min(count.saturating_sub(1)), &scroll)),
@@ -269,7 +269,7 @@ impl RenderOnce for DocumentViewer {
                             .tooltip("Pin notes"),
                         pinning,
                     )
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_toggle(move |on, _, cx| {
                         desk.update(cx, |desk, cx| {
                             desk.pinning = on;

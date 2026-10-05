@@ -92,13 +92,15 @@ impl RenderOnce for IncomingCallDialog {
                 .child(Pulse::new((id, "ring")).rounded_full().child(avatar)),
         )
         .action(move |close| {
-            Button::new((decline_id, "decline")).label("Decline")
+            Button::new((decline_id, "decline"))
+                .label("Decline")
                 .icon(IconName::PhoneOff)
                 .variant(ButtonVariant::Danger)
                 .on_click(move |_, window, cx| close(window, cx))
         })
         .action(move |close| {
-            Button::new((accept_id, "accept")).label("Accept")
+            Button::new((accept_id, "accept"))
+                .label("Accept")
                 .icon(icon)
                 .variant(ButtonVariant::Success)
                 .on_click(move |_, window, cx| {

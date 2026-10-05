@@ -1,3 +1,7 @@
+use gpui::{
+    App, AppContext, Bounds, Context, IntoElement, ParentElement, Render, Styled, TitlebarOptions,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowOptions, div, point, px, size,
+};
 use lithe_gpui::{
     buttons::{Button, SegmentedControl},
     files::FileIcon,
@@ -6,10 +10,6 @@ use lithe_gpui::{
     shell::{Vibrancy, WindowControls},
     theme::{ActiveTheme, Platform, Theme},
     typography::{Kbd, KbdCombo},
-};
-use gpui::{
-    App, AppContext, Bounds, Context, IntoElement, ParentElement, Render, Styled, TitlebarOptions,
-    Window, WindowBackgroundAppearance, WindowBounds, WindowOptions, div, point, px, size,
 };
 
 use crate::{

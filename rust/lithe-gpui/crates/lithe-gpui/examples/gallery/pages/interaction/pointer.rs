@@ -1,3 +1,7 @@
+use gpui::{
+    App, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, point, prelude::*, px, size,
+};
 use lithe_gpui::{
     interaction::{Resizable, Rotatable, SelectionArea},
     layout::{Transform, Viewport},
@@ -5,10 +9,6 @@ use lithe_gpui::{
     primitives::{FocusRing, Pressable},
     theme::{ActiveTheme, Elevation, Radius, TextSize},
     typography::format::plural,
-};
-use gpui::{
-    App, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, point, prelude::*, px, size,
 };
 
 use crate::{

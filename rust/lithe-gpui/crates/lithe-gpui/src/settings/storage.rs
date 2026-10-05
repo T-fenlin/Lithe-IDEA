@@ -288,7 +288,8 @@ impl RenderOnce for ImportExportSettings {
             .gap_3()
             .child(
                 div().flex().child(
-                    Button::new((self.id.clone(), "export")).label("Export settings")
+                    Button::new((self.id.clone(), "export"))
+                        .label("Export settings")
                         .variant(ButtonVariant::Secondary)
                         .on_click(move |_, window, cx| {
                             log::info!("settings: export");

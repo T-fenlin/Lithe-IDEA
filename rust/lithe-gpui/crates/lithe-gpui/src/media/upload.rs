@@ -11,7 +11,7 @@ use crate::{
     forms::{DropZone, PICTURES, Run, browse},
     motion::Spinner,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -125,8 +125,9 @@ impl RenderOnce for ImageUpload {
         let colors = theme.colors.clone();
         let replace = pick.map(|pick| {
             let what = SharedString::from(format!("image upload {:?}", self.id));
-            Button::new((self.id.clone(), "replace")).label("Replace")
-                .size(ControlSize::Sm)
+            Button::new((self.id.clone(), "replace"))
+                .label("Replace")
+                .size(Size::Small)
                 .on_click(move |_, window, cx| {
                     let pick = pick.clone();
                     browse(
@@ -140,9 +141,10 @@ impl RenderOnce for ImageUpload {
                 })
         });
         let remove = self.on_remove.map(|remove| {
-            Button::new((self.id.clone(), "remove")).label("Remove")
+            Button::new((self.id.clone(), "remove"))
+                .label("Remove")
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(move |_, window, cx| {
                     log::info!("image upload: removed");
                     remove(window, cx)

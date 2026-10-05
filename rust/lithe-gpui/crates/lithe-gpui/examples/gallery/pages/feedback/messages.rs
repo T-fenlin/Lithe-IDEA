@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     feedback::{
@@ -9,7 +10,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, Radius},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder};
 
 use crate::{
     probe::probe,
@@ -111,7 +111,11 @@ pub fn center(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     "18m",
                 )
                 .action(Button::new("note-review").label("Review").primary())
-                .action(Button::new("note-later").label("Later").variant(ButtonVariant::Ghost)),
+                .action(
+                    Button::new("note-later")
+                        .label("Later")
+                        .variant(ButtonVariant::Ghost),
+                ),
                 item(
                     2,
                     IconName::CalendarDays,
@@ -217,7 +221,8 @@ pub fn alerts(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .on_dismiss(move |_, cx| set(&hide, false, cx))
                     .into_any_element()
             } else {
-                Button::new("alert-again").label("Show the closed alert")
+                Button::new("alert-again")
+                    .label("Show the closed alert")
                     .variant(ButtonVariant::Link)
                     .on_click(move |_, _, cx| set(&show, true, cx))
                     .into_any_element()
@@ -263,7 +268,8 @@ pub fn banner(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .child(Caption::new("The window's content sits under it."))
                     .when(!shown, |content| {
                         content.child(
-                            Button::new("banner-again").label("Show the banner")
+                            Button::new("banner-again")
+                                .label("Show the banner")
                                 .variant(ButtonVariant::Link)
                                 .on_click(move |_, _, cx| set(&again, true, cx)),
                         )
@@ -343,7 +349,8 @@ pub fn lines(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "status",
-                Button::new("status-step").label("Next status")
+                Button::new("status-step")
+                    .label("Next status")
                     .on_click(move |_, _, cx| set(&step, (now + 1) % STEPS.len(), cx)),
             ))
             .child(StatusMessage::new("status", STEPS[now]).icon(IconName::Upload)),

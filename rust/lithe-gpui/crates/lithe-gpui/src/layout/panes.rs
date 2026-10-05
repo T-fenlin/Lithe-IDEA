@@ -11,7 +11,7 @@ use super::{SplitPane, split::check_weights};
 use crate::{
     buttons::IconButton,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 pub type PaneId = u64;
@@ -245,7 +245,7 @@ impl PaneGroup {
             .flex()
             .items_center()
             .justify_between()
-            .h(theme.control_height(ControlSize::Lg))
+            .h(theme.control_height(Size::Large))
             .pl_3()
             .pr_1()
             .border_b_1()
@@ -263,21 +263,21 @@ impl PaneGroup {
                     .gap_0p5()
                     .child(
                         IconButton::new(("split-right", id), IconName::PanelRight)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(cx.listener(move |group, _, _, cx| {
                                 group.split(id, Axis::Horizontal, cx);
                             })),
                     )
                     .child(
                         IconButton::new(("split-down", id), IconName::PanelBottom)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(cx.listener(move |group, _, _, cx| {
                                 group.split(id, Axis::Vertical, cx);
                             })),
                     )
                     .child(
                         IconButton::new(("close", id), IconName::X)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .disabled(lone)
                             .on_click(cx.listener(move |group, _, _, cx| group.close(id, cx))),
                     ),

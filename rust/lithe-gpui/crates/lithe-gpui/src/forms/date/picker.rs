@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
 
 type OnSpan = Rc<dyn Fn((Date, Date), &mut Window, &mut App)>;
@@ -68,7 +68,7 @@ pub(crate) struct Face {
     pub icon: IconName,
     pub shown: Option<SharedString>,
     pub placeholder: SharedString,
-    pub size: ControlSize,
+    pub size: Size,
     pub disabled: bool,
 }
 
@@ -150,7 +150,7 @@ pub struct DatePicker {
     placeholder: SharedString,
     bounds: (Option<Date>, Option<Date>),
     today: Option<Date>,
-    size: ControlSize,
+    size: Size,
     disabled: bool,
     on_change: Option<OnDate>,
 }
@@ -163,7 +163,7 @@ impl DatePicker {
             placeholder: SharedString::from("Pick a date"),
             bounds: (None, None),
             today: None,
-            size: ControlSize::default(),
+            size: Size::default(),
             disabled: false,
             on_change: None,
         }
@@ -185,7 +185,7 @@ impl DatePicker {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -274,7 +274,7 @@ pub struct DateRangePicker {
     value: Option<(Date, Date)>,
     placeholder: SharedString,
     today: Option<Date>,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnSpan>,
 }
 
@@ -285,7 +285,7 @@ impl DateRangePicker {
             value,
             placeholder: SharedString::from("Pick dates"),
             today: None,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -300,7 +300,7 @@ impl DateRangePicker {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -385,5 +385,17 @@ impl RenderOnce for DateRangePicker {
             window,
             cx,
         )
+    }
+}
+
+impl crate::theme::Sizable for DatePicker {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
+    }
+}
+
+impl crate::theme::Sizable for DateRangePicker {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

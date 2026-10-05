@@ -7,7 +7,7 @@ use super::{Block, BlockEditor, BlockKind, view::Look};
 use crate::{
     buttons::{ButtonVariant, IconButton},
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
 };
 
 /// A table's shape: columns, rows, and the cells that fold into their left neighbor.
@@ -183,7 +183,7 @@ pub(super) fn table(
                 cx: &mut Context<BlockEditor>| {
         IconButton::new((id.clone(), format!("table-{key}-{name}")), icon)
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .tooltip(name)
             .on_click(cx.listener(move |editor, _, window, cx| run(editor, key, cell, window, cx)))
     };

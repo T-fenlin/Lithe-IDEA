@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use lithe_gpui::misc::{Captcha, CaptchaState, QrCodeScanner};
 use gpui::{App, IntoElement, ParentElement, RenderImage, Styled, Window, div, px};
+use lithe_gpui::misc::{Captcha, CaptchaState, QrCodeScanner};
 
 use crate::probe::probe;
 use crate::ui::{picture, section};

@@ -7,7 +7,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     forms::evaluate,
     primitives::{FocusRing, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{
         format::{MINUS, Separators, group_digits, significant},
         tabular,
@@ -235,7 +235,9 @@ impl RenderOnce for Calculator {
         };
         let keys = PAD.iter().map(|&(key, label)| {
             let button = match key {
-                Key::Back => Button::new((id.clone(), "back")).label("").icon(IconName::Delete),
+                Key::Back => Button::new((id.clone(), "back"))
+                    .label("")
+                    .icon(IconName::Delete),
                 _ => Button::new((id.clone(), label)).label(label),
             };
             let tape = tape.clone();
@@ -244,7 +246,7 @@ impl RenderOnce for Calculator {
                 .when(key == Key::Digit('0'), |cell| cell.col_span(2))
                 .child(
                     button
-                        .size(ControlSize::Lg)
+                        .size(Size::Large)
                         .variant(match key {
                             Key::Equals => ButtonVariant::Primary,
                             Key::Digit(_) | Key::Point => ButtonVariant::Secondary,

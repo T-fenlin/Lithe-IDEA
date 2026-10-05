@@ -10,7 +10,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     motion::Spinner,
     primitives::{Disclosure, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{DurationStyle, format},
 };
 
@@ -107,7 +107,7 @@ impl RenderOnce for CommandBlock {
         let copy = |key: &'static str, icon, words: &'static str, text: String| {
             IconButton::new((self.id.clone(), key), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(words)
                 .on_click(move |_, _, cx| {
                     log::info!("command block: {words}");
@@ -168,7 +168,7 @@ impl RenderOnce for CommandBlock {
                     .children(self.on_rerun.map(|rerun| {
                         IconButton::new((self.id.clone(), "rerun"), IconName::RotateCcw)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Run again")
                             .on_click(move |_, window, cx| rerun(window, cx))
                     }))

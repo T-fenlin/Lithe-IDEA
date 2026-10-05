@@ -1,3 +1,4 @@
+use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::*, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant, IconButton},
     data_display::{Badge, Tone},
@@ -7,9 +8,8 @@ use lithe_gpui::{
         FeatureHighlight, Hotspot, OnboardingStep, OnboardingWizard, SetupChecklist, SetupTask,
     },
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
-use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::*, px};
 
 use crate::{
     probe::probe,
@@ -80,9 +80,10 @@ pub fn wizard(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .gap_3()
             .child(format!("{} is ready.", name.read(cx).text()))
             .child(
-                Button::new("onboarding-again").label("Start over")
+                Button::new("onboarding-again")
+                    .label("Start over")
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, _, cx| {
                         change(&again, cx, |welcome| *welcome = Welcome::default())
                     }),
@@ -182,7 +183,7 @@ pub fn highlights(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
                 row.child(
                     Button::new("onboarding-show-again").label("Show again")
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, _, cx| change(&reset, cx, |seen| *seen = Seen::default())),
                 )
             }),
@@ -235,9 +236,10 @@ pub fn checklist(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
             done,
         });
     let body = match hidden {
-        true => Button::new("onboarding-setup-again").label("Show the checklist")
+        true => Button::new("onboarding-setup-again")
+            .label("Show the checklist")
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_click(move |_, _, cx| {
                 change(&reset, cx, |setup| {
                     *setup = Setup {

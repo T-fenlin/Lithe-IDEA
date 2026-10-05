@@ -10,7 +10,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     motion::ProgressBar,
     primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{DurationStyle, Ellipsis, MiddleEllipsis, format},
 };
 
@@ -86,7 +86,7 @@ pub(super) fn row(id: ElementId, transfer: &Transfer, asks: &Asks, cx: &App) -> 
             let key = key.clone();
             IconButton::new((id.clone(), name), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(tip)
                 .on_click(move |_, window, cx| {
                     log::info!("transfer {key}: {name}");

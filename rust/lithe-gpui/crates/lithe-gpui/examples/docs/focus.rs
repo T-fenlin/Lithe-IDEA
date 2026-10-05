@@ -1,12 +1,12 @@
+use gpui::{
+    App, AppContext, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
+    StatefulInteractiveElement, Styled, Window, WindowOptions, div, transparent_black,
+};
 use lithe_gpui::{
     Assets,
     buttons::Button,
     primitives::{FocusRing, FocusScope},
     theme::{ActiveTheme, Radius},
-};
-use gpui::{
-    App, AppContext, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, WindowOptions, div, transparent_black,
 };
 
 struct Panel {

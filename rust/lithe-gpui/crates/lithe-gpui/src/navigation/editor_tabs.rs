@@ -12,7 +12,7 @@ use crate::{
     forms::Choice,
     i18n,
     primitives::{DragGhost, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 /// One open document: its id, title and state.
@@ -193,7 +193,7 @@ impl RenderOnce for EditorTabs {
                 let slot: AnyElement = if tab.pinned {
                     let pin = self.on_pin.clone();
                     IconButton::new(("pin", ix), IconName::Pin)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .variant(ButtonVariant::Ghost)
                         .tooltip("Unpin")
                         .on_click(move |_, window, cx| {
@@ -205,7 +205,7 @@ impl RenderOnce for EditorTabs {
                     let close_button = {
                         let close = self.on_close.clone();
                         IconButton::new(("close", ix), IconName::X)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .variant(ButtonVariant::Ghost)
                             .tooltip(i18n::text(cx, "dialog.close", &[]))
                             .on_click(move |_, window, cx| {
@@ -217,7 +217,7 @@ impl RenderOnce for EditorTabs {
                     div()
                         .relative()
                         .flex_none()
-                        .size(theme.control_height(ControlSize::Sm))
+                        .size(theme.control_height(Size::Small))
                         .when(tab.dirty, |slot| {
                             slot.child(
                                 div()
@@ -257,7 +257,7 @@ impl RenderOnce for EditorTabs {
                     .items_center()
                     .gap_1p5()
                     .max_w(wide)
-                    .h(theme.control_height(ControlSize::Lg))
+                    .h(theme.control_height(Size::Large))
                     .pl_3()
                     .pr_1()
                     .border_r_1()

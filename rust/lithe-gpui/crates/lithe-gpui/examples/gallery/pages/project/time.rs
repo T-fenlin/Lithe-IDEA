@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use lithe_gpui::project::{DatabaseView, PomodoroTimer, Status, TimeEntry, TimeTracker};
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use lithe_gpui::project::{DatabaseView, PomodoroTimer, Status, TimeEntry, TimeTracker};
 use web_time::Instant;
 
 use super::{board, quiet};

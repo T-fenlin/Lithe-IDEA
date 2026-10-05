@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     forms::TextInput,
     git::{
@@ -7,7 +8,6 @@ use lithe_gpui::{
     lists::GitStatus,
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::work::history;
 use crate::ui::{keep, row, section, set};

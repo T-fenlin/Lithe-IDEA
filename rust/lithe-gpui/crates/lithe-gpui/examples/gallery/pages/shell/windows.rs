@@ -1,15 +1,15 @@
+use gpui::{
+    App, AppContext, Context, IntoElement, ObjectFit, ParentElement, Render, SharedString, Styled,
+    Window, div, prelude::*, px, size,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant, IconButton},
     primitives::{IconName, Image},
     shell::{
         AboutDialog, Corner, MiniWindow, SplashScreen, TitleBar, WindowManager, WindowSwitcher,
     },
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{Caption, Label, Title},
-};
-use gpui::{
-    App, AppContext, Context, IntoElement, ObjectFit, ParentElement, Render, SharedString, Styled,
-    Window, div, prelude::*, px, size,
 };
 
 use super::chrome::window_frame;
@@ -60,7 +60,8 @@ fn trigger(
 ) -> impl IntoElement {
     probe(
         key,
-        Button::new(key).label(label)
+        Button::new(key)
+            .label(label)
             .variant(ButtonVariant::Outline)
             .icon(IconName::AppWindow)
             .on_click(move |_, _, cx| open(cx)),
@@ -165,8 +166,9 @@ impl Render for Managed {
                     }))
                     .when(asked, |body| {
                         body.child(
-                            Button::new("draft-close").label("Close anyway")
-                                .size(ControlSize::Sm)
+                            Button::new("draft-close")
+                                .label("Close anyway")
+                                .size(Size::Small)
                                 .on_click(|_, window, _| window.remove_window()),
                         )
                     }),
@@ -201,8 +203,9 @@ pub fn window_manager(cx: &mut App) -> impl IntoElement + use<> {
     )))
     .child(
         row().children(open.into_iter().enumerate().map(|(ix, (handle, title))| {
-            Button::new(("managed-focus", ix)).label(title)
-                .size(ControlSize::Sm)
+            Button::new(("managed-focus", ix))
+                .label(title)
+                .size(Size::Small)
                 .variant(ButtonVariant::Subtle)
                 .on_click(move |_, _, cx| {
                     if let Err(error) = WindowManager::focus(handle, cx) {
@@ -224,7 +227,8 @@ pub fn window_switcher(window: &mut Window, cx: &mut App) -> impl IntoElement + 
     )
     .child(probe(
         "switcher-open",
-        Button::new("switcher-open").label("Switch windows")
+        Button::new("switcher-open")
+            .label("Switch windows")
             .variant(ButtonVariant::Outline)
             .on_click(move |_, _, cx| {
                 show.update(cx, |shown, cx| {
@@ -270,7 +274,7 @@ impl Render for Player {
             .px_3()
             .child(
                 div()
-                    .size(theme.control_height(ControlSize::Lg) * 2.0)
+                    .size(theme.control_height(Size::Large) * 2.0)
                     .rounded(theme.radius(Radius::Md))
                     .overflow_hidden()
                     .child(

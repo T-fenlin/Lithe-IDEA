@@ -1,3 +1,4 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::Button,
     data_display::Avatar,
@@ -7,7 +8,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, TextSize},
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use web_time::Instant;
 
 use crate::{

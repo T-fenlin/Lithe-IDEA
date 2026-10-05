@@ -144,13 +144,15 @@ pub(super) fn time_dialog(
     .action({
         let id = id.clone();
         move |close| {
-            Button::new((id, "cancel")).label("Cancel")
+            Button::new((id, "cancel"))
+                .label("Cancel")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, window, cx| close(window, cx))
         }
     })
     .action(move |close| {
-        Button::new((id.clone(), "take")).label(SharedString::from(ask.action))
+        Button::new((id.clone(), "take"))
+            .label(SharedString::from(ask.action))
             .variant(ButtonVariant::Primary)
             .disabled(ahead.is_none())
             .on_click(move |_, window, cx| {

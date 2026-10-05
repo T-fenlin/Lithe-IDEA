@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     account::{
         Account, AccountSwitcher, ApiKey, ApiKeyManager, Profile, ProfileCard, ProfileEditor,
@@ -8,7 +9,6 @@ use lithe_gpui::{
     menus::MenuItem,
     primitives::IconName,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

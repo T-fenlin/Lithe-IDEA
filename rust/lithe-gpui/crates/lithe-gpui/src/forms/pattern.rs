@@ -7,7 +7,7 @@ use gpui::{
 use regex::Regex;
 
 use super::{Highlight, Input, TextInput};
-use crate::theme::{ActiveTheme, ControlSize, TextSize};
+use crate::theme::{ActiveTheme, Size, TextSize};
 
 /// Token spans of a regex, by kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,7 +99,7 @@ pub fn regex_highlights(pattern: &str, cx: &App) -> Vec<(Range<usize>, Highlight
 #[derive(IntoElement)]
 pub struct RegexInput {
     state: Entity<TextInput>,
-    size: ControlSize,
+    size: Size,
 }
 
 impl RegexInput {
@@ -107,11 +107,11 @@ impl RegexInput {
     pub fn new(state: &Entity<TextInput>) -> Self {
         Self {
             state: state.clone(),
-            size: ControlSize::default(),
+            size: Size::default(),
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -180,5 +180,11 @@ mod tests {
         );
         assert_eq!(found[1].0, 1..4);
         assert_eq!(found[5].0, 8..15);
+    }
+}
+
+impl crate::theme::Sizable for RegexInput {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

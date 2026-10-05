@@ -10,7 +10,7 @@ use crate::{
     feedback::InlineMessage,
     forms::{Enter, Input, TextInput},
     primitives::{FocusRing, Icon, IconName, Image, Severity, checked_ratio, framed, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius},
+    theme::{ActiveTheme, IconSize, Radius, Size},
 };
 
 type OnAnswer = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
@@ -125,8 +125,8 @@ impl RenderOnce for Captcha {
                 .flex_none()
                 .items_center()
                 .gap_1()
-                .h(theme.control_height(ControlSize::Md))
-                .px(theme.control_padding(ControlSize::Md))
+                .h(theme.control_height(Size::Medium))
+                .px(theme.control_padding(Size::Medium))
                 .rounded(radius)
                 .border_1()
                 .border_color(colors.border.alpha(0.0))
@@ -141,7 +141,8 @@ impl RenderOnce for Captcha {
                 .into_any_element(),
             false => {
                 let answer = answer.clone();
-                Button::new((id.clone(), "verify-button")).label("Verify")
+                Button::new((id.clone(), "verify-button"))
+                    .label("Verify")
                     .variant(ButtonVariant::Primary)
                     .focus_handle(&verify)
                     .loading(checking)

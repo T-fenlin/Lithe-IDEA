@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 use super::chrome::{OnClose, WindowControls, controls_style, drag_region, route_close};
 use crate::{
     layout::on_axis,
-    theme::{ActiveTheme, ControlSize, Platform, TextSize},
+    theme::{ActiveTheme, Platform, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -144,7 +144,7 @@ impl RenderOnce for ColumnShell {
                         title(column.title, cx),
                         column.actions,
                     )
-                    .min_w(cx.theme().control_height(ControlSize::Lg))
+                    .min_w(cx.theme().control_height(Size::Large))
                     .debug_selector(move || format!("column-shell-items-{ix}")),
                 )
                 .children(trail);

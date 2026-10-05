@@ -1,10 +1,10 @@
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     menus::{Menu, MenuBar, MenuItem, PieItem, PieMenu, SearchableMenu},
     primitives::IconName,
     theme::{ActiveTheme, Radius},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use super::rows::{ran, run};
 use crate::{

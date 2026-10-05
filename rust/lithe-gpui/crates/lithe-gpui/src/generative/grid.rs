@@ -12,7 +12,7 @@ use crate::{
     forms::Pick,
     motion::Skeleton,
     primitives::{Icon, IconName, Image, checked_ratio, framed, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{format::percent, tabular},
 };
 
@@ -171,15 +171,14 @@ impl RenderOnce for GenerationGrid {
                                     )
                                     .child(div().text_center().child(reason))
                                     .children(retry.map(|retry| {
-                                        Button::new((self.id.clone(), format!("retry-{ix}"))).label("Retry")
-                                        .variant(ButtonVariant::Secondary)
-                                        .size(ControlSize::Sm)
-                                        .on_click(
-                                            move |_, window, cx| {
+                                        Button::new((self.id.clone(), format!("retry-{ix}")))
+                                            .label("Retry")
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(Size::Small)
+                                            .on_click(move |_, window, cx| {
                                                 log::info!("generation grid: retry {ix}");
                                                 retry(ix, window, cx)
-                                            },
-                                        )
+                                            })
                                     })),
                             )
                             .into_any_element()

@@ -9,7 +9,7 @@ use super::{Input, InputEvent, TextInput, options::Run};
 use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
 };
 
 type OnRows = Rc<dyn Fn(Vec<Vec<String>>, &mut Window, &mut App)>;
@@ -142,7 +142,7 @@ impl RenderOnce for FieldArray {
                 .child(div().flex_1().min_w_0().child(row))
                 .child(
                     IconButton::new(("remove-row", ix), IconName::Minus)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .tooltip("Remove")
                         .on_click(move |_, window, cx| {
                             log::info!("field array {id:?}: removed row {ix}");
@@ -161,8 +161,9 @@ impl RenderOnce for FieldArray {
             .children(lines)
             .child(
                 div().flex().child(
-                    Button::new(("add-row", 0usize)).label(self.add_label)
-                        .size(ControlSize::Sm)
+                    Button::new(("add-row", 0usize))
+                        .label(self.add_label)
+                        .size(Size::Small)
                         .variant(ButtonVariant::Ghost)
                         .icon(IconName::Plus)
                         .on_click(move |_, window, cx| {
@@ -198,15 +199,10 @@ fn render_rows(id: &ElementId, state: Entity<Rows>, add: &'static str, cx: &App)
         });
     state.read(cx).rows.iter().fold(array, |array, row| {
         array.row(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .children(row.iter().map(|(field, _)| {
-                    div()
-                        .flex_1()
-                        .child(Input::new(field).size(ControlSize::Sm))
-                })),
+            div().flex().items_center().gap_2().children(
+                row.iter()
+                    .map(|(field, _)| div().flex_1().child(Input::new(field).size(Size::Small))),
+            ),
         )
     })
 }

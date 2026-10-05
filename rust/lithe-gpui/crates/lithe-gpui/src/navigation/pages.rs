@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     forms::Run,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::format::{self, Separators},
 };
 
@@ -97,8 +97,9 @@ impl RenderOnce for Pagination {
             .map(move |(ix, entry)| match entry {
                 Some(number) => {
                     let go = go.clone();
-                    Button::new(("page", number)).label(number.to_string())
-                        .size(ControlSize::Sm)
+                    Button::new(("page", number))
+                        .label(number.to_string())
+                        .size(Size::Small)
                         .variant(if number == page {
                             ButtonVariant::Secondary
                         } else {
@@ -125,7 +126,7 @@ impl RenderOnce for Pagination {
             .gap_1()
             .child(
                 IconButton::new("previous", IconName::ChevronLeft)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Previous page")
                     .disabled(page == 1)
@@ -134,7 +135,7 @@ impl RenderOnce for Pagination {
             .children(cells)
             .child(
                 IconButton::new("next", IconName::ChevronRight)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Next page")
                     .disabled(page == pages)
@@ -215,7 +216,8 @@ impl RenderOnce for LoadMore {
             .py_4()
             .when(!done, |more| {
                 more.child(
-                    Button::new((self.id.clone(), "button")).label("Load more")
+                    Button::new((self.id.clone(), "button"))
+                        .label("Load more")
                         .loading(self.loading)
                         .on_click(move |_, window, cx| {
                             log::info!("load more {id:?}: asked");

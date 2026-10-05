@@ -486,7 +486,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "lithe-gpui: icon app-icons/missing.svg is not in the app's asset source")]
+    #[should_panic(
+        expected = "lithe-gpui: icon app-icons/missing.svg is not in the app's asset source"
+    )]
     fn a_path_the_source_lacks_fails() {
         ensure_found(&crate::Assets, "app-icons/missing.svg");
     }

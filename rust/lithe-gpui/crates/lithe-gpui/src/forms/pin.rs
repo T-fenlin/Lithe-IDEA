@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use super::{InputEvent, TextInput};
-use crate::theme::{ActiveTheme, ControlSize, Radius, TextSize};
+use crate::theme::{ActiveTheme, Radius, Size, TextSize};
 
 type OnCode = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 
@@ -120,7 +120,7 @@ impl RenderOnce for PinInput {
         let active = filled.len().min(length - 1);
         let theme = cx.theme();
         let colors = &theme.colors;
-        let side = theme.control_height(ControlSize::Lg) * 1.25;
+        let side = theme.control_height(Size::Large) * 1.25;
         let boxes = (0..length).map(|ix| {
             let current = focused && ix == active;
             let glyph = filled.get(ix).map(|ch| if self.masked { '•' } else { *ch });

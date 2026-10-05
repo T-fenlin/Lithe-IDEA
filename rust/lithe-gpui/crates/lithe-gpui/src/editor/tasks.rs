@@ -9,7 +9,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     motion::Spinner,
     primitives::{Disclosure, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Ellipsis, format},
 };
 
@@ -196,7 +196,7 @@ impl RenderOnce for TaskRunner {
                         .child(
                             IconButton::new((self.id.clone(), format!("run-{ix}")), icon)
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .tooltip(words)
                                 .when_some(action, |button, action| {
                                     button.on_click(move |_, window, cx| {

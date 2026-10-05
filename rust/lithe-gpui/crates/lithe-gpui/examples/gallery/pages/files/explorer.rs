@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, ToSpan};
 use lithe_gpui::{
     files::{FileExplorer, FileView},
     lists::{DirEntry, FileTree},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, ToSpan};
 
 use crate::{
     probe::probe,

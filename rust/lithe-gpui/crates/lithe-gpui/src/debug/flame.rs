@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::{
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::format,
 };
 
@@ -159,7 +159,7 @@ impl RenderOnce for Flamegraph {
         let theme = cx.theme();
         let colors = theme.colors.clone();
         let row = theme
-            .control_height(ControlSize::Sm)
+            .control_height(Size::Small)
             .to_pixels(window.rem_size());
         let placed = Rc::new(place(&self.root, &self.focus));
         let depth = placed.iter().map(|frame| frame.depth).max().unwrap_or(0) + 1;

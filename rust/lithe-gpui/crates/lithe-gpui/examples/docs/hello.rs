@@ -1,8 +1,8 @@
-use lithe_gpui::{Assets, buttons::Button, primitives::FocusScope, theme::ActiveTheme};
 use gpui::{
     App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Window,
     WindowOptions,
 };
+use lithe_gpui::{Assets, buttons::Button, primitives::FocusScope, theme::ActiveTheme};
 
 struct Hello {
     focus: FocusHandle,
@@ -25,7 +25,8 @@ impl Render for Hello {
             .text_color(colors.fg)
             .child(format!("Pressed {} times", self.presses))
             .child(
-                Button::new("press").label("Press")
+                Button::new("press")
+                    .label("Press")
                     .primary()
                     .on_click(move |_, _, cx| {
                         this.update(cx, |hello, cx| {

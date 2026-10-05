@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton, ToggleButton, ToggleItem},
     forms::{Input, TextInput},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Elevation, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
 };
 
 /// How a search matches: case exactly, whole words only, the query as a regular expression.
@@ -160,7 +160,7 @@ impl RenderOnce for FindWidget {
                 ToggleItem::new(key).icon(icon).tooltip(words),
                 on,
             )
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_toggle(move |on, window, cx| {
                 let mut next = options;
                 set(&mut next, on);
@@ -185,7 +185,7 @@ impl RenderOnce for FindWidget {
                            value: bool| {
             IconButton::new((self.id.clone(), key), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(words)
                 .disabled(!enabled)
                 .when_some(action, move |button, action| {
@@ -226,7 +226,7 @@ impl RenderOnce for FindWidget {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .child(Input::new(&self.find).size(ControlSize::Sm)),
+                            .child(Input::new(&self.find).size(Size::Small)),
                     )
                     .when(self.on_options.is_some(), |row| {
                         row.child(toggle(
@@ -281,7 +281,7 @@ impl RenderOnce for FindWidget {
                     .children(self.on_close.clone().map(|close| {
                         IconButton::new((self.id.clone(), "close"), IconName::X)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Close")
                             .on_click(move |_, window, cx| close(window, cx))
                     })),
@@ -290,27 +290,29 @@ impl RenderOnce for FindWidget {
                 let (one, all) = (self.on_replace.clone(), self.on_replace.clone());
                 row()
                     .when(self.on_toggle_replace.is_some(), |row| {
-                        row.pl(theme.control_height(ControlSize::Sm))
+                        row.pl(theme.control_height(Size::Small))
                     })
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .child(Input::new(field).size(ControlSize::Sm)),
+                            .child(Input::new(field).size(Size::Small)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "replace")).label("Replace")
+                        Button::new((self.id.clone(), "replace"))
+                            .label("Replace")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .disabled(!found)
                             .when_some(one, |button, one| {
                                 button.on_click(move |_, window, cx| one(false, window, cx))
                             }),
                     )
                     .child(
-                        Button::new((self.id.clone(), "all")).label("Replace all")
+                        Button::new((self.id.clone(), "all"))
+                            .label("Replace all")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .disabled(!found)
                             .when_some(all, |button, all| {
                                 button.on_click(move |_, window, cx| all(true, window, cx))

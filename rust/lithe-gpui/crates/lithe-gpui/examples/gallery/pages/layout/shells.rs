@@ -1,11 +1,11 @@
+use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::*, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     layout::{AppShell, Drawer, MasterDetail, Page, Sheet, Sidebar, h_stack},
     primitives::{Icon, IconName, Place},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Caption, Paragraph},
 };
-use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::*, px};
 
 use super::basics::tile;
 use crate::{
@@ -52,7 +52,7 @@ fn nav(collapsed: bool, cx: &App) -> impl IntoElement + use<> {
         .children(items.map(|(icon, label)| {
             h_stack()
                 .gap_3()
-                .h(theme.control_height(ControlSize::Md))
+                .h(theme.control_height(Size::Medium))
                 .px_2()
                 .rounded(theme.radius(Radius::Md))
                 .text_size(theme.text_size(TextSize::Sm))
@@ -75,10 +75,11 @@ pub fn sidebar(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 div().flex_1().p_4().flex().items_start().child(probe(
                     "sidebar-toggle",
-                    Button::new("sidebar-toggle").label(if collapsed { "Expand" } else { "Collapse" })
-                    .variant(ButtonVariant::Outline)
-                    .icon(IconName::PanelLeft)
-                    .on_click(move |_, _, cx| flip(&state, cx)),
+                    Button::new("sidebar-toggle")
+                        .label(if collapsed { "Expand" } else { "Collapse" })
+                        .variant(ButtonVariant::Outline)
+                        .icon(IconName::PanelLeft)
+                        .on_click(move |_, _, cx| flip(&state, cx)),
                 )),
             ),
     )
@@ -96,7 +97,8 @@ pub fn drawer(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "drawer-open",
-                Button::new("drawer-open").label("Open drawer")
+                Button::new("drawer-open")
+                    .label("Open drawer")
                     .on_click(move |_, _, cx| flip(&state, cx)),
             ))
             .when(open, |row| {
@@ -121,7 +123,9 @@ pub fn sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "sheet-open",
-                Button::new("sheet-open").label("Open sheet").on_click(move |_, _, cx| flip(&state, cx)),
+                Button::new("sheet-open")
+                    .label("Open sheet")
+                    .on_click(move |_, _, cx| flip(&state, cx)),
             ))
             .when(open, |row| {
                 row.child(
@@ -149,7 +153,8 @@ pub fn page(cx: &App) -> impl IntoElement + use<> {
             Page::new("Projects")
                 .subtitle("Everything your team is shipping.")
                 .action(
-                    Button::new("page-new").label("New project")
+                    Button::new("page-new")
+                        .label("New project")
                         .primary()
                         .icon(IconName::Plus),
                 )
@@ -167,7 +172,7 @@ pub fn app_shell(cx: &App) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let bar = |label: &'static str, cx: &App| {
         div()
-            .h(cx.theme().control_height(ControlSize::Md))
+            .h(cx.theme().control_height(Size::Medium))
             .px_3()
             .flex()
             .items_center()

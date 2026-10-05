@@ -11,7 +11,7 @@ use crate::{
     forms::{Choice, Run},
     motion,
     primitives::{FocusRing, Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 type OnStep = Rc<dyn Fn(usize, &mut Window, &mut App)>;
@@ -68,7 +68,7 @@ impl RenderOnce for Steps {
         let duration = motion::duration(motion::SLOW, cx);
         let theme = cx.theme();
         let colors = &theme.colors;
-        let mark = theme.control_height(ControlSize::Sm);
+        let mark = theme.control_height(Size::Small);
         let line = |ix: usize| {
             let filled = ix < current;
             let fill = div().bg(colors.accent).map(|fill| {
@@ -317,14 +317,15 @@ impl RenderOnce for Wizard {
                 },
             )
         });
-        let forward = Button::new((id.clone(), "advance")).label(if current == last { "Finish" } else { "Next" })
-        .primary()
-        .disabled(!self.ready)
-        .focus_handle(&advance)
-        .on_click(move |_, window, cx| match current == last {
-            true => finish(window, cx),
-            false => next(current + 1, window, cx),
-        });
+        let forward = Button::new((id.clone(), "advance"))
+            .label(if current == last { "Finish" } else { "Next" })
+            .primary()
+            .disabled(!self.ready)
+            .focus_handle(&advance)
+            .on_click(move |_, window, cx| match current == last {
+                true => finish(window, cx),
+                false => next(current + 1, window, cx),
+            });
         div()
             .id(self.id.clone())
             .flex()
@@ -347,7 +348,8 @@ impl RenderOnce for Wizard {
                     .items_center()
                     .justify_between()
                     .child(
-                        Button::new((id.clone(), "back")).label("Back")
+                        Button::new((id.clone(), "back"))
+                            .label("Back")
                             .variant(ButtonVariant::Ghost)
                             .disabled(current == 0)
                             .on_click(move |_, window, cx| {

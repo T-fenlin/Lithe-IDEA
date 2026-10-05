@@ -1,11 +1,11 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::Button,
     terminal::{AnsiText, CommandBlock, CommandHistory, CommandState, PastCommand},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::ui::{keep, row, section, set};
 

@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius},
+    theme::{ActiveTheme, IconSize, Radius, Size},
 };
 
 fn is_slot(slot: char) -> bool {
@@ -123,7 +123,7 @@ pub struct MaskedInput {
     id: ElementId,
     state: Entity<TextInput>,
     mask: SharedString,
-    size: ControlSize,
+    size: Size,
     prefix: Option<AnyElement>,
 }
 
@@ -137,12 +137,12 @@ impl MaskedInput {
             id: id.into(),
             state: state.clone(),
             mask: mask.into(),
-            size: ControlSize::default(),
+            size: Size::default(),
             prefix: None,
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -355,5 +355,11 @@ mod tests {
             fit("(999) 999-9999", "", 0..0, "(555) 123-4567"),
             ("(555) 123-4567".into(), 14)
         );
+    }
+}
+
+impl crate::theme::Sizable for MaskedInput {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

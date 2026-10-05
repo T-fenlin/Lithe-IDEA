@@ -1,3 +1,4 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::SegmentedControl,
     chat::{
@@ -10,7 +11,6 @@ use lithe_gpui::{
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use web_time::Instant;
 
 use crate::{

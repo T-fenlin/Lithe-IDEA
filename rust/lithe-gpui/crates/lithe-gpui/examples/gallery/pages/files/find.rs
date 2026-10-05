@@ -1,3 +1,7 @@
+use gpui::{
+    App, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+};
+use jiff::{SignedDuration, Timestamp, ToSpan};
 use lithe_gpui::{
     debug::HexViewer,
     documents::{Favorite, Favorites},
@@ -9,10 +13,6 @@ use lithe_gpui::{
     lists::DirEntry,
     overlays::Dialog,
 };
-use gpui::{
-    App, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
-};
-use jiff::{SignedDuration, Timestamp, ToSpan};
 
 use crate::{
     probe::probe,

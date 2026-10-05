@@ -1,3 +1,5 @@
+use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px};
+use jiff::{Timestamp, tz::TimeZone};
 use lithe_gpui::{
     forms::{Choice, Select},
     i18n::{I18n, LOCALES},
@@ -5,8 +7,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, Radius},
     typography::Ellipsis,
 };
-use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px};
-use jiff::{Timestamp, tz::TimeZone};
 
 mod a11y;
 

@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     data_display::UsageBar,
     files::{
@@ -6,7 +7,6 @@ use lithe_gpui::{
     },
     typography::format,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

@@ -9,7 +9,7 @@ use super::FileIcon;
 use crate::{
     buttons::{Button, ButtonVariant},
     forms::Checkbox,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{MiddleEllipsis, format},
 };
 
@@ -114,9 +114,10 @@ impl RenderOnce for DuplicateFinder {
         let small = theme.text_size(TextSize::Sm);
         let freed = freed(&self.groups, &self.marked);
         let marked: Rc<[SharedString]> = self.marked.into();
-        let remove = Button::new((self.id.clone(), "remove")).label("Remove marked")
+        let remove = Button::new((self.id.clone(), "remove"))
+            .label("Remove marked")
             .variant(ButtonVariant::Danger)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .disabled(marked.is_empty() || self.on_remove.is_none());
         let remove = match self.on_remove {
             Some(on_remove) => {

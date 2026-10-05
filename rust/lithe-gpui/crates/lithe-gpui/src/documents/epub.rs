@@ -9,7 +9,7 @@ use super::{reading::ReadingProgress, render::MarkdownRenderer};
 use crate::{
     buttons::{Button, ButtonVariant, IconButton, ToggleButton, ToggleItem},
     primitives::IconName,
-    theme::{ActiveTheme, ContainerSize, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, ContainerSize, Radius, Size, TextSize},
     typography::tabular,
 };
 
@@ -94,7 +94,7 @@ impl RenderOnce for EpubReader {
             let place = place.clone();
             IconButton::new((self.id.clone(), tip), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(tip)
                 .disabled(to.is_none())
                 .when_some(to, |button, to| {
@@ -150,7 +150,7 @@ impl RenderOnce for EpubReader {
                     .items_center()
                     .gap_2()
                     .px_2()
-                    .h(theme.control_height(ControlSize::Lg))
+                    .h(theme.control_height(Size::Large))
                     .child(
                         ToggleButton::new(
                             (self.id.clone(), "contents"),
@@ -159,7 +159,7 @@ impl RenderOnce for EpubReader {
                                 .tooltip("Chapters"),
                             contents,
                         )
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_toggle(move |on, _, cx| set(&toggle, cx, |place| place.contents = on)),
                     )
                     .child(
@@ -222,15 +222,23 @@ impl RenderOnce for EpubReader {
                                         .border_color(colors.border)
                                         .child(div().children(chapter.checked_sub(1).map(
                                             |previous| {
-                                                Button::new((self.id.clone(), "previous")).label(format!("← {}", self.chapters[previous].title))
-                                                .variant(ButtonVariant::Ghost)
-                                                .on_click(turn(previous))
+                                                Button::new((self.id.clone(), "previous"))
+                                                    .label(format!(
+                                                        "← {}",
+                                                        self.chapters[previous].title
+                                                    ))
+                                                    .variant(ButtonVariant::Ghost)
+                                                    .on_click(turn(previous))
                                             },
                                         )))
                                         .child(div().children((chapter + 1 < count).then(|| {
-                                            Button::new((self.id.clone(), "next")).label(format!("{} →", self.chapters[chapter + 1].title))
-                                            .variant(ButtonVariant::Ghost)
-                                            .on_click(turn(chapter + 1))
+                                            Button::new((self.id.clone(), "next"))
+                                                .label(format!(
+                                                    "{} →",
+                                                    self.chapters[chapter + 1].title
+                                                ))
+                                                .variant(ButtonVariant::Ghost)
+                                                .on_click(turn(chapter + 1))
                                         }))),
                                 ),
                         ),

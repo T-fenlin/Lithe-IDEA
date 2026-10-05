@@ -13,7 +13,7 @@ use crate::{
     data_display::Avatar,
     forms::OnValue,
     primitives::IconName,
-    theme::{ActiveTheme, AvatarSize, ControlSize, TextSize},
+    theme::{ActiveTheme, AvatarSize, Size, TextSize},
     typography::{Ellipsis, format},
 };
 
@@ -126,7 +126,7 @@ pub(super) fn open_letter(
             let key = key.clone();
             IconButton::new((id.clone(), format!("{name}-{key}")), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(tip)
                 .on_click(move |_, window, cx| {
                     log::info!("mail {key}: {name}");

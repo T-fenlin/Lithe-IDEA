@@ -7,14 +7,14 @@ use super::TextInput;
 use crate::{
     buttons::IconButton,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// A text field's frame: border, focus, and room for things before and after.
 #[derive(IntoElement)]
 pub struct Input {
     state: Entity<TextInput>,
-    size: ControlSize,
+    size: Size,
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
     clearable: bool,
@@ -25,7 +25,7 @@ impl Input {
     pub fn new(state: &Entity<TextInput>) -> Self {
         Self {
             state: state.clone(),
-            size: ControlSize::default(),
+            size: Size::default(),
             prefix: None,
             suffix: None,
             clearable: false,
@@ -33,7 +33,7 @@ impl Input {
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -61,11 +61,20 @@ impl Input {
     }
 }
 
-pub(crate) fn text_size(size: ControlSize) -> TextSize {
+pub(crate) fn text_size(size: Size) -> TextSize {
     match size {
-        ControlSize::Sm => TextSize::Sm,
-        ControlSize::Md => TextSize::Base,
-        ControlSize::Lg => TextSize::Md,
+        // An explicit height maps onto the nearest named tier.
+        Size::Size(height) => text_size(if f32::from(height) < 26.0 {
+            Size::Small
+        } else if f32::from(height) < 30.0 {
+            Size::Medium
+        } else {
+            Size::Large
+        }),
+        Size::XSmall => TextSize::Sm,
+        Size::Small => TextSize::Sm,
+        Size::Medium => TextSize::Base,
+        Size::Large => TextSize::Md,
     }
 }
 
@@ -131,7 +140,7 @@ impl RenderOnce for Input {
             .when(self.clearable && !empty && !disabled, |frame| {
                 frame.child(
                     IconButton::new(("input-clear", clear_id), IconName::CircleX)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .tooltip("Clear")
                         .on_click(move |_, window, cx| {
                             state.update(cx, |input, cx| input.set_text("", cx));
@@ -147,7 +156,7 @@ impl RenderOnce for Input {
 #[derive(IntoElement)]
 pub struct PasswordInput {
     state: Entity<TextInput>,
-    size: ControlSize,
+    size: Size,
 }
 
 impl PasswordInput {
@@ -155,11 +164,11 @@ impl PasswordInput {
     pub fn new(state: &Entity<TextInput>) -> Self {
         Self {
             state: state.clone(),
-            size: ControlSize::default(),
+            size: Size::default(),
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -181,7 +190,7 @@ impl RenderOnce for PasswordInput {
                         IconName::EyeOff
                     },
                 )
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(if masked {
                     "Show password"
                 } else {
@@ -198,5 +207,17 @@ impl RenderOnce for PasswordInput {
                     })
                 }),
             )
+    }
+}
+
+impl crate::theme::Sizable for Input {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
+    }
+}
+
+impl crate::theme::Sizable for PasswordInput {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

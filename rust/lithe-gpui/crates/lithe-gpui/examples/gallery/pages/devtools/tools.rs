@@ -1,9 +1,9 @@
+use gpui::{App, Hsla, IntoElement, ParentElement, Styled, Window, div, px, rgb};
+use jiff::Timestamp;
 use lithe_gpui::devtools::{
     ColorContrastChecker, Container, ContainerList, ContainerState, Encoder, Pod, PodList,
     PodPhase, Reading, RegexTester, ResourceMonitor,
 };
-use gpui::{App, Hsla, IntoElement, ParentElement, Styled, Window, div, px, rgb};
-use jiff::Timestamp;
 
 use crate::ui::{change, keep, section};
 

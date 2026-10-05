@@ -181,7 +181,7 @@ impl RenderOnce for DashboardGrid {
             .on_change
             .unwrap_or_else(|| panic!("dashboard grid {id:?} has no on_change"));
         let (colors, radius) = (theme.colors.clone(), theme.radius(Radius::Lg));
-        let grip = theme.control_height(crate::theme::ControlSize::Sm);
+        let grip = theme.control_height(crate::theme::Size::Small);
         let mut cards = self.cards;
         let placed: Vec<AnyElement> = shown
             .iter()

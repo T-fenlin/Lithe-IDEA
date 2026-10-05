@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     data_display::{Tag, Tone},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 type OnChange = Rc<dyn Fn(Vec<SharedString>, &mut Window, &mut App)>;
@@ -215,7 +215,7 @@ impl RenderOnce for TagInput {
             .flex_wrap()
             .items_center()
             .gap_1()
-            .min_h(theme.control_height(ControlSize::Md))
+            .min_h(theme.control_height(Size::Medium))
             .px_1()
             .py_0p5()
             .rounded(theme.radius(Radius::Md))

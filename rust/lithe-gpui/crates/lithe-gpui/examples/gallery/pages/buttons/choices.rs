@@ -1,8 +1,8 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{SegmentedControl, ToggleButton, ToggleGroup, ToggleItem},
     primitives::IconName,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

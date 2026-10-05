@@ -6,7 +6,7 @@ use crate::{
     buttons::{ToggleButton, ToggleItem},
     forms::{Input, TextInput},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// Whether a path passes comma-separated globs: some include pattern when there are any, and no exclude one.
@@ -99,7 +99,7 @@ impl RenderOnce for SearchFilters {
                 .tooltip("Leave out ignored files"),
             self.ignore,
         )
-        .size(ControlSize::Sm);
+        .size(Size::Small);
         let ignore = match self.on_ignore {
             Some(on_ignore) => ignore.on_toggle(move |on, window, cx| on_ignore(on, window, cx)),
             None => ignore,
@@ -117,12 +117,12 @@ impl RenderOnce for SearchFilters {
                     .child(
                         div()
                             .flex_1()
-                            .child(Input::new(&self.include).size(ControlSize::Sm)),
+                            .child(Input::new(&self.include).size(Size::Small)),
                     )
                     .child(ignore),
             )
             .child(label("Files to exclude"))
-            .child(Input::new(&self.exclude).size(ControlSize::Sm))
+            .child(Input::new(&self.exclude).size(Size::Small))
     }
 }
 

@@ -1,3 +1,7 @@
+use gpui::{
+    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    prelude::*, px,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     data_display::{Change, Release},
@@ -9,11 +13,7 @@ use lithe_gpui::{
     },
     primitives::{HelpTooltip, IconName},
     settings::Shortcut,
-    theme::{ActiveTheme, ControlSize, TextSize},
-};
-use gpui::{
-    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div,
-    prelude::*, px,
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 use crate::{
@@ -149,7 +149,7 @@ pub fn tips(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .action(
                             Button::new("onboarding-empty-new").label("New project")
                                 .variant(ButtonVariant::Primary)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .on_click(|_, _, _| log::info!("gallery: new project")),
                         ),
                 ),
@@ -164,9 +164,10 @@ pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let [opener, keys, close, show] = [(); 4].map(|_| state.clone());
     let body = match hidden {
-        true => Button::new("onboarding-help-show").label("Show help")
+        true => Button::new("onboarding-help-show")
+            .label("Show help")
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_click(move |_, _, cx| change(&show, cx, |help| help.hidden = false))
             .into_any_element(),
         false => div()

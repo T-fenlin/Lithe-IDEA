@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px, rems};
 use lithe_gpui::{
     agent::{AgentState, AgentStatus, CostBreakdown, HumanInputRequest},
     charts::{BarChart, Series},
@@ -9,7 +10,6 @@ use lithe_gpui::{
     forms::TextInput,
     tables::{Cell, Column, DataTable, Row},
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px, rems};
 
 use crate::{
     probe::probe,

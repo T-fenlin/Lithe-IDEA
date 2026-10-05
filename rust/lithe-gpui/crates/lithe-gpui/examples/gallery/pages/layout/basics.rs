@@ -1,9 +1,9 @@
+use gpui::{App, Div, Hsla, IntoElement, ParentElement, SharedString, Styled, div, px};
 use lithe_gpui::{
     layout::{AspectRatio, Container, Masonry, SimpleGrid, ZStack, h_stack, v_stack},
     theme::{ActiveTheme, ContainerSize, Radius, TextSize},
     typography::Caption,
 };
-use gpui::{App, Div, Hsla, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use crate::ui::{code, section, specimen, specimens};
 

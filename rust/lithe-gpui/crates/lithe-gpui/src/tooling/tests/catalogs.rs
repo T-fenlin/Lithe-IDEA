@@ -5,7 +5,7 @@ use gpui::{
 
 use crate::{
     forms::hex,
-    theme::{ControlSize, Density, Palette, Theme},
+    theme::{Density, Palette, Size, Theme},
     tooling::{A11yChecker, DesignTokenViewer},
 };
 
@@ -44,7 +44,7 @@ fn the_viewer_names_each_token_with_its_value(cx: &mut TestAppContext) {
             &[11, 12, 13, 14, 16, 20, 24, 32],
         ),
         ("Radius::", &["Sm", "Md", "Lg", "Xl"], &[4, 6, 8, 12]),
-        ("ControlSize::", &["Sm", "Md", "Lg"], &[24, 28, 32]),
+        ("Size::", &["Sm", "Md", "Lg"], &[24, 28, 32]),
         (
             "IconSize::",
             &["Xs", "Sm", "Md", "Lg", "Xl", "Xxl"],
@@ -82,7 +82,7 @@ fn the_viewer_names_each_token_with_its_value(cx: &mut TestAppContext) {
         &blue,
         "token-TextSize::Sm-12",
         "token-Radius::Md-6",
-        "token-ControlSize::Md-28",
+        "token-Size::Medium-28",
         "token-IconSize::Md-16",
         "token-gap_2-8",
         "token-Elevation::Modal",
@@ -103,11 +103,11 @@ fn the_viewer_names_each_token_with_its_value(cx: &mut TestAppContext) {
     let compact = cx.update(|window, cx| {
         use crate::theme::ActiveTheme;
         cx.theme()
-            .control_height(ControlSize::Md)
+            .control_height(Size::Medium)
             .to_pixels(window.rem_size())
     });
     assert_eq!(compact, px(24.0));
-    assert!(shown("token-ControlSize::Md-24", cx), "compact density");
+    assert!(shown("token-Size::Medium-24", cx), "compact density");
 }
 
 struct Audit;

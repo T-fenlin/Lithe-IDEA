@@ -10,7 +10,7 @@ use crate::{
     buttons::IconButton,
     motion,
     primitives::{DragGhost, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -145,7 +145,7 @@ impl RenderOnce for TabBar {
                 .gap_2()
                 .min_w(narrow)
                 .max_w(wide)
-                .h(theme.control_height(ControlSize::Md))
+                .h(theme.control_height(Size::Medium))
                 .pl_3()
                 .pr_1()
                 .rounded(theme.radius(Radius::Md))
@@ -210,7 +210,7 @@ impl RenderOnce for TabBar {
                             })
                             .child(
                                 IconButton::new(("close", ix), IconName::X)
-                                    .size(ControlSize::Sm)
+                                    .size(Size::Small)
                                     .on_click(move |_, window, cx| {
                                         cx.stop_propagation();
                                         log::info!("tab bar: close {close_id}");
@@ -235,7 +235,7 @@ impl RenderOnce for TabBar {
             .when_some(self.on_add, |bar, add| {
                 bar.child(
                     IconButton::new("new-tab", IconName::Plus)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("tab bar: new tab");
                             add(window, cx)

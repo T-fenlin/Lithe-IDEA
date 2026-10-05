@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::KbdCombo,
 };
 
@@ -58,8 +58,8 @@ impl RenderOnce for HotkeyInput {
             .items_center()
             .justify_between()
             .gap_2()
-            .h(theme.control_height(ControlSize::Md))
-            .px(theme.control_padding(ControlSize::Md))
+            .h(theme.control_height(Size::Medium))
+            .px(theme.control_padding(Size::Medium))
             .rounded(theme.radius(Radius::Md))
             .border_1()
             .border_color(colors.border_strong)

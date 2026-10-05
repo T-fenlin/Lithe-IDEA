@@ -15,7 +15,7 @@ use crate::{
     data_display::Avatar,
     i18n,
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Radius},
+    theme::{ActiveTheme, AvatarSize, IconSize, Radius, Size},
     typography::Ellipsis,
 };
 
@@ -81,7 +81,7 @@ pub(crate) fn moved(event: &KeyDownEvent, rows: &[Choice], at: usize) -> Option<
 pub(crate) fn field_button(
     id: impl Into<ElementId>,
     focus: &FocusHandle,
-    size: ControlSize,
+    size: Size,
     disabled: bool,
     window: &Window,
     cx: &App,
@@ -252,7 +252,7 @@ pub struct Select {
     choices: Vec<Choice>,
     selected: Option<SharedString>,
     placeholder: SharedString,
-    size: ControlSize,
+    size: Size,
     disabled: bool,
     on_change: Option<OnValue>,
 }
@@ -264,7 +264,7 @@ impl Select {
             choices: choices.into_iter().collect(),
             selected: None,
             placeholder: SharedString::from("Choose…"),
-            size: ControlSize::default(),
+            size: Size::default(),
             disabled: false,
             on_change: None,
         }
@@ -280,7 +280,7 @@ impl Select {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -381,5 +381,11 @@ impl RenderOnce for Select {
             window,
             cx,
         )
+    }
+}
+
+impl crate::theme::Sizable for Select {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

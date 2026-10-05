@@ -13,7 +13,7 @@ use crate::{
     forms::Run,
     layout::on_axis,
     primitives::{Divider, FocusRing, IconName},
-    theme::{ActiveTheme, AvatarSize, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, Radius, Size, TextSize},
     typography::{Ellipsis, format},
 };
 
@@ -166,7 +166,7 @@ impl RenderOnce for ThreadPanel {
             let id = self.id.clone();
             IconButton::new((self.id.clone(), "close"), IconName::X)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Close thread")
                 .on_click(move |_, window, cx| {
                     log::info!("thread panel {id}: close");

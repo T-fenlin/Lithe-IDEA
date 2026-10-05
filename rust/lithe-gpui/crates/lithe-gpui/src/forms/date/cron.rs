@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     buttons::{Button, ButtonVariant},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 const PRESETS: [(&str, &str); 5] = [
@@ -63,9 +63,10 @@ impl RenderOnce for CronEditor {
         let colors = &theme.colors;
         let presets = PRESETS.iter().enumerate().map(|(ix, (label, preset))| {
             let state = self.state.clone();
-            Button::new(("preset", ix)).label(*label)
+            Button::new(("preset", ix))
+                .label(*label)
                 .variant(ButtonVariant::Outline)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(move |_, _, cx| {
                     log::info!("cron editor: preset {preset}");
                     state.update(cx, |input, cx| input.set_text(*preset, cx));

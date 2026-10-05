@@ -9,7 +9,7 @@ use crate::{
     forms::OnFlag,
     motion::Pulse,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// Starts and stops dictation: a microphone at rest, a stop square while it records.
@@ -51,7 +51,7 @@ impl RenderOnce for VoiceInputButton {
         } else {
             ButtonVariant::Ghost
         })
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .tooltip(if recording {
             "Stop dictation"
         } else {
@@ -91,7 +91,7 @@ impl RenderOnce for VoiceWaveform {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = theme.colors.clone();
-        let tall = theme.control_height(ControlSize::Sm);
+        let tall = theme.control_height(Size::Small);
         div()
             .flex()
             .items_center()

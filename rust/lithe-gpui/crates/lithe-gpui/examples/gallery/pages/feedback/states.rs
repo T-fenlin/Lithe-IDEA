@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
+use gpui::{App, Div, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     feedback::{
@@ -12,7 +13,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, Radius, TextSize},
     typography::Caption,
 };
-use gpui::{App, Div, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder};
 use web_time::Instant;
 
 use crate::{
@@ -44,9 +44,12 @@ pub fn errors(cx: &mut App) -> impl IntoElement + use<> {
         div()
             .flex()
             .gap_3()
-            .child(frame(cx).child(
-                ErrorView::not_found("error-404").action(Button::new("error-home").label("Go home")),
-            ))
+            .child(
+                frame(cx).child(
+                    ErrorView::not_found("error-404")
+                        .action(Button::new("error-home").label("Go home")),
+                ),
+            )
             .child(
                 frame(cx).child(
                     ErrorView::no_permission("error-403")
@@ -59,9 +62,12 @@ pub fn errors(cx: &mut App) -> impl IntoElement + use<> {
             .flex()
             .gap_3()
             .child(frame(cx).child(ErrorView::maintenance("error-maintenance")))
-            .child(frame(cx).child(
-                ErrorView::offline("error-offline").action(Button::new("error-retry").label("Try again")),
-            )),
+            .child(
+                frame(cx).child(
+                    ErrorView::offline("error-offline")
+                        .action(Button::new("error-retry").label("Try again")),
+                ),
+            ),
     )
 }
 
@@ -133,7 +139,8 @@ pub fn results(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row().child(probe(
             "result-replay",
-            Button::new("result-replay").label("Replay")
+            Button::new("result-replay")
+                .label("Replay")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| set(&replay, now + 1, cx)),
         )),
@@ -299,7 +306,8 @@ pub fn clocks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     )
                     .child(probe(
                         "countdown-restart",
-                        Button::new("countdown-restart").label("Restart")
+                        Button::new("countdown-restart")
+                            .label("Restart")
                             .variant(ButtonVariant::Ghost)
                             .on_click(move |_, _, cx| {
                                 set(&restart, Instant::now() + Duration::from_secs(10), cx);
@@ -316,15 +324,16 @@ pub fn clocks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .gap_3()
                     .child(Timer::new("timer", since).stopped(halt))
                     .child(
-                        Button::new("timer-toggle").label(if halt.is_some() { "Reset" } else { "Stop" })
-                        .variant(ButtonVariant::Ghost)
-                        .on_click(move |_, _, cx| match halt {
-                            Some(_) => {
-                                set(&reset, Instant::now(), cx);
-                                set(&toggle, None, cx);
-                            }
-                            None => set(&toggle, Some(Instant::now()), cx),
-                        }),
+                        Button::new("timer-toggle")
+                            .label(if halt.is_some() { "Reset" } else { "Stop" })
+                            .variant(ButtonVariant::Ghost)
+                            .on_click(move |_, _, cx| match halt {
+                                Some(_) => {
+                                    set(&reset, Instant::now(), cx);
+                                    set(&toggle, None, cx);
+                                }
+                                None => set(&toggle, Some(Instant::now()), cx),
+                            }),
                     ),
                 cx,
             )),

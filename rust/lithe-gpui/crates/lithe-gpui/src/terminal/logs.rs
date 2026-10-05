@@ -10,7 +10,7 @@ use super::ansi::{AnsiText, printed};
 use crate::{
     buttons::{SegmentedControl, ToggleButton, ToggleItem},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Palette, TextSize},
+    theme::{ActiveTheme, Palette, Size, TextSize},
     typography::format,
 };
 
@@ -148,8 +148,7 @@ impl RenderOnce for LogViewer {
             scroll.scroll_to_item(rows.len() - 1, ScrollStrategy::Bottom);
         }
         let levels = LEVELS.iter().fold(
-            SegmentedControl::new((self.id.clone(), "levels"), self.least.word())
-                .size(ControlSize::Sm),
+            SegmentedControl::new((self.id.clone(), "levels"), self.least.word()).size(Size::Small),
             |control, level| control.segment(level.word(), level.word(), None),
         );
         let levels = match self.on_least {
@@ -169,7 +168,7 @@ impl RenderOnce for LogViewer {
                 .tooltip("Follow new lines"),
             self.follow,
         )
-        .size(ControlSize::Sm);
+        .size(Size::Small);
         let (release, follow) = match self.on_follow {
             Some(on_follow) => (
                 Some(on_follow.clone()),
@@ -289,7 +288,11 @@ mod tests {
     fn lines_show_from_a_level_up_and_by_query() {
         let lines = [
             line(LogLevel::Debug, "gpui", "frame"),
-            line(LogLevel::Info, "lithe-gpui::terminal", "started \x1b[1mzsh\x1b[0m"),
+            line(
+                LogLevel::Info,
+                "lithe-gpui::terminal",
+                "started \x1b[1mzsh\x1b[0m",
+            ),
             line(LogLevel::Error, "lithe-gpui::pty", "the program ended"),
         ];
         assert_eq!(shown(&lines, LogLevel::Info, ""), [1, 2]);

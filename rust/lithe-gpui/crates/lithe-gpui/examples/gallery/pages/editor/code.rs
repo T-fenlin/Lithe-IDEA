@@ -1,3 +1,4 @@
+use gpui::{App, Div, Entity, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, SegmentedControl},
     editor::{
@@ -9,7 +10,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, Radius},
     typography::Caption,
 };
-use gpui::{App, Div, Entity, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::{
     probe::probe,
@@ -276,17 +276,18 @@ pub fn changes(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     });
     let open = editor.read(cx).chat_line().is_some();
     let chat_editor = editor.clone();
-    let toggle = Button::new("editor-chat").label(if open {
+    let toggle = Button::new("editor-chat")
+        .label(if open {
             "Close inline chat"
         } else {
             "Open inline chat"
         })
-    .on_click(move |_, window, cx| {
-        chat_editor.update(cx, |editor, cx| {
-            let next = editor.chat_line().is_none().then_some(3);
-            editor.set_chat(next, window, cx)
-        })
-    });
+        .on_click(move |_, window, cx| {
+            chat_editor.update(cx, |editor, cx| {
+                let next = editor.chat_line().is_none().then_some(3);
+                editor.set_chat(next, window, cx)
+            })
+        });
     section(
         "InlineDiff / GhostText / InlineChat / ReadOnlyBanner / VimModeIndicator",
         "A changed line under the one it replaced; a suggestion in grey that Tab takes; a prompt between lines; a banner over code that cannot change here; and the mode of a modal editor.",

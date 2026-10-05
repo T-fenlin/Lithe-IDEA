@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::*, px};
 use lithe_gpui::{
     buttons::{
         ActionBar, ActionSheet, BulkActionBar, Button, ButtonVariant, ConfirmButton, ConfirmMode,
@@ -5,10 +6,9 @@ use lithe_gpui::{
         close_button, more_button,
     },
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::*, px};
 
 use crate::{
     probe::probe,
@@ -153,17 +153,20 @@ pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
                     ActionBar::new()
                         .floating()
                         .child(
-                            Button::new("bar-reply").label("Reply")
+                            Button::new("bar-reply")
+                                .label("Reply")
                                 .variant(ButtonVariant::Ghost)
                                 .icon(IconName::Reply),
                         )
                         .child(
-                            Button::new("bar-forward").label("Forward")
+                            Button::new("bar-forward")
+                                .label("Forward")
                                 .variant(ButtonVariant::Ghost)
                                 .icon(IconName::Forward),
                         )
                         .child(
-                            Button::new("bar-archive").label("Archive")
+                            Button::new("bar-archive")
+                                .label("Archive")
                                 .primary()
                                 .icon(IconName::Archive),
                         ),
@@ -172,7 +175,11 @@ pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
             .child(
                 ActionBar::new()
                     .w_full()
-                    .child(Button::new("bar-cancel").label("Cancel").variant(ButtonVariant::Ghost))
+                    .child(
+                        Button::new("bar-cancel")
+                            .label("Cancel")
+                            .variant(ButtonVariant::Ghost),
+                    )
                     .child(Button::new("bar-save").label("Save changes").primary()),
             ),
     )
@@ -191,7 +198,8 @@ pub fn bulk(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "bulk-select",
-                Button::new("bulk-select").label("Select one more")
+                Button::new("bulk-select")
+                    .label("Select one more")
                     .variant(ButtonVariant::Outline)
                     .on_click(move |_, _, cx| {
                         add.update(cx, |count, cx| {
@@ -203,27 +211,27 @@ pub fn bulk(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(Caption::new(format!("{count} selected"))),
     )
     .child(
-        div()
-            .h(cx.theme().control_height(ControlSize::Lg) * 1.5)
-            .child(
-                BulkActionBar::new("bulk-bar", count)
-                    .action(
-                        Button::new("bulk-move").label("Move")
-                            .variant(ButtonVariant::Ghost)
-                            .icon(IconName::Folder),
-                    )
-                    .action(
-                        Button::new("bulk-delete").label("Delete")
-                            .variant(ButtonVariant::Danger)
-                            .icon(IconName::Trash2),
-                    )
-                    .on_clear(move |_, cx| {
-                        clear.update(cx, |count, cx| {
-                            *count = 0;
-                            cx.notify();
-                        })
-                    }),
-            ),
+        div().h(cx.theme().control_height(Size::Large) * 1.5).child(
+            BulkActionBar::new("bulk-bar", count)
+                .action(
+                    Button::new("bulk-move")
+                        .label("Move")
+                        .variant(ButtonVariant::Ghost)
+                        .icon(IconName::Folder),
+                )
+                .action(
+                    Button::new("bulk-delete")
+                        .label("Delete")
+                        .variant(ButtonVariant::Danger)
+                        .icon(IconName::Trash2),
+                )
+                .on_clear(move |_, cx| {
+                    clear.update(cx, |count, cx| {
+                        *count = 0;
+                        cx.notify();
+                    })
+                }),
+        ),
     )
 }
 
@@ -238,7 +246,8 @@ pub fn action_sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use
     )
     .child(probe(
         "action-sheet-open",
-        Button::new("action-sheet-open").label("Photo options")
+        Button::new("action-sheet-open")
+            .label("Photo options")
             .variant(ButtonVariant::Outline)
             .on_click(move |_, _, cx| {
                 show.update(cx, |shown, cx| {

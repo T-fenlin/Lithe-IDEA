@@ -1,3 +1,5 @@
+use gpui::{AnyElement, App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{SignedDuration, Timestamp, tz::TimeZone};
 use lithe_gpui::{
     buttons::Button,
     feedback::EmptyState,
@@ -6,8 +8,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, Radius, TextSize},
     typography::format,
 };
-use gpui::{AnyElement, App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{SignedDuration, Timestamp, tz::TimeZone};
 
 mod read;
 mod sort;

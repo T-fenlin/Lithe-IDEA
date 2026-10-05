@@ -1,3 +1,7 @@
+use gpui::{
+    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    prelude::*,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     forms::{Input, TextInput},
@@ -5,10 +9,6 @@ use lithe_gpui::{
     primitives::Severity,
     theme::ActiveTheme,
     typography::Caption,
-};
-use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
-    prelude::*,
 };
 
 use crate::{
@@ -35,7 +35,9 @@ fn opener(
     let state = state.clone();
     probe(
         id,
-        Button::new(id).label(label).on_click(move |_, _, cx| set(&state, Some(open), cx)),
+        Button::new(id)
+            .label(label)
+            .on_click(move |_, _, cx| set(&state, Some(open), cx)),
     )
 }
 
@@ -84,12 +86,14 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .child(Input::new(&email)),
                 )
                 .action(|close| {
-                    Button::new("profile-cancel").label("Cancel")
+                    Button::new("profile-cancel")
+                        .label("Cancel")
                         .variant(ButtonVariant::Ghost)
                         .on_click(move |_, window, cx| close(window, cx))
                 })
                 .action(move |close| {
-                    Button::new("profile-save").label("Save")
+                    Button::new("profile-save")
+                        .label("Save")
                         .primary()
                         .on_click(move |_, window, cx| {
                             set(&saved, Some("profile saved".into()), cx);

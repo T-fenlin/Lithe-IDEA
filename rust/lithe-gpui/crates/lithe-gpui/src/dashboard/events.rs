@@ -166,7 +166,8 @@ impl RenderOnce for EventStream {
                     )
                     .child(
                         div().debug_selector(move || state).child(
-                            Button::new((id, "pause")).label(label)
+                            Button::new((id, "pause"))
+                                .label(label)
                                 .variant(ButtonVariant::Secondary)
                                 .on_click(toggle),
                         ),

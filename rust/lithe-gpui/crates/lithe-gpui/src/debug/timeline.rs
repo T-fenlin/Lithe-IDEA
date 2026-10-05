@@ -10,7 +10,7 @@ use super::OnIndex;
 use crate::{
     charts::{measure, nice_step},
     primitives::FocusRing,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{Ellipsis, LEADING, format::decimals},
 };
 
@@ -131,7 +131,7 @@ impl RenderOnce for TimelineProfiler {
         let theme = cx.theme();
         let colors = theme.colors.clone();
         let line = theme
-            .control_height(ControlSize::Md)
+            .control_height(Size::Medium)
             .to_pixels(window.rem_size());
         let (from, to) = self.range;
         let length = to - from;
@@ -142,7 +142,7 @@ impl RenderOnce for TimelineProfiler {
         let wheel_lane = lane.clone();
         let on_range = self.on_range.clone();
         let label = theme.label_width() * 0.6;
-        let row = theme.control_height(ControlSize::Md);
+        let row = theme.control_height(Size::Medium);
         let selected = self.selected.and_then(|ix| self.spans.get(ix).cloned());
         div()
             .flex()

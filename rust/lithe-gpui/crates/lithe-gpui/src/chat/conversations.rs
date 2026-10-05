@@ -12,7 +12,7 @@ use crate::{
     forms::OnValue,
     menus::{Menu, MenuItem, OverflowMenu},
     primitives::{FocusRing, Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Ellipsis, format::system_zone},
 };
 
@@ -78,7 +78,8 @@ pub(crate) fn grouped(
 
 /// Opens a new conversation; it shows Command-N, which the host binds.
 pub fn new_chat_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id).label("New chat")
+    Button::new(id)
+        .label("New chat")
         .variant(ButtonVariant::Secondary)
         .icon(IconName::SquarePen)
         .shortcut("secondary-n")
@@ -182,7 +183,7 @@ impl RenderOnce for ConversationItem {
             .flex()
             .items_center()
             .gap_1()
-            .h(theme.control_height(ControlSize::Md))
+            .h(theme.control_height(Size::Medium))
             .pl_2()
             .pr_0p5()
             .rounded(theme.radius(Radius::Md))

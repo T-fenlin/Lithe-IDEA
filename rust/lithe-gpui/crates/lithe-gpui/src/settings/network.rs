@@ -180,7 +180,8 @@ impl RenderOnce for ProxySettings {
             }))
             .child(
                 div().flex().child(
-                    Button::new((id, "apply")).label("Apply")
+                    Button::new((id, "apply"))
+                        .label("Apply")
                         .variant(ButtonVariant::Primary)
                         .disabled(read.is_none())
                         .on_click(move |_, window, cx| {

@@ -20,7 +20,7 @@ use super::{
 };
 use crate::{
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 type OnTime = Rc<dyn Fn(Time, &mut Window, &mut App)>;
@@ -50,7 +50,7 @@ fn time_columns(
     cx: &mut App,
 ) -> Div {
     let columns = window.use_keyed_state((id.clone(), "columns"), cx, |_, _| Columns::default());
-    let row = cx.theme().control_height(ControlSize::Sm);
+    let row = cx.theme().control_height(Size::Small);
     if columns.read(cx).shown != Some(time) {
         let row = row.to_pixels(window.rem_size());
         let above = |ix: usize| point(Pixels::ZERO, -(row * ix.saturating_sub(2) as f32));
@@ -180,7 +180,7 @@ pub struct TimePicker {
     value: Option<Time>,
     step: u8,
     placeholder: SharedString,
-    size: ControlSize,
+    size: Size,
     disabled: bool,
     on_change: Option<OnTime>,
 }
@@ -192,7 +192,7 @@ impl TimePicker {
             value,
             step: 5,
             placeholder: SharedString::from("Pick a time"),
-            size: ControlSize::default(),
+            size: Size::default(),
             disabled: false,
             on_change: None,
         }
@@ -213,7 +213,7 @@ impl TimePicker {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -280,7 +280,7 @@ pub struct DateTimePicker {
     step: u8,
     placeholder: SharedString,
     today: Option<Date>,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnDateTime>,
 }
 
@@ -292,7 +292,7 @@ impl DateTimePicker {
             step: 5,
             placeholder: SharedString::from("Pick a date and time"),
             today: None,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -311,7 +311,7 @@ impl DateTimePicker {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -438,7 +438,7 @@ impl RenderOnce for DurationPicker {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let now = parts(self.value);
         let theme = cx.theme();
-        let width = theme.control_height(ControlSize::Md) * 4.0;
+        let width = theme.control_height(Size::Medium) * 4.0;
         let units: &[(&str, &str, f64)] = if self.seconds {
             &[
                 ("hours", "h", 9999.0),
@@ -490,5 +490,17 @@ mod tests {
             parts(Duration::from_secs(3 * 3600 + 25 * 60 + 9)),
             [3, 25, 9]
         );
+    }
+}
+
+impl crate::theme::Sizable for TimePicker {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
+    }
+}
+
+impl crate::theme::Sizable for DateTimePicker {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

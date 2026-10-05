@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Platform, TextSize},
+    theme::{ActiveTheme, IconSize, Platform, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -237,7 +237,7 @@ fn round_buttons(
                         .flex()
                         .items_center()
                         .justify_center()
-                        .size(theme.control_height(ControlSize::Sm))
+                        .size(theme.control_height(Size::Small))
                         .rounded_full()
                         .bg(colors.hover)
                         .hover(|style| style.bg(colors.active))

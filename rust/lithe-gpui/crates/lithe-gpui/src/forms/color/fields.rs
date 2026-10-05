@@ -6,7 +6,7 @@ use super::{
     super::{Choice, Input, ScrubInput, Select, TextInput},
     Hsva,
 };
-use crate::theme::{ActiveTheme, ControlSize};
+use crate::theme::{ActiveTheme, Size};
 
 /// How a color picker's typed fields spell the color.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -39,7 +39,7 @@ pub(crate) fn format_select(id: &ElementId, format: Format, set: SetFormat) -> S
         Format::ALL.map(|format| Choice::new(format.label(), format.label())),
     )
     .selected(format.label())
-    .size(ControlSize::Md)
+    .size(Size::Medium)
     .on_change(move |label: &SharedString, window, cx| {
         let format = Format::ALL
             .into_iter()

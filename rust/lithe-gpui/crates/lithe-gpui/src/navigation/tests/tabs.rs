@@ -93,7 +93,7 @@ fn the_chosen_tab_scrolls_in_once_and_a_manual_scroll_stays(cx: &mut TestAppCont
         .min(px(200.0))
         - cx.update(|_, cx| {
             crate::theme::ActiveTheme::theme(cx)
-                .control_height(crate::theme::ControlSize::Sm)
+                .control_height(crate::theme::Size::Small)
                 .to_pixels(px(16.0))
         })
         - px(8.0);

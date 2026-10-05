@@ -11,7 +11,7 @@ use crate::{
     forms::{Input, TextInput},
     motion::Spinner,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{
         Ellipsis,
         format::{plural, took},
@@ -136,9 +136,10 @@ impl RenderOnce for PromptPlayground {
         };
         let sent = filled.clone();
         let run = self.on_run.map(|run| {
-            Button::new((self.id.clone(), "run")).label("Run")
+            Button::new((self.id.clone(), "run"))
+                .label("Run")
                 .variant(ButtonVariant::Primary)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .icon(IconName::Play)
                 .disabled(!ready)
                 .on_click(move |_, window, cx| {

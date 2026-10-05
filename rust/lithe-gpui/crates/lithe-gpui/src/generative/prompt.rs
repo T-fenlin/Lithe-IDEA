@@ -11,7 +11,7 @@ use crate::{
     forms::{Input, OnFlag, TextInput},
     motion::{Entrance, Transition},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 pub(super) type OnText = Rc<dyn Fn(&str, &mut Window, &mut App)>;
@@ -112,9 +112,10 @@ impl RenderOnce for PromptEnhancer {
         let theme = cx.theme();
         let colors = theme.colors.clone();
         let enhance = self.on_enhance.map(|enhance| {
-            Button::new((self.id.clone(), "enhance")).label("Enhance")
+            Button::new((self.id.clone(), "enhance"))
+                .label("Enhance")
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .icon(IconName::Sparkles)
                 .loading(self.enhancing)
                 .disabled(prompt.is_empty() || self.enhancing)
@@ -184,16 +185,18 @@ impl RenderOnce for PromptEnhancer {
                     .flex_wrap()
                     .gap_2()
                     .child(
-                        Button::new((self.id.clone(), "take")).label("Use this")
+                        Button::new((self.id.clone(), "take"))
+                            .label("Use this")
                             .variant(ButtonVariant::Primary)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .disabled(!shown)
                             .on_click(answer(true)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "keep")).label("Keep mine")
+                        Button::new((self.id.clone(), "keep"))
+                            .label("Keep mine")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .disabled(!shown)
                             .on_click(answer(false)),
                     ),

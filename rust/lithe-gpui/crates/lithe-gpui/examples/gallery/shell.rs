@@ -1,14 +1,14 @@
+use gpui::{
+    AnyElement, App, Context, FocusHandle, FontWeight, InteractiveElement, IntoElement,
+    ParentElement, Pixels, Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Window, div, point, prelude::*, px,
+};
 use lithe_gpui::{
     buttons::{ButtonVariant, IconButton},
     feedback::Alert,
     layout::on_axis,
     primitives::{FocusScope, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, Mode, Radius, TextSize, Theme},
-};
-use gpui::{
-    AnyElement, App, Context, FocusHandle, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Window, div, point, prelude::*, px,
+    theme::{ActiveTheme, Mode, Radius, Size, TextSize, Theme},
 };
 
 use crate::{Start, pages, ui::Story};
@@ -201,7 +201,7 @@ impl Gallery {
                 };
                 IconButton::new(id, icon)
                     .variant(variant)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(
                         cx.listener(move |gallery, _, window, cx| {
                             gallery.choose(choice, window, cx)

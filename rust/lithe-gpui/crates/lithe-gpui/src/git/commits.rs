@@ -9,7 +9,7 @@ use gpui::{
 use super::graph::{GraphRow, Half, lanes};
 use crate::{
     data_display::{Avatar, Tag, Tone},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -70,7 +70,7 @@ impl RenderOnce for CommitItem {
             .id(self.id.clone())
             .flex_1()
             .min_w_0()
-            .h(theme.control_height(ControlSize::Lg))
+            .h(theme.control_height(Size::Large))
             .flex()
             .items_center()
             .gap_2()
@@ -222,7 +222,7 @@ impl RenderOnce for CommitList {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let rem = window.rem_size();
-        let height = theme.control_height(ControlSize::Lg).to_pixels(rem);
+        let height = theme.control_height(Size::Large).to_pixels(rem);
         let lane = theme.icon_size(IconSize::Md).to_pixels(rem);
         let stroke = theme.chart().hairline * 1.5;
         let palette = theme.colors.chart;

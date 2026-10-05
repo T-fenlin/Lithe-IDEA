@@ -1,3 +1,4 @@
+use gpui::{App, Axis, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant, IconButton},
     layout::{
@@ -5,10 +6,9 @@ use lithe_gpui::{
         SplitPane, Well, resize_handle,
     },
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
     typography::{Caption, Label, Paragraph},
 };
-use gpui::{App, Axis, IntoElement, ParentElement, Styled, Window, div, px};
 
 use super::basics::tile;
 use crate::{
@@ -101,19 +101,20 @@ pub fn collapsible(window: &mut Window, cx: &mut App) -> impl IntoElement + use<
             .gap_2()
             .child(probe(
                 "collapse-toggle",
-                Button::new("collapse-toggle").label(if is_open { "Collapse" } else { "Expand" })
-                .variant(ButtonVariant::Outline)
-                .trailing_icon(if is_open {
-                    IconName::ChevronUp
-                } else {
-                    IconName::ChevronDown
-                })
-                .on_click(move |_, _, cx| {
-                    open.update(cx, |open, cx| {
-                        *open = !*open;
-                        cx.notify();
+                Button::new("collapse-toggle")
+                    .label(if is_open { "Collapse" } else { "Expand" })
+                    .variant(ButtonVariant::Outline)
+                    .trailing_icon(if is_open {
+                        IconName::ChevronUp
+                    } else {
+                        IconName::ChevronDown
                     })
-                }),
+                    .on_click(move |_, _, cx| {
+                        open.update(cx, |open, cx| {
+                            *open = !*open;
+                            cx.notify();
+                        })
+                    }),
             ))
             .child(
                 Collapsible::new("collapse", is_open).child(
@@ -165,7 +166,7 @@ pub fn card(cx: &App) -> impl IntoElement + use<> {
             .header(
                 CardHeader::new("Storage")
                     .description("Across all workspaces")
-                    .action(IconButton::new("card-more", IconName::Ellipsis).size(ControlSize::Sm)),
+                    .action(IconButton::new("card-more", IconName::Ellipsis).size(Size::Small)),
             )
             .child(Label::new("42.8 GB of 100 GB"))
             .child(Caption::new("Media takes the most room."))
@@ -173,7 +174,11 @@ pub fn card(cx: &App) -> impl IntoElement + use<> {
                 div()
                     .flex()
                     .gap_2()
-                    .child(Button::new("card-cancel").label("Later").variant(ButtonVariant::Ghost))
+                    .child(
+                        Button::new("card-cancel")
+                            .label("Later")
+                            .variant(ButtonVariant::Ghost),
+                    )
                     .child(Button::new("card-go").label("Manage").primary()),
             ),
     )
@@ -189,8 +194,8 @@ pub fn panel(cx: &App) -> impl IntoElement + use<> {
         Panel::new("Outline")
             .w(px(320.0))
             .h(px(160.0))
-            .action(IconButton::new("panel-filter", IconName::Filter).size(ControlSize::Sm))
-            .action(IconButton::new("panel-more", IconName::Ellipsis).size(ControlSize::Sm))
+            .action(IconButton::new("panel-filter", IconName::Filter).size(Size::Small))
+            .action(IconButton::new("panel-more", IconName::Ellipsis).size(Size::Small))
             .child(
                 div()
                     .p_3()

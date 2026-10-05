@@ -10,7 +10,7 @@ use crate::{
     forms::{EmojiPicker, OnValue},
     overlays::Popover,
     primitives::{FocusRing, IconName},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::tabular,
 };
 
@@ -104,7 +104,7 @@ impl RenderOnce for ReactionPicker {
         })
         .icon(IconName::SmilePlus)
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
     }
 }
 

@@ -11,7 +11,7 @@ use crate::{
     forms::{EmojiPicker, OnValue},
     overlays::Popover,
     primitives::{IconName, Image},
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
 };
 
 type OnCover = Rc<dyn Fn(Option<SharedString>, &mut Window, &mut App)>;
@@ -95,9 +95,10 @@ impl RenderOnce for PageCover {
                         .variant(ButtonVariant::Secondary),
                     )
                     .child(
-                        Button::new((self.id.clone(), "remove")).label("Remove")
+                        Button::new((self.id.clone(), "remove"))
+                            .label("Remove")
                             .variant(ButtonVariant::Secondary)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(move |_, window, cx| {
                                 log::info!("page cover: removed");
                                 remove(None, window, cx)

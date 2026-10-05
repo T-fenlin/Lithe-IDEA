@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ObjectFit, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     data_display::{BeforeAfter, Carousel, Gallery, Watermark},
@@ -6,7 +7,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, Radius, TextSize},
     typography::{Caption, Paragraph, Title},
 };
-use gpui::{App, IntoElement, ObjectFit, ParentElement, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

@@ -98,13 +98,15 @@ impl RenderOnce for ConsentDialog {
         .action({
             let id = id.clone();
             move |close| {
-                Button::new((id, "decline")).label("Decline")
+                Button::new((id, "decline"))
+                    .label("Decline")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, window, cx| close(window, cx))
             }
         })
         .action(move |close| {
-            Button::new((id, "accept")).label("Accept")
+            Button::new((id, "accept"))
+                .label("Accept")
                 .primary()
                 .on_click(move |_, window, cx| {
                     if !agreed {

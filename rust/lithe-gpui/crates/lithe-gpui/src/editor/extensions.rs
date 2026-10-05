@@ -10,7 +10,7 @@ use crate::{
     charts::compact,
     data_display::Avatar,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -100,9 +100,10 @@ impl RenderOnce for ExtensionsPanel {
             let button = match action {
                 Some((action, label, variant)) => {
                     let (on_action, id) = (self.on_action.clone(), extension.id.clone());
-                    Button::new((self.id.clone(), format!("action-{ix}"))).label(label)
+                    Button::new((self.id.clone(), format!("action-{ix}")))
+                        .label(label)
                         .variant(variant)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("extensions: {action:?} {id}");
                             if let Some(on_action) = &on_action {
@@ -110,9 +111,10 @@ impl RenderOnce for ExtensionsPanel {
                             }
                         })
                 }
-                None => Button::new((self.id.clone(), format!("action-{ix}"))).label("Installing")
+                None => Button::new((self.id.clone(), format!("action-{ix}")))
+                    .label("Installing")
                     .variant(ButtonVariant::Secondary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .loading(true),
             };
             let muted = extension.state == ExtensionState::Disabled;

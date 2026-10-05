@@ -13,7 +13,7 @@ use crate::{
     forms::{OnFlag, Run},
     motion::Pulse,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// Where a mic meter turns amber, then red.
@@ -39,7 +39,7 @@ pub(crate) fn device_toggle(
         .icon(if on { icons.0 } else { icons.1 })
         .tooltip(tip);
     ToggleButton::new((id.clone(), key), item, on)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .on_toggle(move |to, window, cx| {
             log::info!("{owner}: {key} {}", if to { "on" } else { "off" });
             set(to, window, cx)
@@ -141,7 +141,7 @@ impl RenderOnce for ScreenRecorderControls {
             run.map(|run| {
                 IconButton::new((id.clone(), key), icon)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(tip)
                     .on_click(move |_, window, cx| {
                         log::info!("screen recorder: {key}");
@@ -166,10 +166,11 @@ impl RenderOnce for ScreenRecorderControls {
         };
         let body = match self.state {
             Recording::Idle => div().children(self.on_record.map(|run| {
-                Button::new((id.clone(), "record")).label("Record")
+                Button::new((id.clone(), "record"))
+                    .label("Record")
                     .icon(IconName::CircleDot)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| {
                         log::info!("screen recorder: record");
                         run(window, cx)

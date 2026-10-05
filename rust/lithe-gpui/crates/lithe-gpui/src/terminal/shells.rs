@@ -9,7 +9,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     menus::{Menu, MenuItem, SplitButton},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 /// A shell a terminal can start: its name and its program.
@@ -187,7 +187,7 @@ impl RenderOnce for TerminalToolbar {
             .children(self.actions.into_iter().map(|(key, icon, words, run)| {
                 IconButton::new((self.id.clone(), key), icon)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(words)
                     .on_click(move |_, window, cx| run(window, cx))
             }))

@@ -10,7 +10,7 @@ use super::IconButton;
 use crate::{
     motion,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Elevation, TextSize},
+    theme::{ActiveTheme, Elevation, Size, TextSize},
     typography::AnimatedNumber,
 };
 
@@ -140,7 +140,7 @@ impl RenderOnce for BulkActionBar {
             )
             .child(
                 div()
-                    .h(theme.control_height(ControlSize::Sm))
+                    .h(theme.control_height(Size::Small))
                     .border_l_1()
                     .border_color(colors.border),
             )
@@ -148,7 +148,7 @@ impl RenderOnce for BulkActionBar {
             .when_some(self.on_clear, |bar, clear| {
                 bar.child(
                     IconButton::new("bulk-clear", IconName::X)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .tooltip("Clear selection")
                         .on_click(move |_, window, cx| {
                             log::info!("bulk action bar: cleared");

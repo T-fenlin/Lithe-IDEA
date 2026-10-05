@@ -12,7 +12,7 @@ use crate::{
     forms::Run,
     layout::on_axis,
     primitives::{Disclosure, IconName},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 /// Lines a block shows before it folds.
@@ -86,7 +86,7 @@ impl RenderOnce for CodeBlock {
             run.map(|run| {
                 IconButton::new((self.id.clone(), key.to_string()), icon)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(tip)
                     .on_click(move |_, window, cx| run(window, cx))
             })
@@ -150,19 +150,20 @@ impl RenderOnce for CodeBlock {
                         .border_t_1()
                         .border_color(colors.border)
                         .child(
-                            Button::new((self.id.clone(), "fold")).label(match hidden {
+                            Button::new((self.id.clone(), "fold"))
+                                .label(match hidden {
                                     Some(hidden) => format!("Show {hidden} more lines"),
                                     None => "Show less".to_string(),
                                 })
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .on_click(move |_, _, cx| {
-                                toggle.update(cx, |open, cx| {
-                                    *open = !*open;
-                                    log::info!("code block: open {open}");
-                                    cx.notify();
-                                })
-                            }),
+                                .variant(ButtonVariant::Ghost)
+                                .size(Size::Small)
+                                .on_click(move |_, _, cx| {
+                                    toggle.update(cx, |open, cx| {
+                                        *open = !*open;
+                                        log::info!("code block: open {open}");
+                                        cx.notify();
+                                    })
+                                }),
                         )
                         .child(Disclosure::new((self.id.clone(), "chevron"), opened)),
                 )

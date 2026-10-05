@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, IconButton},
     primitives::IconName,
@@ -5,16 +6,15 @@ use lithe_gpui::{
         ActivityBar, ActivityItem, StatusBar, StatusBarItem, TabBar, Toolbar, ToolbarGroup,
         ToolbarSeparator, WindowTab,
     },
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::chrome::window_frame;
 use crate::{probe::probe, ui::section};
 
 fn tool(id: &'static str, icon: IconName) -> IconButton {
-    IconButton::new(id, icon).size(ControlSize::Sm)
+    IconButton::new(id, icon).size(Size::Small)
 }
 
 pub fn toolbar(cx: &App) -> impl IntoElement + use<> {
@@ -51,8 +51,9 @@ pub fn toolbar(cx: &App) -> impl IntoElement + use<> {
                     )
                     .child(div().flex_1())
                     .child(
-                        Button::new("tb-share").label("Share")
-                            .size(ControlSize::Sm)
+                        Button::new("tb-share")
+                            .label("Share")
+                            .size(Size::Small)
                             .icon(IconName::Share2),
                     ),
             ),

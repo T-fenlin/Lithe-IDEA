@@ -9,7 +9,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     motion::ProgressBar,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::{Ellipsis, format::file_size, tabular},
 };
 
@@ -95,7 +95,7 @@ impl RenderOnce for UploadList {
             handler.clone().map(|run| {
                 IconButton::new((self.id.clone(), SharedString::from(name)), icon)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(tip)
                     .on_click(move |_, window, cx| run(ix, window, cx))
             })

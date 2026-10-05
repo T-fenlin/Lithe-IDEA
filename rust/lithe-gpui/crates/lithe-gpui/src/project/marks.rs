@@ -9,7 +9,7 @@ use super::work::{IssueId, Person, Priority, Status};
 use crate::{
     forms::{Choice, Select},
     primitives::{Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::tabular,
 };
 
@@ -114,7 +114,7 @@ impl RenderOnce for IssueIdBadge {
 pub struct StatusSelect {
     id: ElementId,
     status: Status,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnStatus>,
 }
 
@@ -123,12 +123,12 @@ impl StatusSelect {
         Self {
             id: id.into(),
             status,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -163,7 +163,7 @@ pub struct AssigneePicker {
     id: ElementId,
     people: Vec<Person>,
     assignee: Option<SharedString>,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnAssignee>,
 }
 
@@ -178,7 +178,7 @@ impl AssigneePicker {
             id: id.into(),
             people,
             assignee: None,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -189,7 +189,7 @@ impl AssigneePicker {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -230,5 +230,17 @@ impl RenderOnce for AssigneePicker {
                     on_change(person, window, cx);
                 }
             })
+    }
+}
+
+impl crate::theme::Sizable for StatusSelect {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
+    }
+}
+
+impl crate::theme::Sizable for AssigneePicker {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

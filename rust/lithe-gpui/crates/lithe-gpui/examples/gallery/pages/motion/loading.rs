@@ -1,5 +1,8 @@
 use std::time::Duration;
 
+use gpui::{
+    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     motion::{
@@ -9,9 +12,6 @@ use lithe_gpui::{
     navigation::LoadMore,
     theme::{ActiveTheme, IconSize, Radius, TextSize},
     typography::Caption,
-};
-use gpui::{
-    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 
 use crate::{
@@ -137,7 +137,8 @@ pub fn shimmer(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row().child(probe(
             "shimmer-load",
-            Button::new("shimmer-load").label(if now { "Reload" } else { "Load" })
+            Button::new("shimmer-load")
+                .label(if now { "Reload" } else { "Load" })
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| set(&toggle, !now, cx)),
         )),
@@ -157,7 +158,8 @@ pub fn buttons(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "save",
-                Button::new("save").label("Save changes")
+                Button::new("save")
+                    .label("Save changes")
                     .primary()
                     .loading(save_now)
                     .on_click(move |_, _, cx| {
@@ -166,7 +168,8 @@ pub fn buttons(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     }),
             ))
             .child(
-                Button::new("export").label("Export")
+                Button::new("export")
+                    .label("Export")
                     .loading(export_now)
                     .on_click(move |_, _, cx| {
                         set(&exporting, true, cx);

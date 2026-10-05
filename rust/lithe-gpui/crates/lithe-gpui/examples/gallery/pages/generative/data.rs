@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems};
+use jiff::{SignedDuration, Timestamp};
 use lithe_gpui::{
     data_display::{DescriptionList, Tone},
     forms::TextInput,
@@ -8,8 +10,6 @@ use lithe_gpui::{
     },
     tables::{Cell, Column, DataTable, Row},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems};
-use jiff::{SignedDuration, Timestamp};
 
 use crate::{
     probe::probe,

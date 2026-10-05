@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     data_display::{
@@ -11,7 +12,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, AvatarSize, IconSize, TextSize},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div};
 
 use crate::{
     probe::probe,
@@ -92,7 +92,8 @@ pub fn tags(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 )
             }))
             .child(
-                Button::new("tags-reset").label("Reset")
+                Button::new("tags-reset")
+                    .label("Reset")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, _, cx| set(&reset, START.to_vec(), cx)),
             ),

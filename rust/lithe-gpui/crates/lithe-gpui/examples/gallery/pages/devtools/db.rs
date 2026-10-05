@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     canvas::Viewport,
     devtools::{
@@ -6,7 +7,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::ui::{change, keep, section};
 

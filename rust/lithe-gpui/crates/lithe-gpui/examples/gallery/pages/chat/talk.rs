@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use gpui::{App, ElementId, IntoElement, ParentElement, Styled, Task, Window, div, px};
+use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     chat::{
@@ -9,8 +11,6 @@ use lithe_gpui::{
     primitives::IconName,
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, ElementId, IntoElement, ParentElement, Styled, Task, Window, div, px};
-use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 
 use crate::{
     probe::probe,

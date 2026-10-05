@@ -11,7 +11,7 @@ use super::{Align, Block, BlockEditor, BlockKind, Media, view::Look};
 use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     primitives::{Icon, IconName, Measure},
-    theme::{ControlSize, IconSize},
+    theme::{IconSize, Size},
 };
 
 /// Narrowest a picture gets, as a share of its column.
@@ -113,9 +113,10 @@ pub(super) fn media(
                             .child(media.source.clone()),
                     )
                     .child(
-                        Button::new((id.clone(), format!("open-{key}"))).label("Open")
+                        Button::new((id.clone(), format!("open-{key}")))
+                            .label("Open")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(move |_, _, cx| cx.open_url(&address)),
                     ),
             )
@@ -153,7 +154,7 @@ pub(super) fn media(
     let aligned = |align_to: Align, icon: IconName, cx: &mut Context<BlockEditor>| {
         IconButton::new((id.clone(), format!("align-{key}-{align_to:?}")), icon)
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .tooltip(format!("Align {align_to:?}").to_lowercase())
             .on_click(cx.listener(move |editor, _, _, cx| editor.align(key, align_to, cx)))
     };

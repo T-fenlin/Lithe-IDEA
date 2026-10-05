@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     forms::{Choice, Select},
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
 };
 
 type OnMinutes = Rc<dyn Fn(&[u32], &mut Window, &mut App)>;
@@ -95,7 +95,7 @@ impl RenderOnce for ReminderPicker {
                 .child(
                     div().flex_1().min_w_0().child(
                         Select::new((self.id.clone(), format!("offset-{minute}")), choices)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .selected(minute.to_string())
                             .on_change(move |value: &SharedString, window, cx| {
                                 let picked: u32 = value.parse().expect("an offset is a count");
@@ -108,7 +108,7 @@ impl RenderOnce for ReminderPicker {
                 .child(
                     IconButton::new((self.id.clone(), format!("remove-{minute}")), IconName::X)
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .tooltip("Remove reminder")
                         .on_click(move |_, window, cx| {
                             let next: Vec<u32> = removing
@@ -126,9 +126,10 @@ impl RenderOnce for ReminderPicker {
             .find(|minute| !minutes.contains(minute));
         let add = {
             let (set, minutes) = (set.clone(), minutes.clone());
-            Button::new((self.id.clone(), "add")).label("Add reminder")
+            Button::new((self.id.clone(), "add"))
+                .label("Add reminder")
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .icon(IconName::Plus)
                 .disabled(spare.is_none())
                 .on_click(move |_, window, cx| {

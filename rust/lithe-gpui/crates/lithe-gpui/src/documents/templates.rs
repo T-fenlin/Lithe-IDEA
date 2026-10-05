@@ -11,7 +11,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     forms::{Choice, ChoiceChips, Input, Pick, TextInput},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// Every category at once.
@@ -191,9 +191,10 @@ impl RenderOnce for TemplatePicker {
                                     .child(self.templates[ix].name.clone()),
                             )
                             .child(
-                                Button::new((self.id.clone(), "use")).label("Use template")
+                                Button::new((self.id.clone(), "use"))
+                                    .label("Use template")
                                     .variant(ButtonVariant::Primary)
-                                    .size(ControlSize::Sm)
+                                    .size(Size::Small)
                                     .disabled(take.is_none())
                                     .when_some(take, |button, take| {
                                         button.on_click(move |_, window, cx| {
@@ -243,7 +244,7 @@ impl RenderOnce for TemplatePicker {
                     .border_r_1()
                     .border_color(colors.border)
                     .child(
-                        Input::new(&search).size(ControlSize::Sm).prefix(
+                        Input::new(&search).size(Size::Small).prefix(
                             Icon::new(IconName::Search)
                                 .size(IconSize::Sm)
                                 .color(colors.fg_subtle),

@@ -16,7 +16,7 @@ use super::{
 use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 type OnPaths = Rc<dyn Fn(Vec<PathBuf>, &mut Window, &mut App)>;
@@ -193,7 +193,7 @@ impl RenderOnce for FileInput {
         let (multiple, browse, clear) = (self.multiple, set.clone(), set.clone());
         let browse_what = what.clone();
         let subtle = cx.theme().colors.fg_subtle;
-        let field = field_button(self.id.clone(), &focus, ControlSize::Md, false, window, cx)
+        let field = field_button(self.id.clone(), &focus, Size::Medium, false, window, cx)
             .cursor_pointer()
             .on_click(move |_, window, cx| {
                 let browse = browse.clone();
@@ -215,7 +215,7 @@ impl RenderOnce for FileInput {
             .when(!self.paths.is_empty(), |field| {
                 field.child(
                     IconButton::new((self.id.clone(), "clear"), IconName::X)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .variant(ButtonVariant::Ghost)
                         .tooltip("Clear")
                         .on_click(move |_, window, cx| {
@@ -324,8 +324,9 @@ impl RenderOnce for DropZone {
             })
             .child(
                 div().pt_2().child(
-                    Button::new((self.id, "browse")).label("Browse…")
-                        .size(ControlSize::Sm)
+                    Button::new((self.id, "browse"))
+                        .label("Browse…")
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             let take = chosen.clone();
                             browse(

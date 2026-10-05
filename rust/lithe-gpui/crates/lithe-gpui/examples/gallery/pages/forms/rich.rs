@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, Keystroke, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     forms::{
         ExpressionInput, HotkeyInput, KeyValueInput, ListInput, MentionInput, PathInput,
@@ -5,7 +6,6 @@ use lithe_gpui::{
     },
     typography::Caption,
 };
-use gpui::{App, IntoElement, Keystroke, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::text::field;
 use crate::{

@@ -14,7 +14,7 @@ use crate::{
     menus::{Menu, MenuItem, OverflowMenu},
     motion::Reorder,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Palette, Radius, TextSize},
+    theme::{ActiveTheme, Palette, Radius, Size, TextSize},
 };
 
 /// Theme values a block reads, taken before its fields borrow the context.
@@ -194,7 +194,7 @@ impl Render for BlockEditor {
             let entity = cx.entity();
             let plus = IconButton::new((id.clone(), format!("plus-{key}")), IconName::Plus)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Add a block below")
                 .on_click(move |_, window, cx| {
                     entity.update(cx, |editor, cx| {

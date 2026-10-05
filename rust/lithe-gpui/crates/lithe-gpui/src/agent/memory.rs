@@ -12,7 +12,7 @@ use crate::{
     data_display::{Timeline, TimelineItem, Tone},
     forms::{Pick, TextInput},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{RelativeTime, format::plural},
 };
 
@@ -77,7 +77,9 @@ impl RenderOnce for MemoryPanel {
         let adding = self.on_add.map(|add| {
             send_line(
                 &self.field,
-                Button::new((self.id.clone(), "add")).label("Remember").variant(ButtonVariant::Secondary),
+                Button::new((self.id.clone(), "add"))
+                    .label("Remember")
+                    .variant(ButtonVariant::Secondary),
                 add,
                 "memory",
                 cx,
@@ -113,7 +115,7 @@ impl RenderOnce for MemoryPanel {
                         IconName::Trash2,
                     )
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Forget")
                     .on_click(move |_, window, cx| {
                         log::info!("memory: forget {key}");
@@ -212,9 +214,10 @@ impl RenderOnce for CheckpointList {
                     .clone()
                     .filter(|_| ix != current)
                     .map(|rewind| {
-                        Button::new((self.id.clone(), format!("rewind-{ix}"))).label("Rewind to here")
+                        Button::new((self.id.clone(), format!("rewind-{ix}")))
+                            .label("Rewind to here")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .icon(IconName::RotateCcw)
                             .on_click(move |_, window, cx| {
                                 log::info!("checkpoints: rewind to {ix}");

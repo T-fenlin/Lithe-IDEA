@@ -10,7 +10,7 @@ use super::{ColorPicker, swatch::checker};
 use crate::{
     layout::seeded::{Seeded, use_seeded},
     primitives::tab_stop,
-    theme::{ActiveTheme, ControlSize, Mix, Radius},
+    theme::{ActiveTheme, Mix, Radius, Size},
 };
 
 /// A color at a place along a gradient, from 0 to 1.
@@ -184,7 +184,7 @@ impl RenderOnce for GradientEditor {
             .id((self.id.clone(), "bar"))
             .relative()
             .w_full()
-            .h(theme.control_height(ControlSize::Md))
+            .h(theme.control_height(Size::Medium))
             .cursor_crosshair()
             .child(checker(small, cx))
             .children(bands)

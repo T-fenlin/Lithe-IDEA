@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
     forms::Editing,
-    theme::{ActiveTheme, ControlSize, Density},
+    theme::{ActiveTheme, Density, Size},
 };
 
 /// Sizes in pixels: a cell, a header, the row labels, and the frozen stretch.
@@ -36,7 +36,7 @@ impl Metrics {
             wide,
             tall,
             label: if face.numbered {
-                theme.control_height(ControlSize::Lg).to_pixels(rem) * 1.25
+                theme.control_height(Size::Large).to_pixels(rem) * 1.25
             } else {
                 Pixels::ZERO
             },

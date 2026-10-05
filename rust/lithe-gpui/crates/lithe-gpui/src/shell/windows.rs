@@ -1,16 +1,16 @@
 use anyhow::Context as _;
 use gpui::{
     AnyView, AnyWindowHandle, App, AppContext, Bounds, Context, Entity, FocusHandle, Global,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString, Size,
-    Styled, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowKind, WindowOptions, div,
-    point, prelude::*,
+    InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString, Styled,
+    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, point,
+    prelude::*,
 };
 
 use super::drag_region;
 use crate::{
     buttons::IconButton,
     primitives::{FocusScope, IconName},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 fn titlebar(title: SharedString, cx: &App) -> TitlebarOptions {
@@ -63,7 +63,7 @@ impl<T: IntoElement + Clone + 'static> Render for Hosted<T> {
 /// Opens `content` alone in a fixed-size window, centered.
 pub fn open_hosted<T: IntoElement + Clone + 'static>(
     title: impl Into<SharedString>,
-    size: Size<Pixels>,
+    size: gpui::Size<Pixels>,
     content: T,
     cx: &mut App,
 ) -> anyhow::Result<WindowHandle<Hosted<T>>> {
@@ -96,7 +96,7 @@ impl WindowManager {
     /// Opens a window one title bar below and right of the newest.
     pub fn open<V: Render + 'static>(
         title: impl Into<SharedString>,
-        size: Size<Pixels>,
+        size: gpui::Size<Pixels>,
         cx: &mut App,
         build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
     ) -> anyhow::Result<WindowHandle<V>> {
@@ -166,7 +166,7 @@ impl MiniWindow {
     /// Pinned to a display corner or centered; expanding returns to the opener.
     pub fn open(
         title: impl Into<SharedString>,
-        size: Size<Pixels>,
+        size: gpui::Size<Pixels>,
         corner: Option<Corner>,
         view: AnyView,
         cx: &mut App,
@@ -232,7 +232,7 @@ impl Render for MiniWindow {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .h(theme.control_height(ControlSize::Lg))
+                    .h(theme.control_height(Size::Large))
                     .px_2()
                     .bg(theme.colors.overlay.opacity(0.92))
                     .border_b_1()
@@ -245,7 +245,7 @@ impl Render for MiniWindow {
                     .when_some(back, |bar, back| {
                         bar.child(
                             IconButton::new("mini-expand", IconName::Maximize2)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .on_click(move |_, window, cx| {
                                     window.remove_window();
                                     let returned =
@@ -260,7 +260,7 @@ impl Render for MiniWindow {
                     })
                     .child(
                         IconButton::new("mini-close", IconName::X)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(|_, window, _| window.remove_window()),
                     ),
             )

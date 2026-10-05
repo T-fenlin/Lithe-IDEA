@@ -11,7 +11,7 @@ use crate::{
     layout::{on_axis, reveal_when_focused},
     motion::{self, Axis, Marker, glide, measure_item, measure_origin, slide},
     primitives::{FocusRing, Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, Elevation, Radius},
+    theme::{ActiveTheme, Elevation, Radius, Size},
     typography::Ellipsis,
 };
 
@@ -23,7 +23,7 @@ pub struct SegmentedControl {
     id: ElementId,
     segments: Vec<(SharedString, SharedString, Option<IconName>)>,
     selected: SharedString,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnChange>,
 }
 
@@ -33,7 +33,7 @@ impl SegmentedControl {
             id: id.into(),
             segments: Vec::new(),
             selected: selected.into(),
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -48,7 +48,7 @@ impl SegmentedControl {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -217,5 +217,11 @@ impl RenderOnce for SegmentedControl {
                 .border_color(colors.border),
         )
         .child(control)
+    }
+}
+
+impl crate::theme::Sizable for SegmentedControl {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

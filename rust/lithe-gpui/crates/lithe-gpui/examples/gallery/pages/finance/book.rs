@@ -1,3 +1,5 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, tz::TimeZone};
 use lithe_gpui::{
     finance::{
         BidAskBar, DomLadder, Level2Quotes, OrderBook, PriceChangeBadge, PriceText, QuoteCard,
@@ -6,8 +8,6 @@ use lithe_gpui::{
     theme::TextSize,
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, tz::TimeZone};
 
 use super::markets::day;
 use crate::ui::{keep, noise, row, section, set};

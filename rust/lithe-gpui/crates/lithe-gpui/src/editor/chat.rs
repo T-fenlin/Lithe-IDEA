@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     forms::{Input, TextInput},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 type OnAsk = Rc<dyn Fn(SharedString, &mut Window, &mut App)>;
@@ -106,20 +106,21 @@ impl RenderOnce for InlineChat {
                     .child(
                         div()
                             .flex_1()
-                            .child(Input::new(&self.field).size(ControlSize::Sm)),
+                            .child(Input::new(&self.field).size(Size::Small)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "send")).label(if self.working { "Working" } else { "Send" })
-                        .variant(ButtonVariant::Primary)
-                        .size(ControlSize::Sm)
-                        .loading(self.working)
-                        .disabled(asked.is_empty() || self.working)
-                        .on_click(move |_, window, cx| send(window, cx)),
+                        Button::new((self.id.clone(), "send"))
+                            .label(if self.working { "Working" } else { "Send" })
+                            .variant(ButtonVariant::Primary)
+                            .size(Size::Small)
+                            .loading(self.working)
+                            .disabled(asked.is_empty() || self.working)
+                            .on_click(move |_, window, cx| send(window, cx)),
                     )
                     .children(self.on_close.map(|close| {
                         IconButton::new((self.id.clone(), "close"), IconName::X)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Close")
                             .on_click(move |_, window, cx| close(window, cx))
                     })),

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::Button,
     editor::{
@@ -10,7 +11,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, Mode, Palette, Theme},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::ui::{keep, row, section, set};
 

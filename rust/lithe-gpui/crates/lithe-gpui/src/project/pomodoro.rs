@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     motion::ProgressRing,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{format, tabular},
 };
 
@@ -221,37 +221,38 @@ impl RenderOnce for PomodoroTimer {
         let running = current.since.is_some();
         let toggle = {
             let cycle = cycle.clone();
-            Button::new((self.id.clone(), "toggle")).label(if running { "Pause" } else { "Start" })
-            .variant(ButtonVariant::Primary)
-            .icon(if running {
-                IconName::Pause
-            } else {
-                IconName::Play
-            })
-            .on_click(move |_, _, cx| {
-                let now = cx.background_executor().now();
-                cycle.update(cx, |cycle, cx| {
-                    match cycle.since.take() {
-                        Some(since) => cycle.banked += now.duration_since(since),
-                        None => cycle.since = Some(now),
-                    }
-                    log::info!(
-                        "pomodoro: {}",
-                        if cycle.since.is_some() {
-                            "running"
-                        } else {
-                            "paused"
-                        }
-                    );
-                    cx.notify();
+            Button::new((self.id.clone(), "toggle"))
+                .label(if running { "Pause" } else { "Start" })
+                .variant(ButtonVariant::Primary)
+                .icon(if running {
+                    IconName::Pause
+                } else {
+                    IconName::Play
                 })
-            })
+                .on_click(move |_, _, cx| {
+                    let now = cx.background_executor().now();
+                    cycle.update(cx, |cycle, cx| {
+                        match cycle.since.take() {
+                            Some(since) => cycle.banked += now.duration_since(since),
+                            None => cycle.since = Some(now),
+                        }
+                        log::info!(
+                            "pomodoro: {}",
+                            if cycle.since.is_some() {
+                                "running"
+                            } else {
+                                "paused"
+                            }
+                        );
+                        cx.notify();
+                    })
+                })
         };
         let skip = {
             let (cycle, on_phase) = (cycle.clone(), self.on_phase.clone());
             IconButton::new((self.id.clone(), "skip"), IconName::SkipForward)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Skip to the next phase")
                 .on_click(move |_, window, cx| {
                     advance(&cycle, lengths, on_phase.clone(), window, cx)
@@ -259,7 +260,7 @@ impl RenderOnce for PomodoroTimer {
         };
         let reset = IconButton::new((self.id.clone(), "reset"), IconName::RotateCcw)
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .tooltip("Start over")
             .on_click(move |_, _, cx| {
                 log::info!("pomodoro: reset");

@@ -1,11 +1,11 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use lithe_gpui::{forms::Slider, rendering::RenderSurface, theme::ActiveTheme};
 use gpui::{
     AnyElement, App, DevicePixels, Hsla, IntoElement, ParentElement, RenderImage, Rgba, Size,
     Styled, Window, div, px,
 };
 use image::{Frame, RgbaImage};
+use lithe_gpui::{forms::Slider, rendering::RenderSurface, theme::ActiveTheme};
 
 use super::Page;
 use crate::{

@@ -14,7 +14,7 @@ use super::{
     hex, parse_hex,
     swatch::checker,
 };
-use crate::theme::{ActiveTheme, ControlSize, Elevation, Radius};
+use crate::theme::{ActiveTheme, Elevation, Radius, Size};
 
 type OnColor = Rc<dyn Fn(Hsla, &mut Window, &mut App)>;
 
@@ -348,7 +348,7 @@ impl RenderOnce for ColorPicker {
             .flex()
             .items_center()
             .gap_2()
-            .child(ColorSwatch::new((self.id.clone(), "preview"), current).size(ControlSize::Md))
+            .child(ColorSwatch::new((self.id.clone(), "preview"), current).size(Size::Medium))
             .child(
                 div()
                     .flex_1()

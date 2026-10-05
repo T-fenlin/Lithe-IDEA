@@ -1,3 +1,5 @@
+use gpui::{App, IntoElement, ParentElement, Styled, div, px};
+use jiff::{SignedDuration, Timestamp};
 use lithe_gpui::{
     theme::TextSize,
     typography::{
@@ -5,8 +7,6 @@ use lithe_gpui::{
         Latex, NumberText, PercentText, PluralText, RelativeTime, SelectableText,
     },
 };
-use gpui::{App, IntoElement, ParentElement, Styled, div, px};
-use jiff::{SignedDuration, Timestamp};
 
 use crate::{
     probe::probe,

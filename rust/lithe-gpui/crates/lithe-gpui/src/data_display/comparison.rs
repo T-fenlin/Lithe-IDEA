@@ -5,7 +5,7 @@ use gpui::{
 
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// What a cell holds: a value, or whether the option has the feature.
@@ -90,7 +90,7 @@ impl RenderOnce for Comparison {
             div()
                 .flex()
                 .items_center()
-                .min_h(theme.control_height(ControlSize::Lg))
+                .min_h(theme.control_height(Size::Large))
                 .px_3()
                 .py_2()
                 .when(row > 0, |cell| {

@@ -12,7 +12,7 @@ use crate::{
     data_display::{Avatar, AvatarGroup, Tag, Tone},
     forms::{Input, TextInput},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Palette, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, IconSize, Palette, Radius, Size, TextSize},
     typography::{Ellipsis, LEADING, format},
 };
 
@@ -370,9 +370,10 @@ impl RenderOnce for ReviewComment {
                         .gap_2()
                         .child(div().flex_1().child(Input::new(&self.reply)))
                         .child(
-                            Button::new((self.id.clone(), "reply")).label("Reply")
+                            Button::new((self.id.clone(), "reply"))
+                                .label("Reply")
                                 .variant(ButtonVariant::Primary)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .when_some(reply, |button, reply| {
                                     button.on_click(move |_, window, cx| reply(window, cx))
                                 }),
@@ -381,16 +382,17 @@ impl RenderOnce for ReviewComment {
             })
             .child(
                 div().flex().child(
-                    Button::new((self.id.clone(), "resolve")).label(if resolved {
+                    Button::new((self.id.clone(), "resolve"))
+                        .label(if resolved {
                             "Reopen conversation"
                         } else {
                             "Resolve conversation"
                         })
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
-                    .when_some(resolve, |button, resolve| {
-                        button.on_click(move |_, window, cx| resolve(!resolved, window, cx))
-                    }),
+                        .variant(ButtonVariant::Ghost)
+                        .size(Size::Small)
+                        .when_some(resolve, |button, resolve| {
+                            button.on_click(move |_, window, cx| resolve(!resolved, window, cx))
+                        }),
                 ),
             )
     }

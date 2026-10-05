@@ -15,7 +15,7 @@ use crate::{
     documents::Checklist,
     forms::{Choice, DatePicker, InlineEdit, OnValue, Run, Select},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 type OnTask = Rc<dyn Fn(&Task, &mut Window, &mut App)>;
@@ -160,7 +160,7 @@ impl RenderOnce for TaskDetailPanel {
             .children(self.on_close.map(|close| {
                 IconButton::new((id.clone(), "close"), IconName::X)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Close")
                     .on_click(move |_, window, cx| close(window, cx))
             }));
@@ -180,7 +180,7 @@ impl RenderOnce for TaskDetailPanel {
         let status = {
             let edit = edit.clone();
             StatusSelect::new((id.clone(), "status"), task.status)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_change(move |status, window, cx| {
                     edit(&move |task| task.status = status, window, cx)
                 })
@@ -191,7 +191,7 @@ impl RenderOnce for TaskDetailPanel {
                 Priority::ALL.map(|priority| Choice::new(priority.key(), priority.words()));
             Select::new((id.clone(), "priority"), choices)
                 .selected(task.priority.key())
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_change(move |key: &SharedString, window, cx| {
                     let priority = Priority::of_key(key);
                     edit(&move |task| task.priority = priority, window, cx)
@@ -200,7 +200,7 @@ impl RenderOnce for TaskDetailPanel {
         let assignee = {
             let edit = edit.clone();
             let picker = AssigneePicker::new((id.clone(), "assignee"), self.people)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_change(move |person, window, cx| {
                     let person = person.cloned();
                     edit(&move |task| task.assignee = person.clone(), window, cx)
@@ -213,7 +213,7 @@ impl RenderOnce for TaskDetailPanel {
         let due = {
             let edit = edit.clone();
             DatePicker::new((id.clone(), "due"), task.due)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_change(move |day, window, cx| {
                     edit(&move |task| task.due = Some(day), window, cx)
                 })

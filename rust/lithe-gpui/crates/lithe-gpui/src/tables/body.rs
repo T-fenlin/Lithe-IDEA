@@ -12,7 +12,7 @@ use crate::{
     layout::on_axis,
     lists::Pick,
     primitives::Disclosure,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 pub(super) type Select = Rc<dyn Fn(usize, Pick, &mut Window, &mut App)>;
@@ -315,7 +315,7 @@ impl Body {
                             editor.update(cx, |editing, cx| editing.finish(true, window, cx));
                         }
                     })
-                    .child(Input::new(&field).size(ControlSize::Sm))
+                    .child(Input::new(&field).size(Size::Small))
                     .into_any_element()
             }
             None => draw(

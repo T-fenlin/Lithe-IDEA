@@ -1,11 +1,11 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     agent::{ChangeState, FileChange, MultiFileDiffReview},
     collab::Decision,
     terminal::{CommandBlock, CommandState},
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

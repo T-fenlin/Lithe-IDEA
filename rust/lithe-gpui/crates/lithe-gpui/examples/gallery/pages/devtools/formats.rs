@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     devtools::{JsonEditor, JsonViewer, XmlViewer, YamlViewer},
     editor::CodeEditor,
     forms::TextInput,
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::ui::section;
 

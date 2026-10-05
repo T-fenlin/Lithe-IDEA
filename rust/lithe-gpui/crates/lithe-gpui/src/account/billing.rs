@@ -11,7 +11,7 @@ use crate::{
     data_display::{Badge, Meter, Tone},
     layout::Card,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{
         Ellipsis,
         format::{Separators, currency, number},
@@ -110,13 +110,15 @@ impl RenderOnce for SubscriptionCard {
         let canceled = matches!(plan.standing, Standing::Canceled { .. });
         let period = if plan.yearly { "per year" } else { "per month" };
         let change = self.on_change.map(|run| {
-            Button::new((id.clone(), "change")).label("Change plan")
+            Button::new((id.clone(), "change"))
+                .label("Change plan")
                 .on_click(move |_, window, cx| run(window, cx))
                 .into_any_element()
         });
         let end = match canceled {
             true => self.on_resume.map(|run| {
-                Button::new((id.clone(), "resume")).label("Keep plan")
+                Button::new((id.clone(), "resume"))
+                    .label("Keep plan")
                     .variant(ButtonVariant::Primary)
                     .on_click(move |_, window, cx| run(window, cx))
                     .into_any_element()
@@ -332,7 +334,7 @@ impl RenderOnce for BillingHistory {
                         (id.clone(), format!("download-{}", invoice.key)),
                         IconName::Download,
                     )
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Download")
                     .on_click(move |_, window, cx| {
                         log::info!("billing history: download {key}");

@@ -1,5 +1,8 @@
 use std::rc::Rc;
 
+use gpui::{
+    App, ClipboardItem, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems,
+};
 use lithe_gpui::{
     data_display::Tone,
     forms::TextInput,
@@ -9,9 +12,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, Density, Radius},
     typography::Caption,
-};
-use gpui::{
-    App, ClipboardItem, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems,
 };
 
 use crate::{

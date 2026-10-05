@@ -1,3 +1,5 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, ToSpan, tz::TimeZone};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     chat::{
@@ -11,8 +13,6 @@ use lithe_gpui::{
     primitives::{IconName, Severity},
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, ToSpan, tz::TimeZone};
 
 use crate::{
     probe::probe,

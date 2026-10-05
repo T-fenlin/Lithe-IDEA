@@ -1,11 +1,11 @@
 use std::time::Duration;
 
+use gpui::{
+    App, Entity, IntoElement, ParentElement, SharedString, Styled, TaskExt as _, Window, div, px,
+};
 use lithe_gpui::media::{
     AudioPlayer, AudioSpectrum, AudioWaveform, MediaControls, PlaybackSpeedControl, Playlist,
     Repeat, Track, VolumeControl,
-};
-use gpui::{
-    App, Entity, IntoElement, ParentElement, SharedString, Styled, TaskExt as _, Window, div, px,
 };
 
 use crate::{

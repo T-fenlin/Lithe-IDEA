@@ -14,7 +14,7 @@ use crate::{
     buttons::SegmentedControl,
     editor::{code_colors, stack},
     primitives::FocusRing,
-    theme::{ActiveTheme, ControlSize, Palette, TextSize},
+    theme::{ActiveTheme, Palette, Size, TextSize},
     typography::{LEADING, format},
 };
 
@@ -177,7 +177,7 @@ impl RenderOnce for DiffViewer {
                 DiffLayout::Split => "split",
             },
         )
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .segment("unified", "Unified", None)
         .segment("split", "Split", None);
         let layout = match self.on_layout {

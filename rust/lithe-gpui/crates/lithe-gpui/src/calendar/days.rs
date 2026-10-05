@@ -15,7 +15,7 @@ use super::{
 use crate::{
     forms::{OnValue, show_span, week_start},
     layout::seeded::use_seeded,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::format,
 };
 
@@ -178,7 +178,7 @@ fn names(days: &[Date], today: Date, zones: &[String], window: &Window, cx: &App
         .relative()
         .flex_none()
         .w_full()
-        .h(theme.control_height(ControlSize::Lg) * 1.25)
+        .h(theme.control_height(Size::Large) * 1.25)
         .border_b_1()
         .border_color(colors.border)
         .text_size(theme.text_size(TextSize::Xs))

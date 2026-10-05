@@ -1,8 +1,8 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::canvas::{
     AlignmentToolbar, AssetPanel, Corner, Frame, InspectorPanel, LayerPanel, Shape, ShapeKind,
     aligned,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::tools::studio;
 use crate::ui::{change, section};

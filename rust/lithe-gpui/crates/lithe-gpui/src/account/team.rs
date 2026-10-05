@@ -10,7 +10,7 @@ use crate::{
     buttons::{Button, ButtonVariant, ConfirmButton, ConfirmMode},
     data_display::{Avatar, Badge, Tone},
     forms::{Choice, EmailInput, Enter, Select, is_email},
-    theme::{ActiveTheme, AvatarSize, ControlSize, TextSize},
+    theme::{ActiveTheme, AvatarSize, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -87,7 +87,7 @@ impl RenderOnce for RoleSelector {
         Select::new(id, choices)
             .selected(self.selected)
             .disabled(self.disabled)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_change(move |key, window, cx| {
                 log::info!("role selector: {key}");
                 on_change(key, window, cx);
@@ -196,7 +196,7 @@ impl RenderOnce for TeamMemberTable {
                         "Remove",
                         ConfirmMode::Twice,
                     )
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_confirm(move |window, cx| {
                         log::info!("team member table: remove {removed}");
                         drop(&removed, window, cx);
@@ -400,22 +400,24 @@ impl RenderOnce for InvitationList {
                             .flex_none()
                             .gap_1()
                             .child(
-                                Button::new((id.clone(), format!("resend-{}", invitation.key))).label("Resend")
-                                .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
-                                .on_click(move |_, window, cx| {
-                                    log::info!("invitation list: resend {again}");
-                                    resend(&again, window, cx);
-                                }),
+                                Button::new((id.clone(), format!("resend-{}", invitation.key)))
+                                    .label("Resend")
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(Size::Small)
+                                    .on_click(move |_, window, cx| {
+                                        log::info!("invitation list: resend {again}");
+                                        resend(&again, window, cx);
+                                    }),
                             )
                             .child(
-                                Button::new((id.clone(), format!("revoke-{}", invitation.key))).label("Revoke")
-                                .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
-                                .on_click(move |_, window, cx| {
-                                    log::info!("invitation list: revoke {gone}");
-                                    revoke(&gone, window, cx);
-                                }),
+                                Button::new((id.clone(), format!("revoke-{}", invitation.key)))
+                                    .label("Revoke")
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(Size::Small)
+                                    .on_click(move |_, window, cx| {
+                                        log::info!("invitation list: revoke {gone}");
+                                        revoke(&gone, window, cx);
+                                    }),
                             ),
                     )
             });
@@ -458,7 +460,8 @@ impl RenderOnce for InvitationList {
                         ),
                     )
                     .child(
-                        Button::new((id.clone(), "invite")).label("Invite")
+                        Button::new((id.clone(), "invite"))
+                            .label("Invite")
                             .variant(ButtonVariant::Primary)
                             .disabled(!ready)
                             .on_click(move |_, window, cx| invite(window, cx)),

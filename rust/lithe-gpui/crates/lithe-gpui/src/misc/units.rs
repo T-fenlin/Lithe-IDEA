@@ -7,7 +7,7 @@ use crate::{
     buttons::IconButton,
     forms::{Choice, Input, Select, TextInput, parse_number},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
     typography::{
         format::{MINUS, Separators, significant},
         tabular,
@@ -285,8 +285,8 @@ impl RenderOnce for UnitConverter {
                             div()
                                 .flex()
                                 .items_center()
-                                .min_h(theme.control_height(ControlSize::Md))
-                                .px(theme.control_padding(ControlSize::Md))
+                                .min_h(theme.control_height(Size::Medium))
+                                .px(theme.control_padding(Size::Medium))
                                 .py_1()
                                 .rounded(theme.radius(Radius::Md))
                                 .bg(theme.colors.sunken)

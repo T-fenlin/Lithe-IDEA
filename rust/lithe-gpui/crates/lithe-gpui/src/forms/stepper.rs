@@ -6,7 +6,7 @@ use super::options::OnNumber;
 use crate::{
     buttons::{ButtonVariant, IconButton},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::format::{self, Separators},
 };
 
@@ -77,7 +77,7 @@ impl RenderOnce for Stepper {
         div()
             .flex()
             .items_center()
-            .h(theme.control_height(ControlSize::Md))
+            .h(theme.control_height(Size::Medium))
             .p_0p5()
             .rounded(theme.radius(Radius::Md))
             .border_1()
@@ -86,13 +86,13 @@ impl RenderOnce for Stepper {
             .child(
                 IconButton::new((self.id.clone(), "less"), IconName::Minus)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .disabled(value <= min)
                     .on_click(nudge(-self.step)),
             )
             .child(
                 div()
-                    .min_w(theme.control_height(ControlSize::Md))
+                    .min_w(theme.control_height(Size::Medium))
                     .text_center()
                     .text_size(theme.text_size(TextSize::Base))
                     .text_color(theme.colors.fg)
@@ -101,7 +101,7 @@ impl RenderOnce for Stepper {
             .child(
                 IconButton::new((self.id.clone(), "more"), IconName::Plus)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .disabled(value >= max)
                     .on_click(nudge(self.step)),
             )

@@ -11,7 +11,7 @@ use crate::{
     forms::{Run, surface},
     navigation::marked,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::KbdCombo,
 };
 
@@ -34,7 +34,7 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
         .flex()
         .items_center()
         .gap_2()
-        .h(theme.control_height(ControlSize::Md))
+        .h(theme.control_height(Size::Medium))
         .px_2()
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)

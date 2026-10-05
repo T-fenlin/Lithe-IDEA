@@ -71,15 +71,16 @@ impl RenderOnce for OAuthButtons {
             .children(self.providers.into_iter().map(|(key, name)| {
                 let mine = busy.as_ref() == Some(&key);
                 let pick = on_pick.clone();
-                Button::new((id.clone(), format!("provider-{key}"))).label(format!("Continue with {name}"))
-                .variant(ButtonVariant::Outline)
-                .full_width()
-                .loading(mine)
-                .disabled(busy.is_some() && !mine)
-                .on_click(move |_, window, cx| {
-                    log::info!("oauth buttons: {key}");
-                    pick(&key, window, cx);
-                })
+                Button::new((id.clone(), format!("provider-{key}")))
+                    .label(format!("Continue with {name}"))
+                    .variant(ButtonVariant::Outline)
+                    .full_width()
+                    .loading(mine)
+                    .disabled(busy.is_some() && !mine)
+                    .on_click(move |_, window, cx| {
+                        log::info!("oauth buttons: {key}");
+                        pick(&key, window, cx);
+                    })
             }))
     }
 }

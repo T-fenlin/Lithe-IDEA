@@ -13,7 +13,7 @@ use crate::{
     },
     lists::{ListItem, SelectableList},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// When a status clears itself.
@@ -176,14 +176,14 @@ impl RenderOnce for StatusSetter {
                 icon: IconName::Smile,
                 shown: now.emoji.clone(),
                 placeholder: "".into(),
-                size: ControlSize::Md,
+                size: Size::Medium,
                 disabled: false,
             },
             move |close, anchor, window, cx| {
                 let theme = cx.theme();
                 let rem = window.rem_size();
                 let height = theme.list_max_height().to_pixels(rem)
-                    + theme.control_height(ControlSize::Lg).to_pixels(rem) * 2.0;
+                    + theme.control_height(Size::Large).to_pixels(rem) * 2.0;
                 let (escape, done) = (close.clone(), close.clone());
                 let picker = EmojiPicker::new((popup_id.clone(), "picker"))
                     .when_some(shown, |picker, emoji| picker.selected(emoji))
@@ -280,7 +280,8 @@ impl RenderOnce for StatusSetter {
         });
         let blank = now.emoji.is_none() && now.text.trim().is_empty();
         let clear = self.on_clear.filter(|_| self.status.is_some()).map(|run| {
-            Button::new((self.id.clone(), "remove")).label("Clear status")
+            Button::new((self.id.clone(), "remove"))
+                .label("Clear status")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, window, cx| {
                     log::info!("status setter: clear");
@@ -289,7 +290,8 @@ impl RenderOnce for StatusSetter {
         });
         let save = self.on_save.map(|save| {
             let saving = draft.clone();
-            Button::new((self.id.clone(), "save")).label("Save")
+            Button::new((self.id.clone(), "save"))
+                .label("Save")
                 .variant(ButtonVariant::Primary)
                 .disabled(blank)
                 .on_click(move |_, window, cx| {
@@ -311,7 +313,7 @@ impl RenderOnce for StatusSetter {
                     .child(
                         div()
                             .flex_none()
-                            .w(rems(theme.control_height(ControlSize::Md).0 * 2.5))
+                            .w(rems(theme.control_height(Size::Medium).0 * 2.5))
                             .child(emoji),
                     )
                     .child(div().flex_1().min_w_0().child(Input::new(&input))),

@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use gpui::{App, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, ToSpan};
 use lithe_gpui::{
     charts::NetworkGraph,
     data_display::{PropertyGrid, PropertyGroup},
@@ -11,8 +13,6 @@ use lithe_gpui::{
     lists::{Tree, TreeNode},
     theme::{ActiveTheme, Radius, TextSize},
 };
-use gpui::{App, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, ToSpan};
 
 use crate::{
     probe::probe,

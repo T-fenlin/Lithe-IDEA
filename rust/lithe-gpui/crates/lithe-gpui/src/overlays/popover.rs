@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     forms::{Run, float_height, surface},
     primitives::{FocusScope, IconName, Takeover, give_back, take_focus},
-    theme::ControlSize,
+    theme::Size,
 };
 
 type Content = Box<dyn FnOnce(Run, &mut Window, &mut App) -> AnyElement>;
@@ -20,7 +20,7 @@ struct Face {
     label: SharedString,
     icon: Option<IconName>,
     variant: ButtonVariant,
-    size: ControlSize,
+    size: Size,
 }
 
 /// What opens the panel: its own button, or an element of the owner's, built with the run that opens and closes it.
@@ -71,7 +71,7 @@ impl Popover {
                 label: label.into(),
                 icon: None,
                 variant: ButtonVariant::Secondary,
-                size: ControlSize::default(),
+                size: Size::default(),
             }),
             content: Box::new(move |_, window, cx| content(window, cx).into_any_element()),
         }
@@ -111,7 +111,7 @@ impl Popover {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.face("a size").size = size;
         self
     }
@@ -136,7 +136,8 @@ impl RenderOnce for Popover {
             })
         };
         let trigger = match self.opener {
-            Opener::Button(face) => Button::new((self.id.clone(), "trigger")).label(face.label)
+            Opener::Button(face) => Button::new((self.id.clone(), "trigger"))
+                .label(face.label)
                 .variant(face.variant)
                 .size(face.size)
                 .when_some(face.icon, |button, icon| button.icon(icon))
@@ -235,5 +236,11 @@ impl RenderOnce for Popover {
             window,
             cx,
         ))
+    }
+}
+
+impl crate::theme::Sizable for Popover {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

@@ -13,7 +13,7 @@ use crate::{
     layout::Collapsible,
     motion,
     primitives::{IconName, raise},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// Tools that float over a text field's selection while it has one and holds focus. Its buttons leave focus in the field.
@@ -146,7 +146,7 @@ impl RenderOnce for Peek {
                         .items_center()
                         .justify_between()
                         .gap_2()
-                        .h(theme.control_height(ControlSize::Lg))
+                        .h(theme.control_height(Size::Large))
                         .pl_3()
                         .pr_1()
                         .border_b_1()
@@ -157,7 +157,7 @@ impl RenderOnce for Peek {
                         .child(
                             IconButton::new((self.id.clone(), "close"), IconName::X)
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .tooltip("Close")
                                 .on_click(move |_, window, cx| {
                                     log::info!("peek {id:?}: closed");

@@ -1,12 +1,12 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     agent::{Permission, PermissionPrompt, ToolApprovalDialog, ToolCallCard, ToolCallGroup},
     buttons::{Button, ButtonVariant},
     chat::StepState,
     theme::{ActiveTheme, TextSize},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

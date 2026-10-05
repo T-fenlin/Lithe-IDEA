@@ -1,3 +1,6 @@
+use gpui::{
+    App, ClipboardItem, FontWeight, IntoElement, ParentElement, Styled, Window, div, point, px,
+};
 use lithe_gpui::{
     agent::{ArtifactPanel, BrowserPreview, ComputerUseViewer, LivePreview},
     buttons::{Button, ButtonVariant},
@@ -6,9 +9,6 @@ use lithe_gpui::{
     primitives::IconName,
     theme::{ActiveTheme, TextSize},
     typography::format::plural,
-};
-use gpui::{
-    App, ClipboardItem, FontWeight, IntoElement, ParentElement, Styled, Window, div, point, px,
 };
 
 use crate::{
@@ -106,9 +106,11 @@ fn page(builds: usize, cx: &App) -> impl IntoElement + use<> {
                 .child("Blend a color toward white."),
         )
         .child(
-            div()
-                .flex()
-                .child(Button::new("agent-page-try").label("Try it").variant(ButtonVariant::Primary)),
+            div().flex().child(
+                Button::new("agent-page-try")
+                    .label("Try it")
+                    .variant(ButtonVariant::Primary),
+            ),
         )
         .child(
             div()

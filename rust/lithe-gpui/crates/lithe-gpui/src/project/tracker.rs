@@ -171,22 +171,23 @@ impl RenderOnce for TimeTracker {
                     .into_any_element()
             }
         };
-        let action = Button::new((id.clone(), "action")).label(if running { "Stop" } else { "Start" })
-        .focus_handle(&action)
-        .variant(if running {
-            ButtonVariant::default()
-        } else {
-            ButtonVariant::Primary
-        })
-        .icon(if running {
-            IconName::Square
-        } else {
-            IconName::Play
-        })
-        .on_click(move |_, window, cx| match running {
-            true => stop(window, cx),
-            false => start(window, cx),
-        });
+        let action = Button::new((id.clone(), "action"))
+            .label(if running { "Stop" } else { "Start" })
+            .focus_handle(&action)
+            .variant(if running {
+                ButtonVariant::default()
+            } else {
+                ButtonVariant::Primary
+            })
+            .icon(if running {
+                IconName::Square
+            } else {
+                IconName::Play
+            })
+            .on_click(move |_, window, cx| match running {
+                true => stop(window, cx),
+                false => start(window, cx),
+            });
         let theme = cx.theme();
         let colors = &theme.colors;
         let clock = tabular(div())

@@ -1,10 +1,10 @@
+use gpui::{
+    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+};
 use lithe_gpui::{
     collab::{FollowMode, LiveIndicator, Peer, PresenceAvatars, RemoteCursor, RemoteSelection},
     forms::{Input, TextInput},
     theme::{ActiveTheme, TextSize},
-};
-use gpui::{
-    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
 };
 
 use crate::{

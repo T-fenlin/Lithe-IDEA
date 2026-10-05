@@ -202,11 +202,11 @@ impl RenderOnce for GraphQLExplorer {
                             }))
                             .child(
                                 div().flex().child(
-                                    Button::new((id, "run")).label(if self.running { "Running…" } else { "Run" })
-                                    .variant(ButtonVariant::Primary)
-                                    .disabled(rests)
-                                    .on_click(
-                                        move |_, window, cx| {
+                                    Button::new((id, "run"))
+                                        .label(if self.running { "Running…" } else { "Run" })
+                                        .variant(ButtonVariant::Primary)
+                                        .disabled(rests)
+                                        .on_click(move |_, window, cx| {
                                             let (query, variables) = (
                                                 query.read(cx).text().to_string(),
                                                 variables.read(cx).text().to_string(),
@@ -216,8 +216,7 @@ impl RenderOnce for GraphQLExplorer {
                                                 query.len()
                                             );
                                             on_run(query, variables, window, cx);
-                                        },
-                                    ),
+                                        }),
                                 ),
                             ),
                     ),

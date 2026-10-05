@@ -1,12 +1,12 @@
+use gpui::{
+    App, ElementId, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window,
+    div, px,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     forms::Switch,
     i18n::SkipLink,
     theme::{ActiveTheme, HUE_NAMES, Radius, Theme},
-};
-use gpui::{
-    App, ElementId, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window,
-    div, px,
 };
 
 use crate::probe::probe;

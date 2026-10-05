@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     forms::{Input, TextInput},
     terminal::{LogLevel, LogLine, LogViewer, Process, ProcessList},
     theme::{ActiveTheme, Radius},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::ui::{keep, section, set};
 

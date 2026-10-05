@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// A problem in a span of code: squiggled under it and marked in the gutter.
@@ -109,9 +109,10 @@ impl RenderOnce for ReadOnlyBanner {
             )
             .child(div().flex_1().child(self.message))
             .children(self.action.map(|(label, handler)| {
-                Button::new(self.id).label(label)
+                Button::new(self.id)
+                    .label(label)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| handler(window, cx))
             }))
     }

@@ -99,7 +99,8 @@ impl RenderOnce for AlertList {
                     .filter(|_| firing)
                     .map(|acknowledge| {
                         row_action(
-                            Button::new((id.clone(), format!("ack-{}", alert.key))).label("Acknowledge")
+                            Button::new((id.clone(), format!("ack-{}", alert.key)))
+                                .label("Acknowledge")
                                 .variant(ButtonVariant::Ghost)
                                 .on_click(move |_, window, cx| {
                                     log::info!("alert list: acknowledge {key}");

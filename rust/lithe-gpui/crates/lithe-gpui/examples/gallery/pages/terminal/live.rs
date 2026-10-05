@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+use gpui::{
+    App, AppContext as _, Axis, Entity, IntoElement, ParentElement, SharedString, Styled, Window,
+    div, prelude::*, px,
+};
 use lithe_gpui::{
     editor::{FindOptions, FindWidget},
     forms::TextInput,
@@ -8,10 +12,6 @@ use lithe_gpui::{
     primitives::IconName,
     terminal::{Launch, ShellChoice, ShellSelector, Terminal, TerminalToolbar},
     theme::{ActiveTheme, Radius},
-};
-use gpui::{
-    App, AppContext as _, Axis, Entity, IntoElement, ParentElement, SharedString, Styled, Window,
-    div, prelude::*, px,
 };
 
 use crate::{

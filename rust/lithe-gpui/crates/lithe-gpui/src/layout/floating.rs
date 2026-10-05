@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use super::seeded::use_seeded;
 use crate::{
     primitives::raise,
-    theme::{ActiveTheme, ControlSize, Elevation, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
 };
 
 struct Carry {
@@ -89,7 +89,7 @@ impl RenderOnce for FloatingPanel {
         let owner = origin.entity_id();
         let theme = cx.theme();
         let keep = theme
-            .control_height(ControlSize::Lg)
+            .control_height(Size::Large)
             .to_pixels(window.rem_size());
         let viewport = window.viewport_size();
         let at = clamp_to_window(origin.read(cx).value, keep, viewport);
@@ -137,7 +137,7 @@ impl RenderOnce for FloatingPanel {
                     .id("floating-title")
                     .flex()
                     .items_center()
-                    .h(theme.control_height(ControlSize::Md))
+                    .h(theme.control_height(Size::Medium))
                     .px_3()
                     .border_b_1()
                     .border_color(theme.colors.border)

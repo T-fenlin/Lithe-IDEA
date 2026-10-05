@@ -1,3 +1,4 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     canvas::{
         Brush, BrushSettings, Frame, HistoryPanel, InfiniteCanvas, Shape, ShapeKind, Tool,
@@ -5,7 +6,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

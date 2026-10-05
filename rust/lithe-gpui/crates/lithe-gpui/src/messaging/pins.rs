@@ -12,7 +12,7 @@ use crate::{
     forms::OnValue,
     lists::{ListItem, SelectableList},
     primitives::IconName,
-    theme::{ActiveTheme, AvatarSize, ControlSize, TextSize},
+    theme::{ActiveTheme, AvatarSize, Size, TextSize},
     typography::format,
 };
 
@@ -104,7 +104,7 @@ impl RenderOnce for PinnedMessages {
                                 IconName::PinOff,
                             )
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Unpin")
                             .on_click(move |_, window, cx| {
                                 log::info!("pinned messages: unpin {key}");

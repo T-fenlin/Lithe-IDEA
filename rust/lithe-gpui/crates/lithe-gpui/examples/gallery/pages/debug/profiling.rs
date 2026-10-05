@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     debug::{Flamegraph, NetworkInspector, ProfileFrame, Request, Span, TimelineProfiler},
     forms::{Input, TextInput},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::ui::{keep, section, set};
 

@@ -1,3 +1,4 @@
+use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     forms::IconPicker,
     primitives::{Icon, IconName},
@@ -5,7 +6,6 @@ use lithe_gpui::{
     tooling::{A11yChecker, DesignTokenViewer},
     typography::Code,
 };
-use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::probe::probe;
 use crate::ui::section;

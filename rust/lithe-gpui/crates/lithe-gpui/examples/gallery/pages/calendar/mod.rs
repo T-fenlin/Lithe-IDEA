@@ -1,11 +1,11 @@
-use lithe_gpui::{
-    calendar::Event,
-    theme::{ActiveTheme, TextSize},
-};
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
+use lithe_gpui::{
+    calendar::Event,
+    theme::{ActiveTheme, TextSize},
+};
 
 mod editing;
 mod months;

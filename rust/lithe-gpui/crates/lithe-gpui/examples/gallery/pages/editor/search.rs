@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     editor::{
         CodeEditor, FileHits, FindOptions, FindWidget, Hit, SearchFilters, SearchPanel, find_all,
@@ -7,7 +8,6 @@ use lithe_gpui::{
     theme::ActiveTheme,
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::code::{SAMPLE, framed};
 use crate::ui::{keep, section, set};

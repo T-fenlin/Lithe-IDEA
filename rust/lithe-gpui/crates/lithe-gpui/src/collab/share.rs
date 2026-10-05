@@ -12,7 +12,7 @@ use crate::{
     forms::{Choice, OnValues, Pick, Run, Select, TagInput, is_email},
     overlays::Dialog,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, AvatarSize, IconSize, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -75,7 +75,7 @@ impl RenderOnce for PermissionSelect {
             ROLES.map(|(_, value, label)| Choice::new(value, label)),
         )
         .selected(value)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .on_change(move |value, window, cx| {
             let (role, ..) = ROLES
                 .into_iter()
@@ -179,7 +179,7 @@ impl RenderOnce for AccessList {
                         .children(on_remove.map(|on_remove| {
                             IconButton::new(id("remove"), IconName::X)
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .tooltip("Remove access")
                                 .on_click(move |_, window, cx| {
                                     log::info!("access list: remove {ix}");
@@ -290,7 +290,8 @@ impl RenderOnce for InviteInput {
                         ))
                     }))
                     .child(
-                        Button::new((self.id.clone(), "invite")).label("Invite")
+                        Button::new((self.id.clone(), "invite"))
+                            .label("Invite")
                             .variant(ButtonVariant::Primary)
                             .icon(IconName::UserPlus)
                             .disabled(!ready(&self.emails))
@@ -379,7 +380,7 @@ impl RenderOnce for LinkAccess {
                             ],
                         )
                         .selected(if anyone.is_some() { ANYONE } else { RESTRICTED })
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_change(move |value, window, cx| {
                             let next =
                                 (value.as_ref() == ANYONE).then_some(anyone.unwrap_or(Role::View));
@@ -492,7 +493,8 @@ impl RenderOnce for ShareDialog {
                 .children(section("General access", self.link)),
         )
         .action(move |close| {
-            Button::new(done).label("Done")
+            Button::new(done)
+                .label("Done")
                 .variant(ButtonVariant::Primary)
                 .on_click(move |_, window, cx| close(window, cx))
         })

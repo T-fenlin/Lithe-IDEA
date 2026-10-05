@@ -7,7 +7,7 @@ use super::{
     super::{Choice, Select},
     show_span, zoned_now,
 };
-use crate::theme::ControlSize;
+use crate::theme::Size;
 
 /// A span named from today, such as the last seven days.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,7 +81,7 @@ pub struct RelativeDatePicker {
     id: ElementId,
     value: Option<RelativeRange>,
     today: Option<Date>,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnRange>,
 }
 
@@ -91,7 +91,7 @@ impl RelativeDatePicker {
             id: id.into(),
             value,
             today: None,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -102,7 +102,7 @@ impl RelativeDatePicker {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -172,5 +172,11 @@ mod tests {
             RelativeRange::Yesterday.span(date(2026, 3, 1)).0,
             date(2026, 2, 28)
         );
+    }
+}
+
+impl crate::theme::Sizable for RelativeDatePicker {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

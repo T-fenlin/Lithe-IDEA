@@ -1,14 +1,14 @@
 use std::f32::consts::TAU;
 
-use lithe_gpui::{
-    buttons::{Button, ButtonVariant},
-    primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, Radius, TextSize},
-};
 use gpui::{
     AnyElement, App, ClipboardItem, FontWeight, HighlightStyle, InteractiveElement, IntoElement,
     ParentElement, PathBuilder, SharedString, StatefulInteractiveElement, Styled, StyledText,
     Transformation, Window, anchored, canvas, deferred, div, point, prelude::*, px, radians, svg,
+};
+use lithe_gpui::{
+    buttons::{Button, ButtonVariant},
+    primitives::{FocusRing, Icon, IconName},
+    theme::{ActiveTheme, Radius, TextSize},
 };
 
 use crate::{
@@ -172,13 +172,14 @@ pub fn portal(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .border_color(theme.colors.border)
                     .child(probe(
                         "portal-toggle",
-                        Button::new("portal-toggle").label(if shown { "Hide note" } else { "Show note" })
-                        .on_click(move |_, _, cx| {
-                            open.update(cx, |open, cx| {
-                                *open = !*open;
-                                cx.notify();
-                            })
-                        }),
+                        Button::new("portal-toggle")
+                            .label(if shown { "Hide note" } else { "Show note" })
+                            .on_click(move |_, _, cx| {
+                                open.update(cx, |open, cx| {
+                                    *open = !*open;
+                                    cx.notify();
+                                })
+                            }),
                     ))
                     .when(shown, |clip| {
                         clip.child(deferred(
@@ -242,14 +243,14 @@ pub fn show(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .gap_4()
             .child(
-                Button::new("show-toggle").label(if shown { "Hide" } else { "Show" }).on_click(
-                    move |_, _, cx| {
+                Button::new("show-toggle")
+                    .label(if shown { "Hide" } else { "Show" })
+                    .on_click(move |_, _, cx| {
                         on.update(cx, |on, cx| {
                             *on = !*on;
                             cx.notify();
                         })
-                    },
-                ),
+                    }),
             )
             .when(shown, |row| {
                 row.child(div().text_color(muted).child("Here while true."))
@@ -322,7 +323,8 @@ pub fn click_outside(window: &mut Window, cx: &mut App) -> impl IntoElement + us
         row()
             .gap_4()
             .child(
-                Button::new("outside-open").label("Open panel")
+                Button::new("outside-open")
+                    .label("Open panel")
                     .disabled(shown)
                     .on_click(move |_, _, cx| {
                         open.update(cx, |open, cx| {

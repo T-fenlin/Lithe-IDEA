@@ -6,7 +6,7 @@ use gpui::{App, ElementId, IntoElement, RenderOnce, SharedString, Window};
 use super::picks::{Grid, Pick, finder, grid, rows};
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::Emoji,
 };
 
@@ -85,7 +85,7 @@ impl RenderOnce for IconPicker {
                 pick,
                 none: "No icons match",
                 columns: COLUMNS,
-                cell: cx.theme().control_height(ControlSize::Lg),
+                cell: cx.theme().control_height(Size::Large),
             },
             &finder,
             window,
@@ -188,7 +188,7 @@ impl RenderOnce for EmojiPicker {
                 pick,
                 none: "No emoji match",
                 columns: COLUMNS,
-                cell: cx.theme().control_height(ControlSize::Lg),
+                cell: cx.theme().control_height(Size::Large),
             },
             &finder,
             window,

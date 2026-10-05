@@ -9,7 +9,7 @@ use gpui::{
 use crate::{
     motion,
     primitives::{Backdrop, FocusScope, Place, give_back, take_focus},
-    theme::{ActiveTheme, ControlSize, Elevation, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
 };
 
 type Run = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -98,8 +98,7 @@ impl RenderOnce for ActionSheet {
                 .flex()
                 .items_center()
                 .justify_center()
-                .h(theme.control_height(ControlSize::Lg)
-                    + theme.control_height(ControlSize::Sm) / 2.0)
+                .h(theme.control_height(Size::Large) + theme.control_height(Size::Small) / 2.0)
                 .border_t_1()
                 .border_color(colors.border)
                 .text_size(theme.text_size(TextSize::Md))

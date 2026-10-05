@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, Styled, div, px};
+use jiff::{ToSpan, civil::Date};
 use lithe_gpui::{
     charts::BurndownChart,
     project::{Initiative, Load, MilestoneProgress, Roadmap, WorkloadView},
 };
-use gpui::{App, IntoElement, ParentElement, Styled, div, px};
-use jiff::{ToSpan, civil::Date};
 
 use super::{team, today};
 use crate::{probe::probe, ui::section};

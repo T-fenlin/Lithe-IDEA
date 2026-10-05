@@ -7,7 +7,7 @@ use crate::{
     buttons::{IconButton, SegmentedControl},
     forms::{Run, Slider},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{format::percent, tabular},
 };
 
@@ -70,7 +70,7 @@ impl RenderOnce for MaskBrush {
         let back = |key: &'static str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
                 IconButton::new((self.id.clone(), key), icon)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(tip)
                     .disabled(empty)
                     .on_click(move |_, window, cx| {
@@ -97,7 +97,7 @@ impl RenderOnce for MaskBrush {
                         )
                         .segment("paint", "Paint", Some(IconName::Brush))
                         .segment("erase", "Erase", Some(IconName::Eraser))
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_change(move |value, window, cx| {
                             if let Some(mode) = &mode {
                                 mode(radius, value == "erase", window, cx);

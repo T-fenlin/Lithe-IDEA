@@ -8,7 +8,7 @@ use gpui::{
 use super::button::{keystroke_of, shortcut_text};
 use crate::{
     primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 type Run = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -133,7 +133,7 @@ impl RenderOnce for QuickActions {
                             .flex_none()
                             .items_center()
                             .justify_center()
-                            .size(theme.control_height(ControlSize::Md))
+                            .size(theme.control_height(Size::Medium))
                             .rounded(theme.radius(Radius::Md))
                             .bg(colors.sunken)
                             .border_1()

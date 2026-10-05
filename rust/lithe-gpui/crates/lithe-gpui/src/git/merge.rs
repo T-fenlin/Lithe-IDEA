@@ -11,7 +11,7 @@ use super::merging::{Region, RegionKind, Take, conflicts, resolve, result};
 use crate::{
     buttons::{Button, ButtonVariant},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Palette, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Palette, Radius, Size, TextSize},
     typography::{LEADING, format},
 };
 
@@ -55,9 +55,10 @@ fn takes(
         ]
         .map(|(take, words)| {
             let on_take = on_take.clone();
-            Button::new((id.clone(), format!("take-{conflict}-{take:?}"))).label(words)
+            Button::new((id.clone(), format!("take-{conflict}-{take:?}")))
+                .label(words)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .when_some(on_take, |button, on_take| {
                     button.on_click(move |_, window, cx| on_take(conflict, take, window, cx))
                 })

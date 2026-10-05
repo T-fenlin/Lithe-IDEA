@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
 
 /// A node of a cascade: a value, its label, and the nodes under it.
@@ -120,7 +120,7 @@ pub struct Cascader {
     roots: Vec<Cascade>,
     selected: Vec<SharedString>,
     placeholder: SharedString,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnValues>,
 }
 
@@ -131,7 +131,7 @@ impl Cascader {
             roots: roots.into_iter().collect(),
             selected: Vec::new(),
             placeholder: SharedString::from("Choose…"),
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -147,7 +147,7 @@ impl Cascader {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -395,5 +395,11 @@ mod tests {
             .collect();
         assert_eq!(labels, ["Asia", "Japan", "Osaka"]);
         assert_eq!(trail_of(&roots, &["eu".into(), "xx".into()]), [1]);
+    }
+}
+
+impl crate::theme::Sizable for Cascader {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

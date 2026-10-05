@@ -1,5 +1,5 @@
-use lithe_gpui::forms::{NumberInput, ScrubInput, UnitInput};
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use lithe_gpui::forms::{NumberInput, ScrubInput, UnitInput};
 
 use crate::{
     probe::probe,

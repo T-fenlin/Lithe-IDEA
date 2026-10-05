@@ -1,13 +1,13 @@
+use gpui::{
+    AnyElement, App, Axis, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    point, prelude::*, px,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     layout::{Dock, DockPanel, DockSide, FloatingPanel, PaneGroup, Transform, Viewport, Workspace},
     primitives::IconName,
     theme::{ActiveTheme, Radius, TextSize},
     typography::{Caption, Paragraph},
-};
-use gpui::{
-    AnyElement, App, Axis, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
-    point, prelude::*, px,
 };
 
 use super::{basics::tile, shells::frame};
@@ -109,13 +109,14 @@ pub fn floating(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "floating-open",
-                Button::new("floating-open").label(if shown { "Hide panel" } else { "Show panel" })
-                .on_click(move |_, _, cx| {
-                    open.update(cx, |open, cx| {
-                        *open = !*open;
-                        cx.notify();
-                    })
-                }),
+                Button::new("floating-open")
+                    .label(if shown { "Hide panel" } else { "Show panel" })
+                    .on_click(move |_, _, cx| {
+                        open.update(cx, |open, cx| {
+                            *open = !*open;
+                            cx.notify();
+                        })
+                    }),
             ))
             .when(shown, |row| {
                 row.child(
@@ -155,7 +156,8 @@ pub fn workspace(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         row()
             .child(probe(
                 "workspace-save",
-                Button::new("workspace-save").label("Save layout")
+                Button::new("workspace-save")
+                    .label("Save layout")
                     .icon(IconName::Save)
                     .on_click(move |_, _, cx| {
                         let json =
@@ -168,7 +170,8 @@ pub fn workspace(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
             ))
             .child(probe(
                 "workspace-restore",
-                Button::new("workspace-restore").label("Restore")
+                Button::new("workspace-restore")
+                    .label("Restore")
                     .variant(ButtonVariant::Ghost)
                     .icon(IconName::RotateCcw)
                     .disabled(preview.is_none())

@@ -11,7 +11,7 @@ use crate::{
     motion::duration as motion_duration,
     overlays::media_button,
     primitives::{FocusRing, IconName, framed, tab_stop},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::tabular,
 };
 
@@ -201,7 +201,7 @@ impl RenderOnce for VideoPlayer {
             media_button(
                 (self.id.clone(), key),
                 icon,
-                ControlSize::Sm,
+                Size::Small,
                 true,
                 move |window, cx| match resting {
                     true => wake(&watch, window, cx),

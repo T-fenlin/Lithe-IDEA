@@ -1,10 +1,10 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     account::{ForgotPassword, LoginForm, MagicLinkForm, OAuthButtons, SignupForm, TwoFactorInput},
     feedback::InlineMessage,
     layout::{Card, CardHeader},
     primitives::{Divider, Severity},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

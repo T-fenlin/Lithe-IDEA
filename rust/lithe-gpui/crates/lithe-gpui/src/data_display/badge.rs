@@ -8,7 +8,7 @@ use gpui::{
 
 use crate::{
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, IconSize, Palette, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Palette, Radius, Size, TextSize},
     typography::{AnimatedNumber, Ellipsis},
 };
 
@@ -112,7 +112,7 @@ impl RenderOnce for Badge {
             .items_center()
             .gap_1()
             .px_1p5()
-            .h(theme.control_height(ControlSize::Sm) * 0.75)
+            .h(theme.control_height(Size::Small) * 0.75)
             .rounded(theme.radius(Radius::Sm))
             .bg(fill)
             .text_size(theme.text_size(TextSize::Xs))
@@ -166,7 +166,7 @@ impl RenderOnce for CountBadge {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let (fill, text) = Tone::Accent.colors(&theme.colors);
-        let height = theme.control_height(ControlSize::Sm) * 0.67;
+        let height = theme.control_height(Size::Small) * 0.67;
         let pill = (self.count > 0).then(|| {
             div()
                 .flex()
@@ -315,7 +315,7 @@ impl RenderOnce for Tag {
             .pl_2()
             .when(self.on_remove.is_none(), |tag| tag.pr_2())
             .when(self.on_remove.is_some(), |tag| tag.pr_1())
-            .h(theme.control_height(ControlSize::Sm))
+            .h(theme.control_height(Size::Small))
             .rounded(theme.radius(Radius::Sm))
             .bg(fill)
             .text_size(theme.text_size(TextSize::Sm))

@@ -12,7 +12,7 @@ use crate::{
     i18n,
     navigation::{Group, Palette, Row, fuzzy, marked, query_field},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Ellipsis, KbdCombo},
 };
 
@@ -88,7 +88,7 @@ impl RenderOnce for RecentProjects {
                           action: Option<OnIndex>| {
                 IconButton::new((self.id.clone(), format!("{key}-{ix}")), icon)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(words)
                     .when_some(action, move |button, action| {
                         button.on_click(move |_, window, cx| {

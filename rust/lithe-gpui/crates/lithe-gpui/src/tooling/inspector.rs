@@ -10,7 +10,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     primitives::{FocusScope, raise},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{Ellipsis, LEADING, literal, tabular},
 };
 
@@ -347,9 +347,10 @@ fn panel(
                 .child(div().font_weight(FontWeight::SEMIBOLD).child("Inspector"))
                 .children((!picking).then(|| {
                     div().debug_selector(|| "inspector-pick".into()).child(
-                        Button::new("lithe-inspector-pick").label("Pick")
+                        Button::new("lithe-inspector-pick")
+                            .label("Pick")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(move |_, window, cx| {
                                 owner.update(cx, |inspector, _| inspector.start_picking());
                                 log::info!("inspector: picking");

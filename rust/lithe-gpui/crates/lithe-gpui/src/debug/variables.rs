@@ -11,7 +11,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     forms::{Input, TextInput},
     primitives::{Disclosure, IconName},
-    theme::{ActiveTheme, ControlSize, Palette, Radius, TextSize},
+    theme::{ActiveTheme, Palette, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -288,7 +288,7 @@ impl RenderOnce for WatchPanel {
                                     IconName::X,
                                 )
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .tooltip("Stop watching")
                                 .when_some(
                                     remove,
@@ -299,7 +299,7 @@ impl RenderOnce for WatchPanel {
                             ),
                     )
             }))
-            .child(Input::new(&self.field).size(ControlSize::Sm))
+            .child(Input::new(&self.field).size(Size::Small))
     }
 }
 

@@ -7,7 +7,7 @@ use gpui::{
 };
 use smallvec::SmallVec;
 
-use crate::theme::{ActiveTheme, ControlSize, Mix, Radius, TextSize};
+use crate::theme::{ActiveTheme, Mix, Radius, Size, TextSize};
 
 /// One breath of a skeleton, in and out.
 const BREATH: Duration = Duration::from_millis(1_600);
@@ -118,7 +118,7 @@ impl RenderOnce for SkeletonAvatar {
         Skeleton::new(self.id)
             .circle()
             .flex_none()
-            .size(cx.theme().control_height(ControlSize::Lg))
+            .size(cx.theme().control_height(Size::Large))
     }
 }
 

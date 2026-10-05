@@ -4,8 +4,8 @@ use std::{
 };
 
 use anyhow::{Context as _, Result, bail};
-use lithe_gpui::theme::Theme;
 use gpui::{App, AsyncApp, Window, WindowHandle, px};
+use lithe_gpui::theme::Theme;
 
 use crate::{
     pages, script,

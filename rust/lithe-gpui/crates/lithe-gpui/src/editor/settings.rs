@@ -9,7 +9,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton, SegmentedControl},
     forms::{Choice, JsonInput, NumberInput, Select, Switch, TextInput},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::format::decimals,
 };
 
@@ -144,7 +144,7 @@ impl RenderOnce for SettingsEditor {
             (self.id.clone(), "mode"),
             if self.json.is_some() { "json" } else { "ui" },
         )
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .segment("ui", "Settings", None)
         .segment("json", "JSON", None);
         let mode = match self.on_json.clone() {
@@ -243,7 +243,7 @@ impl RenderOnce for SettingsEditor {
                                     .range(min, max)
                                     .step(step)
                                     .precision(places(*value, step))
-                                    .size(ControlSize::Sm)
+                                    .size(Size::Small)
                                     .on_change(move |value, window, cx| {
                                         tell(
                                             SettingValue::Number {
@@ -271,7 +271,7 @@ impl RenderOnce for SettingsEditor {
                                         .map(|choice| Choice::new(choice.clone(), choice.clone())),
                                 )
                                 .selected(value.clone())
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .on_change(
                                     move |picked, window, cx| {
                                         let value = SettingValue::Choice {
@@ -292,7 +292,7 @@ impl RenderOnce for SettingsEditor {
                         IconName::RotateCcw,
                     )
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Reset to default")
                     .on_click(move |_, window, cx| tell(default.clone(), window, cx))
                 });

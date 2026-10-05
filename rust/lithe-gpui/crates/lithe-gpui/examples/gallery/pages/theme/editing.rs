@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     settings::{ThemeDraft, ThemeEditor},
     theme::{ActiveTheme, Density, Mode, Theme},
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::ui::section;
 

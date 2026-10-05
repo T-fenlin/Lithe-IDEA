@@ -9,7 +9,7 @@ use super::transfer::{Asks, OnKey, Transfer, TransferState, row};
 use crate::{
     buttons::{Button, ButtonVariant},
     forms::Run,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// Keys asserted once a list.
@@ -156,9 +156,10 @@ impl RenderOnce for DownloadManager {
             )
         };
         let clear = self.on_clear.map(|clear| {
-            Button::new((self.id.clone(), "clear")).label("Clear")
+            Button::new((self.id.clone(), "clear"))
+                .label("Clear")
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(move |_, window, cx| {
                     log::info!("download manager: cleared the finished");
                     clear(window, cx)

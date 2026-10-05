@@ -7,7 +7,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     tables::{Cell, Column, DataTable, Row, SortKey},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::format,
 };
 
@@ -136,9 +136,10 @@ impl RenderOnce for ProcessList {
                         busy
                     )))
                     .children(self.on_end.map(|on_end| {
-                        Button::new((self.id.clone(), "end")).label("End process")
+                        Button::new((self.id.clone(), "end"))
+                            .label("End process")
                             .variant(ButtonVariant::Danger)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .disabled(chosen.is_empty())
                             .on_click(move |_, window, cx| {
                                 log::info!("process list: end {chosen:?}");

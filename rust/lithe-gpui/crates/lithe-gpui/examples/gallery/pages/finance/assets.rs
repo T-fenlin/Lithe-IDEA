@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, civil::date, tz::TimeZone};
 use lithe_gpui::{
     charts::PieChart,
     data_display::Gauge,
@@ -11,8 +13,6 @@ use lithe_gpui::{
     theme::TextSize,
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, civil::date, tz::TimeZone};
 use web_time::Instant;
 
 use crate::ui::{keep, noise, row, section, set};

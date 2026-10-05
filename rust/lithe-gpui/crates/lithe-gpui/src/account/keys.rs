@@ -11,7 +11,7 @@ use crate::{
     feedback::Callout,
     forms::{Enter, Input},
     primitives::Severity,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{Ellipsis, literal},
 };
 
@@ -128,8 +128,9 @@ impl RenderOnce for ApiKeyManager {
                                 .gap_2()
                                 .child(CopyButton::new((id.clone(), "copy"), secret))
                                 .child(
-                                    Button::new((id.clone(), "done")).label("Done")
-                                        .size(ControlSize::Sm)
+                                    Button::new((id.clone(), "done"))
+                                        .label("Done")
+                                        .size(Size::Small)
                                         .on_click(move |_, window, cx| dismiss(window, cx)),
                                 ),
                         ),
@@ -183,7 +184,7 @@ impl RenderOnce for ApiKeyManager {
                             "Revoke",
                             ConfirmMode::Twice,
                         )
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_confirm(move |window, cx| {
                             log::info!("api key manager: revoke {key}");
                             revoke(&key, window, cx);
@@ -221,7 +222,8 @@ impl RenderOnce for ApiKeyManager {
                             .child(Input::new(&name)),
                     )
                     .child(
-                        Button::new((id.clone(), "create")).label("Create key")
+                        Button::new((id.clone(), "create"))
+                            .label("Create key")
                             .variant(ButtonVariant::Primary)
                             .disabled(!ready)
                             .on_click(move |_, window, cx| create(window, cx)),

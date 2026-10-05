@@ -1,3 +1,4 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::Button,
     forms::TextInput,
@@ -8,7 +9,6 @@ use lithe_gpui::{
     lists::GitStatus,
     typography::Caption,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

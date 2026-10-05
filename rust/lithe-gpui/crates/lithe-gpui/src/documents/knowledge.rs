@@ -13,7 +13,7 @@ use crate::{
     forms::{OnValue, Pick, Run},
     motion::Reorder,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{RelativeTime, format::plural},
 };
 
@@ -224,7 +224,7 @@ impl RenderOnce for Favorites {
                                         IconName::Star,
                                     )
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ControlSize::Sm)
+                                    .size(Size::Small)
                                     .tooltip("Remove from favorites")
                                     .when_some(
                                         unpin,
@@ -346,7 +346,7 @@ impl RenderOnce for TrashBin {
                             "Empty trash",
                             ConfirmMode::Twice,
                         )
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_confirm(move |window, cx| {
                             log::info!("trash: emptied");
                             empty(window, cx)
@@ -389,9 +389,10 @@ impl RenderOnce for TrashBin {
                             ),
                     )
                     .child(
-                        Button::new((self.id.clone(), format!("restore-{key}"))).label("Restore")
+                        Button::new((self.id.clone(), format!("restore-{key}")))
+                            .label("Restore")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .when_some(restore, |button, restore| {
                                 button.on_click(move |_, window, cx| {
                                     log::info!("trash: restore {restore_key}");
@@ -406,7 +407,7 @@ impl RenderOnce for TrashBin {
                             "Delete",
                             ConfirmMode::Twice,
                         )
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_confirm(move |window, cx| {
                             log::info!("trash: delete {gone} for good");
                             delete(&gone, window, cx)

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     chat::{
         AudioMessage, CodeBlock, FileMessage, ImageGrid, ImageMessage, LinkPreviewCard,
@@ -7,7 +8,6 @@ use lithe_gpui::{
     },
     documents::MarkdownRenderer,
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::ui::{keep, noise, section, set};
 

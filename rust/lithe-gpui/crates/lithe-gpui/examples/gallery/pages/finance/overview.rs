@@ -1,3 +1,5 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, civil::date, tz::TimeZone};
 use lithe_gpui::{
     data_display::Tone,
     finance::{
@@ -9,8 +11,6 @@ use lithe_gpui::{
     tables::{Cell, Column, FilterRule, Row, Test},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, civil::date, tz::TimeZone};
 
 use super::markets::day;
 use crate::{

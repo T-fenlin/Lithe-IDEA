@@ -13,7 +13,7 @@ use crate::{
     buttons::{Button, ButtonVariant, SegmentedControl},
     data_display::Avatar,
     forms::Pick,
-    theme::{ActiveTheme, AvatarSize, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, Radius, Size, TextSize},
     typography::{DateTimeText, format::plural},
 };
 
@@ -233,7 +233,7 @@ impl RenderOnce for VersionHistory {
             (self.id.clone(), "view"),
             if showing_changes { "changes" } else { "read" },
         )
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .segment("read", "Read", None)
         .segment("changes", "Changes", None)
         .on_change({
@@ -251,9 +251,10 @@ impl RenderOnce for VersionHistory {
             .filter(|_| self.selected > 0)
             .map(|restore| {
                 let at = self.selected;
-                Button::new((self.id.clone(), "restore")).label("Restore this version")
+                Button::new((self.id.clone(), "restore"))
+                    .label("Restore this version")
                     .variant(ButtonVariant::Primary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| {
                         log::info!("version history: restore {at}");
                         restore(at, window, cx)

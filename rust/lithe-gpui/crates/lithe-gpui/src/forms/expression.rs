@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{Highlight, Input, TextInput};
 use crate::{
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::format::{self, Separators},
 };
 
@@ -279,7 +279,7 @@ impl RenderOnce for ExpressionInput {
             .child(
                 div().font_family(mono).child(
                     Input::new(&self.state)
-                        .size(ControlSize::Md)
+                        .size(Size::Medium)
                         .invalid(invalid)
                         .prefix(div().text_color(colors.fg_subtle).child("=")),
                 ),

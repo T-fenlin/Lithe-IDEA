@@ -15,7 +15,7 @@ use crate::{
     lists::select::Pick,
     motion::{self, Spinner},
     primitives::{Disclosure, DragGhost, Icon},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -149,7 +149,7 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
                         editing.update(cx, |editing, cx| editing.finish(true, window, cx));
                     }
                 })
-                .child(Input::new(&field).size(ControlSize::Sm))
+                .child(Input::new(&field).size(Size::Small))
                 .into_any_element()
         }
         None => div()
@@ -173,7 +173,7 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
         .id((rows.id.clone(), format!("node-{key}")))
         .relative()
         .w_full()
-        .h(theme.control_height(ControlSize::Md))
+        .h(theme.control_height(Size::Medium))
         .flex()
         .items_center()
         .gap_1()
@@ -291,7 +291,7 @@ fn waiting(rows: &Rows, ix: usize, depth: usize, cx: &App) -> AnyElement {
         .id((rows.id.clone(), format!("waiting-{ix}")))
         .relative()
         .w_full()
-        .h(theme.control_height(ControlSize::Md))
+        .h(theme.control_height(Size::Medium))
         .flex()
         .items_center()
         .px_2()

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     chat::{
@@ -10,7 +11,6 @@ use lithe_gpui::{
     forms::TextInput,
     primitives::IconName,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use web_time::Instant;
 
 use crate::{
@@ -69,7 +69,8 @@ pub fn actions(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(div().child(now_sent))
             .child(probe(
                 "chat-edit-open",
-                Button::new("chat-edit").label("Edit")
+                Button::new("chat-edit")
+                    .label("Edit")
                     .variant(ButtonVariant::Ghost)
                     .icon(IconName::Pencil)
                     .on_click(move |_, _, cx| set(&open, true, cx)),

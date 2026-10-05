@@ -15,7 +15,7 @@ use crate::{
     layout::{bring_into_view, on_axis},
     motion::Skeleton,
     primitives::{Icon, IconName, Image, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::{
         Caption,
         format::{DurationStyle, duration, percent},
@@ -277,9 +277,10 @@ impl RenderOnce for VideoGenerationTimeline {
         );
         let playhead = (self.at.as_secs_f64() / total.max(1.0)).clamp(0.0, 1.0) as f32;
         let extend = self.on_extend.map(|extend| {
-            Button::new((self.id.clone(), "extend")).label("Extend")
+            Button::new((self.id.clone(), "extend"))
+                .label("Extend")
                 .variant(ButtonVariant::Secondary)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .icon(IconName::Plus)
                 .on_click(move |_, window, cx| {
                     log::info!("video timeline: extend");

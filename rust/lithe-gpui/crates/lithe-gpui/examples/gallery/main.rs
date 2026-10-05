@@ -44,11 +44,11 @@ use std::path::PathBuf;
 use anyhow::{Context as _, Result, bail};
 #[cfg(not(target_family = "wasm"))]
 use assets::GalleryAssets;
-use lithe_gpui::theme::{Mode, Theme};
 use gpui::{
     App, AppContext, Bounds, KeyBinding, Menu, MenuItem, SharedString, TitlebarOptions,
     WindowBounds, WindowHandle, WindowOptions, actions, point, px, size,
 };
+use lithe_gpui::theme::{Mode, Theme};
 
 actions!(gallery, [Quit, About, LightMode, DarkMode, NewWindow]);
 

@@ -11,7 +11,7 @@ use crate::{
     forms::Run,
     motion::ProgressBar,
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{DurationStyle, Ellipsis, MiddleEllipsis, format},
 };
 
@@ -141,9 +141,10 @@ impl RenderOnce for FileOperationProgress {
         };
         let button = |key: &'static str, label: &'static str, run: Option<Run>| {
             run.map(|run| {
-                Button::new((self.id.clone(), key)).label(label)
+                Button::new((self.id.clone(), key))
+                    .label(label)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| {
                         log::info!("file operation: {key}");
                         run(window, cx)

@@ -25,12 +25,16 @@ impl Render for Desk {
         let (opener, closer, above) = (cx.entity(), cx.entity(), cx.entity());
         let scope = FocusScope::new(&self.root)
             .size_full()
-            .child(Button::new("opener").label("Windows").on_click(move |_, _, cx| {
-                opener.update(cx, |desk, cx| {
-                    desk.open = true;
-                    cx.notify();
-                })
-            }))
+            .child(
+                Button::new("opener")
+                    .label("Windows")
+                    .on_click(move |_, _, cx| {
+                        opener.update(cx, |desk, cx| {
+                            desk.open = true;
+                            cx.notify();
+                        })
+                    }),
+            )
             .when(self.open, |desk| {
                 desk.child(WindowSwitcher::new("switcher", move |_, cx| {
                     closer.update(cx, |desk, cx| {

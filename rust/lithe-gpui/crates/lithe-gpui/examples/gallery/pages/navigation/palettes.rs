@@ -1,10 +1,10 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Window};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     forms::Choice,
     navigation::{Command, CommandPalette, QuickLauncher, QuickOpen, QuickSwitcher, SearchPalette},
     primitives::IconName,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Window};
 
 use crate::{
     probe::{Opened, probe},
@@ -170,7 +170,8 @@ pub fn quick_open(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
         caption,
         probe(
             "files",
-            Button::new("files-button").label("Go to file")
+            Button::new("files-button")
+                .label("Go to file")
                 .icon(IconName::File)
                 .on_click(move |_, _, cx| set(&opener, true, cx)),
         ),

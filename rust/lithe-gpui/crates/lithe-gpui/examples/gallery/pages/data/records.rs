@@ -1,3 +1,7 @@
+use gpui::{
+    App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::*, px,
+};
+use jiff::{Timestamp, ToSpan};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant, SegmentedControl},
     data_display::{
@@ -6,13 +10,9 @@ use lithe_gpui::{
     },
     forms::{NumberInput, Slider, Switch},
     primitives::{IconName, Severity},
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
     typography::Code,
 };
-use gpui::{
-    App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::*, px,
-};
-use jiff::{Timestamp, ToSpan};
 
 use crate::{
     probe::probe,
@@ -101,14 +101,14 @@ pub fn properties(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
                     "Width",
                     NumberInput::new("prop-width", now.width)
                         .range(40.0, 320.0)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_change(edit(&props, |p, v| p.width = v)),
                 )
                 .row(
                     "Height",
                     NumberInput::new("prop-height", now.height)
                         .range(40.0, 200.0)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_change(edit(&props, |p, v| p.height = v)),
                 )
                 .row(
@@ -116,7 +116,7 @@ pub fn properties(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
                     SegmentedControl::new("prop-direction", now.direction.clone())
                         .segment("row", "Row", None)
                         .segment("column", "Column", None)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_change(move |value, _, cx| {
                             direction.update(cx, |props, cx| {
                                 props.direction = value.clone();
@@ -145,7 +145,7 @@ pub fn properties(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
                 "Scale",
                 NumberInput::new("prop-scale", 2.0)
                     .range(1.0, 4.0)
-                    .size(ControlSize::Sm),
+                    .size(Size::Small),
             ),
         );
     let bar = |ix: usize| {

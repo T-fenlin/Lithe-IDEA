@@ -7,6 +7,10 @@ use std::{
 };
 
 use anyhow::anyhow;
+use gpui::{
+    App, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, px,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     feedback::AsyncView,
@@ -17,10 +21,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, Radius, TextSize},
     typography::Caption,
-};
-use gpui::{
-    App, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use super::loading::later;
@@ -164,7 +164,8 @@ pub fn suspense(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .child(
             row()
                 .child(
-                    Button::new("report-reload").label("Reload")
+                    Button::new("report-reload")
+                        .label("Reload")
                         .variant(ButtonVariant::Ghost)
                         .on_click({
                             let view = view.clone();
@@ -172,7 +173,8 @@ pub fn suspense(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         }),
                 )
                 .child(
-                    Button::new("report-fail").label("Reload and fail")
+                    Button::new("report-fail")
+                        .label("Reload and fail")
                         .variant(ButtonVariant::Ghost)
                         .on_click({
                             let view = view.clone();

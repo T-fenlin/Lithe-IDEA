@@ -1,8 +1,8 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     forms::{EmailInput, InlineEdit, MaskedInput, PhoneInput, PinInput, UrlInput},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::text::field;
 use crate::{

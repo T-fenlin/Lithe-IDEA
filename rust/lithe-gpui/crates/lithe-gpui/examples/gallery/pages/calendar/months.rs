@@ -1,11 +1,11 @@
-use lithe_gpui::{
-    calendar::{CalendarMonthView, Event, EventCard, EventChip, YearView},
-    forms::Calendar,
-};
 use gpui::{
     App, ElementId, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
 };
 use jiff::civil::Date;
+use lithe_gpui::{
+    calendar::{CalendarMonthView, Event, EventCard, EventChip, YearView},
+    forms::Calendar,
+};
 
 use super::{events, here, plan, quiet};
 use crate::{

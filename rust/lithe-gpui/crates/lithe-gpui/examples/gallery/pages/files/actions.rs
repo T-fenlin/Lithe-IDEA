@@ -1,3 +1,5 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::Timestamp;
 use lithe_gpui::{
     files::{FileGrid, FileIcon, FileItem},
     forms::{DropZone, InlineEdit},
@@ -5,8 +7,6 @@ use lithe_gpui::{
     menus::{ContextMenu, Menu, MenuItem},
     primitives::IconName,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::Timestamp;
 
 use crate::{
     probe::probe,

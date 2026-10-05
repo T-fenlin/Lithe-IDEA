@@ -11,7 +11,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     navigation::{fuzzy, marked},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, Elevation, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -291,7 +291,7 @@ impl RenderOnce for SignatureHelp {
             let next = (active + by) % count;
             IconButton::new((self.id.clone(), key), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .disabled(count < 2)
                 .when_some(on_step, |button, on_step| {
                     button.on_click(move |_, window, cx| on_step(next, window, cx))

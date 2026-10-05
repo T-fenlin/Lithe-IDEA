@@ -9,7 +9,7 @@ use crate::{
         Checkbox, Choice, Combobox, MultiSelect, RadioGroup, Rating, Select, Slider, TextInput,
     },
     motion,
-    theme::{ActiveTheme, ControlSize, Theme},
+    theme::{ActiveTheme, Size, Theme},
 };
 
 fn abc(middle_off: bool) -> [Choice; 3] {
@@ -146,7 +146,7 @@ fn press_the_foot(kind: Kind, cx: &mut TestAppContext) -> Vec<String> {
         let theme = cx.theme();
         (
             theme
-                .control_height(ControlSize::Md)
+                .control_height(Size::Medium)
                 .to_pixels(window.rem_size()),
             theme.list_max_height().to_pixels(window.rem_size()),
         )

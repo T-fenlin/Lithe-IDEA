@@ -68,12 +68,14 @@ impl RenderOnce for ToolApprovalDialog {
         .when_some(self.detail, |dialog, detail| dialog.detail(detail))
         .child(CodeBlock::new((self.id.clone(), "arguments"), self.arguments).language("json"))
         .action(move |close| {
-            Button::new(deny).label("Deny")
+            Button::new(deny)
+                .label("Deny")
                 .variant(ButtonVariant::Secondary)
                 .on_click(move |_, window, cx| close(window, cx))
         })
         .action(move |close| {
-            Button::new(run).label("Run")
+            Button::new(run)
+                .label("Run")
                 .variant(ButtonVariant::Primary)
                 .on_click(move |_, window, cx| {
                     approved.set(true);
@@ -129,7 +131,8 @@ impl RenderOnce for PermissionPrompt {
         let colors = theme.colors.clone();
         let choice = |key: &'static str, label: &'static str, variant, answer: Permission| {
             let on_answer = self.on_answer.clone();
-            Button::new((self.id.clone(), key)).label(label)
+            Button::new((self.id.clone(), key))
+                .label(label)
                 .variant(variant)
                 .on_click(move |_, window, cx| {
                     log::info!("permission: {answer:?}");

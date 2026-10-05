@@ -15,7 +15,7 @@ use crate::{
     forms::{Down, Enter, OnValue, Pick, Run, TextInput, Up},
     motion,
     primitives::{Backdrop, FocusScope, Icon, IconName, give_back, take_focus},
-    theme::{ActiveTheme, ControlSize, Elevation, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, IconSize, Radius, Size, TextSize},
 };
 
 pub use kinds::{Command, CommandPalette, QuickOpen, QuickSwitcher, SearchPalette};
@@ -259,7 +259,7 @@ impl Palette {
                         .flex_none()
                         .items_center()
                         .gap_3()
-                        .h(theme.control_height(ControlSize::Lg))
+                        .h(theme.control_height(Size::Large))
                         .px_2()
                         .rounded(theme.radius(Radius::Md))
                         .when(ix == at, |row| row.bg(colors.hover))

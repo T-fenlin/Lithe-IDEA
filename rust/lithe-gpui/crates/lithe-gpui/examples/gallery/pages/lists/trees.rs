@@ -1,12 +1,12 @@
 use std::time::Duration;
 
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     lists::{DropAt, Outline, Tree, TreeNode, TreeSelect},
     primitives::IconName,
     theme::{ActiveTheme, Radius},
     typography::Caption,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

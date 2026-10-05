@@ -7,8 +7,8 @@ use crate::{
     forms::hex,
     primitives::{Icon, IconName},
     theme::{
-        ActiveTheme, AvatarSize, ContainerSize, ControlSize, Elevation, HUE_NAMES, IconSize,
-        Palette, Radius, Syntax, TextSize,
+        ActiveTheme, AvatarSize, ContainerSize, Elevation, HUE_NAMES, IconSize, Palette, Radius,
+        Size, Syntax, TextSize,
     },
     typography::{Ellipsis, literal, tabular},
 };
@@ -199,9 +199,9 @@ impl RenderOnce for DesignTokenViewer {
             )
         });
         let controls = [
-            (ControlSize::Sm, "Sm"),
-            (ControlSize::Md, "Md"),
-            (ControlSize::Lg, "Lg"),
+            (Size::Small, "Sm"),
+            (Size::Medium, "Md"),
+            (Size::Large, "Lg"),
         ]
         .map(|(size, name)| {
             let height = theme.control_height(size);
@@ -212,7 +212,7 @@ impl RenderOnce for DesignTokenViewer {
                 .border_1()
                 .border_color(colors.border_strong)
                 .bg(colors.surface);
-            measure(format!("ControlSize::{name}"), at(height), sample, cx)
+            measure(format!("Size::{name}"), at(height), sample, cx)
         });
         let avatars = [
             (AvatarSize::Xs, "Xs"),

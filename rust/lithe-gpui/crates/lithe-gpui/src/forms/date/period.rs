@@ -16,7 +16,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     layout::seeded::use_seeded,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 const MONTHS: [&str; 12] = [
@@ -64,7 +64,7 @@ fn period_grid(id: &ElementId, page: Page, grid: Grid, window: &mut Window, cx: 
         let turn = turn.clone();
         IconButton::new((id.clone(), key), icon)
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_click(move |_, window, cx| turn(by, window, cx))
     };
     let cells: Vec<_> = page
@@ -79,7 +79,7 @@ fn period_grid(id: &ElementId, page: Page, grid: Grid, window: &mut Window, cx: 
                 .flex()
                 .items_center()
                 .justify_center()
-                .h(theme.control_height(ControlSize::Md))
+                .h(theme.control_height(Size::Medium))
                 .rounded(theme.radius(Radius::Md))
                 .border_1()
                 .border_color(if focused && ix == at {
@@ -109,7 +109,7 @@ fn period_grid(id: &ElementId, page: Page, grid: Grid, window: &mut Window, cx: 
         .flex()
         .flex_col()
         .gap_2()
-        .w(theme.control_height(ControlSize::Md) * 8.0)
+        .w(theme.control_height(Size::Medium) * 8.0)
         .p_2()
         .text_size(theme.text_size(TextSize::Sm))
         .on_key_down(move |event, window, cx| {
@@ -198,7 +198,7 @@ fn period_picker(
             icon: IconName::Calendar,
             shown,
             placeholder: placeholder.into(),
-            size: ControlSize::default(),
+            size: Size::default(),
             disabled: false,
         },
         move |close, anchor, window, cx| {

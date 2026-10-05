@@ -10,7 +10,7 @@ use super::IconButton;
 use crate::{
     motion,
     primitives::{Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
 
 const CONFIRM: Duration = Duration::from_millis(1400);
@@ -46,7 +46,7 @@ impl RenderOnce for CopyButton {
         let success = theme.colors.success;
         let text = self.text;
         let button = IconButton::new("copy", IconName::Copy)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_click(move |_, window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
                 log::info!("copy button: {} characters copied", text.chars().count());
@@ -81,7 +81,7 @@ impl RenderOnce for CopyButton {
         div()
             .id(self.id)
             .flex_none()
-            .size(theme.control_height(ControlSize::Sm))
+            .size(theme.control_height(Size::Small))
             .flex()
             .items_center()
             .justify_center()

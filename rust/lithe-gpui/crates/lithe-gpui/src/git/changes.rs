@@ -11,7 +11,7 @@ use crate::{
     forms::{Checkbox, Input, Submit, TextInput},
     lists::GitStatus,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{Ellipsis, tabular},
 };
 
@@ -92,7 +92,7 @@ impl ChangesList {
                 icon,
             )
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .tooltip(words)
             .when_some(on_action, |button, on_action| {
                 button.on_click(move |_, window, cx| {
@@ -212,7 +212,7 @@ impl ChangesList {
                         .child(
                             IconButton::new((self.id.clone(), format!("all-{staged}")), icon)
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .tooltip(words)
                                 .when_some(on_all, |button, on_all| {
                                     button
@@ -345,9 +345,10 @@ impl RenderOnce for CommitInput {
                     .gap_2()
                     .child(div().flex_1().child(amend))
                     .child(
-                        Button::new((self.id.clone(), "commit")).label(label)
+                        Button::new((self.id.clone(), "commit"))
+                            .label(label)
                             .variant(ButtonVariant::Primary)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .disabled(!ready)
                             .when_some(commit, |button, commit| {
                                 button.on_click(move |_, window, cx| commit(window, cx))

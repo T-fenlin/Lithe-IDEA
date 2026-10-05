@@ -6,7 +6,7 @@ use crate::{
     forms::{Run, TextInput},
     primitives::IconName,
     shell::{Toolbar, ToolbarGroup, ToolbarSeparator},
-    theme::{ActiveTheme, ControlSize, Platform},
+    theme::{ActiveTheme, Platform, Size},
 };
 
 /// A tool: the format it applies, its icon, its name and its key.
@@ -68,7 +68,7 @@ pub(crate) fn tool(
         ToggleItem::new(name).icon(icon).tooltip(tip),
         on,
     )
-    .size(ControlSize::Sm)
+    .size(Size::Small)
     .on_toggle(move |_, window, cx| match (&on_link, format_of) {
         (Some(open), Format::Link) => open(window, cx),
         _ => format(&field, format_of, cx),

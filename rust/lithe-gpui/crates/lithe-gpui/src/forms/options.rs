@@ -11,7 +11,7 @@ use crate::{
     data_display::Avatar,
     motion,
     primitives::{Icon, IconName, raise},
-    theme::{ActiveTheme, AvatarSize, ControlSize, Elevation, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, Elevation, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -190,7 +190,7 @@ pub(crate) fn float(
 ) -> AnyElement {
     let theme = cx.theme();
     let rem = window.rem_size();
-    let row = theme.control_height(ControlSize::Md).to_pixels(rem);
+    let row = theme.control_height(Size::Medium).to_pixels(rem);
     let height = (row * (rows + 1) as f32).min(theme.list_max_height().to_pixels(rem));
     float_height(id, anchor, height, content, window, cx)
 }

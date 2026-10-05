@@ -11,7 +11,7 @@ use crate::{
     forms::Run,
     motion::{ProgressBar, Spinner},
     primitives::Severity,
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{
         Ellipsis,
         format::{file_size, percent},
@@ -86,9 +86,10 @@ impl RenderOnce for ModelCard {
             });
         let (name, in_use) = (self.name.clone(), self.in_use);
         let choose = self.on_use.filter(|_| !in_use).map(|choose| {
-            Button::new((self.id.clone(), "use")).label("Use")
+            Button::new((self.id.clone(), "use"))
+                .label("Use")
                 .variant(ButtonVariant::Secondary)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(move |_, window, cx| {
                     log::info!("model card: use {name}");
                     choose(window, cx)

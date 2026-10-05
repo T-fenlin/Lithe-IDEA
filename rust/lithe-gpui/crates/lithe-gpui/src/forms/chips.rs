@@ -8,7 +8,7 @@ use gpui::{
 use super::{Choice, listbox::chosen, options::OnValues};
 use crate::{
     primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 /// Pills for a short set of choices. One is chosen, or several with `multiple`.
@@ -79,7 +79,7 @@ impl RenderOnce for ChoiceChips {
                     .flex()
                     .items_center()
                     .gap_1p5()
-                    .h(theme.control_height(ControlSize::Sm))
+                    .h(theme.control_height(Size::Small))
                     .px_3()
                     .rounded_full()
                     .border_1()

@@ -10,7 +10,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     forms::InlineEdit,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 type OnCues = Rc<dyn Fn(&[Cue], &mut Window, &mut App)>;
@@ -223,14 +223,14 @@ impl RenderOnce for SubtitleEditor {
             let seek = self.on_seek.clone().map(|seek| {
                 let start = cue.start;
                 IconButton::new((self.id.clone(), format!("{key}-seek")), IconName::Play)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Play from here")
                     .on_click(move |_, window, cx| seek(start, window, cx))
             });
             let remove = self.on_change.clone().map(|change| {
                 let (cues, key) = (cues.clone(), key.clone());
                 IconButton::new((self.id.clone(), format!("{key}-remove")), IconName::X)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Remove")
                     .on_click(move |_, window, cx| {
                         let next: Vec<Cue> =
@@ -286,9 +286,10 @@ impl RenderOnce for SubtitleEditor {
         });
         let add = self.on_change.clone().map(|change| {
             let cues = cues.clone();
-            Button::new((self.id.clone(), "add")).label("Add a cue")
+            Button::new((self.id.clone(), "add"))
+                .label("Add a cue")
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .icon(IconName::Plus)
                 .on_click(move |_, window, cx| {
                     let taken = |key: &str| cues.iter().any(|cue| cue.key == key);

@@ -116,7 +116,7 @@ impl RenderOnce for UptimeBar {
                 div()
                     .flex()
                     .gap_0p5()
-                    .h(theme.control_height(crate::theme::ControlSize::Sm))
+                    .h(theme.control_height(crate::theme::Size::Small))
                     .children(bars),
             )
     }

@@ -125,7 +125,10 @@ mod mac {
                 .unwrap_or_else(|| panic!("objc class {TARGET} already exists"));
             decl.add_ivar::<*const std::ffi::c_void>(ROUTE);
             unsafe {
-                decl.add_method(sel!(lithePicked:), picked as extern "C" fn(&Object, Sel, id));
+                decl.add_method(
+                    sel!(lithePicked:),
+                    picked as extern "C" fn(&Object, Sel, id),
+                );
             }
             decl.register();
         });

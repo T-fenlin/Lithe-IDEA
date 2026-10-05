@@ -17,7 +17,7 @@ use crate::{
     forms::{OnValue, Run},
     overlays::Popover,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::format,
 };
 
@@ -113,9 +113,10 @@ impl RenderOnce for EventPopover {
             let action = |label: &'static str, variant, handler: Option<OnValue>| {
                 handler.map(|handler| {
                     let (key, close) = (key.clone(), close.clone());
-                    Button::new((self.id.clone(), label)).label(label)
+                    Button::new((self.id.clone(), label))
+                        .label(label)
                         .variant(variant)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("event popover: {label} {key}");
                             close(window, cx);

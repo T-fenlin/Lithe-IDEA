@@ -1,10 +1,10 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, ToSpan};
 use lithe_gpui::{
     lists::{DirEntry, DirectoryListing, FileTree, GitStatus},
     theme::{ActiveTheme, Radius},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, ToSpan};
 
 use crate::{
     probe::probe,

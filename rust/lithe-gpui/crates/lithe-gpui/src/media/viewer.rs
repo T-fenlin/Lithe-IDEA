@@ -13,7 +13,7 @@ use crate::{
     documents::zoom_step,
     motion::Spinner,
     primitives::{FocusRing, Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::tabular,
 };
 
@@ -159,7 +159,7 @@ impl RenderOnce for ImageViewer {
         let button = |key: &'static str, icon: IconName, tip: &'static str, act: Act| {
             let (acted, pixels) = (view.clone(), pixels);
             IconButton::new((self.id.clone(), key), icon)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(tip)
                 .disabled(pixels.is_none())
                 .when_some(pixels, |button, pixels| {

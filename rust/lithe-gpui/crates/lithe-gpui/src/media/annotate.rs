@@ -12,7 +12,7 @@ use crate::{
     forms::{ColorSwatch, Drawing, History, pen},
     layout::seeded::{Seeded, use_seeded},
     primitives::{FocusRing, IconName, Image, checked_ratio, framed, tab_stop},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 type OnMarks = Rc<dyn Fn(&[Mark], &mut Window, &mut App)>;
@@ -191,7 +191,7 @@ impl RenderOnce for ImageAnnotator {
         let tools = TOOLS
             .iter()
             .fold(
-                ToggleGroup::new((self.id.clone(), "tools")).size(ControlSize::Sm),
+                ToggleGroup::new((self.id.clone(), "tools")).size(Size::Small),
                 |group, (_, key, icon, name)| {
                     group.item(
                         ToggleItem::new(*key)
@@ -218,7 +218,7 @@ impl RenderOnce for ImageAnnotator {
         let swatches = (0..COLORS).map(|ix| {
             let painted = board.hand.clone();
             ColorSwatch::new((self.id.clone(), format!("color-{ix}")), tint(ix))
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .selected(ix == color)
                 .on_click(move |_, cx| {
                     painted.update(cx, |hand, cx| {
@@ -234,7 +234,7 @@ impl RenderOnce for ImageAnnotator {
                       run: fn(&Board, &mut Window, &mut App)| {
             let board = board.clone();
             IconButton::new((self.id.clone(), key), icon)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(tip)
                 .disabled(!enabled)
                 .on_click(move |_, window, cx| run(&board, window, cx))

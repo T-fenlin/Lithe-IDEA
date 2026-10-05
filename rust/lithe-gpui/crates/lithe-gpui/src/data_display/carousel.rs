@@ -10,7 +10,7 @@ use web_time::Instant;
 use crate::{
     motion,
     primitives::{FocusRing, Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Mix},
+    theme::{ActiveTheme, IconSize, Mix, Size},
 };
 
 /// Where the deck heads, counted past the ends so a wrap glides one step, where the glide began, and when.
@@ -174,7 +174,7 @@ impl RenderOnce for Carousel {
         };
         let theme = cx.theme();
         let colors = &theme.colors;
-        let button = theme.control_height(ControlSize::Lg);
+        let button = theme.control_height(Size::Large);
         let dot = theme.status_dot();
         let arrow = |name: &'static str, icon: IconName, delta: isize| {
             let step = step.clone();

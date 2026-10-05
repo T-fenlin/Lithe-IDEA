@@ -11,7 +11,7 @@ use crate::{
     documents::blocks::source,
     forms::{Choice, NumberInput, Run, Select},
     primitives::Image,
-    theme::{ActiveTheme, ControlSize, Elevation, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
     typography::{format::plural, tabular},
 };
 
@@ -132,7 +132,7 @@ impl RenderOnce for PrintPreview {
                     .expect("a known paper")
                     .1,
             )
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_change(move |name, window, cx| {
                 let (paper, _) = PAPERS
                     .into_iter()
@@ -151,7 +151,7 @@ impl RenderOnce for PrintPreview {
                     "portrait"
                 },
             )
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .segment("portrait", "Portrait", None)
             .segment("landscape", "Landscape", None)
             .on_change(move |value, window, cx| {
@@ -178,7 +178,7 @@ impl RenderOnce for PrintPreview {
                     .expect("known margins")
                     .1,
             )
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_change(move |name, window, cx| {
                 let (margins, _) = MARGINS
                     .into_iter()
@@ -199,7 +199,7 @@ impl RenderOnce for PrintPreview {
             NumberInput::new((self.id.clone(), "copies"), settings.copies as f64)
                 .range(1.0, MOST_COPIES)
                 .step(1.0)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_change(move |copies, window, cx| {
                     on_change(
                         PrintSettings {
@@ -292,12 +292,14 @@ impl RenderOnce for PrintPreview {
                             .justify_end()
                             .gap_2()
                             .child(
-                                Button::new((self.id.clone(), "cancel")).label("Cancel")
+                                Button::new((self.id.clone(), "cancel"))
+                                    .label("Cancel")
                                     .variant(ButtonVariant::Ghost)
                                     .on_click(move |_, window, cx| cancel(window, cx)),
                             )
                             .child(
-                                Button::new((self.id.clone(), "print")).label("Print")
+                                Button::new((self.id.clone(), "print"))
+                                    .label("Print")
                                     .variant(ButtonVariant::Primary)
                                     .on_click(move |_, window, cx| {
                                         log::info!("print preview: print {settings:?}");

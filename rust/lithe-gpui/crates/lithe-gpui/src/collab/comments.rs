@@ -16,7 +16,7 @@ use crate::{
     forms::{Enter, Input, OnFlag, OnValue, Run, TextInput},
     overlays::Popover,
     primitives::IconName,
-    theme::{ActiveTheme, AvatarSize, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, Radius, Size, TextSize},
     typography::RelativeTime,
 };
 
@@ -83,12 +83,13 @@ impl RenderOnce for Reply {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .child(Input::new(&self.field).size(ControlSize::Sm)),
+                    .child(Input::new(&self.field).size(Size::Small)),
             )
             .child(
-                Button::new((self.id.clone(), "send")).label("Reply")
+                Button::new((self.id.clone(), "send"))
+                    .label("Reply")
                     .variant(ButtonVariant::Primary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .disabled(empty)
                     .on_click(move |_, window, cx| {
                         log::info!("reply: sent");
@@ -164,19 +165,20 @@ impl RenderOnce for CommentThread {
         let colors = theme.colors.clone();
         let resolved = self.thread.resolved;
         let resolve = self.on_resolve.clone().map(|resolve| {
-            Button::new((self.id.clone(), "resolve")).label(if resolved { "Reopen" } else { "Resolve" })
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
-            .icon(if resolved {
-                IconName::RotateCcw
-            } else {
-                IconName::Check
-            })
-            .on_click(move |_, window, cx| {
-                cx.stop_propagation();
-                log::info!("comment thread: resolved {}", !resolved);
-                resolve(!resolved, window, cx)
-            })
+            Button::new((self.id.clone(), "resolve"))
+                .label(if resolved { "Reopen" } else { "Resolve" })
+                .variant(ButtonVariant::Ghost)
+                .size(Size::Small)
+                .icon(if resolved {
+                    IconName::RotateCcw
+                } else {
+                    IconName::Check
+                })
+                .on_click(move |_, window, cx| {
+                    cx.stop_propagation();
+                    log::info!("comment thread: resolved {}", !resolved);
+                    resolve(!resolved, window, cx)
+                })
         });
         let comments = self
             .thread
@@ -337,7 +339,7 @@ impl RenderOnce for CommentMarker {
         })
         .icon(IconName::MessageSquare)
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
     }
 }
 
@@ -420,7 +422,7 @@ impl RenderOnce for CommentSidebar {
             (self.id.clone(), "filter"),
             if resolved { "resolved" } else { "open" },
         )
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .segment("open", format!("Open {open}"), None)
         .segment("resolved", format!("Resolved {done}"), None)
         .on_change(move |value, _, cx| {

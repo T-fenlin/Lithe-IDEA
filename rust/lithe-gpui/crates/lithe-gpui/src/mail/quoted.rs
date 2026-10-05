@@ -8,7 +8,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     layout::Collapsible,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize},
+    theme::{ActiveTheme, Size},
 };
 
 /// Words quoted from an earlier message, folded behind "···" until it is pressed; open, they sit behind a rule. The fold is the text's own, logged.
@@ -47,7 +47,7 @@ impl RenderOnce for QuotedText {
                 div().flex().child(
                     IconButton::new((self.id.clone(), "toggle"), IconName::Ellipsis)
                         .variant(ButtonVariant::Subtle)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .tooltip(if shown {
                             "Hide quoted text"
                         } else {

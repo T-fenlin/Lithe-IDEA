@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::Button,
     misc::{ConsentDialog, CookieBanner, LicenseViewer, Package},
     theme::ActiveTheme,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::probe::probe;
 use crate::ui::section;

@@ -10,7 +10,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     forms::{Enter, Input, Run, TextInput, float, is_url, surface},
     primitives::{FocusScope, IconName, give_back, take_focus},
-    theme::{ActiveTheme, ControlSize},
+    theme::{ActiveTheme, Size},
 };
 
 /// What the editor edits: a link's range and words, or the selection that becomes one.
@@ -169,21 +169,22 @@ impl RenderOnce for LinkEditor {
                         .child(
                             div().w(cx.theme().menu_width()).child(
                                 Input::new(&address)
-                                    .size(ControlSize::Sm)
+                                    .size(Size::Small)
                                     .invalid(!typed.is_empty() && !valid),
                             ),
                         )
                         .child(
-                            Button::new((self.id.clone(), "apply")).label("Apply")
+                            Button::new((self.id.clone(), "apply"))
+                                .label("Apply")
                                 .variant(ButtonVariant::Primary)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .disabled(!valid)
                                 .on_click(move |_, window, cx| press(window, cx)),
                         )
                         .when_some(opened, |row, url| {
                             row.child(
                                 IconButton::new((self.id.clone(), "open"), IconName::ExternalLink)
-                                    .size(ControlSize::Sm)
+                                    .size(Size::Small)
                                     .tooltip("Open link")
                                     .on_click(move |_, _, cx| cx.open_url(&url)),
                             )
@@ -191,7 +192,7 @@ impl RenderOnce for LinkEditor {
                         .when_some(remove, |row, remove| {
                             row.child(
                                 IconButton::new((self.id.clone(), "remove"), IconName::Trash2)
-                                    .size(ControlSize::Sm)
+                                    .size(Size::Small)
                                     .tooltip("Remove link")
                                     .on_click(move |_, window, cx| remove(window, cx)),
                             )

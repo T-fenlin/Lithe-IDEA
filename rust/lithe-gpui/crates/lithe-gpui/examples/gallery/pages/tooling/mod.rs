@@ -1,10 +1,10 @@
+use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     motion::ProgressRing,
-    theme::ControlSize,
+    theme::Size,
     tooling::{Knob, Playground},
 };
-use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px};
 
 mod catalogs;
 mod inspection;
@@ -109,9 +109,9 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
                                 other => panic!("gallery playground: no variant {other}"),
                             };
                             let size = match settings.picked("size").as_ref() {
-                                "Sm" => ControlSize::Sm,
-                                "Md" => ControlSize::Md,
-                                "Lg" => ControlSize::Lg,
+                                "Sm" => Size::Small,
+                                "Md" => Size::Medium,
+                                "Lg" => Size::Large,
                                 other => panic!("gallery playground: no size {other}"),
                             };
                             Button::new("played").label("Save changes")

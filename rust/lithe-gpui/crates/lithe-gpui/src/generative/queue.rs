@@ -11,7 +11,7 @@ use crate::{
     forms::OnValue,
     motion::{AnimatePresence, ProgressRing},
     primitives::{Icon, IconName, Image},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{
         Ellipsis,
         format::{DurationStyle, duration, percent},
@@ -172,9 +172,10 @@ impl RenderOnce for GenerationQueue {
                 .gap_1()
                 .when(failed, |row| {
                     row.children(action("retry", &job.key, &self.on_retry).map(|retry| {
-                        Button::new((self.id.clone(), format!("retry-{}", job.key))).label("Retry")
+                        Button::new((self.id.clone(), format!("retry-{}", job.key)))
+                            .label("Retry")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(retry)
                     }))
                 })
@@ -184,7 +185,7 @@ impl RenderOnce for GenerationQueue {
                             (self.id.clone(), format!("remove-{}", job.key)),
                             IconName::X,
                         )
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .tooltip("Remove")
                         .on_click(remove)
                     }),
@@ -193,7 +194,7 @@ impl RenderOnce for GenerationQueue {
                             (self.id.clone(), format!("cancel-{}", job.key)),
                             IconName::X,
                         )
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .tooltip("Cancel")
                         .on_click(cancel)
                     }),

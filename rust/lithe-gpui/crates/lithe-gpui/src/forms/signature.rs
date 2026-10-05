@@ -10,7 +10,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     layout::seeded::use_seeded,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 /// A pen stroke: points from the pad's top left corner.
@@ -262,8 +262,9 @@ impl RenderOnce for SignaturePad {
             .gap_1()
             .child(pad)
             .child(
-                Button::new((self.id, "clear")).label("Clear")
-                    .size(ControlSize::Sm)
+                Button::new((self.id, "clear"))
+                    .label("Clear")
+                    .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .disabled(empty)
                     .on_click(move |_, window, cx| set(&[], window, cx)),

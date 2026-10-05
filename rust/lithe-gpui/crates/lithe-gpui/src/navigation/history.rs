@@ -7,7 +7,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     forms::Choice,
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
 };
 
 type OnGo = Rc<dyn Fn(usize, &mut Window, &mut App)>;
@@ -93,7 +93,7 @@ impl RenderOnce for BackForwardNavigation {
             .gap_0p5()
             .child(
                 IconButton::new((self.id.clone(), "back"), IconName::ArrowLeft)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Back")
                     .disabled(current == 0)
@@ -101,7 +101,7 @@ impl RenderOnce for BackForwardNavigation {
             )
             .child(
                 IconButton::new((self.id, "forward"), IconName::ArrowRight)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Forward")
                     .disabled(current == last)

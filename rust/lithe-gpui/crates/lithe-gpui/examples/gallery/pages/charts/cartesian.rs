@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use gpui::{App, ClipboardItem, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     charts::{
@@ -8,7 +9,6 @@ use lithe_gpui::{
     theme::ActiveTheme,
     typography::Caption,
 };
-use gpui::{App, ClipboardItem, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

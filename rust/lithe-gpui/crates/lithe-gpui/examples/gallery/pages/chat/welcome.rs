@@ -1,3 +1,5 @@
+use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, px};
+use jiff::{Timestamp, tz::TimeZone};
 use lithe_gpui::{
     chat::{
         CapabilityCards, FollowUpSuggestions, MessageAvatar, MessageBubble, PromptInput, Role,
@@ -9,8 +11,6 @@ use lithe_gpui::{
     primitives::{IconName, Severity},
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, px};
-use jiff::{Timestamp, tz::TimeZone};
 
 use crate::{
     probe::probe,

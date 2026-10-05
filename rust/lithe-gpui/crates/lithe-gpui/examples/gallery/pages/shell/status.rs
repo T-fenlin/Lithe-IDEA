@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     shell::{
@@ -6,7 +7,6 @@ use lithe_gpui::{
     },
     theme::ActiveTheme,
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div};
 
 use super::chrome::window_frame;
 use crate::{
@@ -61,7 +61,8 @@ pub fn update_window(cx: &App) -> impl IntoElement + use<> {
         ))
         .child(native_only(probe(
             "update-open",
-            Button::new("update-open").label("Open update window")
+            Button::new("update-open")
+                .label("Open update window")
                 .variant(ButtonVariant::Outline)
                 .on_click(|_, _, cx| match update_dialog().open(cx) {
                     Ok(handle) => Opened::insert("update", handle.into(), cx),
@@ -103,7 +104,8 @@ pub fn crash_reporter(cx: &App) -> impl IntoElement + use<> {
     ))
     .child(native_only(probe(
         "crash-open",
-        Button::new("crash-open").label("Open crash window")
+        Button::new("crash-open")
+            .label("Open crash window")
             .variant(ButtonVariant::Outline)
             .on_click(move |_, _, cx| match reporter(false).open(cx) {
                 Ok(handle) => Opened::insert("crash", handle.into(), cx),
@@ -133,8 +135,9 @@ pub fn offline(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         let state = state.clone();
         probe(
             key,
-            Button::new(key).label(label)
-                .size(lithe_gpui::theme::ControlSize::Sm)
+            Button::new(key)
+                .label(label)
+                .size(lithe_gpui::theme::Size::Small)
                 .variant(if current == choice {
                     ButtonVariant::Subtle
                 } else {
@@ -150,9 +153,7 @@ pub fn offline(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     })))
     .child(
         div()
-            .h(cx
-                .theme()
-                .control_height(lithe_gpui::theme::ControlSize::Lg))
+            .h(cx.theme().control_height(lithe_gpui::theme::Size::Large))
             .flex()
             .items_center()
             .child(OfflineIndicator::new("connectivity-pill", current)),

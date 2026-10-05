@@ -10,7 +10,7 @@ use crate::{
     buttons::{Button, ButtonVariant, ConfirmButton, ConfirmMode},
     data_display::{Badge, Tone},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -83,9 +83,10 @@ impl RenderOnce for SessionList {
                     .into_any_element(),
                 false => {
                     let (key, out) = (session.key.clone(), on_sign_out.clone());
-                    Button::new((id.clone(), format!("out-{}", session.key))).label("Sign out")
+                    Button::new((id.clone(), format!("out-{}", session.key)))
+                        .label("Sign out")
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("session list: sign out {key}");
                             out(&key, window, cx);

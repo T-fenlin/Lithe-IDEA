@@ -13,7 +13,7 @@ use crate::{
     charts::{Rect, at, finish, place, ring, tint},
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
 };
 
 /// A tool that draws on a market chart.
@@ -113,7 +113,7 @@ impl RenderOnce for DrawingToolbar {
             .map(|(_, key, ..)| *key)
             .expect("every tool is listed");
         let group = TOOLS.iter().fold(
-            ToggleGroup::new(self.id).size(ControlSize::Sm),
+            ToggleGroup::new(self.id).size(Size::Small),
             |group, (_, key, words, icon)| {
                 group.item(ToggleItem::new(*key).icon(*icon).tooltip(*words))
             },

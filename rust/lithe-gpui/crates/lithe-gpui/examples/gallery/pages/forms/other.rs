@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     forms::{
         CodeInput, Combobox, EmojiPicker, FontPicker, IconPicker, JsonInput, NumberInput,
@@ -6,7 +7,6 @@ use lithe_gpui::{
     primitives::IconName,
     theme::ActiveTheme,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::text::field;
 use crate::{

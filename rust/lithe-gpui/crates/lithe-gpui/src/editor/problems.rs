@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{ToggleButton, ToggleItem},
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Ellipsis, format},
 };
 
@@ -128,7 +128,7 @@ impl RenderOnce for ProblemsPanel {
                 ToggleItem::new(key).icon(severity.icon()).label(label),
                 self.shown.contains(&severity),
             )
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_toggle(move |on, window, cx| {
                 let mut next: Vec<Severity> = shown
                     .iter()

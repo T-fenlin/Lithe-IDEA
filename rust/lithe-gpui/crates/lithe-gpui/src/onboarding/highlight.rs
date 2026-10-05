@@ -12,7 +12,7 @@ use crate::{
     layout::Card,
     motion,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// Word of something new: its icon, a New badge over its name, a line on what it does, then Try it and Not now. It rises in when it appears.
@@ -72,18 +72,20 @@ impl RenderOnce for FeatureHighlight {
             .gap_2()
             .mt_3()
             .child(
-                Button::new((id.clone(), "try")).label("Try it")
+                Button::new((id.clone(), "try"))
+                    .label("Try it")
                     .variant(ButtonVariant::Primary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| {
                         log::info!("feature highlight: try {title}");
                         try_it(window, cx)
                     }),
             )
             .child(
-                Button::new((id.clone(), "dismiss")).label("Not now")
+                Button::new((id.clone(), "dismiss"))
+                    .label("Not now")
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| dismiss(window, cx)),
             );
         let words = div()

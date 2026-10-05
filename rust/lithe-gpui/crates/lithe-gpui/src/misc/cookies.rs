@@ -147,16 +147,19 @@ impl RenderOnce for CookieBanner {
                     .flex_wrap()
                     .gap_2()
                     .child(
-                        Button::new((id.clone(), "accept")).label("Accept all")
+                        Button::new((id.clone(), "accept"))
+                            .label("Accept all")
                             .primary()
                             .on_click(move |_, window, cx| all(every.to_vec(), window, cx)),
                     )
                     .child(
-                        Button::new((id.clone(), "reject")).label("Reject all")
+                        Button::new((id.clone(), "reject"))
+                            .label("Reject all")
                             .on_click(move |_, window, cx| none(Vec::new(), window, cx)),
                     )
                     .child(match open {
-                        false => Button::new((id.clone(), "choose")).label("Choose")
+                        false => Button::new((id.clone(), "choose"))
+                            .label("Choose")
                             .variant(ButtonVariant::Ghost)
                             .focus_handle(&choose)
                             .on_click(move |_, _, cx| {
@@ -166,7 +169,8 @@ impl RenderOnce for CookieBanner {
                                     cx.notify();
                                 })
                             }),
-                        true => Button::new((id, "save")).label("Save choices")
+                        true => Button::new((id, "save"))
+                            .label("Save choices")
                             .variant(ButtonVariant::Ghost)
                             .focus_handle(&choose)
                             .on_click(move |_, window, cx| {

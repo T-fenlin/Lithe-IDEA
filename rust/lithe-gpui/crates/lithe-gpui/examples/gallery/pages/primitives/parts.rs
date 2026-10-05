@@ -1,5 +1,9 @@
 use std::{path::Path, time::Duration};
 
+use gpui::{
+    App, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString, Size,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
+};
 use lithe_gpui::{
     buttons::{Button, IconButton},
     primitives::{
@@ -7,10 +11,6 @@ use lithe_gpui::{
         Measure, Pressable, Tooltip, TooltipTrigger,
     },
     theme::{ActiveTheme, IconSize, Radius, TextSize},
-};
-use gpui::{
-    App, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString, Size,
-    StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
 };
 
 use crate::{
@@ -116,7 +116,10 @@ pub fn image(cx: &App) -> impl IntoElement + use<> {
             ))
             .child(specimen(
                 "failed",
-                tile(Image::new("img-missing", Path::new("/missing/lithe.png")), cx),
+                tile(
+                    Image::new("img-missing", Path::new("/missing/lithe.png")),
+                    cx,
+                ),
                 cx,
             ))
             .child(specimen(
@@ -177,9 +180,13 @@ pub fn backdrop(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 .text_color(theme.colors.fg_muted)
                 .child("Click outside to close."),
         )
-        .child(div().flex().justify_end().child(
-            Button::new("backdrop-close").label("Close").on_click(move |_, _, cx| set(&close, false, cx)),
-        ));
+        .child(
+            div().flex().justify_end().child(
+                Button::new("backdrop-close")
+                    .label("Close")
+                    .on_click(move |_, _, cx| set(&close, false, cx)),
+            ),
+        );
     section(
         "Overlay / Backdrop",
         "A scrim that fades in, blocks the page, and hears outside clicks.",
@@ -189,7 +196,8 @@ pub fn backdrop(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "backdrop-open",
-                Button::new("backdrop-open").label("Show backdrop")
+                Button::new("backdrop-open")
+                    .label("Show backdrop")
                     .on_click(move |_, _, cx| set(&show, true, cx)),
             ))
             .when(shown, |row| {
@@ -328,14 +336,14 @@ pub fn measure(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row()
             .child(
-                Button::new("measure-toggle").label(if is_wide { "Narrow" } else { "Widen" }).on_click(
-                    move |_, _, cx| {
+                Button::new("measure-toggle")
+                    .label(if is_wide { "Narrow" } else { "Widen" })
+                    .on_click(move |_, _, cx| {
                         wide.update(cx, |wide, cx| {
                             *wide = !*wide;
                             cx.notify();
                         })
-                    },
-                ),
+                    }),
             )
             .child(code(readout, cx)),
     )

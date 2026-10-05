@@ -8,7 +8,7 @@ use crate::{
     i18n,
     motion::Spinner,
     primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Mix, Palette, Platform, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Mix, Palette, Platform, Radius, Size, TextSize},
     typography::keys::{keystroke, keystroke_labels},
 };
 
@@ -98,11 +98,20 @@ pub(crate) fn tone(variant: ButtonVariant, colors: &Palette) -> Tone {
     }
 }
 
-pub(crate) fn label_size(size: ControlSize) -> (TextSize, IconSize) {
+pub(crate) fn label_size(size: Size) -> (TextSize, IconSize) {
     match size {
-        ControlSize::Sm => (TextSize::Sm, IconSize::Xs),
-        ControlSize::Md => (TextSize::Base, IconSize::Sm),
-        ControlSize::Lg => (TextSize::Md, IconSize::Md),
+        // An explicit height maps onto the nearest named tier.
+        Size::Size(height) => label_size(if f32::from(height) < 26.0 {
+            Size::Small
+        } else if f32::from(height) < 30.0 {
+            Size::Medium
+        } else {
+            Size::Large
+        }),
+        Size::XSmall => (TextSize::Sm, IconSize::Xs),
+        Size::Small => (TextSize::Sm, IconSize::Xs),
+        Size::Medium => (TextSize::Base, IconSize::Sm),
+        Size::Large => (TextSize::Md, IconSize::Md),
     }
 }
 
@@ -133,7 +142,7 @@ pub struct Button {
     trailing_icon: Option<IconName>,
     shortcut: Option<SharedString>,
     variant: ButtonVariant,
-    size: ControlSize,
+    size: Size,
     disabled: bool,
     loading: bool,
     full_width: bool,
@@ -151,7 +160,7 @@ impl Button {
             trailing_icon: None,
             shortcut: None,
             variant: ButtonVariant::default(),
-            size: ControlSize::default(),
+            size: Size::default(),
             disabled: false,
             loading: false,
             full_width: false,
@@ -177,7 +186,7 @@ impl Button {
         self.variant(ButtonVariant::Primary)
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -323,5 +332,11 @@ impl RenderOnce for Button {
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                     .when_some(self.on_click, |el, handler| el.on_click(handler))
             })
+    }
+}
+
+impl crate::theme::Sizable for Button {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

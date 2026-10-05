@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use lithe_gpui::media::{Cue, Scrubber, SubtitleEditor, VideoPlayer, VideoThumbnailStrip};
 use gpui::{
     App, Entity, IntoElement, ParentElement, SharedString, Styled, TaskExt as _, Window, div, px,
 };
+use lithe_gpui::media::{Cue, Scrubber, SubtitleEditor, VideoPlayer, VideoThumbnailStrip};
 
 use crate::{
     probe::probe,

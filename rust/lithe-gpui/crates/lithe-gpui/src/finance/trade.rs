@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant, SegmentedControl},
     forms::NumberInput,
     overlays::ConfirmDialog,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{format, tabular},
 };
 
@@ -169,7 +169,7 @@ impl RenderOnce for OrderEntry {
             .iter()
             .fold(
                 SegmentedControl::new((self.id.clone(), "kind"), order.kind.word().to_lowercase())
-                    .size(ControlSize::Sm),
+                    .size(Size::Small),
                 |control, kind| control.segment(kind.word().to_lowercase(), kind.word(), None),
             );
         let kind = kind.on_change(pick(order.clone(), self.on_change.clone()));
@@ -210,7 +210,8 @@ impl RenderOnce for OrderEntry {
         } else {
             ButtonVariant::Danger
         };
-        let submit = Button::new((self.id.clone(), "place")).label(order.words(2))
+        let submit = Button::new((self.id.clone(), "place"))
+            .label(order.words(2))
             .variant(variant)
             .full_width();
         let placed = (order.clone(), self.on_submit.clone());
@@ -285,9 +286,10 @@ impl RenderOnce for QuickTradeButtons {
             };
             let trade = self.on_trade.clone();
             div().flex_1().child(
-                Button::new((self.id.clone(), name)).label(format!("{name} {}", price(at, 2)))
+                Button::new((self.id.clone(), name))
+                    .label(format!("{name} {}", price(at, 2)))
                     .variant(variant)
-                    .size(ControlSize::Lg)
+                    .size(Size::Large)
                     .full_width()
                     .on_click(move |_, window, cx| {
                         log::info!("quick trade: {side:?} at {at}");

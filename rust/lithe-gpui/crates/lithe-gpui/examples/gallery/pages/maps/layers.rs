@@ -1,7 +1,7 @@
+use gpui::{App, IntoElement, ParentElement, Styled, div, px};
 use lithe_gpui::maps::{
     GeoHeatmap, GeoJsonLayer, LatLon, MapMarker, MapView, MapViewport, RouteLine, read_geojson,
 };
-use gpui::{App, IntoElement, ParentElement, Styled, div, px};
 
 use super::{ATTRIBUTION, tile};
 use crate::probe::probe;

@@ -1,5 +1,9 @@
 use std::rc::Rc;
 
+use gpui::{
+    App, Bounds, Entity, InteractiveElement, IntoElement, ParentElement, ScrollHandle,
+    StatefulInteractiveElement, Styled, Window, div, point, px, size,
+};
 use lithe_gpui::{
     documents::{
         Chapter, DocPage, DocumentViewer, EpubReader, Footnote, Glossary, MarkdownRenderer,
@@ -10,10 +14,6 @@ use lithe_gpui::{
     forms::TextInput,
     navigation::{Sections, TableOfContents},
     theme::{ActiveTheme, Radius},
-};
-use gpui::{
-    App, Bounds, Entity, InteractiveElement, IntoElement, ParentElement, ScrollHandle,
-    StatefulInteractiveElement, Styled, Window, div, point, px, size,
 };
 use serde::Deserialize;
 

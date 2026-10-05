@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     git::{ConflictResolver, DiffLayout, DiffViewer, Take, ThreeWayMerge, regions},
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use lithe_gpui::Assets;
 use gpui::{AssetSource, SharedString};
+use lithe_gpui::Assets;
 
 pub const CUSTOM_ICON: &str = "app-icons/mark.svg";
 

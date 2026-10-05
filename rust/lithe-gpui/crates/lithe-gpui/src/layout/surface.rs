@@ -4,7 +4,7 @@ use gpui::{
 };
 use smallvec::SmallVec;
 
-use crate::theme::{ActiveTheme, ControlSize, Radius, TextSize};
+use crate::theme::{ActiveTheme, Radius, Size, TextSize};
 
 macro_rules! container_parts {
     ($name:ident) => {
@@ -202,7 +202,7 @@ impl RenderOnce for Panel {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .h(theme.control_height(ControlSize::Lg))
+                    .h(theme.control_height(Size::Large))
                     .pl_3()
                     .pr_1()
                     .border_b_1()

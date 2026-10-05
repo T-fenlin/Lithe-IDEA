@@ -1,11 +1,11 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, Styled, Task, Window, div};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     theme::{ActiveTheme, TextSize},
     typography::{AnimatedNumber, GradientText, ShimmerText, Typewriter},
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Task, Window, div};
 
 use crate::ui::{live, row, section, specimen, specimens};
 
@@ -81,7 +81,8 @@ pub fn typewriter(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
             .gap_6()
             .child(div().min_w_80().child(Typewriter::new("typewriter", line)))
             .child(
-                Button::new("type-again").label("Next line")
+                Button::new("type-again")
+                    .label("Next line")
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, _, cx| {
                         take.update(cx, |take, cx| {

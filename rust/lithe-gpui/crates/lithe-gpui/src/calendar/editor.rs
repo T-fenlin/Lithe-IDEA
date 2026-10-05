@@ -326,7 +326,8 @@ impl RenderOnce for EventEditor {
         let fault = draft.fault();
         let save = {
             let (editing, on_save, id) = (editing.clone(), self.on_save.clone(), self.id.clone());
-            Button::new((self.id.clone(), "save")).label("Save")
+            Button::new((self.id.clone(), "save"))
+                .label("Save")
                 .variant(ButtonVariant::Primary)
                 .disabled(fault.is_some())
                 .on_click(move |_, window, cx| {
@@ -338,12 +339,14 @@ impl RenderOnce for EventEditor {
                 })
         };
         let cancel = self.on_cancel.clone().map(|on_cancel| {
-            Button::new((self.id.clone(), "cancel")).label("Cancel")
+            Button::new((self.id.clone(), "cancel"))
+                .label("Cancel")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, window, cx| on_cancel(window, cx))
         });
         let delete = self.on_delete.clone().map(|on_delete| {
-            Button::new((self.id.clone(), "delete")).label("Delete")
+            Button::new((self.id.clone(), "delete"))
+                .label("Delete")
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, window, cx| on_delete(window, cx))
         });

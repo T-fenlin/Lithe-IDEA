@@ -1,18 +1,18 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, div, px};
 use lithe_gpui::{
     buttons::IconButton,
     navigation::NavItem,
     primitives::IconName,
     shell::{ColumnShell, ShellColumn},
-    theme::{ActiveTheme, ControlSize},
+    theme::{ActiveTheme, Size},
     typography::{Caption, Paragraph},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use super::chrome::window_frame;
 use crate::ui::{code, section, specimen};
 
 fn icon(id: &'static str, ix: usize, name: IconName) -> IconButton {
-    IconButton::new((id, ix), name).size(ControlSize::Sm)
+    IconButton::new((id, ix), name).size(Size::Small)
 }
 
 fn shell(id: &'static str, cx: &App) -> ColumnShell {

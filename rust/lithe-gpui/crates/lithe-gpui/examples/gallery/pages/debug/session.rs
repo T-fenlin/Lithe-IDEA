@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     debug::{
         Breakpoint, BreakpointList, CallStack, DebugCommand, DebugState, DebugToolbar, StackFrame,
@@ -6,7 +7,6 @@ use lithe_gpui::{
     forms::{InputEvent, TextInput},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::ui::{keep, row, section, set};
 

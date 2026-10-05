@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     forms::{Input, Run, Slider, TextInput},
     primitives::Tooltip,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{
         Ellipsis,
         format::{currency, decimals, group_digits},
@@ -288,9 +288,10 @@ impl RenderOnce for SystemPromptEditor {
                             .child("System prompt"),
                     )
                     .children(self.on_reset.map(|reset| {
-                        Button::new((self.id.clone(), "reset")).label("Reset")
+                        Button::new((self.id.clone(), "reset"))
+                            .label("Reset")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(move |_, window, cx| {
                                 log::info!("system prompt: reset");
                                 reset(window, cx)

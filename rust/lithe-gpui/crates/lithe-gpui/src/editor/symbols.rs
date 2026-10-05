@@ -10,7 +10,7 @@ use crate::{
     lists::{Tree, TreeNode},
     navigation::{Group, Palette, Row, fuzzy, marked, query_field},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Palette as Colors},
+    theme::{ActiveTheme, Palette as Colors, Size},
 };
 
 /// What a symbol in code is.
@@ -401,7 +401,7 @@ impl RenderOnce for CallHierarchy {
             (self.id.clone(), "side"),
             if self.incoming { "in" } else { "out" },
         )
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .segment("in", incoming, None)
         .segment("out", outgoing, None);
         let side = match self.on_flip {

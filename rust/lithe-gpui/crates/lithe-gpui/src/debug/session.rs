@@ -10,7 +10,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton, shortcut_text},
     forms::Checkbox,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Elevation, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, Radius, Size, TextSize},
     typography::{Ellipsis, tabular},
 };
 
@@ -73,7 +73,7 @@ impl RenderOnce for DebugToolbar {
                 let run = self.on_command.clone();
                 IconButton::new((self.id.clone(), format!("{command:?}")), icon)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(format!("{words}  {}", shortcut_text(key, platform)))
                     .disabled(!enabled)
                     .when_some(run, |button, run| {
@@ -281,7 +281,7 @@ impl RenderOnce for BreakpointList {
                                     IconName::X,
                                 )
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .tooltip("Remove breakpoint")
                                 .when_some(
                                     remove,

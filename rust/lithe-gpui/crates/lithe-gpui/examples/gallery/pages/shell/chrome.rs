@@ -1,11 +1,11 @@
+use gpui::{App, Div, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::IconButton,
     primitives::IconName,
     shell::{TitleBar, WindowControls, drag_region},
-    theme::{ActiveTheme, ControlSize, Elevation, Platform, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, Platform, Radius, Size, TextSize},
     typography::Caption,
 };
-use gpui::{App, Div, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::ui::{code, row, section, specimen, specimens};
 
@@ -30,8 +30,8 @@ fn demo_bar(id: &'static str, style: Platform) -> TitleBar {
         .platform(style)
         .title("Ely — Projects")
         .on_close(|_, _| log::info!("gallery: demo close refused"))
-        .child(IconButton::new((id, 1usize), IconName::PanelLeft).size(ControlSize::Sm))
-        .action(IconButton::new((id, 2usize), IconName::Search).size(ControlSize::Sm))
+        .child(IconButton::new((id, 1usize), IconName::PanelLeft).size(Size::Small))
+        .action(IconButton::new((id, 2usize), IconName::Search).size(Size::Small))
 }
 
 pub fn title_bar(cx: &App) -> impl IntoElement + use<> {
@@ -129,7 +129,7 @@ pub fn drag_area(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
     .child(
         strip
             .w(px(420.0))
-            .h(theme.control_height(ControlSize::Lg))
+            .h(theme.control_height(Size::Large))
             .flex()
             .items_center()
             .justify_center()

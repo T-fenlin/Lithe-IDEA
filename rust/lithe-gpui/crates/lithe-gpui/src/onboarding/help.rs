@@ -12,7 +12,7 @@ use crate::{
     layout::on_axis,
     lists::{ListItem, SelectableList},
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 /// A help article: its key, its title, a line on it, and its body in Markdown. A link to `help:<key>` in a body opens that article.
@@ -129,9 +129,10 @@ fn foot_button(
     icon: IconName,
     run: Run,
 ) -> Button {
-    Button::new((id.clone(), key)).label(label)
+    Button::new((id.clone(), key))
+        .label(label)
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Sm)
+        .size(Size::Small)
         .icon(icon)
         .on_click(move |_, window, cx| {
             log::info!("help panel: {key}");
@@ -159,7 +160,7 @@ impl RenderOnce for HelpPanel {
         let close = self.on_close.map(|run| {
             IconButton::new((id.clone(), "close"), IconName::X)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Close help")
                 .on_click(move |_, window, cx| run(window, cx))
         });
@@ -188,9 +189,10 @@ impl RenderOnce for HelpPanel {
                     .gap_3()
                     .child(
                         div().flex().child(
-                            Button::new((id.clone(), "back")).label("All articles")
+                            Button::new((id.clone(), "back"))
+                                .label("All articles")
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .icon(IconName::ChevronLeft)
                                 .focus_handle(&back_handle)
                                 .on_click(move |_, window, cx| back(None, window, cx)),

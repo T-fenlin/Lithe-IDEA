@@ -1,12 +1,12 @@
+use gpui::{
+    AnyElement, AnyView, App, Context, IntoElement, ParentElement, Render, StyleRefinement, Styled,
+    Window, div, px,
+};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     forms::{Switch, TextInput},
     theme::{ActiveTheme, Radius},
     tooling::{EventLogger, FpsMeter, RenderCounter},
-};
-use gpui::{
-    AnyElement, AnyView, App, Context, IntoElement, ParentElement, Render, StyleRefinement, Styled,
-    Window, div, px,
 };
 
 use crate::probe::probe;
@@ -23,7 +23,8 @@ impl Render for Apart {
             .gap_3()
             .child(RenderCounter::new("apart-renders", "This view"))
             .child(
-                Button::new("apart-redraw").label("Redraw this view")
+                Button::new("apart-redraw")
+                    .label("Redraw this view")
                     .variant(ButtonVariant::Outline)
                     .on_click(cx.listener(|_, _, _, cx| cx.notify())),
             )
@@ -34,7 +35,9 @@ impl Render for Apart {
 fn inspect() -> AnyElement {
     probe(
         "inspect-button",
-        Button::new("inspect").label("Inspect").on_click(|_, window, cx| window.toggle_inspector(cx)),
+        Button::new("inspect")
+            .label("Inspect")
+            .on_click(|_, window, cx| window.toggle_inspector(cx)),
     )
     .into_any_element()
 }

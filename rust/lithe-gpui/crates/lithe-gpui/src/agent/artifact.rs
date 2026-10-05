@@ -10,7 +10,7 @@ use crate::{
     chat::BranchNavigator,
     forms::{Pick, Run},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -90,7 +90,7 @@ impl RenderOnce for ArtifactPanel {
         let action = |key: &'static str, icon: IconName, tip: &'static str, run: Run| {
             IconButton::new((self.id.clone(), key), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(tip)
                 .on_click(move |_, window, cx| {
                     log::info!("artifact: {tip}");
@@ -102,7 +102,7 @@ impl RenderOnce for ArtifactPanel {
                 (self.id.clone(), "view"),
                 if showing_source { "source" } else { "preview" },
             )
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .segment("preview", "Preview", Some(IconName::Eye))
             .segment("source", "Source", Some(IconName::Code))
             .on_change(move |key, _, cx| {

@@ -12,7 +12,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton, SegmentedControl},
     documents::Change,
     primitives::IconName,
-    theme::{ActiveTheme, AvatarSize, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, Radius, Size, TextSize},
     typography::format::plural,
 };
 
@@ -72,7 +72,7 @@ impl RenderOnce for SuggestionMode {
         MODES
             .into_iter()
             .fold(
-                SegmentedControl::new(self.id, value).size(ControlSize::Sm),
+                SegmentedControl::new(self.id, value).size(Size::Small),
                 |control, (_, value, label, icon)| control.segment(value, label, Some(icon)),
             )
             .on_change(move |value, window, cx| {
@@ -325,14 +325,14 @@ impl RenderOnce for TrackChanges {
                     row.child(
                         IconButton::new(id("accept"), IconName::Check)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Accept")
                             .on_click(decide(Decision::Accept(ix))),
                     )
                     .child(
                         IconButton::new(id("reject"), IconName::X)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Reject")
                             .on_click(decide(Decision::Reject(ix))),
                     )
@@ -355,14 +355,16 @@ impl RenderOnce for TrackChanges {
                     )))
                     .when(pending, |bar| {
                         bar.child(
-                            Button::new((self.id.clone(), "reject-all")).label("Reject all")
+                            Button::new((self.id.clone(), "reject-all"))
+                                .label("Reject all")
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .on_click(decide(Decision::RejectAll)),
                         )
                         .child(
-                            Button::new((self.id.clone(), "accept-all")).label("Accept all")
-                                .size(ControlSize::Sm)
+                            Button::new((self.id.clone(), "accept-all"))
+                                .label("Accept all")
+                                .size(Size::Small)
                                 .on_click(decide(Decision::AcceptAll)),
                         )
                     }),

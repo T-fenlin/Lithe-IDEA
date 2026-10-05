@@ -1,3 +1,4 @@
+use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     documents::{
         BlockData, BlockEditor, BlockKind, Checklist, MarkdownEditor, MarkdownMode, Media,
@@ -5,7 +6,6 @@ use lithe_gpui::{
     },
     forms::TextInput,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

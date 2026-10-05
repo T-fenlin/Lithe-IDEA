@@ -10,7 +10,7 @@ use super::WindowManager;
 use crate::{
     motion,
     primitives::{Backdrop, FocusNext, FocusPrev, Icon, IconName, Place, give_back, take_focus},
-    theme::{ActiveTheme, ControlSize, Elevation, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, IconSize, Radius, Size, TextSize},
     typography::Caption,
 };
 
@@ -79,7 +79,7 @@ impl RenderOnce for WindowSwitcher {
                     .flex()
                     .items_center()
                     .gap_3()
-                    .h(theme.control_height(ControlSize::Lg))
+                    .h(theme.control_height(Size::Large))
                     .px_3()
                     .rounded(theme.radius(Radius::Md))
                     .text_size(theme.text_size(TextSize::Base))

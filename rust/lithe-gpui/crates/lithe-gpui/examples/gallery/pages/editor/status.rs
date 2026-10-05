@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     editor::{
         BranchIndicator, CursorPosition, Encoding, IndentSettings, LanguageMode, LineEnding,
@@ -6,7 +7,6 @@ use lithe_gpui::{
     shell::StatusBar,
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

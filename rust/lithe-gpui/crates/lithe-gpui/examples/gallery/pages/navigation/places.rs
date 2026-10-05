@@ -1,3 +1,7 @@
+use gpui::{
+    App, Entity, InteractiveElement, IntoElement, ParentElement, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, px,
+};
 use lithe_gpui::{
     buttons::{ButtonVariant, IconButton},
     forms::{Choice, TextInput},
@@ -9,10 +13,6 @@ use lithe_gpui::{
     primitives::IconName,
     theme::{ActiveTheme, Radius},
     typography::{Heading, Paragraph},
-};
-use gpui::{
-    App, Entity, InteractiveElement, IntoElement, ParentElement, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use crate::{

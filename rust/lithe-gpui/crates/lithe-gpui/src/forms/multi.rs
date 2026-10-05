@@ -14,7 +14,7 @@ use super::{
 use crate::{
     data_display::Tag,
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// A select for several values. Chosen ones sit in the field as chips.
@@ -24,7 +24,7 @@ pub struct MultiSelect {
     choices: Vec<Choice>,
     selected: Vec<SharedString>,
     placeholder: SharedString,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnValues>,
 }
 
@@ -35,7 +35,7 @@ impl MultiSelect {
             choices: choices.into_iter().collect(),
             selected: Vec::new(),
             placeholder: SharedString::from("Choose…"),
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -50,7 +50,7 @@ impl MultiSelect {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -230,5 +230,11 @@ impl RenderOnce for MultiSelect {
                     .render(window, cx),
                 )
             })
+    }
+}
+
+impl crate::theme::Sizable for MultiSelect {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

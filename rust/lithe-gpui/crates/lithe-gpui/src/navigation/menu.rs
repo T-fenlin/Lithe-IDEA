@@ -9,7 +9,7 @@ use gpui::{
 use crate::{
     forms::{Choice, OnValue, float, step, surface},
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// Which entry is open, the link under the keyboard, and where each entry sits.
@@ -132,7 +132,7 @@ impl RenderOnce for NavigationMenu {
                 .flex()
                 .items_center()
                 .gap_1()
-                .h(theme.control_height(ControlSize::Md))
+                .h(theme.control_height(Size::Medium))
                 .px_3()
                 .rounded(theme.radius(Radius::Md))
                 .border_1()

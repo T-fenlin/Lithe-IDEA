@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Window};
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     shell::{TrayIcon, TrayItem, dock_badge, set_dock_badge},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Window};
 
 use crate::{
     probe::probe,
@@ -27,58 +27,60 @@ pub fn tray(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "tray-show",
-                Button::new("tray-show").label(if shown {
+                Button::new("tray-show")
+                    .label(if shown {
                         "Remove tray icon"
                     } else {
                         "Show tray icon"
                     })
-                .variant(ButtonVariant::Outline)
-                .on_click(move |_, _, cx| {
-                    let last = last.clone();
-                    let next = match toggle.read(cx) {
-                        Some(_) => None,
-                        None => {
-                            let items = vec![
-                                TrayItem::Action(ITEMS[0].into()),
-                                TrayItem::Action(ITEMS[1].into()),
-                                TrayItem::Separator,
-                                TrayItem::Action(ITEMS[2].into()),
-                            ];
-                            let made = TrayIcon::new(
-                                "circle.hexagongrid",
-                                items,
-                                move |index, cx| {
-                                    let label = match index {
-                                        0 => ITEMS[0],
-                                        1 => ITEMS[1],
-                                        3 => ITEMS[2],
-                                        other => panic!("tray has no action at {other}"),
-                                    };
-                                    last.update(cx, |last, cx| {
-                                        *last = label.into();
-                                        cx.notify();
-                                    })
-                                },
-                                cx,
-                            );
-                            match made {
-                                Ok(icon) => Some(icon),
-                                Err(error) => {
-                                    log::error!("gallery: tray failed: {error:#}");
-                                    None
+                    .variant(ButtonVariant::Outline)
+                    .on_click(move |_, _, cx| {
+                        let last = last.clone();
+                        let next = match toggle.read(cx) {
+                            Some(_) => None,
+                            None => {
+                                let items = vec![
+                                    TrayItem::Action(ITEMS[0].into()),
+                                    TrayItem::Action(ITEMS[1].into()),
+                                    TrayItem::Separator,
+                                    TrayItem::Action(ITEMS[2].into()),
+                                ];
+                                let made = TrayIcon::new(
+                                    "circle.hexagongrid",
+                                    items,
+                                    move |index, cx| {
+                                        let label = match index {
+                                            0 => ITEMS[0],
+                                            1 => ITEMS[1],
+                                            3 => ITEMS[2],
+                                            other => panic!("tray has no action at {other}"),
+                                        };
+                                        last.update(cx, |last, cx| {
+                                            *last = label.into();
+                                            cx.notify();
+                                        })
+                                    },
+                                    cx,
+                                );
+                                match made {
+                                    Ok(icon) => Some(icon),
+                                    Err(error) => {
+                                        log::error!("gallery: tray failed: {error:#}");
+                                        None
+                                    }
                                 }
                             }
-                        }
-                    };
-                    toggle.update(cx, |tray, cx| {
-                        *tray = next;
-                        cx.notify();
-                    })
-                }),
+                        };
+                        toggle.update(cx, |tray, cx| {
+                            *tray = next;
+                            cx.notify();
+                        })
+                    }),
             ))
             .child(probe(
                 "tray-pick",
-                Button::new("tray-pick").label("Pick “Open gallery”")
+                Button::new("tray-pick")
+                    .label("Pick “Open gallery”")
                     .variant(ButtonVariant::Ghost)
                     .disabled(!shown)
                     .on_click(move |_, _, cx| {
@@ -114,13 +116,15 @@ pub fn dock(cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "badge-set",
-                Button::new("badge-set").label("Badge 3")
+                Button::new("badge-set")
+                    .label("Badge 3")
                     .variant(ButtonVariant::Outline)
                     .on_click(badge(Some("3"))),
             ))
             .child(probe(
                 "badge-clear",
-                Button::new("badge-clear").label("Clear")
+                Button::new("badge-clear")
+                    .label("Clear")
                     .variant(ButtonVariant::Ghost)
                     .on_click(badge(None)),
             ))

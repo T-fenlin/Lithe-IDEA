@@ -12,7 +12,7 @@ use crate::{
     buttons::{Button, ButtonVariant},
     forms::Pick,
     primitives::tab_stop,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{Ellipsis, RelativeTime},
 };
 
@@ -182,9 +182,10 @@ impl RenderOnce for PromptVersionHistory {
             .clone()
             .filter(|_| chosen > 0)
             .map(|restore| {
-                Button::new((self.id.clone(), "restore")).label("Restore")
+                Button::new((self.id.clone(), "restore"))
+                    .label("Restore")
                     .variant(ButtonVariant::Secondary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| {
                         log::info!("prompt versions: restore {chosen}");
                         restore(chosen, window, cx)

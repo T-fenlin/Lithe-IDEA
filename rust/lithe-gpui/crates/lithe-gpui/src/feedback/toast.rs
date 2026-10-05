@@ -13,7 +13,7 @@ use crate::{
     forms::Run,
     motion,
     primitives::{Icon, IconName, Severity, raise},
-    theme::{ActiveTheme, ControlSize, Elevation, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, Elevation, IconSize, Radius, Size, TextSize},
 };
 
 /// How long a toast stays unless told otherwise.
@@ -313,22 +313,24 @@ fn card(
         )
         .when_some(toast.undo, |card, undo| {
             card.child(
-                Button::new((key.clone(), "undo")).label("Undo")
-                    .size(ControlSize::Sm)
+                Button::new((key.clone(), "undo"))
+                    .label("Undo")
+                    .size(Size::Small)
                     .on_click(send(Some(undo))),
             )
         })
         .when_some(toast.action, |card, (label, run)| {
             card.child(
-                Button::new((key.clone(), "action")).label(label)
-                    .size(ControlSize::Sm)
+                Button::new((key.clone(), "action"))
+                    .label(label)
+                    .size(Size::Small)
                     .on_click(send(Some(run))),
             )
         })
         .child(
             IconButton::new((key.clone(), "close"), IconName::X)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(send(None)),
         )
         .children(countdown);

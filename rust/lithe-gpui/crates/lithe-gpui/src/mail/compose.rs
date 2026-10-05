@@ -12,7 +12,7 @@ use crate::{
     chat::{Attachment, AttachmentChip},
     forms::{Choice, Input, OnValue, Run, TagInput, TextInput, is_email},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// What a composer hands over: the addresses, the subject and the words.
@@ -262,9 +262,10 @@ impl RenderOnce for MailComposer {
         };
         let showing = state.clone();
         let copies_button = (!copies).then(|| {
-            Button::new((self.id.clone(), "copies")).label("Cc Bcc")
+            Button::new((self.id.clone(), "copies"))
+                .label("Cc Bcc")
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(move |_, _, cx| {
                     log::info!("mail composer: shows Cc and Bcc");
                     showing.update(cx, |composing, cx| {

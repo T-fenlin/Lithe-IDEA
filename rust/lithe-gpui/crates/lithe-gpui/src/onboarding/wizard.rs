@@ -10,7 +10,7 @@ use crate::{
     forms::{Choice, Run},
     motion::ProgressBar,
     navigation::Wizard,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 type OnStep = Rc<dyn Fn(usize, &mut Window, &mut App)>;
@@ -109,9 +109,10 @@ impl RenderOnce for OnboardingWizard {
         let reached = current + 1;
         let place = format!("Step {reached} of {count}");
         let skip = self.on_skip.map(|run| {
-            Button::new((id.clone(), "skip")).label("Skip for now")
+            Button::new((id.clone(), "skip"))
+                .label("Skip for now")
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(move |_, window, cx| {
                     log::info!("onboarding wizard: skipped at step {current}");
                     run(window, cx)

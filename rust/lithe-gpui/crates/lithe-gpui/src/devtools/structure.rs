@@ -267,7 +267,8 @@ impl RenderOnce for TableStructureEditor {
             .children(rows)
             .child(
                 div().flex().child(
-                    Button::new((id, "add")).label("Add field")
+                    Button::new((id, "add"))
+                        .label("Add field")
                         .variant(ButtonVariant::Secondary)
                         .on_click(move |_, window, cx| add((), window, cx)),
                 ),
@@ -467,7 +468,8 @@ impl RenderOnce for IndexManager {
                             .child(div().flex_1().min_w_0().child(methods)),
                     )
                     .child(
-                        Button::new((id, "create")).label("Create index")
+                        Button::new((id, "create"))
+                            .label("Create index")
                             .variant(ButtonVariant::Primary)
                             .disabled(!ready)
                             .on_click(move |_, window, cx| {

@@ -8,7 +8,7 @@ use super::{Dock, DockSide, Spot};
 use crate::{
     layout::{FloatingPanel, resize_handle},
     primitives::{DragGhost, Icon},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 struct DraggedPanel {
@@ -29,7 +29,7 @@ impl Dock {
             .flex()
             .items_center()
             .gap_0p5()
-            .h(theme.control_height(ControlSize::Lg))
+            .h(theme.control_height(Size::Large))
             .px_1()
             .border_b_1()
             .border_color(theme.colors.border)
@@ -47,7 +47,7 @@ impl Dock {
                     .items_center()
                     .gap_1p5()
                     .px_2()
-                    .h(theme.control_height(ControlSize::Sm))
+                    .h(theme.control_height(Size::Small))
                     .rounded(theme.radius(Radius::Md))
                     .cursor_pointer()
                     .text_size(theme.text_size(TextSize::Sm))

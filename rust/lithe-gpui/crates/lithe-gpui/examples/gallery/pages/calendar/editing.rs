@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{ToSpan, civil::Weekday};
 use lithe_gpui::{
     calendar::{AvailabilityPicker, EventDraft, EventEditor, Frequency, Recurrence, When},
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{ToSpan, civil::Weekday};
 
 use super::{here, plan, quiet};
 use crate::{

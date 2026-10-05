@@ -1,12 +1,12 @@
+use gpui::{
+    App, ElementId, IntoElement, ObjectFit, ParentElement, SharedString, Styled, Window, div, px,
+};
+use jiff::{civil::date, tz::TimeZone};
 use lithe_gpui::{
     messaging::{ChatMessage, Gif, GifPicker, Gifs, Sticker, StickerPack, StickerPicker},
     primitives::Image,
     theme::{ActiveTheme, Radius, TextSize},
 };
-use gpui::{
-    App, ElementId, IntoElement, ObjectFit, ParentElement, SharedString, Styled, Window, div, px,
-};
-use jiff::{civil::date, tz::TimeZone};
 
 use crate::{
     probe::probe,

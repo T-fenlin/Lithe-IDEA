@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use super::Tone;
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 /// What marks an event on the rail.
@@ -80,7 +80,7 @@ impl RenderOnce for TimelineItem {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
-        let slot = theme.control_height(ControlSize::Sm);
+        let slot = theme.control_height(Size::Small);
         let dot = theme.status_dot() * 1.34;
         let (marker, inset) = match self.marker {
             Marker::Dot => (

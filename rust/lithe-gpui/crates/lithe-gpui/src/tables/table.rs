@@ -22,7 +22,7 @@ use crate::{
     lists::{Pick, picked},
     navigation::Pagination,
     primitives::tab_stop,
-    theme::{ActiveTheme, ControlSize, Density, TextSize},
+    theme::{ActiveTheme, Density, Size, TextSize},
     typography::Caption,
 };
 
@@ -278,7 +278,7 @@ impl RenderOnce for DataTable {
                     .collect(),
             ),
             height,
-            lead: theme.control_height(ControlSize::Md),
+            lead: theme.control_height(Size::Medium),
             narrowest,
         });
         let all = selected.as_ref().map(|selected| {

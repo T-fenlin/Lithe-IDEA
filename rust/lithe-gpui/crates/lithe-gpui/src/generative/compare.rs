@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     buttons::{Button, ButtonVariant},
     data_display::{Badge, Tone},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -88,9 +88,10 @@ impl RenderOnce for ABCompareView {
         let decided = self.verdict.is_some();
         let judge = |verdict: Verdict, label: SharedString, key: String| {
             self.on_verdict.clone().map(|judge| {
-                Button::new((self.id.clone(), key)).label(label)
+                Button::new((self.id.clone(), key))
+                    .label(label)
                     .variant(ButtonVariant::Secondary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| {
                         log::info!("comparison: {verdict:?}");
                         judge(verdict, window, cx)

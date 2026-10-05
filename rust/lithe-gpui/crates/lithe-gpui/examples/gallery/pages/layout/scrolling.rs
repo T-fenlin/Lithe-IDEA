@@ -1,10 +1,10 @@
-use lithe_gpui::{
-    layout::{ScrollArea, ScrollShadow, ScrollToTop, Scrollbar, StickyHeader},
-    theme::{ActiveTheme, Radius, TextSize},
-};
 use gpui::{
     App, Axis, FontWeight, InteractiveElement, IntoElement, ParentElement, ScrollHandle,
     SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+};
+use lithe_gpui::{
+    layout::{ScrollArea, ScrollShadow, ScrollToTop, Scrollbar, StickyHeader},
+    theme::{ActiveTheme, Radius, TextSize},
 };
 
 use crate::{probe::probe, ui::section};

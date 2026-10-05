@@ -13,7 +13,7 @@ use crate::{
         replace_trigger,
     },
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::Kbd,
 };
 
@@ -43,7 +43,7 @@ impl RenderOnce for AttachmentButton {
         let pick = self.on_pick;
         IconButton::new(self.id, IconName::Paperclip)
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .tooltip("Attach files")
             .on_click(move |_, window, cx| {
                 let pick = pick.clone();
@@ -99,7 +99,7 @@ impl RenderOnce for SendButton {
         match self.on_stop {
             Some(stop) => IconButton::new(self.id, IconName::Square)
                 .variant(ButtonVariant::Secondary)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Stop")
                 .on_click(move |_, window, cx| {
                     log::info!("send button: stop");
@@ -109,7 +109,7 @@ impl RenderOnce for SendButton {
                 let send = self.on_send;
                 IconButton::new(self.id, IconName::ArrowUp)
                     .variant(ButtonVariant::Primary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip("Send")
                     .disabled(!self.ready)
                     .on_click(move |_, window, cx| {

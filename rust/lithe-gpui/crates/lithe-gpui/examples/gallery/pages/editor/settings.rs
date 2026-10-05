@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     editor::{
         KeySource, Keybinding, KeybindingsEditor, Setting, SettingValue, SettingsEditor,
@@ -5,7 +6,6 @@ use lithe_gpui::{
     },
     forms::{TextInput, json_highlights},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::ui::{keep, section, set};
 

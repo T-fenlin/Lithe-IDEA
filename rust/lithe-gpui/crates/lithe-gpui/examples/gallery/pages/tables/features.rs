@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems};
 use lithe_gpui::{
     data_display::{DescriptionList, Tone},
     tables::{Cell, Column, DataTable, Row},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems};
 
 use super::core::{order_columns, order_rows};
 use crate::{

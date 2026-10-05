@@ -11,7 +11,7 @@ use crate::{
     motion::Pulse,
     overlays::Popover,
     primitives::FocusRing,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
 };
 
 /// The dot: a Tab stop that opens the tip on a press or on Enter.
@@ -109,9 +109,10 @@ impl RenderOnce for Hotspot {
                     .child(prose(body).text_color(theme.colors.fg_muted))
                     .child(
                         div().flex().justify_end().pt_1().child(
-                            Button::new(got_it).label("Got it")
+                            Button::new(got_it)
+                                .label("Got it")
                                 .variant(ButtonVariant::Primary)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .on_click(move |_, window, cx| {
                                     log::info!("hotspot: dismissed");
                                     close(window, cx);

@@ -1,13 +1,13 @@
+use gpui::{
+    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Window,
+    WindowOptions, div,
+};
 use lithe_gpui::{
     Assets,
     buttons::Button,
     i18n::{Direction, I18n},
     primitives::FocusScope,
     theme::ActiveTheme,
-};
-use gpui::{
-    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Window,
-    WindowOptions, div,
 };
 
 struct Words {
@@ -43,7 +43,8 @@ impl Render for Words {
             .text_color(theme.colors.fg)
             .child(row)
             .child(
-                Button::new("locale").label(i18n.text("switch", &[]))
+                Button::new("locale")
+                    .label(i18n.text("switch", &[]))
                     .on_click(move |_, _, cx| I18n::set_locale(next, cx)),
             )
     }

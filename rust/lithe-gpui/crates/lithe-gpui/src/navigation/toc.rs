@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 
 use crate::{
     motion::{self, Axis, Marker, glide, measure_item, measure_origin, slide},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 /// Where a document's sections sit: shared by its anchors and its table of contents.
@@ -199,7 +199,7 @@ impl RenderOnce for TableOfContents {
                     .relative()
                     .flex()
                     .items_center()
-                    .min_h(theme.control_height(ControlSize::Sm))
+                    .min_h(theme.control_height(Size::Small))
                     .pr_2()
                     .rounded(theme.radius(Radius::Sm))
                     .text_size(theme.text_size(TextSize::Sm))

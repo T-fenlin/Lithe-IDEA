@@ -1,3 +1,4 @@
+use gpui::{App, ElementId, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     data_display::{Avatar, Badge, CountBadge, Tone},
     lists::{List, ListItem, SelectableList, SortableList, SwipeAction, SwipeableListItem},
@@ -5,7 +6,6 @@ use lithe_gpui::{
     theme::{ActiveTheme, AvatarSize, IconSize, Radius},
     typography::Caption,
 };
-use gpui::{App, ElementId, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

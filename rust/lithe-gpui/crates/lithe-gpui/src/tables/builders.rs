@@ -11,7 +11,7 @@ use crate::{
     forms::{Choice, Input, InputEvent, Select, TextInput},
     motion::Reorder,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
 
 type OnFilters = Rc<dyn Fn(&[FilterRule], bool, &mut Window, &mut App)>;
@@ -175,7 +175,7 @@ impl RenderOnce for FilterBuilder {
                                 choices(&self.columns),
                             )
                             .selected(rule.column.clone())
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_change(move |key, window, cx| {
                                 let mut next = for_column.clone();
                                 next[ix].column = key.clone();
@@ -187,7 +187,7 @@ impl RenderOnce for FilterBuilder {
                         div().w(theme.label_width() * 0.75).child(
                             Select::new((id.clone(), format!("test-{ix}")), tests.clone())
                                 .selected(rule.test.label())
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .on_change(move |label, window, cx| {
                                     let mut next = for_test.clone();
                                     next[ix].test = *Test::ALL
@@ -199,12 +199,12 @@ impl RenderOnce for FilterBuilder {
                         ),
                     )
                     .child(div().flex_1().when(rule.test.takes_value(), |slot| {
-                        slot.child(Input::new(&entities[ix]).size(ControlSize::Sm))
+                        slot.child(Input::new(&entities[ix]).size(Size::Small))
                     }))
                     .child(
                         IconButton::new((id.clone(), format!("remove-{ix}")), IconName::X)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Remove")
                             .on_click(move |_, window, cx| {
                                 let mut next = for_remove.clone();
@@ -223,10 +223,11 @@ impl RenderOnce for FilterBuilder {
                 .items_center()
                 .justify_between()
                 .child(
-                    Button::new((self.id.clone(), "add")).label("Add rule")
+                    Button::new((self.id.clone(), "add"))
+                        .label("Add rule")
                         .icon(IconName::Plus)
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             let mut next = to_add.clone();
                             next.push(FilterRule {
@@ -244,7 +245,7 @@ impl RenderOnce for FilterBuilder {
                         )
                         .segment("all", "Match all", None)
                         .segment("any", "Match any", None)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_change(move |value, window, cx| {
                             join(to_join.clone(), value.as_ref() == "any", window, cx)
                         }),
@@ -349,7 +350,7 @@ impl RenderOnce for SortBuilder {
                                     choices(&open(&self.columns, &keys, &sort.column)),
                                 )
                                 .selected(sort.column.clone())
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .on_change(
                                     move |key, window, cx| {
                                         let mut next = for_column.clone();
@@ -366,7 +367,7 @@ impl RenderOnce for SortBuilder {
                             )
                             .segment("up", "Ascending", Some(IconName::ArrowUp))
                             .segment("down", "Descending", Some(IconName::ArrowDown))
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_change(move |way, window, cx| {
                                 let mut next = for_flip.clone();
                                 next[ix].rising = way.as_ref() == "up";
@@ -376,7 +377,7 @@ impl RenderOnce for SortBuilder {
                         .child(
                             IconButton::new((id.clone(), format!("sort-remove-{ix}")), IconName::X)
                                 .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
+                                .size(Size::Small)
                                 .tooltip("Remove")
                                 .on_click(move |_, window, cx| {
                                     let mut next = for_remove.clone();
@@ -394,10 +395,11 @@ impl RenderOnce for SortBuilder {
             .gap_1()
             .child(list)
             .children(unused.map(|column| {
-                Button::new((self.id.clone(), "add")).label("Add sort")
+                Button::new((self.id.clone(), "add"))
+                    .label("Add sort")
                     .icon(IconName::Plus)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| {
                         let mut next = add.1.clone();
                         next.push(SortKey {

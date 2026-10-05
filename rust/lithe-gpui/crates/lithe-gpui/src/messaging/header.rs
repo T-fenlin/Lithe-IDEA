@@ -9,7 +9,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     forms::Run,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -77,10 +77,11 @@ impl RenderOnce for ChannelHeader {
         let counted =
             |key: &'static str, icon: IconName, tip: &'static str, what: Option<(usize, Run)>| {
                 what.map(|(count, run)| {
-                    Button::new((self.id.clone(), key)).label(count.to_string())
+                    Button::new((self.id.clone(), key))
+                        .label(count.to_string())
                         .icon(icon)
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("channel header: {tip}");
                             run(window, cx)
@@ -90,7 +91,7 @@ impl RenderOnce for ChannelHeader {
         let call = self.on_call.map(|run| {
             IconButton::new((self.id.clone(), "call"), IconName::Phone)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Start a call")
                 .on_click(move |_, window, cx| {
                     log::info!("channel header: call");

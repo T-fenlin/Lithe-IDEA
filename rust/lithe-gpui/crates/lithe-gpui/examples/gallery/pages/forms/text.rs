@@ -1,11 +1,11 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::IconButton,
     forms::{Input, InputAddon, InputGroup, PasswordInput, SearchInput, TextInput},
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
     typography::Caption,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,
@@ -49,14 +49,14 @@ pub fn input(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "small",
                 div()
                     .w(px(200.0))
-                    .child(Input::new(&small).size(ControlSize::Sm)),
+                    .child(Input::new(&small).size(Size::Small)),
                 cx,
             ))
             .child(specimen(
                 "large",
                 div()
                     .w(px(240.0))
-                    .child(Input::new(&large).size(ControlSize::Lg)),
+                    .child(Input::new(&large).size(Size::Large)),
                 cx,
             ))
             .child(specimen(
@@ -156,7 +156,7 @@ pub fn group(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 div().w(px(200.0)).child(
                     InputGroup::new(&share).after(InputAddon::new(
                         IconButton::new("group-copy", IconName::Copy)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Copy"),
                     )),
                 ),

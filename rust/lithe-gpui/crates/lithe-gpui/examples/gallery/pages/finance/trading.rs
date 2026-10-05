@@ -1,3 +1,5 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::{Timestamp, tz::TimeZone};
 use lithe_gpui::{
     finance::{
         Fill, GreeksTable, Leg, LeverageSlider, MarginIndicator, OptionChain, OptionQuote, Order,
@@ -6,8 +8,6 @@ use lithe_gpui::{
     },
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::{Timestamp, tz::TimeZone};
 
 use super::markets::WIDE;
 use crate::{

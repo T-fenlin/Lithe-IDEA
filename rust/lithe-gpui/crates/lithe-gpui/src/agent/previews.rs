@@ -13,7 +13,7 @@ use crate::{
     layout::on_axis,
     motion::{self, Spinner},
     primitives::{FocusRing, Icon, IconName, Image, checked_ratio, framed, tab_stop},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -386,7 +386,7 @@ impl RenderOnce for LivePreview {
         let reload = self.on_reload.map(|reload| {
             IconButton::new((self.id.clone(), "reload"), IconName::RotateCw)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Reload")
                 .on_click(move |_, window, cx| {
                     log::info!("live preview: reload");

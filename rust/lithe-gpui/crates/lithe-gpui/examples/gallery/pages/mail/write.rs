@@ -1,9 +1,9 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     chat::Attachment,
     mail::{Contact, MailComposer, ScheduleSend, SignatureEditor},
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::{day_and_hour, quiet};
 use crate::{

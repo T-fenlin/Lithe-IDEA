@@ -1,13 +1,13 @@
+use gpui::{
+    App, AppContext, Bounds, Context, FocusHandle, IntoElement, ParentElement, Render, Styled,
+    TitlebarOptions, Window, WindowBounds, WindowOptions, px, size,
+};
 use lithe_gpui::{
     Assets,
     buttons::Button,
     primitives::FocusScope,
     theme::{ActiveTheme, Mode, Theme},
     typography::{Heading, Paragraph},
-};
-use gpui::{
-    App, AppContext, Bounds, Context, FocusHandle, IntoElement, ParentElement, Render, Styled,
-    TitlebarOptions, Window, WindowBounds, WindowOptions, px, size,
 };
 
 struct Start {
@@ -35,7 +35,8 @@ impl Render for Start {
                 "Every Ely component reads the theme, so one call turns them all.",
             ))
             .child(
-                Button::new("mode").label(format!("{next:?} mode"))
+                Button::new("mode")
+                    .label(format!("{next:?} mode"))
                     .on_click(move |_, _, cx| Theme::set_mode(next, cx)),
             )
     }

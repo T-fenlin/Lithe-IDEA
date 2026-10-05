@@ -1,14 +1,14 @@
 use std::{borrow::Cow, f32::consts::FRAC_PI_4};
 
+use gpui::{
+    App, AppContext, AssetSource, Context, FocusHandle, IntoElement, ParentElement, Radians,
+    Render, SharedString, Styled, Window, WindowOptions, div,
+};
 use lithe_gpui::{
     Assets,
     files::FileIcon,
     primitives::{FocusScope, Icon, IconName, IconTheme},
     theme::{ActiveTheme, IconSize},
-};
-use gpui::{
-    App, AppContext, AssetSource, Context, FocusHandle, IntoElement, ParentElement, Radians,
-    Render, SharedString, Styled, Window, WindowOptions, div,
 };
 
 const CUSTOM_ICON: &str = "app-icons/mark.svg";

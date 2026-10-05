@@ -12,7 +12,7 @@ use crate::{
     forms::{OnFlag, Pick, Run},
     motion,
     primitives::{IconName, Image, checked_ratio, framed, tab_stop},
-    theme::{ActiveTheme, AvatarSize, ControlSize, Radius},
+    theme::{ActiveTheme, AvatarSize, Radius, Size},
 };
 
 /// Variations of one picture: the chosen one large, every one as a thumbnail to choose, and ways on from the chosen: vary it a little or a lot, or upscale it. The large picture fades in on each choice.
@@ -109,9 +109,10 @@ impl RenderOnce for VariationPicker {
         };
         let vary = |strong: bool, label: &'static str| {
             self.on_vary.clone().map(|vary| {
-                Button::new((self.id.clone(), label)).label(label)
+                Button::new((self.id.clone(), label))
+                    .label(label)
                     .variant(ButtonVariant::Secondary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .icon(IconName::Shuffle)
                     .on_click(move |_, window, cx| {
                         log::info!("variation picker: vary, strong {strong}");
@@ -177,9 +178,10 @@ impl RenderOnce for VariationPicker {
                     .children(vary(false, "Vary subtly"))
                     .children(vary(true, "Vary strongly"))
                     .children(self.on_upscale.clone().map(|upscale| {
-                        Button::new((self.id.clone(), "upscale")).label("Upscale")
+                        Button::new((self.id.clone(), "upscale"))
+                            .label("Upscale")
                             .variant(ButtonVariant::Secondary)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .icon(IconName::Maximize2)
                             .on_click(move |_, window, cx| {
                                 log::info!("variation picker: upscale");

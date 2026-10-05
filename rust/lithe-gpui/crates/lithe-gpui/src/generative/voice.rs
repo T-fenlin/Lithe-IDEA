@@ -11,7 +11,7 @@ use crate::{
     data_display::Badge,
     forms::OnValue,
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -129,7 +129,7 @@ impl RenderOnce for TTSVoicePicker {
                         },
                     )
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(if sounding {
                         "Stop the sample"
                     } else {

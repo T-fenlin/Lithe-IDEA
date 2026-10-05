@@ -1,11 +1,11 @@
-use lithe_gpui::{
-    Assets, buttons::Button, primitives::FocusScope, rendering::RenderSurface, theme::ActiveTheme,
-};
 use gpui::{
     App, AppContext, Context, DevicePixels, FocusHandle, IntoElement, ParentElement, Render,
     RenderImage, Size, Styled, Window, WindowOptions,
 };
 use image::{Frame, RgbaImage};
+use lithe_gpui::{
+    Assets, buttons::Button, primitives::FocusScope, rendering::RenderSurface, theme::ActiveTheme,
+};
 
 struct Stripes {
     focus: FocusHandle,
@@ -42,12 +42,14 @@ impl Render for Stripes {
                     .revision(u64::from(count)),
             )
             .child(
-                Button::new("more").label("More stripes").on_click(move |_, _, cx| {
-                    this.update(cx, |stripes, cx| {
-                        stripes.count += 2;
-                        cx.notify();
-                    });
-                }),
+                Button::new("more")
+                    .label("More stripes")
+                    .on_click(move |_, _, cx| {
+                        this.update(cx, |stripes, cx| {
+                            stripes.count += 2;
+                            cx.notify();
+                        });
+                    }),
             )
     }
 }

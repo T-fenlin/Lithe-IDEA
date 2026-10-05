@@ -1,3 +1,4 @@
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     canvas::{
         Artboard, Corner, Frame, Guide, InfiniteCanvas, MiniMap, Shape, ShapeKind, Viewport,
@@ -5,7 +6,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

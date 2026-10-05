@@ -14,7 +14,7 @@ use crate::{
     forms::{OnValue, Run},
     overlays::HoverCard,
     primitives::{FocusRing, hand_back, hold_focus},
-    theme::{ActiveTheme, AvatarSize, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, Radius, Size, TextSize},
     typography::tabular,
 };
 
@@ -319,9 +319,10 @@ impl RenderOnce for FollowMode {
                             .child(format!("Following {}", peer.name)),
                     )
                     .child(
-                        Button::new((self.id.clone(), "stop")).label("Stop following")
+                        Button::new((self.id.clone(), "stop"))
+                            .label("Stop following")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .shortcut("escape")
                             .on_click(move |_, window, cx| {
                                 log::info!("follow mode: stopped");

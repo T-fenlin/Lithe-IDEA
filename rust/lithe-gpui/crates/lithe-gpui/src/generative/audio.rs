@@ -10,7 +10,7 @@ use crate::{
     forms::{OnFlag, Run},
     motion::ProgressBar,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{
         Ellipsis,
         format::{DurationStyle, duration, percent},
@@ -112,7 +112,7 @@ impl RenderOnce for AudioGenerationPlayer {
         let action = |key: &'static str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
                 IconButton::new((self.id.clone(), key), icon)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(tip)
                     .disabled(making.is_some())
                     .on_click(move |_, window, cx| {

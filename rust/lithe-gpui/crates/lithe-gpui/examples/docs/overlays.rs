@@ -1,3 +1,7 @@
+use gpui::{
+    App, AppContext, Context, Entity, FocusHandle, IntoElement, ParentElement, Render, Styled,
+    Window, WindowOptions, div,
+};
 use lithe_gpui::{
     Assets,
     buttons::Button,
@@ -5,10 +9,6 @@ use lithe_gpui::{
     overlays::{Dialog, Popover},
     primitives::{FocusScope, Severity},
     theme::ActiveTheme,
-};
-use gpui::{
-    App, AppContext, Context, Entity, FocusHandle, IntoElement, ParentElement, Render, Styled,
-    Window, WindowOptions, div,
 };
 
 struct Layers {
@@ -31,10 +31,13 @@ impl Render for Layers {
             })
             .detail("It leaves the trash after 30 days.")
             .action(|close| {
-                Button::new("cancel").label("Cancel").on_click(move |_, window, cx| close(window, cx))
+                Button::new("cancel")
+                    .label("Cancel")
+                    .on_click(move |_, window, cx| close(window, cx))
             })
             .action(move |close| {
-                Button::new("confirm").label("Delete")
+                Button::new("confirm")
+                    .label("Delete")
                     .primary()
                     .on_click(move |_, window, cx| {
                         close(window, cx);
@@ -60,14 +63,14 @@ impl Render for Layers {
                     .child(Popover::new("details", "Details", |_, _| {
                         div().p_3().child("Size 4 KB · Edited today")
                     }))
-                    .child(
-                        Button::new("delete-open").label("Delete…").on_click(move |_, _, cx| {
+                    .child(Button::new("delete-open").label("Delete…").on_click(
+                        move |_, _, cx| {
                             opener.update(cx, |layers, cx| {
                                 layers.open = true;
                                 cx.notify();
                             })
-                        }),
-                    ),
+                        },
+                    )),
             )
             .children(dialog)
             .child(ToastViewport::new("toasts", &self.toaster))

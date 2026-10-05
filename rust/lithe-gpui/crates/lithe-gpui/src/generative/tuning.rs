@@ -11,7 +11,7 @@ use crate::{
     data_display::{Badge, Tone},
     forms::Run,
     motion::ProgressBar,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{Ellipsis, format::percent, tabular},
 };
 
@@ -122,9 +122,10 @@ impl RenderOnce for FineTuneJobCard {
         let live = matches!(self.phase, TunePhase::Queued(_) | TunePhase::Running(..));
         let action = |key: &'static str, label: &'static str, run: Option<Run>| {
             run.map(|run| {
-                Button::new((self.id.clone(), key)).label(label)
+                Button::new((self.id.clone(), key))
+                    .label(label)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| {
                         log::info!("fine-tune job: {key}");
                         run(window, cx)

@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     buttons::SegmentedControl,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -139,7 +139,7 @@ impl RenderOnce for ToolRegistry {
                                 (self.id.clone(), format!("access-{ix}")),
                                 tool.access.key(),
                             )
-                            .size(ControlSize::Sm),
+                            .size(Size::Small),
                             |control, (_, key, label)| control.segment(*key, *label, None),
                         );
                         let control = match access {

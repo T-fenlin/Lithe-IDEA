@@ -9,7 +9,7 @@ use crate::{
     forms::OnValue,
     motion::ProgressBar,
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::{
         Ellipsis,
         format::{DurationStyle, duration, file_size, percent},
@@ -158,7 +158,7 @@ impl RenderOnce for ModelDownloadManager {
             handler.clone().map(|handler| {
                 let key = key.clone();
                 IconButton::new((self.id.clone(), format!("{what}-{key}")), glyph)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .tooltip(tip)
                     .on_click(move |_, window, cx| {
                         log::info!("model downloads: {what} {key}");
@@ -184,9 +184,10 @@ impl RenderOnce for ModelDownloadManager {
                 DownloadState::Failed(_) => vec![
                     self.on_retry.clone().map(|retry| {
                         let key = key.clone();
-                        Button::new((self.id.clone(), format!("retry-{key}"))).label("Retry")
+                        Button::new((self.id.clone(), format!("retry-{key}")))
+                            .label("Retry")
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .on_click(move |_, window, cx| {
                                 log::info!("model downloads: retry {key}");
                                 retry(&key, window, cx)

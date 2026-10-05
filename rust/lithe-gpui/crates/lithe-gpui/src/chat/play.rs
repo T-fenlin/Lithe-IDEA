@@ -12,7 +12,7 @@ use crate::{
     documents::source,
     forms::OnFlag,
     primitives::{FocusRing, Icon, IconName, Image, tab_stop},
-    theme::{ActiveTheme, ContainerSize, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, ContainerSize, IconSize, Radius, Size, TextSize},
     typography::{DurationStyle, format::duration, tabular},
 };
 
@@ -95,7 +95,7 @@ impl RenderOnce for AudioMessage {
         };
         let count = self.peaks.len();
         let playing = self.playing;
-        let tall = theme.control_height(ControlSize::Md);
+        let tall = theme.control_height(Size::Medium);
         div()
             .max_w(theme.prose_width())
             .flex()

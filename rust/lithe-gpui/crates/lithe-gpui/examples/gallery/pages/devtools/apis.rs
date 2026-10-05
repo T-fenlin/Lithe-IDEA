@@ -1,3 +1,7 @@
+use gpui::{
+    App, AppContext as _, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+};
+use jiff::Timestamp;
 use lithe_gpui::{
     devtools::{
         ApiRequest, ApiRequestBuilder, ApiResponse, Auth, CollectionTree, Direction, Environment,
@@ -8,10 +12,6 @@ use lithe_gpui::{
     forms::TextInput,
     theme::{ActiveTheme, Radius},
 };
-use gpui::{
-    App, AppContext as _, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
-};
-use jiff::Timestamp;
 
 use crate::ui::{change, keep, section};
 

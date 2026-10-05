@@ -21,7 +21,7 @@ use crate::{
     layout::seeded::use_seeded,
     primitives::IconName,
     tables::{Cell, Column, DataTable, Row},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::fresh,
 };
 
@@ -156,7 +156,7 @@ impl RenderOnce for DatabaseView {
                 SegmentedControl::new((id.clone(), "layouts"), shown.words()),
                 |switch, each| switch.segment(each.words(), each.words(), Some(each.icon())),
             )
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_change({
                 let (id, layout) = (id.clone(), layout.clone());
                 move |words: &SharedString, _, cx| {

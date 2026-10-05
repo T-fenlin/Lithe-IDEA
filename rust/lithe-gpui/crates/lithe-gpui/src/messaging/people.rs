@@ -11,7 +11,7 @@ use crate::{
     data_display::{Avatar, Presence},
     forms::Run,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, AvatarSize, IconSize, Size, TextSize},
     typography::{Ellipsis, format, fresh},
 };
 
@@ -147,10 +147,11 @@ impl RenderOnce for UserProfileCard {
         let name = self.name.clone();
         let message = self.on_message.map(|run| {
             let name = name.clone();
-            Button::new((self.id.clone(), "message")).label("Message")
+            Button::new((self.id.clone(), "message"))
+                .label("Message")
                 .icon(IconName::MessageSquare)
                 .variant(ButtonVariant::Primary)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(move |_, window, cx| {
                     log::info!("profile card {name}: message");
                     run(window, cx)
@@ -159,7 +160,7 @@ impl RenderOnce for UserProfileCard {
         let call = self.on_call.map(|run| {
             IconButton::new((self.id.clone(), "call"), IconName::Phone)
                 .variant(ButtonVariant::Outline)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Call")
                 .on_click(move |_, window, cx| {
                     log::info!("profile card {name}: call");

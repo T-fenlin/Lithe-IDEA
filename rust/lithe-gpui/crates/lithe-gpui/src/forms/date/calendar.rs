@@ -13,7 +13,7 @@ use crate::{
     layout::seeded::use_seeded,
     motion,
     primitives::{IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 const WEEKDAYS: [&str; 7] = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
@@ -199,7 +199,7 @@ impl RenderOnce for Calendar {
         };
         let theme = cx.theme();
         let colors = &theme.colors;
-        let cell = theme.control_height(ControlSize::Md);
+        let cell = theme.control_height(Size::Medium);
         let header = div()
             .flex()
             .items_center()
@@ -220,7 +220,7 @@ impl RenderOnce for Calendar {
                         let (turn, cursor) = (turn.clone(), cursor.clone());
                         IconButton::new((self.id.clone(), "prev"), IconName::ChevronLeft)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Previous month")
                             .on_click(move |_, _, cx| {
                                 let next = at.saturating_sub(1.month());
@@ -232,7 +232,7 @@ impl RenderOnce for Calendar {
                         let (turn, cursor) = (turn.clone(), cursor.clone());
                         IconButton::new((self.id.clone(), "next"), IconName::ChevronRight)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Next month")
                             .on_click(move |_, _, cx| {
                                 let next = at.saturating_add(1.month());

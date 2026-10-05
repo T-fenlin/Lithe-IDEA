@@ -11,7 +11,7 @@ use crate::{
     layout::ScrollArea,
     motion::ProgressBar,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Caption, Label, Title},
 };
 
@@ -43,7 +43,7 @@ fn progress_line(state: UpdateState) -> Option<AnyElement> {
     }
 }
 
-fn buttons(state: UpdateState, actions: &Actions, size: ControlSize) -> Vec<Button> {
+fn buttons(state: UpdateState, actions: &Actions, size: Size) -> Vec<Button> {
     let wire = |button: Button, action: &Option<Action>| {
         action.clone().map(|action| {
             button
@@ -52,7 +52,9 @@ fn buttons(state: UpdateState, actions: &Actions, size: ControlSize) -> Vec<Butt
         })
     };
     let later = wire(
-        Button::new("update-later").label("Later").variant(ButtonVariant::Ghost),
+        Button::new("update-later")
+            .label("Later")
+            .variant(ButtonVariant::Ghost),
         &actions.later,
     );
     let main = match state {
@@ -62,7 +64,9 @@ fn buttons(state: UpdateState, actions: &Actions, size: ControlSize) -> Vec<Butt
         ),
         UpdateState::Downloading(_) => None,
         UpdateState::Ready => wire(
-            Button::new("update-restart").label("Restart to update").primary(),
+            Button::new("update-restart")
+                .label("Restart to update")
+                .primary(),
             &actions.restart,
         ),
     };
@@ -152,12 +156,12 @@ impl RenderOnce for UpdateBanner {
                     later: None,
                     ..self.actions.clone()
                 },
-                ControlSize::Sm,
+                Size::Small,
             ))
             .when_some(dismiss, |banner, dismiss| {
                 banner.child(
                     IconButton::new("update-dismiss", IconName::X)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| dismiss(window, cx)),
                 )
             })
@@ -264,7 +268,7 @@ impl RenderOnce for UpdateDialog {
             .child(div().flex().justify_end().gap_2().children(buttons(
                 self.state,
                 &self.actions,
-                ControlSize::Md,
+                Size::Medium,
             )))
     }
 }

@@ -1,3 +1,4 @@
+use gpui::{AnyElement, App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     documents::Checklist,
     forms::DatePicker,
@@ -7,7 +8,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, TextSize},
 };
-use gpui::{AnyElement, App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::{board, quiet, team};
 use crate::{

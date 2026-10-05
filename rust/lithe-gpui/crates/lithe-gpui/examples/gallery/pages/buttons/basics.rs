@@ -1,9 +1,9 @@
+use gpui::{AnyElement, App, ElementId, IntoElement, ParentElement, Styled, div};
 use lithe_gpui::{
     buttons::{Button, ButtonGroup, ButtonVariant, IconButton},
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
 };
-use gpui::{AnyElement, App, ElementId, IntoElement, ParentElement, Styled, div};
 
 use crate::ui::{code, row, section, specimen, specimens};
 
@@ -19,21 +19,23 @@ const VARIANTS: [(ButtonVariant, &str); 7] = [
 
 pub fn basics(cx: &App) -> AnyElement {
     let sizes = [
-        (ControlSize::Sm, "Small"),
-        (ControlSize::Md, "Medium"),
-        (ControlSize::Lg, "Large"),
+        (Size::Small, "Small"),
+        (Size::Medium, "Medium"),
+        (Size::Large, "Large"),
     ];
 
     div()
         .child(
             section("Button", "Primary is ink. Color is saved for meaning.", cx)
                 .child(row().children(VARIANTS.map(|(variant, name)| {
-                    Button::new(name).label(name)
+                    Button::new(name)
+                        .label(name)
                         .variant(variant)
                         .on_click(move |_, _, _| log::info!("gallery: {name} clicked"))
                 })))
                 .child(row().children(VARIANTS.map(|(variant, name)| {
-                    Button::new(ElementId::Name(format!("{name}-off").into())).label(name)
+                    Button::new(ElementId::Name(format!("{name}-off").into()))
+                        .label(name)
                         .variant(variant)
                         .disabled(true)
                 }))),
@@ -45,7 +47,8 @@ pub fn basics(cx: &App) -> AnyElement {
                 cx,
             )
             .child(row().children(sizes.map(|(size, name)| {
-                Button::new(ElementId::Name(format!("size-{name}").into())).label(name)
+                Button::new(ElementId::Name(format!("size-{name}").into()))
+                    .label(name)
                     .primary()
                     .size(size)
             }))),
@@ -59,18 +62,21 @@ pub fn basics(cx: &App) -> AnyElement {
             .child(
                 row()
                     .child(
-                        Button::new("new").label("New file")
+                        Button::new("new")
+                            .label("New file")
                             .primary()
                             .icon(IconName::Plus),
                     )
                     .child(Button::new("share").label("Share").icon(IconName::Share2))
                     .child(
-                        Button::new("sort").label("Sort")
+                        Button::new("sort")
+                            .label("Sort")
                             .variant(ButtonVariant::Ghost)
                             .trailing_icon(IconName::ChevronDown),
                     )
                     .child(
-                        Button::new("delete").label("Delete")
+                        Button::new("delete")
+                            .label("Delete")
                             .variant(ButtonVariant::Danger)
                             .icon(IconName::Trash2),
                     ),
@@ -128,7 +134,8 @@ pub fn basics(cx: &App) -> AnyElement {
                 row()
                     .child(Button::new("hint-save").label("Save").shortcut("cmd-s"))
                     .child(
-                        Button::new("hint-find").label("Find")
+                        Button::new("hint-find")
+                            .label("Find")
                             .variant(ButtonVariant::Ghost)
                             .icon(IconName::Search)
                             .shortcut("cmd-shift-f"),
@@ -148,12 +155,14 @@ pub fn basics(cx: &App) -> AnyElement {
                     .child(
                         ButtonGroup::new()
                             .button(
-                                Button::new("group-prev").label("Previous")
+                                Button::new("group-prev")
+                                    .label("Previous")
                                     .variant(ButtonVariant::Outline)
                                     .icon(IconName::ChevronLeft),
                             )
                             .button(
-                                Button::new("group-next").label("Next")
+                                Button::new("group-next")
+                                    .label("Next")
                                     .variant(ButtonVariant::Outline)
                                     .trailing_icon(IconName::ChevronRight),
                             ),

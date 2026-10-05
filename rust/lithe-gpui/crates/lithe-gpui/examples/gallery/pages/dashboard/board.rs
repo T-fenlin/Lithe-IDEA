@@ -1,3 +1,5 @@
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::Timestamp;
 use lithe_gpui::{
     charts::{LineChart, Series},
     dashboard::{
@@ -7,8 +9,6 @@ use lithe_gpui::{
     data_display::{Gauge, Statistic, TrendIndicator},
     forms::Choice,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::Timestamp;
 
 use crate::ui::{change, keep, section};
 

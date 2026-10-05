@@ -10,7 +10,7 @@ use crate::{
     forms::Run,
     motion::{self, ProgressBar},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
     typography::tabular,
 };
 
@@ -121,9 +121,10 @@ impl RenderOnce for SetupChecklist {
                     );
                 let start = (!task.done).then(|| {
                     let (key, start) = (task.key.clone(), on_start.clone());
-                    Button::new((id.clone(), format!("start-{}", task.key))).label("Start")
+                    Button::new((id.clone(), format!("start-{}", task.key)))
+                        .label("Start")
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("setup checklist: start {key}");
                             start(&key, window, cx)
@@ -176,8 +177,9 @@ impl RenderOnce for SetupChecklist {
                         .child("All set."),
                 )
                 .children(self.on_dismiss.map(|run| {
-                    Button::new((id.clone(), "hide")).label("Hide")
-                        .size(ControlSize::Sm)
+                    Button::new((id.clone(), "hide"))
+                        .label("Hide")
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| {
                             log::info!("setup checklist: hidden");
                             run(window, cx)

@@ -1,10 +1,10 @@
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use lithe_gpui::{
     buttons::ButtonVariant,
     menus::{ContextMenu, DropdownMenu, Menu, MenuItem, OverflowMenu, SplitButton},
     primitives::IconName,
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

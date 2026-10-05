@@ -10,7 +10,7 @@ use crate::{
     forms::{Run, SearchInput, TextInput},
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Density},
+    theme::{ActiveTheme, Density, Size},
 };
 
 type OnHidden = Rc<dyn Fn(&[SharedString], &mut Window, &mut App)>;
@@ -142,7 +142,7 @@ impl RenderOnce for TableToolbar {
             .children(self.search.map(|field| {
                 div()
                     .w(cx.theme().label_width() * 1.6)
-                    .child(SearchInput::new((id.clone(), "search"), &field).size(ControlSize::Sm))
+                    .child(SearchInput::new((id.clone(), "search"), &field).size(Size::Small))
             }))
             .children(self.filter.map(|(rules, on_press)| {
                 let label: SharedString = if rules == 0 {
@@ -150,20 +150,22 @@ impl RenderOnce for TableToolbar {
                 } else {
                     format!("Filter · {rules}").into()
                 };
-                Button::new((id.clone(), "filter")).label(label)
+                Button::new((id.clone(), "filter"))
+                    .label(label)
                     .icon(IconName::Filter)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| on_press(window, cx))
             }))
             .child(div().flex_1())
             .children(columns)
             .children(density)
             .children(self.on_export.map(|on_export| {
-                Button::new((id.clone(), "export")).label("Export")
+                Button::new((id.clone(), "export"))
+                    .label("Export")
                     .icon(IconName::Download)
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .on_click(move |_, window, cx| on_export(window, cx))
             }))
     }

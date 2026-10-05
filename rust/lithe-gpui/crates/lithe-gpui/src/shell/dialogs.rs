@@ -8,7 +8,7 @@ use super::{Hosted, open_hosted};
 use crate::{
     motion::{self, ProgressBar},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Caption, CopyableText, ExternalLink, Paragraph, Title},
 };
 
@@ -19,7 +19,7 @@ fn mark(name: &SharedString, icon: Option<IconName>, cx: &App) -> impl IntoEleme
         .flex()
         .items_center()
         .justify_center()
-        .size(theme.control_height(ControlSize::Lg) * 2.0)
+        .size(theme.control_height(Size::Large) * 2.0)
         .rounded(theme.radius(Radius::Xl))
         .bg(theme.colors.sunken)
         .border_1()

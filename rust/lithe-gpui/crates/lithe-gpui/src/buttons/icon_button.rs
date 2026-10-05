@@ -7,7 +7,7 @@ use super::button::{ButtonVariant, ClickHandler, label_size, tone};
 use crate::{
     i18n,
     primitives::{FocusRing, Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
 };
 
 /// Square button holding one icon.
@@ -16,7 +16,7 @@ pub struct IconButton {
     id: ElementId,
     icon: IconName,
     variant: ButtonVariant,
-    size: ControlSize,
+    size: Size,
     disabled: bool,
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
@@ -28,7 +28,7 @@ impl IconButton {
             id: id.into(),
             icon,
             variant: ButtonVariant::Ghost,
-            size: ControlSize::default(),
+            size: Size::default(),
             disabled: false,
             tooltip: None,
             on_click: None,
@@ -40,7 +40,7 @@ impl IconButton {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -106,5 +106,11 @@ impl RenderOnce for IconButton {
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                     .when_some(self.on_click, |el, handler| el.on_click(handler))
             })
+    }
+}
+
+impl crate::theme::Sizable for IconButton {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

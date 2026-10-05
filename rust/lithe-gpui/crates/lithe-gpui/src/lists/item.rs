@@ -8,7 +8,7 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::{
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
     typography::{Ellipsis, LEADING},
 };
 
@@ -145,7 +145,7 @@ impl RenderOnce for ListItem {
             .gap_3()
             .px_3()
             .py_1p5()
-            .min_h(theme.control_height(ControlSize::Lg))
+            .min_h(theme.control_height(Size::Large))
             .rounded(theme.radius(Radius::Md))
             .border_1()
             .border_color(if self.current {

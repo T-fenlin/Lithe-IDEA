@@ -1,5 +1,5 @@
-use lithe_gpui::charts::{BoxPlot, Histogram, ViolinPlot, WaterfallChart};
 use gpui::{App, IntoElement, ParentElement, Styled, div, px};
+use lithe_gpui::charts::{BoxPlot, Histogram, ViolinPlot, WaterfallChart};
 
 use crate::ui::{noise, section};
 

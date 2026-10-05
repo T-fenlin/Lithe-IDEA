@@ -11,7 +11,7 @@ use crate::{
     forms::{OnFlag, Run},
     layout::Collapsible,
     primitives::{FocusRing, Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// One place in a side navigation. A folded sidebar shows the icon alone and names it on hover.
@@ -79,7 +79,7 @@ impl RenderOnce for NavItem {
             .flex()
             .items_center()
             .gap_2()
-            .h(theme.control_height(ControlSize::Md))
+            .h(theme.control_height(Size::Medium))
             .rounded(theme.radius(Radius::Md))
             .border_1()
             .border_color(gpui::transparent_black())
@@ -115,7 +115,7 @@ impl RenderOnce for NavItem {
         if self.folded {
             return item
                 .justify_center()
-                .w(theme.control_height(ControlSize::Md))
+                .w(theme.control_height(Size::Medium))
                 .tooltip(Tooltip::text(label));
         }
         item.px_2()
@@ -197,7 +197,7 @@ impl RenderOnce for NavGroup {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .h(theme.control_height(ControlSize::Sm))
+                    .h(theme.control_height(Size::Small))
                     .px_2()
                     .rounded(theme.radius(Radius::Md))
                     .border_1()

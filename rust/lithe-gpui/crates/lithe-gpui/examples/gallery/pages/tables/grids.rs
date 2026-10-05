@@ -1,10 +1,10 @@
 use std::{collections::HashMap, rc::Rc};
 
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems};
 use lithe_gpui::{
     tables::{Aggregate, Cell, Column, DataGrid, PivotTable, Spreadsheet, TreeRow, TreeTable},
     typography::Caption,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems};
 
 use crate::{
     probe::probe,

@@ -10,7 +10,7 @@ use super::gridkeys::{Metrics, across, begin, fill, fit, keys, land};
 use crate::{
     forms::{Editing, Input},
     primitives::{FocusNext, FocusPrev},
-    theme::{ActiveTheme, ControlSize, TextSize},
+    theme::{ActiveTheme, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -149,7 +149,7 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
                             editor.update(cx, |editing, cx| editing.finish(true, window, cx));
                         }
                     })
-                    .child(Input::new(field).size(ControlSize::Sm))
+                    .child(Input::new(field).size(Size::Small))
                     .into_any_element()
             }
             _ => Ellipsis::new(text).into_any_element(),

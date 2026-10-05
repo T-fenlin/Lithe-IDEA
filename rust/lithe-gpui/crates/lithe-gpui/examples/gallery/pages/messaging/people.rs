@@ -1,3 +1,5 @@
+use gpui::{App, ElementId, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use jiff::tz::TimeZone;
 use lithe_gpui::{
     data_display::Presence,
     messaging::{
@@ -5,8 +7,6 @@ use lithe_gpui::{
     },
     theme::{ActiveTheme, Radius, TextSize},
 };
-use gpui::{App, ElementId, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use jiff::tz::TimeZone;
 
 use crate::{
     probe::probe,

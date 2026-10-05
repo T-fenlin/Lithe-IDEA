@@ -9,7 +9,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton, ToggleButton, ToggleItem},
     forms::{Choice, Enter, Input, Select, TextInput},
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Palette, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Palette, Radius, Size, TextSize},
 };
 
 /// The color a log line reads in, from the level it opens with.
@@ -111,7 +111,7 @@ impl RenderOnce for OutputPanel {
                 .map(|name| Choice::new(name.clone(), name.clone())),
         )
         .selected(self.channel.clone())
-        .size(ControlSize::Sm);
+        .size(Size::Small);
         let channel = match self.on_channel {
             Some(on_channel) => {
                 channel.on_change(move |name, window, cx| on_channel(name, window, cx))
@@ -125,7 +125,7 @@ impl RenderOnce for OutputPanel {
                 .tooltip("Keep the newest line in view"),
             self.follow,
         )
-        .size(ControlSize::Sm);
+        .size(Size::Small);
         let follow = match self.on_follow {
             Some(on_follow) => follow.on_toggle(move |on, window, cx| on_follow(on, window, cx)),
             None => follow,
@@ -150,7 +150,7 @@ impl RenderOnce for OutputPanel {
                     .children(self.on_clear.map(|clear| {
                         IconButton::new((self.id.clone(), "clear"), IconName::Eraser)
                             .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
+                            .size(Size::Small)
                             .tooltip("Clear")
                             .on_click(move |_, window, cx| clear(window, cx))
                     })),
@@ -287,7 +287,7 @@ impl RenderOnce for DebugConsole {
                     .child(
                         div()
                             .flex_1()
-                            .child(Input::new(&self.field).size(ControlSize::Sm)),
+                            .child(Input::new(&self.field).size(Size::Small)),
                     ),
             )
     }

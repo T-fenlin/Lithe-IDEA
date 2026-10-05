@@ -1,6 +1,6 @@
-use lithe_gpui::misc::{Calculator, Clock, Stopwatch, UnitConverter, WorldClock};
 use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px};
 use jiff::tz::TimeZone;
+use lithe_gpui::misc::{Calculator, Clock, Stopwatch, UnitConverter, WorldClock};
 
 use super::Page;
 use crate::probe::probe;

@@ -13,7 +13,7 @@ use crate::{
     layout::columns_for,
     media::name_chip,
     primitives::{Icon, IconName, checked_ratio, framed},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, AvatarSize, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
 
@@ -275,10 +275,11 @@ impl RenderOnce for ScreenShareView {
             ),
         };
         let stop = self.on_stop.map(|run| {
-            Button::new((self.id.clone(), "stop")).label("Stop presenting")
+            Button::new((self.id.clone(), "stop"))
+                .label("Stop presenting")
                 .icon(IconName::ScreenShareOff)
                 .variant(ButtonVariant::Danger)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .on_click(move |_, window, cx| {
                     log::info!("screen share {presenter}: stop");
                     run(window, cx)

@@ -12,7 +12,7 @@ use super::{
 use crate::{
     i18n,
     primitives::{FocusRing, Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, Radius},
+    theme::{ActiveTheme, Radius, Size},
 };
 
 /// Buttons joined edge to edge.
@@ -93,7 +93,7 @@ fn toggle_face(
     id: ElementId,
     item: &ToggleItem,
     on: bool,
-    size: ControlSize,
+    size: Size,
     press: Option<OnPress>,
     cx: &App,
 ) -> impl IntoElement + use<> {
@@ -158,7 +158,7 @@ pub struct ToggleButton {
     item: ToggleItem,
     on: bool,
     disabled: bool,
-    size: ControlSize,
+    size: Size,
     on_toggle: Option<OnToggle>,
 }
 
@@ -169,12 +169,12 @@ impl ToggleButton {
             item,
             on,
             disabled: false,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_toggle: None,
         }
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -214,7 +214,7 @@ pub struct ToggleGroup {
     items: Vec<ToggleItem>,
     selected: Vec<SharedString>,
     multiple: bool,
-    size: ControlSize,
+    size: Size,
     on_change: Option<OnChange>,
 }
 
@@ -225,7 +225,7 @@ impl ToggleGroup {
             items: Vec::new(),
             selected: Vec::new(),
             multiple: false,
-            size: ControlSize::default(),
+            size: Size::default(),
             on_change: None,
         }
     }
@@ -245,7 +245,7 @@ impl ToggleGroup {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -328,5 +328,17 @@ mod tests {
         assert_eq!(pressed(&values(&["a"]), &b, true), values(&["a", "b"]));
         assert_eq!(pressed(&values(&["a", "b"]), &b, true), values(&["a"]));
         assert_eq!(pressed(&values(&["b"]), &b, false), values(&[]));
+    }
+}
+
+impl crate::theme::Sizable for ToggleButton {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
+    }
+}
+
+impl crate::theme::Sizable for ToggleGroup {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

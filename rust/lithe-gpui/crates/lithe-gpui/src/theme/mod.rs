@@ -43,7 +43,7 @@ pub use platform::Platform;
 pub use project::ProjectSizes;
 pub use syntax::{SyntaxTheme, syntax_themes};
 pub use tokens::{
-    AvatarSize, ContainerSize, ControlSize, Density, Elevation, IconSize, Radius, TextSize,
+    AvatarSize, ContainerSize, Density, Elevation, IconSize, Radius, Sizable, Size, TextSize,
 };
 pub use tooling::ToolingSizes;
 

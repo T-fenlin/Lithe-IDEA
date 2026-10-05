@@ -1,13 +1,13 @@
+use gpui::{
+    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Window,
+    WindowOptions, div, rgb,
+};
 use lithe_gpui::{
     Assets,
     buttons::Button,
     primitives::FocusScope,
     theme::{ActiveTheme, Density, Elevation, Mode, Radius, TextSize, Theme},
     typography::Paragraph,
-};
-use gpui::{
-    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Window,
-    WindowOptions, div, rgb,
 };
 
 struct Tokens {
@@ -41,42 +41,48 @@ impl Render for Tokens {
             .flex_wrap()
             .gap_2()
             .child(
-                Button::new("mode").label(if dark { "Light mode" } else { "Dark mode" }).on_click(
-                    move |_, _, cx| {
+                Button::new("mode")
+                    .label(if dark { "Light mode" } else { "Dark mode" })
+                    .on_click(move |_, _, cx| {
                         Theme::set_mode(if dark { Mode::Light } else { Mode::Dark }, cx)
-                    },
-                ),
+                    }),
             )
             .child(
-                Button::new("contrast").label(if contrast {
+                Button::new("contrast")
+                    .label(if contrast {
                         "Usual contrast"
                     } else {
                         "High contrast"
                     })
-                .on_click(move |_, _, cx| Theme::set_high_contrast(!contrast, cx)),
+                    .on_click(move |_, _, cx| Theme::set_high_contrast(!contrast, cx)),
             )
             .child(
-                Button::new("density").label(if compact {
+                Button::new("density")
+                    .label(if compact {
                         "Standard density"
                     } else {
                         "Compact"
                     })
-                .on_click(move |_, _, cx| {
-                    Theme::update(cx, |theme| {
-                        theme.density = if compact {
-                            Density::Standard
-                        } else {
-                            Density::Compact
-                        };
-                    })
-                }),
+                    .on_click(move |_, _, cx| {
+                        Theme::update(cx, |theme| {
+                            theme.density = if compact {
+                                Density::Standard
+                            } else {
+                                Density::Compact
+                            };
+                        })
+                    }),
             )
-            .child(Button::new("accent").label("Green accent").on_click(|_, _, cx| {
-                let mode = cx.theme().mode();
-                let mut palette = cx.theme().palette();
-                *palette.token_mut("accent") = rgb(0x2f7d4f).into();
-                Theme::set_palette(mode, Some(palette), cx);
-            }));
+            .child(
+                Button::new("accent")
+                    .label("Green accent")
+                    .on_click(|_, _, cx| {
+                        let mode = cx.theme().mode();
+                        let mut palette = cx.theme().palette();
+                        *palette.token_mut("accent") = rgb(0x2f7d4f).into();
+                        Theme::set_palette(mode, Some(palette), cx);
+                    }),
+            );
         FocusScope::new(&self.focus)
             .root()
             .size_full()

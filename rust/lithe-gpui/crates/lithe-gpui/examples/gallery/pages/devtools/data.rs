@@ -1,5 +1,9 @@
 use std::rc::Rc;
 
+use gpui::{
+    App, AppContext as _, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+};
+use jiff::Timestamp;
 use lithe_gpui::{
     devtools::{
         Outcome, PlanStep, QueryHistory, QueryPlanViewer, QueryRun, RedisKey, RedisKeyBrowser,
@@ -10,10 +14,6 @@ use lithe_gpui::{
     tables::DataGrid,
     theme::{ActiveTheme, Radius},
 };
-use gpui::{
-    App, AppContext as _, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
-};
-use jiff::Timestamp;
 
 use crate::ui::{change, keep, section};
 

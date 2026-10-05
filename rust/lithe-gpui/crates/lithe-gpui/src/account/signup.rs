@@ -172,7 +172,8 @@ impl RenderOnce for SignupForm {
                     .map(|error| InlineMessage::new(Severity::Danger, error)),
             )
             .child(
-                Button::new((id.clone(), "submit")).label("Create account")
+                Button::new((id.clone(), "submit"))
+                    .label("Create account")
                     .variant(ButtonVariant::Primary)
                     .full_width()
                     .loading(self.busy)

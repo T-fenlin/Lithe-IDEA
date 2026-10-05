@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     primitives::tab_stop,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 /// The title under the keyboard and where each title sits.
@@ -123,7 +123,7 @@ impl RenderOnce for MenuBar {
                 .relative()
                 .flex()
                 .items_center()
-                .h(theme.control_height(ControlSize::Sm))
+                .h(theme.control_height(Size::Small))
                 .px_2()
                 .rounded(theme.radius(Radius::Md))
                 .border_1()

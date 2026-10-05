@@ -10,7 +10,7 @@ use crate::{
     forms::{Input, TextInput},
     overlays::Popover,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 /// How it is going, from bad to great.
@@ -170,9 +170,10 @@ fn form(
         .child(Input::new(&note))
         .child(
             div().flex().justify_end().child(
-                Button::new((id.clone(), "send")).label("Send")
+                Button::new((id.clone(), "send"))
+                    .label("Send")
                     .variant(ButtonVariant::Primary)
-                    .size(ControlSize::Sm)
+                    .size(Size::Small)
                     .disabled(sentiment.is_none())
                     .on_click(move |_, window, cx| {
                         let chosen = sentiment.expect("Send rests until a face is picked");

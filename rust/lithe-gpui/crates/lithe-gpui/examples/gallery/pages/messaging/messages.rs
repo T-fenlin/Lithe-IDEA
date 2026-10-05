@@ -1,3 +1,5 @@
+use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, px};
+use jiff::{SignedDuration, Timestamp, civil::date, tz::TimeZone};
 use lithe_gpui::{
     buttons::Button,
     chat::DateSeparator,
@@ -8,8 +10,6 @@ use lithe_gpui::{
     motion::TypingIndicator,
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, px};
-use jiff::{SignedDuration, Timestamp, civil::date, tz::TimeZone};
 
 use crate::{
     probe::probe,
@@ -173,7 +173,8 @@ pub fn thread(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     } else {
         let opening = open.clone();
         frame.flex().items_center().justify_center().child(
-            Button::new("messaging-thread-reopen").label("Open the thread")
+            Button::new("messaging-thread-reopen")
+                .label("Open the thread")
                 .on_click(move |_, _, cx| change(&opening, cx, |open| *open = true)),
         )
     };

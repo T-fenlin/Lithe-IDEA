@@ -1,12 +1,12 @@
+use gpui::{
+    AnyElement, App, ImageSource, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+};
 use lithe_gpui::{
     maps::{
         CoordFormat, CoordinateDisplay, LatLon, LocationPicker, MapMarker, MapPopup, MapView,
         MapViewport, Tile,
     },
     theme::ActiveTheme,
-};
-use gpui::{
-    AnyElement, App, ImageSource, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
 };
 
 mod layers;

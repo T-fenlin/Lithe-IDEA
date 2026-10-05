@@ -12,7 +12,7 @@ use crate::{
     forms::Run,
     layout::ScrollArea,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, IconSize, Size, TextSize},
 };
 
 /// A titled message with a line, a time and actions: a row of a `NotificationCenter`, or on its own.
@@ -66,7 +66,7 @@ impl RenderOnce for Notification {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
-        let disc = theme.control_height(ControlSize::Lg);
+        let disc = theme.control_height(Size::Large);
         div()
             .id(self.id)
             .relative()
@@ -209,7 +209,7 @@ impl RenderOnce for NotificationCenter {
             .flex_none()
             .items_center()
             .gap_2()
-            .h(theme.control_height(ControlSize::Lg))
+            .h(theme.control_height(Size::Large))
             .pl_4()
             .pr_2()
             .my_1()
@@ -230,17 +230,19 @@ impl RenderOnce for NotificationCenter {
             .child(div().flex_1())
             .when_some(self.on_read_all.filter(|_| unread > 0), |header, run| {
                 header.child(
-                    Button::new((self.id.clone(), "read-all")).label("Mark all read")
+                    Button::new((self.id.clone(), "read-all"))
+                        .label("Mark all read")
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| run(window, cx)),
                 )
             })
             .when_some(self.on_clear.filter(|_| !empty), |header, run| {
                 header.child(
-                    Button::new((self.id.clone(), "clear")).label("Clear")
+                    Button::new((self.id.clone(), "clear"))
+                        .label("Clear")
                         .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
+                        .size(Size::Small)
                         .on_click(move |_, window, cx| run(window, cx)),
                 )
             });

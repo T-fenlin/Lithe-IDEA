@@ -11,7 +11,7 @@ use crate::{
     forms::Run,
     motion,
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
 /// A ghost close button that keeps its row's height.
@@ -19,7 +19,7 @@ fn dismiss(id: ElementId, run: Run) -> impl IntoElement {
     div().my_neg_1().child(
         IconButton::new(id, IconName::X)
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_click(move |_, window, cx| run(window, cx)),
     )
 }
@@ -166,7 +166,7 @@ impl RenderOnce for Banner {
             .items_center()
             .justify_center()
             .gap_2()
-            .min_h(theme.control_height(ControlSize::Lg))
+            .min_h(theme.control_height(Size::Large))
             .py_1()
             .px_10()
             .bg(self.severity.subtle(colors))
@@ -182,7 +182,8 @@ impl RenderOnce for Banner {
             .child(self.message)
             .when_some(self.action, |banner, (label, run)| {
                 banner.child(
-                    Button::new(link).label(label)
+                    Button::new(link)
+                        .label(label)
                         .variant(ButtonVariant::Link)
                         .on_click(move |_, window, cx| run(window, cx)),
                 )

@@ -1,5 +1,9 @@
 use std::rc::Rc;
 
+use gpui::{
+    App, AppContext as _, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+};
+use jiff::Timestamp;
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     finance::{
@@ -9,10 +13,6 @@ use lithe_gpui::{
     },
     theme::ActiveTheme,
 };
-use gpui::{
-    App, AppContext as _, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
-};
-use jiff::Timestamp;
 
 use crate::{
     probe::probe,

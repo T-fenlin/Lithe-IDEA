@@ -17,7 +17,7 @@ use super::{
 use crate::{
     buttons::SegmentedControl,
     forms::{Down, InputEvent, TextInput, Up},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, Radius, Size, TextSize},
 };
 
 /// How a markdown editor shows its text.
@@ -211,7 +211,7 @@ impl RenderOnce for MarkdownEditor {
                 .iter()
                 .fold(
                     SegmentedControl::new((self.id.clone(), "mode"), self.mode.name())
-                        .size(ControlSize::Sm),
+                        .size(Size::Small),
                     |switch, (_, name)| switch.segment(*name, *name, None),
                 )
                 .on_change(move |name, window, cx| {
@@ -258,7 +258,7 @@ fn visual(
             theme.colors.clone(),
             theme.radius(Radius::Md),
             theme.radius(Radius::Lg),
-            theme.control_height(ControlSize::Lg),
+            theme.control_height(Size::Large),
             theme.text_size(TextSize::Xs),
         )
     };

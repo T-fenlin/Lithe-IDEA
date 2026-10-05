@@ -7,7 +7,7 @@ use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     forms::Run,
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
 };
 
 type OnZoom = Rc<dyn Fn(f32, &mut Window, &mut App)>;
@@ -53,9 +53,10 @@ impl RenderOnce for ZoomIndicator {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let words = format!("{}%", (self.zoom * 100.0).round());
         let on_zoom = self.on_zoom;
-        Button::new(self.id).label(words)
+        Button::new(self.id)
+            .label(words)
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .on_click(move |_, window, cx| {
                 log::info!("zoom indicator: back to 100%");
                 if let Some(on_zoom) = &on_zoom {
@@ -108,7 +109,7 @@ impl RenderOnce for ZoomControls {
             };
             IconButton::new((id.clone(), words), icon)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip(words)
                 .disabled(next.is_none())
                 .on_click(move |_, window, cx| {
@@ -130,7 +131,7 @@ impl RenderOnce for ZoomControls {
         let fit = self.on_fit.map(|on_fit| {
             IconButton::new((id.clone(), "fit"), IconName::Maximize2)
                 .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
+                .size(Size::Small)
                 .tooltip("Fit to screen")
                 .on_click(move |_, window, cx| on_fit(window, cx))
         });

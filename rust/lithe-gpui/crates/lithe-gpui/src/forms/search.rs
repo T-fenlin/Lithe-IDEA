@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    theme::{ActiveTheme, IconSize, Size},
 };
 
 type OnPick = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
@@ -22,7 +22,7 @@ pub struct SearchInput {
     id: ElementId,
     state: Entity<TextInput>,
     history: Vec<SharedString>,
-    size: ControlSize,
+    size: Size,
     on_pick: Option<OnPick>,
 }
 
@@ -32,7 +32,7 @@ impl SearchInput {
             id: id.into(),
             state: state.clone(),
             history: Vec::new(),
-            size: ControlSize::default(),
+            size: Size::default(),
             on_pick: None,
         }
     }
@@ -43,7 +43,7 @@ impl SearchInput {
         self
     }
 
-    pub fn size(mut self, size: ControlSize) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -117,5 +117,11 @@ impl RenderOnce for SearchInput {
                     .render(window, cx),
                 )
             })
+    }
+}
+
+impl crate::theme::Sizable for SearchInput {
+    fn with_size(self, size: impl Into<crate::theme::Size>) -> Self {
+        self.size(size.into())
     }
 }

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 use lithe_gpui::{
     agent::{AgentPlan, AgentProgress, AgentState, AgentStatus, AgentStep, AgentStepList},
     buttons::{Button, ButtonVariant},
@@ -8,7 +9,6 @@ use lithe_gpui::{
     lists::{Tree, TreeNode},
     primitives::IconName,
 };
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::{
     probe::probe,

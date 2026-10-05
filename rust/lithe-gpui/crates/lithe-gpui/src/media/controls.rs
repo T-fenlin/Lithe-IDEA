@@ -8,7 +8,7 @@ use crate::{
     forms::{OnFlag, OnNumber, Run, Slider},
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
-    theme::ControlSize,
+    theme::Size,
 };
 
 type OnSpeed = Rc<dyn Fn(f32, &mut Window, &mut App)>;
@@ -63,7 +63,7 @@ impl RenderOnce for VolumeControl {
         let muted = self.muted;
         let speaker = IconButton::new((self.id.clone(), "mute"), speaker(self.level, muted))
             .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
+            .size(Size::Small)
             .tooltip(if muted { "Unmute" } else { "Mute" })
             .disabled(self.on_mute.is_none());
         let speaker = match self.on_mute.clone() {
@@ -255,7 +255,7 @@ impl RenderOnce for MediaControls {
             };
             IconButton::new((id.clone(), "play"), icon)
                 .variant(ButtonVariant::Primary)
-                .size(ControlSize::Lg)
+                .size(Size::Large)
                 .tooltip(if playing { "Pause" } else { "Play" })
                 .on_click(move |_, window, cx| {
                     log::info!("media controls: {}", if playing { "pause" } else { "play" });
