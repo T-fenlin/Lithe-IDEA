@@ -6,6 +6,8 @@ use gpui::{
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
     feedback::Alert,
+    forms::{Choice as FormChoice, Select},
+    i18n::{LOCALES, Locale, locale, set_locale, text},
     layout::on_axis,
     primitives::{FocusScope, IconName, Severity},
     theme::{ActiveTheme, Mode, Radius, Size, TextSize, Theme},
@@ -134,13 +136,13 @@ impl Gallery {
                             .text_size(theme.text_size(TextSize::Lg))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(colors.fg)
-                            .child("Ely"),
+                            .child("Lithe"),
                     )
                     .child(
                         div()
                             .text_size(theme.text_size(TextSize::Sm))
                             .text_color(colors.fg_subtle)
-                            .child("GPUI Component"),
+                            .child(text(cx, "gallery.tagline", &[])),
                     ),
             )
             .child(
@@ -176,6 +178,21 @@ impl Gallery {
                             .on_click(cx.listener(move |gallery, _, _, cx| gallery.select(ix, cx)))
                     })),
             )
+    }
+
+    /// Chosen language for every page: component copy, numbers and dates follow it.
+    fn locale_switcher(&self) -> impl IntoElement {
+        let tag = Locale::find(&locale())
+            .map(|locale| locale.tag)
+            .unwrap_or("en-US");
+        div().flex_none().w(px(150.0)).child(
+            Select::new(
+                "gallery-locale",
+                LOCALES.map(|locale| FormChoice::new(locale.tag, locale.name)),
+            )
+            .selected(tag)
+            .on_change(|tag, _, cx| set_locale(tag, cx)),
+        )
     }
 
     fn switcher(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -349,7 +366,14 @@ impl Render for Gallery {
                                                     .child(page.summary),
                                             ),
                                     )
-                                    .child(switcher),
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .child(self.locale_switcher())
+                                            .child(switcher),
+                                    ),
                                 body,
                                 cx,
                             ),

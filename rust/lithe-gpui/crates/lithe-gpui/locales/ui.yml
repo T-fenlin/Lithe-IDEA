@@ -3,48 +3,50 @@
 _version: 2
 palette:
   command:
-    placeholder: {en: "Type a command", zh-CN: "输入命令"}
-    empty: {en: "No matching commands", zh-CN: "没有匹配的命令"}
-  recent: {en: "Recent", zh-CN: "最近"}
+    placeholder: {en-US: "Type a command", en-GB: "Type a command", de-DE: "Befehl eingeben", fr-FR: "Saisir une commande", ja-JP: "コマンドを入力", he-IL: "הקלד פקודה", zh-CN: "输入命令"}
+    empty: {en-US: "No matching commands", en-GB: "No matching commands", de-DE: "Keine passenden Befehle", fr-FR: "Aucune commande correspondante", ja-JP: "一致するコマンドがありません", he-IL: "אין פקודות מתאימות", zh-CN: "没有匹配的命令"}
+  recent: {en-US: "Recent", en-GB: "Recent", de-DE: "Zuletzt verwendet", fr-FR: "Récents", ja-JP: "最近", he-IL: "אחרונים", zh-CN: "最近"}
   open:
-    placeholder: {en: "Go to file", zh-CN: "转到文件"}
-    idle: {en: "Type part of a file name", zh-CN: "输入文件名的一部分"}
-    empty: {en: "No matching files", zh-CN: "没有匹配的文件"}
+    placeholder: {en-US: "Go to file", en-GB: "Go to file", de-DE: "Zu Datei springen", fr-FR: "Aller au fichier", ja-JP: "ファイルへ移動", he-IL: "עבור לקובץ", zh-CN: "转到文件"}
+    idle: {en-US: "Type part of a file name", en-GB: "Type part of a file name", de-DE: "Teil eines Dateinamens eingeben", fr-FR: "Saisir une partie d'un nom de fichier", ja-JP: "ファイル名の一部を入力", he-IL: "הקלד חלק משם קובץ", zh-CN: "输入文件名的一部分"}
+    empty: {en-US: "No matching files", en-GB: "No matching files", de-DE: "Keine passenden Dateien", fr-FR: "Aucun fichier correspondant", ja-JP: "一致するファイルがありません", he-IL: "אין קבצים מתאימים", zh-CN: "没有匹配的文件"}
   switch:
-    placeholder: {en: "Switch to", zh-CN: "切换到"}
-    empty: {en: "Nothing open by that name", zh-CN: "没有以此名字打开的"}
+    placeholder: {en-US: "Switch to", en-GB: "Switch to", de-DE: "Wechseln zu", fr-FR: "Basculer vers", ja-JP: "切り替え先", he-IL: "עבור אל", zh-CN: "切换到"}
+    empty: {en-US: "Nothing open by that name", en-GB: "Nothing open by that name", de-DE: "Nichts mit diesem Namen geöffnet", fr-FR: "Rien d'ouvert sous ce nom", ja-JP: "その名前で開いているものはありません", he-IL: "אין דבר פתוח בשם הזה", zh-CN: "没有以此名字打开的"}
   search:
-    placeholder: {en: "Search everything", zh-CN: "搜索全部"}
-    idle: {en: "Type to search", zh-CN: "输入以搜索"}
-    empty: {en: "Nothing found for “%{query}”", zh-CN: "没有找到“%{query}”"}
+    placeholder: {en-US: "Search everything", en-GB: "Search everything", de-DE: "Alles durchsuchen", fr-FR: "Tout rechercher", ja-JP: "すべて検索", he-IL: "חפש בכל", zh-CN: "搜索全部"}
+    idle: {en-US: "Type to search", en-GB: "Type to search", de-DE: "Zum Suchen tippen", fr-FR: "Saisir pour rechercher", ja-JP: "入力して検索", he-IL: "הקלד כדי לחפש", zh-CN: "输入以搜索"}
+    empty: {en-US: "Nothing found for “%{query}”", en-GB: "Nothing found for “%{query}”", de-DE: "Nichts gefunden für „%{query}“", fr-FR: "Rien trouvé pour « %{query} »", ja-JP: "「%{query}」は見つかりませんでした", he-IL: "לא נמצא דבר עבור „%{query}“", zh-CN: "没有找到“%{query}”"}
   symbol:
-    placeholder: {en: "Go to a symbol", zh-CN: "转到符号"}
-    empty: {en: "No matching symbols", zh-CN: "没有匹配的符号"}
+    placeholder: {en-US: "Go to a symbol", en-GB: "Go to a symbol", de-DE: "Zu einem Symbol springen", fr-FR: "Aller à un symbole", ja-JP: "シンボルへ移動", he-IL: "עבור לסמל", zh-CN: "转到符号"}
+    empty: {en-US: "No matching symbols", en-GB: "No matching symbols", de-DE: "Keine passenden Symbole", fr-FR: "Aucun symbole correspondant", ja-JP: "一致するシンボルがありません", he-IL: "אין סמלים מתאימים", zh-CN: "没有匹配的符号"}
   project:
-    placeholder: {en: "Switch to a project", zh-CN: "切换项目"}
-    empty: {en: "No matching projects", zh-CN: "没有匹配的项目"}
-    pin: {en: "Pin", zh-CN: "置顶"}
-    unpin: {en: "Unpin", zh-CN: "取消置顶"}
-    remove: {en: "Remove from recent", zh-CN: "从最近中移除"}
+    placeholder: {en-US: "Switch to a project", en-GB: "Switch to a project", de-DE: "Zu einem Projekt wechseln", fr-FR: "Basculer vers un projet", ja-JP: "プロジェクトを切り替え", he-IL: "עבור לפרויקט", zh-CN: "切换项目"}
+    empty: {en-US: "No matching projects", en-GB: "No matching projects", de-DE: "Keine passenden Projekte", fr-FR: "Aucun projet correspondant", ja-JP: "一致するプロジェクトがありません", he-IL: "אין פרויקטים מתאימים", zh-CN: "没有匹配的项目"}
+    pin: {en-US: "Pin", en-GB: "Pin", de-DE: "Anheften", fr-FR: "Épingler", ja-JP: "ピン留め", he-IL: "נעץ", zh-CN: "置顶"}
+    unpin: {en-US: "Unpin", en-GB: "Unpin", de-DE: "Loslösen", fr-FR: "Désépingler", ja-JP: "ピン留めを解除", he-IL: "בטל נעיצה", zh-CN: "取消置顶"}
+    remove: {en-US: "Remove from recent", en-GB: "Remove from recent", de-DE: "Aus Zuletzt verwendet entfernen", fr-FR: "Retirer des récents", ja-JP: "最近から削除", he-IL: "הסר מהאחרונים", zh-CN: "从最近中移除"}
   branch:
-    placeholder: {en: "Switch to a branch, or name a new one", zh-CN: "切换分支，或输入新分支名"}
-    local: {en: "Local", zh-CN: "本地"}
-    remote: {en: "Remote", zh-CN: "远程"}
-    create: {en: "Create branch “%{query}”", zh-CN: "创建分支“%{query}”"}
-    empty: {en: "No branch fits", zh-CN: "没有匹配的分支"}
-    switch: {en: "Switch to it", zh-CN: "切换过去"}
-    delete: {en: "Delete", zh-CN: "删除"}
+    placeholder: {en-US: "Switch to a branch, or name a new one", en-GB: "Switch to a branch, or name a new one", de-DE: "Zu einem Branch wechseln oder einen neuen benennen", fr-FR: "Basculer vers une branche, ou en nommer une nouvelle", ja-JP: "ブランチを切り替え、または新しい名前を入力", he-IL: "עבור לענף, או תן שם לענף חדש", zh-CN: "切换分支，或输入新分支名"}
+    local: {en-US: "Local", en-GB: "Local", de-DE: "Lokal", fr-FR: "Locale", ja-JP: "ローカル", he-IL: "מקומי", zh-CN: "本地"}
+    remote: {en-US: "Remote", en-GB: "Remote", de-DE: "Remote", fr-FR: "Distante", ja-JP: "リモート", he-IL: "מרוחק", zh-CN: "远程"}
+    create: {en-US: "Create branch “%{query}”", en-GB: "Create branch “%{query}”", de-DE: "Branch „%{query}“ erstellen", fr-FR: "Créer la branche « %{query} »", ja-JP: "ブランチ「%{query}」を作成", he-IL: "צור ענף „%{query}“", zh-CN: "创建分支“%{query}”"}
+    empty: {en-US: "No branch fits", en-GB: "No branch fits", de-DE: "Kein Branch passt", fr-FR: "Aucune branche ne correspond", ja-JP: "一致するブランチがありません", he-IL: "אין ענף מתאים", zh-CN: "没有匹配的分支"}
+    switch: {en-US: "Switch to it", en-GB: "Switch to it", de-DE: "Dorthin wechseln", fr-FR: "Y basculer", ja-JP: "そこへ切り替え", he-IL: "עבור אליו", zh-CN: "切换过去"}
+    delete: {en-US: "Delete", en-GB: "Delete", de-DE: "Löschen", fr-FR: "Supprimer", ja-JP: "削除", he-IL: "מחק", zh-CN: "删除"}
   history:
-    placeholder: {en: "Search past commands", zh-CN: "搜索历史命令"}
-    empty: {en: "No past command fits", zh-CN: "没有匹配的历史命令"}
+    placeholder: {en-US: "Search past commands", en-GB: "Search past commands", de-DE: "Frühere Befehle durchsuchen", fr-FR: "Rechercher dans les commandes passées", ja-JP: "過去のコマンドを検索", he-IL: "חפש פקודות קודמות", zh-CN: "搜索历史命令"}
+    empty: {en-US: "No past command fits", en-GB: "No past command fits", de-DE: "Kein früherer Befehl passt", fr-FR: "Aucune commande passée ne correspond", ja-JP: "一致する過去のコマンドがありません", he-IL: "אין פקודה קודמת מתאימה", zh-CN: "没有匹配的历史命令"}
 dialog:
-  cancel: {en: "Cancel", zh-CN: "取消"}
-  close: {en: "Close", zh-CN: "关闭"}
+  cancel: {en-US: "Cancel", en-GB: "Cancel", de-DE: "Abbrechen", fr-FR: "Annuler", ja-JP: "キャンセル", he-IL: "ביטול", zh-CN: "取消"}
+  close: {en-US: "Close", en-GB: "Close", de-DE: "Schließen", fr-FR: "Fermer", ja-JP: "閉じる", he-IL: "סגור", zh-CN: "关闭"}
 state:
-  unavailable: {en: "Unavailable", zh-CN: "不可用"}
+  unavailable: {en-US: "Unavailable", en-GB: "Unavailable", de-DE: "Nicht verfügbar", fr-FR: "Indisponible", ja-JP: "利用不可", he-IL: "לא זמין", zh-CN: "不可用"}
 # Copy the gallery's i18n page demonstrates with; kept out of the component keys above.
 demo:
-  welcome: {en: "Welcome back, %{name}", en-GB: "Welcome back, %{name}", de-DE: "Willkommen zurück, %{name}", fr-FR: "Bon retour, %{name}", ja-JP: "おかえりなさい、%{name}さん", zh-CN: "欢迎回来，%{name}", he-IL: "ברוך שובך, %{name}"}
-  files: {en: "%{count} files in %{folder}", en-GB: "%{count} files in %{folder}", de-DE: "%{count} Dateien in %{folder}", fr-FR: "%{count} fichiers dans %{folder}", ja-JP: "%{folder}に%{count}個のファイル", zh-CN: "%{folder}中有%{count}个文件", he-IL: "%{count} קבצים ב־%{folder}"}
-  saved: {en: "Last saved %{date}", en-GB: "Last saved %{date}", de-DE: "Zuletzt gespeichert am %{date}", fr-FR: "Enregistré le %{date}", ja-JP: "最終保存：%{date}", zh-CN: "上次保存于%{date}", he-IL: "נשמר לאחרונה ב־%{date}"}
-  change: {en: "%{change}% since yesterday", en-GB: "%{change}% since yesterday", de-DE: "%{change} % seit gestern", fr-FR: "%{change} % depuis hier", ja-JP: "昨日から%{change}%", zh-CN: "较昨日%{change}%", he-IL: "%{change}% מאז אתמול"}
+  welcome: {en-US: "Welcome back, %{name}", en-GB: "Welcome back, %{name}", de-DE: "Willkommen zurück, %{name}", fr-FR: "Bon retour, %{name}", ja-JP: "おかえりなさい、%{name}さん", zh-CN: "欢迎回来，%{name}", he-IL: "ברוך שובך, %{name}"}
+  files: {en-US: "%{count} files in %{folder}", en-GB: "%{count} files in %{folder}", de-DE: "%{count} Dateien in %{folder}", fr-FR: "%{count} fichiers dans %{folder}", ja-JP: "%{folder}に%{count}個のファイル", zh-CN: "%{folder}中有%{count}个文件", he-IL: "%{count} קבצים ב־%{folder}"}
+  saved: {en-US: "Last saved %{date}", en-GB: "Last saved %{date}", de-DE: "Zuletzt gespeichert am %{date}", fr-FR: "Enregistré le %{date}", ja-JP: "最終保存：%{date}", zh-CN: "上次保存于%{date}", he-IL: "נשמר לאחרונה ב־%{date}"}
+  change: {en-US: "%{change}% since yesterday", en-GB: "%{change}% since yesterday", de-DE: "%{change} % seit gestern", fr-FR: "%{change} % depuis hier", ja-JP: "昨日から%{change}%", zh-CN: "较昨日%{change}%", he-IL: "%{change}% מאז אתמול"}
+gallery:
+  tagline: {en-US: "Component gallery", en-GB: "Component gallery", de-DE: "Komponentengalerie", fr-FR: "Galerie de composants", ja-JP: "コンポーネントギャラリー", he-IL: "גלריית רכיבים", zh-CN: "组件画廊"}

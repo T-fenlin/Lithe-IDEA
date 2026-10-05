@@ -64,10 +64,17 @@ fn every_locale_holds_the_same_keys() {
     let mut leaves = 0;
     for line in catalogue.lines().filter(|line| line.contains(": {")) {
         leaves += 1;
-        assert!(line.contains("en: "), "no en in {line:?}");
-        assert!(line.contains("zh-CN: "), "no zh-CN in {line:?}");
+        // Every message carries every locale this crate lists, so one cannot ship
+        // translated for a language and missing for another.
+        for locale in LOCALES {
+            assert!(
+                line.contains(&format!("{}: ", locale.tag)),
+                "no {} in {line:?}",
+                locale.tag
+            );
+        }
     }
-    assert!(leaves >= 30, "the catalogue shrank to {leaves} messages");
+    assert!(leaves >= 34, "the catalogue shrank to {leaves} messages");
 }
 
 /// The catalogue declares the rust-i18n schema version it is written in.
