@@ -78,7 +78,7 @@ pub fn overline(cx: &App) -> impl IntoElement + use<> {
 pub fn inline_code(cx: &App) -> impl IntoElement + use<> {
     section("Code", "Monospace on a quiet fill.", cx).child(
         row()
-            .child("Run")
+            .child(crate::i18n::gallery("Run"))
             .child(Code::new("cargo run --example gallery"))
             .child("to open this window."),
     )
@@ -158,7 +158,7 @@ pub fn truncate(cx: &App) -> impl IntoElement + use<> {
             .flex()
             .items_center()
             .gap_2()
-            .child(div().flex_none().child("Note"))
+            .child(div().flex_none().child(crate::i18n::gallery("Note")))
             .child(Ellipsis::new(PROSE)),
     )
 }
@@ -210,7 +210,7 @@ pub fn link(cx: &App) -> impl IntoElement + use<> {
     )
     .child(
         row()
-            .child("Read the")
+            .child(crate::i18n::gallery("Read the"))
             .child(
                 Link::new("guide", "style guide").on_click(|_, _, _| log::info!("gallery: link")),
             )

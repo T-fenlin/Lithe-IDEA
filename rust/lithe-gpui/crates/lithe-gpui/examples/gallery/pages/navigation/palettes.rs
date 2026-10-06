@@ -101,7 +101,7 @@ pub fn command_palette(window: &mut Window, cx: &mut App) -> impl IntoElement + 
         caption,
         probe(
             "commands",
-            Button::new("commands-button").label("Command palette")
+            Button::new("commands-button").label(crate::i18n::gallery("Command palette"))
                 .icon(IconName::Command)
                 .on_click(move |_, _, cx| set(&opener, true, cx)),
         ),
@@ -171,7 +171,7 @@ pub fn quick_open(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
         probe(
             "files",
             Button::new("files-button")
-                .label("Go to file")
+                .label(crate::i18n::gallery("Go to file"))
                 .icon(IconName::File)
                 .on_click(move |_, _, cx| set(&opener, true, cx)),
         ),
@@ -238,7 +238,7 @@ pub fn quick_switcher(window: &mut Window, cx: &mut App) -> impl IntoElement + u
         format!("in {current}"),
         probe(
             "switcher",
-            Button::new("switcher-button").label("Switch")
+            Button::new("switcher-button").label(crate::i18n::gallery("Switch"))
                 .icon(IconName::Layers)
                 .on_click(move |_, _, cx| set(&opener, true, cx)),
         ),
@@ -391,7 +391,7 @@ pub fn search_palette(window: &mut Window, cx: &mut App) -> impl IntoElement + u
                 caption,
                 probe(
                     "search",
-                    Button::new("search-button").label("Search everything")
+                    Button::new("search-button").label(crate::i18n::gallery("Search everything"))
                         .icon(IconName::Search)
                         .on_click(move |_, _, cx| set(&opener, true, cx)),
                 ),
@@ -401,7 +401,7 @@ pub fn search_palette(window: &mut Window, cx: &mut App) -> impl IntoElement + u
                 "a window above all others",
                 probe(
                     "launcher",
-                    Button::new("launcher-button").label("Open the launcher")
+                    Button::new("launcher-button").label(crate::i18n::gallery("Open the launcher"))
                         .variant(ButtonVariant::Ghost)
                         .icon(IconName::Rocket)
                         .on_click(move |_, _, cx| {

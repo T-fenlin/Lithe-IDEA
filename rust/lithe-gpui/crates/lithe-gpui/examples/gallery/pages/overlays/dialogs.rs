@@ -89,13 +89,13 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 )
                 .action(|close| {
                     Button::new("profile-cancel")
-                        .label("Cancel")
+                        .label(crate::i18n::gallery("Cancel"))
                         .variant(ButtonVariant::Ghost)
                         .on_click(move |_, window, cx| close(window, cx))
                 })
                 .action(move |close| {
                     Button::new("profile-save")
-                        .label("Save")
+                        .label(crate::i18n::gallery("Save"))
                         .primary()
                         .on_click(move |_, window, cx| {
                             set(&saved, Some("profile saved".into()), cx);
@@ -110,7 +110,7 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "Sign in again to keep your changes. Nothing you wrote is lost.",
                 shut.clone(),
             )
-            .label("Sign in")
+            .label(crate::i18n::gallery("Sign in"))
             .into_any_element(),
             Open::Confirm => ConfirmDialog::new(
                 "delete",
@@ -123,7 +123,7 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .on_confirm(move |_, cx| set(&confirmed, Some("project deleted".into()), cx))
             .into_any_element(),
             Open::Prompt => PromptDialog::new("rename", "Rename", &rename, shut.clone())
-                .label("New name")
+                .label(crate::i18n::gallery("New name"))
                 .submit("Rename")
                 .check(|text| match text.trim() {
                     "" => Err("A name cannot be empty.".into()),
@@ -170,7 +170,7 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 let (open, rename) = (open.clone(), rename.clone());
                 probe(
                     "prompt",
-                    Button::new("prompt").label("Rename").on_click(move |_, _, cx| {
+                    Button::new("prompt").label(crate::i18n::gallery("Rename")).on_click(move |_, _, cx| {
                         rename.update(cx, |input, cx| input.set_text("Roadmap", cx));
                         set(&open, Some(Open::Prompt), cx);
                     }),

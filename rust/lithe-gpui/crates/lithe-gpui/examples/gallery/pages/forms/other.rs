@@ -72,7 +72,7 @@ pub fn code(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn font(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let search = field("input-font", window, cx, |input| {
-        input.placeholder("Search fonts")
+        input.placeholder(crate::i18n::gallery("Search fonts"))
     });
     let ui = cx.theme().font_family.clone();
     let family = keep("font-family", move || ui, window, cx);
@@ -130,13 +130,13 @@ pub fn glyphs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn regional(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let language = field("input-language", window, cx, |input| {
-        input.placeholder("Language")
+        input.placeholder(crate::i18n::gallery("Language"))
     });
     let country = field("input-country", window, cx, |input| {
-        input.placeholder("Country")
+        input.placeholder(crate::i18n::gallery("Country"))
     });
     let currency = field("input-currency", window, cx, |input| {
-        input.placeholder("Currency")
+        input.placeholder(crate::i18n::gallery("Currency"))
     });
     let spoken = keep("regional-language", || SharedString::from("zh"), window, cx);
     let land = keep("regional-country", || SharedString::from("CN"), window, cx);

@@ -63,20 +63,24 @@ pub fn basics(cx: &App) -> AnyElement {
                 row()
                     .child(
                         Button::new("new")
-                            .label("New file")
+                            .label(crate::i18n::gallery("New file"))
                             .primary()
                             .icon(IconName::Plus),
                     )
-                    .child(Button::new("share").label("Share").icon(IconName::Share2))
+                    .child(
+                        Button::new("share")
+                            .label(crate::i18n::gallery("Share"))
+                            .icon(IconName::Share2),
+                    )
                     .child(
                         Button::new("sort")
-                            .label("Sort")
+                            .label(crate::i18n::gallery("Sort"))
                             .variant(ButtonVariant::Ghost)
                             .trailing_icon(IconName::ChevronDown),
                     )
                     .child(
                         Button::new("delete")
-                            .label("Delete")
+                            .label(crate::i18n::gallery("Delete"))
                             .variant(ButtonVariant::Danger)
                             .icon(IconName::Trash2),
                     ),
@@ -124,10 +128,14 @@ pub fn basics(cx: &App) -> AnyElement {
             )
             .child(
                 row()
-                    .child(Button::new("hint-save").label("Save").shortcut("cmd-s"))
+                    .child(
+                        Button::new("hint-save")
+                            .label(crate::i18n::gallery("Save"))
+                            .shortcut("cmd-s"),
+                    )
                     .child(
                         Button::new("hint-find")
-                            .label("Find")
+                            .label(crate::i18n::gallery("Find"))
                             .variant(ButtonVariant::Ghost)
                             .icon(IconName::Search)
                             .shortcut("cmd-shift-f"),
@@ -140,21 +148,23 @@ pub fn basics(cx: &App) -> AnyElement {
                 row()
                     .child(
                         ButtonGroup::new()
-                            .button(Button::new("group-day").label("Day"))
-                            .button(Button::new("group-week").label("Week"))
-                            .button(Button::new("group-month").label("Month")),
+                            .button(Button::new("group-day").label(crate::i18n::gallery("Day")))
+                            .button(Button::new("group-week").label(crate::i18n::gallery("Week")))
+                            .button(
+                                Button::new("group-month").label(crate::i18n::gallery("Month")),
+                            ),
                     )
                     .child(
                         ButtonGroup::new()
                             .button(
                                 Button::new("group-prev")
-                                    .label("Previous")
+                                    .label(crate::i18n::gallery("Previous"))
                                     .variant(ButtonVariant::Outline)
                                     .icon(IconName::ChevronLeft),
                             )
                             .button(
                                 Button::new("group-next")
-                                    .label("Next")
+                                    .label(crate::i18n::gallery("Next"))
                                     .variant(ButtonVariant::Outline)
                                     .trailing_icon(IconName::ChevronRight),
                             ),

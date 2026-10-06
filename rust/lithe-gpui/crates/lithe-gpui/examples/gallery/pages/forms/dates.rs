@@ -195,7 +195,7 @@ pub fn more(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     );
     let span = keep("duration-span", || Duration::from_secs(90 * 60), window, cx);
     let zone_field = field("input-zone", window, cx, |input| {
-        input.placeholder("Search zones")
+        input.placeholder(crate::i18n::gallery("Search zones"))
     });
     let (range_now, zone_now, span_now) = (*range.read(cx), zone.read(cx).clone(), *span.read(cx));
     section(

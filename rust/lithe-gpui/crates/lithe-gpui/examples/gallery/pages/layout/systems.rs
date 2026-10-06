@@ -165,7 +165,7 @@ pub fn workspace(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
             .child(probe(
                 "workspace-save",
                 Button::new("workspace-save")
-                    .label("Save layout")
+                    .label(crate::i18n::gallery("Save layout"))
                     .icon(IconName::Save)
                     .on_click(move |_, _, cx| {
                         let json =
@@ -179,7 +179,7 @@ pub fn workspace(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
             .child(probe(
                 "workspace-restore",
                 Button::new("workspace-restore")
-                    .label("Restore")
+                    .label(crate::i18n::gallery("Restore"))
                     .variant(ButtonVariant::Ghost)
                     .icon(IconName::RotateCcw)
                     .disabled(preview.is_none())

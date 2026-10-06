@@ -62,7 +62,7 @@ pub fn update_window(cx: &App) -> impl IntoElement + use<> {
         .child(native_only(probe(
             "update-open",
             Button::new("update-open")
-                .label("Open update window")
+                .label(crate::i18n::gallery("Open update window"))
                 .variant(ButtonVariant::Outline)
                 .on_click(|_, _, cx| match update_dialog().open(cx) {
                     Ok(handle) => Opened::insert("update", handle.into(), cx),
@@ -105,7 +105,7 @@ pub fn crash_reporter(cx: &App) -> impl IntoElement + use<> {
     .child(native_only(probe(
         "crash-open",
         Button::new("crash-open")
-            .label("Open crash window")
+            .label(crate::i18n::gallery("Open crash window"))
             .variant(ButtonVariant::Outline)
             .on_click(move |_, _, cx| match reporter(false).open(cx) {
                 Ok(handle) => Opened::insert("crash", handle.into(), cx),

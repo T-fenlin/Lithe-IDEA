@@ -93,7 +93,7 @@ pub fn stagger(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row().child(probe(
             "stagger-replay",
             Button::new("stagger-replay")
-                .label("Replay")
+                .label(crate::i18n::gallery("Replay"))
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| set(&replay, now + 1, cx)),
         )),
@@ -161,7 +161,7 @@ pub fn presence(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row().child(probe(
             "presence-add",
             Button::new("presence-add")
-                .label("Add a tag")
+                .label(crate::i18n::gallery("Add a tag"))
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| {
                     let mut then = add.read(cx).clone();
@@ -194,7 +194,7 @@ pub fn flip(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row().child(probe(
             "flip-shuffle",
             Button::new("flip-shuffle")
-                .label("Shuffle")
+                .label(crate::i18n::gallery("Shuffle"))
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| {
                     let mut then = shuffle.read(cx).clone();

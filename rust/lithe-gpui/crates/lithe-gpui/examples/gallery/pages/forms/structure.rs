@@ -37,13 +37,15 @@ fn link(text: String, window: &mut Window, cx: &mut App) -> Entity<InputState> {
 
 pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let name = field("form-name", window, cx, |input| {
-        input.placeholder("Ada Lovelace")
+        input.placeholder(crate::i18n::gallery("Ada Lovelace"))
     });
     let email = field("form-email", window, cx, |input| {
         input.placeholder("ada@example.com")
     });
     let bio = field("form-bio", window, cx, |input| {
-        input.multi_line(3, 5).placeholder("A line about you")
+        input
+            .multi_line(3, 5)
+            .placeholder(crate::i18n::gallery("A line about you"))
     });
     let links = keep("form-links", Vec::<Entity<InputState>>::new, window, cx);
     let saved = keep("form-saved", Saved::default, window, cx);
@@ -150,13 +152,13 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .child(DirtyIndicator::new("form-dirty", dirty))
                         .child(div().flex_1())
                         .child(
-                            Button::new("form-discard").label("Discard")
+                            Button::new("form-discard").label(crate::i18n::gallery("Discard"))
                                 .variant(ButtonVariant::Ghost)
                                 .disabled(!dirty)
                                 .on_click(move |_, window, cx| discard(window, cx)),
                         )
                         .child(
-                            Button::new("form-save").label("Save")
+                            Button::new("form-save").label(crate::i18n::gallery("Save"))
                                 .primary()
                                 .disabled(!dirty || !ready(&now))
                                 .on_click(move |_, window, cx| save_click(window, cx)),
@@ -184,7 +186,11 @@ pub fn inline(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 .child(div().flex_1().child(
                     FormField::new("inline-newsletter", "Newsletter").child(Input::new(&email)),
                 ))
-                .child(Button::new("inline-join").label("Subscribe").primary()),
+                .child(
+                    Button::new("inline-join")
+                        .label(crate::i18n::gallery("Subscribe"))
+                        .primary(),
+                ),
         ),
     )
 }

@@ -17,7 +17,9 @@ pub fn mention(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let message = field("input-mention", window, cx, |input| {
         input
             .multi_line(2, 5)
-            .placeholder("Write a note. @ for people, # for tags.")
+            .placeholder(crate::i18n::gallery(
+                "Write a note. @ for people, # for tags.",
+            ))
             .highlighter(mention_highlights)
     });
     section(
@@ -83,7 +85,7 @@ pub fn rows(cx: &App) -> impl IntoElement + use<> {
             .child(
                 div().w(px(240.0)).child(
                     ListInput::new("hosts", ["lithe.dev".to_string()])
-                        .placeholder("Host")
+                        .placeholder(crate::i18n::gallery("Host"))
                         .on_change(|items, _, _| log::info!("gallery: {} hosts", items.len())),
                 ),
             ),

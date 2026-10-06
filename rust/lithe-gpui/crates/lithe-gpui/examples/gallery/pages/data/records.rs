@@ -224,14 +224,16 @@ pub fn timelines(cx: &mut App) -> impl IntoElement + use<> {
         .item(
             TimelineItem::new("Promote to production")
                 .icon(IconName::Hourglass)
-                .child("Waiting for approval"),
+                .child(crate::i18n::gallery("Waiting for approval")),
         );
     let project = Timeline::new()
         .item(TimelineItem::new("Kickoff").time("Jan 12"))
         .item(
             TimelineItem::new("Design review")
                 .time("Feb 3")
-                .child("Type scale settled; spacing loosened by one step."),
+                .child(crate::i18n::gallery(
+                    "Type scale settled; spacing loosened by one step.",
+                )),
         )
         .item(
             TimelineItem::new("Beta")
@@ -242,7 +244,7 @@ pub fn timelines(cx: &mut App) -> impl IntoElement + use<> {
             TimelineItem::new("Launch")
                 .time("Apr 30")
                 .tone(Severity::Warning)
-                .child("Planned"),
+                .child(crate::i18n::gallery("Planned")),
         );
     section(
         "Timeline / TimelineItem",
@@ -306,7 +308,7 @@ pub fn feed(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(div().max_w(px(560.)).child(feed))
     .child(div().flex().child(probe(
         "feed-post",
-        Button::new("feed-post").label("Something happens")
+        Button::new("feed-post").label(crate::i18n::gallery("Something happens"))
             .variant(ButtonVariant::Ghost)
             .icon(IconName::Plus)
             .on_click(move |_, _, cx| {

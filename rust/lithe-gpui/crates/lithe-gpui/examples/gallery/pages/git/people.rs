@@ -77,7 +77,7 @@ pub fn blame(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn review(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let reply = window.use_keyed_state("git-reply", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Reply")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Reply"))
     });
     let resolved = keep("git-resolved", || false, window, cx);
     let notes = keep(

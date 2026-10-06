@@ -70,7 +70,7 @@ pub fn actions(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "chat-edit-open",
                 Button::new("chat-edit")
-                    .label("Edit")
+                    .label(crate::i18n::gallery("Edit"))
                     .variant(ButtonVariant::Ghost)
                     .icon(IconName::Pencil)
                     .on_click(move |_, _, cx| set(&open, true, cx)),
@@ -180,7 +180,7 @@ pub fn thinking(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 div().w(px(560.)).child(ThinkingBlock::new("chat-thought", REASONING, false, Duration::from_secs(12))),
             ))
             .child(ThinkingBlock::new("chat-thinking-now", "Weighing how dark themes change", true, Duration::from_secs(3)))
-            .child(ThinkingIndicator::new("chat-searching").label("Searching the web"))
+            .child(ThinkingIndicator::new("chat-searching").label(crate::i18n::gallery("Searching the web")))
             .child(ThinkingDuration::new(Duration::from_secs(75))),
     )
 }

@@ -147,9 +147,9 @@ pub fn divider(cx: &App) -> impl IntoElement + use<> {
             .child(
                 row()
                     .h_6()
-                    .child("Left")
+                    .child(crate::i18n::gallery("Left"))
                     .child(Divider::vertical())
-                    .child("Right"),
+                    .child(crate::i18n::gallery("Right")),
             ),
     )
 }
@@ -174,16 +174,20 @@ pub fn backdrop(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .rounded(theme.radius(Radius::Xl))
         .bg(theme.colors.overlay)
         .shadow(theme.elevation(lithe_gpui::theme::Elevation::Modal))
-        .child(div().font_weight(FontWeight::SEMIBOLD).child("Backdrop"))
+        .child(
+            div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(crate::i18n::gallery("Backdrop")),
+        )
         .child(
             div()
                 .text_color(theme.colors.fg_muted)
-                .child("Click outside to close."),
+                .child(crate::i18n::gallery("Click outside to close.")),
         )
         .child(
             div().flex().justify_end().child(
                 Button::new("backdrop-close")
-                    .label("Close")
+                    .label(crate::i18n::gallery("Close"))
                     .on_click(move |_, _, cx| set(&close, false, cx)),
             ),
         );
@@ -197,7 +201,7 @@ pub fn backdrop(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "backdrop-open",
                 Button::new("backdrop-open")
-                    .label("Show backdrop")
+                    .label(crate::i18n::gallery("Show backdrop"))
                     .on_click(move |_, _, cx| set(&show, true, cx)),
             ))
             .when(shown, |row| {
@@ -359,7 +363,9 @@ pub fn measure(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .rounded(theme.radius(Radius::Lg))
         .bg(theme.colors.sunken)
         .text_color(theme.colors.fg_muted)
-        .child("Text wraps to the width it gets. The box reports each new size once."),
+        .child(crate::i18n::gallery(
+            "Text wraps to the width it gets. The box reports each new size once.",
+        )),
     )
 }
 
@@ -399,7 +405,7 @@ pub fn intersection(window: &mut Window, cx: &mut App) -> impl IntoElement + use
                         .rounded(theme.radius(Radius::Md))
                         .bg(theme.colors.info_subtle)
                         .text_color(theme.colors.info)
-                        .child("Marker"),
+                        .child(crate::i18n::gallery("Marker")),
                     )
                     .child(spacer()),
             )
@@ -420,7 +426,7 @@ pub fn tooltip(cx: &App) -> impl IntoElement + use<> {
         .border_1()
         .border_color(theme.colors.border)
         .text_color(theme.colors.fg_muted)
-        .child("Move across me");
+        .child(crate::i18n::gallery("Move across me"));
     section(
         "Tooltip Trigger",
         "gpui's trigger with Ely's body, or Ely's own trigger for delay and tracking.",
@@ -453,8 +459,16 @@ pub fn tooltip(cx: &App) -> impl IntoElement + use<> {
                             .flex()
                             .flex_col()
                             .gap_0p5()
-                            .child(div().font_weight(FontWeight::MEDIUM).child("Rich content"))
-                            .child(div().text_color(muted).child("Any element fits here."))
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(crate::i18n::gallery("Rich content")),
+                            )
+                            .child(
+                                div()
+                                    .text_color(muted)
+                                    .child(crate::i18n::gallery("Any element fits here.")),
+                            )
                             .into_any_element()
                     })),
             ))
@@ -472,6 +486,8 @@ pub fn tooltip(cx: &App) -> impl IntoElement + use<> {
         div()
             .text_size(theme.text_size(TextSize::Xs))
             .text_color(theme.colors.fg_subtle)
-            .child("Ely's trigger waits 400ms by default; gpui's waits 500ms."),
+            .child(crate::i18n::gallery(
+                "Ely's trigger waits 400ms by default; gpui's waits 500ms.",
+            )),
     )
 }

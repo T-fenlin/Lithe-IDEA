@@ -23,9 +23,12 @@ const SYSTEM: &str = "You answer about color in plain words. Cite sources.";
 /// The composer's text, which the prompt menu fills.
 pub fn draft(window: &mut Window, cx: &mut App) -> Entity<InputState> {
     window.use_keyed_state("chat-compose", cx, |window, cx| {
-        let mut input = InputState::new(window, cx)
-            .multi_line(1, 8)
-            .placeholder("Ask anything, / for commands, @ for context");
+        let mut input =
+            InputState::new(window, cx)
+                .multi_line(1, 8)
+                .placeholder(crate::i18n::gallery(
+                    "Ask anything, / for commands, @ for context",
+                ));
         input.set_text("Compare these two lifts in dark mode", cx);
         input
     })

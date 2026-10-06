@@ -126,13 +126,13 @@ pub fn undo(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .items_center()
             .gap_2()
             .child(div().w(px(64.)).text_size(theme.text_size(TextSize::Lg)).child(count.to_string()))
-            .child(Button::new("interaction-add").label("Add one").on_click(move |_, _, cx| {
+            .child(Button::new("interaction-add").label(crate::i18n::gallery("Add one")).on_click(move |_, _, cx| {
                 change(&add, cx, |tally| {
                     tally.history.record(tally.count, false);
                     tally.count += 1;
                 })
             }))
-            .child(Button::new("interaction-take").label("Take one").on_click(move |_, _, cx| {
+            .child(Button::new("interaction-take").label(crate::i18n::gallery("Take one")).on_click(move |_, _, cx| {
                 change(&take, cx, |tally| {
                     tally.history.record(tally.count, false);
                     tally.count -= 1;
@@ -141,7 +141,7 @@ pub fn undo(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 Button::new("interaction-undo").icon(IconName::Undo2)
                     .variant(ButtonVariant::Ghost)
-                    .tooltip("Undo")
+                    .tooltip(crate::i18n::gallery("Undo"))
                     .disabled(!can_undo)
                     .on_click(move |_, _, cx| {
                         change(&back, cx, |tally| {
@@ -153,7 +153,7 @@ pub fn undo(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 Button::new("interaction-redo").icon(IconName::Redo2)
                     .variant(ButtonVariant::Ghost)
-                    .tooltip("Redo")
+                    .tooltip(crate::i18n::gallery("Redo"))
                     .disabled(!can_redo)
                     .on_click(move |_, _, cx| {
                         change(&again, cx, |tally| {
@@ -232,7 +232,7 @@ pub fn focus(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     );
     let field = window.use_keyed_state("interaction-autofocus", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Focused as it appears")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Focused as it appears"))
     });
     let now = state.read(cx);
     let (shown, tool, fruit) = (now.field, now.tool.clone(), now.fruit.clone());

@@ -98,10 +98,10 @@ pub fn list_box(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn combobox(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let city = field("input-city", window, cx, |input| {
-        input.placeholder("Search cities")
+        input.placeholder(crate::i18n::gallery("Search cities"))
     });
     let tag = field("input-tag", window, cx, |input| {
-        input.placeholder("Any label")
+        input.placeholder(crate::i18n::gallery("Any label"))
     });
     let chosen = keep("combobox-city", || None::<SharedString>, window, cx);
     let now = chosen.read(cx).clone();
@@ -154,7 +154,7 @@ pub fn multi_select(window: &mut Window, cx: &mut App) -> impl IntoElement + use
         div().w(px(360.0)).child(
             MultiSelect::new("multi-cities", cities())
                 .selected(now)
-                .placeholder("Pick cities")
+                .placeholder(crate::i18n::gallery("Pick cities"))
                 .on_change(move |next, _, cx| set(&picked, next.to_vec(), cx)),
         ),
     ))

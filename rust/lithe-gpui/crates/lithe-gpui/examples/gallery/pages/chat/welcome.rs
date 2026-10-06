@@ -22,7 +22,7 @@ pub fn welcome_draft(window: &mut Window, cx: &mut App) -> Entity<InputState> {
     window.use_keyed_state("chat-welcome-draft", cx, |window, cx| {
         InputState::new(window, cx)
             .multi_line(1, 6)
-            .placeholder("How can I help?")
+            .placeholder(crate::i18n::gallery("How can I help?"))
     })
 }
 

@@ -81,7 +81,7 @@ pub fn presence(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                             .flex_1()
                             .text_size(theme.text_size(TextSize::Sm))
                             .font_weight(FontWeight::MEDIUM)
-                            .child("Handbook / Color / Lift"),
+                            .child(crate::i18n::gallery("Handbook / Color / Lift")),
                     )
                     .child(LiveIndicator::new("collab-live", people.len()))
                     .child(probe(

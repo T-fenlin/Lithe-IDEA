@@ -18,7 +18,9 @@ pub fn toggle_button(window: &mut Window, cx: &mut App) -> impl IntoElement + us
             .child(
                 ToggleButton::new(
                     "toggle-pin",
-                    ToggleItem::new("pin").label("Pinned").icon(IconName::Pin),
+                    ToggleItem::new("pin")
+                        .label(crate::i18n::gallery("Pinned"))
+                        .icon(IconName::Pin),
                     pin_on,
                 )
                 .on_toggle(move |on, _, cx| {
@@ -33,7 +35,7 @@ pub fn toggle_button(window: &mut Window, cx: &mut App) -> impl IntoElement + us
                     "toggle-mute",
                     ToggleItem::new("mute")
                         .icon(IconName::VolumeX)
-                        .tooltip("Mute"),
+                        .tooltip(crate::i18n::gallery("Mute")),
                     mute_on,
                 )
                 .on_toggle(move |on, _, cx| {
@@ -81,16 +83,20 @@ pub fn toggle_group(window: &mut Window, cx: &mut App) -> impl IntoElement + use
                 "multiple",
                 ToggleGroup::new("marks")
                     .multiple()
-                    .item(ToggleItem::new("bold").icon(IconName::Bold).tooltip("Bold"))
+                    .item(
+                        ToggleItem::new("bold")
+                            .icon(IconName::Bold)
+                            .tooltip(crate::i18n::gallery("Bold")),
+                    )
                     .item(
                         ToggleItem::new("italic")
                             .icon(IconName::Italic)
-                            .tooltip("Italic"),
+                            .tooltip(crate::i18n::gallery("Italic")),
                     )
                     .item(
                         ToggleItem::new("underline")
                             .icon(IconName::Underline)
-                            .tooltip("Underline"),
+                            .tooltip(crate::i18n::gallery("Underline")),
                     )
                     .selected(marks_now)
                     .on_change(store(marks)),
@@ -101,17 +107,17 @@ pub fn toggle_group(window: &mut Window, cx: &mut App) -> impl IntoElement + use
                 ToggleGroup::new("align")
                     .item(
                         ToggleItem::new("left")
-                            .label("Left")
+                            .label(crate::i18n::gallery("Left"))
                             .icon(IconName::AlignLeft),
                     )
                     .item(
                         ToggleItem::new("center")
-                            .label("Center")
+                            .label(crate::i18n::gallery("Center"))
                             .icon(IconName::AlignCenter),
                     )
                     .item(
                         ToggleItem::new("right")
-                            .label("Right")
+                            .label(crate::i18n::gallery("Right"))
                             .icon(IconName::AlignRight),
                     )
                     .selected(align_now)

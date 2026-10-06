@@ -93,33 +93,33 @@ pub fn conversation(window: &mut Window, cx: &mut App) -> impl IntoElement + use
             .child(DateSeparator::new(date(2026, 9, 26), date(2026, 9, 26)))
             .child(
                 message("messaging-m1", "Ana Lima", 9, 2)
-                    .child("Morning. The plaster samples came in overnight."),
+                    .child(crate::i18n::gallery("Morning. The plaster samples came in overnight.")),
             )
             .child(
                 message("messaging-m2", "Ana Lima", 9, 3)
                     .after("Ana Lima", at(9, 2))
-                    .child("Three finishes: lime, tadelakt and a sanded gypsum."),
+                    .child(crate::i18n::gallery("Three finishes: lime, tadelakt and a sanded gypsum.")),
             )
             .child(
                 message("messaging-m3", "Ana Lima", 9, 5)
                     .after("Ana Lima", at(9, 3))
-                    .child("They're in the stair hall, along the left wall."),
+                    .child(crate::i18n::gallery("They're in the stair hall, along the left wall.")),
             )
             .child(
                 message("messaging-m4", "Ben Ito", 9, 7)
                     .after("Ana Lima", at(9, 5))
-                    .child("I'll look before the review. Is the tadelakt sealed yet?"),
+                    .child(crate::i18n::gallery("I'll look before the review. Is the tadelakt sealed yet?")),
             )
             .child(
                 message("messaging-m5", "Ana Lima", 9, 21)
                     .after("Ben Ito", at(9, 7))
-                    .child("Not yet. It needs another day."),
+                    .child(crate::i18n::gallery("Not yet. It needs another day.")),
             )
             .child(UnreadDivider::new())
             .child(
                 message("messaging-m6", "Chloé Martin", 9, 34)
                     .after("Ana Lima", at(9, 21))
-                    .child("Pinned the brief: light from above, one stair, olive trees by the windows. Thoughts on where the trees go?")
+                    .child(crate::i18n::gallery("Pinned the brief: light from above, one stair, olive trees by the windows. Thoughts on where the trees go?"))
                     .footer(footer),
             )
             .child(
@@ -134,7 +134,7 @@ pub fn conversation(window: &mut Window, cx: &mut App) -> impl IntoElement + use
 pub fn thread(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let open = thread_open(window, cx);
     let reply = window.use_keyed_state("messaging-thread-reply", cx, |window, cx| {
-        lithe_gpui::forms::InputState::new(window, cx).placeholder("Reply…")
+        lithe_gpui::forms::InputState::new(window, cx).placeholder(crate::i18n::gallery("Reply…"))
     });
     let shown = *open.read(cx);
     let theme = cx.theme();
@@ -150,22 +150,22 @@ pub fn thread(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             ThreadPanel::new(
                 "messaging-thread",
                 message("messaging-t0", "Chloé Martin", 9, 34)
-                    .child("Pinned the brief: light from above, one stair, olive trees by the windows. Thoughts on where the trees go?"),
+                    .child(crate::i18n::gallery("Pinned the brief: light from above, one stair, olive trees by the windows. Thoughts on where the trees go?")),
             )
             .chat("# design")
             .child(
                 message("messaging-t1", "Ana Lima", 9, 40)
-                    .child("By the south windows, where the stair takes its light."),
+                    .child(crate::i18n::gallery("By the south windows, where the stair takes its light.")),
             )
             .child(
                 message("messaging-t2", "Ana Lima", 9, 41)
                     .after("Ana Lima", at(9, 40))
-                    .child("Two there, and one on the landing."),
+                    .child(crate::i18n::gallery("Two there, and one on the landing.")),
             )
             .child(
                 message("messaging-t3", "Ben Ito", 10, 12)
                     .after("Ana Lima", at(9, 41))
-                    .child("Agreed. I'll move them on the plan."),
+                    .child(crate::i18n::gallery("Agreed. I'll move them on the plan.")),
             )
             .composer(Input::new(&reply))
             .on_close(move |_, cx| change(&closing, cx, |open| *open = false)),
@@ -174,7 +174,7 @@ pub fn thread(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         let opening = open.clone();
         frame.flex().items_center().justify_center().child(
             Button::new("messaging-thread-reopen")
-                .label("Open the thread")
+                .label(crate::i18n::gallery("Open the thread"))
                 .on_click(move |_, _, cx| change(&opening, cx, |open| *open = true)),
         )
     };

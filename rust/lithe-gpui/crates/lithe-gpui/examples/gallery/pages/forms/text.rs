@@ -25,16 +25,16 @@ pub fn field(
 
 pub fn input(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let name = field("input-name", window, cx, |input| {
-        input.placeholder("Full name")
+        input.placeholder(crate::i18n::gallery("Full name"))
     });
     let small = field("input-small", window, cx, |input| {
-        input.placeholder("Small")
+        input.placeholder(crate::i18n::gallery("Small"))
     });
     let large = field("input-large", window, cx, |input| {
-        input.placeholder("Large")
+        input.placeholder(crate::i18n::gallery("Large"))
     });
     let clear = field("input-clear", window, cx, |input| {
-        input.placeholder("Clearable")
+        input.placeholder(crate::i18n::gallery("Clearable"))
     });
     section(
         "Input / TextField / ClearableInput",
@@ -71,9 +71,9 @@ pub fn input(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn text_area(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let notes = field("textarea-notes", window, cx, |input| {
-        input
-            .multi_line(3, 6)
-            .placeholder("Notes grow from three lines to six, then scroll.")
+        input.multi_line(3, 6).placeholder(crate::i18n::gallery(
+            "Notes grow from three lines to six, then scroll.",
+        ))
     });
     section(
         "TextArea / AutoResizeInput",
@@ -89,7 +89,7 @@ pub fn text_area(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
 
 pub fn password(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let secret = field("input-password", window, cx, |input| {
-        input.masked().placeholder("Password")
+        input.masked().placeholder(crate::i18n::gallery("Password"))
     });
     section(
         "PasswordInput",
@@ -104,7 +104,7 @@ pub fn password(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn search(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let query = field("input-search", window, cx, |input| {
-        input.placeholder("Search docs")
+        input.placeholder(crate::i18n::gallery("Search docs"))
     });
     let picked = window.use_keyed_state("search-picked", cx, |_, _| {
         SharedString::from("nothing yet")
@@ -160,7 +160,7 @@ pub fn group(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         Button::new("group-copy")
                             .icon(IconName::Copy)
                             .size(Size::Small)
-                            .tooltip("Copy"),
+                            .tooltip(crate::i18n::gallery("Copy")),
                     )),
                 ),
                 cx,

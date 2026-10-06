@@ -49,7 +49,7 @@ fn watches() -> Vec<Watch> {
 pub fn watch(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let chosen = keep("finance-watched", || SharedString::from("ELY"), window, cx);
     let field = window.use_keyed_state("finance-symbol", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Search symbols")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Search symbols"))
     });
     let (now, pick, find) = (chosen.read(cx).clone(), chosen.clone(), chosen.clone());
     let symbols = SYMBOLS.iter().map(|(symbol, name, venue, ..)| {

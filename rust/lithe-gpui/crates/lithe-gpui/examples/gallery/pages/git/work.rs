@@ -356,7 +356,7 @@ pub fn refs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         "Branches as a palette, local and remote apart, a new name offering a new branch; the lists show how far each branch is from its upstream, tags with their messages, and stashes to apply, pop or drop.",
         cx,
     )
-    .child(row().child(Button::new("git-branch-button").label("Switch branch…").on_click(move |_, _, cx| set(&opener, true, cx))))
+    .child(row().child(Button::new("git-branch-button").label(crate::i18n::gallery("Switch branch…")).on_click(move |_, _, cx| set(&opener, true, cx))))
     .children(told.map(Caption::new))
     .child(
         div()

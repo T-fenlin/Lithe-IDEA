@@ -47,13 +47,16 @@ pub fn errors(cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 frame(cx).child(
                     ErrorView::not_found("error-404")
-                        .action(Button::new("error-home").label("Go home")),
+                        .action(Button::new("error-home").label(crate::i18n::gallery("Go home"))),
                 ),
             )
             .child(
                 frame(cx).child(
-                    ErrorView::no_permission("error-403")
-                        .action(Button::new("error-ask").label("Request access").primary()),
+                    ErrorView::no_permission("error-403").action(
+                        Button::new("error-ask")
+                            .label(crate::i18n::gallery("Request access"))
+                            .primary(),
+                    ),
                 ),
             ),
     )
@@ -64,8 +67,9 @@ pub fn errors(cx: &mut App) -> impl IntoElement + use<> {
             .child(frame(cx).child(ErrorView::maintenance("error-maintenance")))
             .child(
                 frame(cx).child(
-                    ErrorView::offline("error-offline")
-                        .action(Button::new("error-retry").label("Try again")),
+                    ErrorView::offline("error-offline").action(
+                        Button::new("error-retry").label(crate::i18n::gallery("Try again")),
+                    ),
                 ),
             ),
     )
@@ -84,7 +88,7 @@ pub fn boundary(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .items_center()
             .justify_center()
             .text_color(theme.colors.fg_muted)
-            .child("Revenue, third quarter: 1.2 M"))
+            .child(crate::i18n::gallery("Revenue, third quarter: 1.2 M")))
     };
     section(
         "ErrorBoundary",
@@ -124,15 +128,24 @@ pub fn results(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 frame(cx).child(
                     ResultView::success(("result-ok", now), "Payment sent")
                         .body("€240.00 to Studio Ottanta. A receipt is on its way.")
-                        .action(Button::new("result-done").label("Done").primary())
-                        .action(Button::new("result-receipt").label("View receipt")),
+                        .action(
+                            Button::new("result-done")
+                                .label(crate::i18n::gallery("Done"))
+                                .primary(),
+                        )
+                        .action(
+                            Button::new("result-receipt")
+                                .label(crate::i18n::gallery("View receipt")),
+                        ),
                 ),
             )
             .child(
                 frame(cx).child(
                     ResultView::failure(("result-no", now), "Payment declined")
                         .body("Your bank declined the charge. No money moved.")
-                        .action(Button::new("result-again").label("Try again")),
+                        .action(
+                            Button::new("result-again").label(crate::i18n::gallery("Try again")),
+                        ),
                 ),
             ),
     )
@@ -140,7 +153,7 @@ pub fn results(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row().child(probe(
             "result-replay",
             Button::new("result-replay")
-                .label("Replay")
+                .label(crate::i18n::gallery("Replay"))
                 .variant(ButtonVariant::Ghost)
                 .on_click(move |_, _, cx| set(&replay, now + 1, cx)),
         )),
@@ -231,7 +244,7 @@ pub fn statuses(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 row()
                     .child(probe(
                         "saving-next",
-                        Button::new("saving-next").label("Next").on_click(next(0, SAVES.len())),
+                        Button::new("saving-next").label(crate::i18n::gallery("Next")).on_click(next(0, SAVES.len())),
                     ))
                     .child(
                         SavingIndicator::new("saving", SAVES[now[0]]).on_retry(move |_, cx| {
@@ -247,7 +260,7 @@ pub fn statuses(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 row()
                     .child(probe(
                         "sync-next",
-                        Button::new("sync-next").label("Next").on_click(next(1, SYNCS.len())),
+                        Button::new("sync-next").label(crate::i18n::gallery("Next")).on_click(next(1, SYNCS.len())),
                     ))
                     .child(SyncStatus::new("sync", SYNCS[now[1]])),
                 cx,
@@ -257,7 +270,7 @@ pub fn statuses(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 row()
                     .child(probe(
                         "connection-next",
-                        Button::new("connection-next").label("Next").on_click(next(2, LINKS.len())),
+                        Button::new("connection-next").label(crate::i18n::gallery("Next")).on_click(next(2, LINKS.len())),
                     ))
                     .child(ConnectionStatus::new("connection", LINKS[now[2]])),
                 cx,
@@ -307,7 +320,7 @@ pub fn clocks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .child(probe(
                         "countdown-restart",
                         Button::new("countdown-restart")
-                            .label("Restart")
+                            .label(crate::i18n::gallery("Restart"))
                             .variant(ButtonVariant::Ghost)
                             .on_click(move |_, _, cx| {
                                 set(&restart, Instant::now() + Duration::from_secs(10), cx);

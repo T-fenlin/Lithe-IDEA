@@ -139,16 +139,19 @@ pub fn accordion(cx: &App) -> impl IntoElement + use<> {
             Accordion::new("faq")
                 .first_open()
                 .item(
-                    AccordionItem::new("What is Ely?")
-                        .child("A component library for gpui, in light and dark."),
+                    AccordionItem::new("What is Ely?").child(crate::i18n::gallery(
+                        "A component library for gpui, in light and dark.",
+                    )),
                 )
                 .item(
-                    AccordionItem::new("Does it animate?")
-                        .child("Where motion explains a change, and nowhere else."),
+                    AccordionItem::new("Does it animate?").child(crate::i18n::gallery(
+                        "Where motion explains a change, and nowhere else.",
+                    )),
                 )
                 .item(
-                    AccordionItem::new("Can I theme it?")
-                        .child("Every color, size and radius comes from one token set."),
+                    AccordionItem::new("Can I theme it?").child(crate::i18n::gallery(
+                        "Every color, size and radius comes from one token set.",
+                    )),
                 ),
         ),
     ))
@@ -180,10 +183,14 @@ pub fn card(cx: &App) -> impl IntoElement + use<> {
                     .gap_2()
                     .child(
                         Button::new("card-cancel")
-                            .label("Later")
+                            .label(crate::i18n::gallery("Later"))
                             .variant(ButtonVariant::Ghost),
                     )
-                    .child(Button::new("card-go").label("Manage").primary()),
+                    .child(
+                        Button::new("card-go")
+                            .label(crate::i18n::gallery("Manage"))
+                            .primary(),
+                    ),
             ),
     )
 }
@@ -230,7 +237,11 @@ pub fn section_demo(cx: &App) -> impl IntoElement + use<> {
         Section::new("Members")
             .w(px(520.0))
             .description("People who can open this workspace.")
-            .action(Button::new("invite").label("Invite").icon(IconName::Plus))
+            .action(
+                Button::new("invite")
+                    .label(crate::i18n::gallery("Invite"))
+                    .icon(IconName::Plus),
+            )
             .child(
                 row()
                     .child(tile("Ada", cx))

@@ -156,5 +156,5 @@ fn picker(cx: &App) -> impl IntoElement + use<> {
             ),
         ),
     )
-    .child(div().text_color(muted).child("The pick reaches the owner as it moves; the log shows it."))
+    .child(div().text_color(muted).child(crate::i18n::gallery("The pick reaches the owner as it moves; the log shows it.")))
 }

@@ -40,7 +40,7 @@ pub fn platform(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "Vibrancy",
                 probe(
                         "frosted-open",
-                        Button::new("frosted-open").label("Open a frosted window")
+                        Button::new("frosted-open").label(crate::i18n::gallery("Open a frosted window"))
                             .on_click(|_, _, cx| frosted(cx)),
                     ),
                 cx,
@@ -110,7 +110,7 @@ fn icons(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .child(
             Switch::new("icon-theme")
                 .checked(on)
-                .label("The owner's icons")
+                .label(crate::i18n::gallery("The owner's icons"))
                 .on_change(move |on, _, cx| {
                     let theme = if on {
                         IconTheme::default()
@@ -185,9 +185,9 @@ impl Render for Frosted {
                     .border_color(colors.border)
                     .min_w_0()
                     .text_color(colors.fg_muted)
-                    .child(
-                        div().child("The sidebar lets the desktop through; this pane stays solid."),
-                    ),
+                    .child(div().child(crate::i18n::gallery(
+                        "The sidebar lets the desktop through; this pane stays solid.",
+                    ))),
             )
     }
 }

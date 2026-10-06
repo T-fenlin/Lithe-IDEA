@@ -138,7 +138,7 @@ pub fn start(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 .on_show(move |on, _, cx| set(&toggle, on, cx)),
         ),
     )
-    .child(row().child(Button::new("panels-switch").label("Switch project…").on_click(move |_, _, cx| set(&opener, true, cx))))
+    .child(row().child(Button::new("panels-switch").label(crate::i18n::gallery("Switch project…")).on_click(move |_, _, cx| set(&opener, true, cx))))
     .children(said.map(Caption::new))
     .child(
         row()

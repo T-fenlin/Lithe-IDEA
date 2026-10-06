@@ -201,7 +201,7 @@ fn signal_pair(strong: Hsla, quiet: Hsla, cx: &App) -> impl IntoElement + use<> 
             div()
                 .text_color(strong)
                 .font_weight(FontWeight::MEDIUM)
-                .child("Aa 12"),
+                .child(crate::i18n::gallery("Aa 12")),
         )
 }
 
@@ -279,7 +279,7 @@ fn type_scale(cx: &App) -> impl IntoElement + use<> {
                         .text_size(theme.text_size(size))
                         .font_weight(weight)
                         .text_color(theme.colors.fg)
-                        .child("Quiet interfaces age well."),
+                        .child(crate::i18n::gallery("Quiet interfaces age well.")),
                 )
         }))
 }

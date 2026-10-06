@@ -119,7 +119,7 @@ pub fn sharing(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(probe(
         "collab-share",
         div().flex().child(
-            Button::new("collab-share-open").label("Share")
+            Button::new("collab-share-open").label(crate::i18n::gallery("Share"))
                 .variant(ButtonVariant::Primary)
                 .icon(IconName::UserPlus)
                 .on_click(move |_, _, cx| set(&open, true, cx)),

@@ -73,7 +73,7 @@ pub fn ripple(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .border_1()
                     .border_color(theme.colors.border)
                     .bg(theme.colors.surface)
-                    .child("Press anywhere"),
+                    .child(crate::i18n::gallery("Press anywhere")),
             ))
             .child(
                 div()
@@ -85,7 +85,7 @@ pub fn ripple(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .justify_center()
                     .child(probe(
                         "celebrate",
-                        Button::new("celebrate").label("Celebrate")
+                        Button::new("celebrate").label(crate::i18n::gallery("Celebrate"))
                             .primary()
                             .on_click(move |_, _, cx| set(&more, now + 1, cx)),
                     ))
@@ -112,7 +112,7 @@ pub fn light(cx: &mut App) -> impl IntoElement + use<> {
                     .border_1()
                     .border_color(theme.colors.border)
                     .bg(theme.colors.surface)
-                    .child("Focus mode"),
+                    .child(crate::i18n::gallery("Focus mode")),
                 cx,
             ))
             .child(specimen(
@@ -127,7 +127,7 @@ pub fn light(cx: &mut App) -> impl IntoElement + use<> {
                             .rounded_full()
                             .bg(theme.colors.success),
                     )
-                    .child("Live"),
+                    .child(crate::i18n::gallery("Live")),
                 cx,
             )),
     )
@@ -148,7 +148,7 @@ pub fn cues(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         specimens()
             .child(specimen(
                 "blink",
-                div().flex().items_center().child("Type here").child(
+                div().flex().items_center().child(crate::i18n::gallery("Type here")).child(
                     Blink::new("blink").w_0p5().h_4().ml_0p5().bg(theme.colors.fg),
                 ),
                 cx,
@@ -164,7 +164,7 @@ pub fn cues(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     )
                     .child(probe(
                         "flash-tick",
-                        Button::new("flash-tick").label("Tick")
+                        Button::new("flash-tick").label(crate::i18n::gallery("Tick"))
                             .variant(ButtonVariant::Ghost)
                             .on_click(move |_, _, cx| set(&tick, value + 37, cx)),
                     )),
@@ -187,7 +187,7 @@ pub fn cues(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     )
                     .child(probe(
                         "shake-try",
-                        Button::new("shake-try").label("Sign in").on_click(move |_, _, cx| set(&again, count + 1, cx)),
+                        Button::new("shake-try").label(crate::i18n::gallery("Sign in")).on_click(move |_, _, cx| set(&again, count + 1, cx)),
                     ))
                     .when(count > 0, |line| line.child(InlineMessage::new(Severity::Danger, "Wrong password"))),
                 cx,

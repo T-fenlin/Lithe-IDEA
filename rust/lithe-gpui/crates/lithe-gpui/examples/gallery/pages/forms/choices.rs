@@ -51,7 +51,7 @@ pub fn checkboxes(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
             .child(
                 Checkbox::new("check-all")
                     .checked(parent)
-                    .label("All notifications")
+                    .label(crate::i18n::gallery("All notifications"))
                     .on_change(move |on, _, cx| {
                         set(&all, if on { open.clone() } else { Vec::new() }, cx)
                     }),
@@ -183,19 +183,19 @@ pub fn switches(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 Switch::new("switch-wifi")
                     .checked(wifi_now)
-                    .label("Wi-Fi")
+                    .label(crate::i18n::gallery("Wi-Fi"))
                     .on_change(move |on, _, cx| set(&wifi, on, cx)),
             )
             .child(
                 Switch::new("switch-sync")
                     .checked(sync_now)
-                    .label("Sync over cellular")
+                    .label(crate::i18n::gallery("Sync over cellular"))
                     .on_change(move |on, _, cx| set(&sync, on, cx)),
             )
             .child(
                 Switch::new("switch-locked")
                     .checked(true)
-                    .label("Managed by your admin")
+                    .label(crate::i18n::gallery("Managed by your admin"))
                     .disabled(true),
             ),
     ))

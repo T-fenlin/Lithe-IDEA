@@ -261,7 +261,7 @@ pub fn context(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .border_color(theme.colors.border_strong)
                     .rounded(theme.radius(Radius::Lg))
                     .text_color(theme.colors.fg_subtle)
-                    .child("Right-click anywhere here"),
+                    .child(crate::i18n::gallery("Right-click anywhere here")),
             ),
         ),
         cx,

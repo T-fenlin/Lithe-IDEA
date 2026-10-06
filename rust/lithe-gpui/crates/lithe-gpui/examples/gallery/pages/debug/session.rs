@@ -240,7 +240,7 @@ pub fn values(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     );
     let field = window.use_keyed_state("debug-watch-field", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Add an expression")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Add an expression"))
     });
     window.use_keyed_state("debug-watch-sub", cx, {
         let (field, watches) = (field.clone(), watches.clone());

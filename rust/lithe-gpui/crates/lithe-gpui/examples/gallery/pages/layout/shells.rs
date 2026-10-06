@@ -98,7 +98,7 @@ pub fn drawer(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "drawer-open",
                 Button::new("drawer-open")
-                    .label("Open drawer")
+                    .label(crate::i18n::gallery("Open drawer"))
                     .on_click(move |_, _, cx| flip(&state, cx)),
             ))
             .when(open, |row| {
@@ -124,7 +124,7 @@ pub fn sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "sheet-open",
                 Button::new("sheet-open")
-                    .label("Open sheet")
+                    .label(crate::i18n::gallery("Open sheet"))
                     .on_click(move |_, _, cx| flip(&state, cx)),
             ))
             .when(open, |row| {
@@ -154,7 +154,7 @@ pub fn page(cx: &App) -> impl IntoElement + use<> {
                 .subtitle("Everything your team is shipping.")
                 .action(
                     Button::new("page-new")
-                        .label("New project")
+                        .label(crate::i18n::gallery("New project"))
                         .primary()
                         .icon(IconName::Plus),
                 )

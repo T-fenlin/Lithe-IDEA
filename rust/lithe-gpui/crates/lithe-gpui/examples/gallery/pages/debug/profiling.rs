@@ -224,7 +224,7 @@ fn requests() -> Vec<Request> {
 pub fn network(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let picked = keep("debug-request", || Some(4usize), window, cx);
     let query = window.use_keyed_state("debug-network-query", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Filter addresses")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Filter addresses"))
     });
     let now = *picked.read(cx);
     let text: SharedString = query.read(cx).text().to_string().into();

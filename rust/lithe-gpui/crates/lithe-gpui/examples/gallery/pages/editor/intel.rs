@@ -206,8 +206,8 @@ pub fn navigate(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .gap_4()
             .child(CodeActionMenu::new("intel-actions", fixes))
-            .child(Button::new("intel-goto-open").label("Go to symbol…").on_click(move |_, _, cx| set(&opener, true, cx)))
-            .child(Button::new("intel-rename-open").label("Rename lookup").on_click(move |_, _, cx| set(&renamer, true, cx)))
+            .child(Button::new("intel-goto-open").label(crate::i18n::gallery("Go to symbol…")).on_click(move |_, _, cx| set(&opener, true, cx)))
+            .child(Button::new("intel-rename-open").label(crate::i18n::gallery("Rename lookup")).on_click(move |_, _, cx| set(&renamer, true, cx)))
             .child(Caption::new(format!("Cursor on line {}.", line + 1))),
     )
     .children(renaming.then(|| {

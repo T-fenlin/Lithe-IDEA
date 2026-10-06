@@ -111,7 +111,7 @@ fn clocks(cx: &App) -> impl IntoElement + use<> {
     )
     .child(
         specimens()
-            .child(specimen("clock", Clock::new("clock").label("Here"), cx))
+            .child(specimen("clock", Clock::new("clock").label(crate::i18n::gallery("Here")), cx))
             .child(specimen(
                 "world clock",
                 div().w(px(320.0)).child(WorldClock::new(

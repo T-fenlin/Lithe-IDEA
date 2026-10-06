@@ -300,7 +300,7 @@ pub fn knowledge(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
                             .px_8()
                             .pb_6()
                             .child(div().mt_neg_8().child(PageIcon::new("know-icon", now_icon).on_change(move |next, _, cx| set(&icon, next.clone(), cx))))
-                            .child(div().text_size(theme.text_size(TextSize::Xxl)).font_weight(FontWeight::SEMIBOLD).child("Lift"))
+                            .child(div().text_size(theme.text_size(TextSize::Xxl)).font_weight(FontWeight::SEMIBOLD).child(crate::i18n::gallery("Lift")))
                             .child(
                                 PropertyGrid::new("know-properties").group(
                                     PropertyGroup::new("Properties")

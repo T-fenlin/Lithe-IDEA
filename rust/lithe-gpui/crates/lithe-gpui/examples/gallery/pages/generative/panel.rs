@@ -63,7 +63,7 @@ pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let prompt = window.use_keyed_state("gen-prompt-field", cx, |window, cx| {
         let mut input = InputState::new(window, cx)
             .multi_line(3, 6)
-            .placeholder("Describe a picture");
+            .placeholder(crate::i18n::gallery("Describe a picture"));
         input.set_text("a spiral staircase in a white atrium", cx);
         input
     });
@@ -143,7 +143,7 @@ pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 .child(
                     FormField::new("gen-left-out", "Leave out").child(
                         TagInput::new("gen-left-out-tags", now.left_out)
-                            .placeholder("A word, then Enter")
+                            .placeholder(crate::i18n::gallery("A word, then Enter"))
                             .on_change(move |tags, _, cx| edit(&tagged, cx, |settings| settings.left_out = tags)),
                     ),
                 )
@@ -169,7 +169,7 @@ pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .flex_col()
                         .gap_2()
                         .child(
-                            Button::new("gen-generate").label("Generate")
+                            Button::new("gen-generate").label(crate::i18n::gallery("Generate"))
                                 .variant(ButtonVariant::Primary)
                                 .full_width()
                                 .shortcut("secondary-enter")

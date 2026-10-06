@@ -248,7 +248,10 @@ fn zero(cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 EmptyState::new("mail-zero", IconName::Inbox, "All caught up")
                     .body("Nothing waits in your inbox. New mail lands here, newest first.")
-                    .action(Button::new("mail-zero-archive").label("Open the archive")),
+                    .action(
+                        Button::new("mail-zero-archive")
+                            .label(crate::i18n::gallery("Open the archive")),
+                    ),
             ),
     ))
 }

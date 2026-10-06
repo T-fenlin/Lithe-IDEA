@@ -56,15 +56,15 @@ pub fn lines(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(probe("revenue", div().w(px(720.)).child(chart())))
     .child(
         row()
-            .child(Button::new("lines-next").label("New data").variant(ButtonVariant::Ghost).on_click(move |_, _, cx| set(&next, now + 1, cx)))
-            .child(Button::new("lines-svg").label("Copy SVG").variant(ButtonVariant::Ghost).on_click({
+            .child(Button::new("lines-next").label(crate::i18n::gallery("New data")).variant(ButtonVariant::Ghost).on_click(move |_, _, cx| set(&next, now + 1, cx)))
+            .child(Button::new("lines-svg").label(crate::i18n::gallery("Copy SVG")).variant(ButtonVariant::Ghost).on_click({
                 let tell = tell.clone();
                 move |_, _, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(for_svg.svg(720.0, 240.0, cx)));
                     set(&tell, Some("SVG"), cx)
                 }
             }))
-            .child(Button::new("lines-csv").label("Copy CSV").variant(ButtonVariant::Ghost).on_click(move |_, _, cx| {
+            .child(Button::new("lines-csv").label(crate::i18n::gallery("Copy CSV")).variant(ButtonVariant::Ghost).on_click(move |_, _, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(for_csv.csv()));
                 set(&tell, Some("CSV"), cx)
             })),

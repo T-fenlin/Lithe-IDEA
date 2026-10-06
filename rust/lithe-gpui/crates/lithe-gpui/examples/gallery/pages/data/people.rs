@@ -48,7 +48,7 @@ pub fn badges(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(row().child(probe(
         "badge-more",
-        Button::new("badge-more").label("One more")
+        Button::new("badge-more").label(crate::i18n::gallery("One more"))
             .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| set(&more, count + 1, cx)),
     )))
@@ -93,7 +93,7 @@ pub fn tags(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             }))
             .child(
                 Button::new("tags-reset")
-                    .label("Reset")
+                    .label(crate::i18n::gallery("Reset"))
                     .variant(ButtonVariant::Ghost)
                     .on_click(move |_, _, cx| set(&reset, START.to_vec(), cx)),
             ),
@@ -177,7 +177,7 @@ pub fn groups(cx: &mut App) -> impl IntoElement + use<> {
             .items_center()
             .gap_1p5()
             .text_size(theme.text_size(TextSize::Base))
-            .child("Assigned to")
+            .child(crate::i18n::gallery("Assigned to"))
             .child(UserChip::new("chip-grace", "Grace Hopper"))
             .child("and")
             .child(UserChip::new("chip-dunes", "Dune Studio").image(picture(DUNES)))
@@ -234,7 +234,7 @@ pub fn numbers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(row().child(probe(
         "stats-next",
-        Button::new("stats-next").label("Next week")
+        Button::new("stats-next").label(crate::i18n::gallery("Next week"))
             .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| set(&next, now + 1, cx)),
     )))

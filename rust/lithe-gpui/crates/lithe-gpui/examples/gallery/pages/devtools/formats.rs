@@ -52,7 +52,7 @@ const FEED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 pub fn documents(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let search = window.use_keyed_state("devtools-json-search", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Find a key or a value")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Find a key or a value"))
     });
     let editor = window.use_keyed_state("devtools-json-editor", cx, |window, cx| {
         CodeEditor::new(
@@ -63,7 +63,7 @@ pub fn documents(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         .language("JSON")
     });
     let yaml_search = window.use_keyed_state("devtools-yaml-search", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Find a key or a value")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Find a key or a value"))
     });
     section(
         "DocumentViewer (MongoDB / JSON) → devtools::JsonViewer · JsonViewer / JsonTree · JsonEditor · YamlViewer · XmlViewer",

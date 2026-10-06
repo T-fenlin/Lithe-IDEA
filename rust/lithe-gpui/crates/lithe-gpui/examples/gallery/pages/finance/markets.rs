@@ -176,7 +176,7 @@ pub fn drawings(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         row()
             .child(DrawingToolbar::new("finance-tools", now_tool).on_change(move |tool, _, cx| set(&pick, tool, cx)))
-            .child(Button::new("finance-clear").label("Clear").variant(ButtonVariant::Ghost).on_click(move |_, _, cx| set(&cleared, Vec::new(), cx))),
+            .child(Button::new("finance-clear").label(crate::i18n::gallery("Clear")).variant(ButtonVariant::Ghost).on_click(move |_, _, cx| set(&cleared, Vec::new(), cx))),
     )
     .child(probe(
         "drawings",

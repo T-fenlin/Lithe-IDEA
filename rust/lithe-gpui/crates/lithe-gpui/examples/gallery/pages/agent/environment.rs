@@ -145,7 +145,7 @@ pub fn connectors_section(window: &mut Window, cx: &mut App) -> impl IntoElement
     let list = keep("agent-servers", servers, window, cx);
     let registry = keep("agent-tools", tools, window, cx);
     let query = window.use_keyed_state("agent-find-tool", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Find a tool")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Find a tool"))
     });
     let (now_list, now_tools, now_query) = (
         list.read(cx).clone(),
@@ -215,7 +215,7 @@ pub fn memory_section(window: &mut Window, cx: &mut App) -> impl IntoElement + u
         cx,
     );
     let field = window.use_keyed_state("agent-memory-field", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Something to keep")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Something to keep"))
     });
     let points = keep(
         "agent-checkpoints",

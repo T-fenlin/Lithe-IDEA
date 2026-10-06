@@ -47,7 +47,7 @@ pub fn text(cx: &App) -> impl IntoElement + use<> {
     section("Text", "A string is an element. StyledText adds runs.", cx).child(
         row()
             .gap_6()
-            .child("Plain text, as a child.")
+            .child(crate::i18n::gallery("Plain text, as a child."))
             .child(StyledText::new("One accent, used once.").with_highlights([(4..10, bold)]))
             .child(code("StyledText::new(…)", cx)),
     )
@@ -150,7 +150,7 @@ pub fn portal(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .border_color(theme.colors.border)
         .shadow(theme.elevation(lithe_gpui::theme::Elevation::Floating))
         .text_size(theme.text_size(TextSize::Sm))
-        .child("Painted last, above the clipped box.");
+        .child(crate::i18n::gallery("Painted last, above the clipped box."));
     section(
         "Portal",
         "deferred(anchored()) escapes clipping and paints on top.",
@@ -223,7 +223,9 @@ pub fn slot(cx: &App) -> impl IntoElement + use<> {
             .child(framed("slot: icon", Icon::new(IconName::Sparkles), cx))
             .child(framed(
                 "slot: button",
-                Button::new("slot-button").label("Save").primary(),
+                Button::new("slot-button")
+                    .label(crate::i18n::gallery("Save"))
+                    .primary(),
                 cx,
             ))
             .child(code("fn framed(body: impl IntoElement)", cx)),
@@ -253,7 +255,11 @@ pub fn show(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     }),
             )
             .when(shown, |row| {
-                row.child(div().text_color(muted).child("Here while true."))
+                row.child(
+                    div()
+                        .text_color(muted)
+                        .child(crate::i18n::gallery("Here while true.")),
+                )
             })
             .child(code(".when(cond, |el| …)", cx)),
     )
@@ -324,7 +330,7 @@ pub fn click_outside(window: &mut Window, cx: &mut App) -> impl IntoElement + us
             .gap_4()
             .child(
                 Button::new("outside-open")
-                    .label("Open panel")
+                    .label(crate::i18n::gallery("Open panel"))
                     .disabled(shown)
                     .on_click(move |_, _, cx| {
                         open.update(cx, |open, cx| {
@@ -341,7 +347,7 @@ pub fn click_outside(window: &mut Window, cx: &mut App) -> impl IntoElement + us
                         .py_2()
                         .rounded(theme.radius(Radius::Md))
                         .bg(theme.colors.sunken)
-                        .child("Click anywhere else.")
+                        .child(crate::i18n::gallery("Click anywhere else."))
                         .on_mouse_down_out(move |_, _, cx| {
                             close.update(cx, |open, cx| {
                                 *open = false;
@@ -448,14 +454,14 @@ pub fn clipboard(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         row()
             .gap_3()
             .child(
-                Button::new("clip-copy").label("Copy “Ely”")
+                Button::new("clip-copy").label(crate::i18n::gallery("Copy “Ely”"))
                     .icon(IconName::Copy)
                     .on_click(|_, _, cx| {
                         cx.write_to_clipboard(ClipboardItem::new_string("Ely".into()))
                     }),
             )
             .child(
-                Button::new("clip-paste").label("Paste")
+                Button::new("clip-paste").label(crate::i18n::gallery("Paste"))
                     .variant(ButtonVariant::Ghost)
                     .icon(IconName::Clipboard)
                     .on_click(move |_, _, cx| {

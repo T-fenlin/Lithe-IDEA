@@ -98,7 +98,9 @@ pub fn queries(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .map(|row| row.iter().map(|cell| SharedString::from(*cell)).collect())
                     .collect(),
             ),
-            search: cx.new(|cx| InputState::new(window, cx).placeholder("Find a query")),
+            search: cx.new(|cx| {
+                InputState::new(window, cx).placeholder(crate::i18n::gallery("Find a query"))
+            }),
             now,
             runs: runs(now),
         }
@@ -160,7 +162,7 @@ pub fn queries(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn redis(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let pattern = window.use_keyed_state("devtools-redis-pattern", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Pattern, such as user:*")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Pattern, such as user:*"))
     });
     let picked = keep(
         "devtools-redis-picked",

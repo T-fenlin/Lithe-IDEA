@@ -24,7 +24,7 @@ impl Render for Apart {
             .child(RenderCounter::new("apart-renders", "This view"))
             .child(
                 Button::new("apart-redraw")
-                    .label("Redraw this view")
+                    .label(crate::i18n::gallery("Redraw this view"))
                     .variant(ButtonVariant::Outline)
                     .on_click(cx.listener(|_, _, _, cx| cx.notify())),
             )
@@ -36,7 +36,7 @@ fn inspect() -> AnyElement {
     probe(
         "inspect-button",
         Button::new("inspect")
-            .label("Inspect")
+            .label(crate::i18n::gallery("Inspect"))
             .on_click(|_, window, cx| window.toggle_inspector(cx)),
     )
     .into_any_element()
@@ -45,7 +45,9 @@ fn inspect() -> AnyElement {
 #[cfg(not(debug_assertions))]
 fn inspect() -> AnyElement {
     div()
-        .child("Release builds leave gpui's inspector out.")
+        .child(crate::i18n::gallery(
+            "Release builds leave gpui's inspector out.",
+        ))
         .into_any_element()
 }
 
@@ -78,7 +80,7 @@ pub fn sections(window: &mut Window, cx: &mut App) -> Vec<AnyElement> {
                 .child(inspect())
                 .child(probe(
                     "inspect-sample",
-                    boxed(div().m_3().p_4()).child("A box to pick"),
+                    boxed(div().m_3().p_4()).child(crate::i18n::gallery("A box to pick")),
                 )),
         )
         .into_any_element(),
@@ -96,7 +98,7 @@ pub fn sections(window: &mut Window, cx: &mut App) -> Vec<AnyElement> {
                 .child(probe(
                     "fps-switch",
                     Switch::new("fps-measure").checked(on)
-                        .label("Measure")
+                        .label(crate::i18n::gallery("Measure"))
                         .on_change(move |on, _, cx| {
                             measuring.update(cx, |measuring, cx| {
                                 *measuring = on;
@@ -138,7 +140,7 @@ pub fn sections(window: &mut Window, cx: &mut App) -> Vec<AnyElement> {
             div().w(px(420.0)).child(
                 EventLogger::new("gallery-events").child(
                     boxed(div().flex().flex_col().gap_2().p_3())
-                        .child("Move, press or scroll here, or type in the field.")
+                        .child(crate::i18n::gallery("Move, press or scroll here, or type in the field."))
                         .child(field),
                 ),
             ),

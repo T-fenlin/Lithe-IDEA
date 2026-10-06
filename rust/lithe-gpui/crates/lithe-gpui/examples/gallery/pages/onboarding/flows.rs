@@ -81,7 +81,7 @@ pub fn wizard(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(format!("{} is ready.", name.read(cx).text()))
             .child(
                 Button::new("onboarding-again")
-                    .label("Start over")
+                    .label(crate::i18n::gallery("Start over"))
                     .variant(ButtonVariant::Ghost)
                     .size(Size::Small)
                     .on_click(move |_, _, cx| {
@@ -181,7 +181,7 @@ pub fn highlights(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
             .child(div().w(px(360.)).children(highlight))
             .when(spot_seen || card_seen, |row| {
                 row.child(
-                    Button::new("onboarding-show-again").label("Show again")
+                    Button::new("onboarding-show-again").label(crate::i18n::gallery("Show again"))
                         .variant(ButtonVariant::Ghost)
                         .size(Size::Small)
                         .on_click(move |_, _, cx| change(&reset, cx, |seen| *seen = Seen::default())),
@@ -237,7 +237,7 @@ pub fn checklist(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         });
     let body = match hidden {
         true => Button::new("onboarding-setup-again")
-            .label("Show the checklist")
+            .label(crate::i18n::gallery("Show the checklist"))
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .on_click(move |_, _, cx| {

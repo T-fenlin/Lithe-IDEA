@@ -95,7 +95,7 @@ pub fn render(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .child(
                         probe(
                             "consent-open",
-                            div().child(Button::new("consent-button").label("Review the terms").on_click(
+                            div().child(Button::new("consent-button").label(crate::i18n::gallery("Review the terms")).on_click(
                                 move |_, _, cx| {
                                     opener.update(cx, |open, cx| {
                                         *open = true;

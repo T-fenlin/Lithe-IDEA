@@ -80,7 +80,7 @@ pub fn tray(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "tray-pick",
                 Button::new("tray-pick")
-                    .label("Pick “Open gallery”")
+                    .label(crate::i18n::gallery("Pick “Open gallery”"))
                     .variant(ButtonVariant::Ghost)
                     .disabled(!shown)
                     .on_click(move |_, _, cx| {
@@ -117,14 +117,14 @@ pub fn dock(cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "badge-set",
                 Button::new("badge-set")
-                    .label("Badge 3")
+                    .label(crate::i18n::gallery("Badge 3"))
                     .variant(ButtonVariant::Outline)
                     .on_click(badge(Some("3"))),
             ))
             .child(probe(
                 "badge-clear",
                 Button::new("badge-clear")
-                    .label("Clear")
+                    .label(crate::i18n::gallery("Clear"))
                     .variant(ButtonVariant::Ghost)
                     .on_click(badge(None)),
             ))

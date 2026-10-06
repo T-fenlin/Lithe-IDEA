@@ -125,7 +125,7 @@ pub fn tips(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Retention"))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child(crate::i18n::gallery("Retention")))
                             .child(HelpTooltip::new("onboarding-retention-help", "Deleted items stay 30 days before they are gone.")),
                     )
                     .child(
@@ -147,7 +147,7 @@ pub fn tips(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     EmptyState::new("onboarding-empty", IconName::FolderOpen, "No projects yet")
                         .body("Projects hold your work and who can see it.")
                         .action(
-                            Button::new("onboarding-empty-new").label("New project")
+                            Button::new("onboarding-empty-new").label(crate::i18n::gallery("New project"))
                                 .variant(ButtonVariant::Primary)
                                 .size(Size::Small)
                                 .on_click(|_, _, _| log::info!("gallery: new project")),
@@ -165,7 +165,7 @@ pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let [opener, keys, close, show] = [(); 4].map(|_| state.clone());
     let body = match hidden {
         true => Button::new("onboarding-help-show")
-            .label("Show help")
+            .label(crate::i18n::gallery("Show help"))
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .on_click(move |_, _, cx| change(&show, cx, |help| help.hidden = false))
@@ -254,13 +254,13 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .gap_3()
             .child(probe(
                 "onboarding-shortcuts",
-                Button::new("onboarding-shortcuts").label("Keyboard shortcuts")
+                Button::new("onboarding-shortcuts").label(crate::i18n::gallery("Keyboard shortcuts"))
                     .icon(IconName::Keyboard)
                     .on_click(move |_, _, cx| change(&keys, cx, |help| help.dialog = Some(Dialog::Shortcuts))),
             ))
             .child(probe(
                 "onboarding-whats-new",
-                Button::new("onboarding-whats-new").label("What's new")
+                Button::new("onboarding-whats-new").label(crate::i18n::gallery("What's new"))
                     .icon(IconName::Sparkles)
                     .on_click(move |_, _, cx| change(&news, cx, |help| help.dialog = Some(Dialog::WhatsNew))),
             )),
@@ -308,7 +308,7 @@ pub fn feedback(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                                 change(&done, cx, |help| help.sent = true)
                             }),
                     )
-                    .when(sent, |column| column.child(div().text_sm().child("Sent. We answer within a day."))),
+                    .when(sent, |column| column.child(div().text_sm().child(crate::i18n::gallery("Sent. We answer within a day.")))),
             ),
     )
 }

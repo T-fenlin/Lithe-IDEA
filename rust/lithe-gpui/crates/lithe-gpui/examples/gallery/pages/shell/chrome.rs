@@ -147,7 +147,7 @@ pub fn drag_area(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
             .border_color(theme.colors.border_strong)
             .text_size(theme.text_size(TextSize::Sm))
             .text_color(theme.colors.fg_subtle)
-            .child("Double-click to zoom this window"),
+            .child(crate::i18n::gallery("Double-click to zoom this window")),
     )
     .child(code("drag_region(id, window, cx)", cx))
 }

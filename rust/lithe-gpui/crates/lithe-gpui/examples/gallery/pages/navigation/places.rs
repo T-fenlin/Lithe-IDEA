@@ -213,7 +213,7 @@ pub fn contents(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 pub fn go_to_line(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let state: Entity<InputState> = window.use_keyed_state("goto-line", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Line or line:column")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Line or line:column"))
     });
     let went = keep("goto-went", || None::<(usize, Option<usize>)>, window, cx);
     let caption = match *went.read(cx) {

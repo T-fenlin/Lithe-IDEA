@@ -60,9 +60,9 @@ pub fn citations(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .flex_wrap()
                     .items_center()
                     .gap_1()
-                    .child("A lift blends a color toward white, in gamma space.")
+                    .child(crate::i18n::gallery("A lift blends a color toward white, in gamma space."))
                     .child(probe("chat-cite-1", cite(1)))
-                    .child("Dark themes lift further.")
+                    .child(crate::i18n::gallery("Dark themes lift further."))
                     .child(cite(0))
                     .child(cite(2)),
             )

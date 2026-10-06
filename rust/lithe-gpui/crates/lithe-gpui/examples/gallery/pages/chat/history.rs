@@ -83,7 +83,7 @@ pub fn conversations_section(
         .to_zoned(TimeZone::try_system().expect("the gallery reads the system time zone"))
         .date();
     let query = window.use_keyed_state("chat-find-conversation", cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Search conversations")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Search conversations"))
     });
     let naming = window.use_keyed_state("chat-rename-field", cx, |window, cx| {
         InputState::new(window, cx)
@@ -161,7 +161,7 @@ pub fn conversations_section(
     ))
     .children(now_renaming.map(|key| {
         PromptDialog::new("chat-rename", "Rename conversation", &naming, move |_, cx| set(&shut, None, cx))
-            .label("Title")
+            .label(crate::i18n::gallery("Title"))
             .submit("Rename")
             .check(|text| match text.trim() {
                 "" => Err("A title cannot be empty.".into()),
@@ -323,7 +323,7 @@ pub fn shared_section(
     )
     .child(probe(
         "chat-export-open",
-        Button::new("chat-export").label("Export…")
+        Button::new("chat-export").label(crate::i18n::gallery("Export…"))
             .variant(ButtonVariant::Secondary)
             .icon(IconName::Download)
             .on_click(move |_, _, cx| set(&opener, true, cx)),

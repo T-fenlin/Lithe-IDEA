@@ -71,7 +71,7 @@ pub fn searchable(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
             "move",
             SearchableMenu::new("move", "Move to", menu)
                 .icon(IconName::FolderOpen)
-                .placeholder("Find a place"),
+                .placeholder(crate::i18n::gallery("Find a place")),
         ),
         cx,
     ))
@@ -110,7 +110,7 @@ pub fn pie(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .border_color(theme.colors.border_strong)
                     .rounded(theme.radius(Radius::Lg))
                     .text_color(theme.colors.fg_subtle)
-                    .child("Right-click for the ring"),
+                    .child(crate::i18n::gallery("Right-click for the ring")),
             ),
         ),
         cx,

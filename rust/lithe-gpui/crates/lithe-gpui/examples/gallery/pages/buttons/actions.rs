@@ -54,10 +54,12 @@ pub fn fab(cx: &App) -> impl IntoElement + use<> {
                     .items_center()
                     .gap_3()
                     .child(
-                        FloatingActionButton::new("fab-compose", IconName::Pencil).label("Compose"),
+                        FloatingActionButton::new("fab-compose", IconName::Pencil)
+                            .label(crate::i18n::gallery("Compose")),
                     )
                     .child(
-                        FloatingActionButton::new("fab-add", IconName::Plus).tooltip("New item"),
+                        FloatingActionButton::new("fab-add", IconName::Plus)
+                            .tooltip(crate::i18n::gallery("New item")),
                     ),
             ),
     )
@@ -154,19 +156,19 @@ pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
                         .floating()
                         .child(
                             Button::new("bar-reply")
-                                .label("Reply")
+                                .label(crate::i18n::gallery("Reply"))
                                 .variant(ButtonVariant::Ghost)
                                 .icon(IconName::Reply),
                         )
                         .child(
                             Button::new("bar-forward")
-                                .label("Forward")
+                                .label(crate::i18n::gallery("Forward"))
                                 .variant(ButtonVariant::Ghost)
                                 .icon(IconName::Forward),
                         )
                         .child(
                             Button::new("bar-archive")
-                                .label("Archive")
+                                .label(crate::i18n::gallery("Archive"))
                                 .primary()
                                 .icon(IconName::Archive),
                         ),
@@ -177,10 +179,14 @@ pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
                     .w_full()
                     .child(
                         Button::new("bar-cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::gallery("Cancel"))
                             .variant(ButtonVariant::Ghost),
                     )
-                    .child(Button::new("bar-save").label("Save changes").primary()),
+                    .child(
+                        Button::new("bar-save")
+                            .label(crate::i18n::gallery("Save changes"))
+                            .primary(),
+                    ),
             ),
     )
 }
@@ -199,7 +205,7 @@ pub fn bulk(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "bulk-select",
                 Button::new("bulk-select")
-                    .label("Select one more")
+                    .label(crate::i18n::gallery("Select one more"))
                     .variant(ButtonVariant::Outline)
                     .on_click(move |_, _, cx| {
                         add.update(cx, |count, cx| {
@@ -215,13 +221,13 @@ pub fn bulk(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             BulkActionBar::new("bulk-bar", count)
                 .action(
                     Button::new("bulk-move")
-                        .label("Move")
+                        .label(crate::i18n::gallery("Move"))
                         .variant(ButtonVariant::Ghost)
                         .icon(IconName::Folder),
                 )
                 .action(
                     Button::new("bulk-delete")
-                        .label("Delete")
+                        .label(crate::i18n::gallery("Delete"))
                         .variant(ButtonVariant::Danger)
                         .icon(IconName::Trash2),
                 )
@@ -247,7 +253,7 @@ pub fn action_sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use
     .child(probe(
         "action-sheet-open",
         Button::new("action-sheet-open")
-            .label("Photo options")
+            .label(crate::i18n::gallery("Photo options"))
             .variant(ButtonVariant::Outline)
             .on_click(move |_, _, cx| {
                 show.update(cx, |shown, cx| {

@@ -59,8 +59,8 @@ pub fn skip_link(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
                         .gap_3()
                         .p_4()
                         .text_color(theme.colors.fg_muted)
-                        .child("The main part starts here.")
-                        .child(Button::new("skip-read").label("Read the guide")),
+                        .child(crate::i18n::gallery("The main part starts here."))
+                        .child(Button::new("skip-read").label(crate::i18n::gallery("Read the guide"))),
                 ),
         ),
     )
@@ -94,7 +94,7 @@ pub fn color_blind(cx: &App) -> impl IntoElement + use<> {
     .child(probe(
         "color-blind",
         Switch::new("color-blind").checked(on)
-            .label("Color-blind safe charts")
+            .label(crate::i18n::gallery("Color-blind safe charts"))
             .on_change(|on, _, cx| Theme::set_color_blind_safe(on, cx)),
     ))
     .child(specimens().gap_3().children(swatches))

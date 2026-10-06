@@ -52,7 +52,7 @@ pub fn toolbar(cx: &App) -> impl IntoElement + use<> {
                     .child(div().flex_1())
                     .child(
                         Button::new("tb-share")
-                            .label("Share")
+                            .label(crate::i18n::gallery("Share"))
                             .size(Size::Small)
                             .icon(IconName::Share2),
                     ),
@@ -73,20 +73,20 @@ pub fn status_bar(cx: &App) -> impl IntoElement + use<> {
                     StatusBarItem::new("sb-branch")
                         .icon(IconName::GitBranch)
                         .label("main")
-                        .tooltip("Switch branch")
+                        .tooltip(crate::i18n::gallery("Switch branch"))
                         .on_click(|_, _, _| log::info!("gallery: branch")),
                 )
                 .left(
                     StatusBarItem::new("sb-sync")
                         .icon(IconName::RefreshCw)
-                        .label("Synced"),
+                        .label(crate::i18n::gallery("Synced")),
                 )
-                .right(StatusBarItem::new("sb-cursor").label("Ln 12, Col 4"))
-                .right(StatusBarItem::new("sb-encoding").label("UTF-8"))
+                .right(StatusBarItem::new("sb-cursor").label(crate::i18n::gallery("Ln 12, Col 4")))
+                .right(StatusBarItem::new("sb-encoding").label(crate::i18n::gallery("UTF-8")))
                 .right(
                     StatusBarItem::new("sb-bell")
                         .icon(IconName::Bell)
-                        .tooltip("No notifications")
+                        .tooltip(crate::i18n::gallery("No notifications"))
                         .on_click(|_, _, _| log::info!("gallery: notifications")),
                 ),
         ),

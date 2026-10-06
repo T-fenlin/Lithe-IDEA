@@ -27,22 +27,22 @@ pub fn popovers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child("Share this page"),
+                    .child(crate::i18n::gallery("Share this page")),
             )
             .child(
                 div()
                     .text_color(theme.colors.fg_muted)
-                    .child("Anyone with the link can view it."),
+                    .child(crate::i18n::gallery("Anyone with the link can view it.")),
             )
             .child(
                 Switch::new("share-switch")
                     .checked(on)
-                    .label("Public link")
+                    .label(crate::i18n::gallery("Public link"))
                     .on_change(move |next, _, cx| set(&public, next, cx)),
             )
             .child(
                 Button::new("share-copy")
-                    .label("Copy link")
+                    .label(crate::i18n::gallery("Copy link"))
                     .icon(IconName::Link)
                     .full_width(),
             )
@@ -64,13 +64,13 @@ pub fn popovers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .items_center()
                     .gap_1()
                     .text_color(muted)
-                    .child("Read the")
+                    .child(crate::i18n::gallery("Read the"))
                     .child(
                         Popover::new("terms", "terms", |_, cx| {
                             div()
                                 .w_72()
                                 .text_color(cx.theme().colors.fg_muted)
-                                .child("Plain words: you own your work, and we keep it private.")
+                                .child(crate::i18n::gallery("Plain words: you own your work, and we keep it private."))
                         })
                         .variant(ButtonVariant::Link),
                     )
@@ -110,22 +110,28 @@ fn profile(cx: &App) -> AnyElement {
                         .child(
                             div()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .child("Ada Lovelace"),
+                                .child(crate::i18n::gallery("Ada Lovelace")),
                         )
                         .child(
                             div()
                                 .text_size(theme.text_size(TextSize::Xs))
                                 .text_color(colors.fg_subtle)
-                                .child("Design · London"),
+                                .child(crate::i18n::gallery("Design · London")),
                         ),
                 ),
         )
         .child(
             div()
                 .text_color(colors.fg_muted)
-                .child("Writes the first programs for machines not yet built."),
+                .child(crate::i18n::gallery(
+                    "Writes the first programs for machines not yet built.",
+                )),
         )
-        .child(Button::new("ada-follow").label("Follow").primary())
+        .child(
+            Button::new("ada-follow")
+                .label(crate::i18n::gallery("Follow"))
+                .primary(),
+        )
         .into_any_element()
 }
 

@@ -112,13 +112,13 @@ pub fn shimmer(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child("Quarterly review"),
+                    .child(crate::i18n::gallery("Quarterly review")),
             )
             .child(
                 div()
                     .text_size(theme.text_size(TextSize::Sm))
                     .text_color(theme.colors.fg_muted)
-                    .child("Revenue rose 12% on the quarter. Churn held at 2.1%; three new markets opened."),
+                    .child(crate::i18n::gallery("Revenue rose 12% on the quarter. Churn held at 2.1%; three new markets opened.")),
             )
             .into_any_element()
     } else {
@@ -159,7 +159,7 @@ pub fn buttons(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "save",
                 Button::new("save")
-                    .label("Save changes")
+                    .label(crate::i18n::gallery("Save changes"))
                     .primary()
                     .loading(save_now)
                     .on_click(move |_, _, cx| {
@@ -169,7 +169,7 @@ pub fn buttons(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             ))
             .child(
                 Button::new("export")
-                    .label("Export")
+                    .label(crate::i18n::gallery("Export"))
                     .loading(export_now)
                     .on_click(move |_, _, cx| {
                         set(&exporting, true, cx);

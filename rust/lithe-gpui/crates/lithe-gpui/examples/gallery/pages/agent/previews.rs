@@ -70,7 +70,7 @@ pub fn watching(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     )
                     .child(probe(
                         "agent-pointer-next",
-                        Button::new("agent-pointer-next").label("Next action")
+                        Button::new("agent-pointer-next").label(crate::i18n::gallery("Next action"))
                             .variant(ButtonVariant::Secondary)
                             .on_click(move |_, _, cx| {
                                 let next = (*step.read(cx) + 1) % ACTIONS.len();
@@ -98,17 +98,17 @@ fn page(builds: usize, cx: &App) -> impl IntoElement + use<> {
             div()
                 .text_size(theme.text_size(TextSize::Xl))
                 .font_weight(FontWeight::SEMIBOLD)
-                .child("Lift"),
+                .child(crate::i18n::gallery("Lift")),
         )
         .child(
             div()
                 .text_color(theme.colors.fg_muted)
-                .child("Blend a color toward white."),
+                .child(crate::i18n::gallery("Blend a color toward white.")),
         )
         .child(
             div().flex().child(
                 Button::new("agent-page-try")
-                    .label("Try it")
+                    .label(crate::i18n::gallery("Try it"))
                     .variant(ButtonVariant::Primary),
             ),
         )

@@ -105,7 +105,7 @@ fn answer(all: &Entity<Vec<Thread>>, key: &SharedString, field: &Entity<InputSta
 
 fn reply_field(key: &'static str, window: &mut Window, cx: &mut App) -> Entity<InputState> {
     window.use_keyed_state(key, cx, |window, cx| {
-        InputState::new(window, cx).placeholder("Reply")
+        InputState::new(window, cx).placeholder(crate::i18n::gallery("Reply"))
     })
 }
 
@@ -195,7 +195,7 @@ pub fn comments(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(div().text_color(theme.colors.fg).child("In dark, accents lift further so they read with the same weight."))
+                    .child(div().text_color(theme.colors.fg).child(crate::i18n::gallery("In dark, accents lift further so they read with the same weight.")))
                     .child(probe("collab-marker", marker)),
             ),
         )

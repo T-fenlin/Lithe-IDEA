@@ -57,7 +57,7 @@ impl Flow {
             links: vec![
                 Link::new("l1", "start", "draft"),
                 Link::new("l2", "draft", "check"),
-                Link::new("l3", "check", "ship").label("Yes"),
+                Link::new("l3", "check", "ship").label(crate::i18n::gallery("Yes")),
                 Link::new("l4", "check", "revise").label("No"),
                 Link::new("l5", "ship", "end"),
             ],

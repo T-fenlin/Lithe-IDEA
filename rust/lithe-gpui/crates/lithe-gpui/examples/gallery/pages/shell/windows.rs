@@ -167,7 +167,7 @@ impl Render for Managed {
                     .when(asked, |body| {
                         body.child(
                             Button::new("draft-close")
-                                .label("Close anyway")
+                                .label(crate::i18n::gallery("Close anyway"))
                                 .size(Size::Small)
                                 .on_click(|_, window, _| window.remove_window()),
                         )
@@ -228,7 +228,7 @@ pub fn window_switcher(window: &mut Window, cx: &mut App) -> impl IntoElement + 
     .child(probe(
         "switcher-open",
         Button::new("switcher-open")
-            .label("Switch windows")
+            .label(crate::i18n::gallery("Switch windows"))
             .variant(ButtonVariant::Outline)
             .on_click(move |_, _, cx| {
                 show.update(cx, |shown, cx| {

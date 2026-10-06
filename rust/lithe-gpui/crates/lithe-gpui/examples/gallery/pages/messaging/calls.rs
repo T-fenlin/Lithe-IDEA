@@ -101,7 +101,9 @@ pub fn controls(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         }
         None => div()
             .text_size(cx.theme().text_size(TextSize::Sm))
-            .child("You left the huddle. Join it again from its mark."),
+            .child(crate::i18n::gallery(
+                "You left the huddle. Join it again from its mark.",
+            )),
     };
     section(
         "CallControls / VoiceCallBar / HuddleIndicator",
@@ -205,7 +207,7 @@ pub fn incoming(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .items_center()
             .gap_4()
             .child(
-                Button::new("messaging-ring").label("Ring")
+                Button::new("messaging-ring").label(crate::i18n::gallery("Ring"))
                     .on_click(move |_, _, cx| change(&ring, cx, |ringing| *ringing = true)),
             )
             .children(said.map(|said| {
