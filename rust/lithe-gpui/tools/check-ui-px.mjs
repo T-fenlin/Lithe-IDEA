@@ -24,7 +24,8 @@
  *     **不是** `/4.`），并写注释说明这个数字的来源；
  *   - 确实需要一个 `Pixels` 值时，用 `window.rem_size()` 把 rem 换算成 Pixels，而不是写死 `px(N.)`。
  *
- * 只读扫描，不改任何文件。扫描范围：`lithe-gpui/crates/` 下每个 crate 的 `src/` 目录里的所有 `.rs`（含 `app`）。
+ * 只读扫描，不改任何文件。扫描范围：`lithe-gpui/crates/` 下每个 crate 的 `src/` 目录里的所有 `.rs`（含 `app`），
+ * **排除 vendored 的组件库 `lithe-gpui/crates/lithe-gpui/`**（上游源码拷贝，见下面的 `VENDORED_CRATE`）。
  *
  * 用法：
  *   node lithe-gpui/tools/check-ui-px.mjs            # 扫描并判定：有白名单以外的命中 → 退出码 1
@@ -39,13 +40,26 @@
  *   3. `#[cfg(test)]` 模块体内的代码不算（按大括号配对定范围，**不是**行号白名单）。
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..");
 const CRATES_DIR = resolve(REPO_ROOT, "lithe-gpui", "crates");
+
+/**
+ * 排除 vendored 组件库：`crates/lithe-gpui` 是 Ely GPUI Components 的源码拷贝
+ * （署名与改动清单见 `crates/lithe-gpui/UPSTREAM.md`），是**上游实现**，不是本仓库的
+ * Application UI。`coding-guides.md:288` 管的是**宿主界面**代码；上游组件内部本来就用
+ * 物理像素表达自己的度量（canvas / charts / theme token 定义本身等，多属该条认可的例外）。
+ * 逐处改写上游要动 800+ 行、与上游分叉、还冒可见回归的风险，收益为零。
+ *
+ * ⚠️ 排除是**按 crate 名**做的，并配一条自检（`validateVendoredExclusion`）：被排除的目录
+ * 必须带 `UPSTREAM.md`（= 确实是 vendored 上游拷贝）。要新写的第一方组件请放**独立 crate**，
+ * 不要挂进这个被排除的目录 —— 否则它就绕过了本规范。
+ */
+const VENDORED_CRATE = "lithe-gpui";
 
 /** 每一条命中的统一修复指引（档位内 helper / 档位外 rems / 真要 Pixels 时换算）。 */
 const FIX_GUIDANCE =
@@ -451,12 +465,23 @@ function collectSources() {
 
   for (const crate of readdirSync(CRATES_DIR, { withFileTypes: true })) {
     if (!crate.isDirectory()) continue;
+    if (crate.name === VENDORED_CRATE) continue; // 上游拷贝，不是 Application UI
     const src = join(CRATES_DIR, crate.name, "src");
     if (!isDirectory(src)) continue;
     walk(src, files);
   }
 
   return files.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/**
+ * 被排除的那个 crate 必须真的是 vendored 上游拷贝（带 `UPSTREAM.md`）。否则排除就成了
+ * "谁想跳过就换个名字"的后门，所以判失败而不是只警告。
+ */
+function validateVendoredExclusion() {
+  const dir = join(CRATES_DIR, VENDORED_CRATE);
+  if (isDirectory(dir) && existsSync(join(dir, "UPSTREAM.md"))) return null;
+  return `被排除的 crates/${VENDORED_CRATE} 里没有 UPSTREAM.md：它看起来不是 vendored 上游拷贝。要么它已经变成第一方 crate（那就别再排除），要么来源署名丢了（那就补回来）。`;
 }
 
 function walk(dir, files) {
@@ -509,6 +534,13 @@ function main() {
   if (whitelistProblems.length > 0) {
     for (const problem of whitelistProblems) console.warn(`警告：${problem}`);
     console.warn("白名单自身有问题（match 为空/过短/重复）—— 先修 WHITELIST 再跑。");
+    process.exitCode = 1;
+    return;
+  }
+
+  const exclusionProblem = validateVendoredExclusion();
+  if (exclusionProblem !== null) {
+    console.warn(`警告：${exclusionProblem}`);
     process.exitCode = 1;
     return;
   }
