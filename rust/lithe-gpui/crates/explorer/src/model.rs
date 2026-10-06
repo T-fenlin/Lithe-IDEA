@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
 use gpui_kit::component::ActiveTheme as _;
@@ -122,32 +122,106 @@ pub(crate) fn build_tree_items(
     let query = filter.map(str::to_lowercase);
     let force_expanded = query.is_some();
     let mut budget = RowBudget::new();
-    let root_id = SharedString::new_static(ROOT_ID);
 
-    let mut items = Vec::new();
-    if budget.take() {
-        let mut root_children = to_items(
-            &root.children,
-            expanded,
-            force_expanded,
-            query.as_deref(),
-            &mut budget,
-        );
-        if root_children.is_empty() && budget.take() {
-            root_children = vec![empty_placeholder("")];
+    // 根行同样占一行预算（`rows` 是"materialize 了多少行"，含根）。
+    if !budget.take() {
+        return BuiltTree {
+            items: Vec::new(),
+            rows: budget.rows(),
+            truncated: budget.truncated,
+        };
+    }
+
+    // 广度优先：行预算先买**浅层**的行。原先的"深度优先 + 每个目录无条件递归"会让根下
+    // 第一个大目录（本仓库的 `.artifacts` 有上万节点）把 `RENDER_LIMIT` 吃光，根的同级
+    // 目录在 `break` 处被整段丢掉 —— 用户看到"顶层目录只剩前两个"。
+    //
+    // 折叠目录的子项仍然要物化：`TreeState` 用"有没有子项"判定能不能展开，不带子项的
+    // 目录会变成不能展开的死行。所以只能改**取用顺序**，不能改成"只建可见行"。
+    let mut nodes: Vec<Option<&TreeNode>> = Vec::new();
+    let mut items: Vec<Option<TreeItem>> = Vec::new();
+    let mut kids: Vec<Vec<usize>> = Vec::new();
+    let mut queue: VecDeque<usize> = VecDeque::new();
+
+    let root_id = SharedString::new_static(ROOT_ID);
+    let root_expanded = force_expanded || expanded.contains(&root_id);
+    nodes.push(Some(root));
+    items.push(Some(
+        TreeItem::new(root_id, SharedString::from(root_label.to_string())).expanded(root_expanded),
+    ));
+    kids.push(Vec::new());
+    queue.push_back(0);
+
+    while let Some(slot) = queue.pop_front() {
+        let Some(node) = nodes[slot] else { continue };
+        let visible = visible_children(node, query.as_deref());
+        if visible.is_empty() {
+            // 空目录，或过滤后一条都不命中：给一条禁用占位行，让它画得出展开箭头。
+            if budget.take() {
+                let ix = items.len();
+                nodes.push(None);
+                items.push(Some(empty_placeholder(&node.path)));
+                kids.push(Vec::new());
+                kids[slot].push(ix);
+            }
+            continue;
         }
-        items.push(
-            TreeItem::new(root_id.clone(), SharedString::from(root_label.to_string()))
-                .expanded(force_expanded || expanded.contains(&root_id))
-                .children(root_children),
-        );
+        for child in visible {
+            if !budget.take() {
+                break;
+            }
+            let id = node_id(child);
+            let item = TreeItem::new(id.clone(), SharedString::from(child.name.clone()))
+                .expanded(force_expanded || expanded.contains(&id));
+            let ix = items.len();
+            nodes.push(Some(child));
+            items.push(Some(item));
+            kids.push(Vec::new());
+            kids[slot].push(ix);
+            if child.is_directory {
+                queue.push_back(ix);
+            }
+        }
+    }
+
+    // 组装：子树在 arena 里永远排在父之后，所以倒着收一次就能先把孩子收好。
+    for slot in (0..items.len()).rev() {
+        if kids[slot].is_empty() {
+            continue;
+        }
+        let children: Vec<TreeItem> = kids[slot]
+            .iter()
+            .map(|&ix| items[ix].take().expect("每个槽只组装一次"))
+            .collect();
+        let mut item = items[slot].take().expect("每个槽只组装一次");
+        item.children = children;
+        items[slot] = Some(item);
     }
 
     BuiltTree {
-        items,
+        items: vec![items[0].take().expect("根槽一定在")],
         rows: budget.rows(),
         truncated: budget.truncated,
     }
+}
+
+fn node_id(node: &TreeNode) -> SharedString {
+    SharedString::from(if node.is_directory {
+        format!("dir:{}", node.path)
+    } else {
+        format!("file:{}", node.path)
+    })
+}
+
+/// `node` 的子项里，按显示顺序留下命中过滤的那些。
+fn visible_children<'a>(node: &'a TreeNode, query: Option<&str>) -> Vec<&'a TreeNode> {
+    let mut visible: Vec<&TreeNode> = node
+        .children
+        .iter()
+        .filter(|child| query.is_none_or(|needle| subtree_matches(child, needle)))
+        .collect();
+    sort_for_display(&mut visible);
+    visible
 }
 
 fn subtree_matches(node: &TreeNode, query: &str) -> bool {
@@ -389,42 +463,6 @@ mod displayed_siblings_tests {
             "焦点在可见树里找不到 ⇒ 根"
         );
     }
-}
-
-fn to_items(
-    nodes: &[TreeNode],
-    expanded: &BTreeSet<SharedString>,
-    force_expanded: bool,
-    query: Option<&str>,
-    budget: &mut RowBudget,
-) -> Vec<TreeItem> {
-    let mut visible: Vec<&TreeNode> = nodes
-        .iter()
-        .filter(|node| query.is_none_or(|needle| subtree_matches(node, needle)))
-        .collect();
-    sort_for_display(&mut visible);
-
-    let mut items = Vec::new();
-    for node in visible {
-        if !budget.take() {
-            break;
-        }
-        let id = SharedString::from(if node.is_directory {
-            format!("dir:{}", node.path)
-        } else {
-            format!("file:{}", node.path)
-        });
-        let mut item = TreeItem::new(id.clone(), SharedString::from(node.name.clone()));
-        if node.is_directory {
-            let mut children = to_items(&node.children, expanded, force_expanded, query, budget);
-            if children.is_empty() && budget.take() {
-                children = vec![empty_placeholder(&node.path)];
-            }
-            item = item.children(children);
-        }
-        items.push(item.expanded(force_expanded || expanded.contains(&id)));
-    }
-    items
 }
 
 fn core_error_text(error: lithe_gpui_shared::CoreError) -> String {
@@ -1019,6 +1057,52 @@ mod tests {
         let built = build_tree_items("demo", &snapshot.root, &BTreeSet::new(), None);
         assert!(!built.truncated);
         assert_eq!(built.rows, 7);
+    }
+
+    /// 第一个目录自己就超过行预算时，它的**同级**目录不能被挤掉：行预算按广度取用。
+    /// 回归：旧实现深度优先，根下第一个大目录吃光预算后在 `break` 处丢掉同级目录，
+    /// 用户看到的顶层列表只剩它一个。
+    #[test]
+    fn a_deep_first_child_does_not_starve_its_siblings() {
+        let deep: Vec<TreeNode> = (0..RENDER_LIMIT + 10)
+            .map(|index| TreeNode {
+                path: format!("big/f{index:05}.txt"),
+                name: format!("f{index:05}.txt"),
+                is_directory: false,
+                children: Vec::new(),
+            })
+            .collect();
+        let root = TreeNode {
+            path: String::new(),
+            name: "demo".to_string(),
+            is_directory: true,
+            children: vec![
+                TreeNode {
+                    path: "big".to_string(),
+                    name: "big".to_string(),
+                    is_directory: true,
+                    children: deep,
+                },
+                TreeNode {
+                    path: "zeta".to_string(),
+                    name: "zeta".to_string(),
+                    is_directory: true,
+                    children: Vec::new(),
+                },
+            ],
+        };
+        let built = build_tree_items("demo", &root, &BTreeSet::new(), None);
+
+        let top: Vec<String> = built.items[0]
+            .children
+            .iter()
+            .map(|item| item.id.to_string())
+            .collect();
+        assert!(
+            top.contains(&"dir:big".to_string()) && top.contains(&"dir:zeta".to_string()),
+            "同一层的目录必须一起拿到预算，实际 = {top:?}"
+        );
+        assert!(built.truncated, "超过上限仍要如实报截断");
     }
 
     #[test]
