@@ -1,6 +1,7 @@
 pub mod activity_bar;
 pub mod branch_panel;
 pub mod command_palette;
+pub mod component_theme;
 pub mod debug;
 pub mod debug_session;
 pub mod debug_transport;

@@ -6,6 +6,10 @@ publish = false
 
 [dependencies]
 gpui-kit = "0.7"
+# 自己的组件库：外壳的窗格框架 / 分隔条 / 拖动 / 尺寸持久化已从 gpui-kit 的
+# `resize_handle` 换成 `lithe_gpui::layout::Dock`（组件 crate 直接建在 gpui-pre
+# 之上，与 gpui-kit 共享同一个 gpui-pre 实例，两边类型可直接互传）。
+lithe-gpui = { path = "../lithe-gpui" }
 lithe-gpui-editor = { path = "../editor" }
 # 扩展目录的状态层（`src/extensions_page.rs` 的数据源）：`load_catalog` 走 Core 的
 # `plugins.listCatalog`。方向是 workbench → extensions → shared，与其它 feature 同一口径；

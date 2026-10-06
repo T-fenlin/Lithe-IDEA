@@ -3,7 +3,8 @@ mod view;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Context, Hsla, IntoElement as _, Pixels, Rems, SharedString, Window, px,
+    AnyElement, App, Context, EventEmitter, Hsla, IntoElement as _, Pixels, Rems, SharedString,
+    Window, px,
 };
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +59,10 @@ impl Spot {
 pub struct SideLimits {
     pub min: Rems,
     pub max: Option<Rems>,
+    /// Space the side may not eat, kept for the center: the cap becomes
+    /// `extent - reserve` whenever that is tighter than `max`. An editor leaves
+    /// the editor column a minimum width this way.
+    pub reserve: Option<Rems>,
 }
 
 impl SideLimits {
@@ -66,6 +71,27 @@ impl SideLimits {
         // A max under the min would make the range empty; the min wins.
         let max = self.max.unwrap_or(cap).0.max(self.min.0);
         Rems(size.0.max(self.min.0).min(max))
+    }
+
+    /// `size` brought inside this range for a dock `extent` along the side's
+    /// axis — what [`Self::cap`] allows, and never under the minimum.
+    pub fn clamp_in(&self, size: Rems, extent: Rems, fallback: Rems, rem: Pixels) -> Rems {
+        let cap = self.cap(extent, fallback, rem);
+        Rems(size.0.max(self.min.0).min(cap.0))
+    }
+
+    /// The cap for a dock `extent` along this side's axis: the tighter of `max`
+    /// and what `reserve` leaves. Never under the minimum.
+    pub fn cap(&self, extent: Rems, fallback: Rems, rem: Pixels) -> Rems {
+        let mut cap = self.max.unwrap_or(fallback);
+        if let Some(reserve) = self.reserve {
+            let left =
+                Rems(f32::from(extent.to_pixels(rem) - reserve.to_pixels(rem)) / f32::from(rem));
+            if left.0 < cap.0 {
+                cap = left;
+            }
+        }
+        Rems(cap.0.max(self.min.0))
     }
 }
 
@@ -118,6 +144,9 @@ pub struct PanelLook {
     pub border_color: Option<Hsla>,
     pub radius: Option<Rems>,
     pub background: Option<Hsla>,
+    /// Draws the tab strip. An application whose own chrome already names the
+    /// panel turns it off; the divider is then the only handle.
+    pub header: Option<bool>,
 }
 
 impl DockPanel {
@@ -128,6 +157,21 @@ impl DockPanel {
             title,
             icon,
             look: PanelLook::default(),
+        }
+    }
+
+    /// A panel the application's own chrome already announces: its group draws
+    /// no tab strip, so there is no icon and no drag handle — the divider is the
+    /// only way to size it, and the application's own control the way to close it.
+    pub fn plain(id: impl Into<SharedString>, title: impl Into<PanelTitle>) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            icon: IconName::Square,
+            look: PanelLook {
+                header: Some(false),
+                ..PanelLook::default()
+            },
         }
     }
 
@@ -154,6 +198,12 @@ impl DockPanel {
         self.look.border_color = Some(color);
         self
     }
+
+    /// Whether this panel's group draws its tab strip.
+    pub fn header(mut self, on: bool) -> Self {
+        self.look.header = Some(on);
+        self
+    }
 }
 
 /// The dock's appearance defaults: the frame around each panel, the divider
@@ -172,6 +222,8 @@ pub struct DockLook {
     pub handle: Pixels,
     /// The divider's line thickness.
     pub handle_line: Pixels,
+    /// Whether every group draws its tab strip, where a panel does not say.
+    pub header: bool,
 }
 
 impl DockLook {
@@ -186,6 +238,7 @@ impl DockLook {
             gap: px(0.),
             handle: px(6.),
             handle_line: px(1.),
+            header: true,
         }
     }
 }
@@ -197,6 +250,7 @@ pub struct PaintedLook {
     pub border_color: Hsla,
     pub radius: Rems,
     pub background: Hsla,
+    pub header: bool,
 }
 
 /// Saved dock arrangement, per side in `DockSide` order. Sizes are in rems.
@@ -251,8 +305,25 @@ impl PanelRegistry {
     }
 }
 
+impl EventEmitter<DockEvent> for Dock {}
+
 type Center = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 type Content = Rc<dyn Fn(&SharedString, &mut Window, &mut App) -> AnyElement>;
+
+/// What a dock reports once a person has changed it, so an application can save
+/// the arrangement or sync its own chrome. A programmatic change — `hide`,
+/// `set_size`, `restore` — does not emit: the caller already knows.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DockEvent {
+    /// A divider was dragged: the side is now this many rems.
+    Resized { side: DockSide, size: Rems },
+    /// The divider between a side's two groups moved.
+    Split { side: DockSide, share: f32 },
+    /// A panel was opened or closed from the dock itself.
+    VisibilityChanged { id: SharedString, hidden: bool },
+    /// A panel moved, docked or floating.
+    Moved { id: SharedString, spot: Spot },
+}
 
 /// Side docks around a center; panels move between docks, float, hide and show.
 pub struct Dock {
@@ -293,6 +364,7 @@ impl Dock {
         let limits = SideLimits {
             min: theme.pane_min(),
             max: None,
+            reserve: None,
         };
         Self {
             panels: Vec::new(),
@@ -378,6 +450,7 @@ impl Dock {
             border_color: panel.look.border_color.unwrap_or(self.look.border_color),
             radius: panel.look.radius.unwrap_or(self.look.radius),
             background: panel.look.background.unwrap_or(self.look.background),
+            header: panel.look.header.unwrap_or(self.look.header),
         }
     }
 
@@ -420,10 +493,44 @@ impl Dock {
         max: Option<Rems>,
         cx: &mut Context<Self>,
     ) {
-        self.limits[side.index()] = SideLimits { min, max };
+        self.set_side_limits_with(side, min, max, None, cx);
+    }
+
+    /// [`Self::set_side_limits`] plus the space this side must leave the center.
+    pub fn set_side_limits_with(
+        &mut self,
+        side: DockSide,
+        min: Rems,
+        max: Option<Rems>,
+        reserve: Option<Rems>,
+        cx: &mut Context<Self>,
+    ) {
+        self.limits[side.index()] = SideLimits { min, max, reserve };
         let cap = Rems(f32::MAX);
         self.sizes[side.index()] = self.limits[side.index()].clamp(self.sizes[side.index()], cap);
         cx.notify();
+    }
+
+    /// How wide (or tall) a side is now, in rems.
+    pub fn size(&self, side: DockSide) -> Rems {
+        self.sizes[side.index()]
+    }
+
+    /// Sets a side's size from outside — a window restoring a saved layout, or an
+    /// application writing back a clamped value. Brought inside the side's limits;
+    /// does not emit [`DockEvent::Resized`], which is for a person's drag.
+    pub fn set_size(&mut self, side: DockSide, size: Rems, cx: &mut Context<Self>) {
+        let cap = Rems(f32::MAX);
+        let next = self.limits[side.index()].clamp(size, cap);
+        if next != self.sizes[side.index()] {
+            self.sizes[side.index()] = next;
+            cx.notify();
+        }
+    }
+
+    /// The dock's own limits for a side, so a caller can clamp what it stores.
+    pub fn side_limits(&self, side: DockSide) -> SideLimits {
+        self.limits[side.index()]
     }
 
     /// How much of `side` its first group takes; the rest goes to the second.
@@ -810,6 +917,109 @@ mod tests {
             assert_eq!(dock.look.handle, px(9.), "hit area");
             assert_eq!(dock.look.handle_line, px(3.), "line");
             assert_eq!(dock.look.gap, px(4.), "gap");
+        });
+    }
+
+    /// A reserve keeps the center's share: the cap follows the extent, and the
+    /// minimum still wins when the space left is smaller than it.
+    #[gpui::test]
+    fn a_reserve_caps_the_side_against_the_extent(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            let rem = px(16.);
+            let limits = SideLimits {
+                min: rems(3.),
+                max: Some(rems(32.)),
+                reserve: Some(rems(25.)),
+            };
+            // A wide dock: the fixed maximum is the tighter of the two.
+            assert_eq!(limits.cap(rems(100.), rems(45.), rem), rems(32.));
+            // A narrow dock: what the reserve leaves is tighter.
+            assert_eq!(limits.cap(rems(40.), rems(45.), rem), rems(15.));
+            // Too narrow for either: the minimum wins over an empty range.
+            assert_eq!(limits.cap(rems(10.), rems(45.), rem), rems(3.));
+        });
+    }
+
+    /// A dock draws its center and its panels; a `plain` panel draws no tab
+    /// strip, so its body starts at the panel's own top — which is how an editor
+    /// shell uses it (its own chrome names the panel).
+    #[gpui::test]
+    fn a_plain_panel_draws_its_body_without_a_header(cx: &mut TestAppContext) {
+        struct Shell {
+            dock: Entity<Dock>,
+        }
+
+        impl Render for Shell {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                self.dock.clone()
+            }
+        }
+
+        cx.update(|cx| Theme::init(cx));
+        let dock = cx.update(|cx| {
+            cx.new(|cx| {
+                let mut dock = Dock::new(
+                    |_, _| {
+                        div()
+                            .debug_selector(|| "dock-center-mark".to_string())
+                            .into_any_element()
+                    },
+                    |id, _, _| {
+                        div()
+                            .debug_selector(move || format!("dock-body-{id}"))
+                            .into_any_element()
+                    },
+                    cx,
+                );
+                dock.add(DockPanel::plain("plain", "Plain"), DockSide::Left);
+                dock.add(
+                    DockPanel::new("named", PanelTitle::Text("Named".into()), IconName::Folder),
+                    DockSide::Right,
+                );
+                dock
+            })
+        });
+        let (_view, cx) = cx.add_window_view(|_, _| Shell { dock });
+        cx.run_until_parked();
+
+        assert!(
+            cx.debug_bounds("dock-center-mark").is_some(),
+            "the center is drawn"
+        );
+        let plain = cx
+            .debug_bounds("dock-body-plain")
+            .expect("plain body drawn");
+        let named = cx
+            .debug_bounds("dock-body-named")
+            .expect("named body drawn");
+        // 两块面板都在 dock 顶部起，所以"body 从多高处开始"就是它上面有没有标签头。
+        assert!(
+            named.top() > plain.top(),
+            "a named panel keeps a tab strip above its body ({named:?} vs {plain:?})"
+        );
+        assert_eq!(
+            plain.top(),
+            cx.debug_bounds("dock-center-mark")
+                .expect("center drawn")
+                .top(),
+            "a plain panel's body starts where the center does — no header above it"
+        );
+    }
+
+    /// Sizes are readable and writable from outside, and a write is clamped —
+    /// this is how an application restores a saved arrangement.
+    #[gpui::test]
+    fn a_size_can_be_written_and_read_back(cx: &mut TestAppContext) {
+        let dock = bench(cx);
+        dock.update(cx, |dock, cx| {
+            dock.set_side_limits(DockSide::Left, rems(3.), Some(rems(20.)), cx);
+            dock.set_size(DockSide::Left, rems(12.), cx);
+            assert_eq!(dock.size(DockSide::Left), rems(12.), "written");
+            dock.set_size(DockSide::Left, rems(40.), cx);
+            assert_eq!(dock.size(DockSide::Left), rems(20.), "clamped to the max");
+            dock.set_size(DockSide::Left, rems(1.), cx);
+            assert_eq!(dock.size(DockSide::Left), rems(3.), "clamped to the min");
         });
     }
 

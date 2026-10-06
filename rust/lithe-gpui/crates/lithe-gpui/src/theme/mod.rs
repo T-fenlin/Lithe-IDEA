@@ -95,7 +95,10 @@ impl ActiveTheme for App {
 }
 
 impl Theme {
-    pub(crate) fn init(cx: &mut App) {
+    /// Installs the component library's theme global. A host calls this once at
+    /// startup, before it renders any of the library's components; the palette
+    /// can then follow the host's own with [`Theme::set_palette`].
+    pub fn init(cx: &mut App) {
         cx.set_global(Theme {
             mode: Mode::Light,
             high_contrast: false,
@@ -176,6 +179,18 @@ impl Theme {
     /// The palette the shown mode fades to: the owner's, or Ely's.
     pub fn palette(&self) -> Palette {
         self.target()
+    }
+
+    /// Shows `mode` with `palette` at once: the host's own colors, or none for
+    /// the library's. A host that has its own theme calls this whenever that
+    /// theme changes, so the library's components share its colors.
+    pub fn apply(mode: Mode, palette: Option<Palette>, cx: &mut App) {
+        let theme = cx.global_mut::<Theme>();
+        theme.mode = mode;
+        theme.custom[mode as usize] = palette;
+        theme.transition += 1;
+        theme.colors = theme.target();
+        cx.refresh_windows();
     }
 
     /// Edits non-color tokens, then repaints.

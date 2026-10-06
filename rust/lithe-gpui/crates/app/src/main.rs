@@ -596,6 +596,9 @@ fn main() {
             gpui_kit::init(cx);
             Theme::change(ThemeMode::Dark, None, cx);
             Theme::set_scrollbar_mode(gpui_kit::component::scroll::ScrollbarMode::Always, cx);
+            // 组件库（`lithe-gpui`）读的是它自己的主题全局：外壳在这里装一次，
+            // 之后宿主每次换主题都会把颜色重新映射过去（见 `component_theme`）。
+            lithe_gpui_workbench::component_theme::install_component_theme(cx);
 
             let store: gpui_kit::Entity<SettingsStore> = lithe_gpui_settings::init_store(
                 cx,

@@ -1,6 +1,6 @@
 use gpui::{
     AnyElement, Axis, Context, CursorStyle, DragMoveEvent, EmptyView, EntityId, FontWeight,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, Render,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, Rems, Render,
     SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div, point, prelude::*,
     relative,
 };
@@ -173,7 +173,7 @@ impl Dock {
             .overflow_hidden()
             .bg(look.background)
             .rounded(inner_radius)
-            .child(self.tabs(side, group, cx))
+            .when(look.header, |pane| pane.child(self.tabs(side, group, cx)))
             .child(div().flex_1().min_h_0().child(body));
         // The frame is the border: a filled box behind, the pane inset over it.
         Some(
@@ -454,8 +454,8 @@ impl Render for Dock {
             .size_full()
             .flex()
             .flex_col()
-            .on_drag_move(
-                cx.listener(move |dock, event: &DragMoveEvent<DockResize>, _, cx| {
+            .on_drag_move(cx.listener(
+                move |dock, event: &DragMoveEvent<DockResize>, window, cx| {
                     let resize = event.drag(cx);
                     if resize.dock != own {
                         return;
@@ -469,24 +469,32 @@ impl Render for Dock {
                         DockSide::Top => pointer.y - bounds.top(),
                         DockSide::Bottom => bounds.bottom() - pointer.y,
                     };
-                    let cap = match side {
-                        DockSide::Left | DockSide::Right => bounds.size.width * 0.45,
-                        DockSide::Top | DockSide::Bottom => bounds.size.height * 0.45,
-                    };
-                    // The side's own range, with the four-fifths cap standing in for a
-                    // side that sets no maximum.
+                    let fallback = Rems::from_pixels(
+                        match side {
+                            DockSide::Left | DockSide::Right => bounds.size.width * 0.45,
+                            DockSide::Top | DockSide::Bottom => bounds.size.height * 0.45,
+                        },
+                        window,
+                    );
+                    let extent = Rems::from_pixels(
+                        match side {
+                            DockSide::Left | DockSide::Right => bounds.size.width,
+                            DockSide::Top | DockSide::Bottom => bounds.size.height,
+                        },
+                        window,
+                    );
+                    // The side's own range: its maximum, tighter of the space its
+                    // reserve leaves the center, and never under its minimum.
                     let limits = dock.limits[side.index()];
-                    let low = limits.min.to_pixels(rem);
-                    let high = limits
-                        .max
-                        .map(|max| max.to_pixels(rem))
-                        .unwrap_or(cap)
-                        .max(low);
-                    let size = span.max(low).min(high);
-                    dock.sizes[side.index()] = gpui::rems(f32::from(size) / f32::from(rem));
-                    cx.notify();
-                }),
-            )
+                    let wanted = Rems::from_pixels(span, window);
+                    let size = limits.clamp_in(wanted, extent, fallback, rem);
+                    if dock.sizes[side.index()] != size {
+                        dock.sizes[side.index()] = size;
+                        cx.emit(super::DockEvent::Resized { side, size });
+                        cx.notify();
+                    }
+                },
+            ))
             .on_drag_move(
                 cx.listener(move |dock, event: &DragMoveEvent<DockSplit>, _, cx| {
                     let split = event.drag(cx);
@@ -507,7 +515,11 @@ impl Render for Dock {
                         ),
                     };
                     if span > 0.0 {
-                        dock.set_split(side, along / span, cx);
+                        let share = along / span;
+                        if dock.split[side.index()] != share {
+                            dock.set_split(side, share, cx);
+                            cx.emit(super::DockEvent::Split { side, share });
+                        }
                     }
                 }),
             )

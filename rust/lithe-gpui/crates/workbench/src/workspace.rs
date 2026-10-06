@@ -4,17 +4,18 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::assets::IconName;
-use gpui_kit::base::{ElementExt as _, HandleEdge, h_flex, resize_handle, v_flex};
+use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::notification::{Notification, NotificationType};
-use gpui_kit::component::{ActiveTheme as _, Icon, Root, WindowExt as _, resize_handle_appearance};
+use gpui_kit::component::{ActiveTheme as _, Icon, Root, WindowExt as _};
 use gpui_kit::{
-    Anchor, AnyElement, App, AppContext as _, Axis, Bounds, ClickEvent, Context, Div, Empty,
-    Entity, Global, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _,
-    PathPromptOptions, Pixels, Point, Render, ScrollHandle, SharedString, Size, Styled as _,
-    Window, div, rems,
+    Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Entity, Global, Hsla,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
+    Render, ScrollHandle, SharedString, Styled as _, Window, div, rems,
 };
+
+use lithe_gpui::layout::{Dock, DockEvent, DockPanel, DockSide};
 
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 use crate::branch_panel::{BranchPanel, open_branch_panel, trigger as branch_trigger};
@@ -475,8 +476,14 @@ pub struct ShellWorkspace {
     left_sidebar_width: f32,
     right_tool_window_width: f32,
     bottom_pane_height: f32,
-    split_container: Rc<Cell<Option<Size<Pixels>>>>,
-    pane_resize_drag: Option<PaneResizeDrag>,
+    /// The frame, the dividers and the sizes of the three tool windows. The
+    /// shell still chooses *what* each one shows and whether it is open; the
+    /// dock owns how they are laid out, and a drag on a divider is the only way
+    /// a person sizes them.
+    dock: Entity<Dock>,
+    _dock_subscription: Option<gpui_kit::Subscription>,
+    /// The shell's own handle, for the closures the dock calls back into.
+    self_handle: gpui_kit::WeakEntity<ShellWorkspace>,
     right_view: RightToolWindowView,
     right_visible: bool,
     maven_project: Option<crate::maven::MavenProjectView>,
@@ -969,6 +976,28 @@ impl ShellWorkspace {
         let spring_panel = cx.new(|cx| crate::spring_panel::SpringPanel::new(window, cx));
         cx.observe(&spring_panel, |_, _, cx| cx.notify()).detach();
 
+        let self_handle = cx.weak_entity();
+        // The dock wraps the middle column: the editor at its center, a tool
+        // window on each side. Its two closures read the shell back, so a panel
+        // always draws the view the shell has chosen for it.
+        let dock = {
+            let center = {
+                let shell = self_handle.clone();
+                move |window: &mut Window, cx: &mut App| match shell.upgrade() {
+                    Some(shell) => shell.read(cx).center_content(window, cx),
+                    None => div().into_any_element(),
+                }
+            };
+            let content = {
+                let shell = self_handle.clone();
+                move |id: &SharedString, window: &mut Window, cx: &mut App| match shell.upgrade() {
+                    Some(shell) => shell.read(cx).panel_content(id.as_ref(), window, cx),
+                    None => div().into_any_element(),
+                }
+            };
+            cx.new(|cx| dock_with_panels(center, content, cx))
+        };
+
         let mut workspace = Self {
             projects: vec![ProjectTab::new(project_name.clone())],
             project_tabs_scroll: ScrollHandle::new(),
@@ -983,8 +1012,9 @@ impl ShellWorkspace {
             left_sidebar_width: SIDEBAR_WIDTH_SPEC,
             right_tool_window_width: RIGHT_TOOL_WINDOW_WIDTH_SPEC,
             bottom_pane_height: BOTTOM_PANE_HEIGHT_SPEC,
-            split_container: Rc::new(Cell::new(None)),
-            pane_resize_drag: None,
+            dock,
+            _dock_subscription: None,
+            self_handle,
             right_view: RightToolWindowView::Maven,
             right_visible: false,
             maven_project: None,
@@ -1029,6 +1059,13 @@ impl ShellWorkspace {
             session_save_task: None,
             _quit_subscription: None,
         };
+        let dock_subscription = cx.subscribe(
+            &workspace.dock,
+            |shell: &mut ShellWorkspace, _dock, event: &DockEvent, cx| {
+                shell.on_dock_event(event, cx)
+            },
+        );
+        workspace._dock_subscription = Some(dock_subscription);
         println!("S1_WORKSPACE root={}", root.display());
         workspace.record_opened_project(&root, None, cx);
         workspace.search_index.schedule_warm(cx);
@@ -1075,15 +1112,28 @@ impl ShellWorkspace {
         if let Some(visible) = session.left_sidebar_visible {
             self.left_sidebar_visible = visible;
         }
+        // Widths come back through the dock: it clamps them against its own
+        // limits, and the shell stores what it settled on. The extent here is
+        // the window's, a little looser than the dock's own box (the window less
+        // the two activity rails) — the approximation the right tool window has
+        // always used, now for all three sides.
+        let rem = window.rem_size();
         let viewport = window.viewport_size();
-        for (pane, stored) in [
-            (ResizablePane::LeftSidebar, session.left_pane_width),
-            (ResizablePane::RightToolWindow, session.right_pane_width),
-            (ResizablePane::BottomPane, session.bottom_pane_height),
+        for (side, stored) in [
+            (DockSide::Left, session.left_pane_width),
+            (DockSide::Right, session.right_pane_width),
+            (DockSide::Bottom, session.bottom_pane_height),
         ] {
-            let (min, max) = self.pane_span_range(pane, viewport);
-            let resolved = pane_span_on_restore(stored, self.pane_span(pane), min, max);
-            self.set_pane_span(pane, resolved);
+            let Some(stored) = stored else { continue };
+            let extent = match side {
+                DockSide::Bottom => rems(f32::from(viewport.height) / 16.),
+                _ => rems(f32::from(viewport.width) / 16.),
+            };
+            let limits = self.dock.read(cx).side_limits(side);
+            let resolved = limits.clamp_in(rems(stored / 16.), extent, rems(f32::MAX), rem);
+            self.dock
+                .update(cx, |dock, cx| dock.set_size(side, resolved, cx));
+            self.set_pane_span(side, resolved.0 * 16.);
         }
         println!(
             "S1_SESSION_SIZES left={} right={} bottom={}",
@@ -1424,89 +1474,118 @@ impl ShellWorkspace {
         }
     }
 
-    fn pane_span(&self, pane: ResizablePane) -> f32 {
-        match pane {
-            ResizablePane::LeftSidebar => self.left_sidebar_width,
-            ResizablePane::RightToolWindow => self.right_tool_window_width,
-            ResizablePane::BottomPane => self.bottom_pane_height,
+    fn set_pane_span(&mut self, side: DockSide, span: f32) {
+        match side {
+            DockSide::Left => self.left_sidebar_width = span,
+            DockSide::Right => self.right_tool_window_width = span,
+            DockSide::Bottom => self.bottom_pane_height = span,
+            DockSide::Top => {}
         }
     }
 
-    fn set_pane_span(&mut self, pane: ResizablePane, span: f32) {
-        match pane {
-            ResizablePane::LeftSidebar => self.left_sidebar_width = span,
-            ResizablePane::RightToolWindow => self.right_tool_window_width = span,
-            ResizablePane::BottomPane => self.bottom_pane_height = span,
-        }
-    }
-
-    fn pane_span_range(&self, pane: ResizablePane, viewport: Size<Pixels>) -> (f32, f32) {
-        let container = self.split_container.get().unwrap_or(viewport);
-        match pane {
-            ResizablePane::LeftSidebar => (
-                SIDEBAR_MIN_WIDTH_SPEC,
-                left_sidebar_max_width(f32::from(container.width)),
-            ),
-            ResizablePane::RightToolWindow => (
-                RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
-                right_tool_window_max_width(f32::from(viewport.width)),
-            ),
-            ResizablePane::BottomPane => (
-                BOTTOM_PANE_MIN_HEIGHT_SPEC,
-                bottom_pane_max_height(f32::from(container.height)),
-            ),
-        }
-    }
-
-    fn begin_pane_resize(&mut self, pane: ResizablePane) {
-        self.pane_resize_drag = Some(PaneResizeDrag { pane, origin: None });
-    }
-
-    fn drag_pane_resize(
-        &mut self,
-        pane: ResizablePane,
-        along: f32,
-        viewport: Size<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        let current = self.pane_span(pane);
-        let (min, max) = self.pane_span_range(pane, viewport);
-        let direction = pane.drag_direction();
-        let Some(session) = self.pane_resize_drag.as_mut() else {
-            return;
-        };
-        if session.pane != pane {
-            return;
-        }
-        let next = match session.origin {
-            Some((press, start)) => clamped_drag_span(press, start, along, min, max, direction),
-            None => {
-                session.origin = Some((along, current));
-                return;
-            }
-        };
-        if next != current {
-            self.set_pane_span(pane, next);
+    /// A person dragged a divider: the dock owns the size from here, and the
+    /// shell records it so the session saves it. The write is debounced, so a
+    /// drag still touches no disk until the hand stops.
+    fn on_dock_event(&mut self, event: &DockEvent, cx: &mut Context<Self>) {
+        if let DockEvent::Resized { side, size } = event {
+            self.set_pane_span(*side, size.0 * 16.);
+            eprintln!(
+                "S1_PANE_RESIZE pane={} span={}",
+                side_id(*side),
+                size.0 * 16.
+            );
+            self.schedule_session_save(cx);
             cx.notify();
         }
     }
 
-    fn end_pane_resize(
-        &mut self,
-        pane: ResizablePane,
-        viewport: Size<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.pane_resize_drag.as_ref().map(|session| session.pane) != Some(pane) {
-            return;
+    /// The middle column the dock wraps: the extensions page while it is open,
+    /// the editor otherwise.
+    fn center_content(&self, window: &mut Window, cx: &App) -> AnyElement {
+        if self.extensions_page_open {
+            if let Some(page) = &self.extensions_page {
+                return page.clone().into_any_element();
+            }
         }
-        let (min, max) = self.pane_span_range(pane, viewport);
-        let resolved = clamp_pane_span(self.pane_span(pane), min, max);
-        self.pane_resize_drag = None;
-        self.set_pane_span(pane, resolved);
-        eprintln!("S1_PANE_RESIZE pane={} span={resolved}", pane.id());
-        self.schedule_session_save(cx);
-        cx.notify();
+        let _ = window;
+        editor_island(self.editor.clone(), cx).into_any_element()
+    }
+
+    /// One dock panel's body. The shell chooses what each tool window shows;
+    /// the dock owns the frame around it, the divider and the size.
+    fn panel_content(&self, id: &str, _window: &mut Window, cx: &App) -> AnyElement {
+        match id {
+            PANEL_LEFT => {
+                if self.top_activity_view == Some(CHANGES_ACTIVITY_IX) {
+                    self.changes.clone().into_any_element()
+                } else if self.top_activity_view == Some(SEARCH_ACTIVITY_IX) {
+                    self.search.clone().into_any_element()
+                } else {
+                    self.explorer.clone().into_any_element()
+                }
+            }
+            PANEL_RIGHT => {
+                let on_close = {
+                    let handle = self.self_handle.clone();
+                    move |event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                        let _ = handle.update(cx, |this, cx| {
+                            this.right_visible = false;
+                            diagnose_right_panel(
+                                this.right_view,
+                                false,
+                                event.mouse_position().map(ProbePoint::from),
+                            );
+                            this.schedule_session_save(cx);
+                            cx.notify();
+                        });
+                    }
+                };
+                right_tool_window(
+                    self.right_view,
+                    self.maven_project.as_ref(),
+                    self.spring_index.as_ref(),
+                    &self.notification_panel,
+                    &self.spring_panel,
+                    on_close,
+                    cx,
+                )
+            }
+            PANEL_BOTTOM => match self.bottom_kind {
+                BottomPaneKind::Terminal => self.terminal.clone().into_any_element(),
+                BottomPaneKind::Git => self.bottom_git.clone().into_any_element(),
+                BottomPaneKind::Diagnostics => {
+                    self.editor.read(cx).problems_pane().into_any_element()
+                }
+                BottomPaneKind::Run => self.run.clone().into_any_element(),
+                BottomPaneKind::Debug => self.debug.clone().into_any_element(),
+            },
+            _ => div().into_any_element(),
+        }
+    }
+
+    /// Brings the shell's tool-window visibility and the dock's together: the
+    /// shell decides, the dock draws. Called once a frame, so no path that flips
+    /// a flag has to remember to tell the dock.
+    fn sync_dock(&mut self, cx: &mut Context<Self>) {
+        let git_self_hidden =
+            self.bottom_kind == BottomPaneKind::Git && !self.bottom_git.read(cx).visible();
+        let wanted = wanted_panels(
+            self.left_sidebar_visible,
+            self.left_pane_visible,
+            self.right_visible,
+            self.bottom_visible,
+            git_self_hidden,
+        );
+        self.dock.update(cx, |dock, cx| {
+            for (id, visible) in wanted {
+                let hidden = dock.is_hidden(id);
+                if visible && hidden {
+                    dock.show(id, cx);
+                } else if !visible && !hidden {
+                    dock.hide(id, cx);
+                }
+            }
+        });
     }
 
     fn reveal_in_project_tree(&mut self, path: &Path, cx: &mut Context<Self>) {
@@ -2694,6 +2773,9 @@ fn right_scan_should_notify(
 
 impl Render for ShellWorkspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The dock's own state is derived: bring it in line with the shell's
+        // flags before anything is drawn, so no other path has to remember to.
+        self.sync_dock(cx);
         let menu = crate::menu_bar::render_bar(&self.menu_bar, window, cx);
         let project_entries = self.project_entries();
         let project_menu = render_project_menu(
@@ -2812,22 +2894,6 @@ impl Render for ShellWorkspace {
             }
         };
 
-        let on_close_right_activity = {
-            let handle = handle.clone();
-            move |event: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                handle.update(cx, |this, cx| {
-                    this.right_visible = false;
-                    diagnose_right_panel(
-                        this.right_view,
-                        false,
-                        event.mouse_position().map(ProbePoint::from),
-                    );
-                    this.schedule_session_save(cx);
-                    cx.notify();
-                });
-            }
-        };
-
         let activity_flags: Vec<bool> = (0..self.activity_items.len())
             .map(|index| self.is_activity_active(index))
             .collect();
@@ -2852,71 +2918,9 @@ impl Render for ShellWorkspace {
             cx,
         );
 
-        let explorer = self.explorer.clone();
-        let editor = self.editor.clone();
-        let left_content: AnyElement = if self.top_activity_view == Some(CHANGES_ACTIVITY_IX) {
-            self.changes.clone().into_any_element()
-        } else if self.top_activity_view == Some(SEARCH_ACTIVITY_IX) {
-            self.search.clone().into_any_element()
-        } else {
-            explorer.into_any_element()
-        };
-        let center: AnyElement = if self.extensions_page_open {
-            match &self.extensions_page {
-                Some(page) => page.clone().into_any_element(),
-                None => editor_island(editor, cx).into_any_element(),
-            }
-        } else {
-            editor_island(editor, cx).into_any_element()
-        };
-        let right_tool_window = right_tool_window(
-            self.right_view,
-            self.maven_project.as_ref(),
-            self.spring_index.as_ref(),
-            &self.notification_panel,
-            &self.spring_panel,
-            on_close_right_activity,
-            cx,
-        );
-        let right_tool_window_visible = self.right_visible;
+        // The middle column and the tool windows are drawn by the dock, from the
+        // shell's own state (`center_content` / `panel_content`).
         let left_sidebar_visible = self.left_sidebar_visible;
-        let left_pane_visible = self.left_pane_visible;
-        let viewport = window.viewport_size();
-        let split_container = self.split_container.clone();
-        let left_sidebar_width = {
-            let (min, max) = self.pane_span_range(ResizablePane::LeftSidebar, viewport);
-            clamp_pane_span(self.left_sidebar_width, min, max)
-        };
-        let right_tool_window_width = {
-            let (min, max) = self.pane_span_range(ResizablePane::RightToolWindow, viewport);
-            clamp_pane_span(self.right_tool_window_width, min, max)
-        };
-        let bottom_pane_height = {
-            let (min, max) = self.pane_span_range(ResizablePane::BottomPane, viewport);
-            clamp_pane_span(self.bottom_pane_height, min, max)
-        };
-
-        let pane_self_hidden =
-            self.bottom_kind == BottomPaneKind::Git && !self.bottom_git.read(cx).visible();
-        let bottom = (self.bottom_visible && !pane_self_hidden).then(|| {
-            let content: AnyElement = match self.bottom_kind {
-                BottomPaneKind::Terminal => self.terminal.clone().into_any_element(),
-                BottomPaneKind::Git => self.bottom_git.clone().into_any_element(),
-                BottomPaneKind::Diagnostics => {
-                    self.editor.read(cx).problems_pane().into_any_element()
-                }
-                BottomPaneKind::Run => self.run.clone().into_any_element(),
-                BottomPaneKind::Debug => self.debug.clone().into_any_element(),
-            };
-            bottom_pane(
-                content,
-                bottom_pane_height,
-                handle.downgrade(),
-                ResizablePane::BottomPane,
-                cx,
-            )
-        });
-
         let root = v_flex()
             .size_full()
             .bg(cx.theme().background)
@@ -2954,70 +2958,7 @@ impl Render for ShellWorkspace {
                     .gap_1()
                     .pr_1()
                     .children(left_sidebar_visible.then_some(left_rail))
-                    .child(
-                        h_flex()
-                            .id(SPLIT_CONTAINER_ID)
-                            .flex_1()
-                            .h_full()
-                            .min_w_0()
-                            .on_prepaint({
-                                let container = split_container;
-                                move |bounds, window, _cx| {
-                                    measure_split_container(&container, bounds, window);
-                                }
-                            })
-                            .children((left_sidebar_visible && left_pane_visible).then(|| {
-                                let pane = div()
-                                    .relative()
-                                    .size_full()
-                                    .child(left_content)
-                                    .child(drag_handle(
-                                        handle.downgrade(),
-                                        ResizablePane::LeftSidebar,
-                                    ))
-                                    .child(drag_tracker(
-                                        handle.downgrade(),
-                                        ResizablePane::LeftSidebar,
-                                    ));
-                                side_pane(
-                                    div().w(rems(left_sidebar_width / 16.)),
-                                    pane,
-                                    SidePaneEdge::WithoutTrailing,
-                                    cx,
-                                )
-                                .into_any_element()
-                            }))
-                            .child(
-                                v_flex()
-                                    .flex_1()
-                                    .h_full()
-                                    .min_w_0()
-                                    .min_h_0()
-                                    .child(center)
-                                    .children(bottom),
-                            ),
-                    )
-                    .children(right_tool_window_visible.then(|| {
-                        let pane = div()
-                            .relative()
-                            .size_full()
-                            .child(right_tool_window)
-                            .child(drag_handle(
-                                handle.downgrade(),
-                                ResizablePane::RightToolWindow,
-                            ))
-                            .child(drag_tracker(
-                                handle.downgrade(),
-                                ResizablePane::RightToolWindow,
-                            ));
-                        side_pane(
-                            div().w(rems(right_tool_window_width / 16.)),
-                            pane,
-                            SidePaneEdge::All,
-                            cx,
-                        )
-                        .into_any_element()
-                    }))
+                    .child(self.dock.clone())
                     .child(right_rail),
             )
             .children(show_status_bar.then(|| {
@@ -3030,227 +2971,85 @@ impl Render for ShellWorkspace {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SidePaneEdge {
-    All,
-    WithoutTrailing,
+/// The three tool windows the dock wraps, by panel id.
+const PANEL_LEFT: &str = "left";
+const PANEL_RIGHT: &str = "right";
+const PANEL_BOTTOM: &str = "bottom";
+
+/// Which tool windows the shell wants open, from its own flags. The left pane
+/// has two switches — the sidebar itself and whether a view is chosen for it —
+/// and the Git tool window hides itself while it has nothing to show.
+fn wanted_panels(
+    left_sidebar_visible: bool,
+    left_pane_visible: bool,
+    right_visible: bool,
+    bottom_visible: bool,
+    git_self_hidden: bool,
+) -> [(&'static str, bool); 3] {
+    [
+        (PANEL_LEFT, left_sidebar_visible && left_pane_visible),
+        (PANEL_RIGHT, right_visible),
+        (PANEL_BOTTOM, bottom_visible && !git_self_hidden),
+    ]
 }
 
-fn side_pane(
-    outer: Div,
-    content: impl IntoElement,
-    edge: SidePaneEdge,
-    cx: &App,
-) -> impl IntoElement {
-    let border_color = cx.theme().border;
-    let outer = outer
-        .h_full()
-        .flex_shrink_0()
-        .relative()
-        .bg(cx.theme().background);
-    let outer = match edge {
-        SidePaneEdge::All => outer.border_1().border_color(border_color),
-        SidePaneEdge::WithoutTrailing => outer
-            .border_t_1()
-            .border_b_1()
-            .border_l_1()
-            .border_color(border_color),
-    };
-    outer.child(content)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ResizablePane {
-    LeftSidebar,
-    RightToolWindow,
-    BottomPane,
-}
-
-impl ResizablePane {
-    fn axis(self) -> Axis {
-        match self {
-            Self::LeftSidebar | Self::RightToolWindow => Axis::Horizontal,
-            Self::BottomPane => Axis::Vertical,
-        }
-    }
-
-    fn handle_edge(self) -> HandleEdge {
-        match self {
-            Self::LeftSidebar => HandleEdge::Trailing,
-            Self::RightToolWindow | Self::BottomPane => HandleEdge::Leading,
-        }
-    }
-
-    fn handle_id(self) -> &'static str {
-        match self {
-            Self::LeftSidebar => "lithe-left-pane-resize",
-            Self::RightToolWindow => "lithe-right-pane-resize",
-            Self::BottomPane => "lithe-bottom-pane-resize",
-        }
-    }
-
-    fn id(self) -> &'static str {
-        match self {
-            Self::LeftSidebar => "left",
-            Self::RightToolWindow => "right",
-            Self::BottomPane => "bottom",
-        }
-    }
-
-    fn drag_direction(self) -> f32 {
-        match self {
-            Self::LeftSidebar => 1.,
-            Self::RightToolWindow | Self::BottomPane => -1.,
-        }
-    }
-
-    fn pointer_along(self, position: Point<Pixels>) -> f32 {
-        f32::from(match self.axis() {
-            Axis::Horizontal => position.x,
-            Axis::Vertical => position.y,
-        })
+fn side_id(side: DockSide) -> &'static str {
+    match side {
+        DockSide::Left => PANEL_LEFT,
+        DockSide::Right => PANEL_RIGHT,
+        DockSide::Bottom => PANEL_BOTTOM,
+        DockSide::Top => "top",
     }
 }
 
-struct PaneResizeDrag {
-    pane: ResizablePane,
-    origin: Option<(f32, f32)>,
-}
-
-fn clamp_pane_span(value: f32, min: f32, max: f32) -> f32 {
-    if value.is_nan() {
-        return min;
-    }
-    value.clamp(min, max.max(min))
-}
-
-fn pane_span_on_restore(stored: Option<f32>, current: f32, min: f32, max: f32) -> f32 {
-    match stored {
-        Some(value) => clamp_pane_span(value, min, max),
-        None => current,
-    }
-}
-
-fn clamped_drag_span(
-    press: f32,
-    start: f32,
-    current: f32,
-    min: f32,
-    max: f32,
-    direction: f32,
-) -> f32 {
-    clamp_pane_span(start + direction * (current - press), min, max)
-}
-
-const SPLIT_CONTAINER_ID: &str = "lithe-workspace-split-container";
-
-fn measure_split_container(
-    cache: &Rc<Cell<Option<Size<Pixels>>>>,
-    bounds: Bounds<Pixels>,
-    window: &mut Window,
-) {
-    let size = bounds.size;
-    let previous = cache.get();
-    cache.set(Some(size));
-    if previous.is_none() {
-        window.request_animation_frame();
-    }
-    if previous != Some(size) {
-        eprintln!(
-            "S1_SPLIT_CONTAINER w={} h={}",
-            f32::from(size.width),
-            f32::from(size.height)
+/// The dock the shell lives in: a tool window on the left, the editor in the
+/// middle, one on the right and one below. Every panel is `plain` — the shell's
+/// own chrome (activity bar, panel headers) already names them, so the dock
+/// draws no tab strip and the divider is the only handle.
+fn dock_with_panels(
+    center: impl Fn(&mut Window, &mut App) -> AnyElement + 'static,
+    content: impl Fn(&SharedString, &mut Window, &mut App) -> AnyElement + 'static,
+    cx: &mut Context<Dock>,
+) -> Dock {
+    let mut dock = Dock::new(center, content, cx);
+    dock.add(DockPanel::plain(PANEL_LEFT, "Project"), DockSide::Left);
+    dock.add(
+        DockPanel::plain(PANEL_RIGHT, "Tool Window"),
+        DockSide::Right,
+    );
+    dock.add(DockPanel::plain(PANEL_BOTTOM, "Terminal"), DockSide::Bottom);
+    // The ranges the macOS specification lays down, as of 2026-10-03 (see
+    // `UI-MAP.md`): each side keeps what the center must not lose ("reserve"),
+    // and the left and right also have a fixed ceiling.
+    for (side, min, max, reserve) in [
+        (
+            DockSide::Left,
+            SIDEBAR_MIN_WIDTH_SPEC,
+            Some(SIDEBAR_MAX_WIDTH_SPEC),
+            Some(SIDEBAR_MIN_EDITOR_WIDTH_SPEC),
+        ),
+        (
+            DockSide::Right,
+            RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
+            Some(RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC),
+            Some(RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC),
+        ),
+        (
+            DockSide::Bottom,
+            BOTTOM_PANE_MIN_HEIGHT_SPEC,
+            None,
+            Some(BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC),
+        ),
+    ] {
+        dock.set_side_limits_with(
+            side,
+            rems(min / 16.),
+            max.map(|width| rems(width / 16.)),
+            reserve.map(|width| rems(width / 16.)),
+            cx,
         );
     }
-}
-
-fn left_sidebar_max_width(available_width: f32) -> f32 {
-    if !available_width.is_finite() || available_width <= 0. {
-        return SIDEBAR_MAX_WIDTH_SPEC;
-    }
-    (available_width - SIDEBAR_MIN_EDITOR_WIDTH_SPEC)
-        .min(SIDEBAR_MAX_WIDTH_SPEC)
-        .max(SIDEBAR_MIN_WIDTH_SPEC)
-}
-
-fn right_tool_window_max_width(available_width: f32) -> f32 {
-    if !available_width.is_finite() || available_width <= 0. {
-        return RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC;
-    }
-    (available_width - RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC)
-        .min(RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC)
-        .max(RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC)
-}
-
-fn bottom_pane_max_height(available_height: f32) -> f32 {
-    if !available_height.is_finite() || available_height <= 0. {
-        return f32::INFINITY;
-    }
-    (available_height - BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC).max(BOTTOM_PANE_MIN_HEIGHT_SPEC)
-}
-
-fn drag_handle(
-    this: gpui_kit::WeakEntity<ShellWorkspace>,
-    pane: ResizablePane,
-) -> impl IntoElement {
-    resize_handle(pane.handle_id(), pane.axis())
-        .with_appearance(resize_handle_appearance())
-        .inside(pane.handle_edge())
-        .on_drag(PaneResizeHandle, move |_, _, _, cx| {
-            cx.stop_propagation();
-            let _ = this.update(cx, |shell, _| shell.begin_pane_resize(pane));
-            cx.new(|_| PaneResizeHandle)
-        })
-}
-
-struct PaneResizeHandle;
-
-impl Render for PaneResizeHandle {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        Empty
-    }
-}
-
-fn drag_tracker(
-    this: gpui_kit::WeakEntity<ShellWorkspace>,
-    pane: ResizablePane,
-) -> impl IntoElement {
-    let drag = this.clone();
-    let release = this;
-    gpui_kit::canvas(
-        |_bounds, _window, _cx| {},
-        move |_bounds, _prepaint, window, _cx| {
-            window.on_mouse_event(move |event: &gpui_kit::MouseMoveEvent, phase, window, cx| {
-                if !phase.bubble() {
-                    return;
-                }
-                let viewport = window.viewport_size();
-                let along = pane.pointer_along(event.position);
-                let released = event.pressed_button != Some(gpui_kit::MouseButton::Left);
-                let _ = drag.update(cx, |shell, cx| {
-                    if shell.pane_resize_drag.as_ref().map(|session| session.pane) != Some(pane) {
-                        return;
-                    }
-                    if released {
-                        shell.end_pane_resize(pane, viewport, cx);
-                    } else {
-                        shell.drag_pane_resize(pane, along, viewport, cx);
-                    }
-                });
-            });
-            window.on_mouse_event(move |_: &gpui_kit::MouseUpEvent, phase, window, cx| {
-                if !phase.bubble() {
-                    return;
-                }
-                let viewport = window.viewport_size();
-                let _ = release.update(cx, |shell, cx| {
-                    shell.end_pane_resize(pane, viewport, cx);
-                });
-            });
-        },
-    )
-    .absolute()
-    .size_full()
+    dock
 }
 
 fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
@@ -3264,27 +3063,6 @@ fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
         .border_color(cx.theme().border)
         .bg(cx.theme().background)
         .child(content)
-}
-
-fn bottom_pane(
-    content: AnyElement,
-    height: f32,
-    handle: gpui_kit::WeakEntity<ShellWorkspace>,
-    pane: ResizablePane,
-    cx: &App,
-) -> impl IntoElement {
-    let body = div()
-        .relative()
-        .w_full()
-        .h(rems(height / 16.))
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().background)
-        .child(content)
-        .child(drag_handle(handle.clone(), pane))
-        .child(drag_tracker(handle, pane));
-
-    v_flex().w_full().flex_shrink_0().child(body)
 }
 
 fn activity_items() -> Vec<ActivityItem> {
@@ -3464,229 +3242,141 @@ fn register_java_toolchain(root: &Path, cx: &App) {
 
 #[cfg(test)]
 mod tests {
+    use gpui_kit::{AppContext as _, TestAppContext, div, prelude::*, rems};
+    use lithe_gpui::layout::DockSide;
+
     use super::{
-        ActionFlags, Axis, BOTTOM_PANE_HEIGHT_SPEC, BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC,
-        BOTTOM_PANE_MIN_HEIGHT_SPEC, COMMAND_ORDER, CommandId, HandleEdge, OpenDestination,
-        Overrides, ProjectOpenDecision, RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC,
-        RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC, RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC,
-        RIGHT_TOOL_WINDOW_WIDTH_SPEC, ResizablePane, RightScanState, RightToolWindowView,
-        SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_EDITOR_WIDTH_SPEC, SIDEBAR_MIN_WIDTH_SPEC,
-        ToolchainPaths, bottom_pane_max_height, clamp_pane_span, clamped_drag_span,
-        left_activity_index, left_sidebar_max_width, pane_span_on_restore, resolve_overrides,
-        resolve_project_open_destination, right_scan_should_notify, right_tool_window_max_width,
-        visible_commands,
+        ActionFlags, BOTTOM_PANE_HEIGHT_SPEC, BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC,
+        BOTTOM_PANE_MIN_HEIGHT_SPEC, COMMAND_ORDER, CommandId, OpenDestination, Overrides,
+        PANEL_BOTTOM, PANEL_LEFT, PANEL_RIGHT, ProjectOpenDecision,
+        RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC, RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
+        RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC, RIGHT_TOOL_WINDOW_WIDTH_SPEC, RightScanState,
+        RightToolWindowView, SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_EDITOR_WIDTH_SPEC,
+        SIDEBAR_MIN_WIDTH_SPEC, ToolchainPaths, dock_with_panels, left_activity_index,
+        resolve_overrides, resolve_project_open_destination, right_scan_should_notify,
+        visible_commands, wanted_panels,
     };
 
+    /// 窗口尺寸规格仍写在宿主侧，但上下限现在由 dock 持有：三块工具窗的
+    /// 区间必须与 macOS 真源一致（见 `UI-MAP.md`）。
+    #[gpui_kit::test]
+    fn the_dock_carries_the_spec_ranges_for_each_tool_window(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            lithe_gpui::theme::Theme::init(cx);
+            let dock = cx.new(|cx| {
+                dock_with_panels(
+                    |_, _| div().into_any_element(),
+                    |_, _, _| div().into_any_element(),
+                    cx,
+                )
+            });
+            dock.read_with(cx, |dock, _| {
+                // 三块都在，且各自在自己的边上（`is_hidden` 对未知 id 会 panic）。
+                assert!(!dock.is_hidden(PANEL_LEFT));
+                assert!(!dock.is_hidden(PANEL_RIGHT));
+                assert!(!dock.is_hidden(PANEL_BOTTOM));
+
+                let left = dock.side_limits(DockSide::Left);
+                assert_eq!(left.min, rems(SIDEBAR_MIN_WIDTH_SPEC / 16.));
+                assert_eq!(left.max, Some(rems(SIDEBAR_MAX_WIDTH_SPEC / 16.)));
+                assert_eq!(
+                    left.reserve,
+                    Some(rems(SIDEBAR_MIN_EDITOR_WIDTH_SPEC / 16.)),
+                    "左栏必须给编辑区留 400"
+                );
+
+                let right = dock.side_limits(DockSide::Right);
+                assert_eq!(right.min, rems(RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC / 16.));
+                assert_eq!(
+                    right.max,
+                    Some(rems(RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC / 16.))
+                );
+                assert_eq!(
+                    right.reserve,
+                    Some(rems(RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC / 16.)),
+                    "右栏必须给中央列留 640"
+                );
+
+                let bottom = dock.side_limits(DockSide::Bottom);
+                assert_eq!(bottom.min, rems(BOTTOM_PANE_MIN_HEIGHT_SPEC / 16.));
+                assert_eq!(bottom.max, None, "底部没有固定上界，只有保留");
+                assert_eq!(
+                    bottom.reserve,
+                    Some(rems(BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC / 16.)),
+                    "底部必须给上方留 220"
+                );
+            });
+        });
+    }
+
+    /// 恢复会话时宽度经 dock 夹取：超出上界的存量值落到上界，非法值落到下界。
+    #[gpui_kit::test]
+    fn a_stored_width_is_clamped_through_the_dock(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            lithe_gpui::theme::Theme::init(cx);
+            let dock = cx.new(|cx| {
+                dock_with_panels(
+                    |_, _| div().into_any_element(),
+                    |_, _, _| div().into_any_element(),
+                    cx,
+                )
+            });
+            dock.update(cx, |dock, cx| {
+                dock.set_size(DockSide::Left, rems(9999.), cx);
+                assert_eq!(
+                    dock.size(DockSide::Left),
+                    rems(SIDEBAR_MAX_WIDTH_SPEC / 16.)
+                );
+                dock.set_size(DockSide::Left, rems(f32::NAN), cx);
+                assert_eq!(
+                    dock.size(DockSide::Left),
+                    rems(SIDEBAR_MIN_WIDTH_SPEC / 16.)
+                );
+            });
+        });
+    }
+
+    /// 默认宽度就是真源值，且底部默认与下界同值（钳制在默认值上恒等）。
     #[test]
-    fn drag_width_follows_the_pointer_and_stays_in_range() {
-        let container_width = 1280.;
-        let left = |press: f32, start: f32, current: f32| {
-            clamped_drag_span(
-                press,
-                start,
-                current,
-                SIDEBAR_MIN_WIDTH_SPEC,
-                left_sidebar_max_width(container_width),
-                ResizablePane::LeftSidebar.drag_direction(),
-            )
+    fn the_spec_defaults_still_hold() {
+        assert_eq!(RIGHT_TOOL_WINDOW_WIDTH_SPEC, 360.);
+        assert_eq!(BOTTOM_PANE_HEIGHT_SPEC, BOTTOM_PANE_MIN_HEIGHT_SPEC);
+    }
+
+    /// 可见性是外壳说了算：三个开关与 Git 面板的自隐藏合成出 dock 的面板开关。
+    #[test]
+    fn visibility_flags_combine_into_the_docks_panels() {
+        let open = |left: bool, left_pane: bool, right: bool, bottom: bool, git_hidden: bool| {
+            let mut wanted = wanted_panels(left, left_pane, right, bottom, git_hidden);
+            wanted.sort_by_key(|(id, _)| *id);
+            wanted
         };
-        assert_eq!(left(100., 320., 200.), 420.);
-        assert_eq!(left(300., 320., 200.), 220.);
-        assert_eq!(left(0., 320., -10_000.), SIDEBAR_MIN_WIDTH_SPEC);
         assert_eq!(
-            left(0., 320., 10_000.),
-            left_sidebar_max_width(container_width)
-        );
-        assert_eq!(left(500., 320., 500.), 320.);
-    }
-
-    #[test]
-    fn left_pane_max_width_is_the_macos_formula() {
-        assert_eq!(SIDEBAR_MIN_EDITOR_WIDTH_SPEC, 400., "400 本身是真源常量");
-        assert_eq!(
-            SIDEBAR_MIN_WIDTH_SPEC, 30.,
-            "下界 = 真源 minimumSidebarWidth"
+            open(true, true, true, true, false),
+            [
+                (PANEL_BOTTOM, true),
+                (PANEL_LEFT, true),
+                (PANEL_RIGHT, true)
+            ]
         );
         assert_eq!(
-            SIDEBAR_MAX_WIDTH_SPEC, 520.,
-            "静网上界 = 真源那个 min(520, …)"
-        );
-
-        assert_eq!(left_sidebar_max_width(400.), SIDEBAR_MIN_WIDTH_SPEC);
-        assert_eq!(left_sidebar_max_width(400. - 1.), SIDEBAR_MIN_WIDTH_SPEC);
-        assert_eq!(left_sidebar_max_width(30.), SIDEBAR_MIN_WIDTH_SPEC);
-        assert_eq!(left_sidebar_max_width(1920.), SIDEBAR_MAX_WIDTH_SPEC);
-        assert_eq!(left_sidebar_max_width(10_000.), SIDEBAR_MAX_WIDTH_SPEC);
-        assert_eq!(
-            left_sidebar_max_width(920.),
-            SIDEBAR_MAX_WIDTH_SPEC,
-            "正好封顶"
-        );
-        assert_eq!(left_sidebar_max_width(700.), 300.);
-        assert_eq!(left_sidebar_max_width(919.), 519.);
-        assert_eq!(left_sidebar_max_width(0.), SIDEBAR_MAX_WIDTH_SPEC);
-        assert_eq!(left_sidebar_max_width(-1.), SIDEBAR_MAX_WIDTH_SPEC);
-        assert_eq!(left_sidebar_max_width(f32::NAN), SIDEBAR_MAX_WIDTH_SPEC);
-        assert_eq!(
-            left_sidebar_max_width(f32::INFINITY),
-            SIDEBAR_MAX_WIDTH_SPEC
-        );
-    }
-
-    #[test]
-    fn bottom_pane_default_matches_the_macos_minimum_so_the_clamp_is_identity() {
-        assert_eq!(
-            BOTTOM_PANE_HEIGHT_SPEC, 260.,
-            "默认高 = 真源 minimumGitPaneHeight（WorkbenchView.swift:2019）"
+            open(false, true, false, false, false),
+            [
+                (PANEL_BOTTOM, false),
+                (PANEL_LEFT, false),
+                (PANEL_RIGHT, false)
+            ],
+            "左栏收起、右栏与底部关闭"
         );
         assert_eq!(
-            BOTTOM_PANE_HEIGHT_SPEC, BOTTOM_PANE_MIN_HEIGHT_SPEC,
-            "默认值必须等于下界，否则 clamp 会在首帧改掉它（改前 240 vs 260 就是那个不自洽）"
+            open(true, false, true, true, true),
+            [
+                (PANEL_BOTTOM, false),
+                (PANEL_LEFT, false),
+                (PANEL_RIGHT, true)
+            ],
+            "搜索页没开时左侧面板也收着；Git 面板自隐藏时底部跟着收"
         );
-        let (min, max) = (BOTTOM_PANE_MIN_HEIGHT_SPEC, bottom_pane_max_height(800.));
-        assert_eq!(
-            clamp_pane_span(BOTTOM_PANE_HEIGHT_SPEC, min, max),
-            BOTTOM_PANE_HEIGHT_SPEC
-        );
-    }
-
-    #[test]
-    fn right_pane_default_is_macos_and_never_overrides_a_stored_width() {
-        assert_eq!(
-            RIGHT_TOOL_WINDOW_WIDTH_SPEC, 360.,
-            "400 出自已作废的 windows/tauri（default-settings.ts:139），真源是 360"
-        );
-        let (min, max) = (
-            RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
-            right_tool_window_max_width(1920.),
-        );
-        assert_eq!(
-            pane_span_on_restore(None, RIGHT_TOOL_WINDOW_WIDTH_SPEC, min, max),
-            RIGHT_TOOL_WINDOW_WIDTH_SPEC
-        );
-        assert_eq!(pane_span_on_restore(Some(413.25), 360., min, max), 413.25);
-        assert_eq!(pane_span_on_restore(Some(500.), 360., min, max), 500.);
-        assert_eq!(pane_span_on_restore(Some(9_999.), 360., min, max), max);
-        assert_eq!(pane_span_on_restore(Some(-5.), 360., min, max), min);
-        assert_eq!(pane_span_on_restore(Some(f32::NAN), 360., min, max), min);
-        assert_eq!(pane_span_on_restore(None, 320., 30., 520.), 320.);
-        assert_eq!(pane_span_on_restore(None, 260., 260., 580.), 260.);
-    }
-
-    #[test]
-    fn leading_edge_panes_grow_towards_the_window_edge() {
-        let right = |press: f32, start: f32, current: f32| {
-            clamped_drag_span(
-                press,
-                start,
-                current,
-                RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
-                RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC,
-                ResizablePane::RightToolWindow.drag_direction(),
-            )
-        };
-        assert_eq!(right(500., 400., 440.), 460.);
-        assert_eq!(right(500., 400., 900.), RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC);
-
-        let bottom = |press: f32, start: f32, current: f32| {
-            clamped_drag_span(
-                press,
-                start,
-                current,
-                BOTTOM_PANE_MIN_HEIGHT_SPEC,
-                bottom_pane_max_height(800.),
-                ResizablePane::BottomPane.drag_direction(),
-            )
-        };
-        assert_eq!(bottom(600., 300., 500.), 400., "往上拖 100 ⇒ 高 400");
-        assert_eq!(bottom(600., 300., 100.), bottom_pane_max_height(800.));
-    }
-
-    #[test]
-    fn the_three_resize_handles_have_distinct_element_ids() {
-        let ids = [
-            ResizablePane::LeftSidebar.handle_id(),
-            ResizablePane::RightToolWindow.handle_id(),
-            ResizablePane::BottomPane.handle_id(),
-        ];
-        for (index, id) in ids.iter().enumerate() {
-            assert!(!id.is_empty(), "ElementId 不能是空串");
-            assert!(
-                !ids[..index].contains(id),
-                "ElementId 撞车：{id}（按住一个手柄可能触发另一个的拖动）"
-            );
-        }
-        assert_eq!(
-            ResizablePane::LeftSidebar.handle_edge(),
-            HandleEdge::Trailing
-        );
-        assert_eq!(
-            ResizablePane::RightToolWindow.handle_edge(),
-            HandleEdge::Leading
-        );
-        assert_eq!(ResizablePane::BottomPane.handle_edge(), HandleEdge::Leading);
-        assert_eq!(ResizablePane::BottomPane.axis(), Axis::Vertical);
-        assert_eq!(ResizablePane::RightToolWindow.axis(), Axis::Horizontal);
-    }
-
-    #[test]
-    fn the_right_pane_max_width_converges_on_a_narrow_window() {
-        assert_eq!(
-            right_tool_window_max_width(1920.),
-            RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC
-        );
-        assert_eq!(
-            right_tool_window_max_width(1280.),
-            1280. - RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC
-        );
-        assert_eq!(
-            right_tool_window_max_width(760.),
-            RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
-            "可用宽刚够放下 640 + 300 时，上界正好是下界"
-        );
-        assert_eq!(
-            right_tool_window_max_width(200.),
-            RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
-            "窗口比两边的下界之和还窄：上界收敛到下界，不产生 min > max"
-        );
-        assert_eq!(
-            right_tool_window_max_width(0.),
-            RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC
-        );
-        assert_eq!(
-            right_tool_window_max_width(f32::NAN),
-            RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC
-        );
-    }
-
-    #[test]
-    fn spans_converge_for_narrow_windows_and_out_of_range_restores() {
-        assert_eq!(
-            bottom_pane_max_height(1200.),
-            1200. - BOTTOM_PANE_MIN_CENTER_HEIGHT_SPEC
-        );
-        assert_eq!(
-            bottom_pane_max_height(300.),
-            BOTTOM_PANE_MIN_HEIGHT_SPEC,
-            "窗口太矮：上界收到下界"
-        );
-        assert!(
-            bottom_pane_max_height(0.).is_infinite(),
-            "窗口尺寸还不可知时这一帧不设上界（别误吃恢复出来的值）"
-        );
-
-        let restored = clamp_pane_span(
-            760.,
-            BOTTOM_PANE_MIN_HEIGHT_SPEC,
-            bottom_pane_max_height(800.),
-        );
-        assert_eq!(restored, bottom_pane_max_height(800.));
-
-        assert_eq!(clamp_pane_span(-5., 260., 580.), 260.);
-        assert_eq!(clamp_pane_span(f32::NAN, 260., 580.), 260.);
-        assert_eq!(clamp_pane_span(f32::NEG_INFINITY, 260., 580.), 260.);
-        assert_eq!(clamp_pane_span(f32::INFINITY, 260., 580.), 580.);
-        assert_eq!(clamp_pane_span(500., 300., 120.), 300.);
     }
 
     #[test]
