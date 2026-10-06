@@ -1,5 +1,5 @@
 use gpui::{
-    AnyElement, App, Context, FocusHandle, FontWeight, InteractiveElement, IntoElement,
+    AnyElement, App, Axis, Context, FocusHandle, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Pixels, Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
     Subscription, Window, div, point, prelude::*, px,
 };
@@ -8,7 +8,7 @@ use lithe_gpui::{
     feedback::Alert,
     forms::{Choice as FormChoice, Select},
     i18n::{LOCALES, Locale, locale, set_locale},
-    layout::on_axis,
+    layout::{Scrollbar, on_axis},
     primitives::{FocusScope, IconName, Severity},
     theme::{ActiveTheme, Mode, Radius, Size, TextSize, Theme},
 };
@@ -253,6 +253,9 @@ impl Gallery {
             .root()
             .size_full()
             .flex()
+            // The overlay scrollbars are positioned against this, so they sit on the
+            // window's edge instead of scrolling away with the page.
+            .relative()
             .bg(theme.colors.bg)
             .text_color(theme.colors.fg)
             .font_family(theme.font_family.clone())
@@ -303,82 +306,88 @@ impl Render for Gallery {
             }
         };
         if self.story.is_some() {
-            return self.root(cx).child(
-                on_axis(div().id(("story", self.pass)))
-                    .size_full()
-                    .overflow_scroll()
-                    .track_scroll(&self.scroll)
-                    // The widest demo, 900, plus padding; narrower, it scrolls sideways.
-                    .child(
-                        div()
-                            .min_w(px(948.0))
-                            .p_6()
-                            // Natively the traffic lights take the top 56.
-                            .when(cfg!(not(target_family = "wasm")), |story| {
-                                story.pt(px(56.0))
-                            })
-                            .child(body),
-                    ),
-            );
+            return self
+                .root(cx)
+                .child(
+                    on_axis(div().id(("story", self.pass)))
+                        .size_full()
+                        .overflow_scroll()
+                        .track_scroll(&self.scroll)
+                        // The widest demo, 900, plus padding; narrower, it scrolls sideways.
+                        .child(
+                            div()
+                                .min_w(px(948.0))
+                                .p_6()
+                                // Natively the traffic lights take the top 56.
+                                .when(cfg!(not(target_family = "wasm")), |story| {
+                                    story.pt(px(56.0))
+                                })
+                                .child(body),
+                        ),
+                )
+                .child(Scrollbar::new("story-bar", &self.scroll, Axis::Vertical));
         }
         let sidebar = self.sidebar(cx);
         let switcher = self.switcher(cx);
         let theme = cx.theme();
         let colors = &theme.colors;
 
-        self.root(cx).child(sidebar).child(
-            on_axis(div().id(("page", self.pass)))
-                .flex_1()
-                .h_full()
-                .overflow_y_scroll()
-                .track_scroll(&self.scroll)
-                .child(
-                    div()
-                        .max_w(px(960.0))
-                        .px(px(56.0))
-                        .pt(px(56.0))
-                        .pb(px(96.0))
-                        .child(
-                            self.card(
-                                div()
-                                    .flex()
-                                    .flex_wrap()
-                                    .items_start()
-                                    .justify_between()
-                                    .gap_6()
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w(px(200.0))
-                                            .flex()
-                                            .flex_col()
-                                            .gap_2()
-                                            .child(
-                                                div()
-                                                    .text_size(theme.text_size(TextSize::Xxl))
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .child(crate::i18n::gallery(page.title)),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(theme.text_size(TextSize::Md))
-                                                    .text_color(colors.fg_muted)
-                                                    .child(crate::i18n::gallery(page.summary)),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap_2()
-                                            .child(self.locale_switcher())
-                                            .child(switcher),
-                                    ),
-                                body,
-                                cx,
+        self.root(cx)
+            .child(sidebar)
+            .child(
+                on_axis(div().id(("page", self.pass)))
+                    .flex_1()
+                    .h_full()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
+                    .child(
+                        div()
+                            .max_w(px(960.0))
+                            .px(px(56.0))
+                            .pt(px(56.0))
+                            .pb(px(96.0))
+                            .child(
+                                self.card(
+                                    div()
+                                        .flex()
+                                        .flex_wrap()
+                                        .items_start()
+                                        .justify_between()
+                                        .gap_6()
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w(px(200.0))
+                                                .flex()
+                                                .flex_col()
+                                                .gap_2()
+                                                .child(
+                                                    div()
+                                                        .text_size(theme.text_size(TextSize::Xxl))
+                                                        .font_weight(FontWeight::SEMIBOLD)
+                                                        .child(crate::i18n::gallery(page.title)),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(theme.text_size(TextSize::Md))
+                                                        .text_color(colors.fg_muted)
+                                                        .child(crate::i18n::gallery(page.summary)),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap_2()
+                                                .child(self.locale_switcher())
+                                                .child(switcher),
+                                        ),
+                                    body,
+                                    cx,
+                                ),
                             ),
-                        ),
-                ),
-        )
+                    ),
+            )
+            .child(Scrollbar::new("page-bar", &self.scroll, Axis::Vertical))
     }
 }
