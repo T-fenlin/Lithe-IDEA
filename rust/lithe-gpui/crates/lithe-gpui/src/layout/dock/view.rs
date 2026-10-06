@@ -1,16 +1,13 @@
 use gpui::{
-    AnyElement, Axis, Context, CursorStyle, DragMoveEvent, EmptyView, EntityId, FontWeight,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, Rems, Render,
-    SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div, point, prelude::*,
-    relative,
+    AnyElement, Axis, Context, DragMoveEvent, EmptyView, EntityId, FontWeight, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, Pixels, Point, Rems, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, point, prelude::*, relative,
 };
 
-use super::{Dock, DockSide, GROUPS, Spot};
+use super::{Dock, DockSide, Spot};
 use crate::{
-    buttons::{Button, ButtonVariant},
-    i18n::text,
-    layout::FloatingPanel,
-    primitives::{DragGhost, Icon, IconName},
+    layout::{FloatingPanel, resize_handle},
+    primitives::{DragGhost, Icon},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
 
@@ -24,278 +21,92 @@ struct DockResize {
     side: DockSide,
 }
 
-/// Drags the divider between a side's two groups.
-struct DockSplit {
-    dock: EntityId,
-    side: DockSide,
-}
-
 impl Dock {
-    /// The heading of one group: its tabs, and the controls for the panel it shows.
-    fn tabs(&self, side: DockSide, group: usize, cx: &mut Context<Self>) -> AnyElement {
+    /// A side's heading: its panels as tabs, dragged to move them.
+    fn tabs(&self, side: DockSide, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let active = self.active[side.index()][group];
-        let zoom = active.map(|ix| self.panels[ix].id.clone());
+        let active = self.active[side.index()];
         div()
             .flex()
             .items_center()
-            .justify_between()
+            .gap_0p5()
             .h(theme.control_height(Size::Large))
             .px_1()
             .border_b_1()
             .border_color(theme.colors.border)
-            .child(div().flex().items_center().gap_0p5().children(
-                self.shown_in(side, group).into_iter().map(|ix| {
-                    let panel = &self.panels[ix];
-                    let selected = active == Some(ix);
-                    let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
-                    let drag = DraggedPanel {
-                        dock: cx.entity_id(),
-                        id: id.clone(),
-                    };
-                    div()
-                        .id(SharedString::from(format!("tab-{side:?}-{group}-{id}")))
-                        .flex()
-                        .items_center()
-                        .gap_1p5()
-                        .px_2()
-                        .h(theme.control_height(Size::Small))
-                        .rounded(theme.radius(Radius::Md))
-                        .cursor_pointer()
-                        .text_size(theme.text_size(TextSize::Sm))
-                        .text_color(if selected {
-                            theme.colors.fg
-                        } else {
-                            theme.colors.fg_subtle
-                        })
-                        .when(selected, |tab| {
-                            tab.bg(theme.colors.hover).font_weight(FontWeight::MEDIUM)
-                        })
-                        .hover(|style| style.text_color(theme.colors.fg))
-                        .child(Icon::new(icon).size(IconSize::Sm).color(if selected {
-                            theme.colors.fg
-                        } else {
-                            theme.colors.fg_subtle
-                        }))
-                        .child(title.clone())
-                        .on_click(cx.listener(move |dock, _, _, cx| dock.activate(&id, cx)))
-                        .on_drag(drag, move |_, _, _, cx| {
-                            DragGhost::new(title.clone(), Some(icon), cx)
-                        })
-                }),
-            ))
-            .children(zoom.map(|id| {
-                let off = self.is_zoomed(&id);
-                let close_id = id.clone();
-                let float_id = id.clone();
-                // One strip per group, so the controls' ids name the group: two
-                // strips sharing an id would collide in the accessibility tree.
-                let (close_el, float_el, zoom_el) = (
-                    SharedString::from(format!("dock-close-{side:?}-{group}")),
-                    SharedString::from(format!("dock-float-{side:?}-{group}")),
-                    SharedString::from(format!("dock-zoom-{side:?}-{group}")),
-                );
+            .children(self.shown_in(side).into_iter().map(|ix| {
+                let panel = &self.panels[ix];
+                let selected = active == Some(ix);
+                let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
+                let drag = DraggedPanel {
+                    dock: cx.entity_id(),
+                    id: id.clone(),
+                };
                 div()
+                    .id(SharedString::from(format!("tab-{side:?}-{id}")))
                     .flex()
                     .items_center()
-                    .gap_0p5()
-                    .child(
-                        Button::new(close_el)
-                            .icon(IconName::X)
-                            .variant(ButtonVariant::Ghost)
-                            .size(Size::Small)
-                            .tooltip(text(cx, "dock.close", &[]))
-                            .on_click(cx.listener(move |dock, _, _, cx| dock.hide(&close_id, cx))),
-                    )
-                    .child(
-                        Button::new(float_el)
-                            .icon(IconName::PictureInPicture2)
-                            .variant(ButtonVariant::Ghost)
-                            .size(Size::Small)
-                            .tooltip(text(cx, "dock.float", &[]))
-                            .on_click(
-                                cx.listener(move |dock, _, _, cx| dock.toggle_float(&float_id, cx)),
-                            ),
-                    )
-                    .child(
-                        Button::new(zoom_el)
-                            .icon(if off {
-                                IconName::Minimize2
-                            } else {
-                                IconName::Maximize2
-                            })
-                            .variant(ButtonVariant::Ghost)
-                            .size(Size::Small)
-                            .tooltip(text(
-                                cx,
-                                if off { "dock.restore" } else { "dock.zoom" },
-                                &[],
-                            ))
-                            .on_click(cx.listener(move |dock, _, _, cx| dock.toggle_zoom(&id, cx))),
-                    )
+                    .gap_1p5()
+                    .px_2()
+                    .h(theme.control_height(Size::Small))
+                    .rounded(theme.radius(Radius::Md))
+                    .cursor_pointer()
+                    .text_size(theme.text_size(TextSize::Sm))
+                    .text_color(if selected {
+                        theme.colors.fg
+                    } else {
+                        theme.colors.fg_subtle
+                    })
+                    .when(selected, |tab| {
+                        tab.bg(theme.colors.hover).font_weight(FontWeight::MEDIUM)
+                    })
+                    .hover(|style| style.text_color(theme.colors.fg))
+                    .child(Icon::new(icon).size(IconSize::Sm).color(if selected {
+                        theme.colors.fg
+                    } else {
+                        theme.colors.fg_subtle
+                    }))
+                    .child(title.clone())
+                    .on_click(cx.listener(move |dock, _, _, cx| dock.activate(&id, cx)))
+                    .on_drag(drag, move |_, _, _, cx| {
+                        DragGhost::new(title.clone(), Some(icon), cx)
+                    })
             }))
             .into_any_element()
     }
 
-    /// One group's pane: its heading over the panel it shows. `None` when the
-    /// group is empty, which is how a side with one group draws that group full.
-    fn group(
-        &self,
-        side: DockSide,
-        group: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let shown = self.shown_in(side, group);
-        let active = shown
-            .iter()
-            .copied()
-            .find(|ix| Some(*ix) == self.active[side.index()][group])
-            .or_else(|| shown.first().copied())?;
-        let panel = &self.panels[active];
-        let panel_id = panel.id.clone();
-        let body = (self.content)(&panel_id, window, cx);
-        // The panel's look wins over the dock's, field by field.
-        let look = self.painted(panel);
-        let (border, radius) = (look.border, look.radius);
-        // The inner box is inset by the border, so its corners match the outer
-        // radius instead of bulging past it.
-        let radius_px = radius.to_pixels(window.rem_size());
-        let inner_radius = if radius_px > border {
-            radius_px - border
-        } else {
-            Pixels::ZERO
-        };
-        let pane = div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .overflow_hidden()
-            .bg(look.background)
-            .rounded(inner_radius)
-            .when(look.header, |pane| pane.child(self.tabs(side, group, cx)))
-            .child(div().flex_1().min_h_0().child(body));
-        // The frame is the border: a filled box behind, the pane inset over it.
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .bg(look.border_color)
-                .rounded(radius)
-                .p(border)
-                .m(self.look.gap)
-                .child(pane)
-                .into_any_element(),
-        )
-    }
-
-    /// A divider: the dock's hit area, and a line whose thickness is the
-    /// dock's. Lights on hover, like the layout chapter's own handle.
-    fn divider(&self, id: SharedString, axis: Axis, cx: &mut Context<Self>) -> Stateful<gpui::Div> {
-        let theme = cx.theme();
-        let (lit, idle) = (theme.colors.focus, theme.colors.border);
-        let base = div()
-            .id(id)
-            .group("dock-divider")
-            .flex_none()
-            .flex()
-            .justify_center()
-            .items_center();
-        match axis {
-            Axis::Horizontal => base
-                .w(self.look.handle)
-                .h_full()
-                .cursor(CursorStyle::ResizeLeftRight)
-                .child(
-                    div()
-                        .h_full()
-                        .border_l(self.look.handle_line)
-                        .border_color(idle)
-                        .group_hover("dock-divider", |s| s.border_color(lit)),
-                ),
-            Axis::Vertical => base
-                .h(self.look.handle)
-                .w_full()
-                .cursor(CursorStyle::ResizeUpDown)
-                .child(
-                    div()
-                        .w_full()
-                        .border_t(self.look.handle_line)
-                        .border_color(idle)
-                        .group_hover("dock-divider", |s| s.border_color(lit)),
-                ),
-        }
-    }
-
-    /// A side: its groups stacked along it, with a divider to share the extent.
+    /// A side: the panel it shows, with a divider to size it. `None` when the
+    /// side has nothing open, which is how an empty side draws nothing.
     fn side(
         &self,
         side: DockSide,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let panes: Vec<AnyElement> = (0..GROUPS)
-            .filter_map(|group| self.group(side, group, window, cx))
-            .collect();
-        if panes.is_empty() {
-            return None;
-        }
-        // Copy what this side needs, so `cx` is free for the divider's build.
-        let surface = cx.theme().colors.surface;
+        let shown = self.shown_in(side);
+        let active = shown
+            .iter()
+            .copied()
+            .find(|ix| Some(*ix) == self.active[side.index()])
+            .or_else(|| shown.first().copied())?;
+        let panel = &self.panels[active];
+        let header = panel.header;
+        let panel_id = panel.id.clone();
+        let body = (self.content)(&panel_id, window, cx);
+        let theme = cx.theme();
+        let pane = div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .overflow_hidden()
+            .bg(theme.colors.surface)
+            .when(header, |pane| pane.child(self.tabs(side, cx)))
+            .child(div().flex_1().min_h_0().flex().flex_col().child(body));
         let size = self.sizes[side.index()];
         let axis = match side {
             DockSide::Left | DockSide::Right => Axis::Horizontal,
             DockSide::Top | DockSide::Bottom => Axis::Vertical,
         };
-        let along = axis == Axis::Horizontal;
-
-        let mut panes = panes.into_iter();
-        let first = panes.next().expect("checked above");
-        let inner: AnyElement = match panes.next() {
-            None => first,
-            Some(second) => {
-                // Group 0 takes the share; group 1 the rest.
-                let share = self.split[side.index()];
-                let split = DockSplit {
-                    dock: cx.entity_id(),
-                    side,
-                };
-                let handle = self
-                    .divider(
-                        SharedString::from(format!("dock-split-{side:?}")),
-                        if along {
-                            Axis::Vertical
-                        } else {
-                            Axis::Horizontal
-                        },
-                        cx,
-                    )
-                    .on_drag(split, |_, _, _, cx| cx.new(|_| EmptyView))
-                    .into_any_element();
-                let (head, rest) = if along {
-                    (
-                        div().h(relative(share)).min_h_0().w_full(),
-                        div().flex_1().min_h_0().w_full(),
-                    )
-                } else {
-                    (
-                        div().w(relative(share)).min_w_0().h_full(),
-                        div().flex_1().min_w_0().h_full(),
-                    )
-                };
-                div()
-                    .flex()
-                    .when(along, |el| el.flex_col())
-                    .size_full()
-                    .child(head.child(first))
-                    .child(handle)
-                    .child(rest.child(second))
-                    .into_any_element()
-            }
-        };
-
-        let pane = div().flex().overflow_hidden().bg(surface).child(inner);
         let pane = match axis {
             Axis::Horizontal => pane.w(size).h_full(),
             Axis::Vertical => pane.h(size).w_full(),
@@ -304,20 +115,17 @@ impl Dock {
             dock: cx.entity_id(),
             side,
         };
-        let handle = self
-            .divider(
-                SharedString::from(format!("dock-handle-{side:?}")),
-                axis,
-                cx,
-            )
-            .on_drag(resize, |_, _, _, cx| cx.new(|_| EmptyView));
+        let handle = resize_handle(
+            SharedString::from(format!("dock-handle-{side:?}")),
+            axis,
+            cx,
+        )
+        .on_drag(resize, |_, _, _, cx| cx.new(|_| EmptyView));
         let row = div().flex().flex_none();
-        // The rail sits outside the panels, on the side.s own edge.
-        let rail = self.rail_for(side, cx);
         Some(
             match side {
-                DockSide::Left => row.h_full().children(rail).child(pane).child(handle),
-                DockSide::Right => row.h_full().child(handle).child(pane).children(rail),
+                DockSide::Left => row.h_full().child(pane).child(handle),
+                DockSide::Right => row.h_full().child(handle).child(pane),
                 DockSide::Top => row.w_full().flex_col().child(pane).child(handle),
                 DockSide::Bottom => row.w_full().flex_col().child(handle).child(pane),
             }
@@ -325,6 +133,8 @@ impl Dock {
         )
     }
 
+    /// The drop zones a dragging tab reveals: one per side, and a middle one that
+    /// floats the panel.
     fn zones(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let (lit, edge, idle) = (
@@ -348,7 +158,7 @@ impl Dock {
                             return;
                         }
                         let target = match spot {
-                            Some(side) => Spot::docked(side),
+                            Some(side) => Spot::Docked(side),
                             None => {
                                 let at = window.mouse_position();
                                 Spot::Floating {
@@ -409,26 +219,6 @@ impl Dock {
 
 impl Render for Dock {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // A zoomed panel takes the whole dock until it is restored, tabs and all.
-        if let Some(ix) = self.zoomed.filter(|ix| !self.hidden[*ix]) {
-            let id = self.panels[ix].id.clone();
-            let body = (self.content)(&id, window, cx);
-            let (side, group) = match self.spots[ix] {
-                Spot::Docked { side, group } => (side, usize::from(group)),
-                Spot::Floating { .. } => (DockSide::Left, 0),
-            };
-            return div()
-                .id("dock")
-                .relative()
-                .size_full()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .bg(cx.theme().colors.surface)
-                .child(self.tabs(side, group, cx))
-                .child(div().flex_1().min_h_0().child(body))
-                .into_any_element();
-        }
         let left = self.side(DockSide::Left, window, cx);
         let right = self.side(DockSide::Right, window, cx);
         let top = self.side(DockSide::Top, window, cx);
@@ -447,7 +237,6 @@ impl Render for Dock {
         let showing_zones = self.dragging && cx.has_active_drag();
         let rem = window.rem_size();
         let own = cx.entity_id();
-        let closed = self.closed(cx);
         div()
             .id("dock")
             .relative()
@@ -496,34 +285,6 @@ impl Render for Dock {
                 },
             ))
             .on_drag_move(
-                cx.listener(move |dock, event: &DragMoveEvent<DockSplit>, _, cx| {
-                    let split = event.drag(cx);
-                    if split.dock != own {
-                        return;
-                    }
-                    let side = split.side;
-                    let bounds = event.bounds;
-                    let pointer = event.event.position;
-                    let (along, span) = match side {
-                        DockSide::Left | DockSide::Right => (
-                            f32::from(pointer.y - bounds.top()),
-                            f32::from(bounds.size.height),
-                        ),
-                        DockSide::Top | DockSide::Bottom => (
-                            f32::from(pointer.x - bounds.left()),
-                            f32::from(bounds.size.width),
-                        ),
-                    };
-                    if span > 0.0 {
-                        let share = along / span;
-                        if dock.split[side.index()] != share {
-                            dock.set_split(side, share, cx);
-                            cx.emit(super::DockEvent::Split { side, share });
-                        }
-                    }
-                }),
-            )
-            .on_drag_move(
                 cx.listener(|dock, event: &DragMoveEvent<DraggedPanel>, _, cx| {
                     if event.drag(cx).dock == cx.entity_id() && !dock.dragging {
                         dock.dragging = true;
@@ -552,14 +313,13 @@ impl Render for Dock {
                             .flex()
                             .flex_col()
                             .children(top)
-                            .child(div().flex_1().min_h_0().child(center))
+                            .child(div().flex_1().min_h_0().flex().flex_col().child(center))
                             .children(bottom),
                     )
                     .children(right)
                     .children(floating)
                     .when(showing_zones, |dock| dock.child(self.zones(cx))),
             )
-            .children(closed)
             .into_any_element()
     }
 }
@@ -576,30 +336,11 @@ impl Dock {
         let id = panel.id.clone();
         let body = (self.content)(&id, window, cx);
         let dock_id = id.clone();
-        let back_id = id.clone();
-        let close_id = id.clone();
-        let actions = [
-            Button::new(SharedString::from(format!("float-dock-{id}")))
-                .icon(IconName::PictureInPicture2)
-                .variant(ButtonVariant::Ghost)
-                .size(Size::Small)
-                .tooltip(text(cx, "dock.dock", &[]))
-                .on_click(cx.listener(move |dock, _, _, cx| dock.toggle_float(&back_id, cx)))
-                .into_any_element(),
-            Button::new(SharedString::from(format!("float-close-{id}")))
-                .icon(IconName::X)
-                .variant(ButtonVariant::Ghost)
-                .size(Size::Small)
-                .tooltip(text(cx, "dock.close", &[]))
-                .on_click(cx.listener(move |dock, _, _, cx| dock.hide(&close_id, cx)))
-                .into_any_element(),
-        ];
         FloatingPanel::new(
             SharedString::from(format!("float-{id}")),
             panel.title.resolve(cx),
             start,
         )
-        .actions(actions)
         .w(cx.theme().sidebar_width(false))
         .h(cx.theme().sheet_size())
         .on_move(cx.listener(move |dock, at: &Point<Pixels>, _, _| {
@@ -611,83 +352,5 @@ impl Dock {
         }))
         .child(body)
         .into_any_element()
-    }
-
-    /// The icon rail for `side`: one button per panel docked there, closed or not,
-    /// so a click is also how a closed one comes back. `None` when the rail is off.
-    fn rail_for(&self, side: DockSide, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let docked: Vec<usize> = (0..self.panels.len())
-            .filter(|ix| matches!(self.spots[*ix], Spot::Docked { side: s, .. } if s == side))
-            .collect();
-        if !self.rail || docked.is_empty() {
-            return None;
-        }
-        let theme = cx.theme();
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .flex_none()
-                .items_center()
-                .gap_0p5()
-                .w(theme.rail_width())
-                .py_1()
-                .border_color(theme.colors.border)
-                .when(side == DockSide::Left, |el| el.border_r_1())
-                .when(side == DockSide::Right, |el| el.border_l_1())
-                .children(docked.into_iter().map(|ix| {
-                    let panel = &self.panels[ix];
-                    let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
-                    let shown = self.is_active_in(ix) && !self.hidden[ix];
-                    Button::new(SharedString::from(format!("rail-{side:?}-{id}")))
-                        .icon(icon)
-                        .variant(if shown {
-                            ButtonVariant::Subtle
-                        } else {
-                            ButtonVariant::Ghost
-                        })
-                        .size(Size::Small)
-                        .tooltip(title)
-                        .on_click(cx.listener(move |dock, _, _, cx| dock.activate(&id, cx)))
-                }))
-                .into_any_element(),
-        )
-    }
-
-    /// The closed panels as buttons that open them again, when the strip is on.
-    ///
-    /// An application with an activity bar leaves this off: a toggle there is the
-    /// usual way back, and a second one would be noise.
-    fn closed(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let closed: Vec<usize> = (0..self.panels.len())
-            .filter(|ix| self.hidden[*ix])
-            .collect();
-        if !self.closed_strip || closed.is_empty() {
-            return None;
-        }
-        let theme = cx.theme();
-        Some(
-            div()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .gap_1()
-                .px_2()
-                .py_1()
-                .border_t_1()
-                .border_color(theme.colors.border)
-                .bg(theme.colors.sunken)
-                .children(closed.into_iter().map(|ix| {
-                    let panel = &self.panels[ix];
-                    let (id, title, icon) = (panel.id.clone(), panel.title.resolve(cx), panel.icon);
-                    Button::new(SharedString::from(format!("dock-closed-{id}")))
-                        .icon(icon)
-                        .label(title)
-                        .variant(ButtonVariant::Ghost)
-                        .size(Size::Small)
-                        .on_click(cx.listener(move |dock, _, _, cx| dock.show(&id, cx)))
-                }))
-                .into_any_element(),
-        )
     }
 }

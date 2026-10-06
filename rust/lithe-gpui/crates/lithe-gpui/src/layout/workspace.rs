@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use super::{Dock, DockLayout, PaneGroup, PaneLayout};
 
 /// Bump when a field changes meaning; never reuse a removed name.
-pub const WORKSPACE_VERSION: u32 = 1;
+///
+/// `v2`: the dock dropped its panel groups and the split between them, so a side
+/// shows one panel and a docked spot names only the side.
+pub const WORKSPACE_VERSION: u32 = 2;
 
 /// Saved window layout: docks and editor panes, as JSON.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,17 +67,11 @@ mod tests {
             version: WORKSPACE_VERSION,
             dock: DockLayout {
                 spots: vec![
-                    ("files".into(), Spot::docked(DockSide::Left)),
+                    ("files".into(), Spot::Docked(DockSide::Left)),
                     ("outline".into(), Spot::Floating { x: 40.0, y: 60.0 }),
                 ],
-                active: [
-                    [Some("files".into()), None],
-                    [None, None],
-                    [None, None],
-                    [None, None],
-                ],
+                active: [Some("files".into()), None, None, None],
                 sizes: [15.0, 17.5, 12.0, 13.75],
-                split: [0.5; 4],
                 hidden: Vec::new(),
             },
             panes: PaneLayout::Split {

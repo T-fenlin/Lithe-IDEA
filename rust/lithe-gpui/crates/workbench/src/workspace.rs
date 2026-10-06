@@ -1081,7 +1081,7 @@ impl ShellWorkspace {
             workspace.open_extensions_page(None, window, cx);
         }
         if let Some(index) = startup_left_view {
-            workspace.select_top_activity(index, cx);
+            workspace.select_top_activity(index, false, cx);
             println!("S1_LEFT_VIEW index={index}");
         }
         let shell_handle = cx.entity().downgrade();
@@ -1141,7 +1141,7 @@ impl ShellWorkspace {
         );
         if let Some(index) = session.top_activity_view {
             if index < self.activity_items.len() {
-                self.select_top_activity(index, cx);
+                self.select_top_activity(index, false, cx);
             }
         }
         if let Some(kind) = session.bottom_kind.as_deref().and_then(bottom_kind_from_id) {
@@ -1597,8 +1597,13 @@ impl ShellWorkspace {
         cx.notify();
     }
 
-    fn select_top_activity(&mut self, index: usize, cx: &mut Context<Self>) {
-        if self.top_activity_view == Some(index) {
+    /// 选中左侧视图。`by_click` 为真表示这是一次活动栏点击 —— 再点同一项就
+    /// 收起面板（IntelliJ 的手感）；恢复会话、应用启动视图时传假，因为那恢复的
+    /// 是"选中的是哪一项"，不是一次点击。两者混用会让第二次启动起左侧面板一直
+    /// 收着：初始 `top_activity_view` 与恢复出来的值都是同一项，切换分支一进就把
+    /// `left_pane_visible` 翻成了假。
+    fn select_top_activity(&mut self, index: usize, by_click: bool, cx: &mut Context<Self>) {
+        if by_click && self.top_activity_view == Some(index) {
             self.left_pane_visible = !self.left_pane_visible;
         } else {
             self.top_activity_view = Some(index);
@@ -1873,7 +1878,7 @@ impl ShellWorkspace {
                     DEFAULT_TOP_ACTIVITY
                 };
                 self.left_sidebar_visible = true;
-                self.select_top_activity(index, cx);
+                self.select_top_activity(index, false, cx);
                 diagnose_menu_run(action, "applied");
             }
             MenuAction::ZoomIn | MenuAction::ZoomOut | MenuAction::ResetZoom => {
@@ -2845,7 +2850,7 @@ impl Render for ShellWorkspace {
                                 this.bottom_visible = true;
                             }
                         }
-                        None => this.select_top_activity(index, cx),
+                        None => this.select_top_activity(index, true, cx),
                     }
                     this.schedule_session_save(cx);
                     this.refresh_problems_if_visible(cx);
@@ -2958,7 +2963,18 @@ impl Render for ShellWorkspace {
                     .gap_1()
                     .pr_1()
                     .children(left_sidebar_visible.then_some(left_rail))
-                    .child(self.dock.clone())
+                    // `h_flex()` is `align-items: center`, so a child is not stretched
+                    // to the row's height: the dock needs an explicit `h_full()`, or its
+                    // `size_full()` root resolves against an indefinite height and the
+                    // whole layout — editor included — collapses to nothing.
+                    .child(
+                        div()
+                            .flex_1()
+                            .h_full()
+                            .min_w_0()
+                            .min_h_0()
+                            .child(self.dock.clone()),
+                    )
                     .child(right_rail),
             )
             .children(show_status_bar.then(|| {

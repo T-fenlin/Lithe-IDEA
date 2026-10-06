@@ -1,6 +1,6 @@
 use gpui::{
     AnyElement, App, Axis, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
-    point, prelude::*, px, rems,
+    point, prelude::*, px,
 };
 use lithe_gpui::{
     buttons::{Button, ButtonVariant},
@@ -49,14 +49,11 @@ fn demo_dock(cx: &mut App) -> Dock {
         },
         cx,
     );
-    // The gallery has no activity bar, so the dock draws its own way back.
-    dock = dock.closed_strip(true).rail(true);
     dock.add(panel("files", "Files", IconName::Folder), DockSide::Left);
-    // The left side stacks two groups, as an editor puts a tree above an outline.
-    dock.add_to(
+    // Two panels on one side tab together.
+    dock.add(
         panel("outline", "Outline", IconName::Layers),
         DockSide::Left,
-        1,
     );
     dock.add(panel("search", "Search", IconName::Search), DockSide::Right);
     dock.add(
@@ -105,71 +102,6 @@ pub fn dock_zones(cx: &App) -> impl IntoElement + use<> {
     .child(Caption::new(crate::i18n::gallery(
         "Drag a tab across the dock above to see them.",
     )))
-}
-
-/// A dock whose panels carry their own border, radius and background, and
-/// whose dividers are the dock's own.
-fn look_dock(cx: &mut App) -> Dock {
-    let title = |text: &str| PanelTitle::Text(crate::i18n::gallery(text));
-    let center = |_: &mut Window, cx: &mut App| {
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .text_size(cx.theme().text_size(TextSize::Sm))
-            .text_color(cx.theme().colors.fg_subtle)
-            .child(crate::i18n::gallery(
-                "DockLook sets a floor; a panel's own look wins per field.",
-            ))
-            .into_any_element()
-    };
-    let body = |id: &SharedString, _: &mut Window, cx: &mut App| {
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .text_size(cx.theme().text_size(TextSize::Sm))
-            .text_color(cx.theme().colors.fg_muted)
-            .child(SharedString::from(id.to_string()))
-            .into_any_element()
-    };
-    let mut dock = Dock::new(center, body, cx).closed_strip(true);
-    dock.add(
-        DockPanel::new("hairline", title("1 px, radius 6"), IconName::Square)
-            .border(px(1.))
-            .radius(rems(0.375)),
-        DockSide::Left,
-    );
-    dock.add_to(
-        DockPanel::new("tinted", title("2 px, tinted"), IconName::Palette)
-            .border(px(2.))
-            .border_color(cx.theme().colors.focus)
-            .background(cx.theme().colors.accent.opacity(0.06))
-            .radius(rems(0.75)),
-        DockSide::Left,
-        1,
-    );
-    dock.add(
-        DockPanel::new("spaced", title("Gap and divider"), IconName::PanelRight)
-            .border(px(1.))
-            .radius(rems(0.5)),
-        DockSide::Right,
-    );
-    dock.gap(px(4.)).handle(px(8.), px(2.))
-}
-
-pub fn dock_look(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
-    let dock = window.use_keyed_state("demo-dock-look", cx, |_, cx| look_dock(cx));
-    section(
-        "DockLook / PanelLook",
-        crate::i18n::gallery(
-            "Border thickness, corner radius and background, per panel or for the whole dock; the divider's hit area and line are the dock's.",
-        ),
-        cx,
-    )
-    .child(probe("dock-look", frame(760.0, 300.0, cx).child(dock)))
 }
 
 pub fn floating(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {

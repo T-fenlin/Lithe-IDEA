@@ -18,10 +18,7 @@ mod viewport;
 mod workspace;
 
 pub use collapse::{Accordion, AccordionItem, Collapsible};
-pub use dock::{
-    Dock, DockEvent, DockLayout, DockPanel, DockSide, PaintedLook, PanelLook, PanelRegistry,
-    PanelTitle, SideLimits, Spot,
-};
+pub use dock::{Dock, DockEvent, DockLayout, DockPanel, DockSide, PanelTitle, SideLimits, Spot};
 pub use floating::FloatingPanel;
 pub use grid::{Masonry, SimpleGrid};
 pub(crate) use grid::{columns_for, fit};
