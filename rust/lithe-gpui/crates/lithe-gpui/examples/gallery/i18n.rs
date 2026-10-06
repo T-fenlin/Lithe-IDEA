@@ -3132,4 +3132,15 @@ const COPY: &[(&str, &str)] = &[
         "You left the huddle. Join it again from its mark.",
         "你已离开语音房，可从它的记号再次加入。",
     ),
+    (
+        "DockLook sets a floor; a panel's own look wins per field.",
+        "DockLook 定的是底线，面板自己的外观逐字段覆盖它。",
+    ),
+    (
+        "Border thickness, corner radius and background, per panel or for the whole dock; the divider's hit area and line are the dock's.",
+        "每块面板可各自设置边框粗细、圆角与背景，也可整块 Dock 统一设置；分隔条的命中区与线宽属于 Dock。",
+    ),
+    ("1 px, radius 6", "1 px，圆角 6"),
+    ("2 px, tinted", "2 px，带底色"),
+    ("Gap and divider", "间隙与分隔条"),
 ];

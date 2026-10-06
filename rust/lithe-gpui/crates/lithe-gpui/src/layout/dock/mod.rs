@@ -2,7 +2,9 @@ mod view;
 
 use std::rc::Rc;
 
-use gpui::{AnyElement, App, Context, IntoElement as _, Rems, SharedString, Window};
+use gpui::{
+    AnyElement, App, Context, Hsla, IntoElement as _, Pixels, Rems, SharedString, Window, px,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{primitives::IconName, theme::ActiveTheme};
@@ -104,6 +106,97 @@ pub struct DockPanel {
     pub id: SharedString,
     pub title: PanelTitle,
     pub icon: IconName,
+    /// Per-panel looks that win over the dock's.
+    pub look: PanelLook,
+}
+
+/// One panel's appearance, over the dock's defaults. `None` inherits.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PanelLook {
+    /// Border thickness; 0 draws none.
+    pub border: Option<Pixels>,
+    pub border_color: Option<Hsla>,
+    pub radius: Option<Rems>,
+    pub background: Option<Hsla>,
+}
+
+impl DockPanel {
+    /// A panel with the dock's own look.
+    pub fn new(id: impl Into<SharedString>, title: PanelTitle, icon: IconName) -> Self {
+        Self {
+            id: id.into(),
+            title,
+            icon,
+            look: PanelLook::default(),
+        }
+    }
+
+    /// Border thickness; 0 draws none.
+    pub fn border(mut self, width: Pixels) -> Self {
+        self.look.border = Some(width);
+        self
+    }
+
+    /// Corner radius, on the rem scale like the theme's own.
+    pub fn radius(mut self, radius: Rems) -> Self {
+        self.look.radius = Some(radius);
+        self
+    }
+
+    /// The panel's own background, over the dock's.
+    pub fn background(mut self, color: Hsla) -> Self {
+        self.look.background = Some(color);
+        self
+    }
+
+    /// The border's color, over the dock's.
+    pub fn border_color(mut self, color: Hsla) -> Self {
+        self.look.border_color = Some(color);
+        self
+    }
+}
+
+/// The dock's appearance defaults: the frame around each panel, the divider
+/// between groups and the drag handle. A panel's [`PanelLook`] wins per field.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DockLook {
+    /// Border thickness around each panel; 0 draws none.
+    pub border: Pixels,
+    pub border_color: Hsla,
+    pub radius: Rems,
+    /// A panel's background, where it does not set its own.
+    pub background: Hsla,
+    /// Space between a panel and its divider.
+    pub gap: Pixels,
+    /// The divider's hit area.
+    pub handle: Pixels,
+    /// The divider's line thickness.
+    pub handle_line: Pixels,
+}
+
+impl DockLook {
+    /// Defaults from the theme's own tokens: no frame, no rounding, no gap.
+    pub fn from_theme(cx: &App) -> Self {
+        let theme = cx.theme();
+        Self {
+            border: px(0.),
+            border_color: theme.colors.border,
+            radius: Rems::ZERO,
+            background: theme.colors.surface,
+            gap: px(0.),
+            handle: px(6.),
+            handle_line: px(1.),
+        }
+    }
+}
+
+/// A panel's look once the dock's defaults have filled its gaps.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PaintedLook {
+    pub border: Pixels,
+    pub border_color: Hsla,
+    pub radius: Rems,
+    pub background: Hsla,
 }
 
 /// Saved dock arrangement, per side in `DockSide` order. Sizes are in rems.
@@ -183,6 +276,7 @@ pub struct Dock {
     sizes: [Rems; 4],
     split: [f32; 4],
     limits: [SideLimits; 4],
+    look: DockLook,
     center: Center,
     content: Content,
     dragging: bool,
@@ -212,6 +306,7 @@ impl Dock {
             sizes: [side, side, strip, strip],
             split: even_split(),
             limits: [limits; 4],
+            look: DockLook::from_theme(cx),
             center: Rc::new(center),
             content: Rc::new(content),
             dragging: false,
@@ -248,6 +343,42 @@ impl Dock {
     pub fn closed_strip(mut self, on: bool) -> Self {
         self.closed_strip = on;
         self
+    }
+
+    /// Replaces the appearance defaults. A panel's [`PanelLook`] wins per field.
+    pub fn look(mut self, look: DockLook) -> Self {
+        self.look = look;
+        self
+    }
+
+    /// The divider's hit area and its line thickness.
+    pub fn handle(mut self, hit: Pixels, line: Pixels) -> Self {
+        self.look.handle = hit;
+        self.look.handle_line = line;
+        self
+    }
+
+    /// Space between a panel and its divider.
+    pub fn gap(mut self, gap: Pixels) -> Self {
+        self.look.gap = gap;
+        self
+    }
+
+    /// The border around every panel, where a panel does not set its own.
+    pub fn border(mut self, width: Pixels, color: Hsla) -> Self {
+        self.look.border = width;
+        self.look.border_color = color;
+        self
+    }
+
+    /// How one panel draws: its own look over the dock's, field by field.
+    pub fn painted(&self, panel: &DockPanel) -> PaintedLook {
+        PaintedLook {
+            border: panel.look.border.unwrap_or(self.look.border),
+            border_color: panel.look.border_color.unwrap_or(self.look.border_color),
+            radius: panel.look.radius.unwrap_or(self.look.radius),
+            background: panel.look.background.unwrap_or(self.look.background),
+        }
     }
 
     /// Panics on a repeated id. The panel joins `side`'s first group.
@@ -602,11 +733,7 @@ mod tests {
     }
 
     fn panel(id: &str) -> DockPanel {
-        DockPanel {
-            id: id.into(),
-            title: PanelTitle::Text(id.into()),
-            icon: IconName::Folder,
-        }
+        DockPanel::new(id, PanelTitle::Text(id.into()), IconName::Folder)
     }
 
     /// `files` and `outline` on the left, `terminal` below.
@@ -625,6 +752,65 @@ mod tests {
 
     fn at(dock: &Dock, side: DockSide, group: usize) -> Option<usize> {
         dock.active[side.index()][group]
+    }
+
+    /// By default a panel draws no frame, no rounding, on the dock's own tone.
+    #[gpui::test]
+    fn panels_draw_without_a_frame_by_default(cx: &mut TestAppContext) {
+        let dock = bench(cx);
+        dock.update(cx, |dock, cx| {
+            let plain = panel("files");
+            let look = dock.painted(&plain);
+            assert_eq!(look.border, px(0.), "no frame");
+            assert_eq!(look.radius, Rems::ZERO, "square corners");
+            assert_eq!(
+                look.background,
+                cx.theme().colors.surface,
+                "the dock's tone"
+            );
+        });
+    }
+
+    /// A panel's own fields win; the ones it leaves alone stay the dock's.
+    #[gpui::test]
+    fn a_panel_overrides_the_dock_field_by_field(cx: &mut TestAppContext) {
+        let dock = bench(cx);
+        dock.update(cx, |dock, cx| {
+            let frame = cx.theme().colors.focus;
+            let docked = px(1.);
+            dock.look = DockLook {
+                border: docked,
+                border_color: frame,
+                radius: rems(0.25),
+                ..dock.look.clone()
+            };
+            // Sets a radius only: thickness still comes from the dock.
+            let own = panel("outline").radius(rems(0.75));
+            let look = dock.painted(&own);
+            assert_eq!(look.border, docked, "thickness from the dock");
+            assert_eq!(look.radius, rems(0.75), "radius from the panel");
+            assert_eq!(look.border_color, frame, "colour from the dock");
+
+            // And the dock's own frame reaches a panel that sets nothing.
+            let plain = dock.painted(&panel("files"));
+            assert_eq!(plain.border, docked, "the dock's frame applies");
+            assert_eq!(plain.radius, rems(0.25), "the dock's radius applies");
+        });
+    }
+
+    /// The divider's hit area and line, and the gap around a panel, are the
+    /// dock's own: they are the frame's, not a panel's.
+    #[gpui::test]
+    fn the_dock_owns_the_divider_and_the_gap(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            let dock = Dock::new(|_, _| blank(), |_, _, _| blank(), cx)
+                .handle(px(9.), px(3.))
+                .gap(px(4.));
+            assert_eq!(dock.look.handle, px(9.), "hit area");
+            assert_eq!(dock.look.handle_line, px(3.), "line");
+            assert_eq!(dock.look.gap, px(4.), "gap");
+        });
     }
 
     /// Two panels on one side can share it: the second group is its own stack.

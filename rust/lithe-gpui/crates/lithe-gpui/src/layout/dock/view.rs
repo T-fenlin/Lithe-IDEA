@@ -1,14 +1,15 @@
 use gpui::{
-    AnyElement, Axis, Context, DragMoveEvent, EmptyView, EntityId, FontWeight, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, point, prelude::*, relative,
+    AnyElement, Axis, Context, CursorStyle, DragMoveEvent, EmptyView, EntityId, FontWeight,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, Render,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div, point, prelude::*,
+    relative,
 };
 
 use super::{Dock, DockSide, GROUPS, Spot};
 use crate::{
     buttons::{Button, ButtonVariant},
     i18n::text,
-    layout::{FloatingPanel, resize_handle},
+    layout::FloatingPanel,
     primitives::{DragGhost, Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
 };
@@ -151,19 +152,80 @@ impl Dock {
             .copied()
             .find(|ix| Some(*ix) == self.active[side.index()][group])
             .or_else(|| shown.first().copied())?;
-        let panel_id = self.panels[active].id.clone();
+        let panel = &self.panels[active];
+        let panel_id = panel.id.clone();
         let body = (self.content)(&panel_id, window, cx);
-        let theme = cx.theme();
+        // The panel's look wins over the dock's, field by field.
+        let look = self.painted(panel);
+        let (border, radius) = (look.border, look.radius);
+        // The inner box is inset by the border, so its corners match the outer
+        // radius instead of bulging past it.
+        let radius_px = radius.to_pixels(window.rem_size());
+        let inner_radius = if radius_px > border {
+            radius_px - border
+        } else {
+            Pixels::ZERO
+        };
+        let pane = div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .overflow_hidden()
+            .bg(look.background)
+            .rounded(inner_radius)
+            .child(self.tabs(side, group, cx))
+            .child(div().flex_1().min_h_0().child(body));
+        // The frame is the border: a filled box behind, the pane inset over it.
         Some(
             div()
                 .flex()
                 .flex_col()
                 .overflow_hidden()
-                .bg(theme.colors.surface)
-                .child(self.tabs(side, group, cx))
-                .child(div().flex_1().min_h_0().child(body))
+                .bg(look.border_color)
+                .rounded(radius)
+                .p(border)
+                .m(self.look.gap)
+                .child(pane)
                 .into_any_element(),
         )
+    }
+
+    /// A divider: the dock's hit area, and a line whose thickness is the
+    /// dock's. Lights on hover, like the layout chapter's own handle.
+    fn divider(&self, id: SharedString, axis: Axis, cx: &mut Context<Self>) -> Stateful<gpui::Div> {
+        let theme = cx.theme();
+        let (lit, idle) = (theme.colors.focus, theme.colors.border);
+        let base = div()
+            .id(id)
+            .group("dock-divider")
+            .flex_none()
+            .flex()
+            .justify_center()
+            .items_center();
+        match axis {
+            Axis::Horizontal => base
+                .w(self.look.handle)
+                .h_full()
+                .cursor(CursorStyle::ResizeLeftRight)
+                .child(
+                    div()
+                        .h_full()
+                        .border_l(self.look.handle_line)
+                        .border_color(idle)
+                        .group_hover("dock-divider", |s| s.border_color(lit)),
+                ),
+            Axis::Vertical => base
+                .h(self.look.handle)
+                .w_full()
+                .cursor(CursorStyle::ResizeUpDown)
+                .child(
+                    div()
+                        .w_full()
+                        .border_t(self.look.handle_line)
+                        .border_color(idle)
+                        .group_hover("dock-divider", |s| s.border_color(lit)),
+                ),
+        }
     }
 
     /// A side: its groups stacked along it, with a divider to share the extent.
@@ -179,7 +241,8 @@ impl Dock {
         if panes.is_empty() {
             return None;
         }
-        let theme = cx.theme();
+        // Copy what this side needs, so `cx` is free for the divider's build.
+        let surface = cx.theme().colors.surface;
         let size = self.sizes[side.index()];
         let axis = match side {
             DockSide::Left | DockSide::Right => Axis::Horizontal,
@@ -198,17 +261,18 @@ impl Dock {
                     dock: cx.entity_id(),
                     side,
                 };
-                let handle = resize_handle(
-                    SharedString::from(format!("dock-split-{side:?}")),
-                    if along {
-                        Axis::Vertical
-                    } else {
-                        Axis::Horizontal
-                    },
-                    cx,
-                )
-                .on_drag(split, |_, _, _, cx| cx.new(|_| EmptyView))
-                .into_any_element();
+                let handle = self
+                    .divider(
+                        SharedString::from(format!("dock-split-{side:?}")),
+                        if along {
+                            Axis::Vertical
+                        } else {
+                            Axis::Horizontal
+                        },
+                        cx,
+                    )
+                    .on_drag(split, |_, _, _, cx| cx.new(|_| EmptyView))
+                    .into_any_element();
                 let (head, rest) = if along {
                     (
                         div().h(relative(share)).min_h_0().w_full(),
@@ -231,11 +295,7 @@ impl Dock {
             }
         };
 
-        let pane = div()
-            .flex()
-            .overflow_hidden()
-            .bg(theme.colors.surface)
-            .child(inner);
+        let pane = div().flex().overflow_hidden().bg(surface).child(inner);
         let pane = match axis {
             Axis::Horizontal => pane.w(size).h_full(),
             Axis::Vertical => pane.h(size).w_full(),
@@ -244,12 +304,13 @@ impl Dock {
             dock: cx.entity_id(),
             side,
         };
-        let handle = resize_handle(
-            SharedString::from(format!("dock-handle-{side:?}")),
-            axis,
-            cx,
-        )
-        .on_drag(resize, |_, _, _, cx| cx.new(|_| EmptyView));
+        let handle = self
+            .divider(
+                SharedString::from(format!("dock-handle-{side:?}")),
+                axis,
+                cx,
+            )
+            .on_drag(resize, |_, _, _, cx| cx.new(|_| EmptyView));
         let row = div().flex().flex_none();
         // The rail sits outside the panels, on the side.s own edge.
         let rail = self.rail_for(side, cx);
