@@ -280,4 +280,521 @@ const COPY: &[(&str, &str)] = &[
         "Drag a tab across the dock above to see them.",
         "把上面 Dock 里的标签拖一下就能看到。",
     ),
+    // ---- 1 Primitives: section notes ----
+    (
+        "gpui's div() is the box. Ely adds nothing.",
+        "gpui 的 div() 就是盒子，Ely 没有加任何东西。",
+    ),
+    (
+        "A string is an element. StyledText adds runs.",
+        "字符串本身就是元素，StyledText 再加样式段。",
+    ),
+    (
+        "gpui's svg(). Any path from the asset source, tinted.",
+        "gpui 的 svg()。资产源里的任意路径，按主题着色。",
+    ),
+    (
+        "gpui's canvas(). Paint with paths.",
+        "gpui 的 canvas()。用路径作画。",
+    ),
+    (
+        "flex_1() takes the slack. No component needed.",
+        "flex_1() 吃掉剩余空间，不需要组件。",
+    ),
+    (
+        "deferred(anchored()) escapes clipping and paints on top.",
+        "deferred(anchored()) 能逃出裁剪、画在最上层。",
+    ),
+    (
+        "Take impl IntoElement. The caller fills the hole.",
+        "接收 impl IntoElement，由调用方填这块空位。",
+    ),
+    (
+        ".when() and .when_some() branch inside a builder.",
+        ".when() 与 .when_some() 在 builder 里做分支。",
+    ),
+    (
+        ".children() takes any iterator.",
+        ".children() 接受任意迭代器。",
+    ),
+    (
+        "Return several elements; the parent adopts them.",
+        "返回多个元素，由父级收养。",
+    ),
+    (
+        "on_mouse_down_out closes what the pointer left.",
+        "on_mouse_down_out 关掉指针离开的那个东西。",
+    ),
+    (
+        "on_hover reports enter and leave. .hover() restyles.",
+        "on_hover 报告进入与离开；.hover() 只改样式。",
+    ),
+    (
+        "on_key_down on a focused element. Click, then type.",
+        "在获得焦点的元素上挂 on_key_down。先点击，再打字。",
+    ),
+    (
+        "write_to_clipboard and read_from_clipboard_async on App; a browser asks before it hands the clipboard over.",
+        "App 上的 write_to_clipboard 与 read_from_clipboard_async；浏览器会先询问再交出剪贴板。",
+    ),
+    (
+        "Bundled Lucide or an application's SVG asset, drawn as a themed mask.",
+        "内置 Lucide 或应用自己的 SVG 资产，按主题色做成蒙版绘制。",
+    ),
+    (
+        "IconName lists every bundled icon. Hover for its name.",
+        "IconName 列出全部内置图标，悬停可看名字。",
+    ),
+    (
+        "Loading pulses. Failure and emptiness show a quiet mark.",
+        "加载时脉动；失败与空态给一个安静的记号。",
+    ),
+    (
+        "One hairline. Across, down, or holding a word.",
+        "一条发丝线。横着、竖着，或中间夹个词。",
+    ),
+    (
+        "A scrim that fades in, blocks the page, and hears outside clicks.",
+        "淡入的遮罩，挡住页面，并监听外面的点击。",
+    ),
+    ("Text for screen readers only.", "只给读屏器看的文字。"),
+    (
+        "Any focusable element. Press Tab to walk these.",
+        "任何可聚焦的元素。按 Tab 在它们之间走。",
+    ),
+    (
+        "Tab into the box. Tab then circles inside it.",
+        "Tab 进盒子，再按 Tab 就在盒内转圈。",
+    ),
+    (
+        "Knows when it is held. Hold half a second for a long press.",
+        "知道自己是被按住的。按住半秒即长按。",
+    ),
+    (
+        "Reports bounds when they change. This is also the ResizeObserver.",
+        "边界变化时上报，同时也是 ResizeObserver。",
+    ),
+    (
+        "Scroll the box. The marker reports entering and leaving.",
+        "滚动这个盒子，标记会报告进入与离开。",
+    ),
+    (
+        "gpui's trigger with Ely's body, or Ely's own trigger for delay and tracking.",
+        "gpui 的触发器配 Ely 的内容体，或用 Ely 自己的触发器获得延迟与跟随。",
+    ),
+    // ---- 2 Typography: section notes ----
+    (
+        "Digits roll by place; or the value counts up.",
+        "数字按位滚动，或从零数上来。",
+    ),
+    (
+        "Reveals by grapheme, so emoji and CJK stay whole.",
+        "按字素揭示，emoji 与 CJK 不会被拆碎。",
+    ),
+    (
+        "A tonal ramp, glyph by glyph. No neon.",
+        "逐字渐变的色调坡道，不做霓虹灯。",
+    ),
+    (
+        "A slow band of light while something loads.",
+        "加载时缓缓扫过的一条光带。",
+    ),
+    (
+        "Six steps, one weight. Size carries the order.",
+        "六级字号、一种字重，层级靠大小表达。",
+    ),
+    (
+        "A pair for page and panel headers.",
+        "页面与面板标题用的一对。",
+    ),
+    (
+        "Reading text at 14 with loose leading.",
+        "14 号正文，行距宽松。",
+    ),
+    ("Names a control or a value.", "给控件或值起名字。"),
+    ("The quiet line beneath.", "下面那行安静的小字。"),
+    ("An eyebrow in small capitals.", "小型大写字母的眉题。"),
+    ("Monospace on a quiet fill.", "安静底色上的等宽字。"),
+    (
+        "gpui key syntax. secondary means ⌘ on macOS and Ctrl elsewhere.",
+        "gpui 的按键语法；secondary 在 macOS 上是 ⌘，别处是 Ctrl。",
+    ),
+    ("Sequences read left to right.", "组合键从左往右读。"),
+    ("A rule and a softer ink.", "一条分隔线加一种更柔和的墨色。"),
+    (
+        "Every match of a query, case-insensitive.",
+        "查询的每一处命中，不分大小写。",
+    ),
+    (
+        "One line, an ellipsis at the end, in the text style around it, cut by the shaped line at the width its box gets.",
+        "单行、末尾省略号，沿用周围文本样式，按盒子宽度由排版线截断。",
+    ),
+    (
+        "gpui's .line_clamp(n): n lines, then a hard cut.",
+        "gpui 的 .line_clamp(n)：留 n 行，然后硬切。",
+    ),
+    (
+        "Cuts the middle so both ends stay legible.",
+        "截掉中间，两端保持可读。",
+    ),
+    (
+        "Hover shows the whole line, only when it was cut.",
+        "悬停显示整行，且只在真的被截断时。",
+    ),
+    (
+        "Blue marks where a click goes. Underline on hover.",
+        "蓝色标记可点击处，悬停加下划线。",
+    ),
+    (
+        "Leaves the app. The arrow says so.",
+        "会离开本应用，箭头就是这么说的。",
+    ),
+    (
+        "Refreshes every thirty seconds while on screen.",
+        "在屏幕上时每三十秒刷新一次。",
+    ),
+    (
+        "strftime patterns in the system zone.",
+        "strftime 格式，系统时区。",
+    ),
+    (
+        "Grouped, fixed precision, tabular figures.",
+        "千分位分组、固定精度、等宽数字。",
+    ),
+    (
+        "ISO 4217 codes. Yen and won have no minor units.",
+        "ISO 4217 代码；日元与韩元没有小数位。",
+    ),
+    (
+        "Signed values carry direction in word and color.",
+        "带符号的值，正负同时写在文字与颜色里。",
+    ),
+    (
+        "Decimal units by default, binary on request.",
+        "默认十进制单位，可切二进制。",
+    ),
+    (
+        "A clock for media, a compact span for logs.",
+        "媒体用时钟，日志用紧凑时长。",
+    ),
+    ("The noun follows the count.", "名词跟着数量变单复数。"),
+    (
+        "One click copies. A check confirms, then leaves.",
+        "点一下即复制，对勾确认后自动消失。",
+    ),
+    (
+        "Drag to select. ⌘C copies, ⌘A takes it all.",
+        "拖动选择；⌘C 复制，⌘A 全选。",
+    ),
+    (
+        "Shortcodes resolve to the system color font.",
+        "短代码解析为系统彩色字符。",
+    ),
+    (
+        "A TeX subset: scripts, fractions, roots, Greek.",
+        "TeX 的一个子集：上下标、分式、根号与希腊字母。",
+    ),
+    // ---- 3 Layout: section notes ----
+    (
+        "h_stack() and v_stack(): flex rows and columns.",
+        "h_stack() 与 v_stack()：横向与纵向的 flex 排布。",
+    ),
+    (
+        "gpui's .flex(), with grow and justify.",
+        "gpui 的 .flex()，带 grow 与 justify。",
+    ),
+    (
+        "gpui's .grid() and .col_span().",
+        "gpui 的 .grid() 与 .col_span()。",
+    ),
+    (
+        "As many equal columns as fit at a minimum width.",
+        "按最小宽度能放下多少等宽列就放多少。",
+    ),
+    (
+        "Each item joins the shortest column.",
+        "每个元素放进当前最矮的列。",
+    ),
+    (
+        "flex, items_center, justify_center.",
+        "flex、items_center、justify_center。",
+    ),
+    (
+        "A centered column capped by a width token.",
+        "居中的一列，宽度由宽度令牌封顶。",
+    ),
+    (
+        "Width fills; height follows the ratio.",
+        "宽度占满，高度按比例跟随。",
+    ),
+    (
+        "gpui's .p_*() on the rem scale.",
+        "gpui 的 .p_*()，按 rem 刻度。",
+    ),
+    (
+        "gpui's .flex_wrap() moves overflow to the next line.",
+        "gpui 的 .flex_wrap() 把溢出挪到下一行。",
+    ),
+    (
+        "gpui's .absolute() with edge offsets.",
+        "gpui 的 .absolute() 加边缘偏移。",
+    ),
+    (
+        "The first child sets the size; the rest cover it.",
+        "第一个子元素定尺寸，其余盖在上面。",
+    ),
+    (
+        "Drag a divider. Panes nest across and down.",
+        "拖动分隔条；面板可横向纵向嵌套。",
+    ),
+    (
+        "A hairline with a wide grab. Hover lights it.",
+        "发丝线配很宽的抓取区，悬停点亮。",
+    ),
+    (
+        "Height animates to the measured content.",
+        "高度以动画过渡到量出的内容高度。",
+    ),
+    (
+        "One open at a time. The chevron turns with it.",
+        "一次只开一个，箭头随之转动。",
+    ),
+    ("Flat: a hairline, no shadow.", "扁平：一条发丝线，无阴影。"),
+    (
+        "An app region: a quiet header bar and a body.",
+        "应用的一个区域：安静的头栏加内容体。",
+    ),
+    (
+        "A page block: title, note, action.",
+        "页面块：标题、说明、操作。",
+    ),
+    (
+        "Related fields under one name.",
+        "相关的字段归在一个名字下。",
+    ),
+    ("A bordered region with no fill.", "有边框、无填充的区域。"),
+    (
+        "A recessed region on the sunken tone.",
+        "凹下去的区域，用下陷色。",
+    ),
+    (
+        "Overlay scrollbars appear while scrolling or hovered.",
+        "滚动或悬停时浮现的覆盖式滚动条。",
+    ),
+    (
+        "Any ScrollHandle can wear one. Drag the thumb.",
+        "任何 ScrollHandle 都能挂一条，滑块可以拖。",
+    ),
+    (
+        "A soft edge wherever more content waits.",
+        "哪里还有内容，哪里就有柔和的边缘提示。",
+    ),
+    (
+        "Past half a screen, a button eases back up.",
+        "滚过半屏后，一个按钮缓缓回到顶部。",
+    ),
+    (
+        "Each group's header pins until the next pushes it off.",
+        "每组的标题钉住，直到下一组把它顶走。",
+    ),
+    (
+        "Folds to an icon rail; the width eases.",
+        "收成一条图标栏，宽度平滑过渡。",
+    ),
+    (
+        "Rises from the bottom. Pull the handle down to dismiss.",
+        "从底部升起，往下拉把手即可关掉。",
+    ),
+    (
+        "Slides in from an edge over a scrim.",
+        "从边上滑入，底下带遮罩。",
+    ),
+    (
+        "Title, note and actions over the body.",
+        "内容体之上是标题、说明与操作。",
+    ),
+    (
+        "Title bar, sidebar, content, status bar.",
+        "标题栏、侧栏、内容、状态栏。",
+    ),
+    (
+        "A list beside the chosen item. The divider drags.",
+        "列表挨着选中项，分隔条可拖。",
+    ),
+    (
+        "Drag the title bar. It stays inside the window.",
+        "拖标题栏，不会跑出窗口。",
+    ),
+    (
+        "Split right or down from any pane; close all but one.",
+        "任意面板可向右或向下分屏；其余可全部关掉只留一个。",
+    ),
+    (
+        "Layout to versioned JSON and back, all or nothing.",
+        "布局与带版本号的 JSON 互相转换，要么全成要么不动。",
+    ),
+    (
+        "Drag to pan. Hold ⌘ or Ctrl and scroll to zoom at the pointer.",
+        "拖动平移；按住 ⌘ 或 Ctrl 并滚动，以指针为中心缩放。",
+    ),
+    // ---- 4 Window & Shell: section notes ----
+    (
+        "Tools in groups, hairlines between, one action apart.",
+        "工具分组排布，组间发丝线，动作之间留出一档。",
+    ),
+    (
+        "Small type at the foot. Items that act show it on hover.",
+        "页脚的小字；可点的条目悬停时显示。",
+    ),
+    (
+        "An icon rail. The mark grows in beside the chosen view.",
+        "一条图标栏，选中视图旁会浮现记号。",
+    ),
+    (
+        "Window tabs. New ones rise in; drag one onto another to reorder.",
+        "窗口标签页，新标签浮现；把一个拖到另一个上即可重排。",
+    ),
+    (
+        "Title centered, system buttons in their place, empty space drags.",
+        "标题居中，系统按钮各就各位，空白处可拖动窗口。",
+    ),
+    (
+        "Three manners. Hover the lights for their glyphs.",
+        "三种状态；悬停红绿灯可看各自的图标。",
+    ),
+    (
+        "Windows hit-tests it natively, Linux moves by hand, double-click zooms.",
+        "Windows 原生命中测试，Linux 手动移动，双击缩放。",
+    ),
+    (
+        "A margin to resize from, a hairline, a shadow, for client-drawn windows.",
+        "自绘窗口用的：可拖动调整的边缘、一条发丝线、一层阴影。",
+    ),
+    (
+        "One menu model: the system bar, the Dock, and later the window.",
+        "同一份菜单模型：系统菜单栏、Dock，之后还有窗口内菜单。",
+    ),
+    (
+        "The sidebar runs to the window's top; each column brings a header that drags.",
+        "侧栏一直顶到窗口上缘，每列带一个可拖动的头。",
+    ),
+    (
+        "Offer, download, restart. One slim bar, three states.",
+        "提供更新、下载、重启：一条窄条，三种状态。",
+    ),
+    (
+        "What changed, then one clear action.",
+        "先说改了什么，再给一个明确的动作。",
+    ),
+    (
+        "Plain words first. The report waits behind a disclosure.",
+        "先说人话，详细报告收在折叠里。",
+    ),
+    (
+        "Quiet while it matters, gone soon after the network returns.",
+        "断网期间安静存在，网络恢复后很快消失。",
+    ),
+    (
+        "Scales the whole window through its rem size. Click the number to reset.",
+        "通过 rem 尺寸缩放整个窗口，点数字即复位。",
+    ),
+    (
+        "An SF Symbol in the menu bar with a menu. macOS only.",
+        "菜单栏里的 SF Symbol 图标加菜单，仅 macOS。",
+    ),
+    (
+        "A count on the app's Dock icon. macOS only.",
+        "应用 Dock 图标上的数字角标，仅 macOS。",
+    ),
+    (
+        "Notices from the system's own center.",
+        "来自系统通知中心的通知。",
+    ),
+    (
+        "Mark and name rise in; the bar reports progress or sweeps.",
+        "记号与名字浮现，进度条报进度或来回扫动。",
+    ),
+    (
+        "Name, version to copy, links, fine print.",
+        "名字、可复制的版本号、链接与小字。",
+    ),
+    (
+        "Each new window cascades from the last; the manager knows them by name.",
+        "每个新窗口从上一个层叠而出，管理器按名字记住它们。",
+    ),
+    (
+        "Managed windows over a scrim. Arrows or Tab move, Enter goes.",
+        "遮罩之上的受管窗口，方向键或 Tab 移动，Enter 进入。",
+    ),
+    (
+        "A search palette in a window above all others.",
+        "浮在一切之上的搜索面板窗口。",
+    ),
+    (
+        "Small windows above the rest. Hover for the bar; expand returns to the app.",
+        "浮在其余窗口上的小窗，悬停出标题栏，展开即回到应用。",
+    ),
+    // ---- 5 Buttons & Actions: section notes ----
+    (
+        "Built from parts in later chapters.",
+        "由后面章节的零件拼成。",
+    ),
+    (
+        "Round and raised for the screen's one main action. It rises in.",
+        "屏幕唯一主操作的圆形凸起按钮，出现时有入场动画。",
+    ),
+    (
+        "Hold until the fill completes, or click twice within three seconds.",
+        "按住直到填满，或三秒内点两次。",
+    ),
+    (
+        "Small, familiar verbs. Each names itself on hover.",
+        "小而熟悉的动作，悬停时自报名字。",
+    ),
+    (
+        "Docked along a panel's foot, or floating as a pill.",
+        "停靠在面板底部，或浮成一颗胶囊。",
+    ),
+    (
+        "Rises once rows are selected. The count rolls as it changes.",
+        "选中若干行后升起，数量变化时滚动更新。",
+    ),
+    (
+        "A few choices from the bottom, and a separate way out.",
+        "从底部弹出的几个选择，出口另设。",
+    ),
+    (
+        "Common moves with their keys. Arrows choose, Enter runs.",
+        "常见动作带各自键位，方向键选择，Enter 执行。",
+    ),
+    (
+        "Primary is ink. Color is saved for meaning.",
+        "主按钮就是墨色，颜色留给有含义的地方。",
+    ),
+    (
+        "Heights follow density. Tab moves the focus ring.",
+        "高度随密度，Tab 移动焦点环。",
+    ),
+    (
+        "Leading icon for verbs. Trailing for menus.",
+        "动词类放前导图标，菜单类放尾随图标。",
+    ),
+    ("Square. Ghost by default.", "方形，默认 Ghost。"),
+    (
+        "The keystroke rides along, quiet, in the platform's spelling.",
+        "按键提示安静地跟在旁边，按平台习惯拼写。",
+    ),
+    ("Buttons joined edge to edge.", "按钮边贴边相连。"),
+    (
+        "Stays pressed until pressed again.",
+        "保持按下状态，再按一次才弹起。",
+    ),
+    (
+        "Several at once for marks; one at a time for alignment.",
+        "标记类可多选，对齐类一次一个。",
+    ),
+    (
+        "One of a few. The thumb springs to the choice.",
+        "几个里选一个，滑块弹到所选。",
+    ),
 ];
