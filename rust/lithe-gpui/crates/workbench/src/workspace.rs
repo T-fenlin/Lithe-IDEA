@@ -595,6 +595,17 @@ impl ShellWorkspace {
                 }
             }));
         });
+        // 面板标题行的「隐藏」：收起整块左工具窗（与再点一次活动栏同一效果），
+        // 活动栏本身留着 —— 收起是"这次不看"，不是"关掉这个视图"。
+        let shell_for_hide = cx.entity().downgrade();
+        explorer.update(cx, |this, _cx| {
+            this.set_hide_host(Arc::new(move |_window: &mut Window, cx: &mut App| {
+                let _ = shell_for_hide.update(cx, |shell, cx| {
+                    shell.left_pane_visible = false;
+                    cx.notify();
+                });
+            }));
+        });
 
         let changes_root = root.clone();
         let changes = cx.new({

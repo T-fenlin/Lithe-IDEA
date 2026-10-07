@@ -47,12 +47,18 @@ cargo build --manifest-path rust/Cargo.toml -p lithe-gpui-app --bin Lithe
 
 ```text
 app        → workbench, settings, shared
-workbench  → editor, explorer, extensions, git, java, notify, run, settings, shared, terminal
+workbench  → editor, explorer, extensions, git, java, notify, run, settings, shared, terminal, lithe-gpui
 editor     → java, notify, shared
 settings   → run, shared
-explorer · extensions · git · java · notify · run · terminal → shared
+explorer   → lithe-gpui, shared
+extensions · git · java · notify · run · terminal → shared
 shared     → （无下游兄弟）
+lithe-gpui → （仓库内无下游兄弟：上游组件库的 fork，见 crates/lithe-gpui/UPSTREAM.md）
 ```
+
+> `lithe-gpui` 是仓库内的组件库（Ely GPUI Components 的 vendored fork）。外壳的三块工具窗
+> （`layout::Dock`）与左侧项目树（`lists::ProjectTree`）都用它；它不依赖任何宿主 crate，
+> 宿主之间的依赖方向因此不变。
 
 | crate | 职责 |
 | --- | --- |

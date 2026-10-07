@@ -1,8 +1,13 @@
 # IDEA 式项目树（整形片）
 
 > 本文件是**设计稿 + 任务清单**。判据（2026-10-07 维护者定调）：只做 **Project 模式**的
-> **整形**（包链压缩 + 源码根/包标记 + git 装饰与组件库一致），**本片不换树控件**；
-> 控件从 gpui-kit 的 `Tree` 换成 `lithe_gpui::lists::Tree` 是**下一片**。
+> **整形**（包链压缩 + 源码根/包标记 + git 装饰与组件库一致）。
+>
+> **控件的迁移已单独成片落地（2026-10-07）**：项目树的行渲染、展开、多选、右键菜单、
+> 行预算与 git 装饰已进组件库 `lithe_gpui::lists::ProjectTree`，宿主
+> `crates/explorer` 只留 Core 读取、端口与文案。决策与代价见
+> `.agents/notes/implemented/architecture/2026-10-07-project-tree-moves-to-own-component-library.md`；
+> 本文 §2 里"新增 `crates/explorer/src/project_tree.rs`"的整形落点**尚未实施**，仍按下文执行。
 >
 > 决策理由写 `.agents/notes/`（实施时与代码同提交）；本文写"改成什么样、怎么验"。
 > 界面逐区域对照见 `rust/lithe-gpui/UI-MAP.md`。
@@ -81,6 +86,13 @@ workspace.snapshot ─► Snapshot { root: TreeNode }
 
 维护者 2026-10-07 定：**项目树与 `lists::FileTree` 的 git 效果必须一致**，真相源放组件库，宿主消费。
 
+> ✅ **2026-10-07 已随「项目树进组件库」落地**（决策见
+> `.agents/notes/implemented/architecture/2026-10-07-project-tree-moves-to-own-component-library.md`）：
+> 1、2、3 已实现；4 的宿主侧解析留在 `crates/explorer/src/model.rs`（`classify`），
+> 渲染已由 `lists::ProjectTree` 用 `letter()` / `tone()` 完成；5 的 `lists::FileTree`
+> 与画廊演示已跟着新 `tone()` 一致。下文的"可见变更"三条已全部发生，
+> 另多一条：混合状态（如 `AM`）的字母由 worktree 字符改为统一词汇。
+
 改动：
 
 1. `lithe_gpui::lists::GitStatus`（`crates/lithe-gpui/src/lists/files.rs`）成为唯一词汇，**补 `Copied`**；`letter()` / `tone()` 由 `pub(crate)` 改 **`pub`**。
@@ -117,7 +129,11 @@ git 装饰：
 
 ## 6. 不在本片（已登记，另开切片）
 
-- **控件换 `lithe_gpui::lists::Tree`**（`explorer_view.rs` 的多选/右键菜单/Reveal/⌘C/键盘要重新接线）。
+- ~~**控件换 `lithe_gpui::lists::Tree`**（`explorer_view.rs` 的多选/右键菜单/Reveal/⌘C/键盘要重新接线）。~~
+  ✅ **2026-10-07 已单独成片落地**：控件是组件库新写的 `lithe_gpui::lists::ProjectTree`
+  （不是通用 `lists::Tree`，理由见 Note 的「考虑过的备选方案」），多选/右键菜单/Reveal/⌘C/键盘
+  一并搬进库；决策与可见变更见
+  `.agents/notes/implemented/architecture/2026-10-07-project-tree-moves-to-own-component-library.md`。
 - `Packages` 拍平模式、`Project Files` 文件管理器模式。
 - `Compact Middle Packages` **开关**（宿主现在没有"树设置"落点；本片按默认开）。
 - `文件修改`标（未保存 / 磁盘变更）—— 需先定数据源（编辑器脏标记 vs mtime）。

@@ -1248,6 +1248,26 @@ const GPUI_ONLY_KEYS = [
     reason:
       "真源头部的副标题是 `\"\\(filteredEndpoints.count) routes\"`（`SpringEndpointsView.swift:12`），硬编码英文、zh-Hans 无条目。`{count}` 由面板按**筛选后**的条数填（与真源一致）。",
   },
+  // ---------------------------------------------------------------------------
+  // 项目树标题行（`crates/explorer/src/explorer_view.rs` 的 `render_header`）
+  //
+  // 真源 `ProjectSidebarView.swift:222-290` 的标题行只有「视图下拉 + 定位/刷新」两个把手，
+  // 没有「全部折叠」与「隐藏」这两条；它们是维护者 2026-10-07 定的「IDEA 外壳版」补上的，
+  // 图标与文案都由宿主给，所以是 gpui 侧自有 key。
+  {
+    key: "fileExplorer.collapseAll",
+    zh: "全部折叠",
+    en: "Collapse All",
+    reason:
+      "宿主 `crates/explorer/src/explorer_view.rs` 标题行「全部折叠」按钮的 tooltip（落点是 `lists::ProjectTree::collapse_all`）。真源没有这条动作，取 IDEA Project 工具窗的标题行把手。",
+  },
+  {
+    key: "fileExplorer.hidePanel",
+    zh: "隐藏",
+    en: "Hide",
+    reason:
+      "宿主同文件标题行「隐藏」按钮的 tooltip：收起整块左工具窗（外壳把 `left_pane_visible` 置假，活动栏留着）。真源没有这条动作，同样是 IDEA 标题行的把手。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);

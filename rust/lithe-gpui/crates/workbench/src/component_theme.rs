@@ -38,7 +38,9 @@ fn sync_component_theme(cx: &mut App) {
     palette.sunken = host.muted;
     palette.overlay = host.popover;
     palette.hover = host.list_hover;
-    palette.active = host.secondary;
+    // `active` 是组件库里「选中的那一行」的底色（`lists::Tree` / `lists::ProjectTree` 都用它），
+    // 宿主的对应色是 `list_active`；项目树改走组件库之后，选中行的底色仍然逐像素相同。
+    palette.active = host.list_active;
     palette.border = host.border;
     palette.border_strong = host.border;
     palette.fg = host.foreground;

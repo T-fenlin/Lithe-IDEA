@@ -94,3 +94,4 @@ MIT 允许衍生与再分发，**前提是保留版权声明与许可文本**。
 | 日期 | 改了什么 | 为什么 |
 | --- | --- | --- |
 | 2026-10-05 | 移植：包重命名、标识符改名、数据串保持原样 | 见上文"本副本的改动清单" |
+| 2026-10-07 | 新增 `lists::project`（`ProjectTree` / `ProjectNode` / `ProjectAsset` / `ProjectIcon` / `ProjectLabels` / `ProjectAction`，导出在 `src/lists/mod.rs`），并把 `lists::files::GitStatus` 补成 `Copied` 七态、`word()`/`letter()`/`tone()` 转 `pub`、新增 `dominant()` | 项目树要变成组件库自己的控件（`.agents/notes/implemented/architecture/2026-10-07-project-tree-moves-to-own-component-library.md`）；git 字母与色调的单一真源按 `docs/tasks/idea-project-tree.md` §4 落在这里。上游没有这个组件，它是 Lithe 侧新增的代码 |

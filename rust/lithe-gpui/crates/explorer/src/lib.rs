@@ -1,8 +1,7 @@
 mod explorer_view;
 mod model;
-mod selection;
 
-pub use explorer_view::{Explorer, RevealInFileManagerHost};
+pub use explorer_view::{Explorer, HidePanelHost, RevealInFileManagerHost};
 
 gpui_kit::actions!(lithe_gpui_explorer, [SelectAllInTree, CopySelection]);
 

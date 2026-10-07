@@ -4,6 +4,7 @@ mod grouped;
 mod item;
 mod long;
 mod outline;
+mod project;
 mod sections;
 mod select;
 mod sortable;
@@ -20,6 +21,10 @@ pub use grouped::GroupedList;
 pub use item::{List, ListItem};
 pub use long::{InfiniteList, VirtualList};
 pub use outline::Outline;
+pub use project::{
+    PROJECT_ACTIONS, ProjectAction, ProjectAsset, ProjectIcon, ProjectIconRequest, ProjectLabels,
+    ProjectNode, ProjectRowKind, ProjectTree, ROW_LIMIT, row_menu_entries,
+};
 pub(crate) use sections::Sections;
 pub use select::SelectableList;
 pub(crate) use select::row_action;

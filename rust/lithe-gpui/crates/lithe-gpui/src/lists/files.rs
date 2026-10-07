@@ -13,7 +13,8 @@ use crate::{
     theme::Size,
 };
 
-/// A file's state in git.
+/// A file's state in git: the one vocabulary the file tree, the project tree and
+/// the owner's porcelain parsing share.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitStatus {
     Modified,
@@ -21,38 +22,60 @@ pub enum GitStatus {
     Deleted,
     Untracked,
     Renamed,
+    Copied,
     Conflicted,
 }
 
 impl GitStatus {
-    pub(crate) fn word(self) -> &'static str {
+    pub fn word(self) -> &'static str {
         match self {
             Self::Modified => "Modified",
             Self::Added => "Added",
             Self::Deleted => "Deleted",
             Self::Untracked => "Untracked",
             Self::Renamed => "Renamed",
+            Self::Copied => "Copied",
             Self::Conflicted => "Conflicted",
         }
     }
 
-    pub(crate) fn letter(self) -> &'static str {
+    /// The letter a row shows at its end.
+    pub fn letter(self) -> &'static str {
         match self {
             Self::Modified => "M",
             Self::Added => "A",
             Self::Deleted => "D",
             Self::Untracked => "U",
             Self::Renamed => "R",
+            Self::Copied => "C",
             Self::Conflicted => "!",
         }
     }
 
-    pub(crate) fn tone(self) -> Tone {
+    /// How urgent the state is, higher wins; a folder takes its most urgent descendant.
+    fn priority(self) -> u8 {
         match self {
-            Self::Modified => Tone::Warning,
-            Self::Added | Self::Untracked => Tone::Success,
-            Self::Deleted | Self::Conflicted => Tone::Danger,
+            Self::Modified => 0,
+            Self::Copied => 1,
+            Self::Renamed => 2,
+            Self::Added | Self::Untracked => 3,
+            Self::Deleted => 4,
+            Self::Conflicted => 5,
+        }
+    }
+
+    /// The most urgent of these states, or none for an empty list.
+    pub fn dominant(statuses: impl IntoIterator<Item = GitStatus>) -> Option<Self> {
+        statuses.into_iter().max_by_key(|status| status.priority())
+    }
+
+    pub fn tone(self) -> Tone {
+        match self {
+            Self::Modified => Tone::Accent,
+            Self::Added | Self::Copied | Self::Untracked => Tone::Success,
+            Self::Deleted => Tone::Danger,
             Self::Renamed => Tone::Info,
+            Self::Conflicted => Tone::Warning,
         }
     }
 }
@@ -249,6 +272,7 @@ mod tests {
     use gpui::SharedString;
 
     use super::{GitStatus, IconTheme, nodes};
+    use crate::data_display::Tone;
     use crate::lists::tree::{Shown, rows};
 
     fn paths() -> Vec<SharedString> {
@@ -313,5 +337,66 @@ mod tests {
         let (labels, open) = shown("butt");
         assert_eq!(labels, ["src •", "ui •", "Button.rs M"]);
         assert_eq!(open, ["src/ui", "src"].map(SharedString::from));
+    }
+
+    #[test]
+    fn every_state_has_one_letter() {
+        assert_eq!(GitStatus::Modified.letter(), "M");
+        assert_eq!(GitStatus::Added.letter(), "A");
+        assert_eq!(GitStatus::Deleted.letter(), "D");
+        assert_eq!(GitStatus::Untracked.letter(), "U");
+        assert_eq!(GitStatus::Renamed.letter(), "R");
+        assert_eq!(GitStatus::Copied.letter(), "C");
+        assert_eq!(GitStatus::Conflicted.letter(), "!");
+    }
+
+    #[test]
+    fn every_state_has_one_tone() {
+        assert_eq!(GitStatus::Modified.tone(), Tone::Accent);
+        assert_eq!(GitStatus::Added.tone(), Tone::Success);
+        assert_eq!(GitStatus::Copied.tone(), Tone::Success);
+        assert_eq!(GitStatus::Untracked.tone(), Tone::Success);
+        assert_eq!(GitStatus::Deleted.tone(), Tone::Danger);
+        assert_eq!(GitStatus::Renamed.tone(), Tone::Info);
+        assert_eq!(GitStatus::Conflicted.tone(), Tone::Warning);
+    }
+
+    #[test]
+    fn the_dominant_state_is_the_most_urgent_one() {
+        assert_eq!(GitStatus::dominant([]), None);
+        assert_eq!(
+            GitStatus::dominant([GitStatus::Modified]),
+            Some(GitStatus::Modified)
+        );
+        assert_eq!(
+            GitStatus::dominant([GitStatus::Modified, GitStatus::Copied]),
+            Some(GitStatus::Copied),
+            "Copied outranks Modified"
+        );
+        assert_eq!(
+            GitStatus::dominant([GitStatus::Copied, GitStatus::Renamed]),
+            Some(GitStatus::Renamed)
+        );
+        assert_eq!(
+            GitStatus::dominant([GitStatus::Renamed, GitStatus::Added]),
+            Some(GitStatus::Added)
+        );
+        assert_eq!(
+            GitStatus::dominant([GitStatus::Added, GitStatus::Deleted]),
+            Some(GitStatus::Deleted)
+        );
+        assert_eq!(
+            GitStatus::dominant([GitStatus::Deleted, GitStatus::Conflicted]),
+            Some(GitStatus::Conflicted),
+            "a conflict outweighs everything else"
+        );
+        assert_eq!(
+            GitStatus::dominant([
+                GitStatus::Modified,
+                GitStatus::Conflicted,
+                GitStatus::Untracked
+            ]),
+            Some(GitStatus::Conflicted)
+        );
     }
 }

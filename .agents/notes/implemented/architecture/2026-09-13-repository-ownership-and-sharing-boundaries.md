@@ -41,10 +41,16 @@ gpui 各 crate 的依赖方向固定，只向下：
 ```text
 app ──> workbench ──> {editor, explorer, extensions, git, terminal} ──> shared
 app ──> settings ──> shared
+workbench ──> lithe-gpui        （外壳的三块工具窗：layout::Dock）
+explorer  ──> lithe-gpui        （左侧项目树：lists::ProjectTree）
 ```
 
 （`notify` 压在 `shared` 之上、其余功能 crate 之下，见它的模块文档；
-`extensions` 与 `editor` / `explorer` 同一层。）
+`extensions` 与 `editor` / `explorer` 同一层。
+`crates/lithe-gpui/` 是**仓库内的组件库**（Ely GPUI Components 的 vendored fork，
+见 `crates/lithe-gpui/UPSTREAM.md`）：它不依赖任何宿主 crate，宿主对它的依赖是
+"用组件"而不是"跨功能协作"，所以上图的宿主内部方向不变；项目树进组件库的决策见
+`2026-10-07-project-tree-moves-to-own-component-library.md`。）
 
 `workbench` 不得依赖 `settings`；`shared` 不依赖任何功能 crate；任何 crate 都
 不得依赖 `app`。越界依赖属于架构问题，不是风格问题。
