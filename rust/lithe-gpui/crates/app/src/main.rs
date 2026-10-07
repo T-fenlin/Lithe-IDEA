@@ -626,6 +626,43 @@ fn main() {
             lithe_gpui_workbench::install_open_project_action(cx);
             lithe_gpui_workbench::menu_bar::install_key_actions(cx);
 
+            // 多窗口：窗口尺寸与选项归组合根，所以「给这个工程再开一个窗口」也由它提供。
+            // 外壳只在 `OpenDestination::NewWindow`（真源 `ProjectOpenPlacement.newWindow`）时调它；
+            // 每个窗口一份自己的 `ShellWorkspace`（自己的 Dock、树、编辑器标签与会话写入）。
+            lithe_gpui_workbench::set_open_window_host(std::sync::Arc::new(
+                move |root: &std::path::Path, _window: &mut Window, cx: &mut App| {
+                    let options = WindowOptions {
+                        window_bounds: Some(startup_window_bounds(cx)),
+                        window_min_size: Some(MIN_WINDOW),
+                        ..TitleBar::window_options()
+                    };
+                    let root = root.to_path_buf();
+                    let opened = cx.open_window(options, move |window, cx| {
+                        let workspace = cx.new(|cx| {
+                            ShellWorkspace::new(
+                                root,
+                                compact_menu_bar,
+                                branch_panel_probe,
+                                run_probe,
+                                run_probe_debug,
+                                window,
+                                cx,
+                            )
+                        });
+                        if let Some(store) = lithe_gpui_settings::try_store(cx) {
+                            store.update(cx, |store, cx| store.attach_window(window, cx));
+                        }
+                        workspace
+                    });
+                    match opened {
+                        Ok(handle) => {
+                            eprintln!("S1_OPEN_WINDOW state=opened handle={handle:?}");
+                        }
+                        Err(error) => eprintln!("S1_OPEN_WINDOW state=failed error={error}"),
+                    }
+                },
+            ));
+
             let (bounds, min_size) = match &plan {
                 LaunchPlan::Welcome(_) => (welcome_window_bounds(cx), WELCOME_WINDOW_SIZE),
                 LaunchPlan::Workspace(_) => (startup_window_bounds(cx), MIN_WINDOW),

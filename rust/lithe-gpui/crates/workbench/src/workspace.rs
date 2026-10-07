@@ -134,6 +134,25 @@ pub enum OpenDestination {
     ThisWindow,
 }
 
+/// Opens another IDE window for a project root. The composition root (`app`) owns window bounds and
+/// options, so it installs this; the shell only decides *when* a project goes to a new window
+/// (真源 `ProjectOpenPlacement.newWindow`).
+pub type OpenWindowHost = std::sync::Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>;
+
+thread_local! {
+    static OPEN_WINDOW_HOST: std::cell::RefCell<Option<OpenWindowHost>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Installed once by the composition root, before the first window opens.
+pub fn set_open_window_host(host: OpenWindowHost) {
+    OPEN_WINDOW_HOST.with(|slot| *slot.borrow_mut() = Some(host));
+}
+
+pub(crate) fn open_window_host() -> Option<OpenWindowHost> {
+    OPEN_WINDOW_HOST.with(|slot| slot.borrow().clone())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ProjectOpenDecision {
     pub(crate) destination: OpenDestination,
@@ -2461,7 +2480,16 @@ impl ShellWorkspace {
         cx: &mut Context<Self>,
     ) {
         match decision.destination {
-            OpenDestination::NewWindow => self.report_new_window_not_wired(cx),
+            OpenDestination::NewWindow => match open_window_host() {
+                Some(host) => {
+                    eprintln!(
+                        "S1_OPEN_PROJECT destination=new-window state=opened path={}",
+                        target.display()
+                    );
+                    host(&target, window, cx);
+                }
+                None => self.report_new_window_not_wired(cx),
+            },
             OpenDestination::ThisWindow => {
                 self.rebuild_project_window(target, decision.remember, window, cx)
             }
