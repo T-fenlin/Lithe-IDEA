@@ -378,6 +378,7 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -
         | C::CloseTabsToLeft
         | C::CloseTabsToRight => (Category::View, idea_icon_mono(&idea::X_ICON, is_dark)),
         C::ReopenClosedTab => (Category::View, idea_icon_mono(&idea::REFRESH_ICON, is_dark)),
+        C::NewWindow => (Category::View, Icon::new(IconName::AppWindow)),
     };
 
     let (label, description) = match id {
@@ -445,6 +446,7 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -
         C::CloseTabsToLeft => (tr("lithe.menu.closeTabsToLeft"), tr("lithe.menu.file")),
         C::CloseTabsToRight => (tr("lithe.menu.closeTabsToRight"), tr("lithe.menu.file")),
         C::ReopenClosedTab => (tr("lithe.menu.reopenClosedTab"), tr("lithe.menu.file")),
+        C::NewWindow => (tr("lithe.menu.newWindow"), tr("lithe.menu.file")),
     };
 
     CommandAction {
@@ -1923,6 +1925,7 @@ impl ShellWorkspace {
             | MenuAction::CloseTabsToLeft
             | MenuAction::CloseTabsToRight
             | MenuAction::ReopenClosedTab
+            | MenuAction::NewWindow
             | MenuAction::CommandPalette
             | MenuAction::ToggleTerminal
             | MenuAction::ToggleMaven
@@ -2090,6 +2093,10 @@ impl ShellWorkspace {
                     .editor
                     .update(cx, |pane, cx| pane.reopen_closed_tab(window, cx));
                 diagnose_run(id, "applied");
+            }
+            CommandId::NewWindow => {
+                diagnose_run(id, "requested");
+                self.open_current_project_in_new_window(window, cx);
             }
             CommandId::NavigateToDefinition => {
                 let _ = self
@@ -2500,6 +2507,35 @@ impl ShellWorkspace {
         eprintln!(
             "S1_OPEN_PROJECT destination=new-window state=not_wired missing=window_handle_routing"
         );
+        self.notify_new_window_not_wired(cx);
+    }
+
+    /// File ▸ New Window（真源 `LitheApp.swift:492` 的 `CommandGroup(replacing: .newItem)`）。
+    /// 真源那一步是"把主窗口再呈现一次"（`ensurePrimaryWindowAvailable` + `presentPrimary`），
+    /// 而本侧窗口尺寸与选项归组合根，所以这里只把**当前工程根**交给 `OpenWindowHost`；新窗口是
+    /// 自己一份 `ShellWorkspace`。真源里"两个窗口共享同一份会话"记在「按窗口的会话」那一片。
+    /// 没有装端口时维持未接线提示（headless / 单测不假装成功）。
+    fn open_current_project_in_new_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match open_window_host() {
+            Some(host) => {
+                let root = self.root.clone();
+                eprintln!(
+                    "S1_OPEN_WINDOW source=menu state=requested root={}",
+                    root.display()
+                );
+                host(&root, window, cx);
+            }
+            None => {
+                eprintln!(
+                    "S1_OPEN_WINDOW source=menu state=not_wired missing=window_handle_routing"
+                );
+                self.notify_new_window_not_wired(cx);
+            }
+        }
+    }
+
+    /// 「打开工程 → 新窗口」与「File ▸ New Window」共用同一条用户提示，诊断锚点各自打印。
+    fn notify_new_window_not_wired(&mut self, cx: &mut Context<Self>) {
         self.notify_not_wired("lithe.gpui.newWindowNotWired", "New Window", cx);
     }
 
@@ -3729,6 +3765,7 @@ mod tests {
             (CommandId::CloseTabsToLeft, "close-tabs-to-left"),
             (CommandId::CloseTabsToRight, "close-tabs-to-right"),
             (CommandId::ReopenClosedTab, "reopen-closed-tab"),
+            (CommandId::NewWindow, "new-window"),
         ];
         let visible = visible_commands(dark());
         let mut ids: Vec<&str> = menu_only.iter().map(|(id, _)| id.id()).collect();
@@ -3773,7 +3810,7 @@ mod tests {
     fn the_actions_catalog_covers_the_whole_command_table() {
         assert_eq!(
             CommandId::ALL.len(),
-            22,
+            23,
             "宿主命令目录的条数变了要同步改注释与 UI-MAP"
         );
         let ids: Vec<&str> = CommandId::ALL.iter().map(|id| id.id()).collect();
@@ -3802,6 +3839,7 @@ mod tests {
                 "close-tabs-to-left",
                 "close-tabs-to-right",
                 "reopen-closed-tab",
+                "new-window",
             ],
             "顺序 = 枚举声明顺序（Actions 档的行序），id 来自 `CommandId::id()`"
         );

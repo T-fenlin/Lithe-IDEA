@@ -64,10 +64,11 @@ pub enum CommandId {
     CloseTabsToLeft,
     CloseTabsToRight,
     ReopenClosedTab,
+    NewWindow,
 }
 
 impl CommandId {
-    pub const ALL: [CommandId; 22] = [
+    pub const ALL: [CommandId; 23] = [
         Self::OpenSettings,
         Self::OpenAppearanceSettings,
         Self::SwitchToLightTheme,
@@ -90,6 +91,7 @@ impl CommandId {
         Self::CloseTabsToLeft,
         Self::CloseTabsToRight,
         Self::ReopenClosedTab,
+        Self::NewWindow,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -116,6 +118,7 @@ impl CommandId {
             Self::CloseTabsToLeft => "close-tabs-to-left",
             Self::CloseTabsToRight => "close-tabs-to-right",
             Self::ReopenClosedTab => "reopen-closed-tab",
+            Self::NewWindow => "new-window",
         }
     }
 }

@@ -308,6 +308,7 @@ pub enum MenuAction {
     ToggleMenuBar,
     NewTerminalTab,
     CloseTerminalTab,
+    NewWindow,
     Preferences,
     Minimize,
     Maximize,
@@ -344,6 +345,7 @@ impl MenuAction {
             Self::ReplaceInFiles => "lithe.search.gpui.replaceInFiles",
             Self::NewTerminalTab => "lithe.menu.newTerminal",
             Self::CloseTerminalTab => "lithe.menu.closeTerminal",
+            Self::NewWindow => "lithe.menu.newWindow",
             Self::Preferences => "lithe.menu.preferences",
             Self::Minimize => "lithe.menu.minimize",
             Self::Maximize => "lithe.menu.maximize",
@@ -405,6 +407,7 @@ impl MenuAction {
             Self::QuickOpen => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
             Self::SearchEverywhere => idea_icon_mono(&idea::GLOBE_HEMISPHERE_WEST_ICON, is_dark),
             Self::ReplaceInFiles => Icon::new(IconName::Replace),
+            Self::NewWindow => Icon::new(IconName::AppWindow),
             Self::Minimize => Icon::new(IconName::WindowMinimize),
             Self::Maximize => Icon::new(IconName::WindowMaximize),
             Self::ToggleFullscreen => Icon::new(IconName::Maximize),
@@ -490,6 +493,7 @@ impl MenuAction {
             | Self::OpenAppearanceSettings
             | Self::NewTerminalTab
             | Self::CloseTerminalTab
+            | Self::NewWindow
             | Self::Minimize
             | Self::Maximize
             | Self::ToggleFullscreen => return None,
@@ -533,6 +537,7 @@ impl MenuAction {
             | Self::Minimize
             | Self::Maximize
             | Self::ToggleFullscreen => None,
+            Self::NewWindow => Some(CommandId::NewWindow),
             Self::ToggleMenuBar => Some(CommandId::ToggleMenuBar),
             Self::Undo
             | Self::Redo
@@ -572,11 +577,7 @@ pub static MENUS: &[TopMenu] = &[
                 missing: MISSING_FILE_LIFECYCLE,
                 icon: MenuIcon::Idea(&idea::FILE_PLUS_ICON),
             },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.newWindow",
-                missing: MISSING_WINDOW_ROUTING,
-                icon: MenuIcon::Lucide(IconName::AppWindow),
-            },
+            MenuItem::Action(MenuAction::NewWindow),
             MenuItem::NotWired {
                 label_key: "lithe.menu.newFile",
                 missing: MISSING_FILE_LIFECYCLE,
@@ -1740,6 +1741,7 @@ mod tests {
         assert_eq!(
             actions,
             vec![
+                MenuAction::NewWindow,
                 MenuAction::OpenFolder,
                 MenuAction::OpenFile,
                 MenuAction::Save,
@@ -1751,6 +1753,43 @@ mod tests {
                 MenuAction::CloseTabsToRight,
                 MenuAction::ReopenClosedTab,
             ]
+        );
+    }
+
+    #[test]
+    fn new_window_menu_item_is_wired_to_the_window_host_command() {
+        use crate::command_palette::CommandId;
+
+        let listed = MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .filter(|item| matches!(item, MenuItem::Action(MenuAction::NewWindow)))
+            .count();
+        assert_eq!(
+            listed, 1,
+            "「新建窗口」在菜单里必须恰好一条（不许两个入口两个动作）"
+        );
+
+        assert_eq!(MenuAction::NewWindow.label_key(), "lithe.menu.newWindow");
+        assert_ne!(
+            tr(MenuAction::NewWindow.label_key()).as_ref(),
+            "lithe.menu.newWindow",
+            "菜单文案解析不出来（键名拼错了？）"
+        );
+        assert_eq!(
+            MenuAction::NewWindow.command_id(),
+            Some(CommandId::NewWindow),
+            "菜单项必须落到「新窗口」那一个 CommandId（执行分支在 run_command_id 里）"
+        );
+        assert_eq!(
+            CommandId::NewWindow.id(),
+            "new-window",
+            "诊断 id 是 `S1_COMMAND_RUN id=…` 的可 grep 契约"
+        );
+        assert!(
+            MenuAction::NewWindow.menu_key().is_none()
+                && MenuAction::NewWindow.keybind_action().is_none(),
+            "真源 File ▸ New Window（LitheApp.swift:492）没有键位，菜单上不许画键位胶囊"
         );
     }
 
@@ -2065,7 +2104,7 @@ mod tests {
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
         );
         assert!(
-            declared.len() >= 43,
+            declared.len() >= 42,
             "占位项突然少了一半（现在 {}）？查一下是不是有人把没能力的项又删掉了",
             declared.len()
         );

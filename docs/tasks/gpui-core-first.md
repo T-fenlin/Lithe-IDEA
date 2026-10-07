@@ -136,7 +136,7 @@ Core 侧缺口**只上报，不在此分支修**。上报材料 = §0 的三处�
 | **H11** | Java Debug Server 启动与端口协商 | 各端 | `vscode.java.startDebugSession` 不在 Core 命令面里（`run/src/lib.rs:34` 把它列为下一步入口）；gpui 只发现了载荷（`java/src/jdtls.rs:30`），没启动它 |
 | **H12** | 文件系统 watcher | 各端 | macOS 用 FSEvents（`MacDirectoryWatcher.swift:17-86`）；gpui **无 watcher**，树与「更改」列表会过期。Core 已备好 `searchIndex.update` 供 watcher 驱动 |
 | **H13** | 终端 PTY | 各端 | gpui `rust/Cargo.lock` 里 `portable-pty`/`alacritty_terminal`/`vte`/`vt100`/`conpty` **零命中**，现在是 `std::process::Command` + 三管道 + ANSI **丢弃**（`ansi.rs:155-175`）→ 无 Ctrl+C、无 resize、无 TUI |
-| **H14** | 窗口与多窗口 | 各端 | gpui 的 `OpenDestination::NewWindow` 是死路（只打 `report_new_window_not_wired`）；macOS 有 `LitheWindowCoordinator`（`RootView.swift:402-677`） |
+| **H14** | 窗口与多窗口 | 各端 | 🟡 gpui 两条入口都已接线（2026-10-07）：「打开工程 → 新窗口」走 `workbench::OpenWindowHost` 端口 + `app` 组合根开窗；File ▸ New Window 走 `CommandId::NewWindow` 调**同一个**端口（真源 `LitheApp.swift:492`）。仍未做：同工程去重/聚焦、按窗口的会话、`projectOpenBehavior` 设置与「在哪打开」对话框的记忆、`lithe.menu.closeWindow` / `lithe.menu.quit`；macOS 有 `LitheWindowCoordinator`（`RootView.swift:402-677`） |
 
 ### 4.2 界面（gpui 侧，Core 数据已具备）
 
