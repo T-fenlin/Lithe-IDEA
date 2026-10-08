@@ -402,6 +402,19 @@ Dialog / Toast / Menu / Popover / Spotlight / Lightbox 的**统一挂载机制**
 的 2 处、`search_everywhere.rs` 的测试 3 处、`tests/common/mod.rs` 的开窗收口，以及**经上游
 `WindowState` 走的所有对话框调用点**（它们会去 `window.root::<gpui_base::Root>()` 找根，根换了
 就 panic）。所以"换根 + 迁对话框调用点"必须同一片落地，不能中途留一个半状态。
+**收尾不可分割（2026-10-08 实测确认）**：上游 `WindowExt` 是按**具体类型**找根的——
+`gpui-component-0.7.1/src/root.rs:89` 是 `window.root::<gpui_base::Root>()??`，
+而 gpui-base `root.rs:180/191` 直接 `.expect("window must have a Base Root")`。
+所以窗口的根实体一旦从 `gpui_base::Root` 换成 `WindowRoot`，**所有经 `WindowExt` 的对话框调用点
+会立刻 panic**：换根与迁移这批调用点必须同一片落地。
+
+规模（grep 实测）：`open_dialog` 19、`close_dialog` 23、`replace_root` 4、`Root::new` 3、
+`push_notification` 1、`WindowExt` 引用 14 ⇒ 约 **60 处**，分布在 `workbench`(41)、`editor`(8)、
+`settings`(7)、`git`(4)。
+
+迁移形态：在 `WindowRootExt` 上给出与旧调用点**同形**的入口（`open_dialog(id, build)` /
+`close_dialog()`），调用点只改 trait 导入与构造闭包。⚠️ 新旧两个 trait 的同名方法同时进作用域
+会直接编译歧义，所以**只能在换根那一片里一次改完**，不能分批。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、
