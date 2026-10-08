@@ -13,8 +13,10 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _};
 
 use crate::debug_session::{DebugSessionHandle, copy_new_output};
+// 本文件这些图标要交给上游 `PopupMenuItem::icon`（只收 gpui-kit 的 Icon），见 `icon_kit`。
+use crate::icon_kit::idea_icon_mono;
 use lithe_gpui_editor::GutterBreakpoint;
-use lithe_gpui_shared::icons::{idea, idea_icon_mono};
+use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::{core_json, tr, tr_args};
 use serde_json::{Value, json};
 

@@ -58,10 +58,13 @@ use lithe_gpui_settings::{
     Category as SettingsCategory, GitIdentityHost, IdentityField, IdentityScope, Overrides,
     RecentProjects, resolve_overrides,
 };
-use lithe_gpui_shared::icons::{idea, idea_icon_mono};
+use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::workspace_config::{ToolchainPaths, load_local_toolchain};
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
+
+// 命令面板这些图标要交给上游 `PopupMenuItem::icon`（只收 gpui-kit 的 Icon），见 `icon_kit`。
+use crate::icon_kit::idea_icon_mono;
 
 pub struct ShellStartup {
     compact_menu: bool,

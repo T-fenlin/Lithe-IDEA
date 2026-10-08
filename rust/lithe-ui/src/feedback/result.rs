@@ -163,6 +163,6 @@ impl RenderOnce for ResultView {
                 },
             )
             .into_any_element();
-        state_view(self.id, head, self.words, cx)
+        state_view(self.id, Some(head), self.words, None, cx)
     }
 }

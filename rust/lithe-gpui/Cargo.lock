@@ -4510,9 +4510,9 @@ dependencies = [
 name = "lithe-gpui-shared"
 version = "0.0.1"
 dependencies = [
- "gpui-kit",
  "gpui-pre",
  "lithe-core",
+ "lithe-ui",
  "rust-i18n",
  "serde",
  "serde_json",

@@ -17,7 +17,8 @@ use crate::{
 
 /// The words and buttons under a state's head.
 pub(super) struct Words {
-    title: SharedString,
+    /// 只有说明、没有标题的形态是 `None`：标题行不画，它那份字号与间距也不再占位。
+    title: Option<SharedString>,
     pub(super) body: Option<SharedString>,
     detail: Option<SharedString>,
     pub(super) actions: SmallVec<[AnyElement; 2]>,
@@ -26,7 +27,17 @@ pub(super) struct Words {
 impl Words {
     pub(super) fn new(title: impl Into<SharedString>) -> Self {
         Self {
-            title: title.into(),
+            title: Some(title.into()),
+            body: None,
+            detail: None,
+            actions: SmallVec::new(),
+        }
+    }
+
+    /// 一个字都没有：标题、说明与动作都由调用方逐个补上。
+    pub(super) fn blank() -> Self {
+        Self {
+            title: None,
             body: None,
             detail: None,
             actions: SmallVec::new(),
@@ -43,15 +54,53 @@ fn measure(block: Div, cx: &App) -> Div {
         .child(block.flex_1().min_w_0().max_w(cx.theme().prose_width()))
 }
 
-/// A head, a title, a line, a detail and actions, centered; it rises in once.
+/// A head, a title, a line, a detail, actions and a tail, centered; it rises in once.
+///
+/// 每个槽位都是可选的：一个什么都没给的形态是一块空盒子，而不是坏掉的状态。
 pub(super) fn state_view(
     id: ElementId,
-    head: AnyElement,
+    head: Option<AnyElement>,
     words: Words,
+    tail: Option<AnyElement>,
     cx: &App,
 ) -> impl IntoElement {
     let theme = cx.theme();
     let colors = &theme.colors;
+    let Words {
+        title,
+        body,
+        detail,
+        actions,
+    } = words;
+    let titled = title.is_some();
+    // 一个字都没有的形态（例如只有内容区）不该留一块空文字占位，否则它还会吃掉一个 gap。
+    let words_block = (title.is_some() || body.is_some()).then(|| {
+        measure(
+            div()
+                .text_center()
+                .when_some(title, |text, title| {
+                    text.child(
+                        div()
+                            .debug_selector(|| "state-title".into())
+                            .text_size(theme.text_size(TextSize::Lg))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors.fg)
+                            .child(title),
+                    )
+                })
+                .when_some(body, |text, body| {
+                    text.child(
+                        div()
+                            .when(titled, |line| line.mt_1())
+                            .text_size(theme.text_size(TextSize::Base))
+                            .text_color(colors.fg_muted)
+                            .child(body),
+                    )
+                }),
+            cx,
+        )
+    });
+
     div()
         .debug_selector(|| "state-root".into())
         .flex()
@@ -60,29 +109,9 @@ pub(super) fn state_view(
         .gap_4()
         .px_6()
         .py_8()
-        .child(head)
-        .child(measure(
-            div()
-                .text_center()
-                .child(
-                    div()
-                        .text_size(theme.text_size(TextSize::Lg))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(colors.fg)
-                        .child(words.title),
-                )
-                .when_some(words.body, |text, body| {
-                    text.child(
-                        div()
-                            .mt_1()
-                            .text_size(theme.text_size(TextSize::Base))
-                            .text_color(colors.fg_muted)
-                            .child(body),
-                    )
-                }),
-            cx,
-        ))
-        .when_some(words.detail, |state, detail| {
+        .when_some(head, |state, head| state.child(head))
+        .when_some(words_block, |state, words| state.child(words))
+        .when_some(detail, |state, detail| {
             state.child(measure(
                 div()
                     .px_3()
@@ -96,9 +125,10 @@ pub(super) fn state_view(
                 cx,
             ))
         })
-        .when(!words.actions.is_empty(), |state| {
-            state.child(div().flex().gap_2().children(words.actions))
+        .when(!actions.is_empty(), |state| {
+            state.child(div().flex().gap_2().children(actions))
         })
+        .when_some(tail, |state, tail| state.child(tail))
         .with_animation(
             id,
             Animation::new(motion::duration(motion::SLOW, cx)).with_easing(motion::ease_out_cubic),
@@ -139,21 +169,64 @@ macro_rules! words_builders {
 }
 pub(super) use words_builders;
 
+/// 空状态的头槽位：库内图标画在软底圆盘上，或者调用方自绘的元素（不套圆盘）。
+enum EmptyHead {
+    Disc(IconName),
+    Drawn(AnyElement),
+}
+
 /// What a view shows with nothing in it: an icon on a soft disc, a title, a line of help and actions. It rises in when it appears.
+///
+/// 槽位都可选。[`EmptyState::new`] 是常见形态（库内图标 + 标题）；[`EmptyState::slots`]
+/// 是组合形态：头、标题、说明、内容区逐个给，没给的不画。上游 `gpui-component` 的
+/// `Empty`/`EmptyHeader`/`EmptyMedia`/`EmptyTitle`/`EmptyDescription`/`EmptyContent`
+/// 一族对着这张表落：`EmptyMedia` → [`EmptyState::media_element`]、`EmptyTitle` →
+/// [`EmptyState::title`]、`EmptyDescription` → [`EmptyState::body`]、
+/// `EmptyContent` → [`EmptyState::content`]。
 #[derive(IntoElement)]
 pub struct EmptyState {
     id: ElementId,
-    icon: IconName,
+    head: Option<EmptyHead>,
     words: Words,
+    content: Option<AnyElement>,
 }
 
 impl EmptyState {
     pub fn new(id: impl Into<ElementId>, icon: IconName, title: impl Into<SharedString>) -> Self {
         Self {
             id: id.into(),
-            icon,
+            head: Some(EmptyHead::Disc(icon)),
             words: Words::new(title),
+            content: None,
         }
+    }
+
+    /// 槽位式构造：头、标题、说明、内容区都由调用方给，没给的不画（宿主 `Empty::new()` 的形态）。
+    pub fn slots(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            head: None,
+            words: Words::blank(),
+            content: None,
+        }
+    }
+
+    /// 标题槽位；`slots` 之后补标题，`new` 已经给过就换成新的。
+    pub fn title(mut self, title: impl Into<SharedString>) -> Self {
+        self.words.title = Some(title.into());
+        self
+    }
+
+    /// 头槽位换成调用方自绘的元素，不再套库内图标的软底圆盘；`new` 给的 `icon` 就此让位。
+    pub fn media_element(mut self, media: impl IntoElement) -> Self {
+        self.head = Some(EmptyHead::Drawn(media.into_any_element()));
+        self
+    }
+
+    /// 说明与动作之下的任意内容区（宿主 `EmptyContent`）：一个按钮、一个输入框、一整块版面都行。
+    pub fn content(mut self, content: impl IntoElement) -> Self {
+        self.content = Some(content.into_any_element());
+        self
     }
 
     words_builders!();
@@ -161,7 +234,11 @@ impl EmptyState {
 
 impl RenderOnce for EmptyState {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        state_view(self.id, disc(self.icon, cx), self.words, cx)
+        let head = self.head.map(|head| match head {
+            EmptyHead::Disc(icon) => disc(icon, cx),
+            EmptyHead::Drawn(element) => element,
+        });
+        state_view(self.id, head, self.words, self.content, cx)
     }
 }
 
@@ -242,7 +319,7 @@ impl RenderOnce for ErrorView {
                     .into_any_element()
             }
         };
-        state_view(self.id, head, self.words, cx)
+        state_view(self.id, Some(head), self.words, None, cx)
     }
 }
 

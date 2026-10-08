@@ -14,10 +14,12 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 
-use lithe_gpui_shared::icons::{idea, idea_icon_mono};
+use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::tr;
 
 use crate::command_palette::CommandId;
+// 本文件这些图标要交给上游 `PopupMenuItem::icon`（只收 gpui-kit 的 Icon），见 `icon_kit`。
+use crate::icon_kit::idea_icon_mono;
 
 const ITEM_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 

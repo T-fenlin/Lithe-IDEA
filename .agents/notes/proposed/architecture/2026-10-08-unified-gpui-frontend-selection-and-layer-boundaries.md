@@ -475,6 +475,43 @@ gpui-component 的 Theme，与组件库的 Theme **不同名、不同形**。以
 
 **已落地的库侧增量（①a）**：`mono_font_size: f32` + `font_size_px()` / `mono_font_size_px()`
 （纯换算，不新增真源）。颜色槽**一个都没加**——宿主所有颜色读点都能落到既有槽上，按上表改名即可。
+### 13. `shared` 迁移完成（2026-10-08）与它暴露的三个缺口
+
+**已落地**：`shared` 整片摘掉 gpui-kit（Cargo.toml 改依赖；`Empty*` 改走组件库 `EmptyState` 的槽位入口；
+`IconName`/`Icon`/`Theme` 换库类型；`v_flex`→`v_stack`）。组件库侧新增
+`EmptyState::{slots, title, media_element, content}` 与 `primitives::Icon` 的 `Styled`（均记入 UPSTREAM.md）。
+验收（主会话独立复跑）：`cargo check --workspace --all-targets` = 0 error；
+`cargo test -p lithe-ui --features test-support` = **1560 passed / 0 failed**；两个 workspace
+`cargo fmt --check` = exit 0；px 守卫 = exit 0。
+
+**① `app` 的资源源缺口（会静默画空白，下一片优先修）**：宿主 `LitheAssets` = 宿主 `assets/**` +
+`GpuiKitFallbackIcons`（106 个名字），**没挂组件库的 `lithe_ui::Assets`（307 个图标）**；而
+`lithe_ui::init` 只探一个 `icons/check.svg`（恰好被上游回落命中）就通过 ⇒ 组件库任一不在这 106 个名字里的
+图标在宿主里**画不出来**（例如 `FileJson`）。修法是挂上组件库资源源，并让探针不再可能被巧合命中。
+
+**② 图标名字缺 31 个**：宿主用到 73 个图标名，组件库图标集**缺 31 个**（如 `FolderClosed`）。
+`explorer` 那一片必须先定"补名字 + 补 SVG 到组件库资产"还是"换名映射"。
+
+**③ 过渡桥（临时，登记待删）**：`shared` 迁移后，宿主上游菜单槽位仍只收 `gpui_kit::component::Icon`
+（`PopupMenuItem::icon(impl Into<gpui_kit::Icon>)`），元素进不去。为不停在"无等价物"，在
+`crates/workbench/src/icon_kit.rs`（新）与 `crates/editor/src/editor_view.rs`、`crates/settings/src/dialog.rs`
+各留一处**同名过渡桥**，把 IDEA 图标包成上游 `Icon`：调用点 0 改动、渲染与迁移前逐字节相同。
+**菜单整片迁到 `lithe_ui::menus` 时，三处桥与 `shared` 的元素版一并收口、删桥。**
+
+**两处可见变化（已登记，待真机或方案确认）**：
+
+- `.json` 的图标由 `FileBraces` 变 **`Braces`**：组件库没有 `FileBraces`，而 `FileJson` 的 SVG 不在宿主
+  资源源里（会画空白）。①修好后应改回 `FileJson` 或给库补 `FileBraces`。
+- `shared::unavailable` 版面**归一化到组件库档位**（标题/说明尺寸与间距走库档位；说明不再叠
+  `.opacity(0.72)`；随之失去读者的 `UNAVAILABLE_DESCRIPTION_OPACITY` 常量已删）。**未真机对照**；
+  若不接受，需要给库的说明槽位补元素/透明度入口。
+
+**`shared` 的 22 条既有红测试（与本片无关，但按 §9 口径必须登记）**：
+`cargo test -p lithe-gpui-shared` **在起点即红**（50 passed / 22 failed）：6 条 `icons::file_icon::*` 失败于
+数据文件 `assets/icons/idea/extension.json` 是 macOS 图标副本（旧清单期望 128 个定义与
+`icons/files/*_dark.svg`），16 条 `workspace_config::*` 失败于 Core 拒绝 Git 写操作
+（`Unsupported Git write operation`）。⇒ 该 crate 的验收只能写"**既有红只剩这些、且与本轮改动无关**"，
+**不得声称全绿**。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、

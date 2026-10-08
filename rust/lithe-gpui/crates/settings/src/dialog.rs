@@ -16,13 +16,21 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 
-use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
+use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::workspace_config::{
     OverrideOrigin, OverrideOrigins, ToolchainPaths, load_local_toolchain, save_local_toolchain,
 };
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
+
+/// 过渡桥：设置页这几个图标最终交给上游的图标槽（只收 gpui-kit 的 `Icon`），组件库的元素进不去
+/// （同 `workbench::icon_kit` 的说明）。按同一份资源路径就地包成上游 `Icon`，
+/// 画出来的东西与迁移前逐字节相同；设置页整片迁到组件库时删掉本函数。
+fn idea_icon_mono(icon: &idea::IdeaIcon, is_dark: bool) -> Icon {
+    let path: SharedString = icon.path(is_dark).into();
+    Icon::empty().path(path)
+}
 
 use crate::identity::{
     GitIdentityPage, IdentityField, IdentityScope, IdentitySetup, git_identity_page,

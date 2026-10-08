@@ -279,12 +279,16 @@ pub(crate) fn icon_for(request: &ProjectIconRequest, cx: &App) -> Option<Project
     {
         return Some(ProjectIcon::Image(path.into()));
     }
-    let fallback = match is_dir {
-        true if request.expanded => IconName::FolderOpen,
-        true => IconName::FolderClosed,
-        false => file_icon::lucide_fallback(request.name.as_str()),
+    // 上游图标名的 `path()` 是 `SharedString`，组件库的是 `&'static str`（见 `shared` 的说明）；
+    // 这里统一收敛成资源路径再交给行图标，两种名字都能用。
+    let fallback: SharedString = match is_dir {
+        true if request.expanded => IconName::FolderOpen.path(),
+        true => IconName::FolderClosed.path(),
+        false => file_icon::lucide_fallback(request.name.as_str())
+            .path()
+            .into(),
     };
-    Some(ProjectIcon::Glyph(fallback.path()))
+    Some(ProjectIcon::Glyph(fallback))
 }
 
 #[cfg(test)]

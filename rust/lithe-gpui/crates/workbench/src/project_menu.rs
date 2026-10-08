@@ -13,8 +13,9 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{Align, ElementExt as _, Placement, Positioner, h_flex, v_flex};
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
-use lithe_gpui_shared::icons::{idea, idea_icon_mono};
+use lithe_gpui_shared::icons::idea;
 
+use crate::icon_kit::idea_icon_mono;
 use lithe_gpui_settings::RecentProject;
 use lithe_gpui_shared::{tr, tr_args};
 

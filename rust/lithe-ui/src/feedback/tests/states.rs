@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use gpui::{
-    Context, Entity, FocusHandle, IntoElement, ParentElement, Pixels, Render, Styled,
-    TestAppContext, VisualTestContext, Window, div, px,
+    Context, Entity, FocusHandle, InteractiveElement as _, IntoElement, ParentElement, Pixels,
+    Render, Styled, TestAppContext, VisualTestContext, Window, div, px,
 };
 use web_time::Instant;
 
@@ -222,5 +222,86 @@ fn state_views_fill_a_column_their_block_measures_by_content(cx: &mut TestAppCon
         widths,
         [px(240.0); 3],
         "each view spans the card inside its padding"
+    );
+}
+
+/// 空状态的一副槽位：给哪个槽，就画哪个槽。
+#[derive(Clone, Copy)]
+enum Slots {
+    /// `new`：库内图标 + 标题。
+    Titled,
+    /// `slots` 之后补标题。
+    SlotsTitled,
+    /// 只有说明，没有标题（宿主 `EmptyHeader` 只给 `description` 的形态）。
+    Note,
+    /// 头由调用方自绘的元素充当。
+    Media,
+    /// 说明之外还有一个任意内容区。
+    Content,
+}
+
+struct Slotted {
+    slots: Slots,
+}
+
+impl Render for Slotted {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let state = match self.slots {
+            Slots::Titled => {
+                EmptyState::new("slots", IconName::Inbox, "Nothing yet").body("A line")
+            }
+            Slots::SlotsTitled => EmptyState::slots("slots")
+                .title("Nothing yet")
+                .body("A line"),
+            Slots::Note => EmptyState::slots("slots").body("Only a note"),
+            Slots::Media => EmptyState::slots("slots")
+                .media_element(div().size_4().debug_selector(|| "media-slot".into()))
+                .body("The head is the caller's"),
+            Slots::Content => EmptyState::slots("slots")
+                .body("Body")
+                .content(div().size_4().debug_selector(|| "content-slot".into())),
+        };
+        div().w(px(420.0)).child(state)
+    }
+}
+
+/// 画一副槽位，回报三处探针：标题行 / 自绘头 / 内容区。
+fn drawn(slots: Slots, cx: &mut TestAppContext) -> [bool; 3] {
+    setup(cx);
+    let (_, cx) = cx.add_window_view(|_, _| Slotted { slots });
+    settle(cx);
+    [
+        cx.debug_bounds("state-title").is_some(),
+        cx.debug_bounds("media-slot").is_some(),
+        cx.debug_bounds("content-slot").is_some(),
+    ]
+}
+
+#[gpui::test]
+fn an_empty_state_draws_the_slots_it_is_given(cx: &mut TestAppContext) {
+    assert_eq!(
+        drawn(Slots::Titled, cx),
+        [true, false, false],
+        "`new`：库内图标在上，标题在下"
+    );
+    assert_eq!(
+        drawn(Slots::SlotsTitled, cx),
+        [true, false, false],
+        "`slots` 之后补的标题照样画"
+    );
+    assert_eq!(
+        drawn(Slots::Note, cx),
+        [false, false, false],
+        "只给说明的形态不画标题行（宿主「只有 description 的 header」）"
+    );
+    assert_eq!(
+        drawn(Slots::Media, cx),
+        [false, true, false],
+        "头槽位换成调用方自绘的元素"
+    );
+    assert_eq!(
+        drawn(Slots::Content, cx),
+        [false, false, true],
+        "内容区是任意元素（宿主 `EmptyContent`）"
     );
 }

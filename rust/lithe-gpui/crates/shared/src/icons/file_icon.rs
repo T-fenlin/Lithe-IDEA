@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use gpui::{AnyElement, App, AssetSource, IntoElement as _, SharedString, Styled as _};
-use gpui_kit::assets::IconName;
-use gpui_kit::component::Theme;
+use lithe_ui::primitives::IconName;
+use lithe_ui::theme::ActiveTheme as _;
 
 pub const BUILTIN_FILE_ICONS: &str = "idea";
 
@@ -228,7 +228,7 @@ pub fn active_theme() -> Option<&'static FileIcons> {
 pub fn theme_icon_path(name: &str, is_dir: bool, expanded: bool, cx: &App) -> Option<&'static str> {
     let active = active_theme()?;
     let builtin = builtin_theme()?;
-    let dark = Theme::global(cx).is_dark();
+    let dark = cx.theme().is_dark();
     lookup_path(active, builtin, name, is_dir, expanded, dark)
 }
 
@@ -350,7 +350,10 @@ pub fn lucide_fallback(name: &str) -> IconName {
         Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "ico" | "svg" | "bmp" | "avif") => {
             IconName::Image
         }
-        Some("json" | "jsonc") => IconName::FileBraces,
+        // 组件库的图标集里没有 `FileBraces`（上游 `gpui-kit` 有），最接近且**宿主资源源里
+        // 确实有这张图**的是 `Braces`（`icons/braces.svg`，在 `GpuiKitFallbackIcons` 的 106 个
+        // 名字里）。`FileJson` 名字更像，但 `icons/file-json.svg` 宿主当前不提供，会静默画空白。
+        Some("json" | "jsonc") => IconName::Braces,
         Some("md" | "markdown" | "txt" | "rst" | "adoc") => IconName::FileText,
         Some("toml" | "yaml" | "yml" | "ini" | "conf" | "cfg" | "properties" | "editorconfig") => {
             IconName::Settings
@@ -524,7 +527,7 @@ mod tests {
 
     #[test]
     fn lucide_fallback_covers_the_documented_cases() {
-        assert_eq!(lucide_fallback("data.json"), IconName::FileBraces);
+        assert_eq!(lucide_fallback("data.json"), IconName::Braces);
         assert_eq!(lucide_fallback("x.yml"), IconName::Settings);
         assert_eq!(lucide_fallback("README.md"), IconName::FileText);
         assert_eq!(lucide_fallback("A.java"), IconName::FileCode);

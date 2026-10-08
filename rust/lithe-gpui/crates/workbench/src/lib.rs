@@ -6,6 +6,7 @@ pub mod debug;
 pub mod debug_session;
 pub mod debug_transport;
 pub mod extensions_page;
+pub(crate) mod icon_kit;
 pub mod maven;
 pub mod menu_bar;
 pub mod notifications;

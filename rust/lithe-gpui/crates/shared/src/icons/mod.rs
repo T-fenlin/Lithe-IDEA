@@ -1,6 +1,6 @@
 use gpui::{AnyElement, App, IntoElement as _, Length, SharedString, Styled as _, Svg, svg};
-use gpui_kit::assets::IconName;
-use gpui_kit::component::Theme;
+use lithe_ui::primitives::{Icon, IconName};
+use lithe_ui::theme::ActiveTheme as _;
 
 pub mod file_icon;
 pub mod idea;
@@ -46,11 +46,11 @@ impl FileIcon {
                 return element;
             }
         }
-        let theme = Theme::global(cx);
+        let theme = cx.theme();
         svg()
             .path(SharedString::from(self.fallback.path()))
             .flex_shrink_0()
-            .text_color(theme.foreground)
+            .text_color(theme.colors.fg)
             .w(side)
             .h(side)
             .into_any_element()
@@ -58,38 +58,43 @@ impl FileIcon {
 }
 
 pub fn idea_icon_svg(icon: &idea::IdeaIcon, cx: &App) -> Svg {
-    let theme = Theme::global(cx);
+    let theme = cx.theme();
     let path: SharedString = icon.path(theme.is_dark()).into();
     svg()
         .path(path)
         .flex_shrink_0()
-        .text_color(theme.foreground)
+        .text_color(theme.colors.fg)
         .size_4()
 }
 
 pub fn idea_icon_image(icon: &idea::IdeaIcon, cx: &App, side: impl Into<Length>) -> AnyElement {
     let side: Length = side.into();
-    let is_dark = Theme::global(cx).is_dark();
+    let is_dark = cx.theme().is_dark();
     match file_icon::theme_file_icon(icon.path(is_dark), side, cx) {
         Some(element) => element,
         None => idea_icon_svg_px(icon, cx, side).into_any_element(),
     }
 }
 
+/// 单色的 IDEA 图标元素（组件库的 [`Icon`]），给按钮、菜单项这类收元素的地方用。
+///
+/// 上游那条 `Icon::empty().path(path)` 在组件库里就是 [`Icon::from_path`]：同一件事
+/// （空图标 + 一个资源路径），只是库这一版还会在渲染时确认路径**确实在宿主的资源源里**
+/// ——`icons/idea/**` 全部随 `LitheAssets` 内嵌（见 `app::assets` 的同名测试）。
 #[must_use]
-pub fn idea_icon_mono(icon: &idea::IdeaIcon, is_dark: bool) -> gpui_kit::component::Icon {
+pub fn idea_icon_mono(icon: &idea::IdeaIcon, is_dark: bool) -> Icon {
     let path: SharedString = icon.path(is_dark).into();
-    gpui_kit::component::Icon::empty().path(path)
+    Icon::from_path(path)
 }
 
 pub fn idea_icon_svg_px(icon: &idea::IdeaIcon, cx: &App, side: impl Into<Length>) -> Svg {
-    let theme = Theme::global(cx);
+    let theme = cx.theme();
     let path: SharedString = icon.path(theme.is_dark()).into();
     let side: Length = side.into();
     svg()
         .path(path)
         .flex_shrink_0()
-        .text_color(theme.foreground)
+        .text_color(theme.colors.fg)
         .w(side)
         .h(side)
 }

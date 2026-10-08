@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use gpui::{
-    App, AssetSource, Global, Hsla, IntoElement, Radians, RenderOnce, SharedString, Transformation,
-    Window, prelude::*, size, svg,
+    App, AssetSource, Global, Hsla, IntoElement, Radians, RenderOnce, SharedString,
+    StyleRefinement, Transformation, Window, prelude::*, size, svg,
 };
 
 use crate::theme::{ActiveTheme, IconSize};
@@ -345,6 +345,8 @@ icons! {
 
 #[derive(IntoElement)]
 pub struct Icon {
+    /// 调用方用 gpui 的样式助手给的细化（`.size_10()` / `.absolute()` …）；见本文件的 `Styled` 实现。
+    style: StyleRefinement,
     path: SharedString,
     bundled: bool,
     size: IconSize,
@@ -352,6 +354,22 @@ pub struct Icon {
     hover: Option<(SharedString, Hsla)>,
     rotation: Option<Radians>,
     scale: f32,
+}
+
+/// 上游 `gpui-component` 的 `Icon` 是 `Styled`（宿主拿它当元素用，`.size_10()` / `.absolute()`
+/// 这类 gpui 助手直接落在图上），我们这份丢了这一条。补回来：**档位（[`IconSize`]）是库内的
+/// 默认值，调用方用 gpui 助手细化过就以后者为准**——否则宿主那句 `icon.size_10()` 会编译不过，
+/// 或者要为了 40px 这种档位外的尺寸在调用点套一层 div 而改变几何。
+impl Styled for Icon {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+
+    /// 颜色收进图标自己的颜色槽，而不是样式细化：`render` 只用一处决定画什么颜色。
+    fn text_color(mut self, color: impl Into<Hsla>) -> Self {
+        self.color = Some(color.into());
+        self
+    }
 }
 
 impl Icon {
@@ -365,6 +383,7 @@ impl Icon {
     /// Draws an SVG supplied by the application's asset source; a missing one fails at render.
     pub fn from_path(path: impl Into<SharedString>) -> Self {
         Self {
+            style: StyleRefinement::default(),
             path: path.into(),
             bundled: false,
             size: IconSize::Md,
@@ -420,6 +439,11 @@ struct FoundIcons(HashSet<SharedString>);
 
 impl Global for FoundIcons {}
 
+/// 调用方细化过尺寸（gpui 助手，如 `.size_10()`）就不用 [`IconSize`] 档位；宽度或高度给了一个就算。
+fn uses_style_size(style: &StyleRefinement) -> bool {
+    style.size.width.is_some() || style.size.height.is_some()
+}
+
 fn ensure_found(source: &dyn AssetSource, path: &str) {
     match source.load(path) {
         Ok(Some(_)) => {}
@@ -438,11 +462,18 @@ impl RenderOnce for Icon {
         }
         let theme = cx.theme();
         let color = self.color.unwrap_or(theme.colors.fg);
+        // 调用方细化过尺寸就听它的；没细化才用档位（见上面 `Styled` 的说明）。
+        let sized = uses_style_size(&self.style);
+        let side = theme.icon_size(self.size);
         svg()
+            .map(|mut svg| {
+                *svg.style() = self.style;
+                svg
+            })
             .path(self.path)
-            .size(theme.icon_size(self.size))
             .flex_none()
             .text_color(color)
+            .when(!sized, |svg| svg.size(side))
             .when_some(self.hover, |svg, (group, hover)| {
                 svg.group_hover(group, |style| style.text_color(hover))
             })
@@ -457,7 +488,10 @@ impl RenderOnce for Icon {
 
 #[cfg(test)]
 mod tests {
-    use super::{Icon, IconName, ensure_found};
+    use gpui::{Hsla, Styled as _};
+
+    use super::{Icon, IconName, ensure_found, uses_style_size};
+    use crate::theme::IconSize;
 
     #[test]
     fn every_icon_ships_in_the_bundle() {
@@ -483,6 +517,23 @@ mod tests {
     #[test]
     fn a_path_the_source_holds_is_found() {
         ensure_found(&crate::Assets, IconName::Check.path());
+    }
+
+    #[test]
+    fn a_size_step_and_a_gpui_style_helper_do_not_fight() {
+        let plain = Icon::new(IconName::Check);
+        assert_eq!(plain.size, IconSize::Md, "档位是库内的默认值");
+        assert!(plain.color.is_none(), "没给颜色就用主题的前景");
+        assert!(!uses_style_size(&plain.style), "没细化过尺寸，就听档位");
+
+        let styled = Icon::new(IconName::Check)
+            .size_10()
+            .text_color(Hsla::default());
+        assert!(uses_style_size(&styled.style), "细化过尺寸，就听细化的");
+        assert!(
+            styled.color.is_some(),
+            "颜色收进图标自己的槽，不进样式细化：`render` 只从一处取颜色"
+        );
     }
 
     #[test]

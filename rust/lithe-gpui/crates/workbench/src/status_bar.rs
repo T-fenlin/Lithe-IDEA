@@ -5,10 +5,12 @@ use gpui::{
     AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, rems,
 };
-use gpui_kit::assets::IconName;
 use gpui_kit::base::h_flex;
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::{ActiveTheme as _, Icon};
+// 回落的 Lucide 名字来自组件库（`shared::icons::file_icon::lucide_fallback` 的返回值类型）。
+// 上游的 `Icon` 只收它自己的图标名，所以这一处按路径构造（名字与路径在两边一致）。
+use lithe_ui::primitives::IconName;
 
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
 
@@ -143,5 +145,7 @@ fn entry_icon(entry: &StatusEntry, cx: &App) -> Option<AnyElement> {
                 .into_any_element(),
         );
     }
-    entry.lucide.map(|name| Icon::new(name).into_any_element())
+    entry
+        .lucide
+        .map(|name| Icon::empty().path(name.path()).into_any_element())
 }

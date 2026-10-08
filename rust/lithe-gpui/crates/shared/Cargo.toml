@@ -5,11 +5,13 @@ edition = "2024"
 publish = false
 
 [dependencies]
-# gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
-gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
 # `shared::i18n` 的返回值是 `SharedString`（调用点是 GPUI element 的 `.child` / `.text`），
-# 所以这里只需要 gpui-kit 的那一个类型；本 crate 不做任何 GPUI 渲染。
-gpui-kit = "=0.7.1"
+# 所以这里只需要 gpui 的那一个类型；本 crate 不做核心渲染，空状态与图标取自组件库。
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
+# 组件库：`empty_state` 用 `feedback::EmptyState`，`icons` 用 `primitives::Icon` /
+# `primitives::IconName` / `theme::{ActiveTheme, Theme}`。原先这两处走 `gpui-kit`，
+# 2026-10-08 随本 crate 迁移去掉（组件库路径与其余宿主 crate 同一范式）。
+lithe-ui = { path = "../../../lithe-ui" }
 # 进程内直接链接 Rust Core 的 Rust 接口，而不是走 macOS 的 C ABI。
 lithe-core = { path = "../../../lithe-core" }
 serde_json = "1"
