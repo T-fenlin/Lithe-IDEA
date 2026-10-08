@@ -1,0 +1,16 @@
+[package]
+name = "lithe-gpui-explorer"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui-kit = "=0.7.1"
+# 项目树控件来自仓库内的组件库 `lithe-gpui`（`lists::ProjectTree`）：行渲染、展开、多选、
+# 右键菜单、行预算与 git 装饰都归它，本 crate 只留 Core 读取、端口与面板状态。
+# 组件 crate 直接建在 gpui-pre 上，与 gpui-kit 共享同一个实例，两边类型可直接互传。
+lithe-ui = { path = "../../../lithe-ui" }
+lithe-gpui-shared = { path = "../shared" }
+# `core_json` 的 payload 形状由 `serde_json::Value` 表达（`shared/src/core_client.rs`），
+# 所以这里与 `lithe-gpui/crates/git` 一样直接依赖 `serde_json`。
+serde_json = "1"

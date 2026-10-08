@@ -1,0 +1,57 @@
+[package]
+name = "lithe-gpui-workbench"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui-kit = "=0.7.1"
+# 自己的组件库：外壳的窗格框架 / 分隔条 / 拖动 / 尺寸持久化已从 gpui-kit 的
+# `resize_handle` 换成 `lithe_gpui::layout::Dock`（组件 crate 直接建在 gpui-pre
+# 之上，与 gpui-kit 共享同一个 gpui-pre 实例，两边类型可直接互传）。
+lithe-ui = { path = "../../../lithe-ui" }
+lithe-gpui-editor = { path = "../editor" }
+# 扩展目录的状态层（`src/extensions_page.rs` 的数据源）：`load_catalog` 走 Core 的
+# `plugins.listCatalog`。方向是 workbench → extensions → shared，与其它 feature 同一口径；
+# extensions 不反向依赖任何 crate。
+lithe-gpui-extensions = { path = "../extensions" }
+lithe-gpui-explorer = { path = "../explorer" }
+lithe-gpui-git = { path = "../git" }
+# Java 语言服务：设置里的 JDK 覆盖值（`javaHomePath`）只有这里能交给它 ——
+# `java` 不许依赖 `settings`，而 `settings` 不认识 JDT LS 会话（依赖方向见
+# `lithe-gpui-java::toolchain` 的模块文档）。用法只有一处：`register_java_toolchain`。
+lithe-gpui-java = { path = "../java" }
+# 运行：底部「运行」工具窗（配置列表 + 输出控制台）与标题栏的 ▶ / 🐞。
+# 进程由它自己起（与 `terminal` 同一口径："进程归 feature crate"），外壳只登记
+# 「工具链在哪」并把面板放进底部工具窗。
+lithe-gpui-run = { path = "../run" }
+# 设置：活动栏「设置」项打开对话框（`workspace.rs` 的 `SETTINGS_ACTIVITY_IX`），
+# 状态栏按 `showStatusBar` 条件渲染。方向是 workbench → settings，settings 不反向依赖。
+# 通知中心的状态层（`src/notifications.rs`）。方向是 workbench → notify，
+# 而 `git` / `editor` / `java` 也在 notify 之上（它们要发通知，见 notify 的模块文档
+# 「为什么独立成一个 crate」的两条约束）。notify 不反向依赖任何 crate。
+lithe-gpui-notify = { path = "../notify" }
+lithe-gpui-settings = { path = "../settings" }
+lithe-gpui-shared = { path = "../shared" }
+lithe-gpui-terminal = { path = "../terminal" }
+# `maven.scan` 的请求与响应都是 JSON（`src/maven.rs`）；与 `editor` / `git` / `explorer`
+# 三个 feature 同一口径：`core_json` 收 `serde_json::Value`。
+serde_json = "1"
+base64 = "0.22"
+
+# UI 集成测试层（`D26`）：`tests/` 下的测试把**真实视图**渲染进无头窗口，用
+# `window.find/click/input` 这套观察接口断言。它由 `gpui-kit` 的 `test-support`
+# feature 提供，而那个 feature **只能从 dev-dependency 打开**，否则生产制品也会被
+# 装上观察包装（上游 `test.md` §配置测试项目 明说"将 test-support 放在开发依赖中，
+# 让普通应用构建不启用观察功能"）。
+#
+# 版本必须与上面的 `gpui-kit = "=0.7.1"` 解析到同一个来源与版本，feature 才会合并；
+# 这也是 §配置测试项目 强调的"普通 gpui-kit 依赖必须解析到相同来源和版本"。
+[dev-dependencies]
+gpui-kit = { version = "=0.7.1", features = ["test-support"] }
+# 集成测试直接引用**真实视图类型**。`EditorPane` 已经是 workbench 的普通依赖
+# （`lithe-gpui-editor`，见上面的 `[dependencies]`），但 workbench **不 re-export**
+# 它（它的公开面只有 `ShellWorkspace` 与几个渲染函数）。生产代码不该为一个测试
+# 扩大公开面，所以这里按上游 `test.md` 的口径"从 library crate 导入生产视图及其构造函数"，
+# 在 dev-dependency 里显式声明同一个 path 依赖。
+lithe-gpui-editor = { path = "../editor" }

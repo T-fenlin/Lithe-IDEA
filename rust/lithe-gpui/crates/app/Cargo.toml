@@ -1,0 +1,47 @@
+[package]
+name = "lithe-gpui-app"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "Lithe"
+path = "src/main.rs"
+
+# 只有 Windows 需要：把 `lithe.rc` 里的图标资源嵌进 `Lithe.exe`（ID 必须为 1，
+# 理由见 `lithe.rc` 与 `build.rs` 的注释）。用 `embed-resource` 而不是 `tauri-winres`，
+# 是因为后者的 `set_icon` 默认资源 ID 是 32512，gpui 找不到。
+[target.'cfg(windows)'.build-dependencies]
+# 版本与 `gpui-pre` 的 build-dependency 同一份，已经在 `lithe-gpui/Cargo.lock` 里。
+embed-resource = "3"
+
+[dependencies]
+# gpui-kit 是**过渡依赖**：宿主仍用它提供的窗口根（对话框/抽屉/通知的统一浮层）与部分组件，
+# 正在按切片迁往 lithe-ui（见 rust/lithe-gpui/README.md）。
+#
+# 版本必须与 lithe-ui 钉的 gpui-pre 对齐：gpui-kit 0.7.0 硬钉 gpui-pre =0.3.7，
+# 与 lithe-ui 的 =0.3.8 冲突；0.7.1 才改用 =0.3.8。所以这里精确钉 =0.7.1，
+# 不用官方文档写的宽松 `0.7`（那会解析到 0.7.0 并直接冲突）。
+gpui-kit = "=0.7.1"
+# 设置（阶段 8）：App Shell 负责"何时读 / 何时应用"，设置本身的模型、持久化、主题应用
+# 与对话框都在这个 crate 里。依赖方向是 app → settings → (gpui-kit, shared)，
+# **不会**反向：settings 不依赖 app / workbench（理由见其 `lib.rs` 的模块文档）。
+lithe-gpui-settings = { path = "../settings" }
+lithe-gpui-shared = { path = "../shared" }
+lithe-gpui-workbench = { path = "../workbench" }
+# 注意：本 crate **不**声明 `rust-i18n`。`rust_i18n::i18n!` 必须出现在持有 `locales/` 的那个
+# crate（本项目是 `lithe-gpui-shared`，理由见 `crates/shared/src/i18n.rs` 的模块文档），
+# `t!` 只能在自己调过 `i18n!` 的 crate 里解析。在这里再声明一次只会多一份没用的依赖。
+# 切换语言仍用 `gpui_kit::component::set_locale("zh-CN")`（见 `src/main.rs`）。
+
+# `LitheAssets`（`src/assets.rs`）用 `rust_embed` 把 `lithe-gpui/assets/**` 编译期内嵌。
+#
+# 版本与 `gpui-kit-assets` 请求的一致（`gpui-kit-assets-0.6.6/Cargo.toml` 的
+# `rust-embed = { version = "8.7.2", features = ["interpolate-folder-path", "include-exclude"] }`），
+# 所以 Cargo 特性合并后只有**一份** `rust-embed`（`lithe-gpui/Cargo.lock` 里是 8.12.0）。
+# `interpolate-folder-path` 是必须的：我们的 `#[folder]` 写成
+# `$CARGO_MANIFEST_DIR/../../assets`（crate 在 `lithe-gpui/crates/app`、资源在 `lithe-gpui/assets`，
+# 是上两级；`..` 不能靠 rust-embed 的相对拼接，理由见 `src/assets.rs` 的注释）。
+# 这里不重复声明 features：它在同一个构建图里已被 `gpui-kit-assets` 打开（Cargo 特性并集），
+# 显式再写一遍只会让"谁打开的"更难追；若将来 gpui-kit 不再依赖它，编译会失败并提示补上。
+rust-embed = "8"

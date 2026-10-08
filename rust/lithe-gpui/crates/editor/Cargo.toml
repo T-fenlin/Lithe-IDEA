@@ -1,0 +1,46 @@
+[package]
+name = "lithe-gpui-editor"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+# gpui-kit 是**过渡依赖**，正在按切片迁往 `lithe-ui`（见 rust/lithe-gpui/README.md）。
+#
+# 这些 grammar 特性会拉进 `tree-sitter ^0.26.13`；`lithe-core` 已于 2026-10-08 由 0.25
+# 升到 0.26（后者带 `links = "tree-sitter"`，同图不允许两份同名原生库），所以现在可以打开。
+# 刻意不含聚合特性 `tree-sitter-languages`：那是 35 个 grammar 的全量包，构建代价与体积都大。
+gpui-kit = { version = "=0.7.1", features = [
+    "tree-sitter-java",
+    "tree-sitter-yaml",
+    "tree-sitter-toml",
+    "tree-sitter-sql",
+    "tree-sitter-markdown",
+    "tree-sitter-bash",
+    "tree-sitter-kotlin",
+] }
+
+# XML：**不在** gpui-kit 的 35 个语法里，但 `pom.xml` 是 Spring Boot 工程里最该高亮的
+# 非 Java 文件。这个 crate 同时给出 `LANGUAGE_XML`（LanguageFn）与
+# `XML_HIGHLIGHT_QUERY`（查询字符串），所以我们不需要自己收 .scm、也不需要 unsafe：
+# 走 `LanguageRegistry::register` 注册即可（见 `src/languages.rs`）。
+# 它只依赖 `tree-sitter-language`，**不触发**上面的 `links` 冲突。
+tree-sitter-xml = "0.7"
+# 通知中心：保存失败 / 跳转无目标都写进通知中心（2026-09-27 从角落 toast 迁过来，决策见
+# `.agents/notes/proposed/architecture/2026-09-27-gpui-notification-center.md`）。
+# `editor` 在 `workbench` **之下**，所以只能走 notify 自己提供的全局槽窄接口
+# （`lithe_gpui_notify::record`），不能去摸外壳的实体。
+lithe-gpui-notify = { path = "../notify" }
+lithe-gpui-shared = { path = "../shared" }
+# 阶段 10 第二批：语义跳转的来源。**只在编辑器里接线**，Java 语言服务本身
+# （JDTLS 载荷发现 / Core LSP 会话 / 索引缓存）全在那个 crate 里，见 `src/navigation.rs`。
+lithe-gpui-java = { path = "../java" }
+# 跳转请求的 payload 是 JSON（`lsp.builtinNavigation` 的请求字段，见 `src/navigation.rs`），
+# 与 `explorer` / `git` 两个 feature 同一口径：`core_json` 收 `serde_json::Value`。
+serde_json = "1"
+# 补全的 trait（`CompletionProvider`）由 `gpui_kit::component::input` 重导出，但**响应类型**
+# （`CompletionResponse` / `CompletionItem` / `TextEdit`）没有重导出，必须直接依赖。
+# ⚠️ **版本**必须与 gpui-base 解析到同一个 crate：版本不一致就是两个不同的 `lsp_types`，
+# 我们实现的 trait 与上游期待的 trait 对不上。
+lsp-types = { version = "0.97", features = ["proposed"] }
+

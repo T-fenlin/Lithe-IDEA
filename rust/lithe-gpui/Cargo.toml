@@ -1,0 +1,44 @@
+# Lithe 统一 GPUI 前端的界面层 workspace。
+#
+# 成员：宿主 crate（app / workbench / editor / explorer / git / java / terminal /
+# settings / run / notify / shared / extensions）。组件库在**平级的** `rust/lithe-ui/`，
+# 是独立 workspace，通过 path 依赖引入。
+#
+# 决策见 .agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md
+
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+# 面向桌面应用：GPUI 是渲染热路径，体积优化在这里不划算。
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = 3
+
+# debug 构建下 GPUI、组件栈与文本/布局栈按未优化编译会让 `cargo run` 明显变慢。
+# 只覆盖列出的上游包，我们自己的代码保持可调试的 debug 构建。
+#
+# 其中 `gpui-base` / `gpui-component` / `gpui-kit*` 是**过渡依赖**：宿主 crate 目前
+# 仍引用 gpui-kit 的窗口根与部分组件，正在按切片迁往 `lithe-ui`；退场后这几项一并删除。
+[profile.dev.package.gpui-pre]
+opt-level = 3
+[profile.dev.package.gpui-pre-macros]
+opt-level = 3
+[profile.dev.package.gpui-pre-platform]
+opt-level = 3
+[profile.dev.package.gpui-base]
+opt-level = 3
+[profile.dev.package.gpui-component]
+opt-level = 3
+[profile.dev.package.gpui-kit]
+opt-level = 3
+[profile.dev.package.gpui-kit-assets]
+opt-level = 3
+[profile.dev.package.rustybuzz]
+opt-level = 3
+[profile.dev.package.taffy]
+opt-level = 3
+[profile.dev.package.ttf-parser]
+opt-level = 3
