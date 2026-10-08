@@ -7,7 +7,7 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
-    StyledExt as _, WindowExt as _,
+    StyledExt as _,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -17,6 +17,8 @@ use gpui_kit::{
 };
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr, tr_args};
+use lithe_ui::overlays::Dialog;
+use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 use serde_json::Value;
 
 use crate::search_index::SearchIndexReadiness;
@@ -65,32 +67,31 @@ pub(crate) fn open_dialog(panel: Entity<ReplaceInFiles>, window: &mut Window, cx
     }
     ReplaceInFiles::diagnose("open", "true");
     let handle = panel.clone();
-    window.open_dialog(cx, move |dialog, window, _cx| {
-        let rem = window.rem_size();
-        let viewport = window.viewport_size();
-        let height = crate::rem_px(rem, PANEL_HEIGHT)
-            .min((viewport.height - rem * 2.).max(gpui_kit::Pixels::ZERO));
-        let margin_top = ((viewport.height - height) / 2.).max(gpui_kit::Pixels::ZERO);
-        dialog
-            .close_button(false)
-            .overlay(true)
-            .overlay_closable(true)
-            .keyboard(true)
-            .width(crate::rem_px(rem, PANEL_WIDTH))
-            .h(height)
-            .margin_top(margin_top)
-            .p_0()
-            .on_close({
-                let handle = handle.clone();
-                move |_event, window, cx| {
-                    let _ = handle.update(cx, |panel, cx| panel.close(window, cx));
-                }
-            })
-            .content({
-                let handle = handle.clone();
-                move |content, _, _| content.p_0().gap_0().h_full().child(handle.clone())
-            })
-    });
+    window.open_dialog(
+        "lithe-replace-in-files",
+        move |id, window, _cx| {
+            let rem = window.rem_size();
+            let viewport = window.viewport_size();
+            let height = crate::rem_px(rem, PANEL_HEIGHT)
+                .min((viewport.height - rem * 2.).max(gpui_kit::Pixels::ZERO));
+            let handle = handle.clone();
+            let teardown = handle.clone();
+            Dialog::new(id)
+                // 居中卡片（上游的 `margin_top((viewport-height)/2)` 等价于默认居中），
+                // 高度给死；正文外面套一层定高容器，面板里的 `h_full()` 才有确定父级。
+                .on_close(move |window, cx| {
+                    let _ = teardown.update(cx, |panel, cx| panel.close(window, cx));
+                    dismiss_hosted(window, cx);
+                })
+                .w(crate::rem_px(rem, PANEL_WIDTH))
+                .h(height)
+                .p_0()
+                .gap_0()
+                .child(div().h(height).child(handle))
+                .into_any_element()
+        },
+        cx,
+    );
     let _ = panel.update(cx, |panel, cx| panel.focus_query(window, cx));
 }
 

@@ -16,13 +16,17 @@ path = "src/main.rs"
 embed-resource = "3"
 
 [dependencies]
-# gpui-kit 是**过渡依赖**：宿主仍用它提供的窗口根（对话框/抽屉/通知的统一浮层）与部分组件，
-# 正在按切片迁往 lithe-ui（见 rust/lithe-gpui/README.md）。
+# gpui-kit 是**过渡依赖**：宿主仍用它提供的部分组件（主题桥、标题栏窗口选项、输入/按钮等），
+# 窗口根与浮层已迁到 lithe-ui（见 rust/lithe-gpui/README.md）。
 #
 # 版本必须与 lithe-ui 钉的 gpui-pre 对齐：gpui-kit 0.7.0 硬钉 gpui-pre =0.3.7，
 # 与 lithe-ui 的 =0.3.8 冲突；0.7.1 才改用 =0.3.8。所以这里精确钉 =0.7.1，
 # 不用官方文档写的宽松 `0.7`（那会解析到 0.7.0 并直接冲突）。
 gpui-kit = "=0.7.1"
+# 自己的组件库：窗口根宿主 `lithe_ui::shell::WindowRoot` 由组合根装上（首窗口 / 欢迎态 /
+# 多窗口三个构造点，见 `src/main.rs`）。gpui-pre 的版本由 lithe-ui 精确钉住，这里按 path 引，
+# 不重复声明 gpui-pre —— 两边必须是同一个 crate 实例，否则类型不通用。
+lithe-ui = { path = "../../../lithe-ui" }
 # 设置（阶段 8）：App Shell 负责"何时读 / 何时应用"，设置本身的模型、持久化、主题应用
 # 与对话框都在这个 crate 里。依赖方向是 app → settings → (gpui-kit, shared)，
 # **不会**反向：settings 不依赖 app / workbench（理由见其 `lib.rs` 的模块文档）。

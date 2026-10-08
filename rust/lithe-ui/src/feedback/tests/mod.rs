@@ -175,9 +175,10 @@ fn typing_under_a_resting_pointer_keeps_the_hold(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_fifth_toast_sends_the_oldest_away(cx: &mut TestAppContext) {
+fn a_fourth_toast_sends_the_oldest_away(cx: &mut TestAppContext) {
     let (view, cx) = desk(cx);
-    let ids: Vec<u64> = (0..5).map(|_| push(&view, Toast::new("Hi"), cx)).collect();
+    // `MOST` 是 3：压第 4 条时挤掉最旧的那条（2026-10-08 由 4 改成 3，与真源对齐）。
+    let ids: Vec<u64> = (0..4).map(|_| push(&view, Toast::new("Hi"), cx)).collect();
     let leaving: Vec<u64> = toasts(&view, cx)
         .into_iter()
         .filter(|(_, out)| *out)

@@ -4,9 +4,7 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{
-    ActiveTheme as _, Sizable as _, StyledExt as _, TitleBar, WindowExt as _,
-};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, StyledExt as _, TitleBar};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, ImageSource,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Resource, SharedString,
@@ -16,6 +14,7 @@ use gpui_kit::{
 use lithe_gpui_settings::{RecentProject, RecentProjects};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{HOST_VERSION, tr, tr_args};
+use lithe_ui::shell::WindowRootExt as _;
 
 use crate::project_menu::{ProjectBadge, badge_view};
 

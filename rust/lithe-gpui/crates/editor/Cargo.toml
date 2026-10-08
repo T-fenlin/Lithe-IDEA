@@ -32,6 +32,9 @@ tree-sitter-xml = "0.7"
 # （`lithe_gpui_notify::record`），不能去摸外壳的实体。
 lithe-gpui-notify = { path = "../notify" }
 lithe-gpui-shared = { path = "../shared" }
+# 自己的组件库：窗口根宿主与对话框（门 G1 起，本 crate 的 `open_dialog` / `close_dialog`
+# 走 `lithe_ui::shell::WindowRootExt`）。gpui-pre 的版本由 lithe-ui 精确钉住，这里不重复声明。
+lithe-ui = { path = "../../../lithe-ui" }
 # 阶段 10 第二批：语义跳转的来源。**只在编辑器里接线**，Java 语言服务本身
 # （JDTLS 载荷发现 / Core LSP 会话 / 索引缓存）全在那个 crate 里，见 `src/navigation.rs`。
 lithe-gpui-java = { path = "../java" }

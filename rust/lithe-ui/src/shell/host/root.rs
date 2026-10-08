@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, AnyView, App, Context, ElementId, Entity, IntoElement, ParentElement, Render,
-    Styled, Subscription, Window, div, prelude::*,
+    Styled, Subscription, WeakFocusHandle, Window, div, prelude::*,
 };
 
 use crate::{
@@ -18,6 +18,8 @@ type Build = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 struct Overlay {
     id: ElementId,
     priority: usize,
+    /// 移除这一层时把焦点交还给谁（见 `WindowRoot::push_dialog`）。`None` 表示这一层不管焦点。
+    previous_focus: Option<WeakFocusHandle>,
     build: Build,
     /// 关闭该层时的收尾（交还焦点、通知 owner）。宿主关闭它时调用一次。
     on_close: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
@@ -55,10 +57,50 @@ impl WindowRoot {
     /// 压入一层浮层（对话框 / 抽屉）。返回它的 `ElementId`，可用于精确关闭。
     ///
     /// `build` 每帧被调用，所以它应当是**纯搭建**：读状态、产出元素，不做副作用。
+    ///
+    /// 本方法**不管焦点**：这一层是谁的元素、焦点归谁，由调用方自己收。元素是
+    /// `overlays::Dialog` 那一类时用 [`Self::push_dialog`]。
     pub fn push_layer(
         &mut self,
         id: impl Into<ElementId>,
         priority: usize,
+        build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static,
+        on_close: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
+        cx: &mut Context<Self>,
+    ) -> ElementId {
+        self.push(id, priority, None, build, on_close, cx)
+    }
+
+    /// 压入一层**对话框**浮层（`crate::overlays::Dialog` 那一类）。
+    ///
+    /// 与 [`Self::push_layer`] 的唯一区别：移除这一层时宿主把焦点交还给 `previous_focus`
+    /// ——**压入之前**窗口上的焦点（`window.focused(cx)`，由调用方在压入时取；与上游
+    /// `gpui-component` 的 `WindowState::open_dialog` 记 `previous_focused_handle` 是同一个做法）。
+    ///
+    /// 为什么非要宿主补这一手：两条关闭路径只有一条能自己交还焦点。
+    ///
+    /// - **组件自己关**（Esc / 遮罩 / 关闭按钮）→ 组件的 `close` 已经交还给同一个人，
+    ///   宿主这次是幂等的第二次；
+    /// - **程序化关**（`WindowRootExt::close_dialog`）→ 走不到组件内部的 `close`，
+    ///   不补的话焦点会留在已经离树的那个 handle 上，之后的键盘输入没有落点
+    ///   （真机症状：从快速打开里选中文件之后，编辑器收不到按键）。
+    pub fn push_dialog(
+        &mut self,
+        id: impl Into<ElementId>,
+        priority: usize,
+        build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static,
+        on_close: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
+        previous_focus: Option<WeakFocusHandle>,
+        cx: &mut Context<Self>,
+    ) -> ElementId {
+        self.push(id, priority, previous_focus, build, on_close, cx)
+    }
+
+    fn push(
+        &mut self,
+        id: impl Into<ElementId>,
+        priority: usize,
+        previous_focus: Option<WeakFocusHandle>,
         build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static,
         on_close: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
         cx: &mut Context<Self>,
@@ -71,6 +113,7 @@ impl WindowRoot {
         self.overlays.push(Overlay {
             id: id.clone(),
             priority,
+            previous_focus,
             build: Rc::new(build),
             on_close,
         });
@@ -80,7 +123,8 @@ impl WindowRoot {
 
     /// 推一条通知；返回 toast id。
     pub fn push_toast(&mut self, toast: Toast, cx: &mut Context<Self>) -> u64 {
-        self.toaster.update(cx, |toaster, cx| toaster.push(toast, cx))
+        self.toaster
+            .update(cx, |toaster, cx| toaster.push(toast, cx))
     }
 
     /// 关掉最上面一层；返回是否真的关掉了一层（没有浮层时返回 `false`，调用方可据此降级）。
@@ -113,6 +157,14 @@ impl WindowRoot {
 
     fn remove_at(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let overlay = self.overlays.remove(index);
+        // 先交还焦点、再跑收尾，与 `overlays::Dialog` 自己那条 close 的顺序一致。
+        if let Some(previous) = overlay
+            .previous_focus
+            .as_ref()
+            .and_then(|handle| handle.upgrade())
+        {
+            window.focus(&previous, cx);
+        }
         if let Some(on_close) = overlay.on_close {
             on_close(window, cx);
         }
@@ -157,9 +209,7 @@ impl Render for WindowRoot {
         // 浮层：每帧重建。
         for overlay in &self.overlays {
             let element = (overlay.build)(window, cx);
-            root = root.child(
-                raise(overlay.id.clone(), element).with_priority(overlay.priority),
-            );
+            root = root.child(raise(overlay.id.clone(), element).with_priority(overlay.priority));
         }
         root
     }

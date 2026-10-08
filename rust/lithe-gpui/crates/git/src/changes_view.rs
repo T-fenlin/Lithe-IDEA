@@ -8,7 +8,7 @@ use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHea
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role, SharedString,
@@ -19,6 +19,8 @@ use gpui_kit::{
 use lithe_gpui_shared::design::{ROW_LINE_HEIGHT, ROW_RADIUS};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{tr, tr_args};
+use lithe_ui::overlays::Dialog;
+use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 
 use crate::CommitChanges;
 use crate::changes::{
@@ -470,40 +472,41 @@ impl ChangesView {
             paths.len()
         );
         let view = cx.entity().downgrade();
-        window.open_dialog(cx, move |dialog, _window, cx| {
-            let confirm_view = view.clone();
-            let confirm_paths = paths.clone();
-            dialog
-                .title(tr(DISCARD_ALL_KEY))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(tr(DISCARD_CONFIRM_KEY)),
-                )
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("changes-discard-cancel")
-                                .label(tr(CANCEL_KEY))
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("changes-discard-confirm")
-                                .danger()
-                                .label(tr(ROLLBACK_KEY))
-                                .on_click(move |_, window, cx| {
-                                    let paths = confirm_paths.clone();
-                                    let _ = confirm_view
-                                        .update(cx, |view, cx| view.confirm_discard(paths, cx));
-                                    window.close_dialog(cx);
-                                }),
-                        ),
-                )
-        });
+        window.open_dialog(
+            "lithe-source-control-discard",
+            move |id, _window, cx| {
+                let confirm_view = view.clone();
+                let confirm_paths = paths.clone();
+                let (cancel_id, confirm_id) = ((id.clone(), "cancel"), (id.clone(), "confirm"));
+                Dialog::new(id)
+                    .title(tr(DISCARD_ALL_KEY))
+                    .on_close(dismiss_hosted)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(tr(DISCARD_CONFIRM_KEY)),
+                    )
+                    .action(move |close| {
+                        Button::new(cancel_id)
+                            .label(tr(CANCEL_KEY))
+                            .on_click(move |_, window, cx| close(window, cx))
+                    })
+                    .action(move |close| {
+                        Button::new(confirm_id)
+                            .danger()
+                            .label(tr(ROLLBACK_KEY))
+                            .on_click(move |_, window, cx| {
+                                let paths = confirm_paths.clone();
+                                let _ = confirm_view
+                                    .update(cx, |view, cx| view.confirm_discard(paths, cx));
+                                close(window, cx);
+                            })
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
     }
 
     fn confirm_discard(&mut self, paths: Vec<SharedString>, cx: &mut Context<Self>) {

@@ -3,13 +3,15 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::Button;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, DefiniteLength, Entity, Focusable as _, FontWeight,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
 };
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_ui::overlays::Dialog;
+use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 
 use lithe_gpui_git::{
     BranchInfo, BranchSnapshot, CheckoutGate, CheckoutPreflight, Preflight, PullGate,
@@ -859,74 +861,79 @@ impl BranchPanel {
         let handle = cx.entity().downgrade();
         let body = pull_diverged_message(&divergence);
         let counts = pull_divergence_counts(&divergence);
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let cancel_handle = handle.clone();
-            let merge_handle = handle.clone();
-            let rebase_handle = handle.clone();
-            dialog
-                .title(tr("lithe.git.choosePullStrategy"))
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .text_sm()
-                        .child(body.clone())
-                        .child(counts.clone())
-                        .child(
-                            div()
-                                .text_color(_cx.theme().muted_foreground)
-                                .child(tr("lithe.git.pullStrategyHint")),
-                        ),
-                )
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("branch-pull-cancel")
-                                .label(tr("lithe.ui.cancel"))
-                                .on_click(move |_, window, cx| {
-                                    if let Some(panel) = cancel_handle.upgrade() {
-                                        let _ = panel.update(cx, |panel, cx| {
-                                            panel.pending_pull = None;
-                                            panel.remote_message = Some((
-                                                false,
-                                                tr("lithe.git.pullResult.strategyRequired"),
-                                            ));
-                                            cx.notify();
-                                        });
-                                    }
-                                    window.close_dialog(cx);
-                                }),
+        window.open_dialog(
+            "lithe-branch-pull-strategy",
+            move |id, _window, _cx| {
+                let cancel_handle = handle.clone();
+                let merge_handle = handle.clone();
+                let rebase_handle = handle.clone();
+                let (cancel_id, merge_id, rebase_id) = (
+                    (id.clone(), "cancel"),
+                    (id.clone(), "merge"),
+                    (id.clone(), "rebase"),
+                );
+                Dialog::new(id)
+                    .title(tr("lithe.git.choosePullStrategy"))
+                    .on_close(dismiss_hosted)
+                    .child(
+                        v_flex()
+                            .gap_2()
+                            .text_sm()
+                            .child(body.clone())
+                            .child(counts.clone())
+                            .child(
+                                div()
+                                    .text_color(_cx.theme().muted_foreground)
+                                    .child(tr("lithe.git.pullStrategyHint")),
+                            ),
+                    )
+                    .action(move |close| {
+                        Button::new(cancel_id)
+                            .label(tr("lithe.ui.cancel"))
+                            .on_click(move |_, window, cx| {
+                                if let Some(panel) = cancel_handle.upgrade() {
+                                    let _ = panel.update(cx, |panel, cx| {
+                                        panel.pending_pull = None;
+                                        panel.remote_message = Some((
+                                            false,
+                                            tr("lithe.git.pullResult.strategyRequired"),
+                                        ));
+                                        cx.notify();
+                                    });
+                                }
+                                close(window, cx);
+                            })
+                    })
+                    .action(move |close| {
+                        Button::new(merge_id).label(tr("lithe.git.merge")).on_click(
+                            move |_, window, cx| {
+                                if let Some(panel) = merge_handle.upgrade() {
+                                    let _ = panel.update(cx, |panel, cx| {
+                                        panel.pending_pull = None;
+                                        panel.resolve_pull(PullStrategy::Merge, cx);
+                                    });
+                                }
+                                close(window, cx);
+                            },
                         )
-                        .child(
-                            Button::new("branch-pull-merge")
-                                .label(tr("lithe.git.merge"))
-                                .on_click(move |_, window, cx| {
-                                    if let Some(panel) = merge_handle.upgrade() {
-                                        let _ = panel.update(cx, |panel, cx| {
-                                            panel.pending_pull = None;
-                                            panel.resolve_pull(PullStrategy::Merge, cx);
-                                        });
-                                    }
-                                    window.close_dialog(cx);
-                                }),
-                        )
-                        .child(
-                            Button::new("branch-pull-rebase")
-                                .label(tr("lithe.git.rebase"))
-                                .on_click(move |_, window, cx| {
-                                    if let Some(panel) = rebase_handle.upgrade() {
-                                        let _ = panel.update(cx, |panel, cx| {
-                                            panel.pending_pull = None;
-                                            panel.resolve_pull(PullStrategy::Rebase, cx);
-                                        });
-                                    }
-                                    window.close_dialog(cx);
-                                }),
-                        ),
-                )
-        });
+                    })
+                    .action(move |close| {
+                        Button::new(rebase_id)
+                            .label(tr("lithe.git.rebase"))
+                            .on_click(move |_, window, cx| {
+                                if let Some(panel) = rebase_handle.upgrade() {
+                                    let _ = panel.update(cx, |panel, cx| {
+                                        panel.pending_pull = None;
+                                        panel.resolve_pull(PullStrategy::Rebase, cx);
+                                    });
+                                }
+                                close(window, cx);
+                            })
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
     }
 
     fn resolve_pull(&mut self, strategy: PullStrategy, cx: &mut Context<Self>) {
@@ -1026,69 +1033,74 @@ impl BranchPanel {
     ) {
         let handle = cx.entity().downgrade();
         let body = checkout_confirm_message(&blocking_paths, CHECKOUT_CONFIRM_PATH_LIMIT);
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let cancel_handle = handle.clone();
-            let stash_handle = handle.clone();
-            let force_handle = handle.clone();
-            let stash_branch = name.clone();
-            let force_branch = name.clone();
-            dialog
-                .title(tr("lithe.git.checkout"))
-                .child(
-                    v_flex().gap_2().text_sm().child(body.clone()).child(
-                        div()
-                            .text_color(_cx.theme().muted_foreground)
-                            .child(tr("lithe.git.pullResult.dirty")),
-                    ),
-                )
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("branch-checkout-cancel")
-                                .label(tr("lithe.ui.cancel"))
-                                .on_click(move |_, window, cx| {
-                                    if let Some(panel) = cancel_handle.upgrade() {
-                                        let _ = panel.update(cx, |_panel, cx| {
-                                            eprintln!(
-                                                "S1_BRANCH_PANEL action=checkout state=cancelled"
-                                            );
-                                            cx.notify();
-                                        });
-                                    }
-                                    window.close_dialog(cx);
-                                }),
-                        )
-                        .child(
-                            Button::new("branch-checkout-stash")
-                                .label(tr("lithe.git.stashChanges"))
-                                .on_click(move |_, window, cx| {
-                                    if let Some(panel) = stash_handle.upgrade() {
-                                        let branch = stash_branch.clone();
-                                        let _ = panel.update(cx, |panel, cx| {
-                                            panel.perform_checkout(branch, false, true, cx);
-                                        });
-                                    }
-                                    window.close_dialog(cx);
-                                }),
-                        )
-                        .child(
-                            Button::new("branch-checkout-force")
-                                .label(tr("lithe.git.checkout"))
-                                .on_click(move |_, window, cx| {
-                                    if let Some(panel) = force_handle.upgrade() {
-                                        let branch = force_branch.clone();
-                                        let _ = panel.update(cx, |panel, cx| {
-                                            panel.perform_checkout(branch, true, false, cx);
-                                        });
-                                    }
-                                    window.close_dialog(cx);
-                                }),
+        window.open_dialog(
+            "lithe-branch-checkout",
+            move |id, _window, _cx| {
+                let cancel_handle = handle.clone();
+                let stash_handle = handle.clone();
+                let force_handle = handle.clone();
+                let stash_branch = name.clone();
+                let force_branch = name.clone();
+                let (cancel_id, stash_id, force_id) = (
+                    (id.clone(), "cancel"),
+                    (id.clone(), "stash"),
+                    (id.clone(), "force"),
+                );
+                Dialog::new(id)
+                    .title(tr("lithe.git.checkout"))
+                    .on_close(dismiss_hosted)
+                    .child(
+                        v_flex().gap_2().text_sm().child(body.clone()).child(
+                            div()
+                                .text_color(_cx.theme().muted_foreground)
+                                .child(tr("lithe.git.pullResult.dirty")),
                         ),
-                )
-        });
+                    )
+                    .action(move |close| {
+                        Button::new(cancel_id)
+                            .label(tr("lithe.ui.cancel"))
+                            .on_click(move |_, window, cx| {
+                                if let Some(panel) = cancel_handle.upgrade() {
+                                    let _ = panel.update(cx, |_panel, cx| {
+                                        eprintln!(
+                                            "S1_BRANCH_PANEL action=checkout state=cancelled"
+                                        );
+                                        cx.notify();
+                                    });
+                                }
+                                close(window, cx);
+                            })
+                    })
+                    .action(move |close| {
+                        Button::new(stash_id)
+                            .label(tr("lithe.git.stashChanges"))
+                            .on_click(move |_, window, cx| {
+                                if let Some(panel) = stash_handle.upgrade() {
+                                    let branch = stash_branch.clone();
+                                    let _ = panel.update(cx, |panel, cx| {
+                                        panel.perform_checkout(branch, false, true, cx);
+                                    });
+                                }
+                                close(window, cx);
+                            })
+                    })
+                    .action(move |close| {
+                        Button::new(force_id)
+                            .label(tr("lithe.git.checkout"))
+                            .on_click(move |_, window, cx| {
+                                if let Some(panel) = force_handle.upgrade() {
+                                    let branch = force_branch.clone();
+                                    let _ = panel.update(cx, |panel, cx| {
+                                        panel.perform_checkout(branch, true, false, cx);
+                                    });
+                                }
+                                close(window, cx);
+                            })
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
     }
 
     fn perform_checkout(
@@ -1339,27 +1351,28 @@ pub(crate) fn open_branch_panel(panel: &Entity<BranchPanel>, window: &mut Window
     let _ = panel.update(cx, |panel, cx| panel.focus_search(window, cx));
 
     let handle = panel.clone();
-    window.open_dialog(cx, move |dialog, window, _cx| {
-        let rem = window.rem_size();
-        dialog
-            .close_button(false)
-            .overlay(true)
-            .overlay_closable(true)
-            .keyboard(true)
-            .width(crate::rem_px(rem, PANEL_WIDTH_SPEC))
-            .margin_top(crate::rem_px(rem, PANEL_TOP_INSET_SPEC))
-            .p_0()
-            .on_close({
-                let handle = handle.clone();
-                move |_event, window, cx| {
-                    let _ = handle.update(cx, |panel, cx| panel.close(window, cx));
-                }
-            })
-            .content({
-                let handle = handle.clone();
-                move |content, _window, cx| content.p_0().gap_0().child(render_panel(&handle, cx))
-            })
-    });
+    window.open_dialog(
+        "lithe-branch-panel",
+        move |id, window, cx| {
+            let rem = window.rem_size();
+            let handle = handle.clone();
+            let teardown = handle.clone();
+            Dialog::new(id)
+                .panel()
+                .on_close(move |window, cx| {
+                    let _ = teardown.update(cx, |panel, cx| panel.close(window, cx));
+                    dismiss_hosted(window, cx);
+                })
+                .w(crate::rem_px(rem, PANEL_WIDTH_SPEC))
+                .max_h(crate::rem_px(rem, PANEL_MAX_HEIGHT_SPEC))
+                .p_0()
+                .gap_0()
+                .top_inset(crate::rem_px(rem, PANEL_TOP_INSET_SPEC))
+                .child(render_panel(&handle, cx))
+                .into_any_element()
+        },
+        cx,
+    );
 }
 
 pub(crate) fn trigger(panel: &Entity<BranchPanel>, cx: &App) -> Option<AnyElement> {

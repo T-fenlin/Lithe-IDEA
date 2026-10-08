@@ -1,14 +1,16 @@
 use std::cell::RefCell;
 
 use gpui_kit::base::v_flex;
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::{
     App, AppContext as _, Context, DefiniteLength, Entity, IntoElement, KeyBinding,
     ParentElement as _, Render, SharedString, Styled as _, WeakEntity, Window, div, rems,
 };
 
 use lithe_gpui_shared::tr;
+use lithe_ui::overlays::Dialog;
+use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 
 use crate::workspace::ShellWorkspace;
 
@@ -184,21 +186,24 @@ pub fn open_command_palette(window: &mut Window, cx: &mut App) {
 
     let palette = cx.new(|cx| CommandPalette::new(window, cx));
     PENDING_FOCUS.with(|slot| *slot.borrow_mut() = true);
-    window.open_dialog(cx, move |dialog, window, _cx| {
-        let rem = window.rem_size();
-        dialog
-            .close_button(false)
-            .overlay(true)
-            .overlay_closable(true)
-            .keyboard(true)
-            .width(crate::rem_px(rem, PANEL_WIDTH))
-            .margin_top(crate::rem_px(rem, PANEL_TOP_INSET))
-            .p_0()
-            .content({
-                let palette = palette.clone();
-                move |content, _, _| content.p_0().gap_0().child(palette.clone())
-            })
-    });
+    window.open_dialog(
+        "lithe-command-palette",
+        move |id, window, _cx| {
+            let rem = window.rem_size();
+            // 面板态：顶部对齐 + 自定义宽度与内衬，等价于上游 Dialog 的
+            // `width(..).margin_top(..).p_0()` 与 `content(|c| c.p_0().gap_0())`。
+            Dialog::new(id)
+                .panel()
+                .on_close(dismiss_hosted)
+                .w(crate::rem_px(rem, PANEL_WIDTH))
+                .p_0()
+                .gap_0()
+                .top_inset(crate::rem_px(rem, PANEL_TOP_INSET))
+                .child(palette.clone())
+                .into_any_element()
+        },
+        cx,
+    );
 }
 
 pub struct CommandPalette {

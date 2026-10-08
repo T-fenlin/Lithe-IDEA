@@ -7,15 +7,21 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::notification::{Notification, NotificationType};
-use gpui_kit::component::{ActiveTheme as _, Icon, Root, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Entity, Global, Hsla,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, Global, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
     Render, ScrollHandle, SharedString, Styled as _, Window, div, rems,
 };
 
 use lithe_ui::layout::{Dock, DockEvent, DockPanel, DockSide};
+// 窗口根宿主（门 G1）：本文件里的 `open_dialog` / `close_dialog` / `has_active_dialog` /
+// `push_notification` 已整片切到 `WindowRootExt`；上游 gpui-kit 的 `WindowExt` 在**本文件**
+// 里不再引入（两个 trait 同名方法并存会歧义编译）。
+use lithe_ui::feedback::Toast;
+use lithe_ui::overlays::Dialog;
+use lithe_ui::primitives::Severity as NoticeSeverity;
+use lithe_ui::shell::{WindowRoot, WindowRootExt as _, dismiss_hosted};
 
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 use crate::branch_panel::{BranchPanel, open_branch_panel, trigger as branch_trigger};
@@ -122,7 +128,7 @@ pub(crate) fn replace_root_with_workspace(
             )
         });
         created = Some(workspace.clone());
-        Root::new(workspace, window, cx)
+        WindowRoot::new(workspace, window, cx)
     });
     let _ = new_root;
     created
@@ -2238,16 +2244,27 @@ impl ShellWorkspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let note = Notification::from(crate::notifications::render_message(entry))
-            .with_type(match entry.severity() {
-                lithe_gpui_notify::Severity::Info => NotificationType::Info,
-                lithe_gpui_notify::Severity::Warning => NotificationType::Warning,
-                lithe_gpui_notify::Severity::Error => NotificationType::Error,
-            })
-            .placement(Anchor::BottomRight);
-        window.push_notification(note, cx);
+        // 通知的落地形态从 gpui-kit 的 `Notification`（挂在它自己的窗口根上）换成 lithe-ui 的
+        // `Toast`（挂在 `WindowRoot` 的 `Toaster` 上）。三处语义差：
+        // 1. 位置：`ToastViewport` 固定右下角，上游那句 `.placement(Anchor::BottomRight)`
+        //    没有对应入口（要换角落是给 `ToastViewport` 加参数，不是在宿主里做）。
+        // 2. 上限：同屏 3 条（`lithe_ui::feedback::toast` 的 `MOST`），与 macOS 真源
+        //    `WorkbenchNotificationFeatureModel.maximumVisibleCount` 一致。
+        // 3. 溢出：丢最旧那条（与上游通知列表语义相同）。
+        let toast = Toast::new(crate::notifications::render_message(entry)).severity(
+            match entry.severity() {
+                lithe_gpui_notify::Severity::Info => NoticeSeverity::Info,
+                lithe_gpui_notify::Severity::Warning => NoticeSeverity::Warning,
+                // lithe-ui 的严重度档位叫 `Danger`（不是 `Error`）：颜色/图标由它自己的
+                // 主题表给，和 gpui-kit 的 `NotificationType::Error` 一一对应。
+                lithe_gpui_notify::Severity::Error => NoticeSeverity::Danger,
+            },
+        );
+        if !window.push_notification(toast, cx) {
+            // 没挂宿主的窗口：如实报出来，不假装通知已经发出去了。
+            eprintln!("S1_NOTIFICATION toast=false reason=no-window-root");
+        }
     }
-
     fn note_notifications_opened(&mut self, cx: &mut Context<Self>) {
         self.notifications
             .update(cx, |store, _| store.mark_all_read());
@@ -2619,81 +2636,86 @@ impl ShellWorkspace {
             target.display()
         );
 
-        window.open_dialog(cx, move |dialog, _window, cx| {
-            let checkbox_cell = do_not_ask.clone();
-            let checkbox_shell = shell.clone();
-            let click_cell = do_not_ask.clone();
-            let cancel_label = tr("lithe.projectOpen.cancel");
-            let new_window_label = tr("lithe.projectOpen.newWindow");
-            let this_window_label = tr("lithe.projectOpen.thisWindow");
-            let new_window_shell = shell.clone();
-            let this_window_shell = shell.clone();
-            let this_window_target = target.clone();
+        window.open_dialog(
+            "lithe-project-open-where",
+            move |id, _window, cx| {
+                let checkbox_cell = do_not_ask.clone();
+                let checkbox_shell = shell.clone();
+                let click_cell = do_not_ask.clone();
+                let cancel_label = tr("lithe.projectOpen.cancel");
+                let new_window_label = tr("lithe.projectOpen.newWindow");
+                let this_window_label = tr("lithe.projectOpen.thisWindow");
+                let new_window_shell = shell.clone();
+                let this_window_shell = shell.clone();
+                let this_window_target = target.clone();
+                let (cancel_id, new_window_id, this_window_id) = (
+                    (id.clone(), "cancel"),
+                    (id.clone(), "new-window"),
+                    (id.clone(), "this-window"),
+                );
 
-            dialog
-                .title(tr("lithe.projectOpen.title"))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(body.clone()),
-                )
-                .child(
-                    Checkbox::new("lithe-project-open-do-not-ask")
-                        .label(tr("lithe.projectOpen.doNotAskAgain"))
-                        .checked(do_not_ask.get())
-                        .on_change(move |&value, _window, cx| {
-                            checkbox_cell.set(value);
-                            let _ = checkbox_shell.update(cx, |_shell, cx| cx.notify());
-                        }),
-                )
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("lithe-project-open-cancel")
-                                .label(cancel_label)
-                                .on_click(|_, window, cx| {
-                                    eprintln!(
-                                        "S1_OPEN_PROJECT state=cancelled reason=dialog-cancel"
-                                    );
-                                    window.close_dialog(cx);
-                                }),
+                Dialog::new(id)
+                    .title(tr("lithe.projectOpen.title"))
+                    .on_close(dismiss_hosted)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(body.clone()),
+                    )
+                    .child(
+                        Checkbox::new("lithe-project-open-do-not-ask")
+                            .label(tr("lithe.projectOpen.doNotAskAgain"))
+                            .checked(do_not_ask.get())
+                            .on_change(move |&value, _window, cx| {
+                                checkbox_cell.set(value);
+                                let _ = checkbox_shell.update(cx, |_shell, cx| cx.notify());
+                            }),
+                    )
+                    .action(move |close| {
+                        Button::new(cancel_id)
+                            .label(cancel_label)
+                            .on_click(move |_, window, cx| {
+                                eprintln!("S1_OPEN_PROJECT state=cancelled reason=dialog-cancel");
+                                close(window, cx);
+                            })
+                    })
+                    .action(move |close| {
+                        let new_window_shell = new_window_shell.clone();
+                        Button::new(new_window_id).label(new_window_label).on_click(
+                            move |_, window, cx| {
+                                let _ = new_window_shell
+                                    .update(cx, |shell, cx| shell.report_new_window_not_wired(cx));
+                                close(window, cx);
+                            },
                         )
-                        .child(
-                            Button::new("lithe-project-open-new-window")
-                                .label(new_window_label)
-                                .on_click(move |_, window, cx| {
-                                    let _ = new_window_shell.update(cx, |shell, cx| {
-                                        shell.report_new_window_not_wired(cx)
-                                    });
-                                    window.close_dialog(cx);
-                                }),
-                        )
-                        .child(
-                            Button::new("lithe-project-open-this-window")
-                                .primary()
-                                .label(this_window_label)
-                                .on_click(move |_, window, cx| {
-                                    let remember = click_cell.get();
-                                    window.close_dialog(cx);
-                                    let _ = this_window_shell.update(cx, |shell, cx| {
-                                        shell.execute_project_open(
-                                            this_window_target.clone(),
-                                            ProjectOpenDecision {
-                                                destination: OpenDestination::ThisWindow,
-                                                remember,
-                                            },
-                                            window,
-                                            cx,
-                                        )
-                                    });
-                                }),
-                        ),
-                )
-        });
+                    })
+                    .action(move |close| {
+                        let this_window_shell = this_window_shell.clone();
+                        let this_window_target = this_window_target.clone();
+                        Button::new(this_window_id)
+                            .primary()
+                            .label(this_window_label)
+                            .on_click(move |_, window, cx| {
+                                let remember = click_cell.get();
+                                close(window, cx);
+                                let _ = this_window_shell.update(cx, |shell, cx| {
+                                    shell.execute_project_open(
+                                        this_window_target.clone(),
+                                        ProjectOpenDecision {
+                                            destination: OpenDestination::ThisWindow,
+                                            remember,
+                                        },
+                                        window,
+                                        cx,
+                                    )
+                                });
+                            })
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
     }
 
     pub(crate) fn record_opened_project(

@@ -6,5 +6,8 @@ publish = false
 
 [dependencies]
 gpui-kit = "=0.7.1"
+# 自己的组件库：窗口根宿主与对话框（门 G1 起，丢弃改动确认框走 `lithe_ui::shell::WindowRootExt`）。
+# gpui-pre 的版本由 lithe-ui 精确钉住，这里不重复声明。
+lithe-ui = { path = "../../../lithe-ui" }
 lithe-gpui-shared = { path = "../shared" }
 serde_json = "1"

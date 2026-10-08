@@ -16,7 +16,7 @@ use gpui_kit::component::input::{
 };
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Div, Entity, InteractiveElement as _,
     IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Render, ScrollWheelEvent,
@@ -27,6 +27,8 @@ use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::design::TAB_MAX_WIDTH;
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{tr, tr_args};
+use lithe_ui::overlays::Dialog;
+use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 
 pub(crate) use lithe_gpui_shared::rem_px;
 
@@ -1554,60 +1556,61 @@ impl EditorPane {
             _ => tr("lithe.ui.save"),
         };
 
-        window.open_dialog(cx, move |dialog, _, cx| {
-            let discard_pane = pane.clone();
-            let save_pane = pane.clone();
-            let discard_pending = pending.clone();
-            let save_pending = pending.clone();
-            let body = body.clone();
-            let save_label = save_label.clone();
-            dialog
-                .title(tr("lithe.unsavedChanges.title"))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(body),
-                )
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("editor-unsaved-cancel")
-                                .label(tr("lithe.ui.cancel"))
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
+        window.open_dialog(
+            "lithe-editor-unsaved",
+            move |id, _window, cx| {
+                let discard_pane = pane.clone();
+                let save_pane = pane.clone();
+                let discard_pending = pending.clone();
+                let save_pending = pending.clone();
+                let body = body.clone();
+                let save_label = save_label.clone();
+                let (cancel_id, discard_id, save_id) = (
+                    (id.clone(), "cancel"),
+                    (id.clone(), "discard"),
+                    (id.clone(), "save"),
+                );
+                Dialog::new(id)
+                    .title(tr("lithe.unsavedChanges.title"))
+                    .on_close(dismiss_hosted)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(body),
+                    )
+                    .action(move |close| {
+                        Button::new(cancel_id)
+                            .label(tr("lithe.ui.cancel"))
+                            .on_click(move |_, window, cx| close(window, cx))
+                    })
+                    .action(move |close| {
+                        Button::new(discard_id)
+                            .label(tr("lithe.editor.gpui.discardChanges"))
+                            .on_click(move |_, window, cx| {
+                                let pending = discard_pending.clone();
+                                let _ = discard_pane
+                                    .update(cx, |pane, cx| pane.apply_confirm(pending, window, cx));
+                                close(window, cx);
+                            })
+                    })
+                    .action(move |close| {
+                        Button::new(save_id).primary().label(save_label).on_click(
+                            move |_, window, cx| {
+                                let pending = save_pending.clone();
+                                let saved = save_pane
+                                    .update(cx, |pane, cx| pane.save_confirm(pending, window, cx))
+                                    .unwrap_or(false);
+                                if saved {
+                                    close(window, cx);
+                                }
+                            },
                         )
-                        .child(
-                            Button::new("editor-unsaved-discard")
-                                .label(tr("lithe.editor.gpui.discardChanges"))
-                                .on_click(move |_, window, cx| {
-                                    let pending = discard_pending.clone();
-                                    let _ = discard_pane.update(cx, |pane, cx| {
-                                        pane.apply_confirm(pending, window, cx)
-                                    });
-                                    window.close_dialog(cx);
-                                }),
-                        )
-                        .child(
-                            Button::new("editor-unsaved-save")
-                                .primary()
-                                .label(save_label)
-                                .on_click(move |_, window, cx| {
-                                    let pending = save_pending.clone();
-                                    let saved = save_pane
-                                        .update(cx, |pane, cx| {
-                                            pane.save_confirm(pending, window, cx)
-                                        })
-                                        .unwrap_or(false);
-                                    if saved {
-                                        window.close_dialog(cx);
-                                    }
-                                }),
-                        ),
-                )
-        });
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
     }
 
     fn apply_confirm(
@@ -1715,35 +1718,39 @@ impl EditorPane {
         );
 
         let pane = cx.weak_entity();
-        window.open_dialog(cx, move |dialog, _window, cx| {
-            let valid =
-                crate::go_to_line::GoToLineInput::parse(input.read(cx).value().as_ref()).is_some();
-            let confirm_pane = pane.clone();
-            dialog
-                .title(tr("lithe.editor.goToLineColumn"))
-                .child(Input::new(&input))
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("editor-go-to-line-cancel")
-                                .label(tr("lithe.ui.cancel"))
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("editor-go-to-line-ok")
-                                .primary()
-                                .label(tr("lithe.ui.ok"))
-                                .disabled(!valid)
-                                .on_click(move |_, window, cx| {
-                                    let _ = confirm_pane
-                                        .update(cx, |pane, cx| pane.submit_go_to_line(window, cx));
-                                }),
-                        ),
-                )
-        });
+        window.open_dialog(
+            "lithe-go-to-line",
+            move |id, _window, cx| {
+                let valid =
+                    crate::go_to_line::GoToLineInput::parse(input.read(cx).value().as_ref())
+                        .is_some();
+                let confirm_pane = pane.clone();
+                let (cancel_id, ok_id) = ((id.clone(), "cancel"), (id.clone(), "ok"));
+                Dialog::new(id)
+                    .title(tr("lithe.editor.goToLineColumn"))
+                    .on_close(dismiss_hosted)
+                    .child(Input::new(&input))
+                    .action(move |close| {
+                        Button::new(cancel_id)
+                            .label(tr("lithe.ui.cancel"))
+                            .on_click(move |_, window, cx| close(window, cx))
+                    })
+                    .action(move |_close| {
+                        // 确认由 `submit_go_to_line` 自己收口（它同时服务 Enter 那条路），
+                        // 这里再调一次 close 会把**下面**那一层也一起摘掉。
+                        Button::new(ok_id)
+                            .primary()
+                            .label(tr("lithe.ui.ok"))
+                            .disabled(!valid)
+                            .on_click(move |_, window, cx| {
+                                let _ = confirm_pane
+                                    .update(cx, |pane, cx| pane.submit_go_to_line(window, cx));
+                            })
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
     }
 
     pub fn submit_go_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {

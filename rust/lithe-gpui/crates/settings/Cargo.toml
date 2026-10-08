@@ -6,6 +6,9 @@ publish = false
 
 [dependencies]
 gpui-kit = "=0.7.1"
+# 自己的组件库：窗口根宿主与对话框（门 G1 起，设置对话框走 `lithe_ui::shell::WindowRootExt`）。
+# gpui-pre 的版本由 lithe-ui 精确钉住，这里不重复声明。
+lithe-ui = { path = "../../../lithe-ui" }
 lithe-gpui-shared = { path = "../shared" }
 # 运行配置的模型与取数（「运行配置」页与运行工具窗共用同一份）。
 # 依赖方向是 settings -> run -> shared：run 不认识设置，设置只读它的模型。

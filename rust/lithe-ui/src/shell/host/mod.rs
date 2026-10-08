@@ -15,9 +15,45 @@
 
 mod ext;
 mod root;
+#[cfg(all(test, feature = "test-support"))]
+mod tests;
 
-pub use ext::WindowRootExt;
+use gpui::{AnyWindowHandle, App, AppContext as _, Entity, Render, Window, WindowOptions};
+
+pub use ext::{Close, WindowRootExt};
 pub use root::WindowRoot;
+
+/// 浮层组件**自己**关掉时（Esc / 遮罩 / 关闭按钮），把这一层从宿主栈里摘掉。
+///
+/// 具名函数而不是每个调用点手写一遍闭包：漏掉其中一处，就留下一个"关不掉"的浮层——
+/// 组件那边动画走完了、焦点归还了，可栈里那一层还在，下一次 Esc 会再关掉一个更下层的浮层。
+pub fn dismiss_hosted(window: &mut Window, cx: &mut App) {
+    window.close_top_layer(cx);
+}
+
+/// 开一个窗口并装上窗口根宿主；返回窗口句柄与**应用内容**实体（不是根）。
+///
+/// 对应上游 `gpui_kit::open_window`（`gpui-kit-0.7.1/src/lib.rs:149`）：把"开窗 + 包根 +
+/// 回传内容实体"合成一步。调用方拿到的是内容实体，浮层入口走 [`WindowRootExt`]。
+///
+/// 句柄的 `downcast::<WindowRoot>()` 能命中：gpui 的 `open_window` 取的是**内容**类型
+/// （`WindowHandle<V>` 记为 `TypeId::of::<V>()`），根实体由 `cx.new` 包出来。
+pub fn open_rooted_window<V: Render>(
+    options: WindowOptions,
+    cx: &mut App,
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
+) -> anyhow::Result<(AnyWindowHandle, Entity<V>)> {
+    let mut built = None;
+    let window = cx.open_window(options, |window, cx| {
+        let view = build(window, cx);
+        built = Some(view.clone());
+        cx.new(|cx| WindowRoot::new(view, window, cx))
+    })?;
+    Ok((
+        window.into(),
+        built.expect("open_rooted_window ran its build closure"),
+    ))
+}
 
 /// 浮层优先级：数字越大画得越晚、盖在越上面。
 ///

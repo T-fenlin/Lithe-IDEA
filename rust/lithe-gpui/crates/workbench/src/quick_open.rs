@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::base::{h_flex, v_flex};
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::{
     App, AppContext as _, Context, DefiniteLength, ElementId, Entity, InteractiveElement as _,
     IntoElement, KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Task, Window,
@@ -12,6 +12,8 @@ use gpui_kit::{
 };
 use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
+use lithe_ui::overlays::Dialog;
+use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 use serde_json::Value;
 
 use crate::search_index::SearchIndexReadiness;
@@ -54,27 +56,29 @@ pub(crate) fn open_dialog(quick_open: Entity<QuickOpen>, window: &mut Window, cx
         return;
     }
     QuickOpen::diagnose("open", "true");
-    window.open_dialog(cx, move |dialog, window, _cx| {
-        let rem = window.rem_size();
-        dialog
-            .close_button(false)
-            .overlay(true)
-            .overlay_closable(true)
-            .keyboard(true)
-            .width(crate::rem_px(rem, PANEL_WIDTH))
-            .margin_top(crate::rem_px(rem, PANEL_TOP_INSET))
-            .p_0()
-            .on_close({
-                let handle = quick_open.clone();
-                move |_event, window, cx| {
-                    let _ = handle.update(cx, |quick, cx| quick.close(window, cx));
-                }
-            })
-            .content({
-                let handle = quick_open.clone();
-                move |content, _, _| content.p_0().gap_0().child(handle.clone())
-            })
-    });
+    window.open_dialog(
+        "lithe-quick-open",
+        move |id, window, _cx| {
+            let rem = window.rem_size();
+            let quick_open = quick_open.clone();
+            let teardown = quick_open.clone();
+            Dialog::new(id)
+                .panel()
+                // Esc / 遮罩 / 关闭按钮都走这里：先让面板收自己的状态（放弃在途查询、
+                // 撤掉防抖任务），再把这一层从宿主栈里摘掉。
+                .on_close(move |window, cx| {
+                    let _ = teardown.update(cx, |quick, cx| quick.close(window, cx));
+                    dismiss_hosted(window, cx);
+                })
+                .w(crate::rem_px(rem, PANEL_WIDTH))
+                .p_0()
+                .gap_0()
+                .top_inset(crate::rem_px(rem, PANEL_TOP_INSET))
+                .child(quick_open)
+                .into_any_element()
+        },
+        cx,
+    );
 }
 
 pub struct QuickOpen {

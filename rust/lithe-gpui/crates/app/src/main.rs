@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use gpui_kit::component::{Root, Theme, ThemeMode, TitleBar};
+use gpui_kit::component::{Theme, ThemeMode, TitleBar};
 use gpui_kit::{
     App, AppContext as _, Bounds, Pixels, SharedString, Size, Window, WindowBounds, WindowOptions,
     point, px, size,
@@ -11,6 +11,9 @@ use lithe_gpui_settings::{Init, SettingsStore};
 use lithe_gpui_workbench::ShellWorkspace;
 use lithe_gpui_workbench::WelcomeView;
 use lithe_gpui_workbench::right_tool_window::RightToolWindowView;
+// 窗口根从上游 `gpui_base::Root` 换成本仓库自建的 `WindowRoot`（门 G1）。
+// 上游那套按具体类型找根，换根之后任何一处残留都会 panic，所以三个构造点同片改完。
+use lithe_ui::shell::WindowRoot;
 
 mod assets;
 
@@ -652,7 +655,10 @@ fn main() {
                         if let Some(store) = lithe_gpui_settings::try_store(cx) {
                             store.update(cx, |store, cx| store.attach_window(window, cx));
                         }
-                        workspace
+                        // 与首窗口同形：多窗口路径以前返回的是裸 `ShellWorkspace`，
+                        // 于是"在新窗口打开工程"开出来的窗口没有任何浮层宿主（点对话框会 panic）。
+                        // 整片换根时顺手对齐。
+                        cx.new(|cx| WindowRoot::new(workspace, window, cx))
                     });
                     match opened {
                         Ok(handle) => {
@@ -682,7 +688,7 @@ fn main() {
                                 let welcome = cx.new(|cx| {
                                     WelcomeView::new(loaded.projects, loaded.path, window, cx)
                                 });
-                                Root::new(welcome, window, cx)
+                                WindowRoot::new(welcome, window, cx)
                             });
                             if let Some(store) = lithe_gpui_settings::try_store(cx) {
                                 store.update(cx, |store, cx| store.attach_window(window, cx));
@@ -806,7 +812,7 @@ fn main() {
                             }
                         });
                     }
-                    let root_entity = cx.new(|cx| Root::new(workspace, window, cx));
+                    let root_entity = cx.new(|cx| WindowRoot::new(workspace, window, cx));
 
                     if !palette_keys.is_empty() {
                         println!("S1_KEYS plan={}", palette_keys.len());

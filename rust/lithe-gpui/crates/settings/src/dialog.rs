@@ -8,7 +8,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState, NumberInput};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::{
     Anchor, App, AppContext as _, Context, ElementId, Entity, FontWeight, InteractiveElement as _,
     IntoElement, KeyBinding, ParentElement as _, PathPromptOptions, Render, SharedString,
@@ -21,6 +21,8 @@ use lithe_gpui_shared::workspace_config::{
     OverrideOrigin, OverrideOrigins, ToolchainPaths, load_local_toolchain, save_local_toolchain,
 };
 use lithe_gpui_shared::{tr, tr_args};
+use lithe_ui::overlays::Dialog;
+use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 
 use crate::identity::{
     GitIdentityPage, IdentityField, IdentityScope, IdentitySetup, git_identity_page,
@@ -77,29 +79,30 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
         view.update(cx, |view, cx| view.load_page_on_open(category, cx));
     }
 
-    window.open_dialog(cx, move |dialog, window, _cx| {
-        let rem = window.rem_size();
-        let viewport = window.viewport_size();
-        let margin = rem;
-        let width = rem_px(rem, DIALOG_WIDTH);
-        let height = rem_px(rem, DIALOG_HEIGHT)
-            .min((viewport.height - margin * 2.).max(gpui_kit::Pixels::ZERO));
-        let margin_top = ((viewport.height - height) / 2.).max(gpui_kit::Pixels::ZERO);
-
-        dialog
-            .close_button(false)
-            .overlay(true)
-            .overlay_closable(true)
-            .keyboard(true)
-            .width(width)
-            .margin_top(margin_top)
-            .h(height)
-            .p_0()
-            .content({
-                let view = view.clone();
-                move |content, _, _| content.p_0().gap_0().h_full().child(view.clone())
-            })
-    });
+    window.open_dialog(
+        "lithe-settings",
+        move |id, window, _cx| {
+            let rem = window.rem_size();
+            let viewport = window.viewport_size();
+            let margin = rem;
+            let width = rem_px(rem, DIALOG_WIDTH);
+            let height = rem_px(rem, DIALOG_HEIGHT)
+                .min((viewport.height - margin * 2.).max(gpui_kit::Pixels::ZERO));
+            let view = view.clone();
+            Dialog::new(id)
+                // 居中卡片（上游 `margin_top((viewport-height)/2)` 等价于默认居中），高度给死；
+                // 正文外面套一层定高容器，设置页里的 `h_full()` 才有确定父级。
+                // 上游这段本来就没有 `on_close`，所以这里只做一件事：把这一层摘掉。
+                .on_close(dismiss_hosted)
+                .w(width)
+                .h(height)
+                .p_0()
+                .gap_0()
+                .child(div().h(height).child(view))
+                .into_any_element()
+        },
+        cx,
+    );
 }
 
 pub(crate) use lithe_gpui_shared::rem_px;
@@ -872,7 +875,9 @@ impl SettingsDialog {
                     .px_0()
                     .accessibility_label(tr("lithe.tabs.close"))
                     .tooltip(tr("lithe.tabs.close"))
-                    .on_click(|_, window, cx| window.close_dialog(cx)),
+                    .on_click(|_, window, cx| {
+                        window.close_dialog(cx);
+                    }),
             )
     }
 
@@ -2823,57 +2828,58 @@ impl SettingsDialog {
         let input = self.font_size_input.clone();
         let editor_input = self.editor_font_size_input.clone();
 
-        window.open_dialog(cx, move |dialog, _, cx| {
-            let store = store.clone();
-            let input = input.clone();
-            let editor_input = editor_input.clone();
-            dialog
-                .title(tr("lithe.settings.gpui.restoreDefaultsTitle"))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(tr("lithe.settings.gpui.restoreDefaultsBody")),
-                )
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("settings-restore-cancel")
-                                .label(tr("lithe.ui.cancel"))
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("settings-restore-confirm")
-                                .danger()
-                                .label(tr("lithe.settings.mac.restoreDefaults"))
-                                .on_click(move |_, window, cx| {
-                                    store.update(cx, |store, cx| store.restore_defaults(cx));
-                                    input.update(cx, |input, cx| {
-                                        input.set_value(
-                                            SharedString::from(format_ui_font_size(
-                                                UI_FONT_SIZE_DEFAULT,
-                                            )),
-                                            window,
-                                            cx,
-                                        );
-                                    });
-                                    editor_input.update(cx, |input, cx| {
-                                        input.set_value(
-                                            SharedString::from(format_editor_font_size(
-                                                EDITOR_FONT_SIZE_DEFAULT,
-                                            )),
-                                            window,
-                                            cx,
-                                        );
-                                    });
-                                    window.close_dialog(cx);
-                                }),
-                        ),
-                )
-        });
+        window.open_dialog(
+            "lithe-settings-restore-defaults",
+            move |id, _window, cx| {
+                let store = store.clone();
+                let input = input.clone();
+                let editor_input = editor_input.clone();
+                let (cancel_id, confirm_id) = ((id.clone(), "cancel"), (id.clone(), "confirm"));
+                Dialog::new(id)
+                    .title(tr("lithe.settings.gpui.restoreDefaultsTitle"))
+                    .on_close(dismiss_hosted)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(tr("lithe.settings.gpui.restoreDefaultsBody")),
+                    )
+                    .action(move |close| {
+                        Button::new(cancel_id)
+                            .label(tr("lithe.ui.cancel"))
+                            .on_click(move |_, window, cx| close(window, cx))
+                    })
+                    .action(move |close| {
+                        Button::new(confirm_id)
+                            .danger()
+                            .label(tr("lithe.settings.mac.restoreDefaults"))
+                            .on_click(move |_, window, cx| {
+                                store.update(cx, |store, cx| store.restore_defaults(cx));
+                                input.update(cx, |input, cx| {
+                                    input.set_value(
+                                        SharedString::from(format_ui_font_size(
+                                            UI_FONT_SIZE_DEFAULT,
+                                        )),
+                                        window,
+                                        cx,
+                                    );
+                                });
+                                editor_input.update(cx, |input, cx| {
+                                    input.set_value(
+                                        SharedString::from(format_editor_font_size(
+                                            EDITOR_FONT_SIZE_DEFAULT,
+                                        )),
+                                        window,
+                                        cx,
+                                    );
+                                });
+                                close(window, cx);
+                            })
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
     }
 
     fn dropdown(

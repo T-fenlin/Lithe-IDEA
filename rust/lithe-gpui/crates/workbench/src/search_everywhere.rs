@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::base::{h_flex, v_flex};
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, AppContext as _, Context, DefiniteLength, ElementId, Entity, FontWeight,
@@ -13,6 +13,8 @@ use gpui_kit::{
 };
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea, idea_icon_image, idea_icon_svg_px};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
+use lithe_ui::overlays::Dialog;
+use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 use serde_json::Value;
 
 use crate::command_palette::{CommandAction, CommandId};
@@ -60,27 +62,27 @@ pub(crate) fn open_dialog(overlay: Entity<SearchEverywhere>, window: &mut Window
         return;
     }
     SearchEverywhere::diagnose("open", "true");
-    window.open_dialog(cx, move |dialog, window, _cx| {
-        let rem = window.rem_size();
-        dialog
-            .close_button(false)
-            .overlay(true)
-            .overlay_closable(true)
-            .keyboard(true)
-            .width(crate::rem_px(rem, PANEL_WIDTH))
-            .margin_top(crate::rem_px(rem, PANEL_TOP_INSET))
-            .p_0()
-            .on_close({
-                let handle = overlay.clone();
-                move |_event, window, cx| {
-                    let _ = handle.update(cx, |overlay, cx| overlay.close(window, cx));
-                }
-            })
-            .content({
-                let handle = overlay.clone();
-                move |content, _, _| content.p_0().gap_0().child(handle.clone())
-            })
-    });
+    window.open_dialog(
+        "lithe-search-everywhere",
+        move |id, window, _cx| {
+            let rem = window.rem_size();
+            let overlay = overlay.clone();
+            let teardown = overlay.clone();
+            Dialog::new(id)
+                .panel()
+                .on_close(move |window, cx| {
+                    let _ = teardown.update(cx, |overlay, cx| overlay.close(window, cx));
+                    dismiss_hosted(window, cx);
+                })
+                .w(crate::rem_px(rem, PANEL_WIDTH))
+                .p_0()
+                .gap_0()
+                .top_inset(crate::rem_px(rem, PANEL_TOP_INSET))
+                .child(overlay)
+                .into_any_element()
+        },
+        cx,
+    );
 }
 
 pub struct SearchEverywhere {
@@ -741,19 +743,28 @@ mod tests {
 
     use gpui_kit::{
         AppContext as _, Bounds, Entity, Point, Size, TestAppContext, Window, WindowBounds,
-        WindowHandle, WindowOptions, base::Root, px,
+        WindowHandle, WindowOptions, px,
     };
+    use lithe_ui::shell::{WindowRoot, open_rooted_window};
 
     use super::*;
 
-    fn open_overlay(cx: &mut TestAppContext) -> (WindowHandle<Root>, Entity<SearchEverywhere>) {
+    fn open_overlay(
+        cx: &mut TestAppContext,
+    ) -> (WindowHandle<WindowRoot>, Entity<SearchEverywhere>) {
         let on_open: Rc<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static> =
             Rc::new(|_, _, _, _| {});
         let on_action: Rc<dyn Fn(CommandId, &mut Window, &mut App) + 'static> =
             Rc::new(|_, _, _| {});
         cx.update(|cx| {
             gpui_kit::init(cx);
-            let (window, overlay) = gpui_kit::open_window(
+            // 窗口根已换成 lithe-ui 的 `WindowRoot`（门 G1），测试宿主跟着换。
+            // `lithe_ui::init` 会校验 `Application::with_assets`，无头测试里没有，
+            // 所以只装它需要的主题全局。
+            if !cx.has_global::<lithe_ui::theme::Theme>() {
+                lithe_ui::theme::Theme::init(cx);
+            }
+            let (window, overlay) = open_rooted_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(Bounds {
                         origin: Point::default(),
@@ -779,12 +790,15 @@ mod tests {
                 },
             )
             .expect("open test window");
-            (window.downcast::<Root>().expect("Base Root"), overlay)
+            (
+                window.downcast::<WindowRoot>().expect("WindowRoot"),
+                overlay,
+            )
         })
     }
 
     fn with_overlay(
-        handle: WindowHandle<Root>,
+        handle: WindowHandle<WindowRoot>,
         overlay: &Entity<SearchEverywhere>,
         cx: &mut TestAppContext,
         run: impl FnOnce(&mut SearchEverywhere, &mut Window, &mut Context<SearchEverywhere>),

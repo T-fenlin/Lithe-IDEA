@@ -4413,6 +4413,7 @@ dependencies = [
  "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-workbench",
+ "lithe-ui",
  "rust-embed",
 ]
 
@@ -4424,6 +4425,7 @@ dependencies = [
  "lithe-gpui-java",
  "lithe-gpui-notify",
  "lithe-gpui-shared",
+ "lithe-ui",
  "lsp-types",
  "serde_json",
  "tree-sitter-xml",
@@ -4454,6 +4456,7 @@ version = "0.0.1"
 dependencies = [
  "gpui-kit",
  "lithe-gpui-shared",
+ "lithe-ui",
  "serde_json",
 ]
 
@@ -4491,6 +4494,7 @@ dependencies = [
  "gpui-kit",
  "lithe-gpui-run",
  "lithe-gpui-shared",
+ "lithe-ui",
  "notify 7.0.0",
  "serde",
  "serde_json",
