@@ -80,6 +80,9 @@ pub struct Theme {
     /// 基准字号（px）：**尺寸缩放的唯一锚点**。100% 缩放下的窗口 rem 大小也是它。
     pub font_size: f32,
     pub font_family: SharedString,
+    /// 等宽字体（编辑器）字号，px。与 `font_size` 是**两个不同的量**（UI 基准 vs 编辑器字号），
+    /// 不是同一个量的两个副本；它不参与 rem 锚点。宿主设置是它的生产者。
+    pub mono_font_size: f32,
     pub mono_family: SharedString,
     pub reduced_motion: bool,
     pub platform: Platform,
@@ -114,6 +117,7 @@ impl Theme {
             font_scale: 1.0,
             font_size: 16.0,
             font_family: "Inter".into(),
+            mono_font_size: 13.0,
             mono_family: "JetBrains Mono".into(),
             reduced_motion: false,
             platform: Platform::current(),
@@ -210,6 +214,17 @@ impl Theme {
             });
         }
         cx.refresh_windows();
+    }
+
+    /// UI 基准字号的像素形态。**只是 [`Theme::font_size`] 的换算**，不是第二份数据——
+    /// 给"需要一个 `Pixels` 值"的调用点（如宿主的 `rem_px(base, x)`）用。
+    pub fn font_size_px(&self) -> gpui::Pixels {
+        gpui::px(self.font_size)
+    }
+
+    /// 等宽（编辑器）字号的像素形态；同 [`Theme::font_size_px`]，只是换算。
+    pub fn mono_font_size_px(&self) -> gpui::Pixels {
+        gpui::px(self.mono_font_size)
     }
 
     /// 把当前主题的基准字号（乘用户缩放）标到窗口的 rem 大小上。

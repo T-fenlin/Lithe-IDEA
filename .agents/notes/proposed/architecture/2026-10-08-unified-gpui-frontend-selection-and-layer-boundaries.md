@@ -445,6 +445,36 @@ gpui-component 的 Theme，与组件库的 Theme **不同名、不同形**。以
 `colors.*` 取用），否则每个宿主 crate 一动手就先撞这一面。另：`base::h_flex/v_flex` → `layout::h_stack/v_stack`
 与 `ButtonVariants::ghost/small` → `Button::variant(ButtonVariant::Ghost)/size(Size::Small)` 已确认是**直接对应**，
 `Button::icon` 的元素形态已在组件库补上 `icon_element`。
+#### 主题取用对齐：宿主名 → 组件库槽（改写片按此表执行）
+
+上游 `gpui-component` 的 `Theme` 是 `colors: ThemeColor` + **`Deref`**，所以宿主写的是扁平
+`theme.foreground`（自动 deref 而来）。组件库的 `Palette` 命名不同，且**不打算为同一概念再平铺一份**
+（那是第二真源）。逐名映射如下（依据是宿主**实际用法**，不是名字相似）：
+
+| 宿主（gpui-kit）名 | 用到的次数 | 组件库的落点 | 依据 |
+| --- | --- | --- | --- |
+| `muted_foreground` / `foreground` | 182 / 73 | `colors.fg_muted` / `colors.fg` | 同名概念 |
+| `border` | 58 | `colors.border`（强调处用 `border_strong`） | 同名概念 |
+| `danger` / `success` / `warning` / `info` | 36/11/7/4 | 同名槽 `colors.danger` 等 | 同名概念 |
+| `background` | 22 | `colors.bg` | 同名概念 |
+| `accent` | 16 | `colors.accent` | 同名概念 |
+| `primary` | 14 | `colors.selection`（作选中行/选中块底）或 `colors.accent`（品牌交互） | 按**用法**分：`bg(primary)`、`primary.opacity(0.28)` 都在画选中底 |
+| `muted` | 5 | `colors.sunken` | 用法的"下沉面" |
+| `popover` | 4 | `colors.overlay` | 浮层底 |
+| `secondary` | 2 | `colors.surface` | 用法是"非活动标签底" |
+| `list_hover` | 2 | `colors.hover` | 同一概念，库已按列表行命名 |
+| `ring` | 1 | `colors.focus` | 焦点环 |
+| `sidebar_accent` | 1 | `colors.selection` | 侧栏选中底 |
+| `tab_bar` / `title_bar` | 13 / 2 | `colors.surface`（chrome 表面） | 两者都只作 `bg(…)`；库的 `shell::tabs`/`chrome` 画同一片表面 |
+| `font_size` | 23 | `Theme::font_size`（`f32`）/ `font_size_px()` | 同一锚点，只是类型；`rem_px(base, x)` 用后者 |
+| `mono_font_family` / `mono_font_size` | 11 / 0 | `Theme::mono_family` / `mono_font_size`（本轮补） | 字段名不同 / 宿主只写不读 |
+
+⚠️ **unverified（需要在改写 `tab_bar`/`title_bar` 时核实）**：若宿主内置的 JetBrains 主题 JSON 给
+`tab_bar`/`title_bar` 设了**与 surface 不同**的值，则映射到 `colors.surface` 会丢失那份差异，
+届时组件库需要新增一个 chrome 表面槽。核对方式是读主题 JSON 的键与值，不要按名字猜。
+
+**已落地的库侧增量（①a）**：`mono_font_size: f32` + `font_size_px()` / `mono_font_size_px()`
+（纯换算，不新增真源）。颜色槽**一个都没加**——宿主所有颜色读点都能落到既有槽上，按上表改名即可。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、
