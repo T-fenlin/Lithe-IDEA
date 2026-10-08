@@ -1,11 +1,14 @@
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window, rems,
+};
 use gpui_kit::assets::IconName;
 use gpui_kit::base::h_flex;
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::{ActiveTheme as _, Icon};
-use gpui::{AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, rems};
-use gpui::{prelude::FluentBuilder as _};
 
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
 

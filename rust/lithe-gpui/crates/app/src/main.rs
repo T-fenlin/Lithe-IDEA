@@ -2,8 +2,11 @@
 
 use std::path::PathBuf;
 
+use gpui::{
+    App, AppContext as _, Bounds, Pixels, SharedString, Size, Window, WindowBounds, WindowOptions,
+    point, px, size,
+};
 use gpui_kit::component::{Theme, ThemeMode, TitleBar};
-use gpui::{App, AppContext as _, Bounds, Pixels, SharedString, Size, Window, WindowBounds, WindowOptions, point, px, size};
 use lithe_gpui_settings::{Init, SettingsStore};
 use lithe_gpui_workbench::ShellWorkspace;
 use lithe_gpui_workbench::WelcomeView;

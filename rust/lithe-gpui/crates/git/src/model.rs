@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use gpui_kit::component::ActiveTheme as _;
 use gpui::{App, ClickEvent, Hsla, SharedString, Window};
+use gpui_kit::component::ActiveTheme as _;
 
 use lithe_gpui_shared::{CoreClient, CoreRequest, tr, tr_args};
 

@@ -6,9 +6,9 @@ use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
+use gpui::{AppContext as _, Context, SharedString, WeakEntity, Window};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::message_scroller::MessageScrollerState;
-use gpui::{AppContext as _, Context, SharedString, WeakEntity, Window};
 
 use crate::ansi::TerminalText;
 use crate::constants::{

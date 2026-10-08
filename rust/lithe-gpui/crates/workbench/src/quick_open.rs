@@ -2,11 +2,14 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use gpui::DefiniteLength;
+use gpui::{
+    App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _, IntoElement,
+    KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Task, Window, div, rems,
+};
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
-use gpui::{App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Task, Window, div, rems};
-use gpui::{DefiniteLength};
 use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
 use lithe_ui::overlays::Dialog;

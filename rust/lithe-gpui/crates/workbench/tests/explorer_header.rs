@@ -2,8 +2,8 @@ mod common;
 
 use std::path::PathBuf;
 
-use gpui_kit::test::TestWindowExt as _;
 use gpui::{AppContext as _, TestAppContext, px, size};
+use gpui_kit::test::TestWindowExt as _;
 
 use lithe_gpui_explorer::Explorer;
 

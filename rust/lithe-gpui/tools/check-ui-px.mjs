@@ -25,7 +25,8 @@
  *   - 确实需要一个 `Pixels` 值时，用 `window.rem_size()` 把 rem 换算成 Pixels，而不是写死 `px(N.)`。
  *
  * 只读扫描，不改任何文件。扫描范围：`lithe-gpui/crates/` 下每个 crate 的 `src/` 目录里的所有 `.rs`（含 `app`），
- * **排除 vendored 的组件库 `lithe-gpui/crates/lithe-gpui/`**（上游源码拷贝，见下面的 `VENDORED_CRATE`）。
+ * **排除派生的组件库 `rust/lithe-ui/`**（Ely GPUI Components 的源码拷贝，见下面的 `DERIVED_ROOTS`），
+ * 但**包含**它里面属于第一方的子目录（见 `FIRST_PARTY_IN_DERIVED`）。
  *
  * 用法：
  *   node lithe-gpui/tools/check-ui-px.mjs            # 扫描并判定：有白名单以外的命中 → 退出码 1
@@ -49,17 +50,27 @@ const REPO_ROOT = resolve(HERE, "..", "..");
 const CRATES_DIR = resolve(REPO_ROOT, "lithe-gpui", "crates");
 
 /**
- * 排除 vendored 组件库：`crates/lithe-gpui` 是 Ely GPUI Components 的源码拷贝
- * （署名与改动清单见 `crates/lithe-gpui/UPSTREAM.md`），是**上游实现**，不是本仓库的
- * Application UI。`coding-guides.md:288` 管的是**宿主界面**代码；上游组件内部本来就用
- * 物理像素表达自己的度量（canvas / charts / theme token 定义本身等，多属该条认可的例外）。
- * 逐处改写上游要动 800+ 行、与上游分叉、还冒可见回归的风险，收益为零。
+ * 派生（vendored）边界**按声明**判定，不按 crate 名 —— 组件库已经从
+ * `crates/lithe-gpui/` 搬到独立 workspace 的 `rust/lithe-ui/`，按名字排除会静默失效。
  *
- * ⚠️ 排除是**按 crate 名**做的，并配一条自检（`validateVendoredExclusion`）：被排除的目录
- * 必须带 `UPSTREAM.md`（= 确实是 vendored 上游拷贝）。要新写的第一方组件请放**独立 crate**，
- * 不要挂进这个被排除的目录 —— 否则它就绕过了本规范。
+ * `rust/lithe-ui/` 是 Ely GPUI Components 的源码拷贝（署名与改动清单见
+ * `lithe-ui/UPSTREAM.md`），整体是**上游实现**：`coding-guides.md:288` 管的是**宿主界面**
+ * 代码，上游组件内部本来就用物理像素表达自己的度量（canvas / charts / token 定义本身等，
+ * 多属该条认可的例外）。逐处改写要动 800+ 行、与上游分叉、还冒可见回归的风险，收益为零。
+ *
+ * ⚠️ 排除必须**有证据**：每个派生根都要带 `UPSTREAM.md`，否则判失败（`validateDerivedRoots`）
+ * 而不是静默跳过 —— 否则排除就成了"谁想跳过就换个名字"的后门。
+ * 派生目录里属于**我们自己的**目录仍然要扫，见 `FIRST_PARTY_IN_DERIVED`。
  */
-const VENDORED_CRATE = "lithe-gpui";
+const DERIVED_ROOTS = [
+  { label: "lithe-ui", dir: resolve(REPO_ROOT, "lithe-ui"), marker: "UPSTREAM.md" },
+];
+
+/** 派生目录里属于第一方、必须受本规范约束的子目录（仓库相对路径）。 */
+const FIRST_PARTY_IN_DERIVED = [
+  "lithe-ui/src/shell/host", // 窗口根宿主（门 G1，自建）
+  "lithe-ui/src/lists/project", // 项目树（Lithe 自有）
+];
 
 /** 每一条命中的统一修复指引（档位内 helper / 档位外 rems / 真要 Pixels 时换算）。 */
 const FIX_GUIDANCE =
@@ -459,29 +470,48 @@ function testModuleEnd(source, from) {
   return skipBraced(source, j);
 }
 
-/** 收集 `lithe-gpui/crates/` 下每个 crate 的 `src/` 里的 `.rs`（不扫 `target/`，也不扫 `crates/` 下的 `tests/`）。 */
+/**
+ * 收集要扫的 `.rs`：`lithe-gpui/crates/` 下每个 crate 的 `src/`，
+ * **加上**组件库里第一方的子目录（`FIRST_PARTY_IN_DERIVED`）。
+ * 不扫 `target/`，也不扫 `crates/` 下的 `tests/`。
+ */
 function collectSources() {
   const files = [];
 
   for (const crate of readdirSync(CRATES_DIR, { withFileTypes: true })) {
     if (!crate.isDirectory()) continue;
-    if (crate.name === VENDORED_CRATE) continue; // 上游拷贝，不是 Application UI
     const src = join(CRATES_DIR, crate.name, "src");
     if (!isDirectory(src)) continue;
     walk(src, files);
+  }
+
+  for (const relativePath of FIRST_PARTY_IN_DERIVED) {
+    const dir = join(REPO_ROOT, ...relativePath.split("/"));
+    if (isDirectory(dir)) walk(dir, files);
   }
 
   return files.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /**
- * 被排除的那个 crate 必须真的是 vendored 上游拷贝（带 `UPSTREAM.md`）。否则排除就成了
- * "谁想跳过就换个名字"的后门，所以判失败而不是只警告。
+ * 两条不变式，任一不成立就判失败（而不是只警告）：
+ *
+ * 1. 每个派生根都真的是 vendored 上游拷贝（带 `UPSTREAM.md`）——否则排除就成了
+ *    "谁想跳过就换个名字"的后门；
+ * 2. 每个第一方扫描目录都存在——否则规范覆盖会在目录被搬走时**静默失效**
+ *    （这正是组件库搬到 `rust/lithe-ui/` 后发生过的事：旧的按名字排除空转，整个组件库
+ *    从未进过扫描范围）。
  */
-function validateVendoredExclusion() {
-  const dir = join(CRATES_DIR, VENDORED_CRATE);
-  if (isDirectory(dir) && existsSync(join(dir, "UPSTREAM.md"))) return null;
-  return `被排除的 crates/${VENDORED_CRATE} 里没有 UPSTREAM.md：它看起来不是 vendored 上游拷贝。要么它已经变成第一方 crate（那就别再排除），要么来源署名丢了（那就补回来）。`;
+function validateDerivedRoots() {
+  for (const root of DERIVED_ROOTS) {
+    if (isDirectory(root.dir) && existsSync(join(root.dir, root.marker))) continue;
+    return `派生根 ${root.label} 里没有 ${root.marker}：它看起来不是 vendored 上游拷贝。要么它已经变成第一方（那就别再排除），要么来源署名丢了（那就补回来）。`;
+  }
+  for (const relativePath of FIRST_PARTY_IN_DERIVED) {
+    if (isDirectory(join(REPO_ROOT, ...relativePath.split("/")))) continue;
+    return `第一方扫描目录 ${relativePath} 不存在：它可能被搬走了。请更新 FIRST_PARTY_IN_DERIVED，别让规范覆盖静默失效。`;
+  }
+  return null;
 }
 
 function walk(dir, files) {
@@ -538,7 +568,7 @@ function main() {
     return;
   }
 
-  const exclusionProblem = validateVendoredExclusion();
+  const exclusionProblem = validateDerivedRoots();
   if (exclusionProblem !== null) {
     console.warn(`警告：${exclusionProblem}`);
     process.exitCode = 1;

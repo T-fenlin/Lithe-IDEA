@@ -2,8 +2,8 @@ mod common;
 
 use std::path::PathBuf;
 
-use gpui_kit::test::TestWindowExt as _;
 use gpui::{App, AppContext as _, TestAppContext, Window, px, size};
+use gpui_kit::test::TestWindowExt as _;
 
 struct TempFile {
     path: PathBuf,

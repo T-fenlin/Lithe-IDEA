@@ -1,13 +1,17 @@
 use std::path::PathBuf;
 
+use gpui::{
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, ImageSource,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems,
+};
+use gpui::{Resource, img};
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, StyledExt as _, TitleBar};
-use gpui::{AnyElement, App, AppContext as _, Context, ElementId, Entity, ImageSource, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems};
-use gpui::{Resource, img};
-use gpui_kit::{TestSupportExt as _};
 use lithe_gpui_settings::{RecentProject, RecentProjects};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{HOST_VERSION, tr, tr_args};

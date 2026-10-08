@@ -75,7 +75,10 @@ pub struct Theme {
     pub colors: Palette,
     pub density: Density,
     pub radius_scale: f32,
+    /// 用户缩放系数（85%–130%）。**它不再自己乘 token 值**——见 `apply_rem`。
     pub font_scale: f32,
+    /// 基准字号（px）：**尺寸缩放的唯一锚点**。100% 缩放下的窗口 rem 大小也是它。
+    pub font_size: f32,
     pub font_family: SharedString,
     pub mono_family: SharedString,
     pub reduced_motion: bool,
@@ -109,6 +112,7 @@ impl Theme {
             density: Density::Standard,
             radius_scale: 1.0,
             font_scale: 1.0,
+            font_size: 16.0,
             font_family: "Inter".into(),
             mono_family: "JetBrains Mono".into(),
             reduced_motion: false,
@@ -196,7 +200,23 @@ impl Theme {
     /// Edits non-color tokens, then repaints.
     pub fn update(cx: &mut App, edit: impl FnOnce(&mut Theme)) {
         edit(cx.global_mut::<Theme>());
+        // 尺寸缩放的**单一杠杆**落点：主题是唯一真源，每个窗口的 rem 大小由它推出。
+        // `Window::set_rem_size` 只是一次赋值（不标脏），所以这里统一重标是安全的，
+        // 也不会与"每帧渲染"互相触发。
+        for handle in cx.windows() {
+            let _ = handle.update(cx, |_, window, cx| {
+                let rem = cx.theme().base_rem() * cx.theme().font_scale;
+                window.set_rem_size(rem);
+            });
+        }
         cx.refresh_windows();
+    }
+
+    /// 把当前主题的基准字号（乘用户缩放）标到窗口的 rem 大小上。
+    ///
+    /// 这是全套尺寸唯一的缩放入口：token 只把设计值换算成 rem，不再各自乘缩放系数。
+    pub fn apply_rem(&self, window: &mut gpui::Window) {
+        window.set_rem_size(self.base_rem() * self.font_scale);
     }
 
     fn target(&self) -> Palette {

@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use gpui::App;
-use gpui_kit::component::input::EditorState;
 use gpui::{Entity, SharedString, Subscription, Task};
+use gpui_kit::component::input::EditorState;
 use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::tr_args;
 

@@ -81,6 +81,10 @@ pub enum Elevation {
     Modal,
 }
 
+/// 把设计值（100% 缩放下的 px）换算成 rem。
+///
+/// 除数 16 是**设计单位**（= 100% 缩放下的 rem 基准），不是缩放杠杆：真正的缩放由
+/// [`Theme::apply_rem`] 改窗口 rem 大小完成，所以这里刻意不读 `font_scale`。
 pub(super) fn px_to_rems(value: f32) -> Rems {
     rems(value / 16.0)
 }
@@ -139,7 +143,7 @@ impl Theme {
             IconSize::Xl => 24.0,
             IconSize::Xxl => 32.0,
         };
-        px_to_rems(base * self.font_scale)
+        px_to_rems(base)
     }
 
     pub fn container_width(&self, size: ContainerSize) -> Rems {
@@ -222,9 +226,11 @@ impl Theme {
         size(px(480.0), px(300.0))
     }
 
-    /// A window's rem size at 100% zoom; gpui's own default.
+    /// 100% 缩放下的窗口 rem 大小 = 主题基准字号。
+    ///
+    /// 缩放的唯一杠杆在 [`Theme::apply_rem`]（写窗口 rem 大小）；本函数只是把真源读出来。
     pub fn base_rem(&self) -> Pixels {
-        px(16.0)
+        px(self.font_size)
     }
 
     /// Gap between the edge of a screen or window and what floats by it: a mini window, a toast stack.
@@ -472,7 +478,7 @@ impl Theme {
             TextSize::Xxl => 24.0,
             TextSize::Display => 32.0,
         };
-        px_to_rems(base * self.font_scale)
+        px_to_rems(base)
     }
 
     pub fn radius(&self, size: Radius) -> Rems {

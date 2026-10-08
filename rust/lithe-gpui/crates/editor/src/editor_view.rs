@@ -7,6 +7,14 @@ use std::time::Duration;
 
 use crate::buffer::{Buffer, display_names, icon_for_file, language_for_file, read_body};
 use crate::navigation::{JumpEntry, JumpHistory, NavTarget, editor_position, resolve_target};
+use gpui::{
+    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, InteractiveElement as _,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Render, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task, WeakEntity,
+    Window, div, point, rems,
+};
+use gpui::{Div, relative};
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -17,9 +25,6 @@ use gpui_kit::component::input::{
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
-use gpui::{AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Render, ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task, WeakEntity, Window, div, point, rems};
-use gpui::{Div, relative};
-use gpui_kit::{TestSupportExt as _};
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::design::TAB_MAX_WIDTH;
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};

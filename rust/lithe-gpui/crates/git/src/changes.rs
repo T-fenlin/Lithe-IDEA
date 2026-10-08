@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use gpui_kit::component::ActiveTheme as _;
 use gpui::{App, Hsla, SharedString};
+use gpui_kit::component::ActiveTheme as _;
 
 use crate::model::{
     discover_repository_root, execute_core, parse_references, repository_root_of,

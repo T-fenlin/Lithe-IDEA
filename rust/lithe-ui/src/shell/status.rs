@@ -178,16 +178,16 @@ impl ZoomControl {
 }
 
 fn apply(percent: u32, window: &mut Window, cx: &mut App) {
-    let base = cx.theme().base_rem();
     log::info!("zoom: {percent}%");
-    window.set_rem_size(base * (percent as f32 / 100.0));
+    // 单一杠杆：把百分比写进主题，由 `Theme::update` 统一标到所有窗口的 rem 大小上。
+    crate::theme::Theme::update(cx, |theme| theme.font_scale = percent as f32 / 100.0);
     window.refresh();
 }
 
 impl RenderOnce for ZoomControl {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let percent = (window.rem_size() / theme.base_rem() * 100.0).round() as u32;
+        let percent = (theme.font_scale * 100.0).round() as u32;
         let (down, up) = (step(percent, -1), step(percent, 1));
         div()
             .id(self.id)

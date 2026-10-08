@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use gpui::{
+    AnyElement, App, AppContext as _, Context, IntoElement, ParentElement as _, Styled as _, div,
+};
 use gpui_kit::component::ActiveTheme as _;
-use gpui::{AnyElement, App, AppContext as _, Context, IntoElement, ParentElement as _, Styled as _, div};
 use lithe_gpui_shared::{CoreError, core_json, tr};
 use serde_json::{Value, json};
 

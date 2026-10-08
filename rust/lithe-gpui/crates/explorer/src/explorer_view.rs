@@ -2,15 +2,19 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use gpui::Role;
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    AnyElement, App, AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle,
+    Focusable as _, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems,
+};
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::Button;
 use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, App, AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems};
-use gpui::{Role};
 
 use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::tr;

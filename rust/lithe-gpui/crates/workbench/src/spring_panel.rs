@@ -1,7 +1,10 @@
+use gpui::{
+    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, SharedString,
+    Styled as _, Subscription, Window, div, rems,
+};
 use gpui_kit::base::h_flex;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName};
-use gpui::{App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, SharedString, Styled as _, Subscription, Window, div, rems};
 
 use lithe_gpui_shared::tr;
 

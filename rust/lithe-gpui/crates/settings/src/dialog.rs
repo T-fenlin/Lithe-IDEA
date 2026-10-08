@@ -1,5 +1,11 @@
 use std::path::PathBuf;
 
+use gpui::{Anchor, PathPromptOptions, prelude::FluentBuilder as _};
+use gpui::{
+    App, AppContext as _, Context, ElementId, Entity, FontWeight, InteractiveElement as _,
+    IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
+};
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{Selectable as _, h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -9,8 +15,6 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
-use gpui::{App, AppContext as _, Context, ElementId, Entity, FontWeight, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems};
-use gpui::{Anchor, PathPromptOptions, prelude::FluentBuilder as _};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
 use lithe_gpui_shared::workspace_config::{

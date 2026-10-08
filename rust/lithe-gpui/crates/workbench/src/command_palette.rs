@@ -1,10 +1,13 @@
 use std::cell::RefCell;
 
+use gpui::DefiniteLength;
+use gpui::{
+    App, AppContext as _, Context, Entity, IntoElement, KeyBinding, ParentElement as _, Render,
+    SharedString, Styled as _, WeakEntity, Window, div, rems,
+};
 use gpui_kit::base::v_flex;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
-use gpui::{App, AppContext as _, Context, Entity, IntoElement, KeyBinding, ParentElement as _, Render, SharedString, Styled as _, WeakEntity, Window, div, rems};
-use gpui::{DefiniteLength};
 
 use lithe_gpui_shared::tr;
 use lithe_ui::overlays::Dialog;

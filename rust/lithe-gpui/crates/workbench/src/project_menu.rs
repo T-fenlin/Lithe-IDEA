@@ -1,13 +1,18 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle,
+    Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Subscription, WeakEntity, Window, div, rems, rgb,
+};
+use gpui::{DismissEvent, deferred, radians};
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{Align, ElementExt as _, Placement, Positioner, h_flex, v_flex};
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems, rgb};
-use gpui::{DismissEvent, deferred, radians};
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 
 use lithe_gpui_settings::RecentProject;

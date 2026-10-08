@@ -1,5 +1,11 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, WeakEntity, Window, div, rems,
+};
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::StyledExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -8,8 +14,6 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
 };
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
 use lithe_gpui_notify::{Entry, EntryId, Severity, Store, matches_text};

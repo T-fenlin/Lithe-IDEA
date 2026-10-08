@@ -408,8 +408,24 @@ Dialog / Toast / Menu / Popover / Spotlight / Lightbox 的**统一挂载机制**
 5 条行为测试全过（单根、Esc 关层、显式关闭只跑一次 `on_close`、关闭后焦点归还、
 没挂宿主时**报告而不是 panic**）；两个 workspace 的 `cargo fmt --check` 均 exit 0。
 
-**仍未做（下一阶段）**：其余 9 个宿主 crate 的组件仍走 gpui-kit（机械批 → 组件重写）；
-rem 缩放锚点（`Theme::font_size` + `set_rem_size`）；尺寸守卫对 `rust/lithe-ui/` 失明。
+**两个结构缺口已补（2026-10-08）**：
+
+- **rem 缩放锚点**：组件库 `theme::Theme` 新增 `font_size: f32`（基准字号），`base_rem()` 由硬编码
+  `px(16.0)` 改为读它；`tokens` 不再各自乘 `font_scale`（此前它与 `ZoomControl` 改窗口 rem 大小是
+  **两套叠加的缩放**）；`Theme::update` 统一把 `font_size × font_scale` 标到所有窗口的 rem 大小，
+  新增 `Theme::apply_rem` 作为唯一入口；`ZoomControl` 改为把百分比写进主题；`WindowRoot` 挂载时继承
+  当前缩放。**并发现并接掉一处第二真源**：仓库里有**两个 `Theme`**——宿主自己的（`font_size: Pixels`）
+  与组件库的，宿主的 UI 字号设置原先只写自己那份、不会流到库的锚点；现在 `settings::theme::
+  apply_theme_font_size` 会把同一个值同步进组件库（带 `has_global` 守卫）。
+  验收：`cargo test -p lithe-ui --features test-support` = 1558 passed / 0 failed；
+  `cargo check --workspace --all-targets` = 0 error。
+- **尺寸守卫对组件库失明**：守卫本来就是**红的**（自检抓到被排除的 `crates/lithe-gpui` 已不存在），
+  不只是盲。已改为**按声明判定派生边界**（`DERIVED_ROOTS` 必须带 `UPSTREAM.md` 作证据），并把
+  组件库里属于我们自己的目录纳入扫描（`FIRST_PARTY_IN_DERIVED`：`lithe-ui/src/shell/host`、
+  `lithe-ui/src/lists/project`）。两条不变式任一不成立即判失败，防止覆盖静默失效。
+  验收：`--selftest` 与实扫均 exit 0。
+
+**仍未做（下一阶段）**：其余 9 个宿主 crate 的组件仍走 gpui-kit（组件重写批，剩余 369 行）。
 
 规模（grep 实测）：`open_dialog` 19、`close_dialog` 23、`replace_root` 4、`Root::new` 3、
 `push_notification` 1、`WindowExt` 引用 14 ⇒ 约 **60 处**，分布在 `workbench`(41)、`editor`(8)、

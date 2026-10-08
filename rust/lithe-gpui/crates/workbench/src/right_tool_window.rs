@@ -2,12 +2,16 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, Length,
+    ParentElement as _, Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window, div, rems,
+};
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, Length, ParentElement as _, Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems};
 use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
 
 use lithe_gpui_shared::tr;

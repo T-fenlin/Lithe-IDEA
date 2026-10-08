@@ -1,6 +1,13 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, StyleRefinement,
+    Styled as _, Subscription, WeakEntity, Window, div, rems,
+};
+use gpui::{Role, img, relative};
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -10,9 +17,6 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerState};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, Size};
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, WeakEntity, Window, div, rems};
-use gpui::{Role, img, relative};
 use lithe_gpui_shared::design::TAB_MAX_WIDTH;
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 

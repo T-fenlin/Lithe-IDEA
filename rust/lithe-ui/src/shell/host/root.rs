@@ -8,6 +8,7 @@ use gpui::{
 use crate::{
     feedback::{Toast, ToastViewport, Toaster},
     primitives::raise,
+    theme::ActiveTheme as _,
 };
 
 use super::priority;
@@ -37,7 +38,9 @@ pub struct WindowRoot {
 
 impl WindowRoot {
     /// 包住窗口内容。`content` 通常是外壳（`ShellWorkspace`）或欢迎页。
-    pub fn new(content: impl Into<AnyView>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(content: impl Into<AnyView>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // 新窗口继承当前缩放：尺寸只有一个锚点（主题基准字号 × 用户缩放）。
+        cx.theme().apply_rem(window);
         let toaster = cx.new(|_| Toaster::default());
         let _toaster_changed = cx.observe(&toaster, |_, _, cx| cx.notify());
         Self {

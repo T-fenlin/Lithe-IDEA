@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
+use gpui::{App, SharedString, WindowAppearance, px};
 use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::{ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry};
-use gpui::{App, SharedString, WindowAppearance, px};
 use lithe_gpui_shared::design;
 use lithe_gpui_shared::rem_px;
 
@@ -400,6 +400,12 @@ pub fn apply_theme_font_size(cx: &mut App, ui_font_size: f64) {
     let font_size = px(theme_font_size_for(ui_font_size));
     Theme::global_mut(cx).font_size = font_size;
     Theme::sync_base(cx);
+    // 组件库的尺寸锚点与宿主这里的基准字号是**同一个值**：库里的 rem 档位、窗口 rem 大小
+    // 都由它推出。不在这里同步，宿主的字号设置与组件库的锚点就成了两套缩放真源。
+    // `lithe_ui::theme::Theme::update` 自己会把新锚点标到所有窗口的 rem 大小上。
+    if cx.has_global::<lithe_ui::theme::Theme>() {
+        lithe_ui::theme::Theme::update(cx, |theme| theme.font_size = f32::from(font_size));
+    }
     cx.refresh_windows();
     println!(
         "S1_THEME font_size={:?} ui_font_size={ui_font_size}",

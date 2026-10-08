@@ -1,12 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    AnyElement, AppContext as _, Context, EventEmitter, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
+    Window, div, rems,
+};
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _};
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, AppContext as _, Context, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div, rems};
 
 use crate::debug_session::{DebugSessionHandle, copy_new_output};
 use lithe_gpui_editor::GutterBreakpoint;
