@@ -14,8 +14,9 @@ Lithe 现在有两套各自实现的界面（macOS 用 SwiftUI/AppKit，Windows 
    但它是**一个人重新打包的 Zed 快照**、没有公开源码仓库、约每周把版本重基到新的 Zed 提交上。
    所以必须**把源码 vendor 进仓库、自己持有 Zed 提交号**，而不是把它当成一个普通依赖。
 2. **整套前端从零重建**，不把既有 GPUI 分支（`feat/lithe-gpui-components`，445 个提交）当基线。
-   组件底座是 Ely GPUI Components（MIT）的 vendored fork（`crates/lithe-gpui`），
-   Lithe 自己的第一方组件放新建的 `lithe-ui`；外部发布的 `gpui-kit` **不引入**——
+   组件库是 **`rust/lithe-ui`**（Ely GPUI Components 的 vendored fork 与 Lithe 自有组件
+   **合成一个 crate**，MIT 派生）；界面层 **`rust/lithe-gpui`** 从零重写并 path 依赖它；
+   外部发布的 `gpui-kit` **不引入**——
    不是"以后退场"，而是从一开始就不出现在依赖里。
 3. **界面规格真源是 IDEA**（Community 版），不是某一端的现有实现；验收用
    `shared/platform-feature-matrix/` 的能力矩阵取 **Windows ∪ macOS 并集**。
@@ -70,9 +71,8 @@ macOS 侧的 SwiftUI 今天就通过 C ABI（`lithe_core_execute_json_with_event
 | 层 | 是什么 | 谁维护 | 依赖 |
 | --- | --- | --- | --- |
 | 框架层 | `gpui`（`gpui-pre` / `gpui-pre-platform`），负责窗口、GPU surface、输入、输入法、渲染 | **vendor 进仓库，我们持有提交号** | 无 |
-| 组件底座 | `crates/lithe-gpui`（Ely fork，MIT）提供视觉语言与通用组件 | 我们（复用既有分支的 fork，不跟踪上游） | 框架层 |
-| 第一方组件 | 新建 `crates/lithe-ui`：Lithe 自己的组件与窗口根宿主 | 我们 | 组件底座 |
-| 宿主 | `crates/lithe-gpui-*`（`app` / `workbench` / `editor` / `git` / `java` / `settings` / `terminal` / …） | 我们 | 上面三层 + `lithe-core` |
+| 组件库 | `rust/lithe-ui`：Ely fork 的组件（视觉语言与通用控件）**加上** Lithe 自有组件（项目树、窗口根宿主…），合成一个 crate | 我们（复用既有分支的 fork，不跟踪上游） | 框架层 |
+| 界面层 | `rust/lithe-gpui/crates/*`：`app` / `workbench` / `editor` / `git` / `java` / `settings` / `terminal` / … | 我们（**从零重写**，不复用既有分支的宿主代码） | 组件库 + `lithe-core` |
 
 **正确做法**：写业务界面时，新组件放 `lithe-ui`，能用的现成组件从 `lithe-gpui` 取。
 **不要这样做**：不要把第一方代码加进 vendored 目录（下文"尺寸与缩放"一节说明为什么）。
@@ -132,8 +132,17 @@ macOS 侧的 SwiftUI 今天就通过 C ABI（`lithe_core_execute_json_with_event
 | **对齐 `gpui-kit` 的 API 重构** | 尺寸 3 档扩到 5 档 + `Sizable`、`IconButton` 并入 `Button`、`TextInput` → `InputState`、`Switch`/`Checkbox`/`Dialog` 构造改 builder、i18n 换成 `rust_i18n` 并对齐宿主 | **直接复用**——这正是"编码与约定对齐 `gpui-kit`"的既有成果 |
 | 真 bug 修复 | 无障碍节点 id 撞车导致 panic、浮动面板缺"停靠回去 / 关闭"、隐藏的浮动面板仍渲染 | **必须复用**，否则重犯 |
 | Dock 能力先加后撤 | 先加了一批能力，后又"撤掉没有消费方的能力"、只留外壳真正用的 | 复用**撤后**的状态（这是已辩论过的结论：不留死 API） |
-| Lithe 侧新组件 | 项目树（`lists::project`） | **搬去 `lithe-ui`**（第一方组件不进 vendored 底座） |
+| Lithe 侧新组件 | 项目树（`lists::project`） | **留在 `lithe-ui` 内**（2026-10-08 定）：组件库是一个 crate，Ely 派生与自有组件不拆家 |
 | 画廊中文化 | 43 页演示的文案与翻译 | 与产品运行无关，独立取舍（它同时是回归样本） |
+
+**底座维护口径（2026-10-08 定）**：`lithe-gpui` **保持"我们维护的 fork"**，不回退成纯上游拷贝。
+理由是那 34 个提交里有**两处真 bug 修复**（无障碍节点 id 撞车导致的 panic、浮动面板缺"停靠回去 / 关闭"）
+与**一批对齐 `gpui-kit` 的 API 重构**，回退等于把已经赚到的保证再丢一次。
+代价必须显式承认并处理：底座不再"逐文件等于上游"，所以
+① `UPSTREAM.md` 要携带**完整**改动清单（已补：34 条提交）；
+② 尺寸守卫按"目录"而不是"crate 名"排除上游派生代码：把上游派生文件收进 `src/vendor/`
+（守卫只扫 `src/` 下不属于 `vendor/` 的部分）。**这一步尚未执行**——它要把上游派生文件里的
+`crate::` 引用整体改成 `crate::vendor::`，是独立一片，与本片的布局调整分开做。
 
 **另一条值得记的事实**：Ely 自带 **659 项测试**，既有工作把它们跑绿过（`82bca6c0`）。
 复用底座的收益不只是"组件数量"，还包括这套现成的回归网——这也是"从零手写"比不了的地方。
@@ -306,15 +315,18 @@ Search Everywhere 的按类型分段与相关度、替换的**应用**命令、�
 
 ### 10. 命名与落点
 
-- 新的第一方组件 crate 命名 **`lithe-ui`**。
-  `lithe-gpui` 这个名字留给 vendored 组件底座，宿主特性 crate 是 `lithe-gpui-*`，
-  三者要能一眼分开（尺寸守卫按 crate 名排除 vendored 库，名字撞了会误判）。
+- **命名定案（2026-10-08）**：组件库 = **`lithe-ui`**（`rust/lithe-ui`，独立 workspace）；
+  界面层 = **`lithe-gpui`**（`rust/lithe-gpui`，宿主 crate 的落点，从零重写）。两者平级、
+  各自独立 workspace。既有布局里"界面层目录"与"组件库 crate"同名，是这次混乱的根源。
 - **起点用独立 workspace**：`rust/lithe-gpui/Cargo.toml` 自己当 workspace 根（成员取通配 `crates/*`），
   **不并入 `rust/`**。理由是分片与互不干扰：本分支上 macOS 前端仍通过 C ABI 链接 `lithe-core`
   的 staticlib，Core 的 release profile 仍按"体积受控、供别的进程链接的库"来定；而并入会强制把
   `rust/` 的 resolver 从 2 升到 3、改变 Core 的 feature 合并策略，并让 GPUI 的大依赖树污染
   Core 的 `Cargo.lock`。**合并是一次单独的、可独立验证的片**，不在起点自检里做。
-- 第一方组件落点 `crates/lithe-ui/`（在上述 workspace 之下，成员是通配写法，新增 crate 不用改根 manifest）。
+- 组件库是**一个 crate**：Ely 派生内容与 Lithe 自有组件（项目树等）都在 `rust/lithe-ui` 里，不拆两个。
+- 界面层的第一个宿主 crate 落地时，在 `rust/lithe-gpui/` 建 workspace 根（`members = ["crates/*"]`、
+  `resolver = "3"`）。**在此之前那里只有一份 README**——空成员的 workspace 不合法
+  （`cargo metadata` 直接报错），所以不留空壳结构。
 - **它会被尺寸守卫扫描**，所以从第一天就必须是相对档位写法。
 - 需要补一行所有权登记：仓库所有权与共享边界的 Note，以及 `develop-lithe` 的所有权表。
 

@@ -1,7 +1,8 @@
 .DS_Store
 .build/
 rust/target/
-# GPUI 前端是 rust/ 下的独立 workspace，产物不落在 rust/target。
+# GPUI 组件库与界面层都是 rust/ 下的独立 workspace，产物不落在 rust/target。
+rust/lithe-ui/target/
 rust/lithe-gpui/target/
 .swiftpm/
 .idea/
