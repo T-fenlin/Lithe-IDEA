@@ -16,6 +16,8 @@ use gpui_kit::{
     div, rems,
 };
 
+use lithe_gpui_shared::icons::idea;
+use lithe_gpui_shared::tr;
 use lithe_ui::buttons::{Button as LitheButton, ButtonVariant};
 use lithe_ui::lists::{
     PROJECT_ACTIONS, ProjectAction, ProjectAsset, ProjectLabels, ProjectTree, row_menu_entries,
@@ -23,8 +25,6 @@ use lithe_ui::lists::{
 use lithe_ui::menus::{DropdownMenu, Menu, MenuItem, OverflowMenu};
 use lithe_ui::primitives::IconName;
 use lithe_ui::theme::Size;
-use lithe_gpui_shared::icons::idea;
-use lithe_gpui_shared::tr;
 
 use crate::model::{Snapshot, icon_for, load_git_status, load_snapshot};
 

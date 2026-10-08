@@ -11,9 +11,9 @@ use std::path::Path;
 use gpui_kit::App;
 use gpui_kit::SharedString;
 use gpui_kit::assets::IconName;
-use lithe_ui::lists::{GitStatus, ProjectIcon, ProjectIconRequest, ProjectNode, ProjectRowKind};
 use lithe_gpui_shared::core_json;
 use lithe_gpui_shared::icons::file_icon;
+use lithe_ui::lists::{GitStatus, ProjectIcon, ProjectIconRequest, ProjectNode, ProjectRowKind};
 use serde_json::{Value, json};
 
 /// One folder or file of the workspace snapshot, as Core sends it.
