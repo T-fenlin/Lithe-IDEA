@@ -318,7 +318,7 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
                     .min_w_0()
                     .truncate()
                     .text_sm()
-                    .font_weight(gpui_kit::FontWeight::MEDIUM)
+                    .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(cx.theme().foreground)
                     .child(project.artifact_id.clone()),
             )
@@ -354,7 +354,7 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
                     .text_xs()
                     .when(is_active, |this| {
                         this.text_color(cx.theme().primary)
-                            .font_weight(gpui_kit::FontWeight::MEDIUM)
+                            .font_weight(gpui::FontWeight::MEDIUM)
                     })
                     .when(!is_active, |this| {
                         this.text_color(cx.theme().muted_foreground)

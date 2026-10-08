@@ -58,7 +58,7 @@ pub fn install_actions(cx: &mut App) {
     });
 }
 
-gpui_kit::actions!(lithe_workbench, [OpenReplaceInFiles]);
+gpui::actions!(lithe_workbench, [OpenReplaceInFiles]);
 
 pub(crate) fn open_dialog(panel: Entity<ReplaceInFiles>, window: &mut Window, cx: &mut App) {
     if window.has_active_dialog(cx) {
@@ -73,7 +73,7 @@ pub(crate) fn open_dialog(panel: Entity<ReplaceInFiles>, window: &mut Window, cx
             let rem = window.rem_size();
             let viewport = window.viewport_size();
             let height = crate::rem_px(rem, PANEL_HEIGHT)
-                .min((viewport.height - rem * 2.).max(gpui_kit::Pixels::ZERO));
+                .min((viewport.height - rem * 2.).max(gpui::Pixels::ZERO));
             let handle = handle.clone();
             let teardown = handle.clone();
             Dialog::new(id)

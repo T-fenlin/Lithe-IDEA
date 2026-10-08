@@ -18,7 +18,7 @@ fn workspace_dir() -> PathBuf {
     root
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn command_a_without_focus_selects_the_top_level_items(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     // 项目树现在是组件库的控件，渲染前必须由组合根那一套把组件库主题装上
@@ -70,7 +70,7 @@ impl lithe_gpui_explorer::FileClipboardPort for RecordingClipboard {
     }
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn command_c_writes_the_selected_items_to_the_clipboard_port(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     cx.update(lithe_gpui_workbench::component_theme::install_component_theme);

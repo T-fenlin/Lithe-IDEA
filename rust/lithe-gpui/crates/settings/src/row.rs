@@ -14,14 +14,14 @@ pub enum ControlWidth {
 }
 
 impl ControlWidth {
-    pub fn rems(self) -> gpui_kit::Rems {
+    pub fn rems(self) -> gpui::Rems {
         match self {
             Self::Default => rems(144. / 16.),
             Self::Number => rems(112. / 16.),
         }
     }
 
-    pub fn length(self) -> gpui_kit::Length {
+    pub fn length(self) -> gpui::Length {
         self.rems().into()
     }
 }
@@ -44,7 +44,7 @@ pub fn settings_group(title: SharedString, rows: Vec<AnyElement>, cx: &App) -> i
                 .border_b_1()
                 .border_color(cx.theme().border)
                 .text_sm()
-                .font_weight(gpui_kit::FontWeight::MEDIUM)
+                .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(cx.theme().muted_foreground)
                 .child(title),
         )
@@ -125,7 +125,7 @@ pub fn page_title(title: SharedString) -> impl IntoElement {
         .w_full()
         .mb_5()
         .text_xl()
-        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+        .font_weight(gpui::FontWeight::SEMIBOLD)
         .child(title)
 }
 
@@ -140,11 +140,11 @@ mod tests {
     #[test]
     fn control_widths_are_the_windows_values() {
         let to_px = |width: ControlWidth, rem: f32| {
-            gpui_kit::AbsoluteLength::from(width.rems()).to_pixels(gpui_kit::px(rem))
+            gpui::AbsoluteLength::from(width.rems()).to_pixels(gpui::px(rem))
         };
 
-        assert_eq!(to_px(ControlWidth::Default, 16.), gpui_kit::px(144.));
-        assert_eq!(to_px(ControlWidth::Number, 16.), gpui_kit::px(112.));
-        assert_eq!(to_px(ControlWidth::Default, 32.), gpui_kit::px(288.));
+        assert_eq!(to_px(ControlWidth::Default, 16.), gpui::px(144.));
+        assert_eq!(to_px(ControlWidth::Number, 16.), gpui::px(112.));
+        assert_eq!(to_px(ControlWidth::Default, 32.), gpui::px(288.));
     }
 }

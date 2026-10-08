@@ -55,7 +55,7 @@ pub fn install_actions(cx: &mut App) {
     ]);
 }
 
-gpui_kit::actions!(lithe_workbench, [NextScope, PreviousScope]);
+gpui::actions!(lithe_workbench, [NextScope, PreviousScope]);
 
 pub(crate) fn open_dialog(overlay: Entity<SearchEverywhere>, window: &mut Window, cx: &mut App) {
     if window.has_active_dialog(cx) {
@@ -827,7 +827,7 @@ mod tests {
         });
     }
 
-    #[gpui_kit::test]
+    #[gpui::test]
     fn the_actions_scope_and_command_mode_never_start_a_core_query(cx: &mut TestAppContext) {
         let (handle, overlay) = open_overlay(cx);
 

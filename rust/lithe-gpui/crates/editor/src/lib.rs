@@ -17,7 +17,7 @@ pub use problems::ProblemsPane;
 
 use gpui::{App, KeyBinding};
 
-gpui_kit::actions!(
+gpui::actions!(
     lithe_editor,
     [SaveBuffer, NavigateToDefinition, CloseActiveTab]
 );

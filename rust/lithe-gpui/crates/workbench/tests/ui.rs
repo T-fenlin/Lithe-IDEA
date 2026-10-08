@@ -24,7 +24,7 @@ impl Drop for TempFile {
     }
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn editor_pane_renders_a_real_file_and_reports_its_indent(cx: &mut TestAppContext) {
     let file = TempFile::new("indent.md", "# 标题\n\n正文\n");
 
@@ -76,7 +76,7 @@ fn editor_pane_renders_a_real_file_and_reports_its_indent(cx: &mut TestAppContex
     });
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn editor_body_host_fills_the_pane_below_the_tab_bar(cx: &mut TestAppContext) {
     let file = TempFile::new("host.md", "# 标题\n\n正文\n");
 
@@ -110,7 +110,7 @@ fn editor_body_host_fills_the_pane_below_the_tab_bar(cx: &mut TestAppContext) {
     .unwrap();
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn theme_application_caps_simultaneous_notification_toasts_at_three(cx: &mut TestAppContext) {
     use gpui_kit::component::Theme;
     use lithe_gpui_settings::theme::NOTIFICATION_MAX_ITEMS;
@@ -145,7 +145,7 @@ fn theme_application_caps_simultaneous_notification_toasts_at_three(cx: &mut Tes
     );
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn theme_application_sets_notification_toast_insets_from_the_macos_source(cx: &mut TestAppContext) {
     use gpui_kit::component::Theme;
     use lithe_gpui_settings::theme::{
@@ -219,7 +219,7 @@ fn theme_application_sets_notification_toast_insets_from_the_macos_source(cx: &m
     );
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn welcome_view_lists_recent_projects_and_a_row_click_calls_the_opener(cx: &mut TestAppContext) {
     use std::sync::{Arc, Mutex};
 
@@ -288,7 +288,7 @@ fn welcome_view_lists_recent_projects_and_a_row_click_calls_the_opener(cx: &mut 
     });
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn welcome_window_renders_the_title_bar_above_its_content(cx: &mut TestAppContext) {
     use gpui_kit::component::Theme;
     use lithe_gpui_settings::RecentProjects;

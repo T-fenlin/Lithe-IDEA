@@ -200,7 +200,7 @@ pub fn left_activity_index(selector: &str) -> Option<usize> {
 }
 
 type GitIdentityDeliver =
-    Box<dyn FnOnce(Option<String>, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static>;
+    Box<dyn FnOnce(Option<String>, &mut gpui::Window, &mut gpui::App) + 'static>;
 
 trait IntoGitIdentity {
     type Target;
@@ -509,9 +509,9 @@ pub struct ShellWorkspace {
     /// dock owns how they are laid out, and a drag on a divider is the only way
     /// a person sizes them.
     dock: Entity<Dock>,
-    _dock_subscription: Option<gpui_kit::Subscription>,
+    _dock_subscription: Option<gpui::Subscription>,
     /// The shell's own handle, for the closures the dock calls back into.
-    self_handle: gpui_kit::WeakEntity<ShellWorkspace>,
+    self_handle: gpui::WeakEntity<ShellWorkspace>,
     right_view: RightToolWindowView,
     right_visible: bool,
     maven_project: Option<crate::maven::MavenProjectView>,
@@ -520,30 +520,29 @@ pub struct ShellWorkspace {
     explorer: Entity<Explorer>,
     changes: Entity<ChangesView>,
     search: Entity<crate::search_panel::SearchPanel>,
-    quick_open_overlay: Option<gpui_kit::WeakEntity<crate::quick_open::QuickOpen>>,
-    search_everywhere_overlay:
-        Option<gpui_kit::WeakEntity<crate::search_everywhere::SearchEverywhere>>,
-    replace_in_files_overlay: Option<gpui_kit::WeakEntity<crate::replace_in_files::ReplaceInFiles>>,
+    quick_open_overlay: Option<gpui::WeakEntity<crate::quick_open::QuickOpen>>,
+    search_everywhere_overlay: Option<gpui::WeakEntity<crate::search_everywhere::SearchEverywhere>>,
+    replace_in_files_overlay: Option<gpui::WeakEntity<crate::replace_in_files::ReplaceInFiles>>,
     editor: Entity<EditorPane>,
     extensions_page: Option<Entity<crate::extensions_page::ExtensionsPage>>,
     extensions_page_open: bool,
     terminal: Entity<TerminalPane>,
     bottom_git: Entity<BottomPane>,
     run: Entity<RunPane>,
-    _run_subscription: Option<gpui_kit::Subscription>,
+    _run_subscription: Option<gpui::Subscription>,
     debug: Entity<DebugPane>,
-    _debug_subscription: Option<gpui_kit::Subscription>,
+    _debug_subscription: Option<gpui::Subscription>,
     bottom_kind: BottomPaneKind,
     bottom_visible: bool,
-    _settings_subscription: Option<gpui_kit::Subscription>,
-    _terminal_subscription: Option<gpui_kit::Subscription>,
-    _editor_subscription: Option<gpui_kit::Subscription>,
-    focus: gpui_kit::FocusHandle,
+    _settings_subscription: Option<gpui::Subscription>,
+    _terminal_subscription: Option<gpui::Subscription>,
+    _editor_subscription: Option<gpui::Subscription>,
+    focus: gpui::FocusHandle,
     menu_bar: Entity<MenuBar>,
     project_menu: Entity<ProjectMenu>,
-    _project_menu_subscription: Option<gpui_kit::Subscription>,
+    _project_menu_subscription: Option<gpui::Subscription>,
     branch_panel: Entity<BranchPanel>,
-    _branch_panel_subscription: Option<gpui_kit::Subscription>,
+    _branch_panel_subscription: Option<gpui::Subscription>,
     branch_panel_probe: bool,
     recent_projects: RecentProjects,
     recent_projects_path: Option<PathBuf>,
@@ -551,11 +550,11 @@ pub struct ShellWorkspace {
     notifications: Entity<lithe_gpui_notify::Store>,
     notification_panel: Entity<crate::notifications::NotificationPanel>,
     spring_panel: Entity<crate::spring_panel::SpringPanel>,
-    _notification_toast_subscription: Option<gpui_kit::Subscription>,
+    _notification_toast_subscription: Option<gpui::Subscription>,
     notification_toast_seq: u64,
     session: SessionTracker,
-    session_save_task: Option<gpui_kit::Task<()>>,
-    _quit_subscription: Option<gpui_kit::Subscription>,
+    session_save_task: Option<gpui::Task<()>>,
+    _quit_subscription: Option<gpui::Subscription>,
 }
 
 impl ShellWorkspace {
@@ -851,11 +850,11 @@ impl ShellWorkspace {
                     Box::new(
                         move |scope: &str,
                               deliver: GitIdentityDeliver,
-                              async_cx: &mut gpui_kit::AsyncWindowContext| {
+                              async_cx: &mut gpui::AsyncWindowContext| {
                             let scope = IdentityScope::from_id(scope);
                             let root = root_text.clone();
                             async_cx
-                            .spawn(async move |async_cx: &mut gpui_kit::AsyncWindowContext| {
+                            .spawn(async move |async_cx: &mut gpui::AsyncWindowContext| {
                                 let result = async_cx
                                     .background_spawn(async move {
                                         lithe_gpui_git::inspect_identity(
@@ -886,12 +885,12 @@ impl ShellWorkspace {
                               key: &str,
                               value: Option<String>,
                               deliver: GitIdentityDeliver,
-                              async_cx: &mut gpui_kit::AsyncWindowContext| {
+                              async_cx: &mut gpui::AsyncWindowContext| {
                             let scope = IdentityScope::from_id(scope);
                             let field = IdentityField::from_id(key);
                             let root = root_text.clone();
                             async_cx
-                            .spawn(async move |async_cx: &mut gpui_kit::AsyncWindowContext| {
+                            .spawn(async move |async_cx: &mut gpui::AsyncWindowContext| {
                                 let result = async_cx
                                     .background_spawn(async move {
                                         lithe_gpui_git::configure_identity(
@@ -2820,7 +2819,7 @@ impl ShellWorkspace {
     }
 }
 
-gpui_kit::actions!(lithe_workbench, [OpenProjectFolder]);
+gpui::actions!(lithe_workbench, [OpenProjectFolder]);
 
 pub fn install_open_project_action(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("ctrl-o", OpenProjectFolder, None)]);
@@ -3374,7 +3373,7 @@ mod tests {
 
     /// 窗口尺寸规格仍写在宿主侧，但上下限现在由 dock 持有：三块工具窗的
     /// 区间必须与 macOS 真源一致（见 `UI-MAP.md`）。
-    #[gpui_kit::test]
+    #[gpui::test]
     fn the_dock_carries_the_spec_ranges_for_each_tool_window(cx: &mut TestAppContext) {
         cx.update(|cx| {
             lithe_ui::theme::Theme::init(cx);
@@ -3425,7 +3424,7 @@ mod tests {
     }
 
     /// 恢复会话时宽度经 dock 夹取：超出上界的存量值落到上界，非法值落到下界。
-    #[gpui_kit::test]
+    #[gpui::test]
     fn a_stored_width_is_clamped_through_the_dock(cx: &mut TestAppContext) {
         cx.update(|cx| {
             lithe_ui::theme::Theme::init(cx);
@@ -3519,7 +3518,7 @@ mod tests {
             let key = action
                 .menu_key()
                 .unwrap_or_else(|| panic!("{action:?} 没有键位字面量"));
-            gpui_kit::Keystroke::parse(key)
+            gpui::Keystroke::parse(key)
                 .unwrap_or_else(|error| panic!("{action:?} 的键位 {key:?} 解析不了：{error}"));
             assert!(listed.contains(&action), "{action:?} 没有画在任何菜单里");
             assert!(

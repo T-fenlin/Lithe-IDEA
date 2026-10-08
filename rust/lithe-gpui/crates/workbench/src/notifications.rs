@@ -548,5 +548,5 @@ mod tests {
         lithe_gpui_shared::tr_args(key, &[("count", count.as_str())])
     }
 
-    type SharedStringAlias = gpui_kit::SharedString;
+    type SharedStringAlias = gpui::SharedString;
 }

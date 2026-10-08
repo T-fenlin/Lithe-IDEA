@@ -38,7 +38,7 @@ impl HoverProvider for LitheHoverProvider {
         offset: usize,
         _window: &mut Window,
         cx: &mut App,
-    ) -> Task<gpui_kit::Result<Option<Hover>>> {
+    ) -> Task<gpui::Result<Option<Hover>>> {
         let (line, utf16_column) = crate::navigation::core_position(text, offset);
         let body = text.to_string();
         let file_path = self.file_path.clone();

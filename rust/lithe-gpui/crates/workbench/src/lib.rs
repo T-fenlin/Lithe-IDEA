@@ -33,7 +33,7 @@ pub use workspace::{
     left_activity_index, set_open_window_host, set_shell_startup,
 };
 
-pub fn install_actions(cx: &mut gpui_kit::App) {
+pub fn install_actions(cx: &mut gpui::App) {
     lithe_gpui_explorer::install_actions(cx);
 }
 

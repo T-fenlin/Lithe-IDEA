@@ -28,14 +28,14 @@ pub(crate) fn shell() -> Option<WeakEntity<ShellWorkspace>> {
 }
 
 thread_local! {
-    static SHELL_FOCUS: RefCell<Option<gpui_kit::FocusHandle>> = const { RefCell::new(None) };
+    static SHELL_FOCUS: RefCell<Option<gpui::FocusHandle>> = const { RefCell::new(None) };
 }
 
-pub(crate) fn set_shell_focus(focus: gpui_kit::FocusHandle) {
+pub(crate) fn set_shell_focus(focus: gpui::FocusHandle) {
     SHELL_FOCUS.with(|slot| *slot.borrow_mut() = Some(focus));
 }
 
-pub fn shell_focus() -> Option<gpui_kit::FocusHandle> {
+pub fn shell_focus() -> Option<gpui::FocusHandle> {
     SHELL_FOCUS.with(|slot| slot.borrow().clone())
 }
 
@@ -169,7 +169,7 @@ pub fn install_actions(cx: &mut App) {
     cx.on_action(|_: &ToggleMenuBar, cx: &mut App| crate::menu_bar::toggle_menu_bar(cx));
 }
 
-gpui_kit::actions!(lithe_workbench, [OpenCommandPalette, ToggleMenuBar]);
+gpui::actions!(lithe_workbench, [OpenCommandPalette, ToggleMenuBar]);
 
 const PANEL_WIDTH: f32 = 704.;
 const PANEL_MAX_HEIGHT: f32 = 512.;

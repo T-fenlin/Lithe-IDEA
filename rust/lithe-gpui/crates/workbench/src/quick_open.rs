@@ -48,7 +48,7 @@ pub fn install_actions(cx: &mut App) {
     });
 }
 
-gpui_kit::actions!(lithe_workbench, [OpenQuickOpen]);
+gpui::actions!(lithe_workbench, [OpenQuickOpen]);
 
 pub(crate) fn open_dialog(quick_open: Entity<QuickOpen>, window: &mut Window, cx: &mut App) {
     if window.has_active_dialog(cx) {

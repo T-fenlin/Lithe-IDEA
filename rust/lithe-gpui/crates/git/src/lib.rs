@@ -25,7 +25,7 @@ pub use remote::{
 
 use gpui::{App, KeyBinding};
 
-gpui_kit::actions!(lithe_git, [CommitChanges]);
+gpui::actions!(lithe_git, [CommitChanges]);
 
 pub fn install_actions(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("ctrl-enter", CommitChanges, None)]);

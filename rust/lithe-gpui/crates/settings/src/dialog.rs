@@ -57,7 +57,7 @@ pub fn install_actions(cx: &mut App) {
     });
 }
 
-gpui_kit::actions!(lithe_settings, [OpenSettings]);
+gpui::actions!(lithe_settings, [OpenSettings]);
 
 pub fn open_settings_dialog(window: &mut Window, cx: &mut App) {
     open_settings_dialog_at(window, cx, Category::DEFAULT);
@@ -87,7 +87,7 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
             let margin = rem;
             let width = rem_px(rem, DIALOG_WIDTH);
             let height = rem_px(rem, DIALOG_HEIGHT)
-                .min((viewport.height - margin * 2.).max(gpui_kit::Pixels::ZERO));
+                .min((viewport.height - margin * 2.).max(gpui::Pixels::ZERO));
             let view = view.clone();
             Dialog::new(id)
                 // 居中卡片（上游 `margin_top((viewport-height)/2)` 等价于默认居中），高度给死；
@@ -107,7 +107,7 @@ pub fn open_settings_dialog_at(window: &mut Window, cx: &mut App, category: Cate
 
 pub(crate) use lithe_gpui_shared::rem_px;
 
-fn rem_length(spec_px: f32) -> gpui_kit::Length {
+fn rem_length(spec_px: f32) -> gpui::Length {
     rems(spec_px / 16.).into()
 }
 
@@ -489,7 +489,7 @@ fn maven_config_effective(
     }
 }
 
-fn run_page_hint(text: SharedString, cx: &Context<SettingsDialog>) -> gpui_kit::AnyElement {
+fn run_page_hint(text: SharedString, cx: &Context<SettingsDialog>) -> gpui::AnyElement {
     div()
         .w_full()
         .text_sm()
@@ -973,7 +973,7 @@ impl SettingsDialog {
             )
     }
 
-    fn general_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+    fn general_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         vec![
             settings_group(
                 tr("lithe.settings.mac.language"),
@@ -1016,11 +1016,7 @@ impl SettingsDialog {
         ]
     }
 
-    fn appearance_note(
-        &self,
-        key: AppearanceKey,
-        cx: &Context<Self>,
-    ) -> Option<gpui_kit::AnyElement> {
+    fn appearance_note(&self, key: AppearanceKey, cx: &Context<Self>) -> Option<gpui::AnyElement> {
         let source = self.store.read(cx).appearance_source(key);
         self.appearance_note_for(source, &[key], cx)
     }
@@ -1030,7 +1026,7 @@ impl SettingsDialog {
         source: AppearanceSource,
         keys: &[AppearanceKey],
         cx: &Context<Self>,
-    ) -> Option<gpui_kit::AnyElement> {
+    ) -> Option<gpui::AnyElement> {
         if !source.is_workspace_override() {
             return None;
         }
@@ -1051,11 +1047,7 @@ impl SettingsDialog {
         Some(appearance_source_note(tr(source.locale_key()), revert, cx))
     }
 
-    fn appearance_page(
-        &self,
-        settings: &Settings,
-        cx: &Context<Self>,
-    ) -> Vec<gpui_kit::AnyElement> {
+    fn appearance_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         let mode = AppearanceMode::from_settings(settings);
         let applied_theme = self.store.read(cx).applied_theme();
         let themes = theme_choices(cx, applied_theme.clone());
@@ -1211,7 +1203,7 @@ impl SettingsDialog {
         ]
     }
 
-    fn editor_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+    fn editor_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         vec![
             settings_group(
                 tr("lithe.settings.mac.display"),
@@ -1328,7 +1320,7 @@ impl SettingsDialog {
         ]
     }
 
-    fn terminal_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+    fn terminal_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         vec![
             settings_group(
                 tr("lithe.settings.mac.shell"),
@@ -1577,7 +1569,7 @@ impl SettingsDialog {
         eprintln!("{GIT_IDENTITY_TAG} {detail}");
     }
 
-    fn git_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+    fn git_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         if self.git.host.is_none() {
             return self.empty_page(cx);
         }
@@ -1589,7 +1581,7 @@ impl SettingsDialog {
             .unwrap_or_default();
         self.git_diagnose(&format!("run=render host=present root={host_root}"));
 
-        let mut rows: Vec<gpui_kit::AnyElement> = Vec::new();
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
 
         rows.push(settings_row(
             "settings-row-git-scope",
@@ -1748,7 +1740,7 @@ impl SettingsDialog {
         ]
     }
 
-    fn git_identity_row(&self, field: IdentityField, cx: &Context<Self>) -> gpui_kit::AnyElement {
+    fn git_identity_row(&self, field: IdentityField, cx: &Context<Self>) -> gpui::AnyElement {
         let draft = self.git_draft(field, cx);
         let save_enabled = git_save_enabled(
             self.git.setup.as_ref(),
@@ -2075,7 +2067,7 @@ impl SettingsDialog {
         .detach();
     }
 
-    fn project_page(&self, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+    fn project_page(&self, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         let environment = self.project.environment.as_ref();
         let detecting = || EffectiveLine {
             text: tr("lithe.toolchain.detecting"),
@@ -2083,7 +2075,7 @@ impl SettingsDialog {
             detail: None,
         };
 
-        let mut toolchain_rows: Vec<gpui_kit::AnyElement> = Vec::new();
+        let mut toolchain_rows: Vec<gpui::AnyElement> = Vec::new();
 
         let scope_key = if self.project.workspace_root.is_some() {
             "lithe.settings.gpui.projectScopeProject"
@@ -2146,7 +2138,7 @@ impl SettingsDialog {
 
         toolchain_rows.push(self.project_actions(cx));
 
-        let maven_rows: Vec<gpui_kit::AnyElement> = MavenConfigField::ALL
+        let maven_rows: Vec<gpui::AnyElement> = MavenConfigField::ALL
             .into_iter()
             .map(|field| self.project_maven_config_row(field, cx))
             .collect();
@@ -2164,7 +2156,7 @@ impl SettingsDialog {
         effective: EffectiveLine,
         detected: Option<SharedString>,
         cx: &Context<Self>,
-    ) -> gpui_kit::AnyElement {
+    ) -> gpui::AnyElement {
         v_flex()
             .id(("settings-project-row", field.index()))
             .w_full()
@@ -2264,7 +2256,7 @@ impl SettingsDialog {
         note: Option<SharedString>,
         is_error: bool,
         cx: &Context<Self>,
-    ) -> gpui_kit::AnyElement {
+    ) -> gpui::AnyElement {
         v_flex()
             .id(id)
             .w_full()
@@ -2300,7 +2292,7 @@ impl SettingsDialog {
         &self,
         field: MavenConfigField,
         cx: &Context<Self>,
-    ) -> gpui_kit::AnyElement {
+    ) -> gpui::AnyElement {
         let effective = maven_config_effective(field, self.project.environment.as_ref());
         v_flex()
             .id(("settings-maven-config-row", field.index()))
@@ -2379,7 +2371,7 @@ impl SettingsDialog {
             .into_any_element()
     }
 
-    fn project_actions(&self, cx: &Context<Self>) -> gpui_kit::AnyElement {
+    fn project_actions(&self, cx: &Context<Self>) -> gpui::AnyElement {
         h_flex()
             .w_full()
             .items_center()
@@ -2432,11 +2424,11 @@ impl SettingsDialog {
         }
     }
 
-    fn lsp_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+    fn lsp_page(&self, settings: &Settings, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         let environment = self.project.environment.as_ref();
         let detecting = || SharedString::from(tr("lithe.toolchain.detecting"));
 
-        let mut service_rows: Vec<gpui_kit::AnyElement> = vec![settings_row(
+        let mut service_rows: Vec<gpui::AnyElement> = vec![settings_row(
             "settings-row-lsp-auto-completion",
             tr("lithe.settings.mac.autoCompletion"),
             Some(tr("lithe.settings.gpui.autoCompletionDescription")),
@@ -2569,8 +2561,8 @@ impl SettingsDialog {
         .detach();
     }
 
-    fn run_page(&self, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
-        let mut rows: Vec<gpui_kit::AnyElement> = Vec::new();
+    fn run_page(&self, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
 
         rows.push(
             div()
@@ -2667,7 +2659,7 @@ impl SettingsDialog {
         index: usize,
         configuration: &RunConfigurationView,
         cx: &Context<Self>,
-    ) -> gpui_kit::AnyElement {
+    ) -> gpui::AnyElement {
         let fact = |label_key: &'static str, value: SharedString, muted: bool| {
             h_flex()
                 .w_full()
@@ -2751,7 +2743,7 @@ impl SettingsDialog {
             .into_any_element()
     }
 
-    fn empty_page(&self, cx: &Context<Self>) -> Vec<gpui_kit::AnyElement> {
+    fn empty_page(&self, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         let prerequisite = self
             .category
             .prerequisite_key()
@@ -2888,7 +2880,7 @@ impl SettingsDialog {
         current_label: SharedString,
         options: Vec<(SharedString, SharedString, bool)>,
         on_select: Box<dyn Fn(SharedString, &mut Window, &mut App) + 'static>,
-    ) -> gpui_kit::AnyElement {
+    ) -> gpui::AnyElement {
         let on_select = std::rc::Rc::new(on_select);
         Button::new(id)
             .outline()

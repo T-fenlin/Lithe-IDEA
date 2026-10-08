@@ -21,7 +21,7 @@ fn workspace_dir() -> PathBuf {
 
 /// The panel header's two actions — 「全部折叠」与「刷新」——through the same methods its buttons
 /// call. The buttons themselves are only reachable by pointer, so this lane drives the actions.
-#[gpui_kit::test]
+#[gpui::test]
 fn the_panel_actions_collapse_every_folder_and_refresh_the_snapshot(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     // 项目树是组件库的控件，渲染前要装组件库主题（与生产组合根同一入口）。

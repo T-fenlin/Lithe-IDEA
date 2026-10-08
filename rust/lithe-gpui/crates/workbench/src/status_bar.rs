@@ -134,7 +134,7 @@ fn entry_icon(entry: &StatusEntry, cx: &App) -> Option<AnyElement> {
     if let Some(path) = entry.icon {
         let theme = gpui_kit::component::Theme::global(cx);
         return Some(
-            gpui_kit::svg()
+            gpui::svg()
                 .path(path)
                 .flex_shrink_0()
                 .text_color(theme.muted_foreground)

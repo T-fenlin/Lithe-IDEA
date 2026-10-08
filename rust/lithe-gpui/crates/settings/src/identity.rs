@@ -151,8 +151,8 @@ pub struct GitIdentityHost {
     pub load: Box<
         dyn Fn(
             &str,
-            Box<dyn FnOnce(Option<String>, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static>,
-            &mut gpui_kit::AsyncWindowContext,
+            Box<dyn FnOnce(Option<String>, &mut gpui::Window, &mut gpui::App) + 'static>,
+            &mut gpui::AsyncWindowContext,
         ),
     >,
     pub save: Box<
@@ -160,8 +160,8 @@ pub struct GitIdentityHost {
             &str,
             &str,
             Option<String>,
-            Box<dyn FnOnce(Option<String>, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static>,
-            &mut gpui_kit::AsyncWindowContext,
+            Box<dyn FnOnce(Option<String>, &mut gpui::Window, &mut gpui::App) + 'static>,
+            &mut gpui::AsyncWindowContext,
         ),
     >,
 }
@@ -197,9 +197,9 @@ impl GitIdentityPage {
     pub fn load<T: 'static>(
         &self,
         scope: IdentityScope,
-        deliver: impl FnOnce(Option<IdentitySetup>, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
-        window: &mut gpui_kit::Window,
-        cx: &mut gpui_kit::Context<T>,
+        deliver: impl FnOnce(Option<IdentitySetup>, &mut gpui::Window, &mut gpui::App) + 'static,
+        window: &mut gpui::Window,
+        cx: &mut gpui::Context<T>,
     ) {
         let scope_id = scope.id().to_string();
         let host = self.host.clone();
@@ -224,9 +224,9 @@ impl GitIdentityPage {
         scope: IdentityScope,
         field: IdentityField,
         value: Option<String>,
-        deliver: impl FnOnce(Option<IdentitySetup>, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
-        window: &mut gpui_kit::Window,
-        cx: &mut gpui_kit::Context<T>,
+        deliver: impl FnOnce(Option<IdentitySetup>, &mut gpui::Window, &mut gpui::App) + 'static,
+        window: &mut gpui::Window,
+        cx: &mut gpui::Context<T>,
     ) {
         let host = self.host.clone();
         cx.spawn_in(&*window, async move |_view, async_cx| {

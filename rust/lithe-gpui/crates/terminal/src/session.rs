@@ -200,7 +200,7 @@ pub(crate) fn blocking_recv(receiver: &Arc<Mutex<Receiver<SessionEvent>>>) -> Op
     guard.recv().ok()
 }
 
-impl gpui_kit::EventEmitter<TerminalPaneEvent> for TerminalPane {}
+impl gpui::EventEmitter<TerminalPaneEvent> for TerminalPane {}
 
 impl TerminalPane {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {

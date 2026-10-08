@@ -47,7 +47,7 @@ pub fn update_content<V: Render, R>(
     content: &Entity<V>,
     cx: &mut TestAppContext,
     update: impl FnOnce(&mut V, &mut Window, &mut Context<V>) -> R,
-) -> gpui_kit::Result<R> {
+) -> gpui::Result<R> {
     cx.update_window(window.into(), |_, window, cx| {
         content.update(cx, |view, cx| update(view, window, cx))
     })

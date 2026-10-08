@@ -142,7 +142,7 @@ impl ProjectOpener for WorkspaceOpener {
             return;
         }
         eprintln!("{WELCOME_TAG} pick_folder state=prompt");
-        let picked = cx.prompt_for_paths(gpui_kit::PathPromptOptions {
+        let picked = cx.prompt_for_paths(gpui::PathPromptOptions {
             files: false,
             directories: true,
             multiple: false,

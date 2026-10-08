@@ -203,7 +203,7 @@ pub const KEY_ZOOM_OUT: &str = "ctrl--";
 pub const KEY_RESET_ZOOM: &str = "ctrl-0";
 pub const KEY_GO_TO_LINE: &str = "ctrl-g";
 
-gpui_kit::actions!(
+gpui::actions!(
     lithe_workbench,
     [
         ReopenTab,
@@ -226,7 +226,7 @@ fn push_menu_key(menu_action: MenuAction, key: &'static str, cx: &mut App) {
     eprintln!("S1_MENU_KEY id={id} source={key} state=pushed");
 }
 
-fn install_menu_key<A: gpui_kit::Action>(
+fn install_menu_key<A: gpui::Action>(
     cx: &mut App,
     key: &'static str,
     action: A,
@@ -454,7 +454,7 @@ impl MenuAction {
         }
     }
 
-    pub fn keybind_action(self) -> Option<Box<dyn gpui_kit::Action>> {
+    pub fn keybind_action(self) -> Option<Box<dyn gpui::Action>> {
         use crate::command_palette::{OpenCommandPalette, ToggleMenuBar as ToggleMenuBarAction};
 
         Some(match self {
@@ -1023,7 +1023,7 @@ pub struct MenuBar {
     restore_focus: bool,
     pending: Vec<MenuRequest>,
     action_context: FocusHandle,
-    shell: Option<gpui_kit::WeakEntity<crate::workspace::ShellWorkspace>>,
+    shell: Option<gpui::WeakEntity<crate::workspace::ShellWorkspace>>,
     escape_interceptor: Option<Subscription>,
 }
 
@@ -1269,10 +1269,10 @@ pub fn mode_for(compact: bool) -> MenuBarMode {
 }
 
 thread_local! {
-    static MENU_BAR: std::cell::RefCell<Option<gpui_kit::WeakEntity<MenuBar>>> =
+    static MENU_BAR: std::cell::RefCell<Option<gpui::WeakEntity<MenuBar>>> =
         const { std::cell::RefCell::new(None) };
 
-    static MENU_BAR_SHELL: std::cell::RefCell<Option<gpui_kit::WeakEntity<crate::workspace::ShellWorkspace>>> =
+    static MENU_BAR_SHELL: std::cell::RefCell<Option<gpui::WeakEntity<crate::workspace::ShellWorkspace>>> =
         const { std::cell::RefCell::new(None) };
 
     static ACTION_TARGET: std::cell::RefCell<Option<FocusHandle>> =
@@ -1283,15 +1283,15 @@ pub fn action_target() -> Option<FocusHandle> {
     ACTION_TARGET.with(|slot| slot.borrow().clone())
 }
 
-pub(crate) fn set_shell(shell: gpui_kit::WeakEntity<crate::workspace::ShellWorkspace>) {
+pub(crate) fn set_shell(shell: gpui::WeakEntity<crate::workspace::ShellWorkspace>) {
     MENU_BAR_SHELL.with(|slot| *slot.borrow_mut() = Some(shell));
 }
 
-pub(crate) fn set_menu_bar(bar: gpui_kit::WeakEntity<MenuBar>) {
+pub(crate) fn set_menu_bar(bar: gpui::WeakEntity<MenuBar>) {
     MENU_BAR.with(|slot| *slot.borrow_mut() = Some(bar));
 }
 
-pub fn handle() -> gpui_kit::WeakEntity<MenuBar> {
+pub fn handle() -> gpui::WeakEntity<MenuBar> {
     MENU_BAR
         .with(|slot| slot.borrow().clone())
         .expect("菜单栏句柄没有登记：`ShellWorkspace::new` 必须在 `render` 之前调 `set_menu_bar`")
@@ -1306,7 +1306,7 @@ pub fn push_show_run_pane(cx: &mut App) {
     eprintln!("S1_TITLE_BAR_RUN id=lithe.run.configurations state=pushed");
 }
 
-pub(crate) fn try_handle() -> Option<gpui_kit::WeakEntity<MenuBar>> {
+pub(crate) fn try_handle() -> Option<gpui::WeakEntity<MenuBar>> {
     MENU_BAR.with(|slot| slot.borrow().clone())
 }
 
@@ -1345,7 +1345,7 @@ pub(crate) fn render_bar(
     bar: &Entity<MenuBar>,
     window: &mut Window,
     cx: &mut App,
-) -> Option<gpui_kit::AnyElement> {
+) -> Option<gpui::AnyElement> {
     bar.downgrade()
         .update(cx, |bar, cx| menu_bar(bar, window, cx).into_any_element())
         .ok()
@@ -1909,7 +1909,7 @@ mod tests {
                 action.keybind_action().is_some(),
                 "{action:?} 声明了键位 {key} 却没有对应的 Action —— 它会显示一颗按不出的键"
             );
-            gpui_kit::Keystroke::parse(key)
+            gpui::Keystroke::parse(key)
                 .unwrap_or_else(|error| panic!("{action:?} 的键位 {key:?} 解析不了：{error}"));
         }
 

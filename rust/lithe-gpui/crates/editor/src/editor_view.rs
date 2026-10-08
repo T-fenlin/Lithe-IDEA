@@ -646,7 +646,7 @@ impl EditorPane {
                 &editor,
                 window,
                 |pane: &mut Self,
-                 editor: &gpui_kit::Entity<EditorState>,
+                 editor: &gpui::Entity<EditorState>,
                  event: &InputEvent,
                  window,
                  cx| {
@@ -1014,7 +1014,7 @@ impl EditorPane {
                 &editor,
                 window,
                 |pane: &mut Self,
-                 editor: &gpui_kit::Entity<EditorState>,
+                 editor: &gpui::Entity<EditorState>,
                  event: &InputEvent,
                  window,
                  cx| {
@@ -1157,7 +1157,7 @@ impl EditorPane {
 
     fn on_input_change(
         &mut self,
-        editor: &gpui_kit::Entity<EditorState>,
+        editor: &gpui::Entity<EditorState>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -2214,16 +2214,14 @@ impl EditorPane {
                         let path_for_click = path_for_rows.clone();
                         row_element
                             .cursor_pointer()
-                            .on_click(cx.listener(
-                                move |_pane, event: &gpui_kit::ClickEvent, _, cx| {
-                                    if event.modifiers().alt {
-                                        (remove)(&path_for_click, line, cx);
-                                    } else {
-                                        (toggle)(&path_for_click, line, cx);
-                                    }
-                                    let _ = &set_enabled;
-                                },
-                            ))
+                            .on_click(cx.listener(move |_pane, event: &gpui::ClickEvent, _, cx| {
+                                if event.modifiers().alt {
+                                    (remove)(&path_for_click, line, cx);
+                                } else {
+                                    (toggle)(&path_for_click, line, cx);
+                                }
+                                let _ = &set_enabled;
+                            }))
                             .into_any_element()
                     }
                     None => row_element.into_any_element(),

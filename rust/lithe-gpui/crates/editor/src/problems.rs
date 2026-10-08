@@ -525,7 +525,7 @@ fn severity_icon(level: Level) -> &'static idea::IdeaIcon {
     }
 }
 
-fn severity_color(level: Level, cx: &Context<ProblemsPane>) -> gpui_kit::Hsla {
+fn severity_color(level: Level, cx: &Context<ProblemsPane>) -> gpui::Hsla {
     match level {
         Level::Error => cx.theme().danger,
         Level::Warning => cx.theme().warning,

@@ -56,7 +56,7 @@ struct Options {
     locale_override: Option<String>,
     open_settings: bool,
     open_palette: bool,
-    palette_keys: Vec<Vec<gpui_kit::Keystroke>>,
+    palette_keys: Vec<Vec<gpui::Keystroke>>,
     compact_menu_bar: bool,
     menu_probe: Option<(String, Option<String>)>,
     menu_probe_delay_ms: u64,
@@ -272,7 +272,7 @@ fn parse_options() -> Result<Options, String> {
                     if token.is_empty() {
                         continue;
                     }
-                    let keystroke = gpui_kit::Keystroke::parse(token)
+                    let keystroke = gpui::Keystroke::parse(token)
                         .map_err(|error| format!("--palette-keys 里解析不了 {token:?}：{error}"))?;
                     sequence.push(keystroke);
                 }
@@ -317,8 +317,8 @@ fn parse_options() -> Result<Options, String> {
 }
 
 struct KeyPlan {
-    focus: gpui_kit::FocusHandle,
-    rounds: std::collections::VecDeque<std::collections::VecDeque<gpui_kit::Keystroke>>,
+    focus: gpui::FocusHandle,
+    rounds: std::collections::VecDeque<std::collections::VecDeque<gpui::Keystroke>>,
 }
 
 fn dispatch_next_key(window: &mut Window, cx: &mut App, mut plan: KeyPlan) {
@@ -603,7 +603,7 @@ fn main() {
             // 之后宿主每次换主题都会把颜色重新映射过去（见 `component_theme`）。
             lithe_gpui_workbench::component_theme::install_component_theme(cx);
 
-            let store: gpui_kit::Entity<SettingsStore> = lithe_gpui_settings::init_store(
+            let store: gpui::Entity<SettingsStore> = lithe_gpui_settings::init_store(
                 cx,
                 Init {
                     loaded,

@@ -243,15 +243,15 @@ pub fn theme_icon_bytes(asset_path: &str, cx: &App) -> Option<Vec<u8>> {
 
 pub fn theme_file_icon(
     asset_path: &str,
-    side: impl Into<gpui_kit::Length>,
+    side: impl Into<gpui::Length>,
     cx: &App,
 ) -> Option<AnyElement> {
     theme_icon_bytes(asset_path, cx)?;
-    let side: gpui_kit::Length = side.into();
+    let side: gpui::Length = side.into();
     Some(
-        gpui_kit::img(gpui_kit::ImageSource::Resource(
-            gpui_kit::Resource::Embedded(SharedString::from(asset_path.to_string())),
-        ))
+        gpui::img(gpui::ImageSource::Resource(gpui::Resource::Embedded(
+            SharedString::from(asset_path.to_string()),
+        )))
         .flex_shrink_0()
         .w(side)
         .h(side)

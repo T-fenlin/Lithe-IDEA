@@ -53,7 +53,7 @@ impl CodeActionProvider for JavaCodeActionProvider {
         range: std::ops::Range<usize>,
         _window: &mut Window,
         cx: &mut App,
-    ) -> Task<gpui_kit::Result<Vec<CodeAction>>> {
+    ) -> Task<gpui::Result<Vec<CodeAction>>> {
         let text = state.read(cx).text().clone();
         let body = text.to_string();
         let (start_line, start_column) = crate::navigation::core_position(&text, range.start);
@@ -121,7 +121,7 @@ impl CodeActionProvider for JavaCodeActionProvider {
         _push_to_history: bool,
         window: &mut Window,
         cx: &mut App,
-    ) -> Task<gpui_kit::Result<()>> {
+    ) -> Task<gpui::Result<()>> {
         let file = self.file_path.display().to_string();
         let title = action.title.clone();
         let Some(uri) = self.file_uri() else {

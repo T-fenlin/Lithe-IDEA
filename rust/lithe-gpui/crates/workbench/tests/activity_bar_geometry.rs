@@ -25,7 +25,7 @@ impl Render for BarHost {
     }
 }
 
-#[gpui_kit::test]
+#[gpui::test]
 fn activity_bar_item_measures_the_macos_item_box(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
 

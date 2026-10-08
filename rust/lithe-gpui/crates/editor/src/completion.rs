@@ -20,13 +20,13 @@ const COMPLETION_MENU_WIDTH_PX: f32 = 480.;
 
 const COMPLETION_DEBOUNCE_MS: u64 = 120;
 
-pub(crate) fn menu_width(rem: gpui_kit::Pixels) -> gpui_kit::Pixels {
+pub(crate) fn menu_width(rem: gpui::Pixels) -> gpui::Pixels {
     crate::editor_view::rem_px(rem, COMPLETION_MENU_WIDTH_PX)
 }
 
 pub(crate) fn set_menu_width(
     state: &mut gpui_kit::component::input::EditorState,
-    width: gpui_kit::Pixels,
+    width: gpui::Pixels,
 ) -> bool {
     let lsp = state.lsp_mut();
     if lsp.completion_provider.is_none() || lsp.completion_menu.max_width == width {
@@ -39,7 +39,7 @@ pub(crate) fn set_menu_width(
 pub(crate) fn install(
     state: &mut gpui_kit::component::input::EditorState,
     provider: Option<Rc<dyn CompletionProvider>>,
-    rem: gpui_kit::Pixels,
+    rem: gpui::Pixels,
 ) {
     let Some(provider) = provider else {
         return;
@@ -98,7 +98,7 @@ impl CompletionProvider for JavaCompletionProvider {
         _trigger: CompletionContext,
         _window: &mut Window,
         cx: &mut App,
-    ) -> Task<gpui_kit::Result<CompletionResponse>> {
+    ) -> Task<gpui::Result<CompletionResponse>> {
         let (line, utf16_column) = crate::navigation::core_position(text, offset);
         let position = Position::new(line as u32, utf16_column as u32);
         let body = text.to_string();
