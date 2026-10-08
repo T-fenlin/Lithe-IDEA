@@ -25,7 +25,12 @@ serde_json = "1.0"
 sha1 = "0.10"
 sha2 = "0.10"
 toml = { version = "1.1.4", default-features = false, features = ["parse", "serde"] }
-tree-sitter = "0.25"
+# tree-sitter 0.26：GPUI 界面层（gpui-kit / 未来的自建编辑器）需要 0.26 的语法包，
+# 而 `tree-sitter` 带 `links = "tree-sitter"`，同一个依赖图里不允许两份同名原生库。
+# 既有 GPUI 分支早就升到 0.26（其 Cargo.lock 是 0.26.13），JS 侧 `windows/tauri` 的
+# `web-tree-sitter` 也已在 ^0.26.9 线上，所以这里是向既有选择收敛。
+# `tree-sitter-java 0.23` 不变：它只依赖 `tree-sitter-language`，两版都兼容。
+tree-sitter = "0.26"
 tree-sitter-java = "0.23"
 serde_yaml_ng = "0.10.0"
 zip = { version = "2.4", default-features = false, features = ["deflate"] }
