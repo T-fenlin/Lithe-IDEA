@@ -130,6 +130,7 @@ MIT 允许衍生与再分发，**前提是保留版权声明与许可文本**。
 | 2026-10-05 | 移植：包重命名、标识符改名、数据串保持原样 | 见上文"本副本的改动清单" |
 | 2026-10-07 | 新增 `lists::project`（`ProjectTree` / `ProjectNode` / `ProjectAsset` / `ProjectIcon` / `ProjectLabels` / `ProjectAction`，导出在 `src/lists/mod.rs`），并把 `lists::files::GitStatus` 补成 `Copied` 七态、`word()`/`letter()`/`tone()` 转 `pub`、新增 `dominant()` | 项目树要变成组件库自己的控件（`.agents/notes/implemented/architecture/2026-10-07-project-tree-moves-to-own-component-library.md`）；git 字母与色调的单一真源按 `docs/tasks/idea-project-tree.md` §4 落在这里。上游没有这个组件，它是 Lithe 侧新增的代码 |
 | 2026-10-08 | 组件库独立：本 crate 从 `rust/lithe-gpui/crates/lithe-gpui` 移到 `rust/lithe-ui`，包名与标识符由 `lithe-gpui`/`lithe_gpui` 改为 `lithe-ui`/`lithe_ui`；gpui 依赖由 `=0.3.7` 升到 `=0.3.8` | 分层：界面层（要重写的宿主）留在 `rust/lithe-gpui`，组件库独立成 `rust/lithe-ui` 并由界面层 path 依赖；项目树仍在本 crate 内。见 `.agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md` |
+| 2026-10-08 | 新增 `src/shell/host/`：窗口根宿主 `WindowRoot` 与窗口扩展 `WindowRootExt`；`feedback::toast` 的 `MOST` 由 4 改为 3 | 门 G1：把上游 `Root` 的统一浮层挂载换成自建（复用 `primitives::raise(..).with_priority(..)`，排序与绘制交 gpui 的 `Window::defer_draw`）；`MOST` 与真源（通知上限 3）对齐 |
 
 ## 完整提交清单
 

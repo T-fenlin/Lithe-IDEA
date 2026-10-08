@@ -19,7 +19,9 @@ use crate::{
 /// How long a toast stays unless told otherwise.
 const STAY: Duration = Duration::from_secs(5);
 /// A toast past this many sends the oldest away.
-const MOST: usize = 4;
+/// 同屏最多留几条。真源是 **3**（macOS 侧通知上限），超过就丢最旧那条。
+/// 2026-10-08 由 4 改成 3：换了实现却没钉住规格，是本次重构明确要避免的事。
+const MOST: usize = 3;
 
 /// A short message for a `ToastViewport`. With an action it is a snackbar; with `undo` it counts down.
 #[derive(Clone)]

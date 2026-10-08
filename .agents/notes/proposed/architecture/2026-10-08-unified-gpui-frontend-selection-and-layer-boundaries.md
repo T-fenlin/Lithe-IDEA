@@ -363,6 +363,45 @@ Search Everywhere 的按类型分段与相关度、替换的**应用**命令、�
 **要照抄的不是结论口号，而是"判据机器化"这个习惯**：既有分支把尺寸规范做成了守卫脚本，
 把"哪些做不了"做成了登记册。重建时这两样都要有。
 
+### 12. 窗口根宿主（门 G1）：机制与第一片
+
+**决定**：自建窗口根宿主叫 **`WindowRoot`**，放在组件库 `rust/lithe-ui/src/shell/host/`；
+**不叫 `Root`**——上游 gpui-base 的根类型同名，迁移期两套并存时同名会让"还剩几处旧根"grep 不出来。
+
+**机制：不必重写浮层。** 组件库的 `primitives::raise(id, child).with_priority(n)` 已经是
+Dialog / Toast / Menu / Popover / Spotlight / Lightbox 的**统一挂载机制**（排序与绘制交给 gpui 的
+`Window::defer_draw`）。宿主只是"每帧渲染的实体 + 有序层栈 + `Entity<Toaster>` + 窗口级入口"。
+
+**两条硬约束**（已写进代码注释）：
+
+1. **浮层元素每帧重建**：`primitives::layer` 在 prepaint 时 `child.take()` 消费元素，
+   把 `AnyElement` 缓存起来复用，第二帧必 panic ⇒ `Overlay::build` 是
+   `Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>`。
+2. **一个窗口一个宿主**，整片切换、不逐控件混用。
+
+**窗口级入口返回 `bool`，不照抄上游的 `expect`**：上游 `WindowExt` 在窗口没挂根时直接 panic，
+而本仓库多窗口路径确实存在没挂宿主的窗口（见下面发现 ①）。没挂宿主 / 没有浮层时返回 `false`，
+调用方走降级表现（降级可见）。
+
+**第一片已落地（2026-10-08）**：`src/shell/host/{mod,root,ext}.rs`（`WindowRoot`、`WindowRootExt`、
+优先级档位），并把 `feedback::toast` 的同屏上限由 4 改为 **3**（与真源对齐——换了实现必须钉住规格）。
+验证：`cargo check -p lithe-ui --all-targets` 通过。
+
+**G1 侦察发现的三个既有问题（都还没修，按序登记）**：
+
+1. **多窗口路径现在就缺窗口根**：`app/src/main.rs` 里"在新窗口打开工程"那条 `cx.open_window`
+   返回的是裸 `ShellWorkspace`，**没有包 `Root`** ⇒ 那个窗口压根没有浮层宿主。
+2. **尺寸守卫对组件库是"失明"，不是"按目录排除"**：`tools/check-ui-px.mjs` 只扫
+   `rust/lithe-gpui/crates/*/src`，而 `rust/lithe-ui/` 是另一个 workspace、根本没进扫描范围；
+   它排除的 crate 目录（`crates/lithe-gpui/`）也已不存在。守卫需要一次独立重做
+   （建议把排除判据改成"由 `UPSTREAM.md` 声明的派生目录"）。
+3. **rem 缩放锚点在组件库不存在**：`Theme` 没有 `font_size` 字段，全仓无人调 `set_rem_size`
+   ⇒ "主题基准字号是唯一缩放锚点"这条规范目前**没有落点**，需要单独一片。
+
+**未完成（G1 的下一片）**：把窗口根整片切过去——`app/src/main.rs` 的 4 处、`workbench/workspace.rs`
+的 2 处、`search_everywhere.rs` 的测试 3 处、`tests/common/mod.rs` 的开窗收口，以及**经上游
+`WindowState` 走的所有对话框调用点**（它们会去 `window.root::<gpui_base::Root>()` 找根，根换了
+就 panic）。所以"换根 + 迁对话框调用点"必须同一片落地，不能中途留一个半状态。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、
