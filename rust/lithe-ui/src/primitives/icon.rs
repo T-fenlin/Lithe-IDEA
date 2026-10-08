@@ -444,27 +444,48 @@ fn uses_style_size(style: &StyleRefinement) -> bool {
     style.size.width.is_some() || style.size.height.is_some()
 }
 
-fn ensure_found(source: &dyn AssetSource, path: &str) {
+/// 宿主资产自持 + 缺则留空：宿主传入的图标路径解析不到就**不画**（占同位），不 panic。
+///
+/// "资源源整体没挂"仍由 [`crate::init`] 的探针在启动时响亮报错；这里只对**单个路径**
+/// 记警告并返回 `false`，让调用方留空——无头测试没有资源源入口（gpui 的 `TestAppContext`
+/// 不提供挂 assets 的 API），若在这里 panic，任何渲染宿主图标的集成测试都跑不起来。
+fn ensure_found(source: &dyn AssetSource, path: &str) -> bool {
     match source.load(path) {
-        Ok(Some(_)) => {}
-        Ok(None) => panic!("lithe-ui: icon {path} is not in the app's asset source"),
-        Err(error) => panic!("lithe-ui: icon {path} failed to load: {error:#}"),
+        Ok(Some(_)) => true,
+        Ok(None) => {
+            log::warn!("lithe-ui: icon {path} is not in the app's asset source; leaving it blank");
+            false
+        }
+        Err(error) => {
+            log::warn!("lithe-ui: icon {path} failed to load: {error:#}; leaving it blank");
+            false
+        }
     }
 }
 
 impl RenderOnce for Icon {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (color, sized, side) = {
+            let theme = cx.theme();
+            (
+                self.color.unwrap_or(theme.colors.fg),
+                // 调用方细化过尺寸就听它的；没细化才用档位（见上面 `Styled` 的说明）。
+                uses_style_size(&self.style),
+                theme.icon_size(self.size),
+            )
+        };
         if !self.bundled && !cx.default_global::<FoundIcons>().0.contains(&self.path) {
-            ensure_found(cx.asset_source().as_ref(), &self.path);
+            if !ensure_found(cx.asset_source().as_ref(), &self.path) {
+                // 缺则留空：同尺寸空槽，行不跳位（与 `shared` 的文件图标回落同一口径）。
+                return gpui::div()
+                    .flex_none()
+                    .when(!sized, |element| element.size(side))
+                    .into_any_element();
+            }
             cx.default_global::<FoundIcons>()
                 .0
                 .insert(self.path.clone());
         }
-        let theme = cx.theme();
-        let color = self.color.unwrap_or(theme.colors.fg);
-        // 调用方细化过尺寸就听它的；没细化才用档位（见上面 `Styled` 的说明）。
-        let sized = uses_style_size(&self.style);
-        let side = theme.icon_size(self.size);
         svg()
             .map(|mut svg| {
                 *svg.style() = self.style;
@@ -483,6 +504,7 @@ impl RenderOnce for Icon {
                         .with_scaling(size(self.scale, self.scale)),
                 )
             })
+            .into_any_element()
     }
 }
 
@@ -516,7 +538,7 @@ mod tests {
 
     #[test]
     fn a_path_the_source_holds_is_found() {
-        ensure_found(&crate::Assets, IconName::Check.path());
+        assert!(ensure_found(&crate::Assets, IconName::Check.path()));
     }
 
     #[test]
@@ -536,11 +558,9 @@ mod tests {
         );
     }
 
+    /// 宿主口径是"缺则留空"：解析不到**不 panic**，只返回 `false` 让调用方留空。
     #[test]
-    #[should_panic(
-        expected = "lithe-ui: icon app-icons/missing.svg is not in the app's asset source"
-    )]
-    fn a_path_the_source_lacks_fails() {
-        ensure_found(&crate::Assets, "app-icons/missing.svg");
+    fn a_path_the_source_lacks_is_blank_not_a_panic() {
+        assert!(!ensure_found(&crate::Assets, "app-icons/missing.svg"));
     }
 }

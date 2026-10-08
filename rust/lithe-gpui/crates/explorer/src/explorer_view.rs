@@ -9,21 +9,21 @@ use gpui::{
     Focusable as _, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::Button;
-use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader};
-use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
+use lithe_ui::feedback::EmptyState;
+use lithe_ui::layout::{h_stack, v_stack};
 
-use lithe_gpui_shared::icons::idea;
+use lithe_ui::forms::{InputEvent, InputState};
+use lithe_ui::motion::Spinner;
+use lithe_ui::theme::ActiveTheme as _;
+
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::tr;
 use lithe_ui::buttons::{Button as LitheButton, ButtonVariant};
 use lithe_ui::lists::{
     PROJECT_ACTIONS, ProjectAction, ProjectAsset, ProjectLabels, ProjectTree, row_menu_entries,
 };
 use lithe_ui::menus::{DropdownMenu, Menu, MenuItem, OverflowMenu};
-use lithe_ui::primitives::IconName;
+
 use lithe_ui::theme::Size;
 
 use crate::model::{Snapshot, icon_for, load_git_status, load_snapshot};
@@ -97,13 +97,13 @@ impl Explorer {
     ) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx));
         search.update(cx, |state, cx| {
-            state.set_placeholder(tr(SEARCH_FILES_KEY), window, cx);
+            state.set_placeholder(tr(SEARCH_FILES_KEY), cx);
         });
         let search_events = cx.subscribe(
             &search,
             |this, _input, event: &InputEvent, cx: &mut Context<Self>| {
-                if matches!(event, InputEvent::Change) {
-                    let query = this.search.read(&**cx).value();
+                if matches!(event, InputEvent::Changed) {
+                    let query = SharedString::from(this.search.read(&**cx).text());
                     this.set_query(query, cx);
                 }
             },
@@ -350,7 +350,10 @@ impl Explorer {
         self.search_open = !self.search_open;
         if self.search_open {
             let search = self.search.clone();
-            search.update(cx, |state, cx| state.focus(window, cx));
+            search.update(cx, |state, cx| {
+                let handle = state.focus_handle(cx);
+                window.focus(&handle, cx);
+            });
         } else {
             self.clear_search(window, cx);
         }
@@ -358,10 +361,10 @@ impl Explorer {
     }
 
     #[allow(dead_code)]
-    fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn clear_search(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let search = self.search.clone();
         search.update(cx, |state, cx| {
-            state.set_value(SharedString::default(), window, cx);
+            state.set_text(String::new(), cx);
         });
         self.set_query(SharedString::default(), cx);
     }
@@ -419,7 +422,7 @@ impl Explorer {
         let loading = self.state.is_loading();
         let options = self.options_menu(cx);
         let view = Menu::new().item(MenuItem::check(tr(PROJECT_VIEW_KEY), true));
-        h_flex()
+        h_stack()
             .id("explorer-header")
             .h(rems(HEADER_HEIGHT_SPEC / 16.))
             .w_full()
@@ -432,24 +435,25 @@ impl Explorer {
                     .variant(ButtonVariant::Ghost),
             )
             .child(
-                h_flex()
+                h_stack()
                     .items_center()
                     .gap_0p5()
                     .when(loading, |row| {
                         row.child(
-                            div()
-                                .size_6()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(Spinner::new().color(cx.theme().muted_foreground)),
+                            div().size_6().flex().items_center().justify_center().child(
+                                Spinner::new("explorer-header-spinner")
+                                    .color(cx.theme().colors.fg_muted),
+                            ),
                         )
                     })
                     .when(!loading, |row| {
                         row.child(testable(
                             "explorer-header-refresh",
                             LitheButton::new("explorer-header-refresh")
-                                .icon(IconName::RefreshCw)
+                                .icon_element(idea_icon_mono(
+                                    &idea::REFRESH_ICON,
+                                    cx.theme().is_dark(),
+                                ))
                                 .variant(ButtonVariant::Ghost)
                                 .size(Size::Small)
                                 .tooltip(tr(REFRESH_KEY))
@@ -461,7 +465,6 @@ impl Explorer {
                     .child(testable(
                         "explorer-header-collapse",
                         LitheButton::new("explorer-header-collapse")
-                            .icon(IconName::ChevronsUpDown)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip(tr(COLLAPSE_ALL_KEY))
@@ -476,7 +479,6 @@ impl Explorer {
                     .child(testable(
                         "explorer-header-hide",
                         LitheButton::new("explorer-header-hide")
-                            .icon(IconName::PanelLeft)
                             .variant(ButtonVariant::Ghost)
                             .size(Size::Small)
                             .tooltip(tr(HIDE_PANEL_KEY))
@@ -536,31 +538,34 @@ impl Explorer {
         };
 
         let loading = self.state.is_loading();
-        v_flex()
+        v_stack()
             .relative()
             .flex_1()
             .min_h_0()
             .w_full()
             .when(loading, |this| {
                 this.child(
-                    h_flex()
+                    h_stack()
                         .absolute()
                         .top_3()
                         .left_0()
                         .right_0()
                         .justify_center()
                         .child(
-                            h_flex()
+                            h_stack()
                                 .gap_2()
                                 .px_3()
                                 .py_1p5()
                                 .rounded_full()
-                                .bg(cx.theme().muted)
+                                .bg(cx.theme().colors.sunken)
                                 .border_1()
-                                .border_color(cx.theme().border)
+                                .border_color(cx.theme().colors.border)
                                 .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(Spinner::new().color(cx.theme().muted_foreground))
+                                .text_color(cx.theme().colors.fg_muted)
+                                .child(
+                                    Spinner::new("explorer-loading-spinner")
+                                        .color(cx.theme().colors.fg_muted),
+                                )
                                 .child(tr(LOADING_FILES_KEY)),
                         ),
                 )
@@ -570,7 +575,7 @@ impl Explorer {
     }
 
     fn render_tree(&self, cx: &mut Context<Self>) -> AnyElement {
-        v_flex()
+        v_stack()
             .id("explorer-tree-viewport")
             .flex_1()
             .min_h_0()
@@ -613,15 +618,12 @@ impl Explorer {
         action: Option<(SharedString, bool)>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut empty = Empty::new().border_color(cx.theme().transparent).header(
-            EmptyHeader::new().description(EmptyDescription::new().text_sm().child(message)),
-        );
+        let mut empty = EmptyState::slots("explorer-empty").body(message);
 
         if let Some((label, disabled)) = action {
-            let button = Button::new("explorer-empty-action")
+            let button = LitheButton::new("explorer-empty-action")
                 .label(label)
-                .small()
-                .compact();
+                .size(Size::Small);
             let button = if disabled {
                 button.disabled(true)
             } else {
@@ -634,10 +636,10 @@ impl Explorer {
                     },
                 ))
             };
-            empty = empty.content(EmptyContent::new().child(button));
+            empty = empty.content(button);
         }
 
-        v_flex().size_full().child(empty).into_any_element()
+        v_stack().size_full().child(empty).into_any_element()
     }
 }
 
@@ -690,12 +692,12 @@ impl Render for Explorer {
         let header = self.render_header(cx);
         let body = self.render_body(cx);
 
-        v_flex()
+        v_stack()
             .size_full()
             .min_h_0()
             .overflow_hidden()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
+            .bg(cx.theme().colors.bg)
+            .text_color(cx.theme().colors.fg)
             .child(header)
             .child(body)
     }

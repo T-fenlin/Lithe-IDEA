@@ -4437,7 +4437,6 @@ dependencies = [
 name = "lithe-gpui-explorer"
 version = "0.0.1"
 dependencies = [
- "gpui-kit",
  "gpui-pre",
  "lithe-gpui-shared",
  "lithe-ui",
