@@ -2,6 +2,32 @@ use std::borrow::Cow;
 
 use gpui::{AssetSource, Result, SharedString};
 
+// 上游 `gpui-kit` 的图标回落子集（106 个名字）——**限期拆除的过渡垫片**，不是应用图标源。
+// （宏调用上面不能挂 `///`，rustc 会报 unused doc comment，所以这段用 `//`。）
+//
+// 口径（2026-10-08）：**应用**图标一律取自本仓库自己的图标集 `assets/icons/idea/**`
+// （`icons/idea/extension.json` 是清单真源），我们没有就留空；不许用组件库图标顶替。
+// 本回落子集不是给应用用的，它顶的是**上游组件自己内部**的装饰图标：
+// `Icon::new(IconName::X)` 之类的路径长这样 `icons/x.svg`，只可能由这里命中
+// （`LitheAssets` 内嵌表只有 `icons/idea/**`、`app-icon/**`、`images/**` 三组）。
+//
+// **为什么这一片不删**：宿主仍在渲染的组件库里，下面这些内部装饰图标就是靠它才画得出来的
+// （实测见 `.artifacts/logs/lithe-ui-internal-iconname.txt`）：
+// `lithe_ui::overlays::Dialog` 的关闭 `X`（`overlays/dialog.rs:228`）、
+// `lithe_ui::feedback::Toast`/`messages` 的关闭 `X`（`feedback/toast.rs:334`、`feedback/messages.rs:21`）、
+// `lithe_ui::menus` 的勾选 `Check` / 子菜单箭头 `ChevronRight`（`menus/draw.rs:27,78`）与
+// 下拉/溢出的 `ChevronDown`、`Ellipsis`（`menus/hosts.rs:109,130,214,357`）、
+// `lithe_ui::primitives::Severity::icon`（`primitives/severity.rs:37-39`）、
+// `lithe_ui::layout::DockPanel::plain` 的 `Square`（`layout/dock/mod.rs:142`）。
+// 一旦删掉它、宿主又没挂 `lithe_ui::Assets`，这些图标会**一起静默变空**。
+//
+// **拆除条件**（两条都满足才拆）：① 上表这些组件全部迁到本仓库自己的图标（走 `icons/idea/**`），
+// 或宿主改挂一份明确的图标来源；② `node rust/lithe-gpui/tools/sync-gpui-kit-icons.mjs` 的名单
+// 只由**上游组件内部**引用（不再含宿主代码自己点名的 `IconName::`）。在此之前它按垫片留存，
+// 且加任何新名字都要能说出「是哪个组件的内部装饰在用」。
+//
+// 另注：`lithe_ui` 自带的约 307 个图标（`rust/lithe-ui/assets/icons`）**不挂**进宿主资源源
+// —— 2026-10-08 的图标口径修正作废了「把 `lithe_ui::Assets` 挂进来」这条先前结论。
 gpui_kit::assets::icon_assets!(
     GpuiKitFallbackIcons,
     [
@@ -327,13 +353,16 @@ mod tests {
             resource_bytes as f64 / 1_048_576.0
         );
         assert_eq!(
-            resource_bytes, 3_244_470,
+            resource_bytes, 3_246_804,
             "内嵌资源字节数应精确等于 310 个资源文件之和（文本资源行尾归一后的口径）；\
              若变大，先查是不是有图标主题被塞回来了（lithe/symbols/material/pierre 已于 2026-10-04 删除）；\
              再查是不是有资源被整体替换成了更大的版本；\
              是不是又进来了，再查是不是有资源被整体替换成了更大的版本；\
              若变小，通常是清单 `icons/idea/extension.json` 被改写 —— 重测后再改这个数。\
-             另注意：清单重写也会让这个数变化（2026-10-04 起路径改指 macOS 图标副本）"
+             另注意：清单重写也会让这个数变化（2026-10-04 起路径改指 macOS 图标副本）。\
+             2026-10-08 从 3_244_470 涨到 3_246_804：清单补齐了 maven/docker/editorConfig/class/\
+             interface/enum/annotation/record 与 python/rust/go/kotlin/ruby/php/scala/binaryData \
+             这批我们本来就有图的定义（并删掉两处没有美术的悬空引用），只有一个文件变了、没有增删图标。"
         );
     }
 

@@ -693,7 +693,7 @@ impl IntoCommandItem for EverywhereRow {
                 } else if java_icon {
                     idea_icon_image(&idea::JAVA_ICON, cx, rems(ROW_ICON_SPEC / 16.))
                 } else {
-                    FileIcon::lucide(file_icon::lucide_fallback(item_name.as_ref()))
+                    FileIcon::own(file_icon::fallback_icon(item_name.as_ref()))
                         .with_theme_icon(item_name.as_ref(), cx)
                         .render(rems(ROW_ICON_SPEC / 16.), cx)
                 })

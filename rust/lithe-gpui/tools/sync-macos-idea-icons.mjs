@@ -143,9 +143,15 @@ for (const path of walk(CRATES_DIR, (p) => p.endsWith(".rs"))) {
   }
 }
 
+// 「被引用」必须把 `filenames` / `expandedFolders` 一起算进来：只算 `fileExtensions` /
+// `folders` / 默认值会让 `pom.xml`→maven、`.gitignore`→gitignore、`\0lithe:java.class`→class
+// 这类**按名字**点名的 id 被当成没人用而删掉，清单里就留下指向空定义的悬空引用
+// （2026-10-08 前 0.3.0 的清单正是这样：43 条定义、10 处悬空）。
 const referencedDefinitions = new Set([
   ...Object.values(iconBlock.fileExtensions ?? {}),
+  ...Object.values(iconBlock.filenames ?? {}),
   ...Object.values(iconBlock.folders ?? {}),
+  ...Object.values(iconBlock.expandedFolders ?? {}),
   ...[iconBlock.defaultFile, iconBlock.defaultFolder, iconBlock.defaultFolderOpen].filter(Boolean),
 ]);
 
@@ -164,6 +170,10 @@ function macosTargetFor(legacyPath) {
 }
 
 function newPathForLegacy(legacyPath) {
+  // 已经是搬迁后的 `legacy/**` 布局：原样返回。少了这一条，`--apply` 每跑一次就会给
+  // 这些路径再加一层 `legacy/`（`legacy/files/maven.svg` → `legacy/legacy/files/maven.svg`），
+  // 即工具自己不可重复跑 —— 清单和 `idea.rs` 里的 legacy 路径都会被它改坏。
+  if (legacyPath.startsWith(`${LEGACY_DIR}/`)) return legacyPath;
   const target = macosTargetFor(legacyPath);
   if (target) return target;
   return `${LEGACY_DIR}/${legacyPath.replace(/^icons\//, "")}`;
@@ -215,7 +225,7 @@ function report() {
   console.log(`  · 保留：${neededLegacy.size}（其中 ${legacyKeptMacos.length} 个换成 macOS 美术、${legacyKeptAsIs.length} 个继续用旧美术）`);
   console.log(`  · 删除（清单与代码都没引用）：${legacyDrop.length}`);
   console.log(`idea.rs 常量：保留 ${keptConstants.length}、删除 ${droppedConstants.length}`);
-  console.log(`清单定义：删除未被 fileExtensions/folders/默认值引用的 ${droppedDefinitions.length} 条`);
+  console.log(`清单定义：删除未被 fileExtensions/filenames/folders/expandedFolders/默认值引用的 ${droppedDefinitions.length} 条`);
 }
 
 if (DRY_RUN) {
@@ -224,9 +234,13 @@ if (DRY_RUN) {
   for (const rel of legacyKeptAsIs.slice(0, 40)) console.log(`  ${rel}`);
   console.log("\n--- 会被删除的旧文件（前 40）---");
   for (const rel of legacyDrop.slice(0, 40)) console.log(`  ${rel}`);
-  console.log("\n--- 常量新旧路径（前 25）---");
-  for (const constant of keptConstants.slice(0, 25)) {
-    console.log(`  ${constant.name}: ${constant.light} -> ${newPathForLegacy(constant.light)}`);
+  console.log(`\n--- 常量新旧路径（全部 ${keptConstants.length} 个）---`);
+  for (const constant of keptConstants) {
+    // 按 `--apply` 写 idea.rs 的那条表达式算（先剥掉 `icons/idea/` 前缀），否则预览打印的是
+    // 另一个输入形状下的结果，跟真正写进去的值对不上。
+    const light = constant.light.replace(/^icons\/idea\//, "");
+    const dark = constant.dark.replace(/^icons\/idea\//, "");
+    console.log(`  ${constant.name}: ${constant.light} -> icons/idea/${newPathForLegacy(light)} | ${constant.dark} -> icons/idea/${newPathForLegacy(dark)}`);
   }
   process.exit(0);
 }

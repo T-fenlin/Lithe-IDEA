@@ -360,7 +360,7 @@ impl IntoCommandItem for QuickOpenRow {
                 .gap_2()
                 .items_center()
                 .child(
-                    FileIcon::lucide(file_icon::lucide_fallback(item_name.as_ref()))
+                    FileIcon::own(file_icon::fallback_icon(item_name.as_ref()))
                         .with_theme_icon(item_name.as_ref(), cx)
                         .render(rems(ROW_ICON_SPEC / 16.), cx),
                 )

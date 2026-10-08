@@ -532,6 +532,29 @@ gpui-component 的 Theme，与组件库的 Theme **不同名、不同形**。以
 （workbench 84 / shared 17 / git 10 / explorer 6 / settings 5 / terminal 3 / app 1 / editor 1）。
 各 crate 的迁移片都要把其中属于**应用图标**的改成我们自己的图标（`shared::icons::idea::*` 或我们的 SVG 路径），
 我们没有的**留空**；只有**上游组件自身的内部装饰图标**才继续由上游绘制。
+#### 图标口径的落地结果与第 5 步清单的拍板（2026-10-08）
+
+**已落地**：`shared` 的 `lucide_fallback() -> IconName`（按扩展名返回**库**图标名，即"用库图标顶替"的机制本体）
+改为 `fallback_icon() -> Option<AppIcon>`；新增 `AppIcon` **只装本仓路径**（装不下库的 `IconName` ⇒ 该行为在类型上
+不可表达）；`FileIcon::lucide` → `FileIcon::own`，渲染三分支（清单图 → 我方兜底图 → **留空占同位**）。
+`.json` 从库的 `Braces` **改回我们自己的** `icons/idea/fileTypes/json.svg`。`extension.json` 43 → 59 条定义、
+悬空引用 10 → 0（根因：同步工具 `referencedDefinitions` 不数 `filenames`，误裁 maven/docker/class 等定义），
+工具一并修正。`shared` 的 6 条图标红转绿（50/22 → **61/16**，余 16 条与起点同名、属 Core 拒 git 写的环境问题）。
+
+**清单（专家只出数据）——库组件自身的内部装饰图标**：`Dialog` 关闭 X、`Toast`/消息条关闭 X 与严重度图标、
+菜单 Check / 子菜单 ChevronRight / 下拉 ChevronDown / Ellipsis / Search、`DockPanel::plain` 的 Square、
+分栏组头的 PanelRight/PanelBottom/X —— **今天全靠 `GpuiKitFallbackIcons` 命中**；而 `CircleAlert`、菜单单选 `Dot`、
+`shell/status`、`tooltip`、`files` 等处若干图标**今天就已经空白**。若既不挂 `lithe_ui::Assets` 又去掉
+`GpuiKitFallbackIcons`，上述会**静默**变空（`Icon` 的 bundled 分支跳过资源校验，不 panic）。
+
+**拍板（依据：宿主资产自持 + 本仓自有真源 + 两个命名空间分离）**：
+
+1. **应用图标**：只取 `assets/icons/idea/**`（已由 `AppIcon` 在类型上保证），缺失留空 —— 不动。
+2. **库组件自身的内部装饰图标**：属本仓组件库**自己的**渲染素材（`rust/lithe-ui` 是本仓自有的 crate，非外部上游）
+   ⇒ **挂 `lithe_ui::Assets`** 让库自己渲染。这不是"借库顶替宿主资产"——两者命名空间已由 `AppIcon` 隔开。
+3. **`GpuiKitFallbackIcons`（外部 gpui-kit 的图标）**：在 2 落地后**摘掉**；当前保留为登记在案的限期垫片。
+4. 把 `lithe_ui::init` 里**会被巧合命中的探针**换成真探针，否则"资源源已挂"无法自证。
+5. 2/3 落地后复核清单里"今天就已空白"的那批是否被 `lithe_ui::Assets` 覆盖；仍未覆盖的按组件库规矩补其自有素材。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、

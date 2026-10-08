@@ -10,10 +10,10 @@ use std::path::Path;
 
 use gpui::App;
 use gpui::SharedString;
-use gpui_kit::assets::IconName;
 use lithe_gpui_shared::core_json;
-use lithe_gpui_shared::icons::file_icon;
+use lithe_gpui_shared::icons::{file_icon, idea};
 use lithe_ui::lists::{GitStatus, ProjectIcon, ProjectIconRequest, ProjectNode, ProjectRowKind};
+use lithe_ui::theme::ActiveTheme as _;
 use serde_json::{Value, json};
 
 /// One folder or file of the workspace snapshot, as Core sends it.
@@ -266,11 +266,15 @@ pub(crate) fn load_git_status(root: &Path) -> Result<Vec<(SharedString, GitStatu
     })
 }
 
-/// The icon a row draws: the IDE's own file-type drawing when we have one, else the Lucide glyph
-/// for that kind. An open, empty folder shows the plain file glyph it always has.
+/// The icon a row draws: the IDE's own file-type drawing when we have one, else our own
+/// extension-based fallback — and **nothing at all** when our icon set has no drawing for it.
+/// An open, empty folder keeps the plain file glyph it always has.
 pub(crate) fn icon_for(request: &ProjectIconRequest, cx: &App) -> Option<ProjectIcon> {
+    let is_dark = cx.theme().is_dark();
     if request.kind == ProjectRowKind::EmptyFolder {
-        return Some(ProjectIcon::Glyph(IconName::File.path()));
+        // 老代码这里给的是组件库的 `IconName::File`（`icons/file.svg`）。按 2026-10-08 的口径
+        // 换成我们自己的那张：同一件事（一个普通文件字形），资源来自 `assets/icons/idea/**`。
+        return Some(ProjectIcon::Image(idea::FILE_ICON.path(is_dark).into()));
     }
     let is_dir = request.kind == ProjectRowKind::Directory;
     if let Some(path) =
@@ -279,16 +283,11 @@ pub(crate) fn icon_for(request: &ProjectIconRequest, cx: &App) -> Option<Project
     {
         return Some(ProjectIcon::Image(path.into()));
     }
-    // 上游图标名的 `path()` 是 `SharedString`，组件库的是 `&'static str`（见 `shared` 的说明）；
-    // 这里统一收敛成资源路径再交给行图标，两种名字都能用。
-    let fallback: SharedString = match is_dir {
-        true if request.expanded => IconName::FolderOpen.path(),
-        true => IconName::FolderClosed.path(),
-        false => file_icon::lucide_fallback(request.name.as_str())
-            .path()
-            .into(),
-    };
-    Some(ProjectIcon::Glyph(fallback))
+    // 清单没命中：用我们自己图标集里按扩展名兜的那张。我们也没有那个类型的图 ⇒ `None`，
+    // 行组件留出同宽的图标位而不画图形（见 `lithe_ui::lists::project::row`）——
+    // 不再回落到组件库的图标名。
+    file_icon::fallback_icon(request.name.as_str())
+        .map(|icon| ProjectIcon::Image(icon.path(is_dark).into()))
 }
 
 #[cfg(test)]

@@ -6,11 +6,8 @@ use gpui::{
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, rems,
 };
 use gpui_kit::base::h_flex;
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::status_bar::StatusBar;
-use gpui_kit::component::{ActiveTheme as _, Icon};
-// 回落的 Lucide 名字来自组件库（`shared::icons::file_icon::lucide_fallback` 的返回值类型）。
-// 上游的 `Icon` 只收它自己的图标名，所以这一处按路径构造（名字与路径在两边一致）。
-use lithe_ui::primitives::IconName;
 
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
 
@@ -20,8 +17,9 @@ const CHIP_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 
 #[non_exhaustive]
 pub struct StatusEntry {
+    /// 我们自己的图标集（`assets/icons/idea/**`）里的一条资源路径；
+    /// `None` = 我们没有这张图 ⇒ 这个条目不带图标（见 [`entry_icon`]）。
     icon: Option<&'static str>,
-    lucide: Option<IconName>,
     text: SharedString,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
 }
@@ -30,7 +28,6 @@ impl StatusEntry {
     pub fn new(text: impl Into<SharedString>) -> Self {
         Self {
             icon: None,
-            lucide: None,
             text: text.into(),
             on_click: None,
         }
@@ -44,20 +41,22 @@ impl StatusEntry {
         self
     }
 
-    pub fn with_icon(mut self, icon: IconName) -> Self {
-        self.lucide = Some(icon);
-        self
-    }
-
     pub fn with_idea_icon(mut self, icon: &'static idea::IdeaIcon, cx: &App) -> Self {
         self.icon = Some(icon.path(gpui_kit::component::Theme::global(cx).is_dark()));
         self
     }
 
+    /// 文件类型图标：清单（我们自己的 `extension.json`）命中就用它那张；没命中就用
+    /// [`file_icon::fallback_icon`] 按扩展名兜的那张；两张都没有 ⇒ 不带图标。
+    ///
+    /// 改口径前这里还会在两者都没命中时退回组件库的 `IconName`（`StatusEntry::lucide`
+    /// 那个字段），那是「用库图标顶我们的」，已随本片删除。
     pub fn with_file_icon(mut self, name: &str, cx: &App) -> Self {
-        let icon = FileIcon::lucide(file_icon::lucide_fallback(name)).with_theme_icon(name, cx);
-        self.icon = icon.themed;
-        self.lucide = Some(icon.fallback);
+        let icon = FileIcon::own(file_icon::fallback_icon(name)).with_theme_icon(name, cx);
+        let is_dark = gpui_kit::component::Theme::global(cx).is_dark();
+        self.icon = icon
+            .themed
+            .or(icon.fallback.map(|fallback| fallback.path(is_dark)));
         self
     }
 }
@@ -133,19 +132,15 @@ fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
 }
 
 fn entry_icon(entry: &StatusEntry, cx: &App) -> Option<AnyElement> {
-    if let Some(path) = entry.icon {
-        let theme = gpui_kit::component::Theme::global(cx);
-        return Some(
-            gpui::svg()
-                .path(path)
-                .flex_shrink_0()
-                .text_color(theme.muted_foreground)
-                .w(rems(14. / 16.))
-                .h(rems(14. / 16.))
-                .into_any_element(),
-        );
-    }
-    entry
-        .lucide
-        .map(|name| Icon::empty().path(name.path()).into_any_element())
+    let path = entry.icon?;
+    let theme = gpui_kit::component::Theme::global(cx);
+    Some(
+        gpui::svg()
+            .path(path)
+            .flex_shrink_0()
+            .text_color(theme.muted_foreground)
+            .w(rems(14. / 16.))
+            .h(rems(14. / 16.))
+            .into_any_element(),
+    )
 }

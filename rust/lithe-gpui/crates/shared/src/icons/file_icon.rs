@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use gpui::{AnyElement, App, AssetSource, IntoElement as _, SharedString, Styled as _};
-use lithe_ui::primitives::IconName;
 use lithe_ui::theme::ActiveTheme as _;
+
+use super::AppIcon;
 
 pub const BUILTIN_FILE_ICONS: &str = "idea";
 
@@ -340,34 +341,115 @@ fn lookup_mapped<'a>(key: &str, table: &'a HashMap<String, String>) -> Option<&'
     table.get(key).map(String::as_str)
 }
 
-#[must_use]
-pub fn lucide_fallback(name: &str) -> IconName {
-    let extension = name
-        .rsplit_once('.')
-        .map(|(_, extension)| extension.to_ascii_lowercase());
+/// 扩展名 → 我们自己的 SVG 路径（不含点，全小写）。表里的每一条都必须指向本仓库
+/// `assets/icons/idea/**` 下**真实存在**的文件，由 `fallback_icons_only_name_our_own_assets` 守着。
+const FALLBACK_ICONS: &[(&str, &str)] = &[
+    ("png", "icons/idea/fileTypes/image.svg"),
+    ("jpg", "icons/idea/fileTypes/image.svg"),
+    ("jpeg", "icons/idea/fileTypes/image.svg"),
+    ("gif", "icons/idea/fileTypes/image.svg"),
+    ("webp", "icons/idea/fileTypes/image.svg"),
+    ("ico", "icons/idea/fileTypes/image.svg"),
+    ("svg", "icons/idea/fileTypes/image.svg"),
+    ("bmp", "icons/idea/fileTypes/image.svg"),
+    ("avif", "icons/idea/fileTypes/image.svg"),
+    ("json", "icons/idea/fileTypes/json.svg"),
+    ("jsonc", "icons/idea/fileTypes/json.svg"),
+    ("json5", "icons/idea/fileTypes/json.svg"),
+    ("md", "icons/idea/fileTypes/markdown.svg"),
+    ("markdown", "icons/idea/fileTypes/markdown.svg"),
+    ("mdx", "icons/idea/fileTypes/markdown.svg"),
+    ("txt", "icons/idea/fileTypes/text.svg"),
+    ("log", "icons/idea/fileTypes/text.svg"),
+    ("lock", "icons/idea/fileTypes/text.svg"),
+    // 清单里 `.adoc` 也是文本图（那边没有 Markdown 专用名），这里必须跟它一致。
+    ("adoc", "icons/idea/fileTypes/text.svg"),
+    ("yml", "icons/idea/fileTypes/yaml.svg"),
+    ("yaml", "icons/idea/fileTypes/yaml.svg"),
+    ("toml", "icons/idea/fileTypes/toml.svg"),
+    ("ini", "icons/idea/fileTypes/properties.svg"),
+    ("conf", "icons/idea/fileTypes/properties.svg"),
+    ("cfg", "icons/idea/fileTypes/properties.svg"),
+    ("properties", "icons/idea/fileTypes/properties.svg"),
+    ("editorconfig", "icons/idea/fileTypes/editorConfig.svg"),
+    ("sh", "icons/idea/fileTypes/shell.svg"),
+    ("bash", "icons/idea/fileTypes/shell.svg"),
+    ("zsh", "icons/idea/fileTypes/shell.svg"),
+    ("fish", "icons/idea/fileTypes/shell.svg"),
+    ("ps1", "icons/idea/fileTypes/powershell.svg"),
+    ("psm1", "icons/idea/fileTypes/powershell.svg"),
+    ("psd1", "icons/idea/fileTypes/powershell.svg"),
+    ("bat", "icons/idea/fileTypes/powershell.svg"),
+    ("cmd", "icons/idea/fileTypes/powershell.svg"),
+    ("py", "icons/idea/fileTypes/python.svg"),
+    ("rs", "icons/idea/fileTypes/rust.svg"),
+    ("go", "icons/idea/fileTypes/go.svg"),
+    // `.kt` 有我们自己的图；`.kts` 不出第二种说法，一律留给清单（那边是 Gradle 脚本）。
+    ("kt", "icons/idea/fileTypes/kotlin.svg"),
+    ("rb", "icons/idea/fileTypes/ruby.svg"),
+    ("php", "icons/idea/fileTypes/php.svg"),
+    ("scala", "icons/idea/fileTypes/scala.svg"),
+    ("java", "icons/idea/fileTypes/java.svg"),
+    ("swift", "icons/idea/fileTypes/swiftLang.svg"),
+    ("c", "icons/idea/fileTypes/c.svg"),
+    ("h", "icons/idea/fileTypes/h.svg"),
+    ("hpp", "icons/idea/fileTypes/h.svg"),
+    ("cc", "icons/idea/fileTypes/cpp.svg"),
+    ("cpp", "icons/idea/fileTypes/cpp.svg"),
+    ("cxx", "icons/idea/fileTypes/cpp.svg"),
+    ("cs", "icons/idea/fileTypes/csharp.svg"),
+    ("css", "icons/idea/fileTypes/css.svg"),
+    ("scss", "icons/idea/fileTypes/css.svg"),
+    ("less", "icons/idea/fileTypes/css.svg"),
+    ("sass", "icons/idea/fileTypes/css.svg"),
+    ("html", "icons/idea/fileTypes/html.svg"),
+    ("htm", "icons/idea/fileTypes/html.svg"),
+    ("xml", "icons/idea/fileTypes/xml.svg"),
+    ("sql", "icons/idea/fileTypes/sql.svg"),
+    ("csv", "icons/idea/fileTypes/csv.svg"),
+    ("gradle", "icons/idea/fileTypes/gradle.svg"),
+    ("groovy", "icons/idea/fileTypes/groovy.svg"),
+    ("zip", "icons/idea/fileTypes/archive.svg"),
+    ("tar", "icons/idea/fileTypes/archive.svg"),
+    ("gz", "icons/idea/fileTypes/archive.svg"),
+    ("tgz", "icons/idea/fileTypes/archive.svg"),
+    ("7z", "icons/idea/fileTypes/archive.svg"),
+    ("rar", "icons/idea/fileTypes/archive.svg"),
+    ("bin", "icons/idea/fileTypes/binaryData.svg"),
+    ("exe", "icons/idea/fileTypes/binaryData.svg"),
+    ("dll", "icons/idea/fileTypes/binaryData.svg"),
+    ("so", "icons/idea/fileTypes/binaryData.svg"),
+    ("dylib", "icons/idea/fileTypes/binaryData.svg"),
+    ("class", "icons/idea/fileTypes/binaryData.svg"),
+];
 
-    match extension.as_deref() {
-        Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "ico" | "svg" | "bmp" | "avif") => {
-            IconName::Image
-        }
-        // 组件库的图标集里没有 `FileBraces`（上游 `gpui-kit` 有），最接近且**宿主资源源里
-        // 确实有这张图**的是 `Braces`（`icons/braces.svg`，在 `GpuiKitFallbackIcons` 的 106 个
-        // 名字里）。`FileJson` 名字更像，但 `icons/file-json.svg` 宿主当前不提供，会静默画空白。
-        Some("json" | "jsonc") => IconName::Braces,
-        Some("md" | "markdown" | "txt" | "rst" | "adoc") => IconName::FileText,
-        Some("toml" | "yaml" | "yml" | "ini" | "conf" | "cfg" | "properties" | "editorconfig") => {
-            IconName::Settings
-        }
-        Some("lock") => IconName::Package,
-        Some("sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "bat" | "cmd") => IconName::Terminal,
-        Some(
-            "rs" | "ts" | "tsx" | "mts" | "cts" | "js" | "jsx" | "mjs" | "cjs" | "py" | "java"
-            | "kt" | "kts" | "swift" | "go" | "c" | "h" | "cc" | "cpp" | "hpp" | "cs" | "rb"
-            | "php" | "vue" | "svelte" | "sql" | "css" | "scss" | "less" | "html" | "xml"
-            | "gradle" | "lua" | "dart" | "scala" | "ex" | "exs" | "dockerfile",
-        ) => IconName::FileCode,
-        _ => IconName::File,
-    }
+/// 主题清单没命中时，**我们自己**图标集里还给不给得出这张图。
+///
+/// **口径**（维护者，2026-10-08）：应用图标只用本仓库自己的图标集
+/// `rust/lithe-gpui/assets/icons/idea/**`；我们没有那张图就**留空、不画**，不许拿组件库
+/// （`lithe-ui` / `gpui-kit`）的图标顶替。
+///
+/// **查找规则**：只看**扩展名**（完整文件名的真源是主题清单，已由 [`theme_icon_path`] 命中），
+/// 命中 [`FALLBACK_ICONS`] 就返回 `icons/idea/**` 下的**我们自己的**路径，否则 `None` ——
+/// 调用点据此**留空**（[`FileIcon::render`](crate::icons::FileIcon::render) 会占住同一个
+/// 图标位而不画图形）。
+///
+/// **这张表和主题清单的关系**：清单（`extension.json`）是文件类型图标的真源，本表只登记
+/// 「清单整份读不出来」时我们仍然有的图，给清单当第二层兜底。两边都覆盖到的扩展名必须给出
+/// 同一条路径，由 `fallback_icons_agree_with_the_theme_manifest` 一条一条守着，免得长出
+/// 第二套说法。
+///
+/// **改口径前的样子**：这个函数原来叫 `lucide_fallback`，按扩展名返回 `lithe_ui::IconName`
+/// （png→`Image`、json→`Braces`、md→`FileText`、yml→`Settings`、java→`FileCode`、
+/// sh→`Terminal`、lock→`Package`、其余→`File`）—— 那就是「用库图标顶我们的」；
+/// 那些分支已全部删除，`.json` 也改回我们自己的 `fileTypes/json.svg`。
+#[must_use]
+pub fn fallback_icon(name: &str) -> Option<AppIcon> {
+    let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    FALLBACK_ICONS
+        .iter()
+        .find(|(candidate, _)| *candidate == extension.as_str())
+        .map(|(_, path)| AppIcon::same(path))
 }
 
 #[cfg(test)]
@@ -402,37 +484,80 @@ mod tests {
         .expect("synthetic pack must parse")
     }
 
+    /// 图标包真源：`assets/icons/idea/extension.json` 的 `iconDefinitions` 条数。
+    /// 2026-10-08 从 43 涨到 59：`filenames` 点名的 maven/docker/editorConfig/class/interface/
+    /// enum/annotation/record 与磁盘上早就有图、清单却没登记的 python/rust/go/kotlin/ruby/php/
+    /// scala/binaryData 一并补了进来。改清单就要同步这个数。
+    const MANIFEST_DEFINITIONS: usize = 59;
+
     #[test]
     fn active_theme_parses() {
         let theme = active_theme().expect("idea theme must parse");
         assert_eq!(theme.root(), "icons/idea/");
-        assert_eq!(theme.definition_count(), 128);
+        assert_eq!(theme.definition_count(), MANIFEST_DEFINITIONS);
+    }
+
+    #[test]
+    fn every_definition_reference_resolves() {
+        let theme = active_theme().expect("idea theme must parse");
+        let root: serde_json::Value =
+            serde_json::from_str(BUILTIN_EXTENSION_JSON).expect("manifest must be JSON");
+        let block = &root["icons"][0];
+        let mut references = 0;
+        // 清单里每一条按名字/扩展名点到的 id 都必须真的解析到一条定义。0.3.0 的清单做不到这件事：
+        // 43 条定义 + 10 处悬空引用（`pom.xml` 没有 maven 图、`\0lithe:java.class` 没有 class 图），
+        // 根因是同步工具的裁剪规则只把 `fileExtensions`/`folders`/默认值算作「被引用」。
+        //
+        // 注意 `\0lithe:*` 这批语义名：gpui 宿主按 `SEMANTIC_PREFIX` 把它们**跳过**（它们不吃
+        // 文件名/扩展名查表），所以这里直接读清单原文核对，不走 [`FileIcons::file_id`]。
+        // 它们仍是 Windows 前端 `file-icon-semantics.ts` 的契约，必须继续指向真实定义。
+        for table in ["fileExtensions", "filenames", "folders", "expandedFolders"] {
+            let entries = block[table]
+                .as_object()
+                .unwrap_or_else(|| panic!("`{table}` 应当是对象"));
+            for (key, id) in entries {
+                let id = id.as_str().expect("id 应当是字符串");
+                assert!(
+                    theme.resolve(id, true).is_some() && theme.resolve(id, false).is_some(),
+                    "`{table}` 的 `{key:?}` 指向 `{id}`，但清单里没有这条定义（会悄悄变成默认图）"
+                );
+                references += 1;
+            }
+        }
+        for key in ["defaultFile", "defaultFolder", "defaultFolderOpen"] {
+            let id = block[key].as_str().expect("默认值应当是字符串");
+            assert!(
+                theme.resolve(id, true).is_some() && theme.resolve(id, false).is_some(),
+                "`{key}` = `{id}` 在清单里没有定义"
+            );
+            references += 1;
+        }
+        assert!(
+            references >= 100,
+            "只查到 {references} 条引用，这个检查没在干活"
+        );
     }
 
     #[test]
     fn idea_theme_matches_the_documented_files() {
         for (name, dark, light) in [
-            (
-                ".gitignore",
-                "icons/files/gitignore.svg",
-                "icons/files/gitignore.svg",
-            ),
+            // 我们自己的图；`pom.xml` 走的是清单 `filenames` 里的 maven。
             (
                 "pom.xml",
-                "icons/files/maven_dark.svg",
-                "icons/files/maven.svg",
+                "legacy/files/maven_dark.svg",
+                "legacy/files/maven.svg",
             ),
+            ("data.json", "fileTypes/json.svg", "fileTypes/json.svg"),
             (
                 "README.md",
-                "icons/files/markdown_dark.svg",
-                "icons/files/markdown.svg",
+                "fileTypes/markdown.svg",
+                "fileTypes/markdown.svg",
             ),
-            (
-                "A.java",
-                "icons/files/java_dark.svg",
-                "icons/files/java.svg",
-            ),
-            ("x.yml", "icons/files/yaml_dark.svg", "icons/files/yaml.svg"),
+            ("A.java", "fileTypes/java.svg", "fileTypes/java.svg"),
+            ("x.yml", "fileTypes/yaml.svg", "fileTypes/yaml.svg"),
+            ("Main.kt", "fileTypes/kotlin.svg", "fileTypes/kotlin.svg"),
+            // 我们自己没有 `.gitignore` 的专用图：落到 `defaultFile`，仍是我们自己的文本图。
+            (".gitignore", "fileTypes/text.svg", "fileTypes/text.svg"),
         ] {
             assert_eq!(
                 relative(idea_path(name, false, false, true)),
@@ -451,11 +576,11 @@ mod tests {
     fn unknown_file_falls_back_to_default_file() {
         assert_eq!(
             relative(idea_path("notes.unknownext", false, false, true)),
-            Some("icons/files/text_dark.svg"),
+            Some("fileTypes/text.svg"),
         );
         assert_eq!(
             relative(idea_path("no-extension-at-all", false, false, true)),
-            Some("icons/files/text_dark.svg"),
+            Some("fileTypes/text.svg"),
         );
     }
 
@@ -463,7 +588,7 @@ mod tests {
     fn multi_dot_names_use_the_longest_suffix_first() {
         assert_eq!(
             relative(idea_path("archive.tar.gz", false, false, true)),
-            Some("icons/files/archive_dark.svg"),
+            Some("fileTypes/archive.svg"),
         );
     }
 
@@ -471,11 +596,11 @@ mod tests {
     fn folders_use_default_folder_icon() {
         assert_eq!(
             relative(idea_path("src", true, false, true)),
-            Some("icons/folders/folder_dark.svg"),
+            Some("nodes/folder.svg"),
         );
         assert_eq!(
             relative(idea_path("src", true, true, false)),
-            Some("icons/folders/folder.svg"),
+            Some("nodes/folder_light.svg"),
         );
     }
 
@@ -490,7 +615,7 @@ mod tests {
         );
         assert_eq!(
             lookup_path(&pack, builtin, "A.java", false, false, true),
-            Some("icons/idea/icons/files/java_dark.svg"),
+            Some("icons/idea/fileTypes/java.svg"),
         );
         assert_eq!(
             lookup_path(&pack, builtin, "notes.unknownext", false, false, true),
@@ -525,16 +650,84 @@ mod tests {
         );
     }
 
+    fn assets_root() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets")
+    }
+
+    /// 改口径的验收点：兜底图只能是**我们自己的**资源，而且那份资源真的在磁盘上。
     #[test]
-    fn lucide_fallback_covers_the_documented_cases() {
-        assert_eq!(lucide_fallback("data.json"), IconName::Braces);
-        assert_eq!(lucide_fallback("x.yml"), IconName::Settings);
-        assert_eq!(lucide_fallback("README.md"), IconName::FileText);
-        assert_eq!(lucide_fallback("A.java"), IconName::FileCode);
-        assert_eq!(lucide_fallback("run.sh"), IconName::Terminal);
-        assert_eq!(lucide_fallback("Cargo.lock"), IconName::Package);
-        assert_eq!(lucide_fallback("logo.png"), IconName::Image);
-        assert_eq!(lucide_fallback("notes.unknownext"), IconName::File);
-        assert_eq!(lucide_fallback("no-extension"), IconName::File);
+    fn fallback_icons_only_name_our_own_assets() {
+        let assets = assets_root();
+        for (extension, path) in FALLBACK_ICONS {
+            assert!(
+                path.starts_with("icons/idea/"),
+                "`{extension}` 的兜底图 `{path}` 不在我们自己的图标集里"
+            );
+            assert!(
+                assets.join(path).exists(),
+                "`{extension}` 的兜底图 `{path}` 在 assets 里不存在（界面上会画空白）"
+            );
+        }
+    }
+
+    /// 回归点：`.json` 曾经被映射成组件库的 `IconName::Braces`（注释理由是「`icons/file-json.svg`
+    /// 宿主不提供」）。我们自己的 `fileTypes/json.svg` 一直都在。
+    #[test]
+    fn fallback_icon_keeps_json_ours() {
+        assert_eq!(
+            fallback_icon("data.json"),
+            Some(AppIcon::same("icons/idea/fileTypes/json.svg")),
+        );
+        assert_eq!(
+            fallback_icon("settings.jsonc"),
+            Some(AppIcon::same("icons/idea/fileTypes/json.svg")),
+        );
+    }
+
+    /// 没有对应图的类型一律 `None`（⇒ 调用点留空），不再回落到组件库图标。
+    #[test]
+    fn fallback_icon_leaves_unknown_types_empty() {
+        for name in [
+            "notes.unknownext",
+            "no-extension",
+            "Makefile",
+            "logo.tiff",
+            "script.lua",
+        ] {
+            assert_eq!(fallback_icon(name), None, "`{name}` 应当留空");
+        }
+    }
+
+    /// 扩展名大小写不敏感（清单那边也是这个口径）。
+    #[test]
+    fn fallback_icon_ignores_extension_case() {
+        assert_eq!(fallback_icon("LOGO.PNG"), fallback_icon("logo.png"));
+        assert_eq!(fallback_icon("Main.JAVA"), fallback_icon("Main.java"));
+    }
+
+    /// 兜底表和主题清单都覆盖到的扩展名必须给出同一条路径 —— 不允许长出第二套说法。
+    #[test]
+    fn fallback_icons_agree_with_the_theme_manifest() {
+        let theme = active_theme().expect("idea theme must parse");
+        let mut overlapping = 0;
+        for (extension, path) in FALLBACK_ICONS {
+            let probe = format!("probe.{extension}");
+            // 清单没按扩展名登记的类型（本表专管的那些缺口）不参与比对。
+            let Some(id) = theme.file_id(&probe) else {
+                continue;
+            };
+            overlapping += 1;
+            for dark in [true, false] {
+                assert_eq!(
+                    theme.resolve(id, dark),
+                    Some(*path),
+                    "`.{extension}` 在清单里是 `{id}`，兜底表给的是 `{path}` —— 两处必须一致"
+                );
+            }
+        }
+        assert!(
+            overlapping > 20,
+            "只比到 {overlapping} 个重叠扩展名，这个检查没在干活"
+        );
     }
 }

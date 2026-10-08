@@ -9,7 +9,7 @@ use lithe_gpui_shared::tr_args;
 const MAX_EDITOR_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) fn icon_for_file(name: &str, cx: &App) -> FileIcon {
-    FileIcon::lucide(file_icon::lucide_fallback(name)).with_theme_icon(name, cx)
+    FileIcon::own(file_icon::fallback_icon(name)).with_theme_icon(name, cx)
 }
 
 pub(crate) fn language_for_file(name: &str) -> Option<&'static str> {

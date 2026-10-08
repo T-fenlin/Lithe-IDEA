@@ -1,19 +1,89 @@
-use gpui::{AnyElement, App, IntoElement as _, Length, SharedString, Styled as _, Svg, svg};
-use lithe_ui::primitives::{Icon, IconName};
+use gpui::{AnyElement, App, IntoElement as _, Length, SharedString, Styled as _, Svg, div, svg};
+use lithe_ui::primitives::Icon;
 use lithe_ui::theme::ActiveTheme as _;
 
 pub mod file_icon;
 pub mod idea;
 
+/// 我们自己图标集里的一个图标。
+///
+/// **口径**（维护者，2026-10-08，见
+/// `.agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md`）：
+/// 应用图标一律取自**本仓库自己的**图标集 `rust/lithe-gpui/assets/icons/idea/**`（302 个文件）；
+/// 我们自己没有那张图就**留空、不画**，不许拿 `gpui-kit` / `lithe-ui` 的图标顶替。
+///
+/// **这个类型把口径变成类型事实**：它只装资源路径 `&'static str`，装不下
+/// `lithe_ui::primitives::IconName` 这类组件库图标名 —— 所以「用库图标」不再可表达。
+///
+/// **查找规则**：路径只可能来自 `assets/icons/idea/**`，取法有三种 ——
+/// [`idea::*`](idea) 常量（用 [`AppIcon::from_idea`] 取）、[`file_icon`] 的主题清单，
+/// 以及 [`file_icon::fallback_icon`] 那张显式表。
+///
+/// **「我们没有」不由本类型表达**，而由 `Option<AppIcon>` 的 `None` 表达：
+/// 见 [`FileIcon::fallback`] 与 [`file_icon::fallback_icon`]。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppIcon {
+    /// 深色与浅色用同一张图。
+    Same(&'static str),
+    /// 深色与浅色各一张图（[`idea::IdeaIcon`] 的常态）。
+    Themed {
+        light: &'static str,
+        dark: &'static str,
+    },
+}
+
+impl AppIcon {
+    /// 深浅色统一用 `light` 那一张。
+    #[must_use]
+    pub const fn same(light: &'static str) -> Self {
+        Self::Same(light)
+    }
+
+    /// 深浅色各一张；路径必须都指向我们自己的资源。
+    #[must_use]
+    pub const fn themed(light: &'static str, dark: &'static str) -> Self {
+        Self::Themed { light, dark }
+    }
+
+    /// 由 [`idea::*`](idea) 常量取，深浅变体跟着常量走。
+    #[must_use]
+    pub const fn from_idea(icon: &'static idea::IdeaIcon) -> Self {
+        Self::Themed {
+            light: icon.light,
+            dark: icon.dark,
+        }
+    }
+
+    /// 当前主题该画哪张图。
+    #[must_use]
+    pub const fn path(&self, is_dark: bool) -> &'static str {
+        match self {
+            Self::Same(path) => path,
+            Self::Themed { light, dark } => {
+                if is_dark {
+                    *dark
+                } else {
+                    *light
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct FileIcon {
+    /// 我们自己的主题清单（`assets/icons/idea/extension.json`）按文件名命中的图；
+    /// 构造时已按调用点的主题解析成路径。`None` = 清单里没有这一条。
     pub themed: Option<&'static str>,
-    pub fallback: IconName,
+    /// 清单没命中时的兜底：**我们自己的**图标（见 [`file_icon::fallback_icon`]）。
+    /// `None` = 我们自己的图标集里也没有 ⇒ 渲染时**留空**（占住同一个图标位，不画图形）。
+    pub fallback: Option<AppIcon>,
 }
 
 impl FileIcon {
+    /// 只有兜底图、没有清单主题图；`None` 就是「我们没有这张图 ⇒ 留空」。
     #[must_use]
-    pub fn lucide(fallback: IconName) -> Self {
+    pub fn own(fallback: Option<AppIcon>) -> Self {
         Self {
             themed: None,
             fallback,
@@ -46,9 +116,13 @@ impl FileIcon {
                 return element;
             }
         }
+        let Some(icon) = self.fallback else {
+            // 我们自己的图标集里没有这张图：留空——占住同一个图标位（行不跳），但不画任何图形。
+            return div().flex_none().w(side).h(side).into_any_element();
+        };
         let theme = cx.theme();
         svg()
-            .path(SharedString::from(self.fallback.path()))
+            .path(SharedString::from(icon.path(theme.is_dark())))
             .flex_shrink_0()
             .text_color(theme.colors.fg)
             .w(side)
