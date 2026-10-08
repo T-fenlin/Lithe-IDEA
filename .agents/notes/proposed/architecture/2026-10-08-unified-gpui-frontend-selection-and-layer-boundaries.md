@@ -398,15 +398,18 @@ Dialog / Toast / Menu / Popover / Spotlight / Lightbox 的**统一挂载机制**
 3. **rem 缩放锚点在组件库不存在**：`Theme` 没有 `font_size` 字段，全仓无人调 `set_rem_size`
    ⇒ "主题基准字号是唯一缩放锚点"这条规范目前**没有落点**，需要单独一片。
 
-**未完成（G1 的下一片）**：把窗口根整片切过去——`app/src/main.rs` 的 4 处、`workbench/workspace.rs`
-的 2 处、`search_everywhere.rs` 的测试 3 处、`tests/common/mod.rs` 的开窗收口，以及**经上游
-`WindowState` 走的所有对话框调用点**（它们会去 `window.root::<gpui_base::Root>()` 找根，根换了
-就 panic）。所以"换根 + 迁对话框调用点"必须同一片落地，不能中途留一个半状态。
-**收尾不可分割（2026-10-08 实测确认）**：上游 `WindowExt` 是按**具体类型**找根的——
-`gpui-component-0.7.1/src/root.rs:89` 是 `window.root::<gpui_base::Root>()??`，
-而 gpui-base `root.rs:180/191` 直接 `.expect("window must have a Base Root")`。
-所以窗口的根实体一旦从 `gpui_base::Root` 换成 `WindowRoot`，**所有经 `WindowExt` 的对话框调用点
-会立刻 panic**：换根与迁移这批调用点必须同一片落地。
+**已完成（2026-10-08，`d4423274`）**：窗口根整片切过来了——`app/src/main.rs` 三条路径、
+`workbench/src/workspace.rs`（含 `replace_root_with_workspace` 的换根闭包）、
+`search_everywhere.rs` 与 `tests/common/mod.rs` 的测试收口，以及全部经上游 `WindowExt` 的
+对话框 / 通知调用点（约 60 处，改走 `WindowRootExt` 的同形入口）。
+
+**G1 验收证据**：`cargo check --workspace` = **0 error / 3 条既有警告**；
+`cargo test -p lithe-ui --features test-support` = **1558 passed / 0 failed**，其中宿主新增的
+5 条行为测试全过（单根、Esc 关层、显式关闭只跑一次 `on_close`、关闭后焦点归还、
+没挂宿主时**报告而不是 panic**）；两个 workspace 的 `cargo fmt --check` 均 exit 0。
+
+**仍未做（下一阶段）**：其余 9 个宿主 crate 的组件仍走 gpui-kit（机械批 → 组件重写）；
+rem 缩放锚点（`Theme::font_size` + `set_rem_size`）；尺寸守卫对 `rust/lithe-ui/` 失明。
 
 规模（grep 实测）：`open_dialog` 19、`close_dialog` 23、`replace_root` 4、`Root::new` 3、
 `push_notification` 1、`WindowExt` 引用 14 ⇒ 约 **60 处**，分布在 `workbench`(41)、`editor`(8)、
