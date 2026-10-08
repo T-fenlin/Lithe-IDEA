@@ -5,13 +5,13 @@ use std::sync::mpsc::Receiver;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, AppContext as _, Context, EventEmitter, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
-    Window, div,
+    AnyElement, AppContext as _, Context, EventEmitter, FontWeight, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Task, Window, div,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _};
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{core_json, tr, tr_args};
@@ -407,7 +407,7 @@ fn free_local_port() -> Option<u16> {
 
 impl Render for RunPane {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+        v_stack()
             .size_full()
             .child(self.toolbar(cx))
             .when_some(self.command_line(), |this, command| {
@@ -417,8 +417,8 @@ impl Render for RunPane {
                         .px_2()
                         .pb_1()
                         .text_xs()
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .text_color(cx.theme().muted_foreground)
+                        .font_family(cx.theme().mono_family.clone())
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(SharedString::from(command)),
                 )
             })
@@ -429,7 +429,7 @@ impl Render for RunPane {
                         .px_2()
                         .pb_1()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.run.gpui.debugUnsupported")),
                 )
             })
@@ -440,12 +440,12 @@ impl Render for RunPane {
                         .px_2()
                         .py_1()
                         .text_xs()
-                        .text_color(cx.theme().danger)
+                        .text_color(cx.theme().colors.danger)
                         .child(notice),
                 )
             })
             .child(
-                v_flex()
+                v_stack()
                     .id("lithe-run-body")
                     .w_full()
                     .flex_1()
@@ -475,21 +475,21 @@ impl RunPane {
             .unwrap_or_else(|| tr("lithe.run.configurations").to_string());
         let status = self.status_text(cx);
 
-        let mut row = h_flex()
+        let mut row = h_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
             .px_2()
             .py_1()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
                 div()
                     .min_w_0()
                     .truncate()
                     .text_sm()
-                    .font_medium()
-                    .text_color(cx.theme().foreground)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().colors.fg)
                     .child(name),
             )
             .when_some(status, |this, status| {
@@ -497,7 +497,7 @@ impl RunPane {
                     div()
                         .flex_shrink_0()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(status),
                 )
             });
@@ -506,36 +506,36 @@ impl RunPane {
             .child(div().flex_1())
             .child(
                 Button::new("run-pane-run")
-                    .small()
-                    .ghost()
-                    .icon(idea_icon_mono(&idea::PLAY_ICON, cx.theme().is_dark()))
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
+                    .icon_element(idea_icon_mono(&idea::PLAY_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.run.run"))
                     .disabled(running)
                     .on_click(cx.listener(|this, _, _, cx| this.launch(false, cx))),
             )
             .child(
                 Button::new("run-pane-debug")
-                    .small()
-                    .ghost()
-                    .icon(idea_icon_mono(&idea::BUG_ICON, cx.theme().is_dark()))
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
+                    .icon_element(idea_icon_mono(&idea::BUG_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.debugger.start"))
                     .disabled(running)
                     .on_click(cx.listener(|this, _, _, cx| this.launch(true, cx))),
             )
             .child(
                 Button::new("run-pane-stop")
-                    .small()
-                    .ghost()
-                    .icon(idea_icon_mono(&idea::STOP_ICON, cx.theme().is_dark()))
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
+                    .icon_element(idea_icon_mono(&idea::STOP_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.run.stop"))
                     .disabled(!running)
                     .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
             )
             .child(
                 Button::new("run-pane-clear")
-                    .small()
-                    .ghost()
-                    .icon(idea_icon_mono(&idea::TRASH_ICON, cx.theme().is_dark()))
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
+                    .icon_element(idea_icon_mono(&idea::TRASH_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.run.clearOutput"))
                     .disabled(self.session.is_none())
                     .on_click(cx.listener(|this, _, _, cx| this.clear_output(cx))),
@@ -566,7 +566,7 @@ impl RunPane {
 
     fn configuration_list(&self, cx: &Context<Self>) -> AnyElement {
         if self.configurations.is_empty() {
-            return v_flex()
+            return v_stack()
                 .w_full()
                 .items_center()
                 .justify_center()
@@ -575,23 +575,23 @@ impl RunPane {
                 .child(
                     div()
                         .text_sm()
-                        .text_color(cx.theme().foreground)
+                        .text_color(cx.theme().colors.fg)
                         .child(tr("lithe.settings.gpui.runNothingDetected")),
                 )
                 .child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.run.emptyOutput")),
                 )
                 .into_any_element();
         }
 
-        let mut column = v_flex().w_full();
+        let mut column = v_stack().w_full();
         for (index, configuration) in self.configurations.iter().enumerate() {
             let selected = self.selected == Some(index);
             column = column.child(
-                h_flex()
+                h_stack()
                     .id(SharedString::from(format!(
                         "run-configuration-{index}-{}",
                         configuration.id
@@ -601,15 +601,15 @@ impl RunPane {
                     .px_2()
                     .py_1()
                     .cursor_pointer()
-                    .when(selected, |this| this.bg(cx.theme().accent))
+                    .when(selected, |this| this.bg(cx.theme().colors.accent))
                     .on_click(cx.listener(move |this, _, _, cx| this.select(index, cx)))
                     .child(
                         idea_icon_mono(&idea::PLAY_ICON, cx.theme().is_dark())
                             .size_3()
                             .text_color(if selected {
-                                cx.theme().primary
+                                cx.theme().colors.on_accent
                             } else {
-                                cx.theme().muted_foreground
+                                cx.theme().colors.fg_muted
                             }),
                     )
                     .child(
@@ -617,14 +617,14 @@ impl RunPane {
                             .min_w_0()
                             .truncate()
                             .text_sm()
-                            .text_color(cx.theme().foreground)
+                            .text_color(cx.theme().colors.fg)
                             .child(configuration.name.clone()),
                     )
                     .child(
                         div()
                             .flex_shrink_0()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr(configuration.execution.label_key())),
                     )
                     .child(div().flex_1())
@@ -632,7 +632,7 @@ impl RunPane {
                         div()
                             .flex_shrink_0()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(configuration.provider_title.clone()),
                     ),
             );
@@ -645,19 +645,19 @@ impl RunPane {
             return div()
                 .p_2()
                 .text_sm()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(tr("lithe.run.selectConfiguration"))
                 .into_any_element();
         };
         let lines = session.output_lines();
-        let mono = cx.theme().mono_font_family.clone();
-        let mut column = v_flex().w_full().p_2().gap_0();
+        let mono = cx.theme().mono_family.clone();
+        let mut column = v_stack().w_full().p_2().gap_0();
         if self.output_truncated() {
             column = column.child(
                 div()
                     .w_full()
                     .text_xs()
-                    .text_color(cx.theme().warning)
+                    .text_color(cx.theme().colors.warning)
                     .child(tr("lithe.run.gpui.outputTruncated")),
             );
         }
@@ -665,7 +665,7 @@ impl RunPane {
             column = column.child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.run.emptyOutput")),
             );
         }
@@ -674,7 +674,7 @@ impl RunPane {
                 .w_full()
                 .text_xs()
                 .font_family(mono.clone())
-                .text_color(cx.theme().foreground)
+                .text_color(cx.theme().colors.fg)
                 .child(SharedString::from(line))
         }));
         column.into_any_element()

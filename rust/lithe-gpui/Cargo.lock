@@ -4485,9 +4485,9 @@ dependencies = [
 name = "lithe-gpui-run"
 version = "0.0.1"
 dependencies = [
- "gpui-kit",
  "gpui-pre",
  "lithe-gpui-shared",
+ "lithe-ui",
  "serde_json",
 ]
 
