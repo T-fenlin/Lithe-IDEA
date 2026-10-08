@@ -4,11 +4,8 @@ use std::sync::Arc;
 
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::{ActiveTheme as _, StyledExt as _};
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems};
 
 use lithe_gpui_java::{JavaDiagnostic, JavaFileDiagnostics, JavaLanguageService};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};

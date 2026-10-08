@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 
-use gpui_kit::{
-    App, AppContext as _, Context, Entity, Global, SharedString, Subscription, Window,
-    WindowAppearance, px,
-};
+use gpui::{App, AppContext as _, Context, Entity, SharedString, Subscription, Window, WindowAppearance, px};
+use gpui_kit::{Global};
 use serde_json::Value;
 
 use lithe_gpui_shared::workspace_config::WorkspaceConfigPaths;

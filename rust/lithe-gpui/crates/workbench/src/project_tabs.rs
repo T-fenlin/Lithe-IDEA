@@ -4,11 +4,9 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::h_flex;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _};
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    App, InteractiveElement as _, IntoElement, ParentElement as _, ScrollHandle, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, div, rems,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{App, InteractiveElement as _, IntoElement, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems};
+use gpui_kit::{ScrollHandle};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::tr_args;

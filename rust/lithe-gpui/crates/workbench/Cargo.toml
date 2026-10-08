@@ -5,6 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
+# gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
 gpui-kit = "=0.7.1"
 # 自己的组件库：外壳的窗格框架 / 分隔条 / 拖动 / 尺寸持久化已从 gpui-kit 的
 # `resize_handle` 换成 `lithe_gpui::layout::Dock`（组件 crate 直接建在 gpui-pre

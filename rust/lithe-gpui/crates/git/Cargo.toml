@@ -5,6 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
+# gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
 gpui-kit = "=0.7.1"
 # 自己的组件库：窗口根宿主与对话框（门 G1 起，丢弃改动确认框走 `lithe_ui::shell::WindowRootExt`）。
 # gpui-pre 的版本由 lithe-ui 精确钉住，这里不重复声明。

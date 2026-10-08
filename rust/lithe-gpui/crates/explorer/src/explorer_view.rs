@@ -8,13 +8,9 @@ use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHea
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    AnyElement, App, AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle,
-    Focusable as _, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window,
-    div, rems,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{AnyElement, App, AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems};
+use gpui_kit::{Role};
 
 use lithe_gpui_shared::icons::idea;
 use lithe_gpui_shared::tr;

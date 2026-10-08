@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::{ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry};
-use gpui_kit::{App, SharedString, WindowAppearance, px};
+use gpui::{App, SharedString, WindowAppearance, px};
 use lithe_gpui_shared::design;
 use lithe_gpui_shared::rem_px;
 

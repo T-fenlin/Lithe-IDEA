@@ -8,13 +8,9 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, Length, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, relative,
-    rems,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{AnyElement, App, AppContext as _, Context, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement, Length, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems};
+use gpui_kit::{Div, relative};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{tr, tr_args};

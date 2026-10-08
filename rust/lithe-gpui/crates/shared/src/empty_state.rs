@@ -1,7 +1,7 @@
 use gpui_kit::base::v_flex;
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
 use gpui_kit::component::{ActiveTheme as _, StyledExt as _};
-use gpui_kit::{AnyElement, App, IntoElement, ParentElement as _, SharedString, Styled as _};
+use gpui::{AnyElement, App, IntoElement, ParentElement as _, SharedString, Styled as _};
 
 pub const UNAVAILABLE_ICON_SIZE_SPEC: f32 = 28.;
 

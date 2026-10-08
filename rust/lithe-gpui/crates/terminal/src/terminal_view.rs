@@ -10,12 +10,9 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerState};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, Size};
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
-    StyleRefinement, Styled as _, Subscription, WeakEntity, Window, div, img, relative, rems,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, WeakEntity, Window, div, rems};
+use gpui_kit::{Role, img, relative};
 use lithe_gpui_shared::design::TAB_MAX_WIDTH;
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
@@ -536,7 +533,7 @@ fn output_row_style() -> StyleRefinement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_kit::{AbsoluteLength, px};
+    use gpui::{AbsoluteLength, px};
 
     #[test]
     fn rem_conversions_match_the_spec_pixels() {

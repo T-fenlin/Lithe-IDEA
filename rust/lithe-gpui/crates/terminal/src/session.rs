@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::message_scroller::MessageScrollerState;
-use gpui_kit::{AppContext as _, Context, SharedString, WeakEntity, Window};
+use gpui::{AppContext as _, Context, SharedString, WeakEntity, Window};
 
 use crate::ansi::TerminalText;
 use crate::constants::{

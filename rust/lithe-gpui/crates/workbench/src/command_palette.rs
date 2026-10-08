@@ -3,10 +3,8 @@ use std::cell::RefCell;
 use gpui_kit::base::v_flex;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
-use gpui_kit::{
-    App, AppContext as _, Context, DefiniteLength, Entity, IntoElement, KeyBinding,
-    ParentElement as _, Render, SharedString, Styled as _, WeakEntity, Window, div, rems,
-};
+use gpui::{App, AppContext as _, Context, Entity, IntoElement, KeyBinding, ParentElement as _, Render, SharedString, Styled as _, WeakEntity, Window, div, rems};
+use gpui_kit::{DefiniteLength};
 
 use lithe_gpui_shared::tr;
 use lithe_ui::overlays::Dialog;

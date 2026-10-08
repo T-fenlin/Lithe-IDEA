@@ -1,6 +1,6 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Theme;
-use gpui_kit::{AnyElement, App, IntoElement as _, Length, SharedString, Styled as _, Svg, svg};
+use gpui::{AnyElement, App, IntoElement as _, Length, SharedString, Styled as _, Svg, svg};
 
 pub mod file_icon;
 pub mod idea;

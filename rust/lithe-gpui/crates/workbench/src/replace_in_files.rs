@@ -9,12 +9,8 @@ use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
     StyledExt as _,
 };
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, Focusable as _, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
-    Styled as _, Subscription, Window, div, rems,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{AnyElement, App, AppContext as _, Context, ElementId, Entity, Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div, rems};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr, tr_args};
 use lithe_ui::overlays::Dialog;

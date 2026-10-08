@@ -4,11 +4,8 @@ use gpui_kit::component::button::Button;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon};
-use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, DefiniteLength, Entity, Focusable as _, FontWeight,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
-};
+use gpui::{AnyElement, App, AppContext as _, Context, Entity, Focusable as _, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems};
+use gpui_kit::{DefiniteLength};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
@@ -1471,7 +1468,7 @@ mod tests {
         pull_diverged_message, pull_divergence_counts, remote_actions_disabled, remote_message,
         trigger_icon_names, update_project_disabled, visible_rows,
     };
-    use gpui_kit::{SharedString, px};
+    use gpui::{SharedString, px};
     use lithe_gpui_git::{BranchInfo, BranchSnapshot};
     use lithe_gpui_shared::tr;
 

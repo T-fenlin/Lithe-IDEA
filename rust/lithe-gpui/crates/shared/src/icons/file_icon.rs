@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Theme;
-use gpui_kit::{AnyElement, App, AssetSource, IntoElement as _, SharedString, Styled as _};
+use gpui::{AnyElement, App, AssetSource, IntoElement as _, SharedString, Styled as _};
 
 pub const BUILTIN_FILE_ICONS: &str = "idea";
 

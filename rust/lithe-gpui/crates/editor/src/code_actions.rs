@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use gpui_kit::component::input::{CodeActionProvider, EditorState};
-use gpui_kit::{App, AppContext as _, Entity, SharedString, Task, Window};
+use gpui::{App, AppContext as _, Entity, SharedString, Task, Window};
 use lithe_gpui_java::{JavaCodeAction, JavaLanguageService, JavaPosition};
 use lsp_types::{CodeAction, CodeActionKind, Position, TextEdit, Uri, WorkspaceEdit};
 

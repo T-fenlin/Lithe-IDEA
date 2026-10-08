@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use gpui_kit::component::input::{CompletionProvider, Rope};
-use gpui_kit::{App, AppContext as _, Task, Window};
+use gpui::{App, AppContext as _, Task, Window};
 use lithe_gpui_java::{JavaCompletionItem, JavaLanguageService};
 use lithe_gpui_shared::core_json;
 use lsp_types::{

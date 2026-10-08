@@ -15,7 +15,7 @@ pub use editor_view::{
 };
 pub use problems::ProblemsPane;
 
-use gpui_kit::{App, KeyBinding};
+use gpui::{App, KeyBinding};
 
 gpui_kit::actions!(
     lithe_editor,

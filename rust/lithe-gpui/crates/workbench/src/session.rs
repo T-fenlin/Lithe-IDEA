@@ -7,7 +7,7 @@ use lithe_gpui_shared::workspace_config::session::{
     self, SessionFileOutcome, SessionState, SessionUiState,
 };
 
-use gpui_kit::{App, Entity, Window};
+use gpui::{App, Entity, Window};
 
 pub const SESSION_SAVE_DEBOUNCE_MS: u64 = 300;
 

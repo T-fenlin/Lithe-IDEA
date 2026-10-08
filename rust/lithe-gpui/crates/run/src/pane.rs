@@ -6,12 +6,8 @@ use std::sync::mpsc::Receiver;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _};
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    AnyElement, AppContext as _, Context, EventEmitter, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
-    Window, div,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{AnyElement, AppContext as _, Context, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{core_json, tr, tr_args};

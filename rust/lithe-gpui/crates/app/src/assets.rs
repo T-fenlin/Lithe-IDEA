@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use gpui_kit::{AssetSource, Result, SharedString};
+use gpui::{AssetSource, Result, SharedString};
 
 gpui_kit::assets::icon_assets!(
     GpuiKitFallbackIcons,

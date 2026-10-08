@@ -7,7 +7,7 @@ pub mod icons;
 pub mod languages;
 pub mod workspace_config;
 
-use gpui_kit::{AbsoluteLength, Pixels, rems};
+use gpui::{AbsoluteLength, Pixels, rems};
 
 rust_i18n::i18n!("locales", fallback = "en");
 

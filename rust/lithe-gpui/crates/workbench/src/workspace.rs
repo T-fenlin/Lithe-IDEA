@@ -8,11 +8,8 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::{ActiveTheme as _, Icon};
-use gpui_kit::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, Global, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
-    Render, ScrollHandle, SharedString, Styled as _, Window, div, rems,
-};
+use gpui::{AnyElement, App, AppContext as _, ClickEvent, Context, Entity, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Window, div, rems};
+use gpui_kit::{Global, PathPromptOptions, ScrollHandle};
 
 use lithe_ui::layout::{Dock, DockEvent, DockPanel, DockSide};
 // 窗口根宿主（门 G1）：本文件里的 `open_dialog` / `close_dialog` / `has_active_dialog` /
@@ -3355,7 +3352,8 @@ fn register_java_toolchain(root: &Path, cx: &App) {
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::{AppContext as _, TestAppContext, div, prelude::*, rems};
+    use gpui::{AppContext as _, TestAppContext, div, rems};
+    use gpui_kit::{prelude::*};
     use lithe_ui::layout::DockSide;
 
     use super::{

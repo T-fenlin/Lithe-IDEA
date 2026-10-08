@@ -4410,6 +4410,7 @@ version = "0.0.1"
 dependencies = [
  "embed-resource",
  "gpui-kit",
+ "gpui-pre",
  "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-workbench",
@@ -4422,6 +4423,7 @@ name = "lithe-gpui-editor"
 version = "0.0.1"
 dependencies = [
  "gpui-kit",
+ "gpui-pre",
  "lithe-gpui-java",
  "lithe-gpui-notify",
  "lithe-gpui-shared",
@@ -4436,6 +4438,7 @@ name = "lithe-gpui-explorer"
 version = "0.0.1"
 dependencies = [
  "gpui-kit",
+ "gpui-pre",
  "lithe-gpui-shared",
  "lithe-ui",
  "serde_json",
@@ -4455,6 +4458,7 @@ name = "lithe-gpui-git"
 version = "0.0.1"
 dependencies = [
  "gpui-kit",
+ "gpui-pre",
  "lithe-gpui-shared",
  "lithe-ui",
  "serde_json",
@@ -4482,6 +4486,7 @@ name = "lithe-gpui-run"
 version = "0.0.1"
 dependencies = [
  "gpui-kit",
+ "gpui-pre",
  "lithe-gpui-shared",
  "serde_json",
 ]
@@ -4492,6 +4497,7 @@ version = "0.0.1"
 dependencies = [
  "async-channel",
  "gpui-kit",
+ "gpui-pre",
  "lithe-gpui-run",
  "lithe-gpui-shared",
  "lithe-ui",
@@ -4505,6 +4511,7 @@ name = "lithe-gpui-shared"
 version = "0.0.1"
 dependencies = [
  "gpui-kit",
+ "gpui-pre",
  "lithe-core",
  "rust-i18n",
  "serde",
@@ -4517,6 +4524,7 @@ name = "lithe-gpui-terminal"
 version = "0.0.1"
 dependencies = [
  "gpui-kit",
+ "gpui-pre",
  "lithe-gpui-shared",
 ]
 
@@ -4526,6 +4534,7 @@ version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
  "gpui-kit",
+ "gpui-pre",
  "lithe-gpui-editor",
  "lithe-gpui-explorer",
  "lithe-gpui-extensions",

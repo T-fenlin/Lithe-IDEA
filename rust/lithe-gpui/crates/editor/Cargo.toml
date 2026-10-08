@@ -5,6 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
+# gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
 # gpui-kit 是**过渡依赖**，正在按切片迁往 `lithe-ui`（见 rust/lithe-gpui/README.md）。
 #
 # 这些 grammar 特性会拉进 `tree-sitter ^0.26.13`；`lithe-core` 已于 2026-10-08 由 0.25

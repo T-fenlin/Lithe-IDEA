@@ -5,6 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
+# gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
 gpui-kit = "=0.7.1"
 # 项目树控件来自仓库内的组件库 `lithe-gpui`（`lists::ProjectTree`）：行渲染、展开、多选、
 # 右键菜单、行预算与 git 装饰都归它，本 crate 只留 Core 读取、端口与面板状态。

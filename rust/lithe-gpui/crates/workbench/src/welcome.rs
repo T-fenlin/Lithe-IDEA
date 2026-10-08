@@ -5,12 +5,8 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, StyledExt as _, TitleBar};
-use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, ImageSource,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Resource, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, WeakEntity,
-    Window, div, img, rems,
-};
+use gpui::{AnyElement, App, AppContext as _, Context, ElementId, Entity, ImageSource, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems};
+use gpui_kit::{Resource, TestSupportExt as _, img};
 use lithe_gpui_settings::{RecentProject, RecentProjects};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{HOST_VERSION, tr, tr_args};

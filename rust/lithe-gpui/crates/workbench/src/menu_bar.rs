@@ -6,12 +6,8 @@ use gpui_kit::base::{Align, ElementExt as _, Placement, Positioner, h_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
-use gpui_kit::{
-    App, AppContext as _, Bounds, ClickEvent, Context, DismissEvent, Entity, FocusHandle,
-    Focusable as _, InteractiveElement as _, IntoElement, KeyBinding, Keystroke, MouseButton,
-    ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Subscription, Window, deferred, div, rems,
-};
+use gpui::{App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, KeyBinding, Keystroke, MouseButton, ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems};
+use gpui_kit::{DismissEvent, deferred};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::tr;

@@ -23,7 +23,7 @@ pub use remote::{
     validate_fields,
 };
 
-use gpui_kit::{App, KeyBinding};
+use gpui::{App, KeyBinding};
 
 gpui_kit::actions!(lithe_git, [CommitChanges]);
 

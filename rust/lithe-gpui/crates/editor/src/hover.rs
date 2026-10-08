@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui_kit::component::input::{EditorState, HoverProvider, Rope};
-use gpui_kit::{App, AppContext as _, Task, Window};
+use gpui::{App, AppContext as _, Task, Window};
 use lithe_gpui_java::{JavaHover, JavaLanguageService};
 use lithe_gpui_shared::core_json;
 use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Range};

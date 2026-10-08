@@ -6,12 +6,8 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, Length,
-    ParentElement as _, Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Window, div, rems,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, Length, ParentElement as _, Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems};
 use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
 
 use lithe_gpui_shared::tr;
@@ -612,7 +608,7 @@ mod tests {
 
     #[test]
     fn probe_point_keeps_logical_pixels_unscaled() {
-        use gpui_kit::{Point, px};
+        use gpui::{Point, px};
 
         let point = ProbePoint::from(Point {
             x: px(1421.6),
