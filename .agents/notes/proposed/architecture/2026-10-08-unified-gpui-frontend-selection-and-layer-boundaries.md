@@ -512,6 +512,26 @@ gpui-component 的 Theme，与组件库的 Theme **不同名、不同形**。以
 `icons/files/*_dark.svg`），16 条 `workspace_config::*` 失败于 Core 拒绝 Git 写操作
 （`Unsupported Git write operation`）。⇒ 该 crate 的验收只能写"**既有红只剩这些、且与本轮改动无关**"，
 **不得声称全绿**。
+#### 图标口径修正（维护者 2026-10-08）：应用图标只用**我们自己的**图标集
+
+**规则**：应用图标一律取自本仓库自己的图标集（`rust/lithe-gpui/assets/icons/idea/`，实测 **302 个文件**，
+含 `fileTypes/json.svg` 等）；**我们自己没有那个图标就空着**，**不用 UI 库（gpui-kit 或 lithe-ui）的图标来顶**。
+
+**据此作废与修正本稿先前两处结论**：
+
+- ❌ **作废 ①**（"把 `lithe_ui::Assets`（307 图标）挂进宿主资源源"）：不挂。
+- ❌ **作废 ②**（"宿主 73 个图标名在库图标集里缺 31 个，需补名字或换名映射"）：判据换成"**我们自己的图标集里有没有**"，
+  没有就空着；不再以库的图标集为参照。
+- ⚠️ **`GpuiKitFallbackIcons`（106 个 gpui-kit 图标名，挂在 `crates/app/src/assets.rs`）= "用 UI 库图标"的兜底机制**，
+  按本口径应移除；移除前要确认它当前**是否还在替上游组件自身的内部图标（对话框关闭、勾选、微调钮等）兜底**——
+  若是，则它属于"上游组件自己的渲染素材"，要么随组件被替换而消失，要么作为**限期拆除的过渡垫片**登记。
+- ⚠️ **回归修正**：`shared/src/icons/file_icon.rs` 把 `.json` 映射成库的 `Braces`（理由"宿主资源源没有 `file-json.svg`"）
+  属于**用库图标顶替我们的**，且**宿主的 `fileTypes/json.svg` 本就在**。应改回**我们自己的**图标。
+
+**受影响规模（下一步的工作量证据）**：宿主里仍以**库的 `IconName::` 枚举**命名的调用点共 **127 处**
+（workbench 84 / shared 17 / git 10 / explorer 6 / settings 5 / terminal 3 / app 1 / editor 1）。
+各 crate 的迁移片都要把其中属于**应用图标**的改成我们自己的图标（`shared::icons::idea::*` 或我们的 SVG 路径），
+我们没有的**留空**；只有**上游组件自身的内部装饰图标**才继续由上游绘制。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、
