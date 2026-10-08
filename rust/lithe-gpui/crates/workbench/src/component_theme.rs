@@ -8,7 +8,7 @@
 //! 映射是**保守**的：只覆盖组件真正读的、宿主也确实有的那些语义色；其余
 //! （渐变、图表、ANSI、语法色等）留给组件库自己的调色板。
 
-use gpui_kit::App;
+use gpui::App;
 use gpui_kit::component::ActiveTheme as _;
 use lithe_ui::theme::{Mode, Palette, Theme};
 

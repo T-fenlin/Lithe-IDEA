@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::BackgroundExecutor;
+use gpui::BackgroundExecutor;
 use gpui_kit::base::input::{Diagnostic, DiagnosticSet, DiagnosticSeverity};
 use gpui_kit::component::input::{EditorState, Rope};
 use lithe_gpui_java::{JavaDiagnostic, JavaLanguageService};

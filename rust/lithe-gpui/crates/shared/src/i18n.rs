@@ -1,4 +1,4 @@
-use gpui_kit::SharedString;
+use gpui::SharedString;
 
 pub fn tr(key: &str) -> SharedString {
     SharedString::from(rust_i18n::t!(key).to_string())

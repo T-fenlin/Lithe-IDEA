@@ -1,4 +1,4 @@
-use gpui_kit::SharedString;
+use gpui::SharedString;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum EscapeState {

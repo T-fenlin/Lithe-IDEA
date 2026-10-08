@@ -2,9 +2,7 @@ mod common;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{
-    AppContext as _, Context, ElementId, IntoElement, Render, TestAppContext, Window, px, size,
-};
+use gpui::{AppContext as _, Context, ElementId, IntoElement, Render, TestAppContext, Window, px, size};
 
 use lithe_gpui_workbench::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 

@@ -1490,7 +1490,7 @@ mod tests {
     }
 
     fn action_fixture() -> Vec<CommandAction> {
-        use gpui_kit::SharedString;
+        use gpui::SharedString;
         use gpui_kit::component::Icon;
 
         use crate::command_palette::{Category, CommandId};

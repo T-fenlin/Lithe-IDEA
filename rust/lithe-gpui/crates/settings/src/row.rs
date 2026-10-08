@@ -1,7 +1,7 @@
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::ActiveTheme as _;
 use gpui::{AnyElement, App, ClickEvent, ElementId, InteractiveElement as _, IntoElement, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems};
-use gpui_kit::{Div, prelude::FluentBuilder as _};
+use gpui::{Div, prelude::FluentBuilder as _};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlWidth {

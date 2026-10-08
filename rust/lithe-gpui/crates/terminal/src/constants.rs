@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use gpui_kit::SharedString;
+use gpui::SharedString;
 use lithe_gpui_shared::tr;
 
 pub(crate) const NO_TERMINALS_KEY: &str = "lithe.terminal.noTerminals";

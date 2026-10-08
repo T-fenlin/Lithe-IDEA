@@ -8,8 +8,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use gpui_kit::App;
-use gpui_kit::SharedString;
+use gpui::App;
+use gpui::SharedString;
 use gpui_kit::assets::IconName;
 use lithe_gpui_shared::core_json;
 use lithe_gpui_shared::icons::file_icon;

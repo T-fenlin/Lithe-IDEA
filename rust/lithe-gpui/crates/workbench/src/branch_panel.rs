@@ -5,7 +5,7 @@ use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui::{AnyElement, App, AppContext as _, Context, Entity, Focusable as _, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems};
-use gpui_kit::{DefiniteLength};
+use gpui::{DefiniteLength};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
@@ -1447,7 +1447,7 @@ fn render_tracking(tracking: lithe_gpui_git::TrackingCounts, cx: &App) -> Vec<An
 }
 
 #[cfg(test)]
-use gpui_kit::Pixels;
+use gpui::Pixels;
 
 #[cfg(test)]
 fn branch_row_height(rem: Pixels) -> Pixels {

@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::process::Command;
 
-use gpui_kit::App;
+use gpui::App;
 
 pub fn restart_application(cx: &App) -> bool {
     let exe = match std::env::current_exe() {

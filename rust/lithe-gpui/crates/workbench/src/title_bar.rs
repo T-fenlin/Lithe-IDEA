@@ -2,7 +2,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui::{AnyElement, App, Entity, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems};
-use gpui_kit::{WindowControlArea};
+use gpui::{WindowControlArea};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 
 use lithe_gpui_shared::tr;

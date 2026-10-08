@@ -7,7 +7,7 @@ use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, AppContext as _, Context, ElementId, Entity, FontWeight, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div, rems};
-use gpui_kit::{DefiniteLength};
+use gpui::{DefiniteLength};
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea, idea_icon_image, idea_icon_svg_px};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
 use lithe_ui::overlays::Dialog;

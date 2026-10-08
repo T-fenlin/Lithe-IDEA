@@ -1,4 +1,4 @@
-use gpui_kit::SharedString;
+use gpui::SharedString;
 use serde_json::Value;
 
 use crate::changes::{self, WriteOutcome};

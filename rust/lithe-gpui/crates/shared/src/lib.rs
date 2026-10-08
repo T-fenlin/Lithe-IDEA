@@ -29,7 +29,7 @@ pub fn rem_px(rem: Pixels, spec_px: f32) -> Pixels {
 #[cfg(test)]
 mod tests {
     use super::rem_px;
-    use gpui_kit::px;
+    use gpui::px;
 
     #[test]
     fn rem_px_scales_with_the_runtime_base() {

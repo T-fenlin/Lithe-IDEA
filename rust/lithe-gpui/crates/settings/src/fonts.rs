@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use gpui_kit::App;
+use gpui::App;
 
 use crate::extensions;
 use crate::extensions::{BundledExtension, BundledKind};

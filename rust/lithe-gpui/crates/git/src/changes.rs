@@ -475,7 +475,7 @@ pub fn operation_action(root: &str, operation: &str) -> WriteOutcome {
 #[cfg(test)]
 mod tests {
     use super::{ChangeKind, ChangeRow, OperationKind, parse_changes, parse_operation};
-    use gpui_kit::SharedString;
+    use gpui::SharedString;
 
     fn row(path: &str, status: &str, untracked: bool) -> ChangeRow {
         ChangeRow {

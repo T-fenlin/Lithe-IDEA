@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
-use gpui_kit::SharedString;
+use gpui::SharedString;
 
 #[derive(Clone)]
 #[non_exhaustive]

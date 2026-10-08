@@ -10,7 +10,7 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui::{App, AppContext as _, Context, ElementId, Entity, FontWeight, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems};
-use gpui_kit::{Anchor, PathPromptOptions, prelude::FluentBuilder as _};
+use gpui::{Anchor, PathPromptOptions, prelude::FluentBuilder as _};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
 use lithe_gpui_shared::workspace_config::{
@@ -3069,7 +3069,7 @@ fn git_scope_label(scope: IdentityScope) -> SharedString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_kit::px;
+    use gpui::px;
 
     #[test]
     fn font_size_labels_are_compact() {

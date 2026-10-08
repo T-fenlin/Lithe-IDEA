@@ -182,7 +182,7 @@ impl AssetSource for LitheAssets {
 #[cfg(test)]
 mod tests {
     use super::{GpuiKitFallbackIcons, LitheAssets, PROBE_PATHS, probe_len};
-    use gpui_kit::AssetSource as _;
+    use gpui::AssetSource as _;
 
     fn embedded_paths() -> Vec<String> {
         <LitheAssets as rust_embed::RustEmbed>::iter()

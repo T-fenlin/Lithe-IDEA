@@ -10,7 +10,7 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
 use gpui::{AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems};
-use gpui_kit::{Role, relative};
+use gpui::{Role, relative};
 
 use lithe_gpui_shared::design::{ROW_LINE_HEIGHT, ROW_RADIUS};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
@@ -1451,7 +1451,7 @@ impl Render for ChangesView {
 mod tests {
     use super::{change_row_element_id, stage_button_element_id};
     use crate::changes::{ChangeKind, ChangeRow};
-    use gpui_kit::SharedString;
+    use gpui::SharedString;
 
     fn row(path: &str, status: &str, untracked: bool) -> ChangeRow {
         ChangeRow {

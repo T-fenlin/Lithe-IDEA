@@ -10,7 +10,7 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{AnyElement, App, AppContext as _, Context, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement, Length, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems};
-use gpui_kit::{Div, relative};
+use gpui::{Div, relative};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{tr, tr_args};
@@ -1909,7 +1909,7 @@ impl Render for BottomPane {
 mod tests {
     use super::{commit_element_id, panel_element_id};
     use crate::model::{Commit, Panel};
-    use gpui_kit::SharedString;
+    use gpui::SharedString;
 
     fn commit(hash: &str) -> Commit {
         Commit {

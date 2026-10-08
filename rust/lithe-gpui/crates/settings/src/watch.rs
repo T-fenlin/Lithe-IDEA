@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use gpui_kit::Context;
+use gpui::Context;
 
 use crate::store::SettingsStore;
 

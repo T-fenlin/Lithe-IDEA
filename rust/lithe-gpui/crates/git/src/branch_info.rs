@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gpui_kit::SharedString;
+use gpui::SharedString;
 
 use crate::model::{
     RefKind, Reference, discover_repository_root, execute_core, parse_references,
@@ -133,7 +133,7 @@ fn local_branches(
 mod tests {
     use super::{BranchInfo, BranchSnapshot, RefKind, TrackingCounts, local_branches};
     use crate::model::Reference;
-    use gpui_kit::SharedString;
+    use gpui::SharedString;
 
     fn reference(name: &str, kind: RefKind, is_current: bool) -> Reference {
         Reference {
