@@ -434,6 +434,17 @@ Dialog / Toast / Menu / Popover / Spotlight / Lightbox 的**统一挂载机制**
 迁移形态：在 `WindowRootExt` 上给出与旧调用点**同形**的入口（`open_dialog(id, build)` /
 `close_dialog()`），调用点只改 trait 导入与构造闭包。⚠️ 新旧两个 trait 的同名方法同时进作用域
 会直接编译歧义，所以**只能在换根那一片里一次改完**，不能分批。
+**组件重写批的第一块路障（2026-10-08 实测）**：宿主代码大量直接读 `cx.theme().X`，而这些取用口来自上游
+gpui-component 的 Theme，与组件库的 Theme **不同名、不同形**。以最小的 `run` 试点即一次报出 22 个错：
+
+- 缺 `mono_font_family`（组件库字段叫 `mono_family`）；
+- 缺扁平的**颜色取用**：`primary` / `foreground` / `muted_foreground` / `border` / `danger` / `warning` /
+  `accent`——组件库把它们收在 `colors: Palette` 里（`cx.theme().colors.primary` 之类）。
+
+⇒ 组件重写批应当以「**主题取用对齐**」开场：给组件库 Theme 补上游同名的取用口（或在宿主侧改为
+`colors.*` 取用），否则每个宿主 crate 一动手就先撞这一面。另：`base::h_flex/v_flex` → `layout::h_stack/v_stack`
+与 `ButtonVariants::ghost/small` → `Button::variant(ButtonVariant::Ghost)/size(Size::Small)` 已确认是**直接对应**，
+`Button::icon` 的元素形态已在组件库补上 `icon_element`。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、

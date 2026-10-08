@@ -185,7 +185,7 @@ fn apply(percent: u32, window: &mut Window, cx: &mut App) {
 }
 
 impl RenderOnce for ZoomControl {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let percent = (theme.font_scale * 100.0).round() as u32;
         let (down, up) = (step(percent, -1), step(percent, 1));

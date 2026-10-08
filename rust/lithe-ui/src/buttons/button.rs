@@ -139,6 +139,8 @@ pub struct Button {
     id: ElementId,
     label: SharedString,
     icon: Option<IconName>,
+    /// 以**元素**形式给出的前置图标（宿主自己的图标体系，如 Lithe 的 IDEA 风格单色图标）。
+    icon_element: Option<gpui::AnyElement>,
     trailing_icon: Option<IconName>,
     shortcut: Option<SharedString>,
     variant: ButtonVariant,
@@ -158,6 +160,7 @@ impl Button {
             id: id.into(),
             label: SharedString::default(),
             icon: None,
+            icon_element: None,
             trailing_icon: None,
             shortcut: None,
             variant: ButtonVariant::default(),
@@ -201,6 +204,16 @@ impl Button {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// 前置图标，但以**元素**传入——给"图标来自宿主自己的图标体系"的场景用。
+    ///
+    /// 上游 `gpui-base` 的 `Button::icon` 收 `impl Into<ButtonIcon>`，一个方法同时覆盖
+    /// 库内图标与外部元素；我们的 [`Button::icon`] 只收 [`IconName`]，所以宿主图标元素走这里。
+    /// 两者都给时 `icon_element` 优先。
+    pub fn icon_element(mut self, icon: impl IntoElement) -> Self {
+        self.icon_element = Some(icon.into_any_element());
         self
     }
 
@@ -248,13 +261,14 @@ impl Button {
 }
 
 impl RenderOnce for Button {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let tone = tone(self.variant, &theme.colors);
         let (text, icon_size) = label_size(self.size);
         let link = self.variant == ButtonVariant::Link;
         // An icon with no label is a square button: the shape Button used to draw.
-        let square = self.label.is_empty() && self.icon.is_some();
+        let icon_element = self.icon_element.take();
+        let square = self.label.is_empty() && (self.icon.is_some() || icon_element.is_some());
         let tooltip = self.tooltip.clone();
         let icon = |name| Icon::new(name).size(icon_size).color(tone.fg);
         let radius = theme.radius(Radius::Md);
@@ -266,6 +280,7 @@ impl RenderOnce for Button {
             .flex()
             .items_center()
             .gap_1p5()
+            .when_some(icon_element, |el, icon| el.child(icon))
             .when_some(self.icon, |el, name| el.child(icon(name)))
             .when(!self.label.is_empty(), |el| el.child(self.label))
             .when_some(self.trailing_icon, |el, name| el.child(icon(name)))
