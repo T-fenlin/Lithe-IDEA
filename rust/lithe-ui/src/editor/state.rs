@@ -16,6 +16,7 @@ use super::{
 };
 use crate::{
     forms::{History, InputEvent, InputState},
+    language::Language,
     theme::ActiveTheme,
 };
 
@@ -112,6 +113,9 @@ pub(crate) struct Options {
     /// Whether typing an identifier character asks for completions automatically; off by default (see
     /// [`CodeEditor::auto_completion`]).
     pub auto_completion: bool,
+    /// Characters beyond the identifier ones that ask for completions on their own (see
+    /// [`CodeEditor::completion_triggers`]); empty by default.
+    pub triggers: String,
     /// Whether a line too wide for the code area is wrapped onto rows of its own; off by default (see
     /// [`CodeEditor::soft_wrap`]).
     pub soft_wrap: bool,
@@ -253,6 +257,7 @@ impl CodeEditor {
                 read_only: false,
                 tab: 4,
                 auto_completion: false,
+                triggers: String::new(),
                 soft_wrap: false,
             },
             marks: Marks::default(),
@@ -274,6 +279,11 @@ impl CodeEditor {
         }
     }
 
+    /// The displayed language name, for an owner that is not using the language registry.
+    ///
+    /// It is the name [`CodeEditor::language_name`] reports and nothing else — the colours come from the
+    /// language set with [`CodeEditor::set_language`]. An owner that resolves its language through
+    /// [`crate::language`] sets both at once from the resolved [`crate::language::Language`].
     pub fn language(mut self, name: impl Into<SharedString>) -> Self {
         self.options.language = name.into();
         self
@@ -335,6 +345,20 @@ impl CodeEditor {
         self
     }
 
+    /// Changes the tab width while the editor runs, the way a settings page switches it.
+    ///
+    /// The rows are laid out on the next render, so the new width is in place by the time anything is drawn.
+    /// Zero is refused, exactly as [`CodeEditor::tab_size`] refuses it.
+    pub fn set_tab_size(&mut self, size: usize, cx: &mut Context<Self>) {
+        assert!(size > 0, "a tab spans at least one column");
+        if self.options.tab == size {
+            return;
+        }
+        log::info!("code editor: tab size {size}");
+        self.options.tab = size;
+        cx.notify();
+    }
+
     /// Ask for completions after an identifier character (a letter, a digit or an underscore); **off** by
     /// default.
     ///
@@ -344,6 +368,30 @@ impl CodeEditor {
     pub fn auto_completion(mut self, on: bool) -> Self {
         self.options.auto_completion = on;
         self
+    }
+
+    /// Characters **beyond** the identifier ones (a letter, a digit or an underscore) that ask for completions
+    /// on their own once [`CodeEditor::auto_completion`] is on — `.` and `@` for a language whose members and
+    /// annotations are reached that way.
+    ///
+    /// The set is the owner's, not the library's: which keystrokes open a completion list is a property of the
+    /// language being edited, so the library reports the moment and the owner names the characters. Whitespace
+    /// and punctuation that are not named here keep their editor behaviour and ask for nothing.
+    pub fn completion_triggers(mut self, triggers: impl Into<String>) -> Self {
+        self.options.triggers = triggers.into();
+        self
+    }
+
+    /// Turns automatic completion on or off while the editor runs, the way a settings page switches it.
+    ///
+    /// The explicit `ctrl-space` trigger is independent of this switch: it asks either way.
+    pub fn set_auto_completion(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.options.auto_completion == on {
+            return;
+        }
+        log::info!("code editor: auto completion {on}");
+        self.options.auto_completion = on;
+        cx.notify();
     }
 
     /// Wrap a line too wide for the code area onto rows of its own; **off** by default, and the owner decides
@@ -406,10 +454,37 @@ impl CodeEditor {
 
     pub fn set_text(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
         let before = self.snapshot();
+        // The engine belonged to the text that just went away, so the same language is installed on the new text.
+        let language = self.buffer.language();
         self.buffer = Buffer::new(text);
+        self.buffer.set_language(language);
         self.selections = vec![Selection::caret(0)];
         self.folded.clear();
         self.commit(before, false, cx);
+    }
+
+    /// Sets the language whose grammar and query colour this editor's text, or `None` for the built-in lexer.
+    ///
+    /// The **owner** resolves the language from its registry ([`crate::language::by_path`]) and pushes it in: the
+    /// library never guesses a language from a path, and it holds no registry of its own. The resolved
+    /// language's `name` also becomes what [`CodeEditor::language_name`] reports; `None` reports `Plain text`
+    /// and takes the colours back to the built-in lexer. A language is kept across
+    /// [`CodeEditor::set_text`] — replacing a file's text is not a change of language.
+    ///
+    /// The spans are re-parsed from the language set now, so a change costs one reparse on the next render
+    /// rather than a parse per frame.
+    pub fn set_language(&mut self, language: Option<&'static Language>, cx: &mut Context<Self>) {
+        if self.buffer.language().map(|each| each.id) == language.map(|each| each.id) {
+            return;
+        }
+        log::info!(
+            "code editor: language {}",
+            language.map_or("plain text", |each| each.id)
+        );
+        self.options.language =
+            language.map_or_else(|| "Plain text".into(), |each| each.name.into());
+        self.buffer.set_language(language);
+        cx.notify();
     }
 
     pub fn set_cursor_shape(&mut self, shape: CursorShape, cx: &mut Context<Self>) {
@@ -651,13 +726,30 @@ impl CodeEditor {
     ///
     /// The split is the other way round from completions — how the content is fetched (a language server,
     /// documentation, disk) is the owner's, how it is drawn is the library's. It hangs from the symbol the last
-    /// [`EditorEvent::HoverRequested`] named, or from the primary cursor when none was asked. A text change
-    /// makes the content stale without clearing it: the owner pushes again, or pushes `None`, when it moves on.
+    /// [`EditorEvent::HoverRequested`] named, or from the primary cursor when none was asked
+    /// ([`CodeEditor::present_hover_at`] names the offset itself). A text change makes the content stale
+    /// without clearing it: the owner pushes again, or pushes `None`, when it moves on.
     pub fn present_hover(&mut self, info: Option<HoverInfo>, cx: &mut Context<Self>) {
         let offset = self
             .hover_symbol
             .as_ref()
             .map_or_else(|| self.cursor_offset(), |symbol| symbol.start);
+        self.hover = info.map(|info| Hover { info, offset });
+        cx.notify();
+    }
+
+    /// Hover content hung from an offset the owner names, instead of from the symbol the pointer last asked for.
+    ///
+    /// The keyboard route — asking for the symbol **at the caret** — needs this: the pointer's last symbol may be
+    /// somewhere else on the page entirely, and [`CodeEditor::present_hover`] would hang the content there. The
+    /// anchor is drawn by the same rule as [`CodeEditor::bounds_for_offset`], so content whose offset is hidden
+    /// in a fold or scrolled out of view is not drawn.
+    pub fn present_hover_at(
+        &mut self,
+        offset: usize,
+        info: Option<HoverInfo>,
+        cx: &mut Context<Self>,
+    ) {
         self.hover = info.map(|info| Hover { info, offset });
         cx.notify();
     }
@@ -802,7 +894,8 @@ impl CodeEditor {
     }
 
     /// After text was typed: ask for completions when automatic completion is on, and this really was one
-    /// identifier character.
+    /// character that opens a list here — an identifier character, or one of the owner's own
+    /// [`CodeEditor::completion_triggers`].
     ///
     /// Several characters at once (a paste, a committed composition) are not typing character by character,
     /// so they ask for nothing.
@@ -811,11 +904,13 @@ impl CodeEditor {
             return;
         }
         let mut chars = typed.chars();
-        let identifier = matches!(
-            (chars.next(), chars.next()),
-            (Some(ch), None) if ch.is_alphanumeric() || ch == '_'
-        );
-        if identifier {
+        let opens = match (chars.next(), chars.next()) {
+            (Some(ch), None) => {
+                ch.is_alphanumeric() || ch == '_' || self.options.triggers.contains(ch)
+            }
+            _ => false,
+        };
+        if opens {
             self.request_completion(cx);
         }
     }

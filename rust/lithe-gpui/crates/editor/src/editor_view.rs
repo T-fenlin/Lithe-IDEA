@@ -2,46 +2,40 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use crate::buffer::{Buffer, display_names, icon_for_file, language_for_file, read_body};
-use crate::navigation::{JumpEntry, JumpHistory, NavTarget, editor_position, resolve_target};
+use crate::buffer::{
+    Buffer, display_names, icon_for_file, language_for_file, read_body, resolved_language,
+};
+use crate::navigation::{
+    JumpEntry, JumpHistory, NavTarget, byte_offset, line_character, resolve_target, word_range,
+};
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Render, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task, WeakEntity,
-    Window, div, point, rems,
+    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, EntityId, Focusable as _,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
+    ParentElement as _, Pixels, Point, Render, Role, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, WeakEntity, Window, canvas,
+    div, point, rems,
 };
-use gpui::{Div, relative};
-use gpui_kit::TestSupportExt as _;
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
-use gpui_kit::component::input::{
-    Editor, EditorState, Input, InputEvent, InputState, Position, Rope, RopeExt as _, TabSize,
-};
-use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
-use gpui_kit::component::tab::{Tab, TabBar, TabVariant};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
+
 use lithe_gpui_java::JavaLanguageService;
 use lithe_gpui_shared::design::TAB_MAX_WIDTH;
-use lithe_gpui_shared::icons::{idea, idea_icon_mono as idea_icon_element};
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
+use lithe_gpui_shared::rem_px;
 use lithe_gpui_shared::{tr, tr_args};
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::editor::{
+    CodeEditor, CompletionItem as UiCompletion, CompletionMenu, EditorEvent, PopupKey,
+    completions as filtered_completions,
+};
+use lithe_ui::feedback::EmptyState;
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::menus::{ContextMenu, Menu, MenuItem};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
-
-/// 过渡桥：上游 `PopupMenuItem::icon` 只收**它自己**的 `Icon`，组件库的元素进不去
-/// （同 `workbench::icon_kit` 的说明）。按同一份资源路径就地包成上游 `Icon`，
-/// 画出来的东西与迁移前逐字节相同；这批右键菜单迁到 `lithe_ui::menus` 时删掉本函数，
-/// 那些调用点改用 [`idea_icon_element`]。
-fn idea_icon_mono(icon: &idea::IdeaIcon, is_dark: bool) -> gpui_kit::component::Icon {
-    let path: gpui::SharedString = icon.path(is_dark).into();
-    gpui_kit::component::Icon::empty().path(path)
-}
-
-pub(crate) use lithe_gpui_shared::rem_px;
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 const FALLBACK_LINE_HEIGHT: f32 = 20.;
 
@@ -59,6 +53,13 @@ const BREAKPOINT_MARKER_SIZE_SPEC: f32 = 14.;
 
 const EDITOR_CONTENT_TOP_PADDING_SPEC: f32 = 8.;
 
+/// 自动补全在哪些字符上开列表：标识符字符由库自己认，这两个是 Java 特有的入口
+/// （`.` 成员访问、`@` 注解）——策略是产品设置的一部分，所以由宿主点名（见 `completion_triggers`）。
+const COMPLETION_TRIGGERS: &str = ".@";
+
+/// 一次翻页键在补全列表里走多少行。
+const COMPLETION_PAGE: isize = 10;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct CursorPosition {
     pub line: usize,
@@ -73,7 +74,7 @@ struct NavRequest {
     generation: u64,
     path: PathBuf,
     revision: u64,
-    origin: Position,
+    origin: lsp_types::Position,
 }
 
 pub struct TabMenuHostActions {
@@ -165,8 +166,21 @@ pub struct SessionRestore {
 }
 
 struct GoToLinePrompt {
-    input: Entity<InputState>,
+    input: Entity<lithe_ui::forms::InputState>,
     _enter: Subscription,
+}
+
+/// 正在显示的那一份补全列表。
+///
+/// `offset` 是请求发出时光标所在的字节偏移（弹层贴着它画），`selected` 是**过滤之后**的行号
+/// （与组件库画出来的顺序一致），`items` 是服务端原样的那批（接受时按值回配）。
+struct Completion {
+    editor: EntityId,
+    items: Vec<lithe_gpui_java::JavaCompletionItem>,
+    rows: Vec<UiCompletion>,
+    offset: usize,
+    selected: usize,
+    revision: u64,
 }
 
 pub struct EditorPane {
@@ -196,7 +210,23 @@ pub struct EditorPane {
     auto_save: bool,
     soft_wrap: bool,
     go_to_line: Option<GoToLinePrompt>,
-    _theme_subscription: Subscription,
+    /// 补全：当前这一份、请求的代次（晚到的答案据此丢掉）、以及正在跑的任务。
+    completion: Option<Completion>,
+    completion_generation: Arc<AtomicU64>,
+    completion_task: Option<Task<()>>,
+    completion_revision: u64,
+    /// 悬停：当前挂着的锚点（`None` 表示没画）、代次与任务。
+    hover_offset: Option<usize>,
+    hover_generation: u64,
+    hover_task: Option<Task<()>>,
+    /// 代码动作：服务端给的这一批、以及"请在第 N 次请求时于这个窗口坐标开菜单"。
+    code_actions: Vec<lithe_gpui_java::JavaCodeAction>,
+    code_action_request: Option<(u64, Point<Pixels>)>,
+    code_action_generation: Arc<AtomicU64>,
+    code_action_task: Option<Task<()>>,
+    /// 正文容器（弹层的父容器）在窗口里的原点，由它自己的 canvas 量出来：`bounds_for_offset` 给的是
+    /// **窗口**坐标，要画成这个容器的子元素就得减去它。
+    body_origin: Option<Point<Pixels>>,
 }
 
 const DEFAULT_TAB_SIZE: usize = 2;
@@ -210,9 +240,6 @@ impl EditorPane {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let theme_subscription = cx.observe_global::<gpui_kit::component::Theme>(|pane, cx| {
-            pane.sync_completion_menu_width(cx);
-        });
         Self {
             notifications,
             buffers: Vec::new(),
@@ -238,34 +265,51 @@ impl EditorPane {
             auto_save: AUTO_SAVE_DEFAULT,
             soft_wrap: SOFT_WRAP_DEFAULT,
             go_to_line: None,
+            completion: None,
+            completion_generation: Arc::new(AtomicU64::new(0)),
+            completion_task: None,
+            completion_revision: 0,
+            hover_offset: None,
+            hover_generation: 0,
+            hover_task: None,
+            code_actions: Vec::new(),
+            code_action_request: None,
+            code_action_generation: Arc::new(AtomicU64::new(0)),
+            code_action_task: None,
+            body_origin: None,
             hovered_tab: None,
             closed: Vec::new(),
-            _theme_subscription: theme_subscription,
         }
     }
 
-    fn sync_completion_menu_width(&mut self, cx: &mut Context<Self>) {
-        let rem = cx.theme().font_size;
-        let width = crate::completion::menu_width(rem);
-        let mut refreshed = 0usize;
-        for buffer in &self.buffers {
-            buffer.editor.update(cx, |state, _cx| {
-                if crate::completion::set_menu_width(state, width) {
-                    refreshed += 1;
-                }
-            });
-        }
-        if refreshed > 0 {
-            eprintln!(
-                "S1_EDITOR_COMPLETION_WIDTH max_width={width:?} rem={rem:?} buffers={refreshed}"
-            );
-        }
+    /// 打开列表之前那一段（也就是光标所在缓冲区，若它在这个窗格里）。
+    fn index_of(&self, editor: &Entity<CodeEditor>) -> Option<usize> {
+        self.buffers
+            .iter()
+            .position(|buffer| buffer.editor.entity_id() == editor.entity_id())
+    }
+
+    fn index_of_id(&self, editor: EntityId) -> Option<usize> {
+        self.buffers
+            .iter()
+            .position(|buffer| buffer.editor.entity_id() == editor)
+    }
+
+    /// 这个文件用不用 Java 语言服务：`.java` 且注册表认得它。
+    fn java_for(&self, name: &str) -> Option<Arc<JavaLanguageService>> {
+        (language_for_file(name) == Some("java"))
+            .then(|| self.java.clone())
+            .flatten()
     }
 
     pub fn set_auto_completion(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        use std::sync::atomic::Ordering;
         let changed = self.auto_completion.load(Ordering::Acquire) != enabled;
         self.auto_completion.store(enabled, Ordering::Release);
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_auto_completion(enabled, cx));
+        }
         println!(
             "S1_EDITOR_AUTO_COMPLETION enabled={} changed={} buffers={}",
             enabled,
@@ -277,14 +321,14 @@ impl EditorPane {
         }
     }
 
-    pub fn set_soft_wrap(&mut self, enabled: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_soft_wrap(&mut self, enabled: bool, _window: &mut Window, cx: &mut Context<Self>) {
         let changed = self.soft_wrap != enabled;
         self.soft_wrap = enabled;
         let mut applied = 0usize;
         for buffer in &self.buffers {
             buffer
                 .editor
-                .update(cx, |state, cx| state.set_soft_wrap(enabled, window, cx));
+                .update(cx, |state, cx| state.set_soft_wrap(enabled, cx));
             applied += 1;
         }
         println!("S1_EDITOR_SOFT_WRAP enabled={enabled} changed={changed} buffers={applied}");
@@ -327,14 +371,10 @@ impl EditorPane {
             return;
         }
         self.tab_size = tab_size;
-        let tab = TabSize {
-            tab_size,
-            hard_tabs: false,
-        };
         for buffer in &self.buffers {
             buffer
                 .editor
-                .update(cx, |state, cx| state.set_tab_size(tab, cx));
+                .update(cx, |state, cx| state.set_tab_size(tab_size, cx));
         }
         println!(
             "S1_EDITOR_TAB_SIZE size={} buffers={}",
@@ -365,39 +405,12 @@ impl EditorPane {
             }));
         });
 
-        let mut patched = 0usize;
-        for buffer in &self.buffers {
-            if crate::buffer::language_for_file(&buffer.name) != Some("java") {
-                continue;
-            }
-            let provider = crate::completion::JavaCompletionProvider::new(
-                Some(service.clone()),
-                buffer.path.clone(),
-                self.auto_completion.clone(),
-            );
-            let code_actions = crate::code_actions::JavaCodeActionProvider::new(
-                service.clone(),
-                buffer.path.clone(),
-            );
-            let hover =
-                crate::hover::LitheHoverProvider::new(Some(service.clone()), buffer.path.clone());
-            let rem = cx.theme().font_size;
-            buffer.editor.update(cx, |state, _cx| {
-                crate::completion::install(state, Some(provider), rem);
-                crate::code_actions::install(state, Some(code_actions));
-                crate::hover::install(state, Some(hover));
-            });
-            patched += 1;
-        }
-        if patched > 0 {
-            println!("S1_JAVA_COMPLETION reattached buffers={patched}");
-        }
-
+        // Java 缓冲区一开就接上了语言服务（见 `open`），这里只补一件事：服务就绪之后把诊断要一遍。
         let java_buffers: Vec<usize> = self
             .buffers
             .iter()
             .enumerate()
-            .filter(|(_, buffer)| crate::buffer::language_for_file(&buffer.name) == Some("java"))
+            .filter(|(_, buffer)| language_for_file(&buffer.name) == Some("java"))
             .map(|(index, _)| index)
             .collect();
         for index in java_buffers {
@@ -422,7 +435,7 @@ impl EditorPane {
         };
         if !buffer.writable
             || is_virtual_source_path(&buffer.path)
-            || crate::buffer::language_for_file(&buffer.name) != Some("java")
+            || language_for_file(&buffer.name) != Some("java")
         {
             return;
         }
@@ -477,9 +490,7 @@ impl EditorPane {
         }
 
         let written = self.buffers[index].editor.update(cx, |state, cx| {
-            let written = crate::diagnostics::apply(state, &fetched.diagnostics);
-            cx.notify();
-            written
+            crate::diagnostics::apply(state, &fetched.diagnostics, cx)
         });
 
         if let Some(error) = &fetched.sync_error {
@@ -515,9 +526,12 @@ impl EditorPane {
         let origin = self
             .active
             .and_then(|index| self.buffers.get(index))
-            .map(|buffer| JumpEntry {
-                path: buffer.path.clone(),
-                position: buffer.editor.read(cx).cursor_position(),
+            .map(|buffer| {
+                let state = buffer.editor.read(cx);
+                JumpEntry {
+                    path: buffer.path.clone(),
+                    position: line_character(state.text(), state.cursor_offset()),
+                }
             });
 
         if !self.buffers.iter().any(|buffer| buffer.path == path) {
@@ -527,21 +541,22 @@ impl EditorPane {
             return false;
         };
 
-        let text = self.buffers[index].editor.read(cx).text().clone();
-        let position = editor_position(&text, line as usize, utf16_column as usize);
+        let text = self.buffers[index].editor.read(cx).text().to_string();
+        let to = self.buffers[index].editor.update(cx, |state, cx| {
+            let offset =
+                crate::navigation::offset_for_utf16(&text, line as usize, utf16_column as usize);
+            state.set_cursor_offset(offset, window, cx);
+            state.position()
+        });
         if let Some(origin) = origin {
             self.history.record(origin);
         }
-        let to = self.buffers[index].editor.update(cx, |state, cx| {
-            state.set_cursor_position(position, window, cx);
-            state.cursor_position()
-        });
         self.active = Some(index);
 
         println!(
             "S1_NAV_JUMP to={}:{} kind={} file={}",
-            to.line + 1,
-            to.character + 1,
+            to.0,
+            to.1,
             origin_kind,
             self.buffers[index].path.display()
         );
@@ -582,13 +597,6 @@ impl EditorPane {
         self.workspace_root = Some(root);
     }
 
-    fn tab(&self) -> TabSize {
-        TabSize {
-            tab_size: self.tab_size,
-            hard_tabs: false,
-        }
-    }
-
     pub fn open(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let path = path.to_path_buf();
 
@@ -604,69 +612,31 @@ impl EditorPane {
             .into();
         let body = read_body(&path, &name);
         let writable = body.writable;
-        let language = language_for_file(&name);
-        crate::languages::ensure_extra_languages();
-        let tab = self.tab();
-        let completion_provider = (language == Some("java")).then(|| {
-            crate::completion::JavaCompletionProvider::new(
-                self.java.clone(),
-                path.clone(),
-                self.auto_completion.clone(),
-            )
-        });
-
-        let code_action_provider = (language == Some("java"))
-            .then(|| self.java.clone())
-            .flatten()
-            .map(|service| crate::code_actions::JavaCodeActionProvider::new(service, path.clone()));
-
-        let hover_provider = Some(crate::hover::LitheHoverProvider::new(
-            (language == Some("java"))
-                .then(|| self.java.clone())
-                .flatten(),
-            path.clone(),
-        ));
+        let language = resolved_language(&name);
+        let tab_size = self.tab_size;
+        let auto_completion = self.auto_completion.load(Ordering::Acquire);
+        let text = body.text;
 
         let editor = cx.new(|cx| {
-            let mut state = EditorState::new(window, cx).searchable(true);
-            if let Some(language) = language {
-                state = state.language(language);
-            }
-            state.set_tab_size(tab, cx);
-            crate::completion::install(&mut state, completion_provider, window.rem_size());
-            crate::code_actions::install(&mut state, code_action_provider);
-            crate::hover::install(&mut state, hover_provider);
+            let mut state = CodeEditor::new(text, window, cx)
+                .tab_size(tab_size)
+                .auto_completion(auto_completion)
+                .completion_triggers(COMPLETION_TRIGGERS);
             if !writable {
-                state.set_readonly(true, cx);
+                state = state.read_only();
             }
+            if !self.soft_wrap {
+                state = state.soft_wrap(false);
+            }
+            state.set_language(language, cx);
             state
         });
-        editor.update(cx, |state, cx| state.set_value(body.text, window, cx));
-        if !self.soft_wrap {
-            editor.update(cx, |state, cx| state.set_soft_wrap(false, window, cx));
-        }
         println!(
             "S1_EDITOR_LANG name={} file={name}",
-            editor.read(cx).language_name()
+            language.map_or("plain-text", |language| language.id)
         );
 
-        let subscriptions = vec![
-            cx.subscribe_in(
-                &editor,
-                window,
-                |pane: &mut Self,
-                 editor: &gpui::Entity<EditorState>,
-                 event: &InputEvent,
-                 window,
-                 cx| {
-                    if matches!(event, InputEvent::Change) {
-                        pane.on_input_change(editor, window, cx);
-                    }
-                },
-            ),
-            cx.observe(&editor, |pane: &mut Self, _editor, cx| pane.sync_cursor(cx)),
-        ];
-
+        let subscriptions = self.subscribe_to(&editor, window, cx);
         let icon = icon_for_file(&name, cx);
         let _ = self
             .last_text
@@ -681,11 +651,70 @@ impl EditorPane {
         ));
         self.active = Some(self.buffers.len() - 1);
         self.sync_cursor(cx);
-        if language == Some("java") {
+        if language_for_file(&self.buffers[self.buffers.len() - 1].name) == Some("java") {
             let opened = self.buffers.len() - 1;
             self.schedule_diagnostics(opened, Duration::ZERO, cx);
         }
         cx.notify();
+    }
+
+    /// 编辑器 → 宿主的那两条订阅：事件（改变了、要补全、要悬停、弹层按键）与状态变化（光标、滚动）。
+    fn subscribe_to(
+        &self,
+        editor: &Entity<CodeEditor>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<Subscription> {
+        vec![
+            cx.subscribe_in(
+                editor,
+                window,
+                |pane: &mut Self, editor: &Entity<CodeEditor>, event: &EditorEvent, window, cx| {
+                    pane.on_editor_event(editor, event, window, cx)
+                },
+            ),
+            cx.observe(editor, |pane: &mut Self, editor, cx| {
+                pane.on_editor_changed(&editor, cx)
+            }),
+        ]
+    }
+
+    fn on_editor_event(
+        &mut self,
+        editor: &Entity<CodeEditor>,
+        event: &EditorEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            EditorEvent::Changed => self.on_text_changed(editor, window, cx),
+            EditorEvent::CompletionRequested(offset) => {
+                self.ask_for_completions(editor, *offset, cx);
+            }
+            EditorEvent::HoverRequested(offset) => self.ask_for_hover(editor, *offset, cx),
+            EditorEvent::PopupKey(key) => self.on_popup_key(editor, *key, cx),
+            // 组件库的只读横幅带一个"Make editable"按钮，而本产品的只读是**文件属性**（见 `refuse_unlock`）。
+            EditorEvent::Unlock => self.refuse_unlock(editor, cx),
+            _ => {}
+        }
+    }
+
+    /// 编辑器的状态变了（光标动了、滚了、重画了）：把状态栏的光标同步一下，并收拾掉"锚点已经看不见
+    /// 的弹层"——库不会自己收，滚动之后挂在视口外的补全列表必须由这里关掉。
+    fn on_editor_changed(&mut self, editor: &Entity<CodeEditor>, cx: &mut Context<Self>) {
+        self.sync_cursor(cx);
+        let Some(completion) = self.completion.as_ref() else {
+            return;
+        };
+        if editor
+            .read(cx)
+            .bounds_for_offset(completion.offset, cx)
+            .is_some()
+        {
+            return;
+        }
+        println!("S1_EDITOR_COMPLETION open=false reason=anchor-out-of-view");
+        self.dismiss_completion(editor, cx);
     }
 
     pub fn active_buffer_name(&self) -> String {
@@ -770,11 +799,8 @@ impl EditorPane {
         self.active
             .and_then(|index| self.buffers.get(index))
             .map(|buffer| {
-                let position = buffer.editor.read(cx).cursor_position();
-                CursorPosition {
-                    line: position.line as usize + 1,
-                    column: position.character as usize + 1,
-                }
+                let (line, column) = buffer.editor.read(cx).position();
+                CursorPosition { line, column }
             })
             .unwrap_or(CursorPosition::INITIAL)
     }
@@ -808,11 +834,9 @@ impl EditorPane {
         let file_path = path.to_string_lossy().to_string();
         let (offset, origin, text) = {
             let state = buffer.editor.read(cx);
-            (
-                state.cursor(),
-                state.cursor_position(),
-                state.text().clone(),
-            )
+            let text = state.text().to_string();
+            let offset = state.cursor_offset();
+            (offset, line_character(&text, offset), text)
         };
         let java = self.java.clone();
 
@@ -882,8 +906,15 @@ impl EditorPane {
             }
         };
 
-        let (index, position, via) = match target {
-            NavTarget::Local(position) => (origin_index, position, "builtin"),
+        let (index, offset, via) = match target {
+            NavTarget::Local(position) => {
+                let text = self.buffers[origin_index]
+                    .editor
+                    .read(cx)
+                    .text()
+                    .to_string();
+                (origin_index, byte_offset(&text, position), "builtin")
+            }
             NavTarget::File {
                 path,
                 line,
@@ -897,10 +928,14 @@ impl EditorPane {
                     self.notify_no_target(cx);
                     return;
                 };
-                let text = self.buffers[index].editor.read(cx).text().clone();
+                let text = self.buffers[index].editor.read(cx).text().to_string();
                 (
                     index,
-                    editor_position(&text, line as usize, utf16_column as usize),
+                    crate::navigation::offset_for_utf16(
+                        &text,
+                        line as usize,
+                        utf16_column as usize,
+                    ),
                     "jdtls",
                 )
             }
@@ -911,13 +946,13 @@ impl EditorPane {
                 line,
                 utf16_column,
             } => {
-                let position = editor_position(
-                    &Rope::from(text.as_str()),
+                let offset = crate::navigation::offset_for_utf16(
+                    &text,
                     line as usize,
                     utf16_column as usize,
                 );
                 let index = self.open_virtual(&uri, &display_path, text, window, cx);
-                (index, position, "jdtls-virtual")
+                (index, offset, "jdtls-virtual")
             }
         };
 
@@ -926,8 +961,8 @@ impl EditorPane {
             position: origin,
         });
         let to = self.buffers[index].editor.update(cx, |state, cx| {
-            state.set_cursor_position(position, window, cx);
-            state.cursor_position()
+            state.set_cursor_offset(offset, window, cx);
+            state.position()
         });
         self.active = Some(index);
 
@@ -935,8 +970,8 @@ impl EditorPane {
             "S1_NAV_JUMP from={}:{} to={}:{} kind=definition via={via} file={}",
             origin.line + 1,
             origin.character + 1,
-            to.line + 1,
-            to.character + 1,
+            to.0,
+            to.1,
             self.buffers[index].path.display()
         );
         self.sync_cursor(cx);
@@ -953,6 +988,7 @@ impl EditorPane {
             return;
         }
 
+        // 点在正文里（而不是行号槽、标签栏或空白）：`offset_at` 给不出偏移就说明这一点不在代码行上。
         let inside = self
             .active
             .and_then(|index| self.buffers.get(index))
@@ -960,14 +996,43 @@ impl EditorPane {
                 buffer
                     .editor
                     .read(cx)
-                    .input_bounds()
-                    .contains(&event.position)
+                    .offset_at(event.position, cx)
+                    .is_some()
             });
         if !inside {
             return;
         }
 
         self.navigate_to_definition(window, cx);
+    }
+
+    /// 指针在正文里移动：离开当前悬停的那个词就把面板收掉（库不报"离开"，只报"进了新的符号"）。
+    fn on_editor_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some(anchor) = self.hover_offset else {
+            return;
+        };
+        let Some(index) = self.active else {
+            return;
+        };
+        let editor = self.buffers[index].editor.clone();
+        let still = {
+            let state = editor.read(cx);
+            state.offset_at(event.position, cx).is_some_and(|at| {
+                word_range(state.text(), at).is_some_and(|word| word.start == anchor)
+            })
+        };
+        if !still {
+            self.clear_hover(&editor, cx);
+        }
+    }
+
+    /// 指针离开正文容器（整个编辑器）：挂着的悬停内容同样收掉。
+    fn on_pointer_left_editor(&mut self, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            return;
+        };
+        let editor = self.buffers[index].editor.clone();
+        self.clear_hover(&editor, cx);
     }
 
     fn open_virtual(
@@ -989,57 +1054,31 @@ impl EditorPane {
             .unwrap_or(display_path)
             .to_string()
             .into();
-        let language = language_for_file(&name);
-        crate::languages::ensure_extra_languages();
-        let tab = self.tab();
-        let hover_provider = Some(crate::hover::LitheHoverProvider::new(
-            (language == Some("java"))
-                .then(|| self.java.clone())
-                .flatten(),
-            path.clone(),
-        ));
+        let language = resolved_language(&name);
+        let tab_size = self.tab_size;
 
         let editor = cx.new(|cx| {
-            let mut state = EditorState::new(window, cx).searchable(true);
-            if let Some(language) = language {
-                state = state.language(language);
+            let mut state = CodeEditor::new(text, window, cx)
+                .tab_size(tab_size)
+                .read_only();
+            if !self.soft_wrap {
+                state = state.soft_wrap(false);
             }
-            state.set_readonly(true, cx);
-            state.set_tab_size(tab, cx);
-            crate::hover::install(&mut state, hover_provider);
+            state.set_language(language, cx);
             state
         });
-        editor.update(cx, |state, cx| state.set_value(text, window, cx));
-        if !self.soft_wrap {
-            editor.update(cx, |state, cx| state.set_soft_wrap(false, window, cx));
-        }
         println!(
             "S1_EDITOR_LANG name={} file={name} virtual=true",
-            editor.read(cx).language_name()
+            language.map_or("plain-text", |language| language.id)
         );
 
-        let subscriptions = vec![
-            cx.subscribe_in(
-                &editor,
-                window,
-                |pane: &mut Self,
-                 editor: &gpui::Entity<EditorState>,
-                 event: &InputEvent,
-                 window,
-                 cx| {
-                    if matches!(event, InputEvent::Change) {
-                        pane.on_input_change(editor, window, cx);
-                    }
-                },
-            ),
-            cx.observe(&editor, |pane: &mut Self, _editor, cx| pane.sync_cursor(cx)),
-        ];
-
+        let subscriptions = self.subscribe_to(&editor, window, cx);
         let icon = icon_for_file(&name, cx);
         self.buffers
             .push(Buffer::new(path, name, icon, editor, false, subscriptions));
         self.buffers.len() - 1
     }
+
     #[allow(dead_code)]
     fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(present) = self.current_entry(cx) else {
@@ -1087,8 +1126,9 @@ impl EditorPane {
         };
 
         let to = self.buffers[index].editor.update(cx, |state, cx| {
-            state.set_cursor_position(entry.position, window, cx);
-            state.cursor_position()
+            let offset = byte_offset(state.text(), entry.position);
+            state.set_cursor_offset(offset, window, cx);
+            state.position()
         });
         self.active = Some(index);
 
@@ -1096,8 +1136,8 @@ impl EditorPane {
             "{log_tag} from={}:{} to={}:{}",
             from.position.line + 1,
             from.position.character + 1,
-            to.line + 1,
-            to.character + 1
+            to.0,
+            to.1
         );
         self.sync_cursor(cx);
         cx.notify();
@@ -1106,9 +1146,10 @@ impl EditorPane {
     fn current_entry(&self, cx: &App) -> Option<JumpEntry> {
         let index = self.active?;
         let buffer = self.buffers.get(index)?;
+        let state = buffer.editor.read(cx);
         Some(JumpEntry {
             path: buffer.path.clone(),
-            position: buffer.editor.read(cx).cursor_position(),
+            position: line_character(state.text(), state.cursor_offset()),
         })
     }
 
@@ -1164,17 +1205,16 @@ impl EditorPane {
         cx.notify();
     }
 
-    fn on_input_change(
+    /// 正文变了：脏标记、修订号、诊断、自动保存、调试宿主的回调，再加上"库不会替我们清的"那两样
+    /// ——过期的诊断波浪线（上游的 `DiagnosticSet` 也是在正文变化时 reset 的）与悬停内容，
+    /// 以及补全列表要跟着新前缀收窄。
+    fn on_text_changed(
         &mut self,
-        editor: &gpui::Entity<EditorState>,
+        editor: &Entity<CodeEditor>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self
-            .buffers
-            .iter()
-            .position(|buffer| buffer.editor.entity_id() == editor.entity_id())
-        else {
+        let Some(index) = self.index_of(editor) else {
             return;
         };
         if !self.buffers[index].writable {
@@ -1207,6 +1247,10 @@ impl EditorPane {
             }
             _ => {}
         }
+
+        self.clear_hover(editor, cx);
+        editor.update(cx, |state, cx| state.set_diagnostics(Vec::new(), cx));
+        self.narrow_completion(editor, cx);
     }
 
     fn schedule_auto_save(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -1250,7 +1294,7 @@ impl EditorPane {
         };
         let path = buffer.path.clone();
         let name = buffer.name.clone();
-        let value = buffer.editor.read(cx).value();
+        let value = buffer.editor.read(cx).text().to_string();
 
         match std::fs::write(&path, value.as_bytes()) {
             Ok(()) => {
@@ -1481,7 +1525,7 @@ impl EditorPane {
         self.open_unsaved_dialog(PendingConfirm::Reload(index), body, window, cx);
     }
 
-    fn reload_buffer(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    fn reload_buffer(&mut self, index: usize, _window: &mut Window, cx: &mut Context<Self>) {
         let Some(buffer) = self.buffers.get_mut(index) else {
             return;
         };
@@ -1499,8 +1543,8 @@ impl EditorPane {
 
         let editor = buffer.editor.clone();
         editor.update(cx, |state, cx| {
-            state.set_value(body.text, window, cx);
-            state.set_readonly(!writable, cx);
+            state.set_text(body.text, cx);
+            state.set_read_only(!writable, cx);
         });
 
         eprintln!(
@@ -1587,7 +1631,7 @@ impl EditorPane {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(body),
                     )
                     .action(move |close| {
@@ -1698,21 +1742,27 @@ impl EditorPane {
             return;
         }
 
-        let text = self.buffers[index].editor.read(cx).text().clone();
-        let offset = self.buffers[index].editor.read(cx).cursor();
+        let (text, offset) = {
+            let state = self.buffers[index].editor.read(cx);
+            (state.text().to_string(), state.cursor_offset())
+        };
         let (line, utf16_column) = crate::navigation::core_position(&text, offset);
         let initial = crate::go_to_line::GoToLineInput::prefill(line as usize, utf16_column);
 
-        let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(initial)
-                .placeholder(tr("lithe.navigation.goToLinePrompt"))
+        let input = cx.new(|cx| lithe_ui::forms::InputState::new(window, cx));
+        input.update(cx, |state, cx| {
+            state.set_placeholder(tr("lithe.navigation.goToLinePrompt"), cx);
+            state.set_text(initial, cx);
         });
         let enter = cx.subscribe_in(
             &input,
             window,
-            |pane: &mut Self, _input: &Entity<InputState>, event: &InputEvent, window, cx| {
-                if matches!(event, InputEvent::PressEnter { .. }) {
+            |pane: &mut Self,
+             _input: &Entity<lithe_ui::forms::InputState>,
+             event: &lithe_ui::forms::InputEvent,
+             window,
+             cx| {
+                if matches!(event, lithe_ui::forms::InputEvent::Submit) {
                     pane.submit_go_to_line(window, cx);
                 }
             },
@@ -1733,14 +1783,13 @@ impl EditorPane {
             "lithe-go-to-line",
             move |id, _window, cx| {
                 let valid =
-                    crate::go_to_line::GoToLineInput::parse(input.read(cx).value().as_ref())
-                        .is_some();
+                    crate::go_to_line::GoToLineInput::parse(input.read(cx).text()).is_some();
                 let confirm_pane = pane.clone();
                 let (cancel_id, ok_id) = ((id.clone(), "cancel"), (id.clone(), "ok"));
                 Dialog::new(id)
                     .title(tr("lithe.editor.goToLineColumn"))
                     .on_close(dismiss_hosted)
-                    .child(Input::new(&input))
+                    .child(lithe_ui::forms::Input::new(&input))
                     .action(move |close| {
                         Button::new(cancel_id)
                             .label(tr("lithe.ui.cancel"))
@@ -1768,7 +1817,7 @@ impl EditorPane {
         let Some(prompt) = self.go_to_line.as_ref() else {
             return;
         };
-        let text = prompt.input.read(cx).value().to_string();
+        let text = prompt.input.read(cx).text().to_string();
         let Some(parsed) = crate::go_to_line::GoToLineInput::parse(&text) else {
             eprintln!("S1_EDITOR_GO_TO_LINE submit=false reason=unparsable input={text:?}");
             return;
@@ -1798,26 +1847,23 @@ impl EditorPane {
             eprintln!("S1_EDITOR_GO_TO_LINE jump=false reason=no-active-buffer");
             return false;
         };
-        let text = self.buffers[index].editor.read(cx).text().clone();
-        let target = crate::go_to_line::GoToLineInput::clamped(
-            line,
-            column,
-            has_explicit_column,
-            &text.to_string(),
-        );
+        let text = self.buffers[index].editor.read(cx).text().to_string();
+        let target =
+            crate::go_to_line::GoToLineInput::clamped(line, column, has_explicit_column, &text);
         let origin = JumpEntry {
             path: self.buffers[index].path.clone(),
-            position: self.buffers[index].editor.read(cx).cursor_position(),
+            position: line_character(&text, self.buffers[index].editor.read(cx).cursor_offset()),
         };
-        let position = editor_position(&text, target.line, target.column);
+        // `go_to_line` 的列是 **UTF-16** 口径（提示串里那一列），与 LSP 一致。
+        let offset = crate::navigation::offset_for_utf16(&text, target.line, target.column);
         let to = self.buffers[index].editor.update(cx, |state, cx| {
-            state.set_cursor_position(position, window, cx);
-            state.cursor_position()
+            state.set_cursor_offset(offset, window, cx);
+            state.position()
         });
         self.history.record(origin);
-
         self.buffers[index].editor.update(cx, |state, cx| {
-            state.focus(window, cx);
+            let handle = state.focus_handle(cx);
+            window.focus(&handle, cx);
         });
 
         println!(
@@ -1825,230 +1871,514 @@ impl EditorPane {
             target.line + 1,
             target.column + 1,
             target.has_explicit_column,
-            to.line + 1,
-            to.character + 1
+            to.0,
+            to.1
         );
         self.sync_cursor(cx);
         cx.notify();
         true
     }
 
-    pub fn show_hover_at_caret(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    // ------------------------------------------------------------------
+    // 悬停
+    // ------------------------------------------------------------------
+
+    pub fn show_hover_at_caret(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.active else {
             eprintln!("S1_EDITOR_HOVER menu=false reason=no-active-buffer");
             return;
         };
         let editor = self.buffers[index].editor.clone();
-        let java = (language_for_file(&self.buffers[index].name) == Some("java"))
-            .then(|| self.java.clone())
-            .flatten();
-        let provider =
-            crate::hover::LitheHoverProvider::new(java, self.buffers[index].path.clone());
-        let text = editor.read(cx).text().clone();
-        let offset = editor.read(cx).cursor();
+        let offset = editor.read(cx).cursor_offset();
         println!("S1_EDITOR_HOVER menu=true offset={offset}");
-        let task = provider.hover(&text, offset, window, cx);
-
-        cx.spawn_in(window, async move |pane, cx| {
-            let Ok(Some(hover)) = task.await else {
-                return;
-            };
-            let _ = pane.update_in(cx, |_pane, _window, cx| {
-                let text = editor.read(cx).text().clone();
-                let range = hover
-                    .range
-                    .as_ref()
-                    .map(|range| {
-                        text.position_to_offset(&range.start)..text.position_to_offset(&range.end)
-                    })
-                    .unwrap_or_else(|| text.word_range(offset).unwrap_or(offset..offset));
-                editor.update(cx, |state, cx| state.present_hover(range, hover, cx));
-            });
-        })
-        .detach();
+        self.ask_for_hover(&editor, offset, cx);
     }
 
-    fn render_tab_bar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let names = display_names(&self.buffers);
+    fn ask_for_hover(
+        &mut self,
+        editor: &Entity<CodeEditor>,
+        offset: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.index_of(editor) else {
+            return;
+        };
+        let path = self.buffers[index].path.clone();
+        let text = editor.read(cx).text().to_string();
+        let java = self.java_for(&self.buffers[index].name);
 
-        let mut bar = TabBar::new("editor-tab-bar")
-            .with_variant(TabVariant::Underline)
-            .bg(cx.theme().tab_bar)
+        let generation = self.hover_generation.wrapping_add(1);
+        self.hover_generation = generation;
+        let requested = crate::hover::request(java, path, text, offset, cx);
+        let editor = editor.clone();
+        let task = cx.spawn(async move |pane, cx| {
+            let content = requested.await;
+            let _ = pane.update(cx, |pane, cx| {
+                pane.present_hover(&editor, offset, generation, content, cx)
+            });
+        });
+        self.hover_task = Some(task);
+    }
+
+    fn present_hover(
+        &mut self,
+        editor: &Entity<CodeEditor>,
+        offset: usize,
+        generation: u64,
+        content: Option<crate::hover::Content>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.hover_generation != generation {
+            return;
+        }
+        let Some(index) = self.index_of(editor) else {
+            return;
+        };
+        let info = content.map(|content| {
+            crate::hover::info(content, ("lithe-editor-hover", generation as usize))
+        });
+        if info.is_none() {
+            eprintln!(
+                "S1_EDITOR_HOVER file={} result=none",
+                self.buffers[index].path.display()
+            );
+        }
+        self.hover_offset = info.as_ref().map(|_| offset);
+        editor.update(cx, |state, cx| state.present_hover_at(offset, info, cx));
+    }
+
+    fn clear_hover(&mut self, editor: &Entity<CodeEditor>, cx: &mut Context<Self>) {
+        if self.hover_offset.take().is_none() {
+            return;
+        }
+        editor.update(cx, |state, cx| state.present_hover(None, cx));
+    }
+
+    // ------------------------------------------------------------------
+    // 补全
+    // ------------------------------------------------------------------
+
+    fn ask_for_completions(
+        &mut self,
+        editor: &Entity<CodeEditor>,
+        offset: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.index_of(editor) else {
+            return;
+        };
+        // 新的一次请求顶掉旧的列表（也把它的高亮与接管一起收掉）。
+        self.dismiss_completion(editor, cx);
+
+        let mine = self.completion_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let path = self.buffers[index].path.clone();
+        let text = editor.read(cx).text().to_string();
+        let java = self.java_for(&self.buffers[index].name);
+        let executor = cx.background_executor().clone();
+        let generation = self.completion_generation.clone();
+        let requested =
+            crate::completion::fetch(java, path, text, offset, executor, generation, mine);
+
+        let editor = editor.clone();
+        let task = cx.spawn(async move |pane, cx| {
+            let Some(fetched) = requested.await else {
+                return;
+            };
+            let _ = pane.update(cx, |pane, cx| {
+                pane.present_completions(&editor, offset, mine, fetched, cx)
+            });
+        });
+        self.completion_task = Some(task);
+    }
+
+    fn present_completions(
+        &mut self,
+        editor: &Entity<CodeEditor>,
+        offset: usize,
+        mine: u64,
+        fetched: crate::completion::Fetched,
+        cx: &mut Context<Self>,
+    ) {
+        if self.completion_generation.load(Ordering::SeqCst) != mine {
+            return;
+        }
+        let Some(index) = self.index_of(editor) else {
+            return;
+        };
+        let file = self.buffers[index].path.display().to_string();
+        if fetched.items.is_empty() {
+            println!(
+                "S1_EDITOR_COMPLETION open=false reason=no-items file={file} source={} prefix={:?} ms={}",
+                fetched.source, fetched.prefix, fetched.elapsed_ms
+            );
+            editor.update(cx, |state, cx| state.clear_completions(cx));
+            return;
+        }
+
+        self.completion_revision = self.completion_revision.wrapping_add(1);
+        let rows = crate::completion::rows(&fetched.items);
+        let count = fetched.items.len();
+        println!(
+            "S1_EDITOR_COMPLETION open=true file={file} source={} prefix={:?} items={count} offset={offset} ms={}",
+            fetched.source, fetched.prefix, fetched.elapsed_ms
+        );
+        editor.update(cx, |state, cx| {
+            state.set_completions(rows.clone(), cx);
+            state.set_popup_active(true, cx);
+        });
+        self.completion = Some(Completion {
+            editor: editor.entity_id(),
+            items: fetched.items,
+            rows,
+            offset,
+            selected: 0,
+            revision: self.completion_revision,
+        });
+        cx.notify();
+    }
+
+    fn on_popup_key(&mut self, editor: &Entity<CodeEditor>, key: PopupKey, cx: &mut Context<Self>) {
+        if self.completion.is_none() {
+            return;
+        }
+        match key {
+            PopupKey::Up => self.step_completion(editor, -1, cx),
+            PopupKey::Down => self.step_completion(editor, 1, cx),
+            PopupKey::PageUp => self.step_completion(editor, -COMPLETION_PAGE, cx),
+            PopupKey::PageDown => self.step_completion(editor, COMPLETION_PAGE, cx),
+            PopupKey::Enter | PopupKey::Tab => self.accept_completion(editor, cx),
+            PopupKey::Escape => {
+                println!("S1_EDITOR_COMPLETION open=false reason=escape");
+                self.dismiss_completion(editor, cx);
+            }
+            // 库把 Backspace 交给了弹层（它自己不删），所以删除由这里做；删完正文一变，
+            // `narrow_completion` 会按新前缀收窄或收掉列表。
+            PopupKey::Backspace => self.backspace_in_completion(editor, cx),
+        }
+    }
+
+    fn step_completion(&mut self, editor: &Entity<CodeEditor>, by: isize, cx: &mut Context<Self>) {
+        if self.completion.is_none() {
+            return;
+        }
+        let count = self.completion_len(editor, cx);
+        if count == 0 {
+            return;
+        }
+        let step = by.rem_euclid(count as isize);
+        if let Some(completion) = self.completion.as_mut() {
+            let moved = (completion.selected as isize + step).rem_euclid(count as isize);
+            completion.selected = moved as usize;
+        }
+        self.completion_moved(editor, cx);
+    }
+
+    fn completion_moved(&mut self, editor: &Entity<CodeEditor>, cx: &mut Context<Self>) {
+        println!(
+            "S1_EDITOR_COMPLETION selected={}",
+            self.completion.as_ref().map_or(0, |each| each.selected)
+        );
+        editor.update(cx, |state, cx| state.set_popup_active(true, cx));
+        cx.notify();
+    }
+
+    /// 当前前缀过滤之后还剩多少行（组件库画的就是这个数）。
+    fn completion_len(&self, editor: &Entity<CodeEditor>, cx: &App) -> usize {
+        let Some(completion) = self.completion.as_ref() else {
+            return 0;
+        };
+        let state = editor.read(cx);
+        let typed = crate::completion::word_prefix(state.text(), state.cursor_offset());
+        filtered_completions(&completion.rows, &typed).len()
+    }
+
+    fn accept_completion(&mut self, editor: &Entity<CodeEditor>, cx: &mut Context<Self>) {
+        let Some(completion) = self.completion.as_ref() else {
+            return;
+        };
+        let text = editor.read(cx).text().to_string();
+        let cursor = editor.read(cx).cursor_offset();
+        let typed = crate::completion::word_prefix(&text, cursor);
+        let rows: Vec<UiCompletion> = filtered_completions(&completion.rows, &typed)
+            .into_iter()
+            .map(|(row, _)| row)
+            .collect();
+        let Some(item) = crate::completion::pick(&completion.items, &rows, completion.selected)
+        else {
+            self.dismiss_completion(editor, cx);
+            return;
+        };
+        let (range, insert) = crate::completion::edit_for(item, &text, cursor);
+        let label = item.label.clone();
+        let file = self.active_path().map(|path| path.display().to_string());
+
+        // 先收列表再改文本：`apply_edits` 会同步发 `Changed`，那时列表若还在，就会按新前缀
+        // 把"刚接受的那一条"又留下（一模一样的一行看着像没接受成功）。
+        self.dismiss_completion(editor, cx);
+        editor.update(cx, |state, cx| state.apply_edits(&[(range, insert)], cx));
+        println!(
+            "S1_EDITOR_COMPLETION accepted={label:?} file={}",
+            file.unwrap_or_default()
+        );
+        cx.notify();
+    }
+
+    fn backspace_in_completion(&mut self, editor: &Entity<CodeEditor>, cx: &mut Context<Self>) {
+        let (text, cursor) = {
+            let state = editor.read(cx);
+            (state.text().to_string(), state.cursor_offset())
+        };
+        if cursor == 0 {
+            return;
+        }
+        let mut start = cursor - 1;
+        while start > 0 && !text.is_char_boundary(start) {
+            start -= 1;
+        }
+        editor.update(cx, |state, cx| {
+            state.apply_edits(&[(start..cursor, String::new())], cx)
+        });
+    }
+
+    /// 接受一条之后、或按下 Esc、或点到别处：把列表收掉，并把键盘接管交还。
+    fn dismiss_completion(&mut self, editor: &Entity<CodeEditor>, cx: &mut Context<Self>) {
+        if self.completion.take().is_none() {
+            return;
+        }
+        editor.update(cx, |state, cx| {
+            state.clear_completions(cx);
+            state.set_popup_active(false, cx);
+        });
+        cx.notify();
+    }
+
+    /// 正文变了：前缀空了、或者一条都匹配不上，就把列表收掉；否则把高亮夹回剩下的行里。
+    fn narrow_completion(&mut self, editor: &Entity<CodeEditor>, cx: &mut Context<Self>) {
+        if self.completion.is_none() {
+            return;
+        }
+        let (typed, count) = {
+            let state = editor.read(cx);
+            let typed = crate::completion::word_prefix(state.text(), state.cursor_offset());
+            let count = self
+                .completion
+                .as_ref()
+                .map(|completion| filtered_completions(&completion.rows, &typed).len())
+                .unwrap_or(0);
+            (typed, count)
+        };
+        if typed.is_empty() || count == 0 {
+            println!(
+                "S1_EDITOR_COMPLETION open=false reason={}",
+                if typed.is_empty() {
+                    "empty-prefix"
+                } else {
+                    "no-match"
+                }
+            );
+            self.dismiss_completion(editor, cx);
+            return;
+        }
+        if let Some(completion) = self.completion.as_mut() {
+            completion.selected = completion.selected.min(count - 1);
+        }
+        cx.notify();
+    }
+
+    /// 组件库里那一行被点中：按值回配服务端那一条，再走与键盘接受同样的一步。
+    fn accept_picked(&mut self, row: UiCompletion, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            return;
+        };
+        let editor = self.buffers[index].editor.clone();
+        let Some(completion) = self.completion.as_ref() else {
+            return;
+        };
+        let Some(item) = crate::completion::pick_clicked(&completion.items, &row) else {
+            return;
+        };
+        let item = item.clone();
+        let text = editor.read(cx).text().to_string();
+        let cursor = editor.read(cx).cursor_offset();
+        let (range, insert) = crate::completion::edit_for(&item, &text, cursor);
+        let label = item.label.clone();
+        self.dismiss_completion(&editor, cx);
+        editor.update(cx, |state, cx| state.apply_edits(&[(range, insert)], cx));
+        println!("S1_EDITOR_COMPLETION accepted={label:?} via=click");
+        cx.notify();
+    }
+
+    // ------------------------------------------------------------------
+    // 代码动作
+    // ------------------------------------------------------------------
+
+    /// `ctrl-.`（macOS 还有 `cmd-.`，与上游 gpui-base 的 `ToggleCodeActions` 同一个键）。
+    pub fn show_code_actions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_CODE_ACTION menu=false reason=no-active-buffer");
+            return;
+        };
+        if language_for_file(&self.buffers[index].name) != Some("java") {
+            eprintln!(
+                "S1_EDITOR_CODE_ACTION menu=false reason=not-java file={}",
+                self.buffers[index].path.display()
+            );
+            return;
+        }
+        let Some(service) = self.java.clone() else {
+            eprintln!(
+                "S1_EDITOR_CODE_ACTION menu=false reason=no-java-service file={}",
+                self.buffers[index].path.display()
+            );
+            return;
+        };
+
+        let path = self.buffers[index].path.clone();
+        let text = self.buffers[index].editor.read(cx).text().to_string();
+        let range = self.buffers[index].editor.read(cx).primary().range();
+        let caret = self.buffers[index].editor.read(cx).cursor_offset();
+
+        let mine = self.code_action_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let generation = self.code_action_generation.clone();
+        let requested = crate::code_actions::fetch(service, path, text, range, generation, mine);
+        let task = cx.spawn_in(window, async move |pane, cx| {
+            let Some(actions) = requested.await else {
+                return;
+            };
+            let _ = pane.update_in(cx, |pane, window, cx| {
+                pane.present_code_actions(caret, mine, actions, window, cx)
+            });
+        });
+        self.code_action_task = Some(task);
+    }
+
+    fn present_code_actions(
+        &mut self,
+        caret: usize,
+        mine: u64,
+        actions: Vec<lithe_gpui_java::JavaCodeAction>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.code_action_generation.load(Ordering::SeqCst) != mine {
+            return;
+        }
+        let Some(index) = self.active else {
+            return;
+        };
+        let file = self.buffers[index].path.display().to_string();
+        if actions.is_empty() {
+            println!("S1_EDITOR_CODE_ACTION menu=false reason=no-actions file={file}");
+            return;
+        }
+        let Some(bounds) = self.buffers[index]
+            .editor
+            .read(cx)
+            .bounds_for_offset(caret, cx)
+        else {
+            println!("S1_EDITOR_CODE_ACTION menu=false reason=anchor-out-of-view file={file}");
+            return;
+        };
+
+        let count = actions.len();
+        self.code_actions = actions;
+        self.code_action_request = Some((
+            mine,
+            point(bounds.origin.x, bounds.origin.y + bounds.size.height),
+        ));
+        println!("S1_EDITOR_CODE_ACTION menu=true file={file} actions={count}");
+        cx.notify();
+    }
+
+    /// 菜单里选中的那一条：把它的编辑落进缓冲区（一批一次撤销步、只读拒绝）。
+    fn apply_code_action(&mut self, at: usize, cx: &mut Context<Self>) {
+        let Some(action) = self.code_actions.get(at).cloned() else {
+            return;
+        };
+        let Some(index) = self.active else {
+            return;
+        };
+        let editor = self.buffers[index].editor.clone();
+        let file = self.buffers[index].path.display().to_string();
+        let edits = {
+            let state = editor.read(cx);
+            crate::code_actions::edits_for(&action, state.text())
+        };
+        if edits.is_empty() {
+            println!(
+                "S1_EDITOR_CODE_ACTION file={file} result=skipped reason=no-edits-for-this-file title={:?}",
+                action.title
+            );
+            return;
+        }
+        let count = edits.len();
+        editor.update(cx, |state, cx| state.apply_edits(&edits, cx));
+        println!(
+            "S1_EDITOR_CODE_ACTION file={file} result=applied edits={count} title={:?}",
+            action.title
+        );
+        if action.other_file_edits > 0 {
+            println!(
+                "S1_EDITOR_CODE_ACTION file={file} result=not-applied other_files={} title={:?}",
+                action.other_file_edits, action.title
+            );
+        }
+        cx.notify();
+    }
+
+    /// 组件库的只读横幅带着一个"Make editable"按钮，而本产品的只读是**文件属性**（二进制、有损解码、
+    /// 超过上限、读失败）：编辑出来的东西写不回磁盘（`save_active` 也会拒），所以这里立刻按回去，
+    /// 并留下一条诊断——不假装这次解锁成功了。
+    fn refuse_unlock(&mut self, editor: &Entity<CodeEditor>, cx: &mut Context<Self>) {
+        let Some(index) = self.index_of(editor) else {
+            return;
+        };
+        if self.buffers[index].writable {
+            return;
+        }
+        let file = self.buffers[index].path.display().to_string();
+        editor.update(cx, |state, cx| state.set_read_only(true, cx));
+        eprintln!("S1_EDITOR_UNLOCK_REFUSED file={file} reason=not-writable");
+    }
+
+    fn render_tab_bar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let names = display_names(&self.buffers);
+        let colors = cx.theme().colors.clone();
+
+        let mut bar = h_stack()
+            .flex_shrink_0()
             .h_9()
             .px_2()
-            .max_width(rem_px(cx.theme().font_size, TAB_MAX_WIDTH))
-            .on_click(cx.listener(|pane, index: &usize, _window, cx| {
-                pane.activate(*index, cx);
-            }));
+            .overflow_hidden()
+            .max_w(rem_px(window.rem_size(), TAB_MAX_WIDTH))
+            .border_b_1()
+            .border_color(colors.border)
+            .bg(colors.tab_bar)
+            .id("editor-tab-bar");
 
         for (index, (buffer, name)) in self.buffers.iter().zip(names).enumerate() {
             bar = bar.child(self.render_tab(index, buffer, name, cx));
         }
 
-        if let Some(active) = self.active {
-            bar = bar.selected_index(active);
-        }
-
         bar.into_any_element()
     }
 
-    fn with_tab_menu(
-        &self,
-        index: usize,
-        buffer: &Buffer,
-        content: Div,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let pane: Entity<Self> = cx.entity();
-        let path = buffer.path.clone();
-        let name = buffer.name.clone();
-        let on_disk = !is_virtual_source_path(&path);
-
-        content
-            .id(tab_element_id(&buffer.path))
-            .on_hover(cx.listener(move |pane, hovered: &bool, _window, cx| {
-                let next = if *hovered {
-                    Some(index)
-                } else if pane.hovered_tab == Some(index) {
-                    None
-                } else {
-                    pane.hovered_tab
-                };
-                if pane.hovered_tab != next {
-                    pane.hovered_tab = next;
-                    cx.notify();
-                }
-            }))
-            .context_menu(
-                move |mut menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
-                    let mut items = 0usize;
-                    let mut separators = 0usize;
-
-                    menu = menu.item(
-                        PopupMenuItem::new(tr("lithe.files.copyPath"))
-                            .icon(idea_icon_mono(&idea::COPY_ICON, cx.theme().is_dark()))
-                            .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
-                                pane.copy_path(index, cx);
-                            })),
-                    );
-                    items += 1;
-
-                    menu = menu.item(
-                        PopupMenuItem::new(tr("lithe.files.copyRelativePath"))
-                            .icon(idea_icon_mono(&idea::COPY_ICON, cx.theme().is_dark()))
-                            .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
-                                pane.copy_relative_path(index, cx);
-                            })),
-                    );
-                    items += 1;
-
-                    menu = menu.item(
-                        PopupMenuItem::new(tr("lithe.editor.gpui.revealInProjectTree"))
-                            .icon(idea_icon_mono(&idea::FILES_ICON, cx.theme().is_dark()))
-                            .on_click(window.listener_for(&pane, move |pane, _, _window, cx| {
-                                pane.reveal_in_project_tree(index, cx);
-                            })),
-                    );
-                    items += 1;
-
-                    menu = menu.item(
-                        PopupMenuItem::new(tr("lithe.files.reveal"))
-                            .icon(idea_icon_mono(&idea::FOLDER_ICON, cx.theme().is_dark()))
-                            .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
-                                pane.reveal_in_explorer(index, window, cx);
-                            })),
-                    );
-                    items += 1;
-
-                    if on_disk {
-                        menu = menu.item(
-                            PopupMenuItem::new(tr("lithe.files.openInTerminal"))
-                                .icon(IconName::Terminal)
-                                .on_click(window.listener_for(
-                                    &pane,
-                                    move |pane, _, window, cx| {
-                                        pane.open_in_terminal(index, window, cx);
-                                    },
-                                )),
-                        );
-                        items += 1;
-                    }
-
-                    if on_disk {
-                        menu = menu.item(
-                            PopupMenuItem::new(tr("lithe.tabs.reload"))
-                                .icon(idea_icon_mono(&idea::REFRESH_ICON, cx.theme().is_dark()))
-                                .on_click(window.listener_for(
-                                    &pane,
-                                    move |pane, _, window, cx| {
-                                        pane.request_reload(index, window, cx);
-                                    },
-                                )),
-                        );
-                        items += 1;
-                    }
-
-                    menu = menu.separator();
-                    separators += 1;
-
-                    menu = menu.item(
-                        PopupMenuItem::new(tr("lithe.tabs.close"))
-                            .icon(idea_icon_mono(&idea::X_ICON, cx.theme().is_dark()))
-                            .on_click(window.listener_for(&pane, move |pane, _, window, cx| {
-                                pane.request_close(index, window, cx);
-                            })),
-                    );
-                    items += 1;
-
-                    menu = menu.item(PopupMenuItem::new(tr("lithe.tabs.closeOthers")).on_click(
-                        window.listener_for(&pane, {
-                            let anchor = path.clone();
-                            move |pane, _, window, cx| {
-                                pane.close_scope(CloseScope::Others(anchor.clone()), window, cx);
-                            }
-                        }),
-                    ));
-                    items += 1;
-
-                    menu = menu.item(PopupMenuItem::new(tr("lithe.tabs.closeToRight")).on_click(
-                        window.listener_for(&pane, {
-                            let anchor = path.clone();
-                            move |pane, _, window, cx| {
-                                pane.close_scope(CloseScope::ToRight(anchor.clone()), window, cx);
-                            }
-                        }),
-                    ));
-                    items += 1;
-
-                    menu = menu.item(PopupMenuItem::new(tr("lithe.tabs.closeAll")).on_click(
-                        window.listener_for(&pane, move |pane, _, window, cx| {
-                            pane.close_scope(CloseScope::All, window, cx);
-                        }),
-                    ));
-                    items += 1;
-
-                    eprintln!(
-                        "S1_TAB_MENU opened=true tab={name} items={items} separators={separators}"
-                    );
-                    menu
-                },
-            )
-            .into_any_element()
-    }
-
+    /// 一个标签：图标 + 名字 + 未保存圆点（悬停或选中时变成关闭按钮），右键是标签菜单。
+    ///
+    /// 布局由宿主给（选中态用 `accent` 划一条底线）：组件库的标签栏组件只收 `IconName`，
+    /// 而这里的图标是产品自己的文件类型图标（`FileIcon`），换成库内图标就是可见的降级。
     fn render_tab(
         &self,
         index: usize,
         buffer: &Buffer,
         name: SharedString,
         cx: &mut Context<Self>,
-    ) -> Tab {
+    ) -> AnyElement {
         let is_active = self.active == Some(index);
-        let label_color = if is_active {
-            cx.theme().foreground
-        } else {
-            cx.theme().muted_foreground
-        };
+        let (fg, muted) = (cx.theme().colors.fg, cx.theme().colors.fg_muted);
+        let accent = cx.theme().colors.accent;
+        let hover = cx.theme().colors.hover;
+        let label_color = if is_active { fg } else { muted };
 
         let aria_label = if buffer.is_dirty {
             SharedString::from(format!("{name}（未保存）"))
@@ -2061,7 +2391,7 @@ impl EditorPane {
                 .flex_shrink_0()
                 .size_2()
                 .rounded_full()
-                .bg(cx.theme().primary)
+                .bg(cx.theme().colors.accent)
         });
 
         let close = (is_active || self.hovered_tab == Some(index)).then(|| {
@@ -2075,12 +2405,15 @@ impl EditorPane {
                 .child(Self::close_button(&buffer.path, index, cx))
         });
 
-        let content = h_flex()
+        let content = h_stack()
+            .relative()
+            .h_full()
             .items_center()
             .pl_2()
             .pr_6()
             .gap_1p5()
             .min_w_0()
+            .when(is_active, |tab| tab.bg(cx.theme().colors.bg))
             .child(buffer.icon.render(rems(0.75), cx))
             .child(
                 div()
@@ -2090,44 +2423,180 @@ impl EditorPane {
                     .child(name),
             )
             .children(dirty_dot)
-            .children(close);
+            .children(close)
+            .children(is_active.then(|| {
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(rems(2. / 16.))
+                    .bg(accent)
+            }))
+            .id(tab_element_id(&buffer.path))
+            .role(Role::Tab)
+            .aria_label(aria_label.clone())
+            .aria_selected(is_active)
+            .cursor_pointer()
+            .hover(move |tab| tab.bg(hover))
+            .on_hover(cx.listener(move |pane, hovered: &bool, _window, cx| {
+                let next = if *hovered {
+                    Some(index)
+                } else if pane.hovered_tab == Some(index) {
+                    None
+                } else {
+                    pane.hovered_tab
+                };
+                if pane.hovered_tab != next {
+                    pane.hovered_tab = next;
+                    cx.notify();
+                }
+            }))
+            .on_click(
+                cx.listener(move |pane, _event: &gpui::ClickEvent, _window, cx| {
+                    pane.activate(index, cx);
+                }),
+            );
 
-        let content = self.with_tab_menu(index, buffer, content.h_full(), cx);
+        ContextMenu::new(
+            tab_menu_element_id(&buffer.path),
+            self.tab_menu(index, buffer, cx),
+        )
+        .child(content.into_any_element())
+        .into_any_element()
+    }
 
-        Tab::new().aria_label(aria_label).child(content)
+    /// 标签的右键菜单：除了图标（组件库的菜单行只收库内图标名），条目的文案与动作与迁移前一一对应。
+    fn tab_menu(&self, index: usize, buffer: &Buffer, cx: &mut Context<Self>) -> Menu {
+        let pane: Entity<Self> = cx.entity();
+        let path = buffer.path.clone();
+        let on_disk = !is_virtual_source_path(&path);
+        let mut menu = Menu::new();
+        // 迁移前那条 `S1_TAB_MENU opened=…` 诊断报的是行数与分隔符数，菜单本身读不出这些，所以在建的时候数。
+        let mut items = 0usize;
+        let mut separators = 0usize;
+
+        type Row = Rc<dyn Fn(&mut EditorPane, &mut Window, &mut Context<EditorPane>)>;
+        let entry = |label: SharedString, run: Row| {
+            let pane = pane.clone();
+            MenuItem::new(label).on_click(move |window, cx| {
+                let _ = pane.update(cx, |pane, cx| run(pane, window, cx));
+            })
+        };
+
+        menu = menu.item(entry(
+            tr("lithe.files.copyPath"),
+            Rc::new(move |pane: &mut Self, _window, cx| pane.copy_path(index, cx)),
+        ));
+        items += 1;
+        menu = menu.item(entry(
+            tr("lithe.files.copyRelativePath"),
+            Rc::new(move |pane: &mut Self, _window, cx| pane.copy_relative_path(index, cx)),
+        ));
+        items += 1;
+        menu = menu.item(entry(
+            tr("lithe.editor.gpui.revealInProjectTree"),
+            Rc::new(move |pane: &mut Self, _window, cx| pane.reveal_in_project_tree(index, cx)),
+        ));
+        items += 1;
+        menu = menu.item(entry(
+            tr("lithe.files.reveal"),
+            Rc::new(move |pane: &mut Self, window, cx| pane.reveal_in_explorer(index, window, cx)),
+        ));
+        items += 1;
+
+        if on_disk {
+            menu = menu.item(entry(
+                tr("lithe.files.openInTerminal"),
+                Rc::new(move |pane: &mut Self, window, cx| {
+                    pane.open_in_terminal(index, window, cx)
+                }),
+            ));
+            items += 1;
+            menu = menu.item(entry(
+                tr("lithe.tabs.reload"),
+                Rc::new(move |pane: &mut Self, window, cx| pane.request_reload(index, window, cx)),
+            ));
+            items += 1;
+        }
+
+        menu = menu.separator();
+        separators += 1;
+        menu = menu.item(entry(
+            tr("lithe.tabs.close"),
+            Rc::new(move |pane: &mut Self, window, cx| pane.request_close(index, window, cx)),
+        ));
+        items += 1;
+        menu = menu.item(entry(
+            tr("lithe.tabs.closeOthers"),
+            Rc::new({
+                let anchor = path.clone();
+                move |pane: &mut Self, window, cx| {
+                    pane.close_scope(CloseScope::Others(anchor.clone()), window, cx)
+                }
+            }),
+        ));
+        items += 1;
+        menu = menu.item(entry(
+            tr("lithe.tabs.closeToRight"),
+            Rc::new({
+                let anchor = path.clone();
+                move |pane: &mut Self, window, cx| {
+                    pane.close_scope(CloseScope::ToRight(anchor.clone()), window, cx)
+                }
+            }),
+        ));
+        items += 1;
+        menu = menu.item(entry(
+            tr("lithe.tabs.closeAll"),
+            Rc::new(move |pane: &mut Self, window, cx| {
+                pane.close_scope(CloseScope::All, window, cx)
+            }),
+        ));
+        items += 1;
+
+        eprintln!(
+            "S1_TAB_MENU opened=true tab={} items={items} separators={separators}",
+            buffer.name
+        );
+        menu
     }
 
     fn close_button(path: &Path, index: usize, cx: &mut Context<Self>) -> Button {
         Button::new(tab_close_element_id(path))
-            .icon(idea_icon_mono(&idea::X_ICON, cx.theme().is_dark()))
-            .ghost()
-            .small()
-            .tab_stop(false)
+            .icon_element(idea_icon_mono(&idea::X_ICON, cx.theme().is_dark()))
+            .variant(ButtonVariant::Ghost)
+            .size(Size::Small)
             .tooltip(tr("lithe.tabs.close"))
-            .accessibility_label(tr("lithe.tabs.close"))
-            .on_click(cx.listener(move |pane, _event, window, cx| {
-                cx.stop_propagation();
-                pane.request_close(index, window, cx);
-            }))
+            .on_click(
+                cx.listener(move |pane, _event: &gpui::ClickEvent, window, cx| {
+                    cx.stop_propagation();
+                    pane.request_close(index, window, cx);
+                }),
+            )
     }
 
-    fn render_body(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_body(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(buffer) = self.active.and_then(|index| self.buffers.get(index)) else {
             return Self::render_empty_state(cx);
         };
         let editor = buffer.editor.clone();
         let scroll_editor = editor.clone();
         let path = buffer.path.clone();
+        let measured = cx.entity().downgrade();
+        let popup_owner = measured.clone();
 
-        h_flex()
+        h_stack()
+            .relative()
             .flex_1()
             .min_h_0()
             .overflow_hidden()
-            .child(self.breakpoint_gutter(&path, cx))
+            .child(self.breakpoint_gutter(window, &path, cx))
             .child(
                 div()
                     .id(EDITOR_HOST_ELEMENT_ID)
-                    .test_support()
+                    .debug_selector(|| EDITOR_HOST_ELEMENT_ID.to_string())
+                    .relative()
                     .flex_1()
                     .h_full()
                     .min_h_0()
@@ -2138,6 +2607,14 @@ impl EditorPane {
                             pane.on_editor_click(event, window, cx);
                         }),
                     )
+                    .on_mouse_move(cx.listener(|pane, event: &MouseMoveEvent, _window, cx| {
+                        pane.on_editor_move(event, cx)
+                    }))
+                    .on_hover(cx.listener(|pane, hovered: &bool, _window, cx| {
+                        if !*hovered {
+                            pane.on_pointer_left_editor(cx);
+                        }
+                    }))
                     .on_scroll_wheel(cx.listener(
                         move |_pane, event: &ScrollWheelEvent, window, cx| {
                             let line_height = scroll_editor
@@ -2154,12 +2631,71 @@ impl EditorPane {
                             });
                         },
                     ))
-                    .child(Editor::new(&editor).h(relative(1.)).bordered(false)),
+                    .child(editor)
+                    // 正文容器的原点：`bounds_for_offset` 给的是窗口坐标，弹层要画成这个容器的子元素，
+                    // 所以差这一份原点（与组件库内部 `metrics.body` 同一个做法）。
+                    .child(
+                        canvas(
+                            move |bounds, _, cx| {
+                                let _ = measured
+                                    .update(cx, |pane, _| pane.body_origin = Some(bounds.origin));
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full(),
+                    ),
             )
+            .children(self.completion_popup(&popup_owner, cx))
             .into_any_element()
     }
 
-    fn breakpoint_gutter(&self, path: &Path, cx: &Context<Self>) -> AnyElement {
+    /// 补全列表：贴着光标所在的字符画在正文容器里。
+    ///
+    /// 与迁移前同一个落点（上游的补全菜单也画在编辑器正文里，同样被正文容器的 `overflow` 裁掉），
+    /// 所以观感不会变成"库能出界、宿主不能"。锚点看不见（滚出视口、折起来）时这里什么也不画，
+    /// 而 `on_editor_changed` 会在同一帧把列表整个收掉，不会留下一个"看不见却还吃着方向键"的弹层。
+    fn completion_popup(&self, pane: &WeakEntity<Self>, cx: &App) -> Option<AnyElement> {
+        let completion = self.completion.as_ref()?;
+        let origin = self.body_origin?;
+        let index = self.index_of_id(completion.editor)?;
+        let editor = self.buffers.get(index)?.editor.clone();
+        let bounds = editor.read(cx).bounds_for_offset(completion.offset, cx)?;
+        let (text, cursor) = {
+            let state = editor.read(cx);
+            (state.text().to_string(), state.cursor_offset())
+        };
+        let typed = crate::completion::word_prefix(&text, cursor);
+        let pick = pane.clone();
+
+        Some(
+            div()
+                .absolute()
+                .left(bounds.origin.x - origin.x)
+                .top(bounds.origin.y - origin.y + bounds.size.height)
+                .child(
+                    CompletionMenu::new(
+                        ("lithe-editor-completions", completion.revision as usize),
+                        completion.rows.clone(),
+                    )
+                    .typed(typed)
+                    .selected(completion.selected)
+                    .on_pick(move |row: &UiCompletion, _window, cx| {
+                        let row = row.clone();
+                        let _ = pick.update(cx, |pane, cx| pane.accept_picked(row, cx));
+                    }),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// 断点槽：每个可视**行**一格（高度与编辑器行高一致），行号由 `line_at_row` 给。
+    ///
+    /// 不写 `row + 1`：折叠体、ghost、代码透镜与软换行都会让行号不等于行下标，而软换行之后
+    /// 同一行的每个可视子行都指向该行（`line_at_row` 的语义）。
+    fn breakpoint_gutter(&self, window: &Window, path: &Path, cx: &Context<Self>) -> AnyElement {
         let column = div()
             .w(rems(BREAKPOINT_GUTTER_WIDTH_SPEC / 16.))
             .flex_shrink_0()
@@ -2180,7 +2716,7 @@ impl EditorPane {
         let (Some(visible), Some(line_height)) = (visible, line_height) else {
             return column.into_any_element();
         };
-        let top = rem_px(cx.theme().font_size, EDITOR_CONTENT_TOP_PADDING_SPEC)
+        let top = rem_px(window.rem_size(), EDITOR_CONTENT_TOP_PADDING_SPEC)
             + line_height * visible.start as f32
             - scroll_y;
         let marks = self.gutter_breakpoints.get(path);
@@ -2188,19 +2724,21 @@ impl EditorPane {
         let path_for_rows = path.to_path_buf();
         let rows: Vec<AnyElement> = (visible.start..visible.end)
             .map(|row| {
-                let line = row + 1;
-                let breakpoint = marks
-                    .and_then(|marks| marks.iter().find(|mark| mark.line == line))
+                // 不是整行的行（透镜、ghost、被删掉的 diff 行）也要占住同样高度，否则下面的行会错位。
+                let line = buffer.editor.read(cx).line_at_row(row);
+                let breakpoint = line
+                    .and_then(|line| {
+                        marks.and_then(|marks| marks.iter().find(|mark| mark.line == line))
+                    })
                     .copied();
-                let mut row_element = h_flex()
+                let mut row_element = h_stack()
                     .id(SharedString::from(format!(
-                        "bp-{}-{line}",
+                        "bp-{}-{row}",
                         path_for_rows.display()
                     )))
                     .w_full()
                     .h(line_height)
                     .flex_shrink_0()
-                    .items_center()
                     .justify_center();
                 if let Some(breakpoint) = breakpoint {
                     let active = breakpoint.enabled && !self.breakpoints_muted;
@@ -2209,16 +2747,15 @@ impl EditorPane {
                             .size(rems(BREAKPOINT_MARKER_SIZE_SPEC / 16.))
                             .rounded_full()
                             .bg(if active {
-                                cx.theme().danger
+                                cx.theme().colors.danger
                             } else {
-                                cx.theme().muted_foreground
+                                cx.theme().colors.fg_muted
                             }),
                     );
                 }
-                match host {
-                    Some(host) => {
+                match (host, line) {
+                    (Some(host), Some(line)) => {
                         let toggle = host.toggle.clone();
-                        let set_enabled = host.set_enabled.clone();
                         let remove = host.remove.clone();
                         let path_for_click = path_for_rows.clone();
                         row_element
@@ -2229,78 +2766,77 @@ impl EditorPane {
                                 } else {
                                     (toggle)(&path_for_click, line, cx);
                                 }
-                                let _ = &set_enabled;
                             }))
                             .into_any_element()
                     }
-                    None => row_element.into_any_element(),
+                    _ => row_element.into_any_element(),
                 }
             })
             .collect();
         column
-            .child(v_flex().w_full().relative().top(-top).children(rows))
+            .child(v_stack().w_full().relative().top(-top).children(rows))
             .into_any_element()
     }
 
-    fn render_empty_state(cx: &App) -> AnyElement {
-        v_flex()
-            .flex_1()
-            .min_h_0()
-            .context_menu(|menu, _window, _cx| {
-                menu.item(PopupMenuItem::new(tr("lithe.ui.noActionsHere")).disabled(true))
-            })
-            .child(
-                Empty::new()
-                    .border_color(cx.theme().transparent)
-                    .gap_3()
-                    .px_6()
-                    .py_8()
-                    .header(
-                        EmptyHeader::new()
-                            .max_w_112()
-                            .gap_3()
-                            .media(
-                                EmptyMedia::new().child(
-                                    div()
-                                        .relative()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .size_12()
-                                        .child(
-                                            idea_icon_element(
-                                                &idea::FILE_ICON,
-                                                cx.theme().is_dark(),
-                                            )
-                                            .size_10()
-                                            .text_color(cx.theme().muted_foreground),
-                                        )
-                                        .child(
-                                            idea_icon_element(
-                                                &idea::MAGNIFYING_GLASS_ICON,
-                                                cx.theme().is_dark(),
-                                            )
-                                            .absolute()
-                                            .right_0()
-                                            .bottom_0()
-                                            .size_5()
-                                            .text_color(cx.theme().muted_foreground),
-                                        ),
+    fn render_empty_state(cx: &mut Context<Self>) -> AnyElement {
+        ContextMenu::new(
+            "lithe-editor-empty-menu",
+            Menu::new().item(MenuItem::new(tr("lithe.ui.noActionsHere")).disabled(true)),
+        )
+        .child(
+            v_stack()
+                .flex_1()
+                .min_h_0()
+                .child(
+                    EmptyState::slots("lithe-editor-empty")
+                        .media_element(
+                            div()
+                                .relative()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .size_12()
+                                .child(
+                                    idea_icon_mono(&idea::FILE_ICON, cx.theme().is_dark())
+                                        .size(lithe_ui::theme::IconSize::Lg),
+                                )
+                                .child(
+                                    idea_icon_mono(
+                                        &idea::MAGNIFYING_GLASS_ICON,
+                                        cx.theme().is_dark(),
+                                    )
+                                    .absolute()
+                                    .right_0()
+                                    .bottom_0(),
                                 ),
-                            )
-                            .title(
-                                EmptyTitle::new()
-                                    .text_sm()
-                                    .child(tr("lithe.workbench.emptyEditorTitle")),
-                            )
-                            .description(
-                                EmptyDescription::new()
-                                    .text_sm()
-                                    .child(tr("lithe.workbench.emptyEditorDescription")),
-                            ),
-                    ),
-            )
-            .into_any_element()
+                        )
+                        .title(tr("lithe.workbench.emptyEditorTitle"))
+                        .body(tr("lithe.workbench.emptyEditorDescription")),
+                )
+                .into_any_element(),
+        )
+        .into_any_element()
+    }
+
+    /// 代码动作的菜单：组件库的 `ContextMenu::manual` 就是"宿主在某个窗口坐标上开一份菜单"，
+    /// 键盘、选中、点到别处关闭、关掉后交还焦点都归它。
+    fn code_action_menu(&self, pane: &WeakEntity<Self>, cx: &App) -> Option<AnyElement> {
+        if self.code_action_request.is_none() || self.code_actions.is_empty() {
+            return None;
+        }
+        let pick = pane.clone();
+        let menu = crate::code_actions::menu(
+            &self.code_actions,
+            Rc::new(move |at: usize, _window, cx| {
+                let _ = pick.update(cx, |pane, cx| pane.apply_code_action(at, cx));
+            }),
+        );
+        let _ = cx;
+        Some(
+            ContextMenu::new("lithe-editor-code-actions", menu)
+                .manual(self.code_action_request)
+                .into_any_element(),
+        )
     }
 }
 
@@ -2310,6 +2846,10 @@ fn tab_element_id(path: &Path) -> String {
 
 fn tab_close_element_id(path: &Path) -> String {
     format!("editor-tab-close:{}", path.display())
+}
+
+fn tab_menu_element_id(path: &Path) -> String {
+    format!("editor-tab-menu:{}", path.display())
 }
 
 fn is_virtual_source_path(path: &Path) -> bool {
@@ -2342,12 +2882,16 @@ impl Drop for EditorPane {
 }
 
 impl Render for EditorPane {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let pane = cx.entity().downgrade();
+        let code_actions = self.code_action_menu(&pane, cx);
+        let tabs = self.render_tab_bar(window, cx);
+        let body = self.render_body(window, cx);
+        v_stack()
             .size_full()
             .min_h_0()
             .overflow_hidden()
-            .bg(cx.theme().background)
+            .bg(cx.theme().colors.bg)
             .on_action(
                 cx.listener(|pane, _: &crate::NavigateToDefinition, window, cx| {
                     pane.navigate_to_definition(window, cx);
@@ -2356,8 +2900,12 @@ impl Render for EditorPane {
             .on_action(cx.listener(|pane, _: &crate::CloseActiveTab, window, cx| {
                 pane.close_active(window, cx);
             }))
-            .child(self.render_tab_bar(cx))
-            .child(self.render_body(cx))
+            .on_action(cx.listener(|pane, _: &crate::ShowCodeActions, window, cx| {
+                pane.show_code_actions(window, cx);
+            }))
+            .child(tabs)
+            .child(body)
+            .children(code_actions)
     }
 }
 

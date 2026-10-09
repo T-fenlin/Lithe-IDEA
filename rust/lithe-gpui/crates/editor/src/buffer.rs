@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 use gpui::App;
 use gpui::{Entity, SharedString, Subscription, Task};
-use gpui_kit::component::input::EditorState;
 use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::tr_args;
+use lithe_ui::editor::CodeEditor;
 
 const MAX_EDITOR_BYTES: u64 = 2 * 1024 * 1024;
 
@@ -12,35 +12,20 @@ pub(crate) fn icon_for_file(name: &str, cx: &App) -> FileIcon {
     FileIcon::own(file_icon::fallback_icon(name)).with_theme_icon(name, cx)
 }
 
+/// The language a file is highlighted and served in, from the component library's registry.
+///
+/// The registry is the single source of truth for which extensions and file names belong to a language
+/// (`lithe_gpui_languages` registers the grammars at startup), so this side keeps no table of its own. A
+/// language the user switched off is not handed out: the file then opens with the built-in lexer colours,
+/// which is what "unloading a language pack" means.
+pub(crate) fn resolved_language(name: &str) -> Option<&'static lithe_ui::language::Language> {
+    let language = lithe_ui::language::by_path(name)?;
+    (!lithe_gpui_shared::languages::is_language_disabled(language.id)).then_some(language)
+}
+
+/// 语言 id（宿主的日志、Java 服务的接线判据与"这个文件是什么语言"都用它）。
 pub(crate) fn language_for_file(name: &str) -> Option<&'static str> {
-    let extension = Path::new(name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase);
-
-    let resolve = |language: Option<&'static str>| -> Option<&'static str> {
-        match language {
-            Some(name) if lithe_gpui_shared::languages::is_language_disabled(name) => None,
-            other => other,
-        }
-    };
-
-    let language = match extension.as_deref() {
-        Some("java") => Some("java"),
-        Some("json" | "jsonc") => Some("json"),
-        Some("yml" | "yaml") => Some("yaml"),
-        Some("toml") => Some("toml"),
-        Some("sql") => Some("sql"),
-        Some("md" | "markdown") => Some("markdown"),
-        Some("sh" | "bash") => Some("bash"),
-        Some("kt" | "kts" | "ktm") => Some("kotlin"),
-        Some("xml" | "xsd" | "xsl" | "xslt" | "wsdl") => Some("xml"),
-        _ => match name.to_ascii_lowercase().as_str() {
-            "mvnw" | "gradlew" | "mvnw.cmd" | "gradlew.bat" => Some("bash"),
-            _ => None,
-        },
-    };
-    resolve(language)
+    resolved_language(name).map(|language| language.id)
 }
 
 pub(crate) struct Body {
@@ -190,7 +175,7 @@ pub(crate) struct Buffer {
     pub(crate) path: PathBuf,
     pub(crate) name: SharedString,
     pub(crate) icon: FileIcon,
-    pub(crate) editor: Entity<EditorState>,
+    pub(crate) editor: Entity<CodeEditor>,
     pub(crate) is_dirty: bool,
     pub(crate) writable: bool,
     pub(crate) save_generation: u64,
@@ -206,7 +191,7 @@ impl Buffer {
         path: PathBuf,
         name: SharedString,
         icon: FileIcon,
-        editor: Entity<EditorState>,
+        editor: Entity<CodeEditor>,
         writable: bool,
         subscriptions: Vec<Subscription>,
     ) -> Self {
@@ -333,6 +318,7 @@ mod tests {
 
     #[test]
     fn java_maps_to_java_language() {
+        languages();
         assert_eq!(language_for_file("HighlightProbe.java"), Some("java"));
         assert_eq!(
             language_for_file("Foo.JAVA"),
@@ -343,12 +329,14 @@ mod tests {
 
     #[test]
     fn json_maps_to_json_language() {
+        languages();
         assert_eq!(language_for_file("tsconfig.json"), Some("json"));
         assert_eq!(language_for_file("settings.jsonc"), Some("json"));
     }
 
     #[test]
     fn unmapped_extension_falls_back_to_none() {
+        languages();
         for name in [
             "notes.txt",
             "sample.xyz",
@@ -365,6 +353,7 @@ mod tests {
 
     #[test]
     fn project_files_map_to_their_languages() {
+        languages();
         for (name, expected) in [
             ("application.yml", "yaml"),
             ("application-dev.yaml", "yaml"),
@@ -382,5 +371,14 @@ mod tests {
         ] {
             assert_eq!(language_for_file(name), Some(expected), "{name} 的映射");
         }
+    }
+
+    /// 注册表是进程级的全局状态：每个用到 `language_for_file` 的测试都自己注册一次，
+    /// 免得测试并行跑时依赖别人先跑。重复注册是幂等的（注册表自己记一条警告）。
+    ///
+    /// 这里**不**断言「关掉某种语言」那条分支：`set_disabled_languages` 改的是进程级全局状态，
+    /// 与并行跑的同批测试互相踩。那条分支的守卫在 `shared::languages` 与设置侧，不在这里重复。
+    fn languages() {
+        lithe_gpui_languages::register();
     }
 }

@@ -1,11 +1,22 @@
+//! 诊断：把 JDTLS 的 UTF-16 坐标换算成编辑器字节偏移，再交给组件库画波浪线。
+//!
+//! 分工与补全/悬停同一条口径：**取数**在语言服务里、**画**在组件库里（`CodeEditor::set_diagnostics`
+//! 收一份完整快照），本文件只做协议坐标到编辑器坐标的换算与严重度映射。
+//!
+//! 快照语义按真源走：服务端每次给的都是"这份文件的全部诊断"，所以每次推送都是**整份替换**；
+//! 正文一变（`EditorEvent::Changed`）之前的偏移就全过期了，宿主会把它们清掉再等下一份
+//! （上游 `DiagnosticSet` 也是在正文变化时 reset 的，同一条行为）。
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui::BackgroundExecutor;
-use gpui_kit::base::input::{Diagnostic, DiagnosticSet, DiagnosticSeverity};
-use gpui_kit::component::input::{EditorState, Rope};
+use gpui::{BackgroundExecutor, Context};
 use lithe_gpui_java::{JavaDiagnostic, JavaLanguageService};
+use lithe_ui::editor::{CodeEditor, Diagnostic};
+use lithe_ui::primitives::Severity;
+
+use crate::navigation::offset_for_utf16;
 
 const RETRY_BACKOFF_MS: [u64; 5] = [250, 500, 1_000, 2_000, 4_000];
 
@@ -56,43 +67,46 @@ pub(crate) async fn fetch(
     }
 }
 
-pub(crate) fn apply(state: &mut EditorState, diagnostics: &[JavaDiagnostic]) -> usize {
-    let text = state.text().clone();
-    let Some(set) = state.diagnostics_mut() else {
-        return 0;
-    };
-    write(set, &text, diagnostics)
+/// Hands one snapshot of server diagnostics to the editor, replacing whatever was drawn before; returns how
+/// many marks were written.
+pub(crate) fn apply(
+    state: &mut CodeEditor,
+    diagnostics: &[JavaDiagnostic],
+    cx: &mut Context<CodeEditor>,
+) -> usize {
+    let text = state.text().to_string();
+    let marks = marks(diagnostics, &text);
+    let written = marks.len();
+    state.set_diagnostics(marks, cx);
+    written
 }
 
-fn write(set: &mut DiagnosticSet, text: &Rope, diagnostics: &[JavaDiagnostic]) -> usize {
-    set.clear();
-    for diagnostic in diagnostics {
-        set.push(to_upstream(diagnostic, text));
-    }
-    diagnostics.len()
+/// The squiggles a snapshot becomes, in the editor's own byte offsets and severities.
+pub(crate) fn marks(diagnostics: &[JavaDiagnostic], text: &str) -> Vec<Diagnostic> {
+    diagnostics
+        .iter()
+        .map(|diagnostic| to_editor(diagnostic, text))
+        .collect()
 }
 
-fn to_upstream(diagnostic: &JavaDiagnostic, text: &Rope) -> Diagnostic {
-    let start = crate::navigation::editor_position(
+fn to_editor(diagnostic: &JavaDiagnostic, text: &str) -> Diagnostic {
+    let start = offset_for_utf16(
         text,
         diagnostic.range.start.line as usize,
         diagnostic.range.start.utf16_column as usize,
     );
-    let end = crate::navigation::editor_position(
+    let end = offset_for_utf16(
         text,
         diagnostic.range.end.line as usize,
         diagnostic.range.end.utf16_column as usize,
     );
 
-    let mut mapped = Diagnostic::new(start..end, diagnostic.message.clone())
-        .with_severity(severity(diagnostic.severity));
-    if let Some(source) = &diagnostic.source {
-        mapped = mapped.with_source(source.clone());
+    Diagnostic {
+        // 服务端把范围发反了也只是画成空的一小段，不至于让渲染去切片一个倒过来的区间。
+        range: start..end.max(start),
+        severity: severity(diagnostic.severity),
+        message: diagnostic.message.clone().into(),
     }
-    if let Some(code) = &diagnostic.code {
-        mapped = mapped.with_code(code.clone());
-    }
-    mapped
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -123,12 +137,12 @@ impl Level {
     }
 }
 
-fn severity(value: Option<i64>) -> DiagnosticSeverity {
+/// LSP 的严重度数字映射到组件库的四档：`1` 错误、`2` 警告、`4` 提示，其余（含缺省）算信息。
+fn severity(value: Option<i64>) -> Severity {
     match Level::from_lsp(value) {
-        Level::Error => DiagnosticSeverity::Error,
-        Level::Warning => DiagnosticSeverity::Warning,
-        Level::Info => DiagnosticSeverity::Info,
-        Level::Hint => DiagnosticSeverity::Hint,
+        Level::Error => Severity::Danger,
+        Level::Warning => Severity::Warning,
+        Level::Info | Level::Hint => Severity::Info,
     }
 }
 
@@ -143,8 +157,7 @@ pub(crate) fn severity_max(diagnostics: &[JavaDiagnostic]) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::component::input::Position;
-    use lithe_gpui_java::{JavaDiagnostic, JavaDiagnosticRange, JavaPosition};
+    use lithe_gpui_java::{JavaDiagnosticRange, JavaPosition};
 
     use super::*;
 
@@ -176,13 +189,13 @@ mod tests {
 
     #[test]
     fn severity_follows_lsp_numbers_and_defaults_to_info() {
-        assert_eq!(severity(Some(1)), DiagnosticSeverity::Error);
-        assert_eq!(severity(Some(2)), DiagnosticSeverity::Warning);
-        assert_eq!(severity(Some(3)), DiagnosticSeverity::Info);
-        assert_eq!(severity(Some(4)), DiagnosticSeverity::Hint);
-        assert_eq!(severity(None), DiagnosticSeverity::Info);
-        assert_eq!(severity(Some(0)), DiagnosticSeverity::Info);
-        assert_eq!(severity(Some(99)), DiagnosticSeverity::Info);
+        assert_eq!(severity(Some(1)), Severity::Danger);
+        assert_eq!(severity(Some(2)), Severity::Warning);
+        assert_eq!(severity(Some(3)), Severity::Info);
+        assert_eq!(severity(Some(4)), Severity::Info);
+        assert_eq!(severity(None), Severity::Info);
+        assert_eq!(severity(Some(0)), Severity::Info);
+        assert_eq!(severity(Some(99)), Severity::Info);
     }
 
     #[test]
@@ -208,123 +221,85 @@ mod tests {
     }
 
     #[test]
-    fn mapping_keeps_message_severity_source_and_code() {
-        let rope = Rope::from_str("int x = \"nope\";\n");
-        let mapped = to_upstream(&diagnostic(0, 8, 0, 14, Some(1)), &rope);
+    fn mapping_keeps_message_and_severity() {
+        let text = "int x = \"nope\";\n";
+        let mapped = to_editor(&diagnostic(0, 8, 0, 14, Some(1)), text);
 
-        assert_eq!(mapped.severity, DiagnosticSeverity::Error);
+        assert_eq!(mapped.severity, Severity::Danger);
         assert_eq!(
-            mapped.message.as_str(),
+            mapped.message,
             "Type mismatch: cannot convert from String to int"
         );
-        assert_eq!(mapped.source.as_ref().map(|s| s.as_str()), Some("Java"));
-        assert_eq!(
-            mapped.code.as_ref().map(|s| s.as_str()),
-            Some("TypeMismatch")
-        );
-        assert_eq!(mapped.range.start, Position::new(0, 8));
-        assert_eq!(mapped.range.end, Position::new(0, 14));
+        assert_eq!(mapped.range, 8..14);
     }
 
     #[test]
-    fn utf16_columns_are_converted_to_character_columns_for_the_underline() {
-        let text = Rope::from_str("// 🙂 int y\n");
-        let mapped = to_upstream(&diagnostic(0, 10, 0, 11, Some(1)), &text);
+    fn utf16_columns_are_converted_to_byte_offsets_for_the_underline() {
+        let text = "// 🙂 int y\n";
+        let mapped = to_editor(&diagnostic(0, 10, 0, 11, Some(1)), text);
         assert_eq!(
-            mapped.range.start,
-            Position::new(0, 9),
-            "UTF-16 列 10 → 字符列 9"
-        );
-
-        let mut set = DiagnosticSet::new(&text);
-        set.push(mapped);
-        assert_eq!(set.len(), 1);
-        let entry = set.for_offset(12).expect("第 12 字节应当落在诊断范围内");
-        assert_eq!(
-            entry.range,
+            mapped.range,
             12..13,
             "波浪线必须落在 `y` 这一个字节上（把 UTF-16 当字符解会落到别的字节）"
         );
+        assert_eq!(&text[mapped.range], "y");
     }
 
     #[test]
     fn ascii_columns_are_unchanged() {
-        let text = Rope::from_str("// int y\n");
-        let mut set = DiagnosticSet::new(&text);
-        set.push(to_upstream(&diagnostic(0, 7, 0, 8, Some(1)), &text));
-        let entry = set.for_offset(7).expect("第 7 字节应当落在诊断范围内");
-        assert_eq!(entry.range, 7..8);
+        let text = "// int y\n";
+        let mapped = to_editor(&diagnostic(0, 7, 0, 8, Some(1)), text);
+        assert_eq!(mapped.range, 7..8);
     }
 
     #[test]
     fn ranges_on_later_lines_use_that_line_slice() {
-        let text = Rope::from_str("int a = 1;\n// 🙂 oops\nint b = 2;\n");
-        let mut set = DiagnosticSet::new(&text);
-        set.push(to_upstream(&diagnostic(1, 6, 1, 10, Some(2)), &text));
+        let text = "int a = 1;\n// 🙂 oops\nint b = 2;\n";
+        let mapped = to_editor(&diagnostic(1, 6, 1, 10, Some(2)), text);
 
-        let entry = set.for_offset(19).expect("诊断必须落在行 1 的 oops 上");
-        assert_eq!(entry.range, 19..23);
+        assert_eq!(mapped.range, 19..23);
         assert_eq!(
-            &text.to_string()[entry.range.clone()],
-            "oops",
+            &text[mapped.range], "oops",
             "字节范围必须正好覆盖 oops（差一列就会切到别的字符）"
         );
     }
 
     #[test]
     fn out_of_range_positions_do_not_panic() {
-        let text = Rope::from_str("int x = 1;\n");
-        let mut set = DiagnosticSet::new(&text);
-        set.push(to_upstream(&diagnostic(99, 99, 99, 100, Some(1)), &text));
-        assert_eq!(set.len(), 1, "越界的诊断仍然入集合（范围落在文本末尾）");
+        let text = "int x = 1;\n";
+        let mapped = to_editor(&diagnostic(99, 99, 99, 100, Some(1)), text);
+        assert_eq!(
+            mapped.range,
+            text.len()..text.len(),
+            "越界的诊断仍然入集合（范围落在文本末尾）"
+        );
     }
 
+    /// 服务端把范围发反了：读成空的一段，而不是让渲染去切一个倒过来的区间。
     #[test]
-    fn writing_a_smaller_snapshot_drops_the_previous_entries() {
-        let text = Rope::from_str("int a = 1;\nint b = 2;\n");
-        let mut set = DiagnosticSet::new(&text);
-        let written = write(
-            &mut set,
-            &text,
+    fn a_backwards_range_reads_as_empty() {
+        let text = "int x = 1;\n";
+        let mapped = to_editor(&diagnostic(0, 9, 0, 4, Some(1)), text);
+        assert_eq!(mapped.range, 9..9);
+    }
+
+    /// 每次推送都是整份快照：给的小了就只剩小的那些条目，给空的就一条不剩。
+    #[test]
+    fn a_snapshot_replaces_the_one_before_it() {
+        let text = "int a = 1;\nint b = 2;\n";
+        let two = marks(
             &[
                 diagnostic(0, 0, 0, 3, Some(1)),
                 diagnostic(1, 0, 1, 3, Some(1)),
             ],
+            text,
         );
-        assert_eq!(written, 2);
-        assert_eq!(set.len(), 2);
+        assert_eq!(two.len(), 2);
 
-        let written = write(&mut set, &text, &[diagnostic(0, 0, 0, 3, Some(2))]);
-        assert_eq!(written, 1);
-        assert_eq!(set.len(), 1, "旧的那一条必须被整份替换掉");
-        assert_eq!(
-            set.for_offset(0).expect("新的那条还在").severity,
-            DiagnosticSeverity::Warning
-        );
-        assert!(
-            set.for_offset(11).is_none(),
-            "第二行（字节 11 起）的诊断必须已经被清掉"
-        );
+        let one = marks(&[diagnostic(0, 0, 0, 3, Some(2))], text);
+        assert_eq!(one.len(), 1, "旧的那一条必须被整份替换掉");
+        assert_eq!(one[0].severity, Severity::Warning);
 
-        write(&mut set, &text, &[]);
-        assert_eq!(set.len(), 0, "空快照必须把波浪线全部清掉");
-    }
-
-    #[test]
-    fn upstream_reset_clears_diagnostics_on_text_change() {
-        let text = Rope::from_str("int a = 1;\n");
-        let mut set = DiagnosticSet::new(&text);
-        set.push(Diagnostic::new(
-            Position::new(0, 0)..Position::new(0, 3),
-            "boom",
-        ));
-        assert_eq!(set.len(), 1);
-
-        set.reset(&Rope::from_str("int a = 2;\n"));
-        assert_eq!(
-            set.len(),
-            0,
-            "上游在每次正文变化时 reset：缓存旧快照再重放会让波浪线回到旧位置"
-        );
+        assert!(marks(&[], text).is_empty(), "空快照必须把波浪线全部清掉");
     }
 }

@@ -7,45 +7,29 @@ publish = false
 [dependencies]
 # gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
-# gpui-kit 是**过渡依赖**，正在按切片迁往 `lithe-ui`（见 rust/lithe-gpui/README.md）。
-#
-# 这些 grammar 特性会拉进 `tree-sitter ^0.26.13`；`lithe-core` 已于 2026-10-08 由 0.25
-# 升到 0.26（后者带 `links = "tree-sitter"`，同图不允许两份同名原生库），所以现在可以打开。
-# 刻意不含聚合特性 `tree-sitter-languages`：那是 35 个 grammar 的全量包，构建代价与体积都大。
-gpui-kit = { version = "=0.7.1", features = [
-    "tree-sitter-java",
-    "tree-sitter-yaml",
-    "tree-sitter-toml",
-    "tree-sitter-sql",
-    "tree-sitter-markdown",
-    "tree-sitter-bash",
-    "tree-sitter-kotlin",
-] }
-
-# XML：**不在** gpui-kit 的 35 个语法里，但 `pom.xml` 是 Spring Boot 工程里最该高亮的
-# 非 Java 文件。这个 crate 同时给出 `LANGUAGE_XML`（LanguageFn）与
-# `XML_HIGHLIGHT_QUERY`（查询字符串），所以我们不需要自己收 .scm、也不需要 unsafe：
-# 走 `LanguageRegistry::register` 注册即可（见 `src/languages.rs`）。
-# 它只依赖 `tree-sitter-language`，**不触发**上面的 `links` 冲突。
-tree-sitter-xml = "0.7"
+# 组件库：代码编辑器本体（`lithe_ui::editor::CodeEditor`）、语言注册表与高亮引擎、
+# 主题、标签栏/菜单/按钮这些控件。**不再有 gpui-kit**：本 crate 是最后一批离开它的
+# 宿主 crate 之一，所有界面元素都改从 `lithe-ui` 取（语法高亮也不必再由本 crate
+# 打开 grammar 特性——grammar 由第一方语言插件 `lithe-gpui-languages` 注册进注册表）。
+lithe-ui = { path = "../../../lithe-ui" }
 # 通知中心：保存失败 / 跳转无目标都写进通知中心（2026-09-27 从角落 toast 迁过来，决策见
 # `.agents/notes/proposed/architecture/2026-09-27-gpui-notification-center.md`）。
 # `editor` 在 `workbench` **之下**，所以只能走 notify 自己提供的全局槽窄接口
 # （`lithe_gpui_notify::record`），不能去摸外壳的实体。
 lithe-gpui-notify = { path = "../notify" }
 lithe-gpui-shared = { path = "../shared" }
-# 自己的组件库：窗口根宿主与对话框（门 G1 起，本 crate 的 `open_dialog` / `close_dialog`
-# 走 `lithe_ui::shell::WindowRootExt`）。gpui-pre 的版本由 lithe-ui 精确钉住，这里不重复声明。
-lithe-ui = { path = "../../../lithe-ui" }
 # 阶段 10 第二批：语义跳转的来源。**只在编辑器里接线**，Java 语言服务本身
 # （JDTLS 载荷发现 / Core LSP 会话 / 索引缓存）全在那个 crate 里，见 `src/navigation.rs`。
 lithe-gpui-java = { path = "../java" }
 # 跳转请求的 payload 是 JSON（`lsp.builtinNavigation` 的请求字段，见 `src/navigation.rs`），
 # 与 `explorer` / `git` 两个 feature 同一口径：`core_json` 收 `serde_json::Value`。
 serde_json = "1"
-# 补全的 trait（`CompletionProvider`）由 `gpui_kit::component::input` 重导出，但**响应类型**
-# （`CompletionResponse` / `CompletionItem` / `TextEdit`）没有重导出，必须直接依赖。
-# ⚠️ **版本**必须与 gpui-base 解析到同一个 crate：版本不一致就是两个不同的 `lsp_types`，
-# 我们实现的 trait 与上游期待的 trait 对不上。
+# LSP 协议自己的位置类型：`Position { line, character }` 与 `Hover` / 诊断范围都是按 LSP 的
+# 口径报给 Core 的（行 0 基、列按 UTF-16 码元）。编辑器内部的列是**字符**列，换算全在
+# `src/navigation.rs`，就用这个类型把两边分清楚。
 lsp-types = { version = "0.97", features = ["proposed"] }
 
+[dev-dependencies]
+# 语言注册表是进程级全局：凡是用到 `language_for_file` 的测试都得先注册一次。
+# 它只依赖 `lithe-ui`（不反向依赖本 crate），所以这里不会成环。
+lithe-gpui-languages = { path = "../languages" }

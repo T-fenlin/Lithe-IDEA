@@ -391,6 +391,51 @@ fn auto_completion_stays_off_by_default(cx: &mut TestAppContext) {
     });
 }
 
+/// The characters that open a list are the owner's: naming `.` and `@` asks on those too, and nothing else
+/// changes — an unnamed punctuation mark still asks for nothing, and the switch can be turned at runtime.
+#[gpui::test]
+fn the_owner_names_the_characters_that_open_a_completion_list(cx: &mut TestAppContext) {
+    cx.update(Theme::init);
+    let (editor, cx) = cx.add_window_view(|window, cx| {
+        CodeEditor::new("let ", window, cx)
+            .auto_completion(true)
+            .completion_triggers(".@")
+    });
+    let (_watching, asked) = watch(&editor, cx, |event| match event {
+        EditorEvent::CompletionRequested(at) => Some(*at),
+        _ => None,
+    });
+    editor.update(cx, |editor, cx| {
+        editor.select([4..4], cx);
+        editor.type_text(".", cx);
+    });
+    assert_eq!(*asked.borrow(), vec![5], "a member dot asks");
+    editor.update(cx, |editor, cx| {
+        editor.type_text("@", cx);
+    });
+    assert_eq!(asked.borrow().len(), 2, "an annotation marker asks");
+    editor.update(cx, |editor, cx| {
+        editor.type_text("-", cx);
+    });
+    assert_eq!(asked.borrow().len(), 2, "an unnamed mark asks for nothing");
+    // The settings page's switch turns the whole policy off, `.` included. 每一次 `update` 结束时
+    // gpui 才把事件投递给订阅者，所以断言必须落在 `update` **之外**，否则看到的是投递之前的计数。
+    editor.update(cx, |editor, cx| editor.set_auto_completion(false, cx));
+    editor.update(cx, |editor, cx| {
+        editor.type_text(".", cx);
+    });
+    assert_eq!(
+        asked.borrow().len(),
+        2,
+        "switched off, the dot asks nothing"
+    );
+    editor.update(cx, |editor, cx| editor.set_auto_completion(true, cx));
+    editor.update(cx, |editor, cx| {
+        editor.type_text(".", cx);
+    });
+    assert_eq!(asked.borrow().len(), 3, "switched back on, it asks again");
+}
+
 /// The explicit trigger: `ctrl-space` goes through the key bindings and reports the primary cursor's byte
 /// offset; fetching the data and showing the popup are the owner's.
 #[gpui::test]
@@ -1532,4 +1577,112 @@ fn up_and_down_walk_the_visual_sub_rows(cx: &mut TestAppContext) {
             "each step up moves back: {seen:?}"
         );
     });
+}
+
+/// A settings page switches the tab width on an editor that is already open, and the new width is what an indent
+/// uses from then on.
+#[gpui::test]
+fn a_tab_width_can_change_while_the_editor_runs(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("a", cx);
+    editor.update(cx, |editor, cx| {
+        assert_eq!(editor.options.tab, 4, "the built-in width");
+        editor.set_tab_size(8, cx);
+        assert_eq!(editor.options.tab, 8);
+        editor.select([0..0], cx);
+        editor.indent(cx);
+        assert_eq!(
+            editor.text(),
+            "        a",
+            "a Tab now stands for eight spaces"
+        );
+        // Setting the width it already has changes nothing (no redraw for a no-op).
+        editor.set_tab_size(8, cx);
+        assert_eq!(editor.text(), "        a");
+    });
+    cx.run_until_parked();
+}
+
+/// The owner resolves a language from its registry and pushes it in; the editor keeps it across a text
+/// replacement, reports its display name, and gives it back on `None`.
+#[gpui::test]
+fn a_language_can_be_attached_and_taken_back_while_the_editor_runs(cx: &mut TestAppContext) {
+    static TEST_LANGUAGE: crate::language::Language = crate::language::Language {
+        id: "test",
+        name: "Test",
+        extensions: &["test"],
+        filenames: &[],
+        grammar: || unreachable!("no render asks this language for a grammar"),
+        highlights: "",
+        line_comment: "//",
+    };
+    let (editor, cx) = editor("class A {}", cx);
+    cx.run_until_parked();
+    editor.update(cx, |editor, cx| {
+        assert_eq!(editor.language_name().as_ref(), "Plain text");
+        assert!(editor.buffer.language().is_none());
+        editor.set_language(Some(&TEST_LANGUAGE), cx);
+        assert_eq!(editor.buffer.language().map(|each| each.id), Some("test"));
+        assert_eq!(
+            editor.language_name().as_ref(),
+            "Test",
+            "the resolved language's own name is what the owner reports"
+        );
+        // Replacing the text is not a change of language, so the same grammar stays attached.
+        editor.set_text("class B {}", cx);
+        assert_eq!(editor.buffer.language().map(|each| each.id), Some("test"));
+        // Taking it back goes to the built-in lexer and back to the plain-text name.
+        editor.set_language(None, cx);
+        assert!(editor.buffer.language().is_none());
+        assert_eq!(editor.language_name().as_ref(), "Plain text");
+    });
+    // The frame that follows finds no language, so nothing asks the panicking grammar: this is the arrangement
+    // a host really runs (resolve, push, fall back), and it must lay out and paint without blowing up.
+    cx.run_until_parked();
+}
+
+/// The two hover entry points differ in where the content hangs: the pointer's symbol, or an offset the owner
+/// names — which is what the keyboard route needs, because the pointer's last symbol is somewhere else.
+#[gpui::test]
+fn hover_content_hangs_from_the_offset_the_owner_names(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("let total = 2;", cx);
+    cx.run_until_parked();
+    // The pointer rests on `total` (columns 4..9), so that symbol is what a plain push hangs the content from.
+    editor.update(cx, |editor, cx| {
+        let (left, advance, line) = (
+            editor.metrics.left,
+            editor.metrics.advance,
+            editor.metrics.line,
+        );
+        let moved = MouseMoveEvent {
+            position: point(left + advance * 5., line / 2.),
+            ..MouseMoveEvent::default()
+        };
+        editor.track_hover(0, 0, &moved, cx);
+    });
+    editor.update(cx, |editor, cx| {
+        let info = || Some(HoverInfo::new("hover", "let total: i32"));
+        // The caret sits at the end of the line, away from the symbol the pointer stopped on.
+        editor.select([13..13], cx);
+        editor.present_hover(info(), cx);
+        assert_eq!(
+            editor.hover.as_ref().map(|hover| hover.offset),
+            Some(4),
+            "the pointer's symbol is the anchor a plain push takes"
+        );
+        assert!(editor.hover_panel(cx).is_some(), "it is drawn there");
+
+        // The keyboard route names the caret itself, which is where the user is looking.
+        editor.present_hover_at(13, info(), cx);
+        assert_eq!(
+            editor.hover.as_ref().map(|hover| hover.offset),
+            Some(13),
+            "an owner-named offset wins over the pointer's symbol"
+        );
+        assert!(editor.hover_panel(cx).is_some());
+
+        editor.present_hover_at(13, None, cx);
+        assert!(editor.hover().is_none(), "None takes the content down");
+        assert!(editor.hover_panel(cx).is_none(), "nothing drawn");
+    });
+    cx.run_until_parked();
 }

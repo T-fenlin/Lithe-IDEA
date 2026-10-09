@@ -92,22 +92,22 @@ fn editor_body_host_fills_the_pane_below_the_tab_bar(cx: &mut TestAppContext) {
     })
     .unwrap();
 
-    cx.update_window(handle.into(), |_, window, cx| {
+    // 正文容器的尺寸改从 gpui 自己的 debug selector 读（`.debug_selector` 记进
+    // `rendered_frame.debug_bounds`）：编辑器整片迁到 `lithe-ui` 之后，上游 gpui-kit 那套
+    // `TestSupportExt::test_support()` 观察包装不再属于本 crate。
+    let mut window = gpui::VisualTestContext::from_window(handle.into(), cx);
+    window.update(|window, cx| {
         window.render_frame(cx);
-        let host = window.find(lithe_gpui_editor::EDITOR_HOST_ELEMENT_ID);
-        println!(
-            "EDITOR_HOST bounds={:?} size={:?}",
-            host.bounds().origin,
-            host.bounds().size
-        );
-        assert!(
-            host.bounds().size.height >= px(100.),
-            "编辑器正文容器必须在标签栏下面拿到真实高度（实测 {:?}）：\
-             高度为 0 时 gpui-component 的 Editor 什么都不画，用户看到的就是'打开文件后一片黑'",
-            host.bounds().size.height
-        );
-    })
-    .unwrap();
+    });
+    let host = window
+        .debug_bounds(lithe_gpui_editor::EDITOR_HOST_ELEMENT_ID)
+        .expect("编辑器正文容器必须带 debug selector（EDITOR_HOST_ELEMENT_ID），UI 测试就是靠它量高度的");
+    println!("EDITOR_HOST bounds={:?} size={:?}", host.origin, host.size);
+    assert!(
+        host.size.height >= px(100.),
+        "编辑器正文容器必须在标签栏下面拿到真实高度（实测 {:?}）：高度为 0 时编辑器什么都不画，用户看到的就是打开文件后一片黑",
+        host.size.height
+    );
 }
 
 #[gpui::test]

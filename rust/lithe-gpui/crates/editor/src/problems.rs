@@ -7,8 +7,8 @@ use gpui::{
     AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, rems,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::{ActiveTheme as _, StyledExt as _};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::theme::ActiveTheme as _;
 
 use lithe_gpui_java::{JavaDiagnostic, JavaFileDiagnostics, JavaLanguageService};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
@@ -270,17 +270,17 @@ impl Render for ProblemsPane {
         } else if visible == 0 {
             self.empty_state(tr("lithe.diagnostics.noMatch"), true, cx)
         } else {
-            v_flex()
+            v_stack()
                 .w_full()
                 .children(self.file_groups(cx))
                 .into_any_element()
         };
 
-        v_flex()
+        v_stack()
             .size_full()
             .child(self.toolbar(counts, cx))
             .child(
-                v_flex()
+                v_stack()
                     .id("lithe-problems-list")
                     .w_full()
                     .flex_1()
@@ -295,19 +295,19 @@ impl Render for ProblemsPane {
 impl ProblemsPane {
     fn toolbar(&self, counts: Counts, cx: &Context<Self>) -> AnyElement {
         let total = counts.total().to_string();
-        let mut row = h_flex()
+        let mut row = h_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
             .px_2()
             .py_1()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
                 div()
                     .text_sm()
-                    .font_medium()
-                    .text_color(cx.theme().foreground)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr_args(
                         "lithe.diagnostics.problemCount",
                         &[("count", total.as_str())],
@@ -327,12 +327,12 @@ impl ProblemsPane {
             let color = if shown {
                 severity_color(level, cx)
             } else {
-                cx.theme().muted_foreground
+                cx.theme().colors.fg_muted
             };
             let label = tr(key).to_string();
             let count = count.to_string();
             row = row.child(
-                h_flex()
+                h_stack()
                     .id(SharedString::from(format!(
                         "problems-filter-{}",
                         level.id()
@@ -340,7 +340,7 @@ impl ProblemsPane {
                     .gap_1()
                     .px_1()
                     .rounded_sm()
-                    .when(shown, |this| this.bg(cx.theme().accent))
+                    .when(shown, |this| this.bg(cx.theme().colors.active))
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle(level, cx)))
                     .child(idea_icon_image(severity_icon(level), cx, rems(0.75)))
@@ -370,8 +370,8 @@ impl ProblemsPane {
             }
             let collapsed = self.collapsed.contains(&file.path);
             let path = file.path.clone();
-            let mut group = v_flex().w_full().child(
-                h_flex()
+            let mut group = v_stack().w_full().child(
+                h_stack()
                     .id(SharedString::from(format!(
                         "problems-file-{}",
                         file.path.display()
@@ -395,8 +395,8 @@ impl ProblemsPane {
                         div()
                             .flex_shrink_0()
                             .text_sm()
-                            .font_medium()
-                            .text_color(cx.theme().foreground)
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(cx.theme().colors.fg)
                             .child(file.name.clone()),
                     )
                     .child(
@@ -404,14 +404,14 @@ impl ProblemsPane {
                             .min_w_0()
                             .truncate()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(file.directory.clone()),
                     )
                     .child(
                         div()
                             .flex_shrink_0()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(format!("({})", problems.len())),
                     ),
             );
@@ -436,7 +436,7 @@ impl ProblemsPane {
         let path = path.to_path_buf();
         let entry = problem.clone();
 
-        h_flex()
+        h_stack()
             .id(SharedString::from(format!(
                 "problems-row-{}-{}-{}",
                 path.display(),
@@ -458,29 +458,29 @@ impl ProblemsPane {
                 rems(0.75),
             ))
             .child(
-                v_flex()
+                v_stack()
                     .min_w_0()
                     .flex_1()
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().foreground)
+                            .text_color(cx.theme().colors.fg)
                             .child(problem.message.clone()),
                     )
                     .child(
-                        h_flex()
+                        h_stack()
                             .gap_2()
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
+                                    .text_color(cx.theme().colors.fg_muted)
                                     .child(location),
                             )
                             .when(!source.is_empty(), |this| {
                                 this.child(
                                     div()
                                         .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
+                                        .text_color(cx.theme().colors.fg_muted)
                                         .child(source),
                                 )
                             }),
@@ -490,7 +490,7 @@ impl ProblemsPane {
     }
 
     fn empty_state(&self, title: SharedString, reset: bool, cx: &Context<Self>) -> AnyElement {
-        v_flex()
+        v_stack()
             .w_full()
             .items_center()
             .justify_center()
@@ -499,7 +499,7 @@ impl ProblemsPane {
             .child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(title),
             )
             .when(reset, |this| {
@@ -507,7 +507,7 @@ impl ProblemsPane {
                     div()
                         .id("problems-reset-filters")
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| this.reset_filter(cx)))
                         .child(tr("lithe.diagnostics.resetFilters")),
@@ -527,9 +527,9 @@ fn severity_icon(level: Level) -> &'static idea::IdeaIcon {
 
 fn severity_color(level: Level, cx: &Context<ProblemsPane>) -> gpui::Hsla {
     match level {
-        Level::Error => cx.theme().danger,
-        Level::Warning => cx.theme().warning,
-        _ => cx.theme().info,
+        Level::Error => cx.theme().colors.danger,
+        Level::Warning => cx.theme().colors.warning,
+        _ => cx.theme().colors.info,
     }
 }
 

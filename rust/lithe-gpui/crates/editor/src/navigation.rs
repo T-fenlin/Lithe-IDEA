@@ -1,8 +1,22 @@
+//! 语义跳转、以及**编辑器列口径与 LSP 列口径之间的唯一换算点**。
+//!
+//! 两个口径必须分清，混用不会报错、只会静默跳错位置：
+//!
+//! * **编辑器**：`(行, 字符列)` —— 一列就是一个字符（`char`），跳转历史里记的是它；
+//! * **LSP / Core**：`(行, UTF-16 码元列)` —— 一个 emoji 是两列。协议边界上的一切
+//!   （补全、悬停、定义、诊断、代码动作的请求与响应）都走这个口径。
+//!
+//! 组件库的编辑器只给**字节偏移**一种坐标（`CodeEditor::cursor_offset` / `set_cursor_offset`），
+//! 所以换算全在本文件：`core_position` 把偏移读成 UTF-16 列，`editor_position` /
+//! `offset_for_utf16` 把协议坐标换回编辑器坐标，`line_character` / `byte_offset` 是跳转历史
+//! 用的字符列口径。
+
+use std::ops::Range;
 use std::path::PathBuf;
 
-use gpui_kit::component::input::{Position, Rope, RopeExt};
 use lithe_gpui_java::{JavaLanguageService, JavaTarget};
 use lithe_gpui_shared::core_json;
+use lsp_types::Position;
 use serde_json::{Value, json};
 
 const BUILTIN_NAVIGATION: &str = "lsp.builtinNavigation";
@@ -32,14 +46,14 @@ pub(crate) enum NavTarget {
 pub(crate) fn resolve_target(
     java: Option<&JavaLanguageService>,
     file_path: &str,
-    text: &Rope,
+    text: &str,
     offset: usize,
 ) -> Result<Option<NavTarget>, String> {
     if let Some(service) = java.filter(|_| is_java_source(file_path)) {
         let (line, utf16_column) = core_position(text, offset);
         match service.definition(
             std::path::Path::new(file_path),
-            &text.to_string(),
+            text,
             line as u32,
             utf16_column as u32,
         ) {
@@ -85,13 +99,13 @@ fn is_java_source(file_path: &str) -> bool {
 
 pub(crate) fn definition_target(
     file_path: &str,
-    text: &Rope,
+    text: &str,
     offset: usize,
 ) -> Result<Option<Position>, String> {
     let (line, utf16_column) = core_position(text, offset);
     let request = json!({
         "filePath": file_path,
-        "text": text.to_string(),
+        "text": text,
         "position": { "line": line, "utf16Column": utf16_column },
         "method": DEFINITION_METHOD,
     });
@@ -127,16 +141,138 @@ pub(crate) fn definition_target(
     )))
 }
 
-pub(crate) fn core_position(text: &Rope, offset: usize) -> (u64, usize) {
-    let point = text.offset_to_point(offset);
-    let line = text.slice_line(point.row);
-    (point.row as u64, line.byte_to_utf16_idx(point.column))
+/// A byte offset pulled onto a whole character inside `text` (an offset past its end lands on the end).
+pub(crate) fn clamped_offset(text: &str, offset: usize) -> usize {
+    let mut offset = offset.min(text.len());
+    while offset > 0 && !text.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    offset
 }
 
-pub(crate) fn editor_position(text: &Rope, line: usize, utf16_column: usize) -> Position {
-    let line_text = text.slice_line(line);
-    let byte = line_text.utf16_to_byte_idx(utf16_column.min(line_text.len_utf16()));
-    Position::new(line as u32, line_text.slice(..byte).chars().count() as u32)
+/// The zero-based line a byte offset stands on, and the byte offset that line starts at.
+fn line_start(text: &str, offset: usize) -> (usize, usize) {
+    let mut line = 0usize;
+    let mut start = 0usize;
+    for (at, ch) in text.char_indices() {
+        if at >= offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            start = at + 1;
+        }
+    }
+    (line, start)
+}
+
+/// Where a zero-based line starts, and its own text — its terminator (`\n`, `\r\n` or `\r`) left out.
+/// `None` when the document has no such line at all.
+fn line_span(text: &str, line: usize) -> Option<(usize, &str)> {
+    let mut start = 0usize;
+    for _ in 0..line {
+        let at = text[start..].find('\n')?;
+        start += at + 1;
+    }
+    let rest = &text[start..];
+    let end = rest.find('\n').map_or(rest.len(), |at| at);
+    let body = rest[..end].strip_suffix('\r').unwrap_or(&rest[..end]);
+    Some((start, body))
+}
+
+/// The LSP reading of a byte offset: zero-based line and a column in **UTF-16 code units**.
+pub(crate) fn core_position(text: &str, offset: usize) -> (u64, usize) {
+    let offset = clamped_offset(text, offset);
+    let (line, start) = line_start(text, offset);
+    let column = text[start..offset].chars().map(char::len_utf16).sum();
+    (line as u64, column)
+}
+
+/// The byte offset of a zero-based line and a **UTF-16** column, pulled onto a whole character inside that
+/// line (a column past the line's end lands on its end, a column inside a character lands on that character's
+/// first byte, and a line the document does not have lands on the end of the text).
+pub(crate) fn offset_for_utf16(text: &str, line: usize, utf16_column: usize) -> usize {
+    let Some((start, body)) = line_span(text, line) else {
+        return text.len();
+    };
+    let mut units = 0usize;
+    let mut here = start;
+    for (at, ch) in body.char_indices() {
+        if units > utf16_column {
+            return here;
+        }
+        here = start + at;
+        units += ch.len_utf16();
+    }
+    if units > utf16_column {
+        here
+    } else {
+        start + body.len()
+    }
+}
+
+/// The editor's own reading of a byte offset: zero-based line and a **character** column.
+pub(crate) fn line_character(text: &str, offset: usize) -> Position {
+    let offset = clamped_offset(text, offset);
+    let (line, start) = line_start(text, offset);
+    Position::new(line as u32, text[start..offset].chars().count() as u32)
+}
+
+/// The editor position of a protocol position: the UTF-16 column is read back as a character column, which
+/// is what a jump history remembers.
+pub(crate) fn editor_position(text: &str, line: usize, utf16_column: usize) -> Position {
+    line_character(text, offset_for_utf16(text, line, utf16_column))
+}
+
+/// The byte offset of an editor position: zero-based line and a **character** column, clamped the same way
+/// as [`offset_for_utf16`].
+pub(crate) fn byte_offset(text: &str, position: Position) -> usize {
+    let Some((start, body)) = line_span(text, position.line as usize) else {
+        return text.len();
+    };
+    let column = position.character as usize;
+    let mut chars = 0usize;
+    let mut here = start;
+    for (at, _) in body.char_indices() {
+        if chars > column {
+            return here;
+        }
+        here = start + at;
+        chars += 1;
+    }
+    if chars > column {
+        here
+    } else {
+        start + body.len()
+    }
+}
+
+/// The identifier the byte offset **stands on** — letters, digits and `_` — or `None` over whitespace and
+/// punctuation, and `None` for an offset that is not on a whole character.
+pub(crate) fn word_range(text: &str, offset: usize) -> Option<Range<usize>> {
+    let offset = clamped_offset(text, offset);
+    let is_word = |ch: char| ch.is_alphanumeric() || ch == '_';
+    if !text[offset..].chars().next().is_some_and(is_word) {
+        return None;
+    }
+    let mut start = offset;
+    while start > 0 {
+        let Some(previous) = text[..start].chars().next_back() else {
+            break;
+        };
+        if !is_word(previous) {
+            break;
+        }
+        start -= previous.len_utf8();
+    }
+    let mut end = offset;
+    for ch in text[offset..].chars() {
+        if !is_word(ch) {
+            break;
+        }
+        end += ch.len_utf8();
+    }
+    Some(start..end)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -244,16 +380,15 @@ mod tests {
         }
     }
 
-    fn offset_of(text: &Rope, line: u32, character: u32) -> usize {
-        text.position_to_offset(&Position::new(line, character))
+    fn offset_of(text: &str, line: u32, character: u32) -> usize {
+        byte_offset(text, Position::new(line, character))
     }
 
     #[test]
     fn definition_lands_on_the_declaration() {
-        let text = Rope::from(SAMPLE);
-        let offset = offset_of(&text, 11, 18);
+        let offset = offset_of(SAMPLE, 11, 18);
 
-        let target = definition_target("Hello.java", &text, offset).expect("Core 调用成功");
+        let target = definition_target("Hello.java", SAMPLE, offset).expect("Core 调用成功");
 
         let target = target.expect("样本里 `add` 有声明，应当有目标");
         assert_eq!(target.line, 2, "目标应是第 3 行（0 基 2）的声明");
@@ -262,10 +397,9 @@ mod tests {
 
     #[test]
     fn definition_at_a_declaration_returns_itself() {
-        let text = Rope::from(SAMPLE);
-        let offset = offset_of(&text, 2, 15);
+        let offset = offset_of(SAMPLE, 2, 15);
 
-        let target = definition_target("Hello.java", &text, offset)
+        let target = definition_target("Hello.java", SAMPLE, offset)
             .expect("Core 调用成功")
             .expect("声明自己也是一个目标");
 
@@ -274,11 +408,10 @@ mod tests {
 
     #[test]
     fn definition_without_a_matching_identifier_reports_nothing() {
-        let text = Rope::from(SAMPLE);
-        let offset = offset_of(&text, 1, 0);
+        let offset = offset_of(SAMPLE, 1, 0);
 
         assert_eq!(
-            definition_target("Hello.java", &text, offset).expect("Core 调用成功"),
+            definition_target("Hello.java", SAMPLE, offset).expect("Core 调用成功"),
             None
         );
     }
@@ -293,10 +426,9 @@ mod tests {
 
     #[test]
     fn without_a_java_service_the_builtin_navigation_still_answers() {
-        let text = Rope::from(SAMPLE);
-        let offset = offset_of(&text, 11, 18);
+        let offset = offset_of(SAMPLE, 11, 18);
 
-        let target = resolve_target(None, "Hello.java", &text, offset)
+        let target = resolve_target(None, "Hello.java", SAMPLE, offset)
             .expect("Core 调用成功")
             .expect("样本里 `add` 有声明");
         let NavTarget::Local(position) = target else {
@@ -307,20 +439,64 @@ mod tests {
 
     #[test]
     fn utf16_and_character_columns_are_not_interchangeable() {
-        let text = Rope::from("String s = \"🎉\"; int value = 1;\n");
+        let text = "String s = \"🎉\"; int value = 1;\n";
 
-        let offset = offset_of(&text, 0, 20);
+        let offset = offset_of(text, 0, 20);
         assert_eq!(
-            core_position(&text, offset),
+            core_position(text, offset),
             (0, 21),
             "字节偏移要按 UTF-16 报给 Core"
         );
 
-        let position = editor_position(&text, 0, 21);
+        let position = editor_position(text, 0, 21);
         assert_eq!(
             position.character, 20,
             "Core 的 UTF-16 列换回编辑器时要变成字符列（少掉的正是 🎉 的第二个码元）"
         );
+    }
+
+    /// 行首、行尾、行尾之后、以及没有的那一行：都夹到该行的字符上，不切字符、不 panic。
+    #[test]
+    fn columns_are_clamped_onto_whole_characters_of_their_line() {
+        let text = "ab\n🎉 cd\nlast";
+        assert_eq!(offset_of(text, 0, 0), 0);
+        assert_eq!(offset_of(text, 0, 99), 2, "行尾就是该行的换行符之前");
+        assert_eq!(offset_of(text, 1, 0), 3);
+        assert_eq!(
+            offset_of(text, 1, 1),
+            7,
+            "**字符**列 1 是 emoji 之后那个空格（编辑器口径，一个 emoji 算一列）"
+        );
+        assert_eq!(offset_of(text, 1, 3), 9, "字符列 3 是 `d`");
+        assert_eq!(offset_of(text, 2, 99), text.len());
+        assert_eq!(offset_of(text, 99, 0), text.len(), "没有的行夹到文本末尾");
+    }
+
+    /// UTF-16 列与字符列不是一回事：emoji 占两列，落在它中间的那一列夹回它的起点。
+    #[test]
+    fn utf16_columns_are_clamped_too() {
+        let text = "ab\n🎉 cd\nlast";
+        assert_eq!(offset_for_utf16(text, 1, 0), 3);
+        assert_eq!(offset_for_utf16(text, 1, 1), 3, "emoji 中间 → 它的起点");
+        assert_eq!(offset_for_utf16(text, 1, 2), 7, "emoji 之后");
+        assert_eq!(
+            core_position(text, 7),
+            (1, 2),
+            "emoji 之后第 7 个字节按 UTF-16 报 2 列"
+        );
+    }
+
+    #[test]
+    fn a_word_is_the_identifier_an_offset_stands_on() {
+        let text = "let total = 2;";
+        assert_eq!(word_range(text, 5), Some(4..9), "`total` 从 4 到 9");
+        assert_eq!(word_range(text, 4), Some(4..9));
+        assert_eq!(word_range(text, 8), Some(4..9));
+        assert_eq!(word_range(text, 2), Some(0..3), "`let`");
+        assert_eq!(word_range(text, 3), None, "空格上不是词");
+        assert_eq!(word_range(text, 9), None, "词之后紧邻的空格上不是词");
+        assert_eq!(word_range(text, 15), None, "文本末尾之后也不是词");
+        assert_eq!(word_range("中文 x", 0), Some(0..6), "中日韩字符算词字符");
     }
 
     #[test]
