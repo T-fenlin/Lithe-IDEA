@@ -2747,15 +2747,6 @@ dependencies = [
  "smallvec",
  "smol",
  "tracing",
- "tree-sitter",
- "tree-sitter-bash",
- "tree-sitter-java",
- "tree-sitter-json",
- "tree-sitter-kotlin-sg",
- "tree-sitter-md",
- "tree-sitter-sequel",
- "tree-sitter-toml-ng",
- "tree-sitter-yaml",
  "uuid",
  "windows 0.58.0",
 ]
@@ -4424,15 +4415,14 @@ dependencies = [
 name = "lithe-gpui-editor"
 version = "0.0.1"
 dependencies = [
- "gpui-kit",
  "gpui-pre",
  "lithe-gpui-java",
+ "lithe-gpui-languages",
  "lithe-gpui-notify",
  "lithe-gpui-shared",
  "lithe-ui",
  "lsp-types",
  "serde_json",
- "tree-sitter-xml",
 ]
 
 [[package]]
@@ -4541,9 +4531,9 @@ dependencies = [
 name = "lithe-gpui-terminal"
 version = "0.0.1"
 dependencies = [
- "gpui-kit",
  "gpui-pre",
  "lithe-gpui-shared",
+ "lithe-ui",
 ]
 
 [[package]]

@@ -3,6 +3,7 @@ mod files;
 mod grouped;
 mod item;
 mod long;
+mod messages;
 mod outline;
 mod project;
 mod sections;
@@ -20,6 +21,7 @@ pub use files::{FileTree, GitStatus};
 pub use grouped::GroupedList;
 pub use item::{List, ListItem};
 pub use long::{InfiniteList, VirtualList};
+pub use messages::{MessageScroller, MessageScrollerState};
 pub use outline::Outline;
 pub use project::{
     PROJECT_ACTIONS, ProjectAction, ProjectAsset, ProjectIcon, ProjectIconRequest, ProjectLabels,

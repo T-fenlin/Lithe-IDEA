@@ -71,9 +71,19 @@ pub(crate) fn terminals_aria() -> SharedString {
     tr(TERMINALS_ARIA_KEY)
 }
 
+// 下面三个几何规格现在**只有测试**在读（宿主原来的 `h(...)` / `rounded(...)` 随库
+// `Button` / `Input` 的几何收口而消失，见 `terminal_view.rs` 的差异注释）。常量本身
+// 仍是终端的规格真源，留在这里等对应的库片把入口补回来。
+#[allow(dead_code)]
 pub(crate) const CHROME_RADIUS: f32 = 4.;
+#[allow(dead_code)]
 pub(crate) const STATUS_LINE_HEIGHT: f32 = 24.;
 pub(crate) const TERMINAL_LINE_HEIGHT: f32 = 1.;
+/// 转录每行的横向内衬（终端的规格真源）。**当前没有读点**：迁到组件库的
+/// `lists::MessageScroller` 之后，逐行内衬归库自己（每行 `px_3`），而库还没有
+/// `with_row_style` 那样的入口把 16px 交回去——这个缺口登记在移植汇报里，
+/// 库片补上后这里会重新被读到。
+#[allow(dead_code)]
 pub(crate) const TERMINAL_PADDING_INLINE: f32 = 16.;
 pub(crate) const MAX_LINES: usize = 10_000;
 pub(crate) const READ_BUFFER: usize = 4 * 1024;

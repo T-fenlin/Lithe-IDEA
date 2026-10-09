@@ -26,5 +26,5 @@ pub use palette::{
     Command, CommandPalette, QuickLauncher, QuickOpen, QuickSwitcher, SearchPalette,
 };
 pub use steps::{Steps, Wizard};
-pub use tabs::{TabPlacement, Tabs};
+pub use tabs::{Tab, TabBar, TabPlacement, Tabs};
 pub use toc::{Anchor, Sections, TableOfContents};

@@ -85,6 +85,213 @@ impl Tabs {
     }
 }
 
+/// One tab of a [`TabBar`]: its own content, an optional trailing slot (a close
+/// button) and the words screen readers announce it by.
+///
+/// 内容先收进一个 `Div`（[`Tab::new`] 取任意元素、[`Tab::label`] 取一句正文），
+/// 所以 `Tab` 自己**不是**一个 `RenderOnce` 组件——它只是 [`TabBar`] 攒起来的一张表。
+pub struct Tab {
+    content: AnyElement,
+    suffix: Option<AnyElement>,
+    aria_label: Option<SharedString>,
+}
+
+impl Tab {
+    /// A tab whose body is `content`.
+    pub fn new(content: impl IntoElement) -> Self {
+        Self {
+            content: div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .child(content)
+                .into_any_element(),
+            suffix: None,
+            aria_label: None,
+        }
+    }
+
+    /// A tab whose body is a line of text.
+    pub fn label(label: impl Into<SharedString>) -> Self {
+        Self::new(label.into())
+    }
+
+    /// Its trailing slot, beside the content: a close button, a badge.
+    pub fn suffix(mut self, suffix: impl IntoElement) -> Self {
+        self.suffix = Some(suffix.into_any_element());
+        self
+    }
+
+    /// The words it is announced by, for a tab whose content does not read as its name.
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+}
+
+impl From<&'static str> for Tab {
+    fn from(label: &'static str) -> Self {
+        Tab::label(label)
+    }
+}
+
+impl From<SharedString> for Tab {
+    fn from(label: SharedString) -> Self {
+        Tab::label(label)
+    }
+}
+
+/// A strip of tabs whose bodies belong to the caller. Each tab carries its own
+/// content and an optional trailing slot, and the chosen one is drawn with the
+/// accent underline.
+///
+/// Unlike [`super::Tabs`], which turns plain [`Choice`]s into labels, this one
+/// takes whole elements, so a tab can hold a close button or any other control.
+/// A `suffix` on the bar itself holds the controls that belong beside the strip
+/// (new tab, clear, a profile menu).
+#[derive(IntoElement)]
+pub struct TabBar {
+    id: ElementId,
+    tabs: Vec<Tab>,
+    selected: usize,
+    suffix: Option<AnyElement>,
+    max_width: Option<Pixels>,
+    on_click: Option<OnIndex>,
+}
+
+type OnIndex = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+impl TabBar {
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            tabs: Vec::new(),
+            selected: 0,
+            suffix: None,
+            max_width: None,
+            on_click: None,
+        }
+    }
+
+    /// Which tab is drawn as chosen; out of range draws none of them chosen.
+    pub fn selected_index(mut self, selected: usize) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// Add one tab.
+    pub fn child(mut self, tab: impl Into<Tab>) -> Self {
+        self.tabs.push(tab.into());
+        self
+    }
+
+    /// Add several tabs.
+    pub fn children(mut self, tabs: impl IntoIterator<Item = impl Into<Tab>>) -> Self {
+        self.tabs.extend(tabs.into_iter().map(Into::into));
+        self
+    }
+
+    /// The controls beside the strip, after the last tab.
+    pub fn suffix(mut self, suffix: impl IntoElement) -> Self {
+        self.suffix = Some(suffix.into_any_element());
+        self
+    }
+
+    /// Cap each tab's width.
+    pub fn max_width(mut self, width: impl Into<Pixels>) -> Self {
+        self.max_width = Some(width.into());
+        self
+    }
+
+    /// Runs with the pressed tab's index.
+    pub fn on_click(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
+        self.on_click = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for TabBar {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let height = theme.control_height(Size::Medium);
+        let thickness = theme.underline_thickness();
+        let radius = theme.radius(Radius::Md);
+        let text = theme.text_size(TextSize::Sm);
+        let max_width = self.max_width;
+        let tabs = self
+            .tabs
+            .into_iter()
+            .enumerate()
+            .map(|(ix, tab)| {
+                let chosen = ix == self.selected;
+                let click = self.on_click.clone();
+                let label = tab.aria_label.clone();
+                let (fg, weight) = if chosen {
+                    (colors.fg, FontWeight::MEDIUM)
+                } else {
+                    (colors.fg_muted, FontWeight::NORMAL)
+                };
+                let mut item = div()
+                    .id(("tab-bar-item", ix))
+                    .role(Role::Tab)
+                    .aria_selected(chosen)
+                    .when_some(label, |item, label| item.aria_label(label))
+                    .relative()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_1p5()
+                    .h(height)
+                    .px_3()
+                    .rounded(radius)
+                    .text_size(text)
+                    .font_weight(weight)
+                    .text_color(fg)
+                    .map(|item| match max_width {
+                        Some(width) => item.max_w(width),
+                        None => item,
+                    })
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, move |_, window, _| {
+                        window.prevent_default()
+                    })
+                    .on_click(move |_, window, cx| {
+                        if let Some(click) = &click {
+                            click(ix, window, cx);
+                        }
+                    })
+                    .hover(|style| style.text_color(colors.fg));
+                if chosen {
+                    item = item.child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .bottom_0()
+                            .h(thickness)
+                            .bg(colors.accent),
+                    );
+                }
+                item.child(tab.content).children(tab.suffix)
+            })
+            .collect::<Vec<_>>();
+
+        div()
+            .id(self.id)
+            .flex()
+            .items_center()
+            .min_w_0()
+            .border_b_1()
+            .border_color(colors.border)
+            .children(tabs)
+            .children(
+                self.suffix
+                    .map(|suffix| div().flex_none().px_1().child(suffix)),
+            )
+    }
+}
+
 impl RenderOnce for Tabs {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let values: Vec<SharedString> = self.tabs.iter().map(|tab| tab.value.clone()).collect();

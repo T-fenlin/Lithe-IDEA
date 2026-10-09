@@ -6,9 +6,9 @@ use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use gpui::{AppContext as _, Context, SharedString, WeakEntity, Window};
-use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::message_scroller::MessageScrollerState;
+use gpui::{AppContext as _, Context, Focusable as _, SharedString, WeakEntity, Window};
+use lithe_ui::forms::{InputEvent, InputState};
+use lithe_ui::lists::MessageScrollerState;
 
 use crate::ansi::TerminalText;
 use crate::constants::{
@@ -205,10 +205,9 @@ impl gpui::EventEmitter<TerminalPaneEvent> for TerminalPane {}
 impl TerminalPane {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let profiles = profiles();
-        let input = cx.new(|cx| InputState::new(window, cx));
-        input.update(cx, |state, cx| {
-            state.set_placeholder(input_placeholder(), window, cx);
-        });
+        // 库的 `InputState::placeholder` 是构造期 builder（宿主的 `set_placeholder` 是运行期
+        // setter，且要 `window`），占位文案在构造时一次给定即可。
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(input_placeholder()));
 
         let input_events = cx.subscribe_in(
             &input,
@@ -218,7 +217,8 @@ impl TerminalPane {
              event: &InputEvent,
              window: &mut Window,
              cx: &mut Context<Self>| {
-                if matches!(event, InputEvent::PressEnter { .. }) {
+                // 宿主是 `InputEvent::PressEnter { .. }`；库把回车收成一个无载荷变体 `Submit`。
+                if matches!(event, InputEvent::Submit) {
                     this.submit_input(window, cx);
                 }
             },
@@ -286,8 +286,13 @@ impl TerminalPane {
     }
 
     fn focus_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+        // 库把 `InputState` 的聚焦收成 `Focusable`（`focus_handle`），聚焦动作由窗口做——
+        // 宿主的 `state.focus(window, cx)` 在这边没有对等物。
         let input = self.input.clone();
-        input.update(cx, |state, cx| state.focus(window, cx));
+        input.update(cx, |state, cx| {
+            let handle = state.focus_handle(cx);
+            window.focus(&handle, cx);
+        });
     }
 
     #[allow(dead_code)]
@@ -474,12 +479,15 @@ impl TerminalPane {
     }
 
     pub(crate) fn submit_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let value = self.input.read(&**cx).value();
+        // 库的读值是 `text()`（宿主的 `value()`）；`set_value(.., window, cx)` 在库侧是
+        // `set_text(.., cx)`——两处都不再要 `window`。
+        let value = self.input.read(&**cx).text().to_string();
         let line = value.trim_end_matches(['\r', '\n']).to_string();
         if line.trim().is_empty() {
             return;
         }
 
+        let _ = window;
         let mut delivered = false;
         if let Some(tab) = self.tabs.get(self.active)
             && let Some(writer) = &tab.session.writer
@@ -494,7 +502,7 @@ impl TerminalPane {
 
         let input = self.input.clone();
         input.update(cx, |state, cx| {
-            state.set_value(SharedString::default(), window, cx);
+            state.set_text("", cx);
         });
         cx.notify();
     }

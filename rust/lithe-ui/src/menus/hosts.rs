@@ -119,6 +119,8 @@ pub struct OverflowMenu {
     id: ElementId,
     menu: Menu,
     icon: IconName,
+    /// 以**元素**给出的图标（宿主自己的图标体系），优先于 [`Self::icon`]。
+    icon_element: Option<AnyElement>,
     tooltip: SharedString,
 }
 
@@ -128,12 +130,22 @@ impl OverflowMenu {
             id: id.into(),
             menu,
             icon: IconName::Ellipsis,
+            icon_element: None,
             tooltip: "More".into(),
         }
     }
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = icon;
+        self
+    }
+
+    /// 图标以**元素**传入——给"图标来自宿主自己的图标体系"的场景用。
+    ///
+    /// 与 [`crate::buttons::Button::icon_element`] 同一口径：库内 [`IconName`] 走
+    /// [`Self::icon`]，宿主（如 Lithe 的 IDEA 单色图标集）的元素走这里，两者都给时以元素为准。
+    pub fn icon_element(mut self, icon: impl IntoElement) -> Self {
+        self.icon_element = Some(icon.into_any_element());
         self
     }
 
@@ -148,9 +160,12 @@ impl RenderOnce for OverflowMenu {
         let state = state(&self.id, window, cx);
         let click = toggle(&state, &self.menu, cx);
         let button = Button::new((self.id.clone(), "button"))
-            .icon(self.icon)
             .variant(ButtonVariant::Ghost)
             .tooltip(self.tooltip)
+            .map(|button| match self.icon_element {
+                Some(icon) => button.icon_element(icon),
+                None => button.icon(self.icon),
+            })
             .on_click(move |event, window, cx| click(event, window, cx));
         host(self.id, button, &self.menu, &state, None, window, cx)
     }
