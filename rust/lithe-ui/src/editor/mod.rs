@@ -53,7 +53,7 @@ pub use problems::{Problem, ProblemsPanel};
 pub use refactor::{ActionKind, CodeAction, CodeActionMenu, RenameInput};
 pub use search::{FileHits, Hit, ReferencesPanel, SearchPanel, SearchResultItem};
 pub use settings::{Setting, SettingValue, SettingsEditor, settings_json};
-pub use state::{CodeEditor, CursorShape, EditorEvent, LineNumbers};
+pub use state::{CodeEditor, CursorShape, EditorEvent, LineNumbers, PopupKey};
 pub use status::{
     BranchIndicator, CursorPosition, Encoding, IndentSettings, LanguageMode, LineEnding, LspState,
     LspStatus, NotificationBell,

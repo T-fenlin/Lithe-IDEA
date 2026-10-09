@@ -37,6 +37,33 @@ pub enum CursorShape {
     Underline,
 }
 
+/// A navigation key pressed while a popup owned by the owner has the keyboard.
+///
+/// The editor did **not** act on it: a popup that keeps the keyboard while the caret still belongs to the
+/// editor (a completion menu, a code-action list) would otherwise never see its own navigation keys, because
+/// the editor's bindings take them first. The owner decides what each key means for its popup — moving the
+/// highlight, accepting, closing — and the library keeps no state beyond whether a popup is active
+/// ([`CodeEditor::set_popup_active`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PopupKey {
+    /// `up`.
+    Up,
+    /// `down`.
+    Down,
+    /// `pageup`.
+    PageUp,
+    /// `pagedown`.
+    PageDown,
+    /// `enter`.
+    Enter,
+    /// `tab`.
+    Tab,
+    /// `escape`.
+    Escape,
+    /// `backspace`.
+    Backspace,
+}
+
 /// What the editor tells its owner.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorEvent {
@@ -60,6 +87,11 @@ pub enum EditorEvent {
     /// and pushes it back with [`CodeEditor::present_hover`]. Leaving a symbol raises nothing: when to take a
     /// hover down is the owner's business.
     HoverRequested(usize),
+    /// A navigation key the owner's popup owns, which the editor left alone.
+    ///
+    /// Raised only while [`CodeEditor::set_popup_active`] says a popup is active; the popup's selection,
+    /// highlight, acceptance and dismissal are all the owner's business.
+    PopupKey(PopupKey),
 }
 
 /// The editor's look and manners.
@@ -144,6 +176,9 @@ pub struct CodeEditor {
     /// The symbol the pointer is over now, so one symbol is asked for only once
     /// ([`EditorEvent::HoverRequested`]).
     pub(crate) hover_symbol: Option<Range<usize>>,
+    /// While true, the navigation keys a popup uses are reported instead of acted on
+    /// ([`CodeEditor::set_popup_active`]).
+    pub(crate) popup_active: bool,
     pub(crate) dragging: bool,
     pub(crate) caret_on: bool,
     /// Blink runs only while focused, or unseen cursors redraw forever.
@@ -220,6 +255,7 @@ impl CodeEditor {
             completions: Vec::new(),
             hover: None,
             hover_symbol: None,
+            popup_active: false,
             dragging: false,
             caret_on: true,
             focused: false,
@@ -365,6 +401,40 @@ impl CodeEditor {
         log::info!("code editor: read only {read_only}");
         self.options.read_only = read_only;
         cx.notify();
+    }
+
+    /// Tells the editor that a popup owned by the owner (completion menu, code actions, …) has the keyboard.
+    /// While active the editor stops acting on the navigation keys below and reports them
+    /// ([`EditorEvent::PopupKey`]) instead, so the owner can drive its popup; everything else — typing, the input
+    /// method, selection, scrolling — keeps working, and the editor keeps the focus.
+    ///
+    /// The keys handed over are Up, Down, PageUp, PageDown, Enter, Tab, Escape and Backspace: with the popup up
+    /// they move its highlight, accept, close or step back instead of moving the caret, inserting, indenting or
+    /// deleting. Their modified forms are **not** handed over — `shift-up`, `shift-tab`, `ctrl-home` and the
+    /// editing keys (`delete`, `ctrl-backspace`) keep their editor behaviour, so an owner that wants one of those
+    /// handles it in its own key context. The library reports only what was pressed: choosing, highlighting,
+    /// accepting and closing stay the owner's, and no popup state beyond this switch is kept here.
+    ///
+    /// The popup is the owner's own surface, so the owner also clears this when it closes; a popup that is
+    /// dismissed keeps the editor from acting on those keys until it does.
+    pub fn set_popup_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if self.popup_active == active {
+            return;
+        }
+        self.popup_active = active;
+        cx.notify();
+    }
+
+    /// Reports a navigation key to the owner when its popup owns the keyboard, and answers whether it did.
+    ///
+    /// The one place the hand-over is decided: every action a popup key is bound to asks here first, so the
+    /// editor's own behaviour can only run while no popup is active.
+    pub(crate) fn report_popup_key(&mut self, key: PopupKey, cx: &mut Context<Self>) -> bool {
+        if !self.popup_active {
+            return false;
+        }
+        cx.emit(EditorEvent::PopupKey(key));
+        true
     }
 
     /// Selects these ranges, the last one primary.

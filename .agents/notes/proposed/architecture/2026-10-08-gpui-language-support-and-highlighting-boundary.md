@@ -192,11 +192,18 @@ editor crate 现在只是把这些结果包成上游的 provider（`completion.r
 
 **决策（按"缺能力补进 lithe-ui、不允许静默降级"的既定口径）：先补库，不做可见降级。** 拆两片：
 
-- **片 A（小，已开工）**：把"弹层接管键盘"做成**通用**接缝——`CodeEditor::set_popup_active(bool, cx)`
-  加 `EditorEvent::PopupKey(PopupKey)`（Up/Down/PageUp/PageDown/Enter/Tab/Escape/Backspace 在接管期间
+- **片 A（已落地，2026-10-08）**：把"弹层接管键盘"做成**通用**接缝——`CodeEditor::set_popup_active(bool, cx)`
+  加 `EditorEvent::PopupKey(PopupKey)`（`Up/Down/PageUp/PageDown/Enter/Tab/Escape/Backspace` 在接管期间
   **库不执行自己的动作、改为上报**，其余按键与 IME 照常，编辑器保持焦点）；外加
-  `set_scroll_offset(point, cx)`（夹到合法范围）。**不引入真正的按键转发机制**：只在既有 action 处理
-  里先看开关，命中就发事件后返回——改动小且不碰 `listen()` 的可见性。
+  `set_scroll_offset(point, cx)`（夹到合法范围）。**没有引入真正的按键转发机制**：8 个既有 action 的
+  处理里先看开关，命中就发事件后返回，未改 `listen()` 的可见性与 `CONTEXT`；仲裁点唯一
+  （`report_popup_key` 未激活时直接返回、不发事件也不 notify），所以**关着时逐字节等于改动前**
+  （测试 1581 → 1587 passed）。两处口径由实现拍板并写进 doc：**修饰形式不接管**（`shift-up`/`shift-tab`/
+  `ctrl-backspace` 等仍归编辑器），`enter`/`escape` 的守卫**先于**原有的焦点检查与内联 chat 分支。
+  顺带记一个后人会踩的坑：gpui 的 `UniformListScrollHandle::max_offset()` 返回的是**正值"可行进距离"**，
+  合法滚动区间是 `-reach..0`（内容装得下时 `reach == 0`），按负值夹取会直接 panic。
+  注意 `EditorEvent` 新增变体对**穷尽 match 的消费方是破坏性**的：本仓内消费点都在 lithe-ui，产品侧
+  在 L3 里接这个事件时要补分支。
 - **片 B（大，待排期）**：**软换行**。这是编辑器的布局特性（行表一行一行 → 需要按宽度折行的子行、
   影响度量、光标移动、折叠、gutter 与 `line_at_row` 的语义），规模明显大于片 A，必须独立成片并带自己的
   测试；片 B 落地前 L3 无法在不丢软换行的前提下收口。

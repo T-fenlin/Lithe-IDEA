@@ -1,6 +1,10 @@
 use gpui::{App, Context, InteractiveElement, KeyBinding, Window, actions};
 
-use super::{buffer::Buffer, cursor::Motion, state::CodeEditor};
+use super::{
+    buffer::Buffer,
+    cursor::Motion,
+    state::{CodeEditor, PopupKey},
+};
 
 actions!(
     ely_editor,
@@ -154,10 +158,22 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<CodeEditor
             ))
         };
     }
+    // The navigation keys of an owner's popup come first: with one active they are reported and the editor's
+    // own behaviour below never runs, so a completion menu keeps the keyboard while the caret stays here. Every
+    // other binding is untouched — typing goes through the input handler, and the keys left out of this list
+    // (`shift-up`, `delete`, `ctrl-home`, …) always keep their editor behaviour.
     let root = on!(root, Left, |e, _, cx| e.motion(Motion::Left, false, cx));
     let root = on!(root, Right, |e, _, cx| e.motion(Motion::Right, false, cx));
-    let root = on!(root, Up, |e, _, cx| e.motion(Motion::Up, false, cx));
-    let root = on!(root, Down, |e, _, cx| e.motion(Motion::Down, false, cx));
+    let root = on!(root, Up, |e, _, cx| {
+        if !e.report_popup_key(PopupKey::Up, cx) {
+            e.motion(Motion::Up, false, cx)
+        }
+    });
+    let root = on!(root, Down, |e, _, cx| {
+        if !e.report_popup_key(PopupKey::Down, cx) {
+            e.motion(Motion::Down, false, cx)
+        }
+    });
     let root = on!(root, SelectLeft, |e, _, cx| e.motion(
         Motion::Left,
         true,
@@ -234,18 +250,20 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<CodeEditor
         true,
         cx
     ));
-    let root = on!(root, PageUp, |e, _, cx| e.motion(
-        Motion::Page(-PAGE),
-        false,
-        cx
-    ));
-    let root = on!(root, PageDown, |e, _, cx| e.motion(
-        Motion::Page(PAGE),
-        false,
-        cx
-    ));
+    let root = on!(root, PageUp, |e, _, cx| {
+        if !e.report_popup_key(PopupKey::PageUp, cx) {
+            e.motion(Motion::Page(-PAGE), false, cx)
+        }
+    });
+    let root = on!(root, PageDown, |e, _, cx| {
+        if !e.report_popup_key(PopupKey::PageDown, cx) {
+            e.motion(Motion::Page(PAGE), false, cx)
+        }
+    });
     let root = on!(root, Backspace, |e, _, cx| {
-        e.delete_by(|buffer, at| buffer.previous(at)..at, cx)
+        if !e.report_popup_key(PopupKey::Backspace, cx) {
+            e.delete_by(|buffer, at| buffer.previous(at)..at, cx)
+        }
     });
     let root = on!(root, Delete, |e, _, cx| e
         .delete_by(|buffer, at| at..buffer.next(at), cx));
@@ -254,13 +272,20 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<CodeEditor
     });
     let root = on!(root, DeleteLineLeft, |e, _, cx| e.delete_by(line_left, cx));
     let root = on!(root, Newline, |e, window, cx| {
+        if e.report_popup_key(PopupKey::Enter, cx) {
+            return;
+        }
         if e.focus.is_focused(window) {
             e.newline(cx)
         } else {
             cx.propagate()
         }
     });
-    let root = on!(root, Indent, |e, _, cx| e.indent(cx));
+    let root = on!(root, Indent, |e, _, cx| {
+        if !e.report_popup_key(PopupKey::Tab, cx) {
+            e.indent(cx)
+        }
+    });
     let root = on!(root, Outdent, |e, _, cx| e.outdent(cx));
     let root = on!(root, Undo, |e, _, cx| e.undo(cx));
     let root = on!(root, Redo, |e, _, cx| e.redo(cx));
@@ -276,6 +301,9 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<CodeEditor
     let root = on!(root, AddCursorBelow, |e, _, cx| e.add_cursor(true, cx));
     let root = on!(root, SelectNext, |e, _, cx| e.select_next(cx));
     let root = on!(root, SingleCursor, |e, window, cx| {
+        if e.report_popup_key(PopupKey::Escape, cx) {
+            return;
+        }
         if e.marks.chat.is_some() {
             e.set_chat(None, window, cx)
         } else {

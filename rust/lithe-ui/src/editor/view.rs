@@ -271,6 +271,28 @@ impl CodeEditor {
         self.scroll.0.borrow().base_handle.offset()
     }
 
+    /// Scrolls the code area to `offset`, clamped to what the content allows (a negative `y` means the
+    /// content has scrolled up, the same sign as [`CodeEditor::scroll_offset`]). The owner calls this from its
+    /// wheel and scrollbar handling.
+    ///
+    /// The reading is the one an owner can compute before it calls — `-offset.y` is how far down the content
+    /// stands — and it is clamped twice for safety: here against the last measured travel, so
+    /// [`CodeEditor::scroll_offset`] answers a value that is already inside it, and again by the list on its next
+    /// layout, so a frame that changed height in between (a resize, a fold, new text) still cannot be scrolled
+    /// past its content. Before the first layout there is no measured content to scroll, so the offset stays at
+    /// the top and nothing panics.
+    pub fn set_scroll_offset(&mut self, offset: Point<Pixels>, cx: &mut Context<Self>) {
+        // The list reports how far its content can travel with a **positive** sign — a distance rather than an
+        // offset — so the range an offset may take is `-travel..0`, and content that fits has no travel at all.
+        let reach = self.scroll.0.borrow().base_handle.max_offset();
+        let clamped = point(
+            offset.x.clamp(-reach.x, Pixels::ZERO),
+            offset.y.clamp(-reach.y, Pixels::ZERO),
+        );
+        self.scroll.0.borrow().base_handle.set_offset(clamped);
+        cx.notify();
+    }
+
     /// The byte offset under a window point; `None` when that point is not on a row of code (the gutter,
     /// past the last row, a row that is not a whole line).
     ///

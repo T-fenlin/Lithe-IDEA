@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{
     Buffer, CodeEditor, CompletionItem, EditorEvent, GhostText, HoverInfo, InlayHint, LineNumbers,
-    SymbolKind, layout::Row, syntax,
+    PopupKey, SymbolKind, layout::Row, syntax,
 };
 use crate::theme::Theme;
 
@@ -792,4 +792,331 @@ fn only_a_focused_editor_blinks(cx: &mut TestAppContext) {
     cx.executor().advance_clock(Duration::from_secs(3));
     cx.run_until_parked();
     assert!(redraws.get() > 2, "a focused one blinks");
+}
+
+/// Binds the editor's keys, places the caret and focuses the editor, so the next keystrokes go through the real
+/// bindings. What every key test below starts from.
+fn ready(editor: &Entity<CodeEditor>, cx: &mut VisualTestContext, caret: usize) {
+    cx.update(|window, cx| {
+        super::keys::bind_keys(cx);
+        window.refresh();
+    });
+    editor.update(cx, |editor, cx| editor.select([caret..caret], cx));
+    let focus = editor.read_with(cx, |editor, _| editor.focus.clone());
+    cx.update(|window, cx| window.focus(&focus, cx));
+    cx.run_until_parked();
+}
+
+/// A popup that owns the keyboard takes the four navigation keys: each one is reported and the caret stays put,
+/// and once the popup closes the same keys move the caret again.
+#[gpui::test]
+fn a_popup_takes_the_arrow_keys_and_gives_them_back(cx: &mut TestAppContext) {
+    let text = "one\ntwo\nthree\nfour";
+    let (editor, cx) = editor(text, cx);
+    let (_watching, keys) = watch(&editor, cx, |event| match event {
+        EditorEvent::PopupKey(key) => Some(*key),
+        _ => None,
+    });
+    ready(&editor, cx, 0);
+    editor.update(cx, |editor, cx| editor.set_popup_active(true, cx));
+    cx.run_until_parked();
+    for (keystroke, key) in [
+        ("up", PopupKey::Up),
+        ("down", PopupKey::Down),
+        ("pageup", PopupKey::PageUp),
+        ("pagedown", PopupKey::PageDown),
+    ] {
+        cx.simulate_keystrokes(keystroke);
+        assert_eq!(
+            keys.borrow().last(),
+            Some(&key),
+            "{keystroke} is reported to the popup"
+        );
+        assert_eq!(
+            editor.read_with(cx, |editor, _| editor.cursor_offset()),
+            0,
+            "{keystroke} leaves the caret where it was"
+        );
+    }
+    assert_eq!(
+        keys.borrow().len(),
+        4,
+        "each press reports exactly its own key"
+    );
+    // `shift-down` is not a popup key: it still extends the selection the way the binding always did.
+    cx.simulate_keystrokes("shift-down");
+    assert_eq!(
+        keys.borrow().len(),
+        4,
+        "a modified arrow is not handed over"
+    );
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.selections()[0].range()),
+        0..4,
+        "so it selects as before"
+    );
+    editor.update(cx, |editor, cx| editor.set_popup_active(false, cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("down");
+    assert_eq!(keys.borrow().len(), 4, "a closed popup hears nothing more");
+    // The selection the modified arrow left ends at "two"'s start, so the caret it downloads onto the next
+    // line keeps that column: two lines down is the start of "three".
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.cursor_offset()),
+        8,
+        "and the editor moves the caret itself again"
+    );
+    assert!(
+        cx.update(|window, cx| editor.read(cx).focus.is_focused(window)),
+        "the editor still holds the keyboard"
+    );
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.text().to_string()),
+        text
+    );
+}
+
+/// Escape is the popup's before it is anything else's: with a popup up it closes nothing of the editor's own,
+/// while without one it still closes the inline chat the way the binding always did.
+#[gpui::test]
+fn a_popup_takes_escape_before_the_inline_chat(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("fn a() {\n    b();\n}\n", cx);
+    let (_watching, keys) = watch(&editor, cx, |event| match event {
+        EditorEvent::PopupKey(key) => Some(*key),
+        _ => None,
+    });
+    ready(&editor, cx, 0);
+    editor.update_in(cx, |editor, window, cx| {
+        editor.set_chat(Some(1), window, cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.chat_line()),
+        Some(1),
+        "the inline chat is open"
+    );
+    editor.update(cx, |editor, cx| editor.set_popup_active(true, cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("escape");
+    assert_eq!(keys.borrow().as_slice(), [PopupKey::Escape]);
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.chat_line()),
+        Some(1),
+        "the popup hears Escape, so the chat stays open"
+    );
+    editor.update(cx, |editor, cx| editor.set_popup_active(false, cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("escape");
+    assert_eq!(
+        keys.borrow().as_slice(),
+        [PopupKey::Escape],
+        "a closed popup hears nothing more"
+    );
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.chat_line()),
+        None,
+        "and Escape closes the chat again"
+    );
+}
+
+/// The editing keys a popup owns — Enter, Tab, Escape and Backspace — are reported and change nothing; when the
+/// popup closes each of them does its own work again.
+#[gpui::test]
+fn a_popup_takes_enter_tab_escape_and_backspace(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("one", cx);
+    let (_watching, keys) = watch(&editor, cx, |event| match event {
+        EditorEvent::PopupKey(key) => Some(*key),
+        _ => None,
+    });
+    ready(&editor, cx, 3);
+    editor.update(cx, |editor, cx| editor.set_popup_active(true, cx));
+    cx.run_until_parked();
+    for (keystroke, key) in [
+        ("enter", PopupKey::Enter),
+        ("tab", PopupKey::Tab),
+        ("escape", PopupKey::Escape),
+        ("backspace", PopupKey::Backspace),
+    ] {
+        cx.simulate_keystrokes(keystroke);
+        assert_eq!(
+            keys.borrow().last(),
+            Some(&key),
+            "{keystroke} is reported to the popup"
+        );
+        assert_eq!(
+            editor.read_with(cx, |editor, _| editor.text().to_string()),
+            "one",
+            "{keystroke} changes no text"
+        );
+        assert_eq!(
+            editor.read_with(cx, |editor, _| editor.cursor_offset()),
+            3,
+            "{keystroke} moves no caret"
+        );
+        assert_eq!(
+            editor.read_with(cx, |editor, _| editor.selections().len()),
+            1,
+            "{keystroke} changes no selection"
+        );
+    }
+    assert_eq!(keys.borrow().len(), 4);
+    editor.update(cx, |editor, cx| editor.set_popup_active(false, cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.text().to_string()),
+        "one\n",
+        "Enter inserts a line again"
+    );
+    cx.simulate_keystrokes("tab");
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.text().to_string()),
+        "one\n    ",
+        "Tab indents again"
+    );
+    cx.simulate_keystrokes("backspace backspace backspace backspace");
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.text().to_string()),
+        "one\n",
+        "Backspace deletes again"
+    );
+    assert_eq!(keys.borrow().len(), 4, "a closed popup hears nothing more");
+}
+
+/// A popup takes the navigation keys and nothing else: typing, the IME and the horizontal keys keep working
+/// while it is up, so the owner still sees the text the user types.
+#[gpui::test]
+fn a_popup_still_lets_typing_through(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("one", cx);
+    let (_watching, keys) = watch(&editor, cx, |event| match event {
+        EditorEvent::PopupKey(key) => Some(*key),
+        _ => None,
+    });
+    ready(&editor, cx, 3);
+    editor.update(cx, |editor, cx| editor.set_popup_active(true, cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("x");
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.text().to_string()),
+        "onex",
+        "a letter still types"
+    );
+    cx.simulate_keystrokes("left home end right");
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.cursor_offset()),
+        4,
+        "the horizontal keys still move the caret"
+    );
+    assert!(
+        keys.borrow().is_empty(),
+        "none of those is a popup key: {:?}",
+        keys.borrow()
+    );
+}
+
+/// An owner scrolling the code area with its own wheel or scrollbar: the offset it sets is the one the editor
+/// reads back, and one out of range is pulled onto the content's own bounds instead of scrolling into nothing.
+#[gpui::test]
+fn an_owner_sets_the_scroll_offset_within_the_content(cx: &mut TestAppContext) {
+    let mut text = String::new();
+    for line in 0..200 {
+        text.push_str(&format!("line {line};\n"));
+    }
+    let (editor, cx) = editor(&text, cx);
+    cx.run_until_parked();
+    // A wheel of its own: the value the owner asks for is what it reads back, and the rows move with it.
+    editor.update(cx, |editor, cx| {
+        editor.set_scroll_offset(point(px(0.), px(-120.)), cx);
+        assert_eq!(
+            editor.scroll_offset(),
+            point(px(0.), px(-120.)),
+            "an offset inside the content is kept as it was asked for"
+        );
+        let at = editor.visible_row_range().expect("a laid-out frame");
+        editor.set_scroll_offset(point(px(0.), px(-240.)), cx);
+        let further = editor.visible_row_range().expect("a laid-out frame");
+        assert!(
+            further.start > at.start,
+            "scrolling further shows later rows: {further:?} against {at:?}"
+        );
+    });
+    cx.run_until_parked();
+    let end = editor.read_with(cx, |editor, _| {
+        editor.visible_row_range().expect("a laid-out frame").end
+    });
+    let rows = editor.read_with(cx, |editor, _| editor.frame.rows.len());
+    editor.update(cx, |editor, cx| {
+        // Far past the end of a 200-line document: the offset stops where the content does, so the view is the
+        // last rows rather than an empty stretch past them.
+        editor.set_scroll_offset(point(px(0.), px(-1.0e9)), cx);
+        let far = editor.scroll_offset().y.as_f32();
+        assert!(
+            far < 0.0,
+            "a scroll past the end does not run away: {far} pixels"
+        );
+        assert!(
+            far.is_finite(),
+            "and it is a real number, not an overflow: {far}"
+        );
+        let shown = editor.visible_row_range().expect("a laid-out frame");
+        assert!(
+            shown.end <= rows && shown.end >= end,
+            "the far end shows the last rows of {rows}: {shown:?}"
+        );
+        assert!(
+            shown.end > rows - 40,
+            "and really reaches the bottom of the document: {shown:?}"
+        );
+        assert!(
+            editor.line_at_row(rows - 1).is_some(),
+            "the last row is still a line"
+        );
+        // Before the start of the content there is nothing to show, so the offset stops at the top.
+        editor.set_scroll_offset(point(px(0.), px(1.0e9)), cx);
+        assert_eq!(
+            editor.scroll_offset(),
+            point(px(0.), px(0.)),
+            "a scroll before the start stops at the first row"
+        );
+        assert_eq!(
+            editor.visible_row_range().map(|rows| rows.start),
+            Some(0),
+            "which is the first row"
+        );
+    });
+}
+
+/// A document that fits its window has nowhere to scroll: an owner's offset is pulled back to the top rather
+/// than leaving the first row half off screen.
+#[gpui::test]
+fn a_scroll_offset_on_content_that_fits_stays_at_the_top(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("one\ntwo", cx);
+    cx.run_until_parked();
+    editor.update(cx, |editor, cx| {
+        assert_eq!(
+            editor.visible_row_range(),
+            Some(0..2),
+            "two whole rows fill the window"
+        );
+        editor.set_scroll_offset(point(px(0.), px(-400.)), cx);
+        assert_eq!(
+            editor.scroll_offset(),
+            point(px(0.), px(0.)),
+            "an offset with nowhere to go stays at the top"
+        );
+        assert_eq!(
+            editor.visible_row_range(),
+            Some(0..2),
+            "and the first row is still where it was"
+        );
+        assert_eq!(editor.text(), "one\ntwo", "scrolling changes no text");
+    });
+    cx.run_until_parked();
+    editor.read_with(cx, |editor, _| {
+        assert_eq!(
+            editor.visible_row_range().map(|rows| rows.start),
+            Some(0),
+            "the next layout agrees: nothing moved"
+        );
+    });
 }
