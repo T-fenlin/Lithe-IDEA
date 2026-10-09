@@ -103,6 +103,29 @@
 `LanguageRegistry`/`GrammarConfig` → **本笔记的注册表**（`crates/editor/src/languages.rs` 那 42 行
 注册 XML 的文件随之删除）；`HighlightTheme` → `theme::Syntax`。
 
+### LSP 的界面编排要重建，但**数据层复用**
+
+产品编辑器今天不是自己接 core，而是把语言服务的结果适配进 `gpui-kit` `EditorState` **内置的 LSP
+子系统**（`state.lsp_mut()`、`lsp.completion_provider`、`lsp.completion_menu.max_width`、
+`Rc<dyn CompletionProvider>`）。删掉上游编辑器就删掉了这套子系统，所以补全/悬停/代码动作的
+**编排**（何时弹、弹在哪、键盘选择、接受后如何落编辑）必须重建。
+
+好消息是数据层不用动：`rust/lithe-gpui/crates/java`（`JavaLanguageService`，4000 行）
+**只依赖 `shared` 与 `url`，完全不碰 `gpui-kit`**，已经暴露 `prepare` / `definition` / `hover` /
+`completion` / `code_actions` / `diagnostics` / `workspace_diagnostics` / `sync_document`。
+editor crate 现在只是把这些结果包成上游的 provider（`completion.rs:39 install(...)`、
+`JavaCompletionProvider`）。
+
+组件库这一侧提供的是**展示件**而不是子系统：`hints.rs` 有 `CompletionItem`/`CompletionMenu`
+（`selected(usize)`、`on_pick`）与 `SignatureHelp`，`hover::HoverInfo`，`refactor::CodeActionMenu`；
+但 `CodeEditor` **没有** completion/hover/action 钩子，`view.rs` 也不渲染这些弹层。浮动层的落点用
+已经建好的门 G1 宿主（`lithe_ui::shell::{WindowRootExt::push_layer, open_rooted_window}`），
+即"组件库给展示件、宿主负责编排与定位"。
+
+**因此决策**：编排留在产品 crate（`rust/lithe-gpui/crates/editor`），数据仍走
+`lithe-gpui-java`；若编排需要而组件库缺少的能力（例如光标锚定的弹层定位助手），按仓库既有口径
+**补进 `lithe-ui` 或映射到最接近的 API**，不用空壳糊过去，也不把产品语义塞进通用组件库。
+
 ## 考虑过的备选方案
 
 1. **直接依赖 Zed 的编辑器与语言栈**。否决。一手证据（`gh api` 取 Zed main 的 crate manifest）：
