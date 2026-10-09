@@ -4411,6 +4411,7 @@ dependencies = [
  "embed-resource",
  "gpui-kit",
  "gpui-pre",
+ "gpui-pre-platform",
  "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-workbench",

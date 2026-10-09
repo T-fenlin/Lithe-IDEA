@@ -19,6 +19,13 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// 本工具随 2026-10-08 的「图标口径修正」**退役**：`GpuiKitFallbackIcons`（上游 gpui-kit 的 106 个
+// 名字）那份过渡垫片已从 `crates/app/src/assets.rs` 拆除，组件库组件自身的内部装饰图标改由
+// `lithe_ui::Assets`（本仓库自己的组件库 crate）提供。这里显式报错而不是静默什么都不做，
+// 免得有人还以为它在维护那份名单。
+console.error("sync-gpui-kit-icons.mjs 已退役：回落垫片已拆，组件库图标由 lithe_ui::Assets 提供。");
+process.exit(1);
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..", "..");
 const CRATES_DIR = resolve(REPO_ROOT, "rust/lithe-gpui/crates");

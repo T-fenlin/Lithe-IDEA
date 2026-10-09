@@ -576,16 +576,16 @@ fn main() {
         .clone()
         .unwrap_or_else(|| loaded.settings.gpui_locale().to_string());
 
-    gpui_kit::application()
+    gpui_platform::application()
         .with_assets(assets::LitheAssets)
         .run(move |cx| {
             #[cfg(debug_assertions)]
             {
                 eprintln!(
-                    "S1_ASSETS embedded={} idea_icons={} fallback_icons={}",
+                    "S1_ASSETS embedded={} idea_icons={} library_icons={}",
                     assets::LitheAssets::embedded_count(),
                     assets::LitheAssets::embedded_count_under("icons/idea/"),
-                    assets::LitheAssets::fallback_count()
+                    assets::LitheAssets::library_icon_count()
                 );
                 for &probe in assets::PROBE_PATHS {
                     let hit = assets::probe_len(probe);

@@ -2,143 +2,13 @@ use std::borrow::Cow;
 
 use gpui::{AssetSource, Result, SharedString};
 
-// 上游 `gpui-kit` 的图标回落子集（106 个名字）——**限期拆除的过渡垫片**，不是应用图标源。
-// （宏调用上面不能挂 `///`，rustc 会报 unused doc comment，所以这段用 `//`。）
+// 组件库组件**自身**的内部装饰图标（关闭 X、勾选 Check、子菜单箭头、严重度图标等）由
+// 组件库自带的资源源 `lithe_ui::Assets` 提供 —— 它同样是本仓库自有的 crate（`rust/lithe-ui`），
+// 不再借用外部 gpui-kit 的 106 个名字（那份过渡垫片已随本片拆除）。
 //
 // 口径（2026-10-08）：**应用**图标一律取自本仓库自己的图标集 `assets/icons/idea/**`
-// （`icons/idea/extension.json` 是清单真源），我们没有就留空；不许用组件库图标顶替。
-// 本回落子集不是给应用用的，它顶的是**上游组件自己内部**的装饰图标：
-// `Icon::new(IconName::X)` 之类的路径长这样 `icons/x.svg`，只可能由这里命中
-// （`LitheAssets` 内嵌表只有 `icons/idea/**`、`app-icon/**`、`images/**` 三组）。
-//
-// **为什么这一片不删**：宿主仍在渲染的组件库里，下面这些内部装饰图标就是靠它才画得出来的
-// （实测见 `.artifacts/logs/lithe-ui-internal-iconname.txt`）：
-// `lithe_ui::overlays::Dialog` 的关闭 `X`（`overlays/dialog.rs:228`）、
-// `lithe_ui::feedback::Toast`/`messages` 的关闭 `X`（`feedback/toast.rs:334`、`feedback/messages.rs:21`）、
-// `lithe_ui::menus` 的勾选 `Check` / 子菜单箭头 `ChevronRight`（`menus/draw.rs:27,78`）与
-// 下拉/溢出的 `ChevronDown`、`Ellipsis`（`menus/hosts.rs:109,130,214,357`）、
-// `lithe_ui::primitives::Severity::icon`（`primitives/severity.rs:37-39`）、
-// `lithe_ui::layout::DockPanel::plain` 的 `Square`（`layout/dock/mod.rs:142`）。
-// 一旦删掉它、宿主又没挂 `lithe_ui::Assets`，这些图标会**一起静默变空**。
-//
-// **拆除条件**（两条都满足才拆）：① 上表这些组件全部迁到本仓库自己的图标（走 `icons/idea/**`），
-// 或宿主改挂一份明确的图标来源；② `node rust/lithe-gpui/tools/sync-gpui-kit-icons.mjs` 的名单
-// 只由**上游组件内部**引用（不再含宿主代码自己点名的 `IconName::`）。在此之前它按垫片留存，
-// 且加任何新名字都要能说出「是哪个组件的内部装饰在用」。
-//
-// 另注：`lithe_ui` 自带的约 307 个图标（`rust/lithe-ui/assets/icons`）**不挂**进宿主资源源
-// —— 2026-10-08 的图标口径修正作废了「把 `lithe_ui::Assets` 挂进来」这条先前结论。
-gpui_kit::assets::icon_assets!(
-    GpuiKitFallbackIcons,
-    [
-        AppWindow,
-        ArrowDown,
-        ArrowDownLeft,
-        ArrowDownToLine,
-        ArrowUpRight,
-        Asterisk,
-        Ban,
-        BookOpen,
-        Braces,
-        Calendar,
-        CaseSensitive,
-        Check,
-        ChevronDown,
-        ChevronLeft,
-        ChevronRight,
-        ChevronUp,
-        ChevronsUpDown,
-        CircleCheck,
-        CircleDot,
-        CircleSlash,
-        CircleX,
-        Clipboard,
-        Close,
-        Code,
-        Copy,
-        CopyPlus,
-        Ellipsis,
-        ExternalLink,
-        Eye,
-        EyeOff,
-        File,
-        FileBraces,
-        FileCode,
-        FilePlusCorner,
-        FileText,
-        FileType,
-        FoldVertical,
-        Folder,
-        FolderClosed,
-        FolderCog,
-        FolderOpen,
-        FolderTree,
-        FolderX,
-        GitBranch,
-        GitGraph,
-        Github,
-        Image,
-        Inbox,
-        Info,
-        Inspector,
-        Leaf,
-        List,
-        ListOrdered,
-        Loader,
-        Map,
-        Maximize,
-        Minimize,
-        Minus,
-        Network,
-        Package,
-        PanelBottom,
-        PanelBottomOpen,
-        PanelLeft,
-        PanelLeftClose,
-        PanelLeftOpen,
-        PanelRight,
-        PanelRightClose,
-        PanelRightOpen,
-        Parentheses,
-        Pilcrow,
-        Plus,
-        Power,
-        Puzzle,
-        RefreshCw,
-        Replace,
-        SaveAll,
-        SaveCheck,
-        SavePen,
-        ScrollText,
-        Search,
-        Settings,
-        Signature,
-        SortAscending,
-        SortDescending,
-        Space,
-        Sparkles,
-        Square,
-        SquareActivity,
-        SquareDashed,
-        SquarePilcrow,
-        SquareTerminal,
-        SquareX,
-        Star,
-        StarFill,
-        Tag,
-        Terminal,
-        TextWrap,
-        TriangleAlert,
-        Undo2,
-        UnfoldVertical,
-        User,
-        WindowClose,
-        WindowMaximize,
-        WindowMinimize,
-        WindowRestore,
-        X,
-    ]
-);
+// （`icons/idea/extension.json` 是清单真源），我们没有就留空；不许用组件库图标顶替应用图标。
+// 两者命名空间由 `shared::icons::AppIcon` 在类型上隔开：应用图标只装本仓路径。
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../assets"]
@@ -160,9 +30,9 @@ impl LitheAssets {
     }
 
     #[must_use]
-    pub fn fallback_count() -> usize {
-        GpuiKitFallbackIcons
-            .list("")
+    pub fn library_icon_count() -> usize {
+        lithe_ui::Assets
+            .list("icons/")
             .map(|paths| paths.len())
             .unwrap_or_default()
     }
@@ -190,7 +60,7 @@ impl AssetSource for LitheAssets {
             return Ok(Some(file.data));
         }
 
-        GpuiKitFallbackIcons.load(path)
+        lithe_ui::Assets.load(path)
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
@@ -198,7 +68,7 @@ impl AssetSource for LitheAssets {
             .filter(|name| name.starts_with(path))
             .map(SharedString::from)
             .collect();
-        paths.extend(GpuiKitFallbackIcons.list(path)?);
+        paths.extend(lithe_ui::Assets.list(path)?);
         paths.sort();
         paths.dedup();
         Ok(paths)
@@ -207,7 +77,7 @@ impl AssetSource for LitheAssets {
 
 #[cfg(test)]
 mod tests {
-    use super::{GpuiKitFallbackIcons, LitheAssets, PROBE_PATHS, probe_len};
+    use super::{LitheAssets, PROBE_PATHS, probe_len};
     use gpui::AssetSource as _;
 
     fn embedded_paths() -> Vec<String> {
@@ -366,37 +236,28 @@ mod tests {
         );
     }
 
+    /// 组件库自己的图标（宿主会渲染的那些内部装饰图标）必须**全部**能从宿主资源源取到。
+    ///
+    /// 口径（2026-10-08）：**应用**图标只取本仓 `assets/icons/idea/**`，缺则留空，不用组件库
+    /// 图标顶替；而**组件库组件自身**的装饰图标由 `lithe_ui::Assets` 提供——它同样是本仓自有的
+    /// crate，不再是外部 gpui-kit 的 106 个名字的过渡垫片（那份已随本片拆除）。
     #[test]
-    fn gpui_kit_fallback_icons_are_the_used_subset_and_loadable() {
-        let paths = GpuiKitFallbackIcons
-            .list("")
-            .expect("列出 gpui-kit 回落图标");
-        assert_eq!(
-            paths.len(),
-            106,
-            "回落子集只登记「宿主代码 + gpui-kit 组件内部」实际用到的图标名（2026-10-04 实测 106 个），\
-             不再内嵌 gpui-kit 的整份目录（AllAssets，1830 个）；\
-             新增 `IconName::X` 之后跑 `node rust/lithe-gpui/tools/sync-gpui-kit-icons.mjs --apply`"
-        );
-        for path in [
-            "icons/x.svg",
-            "icons/chevron-down.svg",
-            "icons/search.svg",
-            "icons/square-terminal.svg",
-        ] {
-            assert!(
-                paths.iter().any(|listed| listed == path),
-                "`{path}` 必须在回落子集里，否则界面上会静默画空白"
-            );
-        }
-        for path in &paths {
+    fn every_library_icon_the_host_draws_is_reachable() {
+        use gpui::AssetSource as _;
+        use lithe_ui::primitives::IconName;
+
+        for icon in IconName::ALL {
+            let path = icon.path();
             let bytes = LitheAssets
                 .load(path)
                 .unwrap_or_else(|error| panic!("`{path}` load 报错：{error}"))
-                .unwrap_or_else(|| panic!("`{path}` 在回落子集里，但取不到字节"));
-            assert!(!bytes.is_empty(), "`{path}` 取到了 0 字节，等于取不到");
+                .unwrap_or_else(|| panic!("`{path}` 取不到字节：组件库图标没接进宿主资源源"));
+            assert!(!bytes.is_empty(), "`{path}` 取到 0 字节，等于取不到");
         }
-        assert_eq!(LitheAssets::fallback_count(), 106);
+        assert!(
+            LitheAssets::library_icon_count() > 0,
+            "组件库图标数为 0，说明 `lithe_ui::Assets` 没接上"
+        );
     }
 
     #[test]

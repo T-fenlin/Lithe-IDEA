@@ -555,6 +555,33 @@ gpui-component 的 Theme，与组件库的 Theme **不同名、不同形**。以
 3. **`GpuiKitFallbackIcons`（外部 gpui-kit 的图标）**：在 2 落地后**摘掉**；当前保留为登记在案的限期垫片。
 4. 把 `lithe_ui::init` 里**会被巧合命中的探针**换成真探针，否则"资源源已挂"无法自证。
 5. 2/3 落地后复核清单里"今天就已空白"的那批是否被 `lithe_ui::Assets` 覆盖；仍未覆盖的按组件库规矩补其自有素材。
+### 14. `app` 入口片：资产源换成组件库自带的 `lithe_ui::Assets`（2026-10-08）
+
+**已落地**：
+
+- `crates/app/src/assets.rs` 删掉上游 `gpui_kit::assets::icon_assets!(GpuiKitFallbackIcons, [106 个名字])`
+  过渡垫片，回落源改为 **`lithe_ui::Assets`**（本仓组件库 crate 自带的资源源）——组件库组件自身的内部装饰
+  图标（Dialog/Toast 的关闭 X、菜单 Check 与箭头、Severity 图标…）改由**本仓自有**素材提供，不再借外部
+  gpui-kit 的图标名。`fallback_count()` 改名 `library_icon_count()`。
+- 新增测试 `every_library_icon_the_host_draws_is_reachable`：逐个断言 `lithe_ui::primitives::IconName::ALL`
+  的路径都能从 `LitheAssets` 取到非空字节 —— 比原来"106 个名字存在"更强，且覆盖到此前**今天就已空白**的那些。
+- 入口 `gpui_kit::application()` → **`gpui_platform::application()`**（上游 gpui-kit 本身就是
+  `pub use ::gpui_platform::application;`，见 `gpui-kit/src/lib.rs:168`）；app 新增与组件库**同一条**钉版依赖
+  `gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["font-kit"] }`。
+- `tools/sync-gpui-kit-icons.mjs` **退役**（它维护的正是被拆掉的垫片名单）：改为显式 `console.error` + exit 1，
+  不静默失效、不留陷阱。
+
+**`app` 仍有 4 处 gpui-kit，归属已定（本片不动）**：
+
+| 剩余 | 归属/前置 |
+| --- | --- |
+| `gpui_kit::init(cx)` | 要等**最后一个 gpui-kit 组件退场**（它初始化的是 gpui-kit 组件自身） |
+| `Theme::change(ThemeMode::Dark, ..)` + `Theme::set_scrollbar_mode(..)` | **主题迁移片 ②**（宿主主题降为生产者；组件库没有 scrollbar mode 对等 API，需补库能力或映射） |
+| `use gpui_kit::component::{Theme, ThemeMode, TitleBar}` 里的 `TitleBar::window_options()`（`main.rs:640,681`） | 标题栏/主题簇；**先查**组件库 `shell::chrome::TitleBar` 有无对等 API，无则按"补进库或映射最接近 API" |
+| `gpui_kit::component::set_locale(&locale)` | 它服务的是 **gpui-kit 组件自己的字符串**（我们自己的 `tr()` 走本仓 i18n）；两者要一起退出，否则 gpui-kit 组件文案会掉回默认语言 |
+
+**验收**：`cargo test -p lithe-gpui-app` = 11 passed / 0 failed；
+`cargo check --workspace --all-targets` = 0 error；`cargo fmt --check` 与 px 守卫 = exit 0。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、
