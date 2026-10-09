@@ -602,6 +602,33 @@ gpui-component 的 Theme，与组件库的 Theme **不同名、不同形**。以
 都已迁到组件库**（`theme.X` → `theme.colors.*`，按映射表）——那属于各 crate 的重写片；
 `yellow_light`（4 处，全在 `git/src/log_view.rs` 的图着色）要在那片决定"映射到 `warning` 还是补槽"；
 `Theme::set_scrollbar_mode` 组件库**没有对等 API**，需补库能力。
+### 16. `settings` 第一片：rem 锚点归组件库主题 + `row.rs` 迁移（2026-10-08）
+
+**已落地**：
+
+- `store.rs`：`observe_global::<gpui_kit::component::Theme>` → **`observe_global::<lithe_ui::theme::Theme>`**；
+  `enforce_rem_base` 改写为直接读/写组件库主题的 `font_size` 并用 `lithe_ui::theme::Theme::update`
+  （它会把锚点标到所有窗口的 rem 上，等价于原先写 gpui-kit 主题再 `sync_base`）。
+  ⇒ **缩放锚点现在由组件库主题拥有**，与"单一杠杆"那条一致。
+- `row.rs`：`base::{h_flex,v_flex}` → `layout::{h_stack,v_stack}`；`ActiveTheme` 换库；
+  8 处取用按映射表改名（`border`→`colors.border`、`popover`→`colors.overlay`、
+  `muted_foreground`→`colors.fg_muted`、`foreground`→`colors.fg`）。
+  其中 **`radius` 是"字段→方法"的形状差**：证据是主题 JSON 设 `"radius": 6, "radius.lg": 8`
+  （`themes/jetbrains.json:11-12`），而库的档位 `Radius::Md = 6.0` / `Lg = 8.0` ⇒ 精确对应，
+  改写成 `.rounded(cx.theme().radius(Radius::Md))`。
+
+**`settings` 仍剩两簇（都不宜硬塞）**：
+
+| 剩余 | 性质 |
+| --- | --- |
+| `dialog.rs`（10） | **组件面重写**：Button / Input / InputState / InputEvent / NumberInput / menu(DropdownMenu/PopupMenuItem) / Switch / Empty*/ Icon / ScrollableElement / Selectable —— 逐件对齐组件库 API |
+| `theme.rs`（6） | **主题装载本体**：`ThemeRegistry` / `ThemeConfig` / `ThemeMode` / `ThemeSet` / `try_parse_background` / `try_parse_color` / `HighlightTheme`。换真源要重写"JetBrains JSON → Palette"的解析与编辑器的高亮主题，属独立的"主题装载"片 |
+
+顺带记下：`apply_theme_by_name` 里 `Theme::global_mut(cx).notification.max_items = NOTIFICATION_MAX_ITEMS`
+（= **3**）—— 这正是当初与组件库 `MOST = 4` 对齐的那个真源；组件库的通知/Toast 接手时这条要一并搬过去。
+
+**验收**：`cargo check --workspace --all-targets` = 0 error；`cargo test -p lithe-gpui-settings -p lithe-gpui-app
+-p lithe-gpui-workbench --no-fail-fast` = exit 0（171 + 11 + 239 + 1 + 1 + 2 + 6）；fmt 与 px 守卫 = exit 0。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、

@@ -4,8 +4,8 @@ use gpui::{
     rems,
 };
 use gpui::{Div, prelude::FluentBuilder as _};
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::ActiveTheme as _;
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::theme::{ActiveTheme as _, Radius};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlWidth {
@@ -29,26 +29,26 @@ impl ControlWidth {
 pub type RowActivation = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 pub fn settings_group(title: SharedString, rows: Vec<AnyElement>, cx: &App) -> impl IntoElement {
-    v_flex()
+    v_stack()
         .w_full()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius(Radius::Md))
         .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().popover.opacity(0.35))
+        .border_color(cx.theme().colors.border)
+        .bg(cx.theme().colors.overlay.opacity(0.35))
         .overflow_hidden()
         .child(
-            h_flex()
+            h_stack()
                 .w_full()
                 .px_3()
                 .py_2()
                 .border_b_1()
-                .border_color(cx.theme().border)
+                .border_color(cx.theme().colors.border)
                 .text_sm()
                 .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(title),
         )
-        .child(v_flex().w_full().gap_3().p_3().children(rows))
+        .child(v_stack().w_full().gap_3().p_3().children(rows))
 }
 
 pub fn settings_row(
@@ -71,7 +71,7 @@ pub fn settings_row_with_note(
     on_activate: Option<RowActivation>,
     cx: &App,
 ) -> AnyElement {
-    h_flex()
+    h_stack()
         .id(id)
         .w_full()
         .min_h_8()
@@ -81,20 +81,20 @@ pub fn settings_row_with_note(
             this.on_click(move |event, window, cx| on_activate(event, window, cx))
         })
         .child(
-            v_flex()
+            v_stack()
                 .min_w_0()
                 .flex_1()
                 .gap_1()
                 .child(
                     div()
                         .text_sm()
-                        .text_color(cx.theme().foreground)
+                        .text_color(cx.theme().colors.fg)
                         .child(label),
                 )
                 .children(description.map(|description| {
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(description)
                 }))
                 .children(note),
@@ -104,7 +104,7 @@ pub fn settings_row_with_note(
 }
 
 pub fn appearance_source_note(text: SharedString, revert: AnyElement, cx: &App) -> AnyElement {
-    h_flex()
+    h_stack()
         .w_full()
         .min_w_0()
         .items_center()
@@ -113,7 +113,7 @@ pub fn appearance_source_note(text: SharedString, revert: AnyElement, cx: &App) 
             div()
                 .min_w_0()
                 .text_xs()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(text),
         )
         .child(div().flex_shrink_0().child(revert))
@@ -130,7 +130,7 @@ pub fn page_title(title: SharedString) -> impl IntoElement {
 }
 
 pub fn page_stack() -> Div {
-    v_flex().w_full().gap_4()
+    v_stack().w_full().gap_4()
 }
 
 #[cfg(test)]
