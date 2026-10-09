@@ -5,7 +5,12 @@ use gpui::{
     Point, UTF16Selection, Window,
 };
 
-use super::{cursor::Selection, layout::Shown, state::CodeEditor};
+use super::{
+    cursor::Selection,
+    layout::Shown,
+    state::CodeEditor,
+    wrap::{Wrap, byte_at},
+};
 use crate::{
     forms::{from_utf16, to_utf16},
     theme::ActiveTheme,
@@ -66,14 +71,42 @@ impl CodeEditor {
         }
     }
 
-    /// The offset nearest window x on a line.
-    pub(crate) fn offset_in(&self, line: usize, x: Pixels, cx: &App) -> usize {
-        let text = self.row_text(line);
+    /// The buffer offset nearest window x inside one visual sub-row, and the drawn column it stands at.
+    ///
+    /// The sub-row draws its own slice of the line, so x is read against the text that slice holds: a click
+    /// below the first sub-row of a wrapped line lands on the characters that sub-row draws rather than on the
+    /// line's first columns. Both answers are in the whole line's coordinates — the drawn column is what
+    /// [`CodeEditor::placed`] puts a caret at.
+    ///
+    /// Notes set into the line belong to the sub-row the line starts drawing them in: a sub-row's own drawn
+    /// slice of them is what x is read against, so a note the row drew in another sub-row would put this
+    /// answer inside its text.
+    pub(crate) fn line_offset(
+        &self,
+        line: usize,
+        wrap: &Wrap,
+        x: Pixels,
+        cx: &App,
+    ) -> (usize, usize) {
+        let range = self.row_range(line);
+        let text = &self.buffer.text()[range.clone()];
         let shown = Shown::new(text, self.notes(line, cx), Vec::new());
-        let column = ((x - self.metrics.left) / self.metrics.advance)
-            .round()
-            .max(0.0) as usize;
-        self.buffer.offset(line, shown.back(text, column))
+        // x is read against the whole drawn line: this sub-row starts drawing at its own column, so the column
+        // a click lands on there is that column plus what it measured inside the sub-row.
+        let clicked = wrap.column
+            + ((x - self.metrics.left) / self.metrics.advance)
+                .round()
+                .max(0.0) as usize;
+        let column = shown.back(text, clicked.min(shown.text.chars().count()));
+        // The sub-row draws its own slice of the line, so the byte is read inside that slice: the column the
+        // click landed on is a column of the **line**, and the sub-row's own start takes it back to one of the
+        // slice. The line's own columns and the slice's characters run one for one because a note set into the
+        // line belongs to the sub-row that starts drawing it, never to a later one.
+        let local = byte_at(
+            &text[wrap.range.clone()],
+            column.saturating_sub(wrap.column),
+        );
+        (range.start + wrap.range.start + local, column)
     }
 
     fn utf16_range(&self, range: &Range<usize>) -> Range<usize> {

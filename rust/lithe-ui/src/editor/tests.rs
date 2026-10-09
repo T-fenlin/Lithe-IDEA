@@ -7,7 +7,7 @@ use gpui::{
 
 use super::{
     Buffer, CodeEditor, CompletionItem, EditorEvent, GhostText, HoverInfo, InlayHint, LineNumbers,
-    PopupKey, SymbolKind, layout::Row, syntax,
+    PopupKey, SymbolKind, layout::Row, syntax, wrap,
 };
 use crate::theme::Theme;
 
@@ -18,6 +18,22 @@ fn editor<'a>(
     cx.update(Theme::init);
     let text = text.to_string();
     cx.add_window_view(move |window, cx| CodeEditor::new(text, window, cx))
+}
+
+/// An editor with soft wrap on, drawn once so a width has been measured.
+fn wrapped<'a>(
+    text: &str,
+    cx: &'a mut TestAppContext,
+) -> (Entity<CodeEditor>, &'a mut VisualTestContext) {
+    let (editor, cx) = editor(text, cx);
+    editor.update(cx, |editor, cx| editor.set_soft_wrap(true, cx));
+    cx.run_until_parked();
+    (editor, cx)
+}
+
+/// A line of `chars` characters that costs several rows, and no spaces to break at, so its split is exact.
+fn long_line(chars: usize) -> String {
+    "x".repeat(chars)
 }
 
 /// Watches the editor's events and collects the ones a test cares about: events are the only trigger surface an
@@ -258,14 +274,15 @@ fn a_composition_cleared_to_nothing_ends(cx: &mut TestAppContext) {
 }
 
 impl CodeEditor {
-    /// Whether line `line` has a row now.
+    /// Whether line `line` has a row when the table is laid out against the folds that are closed now and the
+    /// wrap the frame holds — the same question the row builder answers, asked on request.
     fn frame_shows(&self, line: usize) -> bool {
-        let hide = super::layout::hidden(
-            self.buffer.lines(),
-            &super::syntax::folds(&self.buffer),
-            &self.folded,
-        );
-        super::layout::rows(&self.buffer, &hide, &self.marks).contains(&Row::Line(line))
+        let hidden = self.hide_lines();
+        super::layout::rows(&self.buffer, &hidden, &self.marks, |each| {
+            self.line_wraps(each, &hidden).len()
+        })
+        .iter()
+        .any(|row| matches!(row, Row::Line(shown, _) if *shown == line))
     }
 }
 
@@ -700,7 +717,7 @@ fn a_pointer_over_a_symbol_asks_for_its_hover_once(cx: &mut TestAppContext) {
             position: point(left + advance * column, line / 2.),
             ..MouseMoveEvent::default()
         };
-        editor.track_hover(0, &moved, cx);
+        editor.track_hover(0, 0, &moved, cx);
     };
     editor.update(cx, |editor, cx| ask(editor, cx, 5.));
     assert_eq!(*asked.borrow(), vec![4], "total starts at 4");
@@ -1117,6 +1134,402 @@ fn a_scroll_offset_on_content_that_fits_stays_at_the_top(cx: &mut TestAppContext
             editor.visible_row_range().map(|rows| rows.start),
             Some(0),
             "the next layout agrees: nothing moved"
+        );
+    });
+}
+
+/// Soft wrap, the whole chain: a line wider than the code area takes several rows of the table, every one of
+/// them still the line it was cut from, and the text is cut at the width the row table was built with.
+#[gpui::test]
+fn a_line_wider_than_the_code_area_is_drawn_across_several_rows(cx: &mut TestAppContext) {
+    let text = long_line(400);
+    let (editor, cx) = wrapped(&text, cx);
+    let (columns, wraps, rows) = editor.read_with(cx, |editor, _| {
+        let columns = editor.wrap_columns();
+        (
+            columns,
+            editor.line_wraps(0, &editor.hide_lines()).to_vec(),
+            editor
+                .frame
+                .rows
+                .iter()
+                .filter(|row| matches!(row, Row::Line(0, _)))
+                .count(),
+        )
+    });
+    assert!(columns > 0, "a code area wide enough to wrap into");
+    assert_eq!(
+        wraps,
+        wrap::segments(&text, columns),
+        "the row table is cut at the width the frame was built with"
+    );
+    assert_eq!(rows, wraps.len(), "and gives the line a row per sub-row");
+    assert!(rows > 1, "400 characters do not fit one row: {columns}");
+}
+
+/// Invariant 1: a wrapped line's every visual sub-row names that line, and `visible_row_range` still reports
+/// **row-table** indices (invariant 2) — the table is longer than the document by the rows the cuts added.
+#[gpui::test]
+fn every_visual_sub_row_of_a_line_names_that_line(cx: &mut TestAppContext) {
+    let text = format!("{}{}\nlast", long_line(400), "\nshort");
+    let (editor, cx) = wrapped(&text, cx);
+    cx.run_until_parked();
+    editor.read_with(cx, |editor, _| {
+        let visible = editor.visible_row_range().expect("a laid-out frame");
+        let spans = editor.line_wraps(0, &editor.hide_lines()).len();
+        assert!(spans > 1, "the first line was cut: {spans} sub-rows");
+        // Every row of the table, named: the sequence of line numbers has no gaps and no repeats, other than
+        // the repeat a wrapped line makes on purpose.
+        let names: Vec<Option<usize>> = (0..editor.frame.rows.len())
+            .map(|row| editor.line_at_row(row))
+            .collect();
+        let mut wanted: Vec<Option<usize>> = Vec::new();
+        for line in 1..=editor.text().lines().count() {
+            wanted.extend(std::iter::repeat_n(
+                Some(line),
+                editor.line_wraps(line - 1, &editor.hide_lines()).len(),
+            ));
+        }
+        assert_eq!(
+            names, wanted,
+            "each row names its line, and the document's lines come in order"
+        );
+        assert_eq!(
+            (0..spans)
+                .map(|row| editor.line_at_row(row))
+                .collect::<Vec<_>>(),
+            vec![Some(1); spans],
+            "every sub-row of line 1 names line 1"
+        );
+        assert_eq!(
+            editor.line_at_row(spans),
+            Some(2),
+            "and the next row is the next line, not another sub-row"
+        );
+        assert_eq!(
+            (visible.start, visible.end),
+            (0, editor.frame.rows.len()),
+            "the window is taller than this document, so the range covers every row"
+        );
+        assert_eq!(
+            editor.frame.rows.len(),
+            spans + 2,
+            "and the table is longer than the document by the sub-rows it added"
+        );
+        assert!(
+            editor.frame.rows.len() > editor.text().lines().count(),
+            "which is the point: three lines, more rows than three"
+        );
+    });
+}
+
+/// Invariant 6: a closed fold hides whole **lines** and leaves the header drawn alone, wrapped.
+///
+/// The text carries a fold: the header line opens a block that the last line closes. A line whose body a fold
+/// hides draws no row — not one per sub-row and not one either way — while the header keeps wrapping.
+#[gpui::test]
+fn a_fold_hides_the_body_and_wraps_its_header(cx: &mut TestAppContext) {
+    // An identifier with no space in it, so the header wraps at a character; the block opens on its braces and
+    // its body is indented, which is what the editor reads a fold from.
+    let header = format!("fn wide_{}() {{", long_line(400));
+    let text = format!("{header}\n    body();\n}}");
+    let (editor, cx) = wrapped(&text, cx);
+    cx.run_until_parked();
+    let spans = editor.read_with(cx, |editor, _| {
+        editor.line_wraps(0, &editor.hide_lines()).len()
+    });
+    assert!(
+        spans > 1,
+        "the header wrapped while it was open: {spans} sub-rows"
+    );
+    editor.read_with(cx, |editor, _| {
+        assert!(editor.frame_shows(1), "and the body had a row of its own");
+    });
+    editor.update(cx, |editor, cx| editor.toggle_fold(0, cx));
+    cx.run_until_parked();
+    editor.read_with(cx, |editor, _| {
+        let hidden = editor.hide_lines();
+        assert_eq!(
+            hidden.get(1),
+            Some(&true),
+            "the fold closed over the body: hidden={hidden:?}"
+        );
+        assert!(
+            !editor.frame_shows(1),
+            "and a hidden line keeps no row, wrapped or not"
+        );
+        assert_eq!(
+            (0..spans)
+                .map(|row| editor.line_at_row(row))
+                .collect::<Vec<_>>(),
+            vec![Some(1); spans],
+            "so the header's sub-rows follow one another with nothing between them"
+        );
+    });
+}
+
+/// Invariant 3: `bounds_for_offset` puts each offset of a wrapped line in the rectangle the offset's own
+/// **visual sub-row** draws it in, and the layout that reads a point back agrees with it.
+#[gpui::test]
+fn anchors_and_clicks_agree_on_a_wrapped_line(cx: &mut TestAppContext) {
+    let text = long_line(600);
+    let (editor, cx) = wrapped(&text, cx);
+    let spans = editor.read_with(cx, |editor, _| {
+        editor.line_wraps(0, &editor.hide_lines()).len()
+    });
+    assert!(spans > 1, "the line was cut: {spans} sub-rows");
+    editor.read_with(cx, |editor, cx| {
+        let first = editor.bounds_for_offset(0, cx).expect("the line start");
+        let line = editor.line_height().expect("a measured line height");
+        let advance = editor.metrics.advance;
+        let mut seen = 0;
+        for offset in 0..text.len() {
+            let Some(bounds) = editor.bounds_for_offset(offset, cx) else {
+                continue;
+            };
+            seen += 1;
+            let sub = editor
+                .sub_row(0, offset)
+                .map(|(sub, _)| sub)
+                .expect("a line that wraps has sub-rows");
+            let wraps = editor.line_wraps(0, &editor.hide_lines());
+            // The rectangle's row is the sub-row's own: the first draws at the line's top, and every later one
+            // a row further down — the reading that used to put every offset on the first sub-row.
+            assert_eq!(
+                bounds.origin.y,
+                first.origin.y + line * sub as f32,
+                "offset {offset} draws on its own sub-row {sub}"
+            );
+            // And its column is where that sub-row starts drawing, plus the offset's own place inside it.
+            let inside = offset - wraps[sub].range.start;
+            assert_eq!(
+                bounds.origin.x,
+                first.origin.x + advance * (wraps[sub].column + inside) as f32,
+                "offset {offset} draws at its own column of sub-row {sub}"
+            );
+        }
+        assert_eq!(seen, text.len(), "every character of the line was placed");
+        assert!(
+            editor.bounds_for_offset(text.len(), cx).is_some(),
+            "and so is the end of the line"
+        );
+    });
+}
+
+/// Invariant 4: a hidden line height and scroll range are readings of the row table, so wrapping a document
+/// gives it somewhere to scroll that it did not have — and takes it away again when soft wrap goes off.
+#[gpui::test]
+fn soft_wrap_grows_what_the_view_can_scroll_and_reverses(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("short\nlines\nonly", cx);
+    cx.run_until_parked();
+    let plain = editor.read_with(cx, |editor, _| {
+        assert_eq!(
+            editor.frame.rows.len(),
+            3,
+            "unwrapped, three lines are three rows"
+        );
+        editor.line_height().expect("a measured line height")
+    });
+    editor.update(cx, |editor, cx| editor.set_soft_wrap(true, cx));
+    cx.run_until_parked();
+    editor.read_with(cx, |editor, _| {
+        assert_eq!(
+            editor.frame.rows.len(),
+            3,
+            "lines that fit the code area are still one row each"
+        );
+        assert_eq!(
+            editor.line_height(),
+            Some(plain),
+            "turning it on does not change a row's height"
+        );
+        assert!(
+            editor.line_wraps(0, &editor.hide_lines()).len() == 1,
+            "and none of them was cut"
+        );
+    });
+    // Now a document whose lines really are wider than the code area: the table lengthens and the content
+    // travel with it.
+    let (editor, cx) = wrapped(&long_line(400), cx);
+    cx.run_until_parked();
+    editor.update(cx, |editor, cx| {
+        editor.select([0..0], cx);
+        editor.set_scroll_offset(point(px(0.), px(-1.0e9)), cx);
+        assert!(
+            editor.scroll_offset().y < px(0.),
+            "a wrapped line gives the view somewhere to scroll: {:?}",
+            editor.scroll_offset()
+        );
+    });
+    editor.update(cx, |editor, cx| editor.set_soft_wrap(false, cx));
+    cx.run_until_parked();
+    editor.read_with(cx, |editor, _| {
+        assert_eq!(
+            editor.frame.rows.len(),
+            1,
+            "turning soft wrap off restores one row for the line"
+        );
+        assert_eq!(
+            editor.visible_row_range(),
+            Some(0..1),
+            "so the whole document fits the window again"
+        );
+        assert_eq!(editor.line_at_row(0), Some(1));
+    });
+}
+
+/// Invariant 5: a wrapped line shows its number on the sub-row it starts at, and the rows after it take the
+/// blank gutter instead of the same number again.
+///
+/// The mapping is decided where the row is built, so this walks the same sub-rows the row builder does: the
+/// first one takes `Cell::Line`, every one after it `Cell::Blank`.
+#[gpui::test]
+fn a_wrapped_line_shows_its_number_once(cx: &mut TestAppContext) {
+    let text = format!("fn wide() {{{{ {} }}}}\nbody();\n}}", long_line(400));
+    let (editor, cx) = wrapped(&text, cx);
+    cx.run_until_parked();
+    editor.update(cx, |editor, cx| {
+        let spans = editor.line_wraps(0, &editor.hide_lines()).len();
+        assert!(spans > 1, "the header line was cut: {spans}");
+        let cells: Vec<super::gutter::Cell> = (0..spans)
+            .map(|sub| {
+                if sub == 0 {
+                    super::gutter::Cell::Line(0)
+                } else {
+                    super::gutter::Cell::Blank
+                }
+            })
+            .collect();
+        assert_eq!(
+            cells
+                .iter()
+                .filter(|cell| matches!(cell, super::gutter::Cell::Line(_)))
+                .count(),
+            1,
+            "exactly one of the line's {spans} sub-rows draws the number"
+        );
+        // And both kinds of cell draw: a numbered sub-row, and the blank one a continuation takes.
+        let _ = editor.gutter(super::gutter::Cell::Line(0), 0, cx);
+        let _ = editor.gutter(super::gutter::Cell::Blank, 1, cx);
+        assert_eq!(editor.line_at_row(0), Some(1));
+    });
+}
+
+/// Invariant 7: the boundaries. An empty line, a run with no word boundary in it and a trailing newline all
+/// keep the table and the anchors readable rather than panicking.
+#[gpui::test]
+fn empty_and_unbreakable_lines_keep_the_table_readable(cx: &mut TestAppContext) {
+    let text = format!("{}{}{}", long_line(400), "\n\n", long_line(300));
+    let (editor, cx) = wrapped(&text, cx);
+    cx.run_until_parked();
+    editor.read_with(cx, |editor, cx| {
+        assert_eq!(
+            editor.text().lines().count(),
+            3,
+            "the trailing newline ends"
+        );
+        assert!(
+            editor.line_wraps(1, &editor.hide_lines())
+                == vec![wrap::Wrap {
+                    range: 0..0,
+                    column: 0
+                }],
+            "an empty line is one empty sub-row"
+        );
+        // Every row of the table names its line, in order, with the repeats a wrapped line makes on purpose.
+        let names: Vec<Option<usize>> = (0..editor.frame.rows.len())
+            .map(|row| editor.line_at_row(row))
+            .collect();
+        let mut wanted: Vec<Option<usize>> = Vec::new();
+        for line in 1..=editor.text().lines().count() {
+            wanted.extend(std::iter::repeat_n(
+                Some(line),
+                editor.line_wraps(line - 1, &editor.hide_lines()).len(),
+            ));
+        }
+        assert_eq!(names, wanted, "and every line keeps naming itself");
+        assert!(
+            editor.bounds_for_offset(0, cx).is_some()
+                && editor.bounds_for_offset(400, cx).is_some(),
+            "the line start and the empty line after it are both drawn"
+        );
+    });
+}
+
+/// Soft wrap is the owner's switch: off until asked for, and the product's default is the owner's to pass.
+#[gpui::test]
+fn soft_wrap_is_off_until_the_owner_turns_it_on(cx: &mut TestAppContext) {
+    let (editor, cx) = editor(&long_line(400), cx);
+    cx.run_until_parked();
+    editor.update(cx, |editor, cx| {
+        assert!(!editor.soft_wrap_enabled(), "off by default");
+        assert_eq!(
+            editor.wrap_columns(),
+            0,
+            "and nothing is measured to wrap into while it is off"
+        );
+        assert_eq!(editor.frame.rows.len(), 1);
+        editor.set_soft_wrap(true, cx);
+        assert!(editor.soft_wrap_enabled());
+        editor.set_soft_wrap(true, cx);
+        assert!(editor.soft_wrap_enabled(), "setting it twice is setting it");
+    });
+    cx.run_until_parked();
+    editor.read_with(cx, |editor, _| {
+        assert!(editor.wrap_columns() > 0, "now a width has been measured");
+        assert!(
+            editor.line_wraps(0, &editor.hide_lines()).len() > 1,
+            "and the line is cut"
+        );
+    });
+}
+
+/// A wrapped line is walked by its visual sub-rows: down steps inside the line before it reaches the next
+/// one, and up walks back the same way — the caret follows what is drawn rather than the document.
+#[gpui::test]
+fn up_and_down_walk_the_visual_sub_rows(cx: &mut TestAppContext) {
+    let text = format!("{}\nlast", long_line(400));
+    let (editor, cx) = wrapped(&text, cx);
+    let spans = editor.read_with(cx, |editor, _| {
+        editor.line_wraps(0, &editor.hide_lines()).len()
+    });
+    assert!(spans > 1, "the first line was cut: {spans}");
+    editor.update(cx, |editor, cx| {
+        editor.select([0..0], cx);
+        // Every step down inside the wrapped line stays on line 1, and each one moves.
+        let mut column = 0;
+        for _ in 0..spans - 1 {
+            editor.motion(super::cursor::Motion::Down, false, cx);
+            let head = editor.primary().head;
+            assert_eq!(
+                editor.buffer.line_of(head),
+                0,
+                "a step inside a wrapped line does not leave it"
+            );
+            assert!(head > column, "and it moves on: {head} after {column}");
+            column = head;
+        }
+        // And one more steps onto the line below.
+        editor.motion(super::cursor::Motion::Down, false, cx);
+        assert_eq!(
+            editor.buffer.line_of(editor.primary().head),
+            1,
+            "the last sub-row is where the next line begins"
+        );
+        // Up walks back: the same sub-rows, in the other order.
+        let mut seen = vec![editor.primary().head];
+        for _ in 0..spans {
+            editor.motion(super::cursor::Motion::Up, false, cx);
+            seen.push(editor.primary().head);
+        }
+        assert_eq!(
+            seen.last().copied().map(|head| editor.buffer.line_of(head)),
+            Some(0),
+            "and comes back to line 1"
+        );
+        assert!(
+            seen.windows(2).all(|pair| pair[1] < pair[0]),
+            "each step up moves back: {seen:?}"
         );
     });
 }

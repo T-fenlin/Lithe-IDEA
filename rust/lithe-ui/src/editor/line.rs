@@ -2,8 +2,8 @@ use std::ops::Range;
 
 use gpui::{
     AnyElement, Context, FontWeight, HighlightStyle, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Stateful, Styled, StyledText, UnderlineStyle,
-    Window, canvas, div, prelude::*,
+    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Stateful, Styled, StyledText,
+    UnderlineStyle, Window, div, prelude::*,
 };
 
 use super::{
@@ -12,6 +12,7 @@ use super::{
     layout::{Shown, stack},
     state::{CodeEditor, CursorShape, EditorEvent},
     syntax,
+    wrap::Wrap,
 };
 use crate::{
     charts::tint,
@@ -135,6 +136,7 @@ impl CodeEditor {
         base: Stateful<gpui::Div>,
         row: usize,
         line: usize,
+        sub: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -144,7 +146,19 @@ impl CodeEditor {
         let text = self.row_text(line);
         let range = self.row_range(line);
         let shown = Shown::new(text, self.notes(line, cx), self.styles(line, cx));
-        let x = |column: usize| advance * (column + 1) as f32;
+        // Which visual sub-row of the line this row draws: its own slice of the drawn text, and where that
+        // slice starts among the line's drawn columns. On a line that does not wrap this is the whole line,
+        // as it was before soft wrap existed.
+        let wraps = self.line_wraps(line, self.frame_hidden());
+        let wrap = wraps.get(sub).cloned().unwrap_or(Wrap {
+            range: 0..text.len(),
+            column: 0,
+        });
+        let drawn = shown.drawn_range(&wrap.range);
+        let (drawn, drawn_text) = (drawn.clone(), shown.text[drawn].to_string());
+        let left = shown.text[..drawn.start].chars().count();
+        let (first, len) = (wrap.column, drawn_text.chars().count());
+        let x = |column: usize| advance * (column.saturating_sub(left) + 1) as f32;
         let focused = self.focus.is_focused(window);
         let primary = self.primary();
         let current = primary.is_empty() && self.buffer.line_of(primary.head) == line;
@@ -166,12 +180,13 @@ impl CodeEditor {
             } else {
                 column_of(span.end)
             };
-            (end > start).then(|| {
+            let clipped = end.min(first + len);
+            (clipped > start.max(first)).then(|| {
                 div()
                     .absolute()
                     .top_0()
-                    .left(x(start))
-                    .w(advance * (end - start) as f32)
+                    .left(x(start.max(first)))
+                    .w(advance * (clipped - start.max(first)) as f32)
                     .h(height)
                     .bg(if focused {
                         colors.selection
@@ -195,35 +210,49 @@ impl CodeEditor {
         } else {
             Default::default()
         };
-        let rulers = self.options.rulers.iter().map(|column| {
-            div()
-                .absolute()
-                .top_0()
-                .left(x(*column))
-                .h(height)
-                .w_0()
-                .border_l_1()
-                .border_color(colors.border.opacity(0.6))
-        });
-        let guides = guides.into_iter().map(|column| {
-            let strong = active == Some(column);
-            div()
-                .absolute()
-                .top_0()
-                .left(x(column))
-                .h(height)
-                .w_0()
-                .border_l_1()
-                .border_color(if strong {
-                    colors.border_strong
-                } else {
-                    colors.border.opacity(0.6)
-                })
-        });
+        let rulers = self
+            .options
+            .rulers
+            .iter()
+            .filter(|column| (first..first + len).contains(*column))
+            .map(|column| {
+                div()
+                    .absolute()
+                    .top_0()
+                    .left(x(*column))
+                    .h(height)
+                    .w_0()
+                    .border_l_1()
+                    .border_color(colors.border.opacity(0.6))
+            });
+        let guides = guides
+            .into_iter()
+            .filter(|column| (first..first + len).contains(column))
+            .map(|column| {
+                let strong = active == Some(column);
+                div()
+                    .absolute()
+                    .top_0()
+                    .left(x(column))
+                    .h(height)
+                    .w_0()
+                    .border_l_1()
+                    .border_color(if strong {
+                        colors.border_strong
+                    } else {
+                        colors.border.opacity(0.6)
+                    })
+            });
         let carets = self
             .selections
             .iter()
             .filter(|selection| self.buffer.line_of(selection.head) == line)
+            // A caret draws on the row of its own visual sub-row, so a cursor inside a wrapped line stands
+            // under the character it is at rather than at the wrap column of the row that holds the line.
+            .filter(|selection| {
+                let column = column_of(selection.head);
+                (first..=first + len).contains(&column)
+            })
             .filter(|_| focused && self.caret_on)
             .map(|selection| {
                 let left = x(column_of(selection.head));
@@ -243,7 +272,8 @@ impl CodeEditor {
                         .bg(colors.focus),
                 }
             });
-        let dots = self.options.whitespace.then(|| {
+        // Whitespace marks are the line's own, so they draw in the first sub-row and nowhere else.
+        let dots = (self.options.whitespace && sub == 0).then(|| {
             div()
                 .absolute()
                 .top_0()
@@ -254,13 +284,14 @@ impl CodeEditor {
                 .text_color(colors.fg_subtle.opacity(0.6))
                 .child(self.whitespace(line, &shown, cx))
         });
-        let folded = self.folded.contains(&line).then(|| {
+        // The fold marker stands at the end of the line's text, which is only drawn on its last sub-row.
+        let folded = (self.folded.contains(&line) && sub + 1 == wraps.len()).then(|| {
             let entity = cx.entity();
             div()
                 .id(("unfold", line))
                 .absolute()
                 .top_0()
-                .left(x(shown.text.chars().count() + 1))
+                .left(x(first + len + 1))
                 .h(height)
                 .flex()
                 .items_center()
@@ -284,8 +315,6 @@ impl CodeEditor {
             .hunks
             .iter()
             .any(|hunk| (hunk.line..hunk.line + hunk.added).contains(&line));
-        let entity = cx.entity();
-        let left = x(0);
         let code = div()
             .id(("code", row))
             .relative()
@@ -301,60 +330,55 @@ impl CodeEditor {
                 div()
                     .absolute()
                     .top_0()
-                    .left(left)
+                    .left(x(0))
                     .h(height)
                     .line_height(height)
-                    .whitespace_nowrap()
                     .text_color(colors.syntax.variable)
                     .child(
-                        StyledText::new(shown.text.clone()).with_highlights(shown.styles.clone()),
+                        StyledText::new(drawn_text.clone()).with_highlights(drawn_styles(
+                            &shown,
+                            &drawn,
+                            &drawn_text,
+                        )),
                     ),
             )
             .children(dots)
             .children(folded)
             .children(carets)
-            .child(
-                canvas(
-                    move |bounds, _, cx| {
-                        let origin = bounds.origin.x + left;
-                        entity.update(cx, |editor, _| {
-                            if editor.metrics.left != origin {
-                                editor.metrics.left = origin;
-                            }
-                        });
-                    },
-                    |_, _, _, _| {},
-                )
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full(),
-            )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |editor, event: &MouseDownEvent, window, cx| {
-                    editor.press(line, event, window, cx)
+                    editor.press(line, sub, event, window, cx)
                 }),
             )
             .on_mouse_move(cx.listener(move |editor, event: &MouseMoveEvent, _, cx| {
-                editor.drag(line, event, cx);
-                editor.track_hover(line, event, cx);
+                editor.drag(line, sub, event, cx);
+                editor.track_hover(line, sub, event, cx);
             }));
-        base.child(self.gutter(Cell::Line(line), row, cx))
+        let cell = if sub == 0 {
+            Cell::Line(line)
+        } else {
+            Cell::Blank
+        };
+        base.child(self.gutter(cell, row, cx))
             .child(code)
             .into_any_element()
     }
 
     /// A press on a line: one caret, a word on a double press, the line on a triple; Shift extends, Alt adds a caret.
+    ///
+    /// `sub` names the visual sub-row the press landed on, so the caret goes where the pointer points on a
+    /// wrapped line rather than to the line's first columns.
     pub(crate) fn press(
         &mut self,
         line: usize,
+        sub: usize,
         event: &MouseDownEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus, cx);
-        let at = self.offset_in(line, event.position.x, cx);
+        let at = self.pressed_offset(line, sub, event.position.x, cx);
         let chosen = match event.click_count {
             2 => {
                 let word = self.buffer.word_at(at);
@@ -393,11 +417,17 @@ impl CodeEditor {
     }
 
     /// A drag over a line stretches the primary selection to where the pointer is.
-    pub(crate) fn drag(&mut self, line: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+    pub(crate) fn drag(
+        &mut self,
+        line: usize,
+        sub: usize,
+        event: &MouseMoveEvent,
+        cx: &mut Context<Self>,
+    ) {
         if !self.dragging || !event.dragging() {
             return;
         }
-        let at = self.offset_in(line, event.position.x, cx);
+        let at = self.pressed_offset(line, sub, event.position.x, cx);
         let mut all = self.selections.clone();
         let primary = all.last_mut().expect("an editor keeps a cursor");
         if primary.head == at {
@@ -418,13 +448,14 @@ impl CodeEditor {
     pub(crate) fn track_hover(
         &mut self,
         line: usize,
+        sub: usize,
         event: &MouseMoveEvent,
         cx: &mut Context<Self>,
     ) {
         if self.dragging {
             return;
         }
-        let at = self.offset_in(line, event.position.x, cx);
+        let at = self.pressed_offset(line, sub, event.position.x, cx);
         let word = self.buffer.word_at(at);
         let symbol = (!word.is_empty()
             && self.buffer.text()[word.clone()]
@@ -440,4 +471,39 @@ impl CodeEditor {
         }
         self.hover_symbol = symbol;
     }
+
+    /// The offset a pointer at window x stands over, read on the visual sub-row it landed on.
+    pub(crate) fn pressed_offset(
+        &self,
+        line: usize,
+        sub: usize,
+        x: Pixels,
+        cx: &Context<Self>,
+    ) -> usize {
+        let wraps = self.line_wraps(line, self.frame_hidden());
+        let Some(wrap) = wraps.get(sub) else {
+            return self.buffer.line_range(line).start;
+        };
+        self.line_offset(line, wrap, x, cx).0
+    }
+}
+
+/// One sub-row's highlights: the line's own styles, cut to the sub-row's slice of the drawn text.
+///
+/// A style that reaches across a break colors each sub-row it touches, which is what an underline or a search
+/// wash over a wrapped match should do.
+fn drawn_styles(
+    shown: &Shown,
+    drawn: &std::ops::Range<usize>,
+    drawn_text: &str,
+) -> Vec<(std::ops::Range<usize>, gpui::HighlightStyle)> {
+    shown
+        .styles
+        .iter()
+        .filter_map(|(span, style)| {
+            let start = span.start.max(drawn.start) - drawn.start;
+            let end = span.end.min(drawn.end).saturating_sub(drawn.start);
+            (start < end && drawn_text.get(start..end).is_some()).then(|| (start..end, *style))
+        })
+        .collect()
 }

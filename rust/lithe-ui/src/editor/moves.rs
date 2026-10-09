@@ -3,30 +3,38 @@ use gpui::{Context, ScrollStrategy, Window};
 use super::{
     buffer::clamped_range,
     cursor::{Motion, Selection, merged, moved},
-    layout::{Row, hidden, rows},
+    layout::{Row, Shown, hidden, rows},
     state::CodeEditor,
     syntax::folds,
+    wrap::byte_at,
 };
 
 impl CodeEditor {
-    /// Moves every cursor. Up and down step over folded lines.
+    /// Moves every cursor. Up and down step over folded lines, and over the visual sub-rows a wrapped line
+    /// draws: a wrapped line is walked a sub-row at a time before the next line is reached.
     pub(crate) fn motion(&mut self, motion: Motion, extend: bool, cx: &mut Context<Self>) {
         let hide = hidden(self.buffer.lines(), &folds(&self.buffer), &self.folded);
-        let vertical = matches!(motion, Motion::Up | Motion::Down | Motion::Page(_));
         let moved: Vec<Selection> = self
             .selections
             .iter()
-            .map(|selection| {
-                let mut next = moved(&self.buffer, *selection, motion, extend);
-                while vertical && hide[self.buffer.line_of(next.head)] {
-                    let again = moved(&self.buffer, next, motion, extend);
-                    if again.head == next.head {
-                        break;
+            .map(
+                |selection| match self.row_step(*selection, motion, extend, &hide) {
+                    Some(next) => next,
+                    None => {
+                        let vertical =
+                            matches!(motion, Motion::Up | Motion::Down | Motion::Page(_));
+                        let mut next = moved(&self.buffer, *selection, motion, extend);
+                        while vertical && hide[self.buffer.line_of(next.head)] {
+                            let again = moved(&self.buffer, next, motion, extend);
+                            if again.head == next.head {
+                                break;
+                            }
+                            next = again;
+                        }
+                        next
                     }
-                    next = again;
-                }
-                next
-            })
+                },
+            )
             .collect();
         let up = matches!(
             motion,
@@ -36,16 +44,116 @@ impl CodeEditor {
         self.reveal(!up, cx);
     }
 
+    /// The cursor after stepping one visual sub-row up or down, `None` when this motion is not one the wrap
+    /// table decides.
+    ///
+    /// Up and down keep the drawn column they left, the same reading as the column-goal a vertical move keeps;
+    /// a step inside a wrapped line lands on the neighbour sub-row, and a step off either end of the line lands
+    /// on the neighbouring line's nearest sub-row — so the cursor walks what is drawn, one row at a time.
+    /// A fold hides lines rather than sub-rows, and `Page` counts lines, so both go to the unwrapped motion.
+    fn row_step(
+        &self,
+        selection: Selection,
+        motion: Motion,
+        extend: bool,
+        hide: &[bool],
+    ) -> Option<Selection> {
+        let down = match motion {
+            Motion::Down => true,
+            Motion::Up => false,
+            _ => return None,
+        };
+        if !self.options.soft_wrap {
+            return None;
+        }
+        let head = selection.head;
+        let line = self.buffer.line_of(head);
+        if hide[line] {
+            return None;
+        }
+        let shown = self.line_shown(line);
+        let text = &self.buffer.text()[self.row_range(line)];
+        let head_column = shown.column(text, self.buffer.point(head).1.min(text.len()));
+        // The column the step aims at is the one a run of steps started from, so walking a wrapped line down
+        // and back up returns the caret to where it began rather than to the wrap column it passed. Where the
+        // caret **is** decides which sub-row step; the aim decides only the column within it.
+        let column = selection.goal.unwrap_or(head_column);
+        let wraps = self.line_wraps(line, hide);
+        let sub = self.sub_row(line, head_column).map_or(0, |(sub, _)| sub);
+        let next = if down { sub + 1 } else { sub.wrapping_sub(1) };
+        let (line, wraps, sub) = match wraps.get(next) {
+            Some(_) => (line, wraps, next),
+            None => {
+                let step = if down { 1 } else { -1 };
+                let target = line as isize + step;
+                if target < 0 {
+                    return Some(Selection {
+                        anchor: if extend { selection.anchor } else { 0 },
+                        head: 0,
+                        goal: Some(column),
+                    });
+                }
+                if target >= self.buffer.lines() as isize {
+                    return Some(Selection {
+                        anchor: if extend {
+                            selection.anchor
+                        } else {
+                            self.buffer.len()
+                        },
+                        head: self.buffer.len(),
+                        goal: Some(column),
+                    });
+                }
+                let line = target as usize;
+                if hide[line] {
+                    return None;
+                }
+                let wraps = self.line_wraps(line, hide);
+                let sub = if down { 0 } else { wraps.len() - 1 };
+                (line, wraps, sub)
+            }
+        };
+        let wrap = wraps[sub].clone();
+        let range = self.row_range(line);
+        let text = &self.buffer.text()[range.clone()];
+        let head = range.start
+            + wrap.range.start
+            + byte_at(
+                &text[wrap.range.clone()],
+                column.saturating_sub(wrap.column),
+            );
+        Some(Selection {
+            anchor: if extend { selection.anchor } else { head },
+            head,
+            goal: Some(column),
+        })
+    }
+
+    /// The `Shown` view of a row, which is what turns a byte of the line into a drawn column.
+    ///
+    /// Notes are left out on purpose: a motion works in the text's own columns, and a sub-row boundary is a
+    /// byte of the text, so the two readings have to be the same one.
+    fn line_shown(&self, line: usize) -> Shown {
+        let range = self.row_range(line);
+        Shown::new(&self.buffer.text()[range], Vec::new(), Vec::new())
+    }
+
     pub(crate) fn select_all(&mut self, cx: &mut Context<Self>) {
         let all = 0..self.buffer.len();
         self.select([all], cx);
     }
 
     /// A new cursor a line above or below the primary one, at its column.
+    ///
+    /// A wrapped line is walked by its visual sub-rows here too, so the cursor this adds is the one the arrow
+    /// keys would have reached.
     pub(crate) fn add_cursor(&mut self, below: bool, cx: &mut Context<Self>) {
         let primary = self.primary();
         let motion = if below { Motion::Down } else { Motion::Up };
-        let next = moved(&self.buffer, Selection::caret(primary.head), motion, false);
+        let hide = hidden(self.buffer.lines(), &folds(&self.buffer), &self.folded);
+        let next = self
+            .row_step(Selection::caret(primary.head), motion, false, &hide)
+            .unwrap_or_else(|| moved(&self.buffer, Selection::caret(primary.head), motion, false));
         if next.head == primary.head {
             return;
         }
@@ -176,13 +284,22 @@ impl CodeEditor {
     }
 
     /// The row the primary cursor draws on.
+    ///
+    /// On a wrapped line that is the row of the cursor's own visual sub-row, so revealing and centring the
+    /// cursor scroll to where it is drawn rather than to the row the line starts at.
     pub(crate) fn primary_row(&self) -> usize {
-        let line = self.buffer.line_of(self.primary().head);
+        let head = self.primary().head;
+        let line = self.buffer.line_of(head);
+        let sub = self
+            .sub_row(line, self.buffer.point(head).1)
+            .map_or(0, |(sub, _)| sub);
         let hide = hidden(self.buffer.lines(), &folds(&self.buffer), &self.folded);
-        rows(&self.buffer, &hide, &self.marks)
-            .iter()
-            .position(|row| *row == Row::Line(line))
-            .expect("the primary cursor sits on a shown line")
+        rows(&self.buffer, &hide, &self.marks, |each| {
+            self.line_wraps(each, self.frame_hidden()).len()
+        })
+        .iter()
+        .position(|row| *row == Row::Line(line, sub))
+        .expect("the primary cursor sits on a shown line")
     }
 
     /// Scrolls the primary cursor into view: from below when moving down, from above when moving up.

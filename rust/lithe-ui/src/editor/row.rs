@@ -21,7 +21,7 @@ impl CodeEditor {
             .h(self.frame.line)
             .flex();
         match self.frame.rows[ix] {
-            Row::Line(line) => self.line_row(base, ix, line, window, cx),
+            Row::Line(line, sub) => self.line_row(base, ix, line, sub, window, cx),
             Row::Lens(at) => self.lens_row(base, ix, at, cx),
             Row::Removed(hunk, at) => self.removed_row(base, ix, hunk, at, cx),
             Row::Ghost(at) => self.ghost_row(base, ix, at, cx),

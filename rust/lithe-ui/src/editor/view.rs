@@ -13,6 +13,7 @@ use super::{
     layout::{Row, Shown, around, hidden, rows},
     state::{CodeEditor, EditorEvent},
     syntax::{self, Bracket, brackets, folds},
+    wrap::{self, Wrap},
 };
 use crate::theme::{ActiveTheme, TextSize};
 
@@ -20,6 +21,12 @@ use crate::theme::{ActiveTheme, TextSize};
 #[derive(Default)]
 pub(crate) struct Frame {
     pub rows: Vec<Row>,
+    /// What each line wraps onto, by line: one sub-row spanning it whole while soft wrap is off, and the
+    /// width the rows were cut to. A runtime switch or a resize leaves this stale until the next render.
+    pub wrap: Vec<Vec<Wrap>>,
+    /// Which lines a closed fold hid when this frame was built. The wrap table and the rows are both read
+    /// through it, so a fold that goes in between two renders cannot make one of them disagree with the other.
+    pub hidden: Vec<bool>,
     pub folds: Vec<(usize, usize)>,
     pub brackets: Vec<Bracket>,
     pub advance: Pixels,
@@ -60,7 +67,7 @@ impl CodeEditor {
         self.frame.rows[first.min(self.frame.rows.len().saturating_sub(1))..]
             .iter()
             .find_map(|row| match row {
-                Row::Line(line) => Some(*line),
+                Row::Line(line, _) => Some(*line),
                 _ => None,
             })
     }
@@ -127,7 +134,8 @@ impl CodeEditor {
             .rows
             .iter()
             .map(|row| match row {
-                Row::Line(at) => {
+                // The minimap draws a line, not its sub-rows, so a continuation adds nothing.
+                Row::Line(at, 0) => {
                     let text = self.buffer.line(*at);
                     syntax::colors_in(&self.buffer, self.buffer.line_range(*at), cx)
                         .into_iter()
@@ -251,11 +259,13 @@ impl CodeEditor {
     /// line (a code lens, a removed diff line, ghost text, the inline chat) or out of range.
     ///
     /// The companion of [`CodeEditor::visible_row_range`]: a folded body, a ghost row or a lens makes the row
-    /// table shorter and coarser than the document, so `row + 1` is not a line number — ask here instead. It
-    /// answers for the frame that is painted; before the first layout every index is out of range.
+    /// table shorter and coarser than the document, so `row + 1` is not a line number — ask here instead. With
+    /// soft wrap on it is coarser still: every visual sub-row of a line stands for that line, so a line wider
+    /// than the code area answers the same number for each of the rows it takes. It answers for the frame that
+    /// is painted; before the first layout every index is out of range.
     pub fn line_at_row(&self, row: usize) -> Option<usize> {
         match self.frame.rows.get(row)? {
-            Row::Line(line) => Some(line + 1),
+            Row::Line(line, _) => Some(line + 1),
             _ => None,
         }
     }
@@ -297,7 +307,8 @@ impl CodeEditor {
     /// past the last row, a row that is not a whole line).
     ///
     /// The mouse-position lookup; for the other direction see [`CodeEditor::bounds_for_offset`]. `None`
-    /// until a line height has been measured.
+    /// until a line height has been measured. A point below the first visual sub-row of a wrapped line is read
+    /// against **that** sub-row, so a click lands on the characters it was aimed at.
     pub fn offset_at(&self, position: Point<Pixels>, cx: &App) -> Option<usize> {
         let metrics = self.metrics;
         if metrics.line <= Pixels::ZERO || metrics.advance <= Pixels::ZERO {
@@ -306,10 +317,14 @@ impl CodeEditor {
         let scrolled = -self.scroll.0.borrow().base_handle.offset().y;
         let row = ((position.y - metrics.body.y + scrolled) / metrics.line).floor();
         let row = self.frame.rows.get(row.max(0.0) as usize)?;
-        let Row::Line(line) = *row else {
+        let Row::Line(line, sub) = *row else {
             return None;
         };
-        Some(self.offset_in(line, position.x, cx))
+        let wrap = self
+            .line_wraps(line, self.frame_hidden())
+            .get(sub)
+            .cloned()?;
+        Some(self.line_offset(line, &wrap, position.x, cx).0)
     }
 
     /// The rectangle (in window pixels) an offset occupies on screen, which an owner anchors its completion
@@ -328,22 +343,39 @@ impl CodeEditor {
     /// method wants to know where a composition would go, even off screen).
     ///
     /// Answers the row index and its rectangle; `None` when a fold hides that line, or while the row is not
-    /// in this frame's row table yet.
+    /// in this frame's row table yet. On a wrapped line the row is the one its **visual sub-row** takes, and
+    /// the rectangle stands on that sub-row — so an owner anchoring a popup inside a continuation gets the
+    /// rectangle it is drawn in rather than the first sub-row's.
     pub(crate) fn placed(&self, offset: usize, cx: &App) -> Option<(usize, Bounds<Pixels>)> {
         let offset = clamped_range(self.buffer.text(), offset..offset).start;
         let line = self.buffer.line_of(offset);
+        let text = self.row_text(line);
+        let shown = Shown::new(text, self.notes(line, cx), Vec::new());
+        let range = self.row_range(line);
+        // Which visual sub-row draws these bytes, and how far into that sub-row's own drawing they stand. The
+        // column is the sub-row's drawn start plus what the offset adds inside it, so an offset on the line's
+        // first sub-row draws where it always did and one past a break draws under the sub-row it fell in.
+        let (sub, drawn) = match self.sub_row(line, offset - range.start) {
+            Some((sub, wrap)) => {
+                let within = (offset - range.start).min(wrap.range.end);
+                let inside = shown.drawn_range(&(wrap.range.start..within));
+                let drawn = wrap.column + shown.text[inside].chars().count();
+                (sub, drawn)
+            }
+            None => {
+                let column = shown.column(text, self.buffer.point(offset).1.min(text.len()));
+                (0, column)
+            }
+        };
         let row = self
             .frame
             .rows
             .iter()
-            .position(|row| *row == Row::Line(line))?;
-        let text = self.row_text(line);
-        let shown = Shown::new(text, self.notes(line, cx), Vec::new());
-        let column = shown.column(text, self.buffer.point(offset).1.min(text.len()));
+            .position(|row| *row == Row::Line(line, sub))?;
         let metrics = self.metrics;
         let scrolled = -self.scroll.0.borrow().base_handle.offset().y;
         let origin = point(
-            metrics.left + metrics.advance * column as f32,
+            metrics.left + metrics.advance * drawn as f32,
             metrics.body.y + metrics.line * row as f32 - scrolled,
         );
         Some((
@@ -384,8 +416,30 @@ impl Render for CodeEditor {
             _ => Vec::new(),
         };
         let minimap = self.frame.minimap;
+        // Where every line wraps, at the width the last layout measured; soft wrap off leaves each line the
+        // one sub-row that spans it whole, so the table reads exactly as it did before soft wrap existed.
+        // Cutting the text is what the rows are counted from, so it happens before the row table.
+        let columns = self.wrap_columns();
+        let segments: Vec<Vec<Wrap>> = (0..self.buffer.lines())
+            .map(|line| {
+                // A line a closed fold hides draws no rows, so there is nothing to cut it for; the fold's
+                // header draws to the end of that header line, which is the whole line either way.
+                if self.options.soft_wrap && !hide[line] {
+                    wrap::segments(self.buffer.line(line), columns)
+                } else {
+                    vec![Wrap {
+                        range: 0..self.row_range(line).len(),
+                        column: 0,
+                    }]
+                }
+            })
+            .collect();
         self.frame = Frame {
-            rows: rows(&self.buffer, &hide, &self.marks),
+            rows: rows(&self.buffer, &hide, &self.marks, |line| {
+                segments.get(line).map_or(1, Vec::len)
+            }),
+            wrap: segments,
+            hidden: hide,
             folds: found,
             brackets: found_brackets,
             advance,
@@ -396,6 +450,10 @@ impl Render for CodeEditor {
         };
         self.metrics.advance = advance;
         self.metrics.line = line;
+        // The first column of code, past the gutter. The row's own box says the same thing, but a row is only
+        // painted when it is in view, so the frame reads it from the body the rows sit in and the gutter they
+        // all leave: one answer for every row, wrapped or not.
+        self.metrics.left = self.metrics.body.x + advance * self.gutter_columns() as f32;
         let hover = self.hover_panel(cx);
         let count = self.frame.rows.len();
         let list = uniform_list(
@@ -431,7 +489,15 @@ impl Render for CodeEditor {
             .child(
                 canvas(
                     move |bounds, _, cx| {
-                        top.update(cx, |editor, _| editor.metrics.body = bounds.origin);
+                        top.update(cx, |editor, cx| {
+                            editor.metrics.body = bounds.origin;
+                            // The code area's width is what soft wrap cuts a line to, and it is only known
+                            // here, so a change to it asks for the frame that rewraps at it.
+                            if editor.metrics.body_size != bounds.size {
+                                editor.metrics.body_size = bounds.size;
+                                cx.notify();
+                            }
+                        });
                     },
                     |_, _, _, _| {},
                 )

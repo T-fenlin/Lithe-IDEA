@@ -10,7 +10,8 @@ pub(crate) const CHAT_ROWS: usize = 3;
 /// One row the editor draws, all the same height.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Row {
-    Line(usize),
+    /// A line of the document, and which of its visual sub-rows this is (0 without soft wrap).
+    Line(usize, usize),
     /// A code lens, by its place among the lenses.
     Lens(usize),
     /// A removed line of a diff hunk: the hunk, then the line within it.
@@ -37,7 +38,16 @@ pub(crate) fn hidden(
 }
 
 /// The rows in order: lenses and removed lines above their line, ghost lines and the chat below it, nothing a fold hides.
-pub(crate) fn rows(buffer: &Buffer, hidden: &[bool], marks: &Marks) -> Vec<Row> {
+///
+/// `wrap` is asked how many visual sub-rows a line takes ([`super::wrap::segments`]); one means the line has
+/// the one row it always had, and more means the line's text is drawn across that many rows, in order. A line
+/// whose body a fold hides is never asked: a fold takes the whole line away, sub-rows and all.
+pub(crate) fn rows(
+    buffer: &Buffer,
+    hidden: &[bool],
+    marks: &Marks,
+    wrap: impl Fn(usize) -> usize,
+) -> Vec<Row> {
     let ghost = marks.ghost.as_ref().map(|ghost| {
         let extra = ghost.text.split('\n').count() - 1;
         (buffer.line_of(ghost.offset), extra)
@@ -60,7 +70,7 @@ pub(crate) fn rows(buffer: &Buffer, hidden: &[bool], marks: &Marks) -> Vec<Row> 
         {
             out.extend((0..hunk.removed.len()).map(|at| Row::Removed(ix, at)));
         }
-        out.push(Row::Line(line));
+        out.extend((0..wrap(line).max(1)).map(|sub| Row::Line(line, sub)));
         if let Some((at, extra)) = ghost
             && at == line
         {
@@ -181,6 +191,16 @@ impl Shown {
                 .sum::<usize>()
     }
 
+    /// Where a range **of the line** stands in this drawn text.
+    ///
+    /// A note set in at either end stays outside the range on the side its boundary reads: a sub-row cuts the
+    /// drawn text with this, so a note never straddles two sub-rows. Empty for an empty range.
+    pub fn drawn_range(&self, range: &Range<usize>) -> Range<usize> {
+        let start = self.byte(range.start, false);
+        let end = self.byte(range.end, true).max(start);
+        start..end
+    }
+
     /// The column of the line under drawn column `shown`, skipping notes.
     pub fn back(&self, line: &str, shown: usize) -> usize {
         let mut column = shown;
@@ -221,17 +241,41 @@ mod tests {
         };
         let hide = hidden(5, &[(0, 2)], &BTreeSet::from([0]));
         assert_eq!(
-            rows(&buffer, &hide, &marks),
+            rows(&buffer, &hide, &marks, |_| 1),
             [
-                Row::Line(0),
+                Row::Line(0, 0),
                 Row::Ghost(1),
                 Row::Lens(0),
-                Row::Line(3),
+                Row::Line(3, 0),
                 Row::Removed(0, 0),
-                Row::Line(4)
+                Row::Line(4, 0)
             ]
         );
         assert_eq!(around(&[(0, 4), (1, 2)], 2, 3), [0, 1]);
+    }
+
+    /// A wrapped line takes as many rows as it has sub-rows, in order, and nothing else moves.
+    #[test]
+    fn a_wrapped_line_takes_a_row_for_each_of_its_sub_rows() {
+        let buffer = Buffer::new("a\nb\nc");
+        let marks = Marks::default();
+        let hide = hidden(3, &[], &BTreeSet::new());
+        assert_eq!(
+            rows(&buffer, &hide, &marks, |line| if line == 1 { 3 } else { 1 }),
+            [
+                Row::Line(0, 0),
+                Row::Line(1, 0),
+                Row::Line(1, 1),
+                Row::Line(1, 2),
+                Row::Line(2, 0)
+            ],
+            "the wrapped line's sub-rows stand between its neighbours, in order"
+        );
+        assert_eq!(
+            rows(&buffer, &hide, &marks, |_| 0),
+            [Row::Line(0, 0), Row::Line(1, 0), Row::Line(2, 0)],
+            "an answer of none still leaves the line one row to stand on"
+        );
     }
 
     #[test]

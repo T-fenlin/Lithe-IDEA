@@ -86,6 +86,10 @@ impl CodeEditor {
     }
 
     /// The gutter cell for a row.
+    ///
+    /// The number, the breakpoint dot, the fold chevron and the git bar all belong to the **line**, so a
+    /// wrapped line's continuation sub-rows take [`Cell::Blank`] instead: the number is drawn once, on the
+    /// sub-row the line starts at, and the rest of the line's gutter stays empty.
     pub(crate) fn gutter(&self, cell: Cell, row: usize, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let colors = theme.colors.clone();

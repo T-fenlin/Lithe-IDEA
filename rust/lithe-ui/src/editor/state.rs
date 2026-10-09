@@ -1,8 +1,8 @@
-use std::{collections::BTreeSet, ops::Range, time::Duration};
+use std::{borrow::Cow, collections::BTreeSet, ops::Range, time::Duration};
 
 use gpui::{
     App, AppContext as _, Context, EventEmitter, FocusHandle, Focusable, Pixels, Point,
-    ScrollStrategy, SharedString, Subscription, Task, UniformListScrollHandle, Window,
+    ScrollStrategy, SharedString, Size, Subscription, Task, UniformListScrollHandle, Window,
 };
 
 use super::{
@@ -12,6 +12,7 @@ use super::{
     hints::CompletionItem,
     hover::HoverInfo,
     view::Frame,
+    wrap::Wrap,
 };
 use crate::{
     forms::{History, InputEvent, InputState},
@@ -111,6 +112,9 @@ pub(crate) struct Options {
     /// Whether typing an identifier character asks for completions automatically; off by default (see
     /// [`CodeEditor::auto_completion`]).
     pub auto_completion: bool,
+    /// Whether a line too wide for the code area is wrapped onto rows of its own; off by default (see
+    /// [`CodeEditor::soft_wrap`]).
+    pub soft_wrap: bool,
 }
 
 /// What the owner lays over the code.
@@ -148,6 +152,8 @@ pub(crate) struct Metrics {
     pub left: Pixels,
     /// The scrollable code area's top-left corner, which a host layers its own popups over.
     pub body: Point<Pixels>,
+    /// The scrollable code area's size, which is how wide a line may be before soft wrap cuts it.
+    pub body_size: Size<Pixels>,
     pub advance: Pixels,
     pub line: Pixels,
 }
@@ -247,6 +253,7 @@ impl CodeEditor {
                 read_only: false,
                 tab: 4,
                 auto_completion: false,
+                soft_wrap: false,
             },
             marks: Marks::default(),
             marked: None,
@@ -339,6 +346,24 @@ impl CodeEditor {
         self
     }
 
+    /// Wrap a line too wide for the code area onto rows of its own; **off** by default, and the owner decides
+    /// the default it wants.
+    ///
+    /// The product editor (Lithe's `word_wrap` setting) defaults to **on**, so an owner moving that code over
+    /// passes `true` here and follows the setting with [`CodeEditor::set_soft_wrap`]. A break is taken at the
+    /// last **word** boundary that fits, so words stay whole where they can and no sub-row opens on a space —
+    /// the space a break falls on ends the sub-row before it. A run of non-space characters too long to fit is
+    /// cut at a character, because a minified line or a long literal has no boundary to break at. The width a
+    /// line is wrapped to is the code area's own — its measured width less the gutter — so resizing the editor
+    /// rewraps it, and nothing else.
+    ///
+    /// While it is off, the row table holds one row per line and every offset, anchor and scroll reading is
+    /// exactly what it was without soft wrap.
+    pub fn soft_wrap(mut self, on: bool) -> Self {
+        self.options.soft_wrap = on;
+        self
+    }
+
     pub fn text(&self) -> &str {
         self.buffer.text()
     }
@@ -395,6 +420,99 @@ impl CodeEditor {
     pub fn set_line_numbers(&mut self, numbers: LineNumbers, cx: &mut Context<Self>) {
         self.options.numbers = numbers;
         cx.notify();
+    }
+
+    /// Turns soft wrap on or off while the editor runs, the way a settings page switches it.
+    ///
+    /// The editor cuts every line again and lays the row table out on its next render, so both the wrap and
+    /// the scroll range that follows from it are in place by the time anything is drawn. Turning it **off**
+    /// restores the row table the editor had without soft wrap — one row per line, so every offset, anchor and
+    /// scroll reading is exactly what it was.
+    pub fn set_soft_wrap(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.options.soft_wrap == on {
+            return;
+        }
+        log::info!("code editor: soft wrap {on}");
+        self.options.soft_wrap = on;
+        cx.notify();
+    }
+
+    /// Whether a line too wide for the code area is wrapped onto rows of its own.
+    pub fn soft_wrap_enabled(&self) -> bool {
+        self.options.soft_wrap
+    }
+
+    /// How many characters of a line the code area fits.
+    ///
+    /// The width is the one the body last measured ([`Metrics::body_size`]) less the gutter the row draws
+    /// ([`CodeEditor::gutter_columns`]); both are readings of the frame that is up, so this is the code area
+    /// the owner actually gave the editor, and no constant of its own. Zero — nothing wraps — while soft wrap
+    /// is off, before a character width has been measured, or in a code area no wider than its gutter.
+    pub(crate) fn wrap_columns(&self) -> usize {
+        let metrics = self.metrics;
+        if !self.options.soft_wrap || metrics.advance <= Pixels::ZERO {
+            return 0;
+        }
+        let room = metrics.body_size.width - metrics.advance * self.gutter_columns() as f32;
+        (f32::from(room) / f32::from(metrics.advance))
+            .floor()
+            .max(0.0) as usize
+    }
+
+    /// Which lines a closed fold hides, from the folds the text has now — one place decides it, so the rows
+    /// the frame draws and the wrap a line takes always agree on whether that line is there at all.
+    pub(crate) fn hide_lines(&self) -> Vec<bool> {
+        super::layout::hidden(
+            self.buffer.lines(),
+            &super::syntax::folds(&self.buffer),
+            &self.folded,
+        )
+    }
+
+    /// The visual sub-rows a line takes, given which lines are hidden.
+    ///
+    /// Borrowed from the wrap table when the line is wrapped, and made up for the caller's own use otherwise —
+    /// so a row that is not wrapped costs a comparison rather than an allocation. A line `hidden` hides takes
+    /// the one sub-row as well: it has no row of its own to wrap onto.
+    pub(crate) fn line_wraps(&self, line: usize, hidden: &[bool]) -> Cow<'_, [Wrap]> {
+        let whole = Wrap {
+            range: 0..self.row_range(line).len(),
+            column: 0,
+        };
+        if hidden.get(line).copied().unwrap_or(false) {
+            return Cow::Owned(vec![whole]);
+        }
+        match self.frame.wrap.get(line).filter(|subs| !subs.is_empty()) {
+            Some(subs) => Cow::Borrowed(subs),
+            None => Cow::Owned(vec![whole]),
+        }
+    }
+
+    /// The frame's own snapshot of which lines a closed fold hid, which is what its rows and its wrap were
+    /// both built against.
+    pub(crate) fn frame_hidden(&self) -> &[bool] {
+        &self.frame.hidden
+    }
+
+    /// The sub-row of `line` as it stands for that line's bytes.
+    ///
+    /// Answers which sub-row the frame puts those bytes in, and its own span of the line, so a caller works in
+    /// the line's coordinates. A byte exactly where two sub-rows meet — the byte a break falls before — belongs
+    /// to the earlier one, the same reading clicks and anchors take. `None` while the frame
+    /// draws the line whole: every row of it is then row 0, and an unwrapped line has no sub-row to name.
+    pub(crate) fn sub_row(&self, line: usize, at: usize) -> Option<(usize, &Wrap)> {
+        if !self.options.soft_wrap {
+            return None;
+        }
+        let subs = self.frame.wrap.get(line).filter(|subs| !subs.is_empty())?;
+        let local = at.clamp(0, self.row_range(line).len());
+        // The last sub-row that starts at or before the byte: an offset that runs past one sub-row's end
+        // belongs to the next, and one that lands exactly on a boundary belongs to the sub-row it closes.
+        let sub = subs
+            .partition_point(|wrap| wrap.range.start <= local)
+            .saturating_sub(1)
+            .min(subs.len() - 1);
+        Some((sub, &subs[sub]))
     }
 
     pub fn set_read_only(&mut self, read_only: bool, cx: &mut Context<Self>) {
