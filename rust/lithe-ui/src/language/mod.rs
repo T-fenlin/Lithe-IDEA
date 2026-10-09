@@ -21,12 +21,17 @@ use crate::theme::Syntax;
 
 /// 一种语言的语法支持。语言支持插件声明它，组件库只按接口使用。
 pub struct Language {
-    /// 稳定标识（如 `java`），用于日志与去重。
+    /// 稳定标识（如 `java`、`bash`），**也是宿主"禁用某语言"开关的键**。
+    ///
+    /// 因此它必须与宿主的既有取值一致（例如 shell 脚本是 `bash` 而不是 `shell`）：id 一漂移，
+    /// "卸载项目语言包"就再也关不掉对应高亮——这类不一致不会报错，只会静默失灵。
     pub id: &'static str,
     /// 展示名（如 `Java`）。
     pub name: &'static str,
     /// 归属的文件扩展名（小写、不带点）。
     pub extensions: &'static [&'static str],
+    /// 归属的**文件名**（小写），给没有扩展名的脚本用（如 `mvnw`、`gradlew.bat`）。
+    pub filenames: &'static [&'static str],
     /// 语法本体。用函数指针而不是值：`Language` 要能放进 `static`，而 grammar 的构造不是 const。
     pub grammar: fn() -> Grammar,
     /// 高亮查询（`highlights.scm` 源文本），通常直接取 grammar crate 自带的常量。
@@ -103,6 +108,7 @@ impl Slot {
 struct Registry {
     languages: Vec<&'static Language>,
     by_extension: Vec<(&'static str, &'static Language)>,
+    by_filename: Vec<(&'static str, &'static Language)>,
 }
 
 static REGISTRY: OnceLock<Registry> = OnceLock::new();
@@ -114,6 +120,7 @@ static REGISTRY: OnceLock<Registry> = OnceLock::new();
 pub fn register(languages: &'static [Language]) {
     let mut registered: Vec<&'static Language> = Vec::with_capacity(languages.len());
     let mut by_extension: Vec<(&'static str, &'static Language)> = Vec::new();
+    let mut by_filename: Vec<(&'static str, &'static Language)> = Vec::new();
     for language in languages {
         assert!(
             !registered.iter().any(|each| each.id == language.id),
@@ -131,11 +138,22 @@ pub fn register(languages: &'static [Language]) {
             );
             by_extension.push((extension, language));
         }
+        for filename in language.filenames {
+            assert!(
+                !by_filename
+                    .iter()
+                    .any(|(each, _)| each.eq_ignore_ascii_case(filename)),
+                "文件名 `{filename}` 被 `{}` 与另一种语言同时声明",
+                language.id
+            );
+            by_filename.push((filename, language));
+        }
     }
     if REGISTRY
         .set(Registry {
             languages: registered,
             by_extension,
+            by_filename,
         })
         .is_err()
     {
@@ -160,12 +178,29 @@ pub fn by_extension(extension: &str) -> Option<&'static Language> {
         .map(|(_, language)| *language)
 }
 
-/// 按路径找语言支持（取最后一个 `.` 之后的部分）。
+/// 按**文件名**（不含目录、大小写不敏感）找语言支持——给 `mvnw`、`gradlew.bat` 这类
+/// 没有扩展名的脚本用。
+#[must_use]
+pub fn by_filename(filename: &str) -> Option<&'static Language> {
+    let name = filename.rsplit(['/', '\\']).next()?;
+    REGISTRY
+        .get()?
+        .by_filename
+        .iter()
+        .find(|(each, _)| each.eq_ignore_ascii_case(name))
+        .map(|(_, language)| *language)
+}
+
+/// 按路径找语言支持：**先看整个文件名**，再看最后一个 `.` 之后的扩展名。
+///
+/// 顺序有意义：`mvnw` 这类无扩展名脚本只能靠文件名认出来，而 `pom.xml` 只靠扩展名就够。
 #[must_use]
 pub fn by_path(path: &str) -> Option<&'static Language> {
     let name = path.rsplit(['/', '\\']).next()?;
-    let extension = name.rsplit_once('.')?.1;
-    by_extension(extension)
+    if let Some(language) = by_filename(name) {
+        return Some(language);
+    }
+    by_extension(name.rsplit_once('.')?.1)
 }
 
 /// 一种语言的解析与高亮缓存。

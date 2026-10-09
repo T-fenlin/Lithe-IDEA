@@ -17,11 +17,12 @@
 use lithe_ui::language::Language;
 
 /// 本插件提供的语言。宿主在启动时通过 [`register`] 注册。
-static LANGUAGES: [Language; 8] = [
+static LANGUAGES: [Language; 9] = [
     Language {
         id: "java",
         name: "Java",
         extensions: &["java"],
+        filenames: &[],
         grammar: || tree_sitter_java::LANGUAGE.into(),
         highlights: tree_sitter_java::HIGHLIGHTS_QUERY,
         line_comment: "//",
@@ -29,7 +30,8 @@ static LANGUAGES: [Language; 8] = [
     Language {
         id: "kotlin",
         name: "Kotlin",
-        extensions: &["kt", "kts"],
+        extensions: &["kt", "kts", "ktm"],
+        filenames: &[],
         grammar: || tree_sitter_kotlin_sg::LANGUAGE.into(),
         highlights: tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY,
         line_comment: "//",
@@ -37,7 +39,8 @@ static LANGUAGES: [Language; 8] = [
     Language {
         id: "xml",
         name: "XML",
-        extensions: &["xml", "xsd"],
+        extensions: &["xml", "xsd", "xsl", "xslt", "wsdl"],
+        filenames: &[],
         grammar: || tree_sitter_xml::LANGUAGE_XML.into(),
         highlights: tree_sitter_xml::XML_HIGHLIGHT_QUERY,
         line_comment: "<!--",
@@ -46,6 +49,7 @@ static LANGUAGES: [Language; 8] = [
         id: "yaml",
         name: "YAML",
         extensions: &["yaml", "yml"],
+        filenames: &[],
         grammar: || tree_sitter_yaml::LANGUAGE.into(),
         highlights: tree_sitter_yaml::HIGHLIGHTS_QUERY,
         line_comment: "#",
@@ -54,22 +58,34 @@ static LANGUAGES: [Language; 8] = [
         id: "toml",
         name: "TOML",
         extensions: &["toml"],
+        filenames: &[],
         grammar: || tree_sitter_toml_ng::LANGUAGE.into(),
         highlights: tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
         line_comment: "#",
     },
     Language {
+        id: "json",
+        name: "JSON",
+        extensions: &["json", "jsonc"],
+        filenames: &[],
+        grammar: || tree_sitter_json::LANGUAGE.into(),
+        highlights: tree_sitter_json::HIGHLIGHTS_QUERY,
+        line_comment: "//",
+    },
+    Language {
         id: "sql",
         name: "SQL",
         extensions: &["sql"],
+        filenames: &[],
         grammar: || tree_sitter_sequel::LANGUAGE.into(),
         highlights: tree_sitter_sequel::HIGHLIGHTS_QUERY,
         line_comment: "--",
     },
     Language {
-        id: "shell",
+        id: "bash",
         name: "Shell",
-        extensions: &["sh", "bash", "zsh"],
+        extensions: &["sh", "bash"],
+        filenames: &["mvnw", "gradlew", "mvnw.cmd", "gradlew.bat"],
         grammar: || tree_sitter_bash::LANGUAGE.into(),
         highlights: tree_sitter_bash::HIGHLIGHT_QUERY,
         line_comment: "#",
@@ -78,6 +94,7 @@ static LANGUAGES: [Language; 8] = [
         id: "markdown",
         name: "Markdown",
         extensions: &["md", "markdown"],
+        filenames: &[],
         grammar: || tree_sitter_md::LANGUAGE.into(),
         highlights: tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
         // Markdown 没有行注释语法；留空而不是塞一个别的标记。
@@ -225,6 +242,7 @@ mod tests {
             id: "unbuildable",
             name: "Unbuildable",
             extensions: &["unbuildable"],
+            filenames: &[],
             grammar: || tree_sitter_java::LANGUAGE.into(),
             highlights: "(this is not a query",
             line_comment: "//",
@@ -240,5 +258,40 @@ mod tests {
         buffer.set_language(None);
         assert!(!buffer.has_highlighter());
         assert!(buffer.highlight_spans(0..buffer.len()).is_empty());
+    }
+    /// 注册表必须覆盖产品原本的语言映射（`crates/editor/src/buffer.rs:15-44` 的 id/扩展名/
+    /// 文件名，以及设置侧 `lithe.projectLanguages` 的 id 清单）。**id 漂移不会报错，只会让
+    /// "卸载项目语言包"再也关不掉对应高亮**，所以这条断言是防静默失灵的。
+    #[test]
+    fn the_registry_covers_the_products_language_mapping() {
+        ready();
+        for id in [
+            "java", "json", "yaml", "toml", "sql", "markdown", "bash", "kotlin", "xml",
+        ] {
+            assert!(
+                language::all().iter().any(|each| each.id == id),
+                "注册表缺少产品在用的语言 id `{id}`"
+            );
+        }
+        for (path, id) in [
+            ("A.java", "java"),
+            ("pom.xml", "xml"),
+            ("schema.xslt", "xml"),
+            ("build.gradle.kts", "kotlin"),
+            ("app.jsonc", "json"),
+            ("script.sh", "bash"),
+            ("mvnw", "bash"),
+            ("gradlew.bat", "bash"),
+            ("README.md", "markdown"),
+            ("config.yml", "yaml"),
+            ("Cargo.toml", "toml"),
+            ("query.sql", "sql"),
+        ] {
+            assert_eq!(
+                language::by_path(path).map(|each| each.id),
+                Some(id),
+                "`{path}` 应该解析到 `{id}`"
+            );
+        }
     }
 }

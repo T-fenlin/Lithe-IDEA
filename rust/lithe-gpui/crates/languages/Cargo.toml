@@ -11,6 +11,7 @@ lithe-ui = { path = "../../../lithe-ui" }
 # grammar 的版本与本仓 lock 中既有的那份**保持一致**（同一 crate 实例，不引入第二份原生库）。
 tree-sitter = "0.26"
 tree-sitter-bash = "0.23"
+tree-sitter-json = "0.24"
 tree-sitter-java = "0.23"
 tree-sitter-kotlin-sg = "0.4"
 tree-sitter-md = "0.5"

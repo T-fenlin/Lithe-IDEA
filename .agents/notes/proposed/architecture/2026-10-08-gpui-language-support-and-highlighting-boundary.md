@@ -126,6 +126,37 @@ editor crate 现在只是把这些结果包成上游的 provider（`completion.r
 `lithe-gpui-java`；若编排需要而组件库缺少的能力（例如光标锚定的弹层定位助手），按仓库既有口径
 **补进 `lithe-ui` 或映射到最接近的 API**，不用空壳糊过去，也不把产品语义塞进通用组件库。
 
+### L3 的前置缺口：组件库缺「LSP 请求接缝」（2026-10-08 判定，尚未开工）
+
+按映射表动手前，子代理侦察后**停下来**（产品代码一行未改），我逐条复核确认：
+
+- **组件库没有任何 provider 接缝**：`CompletionProvider|HoverProvider|CodeActionProvider` 在
+  `rust/lithe-ui` 全仓命中 **0**；`CodeEditor` 唯一的扩展点是 `chat_field`。而产品每一处都打在
+  gpui-kit 的私有 LSP 槽上：`completion.rs:31,47` 的 `lsp_mut().completion_provider` 与
+  `.completion_menu.max_width`、`hover.rs:17` 的 `hover_provider`、`code_actions.rs:18` 的
+  `code_action_providers`。库侧 `hints::{CompletionItem, CompletionMenu}`、`hover::HoverInfo`、
+  `refactor::CodeActionMenu` 都是 `RenderOnce` **展示件**：构造时就要静态数据，没有异步取项、没有锚点。
+- **读不到也设不了光标的字节偏移**：`CodeEditor` 公开面只有 `position()`（行列，从 1 起）与 `select()`，
+  而 LSP 请求要的正是字节偏移 ⇒ `editor_view.rs` 的 `navigate_to_definition`(812)、
+  `open_go_to_line`(1702)、`show_hover_at_caret`(1848)、`open_at`(536)、`apply_definition`(928)、
+  `restore_entry`(1089)、`go_to_line_column`(1814) 全部落空；`apply_lsp_edits`（`code_actions.rs:153`）
+  在库侧同样没有对应物。
+- **视图度量是私有的**：`visible_row_range` / `line_height` / `scroll_offset` / `offset_at` 都是
+  `pub(crate)`，而宿主的断点 gutter、滚轮与 alt+click 要用。
+- **没有 LSP 交互的生命周期**：库侧 `EditorEvent` 只有 `Changed/Lens/Asked/ChatClosed/Unlock`，
+  按键绑定里没有补全触发 ⇒ 触发、锚点跟随、键盘选择、接受、悬停布局、灯泡弹出、编辑应用都要从零做。
+
+**决策**：把这三类能力（provider/请求接缝、光标字节读写、视图度量）作为**独立一片补进 `lithe-ui`**，
+语义按上游对齐（不给上游独有 API 补别名，也不把产品语义塞进通用组件库）；这一片完成前不启动 L3 的
+原子移植。硬做 L3 只剩两条错路——把 LSP 交互静默降级成静态菜单，或在组件库里塞一个 IDE 子系统——
+两条都不接受。
+
+**顺带修掉的真缺口（已落地）**：语言 id/扩展名/文件名保真度。产品的
+`crates/editor/src/buffer.rs:15-44` 与设置侧 `lithe.projectLanguages` 用的是 `bash`（不是 `shell`）、
+`json/jsonc`、`ktm`、`xsl/xslt/wsdl`，以及 `mvnw`/`gradlew`/`mvnw.cmd`/`gradlew.bat` 的无扩展名映射。
+**id 一漂移不会报错，只会让"卸载项目语言包"再也关不掉高亮**。现在注册表有 `filenames` 字段与
+`by_filename`/`by_path` 两级查找，并有保真度测试守着这 9 个 id 与 12 条路径映射。
+
 ## 考虑过的备选方案
 
 1. **直接依赖 Zed 的编辑器与语言栈**。否决。一手证据（`gh api` 取 Zed main 的 crate manifest）：

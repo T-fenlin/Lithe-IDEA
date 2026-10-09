@@ -4482,6 +4482,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-java",
+ "tree-sitter-json",
  "tree-sitter-kotlin-sg",
  "tree-sitter-md",
  "tree-sitter-sequel",
