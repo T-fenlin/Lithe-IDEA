@@ -1,14 +1,16 @@
 use std::{collections::BTreeSet, ops::Range, time::Duration};
 
 use gpui::{
-    App, AppContext as _, Context, EventEmitter, FocusHandle, Focusable, Pixels, ScrollStrategy,
-    SharedString, Subscription, Task, UniformListScrollHandle, Window,
+    App, AppContext as _, Context, EventEmitter, FocusHandle, Focusable, Pixels, Point,
+    ScrollStrategy, SharedString, Subscription, Task, UniformListScrollHandle, Window,
 };
 
 use super::{
     buffer::Buffer,
     cursor::{Selection, merged},
     decor::{CodeLens, Diagnostic, DiffHunk, GhostText, GitMark, InlayHint},
+    hints::CompletionItem,
+    hover::HoverInfo,
     view::Frame,
 };
 use crate::{
@@ -46,6 +48,18 @@ pub enum EditorEvent {
     ChatClosed,
     /// The read-only banner's action.
     Unlock,
+    /// The owner should ask for completions: the primary cursor's byte offset.
+    ///
+    /// The library reports the moment and nothing else: the **owner** queries its language server and pushes
+    /// the answer back through [`CodeEditor::set_completions`]. Explicit `ctrl-space`, automatic completion
+    /// and the owner's own entry points all raise this one event.
+    CompletionRequested(usize),
+    /// The owner should ask for a hover: the byte offset where the symbol under the pointer starts.
+    ///
+    /// The same split as [`EditorEvent::CompletionRequested`] — the library asks, the owner fetches the content
+    /// and pushes it back with [`CodeEditor::present_hover`]. Leaving a symbol raises nothing: when to take a
+    /// hover down is the owner's business.
+    HoverRequested(usize),
 }
 
 /// The editor's look and manners.
@@ -62,6 +76,9 @@ pub(crate) struct Options {
     pub sticky: bool,
     pub read_only: bool,
     pub tab: usize,
+    /// Whether typing an identifier character asks for completions automatically; off by default (see
+    /// [`CodeEditor::auto_completion`]).
+    pub auto_completion: bool,
 }
 
 /// What the owner lays over the code.
@@ -78,6 +95,13 @@ pub(crate) struct Marks {
     pub chat: Option<usize>,
 }
 
+/// The hover content the owner pushed back, and the offset it hangs from.
+pub(crate) struct Hover {
+    pub info: HoverInfo,
+    /// The start of the symbol the last [`EditorEvent::HoverRequested`] named, or the primary cursor when none was asked.
+    pub offset: usize,
+}
+
 /// The text and cursors one undo step returns to.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Snapshot {
@@ -85,11 +109,13 @@ pub(crate) struct Snapshot {
     pub selections: Vec<Selection>,
 }
 
-/// Where the code sat when last painted, in window pixels: its left edge, the top of the first row, a character's width and a row's height.
+/// Where the code sat when last painted, in window pixels: the text's left edge, the body's top-left corner, a character's width and a row's height.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Metrics {
+    /// The first column of code, past the gutter.
     pub left: Pixels,
-    pub top: Pixels,
+    /// The scrollable code area's top-left corner, which a host layers its own popups over.
+    pub body: Point<Pixels>,
     pub advance: Pixels,
     pub line: Pixels,
 }
@@ -110,6 +136,14 @@ pub struct CodeEditor {
     /// The text before an input method's composition began, while it runs.
     pub(crate) composing: Option<Snapshot>,
     pub(crate) metrics: Metrics,
+    /// Completions the owner pushed: the library only keeps the data; rendering, placing and driving the
+    /// popup all stay with the owner.
+    pub(crate) completions: Vec<CompletionItem>,
+    /// Hover content the owner pushed: drawn inside the editor while it is `Some`.
+    pub(crate) hover: Option<Hover>,
+    /// The symbol the pointer is over now, so one symbol is asked for only once
+    /// ([`EditorEvent::HoverRequested`]).
+    pub(crate) hover_symbol: Option<Range<usize>>,
     pub(crate) dragging: bool,
     pub(crate) caret_on: bool,
     /// Blink runs only while focused, or unseen cursors redraw forever.
@@ -177,11 +211,15 @@ impl CodeEditor {
                 sticky: false,
                 read_only: false,
                 tab: 4,
+                auto_completion: false,
             },
             marks: Marks::default(),
             marked: None,
             composing: None,
             metrics: Metrics::default(),
+            completions: Vec::new(),
+            hover: None,
+            hover_symbol: None,
             dragging: false,
             caret_on: true,
             focused: false,
@@ -254,6 +292,17 @@ impl CodeEditor {
         self
     }
 
+    /// Ask for completions after an identifier character (a letter, a digit or an underscore); **off** by
+    /// default.
+    ///
+    /// While it is on, every such character typed raises [`EditorEvent::CompletionRequested`]; fetching the
+    /// data and showing the popup still belong to the owner. The explicit `ctrl-space` trigger is independent
+    /// of this switch — both entry points raise the same event.
+    pub fn auto_completion(mut self, on: bool) -> Self {
+        self.options.auto_completion = on;
+        self
+    }
+
     pub fn text(&self) -> &str {
         self.buffer.text()
     }
@@ -271,6 +320,14 @@ impl CodeEditor {
     pub fn position(&self) -> (usize, usize) {
         let (line, column) = self.buffer.point(self.primary().head);
         (line + 1, column + 1)
+    }
+
+    /// The primary cursor's **byte offset**, in the same coordinates as [`Buffer`].
+    ///
+    /// The way an owner hands a position to its language server (a completion or hover position, a code
+    /// action's range); the editor knows nothing about LSP and asks for nothing itself.
+    pub fn cursor_offset(&self) -> usize {
+        self.primary().head
     }
 
     pub fn language_name(&self) -> &SharedString {
@@ -369,6 +426,57 @@ impl CodeEditor {
     pub fn set_code_lenses(&mut self, lenses: Vec<CodeLens>, cx: &mut Context<Self>) {
         self.marks.lenses = lenses;
         cx.notify();
+    }
+
+    /// The completions the owner fetched.
+    ///
+    /// The same shape as `set_diagnostics`/`set_inlay_hints`/`set_code_lenses`: the **owner** asks its language
+    /// server and pushes the answer in, and the library only keeps the data (read it back with
+    /// [`CodeEditor::completions`]). The popup's rendering, placement and keyboard navigation are not in the
+    /// library: an owner anchors its own popup with [`CodeEditor::bounds_for_offset`].
+    pub fn set_completions(&mut self, items: Vec<CompletionItem>, cx: &mut Context<Self>) {
+        if self.completions == items {
+            return;
+        }
+        log::info!("code editor: {} completions", items.len());
+        self.completions = items;
+        cx.notify();
+    }
+
+    /// Takes the completions down: the owner clears them when it closes its popup, or when a newer request
+    /// replaces this one.
+    pub fn clear_completions(&mut self, cx: &mut Context<Self>) {
+        if self.completions.is_empty() {
+            return;
+        }
+        self.completions.clear();
+        cx.notify();
+    }
+
+    /// The completions the owner pushed; empty means this request suggested nothing.
+    pub fn completions(&self) -> &[CompletionItem] {
+        &self.completions
+    }
+
+    /// Hover content the owner fetched: while it is `Some` the **library** draws it in the editor, and `None`
+    /// takes it down.
+    ///
+    /// The split is the other way round from completions — how the content is fetched (a language server,
+    /// documentation, disk) is the owner's, how it is drawn is the library's. It hangs from the symbol the last
+    /// [`EditorEvent::HoverRequested`] named, or from the primary cursor when none was asked. A text change
+    /// makes the content stale without clearing it: the owner pushes again, or pushes `None`, when it moves on.
+    pub fn present_hover(&mut self, info: Option<HoverInfo>, cx: &mut Context<Self>) {
+        let offset = self
+            .hover_symbol
+            .as_ref()
+            .map_or_else(|| self.cursor_offset(), |symbol| symbol.start);
+        self.hover = info.map(|info| Hover { info, offset });
+        cx.notify();
+    }
+
+    /// The hover content on show.
+    pub fn hover(&self) -> Option<&HoverInfo> {
+        self.hover.as_ref().map(|hover| &hover.info)
     }
 
     /// Suggested text at an offset, in grey until Tab takes it.
@@ -490,5 +598,37 @@ impl CodeEditor {
 
     pub(crate) fn editable(&self) -> bool {
         !self.options.read_only
+    }
+
+    /// Ask for completions now: report the primary cursor's byte offset to the owner
+    /// ([`EditorEvent::CompletionRequested`]).
+    ///
+    /// The library makes no language-server request — `ctrl-space`, automatic completion and the owner's own
+    /// entry points all arrive here, and the answer comes back through [`CodeEditor::set_completions`].
+    /// Read-only text may ask too: asking changes nothing. Automatic completion reaches this on every
+    /// identifier character, so it logs at `debug`.
+    pub(crate) fn request_completion(&mut self, cx: &mut Context<Self>) {
+        let offset = self.cursor_offset();
+        log::debug!("code editor: completion asked at {offset}");
+        cx.emit(EditorEvent::CompletionRequested(offset));
+    }
+
+    /// After text was typed: ask for completions when automatic completion is on, and this really was one
+    /// identifier character.
+    ///
+    /// Several characters at once (a paste, a committed composition) are not typing character by character,
+    /// so they ask for nothing.
+    pub(crate) fn request_after_typing(&mut self, typed: &str, cx: &mut Context<Self>) {
+        if !self.options.auto_completion {
+            return;
+        }
+        let mut chars = typed.chars();
+        let identifier = matches!(
+            (chars.next(), chars.next()),
+            (Some(ch), None) if ch.is_alphanumeric() || ch == '_'
+        );
+        if identifier {
+            self.request_completion(cx);
+        }
     }
 }

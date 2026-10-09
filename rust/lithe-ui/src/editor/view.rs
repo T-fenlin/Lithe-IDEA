@@ -1,15 +1,16 @@
 use std::ops::Range;
 
 use gpui::{
-    AnyElement, Bounds, Context, ElementInputHandler, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Render, Styled, StyledText, Window,
-    canvas, div, fill, font, point, size, uniform_list,
+    AnyElement, App, Bounds, Context, ElementInputHandler, InteractiveElement, IntoElement,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Styled,
+    StyledText, Window, canvas, div, fill, font, point, size, uniform_list,
 };
 
 use super::{
+    buffer::clamped_range,
     decor::ReadOnlyBanner,
     keys::{CONTEXT, listen},
-    layout::{Row, around, hidden, rows},
+    layout::{Row, Shown, around, hidden, rows},
     state::{CodeEditor, EditorEvent},
     syntax::{self, Bracket, brackets, folds},
 };
@@ -217,6 +218,119 @@ impl CodeEditor {
     }
 }
 
+/// View metrics and anchors.
+///
+/// This group is for the **owner**: a gutter, breakpoints, a completion or hover popup all need to know
+/// what is drawn right now and where an offset sits on screen. The library answers only for a frame it has
+/// measured — a frame that has not been laid out yet gives `None`, so an owner falls back to its own
+/// defaults instead of taking a wrong place for the right one.
+impl CodeEditor {
+    /// The rows the viewport draws now, indexed into this frame's row table (not line numbers).
+    ///
+    /// `None` before the first layout, while no line height or viewport height is known. Folded bodies,
+    /// ghost rows and code lenses make a row index differ from a line number, so this reports no line
+    /// numbers: ask [`CodeEditor::line_at_row`] for one.
+    pub fn visible_row_range(&self) -> Option<Range<usize>> {
+        let line = self.metrics.line;
+        if line <= Pixels::ZERO {
+            return None;
+        }
+        let state = self.scroll.0.borrow();
+        let viewport = state.base_handle.bounds().size.height;
+        if viewport <= Pixels::ZERO {
+            return None;
+        }
+        let scrolled = -state.base_handle.offset().y;
+        let count = self.frame.rows.len();
+        let first = ((scrolled / line).floor().max(0.0) as usize).min(count);
+        let last = (((scrolled + viewport) / line).ceil().max(0.0) as usize).min(count);
+        Some(first..last.max(first))
+    }
+
+    /// The 1-based line number a row-table index stands for; `None` when that row is not a whole document
+    /// line (a code lens, a removed diff line, ghost text, the inline chat) or out of range.
+    ///
+    /// The companion of [`CodeEditor::visible_row_range`]: a folded body, a ghost row or a lens makes the row
+    /// table shorter and coarser than the document, so `row + 1` is not a line number — ask here instead. It
+    /// answers for the frame that is painted; before the first layout every index is out of range.
+    pub fn line_at_row(&self, row: usize) -> Option<usize> {
+        match self.frame.rows.get(row)? {
+            Row::Line(line) => Some(line + 1),
+            _ => None,
+        }
+    }
+
+    /// One row's height; `None` before the first layout.
+    pub fn line_height(&self) -> Option<Pixels> {
+        (self.metrics.line > Pixels::ZERO).then_some(self.metrics.line)
+    }
+
+    /// The code area's scroll offset: a negative `y` means the content has scrolled up, the same sign as
+    /// the upstream `EditorState::scroll_offset`.
+    pub fn scroll_offset(&self) -> Point<Pixels> {
+        self.scroll.0.borrow().base_handle.offset()
+    }
+
+    /// The byte offset under a window point; `None` when that point is not on a row of code (the gutter,
+    /// past the last row, a row that is not a whole line).
+    ///
+    /// The mouse-position lookup; for the other direction see [`CodeEditor::bounds_for_offset`]. `None`
+    /// until a line height has been measured.
+    pub fn offset_at(&self, position: Point<Pixels>, cx: &App) -> Option<usize> {
+        let metrics = self.metrics;
+        if metrics.line <= Pixels::ZERO || metrics.advance <= Pixels::ZERO {
+            return None;
+        }
+        let scrolled = -self.scroll.0.borrow().base_handle.offset().y;
+        let row = ((position.y - metrics.body.y + scrolled) / metrics.line).floor();
+        let row = self.frame.rows.get(row.max(0.0) as usize)?;
+        let Row::Line(line) = *row else {
+            return None;
+        };
+        Some(self.offset_in(line, position.x, cx))
+    }
+
+    /// The rectangle (in window pixels) an offset occupies on screen, which an owner anchors its completion
+    /// or hover popup to.
+    ///
+    /// Only **already drawn and currently visible** places are answered: not laid out yet
+    /// ([`CodeEditor::visible_row_range`] gives `None`), hidden in a fold, or scrolled out of view all give
+    /// `None` — so an owner shows nothing rather than something in the wrong place. An offset out of bounds
+    /// or inside a multi-byte character is pulled onto a whole character first; it never panics.
+    pub fn bounds_for_offset(&self, offset: usize, cx: &App) -> Option<Bounds<Pixels>> {
+        let (row, bounds) = self.placed(offset, cx)?;
+        self.visible_row_range()?.contains(&row).then_some(bounds)
+    }
+
+    /// Which row an offset is drawn on, and where in the window; it does **not** judge visibility (the input
+    /// method wants to know where a composition would go, even off screen).
+    ///
+    /// Answers the row index and its rectangle; `None` when a fold hides that line, or while the row is not
+    /// in this frame's row table yet.
+    pub(crate) fn placed(&self, offset: usize, cx: &App) -> Option<(usize, Bounds<Pixels>)> {
+        let offset = clamped_range(self.buffer.text(), offset..offset).start;
+        let line = self.buffer.line_of(offset);
+        let row = self
+            .frame
+            .rows
+            .iter()
+            .position(|row| *row == Row::Line(line))?;
+        let text = self.row_text(line);
+        let shown = Shown::new(text, self.notes(line, cx), Vec::new());
+        let column = shown.column(text, self.buffer.point(offset).1.min(text.len()));
+        let metrics = self.metrics;
+        let scrolled = -self.scroll.0.borrow().base_handle.offset().y;
+        let origin = point(
+            metrics.left + metrics.advance * column as f32,
+            metrics.body.y + metrics.line * row as f32 - scrolled,
+        );
+        Some((
+            row,
+            Bounds::new(origin, size(metrics.advance, metrics.line)),
+        ))
+    }
+}
+
 impl Render for CodeEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let sticky = if self.options.sticky {
@@ -260,6 +374,7 @@ impl Render for CodeEditor {
         };
         self.metrics.advance = advance;
         self.metrics.line = line;
+        let hover = self.hover_panel(cx);
         let count = self.frame.rows.len();
         let list = uniform_list(
             "editor-rows",
@@ -290,10 +405,11 @@ impl Render for CodeEditor {
             .h_full()
             .child(list)
             .children(sticky)
+            .children(hover)
             .child(
                 canvas(
                     move |bounds, _, cx| {
-                        top.update(cx, |editor, _| editor.metrics.top = bounds.origin.y);
+                        top.update(cx, |editor, _| editor.metrics.body = bounds.origin);
                     },
                     |_, _, _, _| {},
                 )

@@ -151,6 +151,30 @@ editor crate 现在只是把这些结果包成上游的 provider（`completion.r
 原子移植。硬做 L3 只剩两条错路——把 LSP 交互静默降级成静态菜单，或在组件库里塞一个 IDE 子系统——
 两条都不接受。
 
+**这一片已落地（2026-10-08，`rust/lithe-ui/src/editor/`，测试 1568 → 1580 passed）**：
+
+- 光标字节偏移：`cursor_offset()`、`set_cursor_offset(offset, window, cx)`（越界与切字符经 `clamped_range`
+  拉回、收单点光标、最小滚动、焦点交给编辑器——与上游 `set_cursor_position` 同口径，产品现有 4 处调用点依赖它）。
+- LSP 批量编辑：`apply_edits(&[(Range<usize>, String)], cx)`（起点降序、落笔前再夹一次、重叠不 panic、
+  一次算一个撤销步、光标映射到所在编辑的替换文本末尾；只读编辑器拒绝改动）。
+- 视图度量与锚点：`visible_row_range()`、`line_height()`、`scroll_offset()`、`offset_at(...)`、
+  `bounds_for_offset(offset, cx)`（只回答已布局且可见的位置）。`bounds_for_offset` 需要 `cx`：
+  有 inlay hint 的行要按渲染后的列算，不给 `cx` 就是**假装正确**。
+- 请求事件与数据推送：`EditorEvent::CompletionRequested(usize)` / `HoverRequested(usize)`；
+  `ctrl-space` 显式触发、`auto_completion(bool)`（默认关，只在恰好敲进一个标识符字符后发）、
+  悬停按标识符进入发一次（同一个符号只问一次）；`set_completions` / `clear_completions` /
+  `completions` / `present_hover` / `hover`（库只存、只画，弹层与键盘导航留宿主）。
+
+**L3 仍要履行的三件事**（写在代码 doc 里，也记在这里）：
+
+1. **gutter 需要行号**：`visible_row_range()` 给的是**行表下标**，有折叠/ghost/lens 时与行号不等价；
+   产品的断点 gutter 现在假设 `row + 1 == line`，会错位。组件库要补一个 O(1) 的"行下标 → 行号"查询
+   （折叠体与越界返回"没有"，不要瞎猜），已作为本片的紧接补丁。
+2. **补全/悬停的数据生命周期由宿主负责**：库不随文本变化自动清（`clear_completions` /
+   `present_hover(None)` 由宿主调），也没有"指针离开符号"的事件——收层时机归宿主。
+3. **弹层编排归宿主**：定位用 `bounds_for_offset`，浮层用门 G1 的
+   `lithe_ui::shell::WindowRootExt::push_layer`。
+
 **顺带修掉的真缺口（已落地）**：语言 id/扩展名/文件名保真度。产品的
 `crates/editor/src/buffer.rs:15-44` 与设置侧 `lithe.projectLanguages` 用的是 `bash`（不是 `shell`）、
 `json/jsonc`、`ktm`、`xsl/xslt/wsdl`，以及 `mvnw`/`gradlew`/`mvnw.cmd`/`gradlew.bat` 的无扩展名映射。

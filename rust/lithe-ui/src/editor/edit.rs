@@ -3,7 +3,7 @@ use std::ops::Range;
 use gpui::{ClipboardItem, Context};
 
 use super::{
-    buffer::Buffer,
+    buffer::{Buffer, clamped_range},
     cursor::{Motion, Selection, merged, replace_each},
     state::CodeEditor,
 };
@@ -52,6 +52,47 @@ impl CodeEditor {
         self.reveal(true, cx);
     }
 
+    /// Applies a batch of the owner's text edits (a language server's `TextEdit`: byte-range replacements) as
+    /// one undo step; read-only text refuses.
+    ///
+    /// Ranges are applied **bottom-up**, so an earlier edit cannot move a later one's offsets, and every range
+    /// is clamped onto whole characters of the text as it stands **at that moment** — an out-of-bounds,
+    /// character-splitting or even overlapping batch lands safely instead of panicking (where ranges overlap,
+    /// the one applied later, i.e. the earlier one, wins). Afterwards the primary cursor sits where the edits
+    /// left it: a cursor inside an edit stops at the end of that edit's replacement (a completion, a rename),
+    /// and edits above it shift it (a new import line). Only a real text change counts as a step and raises
+    /// [`super::EditorEvent::Changed`].
+    pub fn apply_edits(&mut self, edits: &[(Range<usize>, String)], cx: &mut Context<Self>) {
+        if !self.editable() {
+            log::debug!("code editor: read only, LSP edits dropped");
+            return;
+        }
+        if edits.is_empty() {
+            return;
+        }
+        let mut applied: Vec<(Range<usize>, String)> = edits
+            .iter()
+            .map(|(range, text)| {
+                (
+                    clamped_range(self.buffer.text(), range.clone()),
+                    text.clone(),
+                )
+            })
+            .collect();
+        applied.sort_by(|a, b| b.0.start.cmp(&a.0.start).then(b.0.end.cmp(&a.0.end)));
+        let caret = caret_after(self.cursor_offset(), &applied);
+        let before = self.snapshot();
+        for (range, replacement) in &applied {
+            let range = clamped_range(self.buffer.text(), range.clone());
+            self.buffer.replace(range, replacement);
+        }
+        self.marked = None;
+        let caret = clamped_range(self.buffer.text(), caret..caret).start;
+        self.commit(before, false, cx);
+        self.set_selections(vec![Selection::caret(caret)], cx);
+        self.reveal(true, cx);
+    }
+
     /// Types text at each cursor; an opener brings its closer, and a closer already there is stepped over.
     pub(crate) fn type_text(&mut self, text: &str, cx: &mut Context<Self>) {
         if !self.editable() {
@@ -59,7 +100,8 @@ impl CodeEditor {
         }
         let mut chars = text.chars();
         let (Some(ch), None) = (chars.next(), chars.next()) else {
-            return self.insert(text, true, cx);
+            self.insert(text, true, cx);
+            return self.request_after_typing(text, cx);
         };
         let next = |caret: usize| self.buffer.text()[caret..].chars().next();
         let all_empty = self.selections.iter().all(Selection::is_empty);
@@ -73,13 +115,15 @@ impl CodeEditor {
             return self.motion(Motion::Right, false, cx);
         }
         let Some((open, close)) = PAIRS.iter().find(|(open, _)| *open == ch) else {
-            return self.insert(text, true, cx);
+            self.insert(text, true, cx);
+            return self.request_after_typing(text, cx);
         };
         let free = |caret: usize| {
             next(caret).is_none_or(|after| after.is_whitespace() || ")]}".contains(after))
         };
         if !all_empty || !self.selections.iter().all(|selection| free(selection.head)) {
-            return self.insert(text, true, cx);
+            self.insert(text, true, cx);
+            return self.request_after_typing(text, cx);
         }
         let edits = self
             .selections
@@ -93,6 +137,7 @@ impl CodeEditor {
             .map(|caret| Selection::caret(caret.head - close.len_utf8()))
             .collect();
         self.set_selections(back, cx);
+        self.request_after_typing(text, cx);
     }
 
     /// Deletes each selection, or what `reach` finds from each bare caret.
@@ -423,4 +468,25 @@ fn joined(mut edits: Vec<(Range<usize>, String)>) -> Vec<(Range<usize>, String)>
         }
     }
     out
+}
+
+/// Where a caret at `at` lands after `edits`, which are sorted from the bottom of the text up.
+///
+/// A caret inside an edit moves to the end of that edit's replacement; an edit above it only shifts it by
+/// its own delta; an edit below it leaves it where it was. A caret in the text is always a whole character,
+/// so the answer is too.
+fn caret_after(at: usize, edits: &[(Range<usize>, String)]) -> usize {
+    let mut at = at;
+    let mut shift: isize = 0;
+    for (range, replacement) in edits.iter().rev() {
+        if at < range.start {
+            break;
+        }
+        if at <= range.end {
+            at = range.start + replacement.len();
+            break;
+        }
+        shift += replacement.len() as isize - range.len() as isize;
+    }
+    (at as isize + shift).max(0) as usize
 }

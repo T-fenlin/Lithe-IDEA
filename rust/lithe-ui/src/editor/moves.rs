@@ -1,6 +1,7 @@
-use gpui::{Context, ScrollStrategy};
+use gpui::{Context, ScrollStrategy, Window};
 
 use super::{
+    buffer::clamped_range,
     cursor::{Motion, Selection, merged, moved},
     layout::{Row, hidden, rows},
     state::CodeEditor,
@@ -100,6 +101,30 @@ impl CodeEditor {
         let primary = self.primary();
         self.marks.ghost = None;
         self.set_selections(vec![Selection::caret(primary.head)], cx);
+    }
+
+    /// Puts the primary cursor at `offset` (a byte offset) and collapses the selection to a caret.
+    ///
+    /// An offset out of bounds or inside a multi-byte character is pulled back onto a whole character first
+    /// (`buffer::clamped_range`), never panicking; a fold over the cursor opens (`set_selections` does that),
+    /// the viewport scrolls only **as far as it must** to bring the cursor in (`ScrollStrategy::Nearest`, the
+    /// same reading as the upstream `set_cursor_position` with `ScrollPadding::Minimal`, rather than pushing the
+    /// cursor to a viewport edge the way key-repeat motion does), and the keyboard focus goes to the editor.
+    ///
+    /// An owner places its cursor with this after a language-server answer (go to definition, a code action,
+    /// restoring a remembered position); the editor asks for nothing itself.
+    pub fn set_cursor_offset(
+        &mut self,
+        offset: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let at = clamped_range(self.buffer.text(), offset..offset).start;
+        self.set_selections(vec![Selection::caret(at)], cx);
+        self.scroll
+            .scroll_to_item(self.primary_row(), ScrollStrategy::Nearest);
+        window.focus(&self.focus, cx);
+        cx.notify();
     }
 
     /// Folds the block that opens on a line, or opens it again; cursors inside move to its header.

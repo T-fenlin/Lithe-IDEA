@@ -2,14 +2,10 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, EntityInputHandler, FontStyle, HighlightStyle, Pixels,
-    Point, UTF16Selection, Window, point,
+    Point, UTF16Selection, Window,
 };
 
-use super::{
-    cursor::Selection,
-    layout::{Row, Shown},
-    state::CodeEditor,
-};
+use super::{cursor::Selection, layout::Shown, state::CodeEditor};
 use crate::{
     forms::{from_utf16, to_utf16},
     theme::ActiveTheme,
@@ -68,21 +64,6 @@ impl CodeEditor {
         {
             self.history.record(start, false);
         }
-    }
-
-    /// The offset under a window point, when a row of code is there.
-    pub(crate) fn offset_at(&self, position: Point<Pixels>, cx: &App) -> Option<usize> {
-        let metrics = self.metrics;
-        if metrics.line <= Pixels::ZERO || metrics.advance <= Pixels::ZERO {
-            return None;
-        }
-        let scrolled = -self.scroll.0.borrow().base_handle.offset().y;
-        let row = ((position.y - metrics.top + scrolled) / metrics.line).floor();
-        let row = self.frame.rows.get(row.max(0.0) as usize)?;
-        let Row::Line(line) = *row else {
-            return None;
-        };
-        Some(self.offset_in(line, position.x, cx))
     }
 
     /// The offset nearest window x on a line.
@@ -206,25 +187,7 @@ impl EntityInputHandler for CodeEditor {
         cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
         let range = self.byte_range(&range_utf16);
-        let line = self.buffer.line_of(range.start);
-        let row = self
-            .frame
-            .rows
-            .iter()
-            .position(|row| *row == Row::Line(line))?;
-        let text = self.row_text(line);
-        let shown = Shown::new(text, self.notes(line, cx), Vec::new());
-        let column = shown.column(text, self.buffer.point(range.start).1.min(text.len()));
-        let metrics = self.metrics;
-        let scrolled = -self.scroll.0.borrow().base_handle.offset().y;
-        let origin = point(
-            metrics.left + metrics.advance * column as f32,
-            metrics.top + metrics.line * row as f32 - scrolled,
-        );
-        Some(Bounds::new(
-            origin,
-            gpui::size(metrics.advance, metrics.line),
-        ))
+        self.placed(range.start, cx).map(|(_, bounds)| bounds)
     }
 
     fn character_index_for_point(

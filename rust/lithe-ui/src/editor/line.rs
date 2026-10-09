@@ -10,7 +10,7 @@ use super::{
     cursor::Selection,
     gutter::Cell,
     layout::{Shown, stack},
-    state::{CodeEditor, CursorShape},
+    state::{CodeEditor, CursorShape, EditorEvent},
     syntax,
 };
 use crate::{
@@ -337,7 +337,8 @@ impl CodeEditor {
                 }),
             )
             .on_mouse_move(cx.listener(move |editor, event: &MouseMoveEvent, _, cx| {
-                editor.drag(line, event, cx)
+                editor.drag(line, event, cx);
+                editor.track_hover(line, event, cx);
             }));
         base.child(self.gutter(Cell::Line(line), row, cx))
             .child(code)
@@ -405,5 +406,38 @@ impl CodeEditor {
         primary.head = at;
         primary.goal = None;
         self.set_selections(all, cx);
+    }
+
+    /// Asks the owner for a hover ([`EditorEvent::HoverRequested`]) while the pointer rests on a symbol: one
+    /// symbol is asked for once, whitespace and punctuation ask for nothing, and a selection being dragged asks
+    /// for nothing.
+    ///
+    /// The library only reports where the pointer stopped; fetching the content and taking a hover down are the
+    /// owner's. Leaving a symbol raises nothing (see [`EditorEvent::HoverRequested`]) — the owner times its own
+    /// dismissal.
+    pub(crate) fn track_hover(
+        &mut self,
+        line: usize,
+        event: &MouseMoveEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if self.dragging {
+            return;
+        }
+        let at = self.offset_in(line, event.position.x, cx);
+        let word = self.buffer.word_at(at);
+        let symbol = (!word.is_empty()
+            && self.buffer.text()[word.clone()]
+                .chars()
+                .all(|ch| ch.is_alphanumeric() || ch == '_'))
+        .then_some(word);
+        if symbol == self.hover_symbol {
+            return;
+        }
+        if let Some(word) = symbol.as_ref() {
+            log::debug!("code editor: hover asked at {}", word.start);
+            cx.emit(EditorEvent::HoverRequested(word.start));
+        }
+        self.hover_symbol = symbol;
     }
 }

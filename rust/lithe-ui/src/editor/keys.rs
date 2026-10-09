@@ -47,6 +47,7 @@ actions!(
         ToggleComment,
         Fold,
         Unfold,
+        Complete,
     ]
 );
 
@@ -92,6 +93,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-c", Copy, context),
         KeyBinding::new("secondary-x", Cut, context),
         KeyBinding::new("secondary-d", SelectNext, context),
+        // Explicit completion trigger: IDEA's basic-completion key, the same on all three platforms.
+        KeyBinding::new("ctrl-space", Complete, context),
         KeyBinding::new("escape", SingleCursor, context),
         KeyBinding::new("secondary-/", ToggleComment, context),
         KeyBinding::new("secondary-alt-[", Fold, context),
@@ -291,10 +294,12 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<CodeEditor
             e.toggle_fold(header, cx);
         }
     });
-    on!(root, Unfold, |e, _, cx| {
+    let root = on!(root, Unfold, |e, _, cx| {
         let line = e.buffer.line_of(e.primary().head);
         if e.folded.contains(&line) {
             e.toggle_fold(line, cx);
         }
-    })
+    });
+    // Ctrl-Space: ask the owner for completions; fetching the data and showing the popup are its business.
+    on!(root, Complete, |e, _, cx| e.request_completion(cx))
 }

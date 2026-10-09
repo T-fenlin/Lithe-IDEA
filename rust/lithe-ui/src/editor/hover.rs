@@ -1,11 +1,11 @@
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    App, ElementId, HighlightStyle, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Window, div,
+    AnyElement, App, ElementId, HighlightStyle, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, StyledText, Window, div,
 };
 
-use super::syntax;
+use super::{state::CodeEditor, syntax};
 use crate::{
     primitives::{Icon, Severity},
     theme::{ActiveTheme, Elevation, IconSize, Palette, Radius, TextSize},
@@ -14,7 +14,11 @@ use crate::{
 type OnPress = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// What a hover over a symbol reads: its signature in code, a problem when there is one, its documentation, and links.
-#[derive(IntoElement)]
+///
+/// The library only **draws** it: the owner fetches the content and pushes it with [`CodeEditor::present_hover`].
+/// `Clone` is there so the editor can redraw the same content every frame (link handlers are shared through
+/// `Rc`: a copy is a handle, not state).
+#[derive(IntoElement, Clone)]
 pub struct HoverInfo {
     id: ElementId,
     signature: SharedString,
@@ -52,6 +56,30 @@ impl HoverInfo {
     ) -> Self {
         self.links.push((label.into(), Rc::new(handler)));
         self
+    }
+}
+
+/// Where the editor draws hover content.
+impl CodeEditor {
+    /// The hover content the owner pushed, drawn under the character it hangs from; nothing is drawn while the
+    /// anchor is not in the viewport, or the frame has not been laid out.
+    ///
+    /// Draw only, never fetch: the content arrives through [`CodeEditor::present_hover`], and the anchor is the
+    /// symbol the last [`super::EditorEvent::HoverRequested`] named. The rule matches
+    /// [`CodeEditor::bounds_for_offset`] exactly, so an owner placing its own popup lands in the same place;
+    /// taking the content down is the owner's business, the library never withdraws it on its own.
+    pub(crate) fn hover_panel(&self, cx: &App) -> Option<AnyElement> {
+        let hover = self.hover.as_ref()?;
+        let bounds = self.bounds_for_offset(hover.offset, cx)?;
+        let body = self.metrics.body;
+        Some(
+            div()
+                .absolute()
+                .left(bounds.origin.x - body.x)
+                .top(bounds.origin.y - body.y + bounds.size.height)
+                .child(hover.info.clone())
+                .into_any_element(),
+        )
     }
 }
 

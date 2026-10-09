@@ -266,6 +266,22 @@ Community 的 action / control / theme 源，并把来源路径与版本记进�
 智能选区、图片粘贴、保存冲突与磁盘回读核对、只读策略，以及**真正的 LSP 客户端布线**
 （"编辑器有 LSP 接缝"不等于"有 LSP 客户端"——两侧要分开验证）。
 
+**进展（2026-10-08）：接缝这一半已在组件库落地，客户端那一半仍是产品工作。**
+
+- **已落地（`rust/lithe-ui/src/editor/`）**：光标字节偏移 `cursor_offset()` / `set_cursor_offset(...)`
+  （越界与切字符经 `clamped_range` 拉回、不 panic）；LSP 批量编辑 `apply_edits(&[(Range, String)])`
+  （起点降序、落笔前再夹一次、一处撤销步、光标映射到所在编辑末尾）；视图度量与锚点
+  `visible_row_range()` / `line_height()` / `scroll_offset()` / `offset_at(...)` /
+  `bounds_for_offset(offset, cx)`；补全与悬停的**请求事件** `EditorEvent::CompletionRequested(usize)` /
+  `HoverRequested(usize)`（`ctrl-space` 显式触发，以及默认关闭的 `auto_completion`——只在恰好敲进
+  一个标识符字符后发）。
+- **分层口径**：组件库**只报时机、只存数据、只画内容**（`set_completions` / `clear_completions` /
+  `completions` / `present_hover` / `hover`）；**取数、弹层定位与键盘导航留在宿主**
+  （用门 G1 的 `lithe_ui::shell::WindowRootExt::push_layer`）。
+- **客户端那一半仍是产品工作**：数据来自 `rust/lithe-gpui/crates/java` 的 `JavaLanguageService`
+  （该 crate 只依赖 `shared` 与 `url`，完全不碰 `gpui-kit`）；`crates/editor` 要自己承担补全/悬停的
+  生命周期（文本变化后收层，库不自动清）与弹层编排。
+
 **WebView 兜底只能当降风险项**：内嵌 WebView 的方案目前只在 macOS 与 Windows 有受支持路径，
 Linux 那条还没发布，且它画在 GPUI 之上、浮层盖不住它。所以
 **"顶不住就内嵌 Monaco"只适用于 macOS/Windows，不能当作 Linux 的逃生舱。**
