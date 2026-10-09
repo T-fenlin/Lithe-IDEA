@@ -63,11 +63,14 @@
 
 ### 装载策略：先静态，再动态，接口先立
 
-- **现在（静态）**：grammar 作为依赖编进二进制，与 `gpui-kit` 时代一致。加语言需要重新构建。
-- **将来（动态）**：装载源换成 `extensions/` 目录里的语言支持包（动态库 + 查询 + 配置），并遵守仓库
-  既有纪律：资源在**构建阶段**固定来源并签名，运行时只从已安装插件发现入口，不写 app bundle 或安装目录。
+- **现在（静态，已落地）**：grammar 作为依赖编进二进制，与 `gpui-kit` 时代一致。加语言需要重新构建。
+  维护者 2026-10-08 明确：**动态装载（L4）先不做，静态够用**。
+- **将来（动态，暂缓）**：装载源换成 `extensions/` 目录里的语言支持包（动态库 + 查询 + 配置），并遵守
+  仓库既有纪律：资源在**构建阶段**固定来源并签名，运行时只从已安装插件发现入口，不写 app bundle 或安装目录。
+  触发条件是"确实需要第三方在不重新发版的前提下加语言"；没有这个需求前不做，以免 ABI 与打包成本
+  拖住接口定型。
 - 关键点：这次定的是**接口与注册表**，不是加载器。换成动态库时，`Language` 声明与注册表 API 不变，
-  只替换"从哪里拿到 grammar"。
+  只替换"从哪里拿到 grammar"。**现在不做加载器，不会阻碍将来做**。
 
 ### 已知边界（不假装完整）
 
@@ -75,6 +78,24 @@
   `tree_sitter_md::INLINE_LANGUAGE` + `HIGHLIGHT_QUERY_INLINE` 的第二次解析（术语上是 injections），
   等引擎支持注入后再补。
 - XML 只注册了 XML 语法，DTD 是另一个 grammar，尚未注册。
+
+### 静态语言支持什么时候才"看得见"
+
+语言注册表与引擎已经能用（`lithe-gpui-languages` 的端到端测试证明 `class`/`1` 能落到正确槽位），
+但**界面上还看不到**：产品编辑器 crate（`rust/lithe-gpui/crates/editor`，5256 行）整块建在
+`gpui-kit` 的编辑器上，高亮由上游自己的 `GrammarConfig`/`LanguageRegistry` 完成。要让我们的注册表
+生效，编辑器必须走组件库的渲染路径。
+
+按依赖顺序分四片，每片可独立编译验证：
+
+| 子片 | 范围 | 依据 |
+| --- | --- | --- |
+| **L3a** | `buffer.rs`(339 行) + `languages.rs`(42 行)：文本模型与 LSP 位置换算换到 `lithe_ui::editor::Buffer` + `lithe_ui::language` | 其余文件都建在 `Rope`/`Position`/`EditorState` 上（分别 44/84/14 处） |
+| **L3b** | `completion.rs`/`hover.rs`/`code_actions.rs`/`problems.rs`/`diagnostics.rs` → 库侧 `hints`/`hover`/`refactor`/`problems` | 库侧已有对等件，属重接而非新建 |
+| **L3c** | `editor_view.rs`(2194 行)：编辑器部件换成库侧 `CodeEditor`/`view` | **高亮此时才在产品里可见**，因为高亮由渲染路径决定 |
+| **L3d** | `navigation.rs`/`go_to_line.rs` 收尾，摘掉该 crate 的 `gpui-kit` | 收尾片 |
+
+先做 L3a 的原因：它是其余三片共同的地基（位置与 rope 语义），而且**不需要**先动 2194 行的部件文件。
 
 ## 考虑过的备选方案
 
