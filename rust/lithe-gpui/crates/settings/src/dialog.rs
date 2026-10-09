@@ -1,36 +1,25 @@
 use std::path::PathBuf;
 
-use gpui::{Anchor, PathPromptOptions, prelude::FluentBuilder as _};
 use gpui::{
-    App, AppContext as _, Context, ElementId, Entity, FontWeight, InteractiveElement as _,
-    IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, FontWeight, Hsla,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Rems, Render,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
 };
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{Selectable as _, h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle};
-use gpui_kit::component::input::{Input, InputEvent, InputState, NumberInput};
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
+use gpui::{PathPromptOptions, prelude::FluentBuilder as _};
 
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
 use lithe_gpui_shared::workspace_config::{
     OverrideOrigin, OverrideOrigins, ToolchainPaths, load_local_toolchain, save_local_toolchain,
 };
 use lithe_gpui_shared::{tr, tr_args};
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::feedback::EmptyState;
+use lithe_ui::forms::{Input, InputEvent, InputState, NumberInput, Switch};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::menus::{DropdownMenu, Menu, MenuItem};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
-
-/// 过渡桥：设置页这几个图标最终交给上游的图标槽（只收 gpui-kit 的 `Icon`），组件库的元素进不去
-/// （同 `workbench::icon_kit` 的说明）。按同一份资源路径就地包成上游 `Icon`，
-/// 画出来的东西与迁移前逐字节相同；设置页整片迁到组件库时删掉本函数。
-fn idea_icon_mono(icon: &idea::IdeaIcon, is_dark: bool) -> Icon {
-    let path: SharedString = icon.path(is_dark).into();
-    Icon::empty().path(path)
-}
+use lithe_ui::theme::{ActiveTheme as _, Radius, Size};
 
 use crate::identity::{
     GitIdentityPage, IdentityField, IdentityScope, IdentitySetup, git_identity_page,
@@ -41,15 +30,14 @@ use crate::project::{
     ProjectEnvironment, ToolSource, discover, resolve_overrides,
 };
 use crate::row::{
-    ControlWidth, RowActivation, appearance_source_note, page_stack, page_title, settings_group,
-    settings_row, settings_row_with_note,
+    RowActivation, appearance_source_note, page_stack, page_title, settings_group, settings_row,
+    settings_row_with_note,
 };
 use crate::run::{RunConfigurationView, RunProjectView};
 use crate::schema::{
-    DISPLAY_LANGUAGES, EDITOR_FONT_SIZE_DEFAULT, EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN,
-    SHELL_SYSTEM_DEFAULT, Settings, TAB_SIZES, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN,
-    TERMINAL_FONT_SIZE_UNSET, TERMINAL_SHELL_IDS, UI_FONT_SIZE_DEFAULT, UI_FONT_SIZE_MAX,
-    UI_FONT_SIZE_MIN, UI_FONT_SIZE_STEP,
+    DISPLAY_LANGUAGES, EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN, SHELL_SYSTEM_DEFAULT, Settings,
+    TAB_SIZES, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_UNSET,
+    TERMINAL_SHELL_IDS, UI_FONT_SIZE_MAX, UI_FONT_SIZE_MIN, UI_FONT_SIZE_STEP,
 };
 use crate::store::{AppearanceMode, SettingsStore, store};
 use crate::theme;
@@ -117,6 +105,20 @@ pub(crate) use lithe_gpui_shared::rem_px;
 
 fn rem_length(spec_px: f32) -> gpui::Length {
     rems(spec_px / 16.).into()
+}
+
+/// 建一个带初值的一行文本输入状态。
+///
+/// 库的 `InputState` 没有上游的 `default_value(..)` 构造器，初值只能构造后 `set_text(..)`
+/// （`set_text` 会发一次 `Changed`；此刻还没有订阅者，不会回流成一次保存）。
+fn text_input(
+    window: &mut Window,
+    cx: &mut Context<InputState>,
+    text: impl Into<String>,
+) -> InputState {
+    let mut state = InputState::new(window, cx);
+    state.set_text(text, cx);
+    state
 }
 
 const DIALOG_WIDTH: f32 = 820.;
@@ -213,20 +215,31 @@ impl Category {
         }
     }
 
-    fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
+    /// 本仓自有图标集（`lithe_gpui_shared::icons::idea`）里的分类图形；**没有对应图形的分类给
+    /// `None`**，由调用点占一个同尺寸空槽，不拿组件库的 `IconName` 顶替（同
+    /// `crates/terminal/src/terminal_view.rs` 的图标口径）。
+    fn icon(self) -> Option<&'static idea::IdeaIcon> {
         match self {
-            Self::General => idea_icon_mono(&idea::GEAR_ICON, is_dark),
-            Self::Appearance => idea_icon_mono(&idea::PALETTE_ICON, is_dark),
-            Self::Editor => Icon::new(IconName::Code),
-            Self::Terminal => Icon::new(IconName::SquareTerminal),
-            Self::Project => Icon::new(IconName::FolderCog),
-            Self::Run => idea_icon_mono(&idea::PLAY_ICON, is_dark),
-            Self::Keyboard => idea_icon_mono(&idea::KEYBOARD_ICON, is_dark),
-            Self::Lsp => Icon::new(IconName::Braces),
-            Self::Git => idea_icon_mono(&idea::GIT_BRANCH_ICON, is_dark),
-            Self::Logs => Icon::new(IconName::ScrollText),
-            Self::Updates => idea_icon_mono(&idea::DOWNLOAD_ICON, is_dark),
+            Self::General => Some(&idea::GEAR_ICON),
+            Self::Appearance => Some(&idea::PALETTE_ICON),
+            Self::Run => Some(&idea::PLAY_ICON),
+            Self::Keyboard => Some(&idea::KEYBOARD_ICON),
+            Self::Git => Some(&idea::GIT_BRANCH_ICON),
+            Self::Updates => Some(&idea::DOWNLOAD_ICON),
+            // 本仓图标集里没有「编辑器 / 终端 / 项目 / 语言服务 / 日志」这五张图。
+            Self::Editor | Self::Terminal | Self::Project | Self::Lsp | Self::Logs => None,
         }
+    }
+}
+
+/// 一个分类的图标位：有自有图形就画（按调用点给的边长与颜色），没有就占同尺寸空位
+/// ——空位不画任何图形，只保证版面不跳。
+fn category_icon(category: Category, side: Rems, color: Hsla, cx: &App) -> AnyElement {
+    match category.icon() {
+        Some(icon) => idea_icon_svg_px(icon, cx, side)
+            .text_color(color)
+            .into_any_element(),
+        None => div().flex_none().w(side).h(side).into_any_element(),
     }
 }
 
@@ -429,7 +442,7 @@ fn source_label(source: ToolSource) -> SharedString {
 }
 
 fn draft_value(input: &Entity<InputState>, cx: &App) -> String {
-    input.read(cx).value().trim().to_string()
+    input.read(cx).text().trim().to_string()
 }
 
 fn maven_config_effective(
@@ -501,7 +514,7 @@ fn run_page_hint(text: SharedString, cx: &Context<SettingsDialog>) -> gpui::AnyE
     div()
         .w_full()
         .text_sm()
-        .text_color(cx.theme().foreground)
+        .text_color(cx.theme().colors.fg)
         .child(text)
         .into_any_element()
 }
@@ -697,8 +710,6 @@ fn git_clear_enabled(setup: Option<&IdentitySetup>, field: IdentityField, busy: 
 pub struct SettingsDialog {
     store: Entity<SettingsStore>,
     category: Category,
-    font_size_input: Entity<InputState>,
-    editor_font_size_input: Entity<InputState>,
     git_name_input: Entity<InputState>,
     git_email_input: Entity<InputState>,
     git: GitPageState,
@@ -719,23 +730,7 @@ impl SettingsDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let value = store.read(cx).settings().ui_font_size;
-        let editor_value = store.read(cx).settings().font_size;
         let saved = store.read(cx).settings().clone();
-        let font_size_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(format_ui_font_size(value))
-                .step(UI_FONT_SIZE_STEP)
-                .min(UI_FONT_SIZE_MIN)
-                .max(UI_FONT_SIZE_MAX)
-        });
-        let editor_font_size_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(format_editor_font_size(editor_value))
-                .step(1.)
-                .min(EDITOR_FONT_SIZE_MIN)
-                .max(EDITOR_FONT_SIZE_MAX)
-        });
 
         let git_name_input = cx.new(|cx| InputState::new(window, cx));
         let git_email_input = cx.new(|cx| InputState::new(window, cx));
@@ -753,65 +748,25 @@ impl SettingsDialog {
         }
         let (project_overrides, override_origins) =
             resolve_overrides(&local_toolchain.paths, &Overrides::from_settings(&saved));
-        let java_home_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(project_overrides.java_home.clone())
-        });
-        let maven_executable_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(project_overrides.maven_executable.clone())
-        });
-        let maven_java_home_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(project_overrides.maven_java_home.clone())
-        });
-        let maven_settings_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(project_overrides.maven_settings.clone())
-        });
-        let maven_local_repository_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(project_overrides.maven_local_repository.clone())
-        });
+        let java_home_input =
+            cx.new(|cx| text_input(window, cx, project_overrides.java_home.clone()));
+        let maven_executable_input =
+            cx.new(|cx| text_input(window, cx, project_overrides.maven_executable.clone()));
+        let maven_java_home_input =
+            cx.new(|cx| text_input(window, cx, project_overrides.maven_java_home.clone()));
+        let maven_settings_input =
+            cx.new(|cx| text_input(window, cx, project_overrides.maven_settings.clone()));
+        let maven_local_repository_input =
+            cx.new(|cx| text_input(window, cx, project_overrides.maven_local_repository.clone()));
 
         let mut subscriptions = Vec::new();
         subscriptions.push(cx.observe(&store, |_, _, cx| cx.notify()));
-        subscriptions.push(cx.subscribe_in(
-            &font_size_input,
-            window,
-            |this: &mut Self, input, event: &InputEvent, _window, cx| {
-                if !matches!(event, InputEvent::Change) {
-                    return;
-                }
-                let Ok(parsed) = input.read(cx).value().parse::<f64>() else {
-                    return;
-                };
-                if !(UI_FONT_SIZE_MIN..=UI_FONT_SIZE_MAX).contains(&parsed) {
-                    return;
-                }
-                let store = this.store.clone();
-                store.update(cx, |store, cx| store.set_ui_font_size(parsed, cx));
-            },
-        ));
-        subscriptions.push(cx.subscribe_in(
-            &editor_font_size_input,
-            window,
-            |this: &mut Self, input, event: &InputEvent, _window, cx| {
-                if !matches!(event, InputEvent::Change) {
-                    return;
-                }
-                let Ok(parsed) = input.read(cx).value().parse::<f64>() else {
-                    return;
-                };
-                if !(EDITOR_FONT_SIZE_MIN..=EDITOR_FONT_SIZE_MAX).contains(&parsed) {
-                    return;
-                }
-                let store = this.store.clone();
-                store.update(cx, |store, cx| store.set_editor_font_size(parsed, cx));
-            },
-        ));
         for input in [&git_name_input, &git_email_input] {
             subscriptions.push(cx.subscribe_in(
                 input,
                 window,
                 |_this: &mut Self, _input, event: &InputEvent, _window, cx| {
-                    if matches!(event, InputEvent::Change) {
+                    if matches!(event, InputEvent::Changed) {
                         cx.notify();
                     }
                 },
@@ -829,7 +784,7 @@ impl SettingsDialog {
                 input,
                 window,
                 |_this: &mut Self, _input, event: &InputEvent, _window, cx| {
-                    if matches!(event, InputEvent::Change) {
+                    if matches!(event, InputEvent::Changed) {
                         cx.notify();
                     }
                 },
@@ -839,8 +794,6 @@ impl SettingsDialog {
         Self {
             store,
             category,
-            font_size_input,
-            editor_font_size_input,
             git_name_input,
             git_email_input,
             git: GitPageState::new(),
@@ -856,7 +809,7 @@ impl SettingsDialog {
     }
 
     fn header(&self, cx: &Context<Self>) -> impl IntoElement {
-        h_flex()
+        h_stack()
             .w_full()
             .h_11()
             .flex_shrink_0()
@@ -864,9 +817,9 @@ impl SettingsDialog {
             .gap_2()
             .px_3()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().popover)
-            .text_color(cx.theme().foreground)
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.overlay)
+            .text_color(cx.theme().colors.fg)
             .child(idea_icon_image(&idea::GEAR_ICON, cx, rems(1.)))
             .child(
                 div()
@@ -876,12 +829,14 @@ impl SettingsDialog {
             )
             .child(div().flex_1())
             .child(
+                // 库 `Button` 没有 gpui 的 `Styled`：上游的 `.px_0()` 没有落点（图标按钮的方形
+                // 几何归库自己）；图标改走 `.icon_element(..)`（库 `.icon(..)` 只吃库内图标名）。
+                // 上游那条 `.accessibility_label(..)` 也没有对等物：库只有 `label` 会转成
+                // `aria_label`，图标按钮只剩 `tooltip`——这一处登记在汇报的缺口清单里。
                 Button::new("settings-close")
-                    .small()
-                    .ghost()
-                    .child(idea_icon_image(&idea::X_ICON, cx, rems(1.)))
-                    .px_0()
-                    .accessibility_label(tr("lithe.tabs.close"))
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
+                    .icon_element(idea_icon_image(&idea::X_ICON, cx, rems(1.)))
                     .tooltip(tr("lithe.tabs.close"))
                     .on_click(|_, window, cx| {
                         window.close_dialog(cx);
@@ -890,7 +845,7 @@ impl SettingsDialog {
     }
 
     fn nav(&self, cx: &Context<Self>) -> impl IntoElement {
-        v_flex()
+        v_stack()
             .id("settings-nav")
             .h_full()
             .w(rem_length(NAV_WIDTH))
@@ -898,30 +853,23 @@ impl SettingsDialog {
             .gap_0p5()
             .p_2()
             .border_r_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().popover)
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.overlay)
             .aria_label(tr("lithe.settings.mac.categories"))
             .children(Category::ALL.iter().enumerate().map(|(index, category)| {
                 let selected = *category == self.category;
+                // 库 `Button` 没有 gpui 的 `Styled` / `ParentElement`：上游的 `.w_full()` 与
+                // `.child(..)`（图标 + 文案的自定义行）在库侧没有落点，几何与内部排版归库自己；
+                // `.selected(..)` 也没有对等物——"当前分类"用 `Subtle` 档表达（底色 = `colors.hover`，
+                // 与库 `NavItem` 的 active 底色同源）。这两处差异登记在汇报的缺口清单里。
                 Button::new(("settings-category", index))
-                    .ghost()
-                    .selected(selected)
-                    .w_full()
-                    .child(
-                        h_flex()
-                            .w_full()
-                            .min_w_0()
-                            .items_center()
-                            .gap_2p5()
-                            .child(category.icon(cx.theme().is_dark()).size_4())
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .when(selected, |this| this.font_weight(FontWeight::MEDIUM))
-                                    .child(tr(category.label_key())),
-                            ),
-                    )
+                    .variant(if selected {
+                        ButtonVariant::Subtle
+                    } else {
+                        ButtonVariant::Ghost
+                    })
+                    .icon_element(category_icon(*category, rems(1.), cx.theme().colors.fg, cx))
+                    .label(tr(category.label_key()))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.category = *category;
                         if *category == Category::Git && this.git.setup.is_none() && !this.git.busy
@@ -960,8 +908,13 @@ impl SettingsDialog {
             .min_w_0()
             .h_full()
             .p_6()
-            .bg(cx.theme().background)
-            .overflow_y_scrollbar()
+            .bg(cx.theme().colors.bg)
+            // 上游的 `.overflow_y_scrollbar()` 来自 gpui-kit 的 `ScrollableElement`（带自绘滚动条）。
+            // 库侧的同位件是 `lithe_ui::layout::ScrollArea`（外层定高 + 内层滚动的盒模型），
+            // 直接把本层换成它会改掉 padding 与滚动条的落点；本片按迁移既定做法改用 gpui 自己的
+            // `.overflow_y_scroll()`（同 `crates/run/src/pane.rs`、`crates/git/src/log_view.rs`），
+            // 「滚动条不再自绘」这一处差异登记在汇报的缺口清单里。
+            .overflow_y_scroll()
             .child(
                 page_stack()
                     .child(page_title(tr(self.category.label_key())))
@@ -1042,8 +995,8 @@ impl SettingsDialog {
         let keys = keys.to_vec();
         let id = SharedString::from(format!("settings-appearance-revert-{}", keys[0].as_str()));
         let revert = Button::new(id)
-            .small()
-            .ghost()
+            .size(Size::Small)
+            .variant(ButtonVariant::Ghost)
             .label(tr("settings.gpui.appearanceRevertToGlobal"))
             .on_click(move |_, _, cx| {
                 let keys = keys.clone();
@@ -1165,9 +1118,22 @@ impl SettingsDialog {
                         tr("lithe.settings.appearance.uiFontSize"),
                         Some(tr("lithe.settings.appearance.uiFontSizeDescription")),
                         self.appearance_note(AppearanceKey::UiFontSize, cx),
-                        NumberInput::new(&self.font_size_input)
-                            .w(ControlWidth::Number.length())
-                            .into_any_element(),
+                        {
+                            let store = self.store.clone();
+                            // 库 `NumberInput` 自持文本框（不再由宿主的 `InputState` 驱动），
+                            // 值经 `.on_change(..)` 回流；上下限/步长归库，宿主的
+                            // `normalize_ui_font_size` 仍是写入时的真源。
+                            NumberInput::new("settings-ui-font-size", settings.ui_font_size)
+                                .range(UI_FONT_SIZE_MIN, UI_FONT_SIZE_MAX)
+                                .step(UI_FONT_SIZE_STEP)
+                                // 上游按 0.5 步进，显示走 `format_ui_font_size`（整数不带小数点）；
+                                // 库按固定小数位显示（见汇报缺口清单）。
+                                .precision(1)
+                                .on_change(move |value, _, cx| {
+                                    store.update(cx, |store, cx| store.set_ui_font_size(value, cx));
+                                })
+                                .into_any_element()
+                        },
                         None,
                         cx,
                     ),
@@ -1184,10 +1150,8 @@ impl SettingsDialog {
                     {
                         let store = self.store.clone();
                         Switch::new("settings-show-status-bar")
-                            .small()
                             .checked(settings.show_status_bar)
                             .on_change(move |checked, _, cx| {
-                                let checked = *checked;
                                 store
                                     .update(cx, |store, cx| store.set_show_status_bar(checked, cx));
                             })
@@ -1242,9 +1206,20 @@ impl SettingsDialog {
                         tr("lithe.settings.mac.fontSize"),
                         Some(tr("lithe.settings.gpui.editorFontSizeDescription")),
                         self.appearance_note(AppearanceKey::EditorFontSize, cx),
-                        NumberInput::new(&self.editor_font_size_input)
-                            .w(ControlWidth::Number.length())
-                            .into_any_element(),
+                        {
+                            let store = self.store.clone();
+                            // 同上一处：库 `NumberInput` 自持文本框，整数档（`precision` 缺省 0）
+                            // 与上游的 `format_editor_font_size` 显示一致。
+                            NumberInput::new("settings-editor-font-size", settings.font_size)
+                                .range(EDITOR_FONT_SIZE_MIN, EDITOR_FONT_SIZE_MAX)
+                                .step(1.)
+                                .on_change(move |value, _, cx| {
+                                    store.update(cx, |store, cx| {
+                                        store.set_editor_font_size(value, cx)
+                                    });
+                                })
+                                .into_any_element()
+                        },
                         None,
                         cx,
                     ),
@@ -1255,10 +1230,8 @@ impl SettingsDialog {
                         {
                             let store = self.store.clone();
                             Switch::new("settings-editor-word-wrap")
-                                .small()
                                 .checked(settings.word_wrap)
                                 .on_change(move |checked, _, cx| {
-                                    let checked = *checked;
                                     store.update(cx, |store, cx| store.set_word_wrap(checked, cx));
                                 })
                                 .into_any_element()
@@ -1311,10 +1284,8 @@ impl SettingsDialog {
                     {
                         let store = self.store.clone();
                         Switch::new("settings-editor-auto-save")
-                            .small()
                             .checked(settings.auto_save)
                             .on_change(move |checked, _, cx| {
-                                let checked = *checked;
                                 store.update(cx, |store, cx| store.set_auto_save(checked, cx));
                             })
                             .into_any_element()
@@ -1404,20 +1375,15 @@ impl SettingsDialog {
     }
 
     fn git_draft(&self, field: IdentityField, cx: &Context<Self>) -> SharedString {
-        self.git_input(field).read(cx).value()
+        // 库的 `InputState::text()` 给 `&str`（上游 `value()` 直接给 `SharedString`）。
+        SharedString::from(self.git_input(field).read(cx).text())
     }
 
-    fn git_fill_input(
-        &self,
-        field: IdentityField,
-        setup: &IdentitySetup,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn git_fill_input(&self, field: IdentityField, setup: &IdentitySetup, cx: &mut Context<Self>) {
         let text = setup.configured(field).unwrap_or("").to_string();
-        self.git_input(field).update(cx, |input, cx| {
-            input.set_value(SharedString::from(text), window, cx);
-        });
+        // 库的 `set_text(.., cx)` 是 2 参（上游 `set_value(.., window, cx)` 要 `window`）。
+        self.git_input(field)
+            .update(cx, |input, cx| input.set_text(text, cx));
     }
 
     fn git_load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1442,7 +1408,7 @@ impl SettingsDialog {
         let entity = cx.entity().downgrade();
         host.load(
             scope,
-            move |setup, window, cx| {
+            move |setup, _window, cx| {
                 let _ = entity.update(cx, |this, cx| {
                     if this.git.generation != generation {
                         return;
@@ -1461,8 +1427,8 @@ impl SettingsDialog {
                                 setup.effective_name.is_some(),
                                 setup.effective_email.is_some(),
                             ));
-                            this.git_fill_input(IdentityField::Name, &setup, window, cx);
-                            this.git_fill_input(IdentityField::Email, &setup, window, cx);
+                            this.git_fill_input(IdentityField::Name, &setup, cx);
+                            this.git_fill_input(IdentityField::Email, &setup, cx);
                         }
                         None => {
                             this.git_diagnose(&format!(
@@ -1470,18 +1436,8 @@ impl SettingsDialog {
                                 scope.id()
                             ));
                             this.git.error = Some(tr("lithe.git.setup.readFailed"));
-                            this.git_fill_input(
-                                IdentityField::Name,
-                                &IdentitySetup::default(),
-                                window,
-                                cx,
-                            );
-                            this.git_fill_input(
-                                IdentityField::Email,
-                                &IdentitySetup::default(),
-                                window,
-                                cx,
-                            );
+                            this.git_fill_input(IdentityField::Name, &IdentitySetup::default(), cx);
+                            this.git_fill_input(IdentityField::Email, &IdentitySetup::default(), cx);
                         }
                     }
                     cx.notify();
@@ -1539,7 +1495,7 @@ impl SettingsDialog {
             scope,
             field,
             value,
-            move |setup, window, cx| {
+            move |setup, _window, cx| {
                 let _ = entity.update(cx, |this, cx| {
                     if this.git.generation != generation {
                         return;
@@ -1555,7 +1511,7 @@ impl SettingsDialog {
                                 setup.configured(field).is_some(),
                                 setup.effective(field).is_some(),
                             ));
-                            this.git_fill_input(field, &setup, window, cx);
+                            this.git_fill_input(field, &setup, cx);
                         }
                         None => {
                             this.git_diagnose(&format!(
@@ -1634,7 +1590,7 @@ impl SettingsDialog {
             div()
                 .w_full()
                 .text_xs()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(SharedString::from(host_root))
                 .into_any_element(),
         );
@@ -1649,7 +1605,7 @@ impl SettingsDialog {
                 div()
                     .w_full()
                     .text_sm()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr("lithe.git.setup.initializeFirst"))
                     .into_any_element(),
             );
@@ -1663,19 +1619,19 @@ impl SettingsDialog {
             div()
                 .w_full()
                 .text_xs()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(tr("lithe.git.setup.separateSave"))
                 .into_any_element(),
         );
         rows.push(
-            h_flex()
+            h_stack()
                 .w_full()
                 .items_center()
                 .gap_3()
                 .child(
                     Button::new("settings-git-reload")
-                        .small()
-                        .ghost()
+                        .size(Size::Small)
+                        .variant(ButtonVariant::Ghost)
                         .label(tr("lithe.git.setup.reload"))
                         .disabled(self.git.busy)
                         .on_click(cx.listener(|this, _, window, cx| this.git_load(window, cx))),
@@ -1684,18 +1640,23 @@ impl SettingsDialog {
                     this.child(
                         div()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.git.setup.loading")),
                     )
                 })
                 .when_some(self.git.error.clone(), |this, error| {
-                    this.child(div().text_xs().text_color(cx.theme().danger).child(error))
+                    this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().colors.danger)
+                            .child(error),
+                    )
                 })
                 .when(self.git.saved.is_some(), |this| {
                     this.child(
                         div()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.git.setup.saved")),
                     )
                 })
@@ -1710,7 +1671,7 @@ impl SettingsDialog {
                         div()
                             .w_full()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.git.setup.identityDescription"))
                             .into_any_element(),
                     ];
@@ -1729,10 +1690,8 @@ impl SettingsDialog {
                     {
                         let store = self.store.clone();
                         Switch::new("settings-git-confirm-discard")
-                            .small()
                             .checked(settings.confirm_before_discard)
                             .on_change(move |checked, _, cx| {
-                                let checked = *checked;
                                 store.update(cx, |store, cx| {
                                     store.set_confirm_before_discard(checked, cx)
                                 });
@@ -1771,18 +1730,18 @@ impl SettingsDialog {
             .and_then(|setup| setup.effective(field))
             .map(str::to_string);
 
-        v_flex()
+        v_stack()
             .id(("settings-git-field", field.index()))
             .w_full()
             .gap_2()
             .child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr(field.label_key())),
             )
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .items_center()
                     .gap_2()
@@ -1794,7 +1753,7 @@ impl SettingsDialog {
                     )
                     .child(
                         Button::new(("settings-git-save", field.index()))
-                            .small()
+                            .size(Size::Small)
                             .label(tr("lithe.git.setup.save"))
                             .disabled(!save_enabled)
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -1803,8 +1762,8 @@ impl SettingsDialog {
                     )
                     .child(
                         Button::new(("settings-git-clear", field.index()))
-                            .small()
-                            .ghost()
+                            .size(Size::Small)
+                            .variant(ButtonVariant::Ghost)
                             .label(tr("lithe.git.setup.clear"))
                             .disabled(!clear_enabled)
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -1815,7 +1774,7 @@ impl SettingsDialog {
             .child(
                 div()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(match effective {
                         Some(value) => SharedString::from(format!(
                             "{}: {value}",
@@ -1828,7 +1787,7 @@ impl SettingsDialog {
                 this.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.git.setup.initializeFirst")),
                 )
             })
@@ -1919,11 +1878,9 @@ impl SettingsDialog {
             };
             let value = path.to_string_lossy().to_string();
             println!("S1_SETTINGS_PROJECT run=pick target={target} state=picked path={value}");
-            let _ = async_cx.update(move |window, cx| {
+            let _ = async_cx.update(move |_window, cx| {
                 let _ = this.update(cx, |this, cx| {
-                    input.update(cx, |input, cx| {
-                        input.set_value(SharedString::from(value), window, cx);
-                    });
+                    input.update(cx, |input, cx| input.set_text(value, cx));
                     this.project.saved = false;
                     cx.notify();
                 });
@@ -1932,26 +1889,17 @@ impl SettingsDialog {
         .detach();
     }
 
-    fn project_clear(&mut self, field: ProjectField, window: &mut Window, cx: &mut Context<Self>) {
+    fn project_clear(&mut self, field: ProjectField, cx: &mut Context<Self>) {
         let input = self.project_field_input(field).clone();
-        input.update(cx, |input, cx| {
-            input.set_value(SharedString::from(""), window, cx);
-        });
+        input.update(cx, |input, cx| input.set_text("", cx));
         self.project.saved = false;
         self.project_diagnose(&format!("run=clear field={}", field.id()));
         cx.notify();
     }
 
-    fn project_clear_maven_config(
-        &mut self,
-        field: MavenConfigField,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn project_clear_maven_config(&mut self, field: MavenConfigField, cx: &mut Context<Self>) {
         let input = self.maven_config_input(field).clone();
-        input.update(cx, |input, cx| {
-            input.set_value(SharedString::from(""), window, cx);
-        });
+        input.update(cx, |input, cx| input.set_text("", cx));
         self.project.saved = false;
         self.project_diagnose(&format!("run=clear field={}", field.id()));
         cx.notify();
@@ -2094,7 +2042,7 @@ impl SettingsDialog {
             div()
                 .w_full()
                 .text_xs()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(tr(scope_key))
                 .into_any_element(),
         );
@@ -2104,7 +2052,7 @@ impl SettingsDialog {
                 div()
                     .w_full()
                     .text_sm()
-                    .text_color(cx.theme().danger)
+                    .text_color(cx.theme().colors.danger)
                     .child(tr("lithe.settings.gpui.projectNothingDetected"))
                     .into_any_element(),
             );
@@ -2165,18 +2113,18 @@ impl SettingsDialog {
         detected: Option<SharedString>,
         cx: &Context<Self>,
     ) -> gpui::AnyElement {
-        v_flex()
+        v_stack()
             .id(("settings-project-row", field.index()))
             .w_full()
             .gap_2()
             .child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr(field.label_key())),
             )
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .items_center()
                     .gap_2()
@@ -2188,8 +2136,8 @@ impl SettingsDialog {
                     )
                     .child(
                         Button::new(("settings-project-pick", field.index()))
-                            .small()
-                            .ghost()
+                            .size(Size::Small)
+                            .variant(ButtonVariant::Ghost)
                             .label(tr("lithe.settings.gpui.pickPath"))
                             .disabled(self.project.busy)
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -2198,26 +2146,26 @@ impl SettingsDialog {
                     )
                     .child(
                         Button::new(("settings-project-clear", field.index()))
-                            .small()
-                            .ghost()
+                            .size(Size::Small)
+                            .variant(ButtonVariant::Ghost)
                             .label(tr("lithe.ui.clear"))
                             .disabled(self.project.busy)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.project_clear(field, window, cx)
+                            .on_click(cx.listener(move |this, _, _window, cx| {
+                                this.project_clear(field, cx)
                             })),
                     ),
             )
             .child(
                 div()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr(field.hint_key())),
             )
             .children(
                 override_origin_key(field.origin(&self.project.origins)).map(|key| {
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr(key))
                 }),
             )
@@ -2225,7 +2173,7 @@ impl SettingsDialog {
                 div()
                     .w_full()
                     .text_xs()
-                    .text_color(cx.theme().warning)
+                    .text_color(cx.theme().colors.warning)
                     .child(tr(key))
             }))
             .child(
@@ -2233,9 +2181,9 @@ impl SettingsDialog {
                     .w_full()
                     .text_xs()
                     .text_color(if effective.is_error {
-                        cx.theme().danger
+                        cx.theme().colors.danger
                     } else {
-                        cx.theme().foreground
+                        cx.theme().colors.fg
                     })
                     .child(effective.text),
             )
@@ -2243,14 +2191,14 @@ impl SettingsDialog {
                 div()
                     .w_full()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(detail)
             }))
             .children(detected.map(|detected| {
                 div()
                     .w_full()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(detected)
             }))
             .into_any_element()
@@ -2265,14 +2213,14 @@ impl SettingsDialog {
         is_error: bool,
         cx: &Context<Self>,
     ) -> gpui::AnyElement {
-        v_flex()
+        v_stack()
             .id(id)
             .w_full()
             .gap_1()
             .child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(label),
             )
             .child(
@@ -2280,9 +2228,9 @@ impl SettingsDialog {
                     .w_full()
                     .text_xs()
                     .text_color(if is_error {
-                        cx.theme().danger
+                        cx.theme().colors.danger
                     } else {
-                        cx.theme().foreground
+                        cx.theme().colors.fg
                     })
                     .child(value),
             )
@@ -2290,7 +2238,7 @@ impl SettingsDialog {
                 div()
                     .w_full()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(note)
             }))
             .into_any_element()
@@ -2302,18 +2250,18 @@ impl SettingsDialog {
         cx: &Context<Self>,
     ) -> gpui::AnyElement {
         let effective = maven_config_effective(field, self.project.environment.as_ref());
-        v_flex()
+        v_stack()
             .id(("settings-maven-config-row", field.index()))
             .w_full()
             .gap_2()
             .child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(field.label()),
             )
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .items_center()
                     .gap_2()
@@ -2325,8 +2273,8 @@ impl SettingsDialog {
                     )
                     .child(
                         Button::new(("settings-maven-pick", field.index()))
-                            .small()
-                            .ghost()
+                            .size(Size::Small)
+                            .variant(ButtonVariant::Ghost)
                             .label(tr("lithe.settings.gpui.pickPath"))
                             .disabled(self.project.busy)
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -2335,26 +2283,26 @@ impl SettingsDialog {
                     )
                     .child(
                         Button::new(("settings-maven-clear", field.index()))
-                            .small()
-                            .ghost()
+                            .size(Size::Small)
+                            .variant(ButtonVariant::Ghost)
                             .label(tr("lithe.ui.clear"))
                             .disabled(self.project.busy)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.project_clear_maven_config(field, window, cx)
+                            .on_click(cx.listener(move |this, _, _window, cx| {
+                                this.project_clear_maven_config(field, cx)
                             })),
                     ),
             )
             .child(
                 div()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr(field.hint_key())),
             )
             .children(
                 override_origin_key(field.origin(&self.project.origins)).map(|key| {
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr(key))
                 }),
             )
@@ -2363,9 +2311,9 @@ impl SettingsDialog {
                     .w_full()
                     .text_xs()
                     .text_color(if effective.is_error {
-                        cx.theme().danger
+                        cx.theme().colors.danger
                     } else {
-                        cx.theme().foreground
+                        cx.theme().colors.fg
                     })
                     .child(effective.text),
             )
@@ -2373,29 +2321,29 @@ impl SettingsDialog {
                 div()
                     .w_full()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(detail)
             }))
             .into_any_element()
     }
 
     fn project_actions(&self, cx: &Context<Self>) -> gpui::AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .items_center()
             .gap_3()
             .pt_2()
             .child(
                 Button::new("settings-project-refresh")
-                    .small()
-                    .ghost()
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
                     .label(tr("lithe.settings.project.refresh"))
                     .disabled(self.project.busy)
                     .on_click(cx.listener(|this, _, _window, cx| this.project_load(cx))),
             )
             .child(
                 Button::new("settings-project-save")
-                    .small()
+                    .size(Size::Small)
                     .label(tr("lithe.ui.save"))
                     .disabled(self.project.busy)
                     .on_click(cx.listener(|this, _, _window, cx| this.project_save(cx))),
@@ -2404,7 +2352,7 @@ impl SettingsDialog {
                 this.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.toolchain.detecting")),
                 )
             })
@@ -2412,7 +2360,7 @@ impl SettingsDialog {
                 this.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.settings.project.saved")),
                 )
             })
@@ -2443,10 +2391,8 @@ impl SettingsDialog {
             {
                 let store = self.store.clone();
                 Switch::new("settings-lsp-auto-completion")
-                    .small()
                     .checked(settings.auto_completion)
                     .on_change(move |checked, _, cx| {
-                        let checked = *checked;
                         store.update(cx, |store, cx| store.set_auto_completion(checked, cx));
                     })
                     .into_any_element()
@@ -2458,7 +2404,7 @@ impl SettingsDialog {
             div()
                 .w_full()
                 .text_xs()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(tr("lithe.settings.gpui.lspOnlyAutoCompletion"))
                 .into_any_element(),
         );
@@ -2576,7 +2522,7 @@ impl SettingsDialog {
             div()
                 .w_full()
                 .text_sm()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(tr("lithe.settings.gpui.runReadOnlyDescription"))
                 .into_any_element(),
         );
@@ -2586,7 +2532,7 @@ impl SettingsDialog {
                 div()
                     .w_full()
                     .text_sm()
-                    .text_color(cx.theme().danger)
+                    .text_color(cx.theme().colors.danger)
                     .child(error.clone())
                     .into_any_element(),
             );
@@ -2598,7 +2544,7 @@ impl SettingsDialog {
                     div()
                         .w_full()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr_args(
                             "lithe.run.generatedEntries",
                             &[("count", &view.entry_count.to_string())],
@@ -2609,15 +2555,15 @@ impl SettingsDialog {
         }
 
         rows.push(
-            h_flex()
+            h_stack()
                 .w_full()
                 .items_center()
                 .gap_3()
                 .pt_2()
                 .child(
                     Button::new("settings-run-refresh")
-                        .small()
-                        .ghost()
+                        .size(Size::Small)
+                        .variant(ButtonVariant::Ghost)
                         .label(if self.run.busy {
                             tr("lithe.settings.project.loading")
                         } else {
@@ -2654,7 +2600,7 @@ impl SettingsDialog {
             div()
                 .w_full()
                 .text_xs()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(tr("lithe.settings.gpui.runNotWired"))
                 .into_any_element(),
         );
@@ -2669,7 +2615,7 @@ impl SettingsDialog {
         cx: &Context<Self>,
     ) -> gpui::AnyElement {
         let fact = |label_key: &'static str, value: SharedString, muted: bool| {
-            h_flex()
+            h_stack()
                 .w_full()
                 .items_start()
                 .gap_2()
@@ -2678,7 +2624,7 @@ impl SettingsDialog {
                         .w(rems(7.5))
                         .flex_shrink_0()
                         .text_sm()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr(label_key)),
                 )
                 .child(
@@ -2687,9 +2633,9 @@ impl SettingsDialog {
                         .flex_1()
                         .text_sm()
                         .text_color(if muted {
-                            cx.theme().muted_foreground
+                            cx.theme().colors.fg_muted
                         } else {
-                            cx.theme().foreground
+                            cx.theme().colors.fg
                         })
                         .child(value),
                 )
@@ -2713,20 +2659,20 @@ impl SettingsDialog {
             source.push_str(manifest);
         }
 
-        v_flex()
+        v_stack()
             .id(("settings-run-row", index))
             .w_full()
             .gap_1()
             .p_3()
-            .rounded(cx.theme().radius)
+            .rounded(cx.theme().radius(Radius::Md))
             .border_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().popover.opacity(0.35))
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.overlay.opacity(0.35))
             .child(
                 div()
                     .text_sm()
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(configuration.name.clone()),
             )
             .child(fact("lithe.run.type", SharedString::from(kind), false))
@@ -2756,43 +2702,33 @@ impl SettingsDialog {
             .category
             .prerequisite_key()
             .expect("空态分类必须登记一条前置条件文案（`Category::prerequisite_key`）");
+        let category = self.category;
         vec![
-            v_flex()
+            v_stack()
                 .w_full()
                 .py_8()
                 .child(
-                    Empty::new()
-                        .border_color(cx.theme().transparent)
-                        .gap_3()
-                        .px_6()
-                        .header(
-                            EmptyHeader::new()
-                                .max_w_112()
-                                .gap_3()
-                                .media(
-                                    EmptyMedia::new().child(
-                                        self.category
-                                            .icon(cx.theme().is_dark())
-                                            .size_10()
-                                            .text_color(cx.theme().muted_foreground),
-                                    ),
-                                )
-                                .title(
-                                    EmptyTitle::new()
-                                        .text_sm()
-                                        .child(tr("lithe.settings.gpui.pageNotAvailableTitle")),
-                                )
-                                .description(
-                                    EmptyDescription::new().text_sm().child(tr(prerequisite)),
-                                ),
-                        ),
+                    // 上游 `Empty` / `EmptyHeader` / `EmptyMedia` / `EmptyTitle` / `EmptyDescription`
+                    // 一族，在库侧是**槽位式**的 `EmptyState`：`EmptyMedia` → `media_element`、
+                    // `EmptyTitle` → `title`、`EmptyDescription` → `body`；版面（间距、字号、
+                    // 最大宽度、那圈透明边框）归库自己定，宿主不再逐项给。
+                    // 头槽位的边长沿用上游的 `size_10`（2.5rem = 40px）。
+                    EmptyState::slots("settings-empty-page")
+                        .media_element(category_icon(
+                            category,
+                            rems(2.5),
+                            cx.theme().colors.fg_muted,
+                            cx,
+                        ))
+                        .title(tr("lithe.settings.gpui.pageNotAvailableTitle"))
+                        .body(tr(prerequisite)),
                 )
                 .into_any_element(),
         ]
     }
 
     fn footer(&self, cx: &Context<Self>) -> impl IntoElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .items_center()
@@ -2800,10 +2736,10 @@ impl SettingsDialog {
             .px_4()
             .py_3()
             .border_t_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
                 Button::new("settings-restore-defaults")
-                    .ghost()
+                    .variant(ButtonVariant::Ghost)
                     .label(tr("lithe.settings.gpui.restoreDefaultsOpen"))
                     .on_click(
                         cx.listener(|this, _, window, cx| {
@@ -2825,15 +2761,11 @@ impl SettingsDialog {
 
     fn confirm_restore_defaults(&self, window: &mut Window, cx: &mut Context<Self>) {
         let store = self.store.clone();
-        let input = self.font_size_input.clone();
-        let editor_input = self.editor_font_size_input.clone();
 
         window.open_dialog(
             "lithe-settings-restore-defaults",
             move |id, _window, cx| {
                 let store = store.clone();
-                let input = input.clone();
-                let editor_input = editor_input.clone();
                 let (cancel_id, confirm_id) = ((id.clone(), "cancel"), (id.clone(), "confirm"));
                 Dialog::new(id)
                     .title(tr("lithe.settings.gpui.restoreDefaultsTitle"))
@@ -2841,7 +2773,7 @@ impl SettingsDialog {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.settings.gpui.restoreDefaultsBody")),
                     )
                     .action(move |close| {
@@ -2851,28 +2783,15 @@ impl SettingsDialog {
                     })
                     .action(move |close| {
                         Button::new(confirm_id)
-                            .danger()
+                            .variant(ButtonVariant::Danger)
                             .label(tr("lithe.settings.mac.restoreDefaults"))
                             .on_click(move |_, window, cx| {
+                                // 字号输入现在是库的 `NumberInput`：它自己把显示同步到传入的
+                                // `value`（`settings.ui_font_size` / `settings.font_size`）。
+                                // `restore_defaults` 会 `notify()` 存储，本对话框的
+                                // `cx.observe(&store, ..)` 随即重绘，上游那两处手写 `set_value`
+                                // 因此不再需要。
                                 store.update(cx, |store, cx| store.restore_defaults(cx));
-                                input.update(cx, |input, cx| {
-                                    input.set_value(
-                                        SharedString::from(format_ui_font_size(
-                                            UI_FONT_SIZE_DEFAULT,
-                                        )),
-                                        window,
-                                        cx,
-                                    );
-                                });
-                                editor_input.update(cx, |input, cx| {
-                                    input.set_value(
-                                        SharedString::from(format_editor_font_size(
-                                            EDITOR_FONT_SIZE_DEFAULT,
-                                        )),
-                                        window,
-                                        cx,
-                                    );
-                                });
                                 close(window, cx);
                             })
                     })
@@ -2890,41 +2809,34 @@ impl SettingsDialog {
         on_select: Box<dyn Fn(SharedString, &mut Window, &mut App) + 'static>,
     ) -> gpui::AnyElement {
         let on_select = std::rc::Rc::new(on_select);
-        Button::new(id)
-            .outline()
-            .w(ControlWidth::Default.length())
-            .justify_between()
-            .child(div().min_w_0().truncate().child(current_label))
-            .dropdown_caret(true)
-            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
-                options
-                    .iter()
-                    .fold(menu, |menu, (value, label, checked)| {
-                        let on_select = on_select.clone();
-                        let value = value.clone();
-                        menu.item(
-                            PopupMenuItem::new(label.clone())
-                                .checked(*checked)
-                                .on_click(move |_, window, cx| {
-                                    on_select(value.clone(), window, cx);
-                                }),
-                        )
-                    })
-                    .scrollable(true)
-            })
+        // "一组里选一个"：上游的 `PopupMenuItem::checked(..)` 在库侧对到
+        // `MenuItem::radio(label, selected)`（单选行，带选中标记；`MenuItem::check` 是独立勾选项）。
+        let mut menu = Menu::new();
+        for (value, label, checked) in options {
+            let on_select = on_select.clone();
+            menu = menu.item(MenuItem::radio(label, checked).on_click(move |window, cx| {
+                on_select(value.clone(), window, cx);
+            }));
+        }
+        // 库 `DropdownMenu` 自己画触发按钮（label + 尾部折叠箭头）并贴在触发器下方开菜单。
+        // 上游的定宽 `.w(ControlWidth::Default.length())`、`.justify_between()`、
+        // `Anchor::TopRight` 定位与 `.scrollable(true)` 在库侧没有落点——几何与弹层定位归库自己，
+        // 这几处差异登记在汇报的缺口清单里。
+        DropdownMenu::new(id, current_label, menu)
+            .variant(ButtonVariant::Outline)
             .into_any_element()
     }
 }
 
 impl Render for SettingsDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+        v_stack()
             .size_full()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
+            .bg(cx.theme().colors.bg)
+            .text_color(cx.theme().colors.fg)
             .child(self.header(cx))
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .flex_1()
                     .min_h_0()
@@ -3031,21 +2943,12 @@ fn mode_label(mode: AppearanceMode) -> SharedString {
     }
 }
 
-fn format_ui_font_size(value: f64) -> String {
-    let normalized = crate::schema::normalize_ui_font_size(value);
-    if normalized.fract() == 0.0 {
-        format!("{}", normalized as i64)
-    } else {
-        format!("{normalized}")
-    }
-}
-
-fn format_editor_font_size(value: f64) -> String {
-    format!(
-        "{}",
-        crate::schema::normalize_editor_font_size(value) as i64
-    )
-}
+// 上游这里还有 `format_ui_font_size` / `format_editor_font_size` 两个显示格式化函数。
+// 字号输入现在交给库的 `NumberInput`，**显示文本由库自己按 `precision` 生成**，宿主不再有
+// 格式化落点，所以两个函数随调用点一起删掉（连同只测它们的 `font_size_labels_are_compact`）。
+// 参考实现的显示口径是"最多几位小数、去掉尾随零"（`windows/tauri/src/ui/number-input.tsx:71-89`
+// 的 `format.maximumFractionDigits`），库是"固定几位小数"，这一处差异登记在汇报的缺口清单里。
+// 库侧补齐后，这条显示契约应作为库测试回到 `lithe-ui`。
 
 fn tab_size_label(size: u32) -> SharedString {
     SharedString::from(format!("{size} {}", tr("lithe.settings.mac.spaces")))
@@ -3075,14 +2978,8 @@ mod tests {
     use super::*;
     use gpui::px;
 
-    #[test]
-    fn font_size_labels_are_compact() {
-        assert_eq!(format_ui_font_size(13.0), "13");
-        assert_eq!(format_ui_font_size(16.5), "16.5");
-        assert_eq!(format_ui_font_size(13.24), "13");
-        assert_eq!(format_editor_font_size(14.0), "14");
-        assert_eq!(format_editor_font_size(14.6), "15");
-    }
+    // `font_size_labels_are_compact` 随 `format_ui_font_size` / `format_editor_font_size`
+    // 一起删除：显示文本的格式化已归库的 `NumberInput`（见上方注释与汇报的缺口清单）。
 
     #[test]
     fn categories_match_the_windows_list_without_ai() {
