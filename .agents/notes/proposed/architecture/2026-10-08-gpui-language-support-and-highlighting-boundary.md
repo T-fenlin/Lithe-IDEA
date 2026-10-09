@@ -86,16 +86,22 @@
 `gpui-kit` 的编辑器上，高亮由上游自己的 `GrammarConfig`/`LanguageRegistry` 完成。要让我们的注册表
 生效，编辑器必须走组件库的渲染路径。
 
-按依赖顺序分四片，每片可独立编译验证：
+**这不是能按文件分片的改动**（2026-10-08 侦察后修正过先前的切法）：
 
-| 子片 | 范围 | 依据 |
-| --- | --- | --- |
-| **L3a** | `buffer.rs`(339 行) + `languages.rs`(42 行)：文本模型与 LSP 位置换算换到 `lithe_ui::editor::Buffer` + `lithe_ui::language` | 其余文件都建在 `Rope`/`Position`/`EditorState` 上（分别 44/84/14 处） |
-| **L3b** | `completion.rs`/`hover.rs`/`code_actions.rs`/`problems.rs`/`diagnostics.rs` → 库侧 `hints`/`hover`/`refactor`/`problems` | 库侧已有对等件，属重接而非新建 |
-| **L3c** | `editor_view.rs`(2194 行)：编辑器部件换成库侧 `CodeEditor`/`view` | **高亮此时才在产品里可见**，因为高亮由渲染路径决定 |
-| **L3d** | `navigation.rs`/`go_to_line.rs` 收尾，摘掉该 crate 的 `gpui-kit` | 收尾片 |
+- `gpui-kit` 的 `EditorState` 是该 crate 的中枢类型，被 **6 个文件**引用
+  （`buffer.rs` 3 处、`code_actions.rs` 4、`completion.rs` 2、`diagnostics.rs` 2、`editor_view.rs` 6、`hover.rs` 2）；
+- 产品 `Buffer` 的 `editor: Entity<EditorState>` 只被 `editor_view.rs` 用，但用了 **54 次**；
+- 上游 `Editor` 部件的渲染落点只有 **1 处**（`editor_view.rs:2157`）。
 
-先做 L3a 的原因：它是其余三片共同的地基（位置与 rope 语义），而且**不需要**先动 2194 行的部件文件。
+所以换模型必然级联整个 crate：**要么整体换掉，要么别动**。只换那 1 处渲染点做不了——组件库的
+编辑器要渲染它自己的模型。维护者的选择是**完整移植、一笔原子提交**（而不是先做一个"只读高亮预览"
+的楔子，也不是继续让语言层停留在测试级）。
+
+目标映射（侦察已确认）：`EditorState` → `CodeEditor`（`state.rs`，Entity + `EditorEvent`）；
+`Rope`/`Position` → `Buffer` + `Selection`；provider → 库侧 `hints`/`hover`/`refactor`/`problems`；
+诊断/inlay hints/code lens/ghost text/diff/git 标记/断点 → `CodeEditor` 的 `set_*`；
+`LanguageRegistry`/`GrammarConfig` → **本笔记的注册表**（`crates/editor/src/languages.rs` 那 42 行
+注册 XML 的文件随之删除）；`HighlightTheme` → `theme::Syntax`。
 
 ## 考虑过的备选方案
 
