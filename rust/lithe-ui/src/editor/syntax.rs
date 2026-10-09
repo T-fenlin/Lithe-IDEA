@@ -2,8 +2,9 @@ use std::ops::Range;
 
 use gpui::{App, HighlightStyle};
 
-use super::buffer::Buffer;
+use super::buffer::{Buffer, clamped_range};
 use crate::forms::{Kind, code_highlights, lex};
+use crate::theme::ActiveTheme;
 
 /// Each line that opens a block, and the last line the block holds, read from indentation.
 pub(crate) fn folds(buffer: &Buffer) -> Vec<(usize, usize)> {
@@ -118,6 +119,38 @@ pub(crate) fn colors(text: &str, cx: &App) -> Vec<(Range<usize>, HighlightStyle)
                 HighlightStyle {
                     color: Some(highlight.color),
                     background_color: highlight.background,
+                    ..HighlightStyle::default()
+                },
+            )
+        })
+        .collect()
+}
+
+/// The colors of a buffer's bytes in `range`, in offsets **relative to `range.start`**.
+///
+/// So the answer belongs to the slice `buffer.text()[range]` the caller is about to draw: a whole
+/// line, a row cut short by ghost text, or one sticky header. With a registered language whose
+/// grammar loads, the spans come from tree-sitter; otherwise they come from the same built-in
+/// lexer the editor has always drawn, line by line. A range that runs past the text or splits a
+/// character is clamped first, so it can never pick up a neighbouring line's colors.
+pub(crate) fn colors_in(
+    buffer: &Buffer,
+    range: Range<usize>,
+    cx: &App,
+) -> Vec<(Range<usize>, HighlightStyle)> {
+    let range = clamped_range(buffer.text(), range);
+    if !buffer.has_highlighter() {
+        return colors(&buffer.text()[range], cx);
+    }
+    let syntax = &cx.theme().colors.syntax;
+    buffer
+        .highlight_spans(range.clone())
+        .into_iter()
+        .map(|(span, slot)| {
+            (
+                span.start.saturating_sub(range.start)..span.end.saturating_sub(range.start),
+                HighlightStyle {
+                    color: Some(slot.color(syntax)),
                     ..HighlightStyle::default()
                 },
             )

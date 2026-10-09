@@ -5,7 +5,7 @@ use gpui::{
     VisualTestContext,
 };
 
-use super::{CodeEditor, GhostText, InlayHint, LineNumbers, layout::Row};
+use super::{Buffer, CodeEditor, GhostText, InlayHint, LineNumbers, layout::Row, syntax};
 use crate::theme::Theme;
 
 fn editor<'a>(
@@ -255,6 +255,39 @@ fn a_browser_paste_gives_each_cursor_its_line(cx: &mut TestAppContext) {
             assert_eq!(editor.text(), "a1\nb2");
         })
     });
+}
+
+/// 没有语言时的回归基线：同一段文本，逐行取色的老入口与缓冲区感知的新入口必须给出同一结果。
+///
+/// `set_language(None)` 就是编辑器接上语言注册表之前的全部行为，所以这条断言等价于"接线没有
+/// 改变没有语言时的观感"。
+#[gpui::test]
+fn a_buffer_without_a_language_keeps_the_lexer_colors(cx: &mut TestAppContext) {
+    cx.update(Theme::init);
+    let buffer = Buffer::new("fn a() {\n    let s = \"x\"; // note\n}");
+    assert!(buffer.language().is_none());
+    assert!(
+        !buffer.has_highlighter(),
+        "没有语言就没有 tree-sitter 高亮器"
+    );
+    for line in 0..buffer.lines() {
+        let range = buffer.line_range(line);
+        let expected = cx.update(|cx| syntax::colors(buffer.line(line), cx));
+        let found = cx.update(|cx| syntax::colors_in(&buffer, range.clone(), cx));
+        assert_eq!(found, expected, "第 {line} 行必须与逐行词法器一致");
+        assert!(
+            found
+                .iter()
+                .all(|(span, _)| span.start <= span.end && span.end <= range.end - range.start),
+            "第 {line} 行的 span 必须落在该行之内：{found:?}"
+        );
+    }
+    // 片段（而不是整行）也一样：取色入口按调用方给的绝对区间切片，答案属于那一段文本。
+    let tail = buffer.line_range(1).start + 4;
+    let whole = buffer.len();
+    let found = cx.update(|cx| syntax::colors_in(&buffer, tail..whole, cx));
+    let expected = cx.update(|cx| syntax::colors(&buffer.text()[tail..whole], cx));
+    assert_eq!(found, expected);
 }
 
 #[gpui::test]

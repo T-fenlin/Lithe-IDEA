@@ -29,7 +29,7 @@ impl CodeEditor {
         let touches = |span: &Range<usize>| {
             span.start < range.end.max(range.start + 1) && range.start < span.end
         };
-        let mut spans = syntax::colors(self.row_text(line), cx);
+        let mut spans = syntax::colors_in(&self.buffer, range.clone(), cx);
         let brackets = self
             .frame
             .brackets

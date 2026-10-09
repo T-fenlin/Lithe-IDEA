@@ -146,6 +146,12 @@ cd rust/lithe-gpui && cargo check --workspace --all-targets
 ./scripts/verify-agent-notes.sh
 ```
 
+**"装了但装不上 → 退回词法器"这条分支的覆盖是分开的**，不要误以为有一条测试同时覆盖它：
+组件库**没有** grammar 依赖（`tree-sitter` 只提供引擎），因此在组件库里造不出"声明了语言但 grammar
+/查询装不上"的输入。现在的覆盖是两半互补——语言支持插件里用真 Java grammar + 故意写坏的查询，断言
+`has_highlighter() == false`、`highlight_spans()` 为空且连问两次不 panic；组件库里断言"没有可用高亮器"
+这一同一分支给出的颜色与逐行词法器**逐字节相同**。
+
 ## 适用范围
 
 - `rust/lithe-ui/src/language/`（接口与引擎）

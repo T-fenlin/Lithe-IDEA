@@ -1,11 +1,117 @@
+use std::cell::RefCell;
+use std::fmt;
 use std::ops::Range;
 
+use crate::language::{Highlighter, Language, Slot};
+
+/// `range` pulled inside `text` and onto whole characters.
+///
+/// Every byte-indexed consumer of a buffer goes through this, so a range a caller worked out
+/// slightly wrong cannot panic on a split character or answer with a neighbouring line's bytes.
+pub(crate) fn clamped_range(text: &str, range: Range<usize>) -> Range<usize> {
+    let whole = |offset: usize| {
+        let mut at = offset.min(text.len());
+        while at > 0 && !text.is_char_boundary(at) {
+            at -= 1;
+        }
+        at
+    };
+    let start = whole(range.start);
+    start..whole(range.end).max(start)
+}
+
 /// Source text and where each line starts, in bytes.
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Buffer {
     text: String,
     starts: Vec<usize>,
+    /// The registered language that highlights this buffer, when a plugin declared one.
+    language: Option<&'static Language>,
+    /// Bumped by every text change and every language change. The highlighter remembers the
+    /// version it parsed, so a stale span table is never drawn over newer text.
+    version: u64,
+    /// The tree-sitter engine and its span table, built on first use (see [`Highlight`]).
+    highlight: RefCell<Highlight>,
 }
+
+/// A buffer's tree-sitter engine, built on first use and kept in step with the text.
+///
+/// Views hold only `&Buffer`, and building a [`Highlighter`] compiles the language's query, so the
+/// engine sits behind a [`RefCell`] and is built once instead of once per painted row.
+#[derive(Default)]
+struct Highlight {
+    /// `None` until the first request; the inner `None` records that the language's grammar or
+    /// query would not install, so a broken language plugin costs one attempt, not one per frame.
+    engine: Option<Option<Highlighter>>,
+    /// The text version the engine holds spans for; `None` means it has not parsed yet.
+    parsed: Option<u64>,
+}
+
+impl Highlight {
+    /// The spans of `text` inside `range`, re-parsing first when the text has moved on.
+    fn spans(
+        &mut self,
+        language: &'static Language,
+        text: &str,
+        version: u64,
+        range: Range<usize>,
+    ) -> Vec<(Range<usize>, Slot)> {
+        let Self { engine, parsed } = self;
+        if engine.is_none() {
+            *engine = Some(Highlighter::new(language));
+        }
+        let Some(highlighter) = engine.as_mut().and_then(|built| built.as_mut()) else {
+            return Vec::new();
+        };
+        if *parsed != Some(version) {
+            highlighter.reparse(text);
+            *parsed = Some(version);
+        }
+        highlighter.spans_in(range)
+    }
+
+    /// Whether the language's engine installed; builds it on the first call.
+    fn ready(&mut self, language: &'static Language) -> bool {
+        if self.engine.is_none() {
+            self.engine = Some(Highlighter::new(language));
+        }
+        self.engine.as_ref().is_some_and(Option::is_some)
+    }
+}
+
+impl Clone for Buffer {
+    /// The text, its line table and its language; the highlight cache rebuilds on demand.
+    fn clone(&self) -> Self {
+        Self {
+            text: self.text.clone(),
+            starts: self.starts.clone(),
+            language: self.language,
+            version: self.version,
+            highlight: RefCell::new(Highlight::default()),
+        }
+    }
+}
+
+impl fmt::Debug for Buffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Buffer")
+            .field("text", &self.text)
+            .field("starts", &self.starts)
+            .field("language", &self.language.map(|language| language.id))
+            .finish_non_exhaustive()
+    }
+}
+
+/// Two buffers are equal when they hold the same text in the same language; the cached
+/// tree-sitter spans are derived data and take no part.
+impl PartialEq for Buffer {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+            && self.language.map(|language| language.id)
+                == other.language.map(|language| language.id)
+    }
+}
+
+impl Eq for Buffer {}
 
 fn starts(text: &str) -> Vec<usize> {
     std::iter::once(0)
@@ -17,7 +123,13 @@ impl Buffer {
     pub fn new(text: impl Into<String>) -> Self {
         let text = text.into();
         let starts = starts(&text);
-        Self { text, starts }
+        Self {
+            text,
+            starts,
+            language: None,
+            version: 0,
+            highlight: RefCell::new(Highlight::default()),
+        }
     }
 
     pub fn text(&self) -> &str {
@@ -30,6 +142,60 @@ impl Buffer {
 
     pub fn is_empty(&self) -> bool {
         self.text.is_empty()
+    }
+
+    /// The language highlighting this buffer, when a language plugin declared one.
+    pub fn language(&self) -> Option<&'static Language> {
+        self.language
+    }
+
+    /// Sets the language that highlights this buffer, or `None` for the built-in lexer.
+    ///
+    /// The cached spans were produced by the previous language's grammar, so a change drops them
+    /// and the next request builds the new engine.
+    pub fn set_language(&mut self, language: Option<&'static Language>) {
+        if self.language.map(|each| each.id) == language.map(|each| each.id) {
+            return;
+        }
+        self.language = language;
+        self.version += 1;
+        self.highlight = RefCell::new(Highlight::default());
+    }
+
+    /// Whether a language is set **and** its highlighter actually installed.
+    ///
+    /// This is the fork the editor's colours take: `true` means spans come from tree-sitter,
+    /// `false` means the built-in lexer draws them. So a language whose grammar or query will not
+    /// install degrades visibly to the lexer rather than painting nothing.
+    pub fn has_highlighter(&self) -> bool {
+        let Some(language) = self.language else {
+            return false;
+        };
+        // A borrow that is already taken reads as "no highlighter", which sends the caller to the
+        // lexer instead of panicking inside a render.
+        self.highlight
+            .try_borrow_mut()
+            .is_ok_and(|mut highlight| highlight.ready(language))
+    }
+
+    /// The tree-sitter spans inside `range`, in buffer offsets and clipped to it.
+    ///
+    /// Empty when no language is set, when its grammar or query will not install, or when nothing
+    /// in `range` is captured. It never panics: an out-of-bounds or character-splitting range is
+    /// pulled back onto whole characters inside the text first, so a caller's arithmetic mistake
+    /// cannot take a neighbouring line's colours or crash a frame.
+    pub fn highlight_spans(&self, range: Range<usize>) -> Vec<(Range<usize>, Slot)> {
+        let range = clamped_range(&self.text, range);
+        if range.is_empty() {
+            return Vec::new();
+        }
+        let Some(language) = self.language else {
+            return Vec::new();
+        };
+        let Ok(mut highlight) = self.highlight.try_borrow_mut() else {
+            return Vec::new();
+        };
+        highlight.spans(language, &self.text, self.version, range)
     }
 
     /// How many lines it holds; an empty buffer holds one.
@@ -107,6 +273,8 @@ impl Buffer {
         );
         self.text.replace_range(range, text);
         self.starts = starts(&self.text);
+        // The span table now describes text that is gone; the next request re-parses.
+        self.version += 1;
     }
 }
 
@@ -250,5 +418,56 @@ mod tests {
         assert_eq!(buffer.word_end(22), 23, "a line end steps to the next line");
         assert_eq!(buffer.word_at(6), 4..9);
         assert_eq!(buffer.word_at(10), 10..11, "a mark is its own run");
+    }
+
+    #[test]
+    fn a_range_is_pulled_inside_the_text_and_onto_whole_characters() {
+        // π is two bytes at 1..3, so a range that splits it has to step back rather than panic.
+        let text = "aπb";
+        assert_eq!(clamped_range(text, 0..4), 0..4);
+        assert_eq!(clamped_range(text, 0..99), 0..4, "past the end");
+        assert_eq!(clamped_range(text, 3..1), 3..3, "backwards");
+        assert_eq!(clamped_range(text, 2..2), 1..1, "inside π");
+        assert_eq!(clamped_range(text, 2..3), 1..3, "its start is inside π");
+        assert_eq!(clamped_range("", 5..9), 0..0);
+    }
+
+    /// No language means no tree-sitter spans, and no range a caller works out can panic.
+    #[test]
+    fn spans_stay_empty_and_safe_without_a_language() {
+        let mut buffer = Buffer::new("let π = 1;");
+        assert!(buffer.language().is_none());
+        assert!(!buffer.has_highlighter());
+        let long = 0..usize::MAX;
+        for range in [long, 5..2, 100..200, 0..0, 0..buffer.len()] {
+            assert!(buffer.highlight_spans(range).is_empty());
+        }
+        let pi = buffer.text().find('π').expect("π");
+        assert!(
+            buffer.highlight_spans(pi + 1..pi + 2).is_empty(),
+            "a range that splits π has to be survivable, not sliced"
+        );
+        buffer.set_language(None);
+        assert!(buffer.language().is_none());
+        assert!(!buffer.has_highlighter());
+    }
+
+    /// The highlight cache compares this version, so every text or language change has to age it.
+    #[test]
+    fn an_edit_and_a_new_language_age_the_highlight_cache() {
+        let mut buffer = Buffer::new("a");
+        let fresh = buffer.version;
+        buffer.replace(1..1, "b");
+        assert_eq!(buffer.text(), "ab");
+        assert!(
+            buffer.version > fresh,
+            "an edit leaves the span table stale"
+        );
+        let edited = buffer.version;
+        buffer.set_language(None);
+        assert_eq!(
+            buffer.version, edited,
+            "re-setting the language it already has changes nothing"
+        );
     }
 }

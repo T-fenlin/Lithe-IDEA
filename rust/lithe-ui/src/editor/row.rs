@@ -119,9 +119,9 @@ impl CodeEditor {
         let text = lines[at].to_string();
         let rest = (at + 1 == lines.len()).then(|| {
             let line = self.buffer.line_of(ghost.offset);
-            let rest =
-                self.buffer.text()[ghost.offset..self.buffer.line_range(line).end].to_string();
-            let styles = syntax::colors(&rest, cx);
+            let range = ghost.offset..self.buffer.line_range(line).end;
+            let rest = self.buffer.text()[range.clone()].to_string();
+            let styles = syntax::colors_in(&self.buffer, range, cx);
             StyledText::new(rest).with_highlights(styles)
         });
         base.child(self.gutter(Cell::Blank, ix, cx))

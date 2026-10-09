@@ -92,7 +92,8 @@ pub fn register() {
 
 #[cfg(test)]
 mod tests {
-    use lithe_ui::language::{self, Highlighter, Slot};
+    use lithe_ui::editor::Buffer;
+    use lithe_ui::language::{self, Highlighter, Language, Slot};
 
     use super::register;
 
@@ -149,10 +150,7 @@ mod tests {
         );
         // 切片必须落在请求范围内：编辑器按行取色，越界会串色到邻行。
         for (range, _) in highlighter.spans_in(0..9) {
-            assert!(
-                range.start >= 0 && range.end <= 9,
-                "{range:?} 越过了请求范围"
-            );
+            assert!(range.end <= 9, "{range:?} 越过了请求范围");
         }
     }
 
@@ -161,5 +159,86 @@ mod tests {
     fn an_unregistered_extension_stays_blank() {
         ready();
         assert!(language::by_extension("nope").is_none());
+    }
+
+    /// 端到端：组件库**自己的编辑器缓冲区**接上注册表后，Java 的颜色来自 tree-sitter。
+    ///
+    /// 与上面的断言不同，这一条走的是编辑器真正走的入口（`Buffer::set_language` +
+    /// `Buffer::highlight_spans`），不是自己另建一个 `Highlighter`——所以它证明的是"接线接上了"，
+    /// 而不只是"引擎能用"。
+    #[test]
+    fn the_editor_buffer_colors_java_through_tree_sitter() {
+        ready();
+        let java = language::by_extension("java").expect("java 已注册");
+        let source = "class A { int x = 1; }";
+        let mut buffer = Buffer::new(source);
+        assert!(
+            !buffer.has_highlighter(),
+            "还没设置语言时，缓冲区不该有 tree-sitter 高亮器"
+        );
+        buffer.set_language(Some(java));
+        assert_eq!(buffer.language().map(|each| each.id), Some("java"));
+        assert!(
+            buffer.has_highlighter(),
+            "Java 的 grammar 与高亮查询都应该装得上"
+        );
+        let spans = buffer.highlight_spans(0..source.len());
+        // 一个词可能同时落进多个 capture（`A` 既是 `variable` 又是 `type`），所以按词收集槽位。
+        let slots = |word: &str| {
+            spans
+                .iter()
+                .filter(|(range, _)| &source[range.clone()] == word)
+                .map(|(_, slot)| *slot)
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            slots("class").contains(&Slot::Keyword),
+            "`class` 应该由 tree-sitter 认成关键字：{spans:?}"
+        );
+        assert!(
+            slots("1").contains(&Slot::Number),
+            "`1` 应该由 tree-sitter 认成数字：{spans:?}"
+        );
+        // 这一条才是"走的是语法而不是词法器"的证据：库内词法器对小写词只会给 `Variable`
+        // （`int` 不在它的关键字表里），只有 Java 语法能把 `int` 认成内建类型。
+        assert!(
+            slots("int").contains(&Slot::TypeName),
+            "`int` 应该由 Java 语法认成内建类型，词法器给不出这个槽位：{spans:?}"
+        );
+        // 编辑器按行/按可见片段取色：请求区间之外的字节一概不参与。
+        let head = buffer.highlight_spans(0..5);
+        assert!(!head.is_empty(), "`class` 正好落在这个区间里");
+        assert!(
+            head.iter().all(|(range, _)| range.end <= 5),
+            "{head:?} 越过了请求区间"
+        );
+    }
+
+    /// 语言声明了但高亮器装不上（查询编译不过）：不 panic、报"没有高亮器"、取 span 给空。
+    ///
+    /// 这正是"可见降级"的分叉点：编辑器看到 `has_highlighter()` 为假就回退到自己的简易词法器
+    /// ——有颜色可看，而不是假装高亮，也不是每帧重试一次昂贵的查询编译。
+    #[test]
+    fn a_language_whose_query_will_not_compile_degrades_without_panicking() {
+        /// 语法是真的，查询是坏的：这就是"插件声明了但装不上"的形态。
+        static UNBUILDABLE: Language = Language {
+            id: "unbuildable",
+            name: "Unbuildable",
+            extensions: &["unbuildable"],
+            grammar: || tree_sitter_java::LANGUAGE.into(),
+            highlights: "(this is not a query",
+            line_comment: "//",
+        };
+        let mut buffer = Buffer::new("class A { int x = 1; }");
+        buffer.set_language(Some(&UNBUILDABLE));
+        assert_eq!(buffer.language().map(|each| each.id), Some("unbuildable"));
+        assert!(!buffer.has_highlighter(), "装不上的语言必须报没有高亮器");
+        assert!(buffer.highlight_spans(0..buffer.len()).is_empty());
+        // 再问一次仍然是"没有"，而不是重试到 panic。
+        assert!(!buffer.has_highlighter());
+        // 撤回语言回到词法器路径，同样不 panic。
+        buffer.set_language(None);
+        assert!(!buffer.has_highlighter());
+        assert!(buffer.highlight_spans(0..buffer.len()).is_empty());
     }
 }
