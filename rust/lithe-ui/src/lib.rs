@@ -24,6 +24,7 @@ rust_i18n::i18n!("locales", fallback = "en-US");
 
 pub mod i18n;
 pub mod interaction;
+pub mod language;
 pub mod layout;
 pub mod lists;
 pub mod mail;

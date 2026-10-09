@@ -41,6 +41,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 similar = { version = "3.2", default-features = false, features = ["std", "text", "inline", "unicode"] }
 smallvec = "1"
+tree-sitter = "0.26"
 unicode-segmentation = "1"
 vte = { version = "0.15", default-features = false, features = ["std", "ansi"] }
 web-time = "1.1"

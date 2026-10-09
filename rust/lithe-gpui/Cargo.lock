@@ -4412,6 +4412,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pre",
  "gpui-pre-platform",
+ "lithe-gpui-languages",
  "lithe-gpui-settings",
  "lithe-gpui-shared",
  "lithe-gpui-workbench",
@@ -4471,6 +4472,22 @@ dependencies = [
  "lithe-gpui-shared",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "lithe-gpui-languages"
+version = "0.1.0"
+dependencies = [
+ "lithe-ui",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "tree-sitter-java",
+ "tree-sitter-kotlin-sg",
+ "tree-sitter-md",
+ "tree-sitter-sequel",
+ "tree-sitter-toml-ng",
+ "tree-sitter-xml",
+ "tree-sitter-yaml",
 ]
 
 [[package]]
@@ -4594,6 +4611,7 @@ dependencies = [
  "serde_json",
  "similar",
  "smallvec",
+ "tree-sitter",
  "unicode-segmentation",
  "vte",
  "web-time",

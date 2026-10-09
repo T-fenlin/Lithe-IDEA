@@ -1,0 +1,20 @@
+[package]
+name = "lithe-gpui-languages"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Lithe 的第一方语言支持插件：把 tree-sitter 语法注册进组件库的语言注册表"
+publish = false
+
+[dependencies]
+lithe-ui = { path = "../../../lithe-ui" }
+# grammar 的版本与本仓 lock 中既有的那份**保持一致**（同一 crate 实例，不引入第二份原生库）。
+tree-sitter = "0.26"
+tree-sitter-bash = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-kotlin-sg = "0.4"
+tree-sitter-md = "0.5"
+tree-sitter-sequel = "0.3"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-xml = "0.7"
+tree-sitter-yaml = "0.7"

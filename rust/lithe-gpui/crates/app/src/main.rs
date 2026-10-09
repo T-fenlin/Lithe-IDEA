@@ -602,6 +602,9 @@ fn main() {
             // 组件库（`lithe-gpui`）读的是它自己的主题全局：外壳在这里装一次，
             // 之后宿主每次换主题都会把颜色重新映射过去（见 `component_theme`）。
             lithe_gpui_workbench::component_theme::install_component_theme(cx);
+            // 语言支持插件：把 tree-sitter 语法注册进组件库的语言注册表（静态装载；
+            // 换成扩展目录里的动态库时，这一行的位置与语义不变）。
+            lithe_gpui_languages::register();
 
             let store: gpui::Entity<SettingsStore> = lithe_gpui_settings::init_store(
                 cx,

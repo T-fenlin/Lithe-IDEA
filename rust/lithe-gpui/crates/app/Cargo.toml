@@ -16,6 +16,7 @@ path = "src/main.rs"
 embed-resource = "3"
 
 [dependencies]
+lithe-gpui-languages = { path = "../languages" }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["font-kit"] }
 # gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
