@@ -175,6 +175,36 @@ editor crate 现在只是把这些结果包成上游的 provider（`completion.r
 3. **弹层编排归宿主**：定位用 `bounds_for_offset`，浮层用门 G1 的
    `lithe_ui::shell::WindowRootExt::push_layer`。
 
+### L3 第二次开工被拦：弹层键盘接管与软换行（2026-10-08，未改一行代码）
+
+委托出去做移植的子代理在动手前停下并交了证据，我逐条复验成立：
+
+- **宿主拿不到弹层需要的按键**：`keys.rs:54` 是 `pub(crate) const CONTEXT = "ElyEditor"`，
+  `view.rs:423` 在编辑器根节点 `.key_context(CONTEXT)`，43 个 action 全绑给 `CodeEditor` 自己，
+  `keys.rs:143` 的 `listen()` 是 `pub(crate)`。于是"宿主渲染补全弹层"在实现上不成立：编辑器持焦点时
+  Up/Down 被库吃掉去移光标、Enter 被吃掉去换行，浮层收不到导航键；反过来让浮层抢焦点则打着字就断。
+  补全是在用功能（`workbench/src/workspace.rs:939,954` 接设置开关），不能丢。
+- **软换行完全没有**：`soft_wrap|word_wrap` 在整个 crate 里 **0 命中**，`Options` 没这个字段，
+  `view.rs:379` 走 `uniform_list` 一行一行、`row.rs:98` 是 `whitespace_nowrap()`；而产品 `word_wrap`
+  **默认 true**（`settings/src/schema.rs:288`）、设置页可切（`dialog.rs:1253-1262`）。照搬即静默降级。
+- 两个较小的缺口：运行期设滚动位置（只有只读 `scroll_offset()`，`reveal` 是 `pub(crate)`）；
+  以及宿主测试支撑（`TestSupportExt` 0 命中，workbench 两条 UI 测试要重写——这条属宿主侧工作）。
+
+**决策（按"缺能力补进 lithe-ui、不允许静默降级"的既定口径）：先补库，不做可见降级。** 拆两片：
+
+- **片 A（小，已开工）**：把"弹层接管键盘"做成**通用**接缝——`CodeEditor::set_popup_active(bool, cx)`
+  加 `EditorEvent::PopupKey(PopupKey)`（Up/Down/PageUp/PageDown/Enter/Tab/Escape/Backspace 在接管期间
+  **库不执行自己的动作、改为上报**，其余按键与 IME 照常，编辑器保持焦点）；外加
+  `set_scroll_offset(point, cx)`（夹到合法范围）。**不引入真正的按键转发机制**：只在既有 action 处理
+  里先看开关，命中就发事件后返回——改动小且不碰 `listen()` 的可见性。
+- **片 B（大，待排期）**：**软换行**。这是编辑器的布局特性（行表一行一行 → 需要按宽度折行的子行、
+  影响度量、光标移动、折叠、gutter 与 `line_at_row` 的语义），规模明显大于片 A，必须独立成片并带自己的
+  测试；片 B 落地前 L3 无法在不丢软换行的前提下收口。
+
+另记两条**宿主侧**工作（不是库缺口）：产品用 `Position` 做 UTF-16 列换算，迁后要改用
+`Buffer::point/offset`（口径是**字符列**不是 UTF-16 列，相关测试要跟着改）；代码动作当前在产品里
+**用户不可达**（无触发键），迁后应做成宿主菜单入口，建议独立后续片。
+
 **顺带修掉的真缺口（已落地）**：语言 id/扩展名/文件名保真度。产品的
 `crates/editor/src/buffer.rs:15-44` 与设置侧 `lithe.projectLanguages` 用的是 `bash`（不是 `shell`）、
 `json/jsonc`、`ktm`、`xsl/xslt/wsdl`，以及 `mvnw`/`gradlew`/`mvnw.cmd`/`gradlew.bat` 的无扩展名映射。
