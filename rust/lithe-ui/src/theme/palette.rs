@@ -95,9 +95,15 @@ mixable!(
 
 mixable!(
     /// Semantic colors. Components read these, never literals.
+    ///
+    /// `tab_bar` / `title_bar` 是 **chrome 表面槽**：JetBrains 主题里两者取值不同
+    /// （实测 `themes/jetbrains.json`：亮 `#ffffff` vs `#f2f2f2`、暗 `#2b2b2b` vs `#313335`），
+    /// 且宿主的 `tab_bar` 有 15 处渲染读点 ⇒ 既不能并成一个槽，也不能映射到 `surface`。
     Palette {
         bg,
         surface,
+        tab_bar,
+        title_bar,
         sunken,
         overlay,
         hover,
@@ -177,6 +183,8 @@ impl Palette {
         let mut palette = Self {
             bg: c(0xfcfaf7),
             surface: c(0xffffff),
+            tab_bar: c(0xffffff),
+            title_bar: c(0xfcfaf7),
             sunken: c(0xf6f4f1),
             overlay: c(0xffffff),
             hover: c(0xf2f0ed),
@@ -248,6 +256,8 @@ impl Palette {
         let mut palette = Self {
             bg: c(0x131110),
             surface: c(0x1b1917),
+            tab_bar: c(0x1b1917),
+            title_bar: c(0x131110),
             sunken: c(0x0e0d0b),
             overlay: c(0x201f1d),
             hover: c(0x252422),

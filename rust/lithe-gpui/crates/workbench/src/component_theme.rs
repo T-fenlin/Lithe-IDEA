@@ -33,6 +33,9 @@ fn sync_component_theme(cx: &mut App) {
         Mode::Light => Palette::light(false),
     };
     // 面板与中央列用的是同一个底色（外壳原先也是这么画的），分隔线用宿主的边框色。
+    // chrome 槽（证据：	hemes/jetbrains.json 的 	ab_bar.background 与 	itle_bar.background 不同，	ab_bar 有 15 处渲染读点）
+    palette.tab_bar = host.tab_bar;
+    palette.title_bar = host.title_bar;
     palette.bg = host.background;
     palette.surface = host.background;
     palette.sunken = host.muted;
@@ -57,4 +60,6 @@ fn sync_component_theme(cx: &mut App) {
     palette.danger = host.danger;
     palette.info = host.info;
     Theme::apply(mode, Some(palette), cx);
+    // 字体同样以宿主为唯一真源：换主题/启动都要把字体族推进组件库。
+    lithe_gpui_settings::theme::sync_component_fonts(cx);
 }

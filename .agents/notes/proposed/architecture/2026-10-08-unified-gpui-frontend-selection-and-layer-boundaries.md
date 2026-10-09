@@ -582,6 +582,26 @@ gpui-component 的 Theme，与组件库的 Theme **不同名、不同形**。以
 
 **验收**：`cargo test -p lithe-gpui-app` = 11 passed / 0 failed；
 `cargo check --workspace --all-targets` = 0 error；`cargo fmt --check` 与 px 守卫 = exit 0。
+### 15. 主题与字体收口（2026-10-08）
+
+**未决项由证据判定：`tab_bar`/`title_bar` 不映射到 `surface`，而是给组件库新增两个 chrome 槽。**
+
+证据：`themes/jetbrains.json` 亮色 `tab_bar.background=#ffffff` vs `title_bar.background=#f2f2f2`，
+暗色 `#2b2b2b` vs `#313335` —— **两种模式下都不同**（且 `title_bar` 与 sidebar/status bar 同值）；
+宿主 `theme.tab_bar` 有 **15 处**渲染读点（含 `.opacity(0.6/0.45/0.35)` 变体）。
+⇒ `Palette` 新增 `tab_bar` / `title_bar`（`Palette::NAMES` 36 → 38，`theme::tests` 的计数断言同步，
+`UPSTREAM.md` 留痕），桥 `component_theme.rs` 把宿主这两个值映射进来。
+
+**字体收口（修掉一处真 bug）**：组件库组件读 `lithe_ui::theme::Theme` 的 `font_family` / `mono_family` /
+`font_size` / `mono_font_size`，而**此前全仓没有任何地方写它们** ⇒ 库组件一直用库内硬编码的
+`"Inter"` / `"JetBrains Mono"`，不跟随宿主的字体设置。现在 `settings/theme.rs` 新增
+`pub fn sync_component_fonts(cx)`（**宿主字体是唯一真源**），在 `apply_font_families` /
+`apply_editor_font_size` / `apply_theme_font_size` 三处调用，并由桥在装主题/换主题时再调一次。
+
+**仍未做（归属已定）**：③ 删除 gpui-kit 主题全局与 `component_theme.rs`，前提是**每个宿主 crate 的主题读点
+都已迁到组件库**（`theme.X` → `theme.colors.*`，按映射表）——那属于各 crate 的重写片；
+`yellow_light`（4 处，全在 `git/src/log_view.rs` 的图着色）要在那片决定"映射到 `warning` 还是补槽"；
+`Theme::set_scrollbar_mode` 组件库**没有对等 API**，需补库能力。
 ## 考虑过的备选方案
 
 **备选一：复用 `feat/lithe-gpui-components` 分支的既有资产（445 个提交、13 个 crate、

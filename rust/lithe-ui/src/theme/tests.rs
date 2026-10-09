@@ -51,7 +51,8 @@ fn every_color_answers_to_its_name() {
     for (ix, name) in Palette::NAMES.iter().enumerate() {
         *palette.token_mut(name) = hsla(ix as f32 / 64.0, 0.5, 0.5, 1.0);
     }
-    assert_eq!(Palette::NAMES.len(), 36, "every color of the palette");
+    // 38 = 36 + chrome 表面槽 `tab_bar` / `title_bar`（2026-10-08 加，见 palette.rs 的说明）。
+    assert_eq!(Palette::NAMES.len(), 38, "every color of the palette");
     let at = |name: &str| {
         Palette::NAMES
             .iter()

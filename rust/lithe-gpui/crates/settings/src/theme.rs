@@ -396,6 +396,31 @@ fn stamp_builtin_highlight_if_absent(cx: &mut App, theme: &ThemeConfig, mode: Th
     );
 }
 
+/// 把宿主的字体设置推进组件库的主题（字体在这里是**唯一真源**）。
+///
+/// 组件库组件读的是 `lithe_ui::theme::Theme` 的 `font_family` / `mono_family` /
+/// `font_size` / `mono_font_size`；不推的话它们会一直用库内硬编码的默认字体族
+/// （迁移后实测：库组件字体不跟随宿主设置）。
+pub fn sync_component_fonts(cx: &mut App) {
+    if !cx.has_global::<lithe_ui::theme::Theme>() {
+        return;
+    }
+    let (font_family, mono_family, font_size, mono_font_size) = {
+        let host = Theme::global(cx);
+        (
+            host.font_family.clone(),
+            host.mono_font_family.clone(),
+            host.font_size,
+            host.mono_font_size,
+        )
+    };
+    lithe_ui::theme::Theme::update(cx, |theme| {
+        theme.font_family = font_family;
+        theme.mono_family = mono_family;
+        theme.font_size = f32::from(font_size);
+        theme.mono_font_size = f32::from(mono_font_size);
+    });
+}
 pub fn apply_theme_font_size(cx: &mut App, ui_font_size: f64) {
     let font_size = px(theme_font_size_for(ui_font_size));
     Theme::global_mut(cx).font_size = font_size;
@@ -403,9 +428,7 @@ pub fn apply_theme_font_size(cx: &mut App, ui_font_size: f64) {
     // 组件库的尺寸锚点与宿主这里的基准字号是**同一个值**：库里的 rem 档位、窗口 rem 大小
     // 都由它推出。不在这里同步，宿主的字号设置与组件库的锚点就成了两套缩放真源。
     // `lithe_ui::theme::Theme::update` 自己会把新锚点标到所有窗口的 rem 大小上。
-    if cx.has_global::<lithe_ui::theme::Theme>() {
-        lithe_ui::theme::Theme::update(cx, |theme| theme.font_size = f32::from(font_size));
-    }
+    sync_component_fonts(cx);
     cx.refresh_windows();
     println!(
         "S1_THEME font_size={:?} ui_font_size={ui_font_size}",
@@ -418,6 +441,7 @@ pub fn apply_editor_font_size(cx: &mut App, editor_font_size: f64) {
     Theme::global_mut(cx).mono_font_size = font_size;
     Theme::sync_base(cx);
     cx.refresh_windows();
+    sync_component_fonts(cx);
     println!("S1_THEME mono_font_size={font_size:?} editor_font_size={editor_font_size}");
 }
 
@@ -436,6 +460,7 @@ pub fn apply_font_families(cx: &mut App, ui_family: &str, mono_family: &str) {
     }
 
     Theme::sync_base(cx);
+    sync_component_fonts(cx);
     cx.refresh_windows();
 }
 
