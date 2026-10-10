@@ -405,7 +405,9 @@ impl RenderOnce for TitleBar {
             .items_center()
             .gap_2()
             .h(theme.titlebar_height())
-            .bg(theme.colors.bg)
+            // Chrome 槽而不是页面底色：与 workbench 的 `title_bar` 同一条规则（见
+            // `Palette::title_bar`），一个进程里主窗口顶部分离、欢迎窗口不分离更说不通。
+            .bg(theme.colors.title_bar)
             .border_b_1()
             .border_color(theme.colors.border);
         let bar = bar.when(!centered, |bar| bar.pl_3());

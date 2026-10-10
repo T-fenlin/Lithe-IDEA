@@ -8,6 +8,7 @@ use gpui::{
 use crate::{
     data_display::{Badge, Tone},
     forms::HotkeyInput,
+    i18n::text,
     navigation::fuzzy,
     primitives::{Icon, IconName, Tooltip},
     theme::{ActiveTheme, IconSize, Radius, TextSize},
@@ -126,6 +127,11 @@ impl RenderOnce for KeybindingsEditor {
                 .any(|text| fuzzy(&query, text).is_some())
         };
         let widths = [2.25, 1.5, 1.5, 0.75].map(|share| theme.label_width() * share);
+        // Source 那一栏的两张角标走文案表：它们跟别的界面文案一起换语言。
+        let (source_default, source_user) = (
+            text(cx, "keys.source.default", &[]),
+            text(cx, "keys.source.user", &[]),
+        );
         let head = columns(div())
             .py_1()
             .text_size(theme.text_size(TextSize::Xs))
@@ -224,8 +230,8 @@ impl RenderOnce for KeybindingsEditor {
                             .children(binding.when.clone()),
                     )
                     .child(div().w(widths[3]).flex().child(match binding.source {
-                        KeySource::Default => Badge::new("Default"),
-                        KeySource::User => Badge::new("User").tone(Tone::Info),
+                        KeySource::Default => Badge::new(source_default.clone()),
+                        KeySource::User => Badge::new(source_user.clone()).tone(Tone::Info),
                     }))
             });
         div()

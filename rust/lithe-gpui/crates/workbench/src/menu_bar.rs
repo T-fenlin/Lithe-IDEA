@@ -7,7 +7,7 @@ use gpui::{
 };
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::tr;
-use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::buttons::{Button, ButtonCustomVariant, ButtonVariant};
 use lithe_ui::layout::h_stack;
 use lithe_ui::menus::{Menu, MenuItem as MenuRow, TriggerMenu};
 use lithe_ui::primitives::Measure;
@@ -1396,17 +1396,32 @@ fn compact_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
     let panel = if open { compact_menu(cx) } else { Menu::new() };
 
     let colors = &cx.theme().colors;
-    let open_bg = colors.active;
+    let (open_bg, open_fg) = (colors.active, colors.fg);
     TriggerMenu::new("lithe-menu-bar-compact", panel, move |open, _window, cx| {
         // 展开态要留在按钮上：汉堡按钮按下去之后面板顶掉了整条菜单栏，按钮是唯一还在
         // 屏幕上的、能说明「菜单是从这儿开的」的东西。
+        //
+        // 底色光写 `.bg(active)` 不够：Ghost 那档 hover 底压在外层自定义样式之上，而点完
+        // 之后指针本来就还停在按钮上 —— 那一档会被盖成 hover，"开着"和"只是指着"就又分不
+        // 出来了。所以展开时换成 `Custom` variant，把静置 / 悬停 / 按下三档一起锁到 `active`
+        // （与 Pinned 的展开态同槽）。
+        let variant = if open {
+            ButtonVariant::Custom(
+                ButtonCustomVariant::new(cx)
+                    .color(open_bg)
+                    .hover(open_bg)
+                    .active(open_bg)
+                    .foreground(open_fg),
+            )
+        } else {
+            ButtonVariant::Ghost
+        };
         Button::new("lithe-menu-bar-trigger")
-            .variant(ButtonVariant::Ghost)
+            .variant(variant)
             .size(Size::Small)
             .icon_element(idea_icon_mono(&idea::FILES_ICON, cx.theme().is_dark()))
             .tooltip(tr("lithe.window.menu"))
             .aria_label(tr("lithe.window.menu"))
-            .when(open, |button| button.bg(open_bg))
             .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
                 let _ = button_handle.update(cx, |bar, cx| bar.toggle_compact(cx));
             })
@@ -1512,7 +1527,7 @@ fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
     let hover = match face {
         TriggerFace::Disabled => None,
         TriggerFace::Open | TriggerFace::FocusVisible => Some(colors.active),
-        _ => Some(colors.hover),
+        _ => TriggerFace::Hover.paint(colors).1,
     };
     let handle = handle();
 

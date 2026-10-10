@@ -49,6 +49,8 @@ fn a_right_to_left_message_leads_with_its_mark() {
 fn a_key_reads_its_message() {
     assert_eq!(message("palette.recent"), "Recent");
     assert_eq!(message("state.unavailable"), "Unavailable");
+    assert_eq!(message("keys.source.default"), "Default");
+    assert_eq!(message("keys.source.user"), "User");
 }
 
 /// Every leaf in the catalogue carries every locale, so a message cannot ship
