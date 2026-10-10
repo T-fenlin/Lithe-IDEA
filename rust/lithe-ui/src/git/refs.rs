@@ -2,13 +2,13 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, Styled, Window, div, prelude::*,
+    RenderOnce, SharedString, StyleRefinement, Styled, Window, div, prelude::*,
 };
 
 use crate::{
     buttons::{Button, ButtonVariant},
     i18n,
-    navigation::{Group, Palette, Row, fuzzy, marked, query_field},
+    navigation::{Group, OnPick, Palette, PaletteRow, fuzzy, marked, query_field},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Ellipsis, tabular},
@@ -94,7 +94,7 @@ impl RenderOnce for BranchSelector {
         );
         let query = input.read(cx).text().trim().to_string();
         let colors = cx.theme().colors.clone();
-        let row = |branch: &Branch, cx: &App| -> Option<(i32, Row)> {
+        let row = |branch: &Branch, cx: &App| -> Option<(i32, PaletteRow)> {
             let (score, hits) = if query.is_empty() {
                 (0, Vec::new())
             } else {
@@ -103,7 +103,7 @@ impl RenderOnce for BranchSelector {
             };
             Some((
                 score,
-                Row {
+                PaletteRow {
                     value: branch.name.clone(),
                     name: branch.name.clone(),
                     icon: Some(if branch.current {
@@ -129,7 +129,7 @@ impl RenderOnce for BranchSelector {
             ))
         };
         let group = |title: SharedString, remote: bool, cx: &App| {
-            let mut rows: Vec<(i32, Row)> = self
+            let mut rows: Vec<(i32, PaletteRow)> = self
                 .branches
                 .iter()
                 .filter(|branch| branch.remote == remote)
@@ -157,7 +157,7 @@ impl RenderOnce for BranchSelector {
                 0,
                 Group {
                     title: None,
-                    rows: vec![Row {
+                    rows: vec![PaletteRow {
                         value: format!("{CREATE}{query}").into(),
                         name: create.clone(),
                         icon: Some(IconName::Plus),
@@ -170,8 +170,8 @@ impl RenderOnce for BranchSelector {
             );
         }
         let (pick, create) = (self.on_pick, self.on_create);
-        let on_pick: OnName = Rc::new(
-            move |value: &SharedString, window: &mut Window, cx: &mut App| match value
+        let on_pick: OnPick = Rc::new(
+            move |_: usize, value: &SharedString, window: &mut Window, cx: &mut App| match value
                 .strip_prefix(CREATE)
             {
                 Some(name) => {
@@ -192,6 +192,8 @@ impl RenderOnce for BranchSelector {
             groups,
             start: 0,
             empty: i18n::text(cx, "palette.branch.empty", &[]),
+            loading: false,
+            style: StyleRefinement::default(),
             on_pick: Some(on_pick),
             on_close: self.on_close,
         }

@@ -8,18 +8,37 @@ use std::{ops::Range, rc::Rc};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ElementId, Entity, FontWeight, HighlightStyle,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Point, Role, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Window, div, prelude::*,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, StyledText, Window, div,
+    prelude::*,
 };
 
 use crate::{
     forms::{Down, Enter, InputState, OnValue, Pick, Run, Up},
-    motion,
+    motion::{self, Spinner},
     primitives::{Backdrop, FocusScope, Icon, IconName, give_back, take_focus},
     theme::{ActiveTheme, Elevation, IconSize, Radius, Size, TextSize},
 };
 
 pub use kinds::{Command, CommandPalette, QuickOpen, QuickSwitcher, SearchPalette};
 pub use launcher::QuickLauncher;
+
+/// What a pick does: the row's index under the cursor and the value it carries.
+///
+/// The index is what a caller that owns the rows needs — it can look the row up
+/// again without relying on values being unique.
+pub(crate) type OnPick = Rc<dyn Fn(usize, &SharedString, &mut Window, &mut App)>;
+
+/// 只关心值的回调适配成一次拾取（忽略行号）。
+pub(crate) fn on_value(run: Option<OnValue>) -> Option<OnPick> {
+    run.map(|run| {
+        let pick: OnPick = Rc::new(
+            move |_: usize, value: &SharedString, window: &mut Window, cx: &mut App| {
+                run(value, window, cx)
+            },
+        );
+        pick
+    })
+}
 
 /// How well a query fits a text, and the byte ranges it covers.
 #[derive(Debug, PartialEq)]
@@ -99,23 +118,79 @@ pub(crate) fn marked(text: SharedString, hits: Vec<Range<usize>>, cx: &App) -> A
         .into_any_element()
 }
 
-/// One result: the value a pick hands back, then what the row shows.
-pub(crate) struct Row {
+/// One row: the value a pick hands back, then what the row shows.
+///
+/// The palette kinds below build these from their own inputs. A caller that
+/// answers queries itself ([`Palette`]) builds them directly, which is how a
+/// row can carry an icon, a two-part label or a trailing note the library
+/// knows nothing about.
+pub struct PaletteRow {
+    /// Handed to `on_pick`.
     pub value: SharedString,
     /// The row's plain name, for assistive technology.
     pub name: SharedString,
+    /// A library icon, when the row has one.
     pub icon: Option<IconName>,
     /// 调用方自带的图标，优先于 `icon`（由 `Command` / `Choice` 的 `icon_element` 现取）。
     pub icon_element: Option<AnyElement>,
+    /// What the row shows as its name; plain text unless the caller marks it.
     pub label: AnyElement,
+    /// A quieter second part, such as a path or a description.
     pub detail: Option<AnyElement>,
+    /// A trailing part, such as a key chord or a count.
     pub end: Option<AnyElement>,
+}
+
+impl PaletteRow {
+    /// A row whose label is its plain name.
+    pub fn new(value: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
+        let label: SharedString = label.into();
+        Self {
+            value: value.into(),
+            name: label.clone(),
+            icon: None,
+            icon_element: None,
+            label: label.into_any_element(),
+            detail: None,
+            end: None,
+        }
+    }
+
+    /// A library icon in the leading slot.
+    pub fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    /// A caller-owned icon in the leading slot; wins over [`PaletteRow::icon`].
+    pub fn icon_element(mut self, icon: impl IntoElement) -> Self {
+        self.icon_element = Some(icon.into_any_element());
+        self
+    }
+
+    /// The name the row shows, instead of its plain label.
+    pub fn label(mut self, label: impl IntoElement) -> Self {
+        self.label = label.into_any_element();
+        self
+    }
+
+    /// The quieter second part.
+    pub fn detail(mut self, detail: impl IntoElement) -> Self {
+        self.detail = Some(detail.into_any_element());
+        self
+    }
+
+    /// The trailing part.
+    pub fn end(mut self, end: impl IntoElement) -> Self {
+        self.end = Some(end.into_any_element());
+        self
+    }
 }
 
 /// Rows under an optional heading.
 pub(crate) struct Group {
     pub title: Option<SharedString>,
-    pub rows: Vec<Row>,
+    pub rows: Vec<PaletteRow>,
 }
 
 /// The row under the keyboard, the query it was set for, and the list's scroll.
@@ -139,21 +214,109 @@ pub(crate) fn query_field(
 }
 
 /// A query field over grouped rows. Arrows move, Enter or a click picks, Escape closes.
-pub(crate) struct Palette {
-    pub id: ElementId,
-    pub input: Entity<InputState>,
-    pub groups: Vec<Group>,
+///
+/// There are two ways to feed it:
+///
+/// - the [`CommandPalette`] / [`QuickOpen`] / [`QuickSwitcher`] / [`SearchPalette`]
+///   kinds, which rank and mark rows themselves from a list the caller hands over;
+/// - `Palette` built directly, for a caller that answers each query itself — an
+///   async search, say. It takes the caller's own query field, so the caller
+///   subscribes to that field's change event, computes the rows for the current
+///   query, and gets the picked index back. While `loading` is set the empty text
+///   stays hidden, because "nothing yet" is not the same as "no match".
+pub struct Palette {
+    /// 字段对库内开放；库外只能走 `new` 与各构造口，免得把 `Group` 这类内部形状漏出去。
+    pub(crate) id: ElementId,
+    pub(crate) input: Entity<InputState>,
+    pub(crate) groups: Vec<Group>,
     /// The row marked whenever the query changes.
-    pub start: usize,
-    /// Said when no row fits.
-    pub empty: SharedString,
-    pub on_pick: Option<OnValue>,
-    pub on_close: Run,
+    pub(crate) start: usize,
+    /// Said when no row fits and nothing is in flight.
+    pub(crate) empty: SharedString,
+    /// An answer is in flight: the leading mark spins and `empty` stays hidden.
+    pub(crate) loading: bool,
+    /// 调用方对卡片的样式覆盖（`Styled`）；尺寸、内衬这类规格不该在组件里写死。
+    pub(crate) style: StyleRefinement,
+    pub(crate) on_pick: Option<OnPick>,
+    pub(crate) on_close: Run,
 }
 
 impl Palette {
+    /// A palette over `input`, the query field the caller owns and watches.
+    ///
+    /// `on_close` runs on Escape and after a pick: close the host layer there.
+    pub fn new(
+        id: impl Into<ElementId>,
+        input: Entity<InputState>,
+        on_close: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            input,
+            groups: Vec::new(),
+            start: 0,
+            empty: SharedString::default(),
+            loading: false,
+            style: StyleRefinement::default(),
+            on_pick: None,
+            on_close: Rc::new(on_close),
+        }
+    }
+
+    /// Rows under a heading. A heading with no rows under it is dropped on render.
+    pub fn group(
+        mut self,
+        title: impl Into<SharedString>,
+        rows: impl IntoIterator<Item = PaletteRow>,
+    ) -> Self {
+        self.groups.push(Group {
+            title: Some(title.into()),
+            rows: rows.into_iter().collect(),
+        });
+        self
+    }
+
+    /// Rows with no heading.
+    pub fn rows(mut self, rows: impl IntoIterator<Item = PaletteRow>) -> Self {
+        self.groups.push(Group {
+            title: None,
+            rows: rows.into_iter().collect(),
+        });
+        self
+    }
+
+    /// The row marked whenever the query changes.
+    pub fn start(mut self, at: usize) -> Self {
+        self.start = at;
+        self
+    }
+
+    /// Said when no row fits and nothing is in flight.
+    pub fn empty(mut self, text: impl Into<SharedString>) -> Self {
+        self.empty = text.into();
+        self
+    }
+
+    /// Whether an answer is in flight.
+    pub fn loading(mut self, loading: bool) -> Self {
+        self.loading = loading;
+        self
+    }
+
+    /// What a pick does: the row's index and the value it carries.
+    ///
+    /// It runs **before** `on_close`, so the caller can still read the state the
+    /// rows were built from — a list cleared on close is the usual trap.
+    pub fn on_pick(
+        mut self,
+        handler: impl Fn(usize, &SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_pick = Some(Rc::new(handler));
+        self
+    }
+
     /// Over a scrim; a click on it closes. Tab stays inside, and focus returns on every close.
-    pub(crate) fn overlay(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    pub fn overlay(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let takeover = take_focus((self.id.clone(), "takeover"), window, cx);
         let scope = takeover.read(cx).focus.clone();
         if scope.is_focused(window) {
@@ -170,8 +333,8 @@ impl Palette {
             .child(FocusScope::new(&scope).trap().child(self.card(window, cx)))
     }
 
-    /// The card alone, as in a window of its own.
-    pub(crate) fn card(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    /// The card alone, as in a window or a dialog of its own.
+    pub fn card(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let cursor =
             window.use_keyed_state((self.id.clone(), "cursor"), cx, |_, _| Cursor::default());
         let values: Vec<SharedString> = self
@@ -223,12 +386,13 @@ impl Palette {
         let pick: Pick = {
             let (id, on_pick, close) = (self.id.clone(), self.on_pick, self.on_close.clone());
             Rc::new(move |ix, window, cx| {
-                let value = &values[ix];
+                let value = values[ix].clone();
                 log::info!("palette {id:?}: picked {value}");
-                close(window, cx);
+                // 先交回给调用方、再关闭：调用方常在关闭时清空行，倒过来就查不到这一行了。
                 if let Some(on_pick) = &on_pick {
-                    on_pick(value, window, cx);
+                    on_pick(ix, &value, window, cx);
                 }
+                close(window, cx);
             })
         };
         let theme = cx.theme();
@@ -322,7 +486,7 @@ impl Palette {
         }
         let (up, down, escape) = (go.clone(), go, self.on_close);
         let (enter, chosen) = (pick, cursor.clone());
-        let card = div()
+        let mut card = div()
             .id(self.id.clone())
             .debug_selector(|| "palette-card".into())
             .flex()
@@ -367,11 +531,17 @@ impl Palette {
                     .border_b_1()
                     .border_color(colors.border)
                     .text_size(theme.text_size(TextSize::Md))
-                    .child(
+                    .child(if self.loading {
+                        Spinner::new((self.id.clone(), "loading"))
+                            .size(IconSize::Sm)
+                            .color(colors.fg_subtle)
+                            .into_any_element()
+                    } else {
                         Icon::new(IconName::Search)
                             .size(IconSize::Sm)
-                            .color(colors.fg_subtle),
-                    )
+                            .color(colors.fg_subtle)
+                            .into_any_element()
+                    })
                     .child(div().flex_1().min_w_0().child(self.input.clone())),
             )
             .child(
@@ -386,9 +556,11 @@ impl Palette {
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .children(children)
-                    .when(count == 0, |list| {
+                    // 在途时列表空是"还没到"，不是"没匹配"：这时候别说空话。
+                    .when(count == 0 && !self.loading, |list| {
                         list.child(
                             div()
+                                .debug_selector(|| "palette-empty".into())
                                 .flex()
                                 .flex_1()
                                 .items_center()
@@ -398,11 +570,18 @@ impl Palette {
                         )
                     }),
             );
+        card.style().refine(&self.style);
         // Padding grows the box the scrim centers.
         div().child(card).with_animation(
             (self.id, "in"),
             Animation::new(motion::duration(motion::BASE, cx)).with_easing(motion::ease_out_cubic),
             |card, t| card.opacity(t).pt(motion::NUDGE * (1.0 - t)),
         )
+    }
+}
+
+impl Styled for Palette {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
     }
 }

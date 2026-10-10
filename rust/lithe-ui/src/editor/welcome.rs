@@ -2,15 +2,15 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
-    prelude::*,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
+    Window, div, prelude::*,
 };
 
 use crate::{
     buttons::{Button, ButtonVariant},
     forms::Checkbox,
     i18n,
-    navigation::{Group, Palette, Row, fuzzy, marked, query_field},
+    navigation::{Group, Palette, PaletteRow, fuzzy, marked, query_field},
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, Size, TextSize},
     typography::{Ellipsis, KbdCombo},
@@ -222,7 +222,7 @@ impl RenderOnce for ProjectSwitcher {
         );
         let query = input.read(cx).text().trim().to_string();
         let colors = cx.theme().colors.clone();
-        let mut found: Vec<(i32, Row)> = ordered(&self.projects)
+        let mut found: Vec<(i32, PaletteRow)> = ordered(&self.projects)
             .into_iter()
             .filter_map(|(ix, project)| {
                 let (score, hits) = if query.is_empty() {
@@ -232,7 +232,7 @@ impl RenderOnce for ProjectSwitcher {
                 };
                 Some((
                     score,
-                    Row {
+                    PaletteRow {
                         value: ix.to_string().into(),
                         name: project.name.clone(),
                         icon: Some(if project.pinned {
@@ -263,14 +263,14 @@ impl RenderOnce for ProjectSwitcher {
         }
         let on_pick = self.on_open.map(|open| {
             Rc::new(
-                move |value: &SharedString, window: &mut Window, cx: &mut App| {
+                move |_: usize, value: &SharedString, window: &mut Window, cx: &mut App| {
                     open(
                         value.parse().expect("a project row carries its place"),
                         window,
                         cx,
                     )
                 },
-            ) as Rc<dyn Fn(&SharedString, &mut Window, &mut App)>
+            ) as Rc<dyn Fn(usize, &SharedString, &mut Window, &mut App)>
         });
         Palette {
             id: self.id,
@@ -281,6 +281,8 @@ impl RenderOnce for ProjectSwitcher {
             }],
             start: 0,
             empty: i18n::text(cx, "palette.project.empty", &[]),
+            loading: false,
+            style: StyleRefinement::default(),
             on_pick,
             on_close: self.on_close,
         }

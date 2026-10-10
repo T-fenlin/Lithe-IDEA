@@ -1,12 +1,13 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
+    App, ElementId, IntoElement, ParentElement, RenderOnce, SharedString, StyleRefinement, Styled,
+    Window, div,
 };
 
 use crate::{
     i18n,
-    navigation::{Group, Palette, Row, fuzzy, marked, query_field},
+    navigation::{Group, Palette, PaletteRow, fuzzy, marked, on_value, query_field},
     primitives::IconName,
     theme::ActiveTheme,
 };
@@ -66,7 +67,7 @@ impl RenderOnce for CommandHistory {
         );
         let query = input.read(cx).text().trim().to_string();
         let colors = cx.theme().colors.clone();
-        let mut found: Vec<(i32, Row)> = self
+        let mut found: Vec<(i32, PaletteRow)> = self
             .commands
             .iter()
             .filter_map(|past| {
@@ -83,7 +84,7 @@ impl RenderOnce for CommandHistory {
                 };
                 Some((
                     score,
-                    Row {
+                    PaletteRow {
                         value: past.command.clone(),
                         name: past.command.clone(),
                         icon: Some(icon),
@@ -117,7 +118,9 @@ impl RenderOnce for CommandHistory {
             }],
             start: 0,
             empty: i18n::text(cx, "palette.history.empty", &[]),
-            on_pick: self.on_pick,
+            loading: false,
+            style: StyleRefinement::default(),
+            on_pick: on_value(self.on_pick),
             on_close: self.on_close,
         }
         .overlay(window, cx)

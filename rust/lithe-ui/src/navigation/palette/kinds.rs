@@ -1,8 +1,8 @@
 use std::{iter, ops::Range, rc::Rc};
 
-use gpui::{AnyElement, App, ElementId, IntoElement, RenderOnce, SharedString, Window};
+use gpui::{AnyElement, App, ElementId, IntoElement, RenderOnce, SharedString, StyleRefinement, Window};
 
-use super::{Fit, Group, Palette, Row, fuzzy, marked, query_field};
+use super::{Fit, Group, Palette, PaletteRow, fuzzy, marked, on_value, query_field};
 use crate::{
     forms::{Choice, OnValue, Run},
     i18n,
@@ -67,8 +67,8 @@ impl Command {
         self
     }
 
-    fn row(&self, hits: Vec<Range<usize>>, cx: &App) -> Row {
-        Row {
+    fn row(&self, hits: Vec<Range<usize>>, cx: &App) -> PaletteRow {
+        PaletteRow {
             value: self.value.clone(),
             name: self.label.clone(),
             icon: self.icon,
@@ -196,7 +196,9 @@ impl RenderOnce for CommandPalette {
             groups,
             start: 0,
             empty: i18n::text(cx, "palette.command.empty", &[]),
-            on_pick: self.on_run,
+            loading: false,
+            style: StyleRefinement::default(),
+            on_pick: on_value(self.on_run),
             on_close: self.on_close,
         }
         .overlay(window, cx)
@@ -247,7 +249,7 @@ impl QuickOpen {
 }
 
 /// A file row: its name, then its folder, each with the hits that fall in it.
-fn file_row(path: &SharedString, hits: &[Range<usize>], cx: &App) -> Row {
+fn file_row(path: &SharedString, hits: &[Range<usize>], cx: &App) -> PaletteRow {
     let name_at = path.rfind('/').map_or(0, |slash| slash + 1);
     let within = |from: usize, to: usize| -> Vec<Range<usize>> {
         hits.iter()
@@ -257,7 +259,7 @@ fn file_row(path: &SharedString, hits: &[Range<usize>], cx: &App) -> Row {
             .collect()
     };
     let folder = &path[..name_at.saturating_sub(1)];
-    Row {
+    PaletteRow {
         value: path.clone(),
         name: path[name_at..].to_string().into(),
         icon: Some(IconName::File),
@@ -308,7 +310,9 @@ impl RenderOnce for QuickOpen {
             groups: vec![group],
             start: 0,
             empty,
-            on_pick: self.on_open,
+            loading: false,
+            style: StyleRefinement::default(),
+            on_pick: on_value(self.on_open),
             on_close: self.on_close,
         }
         .overlay(window, cx)
@@ -358,7 +362,7 @@ impl RenderOnce for QuickSwitcher {
         let placeholder = i18n::text(cx, "palette.switch.placeholder", &[]);
         let input = query_field(&self.id, placeholder, window, cx);
         let query = input.read(cx).text().trim().to_string();
-        let row = |item: &Choice, hits: Vec<Range<usize>>| Row {
+        let row = |item: &Choice, hits: Vec<Range<usize>>| PaletteRow {
             value: item.value.clone(),
             name: item.label.clone(),
             icon: item.icon,
@@ -390,7 +394,9 @@ impl RenderOnce for QuickSwitcher {
             groups: vec![Group { title: None, rows }],
             start,
             empty: i18n::text(cx, "palette.switch.empty", &[]),
-            on_pick: self.on_switch,
+            loading: false,
+            style: StyleRefinement::default(),
+            on_pick: on_value(self.on_switch),
             on_close: self.on_close,
         }
         .overlay(window, cx)
@@ -463,7 +469,7 @@ impl SearchPalette {
                             result.value
                         );
                     })
-                    .map(|result| Row {
+                    .map(|result| PaletteRow {
                         value: result.value.clone(),
                         name: result.label.clone(),
                         icon: result.icon,
@@ -487,7 +493,9 @@ impl SearchPalette {
             } else {
                 i18n::text(cx, "palette.search.empty", &[("query", &query)])
             },
-            on_pick: self.on_open,
+            loading: false,
+            style: StyleRefinement::default(),
+            on_pick: on_value(self.on_open),
             on_close: self.on_close,
         }
     }

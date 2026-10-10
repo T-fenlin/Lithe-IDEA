@@ -2,14 +2,17 @@ use std::ops::Range;
 
 use gpui::{
     Context, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyUpEvent, Keystroke,
-    ParentElement, Render, SharedString, TestAppContext, VisualTestContext, Window, div,
-    prelude::*,
+    ParentElement, Render, SharedString, Subscription, TestAppContext, VisualTestContext, Window,
+    div, prelude::*,
 };
 
-use super::{Command, CommandPalette, Fit, QuickOpen, QuickSwitcher, SearchPalette, fuzzy};
+use super::{
+    Command, CommandPalette, Fit, Palette, PaletteRow, QuickOpen, QuickSwitcher, SearchPalette,
+    fuzzy,
+};
 use crate::{
     buttons::Button,
-    forms::Choice,
+    forms::{Choice, InputEvent, InputState},
     primitives::{FocusNext, FocusScope},
     theme::Theme,
 };
@@ -316,5 +319,143 @@ fn a_command_row_shows_the_icon_element_it_is_given(cx: &mut TestAppContext) {
     assert!(
         cx.debug_bounds("command-icon-element").is_some(),
         "宿主自带的图标元素画在命令行的行首"
+    );
+}
+
+/// 宿主自己驱动的一版：输入框、按查询算出的行、收回去的行号，全都归它自己，库只出壳。
+struct Driven {
+    root: FocusHandle,
+    input: gpui::Entity<InputState>,
+    rows: Vec<SharedString>,
+    loading: bool,
+    got: Option<(usize, SharedString)>,
+    open: bool,
+    _changed: Subscription,
+}
+
+fn files(query: &str) -> Vec<SharedString> {
+    ["src/main.rs", "src/lib.rs", "docs/guide.md"]
+        .into_iter()
+        .filter(|path| query.is_empty() || path.contains(query))
+        .map(SharedString::from)
+        .collect()
+}
+
+impl Driven {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Files"));
+        let changed = cx.subscribe_in(
+            &input,
+            window,
+            |driven: &mut Self, input: &gpui::Entity<InputState>, event: &InputEvent, _, cx| {
+                if *event != InputEvent::Changed {
+                    return;
+                }
+                driven.rows = files(input.read(cx).text());
+                driven.loading = false;
+                cx.notify();
+            },
+        );
+        Self {
+            root: cx.focus_handle(),
+            input,
+            rows: files(""),
+            loading: false,
+            got: None,
+            open: true,
+            _changed: changed,
+        }
+    }
+}
+
+impl Render for Driven {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let me = cx.entity();
+        let close = {
+            let me = me.clone();
+            move |_: &mut Window, cx: &mut gpui::App| {
+                me.update(cx, |driven, cx| {
+                    driven.open = false;
+                    cx.notify();
+                })
+            }
+        };
+        let pick = move |row: usize, value: &SharedString, _: &mut Window, cx: &mut gpui::App| {
+            let value = value.clone();
+            me.update(cx, |driven, _| driven.got = Some((row, value)));
+        };
+        let rows = self
+            .rows
+            .iter()
+            .cloned()
+            .map(|path| PaletteRow::new(path.clone(), path));
+        FocusScope::new(&self.root).size_full().child(
+            Palette::new("driven", self.input.clone(), close)
+                .rows(rows)
+                .empty("No file")
+                .loading(self.loading)
+                .w_full()
+                .on_pick(pick)
+                .card(window, cx),
+        )
+    }
+}
+
+fn driven(cx: &mut TestAppContext) -> (gpui::Entity<Driven>, &mut VisualTestContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|window, cx| Driven::new(window, cx));
+    settle(cx);
+    (view, cx)
+}
+
+#[gpui::test]
+fn the_owner_answers_every_query_and_gets_the_row_index_back(cx: &mut TestAppContext) {
+    let (view, cx) = driven(cx);
+    // `Palette::card` 不做焦点接管（那是 `overlay` 的事）：光标得由宿主自己送进查询框。
+    let focus = view.read_with(cx, |driven, cx| driven.input.read(cx).focus().clone());
+    cx.update(|window, cx| window.focus(&focus, cx));
+    settle(cx);
+    // 库不过滤：这三行是宿主给的，改了查询才换。
+    cx.simulate_input("rs");
+    settle(cx);
+    assert_eq!(
+        view.read_with(cx, |driven, _| driven.rows.clone()),
+        [
+            SharedString::from("src/main.rs"),
+            SharedString::from("src/lib.rs")
+        ]
+    );
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    press("enter", cx);
+    assert_eq!(
+        view.read_with(cx, |driven, _| driven.got.clone()),
+        Some((1, SharedString::from("src/lib.rs"))),
+        "行号是宿主自己那两行的位次，不是库内的过滤结果"
+    );
+    assert!(!view.read_with(cx, |driven, _| driven.open), "拾起之后壳要关");
+}
+
+#[gpui::test]
+fn an_answer_in_flight_says_nothing_about_matching(cx: &mut TestAppContext) {
+    let (view, cx) = driven(cx);
+    view.update(cx, |driven, cx| {
+        driven.rows.clear();
+        driven.loading = true;
+        cx.notify();
+    });
+    settle(cx);
+    assert!(
+        cx.debug_bounds("palette-empty").is_none(),
+        "在途时不该冒出「没匹配」"
+    );
+    view.update(cx, |driven, cx| {
+        driven.loading = false;
+        cx.notify();
+    });
+    settle(cx);
+    assert!(
+        cx.debug_bounds("palette-empty").is_some(),
+        "落定之后才说没匹配"
     );
 }

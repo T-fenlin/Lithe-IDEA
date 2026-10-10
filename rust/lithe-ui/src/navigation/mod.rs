@@ -7,7 +7,7 @@ mod nav;
 mod overflow;
 mod pages;
 mod palette;
-pub(crate) use palette::{Group, Palette, Row, fuzzy, marked, query_field};
+pub(crate) use palette::{Group, OnPick, fuzzy, marked, on_value, query_field};
 mod steps;
 mod tabs;
 #[cfg(all(test, feature = "test-support"))]
@@ -23,7 +23,8 @@ pub use nav::{NavGroup, NavItem};
 pub use overflow::TabOverflowMenu;
 pub use pages::{LoadMore, Pagination};
 pub use palette::{
-    Command, CommandPalette, QuickLauncher, QuickOpen, QuickSwitcher, SearchPalette,
+    Command, CommandPalette, Palette, PaletteRow, QuickLauncher, QuickOpen, QuickSwitcher,
+    SearchPalette,
 };
 pub use steps::{Steps, Wizard};
 pub use tabs::{Tab, TabBar, TabPlacement, Tabs};

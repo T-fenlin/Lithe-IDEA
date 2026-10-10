@@ -439,7 +439,9 @@ impl InputState {
         self.caret_on
     }
 
-    pub(crate) fn focus(&self) -> &FocusHandle {
+    /// The field's focus handle, for a caller that puts the caret in it — a palette
+    /// opened by a key binding, say: `window.focus(&input.read(cx).focus().clone(), cx)`.
+    pub fn focus(&self) -> &FocusHandle {
         &self.focus
     }
 }

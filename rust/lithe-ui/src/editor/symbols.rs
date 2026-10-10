@@ -1,14 +1,15 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
+    App, ElementId, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, StyleRefinement,
+    Styled, Window, div,
 };
 
 use crate::{
     buttons::SegmentedControl,
     i18n,
     lists::{Tree, TreeNode},
-    navigation::{Group, Palette, Row, fuzzy, marked, query_field},
+    navigation::{Group, Palette, PaletteRow, fuzzy, marked, query_field},
     primitives::IconName,
     theme::{ActiveTheme, Palette as Colors, Size},
 };
@@ -267,7 +268,7 @@ impl RenderOnce for GoToSymbol {
         );
         let query = input.read(cx).text().trim().to_string();
         let colors = cx.theme().colors.clone();
-        let mut found: Vec<(i32, Row)> = flattened(&self.symbols)
+        let mut found: Vec<(i32, PaletteRow)> = flattened(&self.symbols)
             .into_iter()
             .filter_map(|(path, symbol)| {
                 let fit = if query.is_empty() {
@@ -282,7 +283,7 @@ impl RenderOnce for GoToSymbol {
                         .child(path.join(" › "))
                         .into_any_element()
                 });
-                let row = Row {
+                let row = PaletteRow {
                     value: symbol.line.to_string().into(),
                     name: symbol.name.clone(),
                     icon: Some(symbol.kind.icon()),
@@ -304,11 +305,11 @@ impl RenderOnce for GoToSymbol {
         }
         let on_pick = self.on_pick.map(|on_pick| {
             Rc::new(
-                move |value: &SharedString, window: &mut Window, cx: &mut App| {
+                move |_: usize, value: &SharedString, window: &mut Window, cx: &mut App| {
                     let line: usize = value.parse().expect("a symbol row carries its line");
                     on_pick(line, window, cx);
                 },
-            ) as Rc<dyn Fn(&SharedString, &mut Window, &mut App)>
+            ) as Rc<dyn Fn(usize, &SharedString, &mut Window, &mut App)>
         });
         Palette {
             id: self.id,
@@ -319,6 +320,8 @@ impl RenderOnce for GoToSymbol {
             }],
             start: 0,
             empty: i18n::text(cx, "palette.symbol.empty", &[]),
+            loading: false,
+            style: StyleRefinement::default(),
             on_pick,
             on_close: self.on_close,
         }
