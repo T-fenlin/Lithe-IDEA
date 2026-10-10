@@ -36,6 +36,9 @@ fn sync_component_theme(cx: &mut App) {
     // chrome 槽（证据：	hemes/jetbrains.json 的 	ab_bar.background 与 	itle_bar.background 不同，	ab_bar 有 15 处渲染读点）
     palette.tab_bar = host.tab_bar;
     palette.title_bar = host.title_bar;
+    // 状态栏也是独立的 chrome 表面：同一份主题里 `status_bar.background` 亮 `#f2f2f2` / 暗 `#313335`，
+    // 既不是 `background`（亮 `#ffffff`）也不是 `tab_bar`；组件库的 `shell::StatusBar` 读这个槽。
+    palette.status_bar = host.status_bar;
     palette.bg = host.background;
     palette.surface = host.background;
     palette.sunken = host.muted;

@@ -6,13 +6,11 @@ use gpui::{
     App, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, div, rems,
 };
-use gpui_kit::assets::IconName;
-use gpui_kit::base::h_flex;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Sizable as _};
-
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
 use lithe_gpui_shared::tr_args;
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::layout::h_stack;
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 const STRIP_HEIGHT_SPEC: f32 = 38.;
 
@@ -61,16 +59,18 @@ pub fn project_tabs(
     let on_activate: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(on_activate);
     let on_close: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(on_close);
 
-    let strip_bg = cx.theme().tab_bar;
-    let border = cx.theme().border;
-    let accent = cx.theme().accent;
-    let inactive_bg = cx.theme().secondary;
-    let foreground = cx.theme().foreground;
-    let subtle_foreground = cx.theme().muted_foreground;
-    let primary = cx.theme().primary;
-    let focus_border = cx.theme().ring;
+    let colors = &cx.theme().colors;
+    let strip_bg = colors.tab_bar;
+    let border = colors.border;
+    let accent = colors.accent;
+    let inactive_bg = colors.surface;
+    let foreground = colors.fg;
+    let subtle_foreground = colors.fg_muted;
+    // 选中标签底部那条下划线画在 `accent` 底上 ⇒ 取 `on_accent`。
+    let primary = colors.on_accent;
+    let focus_border = colors.focus;
 
-    h_flex()
+    h_stack()
         .w_full()
         .h(rems(STRIP_HEIGHT_SPEC / 16.))
         .flex_shrink_0()
@@ -80,7 +80,7 @@ pub fn project_tabs(
         .border_b_1()
         .border_color(border)
         .child(
-            h_flex()
+            h_stack()
                 .id("project-tabs-scroll")
                 .flex_1()
                 .min_w_0()
@@ -89,7 +89,7 @@ pub fn project_tabs(
                 .overflow_x_scroll()
                 .track_scroll(scroll)
                 .child(
-                    h_flex()
+                    h_stack()
                         .h_full()
                         .items_center()
                         .gap_1p5()
@@ -109,7 +109,7 @@ pub fn project_tabs(
                                 .min_w(rems(TAB_MIN_WIDTH_SPEC / 16.))
                                 .h(rems(TAB_HEIGHT_SPEC / 16.))
                                 .child({
-                                    let mut label = h_flex()
+                                    let mut label = h_stack()
                                         .id(SharedString::from(format!("project-tab-{name}")))
                                         .relative()
                                         .size_full()
@@ -187,7 +187,7 @@ pub fn project_tabs(
                                     )
                                 })
                                 .child(
-                                    h_flex()
+                                    h_stack()
                                         .absolute()
                                         .top_0()
                                         .bottom_0()
@@ -201,9 +201,16 @@ pub fn project_tabs(
                                             Button::new(SharedString::from(format!(
                                                 "project-tab-close-{tooltip}"
                                             )))
-                                            .icon(IconName::X)
-                                            .ghost()
-                                            .with_size(crate::rem_px(rem, CLOSE_BUTTON_SIZE_SPEC))
+                                            // 关闭用的叉来自**本仓**图标集（`icons/idea/**`）。
+                                            .icon_element(idea_icon_mono(
+                                                &idea::X_ICON,
+                                                cx.theme().is_dark(),
+                                            ))
+                                            .variant(ButtonVariant::Ghost)
+                                            .size(Size::Size(crate::rem_px(
+                                                rem,
+                                                CLOSE_BUTTON_SIZE_SPEC,
+                                            )))
                                             .tooltip(tr_args(
                                                 "lithe.titleProject.closeProject",
                                                 &[("name", tooltip.as_ref())],

@@ -5,9 +5,9 @@ use gpui::{
     AnyElement, App, ClickEvent, InteractiveElement as _, IntoElement, ParentElement as _,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, rems,
 };
-use gpui_kit::base::h_flex;
-use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::component::status_bar::StatusBar;
+use lithe_ui::layout::h_stack;
+use lithe_ui::shell::StatusBar;
+use lithe_ui::theme::ActiveTheme as _;
 
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea};
 
@@ -42,7 +42,7 @@ impl StatusEntry {
     }
 
     pub fn with_idea_icon(mut self, icon: &'static idea::IdeaIcon, cx: &App) -> Self {
-        self.icon = Some(icon.path(gpui_kit::component::Theme::global(cx).is_dark()));
+        self.icon = Some(icon.path(cx.theme().is_dark()));
         self
     }
 
@@ -53,7 +53,7 @@ impl StatusEntry {
     /// 那个字段），那是「用库图标顶我们的」，已随本片删除。
     pub fn with_file_icon(mut self, name: &str, cx: &App) -> Self {
         let icon = FileIcon::own(file_icon::fallback_icon(name)).with_theme_icon(name, cx);
-        let is_dark = gpui_kit::component::Theme::global(cx).is_dark();
+        let is_dark = cx.theme().is_dark();
         self.icon = icon
             .themed
             .or(icon.fallback.map(|fallback| fallback.path(is_dark)));
@@ -67,19 +67,20 @@ pub fn status_bar(
     _window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
+    // 底色来自组件库主题的 `status_bar` chrome 槽（宿主在 `component_theme` 里把它设成
+    // 自己主题的 `status_bar`），不再由这里覆盖 —— 宿主只当生产者。
     StatusBar::new()
         .h_6()
         .py_0()
         .border_0()
         .px_2()
-        .bg(cx.theme().tokens.status_bar)
         .text_sm()
-        .text_color(cx.theme().muted_foreground)
+        .text_color(cx.theme().colors.fg_muted)
         .child(status_row(left, right, cx))
 }
 
 fn status_row(left: &[StatusEntry], right: &[StatusEntry], cx: &App) -> impl IntoElement {
-    h_flex()
+    h_stack()
         .w_full()
         .items_center()
         .justify_between()
@@ -94,7 +95,7 @@ fn entry_group(
     leading: bool,
     cx: &App,
 ) -> impl IntoElement {
-    h_flex()
+    h_stack()
         .items_center()
         .gap_0p5()
         .when(leading, |this| this.flex_1().min_w_0().overflow_hidden())
@@ -108,11 +109,12 @@ fn entry_group(
 }
 
 fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
-    let hover_bg = cx.theme().accent;
-    let hover_fg = cx.theme().foreground;
+    let theme = cx.theme();
+    let hover_bg = theme.colors.accent;
+    let hover_fg = theme.colors.fg;
     let on_click = entry.on_click.clone();
 
-    h_flex()
+    h_stack()
         .id(id)
         .h_6()
         .max_w(rems(CHIP_MAX_WIDTH_SPEC / 16.))
@@ -133,12 +135,12 @@ fn entry_chip(id: String, entry: &StatusEntry, cx: &App) -> impl IntoElement {
 
 fn entry_icon(entry: &StatusEntry, cx: &App) -> Option<AnyElement> {
     let path = entry.icon?;
-    let theme = gpui_kit::component::Theme::global(cx);
+    let theme = cx.theme();
     Some(
         gpui::svg()
             .path(path)
             .flex_shrink_0()
-            .text_color(theme.muted_foreground)
+            .text_color(theme.colors.fg_muted)
             .w(rems(14. / 16.))
             .h(rems(14. / 16.))
             .into_any_element(),

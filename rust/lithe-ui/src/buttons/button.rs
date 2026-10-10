@@ -138,6 +138,9 @@ pub(crate) fn shortcut_text(source: &str, platform: Platform) -> String {
 pub struct Button {
     id: ElementId,
     label: SharedString,
+    /// The name assistive tech announces when it is not the visible label — an icon-only button
+    /// otherwise has no name at all.
+    aria_label: Option<SharedString>,
     icon: Option<IconName>,
     /// 以**元素**形式给出的前置图标（宿主自己的图标体系，如 Lithe 的 IDEA 风格单色图标）。
     icon_element: Option<gpui::AnyElement>,
@@ -149,6 +152,8 @@ pub struct Button {
     loading: bool,
     full_width: bool,
     focus: Option<FocusHandle>,
+    /// `false` keeps it out of the Tab order; unset leaves the default (a Tab stop).
+    tab_stop: Option<bool>,
     tooltip: Option<SharedString>,
     pub(crate) slot: Option<Slot>,
     on_click: Option<ClickHandler>,
@@ -159,6 +164,7 @@ impl Button {
         Self {
             id: id.into(),
             label: SharedString::default(),
+            aria_label: None,
             icon: None,
             icon_element: None,
             trailing_icon: None,
@@ -169,6 +175,7 @@ impl Button {
             loading: false,
             full_width: false,
             focus: None,
+            tab_stop: None,
             tooltip: None,
             slot: None,
             on_click: None,
@@ -180,6 +187,28 @@ impl Button {
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = label.into();
         self
+    }
+
+    /// The name assistive tech announces, when it differs from the visible label — the case of an
+    /// icon-only button, which draws no text to name itself with. Prefer it over [`Self::label`]:
+    /// a label also paints.
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Whether Tab reaches it. `false` takes it out of the tab order, for a control reached by
+    /// pointer or by the focus an owner restores itself.
+    pub fn tab_stop(mut self, tab_stop: bool) -> Self {
+        self.tab_stop = Some(tab_stop);
+        self
+    }
+
+    /// The name assistive tech announces: the explicit [`Self::aria_label`], else the visible label.
+    pub(crate) fn accessible_name(&self) -> SharedString {
+        self.aria_label
+            .clone()
+            .unwrap_or_else(|| self.label.clone())
     }
 
     /// A hover tooltip; names an icon-only button that has no visible label.
@@ -273,9 +302,11 @@ impl RenderOnce for Button {
         let icon = |name| Icon::new(name).size(icon_size).color(tone.fg);
         let radius = theme.radius(Radius::Md);
         let platform = cx.theme().platform;
+        // Before the label moves into `parts` below.
+        let name = self.accessible_name();
         let hint = self.shortcut.map(|source| shortcut_text(&source, platform));
         let spinner = (self.id.clone(), "spinner");
-        let name = self.label.clone();
+        let tab_stop = self.tab_stop;
         let parts = div()
             .flex()
             .items_center()
@@ -346,6 +377,10 @@ impl RenderOnce for Button {
                 let el = match &self.focus {
                     Some(handle) => el.track_focus(handle),
                     None => el.tab_index(0),
+                };
+                let el = match tab_stop {
+                    Some(stop) => el.tab_stop(stop),
+                    None => el,
                 };
                 if self.loading {
                     return el

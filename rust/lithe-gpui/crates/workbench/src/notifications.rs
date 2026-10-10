@@ -6,18 +6,14 @@ use gpui::{
     IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
     Styled as _, Subscription, WeakEntity, Window, div, rems,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::StyledExt as _;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
-};
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
 
 use lithe_gpui_notify::{Entry, EntryId, Severity, Store, matches_text};
 use lithe_gpui_shared::{tr, tr_args};
+use lithe_ui::buttons::{Button, ButtonVariant, ToggleButton, ToggleItem};
+use lithe_ui::forms::{Input, InputEvent, InputState};
+use lithe_ui::layout::{ScrollArea, h_stack, v_stack};
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 pub fn now_ms() -> u64 {
     SystemTime::now()
@@ -140,8 +136,8 @@ impl NotificationPanel {
             &search,
             window,
             |this: &mut Self, state: &Entity<InputState>, event: &InputEvent, _, cx| {
-                if matches!(event, InputEvent::Change) {
-                    this.query = state.read(cx).value();
+                if matches!(event, InputEvent::Changed) {
+                    this.query = state.read(cx).text().into();
                     cx.notify();
                 }
             },
@@ -213,35 +209,35 @@ impl NotificationPanel {
     }
 
     fn toolbar(&mut self, total: usize, cx: &mut Context<Self>) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
             .px_2()
             .py_2()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
-                Input::new(&self.search)
-                    .small()
-                    .cleanable(true)
-                    .flex_1()
-                    .prefix(idea_icon_image(
-                        &idea::MAGNIFYING_GLASS_ICON,
-                        cx,
-                        rems(14. / 16.),
-                    ))
-                    .aria_label(tr("lithe.notifications.search")),
+                div().flex_1().min_w_0().child(
+                    Input::new(&self.search)
+                        .size(Size::Small)
+                        .clearable()
+                        .prefix(idea_icon_image(
+                            &idea::MAGNIFYING_GLASS_ICON,
+                            cx,
+                            rems(14. / 16.),
+                        ))
+                        .aria_label(tr("lithe.notifications.search")),
+                ),
             )
             .child(
                 Button::new("lithe-notifications-clear-all")
-                    .ghost()
-                    .small()
-                    .child(idea_icon_image(&idea::TRASH_ICON, cx, rems(1.)))
-                    .px_0()
+                    .variant(ButtonVariant::Ghost)
+                    .size(Size::Small)
+                    .icon_element(idea_icon_image(&idea::TRASH_ICON, cx, rems(1.)))
                     .disabled(total == 0)
                     .tooltip(tr("lithe.notifications.clearAll"))
-                    .accessibility_label(tr("lithe.notifications.clearAll"))
+                    .aria_label(tr("lithe.notifications.clearAll"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         let Some(store) = this.store.upgrade() else {
                             return;
@@ -256,7 +252,8 @@ impl NotificationPanel {
     }
 
     fn filter_bar(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        h_flex()
+        let panel = cx.entity();
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .gap_1()
@@ -265,22 +262,24 @@ impl NotificationPanel {
             .child(
                 div()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.notifications.filter")),
             )
             .children(Filter::options().map(|(option, _)| {
                 let selected = option == self.filter;
-                let id = format!("lithe-notifications-filter-{}", option_key(option));
-                Button::new(id)
-                    .ghost()
-                    .small()
-                    .selected(selected)
-                    .toggled(selected)
-                    .label(option.label())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.filter = option;
-                        cx.notify();
-                    }))
+                let key = option_key(option);
+                let id = format!("lithe-notifications-filter-{key}");
+                let panel = panel.clone();
+                // 单选筛选：按下的永远是「这一项选中」，再按一次也不会取消（原来的
+                // `.selected(selected).toggled(selected)` + `on_click` 就是这个语义）。
+                ToggleButton::new(id, ToggleItem::new(key).label(option.label()), selected)
+                    .size(Size::Small)
+                    .on_toggle(move |_on, _, cx| {
+                        panel.update(cx, |this, cx| {
+                            this.filter = option;
+                            cx.notify();
+                        });
+                    })
             }))
             .into_any_element()
     }
@@ -289,17 +288,19 @@ impl NotificationPanel {
         let expanded = self.expanded == Some(row.id);
         let id = row.id;
 
-        let mut column = v_flex()
+        let mut column = v_stack()
             .w_full()
             .gap_1()
             .py_2()
             .px_3()
             .cursor_pointer()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .when(!row.unread, |this| this.bg(cx.theme().accent.opacity(0.35)))
+            .border_color(cx.theme().colors.border)
+            .when(!row.unread, |this| {
+                this.bg(cx.theme().colors.accent.opacity(0.35))
+            })
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .gap_2()
                     .items_center()
@@ -309,47 +310,47 @@ impl NotificationPanel {
                             .flex_1()
                             .min_w_0()
                             .text_sm()
-                            .text_color(cx.theme().foreground)
+                            .text_color(cx.theme().colors.fg)
                             .child(row.message.clone()),
                     )
                     .child(
                         div()
                             .flex_shrink_0()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(row.age.clone()),
                     ),
             );
 
         if row.occurrences > 1 {
             column = column.child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .pl_6()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(format!("×{}", row.occurrences)),
             );
         }
 
         if expanded {
             column = column.child(
-                v_flex()
+                v_stack()
                     .w_full()
                     .gap_1()
                     .pl_6()
                     .pt_1()
                     .border_l_1()
-                    .border_color(cx.theme().border)
+                    .border_color(cx.theme().colors.border)
                     .child(
                         div()
                             .text_xs()
-                            .font_semibold()
-                            .text_color(cx.theme().muted_foreground)
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.notifications.details")),
                     )
                     .children(row.details.iter().map(|(name, value)| {
-                        h_flex()
+                        h_stack()
                             .w_full()
                             .gap_2()
                             .text_xs()
@@ -357,14 +358,14 @@ impl NotificationPanel {
                                 div()
                                     .w_20()
                                     .flex_shrink_0()
-                                    .text_color(cx.theme().muted_foreground)
+                                    .text_color(cx.theme().colors.fg_muted)
                                     .child(name.clone()),
                             )
                             .child(
                                 div()
                                     .flex_1()
                                     .min_w_0()
-                                    .text_color(cx.theme().foreground)
+                                    .text_color(cx.theme().colors.fg)
                                     .child(value.clone()),
                             )
                     })),
@@ -387,9 +388,8 @@ impl NotificationPanel {
             tr("lithe.notifications.empty")
         };
         lithe_gpui_shared::empty_state::unavailable(
-            Some(Icon::new(IconName::Inbox).size(rems(
-                lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.,
-            ))),
+            // 通知中心的图标取**本仓**图标集里的「通知铃」（`legacy/ui/notifications.svg`）。
+            Some(idea_icon_mono(&idea::BELL_ICON, cx.theme().is_dark()).size_7()),
             title,
             None,
             None,
@@ -418,20 +418,20 @@ impl Render for NotificationPanel {
 
         match layout_for(total, rows.len()) {
             Layout::Empty => self.empty_state(false, cx).into_any_element(),
-            Layout::List { filtered } => v_flex()
+            Layout::List { filtered } => v_stack()
                 .w_full()
                 .flex_1()
                 .min_h_0()
                 .child(self.toolbar(total, cx))
                 .child(self.filter_bar(cx))
                 .child(
-                    v_flex()
-                        .id("lithe-notification-list")
+                    // 组件库的滚动区自己持滚动句柄并叠滚动条（原来是 gpui-kit 的
+                    // `.overflow_y_scrollbar()`，语义相同）。
+                    ScrollArea::new("lithe-notification-list")
                         .w_full()
                         .flex_1()
                         .min_h_0()
                         .gap_0()
-                        .overflow_y_scrollbar()
                         .when(filtered, |this| this.child(self.empty_state(true, cx)))
                         .when(!filtered, |this| {
                             this.children(rows.iter().map(|row| self.row(row, cx)))

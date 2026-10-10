@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use gpui::{
     AnyElement, App, AppContext as _, Context, IntoElement, ParentElement as _, Styled as _, div,
 };
-use gpui_kit::component::ActiveTheme as _;
 use lithe_gpui_shared::{CoreError, core_json, tr};
+use lithe_ui::theme::ActiveTheme as _;
 use serde_json::{Value, json};
 
 use crate::workspace::ShellWorkspace;
@@ -56,7 +56,7 @@ pub(crate) fn readiness_notice(readiness: SearchIndexReadiness, cx: &App) -> Opt
             .px_3()
             .py_2()
             .text_sm()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().colors.fg_muted)
             .child(tr(key))
             .into_any_element(),
     )

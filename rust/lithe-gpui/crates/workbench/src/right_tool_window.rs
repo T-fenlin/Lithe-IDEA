@@ -8,15 +8,12 @@ use gpui::{
     ParentElement as _, Pixels, Point, SharedString, StatefulInteractiveElement as _, Styled as _,
     Window, div, rems,
 };
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Icon, StyledExt as _};
-use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono, idea_icon_svg_px};
 
 use lithe_gpui_shared::tr;
-
-const CLOSE_BUTTON_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 const TOOL_WINDOW_HEADER_HEIGHT_SPEC: f32 = 30.;
 const TOOL_WINDOW_HEADER_ICON_SPEC: f32 = 13.;
@@ -67,13 +64,13 @@ impl RightToolWindowView {
         let side: Length = side.into();
         match self {
             Self::Notifications => idea_icon_svg_px(&idea::BELL_ICON, cx, side)
-                .text_color(cx.theme().primary)
+                .text_color(cx.theme().colors.info)
                 .into_any_element(),
             Self::Maven => idea_icon_image(&idea::MAVEN_ICON, cx, side),
-            Self::Spring => Icon::new(IconName::Leaf)
-                .size(side)
-                .text_color(cx.theme().primary)
-                .into_any_element(),
+            // 本仓图标集里**没有**「Spring 的叶子」那张图形 ⇒ 同尺寸空槽（留位、不画），
+            // 不拿组件库的 `IconName::Leaf` 顶替（维护者口径：应用图标只取 `assets/icons/idea/**`，
+            // 我们缺的留空）。补图形要走「往 `assets/icons/idea/**` 加一张我们自己的图」。
+            Self::Spring => div().flex_none().w(side).h(side).into_any_element(),
         }
     }
 
@@ -180,7 +177,7 @@ pub fn right_tool_window(
         }
         _ => None,
     };
-    v_flex()
+    v_stack()
         .id("lithe-right-tool-window")
         .aria_label(title.clone())
         .size_full()
@@ -205,7 +202,7 @@ pub fn right_tool_window(
 fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App) -> AnyElement {
     let visible = crate::spring::filter_endpoints(&index.endpoints, query);
     if visible.is_empty() {
-        return v_flex()
+        return v_stack()
             .w_full()
             .flex_1()
             .min_h_0()
@@ -214,14 +211,14 @@ fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App)
             .child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.spring.gpui.noEndpoints")),
             )
             .into_any_element();
     }
 
-    let mono = cx.theme().mono_font_family.clone();
-    let mut column = v_flex()
+    let mono = cx.theme().mono_family.clone();
+    let mut column = v_stack()
         .id("spring-index")
         .w_full()
         .flex_1()
@@ -231,13 +228,13 @@ fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App)
 
     for endpoint in &visible {
         let method_color = match endpoint.http_methods.first().map(String::as_str) {
-            Some("GET") => cx.theme().success,
-            Some("POST") => cx.theme().primary,
-            Some("DELETE") => cx.theme().danger,
-            _ => cx.theme().warning,
+            Some("GET") => cx.theme().colors.success,
+            Some("POST") => cx.theme().colors.info,
+            Some("DELETE") => cx.theme().colors.danger,
+            _ => cx.theme().colors.warning,
         };
         column = column.child(
-            h_flex()
+            h_stack()
                 .w_full()
                 .gap(rems(9. / 16.))
                 .px(rems(10. / 16.))
@@ -247,7 +244,7 @@ fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App)
                         .flex_shrink_0()
                         .w(rems(58. / 16.))
                         .text_xs()
-                        .font_bold()
+                        .font_weight(gpui::FontWeight::BOLD)
                         .font_family(mono.clone())
                         .text_color(method_color)
                         .child(endpoint.methods_label()),
@@ -256,16 +253,16 @@ fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App)
                     div()
                         .flex_shrink_0()
                         .text_sm()
-                        .font_medium()
+                        .font_weight(gpui::FontWeight::MEDIUM)
                         .font_family(mono.clone())
-                        .text_color(cx.theme().foreground)
+                        .text_color(cx.theme().colors.fg)
                         .child(endpoint.route.clone()),
                 )
                 .child(
                     div()
                         .flex_shrink_0()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(format!("{}.{}", endpoint.controller, endpoint.method)),
                 )
                 .child(div().flex_1())
@@ -274,7 +271,7 @@ fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App)
                         .min_w_0()
                         .truncate()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(endpoint.path.clone()),
                 ),
         );
@@ -285,7 +282,7 @@ fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App)
             .w_full()
             .mt_2()
             .text_xs()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().colors.fg_muted)
             .child(format!(
                 "properties {} · values {} · refs {} · injections {} · beans {} · diagnostics {}",
                 index.properties,
@@ -301,7 +298,7 @@ fn spring_content(index: &crate::spring::SpringIndexView, query: &str, cx: &App)
 }
 
 fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyElement {
-    let mut column = v_flex()
+    let mut column = v_stack()
         .id("maven-project")
         .w_full()
         .flex_1()
@@ -310,7 +307,7 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
         .p_3();
 
     column = column.child(
-        h_flex()
+        h_stack()
             .w_full()
             .gap_2()
             .child(
@@ -319,14 +316,14 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
                     .truncate()
                     .text_sm()
                     .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(project.artifact_id.clone()),
             )
             .children(project.version.clone().map(|version| {
                 div()
                     .flex_shrink_0()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(version)
             })),
     );
@@ -335,7 +332,7 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
             .w_full()
             .text_xs()
             .truncate()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().colors.fg_muted)
             .child(project.relative_path.clone()),
     );
 
@@ -345,7 +342,7 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
 
     if !project.profiles.is_empty() {
         let active = &project.active_profiles;
-        column = column.child(v_flex().w_full().mt_2().gap_1().children(
+        column = column.child(v_stack().w_full().mt_2().gap_1().children(
             project.profiles.iter().map(|id| {
                 let is_active = active.contains(id);
                 div()
@@ -353,11 +350,11 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
                     .truncate()
                     .text_xs()
                     .when(is_active, |this| {
-                        this.text_color(cx.theme().primary)
+                        this.text_color(cx.theme().colors.info)
                             .font_weight(gpui::FontWeight::MEDIUM)
                     })
                     .when(!is_active, |this| {
-                        this.text_color(cx.theme().muted_foreground)
+                        this.text_color(cx.theme().colors.fg_muted)
                     })
                     .child(id.clone())
             }),
@@ -368,9 +365,9 @@ fn maven_content(project: &crate::maven::MavenProjectView, cx: &App) -> AnyEleme
 }
 
 fn maven_module_row(module: &crate::maven::MavenModuleView, cx: &App) -> AnyElement {
-    let mut column = v_flex().w_full().gap_1();
+    let mut column = v_stack().w_full().gap_1();
     column = column.child(
-        h_flex()
+        h_stack()
             .w_full()
             .gap_2()
             .child(
@@ -378,20 +375,20 @@ fn maven_module_row(module: &crate::maven::MavenModuleView, cx: &App) -> AnyElem
                     .min_w_0()
                     .truncate()
                     .text_xs()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(module.label().to_string()),
             )
             .children(module.version.clone().map(|version| {
                 div()
                     .flex_shrink_0()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(version)
             })),
     );
     for root in &module.source_roots {
         column = column.child(
-            h_flex()
+            h_stack()
                 .w_full()
                 .gap_2()
                 .child(
@@ -399,21 +396,21 @@ fn maven_module_row(module: &crate::maven::MavenModuleView, cx: &App) -> AnyElem
                         .min_w_0()
                         .truncate()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(root.path.clone()),
                 )
                 .child(
                     div()
                         .flex_shrink_0()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(root.kind.clone()),
                 ),
         );
     }
     if !module.modules.is_empty() {
         column = column.child(
-            v_flex().w_full().pl_3().gap_1().children(
+            v_stack().w_full().pl_3().gap_1().children(
                 module
                     .modules
                     .iter()
@@ -432,7 +429,7 @@ fn header(
     cx: &App,
 ) -> AnyElement {
     let close_label = tr("lithe.commandPalette.close");
-    h_flex()
+    h_stack()
         .w_full()
         .flex_shrink_0()
         .h(rems(TOOL_WINDOW_HEADER_HEIGHT_SPEC / 16.))
@@ -440,10 +437,10 @@ fn header(
         .pl_3()
         .pr(rems(TOOL_WINDOW_HEADER_TRAILING_INSET_SPEC / 16.))
         .border_b_1()
-        .border_color(cx.theme().border)
+        .border_color(cx.theme().colors.border)
         .child(view.icon(cx, rems(TOOL_WINDOW_HEADER_ICON_SPEC / 16.)))
         .child(
-            h_flex()
+            h_stack()
                 .flex_1()
                 .min_w_0()
                 .gap_2()
@@ -452,8 +449,8 @@ fn header(
                         .min_w_0()
                         .truncate()
                         .text_xs()
-                        .font_semibold()
-                        .text_color(cx.theme().foreground)
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(cx.theme().colors.fg)
                         .child(title),
                 )
                 .children(subtitle.map(|subtitle| {
@@ -461,23 +458,23 @@ fn header(
                         .flex_shrink_0()
                         .truncate()
                         .text_xs()
-                        .font_medium()
-                        .text_color(cx.theme().muted_foreground)
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(subtitle)
                 })),
         )
         .child(
             Button::new("right-tool-window-close")
-                .ghost()
-                .icon(IconName::X)
+                .variant(ButtonVariant::Ghost)
+                // 关闭用的叉来自**本仓**图标集（`icons/idea/**`）。
+                .icon_element(idea_icon_mono(&idea::X_ICON, cx.theme().is_dark()))
+                // 键盘 Tab 不落在这个关闭键上（原来的 `.tab_stop(false)`）。
                 .tab_stop(false)
-                .size_6()
-                .rounded(crate::rem_px(
-                    cx.theme().font_size,
-                    CLOSE_BUTTON_RADIUS_SPEC,
-                ))
+                // 24pt 方形：库的 `Size::Small` 档就是 24pt（`control_height`）。
+                .size(Size::Small)
                 .tooltip(close_label.clone())
-                .accessibility_label(close_label)
+                // 图标键自己没有可见文字，可访问名只能靠 aria_label 给。
+                .aria_label(close_label)
                 .on_click(on_close),
         )
         .into_any_element()

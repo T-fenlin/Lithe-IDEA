@@ -4,16 +4,11 @@ use gpui::{
     IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
     Styled as _, Subscription, Window, div, rems,
 };
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::StyledExt as _;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, Selectable as _, Sizable as _,
-};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_ui::buttons::{Button, ButtonVariant, ToggleButton, ToggleItem};
+use lithe_ui::forms::{Input, InputEvent, InputState};
+use lithe_ui::layout::{ScrollArea, h_stack, v_stack};
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 use lithe_gpui_shared::{tr, tr_args};
 
@@ -177,8 +172,8 @@ impl ExtensionsPage {
             &search,
             window,
             |this: &mut Self, state: &Entity<InputState>, event: &InputEvent, _, cx| {
-                if matches!(event, InputEvent::Change) {
-                    this.query = state.read(cx).value();
+                if matches!(event, InputEvent::Changed) {
+                    this.query = state.read(cx).text().into();
                     cx.notify();
                 }
             },
@@ -256,19 +251,19 @@ impl ExtensionsPage {
     }
 
     fn header(&self, total: usize, cx: &App) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h_8()
             .gap_2()
             .px_3()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
-                Icon::new(IconName::Puzzle)
-                    .size_4()
-                    .flex_shrink_0()
-                    .text_color(cx.theme().primary),
+                // 本仓图标集里**有** `expui/nodes/plugin.svg` 这张图，但
+                // `shared::icons::idea` 还没为它登记常量 ⇒ 本轮按口径**留空**（同尺寸空槽），
+                // 不拿组件库的 `IconName::Puzzle` 顶替。补图形要走 shared 那一侧的登记。
+                div().flex_shrink_0().size_4(),
             )
             .child(
                 div()
@@ -276,8 +271,8 @@ impl ExtensionsPage {
                     .min_w_0()
                     .truncate()
                     .text_sm()
-                    .font_semibold()
-                    .text_color(cx.theme().foreground)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr("lithe.extensions.title")),
             )
             .when(total > 0, |this| {
@@ -285,7 +280,7 @@ impl ExtensionsPage {
                     div()
                         .flex_shrink_0()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr_args(
                             "lithe.extensions.availableCount",
                             &[("count", &total.to_string())],
@@ -296,45 +291,52 @@ impl ExtensionsPage {
     }
 
     fn toolbar(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        h_flex()
+        let page = cx.entity();
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
             .px_3()
             .py_2()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
-                Input::new(&self.search)
-                    .small()
-                    .cleanable(true)
-                    .flex_1()
-                    .min_w_0()
-                    .prefix(idea_icon_image(
-                        &idea::MAGNIFYING_GLASS_ICON,
-                        cx,
-                        rems(14. / 16.),
-                    ))
-                    .aria_label(tr("lithe.extensions.searchPlaceholder")),
+                div().flex_1().min_w_0().child(
+                    Input::new(&self.search)
+                        .size(Size::Small)
+                        .clearable()
+                        .prefix(idea_icon_image(
+                            &idea::MAGNIFYING_GLASS_ICON,
+                            cx,
+                            rems(14. / 16.),
+                        ))
+                        .aria_label(tr("lithe.extensions.searchPlaceholder")),
+                ),
             )
             .child(
-                h_flex()
+                h_stack()
                     .flex_shrink_0()
                     .gap_1()
                     .children(FILTERS.iter().map(|(category, key)| {
                         let selected = self.category == *category;
                         let id: SharedString =
                             format!("lithe-extensions-filter-{}", filter_key(*category)).into();
-                        Button::new(id)
-                            .ghost()
-                            .small()
-                            .selected(selected)
-                            .toggled(selected)
-                            .label(tr(key))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.category = *category;
+                        let page = page.clone();
+                        let category = *category;
+                        // 单选筛选：按下永远表示「这一项选中」（原来是
+                        // `.ghost().selected(..).toggled(..)` + `on_click`）。
+                        ToggleButton::new(
+                            id,
+                            ToggleItem::new(filter_key(category)).label(tr(key)),
+                            selected,
+                        )
+                        .size(Size::Small)
+                        .on_toggle(move |_on, _, cx| {
+                            page.update(cx, |this, cx| {
+                                this.category = category;
                                 cx.notify();
-                            }))
+                            });
+                        })
                     })),
             )
             .into_any_element()
@@ -345,16 +347,16 @@ impl ExtensionsPage {
         let id = card.id.clone();
 
         let mut column =
-            v_flex()
+            v_stack()
                 .w_full()
                 .gap_1()
                 .py_2()
                 .px_3()
                 .cursor_pointer()
                 .border_b_1()
-                .border_color(cx.theme().border)
+                .border_color(cx.theme().colors.border)
                 .child(
-                    h_flex()
+                    h_stack()
                         .w_full()
                         .gap_2()
                         .items_center()
@@ -363,22 +365,22 @@ impl ExtensionsPage {
                                 .min_w_0()
                                 .truncate()
                                 .text_sm()
-                                .font_medium()
-                                .text_color(cx.theme().foreground)
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(cx.theme().colors.fg)
                                 .child(card.name.clone()),
                         )
                         .child(
                             div()
                                 .flex_shrink_0()
                                 .text_xs()
-                                .text_color(cx.theme().muted_foreground)
+                                .text_color(cx.theme().colors.fg_muted)
                                 .child(card.version.clone()),
                         )
                         .child(
                             div()
                                 .flex_shrink_0()
                                 .text_xs()
-                                .text_color(cx.theme().muted_foreground)
+                                .text_color(cx.theme().colors.fg_muted)
                                 .child(card.categories_label.clone()),
                         )
                         .when(card.built_in || (card.removable && !uninstalled), |this| {
@@ -386,7 +388,7 @@ impl ExtensionsPage {
                                 div()
                                     .flex_shrink_0()
                                     .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
+                                    .text_color(cx.theme().colors.fg_muted)
                                     .child(tr("lithe.extensions.builtIn")),
                             )
                         })
@@ -395,7 +397,7 @@ impl ExtensionsPage {
                                 div()
                                     .flex_shrink_0()
                                     .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
+                                    .text_color(cx.theme().colors.fg_muted)
                                     .child(tr("lithe.extensions.uninstalled")),
                             )
                         })
@@ -415,9 +417,8 @@ impl ExtensionsPage {
                                         "lithe-extensions-use-{}",
                                         card.id
                                     )))
-                                    .outline()
-                                    .small()
-                                    .flex_shrink_0()
+                                    .variant(ButtonVariant::Outline)
+                                    .size(Size::Small)
                                     .disabled(is_current)
                                     .label(label)
                                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -439,9 +440,8 @@ impl ExtensionsPage {
                                     "lithe-extensions-toggle-{}",
                                     card.id
                                 )))
-                                .outline()
-                                .small()
-                                .flex_shrink_0()
+                                .variant(ButtonVariant::Outline)
+                                .size(Size::Small)
                                 .label(label)
                                 .on_click(cx.listener(
                                     move |this, _, _, cx| {
@@ -454,25 +454,25 @@ impl ExtensionsPage {
                 );
 
         if expanded {
-            let mut details = v_flex()
+            let mut details = v_stack()
                 .w_full()
                 .gap_1()
                 .pl_6()
                 .pt_1()
                 .border_l_1()
-                .border_color(cx.theme().border);
+                .border_color(cx.theme().colors.border);
             if let Some(description) = &card.description {
                 details = details.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().foreground)
+                        .text_color(cx.theme().colors.fg)
                         .child(description.clone()),
                 );
             }
             details = details.child(
                 div()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr_args(
                         "lithe.extensions.byPublisher",
                         &[("publisher", card.publisher.as_ref())],
@@ -482,7 +482,7 @@ impl ExtensionsPage {
                 details = details.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.extensions.languageUninstallHint")),
                 );
             }
@@ -490,7 +490,7 @@ impl ExtensionsPage {
                 details = details.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.extensions.fontRestartHint")),
                 );
             }
@@ -499,8 +499,8 @@ impl ExtensionsPage {
                     .child(
                         div()
                             .text_xs()
-                            .font_semibold()
-                            .text_color(cx.theme().muted_foreground)
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.extensions.contributions")),
                     )
                     .children(card.contributions.iter().map(|line| {
@@ -509,7 +509,7 @@ impl ExtensionsPage {
                             .min_w_0()
                             .truncate()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(line.clone())
                     }));
             }
@@ -534,9 +534,9 @@ impl ExtensionsPage {
             CatalogStatus::Loaded(_) => (tr("lithe.extensions.noneFound"), None),
         };
         lithe_gpui_shared::empty_state::unavailable(
-            Some(Icon::new(IconName::Puzzle).size(rems(
-                lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.,
-            ))),
+            // 本仓图标集里**有** `expui/nodes/plugin.svg`，但 `shared::icons::idea` 还没登记常量
+            // ⇒ 留空（同尺寸空槽），不拿组件库的 `IconName::Puzzle` 顶替。
+            Some(div().flex_none().size_7()),
             title,
             None,
             failure.map(|error| {
@@ -544,7 +544,7 @@ impl ExtensionsPage {
                     .w_full()
                     .px_3()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(error)
                     .into_any_element()
             }),
@@ -584,19 +584,19 @@ impl Render for ExtensionsPage {
             _ => 0,
         };
 
-        v_flex()
+        v_stack()
             .size_full()
             .min_w_0()
-            .bg(cx.theme().background)
+            .bg(cx.theme().colors.bg)
             .child(self.header(total, cx))
             .child(self.toolbar(cx))
             .child(
-                v_flex()
-                    .id("lithe-extensions-list")
+                // 组件库的滚动区自己持滚动句柄并叠滚动条（原来是 gpui-kit 的
+                // `.overflow_y_scrollbar()`，语义相同）。
+                ScrollArea::new("lithe-extensions-list")
                     .w_full()
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scrollbar()
                     .when(cards.is_empty(), |this| this.child(self.empty_state(cx)))
                     .when(!cards.is_empty(), |this| {
                         this.children(cards.iter().map(|card| {

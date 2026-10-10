@@ -477,3 +477,46 @@ fn at_280px_the_caption_buttons_stay_inside_the_shell(cx: &mut TestAppContext) {
         "{share:?} scrolls into {items:?}"
     );
 }
+
+struct Footed;
+
+impl Render for Footed {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().w(px(400.0)).h(px(200.0)).flex().flex_col().child(
+            super::StatusBar::new()
+                .h(px(40.0))
+                .border_0()
+                .left("Ln 1")
+                .right("UTF-8")
+                .child(
+                    div()
+                        .debug_selector(|| "foot-middle".into())
+                        .w(px(24.0))
+                        .h_full(),
+                ),
+        )
+    }
+}
+
+/// The host's own style refines the bar last, and `child` fills the middle between the two ends.
+///
+/// Regression risk: applying the component's metrics *after* the caller's makes a host's height,
+/// padding, border and text size silently do nothing — the bar it replaces
+/// (`gpui-component`'s `StatusBar`) refines its own style last, and the host leans on that.
+#[gpui::test]
+fn a_hosts_style_and_content_reach_the_status_bar(cx: &mut TestAppContext) {
+    cx.update(Theme::init);
+    let (_, cx) = cx.add_window_view(|_, _| Footed);
+    settle(cx);
+    let middle = cx.debug_bounds("foot-middle").expect("the middle child");
+    assert_eq!(
+        middle.size.height,
+        px(40.0),
+        "the caller's 40px height wins over the component's own"
+    );
+    assert_eq!(middle.size.width, px(24.0), "the child keeps its width");
+    assert!(
+        middle.left() > px(0.0),
+        "{middle:?} sits after the left item, not over it"
+    );
+}

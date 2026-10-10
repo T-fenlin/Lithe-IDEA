@@ -4,16 +4,16 @@ use gpui::{
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
     rems,
 };
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
-
 use lithe_gpui_shared::tr;
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::theme::ActiveTheme as _;
 
 use crate::menu_bar::{MenuAction, push_show_run_pane};
 
 const WINDOW_CONTROL_WIDTH_SPEC: f32 = 44.;
+
+const WINDOW_CONTROL_ICON_SPEC: f32 = 14.;
 
 const TITLE_BAR_HEIGHT_SPEC: f32 = 40.;
 
@@ -33,18 +33,18 @@ pub fn title_bar(
     window: &Window,
     cx: &App,
 ) -> impl IntoElement {
-    v_flex()
+    v_stack()
         .flex_shrink_0()
         .w_full()
-        .bg(cx.theme().title_bar)
+        .bg(cx.theme().colors.title_bar)
         .text_sm()
-        .text_color(cx.theme().muted_foreground)
+        .text_color(cx.theme().colors.fg_muted)
         .child(
-            h_flex()
+            h_stack()
                 .w_full()
                 .h(rems(TITLE_BAR_HEIGHT_SPEC / 16.))
                 .child(
-                    h_flex()
+                    h_stack()
                         .flex_1()
                         .min_w_0()
                         .h_full()
@@ -62,7 +62,7 @@ pub fn title_bar(
 }
 
 fn drag_region() -> impl IntoElement {
-    h_flex()
+    h_stack()
         .flex_1()
         .min_w_0()
         .h_full()
@@ -71,7 +71,7 @@ fn drag_region() -> impl IntoElement {
 }
 
 fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
-    h_flex()
+    h_stack()
         .flex_shrink_0()
         .h_full()
         .gap_0()
@@ -102,13 +102,26 @@ fn window_control(control: WindowControl, cx: &App) -> impl IntoElement {
         .h_full()
         .rounded_none()
         .text_color(if control.is_close() {
-            theme.foreground
+            theme.colors.fg
         } else {
-            theme.muted_foreground
+            theme.colors.fg_muted
         })
         .window_control_area(control.area())
         .hover(move |style| style.bg(hover_background).text_color(hover_foreground))
-        .child(Icon::new(control.icon()).small())
+        .child(control.glyph(cx))
+}
+
+/// 标题栏按钮的图形：本仓图标集（`assets/icons/idea/**`）里的那一张。
+///
+/// **颜色刻意不写死**：外层 `window_control` 的 `.text_color(..)`（含 hover 里的那一档）
+/// 由继承落到这张图上，与迁移前 `Icon::new(..)` 继承文字色的行为一致。
+fn control_glyph(icon: &'static idea::IdeaIcon, cx: &App) -> AnyElement {
+    gpui::svg()
+        .path(icon.path(cx.theme().is_dark()))
+        .flex_shrink_0()
+        .w(rems(WINDOW_CONTROL_ICON_SPEC / 16.))
+        .h(rems(WINDOW_CONTROL_ICON_SPEC / 16.))
+        .into_any_element()
 }
 
 #[derive(Clone, Copy)]
@@ -129,12 +142,22 @@ impl WindowControl {
         }
     }
 
-    fn icon(self) -> IconName {
+    /// 这个按钮画哪张图。
+    ///
+    /// **本仓图标集里没有「最大化」那张图形** ⇒ 同尺寸**空槽**（留位、不画），
+    /// 不拿 `gpui_kit::assets::IconName` / 组件库的图标顶替 —— 维护者口径见
+    /// `.agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md`。
+    /// 想让它有图形，正路是往 `assets/icons/idea/**` 补一张我们自己的图并登记 `idea::*` 常量。
+    fn glyph(self, cx: &App) -> AnyElement {
         match self {
-            Self::Minimize => IconName::Minus,
-            Self::Maximize => IconName::Square,
-            Self::Restore => IconName::Copy,
-            Self::Close => IconName::X,
+            Self::Minimize => control_glyph(&idea::MINUS_ICON, cx),
+            Self::Maximize => div()
+                .flex_none()
+                .w(rems(WINDOW_CONTROL_ICON_SPEC / 16.))
+                .h(rems(WINDOW_CONTROL_ICON_SPEC / 16.))
+                .into_any_element(),
+            Self::Restore => control_glyph(&idea::COPY_ICON, cx),
+            Self::Close => control_glyph(&idea::X_ICON, cx),
         }
     }
 
@@ -153,24 +176,25 @@ impl WindowControl {
     fn hover_background(self, cx: &App) -> Hsla {
         let theme = cx.theme();
         if self.is_close() {
-            theme.danger
+            theme.colors.danger
         } else {
-            theme.accent
+            theme.colors.accent
         }
     }
 
     fn hover_foreground(self, cx: &App) -> Hsla {
         let theme = cx.theme();
         if self.is_close() {
-            theme.danger_foreground
+            // 危险底上的前景：与库自身的危险按钮同槽（`tone(Danger).fg`）。
+            theme.colors.on_accent
         } else {
-            theme.foreground
+            theme.colors.fg
         }
     }
 }
 
 fn run_controls(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> impl IntoElement {
-    h_flex()
+    h_stack()
         .flex_shrink_0()
         .h_full()
         .gap_2()
@@ -185,16 +209,16 @@ fn account_slot() -> impl IntoElement {
 
 fn run_configuration_slot(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
-    let idle = theme.muted_foreground;
-    let hover_bg = theme.accent;
-    let hover_fg = theme.foreground;
+    let idle = theme.colors.fg_muted;
+    let hover_bg = theme.colors.accent;
+    let hover_fg = theme.colors.fg;
     let label = run
         .read(cx)
         .selected()
         .map(|configuration| SharedString::from(configuration.name.clone()))
         .unwrap_or_else(|| tr("lithe.run.configurations"));
 
-    h_flex()
+    h_stack()
         .id("title-bar-run-configuration")
         .flex_shrink_0()
         .h(rems(RUN_SLOT_HEIGHT_SPEC / 16.))
@@ -215,7 +239,13 @@ fn run_configuration_slot(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> imp
         })
         .aria_label(tr("lithe.run.configurations"))
         .child(div().min_w_0().truncate().text_xs().child(label))
-        .child(Icon::new(IconName::ChevronDown).size_2p5())
+        // 展开箭头取**本仓**图标集；颜色照旧继承外层 `.text_color(..)`（含 hover 那一档）。
+        .child(
+            gpui::svg()
+                .path(idea::CARET_DOWN_ICON.path(cx.theme().is_dark()))
+                .flex_shrink_0()
+                .size_2p5(),
+        )
 }
 
 fn run_control(
@@ -224,7 +254,7 @@ fn run_control(
     cx: &App,
 ) -> impl IntoElement {
     let theme = cx.theme();
-    let hover_bg = theme.accent;
+    let hover_bg = theme.colors.accent;
 
     div()
         .id(control.id())

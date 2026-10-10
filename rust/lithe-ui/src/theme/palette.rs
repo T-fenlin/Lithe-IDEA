@@ -96,14 +96,20 @@ mixable!(
 mixable!(
     /// Semantic colors. Components read these, never literals.
     ///
-    /// `tab_bar` / `title_bar` 是 **chrome 表面槽**：JetBrains 主题里两者取值不同
-    /// （实测 `themes/jetbrains.json`：亮 `#ffffff` vs `#f2f2f2`、暗 `#2b2b2b` vs `#313335`），
-    /// 且宿主的 `tab_bar` 有 15 处渲染读点 ⇒ 既不能并成一个槽，也不能映射到 `surface`。
+    /// `tab_bar` / `title_bar` / `status_bar` are the **chrome surface slots**: a JetBrains theme
+    /// gives them different values (`themes/jetbrains.json`: light `#ffffff` vs `#f2f2f2` vs
+    /// `#f2f2f2`, dark `#2b2b2b` vs `#313335` vs `#313335`) and none of them is the page
+    /// background, so they can be neither merged into one slot nor mapped onto `surface`.
+    ///
+    /// `status_bar` defaults to the page background so a host that has no separate status-bar
+    /// color keeps the library's look; a host with its own chrome colors sets it, and
+    /// [`StatusBar`](crate::shell::StatusBar) paints it.
     Palette {
         bg,
         surface,
         tab_bar,
         title_bar,
+        status_bar,
         sunken,
         overlay,
         hover,
@@ -185,6 +191,7 @@ impl Palette {
             surface: c(0xffffff),
             tab_bar: c(0xffffff),
             title_bar: c(0xfcfaf7),
+            status_bar: c(0xfcfaf7),
             sunken: c(0xf6f4f1),
             overlay: c(0xffffff),
             hover: c(0xf2f0ed),
@@ -258,6 +265,7 @@ impl Palette {
             surface: c(0x1b1917),
             tab_bar: c(0x1b1917),
             title_bar: c(0x131110),
+            status_bar: c(0x131110),
             sunken: c(0x0e0d0b),
             overlay: c(0x201f1d),
             hover: c(0x252422),

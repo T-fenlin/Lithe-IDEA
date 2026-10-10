@@ -99,3 +99,78 @@ fn a_disabled_toggle_ignores_clicks(cx: &mut TestAppContext) {
     cx.simulate_click(point(px(4.0), px(4.0)), Modifiers::none());
     assert_eq!(view.read_with(cx, |toggles, _| toggles.presses), 1);
 }
+
+/// The rule an icon-only button leans on: with no visible text, `aria_label` is the only name it
+/// has, and it must win over an empty label.
+#[test]
+fn an_icon_only_button_is_named_by_its_aria_label() {
+    assert_eq!(
+        Button::new("close").accessible_name().as_ref(),
+        "",
+        "an icon-only button with neither has no name"
+    );
+    assert_eq!(
+        Button::new("close")
+            .aria_label("Close")
+            .accessible_name()
+            .as_ref(),
+        "Close"
+    );
+    assert_eq!(
+        Button::new("save").label("Save").accessible_name().as_ref(),
+        "Save",
+        "a visible label still names it"
+    );
+    assert_eq!(
+        Button::new("save")
+            .label("Save")
+            .aria_label("Save the buffer")
+            .accessible_name()
+            .as_ref(),
+        "Save the buffer",
+        "the explicit name wins"
+    );
+}
+
+/// One keeper beside one button the host keeps out of the tab order.
+struct TabOrder {
+    root: FocusHandle,
+    reached: usize,
+}
+
+impl Render for TabOrder {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        FocusScope::new(&self.root).root().size_full().child(
+            div()
+                .flex()
+                .child(Button::new("skipped").label("Close").tab_stop(false))
+                .child(Button::new("reached").label("Save").on_click({
+                    let view = view.clone();
+                    move |_, _, cx| view.update(cx, |order, _| order.reached += 1)
+                })),
+        )
+    }
+}
+
+/// Tab skips a button built with `tab_stop(false)`, so a host's close control is not a stray stop.
+#[gpui::test]
+fn tab_skips_a_button_taken_out_of_the_order(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        cx.bind_keys([KeyBinding::new("tab", FocusNext, None)]);
+    });
+    let (view, cx) = cx.add_window_view(|_, cx| TabOrder {
+        root: cx.focus_handle(),
+        reached: 0,
+    });
+    let root = view.read_with(cx, |order, _| order.root.clone());
+    cx.update(|window, cx| window.focus(&root, cx));
+    press("tab", cx);
+    press("enter", cx);
+    assert_eq!(
+        view.read_with(cx, |order, _| order.reached),
+        1,
+        "Tab landed on the button after the skipped one"
+    );
+}

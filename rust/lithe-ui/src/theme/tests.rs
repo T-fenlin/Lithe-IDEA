@@ -51,8 +51,9 @@ fn every_color_answers_to_its_name() {
     for (ix, name) in Palette::NAMES.iter().enumerate() {
         *palette.token_mut(name) = hsla(ix as f32 / 64.0, 0.5, 0.5, 1.0);
     }
-    // 38 = 36 + chrome 表面槽 `tab_bar` / `title_bar`（2026-10-08 加，见 palette.rs 的说明）。
-    assert_eq!(Palette::NAMES.len(), 38, "every color of the palette");
+    // 39 = 36 + chrome 表面槽 `tab_bar` / `title_bar` / `status_bar`
+    // （前两个 2026-10-08 加，`status_bar` 2026-10-09 加，见 palette.rs 的说明）。
+    assert_eq!(Palette::NAMES.len(), 39, "every color of the palette");
     let at = |name: &str| {
         Palette::NAMES
             .iter()
@@ -75,6 +76,25 @@ fn every_color_answers_to_its_name() {
 #[should_panic(expected = "no palette color glow")]
 fn an_unknown_color_fails() {
     Palette::light(false).token_mut("glow");
+}
+
+/// The status bar is its own chrome surface slot: it starts on the page background, and a host
+/// that has a separate status-bar color moves it without touching `bg`.
+///
+/// Regression risk: mapping the host's status-bar color onto `bg` or `title_bar` would repaint the
+/// page (or the window title bar) whenever a theme gives the status bar its own color —
+/// `themes/jetbrains.json` gives it `#f2f2f2` against a `#ffffff` page in the light theme.
+#[test]
+fn the_status_bar_surface_moves_alone() {
+    for mut palette in [Palette::light(false), Palette::dark(false)] {
+        assert_eq!(
+            palette.status_bar, palette.bg,
+            "with no host color it keeps the library's look"
+        );
+        palette.status_bar = hsla(0.2, 0.5, 0.5, 1.0);
+        assert_ne!(palette.status_bar, palette.bg, "and it is not an alias");
+        assert_eq!(palette.token("status_bar"), palette.status_bar);
+    }
 }
 
 #[test]

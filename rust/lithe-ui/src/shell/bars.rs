@@ -1,7 +1,7 @@
 use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window,
-    div, prelude::*,
+    Refineable, RenderOnce, Role, SharedString, StatefulInteractiveElement, StyleRefinement,
+    Styled, Window, div, prelude::*,
 };
 use smallvec::SmallVec;
 
@@ -100,20 +100,26 @@ impl RenderOnce for ToolbarSeparator {
     }
 }
 
-/// Thin bar along a window's foot: items left and right.
+/// Thin bar along a window's foot: items left, in the middle, and right.
+///
+/// The caller's own style **refines this bar last**, so a host keeps control of its height,
+/// padding, border and text size — the shape of the component this one replaces
+/// (`gpui-component`'s `StatusBar`, which applies `.refine_style(&self.style)` after its own).
 #[derive(IntoElement)]
 pub struct StatusBar {
-    base: Div,
+    style: StyleRefinement,
     left: SmallVec<[AnyElement; 4]>,
     right: SmallVec<[AnyElement; 4]>,
+    children: SmallVec<[AnyElement; 4]>,
 }
 
 impl StatusBar {
     pub fn new() -> Self {
         Self {
-            base: div(),
+            style: StyleRefinement::default(),
             left: SmallVec::new(),
             right: SmallVec::new(),
+            children: SmallVec::new(),
         }
     }
 
@@ -136,7 +142,14 @@ impl Default for StatusBar {
 
 impl Styled for StatusBar {
     fn style(&mut self) -> &mut StyleRefinement {
-        self.base.style()
+        &mut self.style
+    }
+}
+
+/// `child` / `children` fill the middle, between the two pinned ends.
+impl ParentElement for StatusBar {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
     }
 }
 
@@ -144,20 +157,31 @@ impl RenderOnce for StatusBar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let side = || div().flex().items_center().gap_0p5().h_full();
-        self.base
+        let mut bar = div()
             .flex()
             .flex_none()
             .items_center()
             .justify_between()
             .h(theme.control_height(Size::Small))
             .px_1()
-            .bg(theme.colors.bg)
+            .bg(theme.colors.status_bar)
             .border_t_1()
             .border_color(theme.colors.border)
             .text_size(theme.text_size(TextSize::Xs))
             .text_color(theme.colors.fg_muted)
             .child(side().children(self.left))
-            .child(side().children(self.right))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .items_center()
+                    .children(self.children),
+            )
+            .child(side().children(self.right));
+        bar.style().refine(&self.style);
+        bar
     }
 }
 

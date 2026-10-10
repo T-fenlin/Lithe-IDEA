@@ -1,6 +1,6 @@
 use gpui::{
     AnyElement, App, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    RenderOnce, Styled, Window, div, prelude::*,
+    RenderOnce, SharedString, Styled, Window, div, prelude::*,
 };
 
 use super::InputState;
@@ -19,6 +19,8 @@ pub struct Input {
     suffix: Option<AnyElement>,
     clearable: bool,
     invalid: bool,
+    /// The name assistive tech announces; the placeholder stands in when it is unset.
+    aria_label: Option<SharedString>,
 }
 
 impl Input {
@@ -30,6 +32,7 @@ impl Input {
             suffix: None,
             clearable: false,
             invalid: false,
+            aria_label: None,
         }
     }
 
@@ -58,6 +61,20 @@ impl Input {
     pub fn invalid(mut self, invalid: bool) -> Self {
         self.invalid = invalid;
         self
+    }
+
+    /// The name assistive tech announces for the field. A placeholder is a hint, not a name, so a
+    /// field whose purpose is not obvious from the placeholder alone should set this.
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// The name assistive tech announces: the explicit [`Self::aria_label`], else the placeholder.
+    pub(crate) fn spoken_name(&self, cx: &App) -> SharedString {
+        self.aria_label
+            .clone()
+            .unwrap_or_else(|| self.state.read(cx).placeholder_text().clone())
     }
 }
 
@@ -98,8 +115,11 @@ impl RenderOnce for Input {
             colors.border_strong
         };
         let (state, clear_id) = (self.state.clone(), self.state.entity_id());
+        let name = self.spoken_name(cx);
         div()
+            .id(("input-frame", clear_id))
             .debug_selector(|| "input-root".into())
+            .when(!name.is_empty(), |frame| frame.aria_label(name))
             .flex()
             .gap_2()
             .px(theme.control_padding(self.size))

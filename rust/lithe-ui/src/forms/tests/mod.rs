@@ -72,6 +72,29 @@ fn focus(field: &Entity<InputState>, cx: &mut VisualTestContext) {
     cx.update(|window, cx| window.focus(&field.read(cx).focus().clone(), cx));
 }
 
+/// A field's accessible name is its explicit label, or the placeholder when it has none — an
+/// unlabelled search box is still announced as something.
+#[gpui::test]
+fn a_field_is_named_by_its_label_or_its_placeholder(cx: &mut TestAppContext) {
+    let (fields, cx) = open_with(1, false, |input| input.placeholder("Search"), cx);
+    let field = &fields[0];
+    let named = |aria: Option<&'static str>, cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let input = Input::new(field);
+            match aria {
+                Some(text) => input.aria_label(text).spoken_name(cx),
+                None => input.spoken_name(cx),
+            }
+        })
+    };
+    assert_eq!(named(None, cx).as_ref(), "Search");
+    assert_eq!(
+        named(Some("Search extensions"), cx).as_ref(),
+        "Search extensions",
+        "an explicit name wins over the hint"
+    );
+}
+
 #[gpui::test]
 fn tab_reaches_fields_and_skips_disabled_ones(cx: &mut TestAppContext) {
     let (fields, cx) = open(3, false, cx);
