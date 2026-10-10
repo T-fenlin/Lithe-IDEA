@@ -9,19 +9,17 @@ use gpui::{
     rems,
 };
 use gpui::{Global, PathPromptOptions, ScrollHandle};
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::ActiveTheme as _;
 
-use lithe_ui::layout::{Dock, DockEvent, DockPanel, DockSide};
+use lithe_ui::buttons::Button;
+use lithe_ui::forms::Checkbox;
+use lithe_ui::layout::{Dock, DockEvent, DockPanel, DockSide, h_stack, v_stack};
 // 窗口根宿主（门 G1）：本文件里的 `open_dialog` / `close_dialog` / `has_active_dialog` /
-// `push_notification` 已整片切到 `WindowRootExt`；上游 gpui-kit 的 `WindowExt` 在**本文件**
-// 里不再引入（两个 trait 同名方法并存会歧义编译）。
+// `push_notification` 已整片切到 `WindowRootExt`。
 use lithe_ui::feedback::Toast;
 use lithe_ui::overlays::Dialog;
 use lithe_ui::primitives::Severity as NoticeSeverity;
 use lithe_ui::shell::{WindowRoot, WindowRootExt as _, dismiss_hosted};
+use lithe_ui::theme::ActiveTheme as _;
 
 use crate::activity_bar::{ActivityItem, ActivitySide, activity_bar};
 use crate::branch_panel::{BranchPanel, open_branch_panel, trigger as branch_trigger};
@@ -347,8 +345,7 @@ pub(crate) struct ActionFlags {
 ///
 /// 图标一律走本仓的 idea 集（`shared::icons` 的口径）：我们自己没有那张图的几条**留空**
 /// （`ToggleStatusBar` 没有状态栏/底部面板的图、`ToggleMenuBar` 用三点代替 —— 见下）。
-/// 原来这里有六个 `gpui_kit::assets::IconName`（`SquareTerminal` / `Package` /
-/// `PanelBottom` / `List` / `Replace` / `AppWindow`），现按同一份资产目录换成 idea 图。
+/// （这一栏早先借的是外部图标集的那几个名字，现按同一份资产目录换成 idea 图。）
 pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction {
     use CommandId as C;
     let (category, icon) = match id {
@@ -1849,9 +1846,15 @@ impl ShellWorkspace {
             | MenuAction::Paste
             | MenuAction::SelectAll
             | MenuAction::Find
-            | MenuAction::FindAndReplace
-            | MenuAction::QuickFix => {
+            | MenuAction::FindAndReplace => {
                 self.dispatch_editor_action(action, window, cx);
+            }
+            // 「快速修复」不走 `dispatch_action`：代码动作菜单是编辑器自己那一块，
+            // 外壳直接叫它开（`EditorPane::show_code_actions`）。
+            MenuAction::QuickFix => {
+                self.editor
+                    .update(cx, |pane, cx| pane.show_code_actions(window, cx));
+                diagnose_menu_run(action, "codeActions");
             }
             MenuAction::ToggleActivitySidebar => {
                 self.toggle_left_sidebar();
@@ -2251,10 +2254,10 @@ impl ShellWorkspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // 通知的落地形态从 gpui-kit 的 `Notification`（挂在它自己的窗口根上）换成 lithe-ui 的
-        // `Toast`（挂在 `WindowRoot` 的 `Toaster` 上）。三处语义差：
-        // 1. 位置：`ToastViewport` 固定右下角，上游那句 `.placement(Anchor::BottomRight)`
-        //    没有对应入口（要换角落是给 `ToastViewport` 加参数，不是在宿主里做）。
+        // 通知的落地形态是 lithe-ui 的 `Toast`（挂在 `WindowRoot` 的 `Toaster` 上）。
+        // 三处语义：
+        // 1. 位置：`ToastViewport` 固定右下角（要换角落是给 `ToastViewport` 加参数，
+        //    不是在宿主里做）。
         // 2. 上限：同屏 3 条（`lithe_ui::feedback::toast` 的 `MOST`），与 macOS 真源
         //    `WorkbenchNotificationFeatureModel.maximumVisibleCount` 一致。
         // 3. 溢出：丢最旧那条（与上游通知列表语义相同）。
@@ -2263,7 +2266,7 @@ impl ShellWorkspace {
                 lithe_gpui_notify::Severity::Info => NoticeSeverity::Info,
                 lithe_gpui_notify::Severity::Warning => NoticeSeverity::Warning,
                 // lithe-ui 的严重度档位叫 `Danger`（不是 `Error`）：颜色/图标由它自己的
-                // 主题表给，和 gpui-kit 的 `NotificationType::Error` 一一对应。
+                // 主题表给。
                 lithe_gpui_notify::Severity::Error => NoticeSeverity::Danger,
             },
         );
@@ -2667,14 +2670,14 @@ impl ShellWorkspace {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(body.clone()),
                     )
                     .child(
                         Checkbox::new("lithe-project-open-do-not-ask")
                             .label(tr("lithe.projectOpen.doNotAskAgain"))
                             .checked(do_not_ask.get())
-                            .on_change(move |&value, _window, cx| {
+                            .on_change(move |value, _window, cx| {
                                 checkbox_cell.set(value);
                                 let _ = checkbox_shell.update(cx, |_shell, cx| cx.notify());
                             }),
@@ -3029,10 +3032,10 @@ impl Render for ShellWorkspace {
         // The middle column and the tool windows are drawn by the dock, from the
         // shell's own state (`center_content` / `panel_content`).
         let left_sidebar_visible = self.left_sidebar_visible;
-        let root = v_flex()
+        let root = v_stack()
             .size_full()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
+            .bg(cx.theme().colors.bg)
+            .text_color(cx.theme().colors.fg)
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &SaveBuffer, window, cx| {
                 let _ = this
@@ -3059,14 +3062,14 @@ impl Render for ShellWorkspace {
                 )
             }))
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .flex_1()
                     .min_h_0()
                     .gap_1()
                     .pr_1()
                     .children(left_sidebar_visible.then_some(left_rail))
-                    // `h_flex()` is `align-items: center`, so a child is not stretched
+                    // `h_stack()` is `align-items: center`, so a child is not stretched
                     // to the row's height: the dock needs an explicit `h_full()`, or its
                     // `size_full()` root resolves against an indefinite height and the
                     // whole layout — editor included — collapses to nothing.
@@ -3179,8 +3182,8 @@ fn editor_island(content: impl IntoElement, cx: &App) -> impl IntoElement {
         .min_h_0()
         .overflow_hidden()
         .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().background)
+        .border_color(cx.theme().colors.border)
+        .bg(cx.theme().colors.bg)
         .child(content)
 }
 
@@ -3204,8 +3207,8 @@ fn activity_items() -> Vec<ActivityItem> {
 fn notification_badge_color(store: &Entity<lithe_gpui_notify::Store>, cx: &App) -> Option<Hsla> {
     match store.read(cx).badge() {
         lithe_gpui_notify::Badge::None => None,
-        lithe_gpui_notify::Badge::Info => Some(cx.theme().info),
-        lithe_gpui_notify::Badge::Error => Some(cx.theme().danger),
+        lithe_gpui_notify::Badge::Info => Some(cx.theme().colors.info),
+        lithe_gpui_notify::Badge::Error => Some(cx.theme().colors.danger),
     }
 }
 

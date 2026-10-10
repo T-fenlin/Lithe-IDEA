@@ -3,7 +3,6 @@ mod common;
 use std::path::PathBuf;
 
 use gpui::{AppContext as _, TestAppContext, px, size};
-use gpui_kit::test::TestWindowExt as _;
 
 use lithe_gpui_explorer::Explorer;
 
@@ -23,9 +22,6 @@ fn workspace_dir() -> PathBuf {
 /// call. The buttons themselves are only reachable by pointer, so this lane drives the actions.
 #[gpui::test]
 fn the_panel_actions_collapse_every_folder_and_refresh_the_snapshot(cx: &mut TestAppContext) {
-    cx.update(gpui_kit::init);
-    // 项目树是组件库的控件，渲染前要装组件库主题（与生产组合根同一入口）。
-    cx.update(lithe_gpui_workbench::component_theme::install_component_theme);
     cx.update(|cx| lithe_gpui_workbench::install_actions(cx));
     let root = workspace_dir();
 
@@ -35,8 +31,10 @@ fn the_panel_actions_collapse_every_folder_and_refresh_the_snapshot(cx: &mut Tes
         });
 
     cx.run_until_parked();
+    // 补一帧：上游那套观察包装退场后，帧由 gpui 自己的 `refresh` + `draw` 出。
     cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
+        window.refresh();
+        window.draw(cx).clear(cx);
     })
     .unwrap();
 

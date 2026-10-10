@@ -48,6 +48,11 @@ pub use hints::{CompletionItem, CompletionMenu, Signature, SignatureHelp, comple
 pub use hover::HoverInfo;
 pub use keybindings::{KeySource, Keybinding, KeybindingsEditor, conflicts};
 pub(crate) use keys::bind_keys;
+/// 编辑命令的动作，给宿主把菜单 / 命令面板上的「撤销」「复制」这类命令派发给编辑器用。
+///
+/// 它们就是编辑器自己在 `ElyEditor` 上下文里登记的那几个类型 —— 派发靠类型匹配，
+/// 宿主另立一个同名动作是派发不到的。
+pub use keys::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 pub(crate) use layout::stack;
 pub use preview::ThemePreview;
 pub use problems::{Problem, ProblemsPanel};

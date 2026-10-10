@@ -3,7 +3,6 @@ mod common;
 use std::path::PathBuf;
 
 use gpui::{AppContext as _, TestAppContext, px, size};
-use gpui_kit::test::TestWindowExt as _;
 
 use lithe_gpui_explorer::Explorer;
 
@@ -20,10 +19,8 @@ fn workspace_dir() -> PathBuf {
 
 #[gpui::test]
 fn command_a_without_focus_selects_the_top_level_items(cx: &mut TestAppContext) {
-    cx.update(gpui_kit::init);
     // 项目树现在是组件库的控件，渲染前必须由组合根那一套把组件库主题装上
     // （生产路径是 `crates/app/src/main.rs`；测试里走同一个入口）。
-    cx.update(lithe_gpui_workbench::component_theme::install_component_theme);
     cx.update(|cx| lithe_gpui_workbench::install_actions(cx));
     let root = workspace_dir();
 
@@ -33,8 +30,10 @@ fn command_a_without_focus_selects_the_top_level_items(cx: &mut TestAppContext) 
         });
 
     cx.run_until_parked();
+    // 补一帧：上游那套观察包装退场后，帧由 gpui 自己的 `refresh` + `draw` 出。
     cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
+        window.refresh();
+        window.draw(cx).clear(cx);
     })
     .unwrap();
 
@@ -72,8 +71,6 @@ impl lithe_gpui_explorer::FileClipboardPort for RecordingClipboard {
 
 #[gpui::test]
 fn command_c_writes_the_selected_items_to_the_clipboard_port(cx: &mut TestAppContext) {
-    cx.update(gpui_kit::init);
-    cx.update(lithe_gpui_workbench::component_theme::install_component_theme);
     cx.update(|cx| lithe_gpui_workbench::install_actions(cx));
     let root = workspace_dir();
     let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -89,8 +86,10 @@ fn command_c_writes_the_selected_items_to_the_clipboard_port(cx: &mut TestAppCon
         });
 
     cx.run_until_parked();
+    // 补一帧：上游那套观察包装退场后，帧由 gpui 自己的 `refresh` + `draw` 出。
     cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
+        window.refresh();
+        window.draw(cx).clear(cx);
     })
     .unwrap();
     let focus = cx.update(|cx| explorer.read(cx).focus_handle(cx));

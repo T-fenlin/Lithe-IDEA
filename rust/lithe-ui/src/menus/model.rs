@@ -13,7 +13,7 @@ pub(super) enum Kind {
     Sub(Menu),
 }
 
-/// 调用方自画的一行内容（见 [`MenuItem::element`]）。
+/// 调用方自画的一行内容（见 [`MenuItem::element`]）或一个图标（见 [`MenuItem::icon_element`]）。
 pub(super) type Build = Rc<dyn Fn(&App) -> AnyElement>;
 
 /// One row of a menu. Its keys are shown, not bound.
@@ -26,6 +26,8 @@ pub struct MenuItem {
     pub(super) disabled: bool,
     pub(super) on_click: Option<Run>,
     pub(super) hits: Vec<Range<usize>>,
+    /// 图标槽由调用方画时的内容；给了它就不看 [`Self::icon`]。
+    pub(super) leading: Option<Build>,
     /// 整行由调用方画时的内容；给了它，`label` / `icon` / `keys` 都不画。
     pub(super) element: Option<Build>,
 }
@@ -40,6 +42,7 @@ impl MenuItem {
             disabled: false,
             on_click: None,
             hits: Vec::new(),
+            leading: None,
             element: None,
         }
     }
@@ -80,6 +83,18 @@ impl MenuItem {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// 图标槽交给调用方画：宿主有自己的图标集时用它。
+    ///
+    /// 槽位由库给（尺寸与行高都跟着 [主题](crate::theme::Theme) 的图标档位走，行不会跳），
+    /// `build` 只画里面的图形。给了它就不看 [`Self::icon`]。
+    ///
+    /// 与 [`Self::element`] 同一口径：`build` 只拿得到 `&App`。库自己那条路会在行禁用时
+    /// 把图标画成 `fg_disabled`，自画的元素不知道这件事 —— 要做禁用行的话，颜色得自己按状态给。
+    pub fn icon_element(mut self, build: impl Fn(&App) -> AnyElement + 'static) -> Self {
+        self.leading = Some(Rc::new(build));
         self
     }
 

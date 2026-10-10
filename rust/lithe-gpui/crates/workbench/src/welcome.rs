@@ -471,8 +471,7 @@ impl WelcomeView {
 
         let mut element = h_stack()
             .id(id)
-            // 上游那套 `TestSupportExt::test_support()` 随 gpui-kit 退场，量盒子改走
-            // gpui 原生的 debug selector（按行号，UI 测试可预期）。
+            // 量盒子走 gpui 原生的 debug selector（按行号，UI 测试可预期）。
             .debug_selector(move || format!("lithe-welcome-row-{index}"))
             .w_full()
             .flex_shrink_0()
@@ -620,8 +619,7 @@ impl Render for WelcomeView {
 fn welcome_title_bar() -> impl IntoElement {
     div()
         .id("lithe-welcome-title-bar")
-        // 上游的 `TestSupportExt::test_support()` 观察包装随 gpui-kit 退场，
-        // UI 测试改从 gpui 原生的 debug selector 量这条标题栏。
+        // UI 测试从 gpui 原生的 debug selector 量这条标题栏。
         .debug_selector(|| "lithe-welcome-title-bar".into())
         .w_full()
         .flex_shrink_0()

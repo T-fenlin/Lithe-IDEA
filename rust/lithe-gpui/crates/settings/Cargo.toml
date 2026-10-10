@@ -7,9 +7,8 @@ publish = false
 [dependencies]
 # gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
-# 不再有 gpui-kit：宿主主题的真源已经搬到组件库（`lithe_ui::theme::Theme`），主题文件的
-# 读法、主题目录的监听都由本 crate 自持。gpui-kit 只剩「它自己那些组件的颜色来源」这一个
-# 用途，由 workbench 侧一段过渡适配负责喂（见 `crates/workbench/src/component_theme.rs`）。
+# 宿主主题的真源在组件库（`lithe_ui::theme::Theme`），主题文件的读法、主题目录的监听
+# 都由本 crate 自持，颜色与字体只往那一个全局写。
 # 自己的组件库：窗口根宿主与对话框（门 G1 起，设置对话框走 `lithe_ui::shell::WindowRootExt`）。
 # gpui-pre 的版本由 lithe-ui 精确钉住，这里不重复声明。
 lithe-ui = { path = "../../../lithe-ui" }
@@ -17,13 +16,12 @@ lithe-gpui-shared = { path = "../shared" }
 # 运行配置的模型与取数（「运行配置」页与运行工具窗共用同一份）。
 # 依赖方向是 settings -> run -> shared：run 不认识设置，设置只读它的模型。
 lithe-gpui-run = { path = "../run" }
-# 设置文件是 JSON，而 `gpui-kit` **不重导出** serde / serde_json
-# （`gpui-kit-0.6.6/src/lib.rs` 的 `pub use` 清单里两者都没有），所以直接声明。
-# 版本跟随 workspace 已有的 `lithe-gpui-shared`（`serde_json = "1"`）。
+# 设置文件是 JSON：serde / serde_json 直接声明，版本跟随 workspace 已有的
+# `lithe-gpui-shared`（`serde_json = "1"`）。
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # 设置文件的**外部改动**监听（见 `src/watch.rs`）。两个 crate 都已经在本 workspace 的
-# 依赖树里（`notify` 由 `gpui-component` 引入，`async-channel` 由 `gpui-pre` 引入），
+# 依赖树里（`notify` 由上游组件栈引入，`async-channel` 由 `gpui-pre` 引入），
 # 所以直接声明它们不增加任何新的第三方代码，只是把它们升成直接依赖。
 notify = "7"
 async-channel = "2"

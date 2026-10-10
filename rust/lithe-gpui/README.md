@@ -11,17 +11,17 @@
   是独立 workspace，通过 path 依赖引入：`lithe-ui = { path = "../../lithe-ui" }`。
 - `assets/` 由 `crates/app` 用 `rust-embed` 编译期内嵌（`$CARGO_MANIFEST_DIR/../../assets`）。
 
-## 当前状态（2026-10-08）
+## 当前状态（2026-10-10）
 
 宿主 crate 是**从既有分支 `feat/lithe-gpui-components` 照搬过来的**，不是从零重写。
 搬过来时只做了必要适配：组件库的依赖路径（`../lithe-gpui` → `../../lithe-ui`）与 14 处
 `lithe_gpui::` 引用。
 
-⚠️ **`gpui-kit` 是过渡依赖**：搬过来的宿主里仍有约 **429 行**引用 `gpui-kit`
-（`workbench` 196、`settings` 76、`editor` 48、`git` 29、`terminal` 22、`shared` 19、
-`explorer` 17、`app` 15、`run` 5、`notify` 2；`java` 与 `extensions` 为 0），
-其中包含窗口根 `Root`（对话框/抽屉/通知的统一浮层挂载）。它**正在按切片迁往 `lithe-ui`**，
-退场后 `Cargo.toml` 里的 `gpui-kit` 与 workspace 里的对应 profile 覆盖一并删除。
+✅ **过渡依赖已经摘干净**：原先按切片迁往 `lithe-ui` 的那一批（窗口根 `Root`、
+对话框/抽屉/通知的浮层挂载、菜单、按钮、输入框、图标、主题桥）全部落地，
+`gpui-kit` 从所有 crate 的 `Cargo.toml` 与 workspace 的 profile 覆盖里删除 ——
+代码、注释、构建声明里都不再有它。UI 测试也随之改从 gpui 自己的 debug selector
+（`.debug_selector` + `VisualTestContext::debug_bounds`）断言，不再依赖任何"观察包装"。
 
 ## 工具
 

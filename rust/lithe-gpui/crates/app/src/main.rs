@@ -6,14 +6,15 @@ use gpui::{
     App, AppContext as _, Bounds, Pixels, SharedString, Size, Window, WindowBounds, WindowOptions,
     point, px, size,
 };
-use gpui_kit::component::{Theme, ThemeMode, TitleBar};
 use lithe_gpui_settings::{Init, SettingsStore};
 use lithe_gpui_workbench::ShellWorkspace;
 use lithe_gpui_workbench::WelcomeView;
 use lithe_gpui_workbench::right_tool_window::RightToolWindowView;
-// 窗口根从上游 `gpui_base::Root` 换成本仓库自建的 `WindowRoot`（门 G1）。
-// 上游那套按具体类型找根，换根之后任何一处残留都会 panic，所以三个构造点同片改完。
-use lithe_ui::shell::WindowRoot;
+// 窗口根是本仓库自建的 `WindowRoot`（门 G1）。它按具体类型找根，换根之后任何一处
+// 残留都会 panic，所以三个构造点（首窗口 / 欢迎态 / 多窗口）必须同形。
+use lithe_ui::i18n::set_locale;
+use lithe_ui::shell::{TitleBar, WindowRoot};
+use lithe_ui::theme::Theme;
 
 mod assets;
 
@@ -595,13 +596,10 @@ fn main() {
                     );
                 }
             }
-            gpui_kit::component::set_locale(&locale);
-            gpui_kit::init(cx);
-            Theme::change(ThemeMode::Dark, None, cx);
-            Theme::set_scrollbar_mode(gpui_kit::component::scroll::ScrollbarMode::Always, cx);
-            // 组件库（`lithe-gpui`）读的是它自己的主题全局：外壳在这里装一次，
-            // 之后宿主每次换主题都会把颜色重新映射过去（见 `component_theme`）。
-            lithe_gpui_workbench::component_theme::install_component_theme(cx);
+            // 语言：本仓的 `tr` 与组件库共用 rust_i18n 的全局 locale，设一次两处都换。
+            set_locale(&locale, cx);
+            // 组件库的主题全局：外壳在这里装一次，之后宿主每次换主题都往它写。
+            Theme::init(cx);
             // 语言支持插件：把 tree-sitter 语法注册进组件库的语言注册表（静态装载；
             // 换成扩展目录里的动态库时，这一行的位置与语义不变）。
             lithe_gpui_languages::register();
@@ -640,7 +638,7 @@ fn main() {
                     let options = WindowOptions {
                         window_bounds: Some(startup_window_bounds(cx)),
                         window_min_size: Some(MIN_WINDOW),
-                        ..TitleBar::window_options()
+                        ..TitleBar::window_options(cx)
                     };
                     let root = root.to_path_buf();
                     let opened = cx.open_window(options, move |window, cx| {
@@ -678,10 +676,12 @@ fn main() {
             };
 
             cx.spawn(async move |cx| {
+                // 这里是异步上下文（手上只有 `AsyncApp`），窗口选项要 app 才能算。
+                let title_bar = cx.update(|cx| TitleBar::window_options(cx));
                 let window_options = WindowOptions {
                     window_bounds: Some(bounds),
                     window_min_size: Some(min_size),
-                    ..TitleBar::window_options()
+                    ..title_bar
                 };
 
                 cx.open_window(window_options, move |window, cx| {

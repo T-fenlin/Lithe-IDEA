@@ -8,8 +8,7 @@ publish = false
 # gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
 # 组件库：代码编辑器本体（`lithe_ui::editor::CodeEditor`）、语言注册表与高亮引擎、
-# 主题、标签栏/菜单/按钮这些控件。**不再有 gpui-kit**：本 crate 是最后一批离开它的
-# 宿主 crate 之一，所有界面元素都改从 `lithe-ui` 取（语法高亮也不必再由本 crate
+# 主题、标签栏/菜单/按钮这些控件：所有界面元素都从 `lithe-ui` 取（语法高亮也不必再由本 crate
 # 打开 grammar 特性——grammar 由第一方语言插件 `lithe-gpui-languages` 注册进注册表）。
 lithe-ui = { path = "../../../lithe-ui" }
 # 通知中心：保存失败 / 跳转无目标都写进通知中心（2026-09-27 从角落 toast 迁过来，决策见

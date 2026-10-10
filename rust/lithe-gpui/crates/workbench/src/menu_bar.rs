@@ -1,35 +1,32 @@
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
-
 use gpui::{
-    App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable as _,
-    InteractiveElement as _, IntoElement, KeyBinding, Keystroke, MouseButton, ParentElement as _,
-    Pixels, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
-    rems,
+    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle,
+    IntoElement, KeyBinding, Keystroke, MouseButton, ParentElement as _, Pixels, SharedString,
+    Styled as _, Subscription, Window, div, prelude::*, rems,
 };
-use gpui::{DismissEvent, deferred};
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{Align, ElementExt as _, Placement, Positioner, h_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
-
-use lithe_gpui_shared::icons::idea;
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::tr;
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::layout::h_stack;
+use lithe_ui::menus::{Menu, MenuItem as MenuRow, TriggerMenu};
+use lithe_ui::primitives::Measure;
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 use crate::command_palette::CommandId;
-// 本文件这些图标要交给上游 `PopupMenuItem::icon`（只收 gpui-kit 的 Icon），见 `icon_kit`。
-use crate::icon_kit::idea_icon_mono;
 
 const ITEM_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 
-const FLOAT_RADIUS_SPEC: f32 = 14.4;
+const BAR_HEIGHT_SPEC: f32 = 24.;
 
+const BAR_GAP_SPEC: f32 = 2.;
+
+const BAR_PADDING_SPEC: f32 = 2.;
+
+const TRIGGER_HEIGHT_SPEC: f32 = 20.;
+
+const TRIGGER_PADDING_SPEC: f32 = 6.;
+
+/// 面板最小宽度（pt）：窄菜单也别挤成一条。
 const PANEL_MIN_WIDTH_SPEC: f32 = 240.;
-
-const PANEL_OFFSET_SPEC: f32 = 4.;
-
-const PANEL_WINDOW_MARGIN_SPEC: f32 = 8.;
 
 fn is_escape(keystroke: &Keystroke) -> bool {
     keystroke.key == "escape" && keystroke.modifiers.number_of_modifiers() == 0
@@ -318,10 +315,16 @@ pub enum MenuAction {
     ToggleFullscreen,
 }
 
+/// 一行菜单的图标。
+///
+/// **口径**（见 `shared::icons::AppIcon` 的文档）：应用图标一律取自本仓自己的
+/// `rust/lithe-gpui/assets/icons/idea/**`；自己**没画过**那张图的行就留一个空槽，
+/// 不拿别的图标集顶替：没画过就是空槽，不找一个「差不多像的」换上。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuIcon {
     Idea(&'static idea::IdeaIcon),
-    Lucide(IconName),
+    /// 我们没画过这张图。
+    Empty,
 }
 
 impl MenuAction {
@@ -385,61 +388,60 @@ impl MenuAction {
         tr(self.label_key())
     }
 
-    pub fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
+    /// 本动作的图标（见 [`MenuIcon`] 的口径：我们没画过那张图就是空槽）。
+    pub fn icon(self) -> MenuIcon {
         match self {
-            Self::OpenFolder => idea_icon_mono(&idea::FOLDER_ICON, is_dark),
-            Self::OpenFile => idea_icon_mono(&idea::FILE_ICON, is_dark),
-            Self::Save => idea_icon_mono(&idea::FLOPPY_DISK_ICON, is_dark),
-            Self::CloseTab => idea_icon_mono(&idea::X_ICON, is_dark),
-            Self::CloseOtherTabs => idea_icon_mono(&idea::FILES_ICON, is_dark),
-            Self::CloseAllTabs => Icon::new(IconName::SquareX),
-            Self::CloseSavedTabs => Icon::new(IconName::SaveCheck),
-            Self::CloseTabsToLeft => Icon::new(IconName::PanelLeft),
-            Self::CloseTabsToRight => Icon::new(IconName::PanelRight),
-            Self::ReopenClosedTab => idea_icon_mono(&idea::REFRESH_ICON, is_dark),
-            Self::CommandPalette => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
+            Self::OpenFolder => MenuIcon::Idea(&idea::FOLDER_ICON),
+            Self::OpenFile => MenuIcon::Idea(&idea::FILE_ICON),
+            Self::Save => MenuIcon::Idea(&idea::FLOPPY_DISK_ICON),
+            Self::CloseTab => MenuIcon::Idea(&idea::X_ICON),
+            Self::CloseOtherTabs => MenuIcon::Idea(&idea::FILES_ICON),
+            Self::ReopenClosedTab => MenuIcon::Idea(&idea::REFRESH_ICON),
+            Self::CommandPalette => MenuIcon::Idea(&idea::MAGNIFYING_GLASS_ICON),
             Self::ToggleTerminal | Self::NewTerminalTab | Self::CloseTerminalTab => {
-                Icon::new(IconName::SquareTerminal)
+                MenuIcon::Idea(&idea::TERMINAL_ICON)
             }
-            Self::ToggleStatusBar => Icon::new(IconName::PanelBottom),
-            Self::ToggleMaven => Icon::new(IconName::Package),
-            Self::OpenAppearanceSettings | Self::Preferences => {
-                idea_icon_mono(&idea::GEAR_ICON, is_dark)
-            }
-            Self::GoToDefinition => idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
-            Self::QuickOpen => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
-            Self::SearchEverywhere => idea_icon_mono(&idea::GLOBE_HEMISPHERE_WEST_ICON, is_dark),
-            Self::ReplaceInFiles => Icon::new(IconName::Replace),
-            Self::NewWindow => Icon::new(IconName::AppWindow),
-            Self::Minimize => Icon::new(IconName::WindowMinimize),
-            Self::Maximize => Icon::new(IconName::WindowMaximize),
-            Self::ToggleFullscreen => Icon::new(IconName::Maximize),
-            Self::Undo => idea_icon_mono(&idea::ARROW_COUNTER_CLOCKWISE_ICON, is_dark),
-            Self::Redo => idea_icon_mono(&idea::ARROW_CLOCKWISE_ICON, is_dark),
-            Self::Cut => idea_icon_mono(&idea::SCISSORS_ICON, is_dark),
-            Self::Copy => idea_icon_mono(&idea::COPY_ICON, is_dark),
-            Self::Paste => Icon::new(IconName::Clipboard),
-            Self::SelectAll => Icon::new(IconName::SquareDashed),
-            Self::Find => idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
-            Self::FindAndReplace => Icon::new(IconName::Replace),
-            Self::QuickFix => idea_icon_mono(&idea::LIGHTBULB_ICON, is_dark),
-            Self::ToggleActivitySidebar => Icon::new(IconName::PanelLeft),
-            Self::ToggleSecondarySidebar => Icon::new(IconName::PanelRight),
-            Self::ShowDiagnostics => Icon::new(IconName::SquareActivity),
-            Self::ShowFileExplorer => idea_icon_mono(&idea::FILES_ICON, is_dark),
-            Self::ShowSourceControl => idea_icon_mono(&idea::GIT_BRANCH_ICON, is_dark),
-            Self::ShowRunAndDebug | Self::StartDebugging => {
-                idea_icon_mono(&idea::PLAY_ICON, is_dark)
-            }
-            Self::StopDebugging => idea_icon_mono(&idea::STOP_ICON, is_dark),
-            Self::ToggleBreakpoint => Icon::new(IconName::CircleDot),
-            Self::GoToLine => idea_icon_mono(&idea::HASH_ICON, is_dark),
-            Self::ToggleWordWrap => Icon::new(IconName::TextWrap),
-            Self::ShowHover => idea_icon_mono(&idea::INFO_ICON, is_dark),
-            Self::ZoomIn => idea_icon_mono(&idea::MAGNIFYING_GLASS_PLUS_ICON, is_dark),
-            Self::ZoomOut => idea_icon_mono(&idea::MAGNIFYING_GLASS_MINUS_ICON, is_dark),
-            Self::ResetZoom => idea_icon_mono(&idea::REFRESH_ICON, is_dark),
-            Self::ToggleMenuBar => idea_icon_mono(&idea::FILES_ICON, is_dark),
+            Self::ToggleMaven => MenuIcon::Idea(&idea::MAVEN_ICON),
+            Self::OpenAppearanceSettings | Self::Preferences => MenuIcon::Idea(&idea::GEAR_ICON),
+            Self::GoToDefinition => MenuIcon::Idea(&idea::ARROW_RIGHT_ICON),
+            Self::QuickOpen => MenuIcon::Idea(&idea::MAGNIFYING_GLASS_ICON),
+            Self::SearchEverywhere => MenuIcon::Idea(&idea::GLOBE_HEMISPHERE_WEST_ICON),
+            Self::Undo => MenuIcon::Idea(&idea::ARROW_COUNTER_CLOCKWISE_ICON),
+            Self::Redo => MenuIcon::Idea(&idea::ARROW_CLOCKWISE_ICON),
+            Self::Cut => MenuIcon::Idea(&idea::SCISSORS_ICON),
+            Self::Copy => MenuIcon::Idea(&idea::COPY_ICON),
+            Self::Find => MenuIcon::Idea(&idea::MAGNIFYING_GLASS_ICON),
+            Self::QuickFix => MenuIcon::Idea(&idea::LIGHTBULB_ICON),
+            Self::ShowFileExplorer => MenuIcon::Idea(&idea::FILES_ICON),
+            Self::ShowSourceControl => MenuIcon::Idea(&idea::GIT_BRANCH_ICON),
+            Self::ShowRunAndDebug | Self::StartDebugging => MenuIcon::Idea(&idea::PLAY_ICON),
+            Self::StopDebugging => MenuIcon::Idea(&idea::STOP_ICON),
+            Self::GoToLine => MenuIcon::Idea(&idea::HASH_ICON),
+            Self::ShowHover => MenuIcon::Idea(&idea::INFO_ICON),
+            Self::ZoomIn => MenuIcon::Idea(&idea::MAGNIFYING_GLASS_PLUS_ICON),
+            Self::ZoomOut => MenuIcon::Idea(&idea::MAGNIFYING_GLASS_MINUS_ICON),
+            Self::ResetZoom => MenuIcon::Idea(&idea::REFRESH_ICON),
+            Self::ToggleMenuBar => MenuIcon::Idea(&idea::FILES_ICON),
+            // 上游那批借来的图标（`CloseAllTabs` 的方框叉、`Paste` 的剪贴板、
+            // 窗口那三个、断点、自动换行…）我们自己的图标集里没有，**留空**。
+            Self::CloseAllTabs
+            | Self::CloseSavedTabs
+            | Self::CloseTabsToLeft
+            | Self::CloseTabsToRight
+            | Self::ToggleStatusBar
+            | Self::ReplaceInFiles
+            | Self::NewWindow
+            | Self::Minimize
+            | Self::Maximize
+            | Self::ToggleFullscreen
+            | Self::Paste
+            | Self::SelectAll
+            | Self::FindAndReplace
+            | Self::ToggleActivitySidebar
+            | Self::ToggleSecondarySidebar
+            | Self::ShowDiagnostics
+            | Self::ToggleBreakpoint
+            | Self::ToggleWordWrap => MenuIcon::Empty,
         }
     }
 
@@ -456,6 +458,10 @@ impl MenuAction {
         }
     }
 
+    /// 这行要派发给谁 —— 菜单上的键位胶囊也从它查（`highest_precedence_binding_for_action`）。
+    ///
+    /// 编辑类的六个走组件库编辑器自己的动作（`lithe_ui::editor`，与 `ElyEditor` 上下文里
+    /// 真登记的键位是同一批类型）；工作台自己的动作是本地 `gpui::actions!` 声明的那几个。
     pub fn keybind_action(self) -> Option<Box<dyn gpui::Action>> {
         use crate::command_palette::{OpenCommandPalette, ToggleMenuBar as ToggleMenuBarAction};
 
@@ -476,15 +482,19 @@ impl MenuAction {
             Self::ZoomIn => Box::new(ZoomIn),
             Self::ZoomOut => Box::new(ZoomOut),
             Self::ResetZoom => Box::new(ResetZoom),
-            Self::Undo => Box::new(gpui_kit::base::input::Undo),
-            Self::Redo => Box::new(gpui_kit::base::input::Redo),
-            Self::Cut => Box::new(gpui_kit::base::input::Cut),
-            Self::Copy => Box::new(gpui_kit::base::input::Copy),
-            Self::Paste => Box::new(gpui_kit::base::input::Paste),
-            Self::SelectAll => Box::new(gpui_kit::base::input::SelectAll),
-            Self::Find => Box::new(gpui_kit::base::input::Search),
-            Self::FindAndReplace => Box::new(gpui_kit::base::input::Replace),
-            Self::QuickFix => Box::new(gpui_kit::base::input::ToggleCodeActions),
+            Self::Undo => Box::new(lithe_ui::editor::Undo),
+            Self::Redo => Box::new(lithe_ui::editor::Redo),
+            Self::Cut => Box::new(lithe_ui::editor::Cut),
+            Self::Copy => Box::new(lithe_ui::editor::Copy),
+            Self::Paste => Box::new(lithe_ui::editor::Paste),
+            Self::SelectAll => Box::new(lithe_ui::editor::SelectAll),
+            // 「查找」「在文件中替换」没有可派发的动作：`lithe_ui` 的编辑器有 FindWidget，
+            // 但 `CodeEditor` 还没有接线（见 `editor/state.rs` 的公开面）。没有就不假装有 ——
+            // 不拿别的动作顶替，菜单上也不画键位胶囊。
+            Self::Find | Self::FindAndReplace => return None,
+            // 「快速修复」由工作台自己调编辑器的代码动作菜单（`pane.show_code_actions`），
+            // 不走 `dispatch_action`，所以没有 Action 可查。
+            Self::QuickFix => return None,
             Self::OpenFile
             | Self::CloseOtherTabs
             | Self::CloseAllTabs
@@ -584,26 +594,26 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.newFile",
                 missing: MISSING_FILE_LIFECYCLE,
-                icon: MenuIcon::Lucide(IconName::FilePlusCorner),
+                icon: MenuIcon::Idea(&idea::FILE_PLUS_ICON),
             },
             MenuItem::Action(MenuAction::OpenFolder),
             MenuItem::Action(MenuAction::OpenFile),
             MenuItem::NotWired {
                 label_key: "lithe.menu.closeFolder",
                 missing: MISSING_PROJECT_LIFECYCLE,
-                icon: MenuIcon::Lucide(IconName::FolderX),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::Save),
             MenuItem::NotWired {
                 label_key: "lithe.menu.saveAs",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Lucide(IconName::SavePen),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.saveAll",
                 missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Lucide(IconName::SaveAll),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.revertFile",
@@ -620,7 +630,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.closeWindow",
                 missing: MISSING_WINDOW_ROUTING,
-                icon: MenuIcon::Lucide(IconName::WindowClose),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::CloseOtherTabs),
@@ -632,7 +642,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.quit",
                 missing: MISSING_WINDOW_ROUTING,
-                icon: MenuIcon::Lucide(IconName::Power),
+                icon: MenuIcon::Empty,
             },
         ],
     },
@@ -654,20 +664,20 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleComment",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Lucide(IconName::Code),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Action(MenuAction::QuickFix),
             MenuItem::NotWired {
                 label_key: "lithe.menu.triggerParameterHints",
                 missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Lucide(IconName::Parentheses),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Action(MenuAction::ShowHover),
             MenuItem::Separator,
             MenuItem::NotWired {
                 label_key: "lithe.menu.duplicateLine",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Lucide(IconName::CopyPlus),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.deleteLine",
@@ -687,12 +697,12 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.formatDocument",
                 missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Lucide(IconName::Pilcrow),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.formatSelection",
                 missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Lucide(IconName::SquarePilcrow),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Action(MenuAction::CommandPalette),
         ],
@@ -713,7 +723,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.github",
                 missing: MISSING_GITHUB,
-                icon: MenuIcon::Lucide(IconName::Github),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Action(MenuAction::ShowRunAndDebug),
             MenuItem::Separator,
@@ -725,18 +735,18 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleMinimap",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Lucide(IconName::Map),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Action(MenuAction::ToggleWordWrap),
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleLineNumbers",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Lucide(IconName::ListOrdered),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.toggleRenderWhitespace",
                 missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Lucide(IconName::Space),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::ZoomIn),
@@ -771,22 +781,22 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToImplementation",
                 missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Lucide(IconName::ArrowUpRight),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToTypeDefinition",
                 missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Lucide(IconName::FileType),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToReferences",
                 missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Lucide(IconName::Network),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.renameSymbol",
                 missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Lucide(IconName::Signature),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Separator,
             MenuItem::NotWired {
@@ -884,12 +894,12 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::NotWired {
                 label_key: "lithe.menu.whatsNew",
                 missing: MISSING_HELP_ABOUT,
-                icon: MenuIcon::Lucide(IconName::Sparkles),
+                icon: MenuIcon::Empty,
             },
             MenuItem::NotWired {
                 label_key: "lithe.menu.changelog",
                 missing: MISSING_HELP_ABOUT,
-                icon: MenuIcon::Lucide(IconName::ScrollText),
+                icon: MenuIcon::Empty,
             },
             MenuItem::Separator,
             MenuItem::NotWired {
@@ -1018,15 +1028,15 @@ pub struct MenuBar {
     mode: MenuBarMode,
     selected: Option<usize>,
     compact_visible: bool,
-    popup: Option<Entity<PopupMenu>>,
-    dismiss_subscription: Option<Subscription>,
-    trigger_bounds: Rc<RefCell<Vec<Option<Bounds<Pixels>>>>>,
-    compact_trigger_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     restore_focus: bool,
     pending: Vec<MenuRequest>,
     action_context: FocusHandle,
     shell: Option<gpui::WeakEntity<crate::workspace::ShellWorkspace>>,
     escape_interceptor: Option<Subscription>,
+    /// 每个顶层菜单触发器的位置，由 [`Measure`] 报上来；`S1_MENU_BOUNDS` 诊断要用。
+    trigger_bounds: Vec<Option<Bounds<Pixels>>>,
+    /// 刚打开、几何还没报出去的那个菜单的下标。
+    bounds_pending: Option<usize>,
 }
 
 impl MenuBar {
@@ -1037,15 +1047,13 @@ impl MenuBar {
             mode,
             selected: None,
             compact_visible: false,
-            popup: None,
-            dismiss_subscription: None,
-            trigger_bounds: Rc::new(RefCell::new(vec![None; MENUS.len()])),
-            compact_trigger_bounds: Rc::new(Cell::new(None)),
             restore_focus: false,
             pending: Vec::new(),
             action_context,
             shell,
             escape_interceptor: None,
+            trigger_bounds: vec![None; MENUS.len()],
+            bounds_pending: None,
         });
         let handle = bar.downgrade();
         bar.update(cx, |bar, cx| {
@@ -1088,11 +1096,11 @@ impl MenuBar {
             MenuBarMode::Pinned => MenuBarMode::Compact,
             MenuBarMode::Compact => MenuBarMode::Pinned,
         };
-        let had_popup = self.popup.take().is_some();
-        self.dismiss_subscription = None;
+        let had_open = self.selected.take().is_some() || self.compact_visible;
         self.selected = None;
         self.compact_visible = false;
-        if had_popup {
+        self.bounds_pending = None;
+        if had_open {
             self.restore_focus = true;
         }
         self.mode.diagnose();
@@ -1109,10 +1117,9 @@ impl MenuBar {
                 self.close(CloseReason::Toggle, cx);
             }
             NavState::Open(opened) => {
-                self.popup = None;
-                self.dismiss_subscription = None;
-                self.compact_visible = true;
                 self.selected = Some(opened);
+                self.compact_visible = false;
+                self.bounds_pending = Some(opened);
                 diagnose_open(menu.id);
                 self.notify_shell(cx);
             }
@@ -1130,11 +1137,11 @@ impl MenuBar {
         if self.selected.is_none() && !self.compact_visible {
             return false;
         }
-        let had_popup = self.popup.take().is_some();
-        self.dismiss_subscription = None;
+        let had_open = self.selected.take().is_some() || self.compact_visible;
         self.selected = None;
         self.compact_visible = false;
-        if had_popup {
+        self.bounds_pending = None;
+        if had_open {
             self.restore_focus = true;
         }
         diagnose_close(reason);
@@ -1142,29 +1149,22 @@ impl MenuBar {
         true
     }
 
-    fn handle_dismiss(
-        &mut self,
-        _popup: &Entity<PopupMenu>,
-        _event: &DismissEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(index) = self.selected {
-            let on_own_trigger = self
-                .trigger_bounds_of(index)
-                .is_some_and(|bounds| bounds.contains(&window.mouse_position()));
-            if on_own_trigger {
-                return;
-            }
+    /// 库自己把菜单关了（点外面、选中一行之后）：宿主这边跟着收。
+    ///
+    /// 起因一律记 `dismiss` —— 库只报「关了」这一件事，分不出是点了外面还是又点了
+    /// 自己那块触发器（后者在开合全交给库之前是 `toggle`）。Esc 由拦截器先关掉，
+    /// 轮不到这里，所以那条诊断仍是 `escape`。
+    fn menu_closed(&mut self, index: usize, cx: &mut App) {
+        if self.selected == Some(index) {
+            self.close(CloseReason::Dismiss, cx);
         }
-        self.close(CloseReason::Dismiss, cx);
     }
 
     fn trigger_bounds_of(&self, index: usize) -> Option<Bounds<Pixels>> {
-        self.trigger_bounds.borrow().get(index).copied().flatten()
+        self.trigger_bounds.get(index).copied().flatten()
     }
 
-    fn hover_switch(&mut self, index: usize, cx: &mut Context<Self>) {
+    fn hover_switch(&mut self, index: usize, cx: &mut App) {
         let Some(current) = self.selected else {
             return;
         };
@@ -1215,10 +1215,9 @@ impl MenuBar {
         let Some(index) = MENUS.iter().position(|menu| menu.id == id) else {
             return false;
         };
-        self.popup = None;
-        self.dismiss_subscription = None;
         self.selected = None;
         self.compact_visible = false;
+        self.bounds_pending = None;
         self.toggle(index, cx);
         true
     }
@@ -1337,9 +1336,10 @@ pub fn menu_bar(
         bar.restore_focus = false;
         window.focus(&bar.action_context, cx);
     }
+    let _ = window;
     match bar.mode {
-        MenuBarMode::Pinned => pinned_bar(bar, window, cx).into_any_element(),
-        MenuBarMode::Compact => compact_bar(bar, window, cx).into_any_element(),
+        MenuBarMode::Pinned => pinned_bar(bar, cx).into_any_element(),
+        MenuBarMode::Compact => compact_bar(bar, cx).into_any_element(),
     }
 }
 
@@ -1353,291 +1353,239 @@ pub(crate) fn render_bar(
         .ok()
 }
 
-fn pinned_bar(
-    bar: &mut MenuBar,
-    window: &mut Window,
-    cx: &mut Context<MenuBar>,
-) -> impl IntoElement {
-    let mut bar_element = h_flex()
+fn pinned_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+    let mut bar_element = h_stack()
         .id("lithe-menu-bar-pinned")
         .flex_shrink_0()
         .items_center()
-        .h_6()
-        .gap_0p5()
-        .p_0p5();
+        .h(rems(BAR_HEIGHT_SPEC / 16.))
+        .gap(rems(BAR_GAP_SPEC / 16.))
+        .p(rems(BAR_PADDING_SPEC / 16.));
     for index in 0..MENUS.len() {
-        bar_element = bar_element.child(menu_item(bar, index, window, cx));
+        bar_element = bar_element.child(menu_item(bar, index, cx));
     }
     bar_element
 }
 
-fn compact_bar(
-    bar: &mut MenuBar,
-    window: &mut Window,
-    cx: &mut Context<MenuBar>,
-) -> impl IntoElement {
+/// 紧凑模式：一个按钮，按下去展开**菜单的菜单** —— 每个顶层菜单是一张子菜单。
+///
+/// 原来那套是「按钮下面浮一排顶层菜单触发器，鼠标划过去换一个」，那排浮层要靠上游
+/// 的 `Positioner`（贴边、限窗、外挂 `deferred`）才放得稳；库这边没有对应的外挂定位，
+/// 于是换成子菜单：面板挂哪儿、怎么走键盘都由 [`TriggerMenu`] 自己管。
+fn compact_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
     let handle = handle();
-    let toggle_handle = handle.clone();
-    let button = Button::new("lithe-menu-bar-trigger")
-        .ghost()
-        .small()
-        .icon(idea_icon_mono(&idea::FILES_ICON, cx.theme().is_dark()))
-        .tooltip(tr("lithe.window.menu"))
-        .accessibility_label(tr("lithe.window.menu"))
-        .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-            let _ = toggle_handle.update(cx, |bar, cx| bar.toggle_compact(cx));
-        });
+    let button_handle = handle.clone();
+    let open = bar.compact_visible;
+    // 面板只在开着的时候建：关着的时候库也不画它。
+    let panel = if open { compact_menu(cx) } else { Menu::new() };
 
-    let mut floating = None;
-    if bar.compact_visible {
-        let mut capsule = h_flex()
-            .id("lithe-menu-bar-floating")
-            .items_center()
-            .h_6()
-            .gap_0p5()
-            .p_1()
-            .mt_1()
-            .rounded(rems(FLOAT_RADIUS_SPEC / 16.))
-            .border_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().background);
-        for index in 0..MENUS.len() {
-            capsule = capsule.child(menu_item(bar, index, window, cx));
-        }
-        if let Some(bounds) = bar.compact_trigger_bounds.get() {
-            let rem = window.rem_size();
-            floating = Some(
-                deferred(
-                    Positioner::side(bounds)
-                        .placement(Placement::Bottom)
-                        .align(Align::Start)
-                        .offset(crate::rem_px(rem, PANEL_OFFSET_SPEC))
-                        .margin(crate::rem_px(rem, PANEL_WINDOW_MARGIN_SPEC))
-                        .occlude()
-                        .child(capsule),
-                )
-                .with_priority(1)
-                .into_any_element(),
-            );
-        }
-    }
-
-    let bounds_cell = bar.compact_trigger_bounds.clone();
-    div()
-        .id("lithe-menu-bar-compact")
-        .relative()
-        .flex_shrink_0()
-        .on_prepaint(move |bounds, window, _cx| {
-            let first = bounds_cell.get().is_none();
-            bounds_cell.set(Some(bounds));
-            if first {
-                window.request_animation_frame();
+    TriggerMenu::new("lithe-menu-bar-compact", panel, move |_open, _window, cx| {
+        Button::new("lithe-menu-bar-trigger")
+            .variant(ButtonVariant::Ghost)
+            .size(Size::Small)
+            .icon_element(idea_icon_mono(&idea::FILES_ICON, cx.theme().is_dark()))
+            .tooltip(tr("lithe.window.menu"))
+            .aria_label(tr("lithe.window.menu"))
+            .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                let _ = button_handle.update(cx, |bar, cx| bar.toggle_compact(cx));
+            })
+            .into_any_element()
+    })
+    .open(Some(open))
+    .on_toggle(move |open, cx| {
+        let _ = handle.update(cx, |bar, cx| {
+            if open {
+                bar.compact_visible = true;
+            } else {
+                bar.close(CloseReason::Dismiss, cx);
             }
-        })
-        .child(button)
-        .children(floating)
+        });
+    })
+    .into_any_element()
 }
 
-fn trigger(
-    bar: &MenuBar,
-    index: usize,
-    window: &mut Window,
-    cx: &mut Context<MenuBar>,
-) -> impl IntoElement {
-    let _ = window;
-    let menu = &MENUS[index];
-    let is_open = bar.selected == Some(index);
-    let theme = cx.theme();
-    let (idle, active_text, hover_bg) = (theme.muted_foreground, theme.foreground, theme.accent);
+/// 紧凑模式那张面板：一个顶层菜单一行，行里是它的子菜单。
+fn compact_menu(cx: &mut App) -> Menu {
+    let mut menu = Menu::new();
+    for index in 0..MENUS.len() {
+        menu = menu.item(MenuRow::submenu(MENUS[index].label(), build_menu(index, cx)));
+    }
+    menu
+}
+
+/// 顶层菜单那块触发器：一行文字，开的那个高亮。
+///
+/// 开合归库的 [`TriggerMenu`] 管，这张脸只负责长相和两件宿主自己的事：
+///
+/// - 按下时记住「菜单打开前谁握着焦点」——选中的动作派发给它（见 `action_target`）；
+/// - 鼠标划过来、且已经开了别的菜单时，换到这一个。
+fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
+    let colors = &cx.theme().colors;
+    let (idle, active_text, hover_bg) = (colors.fg_muted, colors.fg, colors.hover);
     let handle = handle();
 
     div()
-        .id(("lithe-menu-trigger", index))
+        .id(("lithe-menu-face", index))
         .flex()
         .items_center()
-        .h_5()
-        .px_1p5()
+        .h(rems(TRIGGER_HEIGHT_SPEC / 16.))
+        .px(rems(TRIGGER_PADDING_SPEC / 16.))
         .rounded(rems(ITEM_RADIUS_SPEC / 16.))
         .text_sm()
-        .text_color(if is_open { active_text } else { idle })
+        .text_color(if open { active_text } else { idle })
         .hover(move |style| style.bg(hover_bg).text_color(active_text))
-        .on_hover(cx.listener(move |bar, hovered: &bool, _window, cx| {
-            if *hovered {
-                bar.hover_switch(index, cx);
-            }
-        }))
         .on_mouse_down(MouseButton::Left, {
             let handle = handle.clone();
             move |_, window, cx| {
-                cx.stop_propagation();
                 let focused = window.focused(cx);
-                let _ = handle.update(cx, |bar, cx| {
-                    bar.remember_action_target(focused);
-                    bar.toggle(index, cx);
-                });
+                let _ = handle.update(cx, |bar, _| bar.remember_action_target(focused));
             }
         })
-        .child(menu.label())
+        .on_hover(move |hovered: &bool, _window, cx| {
+            if *hovered {
+                let _ = handle.update(cx, |bar, cx| bar.hover_switch(index, cx));
+            }
+        })
+        .child(MENUS[index].label())
+        .into_any_element()
 }
 
-fn menu_item(
-    bar: &mut MenuBar,
-    index: usize,
-    window: &mut Window,
-    cx: &mut Context<MenuBar>,
-) -> impl IntoElement {
-    let is_open = bar.selected == Some(index);
+/// 一个顶层菜单：触发器 + 挂在它下面的面板，外加量它的位置给诊断用。
+///
+/// 开合是**受控**的（[`TriggerMenu::open`]）：宿主说开哪个，库就开哪个；库自己关掉时
+/// 由 [`TriggerMenu::on_toggle`] 回报回来。
+fn menu_item(bar: &mut MenuBar, index: usize, cx: &mut App) -> impl IntoElement {
+    let open = bar.selected == Some(index);
+    // 关着的时候面板是空的：库反正不画它，省下每帧建九份菜单。
+    let panel = if open { build_menu(index, cx) } else { Menu::new() };
+    let handle = handle();
+    let measure_handle = handle.clone();
 
-    let bounds_cell = bar.trigger_bounds.clone();
-    let mut wrapper = div()
-        .id(("lithe-menu-item", index))
-        .relative()
-        .flex_shrink_0()
-        .on_prepaint(move |bounds, window, _cx| {
-            let first = bounds_cell.borrow()[index].is_none();
-            bounds_cell.borrow_mut()[index] = Some(bounds);
-            if first {
-                window.request_animation_frame();
-            }
-        })
-        .child(trigger(bar, index, window, cx));
-
-    if is_open {
-        if bar.popup.is_none() {
-            let popup = build_popup(bar, index, window, cx);
-            bar.dismiss_subscription =
-                Some(cx.subscribe_in(&popup, window, MenuBar::handle_dismiss));
-            let focus = popup.read(cx).focus_handle(cx);
-            if !focus.contains_focused(window, cx) {
-                focus.focus(window, cx);
-            }
-            match bar.trigger_bounds_of(index) {
-                Some(bounds) => eprintln!(
-                    "S1_MENU_BOUNDS id={} x={} y={} w={} h={}",
-                    MENUS[index].id,
-                    f32::from(bounds.origin.x) as i32,
-                    f32::from(bounds.origin.y) as i32,
-                    f32::from(bounds.size.width) as i32,
-                    f32::from(bounds.size.height) as i32,
-                ),
-                None => eprintln!("S1_MENU_BOUNDS id={} state=pending", MENUS[index].id),
-            }
-            bar.popup = Some(popup);
-        }
-        if let Some(popup) = bar.popup.clone() {
-            let rem = window.rem_size();
-            wrapper = wrapper.children(popup_for(popup, bar.trigger_bounds_of(index), rem));
+    // 刚打开的那一次，把触发器的几何报出去。
+    if bar.bounds_pending == Some(index) {
+        if let Some(bounds) = bar.trigger_bounds_of(index) {
+            eprintln!(
+                "S1_MENU_BOUNDS id={} x={} y={} w={} h={}",
+                MENUS[index].id,
+                f32::from(bounds.origin.x) as i32,
+                f32::from(bounds.origin.y) as i32,
+                f32::from(bounds.size.width) as i32,
+                f32::from(bounds.size.height) as i32,
+            );
+            bar.bounds_pending = None;
         }
     }
-    wrapper
-}
 
-fn popup_for(
-    popup: Entity<PopupMenu>,
-    bounds: Option<Bounds<Pixels>>,
-    rem: Pixels,
-) -> Option<impl IntoElement> {
-    let bounds = bounds?;
-    Some(
-        deferred(
-            Positioner::side(bounds)
-                .placement(Placement::Bottom)
-                .align(Align::Start)
-                .offset(crate::rem_px(rem, PANEL_OFFSET_SPEC))
-                .margin(crate::rem_px(rem, PANEL_WINDOW_MARGIN_SPEC))
-                .occlude()
-                .child(popup),
-        )
-        .with_priority(1),
+    let item = TriggerMenu::new(
+        ("lithe-menu-item", index),
+        panel,
+        move |open, _window, cx| trigger(index, open, cx),
     )
+    .open(Some(open))
+    .on_toggle(move |open, cx| {
+        let _ = handle.update(cx, |bar, cx| {
+            if open {
+                if bar.selected != Some(index) {
+                    bar.selected = Some(index);
+                    bar.compact_visible = false;
+                    bar.bounds_pending = Some(index);
+                    diagnose_open(MENUS[index].id);
+                    bar.notify_shell(cx);
+                }
+            } else {
+                bar.menu_closed(index, cx);
+            }
+        });
+    })
+    .aria_label(MENUS[index].label());
+
+    // 触发器的位置：库只在绘制期知道，宿主得靠它量出来（`Measure` 报一次变一次）。
+    Measure::new(
+        ("lithe-menu-measure", index),
+        move |bounds, _window, cx: &mut App| {
+            let _ = measure_handle.update(cx, |bar, _| {
+                if let Some(slot) = bar.trigger_bounds.get_mut(index) {
+                    *slot = Some(bounds);
+                }
+            });
+        },
+    )
+    .flex_shrink_0()
+    .child(item)
+    .into_any_element()
 }
 
-fn build_popup(
-    bar: &MenuBar,
-    index: usize,
-    window: &mut Window,
-    cx: &mut Context<MenuBar>,
-) -> Entity<PopupMenu> {
+/// 一个顶层菜单的面板。主题那一行是子菜单，没有主题可选时整行不出现。
+fn build_menu(index: usize, cx: &mut App) -> Menu {
     let items = MENUS[index].items;
-    let action_context = bar.action_context.clone();
     let handle = handle();
+    let names = lithe_gpui_settings::theme::theme_names(cx);
+    let themes = (!names.is_empty()).then(|| theme_menu(names));
 
-    PopupMenu::build(window, cx, move |popup, window, cx| {
-        let rem = window.rem_size();
-        let popup = popup
-            .action_context(action_context.clone())
-            .min_w(crate::rem_px(rem, PANEL_MIN_WIDTH_SPEC));
-
-        let names = lithe_gpui_settings::theme::theme_names(cx);
-        let theme_menu = (!names.is_empty()).then(|| theme_menu(names, window, cx));
-
-        let mut popup = popup;
-        for item in items {
-            popup = match item {
-                MenuItem::Separator => popup.separator(),
-                MenuItem::Action(action) => {
-                    let action = *action;
-                    let item_handle = handle.clone();
-                    let mut item =
-                        PopupMenuItem::new(action.label()).icon(action.icon(cx.theme().is_dark()));
-                    if let Some(bound) = action.keybind_action() {
-                        item = item.action(bound);
-                    }
-                    popup.item(item.on_click(
-                        move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                            let _ = item_handle.update(cx, |bar, cx| bar.push_run(action, cx));
-                        },
-                    ))
+    let mut menu = Menu::new().width(rems(PANEL_MIN_WIDTH_SPEC / 16.));
+    for item in items {
+        menu = match item {
+            MenuItem::Separator => menu.separator(),
+            MenuItem::Action(action) => {
+                let action = *action;
+                let row_handle = handle.clone();
+                let mut row = MenuRow::new(action.label());
+                if let MenuIcon::Idea(icon) = action.icon() {
+                    row = row.icon_element(icon_element(icon));
                 }
-                MenuItem::NotWired {
-                    label_key,
-                    missing,
-                    icon,
-                } => {
-                    let label_key = *label_key;
-                    let missing = *missing;
-                    let icon = match *icon {
-                        MenuIcon::Idea(i) => idea_icon_mono(i, cx.theme().is_dark()),
-                        MenuIcon::Lucide(name) => Icon::new(name),
-                    };
-                    let item_handle = handle.clone();
-                    popup.item(PopupMenuItem::new(tr(label_key)).icon(icon).on_click(
-                        move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                            let _ = item_handle
-                                .update(cx, |bar, cx| bar.push_not_wired(label_key, missing, cx));
-                        },
-                    ))
+                if let Some(keys) = action.menu_key() {
+                    row = row.keys(keys);
                 }
-                MenuItem::Theme => match &theme_menu {
-                    Some(submenu) => popup.item(PopupMenuItem::submenu(
-                        tr("lithe.menu.theme"),
-                        submenu.clone(),
-                    )),
-                    None => popup,
-                },
-            };
-        }
-        popup
-    })
+                menu.item(row.on_click(move |_window, cx| {
+                    let _ = row_handle.update(cx, |bar, cx| bar.push_run(action, cx));
+                }))
+            }
+            MenuItem::NotWired {
+                label_key,
+                missing,
+                icon,
+            } => {
+                let label_key = *label_key;
+                let missing = *missing;
+                let row_handle = handle.clone();
+                let mut row = MenuRow::new(tr(label_key));
+                if let MenuIcon::Idea(icon) = *icon {
+                    row = row.icon_element(icon_element(icon));
+                }
+                menu.item(row.on_click(move |_window, cx| {
+                    let _ = row_handle.update(cx, |bar, cx| {
+                        bar.push_not_wired(label_key, missing, cx)
+                    });
+                }))
+            }
+            MenuItem::Theme => match &themes {
+                Some(submenu) => {
+                    menu.item(MenuRow::submenu(tr("lithe.menu.theme"), submenu.clone()))
+                }
+                None => menu,
+            },
+        };
+    }
+    menu
 }
 
-fn theme_menu(names: Vec<String>, window: &mut Window, cx: &mut App) -> Entity<PopupMenu> {
-    PopupMenu::build(window, cx, move |popup, window, cx| {
-        let rem = window.rem_size();
-        let mut popup = popup.min_w(crate::rem_px(rem, PANEL_MIN_WIDTH_SPEC));
-        for name in names {
-            let label: SharedString = name.clone().into();
-            let value: SharedString = name.into();
-            popup = popup.item(
-                PopupMenuItem::new(label)
-                    .icon(idea_icon_mono(&idea::PALETTE_ICON, cx.theme().is_dark()))
-                    .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                        apply_theme_choice(value.to_string(), cx);
-                    }),
-            );
-        }
-        popup
-    })
+fn theme_menu(names: Vec<String>) -> Menu {
+    let mut menu = Menu::new().width(rems(PANEL_MIN_WIDTH_SPEC / 16.));
+    for name in names {
+        let label: SharedString = name.clone().into();
+        let value: SharedString = name.into();
+        menu = menu.item(
+            MenuRow::new(label)
+                .icon_element(icon_element(&idea::PALETTE_ICON))
+                .on_click(move |_window, cx| apply_theme_choice(value.to_string(), cx)),
+        );
+    }
+    menu
+}
+
+/// 菜单行里的图标槽：本仓那张图，深浅等画的时候再问主题。
+fn icon_element(icon: &'static idea::IdeaIcon) -> impl Fn(&App) -> AnyElement + 'static {
+    move |cx: &App| idea_icon_mono(icon, cx.theme().is_dark()).into_any_element()
 }
 
 #[cfg(test)]
@@ -1833,13 +1781,18 @@ mod tests {
             (MenuAction::Copy, "lithe.menu.copy", true),
             (MenuAction::Paste, "lithe.menu.paste", true),
             (MenuAction::SelectAll, "lithe.menu.selectAll", true),
-            (MenuAction::Find, "lithe.menu.find", true),
+            // 这三条**没有可派发的 Action**，所以菜单上不画键位胶囊：
+            // 「查找」「在文件中替换」要等编辑器的 FindWidget 接进 `EditorPane`
+            // （现在那个入口还不存在，见 `apply_menu_action`）；「快速修复」由外壳
+            // 直接调 `EditorPane::show_code_actions`，不走 `dispatch_action`。
+            // 宁可不画，也不画一颗按不出的键。
+            (MenuAction::Find, "lithe.menu.find", false),
             (
                 MenuAction::FindAndReplace,
                 "lithe.menu.findAndReplace",
-                true,
+                false,
             ),
-            (MenuAction::QuickFix, "lithe.menu.quickFix", true),
+            (MenuAction::QuickFix, "lithe.menu.quickFix", false),
             (
                 MenuAction::ToggleActivitySidebar,
                 "lithe.menu.toggleActivitySidebar",

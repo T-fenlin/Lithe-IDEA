@@ -7,7 +7,6 @@ publish = false
 [dependencies]
 # gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
-# 不再有 gpui-kit：本 crate 是第 7 个摘掉它的（terminal / editor 之后，workbench 整体之前）。
 # 自己的组件库：窗口根宿主与对话框（门 G1 起，丢弃改动确认框走 `lithe_ui::shell::WindowRootExt`）、
 # 按钮 / 输入框 / 菜单 / 空状态 / 转圈 / 提示。
 # gpui-pre 的版本由 lithe-ui 精确钉住，这里不重复声明。

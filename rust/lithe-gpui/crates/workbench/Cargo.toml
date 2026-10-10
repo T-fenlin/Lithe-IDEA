@@ -7,10 +7,8 @@ publish = false
 [dependencies]
 # gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
-gpui-kit = "=0.7.1"
-# 自己的组件库：外壳的窗格框架 / 分隔条 / 拖动 / 尺寸持久化已从 gpui-kit 的
-# `resize_handle` 换成 `lithe_gpui::layout::Dock`（组件 crate 直接建在 gpui-pre
-# 之上，与 gpui-kit 共享同一个 gpui-pre 实例，两边类型可直接互传）。
+# 自己的组件库：外壳的窗格框架 / 分隔条 / 拖动 / 尺寸持久化都在这里，组件 crate 直接建在
+# gpui-pre 之上，与宿主共享同一个 gpui-pre 实例，两边类型可直接互传。
 lithe-ui = { path = "../../../lithe-ui" }
 lithe-gpui-editor = { path = "../editor" }
 # 扩展目录的状态层（`src/extensions_page.rs` 的数据源）：`load_catalog` 走 Core 的
@@ -41,16 +39,14 @@ lithe-gpui-terminal = { path = "../terminal" }
 serde_json = "1"
 base64 = "0.22"
 
-# UI 集成测试层（`D26`）：`tests/` 下的测试把**真实视图**渲染进无头窗口，用
-# `window.find/click/input` 这套观察接口断言。它由 `gpui-kit` 的 `test-support`
-# feature 提供，而那个 feature **只能从 dev-dependency 打开**，否则生产制品也会被
-# 装上观察包装（上游 `test.md` §配置测试项目 明说"将 test-support 放在开发依赖中，
-# 让普通应用构建不启用观察功能"）。
-#
-# 版本必须与上面的 `gpui-kit = "=0.7.1"` 解析到同一个来源与版本，feature 才会合并；
-# 这也是 §配置测试项目 强调的"普通 gpui-kit 依赖必须解析到相同来源和版本"。
+# UI 集成测试层（`D26`）：`tests/` 下的测试把**真实视图**渲染进无头窗口，断言改从
+# gpui 自己的 debug selector 读（`.debug_selector` + `VisualTestContext::debug_bounds`），
+# 不再需要任何"观察包装"依赖：生产制品与测试跑的是同一套渲染。
 [dev-dependencies]
-gpui-kit = { version = "=0.7.1", features = ["test-support"] }
+# `TestAppContext` / `VisualTestContext` / `#[gpui::test]` 都在 gpui 的 `test-support`
+# feature 后面。这个 feature **只能从 dev-dependency 打开**，否则生产制品也会被装上
+# 测试用的观察接口（上游 `test.md` §配置测试项目 就是这条口径）。
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker", "test-support"] }
 # 集成测试直接引用**真实视图类型**。`EditorPane` 已经是 workbench 的普通依赖
 # （`lithe-gpui-editor`，见上面的 `[dependencies]`），但 workbench **不 re-export**
 # 它（它的公开面只有 `ShellWorkspace` 与几个渲染函数）。生产代码不该为一个测试

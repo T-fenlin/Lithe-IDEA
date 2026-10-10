@@ -63,7 +63,7 @@ pub(crate) enum Spot {
     At(Point<Pixels>),
 }
 
-/// A host's menu: where it hangs, its open levels root first, the host's box, the box it hangs under, and the focus to hand back.
+/// A host's menu: where it hangs, its open levels root first, the host's box, the box it hangs under, the focus to hand back, and who to tell when the library itself changes that.
 #[derive(Default)]
 pub(crate) struct Open {
     spot: Option<Spot>,
@@ -71,11 +71,26 @@ pub(crate) struct Open {
     host: Bounds<Pixels>,
     anchor: Bounds<Pixels>,
     takeover: Option<Entity<Takeover>>,
+    /// 库自己把开合改了时回报宿主（见 [`super::TriggerMenu::on_toggle`]）。
+    /// 所有者自己驱动的那次不回报 —— 它本来就知道。
+    report: Option<Rc<dyn Fn(bool, &mut App)>>,
+}
+
+/// Tells the host the open state changed; a host that asked for no report hears nothing.
+fn report_open(state: &Entity<Open>, open: bool, cx: &mut App) {
+    if let Some(report) = state.read(cx).report.clone() {
+        report(open, cx);
+    }
 }
 
 impl Open {
     pub(crate) fn is_open(&self) -> bool {
         self.spot.is_some()
+    }
+
+    /// 挂上回报口径；每帧重挂一次（`Open` 活在窗口的键控状态里，宿主元素每帧新建）。
+    pub(crate) fn report(&mut self, report: Option<Rc<dyn Fn(bool, &mut App)>>) {
+        self.report = report;
     }
 
     /// Hangs the menu under `anchor`, kept current as its owner moves.
@@ -90,6 +105,28 @@ impl Open {
 
     /// Opens at `spot`, with the first row marked when `marked`.
     pub(crate) fn show(state: &Entity<Open>, menu: &Menu, spot: Spot, marked: bool, cx: &mut App) {
+        Self::open_at(state, menu, spot, marked, true, cx);
+    }
+
+    /// 所有者自己驱动的那次打开：不回报（它本来就知道）。
+    pub(crate) fn show_silently(
+        state: &Entity<Open>,
+        menu: &Menu,
+        spot: Spot,
+        marked: bool,
+        cx: &mut App,
+    ) {
+        Self::open_at(state, menu, spot, marked, false, cx);
+    }
+
+    fn open_at(
+        state: &Entity<Open>,
+        menu: &Menu,
+        spot: Spot,
+        marked: bool,
+        report: bool,
+        cx: &mut App,
+    ) {
         let first = menu.step(None, 1).filter(|_| marked);
         state.update(cx, |open, cx| {
             open.spot = Some(spot);
@@ -99,6 +136,9 @@ impl Open {
             }];
             cx.notify();
         });
+        if report {
+            report_open(state, true, cx);
+        }
     }
 
     /// Starts over on new rows with the first marked; the menu stays where it hangs.
@@ -115,6 +155,15 @@ impl Open {
 
     /// Closes and hands focus back to whatever held it before the menu opened.
     pub(crate) fn close(state: &Entity<Open>, window: &mut Window, cx: &mut App) {
+        Self::shut(state, window, true, cx);
+    }
+
+    /// 所有者自己驱动的那次关闭：不回报（它本来就知道）。
+    pub(crate) fn close_silently(state: &Entity<Open>, window: &mut Window, cx: &mut App) {
+        Self::shut(state, window, false, cx);
+    }
+
+    fn shut(state: &Entity<Open>, window: &mut Window, report: bool, cx: &mut App) {
         let takeover = state.update(cx, |open, cx| {
             open.spot = None;
             open.levels.clear();
@@ -123,6 +172,9 @@ impl Open {
         });
         if let Some(takeover) = takeover {
             give_back(&takeover, window, cx);
+        }
+        if report {
+            report_open(state, false, cx);
         }
     }
 }

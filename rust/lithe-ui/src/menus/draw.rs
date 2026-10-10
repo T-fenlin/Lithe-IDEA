@@ -43,6 +43,17 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
         Kind::Radio(true) => (Some(IconName::Dot), fg),
         _ => (item.icon, if item.disabled { fg } else { colors.fg_muted }),
     };
+    // 图标槽：调用方自画的元素优先（宿主自己的图标集，见 `MenuItem::icon_element`），
+    // 其次是上面的库图标；槽位尺寸两种都一样，行不会跳。
+    let lead = match &item.leading {
+        Some(build) => Some(build(cx)),
+        None => lead.map(|icon| {
+            Icon::new(icon)
+                .size(IconSize::Sm)
+                .color(lead_color)
+                .into_any_element()
+        }),
+    };
     div()
         .id(("row", ix))
         .relative()
@@ -62,9 +73,7 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
                 .items_center()
                 .justify_center()
                 .size(theme.icon_size(IconSize::Sm))
-                .when_some(lead, |slot, icon| {
-                    slot.child(Icon::new(icon).size(IconSize::Sm).color(lead_color))
-                }),
+                .children(lead),
         )
         .child(
             div()

@@ -30,9 +30,8 @@ fn activity_bar_item_measures_the_macos_item_box(cx: &mut TestAppContext) {
         })
     });
 
-    // 断言改从 gpui 自己的 debug selector 读（`.debug_selector` 记进 `rendered_frame.debug_bounds`）：
-    // 上游那套 `TestSupportExt` 观察包装随 gpui-kit 一并退场，补一帧用 gpui 原生的
-    // `refresh` + `draw(..).clear(..)`（正是 `TestWindowExt::render_frame` 的实现）。
+    // 断言从 gpui 自己的 debug selector 读（`.debug_selector` 记进
+    // `rendered_frame.debug_bounds`）：先补一帧 `refresh` + `draw(..).clear(..)`。
     let mut window = gpui::VisualTestContext::from_window(handle.into(), cx);
     window.update(|window, cx| {
         window.refresh();

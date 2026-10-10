@@ -76,6 +76,8 @@ pub(crate) fn menu_under(
 /// 自己决定箭头朝哪边；库只负责把这个元素挂在菜单上面。
 ///
 /// 面板宽度/高度跟着 [`Menu`]（见 [`Menu::width`] / [`Menu::max_height`]）。
+/// 开合默认由库管（点触发器开、点外面或 Esc 关）；一排触发器里只有一个该开着、
+/// 还要跟着 hover 换的那种所有者走 [`Self::open`] + [`Self::on_toggle`] 的受控模式。
 #[derive(IntoElement)]
 pub struct TriggerMenu {
     id: ElementId,
@@ -83,6 +85,10 @@ pub struct TriggerMenu {
     trigger: Box<dyn FnOnce(bool, &mut Window, &App) -> AnyElement>,
     /// 所有者按编号请求打开（程序化路径：快捷键、探针）。
     manual: Option<u64>,
+    /// 受控模式：所有者说开还是关；`None` = 库自己管。
+    controlled: Option<bool>,
+    /// 库自己改了开合时回报给谁。
+    report: Option<Rc<dyn Fn(bool, &mut App)>>,
     /// 触发器的可访问名；不给就用调用方画出来的内容当名字。
     aria_label: Option<SharedString>,
 }
@@ -98,8 +104,27 @@ impl TriggerMenu {
             menu,
             trigger: Box::new(trigger),
             manual: None,
+            controlled: None,
+            report: None,
             aria_label: None,
         }
+    }
+
+    /// 开合由所有者说了算：`Some(true)` 让库去开，`Some(false)` 让它关。
+    ///
+    /// 与 [`Self::manual`] 一样是**所有者驱动**的那次，因此不触发 [`Self::on_toggle`] ——
+    /// 所有者本来就知道自己按了什么。
+    pub fn open(mut self, open: Option<bool>) -> Self {
+        self.controlled = open;
+        self
+    }
+
+    /// 库自己把开合改了时叫一次（点外面、Esc、选中一行）。
+    ///
+    /// 受控模式的所有者用它把自己的状态对齐：面板关掉这件事库不通知就没别人知道了。
+    pub fn on_toggle(mut self, handler: impl Fn(bool, &mut App) + 'static) -> Self {
+        self.report = Some(Rc::new(handler));
+        self
     }
 
     pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
@@ -125,9 +150,22 @@ impl RenderOnce for TriggerMenu {
             if *asked.read(cx) != Some(number) {
                 asked.update(cx, |asked, _| *asked = Some(number));
                 log::info!("trigger menu {:?}: asked to open (#{number})", self.id);
-                Open::show(&state, &self.menu, Spot::Under, false, cx);
+                Open::show_silently(&state, &self.menu, Spot::Under, false, cx);
             }
         }
+        // 受控模式：把库里的状态对齐到所有者要的那样。这一步是所有者驱动的，不回报。
+        if let Some(want) = self.controlled {
+            let open = state.read(cx).is_open();
+            if want != open {
+                if want {
+                    Open::show_silently(&state, &self.menu, Spot::Under, false, cx);
+                } else {
+                    Open::close_silently(&state, window, cx);
+                }
+            }
+        }
+        // 回报口径每帧重挂：`Open` 活在窗口的键控状态里，而本元素每帧新建。
+        state.update(cx, |open, _| open.report(self.report.clone()));
         let open = state.read(cx).is_open();
         let click = toggle(&state, &self.menu, cx);
         let trigger = (self.trigger)(open, window, cx);

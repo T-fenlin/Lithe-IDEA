@@ -29,7 +29,7 @@ pub fn bundled_theme_files() -> impl Iterator<Item = (&'static str, &'static str
 ///
 /// 组件库的 [`Mode`](lithe_ui::theme::Mode) 没有 `Deserialize`，主题文件里那一栏又是字符串
 /// （`"light"` / `"dark"`），所以宿主自持一个可反序列化的模式类型，落到组件库时再换算。
-/// 这是本 crate 与 gpui-kit 脱钩的一部分：主题文件的读法归宿主。
+/// 主题文件的读法归宿主，不借任何组件栈自带的那套。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemeMode {
@@ -76,8 +76,8 @@ struct ThemeRecord {
 
 /// 当前生效的主题名（宿主的真源）。
 ///
-/// 过渡期 `workbench` 靠它把主题喂给 gpui-kit 的主题全局（那是 gpui-kit 组件唯一的
-/// 颜色来源）；等 gpui-kit 组件清零，这个全局与它的消费者一起删。
+/// 换主题、探主题（诊断 / `--theme-probe`）都以它为真源，组件库那边的全局由本 crate
+/// 统一写，宿主其它地方不再各记一份。
 #[derive(Default, Debug)]
 pub struct ActiveTheme(pub Option<SharedString>);
 
@@ -315,9 +315,8 @@ fn locate_theme(name: &str) -> Option<ThemeRecord> {
 
 /// 含 `name` 这条主题的那份主题文档原文。
 ///
-/// 过渡期给 `workbench` 用：它把这份原文交给 gpui-kit 自己的 `ThemeConfig` 反序列化，
-/// 于是喂给 gpui-kit 组件的颜色与主题文件**逐键一致**（不是从宿主 Palette 近似还原，
-/// 那样会丢掉 `button.hover.background` / `tab.active.background` 这类组件专用键）。
+/// 交出去的是原文而不是还原后的调色板，于是**逐键无损**：需要查某一栏原始取值
+/// （`button.hover.background` / `tab.active.background` 这类）时读的就是主题文件本身。
 pub fn theme_document_for(name: &str) -> Option<String> {
     theme_documents().into_iter().find(|document| {
         serde_json::from_str::<ThemeSet>(document)
@@ -337,8 +336,7 @@ fn parse_color(value: &str) -> Option<Hsla> {
 
 /// 一条主题 → 组件库调色板。
 ///
-/// 重建的就是原先 `workbench/component_theme.rs` 那条「gpui-kit 主题 → 组件库调色板」
-/// 的映射，只是改成从主题文件的原始键直取：`bg`/`surface`←`background`、
+/// 从主题文件的原始键直取到组件库调色板：`bg`/`surface`←`background`、
 /// `sunken`←`muted.background`、`overlay`←`popover.background`、`hover`←`list.hover.background`、
 /// `active`←`list.active.background`、`focus`/`link`←`ring`、`selection`←`sidebar.accent.background`
 /// …… 没给的栏保留组件库自己的默认值。
@@ -431,9 +429,8 @@ fn palette_for(record: &ThemeRecord) -> Palette {
 
 /// 主题列表的展示顺序：浅色在前、深色在后，同类按名字不分大小写。
 ///
-/// 沿用 gpui-kit 注册表 `sorted_themes()` 的相对次序（它多一档 `is_default` 优先，
-/// 宿主的主题文件没有这一栏），于是主题菜单与 `--theme-probe <下标>` 的次序只在
-/// 「少了 gpui-kit 自带那两条 Default 主题」这一点上不同。
+/// 次序只由宿主自己的主题索引决定（主题文件没有 `is_default` 这一栏），于是主题菜单
+/// 与 `--theme-probe <下标>` 看到的是同一份顺序。
 fn sorted_entries() -> Vec<ThemeEntry> {
     let mut entries = theme_index().entries().to_vec();
     entries.sort_by(|a, b| {
@@ -500,8 +497,7 @@ pub fn watch_lithe_themes(cx: &mut App) {
 
 /// 盯住主题目录：文件一改就重新应用当前主题。
 ///
-/// 这一段原先寄生在 gpui-kit 的 `ThemeRegistry::watch_dir` 上；组件库没有「主题目录」
-/// 这一说，所以宿主自持（`notify` 与 `async-channel` 本来就在本 crate 的依赖里，见
+/// 组件栈没有「主题目录」这一说，所以宿主自持（`notify` 与 `async-channel` 本来就在本 crate 的依赖里，见
 /// `Cargo.toml`——它们不引入任何新的第三方代码，只是从传递依赖升成直接依赖）。
 fn watch_themes_dir(cx: &mut App, dir: PathBuf) {
     let (sender, receiver) = async_channel::bounded::<()>(16);
@@ -568,9 +564,8 @@ pub fn apply_theme_by_id(cx: &mut App, id: &str) -> bool {
 
 /// 按名字应用主题：把主题文件的颜色落成组件库调色板，写进**组件库的主题全局**。
 ///
-/// 从这一版起，宿主主题的真源是 `lithe_ui::theme::Theme`，不再是 gpui-kit 的 `Theme`：
-/// 后者只剩「gpui-kit 组件自己的颜色来源」这一个用途，由 `workbench` 侧一段过渡适配
-/// 依据本函数记下的活动主题名重新喂进去（见 `workbench/component_theme.rs`）。
+/// 宿主主题的真源只有一个：`lithe_ui::theme::Theme`。本函数记下活动主题名，颜色与字体
+/// 都往那一个全局写。
 pub fn apply_theme_by_name(cx: &mut App, name: &str) -> bool {
     let Some(record) = locate_theme(name) else {
         eprintln!("S1_THEME missing name={name}");
@@ -598,8 +593,7 @@ pub fn apply_theme_by_name(cx: &mut App, name: &str) -> bool {
 ///
 /// 组件库组件读的是 `lithe_ui::theme::Theme` 的 `font_family` / `mono_family` / `font_size` /
 /// `mono_font_size`；尺寸缩放的唯一锚点也是它的 `font_size`——`Theme::update` 会把新锚点
-/// 标到所有窗口的 rem 大小上。过渡期 `workbench` 再把这几个值同步给 gpui-kit 的主题，
-/// 免得两套字体各说各话。
+/// 标到所有窗口的 rem 大小上。
 pub fn apply_theme_font_size(cx: &mut App, ui_font_size: f64) {
     if !cx.has_global::<ComponentTheme>() {
         return;

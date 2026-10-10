@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Div, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, RenderOnce, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
-    WindowControlArea, div, prelude::*,
+    ParentElement, RenderOnce, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    TitlebarOptions, Window, WindowControlArea, WindowOptions, div, prelude::*,
 };
 use smallvec::SmallVec;
 
@@ -308,6 +308,24 @@ pub struct TitleBar {
 }
 
 impl TitleBar {
+    /// 画 [`TitleBar`] 的窗口要用哪套窗口选项。
+    ///
+    /// 标题栏是本库自己画的（不是系统的），所以窗口得是「透明标题栏」：平台让出那一条，
+    /// 内容从窗口顶边开始画。拖拽也归标题栏自己（`drag_region` 调 `start_window_move`），
+    /// 因此 `app_owns_titlebar_drag` 必须开——否则平台再把它当系统拖拽区，双击最大化
+    /// 与单击都会先被系统吃掉一轮。
+    pub fn window_options(cx: &App) -> WindowOptions {
+        WindowOptions {
+            titlebar: Some(TitlebarOptions {
+                title: None,
+                appears_transparent: true,
+                traffic_light_position: Some(cx.theme().traffic_light_origin()),
+            }),
+            app_owns_titlebar_drag: true,
+            ..Default::default()
+        }
+    }
+
     /// On macOS the system draws the traffic lights; the bar leaves them room.
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {

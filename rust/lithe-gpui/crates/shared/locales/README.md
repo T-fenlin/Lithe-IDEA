@@ -1,6 +1,6 @@
-# GPUI Kit 界面文案资源（由 Windows 前端提取）
+# 界面文案资源（由 Windows 前端提取）
 
-本目录是 `lithe-gpui/shell`（GPUI Kit 桌面外壳）的 rust-i18n 资源目录。文件内容**全部由脚本从
+本目录是 `lithe-gpui`（Lithe 桌面外壳）的 rust-i18n 资源目录。文件内容**全部由脚本从
 Windows 前端的文案真源提取生成**，不手工维护；改文案请改真源后重新生成，或直接改 GPUI 侧的新真源并把
 `windows/` 前端整体删除（见文末「提取完成后是否需要保留真源」）。
 
@@ -8,7 +8,7 @@ Windows 前端的文案真源提取生成**，不手工维护；改文案请改�
 
 | 产物 | 内容 |
 | --- | --- |
-| `lithe.zh-CN.yml` | 4321 条 `lithe.*` 应用文案（真源 catalog）+ 13 条 gpui 侧自有 key + 2 条 `gpui_component.*` 覆盖（简体中文） |
+| `lithe.zh-CN.yml` | 4321 条 `lithe.*` 应用文案（真源 catalog）+ 13 条 gpui 侧自有 key + 2 条 `components.*` 覆盖（简体中文） |
 | `lithe.en.yml` | 同上（英文） |
 | 生成脚本 | `lithe-gpui/tools/extract-locale.mjs` |
 | 真源 | `crates/shared/locales/source/locale.ts`（`catalogs` 对象，内含 `"en-US"` 与 `"zh-CN"` 两套） |
@@ -47,16 +47,16 @@ node lithe-gpui/tools/extract-locale.mjs --check  # 只校验产物是否与真�
   `get_version()` 缺省返回 1（`rust-i18n-support-4.2.2/src/lib.rs:239-245`），`_version: 2` 走 `parse_file_v2`
   （`.../src/lib.rs:178-190`），它把 namespace（可多层嵌套）拼成点分平面 key 后按 locale 建表
   （`.../src/lib.rs:198-236`）。
-- **locale 键名**=`zh-CN` / `en`（写作 `yamlLocale`），与 `gpui_kit::component::set_locale("zh-CN")` 取值一致。
+- **locale 键名**=`zh-CN` / `en`（写作 `yamlLocale`），与 `lithe_ui::i18n::set_locale("zh-CN", cx)` 取值一致。
 - **文件名**：locale 由 `file_stem().split('.').last()` 推导（`.../src/lib.rs:129-133`）。本项目选用
   `lithe.<locale>.yml` 这种「namespace.locale.yml」写法，与 rust-i18n 自带示例
   `rust-i18n-4.2.2/examples/app/locales/view.en.yml` 一致：在 `_version: 2` 下文件名不参与解析，
   但若将来退回 `_version: 1`，文件名仍然是正确的 locale 来源。
-- **`gpui_component` namespace**：`gpui-component-0.6.6/locales/ui.yml:1-3` 就是 `_version: 2` + 顶层组件 namespace；
-  应用通过 `rust_i18n::extend!(gpui_component)` 把本目录同名 namespace 挂到组件后端上，应用值优先
+- **组件 namespace**：组件库自带一份 `_version: 2` + 顶层组件 namespace 的目录；
+  应用通过 `rust_i18n::extend!(...)` 把本目录同名 namespace 挂上去，应用值优先
   （`rust-i18n-4.2.2/src/lib.rs:199-219`、`rust-i18n-macro-4.2.2/src/lib.rs:358-378`）。
-- 应用侧接线（由主代理完成，不在本次提取范围）：crate root `rust_i18n::i18n!("locales", fallback = "en")`，
-  在 `gpui_kit::init(cx)` **之前**调用 `rust_i18n::extend!(gpui_component)`。
+- 应用侧接线：crate root `rust_i18n::i18n!("locales", fallback = "en")`，切语言调
+  `lithe_ui::i18n::set_locale(tag, cx)`（它内部就是 `rust_i18n::set_locale` + 刷窗口）。
 
 ## 4. key 布局与 namespace
 
@@ -65,15 +65,15 @@ _version: 2
 lithe:                       # ← 应用自己的顶层 namespace
   git.console.copyCommand:   # ← 原 key，前面统一加 lithe. 前缀
     zh-CN: "复制完整命令"
-gpui_component:        # ← 只用于覆盖 gpui-kit 组件内置文案
+components:            # ← 只用于覆盖组件库内置文案
   Dialog.ok:
     zh-CN: "确定"
 ```
 
-- Lithe 页面文案统一放在 **`lithe:`** namespace 下，不混入 `gpui_component:`；YAML 里的 key 是 `lithe.<原 key>`。
+- Lithe 页面文案统一放在 **`lithe:`** namespace 下，不混入 `components:`；YAML 里的 key 是 `lithe.<原 key>`。
 - 应用代码查找时必须带前缀：`t!("lithe.git.console.copyCommand")`（`extend!` 只改变组件查找**自身** key 的方式，
   应用调用不会因此读到组件内置文案）。
-- 之所以再加一层 `lithe:`（而不是把原 key 直接放顶层）：给应用文案一个稳定的归属，和 `gpui_component:`
+- 之所以再加一层 `lithe:`（而不是把原 key 直接放顶层）：给应用文案一个稳定的归属，和 `components:`
   覆盖段在同一文件里不混淆，也方便以后按产品/模块再挂新 namespace。
 
 ## 5. 占位符
@@ -83,7 +83,7 @@ gpui_component:        # ← 只用于覆盖 gpui-kit 组件内置文案
   （`crates/shared/locales/source/locale.ts:8765-8777`）。提取时**逐字保留**，未做任何改写。
 - ⚠️ 接线注意：`rust_i18n::t!` 自己的插值只识别 **`%{name}`**（`rust-i18n-4.2.2/src/lib.rs:45-91` 的
   `replace_patterns` 要求 `%` 前缀；宏在 `rust-i18n-macro-4.2.2/src/tr.rs:455` 调用它）。
-  gpui-kit 组件内置文案用的也是 `%{}`（`gpui-component-0.6.6/locales/ui.yml:349`）。
+  组件库内置文案用的也是 `%{}`。
   因此外壳需要一个薄封装（例如 `t(key, args)`：先 `rust_i18n::t!(...)` 再按 `{name}` 替换），
   否则 `{count}` 会原样显示。
 - 英文有 7 条 key 额外带 `{plural}` 占位符，值由调用点按单复数传入（如
@@ -92,14 +92,14 @@ gpui_component:        # ← 只用于覆盖 gpui-kit 组件内置文案
   `git.localCommitsNotPushed`、`git.remoteCommitsNotPulled`、`git.diffFileCount`、`git.changedFilesCount`。
   这 7 条在 `en` 文件里保留 `{plural}`，接线时英文需要继续传该参数（脚本每次运行会列出这处差异）。
 
-## 6. `gpui_component:` 覆盖段
+## 6. `components:` 覆盖段
 
 本目录只放了 2 条，都是「Lithe 文案与 gpui-component 内置文案同义、且中英文逐字一致」的对话框按钮：
 
 | key | 取值来源 | 内置值（gpui-component 0.6.6） |
 | --- | --- | --- |
-| `gpui_component.Dialog.ok` | `ui.ok`（OK / 确定） | `ui.yml:225-230` = OK / 确定 |
-| `gpui_component.Dialog.cancel` | `ui.cancel`（Cancel / 取消） | `ui.yml:231-236` = Cancel / 取消 |
+| `components.Dialog.ok` | `ui.ok`（OK / 确定） | `ui.yml:225-230` = OK / 确定 |
+| `components.Dialog.cancel` | `ui.cancel`（Cancel / 取消） | `ui.yml:231-236` = Cancel / 取消 |
 
 当前取值与上游一致，等于显式声明「Lithe 对话框按钮用这两个词」并挡住上游改词。引用不存在的真源 key 时脚本会直接报错。
 

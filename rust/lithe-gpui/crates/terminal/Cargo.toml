@@ -7,7 +7,6 @@ publish = false
 [dependencies]
 # gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
-# 自建组件库：输入框、按钮、空状态、标签条、转录滚动器都在这里。原先走 `gpui-kit`，
-# 2026-10-09 随本 crate 整片迁移去掉。
+# 自建组件库：输入框、按钮、空状态、标签条、转录滚动器都在这里。
 lithe-ui = { path = "../../../lithe-ui" }
 lithe-gpui-shared = { path = "../shared" }
