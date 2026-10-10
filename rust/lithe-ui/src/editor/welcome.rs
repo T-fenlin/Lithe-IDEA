@@ -240,6 +240,7 @@ impl RenderOnce for ProjectSwitcher {
                         } else {
                             IconName::Folder
                         }),
+                        icon_element: None,
                         label: marked(project.name.clone(), hits, cx),
                         detail: Some(
                             div()

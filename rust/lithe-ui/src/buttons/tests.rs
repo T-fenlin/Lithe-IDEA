@@ -1,6 +1,7 @@
 use gpui::{
-    Context, FocusHandle, IntoElement, KeyBinding, KeyUpEvent, Keystroke, Modifiers, ParentElement,
-    Render, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    Context, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyUpEvent, Keystroke,
+    Modifiers, ParentElement, Render, Styled, TestAppContext, VisualTestContext, Window, div,
+    point, px,
 };
 
 use super::{Button, ToggleButton, ToggleItem};
@@ -172,5 +173,34 @@ fn tab_skips_a_button_taken_out_of_the_order(cx: &mut TestAppContext) {
         view.read_with(cx, |order, _| order.reached),
         1,
         "Tab landed on the button after the skipped one"
+    );
+}
+
+/// 一个没有 label、只靠调用方自绘图标命名的开关（宿主活动栏那种图标按钮）。
+struct IconToggle;
+
+impl Render for IconToggle {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(ToggleButton::new(
+            "terminal",
+            ToggleItem::new("terminal").icon_element(|_| {
+                div()
+                    .size_4()
+                    .debug_selector(|| "toggle-icon-element".into())
+                    .into_any_element()
+            }),
+            true,
+        ))
+    }
+}
+
+#[gpui::test]
+fn a_toggle_shows_the_icon_element_it_is_given(cx: &mut TestAppContext) {
+    cx.update(Theme::init);
+    let (_, cx) = cx.add_window_view(|_, _| IconToggle);
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("toggle-icon-element").is_some(),
+        "宿主自带的图标元素画在开关里，且无 label 也成立"
     );
 }

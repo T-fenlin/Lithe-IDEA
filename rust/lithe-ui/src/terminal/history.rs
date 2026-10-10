@@ -87,6 +87,7 @@ impl RenderOnce for CommandHistory {
                         value: past.command.clone(),
                         name: past.command.clone(),
                         icon: Some(icon),
+                        icon_element: None,
                         label: marked(past.command.clone(), hits, cx),
                         detail: Some(
                             div()

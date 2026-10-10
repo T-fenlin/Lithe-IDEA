@@ -105,6 +105,8 @@ pub(crate) struct Row {
     /// The row's plain name, for assistive technology.
     pub name: SharedString,
     pub icon: Option<IconName>,
+    /// 调用方自带的图标，优先于 `icon`（由 `Command` / `Choice` 的 `icon_element` 现取）。
+    pub icon_element: Option<AnyElement>,
     pub label: AnyElement,
     pub detail: Option<AnyElement>,
     pub end: Option<AnyElement>,
@@ -277,9 +279,18 @@ impl Palette {
                             cx.stop_propagation();
                             pick(here, window, cx);
                         })
-                        .when_some(row.icon, |line, icon| {
-                            line.child(Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted))
-                        })
+                        .when_some(
+                            // 自有图标元素优先，库内 `IconName` 兜底。
+                            row.icon_element.or_else(|| {
+                                row.icon.map(|name| {
+                                    Icon::new(name)
+                                        .size(IconSize::Sm)
+                                        .color(colors.fg_muted)
+                                        .into_any_element()
+                                })
+                            }),
+                            |line, icon| line.child(icon),
+                        )
                         .child(
                             div()
                                 .flex()

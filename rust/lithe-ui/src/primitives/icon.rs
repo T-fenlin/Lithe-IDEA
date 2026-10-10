@@ -1,7 +1,9 @@
 use std::collections::HashSet;
+use std::fmt;
+use std::rc::Rc;
 
 use gpui::{
-    App, AssetSource, Global, Hsla, IntoElement, Radians, RenderOnce, SharedString,
+    AnyElement, App, AssetSource, Global, Hsla, IntoElement, Radians, RenderOnce, SharedString,
     StyleRefinement, Transformation, Window, prelude::*, size, svg,
 };
 
@@ -341,6 +343,39 @@ icons! {
     Zap => "zap",
     ZoomIn => "zoom-in",
     ZoomOut => "zoom-out",
+}
+
+/// 调用方自带的图标元素，交给本库画在它自己画图标的地方。
+///
+/// 与 [`IconName`] 的分工，同 `Button::icon_element`（`crate::buttons`）：库内图标走
+/// [`IconName`]，宿主自己的图标体系（自有资源集）走这里。存成**工厂**而不是元素本身，
+/// 是因为收它的类型（`forms::Choice`、`palette::Command`、`buttons::ToggleItem`）派生
+/// `Clone` —— `AnyElement` 不可克隆，工厂可以，每次渲染现取一个。
+#[derive(Clone)]
+pub struct IconElement(Rc<dyn Fn(&App) -> AnyElement>);
+
+impl IconElement {
+    pub fn new(build: impl Fn(&App) -> AnyElement + 'static) -> Self {
+        Self(Rc::new(build))
+    }
+
+    /// 现取一个可画的元素。
+    pub fn build(&self, cx: &App) -> AnyElement {
+        (self.0)(cx)
+    }
+}
+
+impl fmt::Debug for IconElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("IconElement(..)")
+    }
+}
+
+/// 只按身份比较：同一个工厂相等，两个不同的工厂不等（元素本身无法比较）。
+impl PartialEq for IconElement {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 #[derive(IntoElement)]

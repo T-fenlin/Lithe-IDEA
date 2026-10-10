@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
+    AnyElement, App, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::*,
 };
 
 use super::{
@@ -11,7 +12,7 @@ use super::{
 };
 use crate::{
     i18n,
-    primitives::{FocusRing, Icon, IconName, Tooltip},
+    primitives::{FocusRing, Icon, IconElement, IconName, Tooltip},
     theme::{ActiveTheme, Radius, Size},
 };
 
@@ -58,6 +59,8 @@ pub struct ToggleItem {
     value: SharedString,
     label: Option<SharedString>,
     icon: Option<IconName>,
+    /// 调用方自带的图标，优先于 `icon`；宿主自己的图标体系走这里（见 `IconElement`）。
+    icon_element: Option<IconElement>,
     tooltip: Option<SharedString>,
 }
 
@@ -67,6 +70,7 @@ impl ToggleItem {
             value: value.into(),
             label: None,
             icon: None,
+            icon_element: None,
             tooltip: None,
         }
     }
@@ -78,6 +82,12 @@ impl ToggleItem {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// 自有图标元素的入口；与 `icon` 同用时以本入口为准。
+    pub fn icon_element(mut self, build: impl Fn(&App) -> AnyElement + 'static) -> Self {
+        self.icon_element = Some(IconElement::new(build));
         self
     }
 
@@ -98,7 +108,7 @@ fn toggle_face(
     cx: &App,
 ) -> impl IntoElement + use<> {
     assert!(
-        item.label.is_some() || item.icon.is_some(),
+        item.label.is_some() || item.icon.is_some() || item.icon_element.is_some(),
         "toggle {} needs a label or an icon",
         item.value
     );
@@ -140,6 +150,11 @@ fn toggle_face(
                 .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                 .on_click(move |_, window, cx| press(window, cx)),
         })
+        .when_some(
+            // 自有图标元素优先，库内 `IconName` 兜底。
+            item.icon_element.as_ref().map(|slot| slot.build(cx)),
+            |face, icon| face.child(icon),
+        )
         .when_some(item.icon, |face, icon| {
             face.child(Icon::new(icon).size(icon_size).color(fg))
         })

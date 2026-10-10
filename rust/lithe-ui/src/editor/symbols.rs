@@ -286,6 +286,7 @@ impl RenderOnce for GoToSymbol {
                     value: symbol.line.to_string().into(),
                     name: symbol.name.clone(),
                     icon: Some(symbol.kind.icon()),
+                    icon_element: None,
                     label: marked(symbol.name.clone(), hits, cx),
                     detail,
                     end: Some(

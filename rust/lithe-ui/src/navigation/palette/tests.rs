@@ -1,8 +1,9 @@
 use std::ops::Range;
 
 use gpui::{
-    Context, FocusHandle, IntoElement, KeyBinding, KeyUpEvent, Keystroke, ParentElement, Render,
-    SharedString, TestAppContext, VisualTestContext, Window, prelude::*,
+    Context, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyUpEvent, Keystroke,
+    ParentElement, Render, SharedString, TestAppContext, VisualTestContext, Window, div,
+    prelude::*,
 };
 
 use super::{Command, CommandPalette, Fit, QuickOpen, QuickSwitcher, SearchPalette, fuzzy};
@@ -285,5 +286,35 @@ fn an_opening_palette_rises_in_the_box_its_scrim_centers(cx: &mut TestAppContext
     assert!(
         lift > gpui::px(0.0) && lift < crate::motion::NUDGE * 0.75,
         "the box grows with the rise, so the card starts half a nudge low: {lift:?}"
+    );
+}
+
+/// 一条命令带调用方自绘的图标元素（宿主自己的图标体系，不走库内 `IconName`）。
+struct IconPalette;
+
+impl Render for IconPalette {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        CommandPalette::new("icons", |_, _| {})
+            .group(
+                "View",
+                [Command::new("terminal", "Terminal").icon_element(|_| {
+                    div()
+                        .size_4()
+                        .debug_selector(|| "command-icon-element".into())
+                        .into_any_element()
+                })],
+            )
+            .into_any_element()
+    }
+}
+
+#[gpui::test]
+fn a_command_row_shows_the_icon_element_it_is_given(cx: &mut TestAppContext) {
+    setup(cx);
+    let (_, cx) = cx.add_window_view(|_, _| IconPalette);
+    settle(cx);
+    assert!(
+        cx.debug_bounds("command-icon-element").is_some(),
+        "宿主自带的图标元素画在命令行的行首"
     );
 }

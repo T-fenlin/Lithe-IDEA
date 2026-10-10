@@ -1,12 +1,14 @@
 use gpui::{
-    AppContext as _, Context, Entity, IntoElement, KeyUpEvent, Keystroke, Modifiers, ParentElement,
-    Render, SharedString, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, KeyUpEvent, Keystroke,
+    Modifiers, ParentElement, Render, SharedString, Styled, TestAppContext, VisualTestContext,
+    Window, div, point, px,
 };
 
 use super::setup;
 use crate::{
     forms::{
-        Checkbox, Choice, Combobox, InputState, MultiSelect, RadioGroup, Rating, Select, Slider,
+        Checkbox, Choice, Combobox, InputState, ListBox, MultiSelect, RadioGroup, Rating, Select,
+        Slider,
     },
     motion,
     theme::{ActiveTheme, Size, Theme},
@@ -478,5 +480,34 @@ fn a_long_choice_keeps_its_list_inside_the_window(cx: &mut TestAppContext) {
     assert!(
         list.left() >= px(0.0) && list.right() <= px(280.0),
         "{list:?}"
+    );
+}
+
+/// 一副只有「宿主自绘图标」的清单，用来证明 `Choice::icon_element` 会画出来。
+struct IconChoice;
+
+impl Render for IconChoice {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        ListBox::new(
+            "icons",
+            [Choice::new("a", "A").icon_element(|_| {
+                div()
+                    .size_4()
+                    .debug_selector(|| "choice-icon-element".into())
+                    .into_any_element()
+            })],
+        )
+        .selected(["a"])
+    }
+}
+
+#[gpui::test]
+fn a_choice_row_shows_the_icon_element_it_is_given(cx: &mut TestAppContext) {
+    setup(cx);
+    let (_, cx) = cx.add_window_view(|_, _| IconChoice);
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("choice-icon-element").is_some(),
+        "宿主自带的图标元素画在选项行首"
     );
 }

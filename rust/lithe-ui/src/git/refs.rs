@@ -111,6 +111,7 @@ impl RenderOnce for BranchSelector {
                     } else {
                         IconName::GitBranch
                     }),
+                    icon_element: None,
                     label: marked(branch.name.clone(), hits, cx),
                     detail: Some(
                         div()
@@ -160,6 +161,7 @@ impl RenderOnce for BranchSelector {
                         value: format!("{CREATE}{query}").into(),
                         name: create.clone(),
                         icon: Some(IconName::Plus),
+                        icon_element: None,
                         label: div().child(create).into_any_element(),
                         detail: None,
                         end: None,

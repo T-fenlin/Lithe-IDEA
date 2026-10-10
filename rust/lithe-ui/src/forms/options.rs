@@ -10,7 +10,7 @@ use gpui::{
 use crate::{
     data_display::Avatar,
     motion,
-    primitives::{Icon, IconName, raise},
+    primitives::{Icon, IconElement, IconName, raise},
     theme::{ActiveTheme, AvatarSize, Elevation, IconSize, Radius, Size, TextSize},
     typography::Ellipsis,
 };
@@ -21,6 +21,8 @@ pub struct Choice {
     pub value: SharedString,
     pub label: SharedString,
     pub icon: Option<IconName>,
+    /// 调用方自带的图标，优先于 `icon`；宿主自己的图标体系走这里（见 `IconElement`）。
+    pub icon_element: Option<IconElement>,
     pub avatar: Option<SharedString>,
     pub note: Option<SharedString>,
     pub disabled: bool,
@@ -33,6 +35,7 @@ impl Choice {
             value: value.into(),
             label: label.into(),
             icon: None,
+            icon_element: None,
             avatar: None,
             note: None,
             disabled: false,
@@ -48,6 +51,12 @@ impl Choice {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// 自有图标元素的入口；与 `icon` 同用时以本入口为准。
+    pub fn icon_element(mut self, build: impl Fn(&App) -> AnyElement + 'static) -> Self {
+        self.icon_element = Some(IconElement::new(build));
         self
     }
 
@@ -147,9 +156,22 @@ pub(crate) fn marked_row(
                     .w(theme.tree_indent() * choice.depth as f32),
             )
         })
-        .when_some(choice.icon, |row, icon| {
-            row.child(Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted))
-        })
+        .when_some(
+            // 自有图标元素优先，库内 `IconName` 兜底。
+            choice
+                .icon_element
+                .as_ref()
+                .map(|slot| slot.build(cx))
+                .or_else(|| {
+                    choice.icon.map(|name| {
+                        Icon::new(name)
+                            .size(IconSize::Sm)
+                            .color(colors.fg_muted)
+                            .into_any_element()
+                    })
+                }),
+            |row, icon| row.child(icon),
+        )
         .when_some(choice.avatar.clone(), |row, name| {
             row.child(Avatar::new((id, "avatar"), name).size(AvatarSize::Xs))
         })

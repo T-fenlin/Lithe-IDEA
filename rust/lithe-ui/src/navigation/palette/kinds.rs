@@ -1,12 +1,12 @@
 use std::{iter, ops::Range, rc::Rc};
 
-use gpui::{App, ElementId, IntoElement, RenderOnce, SharedString, Window};
+use gpui::{AnyElement, App, ElementId, IntoElement, RenderOnce, SharedString, Window};
 
 use super::{Fit, Group, Palette, Row, fuzzy, marked, query_field};
 use crate::{
     forms::{Choice, OnValue, Run},
     i18n,
-    primitives::IconName,
+    primitives::{IconElement, IconName},
     typography::{Highlight, KbdCombo},
 };
 
@@ -34,6 +34,8 @@ pub struct Command {
     pub value: SharedString,
     pub label: SharedString,
     pub icon: Option<IconName>,
+    /// 调用方自带的图标，优先于 `icon`；宿主自己的图标体系走这里（见 `IconElement`）。
+    pub icon_element: Option<IconElement>,
     pub keys: Option<SharedString>,
 }
 
@@ -43,12 +45,19 @@ impl Command {
             value: value.into(),
             label: label.into(),
             icon: None,
+            icon_element: None,
             keys: None,
         }
     }
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// 自有图标元素的入口；与 `icon` 同用时以本入口为准。
+    pub fn icon_element(mut self, build: impl Fn(&App) -> AnyElement + 'static) -> Self {
+        self.icon_element = Some(IconElement::new(build));
         self
     }
 
@@ -63,6 +72,7 @@ impl Command {
             value: self.value.clone(),
             name: self.label.clone(),
             icon: self.icon,
+            icon_element: self.icon_element.as_ref().map(|slot| slot.build(cx)),
             label: marked(self.label.clone(), hits, cx),
             detail: None,
             end: self
@@ -251,6 +261,7 @@ fn file_row(path: &SharedString, hits: &[Range<usize>], cx: &App) -> Row {
         value: path.clone(),
         name: path[name_at..].to_string().into(),
         icon: Some(IconName::File),
+        icon_element: None,
         label: marked(
             path[name_at..].to_string().into(),
             within(name_at, path.len()),
@@ -351,6 +362,7 @@ impl RenderOnce for QuickSwitcher {
             value: item.value.clone(),
             name: item.label.clone(),
             icon: item.icon,
+            icon_element: item.icon_element.as_ref().map(|slot| slot.build(cx)),
             label: marked(item.label.clone(), hits, cx),
             detail: None,
             end: item.note.clone().map(|note| note.into_any_element()),
@@ -455,6 +467,7 @@ impl SearchPalette {
                         value: result.value.clone(),
                         name: result.label.clone(),
                         icon: result.icon,
+                        icon_element: result.icon_element.as_ref().map(|slot| slot.build(cx)),
                         label: Highlight::matching(result.label, &query).into_any_element(),
                         detail: result
                             .note
