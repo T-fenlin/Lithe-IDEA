@@ -4503,7 +4503,6 @@ name = "lithe-gpui-settings"
 version = "0.0.1"
 dependencies = [
  "async-channel",
- "gpui-kit",
  "gpui-pre",
  "lithe-gpui-run",
  "lithe-gpui-shared",

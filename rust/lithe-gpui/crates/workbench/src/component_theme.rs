@@ -1,68 +1,85 @@
-//! 组件库主题与宿主主题的桥接。
+//! 过渡适配：把宿主主题喂给**仍在 gpui-kit 组件上的那一半**。
 //!
-//! `lithe-gpui` 的组件读的是**它自己的**主题全局（`lithe_ui::theme::Theme`），
-//! 而宿主的主题是 gpui-kit 的 `Theme`。两者不是同一份数据，所以外壳在启动时
-//! 装一次组件库主题，并把宿主的颜色映射进去，之后每次宿主换主题都重新映射。
-//! 不装的话组件一渲染就会 panic（`cx.theme()` 读不到全局）。
+//! 宿主主题的真源现在是组件库的 `lithe_ui::theme::Theme`——设置层
+//! （`crates/settings/src/theme.rs`）每次换主题都往它写。但 workbench 里还有一批
+//! gpui-kit 组件（`Icon` / `TitleBar` / `PopupMenuItem` / `Badge` / `Checkbox` / …），
+//! 它们只认 gpui-kit 自己的 `Theme` 全局，所以这台桥**反过来装**：观察组件库主题，
+//! 把当前主题喂给 gpui-kit。
 //!
-//! 映射是**保守**的：只覆盖组件真正读的、宿主也确实有的那些语义色；其余
-//! （渐变、图表、ANSI、语法色等）留给组件库自己的调色板。
+//! 喂法是**无损**的：不把组件库的 `Palette` 还原成 gpui-kit 的颜色（那会丢掉
+//! `button.hover.background` / `tab.active.background` / `table.head.foreground` 这类
+//! 组件专用键），而是拿设置层给出的**主题文件原文**交给 gpui-kit 自己的 `ThemeSet`
+//! 反序列化，再 `apply_config`——与迁移前逐键一致。
+//!
+//! 本文件是**临时代码**：workbench 全部迁到 lithe-ui、gpui-kit 组件清零那一天，
+//! 它连同 workbench 的 `gpui-kit` 依赖一起删。
 
-use gpui::App;
-use gpui_kit::component::ActiveTheme as _;
-use lithe_ui::theme::{Mode, Palette, Theme};
+use std::rc::Rc;
 
-/// 装上组件库主题，并让它跟随宿主的主题；由组合根（`app`）在启动时调用一次。
+use gpui::{App, px};
+use gpui_kit::component::{Theme as LegacyTheme, ThemeConfig as LegacyThemeConfig};
+use lithe_ui::theme::{ActiveTheme as _, Theme as ComponentTheme};
+
+/// 装上组件库主题，并让它带上 gpui-kit 的老消费者；由组合根（`app`）在启动时调用一次。
 pub fn install_component_theme(cx: &mut App) {
-    Theme::init(cx);
-    sync_component_theme(cx);
-    cx.observe_global::<gpui_kit::component::Theme>(|cx| sync_component_theme(cx))
+    ComponentTheme::init(cx);
+    // gpui-kit 的主题全局得先存在，下面的写入才有落点。正常路径里组合根已经调过
+    // `gpui_kit::init`（它同时初始化 `ThemeRegistry`），这里只为「只装主题、不跑
+    // 组合根」的集成测试兜底。
+    if !cx.has_global::<LegacyTheme>() {
+        gpui_kit::init(cx);
+    }
+    sync_legacy_theme(cx);
+    cx.observe_global::<ComponentTheme>(|cx| sync_legacy_theme(cx))
         .detach();
 }
 
-/// 把宿主当前的主题映射进组件库的主题。
-fn sync_component_theme(cx: &mut App) {
-    let host = cx.theme();
-    let mode = if host.is_dark() {
-        Mode::Dark
-    } else {
-        Mode::Light
+/// 把当前宿主主题（含字体）喂给 gpui-kit 的主题全局。
+fn sync_legacy_theme(cx: &mut App) {
+    // 字体以组件库主题为准：它的 `font_size` 是尺寸缩放的唯一锚点，两套字体不能各说各话。
+    let (font_family, mono_family, font_size, mono_font_size) = {
+        let theme = cx.theme();
+        (
+            theme.font_family.clone(),
+            theme.mono_family.clone(),
+            theme.font_size,
+            theme.mono_font_size,
+        )
     };
-    let mut palette = match mode {
-        Mode::Dark => Palette::dark(false),
-        Mode::Light => Palette::light(false),
-    };
-    // 面板与中央列用的是同一个底色（外壳原先也是这么画的），分隔线用宿主的边框色。
-    // chrome 槽（证据：	hemes/jetbrains.json 的 	ab_bar.background 与 	itle_bar.background 不同，	ab_bar 有 15 处渲染读点）
-    palette.tab_bar = host.tab_bar;
-    palette.title_bar = host.title_bar;
-    // 状态栏也是独立的 chrome 表面：同一份主题里 `status_bar.background` 亮 `#f2f2f2` / 暗 `#313335`，
-    // 既不是 `background`（亮 `#ffffff`）也不是 `tab_bar`；组件库的 `shell::StatusBar` 读这个槽。
-    palette.status_bar = host.status_bar;
-    palette.bg = host.background;
-    palette.surface = host.background;
-    palette.sunken = host.muted;
-    palette.overlay = host.popover;
-    palette.hover = host.list_hover;
-    // `active` 是组件库里「选中的那一行」的底色（`lists::Tree` / `lists::ProjectTree` 都用它），
-    // 宿主的对应色是 `list_active`；项目树改走组件库之后，选中行的底色仍然逐像素相同。
-    palette.active = host.list_active;
-    palette.border = host.border;
-    palette.border_strong = host.border;
-    palette.fg = host.foreground;
-    palette.fg_muted = host.muted_foreground;
-    palette.fg_subtle = host.muted_foreground;
-    palette.fg_disabled = host.muted_foreground.opacity(0.6);
-    palette.accent = host.accent;
-    palette.accent_hover = host.accent;
-    palette.focus = host.ring;
-    palette.link = host.ring;
-    palette.selection = host.sidebar_accent;
-    palette.success = host.success;
-    palette.warning = host.warning;
-    palette.danger = host.danger;
-    palette.info = host.info;
-    Theme::apply(mode, Some(palette), cx);
-    // 字体同样以宿主为唯一真源：换主题/启动都要把字体族推进组件库。
-    lithe_gpui_settings::theme::sync_component_fonts(cx);
+
+    match legacy_config(cx) {
+        Some(config) => {
+            let (name, dark) = (config.name.to_string(), config.mode.is_dark());
+            LegacyTheme::update(cx, |theme| {
+                theme.apply_config(&config);
+                theme.font_family = font_family;
+                theme.mono_font_family = mono_family;
+                theme.font_size = px(font_size);
+                theme.mono_font_size = px(mono_font_size);
+            });
+            println!("S1_THEME legacy_synced name={name} dark={dark}");
+        }
+        // 还没有活动主题（只装主题、没走设置层的测试）：字体仍要对齐，颜色留给
+        // `gpui_kit::init` 装的那套默认值。
+        None => {
+            LegacyTheme::update(cx, |theme| {
+                theme.font_family = font_family;
+                theme.mono_font_family = mono_family;
+                theme.font_size = px(font_size);
+                theme.mono_font_size = px(mono_font_size);
+            });
+        }
+    }
+}
+
+/// 当前活动主题在 gpui-kit 眼里的那份配置：从设置层给的主题文件原文反序列化而来。
+///
+/// 走原文而不是走组件库调色板，是为了**逐键无损**：`ThemeConfig` 认得的键（包括
+/// 渐变、`button.*`、`tab.*` 这些组件专用槽）全部原样落到 gpui-kit 的主题上。
+fn legacy_config(cx: &App) -> Option<Rc<LegacyThemeConfig>> {
+    let name = lithe_gpui_settings::theme::active_theme_name(cx)?;
+    let document = lithe_gpui_settings::theme::theme_document_for(&name)?;
+    let set: gpui_kit::component::ThemeSet = serde_json::from_str(&document).ok()?;
+    let config = set.themes.into_iter().find(|theme| theme.name == name)?;
+    Some(Rc::new(config))
 }

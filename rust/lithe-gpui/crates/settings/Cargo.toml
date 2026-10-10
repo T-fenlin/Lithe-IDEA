@@ -7,7 +7,9 @@ publish = false
 [dependencies]
 # gpui 与组件库精确钉同一版本：版本不一致就是两个 crate 实例、类型不通用。
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
-gpui-kit = "=0.7.1"
+# 不再有 gpui-kit：宿主主题的真源已经搬到组件库（`lithe_ui::theme::Theme`），主题文件的
+# 读法、主题目录的监听都由本 crate 自持。gpui-kit 只剩「它自己那些组件的颜色来源」这一个
+# 用途，由 workbench 侧一段过渡适配负责喂（见 `crates/workbench/src/component_theme.rs`）。
 # 自己的组件库：窗口根宿主与对话框（门 G1 起，设置对话框走 `lithe_ui::shell::WindowRootExt`）。
 # gpui-pre 的版本由 lithe-ui 精确钉住，这里不重复声明。
 lithe-ui = { path = "../../../lithe-ui" }

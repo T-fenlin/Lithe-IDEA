@@ -1,16 +1,14 @@
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
-use gpui::{App, SharedString, WindowAppearance, px};
-use gpui_kit::component::highlighter::HighlightTheme;
-use gpui_kit::component::{ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry};
-use lithe_gpui_shared::design;
-use lithe_gpui_shared::rem_px;
+use gpui::{App, Global, Hsla, SharedString, WindowAppearance};
+use lithe_ui::theme::{Mode as ComponentMode, Palette, Theme as ComponentTheme};
+use serde::Deserialize;
 
 use crate::paths;
-use crate::schema::{ThemeIndex, slugify_theme_id, theme_font_size_for};
+use crate::schema::{ThemeEntry, ThemeIndex, slugify_theme_id, theme_font_size_for};
 
 pub const BUILTIN_THEMES: &[(&str, &str)] = &[(
     "jetbrains.json",
@@ -27,11 +25,74 @@ pub fn bundled_theme_files() -> impl Iterator<Item = (&'static str, &'static str
         })
 }
 
-pub const NOTIFICATION_MAX_ITEMS: usize = 3;
+/// 主题文件里的明/暗模式。
+///
+/// 组件库的 [`Mode`](lithe_ui::theme::Mode) 没有 `Deserialize`，主题文件里那一栏又是字符串
+/// （`"light"` / `"dark"`），所以宿主自持一个可反序列化的模式类型，落到组件库时再换算。
+/// 这是本 crate 与 gpui-kit 脱钩的一部分：主题文件的读法归宿主。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    #[default]
+    Light,
+    Dark,
+}
 
-pub const NOTIFICATION_MARGIN_RIGHT_SPEC: f32 = design::ACTIVITY_RAIL_WIDTH_SPEC + 12.;
+impl ThemeMode {
+    pub fn is_dark(self) -> bool {
+        matches!(self, Self::Dark)
+    }
 
-pub const NOTIFICATION_MARGIN_BOTTOM_SPEC: f32 = 38.;
+    fn to_component(self) -> ComponentMode {
+        match self {
+            Self::Light => ComponentMode::Light,
+            Self::Dark => ComponentMode::Dark,
+        }
+    }
+}
+
+/// 主题文件的顶层结构。只声明 `themes`，其余字段（`$schema` / `author` / `url`）与宿主无关。
+#[derive(Debug, Clone, Deserialize)]
+struct ThemeSet {
+    #[serde(default)]
+    themes: Vec<ThemeRecord>,
+}
+
+/// 主题文件里的一条主题。
+///
+/// 只收宿主真正要用的字段：名字、模式、颜色表。**颜色表按主题文件里的原始键收**
+/// （`background` / `muted.foreground` / `list.hover.background` …）而不是落成结构体——
+/// 主题文件多一个键、少一个键都不会让整份主题读不出来，也免得宿主的类型跟着上游的
+/// `ThemeConfigColors` 走。
+#[derive(Debug, Clone, Deserialize)]
+struct ThemeRecord {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    mode: ThemeMode,
+    #[serde(default)]
+    colors: BTreeMap<String, serde_json::Value>,
+}
+
+/// 当前生效的主题名（宿主的真源）。
+///
+/// 过渡期 `workbench` 靠它把主题喂给 gpui-kit 的主题全局（那是 gpui-kit 组件唯一的
+/// 颜色来源）；等 gpui-kit 组件清零，这个全局与它的消费者一起删。
+#[derive(Default, Debug)]
+pub struct ActiveTheme(pub Option<SharedString>);
+
+impl Global for ActiveTheme {}
+
+pub fn active_theme_name(cx: &App) -> Option<SharedString> {
+    if !cx.has_global::<ActiveTheme>() {
+        return None;
+    }
+    cx.global::<ActiveTheme>().0.clone()
+}
+
+fn set_active_theme(cx: &mut App, name: &str) {
+    cx.set_global(ActiveTheme(Some(SharedString::from(name.to_string()))));
+}
 
 const LEGACY_THEME_FILE_NAMES: &[&str] = &["gruvbox.json", "nord.json", "one.json", "vscode.json"];
 
@@ -180,6 +241,23 @@ fn theme_documents_in(dir: &Path) -> Vec<String> {
         .collect()
 }
 
+/// 宿主能看到的全部主题文档：**用户主题目录在前**（同名时压过内置），内置主题在后。
+///
+/// 顺序就是优先级：`ThemeIndex::from_documents` 撞到重复的 id/name 会跳过后来者，
+/// 「用户目录里那条赢」这条规矩靠的就是这个顺序（见
+/// `user_directory_documents_win_over_builtin_ones`）。
+fn theme_documents() -> Vec<String> {
+    let mut documents = paths::themes_dir()
+        .map(|dir| theme_documents_in(&dir))
+        .unwrap_or_default();
+    documents.extend(
+        BUILTIN_THEMES
+            .iter()
+            .map(|(_, content)| (*content).to_string()),
+    );
+    documents
+}
+
 fn user_themes_stamp(dir: &Path) -> Option<SystemTime> {
     std::fs::metadata(dir)
         .ok()
@@ -214,47 +292,159 @@ pub fn theme_index() -> ThemeIndex {
         }
     }
 
-    let mut documents = theme_documents_in(&dir);
-    documents.extend(
-        BUILTIN_THEMES
-            .iter()
-            .map(|(_, content)| (*content).to_string()),
-    );
-    let index = ThemeIndex::from_documents(documents);
+    let index = ThemeIndex::from_documents(theme_documents());
     *lock_index_cache(cache) = Some((stamp, index.clone()));
     index
 }
 
-pub fn theme_ids(cx: &App) -> Vec<String> {
-    let index = theme_index();
-    let mut seen = BTreeSet::new();
-    ThemeRegistry::global(cx)
-        .sorted_themes()
-        .into_iter()
-        .map(|theme| {
-            index
-                .id_for_name(&theme.name)
-                .map(str::to_string)
-                .unwrap_or_else(|| slugify_theme_id(&theme.name))
-        })
-        .filter(|id| seen.insert(id.clone()))
-        .collect()
+/// 按名字在全部主题文档里找那一条（用户目录在前，同名时先见者赢）。
+///
+/// 每次现读现解析：换主题是低频动作（换一次、改一次文件），几份小 JSON 不值得为它再
+/// 养一层缓存；而缓存一旦与磁盘错开，换主题就会换错颜色。
+fn locate_theme(name: &str) -> Option<ThemeRecord> {
+    for document in theme_documents() {
+        let Ok(set) = serde_json::from_str::<ThemeSet>(&document) else {
+            continue;
+        };
+        if let Some(record) = set.themes.into_iter().find(|record| record.name == name) {
+            return Some(record);
+        }
+    }
+    None
 }
 
-pub fn theme_options(cx: &App) -> Vec<(String, String)> {
-    let index = theme_index();
-    let mut seen = BTreeSet::new();
-    ThemeRegistry::global(cx)
-        .sorted_themes()
+/// 含 `name` 这条主题的那份主题文档原文。
+///
+/// 过渡期给 `workbench` 用：它把这份原文交给 gpui-kit 自己的 `ThemeConfig` 反序列化，
+/// 于是喂给 gpui-kit 组件的颜色与主题文件**逐键一致**（不是从宿主 Palette 近似还原，
+/// 那样会丢掉 `button.hover.background` / `tab.active.background` 这类组件专用键）。
+pub fn theme_document_for(name: &str) -> Option<String> {
+    theme_documents().into_iter().find(|document| {
+        serde_json::from_str::<ThemeSet>(document)
+            .map(|set| set.themes.iter().any(|record| record.name == name))
+            .unwrap_or(false)
+    })
+}
+
+/// 主题文件里的颜色字符串 → `Hsla`。
+///
+/// 宿主主题文件里全是纯色（`#rrggbb` / `#rrggbbaa`；实测 37 个不同取值、无渐变），
+/// 所以只认 gpui 自己的 `Rgba` 解析，不认识的一律当「这一栏没给」——宁可用组件库的
+/// 默认值，也不要为了猜一个颜色把整份主题读失败。
+fn parse_color(value: &str) -> Option<Hsla> {
+    gpui::Rgba::try_from(value.trim()).ok().map(Hsla::from)
+}
+
+/// 一条主题 → 组件库调色板。
+///
+/// 重建的就是原先 `workbench/component_theme.rs` 那条「gpui-kit 主题 → 组件库调色板」
+/// 的映射，只是改成从主题文件的原始键直取：`bg`/`surface`←`background`、
+/// `sunken`←`muted.background`、`overlay`←`popover.background`、`hover`←`list.hover.background`、
+/// `active`←`list.active.background`、`focus`/`link`←`ring`、`selection`←`sidebar.accent.background`
+/// …… 没给的栏保留组件库自己的默认值。
+fn palette_for(record: &ThemeRecord) -> Palette {
+    let mut palette = match record.mode {
+        ThemeMode::Light => Palette::light(false),
+        ThemeMode::Dark => Palette::dark(false),
+    };
+    let color = |key: &str| {
+        record
+            .colors
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .and_then(parse_color)
+    };
+
+    if let Some(color) = color("background") {
+        // 面板与中央列同一个底色（外壳原先就这么画）；分隔线另取 `border`。
+        palette.bg = color;
+        palette.surface = color;
+    }
+    if let Some(color) = color("tab_bar.background") {
+        palette.tab_bar = color;
+    }
+    if let Some(color) = color("title_bar.background") {
+        palette.title_bar = color;
+    }
+    if let Some(color) = color("status_bar.background") {
+        palette.status_bar = color;
+    }
+    if let Some(color) = color("muted.background") {
+        palette.sunken = color;
+    }
+    if let Some(color) = color("overlay") {
+        palette.overlay = color;
+    }
+    if let Some(color) = color("list.hover.background") {
+        palette.hover = color;
+    }
+    if let Some(color) = color("list.active.background") {
+        palette.active = color;
+    }
+    if let Some(color) = color("border") {
+        palette.border = color;
+        palette.border_strong = color;
+    }
+    if let Some(color) = color("foreground") {
+        palette.fg = color;
+    }
+    if let Some(color) = color("muted.foreground") {
+        palette.fg_muted = color;
+        palette.fg_subtle = color;
+        palette.fg_disabled = color.opacity(0.6);
+    }
+    if let Some(color) = color("accent.background") {
+        palette.accent = color;
+        palette.accent_hover = color;
+    }
+    if let Some(color) = color("accent.foreground") {
+        palette.on_accent = color;
+    }
+    if let Some(color) = color("ring") {
+        palette.focus = color;
+        palette.link = color;
+    }
+    if let Some(color) = color("sidebar.accent.background") {
+        palette.selection = color;
+    }
+    if let Some(color) = color("success.background") {
+        palette.success = color;
+    }
+    if let Some(color) = color("warning.background") {
+        palette.warning = color;
+    }
+    if let Some(color) = color("danger.background") {
+        palette.danger = color;
+    }
+    if let Some(color) = color("info.background") {
+        palette.info = color;
+    }
+    palette
+}
+
+/// 主题列表的展示顺序：浅色在前、深色在后，同类按名字不分大小写。
+///
+/// 沿用 gpui-kit 注册表 `sorted_themes()` 的相对次序（它多一档 `is_default` 优先，
+/// 宿主的主题文件没有这一栏），于是主题菜单与 `--theme-probe <下标>` 的次序只在
+/// 「少了 gpui-kit 自带那两条 Default 主题」这一点上不同。
+fn sorted_entries() -> Vec<ThemeEntry> {
+    let mut entries = theme_index().entries().to_vec();
+    entries.sort_by(|a, b| {
+        a.dark
+            .cmp(&b.dark)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    entries
+}
+
+pub fn theme_ids(_cx: &App) -> Vec<String> {
+    sorted_entries().into_iter().map(|entry| entry.id).collect()
+}
+
+pub fn theme_options(_cx: &App) -> Vec<(String, String)> {
+    sorted_entries()
         .into_iter()
-        .filter_map(|theme| {
-            let name = theme.name.to_string();
-            let id = index
-                .id_for_name(&name)
-                .map(str::to_string)
-                .unwrap_or_else(|| slugify_theme_id(&name));
-            seen.insert(id.clone()).then_some((id, name))
-        })
+        .map(|entry| (entry.id, entry.name))
         .collect()
 }
 
@@ -266,34 +456,25 @@ pub fn display_name_for(value: &str) -> String {
         .unwrap_or_else(|| value.to_string())
 }
 
-pub fn canonical_theme_id(cx: &App, value: &str) -> String {
-    let name = resolve_name_for_id(cx, value);
+pub fn canonical_theme_id(_cx: &App, value: &str) -> String {
     theme_index()
-        .id_for_name(&name)
-        .map(str::to_string)
+        .canonicalize(value)
         .unwrap_or_else(|| value.to_string())
 }
 
-fn resolve_name_for_id(cx: &App, id: &str) -> String {
-    let registry = ThemeRegistry::global(cx);
+/// 主题 id（或名字）→ 主题文件里的那一条名字。
+fn resolve_name_for_id(id: &str) -> String {
     let index = theme_index();
-
     if let Some(canonical) = index.canonicalize(id) {
         if let Some(name) = index.name_for_id(&canonical) {
-            if registry
-                .themes()
-                .contains_key(&SharedString::from(name.to_string()))
-            {
-                return name.to_string();
-            }
+            return name.to_string();
         }
     }
-
-    registry
-        .sorted_themes()
-        .into_iter()
-        .find(|theme| slugify_theme_id(&theme.name) == id)
-        .map(|theme| theme.name.to_string())
+    index
+        .entries()
+        .iter()
+        .find(|entry| slugify_theme_id(&entry.name) == id)
+        .map(|entry| entry.name.clone())
         .unwrap_or_else(|| id.to_string())
 }
 
@@ -307,11 +488,54 @@ pub fn watch_lithe_themes(cx: &mut App) {
         return;
     };
 
-    let result =
-        ThemeRegistry::watch_dir(
-            themes_dir.clone(),
-            cx,
-            move |cx| match crate::store::try_store(cx) {
+    watch_themes_dir(cx, themes_dir);
+}
+
+/// 盯住主题目录：文件一改就重新应用当前主题。
+///
+/// 这一段原先寄生在 gpui-kit 的 `ThemeRegistry::watch_dir` 上；组件库没有「主题目录」
+/// 这一说，所以宿主自持（`notify` 与 `async-channel` 本来就在本 crate 的依赖里，见
+/// `Cargo.toml`——它们不引入任何新的第三方代码，只是从传递依赖升成直接依赖）。
+fn watch_themes_dir(cx: &mut App, dir: PathBuf) {
+    let (sender, receiver) = async_channel::bounded::<()>(16);
+    let mut watcher =
+        match notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+            let Ok(event) = result else {
+                return;
+            };
+            if !matches!(
+                event.kind,
+                notify::EventKind::Create(_)
+                    | notify::EventKind::Modify(_)
+                    | notify::EventKind::Remove(_)
+            ) {
+                return;
+            }
+            let _ = sender.try_send(());
+        }) {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                eprintln!("S1_THEME watch_failed dir={} error={error}", dir.display());
+                return;
+            }
+        };
+
+    let watched = dir.clone();
+    let watched_for_log = dir.clone();
+    cx.spawn(async move |cx| {
+        use notify::Watcher as _;
+
+        if let Err(error) = watcher.watch(&watched, notify::RecursiveMode::NonRecursive) {
+            eprintln!(
+                "S1_THEME watch_failed dir={} error={error}",
+                watched.display()
+            );
+            return;
+        }
+        println!("S1_THEME watching dir={}", watched_for_log.display());
+
+        while receiver.recv().await.is_ok() {
+            let _ = cx.update(|cx| match crate::store::try_store(cx) {
                 Some(store) => {
                     store.update(cx, |store, cx| store.reapply_theme(cx));
                 }
@@ -321,147 +545,100 @@ pub fn watch_lithe_themes(cx: &mut App) {
                         eprintln!("S1_THEME missing id={id}");
                     }
                 }
-            },
-        );
-
-    match result {
-        Ok(()) => println!("S1_THEME watching dir={}", themes_dir.display()),
-        Err(error) => eprintln!(
-            "S1_THEME watch_failed dir={} error={error}",
-            themes_dir.display()
-        ),
-    }
+            });
+        }
+    })
+    .detach();
 }
 
 pub fn apply_theme_by_id(cx: &mut App, id: &str) -> bool {
-    let name = resolve_name_for_id(cx, id);
+    let name = resolve_name_for_id(id);
     if name != id {
         println!("S1_THEME resolved id={id} name={name}");
     }
     apply_theme_by_name(cx, &name)
 }
 
+/// 按名字应用主题：把主题文件的颜色落成组件库调色板，写进**组件库的主题全局**。
+///
+/// 从这一版起，宿主主题的真源是 `lithe_ui::theme::Theme`，不再是 gpui-kit 的 `Theme`：
+/// 后者只剩「gpui-kit 组件自己的颜色来源」这一个用途，由 `workbench` 侧一段过渡适配
+/// 依据本函数记下的活动主题名重新喂进去（见 `workbench/component_theme.rs`）。
 pub fn apply_theme_by_name(cx: &mut App, name: &str) -> bool {
-    let theme = ThemeRegistry::global(cx)
-        .themes()
-        .get(&SharedString::from(name.to_string()))
-        .cloned();
-
-    let Some(theme) = theme else {
+    let Some(record) = locate_theme(name) else {
         eprintln!("S1_THEME missing name={name}");
         return false;
     };
 
-    let mode = theme.mode;
-    Theme::change(mode, None, cx);
-    Theme::global_mut(cx).notification.max_items = NOTIFICATION_MAX_ITEMS;
-    stamp_builtin_highlight_if_absent(cx, &theme, mode);
-    Theme::global_mut(cx).apply_config(&theme);
-    let rem = cx.theme().font_size;
-    let notification = &mut Theme::global_mut(cx).notification;
-    notification.margins.right = rem_px(rem, NOTIFICATION_MARGIN_RIGHT_SPEC);
-    notification.margins.bottom = rem_px(rem, NOTIFICATION_MARGIN_BOTTOM_SPEC);
-    Theme::sync_base(cx);
-    cx.refresh_windows();
-    println!("S1_THEME applied={name} dark={}", mode.is_dark());
+    if !cx.has_global::<ComponentTheme>() {
+        eprintln!("S1_THEME component_theme_missing name={name}");
+        return false;
+    }
+
+    // 先记活动主题名，再改主题全局：改全局会通知观察者（过渡适配就在那条链上），
+    // 它读到的必须是这一次的名字。
+    set_active_theme(cx, &record.name);
+    ComponentTheme::apply(record.mode.to_component(), Some(palette_for(&record)), cx);
+    println!(
+        "S1_THEME applied={} dark={}",
+        record.name,
+        record.mode.is_dark()
+    );
     true
 }
 
-fn stamp_builtin_highlight_if_absent(cx: &mut App, theme: &ThemeConfig, mode: ThemeMode) {
-    if theme.highlight.is_some() {
-        return;
-    }
-
-    let builtin = ThemeRegistry::global(cx)
-        .default_themes()
-        .get(&mode)
-        .cloned();
-    let Some(builtin) = builtin else {
-        return;
-    };
-    let Some(style) = builtin.highlight.clone() else {
-        return;
-    };
-
-    Theme::global_mut(cx).highlight_theme = Arc::new(HighlightTheme {
-        name: builtin.name.to_string(),
-        appearance: mode,
-        style,
-    });
-    println!(
-        "S1_THEME highlight=builtin theme={} dark={} source={}",
-        theme.name,
-        mode.is_dark(),
-        builtin.name
-    );
-}
-
-/// 把宿主的字体设置推进组件库的主题（字体在这里是**唯一真源**）。
+/// 字体设置写进**组件库主题**（字体在这里是唯一真源）。
 ///
-/// 组件库组件读的是 `lithe_ui::theme::Theme` 的 `font_family` / `mono_family` /
-/// `font_size` / `mono_font_size`；不推的话它们会一直用库内硬编码的默认字体族
-/// （迁移后实测：库组件字体不跟随宿主设置）。
-pub fn sync_component_fonts(cx: &mut App) {
-    if !cx.has_global::<lithe_ui::theme::Theme>() {
+/// 组件库组件读的是 `lithe_ui::theme::Theme` 的 `font_family` / `mono_family` / `font_size` /
+/// `mono_font_size`；尺寸缩放的唯一锚点也是它的 `font_size`——`Theme::update` 会把新锚点
+/// 标到所有窗口的 rem 大小上。过渡期 `workbench` 再把这几个值同步给 gpui-kit 的主题，
+/// 免得两套字体各说各话。
+pub fn apply_theme_font_size(cx: &mut App, ui_font_size: f64) {
+    if !cx.has_global::<ComponentTheme>() {
         return;
     }
-    let (font_family, mono_family, font_size, mono_font_size) = {
-        let host = Theme::global(cx);
-        (
-            host.font_family.clone(),
-            host.mono_font_family.clone(),
-            host.font_size,
-            host.mono_font_size,
-        )
-    };
-    lithe_ui::theme::Theme::update(cx, |theme| {
-        theme.font_family = font_family;
-        theme.mono_family = mono_family;
-        theme.font_size = f32::from(font_size);
-        theme.mono_font_size = f32::from(mono_font_size);
-    });
-}
-pub fn apply_theme_font_size(cx: &mut App, ui_font_size: f64) {
-    let font_size = px(theme_font_size_for(ui_font_size));
-    Theme::global_mut(cx).font_size = font_size;
-    Theme::sync_base(cx);
-    // 组件库的尺寸锚点与宿主这里的基准字号是**同一个值**：库里的 rem 档位、窗口 rem 大小
-    // 都由它推出。不在这里同步，宿主的字号设置与组件库的锚点就成了两套缩放真源。
-    // `lithe_ui::theme::Theme::update` 自己会把新锚点标到所有窗口的 rem 大小上。
-    sync_component_fonts(cx);
-    cx.refresh_windows();
-    println!(
-        "S1_THEME font_size={:?} ui_font_size={ui_font_size}",
-        font_size
-    );
+    let font_size = theme_font_size_for(ui_font_size);
+    ComponentTheme::update(cx, |theme| theme.font_size = font_size);
+    println!("S1_THEME font_size={font_size} ui_font_size={ui_font_size}");
 }
 
 pub fn apply_editor_font_size(cx: &mut App, editor_font_size: f64) {
-    let font_size = px(editor_font_size as f32);
-    Theme::global_mut(cx).mono_font_size = font_size;
-    Theme::sync_base(cx);
-    cx.refresh_windows();
-    sync_component_fonts(cx);
-    println!("S1_THEME mono_font_size={font_size:?} editor_font_size={editor_font_size}");
+    if !cx.has_global::<ComponentTheme>() {
+        return;
+    }
+    let font_size = editor_font_size as f32;
+    ComponentTheme::update(cx, |theme| theme.mono_font_size = font_size);
+    println!("S1_THEME mono_font_size={font_size} editor_font_size={editor_font_size}");
 }
 
 pub const SYSTEM_UI_FONT_FAMILY: &str = ".SystemUIFont";
 
 pub fn apply_font_families(cx: &mut App, ui_family: &str, mono_family: &str) {
+    if !cx.has_global::<ComponentTheme>() {
+        return;
+    }
     let installed = installed_font_names(cx);
+    let ui = usable_family("fontFamily", ui_family, installed).map(str::to_string);
+    let mono = usable_family("monoFontFamily", mono_family, installed).map(str::to_string);
+    if ui.is_none() && mono.is_none() {
+        return;
+    }
 
-    if let Some(family) = usable_family("fontFamily", ui_family, installed) {
-        Theme::global_mut(cx).font_family = SharedString::from(family.to_string());
+    ComponentTheme::update(cx, |theme| {
+        if let Some(family) = &ui {
+            theme.font_family = SharedString::from(family.clone());
+        }
+        if let Some(family) = &mono {
+            theme.mono_family = SharedString::from(family.clone());
+        }
+    });
+
+    if let Some(family) = ui {
         println!("S1_THEME font_family key=fontFamily value={family}");
     }
-    if let Some(family) = usable_family("monoFontFamily", mono_family, installed) {
-        Theme::global_mut(cx).mono_font_family = SharedString::from(family.to_string());
+    if let Some(family) = mono {
         println!("S1_THEME font_family key=monoFontFamily value={family}");
     }
-
-    Theme::sync_base(cx);
-    sync_component_fonts(cx);
-    cx.refresh_windows();
 }
 
 pub fn installed_font_names(cx: &App) -> &'static [String] {
@@ -484,20 +661,21 @@ pub fn usable_family<'a>(key: &str, value: &'a str, installed: &[String]) -> Opt
     None
 }
 
-pub fn theme_names(cx: &App) -> Vec<String> {
-    ThemeRegistry::global(cx)
-        .sorted_themes()
+pub fn theme_names(_cx: &App) -> Vec<String> {
+    sorted_entries()
         .into_iter()
-        .map(|theme| theme.name.to_string())
+        .map(|entry| entry.name)
         .collect()
 }
 
-pub fn theme_is_dark(cx: &App, value: &str) -> Option<bool> {
-    let name = resolve_name_for_id(cx, value);
-    ThemeRegistry::global(cx)
-        .themes()
-        .get(&SharedString::from(name))
-        .map(|theme| theme.mode.is_dark())
+pub fn theme_is_dark(_cx: &App, value: &str) -> Option<bool> {
+    let index = theme_index();
+    let id = index.canonicalize(value)?;
+    index
+        .entries()
+        .iter()
+        .find(|entry| entry.id == id)
+        .map(|entry| entry.dark)
 }
 
 pub fn system_is_dark(appearance: WindowAppearance) -> bool {
@@ -510,16 +688,6 @@ pub fn system_is_dark(appearance: WindowAppearance) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn notification_right_inset_derives_from_the_activity_rail_owner() {
-        assert_eq!(NOTIFICATION_MARGIN_RIGHT_SPEC, 52.);
-        assert_eq!(
-            NOTIFICATION_MARGIN_RIGHT_SPEC,
-            design::ACTIVITY_RAIL_WIDTH_SPEC + 12.,
-            "通知右内衬必须派生自活动栏 rail 宽 owner（真源 `WorkbenchView.swift:553` 的 `+ 12`）"
-        );
-    }
 
     #[test]
     fn usable_family_only_accepts_empty_virtual_or_installed() {
@@ -572,7 +740,6 @@ mod tests {
 
     #[test]
     fn every_theme_file_is_embedded_and_loadable() {
-        use gpui_kit::component::ThemeSet;
         use std::collections::BTreeMap;
 
         let bundled: BTreeMap<&str, &str> = bundled_theme_files()
@@ -653,11 +820,8 @@ mod tests {
                     assert!(
                         set.themes
                             .iter()
-                            .any(|theme| theme.mode == gpui_kit::component::ThemeMode::Light)
-                            && set
-                                .themes
-                                .iter()
-                                .any(|theme| theme.mode == gpui_kit::component::ThemeMode::Dark),
+                            .any(|theme| theme.mode == ThemeMode::Light)
+                            && set.themes.iter().any(|theme| theme.mode == ThemeMode::Dark),
                         "{file}: 捆绑主题组缺浅色或深色变体"
                     );
                 }
@@ -690,7 +854,6 @@ mod tests {
 
     #[test]
     fn every_theme_file_is_a_loadable_theme_set() {
-        use gpui_kit::component::{ThemeSet, try_parse_background, try_parse_color};
         use std::collections::BTreeMap;
 
         for (dir, label) in [
@@ -753,8 +916,9 @@ mod tests {
                             continue;
                         };
                         assert!(
-                            try_parse_color(value).is_ok() || try_parse_background(value).is_ok(),
-                            "{file}/{name}: color {key:?} = {value:?} is not parseable by gpui"
+                            parse_color(value).is_some(),
+                            "{file}/{name}: color {key:?} = {value:?} 宿主解析不了\
+                             （宿主主题文件只收纯色 `#rrggbb[aa]`，渐变要另开一条映射）"
                         );
                     }
 

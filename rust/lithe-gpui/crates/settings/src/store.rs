@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use gpui::Global;
 use gpui::{
-    App, AppContext as _, Context, Entity, SharedString, Subscription, Window, WindowAppearance, px,
+    App, AppContext as _, Context, Entity, SharedString, Subscription, Window, WindowAppearance,
 };
 use serde_json::Value;
 
