@@ -11,7 +11,7 @@ impl IdeaIcon {
     }
 }
 
-pub const ALL: [IdeaIcon; 59] = [
+pub const ALL: [IdeaIcon; 62] = [
     ARROW_CLOCKWISE_ICON,
     ARROW_COUNTER_CLOCKWISE_ICON,
     ARROW_DOWN_ICON,
@@ -62,12 +62,15 @@ pub const ALL: [IdeaIcon; 59] = [
     MONITOR_ICON,
     PALETTE_ICON,
     PLAY_ICON,
+    PLUGIN_ICON,
     PLUS_ICON,
     REFRESH_ICON,
     ROWS_ICON,
     SCISSORS_ICON,
     STOP_ICON,
+    TERMINAL_ICON,
     TRASH_ICON,
+    VCS_ICON,
     WARNING_CIRCLE_ICON,
     X_ICON,
     XCIRCLE_ICON,
@@ -373,6 +376,12 @@ pub const PLAY_ICON: IdeaIcon = IdeaIcon {
     has_dark: false,
 };
 
+pub const PLUGIN_ICON: IdeaIcon = IdeaIcon {
+    light: "icons/idea/expui/nodes/plugin.svg",
+    dark: "icons/idea/expui/nodes/plugin_dark.svg",
+    has_dark: true,
+};
+
 pub const PLUS_ICON: IdeaIcon = IdeaIcon {
     light: "icons/idea/legacy/ui/add.svg",
     dark: "icons/idea/legacy/ui/add_dark.svg",
@@ -403,9 +412,21 @@ pub const STOP_ICON: IdeaIcon = IdeaIcon {
     has_dark: false,
 };
 
+pub const TERMINAL_ICON: IdeaIcon = IdeaIcon {
+    light: "icons/idea/terminal/terminal@20x20.svg",
+    dark: "icons/idea/terminal/terminal@20x20_dark.svg",
+    has_dark: true,
+};
+
 pub const TRASH_ICON: IdeaIcon = IdeaIcon {
     light: "icons/idea/legacy/ui/delete.svg",
     dark: "icons/idea/legacy/ui/delete_dark.svg",
+    has_dark: true,
+};
+
+pub const VCS_ICON: IdeaIcon = IdeaIcon {
+    light: "icons/idea/expui/toolwindows/vcs@20x20.svg",
+    dark: "icons/idea/expui/toolwindows/vcs@20x20_dark.svg",
     has_dark: true,
 };
 
