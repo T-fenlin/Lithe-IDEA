@@ -3,20 +3,17 @@ use std::path::{Path, PathBuf};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, AppContext as _, Context, EventEmitter, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
-    Window, div, rems,
+    AnyElement, AppContext as _, Context, EventEmitter, FontWeight, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Task, Window, div, rems,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _};
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 use crate::debug_session::{DebugSessionHandle, copy_new_output};
-// 本文件这些图标要交给上游 `PopupMenuItem::icon`（只收 gpui-kit 的 Icon），见 `icon_kit`。
-use crate::icon_kit::idea_icon_mono;
 use lithe_gpui_editor::GutterBreakpoint;
-use lithe_gpui_shared::icons::idea;
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::{core_json, tr, tr_args};
 use serde_json::{Value, json};
 
@@ -1818,7 +1815,7 @@ impl DebugPane {
     }
 
     fn header(&self, cx: &Context<Self>) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
@@ -1826,12 +1823,12 @@ impl DebugPane {
             .pr_2()
             .h(rems(DEBUG_SESSION_HEADER_HEIGHT_SPEC / 16.))
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
                 div()
                     .text_sm()
-                    .font_medium()
-                    .text_color(cx.theme().foreground)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr("lithe.debugger.gpui.toolWindowTitle")),
             )
             .child(self.fact_chip(
@@ -1843,9 +1840,9 @@ impl DebugPane {
             .child(div().flex_1())
             .child(
                 Button::new("debug-pane-hide")
-                    .small()
-                    .ghost()
-                    .icon(idea_icon_mono(&idea::STOP_ICON, cx.theme().is_dark()))
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
+                    .icon_element(idea_icon_mono(&idea::STOP_ICON, cx.theme().is_dark()))
                     .tooltip(tr("lithe.debugger.hideRunAndDebug"))
                     .on_click(cx.listener(|_pane, _, _, cx| {
                         cx.emit(DebugPaneEvent::Hide);
@@ -1861,28 +1858,32 @@ impl DebugPane {
         cx: &Context<Self>,
     ) -> AnyElement {
         let missing = present.missing_key();
-        h_flex()
+        h_stack()
             .flex_shrink_0()
             .gap_1()
             .px_2()
             .rounded_md()
-            .bg(cx.theme().muted)
+            .bg(cx.theme().colors.sunken)
             .text_xs()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().colors.fg_muted)
             .child(label)
-            .child(div().text_color(cx.theme().danger).child(tr(missing)))
+            .child(
+                div()
+                    .text_color(cx.theme().colors.danger)
+                    .child(tr(missing)),
+            )
             .into_any_element()
     }
 
     fn toolbar(&self, cx: &Context<Self>) -> AnyElement {
-        let mut row = h_flex()
+        let mut row = h_stack()
             .w_full()
             .flex_shrink_0()
             .h(rems(DEBUG_TOOLBAR_HEIGHT_SPEC / 16.))
             .px_2()
             .gap_1()
             .border_b_1()
-            .border_color(cx.theme().border);
+            .border_color(cx.theme().colors.border);
         for action in DEBUG_TOOLBAR_ACTIONS {
             if let Some(control) = toolbar_control(action) {
                 let enabled = self.execution.is_enabled(control);
@@ -1891,8 +1892,8 @@ impl DebugPane {
                         "debug-toolbar-{}",
                         toolbar_action_id(action)
                     )))
-                    .small()
-                    .ghost()
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
                     .disabled(!enabled)
                     .tooltip(toolbar_tooltip(action))
                     .on_click(cx.listener(move |pane, _, _, cx| {
@@ -1910,8 +1911,8 @@ impl DebugPane {
                         "debug-toolbar-{}",
                         toolbar_action_id(action)
                     )))
-                    .small()
-                    .ghost()
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
                     .disabled(disabled)
                     .tooltip(toolbar_tooltip(action))
                     .on_click(cx.listener(move |pane, _, _, cx| {
@@ -1925,23 +1926,23 @@ impl DebugPane {
                         .w(rems(1. / 16.))
                         .h(rems(DEBUG_TOOLBAR_ICON_SPEC / 16.))
                         .mx_1()
-                        .bg(cx.theme().border),
+                        .bg(cx.theme().colors.border),
                 );
             }
         }
         row.child(div().flex_1())
             .child(
-                h_flex()
+                h_stack()
                     .flex_shrink_0()
                     .gap_1()
                     .px_2()
                     .rounded_full()
-                    .bg(cx.theme().muted)
+                    .bg(cx.theme().colors.sunken)
                     .text_xs()
                     .text_color(match self.execution.state() {
-                        DebugExecutionState::Paused => cx.theme().warning,
-                        DebugExecutionState::Terminated => cx.theme().muted_foreground,
-                        _ => cx.theme().success,
+                        DebugExecutionState::Paused => cx.theme().colors.warning,
+                        DebugExecutionState::Terminated => cx.theme().colors.fg_muted,
+                        _ => cx.theme().colors.success,
                     })
                     .child(self.execution.status_text()),
             )
@@ -1990,14 +1991,14 @@ impl DebugPane {
     }
 
     fn content_tabs(&self, cx: &Context<Self>) -> AnyElement {
-        let mut row = h_flex()
+        let mut row = h_stack()
             .w_full()
             .flex_shrink_0()
             .h(rems(DEBUG_CONTENT_TABS_HEIGHT_SPEC / 16.))
             .px_2()
             .gap_1()
             .border_b_1()
-            .border_color(cx.theme().border);
+            .border_color(cx.theme().colors.border);
         for content in [DebugContent::Debugger, DebugContent::Console] {
             let selected = self.content == content;
             row = row.child(
@@ -2016,11 +2017,11 @@ impl DebugPane {
                     .rounded_md()
                     .cursor_pointer()
                     .when(selected, |this| {
-                        this.bg(cx.theme().secondary)
-                            .text_color(cx.theme().foreground)
+                        this.bg(cx.theme().colors.sunken)
+                            .text_color(cx.theme().colors.fg)
                     })
                     .when(!selected, |this| {
-                        this.text_color(cx.theme().muted_foreground)
+                        this.text_color(cx.theme().colors.fg_muted)
                     })
                     .text_xs()
                     .child(tr(content.title_key()))
@@ -2033,15 +2034,15 @@ impl DebugPane {
     }
 
     fn section_header(&self, title: SharedString, count: usize, cx: &Context<Self>) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h(rems(DEBUG_SECTION_HEADER_HEIGHT_SPEC / 16.))
             .px_2()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .text_xs()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().colors.fg_muted)
             .child(title)
             .child(div().flex_1())
             .child(SharedString::from(count.to_string()))
@@ -2049,7 +2050,7 @@ impl DebugPane {
     }
 
     fn stack_column(&self, cx: &Context<Self>) -> AnyElement {
-        let mut column = v_flex()
+        let mut column = v_stack()
             .flex_1()
             .min_w(rems(DEBUG_STACK_COLUMN_MIN_WIDTH_SPEC / 16.))
             .min_h_0()
@@ -2071,7 +2072,7 @@ impl DebugPane {
                     })
                     .unwrap_or_default();
                 column = column.child(
-                    v_flex()
+                    v_stack()
                         .w_full()
                         .px_2()
                         .py_1()
@@ -2079,19 +2080,19 @@ impl DebugPane {
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(cx.theme().foreground)
+                                .text_color(cx.theme().colors.fg)
                                 .child(SharedString::from(frame.name.clone())),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(cx.theme().muted_foreground)
+                                .text_color(cx.theme().colors.fg_muted)
                                 .child(SharedString::from(location)),
                         ),
                 );
             }
         }
-        let mut breakpoint_section = v_flex().w_full().child(self.section_header(
+        let mut breakpoint_section = v_stack().w_full().child(self.section_header(
             tr("lithe.debugger.breakpoints"),
             self.breakpoints.total(),
             cx,
@@ -2112,13 +2113,13 @@ impl DebugPane {
             for (path, line, enabled) in rows {
                 let line_text = line.to_string();
                 breakpoint_section = breakpoint_section.child(
-                    h_flex()
+                    h_stack()
                         .w_full()
                         .px_2()
                         .py_1()
                         .gap_2()
                         .text_xs()
-                        .child(div().text_color(cx.theme().muted_foreground).child(tr_args(
+                        .child(div().text_color(cx.theme().colors.fg_muted).child(tr_args(
                             "lithe.debugger.lineNumber",
                             &[("line", line_text.as_str())],
                         )))
@@ -2127,9 +2128,9 @@ impl DebugPane {
                                 .flex_1()
                                 .truncate()
                                 .text_color(if enabled {
-                                    cx.theme().foreground
+                                    cx.theme().colors.fg
                                 } else {
-                                    cx.theme().muted_foreground
+                                    cx.theme().colors.fg_muted
                                 })
                                 .child(SharedString::from(path)),
                         ),
@@ -2140,19 +2141,19 @@ impl DebugPane {
     }
 
     fn data_column(&self, cx: &Context<Self>) -> AnyElement {
-        let mut column = v_flex()
+        let mut column = v_stack()
             .flex_1()
             .min_w(rems(DEBUG_DATA_COLUMN_MIN_WIDTH_SPEC / 16.))
             .min_h_0()
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .flex_shrink_0()
                     .h(rems(DEBUG_EVALUATE_ROW_HEIGHT_SPEC / 16.))
                     .px_2()
                     .gap_2()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.debugger.variables"))
                     .child(div().flex_1())
                     .child(tr("lithe.debugger.evaluating")),
@@ -2182,23 +2183,23 @@ impl DebugPane {
                     WatchState::NotEvaluated => tr("lithe.debugger.notEvaluated").to_string(),
                 };
                 column = column.child(
-                    v_flex()
+                    v_stack()
                         .w_full()
                         .px_2()
                         .py_1()
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(cx.theme().foreground)
+                                .text_color(cx.theme().colors.fg)
                                 .child(SharedString::from(watch.expression.clone())),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(match watch.state {
-                                    WatchState::Failed => cx.theme().danger,
-                                    WatchState::Ready => cx.theme().success,
-                                    _ => cx.theme().muted_foreground,
+                                    WatchState::Failed => cx.theme().colors.danger,
+                                    WatchState::Ready => cx.theme().colors.success,
+                                    _ => cx.theme().colors.fg_muted,
                                 })
                                 .child(SharedString::from(detail)),
                         ),
@@ -2219,7 +2220,7 @@ impl DebugPane {
                 row.variable.value.clone()
             }
         );
-        h_flex()
+        h_stack()
             .w_full()
             .pr_2()
             .py_1()
@@ -2228,13 +2229,13 @@ impl DebugPane {
             .text_xs()
             .child(
                 div()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(SharedString::from(name)),
             )
             .when_some(row.variable.type_name.clone(), |this, type_name| {
                 this.child(
                     div()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(SharedString::from(type_name)),
                 )
             })
@@ -2242,7 +2243,7 @@ impl DebugPane {
     }
 
     fn filters_block(&self, cx: &Context<Self>) -> AnyElement {
-        let mut block = v_flex().w_full().child(self.section_header(
+        let mut block = v_stack().w_full().child(self.section_header(
             tr("lithe.debugger.gpui.steppingFilters"),
             match &self.filters {
                 SteppingFiltersState::Ready(filters) => filters.class_name_filters.len(),
@@ -2259,24 +2260,24 @@ impl DebugPane {
             }
             SteppingFiltersState::Failed(error) => {
                 block = block.child(
-                    v_flex()
+                    v_stack()
                         .w_full()
                         .px_2()
                         .py_1()
                         .text_xs()
-                        .text_color(cx.theme().danger)
+                        .text_color(cx.theme().colors.danger)
                         .child(tr("lithe.debugger.gpui.filtersFailed"))
                         .child(SharedString::from(error.clone())),
                 )
             }
             SteppingFiltersState::Ready(filters) => {
                 block = block.child(
-                    v_flex()
+                    v_stack()
                         .w_full()
                         .px_2()
                         .py_1()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(SharedString::from(format!(
                             "{}: {}",
                             tr("lithe.debugger.gpui.filterClassPatterns"),
@@ -2296,12 +2297,12 @@ impl DebugPane {
                     SteppingFilterToggle::HideFilteredStackFrames,
                 ] {
                     block = block.child(
-                        h_flex()
+                        h_stack()
                             .w_full()
                             .px_2()
                             .py_1()
                             .text_xs()
-                            .text_color(cx.theme().foreground)
+                            .text_color(cx.theme().colors.fg)
                             .child(tr(toggle.label_key()))
                             .child(div().flex_1())
                             .child(SharedString::from(
@@ -2316,7 +2317,7 @@ impl DebugPane {
 
     fn empty_state(&self, cx: &Context<Self>) -> AnyElement {
         let blocker = self.start_blocker();
-        let mut column = v_flex()
+        let mut column = v_stack()
             .size_full()
             .items_center()
             .justify_center()
@@ -2325,14 +2326,14 @@ impl DebugPane {
             .child(
                 div()
                     .text_lg()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr("lithe.debugger.gpui.emptyTitle")),
             )
             .child(
                 div()
                     .max_w(rems(520. / 16.))
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(match blocker {
                         Some(blocker) => tr(blocker.text_key()),
                         None => tr("lithe.debugger.statusIdle"),
@@ -2343,20 +2344,20 @@ impl DebugPane {
                 div()
                     .max_w(rems(520. / 16.))
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.debugger.gpui.h10Note")),
             )
             .child(
                 div()
                     .max_w(rems(520. / 16.))
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.debugger.gpui.h11Note")),
             );
         let can_start = blocker.is_none();
         column = column.child(
             Button::new("debug-empty-start")
-                .small()
+                .size(Size::Small)
                 .disabled(!can_start)
                 .tooltip(match blocker {
                     Some(blocker) => tr(blocker.text_key()),
@@ -2368,7 +2369,7 @@ impl DebugPane {
         column = column.child(
             div()
                 .text_xs()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(tr_args(
                     "lithe.debugger.gpui.breakpointSummary",
                     &[("count", self.breakpoints.total().to_string().as_str())],
@@ -2378,14 +2379,14 @@ impl DebugPane {
     }
 
     fn console(&self, cx: &Context<Self>) -> AnyElement {
-        v_flex()
+        v_stack()
             .size_full()
             .child(
                 div()
                     .px_2()
                     .py_1()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.debugger.adapterOutputAppearsHere")),
             )
             .children(
@@ -2408,7 +2409,7 @@ impl DebugPane {
             .px_2()
             .py_2()
             .text_xs()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().colors.fg_muted)
             .child(text)
             .into_any_element()
     }
@@ -2423,19 +2424,19 @@ impl DebugPane {
         if threads.is_empty() && frames.is_empty() {
             return div().into_any_element();
         }
-        let mut column = v_flex()
+        let mut column = v_stack()
             .w_full()
             .flex_shrink_0()
             .gap_1()
             .px_2()
             .py_1()
             .border_b_1()
-            .border_color(cx.theme().border);
+            .border_color(cx.theme().colors.border);
         if !threads.is_empty() {
             column = column.child(
                 div()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(SharedString::from(threads.join("  "))),
             );
         }
@@ -2443,7 +2444,7 @@ impl DebugPane {
             column = column.child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(SharedString::from(frame)),
             );
         }
@@ -2490,14 +2491,14 @@ impl DebugPane {
         if scopes.is_empty() && variables.is_empty() {
             return div().into_any_element();
         }
-        let mut column = v_flex()
+        let mut column = v_stack()
             .w_full()
             .flex_shrink_0()
             .gap_1()
             .px_2()
             .py_1()
             .border_b_1()
-            .border_color(cx.theme().border);
+            .border_color(cx.theme().colors.border);
         for (index, (name, reference)) in scopes.into_iter().enumerate() {
             let expanded = self.expanded_reference == Some(reference);
             column = column.child(
@@ -2507,7 +2508,7 @@ impl DebugPane {
                         pane.expand_variables(reference, cx);
                     }))
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(SharedString::from(format!(
                         "{} {name} • {reference}",
                         if expanded { "▾" } else { "▸" }
@@ -2519,7 +2520,7 @@ impl DebugPane {
                         div()
                             .pl_3()
                             .text_sm()
-                            .text_color(cx.theme().foreground)
+                            .text_color(cx.theme().colors.fg)
                             .child(SharedString::from(variable)),
                     );
                 }
@@ -2529,7 +2530,7 @@ impl DebugPane {
             column = column.child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(SharedString::from(variable)),
             );
         }
@@ -2537,23 +2538,30 @@ impl DebugPane {
     }
 
     fn debugger_content(&self, cx: &Context<Self>) -> AnyElement {
-        h_flex()
+        h_stack()
             .size_full()
             .min_h_0()
             .child(
-                v_flex()
+                v_stack()
+                    .id("debug-summary-scroll")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scrollbar()
+                    .overflow_y_scroll()
                     .child(self.live_debug_summary(cx))
                     .child(self.stack_column(cx)),
             )
-            .child(div().w(rems(1. / 16.)).h_full().bg(cx.theme().border))
             .child(
-                v_flex()
+                div()
+                    .w(rems(1. / 16.))
+                    .h_full()
+                    .bg(cx.theme().colors.border),
+            )
+            .child(
+                v_stack()
+                    .id("debug-variables-scroll")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scrollbar()
+                    .overflow_y_scroll()
                     .child(self.live_variables(cx))
                     .child(self.data_column(cx)),
             )
@@ -2740,14 +2748,14 @@ impl Render for DebugPane {
         if self.drain_session() {
             cx.notify();
         }
-        v_flex()
+        v_stack()
             .size_full()
             .min_h_0()
-            .bg(cx.theme().background)
+            .bg(cx.theme().colors.bg)
             .child(self.header(cx))
             .child(self.toolbar(cx))
             .child(if self.has_content() {
-                v_flex()
+                v_stack()
                     .flex_1()
                     .min_h_0()
                     .child(self.content_tabs(cx))
@@ -2756,7 +2764,7 @@ impl Render for DebugPane {
                         DebugContent::Console => self.console(cx),
                     }))
             } else {
-                v_flex().flex_1().min_h_0().child(self.empty_state(cx))
+                v_stack().flex_1().min_h_0().child(self.empty_state(cx))
             })
             .into_any_element()
     }
