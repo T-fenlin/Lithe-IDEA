@@ -9,11 +9,10 @@ use gpui::{
     rems,
 };
 use gpui::{Global, PathPromptOptions, ScrollHandle};
-use gpui_kit::assets::IconName;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::{ActiveTheme as _, Icon};
+use gpui_kit::component::ActiveTheme as _;
 
 use lithe_ui::layout::{Dock, DockEvent, DockPanel, DockSide};
 // 窗口根宿主（门 G1）：本文件里的 `open_dialog` / `close_dialog` / `has_active_dialog` /
@@ -63,8 +62,8 @@ use lithe_gpui_shared::workspace_config::{ToolchainPaths, load_local_toolchain};
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_gpui_terminal::{TerminalPane, TerminalPaneEvent};
 
-// 命令面板这些图标要交给上游 `PopupMenuItem::icon`（只收 gpui-kit 的 Icon），见 `icon_kit`。
-use crate::icon_kit::idea_icon_mono;
+// 命令表的图标走本仓 idea 集，而且是「画的时候才问主题」的工厂形式（见 `shared::icons`）。
+use lithe_gpui_shared::icons::idea_icon_element;
 
 pub struct ShellStartup {
     compact_menu: bool,
@@ -344,51 +343,63 @@ pub(crate) struct ActionFlags {
     pub(crate) dark_theme: bool,
 }
 
-pub(crate) fn command_action(id: CommandId, flags: ActionFlags, is_dark: bool) -> CommandAction {
+/// 命令表的一行。
+///
+/// 图标一律走本仓的 idea 集（`shared::icons` 的口径）：我们自己没有那张图的几条**留空**
+/// （`ToggleStatusBar` 没有状态栏/底部面板的图、`ToggleMenuBar` 用三点代替 —— 见下）。
+/// 原来这里有六个 `gpui_kit::assets::IconName`（`SquareTerminal` / `Package` /
+/// `PanelBottom` / `List` / `Replace` / `AppWindow`），现按同一份资产目录换成 idea 图。
+pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction {
     use CommandId as C;
     let (category, icon) = match id {
-        C::OpenSettings | C::OpenAppearanceSettings => (
-            Category::Settings,
-            idea_icon_mono(&idea::GEAR_ICON, is_dark),
+        C::OpenSettings | C::OpenAppearanceSettings => {
+            (Category::Settings, Some(idea_icon_element(&idea::GEAR_ICON)))
+        }
+        C::SwitchToLightTheme | C::SwitchToDarkTheme => {
+            (Category::Settings, Some(idea_icon_element(&idea::PALETTE_ICON)))
+        }
+        C::ToggleTerminal => (Category::View, Some(idea_icon_element(&idea::TERMINAL_ICON))),
+        C::ToggleMaven => (Category::View, Some(idea_icon_element(&idea::MAVEN_ICON))),
+        // 本仓没有「状态栏 / 底部面板」这张 idea 图 ⇒ 留空，不拿组件库图标顶替。
+        C::ToggleStatusBar => (Category::View, None),
+        // 主菜单的开合就是那三条横线。
+        C::ToggleMenuBar => (
+            Category::View,
+            Some(idea_icon_element(&idea::DOTS_THREE_ICON)),
         ),
-        C::SwitchToLightTheme | C::SwitchToDarkTheme => (
-            Category::Settings,
-            idea_icon_mono(&idea::PALETTE_ICON, is_dark),
-        ),
-        C::ToggleTerminal => (Category::View, Icon::new(IconName::SquareTerminal)),
-        C::ToggleMaven => (Category::View, Icon::new(IconName::Package)),
-        C::ToggleStatusBar => (Category::View, Icon::new(IconName::PanelBottom)),
-        C::ToggleMenuBar => (Category::View, Icon::new(IconName::List)),
         C::SaveBuffer => (
             Category::View,
-            idea_icon_mono(&idea::FLOPPY_DISK_ICON, is_dark),
+            Some(idea_icon_element(&idea::FLOPPY_DISK_ICON)),
         ),
-        C::OpenCommandPalette => (
+        C::OpenCommandPalette | C::OpenQuickOpen => (
             Category::View,
-            idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
-        ),
-        C::OpenQuickOpen => (
-            Category::View,
-            idea_icon_mono(&idea::MAGNIFYING_GLASS_ICON, is_dark),
+            Some(idea_icon_element(&idea::MAGNIFYING_GLASS_ICON)),
         ),
         C::OpenSearchEverywhere => (
             Category::View,
-            idea_icon_mono(&idea::GLOBE_HEMISPHERE_WEST_ICON, is_dark),
+            Some(idea_icon_element(&idea::GLOBE_HEMISPHERE_WEST_ICON)),
         ),
-        C::OpenReplaceInFiles => (Category::View, Icon::new(IconName::Replace)),
+        // 替换在 IDEA 里就落在「查找」工具窗里（`expui/toolwindows/find@20x20`）。
+        C::OpenReplaceInFiles => (
+            Category::View,
+            Some(idea_icon_element(&idea::FIND_TOOL_WINDOW_ICON)),
+        ),
         C::NavigateToDefinition => (
             Category::View,
-            idea_icon_mono(&idea::ARROW_RIGHT_ICON, is_dark),
+            Some(idea_icon_element(&idea::ARROW_RIGHT_ICON)),
         ),
-        C::OpenFile => (Category::View, idea_icon_mono(&idea::FOLDER_ICON, is_dark)),
+        C::OpenFile => (Category::View, Some(idea_icon_element(&idea::FOLDER_ICON))),
         C::CloseTab
         | C::CloseOtherTabs
         | C::CloseAllTabs
         | C::CloseSavedTabs
         | C::CloseTabsToLeft
-        | C::CloseTabsToRight => (Category::View, idea_icon_mono(&idea::X_ICON, is_dark)),
-        C::ReopenClosedTab => (Category::View, idea_icon_mono(&idea::REFRESH_ICON, is_dark)),
-        C::NewWindow => (Category::View, Icon::new(IconName::AppWindow)),
+        | C::CloseTabsToRight => (Category::View, Some(idea_icon_element(&idea::X_ICON))),
+        C::ReopenClosedTab => (
+            Category::View,
+            Some(idea_icon_element(&idea::REFRESH_ICON)),
+        ),
+        C::NewWindow => (Category::View, Some(idea_icon_element(&idea::MONITOR_ICON))),
     };
 
     let (label, description) = match id {
@@ -1671,19 +1682,17 @@ impl ShellWorkspace {
 
     pub(crate) fn command_actions(&self, cx: &App) -> Vec<CommandAction> {
         let flags = self.action_flags(cx);
-        let is_dark = cx.theme().is_dark();
         visible_commands(flags)
             .into_iter()
-            .map(|id| command_action(id, flags, is_dark))
+            .map(|id| command_action(id, flags))
             .collect()
     }
 
     pub(crate) fn action_catalog(&self, cx: &App) -> Vec<CommandAction> {
         let flags = self.action_flags(cx);
-        let is_dark = cx.theme().is_dark();
         CommandId::ALL
             .into_iter()
-            .map(|id| command_action(id, flags, is_dark))
+            .map(|id| command_action(id, flags))
             .collect()
     }
 
@@ -1792,13 +1801,6 @@ impl ShellWorkspace {
                 view.set_search_index_readiness(readiness, cx)
             });
         }
-    }
-
-    pub(crate) fn run_command(&mut self, row: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(id) = visible_commands(self.action_flags(cx)).get(row).copied() else {
-            return;
-        };
-        self.run_command_id(id, window, cx);
     }
 
     pub fn apply_menu_action(
@@ -1988,7 +1990,14 @@ impl ShellWorkspace {
         diagnose_menu_run(action, "applied");
     }
 
-    fn run_command_id(&mut self, id: CommandId, window: &mut Window, cx: &mut Context<Self>) {
+    /// 跑一条命令。命令面板给的就是 `CommandId` 本身：行由它按查询裁出来，
+    /// 索引与动作同一份列表，不再有「按下的行」与「跑起来的命令」错位那类事。
+    pub(crate) fn run_command_id(
+        &mut self,
+        id: CommandId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match id {
             CommandId::SaveBuffer => {
                 let _ = self
@@ -3883,7 +3892,7 @@ mod tests {
         }
 
         for id in CommandId::ALL {
-            let action = super::command_action(id, dark(), true);
+            let action = super::command_action(id, dark());
             assert_eq!(action.id, id);
             assert!(!action.label.is_empty(), "{} 的 label 为空", id.id());
             assert!(

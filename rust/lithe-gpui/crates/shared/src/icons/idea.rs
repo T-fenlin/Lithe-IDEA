@@ -11,7 +11,7 @@ impl IdeaIcon {
     }
 }
 
-pub const ALL: [IdeaIcon; 62] = [
+pub const ALL: [IdeaIcon; 63] = [
     ARROW_CLOCKWISE_ICON,
     ARROW_COUNTER_CLOCKWISE_ICON,
     ARROW_DOWN_ICON,
@@ -38,6 +38,7 @@ pub const ALL: [IdeaIcon; 62] = [
     FILE_ICON,
     FILE_PLUS_ICON,
     FILES_ICON,
+    FIND_TOOL_WINDOW_ICON,
     FLOPPY_DISK_ICON,
     FOLDER_ICON,
     FOLDER_PLUS_ICON,
@@ -229,6 +230,12 @@ pub const FILE_PLUS_ICON: IdeaIcon = IdeaIcon {
 pub const FILES_ICON: IdeaIcon = IdeaIcon {
     light: "icons/idea/legacy/ui/listFiles.svg",
     dark: "icons/idea/legacy/ui/listFiles_dark.svg",
+    has_dark: true,
+};
+
+pub const FIND_TOOL_WINDOW_ICON: IdeaIcon = IdeaIcon {
+    light: "icons/idea/expui/toolwindows/find@20x20.svg",
+    dark: "icons/idea/expui/toolwindows/find@20x20_dark.svg",
     has_dark: true,
 };
 

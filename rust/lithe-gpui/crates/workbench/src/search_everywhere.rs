@@ -2,20 +2,20 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui::DefiniteLength;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext as _, Context, ElementId, Entity, FontWeight, InteractiveElement as _,
-    IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Task, Window, div, rems,
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, FontWeight,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window, div, rems,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use lithe_gpui_shared::icons::{FileIcon, file_icon, idea, idea_icon_image, idea_icon_svg_px};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
+use lithe_ui::forms::{InputEvent, InputState};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::navigation::{Palette, PaletteRow};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
+use lithe_ui::theme::ActiveTheme as _;
 use serde_json::Value;
 
 use crate::command_palette::{CommandAction, CommandId};
@@ -34,6 +34,10 @@ const PANEL_WIDTH: f32 = 860.;
 const PANEL_MAX_HEIGHT: f32 = 560.;
 const PANEL_TOP_INSET: f32 = 84.;
 
+/// 空查询时说「敲 `/` 找命令」，一旦有字就换成普通提示（与上游 `Command` 每帧现算的一致）。
+const PLACEHOLDER_EMPTY_KEY: &str = "lithe.searchEverywhere.typeSlash";
+const PLACEHOLDER_TYPED_KEY: &str = "lithe.search.gpui.queryPlaceholder";
+
 const TAB_HEIGHT_SPEC: f32 = 38.;
 const TAB_PADDING_SPEC: f32 = 11.;
 const TAB_UNDERLINE_SPEC: f32 = 2.;
@@ -45,6 +49,10 @@ const ACTION_ICON_SLOT_SPEC: f32 = 16.;
 
 const OVERLAY_ID: &str = "search-everywhere";
 const SCOPE_ROW_ID: &str = "search-everywhere-scopes";
+
+/// `Palette::new` 的 id 与 `open_dialog` 那个层名刻意不同：前者是元素/键控状态的 key，
+/// 后者是宿主浮层栈里的层名。
+const PALETTE_ID: &str = "search-everywhere-body";
 
 const SCOPE_KEY_CONTEXT: &str = "SearchEverywhere";
 
@@ -90,12 +98,18 @@ pub struct SearchEverywhere {
     root: PathBuf,
     on_open: Rc<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static>,
     on_action: Rc<dyn Fn(CommandId, &mut Window, &mut App) + 'static>,
-    command: Entity<CommandState>,
+    query: Entity<InputState>,
+    /// 查询框一动就重排一次 —— 行是本面板自己算的（库的 `Palette` 不做过滤）。
+    _query_changed: Subscription,
     scope: SearchEverywhereScope,
     query_text: SharedString,
     state: EverywhereState,
     timeline: QueryTimeline,
     debounce_task: Option<Task<()>>,
+    /// 有一轮在途：行首转圈，且不说「没匹配」。
+    loading: bool,
+    /// 面板是每次打开现建的：第一帧把光标送进查询框。
+    focus_pending: bool,
     search_index_readiness: SearchIndexReadiness,
 }
 
@@ -108,16 +122,32 @@ impl SearchEverywhere {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let query =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr(PLACEHOLDER_EMPTY_KEY)));
+        let query_changed = cx.subscribe_in(
+            &query,
+            window,
+            |overlay: &mut Self, field: &Entity<InputState>, event: &InputEvent, window, cx| {
+                if *event != InputEvent::Changed {
+                    return;
+                }
+                let text = field.read(cx).text().to_string();
+                overlay.on_query(&text, window, cx);
+            },
+        );
         Self {
             root,
             on_open,
             on_action,
-            command: cx.new(|cx| CommandState::new(window, cx)),
+            query,
+            _query_changed: query_changed,
             scope: SearchEverywhereScope::All,
             query_text: SharedString::default(),
             state: EverywhereState::Idle,
             timeline: QueryTimeline::default(),
             debounce_task: None,
+            loading: false,
+            focus_pending: true,
             search_index_readiness,
         }
     }
@@ -183,6 +213,15 @@ impl SearchEverywhere {
             return;
         }
         self.query_text = SharedString::from(query);
+        // 上游 `Command` 每帧按当前串现算提示语；查询框归调用方之后，提示语是输入框的状态，
+        // 得自己跟着串走。置空只 `notify`，不会再发 `Changed`，不会打回这里。
+        let placeholder = if self.query_text.trim().is_empty() {
+            tr(PLACEHOLDER_EMPTY_KEY)
+        } else {
+            tr(PLACEHOLDER_TYPED_KEY)
+        };
+        self.query
+            .update(cx, |input, cx| input.set_placeholder(placeholder, cx));
         if uses_command_catalog(self.scope, &self.query_text) {
             self.abandon(window, cx);
             let rows = self.items(cx).len();
@@ -378,7 +417,8 @@ impl SearchEverywhere {
         let Some(item) = self.items(cx).into_iter().nth(row) else {
             return;
         };
-        window.close_dialog(cx);
+        // 关面板由 `Palette::on_close` 收（它先叫这里、再收尾）：这一行得在收尾之前读，
+        // 收尾（`close`）会把 `state` 复位成 `Idle`、行就没了。
         self.abandon(window, cx);
         match item {
             EverywhereItem::Action(action) => {
@@ -419,9 +459,9 @@ impl SearchEverywhere {
         cx.notify();
     }
 
-    fn set_loading(&self, loading: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.command
-            .update(cx, |state, cx| state.set_loading(loading, window, cx));
+    fn set_loading(&mut self, loading: bool, _window: &mut Window, cx: &mut Context<Self>) {
+        self.loading = loading;
+        cx.notify();
     }
 
     fn cancel_in_background(operation_id: String, cx: &mut Context<Self>) {
@@ -440,16 +480,16 @@ impl SearchEverywhere {
     }
 
     fn scope_tabs(&self, cx: &Context<Self>) -> impl IntoElement {
-        let mut row = h_flex()
+        let colors = &cx.theme().colors;
+        let mut row = h_stack()
             .id(SCOPE_ROW_ID)
             .w_full()
             .h_10()
             .px_1p5()
             .gap_0p5()
-            .items_center()
-            .bg(cx.theme().tab_bar)
+            .bg(colors.tab_bar)
             .border_b_1()
-            .border_color(cx.theme().border);
+            .border_color(colors.border);
         for scope in SearchEverywhereScope::ALL {
             row = row.child(self.scope_tab(scope, cx));
         }
@@ -458,12 +498,9 @@ impl SearchEverywhere {
 
     fn scope_tab(&self, scope: SearchEverywhereScope, cx: &Context<Self>) -> impl IntoElement {
         let active = self.scope == scope;
-        let foreground = if active {
-            cx.theme().foreground
-        } else {
-            cx.theme().muted_foreground
-        };
-        v_flex()
+        let colors = &cx.theme().colors;
+        let foreground = if active { colors.fg } else { colors.fg_subtle };
+        v_stack()
             .id(ElementId::from(format!(
                 "search-everywhere-scope-{}",
                 scope.token()
@@ -475,7 +512,7 @@ impl SearchEverywhere {
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, window, cx| this.set_scope(scope, window, cx)))
             .child(
-                h_flex()
+                h_stack()
                     .px(rems(TAB_PADDING_SPEC / 16.))
                     .text_xs()
                     .font_weight(if active {
@@ -494,14 +531,18 @@ impl SearchEverywhere {
                         .right_0()
                         .bottom_0()
                         .h(rems(TAB_UNDERLINE_SPEC / 16.))
-                        .bg(cx.theme().primary),
+                        .bg(colors.primary),
                 )
             })
     }
 }
 
 impl Render for SearchEverywhere {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.focus_pending {
+            self.focus_pending = false;
+            window.focus(&self.query.read(cx).focus().clone(), cx);
+        }
         let failure: Option<SharedString> = match &self.state {
             EverywhereState::Failed { reason, .. } => Some(SharedString::from(reason.clone())),
             _ => None,
@@ -517,14 +558,48 @@ impl Render for SearchEverywhere {
         } else {
             self.scope.empty_key()
         };
-        let placeholder = if self.query_text.is_empty() {
-            tr("lithe.searchEverywhere.typeSlash")
-        } else {
-            tr("lithe.search.gpui.queryPlaceholder")
-        };
         let index_notice = crate::search_index::readiness_notice(self.search_index_readiness, cx);
+        let (danger, quiet) = {
+            let colors = &cx.theme().colors;
+            (colors.danger, colors.fg_subtle)
+        };
 
-        v_flex()
+        // 空态三态：查询失败（danger 色）、查询为空（什么都不说）、查了但没匹配（quiet 色）。
+        let empty: AnyElement = match (&failure, empty_query) {
+            (Some(reason), _) => div()
+                .py_6()
+                .w_full()
+                .text_center()
+                .text_sm()
+                .text_color(danger)
+                .child(reason.clone())
+                .into_any_element(),
+            (None, true) => div().into_any_element(),
+            (None, false) => div()
+                .py_6()
+                .w_full()
+                .text_center()
+                .text_sm()
+                .text_color(quiet)
+                .child(tr(empty_key))
+                .into_any_element(),
+        };
+
+        let close = {
+            let overlay = cx.entity();
+            move |window: &mut Window, cx: &mut App| {
+                let _ = overlay.update(cx, |overlay, cx| overlay.close(window, cx));
+                dismiss_hosted(window, cx);
+            }
+        };
+        let pick = {
+            let overlay = cx.entity();
+            move |row: usize, _: &SharedString, window: &mut Window, cx: &mut App| {
+                let _ = overlay.update(cx, |overlay, cx| overlay.confirm(row, window, cx));
+            }
+        };
+
+        v_stack()
             .id(OVERLAY_ID)
             .key_context(SCOPE_KEY_CONTEXT)
             .w_full()
@@ -533,50 +608,15 @@ impl Render for SearchEverywhere {
             .child(self.scope_tabs(cx))
             .children(index_notice)
             .child(
-                Command::new(&self.command)
-                    .bordered(false)
+                Palette::new(PALETTE_ID, self.query.clone(), close)
+                    .rows(rows.into_iter().map(|item| item.palette_row(cx)))
+                    .empty(empty)
+                    .loading(self.loading)
+                    .on_pick(pick)
                     .w_full()
-                    .filterable(false)
-                    .placeholder(placeholder)
-                    .max_h(DefiniteLength::from(rems(PANEL_MAX_HEIGHT / 16.)))
-                    .items(rows.into_iter().map(IntoCommandItem::into_command_item))
-                    .empty(move |_state, _window, cx| {
-                        if let Some(reason) = failure.clone() {
-                            return div()
-                                .py_6()
-                                .w_full()
-                                .text_center()
-                                .text_sm()
-                                .text_color(cx.theme().danger)
-                                .child(reason)
-                                .into_any_element();
-                        }
-                        if empty_query {
-                            return div().into_any_element();
-                        }
-                        div()
-                            .py_6()
-                            .w_full()
-                            .text_center()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(tr(empty_key))
-                            .into_any_element()
-                    })
-                    .on_query({
-                        let overlay = cx.entity();
-                        move |query, window, cx| {
-                            let _ = overlay
-                                .update(cx, |overlay, cx| overlay.on_query(query, window, cx));
-                        }
-                    })
-                    .on_confirm({
-                        let overlay = cx.entity();
-                        move |index, window, cx| {
-                            let _ = overlay
-                                .update(cx, |overlay, cx| overlay.confirm(index.row, window, cx));
-                        }
-                    }),
+                    .h_auto()
+                    .max_h(rems(PANEL_MAX_HEIGHT / 16.))
+                    .card(window, cx),
             )
     }
 }
@@ -586,155 +626,122 @@ enum EverywhereItem {
     Action(CommandAction),
 }
 
-trait IntoCommandItem {
-    fn into_command_item(self) -> CommandItem;
-}
-
-impl IntoCommandItem for EverywhereItem {
-    fn into_command_item(self) -> CommandItem {
+impl EverywhereItem {
+    fn palette_row(self, cx: &App) -> PaletteRow {
         match self {
-            Self::Result(row) => row.into_command_item(),
-            Self::Action(action) => action.into_command_item(),
+            Self::Result(row) => result_row(row, cx),
+            Self::Action(action) => action_row(action, cx),
         }
     }
 }
 
-impl IntoCommandItem for CommandAction {
-    fn into_command_item(self) -> CommandItem {
-        let group = self.category_label();
-        let label = self.label.clone();
-        let description = self.description.clone();
-        let identity = self.id.id();
-        CommandItem::new().label(label.clone()).child(move |_, cx| {
-            h_flex()
-                .id(ElementId::from(format!(
-                    "search-everywhere-action-{identity}"
-                )))
-                .w_full()
-                .min_w_0()
-                .h_6()
-                .gap_2()
+/// 一条动作：[`crate::command_palette::CommandAction`] 的标签 + 描述 + 分类。
+///
+/// 行首刻意用固定的闪电标（`warning` 色）当「这是命令、不是文件」的记号，
+/// 而不是命令自己的图标 —— 与上游 `Command` 里动作行的口径一致。
+fn action_row(action: CommandAction, cx: &App) -> PaletteRow {
+    let colors = &cx.theme().colors;
+    let group = action.category_label();
+    let (label, description) = (action.label.clone(), action.description.clone());
+    PaletteRow::new(action.id.id(), label.clone())
+        .icon_element(
+            div()
+                .flex_shrink_0()
+                .w(rems(ACTION_ICON_SLOT_SPEC / 16.))
                 .items_center()
+                .justify_center()
                 .child(
-                    div()
-                        .flex_shrink_0()
-                        .w(rems(ACTION_ICON_SLOT_SPEC / 16.))
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            idea_icon_svg_px(
-                                &idea::LIGHTNING_ICON,
-                                cx,
-                                rems(ACTION_ICON_SPEC / 16.),
-                            )
-                            .text_color(cx.theme().warning),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .text_xs()
-                        .text_color(cx.theme().foreground)
-                        .child(label.clone()),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(description.clone()),
-                )
-                .child(div().flex_1().min_w_0())
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(group.clone()),
-                )
-                .into_any_element()
-        })
-    }
+                    idea_icon_svg_px(&idea::LIGHTNING_ICON, cx, rems(ACTION_ICON_SPEC / 16.))
+                        .text_color(colors.warning),
+                ),
+        )
+        .label(
+            div()
+                .flex_shrink_0()
+                .text_xs()
+                .text_color(colors.fg)
+                .child(label),
+        )
+        .detail(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_xs()
+                .text_color(colors.fg_subtle)
+                .child(description),
+        )
+        .end(
+            div()
+                .flex_shrink_0()
+                .text_xs()
+                .text_color(colors.fg_subtle)
+                .child(group),
+        )
 }
 
-impl IntoCommandItem for EverywhereRow {
-    fn into_command_item(self) -> CommandItem {
-        let shows_line = self.shows_line();
-        let shows_preview = self.shows_preview();
-        let class_icon = self.kind.is_type();
-        let java_icon = self.kind.is_symbol();
-        let EverywhereRow {
-            path,
-            name,
-            parent,
-            line,
-            preview,
-            ..
-        } = self;
-        let label = SharedString::from(name.clone());
-        let item_name = SharedString::from(name);
-        let item_parent = SharedString::from(parent);
-        let item_preview = SharedString::from(preview);
-        CommandItem::new().label(label).child(move |_, cx| {
-            let identity = match line {
-                Some(line) => format!("{path}-{line}-{item_name}"),
-                None => path.clone(),
-            };
-            h_flex()
-                .id(ElementId::from(format!("search-everywhere-row-{identity}")))
-                .w_full()
-                .min_w_0()
-                .h_6()
-                .gap_2()
-                .items_center()
-                .child(if class_icon {
-                    idea_icon_image(&idea::CLASS_ICON, cx, rems(ROW_ICON_SPEC / 16.))
-                } else if java_icon {
-                    idea_icon_image(&idea::JAVA_ICON, cx, rems(ROW_ICON_SPEC / 16.))
-                } else {
-                    FileIcon::own(file_icon::fallback_icon(item_name.as_ref()))
-                        .with_theme_icon(item_name.as_ref(), cx)
-                        .render(rems(ROW_ICON_SPEC / 16.), cx)
-                })
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .text_xs()
-                        .text_color(cx.theme().foreground)
-                        .child(item_name.clone()),
-                )
-                .when(shows_line && line.is_some(), |this| {
-                    this.child(
-                        div()
-                            .flex_shrink_0()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(SharedString::from(format!(":{}", line.unwrap_or(0)))),
-                    )
-                })
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(item_parent.clone()),
-                )
-                .when(shows_preview, |this| {
-                    this.child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(item_preview.clone()),
-                    )
-                })
-                .into_any_element()
-        })
+/// 一条搜索结果：主题文件图标 + 名字（符号/内容还会带 `:行号`）+ 父路径（+ 内容预览）。
+fn result_row(row: EverywhereRow, cx: &App) -> PaletteRow {
+    let shows_line = row.shows_line();
+    let shows_preview = row.shows_preview();
+    let class_icon = row.kind.is_type();
+    let java_icon = row.kind.is_symbol();
+    let EverywhereRow {
+        path,
+        name,
+        parent,
+        line,
+        preview,
+        ..
+    } = row;
+    let colors = &cx.theme().colors;
+    let item_name = SharedString::from(name.clone());
+    let icon = if class_icon {
+        idea_icon_image(&idea::CLASS_ICON, cx, rems(ROW_ICON_SPEC / 16.))
+    } else if java_icon {
+        idea_icon_image(&idea::JAVA_ICON, cx, rems(ROW_ICON_SPEC / 16.))
+    } else {
+        FileIcon::own(file_icon::fallback_icon(item_name.as_ref()))
+            .with_theme_icon(item_name.as_ref(), cx)
+            .render(rems(ROW_ICON_SPEC / 16.), cx)
+    };
+    let mut line_mark = h_stack()
+        .flex_shrink_0()
+        .text_xs()
+        .text_color(colors.fg)
+        .child(item_name);
+    if shows_line {
+        if let Some(line) = line {
+            line_mark = line_mark.child(
+                div()
+                    .flex_shrink_0()
+                    .text_xs()
+                    .text_color(colors.fg_subtle)
+                    .child(SharedString::from(format!(":{line}"))),
+            );
+        }
     }
+    let mut row = PaletteRow::new(path, name)
+        .icon_element(icon)
+        .label(line_mark)
+        .detail(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_xs()
+                .text_color(colors.fg_subtle)
+                .child(SharedString::from(parent)),
+        );
+    if shows_preview {
+        row = row.end(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_xs()
+                .text_color(colors.fg_subtle)
+                .child(SharedString::from(preview)),
+        );
+    }
+    row
 }
 
 #[cfg(test)]
@@ -758,7 +765,6 @@ mod tests {
         let on_action: Rc<dyn Fn(CommandId, &mut Window, &mut App) + 'static> =
             Rc::new(|_, _, _| {});
         cx.update(|cx| {
-            gpui_kit::init(cx);
             // 窗口根已换成 lithe-ui 的 `WindowRoot`（门 G1），测试宿主跟着换。
             // `lithe_ui::init` 会校验 `Application::with_assets`，无头测试里没有，
             // 所以只装它需要的主题全局。

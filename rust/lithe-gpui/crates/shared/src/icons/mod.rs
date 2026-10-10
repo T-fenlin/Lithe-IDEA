@@ -161,6 +161,19 @@ pub fn idea_icon_mono(icon: &idea::IdeaIcon, is_dark: bool) -> Icon {
     Icon::from_path(path)
 }
 
+/// 现取的 IDEA 图标元素，给「先拿图标、画的时候才知道主题」的地方用。
+///
+/// 与 [`idea_icon_mono`] 画出来的是同一张图，只是把 `is_dark` 推到渲染那一刻再问主题 ——
+/// 命令表的行是这样：图标随 `CommandAction` 一路传下去，真正落笔时才有 `&App`。
+///
+/// 参数收 `&'static`：图标只能是 [`idea`] 里的常量（见 [`AppIcon`] 的口径）。
+#[must_use]
+pub fn idea_icon_element(icon: &'static idea::IdeaIcon) -> lithe_ui::primitives::IconElement {
+    lithe_ui::primitives::IconElement::new(move |cx| {
+        idea_icon_mono(icon, cx.theme().is_dark()).into_any_element()
+    })
+}
+
 pub fn idea_icon_svg_px(icon: &idea::IdeaIcon, cx: &App, side: impl Into<Length>) -> Svg {
     let theme = cx.theme();
     let path: SharedString = icon.path(theme.is_dark()).into();

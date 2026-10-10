@@ -191,7 +191,7 @@ impl RenderOnce for BranchSelector {
             input,
             groups,
             start: 0,
-            empty: i18n::text(cx, "palette.branch.empty", &[]),
+            empty: i18n::text(cx, "palette.branch.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
             on_pick: Some(on_pick),

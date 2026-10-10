@@ -2,18 +2,18 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui::DefiniteLength;
 use gpui::{
-    App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _, IntoElement,
-    KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Task, Window, div, rems,
+    AnyElement, App, AppContext as _, Context, Entity, IntoElement, KeyBinding,
+    ParentElement as _, Render, SharedString, Styled as _, Subscription, Task, Window, div, rems,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
+use lithe_ui::forms::{InputEvent, InputState};
+use lithe_ui::layout::v_stack;
+use lithe_ui::navigation::{Palette, PaletteRow};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
+use lithe_ui::theme::ActiveTheme as _;
 use serde_json::Value;
 
 use crate::search_index::SearchIndexReadiness;
@@ -84,11 +84,17 @@ pub(crate) fn open_dialog(quick_open: Entity<QuickOpen>, window: &mut Window, cx
 pub struct QuickOpen {
     root: PathBuf,
     on_open: Rc<dyn Fn(PathBuf, &mut Window, &mut App) + 'static>,
-    command: Entity<CommandState>,
+    query: Entity<InputState>,
+    /// 查询框一动就重新起一轮（防抖 + 在途取消都在 `on_query` 里）。
+    _query_changed: Subscription,
     query_text: SharedString,
     state: QuickOpenState,
     timeline: QueryTimeline,
     debounce_task: Option<Task<()>>,
+    /// 有一轮在途：行首转圈，且不说「没匹配」。
+    loading: bool,
+    /// 面板是每次打开现建的：第一帧把光标送进查询框。
+    focus_pending: bool,
     search_index_readiness: SearchIndexReadiness,
 }
 
@@ -100,14 +106,31 @@ impl QuickOpen {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("lithe.quickOpen.searchFiles"))
+        });
+        let query_changed = cx.subscribe_in(
+            &query,
+            window,
+            |quick: &mut Self, field: &Entity<InputState>, event: &InputEvent, window, cx| {
+                if *event != InputEvent::Changed {
+                    return;
+                }
+                let text = field.read(cx).text().to_string();
+                quick.on_query(&text, window, cx);
+            },
+        );
         Self {
             root,
             on_open,
-            command: cx.new(|cx| CommandState::new(window, cx)),
+            query,
+            _query_changed: query_changed,
             query_text: SharedString::default(),
             state: QuickOpenState::Idle,
             timeline: QueryTimeline::default(),
             debounce_task: None,
+            loading: false,
+            focus_pending: true,
             search_index_readiness,
         }
     }
@@ -241,7 +264,8 @@ impl QuickOpen {
         let Some(target) = self.state.rows().get(row).cloned() else {
             return;
         };
-        window.close_dialog(cx);
+        // 关面板由 `Palette::on_close` 收（它先叫这里、再收尾）：这一行得在收尾之前读，
+        // 收尾会把 `state` 复位成 `Idle`、行就没了。
         if let Some(superseded) = self.timeline.abandon() {
             Self::cancel_in_background(superseded, cx);
         }
@@ -263,9 +287,9 @@ impl QuickOpen {
         cx.notify();
     }
 
-    fn set_loading(&self, loading: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.command
-            .update(cx, |state, cx| state.set_loading(loading, window, cx));
+    fn set_loading(&mut self, loading: bool, _window: &mut Window, cx: &mut Context<Self>) {
+        self.loading = loading;
+        cx.notify();
     }
 
     fn cancel_in_background(operation_id: String, cx: &mut Context<Self>) {
@@ -285,7 +309,11 @@ impl QuickOpen {
 }
 
 impl Render for QuickOpen {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.focus_pending {
+            self.focus_pending = false;
+            window.focus(&self.query.read(cx).focus().clone(), cx);
+        }
         let failure: Option<SharedString> = match &self.state {
             QuickOpenState::Failed { reason, .. } => Some(SharedString::from(reason.clone())),
             _ => None,
@@ -293,94 +321,88 @@ impl Render for QuickOpen {
         let rows: Vec<QuickOpenRow> = self.state.rows().to_vec();
         let empty_query = self.state.query().trim().is_empty();
         let index_notice = crate::search_index::readiness_notice(self.search_index_readiness, cx);
+        let theme = cx.theme();
+        let (danger, quiet) = (theme.colors.danger, theme.colors.fg_subtle);
 
-        let command = Command::new(&self.command)
-            .bordered(false)
-            .w_full()
-            .filterable(false)
-            .placeholder(tr("lithe.quickOpen.searchFiles"))
-            .max_h(DefiniteLength::from(rems(PANEL_MAX_HEIGHT / 16.)))
-            .items(rows.into_iter().map(IntoCommandItem::into_command_item))
-            .empty(move |_state, _window, cx| {
-                if let Some(reason) = failure.clone() {
-                    return div()
-                        .py_6()
-                        .w_full()
-                        .text_center()
-                        .text_sm()
-                        .text_color(cx.theme().danger)
-                        .child(reason)
-                        .into_any_element();
-                }
-                if empty_query {
-                    return div().into_any_element();
-                }
-                div()
-                    .py_6()
-                    .w_full()
-                    .text_center()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(tr("lithe.quickOpen.noMatch"))
-                    .into_any_element()
-            })
-            .on_query({
-                let quick = cx.entity();
-                move |query, window, cx| {
-                    let _ = quick.update(cx, |quick, cx| quick.on_query(query, window, cx));
-                }
-            })
-            .on_confirm({
-                let quick = cx.entity();
-                move |index, window, cx| {
-                    let _ = quick.update(cx, |quick, cx| quick.confirm(index.row, window, cx));
-                }
-            });
-
-        v_flex().w_full().children(index_notice).child(command)
-    }
-}
-
-trait IntoCommandItem {
-    fn into_command_item(self) -> CommandItem;
-}
-
-impl IntoCommandItem for QuickOpenRow {
-    fn into_command_item(self) -> CommandItem {
-        let QuickOpenRow { path, name, parent } = self;
-        let label = SharedString::from(name.clone());
-        let item_name = SharedString::from(name);
-        let item_parent = SharedString::from(parent);
-        CommandItem::new().label(label).child(move |_, cx| {
-            h_flex()
-                .id(ElementId::from(format!("quick-open-result-{path}")))
+        // 空态三态：查询失败（danger 色）、查询为空（什么都不说）、查了但没匹配（quiet 色）。
+        let empty: AnyElement = match (&failure, empty_query) {
+            (Some(reason), _) => div()
+                .py_6()
                 .w_full()
-                .min_w_0()
-                .h_6()
-                .gap_2()
-                .items_center()
-                .child(
-                    FileIcon::own(file_icon::fallback_icon(item_name.as_ref()))
-                        .with_theme_icon(item_name.as_ref(), cx)
-                        .render(rems(ROW_ICON_SPEC / 16.), cx),
-                )
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .text_xs()
-                        .text_color(cx.theme().foreground)
-                        .child(item_name.clone()),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(item_parent.clone()),
-                )
-                .into_any_element()
-        })
+                .text_center()
+                .text_sm()
+                .text_color(danger)
+                .child(reason.clone())
+                .into_any_element(),
+            (None, true) => div().into_any_element(),
+            (None, false) => div()
+                .py_6()
+                .w_full()
+                .text_center()
+                .text_sm()
+                .text_color(quiet)
+                .child(tr("lithe.quickOpen.noMatch"))
+                .into_any_element(),
+        };
+
+        let close = {
+            let quick = cx.entity();
+            move |window: &mut Window, cx: &mut App| {
+                let _ = quick.update(cx, |quick, cx| quick.close(window, cx));
+                dismiss_hosted(window, cx);
+            }
+        };
+        let pick = {
+            let quick = cx.entity();
+            move |row: usize, _: &SharedString, window: &mut Window, cx: &mut App| {
+                let _ = quick.update(cx, |quick, cx| quick.confirm(row, window, cx));
+            }
+        };
+
+        v_stack()
+            .w_full()
+            .children(index_notice)
+            .child(
+                Palette::new(QUICK_OPEN_ID, self.query.clone(), close)
+                    .rows(rows.into_iter().map(|row| palette_row(row, cx)))
+                    .empty(empty)
+                    .loading(self.loading)
+                    .on_pick(pick)
+                    .w_full()
+                    .h_auto()
+                    .max_h(rems(PANEL_MAX_HEIGHT / 16.))
+                    .card(window, cx),
+            )
     }
+}
+
+/// `Palette::new` 的 id 与 `open_dialog` 那个层名刻意不同：前者是元素/键控状态的 key，
+/// 后者是宿主浮层栈里的层名。
+const QUICK_OPEN_ID: &str = "lithe-quick-open-body";
+
+/// A result row: the theme file icon, then the name, then where it lives.
+fn palette_row(row: QuickOpenRow, cx: &App) -> PaletteRow {
+    let QuickOpenRow { path, name, parent } = row;
+    let colors = &cx.theme().colors;
+    let item_name = SharedString::from(name.clone());
+    let icon = FileIcon::own(file_icon::fallback_icon(item_name.as_ref()))
+        .with_theme_icon(item_name.as_ref(), cx)
+        .render(rems(ROW_ICON_SPEC / 16.), cx);
+    PaletteRow::new(path, name)
+        .icon_element(icon)
+        .label(
+            div()
+                .flex_shrink_0()
+                .text_xs()
+                .text_color(colors.fg)
+                .child(item_name),
+        )
+        .detail(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_xs()
+                .text_color(colors.fg_subtle)
+                .child(SharedString::from(parent)),
+        )
 }

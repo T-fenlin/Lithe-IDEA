@@ -195,7 +195,7 @@ impl RenderOnce for CommandPalette {
             input,
             groups,
             start: 0,
-            empty: i18n::text(cx, "palette.command.empty", &[]),
+            empty: i18n::text(cx, "palette.command.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
             on_pick: on_value(self.on_run),
@@ -291,7 +291,7 @@ impl RenderOnce for QuickOpen {
                     title: Some(i18n::text(cx, "palette.recent", &[])),
                     rows,
                 },
-                i18n::text(cx, "palette.open.idle", &[]),
+                i18n::text(cx, "palette.open.idle", &[]).into_any_element(),
             )
         } else {
             let rows = ranked(self.paths.iter(), &query, |path| &path[..])
@@ -301,7 +301,7 @@ impl RenderOnce for QuickOpen {
                 .collect();
             (
                 Group { title: None, rows },
-                i18n::text(cx, "palette.open.empty", &[]),
+                i18n::text(cx, "palette.open.empty", &[]).into_any_element(),
             )
         };
         Palette {
@@ -393,7 +393,7 @@ impl RenderOnce for QuickSwitcher {
             input,
             groups: vec![Group { title: None, rows }],
             start,
-            empty: i18n::text(cx, "palette.switch.empty", &[]),
+            empty: i18n::text(cx, "palette.switch.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
             on_pick: on_value(self.on_switch),
@@ -492,7 +492,8 @@ impl SearchPalette {
                 i18n::text(cx, "palette.search.idle", &[])
             } else {
                 i18n::text(cx, "palette.search.empty", &[("query", &query)])
-            },
+            }
+            .into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
             on_pick: on_value(self.on_open),

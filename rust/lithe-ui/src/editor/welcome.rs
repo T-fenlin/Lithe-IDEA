@@ -280,7 +280,7 @@ impl RenderOnce for ProjectSwitcher {
                 rows: found.into_iter().map(|(_, row)| row).collect(),
             }],
             start: 0,
-            empty: i18n::text(cx, "palette.project.empty", &[]),
+            empty: i18n::text(cx, "palette.project.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
             on_pick,

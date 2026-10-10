@@ -232,7 +232,7 @@ pub struct Palette {
     /// The row marked whenever the query changes.
     pub(crate) start: usize,
     /// Said when no row fits and nothing is in flight.
-    pub(crate) empty: SharedString,
+    pub(crate) empty: AnyElement,
     /// An answer is in flight: the leading mark spins and `empty` stays hidden.
     pub(crate) loading: bool,
     /// 调用方对卡片的样式覆盖（`Styled`）；尺寸、内衬这类规格不该在组件里写死。
@@ -255,7 +255,7 @@ impl Palette {
             input,
             groups: Vec::new(),
             start: 0,
-            empty: SharedString::default(),
+            empty: SharedString::default().into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
             on_pick: None,
@@ -292,8 +292,11 @@ impl Palette {
     }
 
     /// Said when no row fits and nothing is in flight.
-    pub fn empty(mut self, text: impl Into<SharedString>) -> Self {
-        self.empty = text.into();
+    ///
+    /// Any element, so a failed search can say so in the danger color while a
+    /// plain "nothing matched" stays quiet. Plain text keeps the quiet default.
+    pub fn empty(mut self, empty: impl IntoElement) -> Self {
+        self.empty = empty.into_any_element();
         self
     }
 

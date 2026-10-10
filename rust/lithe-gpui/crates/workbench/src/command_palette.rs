@@ -1,17 +1,17 @@
 use std::cell::RefCell;
 
-use gpui::DefiniteLength;
 use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, KeyBinding, ParentElement as _, Render,
-    SharedString, Styled as _, WeakEntity, Window, div, rems,
+    SharedString, Styled as _, Subscription, WeakEntity, Window, div, rems,
 };
-use gpui_kit::base::v_flex;
-use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::component::command::{Command, CommandItem, CommandState};
-
 use lithe_gpui_shared::tr;
+use lithe_ui::forms::{InputEvent, InputState};
+use lithe_ui::layout::v_stack;
+use lithe_ui::navigation::{Palette, PaletteRow};
 use lithe_ui::overlays::Dialog;
+use lithe_ui::primitives::IconElement;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
+use lithe_ui::theme::ActiveTheme as _;
 
 use crate::workspace::ShellWorkspace;
 
@@ -146,7 +146,10 @@ pub(crate) struct CommandAction {
     pub(crate) category: Category,
     pub(crate) label: SharedString,
     pub(crate) description: SharedString,
-    pub(crate) icon: gpui_kit::component::Icon,
+    /// 应用图标，取自本仓 `assets/icons/idea/**`（见 `shared::icons` 的图标口径）。
+    ///
+    /// 是**现取**的工厂而不是元素：`is_dark` 要等画的时候问主题。没有对应图标的那几条留空。
+    pub(crate) icon: Option<IconElement>,
 }
 
 impl CommandAction {
@@ -208,23 +211,81 @@ pub fn open_command_palette(window: &mut Window, cx: &mut App) {
 }
 
 pub struct CommandPalette {
-    command: Entity<CommandState>,
+    query: Entity<InputState>,
+    /// 查询框一动就重排一次 —— 行是本面板自己算的（库的 `Palette` 不做过滤）。
+    _query_changed: Subscription,
 }
 
 impl CommandPalette {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder(tr("lithe.commandPalette.placeholder")));
+        let query_changed = cx.subscribe_in(
+            &query,
+            window,
+            |_, _: &Entity<InputState>, event: &InputEvent, _, cx| {
+                if *event == InputEvent::Changed {
+                    cx.notify();
+                }
+            },
+        );
         Self {
-            command: cx.new(|cx| CommandState::new(window, cx)),
+            query,
+            _query_changed: query_changed,
         }
     }
 
-    fn confirm(&mut self, row: usize, window: &mut Window, cx: &mut Context<Self>) {
-        window.close_dialog(cx);
+    fn confirm(&mut self, id: CommandId, window: &mut Window, cx: &mut Context<Self>) {
         let Some(shell) = shell().and_then(|shell| shell.upgrade()) else {
             return;
         };
-        shell.update(cx, |shell, cx| shell.run_command(row, window, cx));
+        shell.update(cx, |shell, cx| shell.run_command_id(id, window, cx));
     }
+}
+
+/// 命令表按 `search_model` 的同一套匹配裁一遍，**保持目录顺序**。
+///
+/// 原来是上游 `Command` 自己过滤：它排序、按 label/关键字匹配，而 `run_command(row)`
+/// 却拿的是**未过滤目录**的位次 ⇒ 带查询时按下的那一行与跑起来的不是同一条。
+/// 这里改成「过滤后的行 → 行上的 id」，索引与动作合一，匹配口径也与「随处搜索」一致。
+fn visible_rows(query: &str, cx: &App) -> Vec<CommandAction> {
+    let catalog = shell()
+        .and_then(|shell| shell.upgrade())
+        .map(|shell| shell.read(cx).action_catalog(cx))
+        .unwrap_or_default();
+    crate::search_model::action_rows(catalog, query)
+}
+
+fn row(action: CommandAction, cx: &App) -> PaletteRow {
+    let theme = cx.theme();
+    let (id, label, description, icon) = (action.id, action.label, action.description, action.icon);
+    let mut row = PaletteRow::new(id.id(), label.clone()).label(
+        v_stack()
+            .w_full()
+            .min_w_0()
+            .min_h_8()
+            .justify_center()
+            .gap_0p5()
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_sm()
+                    .text_color(theme.colors.fg)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_xs()
+                    .text_color(theme.colors.fg_muted)
+                    .child(description),
+            ),
+    );
+    if let Some(icon) = icon {
+        row = row.icon_element(icon.build(cx));
+    }
+    row
 }
 
 impl Render for CommandPalette {
@@ -235,87 +296,31 @@ impl Render for CommandPalette {
             pending
         });
         if needs_focus {
-            self.command
-                .update(cx, |command, cx| command.focus(window, cx));
+            window.focus(&self.query.read(cx).focus().clone(), cx);
             println!("S1_COMMAND_PALETTE focus=search");
         }
 
-        let actions = shell()
-            .and_then(|shell| shell.upgrade())
-            .map(|shell| shell.read(cx).command_actions(cx))
-            .unwrap_or_default();
+        let query = self.query.read(cx).text().to_string();
+        let rows = visible_rows(&query, cx);
+        let ids: Vec<CommandId> = rows.iter().map(|action| action.id).collect();
+        let close = |window: &mut Window, cx: &mut App| dismiss_hosted(window, cx);
+        let pick = {
+            let palette = cx.entity();
+            move |row: usize, _: &SharedString, window: &mut Window, cx: &mut App| {
+                let Some(id) = ids.get(row).copied() else {
+                    return;
+                };
+                palette.update(cx, |palette, cx| palette.confirm(id, window, cx));
+            }
+        };
 
-        Command::new(&self.command)
-            .bordered(false)
+        Palette::new("lithe-command-palette", self.query.clone(), close)
+            .rows(rows.into_iter().map(|action| row(action, cx)))
+            .empty(tr("lithe.commandPalette.noCommands"))
+            .on_pick(pick)
             .w_full()
-            .placeholder(tr("lithe.commandPalette.placeholder"))
-            .max_h(DefiniteLength::from(rems(PANEL_MAX_HEIGHT / 16.)))
-            .items(actions.into_iter().map(IntoCommandItem::into_command_item))
-            .empty(|_, _, cx| {
-                div()
-                    .py_6()
-                    .w_full()
-                    .text_center()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(tr("lithe.commandPalette.noCommands"))
-            })
-            .on_confirm({
-                let palette = cx.entity();
-                move |index, window, cx| {
-                    palette.update(cx, |palette, cx| {
-                        palette.confirm(index.row, window, cx);
-                    });
-                }
-            })
-    }
-}
-
-trait IntoCommandItem {
-    fn into_command_item(self) -> CommandItem;
-}
-
-impl IntoCommandItem for CommandAction {
-    fn into_command_item(self) -> CommandItem {
-        let search_category = self.category_label();
-        let CommandAction {
-            id,
-            label,
-            description,
-            icon,
-            ..
-        } = self;
-        let search_key: SharedString = id.id().into();
-        let item_label = label.clone();
-        let item_description = description.clone();
-        CommandItem::new()
-            .label(label)
-            .keywords([description, search_key, search_category])
-            .icon(icon)
-            .child(move |_, cx| {
-                v_flex()
-                    .w_full()
-                    .min_w_0()
-                    .min_h_8()
-                    .justify_center()
-                    .gap_0p5()
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_sm()
-                            .text_color(cx.theme().foreground)
-                            .child(item_label.clone()),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(item_description.clone()),
-                    )
-                    .into_any_element()
-            })
+            .h_auto()
+            .max_h(rems(PANEL_MAX_HEIGHT / 16.))
+            .card(window, cx)
     }
 }

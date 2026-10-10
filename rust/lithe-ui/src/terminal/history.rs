@@ -117,7 +117,7 @@ impl RenderOnce for CommandHistory {
                 rows: found.into_iter().map(|(_, row)| row).collect(),
             }],
             start: 0,
-            empty: i18n::text(cx, "palette.history.empty", &[]),
+            empty: i18n::text(cx, "palette.history.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
             on_pick: on_value(self.on_pick),
