@@ -5,46 +5,44 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, FontWeight, Hsla, InteractiveElement as _,
     IntoElement, Length, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, WeakEntity, Window, div, rems,
+    Styled as _, Subscription, WeakEntity, Window, div, px, rems,
 };
 use gpui::{Div, relative};
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::forms::{Input, InputEvent, InputState};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::menus::{DropdownMenu, Menu, MenuItem};
+use lithe_ui::primitives::Tooltip;
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::{tr, tr_args};
 
+/// Git 视图的图标。
+///
+/// 应用图标**只取本仓自有图标集**（`idea::*`）。本仓没有对应图形的位置留**同尺寸空槽**，
+/// 不拿组件库的 `IconName` 顶替——口径见
+/// `.agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md`
+/// 的"图标口径"一节。缺图形不影响功能：按钮仍在、提示与无障碍名字仍在。
 enum LogIcon {
     Idea(&'static idea::IdeaIcon),
-    Lucide(IconName),
+    /// 本仓没有这个图形；占住同样的方框，保持整列对齐。
+    Blank,
 }
 
 impl LogIcon {
-    fn element(self, cx: &App, side: impl Into<Length>, enabled: bool) -> AnyElement {
+    fn element(self, cx: &App, side: impl Into<Length>) -> AnyElement {
         match self {
-            Self::Lucide(name) => {
-                let color = if enabled {
-                    cx.theme().foreground
-                } else {
-                    cx.theme().muted_foreground
-                };
-                let side = side.into();
-                Icon::new(name)
-                    .w(side)
-                    .h(side)
-                    .text_color(color)
-                    .into_any_element()
-            }
             Self::Idea(icon) => idea_icon_image(icon, cx, side),
+            Self::Blank => {
+                let side = side.into();
+                div().flex_shrink_0().w(side).h(side).into_any_element()
+            }
         }
     }
 }
 
+use crate::changes::ChangeKind;
 use crate::model::{
     AUTHOR_COLUMN_WIDTH, ButtonHandler, COMMIT_CONTENT_MIN_WIDTH, COMMIT_FILE_INDENT_BASE,
     COMMIT_FILE_INDENT_STEP, COMMIT_FILE_STATUS_FONT_SIZE, COMMIT_PANE_FRACTION, COMMIT_ROW_HEIGHT,
@@ -113,8 +111,8 @@ impl BottomPane {
             &filter,
             window,
             |pane: &mut Self, state: &Entity<InputState>, event: &InputEvent, _window, cx| {
-                if matches!(event, InputEvent::Change) {
-                    pane.filter_query = state.read(cx).value();
+                if matches!(event, InputEvent::Changed) {
+                    pane.filter_query = SharedString::from(state.read(cx).text());
                     cx.notify();
                 }
             },
@@ -420,14 +418,16 @@ impl BottomPane {
             .justify_center()
             .size_6()
             .rounded(rems(ICON_BUTTON_RADIUS / 16.))
-            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+            .tooltip(Tooltip::text(tooltip.clone()))
             .aria_label(label)
             .when(enabled, |this| {
-                this.hover(|style| style.bg(cx.theme().accent))
+                // `accent` 是近黑/近白的高对比强调色，做 hover 底会把图标吞掉；hover 槽才是
+                // 控件悬停底（与 `changes_view` 的图标按钮同一口径）。
+                this.hover(|style| style.bg(cx.theme().colors.hover))
                     .on_click(move |event, window, cx| handler(event, window, cx))
             })
             .when(!enabled, |this| this.opacity(0.4))
-            .child(icon.element(cx, rems(14. / 16.), enabled))
+            .child(icon.element(cx, rems(14. / 16.)))
     }
 
     fn toolbar_button(
@@ -447,14 +447,14 @@ impl BottomPane {
             .justify_center()
             .size_8()
             .rounded(rems(REFERENCE_TOOLBAR_BUTTON_RADIUS / 16.))
-            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+            .tooltip(Tooltip::text(tooltip.clone()))
             .aria_label(label)
             .when(enabled, |this| {
-                this.hover(|style| style.bg(cx.theme().accent))
+                this.hover(|style| style.bg(cx.theme().colors.hover))
                     .on_click(move |event, window, cx| handler(event, window, cx))
             })
             .when(!enabled, |this| this.opacity(0.3))
-            .child(icon.element(cx, rems(1.), enabled))
+            .child(icon.element(cx, rems(1.)))
     }
 
     fn title_bar(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
@@ -489,7 +489,7 @@ impl BottomPane {
         };
         let settings: ButtonHandler = handler(|_event, _window, _cx| {});
 
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h_8()
@@ -497,8 +497,8 @@ impl BottomPane {
             .gap_2()
             .px_2()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().tab_bar)
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.tab_bar)
             .text_sm()
             .child(idea_icon_image(&idea::GIT_BRANCH_ICON, cx, rems(14. / 16.)))
             .child(
@@ -517,10 +517,10 @@ impl BottomPane {
                     .px_2()
                     .rounded(rems(REFERENCE_PILL_RADIUS / 16.))
                     .border_1()
-                    .border_color(cx.theme().border)
-                    .bg(cx.theme().background)
+                    .border_color(cx.theme().colors.border)
+                    .bg(cx.theme().colors.bg)
                     .font_weight(FontWeight::MEDIUM)
-                    .hover(|style| style.bg(cx.theme().accent))
+                    .hover(|style| style.bg(cx.theme().colors.hover))
                     .aria_label(tr("lithe.git.log.showAll"))
                     .on_click(move |event, window, cx| show_all(event, window, cx))
                     .child(div().min_w_0().text_ellipsis().child(pill_label)),
@@ -545,7 +545,7 @@ impl BottomPane {
             .child(
                 div()
                     .flex_shrink_0()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.footer.readOnly")),
             )
             .child(Self::icon_button(
@@ -559,7 +559,7 @@ impl BottomPane {
     }
 
     fn tab_row(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
-        let mut row = h_flex()
+        let mut row = h_stack()
             .w_full()
             .flex_shrink_0()
             .h_6()
@@ -567,7 +567,7 @@ impl BottomPane {
             .gap_4()
             .px_3()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .text_xs();
 
         for (panel, label) in [
@@ -582,11 +582,11 @@ impl BottomPane {
                     .flex_shrink_0()
                     .aria_selected(selected)
                     .text_color(if selected {
-                        cx.theme().foreground
+                        cx.theme().colors.fg
                     } else {
-                        cx.theme().muted_foreground
+                        cx.theme().colors.fg_muted
                     })
-                    .hover(|style| style.text_color(cx.theme().foreground))
+                    .hover(|style| style.text_color(cx.theme().colors.fg))
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| {
                             if pane.panel != panel {
@@ -606,33 +606,29 @@ impl BottomPane {
         let current = self.filter_scope;
         let this = this.clone();
 
-        Button::new("bottom-git-filter-field")
-            .ghost()
-            .small()
-            .compact()
-            .label(current.label())
+        let mut menu = Menu::new();
+        for scope in FilterScope::all() {
+            let this = this.clone();
+            // "一组里选一个"：上游 `PopupMenuItem::checked(..)` 在库侧对到 `MenuItem::radio`
+            // （`MenuItem::check` 是独立的勾选项，语义不同）。
+            menu = menu.item(MenuItem::radio(scope.label(), scope == current).on_click(
+                move |_window, cx| {
+                    let _ = this.update(cx, |pane, cx| {
+                        pane.filter_scope = scope;
+                        let placeholder = scope.placeholder();
+                        pane.filter
+                            .update(cx, |state, cx| state.set_placeholder(placeholder, cx));
+                        cx.notify();
+                    });
+                },
+            ));
+        }
+
+        // 库的 `DropdownMenu` 自己画触发按钮（label + 尾部折叠箭头）并在触发器下方开菜单。
+        DropdownMenu::new("bottom-git-filter-field", current.label(), menu)
+            .variant(ButtonVariant::Ghost)
+            .size(Size::Small)
             .tooltip(tr("lithe.git.log.filterField"))
-            .dropdown_menu(move |menu, _window, _cx| {
-                let mut menu = menu;
-                for scope in FilterScope::all() {
-                    let this = this.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(scope.label())
-                            .checked(scope == current)
-                            .on_click(move |_event, window: &mut Window, cx: &mut App| {
-                                let _ = this.update(cx, |pane, cx| {
-                                    pane.filter_scope = scope;
-                                    let placeholder = scope.placeholder();
-                                    pane.filter.update(cx, |state, cx| {
-                                        state.set_placeholder(placeholder, window, cx)
-                                    });
-                                    cx.notify();
-                                });
-                            }),
-                    );
-                }
-                menu
-            })
     }
 
     fn filter_row(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
@@ -649,7 +645,7 @@ impl BottomPane {
             })
         };
 
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h_8()
@@ -657,20 +653,24 @@ impl BottomPane {
             .gap_2()
             .px_2()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().tab_bar)
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.tab_bar)
             .child(
-                Input::new(&self.filter)
-                    .cleanable(true)
-                    .small()
+                // 库的 `Input` 不是 `Styled`：宽度上下限由外层盒子给，输入框自己只管边框与内部。
+                div()
                     .flex_1()
                     .min_w(rems(FILTER_INPUT_MIN_WIDTH / 16.))
                     .max_w(rems(FILTER_INPUT_MAX_WIDTH / 16.))
-                    .prefix(idea_icon_image(
-                        &idea::MAGNIFYING_GLASS_ICON,
-                        cx,
-                        rems(14. / 16.),
-                    )),
+                    .child(
+                        Input::new(&self.filter)
+                            .clearable()
+                            .size(Size::Small)
+                            .prefix(idea_icon_image(
+                                &idea::MAGNIFYING_GLASS_ICON,
+                                cx,
+                                rems(14. / 16.),
+                            )),
+                    ),
             )
             .child(self.scope_button(this))
             .child(Self::icon_button(
@@ -692,23 +692,23 @@ impl BottomPane {
             .child(
                 div()
                     .flex_shrink_0()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(SharedString::from(format!("{visible}/{total}"))),
             )
     }
 
     fn commit_header(cx: &App) -> Div {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h_6()
             .items_center()
             .px_2()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().tab_bar)
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.tab_bar)
             .text_sm()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().colors.fg_muted)
             .child(div().min_w_0().flex_1().child(tr("lithe.git.log.commit")))
             .child(
                 div()
@@ -717,7 +717,7 @@ impl BottomPane {
                     .child(tr("lithe.git.log.author")),
             )
             .child(
-                h_flex()
+                h_stack()
                     .w_32()
                     .flex_shrink_0()
                     .justify_end()
@@ -728,7 +728,7 @@ impl BottomPane {
     fn graph_cell(row: &GraphRow, cx: &App) -> Div {
         let half = COMMIT_ROW_HEIGHT / 2.;
 
-        h_flex()
+        h_stack()
             .h_full()
             .flex_shrink_0()
             .min_w(rems(GRAPH_MIN_WIDTH / 16.))
@@ -740,7 +740,7 @@ impl BottomPane {
                 let edge_here = row.edges.iter().find(|(target, _, _)| *target == lane);
 
                 match (lane == row.lane, color) {
-                    (true, _) => v_flex()
+                    (true, _) => v_stack()
                         .w(lane_width)
                         .h_full()
                         .items_center()
@@ -755,7 +755,7 @@ impl BottomPane {
                                 .size(rems(GRAPH_NODE_RADIUS * 2. / 16.))
                                 .flex_shrink_0()
                                 .rounded_full()
-                                .bg(cx.theme().background)
+                                .bg(cx.theme().colors.bg)
                                 .border_2()
                                 .border_color(lane_color(row.node_color, cx)),
                         )
@@ -768,13 +768,13 @@ impl BottomPane {
                                 }),
                         )
                         .into_any_element(),
-                    (false, Some(index)) => v_flex()
+                    (false, Some(index)) => v_stack()
                         .w(lane_width)
                         .h_full()
                         .items_center()
                         .child(div().w(line_width).h_full().bg(lane_color(*index, cx)))
                         .into_any_element(),
-                    (false, None) => v_flex()
+                    (false, None) => v_stack()
                         .w(lane_width)
                         .h_full()
                         .items_center()
@@ -795,7 +795,7 @@ impl BottomPane {
 
     fn label_badge(label: &Label, cx: &App) -> Div {
         let color = label_color(label.kind, cx);
-        h_flex()
+        h_stack()
             .h(rems((LABEL_FONT_SIZE + LABEL_PADDING_Y * 2.) / 16.))
             .max_w(rems(LABEL_MAX_WIDTH / 16.))
             .flex_shrink_0()
@@ -820,31 +820,39 @@ impl BottomPane {
         this: &WeakEntity<Self>,
         cx: &App,
     ) -> impl IntoElement {
+        // 选中底用 `selection` **槽位原值**：它自带 alpha（亮 20% / 暗 30%），原先再乘
+        // 0.22 只剩约 4%，等于没有选中态。
+        let selected_bg = cx.theme().colors.selection;
+        // hover 走 `hover` 槽，与 `changes_view` / `editor` 一致。原先这里用
+        // `accent.opacity(..)`，但本调色板里 `accent` 是**近黑/近白的高对比强调色**
+        // （亮 `#181613`、暗 `#f3f1f0`），拿它当 hover 底在亮主题下是一整块深色。
         let hover_bg = if selected {
-            cx.theme().primary.opacity(0.28)
+            selected_bg
         } else {
-            cx.theme().accent.opacity(0.7)
+            cx.theme().colors.hover
         };
         let this = this.clone();
 
-        h_flex()
+        h_stack()
             .id(commit_element_id(commit))
             .w_full()
             .min_w(rems(COMMIT_CONTENT_MIN_WIDTH / 16.))
             .min_h(rems(COMMIT_ROW_HEIGHT / 16.))
             .items_center()
             .px_1()
-            .border_b_1()
-            .border_color(cx.theme().border.opacity(0.5))
+            // IDEA 的 Commits 窗格是一张**没有网格线**的表：JetBrains 官方给
+            // `VcsLogGraphTable` 的写法是 `setShowHorizontalLines(false)` /
+            // `setShowVerticalLines(false)` / `setIntercellSpacing(JBUI.emptySize())`。
+            // 原先每行画 1px 底边，与真源相反。
             .whitespace_nowrap()
-            .when(selected, |row| row.bg(cx.theme().primary.opacity(0.22)))
+            .when(selected, |row| row.bg(selected_bg))
             .hover(move |style| style.bg(hover_bg))
             .on_click(move |_event, _window, cx: &mut App| {
                 let _ = this.update(cx, |pane, cx| pane.select_commit(index, cx));
             })
             .child(Self::graph_cell(graph, cx))
             .child(
-                h_flex()
+                h_stack()
                     .flex_1()
                     .min_w_0()
                     .items_center()
@@ -865,6 +873,12 @@ impl BottomPane {
                             .min_h(rems(COMMIT_ROW_HEIGHT / 16.))
                             .text_sm()
                             .line_height(rems(COMMIT_ROW_HEIGHT / 16.))
+                            // IDEA 的日志高亮规则：合并提交**灰色显示**
+                            // （JetBrains 官方 Log tab 文档：Highlight → Merge Commits: greyed out）。
+                            // 判据是父提交多于一个，与 IDEA 的合并提交定义一致。
+                            .when(commit.parent_hashes.len() > 1, |this| {
+                                this.text_color(cx.theme().colors.fg_muted)
+                            })
                             .child(commit.subject.clone()),
                     ),
             )
@@ -875,17 +889,17 @@ impl BottomPane {
                     .px_2()
                     .text_ellipsis()
                     .text_sm()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(commit.author.clone()),
             )
             .child(
-                h_flex()
+                h_stack()
                     .w_32()
                     .flex_shrink_0()
                     .justify_end()
                     .text_size(rems(DATE_FONT_SIZE / 16.))
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .text_color(cx.theme().muted_foreground)
+                    .font_family(cx.theme().mono_family.clone())
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(commit.date.clone()),
             )
     }
@@ -895,7 +909,7 @@ impl BottomPane {
         let total = self.commits.len();
         let graphs = layout_graph(&self.commits);
 
-        let mut list = v_flex()
+        let mut list = v_stack()
             .w_full()
             .min_w(rems(COMMIT_CONTENT_MIN_WIDTH / 16.));
 
@@ -906,12 +920,12 @@ impl BottomPane {
                 tr("lithe.git.log.noMatch")
             };
             list = list.child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .min_h(rems(COMMIT_ROW_HEIGHT * 4. / 16.))
                     .items_center()
                     .justify_center()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(message),
             );
         } else {
@@ -940,7 +954,7 @@ impl BottomPane {
         if self.has_more {
             let this = this.clone();
             list = list.child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .min_w(rems(COMMIT_CONTENT_MIN_WIDTH / 16.))
                     .h_9()
@@ -948,11 +962,14 @@ impl BottomPane {
                     .items_center()
                     .justify_center()
                     .border_t_1()
-                    .border_color(cx.theme().border)
+                    .border_color(cx.theme().colors.border)
                     .child(
                         Button::new("bottom-git-load-more")
-                            .ghost()
-                            .with_size(rem_px(cx.theme().font_size, LOAD_MORE_BUTTON_HEIGHT))
+                            .variant(ButtonVariant::Ghost)
+                            .size(Size::Size(rem_px(
+                                px(cx.theme().font_size),
+                                LOAD_MORE_BUTTON_HEIGHT,
+                            )))
                             .label(if self.loading_more {
                                 tr("lithe.git.log.loadingCommits")
                             } else {
@@ -966,9 +983,9 @@ impl BottomPane {
             );
         }
 
-        v_flex()
+        v_stack()
             .size_full()
-            .bg(cx.theme().background)
+            .bg(cx.theme().colors.bg)
             .text_sm()
             .child(self.filter_row(this, cx))
             .child(Self::commit_header(cx))
@@ -1030,7 +1047,7 @@ impl BottomPane {
         };
         let create_branch: ButtonHandler = handler(|_event, _window, _cx| {});
 
-        v_flex()
+        v_stack()
             .w_9()
             .h_full()
             .flex_shrink_0()
@@ -1038,11 +1055,12 @@ impl BottomPane {
             .gap_1()
             .py_1()
             .border_r_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().tab_bar.opacity(0.6))
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.tab_bar.opacity(0.6))
             .child(Self::toolbar_button(
                 ("bottom-git-ref-expand", 0),
-                LogIcon::Lucide(IconName::UnfoldVertical),
+                // 本仓图标集没有"全部展开/全部折叠"的图形：留空槽，提示与无障碍名字仍在。
+                LogIcon::Blank,
                 tr("lithe.git.expandAll"),
                 has_references,
                 expand,
@@ -1050,7 +1068,7 @@ impl BottomPane {
             ))
             .child(Self::toolbar_button(
                 ("bottom-git-ref-collapse", 0),
-                LogIcon::Lucide(IconName::FoldVertical),
+                LogIcon::Blank,
                 tr("lithe.git.collapseAll"),
                 has_references,
                 collapse,
@@ -1062,7 +1080,7 @@ impl BottomPane {
                     .h_px()
                     .flex_shrink_0()
                     .my_1()
-                    .bg(cx.theme().border),
+                    .bg(cx.theme().colors.border),
             )
             .child(Self::toolbar_button(
                 ("bottom-git-ref-mine", 0),
@@ -1095,7 +1113,7 @@ impl BottomPane {
         is_group: bool,
         selected: bool,
         disclosure: Option<AnyElement>,
-        icon: Option<IconName>,
+        icon: Option<LogIcon>,
         reference: Option<(usize, Option<(usize, usize)>, bool)>,
         this: &WeakEntity<Self>,
         cx: &App,
@@ -1105,7 +1123,7 @@ impl BottomPane {
         let tracking = reference.and_then(|(_, tracking, _)| tracking);
         let is_current = reference.is_some_and(|(_, _, current)| current);
 
-        let row = h_flex()
+        let row = h_stack()
             .id(SharedString::from(format!("bottom-git-ref-row:{row_id}")))
             .w_full()
             .min_w_0()
@@ -1116,12 +1134,16 @@ impl BottomPane {
                 (REFERENCE_INDENT_BASE + depth as f32 * REFERENCE_INDENT_STEP) / 16.,
             ))
             .rounded(rems(REFERENCE_ROW_RADIUS / 16.))
-            .when(selected, |row| row.bg(cx.theme().accent))
+            // 选中底走 `selection` 槽，不再用 `accent`：后者在本调色板是近黑（亮）/ 近白（暗）
+            // 的高对比强调色，当选中底会把行内文字压成同色、读不出来。
+            .when(selected, |row| row.bg(cx.theme().colors.selection))
+            // IDEA 的 Branches 窗格用**黄色**标当前分支（官方 Log tab 文档：
+            // 「yellow: marks the current branch head」），故当前分支名取 `warning`（黄）。
             .when(is_current, |row| {
                 row.font_weight(FontWeight::SEMIBOLD)
-                    .text_color(cx.theme().yellow_light)
+                    .text_color(cx.theme().colors.warning)
             })
-            .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
+            .hover(|style| style.bg(cx.theme().colors.hover))
             .when_some(index, |row, index| {
                 row.on_click(move |_event, _window, cx: &mut App| {
                     let _ = this.update(cx, |pane, cx| pane.select_reference(Some(index), cx));
@@ -1134,11 +1156,7 @@ impl BottomPane {
         };
 
         let row = match icon {
-            Some(icon) => row.child(Icon::new(icon).size_3p5().text_color(if is_current {
-                cx.theme().yellow_light
-            } else {
-                cx.theme().muted_foreground
-            })),
+            Some(icon) => row.child(icon.element(cx, rems(14. / 16.))),
             None if is_group => row.child(idea_icon_image(&idea::FOLDER_ICON, cx, rems(14. / 16.))),
             None => row,
         };
@@ -1148,7 +1166,7 @@ impl BottomPane {
             .child(div().flex_1());
 
         if let Some((ahead, behind)) = tracking {
-            let mut counts = h_flex()
+            let mut counts = h_stack()
                 .flex_shrink_0()
                 .items_center()
                 .gap_1()
@@ -1156,14 +1174,14 @@ impl BottomPane {
             if behind > 0 {
                 counts = counts.child(
                     div()
-                        .text_color(cx.theme().info)
+                        .text_color(cx.theme().colors.info)
                         .child(SharedString::from(format!("↙{}", tracking_count(behind)))),
                 );
             }
             if ahead > 0 {
                 counts = counts.child(
                     div()
-                        .text_color(cx.theme().success)
+                        .text_color(cx.theme().colors.success)
                         .child(SharedString::from(format!("↗{}", tracking_count(ahead)))),
                 );
             }
@@ -1172,14 +1190,17 @@ impl BottomPane {
 
         if is_current {
             row = row.child(
-                h_flex()
+                h_stack()
                     .flex_shrink_0()
                     .px_1()
                     .rounded(rems(REFERENCE_SECTION_RADIUS / 16.))
-                    .bg(cx.theme().yellow_light.opacity(0.12))
+                    // 「当前分支」徽章跟着上面的黄色口径走：底用 `warning_subtle`、字用 `warning`。
+                    // 原先底是 `accent.opacity(0.12)`（近黑的极浅一层）、字是 `accent`（近黑），
+                    // 在暗主题下几乎看不见徽章。
+                    .bg(cx.theme().colors.warning_subtle)
                     .text_size(rems(REFERENCE_BADGE_FONT_SIZE / 16.))
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(cx.theme().yellow_light)
+                    .text_color(cx.theme().colors.warning)
                     .child(tr("lithe.git.current")),
             );
         }
@@ -1200,7 +1221,7 @@ impl BottomPane {
             .filter(|(index, _)| self.visible_reference(*index))
             .count();
 
-        let mut body = v_flex().w_full().gap_1();
+        let mut body = v_stack().w_full().gap_1();
 
         let current_index = self
             .references
@@ -1210,7 +1231,7 @@ impl BottomPane {
             self.selected_reference.is_some() && self.selected_reference == current_index;
         let head = {
             let this = this.clone();
-            h_flex()
+            h_stack()
                 .id("bottom-git-head-row")
                 .w_full()
                 .h_7()
@@ -1220,12 +1241,12 @@ impl BottomPane {
                 .px_2()
                 .rounded(rems(REFERENCE_HEAD_ROW_RADIUS / 16.))
                 .font_weight(FontWeight::MEDIUM)
-                .when(head_selected, |row| row.bg(cx.theme().accent))
-                .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
+                .when(head_selected, |row| row.bg(cx.theme().colors.selection))
+                .hover(|style| style.bg(cx.theme().colors.hover))
                 .on_click(move |_event, _window, cx: &mut App| {
                     let _ = this.update(cx, |pane, cx| pane.select_reference(current_index, cx));
                 })
-                .child(div().text_color(cx.theme().primary).child("→"))
+                .child(div().text_color(cx.theme().colors.selection).child("→"))
                 .child(
                     div()
                         .min_w_0()
@@ -1238,7 +1259,7 @@ impl BottomPane {
                             .flex_1()
                             .min_w_0()
                             .text_ellipsis()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(reference.short_name),
                     )
                 })
@@ -1249,10 +1270,10 @@ impl BottomPane {
             let collapsed = self.collapsed_sections.contains(kind.id());
             let rows = build_reference_rows(&self.references, kind);
 
-            let mut section = v_flex().w_full();
+            let mut section = v_stack().w_full();
             let header = {
                 let this = this.clone();
-                h_flex()
+                h_stack()
                     .id(("bottom-git-ref-section", kind as usize))
                     .w_full()
                     .h_6()
@@ -1261,7 +1282,7 @@ impl BottomPane {
                     .px_1p5()
                     .rounded(rems(REFERENCE_SECTION_RADIUS / 16.))
                     .font_weight(FontWeight::MEDIUM)
-                    .hover(|style| style.bg(cx.theme().accent.opacity(0.8)))
+                    .hover(|style| style.bg(cx.theme().colors.hover))
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| pane.toggle_section(kind, cx));
                     })
@@ -1279,7 +1300,7 @@ impl BottomPane {
                     .child(
                         div()
                             .flex_shrink_0()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(SharedString::from(
                                 self.references
                                     .iter()
@@ -1301,7 +1322,7 @@ impl BottomPane {
                             .h_6()
                             .pl_8()
                             .line_height(rems(1.5))
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.git.log.none")),
                     );
                 } else {
@@ -1376,16 +1397,17 @@ impl BottomPane {
                                 .as_ref()
                                 .map(|_| (reference.ahead, reference.behind))
                         });
+                        // 引用图标按"本仓有没有"取：本地/远程有对应图形，标签没有 ⇒ 留空槽。
                         let icon = if is_current {
-                            IconName::Check
+                            LogIcon::Idea(&idea::CHECK_ICON)
                         } else if let Some(reference) = reference.as_ref() {
                             match reference.kind {
-                                RefKind::Tag => IconName::Tag,
-                                RefKind::Remote => IconName::Network,
-                                RefKind::Local => IconName::GitBranch,
+                                RefKind::Tag => LogIcon::Blank,
+                                RefKind::Remote => LogIcon::Idea(&idea::GLOBE_HEMISPHERE_WEST_ICON),
+                                RefKind::Local => LogIcon::Idea(&idea::GIT_BRANCH_ICON),
                             }
                         } else {
-                            IconName::GitBranch
+                            LogIcon::Idea(&idea::GIT_BRANCH_ICON)
                         };
 
                         section = section.child(Self::reference_row(
@@ -1412,26 +1434,26 @@ impl BottomPane {
             .and_then(|index| self.references.get(index))
             .map(|reference| reference.short_name.clone());
 
-        h_flex()
+        h_stack()
             .size_full()
-            .bg(cx.theme().tab_bar.opacity(0.45))
+            .bg(cx.theme().colors.tab_bar.opacity(0.45))
             .text_sm()
             .child(Self::reference_toolbar(self, this, cx))
             .child(
-                v_flex()
+                v_stack()
                     .flex_1()
                     .min_w_0()
                     .h_full()
                     .child(
-                        h_flex()
+                        h_stack()
                             .w_full()
                             .flex_shrink_0()
                             .h_8()
                             .items_center()
                             .px_2()
                             .border_b_1()
-                            .border_color(cx.theme().border)
-                            .text_color(cx.theme().muted_foreground)
+                            .border_color(cx.theme().colors.border)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.git.log.references"))
                             .child(div().flex_1())
                             .when_some(reference_label, |row, label| {
@@ -1455,18 +1477,18 @@ impl BottomPane {
     fn inspector_pane(&self, cx: &App) -> impl IntoElement {
         let file_count = self.files.iter().filter(|row| !row.is_folder).count();
 
-        v_flex()
+        v_stack()
             .size_full()
-            .bg(cx.theme().tab_bar.opacity(0.35))
+            .bg(cx.theme().colors.tab_bar.opacity(0.35))
             .text_sm()
             .child(
-                v_flex()
+                v_stack()
                     .w_full()
                     .h(relative(INSPECTOR_FILES_FRACTION))
                     .min_h(rems(INSPECTOR_FILES_MIN_HEIGHT / 16.))
                     .min_w_0()
                     .child(
-                        h_flex()
+                        h_stack()
                             .w_full()
                             .flex_shrink_0()
                             .h_8()
@@ -1474,9 +1496,9 @@ impl BottomPane {
                             .gap_2()
                             .px_2()
                             .border_b_1()
-                            .border_color(cx.theme().border)
-                            .bg(cx.theme().tab_bar)
-                            .text_color(cx.theme().muted_foreground)
+                            .border_color(cx.theme().colors.border)
+                            .bg(cx.theme().colors.tab_bar)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr("lithe.git.log.commitFiles"))
                             .child(div().flex_1())
                             .child(if self.files_state == FilesState::Loading {
@@ -1499,7 +1521,7 @@ impl BottomPane {
                     .child(self.commit_files_body(cx)),
             )
             .child(
-                v_flex()
+                v_stack()
                     .id("bottom-git-detail-scroll")
                     .w_full()
                     .h(relative(INSPECTOR_DETAILS_FRACTION))
@@ -1507,8 +1529,8 @@ impl BottomPane {
                     .min_w_0()
                     .overflow_y_scroll()
                     .border_t_1()
-                    .border_color(cx.theme().border)
-                    .bg(cx.theme().background)
+                    .border_color(cx.theme().colors.border)
+                    .bg(cx.theme().colors.bg)
                     .p_3()
                     .gap_2()
                     .child(self.commit_detail_body(cx)),
@@ -1517,7 +1539,7 @@ impl BottomPane {
 
     fn commit_files_body(&self, cx: &App) -> impl IntoElement {
         let centered = |message: SharedString, color: Hsla| {
-            h_flex()
+            h_stack()
                 .w_full()
                 .flex_1()
                 .min_h_0()
@@ -1529,23 +1551,23 @@ impl BottomPane {
         };
 
         match self.files_state {
-            FilesState::Idle => centered(
-                tr("lithe.git.log.selectCommit"),
-                cx.theme().muted_foreground,
-            ),
+            FilesState::Idle => {
+                centered(tr("lithe.git.log.selectCommit"), cx.theme().colors.fg_muted)
+            }
             FilesState::Loading => centered(
                 tr("lithe.git.log.loadingChangedFiles"),
-                cx.theme().muted_foreground,
+                cx.theme().colors.fg_muted,
             ),
-            FilesState::Failed => {
-                centered(tr("lithe.git.log.unableToLoadFiles"), cx.theme().danger)
-            }
+            FilesState::Failed => centered(
+                tr("lithe.git.log.unableToLoadFiles"),
+                cx.theme().colors.danger,
+            ),
             FilesState::Ready if self.files.is_empty() => centered(
                 tr("lithe.git.log.noChangedFiles"),
-                cx.theme().muted_foreground,
+                cx.theme().colors.fg_muted,
             ),
             FilesState::Ready => {
-                let mut tree = v_flex().w_full();
+                let mut tree = v_stack().w_full();
                 for row in &self.files {
                     tree = tree.child(Self::commit_file_row(row, cx));
                 }
@@ -1564,14 +1586,12 @@ impl BottomPane {
 
     fn commit_file_row(row: &CommitFileRow, cx: &App) -> Div {
         let status = row.status.chars().next().unwrap_or(' ');
-        let status_color = match status {
-            'A' => cx.theme().success,
-            'D' => cx.theme().danger,
-            'R' => cx.theme().primary,
-            _ => cx.theme().warning,
-        };
+        // 状态色只此一份：`ChangeKind::color`。原先这里是第二份 switch，且把删除画成红、
+        // 把修改画成黄、把重命名画成 `selection`（那是**带 alpha 的底色槽**，当文字色只有
+        // 20% 不透明度、几乎看不见）。与 Changes 视图同一真源后，改色只需改一处。
+        let status_color = ChangeKind::parse(&row.status, false).color(cx);
 
-        let row_element = h_flex()
+        let row_element = h_stack()
             .w_full()
             .min_w_0()
             .h_6()
@@ -1585,11 +1605,7 @@ impl BottomPane {
 
         if row.is_folder {
             row_element
-                .child(
-                    Icon::new(IconName::Folder)
-                        .size_3p5()
-                        .text_color(cx.theme().muted_foreground),
-                )
+                .child(idea_icon_image(&idea::FOLDER_ICON, cx, rems(14. / 16.)))
                 .child(
                     div()
                         .min_w_0()
@@ -1601,7 +1617,7 @@ impl BottomPane {
                     div()
                         .flex_shrink_0()
                         .text_size(rems(COMMIT_FILE_STATUS_FONT_SIZE / 16.))
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr_args(
                             "lithe.git.log.filesCount",
                             &[("count", &row.file_count.to_string())],
@@ -1619,7 +1635,7 @@ impl BottomPane {
                 .child(
                     div()
                         .flex_shrink_0()
-                        .font_family(cx.theme().mono_font_family.clone())
+                        .font_family(cx.theme().mono_family.clone())
                         .text_size(rems(COMMIT_FILE_STATUS_FONT_SIZE / 16.))
                         .text_color(status_color)
                         .child(SharedString::from(status.to_string())),
@@ -1628,20 +1644,20 @@ impl BottomPane {
     }
 
     fn commit_detail_body(&self, cx: &App) -> impl IntoElement {
-        let mono = cx.theme().mono_font_family.clone();
+        let mono = cx.theme().mono_family.clone();
 
         let Some(detail) = self.detail.as_ref() else {
-            return h_flex()
+            return h_stack()
                 .w_full()
                 .flex_1()
                 .items_center()
                 .justify_center()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().colors.fg_muted)
                 .child(tr("lithe.git.log.commitDetails"))
                 .into_any_element();
         };
 
-        v_flex()
+        v_stack()
             .w_full()
             .gap_2()
             .child(
@@ -1653,7 +1669,7 @@ impl BottomPane {
                 div()
                     .font_family(mono.clone())
                     .text_size(rems(INSPECTOR_MONO_FONT_SIZE / 16.))
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(SharedString::from(if detail.email.is_empty() {
                         format!("{} · {}", detail.short_hash, detail.author)
                     } else {
@@ -1667,13 +1683,15 @@ impl BottomPane {
                 div()
                     .font_family(mono.clone())
                     .text_size(rems(INSPECTOR_MONO_FONT_SIZE / 16.))
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(detail.date.clone()),
             )
             .when(!detail.decorations.is_empty(), |this| {
                 this.child(
+                    // `selection` 是**带 alpha 的底色槽**（亮 20% / 暗 30%），当文字色几乎
+                    // 看不见；这里的装饰串是引用名，用中性弱化色。
                     div()
-                        .text_color(cx.theme().primary)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(detail.decorations.clone()),
                 )
             })
@@ -1681,14 +1699,14 @@ impl BottomPane {
                 div()
                     .font_family(mono)
                     .text_size(rems(INSPECTOR_HASH_FONT_SIZE / 16.))
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(detail.hash.clone()),
             )
             .into_any_element()
     }
 
     fn console_pane(cx: &App) -> impl IntoElement {
-        let mut toolbar = v_flex()
+        let mut toolbar = v_stack()
             .w_8()
             .h_full()
             .flex_shrink_0()
@@ -1696,7 +1714,7 @@ impl BottomPane {
             .gap_1()
             .py_1()
             .border_r_1()
-            .border_color(cx.theme().border);
+            .border_color(cx.theme().colors.border);
 
         for (index, (icon, label)) in [
             (
@@ -1704,7 +1722,8 @@ impl BottomPane {
                 tr("lithe.git.console.find"),
             ),
             (
-                LogIcon::Lucide(IconName::TextWrap),
+                // 本仓图标集没有"软换行"的图形：留空槽。
+                LogIcon::Blank,
                 tr("lithe.git.console.wrap"),
             ),
             (
@@ -1712,7 +1731,8 @@ impl BottomPane {
                 tr("lithe.git.console.scrollToEnd"),
             ),
             (
-                LogIcon::Lucide(IconName::CircleSlash),
+                // 本仓图标集没有"取消/禁止"的图形：留空槽。
+                LogIcon::Blank,
                 tr("lithe.git.console.cancel"),
             ),
             (
@@ -1737,26 +1757,26 @@ impl BottomPane {
             ));
         }
 
-        h_flex()
+        h_stack()
             .size_full()
-            .font_family(cx.theme().mono_font_family.clone())
+            .font_family(cx.theme().mono_family.clone())
             .text_xs()
             .child(toolbar)
             .child(
-                h_flex()
+                h_stack()
                     .flex_1()
                     .min_w_0()
                     .h_full()
                     .items_center()
                     .justify_center()
                     .p_3()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.git.console.empty")),
             )
     }
 
     fn log_body(&self, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_1()
             .min_h_0()
@@ -1768,7 +1788,13 @@ impl BottomPane {
                     .min_h_0()
                     .child(self.reference_pane(this, cx)),
             )
-            .child(div().w_px().h_full().flex_shrink_0().bg(cx.theme().border))
+            .child(
+                div()
+                    .w_px()
+                    .h_full()
+                    .flex_shrink_0()
+                    .bg(cx.theme().colors.border),
+            )
             .child(
                 div()
                     .w(relative(COMMIT_PANE_FRACTION))
@@ -1777,7 +1803,13 @@ impl BottomPane {
                     .min_h_0()
                     .child(self.commit_pane(this, cx)),
             )
-            .child(div().w_px().h_full().flex_shrink_0().bg(cx.theme().border))
+            .child(
+                div()
+                    .w_px()
+                    .h_full()
+                    .flex_shrink_0()
+                    .bg(cx.theme().colors.border),
+            )
             .child(
                 div()
                     .w(relative(INSPECTOR_PANE_FRACTION))
@@ -1790,7 +1822,7 @@ impl BottomPane {
 
     fn banner(text: SharedString, this: &WeakEntity<Self>, cx: &App) -> impl IntoElement {
         let this = this.clone();
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h_7()
@@ -1798,15 +1830,18 @@ impl BottomPane {
             .gap_2()
             .px_2()
             .border_b_1()
-            .border_color(cx.theme().danger.opacity(0.3))
-            .bg(cx.theme().danger.opacity(0.1))
+            .border_color(cx.theme().colors.danger.opacity(0.3))
+            .bg(cx.theme().colors.danger.opacity(0.1))
             .text_sm()
-            .text_color(cx.theme().danger)
+            .text_color(cx.theme().colors.danger)
             .child(div().min_w_0().flex_1().text_ellipsis().child(text))
             .child(
                 Button::new("bottom-git-retry")
-                    .ghost()
-                    .with_size(rem_px(cx.theme().font_size, LOAD_MORE_BUTTON_HEIGHT))
+                    .variant(ButtonVariant::Ghost)
+                    .size(Size::Size(rem_px(
+                        px(cx.theme().font_size),
+                        LOAD_MORE_BUTTON_HEIGHT,
+                    )))
                     .label(tr("lithe.git.log.retry"))
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| pane.refresh(cx));
@@ -1820,15 +1855,15 @@ impl BottomPane {
         retry: Option<&WeakEntity<Self>>,
         cx: &App,
     ) -> Div {
-        let mut block = v_flex()
+        let mut block = v_stack()
             .w_full()
             .flex_1()
             .min_h_0()
             .items_center()
             .justify_center()
             .gap_2()
-            .text_color(cx.theme().muted_foreground)
-            .child(div().text_color(cx.theme().foreground).child(title));
+            .text_color(cx.theme().colors.fg_muted)
+            .child(div().text_color(cx.theme().colors.fg).child(title));
 
         if let Some(detail) = detail {
             block = block.child(div().child(detail));
@@ -1838,8 +1873,11 @@ impl BottomPane {
             let this = this.clone();
             block = block.child(
                 Button::new("bottom-git-empty-retry")
-                    .ghost()
-                    .with_size(rem_px(cx.theme().font_size, LOAD_MORE_BUTTON_HEIGHT))
+                    .variant(ButtonVariant::Ghost)
+                    .size(Size::Size(rem_px(
+                        px(cx.theme().font_size),
+                        LOAD_MORE_BUTTON_HEIGHT,
+                    )))
                     .label(tr("lithe.git.log.retry"))
                     .on_click(move |_event, _window, cx: &mut App| {
                         let _ = this.update(cx, |pane, cx| pane.refresh(cx));
@@ -1861,11 +1899,11 @@ impl Drop for BottomPane {
 
 impl Render for BottomPane {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut root = v_flex()
+        let mut root = v_stack()
             .size_full()
             .overflow_hidden()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground);
+            .bg(cx.theme().colors.bg)
+            .text_color(cx.theme().colors.fg);
 
         if !self.visible {
             return root;

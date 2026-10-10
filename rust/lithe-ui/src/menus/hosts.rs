@@ -15,6 +15,7 @@ use crate::{
     buttons::{Button, ButtonGroup, ButtonVariant},
     forms::InputState,
     primitives::IconName,
+    theme::Size,
 };
 
 pub(crate) type Click = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -74,6 +75,9 @@ pub struct DropdownMenu {
     label: SharedString,
     icon: Option<IconName>,
     variant: ButtonVariant,
+    size: Size,
+    /// What the trigger says on hover; unset leaves it without one.
+    tooltip: Option<SharedString>,
     menu: Menu,
 }
 
@@ -84,6 +88,8 @@ impl DropdownMenu {
             label: label.into(),
             icon: None,
             variant: ButtonVariant::Secondary,
+            size: Size::default(),
+            tooltip: None,
             menu,
         }
     }
@@ -97,6 +103,21 @@ impl DropdownMenu {
         self.variant = variant;
         self
     }
+
+    /// The trigger button's size tier; the default is [`Size::Medium`].
+    ///
+    /// Hosts that put a dropdown in a dense toolbar need this: without it the
+    /// trigger would be the only button in the row at the default tier.
+    pub fn size(mut self, size: Size) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// The trigger button's hover text; unset leaves it without one.
+    pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(tooltip.into());
+        self
+    }
 }
 
 impl RenderOnce for DropdownMenu {
@@ -106,7 +127,9 @@ impl RenderOnce for DropdownMenu {
         let button = Button::new((self.id.clone(), "button"))
             .label(self.label)
             .variant(self.variant)
+            .size(self.size)
             .trailing_icon(IconName::ChevronDown)
+            .when_some(self.tooltip, |button, tooltip| button.tooltip(tooltip))
             .when_some(self.icon, |button, icon| button.icon(icon))
             .on_click(move |event, window, cx| click(event, window, cx));
         host(self.id, button, &self.menu, &state, None, window, cx)
@@ -122,6 +145,8 @@ pub struct OverflowMenu {
     /// 以**元素**给出的图标（宿主自己的图标体系），优先于 [`Self::icon`]。
     icon_element: Option<AnyElement>,
     tooltip: SharedString,
+    /// 无障碍名字。图标按钮没有可见文字，缺了它读屏软件就没有名字可念。
+    aria_label: Option<SharedString>,
 }
 
 impl OverflowMenu {
@@ -132,6 +157,7 @@ impl OverflowMenu {
             icon: IconName::Ellipsis,
             icon_element: None,
             tooltip: "More".into(),
+            aria_label: None,
         }
     }
 
@@ -153,6 +179,14 @@ impl OverflowMenu {
         self.tooltip = tooltip.into();
         self
     }
+
+    /// 无障碍名字；图标按钮没有可见文字，不给它读屏软件就没有名字可念。
+    ///
+    /// 与 [`crate::buttons::Button::aria_label`] 同一口径：提示语（tooltip）不是名字。
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
 }
 
 impl RenderOnce for OverflowMenu {
@@ -162,6 +196,7 @@ impl RenderOnce for OverflowMenu {
         let button = Button::new((self.id.clone(), "button"))
             .variant(ButtonVariant::Ghost)
             .tooltip(self.tooltip)
+            .when_some(self.aria_label, |button, label| button.aria_label(label))
             .map(|button| match self.icon_element {
                 Some(icon) => button.icon_element(icon),
                 None => button.icon(self.icon),

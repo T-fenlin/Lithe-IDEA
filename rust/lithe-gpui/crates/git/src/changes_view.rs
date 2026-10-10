@@ -3,18 +3,19 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FontWeight,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems,
+    StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, px, rems,
 };
 use gpui::{Role, relative};
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia};
-use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _};
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::feedback::EmptyState;
+use lithe_ui::forms::{Input, InputEvent, InputState};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::menus::{Menu, MenuItem, OverflowMenu};
+use lithe_ui::motion::Spinner;
+use lithe_ui::primitives::Tooltip;
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 use lithe_gpui_shared::design::{ROW_LINE_HEIGHT, ROW_RADIUS};
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
@@ -34,6 +35,11 @@ use crate::remote::{self, ConflictGate, Preflight};
 const COMMIT_PANEL_RADIUS: f32 = RADIUS_XL;
 const COMMIT_ERROR_RADIUS: f32 = RADIUS_MD;
 const COMMIT_INPUT_HEIGHT: f32 = 64.;
+/// 提交按钮高度（px）。原来是 `.h_7()`（28px），库的 `Button` 只按档位或显式边长收尺寸。
+const COMMIT_BUTTON_HEIGHT: f32 = 28.;
+/// 提交说明框的行数区间（库 `InputState::multi_line` 收的是行数，不是像素）。
+const COMMIT_INPUT_MIN_ROWS: usize = 3;
+const COMMIT_INPUT_MAX_ROWS: usize = 8;
 const CONFLICT_PATH_LIMIT: usize = 3;
 
 const TITLE_KEY: &str = "lithe.workbench.sourceControl";
@@ -98,7 +104,7 @@ pub struct ChangesView {
     notice: Option<SharedString>,
     pending: BTreeSet<SharedString>,
     busy: bool,
-    message: Entity<TextareaState>,
+    message: Entity<InputState>,
     _message_subscription: Subscription,
     request_serial: u64,
     confirm_before_discard: bool,
@@ -113,13 +119,17 @@ impl ChangesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let message =
-            cx.new(|cx| TextareaState::new(window, cx).placeholder(tr(COMMIT_PLACEHOLDER_KEY)));
+        // 库的 `InputState` 一份类型管单行与多行：提交说明是 3–8 行的多行框。
+        let message = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(COMMIT_INPUT_MIN_ROWS, COMMIT_INPUT_MAX_ROWS)
+                .placeholder(tr(COMMIT_PLACEHOLDER_KEY))
+        });
         let message_subscription = cx.subscribe_in(
             &message,
             window,
-            |_view: &mut Self, _state: &Entity<TextareaState>, event: &InputEvent, _window, cx| {
-                if matches!(event, InputEvent::Change) {
+            |_view: &mut Self, _state: &Entity<InputState>, event: &InputEvent, _window, cx| {
+                if matches!(event, InputEvent::Changed) {
                     cx.notify();
                 }
             },
@@ -213,7 +223,18 @@ impl ChangesView {
     }
 
     fn message_text(&self, cx: &App) -> SharedString {
-        self.message.read(cx).value()
+        SharedString::from(self.message.read(cx).text())
+    }
+
+    /// 切换忙碌态，并把提交说明框的**可编辑性**一起切掉。
+    ///
+    /// 上游 `Textarea::disabled(..)` 是画的时候传的一个开关；库的 `Input` 没有这个开关，
+    /// 禁用在状态上（`InputState::set_disabled`）。所以忙碌态必须有个统一入口，
+    /// 否则某条路径忘了同步，提交框就会在写入过程中还能改。
+    fn set_busy(&mut self, busy: bool, cx: &mut Context<Self>) {
+        self.busy = busy;
+        self.message
+            .update(cx, |state, cx| state.set_disabled(busy, cx));
     }
 
     fn commit_blocker(&self, cx: &App) -> Option<CommitBlocker> {
@@ -300,21 +321,21 @@ impl ChangesView {
         let Some(root) = self.repository_root_text() else {
             return;
         };
-        self.busy = true;
+        self.set_busy(true, cx);
         self.error = None;
         self.notice = None;
         cx.notify();
         cx.spawn(async move |this, cx| {
             let outcome = cx.background_spawn(async move { stage_all(&root) }).await;
             let _ = this.update(cx, |view, cx| {
-                view.busy = false;
+                view.set_busy(false, cx);
                 view.record_write("stage_all", 0, outcome.failure, None, cx);
             });
         })
         .detach();
     }
 
-    fn commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn commit(&mut self, cx: &mut Context<Self>) {
         if self.busy {
             return;
         }
@@ -334,18 +355,18 @@ impl ChangesView {
         };
         let staged = self.staged_count();
         let text = self.message_text(cx).to_string();
-        self.busy = true;
+        self.set_busy(true, cx);
         self.error = None;
         self.notice = None;
         cx.notify();
 
         let serial = self.conflict.begin();
         let gate_root = root.clone();
-        cx.spawn_in(window, async move |this, cx| {
+        cx.spawn(async move |this, cx| {
             let markers = cx
                 .background_spawn(async move { remote::conflict_markers(&gate_root) })
                 .await;
-            let _ = this.update_in(cx, |view, window, cx| {
+            let _ = this.update(cx, |view, cx| {
                 if !view.conflict.apply(serial, markers) {
                     eprintln!("S1_SOURCE_CONTROL commit_gate=stale_reply action=drop");
                     return;
@@ -353,7 +374,7 @@ impl ChangesView {
                 match remote::conflict_gate(view.conflict.state()) {
                     ConflictGate::Clear => {
                         eprintln!("S1_SOURCE_CONTROL commit_gate=conflict_markers state=clear");
-                        view.run_commit(root, staged, text, window, cx);
+                        view.run_commit(root, staged, text, cx);
                     }
                     ConflictGate::Present { paths } => {
                         let (listed, more) = remote::join_paths(&paths, CONFLICT_PATH_LIMIT);
@@ -366,7 +387,7 @@ impl ChangesView {
                             "S1_SOURCE_CONTROL commit_gate=conflict_markers state=blocked paths={}",
                             paths.len()
                         );
-                        view.busy = false;
+                        view.set_busy(false, cx);
                         view.error = Some(tr_args(
                             CONFLICT_MARKERS_KEY,
                             &[("paths", &format!("{listed}{more}"))],
@@ -377,13 +398,13 @@ impl ChangesView {
                         eprintln!(
                             "S1_SOURCE_CONTROL commit_gate=conflict_markers state=unavailable error={reason}"
                         );
-                        view.busy = false;
+                        view.set_busy(false, cx);
                         view.error = Some(tr(VERIFY_MARKERS_KEY));
                         cx.notify();
                     }
                     ConflictGate::Wait => {
                         eprintln!("S1_SOURCE_CONTROL commit_gate=conflict_markers state=wait");
-                        view.busy = false;
+                        view.set_busy(false, cx);
                         cx.notify();
                     }
                 }
@@ -392,27 +413,20 @@ impl ChangesView {
         .detach();
     }
 
-    fn run_commit(
-        &mut self,
-        root: String,
-        staged: usize,
-        text: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        cx.spawn_in(window, async move |this, cx| {
+    fn run_commit(&mut self, root: String, staged: usize, text: String, cx: &mut Context<Self>) {
+        // 库的 `set_text` 不需要窗口（上游 `set_value` 要，是因为它要挪光标）；
+        // 这条路径现在没有别的东西要用窗口，所以整条链不再 `spawn_in`。
+        cx.spawn(async move |this, cx| {
             let outcome = cx
                 .background_spawn(async move { write_commit(&root, &text) })
                 .await;
-            let _ = this.update_in(cx, |view, window, cx| {
-                view.busy = false;
+            let _ = this.update(cx, |view, cx| {
+                view.set_busy(false, cx);
                 let committed = outcome.failure.is_none();
                 view.record_write("commit", staged, outcome.failure, None, cx);
                 if committed {
                     view.notice = Some(tr(COMMITTED_KEY));
-                    view.message.update(cx, |state, cx| {
-                        state.set_value(SharedString::default(), window, cx)
-                    });
+                    view.message.update(cx, |state, cx| state.set_text("", cx));
                     cx.notify();
                 }
             });
@@ -427,7 +441,7 @@ impl ChangesView {
         let Some(root) = self.repository_root_text() else {
             return;
         };
-        self.busy = true;
+        self.set_busy(true, cx);
         self.error = None;
         self.notice = None;
         cx.notify();
@@ -436,7 +450,7 @@ impl ChangesView {
                 .background_spawn(async move { operation_action(&root, operation) })
                 .await;
             let _ = this.update(cx, |view, cx| {
-                view.busy = false;
+                view.set_busy(false, cx);
                 view.record_write(operation, 0, outcome.failure, None, cx);
             });
         })
@@ -484,7 +498,7 @@ impl ChangesView {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(tr(DISCARD_CONFIRM_KEY)),
                     )
                     .action(move |close| {
@@ -494,7 +508,7 @@ impl ChangesView {
                     })
                     .action(move |close| {
                         Button::new(confirm_id)
-                            .danger()
+                            .variant(ButtonVariant::Danger)
                             .label(tr(ROLLBACK_KEY))
                             .on_click(move |_, window, cx| {
                                 let paths = confirm_paths.clone();
@@ -515,7 +529,7 @@ impl ChangesView {
         };
         let target: Vec<String> = paths.iter().map(|path| path.to_string()).collect();
         let count = target.len();
-        self.busy = true;
+        self.set_busy(true, cx);
         self.error = None;
         self.notice = None;
         cx.notify();
@@ -524,7 +538,7 @@ impl ChangesView {
                 .background_spawn(async move { discard(&root, &target) })
                 .await;
             let _ = this.update(cx, |view, cx| {
-                view.busy = false;
+                view.set_busy(false, cx);
                 view.record_write("discard", count, outcome.failure, None, cx);
             });
         })
@@ -581,34 +595,32 @@ impl ChangesView {
                 .any(|row| !row.kind.is_untracked() && row.worktree);
 
         let menu_this = this.clone();
-        let more = Button::new("changes-more")
-            .ghost()
-            .child(idea_icon_image(&idea::DOTS_THREE_ICON, cx, rems(1.)))
-            .px_0()
-            .tab_stop(false)
-            .size_6()
-            .rounded(rem_px(cx.theme().font_size, ICON_BUTTON_RADIUS))
+        let mut menu = Menu::new();
+        menu = menu.item(MenuItem::new(tr(REFRESH_KEY)).on_click({
+            let refresh_this = menu_this.clone();
+            move |_window, cx| {
+                let _ = refresh_this.update(cx, |view, cx| view.refresh(cx));
+            }
+        }));
+        menu = menu.item(
+            MenuItem::new(tr(DISCARD_ALL_KEY))
+                .disabled(!discard_enabled)
+                .on_click({
+                    let discard_this = menu_this.clone();
+                    move |window, cx| {
+                        let _ =
+                            discard_this.update(cx, |view, cx| view.discard_unstaged(window, cx));
+                    }
+                }),
+        );
+        // 库 `OverflowMenu` 正是"图标按钮 + 菜单"：图标以元素传入（走本仓自有图标集），
+        // 提示语与无障碍名字都留着。
+        let more = OverflowMenu::new("changes-more", menu)
+            .icon_element(idea_icon_image(&idea::DOTS_THREE_ICON, cx, rems(1.)))
             .tooltip(tr(ACTIONS_KEY))
-            .accessibility_label(tr(ACTIONS_KEY))
-            .dropdown_menu(move |menu, _window, _cx| {
-                let refresh_this = menu_this.clone();
-                let discard_this = menu_this.clone();
-                menu.item(PopupMenuItem::new(tr(REFRESH_KEY)).on_click(
-                    move |_event, _window, cx| {
-                        let _ = refresh_this.update(cx, |view, cx| view.refresh(cx));
-                    },
-                ))
-                .item(
-                    PopupMenuItem::new(tr(DISCARD_ALL_KEY))
-                        .disabled(!discard_enabled)
-                        .on_click(move |_event, window, cx| {
-                            let _ = discard_this
-                                .update(cx, |view, cx| view.discard_unstaged(window, cx));
-                        }),
-                )
-            });
+            .aria_label(tr(ACTIONS_KEY));
 
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h_9()
@@ -616,8 +628,8 @@ impl ChangesView {
             .gap_2()
             .px_2()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().background)
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.bg)
             .child(
                 div()
                     .flex_1()
@@ -626,7 +638,7 @@ impl ChangesView {
                     .text_sm()
                     .font_weight(FontWeight::SEMIBOLD)
                     .line_height(rems(1.))
-                    .text_color(cx.theme().foreground)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr(TITLE_KEY)),
             )
             .child(self.icon_button(
@@ -634,13 +646,20 @@ impl ChangesView {
                 idea_icon_image(&idea::REFRESH_ICON, cx, rems(1.)),
                 tr(REFRESH_KEY),
                 !matches!(self.state, LoadState::Loading),
-                cx.theme().font_size,
+                px(cx.theme().font_size),
+                cx.theme().colors.hover,
                 cx.listener(|view: &mut Self, _event, _window, cx| view.refresh(cx)),
             ))
             .child(more)
             .into_any_element()
     }
 
+    /// 24px 的图标按钮。
+    ///
+    /// 用裸盒子而不是库 `Button`：库 `Button` 不实现 `Styled`，拿不到"24px 方框 + 自己的圆角
+    /// + 无内衬"这三条几何；而这三条规定了 Git 工具窗口图标按钮的行高与对齐，
+    /// 与 `log_view` 的图标按钮是同一形态。提示语与无障碍名字照给，
+    /// 不因为按钮上没有文字就丢掉。
     fn icon_button(
         &self,
         id: &'static str,
@@ -648,48 +667,51 @@ impl ChangesView {
         label: SharedString,
         enabled: bool,
         rem: Pixels,
+        hover: Hsla,
         on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> AnyElement {
-        let button = Button::new(id)
-            .ghost()
-            .child(icon)
-            .px_0()
-            .tab_stop(false)
+        let button = div()
+            .id(id)
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .justify_center()
             .size_6()
             .rounded(rem_px(rem, ICON_BUTTON_RADIUS))
-            .tooltip(label.clone())
-            .accessibility_label(label);
+            .tooltip(Tooltip::text(label.clone()))
+            .aria_label(label);
         if enabled {
-            button.on_click(on_click).into_any_element()
+            button.hover(|style| style.bg(hover)).on_click(on_click)
         } else {
-            button.disabled(true).into_any_element()
+            button.opacity(0.4)
         }
+        .child(icon)
+        .into_any_element()
     }
 
     fn render_load_error(&self, message: SharedString, cx: &mut Context<Self>) -> AnyElement {
-        v_flex()
+        v_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
             .p_3()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().danger.opacity(0.12))
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.danger.opacity(0.12))
             .text_sm()
-            .text_color(cx.theme().danger)
+            .text_color(cx.theme().colors.danger)
             .child(message)
             .child(
                 Button::new("changes-retry")
                     .label(tr(RETRY_KEY))
-                    .small()
-                    .compact()
+                    .size(Size::Small)
                     .on_click(cx.listener(|view: &mut Self, _event, _window, cx| view.refresh(cx))),
             )
             .into_any_element()
     }
 
     fn render_write_error(&self, message: SharedString, cx: &mut Context<Self>) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .items_start()
@@ -697,10 +719,10 @@ impl ChangesView {
             .px_3()
             .py_2()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().danger.opacity(0.12))
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.danger.opacity(0.12))
             .text_sm()
-            .text_color(cx.theme().danger)
+            .text_color(cx.theme().colors.danger)
             .child(idea_icon_image(
                 &idea::WARNING_CIRCLE_ICON,
                 cx,
@@ -712,7 +734,8 @@ impl ChangesView {
                 idea_icon_image(&idea::X_ICON, cx, rems(1.)),
                 tr(CANCEL_KEY),
                 true,
-                cx.theme().font_size,
+                px(cx.theme().font_size),
+                cx.theme().colors.hover,
                 cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.error = None;
                     cx.notify();
@@ -722,7 +745,7 @@ impl ChangesView {
     }
 
     fn render_notice(&self, message: SharedString, cx: &mut Context<Self>) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .items_center()
@@ -730,10 +753,10 @@ impl ChangesView {
             .px_3()
             .py_2()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().success.opacity(0.12))
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.success.opacity(0.12))
             .text_sm()
-            .text_color(cx.theme().success)
+            .text_color(cx.theme().colors.success)
             .child(idea_icon_image(&idea::CHECK_ICON, cx, rems(14. / 16.)))
             .child(div().flex_1().min_w_0().child(message))
             .child(self.icon_button(
@@ -741,7 +764,8 @@ impl ChangesView {
                 idea_icon_image(&idea::X_ICON, cx, rems(1.)),
                 tr(CANCEL_KEY),
                 true,
-                cx.theme().font_size,
+                px(cx.theme().font_size),
+                cx.theme().colors.hover,
                 cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.notice = None;
                     cx.notify();
@@ -755,18 +779,18 @@ impl ChangesView {
         operation: &OperationState,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut banner = v_flex()
+        let mut banner = v_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
             .px_3()
             .py_2p5()
             .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().tab_bar)
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.tab_bar)
             .text_sm()
             .child(
-                h_flex()
+                h_stack()
                     .items_center()
                     .gap_2()
                     .child(idea_icon_image(
@@ -783,7 +807,7 @@ impl ChangesView {
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(SharedString::from(format!(
                                 "— {}",
                                 reference.chars().take(7).collect::<String>()
@@ -792,7 +816,7 @@ impl ChangesView {
             );
 
         if let (Some(step), Some(total)) = (operation.step, operation.total) {
-            banner = banner.child(div().text_color(cx.theme().muted_foreground).child(tr_args(
+            banner = banner.child(div().text_color(cx.theme().colors.fg_muted).child(tr_args(
                 OPERATION_STEP_KEY,
                 &[("step", &step.to_string()), ("total", &total.to_string())],
             )));
@@ -807,32 +831,31 @@ impl ChangesView {
                 .collect::<Vec<_>>()
                 .join("、");
             banner = banner.child(
-                v_flex()
+                v_stack()
                     .gap_1()
-                    .child(div().text_color(cx.theme().danger).child(tr_args(
+                    .child(div().text_color(cx.theme().colors.danger).child(tr_args(
                         RESOLVE_CONFLICTS_HINT_KEY,
                         &[("count", &operation.conflicted_paths.len().to_string())],
                     )))
                     .child(
                         div()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(SharedString::from(paths)),
                     ),
             );
         } else {
             banner = banner.child(
                 div()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr(CONFLICTS_RESOLVED_KEY)),
             );
         }
 
         let can_continue = !self.busy && !operation.has_conflicts();
-        let mut actions = h_flex().items_center().gap_2().child(
+        let mut actions = h_stack().items_center().gap_2().child(
             Button::new("changes-operation-continue")
                 .label(tr(operation.kind.continue_key()))
-                .small()
-                .compact()
+                .size(Size::Small)
                 .disabled(!can_continue)
                 .on_click(cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.run_operation_action("operationContinue", cx)
@@ -843,8 +866,7 @@ impl ChangesView {
             actions = actions.child(
                 Button::new("changes-operation-skip")
                     .label(tr(SKIP_KEY))
-                    .small()
-                    .compact()
+                    .size(Size::Small)
                     .disabled(self.busy)
                     .on_click(cx.listener(|view: &mut Self, _event, _window, cx| {
                         view.run_operation_action("operationSkip", cx)
@@ -855,9 +877,8 @@ impl ChangesView {
         actions = actions.child(
             Button::new("changes-operation-abort")
                 .label(tr(ABORT_KEY))
-                .ghost()
-                .small()
-                .compact()
+                .variant(ButtonVariant::Ghost)
+                .size(Size::Small)
                 .disabled(self.busy)
                 .on_click(cx.listener(|view: &mut Self, _event, _window, cx| {
                     view.run_operation_action("operationAbort", cx)
@@ -871,7 +892,7 @@ impl ChangesView {
         let unstaged = self.snapshot.unstaged_count();
         let staged = self.staged_count();
 
-        let mut row = h_flex()
+        let mut row = h_stack()
             .w_full()
             .flex_shrink_0()
             .h_9()
@@ -879,12 +900,12 @@ impl ChangesView {
             .gap_2()
             .px_2()
             .child(
-                h_flex()
+                h_stack()
                     .flex_1()
                     .min_w_0()
                     .items_center()
                     .gap_1()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .children(
                         self.snapshot
                             .branch
@@ -905,7 +926,8 @@ impl ChangesView {
                 idea_icon_image(&idea::PLUS_ICON, cx, rems(1.)),
                 tr(STAGE_ALL_KEY),
                 !self.busy,
-                cx.theme().font_size,
+                px(cx.theme().font_size),
+                cx.theme().colors.hover,
                 cx.listener(|view: &mut Self, _event, _window, cx| view.set_all_staged(true, cx)),
             ));
         }
@@ -915,7 +937,8 @@ impl ChangesView {
                 idea_icon_image(&idea::MINUS_ICON, cx, rems(1.)),
                 tr(UNSTAGE_ALL_KEY),
                 !self.busy,
-                cx.theme().font_size,
+                px(cx.theme().font_size),
+                cx.theme().colors.hover,
                 cx.listener(|view: &mut Self, _event, _window, cx| view.set_all_staged(false, cx)),
             ));
         }
@@ -924,7 +947,7 @@ impl ChangesView {
     }
 
     fn render_section_header(label: SharedString, count: usize, cx: &App) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h_8()
@@ -934,15 +957,15 @@ impl ChangesView {
             .pb_0p5()
             .text_sm()
             .font_weight(FontWeight::MEDIUM)
-            .text_color(cx.theme().foreground)
+            .text_color(cx.theme().colors.fg)
             .child(label)
             .child(
                 div()
                     .flex_shrink_0()
                     .px_1p5()
                     .rounded(rems(ROW_RADIUS / 16.))
-                    .bg(cx.theme().muted)
-                    .text_color(cx.theme().muted_foreground)
+                    .bg(cx.theme().colors.sunken)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(SharedString::from(count.to_string())),
             )
             .into_any_element()
@@ -979,28 +1002,36 @@ impl ChangesView {
                 .items_center()
                 .justify_center()
                 .size_5()
-                .child(Spinner::new().color(cx.theme().muted_foreground))
+                // 库的 `Spinner` 要一个 id（它自己带动画状态），按行命名空间给。
+                .child(
+                    Spinner::new(stage_spinner_element_id(row)).color(cx.theme().colors.fg_muted),
+                )
                 .into_any_element()
         } else {
-            Button::new(stage_button_element_id(row))
-                .ghost()
+            // 同 `icon_button`：20px 方框 + 自己的圆角，库 `Button` 拿不到这份几何。
+            div()
+                .id(stage_button_element_id(row))
+                .flex()
+                .flex_shrink_0()
+                .items_center()
+                .justify_center()
+                .size_5()
+                .rounded(rem_px(px(cx.theme().font_size), ROW_RADIUS))
+                .tooltip(Tooltip::text(label.clone()))
+                .aria_label(label)
+                .hover(|style| style.bg(cx.theme().colors.hover))
+                .on_click(cx.listener(move |view: &mut Self, _event, _window, cx| {
+                    view.set_staged(vec![path.clone()], !staged, cx);
+                }))
                 .child(if staged {
                     idea_icon_image(&idea::MINUS_ICON, cx, rems(1.))
                 } else {
                     idea_icon_image(&idea::PLUS_ICON, cx, rems(1.))
                 })
-                .tab_stop(false)
-                .size_5()
-                .rounded(rem_px(cx.theme().font_size, ROW_RADIUS))
-                .tooltip(label.clone())
-                .accessibility_label(label)
-                .on_click(cx.listener(move |view: &mut Self, _event, _window, cx| {
-                    view.set_staged(vec![path.clone()], !staged, cx);
-                }))
                 .into_any_element()
         };
 
-        h_flex()
+        h_stack()
             .id(change_row_element_id(row))
             .w_full()
             .flex_shrink_0()
@@ -1014,7 +1045,7 @@ impl ChangesView {
             .whitespace_nowrap()
             .overflow_hidden()
             .aria_label(row_aria_label(row))
-            .hover(|style| style.bg(cx.theme().list_hover))
+            .hover(|style| style.bg(cx.theme().colors.hover))
             .child(
                 div()
                     .flex_shrink_0()
@@ -1026,7 +1057,7 @@ impl ChangesView {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(directory)
             }))
             .child(div().flex_1())
@@ -1055,7 +1086,7 @@ impl ChangesView {
             let label = open_label.clone();
             let path_text = path.clone();
             rows.push(
-                h_flex()
+                h_stack()
                     .id(SharedString::from(format!("changes-conflict-open-{path}")))
                     .w_full()
                     .h_6()
@@ -1064,8 +1095,8 @@ impl ChangesView {
                     .px_1p5()
                     .rounded(rems(RADIUS_MD / 16.))
                     .text_sm()
-                    .text_color(cx.theme().foreground)
-                    .hover(|style| style.bg(cx.theme().accent))
+                    .text_color(cx.theme().colors.fg)
+                    .hover(|style| style.bg(cx.theme().colors.hover))
                     .child(div().min_w_0().truncate().child(path.clone()))
                     .aria_label(SharedString::from(format!(
                         "{} {}",
@@ -1089,23 +1120,23 @@ impl ChangesView {
         }
 
         Some(
-            v_flex()
+            v_stack()
                 .w_full()
                 .flex_shrink_0()
                 .gap_1()
                 .px_1p5()
                 .pb_2()
                 .child(
-                    h_flex()
+                    h_stack()
                         .w_full()
                         .items_start()
                         .gap_2()
                         .px_1p5()
                         .py_1()
                         .rounded(rems(RADIUS_MD / 16.))
-                        .bg(cx.theme().danger.opacity(0.12))
+                        .bg(cx.theme().colors.danger.opacity(0.12))
                         .text_sm()
-                        .text_color(cx.theme().danger)
+                        .text_color(cx.theme().colors.danger)
                         .child(idea_icon_image(
                             &idea::WARNING_CIRCLE_ICON,
                             cx,
@@ -1156,14 +1187,14 @@ impl ChangesView {
             }
         }
 
-        v_flex()
+        v_stack()
             .flex_1()
             .min_h_0()
             .w_full()
             .child(self.render_toolbar(cx))
             .children(self.render_conflict_markers(cx))
             .child(
-                v_flex()
+                v_stack()
                     .id("changes-scroll")
                     .role(Role::Tree)
                     .aria_label(tree_label)
@@ -1182,8 +1213,8 @@ impl ChangesView {
         match &self.state {
             LoadState::Loading => self.centered(
                 Some(
-                    Spinner::new()
-                        .color(cx.theme().muted_foreground)
+                    Spinner::new("changes-loading-spinner")
+                        .color(cx.theme().colors.fg_muted)
                         .into_any_element(),
                 ),
                 tr(LOADING_KEY),
@@ -1228,41 +1259,32 @@ impl ChangesView {
         action: Option<(SharedString, SharedString, bool)>,
         cx: &App,
     ) -> AnyElement {
-        let mut header = EmptyHeader::new().gap_2();
+        // 上游 `Empty`/`EmptyHeader`/`EmptyMedia`/`EmptyDescription`/`EmptyContent` 一族
+        // 在库侧对到槽位式的 `EmptyState`：`EmptyMedia` → `media_element`、
+        // `EmptyDescription` → `body`、`EmptyContent` → `content`。版面归库档位。
+        let mut empty = EmptyState::slots("changes-empty").body(message);
         if let Some(icon) = icon {
-            header = header.media(EmptyMedia::new().child(icon));
+            empty = empty.media_element(icon);
         }
-        header = header.description(
-            EmptyDescription::new()
-                .text_sm()
-                .text_color(cx.theme().muted_foreground)
-                .child(message),
-        );
-
-        let mut empty = Empty::new()
-            .border_color(cx.theme().transparent)
-            .p_3()
-            .header(header);
         if let Some((hint, label, enabled)) = action {
-            let mut content = v_flex().gap_2().items_center().child(
+            let mut content = v_stack().gap_2().items_center().child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(hint),
             );
             if !label.is_empty() {
                 content = content.child(
                     Button::new("changes-empty-action")
                         .label(label)
-                        .small()
-                        .compact()
+                        .size(Size::Small)
                         .disabled(!enabled),
                 );
             }
-            empty = empty.content(EmptyContent::new().child(content));
+            empty = empty.content(content);
         }
 
-        v_flex()
+        v_stack()
             .flex_1()
             .min_h_0()
             .w_full()
@@ -1293,14 +1315,14 @@ impl ChangesView {
                     None => None,
                 });
 
-        let mut panel = v_flex()
+        let mut panel = v_stack()
             .w_full()
             .flex_shrink_0()
             .mx_2()
             .mb_2()
             .rounded(rems(COMMIT_PANEL_RADIUS / 16.))
             .border_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .overflow_hidden();
 
         if let Some(error) = panel_error {
@@ -1312,20 +1334,22 @@ impl ChangesView {
                     .py_1p5()
                     .rounded(rems(COMMIT_ERROR_RADIUS / 16.))
                     .border_1()
-                    .border_color(cx.theme().danger.opacity(0.3))
-                    .bg(cx.theme().danger.opacity(0.1))
+                    .border_color(cx.theme().colors.danger.opacity(0.3))
+                    .bg(cx.theme().colors.danger.opacity(0.1))
                     .text_sm()
-                    .text_color(cx.theme().danger)
+                    .text_color(cx.theme().colors.danger)
                     .child(error),
             );
         }
 
+        // 库的 `Input` 不实现 `Styled`：高度与宽度由外层盒子给。禁用不在画的时候传
+        // （库的 `Input` 没有 `disabled(..)` 开关），而是写在 `InputState` 上，
+        // 由 `set_busy` 统一同步。
         panel = panel.child(
-            Textarea::new(&self.message)
+            div()
                 .h(rems(COMMIT_INPUT_HEIGHT / 16.))
-                .disabled(self.busy)
                 .w_full()
-                .text_sm(),
+                .child(Input::new(&self.message)),
         );
 
         let count_label = if staged == 0 {
@@ -1337,7 +1361,7 @@ impl ChangesView {
 
         panel
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .items_center()
                     .gap_2()
@@ -1350,7 +1374,7 @@ impl ChangesView {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(count_label),
                     )
                     .child(
@@ -1361,12 +1385,11 @@ impl ChangesView {
                             } else {
                                 tr(COMMIT_KEY)
                             })
-                            .h_7()
-                            .px_3()
+                            .size(Size::Size(px(COMMIT_BUTTON_HEIGHT)))
                             .disabled(!can_commit)
-                            .on_click(cx.listener(|view: &mut Self, _event, window, cx| {
-                                view.commit(window, cx)
-                            })),
+                            .on_click(
+                                cx.listener(|view: &mut Self, _event, _window, cx| view.commit(cx)),
+                            ),
                     ),
             )
             .into_any_element()
@@ -1401,6 +1424,10 @@ fn stage_button_element_id(row: &ChangeRow) -> String {
     format!("changes-stage-row:{}", row.path)
 }
 
+fn stage_spinner_element_id(row: &ChangeRow) -> String {
+    format!("changes-stage-spinner:{}", row.path)
+}
+
 impl Render for ChangesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let this = cx.entity().downgrade();
@@ -1430,12 +1457,12 @@ impl Render for ChangesView {
             .shows_commit_panel()
             .then(|| self.render_commit_panel(cx));
 
-        v_flex()
+        v_stack()
             .size_full()
             .min_h_0()
             .overflow_hidden()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
+            .bg(cx.theme().colors.bg)
+            .text_color(cx.theme().colors.fg)
             .child(title_bar)
             .children(load_error)
             .children(write_error)
@@ -1444,9 +1471,7 @@ impl Render for ChangesView {
             .child(body)
             .children(commit_panel)
             .on_action(
-                cx.listener(|view: &mut Self, _: &CommitChanges, window, cx| {
-                    view.commit(window, cx)
-                }),
+                cx.listener(|view: &mut Self, _: &CommitChanges, _window, cx| view.commit(cx)),
             )
     }
 }

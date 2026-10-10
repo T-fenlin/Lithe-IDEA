@@ -6,8 +6,8 @@ use gpui::{
 
 mod more;
 
-use super::{ContextMenu, DropdownMenu, Menu, MenuItem, SearchableMenu};
-use crate::{primitives::FocusScope, theme::Theme};
+use super::{ContextMenu, DropdownMenu, Menu, MenuItem, OverflowMenu, SearchableMenu};
+use crate::{primitives::FocusScope, theme::Size, theme::Theme};
 
 /// What the rows did, and the state the check and radio rows show.
 struct Desk {
@@ -395,6 +395,102 @@ fn an_open_dropdown_follows_its_host(cx: &mut TestAppContext) {
     settle(cx);
     press("enter", cx);
     assert_eq!(ran(&view, cx), ["cut"], "the panel moved with its button");
+}
+
+/// 同一份菜单挂三个触发器：默认档、小档（带提示语）、图标按钮（带无障碍名字）。
+struct Tiers {
+    ran: Vec<SharedString>,
+}
+
+impl Render for Tiers {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        let menu = Menu::new().item(MenuItem::new("Cut").on_click(move |_, cx| {
+            view.update(cx, |tiers, cx| {
+                tiers.ran.push("cut".into());
+                cx.notify();
+            })
+        }));
+        div()
+            .size_full()
+            .child(
+                div()
+                    .debug_selector(|| "tier-default".into())
+                    .child(DropdownMenu::new("default", "Edit", menu.clone())),
+            )
+            .child(
+                div().debug_selector(|| "tier-small".into()).child(
+                    DropdownMenu::new("small", "Edit", menu.clone())
+                        .size(Size::Small)
+                        .tooltip("Pick"),
+                ),
+            )
+            // 包装 div 在列里会被拉伸到整行宽，而图标按钮只占左边一个方块；不给它一个
+            // 与按钮同宽的盒子，`.center()` 就落在按钮右边的空白上、点不到触发器。
+            // （带文字的触发器够宽，所以上面两个不用这一步。）
+            .child(
+                div()
+                    .w(px(28.0))
+                    .debug_selector(|| "tier-overflow".into())
+                    .child(
+                        OverflowMenu::new("more", menu)
+                            .tooltip("More")
+                            .aria_label("More actions"),
+                    ),
+            )
+    }
+}
+
+fn tiers(cx: &mut TestAppContext) -> (gpui::Entity<Tiers>, &mut VisualTestContext) {
+    cx.update(|cx| Theme::init(cx));
+    let (view, cx) = cx.add_window_view(|_, _| Tiers { ran: Vec::new() });
+    settle(cx);
+    (view, cx)
+}
+
+#[gpui::test]
+fn the_small_trigger_is_shorter_than_the_default_one(cx: &mut TestAppContext) {
+    let (_view, cx) = tiers(cx);
+    let default = cx
+        .debug_bounds("tier-default")
+        .expect("the default trigger");
+    let small = cx.debug_bounds("tier-small").expect("the small trigger");
+    assert!(
+        small.size.height < default.size.height,
+        "小档触发器必须比默认档矮：small={:?} default={:?}",
+        small.size.height,
+        default.size.height
+    );
+}
+
+#[gpui::test]
+fn a_sized_trigger_with_a_tooltip_still_opens_and_runs(cx: &mut TestAppContext) {
+    let (view, cx) = tiers(cx);
+    let at = cx
+        .debug_bounds("tier-small")
+        .expect("the small trigger")
+        .center();
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    cx.simulate_click(at, Modifiers::none());
+    settle(cx);
+    press("down", cx);
+    press("enter", cx);
+    assert_eq!(view.read_with(cx, |tiers, _| tiers.ran.clone()), ["cut"]);
+}
+
+#[gpui::test]
+fn an_overflow_menu_carrying_an_aria_label_opens(cx: &mut TestAppContext) {
+    let (view, cx) = tiers(cx);
+    let at = cx
+        .debug_bounds("tier-overflow")
+        .expect("the overflow trigger")
+        .center();
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    cx.simulate_click(at, Modifiers::none());
+    settle(cx);
+    press("down", cx);
+    press("enter", cx);
+    assert_eq!(view.read_with(cx, |tiers, _| tiers.ran.clone()), ["cut"]);
 }
 
 #[gpui::test]

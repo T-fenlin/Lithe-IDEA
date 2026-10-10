@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use gpui::{App, ClickEvent, Hsla, SharedString, Window};
-use gpui_kit::component::ActiveTheme as _;
+use lithe_ui::theme::ActiveTheme as _;
 
 use lithe_gpui_shared::{CoreClient, CoreRequest, tr, tr_args};
 
@@ -18,7 +18,12 @@ pub(crate) const ICON_BUTTON_RADIUS: f32 = RADIUS_MD;
 pub(crate) const FILTER_INPUT_MIN_WIDTH: f32 = 144.;
 pub(crate) const FILTER_INPUT_MAX_WIDTH: f32 = 288.;
 
-pub(crate) const COMMIT_ROW_HEIGHT: f32 = 30.;
+/// 提交行高（px）。
+///
+/// 规格真源是 IDEA：New UI 下 `ide.override.VersionControl.Log.Commit.rowHeight` 的默认值为
+/// **26**（紧凑模式 24，经典 UI 该设置被忽略、改为动态计算）。来源是 JetBrains 官方在
+/// YouTrack IDEA-338459 里给出的默认值清单。改之前是 30，比真源高 4px。
+pub(crate) const COMMIT_ROW_HEIGHT: f32 = 26.;
 pub(crate) const AUTHOR_COLUMN_WIDTH: f32 = 112.;
 pub(crate) const DATE_FONT_SIZE: f32 = 11.;
 pub(crate) const COMMIT_CONTENT_MIN_WIDTH: f32 = 520.;
@@ -596,25 +601,39 @@ pub(crate) fn load_commit_files(root: &str, commit: &str) -> Result<Vec<(String,
         .collect())
 }
 
+/// 分支图车道色。
+///
+/// 车道要的是"**彼此分得开**"的一组色，不是"各有语义"的一组色：组件库的 `chart` 正是
+/// 按 3:1 对比度、并对红/绿色盲保持可分辨的 8 个色相。IDEA 的 `VcsLogColorManager`
+/// 也是同一思路——给分支分配可区分的颜色，而不是复用语义色。
+/// 上游那套（`blue_light`/`magenta_light`/`cyan_light`）在组件库里没有对应槽位。
 pub(crate) fn lane_color(index: usize, cx: &App) -> Hsla {
-    let theme = cx.theme();
-    match index % 6 {
-        0 => theme.success,
-        1 => theme.blue_light,
-        2 => theme.magenta_light,
-        3 => theme.warning,
-        4 => theme.danger,
-        _ => theme.cyan_light,
-    }
+    let chart = cx.theme().colors.chart;
+    chart[index % chart.len()]
 }
 
+/// 引用标签色。
+///
+/// 按 IDEA 的观感落语义槽：标签=黄、分支=绿、远程=蓝、HEAD=强调色。
+/// 上游的 `cyan_light`/`green_light`/`yellow_light` 在组件库里没有对应槽位。
+/// 引用徽章的取色。
+///
+/// 口径是 IDEA Log tab 官方文档给的四种标注色：
+/// **黄色 = 当前分支头**（`yellow: marks the current branch head`）、
+/// **绿色 = 本地分支**（`green: marks local branches`）、
+/// **紫色 = 远程分支**（`violet: marks remote branches`）、
+/// 标签（tag）文档没给色，用中性 `fg_muted` + 图标区分，不与前三种抢色。
+///
+/// 本调色板没有紫色槽，远程分支取最接近的 `info`（蓝）；`Head` 原先取 `accent`，
+/// 而 `accent` 在本调色板是近黑（亮 `#181613`）/ 近白（暗 `#f3f1f0`）的高对比强调色，
+/// 画出来是一枚黑/白徽章，与真源的黄色不符。
 pub(crate) fn label_color(kind: LabelKind, cx: &App) -> Hsla {
-    let theme = cx.theme();
+    let colors = &cx.theme().colors;
     match kind {
-        LabelKind::Head => theme.cyan_light,
-        LabelKind::Remote => theme.blue_light,
-        LabelKind::Tag => theme.yellow_light,
-        LabelKind::Branch => theme.green_light,
+        LabelKind::Head => colors.warning,
+        LabelKind::Remote => colors.info,
+        LabelKind::Tag => colors.fg_muted,
+        LabelKind::Branch => colors.success,
     }
 }
 

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use gpui::{App, Hsla, SharedString};
-use gpui_kit::component::ActiveTheme as _;
+use lithe_ui::theme::ActiveTheme as _;
 
 use crate::model::{
     discover_repository_root, execute_core, parse_references, repository_root_of,
@@ -53,14 +53,22 @@ impl ChangeKind {
         }
     }
 
+    /// 变更状态色。
+    ///
+    /// 上游那套（`green_light`/`blue_light`/`magenta_light`）在组件库里没有对应槽位；
+    /// 组件库的调色板是**语义槽**，所以按"这个状态在 IDEA 里是什么颜色"落：
+    /// 新增=绿、修改=蓝、删除=灰、未跟踪=红（IDEA 的 `FileStatus` 用色）。
+    /// IDEA 的 `FileStatus` **没有重命名这一档**——重命名在 IDEA 里按"已修改"呈现，
+    /// 区分靠状态字母 `R`，所以这里与 Modified 同色（原先取 `accent`，而 `accent` 在本
+    /// 调色板是近黑/近白的高对比强调色，画出来跟普通文字一个样，等于没有状态）。
     pub fn color(self, cx: &App) -> Hsla {
-        let theme = cx.theme();
+        let colors = &cx.theme().colors;
         match self {
-            Self::Added => theme.green_light,
-            Self::Modified => theme.blue_light,
-            Self::Deleted => theme.muted_foreground,
-            Self::Renamed => theme.magenta_light,
-            Self::Untracked => theme.danger,
+            Self::Added => colors.success,
+            Self::Modified => colors.info,
+            Self::Deleted => colors.fg_muted,
+            Self::Renamed => colors.info,
+            Self::Untracked => colors.danger,
         }
     }
 
