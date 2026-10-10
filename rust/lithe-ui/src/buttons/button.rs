@@ -267,7 +267,7 @@ impl Button {
     }
 
     /// The button's text. A builder rather than a `new` argument, matching the
-    /// gpui-kit shape (`Button::new(id).label("Save")`).
+    /// upstream shape (`Button::new(id).label("Save")`).
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = label.into();
         self

@@ -19,7 +19,7 @@ pub type Close = Rc<dyn Fn(&mut Window, &mut App)>;
 /// 上游那种 `expect("window must have a Base Root")`——因为多窗口路径上确实存在还没挂宿主的
 /// 窗口（`app/src/main.rs` 的"在新窗口打开工程"就是），照抄上游写法会在启动时直接 panic。
 ///
-/// 名字与上游 `gpui_kit::component::WindowExt` 的对应关系（迁移后 gpui-kit 那一套退场）：
+/// 名字与上游 `WindowExt` 的对应关系：
 ///
 /// | 上游 | 这里 |
 /// | --- | --- |

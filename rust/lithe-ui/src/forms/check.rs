@@ -117,7 +117,7 @@ impl Checkbox {
         }
     }
 
-    /// Whether the box is on. Accepts a bool (gpui-kit.s `.checked(true)`) or a
+    /// Whether the box is on. Accepts a bool (`.checked(true)`) or a
     /// [`CheckState`] when the box can also be mixed.
     pub fn checked(mut self, checked: impl Into<CheckState>) -> Self {
         self.state = checked.into();

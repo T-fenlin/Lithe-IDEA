@@ -35,7 +35,7 @@ impl Switch {
     }
 
     /// Whether the switch is on. A builder rather than a `new` argument,
-    /// matching the gpui-kit shape (`Switch::new(id).checked(true)`).
+    /// matching the upstream shape (`Switch::new(id).checked(true)`).
     pub fn checked(mut self, checked: bool) -> Self {
         self.on = checked;
         self

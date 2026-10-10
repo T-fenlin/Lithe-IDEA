@@ -1,6 +1,6 @@
 //! 窗口根宿主（G1）：一个窗口只有一层浮层栈。
 //!
-//! 它替代过渡期上游 gpui-kit 的 `Root`。宿主自己是一个**每帧渲染**的 `Entity`，
+//! 它替代上游的 `Root`。宿主自己是一个**每帧渲染**的 `Entity`，
 //! 把窗口内容与所有浮层（抽屉 / 对话框 / 通知）挂到同一条
 //! `raise(..).with_priority(..)` 链上——排序与绘制交给 gpui 的 `Window::defer_draw`
 //! （见 `crate::primitives::layer`），本模块不重画遮罩、不自己管焦点。
@@ -33,7 +33,7 @@ pub fn dismiss_hosted(window: &mut Window, cx: &mut App) {
 
 /// 开一个窗口并装上窗口根宿主；返回窗口句柄与**应用内容**实体（不是根）。
 ///
-/// 对应上游 `gpui_kit::open_window`（`gpui-kit-0.7.1/src/lib.rs:149`）：把"开窗 + 包根 +
+/// 对应上游的 `open_window`：把"开窗 + 包根 +
 /// 回传内容实体"合成一步。调用方拿到的是内容实体，浮层入口走 [`WindowRootExt`]。
 ///
 /// 句柄的 `downcast::<WindowRoot>()` 能命中：gpui 的 `open_window` 取的是**内容**类型

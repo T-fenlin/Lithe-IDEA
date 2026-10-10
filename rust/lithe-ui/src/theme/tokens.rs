@@ -10,7 +10,7 @@ pub enum Density {
     Comfortable,
 }
 
-/// A control's size tier, matching gpui-kit's `Size`: four named tiers plus an
+/// A control's size tier, matching the upstream `Size`: four named tiers plus an
 /// explicit pixel size. When Lithe took the library over, `Sm`/`Md`/`Lg` became
 /// `Small`/`Medium`/`Large` and `XSmall` plus `Size(Pixels)` were added.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -518,11 +518,11 @@ impl From<Pixels> for Size {
     }
 }
 
-/// A control that takes a size tier, matching gpui-kit's `Sizable`.
+/// A control that takes a size tier, matching the upstream `Sizable`.
 ///
 /// Components keep their own `size(Size)` setter; this adds the named-tier
 /// shorthands and the pixel-length form so call sites read the same as they
-/// would against gpui-kit.
+/// would against the upstream.
 pub trait Sizable: Sized {
     /// Sets the size; also accepts a raw length (`px(30.)`).
     fn with_size(self, size: impl Into<Size>) -> Self;

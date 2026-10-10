@@ -1,7 +1,7 @@
 //! Component copy and locale data.
 //!
 //! Messages live in `locales/ui.yml` and are read through [`rust_i18n`], the same
-//! mechanism gpui-kit and the Lithe host use, so one `set_locale` moves the whole
+//! mechanism the Lithe host uses, so one `set_locale` moves the whole
 //! application. [`text`] stays as the seam components call: it looks the message
 //! up, fills its arguments, and applies the locale's paragraph direction.
 //!

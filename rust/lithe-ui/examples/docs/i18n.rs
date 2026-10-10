@@ -1,7 +1,7 @@
 //! One locale for the window: component copy, numbers and dates all follow it.
 //!
 //! Messages live in the crate's `locales/ui.yml` and are read through
-//! `rust_i18n`, the same mechanism gpui-kit and the Lithe host use, so
+//! `rust_i18n`, the same mechanism the Lithe host uses, so
 //! `set_locale` moves everything at once.
 
 use gpui::{
