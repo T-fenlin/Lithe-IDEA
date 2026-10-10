@@ -33,12 +33,18 @@ pub fn title_bar(
     window: &Window,
     cx: &App,
 ) -> impl IntoElement {
+    let colors = &cx.theme().colors;
     v_stack()
         .flex_shrink_0()
         .w_full()
-        .bg(cx.theme().colors.title_bar)
+        .bg(colors.title_bar)
+        // 下边框画在这一层（整条 header 的下沿），不在 `pinned_bar` 自己身上：
+        // 菜单栏是这一行里的子块，比 header 矮 40spec 的那一段，边框落在它下面会穿到
+        // header 中间去；IDEA 的 header 边界也是沿着整条 header 的下沿走的。
+        .border_b_1()
+        .border_color(colors.border)
         .text_sm()
-        .text_color(cx.theme().colors.fg_muted)
+        .text_color(colors.fg_muted)
         .child(
             h_stack()
                 .w_full()

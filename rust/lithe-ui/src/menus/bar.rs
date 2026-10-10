@@ -76,6 +76,7 @@ fn open_title(
 pub struct MenuBar {
     id: ElementId,
     menus: Vec<OwnedMenu>,
+    standalone: bool,
 }
 
 impl MenuBar {
@@ -85,7 +86,19 @@ impl MenuBar {
         Self {
             id: id.into(),
             menus,
+            standalone: true,
         }
+    }
+
+    /// Whether to paint its own chrome; true when the bar is not already inside chrome.
+    ///
+    /// A bar at the top of a page carries the background and the bottom hairline that tell it
+    /// apart from the content below, since nothing else there does. A host that already painted
+    /// a header around it passes false: a second background over the same color is invisible,
+    /// and a second hairline lands above the host's own border.
+    pub fn standalone(mut self, standalone: bool) -> Self {
+        self.standalone = standalone;
+        self
     }
 }
 
@@ -168,12 +181,22 @@ impl RenderOnce for MenuBar {
                 )
         });
         let (keys, key_titles, key_menus) = (state.clone(), titles.clone(), menus.clone());
+        // The bar paints its own chrome: `title_bar` is its slot, distinct from the page `bg`.
+        // `w_full` matters: a flex row is only as wide as its titles, so without it the
+        // background becomes a short swatch ending at the last menu name.
         div()
             .id(self.id.clone())
             .track_focus(&focus)
             .flex()
             .items_center()
             .gap_0p5()
+            .w_full()
+            .h(theme.control_height(Size::Small))
+            .px_1()
+            .bg(colors.title_bar)
+            .when(self.standalone, |bar| {
+                bar.border_b_1().border_color(colors.border)
+            })
             .on_key_down(move |event, _, cx| {
                 let key = event.keystroke.key.as_str();
                 let open = keys.read(cx).is_open();

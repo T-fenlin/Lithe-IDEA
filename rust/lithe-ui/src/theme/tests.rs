@@ -79,22 +79,40 @@ fn an_unknown_color_fails() {
     Palette::light(false).token_mut("glow");
 }
 
-/// The status bar is its own chrome surface slot: it starts on the page background, and a host
-/// that has a separate status-bar color moves it without touching `bg`.
+/// The status bar is its own chrome surface slot: it starts on the chrome color, never the page
+/// background, and a host that has a separate status-bar color moves it without touching `bg`.
 ///
-/// Regression risk: mapping the host's status-bar color onto `bg` or `title_bar` would repaint the
+/// Regression risk: mapping a host's status-bar color onto `bg` or `title_bar` would repaint the
 /// page (or the window title bar) whenever a theme gives the status bar its own color —
 /// `themes/jetbrains.json` gives it `#f2f2f2` against a `#ffffff` page in the light theme.
 #[test]
 fn the_status_bar_surface_moves_alone() {
     for mut palette in [Palette::light(false), Palette::dark(false)] {
-        assert_eq!(
+        // 2026-10-11 起 chrome 槽不再与页面底色同值：一条与页面同色的状态栏没有可见边界，
+        // 正是 chrome 槽要避免的那个问题。
+        assert_ne!(
             palette.status_bar, palette.bg,
-            "with no host color it keeps the library's look"
+            "a chrome bar must be tellable from the page it sits on"
         );
         palette.status_bar = hsla(0.2, 0.5, 0.5, 1.0);
-        assert_ne!(palette.status_bar, palette.bg, "and it is not an alias");
+        assert_ne!(palette.status_bar, palette.title_bar, "and it has its own slot");
         assert_eq!(palette.token("status_bar"), palette.status_bar);
+    }
+}
+
+/// The chrome slots answer to different colors than the page.
+///
+/// Regression risk: `title_bar` once held the page `bg`. A `MenuBar` at the top of a page then
+/// painted a background nobody could see — the reported "transparent menu bar".
+#[test]
+fn every_chrome_slot_differs_from_the_page() {
+    for palette in [Palette::light(false), Palette::dark(false)] {
+        for (slot, name) in [
+            (palette.title_bar, "title_bar"),
+            (palette.status_bar, "status_bar"),
+        ] {
+            assert_ne!(slot, palette.bg, "{name} must differ from bg: {slot:?}");
+        }
     }
 }
 

@@ -1268,6 +1268,13 @@ const GPUI_ONLY_KEYS = [
     reason:
       "宿主同文件标题行「隐藏」按钮的 tooltip：收起整块左工具窗（外壳把 `left_pane_visible` 置假，活动栏留着）。真源没有这条动作，同样是 IDEA 标题行的把手。",
   },
+  {
+    key: "gpui.menuNotWiredBadge",
+    zh: "未接入",
+    en: "Not wired",
+    reason:
+      "菜单栏面板里未接线那一行行尾的角标（`crates/workbench/src/menu_bar.rs` 的 `MenuItem::NotWired`）。真源那 42 条菜单项恒可执行，catalog 里没有「能力还没接」这种短标签；与此前 `gpui.menuMissing.*` 那一族整句说明的分工是：整句解释「缺什么」（点击后给的通知），这一个词只标状态，且必须短到能贴在行尾。",
+  },
 ];
 
 const TS_QUOTES = new Set(['"', "'", "`"]);

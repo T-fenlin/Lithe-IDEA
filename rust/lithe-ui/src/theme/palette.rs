@@ -101,9 +101,11 @@ mixable!(
     /// `#f2f2f2`, dark `#2b2b2b` vs `#313335` vs `#313335`) and none of them is the page
     /// background, so they can be neither merged into one slot nor mapped onto `surface`.
     ///
-    /// `status_bar` defaults to the page background so a host that has no separate status-bar
-    /// color keeps the library's look; a host with its own chrome colors sets it, and
-    /// [`StatusBar`](crate::shell::StatusBar) paints it.
+    /// `status_bar` used to default to the page background so that a host without a
+    /// status-bar color kept the library's look. It now defaults to the chrome color instead:
+    /// a bar that reads as chrome but is painted in the page color has no visible edge, which
+    /// is the same defect the chrome slots exist to avoid. A host with its own chrome colors
+    /// sets it, and [`StatusBar`](crate::shell::StatusBar) paints it.
     ///
     /// `primary` / `on_primary` are the **brand slot** (`primary.background` /
     /// `primary.foreground`): the fill of a chosen item whose selection reads as brand — the active
@@ -197,8 +199,9 @@ impl Palette {
             bg: c(0xfcfaf7),
             surface: c(0xffffff),
             tab_bar: c(0xffffff),
-            title_bar: c(0xfcfaf7),
-            status_bar: c(0xfcfaf7),
+            // IDEA 的浅色 header（`themes/jetbrains.json` 的 `title_bar.background`）。
+            title_bar: c(0xf2f2f2),
+            status_bar: c(0xf2f2f2),
             sunken: c(0xf6f4f1),
             overlay: c(0xffffff),
             hover: c(0xf2f0ed),
@@ -273,8 +276,9 @@ impl Palette {
             bg: c(0x131110),
             surface: c(0x1b1917),
             tab_bar: c(0x1b1917),
-            title_bar: c(0x131110),
-            status_bar: c(0x131110),
+            // IDEA 的深色 header（`themes/jetbrains.json` 的 `title_bar.background`）。
+            title_bar: c(0x313335),
+            status_bar: c(0x313335),
             sunken: c(0x0e0d0b),
             overlay: c(0x201f1d),
             hover: c(0x252422),

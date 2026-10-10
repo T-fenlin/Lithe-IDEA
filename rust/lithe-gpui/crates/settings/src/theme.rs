@@ -337,7 +337,7 @@ fn parse_color(value: &str) -> Option<Hsla> {
 /// 一条主题 → 组件库调色板。
 ///
 /// 从主题文件的原始键直取到组件库调色板：`bg`/`surface`←`background`、
-/// `sunken`←`muted.background`、`overlay`←`popover.background`、`hover`←`list.hover.background`、
+/// `overlay`←`popover.background`、`backdrop`←`overlay`、`hover`←`list.hover.background`、
 /// `active`←`list.active.background`、`focus`/`link`←`ring`、`selection`←`sidebar.accent.background`
 /// …… 没给的栏保留组件库自己的默认值。
 fn palette_for(record: &ThemeRecord) -> Palette {
@@ -370,11 +370,28 @@ fn palette_for(record: &ThemeRecord) -> Palette {
     if let Some(color) = color("muted.background") {
         palette.sunken = color;
     }
-    if let Some(color) = color("overlay") {
-        palette.overlay = color;
-    }
     if let Some(color) = color("list.hover.background") {
         palette.hover = color;
+    }
+    // 主题文件里那一栏 `overlay` 是 scrim（模态浮层压在最上面的那层暗底，实测两组内置主题
+    // 都给 `#00000033`≈20% 黑），**不是**浮层自己的底色；它归 `backdrop`——`Backdrop` 那层
+    // 全窗 scrim 读的就是它（见 `lithe-ui::primitives::backdrop`）。
+    if let Some(color) = color("overlay") {
+        palette.backdrop = color;
+    }
+    // 浮层底色另有其键：`popover.background`。
+    //
+    // 守卫：这一栏在浅色里常常与 `hover` 同值（两组内置主题都给 `#f2f2f2`），那就会让菜单里
+    // 正被指着的那一行与面板底色融成一片、等于没有高亮。撞色时退到 `surface`（= `background`）：
+    // 宁可浮层与页面同色、靠描边与投影分辨层次，也不要丢掉行高亮。深色那边 `#313335` 与
+    // `hover` 的 `#3c3f41` 不同，保留原值。
+    if let Some(popover) = color("popover.background") {
+        let merges_into_hover = Some(popover) == color("list.hover.background");
+        palette.overlay = if merges_into_hover {
+            palette.surface
+        } else {
+            popover
+        };
     }
     if let Some(color) = color("list.active.background") {
         palette.active = color;
@@ -928,6 +945,49 @@ mod tests {
             }
 
             assert!(theme_count > 0, "no theme defined in {label}");
+        }
+    }
+
+    /// 内置主题里那条主题记录。
+    ///
+    /// 测试直接翻 [`BUILTIN_THEMES`] 而不走 `locate_theme`：那条路会连带读用户主题目录，
+    /// 同一个名字在用户目录里被改写时这个断言就不再是「内置主题长什么样」了。
+    fn builtin_record(name: &str) -> ThemeRecord {
+        for (file, content) in BUILTIN_THEMES {
+            let Ok(set) = serde_json::from_str::<ThemeSet>(content) else {
+                panic!("{file}: not a loadable ThemeSet");
+            };
+            if let Some(record) = set.themes.into_iter().find(|record| record.name == name) {
+                return record;
+            }
+        }
+        panic!("内置主题里没有 {name:?}");
+    }
+
+    #[test]
+    fn overlay_panel_background_never_merges_into_the_row_highlight() {
+        // 回归：浮层底色曾经取主题文件里那条 scrim 语义的 `overlay`（`#00000033`），菜单、
+        // 下拉、命令面板、悬浮卡片统统是半透明的；改取 `popover.background` 后又撞上浅色
+        // 里 `popover.background` 与 `list.hover.background` 同为 `#f2f2f2`——那时被指着的
+        // 那一行与面板底色一致，等于没有高亮，所以有了 `palette_for` 里的退避。
+        for name in ["IntelliJ Light", "Darcula"] {
+            let palette = palette_for(&builtin_record(name));
+
+            assert!(
+                palette.overlay.a >= 1.0,
+                "{name}: 浮层底色必须是实色（不能是 scrim），alpha={}",
+                palette.overlay.a
+            );
+            assert_ne!(
+                palette.overlay, palette.hover,
+                "{name}: 浮层底色与行高亮同色，菜单里被指着的那一行会看不见"
+            );
+            // scrim 那条不能丢：Backdrop 铺的全窗暗底读的就是 `backdrop`。
+            assert!(
+                palette.backdrop.a < 1.0,
+                "{name}: `overlay` 那栏是 scrim，应当落到 `backdrop` 上，alpha={}",
+                palette.backdrop.a
+            );
         }
     }
 

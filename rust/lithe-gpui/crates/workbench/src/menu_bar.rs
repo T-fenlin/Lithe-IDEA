@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 use gpui::{
-    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle,
+    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle, Hsla,
     IntoElement, KeyBinding, Keystroke, MouseButton, ParentElement as _, Pixels, SharedString,
-    Styled as _, Subscription, Window, div, prelude::*, rems,
+    Styled as _, Subscription, Window, div, prelude::*, rems, transparent_black,
 };
 use lithe_gpui_shared::icons::{idea, idea_icon_mono};
 use lithe_gpui_shared::tr;
@@ -9,7 +11,7 @@ use lithe_ui::buttons::{Button, ButtonVariant};
 use lithe_ui::layout::h_stack;
 use lithe_ui::menus::{Menu, MenuItem as MenuRow, TriggerMenu};
 use lithe_ui::primitives::Measure;
-use lithe_ui::theme::{ActiveTheme as _, Size};
+use lithe_ui::theme::{ActiveTheme as _, IconSize, Palette, Size};
 
 use crate::command_palette::CommandId;
 
@@ -27,6 +29,10 @@ const TRIGGER_PADDING_SPEC: f32 = 6.;
 
 /// 面板最小宽度（pt）：窄菜单也别挤成一条。
 const PANEL_MIN_WIDTH_SPEC: f32 = 240.;
+
+/// 未接线那一行行尾的角标文案；为什么整机没有一个「还没做」的短标签见
+/// `lithe-gpui/tools/extract-locale.mjs` 里 `gpui.menuNotWiredBadge` 那条的理由。
+const NOT_WIRED_BADGE_KEY: &str = "lithe.gpui.menuNotWiredBadge";
 
 fn is_escape(keystroke: &Keystroke) -> bool {
     keystroke.key == "escape" && keystroke.modifiers.number_of_modifiers() == 0
@@ -1072,11 +1078,21 @@ impl MenuBar {
         bar
     }
 
+    /// 让外壳重画一次（拿到最新的菜单状态）。
+    ///
+    /// 必须**推迟**：菜单的关闭回调（dismiss / Escape / 选中一行）跑在外壳自己的更新栈里，
+    /// 那条链是 `ShellWorkspace` 在 update -> 菜单还给中间层 -> `MenuBar::close` -> 这里。
+    /// 此刻 `ShellWorkspace` 还在「正在被 update」的借用里（见 `close`）；
+    /// 直接 `shell.update` 就是第二次可变借用，gpui 会报
+    /// `cannot update ShellWorkspace while it is already being updated`。
+    /// `App::defer` 把它挪到本轮 effect 跑完之后、实体归还之后，借用已经结束。
     fn notify_shell(&self, cx: &mut App) {
-        let Some(shell) = self.shell.as_ref() else {
+        let Some(shell) = self.shell.as_ref().cloned() else {
             return;
         };
-        let _ = shell.update(cx, |_, cx| cx.notify());
+        cx.defer(move |cx| {
+            let _ = shell.update(cx, |_, cx| cx.notify());
+        });
     }
 
     pub fn mode(&self) -> MenuBarMode {
@@ -1379,13 +1395,18 @@ fn compact_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
     // 面板只在开着的时候建：关着的时候库也不画它。
     let panel = if open { compact_menu(cx) } else { Menu::new() };
 
-    TriggerMenu::new("lithe-menu-bar-compact", panel, move |_open, _window, cx| {
+    let colors = &cx.theme().colors;
+    let open_bg = colors.active;
+    TriggerMenu::new("lithe-menu-bar-compact", panel, move |open, _window, cx| {
+        // 展开态要留在按钮上：汉堡按钮按下去之后面板顶掉了整条菜单栏，按钮是唯一还在
+        // 屏幕上的、能说明「菜单是从这儿开的」的东西。
         Button::new("lithe-menu-bar-trigger")
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
             .icon_element(idea_icon_mono(&idea::FILES_ICON, cx.theme().is_dark()))
             .tooltip(tr("lithe.window.menu"))
             .aria_label(tr("lithe.window.menu"))
+            .when(open, |button| button.bg(open_bg))
             .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
                 let _ = button_handle.update(cx, |bar, cx| bar.toggle_compact(cx));
             })
@@ -1413,15 +1434,86 @@ fn compact_menu(cx: &mut App) -> Menu {
     menu
 }
 
+/// 顶层菜单触发器的一张脸：文字色、底、内描边，全在这一张表里。
+///
+/// 五个状态的配色是照 IDEA 的菜单栏对出来的（2026-10-11）：
+///
+/// | 状态 | 文字 | 底 | 内描边 |
+/// | --- | --- | --- | --- |
+/// | idle | `fg` | 无 | 无 |
+/// | hover | `fg` | `hover` | 无 |
+/// | open | `fg` | `active` | 无 |
+/// | focus-visible | `fg` | `active` | `fg` 1px |
+/// | disabled | `fg_disabled` | 无 | 无 |
+///
+/// 两条硬规矩：
+///
+/// - 文字一律 `fg` 而不用 `fg_muted`：浅色 `title_bar` 上 `fg_muted` 只剩 4.56:1，菜单栏
+///   天天盯着看，余量不够。
+/// - 内描边**不用 `focus` token**：那一个落在 `title_bar`（深 `#313335`）上只有 2.49:1，
+///   蹲不到 WCAG 的 3:1；用 `fg` 自己画 1px 反而稳过。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TriggerFace {
+    Idle,
+    Hover,
+    Open,
+    FocusVisible,
+    Disabled,
+}
+
+impl TriggerFace {
+    /// 三件事合成一张脸：`disabled` 最大，其次 `focused`，最后才是开合。
+    fn of(open: bool, disabled: bool, focused: bool) -> Self {
+        if disabled {
+            return Self::Disabled;
+        }
+        if focused {
+            return Self::FocusVisible;
+        }
+        if open {
+            Self::Open
+        } else {
+            Self::Idle
+        }
+    }
+
+    /// 文字色、底（`None` = 不画底）、内描边（`None` = 透明）。
+    fn paint(self, colors: &Palette) -> (Hsla, Option<Hsla>, Option<Hsla>) {
+        match self {
+            Self::Idle => (colors.fg, None, None),
+            Self::Hover => (colors.fg, Some(colors.hover), None),
+            // 展开态取 `active`（selection 蓝，浅 `#d9e5f2` / 深 `#214283`）而不是 `hover`：
+            // 面板开着时鼠标多半还停在触发器上，两态同色就分不清「指着」和「开着」。
+            Self::Open => (colors.fg, Some(colors.active), None),
+            Self::FocusVisible => (colors.fg, Some(colors.active), Some(colors.fg)),
+            Self::Disabled => (colors.fg_disabled, None, None),
+        }
+    }
+}
+
 /// 顶层菜单那块触发器：一行文字，开的那个高亮。
 ///
 /// 开合归库的 [`TriggerMenu`] 管，这张脸只负责长相和两件宿主自己的事：
 ///
 /// - 按下时记住「菜单打开前谁握着焦点」——选中的动作派发给它（见 `action_target`）；
 /// - 鼠标划过来、且已经开了别的菜单时，换到这一个。
+///
+/// `disabled` / `focused` 这两个入参今天恒为假：九个顶层菜单都不能禁用，键盘也还没走到
+/// 触发器上（顶层导航的键位方案另排期）。配色先按 [`TriggerFace`] 定死，接线的活归那一批
+/// ——到时候只要把这两个入参换成真来源，不用再动颜色。
 fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
     let colors = &cx.theme().colors;
-    let (idle, active_text, hover_bg) = (colors.fg_muted, colors.fg, colors.hover);
+    let face = TriggerFace::of(open, false, false);
+    let (text, background, inner) = face.paint(colors);
+    // 内描边恒留 1px 的槽：聚焦那一刻才上色，免得整行宽高跳两个像素。
+    let inner = inner.unwrap_or(transparent_black());
+    // 悬停底跟着状态走：展开着的时候鼠标还在触发器上，底就该停在 `active` 上；
+    // 禁用态连悬停都不给——那一行什么都不该反应。
+    let hover = match face {
+        TriggerFace::Disabled => None,
+        TriggerFace::Open | TriggerFace::FocusVisible => Some(colors.active),
+        _ => Some(colors.hover),
+    };
     let handle = handle();
 
     div()
@@ -1432,8 +1524,13 @@ fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
         .px(rems(TRIGGER_PADDING_SPEC / 16.))
         .rounded(rems(ITEM_RADIUS_SPEC / 16.))
         .text_sm()
-        .text_color(if open { active_text } else { idle })
-        .hover(move |style| style.bg(hover_bg).text_color(active_text))
+        .text_color(text)
+        .border_1()
+        .border_color(inner)
+        .when_some(background, |face, background| face.bg(background))
+        .when_some(hover, |face, hover| {
+            face.hover(move |style| style.bg(hover).text_color(text))
+        })
         .on_mouse_down(MouseButton::Left, {
             let handle = handle.clone();
             move |_, window, cx| {
@@ -1548,15 +1645,21 @@ fn build_menu(index: usize, cx: &mut App) -> Menu {
                 let label_key = *label_key;
                 let missing = *missing;
                 let row_handle = handle.clone();
-                let mut row = MenuRow::new(tr(label_key));
-                if let MenuIcon::Idea(icon) = *icon {
-                    row = row.icon_element(icon_element(icon));
-                }
-                menu.item(row.on_click(move |_window, cx| {
-                    let _ = row_handle.update(cx, |bar, cx| {
-                        bar.push_not_wired(label_key, missing, cx)
-                    });
-                }))
+                let (label, badge) = (tr(label_key), tr(NOT_WIRED_BADGE_KEY));
+                let lead: Option<Rc<dyn Fn(&App) -> AnyElement>> = match *icon {
+                    MenuIcon::Idea(icon) => Some(Rc::new(icon_element(icon))),
+                    MenuIcon::Empty => None,
+                };
+                menu.item(
+                    MenuRow::element(move |cx| {
+                        not_wired_row(label.clone(), badge.clone(), lead.as_ref(), cx)
+                    })
+                    .on_click(move |_window, cx| {
+                        let _ = row_handle.update(cx, |bar, cx| {
+                            bar.push_not_wired(label_key, missing, cx)
+                        });
+                    }),
+                )
             }
             MenuItem::Theme => match &themes {
                 Some(submenu) => {
@@ -1567,6 +1670,41 @@ fn build_menu(index: usize, cx: &mut App) -> Menu {
         };
     }
     menu
+}
+
+/// 菜单行里的图标槽内容：本仓那张图，深浅等画的时候再问主题。
+type Slot = Rc<dyn Fn(&App) -> AnyElement>;
+
+/// 未接线那一行的行内容：图标槽 + 标题 + 行尾的「未接入」角标。
+///
+/// **降权用 `fg_subtle` 而不是 `fg_disabled`，并且保持可点**：这类行是「还没做」不是
+/// 「现在不能用」，置灰会把两件事画成一个样；再就是 `Menu::step()` 跳过 `disabled` 的行，
+/// 置灰等于把它们的键盘可达性一起丢掉。点击照旧走到 `push_not_wired`（那句才说清缺什么）。
+fn not_wired_row(
+    label: SharedString,
+    badge: SharedString,
+    lead: Option<&Slot>,
+    cx: &App,
+) -> AnyElement {
+    let theme = cx.theme();
+    let colors = &theme.colors;
+    h_stack()
+        .flex_1()
+        .min_w_0()
+        .gap_2()
+        .text_color(colors.fg_subtle)
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(theme.icon_size(IconSize::Sm))
+                .children(lead.map(|paint| paint(cx))),
+        )
+        .child(div().flex_1().min_w_0().truncate().child(label))
+        .child(div().flex_none().text_xs().child(badge))
+        .into_any_element()
 }
 
 fn theme_menu(names: Vec<String>) -> Menu {
@@ -1594,13 +1732,65 @@ mod tests {
         CloseReason, KEY_GO_TO_LINE, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM,
         KEY_TOGGLE_ACTIVITY_SIDEBAR, KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS,
         MISSING_GROUPS, MenuAction, MenuBarMode, MenuItem, NOT_WIRED_OUTSIDE_MENUS, NavState,
-        action_count, mode_for, not_wired_count, resolve_menu_toggle,
+        TriggerFace, action_count, mode_for, not_wired_count, resolve_menu_toggle,
     };
     use lithe_gpui_shared::tr;
+    use lithe_ui::theme::Palette;
     use std::collections::BTreeSet;
 
     const SOURCE_MENU_ITEMS: usize = 89;
     const LOCAL_ONLY_ITEMS: usize = 5;
+
+    /// 回归：菜单栏曾经只有「闲置 / 悬停」两态，展开着的那个菜单没有底；补四态时又把
+    /// 展开态和悬停态设成了同一个 `hover`，鼠标还压在触发器上就分不清「指着」和「开着」。
+    #[test]
+    fn trigger_faces_follow_the_spec_table() {
+        for palette in [Palette::light(false), Palette::dark(false)] {
+            let face = |state: TriggerFace| state.paint(&palette);
+
+            assert_eq!(face(TriggerFace::Idle), (palette.fg, None, None));
+            assert_eq!(face(TriggerFace::Hover).1, Some(palette.hover));
+            assert_eq!(face(TriggerFace::Open).1, Some(palette.active));
+            assert_eq!(face(TriggerFace::FocusVisible).1, Some(palette.active));
+            // 内描边取 `fg` 自己：`focus` token 落在 `title_bar` 上只有 2.49:1，不够 WCAG。
+            assert_eq!(face(TriggerFace::FocusVisible).2, Some(palette.fg));
+            assert_eq!(face(TriggerFace::Disabled), (palette.fg_disabled, None, None));
+
+            // 展开态与悬停态必须分得开，否则鼠标停在触发器上就等于没有高亮。
+            assert_ne!(
+                face(TriggerFace::Open).1,
+                face(TriggerFace::Hover).1,
+                "展开态与悬停态同色，看不出菜单开着"
+            );
+            assert_ne!(palette.hover, palette.active, "调色板本身就撞色了");
+            // 除禁用态之外文字都是 `fg`：浅色下 `fg_muted` 在 header 上只剩 4.56:1。
+            for state in [
+                TriggerFace::Idle,
+                TriggerFace::Hover,
+                TriggerFace::Open,
+                TriggerFace::FocusVisible,
+            ] {
+                assert_eq!(face(state).0, palette.fg, "{state:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn trigger_face_picks_the_strongest_state() {
+        assert_eq!(TriggerFace::of(false, false, false), TriggerFace::Idle);
+        assert_eq!(TriggerFace::of(true, false, false), TriggerFace::Open);
+        assert_eq!(TriggerFace::of(false, false, true), TriggerFace::FocusVisible);
+        assert_eq!(
+            TriggerFace::of(true, false, true),
+            TriggerFace::FocusVisible,
+            "聚焦压过开合"
+        );
+        assert_eq!(
+            TriggerFace::of(true, true, true),
+            TriggerFace::Disabled,
+            "禁用压过一切"
+        );
+    }
 
     #[test]
     fn close_reasons_match_the_spec_vocabulary() {
