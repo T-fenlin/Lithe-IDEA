@@ -2,23 +2,19 @@ use std::path::PathBuf;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, Focusable as _, Hsla,
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
-    Styled as _, Subscription, Window, div, rems,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
-    StyledExt as _,
-};
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr, tr_args};
+use lithe_ui::buttons::Button;
+use lithe_ui::forms::{Input, InputEvent, InputState};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::motion::Spinner;
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
+use lithe_ui::theme::{ActiveTheme as _, Size};
 use serde_json::Value;
 
 use crate::search_index::SearchIndexReadiness;
@@ -239,19 +235,21 @@ impl ReplaceInFiles {
     }
 
     fn focus_query(&self, window: &mut Window, cx: &mut App) {
-        self.query.read(cx).focus_handle(cx).focus(window, cx);
+        let focus = self.query.read(cx).focus().clone();
+        window.focus(&focus, cx);
     }
 
     fn on_input_event(&mut self, event: &InputEvent, cx: &mut Context<Self>) {
         match event {
-            InputEvent::Change => {
-                self.query_text = self.query.read(cx).value();
-                self.replacement_text = self.replacement.read(cx).value();
-                self.mask_text = self.mask.read(cx).value();
+            InputEvent::Changed => {
+                self.query_text = SharedString::from(self.query.read(cx).text().to_string());
+                self.replacement_text =
+                    SharedString::from(self.replacement.read(cx).text().to_string());
+                self.mask_text = SharedString::from(self.mask.read(cx).text().to_string());
                 self.options.search.file_mask = self.mask_text.to_string();
                 self.discard_preview(cx);
             }
-            InputEvent::PressEnter { .. } => self.issue(cx),
+            InputEvent::Submit => self.issue(cx),
             InputEvent::Focus | InputEvent::Blur => {}
         }
     }
@@ -399,7 +397,7 @@ impl ReplaceInFiles {
     }
 
     fn header(&self, cx: &App) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h_10()
@@ -408,23 +406,25 @@ impl ReplaceInFiles {
             .child(
                 div()
                     .text_sm()
-                    .font_medium()
-                    .text_color(cx.theme().foreground)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().colors.fg)
                     .child(tr("lithe.search.gpui.replaceInFiles")),
             )
             .child(div().flex_1())
+            // 库里的 `Input` 是个 `IntoElement` 的框，不吃 `Styled`；宽度得外包一层给。
             .child(
-                Input::new(&self.mask)
-                    .small()
-                    .cleanable(true)
-                    .w(rems(96. / 16.))
-                    .aria_label(tr("lithe.search.filesToInclude")),
+                div().w(rems(96. / 16.)).child(
+                    Input::new(&self.mask)
+                        .size(Size::Small)
+                        .clearable()
+                        .aria_label(tr("lithe.search.filesToInclude")),
+                ),
             )
             .into_any_element()
     }
 
     fn controls(&self, cx: &mut Context<Self>) -> AnyElement {
-        v_flex()
+        v_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
@@ -432,9 +432,8 @@ impl ReplaceInFiles {
             .pb_2p5()
             .child(
                 Input::new(&self.query)
-                    .small()
-                    .cleanable(true)
-                    .w_full()
+                    .size(Size::Small)
+                    .clearable()
                     .prefix(idea_icon_image(
                         &idea::MAGNIFYING_GLASS_ICON,
                         cx,
@@ -445,9 +444,8 @@ impl ReplaceInFiles {
             .child(self.option_row(ReplaceOption::QUERY_ROW.as_slice(), cx))
             .child(
                 Input::new(&self.replacement)
-                    .small()
-                    .cleanable(true)
-                    .w_full()
+                    .size(Size::Small)
+                    .clearable()
                     .aria_label(tr("lithe.search.replaceWith")),
             )
             .child(self.option_row(&[ReplaceOption::PreserveCase], cx))
@@ -455,7 +453,7 @@ impl ReplaceInFiles {
     }
 
     fn option_row(&self, options: &[ReplaceOption], cx: &mut Context<Self>) -> AnyElement {
-        let mut row = h_flex().w_full().flex_shrink_0().gap_1();
+        let mut row = h_stack().w_full().flex_shrink_0().gap_1();
         for option in options {
             let option = *option;
             row = row.child(
@@ -463,7 +461,7 @@ impl ReplaceInFiles {
                     "lithe-replace-option-{}",
                     option.id()
                 )))
-                .small()
+                .size(Size::Small)
                 .selected(option.get(&self.options))
                 .disabled(!option.enabled(&self.options))
                 .label(tr(option.label_key()))
@@ -479,27 +477,30 @@ impl ReplaceInFiles {
     fn results(&mut self, cx: &mut Context<Self>) -> AnyElement {
         match &self.state {
             ReplaceState::Idle => Self::empty_state(
-                Some(IconName::Search),
+                Some(&idea::MAGNIFYING_GLASS_ICON),
                 tr("lithe.search.gpui.replaceInFiles"),
                 Some(tr("lithe.search.gpui.replaceEmptyDescription")),
                 cx,
             ),
-            ReplaceState::Loading { .. } => h_flex()
+            ReplaceState::Loading { .. } => h_stack()
                 .w_full()
                 .flex_1()
                 .min_h_0()
                 .justify_center()
                 .gap_2()
-                .child(Spinner::new().color(cx.theme().muted_foreground))
+                .child(
+                    Spinner::new("lithe-replace-spinner")
+                        .color(cx.theme().colors.fg_muted),
+                )
                 .child(
                     div()
                         .text_sm()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.fileExplorer.searchingFiles")),
                 )
                 .into_any_element(),
             ReplaceState::Failed { reason, .. } => Self::empty_state(
-                Some(IconName::TriangleAlert),
+                Some(&idea::WARNING_CIRCLE_ICON),
                 tr("lithe.search.failed"),
                 Some(SharedString::from(reason.clone())),
                 cx,
@@ -521,20 +522,20 @@ impl ReplaceInFiles {
     }
 
     fn list(&self, rows: &[ReplaceRow], cx: &mut Context<Self>) -> AnyElement {
-        v_flex()
+        v_stack()
             .id(LIST_ID)
             .w_full()
             .flex_1()
             .min_h_0()
             .gap_0()
-            .overflow_y_scrollbar()
+            .overflow_y_scroll()
             .children(rows.iter().map(|row| self.row(row, cx)))
             .into_any_element()
     }
 
     fn row(&self, row: &ReplaceRow, cx: &App) -> AnyElement {
         match row {
-            ReplaceRow::File { path, occurrences } => h_flex()
+            ReplaceRow::File { path, occurrences } => h_stack()
                 .id(ElementId::from(format!("replace-file-{path}")))
                 .w_full()
                 .gap_2()
@@ -550,17 +551,17 @@ impl ReplaceInFiles {
                         .flex_1()
                         .min_w_0()
                         .text_xs()
-                        .font_medium()
+                        .font_weight(FontWeight::MEDIUM)
                         .overflow_hidden()
                         .whitespace_nowrap()
-                        .text_color(cx.theme().foreground)
+                        .text_color(cx.theme().colors.fg)
                         .child(SharedString::from(path.clone())),
                 )
                 .child(
                     div()
                         .flex_shrink_0()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(SharedString::from(occurrences.to_string())),
                 )
                 .into_any_element(),
@@ -570,7 +571,7 @@ impl ReplaceInFiles {
                 before,
                 after,
                 ..
-            } => h_flex()
+            } => h_stack()
                 .id(ElementId::from(format!("replace-line-{path}-{line}")))
                 .w_full()
                 .h(rems(ROW_HEIGHT_SPEC / 16.))
@@ -583,24 +584,24 @@ impl ReplaceInFiles {
                         .w_8()
                         .flex_shrink_0()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(SharedString::from(line.to_string())),
                 )
                 .child(
-                    v_flex()
+                    v_stack()
                         .flex_1()
                         .min_w_0()
                         .gap_0()
                         .child(Self::text_pair(
                             tr("lithe.search.gpui.before"),
                             before,
-                            cx.theme().muted_foreground,
+                            cx.theme().colors.fg_muted,
                             cx,
                         ))
                         .child(Self::text_pair(
                             tr("lithe.search.gpui.after"),
                             after,
-                            cx.theme().foreground,
+                            cx.theme().colors.fg,
                             cx,
                         )),
                 )
@@ -609,7 +610,7 @@ impl ReplaceInFiles {
     }
 
     fn text_pair(label: SharedString, text: &str, color: Hsla, cx: &App) -> AnyElement {
-        h_flex()
+        h_stack()
             .w_full()
             .min_w_0()
             .gap_2()
@@ -618,7 +619,7 @@ impl ReplaceInFiles {
                     .w(rems(48. / 16.))
                     .flex_shrink_0()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(label),
             )
             .child(
@@ -626,7 +627,7 @@ impl ReplaceInFiles {
                     .flex_1()
                     .min_w_0()
                     .text_xs()
-                    .font_family(cx.theme().mono_font_family.clone())
+                    .font_family(cx.theme().mono_family.clone())
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_color(color)
@@ -639,14 +640,14 @@ impl ReplaceInFiles {
         let (files, matches) = self.state.counts();
         let loading = matches!(self.state, ReplaceState::Loading { .. });
         let can_preview = preview_enabled(&self.state, &self.query_text);
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .h(rems(FOOTER_HEIGHT_SPEC / 16.))
             .px_5()
             .gap_2()
             .border_t_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
                 Button::new(PREVIEW_BUTTON_ID)
                     .primary()
@@ -656,13 +657,16 @@ impl ReplaceInFiles {
             )
             .child(div().flex_1())
             .child(div().w_4().flex_shrink_0().when(loading, |slot| {
-                slot.child(Spinner::new().color(cx.theme().muted_foreground))
+                slot.child(
+                    Spinner::new("lithe-replace-footer-spinner")
+                        .color(cx.theme().colors.fg_muted),
+                )
             }))
             .child(
                 div()
                     .flex_shrink_0()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr_args(
                         "lithe.search.gpui.replacePreviewCounts",
                         &[
@@ -675,16 +679,19 @@ impl ReplaceInFiles {
     }
 
     fn empty_state(
-        icon: Option<IconName>,
+        icon: Option<&'static idea::IdeaIcon>,
         title: SharedString,
         description: Option<SharedString>,
         cx: &App,
     ) -> AnyElement {
         lithe_gpui_shared::empty_state::unavailable(
             icon.map(|icon| {
-                Icon::new(icon).size(rems(
-                    lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.,
-                ))
+                idea_icon_svg_px(
+                    icon,
+                    cx,
+                    rems(lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.),
+                )
+                .text_color(cx.theme().colors.fg_muted)
             }),
             title,
             description,
@@ -701,7 +708,7 @@ fn preview_enabled(state: &ReplaceState, query: &str) -> bool {
 impl Render for ReplaceInFiles {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let index_notice = crate::search_index::readiness_notice(self.search_index_readiness, cx);
-        v_flex()
+        v_stack()
             .id(OVERLAY_ID)
             .size_full()
             .child(self.header(cx))

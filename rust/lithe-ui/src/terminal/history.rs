@@ -120,6 +120,8 @@ impl RenderOnce for CommandHistory {
             empty: i18n::text(cx, "palette.history.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
+            field_trailing: None,
+            footer: None,
             on_pick: on_value(self.on_pick),
             on_close: self.on_close,
         }

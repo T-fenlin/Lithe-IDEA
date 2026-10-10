@@ -3,18 +3,16 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, Focusable as _,
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window, div, rems,
 };
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr, tr_args};
+use lithe_ui::forms::{Checkbox, Input, InputEvent, InputState};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::motion::Spinner;
+use lithe_ui::theme::{ActiveTheme as _, Size};
 use serde_json::Value;
 
 use crate::search_index::SearchIndexReadiness;
@@ -148,18 +146,19 @@ impl SearchPanel {
     }
 
     pub fn activate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.query.read(cx).focus_handle(cx).focus(window, cx);
+        let focus = self.query.read(cx).focus().clone();
+        window.focus(&focus, cx);
     }
 
     fn on_input_event(&mut self, event: &InputEvent, cx: &mut Context<Self>) {
         match event {
-            InputEvent::Change => {
-                self.query_text = self.query.read(cx).value();
-                self.mask_text = self.mask.read(cx).value();
+            InputEvent::Changed => {
+                self.query_text = SharedString::from(self.query.read(cx).text().to_string());
+                self.mask_text = SharedString::from(self.mask.read(cx).text().to_string());
                 self.options.file_mask = self.mask_text.to_string();
                 self.restart(cx);
             }
-            InputEvent::PressEnter { .. } => self.issue(cx),
+            InputEvent::Submit => self.issue(cx),
             InputEvent::Focus | InputEvent::Blur => {}
         }
     }
@@ -291,7 +290,7 @@ impl SearchPanel {
     }
 
     fn controls(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let mut options = v_flex().w_full().gap_1();
+        let mut options = v_stack().w_full().gap_1();
         for option in QueryOption::ALL {
             let checked = option.get(&self.options);
             let id = option.id();
@@ -299,24 +298,25 @@ impl SearchPanel {
                 Checkbox::new(ElementId::from(format!("lithe-search-option-{id}")))
                     .label(tr(option.label_key()))
                     .checked(checked)
-                    .on_change(cx.listener(move |this, checked: &bool, _, cx| {
-                        this.set_option(option, *checked, cx);
+                    // 库里 `on_change` 收的是**值**（`Fn(bool, …)`），不是引用；
+                    // gpui 的 `listener` 只产出收 `&E` 的闭包，所以这里用 `processor`。
+                    .on_change(cx.processor(move |this, checked: bool, _, cx| {
+                        this.set_option(option, checked, cx);
                     })),
             );
         }
 
-        v_flex()
+        v_stack()
             .w_full()
             .flex_shrink_0()
             .gap_2()
             .p_2()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
                 Input::new(&self.query)
-                    .small()
-                    .cleanable(true)
-                    .w_full()
+                    .size(Size::Small)
+                    .clearable()
                     .prefix(idea_icon_image(
                         &idea::MAGNIFYING_GLASS_ICON,
                         cx,
@@ -326,9 +326,8 @@ impl SearchPanel {
             )
             .child(
                 Input::new(&self.mask)
-                    .small()
-                    .cleanable(true)
-                    .w_full()
+                    .size(Size::Small)
+                    .clearable()
                     .aria_label(tr("lithe.search.filesToInclude")),
             )
             .child(options)
@@ -338,27 +337,29 @@ impl SearchPanel {
     fn results(&mut self, cx: &mut Context<Self>) -> AnyElement {
         match &self.state {
             SearchState::Idle => Self::empty_state(
-                Some(IconName::Search),
+                Some(&idea::MAGNIFYING_GLASS_ICON),
                 tr("lithe.search.emptyTitle"),
                 Some(tr("lithe.search.emptyDescription")),
                 cx,
             ),
-            SearchState::Loading { .. } => h_flex()
+            SearchState::Loading { .. } => h_stack()
                 .w_full()
                 .flex_1()
                 .min_h_0()
                 .justify_center()
                 .gap_2()
-                .child(Spinner::new().color(cx.theme().muted_foreground))
+                .child(
+                    Spinner::new("lithe-search-spinner").color(cx.theme().colors.fg_muted),
+                )
                 .child(
                     div()
                         .text_sm()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().colors.fg_muted)
                         .child(tr("lithe.fileExplorer.searchingFiles")),
                 )
                 .into_any_element(),
             SearchState::Failed { reason, .. } => Self::empty_state(
-                Some(IconName::TriangleAlert),
+                Some(&idea::WARNING_CIRCLE_ICON),
                 tr("lithe.search.failed"),
                 Some(SharedString::from(reason.clone())),
                 cx,
@@ -377,13 +378,13 @@ impl SearchPanel {
     }
 
     fn list(&self, rows: &[SearchRow], cx: &mut Context<Self>) -> AnyElement {
-        v_flex()
+        v_stack()
             .id("lithe-search-results")
             .w_full()
             .flex_1()
             .min_h_0()
             .gap_0()
-            .overflow_y_scrollbar()
+            .overflow_y_scroll()
             .children(rows.iter().map(|row| self.row(row, cx)))
             .into_any_element()
     }
@@ -394,7 +395,7 @@ impl SearchPanel {
             SearchRow::File { path, hits } => {
                 let open_path = absolute(&self.root, path);
                 let open = open.clone();
-                h_flex()
+                h_stack()
                     .id(ElementId::from(format!("search-file-{path}")))
                     .w_full()
                     .gap_2()
@@ -407,17 +408,17 @@ impl SearchPanel {
                             .flex_1()
                             .min_w_0()
                             .text_xs()
-                            .font_medium()
+                            .font_weight(FontWeight::MEDIUM)
                             .overflow_hidden()
                             .whitespace_nowrap()
-                            .text_color(cx.theme().foreground)
+                            .text_color(cx.theme().colors.fg)
                             .child(SharedString::from(path.clone())),
                     )
                     .child(
                         div()
                             .flex_shrink_0()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(SharedString::from(hits.to_string())),
                     )
                     .on_click(cx.listener(move |_this, _, window, cx| {
@@ -434,7 +435,7 @@ impl SearchPanel {
                 let open_path = absolute(&self.root, path);
                 let target_line = line.map(|line| line as u32);
                 let open = open.clone();
-                h_flex()
+                h_stack()
                     .id(ElementId::from(format!(
                         "search-result-{path}-{}",
                         line.unwrap_or(0)
@@ -450,7 +451,7 @@ impl SearchPanel {
                             .w_8()
                             .flex_shrink_0()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(SharedString::from(match line {
                                 Some(line) => line.to_string(),
                                 None => String::new(),
@@ -461,10 +462,10 @@ impl SearchPanel {
                             .flex_1()
                             .min_w_0()
                             .text_xs()
-                            .font_family(cx.theme().mono_font_family.clone())
+                            .font_family(cx.theme().mono_family.clone())
                             .overflow_hidden()
                             .whitespace_nowrap()
-                            .text_color(cx.theme().muted_foreground)
+                            .text_color(cx.theme().colors.fg_muted)
                             .child(SharedString::from(preview.clone())),
                     )
                     .on_click(cx.listener(move |_this, _, window, cx| {
@@ -480,16 +481,19 @@ impl SearchPanel {
     }
 
     fn empty_state(
-        icon: Option<IconName>,
+        icon: Option<&'static idea::IdeaIcon>,
         title: SharedString,
         description: Option<SharedString>,
         cx: &App,
     ) -> AnyElement {
         lithe_gpui_shared::empty_state::unavailable(
             icon.map(|icon| {
-                Icon::new(icon).size(rems(
-                    lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.,
-                ))
+                idea_icon_svg_px(
+                    icon,
+                    cx,
+                    rems(lithe_gpui_shared::empty_state::UNAVAILABLE_ICON_SIZE_SPEC / 16.),
+                )
+                .text_color(cx.theme().colors.fg_muted)
             }),
             title,
             description,
@@ -502,9 +506,9 @@ impl SearchPanel {
 impl Render for SearchPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let index_notice = crate::search_index::readiness_notice(self.search_index_readiness, cx);
-        v_flex()
+        v_stack()
             .size_full()
-            .bg(cx.theme().background)
+            .bg(cx.theme().colors.bg)
             .child(self.controls(cx))
             .children(index_notice)
             .child(self.results(cx))

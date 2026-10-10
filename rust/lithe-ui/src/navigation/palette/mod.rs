@@ -237,6 +237,10 @@ pub struct Palette {
     pub(crate) loading: bool,
     /// 调用方对卡片的样式覆盖（`Styled`）；尺寸、内衬这类规格不该在组件里写死。
     pub(crate) style: StyleRefinement,
+    /// 查询框右侧的收尾元素（条数、快捷键提示…）。
+    pub(crate) field_trailing: Option<AnyElement>,
+    /// 列表之下的收尾行（调用方的按钮条）。
+    pub(crate) footer: Option<AnyElement>,
     pub(crate) on_pick: Option<OnPick>,
     pub(crate) on_close: Run,
 }
@@ -258,6 +262,8 @@ impl Palette {
             empty: SharedString::default().into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
+            field_trailing: None,
+            footer: None,
             on_pick: None,
             on_close: Rc::new(on_close),
         }
@@ -303,6 +309,18 @@ impl Palette {
     /// Whether an answer is in flight.
     pub fn loading(mut self, loading: bool) -> Self {
         self.loading = loading;
+        self
+    }
+
+    /// An element after the query field, inside the same row — a count, a hint.
+    pub fn field_trailing(mut self, trailing: impl IntoElement) -> Self {
+        self.field_trailing = Some(trailing.into_any_element());
+        self
+    }
+
+    /// A row below the list, inside the card — the caller's own actions.
+    pub fn footer(mut self, footer: impl IntoElement) -> Self {
+        self.footer = Some(footer.into_any_element());
         self
     }
 
@@ -545,7 +563,10 @@ impl Palette {
                             .color(colors.fg_subtle)
                             .into_any_element()
                     })
-                    .child(div().flex_1().min_w_0().child(self.input.clone())),
+                    .child(div().flex_1().min_w_0().child(self.input.clone()))
+                    .when_some(self.field_trailing, |field, trailing| {
+                        field.child(div().flex_none().child(trailing))
+                    }),
             )
             .child(
                 div()
@@ -572,7 +593,18 @@ impl Palette {
                                 .child(self.empty),
                         )
                     }),
-            );
+            )
+            .when_some(self.footer, |card, footer| {
+                card.child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .p_2()
+                        .border_t_1()
+                        .border_color(colors.border)
+                        .child(footer),
+                )
+            });
         card.style().refine(&self.style);
         // Padding grows the box the scrim centers.
         div().child(card).with_animation(

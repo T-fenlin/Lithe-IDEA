@@ -198,6 +198,8 @@ impl RenderOnce for CommandPalette {
             empty: i18n::text(cx, "palette.command.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
+            field_trailing: None,
+            footer: None,
             on_pick: on_value(self.on_run),
             on_close: self.on_close,
         }
@@ -312,6 +314,8 @@ impl RenderOnce for QuickOpen {
             empty,
             loading: false,
             style: StyleRefinement::default(),
+            field_trailing: None,
+            footer: None,
             on_pick: on_value(self.on_open),
             on_close: self.on_close,
         }
@@ -396,6 +400,8 @@ impl RenderOnce for QuickSwitcher {
             empty: i18n::text(cx, "palette.switch.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
+            field_trailing: None,
+            footer: None,
             on_pick: on_value(self.on_switch),
             on_close: self.on_close,
         }
@@ -496,6 +502,8 @@ impl SearchPalette {
             .into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
+            field_trailing: None,
+            footer: None,
             on_pick: on_value(self.on_open),
             on_close: self.on_close,
         }

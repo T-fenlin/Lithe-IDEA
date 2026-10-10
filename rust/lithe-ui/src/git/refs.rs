@@ -194,6 +194,8 @@ impl RenderOnce for BranchSelector {
             empty: i18n::text(cx, "palette.branch.empty", &[]).into_any_element(),
             loading: false,
             style: StyleRefinement::default(),
+            field_trailing: None,
+            footer: None,
             on_pick: Some(on_pick),
             on_close: self.on_close,
         }

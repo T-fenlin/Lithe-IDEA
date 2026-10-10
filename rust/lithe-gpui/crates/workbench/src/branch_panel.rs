@@ -1,18 +1,16 @@
-use gpui::DefiniteLength;
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, Focusable as _, FontWeight,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
+    AnyElement, App, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _,
+    IntoElement, MouseButton, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
 };
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::Button;
-use gpui_kit::component::command::{Command, CommandItem, CommandState};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::{ActiveTheme as _, Icon};
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
+use lithe_ui::buttons::Button;
+use lithe_ui::forms::{InputEvent, InputState};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::navigation::{Palette, PaletteRow};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
+use lithe_ui::theme::ActiveTheme as _;
 
 use lithe_gpui_git::{
     BranchInfo, BranchSnapshot, CheckoutGate, CheckoutPreflight, Preflight, PullGate,
@@ -27,9 +25,15 @@ const PANEL_MAX_HEIGHT_SPEC: f32 = 512.;
 
 const PANEL_TOP_INSET_SPEC: f32 = 64.;
 
+/// `Palette::new` 的 id 与 `open_dialog` 那个层名刻意不同：前者是元素/键控状态的 key，
+/// 后者是宿主浮层栈里的层名。
+const BRANCH_PALETTE_ID: &str = "lithe-branch-panel-body";
+
 const SEARCH_ROW_HEIGHT_SPEC: f32 = 28.;
 
 const TAB_HEIGHT_SPEC: f32 = 32.;
+
+const TAB_ICON_SPEC: f32 = 14.;
 
 const BRANCH_ROW_HEIGHT_SPEC: f32 = 36.;
 
@@ -216,11 +220,13 @@ impl PanelTab {
         }
     }
 
-    fn icon(self) -> IconName {
+    /// 面板自绘的应用图标只能取自本仓 `assets/icons/idea/**`（见 `shared::icons` 的口径）：
+    /// 本仓没有对应图的那一档留空槽，不拿组件库的 `IconName` 顶替。
+    fn icon(self) -> Option<&'static idea::IdeaIcon> {
         match self {
-            Self::Repositories => IconName::FolderOpen,
-            Self::Branches => IconName::GitBranch,
-            Self::Worktrees => IconName::FolderTree,
+            Self::Repositories => Some(&idea::FOLDER_ICON),
+            Self::Branches => Some(&idea::GIT_BRANCH_ICON),
+            Self::Worktrees => None,
         }
     }
 
@@ -242,10 +248,10 @@ impl PanelTab {
 }
 
 fn render_tabs(cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    let active_bg = theme.accent;
-    let active_fg = theme.foreground;
-    let muted = theme.muted_foreground;
+    let colors = &cx.theme().colors;
+    let active_bg = colors.hover;
+    let active_fg = colors.fg;
+    let muted = colors.fg_muted;
 
     let tabs = PanelTab::ALL.into_iter().map(move |tab| {
         let selected = tab == PanelTab::ACTIVE;
@@ -253,17 +259,19 @@ fn render_tabs(cx: &App) -> impl IntoElement {
             true => (Some(active_bg), active_fg),
             false => (None, muted),
         };
-        let mut pill = h_flex()
+        let mut pill = h_stack()
             .id(SharedString::from(format!("branch-panel-tab-{}", tab.id())))
             .flex_shrink_0()
-            .items_center()
             .min_h(rems(TAB_HEIGHT_SPEC / 16.))
             .px_3()
             .gap_1p5()
             .rounded_full()
             .text_sm()
             .text_color(foreground)
-            .child(Icon::new(tab.icon()).size_3p5())
+            .children(
+                tab.icon()
+                    .map(|icon| idea_icon_image(icon, cx, rems(TAB_ICON_SPEC / 16.))),
+            )
             .child(tr(tab.label_key()))
             .aria_label(tr(tab.label_key()));
 
@@ -280,10 +288,9 @@ fn render_tabs(cx: &App) -> impl IntoElement {
         pill
     });
 
-    h_flex()
+    h_stack()
         .id("branch-panel-tabs")
         .flex_shrink_0()
-        .items_center()
         .gap_1()
         .px_2()
         .pt_2()
@@ -291,50 +298,31 @@ fn render_tabs(cx: &App) -> impl IntoElement {
         .children(tabs)
 }
 
-fn render_search(input: &Entity<InputState>, total: usize, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
+/// 条数徽标，挂在 [`Palette`] 的查询行尾（`field_trailing`）。
+///
+/// 搜索框本身不再由面板画：库的 `Palette` 卡头就是「放大镜 + 查询框」一行，
+/// 面板要按 ↑/↓/Enter 驱动列表，光标就必须落在**卡内**那个框上。
+fn render_count(total: usize, cx: &App) -> AnyElement {
+    let colors = &cx.theme().colors;
 
-    h_flex()
+    h_stack()
         .flex_shrink_0()
-        .items_center()
-        .gap_2()
-        .px_4()
-        .py_3()
-        .border_b_1()
-        .border_color(theme.border)
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .h(rems(SEARCH_ROW_HEIGHT_SPEC / 16.))
-                .child(
-                    Input::new(input)
-                        .appearance(false)
-                        .p_0()
-                        .h_full()
-                        .aria_label(tr("lithe.git.searchBranchesAria")),
-                ),
-        )
-        .child(
-            h_flex()
-                .flex_shrink_0()
-                .items_center()
-                .min_h(rems(SEARCH_ROW_HEIGHT_SPEC / 16.))
-                .max_w(rems(BADGE_MAX_WIDTH_SPEC / 16.))
-                .px_2()
-                .rounded_full()
-                .bg(theme.muted.opacity(0.7))
-                .text_sm()
-                .text_color(theme.muted_foreground)
-                .truncate()
-                .child(tr_args(
-                    match total {
-                        1 => "lithe.git.branchCount",
-                        _ => "lithe.git.branchesCount",
-                    },
-                    &[("count", &total.to_string())],
-                )),
-        )
+        .min_h(rems(SEARCH_ROW_HEIGHT_SPEC / 16.))
+        .max_w(rems(BADGE_MAX_WIDTH_SPEC / 16.))
+        .px_2()
+        .rounded_full()
+        .bg(colors.sunken.opacity(0.7))
+        .text_sm()
+        .text_color(colors.fg_muted)
+        .truncate()
+        .child(tr_args(
+            match total {
+                1 => "lithe.git.branchCount",
+                _ => "lithe.git.branchesCount",
+            },
+            &[("count", &total.to_string())],
+        ))
+        .into_any_element()
 }
 
 fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
@@ -344,8 +332,9 @@ fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
     };
     let disabled = remote_actions_disabled(&snapshot, &run);
     let pull_disabled = update_project_disabled(&snapshot, &run);
+    let colors = &cx.theme().colors;
 
-    let mut section = v_flex().w_full().flex_shrink_0().gap_0p5().px_2().py_1();
+    let mut section = v_stack().w_full().flex_shrink_0().gap_0p5().px_2().py_1();
 
     for action in [RemoteAction::Fetch, RemoteAction::Pull, RemoteAction::Push] {
         let running = run.running_action() == Some(action);
@@ -360,10 +349,10 @@ fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
             disabled
         };
         let icon = match action {
-            RemoteAction::Fetch => IconName::ArrowDownToLine,
-            RemoteAction::Pull => IconName::ArrowDownLeft,
-            RemoteAction::Push => IconName::ArrowUpRight,
-            RemoteAction::Checkout => IconName::GitBranch,
+            RemoteAction::Fetch => &idea::DOWNLOAD_ICON,
+            RemoteAction::Pull => &idea::ARROW_DOWN_ICON,
+            RemoteAction::Push => &idea::ARROW_UP_ICON,
+            RemoteAction::Checkout => &idea::GIT_BRANCH_ICON,
         };
         let shortcut = match action {
             RemoteAction::Pull => Some("⌘T"),
@@ -382,12 +371,12 @@ fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
             .rounded(rems(ACTION_ROW_RADIUS_SPEC / 16.))
             .text_sm()
             .text_color(if row_disabled {
-                cx.theme().muted_foreground
+                colors.fg_muted
             } else {
-                cx.theme().foreground
+                colors.fg
             });
         if !row_disabled {
-            row = row.hover(|style| style.bg(cx.theme().accent));
+            row = row.hover(|style| style.bg(colors.hover));
         }
         row = row.child(
             div()
@@ -397,10 +386,8 @@ fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
                 .justify_center()
                 .w(rems(ACTION_ICON_SLOT_SPEC / 16.))
                 .child(
-                    Icon::new(icon)
-                        .text_color(cx.theme().muted_foreground)
-                        .w(rems(ACTION_ICON_SIZE_SPEC / 16.))
-                        .h(rems(ACTION_ICON_SIZE_SPEC / 16.)),
+                    idea_icon_svg_px(icon, cx, rems(ACTION_ICON_SIZE_SPEC / 16.))
+                        .text_color(colors.fg_muted),
                 ),
         );
         row = row.child(div().min_w_0().truncate().child(label));
@@ -409,7 +396,7 @@ fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
                 div()
                     .ml_auto()
                     .flex_shrink_0()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(colors.fg_muted)
                     .text_size(rems(ACTION_SHORTCUT_FONT_SPEC / 16.))
                     .child(SharedString::from(shortcut)),
             );
@@ -433,12 +420,9 @@ fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
 
 fn render_remote_message(message: &(bool, SharedString), cx: &App) -> impl IntoElement {
     let (is_error, text) = message;
-    let color = if *is_error {
-        cx.theme().danger
-    } else {
-        cx.theme().success
-    };
-    h_flex()
+    let colors = &cx.theme().colors;
+    let color = if *is_error { colors.danger } else { colors.success };
+    h_stack()
         .w_full()
         .flex_shrink_0()
         .items_start()
@@ -461,21 +445,20 @@ fn render_remote_message(message: &(bool, SharedString), cx: &App) -> impl IntoE
 }
 
 fn render_footer(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
+    let colors = &cx.theme().colors;
     let handle = panel.downgrade();
-    let idle_fg = theme.muted_foreground;
-    let hover_bg = theme.accent;
-    let hover_fg = theme.foreground;
+    let idle_fg = colors.fg_muted;
+    let hover_bg = colors.hover;
+    let hover_fg = colors.fg;
 
-    h_flex()
+    h_stack()
         .flex_shrink_0()
-        .items_center()
         .justify_end()
         .gap_2()
         .px_3()
         .py_3()
         .border_t_1()
-        .border_color(theme.border)
+        .border_color(colors.border)
         .child(
             div()
                 .id("branch-panel-refresh")
@@ -486,79 +469,65 @@ fn render_footer(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
                 .px_3()
                 .gap_1p5()
                 .rounded(rems(ROW_RADIUS_SPEC / 16.))
-                .bg(theme.accent)
+                .bg(colors.hover)
                 .text_sm()
-                .text_color(theme.foreground)
+                .text_color(colors.fg)
                 .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
                 .on_click(move |_event, window, cx| {
                     let _ = handle.update(cx, |panel, cx| panel.refresh(window, cx));
                 })
-                .child(Icon::new(IconName::RefreshCw).size_4().text_color(idle_fg))
+                .child(idea_icon_svg_px(&idea::REFRESH_ICON, cx, rems(1.)).text_color(idle_fg))
                 .child(tr("lithe.git.refresh")),
         )
 }
 
-trait IntoBranchItem {
-    fn into_branch_item(self) -> CommandItem;
-}
+/// 一行分支：行首是「当前」勾 / 分支图标，中间是名字，当前分支再挂一枚徽标。
+fn branch_row(branch: BranchInfo, cx: &App) -> PaletteRow {
+    let BranchInfo {
+        name, is_current, ..
+    } = branch;
+    let colors = &cx.theme().colors;
+    let name_color = if is_current { colors.fg } else { colors.fg_muted };
+    let icon = match is_current {
+        true => idea_icon_image(&idea::CHECK_ICON, cx, rems(14. / 16.)),
+        false => idea_icon_image(&idea::GIT_BRANCH_ICON, cx, rems(14. / 16.)),
+    };
 
-impl IntoBranchItem for BranchInfo {
-    fn into_branch_item(self) -> CommandItem {
-        let name = self.name.clone();
-        let search = self.name.clone();
-        let is_current = self.is_current;
-
-        CommandItem::new().label(search).child(move |_window, cx| {
-            let theme = cx.theme();
-            let name_color = if is_current {
-                theme.foreground
-            } else {
-                theme.muted_foreground
-            };
-            let leading = h_flex()
+    let mut row = PaletteRow::new(name.clone(), name.clone())
+        .icon_element(
+            div()
                 .flex_shrink_0()
+                .flex()
                 .items_center()
                 .justify_center()
                 .size_5()
-                .child(match is_current {
-                    true => idea_icon_image(&idea::CHECK_ICON, cx, rems(14. / 16.)),
-                    false => idea_icon_image(&idea::GIT_BRANCH_ICON, cx, rems(14. / 16.)),
-                });
-
-            let mut row = h_flex()
-                .w_full()
+                .child(icon),
+        )
+        .label(
+            div()
                 .min_w_0()
-                .min_h(rems(BRANCH_ROW_HEIGHT_SPEC / 16.))
-                .gap_2p5()
-                .child(leading)
-                .child(
-                    div()
-                        .min_w_0()
-                        .max_w(rems(BRANCH_NAME_MAX_WIDTH_SPEC / 16.))
-                        .truncate()
-                        .text_sm()
-                        .text_color(name_color)
-                        .child(name.clone()),
-                );
+                .max_w(rems(BRANCH_NAME_MAX_WIDTH_SPEC / 16.))
+                .truncate()
+                .text_sm()
+                .text_color(name_color)
+                .child(name),
+        );
 
-            if is_current {
-                row = row.child(
-                    div()
-                        .ml_auto()
-                        .flex_shrink_0()
-                        .px_1p5()
-                        .rounded_full()
-                        .bg(theme.success.opacity(0.1))
-                        .text_xs()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.success)
-                        .child(tr("lithe.git.current")),
-                );
-            }
-
-            row.into_any_element()
-        })
+    if is_current {
+        row = row.end(
+            div()
+                .flex_shrink_0()
+                .px_1p5()
+                .rounded_full()
+                .bg(colors.success.opacity(0.1))
+                .text_xs()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors.success)
+                .child(tr("lithe.git.current")),
+        );
     }
+
+    row
 }
 
 fn diagnose(opened: bool, branches: usize, current: Option<&str>) {
@@ -612,7 +581,6 @@ fn diagnose_failures(failures: &[String]) {
 pub struct BranchPanel {
     root: std::path::PathBuf,
     open: bool,
-    command: Entity<CommandState>,
     search: Entity<InputState>,
     query: SharedString,
     branches: BranchSnapshot,
@@ -633,13 +601,12 @@ impl BranchPanel {
         let search =
             cx.new(|cx| InputState::new(window, cx).placeholder(tr("lithe.git.searchBranches")));
         cx.new(|cx| {
-            let command = cx.new(|cx| CommandState::new(window, cx));
             let subscription = cx.subscribe_in(
                 &search,
                 window,
                 |panel: &mut Self, state: &Entity<InputState>, event: &InputEvent, _window, cx| {
-                    if matches!(event, InputEvent::Change) {
-                        panel.query = state.read(cx).value();
+                    if *event == InputEvent::Changed {
+                        panel.query = SharedString::from(state.read(cx).text().to_string());
                         cx.notify();
                     }
                 },
@@ -647,7 +614,6 @@ impl BranchPanel {
             Self {
                 root,
                 open: false,
-                command,
                 search,
                 query: SharedString::default(),
                 branches,
@@ -669,7 +635,7 @@ impl BranchPanel {
         &self.branches
     }
 
-    fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn open(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.branches = BranchSnapshot::load(&self.root);
         self.open = true;
         diagnose(
@@ -682,7 +648,7 @@ impl BranchPanel {
         diagnose_failures(&self.branches.failures);
         self.query = SharedString::default();
         self.search
-            .update(cx, |state, cx| state.set_value("", window, cx));
+            .update(cx, |state, cx| state.set_text("", cx));
         cx.notify();
     }
 
@@ -877,14 +843,14 @@ impl BranchPanel {
                     .title(tr("lithe.git.choosePullStrategy"))
                     .on_close(dismiss_hosted)
                     .child(
-                        v_flex()
+                        v_stack()
                             .gap_2()
                             .text_sm()
                             .child(body.clone())
                             .child(counts.clone())
                             .child(
                                 div()
-                                    .text_color(_cx.theme().muted_foreground)
+                                    .text_color(_cx.theme().colors.fg_muted)
                                     .child(tr("lithe.git.pullStrategyHint")),
                             ),
                     )
@@ -1051,9 +1017,9 @@ impl BranchPanel {
                     .title(tr("lithe.git.checkout"))
                     .on_close(dismiss_hosted)
                     .child(
-                        v_flex().gap_2().text_sm().child(body.clone()).child(
+                        v_stack().gap_2().text_sm().child(body.clone()).child(
                             div()
-                                .text_color(_cx.theme().muted_foreground)
+                                .text_color(_cx.theme().colors.fg_muted)
                                 .child(tr("lithe.git.pullResult.dirty")),
                         ),
                     )
@@ -1199,8 +1165,8 @@ impl BranchPanel {
     }
 
     fn focus_search(&self, window: &mut Window, cx: &mut App) {
-        let focus = self.search.read(cx).focus_handle(cx);
-        focus.focus(window, cx);
+        let focus = self.search.read(cx).focus().clone();
+        window.focus(&focus, cx);
     }
 
     pub fn open_by_probe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1255,7 +1221,7 @@ fn visible_rows(branches: &[BranchInfo], query: &str) -> Vec<BranchInfo> {
         .collect()
 }
 
-fn render_empty(query: &str, cx: &App) -> impl IntoElement {
+fn render_empty(query: &str, cx: &App) -> AnyElement {
     let key = match query.trim().is_empty() {
         true => "lithe.git.noBranchesFound",
         false => "lithe.git.noMatchingBranches",
@@ -1265,11 +1231,13 @@ fn render_empty(query: &str, cx: &App) -> impl IntoElement {
         .w_full()
         .text_center()
         .text_sm()
-        .text_color(cx.theme().muted_foreground)
+        .text_color(cx.theme().colors.fg_muted)
         .child(tr(key))
+        .into_any_element()
 }
 
 fn render_error_bar(failures: &[String], cx: &App) -> impl IntoElement {
+    let danger = cx.theme().colors.danger;
     div()
         .flex_shrink_0()
         .mx_2()
@@ -1277,17 +1245,16 @@ fn render_error_bar(failures: &[String], cx: &App) -> impl IntoElement {
         .px_2()
         .py_1p5()
         .rounded(rems(ROW_RADIUS_SPEC / 16.))
-        .bg(cx.theme().danger.opacity(0.1))
+        .bg(danger.opacity(0.1))
         .text_xs()
-        .text_color(cx.theme().danger)
+        .text_color(danger)
         .child(SharedString::from(failures.join("；")))
 }
 
-fn render_panel(panel: &Entity<BranchPanel>, cx: &App) -> AnyElement {
-    let (command, query, search, snapshot) = {
+fn render_panel(panel: &Entity<BranchPanel>, window: &mut Window, cx: &mut App) -> AnyElement {
+    let (query, search, snapshot) = {
         let panel = panel.read(cx);
         (
-            panel.command.clone(),
             panel.query.clone(),
             panel.search.clone(),
             panel.branches.clone(),
@@ -1301,47 +1268,43 @@ fn render_panel(panel: &Entity<BranchPanel>, cx: &App) -> AnyElement {
     let confirm_handle = panel.downgrade();
     let visible_names: Vec<SharedString> = rows.iter().map(|row| row.name.clone()).collect();
 
-    let command_element = Command::new(&command)
-        .bordered(false)
-        .searchable(false)
-        .filterable(false)
-        .w_full()
-        .max_h(DefiniteLength::from(rems(PANEL_MAX_HEIGHT_SPEC / 16.)))
-        .items(rows.into_iter().map(IntoBranchItem::into_branch_item))
-        .empty(move |_, _, cx| render_empty(empty_query.as_ref(), cx).into_any_element())
-        .on_confirm(move |index, window, cx| {
-            eprintln!(
-                "S1_BRANCH_PANEL action=checkout row={} state=preflight",
-                index.row
-            );
-            let Some(branch) = visible_names.get(index.row).cloned() else {
-                eprintln!(
-                    "S1_BRANCH_PANEL action=checkout row={} state=missing_row",
-                    index.row
-                );
-                return;
-            };
-            let _ =
-                confirm_handle.update(cx, |panel, cx| panel.request_checkout(branch, window, cx));
-        })
-        .footer({
-            let panel = panel.clone();
-            move |_, _, cx| render_footer(&panel, cx).into_any_element()
-        });
+    // 查询框由库的 `Palette` 画（卡头那一行）——光标得落在**卡内**，↑/↓/Enter 才驱动得了列表。
+    // 于是远程动作行上移到搜索行之前，条数徽标走 `field_trailing` 挂在查询框右侧。
+    let close = |window: &mut Window, cx: &mut App| dismiss_hosted(window, cx);
+    let pick = move |row: usize, _: &SharedString, window: &mut Window, cx: &mut App| {
+        eprintln!("S1_BRANCH_PANEL action=checkout row={row} state=preflight");
+        let Some(branch) = visible_names.get(row).cloned() else {
+            eprintln!("S1_BRANCH_PANEL action=checkout row={row} state=missing_row");
+            return;
+        };
+        let _ =
+            confirm_handle.update(cx, |panel, cx| panel.request_checkout(branch, window, cx));
+    };
 
-    let mut container = v_flex().w_full();
+    // `Palette::card` 的返回元素借用 `cx` 到被消费为止，所以它必须是最后一步：
+    // 其余部件先画完，卡再压上去。
+    let mut container = v_stack().w_full();
     if !failures.is_empty() {
         container = container.child(render_error_bar(&failures, cx));
     }
     let remote_message = panel.read(cx).remote_message.clone();
-    container = container
-        .child(render_tabs(cx))
-        .child(render_search(&search, total, cx))
-        .child(render_actions(panel, cx));
+    container = container.child(render_tabs(cx)).child(render_actions(panel, cx));
     if let Some(message) = &remote_message {
         container = container.child(render_remote_message(message, cx).into_any_element());
     }
-    container.child(command_element).into_any_element()
+
+    let palette = Palette::new(BRANCH_PALETTE_ID, search, close)
+        .rows(rows.into_iter().map(|branch| branch_row(branch, cx)))
+        .empty(render_empty(empty_query.as_ref(), cx))
+        .on_pick(pick)
+        .field_trailing(render_count(total, cx))
+        .footer(render_footer(panel, cx))
+        .w_full()
+        .h_auto()
+        .max_h(rems(PANEL_MAX_HEIGHT_SPEC / 16.))
+        .card(window, cx);
+
+    container.child(palette).into_any_element()
 }
 
 pub(crate) fn open_branch_panel(panel: &Entity<BranchPanel>, window: &mut Window, cx: &mut App) {
@@ -1369,7 +1332,7 @@ pub(crate) fn open_branch_panel(panel: &Entity<BranchPanel>, window: &mut Window
                 .p_0()
                 .gap_0()
                 .top_inset(crate::rem_px(rem, PANEL_TOP_INSET_SPEC))
-                .child(render_panel(&handle, cx))
+                .child(render_panel(&handle, window, cx))
                 .into_any_element()
         },
         cx,
@@ -1379,10 +1342,10 @@ pub(crate) fn open_branch_panel(panel: &Entity<BranchPanel>, window: &mut Window
 pub(crate) fn trigger(panel: &Entity<BranchPanel>, cx: &App) -> Option<AnyElement> {
     let branch = panel.read(cx).branches().branch.clone()?;
     let tracking = panel.read(cx).branches().tracking;
-    let theme = cx.theme();
-    let idle = theme.muted_foreground;
-    let hover_bg = theme.accent;
-    let hover_fg = theme.foreground;
+    let colors = &cx.theme().colors;
+    let idle = colors.fg_muted;
+    let hover_bg = colors.hover;
+    let hover_fg = colors.fg;
     let open_handle = panel.clone();
     let name = branch.clone();
 
@@ -1410,7 +1373,11 @@ pub(crate) fn trigger(panel: &Entity<BranchPanel>, cx: &App) -> Option<AnyElemen
                 }
                 open_branch_panel(&open_handle, window, cx);
             })
-            .child(Icon::new(IconName::GitBranch).size_3p5())
+            .child(idea_icon_image(
+                &idea::GIT_BRANCH_ICON,
+                cx,
+                rems(14. / 16.),
+            ))
             .child(div().min_w_0().truncate().child(branch))
             .children(render_tracking(tracking, cx))
             .aria_label(SharedString::from(format!(
@@ -1426,13 +1393,14 @@ fn render_tracking(tracking: lithe_gpui_git::TrackingCounts, cx: &App) -> Vec<An
     if tracking.is_empty() {
         return Vec::new();
     }
+    let colors = &cx.theme().colors;
     let mut arrows = Vec::new();
     if tracking.behind > 0 {
         arrows.push(
             div()
                 .flex_shrink_0()
                 .text_size(rems(10. / 16.))
-                .text_color(cx.theme().info)
+                .text_color(colors.info)
                 .child(SharedString::from("↙"))
                 .into_any_element(),
         );
@@ -1442,7 +1410,7 @@ fn render_tracking(tracking: lithe_gpui_git::TrackingCounts, cx: &App) -> Vec<An
             div()
                 .flex_shrink_0()
                 .text_size(rems(10. / 16.))
-                .text_color(cx.theme().success)
+                .text_color(colors.success)
                 .child(SharedString::from("↗"))
                 .into_any_element(),
         );
@@ -1459,21 +1427,22 @@ fn branch_row_height(rem: Pixels) -> Pixels {
 }
 
 #[cfg(test)]
-fn trigger_icon_names() -> [IconName; 1] {
-    [IconName::GitBranch]
+fn trigger_icon_names() -> [&'static idea::IdeaIcon; 1] {
+    [&idea::GIT_BRANCH_ICON]
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        BRANCH_ROW_HEIGHT_SPEC, IconName, PANEL_MAX_HEIGHT_SPEC, PANEL_TOP_INSET_SPEC,
-        PANEL_WIDTH_SPEC, PanelTab, PullDivergence, RemoteAction, RemoteRun,
-        SEARCH_ROW_HEIGHT_SPEC, branch_row_height, checkout_confirm_message, matches_query,
-        pull_diverged_message, pull_divergence_counts, remote_actions_disabled, remote_message,
-        trigger_icon_names, update_project_disabled, visible_rows,
+        BRANCH_ROW_HEIGHT_SPEC, PANEL_MAX_HEIGHT_SPEC, PANEL_TOP_INSET_SPEC, PANEL_WIDTH_SPEC,
+        PanelTab, PullDivergence, RemoteAction, RemoteRun, SEARCH_ROW_HEIGHT_SPEC, branch_row_height,
+        checkout_confirm_message, matches_query, pull_diverged_message, pull_divergence_counts,
+        remote_actions_disabled, remote_message, trigger_icon_names, update_project_disabled,
+        visible_rows,
     };
     use gpui::{SharedString, px};
     use lithe_gpui_git::{BranchInfo, BranchSnapshot};
+    use lithe_gpui_shared::icons::idea;
     use lithe_gpui_shared::tr;
 
     fn branch(name: &str, is_current: bool) -> BranchInfo {
@@ -1515,9 +1484,9 @@ mod tests {
     #[test]
     fn trigger_has_no_chevron() {
         let icons = trigger_icon_names();
-        assert_eq!(icons, [IconName::GitBranch]);
-        assert!(!icons.contains(&IconName::ChevronDown));
-        assert!(!icons.contains(&IconName::ChevronUp));
+        assert_eq!(icons, [&idea::GIT_BRANCH_ICON]);
+        assert!(!icons.contains(&&idea::CARET_DOWN_ICON));
+        assert!(!icons.contains(&&idea::CARET_RIGHT_ICON));
     }
 
     #[test]
