@@ -68,6 +68,85 @@ pub(crate) fn menu_under(
     host(id, trigger(click), menu, &state, None, window, cx)
 }
 
+/// 调用方自己的触发器，和一个挂在它下面的菜单。
+///
+/// 与 [`DropdownMenu`] 的分工：那个的触发器是一个按钮（label + 图标），
+/// 这个的触发器由调用方整块画——项目徽标 + 名字 + 箭头这种富触发器，库画不出来。
+/// `trigger` 收"现在开着没有"和当帧的 [`Window`] / [`App`]（主题色那类），
+/// 自己决定箭头朝哪边；库只负责把这个元素挂在菜单上面。
+///
+/// 面板宽度/高度跟着 [`Menu`]（见 [`Menu::width`] / [`Menu::max_height`]）。
+#[derive(IntoElement)]
+pub struct TriggerMenu {
+    id: ElementId,
+    menu: Menu,
+    trigger: Box<dyn FnOnce(bool, &mut Window, &App) -> AnyElement>,
+    /// 所有者按编号请求打开（程序化路径：快捷键、探针）。
+    manual: Option<u64>,
+    /// 触发器的可访问名；不给就用调用方画出来的内容当名字。
+    aria_label: Option<SharedString>,
+}
+
+impl TriggerMenu {
+    pub fn new(
+        id: impl Into<ElementId>,
+        menu: Menu,
+        trigger: impl FnOnce(bool, &mut Window, &App) -> AnyElement + 'static,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            menu,
+            trigger: Box::new(trigger),
+            manual: None,
+            aria_label: None,
+        }
+    }
+
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// 由所有者按编号请求打开，不走点击：编号变了就打开一次。
+    ///
+    /// 与 [`ContextMenu::manual`] 同一口径。展开方向仍与点击一致（挂在触发器下面），
+    /// 因为它挂的还是同一块触发器。
+    pub fn manual(mut self, request: Option<u64>) -> Self {
+        self.manual = request;
+        self
+    }
+}
+
+impl RenderOnce for TriggerMenu {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let state = state(&self.id, window, cx);
+        if let Some(number) = self.manual {
+            let asked = window.use_keyed_state((self.id.clone(), "asked"), cx, |_, _| None);
+            if *asked.read(cx) != Some(number) {
+                asked.update(cx, |asked, _| *asked = Some(number));
+                log::info!("trigger menu {:?}: asked to open (#{number})", self.id);
+                Open::show(&state, &self.menu, Spot::Under, false, cx);
+            }
+        }
+        let open = state.read(cx).is_open();
+        let click = toggle(&state, &self.menu, cx);
+        let trigger = (self.trigger)(open, window, cx);
+        let aria_label = self.aria_label.clone();
+        // 触发器长在可拖拽的窗口壳里（标题栏那类）：按下先吃掉，别让它变成拖窗口。
+        // 这层要自己的 id：`on_click` 与 `aria_label` 只在 `Stateful` 上，外层 host 的 id 已经用掉了。
+        let trigger = div()
+            .id((self.id.clone(), "trigger"))
+            .when_some(aria_label, |trigger, label| trigger.aria_label(label))
+            .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                window.prevent_default();
+                cx.stop_propagation();
+            })
+            .on_click(move |event, window, cx| click(event, window, cx))
+            .child(trigger);
+        host(self.id, trigger, &self.menu, &state, None, window, cx)
+    }
+}
+
 /// A button that opens a menu under it.
 #[derive(IntoElement)]
 pub struct DropdownMenu {

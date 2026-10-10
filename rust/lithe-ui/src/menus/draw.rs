@@ -23,6 +23,21 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
     } else {
         colors.fg
     };
+    // 富行：外壳照旧（高度下限、内边距、圆角、hover 底、整行可点），内容全由调用方画。
+    if let Some(build) = &item.element {
+        return div()
+            .id(("row", ix))
+            .relative()
+            .flex()
+            .items_center()
+            .min_h(theme.control_height(Size::Medium))
+            .px_2()
+            .rounded(theme.radius(Radius::Md))
+            .text_color(fg)
+            .when(current && !item.disabled, |row| row.bg(colors.hover))
+            .when(!item.disabled, |row| row.cursor_pointer())
+            .child(build(cx));
+    }
     let (lead, lead_color) = match &item.kind {
         Kind::Check(true) => (Some(IconName::Check), fg),
         Kind::Radio(true) => (Some(IconName::Dot), fg),
@@ -149,12 +164,21 @@ pub(super) fn panel(
                     .into_any_element()
             }
         });
-    surface((id.clone(), format!("panel-{depth}")), cx)
+    let panel = surface((id.clone(), format!("panel-{depth}")), cx)
         .relative()
-        .min_w(theme.menu_width())
         .p_1()
         .flex()
-        .flex_col()
+        .flex_col();
+    // 面板宽度：定宽（最小=最大）或主题的菜单宽度；超高的面板自己滚。
+    let panel = match here.width {
+        Some(width) => panel.min_w(width).max_w(width),
+        None => panel.min_w(theme.menu_width()),
+    };
+    let panel = match here.max_height {
+        Some(height) => panel.max_h(height).overflow_y_scroll(),
+        None => panel,
+    };
+    panel
         .children(head)
         .children(rows)
         .child(measure(state.clone(), move |open, bounds| {

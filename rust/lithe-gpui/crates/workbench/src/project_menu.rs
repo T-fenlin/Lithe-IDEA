@@ -3,19 +3,15 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle,
-    Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Subscription, WeakEntity, Window, div, rems, rgb,
+    AnyElement, App, AppContext as _, Context, Entity, FontWeight, Hsla, InteractiveElement as _,
+    IntoElement, Length, ParentElement as _, SharedString, Styled as _, WeakEntity, div, radians,
+    rems, rgb,
 };
-use gpui::{DismissEvent, deferred, radians};
-use gpui_kit::assets::IconName;
-use gpui_kit::base::{Align, ElementExt as _, Placement, Positioner, h_flex, v_flex};
-use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
-use lithe_gpui_shared::icons::idea;
+use lithe_gpui_shared::icons::{idea, idea_icon_mono};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::menus::{Menu, MenuItem, TriggerMenu};
+use lithe_ui::theme::{ActiveTheme as _, IconSize};
 
-use crate::icon_kit::idea_icon_mono;
 use lithe_gpui_settings::RecentProject;
 use lithe_gpui_shared::{tr, tr_args};
 
@@ -35,10 +31,6 @@ const TRIGGER_LEADING_INSET_SPEC: f32 = 6.;
 const TRIGGER_TRAILING_INSET_SPEC: f32 = 10.;
 
 const BADGE_FONT_SIZE_SPEC: f32 = 10.;
-
-const PANEL_OFFSET_SPEC: f32 = 4.;
-
-const PANEL_WINDOW_MARGIN_SPEC: f32 = 8.;
 
 const ROW_RADIUS_SPEC: f32 = lithe_gpui_shared::design::CONTROL_RADIUS;
 
@@ -101,7 +93,13 @@ impl ProjectBadge {
     }
 }
 
-pub(crate) fn badge_view(badge: &ProjectBadge, size: Pixels) -> impl IntoElement {
+/// 项目徽标：两个字母 + 一层底色。
+///
+/// 尺寸收 [`Length`] 而不是 `Pixels`：菜单行是「绘制期才拿得到 `&App`」的地方
+/// （见 [`MenuItem::element`]），那里只能说 `rems`；欢迎页那边手上有 `Window`，
+/// 说像素更方便。两种写法都进得来。
+pub(crate) fn badge_view(badge: &ProjectBadge, size: impl Into<Length>) -> impl IntoElement {
+    let size: Length = size.into();
     div()
         .flex_shrink_0()
         .flex()
@@ -126,11 +124,12 @@ enum PanelAction {
 impl PanelAction {
     const ALL: [Self; 3] = [Self::NewProject, Self::OpenFolder, Self::CloneRepository];
 
-    fn icon(self, is_dark: bool) -> gpui_kit::component::Icon {
+    /// 本仓自己的图标常量，深浅由画的时候再问主题（同 [`idea_icon_mono`] 的口径）。
+    fn icon(self) -> &'static idea::IdeaIcon {
         match self {
-            Self::NewProject => idea_icon_mono(&idea::PLUS_ICON, is_dark),
-            Self::OpenFolder => idea_icon_mono(&idea::FOLDER_ICON, is_dark),
-            Self::CloneRepository => idea_icon_mono(&idea::GIT_BRANCH_ICON, is_dark),
+            Self::NewProject => &idea::PLUS_ICON,
+            Self::OpenFolder => &idea::FOLDER_ICON,
+            Self::CloneRepository => &idea::GIT_BRANCH_ICON,
         }
     }
 
@@ -188,23 +187,24 @@ impl PanelWire {
     }
 }
 
-fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) -> PopupMenuItem {
+/// 面板顶上那三条动作：图标 + 一句话。
+///
+/// 行外壳（内边距、圆角、hover 底、整行可点）由库给，这里只画内容。
+fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) -> MenuItem {
     let wire = action.wire().zip(shell);
     let clickable = wire.is_some();
-    let item = PopupMenuItem::element(move |_window, cx| {
-        let color = if clickable {
-            cx.theme().foreground
-        } else {
-            cx.theme().muted_foreground
-        };
-        h_flex()
+    let item = MenuItem::element(move |cx| {
+        let colors = &cx.theme().colors;
+        let color = if clickable { colors.fg } else { colors.fg_muted };
+        h_stack()
             .w_full()
             .h(rems(ACTION_ROW_HEIGHT_SPEC / 16.))
             .gap_2()
-            .mx_neg_2()
-            .px_2()
-            .rounded(rems(ROW_RADIUS_SPEC / 16.))
-            .child(action.icon(cx.theme().is_dark()).size_4().text_color(color))
+            .child(
+                idea_icon_mono(action.icon(), cx.theme().is_dark())
+                    .size(IconSize::Md)
+                    .color(color),
+            )
             .child(
                 div()
                     .min_w_0()
@@ -213,6 +213,7 @@ fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) ->
                     .text_color(color)
                     .child(tr(action.label_key())),
             )
+            .into_any_element()
     });
 
     if !clickable {
@@ -222,7 +223,7 @@ fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) ->
     let Some((wire, shell)) = wire else {
         return item.disabled(true);
     };
-    item.on_click(move |_event, window, cx| match wire.missing() {
+    item.on_click(move |window, cx| match wire.missing() {
         Some(missing) => {
             let _ = shell.update(cx, |shell, cx| {
                 shell.report_panel_action_not_wired(action.id(), missing, cx)
@@ -241,32 +242,31 @@ pub(crate) struct ProjectEntry {
     pub active: bool,
 }
 
-fn project_row(entry: &ProjectEntry) -> PopupMenuItem {
+/// 「已打开项目」里的一行：徽标 + 名字 + 路径，当前那个带对勾。
+///
+/// 一行装不下「徽标 + 两行字」，所以整行自画（[`MenuItem::element`]）。
+/// 行仍然是**条目**而不是可点的动作：切换项目走标签页，这里只是状态陈列。
+fn project_row(entry: &ProjectEntry) -> MenuItem {
     let badge = ProjectBadge::for_name(&entry.name);
     let name = entry.name.clone();
     let path = entry.path.clone();
     let active = entry.active;
 
-    PopupMenuItem::element(move |window, cx| {
-        let theme = cx.theme();
-        let rem = window.rem_size();
-        let accent = theme.accent;
-        let foreground = theme.foreground;
-        let muted = theme.muted_foreground;
-        let primary = theme.primary;
-
-        h_flex()
+    MenuItem::element(move |cx| {
+        let colors = &cx.theme().colors;
+        h_stack()
             .w_full()
             .min_h(rems(PROJECT_ROW_HEIGHT_SPEC / 16.))
             .gap_2p5()
+            // 库的行壳自带 `px_2`；负外边距 + 同量内边距让高亮铺满整条面板。
             .mx_neg_2()
             .px_2()
             .py_1p5()
             .rounded(rems(ROW_RADIUS_SPEC / 16.))
-            .when(active, |this| this.bg(accent))
-            .child(badge_view(&badge, crate::rem_px(rem, ROW_BADGE_SIZE_SPEC)))
+            .when(active, |row| row.bg(colors.hover))
+            .child(badge_view(&badge, rems(ROW_BADGE_SIZE_SPEC / 16.)))
             .child(
-                v_flex()
+                v_stack()
                     .flex_1()
                     .min_w_0()
                     .child(
@@ -275,7 +275,7 @@ fn project_row(entry: &ProjectEntry) -> PopupMenuItem {
                             .truncate()
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(foreground)
+                            .text_color(colors.fg)
                             .child(name.clone()),
                     )
                     .child(
@@ -283,58 +283,46 @@ fn project_row(entry: &ProjectEntry) -> PopupMenuItem {
                             .min_w_0()
                             .truncate()
                             .text_xs()
-                            .text_color(muted)
+                            .text_color(colors.fg_muted)
                             .child(path.clone()),
                     ),
             )
-            .when(active, |this| {
-                this.child(Icon::new(IconName::Check).size_4().text_color(primary))
+            .when(active, |row| {
+                row.child(
+                    idea_icon_mono(&idea::CHECK_ICON, cx.theme().is_dark())
+                        .size(IconSize::Md)
+                        .color(colors.primary),
+                )
             })
+            .into_any_element()
     })
     .disabled(true)
 }
 
-fn group_label(key: &'static str) -> PopupMenuItem {
-    PopupMenuItem::element(move |_window, cx| {
-        div()
-            .w_full()
-            .mx_neg_2()
-            .px_2()
-            .pt_1p5()
-            .pb_1()
-            .text_xs()
-            .text_color(cx.theme().muted_foreground)
-            .child(tr(key))
-    })
-    .disabled(true)
-}
-
-fn recent_empty_row() -> PopupMenuItem {
-    PopupMenuItem::element(move |_window, cx| {
+fn recent_empty_row() -> MenuItem {
+    MenuItem::element(|cx| {
         div()
             .w_full()
             .mx_neg_2()
             .px_2()
             .py_3()
             .text_xs()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().colors.fg_muted)
             .child(tr("lithe.titleProject.noRecentProjects"))
+            .into_any_element()
     })
     .disabled(true)
 }
 
-fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) -> PopupMenuItem {
+/// 「最近项目」里的一行：和 [`project_row`] 同一张脸，但点了会去开它。
+fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) -> MenuItem {
     let badge = ProjectBadge::for_name(&entry.name);
     let name: SharedString = entry.name.clone().into();
     let path_text = entry.path.clone();
     let path = std::path::PathBuf::from(entry.path.clone());
-    let item = PopupMenuItem::element(move |window, cx| {
-        let theme = cx.theme();
-        let foreground = theme.foreground;
-        let muted = theme.muted_foreground;
-        let rem = window.rem_size();
-
-        h_flex()
+    let item = MenuItem::element(move |cx| {
+        let colors = &cx.theme().colors;
+        h_stack()
             .w_full()
             .min_h(rems(PROJECT_ROW_HEIGHT_SPEC / 16.))
             .gap_2p5()
@@ -342,9 +330,9 @@ fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) 
             .px_2()
             .py_1p5()
             .rounded(rems(ROW_RADIUS_SPEC / 16.))
-            .child(badge_view(&badge, crate::rem_px(rem, ROW_BADGE_SIZE_SPEC)))
+            .child(badge_view(&badge, rems(ROW_BADGE_SIZE_SPEC / 16.)))
             .child(
-                v_flex()
+                v_stack()
                     .flex_1()
                     .min_w_0()
                     .child(
@@ -353,7 +341,7 @@ fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) 
                             .truncate()
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(foreground)
+                            .text_color(colors.fg)
                             .child(name.clone()),
                     )
                     .child(
@@ -361,14 +349,15 @@ fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) 
                             .min_w_0()
                             .truncate()
                             .text_xs()
-                            .text_color(muted)
+                            .text_color(colors.fg_muted)
                             .child(path_text.clone()),
                     ),
             )
+            .into_any_element()
     });
 
     match shell {
-        Some(shell) => item.on_click(move |_event, window, cx| {
+        Some(shell) => item.on_click(move |window, cx| {
             let path = path.clone();
             let _ = shell.update(cx, |shell, cx| {
                 shell.request_open_project(path.clone(), None, window, cx)
@@ -378,65 +367,35 @@ fn recent_row(entry: &RecentProject, shell: Option<WeakEntity<ShellWorkspace>>) 
     }
 }
 
-fn build_popup(
+fn build_panel(
     entries: &[ProjectEntry],
     recent: &[RecentProject],
     shell: Option<WeakEntity<ShellWorkspace>>,
-    action_context: FocusHandle,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<PopupMenu> {
-    let entries = entries.to_vec();
-    let recent = recent.to_vec();
-    PopupMenu::build(window, cx, move |menu, window, _cx| {
-        let rem = window.rem_size();
-        let mut menu = menu
-            .action_context(action_context)
-            .min_w(crate::rem_px(rem, PANEL_WIDTH_SPEC))
-            .max_w(crate::rem_px(rem, PANEL_WIDTH_SPEC))
-            .max_h(crate::rem_px(rem, PANEL_MAX_HEIGHT_SPEC))
-            .scrollable(true);
+) -> Menu {
+    let mut menu = Menu::new()
+        .items(
+            PanelAction::ALL
+                .into_iter()
+                .map(|action| action_row(action, shell.clone())),
+        )
+        // 定宽 + 限高：行里是「徽标 + 两行字」，宽度随内容变会让面板每帧都不一样宽。
+        .width(rems(PANEL_WIDTH_SPEC / 16.))
+        .max_height(rems(PANEL_MAX_HEIGHT_SPEC / 16.));
 
-        for action in PanelAction::ALL {
-            menu = menu.item(action_row(action, shell.clone()));
-        }
+    menu = menu.group(
+        tr("lithe.titleProject.openProjects"),
+        entries.iter().map(project_row),
+    );
 
-        menu = menu
-            .separator()
-            .item(group_label("lithe.titleProject.openProjects"));
-        for entry in &entries {
-            menu = menu.item(project_row(entry));
-        }
-
-        menu = menu
-            .separator()
-            .item(group_label("lithe.titleProject.recentProjects"));
-        if recent.is_empty() {
-            menu = menu.item(recent_empty_row());
-        } else {
-            for entry in &recent {
-                menu = menu.item(recent_row(entry, shell.clone()));
-            }
-        }
-        menu
-    })
-}
-
-fn popup_for(
-    popup: Entity<PopupMenu>,
-    trigger_bounds: Bounds<Pixels>,
-    rem: Pixels,
-) -> impl IntoElement {
-    deferred(
-        Positioner::side(trigger_bounds)
-            .placement(Placement::Bottom)
-            .align(Align::Start)
-            .offset(crate::rem_px(rem, PANEL_OFFSET_SPEC))
-            .margin(crate::rem_px(rem, PANEL_WINDOW_MARGIN_SPEC))
-            .occlude()
-            .child(popup),
-    )
-    .with_priority(1)
+    let recent_items: Vec<MenuItem> = if recent.is_empty() {
+        vec![recent_empty_row()]
+    } else {
+        recent
+            .iter()
+            .map(|entry| recent_row(entry, shell.clone()))
+            .collect()
+    };
+    menu.group(tr("lithe.titleProject.recentProjects"), recent_items)
 }
 
 fn diagnose(opened: bool, current: &str, recent: usize) {
@@ -487,30 +446,35 @@ fn diagnose_recent(recent: &[RecentProject]) {
     }
 }
 
+/// 标题栏上那块「项目下拉」在壳里的状态。
+///
+/// 面板自己的开合由库的 [`TriggerMenu`] 管（`Open` 就在窗口的键控状态里），
+/// 这个实体只剩壳要交给它的东西：往哪开项目、当前项目的徽标，以及探针的请求编号。
 pub struct ProjectMenu {
-    open: bool,
-    popup: Option<Entity<PopupMenu>>,
-    trigger_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
-    _dismiss_subscription: Option<Subscription>,
-    action_context: FocusHandle,
+    /// 当前项目的徽标。项目名在构造时就定死了，不必每帧从名字重算一遍。
+    badge: ProjectBadge,
     shell: Option<WeakEntity<ShellWorkspace>>,
+    /// 探针请求打开的编号；库按「编号变了就开一次」处理。`None` = 还没人请求过。
+    probe: Option<u64>,
+    /// 下一个编号。
+    asked_by_probe: u64,
+    /// 上一帧面板开着没有。开合诊断只在变的那一刻报一次 —— 面板每帧都在重画，
+    /// 跟着它刷屏没有意义，而开合本身现在归库管，抓不到「刚打开」那个点。
+    open: Rc<Cell<bool>>,
+    /// 结构诊断报过没有。那是**静态规格**（面板宽度、段数、行高），报一次就够。
+    structure_reported: Cell<bool>,
 }
 
 impl ProjectMenu {
-    pub fn new(
-        current: &str,
-        recent_count: usize,
-        action_context: FocusHandle,
-        cx: &mut App,
-    ) -> Entity<Self> {
+    pub fn new(current: &str, recent_count: usize, cx: &mut App) -> Entity<Self> {
         diagnose(false, current, recent_count);
         cx.new(|_| Self {
-            open: false,
-            popup: None,
-            trigger_bounds: Rc::new(Cell::new(None)),
-            _dismiss_subscription: None,
-            action_context,
+            badge: ProjectBadge::for_name(current),
             shell: None,
+            probe: None,
+            asked_by_probe: 0,
+            open: Rc::new(Cell::new(false)),
+            structure_reported: Cell::new(false),
         })
     }
 
@@ -518,38 +482,10 @@ impl ProjectMenu {
         self.shell = Some(shell);
     }
 
-    pub fn is_open(&self) -> bool {
-        self.open
-    }
-
-    fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.open {
-            self.open = false;
-            self.popup = None;
-            self._dismiss_subscription = None;
-            window.focus(&self.action_context, cx);
-        } else {
-            self.open = true;
-        }
-        cx.notify();
-    }
-
-    fn handle_dismiss(
-        &mut self,
-        _popup: &Entity<PopupMenu>,
-        _event: &DismissEvent,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.open = false;
-        self.popup = None;
-        self._dismiss_subscription = None;
-        cx.notify();
-    }
-
     pub fn open_by_probe(&mut self, cx: &mut Context<Self>) {
         eprintln!("S1_PROJECT_MENU_PROBE open=true");
-        self.open = true;
+        self.asked_by_probe += 1;
+        self.probe = Some(self.asked_by_probe);
         cx.notify();
     }
 }
@@ -568,25 +504,16 @@ pub fn handle() -> WeakEntity<ProjectMenu> {
     )
 }
 
-fn trigger(
-    entry: &ProjectEntry,
-    open: bool,
-    handle: WeakEntity<ProjectMenu>,
-    rem: Pixels,
-    cx: &App,
-) -> impl IntoElement {
-    let theme = cx.theme();
-    let badge = ProjectBadge::for_name(&entry.name);
-    let name = entry.name.clone();
-    let idle = theme.muted_foreground;
-    let hover_bg = theme.accent;
-    let hover_fg = theme.foreground;
+/// 标题栏上那块触发器：徽标 + 名字 + 展开箭头。
+///
+/// 点击与「挂在触发器下面」由库的 [`TriggerMenu`] 管，这里只画长相 ——
+/// `open` 决定箭头朝哪边。
+fn trigger(name: &SharedString, badge: &ProjectBadge, open: bool, cx: &App) -> AnyElement {
+    let colors = &cx.theme().colors;
+    let (idle, hover_bg, hover_fg) = (colors.fg_muted, colors.hover, colors.fg);
 
-    div()
-        .id("lithe-title-project-trigger")
-        .flex()
+    h_stack()
         .flex_shrink_0()
-        .items_center()
         .h(rems(TRIGGER_HEIGHT_SPEC / 16.))
         .pl(rems(TRIGGER_LEADING_INSET_SPEC / 16.))
         .pr(rems(TRIGGER_TRAILING_INSET_SPEC / 16.))
@@ -596,108 +523,61 @@ fn trigger(
         .text_sm()
         .text_color(idle)
         .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
-        .on_mouse_down(MouseButton::Left, |_event, window, cx| {
-            window.prevent_default();
-            cx.stop_propagation();
-        })
-        .on_click(
-            move |_event: &ClickEvent, window: &mut Window, cx: &mut App| {
-                let _ = handle.update(cx, |menu, cx| menu.toggle(window, cx));
-            },
-        )
-        .child(badge_view(
-            &badge,
-            crate::rem_px(rem, TRIGGER_BADGE_SIZE_SPEC),
-        ))
-        .child(div().min_w_0().truncate().child(name))
+        .child(badge_view(badge, rems(TRIGGER_BADGE_SIZE_SPEC / 16.)))
+        .child(div().min_w_0().truncate().child(name.clone()))
         .child(
-            Icon::new(match open {
-                true => IconName::ChevronUp,
-                false => IconName::ChevronDown,
-            })
-            .small()
-            .text_color(idle)
-            .rotate(match open {
-                true => radians(std::f32::consts::PI),
-                false => radians(0.),
-            }),
+            // 本仓只有朝下的插入符（`CARET_DOWN_ICON`）；朝上那张由它转半圈。
+            idea_icon_mono(&idea::CARET_DOWN_ICON, cx.theme().is_dark())
+                .size(IconSize::Sm)
+                .color(idle)
+                .rotate(match open {
+                    true => radians(std::f32::consts::PI),
+                    false => radians(0.),
+                }),
         )
-        .aria_label(tr_args(
-            "lithe.titleProject.trigger",
-            &[("project", entry.name.as_ref())],
-        ))
+        .into_any_element()
 }
 
 pub(crate) fn render(
     menu: &Entity<ProjectMenu>,
     entries: &[ProjectEntry],
     recent: &[RecentProject],
-    window: &mut Window,
-    cx: &mut App,
+    cx: &App,
 ) -> Option<AnyElement> {
     if entries.is_empty() {
         return None;
     }
-    menu.downgrade()
-        .update(cx, |menu, cx| {
-            project_menu(menu, entries, recent, window, cx)
-        })
-        .ok()
+    Some(project_menu(menu.read(cx), entries, recent))
 }
 
 fn project_menu(
-    menu: &mut ProjectMenu,
+    menu: &ProjectMenu,
     entries: &[ProjectEntry],
     recent: &[RecentProject],
-    window: &mut Window,
-    cx: &mut Context<ProjectMenu>,
 ) -> AnyElement {
-    let open = menu.open;
+    let name = entries[0].name.clone();
+    let badge = menu.badge.clone();
+    let recent_count = recent.len();
+    let aria_label = tr_args("lithe.titleProject.trigger", &[("project", name.as_ref())]);
+    let panel = build_panel(entries, recent, menu.shell.clone());
 
-    if open && menu.popup.is_none() {
-        let popup = build_popup(
-            entries,
-            recent,
-            menu.shell.clone(),
-            menu.action_context.clone(),
-            window,
-            cx,
-        );
-        menu._dismiss_subscription =
-            Some(cx.subscribe_in(&popup, window, ProjectMenu::handle_dismiss));
-        let focus = popup.read(cx).focus_handle(cx);
-        if !focus.contains_focused(window, cx) {
-            focus.focus(window, cx);
-        }
-        menu.popup = Some(popup);
-        diagnose(true, entries[0].name.as_ref(), recent.len());
-        diagnose_structure(entries.len(), recent.len());
+    // 结构诊断是静态规格，报一次就够（面板每帧都在重画）。
+    if !menu.structure_reported.replace(true) {
+        diagnose_structure(entries.len(), recent_count);
         diagnose_actions();
         diagnose_recent(recent);
     }
 
-    let rem = window.rem_size();
-    let trigger = trigger(&entries[0], open, handle(), rem, cx).into_any_element();
-    let panel = match (menu.popup.clone(), menu.trigger_bounds.get()) {
-        (Some(popup), Some(trigger_bounds)) => Some(popup_for(popup, trigger_bounds, rem)),
-        _ => None,
-    };
-
-    let bounds_cell = menu.trigger_bounds.clone();
-    div()
-        .id("lithe-title-project-menu")
-        .relative()
-        .flex_shrink_0()
-        .on_prepaint(move |bounds, window, _cx| {
-            let first = bounds_cell.get().is_none();
-            bounds_cell.set(Some(bounds));
-            if first {
-                window.request_animation_frame();
-            }
-        })
-        .child(trigger)
-        .children(panel)
-        .into_any_element()
+    let was_open = menu.open.clone();
+    TriggerMenu::new("lithe-title-project-menu", panel, move |open, _window, cx| {
+        if was_open.replace(open) != open {
+            diagnose(open, name.as_ref(), recent_count);
+        }
+        trigger(&name, &badge, open, cx)
+    })
+    .aria_label(aria_label)
+    .manual(menu.probe)
+    .into_any_element()
 }
 
 #[cfg(test)]

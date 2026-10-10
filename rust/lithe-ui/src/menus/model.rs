@@ -1,6 +1,6 @@
 use std::{ops::Range, rc::Rc};
 
-use gpui::{App, SharedString, Window};
+use gpui::{AnyElement, App, Rems, SharedString, Window};
 
 use crate::{forms::Run, navigation::fuzzy, primitives::IconName};
 
@@ -13,6 +13,9 @@ pub(super) enum Kind {
     Sub(Menu),
 }
 
+/// 调用方自画的一行内容（见 [`MenuItem::element`]）。
+pub(super) type Build = Rc<dyn Fn(&App) -> AnyElement>;
+
 /// One row of a menu. Its keys are shown, not bound.
 #[derive(Clone)]
 pub struct MenuItem {
@@ -23,6 +26,8 @@ pub struct MenuItem {
     pub(super) disabled: bool,
     pub(super) on_click: Option<Run>,
     pub(super) hits: Vec<Range<usize>>,
+    /// 整行由调用方画时的内容；给了它，`label` / `icon` / `keys` 都不画。
+    pub(super) element: Option<Build>,
 }
 
 impl MenuItem {
@@ -35,11 +40,27 @@ impl MenuItem {
             disabled: false,
             on_click: None,
             hits: Vec::new(),
+            element: None,
         }
     }
 
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self::with(label, Kind::Run)
+    }
+
+    /// 一行由调用方整行自画：徽标 + 两行文字这种一句话说不清的项。
+    ///
+    /// 行外壳（最小高度、内边距、圆角、hover 底、整行可点）仍由库给，`build` 只画内容。
+    /// 富行没有 `label`，所以不参与 [`Menu`] 的字母过滤（[`super::SearchableMenu`] 那类）；
+    /// [`Self::disabled`] 与 [`Self::on_click`] 照常生效。
+    ///
+    /// `build` 只拿得到 `&App`——绘制期没有 `&mut Window`——所以尺寸请用 [`Rems`] 表达，
+    /// 别去问窗口的 `rem_size()`。
+    pub fn element(build: impl Fn(&App) -> AnyElement + 'static) -> Self {
+        Self {
+            element: Some(Rc::new(build)),
+            ..Self::with("", Kind::Run)
+        }
     }
 
     /// A row with a check; the owner flips `checked` in `on_click`.
@@ -90,6 +111,10 @@ pub(super) enum Entry {
 #[derive(Clone, Default)]
 pub struct Menu {
     pub(super) entries: Vec<Entry>,
+    /// 面板定宽；`None` 用主题的菜单宽度。
+    pub(super) width: Option<Rems>,
+    /// 面板最大高度；给了它整个面板滚动。
+    pub(super) max_height: Option<Rems>,
 }
 
 impl Menu {
@@ -99,6 +124,27 @@ impl Menu {
 
     pub fn item(mut self, item: MenuItem) -> Self {
         self.entries.push(Entry::Item(item));
+        self
+    }
+
+    /// 一串行，按给的顺序接在后面。
+    pub fn items(mut self, items: impl IntoIterator<Item = MenuItem>) -> Self {
+        self.entries.extend(items.into_iter().map(Entry::Item));
+        self
+    }
+
+    /// 面板定宽（最小、最大都锁到这个宽度）。不给就用主题的菜单宽度。
+    ///
+    /// 定宽面板是给「行里有富内容」的菜单用的：徽标 + 路径那种行，宽度随内容变会让
+    /// 每一帧的面板宽度都不同。
+    pub fn width(mut self, width: impl Into<Rems>) -> Self {
+        self.width = Some(width.into());
+        self
+    }
+
+    /// 面板最大高度；超出的部分滚动。不给就不限高。
+    pub fn max_height(mut self, height: impl Into<Rems>) -> Self {
+        self.max_height = Some(height.into());
         self
     }
 
@@ -166,6 +212,7 @@ impl Menu {
                 .into_iter()
                 .map(|(_, item)| Entry::Item(item))
                 .collect(),
+            ..self.clone()
         }
     }
 }

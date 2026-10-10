@@ -1010,12 +1010,7 @@ impl ShellWorkspace {
         loaded_recent.report();
         let recent_projects = loaded_recent.projects.clone();
         let recent_projects_path = loaded_recent.path.clone();
-        let project_menu = ProjectMenu::new(
-            project_name.as_ref(),
-            recent_projects.len(),
-            focus.clone(),
-            cx,
-        );
+        let project_menu = ProjectMenu::new(project_name.as_ref(), recent_projects.len(), cx);
         set_project_menu(project_menu.downgrade());
         let project_menu_subscription = Some(cx.observe(&project_menu, |_, _, cx| cx.notify()));
 
@@ -2896,7 +2891,6 @@ impl Render for ShellWorkspace {
             &self.project_menu,
             &project_entries,
             self.recent_projects.entries(),
-            window,
             cx,
         );
         let branch_item =
