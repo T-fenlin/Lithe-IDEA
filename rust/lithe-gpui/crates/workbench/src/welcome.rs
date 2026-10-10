@@ -1,27 +1,30 @@
 use std::path::PathBuf;
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, ImageSource,
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, FontWeight, ImageSource,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window, div, rems,
 };
 use gpui::{Resource, img};
-use gpui_kit::TestSupportExt as _;
-use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, StyledExt as _, TitleBar};
 use lithe_gpui_settings::{RecentProject, RecentProjects};
-use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_mono};
 use lithe_gpui_shared::{HOST_VERSION, tr, tr_args};
-use lithe_ui::shell::WindowRootExt as _;
+use lithe_ui::buttons::{Button, ButtonVariant};
+use lithe_ui::forms::{Input, InputEvent, InputState};
+use lithe_ui::layout::{h_stack, v_stack};
+use lithe_ui::shell::{TitleBar, WindowRootExt as _};
+use lithe_ui::theme::{ActiveTheme as _, Size};
 
 use crate::project_menu::{ProjectBadge, badge_view};
 
 pub const WELCOME_TAG: &str = "S1_WELCOME";
 
-pub const WELCOME_TITLE_BAR_HEIGHT_SPEC: f32 = 40.;
+/// 欢迎窗口自画标题栏的高度。
+///
+/// 这条不是本 crate 自己的规格：窗口壳由库的 [`TitleBar`] 画，高度取它的
+/// `Theme::titlebar_height()`（38pt）。本常量只是把那个值写出来给 UI 测试量，
+/// 数值必须与库同步——改了库的标题栏高度就得跟着改这里。
+pub const WELCOME_TITLE_BAR_HEIGHT_SPEC: f32 = 38.;
 
 const SIDEBAR_WIDTH_SPEC: f32 = 224.;
 const SEPARATOR_THICKNESS_SPEC: f32 = 1.;
@@ -215,8 +218,8 @@ impl WelcomeView {
             &search,
             window,
             |this: &mut Self, state: &Entity<InputState>, event: &InputEvent, _, cx| {
-                if matches!(event, InputEvent::Change) {
-                    this.filter = state.read(cx).value();
+                if matches!(event, InputEvent::Changed) {
+                    this.filter = SharedString::from(state.read(cx).text().to_string());
                     cx.notify();
                 }
             },
@@ -280,15 +283,17 @@ impl WelcomeView {
     }
 
     fn sidebar(&self, cx: &App) -> AnyElement {
-        let text = cx.theme().foreground;
-        let muted = cx.theme().muted_foreground;
-        v_flex()
+        let text = cx.theme().colors.fg;
+        let muted = cx.theme().colors.fg_muted;
+        v_stack()
             .w(rems(SIDEBAR_WIDTH_SPEC / 16.))
             .h_full()
             .flex_shrink_0()
-            .bg(cx.theme().sidebar)
+            // 左侧栏是比页面更"沉"的一层：库的槽位表里对应的就是 `sunken`
+            // （组件库没有上游那套 `sidebar` / `sidebar_accent` 专名）。
+            .bg(cx.theme().colors.sunken)
             .child(
-                h_flex()
+                h_stack()
                     .gap(rems(HEADER_GAP_SPEC / 16.))
                     .items_center()
                     .px(rems(HEADER_PADDING_H_SPEC / 16.))
@@ -303,11 +308,11 @@ impl WelcomeView {
                         .flex_shrink_0(),
                     )
                     .child(
-                        v_flex()
+                        v_stack()
                             .child(
                                 div()
                                     .text_sm()
-                                    .font_semibold()
+                                    .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(text)
                                     .child("Lithe"),
                             )
@@ -315,14 +320,15 @@ impl WelcomeView {
                     ),
             )
             .child(
-                h_flex()
+                h_stack()
                     .gap(rems(9. / 16.))
                     .items_center()
                     .h(rems(SECTION_ROW_HEIGHT_SPEC / 16.))
                     .px(rems(SECTION_PADDING_H_SPEC / 16.))
                     .mx(rems(SECTION_PADDING_H_SPEC / 16.))
                     .rounded(rems(SECTION_RADIUS_SPEC / 16.))
-                    .bg(cx.theme().sidebar_accent)
+                    // 选中行的底：上游用 `sidebar_accent`，库这边安静选中的那一档是 `hover`。
+                    .bg(cx.theme().colors.hover)
                     .text_color(text)
                     .child(idea_icon_image(
                         &idea::FOLDER_ICON,
@@ -332,25 +338,26 @@ impl WelcomeView {
                     .child(
                         div()
                             .text_sm()
-                            .font_medium()
+                            .font_weight(FontWeight::MEDIUM)
                             .child(tr("lithe.welcome.projects")),
                     ),
             )
             .child(div().flex_1())
             .child(
-                h_flex()
+                h_stack()
                     .px(rems(SECTION_PADDING_H_SPEC / 16.))
                     .pb(rems(SIDEBAR_BOTTOM_PADDING_SPEC / 16.))
                     .child(
+                        // 库的 `Button` 不吃 `.child()`：图标走 `.icon_element()`，
+                        // 内边距由按钮自己按 `Size::Small` 收，不再手写 `.px_0()`。
                         Button::new("lithe-welcome-settings")
-                            .ghost()
-                            .small()
-                            .child(idea_icon_image(
+                            .variant(ButtonVariant::Ghost)
+                            .size(Size::Small)
+                            .icon_element(idea_icon_image(
                                 &idea::GEAR_ICON,
                                 cx,
                                 rems(SETTINGS_ICON_SIZE_SPEC / 16.),
                             ))
-                            .px_0()
                             .on_click(|_, window, cx| {
                                 lithe_gpui_settings::open_settings_dialog(window, cx);
                             }),
@@ -360,11 +367,11 @@ impl WelcomeView {
     }
 
     fn projects_content(&self, me: &WeakEntity<Self>, window: &Window, cx: &App) -> AnyElement {
-        let mut column = v_flex()
+        let mut column = v_stack()
             .flex_1()
             .h_full()
             .min_w_0()
-            .bg(cx.theme().background)
+            .bg(cx.theme().colors.bg)
             .child(self.toolbar(me, cx))
             .child(
                 div()
@@ -373,7 +380,7 @@ impl WelcomeView {
                         div()
                             .h(rems(SEPARATOR_THICKNESS_SPEC / 16.))
                             .w_full()
-                            .bg(cx.theme().border),
+                            .bg(cx.theme().colors.border),
                     ),
             );
 
@@ -381,14 +388,21 @@ impl WelcomeView {
         column = match self.empty_state() {
             Some(state) => column.child(self.empty_state_view(state, cx)),
             None => column.child(
-                v_flex()
+                v_stack()
+                    // `.overflow_y_scroll()` 属 `StatefulInteractiveElement`，只长在
+                    // `Stateful<Div>` 上：先 `.id()` 再滚动。
+                    .id("lithe-welcome-projects")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scrollbar()
+                    .overflow_y_scroll()
                     .gap(rems(LIST_GAP_SPEC / 16.))
                     .px(rems(LIST_PADDING_H_SPEC / 16.))
                     .py(rems(LIST_PADDING_V_SPEC / 16.))
-                    .children(rows.iter().map(|row| self.row(row, me, window, cx))),
+                    .children(
+                        rows.iter()
+                            .enumerate()
+                            .map(|(index, row)| self.row(index, row, me, window, cx)),
+                    ),
             ),
         };
         column.into_any_element()
@@ -396,28 +410,32 @@ impl WelcomeView {
 
     fn toolbar(&self, me: &WeakEntity<Self>, cx: &App) -> AnyElement {
         let me_for_pick = me.clone();
-        h_flex()
+        h_stack()
             .w_full()
             .flex_shrink_0()
             .gap(rems(10. / 16.))
             .px(rems(TOOLBAR_PADDING_H_SPEC / 16.))
             .h(rems(TOOLBAR_HEIGHT_SPEC / 16.))
             .child(
-                Input::new(&self.search)
-                    .small()
-                    .cleanable(true)
+                // 库的 `Input` 是 `IntoElement`，不吃 `.max_w()`；宽度上限外包一层给。
+                div()
                     .max_w(rems(SEARCH_MAX_WIDTH_SPEC / 16.))
-                    .prefix(idea_icon_image(
-                        &idea::MAGNIFYING_GLASS_ICON,
-                        cx,
-                        rems(12.5 / 16.),
-                    )),
+                    .child(
+                        Input::new(&self.search)
+                            .size(Size::Small)
+                            .clearable()
+                            .prefix(idea_icon_image(
+                                &idea::MAGNIFYING_GLASS_ICON,
+                                cx,
+                                rems(12.5 / 16.),
+                            )),
+                    ),
             )
             .child(div().flex_1())
             .child(
                 Button::new("lithe-welcome-open-folder")
-                    .outline()
-                    .small()
+                    .variant(ButtonVariant::Outline)
+                    .size(Size::Small)
                     .label(tr("lithe.welcome.open"))
                     .on_click(move |_, window, cx| {
                         let _ =
@@ -429,6 +447,7 @@ impl WelcomeView {
 
     fn row(
         &self,
+        index: usize,
         row: &WelcomeRow,
         me: &WeakEntity<Self>,
         window: &Window,
@@ -437,12 +456,12 @@ impl WelcomeView {
         let id = welcome_row_element_id(&row.key);
         let hovered = self.hovered.as_deref() == Some(row.key.as_str());
         let foreground = if row.missing {
-            cx.theme().muted_foreground
+            cx.theme().colors.fg_muted
         } else {
-            cx.theme().foreground
+            cx.theme().colors.fg
         };
-        let muted = cx.theme().muted_foreground;
-        let hover_bg = cx.theme().list_hover;
+        let muted = cx.theme().colors.fg_muted;
+        let hover_bg = cx.theme().colors.hover;
         let badge = ProjectBadge::for_name(&row.name);
 
         let me_for_click = me.clone();
@@ -450,8 +469,11 @@ impl WelcomeView {
         let me_for_hover = me.clone();
         let key_for_hover = row.key.clone();
 
-        let mut element = h_flex()
+        let mut element = h_stack()
             .id(id)
+            // 上游那套 `TestSupportExt::test_support()` 随 gpui-kit 退场，量盒子改走
+            // gpui 原生的 debug selector（按行号，UI 测试可预期）。
+            .debug_selector(move || format!("lithe-welcome-row-{index}"))
             .w_full()
             .flex_shrink_0()
             .h(rems(ROW_HEIGHT_SPEC / 16.))
@@ -479,7 +501,7 @@ impl WelcomeView {
                 crate::rem_px(window.rem_size(), ROW_BADGE_SIZE_SPEC),
             ))
             .child(
-                v_flex()
+                v_stack()
                     .flex_1()
                     .min_w_0()
                     .child(
@@ -487,7 +509,7 @@ impl WelcomeView {
                             .min_w_0()
                             .truncate()
                             .text_sm()
-                            .font_medium()
+                            .font_weight(FontWeight::MEDIUM)
                             .text_color(foreground)
                             .child(row.name.clone()),
                     )
@@ -507,9 +529,9 @@ impl WelcomeView {
             let name_for_remove = row.name.clone();
             element = element.child(
                 Button::new(welcome_remove_element_id(&row.key))
-                    .ghost()
-                    .small()
-                    .icon(gpui_kit::assets::IconName::X)
+                    .variant(ButtonVariant::Ghost)
+                    .size(Size::Small)
+                    .icon_element(idea_icon_mono(&idea::X_ICON, cx.theme().is_dark()))
                     .tooltip(tr_args(
                         "lithe.welcome.removeRecent",
                         &[("name", name_for_remove.as_str())],
@@ -522,7 +544,7 @@ impl WelcomeView {
             );
         }
 
-        element.test_support().into_any_element()
+        element.into_any_element()
     }
 
     fn empty_state_view(&self, state: EmptyState, cx: &App) -> AnyElement {
@@ -530,7 +552,7 @@ impl WelcomeView {
             EmptyState::NoRecentProjects => tr("lithe.welcome.noRecentProjects"),
             EmptyState::NoMatchingProjects => tr("lithe.welcome.gpui.noMatchingProjects"),
         };
-        v_flex()
+        v_stack()
             .w_full()
             .flex_1()
             .items_center()
@@ -544,14 +566,14 @@ impl WelcomeView {
             .child(
                 div()
                     .text_sm()
-                    .font_medium()
-                    .text_color(cx.theme().foreground)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().colors.fg)
                     .child(title),
             )
             .child(
                 div()
                     .text_sm()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().colors.fg_muted)
                     .child(tr("lithe.welcome.openFolderHint")),
             )
             .into_any_element()
@@ -569,14 +591,14 @@ pub fn welcome_remove_element_id(key: &str) -> ElementId {
 impl Render for WelcomeView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let me = cx.entity().downgrade();
-        let border = cx.theme().border;
-        v_flex()
+        let border = cx.theme().colors.border;
+        v_stack()
             .w_full()
             .h_full()
-            .bg(cx.theme().background)
-            .child(welcome_title_bar(cx))
+            .bg(cx.theme().colors.bg)
+            .child(welcome_title_bar())
             .child(
-                h_flex()
+                h_stack()
                     .w_full()
                     .flex_1()
                     .min_h_0()
@@ -593,16 +615,17 @@ impl Render for WelcomeView {
     }
 }
 
-fn welcome_title_bar(cx: &App) -> impl IntoElement {
+/// 欢迎窗口的窗口壳：gpui 的窗口在 Windows 上没有原生标题栏，少了这一条既没有窗口键
+/// （min/max/close）也没有拖拽区，用户只能靠 Alt+F4。高度由库的 [`TitleBar`] 自己定。
+fn welcome_title_bar() -> impl IntoElement {
     div()
         .id("lithe-welcome-title-bar")
-        .test_support()
+        // 上游的 `TestSupportExt::test_support()` 观察包装随 gpui-kit 退场，
+        // UI 测试改从 gpui 原生的 debug selector 量这条标题栏。
+        .debug_selector(|| "lithe-welcome-title-bar".into())
         .w_full()
-        .child(
-            TitleBar::new()
-                .h(rems(WELCOME_TITLE_BAR_HEIGHT_SPEC / 16.))
-                .bg(cx.theme().title_bar),
-        )
+        .flex_shrink_0()
+        .child(TitleBar::new("lithe-welcome-window-bar"))
 }
 
 #[cfg(test)]
