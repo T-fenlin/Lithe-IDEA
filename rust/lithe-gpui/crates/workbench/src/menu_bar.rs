@@ -1485,11 +1485,7 @@ impl TriggerFace {
         if focused {
             return Self::FocusVisible;
         }
-        if open {
-            Self::Open
-        } else {
-            Self::Idle
-        }
+        if open { Self::Open } else { Self::Idle }
     }
 
     /// 文字色、底（`None` = 不画底）、内描边（`None` = 透明）。
@@ -1670,9 +1666,8 @@ fn build_menu(index: usize, cx: &mut App) -> Menu {
                         not_wired_row(label.clone(), badge.clone(), lead.as_ref(), cx)
                     })
                     .on_click(move |_window, cx| {
-                        let _ = row_handle.update(cx, |bar, cx| {
-                            bar.push_not_wired(label_key, missing, cx)
-                        });
+                        let _ = row_handle
+                            .update(cx, |bar, cx| bar.push_not_wired(label_key, missing, cx));
                     }),
                 )
             }
@@ -1769,7 +1764,10 @@ mod tests {
             assert_eq!(face(TriggerFace::FocusVisible).1, Some(palette.active));
             // 内描边取 `fg` 自己：`focus` token 落在 `title_bar` 上只有 2.49:1，不够 WCAG。
             assert_eq!(face(TriggerFace::FocusVisible).2, Some(palette.fg));
-            assert_eq!(face(TriggerFace::Disabled), (palette.fg_disabled, None, None));
+            assert_eq!(
+                face(TriggerFace::Disabled),
+                (palette.fg_disabled, None, None)
+            );
 
             // 展开态与悬停态必须分得开，否则鼠标停在触发器上就等于没有高亮。
             assert_ne!(
@@ -1794,7 +1792,10 @@ mod tests {
     fn trigger_face_picks_the_strongest_state() {
         assert_eq!(TriggerFace::of(false, false, false), TriggerFace::Idle);
         assert_eq!(TriggerFace::of(true, false, false), TriggerFace::Open);
-        assert_eq!(TriggerFace::of(false, false, true), TriggerFace::FocusVisible);
+        assert_eq!(
+            TriggerFace::of(false, false, true),
+            TriggerFace::FocusVisible
+        );
         assert_eq!(
             TriggerFace::of(true, false, true),
             TriggerFace::FocusVisible,

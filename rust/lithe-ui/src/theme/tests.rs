@@ -95,7 +95,10 @@ fn the_status_bar_surface_moves_alone() {
             "a chrome bar must be tellable from the page it sits on"
         );
         palette.status_bar = hsla(0.2, 0.5, 0.5, 1.0);
-        assert_ne!(palette.status_bar, palette.title_bar, "and it has its own slot");
+        assert_ne!(
+            palette.status_bar, palette.title_bar,
+            "and it has its own slot"
+        );
         assert_eq!(palette.token("status_bar"), palette.status_bar);
     }
 }
