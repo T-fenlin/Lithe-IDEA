@@ -3187,13 +3187,13 @@ fn activity_items() -> Vec<ActivityItem> {
         ActivityItem::idea(&idea::GIT_BRANCH_ICON, tr("lithe.workbench.changes")),
         ActivityItem::idea(&idea::MAGNIFYING_GLASS_ICON, tr("lithe.workbench.search")),
         ActivityItem::idea(&idea::PLAY_ICON, tr("lithe.workbench.run")).bottom(true),
-        ActivityItem::new(IconName::SquareTerminal, tr("lithe.workbench.terminal")).bottom(true),
+        ActivityItem::idea(&idea::TERMINAL_ICON, tr("lithe.workbench.terminal")).bottom(true),
         ActivityItem::idea(
             &idea::WARNING_CIRCLE_ICON,
             tr("lithe.workbench.diagnostics"),
         )
         .bottom(true),
-        ActivityItem::new(IconName::GitGraph, tr("lithe.workbench.gitLog")).bottom(true),
+        ActivityItem::idea(&idea::VCS_ICON, tr("lithe.workbench.gitLog")).bottom(true),
         ActivityItem::idea(&idea::GEAR_ICON, tr("lithe.workbench.settings")).bottom(true),
     ]
 }
@@ -3215,7 +3215,7 @@ fn right_activity_items(store: &Entity<lithe_gpui_notify::Store>, cx: &App) -> V
         }
     };
     vec![
-        ActivityItem::new(IconName::Puzzle, tr("lithe.extensions.title")),
+        ActivityItem::idea(&idea::PLUGIN_ICON, tr("lithe.extensions.title")),
         bell,
         ActivityItem::idea(&idea::MAVEN_ICON, tr("lithe.workbench.maven")),
     ]

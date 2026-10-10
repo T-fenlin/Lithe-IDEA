@@ -591,8 +591,7 @@ impl Render for ExtensionsPage {
             .child(self.header(total, cx))
             .child(self.toolbar(cx))
             .child(
-                // 组件库的滚动区自己持滚动句柄并叠滚动条（原来是 gpui-kit 的
-                // `.overflow_y_scrollbar()`，语义相同）。
+                // 组件库的滚动区自己持滚动句柄并叠滚动条。
                 ScrollArea::new("lithe-extensions-list")
                     .w_full()
                     .flex_1()

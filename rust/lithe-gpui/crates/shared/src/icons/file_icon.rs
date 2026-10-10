@@ -427,7 +427,7 @@ const FALLBACK_ICONS: &[(&str, &str)] = &[
 ///
 /// **口径**（维护者，2026-10-08）：应用图标只用本仓库自己的图标集
 /// `rust/lithe-gpui/assets/icons/idea/**`；我们没有那张图就**留空、不画**，不许拿组件库
-/// （`lithe-ui` / `gpui-kit`）的图标顶替。
+/// （`lithe-ui`）的图标顶替。
 ///
 /// **查找规则**：只看**扩展名**（完整文件名的真源是主题清单，已由 [`theme_icon_path`] 命中），
 /// 命中 [`FALLBACK_ICONS`] 就返回 `icons/idea/**` 下的**我们自己的**路径，否则 `None` ——

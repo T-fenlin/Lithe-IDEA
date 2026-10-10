@@ -1,7 +1,7 @@
 use gpui::{
     App, ClickEvent, ElementId, FocusHandle, FontWeight, Hsla, IntoElement, MouseButton,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement, Window, div, prelude::*,
-    transparent_black,
+    Refineable, RenderOnce, Role, SharedString, StatefulInteractiveElement, StyleRefinement, Window,
+    div, prelude::*, transparent_black,
 };
 
 use crate::{
@@ -14,7 +14,62 @@ use crate::{
 
 pub(crate) type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Colors a caller supplies for a control whose state is not one of the named tones — an
+/// activity-rail button whose selected fill comes from the host theme, say.
+///
+/// Mirrors `gpui-component`'s `ButtonCustomVariant`: transparent background and the theme
+/// foreground unless told otherwise, so it starts as a quiet ghost and the caller paints it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ButtonCustomVariant {
+    color: Hsla,
+    foreground: Hsla,
+    hover: Hsla,
+    active: Hsla,
+    shadow: bool,
+}
+
+impl ButtonCustomVariant {
+    pub fn new(cx: &App) -> Self {
+        Self {
+            color: transparent_black(),
+            foreground: cx.theme().colors.fg,
+            hover: transparent_black(),
+            active: transparent_black(),
+            shadow: false,
+        }
+    }
+
+    /// The resting background; transparent by default.
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = color;
+        self
+    }
+
+    /// The text and icon color, when it differs from the theme foreground.
+    pub fn foreground(mut self, color: Hsla) -> Self {
+        self.foreground = color;
+        self
+    }
+
+    /// The background under the pointer; transparent by default.
+    pub fn hover(mut self, color: Hsla) -> Self {
+        self.hover = color;
+        self
+    }
+
+    /// The background while pressed, and at rest when the button is selected.
+    pub fn active(mut self, color: Hsla) -> Self {
+        self.active = color;
+        self
+    }
+
+    pub fn shadow(mut self, shadow: bool) -> Self {
+        self.shadow = shadow;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum ButtonVariant {
     Primary,
     #[default]
@@ -26,6 +81,8 @@ pub enum ButtonVariant {
     Success,
     Danger,
     Link,
+    /// Caller-supplied colors; see [`ButtonCustomVariant`].
+    Custom(ButtonCustomVariant),
 }
 
 pub(crate) struct Tone {
@@ -95,6 +152,21 @@ pub(crate) fn tone(variant: ButtonVariant, colors: &Palette) -> Tone {
             fg: colors.link,
             border: clear,
         },
+        ButtonVariant::Custom(style) => Tone {
+            bg: style.color,
+            hover: if style.hover == clear { style.color } else { style.hover },
+            pressed: style.active,
+            fg: style.foreground,
+            border: clear,
+        },
+    }
+}
+
+/// The background a selected button rests on, per variant.
+fn selected_background(variant: ButtonVariant, colors: &Palette) -> Hsla {
+    match variant {
+        ButtonVariant::Custom(style) => style.active,
+        other => tone(other, colors).pressed,
     }
 }
 
@@ -150,11 +222,19 @@ pub struct Button {
     size: Size,
     disabled: bool,
     loading: bool,
+    /// Paints the resting background as a chosen state (an active rail item).
+    selected: bool,
+    /// Announced to assistive tech as the pressed/selected state; painted by [`Self::selected`].
+    toggled: bool,
+    /// The caller's own style, refined over the button's last.
+    style: StyleRefinement,
     full_width: bool,
     focus: Option<FocusHandle>,
     /// `false` keeps it out of the Tab order; unset leaves the default (a Tab stop).
     tab_stop: Option<bool>,
     tooltip: Option<SharedString>,
+    /// A stable name the UI test lane looks the button up by; see gpui's `debug_selector`.
+    debug_name: Option<Box<dyn Fn() -> String + 'static>>,
     pub(crate) slot: Option<Slot>,
     on_click: Option<ClickHandler>,
 }
@@ -173,10 +253,14 @@ impl Button {
             size: Size::default(),
             disabled: false,
             loading: false,
+            selected: false,
+            toggled: false,
+            style: StyleRefinement::default(),
             full_width: false,
             focus: None,
             tab_stop: None,
             tooltip: None,
+            debug_name: None,
             slot: None,
             on_click: None,
         }
@@ -219,6 +303,24 @@ impl Button {
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
+        self
+    }
+
+    /// Colors the button from a caller-supplied set; see [`ButtonCustomVariant`].
+    pub fn custom(mut self, style: ButtonCustomVariant) -> Self {
+        self.variant = ButtonVariant::Custom(style);
+        self
+    }
+
+    /// Paints the resting background as a chosen state — a rail item that is the current one.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// The pressed/selected state assistive tech announces. Pairs with [`Self::selected`].
+    pub fn toggled(mut self, toggled: bool) -> Self {
+        self.toggled = toggled;
         self
     }
 
@@ -287,16 +389,31 @@ impl Button {
         self.on_click = Some(Box::new(handler));
         self
     }
+
+    /// A stable name the UI test lane finds it by (`debug_bounds`); see gpui's `debug_selector`.
+    pub fn debug_selector(mut self, selector: impl Fn() -> String + 'static) -> Self {
+        self.debug_name = Some(Box::new(selector));
+        self
+    }
 }
 
 impl RenderOnce for Button {
     fn render(mut self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let tone = tone(self.variant, &theme.colors);
+        let mut tone = tone(self.variant, &theme.colors);
+        if self.selected {
+            let resting = selected_background(self.variant, &theme.colors);
+            tone.bg = resting;
+            tone.hover = resting;
+            tone.pressed = resting;
+        }
         let (text, icon_size) = label_size(self.size);
         let link = self.variant == ButtonVariant::Link;
+        // The caller's style refines the button last.
+        let style = self.style.clone();
         // An icon with no label is a square button: the shape Button used to draw.
         let icon_element = self.icon_element.take();
+        let debug_name = self.debug_name.take();
         let square = self.label.is_empty() && (self.icon.is_some() || icon_element.is_some());
         let tooltip = self.tooltip.clone();
         let icon = |name| Icon::new(name).size(icon_size).color(tone.fg);
@@ -325,10 +442,12 @@ impl RenderOnce for Button {
                 )
             });
 
-        div()
+        let mut el = div()
             .id(self.id)
+            .when_some(debug_name, |el, selector| el.debug_selector(selector))
             .role(Role::Button)
             .when(!name.is_empty(), |el| el.aria_label(name))
+            .when(self.toggled, |el| el.aria_selected(true))
             .flex()
             .flex_none()
             .items_center()
@@ -396,7 +515,15 @@ impl RenderOnce for Button {
                     .focus_ring(cx)
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                     .when_some(self.on_click, |el, handler| el.on_click(handler))
-            })
+            });
+        el.style().refine(&style);
+        el
+    }
+}
+
+impl Styled for Button {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
     }
 }
 

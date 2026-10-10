@@ -1002,7 +1002,7 @@ impl SettingsStore {
     }
 
     /// 缩放锚点归**组件库**主题：库的 `font_size` 是唯一杠杆，`Theme::update` 会把它标到
-    /// 所有窗口的 rem 大小上（等价于原先写 gpui-kit 主题再 `sync_base`）。
+    /// 所有窗口的 rem 大小上。
     fn enforce_rem_base(&mut self, cx: &mut App) {
         if !cx.has_global::<lithe_ui::theme::Theme>() {
             return;

@@ -8,7 +8,7 @@ pub const UNAVAILABLE_ICON_SIZE_SPEC: f32 = 28.;
 ///
 /// 版面交给组件库的 [`EmptyState`]：槽位式组合，头槽位收任意元素（调用方自己定图标尺寸，
 /// 见 [`UNAVAILABLE_ICON_SIZE_SPEC`]），标题与说明走库内的字号档位。原先这里自己拼
-/// `Empty`/`EmptyHeader`/`EmptyMedia`/`EmptyTitle`/`EmptyDescription`（`gpui-kit`），
+/// 上游的 `Empty`/`EmptyHeader`/`EmptyMedia`/`EmptyTitle`/`EmptyDescription`，
 /// 2026-10-08 迁到组件库后由库决定字号与间距——**说明不再叠 `.opacity(0.72)`**，
 /// 库的说明槽位本就取 `colors.fg_muted`。
 ///

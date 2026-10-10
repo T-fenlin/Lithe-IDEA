@@ -16,7 +16,7 @@ mod tests;
 
 pub use bars::{ActionBar, BulkActionBar};
 pub(crate) use button::shortcut_text;
-pub use button::{Button, ButtonVariant};
+pub use button::{Button, ButtonCustomVariant, ButtonVariant};
 pub use confirm::{ConfirmButton, ConfirmMode};
 pub use copy::CopyButton;
 pub use fab::FloatingActionButton;

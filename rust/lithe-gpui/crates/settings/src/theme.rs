@@ -400,6 +400,13 @@ fn palette_for(record: &ThemeRecord) -> Palette {
     if let Some(color) = color("accent.foreground") {
         palette.on_accent = color;
     }
+    // 宿主的品牌色（活动栏选中态读的就是它）；库侧没有更近的槽，2026-10-10 起 Palette 有专槽。
+    if let Some(color) = color("primary.background") {
+        palette.primary = color;
+    }
+    if let Some(color) = color("primary.foreground") {
+        palette.on_primary = color;
+    }
     if let Some(color) = color("ring") {
         palette.focus = color;
         palette.link = color;

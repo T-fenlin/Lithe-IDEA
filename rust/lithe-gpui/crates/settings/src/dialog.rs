@@ -909,7 +909,7 @@ impl SettingsDialog {
             .h_full()
             .p_6()
             .bg(cx.theme().colors.bg)
-            // 上游的 `.overflow_y_scrollbar()` 来自 gpui-kit 的 `ScrollableElement`（带自绘滚动条）。
+            // 上游的 `.overflow_y_scrollbar()` 来自带自绘滚动条的 `ScrollableElement`。
             // 库侧的同位件是 `lithe_ui::layout::ScrollArea`（外层定高 + 内层滚动的盒模型），
             // 直接把本层换成它会改掉 padding 与滚动条的落点；本片按迁移既定做法改用 gpui 自己的
             // `.overflow_y_scroll()`（同 `crates/run/src/pane.rs`、`crates/git/src/log_view.rs`），

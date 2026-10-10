@@ -656,7 +656,7 @@ fn row_labels() -> ProjectLabels {
     }
 }
 
-/// Marks a header control so the UI test lane can find and click it: the gpui-kit test harness
+/// Marks a header control so the UI test lane can find and click it: the UI test harness
 /// looks elements up by debug selector, which an `id` alone does not register.
 fn testable(id: &'static str, control: impl IntoElement) -> impl IntoElement {
     div()

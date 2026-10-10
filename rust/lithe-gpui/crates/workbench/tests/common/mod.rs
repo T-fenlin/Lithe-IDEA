@@ -1,10 +1,6 @@
 #![allow(dead_code)]
 
-use gpui::{
-    App, AppContext, Bounds, Context, Entity, Pixels, Point, Render, Size, TestAppContext, Window,
-    WindowBounds, WindowHandle, WindowOptions,
-};
-use gpui_kit::AnyWindowHandle;
+use gpui::{AnyWindowHandle, App, AppContext, Bounds, Context, Entity, Pixels, Point, Render, Size, TestAppContext, Window, WindowBounds, WindowHandle, WindowOptions};
 // 窗口根已换成自建的 `WindowRoot`（门 G1）：测试宿主与生产组合根同形，
 // 否则集成测试跑的是另外一套根，浮层这条路根本没被覆盖。
 use lithe_ui::shell::{WindowRoot, open_rooted_window};

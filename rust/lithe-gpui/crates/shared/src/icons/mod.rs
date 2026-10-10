@@ -10,7 +10,7 @@ pub mod idea;
 /// **口径**（维护者，2026-10-08，见
 /// `.agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md`）：
 /// 应用图标一律取自**本仓库自己的**图标集 `rust/lithe-gpui/assets/icons/idea/**`（302 个文件）；
-/// 我们自己没有那张图就**留空、不画**，不许拿 `gpui-kit` / `lithe-ui` 的图标顶替。
+/// 我们自己没有那张图就**留空、不画**，不许拿组件库（`lithe-ui`）的图标顶替。
 ///
 /// **这个类型把口径变成类型事实**：它只装资源路径 `&'static str`，装不下
 /// `lithe_ui::primitives::IconName` 这类组件库图标名 —— 所以「用库图标」不再可表达。

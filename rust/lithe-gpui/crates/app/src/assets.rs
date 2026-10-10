@@ -3,8 +3,7 @@ use std::borrow::Cow;
 use gpui::{AssetSource, Result, SharedString};
 
 // 组件库组件**自身**的内部装饰图标（关闭 X、勾选 Check、子菜单箭头、严重度图标等）由
-// 组件库自带的资源源 `lithe_ui::Assets` 提供 —— 它同样是本仓库自有的 crate（`rust/lithe-ui`），
-// 不再借用外部 gpui-kit 的 106 个名字（那份过渡垫片已随本片拆除）。
+// 组件库自带的资源源 `lithe_ui::Assets` 提供 —— 它同样是本仓库自有的 crate（`rust/lithe-ui`）。
 //
 // 口径（2026-10-08）：**应用**图标一律取自本仓库自己的图标集 `assets/icons/idea/**`
 // （`icons/idea/extension.json` 是清单真源），我们没有就留空；不许用组件库图标顶替应用图标。
@@ -240,7 +239,7 @@ mod tests {
     ///
     /// 口径（2026-10-08）：**应用**图标只取本仓 `assets/icons/idea/**`，缺则留空，不用组件库
     /// 图标顶替；而**组件库组件自身**的装饰图标由 `lithe_ui::Assets` 提供——它同样是本仓自有的
-    /// crate，不再是外部 gpui-kit 的 106 个名字的过渡垫片（那份已随本片拆除）。
+    /// crate。
     #[test]
     fn every_library_icon_the_host_draws_is_reachable() {
         use gpui::AssetSource as _;

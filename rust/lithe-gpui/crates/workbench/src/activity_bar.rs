@@ -4,12 +4,11 @@ use gpui::{
     AnyElement, App, ClickEvent, ElementId, Hsla, IntoElement, Length, ParentElement as _, Pixels,
     SharedString, Styled as _, Window, div, rems,
 };
-use gpui_kit::assets::IconName;
-use gpui_kit::component::badge::Badge;
-use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Placement, Selectable as _};
 use lithe_gpui_shared::design;
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
+use lithe_ui::buttons::{Button, ButtonCustomVariant};
+use lithe_ui::data_display::DotBadge;
+use lithe_ui::theme::ActiveTheme as _;
 
 const COLLAPSED_WIDTH: f32 = design::ACTIVITY_RAIL_WIDTH_SPEC;
 const WORKBENCH_GAP: f32 = 4.;
@@ -33,42 +32,21 @@ const fn rail_width_spec(side: ActivitySide) -> f32 {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum ActivityIcon {
-    Lucide(IconName),
-    Idea(&'static idea::IdeaIcon),
-}
-
-impl ActivityIcon {
-    fn apply(&self, button: Button, cx: &App) -> Button {
-        match self {
-            Self::Lucide(name) => button.icon(*name),
-            Self::Idea(icon) => button.child(idea_icon_image(icon, cx, rems(1.25))),
-        }
-    }
-}
-
 #[non_exhaustive]
 pub struct ActivityItem {
-    icon: ActivityIcon,
+    icon: &'static idea::IdeaIcon,
     label: SharedString,
     bottom: bool,
     badge: Option<Hsla>,
 }
 
 impl ActivityItem {
-    pub fn new(icon: IconName, label: impl Into<SharedString>) -> Self {
-        Self {
-            icon: ActivityIcon::Lucide(icon),
-            label: label.into(),
-            bottom: false,
-            badge: None,
-        }
-    }
-
+    /// A rail item drawn from the app's own icon set (`assets/icons/idea/**`). There is no
+    /// library-icon constructor: an app icon the repo does not carry is a same-size blank, not a
+    /// borrowed component icon.
     pub fn idea(icon: &'static idea::IdeaIcon, label: impl Into<SharedString>) -> Self {
         Self {
-            icon: ActivityIcon::Idea(icon),
+            icon,
             label: label.into(),
             bottom: false,
             badge: None,
@@ -174,17 +152,16 @@ fn item_button(
     rem: Pixels,
     cx: &App,
 ) -> AnyElement {
-    let theme = cx.theme();
-    let accent = theme.accent;
-    let selected_background = theme.primary;
+    let colors = &cx.theme().colors;
+    let accent = colors.accent;
 
     let (foreground, hover_background) = match side {
-        ActivitySide::Left => (theme.foreground, accent.opacity(HOVER_OPACITY)),
-        ActivitySide::Right => (theme.muted_foreground, accent),
+        ActivitySide::Left => (colors.fg, accent.opacity(HOVER_OPACITY)),
+        ActivitySide::Right => (colors.fg_muted, accent),
     };
-    let (id_name, placement): (&str, Placement) = match side {
-        ActivitySide::Left => ("lithe-activity-bar-left", Placement::Right),
-        ActivitySide::Right => ("lithe-activity-bar-right", Placement::Left),
+    let id_name = match side {
+        ActivitySide::Left => "lithe-activity-bar-left",
+        ActivitySide::Right => "lithe-activity-bar-right",
     };
     let (width, height, radius): (Length, Length, Pixels) = (
         rems(ITEM_SIZE / 16.).into(),
@@ -193,22 +170,19 @@ fn item_button(
     );
 
     let is_active = is_active(index);
-    let button = item.icon.apply(
-        Button::new(ElementId::named_usize(id_name, index))
-            .custom(
-                ButtonCustomVariant::new(cx)
-                    .foreground(foreground)
-                    .hover(hover_background)
-                    .active(selected_background),
-            )
-            .selected(is_active)
-            .toggled(is_active),
-        cx,
-    );
-    let button = button
+    let button = Button::new(ElementId::named_usize(id_name, index))
+        .icon_element(idea_icon_image(item.icon, cx, rems(1.25)))
+        .custom(
+            ButtonCustomVariant::new(cx)
+                .foreground(foreground)
+                .hover(hover_background)
+                .active(colors.primary),
+        )
+        .selected(is_active)
+        .toggled(is_active)
         .tooltip(item.label.clone())
-        .tooltip_placement(placement)
-        .accessibility_label(item.label.clone())
+        .aria_label(item.label.clone())
+        .debug_selector(move || format!("lithe-activity-bar-item-{index}"))
         .rounded(radius)
         .w(width)
         .h(height)
@@ -225,7 +199,7 @@ fn item_button(
     match item.badge {
         None => slot.child(button).into_any_element(),
         Some(color) => slot
-            .child(Badge::new().dot().color(color).child(button))
+            .child(DotBadge::new().color(color).over(button))
             .into_any_element(),
     }
 }

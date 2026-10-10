@@ -145,7 +145,7 @@ impl WindowControl {
     /// 这个按钮画哪张图。
     ///
     /// **本仓图标集里没有「最大化」那张图形** ⇒ 同尺寸**空槽**（留位、不画），
-    /// 不拿 `gpui_kit::assets::IconName` / 组件库的图标顶替 —— 维护者口径见
+    /// 不拿组件库的图标顶替 —— 维护者口径见
     /// `.agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md`。
     /// 想让它有图形，正路是往 `assets/icons/idea/**` 补一张我们自己的图并登记 `idea::*` 常量。
     fn glyph(self, cx: &App) -> AnyElement {

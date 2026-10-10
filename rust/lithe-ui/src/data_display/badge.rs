@@ -212,6 +212,8 @@ pub(crate) fn color_mark(color: Hsla, cx: &App) -> gpui::Div {
 #[derive(IntoElement)]
 pub struct DotBadge {
     tone: Tone,
+    /// An explicit color, overriding the tone's — for a hue the palette has no tone for.
+    color: Option<Hsla>,
     over: Option<AnyElement>,
 }
 
@@ -219,12 +221,19 @@ impl DotBadge {
     pub fn new() -> Self {
         Self {
             tone: Tone::Accent,
+            color: None,
             over: None,
         }
     }
 
     pub fn tone(mut self, tone: impl Into<Tone>) -> Self {
         self.tone = tone.into();
+        self
+    }
+
+    /// An explicit dot color, overriding the tone.
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
         self
     }
 
@@ -243,12 +252,13 @@ impl Default for DotBadge {
 impl RenderOnce for DotBadge {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let color = self.color.unwrap_or_else(|| self.tone.dot(&theme.colors));
         let dot = div()
             .size(theme.status_dot() * 1.34)
             .rounded_full()
             .border_1()
             .border_color(theme.colors.bg)
-            .bg(self.tone.dot(&theme.colors));
+            .bg(color);
         match self.over {
             Some(over) => corner(over, dot),
             None => dot.into_any_element(),

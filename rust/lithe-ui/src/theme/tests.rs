@@ -51,9 +51,10 @@ fn every_color_answers_to_its_name() {
     for (ix, name) in Palette::NAMES.iter().enumerate() {
         *palette.token_mut(name) = hsla(ix as f32 / 64.0, 0.5, 0.5, 1.0);
     }
-    // 39 = 36 + chrome 表面槽 `tab_bar` / `title_bar` / `status_bar`
-    // （前两个 2026-10-08 加，`status_bar` 2026-10-09 加，见 palette.rs 的说明）。
-    assert_eq!(Palette::NAMES.len(), 39, "every color of the palette");
+    // 41 = 36 + chrome 表面槽 `tab_bar` / `title_bar` / `status_bar`
+    // （前两个 2026-10-08 加，`status_bar` 2026-10-09 加，见 palette.rs 的说明）
+    // + 品牌色槽 `primary` / `on_primary`（2026-10-10 加，同文件说明）。
+    assert_eq!(Palette::NAMES.len(), 41, "every color of the palette");
     let at = |name: &str| {
         Palette::NAMES
             .iter()

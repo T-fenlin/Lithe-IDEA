@@ -104,6 +104,11 @@ mixable!(
     /// `status_bar` defaults to the page background so a host that has no separate status-bar
     /// color keeps the library's look; a host with its own chrome colors sets it, and
     /// [`StatusBar`](crate::shell::StatusBar) paints it.
+    ///
+    /// `primary` / `on_primary` are the **brand slot** (`primary.background` /
+    /// `primary.foreground`): the fill of a chosen item whose selection reads as brand — the active
+    /// activity-rail icon — rather than as the quiet `accent` surface. Added 2026-10-10; a host
+    /// that never sets them gets the `accent` pair.
     Palette {
         bg,
         surface,
@@ -123,6 +128,8 @@ mixable!(
         accent,
         accent_hover,
         on_accent,
+        primary,
+        on_primary,
         on_media,
         focus,
         link,
@@ -205,6 +212,8 @@ impl Palette {
             accent: c(0x181613),
             accent_hover: c(0x302d2b),
             on_accent: c(0xfcfaf7),
+            primary: c(0x181613),
+            on_primary: c(0xfcfaf7),
             on_media: c(0xffffff),
             focus: c(0x3772bb),
             link: c(0x2863ab),
@@ -279,6 +288,8 @@ impl Palette {
             accent: c(0xf3f1f0),
             accent_hover: c(0xd9d7d5),
             on_accent: c(0x131110),
+            primary: c(0xf3f1f0),
+            on_primary: c(0x131110),
             on_media: c(0xffffff),
             focus: c(0x69a1e8),
             link: c(0x7eb1f3),
