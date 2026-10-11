@@ -222,19 +222,17 @@ mod tests {
             resource_bytes as f64 / 1_048_576.0
         );
         assert_eq!(
-            resource_bytes, 3_246_900,
-            "内嵌资源字节数应精确等于 310 个资源文件之和（文本资源行尾归一后的口径）；\
+            resource_bytes, 3_246_318,
+            "内嵌资源字节数应精确等于 309 个资源文件之和（文本资源行尾归一后的口径）；\
              若变大，先查是不是有图标主题被塞回来了（lithe/symbols/material/pierre 已于 2026-10-04 删除）；\
-             再查是不是有资源被整体替换成了更大的版本；\
-             是不是又进来了，再查是不是有资源被整体替换成了更大的版本；\
              若变小，通常是清单 `icons/idea/extension.json` 被改写 —— 重测后再改这个数。\
              另注意：清单重写也会让这个数变化（2026-10-04 起路径改指 macOS 图标副本）。\
              2026-10-08 从 3_244_470 涨到 3_246_804：清单补齐了 maven/docker/editorConfig/class/\
              interface/enum/annotation/record 与 python/rust/go/kotlin/ruby/php/scala/binaryData \
              这批我们本来就有图的定义（并删掉两处没有美术的悬空引用），只有一个文件变了、没有增删图标。\
-             2026-10-11 涨到 3_246_900：登记了 `unknown`（`fileTypes/unknown.svg` 此前从没进过\
-             定义表，是孤儿素材）。同一批里 `fileTypes/powershell_dark.svg` 经核对与 \
-             `powershell.svg` 逐字节相同，不是深色变体，不进清单、留作待删副本。"
+             2026-10-11 先涨到 3_246_900（登记 `unknown`，`fileTypes/unknown.svg` 此前\
+             从没进过定义表，是孤儿素材），随后删掉那张与 `powershell.svg` 逐字节相同的 \
+             `_dark` 冗余副本、并把 `extension.json` 里的深色档改回指浅色图，于是落到 3_246_318。"
         );
     }
 
