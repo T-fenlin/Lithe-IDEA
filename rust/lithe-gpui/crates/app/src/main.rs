@@ -9,6 +9,7 @@ use gpui::{
 use lithe_gpui_settings::{Init, SettingsStore};
 use lithe_gpui_workbench::ShellWorkspace;
 use lithe_gpui_workbench::WelcomeView;
+use lithe_gpui_workbench::menu_bar::MenuBarMode;
 use lithe_gpui_workbench::right_tool_window::RightToolWindowView;
 // 窗口根是本仓库自建的 `WindowRoot`（门 G1）。它按具体类型找根，换根之后任何一处
 // 残留都会 panic，所以三个构造点（首窗口 / 欢迎态 / 多窗口）必须同形。
@@ -59,6 +60,9 @@ struct Options {
     open_palette: bool,
     palette_keys: Vec<Vec<gpui::Keystroke>>,
     compact_menu_bar: bool,
+    /// 新的四态开关（`--menu-bar-mode=<merged|above|autohide|compact>`）。
+    /// 与 `--compact-menu-bar` 并存：后者是旧的两态开关，只在没给新开关时生效。
+    menu_bar_mode: Option<MenuBarMode>,
     menu_probe: Option<(String, Option<String>)>,
     menu_probe_delay_ms: u64,
     menu_probe_open_ms: u64,
@@ -80,8 +84,22 @@ struct Options {
     session_assert: bool,
 }
 
+/// 解析菜单栏摆法。认不出就把可用值列出来，别让人去猜那四档叫什么。
+fn parse_menu_bar_mode(raw: &str) -> Result<MenuBarMode, String> {
+    MenuBarMode::from_id(raw).ok_or_else(|| {
+        format!(
+            "--menu-bar-mode 认不出 {raw:?}；可用值：{}",
+            MenuBarMode::ALL
+                .iter()
+                .map(|mode| mode.id())
+                .collect::<Vec<_>>()
+                .join(" / ")
+        )
+    })
+}
+
 fn parse_options() -> Result<Options, String> {
-    const USAGE: &str = "用法：Lithe [<workspace-root>] [--theme <主题 id 或名>] [--locale <语言>] [--open-settings] [--open-palette] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
+    const USAGE: &str = "用法：Lithe [<workspace-root>] [--theme <主题 id 或名>] [--locale <语言>] [--open-settings] [--open-palette] [--menu-bar-mode <档位>] [--compact-menu-bar] [--palette-keys <按键串>] [--right-view <id>]\n\
          \x20 省略 <workspace-root> 时：打开「最近项目」里最近且仍然存在的那个（已失效的条目标为失效）；\n\
          \x20 一个都没有时打开**欢迎页**（800×650；挑一个文件夹或点一条最近项目即进入工作区）——\n\
          \x20 双击启动走的就是这一条，窗口一定会开出来。\n\
@@ -89,7 +107,12 @@ fn parse_options() -> Result<Options, String> {
          \x20 --locale <语言>      本次启动使用的界面语言（覆盖设置文件；验证/诊断用）\n\
          \x20 --open-settings     启动后自动打开设置对话框（验证/诊断用）\n\
          \x20 --open-palette      启动后自动打开命令面板（验证/诊断用）\n\
-         \x20 --compact-menu-bar  菜单栏走「左上角图标 + 浮动胶囊」形态（真源默认值；验证/诊断用）\n\
+         \x20 --menu-bar-mode <档位>\n\
+         \x20                     菜单栏摆法，四档：merged（合进标题栏，默认）/ above（抬出\n\
+         \x20                     独立一行）/ autohide（平时藏着，鼠标移到窗口顶上浮出）/\n\
+         \x20                     compact（一个汉堡按钮）。认不出的值会报错并列出可用值\n\
+         \x20 --compact-menu-bar  等价于 --menu-bar-mode=compact（旧开关，保留兼容；\n\
+         \x20                     与 --menu-bar-mode 同时给时以后者为准）\n\
          \x20 --menu-probe <id> [动作名]\n\
          \x20                     打开某个顶级菜单，并在 2.5s 后执行指定动作（验证/诊断用；\n\
          \x20                     例：\"--menu-probe view lithe.menu.toggleTerminal\"）；动作名取\n\
@@ -141,6 +164,7 @@ fn parse_options() -> Result<Options, String> {
     let mut open_settings = false;
     let mut open_palette = false;
     let mut compact_menu_bar = false;
+    let mut menu_bar_mode: Option<MenuBarMode> = None;
     let mut menu_probe: Option<(String, Option<String>)> = None;
     let mut menu_probe_delay_ms: u64 = 2500;
     let mut menu_probe_open_ms: u64 = 0;
@@ -169,6 +193,10 @@ fn parse_options() -> Result<Options, String> {
             "--open-settings" => open_settings = true,
             "--open-palette" => open_palette = true,
             "--compact-menu-bar" => compact_menu_bar = true,
+            "--menu-bar-mode" => {
+                let raw = args.next().ok_or("--menu-bar-mode 缺少值")?;
+                menu_bar_mode = Some(parse_menu_bar_mode(&raw)?);
+            }
             "--menu-probe" => {
                 let menu = args.next().ok_or("--menu-probe 缺少顶级菜单 id")?;
                 let next = args.next();
@@ -279,6 +307,12 @@ fn parse_options() -> Result<Options, String> {
                 }
                 palette_keys.push(sequence);
             }
+            // 同时认 `--menu-bar-mode above` 与 `--menu-bar-mode=above`：现有开关一律是
+            // 空格形式，但等号形式是多数 CLI 的直觉，且上面 USAGE 里也这么写了。
+            other if other.starts_with("--menu-bar-mode=") => {
+                let raw = other["--menu-bar-mode=".len()..].to_string();
+                menu_bar_mode = Some(parse_menu_bar_mode(&raw)?);
+            }
             "-h" | "--help" => return Err(USAGE.to_string()),
             other if root.is_none() && !other.starts_with("--") => {
                 root = Some(PathBuf::from(other));
@@ -294,6 +328,7 @@ fn parse_options() -> Result<Options, String> {
         open_settings,
         open_palette,
         compact_menu_bar,
+        menu_bar_mode,
         menu_probe,
         menu_probe_delay_ms,
         menu_probe_open_ms,
@@ -519,6 +554,7 @@ fn main() {
         open_settings,
         open_palette,
         compact_menu_bar,
+        menu_bar_mode,
         menu_probe,
         menu_probe_delay_ms,
         menu_probe_open_ms,
@@ -623,6 +659,7 @@ fn main() {
             lithe_gpui_workbench::set_shell_startup(
                 cx,
                 compact_menu_bar,
+                menu_bar_mode,
                 right_view_probe,
                 extensions_page_probe,
                 left_view_probe,
@@ -645,7 +682,6 @@ fn main() {
                         let workspace = cx.new(|cx| {
                             ShellWorkspace::new(
                                 root,
-                                compact_menu_bar,
                                 branch_panel_probe,
                                 run_probe,
                                 run_probe_debug,
@@ -704,7 +740,6 @@ fn main() {
                     let workspace = cx.new(|cx| {
                         ShellWorkspace::new(
                             workspace_root,
-                            compact_menu_bar,
                             branch_panel_probe,
                             run_probe,
                             run_probe_debug,

@@ -29,7 +29,7 @@ use crate::command_palette::{
 };
 use crate::debug::{DEBUG_DIAGNOSTIC_TAG as DEBUG_TAG, DebugPane, DebugPaneEvent};
 use crate::menu_bar::{
-    MenuAction, MenuBar, MenuRequest, Missing, diagnose_run as diagnose_menu_run, mode_for,
+    MenuAction, MenuBar, MenuBarMode, MenuRequest, Missing, diagnose_run as diagnose_menu_run,
     set_menu_bar,
 };
 use crate::project_menu::{
@@ -65,6 +65,8 @@ use lithe_gpui_shared::icons::idea_icon_element;
 
 pub struct ShellStartup {
     compact_menu: bool,
+    /// 四态里选了哪一档。`None` = 没给，退回 `compact_menu` 那条旧通道。
+    menu_bar_mode: Option<MenuBarMode>,
     right_view: Option<RightToolWindowView>,
     extensions_page: bool,
     left_view: Option<usize>,
@@ -72,30 +74,45 @@ pub struct ShellStartup {
 
 impl Global for ShellStartup {}
 
+#[allow(clippy::too_many_arguments)]
 pub fn set_shell_startup(
     cx: &mut App,
     compact_menu: bool,
+    menu_bar_mode: Option<MenuBarMode>,
     right_view: Option<RightToolWindowView>,
     extensions_page: bool,
     left_view: Option<usize>,
 ) {
     println!(
-        "S1_WORKSPACE startup compact_menu={compact_menu} right_view={:?} extensions_page={extensions_page} left_view={left_view:?}",
-        right_view.map(|view| view.id())
+        "S1_WORKSPACE startup mode={} compact_menu={compact_menu} right_view={:?} extensions_page={extensions_page} left_view={left_view:?}",
+        startup_menu_bar_mode_of(menu_bar_mode, compact_menu).id(),
+        right_view.as_ref().map(|view| view.id())
     );
     cx.set_global(ShellStartup {
         compact_menu,
+        menu_bar_mode,
         right_view,
         extensions_page,
         left_view,
     });
 }
 
-fn startup_compact_menu(cx: &App) -> bool {
-    cx.try_global::<ShellStartup>()
-        .map(|startup| startup.compact_menu)
-        .unwrap_or(false)
+/// 新的四态参数优先；没给就退回旧的 `compact_menu: bool`（它只能表达 `Compact` 一档）。
+fn startup_menu_bar_mode_of(mode: Option<MenuBarMode>, compact_menu: bool) -> MenuBarMode {
+    mode.or(if compact_menu {
+        Some(MenuBarMode::Compact)
+    } else {
+        None
+    })
+    .unwrap_or(MenuBarMode::DEFAULT)
 }
+
+fn startup_menu_bar_mode(cx: &App) -> MenuBarMode {
+    cx.try_global::<ShellStartup>()
+        .map(|startup| startup_menu_bar_mode_of(startup.menu_bar_mode, startup.compact_menu))
+        .unwrap_or(MenuBarMode::DEFAULT)
+}
+
 
 fn startup_views(cx: &App) -> (Option<RightToolWindowView>, bool, Option<usize>) {
     cx.try_global::<ShellStartup>()
@@ -114,13 +131,11 @@ pub(crate) fn replace_root_with_workspace(
     window: &mut Window,
     cx: &mut App,
 ) -> Option<Entity<ShellWorkspace>> {
-    let compact_menu = startup_compact_menu(cx);
     let mut created: Option<Entity<ShellWorkspace>> = None;
     let new_root = window.replace_root(cx, |window, cx| {
         let workspace = cx.new(|cx| {
             ShellWorkspace::new(
                 target.to_path_buf(),
-                compact_menu,
                 false,
                 false,
                 false,
@@ -571,7 +586,6 @@ pub struct ShellWorkspace {
 impl ShellWorkspace {
     pub fn new(
         root: PathBuf,
-        compact_menu: bool,
         branch_panel_probe: bool,
         run_probe: bool,
         run_probe_debug: bool,
@@ -999,7 +1013,7 @@ impl ShellWorkspace {
             .into();
 
         let focus = cx.focus_handle();
-        let menu_bar = MenuBar::new(mode_for(compact_menu), focus.clone(), cx);
+        let menu_bar = MenuBar::new(startup_menu_bar_mode(cx), focus.clone(), cx);
         set_menu_bar(menu_bar.downgrade());
         // 菜单一变（开 / 关 / 换模式 / 选中一行）外壳就重画。走 `observe` 而不是让 MenuBar
         // 攥一个 `WeakEntity<ShellWorkspace>` 反戳回来：菜单的关闭回调跑在外壳自己的更新栈

@@ -38,9 +38,12 @@ pub fn title_bar(
         .flex_shrink_0()
         .w_full()
         .bg(colors.title_bar)
-        // 下边框画在这一层（整条 header 的下沿），不在 `pinned_bar` 自己身上：
-        // 菜单栏是这一行里的子块，比 header 矮 40spec 的那一段，边框落在它下面会穿到
-        // header 中间去；IDEA 的 header 边界也是沿着整条 header 的下沿走的。
+        // 下边框画在这一层（整条 header 的下沿），不在 `merged_bar` 自己身上：
+        // `Merged` 模式下菜单栏是这一行里的子块，边框落在它下面会穿到 header 中间去；
+        // IDEA 的 header 边界也是沿着整条 header 的下沿走的。
+        //
+        // `Above` / `AutoHide` 那两档菜单是**独立的一行**、在这一层之外，分隔线由
+        // `above_bar()` 自己画（见 `menu_bar.rs`）。
         .border_b_1()
         .border_color(colors.border)
         .text_sm()

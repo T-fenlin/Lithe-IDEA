@@ -23,6 +23,12 @@ const BAR_GAP_SPEC: f32 = 2.;
 
 const BAR_PADDING_SPEC: f32 = 2.;
 
+/// `AutoHide` 藏起来时留在窗口顶上那条热区的高度（pt）。
+///
+/// 要够窄——它平时占着窗口顶部，太宽会把内容往下顶；也要够宽——窄到 1px 时鼠标划过去
+/// 容易漏掉。4pt 是「看不出来但划得到」的量级。
+const AUTOHIDE_HOT_ZONE_SPEC: f32 = 4.;
+
 const TRIGGER_HEIGHT_SPEC: f32 = 20.;
 
 const TRIGGER_PADDING_SPEC: f32 = 6.;
@@ -944,17 +950,64 @@ pub fn not_wired_count() -> usize {
         .count()
 }
 
+/// 菜单栏的四种摆法。
+///
+/// 用户拍板（2026-10-10）要「完整版」：既能抬出独立一行（`Above`），也要「默认藏着、
+/// 鼠标移到顶上才浮出来」（`AutoHide`）。
+///
+/// - `Merged` —— 合进标题栏那一行，与标题栏共用底色。**不要给它刷底**：它继承父级
+///   `title_bar`，刷了同色零收益。分隔线画在 `title_bar()` 的 `v_stack()` 下沿。
+/// - `Above` —— 抬出**独立的一行**，压在标题栏上方。因为是独立一行，需要自己的下边框
+///   与标题栏分开（见 `above_bar`）。
+/// - `AutoHide` —— 默认只留一条几像素高的热区；鼠标移进去浮出 `Above` 那一行。
+///   菜单**开着的时候不能收**（收了等于把人正在用的东西抽走）。
+/// - `Compact` —— 一个汉堡按钮，按下去展开「菜单的菜单」。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuBarMode {
-    Pinned,
+    Merged,
+    Above,
+    AutoHide,
     Compact,
 }
 
 impl MenuBarMode {
+    pub const ALL: [MenuBarMode; 4] = [
+        MenuBarMode::Merged,
+        MenuBarMode::Above,
+        MenuBarMode::AutoHide,
+        MenuBarMode::Compact,
+    ];
+
+    /// `Merged` 是默认：与改造前 `--compact-menu-bar` 没给时的行为一致。
+    pub const DEFAULT: MenuBarMode = MenuBarMode::Merged;
+
     pub const fn id(self) -> &'static str {
         match self {
-            Self::Pinned => "pinned",
+            Self::Merged => "merged",
+            Self::Above => "above",
+            Self::AutoHide => "autohide",
             Self::Compact => "compact",
+        }
+    }
+
+    /// 解析持久化里的那个字符串。认不出的（含旧版的 `pinned`）一律回落 `Merged`——
+    /// 宁可用默认摆法，也不要因为一个认不出的值把整份设置读失败。
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|mode| mode.id() == id)
+    }
+
+    /// 只有 `AutoHide` 是「平时不占地方」的那一档：外壳要按它决定标题栏上面留不留空。
+    pub const fn reserves_no_space(self) -> bool {
+        matches!(self, Self::AutoHide)
+    }
+
+    /// 切到下一档。循环顺序按「占的地方从多到少」排，与 `ALL` 一致。
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Merged => Self::Above,
+            Self::Above => Self::AutoHide,
+            Self::AutoHide => Self::Compact,
+            Self::Compact => Self::Merged,
         }
     }
 
@@ -1034,6 +1087,8 @@ pub struct MenuBar {
     mode: MenuBarMode,
     selected: Option<usize>,
     compact_visible: bool,
+    /// `AutoHide` 下鼠标是否正压在热区/菜单行上。别的模式下恒为 `false`。
+    autohide_revealed: bool,
     restore_focus: bool,
     pending: Vec<MenuRequest>,
     action_context: FocusHandle,
@@ -1051,6 +1106,7 @@ impl MenuBar {
             mode,
             selected: None,
             compact_visible: false,
+            autohide_revealed: false,
             restore_focus: false,
             pending: Vec::new(),
             action_context,
@@ -1103,19 +1159,51 @@ impl MenuBar {
         self.compact_visible
     }
 
+    /// 直接设成某一档（设置页用）。切走时把展开态收干净，否则旧模式的面板会残留。
+    pub fn set_mode(&mut self, mode: MenuBarMode, cx: &mut Context<Self>) {
+        if mode == self.mode {
+            return;
+        }
+        self.mode = mode;
+        self.reset_open_state();
+        self.mode.diagnose();
+        self.notify_self(cx);
+    }
+
     pub fn toggle_mode(&mut self, cx: &mut Context<Self>) {
-        self.mode = match self.mode {
-            MenuBarMode::Pinned => MenuBarMode::Compact,
-            MenuBarMode::Compact => MenuBarMode::Pinned,
-        };
+        self.mode = self.mode.next();
+        self.reset_open_state();
+        self.mode.diagnose();
+        self.notify_self(cx);
+    }
+
+    /// 换模式必然要收的东西：开着的菜单、紧凑面板、待报的几何、以及 AutoHide 的浮出态。
+    fn reset_open_state(&mut self) {
         let had_open = self.selected.take().is_some() || self.compact_visible;
         self.selected = None;
         self.compact_visible = false;
+        self.autohide_revealed = false;
         self.bounds_pending = None;
         if had_open {
             self.restore_focus = true;
         }
-        self.mode.diagnose();
+    }
+
+    /// `AutoHide` 的浮出开关。
+    ///
+    /// **菜单开着的时候不收**：那一档下鼠标移出热区是常事（比如划到某一级子菜单上），
+    /// 收掉等于把人正在用的东西抽走。
+    pub fn set_autohide_revealed(&mut self, revealed: bool, cx: &mut Context<Self>) {
+        if self.mode != MenuBarMode::AutoHide {
+            return;
+        }
+        if revealed == self.autohide_revealed {
+            return;
+        }
+        if !revealed && self.selected.is_some() {
+            return;
+        }
+        self.autohide_revealed = revealed;
         self.notify_self(cx);
     }
 
@@ -1283,11 +1371,19 @@ pub fn lookup_action(id: &str) -> Option<MenuAction> {
         })
 }
 
+/// 从持久化里的字符串取模式；认不出（包括没给）一律回落 [`MenuBarMode::DEFAULT`]。
+pub fn mode_from_id(id: Option<&str>) -> MenuBarMode {
+    id.and_then(MenuBarMode::from_id)
+        .unwrap_or(MenuBarMode::DEFAULT)
+}
+
+/// 旧的 `compact_menu: bool` 兼容通道：它只能表达两档，所以 `true` → `Compact`、
+/// `false` → 默认档。新代码一律走 [`mode_from_id`]。
 pub fn mode_for(compact: bool) -> MenuBarMode {
     if compact {
         MenuBarMode::Compact
     } else {
-        MenuBarMode::Pinned
+        MenuBarMode::DEFAULT
     }
 }
 
@@ -1353,7 +1449,9 @@ pub fn menu_bar(
     }
     let _ = window;
     match bar.mode {
-        MenuBarMode::Pinned => pinned_bar(bar, cx).into_any_element(),
+        MenuBarMode::Merged => merged_bar(bar, cx).into_any_element(),
+        MenuBarMode::Above => above_bar(bar, cx).into_any_element(),
+        MenuBarMode::AutoHide => autohide_bar(bar, cx).into_any_element(),
         MenuBarMode::Compact => compact_bar(bar, cx).into_any_element(),
     }
 }
@@ -1368,18 +1466,69 @@ pub(crate) fn render_bar(
         .ok()
 }
 
-fn pinned_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
-    let mut bar_element = h_stack()
-        .id("lithe-menu-bar-pinned")
+/// 九个顶层菜单横排。三种「把菜单摆出来」的模式共用这一排，差别只在容器。
+fn menu_row(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+    let mut row = h_stack().flex_shrink_0().items_center().gap(rems(BAR_GAP_SPEC / 16.));
+    for index in 0..MENUS.len() {
+        row = row.child(menu_item(bar, index, cx));
+    }
+    row
+}
+
+/// `Merged`：合进标题栏那一行，**不刷底**（继承父级 `title_bar`，刷了同色零收益）。
+fn merged_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+    h_stack()
+        .id("lithe-menu-bar-merged")
         .flex_shrink_0()
         .items_center()
         .h(rems(BAR_HEIGHT_SPEC / 16.))
-        .gap(rems(BAR_GAP_SPEC / 16.))
-        .p(rems(BAR_PADDING_SPEC / 16.));
-    for index in 0..MENUS.len() {
-        bar_element = bar_element.child(menu_item(bar, index, cx));
+        .p(rems(BAR_PADDING_SPEC / 16.))
+        .child(menu_row(bar, cx))
+}
+
+/// `Above`：抬出**独立的一行**，压在标题栏上方。
+///
+/// 与 `Merged` 的差别不只是位置——它是独立的一层，得自己跟下面分开，否则看起来就是
+/// 标题栏被劈成了两截。这里用下边框而不是底色：标题栏与页面都是 `title_bar` /
+/// `bg` 那一档，换成别的底色会在窗口顶部切出一条异色带。
+fn above_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+    let colors = &cx.theme().colors;
+    h_stack()
+        .id("lithe-menu-bar-above")
+        .flex_shrink_0()
+        .items_center()
+        .h(rems(BAR_HEIGHT_SPEC / 16.))
+        .px(rems(BAR_PADDING_SPEC / 16.))
+        .border_b_1()
+        .border_color(colors.border)
+        .child(menu_row(bar, cx))
+}
+
+/// `AutoHide`：平时只留一条热区，鼠标压上去才浮出 `Above` 那一行。
+///
+/// 为什么不干脆用 `on_hover` 挂在那一行自己身上——**藏起来之后那一行就不在场景里了**，
+/// 没有元素能收 hover。所以必须留一条常驻的热区：它不吃地方（几像素高），但一直能
+/// 接到鼠标进出。浮出之后热区与菜单行一起在，鼠标在两者之间移动不会触发收起。
+fn autohide_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+    let revealed = bar.autohide_revealed;
+    let handle = handle();
+    let zone = div()
+        .id("lithe-menu-bar-autohide")
+        .w_full()
+        .flex_shrink_0()
+        .flex()
+        .flex_col()
+        // 藏起来时这条热区自己撑出 `AUTOHIDE_HOT_ZONE_SPEC`；浮出后高度交给菜单行。
+        .when(!revealed, |zone| zone.h(rems(AUTOHIDE_HOT_ZONE_SPEC / 16.)))
+        .on_hover(move |hovered, _, cx| {
+            let _ = handle.update(cx, |bar, cx| bar.set_autohide_revealed(*hovered, cx));
+        });
+
+    if revealed {
+        zone.child(above_bar(bar, cx))
+    } else {
+        zone
     }
-    bar_element
 }
 
 /// 紧凑模式：一个按钮，按下去展开**菜单的菜单** —— 每个顶层菜单是一张子菜单。
@@ -1752,7 +1901,7 @@ mod tests {
         CloseReason, KEY_GO_TO_LINE, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM,
         KEY_TOGGLE_ACTIVITY_SIDEBAR, KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS,
         MISSING_GROUPS, MenuAction, MenuBarMode, MenuItem, NOT_WIRED_OUTSIDE_MENUS, NavState,
-        TriggerFace, action_count, mode_for, not_wired_count, resolve_menu_toggle,
+        TriggerFace, action_count, mode_for, mode_from_id, not_wired_count, resolve_menu_toggle,
     };
     use lithe_gpui_shared::tr;
     use lithe_ui::theme::Palette;
@@ -2527,11 +2676,49 @@ mod tests {
     }
 
     #[test]
+    /// 旧的 `compact_menu: bool` 只能表达两档，`false` 必须还落在默认档上。
     fn mode_defaults_to_pinned() {
-        assert_eq!(mode_for(false), MenuBarMode::Pinned);
+        assert_eq!(mode_for(false), MenuBarMode::DEFAULT);
         assert_eq!(mode_for(true), MenuBarMode::Compact);
-        assert_eq!(MenuBarMode::Pinned.id(), "pinned");
-        assert_eq!(MenuBarMode::Compact.id(), "compact");
+    }
+
+    #[test]
+    fn the_four_modes_round_trip_through_their_ids() {
+        for mode in MenuBarMode::ALL {
+            assert_eq!(MenuBarMode::from_id(mode.id()), Some(mode));
+        }
+        // 认不出的（含改造前存的旧值 `pinned`）一律回落默认档，不能让整份设置读失败。
+        assert_eq!(MenuBarMode::from_id("pinned"), None);
+        assert_eq!(mode_from_id(Some("pinned")), MenuBarMode::DEFAULT);
+        assert_eq!(mode_from_id(None), MenuBarMode::DEFAULT);
+        assert_eq!(mode_from_id(Some("autohide")), MenuBarMode::AutoHide);
+        assert_eq!(mode_from_id(Some("above")), MenuBarMode::Above);
+    }
+
+    #[test]
+    fn the_mode_cycle_visits_every_mode_before_repeating() {
+        let mut mode = MenuBarMode::DEFAULT;
+        let mut seen = Vec::new();
+        for _ in 0..MenuBarMode::ALL.len() {
+            seen.push(mode);
+            mode = mode.next();
+        }
+        assert_eq!(mode, MenuBarMode::DEFAULT, "转一圈要回到原点");
+        assert_eq!(seen.len(), 4);
+        for each in MenuBarMode::ALL {
+            assert!(seen.contains(&each), "{each:?} 没出现在循环里");
+        }
+    }
+
+    #[test]
+    fn only_autohide_reserves_no_space() {
+        // 外壳靠这个决定标题栏上面留不留空：只有 AutoHide 是平时不占地方的那一档。
+        assert!(MenuBarMode::AutoHide.reserves_no_space());
+        for mode in MenuBarMode::ALL {
+            if mode != MenuBarMode::AutoHide {
+                assert!(!mode.reserves_no_space(), "{mode:?} 是要占地方的");
+            }
+        }
     }
 
     #[test]
