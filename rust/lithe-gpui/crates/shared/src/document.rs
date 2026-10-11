@@ -119,6 +119,22 @@ pub fn merge_document<T: Serialize>(
     Ok(merged)
 }
 
+/// 把 `previous` 里 `next` 不认识的键合回 `next`，好让旧版/未知字段在存盘时不被抹掉。
+///
+/// **代价：删除永远不生效。** 判据是「键在 `next` 里**存不存在**」，不是「值是不是空」：
+/// 只要键不在 `next` 里（`merged.contains_key(key) == false`），就把 `previous` 的值原样
+/// 补回来。这一条在**所有层级**都成立，不只是嵌套对象。所以删掉一个设置项、再存盘，
+/// 它会被这个函数从旧文档里捞回来 —— 表现是「用户取消了设置，重启后还在」。
+///
+/// 想让某个字段支持删除，唯一办法是**让它的键每次都出现在 `next` 里**，从而走到替换
+/// 分支。数组天然满足：`Vec<T>` 作为结构体字段，哪怕是空数组也会被序列化成 `[]`，
+/// `contains_key` 为真，于是整段被 `next` 顶掉，删除就生效了。注意 `Option<Vec<T>>`
+/// （`None` 时 `skip_serializing_if`）或任何稀疏序列化会把键从 `next` 里整个去掉，那它
+/// 就退回上一条、删除又失效了。
+///
+/// `merge_document` 的两个调用方（`settings::persistence`、`settings::workspace`）都受此
+/// 约束。已有的绕法见 `settings::workspace`：merge 之后再显式 `unset_json_keys()` 摘掉要
+/// 删的键，而不是指望这个函数。
 pub fn preserve_unknown(previous: Option<&Value>, next: &Value) -> Value {
     let (Some(Value::Object(previous)), Value::Object(next)) = (previous, next) else {
         return next.clone();

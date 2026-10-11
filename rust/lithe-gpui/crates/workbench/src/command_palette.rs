@@ -43,88 +43,12 @@ thread_local! {
     static PENDING_FOCUS: RefCell<bool> = const { RefCell::new(false) };
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CommandId {
-    OpenSettings,
-    OpenAppearanceSettings,
-    SwitchToLightTheme,
-    SwitchToDarkTheme,
-    ToggleTerminal,
-    ToggleMaven,
-    ToggleStatusBar,
-    ToggleMenuBar,
-    SaveBuffer,
-    OpenCommandPalette,
-    OpenQuickOpen,
-    OpenSearchEverywhere,
-    OpenReplaceInFiles,
-    NavigateToDefinition,
-    OpenFile,
-    CloseTab,
-    CloseOtherTabs,
-    CloseAllTabs,
-    CloseSavedTabs,
-    CloseTabsToLeft,
-    CloseTabsToRight,
-    ReopenClosedTab,
-    NewWindow,
-}
-
-impl CommandId {
-    pub const ALL: [CommandId; 23] = [
-        Self::OpenSettings,
-        Self::OpenAppearanceSettings,
-        Self::SwitchToLightTheme,
-        Self::SwitchToDarkTheme,
-        Self::ToggleTerminal,
-        Self::ToggleMaven,
-        Self::ToggleStatusBar,
-        Self::ToggleMenuBar,
-        Self::SaveBuffer,
-        Self::OpenCommandPalette,
-        Self::OpenQuickOpen,
-        Self::OpenSearchEverywhere,
-        Self::OpenReplaceInFiles,
-        Self::NavigateToDefinition,
-        Self::OpenFile,
-        Self::CloseTab,
-        Self::CloseOtherTabs,
-        Self::CloseAllTabs,
-        Self::CloseSavedTabs,
-        Self::CloseTabsToLeft,
-        Self::CloseTabsToRight,
-        Self::ReopenClosedTab,
-        Self::NewWindow,
-    ];
-
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::OpenSettings => "open-settings",
-            Self::OpenAppearanceSettings => "open-appearance-settings",
-            Self::SwitchToLightTheme => "switch-theme-light",
-            Self::SwitchToDarkTheme => "switch-theme-dark",
-            Self::ToggleTerminal => "toggle-terminal",
-            Self::ToggleMaven => "toggle-maven",
-            Self::ToggleStatusBar => "toggle-status-bar",
-            Self::ToggleMenuBar => "toggle-menu-bar",
-            Self::SaveBuffer => "save-buffer",
-            Self::OpenCommandPalette => "open-command-palette",
-            Self::OpenQuickOpen => "open-quick-open",
-            Self::OpenSearchEverywhere => "open-search-everywhere",
-            Self::OpenReplaceInFiles => "open-replace-in-files",
-            Self::NavigateToDefinition => "navigate-to-definition",
-            Self::OpenFile => "open-file",
-            Self::CloseTab => "close-tab",
-            Self::CloseOtherTabs => "close-other-tabs",
-            Self::CloseAllTabs => "close-all-tabs",
-            Self::CloseSavedTabs => "close-saved-tabs",
-            Self::CloseTabsToLeft => "close-tabs-to-left",
-            Self::CloseTabsToRight => "close-tabs-to-right",
-            Self::ReopenClosedTab => "reopen-closed-tab",
-            Self::NewWindow => "new-window",
-        }
-    }
-}
+/// 命令目录的真源在 `lithe_gpui_shared`：设置页要枚举全部命令，而 `settings` 够不到
+/// `workbench`（依赖方向 `settings → shared`、`workbench → settings + shared`）。
+///
+/// 这里原样再导出，`crate::command_palette::CommandId` 这个路径对所有引用方保持有效。
+/// 带 i18n 文案和图标的那一层（[`CommandAction`]）留在本地，不要跟着搬。
+pub use lithe_gpui_shared::commands::CommandId;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Category {
