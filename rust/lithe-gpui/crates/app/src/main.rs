@@ -636,6 +636,17 @@ fn main() {
             set_locale(&locale, cx);
             // 组件库的主题全局：外壳在这里装一次，之后宿主每次换主题都往它写。
             Theme::init(cx);
+            // 组件库的键位。编辑器（`CodeEditor`）与输入框（`InputState`）都是 lithe-ui 的
+            // 组件，它们的按键走 `on_action`——**keymap 里没有绑定就永远派发不到**，所以
+            // Ctrl+Z / Ctrl+C / 方向键这些在此之前一条都不生效。
+            //
+            // 这里不能调 `lithe_ui::init`：它开头就 `load(IconName::Check.path())`
+            // （`icons/check.svg`），而本仓挂的资产源是 `LitheAssets`（`rust/lithe-gpui/assets`），
+            // 那个路径不在里面，启动即 panic。`install_key_bindings` 只装键位，不碰资产。
+            //
+            // 位置必须在任何窗口构造之前：键位引擎的快照在 `ShellWorkspace::new` 末尾，
+            // 晚于此处，所以这批绑定会自动进 `baseline_other`，引擎不用改。
+            lithe_ui::install_key_bindings(cx);
             // 语言支持插件：把 tree-sitter 语法注册进组件库的语言注册表（静态装载；
             // 换成扩展目录里的动态库时，这一行的位置与语义不变）。
             lithe_gpui_languages::register();
