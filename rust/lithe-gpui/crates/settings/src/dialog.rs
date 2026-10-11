@@ -775,6 +775,13 @@ fn preset_gap(preset: KeymapPreset) -> usize {
     let rows = preset_bindings(preset);
     CommandId::ALL
         .iter()
+        // 分母只数**能绑键**的那 9 条，不是全部 23 条。
+        //
+        // 那 14 条没有 gpui `Action`，根本绑不了键，预设永远也不可能覆盖它们——给一个没有
+        // action 的命令写预设绑定，写出来也是死的。把它们算进来就是报一堆永远修不了的
+        // 数字（IDEA Classic 22、Eclipse 23），虚高告警；而页面已经在同批行上标了
+        // 「未接入」，告警再数一遍等于同一件事说两遍。
+        .filter(|command| crate::keymap::is_bindable(**command))
         .filter(|command| !rows.iter().any(|row| row.command == **command))
         .count()
 }
@@ -3444,12 +3451,27 @@ mod tests {
     /// 顺带把「Eclipse 档没有 Windows 侧真源」这个事实钉住：将来真源补齐、表被填上，这条
     /// 会失败，那就是提醒该改这条断言的时候了。
     #[test]
-    fn a_preset_without_a_real_source_reports_every_command_missing() {
+    fn a_preset_without_a_real_source_reports_every_bindable_command_missing() {
         assert!(
             preset_bindings(KeymapPreset::Eclipse).is_empty(),
             "ECLIPSE_BINDINGS 今天是空表：macOS 那两份 Eclipse 表是 ⌘ 方言，Windows 上没有对应真源"
         );
-        assert_eq!(preset_gap(KeymapPreset::Eclipse), CommandId::ALL.len());
+
+        // 注入一个只认两条的解析器，把「分母只数可绑的」这条语义钉死。
+        // 刻意不写死 9 或 23：那依赖「到底哪几条有 gpui Action」这个 workbench 侧的知识，
+        // 写在这里会变成第二份真相。
+        crate::keymap::set_bindable_resolver(Some(std::rc::Rc::new(|command| {
+            matches!(command, CommandId::SaveBuffer | CommandId::OpenQuickOpen)
+        })));
+        assert_eq!(
+            preset_gap(KeymapPreset::Eclipse),
+            2,
+            "空表 ⇒ 每一条可绑的都算缺失"
+        );
+
+        // 没有解析器时一律判不可绑 ⇒ 缺口为 0（宁可不报，也不虚报）。
+        crate::keymap::set_bindable_resolver(None);
+        assert_eq!(preset_gap(KeymapPreset::Eclipse), 0);
     }
 
     // `font_size_labels_are_compact` 随 `format_ui_font_size` / `format_editor_font_size`
