@@ -48,11 +48,11 @@ let dark = theme.is_dark();
 
 尺寸一律返回 `Rems`：`px_to_rems(v) = rems(v / 16.0)`，真正的缩放由 `Theme::apply_rem(window)` 写窗口的 rem 大小完成（`tokens.rs:88`、`mod.rs:233`）。**不要在组件里自己乘缩放系数。**
 
-### 语义色板（`src/theme/palette.rs:112-154`）
+### 语义色板（`src/theme/palette.rs:125-173`）
 
 ```
 bg, surface, tab_bar, title_bar, status_bar, sunken, overlay,
-hover, active, border, border_strong,
+hover, active, chrome_hover, chrome_active, border, border_strong,
 fg, fg_muted, fg_subtle, fg_disabled,
 accent, accent_hover, on_accent, primary, on_primary, on_media,
 focus, link, selection,
@@ -68,17 +68,19 @@ tooltip_bg, tooltip_fg, paper, ink
 | `bg` | `#fcfaf7` | `#131110` |
 | `surface` | `#ffffff` | `#1b1917` |
 | `tab_bar` | `#ffffff` | `#1b1917` |
-| `title_bar` | `#fcfaf7` | `#131110` |
-| `status_bar` | `#fcfaf7` | `#131110` |
+| `title_bar` | `#f2f2f2` | `#313335` |
+| `status_bar` | `#f2f2f2` | `#313335` |
 | `sunken` | `#f6f4f1` | `#0e0d0b` |
 | `overlay` | `#ffffff` | `#201f1d` |
 | `hover` / `active` | `#f2f0ed` / `#e9e7e5` | `#252422` / `#2c2b29` |
+| `chrome_hover` / `chrome_active` | `#e1dfdd` / `#cccac8` | `#413f3d` / `#5c5a58` |
 | `border` / `border_strong` | `#e1dfdd` / `#cccac8` | `#2c2b29` / `#413f3d` |
 | `fg` / `fg_muted` / `fg_subtle` / `fg_disabled` | `#181613` / `#605d5a` / `#696764` / `#acaaa8` | `#f3f1f0` / `#afadab` / `#94928f` / `#5c5a58` |
 | `focus` / `link` | `#3772bb` / `#2863ab` | `#69a1e8` / `#7eb1f3` |
 
-> **chrome 槽位**：`tab_bar` / `title_bar` / `status_bar` 是"窗口外壳"专用的三个槽（`palette.rs:96-111` 有说明）。JetBrains 主题给它们的值与页面底色不同（浅色 `#ffffff` / `#f2f2f2` / `#f2f2f2`，深色 `#2b2b2b` / `#313335` / `#313335`），既不能合并成一个槽，也不能拿 `surface` 顶替。
-> 注意：库默认调色板里 `title_bar` 与 `bg` **恰好同色**（浅 `#fcfaf7`、深 `#131110`），所以只靠 `title_bar` 画不出"一条栏"的层次，还要靠边框/内边距（见 03、06 两章）。
+> **chrome 槽位**：`tab_bar` / `title_bar` / `status_bar` 是"窗口外壳"专用的三个槽（`palette.rs:96-124` 有说明）。JetBrains 主题给它们的值与页面底色不同（浅色 `#ffffff` / `#f2f2f2` / `#f2f2f2`，深色 `#2b2b2b` / `#313335` / `#313335`），既不能合并成一个槽，也不能拿 `surface` 顶替。库默认调色板里这两个槽取的就是 JetBrains 的那一档（`#f2f2f2` / `#313335`），与页面底色 `bg` 不同值。
+>
+> **悬停是「从它所在底色上迈的一档」，不是一个到处通用的绝对色**：`hover` 是贴着 `list.background`（浅色纯白）调出来的，JetBrains 浅色把 `list.hover.background`、`title_bar.background`、`popover.background`、`secondary.hover.background` 四栏都给了 `#f2f2f2`，于是把 `hover` 画到标题栏或浮层面板上等于没画。凡是画在 chrome 面上（`title_bar` / `status_bar` / `overlay`）的悬停与选中，一律读 `chrome_hover` / `chrome_active`，且 `chrome_active` 必须比 `chrome_hover` 更强、两者不同色（`theme/tests.rs` 有这条断言，下限 1.10:1）。`hover` / `active` 只留给画在列表/页面底色上的行。
 
 ---
 
