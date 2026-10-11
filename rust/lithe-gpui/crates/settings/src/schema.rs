@@ -377,9 +377,10 @@ impl Settings {
             .into_iter()
             .collect();
 
-        // 键位覆盖按 `(preset, command)` 去重（后写的赢），**认不出的命令 id 要留着**：这份
-        // 文档里还存着别的东西，读的时候静默删掉用户写过的行就越界了。见
-        // `KeymapSettings::dedup_overrides` —— 它是「只去重」，不是 `normalize`（那个会丢）。
+        // 键位覆盖按 `(preset, command)` 去重（后写的赢）。**这里是 `dedup_overrides` 而不是
+        // `KeymapSettings::normalize`** —— 后者会连认不出的命令 id 一起丢掉，而 `normalize()`
+        // 会被 `SettingsStore::commit_global` 反复触发：用户每改一个无关设置（调字号、换主题）
+        // 都会跑一次，那种频率下删用户数据是副作用不是校验。见 `dedup_overrides` 的注释。
         self.keymap.dedup_overrides();
     }
 
@@ -907,6 +908,48 @@ mod tests {
             "不许回落到默认的 secondary-s：{resolved:?}"
         );
         assert_eq!(resolved.source, KeySource::User, "空覆盖也是用户意图");
+    }
+
+    #[test]
+    fn clearing_an_override_falls_back_to_the_layer_below_it() {
+        // 「恢复默认」的语义是撤掉覆盖、让这条命令回落到预设表或默认值，**不是**把键位清空。
+        // 所以断言必须走到合成逻辑（`resolve`）而不是只看 `overrides` 数组变短了。
+        let mut settings = Settings::default();
+        settings.keymap.preset = KeymapPreset::IdeaClassic;
+        settings.keymap.set_override(
+            KeymapPreset::IdeaClassic,
+            CommandId::ToggleTerminal,
+            vec!["secondary-k".to_string()],
+        );
+        assert_eq!(
+            settings.keymap.resolve(CommandId::ToggleTerminal).source,
+            KeySource::User
+        );
+
+        // 预设表里有这一条（IDEA Classic 给 `alt-f12`）→ 清掉覆盖后回到预设层。
+        settings
+            .keymap
+            .clear_override(KeymapPreset::IdeaClassic, CommandId::ToggleTerminal);
+        let resolved = settings.keymap.resolve(CommandId::ToggleTerminal);
+        assert_eq!(resolved.keystrokes, vec!["alt-f12".to_string()]);
+        assert_eq!(resolved.source, KeySource::Preset);
+
+        // 预设表里没有的那一条 → 回到注册表默认值，而不是变成「没有键位」。
+        settings.keymap.set_override(
+            KeymapPreset::IdeaClassic,
+            CommandId::SaveBuffer,
+            vec!["secondary-q".to_string()],
+        );
+        settings
+            .keymap
+            .clear_override(KeymapPreset::IdeaClassic, CommandId::SaveBuffer);
+        let resolved = settings.keymap.resolve(CommandId::SaveBuffer);
+        assert_eq!(resolved.keystrokes, vec!["secondary-s".to_string()]);
+        assert_eq!(resolved.source, KeySource::Default);
+        assert!(
+            resolved.is_bound(),
+            "清掉覆盖是回落到下一层，不是让命令变成未绑定"
+        );
     }
 
     #[test]

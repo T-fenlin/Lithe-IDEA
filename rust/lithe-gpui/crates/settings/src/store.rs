@@ -391,6 +391,21 @@ impl SettingsStore {
         self.commit_global(cx, next, Effects::None);
     }
 
+    /// 删掉一条覆盖，让这条命令回落到**预设表 / 默认值**。
+    ///
+    /// 设置页的「恢复默认」就是它：语义是**撤掉覆盖**，不是「把键位写成默认那一串」——
+    /// 后者会把默认值固化进用户文件，将来改了默认键位反而改不动。
+    pub fn clear_key_override(
+        &mut self,
+        preset: KeymapPreset,
+        command: CommandId,
+        cx: &mut Context<Self>,
+    ) {
+        let mut next = self.global.clone();
+        next.keymap.clear_override(preset, command);
+        self.commit_global(cx, next, Effects::None);
+    }
+
     pub fn set_icons(&mut self, package: &str, cx: &mut Context<Self>) {
         if !self.apply_icons_package(package, cx) {
             return;

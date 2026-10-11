@@ -250,9 +250,15 @@ impl KeymapSettings {
 
     /// 按 `(preset, command)` 排序去重，**认不出来的命令 id 原样保留**。
     ///
-    /// 全局设置文件（`schema::Settings`）走这一条而不是 [`Self::normalize`]：那份文档里还
-    /// 存着别的东西，读的时候静默删掉用户写过的行就越界了 —— 认不出的覆盖对解析无害
-    /// （`resolve` 只认已知 id），将来命令回来了它还在。
+    /// 全局设置文件（`schema::Settings`）走这一条而不是 [`Self::normalize`]，决定性理由是
+    /// **调用频率不对称**：`SettingsStore::commit_global` 每提交一次就跑一次
+    /// `Settings::normalize()`，也就是说挂在全局设置文件上的严格规则**不是只在读到坏数据时
+    /// 生效，而是用户每改一个无关设置（调个字号、换个主题）都会触发一次**。那样的话用户改
+    /// 字号、结果自己手写的那行未知 id 覆盖被悄悄删掉——这是**副作用，不是校验**。独立键位
+    /// 文档没有这个问题：`parse_keymap` 只在明确解析键位文档时调用一次，那时做一次性的
+    /// 严格清理是对的。
+    ///
+    /// 认不出的覆盖留着本身无害（`resolve` 只认已知 id），将来命令回来了它还在。
     ///
     /// 同一 `(preset, command)` 出现多次时**后写的赢**：设置页是「先删旧的再追加」，落盘前
     /// 再规整，后写的那一条代表用户最后一次的意图。**空 `keystrokes` 不在这条规则里** ——
@@ -278,7 +284,8 @@ impl KeymapSettings {
     ///
     /// 照 macOS 端那条「未知命令、重复绑定被忽略」：留着一行认不出来的覆盖，表现是「页面
     /// 上有这行、按下去也没反应」，比没有这行更难发现。只有**独立键位文档**（`parse_keymap`）
-    /// 走这一条；全局设置文件走 `dedup_overrides`，不删用户数据。
+    /// 走这一条；全局设置文件走 `dedup_overrides`，理由见它自己的注释（调用频率不对称 ——
+    /// `normalize` 会被 `commit_global` 反复触发，不能在那种频率下删用户数据）。
     pub fn normalize(&mut self) {
         self.dedup_overrides();
         self.overrides.retain(|entry| entry.command_id().is_some());
