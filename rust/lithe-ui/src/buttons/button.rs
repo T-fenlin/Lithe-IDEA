@@ -1,7 +1,7 @@
 use gpui::{
     App, ClickEvent, ElementId, FocusHandle, FontWeight, Hsla, IntoElement, MouseButton,
-    Refineable, RenderOnce, Role, SharedString, StatefulInteractiveElement, StyleRefinement, Window,
-    div, prelude::*, transparent_black,
+    Refineable, RenderOnce, Role, SharedString, StatefulInteractiveElement, StyleRefinement,
+    Window, div, prelude::*, transparent_black,
 };
 
 use crate::{
@@ -154,7 +154,11 @@ pub(crate) fn tone(variant: ButtonVariant, colors: &Palette) -> Tone {
         },
         ButtonVariant::Custom(style) => Tone {
             bg: style.color,
-            hover: if style.hover == clear { style.color } else { style.hover },
+            hover: if style.hover == clear {
+                style.color
+            } else {
+                style.hover
+            },
             pressed: style.active,
             fg: style.foreground,
             border: clear,
