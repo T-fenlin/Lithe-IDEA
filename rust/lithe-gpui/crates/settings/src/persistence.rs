@@ -170,10 +170,12 @@ pub fn normalize_pattern_lines(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keymap::{KeyOverride, KeymapPreset, KeymapSettings};
     use crate::schema::{
         DEFAULT_AUTO_THEME_DARK, DEFAULT_AUTO_THEME_LIGHT, DEFAULT_DISPLAY_LANGUAGE, DEFAULT_THEME,
         TAB_SIZE_DEFAULT, UI_FONT_SIZE_DEFAULT, UI_FONT_SIZE_MAX, UI_FONT_SIZE_MIN,
     };
+    use lithe_gpui_shared::commands::CommandId;
 
     fn all_non_default() -> Settings {
         Settings {
@@ -203,6 +205,14 @@ mod tests {
             terminal_font_size: 16.0,
             uninstalled_extensions: vec!["lithe.nordTheme".to_string()],
             icons: "pierre".to_string(),
+            keymap: KeymapSettings {
+                preset: KeymapPreset::Eclipse,
+                overrides: vec![KeyOverride::new(
+                    KeymapPreset::IdeaClassic,
+                    CommandId::SaveBuffer,
+                    vec!["secondary-alt-s".to_string()],
+                )],
+            },
         }
     }
 

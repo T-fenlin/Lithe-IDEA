@@ -6,8 +6,10 @@ use gpui::{
 };
 use serde_json::Value;
 
+use lithe_gpui_shared::commands::CommandId;
 use lithe_gpui_shared::workspace_config::WorkspaceConfigPaths;
 
+use crate::keymap::{KeymapPreset, KeymapSettings};
 use crate::persistence::{self, DebounceState, Loaded};
 use crate::schema::{Settings, theme_font_size_for};
 use crate::theme;
@@ -360,6 +362,33 @@ impl SettingsStore {
 
     pub fn uninstalled_extensions(&self) -> &[String] {
         &self.global.uninstalled_extensions
+    }
+
+    /// 键位设置（预设 + 全部预设的用户覆盖）。
+    ///
+    /// 读的是**全局层**：键位不分工作区覆盖（`AppearanceOverlay` 只管外观键），改它走下面两个
+    /// setter。`commit_global` 会顺带 `normalize()`，所以拿到的覆盖一定是去过重、排过序的。
+    pub fn keymap(&self) -> &KeymapSettings {
+        &self.global.keymap
+    }
+
+    pub fn set_keymap_preset(&mut self, preset: KeymapPreset, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.keymap.preset = preset;
+        self.commit_global(cx, next, Effects::None);
+    }
+
+    /// 写一条覆盖。空 `keystrokes` 是**显式不绑定**，不是「没设置」。
+    pub fn set_key_override(
+        &mut self,
+        preset: KeymapPreset,
+        command: CommandId,
+        keystrokes: Vec<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let mut next = self.global.clone();
+        next.keymap.set_override(preset, command, keystrokes);
+        self.commit_global(cx, next, Effects::None);
     }
 
     pub fn set_icons(&mut self, package: &str, cx: &mut Context<Self>) {

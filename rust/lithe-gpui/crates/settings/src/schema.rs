@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+use crate::keymap::KeymapSettings;
+
 pub const UI_FONT_SIZE_MIN: f64 = 10.0;
 pub const UI_FONT_SIZE_MAX: f64 = 24.0;
 pub const UI_FONT_SIZE_STEP: f64 = 0.5;
@@ -260,6 +262,13 @@ pub struct Settings {
 
     #[serde(rename = "uninstalledExtensions")]
     pub uninstalled_extensions: Vec<String>,
+
+    /// 键位设置（预设 + 全部预设的用户覆盖），类型落在 `crate::keymap`。
+    ///
+    /// 老的设置文件里没有这个键：`Settings` 带容器级 `#[serde(default)]`，缺字段时整个
+    /// `Settings` 走 `default()`，于是这里拿到 `KeymapSettings::default()`（Lithe 档、无覆盖）。
+    #[serde(rename = "keymap")]
+    pub keymap: KeymapSettings,
 }
 
 impl Default for Settings {
@@ -291,6 +300,7 @@ impl Default for Settings {
             open_folders_in_new_window: true,
             icons: DEFAULT_ICONS.to_string(),
             uninstalled_extensions: Vec::new(),
+            keymap: KeymapSettings::default(),
         }
     }
 }
@@ -366,6 +376,11 @@ impl Settings {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
+
+        // 键位覆盖按 `(preset, command)` 去重（后写的赢），**认不出的命令 id 要留着**：这份
+        // 文档里还存着别的东西，读的时候静默删掉用户写过的行就越界了。见
+        // `KeymapSettings::dedup_overrides` —— 它是「只去重」，不是 `normalize`（那个会丢）。
+        self.keymap.dedup_overrides();
     }
 
     pub fn normalize_with_themes(&mut self, index: &ThemeIndex) {
@@ -398,6 +413,8 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keymap::{KeySource, KeymapPreset, KeymapSettings};
+    use lithe_gpui_shared::commands::CommandId;
 
     #[test]
     fn defaults_match_the_windows_truth() {
@@ -775,6 +792,121 @@ mod tests {
         assert_eq!(index.entries().len(), 1);
         assert_eq!(index.ids(), vec!["dup"]);
         assert_eq!(index.name_for_id("dup"), Some("First"));
+    }
+
+    #[test]
+    fn a_legacy_document_without_the_keymap_key_gets_the_default() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"theme": "darcula"}"#).expect("老文档必须还能读出来");
+        assert_eq!(settings.keymap, KeymapSettings::default());
+        assert_eq!(settings.keymap.preset, KeymapPreset::Lithe);
+        assert!(settings.keymap.overrides.is_empty());
+    }
+
+    #[test]
+    fn the_keymap_section_survives_a_round_trip() {
+        let mut settings = Settings::default();
+        settings.keymap.preset = KeymapPreset::IdeaClassic;
+        settings.keymap.set_override(
+            KeymapPreset::IdeaClassic,
+            CommandId::ToggleTerminal,
+            vec!["alt-f12".to_string()],
+        );
+
+        let json = serde_json::to_string(&settings).expect("序列化失败");
+        let back: Settings = serde_json::from_str(&json).expect("反序列化失败");
+        assert_eq!(back, settings, "带 keymap 的文档 round-trip 必须不变");
+        assert_eq!(
+            back.keymap.resolve(CommandId::ToggleTerminal).keystrokes,
+            vec!["alt-f12".to_string()]
+        );
+    }
+
+    #[test]
+    fn duplicate_overrides_collapse_to_the_last_one() {
+        let json = r#"{
+          "keymap": {
+            "preset": "lithe",
+            "overrides": [
+              {"preset": "eclipse", "command": "save-buffer", "keystrokes": ["secondary-a"]},
+              {"preset": "eclipse", "command": "save-buffer", "keystrokes": ["secondary-b"]}
+            ]
+          }
+        }"#;
+        let mut settings: Settings = serde_json::from_str(json).expect("解析失败");
+        settings.normalize();
+
+        assert_eq!(
+            settings.keymap.overrides.len(),
+            1,
+            "同一 (preset, command) 只留一条"
+        );
+        assert_eq!(
+            settings.keymap.overrides[0].keystrokes,
+            vec!["secondary-b".to_string()],
+            "后写的赢（与「设置页先删旧的再追加」一致）"
+        );
+    }
+
+    #[test]
+    fn an_unknown_command_id_survives_normalization() {
+        // 全局设置文件不删用户数据：这一版的 `CommandId` 认不出某个 id，不代表它永远是错的
+        // （降级、改 id 都会遇到）。认不出的覆盖对解析无害，将来命令回来了它还在。
+        let json = r#"{
+          "keymap": {
+            "preset": "lithe",
+            "overrides": [
+              {"preset": "lithe", "command": "ghost-command", "keystrokes": ["secondary-y"]}
+            ]
+          }
+        }"#;
+        let mut settings: Settings = serde_json::from_str(json).expect("解析失败");
+        settings.normalize();
+
+        assert_eq!(
+            settings.keymap.overrides.len(),
+            1,
+            "认不出的 id 不许被静默删掉"
+        );
+        assert_eq!(settings.keymap.overrides[0].command, "ghost-command");
+        assert_eq!(
+            settings.keymap.resolve(CommandId::SaveBuffer).keystrokes,
+            vec!["secondary-s".to_string()],
+            "未知覆盖不干扰已知命令"
+        );
+    }
+
+    #[test]
+    fn an_empty_override_stays_empty_through_a_round_trip() {
+        // 数据层那条硬约束在持久化层的验证：空 `keystrokes` =「这条命令在此预设下没有键位」，
+        // 存下来读回去必须还是空的，**不许被默认值回填**（macOS 端 Eclipse 档 `Find` 为空、
+        // 不能回退成 ⌘F 就是这条规则）。
+        let mut settings = Settings::default();
+        settings
+            .keymap
+            .set_override(KeymapPreset::Lithe, CommandId::SaveBuffer, Vec::new());
+
+        let json = serde_json::to_string(&settings).expect("序列化失败");
+        assert!(
+            json.contains(r#""keystrokes":[]"#),
+            "空列表要写成 [] 而不是被省略：{json}"
+        );
+
+        let mut back: Settings = serde_json::from_str(&json).expect("反序列化失败");
+        back.normalize();
+
+        let entry = back
+            .keymap
+            .override_for(KeymapPreset::Lithe, CommandId::SaveBuffer)
+            .expect("空覆盖必须还在，不能被当成「没设置」丢掉");
+        assert!(entry.keystrokes.is_empty(), "读回来必须还是空的");
+
+        let resolved = back.keymap.resolve(CommandId::SaveBuffer);
+        assert!(
+            resolved.keystrokes.is_empty(),
+            "不许回落到默认的 secondary-s：{resolved:?}"
+        );
+        assert_eq!(resolved.source, KeySource::User, "空覆盖也是用户意图");
     }
 
     #[test]
