@@ -377,6 +377,44 @@ mod tests {
         );
     }
 
+    /// 文件里带了**认不出来**的预设 id：不切换、不报错、键位照常进来。
+    ///
+    /// 绝不能因为预设 id 认不出来就把整个文件判成无效——那会把文件里的键位一起丢掉。
+    /// 认不出来就落成 `preset: None`，由调用方落在当前预设上（也因此不填「及预设」）。
+    #[test]
+    fn an_unknown_preset_id_never_invalidates_a_file_that_has_usable_keys() {
+        let unknown_preset = serde_json::json!({
+            "format": EXPORT_FORMAT,
+            "version": EXPORT_VERSION,
+            "keybindingPreset": "vscode",
+            "keybindings": [{ "command": "toggle-terminal", "keystrokes": ["alt-f12"] }],
+        });
+        let ImportResult::Applied(plan) =
+            parse_import(&serde_json::to_string(&unknown_preset).unwrap())
+        else {
+            panic!("预设 id 认不出来不该连累键位：这一条必须照常进来");
+        };
+        assert_eq!(
+            plan.preset, None,
+            "认不出来的预设要落成 None，由调用方落在当前档、且不切档"
+        );
+        assert_eq!(plan.imported(), 1);
+        assert_eq!(plan.skipped(), 0);
+
+        // 反过来：预设认不出来、键位也全是外来的 —— 那就真的没有可救的东西了，判无效。
+        // 与上面不矛盾：挡下它的不是预设 id，是「一条键位都没进来」。
+        let nothing_usable = serde_json::json!({
+            "format": EXPORT_FORMAT,
+            "version": EXPORT_VERSION,
+            "keybindingPreset": "vscode",
+            "keybindings": [{ "command": "file.save", "keystrokes": ["ctrl-s"] }],
+        });
+        assert_eq!(
+            parse_import(&serde_json::to_string(&nothing_usable).unwrap()),
+            ImportResult::Rejected
+        );
+    }
+
     /// 坏 JSON 与空 keybindings 各自的判定：前者无效，后者是「真的 0 条」。
     #[test]
     fn broken_json_and_an_empty_file_are_told_apart() {
