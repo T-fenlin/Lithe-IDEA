@@ -1198,11 +1198,20 @@ impl MenuBar {
         }
     }
 
+    /// 入队一条「跑这个菜单动作」的请求。
+    ///
+    /// 关菜单与入队**必须都通知自己**，通知是无条件的：`close` 只在「确实有东西开着」时才
+    /// 通知（没开就 `return false`，不通知），而入队不是重画问题——队列从空变非空，宿主靠
+    /// `cx.observe` 感知，observe 只在实体被 notify 之后才派发。搭 `close` 的顺风车的话，
+    /// 只要这一路进来时菜单已经关了（例如别的路径先收了面板），请求就会**静默地**躺在
+    /// 队列里不被排空——设置页上点了没反应，比崩溃更难查。
     pub(crate) fn push_run(&mut self, action: MenuAction, cx: &mut Context<Self>) {
         self.pending.push(MenuRequest::Run(action));
         self.close(CloseReason::Select, cx);
+        self.notify_self(cx);
     }
 
+    /// 入队一条「这项还没接线」的提示，理由同 [`Self::push_run`]。
     pub(crate) fn push_not_wired(
         &mut self,
         label_key: &'static str,
@@ -1212,6 +1221,7 @@ impl MenuBar {
         self.pending
             .push(MenuRequest::NotWired { label_key, missing });
         self.close(CloseReason::Select, cx);
+        self.notify_self(cx);
     }
 
     pub fn drain_runs(&mut self) -> Vec<MenuRequest> {
@@ -1478,14 +1488,21 @@ impl TriggerFace {
     }
 
     /// 文字色、底（`None` = 不画底）、内描边（`None` = 透明）。
+    ///
+    /// 底盘取 `chrome_hover` / `chrome_active` 而不是 `hover` / `active`：触发器画在
+    /// `title_bar` 这块 chrome 面上，而 `hover`（`list.hover.background`）是贴着**列表白底**
+    /// 调出来的那一档——IntelliJ Light 里它与 `title_bar` 同为 `#f2f2f2`，铺上去等于没画。
+    /// `chrome_*` 是主题自己给出的「在 chrome 面上悬停/选中用什么」那一档（浅 `#d9e5f2` /
+    /// 深 `#3c3f41`、`#214283`），与 2026-10-10 那篇笔记里的其余调用点同一口径。
     fn paint(self, colors: &Palette) -> (Hsla, Option<Hsla>, Option<Hsla>) {
         match self {
             Self::Idle => (colors.fg, None, None),
-            Self::Hover => (colors.fg, Some(colors.hover), None),
-            // 展开态取 `active`（selection 蓝，浅 `#d9e5f2` / 深 `#214283`）而不是 `hover`：
-            // 面板开着时鼠标多半还停在触发器上，两态同色就分不清「指着」和「开着」。
-            Self::Open => (colors.fg, Some(colors.active), None),
-            Self::Active => (colors.fg, Some(colors.active), Some(colors.fg)),
+            Self::Hover => (colors.fg, Some(colors.chrome_hover), None),
+            // 展开态取 `chrome_active`（selection 蓝，浅 `#b3d7ff` / 深 `#214283`）而不是
+            // `chrome_hover`：面板开着时鼠标多半还停在触发器上，两态同色就分不清「指着」和
+            // 「开着」。
+            Self::Open => (colors.fg, Some(colors.chrome_active), None),
+            Self::Active => (colors.fg, Some(colors.chrome_active), Some(colors.fg)),
             Self::Disabled => (colors.fg_disabled, None, None),
         }
     }
@@ -1511,11 +1528,11 @@ fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
     let (text, background, inner) = face.paint(colors);
     // 内描边恒留 1px 的槽：聚焦那一刻才上色，免得整行宽高跳两个像素。
     let inner = inner.unwrap_or(transparent_black());
-    // 悬停底跟着状态走：展开着的时候鼠标还在触发器上，底就该停在 `active` 上；
+    // 悬停底跟着状态走：展开着的时候鼠标还在触发器上，底就该停在 `chrome_active` 上；
     // 禁用态连悬停都不给——那一行什么都不该反应。
     let hover = match face {
         TriggerFace::Disabled => None,
-        TriggerFace::Open | TriggerFace::Active => Some(colors.active),
+        TriggerFace::Open | TriggerFace::Active => Some(colors.chrome_active),
         _ => TriggerFace::Hover.paint(colors).1,
     };
     let handle = handle();
@@ -1746,15 +1763,19 @@ mod tests {
 
     /// 回归：菜单栏曾经只有「闲置 / 悬停」两态，展开着的那个菜单没有底；补四态时又把
     /// 展开态和悬停态设成了同一个 `hover`，鼠标还压在触发器上就分不清「指着」和「开着」。
+    ///
+    /// 第二次回归（2026-10-11）：这两档用的是 `hover` / `active`，那是贴着**列表白底**调的
+    /// 一档，IntelliJ Light 下与触发器所在的 `title_bar`（`#f2f2f2`）同值 —— 闭合态悬停看不出
+    /// 反馈。画在 chrome 面上的高亮必须读 `chrome_hover` / `chrome_active`。
     #[test]
     fn trigger_faces_follow_the_spec_table() {
         for palette in [Palette::light(false), Palette::dark(false)] {
             let face = |state: TriggerFace| state.paint(&palette);
 
             assert_eq!(face(TriggerFace::Idle), (palette.fg, None, None));
-            assert_eq!(face(TriggerFace::Hover).1, Some(palette.hover));
-            assert_eq!(face(TriggerFace::Open).1, Some(palette.active));
-            assert_eq!(face(TriggerFace::Active).1, Some(palette.active));
+            assert_eq!(face(TriggerFace::Hover).1, Some(palette.chrome_hover));
+            assert_eq!(face(TriggerFace::Open).1, Some(palette.chrome_active));
+            assert_eq!(face(TriggerFace::Active).1, Some(palette.chrome_active));
             // 内描边取 `fg` 自己：`focus` token 落在 `title_bar` 上只有 2.49:1，不够 WCAG。
             assert_eq!(face(TriggerFace::Active).2, Some(palette.fg));
             assert_eq!(
@@ -1762,13 +1783,27 @@ mod tests {
                 (palette.fg_disabled, None, None)
             );
 
+            // 悬停底必须**在它所在的那一块底色上看得见**：触发器画在 `title_bar` 上，取
+            // `hover`（贴着列表白底调的那一档）会在 IntelliJ Light 下与它同值。
+            assert_ne!(
+                palette.chrome_hover, palette.title_bar,
+                "chrome_hover 与 title_bar 同色，触发器悬停等于没画"
+            );
+            assert_ne!(
+                face(TriggerFace::Hover).1,
+                Some(palette.hover),
+                "触发器画在 chrome 面上，不能读列表的 hover 档"
+            );
             // 展开态与悬停态必须分得开，否则鼠标停在触发器上就等于没有高亮。
             assert_ne!(
                 face(TriggerFace::Open).1,
                 face(TriggerFace::Hover).1,
                 "展开态与悬停态同色，看不出菜单开着"
             );
-            assert_ne!(palette.hover, palette.active, "调色板本身就撞色了");
+            assert_ne!(
+                palette.chrome_hover, palette.chrome_active,
+                "调色板本身就撞色了"
+            );
             // 除禁用态之外文字都是 `fg`：浅色下 `fg_muted` 在 header 上只剩 4.56:1。
             for state in [
                 TriggerFace::Idle,

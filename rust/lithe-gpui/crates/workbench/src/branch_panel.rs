@@ -249,7 +249,9 @@ impl PanelTab {
 
 fn render_tabs(cx: &App) -> impl IntoElement {
     let colors = &cx.theme().colors;
-    let active_bg = colors.hover;
+    // 标签画在 Dialog 面板里，面板底是 `overlay`（chrome 面）：`hover` 是贴着**列表白底**
+    // 调的那一档，IntelliJ Light 下与 `overlay` 同为 `#f2f2f2`，铺上去等于没画。
+    let active_bg = colors.chrome_hover;
     let active_fg = colors.fg;
     let muted = colors.fg_muted;
 
@@ -376,7 +378,9 @@ fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
                 colors.fg
             });
         if !row_disabled {
-            row = row.hover(|style| style.bg(colors.hover));
+            // 行画在 Palette 卡里，卡无条件铺 `.bg(colors.overlay)`（chrome 面）：
+            // `hover` 在 IntelliJ Light 下与它同为 `#f2f2f2`，划过去看不见高亮。
+            row = row.hover(|style| style.bg(colors.chrome_hover));
         }
         row = row.child(
             div()
@@ -448,7 +452,9 @@ fn render_footer(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
     let colors = &cx.theme().colors;
     let handle = panel.downgrade();
     let idle_fg = colors.fg_muted;
-    let hover_bg = colors.hover;
+    // footer 画在 Palette 卡里，卡底是 `overlay`（chrome 面）：`hover` 在 IntelliJ Light 下
+    // 与它同为 `#f2f2f2`。
+    let hover_bg = colors.chrome_hover;
     let hover_fg = colors.fg;
 
     h_stack()
@@ -469,7 +475,11 @@ fn render_footer(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
                 .px_3()
                 .gap_1p5()
                 .rounded(rems(ROW_RADIUS_SPEC / 16.))
-                .bg(colors.hover)
+                // 常态**不铺底色**：footer 底 = 卡底 = `overlay` = 浅色 `#f2f2f2`，而主题里
+                // 所有常态语义键（`button` / `secondary` / `accent` / `muted` / `popover` /
+                // `title_bar` / `status_bar` / `sidebar` 的 `.background`）在浅色下也全是
+                // `#f2f2f2` —— 没有一个已有键能在这块底上铺出看得见的常态填充，比它深的
+                // 只有悬停/选中那一族，而那是状态色。故常态留空、只靠文字与图标表达。
                 .text_sm()
                 .text_color(colors.fg)
                 .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
@@ -1344,7 +1354,10 @@ pub(crate) fn trigger(panel: &Entity<BranchPanel>, cx: &App) -> Option<AnyElemen
     let tracking = panel.read(cx).branches().tracking;
     let colors = &cx.theme().colors;
     let idle = colors.fg_muted;
-    let hover_bg = colors.hover;
+    // 这个触发器挂在**标题栏**上（`workspace.rs` 的 `branch_trigger` → `title_bar(..)`），
+    // 底是 `title_bar.background`：IntelliJ Light 下与 `hover` 同为 `#f2f2f2`，悬停等于没画。
+    // 与 `menu_bar.rs` 的 `TriggerFace::paint` 同一口径。
+    let hover_bg = colors.chrome_hover;
     let hover_fg = colors.fg;
     let open_handle = panel.clone();
     let name = branch.clone();
