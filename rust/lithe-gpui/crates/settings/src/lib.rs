@@ -1,3 +1,4 @@
+pub mod command_catalog;
 pub mod dialog;
 pub mod extensions;
 pub mod fonts;
@@ -16,6 +17,9 @@ pub mod theme;
 pub mod watch;
 pub mod workspace;
 
+/// `label_key` 这个名字在 crate 根太泛（`row`、`schema` 都有自己的 key 概念），
+/// 带个前缀带出「这是命令的文案」。
+pub use command_catalog::label_key as command_label_key;
 pub use dialog::{
     Category, OpenSettings, install_actions, open_settings_dialog, open_settings_dialog_at,
 };
