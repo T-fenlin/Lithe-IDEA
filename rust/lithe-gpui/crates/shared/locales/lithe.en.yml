@@ -4709,6 +4709,8 @@ lithe:
     en: "Imported {count} keybindings{preset}"
   settings.keyboard.andPreset:
     en: " and preset"
+  settings.keyboard.importSkipped:
+    en: "{count} more could not be imported: this build does not know those command ids."
   settings.keyboard.importFailed:
     en: "Failed to import keybindings: {error}"
   settings.keyboard.none:

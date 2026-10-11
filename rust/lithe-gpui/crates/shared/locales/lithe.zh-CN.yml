@@ -4709,6 +4709,8 @@ lithe:
     zh-CN: "已导入 {count} 个快捷键{preset}"
   settings.keyboard.andPreset:
     zh-CN: "及预设"
+  settings.keyboard.importSkipped:
+    zh-CN: "另有 {count} 条没能导入：本端不认识这些命令 id。"
   settings.keyboard.importFailed:
     zh-CN: "导入快捷键失败：{error}"
   settings.keyboard.none:

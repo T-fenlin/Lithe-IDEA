@@ -4,6 +4,7 @@ pub mod extensions;
 pub mod fonts;
 pub mod identity;
 pub mod keymap;
+pub mod keymap_io;
 pub mod paths;
 pub mod persistence;
 pub mod project;
@@ -35,6 +36,10 @@ pub use keymap::{
     KEYMAP_SETTINGS_VERSION, KeyOverride, KeySource, KeymapPreset, KeymapSettings, PresetBinding,
     ResolvedBinding, context_for, is_bindable, parse_keymap, preset_bindings,
     set_bindable_resolver,
+};
+pub use keymap_io::{
+    EXPORT_FILE_NAME, EXPORT_FORMAT, EXPORT_VERSION, ImportEntry, ImportPlan, ImportResult,
+    export_payload, parse_import,
 };
 pub use paths::{SETTINGS_FILE_ENV, recent_projects_file_path, settings_file_path};
 pub use persistence::{

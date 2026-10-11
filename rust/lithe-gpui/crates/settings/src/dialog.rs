@@ -20,6 +20,7 @@ use lithe_ui::forms::{Input, InputEvent, InputState, NumberInput, Switch};
 use lithe_ui::layout::{h_stack, v_stack};
 use lithe_ui::menus::{DropdownMenu, Menu, MenuItem};
 use lithe_ui::overlays::Dialog;
+use lithe_ui::primitives::Severity;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 use lithe_ui::theme::{ActiveTheme as _, Radius, Size};
 
@@ -28,6 +29,7 @@ use crate::identity::{
     host_workspace_root, identity_value_is_valid, identity_value_rejection,
 };
 use crate::keymap::{KeySource, KeymapPreset, preset_bindings};
+use crate::keymap_io::{EXPORT_FILE_NAME, ImportResult, export_payload, parse_import};
 use crate::project::{
     DetectedJdk, DetectedMaven, EffectiveToolchain, MINIMUM_JAVA_MAJOR, Overrides,
     ProjectEnvironment, ToolSource, discover, resolve_overrides,
@@ -727,7 +729,26 @@ pub struct SettingsDialog {
     keymap_search: Entity<InputState>,
     /// 正在录键位的那条命令（`KeybindingsEditor` 用它把该行换成 `HotkeyInput`）。
     keymap_recording: Option<SharedString>,
+    /// 导入导出的结果提示。画在键盘页里，走内联 `Alert`：
+    /// `ShellWorkspace::notify` 是 `pub(crate)`，为了一条提示把它放开不值得。
+    keymap_message: Option<KeymapMessage>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// 一条导入导出的结果。
+struct KeymapMessage {
+    severity: Severity,
+    text: SharedString,
+    /// 跳过的条数。**非 0 时另起一行说清楚**——跳过数永远不许静默。
+    skipped: usize,
+}
+
+/// 导出文件上的时间戳。**只给人看**，导入侧从不读它，所以格式随意。
+fn export_stamp() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string())
 }
 
 /// 键位预设的显示名。**专有名词，不进 i18n**：Lithe / IDEA Classic / Eclipse 中英文同形，
@@ -854,6 +875,7 @@ impl SettingsDialog {
             run: RunPageState::new(),
             keymap_search,
             keymap_recording: None,
+            keymap_message: None,
             _subscriptions: subscriptions,
         }
     }
@@ -2938,6 +2960,45 @@ impl SettingsDialog {
             .into_any_element()
         });
 
+        // 导入导出。文件是 gpui 端自闭环的，格式串刻意与 Windows 遗留前端不同
+        // （`keymap_io` 模块文档），老文件会在第一道格式校验就被挡下。
+        let io_row = h_stack()
+            .gap_2()
+            .child(
+                Button::new("settings-keymap-import")
+                    .size(Size::Small)
+                    .label(tr("lithe.settings.keyboard.import"))
+                    .on_click(cx.listener(|this, _, window, cx| this.keymap_import(window, cx))),
+            )
+            .child(
+                Button::new("settings-keymap-export")
+                    .size(Size::Small)
+                    .label(tr("lithe.settings.keyboard.export"))
+                    .on_click(cx.listener(|this, _, window, cx| this.keymap_export(window, cx))),
+            )
+            .into_any_element();
+
+        // 结果提示画在按钮下面：用户刚点的地方，比全局通知好找。
+        let message_alert = self.keymap_message.as_ref().map(|message| {
+            let alert = Alert::new(
+                "settings-keymap-io-message",
+                message.severity,
+                message.text.clone(),
+            );
+            // 跳过数**永远**要说出来：只报「已导入 N 个」会让用户以为那几条也进去了。
+            if message.skipped > 0 {
+                let count = message.skipped.to_string();
+                alert
+                    .body(tr_args(
+                        "lithe.settings.keyboard.importSkipped",
+                        &[("count", count.as_str())],
+                    ))
+                    .into_any_element()
+            } else {
+                alert.into_any_element()
+            }
+        });
+
         vec![
             settings_group(
                 tr("lithe.settings.keyboard.presetLabel"),
@@ -2955,6 +3016,8 @@ impl SettingsDialog {
         ]
         .into_iter()
         .chain(gap_alert)
+        .chain(std::iter::once(io_row))
+        .chain(message_alert)
         .chain(std::iter::once(
             v_stack()
                 .w_full()
@@ -3001,6 +3064,189 @@ impl SettingsDialog {
                 .into_any_element(),
         ))
         .collect()
+    }
+
+    /// 导出：把**当前预设那一桶**覆盖写到用户选的文件。
+    fn keymap_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let keymap = self.store.read(cx).keymap().clone();
+        let text = match serde_json::to_string_pretty(&export_payload(&keymap, &export_stamp())) {
+            Ok(text) => text,
+            Err(error) => {
+                self.keymap_message = Some(KeymapMessage {
+                    severity: Severity::Danger,
+                    text: tr_args(
+                        "lithe.settings.keyboard.exportFailed",
+                        &[("error", &error.to_string())],
+                    ),
+                    skipped: 0,
+                });
+                cx.notify();
+                return;
+            }
+        };
+        // 初始目录给设置文件所在目录：用户下一次要找的就是这里。
+        let directory = crate::paths::settings_file_path()
+            .as_deref()
+            .and_then(std::path::Path::parent)
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let picked = cx.prompt_for_new_path(&directory, Some(EXPORT_FILE_NAME));
+        cx.spawn_in(window, async move |this, async_cx| {
+            let path = match picked.await {
+                Ok(Ok(Some(path))) => path,
+                Ok(Ok(None)) => {
+                    eprintln!("S1_KEYMAP_IO run=export state=cancelled");
+                    return;
+                }
+                Ok(Err(error)) => {
+                    eprintln!("S1_KEYMAP_IO run=export state=failed error={error}");
+                    return;
+                }
+                Err(_) => {
+                    eprintln!("S1_KEYMAP_IO run=export state=cancelled reason=channel-closed");
+                    return;
+                }
+            };
+            // 键位文件是几 KB，直接在前景任务里写完；与仓库里别的设置文件写入同型。
+            let outcome = std::fs::write(&path, text);
+            eprintln!(
+                "S1_KEYMAP_IO run=export state={} path={}",
+                if outcome.is_ok() { "written" } else { "failed" },
+                path.display()
+            );
+            let _ = async_cx.update(move |_, cx| {
+                let _ = this.update(cx, |this, cx| {
+                    this.keymap_message = Some(match outcome {
+                        Ok(()) => KeymapMessage {
+                            severity: Severity::Success,
+                            text: tr("lithe.settings.keyboard.keybindingsExported"),
+                            skipped: 0,
+                        },
+                        Err(error) => KeymapMessage {
+                            severity: Severity::Danger,
+                            text: tr_args(
+                                "lithe.settings.keyboard.exportFailed",
+                                &[("error", &error.to_string())],
+                            ),
+                            skipped: 0,
+                        },
+                    });
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// 导入：读文件 → 解析 → 逐条写进覆盖。判定三档见 `keymap_io` 模块文档。
+    fn keymap_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(tr("lithe.settings.keyboard.import")),
+        });
+        let store = self.store.clone();
+        cx.spawn_in(window, async move |this, async_cx| {
+            let path = match picked.await {
+                Ok(Ok(Some(paths))) => match paths.into_iter().next() {
+                    Some(path) => path,
+                    None => {
+                        eprintln!("S1_KEYMAP_IO run=import state=cancelled");
+                        return;
+                    }
+                },
+                Ok(Ok(None)) => {
+                    eprintln!("S1_KEYMAP_IO run=import state=cancelled");
+                    return;
+                }
+                Ok(Err(error)) => {
+                    eprintln!("S1_KEYMAP_IO run=import state=failed error={error}");
+                    return;
+                }
+                Err(_) => {
+                    eprintln!("S1_KEYMAP_IO run=import state=cancelled reason=channel-closed");
+                    return;
+                }
+            };
+            let outcome = std::fs::read_to_string(&path);
+            let _ = async_cx.update(move |_, cx| {
+                let _ = this.update(cx, |this, cx| {
+                    let Ok(text) = outcome else {
+                        let error = outcome.unwrap_err().to_string();
+                        eprintln!("S1_KEYMAP_IO run=import state=read_failed error={error}");
+                        this.keymap_message = Some(KeymapMessage {
+                            severity: Severity::Danger,
+                            text: tr_args(
+                                "lithe.settings.keyboard.importFailed",
+                                &[("error", &error)],
+                            ),
+                            skipped: 0,
+                        });
+                        cx.notify();
+                        return;
+                    };
+                    match parse_import(&text) {
+                        // 「格式无效」那一档也包含「文件里有条目却一条都导不进」——那对用户
+                        // 就是「这个文件本应用不了」，比报「已导入 0 个」诚实。
+                        ImportResult::Rejected => {
+                            eprintln!("S1_KEYMAP_IO run=import state=rejected");
+                            this.keymap_message = Some(KeymapMessage {
+                                severity: Severity::Warning,
+                                text: tr("lithe.settings.keyboard.invalidFile"),
+                                skipped: 0,
+                            });
+                        }
+                        ImportResult::Applied(plan) => {
+                            let skipped = plan.skipped();
+                            let mut imported = 0usize;
+                            // 文件带预设就顺带切过去：覆盖是按预设分桶的，写进文件那一桶而
+                            // 当前停在另一档，用户会看到「导入成功但页面没变」。
+                            let preset =
+                                plan.preset.unwrap_or_else(|| store.read(cx).keymap().preset);
+                            if let Some(next) = plan.preset {
+                                store.update(cx, |store, cx| store.set_keymap_preset(next, cx));
+                            }
+                            for entry in &plan.entries {
+                                let Some(command) = entry.command else {
+                                    continue;
+                                };
+                                imported += 1;
+                                let keystrokes = entry.keystrokes.clone();
+                                store.update(cx, |store, cx| {
+                                    store.set_key_override(preset, command, keystrokes, cx);
+                                });
+                            }
+                            eprintln!(
+                                "S1_KEYMAP_IO run=import state=applied imported={imported} skipped={skipped} preset={}",
+                                preset.id()
+                            );
+                            let count = imported.to_string();
+                            let suffix = if plan.preset.is_some() {
+                                tr("lithe.settings.keyboard.andPreset")
+                            } else {
+                                SharedString::from("")
+                            };
+                            this.keymap_message = Some(KeymapMessage {
+                                // 有跳过就是「部分成功」：给警告档，别让人以为全都进去了。
+                                severity: if skipped > 0 {
+                                    Severity::Warning
+                                } else {
+                                    Severity::Success
+                                },
+                                text: tr_args(
+                                    "lithe.settings.keyboard.keybindingsImported",
+                                    &[("count", count.as_str()), ("preset", suffix.as_str())],
+                                ),
+                                skipped,
+                            });
+                        }
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
     }
 
     fn dropdown(
