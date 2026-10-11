@@ -79,8 +79,52 @@ tooltip_bg, tooltip_fg, paper, ink
 | `focus` / `link` | `#3772bb` / `#2863ab` | `#69a1e8` / `#7eb1f3` |
 
 > **chrome 槽位**：`tab_bar` / `title_bar` / `status_bar` 是"窗口外壳"专用的三个槽（`palette.rs:96-124` 有说明）。JetBrains 主题给它们的值与页面底色不同（浅色 `#ffffff` / `#f2f2f2` / `#f2f2f2`，深色 `#2b2b2b` / `#313335` / `#313335`），既不能合并成一个槽，也不能拿 `surface` 顶替。库默认调色板里这两个槽取的就是 JetBrains 的那一档（`#f2f2f2` / `#313335`），与页面底色 `bg` 不同值。
+
+#### 悬停/选中取哪个槽位：看它画在什么底上
+
+> **悬停是「从它所在底色上迈的一档」，不是一个到处通用的绝对色。** 高亮槽位由**它画在什么底上**决定：
 >
-> **悬停是「从它所在底色上迈的一档」，不是一个到处通用的绝对色**：`hover` 是贴着 `list.background`（浅色纯白）调出来的，JetBrains 浅色把 `list.hover.background`、`title_bar.background`、`popover.background`、`secondary.hover.background` 四栏都给了 `#f2f2f2`，于是把 `hover` 画到标题栏或浮层面板上等于没画。凡是画在 chrome 面上（`title_bar` / `status_bar` / `overlay`）的悬停与选中，一律读 `chrome_hover` / `chrome_active`，且 `chrome_active` 必须比 `chrome_hover` 更强、两者不同色（`theme/tests.rs` 有这条断言，下限 1.10:1）。`hover` / `active` 只留给画在列表/页面底色上的行。
+> - 画在 `list.background`（浅色纯白）上 → `hover` / `active`
+> - 画在 chrome 面上（`title_bar` / `status_bar` / `popover` / `overlay` / `sunken` / `sidebar.background`）→ `chrome_hover` / `chrome_active`
+>
+> 在 JetBrains 浅色下，后面这一整排底色**全是 `#f2f2f2`**，与 `hover` 逐位相同 —— 把 `hover` 画上去等于没画（实测对比度 **1.0000**）。`chrome_active` 必须比 `chrome_hover` 更强、两者不同色（`theme/tests.rs` 的 `the_chrome_hover_and_active_stand_out_on_the_chrome_surfaces` 断言了这一点，下限 1.10:1）。
+>
+> **否定式提示**：这不是「`hover` 这个色不对」，是「`hover` 的服务对象是白底列表」。**别去改 `hover` 的取值** —— 要换的是**调用点的槽位**。
+
+#### chrome 面上不要放常态填充
+
+> 在一个所有常态色都等于 chrome 底色的主题里（JetBrains 浅色下 `button` / `secondary` / `accent` / `muted` / `popover` / `title_bar` / `status_bar` / `sidebar` 的 `.background` 全是 `#f2f2f2`），**chrome 面上的「常态填充」这个概念本身不成立** —— 要么不铺，要么用状态色（悬停/选中族），**没有第三条路**。
+> 所以 chrome 面上的元件只能靠**描边、投影、文字/图标色**区分层次。
+>
+> 这不是单个主题的个别缺陷，而是这类「扁平浅灰」配色方案的结构性约束：它把 8 个语义不同的 `.background` 键收敛成了同一个色值，于是 chrome 面上任何「用底色区分元件」的设计手段都失效了。
+> **设计新组件时先默认透明**，需要轮廓就上描边，不要试图给它一个常态底色。
+
+#### 悬停态与选中态叠在同一个元素上时（gpui builder 顺序）
+
+`.hover()` 的样式在 gpui 里是**最后** refine 上去的。gpui-pre 0.3.8 `src/elements/div.rs` 里三处 `style.refine(..)` 按源码顺序是：
+
+| 行号 | refine 的内容 |
+| --- | --- |
+| `:3426` | `focus_style`（`.focus(..)`） |
+| `:3454` | `group_hover.style`（`.group_hover(..)`） |
+| `:3473` | `hover_style`（`.hover(..)`） |
+
+后写的覆盖先写的，所以**鼠标停在已选中/已聚焦的行上时，`.hover()` 那一档会盖掉 `.when(..)` / `.focus(..)` 铺的背景**，该行反而掉回悬停档，看着像「选中丢了」。
+
+**若选中态与悬停态是两行独立代码，务必把 hover 挂在 `!= chosen` 上**：
+
+```rust
+.when(ix != chosen, |row| row.hover(|row| row.bg(colors.chrome_hover)))
+```
+
+档位判据是「**有几处代码、两态会不会分离**」，不是「它叫什么名字」：
+
+| 情况 | 档位 | 例子 |
+| --- | --- | --- |
+| 两行独立代码、两态可分离 | **选中强、悬停弱**，给成阶梯 | `editor/hints.rs` 的补全候选行：`.when(ix == chosen)` 与 `.hover(..)` 各一处，本文件无 `on_mouse_move` 把光标拖到悬停行 |
+| 一处代码兼两态（`on_mouse_move` 让光标行 ≡ 悬停行） | 分不出阶梯，**只能取最强档** `chrome_active` | `navigation/palette/mod.rs` 的候选行 |
+
+判定底色时要**追到最外层容器**：`render_panel()` 自己没有 `.bg(` 不代表它透明，要看它挂进去的那个卡片/浮层铺了什么。
 
 ---
 
