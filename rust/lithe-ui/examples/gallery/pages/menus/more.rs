@@ -28,7 +28,12 @@ pub fn menu_bar(cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(specimen(
         "hover moves between menus while one is open",
-        probe("menubar", MenuBar::new("app-bar", menus)),
+        // 菜单条是 `w_full()`：真实宿主里父容器有确定宽度，它铺满整行。画廊的 specimen 是
+        // 内容定宽（fit-content），百分比宽度在那儿退化成 auto，看上去就像没拉伸。给它一个
+        // 确定宽度的盒子，画廊里就能看到真实的「整行菜单条」形态 —— 不为了画廊去改组件。
+        div()
+            .w(px(760.))
+            .child(probe("menubar", MenuBar::new("app-bar", menus))),
         cx,
     ))
 }

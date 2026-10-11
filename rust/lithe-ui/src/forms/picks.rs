@@ -214,9 +214,9 @@ pub(crate) fn grid(
                                 .rounded(theme.radius(Radius::Md))
                                 .border_1()
                                 .border_color(ring)
-                                .when(selected == Some(ix), |cell| cell.bg(colors.active))
+                                .when(selected == Some(ix), |cell| cell.bg(colors.chrome_active))
                                 .cursor_pointer()
-                                .hover(|style| style.bg(colors.hover))
+                                .hover(|style| style.bg(colors.chrome_hover))
                                 .tooltip(Tooltip::text(name))
                                 .on_click(move |_, window, cx| {
                                     clicked.update(cx, |finder, cx| {

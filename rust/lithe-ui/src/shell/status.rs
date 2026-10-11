@@ -213,7 +213,7 @@ impl RenderOnce for ZoomControl {
                     .h(theme.control_height(Size::Small))
                     .rounded_full()
                     .cursor_pointer()
-                    .hover(|style| style.bg(theme.colors.hover))
+                    .hover(|style| style.bg(theme.colors.chrome_hover))
                     .on_click(|_, window, cx| apply(100, window, cx))
                     .child(AnimatedNumber::new("zoom-value", percent as f64).size(TextSize::Sm))
                     .child(div().text_size(theme.text_size(TextSize::Sm)).child("%")),

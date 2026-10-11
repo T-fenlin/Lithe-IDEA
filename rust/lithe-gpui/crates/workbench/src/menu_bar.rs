@@ -1037,7 +1037,6 @@ pub struct MenuBar {
     restore_focus: bool,
     pending: Vec<MenuRequest>,
     action_context: FocusHandle,
-    shell: Option<gpui::WeakEntity<crate::workspace::ShellWorkspace>>,
     escape_interceptor: Option<Subscription>,
     /// 每个顶层菜单触发器的位置，由 [`Measure`] 报上来；`S1_MENU_BOUNDS` 诊断要用。
     trigger_bounds: Vec<Option<Bounds<Pixels>>>,
@@ -1048,7 +1047,6 @@ pub struct MenuBar {
 impl MenuBar {
     pub fn new(mode: MenuBarMode, action_context: FocusHandle, cx: &mut App) -> Entity<Self> {
         mode.diagnose();
-        let shell = MENU_BAR_SHELL.with(|slot| slot.borrow().clone());
         let bar = cx.new(|_| Self {
             mode,
             selected: None,
@@ -1056,7 +1054,6 @@ impl MenuBar {
             restore_focus: false,
             pending: Vec::new(),
             action_context,
-            shell,
             escape_interceptor: None,
             trigger_bounds: vec![None; MENUS.len()],
             bounds_pending: None,
@@ -1078,21 +1075,20 @@ impl MenuBar {
         bar
     }
 
-    /// 让外壳重画一次（拿到最新的菜单状态）。
+    /// 标记自己变了，让外壳跟着重画一次。
     ///
-    /// 必须**推迟**：菜单的关闭回调（dismiss / Escape / 选中一行）跑在外壳自己的更新栈里，
-    /// 那条链是 `ShellWorkspace` 在 update -> 菜单还给中间层 -> `MenuBar::close` -> 这里。
-    /// 此刻 `ShellWorkspace` 还在「正在被 update」的借用里（见 `close`）；
-    /// 直接 `shell.update` 就是第二次可变借用，gpui 会报
+    /// 这里**只通知自己**，不去戳 `ShellWorkspace`：菜单的关闭回调（dismiss / Escape /
+    /// 选中一行）是跑在外壳的更新栈里的，那条链是 `ShellWorkspace` 在 update -> 菜单还给
+    /// 中间层 -> `MenuBar::close` -> 这里。此刻外壳还在「正在被 update」的借用里，反过来
+    /// `shell.update` 就是第二次可变借用，gpui 会报
     /// `cannot update ShellWorkspace while it is already being updated`。
-    /// `App::defer` 把它挪到本轮 effect 跑完之后、实体归还之后，借用已经结束。
-    fn notify_shell(&self, cx: &mut App) {
-        let Some(shell) = self.shell.as_ref().cloned() else {
-            return;
-        };
-        cx.defer(move |cx| {
-            let _ = shell.update(cx, |_, cx| cx.notify());
-        });
+    /// `App::defer` 也救不了它 —— defer 只挪到本轮 effect 之后，借用的边界不受它控制。
+    ///
+    /// 正确的做法是 `ShellWorkspace::new` 里 `cx.observe(&menu_bar, ...)`（与
+    /// `project_menu` / `branch_panel` 同一排）：gpui 保证 observer 在被观察实体的 update
+    /// 结束、实体归还**之后**才派发，重入由框架兜住，不需要我们再猜时机。
+    fn notify_self(&mut self, cx: &mut Context<Self>) {
+        cx.notify();
     }
 
     pub fn mode(&self) -> MenuBarMode {
@@ -1107,7 +1103,7 @@ impl MenuBar {
         self.compact_visible
     }
 
-    pub fn toggle_mode(&mut self, cx: &mut App) {
+    pub fn toggle_mode(&mut self, cx: &mut Context<Self>) {
         self.mode = match self.mode {
             MenuBarMode::Pinned => MenuBarMode::Compact,
             MenuBarMode::Compact => MenuBarMode::Pinned,
@@ -1120,10 +1116,10 @@ impl MenuBar {
             self.restore_focus = true;
         }
         self.mode.diagnose();
-        self.notify_shell(cx);
+        self.notify_self(cx);
     }
 
-    pub fn toggle(&mut self, index: usize, cx: &mut App) {
+    pub fn toggle(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(menu) = MENUS.get(index) else {
             return;
         };
@@ -1137,7 +1133,7 @@ impl MenuBar {
                 self.compact_visible = false;
                 self.bounds_pending = Some(opened);
                 diagnose_open(menu.id);
-                self.notify_shell(cx);
+                self.notify_self(cx);
             }
         }
     }
@@ -1149,7 +1145,7 @@ impl MenuBar {
         }
     }
 
-    pub fn close(&mut self, reason: CloseReason, cx: &mut App) -> bool {
+    pub fn close(&mut self, reason: CloseReason, cx: &mut Context<Self>) -> bool {
         if self.selected.is_none() && !self.compact_visible {
             return false;
         }
@@ -1161,7 +1157,7 @@ impl MenuBar {
             self.restore_focus = true;
         }
         diagnose_close(reason);
-        self.notify_shell(cx);
+        self.notify_self(cx);
         true
     }
 
@@ -1170,7 +1166,7 @@ impl MenuBar {
     /// 起因一律记 `dismiss` —— 库只报「关了」这一件事，分不出是点了外面还是又点了
     /// 自己那块触发器（后者在开合全交给库之前是 `toggle`）。Esc 由拦截器先关掉，
     /// 轮不到这里，所以那条诊断仍是 `escape`。
-    fn menu_closed(&mut self, index: usize, cx: &mut App) {
+    fn menu_closed(&mut self, index: usize, cx: &mut Context<Self>) {
         if self.selected == Some(index) {
             self.close(CloseReason::Dismiss, cx);
         }
@@ -1180,7 +1176,7 @@ impl MenuBar {
         self.trigger_bounds.get(index).copied().flatten()
     }
 
-    fn hover_switch(&mut self, index: usize, cx: &mut App) {
+    fn hover_switch(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(current) = self.selected else {
             return;
         };
@@ -1191,18 +1187,18 @@ impl MenuBar {
         self.toggle(index, cx);
     }
 
-    pub fn toggle_compact(&mut self, cx: &mut App) {
+    pub fn toggle_compact(&mut self, cx: &mut Context<Self>) {
         if self.compact_visible {
             self.close(CloseReason::Toggle, cx);
         } else {
             self.compact_visible = true;
             self.selected = None;
             diagnose_open("compact_bar");
-            self.notify_shell(cx);
+            self.notify_self(cx);
         }
     }
 
-    pub(crate) fn push_run(&mut self, action: MenuAction, cx: &mut App) {
+    pub(crate) fn push_run(&mut self, action: MenuAction, cx: &mut Context<Self>) {
         self.pending.push(MenuRequest::Run(action));
         self.close(CloseReason::Select, cx);
     }
@@ -1211,7 +1207,7 @@ impl MenuBar {
         &mut self,
         label_key: &'static str,
         missing: Missing,
-        cx: &mut App,
+        cx: &mut Context<Self>,
     ) {
         self.pending
             .push(MenuRequest::NotWired { label_key, missing });
@@ -1227,7 +1223,7 @@ impl MenuBar {
         ACTION_TARGET.with(|slot| *slot.borrow_mut() = target);
     }
 
-    pub fn open_by_id(&mut self, id: &str, cx: &mut App) -> bool {
+    pub fn open_by_id(&mut self, id: &str, cx: &mut Context<Self>) -> bool {
         let Some(index) = MENUS.iter().position(|menu| menu.id == id) else {
             return false;
         };
@@ -1251,7 +1247,7 @@ impl MenuBar {
         true
     }
 
-    pub fn run_action(&mut self, action: MenuAction, cx: &mut App) {
+    pub fn run_action(&mut self, action: MenuAction, cx: &mut Context<Self>) {
         self.push_run(action, cx);
     }
 }
@@ -1289,19 +1285,12 @@ thread_local! {
     static MENU_BAR: std::cell::RefCell<Option<gpui::WeakEntity<MenuBar>>> =
         const { std::cell::RefCell::new(None) };
 
-    static MENU_BAR_SHELL: std::cell::RefCell<Option<gpui::WeakEntity<crate::workspace::ShellWorkspace>>> =
-        const { std::cell::RefCell::new(None) };
-
     static ACTION_TARGET: std::cell::RefCell<Option<FocusHandle>> =
         const { std::cell::RefCell::new(None) };
 }
 
 pub fn action_target() -> Option<FocusHandle> {
     ACTION_TARGET.with(|slot| slot.borrow().clone())
-}
-
-pub(crate) fn set_shell(shell: gpui::WeakEntity<crate::workspace::ShellWorkspace>) {
-    MENU_BAR_SHELL.with(|slot| *slot.borrow_mut() = Some(shell));
 }
 
 pub(crate) fn set_menu_bar(bar: gpui::WeakEntity<MenuBar>) {
@@ -1458,7 +1447,7 @@ fn compact_menu(cx: &mut App) -> Menu {
 /// | idle | `fg` | 无 | 无 |
 /// | hover | `fg` | `hover` | 无 |
 /// | open | `fg` | `active` | 无 |
-/// | focus-visible | `fg` | `active` | `fg` 1px |
+/// | active（键盘焦点落在这一格） | `fg` | `active` | `fg` 1px |
 /// | disabled | `fg_disabled` | 无 | 无 |
 ///
 /// 两条硬规矩：
@@ -1472,7 +1461,7 @@ enum TriggerFace {
     Idle,
     Hover,
     Open,
-    FocusVisible,
+    Active,
     Disabled,
 }
 
@@ -1483,7 +1472,7 @@ impl TriggerFace {
             return Self::Disabled;
         }
         if focused {
-            return Self::FocusVisible;
+            return Self::Active;
         }
         if open { Self::Open } else { Self::Idle }
     }
@@ -1496,7 +1485,7 @@ impl TriggerFace {
             // 展开态取 `active`（selection 蓝，浅 `#d9e5f2` / 深 `#214283`）而不是 `hover`：
             // 面板开着时鼠标多半还停在触发器上，两态同色就分不清「指着」和「开着」。
             Self::Open => (colors.fg, Some(colors.active), None),
-            Self::FocusVisible => (colors.fg, Some(colors.active), Some(colors.fg)),
+            Self::Active => (colors.fg, Some(colors.active), Some(colors.fg)),
             Self::Disabled => (colors.fg_disabled, None, None),
         }
     }
@@ -1514,6 +1503,10 @@ impl TriggerFace {
 /// ——到时候只要把这两个入参换成真来源，不用再动颜色。
 fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
     let colors = &cx.theme().colors;
+    // 两个 `false` 只许出现在这一处（调用点收口）：`disabled` 等菜单行真正具备禁用来源，
+    // `focused` 等顶层键盘导航接上 `FocusHandle::is_focused`（gpui-pre 0.3.8 的
+    // `src/window.rs:507` 有这个句柄）。在此之前它们不是 bug，是**尚未接线**——别在别处
+    // 再抄一份 `false`，接线时改这一行就够了。
     let face = TriggerFace::of(open, false, false);
     let (text, background, inner) = face.paint(colors);
     // 内描边恒留 1px 的槽：聚焦那一刻才上色，免得整行宽高跳两个像素。
@@ -1522,7 +1515,7 @@ fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
     // 禁用态连悬停都不给——那一行什么都不该反应。
     let hover = match face {
         TriggerFace::Disabled => None,
-        TriggerFace::Open | TriggerFace::FocusVisible => Some(colors.active),
+        TriggerFace::Open | TriggerFace::Active => Some(colors.active),
         _ => TriggerFace::Hover.paint(colors).1,
     };
     let handle = handle();
@@ -1598,7 +1591,7 @@ fn menu_item(bar: &mut MenuBar, index: usize, cx: &mut App) -> impl IntoElement 
                     bar.compact_visible = false;
                     bar.bounds_pending = Some(index);
                     diagnose_open(MENUS[index].id);
-                    bar.notify_shell(cx);
+                    bar.notify_self(cx);
                 }
             } else {
                 bar.menu_closed(index, cx);
@@ -1761,9 +1754,9 @@ mod tests {
             assert_eq!(face(TriggerFace::Idle), (palette.fg, None, None));
             assert_eq!(face(TriggerFace::Hover).1, Some(palette.hover));
             assert_eq!(face(TriggerFace::Open).1, Some(palette.active));
-            assert_eq!(face(TriggerFace::FocusVisible).1, Some(palette.active));
+            assert_eq!(face(TriggerFace::Active).1, Some(palette.active));
             // 内描边取 `fg` 自己：`focus` token 落在 `title_bar` 上只有 2.49:1，不够 WCAG。
-            assert_eq!(face(TriggerFace::FocusVisible).2, Some(palette.fg));
+            assert_eq!(face(TriggerFace::Active).2, Some(palette.fg));
             assert_eq!(
                 face(TriggerFace::Disabled),
                 (palette.fg_disabled, None, None)
@@ -1781,7 +1774,7 @@ mod tests {
                 TriggerFace::Idle,
                 TriggerFace::Hover,
                 TriggerFace::Open,
-                TriggerFace::FocusVisible,
+                TriggerFace::Active,
             ] {
                 assert_eq!(face(state).0, palette.fg, "{state:?}");
             }
@@ -1794,11 +1787,11 @@ mod tests {
         assert_eq!(TriggerFace::of(true, false, false), TriggerFace::Open);
         assert_eq!(
             TriggerFace::of(false, false, true),
-            TriggerFace::FocusVisible
+            TriggerFace::Active
         );
         assert_eq!(
             TriggerFace::of(true, false, true),
-            TriggerFace::FocusVisible,
+            TriggerFace::Active,
             "聚焦压过开合"
         );
         assert_eq!(

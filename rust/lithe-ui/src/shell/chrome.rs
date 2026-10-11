@@ -182,7 +182,7 @@ fn caption_buttons(
             let group = SharedString::from(format!("caption-{control:?}"));
             let (hover, glyph) = match control {
                 Control::Close => (colors.danger, colors.on_accent),
-                _ => (colors.hover, colors.fg),
+                _ => (colors.chrome_hover, colors.fg),
             };
             div()
                 .id(group.clone())
@@ -239,8 +239,8 @@ fn round_buttons(
                         .justify_center()
                         .size(theme.control_height(Size::Small))
                         .rounded_full()
-                        .bg(colors.hover)
-                        .hover(|style| style.bg(colors.active))
+                        .bg(colors.chrome_hover)
+                        .hover(|style| style.bg(colors.chrome_active))
                         .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                         .on_click(move |_, window, cx| run(control, on_close.as_ref(), window, cx))
                         .child(Icon::new(icon).size(IconSize::Xs).color(colors.fg))

@@ -298,7 +298,7 @@ impl RenderOnce for Calendar {
                         if chosen {
                             day.bg(colors.accent)
                         } else if inside {
-                            day.bg(colors.active)
+                            day.bg(colors.chrome_active)
                         } else {
                             day
                         }
@@ -306,7 +306,7 @@ impl RenderOnce for Calendar {
                     .when(open, |day| {
                         day.cursor_pointer()
                             .when(!chosen && !inside, |day| {
-                                day.hover(|style| style.bg(colors.hover))
+                                day.hover(|style| style.bg(colors.chrome_hover))
                             })
                             .on_hover(move |over, window, cx| {
                                 if *over {

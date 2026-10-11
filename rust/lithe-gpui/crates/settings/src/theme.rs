@@ -4,6 +4,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
 use gpui::{App, Global, Hsla, SharedString, WindowAppearance};
+use lithe_ui::devtools::contrast;
 use lithe_ui::theme::{Mode as ComponentMode, Palette, Theme as ComponentTheme};
 use serde::Deserialize;
 
@@ -340,6 +341,10 @@ fn parse_color(value: &str) -> Option<Hsla> {
 /// `overlay`←`popover.background`、`backdrop`←`overlay`、`hover`←`list.hover.background`、
 /// `active`←`list.active.background`、`focus`/`link`←`ring`、`selection`←`sidebar.accent.background`
 /// …… 没给的栏保留组件库自己的默认值。
+///
+/// 例外是 `chrome_hover` / `chrome_active`：它们不是某个键的直取，而是**相对 chrome 底色**
+/// 推出来的一档（见函数里那段说明）——悬停与选中是「从它所在底色上迈的一档」，不是一个
+/// 到处通用的绝对色。
 fn palette_for(record: &ThemeRecord) -> Palette {
     let mut palette = match record.mode {
         ThemeMode::Light => Palette::light(false),
@@ -373,28 +378,73 @@ fn palette_for(record: &ThemeRecord) -> Palette {
     if let Some(color) = color("list.hover.background") {
         palette.hover = color;
     }
+    if let Some(color) = color("list.active.background") {
+        palette.active = color;
+    }
     // 主题文件里那一栏 `overlay` 是 scrim（模态浮层压在最上面的那层暗底，实测两组内置主题
     // 都给 `#00000033`≈20% 黑），**不是**浮层自己的底色；它归 `backdrop`——`Backdrop` 那层
     // 全窗 scrim 读的就是它（见 `lithe-ui::primitives::backdrop`）。
     if let Some(color) = color("overlay") {
         palette.backdrop = color;
     }
+    // —— 悬停与选中是「从它所在底色上迈的一档」，不是一个到处通用的绝对色 ——
+    //
+    // `hover` 那一档是贴着 `list.background`（浅色纯白）调出来的：同一个绝对色铺到同色的
+    // `title_bar` / `popover` 上就消失了——浅色里 `list.hover.background`、`title_bar.background`、
+    // `popover.background`、`secondary.hover.background` 四栏全是 `#f2f2f2`，于是菜单条条目
+    // 与弹出菜单条目都没有悬停反馈。所以 chrome 面（标题栏 / 状态栏 / 浮层面板）另取一档：
+    // 候选全在主题文件里、不新造色值，取**第一个与三个 chrome 面都不同色**的。深色那边
+    // `list.hover.background` 的 `#3c3f41` 本就与 `#313335` 差一档，直接用它；浅色撞色后退到
+    // `button.hover.background` 的 `#d9e5f2`——按钮底色 `button.background` 正是 chrome 的
+    // `#f2f2f2`，这一栏就是主题自己给出的「在 #f2f2f2 上悬停用什么」。
+    let popover = color("popover.background");
+    let chrome_bases = [
+        palette.title_bar,
+        palette.status_bar,
+        popover.unwrap_or(palette.overlay),
+    ];
+    let chrome_hover = [
+        color("list.hover.background"),
+        color("button.hover.background"),
+        color("secondary.hover.background"),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|each| chrome_bases.iter().all(|base| base != each))
+    .unwrap_or(palette.hover);
+    // 选中态必须比悬停态更强、且不与之同色：浅色里 `list.active.background` 与上面退到的
+    // `button.hover.background` 同为 `#d9e5f2`，于是再退到 `selection.background` 的
+    // `#b3d7ff`——主题里唯一比它更深、且成体系的那一档（对比度 1.33:1 对 1.14:1）。深色那边
+    // `list.active.background` 的 `#214283` 与悬停的 `#3c3f41` 本就不同且更强，取它。
+    let chrome_active = [
+        color("list.active.background"),
+        color("selection.background"),
+        color("secondary.active.background"),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|each| {
+        *each != chrome_hover
+            && chrome_bases
+                .iter()
+                .all(|base| contrast(*each, *base) >= contrast(chrome_hover, *base))
+    })
+    .unwrap_or(palette.active);
+    palette.chrome_hover = chrome_hover;
+    palette.chrome_active = chrome_active;
     // 浮层底色另有其键：`popover.background`。
     //
-    // 守卫：这一栏在浅色里常常与 `hover` 同值（两组内置主题都给 `#f2f2f2`），那就会让菜单里
-    // 正被指着的那一行与面板底色融成一片、等于没有高亮。撞色时退到 `surface`（= `background`）：
-    // 宁可浮层与页面同色、靠描边与投影分辨层次，也不要丢掉行高亮。深色那边 `#313335` 与
-    // `hover` 的 `#3c3f41` 不同，保留原值。
-    if let Some(popover) = color("popover.background") {
-        let merges_into_hover = Some(popover) == color("list.hover.background");
-        palette.overlay = if merges_into_hover {
+    // 守卫：只有当它会与**真正画在浮层里的那一档高亮**（`chrome_hover`，不是 `hover`）同色时
+    // 才退到 `surface`（= `background`）：宁可浮层与页面同色、靠描边与投影分辨层次，也不要丢掉
+    // 行高亮。两组内置主题都不触发——浅色 `#f2f2f2` 对 `#d9e5f2`、深色 `#313335` 对 `#3c3f41`，
+    // 于是浮层拿回主题给它的那一档「抬起来」的底色。
+    if let Some(popover) = popover {
+        let merges_into_the_row_highlight = popover == chrome_hover && palette.surface != popover;
+        palette.overlay = if merges_into_the_row_highlight {
             palette.surface
         } else {
             popover
         };
-    }
-    if let Some(color) = color("list.active.background") {
-        palette.active = color;
     }
     if let Some(color) = color("border") {
         palette.border = color;
@@ -970,6 +1020,10 @@ mod tests {
         // 下拉、命令面板、悬浮卡片统统是半透明的；改取 `popover.background` 后又撞上浅色
         // 里 `popover.background` 与 `list.hover.background` 同为 `#f2f2f2`——那时被指着的
         // 那一行与面板底色一致，等于没有高亮，所以有了 `palette_for` 里的退避。
+        //
+        // 2026-10-11：比对对象从 `hover` 换成 `chrome_hover`。浮层里的行用的是「画在 chrome
+        // 面上」的那一档（菜单条目读 `chrome_hover`），`hover` 只画在列表白底上；拿它跟浮层
+        // 底色比会误报，也挡不住真正的那条撞色。
         for name in ["IntelliJ Light", "Darcula"] {
             let palette = palette_for(&builtin_record(name));
 
@@ -979,8 +1033,8 @@ mod tests {
                 palette.overlay.a
             );
             assert_ne!(
-                palette.overlay, palette.hover,
-                "{name}: 浮层底色与行高亮同色，菜单里被指着的那一行会看不见"
+                palette.overlay, palette.chrome_hover,
+                "{name}: 浮层底色与画在它上面的行高亮同色，菜单里被指着的那一行会看不见"
             );
             // scrim 那条不能丢：Backdrop 铺的全窗暗底读的就是 `backdrop`。
             assert!(
@@ -988,6 +1042,69 @@ mod tests {
                 "{name}: `overlay` 那栏是 scrim，应当落到 `backdrop` 上，alpha={}",
                 palette.backdrop.a
             );
+        }
+    }
+
+    /// chrome 面上的悬停/选中两档必须与**它所在的那块底色**分得开，且选中强于悬停。
+    ///
+    /// 量化下限取 1.10:1：深色里那条「本来就看得见」的悬停（`#3c3f41` 落在 `#313335` 上）
+    /// 实测 1.195:1，浅色退到按钮那一档后是 1.141:1，取整到 1.10 做门槛——比只写 `assert_ne!`
+    /// 强在：同色会挂，差 1/255 那种「理论不同、肉眼无别」也会挂。
+    ///
+    /// 顺带把「这一档到底从哪个键推出来」钉死，免得以后有人改了候选顺序却看不出后果。
+    #[test]
+    fn chrome_hover_and_active_stand_out_on_every_chrome_surface() {
+        for (name, hover_key, active_key) in [
+            (
+                "IntelliJ Light",
+                "button.hover.background",
+                "selection.background",
+            ),
+            ("Darcula", "list.hover.background", "list.active.background"),
+        ] {
+            let record = builtin_record(name);
+            let palette = palette_for(&record);
+            let from_theme = |key: &str| {
+                record
+                    .colors
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(parse_color)
+                    .unwrap_or_else(|| panic!("{name}: 主题文件里没有 {key}"))
+            };
+
+            assert_eq!(
+                palette.chrome_hover,
+                from_theme(hover_key),
+                "{name}: chrome 悬停那一档应当从 `{hover_key}` 推出"
+            );
+            assert_eq!(
+                palette.chrome_active,
+                from_theme(active_key),
+                "{name}: chrome 选中那一档应当从 `{active_key}` 推出"
+            );
+
+            for (slot, base) in [
+                ("title_bar", palette.title_bar),
+                ("status_bar", palette.status_bar),
+                ("overlay", palette.overlay),
+            ] {
+                let hover = contrast(palette.chrome_hover, base);
+                assert!(
+                    hover >= 1.10,
+                    "{name}: chrome 悬停与 {slot} 只差 {hover:.3}:1（下限 1.10）"
+                );
+                assert_ne!(
+                    palette.chrome_active, palette.chrome_hover,
+                    "{name}: 选中态不能与悬停态同色"
+                );
+                let active = contrast(palette.chrome_active, base);
+                assert!(
+                    active >= hover,
+                    "{name}: 选中态在 {slot} 上是 {active:.3}:1，弱于悬停的 {hover:.3}:1；\
+                     选中必须比悬停更强"
+                );
+            }
         }
     }
 

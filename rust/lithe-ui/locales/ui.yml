@@ -49,6 +49,11 @@ dock:
   dock: {en-US: "Dock", en-GB: "Dock", de-DE: "Andocken", fr-FR: "Ancrer", ja-JP: "ドッキング", he-IL: "עגן", zh-CN: "停靠"}
   restore: {en-US: "Restore", en-GB: "Restore", de-DE: "Wiederherstellen", fr-FR: "Restaurer", ja-JP: "元に戻す", he-IL: "שחזר", zh-CN: "还原"}
 keys:
+  table:
+    command: {en-US: "Command", en-GB: "Command", de-DE: "Befehl", fr-FR: "Commande", ja-JP: "コマンド", he-IL: "פקודה", zh-CN: "命令"}
+    binding: {en-US: "Keybinding", en-GB: "Keybinding", de-DE: "Tastenkürzel", fr-FR: "Raccourci", ja-JP: "キーバインド", he-IL: "קיצור מקשים", zh-CN: "快捷键"}
+    when: {en-US: "When", en-GB: "When", de-DE: "Bedingung", fr-FR: "Condition", ja-JP: "条件", he-IL: "כאשר", zh-CN: "触发条件"}
+    source: {en-US: "Source", en-GB: "Source", de-DE: "Quelle", fr-FR: "Source", ja-JP: "ソース", he-IL: "מקור", zh-CN: "来源"}
   source:
     default: {en-US: "Default", en-GB: "Default", de-DE: "Standard", fr-FR: "Par défaut", ja-JP: "既定", he-IL: "ברירת מחדל", zh-CN: "默认"}
     user: {en-US: "User", en-GB: "User", de-DE: "Benutzer", fr-FR: "Utilisateur", ja-JP: "ユーザー", he-IL: "משתמש", zh-CN: "用户"}

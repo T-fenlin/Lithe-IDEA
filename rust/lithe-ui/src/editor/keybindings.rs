@@ -132,16 +132,23 @@ impl RenderOnce for KeybindingsEditor {
             text(cx, "keys.source.default", &[]),
             text(cx, "keys.source.user", &[]),
         );
+        // 四列表头同样走文案表：中文 IDE 的快捷键设置页不能留英文表头。
+        let (head_command, head_binding, head_when, head_source) = (
+            text(cx, "keys.table.command", &[]),
+            text(cx, "keys.table.binding", &[]),
+            text(cx, "keys.table.when", &[]),
+            text(cx, "keys.table.source", &[]),
+        );
         let head = columns(div())
             .py_1()
             .text_size(theme.text_size(TextSize::Xs))
             .text_color(colors.fg_subtle)
             .border_b_1()
             .border_color(colors.border)
-            .child(div().w(widths[0]).child("Command"))
-            .child(div().w(widths[1]).child("Keybinding"))
-            .child(div().w(widths[2]).child("When"))
-            .child(div().w(widths[3]).child("Source"));
+            .child(div().w(widths[0]).child(head_command))
+            .child(div().w(widths[1]).child(head_binding))
+            .child(div().w(widths[2]).child(head_when))
+            .child(div().w(widths[3]).child(head_source));
         let rows = self
             .bindings
             .iter()

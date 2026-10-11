@@ -34,7 +34,7 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
             .px_2()
             .rounded(theme.radius(Radius::Md))
             .text_color(fg)
-            .when(current && !item.disabled, |row| row.bg(colors.hover))
+            .when(current && !item.disabled, |row| row.bg(colors.chrome_hover))
             .when(!item.disabled, |row| row.cursor_pointer())
             .child(build(cx));
     }
@@ -64,7 +64,7 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
         .px_2()
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)
-        .when(current && !item.disabled, |row| row.bg(colors.hover))
+        .when(current && !item.disabled, |row| row.bg(colors.chrome_hover))
         .when(!item.disabled, |row| row.cursor_pointer())
         .child(
             div()

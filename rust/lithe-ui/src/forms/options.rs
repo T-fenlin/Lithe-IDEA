@@ -135,9 +135,13 @@ pub(crate) fn marked_row(
         .py_1()
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)
-        .when(highlighted && !choice.disabled, |row| row.bg(colors.hover))
+        // 选项行画在浮层面板（`overlay`）上，用 chrome 那一档：`hover` 在浅色里与浮层同色。
+        .when(highlighted && !choice.disabled, |row| {
+            row.bg(colors.chrome_hover)
+        })
         .when(!choice.disabled, |row| {
-            row.cursor_pointer().hover(|style| style.bg(colors.hover))
+            row.cursor_pointer()
+                .hover(|style| style.bg(colors.chrome_hover))
         })
         .when_some(checked, |row, on| {
             row.child(

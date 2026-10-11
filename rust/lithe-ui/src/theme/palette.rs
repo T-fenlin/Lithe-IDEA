@@ -111,6 +111,17 @@ mixable!(
     /// `primary.foreground`): the fill of a chosen item whose selection reads as brand — the active
     /// activity-rail icon — rather than as the quiet `accent` surface. Added 2026-10-10; a host
     /// that never sets them gets the `accent` pair.
+    ///
+    /// `chrome_hover` / `chrome_active` are the **hover and chosen steps on a chrome surface** —
+    /// `title_bar` / `status_bar` / `overlay`, the bars and the popup panel. A hover is a step
+    /// *from the surface under it*, never one absolute color carried across surfaces: `hover` is
+    /// tuned against the list's own base, and a JetBrains light theme makes `list.hover.background`,
+    /// `title_bar.background` and `popover.background` all `#f2f2f2`, so painting `hover` on a bar
+    /// or inside a popup shows nothing at all. The chrome pair is that same step taken against the
+    /// chrome bases, and `chrome_active` is the stronger of the two: an open menu trigger and a
+    /// chosen popup row never wear the hover color. Added 2026-10-11; the library's defaults are
+    /// the next two steps of its own ramp (light `border` then `border_strong`, dark
+    /// `border_strong` then `fg_disabled`), and a host derives them from its own theme keys.
     Palette {
         bg,
         surface,
@@ -121,6 +132,8 @@ mixable!(
         overlay,
         hover,
         active,
+        chrome_hover,
+        chrome_active,
         border,
         border_strong,
         fg,
@@ -206,6 +219,10 @@ impl Palette {
             overlay: c(0xffffff),
             hover: c(0xf2f0ed),
             active: c(0xe9e7e5),
+            // chrome 面上的两档：比 `hover`/`active` 各自再深一档，因为 chrome（`title_bar`
+            // `#f2f2f2`）本来就在 `hover` 那一档上；取值不新造，直接取库里已有的两阶。
+            chrome_hover: c(0xe1dfdd),
+            chrome_active: c(0xcccac8),
             border: c(0xe1dfdd),
             border_strong: c(0xcccac8),
             fg: c(0x181613),
@@ -283,6 +300,9 @@ impl Palette {
             overlay: c(0x201f1d),
             hover: c(0x252422),
             active: c(0x2c2b29),
+            // 深色反向：chrome（`title_bar` `#313335`）比 `hover` 亮，两档往上走。
+            chrome_hover: c(0x413f3d),
+            chrome_active: c(0x5c5a58),
             border: c(0x2c2b29),
             border_strong: c(0x413f3d),
             fg: c(0xf3f1f0),

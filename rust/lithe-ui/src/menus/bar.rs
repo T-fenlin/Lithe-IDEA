@@ -146,8 +146,10 @@ impl RenderOnce for MenuBar {
                     gpui::transparent_black()
                 })
                 .text_size(theme.text_size(TextSize::Sm))
-                .when(open && here, |head| head.bg(colors.hover))
-                .hover(|style| style.bg(colors.hover))
+                // 菜单条铺在 `title_bar` 上，悬停/展开要用「画在 chrome 面上」的那两档：
+                // `hover` 是贴着列表白底调的，浅色里与 `title_bar` 同为 `#f2f2f2`，画上去看不见。
+                .when(open && here, |head| head.bg(colors.chrome_active))
+                .hover(|style| style.bg(colors.chrome_hover))
                 .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     window.prevent_default();
                     if open && here {

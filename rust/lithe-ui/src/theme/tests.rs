@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use gpui::{TestAppContext, hsla};
 
+use crate::devtools::contrast;
+
 use super::{ActiveTheme, Mode, Palette, Syntax, Theme};
 
 /// An owner's palette serves its own mode; the other keeps Ely's, and none brings Ely's back.
@@ -51,10 +53,11 @@ fn every_color_answers_to_its_name() {
     for (ix, name) in Palette::NAMES.iter().enumerate() {
         *palette.token_mut(name) = hsla(ix as f32 / 64.0, 0.5, 0.5, 1.0);
     }
-    // 41 = 36 + chrome 表面槽 `tab_bar` / `title_bar` / `status_bar`
+    // 43 = 36 + chrome 表面槽 `tab_bar` / `title_bar` / `status_bar`
     // （前两个 2026-10-08 加，`status_bar` 2026-10-09 加，见 palette.rs 的说明）
-    // + 品牌色槽 `primary` / `on_primary`（2026-10-10 加，同文件说明）。
-    assert_eq!(Palette::NAMES.len(), 41, "every color of the palette");
+    // + 品牌色槽 `primary` / `on_primary`（2026-10-10 加，同文件说明）
+    // + chrome 面上的悬停/选中两档 `chrome_hover` / `chrome_active`（2026-10-11 加，同文件说明）。
+    assert_eq!(Palette::NAMES.len(), 43, "every color of the palette");
     let at = |name: &str| {
         Palette::NAMES
             .iter()
@@ -100,6 +103,42 @@ fn the_status_bar_surface_moves_alone() {
             "and it has its own slot"
         );
         assert_eq!(palette.token("status_bar"), palette.status_bar);
+    }
+}
+
+/// The hover on a chrome surface is a step from that surface, and the chosen step is stronger.
+///
+/// Regression risk: `hover` is one step tuned against the list's own base, so painting that same
+/// absolute color on `title_bar` / `overlay` — a JetBrains light theme gives `list.hover.background`,
+/// `title_bar.background` and `popover.background` all `#f2f2f2` — showed nothing at all: neither
+/// a hovered menu-bar trigger nor a hovered popup row could be seen.
+#[test]
+fn the_chrome_hover_and_active_stand_out_on_the_chrome_surfaces() {
+    for (name, palette) in [
+        ("light", Palette::light(false)),
+        ("dark", Palette::dark(false)),
+    ] {
+        for (slot, base) in [
+            ("title_bar", palette.title_bar),
+            ("status_bar", palette.status_bar),
+            ("overlay", palette.overlay),
+        ] {
+            let hover = contrast(palette.chrome_hover, base);
+            assert!(
+                hover >= 1.10,
+                "{name}: chrome_hover is only {hover:.3}:1 from {slot}; it must read as a step"
+            );
+            assert_ne!(
+                palette.chrome_active, palette.chrome_hover,
+                "{name}: a chosen row must not wear the hover color"
+            );
+            let active = contrast(palette.chrome_active, base);
+            assert!(
+                active >= hover,
+                "{name}: chrome_active is {active:.3}:1 from {slot}, weaker than the hover's \
+                 {hover:.3}:1; the chosen step must be the stronger one"
+            );
+        }
     }
 }
 

@@ -263,7 +263,8 @@ fn project_row(entry: &ProjectEntry) -> MenuItem {
             .px_2()
             .py_1p5()
             .rounded(rems(ROW_RADIUS_SPEC / 16.))
-            .when(active, |row| row.bg(colors.hover))
+            // 行画在浮层面板（`overlay`）上，用 chrome 那一档：`hover` 在浅色里与浮层同色。
+            .when(active, |row| row.bg(colors.chrome_active))
             .child(badge_view(&badge, rems(ROW_BADGE_SIZE_SPEC / 16.)))
             .child(
                 v_stack()
@@ -510,7 +511,8 @@ pub fn handle() -> WeakEntity<ProjectMenu> {
 /// `open` 决定箭头朝哪边。
 fn trigger(name: &SharedString, badge: &ProjectBadge, open: bool, cx: &App) -> AnyElement {
     let colors = &cx.theme().colors;
-    let (idle, hover_bg, hover_fg) = (colors.fg_muted, colors.hover, colors.fg);
+    // 触发器在标题栏（`title_bar`）上，悬停取 chrome 那一档。
+    let (idle, hover_bg, hover_fg) = (colors.fg_muted, colors.chrome_hover, colors.fg);
 
     h_stack()
         .flex_shrink_0()

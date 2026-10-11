@@ -96,7 +96,7 @@ fn period_grid(id: &ElementId, page: Page, grid: Grid, window: &mut Window, cx: 
                         cell.bg(colors.accent).text_color(colors.on_accent)
                     } else {
                         cell.text_color(colors.fg)
-                            .hover(|style| style.bg(colors.hover))
+                            .hover(|style| style.bg(colors.chrome_hover))
                     }
                 })
                 .on_click(move |_, window, cx| pick(ix, window, cx))

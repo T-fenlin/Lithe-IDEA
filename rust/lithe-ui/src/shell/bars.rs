@@ -243,7 +243,8 @@ impl StatusBarItem {
 impl RenderOnce for StatusBarItem {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let hover = theme.colors.hover;
+        // 状态栏条目铺在 `status_bar` 上，悬停取 chrome 那一档：`hover` 在浅色里与它同色。
+        let hover = theme.colors.chrome_hover;
         let name = self
             .label
             .clone()

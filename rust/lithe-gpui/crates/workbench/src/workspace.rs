@@ -30,7 +30,7 @@ use crate::command_palette::{
 use crate::debug::{DEBUG_DIAGNOSTIC_TAG as DEBUG_TAG, DebugPane, DebugPaneEvent};
 use crate::menu_bar::{
     MenuAction, MenuBar, MenuRequest, Missing, diagnose_run as diagnose_menu_run, mode_for,
-    set_menu_bar, set_shell as set_menu_bar_shell,
+    set_menu_bar,
 };
 use crate::project_menu::{
     ProjectEntry, ProjectMenu, render as render_project_menu, set_project_menu,
@@ -999,9 +999,13 @@ impl ShellWorkspace {
             .into();
 
         let focus = cx.focus_handle();
-        set_menu_bar_shell(cx.entity().downgrade());
         let menu_bar = MenuBar::new(mode_for(compact_menu), focus.clone(), cx);
         set_menu_bar(menu_bar.downgrade());
+        // 菜单一变（开 / 关 / 换模式 / 选中一行）外壳就重画。走 `observe` 而不是让 MenuBar
+        // 攥一个 `WeakEntity<ShellWorkspace>` 反戳回来：菜单的关闭回调跑在外壳自己的更新栈
+        // 里，反戳就是第二次可变借用；`observe` 的回调由 gpui 保证在 MenuBar 的 update 结束
+        // 之后才派发。与下面 `project_menu` / `branch_panel` 同一写法。
+        cx.observe(&menu_bar, |_, _, cx| cx.notify()).detach();
 
         let loaded_recent = lithe_gpui_settings::load_recent_projects();
         loaded_recent.report();
