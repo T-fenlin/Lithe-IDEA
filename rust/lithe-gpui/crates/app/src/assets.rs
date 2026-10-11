@@ -182,8 +182,8 @@ mod tests {
 
         assert_eq!(
             LitheAssets::embedded_count_under("icons/idea/"),
-            302,
-            "图标包（idea）应是 302 个文件 = macOS 图标文件夹的 178 个副本 + 122 个并集补充的旧图标 + \
+            301,
+            "图标包（idea）应是 301 个文件 = macOS 图标文件夹的 178 个副本 + 122 个并集补充的旧图标 + \
              extension.json + SOURCES.md"
         );
         assert_eq!(
@@ -202,8 +202,8 @@ mod tests {
             "`images/**` 只有品牌 logo 一个文件"
         );
         assert_eq!(
-            count, 310,
-            "排除 `README.md`/`fonts/` 后的内嵌总数（应用图标 7 + 品牌 1 + 图标包 302）"
+            count, 309,
+            "排除 `README.md`/`fonts/` 后的内嵌总数（应用图标 7 + 品牌 1 + 图标包 301）"
         );
 
         let resource_bytes: usize = <LitheAssets as rust_embed::RustEmbed>::iter()
@@ -222,7 +222,7 @@ mod tests {
             resource_bytes as f64 / 1_048_576.0
         );
         assert_eq!(
-            resource_bytes, 3_246_804,
+            resource_bytes, 3_246_900,
             "内嵌资源字节数应精确等于 310 个资源文件之和（文本资源行尾归一后的口径）；\
              若变大，先查是不是有图标主题被塞回来了（lithe/symbols/material/pierre 已于 2026-10-04 删除）；\
              再查是不是有资源被整体替换成了更大的版本；\
@@ -231,7 +231,10 @@ mod tests {
              另注意：清单重写也会让这个数变化（2026-10-04 起路径改指 macOS 图标副本）。\
              2026-10-08 从 3_244_470 涨到 3_246_804：清单补齐了 maven/docker/editorConfig/class/\
              interface/enum/annotation/record 与 python/rust/go/kotlin/ruby/php/scala/binaryData \
-             这批我们本来就有图的定义（并删掉两处没有美术的悬空引用），只有一个文件变了、没有增删图标。"
+             这批我们本来就有图的定义（并删掉两处没有美术的悬空引用），只有一个文件变了、没有增删图标。\
+             2026-10-11 涨到 3_246_900：登记了 `unknown`（`fileTypes/unknown.svg` 此前从没进过\
+             定义表，是孤儿素材）。同一批里 `fileTypes/powershell_dark.svg` 经核对与 \
+             `powershell.svg` 逐字节相同，不是深色变体，不进清单、留作待删副本。"
         );
     }
 
@@ -256,6 +259,111 @@ mod tests {
         assert!(
             LitheAssets::library_icon_count() > 0,
             "组件库图标数为 0，说明 `lithe_ui::Assets` 没接上"
+        );
+    }
+
+    /// 清单里写着的每一条相对路径（`"./fileTypes/java.svg"` 那种）。
+    ///
+    /// 只抽 `./` 开头的字符串，不引 `serde_json`：本 crate 的活是"内嵌了什么"，
+    /// 把整个清单解析成对象树是 `lithe-gpui-shared` 那边 `file_icon.rs` 的事
+    /// （它有 `serde_json`，并且已经按 id 验过一遍引用完整性）。
+    /// 而 `iconDefinitions` / `lightIconDefinitions` 里的值**一律**以 `./` 开头，
+    /// 所以这一扫正好等于两张定义表引用到的全部路径。
+    fn manifest_referenced_paths(manifest: &str) -> Vec<String> {
+        let mut paths = Vec::new();
+        let mut cursor = 0;
+        while let Some(offset) = manifest[cursor..].find("\"./") {
+            let start = cursor + offset + 3;
+            let Some(end) = manifest[start..].find('"').map(|end| start + end) else {
+                break;
+            };
+            paths.push(manifest[start..end].to_string());
+            cursor = end + 1;
+        }
+        paths
+    }
+
+    /// 图标包里**按文件类型取用**的那批图（不是 UI 图）必须全部被清单够得着。
+    ///
+    /// 口径：`icons/idea/fileTypes/**` 与 `icons/idea/legacy/files/**` 是"后缀 → 图标"的
+    /// 素材池；`debugger/stepOver.svg`、`legacy/ui/close.svg` 这类是 UI 图标，永远不会被任何
+    /// 后缀引用，不该进 `iconDefinitions`，所以这里只管前两个目录。
+    ///
+    /// 用测试而不是编译期检查，是因为 `rust_embed` 的文件清单要到运行时才有：
+    /// 往 `assets/icons/idea/fileTypes/` 里丢一张新 SVG 却忘了在 `extension.json` 登记，
+    /// 这条会直接失败并把漏掉的路径列出来。
+    ///
+    /// **唯一一类允许的例外**：与被够得着的某张图**逐字节相同**的副本。它不算"漏登记的美术"
+    /// —— 那张图已经通过它的孪生文件在服务了，副本只是冗余。这类副本的正解是**删掉**
+    /// （连同 `icons::idea` 里对应的常量一起），不是给它补一条定义。所以下面把它钉成一个
+    /// 显式清单：多出一张新的副本就会失败，逼着人去清理，而不是悄悄放过。
+    #[test]
+    fn every_file_type_icon_is_reachable_from_the_manifest() {
+        let manifest = LitheAssets
+            .load("icons/idea/extension.json")
+            .expect("清单必须能 load")
+            .expect("清单必须在内嵌表里");
+        let manifest = String::from_utf8(manifest.to_vec()).expect("清单必须是 UTF-8");
+        let referenced: Vec<String> = manifest_referenced_paths(&manifest)
+            .into_iter()
+            .map(|relative| format!("icons/idea/{}", relative.trim_start_matches("./")))
+            .collect();
+        let reachable: Vec<Vec<u8>> = referenced
+            .iter()
+            .filter_map(|path| {
+                LitheAssets
+                    .load(path)
+                    .ok()
+                    .flatten()
+                    .map(|bytes| bytes.to_vec())
+            })
+            .collect();
+
+        let mut missing = Vec::new();
+        let mut duplicates = Vec::new();
+        let mut checked = 0;
+        for path in embedded_paths() {
+            // 只看文件类型那两个目录；`nodes/` 是文件夹与 Java 节点图，`legacy/ui/` 等是 UI 图。
+            let is_file_type = path.starts_with("icons/idea/fileTypes/")
+                || path.starts_with("icons/idea/legacy/files/");
+            if !is_file_type || !path.ends_with(".svg") {
+                continue;
+            }
+            checked += 1;
+            if referenced.iter().any(|known| *known == path) {
+                continue;
+            }
+            let bytes = LitheAssets
+                .load(&path)
+                .unwrap_or_else(|error| panic!("`{path}` load 报错：{error}"))
+                .unwrap_or_else(|| panic!("`{path}` 在内嵌表里，但 `load` 取不到字节"))
+                .to_vec();
+            if reachable.iter().any(|served| *served == bytes) {
+                duplicates.push(path);
+            } else {
+                missing.push(path);
+            }
+        }
+
+        assert!(
+            checked >= 60,
+            "只查到 {checked} 张文件类型图，这个检查没在干活（目录被搬走了？）"
+        );
+        assert!(
+            missing.is_empty(),
+            "这 {} 张文件类型的图没有被 `icons/idea/extension.json` 够得着，而且和已登记的图\
+             都不一样 —— 要么在 `iconDefinitions`/`lightIconDefinitions` 里补上定义，要么在 \
+             `fileExtensions`/`filenames` 里补上映射：{missing:?}",
+            missing.len()
+        );
+        // 判定必须是**空**：重复的图已经删干净了（曾有一张 `fileTypes/powershell_dark.svg`
+        // 与 `powershell.svg` 逐字节相同、`_dark` 后缀是误加的，已删；这种名不副实的副本
+        // 会让两个人先后照名字下错结论）。断言空集比钉住具体路径更强：以后再进来任何一张
+        // 重复副本都会挂，逼着清理，而不是悄悄放过。
+        assert_eq!(
+            duplicates,
+            Vec::<String>::new(),
+            "这些文件类型图与被够得着的某张图逐字节相同，是冗余副本，删掉它们：{duplicates:?}"
         );
     }
 

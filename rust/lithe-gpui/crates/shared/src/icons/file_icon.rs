@@ -488,7 +488,11 @@ mod tests {
     /// 2026-10-08 从 43 涨到 59：`filenames` 点名的 maven/docker/editorConfig/class/interface/
     /// enum/annotation/record 与磁盘上早就有图、清单却没登记的 python/rust/go/kotlin/ruby/php/
     /// scala/binaryData 一并补了进来。改清单就要同步这个数。
-    const MANIFEST_DEFINITIONS: usize = 59;
+    /// 2026-10-11 涨到 60：登记 `unknown`（`fileTypes/unknown.svg` 是「认不出类型的文件」那张
+    /// 图，此前从没进过定义表）。注意它**还没有任何 `fileExtensions`/`filenames` 指向**，
+    /// 也就是说现在仍不会显示 —— 真要用起来得动 `defaultFile`，那会改掉无扩展名文件的外观，
+    /// 属于设计决定，暂不在此改。
+    const MANIFEST_DEFINITIONS: usize = 60;
 
     #[test]
     fn active_theme_parses() {
