@@ -1468,7 +1468,10 @@ pub(crate) fn render_bar(
 
 /// 九个顶层菜单横排。三种「把菜单摆出来」的模式共用这一排，差别只在容器。
 fn menu_row(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
-    let mut row = h_stack().flex_shrink_0().items_center().gap(rems(BAR_GAP_SPEC / 16.));
+    let mut row = h_stack()
+        .flex_shrink_0()
+        .items_center()
+        .gap(rems(BAR_GAP_SPEC / 16.));
     for index in 0..MENUS.len() {
         row = row.child(menu_item(bar, index, cx));
     }
@@ -1592,7 +1595,10 @@ fn compact_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
 fn compact_menu(cx: &mut App) -> Menu {
     let mut menu = Menu::new();
     for index in 0..MENUS.len() {
-        menu = menu.item(MenuRow::submenu(MENUS[index].label(), build_menu(index, cx)));
+        menu = menu.item(MenuRow::submenu(
+            MENUS[index].label(),
+            build_menu(index, cx),
+        ));
     }
     menu
 }
@@ -1724,7 +1730,11 @@ fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
 fn menu_item(bar: &mut MenuBar, index: usize, cx: &mut App) -> impl IntoElement {
     let open = bar.selected == Some(index);
     // 关着的时候面板是空的：库反正不画它，省下每帧建九份菜单。
-    let panel = if open { build_menu(index, cx) } else { Menu::new() };
+    let panel = if open {
+        build_menu(index, cx)
+    } else {
+        Menu::new()
+    };
     let handle = handle();
     let measure_handle = handle.clone();
 
@@ -1969,10 +1979,7 @@ mod tests {
     fn trigger_face_picks_the_strongest_state() {
         assert_eq!(TriggerFace::of(false, false, false), TriggerFace::Idle);
         assert_eq!(TriggerFace::of(true, false, false), TriggerFace::Open);
-        assert_eq!(
-            TriggerFace::of(false, false, true),
-            TriggerFace::Active
-        );
+        assert_eq!(TriggerFace::of(false, false, true), TriggerFace::Active);
         assert_eq!(
             TriggerFace::of(true, false, true),
             TriggerFace::Active,

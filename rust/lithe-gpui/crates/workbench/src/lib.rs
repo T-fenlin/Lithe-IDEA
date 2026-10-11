@@ -5,6 +5,7 @@ pub mod debug;
 pub mod debug_session;
 pub mod debug_transport;
 pub mod extensions_page;
+pub mod keymap_engine;
 pub mod maven;
 pub mod menu_bar;
 pub mod notifications;

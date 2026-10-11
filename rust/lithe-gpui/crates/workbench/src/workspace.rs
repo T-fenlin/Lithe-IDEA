@@ -599,6 +599,12 @@ impl ShellWorkspace {
         crate::search_everywhere::install_actions(cx);
         crate::replace_in_files::install_actions(cx);
 
+        // 键位重绑引擎的快照点**必须在这里**：上面这 6 个 `install_actions` 装的绑定
+        // （保存 / 跳转定义 / 菜单条开关 / 命令面板 / 快速打开 / 文件内替换）是窗口构造期
+        // 才进 keymap 的，晚于 `main.rs` 的启动段。快照早于此处就会漏掉它们，第一次重放会
+        // 把它们清掉。第二个窗口再跑一次无害：装的是同一批，快照只做一次。
+        crate::keymap_engine::sync(cx);
+
         register_java_toolchain(&root, cx);
 
         prepare_workspace_config(root.clone(), cx);
@@ -608,6 +614,10 @@ impl ShellWorkspace {
             store.update(cx, |store, cx| {
                 store.set_workspace_root(Some(settings_root), cx)
             });
+            // 键位改了要重放整张 keymap。`settings` 不能反向依赖 `workbench`，所以订阅挂在
+            // 这一侧；引擎自己比指纹，改字号、换主题这类无关改动不会触发重放。
+            cx.observe(&store, |_, _, cx| crate::keymap_engine::sync(cx))
+                .detach();
         }
 
         let notifications = cx.new(|_| lithe_gpui_notify::Store::new());
