@@ -1686,3 +1686,101 @@ fn hover_content_hangs_from_the_offset_the_owner_names(cx: &mut TestAppContext) 
     });
     cx.run_until_parked();
 }
+
+/// 端到端按键：真的按键下去要走完整条链路。
+///
+/// 现有的 editor 测试都是直接调 `e.undo(cx)` / `e.select_all(cx)` 这类方法，**绕过了键位这一层**，
+/// 所以「键位到底接没接上」此前只能靠人在实机上敲。下面三条走 `simulate_keystrokes`，把第四层
+/// （按键 → keymap → context 谓词 → `on_action`）也钉住。
+///
+/// 两个前置，缺一个这条测试就失去意义：
+///
+/// - **要装键位。** 测试里从来没装过（现有用例直接调方法），不装就没有绑定可匹配。
+///   用 `install_key_bindings` 而**不是** `init`：`init` 第一件事校验 `IconName::Check.path()`，
+///   无头测试里必 panic —— 这正是 `install_key_bindings` 存在的理由。
+/// - **要把焦点放到编辑器上。** `key_context(CONTEXT)` 只在焦点路径上生效，不 focus 谓词匹配不上。
+///   这一点我用「去掉 focus 再跑一遍」验过：三条都会挂，见提交说明。
+fn keyed<'a>(
+    text: &str,
+    cx: &'a mut TestAppContext,
+) -> (Entity<CodeEditor>, &'a mut VisualTestContext) {
+    let (editor, cx) = editor(text, cx);
+    cx.update(|window, cx| {
+        crate::install_key_bindings(cx);
+        window.refresh();
+    });
+    let focus = editor.read_with(cx, |editor, _| editor.focus.clone());
+    cx.update(|window, cx| window.focus(&focus, cx));
+    cx.run_until_parked();
+    (editor, cx)
+}
+
+/// `secondary-a` → SelectAll：选区覆盖全文。
+///
+/// 键位在 `keys.rs:96`（`context = Some(CONTEXT)`），动作在 `keys.rs:292` 的 `on_action`。
+#[gpui::test]
+fn secondary_a_selects_the_whole_document(cx: &mut TestAppContext) {
+    let (editor, cx) = keyed("fn a() {\n    b();\n}", cx);
+    cx.simulate_keystrokes("secondary-a");
+    cx.run_until_parked();
+    editor.read_with(cx, |editor, _| {
+        let selections = editor.selections();
+        assert_eq!(selections.len(), 1, "secondary-a 不该产生第二个光标");
+        assert_eq!(
+            (selections[0].anchor, selections[0].head),
+            (0, editor.text().len()),
+            "secondary-a 之后选区要覆盖全文 —— 初始只是 0 处的一个光标"
+        );
+    });
+}
+
+/// `secondary-c` → Copy：剪贴板拿到全文，且**不改** buffer。
+///
+/// 键位在 `keys.rs:97`，动作在 `keys.rs:293`。断言读的是测试平台的真剪贴板
+/// （`platform/test/platform.rs` 的 `read_from_clipboard`），不是猜的。
+#[gpui::test]
+fn secondary_c_puts_the_whole_document_on_the_clipboard(cx: &mut TestAppContext) {
+    let whole = "fn a() {\n    b();\n}";
+    let (editor, cx) = keyed(whole, cx);
+    cx.simulate_keystrokes("secondary-a");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("secondary-c");
+    cx.run_until_parked();
+    let copied = cx
+        .read_from_clipboard()
+        .expect("secondary-c 要写剪贴板；没写就说明按键根本没走到 copy")
+        .text()
+        .expect("写进去的是字符串");
+    assert_eq!(copied, whole, "剪贴板内容就是编辑器全文");
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.text().to_string()),
+        whole,
+        "copy 不该动 buffer"
+    );
+}
+
+/// `secondary-z` → Undo：一次 `undo` 把刚敲进去的字撤掉。
+///
+/// 键位在 `keys.rs:94`，动作在 `keys.rs:290`。先真的敲一个字进撤销栈，否则「undo 之后文本没变」
+/// 这种断言是空的（本来也没变化）。
+#[gpui::test]
+fn secondary_z_takes_back_the_last_edit(cx: &mut TestAppContext) {
+    let (editor, cx) = keyed("let x = 1;", cx);
+    editor.update(cx, |editor, cx| {
+        editor.select([10..10], cx);
+        editor.type_text("2", cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.text().to_string()),
+        "let x = 1;2",
+        "先做一次编辑；做不出来这条测试后面就是空的"
+    );
+    cx.simulate_keystrokes("secondary-z");
+    cx.run_until_parked();
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor.text().to_string()),
+        "let x = 1;",
+        "secondary-z 要把文本复原"
+    );
+}
