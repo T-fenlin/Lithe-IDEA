@@ -433,7 +433,10 @@ fn the_owner_answers_every_query_and_gets_the_row_index_back(cx: &mut TestAppCon
         Some((1, SharedString::from("src/lib.rs"))),
         "行号是宿主自己那两行的位次，不是库内的过滤结果"
     );
-    assert!(!view.read_with(cx, |driven, _| driven.open), "拾起之后壳要关");
+    assert!(
+        !view.read_with(cx, |driven, _| driven.open),
+        "拾起之后壳要关"
+    );
 }
 
 #[gpui::test]

@@ -193,9 +193,11 @@ impl RenderOnce for NavigationMenu {
                     .p_2()
                     .rounded(theme.radius(Radius::Md))
                     .when(!choice.disabled, |row| {
-                        row.when(ix == link, |row| row.bg(colors.hover))
+                        // 链接行画在 `surface(..)` 那个浮层面板上（面板底色 = `overlay`，
+                        // chrome 面），所以取 chrome 两档，不是 `hover` / `active`。
+                        row.when(ix == link, |row| row.bg(colors.chrome_active))
                             .cursor_pointer()
-                            .hover(|style| style.bg(colors.hover))
+                            .hover(|style| style.bg(colors.chrome_hover))
                             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                                 window.prevent_default();
                                 cx.stop_propagation();

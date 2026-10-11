@@ -110,8 +110,16 @@ impl RenderOnce for ActionSheet {
                 .text_color(fg)
                 .cursor_pointer()
                 .tab_index(0)
-                .focus(|style| style.bg(colors.active))
-                .hover(|style| style.bg(colors.hover))
+                // 行画在 `card()` 里，卡片底色是 `overlay`（chrome 面，见上方 `.bg`）：
+                // `hover` 在 JetBrains 浅色里与它同为 `#f2f2f2`，划上去看不见高亮。
+                //
+                // 档位取「聚焦强、悬停弱」，与 `editor/hints.rs` 的候选行同理：这里
+                // 是两行独立代码（`.focus` 与 `.hover`），键盘焦点行与鼠标悬停行是
+                // 两回事、两态可分离，所以给成阶梯；`navigation/palette/mod.rs` 的
+                // 候选行是一处代码兼两态（`on_mouse_move` 让光标行 ≡ 悬停行），分不出
+                // 阶梯，只能取最强档。判据是「有几处代码、两态会不会分离」。
+                .focus(|style| style.bg(colors.chrome_active))
+                .hover(|style| style.bg(colors.chrome_hover))
                 .child(label)
         };
         let heading = (self.title.is_some() || self.message.is_some()).then(|| {

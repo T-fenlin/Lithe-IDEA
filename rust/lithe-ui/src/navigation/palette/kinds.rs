@@ -1,6 +1,8 @@
 use std::{iter, ops::Range, rc::Rc};
 
-use gpui::{AnyElement, App, ElementId, IntoElement, RenderOnce, SharedString, StyleRefinement, Window};
+use gpui::{
+    AnyElement, App, ElementId, IntoElement, RenderOnce, SharedString, StyleRefinement, Window,
+};
 
 use super::{Fit, Group, Palette, PaletteRow, fuzzy, marked, on_value, query_field};
 use crate::{

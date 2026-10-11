@@ -132,9 +132,27 @@ impl RenderOnce for CompletionMenu {
                     .px_2()
                     .py_0p5()
                     .rounded(theme.radius(Radius::Sm))
-                    .when(ix == chosen, |row| row.bg(colors.active))
+                    // 行画在补全浮层里，浮层底色是 `overlay`（chrome 面，见本函数下方
+                    // `.bg(colors.overlay)`）：`hover` 在 JetBrains 浅色里与它同为
+                    // `#f2f2f2`，鼠标划过候选行完全看不见高亮，只有键盘 ↑↓ 那行有反馈。
+                    //
+                    // 档位取「选中强、悬停弱」，给成阶梯。判据是「有几处代码、两态
+                    // 会不会分离」，不是「它叫什么名字」：这里是两行独立代码
+                    // （`.when(ix == chosen)` 与 `.hover`），`chosen` 只由 `self.selected`
+                    // 决定、本文件没有 `on_mouse_move` 把光标拖到悬停行上，两态可分离，
+                    // 选中行与悬停行可以同时是两行，所以该有强弱差。
+                    // 对比 `navigation/palette/mod.rs` 的候选行：那一处代码兼两态
+                    // （`on_mouse_move` 让光标行 ≡ 悬停行），分不出阶梯，只能取最强档。
+                    .when(ix == chosen, |row| row.bg(colors.chrome_active))
                     .cursor_pointer()
-                    .hover(|row| row.bg(colors.hover))
+                    // 悬停只挂在**非选中**行上。`.hover()` 铺的样式在 gpui 里是最后 refine 的
+                    // （gpui-pre 0.3.8 `elements/div.rs:3473`，排在 `focus_style:3426` 之后），
+                    // 会盖掉上面 `.when(ix == chosen)` 铺的那一档 —— 若无条件挂，鼠标停在已选中
+                    // 行上时该行会从 `chrome_active` 掉到 `chrome_hover`，看着像选中丢了。
+                    // `.when` 保证每个元素只调一次 `.hover()`，不会撞 `debug_assert!`。
+                    .when(ix != chosen, |row| {
+                        row.hover(|row| row.bg(colors.chrome_hover))
+                    })
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                     .when_some(pick, |row, pick| {
                         row.on_click(move |_, window, cx| {

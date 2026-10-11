@@ -449,7 +449,11 @@ impl Palette {
                         .h(theme.control_height(Size::Large))
                         .px_2()
                         .rounded(theme.radius(Radius::Md))
-                        .when(ix == at, |row| row.bg(colors.hover))
+                        // 行画在卡片里，卡片无条件铺 `.bg(colors.overlay)`（本文件 `card()`），
+                        // 是 chrome 面：`hover` 在 JetBrains 浅色里与它同为 `#f2f2f2`。
+                        // 这一行既是键盘光标行也是鼠标指着的行（悬停会把光标带走），
+                        // 按「选中」算，取更强的那一档。
+                        .when(ix == at, |row| row.bg(colors.chrome_active))
                         .cursor_pointer()
                         .on_mouse_move(move |_, _, cx| {
                             if hover.read(cx).at != here {

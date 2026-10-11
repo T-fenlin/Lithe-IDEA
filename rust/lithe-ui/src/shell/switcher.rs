@@ -83,7 +83,9 @@ impl RenderOnce for WindowSwitcher {
                     .px_3()
                     .rounded(theme.radius(Radius::Md))
                     .text_size(theme.text_size(TextSize::Base))
-                    .when(ix == selected, |row| row.bg(colors.hover))
+                    // 行画在面板里，面板底色是 `overlay`（chrome 面）：
+                    // `hover` 在 JetBrains 浅色里与它同为 `#f2f2f2`，画上去看不见。
+                    .when(ix == selected, |row| row.bg(colors.chrome_active))
                     .cursor_pointer()
                     .on_click(move |_, window, cx| switch_to(handle, &close, window, cx))
                     .child(
