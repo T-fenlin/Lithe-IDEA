@@ -75,11 +75,7 @@ mod tests {
 
     /// 运行时读 i18n 文件，不 `include_str!`：两个 yml 各约 290 KB，嵌进测试二进制不划算。
     fn locale(name: &str) -> String {
-        let path = format!(
-            "{}/../shared/locales/{}",
-            env!("CARGO_MANIFEST_DIR"),
-            name
-        );
+        let path = format!("{}/../shared/locales/{}", env!("CARGO_MANIFEST_DIR"), name);
         std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("读不了 i18n 文件 {path}：{error}"))
     }
@@ -103,8 +99,14 @@ mod tests {
                 !key.starts_with("lithe."),
                 "{command:?} 的 key 不该带 `lithe.` 前缀（tr() 会加）：{key}"
             );
-            assert!(has_key(&zh, key), "中文档案里没有 {command:?} 的 key：{key}");
-            assert!(has_key(&en, key), "英文档案里没有 {command:?} 的 key：{key}");
+            assert!(
+                has_key(&zh, key),
+                "中文档案里没有 {command:?} 的 key：{key}"
+            );
+            assert!(
+                has_key(&en, key),
+                "英文档案里没有 {command:?} 的 key：{key}"
+            );
         }
     }
 
