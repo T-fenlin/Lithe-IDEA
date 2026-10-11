@@ -236,6 +236,22 @@ pub fn apply(settings: &lithe_gpui_settings::KeymapSettings, cx: &mut App) {
 ///
 /// 装好对仓库的订阅之后要**主动调一次**：`observe` 只在变化时触发，而启动时用户可能已经
 /// 存过覆盖，那时 keymap 还是基线默认值。
+/// 把「这条命令能不能绑键」的判定注给 `settings` 的键位层。
+///
+/// 判定依据是薄表 + `keybind_action()` 有没有值——那是 workbench 的知识，`settings` 不能
+/// 反向依赖，所以走宿主注入（同 `lithe_gpui_settings::set_git_identity_host`）。设置页拿它
+/// 决定哪几行要灰掉。
+///
+/// 幂等，重复调用只是换掉同一个解析器；但**必须调**——不调的话 `is_bindable` 一律 false，
+/// 整页变灰。
+pub fn register_bindable_resolver() {
+    lithe_gpui_settings::set_bindable_resolver(Some(std::rc::Rc::new(|command| {
+        managed_menu_action(command)
+            .and_then(MenuAction::keybind_action)
+            .is_some()
+    })));
+}
+
 pub fn sync(cx: &mut App) {
     let Some(store) = lithe_gpui_settings::try_store(cx) else {
         return;

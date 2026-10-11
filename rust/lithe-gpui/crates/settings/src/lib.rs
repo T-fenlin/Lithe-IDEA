@@ -31,9 +31,10 @@ pub use identity::{
     set_git_identity_host,
 };
 pub use keymap::{
-    DEFAULT_BINDINGS, ECLIPSE_BINDINGS, IDEA_CLASSIC_BINDINGS, KEYMAP_SETTINGS_VERSION,
-    KeyOverride, KeySource, KeymapPreset, KeymapSettings, PresetBinding, ResolvedBinding,
-    context_for, parse_keymap, preset_bindings,
+    BindableResolver, DEFAULT_BINDINGS, ECLIPSE_BINDINGS, IDEA_CLASSIC_BINDINGS,
+    KEYMAP_SETTINGS_VERSION, KeyOverride, KeySource, KeymapPreset, KeymapSettings, PresetBinding,
+    ResolvedBinding, context_for, is_bindable, parse_keymap, preset_bindings,
+    set_bindable_resolver,
 };
 pub use paths::{SETTINGS_FILE_ENV, recent_projects_file_path, settings_file_path};
 pub use persistence::{

@@ -93,7 +93,10 @@ pub fn install_key_bindings(cx: &mut App) {
     editor::bind_keys(cx);
 }
 
-#[cfg(test)]
+// `TestAppContext` 只在 gpui 的 `test-support` feature 打开时才存在（gpui 侧是
+// `#[cfg(any(test, feature = "test-support"))]`，而 gpui 作为依赖编译时不带 `test`），
+// 所以这个模块必须跟着本 crate 的 `test-support` 一起开关。
+#[cfg(all(test, feature = "test-support"))]
 mod tests {
     use super::install_key_bindings;
     use gpui::{App, TestAppContext};

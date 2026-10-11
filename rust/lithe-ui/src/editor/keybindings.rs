@@ -16,13 +16,22 @@ use crate::{
 };
 
 /// Where a binding comes from.
+///
+/// Three tiers, not two: a host that layers a preset above the built-in defaults must be able to
+/// tell them apart. Collapsing `Preset` into `User` would mark rows the user never touched as
+/// "changed by you", which is wrong in a way the reader cannot correct — `Tone::Info` reads as an
+/// edit the user made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeySource {
     Default,
+    Preset,
     User,
 }
 
 /// A command and the keys that run it, in gpui key syntax, when a context holds.
+///
+/// `bindable` is false for a command the host has no dispatchable action for: the row is still
+/// listed so the reader can see the command exists, but it is dimmed and cannot be recorded into.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Keybinding {
     pub command: SharedString,
@@ -30,6 +39,7 @@ pub struct Keybinding {
     pub keys: Option<SharedString>,
     pub when: Option<SharedString>,
     pub source: KeySource,
+    pub bindable: bool,
 }
 
 /// Commands sharing keys in the same context: for each binding, the others its keys also run.
@@ -127,10 +137,12 @@ impl RenderOnce for KeybindingsEditor {
                 .any(|text| fuzzy(&query, text).is_some())
         };
         let widths = [2.25, 1.5, 1.5, 0.75].map(|share| theme.label_width() * share);
-        // Source 那一栏的两张角标走文案表：它们跟别的界面文案一起换语言。
-        let (source_default, source_user) = (
+        // Source 那一栏的角标走文案表：它们跟别的界面文案一起换语言。
+        let (source_default, source_preset, source_user, row_unbindable) = (
             text(cx, "keys.source.default", &[]),
+            text(cx, "keys.source.preset", &[]),
             text(cx, "keys.source.user", &[]),
+            text(cx, "keys.row.unbindable", &[]),
         );
         // 四列表头同样走文案表：中文 IDE 的快捷键设置页不能留英文表头。
         let (head_command, head_binding, head_when, head_source) = (
@@ -157,6 +169,7 @@ impl RenderOnce for KeybindingsEditor {
             .map(|(ix, binding)| {
                 let clashes = conflicts(&self.bindings, binding);
                 let recording = self.recording.as_ref() == Some(&binding.command);
+                let bindable = binding.bindable;
                 let keys = if recording {
                     let (bind, command) = (self.on_bind.clone(), binding.command.clone());
                     HotkeyInput::new((self.id.clone(), format!("keys-{ix}")), None)
@@ -168,40 +181,46 @@ impl RenderOnce for KeybindingsEditor {
                         })
                         .into_any_element()
                 } else {
-                    match &binding.keys {
-                        Some(keys) => div()
-                            .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .child(KbdCombo::new(keys))
-                            .when(!clashes.is_empty(), |cell| {
-                                let words = format!("Also runs {}", clashes.join(", "));
-                                cell.child(
-                                    div()
-                                        .id((self.id.clone(), format!("clash-{ix}")))
-                                        .tooltip(Tooltip::text(words))
-                                        .child(
-                                            Icon::new(IconName::TriangleAlert)
-                                                .size(IconSize::Xs)
-                                                .color(colors.warning),
-                                        ),
-                                )
-                            })
-                            .into_any_element(),
-                        None => div()
-                            .text_color(colors.fg_subtle)
-                            .child("—")
-                            .into_any_element(),
-                    }
+                    let cell = div().flex().items_center().gap_1p5();
+                    let cell = match &binding.keys {
+                        Some(keys) => {
+                            cell.child(KbdCombo::new(keys))
+                                .when(!clashes.is_empty(), |cell| {
+                                    let words = format!("Also runs {}", clashes.join(", "));
+                                    cell.child(
+                                        div()
+                                            .id((self.id.clone(), format!("clash-{ix}")))
+                                            .tooltip(Tooltip::text(words))
+                                            .child(
+                                                Icon::new(IconName::TriangleAlert)
+                                                    .size(IconSize::Xs)
+                                                    .color(colors.warning),
+                                            ),
+                                    )
+                                })
+                        }
+                        None => cell.text_color(colors.fg_subtle).child("—"),
+                    };
+                    // 角标挂在按键格而不是空值分支里：不可绑的行**也可能有键位**（预设或默认给
+                    // 的），那时同样要说清「看得见但改不了」，否则整行变灰没有任何解释。
+                    cell.when(!bindable, |cell| {
+                        cell.child(Badge::new(row_unbindable.clone()))
+                    })
+                    .into_any_element()
                 };
                 let record = self.on_record.clone();
                 let command = binding.command.clone();
                 columns(div().id((self.id.clone(), format!("row-{ix}"))))
                     .py_1p5()
                     .rounded(theme.radius(Radius::Sm))
+                    // 不可改的行整行压暗，且不参与悬停与双击录制 —— 灰而不解释为什么会让人
+                    // 以为是自己点漏了，所以按键那格还要给一枚「未接入」角标（见下）。
+                    .when(!bindable, |row| row.opacity(0.55))
                     .when(recording, |row| row.bg(colors.active))
-                    .when(!recording, |row| row.hover(|row| row.bg(colors.hover)))
-                    .when_some(record, |row, record| {
+                    .when(!recording && bindable, |row| {
+                        row.hover(|row| row.bg(colors.hover))
+                    })
+                    .when_some(record.filter(|_| bindable), |row, record| {
                         row.on_click(move |event, window, cx| {
                             if event.click_count() == 2 {
                                 record(&command, window, cx)
@@ -238,6 +257,9 @@ impl RenderOnce for KeybindingsEditor {
                     )
                     .child(div().w(widths[3]).flex().child(match binding.source {
                         KeySource::Default => Badge::new(source_default.clone()),
+                        // 预设与默认都不是用户改的，所以共用中性徽章，只靠文案区分；
+                        // `Tone::Info` 那档留给 `User`——它才表示「这行是你改过的」。
+                        KeySource::Preset => Badge::new(source_preset.clone()),
                         KeySource::User => Badge::new(source_user.clone()).tone(Tone::Info),
                     }))
             });
@@ -261,6 +283,7 @@ mod tests {
             keys: Some(keys.to_string().into()),
             when: when.map(|when| when.to_string().into()),
             source: KeySource::Default,
+            bindable: true,
         }
     }
 

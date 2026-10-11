@@ -603,6 +603,8 @@ impl ShellWorkspace {
         // （保存 / 跳转定义 / 菜单条开关 / 命令面板 / 快速打开 / 文件内替换）是窗口构造期
         // 才进 keymap 的，晚于 `main.rs` 的启动段。快照早于此处就会漏掉它们，第一次重放会
         // 把它们清掉。第二个窗口再跑一次无害：装的是同一批，快照只做一次。
+        // 设置页要知道哪几条命令能绑键（其余灰掉），判定口由引擎注入。
+        crate::keymap_engine::register_bindable_resolver();
         crate::keymap_engine::sync(cx);
 
         register_java_toolchain(&root, cx);

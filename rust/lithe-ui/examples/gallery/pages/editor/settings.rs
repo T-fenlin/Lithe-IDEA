@@ -107,6 +107,7 @@ pub fn settings_and_keys(window: &mut Window, cx: &mut App) -> impl IntoElement 
                         keys: keys.map(|keys| keys.to_string().into()),
                         when: when.map(|when| when.to_string().into()),
                         source,
+                        bindable: true,
                     }
                 };
             vec![

@@ -3,17 +3,19 @@ use std::path::PathBuf;
 use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Rems, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, rems,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, px,
+    rems,
 };
 use gpui::{PathPromptOptions, prelude::FluentBuilder as _};
 
+use lithe_gpui_shared::commands::CommandId;
 use lithe_gpui_shared::icons::{idea, idea_icon_image, idea_icon_svg_px};
 use lithe_gpui_shared::workspace_config::{
     OverrideOrigin, OverrideOrigins, ToolchainPaths, load_local_toolchain, save_local_toolchain,
 };
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_ui::buttons::{Button, ButtonVariant};
-use lithe_ui::feedback::EmptyState;
+use lithe_ui::feedback::{Alert, EmptyState};
 use lithe_ui::forms::{Input, InputEvent, InputState, NumberInput, Switch};
 use lithe_ui::layout::{h_stack, v_stack};
 use lithe_ui::menus::{DropdownMenu, Menu, MenuItem};
@@ -25,6 +27,7 @@ use crate::identity::{
     GitIdentityPage, IdentityField, IdentityScope, IdentitySetup, git_identity_page,
     host_workspace_root, identity_value_is_valid, identity_value_rejection,
 };
+use crate::keymap::{KeySource, KeymapPreset, preset_bindings};
 use crate::project::{
     DetectedJdk, DetectedMaven, EffectiveToolchain, MINIMUM_JAVA_MAJOR, Overrides,
     ProjectEnvironment, ToolSource, discover, resolve_overrides,
@@ -720,7 +723,39 @@ pub struct SettingsDialog {
     maven_local_repository_input: Entity<InputState>,
     project: ProjectPageState,
     run: RunPageState,
+    /// 快捷键页的搜索框：组件只收 `query`，输入框由页面自己出。
+    keymap_search: Entity<InputState>,
+    /// 正在录键位的那条命令（`KeybindingsEditor` 用它把该行换成 `HotkeyInput`）。
+    keymap_recording: Option<SharedString>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// 键位预设的显示名。**专有名词，不进 i18n**：Lithe / IDEA Classic / Eclipse 中英文同形，
+/// 进了翻译表只会变成一条没人维护的空转条目。
+fn preset_label(preset: KeymapPreset) -> &'static str {
+    match preset {
+        KeymapPreset::Lithe => "Lithe",
+        KeymapPreset::IdeaClassic => "IDEA Classic",
+        KeymapPreset::Eclipse => "Eclipse",
+    }
+}
+
+/// 当前预设表**没有**覆盖到的命令数。
+///
+/// 判据只看预设表本身，不看合成结果：一条命令被用户覆盖过（`KeySource::User`）不等于预设
+/// 覆盖了它，把用户那几条算进「已覆盖」会把缺口数报小。
+///
+/// `Lithe` 档**按设计是空表**——它的键位就是默认值本身（`keymap.rs` 模块文档那四层合成的
+/// 第 2 条），所以对它一律报 0；否则页面一进来就挂着「此预设不完整」，那是在撒谎。
+fn preset_gap(preset: KeymapPreset) -> usize {
+    if preset == KeymapPreset::Lithe {
+        return 0;
+    }
+    let rows = preset_bindings(preset);
+    CommandId::ALL
+        .iter()
+        .filter(|command| !rows.iter().any(|row| row.command == **command))
+        .count()
 }
 
 impl SettingsDialog {
@@ -759,8 +794,21 @@ impl SettingsDialog {
         let maven_local_repository_input =
             cx.new(|cx| text_input(window, cx, project_overrides.maven_local_repository.clone()));
 
+        let keymap_search = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("lithe.settings.keyboard.search"))
+        });
+
         let mut subscriptions = Vec::new();
         subscriptions.push(cx.observe(&store, |_, _, cx| cx.notify()));
+        subscriptions.push(cx.subscribe_in(
+            &keymap_search,
+            window,
+            |_this: &mut Self, _input, event: &InputEvent, _window, cx| {
+                if matches!(event, InputEvent::Changed) {
+                    cx.notify();
+                }
+            },
+        ));
         for input in [&git_name_input, &git_email_input] {
             subscriptions.push(cx.subscribe_in(
                 input,
@@ -804,6 +852,8 @@ impl SettingsDialog {
             maven_local_repository_input,
             project: ProjectPageState::new(workspace_root, project_overrides, override_origins),
             run: RunPageState::new(),
+            keymap_search,
+            keymap_recording: None,
             _subscriptions: subscriptions,
         }
     }
@@ -927,9 +977,8 @@ impl SettingsDialog {
                         Category::Run => self.run_page(cx),
                         Category::Git => self.git_page(&settings, cx),
                         Category::Lsp => self.lsp_page(&settings, cx),
-                        Category::Keyboard | Category::Logs | Category::Updates => {
-                            self.empty_page(cx)
-                        }
+                        Category::Keyboard => self.keyboard_page(cx),
+                        Category::Logs | Category::Updates => self.empty_page(cx),
                     }),
             )
     }
@@ -2801,6 +2850,159 @@ impl SettingsDialog {
         );
     }
 
+    /// 快捷键页：预设选择 + 一张可搜索的键位表。
+    ///
+    /// 命令文案取自 [`crate::command_label_key`]，键位与来源取自 `KeymapSettings::resolve`，
+    /// **能不能改**由 workbench 注入的解析器定（[`crate::keymap::is_bindable`]）：判不了可绑的
+    /// 一律灰掉，不放「改了也不生效」的编辑框。
+    fn keyboard_page(&self, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
+        use lithe_ui::editor::{KeySource as RowSource, Keybinding, KeybindingsEditor};
+
+        let keymap = self.store.read(cx).keymap().clone();
+        let preset = keymap.preset;
+
+        // 预设名是专有名词，中英文同形，按裁定不进 i18n。
+        let options: Vec<(SharedString, SharedString, bool)> = KeymapPreset::ALL
+            .iter()
+            .map(|option| {
+                (
+                    SharedString::from(option.id()),
+                    SharedString::from(preset_label(*option)),
+                    *option == preset,
+                )
+            })
+            .collect();
+        let preset_control = {
+            let store = self.store.clone();
+            self.dropdown(
+                "settings-keymap-preset",
+                SharedString::from(preset_label(preset)),
+                options,
+                Box::new(move |value, _, cx| {
+                    let Some(next) = KeymapPreset::from_id(&value) else {
+                        return;
+                    };
+                    store.update(cx, |store, cx| store.set_keymap_preset(next, cx));
+                }),
+            )
+        };
+
+        let rows: Vec<Keybinding> = CommandId::ALL
+            .iter()
+            .map(|command| {
+                let resolved = keymap.resolve(*command);
+                let bindable = crate::keymap::is_bindable(*command);
+                Keybinding {
+                    command: SharedString::from(command.id()),
+                    title: tr(&format!("lithe.{}", crate::command_label_key(*command))),
+                    keys: resolved
+                        .is_bound()
+                        .then(|| SharedString::from(resolved.keystrokes.join(" "))),
+                    when: resolved.context.map(SharedString::from),
+                    source: match resolved.source {
+                        KeySource::Default => RowSource::Default,
+                        KeySource::Preset => RowSource::Preset,
+                        KeySource::User => RowSource::User,
+                    },
+                    bindable,
+                }
+            })
+            .collect();
+
+        let query = self.keymap_search.read(cx).text().to_string();
+        let recording = self.keymap_recording.clone();
+        let store = self.store.clone();
+        let search = self.keymap_search.clone();
+        // 录制状态挂在本对话框上，而 `on_record` 的闭包只有 `&mut App`，所以先抓句柄。
+        let this = cx.entity();
+
+        // 预设覆盖缺口：老前端（`keyboard-settings.tsx`）也是这一条告警，文案与插值占位
+        // 沿用既有的 `settings.keyboard.presetIncomplete` / `presetSingularSuffix` /
+        // `presetPluralSuffix`，不新增 key。
+        let gap = preset_gap(preset);
+        let gap_alert = (gap > 0).then(|| {
+            let count = gap.to_string();
+            let suffix = if gap == 1 {
+                tr("lithe.settings.keyboard.presetSingularSuffix")
+            } else {
+                tr("lithe.settings.keyboard.presetPluralSuffix")
+            };
+            Alert::new(
+                "settings-keymap-preset-gap",
+                lithe_ui::primitives::Severity::Warning,
+                tr_args(
+                    "lithe.settings.keyboard.presetIncomplete",
+                    &[("count", count.as_str()), ("suffix", suffix.as_str())],
+                ),
+            )
+            .into_any_element()
+        });
+
+        vec![
+            settings_group(
+                tr("lithe.settings.keyboard.presetLabel"),
+                vec![settings_row(
+                    "settings-row-keymap-preset",
+                    tr("lithe.settings.keyboard.presetLabel"),
+                    Some(tr("lithe.settings.keyboard.presetDescription")),
+                    preset_control,
+                    None,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+        ]
+        .into_iter()
+        .chain(gap_alert)
+        .chain(std::iter::once(
+            v_stack()
+                .w_full()
+                .gap_2()
+                .child(
+                    div()
+                        .w(px(320.))
+                        .child(lithe_ui::forms::Input::new(&search)),
+                )
+                .child(
+                    KeybindingsEditor::new("settings-keymap-editor", rows)
+                        .query(query)
+                        .recording(recording.clone())
+                        .on_record(move |command, _, cx| {
+                            // 再点一次同一行 = 取消录制。
+                            this.update(cx, |this, cx| {
+                                this.keymap_recording =
+                                    if this.keymap_recording.as_ref() == Some(command) {
+                                        None
+                                    } else {
+                                        Some(command.clone())
+                                    };
+                                cx.notify();
+                            });
+                        })
+                        .on_bind({
+                            let store = store.clone();
+                            move |command, stroke, _, cx| {
+                                let Some(id) = CommandId::from_id(command) else {
+                                    return;
+                                };
+                                let keys = match stroke {
+                                    Some(stroke) => vec![stroke.to_string()],
+                                    // 清掉键位 = 显式不绑定，落到 `set_key_override` 的空列表语义。
+                                    None => Vec::new(),
+                                };
+                                store.update(cx, |store, cx| {
+                                    let preset = store.keymap().preset;
+                                    store.set_key_override(preset, id, keys, cx);
+                                });
+                            }
+                        }),
+                )
+                .into_any_element(),
+        ))
+        .collect()
+    }
+
     fn dropdown(
         &self,
         id: impl Into<ElementId>,
@@ -2977,6 +3179,32 @@ fn git_scope_label(scope: IdentityScope) -> SharedString {
 mod tests {
     use super::*;
     use gpui::px;
+
+    /// 默认档（Lithe）永远不报覆盖缺口。
+    ///
+    /// 它的预设表**按设计是空表**——它的键位就是默认值本身。若照「表里没有就算缺口」直算，
+    /// 一进设置页就挂着「此预设不完整」，那是在撒谎。
+    #[test]
+    fn the_default_preset_never_reports_a_coverage_gap() {
+        assert_eq!(
+            preset_gap(KeymapPreset::Lithe),
+            0,
+            "Lithe 档的键位就是默认值本身，不该被判成不完整"
+        );
+    }
+
+    /// 没有真源的预设档，缺口就是全部命令。
+    ///
+    /// 顺带把「Eclipse 档没有 Windows 侧真源」这个事实钉住：将来真源补齐、表被填上，这条
+    /// 会失败，那就是提醒该改这条断言的时候了。
+    #[test]
+    fn a_preset_without_a_real_source_reports_every_command_missing() {
+        assert!(
+            preset_bindings(KeymapPreset::Eclipse).is_empty(),
+            "ECLIPSE_BINDINGS 今天是空表：macOS 那两份 Eclipse 表是 ⌘ 方言，Windows 上没有对应真源"
+        );
+        assert_eq!(preset_gap(KeymapPreset::Eclipse), CommandId::ALL.len());
+    }
 
     // `font_size_labels_are_compact` 随 `format_ui_font_size` / `format_editor_font_size`
     // 一起删除：显示文本的格式化已归库的 `NumberInput`（见上方注释与汇报的缺口清单）。

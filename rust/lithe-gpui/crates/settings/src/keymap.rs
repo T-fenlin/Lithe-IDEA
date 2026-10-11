@@ -292,6 +292,41 @@ impl KeymapSettings {
     }
 }
 
+/// 某条命令**能不能绑键**的判定口。由 workbench 在启动时注入。
+///
+/// ## 为什么是注入，不是一张表
+///
+/// 能不能绑键取决于这条命令有没有一个 gpui `Action` 类型，而 action 类型在 workbench
+/// （`MenuAction::keybind_action()`）。依赖方向是 `workbench → settings`，`settings` **不能
+/// 反向依赖**它。把「哪些命令能绑」抄成第二张表，就会有一份必然漂移的副本。
+///
+/// 所以这里只留一个查询口，宿主把解析器注进来——同 `identity::set_git_identity_host`
+/// 那套宿主注入模式。
+///
+/// ## 没有注入时一律返回 `false`
+///
+/// 判定是 refinement，但缺省值必须选**错得响亮的那一侧**：返回 `true` 会放出一堆「改了也不
+/// 生效」的编辑框，用户改完发现没反应，还找不到原因；返回 `false` 是整页变灰，一眼能看出
+/// 解析器没注入。
+pub type BindableResolver = std::rc::Rc<dyn Fn(CommandId) -> bool + 'static>;
+
+thread_local! {
+    static BINDABLE: std::cell::RefCell<Option<BindableResolver>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub fn set_bindable_resolver(resolver: Option<BindableResolver>) {
+    BINDABLE.with(|slot| *slot.borrow_mut() = resolver);
+}
+
+pub fn is_bindable(command: CommandId) -> bool {
+    BINDABLE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|resolve| resolve(command))
+    })
+}
+
 /// 一条命令的合成结果。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolvedBinding {
@@ -921,5 +956,35 @@ mod tests {
         for keystroke in ["secondary-s", "secondary-shift-p", "alt-f12", "f12"] {
             assert!(gpui::Keystroke::parse(keystroke).is_ok(), "{keystroke}");
         }
+    }
+
+    /// 没注入解析器时一律 `false`。
+    ///
+    /// 这个缺省方向是刻意的：宁可整页变灰（一眼看得出解析器没注入），也不能放出一堆
+    /// 「改了也不生效」的编辑框。
+    #[test]
+    fn nothing_is_bindable_without_a_resolver() {
+        // `BINDABLE` 是 thread_local，而测试各跑各的线程，所以这里不会串到别的用例。
+        set_bindable_resolver(None);
+        for command in CommandId::ALL {
+            assert!(
+                !is_bindable(command),
+                "{command:?} 在没有注入解析器时不该被判成可绑"
+            );
+        }
+    }
+
+    /// 注入之后由解析器说了算，且**逐条**生效。
+    #[test]
+    fn a_resolver_decides_what_is_bindable_command_by_command() {
+        set_bindable_resolver(Some(std::rc::Rc::new(|command| {
+            matches!(command, CommandId::SaveBuffer | CommandId::OpenQuickOpen)
+        })));
+        assert!(is_bindable(CommandId::SaveBuffer));
+        assert!(is_bindable(CommandId::OpenQuickOpen));
+        assert!(!is_bindable(CommandId::NewWindow));
+        assert!(!is_bindable(CommandId::OpenSearchEverywhere));
+        // 恢复缺省，免得同线程里后来的用例被影响。
+        set_bindable_resolver(None);
     }
 }

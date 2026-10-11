@@ -56,4 +56,7 @@ keys:
     source: {en-US: "Source", en-GB: "Source", de-DE: "Quelle", fr-FR: "Source", ja-JP: "ソース", he-IL: "מקור", zh-CN: "来源"}
   source:
     default: {en-US: "Default", en-GB: "Default", de-DE: "Standard", fr-FR: "Par défaut", ja-JP: "既定", he-IL: "ברירת מחדל", zh-CN: "默认"}
+    preset: {en-US: "Preset", en-GB: "Preset", de-DE: "Voreinstellung", fr-FR: "Préréglage", ja-JP: "プリセット", he-IL: "הגדרה מוכנה", zh-CN: "预设"}
     user: {en-US: "User", en-GB: "User", de-DE: "Benutzer", fr-FR: "Utilisateur", ja-JP: "ユーザー", he-IL: "משתמש", zh-CN: "用户"}
+  row:
+    unbindable: {en-US: "Not wired", en-GB: "Not wired", de-DE: "Nicht verdrahtet", fr-FR: "Non câblé", ja-JP: "未接続", he-IL: "לא מחובר", zh-CN: "未接入"}
