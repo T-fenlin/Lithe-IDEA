@@ -2,6 +2,7 @@ pub mod dialog;
 pub mod extensions;
 pub mod fonts;
 pub mod identity;
+pub mod keymap;
 pub mod paths;
 pub mod persistence;
 pub mod project;
@@ -24,6 +25,11 @@ pub use identity::{
     GitIdentityHost, GitIdentityPage, IDENTITY_MAX_BYTES, IdentityField, IdentityScope,
     IdentitySetup, git_identity_page, host_workspace_root, identity_value_is_valid,
     set_git_identity_host,
+};
+pub use keymap::{
+    DEFAULT_BINDINGS, ECLIPSE_BINDINGS, IDEA_CLASSIC_BINDINGS, KEYMAP_SETTINGS_VERSION,
+    KeyOverride, KeySource, KeymapPreset, KeymapSettings, PresetBinding, ResolvedBinding,
+    context_for, parse_keymap, preset_bindings,
 };
 pub use paths::{SETTINGS_FILE_ENV, recent_projects_file_path, settings_file_path};
 pub use persistence::{
