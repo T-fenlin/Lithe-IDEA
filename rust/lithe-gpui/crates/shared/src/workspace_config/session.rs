@@ -136,7 +136,13 @@ pub fn save_session(root: &Path, session: &SessionState) -> Result<SessionSaved,
         }
     }
 
-    let exclusion = sharing::ensure_project_dir_excluded(root).map_err(SessionError::Exclude)?;
+    // 排除失败只会让 `.lithe/` 出现在 `git status` 里，不应阻断会话保存；
+    // 否则每次打开项目都会丢失已打开的标签页，并弹出一条 Error 通知。
+    let exclusion = sharing::degrade_exclusion_failure(
+        sharing::ensure_project_dir_excluded(root),
+        root,
+        "session",
+    );
     let bytes =
         document::save_document(&path, session, previous.as_ref(), SESSION_DOCUMENT_VERSION)?;
     let _ = sharing::ensure_local_ignore_file(root);

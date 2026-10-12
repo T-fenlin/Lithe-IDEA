@@ -242,8 +242,12 @@ pub fn save(root: &Path, paths: &ToolchainPaths) -> Result<ToolchainSaved, Works
     let paths = paths.normalized();
     let config = WorkspaceConfigPaths::new(root);
 
-    let exclusion =
-        sharing::ensure_project_dir_excluded(root).map_err(WorkspaceConfigError::Exclude)?;
+    // 与会话、项目清单同理：排除失败不该让 JDK / Maven 路径覆盖存不下来。
+    let exclusion = sharing::degrade_exclusion_failure(
+        sharing::ensure_project_dir_excluded(root),
+        root,
+        "toolchain",
+    );
 
     let run_local_bytes = save_run_local(&config, &paths)?;
     let maven_local_bytes = save_maven_local(&config, &paths)?;

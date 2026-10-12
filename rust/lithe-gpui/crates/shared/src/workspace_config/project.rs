@@ -145,8 +145,12 @@ pub fn save_project_manifest(
     };
 
     let path = WorkspaceConfigPaths::new(root).project_manifest();
-    let exclusion =
-        sharing::ensure_project_dir_excluded(root).map_err(WorkspaceConfigError::Exclude)?;
+    // 与会话保存同理：排除失败只影响工作区是否变脏，不该让项目清单写不进去。
+    let exclusion = sharing::degrade_exclusion_failure(
+        sharing::ensure_project_dir_excluded(root),
+        root,
+        "project",
+    );
     let previous = document::previous_object(&path);
     let bytes = document::save_document(
         &path,

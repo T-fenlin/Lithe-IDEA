@@ -13,8 +13,13 @@ use crate::workspace_config::paths::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnsureExcluded {
+    /// 排除规则已经写入 `.git/info/exclude` 并回读确认。
     Ensured,
+    /// 当前目录不是 Git 工作区，没有排除目标。
     NotARepository,
+    /// 尝试写入 `.git/info/exclude` 但被拒绝，目录没有被排除。
+    /// 调用方应当继续保存业务数据，而不是让整次保存失败。
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +155,30 @@ pub fn ensure_project_dir_excluded(root: &Path) -> Result<EnsureExcluded, Sharin
             &exclude_file,
             &format!("回读失败：{error}"),
         )),
+    }
+}
+
+/// 把 `ensure_project_dir_excluded` 的失败降级成 [`EnsureExcluded::Failed`]。
+///
+/// `.lithe/` 没有写进 `.git/info/exclude` 只会让工作区在 `git status` 里变脏，
+/// 不该让会话、项目清单这类业务数据的保存整体失败。失败仍然打诊断日志，
+/// 便于在 Core 补齐 git 写能力后定位哪些仓库受影响。
+///
+/// `scope` 用于区分调用来源（例如 `session`、`project`），让日志能指回具体写入方。
+pub fn degrade_exclusion_failure(
+    result: Result<EnsureExcluded, SharingError>,
+    root: &Path,
+    scope: &str,
+) -> EnsureExcluded {
+    match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            eprintln!(
+                "{DIAGNOSTIC_PREFIX} exclusion_degraded scope={scope} root={} error={error}",
+                root.display()
+            );
+            EnsureExcluded::Failed
+        }
     }
 }
 
@@ -714,5 +743,30 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exclusion_failure_degrades_instead_of_blocking_the_save() {
+        let root = std::env::temp_dir();
+
+        let ok = degrade_exclusion_failure(Ok(EnsureExcluded::Ensured), &root, "session");
+        assert_eq!(ok, EnsureExcluded::Ensured, "成功时必须原样透传");
+
+        let error = SharingError::NotPersisted {
+            operation: "excludePatterns",
+            pattern: ".lithe/".to_string(),
+            path: root.join(".git/info/exclude"),
+            reason: "测试注入的失败".to_string(),
+        };
+        let degraded = degrade_exclusion_failure(Err(error), &root, "session");
+        assert_eq!(
+            degraded,
+            EnsureExcluded::Failed,
+            "排除失败必须降级成 Failed，让会话 / 项目清单 / 工具链配置的保存继续完成"
+        );
+
+        let not_repo =
+            degrade_exclusion_failure(Ok(EnsureExcluded::NotARepository), &root, "session");
+        assert_eq!(not_repo, EnsureExcluded::NotARepository);
     }
 }
