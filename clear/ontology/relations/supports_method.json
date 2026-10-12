@@ -1,0 +1,11 @@
+{
+  "basis": "engine.rs:4222 semantic_method；client.rs:673 validate_lsp_method",
+  "domain": "lsp_semantic_operation",
+  "gloss": "该操作面已登记并可向服务端发出这个 LSP method",
+  "id": "supports_method",
+  "kind": "defines",
+  "label": "支持语言服务方法",
+  "range": {
+    "form": "statement"
+  }
+}

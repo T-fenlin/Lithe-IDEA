@@ -1,0 +1,14 @@
+{
+  "id": "cross_compiles_to",
+  "label": "可交叉编译到",
+  "gloss": "Rust 核心能针对某交叉编译目标三元组通过编译。宾语是目标三元组字面值。",
+  "kind": "affects",
+  "shape": "threshold",
+  "domain": "rust_core",
+  "range": {
+    "form": "reference"
+  },
+  "check": "实跑 cargo check --target <三元组>，看退出码；失败时记录确切失败的 crate 与错误原文",
+  "basis": "本次实测 rust/lithe-core 对 aarch64-unknown-linux-ohos 的 cargo check",
+  "status": "active"
+}

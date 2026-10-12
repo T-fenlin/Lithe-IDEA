@@ -1,0 +1,7 @@
+{
+  "domain": "lithe_gpui",
+  "id": "manifests_as",
+  "kind": "manifests_as",
+  "label": "表现为",
+  "range": "layout_skeleton"
+}

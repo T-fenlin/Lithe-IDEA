@@ -1,0 +1,10 @@
+{
+  "domain": "macos_swift_frontend",
+  "gloss": "某端已落地的共享控件取值与另一份规格真源（如 IDEA Community）在同一控件同一属性上是否直接矛盾且无法用档位调和。",
+  "id": "conflicts_with_spec_source",
+  "kind": "affects",
+  "label": "与规格真源冲突",
+  "range": {
+    "form": "statement"
+  }
+}

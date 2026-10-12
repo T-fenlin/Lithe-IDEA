@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui/assets/icons/idea/**，301 个文件（297 个 .svg + extension.json + LICENSE-APACHE-2.0.txt + NOTICE.txt + SOURCES.md），经 crates/shared/src/icons/idea.rs（1141 行、186 组 light/dark 常量）暴露。",
+  "id": "E-lit-idea-icons",
+  "label": "GPUI 应用图标集",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/assets/icons/idea/SOURCES.md"
+  },
+  "type": "design_token"
+}

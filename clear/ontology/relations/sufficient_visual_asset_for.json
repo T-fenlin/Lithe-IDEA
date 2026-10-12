@@ -1,0 +1,10 @@
+{
+  "domain": "design_token",
+  "gloss": "某套视觉资产（图标集、字体集）是否足以支撑目标前端的界面视觉，不需要从对照端大批量移植。",
+  "id": "sufficient_visual_asset_for",
+  "kind": "affects",
+  "label": "视觉资产足以支撑",
+  "range": {
+    "form": "statement"
+  }
+}

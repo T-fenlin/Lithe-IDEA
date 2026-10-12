@@ -1,0 +1,6 @@
+{
+  "gloss": "rust/lithe-ui/src/theme/ 下的具名尺寸/圆角/字号/颜色常量，组件只能引用不得硬编码；也是图标集与字体集的载体概念。",
+  "id": "design_token",
+  "kind": "category",
+  "label": "设计 token"
+}

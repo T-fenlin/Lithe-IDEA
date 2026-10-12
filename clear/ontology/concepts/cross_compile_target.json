@@ -1,0 +1,7 @@
+{
+  "id": "cross_compile_target",
+  "label": "交叉编译目标",
+  "gloss": "Rust 交叉编译目标三元组，形如 aarch64-unknown-linux-ohos；判定口径是 cargo check/build --target 的退出码，而非工具链声称支持。",
+  "kind": "category",
+  "basis": "rustup target list 输出的 ohos 目标三元组"
+}

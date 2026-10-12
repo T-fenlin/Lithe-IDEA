@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui/Cargo.toml 的 members = [\"crates/*\"]，13 个 crate、123 个 .rs",
+  "id": "lithe_gpui_workspace",
+  "label": "lithe-gpui workspace",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/Cargo.toml"
+  },
+  "type": "gpui_frontend"
+}

@@ -1,0 +1,41 @@
+{
+  "id": "n-u-jbvzf1",
+  "kind": "unresolved",
+  "status": "escalated",
+  "statement": "预测六名成员里至少四名返回实质结论；实际全部六名成员未返回（engine: disabled, max-tokens/error）。专家团引擎返回 disabled 状态，建议在插件页开启 Agent Team 的 Host 与 Web 层。",
+  "touches": [
+    "E-gpui"
+  ],
+  "evidence": [],
+  "about": [
+    "Lithe 编辑器开发团",
+    "E-gpui",
+    "E-wintauri",
+    "E-macswift",
+    "E-matrix"
+  ],
+  "scope": {
+    "conditions": {
+      "前端": "GPUI 统一前端 rust/lithe-gpui",
+      "对照端": "windows/tauri 与 macos/ Swift EditorFrontend",
+      "基线提交": "3085f5d1",
+      "分支": "feat/menu-bar-opaque",
+      "盘点日期": "2026-10-12"
+    },
+    "ranges": {}
+  },
+  "resolution": {
+    "outcome": "escalated",
+    "reason": "这不是本任务可自行修复的缺陷，是环境能力缺失：专家团引擎返回 `engine.state: disabled`，`reason: Agent Team 服务或当前会话工具尚未就绪`，`recommendation: 建议在插件页开启 Agent Team 的 Host 与 Web 层，并重新加载会话`。按团队规则「没有可用的成员结果，不得据此编造实质性汇总结论」，我已把 s2 改为基于证据台账的自检验证，并在 docs/development/gpui-gap-team-handoff-2026-10.md 第 2 节逐条标注六名成员各自的覆盖缺口与 s3 补写来源。是否开启 Agent Team 属于人的配置决策，我不自行修改配置、不自动重试、不新增轮次。",
+    "by": null
+  },
+  "source": {
+    "session": "session-84d79623-7a5a-489e-ac46-4d102383269f",
+    "goal": "g-mv4vnyyfdopt",
+    "anomaly": "u-jbvzf1",
+    "by": "model"
+  },
+  "review": null,
+  "at": 1791792467271,
+  "updated": 1791804271585
+}

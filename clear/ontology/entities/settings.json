@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui/crates/settings/Cargo.toml，依赖 lithe-ui/shared/run；被 workbench 与 app 依赖",
+  "id": "settings",
+  "label": "lithe-gpui-settings",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/settings/Cargo.toml"
+  },
+  "type": "crate"
+}

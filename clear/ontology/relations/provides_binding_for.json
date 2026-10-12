@@ -1,0 +1,13 @@
+{
+  "id": "provides_binding_for",
+  "label": "提供绑定层",
+  "gloss": "上游项目为某宿主语言或运行时提供绑定层（胶水），而非提供语言移植或平台后端。宾语是宿主语言/运行时的 id。",
+  "kind": "affects",
+  "domain": "upstream_project",
+  "range": {
+    "form": "reference"
+  },
+  "check": "看上游 crate 的 [lib]、keywords 与 README 自述，以及其 CI 实际编译与运行什么",
+  "basis": "ohos-rs 的 crates/napi 与 crates/sys 清单及 simple-test.yml",
+  "status": "active"
+}

@@ -1,0 +1,7 @@
+{
+  "gloss": "GPUI 前端相对对照端在用户可见视觉呈现上的覆盖程度，以矩阵条目条数计",
+  "id": "visual_parity",
+  "kind": "measure",
+  "label": "视觉平替水位",
+  "unit": "条"
+}

@@ -1,0 +1,6 @@
+{
+  "gloss": "构建期通过 CARGO_TARGET_DIR 指向工作区外的目录，绕开沙盒 ACL",
+  "id": "gpui_target_dir",
+  "kind": "category",
+  "label": "GPUI 构建产出目录"
+}

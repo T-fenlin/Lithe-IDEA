@@ -1,0 +1,6 @@
+{
+  "gloss": "crate 在依赖图中的位置：叶子（被依赖少）与中段（被多个 crate 依赖）",
+  "id": "crate_layer",
+  "kind": "category",
+  "label": "crate 分层"
+}

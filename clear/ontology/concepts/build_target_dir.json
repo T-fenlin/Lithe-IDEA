@@ -1,0 +1,6 @@
+{
+  "gloss": "CARGO_TARGET_DIR 指向的产物目录",
+  "id": "build_target_dir",
+  "kind": "category",
+  "label": "构建目标目录"
+}

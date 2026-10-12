@@ -1,0 +1,10 @@
+{
+  "basis": "extensions/src/core_bridge.rs:5-12 发出该命令；Core protocol/command.rs:339 起的 148 条命令表无 plugins.*",
+  "id": "E-plugin-catalog",
+  "label": "GPUI 扩展目录快照",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/extensions/src/core_bridge.rs"
+  },
+  "type": "plugin_catalog"
+}

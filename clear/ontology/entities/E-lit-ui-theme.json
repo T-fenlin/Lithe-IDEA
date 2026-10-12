@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-ui/src/theme/ 20 个 .rs（tokens.rs 14266 B、palette.rs 14209 B、mod.rs 9164 B），110 个 pub fn、Palette::NAMES 43 槽、Syntax::NAMES 13 槽；宿主的 ComponentTheme 就是它（crates/settings/src/theme.rs:8）。",
+  "id": "E-lit-ui-theme",
+  "label": "lithe-ui 主题全局",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-ui/src/theme/mod.rs"
+  },
+  "type": "design_token"
+}

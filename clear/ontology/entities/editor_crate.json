@@ -1,0 +1,10 @@
+{
+  "basis": "lib.rs:19 actions!、9 个模块声明",
+  "id": "editor_crate",
+  "label": "lithe-gpui crates/editor",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/editor/src/lib.rs"
+  },
+  "type": "editor_kernel"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "exists_on",
+  "label": "存在于平台",
+  "gloss": "某条构建链路或能力落在指定平台上；宾语是平台名或链路实体 id。",
+  "kind": "affects",
+  "range": {
+    "form": "reference"
+  },
+  "basis": "仓库工作流与构建脚本的三端对照盘点",
+  "status": "active"
+}

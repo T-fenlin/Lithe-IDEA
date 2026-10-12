@@ -1,0 +1,10 @@
+{
+  "id": "overstates_parity_of",
+  "label": "高估平替进度",
+  "gloss": "某份状态登记把另一个前端的平替完成度记得比实际高；判据是该登记的平台列里包含对照端自己标注为不可用的能力，或该登记缺少被评估前端的平台字段。",
+  "kind": "measures",
+  "domain": "platform_feature_matrix",
+  "range": "gpui_frontend",
+  "basis": "shared/platform-feature-matrix 与 windows/tauri/src/config/backend-capabilities.ts 的对照",
+  "status": "active"
+}

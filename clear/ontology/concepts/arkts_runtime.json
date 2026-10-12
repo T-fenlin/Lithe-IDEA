@@ -1,0 +1,7 @@
+{
+  "id": "arkts_runtime",
+  "label": "ArkTS 运行时",
+  "gloss": "鸿蒙受认可的 UI 层运行时（ArkTS / ArkUI）；原生 GPU 代码只能作为 XComponent 里的客人，因此 ArkTS 薄壳省不掉。",
+  "kind": "category",
+  "basis": ".agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md:306-307"
+}

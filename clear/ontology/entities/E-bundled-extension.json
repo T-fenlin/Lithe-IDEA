@@ -1,0 +1,10 @@
+{
+  "basis": "settings/src/extensions.rs:22-122 的 BUNDLED_EXTENSIONS 常量表，8 条",
+  "id": "E-bundled-extension",
+  "label": "GPUI 内置扩展注册表",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/settings/src/extensions.rs"
+  },
+  "type": "bundled_extension"
+}

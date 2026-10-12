@@ -1,0 +1,11 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "计数：有多少条 CI 车道的构建目标包含该前端",
+  "id": "ci_lanes_building_gpui",
+  "label": "构建该前端的 CI 车道数",
+  "range": {
+    "form": "quantity",
+    "unit": "条"
+  },
+  "shape": "threshold"
+}

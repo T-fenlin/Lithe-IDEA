@@ -1,0 +1,10 @@
+{
+  "basis": "macOS 发行版的 Swift 前端，含 Sources/EditorFrontend/Tests 等目录。",
+  "id": "E-macswift",
+  "label": "macos/",
+  "provenance": {
+    "kind": "named",
+    "ref": "macos"
+  },
+  "type": "macos_swift_frontend"
+}

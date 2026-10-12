@@ -1,0 +1,12 @@
+{
+  "basis": "rust/lithe-ui/src/editor/buffer.rs:265；rust/lithe-ui/src/language/mod.rs:260",
+  "domain": "incremental_text_model",
+  "gloss": "文本变化后是否整篇重建派生结构：1 = 整篇重建，0 = 仅受影响部分",
+  "id": "rebuilt_wholly_on_every_edit",
+  "kind": "measures",
+  "label": "每次编辑整篇重建度",
+  "range": {
+    "form": "quantity",
+    "unit": "1"
+  }
+}

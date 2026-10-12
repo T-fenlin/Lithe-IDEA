@@ -1,0 +1,6 @@
+{
+  "gloss": "classify-ci-changes.sh 输出的布尔开关，决定哪个平台 job 运行",
+  "id": "ci_lane",
+  "kind": "category",
+  "label": "CI 校验车道"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "ohos_platform",
+  "label": "鸿蒙 / OpenHarmony 平台",
+  "gloss": "鸿蒙（OpenHarmony / HarmonyOS NEXT）操作系统平台。作为平台名使用，不是某个量；本仓库当前无任何 OHOS 实现代码或 CI 引用。",
+  "kind": "category",
+  "basis": "Rust 官方 Tier 2 目标 aarch64/armv7/x86_64-unknown-linux-ohos；仓库检索无 ohos/harmony 实现代码"
+}

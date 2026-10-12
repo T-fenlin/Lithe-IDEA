@@ -1,0 +1,6 @@
+{
+  "gloss": "某能力在对照端可用、在 GPUI 端不可用或不可达的差异；需区分未实现、已实现未接线、平台专属三种成因。",
+  "id": "feature_parity_gap",
+  "kind": "phenomenon",
+  "label": "功能缺口"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "defers_support_for",
+  "label": "推迟支持",
+  "gloss": "文档决策把某平台的支持推后，并明确不阻塞主线、不作承诺。宾语是平台名。",
+  "kind": "affects",
+  "domain": "gpui_frontend",
+  "range": {
+    "form": "reference"
+  },
+  "check": "看决策笔记所在的状态目录（proposed / implemented / rejected）与正文结论原文",
+  "basis": ".agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md:311-313",
+  "status": "active"
+}

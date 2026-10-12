@@ -1,0 +1,7 @@
+{
+  "basis": "rust/lithe-ide-host/src/catalog.rs:30-51",
+  "gloss": "lithe-ide-host 经 Core 的 ideHost.control 暴露给插件与 MCP 客户端的 13 个工具，按 read/configure/execute 三档授权",
+  "id": "ide_capability_api",
+  "kind": "category",
+  "label": "IDE 能力 API"
+}

@@ -1,0 +1,10 @@
+{
+  "basis": "149 条能力 JSON，metadata.json 定义实现与验证两套状态。",
+  "id": "E-matrix",
+  "label": "shared/platform-feature-matrix",
+  "provenance": {
+    "kind": "named",
+    "ref": "shared/platform-feature-matrix/metadata.json"
+  },
+  "type": "platform_feature_matrix"
+}

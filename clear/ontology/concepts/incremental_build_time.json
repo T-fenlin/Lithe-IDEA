@@ -1,0 +1,7 @@
+{
+  "gloss": "cargo check/build 的墙钟秒数，分无改动/改叶子/改中段/全量四档",
+  "id": "incremental_build_time",
+  "kind": "measure",
+  "label": "构建耗时",
+  "unit": "秒"
+}

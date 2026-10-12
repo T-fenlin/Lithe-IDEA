@@ -1,0 +1,7 @@
+{
+  "domain": "extensions_page",
+  "id": "page_reads_catalog",
+  "kind": "affects",
+  "label": "扩展页读取插件目录",
+  "range": "plugin_catalog"
+}

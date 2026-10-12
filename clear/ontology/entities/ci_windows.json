@@ -1,0 +1,11 @@
+{
+  "id": "ci_windows",
+  "label": "Windows CI 工作流",
+  "type": "ci_workflow",
+  "basis": ".github/workflows/ci-windows.yml 定义 changes 分类 job 与 frontend / rust-tests / real-jdt 三条车道，末尾以 gate 汇总。",
+  "provenance": {
+    "kind": "named",
+    "ref": ".github/workflows/ci-windows.yml"
+  },
+  "aliases": ["ci-windows.yml"]
+}

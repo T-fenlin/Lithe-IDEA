@@ -1,0 +1,10 @@
+{
+  "basis": "session.rs:74 providerId 写死 java",
+  "id": "java_crate",
+  "label": "lithe-gpui crates/java",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/java/src/session.rs"
+  },
+  "type": "language_service"
+}

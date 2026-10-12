@@ -1,0 +1,7 @@
+{
+  "basis": "rust/lithe-gpui/crates/extensions/src/core_bridge.rs:5-12",
+  "gloss": "Core 侧把插件清单校验后规范化输出的目录文档；当前基线上其取数命令 plugins.listCatalog 不可解析",
+  "id": "plugin_catalog",
+  "kind": "phenomenon",
+  "label": "插件目录"
+}

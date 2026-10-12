@@ -1,0 +1,6 @@
+{
+  "gloss": "crates/workbench/src/activity_bar.rs 画的左右两列工具窗图标列，索引经 bottom_pane_for / from_rail_index 映射到面板",
+  "id": "activity_rail",
+  "kind": "category",
+  "label": "活动栏"
+}

@@ -1,0 +1,10 @@
+{
+  "basis": "本次实测使用的目标目录；.gitignore:6 已忽略 rust/lithe-gpui/target/",
+  "id": "lithe_gpui_target",
+  "label": "工作区内 target 目录",
+  "provenance": {
+    "kind": "named",
+    "ref": "pwsh: Test-Path rust/lithe-gpui/target"
+  },
+  "type": "build_target_dir"
+}

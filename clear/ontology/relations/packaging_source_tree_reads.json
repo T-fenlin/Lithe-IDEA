@@ -1,0 +1,11 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "计数：生产路径（非 cfg(test)）里读取源码树 themes/extensions/assets 目录的调用点数量",
+  "id": "packaging_source_tree_reads",
+  "label": "生产路径读源码树资源的处数",
+  "range": {
+    "form": "quantity",
+    "unit": "处"
+  },
+  "shape": "threshold"
+}

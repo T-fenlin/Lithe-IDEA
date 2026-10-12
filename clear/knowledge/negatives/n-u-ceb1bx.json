@@ -1,0 +1,48 @@
+{
+  "id": "n-u-ceb1bx",
+  "kind": "unresolved",
+  "status": "explained",
+  "statement": "同一份交付里并存两套计数口径而未标明：①「92 项平替基线」来自旧端 backend-capabilities.ts 折算（登记在 r_baseline_constrains）；②「44 个未接线入口」来自 MENUS 数组的入口实例口径（登记在 n-u-91nq7f 与 not_wired_entry 的 gloss）。两者分母不同（92 是能力项矩阵折算数，44 是单个前端的菜单入口数），文档里并列使用但未说明二者不可相加、不可互相折算。评估者在 audit:u1 指出。",
+  "touches": [
+    "E-gpui",
+    "E-matrix",
+    "feature_parity_gap"
+  ],
+  "evidence": [
+    {
+      "ref": "docs/development/gpui-platform-gap-and-schedule-2026-10.md"
+    }
+  ],
+  "about": [
+    "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+    "E-gpui",
+    "E-matrix",
+    "feature_parity_gap",
+    "E-wintauri",
+    "E-macswift"
+  ],
+  "scope": {
+    "conditions": {
+      "前端": "GPUI 统一前端 rust/lithe-gpui",
+      "对照端": "windows/tauri 与 macos/ Swift EditorFrontend",
+      "基线提交": "3085f5d1",
+      "分支": "feat/menu-bar-opaque",
+      "盘点日期": "2026-10-12"
+    },
+    "ranges": {}
+  },
+  "resolution": {
+    "outcome": "explained",
+    "reason": "与评估者已登记的 audit:...#u1 是同一条，我重复登记了。已在最终文档 §1 增补口径说明：92 项是矩阵能力项经旧端 backend-capabilities.ts 折算后的平替基准（分母=能力项），44 是 MENUS 数组内单个 GPUI 前端的菜单入口实例数（分母=菜单入口），两者不可相加也不可互相折算；其中 44 这个数已在前版 §先说结论第 2 点被替换为缺口表的逐行分布（缺失 52 / 未接线 33 / 已实现未接线 4）。",
+    "by": null
+  },
+  "source": {
+    "session": "session-84d79623-7a5a-489e-ac46-4d102383269f",
+    "goal": "g-mv4vnyyfdopt",
+    "anomaly": "u-ceb1bx",
+    "by": "model"
+  },
+  "review": null,
+  "at": 1791794949561,
+  "updated": 1791804271586
+}

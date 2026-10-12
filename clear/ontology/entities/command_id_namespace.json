@@ -1,0 +1,10 @@
+{
+  "basis": "三端命令 id 命名空间：gpui 23 条 kebab-case、macOS 无前缀短名、Windows 域前缀",
+  "id": "command_id_namespace",
+  "label": "三端命令 id 命名空间",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/shared/src/commands.rs"
+  },
+  "type": "command_id"
+}

@@ -1,0 +1,6 @@
+{
+  "gloss": "rust/lithe-gpui 是独立 workspace，与 rust/ 的 lithe-core workspace 互不包含",
+  "id": "gpui_ws",
+  "kind": "category",
+  "label": "GPUI 独立 Cargo workspace"
+}

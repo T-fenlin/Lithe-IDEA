@@ -1,0 +1,6 @@
+{
+  "gloss": "实现已存在（Core 命令、crate 内函数或组件库 widget 齐备），只缺调用点、入口映射或 handler",
+  "id": "wiring_gap",
+  "kind": "phenomenon",
+  "label": "接线缺口"
+}

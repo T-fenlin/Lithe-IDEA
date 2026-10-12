@@ -1,0 +1,6 @@
+{
+  "gloss": "能在 CI 里构建出 GPUI 产物的前端实体类；判据是存在指向 rust/lithe-gpui 或其成员 crate 的构建入口",
+  "id": "gpui_frontend",
+  "kind": "category",
+  "label": "GPUI 前端实体"
+}

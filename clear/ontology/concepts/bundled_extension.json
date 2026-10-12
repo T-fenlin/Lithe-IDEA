@@ -1,0 +1,7 @@
+{
+  "basis": "rust/lithe-gpui/crates/settings/src/extensions.rs:22-122",
+  "gloss": "由 BUNDLED_EXTENSIONS 常量表登记、随宿主发布的可装卸主题/字体/图标/语言包；当前 8 条",
+  "id": "bundled_extension",
+  "kind": "category",
+  "label": "内置扩展"
+}

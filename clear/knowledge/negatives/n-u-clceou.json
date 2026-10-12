@@ -1,0 +1,47 @@
+{
+  "id": "n-u-clceou",
+  "kind": "unresolved",
+  "status": "explained",
+  "statement": "`allow(dead_code)` 计数存在口径差：全目录 19 处，生产代码（`crates/*/src/`）18 处，差 1 处是 `crates/workbench/tests/common/mod.rs:1` 的 crate 级 `#![allow(dead_code)]`。前版 §2.4 写「全目录 18 处」并按 18 设 B3 验收阈值，口径与数不符。评估者在 audit:u2 指出。本版已改为：全目录 19 处、生产代码 18 处，目标与 B3 验收均按生产代码 18 处，测试辅助模块不计入。",
+  "touches": [
+    "E-gpui",
+    "not_wired_entry"
+  ],
+  "evidence": [
+    {
+      "ref": "rust/lithe-gpui/crates/workbench/tests/common/mod.rs"
+    }
+  ],
+  "about": [
+    "rust/lithe-gpui/crates/workbench/tests/common/mod.rs",
+    "E-gpui",
+    "not_wired_entry",
+    "E-wintauri",
+    "E-macswift",
+    "E-matrix"
+  ],
+  "scope": {
+    "conditions": {
+      "前端": "GPUI 统一前端 rust/lithe-gpui",
+      "对照端": "windows/tauri 与 macos/ Swift EditorFrontend",
+      "基线提交": "3085f5d1",
+      "分支": "feat/menu-bar-opaque",
+      "盘点日期": "2026-10-12"
+    },
+    "ranges": {}
+  },
+  "resolution": {
+    "outcome": "explained",
+    "reason": "与评估者已登记的 audit:...#u2 是同一条，我重复登记了。已在最终文档 §2.4 改为双口径明写：全目录 19 处、生产代码（`crates/*/src/`）18 处，差的 1 处是 `crates/workbench/tests/common/mod.rs:1` 的 crate 级 `#![allow(dead_code)]`；§2.4 的目标与 B3 验收阈值统一按生产代码 18 处，并把 B3 的 grep 路径收窄为 `rust/lithe-gpui/crates/*/src/` 显式排除测试辅助模块。",
+    "by": null
+  },
+  "source": {
+    "session": "session-84d79623-7a5a-489e-ac46-4d102383269f",
+    "goal": "g-mv4vnyyfdopt",
+    "anomaly": "u-clceou",
+    "by": "model"
+  },
+  "review": null,
+  "at": 1791794949592,
+  "updated": 1791804271587
+}

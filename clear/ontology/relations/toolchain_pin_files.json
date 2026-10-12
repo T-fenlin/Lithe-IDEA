@@ -1,0 +1,11 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "计数：该前端 workspace 下的 rust-toolchain 钉版文件数量",
+  "id": "toolchain_pin_files",
+  "label": "工具链钉版文件数",
+  "range": {
+    "form": "quantity",
+    "unit": "个"
+  },
+  "shape": "threshold"
+}

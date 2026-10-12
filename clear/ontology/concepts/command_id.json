@@ -1,0 +1,6 @@
+{
+  "gloss": "lithe_gpui_shared::commands::CommandId，23 个变体，kebab-case 短名，是用户键位覆盖的持久化键",
+  "id": "command_id",
+  "kind": "category",
+  "label": "命令 id"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "has_platform_columns_count",
+  "label": "登记的对照平台字段数",
+  "gloss": "某份跨平台状态登记里实际存在的平台列数量；不计未登记的前端，因此该值小于被评估前端总数即说明该前端未被登记。",
+  "kind": "measures",
+  "domain": "platform_feature_matrix",
+  "range": {
+    "form": "quantity",
+    "unit": "个"
+  },
+  "basis": "shared/platform-feature-matrix/features/*.json 的字段结构",
+  "status": "active"
+}

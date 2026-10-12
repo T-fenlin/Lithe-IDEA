@@ -1,0 +1,10 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "某个前端在指定视觉能力上有没有对应实现或可复用 token；宾语是覆盖程度（complete/partial/absent）。",
+  "id": "has_visual_counterpart",
+  "kind": "affects",
+  "label": "具备视觉对应物",
+  "range": {
+    "form": "statement"
+  }
+}

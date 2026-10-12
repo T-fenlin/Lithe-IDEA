@@ -1,0 +1,6 @@
+{
+  "gloss": "lithe-core 已实现 dispatcher 分支的 DAP 命令集合；GPUI 侧可能零引用",
+  "id": "debug_command_surface",
+  "kind": "category",
+  "label": "DAP 命令面"
+}

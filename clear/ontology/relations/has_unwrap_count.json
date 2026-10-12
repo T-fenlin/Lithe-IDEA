@@ -1,0 +1,9 @@
+{
+  "check": "按首个 #[cfg(test)] 行切分生产与测试代码，只数切分线之前的出现次数",
+  "domain": "gpui_frontend",
+  "gloss": "一个 crate 集合在非测试代码里的 unwrap/expect 次数",
+  "id": "has_unwrap_count",
+  "kind": "measures",
+  "label": "生产路径 unwrap 计数",
+  "range": "unwrap_count"
+}

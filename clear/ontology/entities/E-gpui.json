@@ -1,0 +1,10 @@
+{
+  "basis": "工作区 rust/lithe-gpui 目录，13 个宿主 crate；rust/Cargo.toml:2 的 members 不含它，是独立 workspace",
+  "id": "E-gpui",
+  "label": "rust/lithe-gpui",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/Cargo.toml"
+  },
+  "type": "gpui_frontend"
+}

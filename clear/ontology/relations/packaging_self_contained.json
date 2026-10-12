@@ -1,0 +1,10 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "宾语为真表示打包仅需 exe 与 LanguageServers，其余资源已编译期内嵌",
+  "id": "packaging_self_contained",
+  "label": "打包是否自包含",
+  "range": {
+    "form": "statement"
+  },
+  "shape": "threshold"
+}

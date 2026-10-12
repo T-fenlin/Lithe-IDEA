@@ -1,0 +1,10 @@
+{
+  "basis": "client.rs:673 validate_lsp_method、:701 feature_request_params",
+  "id": "core_lsp_layer",
+  "label": "lithe-core LSP 客户端层",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-core/src/lsp/interface/client.rs"
+  },
+  "type": "lsp_semantic_operation"
+}

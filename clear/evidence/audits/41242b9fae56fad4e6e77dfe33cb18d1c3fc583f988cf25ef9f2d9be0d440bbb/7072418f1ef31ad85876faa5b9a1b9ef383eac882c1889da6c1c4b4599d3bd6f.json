@@ -1,0 +1,202 @@
+{
+  "schema_version": "clearai.audit.v2",
+  "kind": "evidence_audit",
+  "step_id": "s3",
+  "auditor_run_id": "2a9c32f6-514e-4677-855a-7bc5ed06f659",
+  "rechecks": [],
+  "reuse": [],
+  "holds": "no",
+  "results": [
+    {
+      "hypothesis": "h-tjah4t",
+      "verdict": "refute",
+      "basis": "文档自身清单即已相左：113 行里 52 行标「缺失」、仅 5 行标「已实现未接线」，头条却称 55.6% 是已实现未接线。抽查「未接线」项证实多数在 GPUI 侧无任何实现入口——保存全部/另存为/还原文件只有 menu_bar.rs:620/625/630 三个 NotWired（save_all/save_as/revert 在 rust/ 生产代码零命中，只有 lithe-ui 的 gallery 示例里有个同名 SaveAll action）；终端分屏只剩 menu_bar.rs:150 的 MISSING 分组 id。推翻条件「多数缺口项在 GPUI 侧找不到任何实现入口或数据结构」被触发。"
+    },
+    {
+      "hypothesis": "h-1r6cbm",
+      "verdict": "support",
+      "basis": "在 shared/platform-feature-matrix 内检索 gpui 零命中；metadata.json:9 的 statusDefinitions 只定义 macos/windows 两套状态，各 feature JSON 只有 macos/windows 两列；windows 列也未按折算——github-prs.json:19 windows=implemented 而 backend-capabilities.ts:11 github:false，database/docker/remote/wsl 同理。推翻条件的两条都不成立。"
+    },
+    {
+      "hypothesis": "h-lcaem1",
+      "verdict": "support",
+      "basis": ".github/workflows 全部 18 个文件检索 lithe-gpui 命中 0；scripts/ 下仅 sign-windows.ps1:3 一处（默认 BinaryDirectory）；build-macos.sh:64 只调 build-rust-core.sh 构建 lithe-core；全仓在 sh/yml/ps1/mjs 里检索 lithe-gpui-app 只命中一条 console.log 提示。未找到 macOS 侧产出 lithe-gpui 产物的入口，推翻条件未触发。附注：Windows 侧同样没有 GPUI 的 CI，只有签名脚本，「只有 Windows 有链路」的说法偏宽。"
+    }
+  ],
+  "anomalies": [
+    {
+      "what": "文档 §先说结论 1 沿用 92 项平替基线、§先说结论 2 沿用「44 个未接线入口」口径，二者分别登记在 clear/ontology/relations/r_baseline_constrains.json:2 与 clear/knowledge/negatives/n-u-91nq7f.json:35，但本步三条判断的 uses 全为空，未走适用性判定（口径本身复核无误：menu_bar.rs:600 起 MENUS 内 MenuItem::NotWired 42 条 + menu_bar.rs:172 的 2 条 = 44）",
+      "matters": "no"
+    },
+    {
+      "what": "doc:253 的「全目录 18 处 allow(dead_code)」与目录实际 19 处的差（rust/lithe-gpui/crates/workbench/tests/common/mod.rs:1）未被登记为口径差",
+      "matters": "no"
+    }
+  ],
+  "lessons": [],
+  "basis": "判据四项在形式上齐备：缺口清单 113 行且每行含 GPUI 现状/对照端/证据路径（doc:185）、§2 优化项 10 条各带现状证据与目标（doc:189）、§3.2 排期表含阶段/周次/人日/依赖/验收五列且依赖都指向表内阶段 id（doc:360–379）、§4 列 7 条未覆盖项（doc:406）。但表内多处断言与仓库或与自身数字对不上，故判不成立：① 头条「缺口里 55.6% 是已实现未接线」（doc:17）取自 handoff:79 的 15 组/(15+12) 口径，而本文件清单自标 52 行「缺失」、仅 5 行「已实现未接线」；抽查证实多数缺口在 GPUI 侧没有实现入口。② #61 称 set_git_identity_host「生产代码零调用」（doc:111），实际 workspace.rs:883 在生产路径注入该 host。③ §3.2 合计写 57 人日（doc:381），表内 18 行相加为 53，且「11.5 周·人」与「1 人 6 周/2 人 3 周」不自洽。④ §2.4 称全目录 allow(dead_code) 18 处（doc:253），实际为 19 处。⑤ #78/#111 称 local-history、onboarding 检索命中 0（doc:143/:181），本地化源里有对应键。判断结果另记：h-tjah4t 推翻，h-1r6cbm 与 h-lcaem1 未被推翻。",
+  "shortfalls": [
+    {
+      "criterion": "①缺口清单表 ≥40 行，每行含 GPUI 现状、对照端、证据路径（含头条统计口径）",
+      "what": "doc:17 称「缺口里 55.6% 是已实现但入口未接」，该数来自 docs/development/gpui-gap-team-handoff-2026-10.md:79 的 15 组/(15+12)；而 doc:111 之后同一份清单里只有 5 行标「已实现未接线」、52 行标「缺失」",
+      "missing": "百分比改用缺口清单自身行数口径（或明写分母是 15 组/12 域），使头条结论与 113 行清单一致"
+    },
+    {
+      "criterion": "①缺口清单表 每行含 GPUI 现状、对照端、证据路径",
+      "what": "doc:111 记 `identity.rs:173` set_git_identity_host「生产代码零调用」；实际 rust/lithe-gpui/crates/workbench/src/workspace.rs:883 在生产路径注入该 host（该文件测试模块起点在 :3395），dialog.rs:264 也读取 git_identity_page()",
+      "missing": "撤回或修正该行证据，并按实际接线状态重定 GPUI 现状"
+    },
+    {
+      "criterion": "③排期表含阶段、周次、人日、依赖、验收方式五列且依赖可追溯",
+      "what": "doc:381 写「合计 57 人日」，而 doc:362–379 的 18 行「人日」相加为 53；同一行的「约 11.5 周·人」与「1 人并行 6 周，或 2 人并行 3 周」（=6 周·人）也不自洽",
+      "missing": "合计与列值、人力口径三者对齐，或注明 57 的额外来源"
+    },
+    {
+      "criterion": "②优化项单独成节且每项写明现状证据与目标",
+      "what": "doc:253 称 rust/lithe-gpui「全目录共命中 allow(dead_code)」18 处，实际目录内为 19 处（多出 rust/lithe-gpui/crates/workbench/tests/common/mod.rs:1 的 `#![allow(dead_code)]`）；doc:369 的 B3 验收正是用同一条 grep 计数",
+      "missing": "说明是否为排除测试辅助模块的口径，并让 §2.4 表、合计与 B3 验收阈值同口径"
+    },
+    {
+      "criterion": "①缺口清单表 每行含 GPUI 现状、对照端、证据路径",
+      "what": "doc:143「GPUI 检索 `local-history` 命中 0」、doc:181「`onboarding` 命中 0」，但 rust/lithe-gpui/crates/shared/locales/source/locale.ts:3662 有 file-local-history 键、:4406 起有成组 onboarding 键（lithe.en.yml:7102、:8532 同）；台账 §2.3 的原始口径限定为 .rs，成文后限定丢失",
+      "missing": "把「命中 0」限定为实现代码范围，或改写成「仅存文案键、无实现」"
+    }
+  ],
+  "refs": [
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 17
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 111
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 143
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 181
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 185
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 189
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 253
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 360
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 369
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 381
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 406
+    },
+    {
+      "path": "docs/development/gpui-gap-team-handoff-2026-10.md",
+      "line": 43
+    },
+    {
+      "path": "docs/development/gpui-gap-team-handoff-2026-10.md",
+      "line": 79
+    },
+    {
+      "path": "docs/development/gpui-gap-evidence-2026-10.md",
+      "line": 175
+    },
+    {
+      "path": "rust/lithe-gpui/crates/workbench/src/workspace.rs",
+      "line": 883
+    },
+    {
+      "path": "rust/lithe-gpui/crates/git/src/identity.rs",
+      "line": 173
+    },
+    {
+      "path": "rust/lithe-gpui/crates/workbench/src/menu_bar.rs",
+      "line": 172
+    },
+    {
+      "path": "rust/lithe-gpui/crates/workbench/src/menu_bar.rs",
+      "line": 600
+    },
+    {
+      "path": "rust/lithe-gpui/crates/workbench/src/menu_bar.rs",
+      "line": 620
+    },
+    {
+      "path": "rust/lithe-gpui/crates/workbench/src/menu_bar.rs",
+      "line": 945
+    },
+    {
+      "path": "rust/lithe-gpui/crates/workbench/tests/common/mod.rs",
+      "line": 1
+    },
+    {
+      "path": "rust/lithe-gpui/crates/shared/locales/source/locale.ts",
+      "line": 3662
+    },
+    {
+      "path": "rust/lithe-gpui/crates/shared/locales/source/locale.ts",
+      "line": 4406
+    },
+    {
+      "path": "rust/lithe-gpui/crates/shared/locales/lithe.en.yml",
+      "line": 7102
+    },
+    {
+      "path": "rust/lithe-gpui/crates/settings/src/keymap.rs",
+      "line": 424
+    },
+    {
+      "path": "rust/lithe-gpui/README.md",
+      "line": 8
+    },
+    {
+      "path": "windows/tauri/src/config/backend-capabilities.ts",
+      "line": 4
+    },
+    {
+      "path": "windows/tauri/src/config/backend-capabilities.ts",
+      "line": 11
+    },
+    {
+      "path": "shared/platform-feature-matrix/metadata.json",
+      "line": 9
+    },
+    {
+      "path": "shared/platform-feature-matrix/features/github-prs.json",
+      "line": 19
+    },
+    {
+      "path": "scripts/sign-windows.ps1",
+      "line": 3
+    },
+    {
+      "path": "scripts/build-macos.sh",
+      "line": 64
+    },
+    {
+      "path": "clear/knowledge/negatives/n-u-91nq7f.json",
+      "line": 35
+    }
+  ],
+  "card": "判据四项在形式上齐备：缺口清单 113 行且每行含 GPUI 现状/对照端/证据路径（doc:185）、§2 优化项 10 条各带现状证据与目标（doc:189）、§3.2 排期表含阶段/周次/人日/依赖/验收五列且依赖都指向表内阶段 id（doc:360–379）、§4 列 7 条未覆盖项（doc:406）。但表内多处断言与仓库或与自身数字对不上，故判不成立：① 头条「缺口里 55.6% 是已实现未接线」（doc:17）取自 handoff:79 的 15 组/(15+12) 口径，而本文件清单自标 52 行「缺失」、仅 5 行「已实现未接线」；抽查证实多数缺口在 GPUI 侧没有实现入口。② #61 称 set_git_identity_host「生产代码零调用」（doc:111），实际 workspace.rs:883 在生产路径注入该 host。③ §3.2 合计写 57 人日（doc:381），表内 18 行相加为 53，且「11.5 周·人」与「1 人 6 周/2 人 3 周」不自洽。④ §2.4 称全目录 allow(dead_code) 18 处（doc:253），实际为 19 处。⑤ #78/#111 称 local-history、onboarding 检索命中 0（doc:143/:181），本地化源里有对应键。判断结果另记：h-tjah4t 推翻，h-1r6cbm 与 h-lcaem1 未被推翻。",
+  "created_at": 1791794481047,
+  "evaluator": "independent"
+}

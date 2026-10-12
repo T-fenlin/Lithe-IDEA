@@ -1,0 +1,7 @@
+{
+  "gloss": "一个 crate 集合在非测试代码里的 .unwrap()/.expect() 出现次数，按首个 #[cfg(test)] 行切分",
+  "id": "unwrap_count",
+  "kind": "measure",
+  "label": "unwrap/expect 计数",
+  "unit": "处"
+}

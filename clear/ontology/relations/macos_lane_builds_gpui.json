@@ -1,0 +1,10 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "宾语为真表示 macOS 侧 CI 车道会构建该前端的 macOS 产物",
+  "id": "macos_lane_builds_gpui",
+  "label": "macOS 车道是否构建该前端",
+  "range": {
+    "form": "statement"
+  },
+  "shape": "threshold"
+}

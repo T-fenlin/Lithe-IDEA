@@ -1,0 +1,7 @@
+{
+  "id": "upstream_project",
+  "label": "上游项目",
+  "gloss": "仓库外部、被本仓库考虑复用或参考的独立开源项目；以仓库地址与自述定位为指认依据。",
+  "kind": "category",
+  "basis": "本次评估引入的外部项目 ohos-rs"
+}

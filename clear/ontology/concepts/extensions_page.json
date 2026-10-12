@@ -1,0 +1,7 @@
+{
+  "basis": "rust/lithe-gpui/crates/workbench/src/extensions_page.rs",
+  "gloss": "GPUI 中央扩展页，列出目录条目并承载装卸启停交互",
+  "id": "extensions_page",
+  "kind": "category",
+  "label": "扩展管理页"
+}

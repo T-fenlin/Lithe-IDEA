@@ -1,0 +1,7 @@
+{
+  "gloss": "HOST_VERSION = env!(CARGO_PKG_VERSION)，当前占位 0.0.1",
+  "id": "host_version",
+  "kind": "measure",
+  "label": "宿主版本号",
+  "unit": "semver"
+}

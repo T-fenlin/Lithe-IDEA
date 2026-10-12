@@ -1,0 +1,7 @@
+{
+  "gloss": "改动一个 crate 后被 cargo 重新编译的 crate 个数",
+  "id": "cascade_recompile_count",
+  "kind": "measure",
+  "label": "级联重编 crate 数",
+  "unit": "个"
+}

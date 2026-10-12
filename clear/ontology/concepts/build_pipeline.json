@@ -1,0 +1,6 @@
+{
+  "gloss": "产出并分发某个前端产物的 CI 工作流与本地脚本集合，含构建、打包、签名与发布步骤",
+  "id": "build_pipeline",
+  "kind": "category",
+  "label": "构建发布链路"
+}

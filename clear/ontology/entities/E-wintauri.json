@@ -1,0 +1,10 @@
+{
+  "basis": "Windows 发行版的 Tauri 前端，含 config/core/features/platform/ui 等子目录。",
+  "id": "E-wintauri",
+  "label": "windows/tauri",
+  "provenance": {
+    "kind": "named",
+    "ref": "windows/tauri/src/config/backend-capabilities.ts"
+  },
+  "type": "windows_tauri_frontend"
+}

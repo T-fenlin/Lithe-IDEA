@@ -1,0 +1,7 @@
+{
+  "id": "platform_layer",
+  "label": "平台层",
+  "gloss": "渲染框架中按操作系统各写一份的那一半：申请窗口、取得绑定窗口的 GPU surface、接收输入与输入法事件。渲染只是框架的一半，平台层是另一半。",
+  "kind": "category",
+  "basis": ".agents/notes/proposed/architecture/2026-10-08-unified-gpui-frontend-selection-and-layer-boundaries.md:304-307"
+}

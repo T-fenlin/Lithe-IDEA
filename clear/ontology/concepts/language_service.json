@@ -1,0 +1,6 @@
+{
+  "gloss": "面向语言提供语义能力的服务对象；GPUI 侧只有一个，以 providerId 标识",
+  "id": "language_service",
+  "kind": "category",
+  "label": "语言服务"
+}

@@ -1,0 +1,10 @@
+{
+  "basis": "service.rs:93 new、:101 lsp_session_id、:118-283 五个语义方法",
+  "id": "java_language_service",
+  "label": "JavaLanguageService",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/java/src/service.rs"
+  },
+  "type": "language_service"
+}

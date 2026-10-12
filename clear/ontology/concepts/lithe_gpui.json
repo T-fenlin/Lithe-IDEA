@@ -1,0 +1,6 @@
+{
+  "gloss": "rust/lithe-gpui 下的界面层 workspace，13 个宿主 crate，平级 path 依赖组件库 rust/lithe-ui",
+  "id": "lithe_gpui",
+  "kind": "category",
+  "label": "GPUI 统一前端"
+}

@@ -1,0 +1,8 @@
+{
+  "check": "矩阵当前只有 macos 与 windows 两个平台字段，未登记 gpui 端。",
+  "domain": "platform_feature_matrix",
+  "id": "r_matrix_measures",
+  "kind": "measures",
+  "label": "登记前端能力状态",
+  "range": "gpui_frontend"
+}

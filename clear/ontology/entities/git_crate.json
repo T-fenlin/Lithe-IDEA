@@ -1,0 +1,10 @@
+{
+  "basis": "remote.rs:45 IntegrationOperation、:515 integration_gate 齐备且有单测，无 UI 消费者",
+  "id": "git_crate",
+  "label": "lithe-gpui crates/git",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/git/src/remote.rs"
+  },
+  "type": "wiring_gap"
+}

@@ -1,0 +1,11 @@
+{
+  "basis": "rust/lithe-gpui 检索 UI 扩展相关关键词命中 8 处全为 crate 名子串",
+  "domain": "ui_extension_sdk",
+  "gloss": "该能力面在指定前端里检索不到任何实现入口",
+  "id": "unimplemented_in",
+  "kind": "defines",
+  "label": "前端无实现",
+  "range": {
+    "form": "code"
+  }
+}

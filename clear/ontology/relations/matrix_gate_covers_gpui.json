@@ -1,0 +1,10 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "宾语为真表示该前端的源码路径被矩阵更新门禁的 platformPaths 覆盖",
+  "id": "matrix_gate_covers_gpui",
+  "label": "矩阵门禁是否覆盖该前端",
+  "range": {
+    "form": "statement"
+  },
+  "shape": "threshold"
+}

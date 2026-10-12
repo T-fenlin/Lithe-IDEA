@@ -1,0 +1,47 @@
+{
+  "id": "n-u-91nq7f",
+  "kind": "unresolved",
+  "status": "explained",
+  "statement": "预测 GPUI 侧 NotWired 命中约 73 处；实际台账按 MENUS 数组内的实例口径统计为 42 条（加菜单外 2 条共 44 条）。73 是把 `NotWired` 这个词在 lithe-gpui 全目录的粗检索命中数（含枚举变体定义、push_not_wired 函数、单元测试与断言），不是入口实例数。",
+  "touches": [
+    "E-gpui",
+    "not_wired_entry"
+  ],
+  "evidence": [
+    {
+      "ref": "rust/lithe-gpui/crates/workbench/src/menu_bar.rs"
+    }
+  ],
+  "about": [
+    "rust/lithe-gpui/crates/workbench/src/menu_bar.rs",
+    "E-gpui",
+    "not_wired_entry",
+    "E-wintauri",
+    "E-macswift",
+    "E-matrix"
+  ],
+  "scope": {
+    "conditions": {
+      "前端": "GPUI 统一前端 rust/lithe-gpui",
+      "对照端": "windows/tauri 与 macos/ Swift EditorFrontend",
+      "基线提交": "3085f5d1",
+      "分支": "feat/menu-bar-opaque",
+      "盘点日期": "2026-10-12"
+    },
+    "ranges": {}
+  },
+  "resolution": {
+    "outcome": "explained",
+    "reason": "两个数是不同口径，不是矛盾。73 是 `NotWired` 这个字符串在 rust/lithe-gpui 全目录的粗检索命中数，含枚举变体定义（menu_bar.rs:183 的 `NotWired {`）、`:1080` 的同类变体、`:1303` 的 `push_not_wired` 函数、`:1820/2402` 的构造点、以及 7 处单元测试与断言。台账采用的是入口实例口径：`MENUS` 数组（menu_bar.rs:595-940）内 `MenuItem::NotWired` 共 42 条，加 `NOT_WIRED_OUTSIDE_MENUS`（:172）2 条，共 44 个对用户可见的未接线入口。已在台账 §2 与最终文档中统一使用 44 这个口径，并写明与 `not_wired_count()`（menu_bar.rs:945）的关系。",
+    "by": null
+  },
+  "source": {
+    "session": "session-84d79623-7a5a-489e-ac46-4d102383269f",
+    "goal": "g-mv4vnyyfdopt",
+    "anomaly": "u-91nq7f",
+    "by": "model"
+  },
+  "review": null,
+  "at": 1791787325277,
+  "updated": 1791804271583
+}

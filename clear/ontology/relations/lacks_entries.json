@@ -1,0 +1,11 @@
+{
+  "basis": "rust/lithe-gpui 全目录关键词检索",
+  "domain": "editor_kernel",
+  "gloss": "该模块集合里检索不到这类用户入口的实现落点",
+  "id": "lacks_entries",
+  "kind": "defines",
+  "label": "缺少实现入口",
+  "range": {
+    "form": "statement"
+  }
+}

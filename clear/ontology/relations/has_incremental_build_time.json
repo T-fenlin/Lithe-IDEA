@@ -1,0 +1,9 @@
+{
+  "check": "Stopwatch 包住 cargo 调用；同一目标目录、环境变量、并行度下比较",
+  "domain": "build_target_dir",
+  "gloss": "在某个构建目标目录上改动一个 crate 后 cargo 的墙钟秒数",
+  "id": "has_incremental_build_time",
+  "kind": "measures",
+  "label": "增量构建耗时",
+  "range": "incremental_build_time"
+}

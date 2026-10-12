@@ -1,0 +1,10 @@
+{
+  "basis": "按 44 条逐条分类后，前置只在界面层的那批条数（待检验，预期 10 条）",
+  "id": "interface_layer_entry_count",
+  "label": "界面层应补的未接线入口数",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/workbench/src/menu_bar.rs"
+  },
+  "type": "entry_count"
+}

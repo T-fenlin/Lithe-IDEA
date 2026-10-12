@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui/crates/terminal/Cargo.toml，只依赖 lithe-ui 与 shared；被 workbench 依赖",
+  "id": "terminal",
+  "label": "lithe-gpui-terminal",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/terminal/Cargo.toml"
+  },
+  "type": "crate"
+}

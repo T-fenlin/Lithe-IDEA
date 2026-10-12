@@ -1,0 +1,7 @@
+{
+  "domain": "lsp_semantic_operation",
+  "id": "gap_classified_as",
+  "kind": "defines",
+  "label": "缺口归因",
+  "range": "core_command_gap"
+}

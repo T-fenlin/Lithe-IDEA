@@ -1,0 +1,6 @@
+{
+  "gloss": "MenuItem::NotWired 条目：菜单上画得出来、点了只给「尚未接入」提示，合计 42 条（MENUS 内）+ 2 条（NOT_WIRED_OUTSIDE_MENUS）。计数只算对用户可见的入口实例，不按源码里 NotWired 这个词的检索命中数——后者会额外计入枚举变体定义、push_not_wired 构造点与单元测试断言（本仓实测 73 次）。",
+  "id": "not_wired_entry",
+  "kind": "category",
+  "label": "未接线入口"
+}

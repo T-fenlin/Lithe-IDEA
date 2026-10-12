@@ -1,0 +1,11 @@
+{
+  "basis": "engine.rs:276 枚举；client.rs:673 validate_lsp_method",
+  "domain": "lsp_semantic_operation",
+  "gloss": "该操作面没有登记这个 LSP method：枚举无变体、白名单拒绝，或参数构造不发它需要的字段",
+  "id": "lacks_method",
+  "kind": "defines",
+  "label": "缺少语言服务方法",
+  "range": {
+    "form": "statement"
+  }
+}

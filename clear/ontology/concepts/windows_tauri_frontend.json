@@ -1,0 +1,6 @@
+{
+  "gloss": "windows/tauri 下的 TypeScript + Tauri 前端，当前 Windows 发行版使用的界面。",
+  "id": "windows_tauri_frontend",
+  "kind": "category",
+  "label": "Windows Tauri 前端"
+}

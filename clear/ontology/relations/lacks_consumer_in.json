@@ -1,0 +1,11 @@
+{
+  "basis": "rust/lithe-gpui 全目录检索命中 6 处全为 hide_host 无关局部变量",
+  "domain": "ide_capability_api",
+  "gloss": "该能力面在指定前端里检索不到任何宿主侧调用点或 UI 消费者",
+  "id": "lacks_consumer_in",
+  "kind": "defines",
+  "label": "宿主侧无消费者",
+  "range": {
+    "form": "reference"
+  }
+}

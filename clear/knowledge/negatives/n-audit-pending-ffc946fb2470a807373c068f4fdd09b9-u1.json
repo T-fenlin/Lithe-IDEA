@@ -1,0 +1,38 @@
+{
+  "id": "n-audit-pending-ffc946fb2470a807373c068f4fdd09b9-u1",
+  "kind": "unresolved",
+  "status": "explained",
+  "statement": "doc:14-16 称「矩阵 Windows 列的 112 项里有 20 项是旧端自己硬编码为『待开发』的能力，平替基准是 92 项」。副本复跑：windows 列 implemented 恰为 112 项，但落在 backend-capabilities.ts 7 个 false 开关组内的只有 10 条（database-connections/-crud-export/-query-history/-schema、docker-compose、github-prs/-reviews-comments、remote-workspace、wsl-paths/-boundaries，evidence 均指向 features/database、features/docker 等目录）；agent-* 20 条在 windows 列是 9 partial + 11 missing，并非 im",
+  "touches": [],
+  "evidence": [],
+  "about": [
+    "E-gpui",
+    "E-wintauri",
+    "E-macswift",
+    "E-matrix"
+  ],
+  "scope": {
+    "conditions": {
+      "前端": "GPUI 统一前端 rust/lithe-gpui",
+      "对照端": "windows/tauri 与 macos/ Swift EditorFrontend",
+      "基线提交": "3085f5d1",
+      "分支": "feat/menu-bar-opaque",
+      "盘点日期": "2026-10-12"
+    },
+    "ranges": {}
+  },
+  "resolution": {
+    "outcome": "explained",
+    "reason": "已独立复算确认，并在三份文档中全部更正。矩阵 Windows 列 implemented 确为 112 项，但落在 backend-capabilities.ts 7 个 false 开关组内的只有 10 项（database-*4、docker-compose、github-prs/-reviews-comments、remote-workspace、wsl-paths/-boundaries），且这 10 项都记成 implemented；agent-* 20 条在 Windows 列是 11 missing + 9 partial，本来就不是 implemented。因此「112 − 20 = 92」不成立，可核实的折算是 112 − 10 = 102 项。已在最终文档 §1 第 1 点与第 4 点改为 102 项并说明 92 的算法未在既有计划中给出、本文件不复述；台账 §1.7 与 §5 的基线行同步改为 102 项；交接文件的 92 表述也改为 102。",
+    "by": null
+  },
+  "source": {
+    "session": "session-84d79623-7a5a-489e-ac46-4d102383269f",
+    "goal": "g-mv4vnyyfdopt",
+    "anomaly": "audit:pending:ffc946fb2470a807373c068f4fdd09b9#u1",
+    "by": "evaluator"
+  },
+  "review": null,
+  "at": 1791797279264,
+  "updated": 1791804271589
+}

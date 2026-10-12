@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui 全目录命令名字符串检索命中 0",
+  "gloss": "实现已有完整落点，但在指定前端里检索不到调用点或 UI 消费者",
+  "id": "unreferenced_by",
+  "kind": "defines",
+  "label": "零引用",
+  "range": {
+    "form": "reference"
+  }
+}

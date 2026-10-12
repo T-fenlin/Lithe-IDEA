@@ -1,0 +1,6 @@
+{
+  "gloss": "矩阵更新门禁覆盖的平台实现路径集合，定义在 scripts/verify-platform-feature-matrix-change.mjs 的 platformPaths 常量",
+  "id": "matrix_gate",
+  "kind": "category",
+  "label": "矩阵变更门禁"
+}

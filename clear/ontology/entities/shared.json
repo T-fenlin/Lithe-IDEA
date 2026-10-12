@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui/crates/shared/Cargo.toml，被 11 个 crate 依赖（最大反向依赖数）",
+  "id": "shared",
+  "label": "lithe-gpui-shared",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/shared/Cargo.toml"
+  },
+  "type": "crate"
+}

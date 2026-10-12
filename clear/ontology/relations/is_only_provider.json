@@ -1,0 +1,11 @@
+{
+  "basis": "rust/lithe-gpui/crates/java/src/session.rs:74",
+  "domain": "language_service",
+  "gloss": "该端只接了一条语言服务：全目录只有一个 providerId 取值",
+  "id": "is_only_provider",
+  "kind": "defines",
+  "label": "是唯一的语言服务提供方",
+  "range": {
+    "form": "statement"
+  }
+}

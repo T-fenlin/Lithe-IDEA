@@ -1,0 +1,12 @@
+{
+  "id": "ohos_rs",
+  "label": "ohos-rs",
+  "type": "upstream_project",
+  "basis": "GitHub 仓库 ohos-rs/ohos-rs：247 stars，MIT，自述 forked from napi-rs；crates/ 下为 napi / sys / build / macro / backend。crates/napi/Cargo.toml 的 name = napi-ohos、keywords 含 NAPI、HarmonyOS；crates/sys/Cargo.toml 的 name = napi-sys-ohos、description = Harmony N-API raw binding。其 CI（.github/workflows/simple-test.yml）只在 ArkVM 上跑 ArkTS + N-API 示例。",
+  "provenance": {
+    "kind": "url",
+    "ref": "https://github.com/ohos-rs/ohos-rs"
+  },
+  "aliases": ["napi-ohos", "napi-sys-ohos"],
+  "note": "提供的是宿主运行时绑定层（Node-API / NAPI），不是 Rust 对鸿蒙的移植，也不提供平台窗口层；仓库内唯一的 workflow 名为 ArkVM Tests。"
+}

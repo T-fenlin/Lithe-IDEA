@@ -1,0 +1,7 @@
+{
+  "gloss": "unsafe 块出现次数，需逐条核对安全不变量",
+  "id": "unsafe_count",
+  "kind": "measure",
+  "label": "unsafe 出现次数",
+  "unit": "处"
+}

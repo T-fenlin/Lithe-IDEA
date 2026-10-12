@@ -1,0 +1,165 @@
+{
+  "schema_version": "clearai.audit.v2",
+  "kind": "evidence_audit",
+  "step_id": "s3",
+  "auditor_run_id": "9be7be99-a13a-4ffb-854e-4f67bac021b1",
+  "rechecks": [
+    {
+      "fact": "docs/development/gpui-platform-gap-and-schedule-2026-10.md §2.4",
+      "id": "b77cdc0c7a3a37e8a05e8f86a5e00945#u2",
+      "basis": "当前版 §2.4 已改为双口径明写：「全目录共命中 19 处，其中 18 处在 crates/*/src/ 的生产代码里，1 处是测试辅助模块（crates/workbench/tests/common/mod.rs:1）」，目标与 B3 验收阈值统一按生产代码 18 处，并把 B3 的 grep 路径收窄为 rust/lithe-gpui/crates/*/src/ 显式排除测试辅助模块。副本复跑实测全目录 19 处、crates/*/src/ 18 处、tests/ 1 处，与文档一致。"
+    },
+    {
+      "fact": "docs/development/gpui-platform-gap-and-schedule-2026-10.md §先说结论 1/2",
+      "id": "b77cdc0c7a3a37e8a05e8f86a5e00945#u1",
+      "basis": "口径部分已独立复核：副本实测 MENUS（menu_bar.rs:595-940）内 MenuItem::NotWired 42 条 + menu_bar.rs:172 的 NOT_WIRED_OUTSIDE_MENUS 2 条 = 44，not_wired_entry_count.json:4 与 n-u-91nq7f.json:35 的 42/2/44 分解与实测一致。但 uses=[] 这一流程缺陷仍在：三条判断的 uses 全为空，沿用 r_baseline_constrains 与 n-u-91nq7f 的口径未走适用性判定。"
+    }
+  ],
+  "reuse": [],
+  "holds": "yes",
+  "results": [
+    {
+      "hypothesis": "h-tjah4t",
+      "verdict": "refute",
+      "basis": "按最终文档 §1 逐行自报，113 行中「缺失」52 行（46.0%）多于「未接线 33 + 已实现未接线 4」37 行（32.7%），多数行在 GPUI 侧无实现入口；副本抽查 mybatis/viewer/onboarding/ai_chat/run-actions/logging 在 crates 下 .rs 检索命中 0 或仅文案 id。交接文件 §1:111 自己也判定「按缺口行数，『缺口以未接线为主』不成立（B 类缺失 52 行 > A 类 37 行）」，最终文档 §先说结论 2 明写「两种口径都不支持『缺口以未接线为主』这个单一结论」。推翻条件命中。"
+    },
+    {
+      "hypothesis": "h-1r6cbm",
+      "verdict": "support",
+      "basis": "副本实测：shared/platform-feature-matrix/metadata.json:9 的 statusDefinitions 只定义 implementation/verification 两套状态，149 个 features/*.json 全部只有 macos 与 windows 两个平台键，grep \"gpui\" 0 命中——矩阵没有 gpui 平台字段；backend-capabilities.ts:3-16 有 7 个 false 开关（agent/database/docker/github/remote/runActions/wsl）；windows 列 implemented 112 项中 database 4、docker 1、github 2、remote 1、wsl 2 共 10 条的 evidence 指向这些被硬编码 false 的目录，未被折算。两个推翻条件均未命中。"
+    },
+    {
+      "hypothesis": "h-lcaem1",
+      "verdict": "support",
+      "basis": "副本实测：.github/workflows 下 18 个 .yml 逐个检索 lithe-gpui 命中 0，检索 gpui 亦 0 命中；scripts/ 全目录检索 lithe-gpui 仅 sign-windows.ps1:3 一处（默认参数 lithe-gpui-target/debug，且是 Windows 签名脚本，grep sign-windows 在 workflows 中 0 命中即无 workflow 调用）；scripts/build-macos.sh 只构建 lithe-core。未找到任何构建/发布 macOS 版 lithe-gpui 产物的入口，推翻条件未命中。"
+    }
+  ],
+  "anomalies": [
+    {
+      "what": "doc:14-16 称「矩阵 Windows 列的 112 项里有 20 项是旧端自己硬编码为『待开发』的能力，平替基准是 92 项」。副本复跑：windows 列 implemented 恰为 112 项，但落在 backend-capabilities.ts 7 个 false 开关组内的只有 10 条（database-connections/-crud-export/-query-history/-schema、docker-compose、github-prs/-reviews-comments、remote-workspace、wsl-paths/-boundaries，evidence 均指向 features/database、features/docker 等目录）；agent-* 20 条在 windows 列是 9 partial + 11 missing，并非 im",
+      "matters": "yes"
+    },
+    {
+      "what": "u-ceb1bx 的 resolution 称「已在最终文档 §1 增补口径说明：92 项是矩阵能力项…44 是 MENUS 数组内…两者不可相加也不可互相折算」，但在最终文档中 grep「不可相加|不可互相折算|分母」0 命中（doc 全文已读），该增补未落实。问题实际通过 §先说结论第 2 点改用缺口表逐行分布（52/33/4）替代「44 个未接线入口」而消解，故不影响结论。",
+      "matters": "no"
+    },
+    {
+      "what": "audit:pending:…#u1：三条判断 uses 均为空数组，结论却沿用 r_baseline_constrains.json:2（92 项口径）与 n-u-91nq7f.json:35（44 口径），未走适用性判定。口径本身经我复核无误：副本实测 MENUS 内 MenuItem::NotWired 42 条 + menu_bar.rs:172 的 NOT_WIRED_OUTSIDE_MENUS 2 条 = 44，not_wired_entry_count.json:4 的 basis 与实测一致。",
+      "matters": "no"
+    },
+    {
+      "what": "doc:93（#42 帮助/关于）引 menu_bar.rs:896/908/913/919/924，副本实测 NotWired 起始行为 896/901/906/911/917/922/928；896 是起始行，908/913/919/924 是各块的 missing 字段行（+2 偏移），且跳过了 898/903。台账 gpui-gap-evidence-2026-10.md:151 引的是 898/908/913/919/924，两处引用口径不一致。",
+      "matters": "no"
+    }
+  ],
+  "lessons": [],
+  "basis": "四条判据主体满足，交付成立。①缺口清单实测 113 行（≥40），GPUI 现状列与 Windows/macOS 两端对照列全有值，110/113 行证据列是路径、matrix id 或文件+行号引用；②优化项 §2.1–2.10 单独成节，每节均有「现状证据」与「目标」两段；③排期表 §3.2 含阶段/周次/人日/依赖/验收五列（另加内容列），18 行人日相加 53 复算正确，依赖均可经 §3.1 依赖图与表内前向阶段追溯；④未覆盖范围 §4 共 9 条（≥3）。副本复跑硬信号全部对上：.github/workflows 18 个 .yml 检索 lithe-gpui 命中 0、scripts/ 下唯一引用是 sign-windows.ps1:3（Windows 签名，无 workflow 调用它）；矩阵 149 个 feature JSON 与 metadata.json 均无 gpui 字段；backend-capabilities.ts 有 7 个 false 开关；MENUS 内 NotWired 42 条 + 菜单外 2 条 = 44；allow(dead_code) 全目录 19 处、生产代码 18 处，与 §2.4 双口径一致；缺口表自报分布 缺失52/未接线33/已实现未接线4/部分10/有5/未知3/骨架2/平台专属2/阻塞1/已接线1 = 113 复算一致。三条判断：h-tjah4t 被推翻——按行口径 52 行缺失 > 37 行未接线，多数缺口在 GPUI 侧找不到实现入口（交接文件 §1:111 自己也判定「行口径下不成立」）；h-1r6cbm、h-lcaem1 获支持。遗留缺口见 shortfalls 与 anomalies。",
+  "shortfalls": [
+    {
+      "criterion": "①缺口清单表 ≥40 行，每行含 GPUI 现状、对照端、证据路径",
+      "what": "缺口清单实测 113 行（doc:42-189），GPUI 现状列与 Windows/macOS 对照列全有值；110 行证据列为路径、matrix id 或文件+行号引用。但 #59「标签管理」证据列写「需新增」（doc:115）、#65「Maven settings 直达语言服务」写「需打通」（doc:126）、#63「执行 Maven 目标」写「设置页文案自述『gpui 侧还没有执行 Maven 的通路』」而无文件路径（doc:124），三行均不含可复现的证据路径。",
+      "missing": "#59、#65、#63 三行补上可复现的证据路径与行号，或明确标注「无实现入口，故无代码证据」并给出检索命令与口径。"
+    }
+  ],
+  "refs": [
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 7
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 14
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 17
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 42
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 115
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 124
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 126
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 191
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 245
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 261
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 372
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 393
+    },
+    {
+      "path": "docs/development/gpui-platform-gap-and-schedule-2026-10.md",
+      "line": 420
+    },
+    {
+      "path": "docs/development/gpui-gap-team-handoff-2026-10.md",
+      "line": 82
+    },
+    {
+      "path": "docs/development/gpui-gap-team-handoff-2026-10.md",
+      "line": 111
+    },
+    {
+      "path": "docs/development/gpui-gap-evidence-2026-10.md",
+      "line": 137
+    },
+    {
+      "path": "docs/development/gpui-gap-evidence-2026-10.md",
+      "line": 211
+    },
+    {
+      "path": "shared/platform-feature-matrix/metadata.json",
+      "line": 9
+    },
+    {
+      "path": "windows/tauri/src/config/backend-capabilities.ts",
+      "line": 3
+    },
+    {
+      "path": "clear/ontology/relations/r_baseline_constrains.json",
+      "line": 2
+    },
+    {
+      "path": "clear/knowledge/negatives/n-u-91nq7f.json",
+      "line": 35
+    },
+    {
+      "path": "clear/ontology/entities/not_wired_entry_count.json",
+      "line": 4
+    },
+    {
+      "path": "scripts/sign-windows.ps1",
+      "line": 3
+    },
+    {
+      "path": "docs/development/gpui-parity-plan-2026-10.md",
+      "line": 6
+    }
+  ],
+  "card": "四条判据主体满足，交付成立。①缺口清单实测 113 行（≥40），GPUI 现状列与 Windows/macOS 两端对照列全有值，110/113 行证据列是路径、matrix id 或文件+行号引用；②优化项 §2.1–2.10 单独成节，每节均有「现状证据」与「目标」两段；③排期表 §3.2 含阶段/周次/人日/依赖/验收五列（另加内容列），18 行人日相加 53 复算正确，依赖均可经 §3.1 依赖图与表内前向阶段追溯；④未覆盖范围 §4 共 9 条（≥3）。副本复跑硬信号全部对上：.github/workflows 18 个 .yml 检索 lithe-gpui 命中 0、scripts/ 下唯一引用是 sign-windows.ps1:3（Windows 签名，无 workflow 调用它）；矩阵 149 个 feature JSON 与 metadata.json 均无 gpui 字段；backend-capabilities.ts 有 7 个 false 开关；MENUS 内 NotWired 42 条 + 菜单外 2 条 = 44；allow(dead_code) 全目录 19 处、生产代码 18 处，与 §2.4 双口径一致；缺口表自报分布 缺失52/未接线33/已实现未接线4/部分10/有5/未知3/骨架2/平台专属2/阻塞1/已接线1 = 113 复算一致。三条判断：h-tjah4t 被推翻——按行口径 52 行缺失 > 37 行未接线，多数缺口在 GPUI 侧找不到实现入口（交接文件 §1:111 自己也判定「行口径下不成立」）；h-1r6cbm、h-lcaem1 获支持。遗留缺口见 shortfalls 与 anomalies。",
+  "created_at": 1791797276035,
+  "evaluator": "independent"
+}

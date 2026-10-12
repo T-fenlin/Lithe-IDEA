@@ -1,0 +1,6 @@
+{
+  "gloss": "crates/workbench/src/menu_bar.rs 的 MENUS 静态表，每行是一个用户可见菜单入口，分 Action / NotWired / Separator / Theme 四种",
+  "id": "menu_bar",
+  "kind": "category",
+  "label": "菜单栏入口表"
+}

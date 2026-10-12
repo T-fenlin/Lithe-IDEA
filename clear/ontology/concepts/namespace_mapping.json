@@ -1,0 +1,6 @@
+{
+  "gloss": "三端命令 id 之间的人工映射；gpui 与 macOS/Windows 两端的 id 命名空间互不相同，无法机械移植",
+  "id": "namespace_mapping",
+  "kind": "phenomenon",
+  "label": "命令 id 命名空间映射"
+}

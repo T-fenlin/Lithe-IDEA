@@ -1,0 +1,11 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "计数：macOS 侧构建目标包含该前端的 CI 车道数",
+  "id": "macos_lanes_building_gpui",
+  "label": "macOS 侧构建该前端的车道数",
+  "range": {
+    "form": "quantity",
+    "unit": "条"
+  },
+  "shape": "threshold"
+}

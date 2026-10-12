@@ -1,0 +1,11 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "计数：矩阵更新门禁的 platformPaths 里有多少条覆盖该前端源码路径",
+  "id": "matrix_gate_covering_gpui",
+  "label": "覆盖该前端的门禁路径数",
+  "range": {
+    "form": "quantity",
+    "unit": "条"
+  },
+  "shape": "threshold"
+}

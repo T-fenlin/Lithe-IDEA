@@ -1,0 +1,10 @@
+{
+  "basis": "实测逐行数构造点：MENUS 内 42 条 NotWired + 菜单外 2 条 = 44",
+  "id": "not_wired_entry_count",
+  "label": "未接线入口集合（44 条）",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/workbench/src/menu_bar.rs"
+  },
+  "type": "not_wired_entry"
+}

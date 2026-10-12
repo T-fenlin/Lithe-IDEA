@@ -1,0 +1,8 @@
+{
+  "check": "旧端 backend-capabilities.ts 把 agent/database/docker/github/remote/wsl/runActions 硬编码为 false，平替基准因此是 92 项而非矩阵的 112 项。",
+  "domain": "windows_tauri_frontend",
+  "id": "r_baseline_constrains",
+  "kind": "affects",
+  "label": "约束平替范围",
+  "range": "gpui_frontend"
+}

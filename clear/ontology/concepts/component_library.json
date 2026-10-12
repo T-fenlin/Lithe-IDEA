@@ -1,0 +1,6 @@
+{
+  "gloss": "rust/lithe-ui，独立 workspace，通过 path 依赖被 9 个宿主 crate 引入",
+  "id": "component_library",
+  "kind": "category",
+  "label": "Lithe 组件库"
+}

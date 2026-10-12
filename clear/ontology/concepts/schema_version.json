@@ -1,0 +1,8 @@
+{
+  "id": "schema_version",
+  "label": "清单 schema 版本",
+  "kind": "measure",
+  "unit": "版本号",
+  "gloss": "插件清单顶层字段，标识目录文档形状；Core 只接受 1，而 GPUI 两处测试样本写 2 且被宽松解析接受",
+  "basis": "rust/lithe-core/src/plugins/mod.rs:7 与 :215；rust/lithe-gpui/crates/extensions/src/model.rs:200；crates/workbench/src/extensions_page.rs:647"
+}

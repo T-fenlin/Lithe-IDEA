@@ -1,0 +1,6 @@
+{
+  "gloss": "menu_bar.rs 里 MENUS 数组与菜单外入口共用的未接线分组（MISSING_*）",
+  "id": "menu_missing_group",
+  "kind": "category",
+  "label": "菜单未接线分组"
+}

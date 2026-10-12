@@ -1,0 +1,11 @@
+{
+  "basis": "extensions_page.rs 全文件检索 enable/disable/install 无实际动作",
+  "domain": "extensions_page",
+  "gloss": "某类交互动作在前端实现里检索不到落点",
+  "id": "absent_from",
+  "kind": "defines",
+  "label": "动作缺失",
+  "range": {
+    "form": "code"
+  }
+}

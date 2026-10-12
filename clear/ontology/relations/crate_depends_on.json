@@ -1,0 +1,9 @@
+{
+  "check": "以 Cargo.toml 的 path 依赖为准，不看注释",
+  "domain": "crate",
+  "id": "crate_depends_on",
+  "kind": "affects",
+  "label": "依赖",
+  "range": "crate",
+  "shape": "coupled"
+}

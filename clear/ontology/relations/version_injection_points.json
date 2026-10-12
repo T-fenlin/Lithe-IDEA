@@ -1,0 +1,11 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "计数：向二进制注入发布版本号的通路数量",
+  "id": "version_injection_points",
+  "label": "版本号注入通路数",
+  "range": {
+    "form": "quantity",
+    "unit": "处"
+  },
+  "shape": "threshold"
+}

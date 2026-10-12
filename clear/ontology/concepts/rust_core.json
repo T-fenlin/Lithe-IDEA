@@ -1,0 +1,7 @@
+{
+  "id": "rust_core",
+  "label": "Rust 核心",
+  "gloss": "平台中立的确定性核心层，产出 rlib/staticlib/cdylib，供各平台前端经 C ABI 消费。",
+  "kind": "category",
+  "basis": "rust/lithe-core/Cargo.toml 的 [lib] crate-type"
+}

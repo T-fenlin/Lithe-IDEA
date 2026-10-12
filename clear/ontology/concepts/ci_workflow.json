@@ -1,0 +1,7 @@
+{
+  "id": "ci_workflow",
+  "label": "CI 工作流",
+  "gloss": "GitHub Actions 工作流文件；含变更分类、按平台选择的车道与汇总 gate。",
+  "kind": "category",
+  "basis": ".github/workflows/ci-windows.yml、ci-macos.yml"
+}

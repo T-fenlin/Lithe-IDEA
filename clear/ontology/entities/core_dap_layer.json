@@ -1,0 +1,10 @@
+{
+  "basis": "dispatcher.rs:706-941 八个 debug 分支已实现，GPUI 侧引用数为 0",
+  "id": "core_dap_layer",
+  "label": "lithe-core DAP 命令面",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-core/src/runtime/dispatcher.rs"
+  },
+  "type": "debug_command_surface"
+}

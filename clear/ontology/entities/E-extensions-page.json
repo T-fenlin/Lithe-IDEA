@@ -1,0 +1,10 @@
+{
+  "basis": "extensions_page.rs:37-42 的状态机与 :253-608 的渲染与动作集合",
+  "id": "E-extensions-page",
+  "label": "GPUI 中央扩展页",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/workbench/src/extensions_page.rs"
+  },
+  "type": "extensions_page"
+}

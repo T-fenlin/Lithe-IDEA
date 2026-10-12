@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui/crates/workbench/Cargo.toml，依赖 10 个第一方 crate；被 app 依赖（反向依赖数 1）",
+  "id": "workbench",
+  "label": "lithe-gpui-workbench",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/workbench/Cargo.toml"
+  },
+  "type": "crate"
+}

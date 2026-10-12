@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui/Cargo.toml 注释声明组件库在平级 rust/lithe-ui，独立 workspace",
+  "id": "lithe_ui",
+  "label": "lithe-ui 组件库",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-ui/Cargo.toml"
+  },
+  "type": "component_library"
+}

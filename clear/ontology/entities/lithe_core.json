@@ -1,0 +1,11 @@
+{
+  "id": "lithe_core",
+  "label": "rust/lithe-core",
+  "type": "rust_core",
+  "basis": "rust/lithe-core/Cargo.toml 定义 [lib] crate-type = [\"rlib\", \"staticlib\", \"cdylib\"]；rust/Cargo.toml 的 workspace members 含 lithe-core。",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-core/Cargo.toml"
+  },
+  "aliases": ["lithe-core"]
+}

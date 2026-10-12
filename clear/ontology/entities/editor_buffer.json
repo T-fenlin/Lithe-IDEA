@@ -1,0 +1,10 @@
+{
+  "basis": "buffer.rs:24 结构体、:265 replace 整篇重建行表",
+  "id": "editor_buffer",
+  "label": "lithe-ui 编辑器文本模型 Buffer",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-ui/src/editor/buffer.rs"
+  },
+  "type": "incremental_text_model"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "lacks_build_pipeline_for",
+  "label": "缺少平台构建链路",
+  "gloss": "某个前端在指定平台上不存在可产出其产物的 CI 工作流或本地脚本入口；宾语是平台名（windows / macos / linux）。",
+  "kind": "affects",
+  "domain": "gpui_frontend",
+  "range": {
+    "form": "reference"
+  },
+  "basis": "仓库 .github/workflows 与 scripts/ 的三端对照盘点",
+  "status": "active"
+}

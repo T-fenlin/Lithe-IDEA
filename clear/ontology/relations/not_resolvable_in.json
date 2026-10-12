@@ -1,0 +1,11 @@
+{
+  "basis": "command.rs:339 起的 148 条命令表逐命名空间清点无 plugins.*；dispatcher.rs:100-106 对未知命令返回 NotSupported",
+  "domain": "plugin_catalog",
+  "gloss": "取数命令在目标前端的 Core 命令表中无法解析，取数必然失败",
+  "id": "not_resolvable_in",
+  "kind": "defines",
+  "label": "命令不可解析",
+  "range": {
+    "form": "reference"
+  }
+}

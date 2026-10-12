@@ -1,0 +1,7 @@
+{
+  "domain": "plugin_catalog",
+  "id": "catalog_defines_bundled",
+  "kind": "defines",
+  "label": "目录定义内置扩展的可装卸状态",
+  "range": "bundled_extension"
+}

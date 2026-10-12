@@ -1,0 +1,10 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "宾语为真表示 workspace 有 rust-toolchain 文件或 CI 固定工具链版本",
+  "id": "has_toolchain_pin",
+  "label": "是否钉版工具链",
+  "range": {
+    "form": "statement"
+  },
+  "shape": "threshold"
+}

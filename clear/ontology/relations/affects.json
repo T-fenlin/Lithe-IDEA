@@ -1,0 +1,7 @@
+{
+  "domain": "command_id",
+  "id": "affects",
+  "kind": "affects",
+  "label": "影响",
+  "range": "namespace_mapping"
+}

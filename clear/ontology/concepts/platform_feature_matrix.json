@@ -1,0 +1,7 @@
+{
+  "gloss": "shared/platform-feature-matrix/features/*.json，149 条能力，只有 macos 与 windows 两个平台列，无 gpui 列",
+  "id": "platform_feature_matrix",
+  "kind": "measure",
+  "label": "跨平台能力矩阵",
+  "unit": "条"
+}

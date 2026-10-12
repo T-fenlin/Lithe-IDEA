@@ -1,0 +1,11 @@
+{
+  "basis": "extensions_page.rs:112 removable 判定；Core plugins/mod.rs:349-377 valid_entrypoint 只接受 builtIn/nativeBundle",
+  "domain": "bundled_extension",
+  "gloss": "某个 UI 入口因判定条件恒为假而永不渲染",
+  "id": "unreachable_because_of",
+  "kind": "defines",
+  "label": "因判定恒假而不可达",
+  "range": {
+    "form": "statement"
+  }
+}

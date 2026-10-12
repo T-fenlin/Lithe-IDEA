@@ -1,0 +1,100 @@
+{
+  "about": "Field definitions for ontology files (laid down by the system, read-only). Naming: X.json describes node X, and its children live in the sibling X/ directory; id must equal the file name. Nested concept directories mean is_a; nested entity directories mean part-of; relations can be flat or grouped in directories (grouping only). References use ids only, so moving directories never breaks them. Writes check a single file; cross-file problems such as broken references or type mismatches are flagged on the card and only block at promotion.",
+  "concept": {
+    "where": "clear/ontology/concepts/**/<id>.json",
+    "required": {
+      "id": "slug: starts with a lowercase letter; letters, digits, underscores; ≤40; equals the file name",
+      "label": "the human-readable name",
+      "gloss": "one-sentence gloss: what it refers to; for a measure (yield, conversion …) state its definition, that is, how it is computed"
+    },
+    "optional": {
+      "kind": "category (reactor, catalyst); measure (yield, impurity; needs unit); phenomenon (drift, deactivation)",
+      "unit": "unit (required for a measure; \"1\" if dimensionless)",
+      "aliases": "array of aliases",
+      "basis": "basis: which material establishes this term",
+      "status": "active | deprecated",
+      "replaced_by": "the id that replaces it once deprecated",
+      "note": "note"
+    },
+    "example": {
+      "id": "jepa",
+      "label": "Joint-embedding predictive architecture",
+      "aliases": [
+        "JEPA"
+      ],
+      "gloss": "predicts the representation of a target from context in representation space, without reconstructing pixels",
+      "basis": "LeCun 2022"
+    }
+  },
+  "relation": {
+    "where": "clear/ontology/relations/**/<id>.json",
+    "required": {
+      "id": "slug, as for concepts (concepts and relations share one id space)",
+      "label": "the human-readable name",
+      "range": "what the object is: a concept id (the object is an entity of that concept), or {\"form\": \"statement\" | \"quantity\" | \"formula\" | \"code\" | \"reference\", \"unit\"?: \"...\"} (the object is a literal value)"
+    },
+    "optional": {
+      "gloss": "one-sentence gloss",
+      "kind": "affects (how one quantity moves with another); defines (how a measure is computed); measures (which instrument reads which quantity); manifests_as (what a phenomenon looks like in the readings)",
+      "shape": "rough shape of an effect: increasing | decreasing | peak | threshold | coupled; expectations come from it",
+      "check": "for a measurement: how to check the reading (reference probe, standard, repeat point)",
+      "domain": "which concept the subject must be (subconcepts count)",
+      "functional": "true = single-valued: one value per subject; two different values are reported as a conflict",
+      "basis": "basis",
+      "status": "active | deprecated",
+      "replaced_by": "the replacing id",
+      "note": "note"
+    },
+    "example": {
+      "id": "derived_from",
+      "label": "derived from",
+      "domain": "method",
+      "range": "method",
+      "functional": false
+    }
+  },
+  "entity": {
+    "where": "clear/ontology/entities/**/<id>.json",
+    "required": {
+      "id": "starts with a letter or digit; letters, digits, underscores, hyphens; ≤60; equals the file name",
+      "label": "the human-readable name",
+      "type": "which concept it is an entity of (concept id)",
+      "basis": "basis: which material lets it be identified",
+      "provenance": "source {\"kind\": \"url\" | \"named\" | \"backref\", \"ref\": \"link / paper name / file in the workspace\"}"
+    },
+    "optional": {
+      "aliases": "array of aliases",
+      "history": "dated history: [{\"at\": \"YYYY-MM-DD\", \"what\": \"calibrated / replaced / drift found\", \"evidence\"?: {\"kind\", \"ref\"}}]",
+      "relations": "its outgoing relations, each with a source: {\"predicate\": relation id, \"object\": another entity id} or {\"predicate\": relation id, \"value\": literal, \"unit\"?: unit}; both need \"evidence\": {\"kind\", \"ref\"}",
+      "note": "note"
+    },
+    "example": {
+      "id": "v_jepa_2_ac",
+      "label": "V-JEPA 2-AC",
+      "type": "world_model",
+      "basis": "action-conditioned V-JEPA 2",
+      "provenance": {
+        "kind": "named",
+        "ref": "sources/vjepa2.md"
+      },
+      "relations": [
+        {
+          "predicate": "derived_from",
+          "object": "v_jepa_2",
+          "evidence": {
+            "kind": "named",
+            "ref": "V-JEPA 2 paper"
+          }
+        },
+        {
+          "predicate": "released_year",
+          "value": 2025,
+          "evidence": {
+            "kind": "named",
+            "ref": "V-JEPA 2 paper"
+          }
+        }
+      ]
+    }
+  }
+}

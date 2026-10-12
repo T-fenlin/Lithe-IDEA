@@ -1,0 +1,6 @@
+{
+  "gloss": "lithe-core 归一化的语言服务操作枚举（LspSemanticOperation）；UI 按意图名请求，Core 映射到具体 LSP method 与参数构造",
+  "id": "lsp_semantic_operation",
+  "kind": "category",
+  "label": "LSP 语义操作面"
+}

@@ -1,0 +1,10 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "宾语为真表示存在向二进制注入发布版本号的通路",
+  "id": "has_version_injection",
+  "label": "是否有版本号注入通路",
+  "range": {
+    "form": "statement"
+  },
+  "shape": "threshold"
+}

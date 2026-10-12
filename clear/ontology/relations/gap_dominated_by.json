@@ -1,0 +1,12 @@
+{
+  "id": "gap_dominated_by",
+  "label": "缺口主要由…构成",
+  "gloss": "某个前端相对对照端的功能缺口，按成因分类后占比最大的那一类；成因取值如 not_wired_entry（已实现未接线）、absent（完全未实现）、platform_specific（平台专属）。",
+  "kind": "defines",
+  "domain": "gpui_frontend",
+  "range": {
+    "form": "reference"
+  },
+  "basis": "rust/lithe-gpui 与 windows/tauri 的入口对照盘点",
+  "status": "active"
+}

@@ -1,0 +1,10 @@
+{
+  "basis": "menu_bar.rs:89 定义、:154 汇总，7 处使用",
+  "id": "missing_lsp_requests",
+  "label": "MISSING_LSP_REQUESTS 未接线分组",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/workbench/src/menu_bar.rs"
+  },
+  "type": "menu_missing_group"
+}

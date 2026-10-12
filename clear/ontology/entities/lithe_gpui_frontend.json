@@ -1,0 +1,10 @@
+{
+  "basis": "rust/lithe-gpui 的界面层 workspace，基线提交 3085f5d1",
+  "id": "lithe_gpui_frontend",
+  "label": "GPUI 统一前端界面层",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/README.md"
+  },
+  "type": "lithe_gpui"
+}

@@ -1,0 +1,9 @@
+{
+  "check": "cargo check/build 输出的 Compiling 行去重计数",
+  "domain": "crate",
+  "id": "cascade_recompile_of",
+  "kind": "affects",
+  "label": "级联重编",
+  "range": "cascade_recompile_count",
+  "shape": "coupled"
+}

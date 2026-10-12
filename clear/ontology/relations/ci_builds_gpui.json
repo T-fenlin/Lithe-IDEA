@@ -1,0 +1,10 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "宾语为真表示存在至少一条 CI 车道会实际构建该前端",
+  "id": "ci_builds_gpui",
+  "label": "CI 是否构建该前端",
+  "range": {
+    "form": "statement"
+  },
+  "shape": "threshold"
+}

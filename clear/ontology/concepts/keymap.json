@@ -1,0 +1,6 @@
+{
+  "gloss": "crates/settings/src/keymap.rs：四层合成（用户覆盖/预设表/注册表默认值/未绑定），只管「哪条命令按哪个键」",
+  "id": "keymap",
+  "kind": "category",
+  "label": "键位数据层"
+}

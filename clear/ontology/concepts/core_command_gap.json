@@ -1,0 +1,6 @@
+{
+  "gloss": "能力的前置在 lithe-core：界面无论怎么写都补不上，必须先在 Core 侧新增语义操作变体、method 白名单或参数构造",
+  "id": "core_command_gap",
+  "kind": "phenomenon",
+  "label": "Core 缺命令"
+}

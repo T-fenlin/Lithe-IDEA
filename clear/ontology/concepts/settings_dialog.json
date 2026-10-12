@@ -1,0 +1,6 @@
+{
+  "gloss": "crates/settings/src/dialog.rs，11 个分类，其中 7 个 IMPLEMENTED，其余走空态并登记 prerequisite_key",
+  "id": "settings_dialog",
+  "kind": "category",
+  "label": "设置对话框"
+}

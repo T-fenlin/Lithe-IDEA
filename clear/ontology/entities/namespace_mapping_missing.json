@@ -1,0 +1,10 @@
+{
+  "basis": "keymap.rs:36-47 自述「预设表无法从任何一端机械移植，只能人工建显式映射」",
+  "id": "namespace_mapping_missing",
+  "label": "命令 id 命名空间映射缺失",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/settings/src/keymap.rs"
+  },
+  "type": "namespace_mapping"
+}

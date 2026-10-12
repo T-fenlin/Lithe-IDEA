@@ -1,0 +1,7 @@
+{
+  "gloss": "#[allow(dead_code)] 标注的条目数，衡量「实现已在但无调用点」的规模",
+  "id": "dead_code_allow",
+  "kind": "measure",
+  "label": "dead_code 豁免",
+  "unit": "处"
+}

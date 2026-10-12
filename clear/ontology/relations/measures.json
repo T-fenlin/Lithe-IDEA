@@ -1,0 +1,7 @@
+{
+  "domain": "not_wired_entry",
+  "id": "measures",
+  "kind": "measures",
+  "label": "度量",
+  "range": "entry_count"
+}

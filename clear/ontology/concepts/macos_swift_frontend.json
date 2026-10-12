@@ -1,0 +1,6 @@
+{
+  "gloss": "macos/ 下的 Swift/SwiftUI/AppKit 前端，仓库自述的 reference product；本批用它承载 macOS 共享控件 owner。",
+  "id": "macos_swift_frontend",
+  "kind": "category",
+  "label": "macOS Swift 前端"
+}

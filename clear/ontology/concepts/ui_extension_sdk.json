@@ -1,0 +1,7 @@
+{
+  "basis": "windows/tauri/src/extensions/ui/services",
+  "gloss": "允许插件向宿主界面注入视图/工具栏动作的运行时；Windows 有实现，GPUI 侧未找到实现入口",
+  "id": "ui_extension_sdk",
+  "kind": "category",
+  "label": "UI 扩展 SDK"
+}

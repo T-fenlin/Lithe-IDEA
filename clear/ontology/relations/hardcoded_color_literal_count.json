@@ -1,0 +1,11 @@
+{
+  "domain": "gpui_frontend",
+  "gloss": "某个前端代码里硬编码色值字面量（0xRRGGBB / rgb( / rgba( / #rrggbb）的处数；0 表示取色只经主题 token。",
+  "id": "hardcoded_color_literal_count",
+  "kind": "measures",
+  "label": "硬编码色值处数",
+  "range": {
+    "form": "quantity",
+    "unit": "处"
+  }
+}

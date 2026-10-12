@@ -1,0 +1,14 @@
+{
+  "id": "lacks_backend_for",
+  "label": "缺少平台后端",
+  "gloss": "某前端所依赖的渲染框架中不存在该平台的平台层 crate，因此在该平台上编不出产物。宾语是平台名（ohos / linux 等）。",
+  "kind": "affects",
+  "shape": "coupled",
+  "domain": "gpui_frontend",
+  "range": {
+    "form": "reference"
+  },
+  "check": "看依赖图的平台 crate 名单（gpui-pre-* 的实际成员），不看文档声称",
+  "basis": "rust/lithe-gpui/Cargo.lock 中 gpui-pre 平台 crate 清单",
+  "status": "active"
+}

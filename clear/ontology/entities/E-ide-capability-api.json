@@ -1,0 +1,10 @@
+{
+  "basis": "catalog.rs:30-51 定义 13 个工具；宿主入口为 Core 的 ideHost.control",
+  "id": "E-ide-capability-api",
+  "label": "IDE 能力 API v1",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-ide-host/src/catalog.rs"
+  },
+  "type": "ide_capability_api"
+}

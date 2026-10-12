@@ -1,0 +1,10 @@
+{
+  "basis": "Windows 侧 ui/services 12 文件；GPUI 侧检索命中 0",
+  "id": "E-ui-extension-sdk",
+  "label": "UI 扩展 SDK",
+  "provenance": {
+    "kind": "named",
+    "ref": "windows/tauri/src/extensions/ui/services"
+  },
+  "type": "ui_extension_sdk"
+}

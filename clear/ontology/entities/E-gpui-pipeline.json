@@ -1,0 +1,10 @@
+{
+  "basis": ".github/workflows 共 18 个工作流均无 lithe-gpui 引用；唯一局部入口是 scripts/sign-windows.ps1:3",
+  "id": "E-gpui-pipeline",
+  "label": "GPUI 产物构建链路",
+  "provenance": {
+    "kind": "named",
+    "ref": ".github/workflows"
+  },
+  "type": "build_pipeline"
+}

@@ -1,0 +1,7 @@
+{
+  "gloss": "一类入口的计数，单位条",
+  "id": "entry_count",
+  "kind": "measure",
+  "label": "入口计数",
+  "unit": "条"
+}

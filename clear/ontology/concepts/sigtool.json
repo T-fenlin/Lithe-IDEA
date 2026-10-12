@@ -1,0 +1,6 @@
+{
+  "gloss": "signtool 对 exe 与同目录 DLL 逐个签名并 verify /pa",
+  "id": "sigtool",
+  "kind": "category",
+  "label": "Windows Authenticode 签名"
+}

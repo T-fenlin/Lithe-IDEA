@@ -1,0 +1,7 @@
+{
+  "domain": "ide_capability_api",
+  "id": "api_served_by_broker",
+  "kind": "affects",
+  "label": "能力 API 由 lithe-ide-host 提供",
+  "range": "plugin_catalog"
+}

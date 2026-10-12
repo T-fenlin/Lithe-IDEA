@@ -1,0 +1,10 @@
+{
+  "basis": "workspace.rs:3157-3204 Dock 三面板、title_bar.rs:28 标题栏、activity_bar.rs:67 活动栏、status_bar.rs:64 状态栏、main.rs:709 WindowRoot",
+  "id": "skeleton_present",
+  "label": "布局骨架已具备",
+  "provenance": {
+    "kind": "named",
+    "ref": "rust/lithe-gpui/crates/workbench/src/workspace.rs"
+  },
+  "type": "layout_skeleton"
+}
