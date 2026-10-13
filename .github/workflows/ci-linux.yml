@@ -1,0 +1,254 @@
+name: Linux CI
+
+# 共享 Rust workspace（rust/）的 Linux 验证通道。
+# Linux 目前没有产品形态（macOS = Swift 参考实现，Windows = React/Tauri
+# 独立实现），本通道只做共享 Rust Core 的编译与测试覆盖，不产出安装包；
+# 数据库 crate 的 Linux 测试已由 ci-database.yml 的 rust-database-tests 承担。
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  changes:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust_core: ${{ steps.classify.outputs.rust_core }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve comparison base
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "manual=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base_sha="$PUSH_BASE_SHA"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+          fi
+          {
+            echo "manual=false"
+            echo "base_sha=$base_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Classify changed paths
+        id: classify
+        env:
+          MANUAL: ${{ steps.base.outputs.manual }}
+          BASE_SHA: ${{ steps.base.outputs.base_sha }}
+        shell: bash
+        run: |
+          if [[ "$MANUAL" == "true" ]]; then
+            echo "rust_core=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ./scripts/classify-ci-changes.sh "$BASE_SHA" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize selected lanes
+        shell: bash
+        env:
+          RUST_CORE: ${{ steps.classify.outputs.rust_core }}
+        run: |
+          {
+            echo "### Linux CI lanes"
+            echo "| Lane | Run |"
+            echo "| --- | --- |"
+            echo "| Shared Rust Core tests | $RUST_CORE |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  rust-core:
+    name: Test shared Rust Core on Linux
+    needs: changes
+    if: needs.changes.outputs.rust_core == 'true'
+    runs-on: ubuntu-latest
+    # Cold compilation of the shared workspace dominates the first run; later
+    # packages reuse the same target directory and finish incrementally.
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Ensure zsh is available for the layout verifier
+        shell: bash
+        run: |
+          if ! command -v zsh >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends zsh
+          fi
+
+      - name: Resolve Rust cache identity
+        id: rust-cache
+        shell: bash
+        run: |
+          commit=$(rustc -Vv | sed -n 's/^commit-hash: //p' | head -n 1)
+          if [[ -z "$commit" ]]; then
+            echo "Could not resolve the Rust compiler commit hash." >&2
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Cargo dependencies
+        id: cargo-download-cache
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+          key: cargo-dependencies-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-dependencies-${{ runner.os }}-
+
+      - name: Restore Cargo build outputs
+        id: cargo-build-cache
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: |
+            rust/target/**/.fingerprint
+            rust/target/**/build
+            rust/target/**/deps
+            rust/target/**/incremental
+          key: lithe-${{ runner.os }}-${{ runner.arch }}-rust-build-v1-x86_64-unknown-linux-gnu-${{ steps.rust-cache.outputs.commit }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
+          restore-keys: |
+            lithe-${{ runner.os }}-${{ runner.arch }}-rust-build-v1-x86_64-unknown-linux-gnu-${{ steps.rust-cache.outputs.commit }}-
+
+      - name: Record whether the build cache was restored
+        shell: bash
+        run: |
+          restored=false
+          if [[ "${{ steps.cargo-build-cache.outcome }}" == "success" ]]; then
+            restored=true
+          fi
+          echo "LITHE_CARGO_BUILD_CACHE_RESTORED=$restored" >> "$GITHUB_ENV"
+
+      - name: Validate restored Cargo downloads or fall back
+        shell: bash
+        run: |
+          if ! node scripts/verify-download-cache.mjs \
+            --cargo-cache "$HOME/.cargo/registry/cache" \
+            --cargo-lock rust/Cargo.lock; then
+            echo "::warning title=Cargo cache validation failed::Discarding the untrusted Cargo download cache and downloading dependencies normally."
+            rm -rf "$HOME/.cargo/registry/cache"
+          fi
+
+      - name: Check Rust Core formatting, comments, and layout
+        shell: bash
+        run: |
+          cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+          node --test --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=junit --test-reporter-destination=.artifacts/test-stability/rust-comment-checker.xml \
+            scripts/test-rust-core-comments.mjs
+          scripts/verify-rust-core-comments.sh
+          zsh scripts/verify-rust-core-layout.sh
+
+      - name: Test shared Rust Core packages
+        shell: bash
+        run: |
+          # A restored build cache can carry stale fingerprints. When a timed
+          # package fails after such a restore, clear the target directory once
+          # and retry; the flag lives in this shell, not GITHUB_ENV, so later
+          # packages in the same step see the update.
+          build_cache_restored="${LITHE_CARGO_BUILD_CACHE_RESTORED:-false}"
+
+          run_timed_package() {
+            local package="$1"
+            local report="$2"
+            if node .agents/skills/write-stable-tests/scripts/run-rust-tests-with-timing.mjs \
+              --manifest rust/Cargo.toml \
+              --package "$package" \
+              --build-timeout-ms 1200000 \
+              --suite-timeout-ms 1200000 \
+              --report "$report"; then
+              return 0
+            fi
+            if [[ "$build_cache_restored" == "true" ]]; then
+              echo "::warning title=Stale build cache::Clearing rust/target after a restored cache failed and retrying $package once."
+              rm -rf rust/target
+              build_cache_restored=false
+              node .agents/skills/write-stable-tests/scripts/run-rust-tests-with-timing.mjs \
+                --manifest rust/Cargo.toml \
+                --package "$package" \
+                --build-timeout-ms 1200000 \
+                --suite-timeout-ms 1200000 \
+                --report "$report"
+              return $?
+            fi
+            return 1
+          }
+
+          run_timed_package lithe-git-host .artifacts/test-stability/git-host-rust-linux.json
+          run_timed_package lithe-agent-host .artifacts/test-stability/agent-host-rust-linux.json
+          run_timed_package lithe-ide-host .artifacts/test-stability/ide-host-rust-linux.json
+          run_timed_package lithe-core .artifacts/test-stability/shared-rust-linux.json
+
+      - name: Generate combined Linux Rust test report
+        if: always()
+        shell: bash
+        run: node .agents/skills/write-stable-tests/scripts/generate-test-report.mjs
+
+      - name: Upload Linux Rust test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-stability-linux-rust
+          path: .artifacts/test-stability/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  gate:
+    name: Linux CI gate
+    needs:
+      - changes
+      - rust-core
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify required jobs
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RUST_CORE_SELECTED: ${{ needs.changes.outputs.rust_core }}
+          RUST_CORE_RESULT: ${{ needs.rust-core.result }}
+        shell: bash
+        run: |
+          [[ "$CHANGES_RESULT" == "success" ]]
+          if [[ "$RUST_CORE_SELECTED" == "true" ]]; then
+            [[ "$RUST_CORE_RESULT" == "success" ]]
+          else
+            [[ "$RUST_CORE_RESULT" == "skipped" ]]
+          fi

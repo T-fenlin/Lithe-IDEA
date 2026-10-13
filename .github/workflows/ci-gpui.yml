@@ -1,0 +1,270 @@
+name: GPUI CI
+
+# 统一 GPUI 前端（rust/lithe-gpui，独立 cargo workspace）的三平台 CI。
+# 该 workspace 不在 rust/ 主 workspace 内，也不被任何现有 workflow 引用；
+# 本文件是它唯一的构建/测试覆盖。macOS/Windows/Linux 三个 runner 并行，
+# 各自编译宿主目标并运行 workspace 测试。
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpui-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  changes:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    outputs:
+      gpui: ${{ steps.classify.outputs.gpui }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Test CI change classifier
+        shell: bash
+        run: ./scripts/test-classify-ci-changes.sh
+
+      - name: Resolve comparison base
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "manual=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base_sha="$PUSH_BASE_SHA"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+          fi
+          {
+            echo "manual=false"
+            echo "base_sha=$base_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Classify changed paths
+        id: classify
+        env:
+          MANUAL: ${{ steps.base.outputs.manual }}
+          BASE_SHA: ${{ steps.base.outputs.base_sha }}
+        shell: bash
+        run: |
+          if [[ "$MANUAL" == "true" ]]; then
+            echo "gpui=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ./scripts/classify-ci-changes.sh "$BASE_SHA" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize selected lanes
+        shell: bash
+        env:
+          GPUI: ${{ steps.classify.outputs.gpui }}
+        run: |
+          {
+            echo "### GPUI CI lanes"
+            echo "| Lane | Run |"
+            echo "| --- | --- |"
+            echo "| Three-platform build and tests | $GPUI |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build and test GPUI (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.gpui == 'true'
+    runs-on: ${{ matrix.runner }}
+    # A cold debug build of the GPUI workspace measured about 13 minutes
+    # locally; CI adds toolchain setup, cache restore and test execution.
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - platform: windows
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: linux
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+
+    env:
+      # Every runner's host triple equals its matrix target, so pinning the
+      # build target keeps `cargo test` and `cargo build` sharing one target
+      # directory instead of compiling the graph twice.
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        # gpui-pre-linux links xkbcommon, fontconfig, wayland/x11 client
+        # libraries and loads Vulkan; the list mirrors the documented GPUI
+        # desktop dependencies (see Zed's script/linux for the same set).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            cmake \
+            libasound2-dev \
+            libfontconfig-dev \
+            libglib2.0-dev \
+            libssl-dev \
+            libvulkan1 \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libzstd-dev \
+            pkg-config
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt
+
+      - name: Configure isolated Cargo cache
+        shell: bash
+        run: |
+          echo "CARGO_HOME=$GITHUB_WORKSPACE/.artifacts/cargo-home" >> "$GITHUB_ENV"
+
+      - name: Resolve Rust cache identity
+        id: rust-cache
+        shell: bash
+        run: |
+          commit=$(rustc -Vv | sed -n 's/^commit-hash: //p' | head -n 1)
+          if [[ -z "$commit" ]]; then
+            echo "Could not resolve the Rust compiler commit hash." >&2
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Cargo downloads
+        id: cargo-download-cache
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: .artifacts/cargo-home/registry/cache
+          key: lithe-${{ runner.os }}-${{ runner.arch }}-gpui-cargo-downloads-v1-${{ hashFiles('rust/lithe-gpui/Cargo.lock') }}
+          restore-keys: |
+            lithe-${{ runner.os }}-${{ runner.arch }}-gpui-cargo-downloads-v1-
+
+      - name: Restore Cargo build outputs
+        id: cargo-build-cache
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: |
+            rust/lithe-gpui/target/**/.fingerprint
+            rust/lithe-gpui/target/**/build
+            rust/lithe-gpui/target/**/deps
+            rust/lithe-gpui/target/**/incremental
+          key: lithe-${{ runner.os }}-${{ runner.arch }}-gpui-cargo-build-v1-dev-${{ matrix.target }}-${{ steps.rust-cache.outputs.commit }}-${{ hashFiles('rust/lithe-gpui/Cargo.lock', 'rust/lithe-gpui/**/Cargo.toml', 'rust/lithe-ui/**/Cargo.toml', 'rust/lithe-core/**/Cargo.toml') }}
+          restore-keys: |
+            lithe-${{ runner.os }}-${{ runner.arch }}-gpui-cargo-build-v1-dev-${{ matrix.target }}-${{ steps.rust-cache.outputs.commit }}-
+
+      - name: Validate restored Cargo caches or fall back
+        shell: bash
+        run: |
+          if ! node scripts/verify-download-cache.mjs \
+            --cargo-cache .artifacts/cargo-home/registry/cache \
+            --cargo-lock rust/lithe-gpui/Cargo.lock; then
+            echo "::warning title=Cargo cache validation failed::Discarding the untrusted Cargo download cache and downloading dependencies normally."
+            rm -rf .artifacts/cargo-home/registry/cache
+          fi
+
+      - name: Check GPUI workspace formatting
+        continue-on-error: true
+        shell: bash
+        # Informational only: the workspace still carries rustfmt drift, so the
+        # check reports a warning instead of blocking the lane. Remove
+        # continue-on-error once `cargo fmt --all` is clean.
+        run: |
+          if ! cargo fmt --manifest-path rust/lithe-gpui/Cargo.toml --all -- --check; then
+            echo "::warning title=GPUI formatting drift::cargo fmt --check reported differences; run cargo fmt in rust/lithe-gpui."
+          fi
+
+      - name: Test the GPUI workspace
+        timeout-minutes: 35
+        shell: bash
+        run: |
+          node .agents/skills/write-stable-tests/scripts/run-rust-tests-with-timing.mjs \
+            --manifest rust/lithe-gpui/Cargo.toml \
+            --warn-ms 5000 \
+            --max-ms 60000 \
+            --build-timeout-ms 1500000 \
+            --suite-timeout-ms 1800000 \
+            --report .artifacts/test-stability/gpui-${{ matrix.platform }}.json
+
+      - name: Build the GPUI app binary
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          cargo build --locked \
+            --manifest-path rust/lithe-gpui/Cargo.toml \
+            --target "${{ matrix.target }}" \
+            -p lithe-gpui-app
+
+      - name: Generate combined GPUI test report
+        if: always()
+        shell: bash
+        run: node .agents/skills/write-stable-tests/scripts/generate-test-report.mjs
+
+      - name: Upload GPUI test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-stability-gpui-${{ matrix.platform }}
+          path: .artifacts/test-stability/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  gate:
+    name: GPUI CI gate
+    needs:
+      - changes
+      - build
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify required jobs
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          GPUI_SELECTED: ${{ needs.changes.outputs.gpui }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        shell: bash
+        run: |
+          [[ "$CHANGES_RESULT" == "success" ]]
+          if [[ "$GPUI_SELECTED" == "true" ]]; then
+            [[ "$BUILD_RESULT" == "success" ]]
+          else
+            [[ "$BUILD_RESULT" == "skipped" ]]
+          fi

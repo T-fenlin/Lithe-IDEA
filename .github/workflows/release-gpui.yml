@@ -1,0 +1,464 @@
+name: Release GPUI Preview
+
+# 统一 GPUI 前端（rust/lithe-gpui）的预发布通道。
+#
+# Linux 策略：Linux 目前没有 Lithe 产品形态（stable 资产契约只有 macOS
+# Sparkle + Windows updater），因此 GPUI 的 Linux 产物只进入本滚动预发布
+# Release，不进入任何 stable Release 资产清单，也不触碰 Sparkle appcast 与
+# Tauri updater manifest。macOS/Windows 的 GPUI 产物同理，直到 GPUI 前端
+# 成为正式产品形态并补齐安装器与更新体系后再评估纳入 stable。
+#
+# 签名策略：Windows 产物在配置 Authenticode 证书时签名，未配置时输出未签名
+# 归档并在 Release 说明与步骤摘要中明确标注；macOS/Linux 产物不签名。
+
+on:
+  schedule:
+    # GitHub Actions schedules are approximate and may be delayed by queueing.
+    # Offset from the product previews (03:17 macOS, 03:27 Windows).
+    - cron: "43 4 * * *"
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: "Branch to build"
+        required: true
+        default: "main"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gpui-preview
+  cancel-in-progress: false
+
+env:
+  GPUI_SOURCE_BRANCH: main
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  prepare:
+    name: Pin preview source and build identity
+    if: github.actor == github.repository_owner || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      build: ${{ steps.source.outputs.build }}
+      timestamp: ${{ steps.source.outputs.timestamp }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_branch || env.GPUI_SOURCE_BRANCH }}
+
+      - name: Resolve GPUI preview version
+        id: version
+        shell: bash
+        run: |
+          manifest="rust/lithe-gpui/crates/app/Cargo.toml"
+          version=$(sed -n 's/^version = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"/\1/p' "$manifest" | head -n 1)
+          if [[ -z "$version" ]]; then
+            echo "Could not resolve the GPUI app version from $manifest" >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=preview-gpui-$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Record immutable build identity
+        id: source
+        shell: bash
+        run: |
+          {
+            echo "sha=$(git rev-parse HEAD)"
+            echo "build=$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
+            echo "timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.platform }} GPUI preview
+    needs: prepare
+    if: github.actor == github.repository_owner || github.event_name == 'schedule'
+    runs-on: ${{ matrix.runner }}
+    # The release profile sets lto = true and codegen-units = 1, so a cold
+    # release build is slower than the debug build CI measures.
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-aarch64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - platform: macos-x86_64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+          - platform: windows-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: linux-x64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+
+    steps:
+      - name: Check out preview source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        # Same set as the GPUI CI lane: xkbcommon, fontconfig, wayland/x11
+        # client libraries and the Vulkan loader.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            cmake \
+            libasound2-dev \
+            libfontconfig-dev \
+            libglib2.0-dev \
+            libssl-dev \
+            libvulkan1 \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libzstd-dev \
+            pkg-config
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Configure isolated Cargo cache
+        shell: bash
+        run: |
+          echo "CARGO_HOME=$GITHUB_WORKSPACE/.artifacts/cargo-home" >> "$GITHUB_ENV"
+
+      - name: Resolve Rust cache identity
+        id: rust-cache
+        shell: bash
+        run: |
+          commit=$(rustc -Vv | sed -n 's/^commit-hash: //p' | head -n 1)
+          if [[ -z "$commit" ]]; then
+            echo "Could not resolve the Rust compiler commit hash." >&2
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Cargo downloads
+        id: cargo-download-cache
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: .artifacts/cargo-home/registry/cache
+          key: lithe-${{ runner.os }}-${{ runner.arch }}-gpui-cargo-downloads-v1-${{ hashFiles('rust/lithe-gpui/Cargo.lock') }}
+          restore-keys: |
+            lithe-${{ runner.os }}-${{ runner.arch }}-gpui-cargo-downloads-v1-
+
+      - name: Restore Cargo build outputs
+        id: cargo-build-cache
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: |
+            rust/lithe-gpui/target/**/.fingerprint
+            rust/lithe-gpui/target/**/build
+            rust/lithe-gpui/target/**/deps
+            rust/lithe-gpui/target/**/incremental
+          key: lithe-${{ runner.os }}-${{ runner.arch }}-gpui-cargo-build-v1-release-${{ matrix.target }}-${{ steps.rust-cache.outputs.commit }}-${{ hashFiles('rust/lithe-gpui/Cargo.lock', 'rust/lithe-gpui/**/Cargo.toml', 'rust/lithe-ui/**/Cargo.toml', 'rust/lithe-core/**/Cargo.toml') }}
+          restore-keys: |
+            lithe-${{ runner.os }}-${{ runner.arch }}-gpui-cargo-build-v1-release-${{ matrix.target }}-${{ steps.rust-cache.outputs.commit }}-
+
+      - name: Validate restored Cargo downloads or fall back
+        shell: bash
+        run: |
+          if ! node scripts/verify-download-cache.mjs \
+            --cargo-cache .artifacts/cargo-home/registry/cache \
+            --cargo-lock rust/lithe-gpui/Cargo.lock; then
+            echo "::warning title=Cargo cache validation failed::Discarding the untrusted Cargo download cache and downloading dependencies normally."
+            rm -rf .artifacts/cargo-home/registry/cache
+          fi
+
+      - name: Build the GPUI release binary
+        timeout-minutes: 55
+        shell: bash
+        run: |
+          cargo build --locked --release \
+            --manifest-path rust/lithe-gpui/Cargo.toml \
+            --target "${{ matrix.target }}" \
+            -p lithe-gpui-app
+
+      - name: Import Authenticode certificate
+        id: signing
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERTIFICATE_BASE64)) {
+            Write-Output "::warning title=Unsigned GPUI preview::No Authenticode certificate is configured; the Windows GPUI archive will be unsigned."
+            "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $path = Join-Path $env:RUNNER_TEMP "lithe-gpui-signing.pfx"
+          [System.IO.File]::WriteAllBytes(
+            $path,
+            [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE_BASE64))
+          $password = ConvertTo-SecureString $env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $path `
+            -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          if ($null -eq $certificate) { throw "Could not import the Authenticode certificate." }
+          "LITHE_WINDOWS_CERTIFICATE_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
+          "signed=true" >> $env:GITHUB_OUTPUT
+
+      - name: Sign the GPUI binaries
+        if: matrix.platform == 'windows-x64' && steps.signing.outputs.signed == 'true'
+        shell: pwsh
+        env:
+          LITHE_WINDOWS_TIMESTAMP_SERVER: ${{ secrets.WINDOWS_TIMESTAMP_SERVER }}
+        run: |
+          ./scripts/sign-windows.ps1 `
+            -BinaryDirectory "rust/lithe-gpui/target/${{ matrix.target }}/release" `
+            -BinaryName "Lithe.exe" `
+            -RequireSignature
+
+      - name: Package the preview archive
+        shell: bash
+        run: |
+          ./scripts/package-gpui-release.sh \
+            --platform "${{ matrix.platform }}" \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --binary-dir "rust/lithe-gpui/target/${{ matrix.target }}/release" \
+            --output dist
+
+      - name: Record signing status
+        shell: bash
+        run: |
+          status_file="dist/SIGNING-${{ matrix.platform }}.txt"
+          if [[ "${{ matrix.platform }}" == "windows-x64" ]]; then
+            if [[ "${{ steps.signing.outputs.signed }}" == "true" ]]; then
+              printf '%s\n' "signed: Windows binaries carry an Authenticode signature." > "$status_file"
+            else
+              printf '%s\n' "unsigned: no Authenticode certificate configured; SmartScreen will warn about the archive contents." > "$status_file"
+            fi
+          else
+            printf '%s\n' "not applicable: only Windows binaries are signed in this preview channel." > "$status_file"
+          fi
+          cat "$status_file"
+
+      - name: Verify the archive checksum
+        shell: bash
+        run: |
+          archive_stem="Lithe-GPUI-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
+          extension="tar.gz"
+          if [[ "${{ matrix.platform }}" == windows-* ]]; then
+            extension="zip"
+          fi
+          (cd dist && shasum -a 256 -c "$archive_stem.$extension.sha256")
+
+      - name: Upload preview artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: gpui-preview-${{ matrix.platform }}
+          path: |
+            dist/Lithe-GPUI-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.*
+            dist/SIGNING-${{ matrix.platform }}.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Publish GPUI preview release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out preview source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Download preview artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: gpui-preview-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify downloaded archive checksums
+        shell: bash
+        env:
+          LITHE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          shopt -s nullglob
+          for checksum in dist/Lithe-GPUI-"$LITHE_VERSION"-*.sha256; do
+            (cd dist && shasum -a 256 -c "$(basename "$checksum")")
+          done
+          shopt -u nullglob
+
+      - name: Compose release notes
+        shell: bash
+        env:
+          LITHE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+          PREVIEW_BUILD: ${{ needs.prepare.outputs.build }}
+        run: |
+          signing_lines=""
+          for platform in macos-aarch64 macos-x86_64 windows-x64 linux-x64; do
+            status_file="dist/SIGNING-$platform.txt"
+            if [[ -f "$status_file" ]]; then
+              signing_lines+="- $platform: $(head -n 1 "$status_file")"$'\n'
+            else
+              signing_lines+="- $platform: status unknown"$'\n'
+            fi
+          done
+          {
+            echo "Rolling GPUI preview build ${PREVIEW_BUILD} from ${SOURCE_SHA}."
+            echo "This release is replaced by the next scheduled build."
+            echo ""
+            echo "The unified GPUI front end is under active development and is not a"
+            echo "supported product yet: archives contain the bare cargo binary (plus"
+            echo "side-by-side DLLs on Windows) instead of an installer or app bundle."
+            echo "Stable Lithe products keep their own macOS and Windows installers."
+            echo ""
+            echo "Signing status:"
+            printf '%s' "$signing_lines"
+          } > dist/preview-notes.md
+          cat dist/preview-notes.md
+
+      - name: Create or update the rolling preview Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+          LITHE_VERSION: ${{ needs.prepare.outputs.version }}
+          PREVIEW_BUILD: ${{ needs.prepare.outputs.build }}
+        shell: bash
+        run: |
+          title="Lithe GPUI ${LITHE_VERSION} Preview - Build ${PREVIEW_BUILD}"
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" \
+              --title "$title" \
+              --notes-file dist/preview-notes.md \
+              --prerelease
+          else
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" \
+              --title "$title" \
+              --notes-file dist/preview-notes.md \
+              --prerelease
+          fi
+
+      - name: Prune stale GPUI preview assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          LITHE_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          # Only names owned by this publisher are eligible; other assets on
+          # the rolling release are never touched.
+          expected=(
+            "Lithe-GPUI-${LITHE_VERSION}-macos-aarch64.tar.gz"
+            "Lithe-GPUI-${LITHE_VERSION}-macos-aarch64.tar.gz.sha256"
+            "Lithe-GPUI-${LITHE_VERSION}-macos-x86_64.tar.gz"
+            "Lithe-GPUI-${LITHE_VERSION}-macos-x86_64.tar.gz.sha256"
+            "Lithe-GPUI-${LITHE_VERSION}-windows-x64.zip"
+            "Lithe-GPUI-${LITHE_VERSION}-windows-x64.zip.sha256"
+            "Lithe-GPUI-${LITHE_VERSION}-linux-x64.tar.gz"
+            "Lithe-GPUI-${LITHE_VERSION}-linux-x64.tar.gz.sha256"
+          )
+          while IFS=$'\t' read -r name id; do
+            [[ "$name" == Lithe-GPUI-* ]] || continue
+            keep=false
+            for candidate in "${expected[@]}"; do
+              if [[ "$name" == "$candidate" ]]; then
+                keep=true
+                break
+              fi
+            done
+            if [[ "$keep" == false ]]; then
+              echo "Pruning stale GPUI preview asset: $name"
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id" > /dev/null
+            fi
+          done < <(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases/$RELEASE_TAG/assets" \
+            --jq '.[][] | "\(.name)\t\(.id)"')
+
+      - name: Upload preview assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          LITHE_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "dist/Lithe-GPUI-${LITHE_VERSION}-macos-aarch64.tar.gz" \
+            "dist/Lithe-GPUI-${LITHE_VERSION}-macos-aarch64.tar.gz.sha256" \
+            "dist/Lithe-GPUI-${LITHE_VERSION}-macos-x86_64.tar.gz" \
+            "dist/Lithe-GPUI-${LITHE_VERSION}-macos-x86_64.tar.gz.sha256" \
+            "dist/Lithe-GPUI-${LITHE_VERSION}-windows-x64.zip" \
+            "dist/Lithe-GPUI-${LITHE_VERSION}-windows-x64.zip.sha256" \
+            "dist/Lithe-GPUI-${LITHE_VERSION}-linux-x64.tar.gz" \
+            "dist/Lithe-GPUI-${LITHE_VERSION}-linux-x64.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Verify the published asset manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          LITHE_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' \
+            | node scripts/verify-release-assets.mjs \
+              --tag "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --expected "Lithe-GPUI-${LITHE_VERSION}-macos-aarch64.tar.gz" \
+              --expected "Lithe-GPUI-${LITHE_VERSION}-macos-aarch64.tar.gz.sha256" \
+              --expected "Lithe-GPUI-${LITHE_VERSION}-macos-x86_64.tar.gz" \
+              --expected "Lithe-GPUI-${LITHE_VERSION}-macos-x86_64.tar.gz.sha256" \
+              --expected "Lithe-GPUI-${LITHE_VERSION}-windows-x64.zip" \
+              --expected "Lithe-GPUI-${LITHE_VERSION}-windows-x64.zip.sha256" \
+              --expected "Lithe-GPUI-${LITHE_VERSION}-linux-x64.tar.gz" \
+              --expected "Lithe-GPUI-${LITHE_VERSION}-linux-x64.tar.gz.sha256"
+
+      - name: Add preview download links
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          LITHE_VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          {
+            echo "### GPUI preview downloads"
+            for platform in macos-aarch64 macos-x86_64 windows-x64 linux-x64; do
+              extension="tar.gz"
+              if [[ "$platform" == windows-* ]]; then
+                extension="zip"
+              fi
+              echo "- [Lithe-GPUI-${LITHE_VERSION}-${platform}.${extension}](https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/Lithe-GPUI-${LITHE_VERSION}-${platform}.${extension})"
+            done
+            echo ""
+            echo "Source: $SOURCE_SHA"
+            echo ""
+            echo "Rolling prerelease; replaced by the next scheduled build. Not a supported product yet."
+          } >> "$GITHUB_STEP_SUMMARY"
