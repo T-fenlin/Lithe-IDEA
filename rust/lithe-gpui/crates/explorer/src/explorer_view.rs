@@ -46,6 +46,15 @@ const REVEAL_KEY: &str = "lithe.files.reveal";
 const COPY_PATH_KEY: &str = "lithe.files.copyPath";
 const COPY_RELATIVE_PATH_KEY: &str = "lithe.files.copyRelativePath";
 const REFRESH_KEY: &str = "lithe.files.refresh";
+const RENAME_KEY: &str = "lithe.files.rename";
+const DELETE_KEY: &str = "lithe.files.delete";
+const NEW_FILE_KEY: &str = "lithe.files.newFile";
+const NEW_FOLDER_KEY: &str = "lithe.files.newFolder";
+// 重命名校验复用宿主目录里现成的键：非法文件名两条、同目录重名按文件/目录分开取。
+const INVALID_NAME_KEY: &str = "lithe.files.invalidFileName";
+const INVALID_NAME_CHARACTERS_KEY: &str = "lithe.files.invalidFileNameCharacters";
+const FILE_EXISTS_KEY: &str = "lithe.fileExplorer.fileAlreadyExistsMessage";
+const FOLDER_EXISTS_KEY: &str = "lithe.fileExplorer.folderAlreadyExistsMessage";
 
 const TREE_ID: &str = "explorer-tree";
 
@@ -53,6 +62,18 @@ const TREE_ID: &str = "explorer-tree";
 const HEADER_HEIGHT_SPEC: f32 = 39.;
 
 pub type RevealInFileManagerHost = Arc<dyn Fn(&Path, &mut App) + 'static>;
+
+/// Commits an in-place rename: the row's path and the name the user kept. The shell does the
+/// validation-independent work — the file-system rename, the cascade into open buffers, refresh.
+pub type RenameHost = Arc<dyn Fn(&Path, &str, &mut Window, &mut App) + 'static>;
+
+/// Handles a row's Delete: the shell confirms with the user, deletes, and forgets the buffers it
+/// closes. The tree itself never touches the disk.
+pub type DeleteHost = Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>;
+
+/// Creates a new entry: `parent` is the folder to create in, `is_dir` picks folder over file. The
+/// shell asks for the name and writes it, so both the tree entry and the File menu share one path.
+pub type NewHost = Arc<dyn Fn(&Path, bool, &mut Window, &mut App) + 'static>;
 
 /// Hides the tool window this tree lives in; the shell owns what that means.
 pub type HidePanelHost = Arc<dyn Fn(&mut Window, &mut App) + 'static>;
@@ -79,7 +100,14 @@ pub struct Explorer {
     tree: Entity<ProjectTree>,
     file_clipboard: Option<Box<dyn crate::FileClipboardPort>>,
     reveal_host: Option<RevealInFileManagerHost>,
+    rename_host: Option<RenameHost>,
+    delete_host: Option<DeleteHost>,
+    new_host: Option<NewHost>,
     hide_host: Option<HidePanelHost>,
+    /// A path to pick once the next reload lands. Rename/delete reload the tree asynchronously, so
+    /// a `reveal` issued right after `refresh` would look at the stale arena and find nothing; the
+    /// host hands the target here instead and `load` applies it when the fresh snapshot is in.
+    pending_reveal: Option<PathBuf>,
     on_open: Rc<dyn Fn(PathBuf, &mut Window, &mut App) + 'static>,
     search: Entity<InputState>,
     #[allow(dead_code)]
@@ -110,6 +138,8 @@ impl Explorer {
         );
 
         let explorer: WeakEntity<Self> = cx.entity().downgrade();
+        let explorer_for_rename = explorer.clone();
+        let check_root = root.clone();
         let tree = cx.new(move |cx| {
             ProjectTree::new(TREE_ID, cx)
                 .labels(row_labels())
@@ -129,6 +159,13 @@ impl Explorer {
                         this.run_row_action(action, path, window, cx);
                     });
                 })
+                // 行内改名：提交走外壳（落盘 + 级联），提交前的校验读文件系统（库只负责把原因画在行里）。
+                .on_rename(move |path, new_name, window, cx| {
+                    let _ = explorer_for_rename.update(cx, |this, cx| {
+                        this.run_rename(path, new_name, window, cx);
+                    });
+                })
+                .on_rename_check(move |path, new_name| check_rename(&check_root, path, new_name))
         });
 
         let mut explorer = Self {
@@ -138,7 +175,11 @@ impl Explorer {
             tree,
             file_clipboard: None,
             reveal_host: None,
+            rename_host: None,
+            delete_host: None,
+            new_host: None,
             hide_host: None,
+            pending_reveal: None,
             on_open: Rc::from(on_open),
             search,
             search_open: false,
@@ -151,6 +192,18 @@ impl Explorer {
 
     pub fn set_reveal_in_file_manager_host(&mut self, host: RevealInFileManagerHost) {
         self.reveal_host = Some(host);
+    }
+
+    pub fn set_rename_host(&mut self, host: RenameHost) {
+        self.rename_host = Some(host);
+    }
+
+    pub fn set_delete_host(&mut self, host: DeleteHost) {
+        self.delete_host = Some(host);
+    }
+
+    pub fn set_new_host(&mut self, host: NewHost) {
+        self.new_host = Some(host);
     }
 
     pub fn set_hide_host(&mut self, host: HidePanelHost) {
@@ -170,6 +223,20 @@ impl Explorer {
 
     pub fn refresh(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.load(cx);
+    }
+
+    /// Reloads the tree and, once the fresh snapshot is in, opens and picks `path`. Rename/delete
+    /// use this instead of `refresh` + `reveal`: `refresh` reloads asynchronously, so a `reveal`
+    /// issued immediately after would search the stale arena and miss the row that just appeared or
+    /// moved. `load` applies `pending_reveal` when the new snapshot lands.
+    pub fn refresh_and_reveal(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.pending_reveal = Some(path);
+        self.refresh(window, cx);
     }
 
     /// Opens every folder above `path`, picks it, and scrolls it into view.
@@ -260,6 +327,10 @@ impl Explorer {
                             .update(cx, |tree, cx| tree.set_status(Vec::new(), cx));
                         eprintln!("S1_EXPLORER_GIT root={} error={error}", this.root.display());
                     }
+                }
+                // Rename/delete asked to land on a row: pick it now that the arena is fresh.
+                if let Some(path) = this.pending_reveal.take() {
+                    this.reveal(&path, cx);
                 }
                 cx.notify();
             });
@@ -411,7 +482,60 @@ impl Explorer {
                 eprintln!("S1_EXPLORER copyRelativePath value={text}");
             }
             ProjectAction::Refresh => self.load(cx),
+            // 行内改名：右键菜单在 `ProjectTree` 里直接进编辑态，只有标题栏的 `⋮` 菜单从这条
+            // 通道回来，落在光标行上——与右键那条入口是同一个。
+            ProjectAction::Rename => {
+                self.tree
+                    .update(cx, |tree, cx| tree.rename_focused(window, cx));
+            }
+            ProjectAction::Delete => {
+                let path = join_relative(&self.root, relative);
+                match self.delete_host.clone() {
+                    Some(host) => host(&path, window, cx),
+                    None => eprintln!("S1_EXPLORER delete result=no-host path={}", path.display()),
+                }
+            }
+            ProjectAction::NewFile | ProjectAction::NewFolder => {
+                let is_folder = action == ProjectAction::NewFolder;
+                let path = join_relative(&self.root, relative);
+                // 文件行的「新建」落在它所在的目录；目录行的落在它里面（IDEA 口径）。
+                let parent = if path.is_dir() {
+                    path
+                } else {
+                    path.parent().map(Path::to_path_buf).unwrap_or(path)
+                };
+                match self.new_host.clone() {
+                    Some(host) => host(&parent, is_folder, window, cx),
+                    None => eprintln!("S1_EXPLORER new result=no-host path={}", parent.display()),
+                }
+            }
         }
+    }
+
+    /// An in-place rename was kept: hand the path and the new name to the shell.
+    fn run_rename(
+        &mut self,
+        relative: &str,
+        new_name: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let path = join_relative(&self.root, relative);
+        match self.rename_host.clone() {
+            Some(host) => host(&path, new_name, window, cx),
+            None => eprintln!("S1_EXPLORER rename result=no-host path={}", path.display()),
+        }
+    }
+
+    /// `F2` on a focused tree: the keyboard fast path into an in-place rename.
+    fn rename_selection(
+        &mut self,
+        _: &crate::RenameSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tree
+            .update(cx, |tree, cx| tree.rename_focused(window, cx));
     }
 
     /// The panel's title row: the view selector on the left, and the tree's own actions on the
@@ -587,6 +711,7 @@ impl Explorer {
             .key_context(crate::EXPLORER_KEY_CONTEXT)
             .on_action(cx.listener(Self::select_all_in_tree))
             .on_action(cx.listener(Self::copy_selection))
+            .on_action(cx.listener(Self::rename_selection))
             .child(self.tree.clone())
             .into_any_element()
     }
@@ -643,8 +768,8 @@ impl Explorer {
     }
 }
 
-/// The sidebar's own words, in the host's catalogue: the note an empty folder shows and the five
-/// row-menu entries.
+/// The sidebar's own words, in the host's catalogue: the note an empty folder shows and the row
+/// menu's entries.
 fn row_labels() -> ProjectLabels {
     ProjectLabels {
         empty_folder: tr(EMPTY_FOLDER_KEY),
@@ -653,7 +778,66 @@ fn row_labels() -> ProjectLabels {
         copy_path: tr(COPY_PATH_KEY),
         copy_relative_path: tr(COPY_RELATIVE_PATH_KEY),
         refresh: tr(REFRESH_KEY),
+        rename: tr(RENAME_KEY),
+        delete: tr(DELETE_KEY),
+        new_file: tr(NEW_FILE_KEY),
+        new_folder: tr(NEW_FOLDER_KEY),
     }
+}
+
+/// Why an in-place rename cannot be kept, or `Ok`. This is the owner's rule (it reads the file
+/// system); the tree only draws the reason beside the field and holds it open.
+fn check_rename(root: &Path, relative: &str, new_name: &str) -> Result<(), SharedString> {
+    // `trim()` 只用来判「是不是空的」；名字**原样**参与其余规则 —— 否则「尾随空格 / 尾随点」
+    // 会被 trim 抹掉，永远拦不住（交互规范 §1.6 名称规则表）。
+    if new_name.trim().is_empty() {
+        return Err(tr(INVALID_NAME_KEY));
+    }
+    if new_name.contains('/')
+        || new_name.contains('\\')
+        || new_name.contains('\0')
+        || is_windows_reserved(new_name)
+        || new_name.ends_with('.')
+        || new_name.ends_with(' ')
+    {
+        return Err(tr(INVALID_NAME_CHARACTERS_KEY));
+    }
+    let target = join_relative(root, relative);
+    let Some(parent) = target.parent() else {
+        return Ok(());
+    };
+    let wanted = parent.join(new_name);
+    if wanted != target && wanted.exists() {
+        // 纯大小写改名在大小写不敏感的卷上指向同一个文件：那是合法改名，不是重名。
+        let same_file = match (wanted.canonicalize(), target.canonicalize()) {
+            (Ok(wanted), Ok(target)) => wanted == target,
+            _ => false,
+        };
+        if !same_file {
+            let key = if target.is_dir() {
+                FOLDER_EXISTS_KEY
+            } else {
+                FILE_EXISTS_KEY
+            };
+            return Err(tr(key));
+        }
+    }
+    Ok(())
+}
+
+/// Windows 保留设备名（`CON`/`PRN`/`AUX`/`NUL`/`COM1..9`/`LPT1..9`）在任何目录下都建不出来，
+/// 带上扩展名也一样（`CON.txt` 仍是设备名）。
+///
+/// 公开：宿主（`workbench`）校验新建名时复用同一张名单，避免两份列表漂移。
+pub fn is_windows_reserved(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+        return true;
+    }
+    stem.len() == 4
+        && (stem.starts_with("COM") || stem.starts_with("LPT"))
+        && stem.as_bytes()[3].is_ascii_digit()
+        && stem.as_bytes()[3] != b'0'
 }
 
 /// Marks a header control so the UI test lane can find and click it: the UI test harness
@@ -738,6 +922,10 @@ mod tests {
             labels.copy_path.to_string(),
             labels.copy_relative_path.to_string(),
             labels.refresh.to_string(),
+            labels.rename.to_string(),
+            labels.delete.to_string(),
+            labels.new_file.to_string(),
+            labels.new_folder.to_string(),
         ];
         for word in &words {
             assert!(
@@ -755,5 +943,85 @@ mod tests {
             "空目录那一行也必须是译文，实际 = {}",
             labels.empty_folder
         );
+    }
+
+    #[test]
+    fn windows_reserved_device_names_are_refused() {
+        for name in ["CON", "con", "PRN", "AUX", "NUL", "COM1", "LPT9", "con.txt"] {
+            assert!(is_windows_reserved(name), "{name} 是保留设备名，必须拒绝");
+        }
+        for name in ["console", "com0", "com10", "lpt", "auxiliary", "foo.txt"] {
+            assert!(!is_windows_reserved(name), "{name} 不是保留设备名");
+        }
+    }
+
+    #[test]
+    fn rename_checks_reject_bad_names_before_reading_the_disk() {
+        // 这几种都在 `exists()` 之前就被挡下，所以给一个不存在的根也不会碰到磁盘。
+        let root = Path::new("/lithe-nonexistent-workspace");
+        for (name, why) in [
+            ("   ", "空名"),
+            ("a/b", "含分隔符 /"),
+            ("a\\b", "含分隔符 \\"),
+            ("foo.", "尾随点"),
+            ("foo ", "尾随空格"),
+            ("CON", "Windows 保留名"),
+            ("COM1.java", "Windows 保留名带扩展名"),
+        ] {
+            assert!(
+                check_rename(root, "dir/File.java", name).is_err(),
+                "{why}：{name:?} 必须被拒绝"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rename_onto_an_existing_name_is_refused_but_a_free_one_passes() {
+        let dir = TempDir::new("explorer-rename-check");
+        std::fs::write(dir.path().join("Taken.java"), "").unwrap();
+        std::fs::write(dir.path().join("Free.java"), "").unwrap();
+        let root = dir.path();
+
+        let taken = check_rename(root, "Taken.java", "Free.java");
+        assert!(taken.is_err(), "改到同目录已存在的名字必须被拒绝");
+
+        let free = check_rename(root, "Taken.java", "Another.java");
+        assert!(free.is_ok(), "没人占用新名字时应当放行：{free:?}");
+
+        // 大小写敏感的平台上 `taken.java` 与 `Taken.java` 同名（不新增条目）也应放行；
+        // 大小写不敏感的卷上它是同一个文件，同样放行——两条路都不该被误判为重名。
+        let case_only = check_rename(root, "Taken.java", "taken.java");
+        assert!(
+            case_only.is_ok(),
+            "纯大小写改名不该被当成重名：{case_only:?}"
+        );
+    }
+
+    /// A directory under the system temp dir, removed on drop — the deterministic teardown the
+    /// test rules ask for (no sleeps, no leaked folders).
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or(0);
+            let path = std::env::temp_dir().join(format!("lithe-{tag}-{nanos}"));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
     }
 }
