@@ -34,6 +34,8 @@ mkdir -p \
     rust/lithe-core/src/lsp/languages \
     rust/lithe-core/tests \
     rust/lithe-db-sidecar/src \
+    rust/lithe-gpui/crates/app/src \
+    rust/lithe-ui/src \
     shared/fixtures/core \
     windows/tauri/src \
     windows/tauri/src-tauri/src
@@ -42,6 +44,8 @@ printf '%s\n' '#[test]' 'fn source_test() { assert_eq!(1, 1); }' > rust/lithe-co
 printf '%s\n' 'pub fn normalize() {}' > rust/lithe-core/src/lsp/languages/java_tests.rs
 printf '%s\n' '#[test]' 'fn value_is_one() { assert_eq!(1, 1); }' > rust/lithe-core/tests/value.rs
 printf '%s\n' 'fn main() {}' > rust/lithe-db-sidecar/src/main.rs
+printf '%s\n' 'fn main() {}' > rust/lithe-gpui/crates/app/src/main.rs
+printf '%s\n' 'pub fn widget() {}' > rust/lithe-ui/src/lib.rs
 printf '%s\n' 'services: {}' > infra/docker/database-validation/compose.yaml
 printf '%s\n' '#!/bin/zsh' 'print -- package' > scripts/verify-macos-package.sh
 printf '%s\n' 'struct App {}' > macos/Sources/Lithe/App.swift
@@ -82,6 +86,7 @@ classification() {
     local metadata="${10}"
     local git_validation="${11:-false}"
     local java_jdt="${12:-false}"
+    local gpui="${13:-false}"
 
     printf 'swift=%s\n' "$swift"
     printf 'plugins=%s\n' "$plugins"
@@ -95,6 +100,7 @@ classification() {
     printf 'rust_comments=%s\n' "$rust_comments"
     printf 'metadata=%s\n' "$metadata"
     printf 'git_validation=%s\n' "$git_validation"
+    printf 'gpui=%s\n' "$gpui"
 }
 
 assert_classification() {
@@ -123,6 +129,11 @@ modify_rust_code() { printf '%s\n' '//! Test module.' 'pub fn value() -> u8 { 2 
 modify_rust_test() { printf '%s\n' '#[test]' 'fn value_is_two() { assert_eq!(2, 2); }' > rust/lithe-core/tests/value.rs; }
 modify_rust_source_test() { printf '%s\n' '#[test]' 'fn source_test() { assert_eq!(2, 2); }' > rust/lithe-core/src/lsp/tests.rs; }
 modify_database_rust() { printf '%s\n' 'fn main() { println!("updated"); }' > rust/lithe-db-sidecar/src/main.rs; }
+modify_gpui_app() { printf '%s\n' 'fn main() { println!("updated"); }' > rust/lithe-gpui/crates/app/src/main.rs; }
+modify_gpui_component_library() { printf '%s\n' 'pub fn widget() { let _ = 1; }' > rust/lithe-ui/src/lib.rs; }
+modify_gpui_workflow() { mkdir -p .github/workflows && printf '%s\n' 'name: updated' > .github/workflows/ci-gpui.yml; }
+modify_gpui_packaging_script() { printf '%s\n' '#!/usr/bin/env bash' 'print -- gpui' > scripts/package-gpui-release.sh; }
+modify_linux_workflow() { mkdir -p .github/workflows && printf '%s\n' 'name: updated' > .github/workflows/ci-linux.yml; }
 modify_database_docker() { printf '%s\n' 'services:' '  mariadb: {}' > infra/docker/database-validation/compose.yaml; }
 modify_macos_package_verifier() { printf '%s\n' '#!/bin/zsh' 'print -- updated-package' > scripts/verify-macos-package.sh; }
 modify_localization_packaging() { printf '%s\n' '#!/bin/zsh' 'print -- localizations' > scripts/package-macos-localizations.sh; }
@@ -176,7 +187,7 @@ assert_classification rust-comment \
     "$(classification false false false false false false false false true false)" \
     modify_rust_comment
 assert_classification rust-code \
-    "$(classification false false false true false true true true false false)" \
+    "$(classification false false false true false true true true false false false false true)" \
     modify_rust_code
 assert_classification rust-test \
     "$(classification false false false true false false false false false false)" \
@@ -212,7 +223,7 @@ assert_classification macos-performance-baseline \
     "$(classification false false false false false true false false false false)" \
     modify_macos_performance_baseline
 assert_classification unknown-script \
-    "$(classification true true true true true true true true false false true true)" \
+    "$(classification true true true true true true true true false false true true true)" \
     modify_unknown_script
 assert_classification swift-test \
     "$(classification true false false false false false false false false false)" \
@@ -263,7 +274,7 @@ assert_classification windows-rust \
     "$(classification false false false false false false true true false false)" \
     modify_windows_rust
 assert_classification java-jdt \
-    "$(classification false false false true false true true true false false false true)" \
+    "$(classification false false false true false true true true false false false true true)" \
     modify_java_jdt
 assert_classification download-cache-validator \
     "$(classification true true true true false true true true false false)" \
@@ -292,10 +303,25 @@ assert_classification metadata \
     "$(classification false false false false false false false false false true)" \
     modify_metadata
 assert_classification classifier \
-    "$(classification true true true true true true true true false false true true)" \
+    "$(classification true true true true true true true true false false true true true)" \
     modify_classifier
 assert_classification rename-rust-to-markdown \
-    "$(classification true true true true true true true true false false true true)" \
+    "$(classification true true true true true true true true false false true true true)" \
     rename_rust_to_markdown
+assert_classification gpui-app \
+    "$(classification false false false false false false false false false false false false true)" \
+    modify_gpui_app
+assert_classification gpui-component-library \
+    "$(classification false false false false false false false false false false false false true)" \
+    modify_gpui_component_library
+assert_classification gpui-workflow \
+    "$(classification false false false false false false false false false false false false true)" \
+    modify_gpui_workflow
+assert_classification gpui-packaging-script \
+    "$(classification false false false false false false false false false false false false true)" \
+    modify_gpui_packaging_script
+assert_classification linux-workflow \
+    "$(classification false false false true false false false false false false false false)" \
+    modify_linux_workflow
 
 printf '%s\n' 'CI change classifier tests passed'

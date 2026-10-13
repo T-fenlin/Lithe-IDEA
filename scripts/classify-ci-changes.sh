@@ -50,6 +50,7 @@ java_jdt=false
 rust_comments=false
 metadata=false
 git_validation=false
+gpui=false
 
 enable_all_validation() {
     swift=true
@@ -62,6 +63,7 @@ enable_all_validation() {
     windows_rust=true
     java_jdt=true
     git_validation=true
+    gpui=true
 }
 
 while IFS=$'\t' read -r status first_path _; do
@@ -115,6 +117,15 @@ while IFS=$'\t' read -r status first_path _; do
             ;;
         .github/workflows/release-windows.yml|.github/workflows/release-preview-windows.yml)
             windows=true
+            ;;
+        .github/workflows/ci-gpui.yml|.github/workflows/release-gpui.yml)
+            # A pipeline change must exercise the lanes it gates.
+            gpui=true
+            ;;
+        .github/workflows/ci-linux.yml)
+            # The Linux lane validates the shared Rust Core suite; database
+            # crates already run on ubuntu-latest in ci-database.yml.
+            rust_core=true
             ;;
         .github/actions/prepare-macos-dependency-cache/*|.github/actions/setup-macos-toolchain/*|.swift-version)
             swift=true
@@ -269,6 +280,11 @@ while IFS=$'\t' read -r status first_path _; do
         macos/tests/*)
             swift=true
             ;;
+        rust/lithe-gpui/*|rust/lithe-ui/*)
+            # The unified GPUI front end is its own cargo workspace under
+            # rust/; only its three-platform lane consumes it.
+            gpui=true
+            ;;
         rust/lithe-core/src/*.rs)
             # Comment-only Rust Core edits use the documentation verifier but
             # skip unit tests and integrated release builds.
@@ -277,6 +293,10 @@ while IFS=$'\t' read -r status first_path _; do
             else
                 rust_core=true
                 if [[ "$lowercase_path" != rust/lithe-core/src/tests/* && "$lowercase_path" != */tests.rs ]]; then
+                    # lithe-gpui-shared links Rust Core in-process, so Core
+                    # edits must also compile the GPUI workspace on three
+                    # platforms; test-only files never reach that linkage.
+                    gpui=true
                     macos_release=true
                     windows=true
                     windows_rust=true
@@ -288,6 +308,7 @@ while IFS=$'\t' read -r status first_path _; do
             ;;
         rust/lithe-core/cargo.toml|rust/lithe-core/include/*)
             rust_core=true
+            gpui=true
             macos_release=true
             windows=true
             windows_rust=true
@@ -295,6 +316,7 @@ while IFS=$'\t' read -r status first_path _; do
         rust/cargo.toml|rust/cargo.lock)
             rust_core=true
             rust_database=true
+            gpui=true
             macos_release=true
             windows=true
             windows_rust=true
@@ -392,6 +414,10 @@ while IFS=$'\t' read -r status first_path _; do
         scripts/build-windows.ps1|scripts/verify-windows-boundaries.ps1|scripts/verify-windows-boundaries.sh|scripts/prepare-jdtls.ps1|scripts/prepare-jdk.ps1|scripts/package-windows.ps1|scripts/install-windows-frontend-dependencies.ps1|scripts/invoke-windows-bun-install.ps1|scripts/windows-frontend-install.test.ts|scripts/invoke-windows-tauri-build.ps1|scripts/create-windows-updater-manifest.ps1|scripts/test-windows-updater-manifest.ps1)
             windows=true
             ;;
+        scripts/package-gpui-release.sh|scripts/verify-release-assets.mjs|scripts/test-verify-release-assets.mjs)
+            # GPUI preview packaging and its release asset gate.
+            gpui=true
+            ;;
         scripts/prepare-lithe-pr-review.mjs|scripts/test-prepare-lithe-pr-review.mjs|scripts/run-lithe-codex-with-timeout.sh|scripts/update-repo-charts.py)
             ;;
         infra/docker/*)
@@ -417,3 +443,4 @@ printf 'java_jdt=%s\n' "$java_jdt"
 printf 'rust_comments=%s\n' "$rust_comments"
 printf 'metadata=%s\n' "$metadata"
 printf 'git_validation=%s\n' "$git_validation"
+printf 'gpui=%s\n' "$gpui"
