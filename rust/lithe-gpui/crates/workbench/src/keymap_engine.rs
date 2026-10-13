@@ -491,7 +491,7 @@ mod tests {
 
     /// `NON_COMMAND` 是 `menu_bar` 测试里的私有常量，这里按同样的成员复刻一份来查。
     fn menu_bar_non_command_contains(action: MenuAction) -> bool {
-        const NON_COMMAND: [MenuAction; 31] = [
+        const NON_COMMAND: [MenuAction; 36] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -523,6 +523,12 @@ mod tests {
             MenuAction::ZoomIn,
             MenuAction::ZoomOut,
             MenuAction::ResetZoom,
+            // 文件生命周期五个：执行分支在 `apply_menu_action`，都没有 `CommandId`。
+            MenuAction::NewTab,
+            MenuAction::NewFile,
+            MenuAction::SaveAs,
+            MenuAction::SaveAll,
+            MenuAction::RevertFile,
         ];
         NON_COMMAND.contains(&action)
     }

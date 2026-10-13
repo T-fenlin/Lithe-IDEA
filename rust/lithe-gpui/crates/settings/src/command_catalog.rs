@@ -22,7 +22,7 @@
 //!
 //! - `OpenSettings` → `lithe.menu.preferences`（`MenuAction::Preferences` 的文案；该动作的
 //!   `command_id()` 是 `None`，但语义就是"打开设置"，且 `OpenSettings` 这个 gpui action
-//!   确实存在并已绑 `ctrl-,`）。
+//!   确实存在并已绑 `secondary-,`）。
 //! - 两个切主题 → `lithe.appearance.gpui.switchTheme{Light,Dark}`。这两个 key 在
 //!   `locales/` 里**早已存在但代码从未引用过**，正是留给这个用途的。
 //!

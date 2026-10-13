@@ -36,7 +36,10 @@ const OVERLAY_ID: &str = "lithe-replace-in-files";
 const LIST_ID: &str = "lithe-replace-preview-results";
 const PREVIEW_BUTTON_ID: &str = "lithe-replace-preview-run";
 
-pub const REPLACE_KEY: &str = "ctrl-shift-r";
+/// 「在文件中替换」的键位。`secondary-` 是 gpui 的平台归一化口径（macOS ⌘⇧R / 其他
+/// Ctrl+Shift+R），与 `settings/src/keymap.rs::DEFAULT_BINDINGS` 报的一致；旧写的 `ctrl-`
+/// 在 macOS 上把「设置页显示的」与「真按得出的」分成了两套（F2）。
+pub const REPLACE_KEY: &str = "secondary-shift-r";
 
 pub fn install_actions(cx: &mut App) {
     cx.bind_keys([KeyBinding::new(REPLACE_KEY, OpenReplaceInFiles, None)]);
@@ -488,10 +491,7 @@ impl ReplaceInFiles {
                 .min_h_0()
                 .justify_center()
                 .gap_2()
-                .child(
-                    Spinner::new("lithe-replace-spinner")
-                        .color(cx.theme().colors.fg_muted),
-                )
+                .child(Spinner::new("lithe-replace-spinner").color(cx.theme().colors.fg_muted))
                 .child(
                     div()
                         .text_sm()
@@ -658,8 +658,7 @@ impl ReplaceInFiles {
             .child(div().flex_1())
             .child(div().w_4().flex_shrink_0().when(loading, |slot| {
                 slot.child(
-                    Spinner::new("lithe-replace-footer-spinner")
-                        .color(cx.theme().colors.fg_muted),
+                    Spinner::new("lithe-replace-footer-spinner").color(cx.theme().colors.fg_muted),
                 )
             }))
             .child(

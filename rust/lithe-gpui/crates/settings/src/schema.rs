@@ -248,6 +248,18 @@ pub struct Settings {
     #[serde(rename = "wordWrap")]
     pub word_wrap: bool,
 
+    /// 缩略图开关。默认与组件库编辑器的出厂值一致（关），不为"像 IDEA"而改默认。
+    #[serde(rename = "minimap")]
+    pub minimap: bool,
+
+    /// 行号开关。关掉时编辑器拿 `LineNumbers::Hidden`。
+    #[serde(rename = "lineNumbers")]
+    pub line_numbers: bool,
+
+    /// 空白字符（空格 / 制表 / 换行标记）渲染开关。
+    #[serde(rename = "renderWhitespace")]
+    pub render_whitespace: bool,
+
     #[serde(rename = "autoSave")]
     pub auto_save: bool,
 
@@ -295,6 +307,9 @@ impl Default for Settings {
             maven_local_repository_path: String::new(),
             auto_completion: true,
             word_wrap: true,
+            minimap: false,
+            line_numbers: true,
+            render_whitespace: false,
             auto_save: true,
             ask_where_to_open_projects: true,
             open_folders_in_new_window: true,

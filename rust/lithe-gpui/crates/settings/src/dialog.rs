@@ -49,7 +49,9 @@ use crate::theme;
 use crate::workspace::{AppearanceKey, AppearanceSource};
 
 pub fn install_actions(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("ctrl-,", OpenSettings, None)]);
+    // `secondary-,` 与 `keymap.rs::DEFAULT_BINDINGS` 报的形态一致（macOS ⌘, / 其他 Ctrl+,）；
+    // 旧写的 `ctrl-,` 在 macOS 上等于「设置页显示 ⌘, 但 Ctrl+, 才生效」（F2）。
+    cx.bind_keys([KeyBinding::new("secondary-,", OpenSettings, None)]);
     cx.on_action(|_: &OpenSettings, cx: &mut App| {
         let Some(window_handle) = cx.active_window() else {
             return;

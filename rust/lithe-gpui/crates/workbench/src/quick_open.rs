@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, IntoElement, KeyBinding,
-    ParentElement as _, Render, SharedString, Styled as _, Subscription, Task, Window, div, rems,
+    AnyElement, App, AppContext as _, Context, Entity, IntoElement, KeyBinding, ParentElement as _,
+    Render, SharedString, Styled as _, Subscription, Task, Window, div, rems,
 };
 use lithe_gpui_shared::icons::{FileIcon, file_icon};
 use lithe_gpui_shared::{CoreClient, CoreError, CoreRequest, tr};
@@ -33,7 +33,9 @@ const PANEL_TOP_INSET: f32 = 84.;
 const ROW_ICON_SPEC: f32 = 14.;
 
 pub fn install_actions(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("ctrl-p", OpenQuickOpen, None)]);
+    // `secondary-p` = macOS ⌘P / 其他 Ctrl+P，与 `DEFAULT_BINDINGS` 报的一致；旧写的 `ctrl-p`
+    // 在 macOS 上错位（F2）。
+    cx.bind_keys([KeyBinding::new("secondary-p", OpenQuickOpen, None)]);
     cx.on_action(|_: &OpenQuickOpen, cx: &mut App| {
         let Some(window_handle) = cx.active_window() else {
             return;
@@ -106,9 +108,8 @@ impl QuickOpen {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let query = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(tr("lithe.quickOpen.searchFiles"))
-        });
+        let query =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("lithe.quickOpen.searchFiles")));
         let query_changed = cx.subscribe_in(
             &query,
             window,
@@ -359,20 +360,17 @@ impl Render for QuickOpen {
             }
         };
 
-        v_stack()
-            .w_full()
-            .children(index_notice)
-            .child(
-                Palette::new(QUICK_OPEN_ID, self.query.clone(), close)
-                    .rows(rows.into_iter().map(|row| palette_row(row, cx)))
-                    .empty(empty)
-                    .loading(self.loading)
-                    .on_pick(pick)
-                    .w_full()
-                    .h_auto()
-                    .max_h(rems(PANEL_MAX_HEIGHT / 16.))
-                    .card(window, cx),
-            )
+        v_stack().w_full().children(index_notice).child(
+            Palette::new(QUICK_OPEN_ID, self.query.clone(), close)
+                .rows(rows.into_iter().map(|row| palette_row(row, cx)))
+                .empty(empty)
+                .loading(self.loading)
+                .on_pick(pick)
+                .w_full()
+                .h_auto()
+                .max_h(rems(PANEL_MAX_HEIGHT / 16.))
+                .card(window, cx),
+        )
     }
 }
 

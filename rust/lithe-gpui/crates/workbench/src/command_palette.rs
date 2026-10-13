@@ -83,9 +83,11 @@ impl CommandAction {
 }
 
 pub fn install_actions(cx: &mut App) {
+    // `secondary-` 是 gpui 的平台归一化口径（macOS ⌘⇧P / ⌘M，其他 Ctrl+Shift+P / Ctrl+M），
+    // 与 `settings/src/keymap.rs::DEFAULT_BINDINGS` 报的一致；旧写的 `ctrl-` 在 macOS 上错位（F2）。
     cx.bind_keys([
-        KeyBinding::new("ctrl-shift-p", OpenCommandPalette, None),
-        KeyBinding::new("ctrl-m", ToggleMenuBar, None),
+        KeyBinding::new("secondary-shift-p", OpenCommandPalette, None),
+        KeyBinding::new("secondary-m", ToggleMenuBar, None),
     ]);
     cx.on_action(|_: &OpenCommandPalette, cx: &mut App| {
         let Some(window_handle) = cx.active_window() else {
@@ -142,7 +144,9 @@ pub struct CommandPalette {
 
 impl CommandPalette {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let query = cx.new(|cx| InputState::new(window, cx).placeholder(tr("lithe.commandPalette.placeholder")));
+        let query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("lithe.commandPalette.placeholder"))
+        });
         let query_changed = cx.subscribe_in(
             &query,
             window,

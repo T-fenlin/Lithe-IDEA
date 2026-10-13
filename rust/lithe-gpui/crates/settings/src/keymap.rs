@@ -22,7 +22,8 @@
 //! - **写 `secondary-`，不写 `cmd-`。** `gpui::Keystroke::parse` 把 `cmd` 解析成
 //!   `modifiers.platform`，在 Windows 上就是 Win 键；`secondary` 才是 gpui 自己的平台
 //!   归一化开关（macOS → `platform`，其他 → `control`）。`explorer` 那组 `cmd-a` / `ctrl-a`
-//!   双写是历史形态，不抄。由 `every_catalog_keystroke_parses_under_gpui` 与
+//!   双写是历史形态（已在 B1 统一为 `secondary-a` / `secondary-c`），不抄。由
+//!   `every_catalog_keystroke_parses_under_gpui` 与
 //!   `no_keystroke_uses_the_cmd_dialect` 两条守着。
 //! - **context 谓词原样带上。** 目录每行都留 [`PresetBinding::context`]，重绑时原样传回
 //!   `KeyBinding::new`：组件库编辑器的键位是带 context `ElyEditor` 绑的，改成无 context 的
@@ -514,7 +515,7 @@ mod tests {
     fn no_keystroke_uses_the_cmd_dialect() {
         // `cmd-` 在 Windows 上是 Win 键（gpui 的 `Keystroke::parse` 把它解析成
         // `modifiers.platform`），键位串必须写 `secondary-`。`explorer` 那组 `cmd-a`/`ctrl-a`
-        // 双写是历史形态，不许往这里抄。
+        // 双写是历史形态（已在 B1 统一为 `secondary-`），不许往这里抄。
         const PREFIXES: [&str; 5] = ["secondary", "ctrl", "alt", "shift", "fn"];
         for (table_name, table) in [
             ("DEFAULT_BINDINGS", DEFAULT_BINDINGS),

@@ -76,11 +76,6 @@ impl Missing {
     }
 }
 
-pub const MISSING_EDITOR_ENTRY: Missing = Missing {
-    id: "editor_entry",
-    text_key: "lithe.gpui.menuMissing.editorEntry",
-};
-
 pub const MISSING_EDITOR_FEATURES: Missing = Missing {
     id: "editor_features",
     text_key: "lithe.gpui.menuMissing.editorFeatures",
@@ -116,11 +111,6 @@ pub const MISSING_NEW_PROJECT_SCAFFOLDING: Missing = Missing {
     text_key: "lithe.gpui.menuMissing.newProjectScaffolding",
 };
 
-pub const MISSING_FILE_LIFECYCLE: Missing = Missing {
-    id: "file_lifecycle",
-    text_key: "lithe.gpui.menuMissing.fileLifecycle",
-};
-
 pub const MISSING_PROJECT_LIFECYCLE: Missing = Missing {
     id: "project_lifecycle",
     text_key: "lithe.gpui.menuMissing.projectLifecycle",
@@ -141,18 +131,21 @@ pub const MISSING_HELP_ABOUT: Missing = Missing {
     text_key: "lithe.gpui.menuMissing.helpAbout",
 };
 
-pub const MISSING_SHORTCUTS_VIEW: Missing = Missing {
-    id: "shortcuts_view",
-    text_key: "lithe.gpui.menuMissing.shortcutsView",
-};
-
 pub const MISSING_TERMINAL_SPLIT: Missing = Missing {
     id: "terminal_split",
     text_key: "lithe.gpui.menuMissing.terminalSplit",
 };
 
-pub const MISSING_GROUPS: [Missing; 15] = [
-    MISSING_EDITOR_ENTRY,
+/// 占位项用的能力分组表。
+///
+/// `editor_entry`、`file_lifecycle` 与 `shortcuts_view` 三个分组已随接线而**退场**：
+/// B2（另存为 / 全部保存 / 还原文件）与 B1（新建标签 / 新建文件）让文件生命周期这批动作
+/// 全部有了执行分支；`shortcuts_view` 唯一的占位项（Tools / Help 的「键盘快捷键」）也被
+/// `MenuAction::ShowKeymapSettings` 接走 —— 三组一条占位项都不剩，空分组留在表里会被
+/// `missing_declarations_are_grouped_by_capability` 判为「声明表虚胖」。对应的文案键
+/// `lithe.gpui.menuMissing.editorEntry` / `.fileLifecycle` / `.shortcutsView` 仍留在真源里
+/// （无人引用，未删），以便同名能力再出现时复用。
+pub const MISSING_GROUPS: [Missing; 12] = [
     MISSING_EDITOR_FEATURES,
     MISSING_LSP_REQUESTS,
     MISSING_SUBSYSTEM,
@@ -160,12 +153,10 @@ pub const MISSING_GROUPS: [Missing; 15] = [
     MISSING_UPDATER,
     MISSING_CLONE_UI,
     MISSING_NEW_PROJECT_SCAFFOLDING,
-    MISSING_FILE_LIFECYCLE,
     MISSING_PROJECT_LIFECYCLE,
     MISSING_LOCAL_HISTORY,
     MISSING_WINDOW_ROUTING,
     MISSING_HELP_ABOUT,
-    MISSING_SHORTCUTS_VIEW,
     MISSING_TERMINAL_SPLIT,
 ];
 
@@ -206,13 +197,26 @@ impl MenuItem {
     }
 }
 
-pub const KEY_REOPEN_CLOSED_TAB: &str = "ctrl-shift-t";
-pub const KEY_TOGGLE_ACTIVITY_SIDEBAR: &str = "ctrl-b";
-pub const KEY_TOGGLE_TERMINAL: &str = "ctrl-j";
-pub const KEY_ZOOM_IN: &str = "ctrl-=";
-pub const KEY_ZOOM_OUT: &str = "ctrl--";
-pub const KEY_RESET_ZOOM: &str = "ctrl-0";
-pub const KEY_GO_TO_LINE: &str = "ctrl-g";
+// 字面量一律 `secondary-`：它是 gpui 的平台归一化开关（macOS → Command，其他 → Control），
+// 也是 `settings/src/keymap.rs::DEFAULT_BINDINGS` 已经假设的形态。旧写的 `ctrl-` 在 macOS 上
+// 把设置页显示的（⌘S）与真能按出来的（Ctrl+S）拆成了两套，那正是 F2 要收口的地方。
+pub const KEY_REOPEN_CLOSED_TAB: &str = "secondary-shift-t";
+pub const KEY_TOGGLE_ACTIVITY_SIDEBAR: &str = "secondary-b";
+pub const KEY_TOGGLE_TERMINAL: &str = "secondary-j";
+pub const KEY_ZOOM_IN: &str = "secondary-=";
+pub const KEY_ZOOM_OUT: &str = "secondary--";
+pub const KEY_RESET_ZOOM: &str = "secondary-0";
+pub const KEY_GO_TO_LINE: &str = "secondary-g";
+/// 查找 / 替换：IDEA-mac 的真源就是 ⌘F / ⌘R，`secondary-` 在 macOS 给 Command、Windows 给 Control。
+pub const KEY_FIND: &str = "secondary-f";
+pub const KEY_FIND_REPLACE: &str = "secondary-r";
+/// 下一处 / 上一处：全窗绑定、三端同键，但**不建 `MenuAction`**（它们不出现在任何菜单行上，
+/// 建了会挂「不在菜单里的 MenuAction」与「登记在 NON_COMMAND 却没进菜单」两条守卫）。
+pub const KEY_FIND_NEXT: &str = "f3";
+pub const KEY_FIND_PREVIOUS: &str = "shift-f3";
+/// 后退 / 前进：IDEA 的 Navigate Back / Forward，三端同键（`secondary` 在 macOS 是 Command）。
+pub const KEY_GO_BACK: &str = "secondary-alt-left";
+pub const KEY_GO_FORWARD: &str = "secondary-alt-right";
 
 gpui::actions!(
     lithe_workbench,
@@ -223,7 +227,11 @@ gpui::actions!(
         ZoomIn,
         ZoomOut,
         ResetZoom,
-        OpenGoToLine
+        OpenGoToLine,
+        GoBack,
+        GoForward,
+        NextTab,
+        PreviousTab,
     ]
 );
 
@@ -270,6 +278,42 @@ pub fn install_key_actions(cx: &mut App) {
     install_menu_key(cx, KEY_ZOOM_OUT, ZoomOut, MenuAction::ZoomOut);
     install_menu_key(cx, KEY_RESET_ZOOM, ResetZoom, MenuAction::ResetZoom);
     install_menu_key(cx, KEY_GO_TO_LINE, OpenGoToLine, MenuAction::GoToLine);
+    install_menu_key(cx, KEY_GO_BACK, GoBack, MenuAction::GoBack);
+    install_menu_key(cx, KEY_GO_FORWARD, GoForward, MenuAction::GoForward);
+    // 切标签页：应用级惯例，与 `secondary-shift-t`（重开关掉的标签页）不冲突。这里**刻意保留
+    // 字面 `ctrl-tab`**：`secondary-tab` 在 macOS 就是 ⌘Tab，被系统应用切换器吃掉，改用它会
+    // 让 macOS 上的「下一个标签页」整条失效。IDEA-mac 自己也是 Ctrl+Tab。
+    install_menu_key(cx, "ctrl-tab", NextTab, MenuAction::NextTab);
+    install_menu_key(cx, "ctrl-shift-tab", PreviousTab, MenuAction::PreviousTab);
+
+    // 查找 / 替换：与 GoToLine 同一范式 —— 绑键 + 把「跑这个菜单动作」推给外壳，菜单点击与
+    // 键位走同一条 `apply_menu_action`。`Esc` 的上下文是查找条自己的，不在这里绑。
+    install_menu_key(cx, KEY_FIND, lithe_gpui_editor::OpenFind, MenuAction::Find);
+    install_menu_key(
+        cx,
+        KEY_FIND_REPLACE,
+        lithe_gpui_editor::OpenFindReplace,
+        MenuAction::FindAndReplace,
+    );
+    // 下一处 / 上一处：**不建 `MenuAction`**（见 `KEY_FIND_NEXT` 的注释）。全窗绑定的键在编辑器
+    // 内有焦点时由 `EditorPane` 自己的 handler 接住；焦点不在编辑器里时下面的转发兜住，两步
+    // 不会重叠 —— 元素级 handler 在冒泡阶段默认 `stop_propagation`，全局监听器就不会再跑。
+    cx.bind_keys([
+        KeyBinding::new(KEY_FIND_NEXT, lithe_gpui_editor::FindNext, None),
+        KeyBinding::new(KEY_FIND_PREVIOUS, lithe_gpui_editor::FindPrevious, None),
+        // `Esc` 只在查找条的上下文里关查找条；编辑器里的 `Esc` 仍归 `ElyEditor` 的 `SingleCursor`。
+        KeyBinding::new(
+            "escape",
+            lithe_gpui_editor::CloseFind,
+            Some(lithe_gpui_editor::FIND_BAR_KEY_CONTEXT),
+        ),
+    ]);
+    cx.on_action(|_: &lithe_gpui_editor::FindNext, cx: &mut App| {
+        crate::workspace::route_find_step(true, cx)
+    });
+    cx.on_action(|_: &lithe_gpui_editor::FindPrevious, cx: &mut App| {
+        crate::workspace::route_find_step(false, cx)
+    });
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -325,6 +369,32 @@ pub enum MenuAction {
     Minimize,
     Maximize,
     ToggleFullscreen,
+    // 编辑器行编辑：动作本体在 `lithe_ui::editor`（与 `ElyEditor` 上下文里登记的同一批类型），
+    // 菜单派发靠类型匹配，和 Undo 一条路。
+    ToggleComment,
+    DuplicateLine,
+    DeleteLine,
+    MoveLineUp,
+    MoveLineDown,
+    // 显示开关：状态在 settings store，执行分支在 `run_menu_action`。
+    ToggleMinimap,
+    ToggleLineNumbers,
+    ToggleRenderWhitespace,
+    // 后退 / 前进：跳转历史在 `EditorPane`，动作是工作台自己的 `gpui::actions!`。
+    GoBack,
+    GoForward,
+    // 快捷键一览：设置对话框的 Keyboard 页（tools / help 两个菜单共用这一个动作）。
+    ShowKeymapSettings,
+    // 标签页上/下一个：循环切换，动作是工作台自己的 `gpui::actions!`。
+    NextTab,
+    PreviousTab,
+    // 文件生命周期：执行分支在 `apply_menu_action`（无活动缓冲时 no-op + 诊断，见裁决 #7），
+    // 所以都没有 `CommandId`（列进 `NON_COMMAND`）。文案键沿用 File 菜单里原本挂着的占位项。
+    NewTab,
+    NewFile,
+    SaveAs,
+    SaveAll,
+    RevertFile,
 }
 
 /// 一行菜单的图标。
@@ -393,6 +463,24 @@ impl MenuAction {
             Self::ZoomOut => "lithe.menu.zoomOut",
             Self::ResetZoom => "lithe.menu.resetZoom",
             Self::ToggleMenuBar => "lithe.menu.toggleMenuBar",
+            Self::ToggleComment => "lithe.menu.toggleComment",
+            Self::DuplicateLine => "lithe.menu.duplicateLine",
+            Self::DeleteLine => "lithe.menu.deleteLine",
+            Self::MoveLineUp => "lithe.menu.moveLineUp",
+            Self::MoveLineDown => "lithe.menu.moveLineDown",
+            Self::ToggleMinimap => "lithe.menu.toggleMinimap",
+            Self::ToggleLineNumbers => "lithe.menu.toggleLineNumbers",
+            Self::ToggleRenderWhitespace => "lithe.menu.toggleRenderWhitespace",
+            Self::GoBack => "lithe.menu.goBack",
+            Self::GoForward => "lithe.menu.goForward",
+            Self::ShowKeymapSettings => "lithe.menu.keyboardShortcuts",
+            Self::NextTab => "lithe.menu.nextTab",
+            Self::PreviousTab => "lithe.menu.previousTab",
+            Self::NewTab => "lithe.menu.newTab",
+            Self::NewFile => "lithe.menu.newFile",
+            Self::SaveAs => "lithe.menu.saveAs",
+            Self::SaveAll => "lithe.menu.saveAll",
+            Self::RevertFile => "lithe.menu.revertFile",
         }
     }
 
@@ -434,8 +522,22 @@ impl MenuAction {
             Self::ZoomOut => MenuIcon::Idea(&idea::MAGNIFYING_GLASS_MINUS_ICON),
             Self::ResetZoom => MenuIcon::Idea(&idea::REFRESH_ICON),
             Self::ToggleMenuBar => MenuIcon::Idea(&idea::FILES_ICON),
+            Self::DeleteLine => MenuIcon::Idea(&idea::TRASH_ICON),
+            Self::MoveLineUp => MenuIcon::Idea(&idea::ARROW_UP_ICON),
+            Self::MoveLineDown => MenuIcon::Idea(&idea::ARROW_DOWN_ICON),
+            Self::GoBack => MenuIcon::Idea(&idea::ARROW_LEFT_ICON),
+            Self::GoForward => MenuIcon::Idea(&idea::ARROW_RIGHT_ICON),
+            Self::ShowKeymapSettings => MenuIcon::Idea(&idea::KEYBOARD_ICON),
+            Self::NextTab => MenuIcon::Idea(&idea::CARET_RIGHT_ICON),
+            Self::PreviousTab => MenuIcon::Idea(&idea::CARET_LEFT_ICON),
+            // 新建两个沿用占位项那枚「新文档」图；`SaveAs`/`SaveAll` 我们没画过（不给三个软盘
+            // 动作共用同一枚图，那比空槽更难认，见视觉稿 §10 的 A3）；`RevertFile` 是一处登记
+            // 在案的语义借用（刷新 ≠ 还原）。
             // 上游那批借来的图标（`CloseAllTabs` 的方框叉、`Paste` 的剪贴板、
             // 窗口那三个、断点、自动换行…）我们自己的图标集里没有，**留空**。
+            Self::NewTab | Self::NewFile => MenuIcon::Idea(&idea::FILE_PLUS_ICON),
+            Self::SaveAs | Self::SaveAll => MenuIcon::Empty,
+            Self::RevertFile => MenuIcon::Idea(&idea::REFRESH_ICON),
             Self::CloseAllTabs
             | Self::CloseSavedTabs
             | Self::CloseTabsToLeft
@@ -453,7 +555,12 @@ impl MenuAction {
             | Self::ToggleSecondarySidebar
             | Self::ShowDiagnostics
             | Self::ToggleBreakpoint
-            | Self::ToggleWordWrap => MenuIcon::Empty,
+            | Self::ToggleWordWrap
+            | Self::ToggleComment
+            | Self::DuplicateLine
+            | Self::ToggleMinimap
+            | Self::ToggleLineNumbers
+            | Self::ToggleRenderWhitespace => MenuIcon::Empty,
         }
     }
 
@@ -466,6 +573,25 @@ impl MenuAction {
             Self::ZoomOut => Some(KEY_ZOOM_OUT),
             Self::ResetZoom => Some(KEY_RESET_ZOOM),
             Self::GoToLine => Some(KEY_GO_TO_LINE),
+            Self::GoBack => Some(KEY_GO_BACK),
+            Self::GoForward => Some(KEY_GO_FORWARD),
+            // 查找 / 替换：`install_key_actions` 里绑的正是这两个键（`secondary-f` / `secondary-r`），
+            // 而它们的 `keybind_action()` 现在也真有值（见下面的注释），所以菜单画得出、按得出生效。
+            Self::Find => Some(KEY_FIND),
+            Self::FindAndReplace => Some(KEY_FIND_REPLACE),
+            // 行编辑五个：键位登记在 `lithe_ui::editor` 的 `ElyEditor` 上下文里
+            // （IDEA 默认键，三端同键），胶囊照旧从这些字面值画。
+            // `DuplicateLine` 是 `secondary-shift-d`（**不是** `secondary-d`）：后者的多光标
+            // `SelectNext` 已经占了，一个键不能命名两个动作（F1）。
+            Self::ToggleComment => Some("secondary-/"),
+            Self::DuplicateLine => Some("secondary-shift-d"),
+            Self::DeleteLine => Some("secondary-y"),
+            Self::MoveLineUp => Some("secondary-alt-shift-up"),
+            Self::MoveLineDown => Some("secondary-alt-shift-down"),
+            // 切标签页：应用级惯例（Ctrl+Tab 下一个 / Ctrl+Shift+Tab 上一个），三端同键，
+            // 与 `ctrl-shift-t`（重开关掉的标签页）不冲突。
+            Self::NextTab => Some("ctrl-tab"),
+            Self::PreviousTab => Some("ctrl-shift-tab"),
             _ => None,
         }
     }
@@ -500,10 +626,20 @@ impl MenuAction {
             Self::Copy => Box::new(lithe_ui::editor::Copy),
             Self::Paste => Box::new(lithe_ui::editor::Paste),
             Self::SelectAll => Box::new(lithe_ui::editor::SelectAll),
-            // 「查找」「在文件中替换」没有可派发的动作：`lithe_ui` 的编辑器有 FindWidget，
-            // 但 `CodeEditor` 还没有接线（见 `editor/state.rs` 的公开面）。没有就不假装有 ——
-            // 不拿别的动作顶替，菜单上也不画键位胶囊。
-            Self::Find | Self::FindAndReplace => return None,
+            // 行编辑五个：与撤销/复制同一条路 —— 派发给聚焦的编辑器，
+            // 动作类型就是 `ElyEditor` 上下文里登记的那几个。
+            Self::ToggleComment => Box::new(lithe_ui::editor::ToggleComment),
+            Self::DuplicateLine => Box::new(lithe_ui::editor::DuplicateLine),
+            Self::DeleteLine => Box::new(lithe_ui::editor::DeleteLine),
+            Self::MoveLineUp => Box::new(lithe_ui::editor::MoveLineUp),
+            Self::MoveLineDown => Box::new(lithe_ui::editor::MoveLineDown),
+            Self::GoBack => Box::new(GoBack),
+            Self::GoForward => Box::new(GoForward),
+            // 查找 / 替换：`lithe_gpui_editor` 的 `OpenFind` / `OpenFindReplace` 是宿主在
+            // `install_key_actions` 里真绑了键的动作（`secondary-f` / `secondary-r`），菜单派发
+            // 也走 `apply_menu_action`（`pane.open_find(...)`），所以键位胶囊能画、按得出生效。
+            Self::Find => Box::new(lithe_gpui_editor::OpenFind),
+            Self::FindAndReplace => Box::new(lithe_gpui_editor::OpenFindReplace),
             // 「快速修复」由工作台自己调编辑器的代码动作菜单（`pane.show_code_actions`），
             // 不走 `dispatch_action`，所以没有 Action 可查。
             Self::QuickFix => return None,
@@ -532,6 +668,20 @@ impl MenuAction {
             | Self::ToggleBreakpoint => return None,
             Self::GoToLine => Box::new(OpenGoToLine),
             Self::ToggleWordWrap | Self::ShowHover => return None,
+            // 显示开关没有可派发的动作：它们改的是 settings store 里的档位，
+            // 由外壳自己在 `run_menu_action` 里翻（和 `ToggleWordWrap` 一条路）。
+            Self::ToggleMinimap | Self::ToggleLineNumbers | Self::ToggleRenderWhitespace => {
+                return None;
+            }
+            // 快捷键一览由外壳直接开设置对话框的 Keyboard 页，没有 Action 可派发。
+            Self::ShowKeymapSettings => return None,
+            Self::NextTab => Box::new(NextTab),
+            Self::PreviousTab => Box::new(PreviousTab),
+            // 文件生命周期五个：执行分支都在 `apply_menu_action`（无活动缓冲时 no-op + 诊断，
+            // 见裁决 #7），没有可派发的 Action，菜单上也不画键位胶囊。
+            Self::NewTab | Self::NewFile | Self::SaveAs | Self::SaveAll | Self::RevertFile => {
+                return None;
+            }
         })
     }
 
@@ -587,7 +737,26 @@ impl MenuAction {
             | Self::ResetZoom
             | Self::GoToLine
             | Self::ToggleWordWrap
-            | Self::ShowHover => None,
+            | Self::ShowHover
+            | Self::ToggleComment
+            | Self::DuplicateLine
+            | Self::DeleteLine
+            | Self::MoveLineUp
+            | Self::MoveLineDown
+            | Self::ToggleMinimap
+            | Self::ToggleLineNumbers
+            | Self::ToggleRenderWhitespace
+            | Self::GoBack
+            | Self::GoForward
+            | Self::ShowKeymapSettings
+            | Self::NextTab
+            | Self::PreviousTab
+            // 文件生命周期五个：执行分支在 `apply_menu_action`，所以都没有 `CommandId`。
+            | Self::NewTab
+            | Self::NewFile
+            | Self::SaveAs
+            | Self::SaveAll
+            | Self::RevertFile => None,
         }
     }
 }
@@ -597,17 +766,9 @@ pub static MENUS: &[TopMenu] = &[
         id: "file",
         label_key: "lithe.menu.file",
         items: &[
-            MenuItem::NotWired {
-                label_key: "lithe.menu.newTab",
-                missing: MISSING_FILE_LIFECYCLE,
-                icon: MenuIcon::Idea(&idea::FILE_PLUS_ICON),
-            },
+            MenuItem::Action(MenuAction::NewTab),
             MenuItem::Action(MenuAction::NewWindow),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.newFile",
-                missing: MISSING_FILE_LIFECYCLE,
-                icon: MenuIcon::Idea(&idea::FILE_PLUS_ICON),
-            },
+            MenuItem::Action(MenuAction::NewFile),
             MenuItem::Action(MenuAction::OpenFolder),
             MenuItem::Action(MenuAction::OpenFile),
             MenuItem::NotWired {
@@ -617,21 +778,9 @@ pub static MENUS: &[TopMenu] = &[
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::Save),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.saveAs",
-                missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Empty,
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.saveAll",
-                missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Empty,
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.revertFile",
-                missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Idea(&idea::REFRESH_ICON),
-            },
+            MenuItem::Action(MenuAction::SaveAs),
+            MenuItem::Action(MenuAction::SaveAll),
+            MenuItem::Action(MenuAction::RevertFile),
             MenuItem::NotWired {
                 label_key: "lithe.menu.showLocalHistory",
                 missing: MISSING_LOCAL_HISTORY,
@@ -673,11 +822,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::Find),
             MenuItem::Action(MenuAction::FindAndReplace),
             MenuItem::Separator,
-            MenuItem::NotWired {
-                label_key: "lithe.menu.toggleComment",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::ToggleComment),
             MenuItem::Action(MenuAction::QuickFix),
             MenuItem::NotWired {
                 label_key: "lithe.menu.triggerParameterHints",
@@ -686,26 +831,10 @@ pub static MENUS: &[TopMenu] = &[
             },
             MenuItem::Action(MenuAction::ShowHover),
             MenuItem::Separator,
-            MenuItem::NotWired {
-                label_key: "lithe.menu.duplicateLine",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Empty,
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.deleteLine",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Idea(&idea::TRASH_ICON),
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.moveLineUp",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Idea(&idea::ARROW_UP_ICON),
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.moveLineDown",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Idea(&idea::ARROW_DOWN_ICON),
-            },
+            MenuItem::Action(MenuAction::DuplicateLine),
+            MenuItem::Action(MenuAction::DeleteLine),
+            MenuItem::Action(MenuAction::MoveLineUp),
+            MenuItem::Action(MenuAction::MoveLineDown),
             MenuItem::NotWired {
                 label_key: "lithe.menu.formatDocument",
                 missing: MISSING_LSP_REQUESTS,
@@ -744,22 +873,10 @@ pub static MENUS: &[TopMenu] = &[
                 missing: MISSING_EDITOR_FEATURES,
                 icon: MenuIcon::Idea(&idea::COLUMNS_ICON),
             },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.toggleMinimap",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::ToggleMinimap),
             MenuItem::Action(MenuAction::ToggleWordWrap),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.toggleLineNumbers",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Empty,
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.toggleRenderWhitespace",
-                missing: MISSING_EDITOR_FEATURES,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::ToggleLineNumbers),
+            MenuItem::Action(MenuAction::ToggleRenderWhitespace),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::ZoomIn),
             MenuItem::Action(MenuAction::ZoomOut),
@@ -778,16 +895,8 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::ReplaceInFiles),
             MenuItem::Action(MenuAction::GoToLine),
             MenuItem::Separator,
-            MenuItem::NotWired {
-                label_key: "lithe.menu.goBack",
-                missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Idea(&idea::ARROW_LEFT_ICON),
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.goForward",
-                missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Idea(&idea::ARROW_RIGHT_ICON),
-            },
+            MenuItem::Action(MenuAction::GoBack),
+            MenuItem::Action(MenuAction::GoForward),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::GoToDefinition),
             MenuItem::NotWired {
@@ -811,16 +920,8 @@ pub static MENUS: &[TopMenu] = &[
                 icon: MenuIcon::Empty,
             },
             MenuItem::Separator,
-            MenuItem::NotWired {
-                label_key: "lithe.menu.nextTab",
-                missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Idea(&idea::CARET_RIGHT_ICON),
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.previousTab",
-                missing: MISSING_EDITOR_ENTRY,
-                icon: MenuIcon::Idea(&idea::CARET_LEFT_ICON),
-            },
+            MenuItem::Action(MenuAction::NextTab),
+            MenuItem::Action(MenuAction::PreviousTab),
         ],
     },
     TopMenu {
@@ -867,11 +968,7 @@ pub static MENUS: &[TopMenu] = &[
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::Preferences),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.keyboardShortcuts",
-                missing: MISSING_SHORTCUTS_VIEW,
-                icon: MenuIcon::Idea(&idea::KEYBOARD_ICON),
-            },
+            MenuItem::Action(MenuAction::ShowKeymapSettings),
             MenuItem::Action(MenuAction::OpenAppearanceSettings),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::ToggleMaven),
@@ -898,11 +995,7 @@ pub static MENUS: &[TopMenu] = &[
                 missing: MISSING_HELP_ABOUT,
                 icon: MenuIcon::Idea(&idea::BOOK_OPEN_ICON),
             },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.keyboardShortcuts",
-                missing: MISSING_SHORTCUTS_VIEW,
-                icon: MenuIcon::Idea(&idea::KEYBOARD_ICON),
-            },
+            MenuItem::Action(MenuAction::ShowKeymapSettings),
             MenuItem::NotWired {
                 label_key: "lithe.menu.whatsNew",
                 missing: MISSING_HELP_ABOUT,
@@ -1908,10 +2001,11 @@ fn icon_element(icon: &'static idea::IdeaIcon) -> impl Fn(&App) -> AnyElement + 
 #[cfg(test)]
 mod tests {
     use super::{
-        CloseReason, KEY_GO_TO_LINE, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM,
-        KEY_TOGGLE_ACTIVITY_SIDEBAR, KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS,
-        MISSING_GROUPS, MenuAction, MenuBarMode, MenuItem, NOT_WIRED_OUTSIDE_MENUS, NavState,
-        TriggerFace, action_count, mode_for, mode_from_id, not_wired_count, resolve_menu_toggle,
+        CloseReason, KEY_FIND, KEY_FIND_REPLACE, KEY_GO_BACK, KEY_GO_FORWARD, KEY_GO_TO_LINE,
+        KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM, KEY_TOGGLE_ACTIVITY_SIDEBAR, KEY_TOGGLE_TERMINAL,
+        KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS, MISSING_GROUPS, MenuAction, MenuBarMode, MenuItem,
+        NOT_WIRED_OUTSIDE_MENUS, NavState, TriggerFace, action_count, mode_for, mode_from_id,
+        not_wired_count, resolve_menu_toggle,
     };
     use lithe_gpui_shared::tr;
     use lithe_ui::theme::Palette;
@@ -2082,10 +2176,15 @@ mod tests {
         assert_eq!(
             actions,
             vec![
+                MenuAction::NewTab,
                 MenuAction::NewWindow,
+                MenuAction::NewFile,
                 MenuAction::OpenFolder,
                 MenuAction::OpenFile,
                 MenuAction::Save,
+                MenuAction::SaveAs,
+                MenuAction::SaveAll,
+                MenuAction::RevertFile,
                 MenuAction::CloseTab,
                 MenuAction::CloseOtherTabs,
                 MenuAction::CloseAllTabs,
@@ -2171,16 +2270,15 @@ mod tests {
             (MenuAction::Copy, "lithe.menu.copy", true),
             (MenuAction::Paste, "lithe.menu.paste", true),
             (MenuAction::SelectAll, "lithe.menu.selectAll", true),
-            // 这三条**没有可派发的 Action**，所以菜单上不画键位胶囊：
-            // 「查找」「在文件中替换」要等编辑器的 FindWidget 接进 `EditorPane`
-            // （现在那个入口还不存在，见 `apply_menu_action`）；「快速修复」由外壳
-            // 直接调 `EditorPane::show_code_actions`，不走 `dispatch_action`。
-            // 宁可不画，也不画一颗按不出的键。
-            (MenuAction::Find, "lithe.menu.find", false),
+            // 查找 / 替换：宿主在 `install_key_actions` 里为它们绑了 `secondary-f` / `secondary-r`，
+            // 并派发 `lithe_gpui_editor::OpenFind` / `OpenFindReplace`（`keybind_action()` 有值），
+            // 所以菜单画得出键位胶囊、按下去也真生效。「快速修复」不同 —— 它由外壳直接调
+            // `EditorPane::show_code_actions`，不走 `dispatch_action`，没有 Action，故仍不画胶囊。
+            (MenuAction::Find, "lithe.menu.find", true),
             (
                 MenuAction::FindAndReplace,
                 "lithe.menu.findAndReplace",
-                false,
+                true,
             ),
             (MenuAction::QuickFix, "lithe.menu.quickFix", false),
             (
@@ -2219,6 +2317,44 @@ mod tests {
                 false,
             ),
             (MenuAction::ShowRunAndDebug, "lithe.menu.runAndDebug", false),
+            // 行编辑五个：动作在 `lithe_ui::editor` 的 `ElyEditor` 上下文里真绑着键
+            // （IDEA 默认键，三端同键），所以菜单画胶囊、派发也走得通。
+            (MenuAction::ToggleComment, "lithe.menu.toggleComment", true),
+            (MenuAction::DuplicateLine, "lithe.menu.duplicateLine", true),
+            (MenuAction::DeleteLine, "lithe.menu.deleteLine", true),
+            (MenuAction::MoveLineUp, "lithe.menu.moveLineUp", true),
+            (MenuAction::MoveLineDown, "lithe.menu.moveLineDown", true),
+            // 后退/前进：工作台自己的动作，`install_key_actions` 绑了键。
+            (MenuAction::GoBack, "lithe.menu.goBack", true),
+            (MenuAction::GoForward, "lithe.menu.goForward", true),
+            // 显示开关三个：翻的是 settings store 的档位，没有可派发动作，不画胶囊。
+            (MenuAction::ToggleMinimap, "lithe.menu.toggleMinimap", false),
+            (
+                MenuAction::ToggleLineNumbers,
+                "lithe.menu.toggleLineNumbers",
+                false,
+            ),
+            (
+                MenuAction::ToggleRenderWhitespace,
+                "lithe.menu.toggleRenderWhitespace",
+                false,
+            ),
+            // 快捷键一览：两处菜单（Tools / Help）共用，外壳直接开设置对话框的 Keyboard 页。
+            (
+                MenuAction::ShowKeymapSettings,
+                "lithe.menu.keyboardShortcuts",
+                false,
+            ),
+            // 标签页上/下一个：循环切换，`ctrl-tab` / `ctrl-shift-tab` 在 `install_key_actions` 里绑着。
+            (MenuAction::NextTab, "lithe.menu.nextTab", true),
+            (MenuAction::PreviousTab, "lithe.menu.previousTab", true),
+            // 文件生命周期五个：执行分支在 `apply_menu_action`（无活动缓冲时 no-op + 诊断），
+            // 没有可派发的 Action，也不绑键，所以菜单上不画键位胶囊。
+            (MenuAction::NewTab, "lithe.menu.newTab", false),
+            (MenuAction::NewFile, "lithe.menu.newFile", false),
+            (MenuAction::SaveAs, "lithe.menu.saveAs", false),
+            (MenuAction::SaveAll, "lithe.menu.saveAll", false),
+            (MenuAction::RevertFile, "lithe.menu.revertFile", false),
         ];
 
         for (action, key, has_key_hint) in table {
@@ -2270,12 +2406,23 @@ mod tests {
             bound,
             vec![
                 KEY_REOPEN_CLOSED_TAB,
+                KEY_FIND,
+                KEY_FIND_REPLACE,
+                "secondary-/",
+                "secondary-shift-d",
+                "secondary-y",
+                "secondary-alt-shift-up",
+                "secondary-alt-shift-down",
                 KEY_TOGGLE_ACTIVITY_SIDEBAR,
                 KEY_TOGGLE_TERMINAL,
                 KEY_ZOOM_IN,
                 KEY_ZOOM_OUT,
                 KEY_RESET_ZOOM,
                 KEY_GO_TO_LINE,
+                KEY_GO_BACK,
+                KEY_GO_FORWARD,
+                "ctrl-tab",
+                "ctrl-shift-tab",
             ],
             "键位清单变了（改它就是改验证脚本）"
         );
@@ -2323,7 +2470,7 @@ mod tests {
 
     #[test]
     fn only_go_to_line_of_the_u20_items_carries_a_key() {
-        assert_eq!(KEY_GO_TO_LINE, "ctrl-g");
+        assert_eq!(KEY_GO_TO_LINE, "secondary-g");
         assert_eq!(MenuAction::GoToLine.menu_key(), Some(KEY_GO_TO_LINE));
         assert!(
             MenuAction::GoToLine.keybind_action().is_some(),
@@ -2341,7 +2488,10 @@ mod tests {
 
     #[test]
     fn every_listed_item_is_wired_or_declares_what_is_missing() {
-        const NON_COMMAND: [MenuAction; 31] = [
+        // 同一个能力默认只许一个菜单入口。双入口要在白名单里说清理由 ——
+        // 「快捷键一览」按 IDEA 的布局在 Tools 和 Help 各有一条，这是上游布局不是重复。
+        const TWO_ENTRIES: [MenuAction; 1] = [MenuAction::ShowKeymapSettings];
+        const NON_COMMAND: [MenuAction; 49] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -2373,6 +2523,25 @@ mod tests {
             MenuAction::ZoomIn,
             MenuAction::ZoomOut,
             MenuAction::ResetZoom,
+            MenuAction::ToggleComment,
+            MenuAction::DuplicateLine,
+            MenuAction::DeleteLine,
+            MenuAction::MoveLineUp,
+            MenuAction::MoveLineDown,
+            MenuAction::ToggleMinimap,
+            MenuAction::ToggleLineNumbers,
+            MenuAction::ToggleRenderWhitespace,
+            MenuAction::GoBack,
+            MenuAction::GoForward,
+            MenuAction::ShowKeymapSettings,
+            MenuAction::NextTab,
+            MenuAction::PreviousTab,
+            // 文件生命周期五个：执行分支在 `apply_menu_action`，都没有 `CommandId`。
+            MenuAction::NewTab,
+            MenuAction::NewFile,
+            MenuAction::SaveAs,
+            MenuAction::SaveAll,
+            MenuAction::RevertFile,
         ];
 
         let mut wired: Vec<MenuAction> = Vec::new();
@@ -2394,8 +2563,8 @@ mod tests {
                             "{action:?} 的文案键不在 lithe.* 命名空间里"
                         );
                         assert!(
-                            !wired.contains(action),
-                            "{action:?} 在菜单里出现了两次（同一个能力不该两个入口）"
+                            !wired.contains(action) || TWO_ENTRIES.contains(action),
+                            "{action:?} 在菜单里出现了两次（同一个能力不该两个入口，白名单除外）"
                         );
                         wired.push(*action);
                     }
@@ -2450,8 +2619,8 @@ mod tests {
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
         );
         assert!(
-            declared.len() >= 42,
-            "占位项突然少了一半（现在 {}）？查一下是不是有人把没能力的项又删掉了",
+            declared.len() >= 23,
+            "占位项突然少了一截（现在 {}）？查一下是不是有人把没能力的项又删掉了",
             declared.len()
         );
     }
@@ -2570,8 +2739,8 @@ mod tests {
         );
         assert_eq!(
             crate::replace_in_files::REPLACE_KEY,
-            "ctrl-shift-r",
-            "真源 Windows 平台表给的就是它（LitheCommandCatalog.swift:61）"
+            "secondary-shift-r",
+            "`secondary-` 才是 gpui 的平台归一化口径（macOS ⌘⇧R / 其他 Ctrl+Shift+R）"
         );
     }
 
@@ -2625,28 +2794,31 @@ mod tests {
             );
         }
         assert!(
-            texts.len() <= 15,
-            "占位文案有 {} 句，超过了'按能力分组'的上限 15（= MISSING_GROUPS 的组数）",
+            texts.len() <= 12,
+            "占位文案有 {} 句，超过了'按能力分组'的上限 12（= MISSING_GROUPS 的组数）",
             texts.len()
         );
         assert_eq!(
             MISSING_GROUPS.len(),
-            15,
+            12,
             "能力组数变了就必须同步改上面的上界与 `MISSING_GROUPS` 的文档"
         );
     }
 
     #[test]
     fn keyboard_shortcuts_appears_in_tools_and_help() {
+        // 「键盘快捷键」入口已经接线（Tools / Help 各画一条 `Action(ShowKeymapSettings)`），
+        // 不再是 `NotWired` 占位项。这条测试盯的是**入口出现在哪两个菜单里**，与接线与否无关。
+        assert_eq!(
+            MenuAction::ShowKeymapSettings.label_key(),
+            "lithe.menu.keyboardShortcuts",
+            "快捷键入口的文案键变了"
+        );
         let places = MENUS
             .iter()
             .flat_map(|menu| {
                 menu.items.iter().filter_map(|item| match item {
-                    MenuItem::NotWired { label_key, .. }
-                        if *label_key == "lithe.menu.keyboardShortcuts" =>
-                    {
-                        Some(menu.id)
-                    }
+                    MenuItem::Action(MenuAction::ShowKeymapSettings) => Some(menu.id),
                     _ => None,
                 })
             })

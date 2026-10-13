@@ -43,7 +43,9 @@ fn command_a_without_focus_selects_the_top_level_items(cx: &mut TestAppContext) 
     })
     .unwrap();
 
-    cx.simulate_keystrokes(handle.into(), "cmd-a");
+    // `secondary-` 才是绑定的写法（macOS ⌘A / 其他 Ctrl+A）；`cmd-` 在 gpui 里只置 `platform`
+    // 位，换到非 macOS 平台上与被绑定的 `secondary-a` 对不上。
+    cx.simulate_keystrokes(handle.into(), "secondary-a");
 
     cx.update(|cx| {
         assert_eq!(
@@ -98,8 +100,8 @@ fn command_c_writes_the_selected_items_to_the_clipboard_port(cx: &mut TestAppCon
     })
     .unwrap();
 
-    cx.simulate_keystrokes(handle.into(), "cmd-a");
-    cx.simulate_keystrokes(handle.into(), "cmd-c");
+    cx.simulate_keystrokes(handle.into(), "secondary-a");
+    cx.simulate_keystrokes(handle.into(), "secondary-c");
 
     let absolute = written.lock().expect("记录锁没中毒").clone();
     assert_eq!(

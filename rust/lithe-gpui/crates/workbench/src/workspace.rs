@@ -11,12 +11,12 @@ use gpui::{
 use gpui::{Global, PathPromptOptions, ScrollHandle};
 
 use lithe_ui::buttons::Button;
-use lithe_ui::forms::Checkbox;
+use lithe_ui::forms::{Checkbox, InputState};
 use lithe_ui::layout::{Dock, DockEvent, DockPanel, DockSide, h_stack, v_stack};
 // 窗口根宿主（门 G1）：本文件里的 `open_dialog` / `close_dialog` / `has_active_dialog` /
 // `push_notification` 已整片切到 `WindowRootExt`。
 use lithe_ui::feedback::Toast;
-use lithe_ui::overlays::Dialog;
+use lithe_ui::overlays::{ConfirmDialog, Dialog, PromptDialog};
 use lithe_ui::primitives::Severity as NoticeSeverity;
 use lithe_ui::shell::{WindowRoot, WindowRootExt as _, dismiss_hosted};
 use lithe_ui::theme::ActiveTheme as _;
@@ -113,7 +113,6 @@ fn startup_menu_bar_mode(cx: &App) -> MenuBarMode {
         .unwrap_or(MenuBarMode::DEFAULT)
 }
 
-
 fn startup_views(cx: &App) -> (Option<RightToolWindowView>, bool, Option<usize>) {
     cx.try_global::<ShellStartup>()
         .map(|startup| {
@@ -133,16 +132,8 @@ pub(crate) fn replace_root_with_workspace(
 ) -> Option<Entity<ShellWorkspace>> {
     let mut created: Option<Entity<ShellWorkspace>> = None;
     let new_root = window.replace_root(cx, |window, cx| {
-        let workspace = cx.new(|cx| {
-            ShellWorkspace::new(
-                target.to_path_buf(),
-                false,
-                false,
-                false,
-                window,
-                cx,
-            )
-        });
+        let workspace =
+            cx.new(|cx| ShellWorkspace::new(target.to_path_buf(), false, false, false, window, cx));
         created = Some(workspace.clone());
         WindowRoot::new(workspace, window, cx)
     });
@@ -364,13 +355,18 @@ pub(crate) struct ActionFlags {
 pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction {
     use CommandId as C;
     let (category, icon) = match id {
-        C::OpenSettings | C::OpenAppearanceSettings => {
-            (Category::Settings, Some(idea_icon_element(&idea::GEAR_ICON)))
-        }
-        C::SwitchToLightTheme | C::SwitchToDarkTheme => {
-            (Category::Settings, Some(idea_icon_element(&idea::PALETTE_ICON)))
-        }
-        C::ToggleTerminal => (Category::View, Some(idea_icon_element(&idea::TERMINAL_ICON))),
+        C::OpenSettings | C::OpenAppearanceSettings => (
+            Category::Settings,
+            Some(idea_icon_element(&idea::GEAR_ICON)),
+        ),
+        C::SwitchToLightTheme | C::SwitchToDarkTheme => (
+            Category::Settings,
+            Some(idea_icon_element(&idea::PALETTE_ICON)),
+        ),
+        C::ToggleTerminal => (
+            Category::View,
+            Some(idea_icon_element(&idea::TERMINAL_ICON)),
+        ),
         C::ToggleMaven => (Category::View, Some(idea_icon_element(&idea::MAVEN_ICON))),
         // 本仓没有「状态栏 / 底部面板」这张 idea 图 ⇒ 留空，不拿组件库图标顶替。
         C::ToggleStatusBar => (Category::View, None),
@@ -407,10 +403,7 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
         | C::CloseSavedTabs
         | C::CloseTabsToLeft
         | C::CloseTabsToRight => (Category::View, Some(idea_icon_element(&idea::X_ICON))),
-        C::ReopenClosedTab => (
-            Category::View,
-            Some(idea_icon_element(&idea::REFRESH_ICON)),
-        ),
+        C::ReopenClosedTab => (Category::View, Some(idea_icon_element(&idea::REFRESH_ICON))),
         C::NewWindow => (Category::View, Some(idea_icon_element(&idea::MONITOR_ICON))),
     };
 
@@ -576,6 +569,10 @@ pub struct ShellWorkspace {
     notifications: Entity<lithe_gpui_notify::Store>,
     notification_panel: Entity<crate::notifications::NotificationPanel>,
     spring_panel: Entity<crate::spring_panel::SpringPanel>,
+    /// The one-line field the tree's New File / New Folder prompts share. `PromptDialog` borrows an
+    /// `Entity<InputState>` that must outlive the dialog's per-frame rebuild, so it lives here and
+    /// is reset before each open instead of being created inside the dialog builder.
+    new_entry_field: Entity<InputState>,
     _notification_toast_subscription: Option<gpui::Subscription>,
     notification_toast_seq: u64,
     session: SessionTracker,
@@ -670,6 +667,41 @@ impl ShellWorkspace {
                 });
             }));
         });
+        // The tree's own rename / delete / new ports: validation, the disk write, the cascade into
+        // open buffers and the refresh all live in the shell; the row only reports what to act on.
+        {
+            let shell_for_rename = cx.entity().downgrade();
+            explorer.update(cx, |this, _cx| {
+                this.set_rename_host(Arc::new(
+                    move |path: &Path, new_name: &str, window: &mut Window, cx: &mut App| {
+                        let _ = shell_for_rename.update(cx, |shell, cx| {
+                            shell.perform_rename(path, new_name, window, cx);
+                        });
+                    },
+                ));
+            });
+            let shell_for_delete = cx.entity().downgrade();
+            explorer.update(cx, |this, _cx| {
+                this.set_delete_host(Arc::new(
+                    move |path: &Path, window: &mut Window, cx: &mut App| {
+                        let _ = shell_for_delete.update(cx, |shell, cx| {
+                            shell.prompt_delete(path, window, cx);
+                        });
+                    },
+                ));
+            });
+            let shell_for_new = cx.entity().downgrade();
+            explorer.update(cx, |this, _cx| {
+                this.set_new_host(Arc::new(
+                    move |parent: &Path, is_folder: bool, window: &mut Window, cx: &mut App| {
+                        let _ = shell_for_new.update(cx, |shell, cx| {
+                            shell.prompt_new_entry(parent, is_folder, window, cx);
+                        });
+                    },
+                ));
+            });
+        }
+        let new_entry_field = cx.new(|cx| InputState::new(window, cx));
 
         let changes_root = root.clone();
         let changes = cx.new({
@@ -973,6 +1005,9 @@ impl ShellWorkspace {
                 pane.set_auto_completion(initial.auto_completion, cx);
                 pane.set_auto_save(initial.auto_save, cx);
                 pane.set_soft_wrap(initial.word_wrap, window, cx);
+                pane.set_minimap(initial.minimap, cx);
+                pane.set_line_numbers(initial.line_numbers, cx);
+                pane.set_render_whitespace(initial.render_whitespace, cx);
             });
             terminal.update(cx, |pane, cx| {
                 pane.set_default_shell(&initial.terminal_default_shell_id, cx);
@@ -988,6 +1023,9 @@ impl ShellWorkspace {
                     pane.set_auto_completion(settings.auto_completion, cx);
                     pane.set_auto_save(settings.auto_save, cx);
                     pane.set_soft_wrap(settings.word_wrap, window, cx);
+                    pane.set_minimap(settings.minimap, cx);
+                    pane.set_line_numbers(settings.line_numbers, cx);
+                    pane.set_render_whitespace(settings.render_whitespace, cx);
                 });
                 this.terminal.update(cx, |pane, cx| {
                     pane.set_default_shell(&settings.terminal_default_shell_id, cx);
@@ -1127,6 +1165,7 @@ impl ShellWorkspace {
             notifications,
             notification_panel,
             spring_panel,
+            new_entry_field,
             notification_toast_seq: 0,
             _notification_toast_subscription: notification_toast_subscription,
             session: SessionTracker::new(&root),
@@ -1875,16 +1914,50 @@ impl ShellWorkspace {
             | MenuAction::Copy
             | MenuAction::Paste
             | MenuAction::SelectAll
-            | MenuAction::Find
-            | MenuAction::FindAndReplace => {
+            | MenuAction::ToggleComment
+            | MenuAction::DuplicateLine
+            | MenuAction::DeleteLine
+            | MenuAction::MoveLineUp
+            | MenuAction::MoveLineDown => {
                 self.dispatch_editor_action(action, window, cx);
             }
-            // 「快速修复」不走 `dispatch_action`：代码动作菜单是编辑器自己那一块，
+            // 查找 / 替换直接叫编辑器开查找条：`dispatch_action(OpenFind)` 会先经过元素级冒泡
+            // （`EditorPane` 自己的 `.on_action`），那条路已 `stop_propagation`，全局观察者
+            // 就不再跑——所以在这里直调 `open_find`，与菜单点击是同一条落点（§1.6）。
+            MenuAction::Find | MenuAction::FindAndReplace => {
+                let with_replace = action == MenuAction::FindAndReplace;
+                self.editor
+                    .update(cx, |pane, cx| pane.open_find(with_replace, window, cx));
+                diagnose_menu_run(action, "find");
+            }
+            // 快速修复：代码动作菜单是编辑器自己那一块，
             // 外壳直接叫它开（`EditorPane::show_code_actions`）。
             MenuAction::QuickFix => {
                 self.editor
                     .update(cx, |pane, cx| pane.show_code_actions(window, cx));
                 diagnose_menu_run(action, "codeActions");
+            }
+            // 文件生命周期：执行分支都在这里，无活动缓冲时由 `EditorPane` 自己 no-op + 诊断。
+            MenuAction::NewTab => {
+                self.editor
+                    .update(cx, |pane, cx| pane.new_untitled(window, cx));
+                diagnose_menu_run(action, "newTab");
+            }
+            MenuAction::NewFile => {
+                self.prompt_new_file(window, cx);
+            }
+            MenuAction::SaveAs => {
+                self.editor.update(cx, |pane, cx| pane.save_as(window, cx));
+                diagnose_menu_run(action, "saveAs");
+            }
+            MenuAction::SaveAll => {
+                self.editor.update(cx, |pane, cx| pane.save_all(window, cx));
+                diagnose_menu_run(action, "saveAll");
+            }
+            MenuAction::RevertFile => {
+                self.editor
+                    .update(cx, |pane, cx| pane.revert_active(window, cx));
+                diagnose_menu_run(action, "revertFile");
             }
             MenuAction::ToggleActivitySidebar => {
                 self.toggle_left_sidebar();
@@ -1928,6 +2001,36 @@ impl ShellWorkspace {
                     "S1_MENU notWired id=lithe.menu.toggleWordWrap missing=no_settings_store"
                 ),
             },
+            MenuAction::ToggleMinimap
+            | MenuAction::ToggleLineNumbers
+            | MenuAction::ToggleRenderWhitespace => {
+                self.toggle_editor_display(action, cx);
+            }
+            MenuAction::GoBack => {
+                self.editor.update(cx, |pane, cx| pane.go_back(window, cx));
+                diagnose_menu_run(action, "goBack");
+            }
+            MenuAction::GoForward => {
+                self.editor
+                    .update(cx, |pane, cx| pane.go_forward(window, cx));
+                diagnose_menu_run(action, "goForward");
+            }
+            MenuAction::ShowKeymapSettings => {
+                lithe_gpui_settings::open_settings_dialog_at(
+                    window,
+                    cx,
+                    lithe_gpui_settings::Category::Keyboard,
+                );
+                diagnose_menu_run(action, "keymap");
+            }
+            MenuAction::NextTab => {
+                self.editor.update(cx, |pane, cx| pane.next_tab(cx));
+                diagnose_menu_run(action, "nextTab");
+            }
+            MenuAction::PreviousTab => {
+                self.editor.update(cx, |pane, cx| pane.previous_tab(cx));
+                diagnose_menu_run(action, "previousTab");
+            }
             MenuAction::ShowHover => {
                 self.editor
                     .update(cx, |pane, cx| pane.show_hover_at_caret(window, cx));
@@ -1999,6 +2102,397 @@ impl ShellWorkspace {
         target.focus(window, cx);
         window.dispatch_action(bound, cx);
         diagnose_menu_run(action, "dispatched");
+    }
+
+    // ------------------------------------------------------------------
+    // 文件生命周期（B2 / B1）：新建、另存为、全部保存、还原，以及 explorer 的增删改名
+    // ------------------------------------------------------------------
+
+    /// File ▸ New File: pick a path under the workspace root, then hand `(parent, name)` to the
+    /// editor's single create entry point — the same one the tree's New File uses (裁决 #11). With
+    /// no workspace root there is nowhere to create, so say so instead of opening a picker.
+    fn prompt_new_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.root.as_os_str().is_empty() {
+            eprintln!("S1_EDITOR_NEW_FILE create=false reason=no-workspace-root via=menu");
+            self.notify(
+                lithe_gpui_notify::Input::new(
+                    "lithe.files.openFolderFirst",
+                    lithe_gpui_notify::Severity::Warning,
+                )
+                .key("lithe.files.openFolderFirst"),
+                cx,
+            );
+            return;
+        }
+        let root = self.root.clone();
+        let picked = cx.prompt_for_new_path(&root, Some("NewFile"));
+        cx.spawn_in(window, async move |shell, cx| {
+            let path = match picked.await {
+                Ok(Ok(Some(path))) => path,
+                Ok(Ok(None)) => {
+                    eprintln!("S1_EDITOR_NEW_FILE create=false reason=cancelled via=menu");
+                    return;
+                }
+                Ok(Err(error)) => {
+                    eprintln!("S1_EDITOR_NEW_FILE create=false reason=error error={error}");
+                    return;
+                }
+                Err(_) => {
+                    eprintln!("S1_EDITOR_NEW_FILE create=false reason=channel-closed");
+                    return;
+                }
+            };
+            let _ = shell.update_in(cx, |shell, window, cx| {
+                shell.create_at_picked_path(path, window, cx)
+            });
+        })
+        .detach();
+    }
+
+    /// Splits a picked path into `(parent, name)` and creates through the editor, so the menu and
+    /// the tree share one on-disk entry point; then reveals whatever appeared.
+    fn create_at_picked_path(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(name) = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+        else {
+            eprintln!(
+                "S1_EDITOR_NEW_FILE create=false reason=no-file-name path={}",
+                path.display()
+            );
+            return;
+        };
+        let Some(parent) = path.parent().map(Path::to_path_buf) else {
+            eprintln!(
+                "S1_EDITOR_NEW_FILE create=false reason=no-parent path={}",
+                path.display()
+            );
+            return;
+        };
+        self.editor.update(cx, |pane, cx| {
+            pane.create_file(Some(parent), name, window, cx)
+        });
+        self.reveal_created(path, window, cx);
+    }
+
+    /// The tree row menu's Delete: confirm first (no recycle bin yet, 裁决 #9), then remove. The
+    /// confirm dialog has no input field, so Enter is structurally not "delete".
+    fn prompt_delete(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        let is_dir = path.is_dir();
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let (title_key, body_key) = if is_dir {
+            (
+                "lithe.fileExplorer.deleteFolder",
+                "lithe.fileExplorer.deleteFolderMessage",
+            )
+        } else {
+            (
+                "lithe.fileExplorer.deleteFile",
+                "lithe.fileExplorer.deleteFileMessage",
+            )
+        };
+        let title = tr(title_key);
+        let body = tr_args(body_key, &[("name", &name)]);
+        let target = path.to_path_buf();
+        let shell = cx.entity().downgrade();
+        let delete_label = tr("lithe.ui.delete");
+        window.open_dialog(
+            "lithe-explorer-delete",
+            move |id, _window, _cx| {
+                let shell = shell.clone();
+                let target = target.clone();
+                ConfirmDialog::new(id, title.clone(), body.clone(), dismiss_hosted)
+                    .confirm(delete_label.clone())
+                    .destructive()
+                    .on_confirm(move |window, cx| {
+                        let _ = shell.update(cx, |shell, cx| {
+                            shell.delete_confirmed(target.clone(), window, cx)
+                        });
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
+    }
+
+    /// Deletes a confirmed target: remove it, forget every buffer under it, then reload the tree
+    /// and land on the parent row. A failure notifies and leaves the explorer alone (B1-19).
+    fn delete_confirmed(&mut self, target: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let is_dir = target.is_dir();
+        let removed = if is_dir {
+            std::fs::remove_dir_all(&target)
+        } else {
+            std::fs::remove_file(&target)
+        };
+        if let Err(error) = removed {
+            eprintln!(
+                "S1_EXPLORER delete result=failed path={} error={error}",
+                target.display()
+            );
+            let name = target
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_default();
+            self.notify(
+                lithe_gpui_notify::Input::new(
+                    "lithe.files.deleteFailed",
+                    lithe_gpui_notify::Severity::Error,
+                )
+                .param("name", name)
+                .param("error", error.to_string())
+                .key("lithe.files.deleteFailed"),
+                cx,
+            );
+            return;
+        }
+        eprintln!(
+            "S1_EXPLORER delete result=applied path={}",
+            target.display()
+        );
+        self.editor
+            .update(cx, |pane, cx| pane.forget_paths(&target, window, cx));
+        // B1-17: pick the parent row; a top-level child falls back to the workspace root.
+        let parent = target
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| self.root.clone());
+        self.explorer.update(cx, |explorer, cx| {
+            explorer.refresh_and_reveal(parent, window, cx)
+        });
+        self.schedule_session_save(cx);
+    }
+
+    /// The tree's New File / New Folder: one `PromptDialog` asks for the name and refuses a bad one
+    /// before submitting (F5). File goes through the editor; a folder is a plain `create_dir`.
+    fn prompt_new_entry(
+        &mut self,
+        parent: &Path,
+        is_folder: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (title_key, label_key, placeholder_key, submit_key) = if is_folder {
+            (
+                "lithe.files.nameNewFolder",
+                "lithe.files.enterNewFolderName",
+                "lithe.files.folderNamePlaceholder",
+                "lithe.files.newFolder",
+            )
+        } else {
+            (
+                "lithe.files.nameNewFile",
+                "lithe.files.enterNewFileName",
+                "lithe.files.fileNamePlaceholder",
+                "lithe.files.newFile",
+            )
+        };
+        let parent = parent.to_path_buf();
+        self.new_entry_field.update(cx, |field, cx| {
+            field.set_text(String::new(), cx);
+            field.set_placeholder(tr(placeholder_key), cx);
+        });
+        let field = self.new_entry_field.clone();
+        let shell = cx.entity().downgrade();
+        let title = tr(title_key);
+        let label = tr(label_key);
+        let submit = tr(submit_key);
+        let check_parent = parent.clone();
+        let check = Arc::new(move |text: &str| check_new_name(&check_parent, text, is_folder));
+        let submit_parent = parent.clone();
+        window.open_dialog(
+            "lithe-explorer-new-entry",
+            move |id, _window, _cx| {
+                let check = check.clone();
+                let shell = shell.clone();
+                let parent = submit_parent.clone();
+                PromptDialog::new(id, title.clone(), &field, dismiss_hosted)
+                    .label(label.clone())
+                    .submit(submit.clone())
+                    .check(move |text| check(text))
+                    .on_submit(move |text, window, cx| {
+                        let name = text.to_string();
+                        let _ = shell.update(cx, |shell, cx| {
+                            shell.finish_new_entry(parent.clone(), is_folder, name, window, cx)
+                        });
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
+    }
+
+    /// Creates the named entry under `parent`: a file through the editor's `create_file` (the menu
+    /// path shares it), a folder through `create_dir`. Both reveal the new row afterwards.
+    fn finish_new_entry(
+        &mut self,
+        parent: PathBuf,
+        is_folder: bool,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let target = parent.join(&name);
+        if is_folder {
+            match std::fs::create_dir(&target) {
+                Ok(()) => {
+                    println!(
+                        "S1_EXPLORER new result=applied kind=folder path={}",
+                        target.display()
+                    );
+                    self.explorer.update(cx, |explorer, cx| {
+                        explorer.refresh_and_reveal(target, window, cx)
+                    });
+                }
+                Err(error) => {
+                    eprintln!(
+                        "S1_EXPLORER new result=failed kind=folder path={} error={error}",
+                        target.display()
+                    );
+                    self.notify(
+                        lithe_gpui_notify::Input::new(
+                            "lithe.files.createFileFailedMessage",
+                            lithe_gpui_notify::Severity::Error,
+                        )
+                        .param("error", error.to_string())
+                        .key("lithe.files.createFileFailedMessage"),
+                        cx,
+                    );
+                }
+            }
+            return;
+        }
+        self.editor.update(cx, |pane, cx| {
+            pane.create_file(Some(parent), name, window, cx)
+        });
+        // The check already refused an existing name, so a file at `target` is the one just made.
+        self.reveal_created(target, window, cx);
+    }
+
+    /// The tree's inline rename, committed: re-check, rename on disk, move every pane-owned path
+    /// table, reload the tree, and land on the new row. The inline check already ran; the rules
+    /// are re-run here because the check and the write are not one transaction.
+    fn perform_rename(
+        &mut self,
+        path: &Path,
+        name: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(key) = invalid_name_key(name) {
+            eprintln!(
+                "S1_EXPLORER rename result=invalid path={} name={name}",
+                path.display()
+            );
+            self.notify(
+                lithe_gpui_notify::Input::new(key, lithe_gpui_notify::Severity::Warning).key(key),
+                cx,
+            );
+            return;
+        }
+        let Some(parent) = path.parent().map(Path::to_path_buf) else {
+            eprintln!(
+                "S1_EXPLORER rename result=no-parent path={}",
+                path.display()
+            );
+            return;
+        };
+        let target = parent.join(name);
+        if target != path && target.exists() {
+            // Case-only rename on a case-insensitive volume points at the same file: that is a
+            // legal rename, not a clash.
+            let same_file = matches!(
+                (target.canonicalize(), path.canonicalize()),
+                (Ok(a), Ok(b)) if a == b
+            );
+            if !same_file {
+                let key = if target.is_dir() {
+                    "lithe.fileExplorer.folderAlreadyExistsMessage"
+                } else {
+                    "lithe.fileExplorer.fileAlreadyExistsMessage"
+                };
+                eprintln!(
+                    "S1_EXPLORER rename result=exists path={} target={}",
+                    path.display(),
+                    target.display()
+                );
+                self.notify(
+                    lithe_gpui_notify::Input::new(key, lithe_gpui_notify::Severity::Warning)
+                        .key(key),
+                    cx,
+                );
+                return;
+            }
+        }
+        if let Err(error) = std::fs::rename(path, &target) {
+            eprintln!(
+                "S1_EXPLORER rename result=failed path={} target={} error={error}",
+                path.display(),
+                target.display()
+            );
+            self.notify(
+                lithe_gpui_notify::Input::new(
+                    "lithe.fileExplorer.moveFailed",
+                    lithe_gpui_notify::Severity::Error,
+                )
+                .key("lithe.fileExplorer.moveFailed"),
+                cx,
+            );
+            return;
+        }
+        eprintln!(
+            "S1_EXPLORER rename result=applied from={} to={}",
+            path.display(),
+            target.display()
+        );
+        self.editor
+            .update(cx, |pane, cx| pane.remap_paths(path, &target, window, cx));
+        self.explorer.update(cx, |explorer, cx| {
+            explorer.refresh_and_reveal(target, window, cx)
+        });
+        self.schedule_session_save(cx);
+    }
+
+    /// Reveals a path the shell just created, once the explorer has reloaded.
+    fn reveal_created(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        if path.exists() {
+            self.explorer.update(cx, |explorer, cx| {
+                explorer.refresh_and_reveal(path, window, cx)
+            });
+        }
+    }
+
+    /// 翻一个编辑器显示开关（缩略图 / 行号 / 空白渲染）：设置 store 是唯一真源，
+    /// 翻它 → 订阅把新档位同步给 `EditorPane`（与 `ToggleWordWrap` 同一条链）。
+    fn toggle_editor_display(&mut self, action: MenuAction, cx: &mut Context<Self>) {
+        let Some(store) = lithe_gpui_settings::try_store(cx) else {
+            eprintln!(
+                "S1_MENU notWired id={} missing=no_settings_store",
+                action.label_key().trim_start_matches("lithe.")
+            );
+            return;
+        };
+        let settings = store.read(cx).settings().clone();
+        let next = match action {
+            MenuAction::ToggleMinimap => !settings.minimap,
+            MenuAction::ToggleLineNumbers => !settings.line_numbers,
+            MenuAction::ToggleRenderWhitespace => !settings.render_whitespace,
+            _ => return,
+        };
+        store.update(cx, |store, cx| match action {
+            MenuAction::ToggleMinimap => store.set_minimap(next, cx),
+            MenuAction::ToggleLineNumbers => store.set_line_numbers(next, cx),
+            MenuAction::ToggleRenderWhitespace => store.set_render_whitespace(next, cx),
+            _ => {}
+        });
+        diagnose_menu_run(action, if next { "on" } else { "off" });
     }
 
     fn apply_zoom(&mut self, action: MenuAction, cx: &mut Context<Self>) {
@@ -2862,16 +3356,80 @@ impl ShellWorkspace {
 gpui::actions!(lithe_workbench, [OpenProjectFolder]);
 
 pub fn install_open_project_action(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("ctrl-o", OpenProjectFolder, None)]);
+    // `secondary-o` = macOS ⌘O / 其他 Ctrl+O，与 gpui 的平台归一化口径一致；旧写的 `ctrl-o`
+    // 在 macOS 上错位（F2）。
+    cx.bind_keys([KeyBinding::new("secondary-o", OpenProjectFolder, None)]);
     cx.on_action(|_: &OpenProjectFolder, cx: &mut App| {
         let bar = crate::menu_bar::try_handle();
         let Some(bar) = bar else {
-            eprintln!("S1_MENU_KEY id=lithe.menu.openFolder source=ctrl-o state=no_menu_bar");
+            eprintln!("S1_MENU_KEY id=lithe.menu.openFolder source=secondary-o state=no_menu_bar");
             return;
         };
         let _ = bar.update(cx, |bar, cx| bar.push_run(MenuAction::OpenFolder, cx));
-        eprintln!("S1_MENU_KEY id=lithe.menu.openFolder source=ctrl-o state=pushed");
+        eprintln!("S1_MENU_KEY id=lithe.menu.openFolder source=secondary-o state=pushed");
     });
+}
+
+/// F3 / Shift+F3 arrive as global listener callbacks (they carry no `MenuAction`): find the shell's
+/// open editor and step its find bar. With no live shell there is nothing to step — the find bar
+/// never opened, and `find_step` reports the closed case itself (B3-14).
+pub fn route_find_step(forward: bool, cx: &mut App) {
+    let Some(shell) = crate::command_palette::shell().and_then(|shell| shell.upgrade()) else {
+        eprintln!("S1_EDITOR_FIND step={forward} result=no-shell");
+        return;
+    };
+    let Some(window) = cx.active_window() else {
+        eprintln!("S1_EDITOR_FIND step={forward} result=no-window");
+        return;
+    };
+    let _ = window.update(cx, |_view, window, cx| {
+        let _ = shell.update(cx, |shell, cx| {
+            shell
+                .editor
+                .update(cx, |pane, cx| pane.find_step(forward, window, cx));
+        });
+    });
+}
+
+/// The syntactic half of the name rules, shared by the shell's own checks (the tree carries its
+/// own copy because it must answer synchronously while typing, inside the component library).
+/// `None` means the name is at least shaped like a legal child.
+///
+/// `trim()` 只用来判「是不是空的」：名字**原样**参与其余规则 —— 尾随空格 / 尾随点是真源里
+/// 「名称非法」的判据（交互规范 §1.6 规则表），先 trim 会把它们抹掉，永远拦不住。
+fn invalid_name_key(name: &str) -> Option<&'static str> {
+    if name.trim().is_empty() {
+        return Some("lithe.files.invalidFileName");
+    }
+    if name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0')
+        || name.ends_with('.')
+        || name.ends_with(' ')
+        || lithe_gpui_explorer::is_windows_reserved(name)
+    {
+        return Some("lithe.files.invalidFileNameCharacters");
+    }
+    None
+}
+
+/// `PromptDialog::check` for the tree's New File / New Folder: the name must be shaped legally and
+/// must not already exist in `parent`. The reason comes back to be shown under the field.
+fn check_new_name(parent: &Path, name: &str, is_dir: bool) -> Result<(), SharedString> {
+    // 名字**原样**进校验（`invalid_name_key` 内部只对判空用 trim）：与行内改名同源，
+    // 尾随空格 / 尾随点都必须被拒。
+    if let Some(key) = invalid_name_key(name) {
+        return Err(tr(key));
+    }
+    if parent.join(name).exists() {
+        let key = if is_dir {
+            "lithe.fileExplorer.folderAlreadyExistsMessage"
+        } else {
+            "lithe.fileExplorer.fileAlreadyExistsMessage"
+        };
+        return Err(tr(key));
+    }
+    Ok(())
 }
 
 impl Drop for ShellWorkspace {
@@ -3395,7 +3953,8 @@ fn register_java_toolchain(root: &Path, cx: &App) {
 #[cfg(test)]
 mod tests {
     use gpui::prelude::*;
-    use gpui::{AppContext as _, TestAppContext, div, rems};
+    use gpui::{TestAppContext, div, rems};
+    use lithe_gpui_shared::tr;
     use lithe_ui::layout::DockSide;
 
     use super::{
@@ -3405,10 +3964,11 @@ mod tests {
         RIGHT_TOOL_WINDOW_MAX_WIDTH_SPEC, RIGHT_TOOL_WINDOW_MIN_WIDTH_SPEC,
         RIGHT_TOOL_WINDOW_MIN_WORKSPACE_WIDTH_SPEC, RIGHT_TOOL_WINDOW_WIDTH_SPEC, RightScanState,
         RightToolWindowView, SIDEBAR_MAX_WIDTH_SPEC, SIDEBAR_MIN_EDITOR_WIDTH_SPEC,
-        SIDEBAR_MIN_WIDTH_SPEC, ToolchainPaths, dock_with_panels, left_activity_index,
-        resolve_overrides, resolve_project_open_destination, right_scan_should_notify,
-        visible_commands, wanted_panels,
+        SIDEBAR_MIN_WIDTH_SPEC, ToolchainPaths, check_new_name, dock_with_panels, invalid_name_key,
+        left_activity_index, resolve_overrides, resolve_project_open_destination,
+        right_scan_should_notify, visible_commands, wanted_panels,
     };
+    use std::path::{Path, PathBuf};
 
     /// 窗口尺寸规格仍写在宿主侧，但上下限现在由 dock 持有：三块工具窗的
     /// 区间必须与 macOS 真源一致（见 `UI-MAP.md`）。
@@ -3566,6 +4126,8 @@ mod tests {
             );
         }
 
+        // 与 `menu_bar` 的 `b2_actions_are_wired_and_only_bound_ones_carry_a_key` 同一条契约：
+        // 菜单里带键帽的动作，顺序与键位必须与真源一致（改它就是改验证脚本）。
         let with_key: Vec<&'static str> = listed
             .iter()
             .filter_map(|action| action.menu_key())
@@ -3574,12 +4136,23 @@ mod tests {
             with_key,
             vec![
                 crate::menu_bar::KEY_REOPEN_CLOSED_TAB,
+                crate::menu_bar::KEY_FIND,
+                crate::menu_bar::KEY_FIND_REPLACE,
+                "secondary-/",
+                "secondary-shift-d",
+                "secondary-y",
+                "secondary-alt-shift-up",
+                "secondary-alt-shift-down",
                 crate::menu_bar::KEY_TOGGLE_ACTIVITY_SIDEBAR,
                 crate::menu_bar::KEY_TOGGLE_TERMINAL,
                 crate::menu_bar::KEY_ZOOM_IN,
                 crate::menu_bar::KEY_ZOOM_OUT,
                 crate::menu_bar::KEY_RESET_ZOOM,
                 crate::menu_bar::KEY_GO_TO_LINE,
+                crate::menu_bar::KEY_GO_BACK,
+                crate::menu_bar::KEY_GO_FORWARD,
+                "ctrl-tab",
+                "ctrl-shift-tab",
             ]
         );
     }
@@ -3971,5 +4544,83 @@ mod tests {
             RightToolWindowView::Maven,
             false,
         ));
+    }
+
+    /// 一个用完自删的临时目录：断言失败也会跑 `Drop`，名字带时间戳与序号避免并行测试撞名
+    /// （`write-stable-tests`：每个资源有且仅有一个拥有者与一条清理路径）。
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new(tag: &str) -> Self {
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static SEQ: AtomicU32 = AtomicU32::new(0);
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!("lithe-workbench-{tag}-{nanos}-{seq}"));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    /// 新建名的语法校验：空串、路径分隔符、尾随点/空格、Windows 保留名全部拒绝，其余放行。
+    /// 规则与 `explorer` 里行内改名同源（两边各自持有，因为分了层）。
+    #[test]
+    fn new_names_refuse_the_shapes_the_disk_refuses() {
+        assert_eq!(invalid_name_key(""), Some("lithe.files.invalidFileName"));
+        for bad in [
+            "a/b", "a\\b", "a\0b", "name.", "name ", "CON", "con.txt", "LPT3", "nul",
+        ] {
+            assert_eq!(
+                invalid_name_key(bad),
+                Some("lithe.files.invalidFileNameCharacters"),
+                "{bad:?} 应当被拒绝"
+            );
+        }
+        for good in ["Foo.java", "a b", "COM0", "LPT10", "conifer", "name..d"] {
+            assert_eq!(invalid_name_key(good), None, "{good:?} 应当放行");
+        }
+    }
+
+    /// 新建名的存在性校验：同目录已存在同名文件/目录时拦下，并把「哪一类重名」说清楚；
+    /// 名字**不做 trim**（只判空时用），尾随空格按非法字符拒绝。走临时的真实目录，不依赖工作区。
+    #[test]
+    fn a_new_child_must_not_already_be_there() {
+        let dir = TestDir::new("new-child");
+        std::fs::write(dir.path().join("taken.txt"), b"").expect("seed file");
+        std::fs::create_dir(dir.path().join("taken-dir")).expect("seed dir");
+
+        assert_eq!(
+            check_new_name(dir.path(), "taken.txt", false),
+            Err(tr("lithe.fileExplorer.fileAlreadyExistsMessage")),
+        );
+        assert_eq!(
+            check_new_name(dir.path(), "taken-dir", true),
+            Err(tr("lithe.fileExplorer.folderAlreadyExistsMessage")),
+        );
+        // 没人占用就放行；全空白名按「空」拒绝；尾随空格按「非法字符」拒绝（名字不做 trim）。
+        assert!(check_new_name(dir.path(), "free.txt", false).is_ok());
+        assert_eq!(
+            check_new_name(dir.path(), "   ", false),
+            Err(tr("lithe.files.invalidFileName")),
+        );
+        assert_eq!(
+            check_new_name(dir.path(), "free.txt ", false),
+            Err(tr("lithe.files.invalidFileNameCharacters")),
+        );
     }
 }

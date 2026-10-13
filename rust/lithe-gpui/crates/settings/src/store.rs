@@ -578,6 +578,24 @@ impl SettingsStore {
         self.commit_global(cx, next, Effects::None);
     }
 
+    pub fn set_minimap(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.minimap = enabled;
+        self.commit_global(cx, next, Effects::None);
+    }
+
+    pub fn set_line_numbers(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.line_numbers = enabled;
+        self.commit_global(cx, next, Effects::None);
+    }
+
+    pub fn set_render_whitespace(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.render_whitespace = enabled;
+        self.commit_global(cx, next, Effects::None);
+    }
+
     pub fn set_auto_save(&mut self, enabled: bool, cx: &mut Context<Self>) {
         let mut next = self.global.clone();
         next.auto_save = enabled;

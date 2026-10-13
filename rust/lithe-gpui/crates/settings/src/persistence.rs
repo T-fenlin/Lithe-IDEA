@@ -199,6 +199,11 @@ mod tests {
             ask_where_to_open_projects: false,
             open_folders_in_new_window: false,
             word_wrap: false,
+            // 三项显示开关都取**非默认**值（出厂：缩略图关 / 行号开 / 空白关），
+            // 否则 `any_single_broken_key_leaves_every_other_key_intact` 拿不到它们的键。
+            minimap: true,
+            line_numbers: false,
+            render_whitespace: true,
             auto_save: false,
             font_family: "Inter".to_string(),
             mono_font_family: "JetBrains Mono".to_string(),
