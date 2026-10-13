@@ -1,5 +1,5 @@
-mod core_client;
 pub mod commands;
+mod core_client;
 pub mod design;
 mod document;
 pub mod empty_state;

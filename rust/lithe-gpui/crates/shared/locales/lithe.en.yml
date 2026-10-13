@@ -493,6 +493,8 @@ lithe:
     en: "Could not save \"{name}\". Check that the file is writable and try again."
   editor.autoSaveFailed:
     en: "Could not auto-save \"{name}\". Your changes are still open."
+  editor.saveAllUntitled:
+    en: "Save All left {count} untitled editor(s) unsaved. Use Save As."
   editor.externalConflict:
     en: "This file changed outside Lithe while you had unsaved edits."
   editor.externalReadFailed:
@@ -5979,6 +5981,8 @@ lithe:
     en: "Please open a folder first"
   files.createFileFailedMessage:
     en: "Failed to create file: {error}"
+  files.deleteFailed:
+    en: "Failed to delete \"{name}\": {error}"
   files.uploadFiles:
     en: "Upload Files"
   files.refresh:

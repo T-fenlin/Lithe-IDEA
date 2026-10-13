@@ -952,6 +952,11 @@ mod tests {
                 "折叠匹配的栈帧",
             ),
             ("lithe.debugger.gpui.pausedWithReason", "已暂停 · {reason}"),
+            ("lithe.files.deleteFailed", "删除“{name}”失败：{error}"),
+            (
+                "lithe.editor.saveAllUntitled",
+                "全部保存跳过了 {count} 个未命名编辑器，请对它们使用“另存为”。",
+            ),
         ];
 
         static LOCALE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

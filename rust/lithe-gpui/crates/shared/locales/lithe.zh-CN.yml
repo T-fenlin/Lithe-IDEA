@@ -493,6 +493,8 @@ lithe:
     zh-CN: "无法保存“{name}”。请检查文件是否可写，然后重试。"
   editor.autoSaveFailed:
     zh-CN: "无法自动保存“{name}”。更改仍保留在编辑器中。"
+  editor.saveAllUntitled:
+    zh-CN: "全部保存跳过了 {count} 个未命名编辑器，请对它们使用“另存为”。"
   editor.externalConflict:
     zh-CN: "该文件已在 Lithe 外部更改，同时编辑器中还有未保存的修改。"
   editor.externalReadFailed:
@@ -5979,6 +5981,8 @@ lithe:
     zh-CN: "请先打开一个文件夹"
   files.createFileFailedMessage:
     zh-CN: "创建文件失败：{error}"
+  files.deleteFailed:
+    zh-CN: "删除“{name}”失败：{error}"
   files.uploadFiles:
     zh-CN: "上传文件"
   files.refresh:

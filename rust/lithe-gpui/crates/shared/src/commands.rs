@@ -187,7 +187,13 @@ mod tests {
 
     #[test]
     fn unknown_ids_are_rejected() {
-        for id in ["", "open-settings ", "OpenSettings", "save-buffer-x", "文件保存"] {
+        for id in [
+            "",
+            "open-settings ",
+            "OpenSettings",
+            "save-buffer-x",
+            "文件保存",
+        ] {
             assert_eq!(CommandId::from_id(id), None, "{id:?} 不该被认出来");
         }
     }
