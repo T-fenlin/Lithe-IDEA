@@ -32,3 +32,7 @@ lsp-types = { version = "0.97", features = ["proposed"] }
 # 语言注册表是进程级全局：凡是用到 `language_for_file` 的测试都得先注册一次。
 # 它只依赖 `lithe-ui`（不反向依赖本 crate），所以这里不会成环。
 lithe-gpui-languages = { path = "../languages" }
+# `TestAppContext` / `#[gpui::test]` 在 gpui 的 `test-support` feature 后面，**只能从
+# dev-dependency 打开**，否则生产制品也会装上测试用的观察接口（上游 `test.md` 的口径）。
+# 查找条与文件生命周期的宿主行为要真的开一个窗口、建一个 `EditorPane` 才测得到。
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker", "test-support"] }

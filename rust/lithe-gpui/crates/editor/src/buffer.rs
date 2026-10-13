@@ -171,7 +171,41 @@ fn labelled(name: &SharedString, segment: &str) -> SharedString {
     }
 }
 
+/// A buffer's stable identity: a file on disk, or a scratch buffer that has no path yet.
+///
+/// Files are keyed by their path, so opening the same file twice lands on the same tab. Scratch
+/// buffers have no path, so they carry a number that a pane never reuses; that keeps two of them
+/// distinct and lets Save As move one onto a path key without an ambiguous duplicate.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum BufferKey {
+    Disk(PathBuf),
+    Untitled(u32),
+}
+
+impl BufferKey {
+    /// The path of a file on disk; `None` for a scratch buffer.
+    pub(crate) fn disk_path(&self) -> Option<&Path> {
+        match self {
+            BufferKey::Disk(path) => Some(path),
+            BufferKey::Untitled(_) => None,
+        }
+    }
+
+    /// The path shown and used for a tab id: real files use their path, scratch buffers the name
+    /// they display, which is unique because the number never repeats within a pane.
+    pub(crate) fn display(&self, name: &str) -> PathBuf {
+        match self {
+            BufferKey::Disk(path) => path.clone(),
+            BufferKey::Untitled(_) => PathBuf::from(name),
+        }
+    }
+}
+
 pub(crate) struct Buffer {
+    /// The identity every lookup compares on (never `name`, which can collide across folders).
+    pub(crate) key: BufferKey,
+    /// The file path for a disk buffer, or the display name for a scratch buffer; the latter is
+    /// only ever shown, never opened or written — use [`Self::disk_path`] for those.
     pub(crate) path: PathBuf,
     pub(crate) name: SharedString,
     pub(crate) icon: FileIcon,
@@ -188,14 +222,16 @@ pub(crate) struct Buffer {
 
 impl Buffer {
     pub(crate) fn new(
-        path: PathBuf,
+        key: BufferKey,
         name: SharedString,
         icon: FileIcon,
         editor: Entity<CodeEditor>,
         writable: bool,
         subscriptions: Vec<Subscription>,
     ) -> Self {
+        let path = key.display(&name);
         Self {
+            key,
             path,
             name,
             icon,
@@ -209,6 +245,15 @@ impl Buffer {
             diagnostics_task: None,
             _subscriptions: subscriptions,
         }
+    }
+
+    /// The file path this buffer is backed by, or `None` for a scratch buffer.
+    pub(crate) fn disk_path(&self) -> Option<&Path> {
+        self.key.disk_path()
+    }
+
+    pub(crate) fn is_disk(&self) -> bool {
+        matches!(self.key, BufferKey::Disk(_))
     }
 }
 

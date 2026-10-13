@@ -12,7 +12,7 @@
 //! 用的字符列口径。
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lithe_gpui_java::{JavaLanguageService, JavaTarget};
 use lithe_gpui_shared::core_json;
@@ -349,6 +349,35 @@ impl JumpHistory {
         }
         self.entries.push(entry);
     }
+
+    /// Points every entry whose path moved with `from` at its new home (a renamed file, or a whole
+    /// folder's subtree).
+    pub(crate) fn remap(&mut self, from: &Path, to: &Path) {
+        for entry in &mut self.entries {
+            if let Some(moved) = remap_path(&entry.path, from, to) {
+                entry.path = moved;
+            }
+        }
+    }
+
+    /// Drops every entry under `target` (a deleted file or folder). The current position is reset
+    /// because the surviving indices shift; the next Back re-derives it.
+    pub(crate) fn remove_path(&mut self, target: &Path) {
+        let before = self.entries.len();
+        self.entries
+            .retain(|entry| remap_path(&entry.path, target, target).is_none());
+        if self.entries.len() != before {
+            self.current_index = None;
+        }
+    }
+}
+
+/// Rewrites `path` when it sits at or under `from`, moving it under `to`. Matching is by whole
+/// path components (`Path::strip_prefix`), so renaming `a/b` leaves `a/bc` alone. `None` when
+/// `path` is elsewhere.
+pub(crate) fn remap_path(path: &Path, from: &Path, to: &Path) -> Option<PathBuf> {
+    let rest = path.strip_prefix(from).ok()?;
+    Some(to.join(rest))
 }
 
 #[cfg(test)]
@@ -585,5 +614,70 @@ mod tests {
             Some(10),
             "溢出时丢的是最旧的一项"
         );
+    }
+
+    #[test]
+    fn renaming_a_folder_moves_its_entries_and_leaves_neighbours_alone() {
+        let mut history = JumpHistory::default();
+        history.record(entry("/ws/a/b/Main.java", 1, 0));
+        history.record(entry("/ws/a/bc/Other.java", 2, 0));
+        history.record(entry("/ws/z/Third.java", 3, 0));
+
+        history.remap(Path::new("/ws/a/b"), Path::new("/ws/a/renamed"));
+
+        let paths: Vec<String> = history
+            .entries
+            .iter()
+            .map(|entry| entry.path.to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                "/ws/a/renamed/Main.java",
+                "/ws/a/bc/Other.java",
+                "/ws/z/Third.java",
+            ],
+            "只改前缀在 `a/b` 下的项；`a/bc` 是按组件匹配的邻居，不受影响"
+        );
+    }
+
+    #[test]
+    fn remap_matches_a_whole_file_path_exactly() {
+        assert_eq!(
+            remap_path(
+                Path::new("/ws/Old.java"),
+                Path::new("/ws/Old.java"),
+                Path::new("/ws/New.java")
+            ),
+            Some(PathBuf::from("/ws/New.java"))
+        );
+        assert_eq!(
+            remap_path(
+                Path::new("/ws/Old.java.bak"),
+                Path::new("/ws/Old.java"),
+                Path::new("/ws/New.java")
+            ),
+            None,
+            "同目录下的相似名字不是同一个文件"
+        );
+    }
+
+    #[test]
+    fn a_deleted_folder_takes_its_entries_with_it() {
+        let mut history = JumpHistory::default();
+        history.record(entry("/ws/gone/Main.java", 1, 0));
+        history.record(entry("/ws/gone/deep/Other.java", 2, 0));
+        history.record(entry("/ws/gonex/Keep.java", 3, 0));
+        history.current_index = Some(1);
+
+        history.remove_path(Path::new("/ws/gone"));
+
+        let paths: Vec<String> = history
+            .entries
+            .iter()
+            .map(|entry| entry.path.to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert_eq!(paths, vec!["/ws/gonex/Keep.java"]);
+        assert_eq!(history.current_index, None, "下标已被删项打乱，需要重算");
     }
 }

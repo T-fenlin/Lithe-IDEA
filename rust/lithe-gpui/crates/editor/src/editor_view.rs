@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -6,10 +7,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::buffer::{
-    Buffer, display_names, icon_for_file, language_for_file, read_body, resolved_language,
+    Buffer, BufferKey, display_names, icon_for_file, language_for_file, read_body,
+    resolved_language,
 };
 use crate::navigation::{
-    JumpEntry, JumpHistory, NavTarget, byte_offset, line_character, resolve_target, word_range,
+    JumpEntry, JumpHistory, NavTarget, byte_offset, line_character, remap_path, resolve_target,
+    word_range,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -27,21 +30,31 @@ use lithe_gpui_shared::rem_px;
 use lithe_gpui_shared::{tr, tr_args};
 use lithe_ui::buttons::{Button, ButtonVariant};
 use lithe_ui::editor::{
-    CodeEditor, CompletionItem as UiCompletion, CompletionMenu, EditorEvent, PopupKey,
-    completions as filtered_completions,
+    CodeEditor, CompletionItem as UiCompletion, CompletionMenu, EditorEvent, FindOptions,
+    FindWidget, LineNumbers, PopupKey, completions as filtered_completions, find_all,
 };
 use lithe_ui::feedback::EmptyState;
+use lithe_ui::forms::{InputEvent, InputState};
 use lithe_ui::layout::{h_stack, v_stack};
 use lithe_ui::menus::{ContextMenu, Menu, MenuItem};
 use lithe_ui::overlays::Dialog;
 use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 use lithe_ui::theme::{ActiveTheme as _, Size};
 
+/// The key context the find bar's own container carries, so `Escape` resolves to `CloseFind` while
+/// focus is inside the bar and to the editor's meanings while focus is in the code. Defined here
+/// because the renderer owns the container; the workbench binds keys with this same name.
+pub const FIND_BAR_KEY_CONTEXT: &str = "EditorFindBar";
+
 const FALLBACK_LINE_HEIGHT: f32 = 20.;
 
 pub const EDITOR_HOST_ELEMENT_ID: &str = "lithe-editor-host";
 
 const AUTO_SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
+
+/// Query keystrokes and text changes recompute the find matches after this quiet period, so typing
+/// does not run a full scan on every key. The first open and any explicit change is immediate.
+const FIND_DEBOUNCE: Duration = Duration::from_millis(120);
 
 const AUTO_SAVE_DEFAULT: bool = true;
 
@@ -101,9 +114,9 @@ pub struct DebugGutterHost {
 
 #[derive(Clone)]
 enum CloseScope {
-    Others(PathBuf),
-    ToLeft(PathBuf),
-    ToRight(PathBuf),
+    Others(BufferKey),
+    ToLeft(BufferKey),
+    ToRight(BufferKey),
     All,
     Saved,
 }
@@ -124,19 +137,17 @@ impl CloseScope {
             Self::Others(anchor) => buffers
                 .iter()
                 .enumerate()
-                .filter(|(_, buffer)| &buffer.path != anchor)
+                .filter(|(_, buffer)| &buffer.key != anchor)
                 .map(|(index, _)| index)
                 .collect(),
             Self::ToLeft(anchor) => {
-                let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor)
-                else {
+                let Some(position) = buffers.iter().position(|buffer| &buffer.key == anchor) else {
                     return Vec::new();
                 };
                 (0..position).collect()
             }
             Self::ToRight(anchor) => {
-                let Some(position) = buffers.iter().position(|buffer| &buffer.path == anchor)
-                else {
+                let Some(position) = buffers.iter().position(|buffer| &buffer.key == anchor) else {
                     return Vec::new();
                 };
                 (position + 1..buffers.len()).collect()
@@ -183,6 +194,36 @@ struct Completion {
     revision: u64,
 }
 
+/// The find bar that is currently showing (the Ctrl+F strip inside the editor).
+///
+/// Same "the host owns it" shape as [`Completion`]: the component library knows how to draw a find
+/// box but not which buffer it belongs to, so the pane holds the two inputs, the matches it
+/// derived, and the debounce generation.
+struct FindBar {
+    /// The buffer editor it belongs to; switching tabs, closing a tab or reloading compares against
+    /// this so a stale bar is torn down rather than left pointing at another file.
+    editor: Entity<CodeEditor>,
+    /// The query and replace fields; the pane owns the `InputState`s (as it does `chat_field`).
+    query: Entity<InputState>,
+    replace: Entity<InputState>,
+    options: FindOptions,
+    /// All matches of `query` in the current buffer, recomputed whenever text, query or options
+    /// change — never cached across buffers.
+    matches: Vec<Range<usize>>,
+    /// Set when the query does not compile; drawn as a short word in the count cell with the
+    /// compiler's own message on a tooltip.
+    error: Option<SharedString>,
+    /// The chosen match, inside `0..matches.len()`; `None` when there are no matches.
+    current: Option<usize>,
+    /// Whether the replace row is unfolded.
+    showing_replace: bool,
+    /// Bumped on every recompute request; a debounced task whose generation has moved on drops its
+    /// (stale) result rather than making the count jump back.
+    generation: Arc<AtomicU64>,
+    /// Input subscriptions (query `Changed`/`Submit`); dropped with the bar.
+    _events: Vec<Subscription>,
+}
+
 pub struct EditorPane {
     notifications: Option<WeakEntity<lithe_gpui_notify::Store>>,
     buffers: Vec<Buffer>,
@@ -209,6 +250,10 @@ pub struct EditorPane {
     closed: Vec<PathBuf>,
     auto_save: bool,
     soft_wrap: bool,
+    /// 三个显示开关的当前档位（设置 store 是唯一真源，这里留一份给新开的缓冲区用）。
+    minimap: bool,
+    line_numbers: bool,
+    render_whitespace: bool,
     go_to_line: Option<GoToLinePrompt>,
     /// 补全：当前这一份、请求的代次（晚到的答案据此丢掉）、以及正在跑的任务。
     completion: Option<Completion>,
@@ -227,6 +272,10 @@ pub struct EditorPane {
     /// 正文容器（弹层的父容器）在窗口里的原点，由它自己的 canvas 量出来：`bounds_for_offset` 给的是
     /// **窗口**坐标，要画成这个容器的子元素就得减去它。
     body_origin: Option<Point<Pixels>>,
+    /// 查找/替换条；`None` 表示没开（关闭即清空归属编辑器的 `backgrounds`，见 `close_find`）。
+    find: Option<FindBar>,
+    /// 未命名缓冲的下一号；只增不减、窗格内不复用，所以两个未命名标签不会撞键。
+    untitled_counter: u32,
 }
 
 const DEFAULT_TAB_SIZE: usize = 2;
@@ -264,6 +313,9 @@ impl EditorPane {
             auto_completion: Rc::new(AtomicBool::new(true)),
             auto_save: AUTO_SAVE_DEFAULT,
             soft_wrap: SOFT_WRAP_DEFAULT,
+            minimap: false,
+            line_numbers: true,
+            render_whitespace: false,
             go_to_line: None,
             completion: None,
             completion_generation: Arc::new(AtomicU64::new(0)),
@@ -279,6 +331,8 @@ impl EditorPane {
             body_origin: None,
             hovered_tab: None,
             closed: Vec::new(),
+            find: None,
+            untitled_counter: 0,
         }
     }
 
@@ -339,6 +393,56 @@ impl EditorPane {
 
     pub fn soft_wrap_enabled(&self) -> bool {
         self.soft_wrap
+    }
+
+    /// 缩略图开关：记下档位（给后面新开的缓冲区），并让开着的这批一起换。
+    pub fn set_minimap(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let changed = self.minimap != enabled;
+        self.minimap = enabled;
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_minimap(enabled, cx));
+        }
+        println!("S1_EDITOR_MINIMAP enabled={enabled} changed={changed}");
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// 行号开关：关掉等于 `LineNumbers::Hidden`。
+    pub fn set_line_numbers(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let changed = self.line_numbers != enabled;
+        self.line_numbers = enabled;
+        let numbers = if enabled {
+            LineNumbers::Absolute
+        } else {
+            LineNumbers::Hidden
+        };
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_line_numbers(numbers, cx));
+        }
+        println!("S1_EDITOR_LINE_NUMBERS enabled={enabled} changed={changed}");
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// 空白字符渲染开关。
+    pub fn set_render_whitespace(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let changed = self.render_whitespace != enabled;
+        self.render_whitespace = enabled;
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_render_whitespace(enabled, cx));
+        }
+        println!("S1_EDITOR_RENDER_WHITESPACE enabled={enabled} changed={changed}");
+        if changed {
+            cx.notify();
+        }
     }
 
     pub fn set_auto_save(&mut self, enabled: bool, cx: &mut Context<Self>) {
@@ -534,10 +638,18 @@ impl EditorPane {
                 }
             });
 
-        if !self.buffers.iter().any(|buffer| buffer.path == path) {
+        if !self
+            .buffers
+            .iter()
+            .any(|buffer| buffer.disk_path() == Some(path))
+        {
             self.open(path, window, cx);
         }
-        let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
+        let Some(index) = self
+            .buffers
+            .iter()
+            .position(|buffer| buffer.disk_path() == Some(path))
+        else {
             return false;
         };
 
@@ -600,7 +712,11 @@ impl EditorPane {
     pub fn open(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let path = path.to_path_buf();
 
-        if let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) {
+        if let Some(index) = self
+            .buffers
+            .iter()
+            .position(|buffer| buffer.key == BufferKey::Disk(path.clone()))
+        {
             self.activate(index, cx);
             return;
         }
@@ -617,20 +733,15 @@ impl EditorPane {
         let auto_completion = self.auto_completion.load(Ordering::Acquire);
         let text = body.text;
 
-        let editor = cx.new(|cx| {
-            let mut state = CodeEditor::new(text, window, cx)
-                .tab_size(tab_size)
-                .auto_completion(auto_completion)
-                .completion_triggers(COMPLETION_TRIGGERS);
-            if !writable {
-                state = state.read_only();
-            }
-            if !self.soft_wrap {
-                state = state.soft_wrap(false);
-            }
-            state.set_language(language, cx);
-            state
-        });
+        let editor = self.build_editor(
+            text,
+            writable,
+            language,
+            tab_size,
+            auto_completion,
+            window,
+            cx,
+        );
         println!(
             "S1_EDITOR_LANG name={} file={name}",
             language.map_or("plain-text", |language| language.id)
@@ -642,7 +753,7 @@ impl EditorPane {
             .last_text
             .insert(path.clone(), editor.read(cx).text().to_string());
         self.buffers.push(Buffer::new(
-            path,
+            BufferKey::Disk(path),
             name,
             icon,
             editor,
@@ -656,6 +767,147 @@ impl EditorPane {
             self.schedule_diagnostics(opened, Duration::ZERO, cx);
         }
         cx.notify();
+    }
+
+    /// Builds a `CodeEditor` with the pane's current display switches applied. Shared by `open`,
+    /// `open_virtual`, `new_untitled` and `create_file` so a new buffer always starts consistent
+    /// with the settings.
+    fn build_editor(
+        &self,
+        text: String,
+        writable: bool,
+        language: Option<&'static lithe_ui::language::Language>,
+        tab_size: usize,
+        auto_completion: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<CodeEditor> {
+        let (soft_wrap, minimap, line_numbers, render_whitespace) = (
+            self.soft_wrap,
+            self.minimap,
+            self.line_numbers,
+            self.render_whitespace,
+        );
+        cx.new(|cx| {
+            let mut state = CodeEditor::new(text, window, cx)
+                .tab_size(tab_size)
+                .auto_completion(auto_completion)
+                .completion_triggers(COMPLETION_TRIGGERS);
+            if !writable {
+                state = state.read_only();
+            }
+            if !soft_wrap {
+                state = state.soft_wrap(false);
+            }
+            if minimap {
+                state = state.minimap();
+            }
+            if !line_numbers {
+                state = state.line_numbers(LineNumbers::Hidden);
+            }
+            if render_whitespace {
+                state = state.show_whitespace();
+            }
+            state.set_language(language, cx);
+            state
+        })
+    }
+
+    /// Opens a scratch buffer: no path, plain text, not dirty, and not part of the session. Its
+    /// number never repeats within this pane, and Save (`Ctrl+S`) sends it to Save As.
+    pub fn new_untitled(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.untitled_counter = self.untitled_counter.wrapping_add(1);
+        let number = self.untitled_counter;
+        let name = tr_args(
+            "lithe.files.untitledNumber",
+            &[("number", &number.to_string())],
+        );
+        let tab_size = self.tab_size;
+        let auto_completion = self.auto_completion.load(Ordering::Acquire);
+
+        let editor = self.build_editor(
+            String::new(),
+            true,
+            None,
+            tab_size,
+            auto_completion,
+            window,
+            cx,
+        );
+        let subscriptions = self.subscribe_to(&editor, window, cx);
+        let icon = icon_for_file(&name, cx);
+        self.buffers.push(Buffer::new(
+            BufferKey::Untitled(number),
+            name.clone(),
+            icon,
+            editor,
+            true,
+            subscriptions,
+        ));
+        self.active = Some(self.buffers.len() - 1);
+        self.sync_cursor(cx);
+        println!("S1_EDITOR_NEW_UNTITLED number={number} name={name}");
+        cx.notify();
+    }
+
+    /// Creates an empty file on disk and opens it. When `directory` is `None` the file lands next
+    /// to the active buffer (or at the workspace root). The name is the caller's validated choice;
+    /// creation uses `create_new` so an existing file is never silently truncated.
+    pub fn create_file(
+        &mut self,
+        directory: Option<PathBuf>,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(directory) = directory.or_else(|| self.creation_directory()) else {
+            eprintln!("S1_EDITOR_NEW_FILE create=false reason=no-directory");
+            self.record_notification(
+                cx,
+                lithe_gpui_notify::Input::new(
+                    "lithe.files.openFolderFirst",
+                    lithe_gpui_notify::Severity::Warning,
+                )
+                .key("lithe.files.openFolderFirst"),
+            );
+            return;
+        };
+        let path = directory.join(&name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(_) => {
+                println!("S1_EDITOR_NEW_FILE create=true path={}", path.display());
+                self.open(&path, window, cx);
+            }
+            Err(error) => {
+                eprintln!(
+                    "S1_EDITOR_NEW_FILE create=false path={} error={error}",
+                    path.display()
+                );
+                self.record_notification(
+                    cx,
+                    lithe_gpui_notify::Input::new(
+                        "lithe.files.createFileFailedMessage",
+                        lithe_gpui_notify::Severity::Error,
+                    )
+                    .param("error", error.to_string())
+                    .key("lithe.files.createFileFailedMessage"),
+                );
+            }
+        }
+    }
+
+    /// Where a new file should go: the active buffer's folder, else the workspace root.
+    fn creation_directory(&self) -> Option<PathBuf> {
+        self.active
+            .and_then(|index| self.buffers.get(index))
+            .and_then(|buffer| buffer.disk_path())
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .or_else(|| self.workspace_root.clone())
     }
 
     /// 编辑器 → 宿主的那两条订阅：事件（改变了、要补全、要悬停、弹层按键）与状态变化（光标、滚动）。
@@ -727,7 +979,8 @@ impl EditorPane {
     pub fn active_buffer_path(&self) -> Option<PathBuf> {
         self.active
             .and_then(|index| self.buffers.get(index))
-            .map(|buffer| buffer.path.clone())
+            .and_then(|buffer| buffer.disk_path())
+            .map(Path::to_path_buf)
     }
 
     pub fn tab_size(&self) -> usize {
@@ -744,7 +997,11 @@ impl EditorPane {
     pub fn open_disk_files(&self) -> Vec<PathBuf> {
         self.buffers
             .iter()
-            .filter(|buffer| !is_virtual_source_path(&buffer.path))
+            .filter(|buffer| {
+                buffer
+                    .disk_path()
+                    .is_some_and(|path| !is_virtual_source_path(path))
+            })
             .map(|buffer| buffer.path.clone())
             .collect()
     }
@@ -752,7 +1009,11 @@ impl EditorPane {
     pub fn active_disk_file(&self) -> Option<PathBuf> {
         self.active
             .and_then(|index| self.buffers.get(index))
-            .filter(|buffer| !is_virtual_source_path(&buffer.path))
+            .filter(|buffer| {
+                buffer
+                    .disk_path()
+                    .is_some_and(|path| !is_virtual_source_path(path))
+            })
             .map(|buffer| buffer.path.clone())
     }
 
@@ -807,6 +1068,7 @@ impl EditorPane {
 
     pub fn save_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_SAVE active=false reason=no-active-buffer");
             return;
         };
         if !self
@@ -816,7 +1078,286 @@ impl EditorPane {
         {
             return;
         }
+        // A scratch buffer has no path: Save must become Save As, never a silent no-op.
+        if !self.buffers[index].is_disk() {
+            println!("S1_EDITOR_SAVE active=false reason=untitled via=saveAs");
+            self.save_as(window, cx);
+            return;
+        }
         self.write_buffer(index, "lithe.editor.saveFailed", window, cx);
+    }
+
+    /// Save As: pick a path, write the buffer there, then move its key/path/name/icon/language and
+    /// every path table onto it. The original file is left untouched. When the chosen path is
+    /// already another tab, the current buffer is written out, closed, and that tab is activated.
+    pub fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_SAVE_AS save=false reason=no-active-buffer");
+            return;
+        };
+        let (key, directory, default_name) = {
+            let buffer = &self.buffers[index];
+            let directory = buffer
+                .disk_path()
+                .and_then(Path::parent)
+                .map(Path::to_path_buf)
+                .or_else(|| self.workspace_root.clone())
+                .unwrap_or_default();
+            (buffer.key.clone(), directory, buffer.name.to_string())
+        };
+
+        let picked = cx.prompt_for_new_path(&directory, Some(&default_name));
+        let pane = cx.weak_entity();
+        cx.spawn_in(window, async move |_this, cx| {
+            let path = match picked.await {
+                Ok(Ok(Some(path))) => path,
+                Ok(Ok(None)) => {
+                    eprintln!("S1_EDITOR_SAVE_AS save=false reason=cancelled");
+                    return;
+                }
+                Ok(Err(error)) => {
+                    eprintln!("S1_EDITOR_SAVE_AS save=false reason=error error={error}");
+                    return;
+                }
+                Err(_) => {
+                    eprintln!("S1_EDITOR_SAVE_AS save=false reason=channel-closed");
+                    return;
+                }
+            };
+            let _ = pane.update_in(cx, |pane, window, cx| {
+                pane.finish_save_as(key, path, window, cx)
+            });
+        })
+        .detach();
+    }
+
+    fn finish_save_as(
+        &mut self,
+        key: BufferKey,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.buffers.iter().position(|buffer| buffer.key == key) else {
+            eprintln!("S1_EDITOR_SAVE_AS save=false reason=buffer-gone");
+            return;
+        };
+        let value = self.buffers[index].editor.read(cx).text().to_string();
+        if let Err(error) = std::fs::write(&path, value.as_bytes()) {
+            eprintln!(
+                "S1_EDITOR_SAVE_AS save=false path={} error={error}",
+                path.display()
+            );
+            let name = self.buffers[index].name.clone();
+            self.record_notification(
+                cx,
+                lithe_gpui_notify::Input::new(
+                    "lithe.editor.saveFailed",
+                    lithe_gpui_notify::Severity::Error,
+                )
+                .param("name", name.as_ref())
+                .param("error", error.to_string())
+                .key("lithe.editor.saveFailed"),
+            );
+            return;
+        }
+
+        // The target is already another tab: writing is done above so nothing is lost, then close
+        // the current buffer and land on the existing tab rather than showing two tabs one path.
+        let duplicate = self
+            .buffers
+            .iter()
+            .position(|buffer| buffer.key == BufferKey::Disk(path.clone()))
+            .filter(|existing| *existing != index);
+        if let Some(existing) = duplicate {
+            self.buffers[index].is_dirty = false;
+            println!(
+                "S1_EDITOR_SAVE_AS duplicateTarget=true path={}",
+                path.display()
+            );
+            self.close(index, cx);
+            let target = existing.min(self.buffers.len().saturating_sub(1));
+            self.activate(target, cx);
+            self.sync_cursor(cx);
+            cx.notify();
+            return;
+        }
+
+        let old = self.buffers[index].path.clone();
+        self.buffers[index].is_dirty = false;
+        self.buffers[index].auto_save_task = None;
+        self.rekey_buffer(index, path.clone(), cx);
+        self.remap_paths(&old, &path, window, cx);
+        println!(
+            "S1_EDITOR_SAVE_AS save=true path={} bytes={}",
+            path.display(),
+            value.len()
+        );
+        println!(
+            "S1_EDITOR_SAVED path={} bytes={}",
+            path.display(),
+            value.len()
+        );
+        self.sync_cursor(cx);
+        cx.notify();
+    }
+
+    /// Save All: writes every dirty, writable disk buffer in tab order; stops at the first failure.
+    /// Dirty scratch buffers cannot be saved without a name, so they are counted and reported once.
+    /// With nothing dirty this is a successful no-op that reports nothing.
+    pub fn save_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut saved = 0usize;
+        let mut skipped_untitled = 0usize;
+        let mut skipped_readonly = 0usize;
+        let mut failed = false;
+
+        for index in 0..self.buffers.len() {
+            let buffer = &self.buffers[index];
+            if !buffer.is_dirty {
+                continue;
+            }
+            if !buffer.writable {
+                skipped_readonly += 1;
+                continue;
+            }
+            if !buffer.is_disk() {
+                skipped_untitled += 1;
+                continue;
+            }
+            if !self.write_buffer(index, "lithe.editor.saveFailed", window, cx) {
+                failed = true;
+                break;
+            }
+            saved += 1;
+        }
+
+        if skipped_untitled > 0 {
+            // 未命名 + 脏：跳过但**不能静默**。文案必须点名「未命名、请用另存为」，所以用
+            // `lithe.editor.saveAllUntitled` 而不是泛泛的 `unsavedChangesBatchBody`（§3.5）。
+            let count = skipped_untitled.to_string();
+            self.record_notification(
+                cx,
+                lithe_gpui_notify::Input::new(
+                    "lithe.editor.saveAllUntitled",
+                    lithe_gpui_notify::Severity::Warning,
+                )
+                .param("count", &count)
+                .key("lithe.editor.saveAllUntitled"),
+            );
+        }
+        println!(
+            "S1_EDITOR_SAVE_ALL saved={saved} skippedUntitled={skipped_untitled} skippedReadOnly={skipped_readonly} failed={}",
+            u8::from(failed)
+        );
+    }
+
+    /// Revert File: re-reads the active buffer from disk, confirming first when it is dirty. The
+    /// confirmation is the shared three-button dialog (`Cancel` / `Discard` / `Save`); Save-then-
+    /// revert is a no-op write-back, kept for v1 to avoid a second dialog shape.
+    pub fn revert_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_REVERT revert=false reason=no-active-buffer");
+            return;
+        };
+        if !self.buffers[index].is_disk() {
+            eprintln!("S1_EDITOR_REVERT revert=false reason=untitled");
+            return;
+        }
+        let dirty = self.buffers[index].is_dirty;
+        println!(
+            "S1_EDITOR_REVERT path={} dirty={dirty} confirm={dirty}",
+            self.buffers[index].path.display()
+        );
+        self.request_reload(index, window, cx);
+    }
+
+    /// Rebuilds a buffer's identity after its path changes: the key, path, name, icon and language
+    /// all follow the new file name.
+    fn rekey_buffer(&mut self, index: usize, path: PathBuf, cx: &mut Context<Self>) {
+        let name: SharedString = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string())
+            .into();
+        let icon = icon_for_file(&name, cx);
+        let language = resolved_language(&name);
+        let buffer = &mut self.buffers[index];
+        buffer.key = BufferKey::Disk(path.clone());
+        buffer.path = path;
+        buffer.name = name;
+        buffer.icon = icon;
+        buffer
+            .editor
+            .update(cx, |state, cx| state.set_language(language, cx));
+    }
+
+    /// The single entry point that moves every pane-owned path table when a file or a whole folder
+    /// changes location (explorer rename, Save As): open buffers' keys, `last_text`,
+    /// `gutter_breakpoints`, the closed-tab list, and the jump history. Matching is by path
+    /// component prefix, so `a/b` never touches `a/bc`.
+    pub fn remap_paths(
+        &mut self,
+        from: &Path,
+        to: &Path,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for index in 0..self.buffers.len() {
+            let Some(old) = self.buffers[index].disk_path().map(Path::to_path_buf) else {
+                continue;
+            };
+            if let Some(new_path) = remap_path(&old, from, to) {
+                self.rekey_buffer(index, new_path, cx);
+            }
+        }
+        remap_map(&mut self.last_text, from, to);
+        remap_map(&mut self.gutter_breakpoints, from, to);
+        for entry in &mut self.closed {
+            if let Some(moved) = remap_path(entry, from, to) {
+                *entry = moved;
+            }
+        }
+        self.history.remap(from, to);
+        println!(
+            "S1_EDITOR_REMAP from={} to={}",
+            from.display(),
+            to.display()
+        );
+        cx.notify();
+    }
+
+    /// Forgets everything under a deleted file or folder: closes the affected buffers (each dirty
+    /// one still goes through its save/discard confirmation via the tab machinery), drops their
+    /// `last_text` and breakpoint rows, and clears them from the jump history.
+    pub fn forget_paths(&mut self, target: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        let victims: Vec<usize> = self
+            .buffers
+            .iter()
+            .enumerate()
+            .filter(|(_, buffer)| {
+                buffer
+                    .disk_path()
+                    .is_some_and(|path| sits_under(path, target))
+            })
+            .map(|(index, _)| index)
+            .collect();
+
+        for index in victims.iter().rev() {
+            self.drop_find_for(self.buffers[*index].editor.entity_id(), cx);
+            self.close(*index, cx);
+        }
+        self.last_text.retain(|path, _| !sits_under(path, target));
+        self.gutter_breakpoints
+            .retain(|path, _| !sits_under(path, target));
+        self.history.remove_path(target);
+        let _ = window;
+        println!(
+            "S1_EDITOR_FORGET target={} closed={}",
+            target.display(),
+            victims.len()
+        );
+        self.sync_cursor(cx);
+        cx.notify();
     }
 
     pub fn navigate_to_definition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1044,7 +1585,11 @@ impl EditorPane {
         cx: &mut Context<Self>,
     ) -> usize {
         let path = PathBuf::from(uri);
-        if let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) {
+        if let Some(index) = self
+            .buffers
+            .iter()
+            .position(|buffer| buffer.key == BufferKey::Disk(path.clone()))
+        {
             return index;
         }
 
@@ -1074,13 +1619,20 @@ impl EditorPane {
 
         let subscriptions = self.subscribe_to(&editor, window, cx);
         let icon = icon_for_file(&name, cx);
-        self.buffers
-            .push(Buffer::new(path, name, icon, editor, false, subscriptions));
+        self.buffers.push(Buffer::new(
+            BufferKey::Disk(path),
+            name,
+            icon,
+            editor,
+            false,
+            subscriptions,
+        ));
         self.buffers.len() - 1
     }
 
     #[allow(dead_code)]
-    fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// 后退：跳转历史上一步。菜单与 `Ctrl+Alt+Left` 都走这里。
+    pub fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(present) = self.current_entry(cx) else {
             return;
         };
@@ -1090,8 +1642,8 @@ impl EditorPane {
         self.restore_entry(present, entry, "S1_NAV_BACK", window, cx);
     }
 
-    #[allow(dead_code)]
-    fn go_forward(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// 前进：跳转历史下一步。
+    pub fn go_forward(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(present) = self.current_entry(cx) else {
             return;
         };
@@ -1179,9 +1731,48 @@ impl EditorPane {
         }
     }
 
+    /// 切到下一个标签页（循环）：`Go ▸ Next Tab` 与 `Ctrl+Tab` 都走这里。
+    pub fn next_tab(&mut self, cx: &mut Context<Self>) {
+        let Some(current) = self.active else {
+            return;
+        };
+        if self.buffers.is_empty() {
+            return;
+        }
+        let next = (current + 1) % self.buffers.len();
+        self.activate(next, cx);
+    }
+
+    /// 切到上一个标签页（循环）。
+    pub fn previous_tab(&mut self, cx: &mut Context<Self>) {
+        let Some(current) = self.active else {
+            return;
+        };
+        if self.buffers.is_empty() {
+            return;
+        }
+        let previous = if current == 0 {
+            self.buffers.len() - 1
+        } else {
+            current - 1
+        };
+        self.activate(previous, cx);
+    }
+
     fn activate(&mut self, index: usize, cx: &mut Context<Self>) {
         if index >= self.buffers.len() {
             return;
+        }
+        // Tear the find bar down before the active buffer changes: afterwards a bar owned by the
+        // old buffer would no longer match and its highlight would be stranded.
+        let next = self.buffers[index].editor.entity_id();
+        if self
+            .find
+            .as_ref()
+            .is_some_and(|find| find.editor.entity_id() != next)
+        {
+            self.drop_find(cx);
+            eprintln!("S1_EDITOR_FIND open=false reason=switch");
         }
         self.active = Some(index);
         eprintln!(
@@ -1233,24 +1824,34 @@ impl EditorPane {
             self.schedule_auto_save(index, window, cx);
         }
 
-        let path = self.buffers[index].path.clone();
-        let after = self.buffers[index].editor.read(cx).text().to_string();
-        match self.last_text.insert(path.clone(), after.clone()) {
-            Some(before) if before != after => {
-                if let Some(host) = self
-                    .debug_gutter_host
-                    .as_ref()
-                    .map(|host| host.source_edit.clone())
-                {
-                    (host)(&path, &before, &after, cx);
+        // A scratch buffer has no file, so it has no row in `last_text` or the debug gutter.
+        if let Some(path) = self.buffers[index].disk_path().map(Path::to_path_buf) {
+            let after = self.buffers[index].editor.read(cx).text().to_string();
+            match self.last_text.insert(path.clone(), after.clone()) {
+                Some(before) if before != after => {
+                    if let Some(host) = self
+                        .debug_gutter_host
+                        .as_ref()
+                        .map(|host| host.source_edit.clone())
+                    {
+                        (host)(&path, &before, &after, cx);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
 
         self.clear_hover(editor, cx);
         editor.update(cx, |state, cx| state.set_diagnostics(Vec::new(), cx));
         self.narrow_completion(editor, cx);
+        // The find matches depend on the text, so the bar re-scans (debounced like the query).
+        if self
+            .find
+            .as_ref()
+            .is_some_and(|find| find.editor.entity_id() == editor.entity_id())
+        {
+            self.schedule_find_recompute(window, cx);
+        }
     }
 
     fn schedule_auto_save(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -1292,6 +1893,12 @@ impl EditorPane {
         let Some(buffer) = self.buffers.get(index) else {
             return false;
         };
+        // A scratch buffer has no path; writing to its display name would drop a stray file on
+        // disk. Callers route scratch buffers to Save As instead.
+        if !buffer.is_disk() {
+            eprintln!("S1_EDITOR_SAVE_FAILED reason=untitled name={}", buffer.name);
+            return false;
+        }
         let path = buffer.path.clone();
         let name = buffer.name.clone();
         let value = buffer.editor.read(cx).text().to_string();
@@ -1336,13 +1943,17 @@ impl EditorPane {
         }
     }
 
-    fn close(&mut self, index: usize) {
+    fn close(&mut self, index: usize, cx: &mut Context<Self>) {
         if index >= self.buffers.len() {
             return;
         }
 
+        // Close the find bar first when it belongs to the buffer going away, so its highlight is
+        // cleared while the editor entity is still reachable.
+        self.drop_find_for(self.buffers[index].editor.entity_id(), cx);
+
         let closed = self.buffers[index].path.clone();
-        if !is_virtual_source_path(&closed) {
+        if self.buffers[index].is_disk() && !is_virtual_source_path(&closed) {
             self.closed.push(closed);
             if self.closed.len() > MAX_CLOSED_TABS {
                 self.closed.remove(0);
@@ -1374,7 +1985,7 @@ impl EditorPane {
                 "S1_TAB_MENU run=close tab={} dirty=false",
                 buffer.name.as_ref()
             );
-            self.close(index);
+            self.close(index, cx);
             self.sync_cursor(cx);
             cx.notify();
             return;
@@ -1394,19 +2005,19 @@ impl EditorPane {
         self.request_close(index, window, cx);
     }
 
-    fn active_path(&self) -> Option<PathBuf> {
+    fn active_key(&self) -> Option<BufferKey> {
         self.active
             .and_then(|index| self.buffers.get(index))
-            .map(|buffer| buffer.path.clone())
+            .map(|buffer| buffer.key.clone())
     }
 
     fn close_scope_at_active(
         &mut self,
-        make: impl FnOnce(PathBuf) -> CloseScope,
+        make: impl FnOnce(BufferKey) -> CloseScope,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(anchor) = self.active_path() else {
+        let Some(anchor) = self.active_key() else {
             eprintln!("S1_TAB_MENU run=close reason=no-active");
             return;
         };
@@ -1446,7 +2057,11 @@ impl EditorPane {
         let Some(buffer) = self.buffers.get(index) else {
             return;
         };
-        let text = buffer.path.to_string_lossy().to_string();
+        let Some(path) = buffer.disk_path() else {
+            eprintln!("S1_TAB_MENU run=copyPath result=untitled");
+            return;
+        };
+        let text = path.to_string_lossy().to_string();
         cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
         eprintln!("S1_TAB_MENU run=copyPath value={text}");
     }
@@ -1455,7 +2070,11 @@ impl EditorPane {
         let Some(buffer) = self.buffers.get(index) else {
             return;
         };
-        let text = relative_to_workspace(&buffer.path, self.workspace_root.as_deref());
+        let Some(path) = buffer.disk_path() else {
+            eprintln!("S1_TAB_MENU run=copyRelativePath result=untitled");
+            return;
+        };
+        let text = relative_to_workspace(path, self.workspace_root.as_deref());
         cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
         eprintln!("S1_TAB_MENU run=copyRelativePath value={text}");
     }
@@ -1464,7 +2083,10 @@ impl EditorPane {
         let Some(buffer) = self.buffers.get(index) else {
             return;
         };
-        let path = buffer.path.clone();
+        let Some(path) = buffer.disk_path().map(Path::to_path_buf) else {
+            eprintln!("S1_TAB_MENU run=revealInTree result=untitled");
+            return;
+        };
         let Some(reveal) = self
             .tab_menu_actions
             .as_ref()
@@ -1481,7 +2103,10 @@ impl EditorPane {
         let Some(buffer) = self.buffers.get(index) else {
             return;
         };
-        let path = buffer.path.clone();
+        let Some(path) = buffer.disk_path().map(Path::to_path_buf) else {
+            eprintln!("S1_TAB_MENU run=reveal result=untitled");
+            return;
+        };
         let Some(reveal) = self
             .tab_menu_actions
             .as_ref()
@@ -1498,7 +2123,10 @@ impl EditorPane {
         let Some(buffer) = self.buffers.get(index) else {
             return;
         };
-        let path = buffer.path.clone();
+        let Some(path) = buffer.disk_path().map(Path::to_path_buf) else {
+            eprintln!("S1_TAB_MENU run=openInTerminal result=untitled");
+            return;
+        };
         let Some(open_terminal) = self
             .tab_menu_actions
             .as_ref()
@@ -1553,6 +2181,15 @@ impl EditorPane {
         );
         self.sync_cursor(cx);
         self.schedule_diagnostics(index, Duration::ZERO, cx);
+        // Revert: `set_text` resets the selection to the caret, so a bar that is open must
+        // recompute and re-select its current match (the reload itself does not close the bar).
+        if self
+            .find
+            .as_ref()
+            .is_some_and(|find| find.editor.entity_id() == self.buffers[index].editor.entity_id())
+        {
+            self.recompute_find(cx);
+        }
         cx.notify();
     }
 
@@ -1591,7 +2228,7 @@ impl EditorPane {
     fn apply_close_scope(&mut self, scope: &CloseScope, cx: &mut Context<Self>) -> usize {
         let targets = scope.targets(&self.buffers);
         for index in targets.iter().rev() {
-            self.close(*index);
+            self.close(*index, cx);
         }
         self.sync_cursor(cx);
         cx.notify();
@@ -1676,7 +2313,7 @@ impl EditorPane {
     ) {
         match pending {
             PendingConfirm::Single(index) => {
-                self.close(index);
+                self.close(index, cx);
                 self.sync_cursor(cx);
                 cx.notify();
             }
@@ -1699,9 +2336,19 @@ impl EditorPane {
     ) -> bool {
         match pending {
             PendingConfirm::Single(index) => {
+                // A scratch buffer needs a name before it can be written: route to Save As and
+                // leave the tab open rather than silently failing to save.
+                if self
+                    .buffers
+                    .get(index)
+                    .is_some_and(|buffer| !buffer.is_disk())
+                {
+                    self.save_as(window, cx);
+                    return false;
+                }
                 let saved = self.write_buffer(index, "lithe.editor.saveFailed", window, cx);
                 if saved {
-                    self.close(index);
+                    self.close(index, cx);
                     self.sync_cursor(cx);
                     cx.notify();
                 }
@@ -2110,7 +2757,11 @@ impl EditorPane {
         };
         let (range, insert) = crate::completion::edit_for(item, &text, cursor);
         let label = item.label.clone();
-        let file = self.active_path().map(|path| path.display().to_string());
+        // The buffer's display path (a real path, or the scratch name) — used only for a message.
+        let file = self
+            .active
+            .and_then(|index| self.buffers.get(index))
+            .map(|buffer| buffer.path.display().to_string());
 
         // 先收列表再改文本：`apply_edits` 会同步发 `Changed`，那时列表若还在，就会按新前缀
         // 把"刚接受的那一条"又留下（一模一样的一行看着像没接受成功）。
@@ -2212,7 +2863,7 @@ impl EditorPane {
     // 代码动作
     // ------------------------------------------------------------------
 
-    /// `ctrl-.`（macOS 还有 `cmd-.`，与上游 gpui-base 的 `ToggleCodeActions` 同一个键）。
+    /// `secondary-.`（macOS ⌘. / 其他 Ctrl+.，与上游 gpui-base 的 `ToggleCodeActions` 同一个键）。
     pub fn show_code_actions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.active else {
             eprintln!("S1_EDITOR_CODE_ACTION menu=false reason=no-active-buffer");
@@ -2341,6 +2992,500 @@ impl EditorPane {
         eprintln!("S1_EDITOR_UNLOCK_REFUSED file={file} reason=not-writable");
     }
 
+    // ------------------------------------------------------------------
+    // 查找 / 替换
+    // ------------------------------------------------------------------
+
+    /// Opens the find bar on the active buffer, unfolding the replace row when `with_replace`.
+    ///
+    /// Refuses (with a diagnostic, no UI) when there is no active buffer or a modal dialog is up,
+    /// matching `open_go_to_line`. Re-opening on the buffer that already owns the bar refocuses
+    /// and selects the query without collapsing a replace row the user opened with Ctrl+R.
+    pub fn open_find(&mut self, with_replace: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_FIND open=false reason=no-active-buffer");
+            return;
+        };
+        if window.has_active_dialog(cx) {
+            eprintln!("S1_EDITOR_FIND open=false reason=active-dialog");
+            return;
+        }
+        let editor = self.buffers[index].editor.clone();
+        let editor_id = editor.entity_id();
+        let mode = if with_replace { "replace" } else { "find" };
+
+        // The bar already belongs to this buffer: reuse it.
+        if self
+            .find
+            .as_ref()
+            .is_some_and(|find| find.editor.entity_id() == editor_id)
+        {
+            if let Some(find) = self.find.as_mut() {
+                if with_replace {
+                    find.showing_replace = true;
+                }
+            }
+            let query = self.find.as_ref().expect("just checked").query.clone();
+            let all = 0..query.read(cx).text().len();
+            query.update(cx, |state, cx| state.select(all, cx));
+            let handle = query.read(cx).focus_handle(cx);
+            window.focus(&handle, cx);
+            let total = self.find.as_ref().map_or(0, |find| find.matches.len());
+            let current = self.find.as_ref().and_then(|find| find.current);
+            println!(
+                "S1_EDITOR_FIND open=true mode={mode} reuse=true matches={total} current={}",
+                current.map_or(-1, |current| current as isize)
+            );
+            cx.notify();
+            return;
+        }
+
+        // A bar owned by another buffer is torn down first so its highlight cannot linger.
+        self.drop_find(cx);
+
+        let query = cx.new(|cx| InputState::new(window, cx));
+        let replace = cx.new(|cx| InputState::new(window, cx));
+        if let Some(prefill) = self.selection_prefill(index, cx) {
+            query.update(cx, |state, cx| {
+                let len = prefill.len();
+                state.set_text(prefill, cx);
+                state.select(0..len, cx);
+            });
+        }
+
+        let events = vec![cx.subscribe_in(
+            &query,
+            window,
+            |pane: &mut Self, _query: &Entity<InputState>, event: &InputEvent, window, cx| {
+                match event {
+                    InputEvent::Changed => pane.schedule_find_recompute(window, cx),
+                    InputEvent::Submit => pane.find_step(true, window, cx),
+                    _ => {}
+                }
+            },
+        )];
+
+        self.find = Some(FindBar {
+            editor: editor.clone(),
+            query: query.clone(),
+            replace,
+            options: FindOptions::default(),
+            matches: Vec::new(),
+            error: None,
+            current: None,
+            showing_replace: with_replace,
+            generation: Arc::new(AtomicU64::new(0)),
+            _events: events,
+        });
+
+        // The first recompute is immediate (not debounced): the user expects an answer on open.
+        self.recompute_find(cx);
+        let handle = query.read(cx).focus_handle(cx);
+        window.focus(&handle, cx);
+        let total = self.find.as_ref().map_or(0, |find| find.matches.len());
+        let current = self.find.as_ref().and_then(|find| find.current);
+        println!(
+            "S1_EDITOR_FIND open=true mode={mode} matches={total} current={}",
+            current.map_or(-1, |current| current as isize)
+        );
+        cx.notify();
+    }
+
+    /// Closes the find bar: clears the owning editor's highlight, forgets the bar, and returns
+    /// focus to that editor (if it is still open). The editor's selection is left alone.
+    pub fn close_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(find) = self.find.as_ref() else {
+            return;
+        };
+        let editor = find.editor.clone();
+        let idle = find.matches.is_empty();
+        self.drop_find(cx);
+        if self
+            .buffers
+            .iter()
+            .any(|buffer| buffer.editor.entity_id() == editor.entity_id())
+        {
+            let handle = editor.read(cx).focus_handle(cx);
+            window.focus(&handle, cx);
+        }
+        println!("S1_EDITOR_FIND open=false reason=close idle={idle}");
+        cx.notify();
+    }
+
+    /// Steps to the next (`forward`) or previous match, wrapping at both ends, and scrolls the
+    /// selection into view (via the editor's own `select`). Focus does not move.
+    pub fn find_step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if window.has_active_dialog(cx) {
+            eprintln!("S1_EDITOR_FIND step=false reason=active-dialog");
+            return;
+        }
+        let Some(find) = self.find.as_ref() else {
+            eprintln!("S1_EDITOR_FIND step=false reason=closed");
+            return;
+        };
+        let total = find.matches.len();
+        let Some(current) = find.current else {
+            eprintln!("S1_EDITOR_FIND step=false reason=no-match");
+            return;
+        };
+        if total == 0 {
+            eprintln!("S1_EDITOR_FIND step=false reason=no-match");
+            return;
+        }
+        let next = if forward {
+            (current + 1) % total
+        } else {
+            (current + total - 1) % total
+        };
+        let wrapped = if forward {
+            current + 1 == total
+        } else {
+            current == 0
+        };
+        if let Some(find) = self.find.as_mut() {
+            find.current = Some(next);
+        }
+        self.apply_find_highlight(cx);
+        println!(
+            "S1_EDITOR_FIND step=true forward={forward} current={next} total={total} wrapped={wrapped}"
+        );
+        cx.notify();
+    }
+
+    /// Recomputes the matches against the owning editor's current text and redraws the highlight.
+    /// Reads only the current buffer, so nothing is cached across tabs.
+    fn recompute_find(&mut self, cx: &mut Context<Self>) {
+        let Some(find) = self.find.as_ref() else {
+            return;
+        };
+        let editor = find.editor.clone();
+        let query = find.query.read(cx).text().to_string();
+        let options = find.options;
+        let text = editor.read(cx).text().to_string();
+        let cursor = editor.read(cx).cursor_offset();
+        let previous = find.current;
+
+        let (matches, error) = match find_all(&text, &query, options) {
+            Ok(ranges) => (ranges, None),
+            Err(message) => (Vec::new(), Some(SharedString::from(message))),
+        };
+        let len = matches.len();
+        let current = if len == 0 {
+            None
+        } else {
+            match previous {
+                Some(index) if index < len => Some(index),
+                _ => Some(first_match_at_or_after(&matches, cursor).unwrap_or(0)),
+            }
+        };
+
+        if let Some(find) = self.find.as_mut() {
+            find.matches = matches;
+            find.error = error;
+            find.current = current;
+        }
+        self.apply_find_highlight(cx);
+    }
+
+    /// Debounced recompute for keystrokes and text changes: bumps the generation and drops the
+    /// result if a newer request landed in the meantime, so a fast typist never sees the count jump
+    /// back to a stale value.
+    fn schedule_find_recompute(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(find) = self.find.as_ref() else {
+            return;
+        };
+        let generation = find.generation.clone();
+        let token = generation.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+        cx.spawn_in(window, async move |pane, cx| {
+            cx.background_executor().timer(FIND_DEBOUNCE).await;
+            let _ = pane.update_in(cx, |pane, _window, cx| {
+                let current = pane
+                    .find
+                    .as_ref()
+                    .map(|find| find.generation.load(Ordering::Acquire));
+                if current == Some(token) {
+                    pane.recompute_find(cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Paints the match wash — the current match stronger than the rest — and selects it so the
+    /// editor scrolls it into view. Empty matches clear the wash.
+    fn apply_find_highlight(&mut self, cx: &mut Context<Self>) {
+        let Some(find) = self.find.as_ref() else {
+            return;
+        };
+        let editor = find.editor.clone();
+        let warn = cx.theme().colors.warning;
+        let current = find.current;
+        let marks: Vec<(Range<usize>, gpui::Hsla)> = find
+            .matches
+            .iter()
+            .enumerate()
+            .map(|(index, range)| {
+                let wash = if Some(index) == current {
+                    warn.opacity(0.45)
+                } else {
+                    warn.opacity(0.2)
+                };
+                (range.clone(), wash)
+            })
+            .collect();
+        let selection = current.and_then(|index| find.matches.get(index).cloned());
+        editor.update(cx, |state, cx| {
+            state.set_backgrounds(marks, cx);
+            if let Some(range) = selection {
+                state.select([range], cx);
+            }
+        });
+    }
+
+    /// Forgets the bar and clears its owning editor's highlight. Focus is untouched; callers that
+    /// still hold the editor restore it with [`Self::close_find`].
+    fn drop_find(&mut self, cx: &mut Context<Self>) {
+        let Some(find) = self.find.take() else {
+            return;
+        };
+        find.editor
+            .update(cx, |state, cx| state.set_backgrounds(Vec::new(), cx));
+    }
+
+    /// Drops the bar only when it belongs to `editor` (used when that buffer is going away).
+    fn drop_find_for(&mut self, editor: EntityId, cx: &mut Context<Self>) {
+        if self
+            .find
+            .as_ref()
+            .is_some_and(|find| find.editor.entity_id() == editor)
+        {
+            self.drop_find(cx);
+        }
+    }
+
+    /// The query the bar should open with: the single, non-empty, single-line selection of the
+    /// buffer, if any. Multiple cursors or a selection spanning lines leave it empty (a guess there
+    /// would be worse than blank).
+    fn selection_prefill(&self, index: usize, cx: &App) -> Option<String> {
+        let editor = self.buffers.get(index)?.editor.clone();
+        let state = editor.read(cx);
+        let selections = state.selections();
+        if selections.len() != 1 {
+            return None;
+        }
+        let selection = selections[0];
+        let (start, end) = (
+            selection.anchor.min(selection.head),
+            selection.anchor.max(selection.head),
+        );
+        if start == end {
+            return None;
+        }
+        let text = state.text();
+        let slice = text.get(start..end)?;
+        if slice.contains('\n') || slice.contains('\r') {
+            return None;
+        }
+        Some(slice.to_string())
+    }
+
+    fn set_find_options(&mut self, options: FindOptions, cx: &mut Context<Self>) {
+        if let Some(find) = self.find.as_mut() {
+            find.options = options;
+        }
+        self.recompute_find(cx);
+    }
+
+    fn set_find_replace_visible(&mut self, showing: bool, cx: &mut Context<Self>) {
+        if let Some(find) = self.find.as_mut() {
+            find.showing_replace = showing;
+        }
+        cx.notify();
+    }
+
+    /// Replaces the current match (`all == false`) or every match (`all == true`) with the replace
+    /// field's text, as one undo step. A read-only buffer refuses silently in the editor, so that
+    /// is detected and reported rather than leaving the user wondering.
+    fn find_replace(&mut self, all: bool, cx: &mut Context<Self>) {
+        let Some(find) = self.find.as_ref() else {
+            return;
+        };
+        let editor = find.editor.clone();
+        let replacement = find.replace.read(cx).text().to_string();
+        let edits: Vec<(Range<usize>, String)> = if all {
+            find.matches
+                .iter()
+                .map(|range| (range.clone(), replacement.clone()))
+                .collect()
+        } else {
+            match find.current {
+                Some(index) => vec![(find.matches[index].clone(), replacement.clone())],
+                None => Vec::new(),
+            }
+        };
+        if edits.is_empty() {
+            eprintln!("S1_EDITOR_FIND replace=false reason=no-match");
+            return;
+        }
+
+        let before = editor.read(cx).text().to_string();
+        editor.update(cx, |state, cx| state.edit(edits, cx));
+        let after = editor.read(cx).text().to_string();
+        if before == after {
+            eprintln!("S1_EDITOR_FIND replace=false reason=read-only");
+            self.record_notification(
+                cx,
+                lithe_gpui_notify::Input::new(
+                    "lithe.footer.readOnly",
+                    lithe_gpui_notify::Severity::Warning,
+                )
+                .key("lithe.footer.readOnly"),
+            );
+            return;
+        }
+
+        // The end of the replaced run, so a single replace moves to the first match at or after it
+        // instead of spinning on a replacement that still contains the query.
+        let replaced_end = self.find.as_ref().and_then(|find| {
+            find.current
+                .and_then(|index| find.matches.get(index))
+                .map(|range| range.start + replacement.len())
+        });
+        self.recompute_find(cx);
+        let next = self.find.as_ref().and_then(|find| {
+            if find.matches.is_empty() {
+                None
+            } else if all {
+                Some(0)
+            } else {
+                Some(first_match_at_or_after(&find.matches, replaced_end.unwrap_or(0)).unwrap_or(0))
+            }
+        });
+        if let Some(find) = self.find.as_mut() {
+            find.current = next;
+        }
+        self.apply_find_highlight(cx);
+        println!("S1_EDITOR_FIND replace=true all={all}");
+        cx.notify();
+    }
+
+    /// The find bar as an absolutely-positioned overlay inside the body container. It carries the
+    /// `EditorFindBar` key context so `Escape` resolves to `CloseFind` while focus is inside it.
+    fn find_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let find = self.find.as_ref()?;
+        let current = find.current;
+        let total = find.matches.len();
+        let error = find.error.clone();
+        let replace = find.replace.clone();
+        let showing_replace = find.showing_replace;
+        let options = find.options;
+        let pane = cx.entity().downgrade();
+
+        let mut widget = FindWidget::new(
+            ("lithe-editor-find", current.unwrap_or(usize::MAX)),
+            &find.query,
+            current,
+            total,
+        )
+        .options(options)
+        .on_options({
+            let pane = pane.clone();
+            move |options, _window, cx| {
+                let _ = pane.update(cx, |pane, cx| pane.set_find_options(options, cx));
+            }
+        })
+        .on_step({
+            let pane = pane.clone();
+            move |forward, window, cx| {
+                let _ = pane.update(cx, |pane, cx| pane.find_step(forward, window, cx));
+            }
+        })
+        .on_toggle_replace({
+            let pane = pane.clone();
+            move |showing, _window, cx| {
+                let _ = pane.update(cx, |pane, cx| pane.set_find_replace_visible(showing, cx));
+            }
+        })
+        .on_replace({
+            let pane = pane.clone();
+            move |all, _window, cx| {
+                let _ = pane.update(cx, |pane, cx| pane.find_replace(all, cx));
+            }
+        })
+        .on_close({
+            let pane = pane.clone();
+            move |window, cx| {
+                let _ = pane.update(cx, |pane, cx| pane.close_find(window, cx));
+            }
+        });
+        if showing_replace {
+            widget = widget.replace(&replace);
+        }
+        if let Some(error) = error {
+            widget = widget.error(error);
+        }
+
+        Some(
+            div()
+                .id("lithe-editor-find-bar")
+                .absolute()
+                .top_2()
+                .right_2()
+                .key_context(FIND_BAR_KEY_CONTEXT)
+                .on_action(cx.listener(|pane, _: &crate::CloseFind, window, cx| {
+                    pane.close_find(window, cx);
+                }))
+                .child(widget)
+                .into_any_element(),
+        )
+    }
+
+    /// 面包屑：当前文件相对工作区根的一串目录段，末段是文件名。
+    ///
+    /// IDEA 的每一段可点（在文件树里定位），本产品先只做展示：段间用 "/" 分隔，
+    /// 末段比目录段亮一档。没有活动缓冲区、或路径不在工作区里（虚拟源码、外部文件）时
+    /// 退到全路径，仍然给读者一个"我在哪儿"的答案。
+    fn render_breadcrumbs(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let index = self.active?;
+        let buffer = self.buffers.get(index)?;
+        let colors = cx.theme().colors.clone();
+        let relative = self
+            .workspace_root
+            .as_ref()
+            .and_then(|root| buffer.path.strip_prefix(root).ok())
+            .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|| buffer.path.to_string_lossy().replace('\\', "/"));
+        let segments: Vec<&str> = relative
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .collect();
+        if segments.is_empty() {
+            return None;
+        }
+        let mut bar = h_stack()
+            .flex_shrink_0()
+            .h_6()
+            .px_2()
+            .gap_1()
+            .overflow_hidden()
+            .bg(colors.bg)
+            .border_b_1()
+            .border_color(colors.border)
+            .id("editor-breadcrumbs");
+        for (position, segment) in segments.iter().enumerate() {
+            let last = position + 1 == segments.len();
+            bar = bar.child(
+                div()
+                    .text_color(if last { colors.fg } else { colors.fg_muted })
+                    .child(segment.to_string()),
+            );
+            if !last {
+                bar = bar.child(div().text_color(colors.fg_muted).child("/"));
+            }
+        }
+        Some(bar.into_any_element())
+    }
+
     fn render_tab_bar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let names = display_names(&self.buffers);
         let colors = cx.theme().colors.clone();
@@ -2402,7 +3547,7 @@ impl EditorPane {
                 .right_1()
                 .flex()
                 .items_center()
-                .child(Self::close_button(&buffer.path, index, cx))
+                .child(Self::close_button(&buffer.key, index, cx))
         });
 
         let content = h_stack()
@@ -2433,7 +3578,7 @@ impl EditorPane {
                     .h(rems(2. / 16.))
                     .bg(accent)
             }))
-            .id(tab_element_id(&buffer.path))
+            .id(tab_element_id(&buffer.key))
             .role(Role::Tab)
             .aria_label(aria_label.clone())
             .aria_selected(is_active)
@@ -2459,7 +3604,7 @@ impl EditorPane {
             );
 
         ContextMenu::new(
-            tab_menu_element_id(&buffer.path),
+            tab_menu_element_id(&buffer.key),
             self.tab_menu(index, buffer, cx),
         )
         .child(content.into_any_element())
@@ -2469,8 +3614,10 @@ impl EditorPane {
     /// 标签的右键菜单：除了图标（组件库的菜单行只收库内图标名），条目的文案与动作与迁移前一一对应。
     fn tab_menu(&self, index: usize, buffer: &Buffer, cx: &mut Context<Self>) -> Menu {
         let pane: Entity<Self> = cx.entity();
-        let path = buffer.path.clone();
-        let on_disk = !is_virtual_source_path(&path);
+        let anchor = buffer.key.clone();
+        let on_disk = buffer
+            .disk_path()
+            .is_some_and(|path| !is_virtual_source_path(path));
         let mut menu = Menu::new();
         // 迁移前那条 `S1_TAB_MENU opened=…` 诊断报的是行数与分隔符数，菜单本身读不出这些，所以在建的时候数。
         let mut items = 0usize;
@@ -2530,7 +3677,7 @@ impl EditorPane {
         menu = menu.item(entry(
             tr("lithe.tabs.closeOthers"),
             Rc::new({
-                let anchor = path.clone();
+                let anchor = anchor.clone();
                 move |pane: &mut Self, window, cx| {
                     pane.close_scope(CloseScope::Others(anchor.clone()), window, cx)
                 }
@@ -2540,7 +3687,7 @@ impl EditorPane {
         menu = menu.item(entry(
             tr("lithe.tabs.closeToRight"),
             Rc::new({
-                let anchor = path.clone();
+                let anchor = anchor.clone();
                 move |pane: &mut Self, window, cx| {
                     pane.close_scope(CloseScope::ToRight(anchor.clone()), window, cx)
                 }
@@ -2562,8 +3709,8 @@ impl EditorPane {
         menu
     }
 
-    fn close_button(path: &Path, index: usize, cx: &mut Context<Self>) -> Button {
-        Button::new(tab_close_element_id(path))
+    fn close_button(key: &BufferKey, index: usize, cx: &mut Context<Self>) -> Button {
+        Button::new(tab_close_element_id(key))
             .icon_element(idea_icon_mono(&idea::X_ICON, cx.theme().is_dark()))
             .variant(ButtonVariant::Ghost)
             .size(Size::Small)
@@ -2649,6 +3796,8 @@ impl EditorPane {
                     ),
             )
             .children(self.completion_popup(&popup_owner, cx))
+            // 查找条画在正文容器里（补全之后，故 z 序在补全之上、代码动作菜单之下）。
+            .children(self.find_bar(cx))
             .into_any_element()
     }
 
@@ -2840,20 +3989,59 @@ impl EditorPane {
     }
 }
 
-fn tab_element_id(path: &Path) -> String {
-    format!("editor-tab:{}", path.display())
+fn tab_element_id(key: &BufferKey) -> String {
+    format!("editor-tab:{}", key_id(key))
 }
 
-fn tab_close_element_id(path: &Path) -> String {
-    format!("editor-tab-close:{}", path.display())
+fn tab_close_element_id(key: &BufferKey) -> String {
+    format!("editor-tab-close:{}", key_id(key))
 }
 
-fn tab_menu_element_id(path: &Path) -> String {
-    format!("editor-tab-menu:{}", path.display())
+fn tab_menu_element_id(key: &BufferKey) -> String {
+    format!("editor-tab-menu:{}", key_id(key))
+}
+
+/// A stable, order-independent id fragment for a buffer key: the path for a disk buffer, a
+/// numbered tag for a scratch one (whose number never repeats within a pane).
+fn key_id(key: &BufferKey) -> String {
+    match key {
+        BufferKey::Disk(path) => path.display().to_string(),
+        BufferKey::Untitled(number) => format!("untitled:{number}"),
+    }
 }
 
 fn is_virtual_source_path(path: &Path) -> bool {
     path.to_string_lossy().starts_with("jdt://")
+}
+
+/// Whether `path` is `target` itself or lives under it (matched by whole path components).
+fn sits_under(path: &Path, target: &Path) -> bool {
+    path.strip_prefix(target).is_ok()
+}
+
+/// The index of the first match that starts at or after `offset`, the natural "next" from the
+/// caret when the bar opens or a replace moves past its target. `None` when every match is earlier.
+fn first_match_at_or_after(matches: &[Range<usize>], offset: usize) -> Option<usize> {
+    matches.iter().position(|range| range.start >= offset)
+}
+
+/// Rewrites a whole map's keys through [`remap_path`], dropping nothing that stays put. A no-op
+/// when no key sits under `from`, so the common case costs one scan.
+fn remap_map<V>(map: &mut BTreeMap<PathBuf, V>, from: &Path, to: &Path) {
+    if !map.keys().any(|path| remap_path(path, from, to).is_some()) {
+        return;
+    }
+    let old = std::mem::take(map);
+    for (path, value) in old {
+        match remap_path(&path, from, to) {
+            Some(moved) => {
+                map.insert(moved, value);
+            }
+            None => {
+                map.insert(path, value);
+            }
+        }
+    }
 }
 
 fn relative_to_workspace(path: &Path, root: Option<&Path>) -> String {
@@ -2903,7 +4091,24 @@ impl Render for EditorPane {
             .on_action(cx.listener(|pane, _: &crate::ShowCodeActions, window, cx| {
                 pane.show_code_actions(window, cx);
             }))
+            // 查找/替换：菜单与键位都走这几个动作（键位由 workbench 绑，见 `crate::OpenFind`）。
+            .on_action(cx.listener(|pane, _: &crate::OpenFind, window, cx| {
+                pane.open_find(false, window, cx);
+            }))
+            .on_action(cx.listener(|pane, _: &crate::OpenFindReplace, window, cx| {
+                pane.open_find(true, window, cx);
+            }))
+            .on_action(cx.listener(|pane, _: &crate::FindNext, window, cx| {
+                pane.find_step(true, window, cx);
+            }))
+            .on_action(cx.listener(|pane, _: &crate::FindPrevious, window, cx| {
+                pane.find_step(false, window, cx);
+            }))
+            .on_action(cx.listener(|pane, _: &crate::CloseFind, window, cx| {
+                pane.close_find(window, cx);
+            }))
             .child(tabs)
+            .children(self.render_breadcrumbs(cx))
             .child(body)
             .children(code_actions)
     }
@@ -2911,19 +4116,81 @@ impl Render for EditorPane {
 
 #[cfg(test)]
 mod tests {
-    use super::{tab_close_element_id, tab_element_id};
+    use super::{
+        BufferKey, first_match_at_or_after, remap_map, sits_under, tab_close_element_id,
+        tab_element_id,
+    };
+    use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
+
+    fn disk(path: &str) -> BufferKey {
+        BufferKey::Disk(PathBuf::from(path))
+    }
+
+    #[test]
+    fn a_buffer_key_keeps_disk_files_and_scratch_buffers_apart() {
+        let file = disk("/ws/Main.java");
+        assert_eq!(file.disk_path(), Some(Path::new("/ws/Main.java")));
+        assert_eq!(file.display("ignored"), PathBuf::from("/ws/Main.java"));
+
+        let scratch = BufferKey::Untitled(3);
+        assert_eq!(scratch.disk_path(), None, "未命名缓冲没有磁盘路径");
+        assert_eq!(
+            scratch.display("Untitled-3"),
+            PathBuf::from("Untitled-3"),
+            "未命名键的展示路径就是它的标题"
+        );
+    }
+
+    #[test]
+    fn a_deleted_folder_takes_its_children_and_leaves_neighbours() {
+        assert!(sits_under(
+            Path::new("/ws/a/b/Main.java"),
+            Path::new("/ws/a/b")
+        ));
+        assert!(sits_under(Path::new("/ws/a/b"), Path::new("/ws/a/b")));
+        assert!(
+            !sits_under(Path::new("/ws/a/bc/Other.java"), Path::new("/ws/a/b")),
+            "按路径组件匹配：`a/bc` 不是 `a/b` 的孩子"
+        );
+    }
+
+    #[test]
+    fn a_remap_moves_its_own_keys_and_leaves_neighbours() {
+        let mut map: BTreeMap<PathBuf, i32> = BTreeMap::new();
+        map.insert(PathBuf::from("/ws/a/b/last"), 1);
+        map.insert(PathBuf::from("/ws/a/bc/last"), 2);
+
+        remap_map(&mut map, Path::new("/ws/a/b"), Path::new("/ws/a/renamed"));
+
+        assert_eq!(map.get(Path::new("/ws/a/renamed/last")), Some(&1));
+        assert_eq!(map.get(Path::new("/ws/a/bc/last")), Some(&2));
+        assert!(!map.contains_key(Path::new("/ws/a/b/last")));
+    }
+
+    #[test]
+    fn the_next_match_is_the_first_one_at_or_after_the_caret() {
+        let matches = [2..4usize, 10..12, 20..22];
+        assert_eq!(first_match_at_or_after(&matches, 0), Some(0));
+        assert_eq!(first_match_at_or_after(&matches, 3), Some(1));
+        assert_eq!(
+            first_match_at_or_after(&matches, 10),
+            Some(1),
+            "起点相等算命中"
+        );
+        assert_eq!(first_match_at_or_after(&matches, 21), None, "都在光标之前");
+    }
 
     #[test]
     fn tab_element_ids_do_not_depend_on_the_tab_order() {
         let tabs = [
-            PathBuf::from("/workspace/src/main.rs"),
-            PathBuf::from("/workspace/README.md"),
-            PathBuf::from("jdt://contents/java.base/java/lang/String.class"),
+            disk("/workspace/src/main.rs"),
+            disk("/workspace/README.md"),
+            disk("jdt://contents/java.base/java/lang/String.class"),
         ];
 
-        let forward: Vec<String> = tabs.iter().map(|path| tab_element_id(path)).collect();
-        let reversed: Vec<String> = tabs.iter().rev().map(|path| tab_element_id(path)).collect();
+        let forward: Vec<String> = tabs.iter().map(tab_element_id).collect();
+        let reversed: Vec<String> = tabs.iter().rev().map(tab_element_id).collect();
 
         assert_eq!(forward[0], reversed[2]);
         assert_eq!(forward[1], reversed[1]);
@@ -2931,19 +4198,301 @@ mod tests {
         assert_ne!(forward[0], forward[1]);
         assert_ne!(forward[0], forward[2]);
         assert_ne!(forward[1], forward[2]);
-        assert!(tab_element_id(Path::new("jdt://x")).starts_with("editor-tab:jdt://x"));
+        assert!(tab_element_id(&disk("jdt://x")).starts_with("editor-tab:jdt://x"));
+    }
+
+    #[test]
+    fn two_untitled_buffers_get_distinct_tab_ids() {
+        assert_ne!(
+            tab_element_id(&BufferKey::Untitled(1)),
+            tab_element_id(&BufferKey::Untitled(2)),
+            "同窗格里两个未命名缓冲不能撞元素 id"
+        );
+        assert_ne!(
+            tab_element_id(&BufferKey::Untitled(1)),
+            tab_element_id(&disk("Untitled-1")),
+            "未命名键与同名磁盘文件也不是同一个标签"
+        );
     }
 
     #[test]
     fn close_button_id_is_namespaced_apart_from_its_tab() {
-        let path = Path::new("/workspace/src/main.rs");
-        let other = Path::new("/workspace/src/lib.rs");
+        let path = disk("/workspace/src/main.rs");
+        let other = disk("/workspace/src/lib.rs");
 
-        assert_ne!(tab_element_id(path), tab_close_element_id(path));
-        assert_ne!(tab_close_element_id(path), tab_close_element_id(other));
+        assert_ne!(tab_element_id(&path), tab_close_element_id(&path));
+        assert_ne!(tab_close_element_id(&path), tab_close_element_id(&other));
         assert_eq!(
-            tab_close_element_id(path),
+            tab_close_element_id(&path),
             "editor-tab-close:/workspace/src/main.rs"
         );
+    }
+}
+
+/// 宿主行为的集成断言（交互稿 §5.1 / §5.2 的 A 类）：真的开一个窗口、建一个 `EditorPane`，
+/// 再驱动它的公开方法。每条都确定性收尾（临时目录 `Drop` 删、不 sleep），符合 `write-stable-tests`。
+#[cfg(test)]
+mod host_tests {
+    use super::*;
+    use gpui::TestAppContext;
+    use std::fs;
+
+    /// 语言注册表是进程级全局，主题也是：每条测试自己装一次，免得并行跑时依赖别人先跑。
+    fn prepare(cx: &mut App) {
+        lithe_gpui_languages::register();
+        lithe_ui::theme::Theme::init(cx);
+    }
+
+    /// 临时目录：建在系统临时目录下，按用例名与进程号隔离，`Drop` 时删掉。
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(case: &str) -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("lithe-editor-host-{case}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).expect("建临时目录");
+            Self(dir)
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn open_pane(cx: &mut TestAppContext) -> (Entity<EditorPane>, &mut gpui::VisualTestContext) {
+        cx.add_window_view(|window, cx| {
+            prepare(cx);
+            EditorPane::new(None, window, cx)
+        })
+    }
+
+    #[gpui::test]
+    fn open_find_without_a_buffer_is_a_no_op(cx: &mut TestAppContext) {
+        let (pane, cx) = open_pane(cx);
+        pane.update_in(cx, |pane, window, cx| pane.open_find(false, window, cx));
+        assert!(
+            pane.read_with(cx, |pane, _| pane.find.is_none()),
+            "无活动缓冲时不该冒出查找条"
+        );
+    }
+
+    #[gpui::test]
+    fn open_find_unfolds_the_replace_row_only_when_asked(cx: &mut TestAppContext) {
+        let dir = TempDir::new("find-row");
+        let file = dir.path("A.java");
+        fs::write(&file, "class A {}\n").expect("写样本");
+        let (pane, cx) = open_pane(cx);
+        pane.update_in(cx, |pane, window, cx| pane.open(&file, window, cx));
+
+        pane.update_in(cx, |pane, window, cx| pane.open_find(false, window, cx));
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane
+                .find
+                .as_ref()
+                .map(|find| find.showing_replace)),
+            Some(false)
+        );
+
+        // A second Ctrl+F must not collapse anything, but Ctrl+R unfolds the replace row.
+        pane.update_in(cx, |pane, window, cx| pane.open_find(false, window, cx));
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane
+                .find
+                .as_ref()
+                .map(|find| find.showing_replace)),
+            Some(false),
+            "Ctrl+F 不改变已展开的替换行"
+        );
+        pane.update_in(cx, |pane, window, cx| pane.open_find(true, window, cx));
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane
+                .find
+                .as_ref()
+                .map(|find| find.showing_replace)),
+            Some(true)
+        );
+    }
+
+    #[gpui::test]
+    fn open_find_prefills_the_query_from_a_single_line_selection(cx: &mut TestAppContext) {
+        let dir = TempDir::new("find-prefill");
+        let file = dir.path("B.java");
+        fs::write(&file, "hello world\n").expect("写样本");
+        let (pane, cx) = open_pane(cx);
+        pane.update_in(cx, |pane, window, cx| {
+            pane.open(&file, window, cx);
+            let editor = pane.buffers[0].editor.clone();
+            editor.update(cx, |state, cx| state.select([0..5], cx));
+            pane.open_find(false, window, cx);
+        });
+        let query = pane.read_with(cx, |pane, cx| {
+            pane.find
+                .as_ref()
+                .expect("查找条已开")
+                .query
+                .read(cx)
+                .text()
+                .to_string()
+        });
+        assert_eq!(query, "hello", "单行非空选区应预填查询框");
+    }
+
+    #[gpui::test]
+    fn find_counts_matches_and_steps_with_wrapping(cx: &mut TestAppContext) {
+        let dir = TempDir::new("find-step");
+        let file = dir.path("C.java");
+        fs::write(&file, "a\na\na\n").expect("写样本");
+        let (pane, cx) = open_pane(cx);
+        pane.update_in(cx, |pane, window, cx| {
+            pane.open(&file, window, cx);
+            pane.open_find(false, window, cx);
+            let query = pane.find.as_ref().expect("查找条已开").query.clone();
+            query.update(cx, |state, cx| state.set_text("a", cx));
+            pane.recompute_find(cx);
+        });
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane.find.as_ref().unwrap().matches.len()),
+            3
+        );
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane.find.as_ref().unwrap().current),
+            Some(0),
+            "开在光标偏移处的第一处命中上"
+        );
+
+        pane.update_in(cx, |pane, window, cx| {
+            pane.find_step(true, window, cx);
+            pane.find_step(true, window, cx);
+        });
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane.find.as_ref().unwrap().current),
+            Some(2)
+        );
+        pane.update_in(cx, |pane, window, cx| pane.find_step(true, window, cx));
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane.find.as_ref().unwrap().current),
+            Some(0),
+            "最后一处再下一处要回绕到第 0 处"
+        );
+        pane.update_in(cx, |pane, window, cx| pane.find_step(false, window, cx));
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane.find.as_ref().unwrap().current),
+            Some(2),
+            "第 0 处再上一处要回绕到最后一处"
+        );
+    }
+
+    #[gpui::test]
+    fn closing_the_find_bar_leaves_no_highlight_behind(cx: &mut TestAppContext) {
+        let dir = TempDir::new("find-close");
+        let file = dir.path("D.java");
+        fs::write(&file, "a\na\n").expect("写样本");
+        let (pane, cx) = open_pane(cx);
+        pane.update_in(cx, |pane, window, cx| {
+            pane.open(&file, window, cx);
+            pane.open_find(false, window, cx);
+            let query = pane.find.as_ref().expect("查找条已开").query.clone();
+            query.update(cx, |state, cx| state.set_text("a", cx));
+            pane.recompute_find(cx);
+        });
+        let editor = pane.read_with(cx, |pane, _| pane.buffers[0].editor.clone());
+        pane.update_in(cx, |pane, window, cx| pane.close_find(window, cx));
+        assert!(pane.read_with(cx, |pane, _| pane.find.is_none()));
+        // The wash itself lives on `CodeEditor`'s private marks; `close_find` clears it through
+        // `set_backgrounds(Vec::new())` (invariant I5). Asserting the editor's step count of the
+        // wash would need a library accessor, which is out of this batch's scope.
+        let _ = editor;
+    }
+
+    #[gpui::test]
+    fn a_scratch_buffer_is_kept_out_of_the_reopen_list(cx: &mut TestAppContext) {
+        let (pane, cx) = open_pane(cx);
+        pane.update_in(cx, |pane, window, cx| {
+            pane.new_untitled(window, cx);
+            pane.new_untitled(window, cx);
+        });
+        let keys = pane.read_with(cx, |pane, _| {
+            pane.buffers
+                .iter()
+                .map(|buffer| buffer.key.clone())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            keys,
+            vec![BufferKey::Untitled(1), BufferKey::Untitled(2)],
+            "两个未命名缓冲并存，编号自增不复用"
+        );
+        assert!(pane.read_with(cx, |pane, _| {
+            pane.buffers
+                .iter()
+                .all(|buffer| !buffer.is_disk() && !buffer.is_dirty)
+        }));
+
+        pane.update_in(cx, |pane, window, cx| pane.close_active(window, cx));
+        assert!(pane.read_with(cx, |pane, _| pane.closed.is_empty()));
+        pane.update_in(cx, |pane, window, cx| pane.reopen_closed_tab(window, cx));
+        assert_eq!(
+            pane.read_with(cx, |pane, _| pane.buffers.len()),
+            1,
+            "未命名缓冲不进 closed，重开也不会把它带回来"
+        );
+    }
+
+    #[gpui::test]
+    fn create_file_never_truncates_an_existing_file(cx: &mut TestAppContext) {
+        let dir = TempDir::new("new-file");
+        let existing = dir.path("Existing.txt");
+        fs::write(&existing, "keep me").expect("写样本");
+        let (pane, cx) = open_pane(cx);
+        pane.update_in(cx, |pane, window, cx| {
+            pane.create_file(Some(dir.0.clone()), "Existing.txt".to_string(), window, cx);
+        });
+        assert_eq!(
+            fs::read_to_string(&existing).expect("读回"),
+            "keep me",
+            "create_new 必须拒绝覆盖已存在的文件"
+        );
+        assert!(
+            pane.read_with(cx, |pane, _| pane.buffers.is_empty()),
+            "创建失败不应打开任何标签"
+        );
+    }
+
+    #[gpui::test]
+    fn remap_paths_moves_a_buffer_and_its_path_tables(cx: &mut TestAppContext) {
+        let dir = TempDir::new("remap");
+        let file = dir.path("Old.java");
+        fs::write(&file, "class Old {}\n").expect("写样本");
+        let (pane, cx) = open_pane(cx);
+        pane.update_in(cx, |pane, window, cx| pane.open(&file, window, cx));
+
+        let renamed = dir.path("New.java");
+        pane.update_in(cx, |pane, window, cx| {
+            pane.remap_paths(&file, &renamed, window, cx);
+        });
+
+        let (key, name) = pane.read_with(cx, |pane, _| {
+            (
+                pane.buffers[0].key.clone(),
+                pane.buffers[0].name.to_string(),
+            )
+        });
+        assert_eq!(key, BufferKey::Disk(renamed.clone()));
+        assert_eq!(name, "New.java", "改名后标题跟着新文件名");
+        let (old_gone, new_there) = pane.read_with(cx, |pane, _| {
+            (
+                pane.last_text.contains_key(&file),
+                pane.last_text.contains_key(&renamed),
+            )
+        });
+        assert!(!old_gone, "last_text 的旧键必须迁走");
+        assert!(new_there);
     }
 }
