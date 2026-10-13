@@ -348,9 +348,7 @@ impl SearchPanel {
                 .min_h_0()
                 .justify_center()
                 .gap_2()
-                .child(
-                    Spinner::new("lithe-search-spinner").color(cx.theme().colors.fg_muted),
-                )
+                .child(Spinner::new("lithe-search-spinner").color(cx.theme().colors.fg_muted))
                 .child(
                     div()
                         .text_sm()

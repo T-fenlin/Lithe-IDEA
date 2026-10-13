@@ -418,18 +418,16 @@ impl WelcomeView {
             .h(rems(TOOLBAR_HEIGHT_SPEC / 16.))
             .child(
                 // 库的 `Input` 是 `IntoElement`，不吃 `.max_w()`；宽度上限外包一层给。
-                div()
-                    .max_w(rems(SEARCH_MAX_WIDTH_SPEC / 16.))
-                    .child(
-                        Input::new(&self.search)
-                            .size(Size::Small)
-                            .clearable()
-                            .prefix(idea_icon_image(
-                                &idea::MAGNIFYING_GLASS_ICON,
-                                cx,
-                                rems(12.5 / 16.),
-                            )),
-                    ),
+                div().max_w(rems(SEARCH_MAX_WIDTH_SPEC / 16.)).child(
+                    Input::new(&self.search)
+                        .size(Size::Small)
+                        .clearable()
+                        .prefix(idea_icon_image(
+                            &idea::MAGNIFYING_GLASS_ICON,
+                            cx,
+                            rems(12.5 / 16.),
+                        )),
+                ),
             )
             .child(div().flex_1())
             .child(

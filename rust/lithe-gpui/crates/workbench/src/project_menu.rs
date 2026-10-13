@@ -195,7 +195,11 @@ fn action_row(action: PanelAction, shell: Option<WeakEntity<ShellWorkspace>>) ->
     let clickable = wire.is_some();
     let item = MenuItem::element(move |cx| {
         let colors = &cx.theme().colors;
-        let color = if clickable { colors.fg } else { colors.fg_muted };
+        let color = if clickable {
+            colors.fg
+        } else {
+            colors.fg_muted
+        };
         h_stack()
             .w_full()
             .h(rems(ACTION_ROW_HEIGHT_SPEC / 16.))
@@ -571,12 +575,16 @@ fn project_menu(
     }
 
     let was_open = menu.open.clone();
-    TriggerMenu::new("lithe-title-project-menu", panel, move |open, _window, cx| {
-        if was_open.replace(open) != open {
-            diagnose(open, name.as_ref(), recent_count);
-        }
-        trigger(&name, &badge, open, cx)
-    })
+    TriggerMenu::new(
+        "lithe-title-project-menu",
+        panel,
+        move |open, _window, cx| {
+            if was_open.replace(open) != open {
+                diagnose(open, name.as_ref(), recent_count);
+            }
+            trigger(&name, &badge, open, cx)
+        },
+    )
     .aria_label(aria_label)
     .manual(menu.probe)
     .into_any_element()

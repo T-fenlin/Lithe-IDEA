@@ -37,9 +37,9 @@ fn activity_bar_item_measures_the_macos_item_box(cx: &mut TestAppContext) {
         window.refresh();
         window.draw(cx).clear(cx);
     });
-    let bounds = window
-        .debug_bounds("lithe-activity-bar-item-0")
-        .expect("活动栏项必须带 debug selector（lithe-activity-bar-item-<index>），UI 测试就是靠它量盒子的");
+    let bounds = window.debug_bounds("lithe-activity-bar-item-0").expect(
+        "活动栏项必须带 debug selector（lithe-activity-bar-item-<index>），UI 测试就是靠它量盒子的",
+    );
     assert!(
         (bounds.size.width.as_f32() - 30.).abs() < 0.5,
         "项盒宽照真源 30（实际 {}）",

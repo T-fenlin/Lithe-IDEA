@@ -425,7 +425,11 @@ fn render_actions(panel: &Entity<BranchPanel>, cx: &App) -> impl IntoElement {
 fn render_remote_message(message: &(bool, SharedString), cx: &App) -> impl IntoElement {
     let (is_error, text) = message;
     let colors = &cx.theme().colors;
-    let color = if *is_error { colors.danger } else { colors.success };
+    let color = if *is_error {
+        colors.danger
+    } else {
+        colors.success
+    };
     h_stack()
         .w_full()
         .flex_shrink_0()
@@ -497,7 +501,11 @@ fn branch_row(branch: BranchInfo, cx: &App) -> PaletteRow {
         name, is_current, ..
     } = branch;
     let colors = &cx.theme().colors;
-    let name_color = if is_current { colors.fg } else { colors.fg_muted };
+    let name_color = if is_current {
+        colors.fg
+    } else {
+        colors.fg_muted
+    };
     let icon = match is_current {
         true => idea_icon_image(&idea::CHECK_ICON, cx, rems(14. / 16.)),
         false => idea_icon_image(&idea::GIT_BRANCH_ICON, cx, rems(14. / 16.)),
@@ -657,8 +665,7 @@ impl BranchPanel {
         diagnose_tabs();
         diagnose_failures(&self.branches.failures);
         self.query = SharedString::default();
-        self.search
-            .update(cx, |state, cx| state.set_text("", cx));
+        self.search.update(cx, |state, cx| state.set_text("", cx));
         cx.notify();
     }
 
@@ -1287,8 +1294,7 @@ fn render_panel(panel: &Entity<BranchPanel>, window: &mut Window, cx: &mut App) 
             eprintln!("S1_BRANCH_PANEL action=checkout row={row} state=missing_row");
             return;
         };
-        let _ =
-            confirm_handle.update(cx, |panel, cx| panel.request_checkout(branch, window, cx));
+        let _ = confirm_handle.update(cx, |panel, cx| panel.request_checkout(branch, window, cx));
     };
 
     // `Palette::card` 的返回元素借用 `cx` 到被消费为止，所以它必须是最后一步：
@@ -1298,7 +1304,9 @@ fn render_panel(panel: &Entity<BranchPanel>, window: &mut Window, cx: &mut App) 
         container = container.child(render_error_bar(&failures, cx));
     }
     let remote_message = panel.read(cx).remote_message.clone();
-    container = container.child(render_tabs(cx)).child(render_actions(panel, cx));
+    container = container
+        .child(render_tabs(cx))
+        .child(render_actions(panel, cx));
     if let Some(message) = &remote_message {
         container = container.child(render_remote_message(message, cx).into_any_element());
     }
@@ -1386,11 +1394,7 @@ pub(crate) fn trigger(panel: &Entity<BranchPanel>, cx: &App) -> Option<AnyElemen
                 }
                 open_branch_panel(&open_handle, window, cx);
             })
-            .child(idea_icon_image(
-                &idea::GIT_BRANCH_ICON,
-                cx,
-                rems(14. / 16.),
-            ))
+            .child(idea_icon_image(&idea::GIT_BRANCH_ICON, cx, rems(14. / 16.)))
             .child(div().min_w_0().truncate().child(branch))
             .children(render_tracking(tracking, cx))
             .aria_label(SharedString::from(format!(
@@ -1448,10 +1452,10 @@ fn trigger_icon_names() -> [&'static idea::IdeaIcon; 1] {
 mod tests {
     use super::{
         BRANCH_ROW_HEIGHT_SPEC, PANEL_MAX_HEIGHT_SPEC, PANEL_TOP_INSET_SPEC, PANEL_WIDTH_SPEC,
-        PanelTab, PullDivergence, RemoteAction, RemoteRun, SEARCH_ROW_HEIGHT_SPEC, branch_row_height,
-        checkout_confirm_message, matches_query, pull_diverged_message, pull_divergence_counts,
-        remote_actions_disabled, remote_message, trigger_icon_names, update_project_disabled,
-        visible_rows,
+        PanelTab, PullDivergence, RemoteAction, RemoteRun, SEARCH_ROW_HEIGHT_SPEC,
+        branch_row_height, checkout_confirm_message, matches_query, pull_diverged_message,
+        pull_divergence_counts, remote_actions_disabled, remote_message, trigger_icon_names,
+        update_project_disabled, visible_rows,
     };
     use gpui::{SharedString, px};
     use lithe_gpui_git::{BranchInfo, BranchSnapshot};

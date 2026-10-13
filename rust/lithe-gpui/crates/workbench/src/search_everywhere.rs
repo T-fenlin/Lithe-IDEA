@@ -122,8 +122,7 @@ impl SearchEverywhere {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let query =
-            cx.new(|cx| InputState::new(window, cx).placeholder(tr(PLACEHOLDER_EMPTY_KEY)));
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder(tr(PLACEHOLDER_EMPTY_KEY)));
         let query_changed = cx.subscribe_in(
             &query,
             window,
