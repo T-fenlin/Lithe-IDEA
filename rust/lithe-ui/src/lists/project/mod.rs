@@ -32,6 +32,7 @@ use self::{
     select::ProjectSelection,
 };
 use crate::{
+    forms::{Editing, OnCheck},
     lists::GitStatus,
     menus::{ContextMenu, Menu, MenuItem},
 };
@@ -44,6 +45,8 @@ pub const ROW_LIMIT: usize = 5_000;
 const ROOT_KEY: &str = "dir:";
 
 type OnAction = Rc<dyn Fn(ProjectAction, &str, &mut Window, &mut App)>;
+type OnRename = Rc<dyn Fn(&str, &str, &mut Window, &mut App)>;
+type OnRenameCheck = Rc<dyn Fn(&str, &str) -> Result<(), SharedString>>;
 pub(crate) type IconFor = Rc<dyn Fn(&ProjectIconRequest, &App) -> Option<ProjectIcon>>;
 
 /// Where a row's icon comes from: a glyph the tree tints with the row's color, or an image
@@ -107,6 +110,10 @@ pub struct ProjectTree {
     caret: Option<(ProjectAsset, ProjectAsset)>,
     icon_for: Option<IconFor>,
     on_action: Option<OnAction>,
+    on_rename: Option<OnRename>,
+    rename_check: Option<OnRenameCheck>,
+    /// The row key being renamed in place, if any.
+    renaming: Option<SharedString>,
 }
 
 impl ProjectTree {
@@ -133,6 +140,9 @@ impl ProjectTree {
             caret: None,
             icon_for: None,
             on_action: None,
+            on_rename: None,
+            rename_check: None,
+            renaming: None,
         }
     }
 
@@ -163,6 +173,25 @@ impl ProjectTree {
         handler: impl Fn(ProjectAction, &str, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_action = Some(Rc::new(handler));
+        self
+    }
+
+    /// Commits a row's in-place rename: the node's path and the name the user kept.
+    pub fn on_rename(
+        mut self,
+        handler: impl Fn(&str, &str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_rename = Some(Rc::new(handler));
+        self
+    }
+
+    /// Asked before an in-place rename commits, with `(path, new name)`; an `Err` holds the field
+    /// open and its reason is drawn beside it. The owner reads the file system here.
+    pub fn on_rename_check(
+        mut self,
+        check: impl Fn(&str, &str) -> Result<(), SharedString> + 'static,
+    ) -> Self {
+        self.rename_check = Some(Rc::new(check));
         self
     }
 
@@ -426,6 +455,59 @@ impl ProjectTree {
         cx.notify();
     }
 
+    /// Starts an in-place rename on a row, selecting the main name — not the extension, so typing
+    /// `Bar` turns `Foo.java` into `Bar.java`. Nothing happens for a note row, the workspace root,
+    /// or a row already being renamed. Committing goes through [`Self::on_rename`]; a refusal from
+    /// [`Self::on_rename_check`] holds the field open with its reason drawn in the row.
+    pub(crate) fn begin_rename(
+        &mut self,
+        key: &SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.renaming.is_some() {
+            return;
+        }
+        let Some(ix) = self.row_of(key.as_ref()) else {
+            return;
+        };
+        if self.rows[ix].placeholder || self.arena.is_root(self.rows[ix].node) {
+            return;
+        }
+        let entry = self.arena.entry(self.rows[ix].node);
+        let (path, name) = (entry.path.to_string(), entry.name.to_string());
+        let stem = stem_len(&name);
+        self.renaming = Some(key.clone());
+        self.open_menu = None;
+        // The same keyed state `render` reads, so the field and the row agree on which row edits.
+        let editing =
+            window.use_keyed_state((self.id.clone(), "rename"), cx, |_, _| Editing::default());
+        if let Some(on_rename) = self.on_rename.clone() {
+            let path = path.clone();
+            editing.update(cx, |editing, _| {
+                editing.on_commit = Some(Rc::new(move |name, window, cx| {
+                    on_rename(&path, name, window, cx)
+                }));
+            });
+        }
+        let check: Option<OnCheck> = self.rename_check.clone().map(|check| {
+            let path = path.clone();
+            Rc::new(move |name: &SharedString| check(&path, name)) as OnCheck
+        });
+        Editing::open(&editing, name, Some(0..stem), check, window, cx);
+        cx.notify();
+    }
+
+    /// Starts an in-place rename on the row the keyboard is on: the `F2` fast path, the same entry
+    /// the row menu's Rename uses. Nothing happens for a note row, the workspace root, no row at
+    /// all, or a row already being renamed.
+    pub fn rename_focused(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(key) = self.cursor.clone() else {
+            return;
+        };
+        self.begin_rename(&key, window, cx);
+    }
+
     /// The rows the keyboard walks, passed over notes.
     fn walk(&self, from: usize, forward: bool) -> Option<usize> {
         let range: Box<dyn Iterator<Item = usize>> = match forward {
@@ -454,7 +536,8 @@ impl ProjectTree {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.rows.is_empty() {
+        // While a row is being renamed its field owns the keyboard; the tree must not also walk.
+        if self.rows.is_empty() || self.renaming.is_some() {
             return;
         }
         let at = self.cursor_row().unwrap_or(0);
@@ -539,6 +622,8 @@ impl ProjectTree {
         let ix = self.row_of(key.as_ref())?;
         let kind = self.rows[ix].kind(&self.arena);
         let path = self.arena.entry(self.rows[ix].node).path.clone();
+        // Renaming or deleting the workspace root itself means nothing.
+        let root = self.arena.is_root(self.rows[ix].node);
         let entries = row_menu_entries(kind);
         if entries.is_empty() {
             return None;
@@ -550,26 +635,43 @@ impl ProjectTree {
                 continue;
             };
             let label = action.label(&self.labels);
+            let disabled = root && matches!(action, ProjectAction::Rename | ProjectAction::Delete);
             let tree = tree.clone();
             let path = path.clone();
-            menu = menu.item(MenuItem::new(label).on_click(move |window, cx| {
-                let _ = tree.update(cx, |tree, cx| {
-                    tree.open_menu = None;
-                    cx.notify();
-                });
-                if action == ProjectAction::Open {
-                    let _ = tree.update(cx, |tree, cx| {
-                        tree.active = Some(path.clone());
-                        cx.notify();
-                    });
-                }
-                let handler = tree.read(cx).on_action.clone();
-                if let Some(handler) = handler {
-                    handler(action, path.as_ref(), window, cx);
-                }
-            }));
+            let row = key.clone();
+            menu = menu.item(
+                MenuItem::new(label)
+                    .icon(action.icon())
+                    .disabled(disabled)
+                    .on_click(move |window, cx| {
+                        if action == ProjectAction::Rename {
+                            let _ = tree.update(cx, |tree, cx| tree.begin_rename(&row, window, cx));
+                            return;
+                        }
+                        let _ = tree.update(cx, |tree, cx| {
+                            tree.open_menu = None;
+                            if action == ProjectAction::Open {
+                                tree.active = Some(path.clone());
+                            }
+                            cx.notify();
+                        });
+                        let handler = tree.read(cx).on_action.clone();
+                        if let Some(handler) = handler {
+                            handler(action, path.as_ref(), window, cx);
+                        }
+                    }),
+            );
         }
         Some(menu)
+    }
+}
+
+/// The length of a name's main part: everything before the last dot, except a leading dot that
+/// only hides the name (`.gitignore` is all main part). A rename selects this, not the extension.
+fn stem_len(name: &str) -> usize {
+    match name.rfind('.') {
+        None | Some(0) => name.len(),
+        Some(dot) => dot,
     }
 }
 
@@ -628,10 +730,20 @@ impl Focusable for ProjectTree {
 }
 
 impl Render for ProjectTree {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(ix) = self.pending_scroll.take() {
             self.scroll.scroll_to_item(ix, ScrollStrategy::Center);
         }
+        // The in-place rename's field lives in a keyed state, shared with `begin_rename`. Once the
+        // field is gone (Enter, Escape, a leaving field, a committed check) the row stops editing
+        // and focus returns to the tree.
+        let editing =
+            window.use_keyed_state((self.id.clone(), "rename"), cx, |_, _| Editing::default());
+        if self.renaming.is_some() && editing.read(cx).field().is_none() {
+            self.renaming = None;
+            window.focus(&self.focus, cx);
+        }
+        let rename_refusal = editing.read(cx).refusal();
         let tree = cx.entity();
         let data = Rc::new(RowData {
             id: self.id.clone(),
@@ -646,6 +758,9 @@ impl Render for ProjectTree {
             empty_folder: self.labels.empty_folder.clone(),
             icon_for: self.icon_for.clone(),
             tree: tree.clone(),
+            editing: editing.clone(),
+            renaming: self.renaming.clone(),
+            rename_refusal,
         });
         let count = self.rows.len();
         let list = uniform_list(

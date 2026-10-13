@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{ops::Range, rc::Rc};
 
 use gpui::{
     App, Context, ElementId, Entity, FocusHandle, InteractiveElement, IntoElement, MouseButton,
@@ -14,6 +14,8 @@ use crate::{
 };
 
 pub(crate) type OnCommit = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
+/// Says why some text cannot be kept yet; a refusal holds the field open for the owner to explain.
+pub(crate) type OnCheck = Rc<dyn Fn(&SharedString) -> Result<(), SharedString>>;
 
 /// A text being edited in place: its field while open, who hears the kept text, and where focus goes back after Enter or Escape. An edit that hands focus back keeps its text on Enter's release, so the release does not open it again.
 #[derive(Default)]
@@ -21,34 +23,67 @@ pub(crate) struct Editing {
     field: Option<(Entity<InputState>, Subscription)>,
     pub on_commit: Option<OnCommit>,
     back: Option<FocusHandle>,
+    /// Asked before Enter or a leaving field keeps the text; a refusal holds the field open.
+    check: Option<OnCheck>,
+    /// Why the last submit was held back; cleared once the text changes or passes.
+    refusal: Option<SharedString>,
 }
 
 impl Editing {
     /// Opens a field on `value`, all of it selected and focused; Enter or leaving keeps it.
     pub(crate) fn begin(state: &Entity<Editing>, value: String, window: &mut Window, cx: &mut App) {
+        Self::open(state, value, None, None, window, cx);
+    }
+
+    /// Opens a field on `value`, focused. `select` is the range left selected, whole value when it
+    /// is `None` — a rename selects the main name, not the extension. `check`, when given, is asked
+    /// before Enter or a leaving field keeps the text: a refusal holds the field open and is read
+    /// back through [`Self::refusal`].
+    pub(crate) fn open(
+        state: &Entity<Editing>,
+        value: String,
+        select: Option<Range<usize>>,
+        check: Option<OnCheck>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         let field = cx.new(|cx| {
             let mut input = InputState::new(window, cx);
             input.set_text(value, cx);
             input
         });
         let all = field.read(cx).text().len();
-        field.update(cx, |input, cx| input.select(0..all, cx));
+        let range = match select {
+            Some(range) => {
+                let end = range.end.min(all);
+                range.start.min(end)..end
+            }
+            None => 0..all,
+        };
+        field.update(cx, |input, cx| input.select(range, cx));
         window.focus(&field.read(cx).focus().clone(), cx);
         let owner = state.clone();
         let events = window.subscribe(&field, cx, move |_, event, window, cx| match event {
             InputEvent::Submit => owner.update(cx, |editing, cx| {
                 if editing.back.is_none() {
-                    editing.finish(false, window, cx);
+                    editing.keep(window, cx);
                 }
             }),
             InputEvent::Blur => owner.update(cx, |editing, cx| {
                 editing.back = None;
-                editing.finish(false, window, cx);
+                editing.keep(window, cx);
+            }),
+            InputEvent::Changed => owner.update(cx, |editing, cx| {
+                if editing.refusal.take().is_some() {
+                    cx.notify();
+                }
             }),
             _ => {}
         });
         state.update(cx, |editing, cx| {
             editing.field = Some((field, events));
+            editing.check = check;
+            editing.refusal = None;
             cx.notify();
         });
     }
@@ -69,11 +104,35 @@ impl Editing {
         self.field.as_ref().map(|(field, _)| field.clone())
     }
 
+    /// Why the last submit was held back, if any; the owner draws it beside the field.
+    pub(crate) fn refusal(&self) -> Option<SharedString> {
+        self.refusal.clone()
+    }
+
+    /// Keeps the text the field holds, unless the check refuses it — a refusal leaves the field
+    /// open and the reason on [`Self::refusal`].
+    fn keep(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((field, _)) = self.field.as_ref() else {
+            return;
+        };
+        let text = SharedString::from(field.read(cx).text().to_string());
+        if let Some(check) = self.check.clone()
+            && let Err(reason) = check(&text)
+        {
+            self.refusal = Some(reason);
+            cx.notify();
+            return;
+        }
+        self.refusal = None;
+        self.finish(false, window, cx);
+    }
+
     /// Ends editing; keeps the text unless `cancel`.
     pub(crate) fn finish(&mut self, cancel: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some((field, _)) = self.field.take() else {
             return;
         };
+        self.refusal = None;
         if cancel {
             log::info!("inline edit: cancelled");
         } else {

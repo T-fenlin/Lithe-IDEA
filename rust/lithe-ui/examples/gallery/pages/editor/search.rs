@@ -67,8 +67,9 @@ pub fn find(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         Err(message) => {
             editor.update(cx, |editor, cx| editor.set_backgrounds(Vec::new(), cx));
             (
-                FindWidget::new("search-widget", &query, None, 0)
-                    .error(message.lines().last().unwrap_or("bad pattern").to_string()),
+                // The raw error travels whole: the widget keeps a short word in the count cell
+                // and shows this message in the tooltip, so trimming it here would hide detail.
+                FindWidget::new("search-widget", &query, None, 0).error(message),
                 None,
             )
         }

@@ -168,11 +168,16 @@ fn a_row_key_is_the_node_key_or_the_empty_note() {
 }
 
 #[test]
-fn the_menus_are_the_macos_ones_and_offer_no_writes() {
+fn the_menu_offers_the_reads_and_the_file_writes() {
     assert_eq!(
         row_menu_entries(ProjectRowKind::File),
         vec![
             Some(ProjectAction::Open),
+            None,
+            Some(ProjectAction::NewFile),
+            None,
+            Some(ProjectAction::Rename),
+            Some(ProjectAction::Delete),
             None,
             Some(ProjectAction::RevealInFileManager),
             Some(ProjectAction::CopyPath),
@@ -182,6 +187,12 @@ fn the_menus_are_the_macos_ones_and_offer_no_writes() {
     assert_eq!(
         row_menu_entries(ProjectRowKind::Directory),
         vec![
+            Some(ProjectAction::NewFile),
+            Some(ProjectAction::NewFolder),
+            None,
+            Some(ProjectAction::Rename),
+            Some(ProjectAction::Delete),
+            None,
             Some(ProjectAction::RevealInFileManager),
             Some(ProjectAction::CopyPath),
             Some(ProjectAction::CopyRelativePath),
@@ -197,17 +208,48 @@ fn the_menus_are_the_macos_ones_and_offer_no_writes() {
         .collect();
     actions.sort_by_key(|action| format!("{action:?}"));
     actions.dedup();
+    let mut expected = super::PROJECT_ACTIONS.to_vec();
+    expected.sort_by_key(|action| format!("{action:?}"));
     assert_eq!(
-        actions,
-        vec![
-            ProjectAction::CopyPath,
-            ProjectAction::CopyRelativePath,
-            ProjectAction::Open,
-            ProjectAction::Refresh,
-            ProjectAction::RevealInFileManager,
-        ],
-        "the five entries the macOS truth has, and nothing that writes"
+        actions, expected,
+        "the two menus together carry every action and nothing else"
     );
+}
+
+#[test]
+fn every_menu_entry_has_its_own_glyph() {
+    use crate::primitives::IconName;
+
+    // The loop touches every variant, so a new action with no mapping fails to compile.
+    for action in super::PROJECT_ACTIONS {
+        let _ = action.icon();
+    }
+    // The two copy entries share a glyph on purpose; the rest stay apart for scanning.
+    assert_eq!(
+        ProjectAction::CopyPath.icon(),
+        ProjectAction::CopyRelativePath.icon()
+    );
+    assert_eq!(ProjectAction::Rename.icon(), IconName::Pencil);
+    assert_eq!(ProjectAction::Delete.icon(), IconName::Trash2);
+    assert_eq!(ProjectAction::NewFile.icon(), IconName::FilePlus);
+    assert_eq!(ProjectAction::NewFolder.icon(), IconName::FolderPlus);
+}
+
+#[test]
+fn a_rename_selects_the_main_name_not_the_extension() {
+    assert_eq!(super::stem_len("App.java"), 3);
+    assert_eq!(
+        super::stem_len("foo.bar.java"),
+        7,
+        "only the last dot is split"
+    );
+    assert_eq!(super::stem_len("README"), 6, "no dot, the whole name");
+    assert_eq!(
+        super::stem_len(".gitignore"),
+        10,
+        "a leading dot hides the name, it does not open an extension"
+    );
+    assert_eq!(super::stem_len("a."), 1);
 }
 
 #[test]
@@ -219,6 +261,10 @@ fn every_menu_entry_has_its_own_word() {
         copy_path: "Copy Path".into(),
         copy_relative_path: "Copy Relative Path".into(),
         refresh: "Refresh".into(),
+        rename: "Rename".into(),
+        delete: "Delete".into(),
+        new_file: "New File".into(),
+        new_folder: "New Folder".into(),
     };
     let mut words: Vec<String> = super::PROJECT_ACTIONS
         .iter()

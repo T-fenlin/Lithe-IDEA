@@ -18,6 +18,12 @@ use gpui::{App, SharedString};
 pub use locale::{Direction, LOCALES, Locale};
 pub use skip::SkipLink;
 
+/// Serializes the tests that read or set the process-wide locale. `rust_i18n::set_locale` is global
+/// state and the tests run in parallel, so a test that changes it would otherwise move another
+/// test's lookups under it.
+#[cfg(test)]
+pub(crate) static LOCALE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The shown locale's message for `key`, each `%{name}` filled from `args`.
 ///
 /// gpui sets no paragraph direction, so a right-to-left message leads with a

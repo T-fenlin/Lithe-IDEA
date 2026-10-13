@@ -497,6 +497,34 @@ impl CodeEditor {
         cx.notify();
     }
 
+    /// Turns the minimap on or off while the editor runs, the way a view menu switches it.
+    pub fn set_minimap(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.options.minimap == on {
+            return;
+        }
+        self.options.minimap = on;
+        cx.notify();
+    }
+
+    /// Whether the minimap is drawn beside the code area.
+    pub fn minimap_enabled(&self) -> bool {
+        self.options.minimap
+    }
+
+    /// Turns the rendering of spaces, tabs and line breaks on or off.
+    pub fn set_render_whitespace(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.options.whitespace == on {
+            return;
+        }
+        self.options.whitespace = on;
+        cx.notify();
+    }
+
+    /// Whether whitespace marks are drawn inside the text.
+    pub fn render_whitespace_enabled(&self) -> bool {
+        self.options.whitespace
+    }
+
     /// Turns soft wrap on or off while the editor runs, the way a settings page switches it.
     ///
     /// The editor cuts every line again and lays the row table out on its next render, so both the wrap and
@@ -668,6 +696,13 @@ impl CodeEditor {
         cx.notify();
     }
 
+    /// Washes `ranges` behind the text; each carries its own color, so the caller picks the
+    /// highlight style.
+    ///
+    /// Occupied by the find bar today (a match wash plus a stronger one on the current match).
+    /// It is a general channel, so a second user — bracket matching, the current word, a marked
+    /// occurrence — would overwrite the find bar's wash. When that second user appears, converge
+    /// on a dedicated API (a `set_find_matches` role) instead of sharing this one.
     pub fn set_backgrounds(
         &mut self,
         ranges: Vec<(Range<usize>, gpui::Hsla)>,

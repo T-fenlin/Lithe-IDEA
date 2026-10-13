@@ -107,6 +107,127 @@ fn toggling_comments_twice_restores_the_lines(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn duplicating_a_line_copies_it_below_and_keeps_the_caret_on_the_original(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("a\nb\nc", cx);
+    editor.update(cx, |editor, cx| {
+        let middle = 2..2;
+        editor.select([middle], cx);
+        editor.duplicate_line(cx);
+        assert_eq!(editor.text(), "a\nb\nb\nc");
+        assert_eq!(
+            editor.primary().head,
+            2,
+            "the caret stays where it was, on the original line"
+        );
+    });
+}
+
+#[gpui::test]
+fn deleting_a_line_takes_its_break_and_not_the_line_after(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("a\nb\nc", cx);
+    editor.update(cx, |editor, cx| {
+        let middle = 2..2;
+        editor.select([middle], cx);
+        editor.delete_line(cx);
+        assert_eq!(editor.text(), "a\nc");
+        assert_eq!(editor.primary().head, 2, "the caret lands on the next line");
+    });
+}
+
+#[gpui::test]
+fn deleting_the_last_line_takes_the_break_before_it(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("a\nb", cx);
+    editor.update(cx, |editor, cx| {
+        let last = 2..2;
+        editor.select([last], cx);
+        editor.delete_line(cx);
+        assert_eq!(editor.text(), "a", "no empty line is left at the end");
+    });
+}
+
+#[gpui::test]
+fn deleting_the_only_line_empties_the_buffer(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("only", cx);
+    editor.update(cx, |editor, cx| {
+        let start = 0..0;
+        editor.select([start], cx);
+        editor.delete_line(cx);
+        assert_eq!(editor.text(), "");
+    });
+}
+
+#[gpui::test]
+fn moving_a_line_swaps_it_with_its_neighbour_and_carries_the_caret(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("a\nb\nc", cx);
+    editor.update(cx, |editor, cx| {
+        let middle = 2..2;
+        editor.select([middle], cx);
+        editor.move_line_up(cx);
+        assert_eq!(editor.text(), "b\na\nc");
+        assert_eq!(editor.primary().head, 0, "the caret rides the line up");
+        editor.move_line_down(cx);
+        assert_eq!(editor.text(), "a\nb\nc");
+        assert_eq!(editor.primary().head, 2, "and back down with it");
+        editor.move_line_down(cx);
+        assert_eq!(editor.text(), "a\nc\nb");
+        assert_eq!(editor.primary().head, 4);
+    });
+}
+
+#[gpui::test]
+fn moving_a_block_of_lines_swaps_the_whole_block(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("a\nb\nc\nd", cx);
+    editor.update(cx, |editor, cx| {
+        // line1-2（"b\nc"）两块选上，整块与上一行交换。
+        let block = 2..5;
+        editor.select([block], cx);
+        editor.move_line_up(cx);
+        assert_eq!(editor.text(), "b\nc\na\nd");
+        // 同一块现在在第 0-1 行，再整块与下一行交换，回到原样。
+        let block = 0..3;
+        editor.select([block], cx);
+        editor.move_line_down(cx);
+        assert_eq!(editor.text(), "a\nb\nc\nd");
+    });
+}
+
+#[gpui::test]
+fn moving_the_first_line_up_or_the_last_line_down_changes_nothing(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("a\nb", cx);
+    editor.update(cx, |editor, cx| {
+        let first = 0..0;
+        editor.select([first], cx);
+        editor.move_line_up(cx);
+        assert_eq!(editor.text(), "a\nb");
+        let last = 2..2;
+        editor.select([last], cx);
+        editor.move_line_down(cx);
+        assert_eq!(
+            editor.text(),
+            "a\nb",
+            "there is no line to swap with at the edges"
+        );
+    });
+}
+
+#[gpui::test]
+fn the_display_switches_report_what_they_were_set_to(cx: &mut TestAppContext) {
+    let (editor, cx) = editor("a", cx);
+    editor.update(cx, |editor, cx| {
+        assert!(!editor.minimap_enabled());
+        assert!(!editor.render_whitespace_enabled());
+        editor.set_minimap(true, cx);
+        editor.set_render_whitespace(true, cx);
+        assert!(editor.minimap_enabled());
+        assert!(editor.render_whitespace_enabled());
+        editor.set_minimap(false, cx);
+        editor.set_render_whitespace(false, cx);
+        assert!(!editor.minimap_enabled());
+        assert!(!editor.render_whitespace_enabled());
+    });
+}
+
+#[gpui::test]
 fn a_multi_line_ghost_moves_the_rest_of_its_line_below_it(cx: &mut TestAppContext) {
     let (editor, cx) = editor("call(x)\nnext", cx);
     editor.update(cx, |editor, cx| {

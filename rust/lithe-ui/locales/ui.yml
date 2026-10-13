@@ -60,3 +60,20 @@ keys:
     user: {en-US: "User", en-GB: "User", de-DE: "Benutzer", fr-FR: "Utilisateur", ja-JP: "ユーザー", he-IL: "משתמש", zh-CN: "用户"}
   row:
     unbindable: {en-US: "Not wired", en-GB: "Not wired", de-DE: "Nicht verdrahtet", fr-FR: "Non câblé", ja-JP: "未接続", he-IL: "לא מחובר", zh-CN: "未接入"}
+editor:
+  find:
+    queryField:         {en-US: "Find", en-GB: "Find", de-DE: "Suchen", fr-FR: "Rechercher", ja-JP: "検索", he-IL: "חיפוש", zh-CN: "查找"}
+    replaceField:       {en-US: "Replace with", en-GB: "Replace with", de-DE: "Ersetzen durch", fr-FR: "Remplacer par", ja-JP: "置換後の文字列", he-IL: "החלף ב־", zh-CN: "替换为"}
+    toggleReplace:      {en-US: "Toggle replace", en-GB: "Toggle replace", de-DE: "Ersetzen ein-/ausblenden", fr-FR: "Afficher/masquer le remplacement", ja-JP: "置換の表示切り替え", he-IL: "הצג/הסתר החלפה", zh-CN: "切换替换"}
+    matchCase:          {en-US: "Match case", en-GB: "Match case", de-DE: "Groß-/Kleinschreibung beachten", fr-FR: "Respecter la casse", ja-JP: "大文字と小文字を区別", he-IL: "התאם רישיות", zh-CN: "区分大小写"}
+    wholeWord:          {en-US: "Whole word", en-GB: "Whole word", de-DE: "Nur ganze Wörter", fr-FR: "Mot entier", ja-JP: "単語単位", he-IL: "מילה שלמה", zh-CN: "全字匹配"}
+    regularExpression:  {en-US: "Regular expression", en-GB: "Regular expression", de-DE: "Regulärer Ausdruck", fr-FR: "Expression régulière", ja-JP: "正規表現", he-IL: "ביטוי רגולרי", zh-CN: "正则表达式"}
+    noResults:          {en-US: "No results", en-GB: "No results", de-DE: "Keine Treffer", fr-FR: "Aucun résultat", ja-JP: "一致なし", he-IL: "אין תוצאות", zh-CN: "无结果"}
+    matchCount:         {en-US: "%{current} of %{total}", en-GB: "%{current} of %{total}", de-DE: "%{current} von %{total}", fr-FR: "%{current} sur %{total}", ja-JP: "%{total} 件中 %{current} 件目", he-IL: "%{current} מתוך %{total}", zh-CN: "第 %{current} / 共 %{total}"}
+    found:              {en-US: "%{total} found", en-GB: "%{total} found", de-DE: "%{total} gefunden", fr-FR: "%{total} résultats", ja-JP: "%{total} 件", he-IL: "נמצאו %{total}", zh-CN: "%{total} 个结果"}
+    invalidPattern:     {en-US: "Invalid regex", en-GB: "Invalid regex", de-DE: "Regex falsch", fr-FR: "Regex invalide", ja-JP: "正規表現エラー", he-IL: "ביטוי שגוי", zh-CN: "正则表达式无效"}
+    previousMatch:      {en-US: "Previous match", en-GB: "Previous match", de-DE: "Vorheriger Treffer", fr-FR: "Correspondance précédente", ja-JP: "前の一致", he-IL: "התאמה קודמת", zh-CN: "上一个匹配"}
+    nextMatch:          {en-US: "Next match", en-GB: "Next match", de-DE: "Nächster Treffer", fr-FR: "Correspondance suivante", ja-JP: "次の一致", he-IL: "התאמה הבאה", zh-CN: "下一个匹配"}
+    close:              {en-US: "Close", en-GB: "Close", de-DE: "Schließen", fr-FR: "Fermer", ja-JP: "閉じる", he-IL: "סגור", zh-CN: "关闭"}
+    replace:            {en-US: "Replace", en-GB: "Replace", de-DE: "Ersetzen", fr-FR: "Remplacer", ja-JP: "置換", he-IL: "החלף", zh-CN: "替换"}
+    replaceAll:         {en-US: "Replace all", en-GB: "Replace all", de-DE: "Alle ersetzen", fr-FR: "Tout remplacer", ja-JP: "すべて置換", he-IL: "החלף הכל", zh-CN: "全部替换"}

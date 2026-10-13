@@ -20,6 +20,7 @@ use super::{
 };
 use crate::{
     data_display::Tone,
+    forms::{Editing, Input},
     lists::GitStatus,
     theme::{ActiveTheme, IconSize, Palette, Radius, Size, TextSize},
 };
@@ -54,6 +55,12 @@ pub(super) struct RowData {
     pub empty_folder: SharedString,
     pub icon_for: Option<IconFor>,
     pub tree: Entity<ProjectTree>,
+    /// The in-place rename's field state, shared with the tree.
+    pub editing: Entity<Editing>,
+    /// The row key being renamed in place, if any.
+    pub renaming: Option<SharedString>,
+    /// Why the rename check refused the last submit, if it did.
+    pub rename_refusal: Option<SharedString>,
 }
 
 pub(super) fn draw(
@@ -185,6 +192,51 @@ fn row(data: &RowData, ix: usize, _window: &mut Window, cx: &mut App) -> AnyElem
     } else if let Some(status) = status {
         label = label.text_color(ink(status.tone(), colors));
     }
+    // The row being renamed shows its field in place of the name, with the check's reason (if any)
+    // trailing it on the same line — a row is a fixed height, so the reason cannot go below it.
+    let renaming = data.renaming.as_ref() == Some(&key);
+    let field = renaming.then(|| data.editing.read(cx).field()).flatten();
+    let body: AnyElement = match field {
+        Some(field) => {
+            let editing = data.editing.clone();
+            let refusal = data.rename_refusal.clone();
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap_1()
+                .on_key_down(move |event, window, cx| {
+                    if event.keystroke.key == "escape" {
+                        cx.stop_propagation();
+                        editing.update(cx, |editing, cx| editing.finish(true, window, cx));
+                    }
+                })
+                .child(
+                    div().flex_1().min_w_0().child(
+                        Input::new(&field)
+                            .size(Size::Small)
+                            .invalid(refusal.is_some()),
+                    ),
+                )
+                .children(refusal.map(|reason| {
+                    div()
+                        .flex_none()
+                        .max_w(relative(0.5))
+                        .truncate()
+                        .whitespace_nowrap()
+                        .overflow_hidden()
+                        .text_size(theme.text_size(TextSize::Xs))
+                        // A renaming row is usually the selected one, so the reason sits on
+                        // `colors.active`; ordinary foreground keeps it readable there where
+                        // `danger` would not.
+                        .text_color(colors.fg)
+                        .child(reason)
+                }))
+                .into_any_element()
+        }
+        None => label.into_any_element(),
+    };
     let letter = status
         .filter(|_| kind == ProjectRowKind::File)
         .map(|status| {
@@ -232,7 +284,7 @@ fn row(data: &RowData, ix: usize, _window: &mut Window, cx: &mut App) -> AnyElem
                 .child(caret),
         )
         .child(icon)
-        .child(label)
+        .child(body)
         .children(letter)
         .on_click(move |event, window, cx| {
             let modifiers = event.modifiers();

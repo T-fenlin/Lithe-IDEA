@@ -369,6 +369,173 @@ impl CodeEditor {
         self.shift_lines(edits, kept, cx);
     }
 
+    /// Duplicates each touched line below itself; every copy keeps the line's own text and the
+    /// selections stay on the original lines (what IDEA leaves behind after `Duplicate Line`).
+    pub(crate) fn duplicate_line(&mut self, cx: &mut Context<Self>) {
+        if !self.editable() {
+            return;
+        }
+        let kept = self.selections.clone();
+        let edits = self
+            .touched()
+            .into_iter()
+            .filter_map(|line| {
+                let range = self.buffer.line_range(line);
+                let slice = self.buffer.text().get(range.clone())?;
+                Some((range.end..range.end, format!("\n{slice}")))
+            })
+            .collect();
+        self.shift_lines(edits, kept, cx);
+    }
+
+    /// Deletes each touched line with its line break; on the last line, which has no break of its
+    /// own, the break **before** it goes too so no empty line is left at the end of the text.
+    pub(crate) fn delete_line(&mut self, cx: &mut Context<Self>) {
+        if !self.editable() {
+            return;
+        }
+        let lines = self.touched();
+        let kept = self.selections.clone();
+        let text_len = self.buffer.len();
+        let last_line = self.buffer.lines() - 1;
+        // Taking the previous break only stays correct when nothing before it is being deleted in
+        // the same step: two adjacent deletions would otherwise overlap and the batch would be
+        // rejected whole.
+        let alone_on_last = lines.len() == 1 && lines[0] == last_line;
+        let edits = lines
+            .into_iter()
+            .filter_map(|line| {
+                let range = self.buffer.line_range(line);
+                if range.end < text_len {
+                    Some((range.start..self.buffer.next(range.end), String::new()))
+                } else if range.start > 0 && alone_on_last {
+                    Some((self.buffer.previous(range.start)..range.end, String::new()))
+                } else {
+                    Some((range.start..range.end, String::new()))
+                }
+            })
+            .collect();
+        self.shift_lines(edits, kept, cx);
+    }
+
+    /// A line's bytes together with its line break, when it has one.
+    fn block(&self, line: usize) -> (Range<usize>, String) {
+        let range = self.buffer.line_range(line);
+        let end = if range.end < self.buffer.len() {
+            self.buffer.next(range.end)
+        } else {
+            range.end
+        };
+        let text = self.buffer.text()[range.start..end].to_string();
+        (range.start..end, text)
+    }
+
+    /// Swaps two neighbouring blocks of lines, breaks included.
+    ///
+    /// A break belongs to the line it ends, so when the lower block runs to the end of the text it has
+    /// none: after the swap that block no longer ends the text and grows one, while the upper block
+    /// takes the end and drops its own. Selections are **not** touched here — the callers know where
+    /// the moved block went and place their own.
+    fn swap_blocks(
+        &mut self,
+        upper: (Range<usize>, String),
+        lower: (Range<usize>, String),
+        cx: &mut Context<Self>,
+    ) {
+        debug_assert_eq!(
+            upper.0.end, lower.0.start,
+            "only neighbouring blocks swap, so the edits cannot overlap"
+        );
+        let edits = if lower.1.ends_with('\n') || !upper.1.ends_with('\n') {
+            vec![(upper.0, lower.1), (lower.0, upper.1)]
+        } else {
+            vec![
+                (upper.0.start..upper.0.end, format!("{}\n", lower.1)),
+                (
+                    upper.0.end..lower.0.end,
+                    upper.1.trim_end_matches('\n').to_string(),
+                ),
+            ]
+        };
+        self.apply(edits, false, cx);
+    }
+
+    /// Moves the touched lines up one, swapping them with the line above. A swap keeps the text
+    /// length, so selections outside the moved block need no shift; the ones inside ride along.
+    pub(crate) fn move_line_up(&mut self, cx: &mut Context<Self>) {
+        if !self.editable() {
+            return;
+        }
+        let lines = self.touched();
+        let (Some(&first), Some(&last)) = (lines.first(), lines.last()) else {
+            return;
+        };
+        if first == 0 {
+            return;
+        }
+        let (previous_range, previous_text) = self.block(first - 1);
+        let swap_at = previous_range.start;
+        let block_start = self.buffer.line_range(first).start;
+        let block_end = self.block(last).0.end;
+        let block_text = self.buffer.text()[block_start..block_end].to_string();
+        let moved = |selection: &Selection| {
+            (selection.anchor >= block_start && selection.head <= block_end).then(|| Selection {
+                anchor: selection.anchor - block_start + swap_at,
+                head: selection.head - block_start + swap_at,
+                goal: None,
+            })
+        };
+        let kept: Vec<Selection> = self
+            .selections
+            .iter()
+            .map(|selection| moved(selection).unwrap_or(*selection))
+            .collect();
+        self.swap_blocks(
+            (previous_range, previous_text),
+            (block_start..block_end, block_text),
+            cx,
+        );
+        self.set_selections(kept, cx);
+    }
+
+    /// Moves the touched lines down one, swapping them with the line below.
+    pub(crate) fn move_line_down(&mut self, cx: &mut Context<Self>) {
+        if !self.editable() {
+            return;
+        }
+        let lines = self.touched();
+        let (Some(&first), Some(&last)) = (lines.first(), lines.last()) else {
+            return;
+        };
+        let line_count = self.buffer.lines();
+        if last + 1 >= line_count {
+            return;
+        }
+        let block_start = self.buffer.line_range(first).start;
+        let block_end = self.block(last).0.end;
+        let block_text = self.buffer.text()[block_start..block_end].to_string();
+        let (next_range, next_text) = self.block(last + 1);
+        let swap_at = next_range.start;
+        let moved = |selection: &Selection| {
+            (selection.anchor >= block_start && selection.head <= block_end).then(|| Selection {
+                anchor: selection.anchor - block_start + swap_at,
+                head: selection.head - block_start + swap_at,
+                goal: None,
+            })
+        };
+        let kept: Vec<Selection> = self
+            .selections
+            .iter()
+            .map(|selection| moved(selection).unwrap_or(*selection))
+            .collect();
+        self.swap_blocks(
+            (block_start..block_end, block_text),
+            (next_range, next_text),
+            cx,
+        );
+        self.set_selections(kept, cx);
+    }
+
     pub(crate) fn undo(&mut self, cx: &mut Context<Self>) {
         if !self.editable() {
             return;

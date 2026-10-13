@@ -49,6 +49,10 @@ actions!(
         SelectNext,
         SingleCursor,
         ToggleComment,
+        DuplicateLine,
+        DeleteLine,
+        MoveLineUp,
+        MoveLineDown,
         Fold,
         Unfold,
         Complete,
@@ -101,6 +105,18 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-space", Complete, context),
         KeyBinding::new("escape", SingleCursor, context),
         KeyBinding::new("secondary-/", ToggleComment, context),
+        // IDEA's default line-editing keys, the same on every platform: duplicate, delete, and
+        // move the touched lines. The editor is the only owner of these actions, so the host's
+        // menu dispatches them by type like Undo does.
+        //
+        // Duplicate line is `secondary-shift-d`, **not** `secondary-d`: the latter already selects
+        // the next occurrence, and one key must not name two actions. IDEA's Windows default is
+        // Ctrl+D for both, but a single binding can only run one, and `SelectNext` keeps the plain
+        // form it has always had.
+        KeyBinding::new("secondary-shift-d", DuplicateLine, context),
+        KeyBinding::new("secondary-y", DeleteLine, context),
+        KeyBinding::new("secondary-alt-shift-up", MoveLineUp, context),
+        KeyBinding::new("secondary-alt-shift-down", MoveLineDown, context),
         KeyBinding::new("secondary-alt-[", Fold, context),
         KeyBinding::new("secondary-alt-]", Unfold, context),
     ];
@@ -311,6 +327,10 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<CodeEditor
         }
     });
     let root = on!(root, ToggleComment, |e, _, cx| e.toggle_comment(cx));
+    let root = on!(root, DuplicateLine, |e, _, cx| e.duplicate_line(cx));
+    let root = on!(root, DeleteLine, |e, _, cx| e.delete_line(cx));
+    let root = on!(root, MoveLineUp, |e, _, cx| e.move_line_up(cx));
+    let root = on!(root, MoveLineDown, |e, _, cx| e.move_line_down(cx));
     let root = on!(root, Fold, |e, _, cx| {
         let line = e.buffer.line_of(e.primary().head);
         let header = super::syntax::folds(&e.buffer)

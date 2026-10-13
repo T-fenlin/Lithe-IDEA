@@ -47,10 +47,16 @@ fn a_right_to_left_message_leads_with_its_mark() {
 /// A message whose key the catalogue holds reads as this crate's English copy.
 #[test]
 fn a_key_reads_its_message() {
+    // The lookup reads the process-wide locale, so it holds the same lock the locale-switching
+    // tests do; otherwise their `set_locale` could move this test's words under it.
+    let _guard = super::LOCALE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     assert_eq!(message("palette.recent"), "Recent");
     assert_eq!(message("state.unavailable"), "Unavailable");
     assert_eq!(message("keys.source.default"), "Default");
     assert_eq!(message("keys.source.user"), "User");
+    assert_eq!(message("editor.find.noResults"), "No results");
 }
 
 /// Every leaf in the catalogue carries every locale, so a message cannot ship

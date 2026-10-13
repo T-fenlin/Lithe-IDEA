@@ -52,7 +52,10 @@ pub(crate) use keys::bind_keys;
 ///
 /// 它们就是编辑器自己在 `ElyEditor` 上下文里登记的那几个类型 —— 派发靠类型匹配，
 /// 宿主另立一个同名动作是派发不到的。
-pub use keys::{Copy, Cut, Paste, Redo, SelectAll, Undo};
+pub use keys::{
+    Copy, Cut, DeleteLine, DuplicateLine, MoveLineDown, MoveLineUp, Paste, Redo, SelectAll,
+    ToggleComment, Undo,
+};
 pub(crate) use layout::stack;
 pub use preview::ThemePreview;
 pub use problems::{Problem, ProblemsPanel};
