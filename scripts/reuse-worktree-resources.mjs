@@ -62,7 +62,7 @@ async function readRegistry() {
     throw new Error(`Unsupported worktree resource registry: ${REGISTRY_PATH}`);
   }
   const identifiers = new Set();
-  const validators = new Set(["cargo", "swiftpm", "bun", "jdtls", "jdk"]);
+  const validators = new Set(["cargo", "jdtls", "jdk"]);
   for (const resource of registry.resources) {
     if (!resource?.id || identifiers.has(resource.id)) throw new Error(`Duplicate or missing resource id: ${resource?.id ?? "<missing>"}`);
     if (!validators.has(resource.validator)) throw new Error(`Unknown validator for ${resource.id}: ${resource.validator}`);
@@ -145,7 +145,14 @@ async function requiredFile(root, relativePath, resourceID) {
 async function validatorArguments(resource, cachePath, targetRoot) {
   if (resource.validator === "cargo") {
     const lockPaths = [];
-    for (const relativePath of ["rust/Cargo.lock", "windows/tauri/src-tauri/Cargo.lock"]) {
+    // Every workspace that downloads into the shared registry cache must be
+    // listed here: the validator rejects archives that no lock references, so
+    // a missing lock would silently evict that workspace's crates.
+    for (const relativePath of [
+      "rust/Cargo.lock",
+      "rust/lithe-gpui/Cargo.lock",
+      "rust/lithe-ui/Cargo.lock",
+    ]) {
       const candidate = path.join(targetRoot, relativePath);
       if (await pathExists(candidate)) lockPaths.push(candidate);
     }
@@ -157,30 +164,6 @@ async function validatorArguments(resource, cachePath, targetRoot) {
   }
   if (resource.validator === "jdk") {
     return ["--skip-cargo", "--jdk-cache", cachePath, "--jdk-manifest", await requiredFile(targetRoot, "third_party/jdk/manifest.json", resource.id)];
-  }
-  if (resource.validator === "swiftpm") {
-    const swiftVersionPath = await requiredFile(targetRoot, ".swift-version", resource.id);
-    const swiftVersion = (await fs.readFile(swiftVersionPath, "utf8")).trim();
-    return [
-      "--skip-cargo",
-      "--swiftpm-cache", cachePath,
-      "--swiftpm-resolved", await requiredFile(targetRoot, "Package.resolved", resource.id),
-      "--swift-version", swiftVersion,
-    ];
-  }
-  if (resource.validator === "bun") {
-    // This route validates sealed downloads only. Job-owned installation temp
-    // data and node_modules stay in the registry's non-reusable exclusions.
-    const packagePath = await requiredFile(targetRoot, "package.json", resource.id);
-    const packageManifest = JSON.parse(await fs.readFile(packagePath, "utf8"));
-    const match = String(packageManifest.packageManager ?? "").match(/^bun@(.+)$/);
-    if (!match) throw new Error("bun requires package.json packageManager to pin Bun");
-    return [
-      "--skip-cargo",
-      "--bun-version", match[1],
-      "--bun-lock", await requiredFile(targetRoot, "bun.lock", resource.id),
-      "--bun-cache", cachePath,
-    ];
   }
   throw new Error(`Unsupported validator: ${resource.validator}`);
 }

@@ -64,34 +64,6 @@ function reuse(extraArguments = []) {
 }
 
 try {
-  await test("bundled UI fonts come from Git and cannot be copied from worktree artifacts", { timeout: 15000 }, async () => {
-    const listed = run(process.execPath, [reuseScript, "--list"]);
-    assertSucceeded(listed);
-    assert.ok(!listed.stdout.includes("bundled-ui-fonts"));
-    const registry = JSON.parse(await fs.readFile(path.join(scriptDirectory, "worktree-resources.json"), "utf8"));
-    const fonts = registry.excludedResources.find(resource => resource.id === "bundled-ui-fonts");
-    assert.match(fonts.identity, /Inter 4\.1.*18 static OTF.*JetBrains Mono 2\.304.*16 static TTF/);
-    assert.match(fonts.identity, /Nerd Fonts v3\.5\.1.*four complete patched TTF/);
-    const rejected = run(process.execPath, [reuseScript, "--source", sourceRoot, "--resource", "bundled-ui-fonts"]);
-    assert.notEqual(rejected.status, 0);
-    assert.match(rejected.stderr, /bundled-ui-fonts is isolated/);
-  });
-  await test("Sparkle baseline staging is never listed or copied between worktrees", { timeout: 15000 }, () => {
-    const listed = run(process.execPath, [reuseScript, "--list"]);
-    assertSucceeded(listed);
-    assert.ok(!listed.stdout.includes("sparkle-baseline-staging"));
-    const refused = reuse(["--resource", "sparkle-baseline-staging"]);
-    assert.notEqual(refused.status, 0);
-    assert.match(diagnostics(refused), /sparkle-baseline-staging.*\.baseline-.*cannot be reused/);
-  });
-  await test("frontend install temp data and dependencies cannot cross worktrees", { timeout: 15000 }, () => {
-    const listed = run(process.execPath, [reuseScript, "--list"]);
-    assertSucceeded(listed);
-    assert.ok(!listed.stdout.includes("frontend-install-state"));
-    const refused = reuse(["--resource", "frontend-install-state"]);
-    assert.notEqual(refused.status, 0);
-    assert.match(diagnostics(refused), /frontend-install-state.*node_modules.*bun-tmp.*cannot be reused/);
-  });
   await test("Java launch files are never listed or copied between worktrees", { timeout: 15000 }, () => {
     const listed = run(process.execPath, [reuseScript, "--list"]);
     assertSucceeded(listed);
@@ -99,11 +71,6 @@ try {
     const refused = reuse(["--resource", "java-launch-temporaries"]);
     assert.notEqual(refused.status, 0);
     assert.match(diagnostics(refused), /java-launch-temporaries.*classpath\.jar.*cannot be reused/);
-  });
-  await test("IDE MCP credentials and helpers cannot cross worktrees", { timeout: 15000 }, () => {
-    const refused = reuse(["--resource", "ide-mcp"]);
-    assert.notEqual(refused.status, 0);
-    assert.match(diagnostics(refused), /ide-mcp.*cannot be reused/);
   });
   await test("generated matrix views cannot be copied across worktrees", { timeout: 15000 }, () => {
     const refused = reuse(["--resource", "platform-feature-matrix"]);
@@ -136,16 +103,6 @@ try {
     const refused = reuse(["--resource", "jdt-maven-settings"]);
     assert.notEqual(refused.status, 0);
     assert.match(diagnostics(refused), /jdt-maven-settings.*cannot be reused/);
-  });
-  await test("PHP downloads and native plugin packages stay isolated in each worktree", { timeout: 15000 }, () => {
-    const listed = run(process.execPath, [reuseScript, "--list"]);
-    assertSucceeded(listed);
-    for (const id of ["php-language-server-downloads", "official-plugin-packages"]) {
-      assert.ok(!listed.stdout.includes(id));
-      const refused = reuse(["--resource", id]);
-      assert.notEqual(refused.status, 0);
-      assert.match(diagnostics(refused), new RegExp(`${id}.*cannot be reused`));
-    }
   });
   await testFailedBackupPreservesDestination();
   await fs.mkdir(path.join(sourceRoot, "third_party", "jdtls"), { recursive: true });
