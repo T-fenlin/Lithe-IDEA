@@ -303,8 +303,8 @@ impl RunControl {
 
     fn icon(self, cx: &App) -> AnyElement {
         match self {
-            Self::Run => idea_icon_image(&idea::PLAY_ICON, cx, rems(16. / 16.)),
-            Self::Debug => idea_icon_image(&idea::BUG_ICON, cx, rems(16. / 16.)),
+            Self::Run => idea_icon_image(&idea::PLAY_ICON, cx, rems(1.)),
+            Self::Debug => idea_icon_image(&idea::BUG_ICON, cx, rems(1.)),
         }
     }
 

@@ -29,8 +29,8 @@ use crate::command_palette::{
 };
 use crate::debug::{DEBUG_DIAGNOSTIC_TAG as DEBUG_TAG, DebugPane, DebugPaneEvent};
 use crate::menu_bar::{
-    MenuAction, MenuBar, MenuBarMode, MenuRequest, Missing, diagnose_run as diagnose_menu_run,
-    set_menu_bar,
+    EditorContext, MenuAction, MenuBar, MenuBarMode, MenuRequest, Missing,
+    diagnose_run as diagnose_menu_run, set_menu_bar,
 };
 use crate::project_menu::{
     ProjectEntry, ProjectMenu, render as render_project_menu, set_project_menu,
@@ -3383,7 +3383,7 @@ pub fn route_find_step(forward: bool, cx: &mut App) {
         return;
     };
     let _ = window.update(cx, |_view, window, cx| {
-        let _ = shell.update(cx, |shell, cx| {
+        shell.update(cx, |shell, cx| {
             shell
                 .editor
                 .update(cx, |pane, cx| pane.find_step(forward, window, cx));
@@ -3471,12 +3471,38 @@ fn right_scan_should_notify(
     visible && current == target
 }
 
+impl ShellWorkspace {
+    /// 菜单启用判定的那一份状态快照（见 [`crate::menu_bar::EditorContext`]）。
+    ///
+    /// **必须只读**：调用点在 `Render::render` 里，那期间外壳正被更新着，再去 `update`
+    /// 编辑窗格会撞 gpui 的借用 panic（`cannot update X while it is already being
+    /// updated`）。五个问句全是 `EditorPane` 上的 `&self` 纯读算式。
+    ///
+    /// 每次重画都现取一份，不做缓存：外壳已经 observe 了编辑窗格
+    /// （`ShellWorkspace::new` 里的 `editor_subscription`），标签页增删改躲不开一次重画。
+    fn menu_context(&self, cx: &App) -> EditorContext {
+        let pane = self.editor.read(cx);
+        EditorContext {
+            has_active_buffer: pane.active_tab_index().is_some(),
+            tab_count: pane.tab_count(),
+            active_tab_index: pane.active_tab_index(),
+            has_active_disk_file: pane.has_active_disk_file(),
+            // `active_buffer_is_readonly` 在没有活动缓冲时返回 `true`，取反后自然是
+            // `false`，与 `EditorContext` 的第 3 条不变量一致。
+            active_writable: !pane.active_buffer_is_readonly(),
+            can_go_back: pane.can_go_back(),
+            can_go_forward: pane.can_go_forward(),
+            has_closed_tabs: pane.has_closed_tabs(),
+        }
+    }
+}
+
 impl Render for ShellWorkspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The dock's own state is derived: bring it in line with the shell's
         // flags before anything is drawn, so no other path has to remember to.
         self.sync_dock(cx);
-        let menu = crate::menu_bar::render_bar(&self.menu_bar, window, cx);
+        let menu = crate::menu_bar::render_bar(&self.menu_bar, self.menu_context(cx), window, cx);
         let project_entries = self.project_entries();
         let project_menu = render_project_menu(
             &self.project_menu,
