@@ -1017,6 +1017,47 @@ impl EditorPane {
             .map(|buffer| buffer.path.clone())
     }
 
+    /// 打开着几个标签页。
+    ///
+    /// 与 [`Self::active_tab_index`] 是一对：`EditorPane::close` 保证 `buffers.is_empty()`
+    /// 与 `active.is_none()` 严格等价，所以 `tab_count() == 0` 时下标必是 `None`。
+    pub fn tab_count(&self) -> usize {
+        self.buffers.len()
+    }
+
+    /// 活动标签页的下标；一个标签页都没开时是 `None`。
+    pub fn active_tab_index(&self) -> Option<usize> {
+        self.active
+    }
+
+    /// 活动缓冲是不是一个**真正的磁盘文件**（未命名 scratch 与虚拟源路径不算）。
+    ///
+    /// 判定与 [`Self::active_disk_file`] 完全一致，只是不克隆那条 `PathBuf`：这个问题
+    /// 每帧都要问一次（菜单要不要置灰），不该为它付一次路径克隆。
+    pub fn has_active_disk_file(&self) -> bool {
+        self.active_disk_file().is_some()
+    }
+
+    /// 跳转历史里有没有「上一处」可去 —— 菜单 ▸ Go ▸ Back 的启用条件。
+    ///
+    /// 只读：与 History 的改动命令（[`Self::go_back`]）分工，问「能不能去」不该动历史。
+    pub fn can_go_back(&self) -> bool {
+        self.history.can_go_back()
+    }
+
+    /// 跳转历史里有没有「下一处」可去 —— 菜单 ▸ Go ▸ Forward 的启用条件。
+    pub fn can_go_forward(&self) -> bool {
+        self.history.can_go_forward()
+    }
+
+    /// 有没有关掉过标签页 —— 菜单 ▸ File ▸ Reopen Closed Tab 的启用条件。
+    ///
+    /// `closed` 只收真正的磁盘文件（`close()` 里排除未命名缓冲与虚拟源路径），
+    /// 与 [`Self::reopen_closed_tab`] 弹出时用的是同一条队列。
+    pub fn has_closed_tabs(&self) -> bool {
+        !self.closed.is_empty()
+    }
+
     pub fn restore_session(
         &mut self,
         paths: &[PathBuf],

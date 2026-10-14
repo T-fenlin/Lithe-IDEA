@@ -288,12 +288,13 @@ pub(crate) struct JumpHistory {
 }
 
 impl JumpHistory {
-    #[allow(dead_code)]
+    // 这两个过去挂着 `#[allow(dead_code)]`：库实现了但从没有调用点。现在 `EditorPane`
+    // 把它们透出去给菜单的启用判定（`EditorPane::can_go_back` / `can_go_forward`），
+    // 有了真调用点就不能再靠 allow 包着了。
     pub(crate) fn can_go_back(&self) -> bool {
         !self.entries.is_empty() && self.current_index.is_none_or(|index| index > 0)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn can_go_forward(&self) -> bool {
         self.current_index
             .is_some_and(|index| index + 1 < self.entries.len())
