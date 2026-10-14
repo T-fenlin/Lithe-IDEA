@@ -11,7 +11,9 @@
 
 两层都已修掉。由此定下五条长期规则：chrome 槽必须与页面底色不同值；不新增 `menu_bar` 槽，菜单栏直接用 `title_bar`；快捷键改绑走 gpui 自带能力，不自建按键转发表；快捷键的用户覆盖在设置文件里存成数组而不是对象；子组件不握外壳实体句柄去回戳外壳，改由外壳观察子组件。
 
-**决策定稿不等于代码写完。** 动这块之前先看下面的逐项落地状态：chrome 槽与浮层底色已进代码，其余大部分只在设计里。
+**决策定稿不等于代码写完。** 动这块之前先看下面的逐项落地状态：chrome 槽与浮层底色已进代码，菜单项动态置灰（决策十二）已进代码，其余大部分只在设计里。
+
+菜单项动态置灰是 2026-10-14 补上的一块：没有打开任何文件时，菜单栏里依赖活动缓冲的行（Save、Find、行编辑、跳转等）自动变灰且点不动。做法是**宿主每次展开菜单时现算一个标量快照，逐行问「你启用吗」**，库侧一行没改（它本来就有 `MenuItem::disabled()`，只是此前没人传过 `true`）。三个容易做反的点写在决策十二里，其中「跳转历史自己会撒谎」一条已经真实发生过一次。
 
 ## 问题
 
@@ -141,6 +143,27 @@ id 字符串要一次定死。现在改最便宜：这套 id 还没有任何东�
 - 不要往 `KeySource` 里加 gpui 侧不存在的来源档位。
 - 不要把用户可见文案写死成英文。库里 `KeybindingsEditor` 渲染来源徽标处（`keybindings.rs` 的 `match binding.source` 那一支）现在是 `Badge::new("Default")` / `Badge::new("User")` 硬编码，扩档时必须同一次改动搬进 `rust/lithe-ui/locales/ui.yml` 改读 `t!()`——默认显示语言是 zh-CN，不修中文用户会看到英文徽标。
 
+### 十二、菜单项的启用状态由宿主现算，库只负责画
+
+菜单里有些行依赖「当前有没有打开的文件」：没有活动缓冲时，Save、Revert、Find、行编辑、跳转这些行点了也不会有效果。**置灰就是为了让「点了没反应」这件事在按下去之前就可见**，而不是让它在运行时静默失败。
+
+选择让宿主算、库不动，是因为库侧其实早就备齐了：`MenuItem::disabled(bool)`（`menus/model.rs`）存在，绘制层会自动把文字与图标换成 `fg_disabled`、不给 hover 底、不设手型光标，键盘导航（`Menu::step`）会自动跳过禁用行，点击分发也会直接返回。缺的一直只是「谁来说这一行该不该灰」。
+
+形态是 `EditorContext`（`workbench/src/menu_bar.rs`，八个 `bool`/`usize`/`Option<usize>` 的 `Copy` 标量）配 `MenuAction::is_enabled(ctx) -> bool`。外壳在 `ShellWorkspace::render` 里用 `self.editor.read(cx)` 取一次快照，然后沿 `render_bar → menu_bar → menu_row → menu_item → build_menu` **显式传参**下去。刻意不做缓存：菜单面板本来就每次展开现建，而外壳早就 `cx.observe` 了编辑窗格，编辑窗格一 notify 外壳就重画，菜单开着时状态变了会自动跟上。
+
+三个已经踩过、且**不看代码一定会再踩**的点：
+
+1. **跳转历史会撒谎。** `go_back` / `go_forward` 的第一句都是 `current_entry(cx)`，而它第一行是 `self.active?`；`close()` 却不清跳转历史。于是「有跳转历史、一个标签页都没开」是可达状态，此时 `can_go_back()` 返回 `true`，而点了毫无反应。所以 `GoBack` / `GoForward` 必须写成 `has_active_buffer && can_go_back`，只写后者等于亲手造一条死行。
+2. **「还原」不看可写性。** `RevertFile` 是从磁盘**读回**，执行侧 `revert_active` 只判 `active` 与 `is_disk()`。有损 UTF-8 转码的缓冲 `writable == false`，可它的正文恰恰是文件内容的近似转写——用户改坏了最需要的就是这一行，带上 `active_writable` 会把唯一的出口堵死。只有 `Save` 才需要 `has_active_buffer && active_writable`。
+3. **自画图标不继承禁用色。** 菜单图标走 `icon_element()` 交给宿主自己画，库明确不会替它上色（`model.rs` 里 `icon_element` 的文档注释写了这件事）。宿主必须在建行时按状态自己选 `fg_disabled` / `fg`。
+
+配套两条规矩：
+
+- **不要给 `MenuBar` 挂 `cx.observe(&editor, ...)`。** 需要的是外壳重画，不是 `MenuBar` 自己被 notify——`render_bar` 跑在外壳的 `render` 里，编辑窗格的 notify 早已被外壳那条 `observe` 转发。挂上去会让子组件攥住编辑窗格句柄，正违反决策八。
+- **禁用行照常显示快捷键。** 「这个动作绑了什么键」是静态事实，抽掉它等于让用户失去学键位的机会。降档靠库：键帽文字与「+」会跟到 `fg_disabled`。这里有个坑——键帽的颜色是 `typography/inline.rs` 里 `cap()` 自己从主题取的，父级 `text_color` 传不进键帽内部，所以在 `menus/draw.rs` 的容器上改颜色是死样式，只能从 `KbdCombo` 这一层传进去。
+
+本批明确不做，避免范围扩散：快捷键触发路径不跟着禁用（那条路不经过 `build_menu`，要拦得让 `MenuBar` 拿到上下文，会牵动 `keymap_engine`）；命令面板不跟着禁用（它的语义是裁剪行，不是置灰）；dirty、选区、剪贴板、撤销栈都不判（代价高或语义不对）。所以会出现「菜单里灰着、但按 ⌘S 仍然静默 no-op」的行——两者结果一致，用户撞不见矛盾，但实现注释里要点明，否则下一个人会当成 bug。
+
 ## 落地状态（逐项）
 
 | 决策 | 落地情况 |
@@ -152,6 +175,7 @@ id 字符串要一次定死。现在改最便宜：这套 id 还没有任何东�
 | 库自带 `TitleBar` 统一画 `title_bar` | 已落地（`shell/chrome.rs` 已换 `colors.title_bar`） |
 | 四、五、六、七（快捷键页与预设） | 未开工（决策十已定目录与预设表的落点） |
 | 九 / 十一（四态菜单栏与 AutoHide） | 未开工，且**本轮四档全做**（见决策十一）；`menus::MenuBar::standalone()` 已就位但无调用点，是为 `Above` 预留 |
+| 十二、菜单项动态置灰 | 已落地（`EditorContext` 八字段 + `MenuAction::is_enabled` + `build_menu` 传参 + 穷举守卫测试；库侧仅 `KbdCombo` 加了一个默认关闭的 `disabled` 开关） |
 
 ## 考虑过的备选方案
 
@@ -197,8 +221,9 @@ Windows 前端的 `getEffectiveKeybindings` 是「用户绑定优先，其余取
 
 ## 验证
 
-- `./scripts/verify-agent-notes.sh`
-- `(cd rust/lithe-ui && cargo test)` —— 覆盖 `theme/tests.rs` 里 chrome 槽与页面底色的分离断言
+- `./scripts/verify-agent-notes.sh` —— **该脚本 2026-10-14 核实时在仓库里并不存在**，是 `.agents/skills/agent-notes/SKILL.md` 引用但缺失的命令，本条未能执行
+- `(cd rust/lithe-ui && cargo test)` —— 覆盖 `theme/tests.rs` 里 chrome 槽与页面底色的分离断言；`shell/tests.rs` 里画了 `KbdCombo`，是键位胶囊默认色的哨兵
+- `(cd rust/lithe-gpui && cargo test -p lithe-gpui-workbench --lib menu_bar)` —— 覆盖 `is_enabled` 的判定表与那张穷举守卫（每个 `MenuAction` 变体都必须有明确归属，漏一个就编译不过）
 - `(cd rust/lithe-gpui && cargo test -p lithe-gpui-settings)` —— 覆盖 `palette_for()` 的浮层底色与 scrim 回归测试
 - `(cd rust/lithe-gpui && cargo test -p lithe-gpui-shared)` —— 覆盖 `document.rs` 的数组/对象合并语义
 - `./scripts/verify-platform-feature-matrix.sh` —— 快捷键页真正实现并验证完后，必须给 `keymap-customization.json` 补 gpui 档；现在补会写出假的验证状态
@@ -211,6 +236,8 @@ Windows 前端的 `getEffectiveKeybindings` 是「用户绑定优先，其余取
 - `rust/lithe-ui/src/menus/bar.rs`
 - `rust/lithe-ui/src/forms/options.rs`
 - `rust/lithe-ui/src/editor/keybindings.rs`
+- `rust/lithe-ui/src/menus/draw.rs`
+- `rust/lithe-ui/src/typography/inline.rs`
 - `rust/lithe-ui/locales/ui.yml`
 - `rust/lithe-gpui/crates/settings/src/theme.rs`
 - `rust/lithe-gpui/crates/settings/src/persistence.rs`
@@ -222,6 +249,8 @@ Windows 前端的 `getEffectiveKeybindings` 是「用户绑定优先，其余取
 - `rust/lithe-gpui/crates/workbench/src/command_palette.rs`
 - `rust/lithe-gpui/crates/shared/src/document.rs`
 - `rust/lithe-gpui/crates/shared/src/lib.rs`
+- `rust/lithe-gpui/crates/editor/src/editor_view.rs`
+- `rust/lithe-gpui/crates/editor/src/navigation.rs`
 - `rust/lithe-gpui/themes/jetbrains.json`
 - `shared/platform-feature-matrix/features/keymap-customization.json`
 
