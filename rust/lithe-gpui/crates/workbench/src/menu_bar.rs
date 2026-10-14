@@ -316,6 +316,42 @@ pub fn install_key_actions(cx: &mut App) {
     });
 }
 
+/// 菜单行「此刻能不能点」的判定上下文。
+///
+/// 只装**标量**：它每帧在 `ShellWorkspace::render` 里现取一次，然后按值传进菜单构建链
+/// （`render_bar` → `menu_bar` → `menu_row` / `compact_menu` → `menu_item` → `build_menu`）。
+/// 不放实体句柄、不放 `PathBuf`、不放任何需要 `&mut App` 才能问的东西 —— 构建链跑在
+/// `ShellWorkspace` 自己的渲染栈里，那里不许再 `update` 别的实体（会撞 gpui 的
+/// `cannot update X while it is already being updated`）。
+///
+/// 不变量（由 `EditorPane::close` 保证，`ShellWorkspace::menu_context` 是唯一生产者）：
+///
+///   1. `has_active_buffer == (tab_count > 0) == active_tab_index.is_some()`
+///   2. `has_active_disk_file == true` ⇒ `has_active_buffer == true`
+///   3. `active_writable` 只在 `has_active_buffer == true` 时有意义；没有活动缓冲时恒为 `false`
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EditorContext {
+    /// 有没有活动缓冲（= 有没有打开的标签页）。
+    pub has_active_buffer: bool,
+    /// 打开着几个标签页。
+    pub tab_count: usize,
+    /// 活动标签页的下标；没有标签页时是 `None`。
+    pub active_tab_index: Option<usize>,
+    /// 活动缓冲是一个**真正的磁盘文件**（未命名 scratch 与虚拟源路径不算）。
+    pub has_active_disk_file: bool,
+    /// 活动缓冲能写回磁盘（非二进制 / 非有损转码 / 非缺失 / 非超限）。
+    pub active_writable: bool,
+    /// 跳转历史里有没有「上一处」可去。
+    pub can_go_back: bool,
+    /// 跳转历史里有没有「下一处」可去。
+    pub can_go_forward: bool,
+    /// 有没有关掉过标签页（File ▸ Reopen Closed Tab 的启用条件）。
+    ///
+    /// 不并入 `tab_count`：关掉过的文件与当前打开着几个标签页是两件事，本批主场景
+    /// （刚开项目、还没关过任何文件）下它就是 `false`。
+    pub has_closed_tabs: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuAction {
     OpenFolder,
@@ -486,6 +522,89 @@ impl MenuAction {
 
     pub fn label(self) -> SharedString {
         tr(self.label_key())
+    }
+
+    /// 这一行在 `ctx` 下能不能点 —— 菜单置灰的唯一真源。
+    ///
+    /// **只影响菜单置灰，不改变执行路径**：键位与命令面板仍会走到 `apply_menu_action`，
+    /// 那里保持既有的「no-op + 诊断」双保险。所以这里判错了最坏也只是「该灰的没灰」，
+    /// 不会执行出错误行为。
+    ///
+    /// 与 [`Self::menu_key`]（这一行**有没有**快捷键）刻意解耦：前者是静态事实（绑没绑键），
+    /// 后者是动态事实（此刻能不能用）。
+    ///
+    /// 没有在下表里点名的变体一律**可用**（`_ => true`）：打开/新建类、界面开关、全局搜索、
+    /// 窗口、帮助都不依赖活动缓冲；拿不到低成本判据的（已关闭标签页栈、终端标签页数）
+    /// 也暂时维持常亮——宁可错亮，也不要因为拿不到数据把一行钉死成灰。
+    pub const fn is_enabled(self, ctx: EditorContext) -> bool {
+        match self {
+            // —— 只要有活动缓冲就能说有意义的一批：对象都是「当前这个缓冲」——
+            Self::CloseTab
+            | Self::Undo
+            | Self::Redo
+            | Self::Cut
+            | Self::Copy
+            | Self::Paste
+            | Self::SelectAll
+            | Self::Find
+            | Self::FindAndReplace
+            | Self::ToggleComment
+            | Self::DuplicateLine
+            | Self::DeleteLine
+            | Self::MoveLineUp
+            | Self::MoveLineDown
+            | Self::GoToLine
+            | Self::QuickFix
+            | Self::ShowHover
+            | Self::GoToDefinition
+            | Self::SaveAs => ctx.has_active_buffer,
+
+            // —— 有活动缓冲 **且** 能写回：二进制 / 有损转码的缓冲写不回磁盘 ——
+            Self::Save => ctx.has_active_buffer && ctx.active_writable,
+
+            // —— 必须是一个磁盘文件：未命名 scratch 没有可还原的源头，也没有
+            //    可落下断点的行（`ShellWorkspace::toggle_breakpoint_at_caret`
+            //    无文件时走的正是 skipped/no-file 那条分支）——
+            //
+            //    `RevertFile` **不看 `active_writable`**：执行侧 `revert_active` 只判
+            //    `active` 与 `is_disk()`，从不看可写性。有损 UTF-8 转码的缓冲
+            //    `writable == false`，可它的正文恰恰是文件内容的近似转写 —— 用户改坏了
+            //    最需要「还原」的就是这种文件，带上 `active_writable` 会把这条唯一的
+            //    逃生通道灰掉。
+            Self::RevertFile => ctx.has_active_disk_file,
+            Self::ToggleBreakpoint => ctx.has_active_disk_file,
+
+            // —— 按标签页数：不和当前是哪个标签页打交道 ——
+            Self::SaveAll | Self::CloseAllTabs | Self::CloseSavedTabs => ctx.tab_count > 0,
+            Self::CloseOtherTabs | Self::NextTab | Self::PreviousTab => ctx.tab_count > 1,
+
+            // —— 按活动标签页的下标：左边至少得有一个邻居 ——
+            Self::CloseTabsToLeft => match ctx.active_tab_index {
+                Some(index) => index > 0,
+                None => false,
+            },
+            Self::CloseTabsToRight => match ctx.active_tab_index {
+                Some(index) => index + 1 < ctx.tab_count,
+                None => false,
+            },
+
+            // —— 跳转历史：有没有可去的目标由历史自己答，但**必须**叠加活动缓冲 ——
+            //
+            //    `go_back` / `go_forward` 的第一句都是 `current_entry(cx)`，而它第一行是
+            //    `self.active?`；`close()` 又不清跳转历史。于是「有跳转历史、一个标签页
+            //    都没开」是可达状态 —— 只按 `can_go_*` 判，会画出一条亮着、带 ⌘[ / ⌘]、
+            //    点了却完全没反应的死行，正是这一整单要消灭的东西。
+            Self::GoBack => ctx.has_active_buffer && ctx.can_go_back,
+            Self::GoForward => ctx.has_active_buffer && ctx.can_go_forward,
+
+            // —— 关掉过的标签页：`reopen_closed_tab` 在 `self.closed.pop()` 为 `None` 时
+            //    直接返回。这一行带 ⌘⇧T 且摆在 File 的关闭组里，在本批主场景（刚开项目、
+            //    还没关过任何文件）下必然失效 —— 不判就是「亮着 + 有快捷键 + 点了无反应」。
+            Self::ReopenClosedTab => ctx.has_closed_tabs,
+
+            // —— 其余：新建/打开类、显示开关、全局搜索、窗口、帮助、未接线行 ——
+            _ => true,
+        }
     }
 
     /// 本动作的图标（见 [`MenuIcon`] 的口径：我们没画过那张图就是空槽）。
@@ -1531,8 +1650,12 @@ pub fn toggle_menu_bar(cx: &mut App) {
     let _ = bar.update(cx, |bar, cx| bar.toggle_mode(cx));
 }
 
+/// 画菜单栏。`ctx` 是外壳现取的那份启用上下文（见 [`EditorContext`]），按值一路传到
+/// [`build_menu`]；之所以显式传而不是放 thread-local，是因为多窗口时后渲染的窗会覆盖
+/// 前一个窗的全局槽。
 pub fn menu_bar(
     bar: &mut MenuBar,
+    ctx: EditorContext,
     window: &mut Window,
     cx: &mut Context<MenuBar>,
 ) -> impl IntoElement {
@@ -1542,44 +1665,47 @@ pub fn menu_bar(
     }
     let _ = window;
     match bar.mode {
-        MenuBarMode::Merged => merged_bar(bar, cx).into_any_element(),
-        MenuBarMode::Above => above_bar(bar, cx).into_any_element(),
-        MenuBarMode::AutoHide => autohide_bar(bar, cx).into_any_element(),
-        MenuBarMode::Compact => compact_bar(bar, cx).into_any_element(),
+        MenuBarMode::Merged => merged_bar(bar, ctx, cx).into_any_element(),
+        MenuBarMode::Above => above_bar(bar, ctx, cx).into_any_element(),
+        MenuBarMode::AutoHide => autohide_bar(bar, ctx, cx).into_any_element(),
+        MenuBarMode::Compact => compact_bar(bar, ctx, cx).into_any_element(),
     }
 }
 
 pub(crate) fn render_bar(
     bar: &Entity<MenuBar>,
+    ctx: EditorContext,
     window: &mut Window,
     cx: &mut App,
 ) -> Option<gpui::AnyElement> {
     bar.downgrade()
-        .update(cx, |bar, cx| menu_bar(bar, window, cx).into_any_element())
+        .update(cx, |bar, cx| {
+            menu_bar(bar, ctx, window, cx).into_any_element()
+        })
         .ok()
 }
 
 /// 九个顶层菜单横排。三种「把菜单摆出来」的模式共用这一排，差别只在容器。
-fn menu_row(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+fn menu_row(bar: &mut MenuBar, ctx: EditorContext, cx: &mut App) -> impl IntoElement {
     let mut row = h_stack()
         .flex_shrink_0()
         .items_center()
         .gap(rems(BAR_GAP_SPEC / 16.));
     for index in 0..MENUS.len() {
-        row = row.child(menu_item(bar, index, cx));
+        row = row.child(menu_item(bar, index, ctx, cx));
     }
     row
 }
 
 /// `Merged`：合进标题栏那一行，**不刷底**（继承父级 `title_bar`，刷了同色零收益）。
-fn merged_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+fn merged_bar(bar: &mut MenuBar, ctx: EditorContext, cx: &mut App) -> impl IntoElement {
     h_stack()
         .id("lithe-menu-bar-merged")
         .flex_shrink_0()
         .items_center()
         .h(rems(BAR_HEIGHT_SPEC / 16.))
         .p(rems(BAR_PADDING_SPEC / 16.))
-        .child(menu_row(bar, cx))
+        .child(menu_row(bar, ctx, cx))
 }
 
 /// `Above`：抬出**独立的一行**，压在标题栏上方。
@@ -1587,7 +1713,7 @@ fn merged_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
 /// 与 `Merged` 的差别不只是位置——它是独立的一层，得自己跟下面分开，否则看起来就是
 /// 标题栏被劈成了两截。这里用下边框而不是底色：标题栏与页面都是 `title_bar` /
 /// `bg` 那一档，换成别的底色会在窗口顶部切出一条异色带。
-fn above_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+fn above_bar(bar: &mut MenuBar, ctx: EditorContext, cx: &mut App) -> impl IntoElement {
     let colors = &cx.theme().colors;
     h_stack()
         .id("lithe-menu-bar-above")
@@ -1597,7 +1723,7 @@ fn above_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
         .px(rems(BAR_PADDING_SPEC / 16.))
         .border_b_1()
         .border_color(colors.border)
-        .child(menu_row(bar, cx))
+        .child(menu_row(bar, ctx, cx))
 }
 
 /// `AutoHide`：平时只留一条热区，鼠标压上去才浮出 `Above` 那一行。
@@ -1605,7 +1731,7 @@ fn above_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
 /// 为什么不干脆用 `on_hover` 挂在那一行自己身上——**藏起来之后那一行就不在场景里了**，
 /// 没有元素能收 hover。所以必须留一条常驻的热区：它不吃地方（几像素高），但一直能
 /// 接到鼠标进出。浮出之后热区与菜单行一起在，鼠标在两者之间移动不会触发收起。
-fn autohide_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+fn autohide_bar(bar: &mut MenuBar, ctx: EditorContext, cx: &mut App) -> impl IntoElement {
     let revealed = bar.autohide_revealed;
     let handle = handle();
     let zone = div()
@@ -1621,7 +1747,7 @@ fn autohide_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
         });
 
     if revealed {
-        zone.child(above_bar(bar, cx))
+        zone.child(above_bar(bar, ctx, cx))
     } else {
         zone
     }
@@ -1632,12 +1758,16 @@ fn autohide_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
 /// 原来那套是「按钮下面浮一排顶层菜单触发器，鼠标划过去换一个」，那排浮层要靠上游
 /// 的 `Positioner`（贴边、限窗、外挂 `deferred`）才放得稳；库这边没有对应的外挂定位，
 /// 于是换成子菜单：面板挂哪儿、怎么走键盘都由 [`TriggerMenu`] 自己管。
-fn compact_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
+fn compact_bar(bar: &mut MenuBar, ctx: EditorContext, cx: &mut App) -> impl IntoElement {
     let handle = handle();
     let button_handle = handle.clone();
     let open = bar.compact_visible;
     // 面板只在开着的时候建：关着的时候库也不画它。
-    let panel = if open { compact_menu(cx) } else { Menu::new() };
+    let panel = if open {
+        compact_menu(ctx, cx)
+    } else {
+        Menu::new()
+    };
 
     let colors = &cx.theme().colors;
     let (open_bg, open_fg) = (colors.active, colors.fg);
@@ -1685,12 +1815,15 @@ fn compact_bar(bar: &mut MenuBar, cx: &mut App) -> impl IntoElement {
 }
 
 /// 紧凑模式那张面板：一个顶层菜单一行，行里是它的子菜单。
-fn compact_menu(cx: &mut App) -> Menu {
+///
+/// 九个行全是子菜单，**父项一律不置灰**：禁用的子菜单是可达性黑洞（`Menu::step` 会跳过
+/// 禁用行），而每个顶层菜单里都还有常亮项（File 有 OpenFile、Edit 有 CommandPalette…）。
+fn compact_menu(ctx: EditorContext, cx: &mut App) -> Menu {
     let mut menu = Menu::new();
     for index in 0..MENUS.len() {
         menu = menu.item(MenuRow::submenu(
             MENUS[index].label(),
-            build_menu(index, cx),
+            build_menu(index, ctx, cx),
         ));
     }
     menu
@@ -1820,11 +1953,16 @@ fn trigger(index: usize, open: bool, cx: &App) -> AnyElement {
 ///
 /// 开合是**受控**的（[`TriggerMenu::open`]）：宿主说开哪个，库就开哪个；库自己关掉时
 /// 由 [`TriggerMenu::on_toggle`] 回报回来。
-fn menu_item(bar: &mut MenuBar, index: usize, cx: &mut App) -> impl IntoElement {
+fn menu_item(
+    bar: &mut MenuBar,
+    index: usize,
+    ctx: EditorContext,
+    cx: &mut App,
+) -> impl IntoElement {
     let open = bar.selected == Some(index);
     // 关着的时候面板是空的：库反正不画它，省下每帧建九份菜单。
     let panel = if open {
-        build_menu(index, cx)
+        build_menu(index, ctx, cx)
     } else {
         Menu::new()
     };
@@ -1886,7 +2024,10 @@ fn menu_item(bar: &mut MenuBar, index: usize, cx: &mut App) -> impl IntoElement 
 }
 
 /// 一个顶层菜单的面板。主题那一行是子菜单，没有主题可选时整行不出现。
-fn build_menu(index: usize, cx: &mut App) -> Menu {
+///
+/// `ctx` 只用来给每一行算 [`MenuAction::is_enabled`]；菜单每次展开都现建一次
+/// （见 [`menu_item`] / [`compact_menu`]），所以状态变了下一次重画就跟上。
+fn build_menu(index: usize, ctx: EditorContext, cx: &mut App) -> Menu {
     let items = MENUS[index].items;
     let handle = handle();
     let names = lithe_gpui_settings::theme::theme_names(cx);
@@ -1898,14 +2039,26 @@ fn build_menu(index: usize, cx: &mut App) -> Menu {
             MenuItem::Separator => menu.separator(),
             MenuItem::Action(action) => {
                 let action = *action;
+                let disabled = !action.is_enabled(ctx);
                 let row_handle = handle.clone();
-                let mut row = MenuRow::new(action.label());
+                let mut row = MenuRow::new(action.label()).disabled(disabled);
                 if let MenuIcon::Idea(icon) = action.icon() {
-                    row = row.icon_element(icon_element(icon));
+                    // 图标槽是宿主自画的，库不会替它上禁用色，颜色得自己按状态给。
+                    row = row.icon_element(icon_element(icon, disabled));
                 }
+                // 键位胶囊**照画**：「这个动作绑定了什么键」是静态事实，不因为当前不可用
+                // 就不存在，抽掉它反而让用户失去学键位的机会（IDEA / VS Code 的禁用菜单项
+                // 也照常显示快捷键）。降档交给库：见 `lithe_ui::typography::KbdCombo` 的
+                // `.disabled()`，键帽文字与「+」会跟到 `fg_disabled`，与行文字同档。
+                //
+                // 这里会置灰、且真的带键位的共 **12** 行：GoToLine、Find、FindAndReplace、
+                // ToggleComment、DuplicateLine、DeleteLine、MoveLineUp、MoveLineDown、
+                // NextTab、PreviousTab、GoBack、GoForward —— 数漏了就会低估这条的收益。
                 if let Some(keys) = action.menu_key() {
                     row = row.keys(keys);
                 }
+                // 不用判 disabled：库已经在两处拦过（绘制时不挂 mouse_down、键盘
+                // `choose()` 直接 return），宿主再判一次就成了第二个真源。
                 menu.item(row.on_click(move |_window, cx| {
                     let _ = row_handle.update(cx, |bar, cx| bar.push_run(action, cx));
                 }))
@@ -1920,7 +2073,8 @@ fn build_menu(index: usize, cx: &mut App) -> Menu {
                 let row_handle = handle.clone();
                 let (label, badge) = (tr(label_key), tr(NOT_WIRED_BADGE_KEY));
                 let lead: Option<Rc<dyn Fn(&App) -> AnyElement>> = match *icon {
-                    MenuIcon::Idea(icon) => Some(Rc::new(icon_element(icon))),
+                    // 未接线行永远不被置灰（下面的 `not_wired_row` 写了理由），传 `false`。
+                    MenuIcon::Idea(icon) => Some(Rc::new(icon_element(icon, false))),
                     MenuIcon::Empty => None,
                 };
                 menu.item(
@@ -1986,26 +2140,47 @@ fn theme_menu(names: Vec<String>) -> Menu {
         let value: SharedString = name.into();
         menu = menu.item(
             MenuRow::new(label)
-                .icon_element(icon_element(&idea::PALETTE_ICON))
+                // 主题子菜单没有禁用态：主题列表空的时候整行都不出现。
+                .icon_element(icon_element(&idea::PALETTE_ICON, false))
                 .on_click(move |_window, cx| apply_theme_choice(value.to_string(), cx)),
         );
     }
     menu
 }
 
-/// 菜单行里的图标槽：本仓那张图，深浅等画的时候再问主题。
-fn icon_element(icon: &'static idea::IdeaIcon) -> impl Fn(&App) -> AnyElement + 'static {
-    move |cx: &App| idea_icon_mono(icon, cx.theme().is_dark()).into_any_element()
+/// 菜单行里的图标槽：本仓那张图，深浅与禁用色等画的时候再问主题。
+///
+/// 禁用行的颜色得**宿主**自己给：库那条 [`MenuRow::icon`] 会在行禁用时把图标画成
+/// `fg_disabled`，而自画的元素拿不到这个状态（`lithe_ui::menus` 里 `icon_element`
+/// 的注释就是这么说的）。`Icon::color()` 对 IDEA 图标同样生效 —— gpui 把 SVG 当
+/// alpha 蒙版画，文件里自带的颜色不参与。
+fn icon_element(
+    icon: &'static idea::IdeaIcon,
+    disabled: bool,
+) -> impl Fn(&App) -> AnyElement + 'static {
+    move |cx: &App| {
+        let theme = cx.theme();
+        // 非禁用时显式给 `fg`：这正是 `Icon::render` 原本回落的值，视觉零变化，
+        // 只是免得读代码的人还要去猜「没给色会落到哪儿」。
+        let color = if disabled {
+            theme.colors.fg_disabled
+        } else {
+            theme.colors.fg
+        };
+        idea_icon_mono(icon, theme.is_dark())
+            .color(color)
+            .into_any_element()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CloseReason, KEY_FIND, KEY_FIND_REPLACE, KEY_GO_BACK, KEY_GO_FORWARD, KEY_GO_TO_LINE,
-        KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM, KEY_TOGGLE_ACTIVITY_SIDEBAR, KEY_TOGGLE_TERMINAL,
-        KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS, MISSING_GROUPS, MenuAction, MenuBarMode, MenuItem,
-        NOT_WIRED_OUTSIDE_MENUS, NavState, TriggerFace, action_count, mode_for, mode_from_id,
-        not_wired_count, resolve_menu_toggle,
+        CloseReason, EditorContext, KEY_FIND, KEY_FIND_REPLACE, KEY_GO_BACK, KEY_GO_FORWARD,
+        KEY_GO_TO_LINE, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM, KEY_TOGGLE_ACTIVITY_SIDEBAR,
+        KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS, MISSING_GROUPS, MenuAction,
+        MenuBarMode, MenuItem, NOT_WIRED_OUTSIDE_MENUS, NavState, TriggerFace, action_count,
+        mode_for, mode_from_id, not_wired_count, resolve_menu_toggle,
     };
     use lithe_gpui_shared::tr;
     use lithe_ui::theme::Palette;
@@ -2934,5 +3109,464 @@ mod tests {
 
         assert!(MENUS.iter().any(|menu| menu.id == "terminal"));
         assert!(!MENUS.iter().any(|menu| menu.id == "nope"));
+    }
+
+    // —— 菜单启用判定（S5）——
+    //
+    // 这里的用例全是**纯函数**测试：不建 `App`、不起定时器、不碰 IO，只把
+    // `EditorContext` 构造出来喂给 `MenuAction::is_enabled`。贪慢等待与共享状态的坑天然
+    // 不存在，所以不必给它们加任何超时或清理。
+
+    /// 一份「符合不变量」的上下文坯子：`EditorContext` 的三条不变量由这里一次性兜住，
+    /// 用例只用 struct 更新语法挑自己要改的那一两个字段。
+    fn context(tab_count: usize, active_tab_index: Option<usize>) -> EditorContext {
+        let context = EditorContext {
+            has_active_buffer: active_tab_index.is_some(),
+            tab_count,
+            active_tab_index,
+            has_active_disk_file: false,
+            active_writable: false,
+            can_go_back: false,
+            can_go_forward: false,
+            has_closed_tabs: false,
+        };
+        assert!(
+            context.has_active_buffer == (context.tab_count > 0)
+                && context.has_active_buffer == context.active_tab_index.is_some(),
+            "上下文坯子自己就违反了第 1 条不变量：{context:?}"
+        );
+        assert!(
+            !context.has_active_disk_file || context.has_active_buffer,
+            "上下文坯子违反了第 2 条不变量：{context:?}"
+        );
+        context
+    }
+
+    /// 一个都没开 —— 本次改造真正的触发场景。
+    fn no_tabs() -> EditorContext {
+        context(0, None)
+    }
+
+    /// 开着一个健康的磁盘文件。
+    fn one_disk_tab() -> EditorContext {
+        EditorContext {
+            has_active_disk_file: true,
+            active_writable: true,
+            ..context(1, Some(0))
+        }
+    }
+
+    fn is_enabled(action: MenuAction, ctx: EditorContext) -> bool {
+        action.is_enabled(ctx)
+    }
+
+    #[test]
+    fn no_open_tab_greys_out_every_buffer_bound_row() {
+        let ctx = no_tabs();
+
+        // 认的是「当前这个缓冲」的那一批：文件生命周期、编辑、查找、跳转。
+        for action in [
+            MenuAction::Save,
+            MenuAction::SaveAs,
+            MenuAction::SaveAll,
+            MenuAction::RevertFile,
+            MenuAction::CloseTab,
+            MenuAction::CloseOtherTabs,
+            MenuAction::CloseAllTabs,
+            MenuAction::CloseSavedTabs,
+            MenuAction::CloseTabsToLeft,
+            MenuAction::CloseTabsToRight,
+            MenuAction::Undo,
+            MenuAction::Redo,
+            MenuAction::Cut,
+            MenuAction::Copy,
+            MenuAction::Paste,
+            MenuAction::SelectAll,
+            MenuAction::Find,
+            MenuAction::FindAndReplace,
+            MenuAction::ToggleComment,
+            MenuAction::DuplicateLine,
+            MenuAction::DeleteLine,
+            MenuAction::MoveLineUp,
+            MenuAction::MoveLineDown,
+            MenuAction::GoToLine,
+            MenuAction::QuickFix,
+            MenuAction::ShowHover,
+            MenuAction::GoToDefinition,
+            MenuAction::ToggleBreakpoint,
+            MenuAction::NextTab,
+            MenuAction::PreviousTab,
+            MenuAction::GoBack,
+            MenuAction::GoForward,
+        ] {
+            assert!(
+                !is_enabled(action, ctx),
+                "{action:?} 一个标签页都没开时不该可点"
+            );
+        }
+
+        // 与缓冲无关的必须照旧可点：File 的五个入口、Edit 的 CommandPalette、
+        // View / Window / Help 全组 —— 这也是「九个顶层菜单里没有一个会全灰」的兜底。
+        for action in [
+            MenuAction::NewTab,
+            MenuAction::NewWindow,
+            MenuAction::NewFile,
+            MenuAction::OpenFolder,
+            MenuAction::OpenFile,
+            MenuAction::CommandPalette,
+            MenuAction::QuickOpen,
+            MenuAction::SearchEverywhere,
+            MenuAction::ReplaceInFiles,
+            MenuAction::StartDebugging,
+            MenuAction::StopDebugging,
+            MenuAction::ToggleWordWrap,
+            MenuAction::ZoomIn,
+            MenuAction::ZoomOut,
+            MenuAction::ResetZoom,
+            MenuAction::ToggleMenuBar,
+            MenuAction::ToggleMinimap,
+            MenuAction::ToggleLineNumbers,
+            MenuAction::ToggleRenderWhitespace,
+            MenuAction::Preferences,
+            MenuAction::ShowKeymapSettings,
+            MenuAction::ToggleActivitySidebar,
+            MenuAction::ToggleSecondarySidebar,
+            MenuAction::ToggleStatusBar,
+            MenuAction::ToggleTerminal,
+            MenuAction::NewTerminalTab,
+            MenuAction::CloseTerminalTab,
+            MenuAction::ShowDiagnostics,
+            MenuAction::ShowFileExplorer,
+            MenuAction::ShowSourceControl,
+            MenuAction::ShowRunAndDebug,
+        ] {
+            assert!(
+                is_enabled(action, ctx),
+                "{action:?} 不需要活动缓冲，不该跟着一起灰"
+            );
+        }
+    }
+
+    /// 本批主场景里唯一一条「带 ⌘⇧T、亮着、点了必然无反应」的行。
+    ///
+    /// `reopen_closed_tab` 的第一句是 `self.closed.pop()`，为 `None` 时直接返回。刚开一个
+    /// 项目、还没关过任何文件时 `closed` 就是空的 —— 不判它，这一行会精确复刻本单
+    /// 要消灭的那种死行。
+    #[test]
+    fn reopen_closed_tab_follows_the_closed_queue_not_the_open_tabs() {
+        // 零标签页（= 主场景）：有没有关过文件说了算，与当前开着几个无关。
+        assert!(!is_enabled(MenuAction::ReopenClosedTab, no_tabs()));
+        assert!(is_enabled(
+            MenuAction::ReopenClosedTab,
+            EditorContext {
+                has_closed_tabs: true,
+                ..no_tabs()
+            }
+        ));
+
+        // 开着三个标签页也一样：它是「关掉过的」清单，不是「打开着的」清单。
+        let three = context(3, Some(1));
+        assert!(!is_enabled(MenuAction::ReopenClosedTab, three));
+    }
+
+    /// 有跳转历史、但一个标签页都没开 —— `can_go_back` 会撒谎，`has_active_buffer` 得兜住。
+    ///
+    /// 复现路径：打开 A.java → ⌘点击跳到 B.java → 关掉所有标签页（`close()` 不清跳转历史）
+    /// → 此时 `can_go_back == true`，而 `go_back` 第一句的 `current_entry` 会因
+    /// `self.active?` 直接返回 `None`，点了毫无反应。
+    #[test]
+    fn jump_history_alone_does_not_light_up_navigation() {
+        let history_but_no_tab = EditorContext {
+            can_go_back: true,
+            can_go_forward: true,
+            ..no_tabs()
+        };
+
+        assert!(
+            !is_enabled(MenuAction::GoBack, history_but_no_tab),
+            "没有活动缓冲时 Back 必须置灰：执行侧会在 `current_entry` 直接返回"
+        );
+        assert!(
+            !is_enabled(MenuAction::GoForward, history_but_no_tab),
+            "没有活动缓冲时 Forward 必须置灰，理由同上"
+        );
+
+        // 有历史、有缓冲 —— 两条都该亮。
+        let navigated = EditorContext {
+            can_go_back: true,
+            can_go_forward: true,
+            ..one_disk_tab()
+        };
+        assert!(is_enabled(MenuAction::GoBack, navigated));
+        assert!(is_enabled(MenuAction::GoForward, navigated));
+    }
+
+    /// 有损 UTF-8 转码的缓冲 `writable == false`，但「还原」恰恰是它唯一需要的出口。
+    #[test]
+    fn a_lossy_buffer_can_still_be_reverted_though_not_saved() {
+        let lossy = EditorContext {
+            has_active_disk_file: true,
+            // 转码有损 ⇒ 写不回磁盘，但可以原样读回来。
+            active_writable: false,
+            ..context(1, Some(0))
+        };
+
+        assert!(
+            is_enabled(MenuAction::RevertFile, lossy),
+            "revert 是从磁盘读回，不看可写性；有损转码文件改坏了只能靠它恢复"
+        );
+        assert!(
+            !is_enabled(MenuAction::Save, lossy),
+            "把有损转码的内容写回去会损坏原文件，这一行必须灰"
+        );
+    }
+
+    #[test]
+    fn a_dirty_untitled_scratch_can_be_saved_but_not_reverted() {
+        // 只点「New Tab」：`save_active` 会转成另存为，所以这一行**可用**；
+        // 但还原与断点都需要一条磁盘路径，没有就是`false`。
+        let ctx = EditorContext {
+            active_writable: true,
+            ..context(1, Some(0))
+        };
+
+        assert!(is_enabled(MenuAction::Save, ctx));
+        assert!(is_enabled(MenuAction::SaveAs, ctx));
+        assert!(!is_enabled(MenuAction::RevertFile, ctx));
+        assert!(!is_enabled(MenuAction::ToggleBreakpoint, ctx));
+    }
+
+    #[test]
+    fn one_tab_disables_tab_cycling_but_not_closing() {
+        let ctx = one_disk_tab();
+
+        assert!(is_enabled(MenuAction::CloseTab, ctx));
+        assert!(is_enabled(MenuAction::CloseAllTabs, ctx));
+        assert!(is_enabled(MenuAction::CloseSavedTabs, ctx));
+        assert!(is_enabled(MenuAction::SaveAll, ctx));
+
+        // 只有一个标签页时「关掉其它 / 上一个 / 下一个」没有意义。
+        assert!(!is_enabled(MenuAction::CloseOtherTabs, ctx));
+        assert!(!is_enabled(MenuAction::NextTab, ctx));
+        assert!(!is_enabled(MenuAction::PreviousTab, ctx));
+        // 左右两边都排不到邻居。
+        assert!(!is_enabled(MenuAction::CloseTabsToLeft, ctx));
+        assert!(!is_enabled(MenuAction::CloseTabsToRight, ctx));
+    }
+
+    #[test]
+    fn the_active_tabs_position_decides_both_close_to_the_side_rows() {
+        // 三个标签页，逐个走一遍活动下标 —— 这是最有代表性的自变量切片。
+        for (index, left_ok, right_ok) in [(0, false, true), (1, true, true), (2, true, false)] {
+            let ctx = EditorContext {
+                has_active_disk_file: true,
+                active_writable: true,
+                ..context(3, Some(index))
+            };
+            assert_eq!(
+                is_enabled(MenuAction::CloseTabsToLeft, ctx),
+                left_ok,
+                "活动在 ix={index} 时「关闭左侧标签页」"
+            );
+            assert_eq!(
+                is_enabled(MenuAction::CloseTabsToRight, ctx),
+                right_ok,
+                "活动在 ix={index} 时「关闭右侧标签页」"
+            );
+            // 只要有两个以上的标签页，这三个就都是活的。
+            assert!(is_enabled(MenuAction::CloseOtherTabs, ctx));
+            assert!(is_enabled(MenuAction::NextTab, ctx));
+            assert!(is_enabled(MenuAction::PreviousTab, ctx));
+        }
+    }
+
+    #[test]
+    fn a_read_only_buffer_disables_saving_but_not_reverting() {
+        // 二进制 / 有损转码的缓冲：`writable` 是假。
+        let ctx = EditorContext {
+            has_active_disk_file: true,
+            ..context(1, Some(0))
+        };
+
+        // 写回磁盘的那一个，灰。
+        assert!(!is_enabled(MenuAction::Save, ctx));
+        // 另存为写到别处去，不受当前缓冲能不能写回影响。
+        assert!(is_enabled(MenuAction::SaveAs, ctx));
+        // 断点不写文件，读了字节就拿得下来。
+        assert!(is_enabled(MenuAction::ToggleBreakpoint, ctx));
+
+        // **还原不在此列**：它是从磁盘读回，执行侧 `revert_active` 只判 `active` 与
+        // `is_disk()`。有损 UTF-8 转码的文件 `writable == false`，可它的正文恰恰是文件
+        // 内容的近似转写 —— 用户改坏了最需要的就是这一行，灰掉等于堵死唯一的出口。
+        assert!(
+            is_enabled(MenuAction::RevertFile, ctx),
+            "revert 读回磁盘内容，不看可写性；有损转码文件改坏了只能靠它恢复"
+        );
+    }
+
+    #[test]
+    fn the_jump_history_decides_back_and_forward() {
+        let present = context(2, Some(1));
+        let navigated = EditorContext {
+            can_go_back: true,
+            can_go_forward: true,
+            ..present
+        };
+
+        assert!(!is_enabled(MenuAction::GoBack, present));
+        assert!(!is_enabled(MenuAction::GoForward, present));
+        assert!(is_enabled(MenuAction::GoBack, navigated));
+        assert!(is_enabled(MenuAction::GoForward, navigated));
+
+        // 只走到一半：能后退但还没得前进 —— 这是 `JumpHistory` 自己的语义。
+        let halfway = EditorContext {
+            can_go_back: true,
+            ..present
+        };
+        assert!(is_enabled(MenuAction::GoBack, halfway));
+        assert!(!is_enabled(MenuAction::GoForward, halfway));
+    }
+
+    /// 判定表的**逐变体**交叉验证。
+    ///
+    /// 下面这个 `match` 必须穷尽：给 `MenuAction` 加一个新成员，这里会先编译不过，
+    /// 逼着实现同学给新行挑一个出处。它是一份刻意维护的镜像——用例 1~6 用的是写死的
+    /// 期望值（这才是真正的验收口径），这里负责补上「一个变体都不漏」那件事。
+    fn assert_row_follows(action: MenuAction, ctx: EditorContext) {
+        let expected = match action {
+            // —— 认的是「当前这个缓冲」的十九个 ——
+            MenuAction::SaveAs
+            | MenuAction::CloseTab
+            | MenuAction::Undo
+            | MenuAction::Redo
+            | MenuAction::Cut
+            | MenuAction::Copy
+            | MenuAction::Paste
+            | MenuAction::SelectAll
+            | MenuAction::Find
+            | MenuAction::FindAndReplace
+            | MenuAction::ToggleComment
+            | MenuAction::DuplicateLine
+            | MenuAction::DeleteLine
+            | MenuAction::MoveLineUp
+            | MenuAction::MoveLineDown
+            | MenuAction::GoToLine
+            | MenuAction::QuickFix
+            | MenuAction::ShowHover
+            | MenuAction::GoToDefinition => ctx.has_active_buffer,
+
+            // —— 要把字节写回磁盘的那个 ——
+            //
+            //    `RevertFile` **不在此列**：它是从磁盘**读回**，执行侧 `revert_active`
+            //    只判 `active` 与 `is_disk()`。有损 UTF-8 转码的缓冲 `writable == false`，
+            //    可还原恰恰是它最需要的出口。
+            MenuAction::Save => ctx.has_active_buffer && ctx.active_writable,
+
+            // —— 必须有一条磁盘路径的两个 ——
+            MenuAction::RevertFile | MenuAction::ToggleBreakpoint => ctx.has_active_disk_file,
+
+            // —— 按标签页数 ——
+            MenuAction::SaveAll | MenuAction::CloseAllTabs | MenuAction::CloseSavedTabs => {
+                ctx.tab_count > 0
+            }
+            MenuAction::CloseOtherTabs | MenuAction::NextTab | MenuAction::PreviousTab => {
+                ctx.tab_count > 1
+            }
+
+            // —— 按活动标签页的位置 ——
+            MenuAction::CloseTabsToLeft => match ctx.active_tab_index {
+                Some(index) => index > 0,
+                None => false,
+            },
+            MenuAction::CloseTabsToRight => match ctx.active_tab_index {
+                Some(index) => index + 1 < ctx.tab_count,
+                None => false,
+            },
+
+            // —— 跳转历史：必须叠加活动缓冲，否则「有历史、没标签页」会画出死行
+            //    （`go_back` / `go_forward` 的第一句都是 `current_entry`，它第一行是
+            //    `self.active?`；`close()` 又不清历史）——
+            MenuAction::GoBack => ctx.has_active_buffer && ctx.can_go_back,
+            MenuAction::GoForward => ctx.has_active_buffer && ctx.can_go_forward,
+
+            // —— 关掉过的标签页：`reopen_closed_tab` 在 `closed.pop()` 为空时直接返回 ——
+            MenuAction::ReopenClosedTab => ctx.has_closed_tabs,
+
+            // —— 其余三十六个：新建/打开、界面开关、全局搜索、窗口、帮助 ——
+            MenuAction::NewTab
+            | MenuAction::NewWindow
+            | MenuAction::NewFile
+            | MenuAction::OpenFolder
+            | MenuAction::OpenFile
+            | MenuAction::CommandPalette
+            | MenuAction::QuickOpen
+            | MenuAction::SearchEverywhere
+            | MenuAction::ReplaceInFiles
+            | MenuAction::ToggleActivitySidebar
+            | MenuAction::ToggleSecondarySidebar
+            | MenuAction::ToggleStatusBar
+            | MenuAction::ToggleTerminal
+            | MenuAction::ToggleMaven
+            | MenuAction::ToggleMenuBar
+            | MenuAction::ToggleWordWrap
+            | MenuAction::ToggleMinimap
+            | MenuAction::ToggleLineNumbers
+            | MenuAction::ToggleRenderWhitespace
+            | MenuAction::OpenAppearanceSettings
+            | MenuAction::ShowDiagnostics
+            | MenuAction::ShowFileExplorer
+            | MenuAction::ShowSourceControl
+            | MenuAction::ShowRunAndDebug
+            | MenuAction::StartDebugging
+            | MenuAction::StopDebugging
+            | MenuAction::ZoomIn
+            | MenuAction::ZoomOut
+            | MenuAction::ResetZoom
+            | MenuAction::ShowKeymapSettings
+            | MenuAction::Preferences
+            | MenuAction::Minimize
+            | MenuAction::Maximize
+            | MenuAction::ToggleFullscreen
+            | MenuAction::NewTerminalTab
+            | MenuAction::CloseTerminalTab => true,
+        };
+
+        assert_eq!(
+            is_enabled(action, ctx),
+            expected,
+            "{action:?} 在 {ctx:?} 下的启用判定与逐变体表不符"
+        );
+    }
+
+    #[test]
+    fn the_decision_table_covers_every_menu_action_in_the_bar() {
+        let cases = [
+            no_tabs(),
+            one_disk_tab(),
+            EditorContext {
+                active_writable: true,
+                ..context(1, Some(0))
+            },
+            context(2, Some(0)),
+            context(2, Some(1)),
+            EditorContext {
+                can_go_back: true,
+                ..context(3, Some(1))
+            },
+            EditorContext {
+                can_go_forward: true,
+                ..context(3, Some(2))
+            },
+        ];
+
+        // 只跑 `MENUS` 里真出现的那些：菜单看不见的行不参与置灰，多判没有意义。
+        for item in MENUS.iter().flat_map(|menu| menu.items.iter()) {
+            let MenuItem::Action(action) = item else {
+                continue;
+            };
+            for ctx in cases {
+                assert_row_follows(*action, ctx);
+            }
+        }
     }
 }
