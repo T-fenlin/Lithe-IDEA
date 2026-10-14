@@ -75,6 +75,14 @@ pub fn file_menu(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
                 .on_click(run(&last, "save as")),
         )
         .item(MenuItem::new("Revert").disabled(true))
+        // 禁用行 + 键位胶囊：这两个特性叠在一起的形态此前画廊里没有样本，而键帽文字
+        // 在禁用时要跟着降到 `fg_disabled`（见 `KbdCombo::disabled`）。留一行在这里，
+        // 改键位那套样式时能立刻看出来。
+        .item(
+            MenuItem::new("Find in files")
+                .keys("secondary-shift-f")
+                .disabled(true),
+        )
         .group(
             "Share",
             [

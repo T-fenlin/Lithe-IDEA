@@ -93,8 +93,15 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
                 div()
                     .flex_none()
                     .pl_4()
-                    .text_color(colors.fg_subtle)
-                    .child(KbdCombo::new(&keys)),
+                    // 容器这层的 `text_color` 传不进键帽内部（`KbdCombo` 自己从主题取色），
+                    // 它只影响非 Mac 平台键间的「+」。真正让胶囊跟着行走的是下面那个
+                    // `.disabled(...)`，这行只是为了读起来自洽。
+                    .text_color(if item.disabled {
+                        colors.fg_disabled
+                    } else {
+                        colors.fg_subtle
+                    })
+                    .child(KbdCombo::new(&keys).disabled(item.disabled)),
             )
         })
         .when(matches!(item.kind, Kind::Sub(_)), |row| {
