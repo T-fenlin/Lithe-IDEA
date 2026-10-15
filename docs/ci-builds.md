@@ -105,6 +105,10 @@ release + LTO  profile 下编译；超时预算见工作流内的 `timeout-minut
 本地（非 CI）编译、跑测试、启动统一走 `scripts/build-gpui.ps1`，不要再手工拼
 `cargo` 参数。这个脚本把此前只存在于文档和记忆里的配方固化成一处：
 
+**只覆盖本地。CI / CD 不改**：`.github/workflows/ci-gpui.yml` 与 `release-gpui.yml`
+继续用它们自己的命令（`--locked`、显式 `--target`、树内 `target/`、缓存键），本节的
+脚本不被任何 workflow 引用，也不要求两边一致。
+
 ```powershell
 ./scripts/build-gpui.ps1 -Action build                          # 编译 debug 产物
 ./scripts/build-gpui.ps1 -Action test -TestPackage lithe-gpui-settings
@@ -124,9 +128,9 @@ release + LTO  profile 下编译；超时预算见工作流内的 `timeout-minut
 - **启动时注入 `LITHE_JDTLS_ROOT`**：开发期 exe 在 target 目录下，向上找 12 层也够不到
   仓库根的 `.artifacts/jdtls`。正式打包后 `LanguageServers/jdtls` 就在 exe 旁边，不需要它。
 
-CI 走的是等价但不同的命令（`--locked`、显式 `--target`、树内 `target/`），见
-`.github/workflows/ci-gpui.yml` 的 “Build the GPUI app binary” 一步；两者不需要一致，
-本地不带 `--locked` 是刻意的。
+作为对照，CI 的同一步是 `cargo build --locked --manifest-path rust/lithe-gpui/Cargo.toml
+--target <triple> -p lithe-gpui-app`（`.github/workflows/ci-gpui.yml` 的 “Build the GPUI
+app binary”）；本地脚本不带 `--locked` 是刻意的，两边各自独立演进。
 
 ### 独立工作树的本地编译
 
