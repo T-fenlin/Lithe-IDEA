@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use gpui::Window;
-use lithe_gpui_java::{JavaCodeAction, JavaLanguageService};
+use lithe_gpui_java::{JavaCodeAction, JavaLanguageService, JavaTextEdit};
 use lithe_ui::editor::ActionKind;
 use lithe_ui::menus::{Menu, MenuItem};
 
@@ -122,8 +122,16 @@ fn group_of(kind: Option<&str>) -> ActionKind {
 /// Edits that belong to another file are **not** applied — this editor holds one file, and its owner
 /// (`lithe-gpui-java` through Core) reports how many of those there are so the log can say so.
 pub(crate) fn edits_for(action: &JavaCodeAction, text: &str) -> Vec<(Range<usize>, String)> {
-    action
-        .edits
+    ranges_for(&action.edits, text)
+}
+
+/// 一组服务端文本编辑 → 编辑器字节区间，ready for `CodeEditor::apply_edits`（它自己会排序与夹取，
+/// 所以这里保留服务端给的顺序）。
+///
+/// 代码动作、重命名、格式化三种结果都是这个形状，所以换算只有这一份：区间反了（服务端把 start/end
+/// 发反）读成空的一段，而不是让 `apply_edits` 去切一个倒过来的区间。
+pub(crate) fn ranges_for(edits: &[JavaTextEdit], text: &str) -> Vec<(Range<usize>, String)> {
+    edits
         .iter()
         .map(|edit| {
             let start = offset_for_utf16(

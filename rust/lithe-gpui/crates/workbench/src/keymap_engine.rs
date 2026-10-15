@@ -11,16 +11,16 @@
 //! gpui 的 `Keymap` 只有 `add_bindings` 与 `clear`，**没有「删某一条」**。所以每次重放都是
 //! 整批重建：
 //!
-//! 1. 快照：把当前全部绑定抄一份，剔除本引擎托管的那 11 条命令的绑定，剩下的记为
+//! 1. 快照：把当前全部绑定抄一份，剔除本引擎托管的那 14 条命令的绑定，剩下的记为
 //!    `baseline_other`；
-//! 2. 重放：`clear_key_bindings()` → `bind_keys(baseline_other + 生效的 11 条)`。
+//! 2. 重放：`clear_key_bindings()` → `bind_keys(baseline_other + 生效的 14 条)`。
 //!
 //! `Keymap::clear()` 连 `binding_indices_by_action_id` 与 `disabled_binding_indices` 一起清
 //! （`gpui-pre-0.3.8/src/keymap.rs:76`），所以整批重建是干净的，不会残留上一次的禁用标记。
 //!
 //! ## 快照点必须在窗口构造之后
 //!
-//! 托管的 11 条里有 6 条（`SaveBuffer`、`NavigateToDefinition`、`ToggleMenuBar`、
+//! 托管的 14 条里有 6 条（`SaveBuffer`、`NavigateToDefinition`、`ToggleMenuBar`、
 //! `OpenCommandPalette`、`OpenQuickOpen`、`OpenReplaceInFiles`）是 `ShellWorkspace::new` 里
 //! 那 6 个 `install_actions` 装的（`workspace.rs:595-600`），**晚于 `main.rs` 的启动段**。
 //! 快照若早于它就会漏掉这 6 条，第一次重放会把保存、命令面板、快速打开这些键位全清掉。
@@ -82,6 +82,9 @@ pub fn managed_menu_action(command: CommandId) -> Option<MenuAction> {
         CommandId::NavigateToDefinition => MenuAction::GoToDefinition,
         CommandId::NavigateToImplementation => MenuAction::GoToImplementation,
         CommandId::NavigateToTypeDefinition => MenuAction::GoToTypeDefinition,
+        CommandId::GoToReferences => MenuAction::GoToReferences,
+        CommandId::RenameSymbol => MenuAction::RenameSymbol,
+        CommandId::FormatDocument => MenuAction::FormatDocument,
         CommandId::ReopenClosedTab => MenuAction::ReopenClosedTab,
         CommandId::ToggleTerminal => MenuAction::ToggleTerminal,
         CommandId::ToggleMenuBar => MenuAction::ToggleMenuBar,
@@ -119,7 +122,7 @@ struct EngineGlobal(KeymapEngine);
 
 impl Global for EngineGlobal {}
 
-/// 把所有绑定抄一份，剔除本引擎托管的那 11 条命令的绑定。
+/// 把所有绑定抄一份，剔除本引擎托管的那 14 条命令的绑定。
 fn capture_baseline(cx: &App) -> Vec<KeyBinding> {
     let managed = managed_action_names();
     let keymap = cx.key_bindings();

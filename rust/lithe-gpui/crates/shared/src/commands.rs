@@ -27,6 +27,9 @@ pub enum CommandId {
     NavigateToDefinition,
     NavigateToImplementation,
     NavigateToTypeDefinition,
+    GoToReferences,
+    RenameSymbol,
+    FormatDocument,
     OpenFile,
     CloseTab,
     CloseOtherTabs,
@@ -39,7 +42,7 @@ pub enum CommandId {
 }
 
 impl CommandId {
-    pub const ALL: [CommandId; 25] = [
+    pub const ALL: [CommandId; 28] = [
         Self::OpenSettings,
         Self::OpenAppearanceSettings,
         Self::SwitchToLightTheme,
@@ -56,6 +59,9 @@ impl CommandId {
         Self::NavigateToDefinition,
         Self::NavigateToImplementation,
         Self::NavigateToTypeDefinition,
+        Self::GoToReferences,
+        Self::RenameSymbol,
+        Self::FormatDocument,
         Self::OpenFile,
         Self::CloseTab,
         Self::CloseOtherTabs,
@@ -85,6 +91,9 @@ impl CommandId {
             Self::NavigateToDefinition => "navigate-to-definition",
             Self::NavigateToImplementation => "navigate-to-implementation",
             Self::NavigateToTypeDefinition => "navigate-to-type-definition",
+            Self::GoToReferences => "go-to-references",
+            Self::RenameSymbol => "rename-symbol",
+            Self::FormatDocument => "format-document",
             Self::OpenFile => "open-file",
             Self::CloseTab => "close-tab",
             Self::CloseOtherTabs => "close-other-tabs",
@@ -119,6 +128,9 @@ impl CommandId {
             "navigate-to-definition" => Some(Self::NavigateToDefinition),
             "navigate-to-implementation" => Some(Self::NavigateToImplementation),
             "navigate-to-type-definition" => Some(Self::NavigateToTypeDefinition),
+            "go-to-references" => Some(Self::GoToReferences),
+            "rename-symbol" => Some(Self::RenameSymbol),
+            "format-document" => Some(Self::FormatDocument),
             "open-file" => Some(Self::OpenFile),
             "close-tab" => Some(Self::CloseTab),
             "close-other-tabs" => Some(Self::CloseOtherTabs),
@@ -151,7 +163,7 @@ const fn str_eq(a: &str, b: &str) -> bool {
 
 /// `ALL` 里的 id 两两不同。
 ///
-/// 配合下面那条长度断言就是完备性证明：`ALL` 有 25 项、id 两两不同、而变体恰好 25 个
+/// 配合下面那条长度断言就是完备性证明：`ALL` 有 28 项、id 两两不同、而变体恰好 28 个
 /// 且各有各的 id，那么 `ALL` 必然覆盖了每一个变体——少一个就必有一个重复顶上来。
 const fn all_ids_are_distinct() -> bool {
     let all = CommandId::ALL;
@@ -170,7 +182,7 @@ const fn all_ids_are_distinct() -> bool {
 }
 
 // 编译期守两件事：变体数（新增变体必须同步改这个数）与 id 不重复。
-const _: () = assert!(CommandId::ALL.len() == 25);
+const _: () = assert!(CommandId::ALL.len() == 28);
 const _: () = assert!(all_ids_are_distinct());
 
 #[cfg(test)]

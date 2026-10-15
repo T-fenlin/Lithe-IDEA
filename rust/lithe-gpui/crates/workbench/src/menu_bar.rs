@@ -217,6 +217,9 @@ pub const KEY_FIND_PREVIOUS: &str = "shift-f3";
 /// 后退 / 前进：IDEA 的 Navigate Back / Forward，三端同键（`secondary` 在 macOS 是 Command）。
 pub const KEY_GO_BACK: &str = "secondary-alt-left";
 pub const KEY_GO_FORWARD: &str = "secondary-alt-right";
+/// 转到引用：真源自己写着「使用 Shift+F12 查找引用」（`references.findReferencesHint`）。
+/// 绑定登记在 `lithe_gpui_editor::install_actions`（与 `f12` / 转到定义同一处）。
+pub const KEY_GO_TO_REFERENCES: &str = "shift-f12";
 
 gpui::actions!(
     lithe_workbench,
@@ -398,6 +401,11 @@ pub enum MenuAction {
     GoToLine,
     ToggleWordWrap,
     ShowHover,
+    // 符号级语义动作：执行分支在 `apply_menu_action`，各自直接调 `EditorPane` 的同名方法
+    // （与 `ShowHover` 一条路）。请求本身是异步的，菜单派发电是同步的，所以不经过 Action 派发。
+    GoToReferences,
+    RenameSymbol,
+    FormatDocument,
     ZoomIn,
     ZoomOut,
     ResetZoom,
@@ -501,6 +509,9 @@ impl MenuAction {
             Self::GoToLine => "lithe.menu.goToLine",
             Self::ToggleWordWrap => "lithe.menu.toggleWordWrap",
             Self::ShowHover => "lithe.menu.showHover",
+            Self::GoToReferences => "lithe.menu.goToReferences",
+            Self::RenameSymbol => "lithe.menu.renameSymbol",
+            Self::FormatDocument => "lithe.menu.formatDocument",
             Self::ZoomIn => "lithe.menu.zoomIn",
             Self::ZoomOut => "lithe.menu.zoomOut",
             Self::ResetZoom => "lithe.menu.resetZoom",
@@ -565,6 +576,9 @@ impl MenuAction {
             | Self::GoToDefinition
             | Self::GoToImplementation
             | Self::GoToTypeDefinition
+            | Self::GoToReferences
+            | Self::RenameSymbol
+            | Self::FormatDocument
             | Self::SaveAs => ctx.has_active_buffer,
 
             // —— 有活动缓冲 **且** 能写回：二进制 / 有损转码的缓冲写不回磁盘 ——
@@ -634,6 +648,10 @@ impl MenuAction {
             // 本仓的 idea 资产里没有「转到实现 / 转到类型定义」这两张图 ⇒ 留空槽，
             // 不拿 `IMPLEMENTED_METHOD_ICON` 之类语义不同的图顶替（见 `MenuIcon` 的口径）。
             Self::GoToImplementation | Self::GoToTypeDefinition => MenuIcon::Empty,
+            Self::GoToReferences => MenuIcon::Idea(&idea::TOOL_WINDOW_FIND_ICON),
+            Self::FormatDocument => MenuIcon::Idea(&idea::ROWS_ICON),
+            // 本仓 idea 资产里没有「重命名」那张图 ⇒ 空槽，不拿语义不同的图顶替。
+            Self::RenameSymbol => MenuIcon::Empty,
             Self::QuickOpen => MenuIcon::Idea(&idea::MAGNIFYING_GLASS_ICON),
             Self::SearchEverywhere => MenuIcon::Idea(&idea::GLOBE_HEMISPHERE_WEST_ICON),
             Self::Undo => MenuIcon::Idea(&idea::ARROW_COUNTER_CLOCKWISE_ICON),
@@ -704,6 +722,9 @@ impl MenuAction {
             Self::ResetZoom => Some(KEY_RESET_ZOOM),
             Self::GoToLine => Some(KEY_GO_TO_LINE),
             Self::GoBack => Some(KEY_GO_BACK),
+            // 真源自己写着「使用 Shift+F12 查找引用」（`references.findReferencesHint`），
+            // 这条键在 `lithe_gpui_editor::install_actions` 里真绑了，所以胶囊画得出、按得出生效。
+            Self::GoToReferences => Some(KEY_GO_TO_REFERENCES),
             Self::GoForward => Some(KEY_GO_FORWARD),
             // 查找 / 替换：`install_key_actions` 里绑的正是这两个键（`secondary-f` / `secondary-r`），
             // 而它们的 `keybind_action()` 现在也真有值（见下面的注释），所以菜单画得出、按得出生效。
@@ -742,6 +763,11 @@ impl MenuAction {
             // `menu_key()` 因此返回 `None`，菜单上不会画一颗按不出的胶囊。
             Self::GoToImplementation => Box::new(lithe_gpui_editor::NavigateToImplementation),
             Self::GoToTypeDefinition => Box::new(lithe_gpui_editor::NavigateToTypeDefinition),
+            Self::GoToReferences => Box::new(lithe_gpui_editor::GoToReferences),
+            // 重命名与格式化：菜单派发走 `apply_menu_action` 直接调宿主方法（重命名要先弹对话框、
+            // 格式化没有 UI），所以没有可派发的 Action；`menu_key()` 因此返回 `None`。
+            Self::RenameSymbol => Box::new(lithe_gpui_editor::RenameSymbol),
+            Self::FormatDocument => Box::new(lithe_gpui_editor::FormatDocument),
             Self::Preferences => Box::new(lithe_gpui_settings::OpenSettings),
             Self::CommandPalette => Box::new(OpenCommandPalette),
             Self::ToggleMenuBar => Box::new(ToggleMenuBarAction),
@@ -839,6 +865,9 @@ impl MenuAction {
             Self::GoToDefinition => Some(CommandId::NavigateToDefinition),
             Self::GoToImplementation => Some(CommandId::NavigateToImplementation),
             Self::GoToTypeDefinition => Some(CommandId::NavigateToTypeDefinition),
+            Self::GoToReferences => Some(CommandId::GoToReferences),
+            Self::RenameSymbol => Some(CommandId::RenameSymbol),
+            Self::FormatDocument => Some(CommandId::FormatDocument),
             Self::QuickOpen => Some(CommandId::OpenQuickOpen),
             Self::SearchEverywhere => Some(CommandId::OpenSearchEverywhere),
             Self::ReplaceInFiles => Some(CommandId::OpenReplaceInFiles),
@@ -971,11 +1000,9 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::DeleteLine),
             MenuItem::Action(MenuAction::MoveLineUp),
             MenuItem::Action(MenuAction::MoveLineDown),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.formatDocument",
-                missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::FormatDocument),
+            // 格式化**选区**仍未接线：Core 只有整篇的 `textDocument/formatting`，
+            // 没有 `rangeFormatting`，宿主拿不到「只格式化这一段」的请求形态。
             MenuItem::NotWired {
                 label_key: "lithe.menu.formatSelection",
                 missing: MISSING_LSP_REQUESTS,
@@ -1037,16 +1064,8 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::GoToDefinition),
             MenuItem::Action(MenuAction::GoToImplementation),
             MenuItem::Action(MenuAction::GoToTypeDefinition),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.goToReferences",
-                missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Empty,
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.renameSymbol",
-                missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::GoToReferences),
+            MenuItem::Action(MenuAction::RenameSymbol),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::NextTab),
             MenuItem::Action(MenuAction::PreviousTab),
@@ -2186,7 +2205,8 @@ fn icon_element(
 mod tests {
     use super::{
         CloseReason, EditorContext, KEY_FIND, KEY_FIND_REPLACE, KEY_GO_BACK, KEY_GO_FORWARD,
-        KEY_GO_TO_LINE, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM, KEY_TOGGLE_ACTIVITY_SIDEBAR,
+        KEY_GO_TO_LINE, KEY_GO_TO_REFERENCES, KEY_REOPEN_CLOSED_TAB, KEY_RESET_ZOOM,
+        KEY_TOGGLE_ACTIVITY_SIDEBAR,
         KEY_TOGGLE_TERMINAL, KEY_ZOOM_IN, KEY_ZOOM_OUT, MENUS, MISSING_GROUPS, MenuAction,
         MenuBarMode, MenuItem, NOT_WIRED_OUTSIDE_MENUS, NavState, TriggerFace, action_count,
         mode_for, mode_from_id, not_wired_count, resolve_menu_toggle,
@@ -2617,6 +2637,7 @@ mod tests {
                 KEY_GO_TO_LINE,
                 KEY_GO_BACK,
                 KEY_GO_FORWARD,
+                KEY_GO_TO_REFERENCES,
                 "ctrl-tab",
                 "ctrl-shift-tab",
             ],
@@ -2814,8 +2835,10 @@ mod tests {
             action_count() + not_wired_count() + 1,
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
         );
+        // 这个下限只防「有人把没能力的项顺手删掉」。2026-10-16 接通转到引用 / 重命名 /
+        // 格式化文档三条后从 21 降到 18；再降就得先解释清楚又接了什么。
         assert!(
-            declared.len() >= 21,
+            declared.len() >= 18,
             "占位项突然少了一截（现在 {}）？查一下是不是有人把没能力的项又删掉了",
             declared.len()
         );
@@ -3457,7 +3480,7 @@ mod tests {
     /// 期望值（这才是真正的验收口径），这里负责补上「一个变体都不漏」那件事。
     fn assert_row_follows(action: MenuAction, ctx: EditorContext) {
         let expected = match action {
-            // —— 认的是「当前这个缓冲」的二十一个 ——
+            // —— 认的是「当前这个缓冲」的那一批 ——
             MenuAction::SaveAs
             | MenuAction::CloseTab
             | MenuAction::Undo
@@ -3478,7 +3501,10 @@ mod tests {
             | MenuAction::ShowHover
             | MenuAction::GoToDefinition
             | MenuAction::GoToImplementation
-            | MenuAction::GoToTypeDefinition => ctx.has_active_buffer,
+            | MenuAction::GoToTypeDefinition
+            | MenuAction::GoToReferences
+            | MenuAction::RenameSymbol
+            | MenuAction::FormatDocument => ctx.has_active_buffer,
 
             // —— 要把字节写回磁盘的那个 ——
             //

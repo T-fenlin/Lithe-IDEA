@@ -184,6 +184,16 @@ struct GoToLinePrompt {
     _enter: Subscription,
 }
 
+/// 重命名符号的输入框。
+///
+/// `offset` 是**发起时**光标所在的字节偏移：对话框开着的时候用户还能去点正文，但那一次重命名的
+/// 语义是「当初光标下那个符号」，所以位置以发起那一刻为准，不跟着光标漂。
+struct RenamePrompt {
+    input: Entity<lithe_ui::forms::InputState>,
+    offset: usize,
+    _enter: Subscription,
+}
+
 /// 正在显示的那一份补全列表。
 ///
 /// `offset` 是请求发出时光标所在的字节偏移（弹层贴着它画），`selected` 是**过滤之后**的行号
@@ -272,6 +282,21 @@ pub struct EditorPane {
     code_action_request: Option<(u64, Point<Pixels>)>,
     code_action_generation: Arc<AtomicU64>,
     code_action_task: Option<Task<()>>,
+    /// 转到引用：服务端给的这一批、以及「请在第 N 次请求时于这个窗口坐标开菜单」。
+    ///
+    /// 与代码动作**共用**菜单机制但各有各的代次：两者可以同时在飞，共用一个计数器会让后发的那次
+    /// 把先发的答案判成过期。
+    references: Vec<crate::symbol_actions::Reference>,
+    reference_request: Option<(u64, Point<Pixels>)>,
+    reference_generation: Arc<AtomicU64>,
+    reference_task: Option<Task<()>>,
+    /// 重命名符号：一个带输入框的模态对话框；`None` 表示没开。
+    rename: Option<RenamePrompt>,
+    rename_generation: Arc<AtomicU64>,
+    rename_task: Option<Task<()>>,
+    /// 格式化：发一次请求，回来整批落进当前缓冲区（没有 UI，所以只有一个代次与任务）。
+    format_generation: Arc<AtomicU64>,
+    format_task: Option<Task<()>>,
     /// 正文容器（弹层的父容器）在窗口里的原点，由它自己的 canvas 量出来：`bounds_for_offset` 给的是
     /// **窗口**坐标，要画成这个容器的子元素就得减去它。
     body_origin: Option<Point<Pixels>>,
@@ -331,6 +356,15 @@ impl EditorPane {
             code_action_request: None,
             code_action_generation: Arc::new(AtomicU64::new(0)),
             code_action_task: None,
+            references: Vec::new(),
+            reference_request: None,
+            reference_generation: Arc::new(AtomicU64::new(0)),
+            reference_task: None,
+            rename: None,
+            rename_generation: Arc::new(AtomicU64::new(0)),
+            rename_task: None,
+            format_generation: Arc::new(AtomicU64::new(0)),
+            format_task: None,
             body_origin: None,
             hovered_tab: None,
             closed: Vec::new(),
@@ -1515,12 +1549,12 @@ impl EditorPane {
             Ok(Some(target)) => target,
             Ok(None) => {
                 println!("S1_NAV_FAILED kind={tag} reason=no-target");
-                self.notify_no_target(nav, cx);
+                self.notify_no_target(nav.label_key(), nav.tag(), cx);
                 return;
             }
             Err(error) => {
                 println!("S1_NAV_FAILED kind={tag} reason={error}");
-                self.notify_no_target(nav, cx);
+                self.notify_no_target(nav.label_key(), nav.tag(), cx);
                 return;
             }
         };
@@ -1539,24 +1573,14 @@ impl EditorPane {
                 line,
                 utf16_column,
             } => {
-                if !self.buffers.iter().any(|buffer| buffer.path == path) {
-                    self.open(&path, window, cx);
-                }
-                let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
+                let Some((index, offset)) =
+                    self.land_on_file(&path, line, utf16_column, window, cx)
+                else {
                     println!("S1_NAV_FAILED kind={tag} reason=no-target");
-                    self.notify_no_target(nav, cx);
+                    self.notify_no_target(nav.label_key(), nav.tag(), cx);
                     return;
                 };
-                let text = self.buffers[index].editor.read(cx).text().to_string();
-                (
-                    index,
-                    crate::navigation::offset_for_utf16(
-                        &text,
-                        line as usize,
-                        utf16_column as usize,
-                    ),
-                    "jdtls",
-                )
+                (index, offset, "jdtls")
             }
             NavTarget::Virtual {
                 uri,
@@ -1787,10 +1811,14 @@ impl EditorPane {
     ///
     /// 文案与去重键都按目标分：连按三次「转到实现」只该合并成一条，而不该与
     /// 「转到定义」的那条互相顶掉。
-    fn notify_no_target(&self, nav: NavigationTarget, cx: &mut Context<Self>) {
-        let target = tr(nav.label_key());
+    ///
+    /// 取的是「文案键 + 去重标签」而不是 [`NavigationTarget`]：转到引用也是一次"没找到"，
+    /// 但它返回一组位置、和三个 Go-to 不是同一个形状，硬塞进那个枚举只会让 `resolve_target`
+    /// 多一个永远走不到的取值。
+    fn notify_no_target(&self, label_key: &str, tag: &str, cx: &mut Context<Self>) {
+        let target = tr(label_key);
         let code = "lithe.navigation.noTargetFound";
-        let key = format!("navigation-no-target-{}", nav.tag());
+        let key = format!("navigation-no-target-{tag}");
         if !self.record_notification(
             cx,
             lithe_gpui_notify::Input::new(code, lithe_gpui_notify::Severity::Info)
@@ -3060,6 +3088,385 @@ impl EditorPane {
         cx.notify();
     }
 
+    /// 打开一个物理文件位置，返回它的缓冲下标与字节偏移（**不动光标**，由调用方决定要不要记跳转历史）。
+    ///
+    /// 定义/实现/类型定义与「转到引用」都落在这里：差别只在落下去之后要不要记一次历史。
+    fn land_on_file(
+        &mut self,
+        path: &Path,
+        line: u32,
+        utf16_column: u32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<(usize, usize)> {
+        if !self.buffers.iter().any(|buffer| buffer.path == path) {
+            self.open(path, window, cx);
+        }
+        let index = self.buffers.iter().position(|buffer| buffer.path == path)?;
+        let text = self.buffers[index].editor.read(cx).text().to_string();
+        let offset = crate::navigation::offset_for_utf16(
+            &text,
+            line as usize,
+            utf16_column as usize,
+        );
+        Some((index, offset))
+    }
+
+    // ------------------------------------------------------------------
+    // 转到引用 / 重命名 / 格式化
+    // ------------------------------------------------------------------
+
+    /// Go ▸ Go to References：取一次引用，回来在光标下方开一份菜单。
+    ///
+    /// 与定义那三个的差别是**结果是一组**：定义只落第一条，引用要把全部位置列出来让用户挑。
+    /// 菜单机制与代码动作共用（`ContextMenu::manual`），但代次各算各的——两者可以同时在飞。
+    pub fn go_to_references(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_REFERENCES open=false reason=no-active-buffer");
+            return;
+        };
+        let file = self.buffers[index].path.display().to_string();
+        if language_for_file(&self.buffers[index].name) != Some("java") {
+            eprintln!("S1_EDITOR_REFERENCES open=false reason=not-java file={file}");
+            return;
+        }
+        let Some(service) = self.java.clone() else {
+            eprintln!("S1_EDITOR_REFERENCES open=false reason=no-java-service file={file}");
+            return;
+        };
+
+        let path = self.buffers[index].path.clone();
+        let text = self.buffers[index].editor.read(cx).text().to_string();
+        let caret = self.buffers[index].editor.read(cx).cursor_offset();
+
+        let mine = self.reference_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let generation = self.reference_generation.clone();
+        let requested = crate::symbol_actions::fetch_references(
+            service, path, text, caret, generation, mine,
+        );
+        let task = cx.spawn_in(window, async move |pane, cx| {
+            let Some(references) = requested.await else {
+                return;
+            };
+            let _ = pane.update_in(cx, |pane, window, cx| {
+                pane.present_references(caret, mine, references, window, cx)
+            });
+        });
+        self.reference_task = Some(task);
+    }
+
+    fn present_references(
+        &mut self,
+        caret: usize,
+        mine: u64,
+        references: Vec<crate::symbol_actions::Reference>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.reference_generation.load(Ordering::SeqCst) != mine {
+            return;
+        }
+        let Some(index) = self.active else {
+            return;
+        };
+        let file = self.buffers[index].path.display().to_string();
+        if references.is_empty() {
+            println!("S1_EDITOR_REFERENCES menu=false reason=no-references file={file}");
+            // 复用真源里已有的菜单文案，不新造导航键（`navigation.references` 不存在）。
+            self.notify_no_target("lithe.menu.goToReferences", "references", cx);
+            return;
+        }
+        let Some(bounds) = self.buffers[index]
+            .editor
+            .read(cx)
+            .bounds_for_offset(caret, cx)
+        else {
+            println!("S1_EDITOR_REFERENCES menu=false reason=anchor-out-of-view file={file}");
+            return;
+        };
+
+        let count = references.len();
+        self.references = references;
+        self.reference_request = Some((
+            mine,
+            point(bounds.origin.x, bounds.origin.y + bounds.size.height),
+        ));
+        println!("S1_EDITOR_REFERENCES menu=true file={file} count={count}");
+        cx.notify();
+    }
+
+    /// 引用菜单里挑中的那一条：打开它并把光标落上去，同时记一次跳转历史。
+    fn apply_reference(&mut self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(reference) = self.references.get(at).cloned() else {
+            return;
+        };
+        let Some(origin_index) = self.active else {
+            return;
+        };
+        let origin_path = self.buffers[origin_index].path.clone();
+        let origin = {
+            let state = self.buffers[origin_index].editor.read(cx);
+            crate::navigation::line_character(state.text(), state.cursor_offset())
+        };
+        let (origin_line, origin_column) = (origin.line, origin.character);
+
+        let Some((index, offset)) =
+            self.land_on_file(&reference.path, reference.line, reference.utf16_column, window, cx)
+        else {
+            println!(
+                "S1_EDITOR_REFERENCES jump=false reason=no-target path={}",
+                reference.path.display()
+            );
+            return;
+        };
+
+        self.history.record(JumpEntry {
+            path: origin_path,
+            position: origin,
+        });
+        let to = self.buffers[index].editor.update(cx, |state, cx| {
+            state.set_cursor_offset(offset, window, cx);
+            state.position()
+        });
+        self.active = Some(index);
+        println!(
+            "S1_EDITOR_REFERENCES jump=true from={}:{} to={}:{} file={}",
+            origin_line + 1,
+            origin_column + 1,
+            to.0,
+            to.1,
+            self.buffers[index].path.display()
+        );
+        self.sync_cursor(cx);
+        cx.notify();
+    }
+
+    /// Edit ▸ Format Document：问一次服务端，回来整批落进当前缓冲区（一批一次撤销步）。
+    pub fn format_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_FORMAT open=false reason=no-active-buffer");
+            return;
+        };
+        let file = self.buffers[index].path.display().to_string();
+        if language_for_file(&self.buffers[index].name) != Some("java") {
+            eprintln!("S1_EDITOR_FORMAT open=false reason=not-java file={file}");
+            return;
+        }
+        let Some(service) = self.java.clone() else {
+            eprintln!("S1_EDITOR_FORMAT open=false reason=no-java-service file={file}");
+            return;
+        };
+
+        let path = self.buffers[index].path.clone();
+        let text = self.buffers[index].editor.read(cx).text().to_string();
+
+        let mine = self.format_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let generation = self.format_generation.clone();
+        let requested =
+            crate::symbol_actions::fetch_formatting(service, path, text, generation, mine);
+        let task = cx.spawn_in(window, async move |pane, cx| {
+            let Some(edits) = requested.await else {
+                return;
+            };
+            let _ = pane.update_in(cx, |pane, _window, cx| pane.apply_formatting(mine, edits, cx));
+        });
+        self.format_task = Some(task);
+    }
+
+    fn apply_formatting(
+        &mut self,
+        mine: u64,
+        edits: Vec<lithe_gpui_java::JavaTextEdit>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.format_generation.load(Ordering::SeqCst) != mine {
+            return;
+        }
+        let Some(index) = self.active else {
+            return;
+        };
+        let file = self.buffers[index].path.display().to_string();
+        let editor = self.buffers[index].editor.clone();
+        let converted = {
+            let state = editor.read(cx);
+            crate::code_actions::ranges_for(&edits, state.text())
+        };
+        if converted.is_empty() {
+            println!("S1_EDITOR_FORMAT file={file} result=no-changes");
+            return;
+        }
+        let count = converted.len();
+        editor.update(cx, |state, cx| state.apply_edits(&converted, cx));
+        println!("S1_EDITOR_FORMAT file={file} result=applied edits={count}");
+        cx.notify();
+    }
+
+    /// Go ▸ Rename Symbol：先在对话框里问新名字，确认之后再问服务端要编辑。
+    ///
+    /// 输入框预填光标下那个词（`word_range`），并且**只选中标识符本身**——用户改的不是整行。
+    pub fn rename_symbol(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_RENAME open=false reason=no-active-buffer");
+            return;
+        };
+        if window.has_active_dialog(cx) {
+            eprintln!("S1_EDITOR_RENAME open=false reason=active-dialog");
+            return;
+        }
+        let file = self.buffers[index].path.display().to_string();
+        if language_for_file(&self.buffers[index].name) != Some("java") {
+            eprintln!("S1_EDITOR_RENAME open=false reason=not-java file={file}");
+            return;
+        }
+        if self.java.is_none() {
+            eprintln!("S1_EDITOR_RENAME open=false reason=no-java-service file={file}");
+            return;
+        }
+
+        let (text, offset) = {
+            let state = self.buffers[index].editor.read(cx);
+            (state.text().to_string(), state.cursor_offset())
+        };
+        let Some(range) = crate::navigation::word_range(&text, offset) else {
+            eprintln!("S1_EDITOR_RENAME open=false reason=no-symbol file={file}");
+            return;
+        };
+        let current = text[range.clone()].to_string();
+
+        let input = cx.new(|cx| lithe_ui::forms::InputState::new(window, cx));
+        input.update(cx, |state, cx| {
+            state.set_placeholder(tr("lithe.editor.renameSymbolPrompt"), cx);
+            state.set_text(current.clone(), cx);
+        });
+        let enter = cx.subscribe_in(
+            &input,
+            window,
+            |pane: &mut Self,
+             _input: &Entity<lithe_ui::forms::InputState>,
+             event: &InputEvent,
+             window,
+             cx| {
+                if matches!(event, InputEvent::Submit) {
+                    pane.submit_rename(window, cx);
+                }
+            },
+        );
+        self.rename = Some(RenamePrompt {
+            input: input.clone(),
+            offset,
+            _enter: enter,
+        });
+        println!("S1_EDITOR_RENAME open=true file={file} symbol={current:?}");
+
+        let pane = cx.weak_entity();
+        window.open_dialog(
+            "lithe-rename-symbol",
+            move |id, _window, cx| {
+                let candidate = input.read(cx).text().trim().to_string();
+                // 空名字、或者与原来一字不差：都不该发请求（服务端会退化成空编辑，白跑一趟）。
+                let valid = !candidate.is_empty() && candidate != current;
+                let confirm_pane = pane.clone();
+                let (cancel_id, ok_id) = ((id.clone(), "cancel"), (id.clone(), "ok"));
+                Dialog::new(id)
+                    .title(tr("lithe.menu.renameSymbol"))
+                    .on_close(dismiss_hosted)
+                    .child(lithe_ui::forms::Input::new(&input))
+                    .action(move |close| {
+                        Button::new(cancel_id)
+                            .label(tr("lithe.ui.cancel"))
+                            .on_click(move |_, window, cx| close(window, cx))
+                    })
+                    .action(move |_close| {
+                        Button::new(ok_id)
+                            .primary()
+                            .label(tr("lithe.ui.ok"))
+                            .disabled(!valid)
+                            .on_click(move |_, window, cx| {
+                                let _ = confirm_pane.update(cx, |pane, cx| {
+                                    pane.submit_rename(window, cx)
+                                });
+                            })
+                    })
+                    .into_any_element()
+            },
+            cx,
+        );
+    }
+
+    /// 对话框确认（也会被 Enter 触发）：把新名字发给服务端，开始取编辑。
+    pub fn submit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(prompt) = self.rename.as_ref() else {
+            return;
+        };
+        let new_name = prompt.input.read(cx).text().trim().to_string();
+        let offset = prompt.offset;
+        if new_name.is_empty() {
+            eprintln!("S1_EDITOR_RENAME submit=false reason=empty-name");
+            return;
+        }
+        let Some(index) = self.active else {
+            return;
+        };
+        let Some(service) = self.java.clone() else {
+            return;
+        };
+        let path = self.buffers[index].path.clone();
+        let text = self.buffers[index].editor.read(cx).text().to_string();
+
+        // 关掉对话框再发请求：请求回来时要落的是一份仍然属于当前缓冲区的编辑，
+        // 而对话框开着的时候用户按不了别的菜单，先关掉才能让「失败也看得见结果」。
+        self.rename = None;
+        window.close_dialog(cx);
+
+        let mine = self.rename_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let generation = self.rename_generation.clone();
+        let requested = crate::symbol_actions::fetch_rename(
+            service, path, text, offset, new_name, generation, mine,
+        );
+        let task = cx.spawn_in(window, async move |pane, cx| {
+            let Some(edits) = requested.await else {
+                return;
+            };
+            let _ = pane.update_in(cx, |pane, _window, cx| pane.apply_rename(mine, edits, cx));
+        });
+        self.rename_task = Some(task);
+    }
+
+    fn apply_rename(
+        &mut self,
+        mine: u64,
+        edits: lithe_gpui_java::JavaWorkspaceEdits,
+        cx: &mut Context<Self>,
+    ) {
+        if self.rename_generation.load(Ordering::SeqCst) != mine {
+            return;
+        }
+        let Some(index) = self.active else {
+            return;
+        };
+        let file = self.buffers[index].path.display().to_string();
+        if edits.other_file_edits > 0 {
+            // 本仓没有跨文件批改的执行层：**说清楚只改了一个文件**，不假装整体完成。
+            eprintln!(
+                "S1_EDITOR_RENAME file={file} result=partial other_files={} note=this-file-only",
+                edits.other_file_edits
+            );
+        }
+        let editor = self.buffers[index].editor.clone();
+        let converted = {
+            let state = editor.read(cx);
+            crate::code_actions::ranges_for(&edits.edits, state.text())
+        };
+        if converted.is_empty() {
+            println!("S1_EDITOR_RENAME file={file} result=no-edits");
+            return;
+        }
+        let count = converted.len();
+        editor.update(cx, |state, cx| state.apply_edits(&converted, cx));
+        println!("S1_EDITOR_RENAME file={file} result=applied edits={count}");
+        cx.notify();
+    }
+
     /// 组件库的只读横幅带着一个"Make editable"按钮，而本产品的只读是**文件属性**（二进制、有损解码、
     /// 超过上限、读失败）：编辑出来的东西写不回磁盘（`save_active` 也会拒），所以这里立刻按回去，
     /// 并留下一条诊断——不假装这次解锁成功了。
@@ -4070,6 +4477,34 @@ impl EditorPane {
                 .into_any_element(),
         )
     }
+
+    /// 引用列表的菜单：与代码动作同一套 `ContextMenu::manual`，每行是「相对路径:行:列」。
+    ///
+    /// 定高而不是定宽：引用可能上百条，不限高会把面板拉到窗口外面；行文案右对齐的路径宽度
+    /// 交给主题的菜单宽度（与代码动作一致）。
+    fn reference_menu(&self, pane: &WeakEntity<Self>, cx: &App) -> Option<AnyElement> {
+        if self.reference_request.is_none() || self.references.is_empty() {
+            return None;
+        }
+        let pick = pane.clone();
+        let root = self.workspace_root.as_deref();
+        let mut menu = Menu::new();
+        for (at, reference) in self.references.iter().enumerate() {
+            let pick = pick.clone();
+            menu = menu.item(MenuItem::new(reference.label(root)).on_click(
+                move |window, cx| {
+                    let _ = pick.update(cx, |pane, cx| pane.apply_reference(at, window, cx));
+                },
+            ));
+        }
+        menu = menu.max_height(rems(20.));
+        let _ = cx;
+        Some(
+            ContextMenu::new("lithe-editor-references", menu)
+                .manual(self.reference_request)
+                .into_any_element(),
+        )
+    }
 }
 
 fn tab_element_id(key: &BufferKey) -> String {
@@ -4156,6 +4591,7 @@ impl Render for EditorPane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = cx.entity().downgrade();
         let code_actions = self.code_action_menu(&pane, cx);
+        let references = self.reference_menu(&pane, cx);
         let tabs = self.render_tab_bar(window, cx);
         let body = self.render_body(window, cx);
         v_stack()
@@ -4184,6 +4620,16 @@ impl Render for EditorPane {
             .on_action(cx.listener(|pane, _: &crate::ShowCodeActions, window, cx| {
                 pane.show_code_actions(window, cx);
             }))
+            // 符号级动作：引用给一组位置，重命名与格式化各发一次编辑请求。
+            .on_action(cx.listener(|pane, _: &crate::GoToReferences, window, cx| {
+                pane.go_to_references(window, cx);
+            }))
+            .on_action(cx.listener(|pane, _: &crate::RenameSymbol, window, cx| {
+                pane.rename_symbol(window, cx);
+            }))
+            .on_action(cx.listener(|pane, _: &crate::FormatDocument, window, cx| {
+                pane.format_document(window, cx);
+            }))
             // 查找/替换：菜单与键位都走这几个动作（键位由 workbench 绑，见 `crate::OpenFind`）。
             .on_action(cx.listener(|pane, _: &crate::OpenFind, window, cx| {
                 pane.open_find(false, window, cx);
@@ -4204,6 +4650,7 @@ impl Render for EditorPane {
             .children(self.render_breadcrumbs(cx))
             .child(body)
             .children(code_actions)
+            .children(references)
     }
 }
 

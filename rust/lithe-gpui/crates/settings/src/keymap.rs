@@ -34,7 +34,7 @@
 //!
 //! ## 已知缺口（登记，不掩盖）
 //!
-//! 三端命令 id 命名空间互不相同：gpui 侧 23 个 id 里只有 `toggle-terminal`、
+//! 三端命令 id 命名空间互不相同：gpui 侧 28 个 id 里只有 `toggle-terminal`、
 //! `toggle-maven` 两个与 macOS 端同名，Windows 前端又是第三套（`file.save`、
 //! `workbench.commandPalette`……）。预设表因此**无法从任何一端机械移植**，只能人工建显式
 //! 映射。本轮只落「两端同名、且键位有真源」的条目：
@@ -399,6 +399,12 @@ pub const DEFAULT_BINDINGS: &[PresetBinding] = &[
         keystrokes: &["f12"],
         context: None,
     },
+    // workbench/src/menu_bar.rs:KEY_GO_TO_REFERENCES（真源那句「使用 Shift+F12 查找引用」）
+    PresetBinding {
+        command: CommandId::GoToReferences,
+        keystrokes: &["shift-f12"],
+        context: None,
+    },
     // workbench/src/menu_bar.rs:KEY_REOPEN_CLOSED_TAB
     PresetBinding {
         command: CommandId::ReopenClosedTab,
@@ -603,6 +609,9 @@ mod tests {
             (CommandId::OpenQuickOpen, vec!["secondary-p"]),
             (CommandId::OpenReplaceInFiles, vec!["secondary-shift-r"]),
             (CommandId::NavigateToDefinition, vec!["f12"]),
+            // 真源 `references.findReferencesHint` 写着「使用 Shift+F12 查找引用」，
+            // 绑定登记在 `lithe_gpui_editor::install_actions`。
+            (CommandId::GoToReferences, vec!["shift-f12"]),
             (CommandId::ReopenClosedTab, vec!["secondary-shift-t"]),
         ];
         let actual: Vec<(CommandId, Vec<String>)> = DEFAULT_BINDINGS

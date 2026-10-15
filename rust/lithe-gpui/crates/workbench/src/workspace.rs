@@ -398,6 +398,13 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
         ),
         // 本仓 idea 资产里没有这两张图 ⇒ 留空槽，不拿语义不同的图顶替。
         C::NavigateToImplementation | C::NavigateToTypeDefinition => (Category::View, None),
+        C::GoToReferences => (
+            Category::View,
+            Some(idea_icon_element(&idea::TOOL_WINDOW_FIND_ICON)),
+        ),
+        // 重命名没有对应图（留空槽）；格式化沿用「整篇排版」的行图。
+        C::RenameSymbol => (Category::View, None),
+        C::FormatDocument => (Category::View, Some(idea_icon_element(&idea::ROWS_ICON))),
         C::OpenFile => (Category::View, Some(idea_icon_element(&idea::FOLDER_ICON))),
         C::CloseTab
         | C::CloseOtherTabs
@@ -473,6 +480,17 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
         C::NavigateToTypeDefinition => (
             tr("lithe.menu.goToTypeDefinition"),
             tr("lithe.navigation.typeDefinition"),
+        ),
+        // 后两个没有 `navigation.*` 文案（那是三个 Go-to 的目标名），
+        // 描述复用各自的菜单文案所属的分组，不新造 i18n。
+        C::GoToReferences => (
+            tr("lithe.menu.goToReferences"),
+            tr("lithe.menu.go"),
+        ),
+        C::RenameSymbol => (tr("lithe.menu.renameSymbol"), tr("lithe.menu.go")),
+        C::FormatDocument => (
+            tr("lithe.menu.formatDocument"),
+            tr("lithe.menu.edit"),
         ),
         C::OpenFile => (tr("lithe.outline.openFile"), tr("lithe.menu.file")),
         C::CloseTab => (tr("lithe.menu.closeTab"), tr("lithe.menu.file")),
@@ -2046,6 +2064,25 @@ impl ShellWorkspace {
                     .update(cx, |pane, cx| pane.show_hover_at_caret(window, cx));
                 diagnose_menu_run(action, "showHover");
             }
+            // 符号级语义动作：三个都是异步取数，派发这一电只负责把请求发出去。
+            MenuAction::GoToReferences => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.go_to_references(window, cx));
+                diagnose_menu_run(action, "goToReferences");
+            }
+            MenuAction::RenameSymbol => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.rename_symbol(window, cx));
+                diagnose_menu_run(action, "renameSymbol");
+            }
+            MenuAction::FormatDocument => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.format_document(window, cx));
+                diagnose_menu_run(action, "formatDocument");
+            }
             MenuAction::ShowDiagnostics | MenuAction::ShowRunAndDebug => {
                 self.bottom_kind = match action {
                     MenuAction::ShowRunAndDebug => BottomPaneKind::Debug,
@@ -2666,6 +2703,24 @@ impl ShellWorkspace {
                 let _ = self
                     .editor
                     .update(cx, |pane, cx| pane.navigate_to_type_definition(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::GoToReferences => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.go_to_references(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::RenameSymbol => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.rename_symbol(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::FormatDocument => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.format_document(window, cx));
                 diagnose_run(id, "applied");
             }
             CommandId::ToggleTerminal => {
@@ -4201,6 +4256,7 @@ mod tests {
                 crate::menu_bar::KEY_GO_TO_LINE,
                 crate::menu_bar::KEY_GO_BACK,
                 crate::menu_bar::KEY_GO_FORWARD,
+                crate::menu_bar::KEY_GO_TO_REFERENCES,
                 "ctrl-tab",
                 "ctrl-shift-tab",
             ]
@@ -4484,6 +4540,9 @@ mod tests {
             CommandId::NavigateToDefinition,
             CommandId::NavigateToImplementation,
             CommandId::NavigateToTypeDefinition,
+            CommandId::GoToReferences,
+            CommandId::RenameSymbol,
+            CommandId::FormatDocument,
         ] {
             ids.push(other.id());
         }
@@ -4497,7 +4556,7 @@ mod tests {
     fn the_actions_catalog_covers_the_whole_command_table() {
         assert_eq!(
             CommandId::ALL.len(),
-            25,
+            28,
             "宿主命令目录的条数变了要同步改注释与 UI-MAP"
         );
         let ids: Vec<&str> = CommandId::ALL.iter().map(|id| id.id()).collect();
@@ -4520,6 +4579,9 @@ mod tests {
                 "navigate-to-definition",
                 "navigate-to-implementation",
                 "navigate-to-type-definition",
+                "go-to-references",
+                "rename-symbol",
+                "format-document",
                 "open-file",
                 "close-tab",
                 "close-other-tabs",

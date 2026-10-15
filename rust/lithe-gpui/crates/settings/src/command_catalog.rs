@@ -16,7 +16,7 @@
 //!
 //! ## 文案从哪来
 //!
-//! **一律复用既有 i18n key，不新造。** 22 条直接取自对应 `MenuAction::label_key()` 的取值
+//! **一律复用既有 i18n key，不新造。** 25 条直接取自对应 `MenuAction::label_key()` 的取值
 //! （两者语义同一个命令），只有 `OpenSettings` / `SwitchToLightTheme` / `SwitchToDarkTheme`
 //! 这 3 条在 `MenuAction` 里没有对应项，各取一个既有 key：
 //!
@@ -59,6 +59,9 @@ pub const fn label_key(command: CommandId) -> &'static str {
         CommandId::NavigateToDefinition => "menu.goToDefinition",
         CommandId::NavigateToImplementation => "menu.goToImplementation",
         CommandId::NavigateToTypeDefinition => "menu.goToTypeDefinition",
+        CommandId::GoToReferences => "menu.goToReferences",
+        CommandId::RenameSymbol => "menu.renameSymbol",
+        CommandId::FormatDocument => "menu.formatDocument",
         CommandId::OpenFile => "outline.openFile",
         CommandId::CloseTab => "menu.closeTab",
         CommandId::CloseOtherTabs => "menu.closeOtherTabs",
@@ -128,7 +131,7 @@ mod tests {
     /// 目录必须跟着 `CommandId` 一起长：加一个新变体而这里没登记，上面两条测试立刻会挂。
     #[test]
     fn the_catalog_covers_every_command() {
-        assert_eq!(CommandId::ALL.len(), 25);
+        assert_eq!(CommandId::ALL.len(), 28);
         for command in CommandId::ALL {
             // `label_key` 是穷举 match，落到这里即证明没漏；再断言一次非空。
             assert!(!label_key(command).is_empty());

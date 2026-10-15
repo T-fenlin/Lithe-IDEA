@@ -785,7 +785,7 @@ fn preset_gap(preset: KeymapPreset) -> usize {
     let rows = preset_bindings(preset);
     CommandId::ALL
         .iter()
-        // 分母只数**能绑键**的那 11 条，不是全部 25 条。
+        // 分母只数**能绑键**的那 14 条，不是全部 28 条。
         //
         // 那 14 条没有 gpui `Action`，根本绑不了键，预设永远也不可能覆盖它们——给一个没有
         // action 的命令写预设绑定，写出来也是死的。把它们算进来就是报一堆永远修不了的

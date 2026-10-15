@@ -7,6 +7,7 @@ mod go_to_line;
 mod hover;
 mod navigation;
 mod problems;
+mod symbol_actions;
 
 pub use editor_view::{
     BufferWriteHost, CursorPosition, DebugGutterHost, EDITOR_HOST_ELEMENT_ID, EditorPane,
@@ -25,6 +26,13 @@ gpui::actions!(
         NavigateToDefinition,
         NavigateToImplementation,
         NavigateToTypeDefinition,
+        // 符号级动作（Go ▸ 转到引用 / 重命名符号，Edit ▸ 格式化文档）。
+        // 只有「转到引用」绑键：真源自己写着「使用 Shift+F12 查找引用」
+        // （`references.findReferencesHint`），不绑这条提示就是假的。另外两条与
+        // 「转到实现 / 类型定义」同口径——只给菜单入口，不铺键位面。
+        GoToReferences,
+        RenameSymbol,
+        FormatDocument,
         CloseActiveTab,
         ShowCodeActions
     ]
@@ -49,6 +57,8 @@ pub fn install_actions(cx: &mut App) {
         // `secondary-.` 绑在编辑器的上下文上）。组件库没有"请求代码动作"的事件 ——
         // 它不认识语言服务 —— 所以这个入口由宿主自己绑、自己取数（见 `src/code_actions.rs`）。
         KeyBinding::new("secondary-.", ShowCodeActions, None),
+        // 真源那句提示是「使用 Shift+F12 查找引用」，所以这一条必须有键才成立。
+        KeyBinding::new("shift-f12", GoToReferences, None),
     ];
     if cfg!(target_os = "macos") {
         bindings.push(KeyBinding::new("cmd-.", ShowCodeActions, None));

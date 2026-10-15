@@ -18,6 +18,12 @@ const HOVER_TIMEOUT: Duration = Duration::from_secs(5);
 
 const CODE_ACTION_TIMEOUT: Duration = Duration::from_secs(15);
 
+// 引用、重命名、格式化：与定义同一量级。JDT 在这三件事上要先做实参绑定与索引，
+// 首次请求明显比后续慢，所以给的时间与 `DEFINITION_TIMEOUT` 看齐而不是向悬停看齐。
+const REFERENCES_TIMEOUT: Duration = Duration::from_secs(60);
+const RENAME_TIMEOUT: Duration = Duration::from_secs(60);
+const FORMATTING_TIMEOUT: Duration = Duration::from_secs(60);
+
 const CODE_ACTION_DIAGNOSTIC_BACKOFF_MS: [u64; 2] = [250, 250];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25,6 +31,18 @@ pub struct JavaCodeAction {
     pub title: String,
     pub kind: Option<String>,
     pub edits: Vec<JavaTextEdit>,
+    pub other_file_edits: usize,
+}
+
+/// `textDocument/rename` 的结果：按文件分的编辑。
+///
+/// 宿主今天只持有**当前这一个文件**，所以把结果分成两半：落在当前文件上的可以直接落进缓冲区，
+/// 落在别的文件上的只能计数（`other_file_edits`）并由调用方如实报出来——静默丢掉就是「改了一半」。
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JavaWorkspaceEdits {
+    /// 当前文件的编辑，顺序即服务端给的顺序。
+    pub edits: Vec<JavaTextEdit>,
+    /// 落在其它文件上的编辑条数。
     pub other_file_edits: usize,
 }
 
@@ -146,6 +164,165 @@ impl JavaLanguageService {
         utf16_column: u32,
     ) -> Result<Option<JavaTarget>, String> {
         self.navigate("typeDefinition", file_path, text, line, utf16_column)
+    }
+
+
+    /// 转到引用：`textDocument/references`。
+    ///
+    /// 与三个 Go-to 的区别是**结果是一组**：定义那三个只取第一条落下去，引用要把全部位置交回宿主，
+    /// 由它列出来给用户挑。Core 已经按 LSP 要求带上 `context.includeDeclaration`，这里不用重复。
+    pub fn references(
+        &self,
+        file_path: &Path,
+        text: &str,
+        line: u32,
+        utf16_column: u32,
+    ) -> Result<Vec<JavaTarget>, String> {
+        self.ensure_session()?;
+        let uri = file_uri(file_path)?;
+        let started = Instant::now();
+
+        let locations = self.with_ready_session(|session| {
+            let (version, changed) = session.sync_document(&uri, "java", text)?;
+            println!(
+                "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+                text.len()
+            );
+            let result = session.request(
+                "references",
+                json!({
+                    "uri": uri,
+                    "position": { "line": line, "utf16Column": utf16_column },
+                }),
+                Instant::now() + REFERENCES_TIMEOUT,
+            )?;
+            Ok(result
+                .get("locations")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default())
+        })?;
+
+        let mut targets = Vec::new();
+        let mut skipped = 0usize;
+        for location in &locations {
+            match self.physical_target("REFERENCE", location)? {
+                Some(target) => targets.push(target),
+                None => skipped += 1,
+            }
+        }
+        println!(
+            "S1_JAVA_REFERENCES uri={uri} line={line} col={utf16_column} locations={} targets={} skipped={skipped} ms={}",
+            locations.len(),
+            targets.len(),
+            started.elapsed().as_millis()
+        );
+        Ok(targets)
+    }
+
+    /// 重命名符号：`textDocument/rename`，`new_name` 是用户输入的新名字。
+    ///
+    /// 服务端回的是 `WorkspaceEdit`（可能横跨多个文件）。这里只把当前文件的编辑翻译出来，
+    /// 其余文件用条数报回调用方——本仓今天没有「跨文件批量改写」的执行层，装作改了才是真问题。
+    pub fn rename(
+        &self,
+        file_path: &Path,
+        text: &str,
+        line: u32,
+        utf16_column: u32,
+        new_name: &str,
+    ) -> Result<JavaWorkspaceEdits, String> {
+        self.ensure_session()?;
+        let uri = file_uri(file_path)?;
+        let started = Instant::now();
+
+        let changes = self.with_ready_session(|session| {
+            let (version, changed) = session.sync_document(&uri, "java", text)?;
+            println!(
+                "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+                text.len()
+            );
+            let result = session.request(
+                "rename",
+                json!({
+                    "uri": uri,
+                    "position": { "line": line, "utf16Column": utf16_column },
+                    "newName": new_name,
+                }),
+                Instant::now() + RENAME_TIMEOUT,
+            )?;
+            Ok(result.get("changes").cloned().unwrap_or(Value::Null))
+        })?;
+
+        let edits = workspace_edits(&changes, file_path);
+        println!(
+            "S1_JAVA_RENAME uri={uri} line={line} col={utf16_column} newName={new_name:?} edits={} other_file_edits={} ms={}",
+            edits.edits.len(),
+            edits.other_file_edits,
+            started.elapsed().as_millis()
+        );
+        Ok(edits)
+    }
+
+    /// 格式化整篇文档：`textDocument/formatting`。
+    ///
+    /// 格式化选项（缩进宽度、是否用空格、要不要去尾随空白/补末尾换行）由 **Core 统一给死**
+    /// （`feature_request_params`），宿主不另传——否则同一个工程在两处设置里会得到两种格式。
+    pub fn formatting(
+        &self,
+        file_path: &Path,
+        text: &str,
+    ) -> Result<Vec<JavaTextEdit>, String> {
+        self.ensure_session()?;
+        let uri = file_uri(file_path)?;
+        let started = Instant::now();
+
+        let raw = self.with_ready_session(|session| {
+            let (version, changed) = session.sync_document(&uri, "java", text)?;
+            println!(
+                "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+                text.len()
+            );
+            let result = session.request(
+                "formatting",
+                json!({ "uri": uri }),
+                Instant::now() + FORMATTING_TIMEOUT,
+            )?;
+            Ok(result
+                .get("edits")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default())
+        })?;
+
+        let edits: Vec<JavaTextEdit> = raw.iter().filter_map(parse_text_edit).collect();
+        println!(
+            "S1_JAVA_FORMATTING uri={uri} raw={} edits={} ms={}",
+            raw.len(),
+            edits.len(),
+            started.elapsed().as_millis()
+        );
+        Ok(edits)
+    }
+
+    /// 走到「拿到一个可用会话」这一步。
+    ///
+    /// 四档状态里只有 `Ready` 能发请求，其余三档各有各的说法；新加的语义操作走这一条，
+    /// 不再各抄一遍 match。
+    fn with_ready_session<T>(
+        &self,
+        body: impl FnOnce(&Session) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match &*state {
+            State::Ready(session) => body(session),
+            State::Failed(reason) => Err(reason.clone()),
+            State::Closed => Err("Java 语言服务已关闭".to_string()),
+            State::Idle => Err("Java 语言服务尚未启动".to_string()),
+        }
     }
 
     /// 三个 Go-to 目标共用的取数路径。
@@ -860,6 +1037,32 @@ fn parse_code_action(value: &Value, file_path: &Path) -> CodeActionOutcome {
         edits,
         other_file_edits,
     })
+}
+
+/// 把服务端回的 `WorkspaceEdit.changes` 拆成「当前文件能落的」与「别的文件的条数」。
+///
+/// Core 已经把 `changes` 的键从 URI 归一成了**文件路径**（`parse_workspace_edit` 走
+/// `file_path_from_uri`），所以这里按路径比对，而不是再解一次 URI。
+fn workspace_edits(changes: &Value, file_path: &Path) -> JavaWorkspaceEdits {
+    let mut edits = Vec::new();
+    let mut other_file_edits = 0usize;
+    if let Some(entries) = changes.as_object() {
+        for (key, list) in entries {
+            let parsed: Vec<JavaTextEdit> = list
+                .as_array()
+                .map(|list| list.iter().filter_map(parse_text_edit).collect())
+                .unwrap_or_default();
+            if is_current_file(key, file_path) {
+                edits.extend(parsed);
+            } else {
+                other_file_edits += parsed.len();
+            }
+        }
+    }
+    JavaWorkspaceEdits {
+        edits,
+        other_file_edits,
+    }
 }
 
 fn is_current_file(key: &str, file_path: &Path) -> bool {
