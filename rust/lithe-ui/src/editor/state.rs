@@ -186,6 +186,12 @@ pub struct CodeEditor {
     /// The symbol the pointer is over now, so one symbol is asked for only once
     /// ([`EditorEvent::HoverRequested`]).
     pub(crate) hover_symbol: Option<Range<usize>>,
+    /// Whether the "secondary" modifier is held (Ctrl on Windows/Linux, Command on macOS).
+    ///
+    /// It drives the only visible sign that "Ctrl+click goes to the definition" exists: the symbol
+    /// under the pointer gets an underline and a hand cursor. Without it that shortcut is a hidden
+    /// affordance — nothing else in the editor changes when the key is held.
+    pub(crate) secondary_held: bool,
     /// While true, the navigation keys a popup uses are reported instead of acted on
     /// ([`CodeEditor::set_popup_active`]).
     pub(crate) popup_active: bool,
@@ -267,6 +273,7 @@ impl CodeEditor {
             completions: Vec::new(),
             hover: None,
             hover_symbol: None,
+            secondary_held: false,
             popup_active: false,
             dragging: false,
             caret_on: true,

@@ -19,6 +19,16 @@ use crate::{
     theme::{ActiveTheme, Radius},
 };
 
+/// Whether a byte range touches one row's byte range.
+///
+/// `styles` and `line_row` must agree on this: the underline and the hand cursor are decided in two
+/// different functions, and a mismatch shows up as an underlined symbol with no hand cursor (or the
+/// reverse). The `max(row.start + 1)` keeps an empty row range from swallowing the symbol that ends
+/// exactly at it.
+fn range_touches_row(span: &Range<usize>, row: &Range<usize>) -> bool {
+    span.start < row.end.max(row.start + 1) && row.start < span.end
+}
+
 impl CodeEditor {
     /// A line's own styles: syntax colors, rainbow brackets, problems, washes, matches and the matched pair.
     fn styles(&self, line: usize, cx: &Context<Self>) -> Vec<(Range<usize>, HighlightStyle)> {
@@ -27,9 +37,7 @@ impl CodeEditor {
         let local = |span: &Range<usize>| {
             span.start.max(range.start) - range.start..span.end.min(range.end) - range.start
         };
-        let touches = |span: &Range<usize>| {
-            span.start < range.end.max(range.start + 1) && range.start < span.end
-        };
+        let touches = |span: &Range<usize>| range_touches_row(span, &range);
         let mut spans = syntax::colors_in(&self.buffer, range.clone(), cx);
         let brackets = self
             .frame
@@ -86,6 +94,23 @@ impl CodeEditor {
                     ..HighlightStyle::default()
                 },
             ));
+        }
+        // 按住 Ctrl/Cmd：指针下那个符号画成可跳转的样子（跳转本身由宿主处理，见 `EditorPane::on_editor_click`）。
+        // 放在最后压过其它下划线：problem 的波浪线是自己的告警语义，这里只补「能跳」这一条。
+        if self.secondary_held {
+            if let Some(symbol) = self.hover_symbol.as_ref().filter(|symbol| touches(symbol)) {
+                spans.push((
+                    local(symbol),
+                    HighlightStyle {
+                        underline: Some(UnderlineStyle {
+                            thickness: cx.theme().underline_thickness(),
+                            color: Some(colors.link),
+                            wavy: false,
+                        }),
+                        ..HighlightStyle::default()
+                    },
+                ));
+            }
         }
         if let Some((open, close)) = self.frame.matched {
             for at in [open, close].into_iter().filter(|at| range.contains(at)) {
@@ -315,12 +340,20 @@ impl CodeEditor {
             .hunks
             .iter()
             .any(|hunk| (hunk.line..hunk.line + hunk.added).contains(&line));
+        // 按住 Ctrl/Cmd 且指针正停在这一行的符号上：整行给手型光标（行的命中区就是这一行，
+        // 所以只能整行给——按字符给光标要另做一层 hitbox，收益不抵复杂度）。
+        let jump_target = self.secondary_held
+            && self
+                .hover_symbol
+                .as_ref()
+                .is_some_and(|symbol| range_touches_row(symbol, &range));
         let code = div()
             .id(("code", row))
             .relative()
             .flex_1()
             .h_full()
             .overflow_hidden()
+            .when(jump_target, |code| code.cursor_pointer())
             .when(current && focused, |code| code.bg(colors.hover))
             .when(added, |code| code.bg(colors.success.opacity(0.08)))
             .children(selections)
@@ -507,3 +540,39 @@ fn drawn_styles(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::range_touches_row;
+    use std::ops::Range;
+
+    fn touches(span: Range<usize>, row: Range<usize>) -> bool {
+        range_touches_row(&span, &row)
+    }
+
+    #[test]
+    fn a_symbol_inside_the_row_touches_it() {
+        assert!(touches(10..14, 0..40));
+    }
+
+    #[test]
+    fn a_symbol_ending_exactly_where_the_row_starts_does_not_touch_it() {
+        // 上一行末尾的符号不该把下一行也标成可跳转。
+        assert!(!touches(0..10, 10..40));
+        assert!(!touches(0..10, 10..10), "空行的行范围不该被上一个符号吃掉");
+    }
+
+    #[test]
+    fn a_symbol_spanning_several_rows_touches_each_of_them() {
+        assert!(touches(5..100, 0..40));
+        assert!(touches(5..100, 40..80));
+        assert!(touches(5..100, 80..90));
+        assert!(!touches(5..100, 100..140));
+    }
+
+    #[test]
+    fn a_symbol_that_starts_on_a_later_row_does_not_touch_this_one() {
+        assert!(!touches(50..60, 0..40));
+    }
+}
+

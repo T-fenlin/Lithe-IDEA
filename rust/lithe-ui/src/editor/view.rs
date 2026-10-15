@@ -510,6 +510,19 @@ impl Render for CodeEditor {
             .id(("code-editor", cx.entity_id().as_u64()))
             .key_context(CONTEXT)
             .track_focus(&self.focus)
+            // Ctrl/Cmd held ⇒ the symbol under the pointer is drawn as a jump target (`styles` adds the
+            // underline, `line_row` the hand cursor). The window reports modifier changes to the focus
+            // path, so this listener on the focus-owning root is where the state stays current; without
+            // the notify the underline would only appear after the next unrelated repaint.
+            .on_modifiers_changed(cx.listener(
+                |editor, event: &gpui::ModifiersChangedEvent, _, cx| {
+                    let held = event.modifiers.secondary();
+                    if editor.secondary_held != held {
+                        editor.secondary_held = held;
+                        cx.notify();
+                    }
+                },
+            ))
             .size_full()
             .flex()
             .flex_col()
