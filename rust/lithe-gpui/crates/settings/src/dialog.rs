@@ -162,12 +162,20 @@ impl Category {
         Category::Updates,
     ];
 
-    pub const IMPLEMENTED: [Category; 7] = [
+    /// 有真实页面、不需要前置条件的分类。
+    ///
+    /// `Keyboard` 2026-10-15 从「未实现」转正：`keyboard_page` 已经是完整页——预设下拉、
+    /// 可搜索键位表、录制改绑、导入导出都在，重绑链路也是通的（`workbench::keymap_engine`
+    /// 注入 `crate::keymap::set_bindable_resolver` 之后由它写回 gpui 的 `Keymap`）。此前的
+    /// `prerequisite_key()` 文案还停在「只有固定绑定的少数快捷键」，把能用的功能对用户说成
+    /// 没做，所以一并撤掉。
+    pub const IMPLEMENTED: [Category; 8] = [
         Category::General,
         Category::Appearance,
         Category::Project,
         Category::Run,
         Category::Editor,
+        Category::Keyboard,
         Category::Terminal,
         Category::Lsp,
     ];
@@ -213,9 +221,9 @@ impl Category {
             | Self::Project
             | Self::Run
             | Self::Editor
+            | Self::Keyboard
             | Self::Terminal
             | Self::Lsp => None,
-            Self::Keyboard => Some("lithe.settings.gpui.prerequisiteKeyboard"),
             Self::Git => Some("lithe.settings.gpui.prerequisiteGit"),
             Self::Logs => Some("lithe.settings.gpui.prerequisiteLogs"),
             Self::Updates => Some("lithe.settings.gpui.prerequisiteUpdates"),
@@ -3815,6 +3823,19 @@ mod tests {
         assert_eq!(Category::Run.prerequisite_key(), None);
         assert_eq!(Category::Run.label_key(), "lithe.settings.run.title");
         assert_eq!(Category::Run.id(), "run");
+    }
+
+    /// 快捷键页 2026-10-15 转正：它**不再**是「未接入」的空态，也不该再挂着前置条件文案。
+    ///
+    /// 这一条钉两件事：`IMPLEMENTED` 名单里有它（否则设置页会把整页换成 `EmptyState`），
+    /// 以及 `prerequisite_key()` 已经撤掉——留着它就会写出「前置条件：…只有固定绑定的少数
+    /// 快捷键」，而 `keyboard_page` 早就是完整页了。
+    #[test]
+    fn the_keyboard_page_is_implemented_not_an_empty_state() {
+        assert!(Category::IMPLEMENTED.contains(&Category::Keyboard));
+        assert_eq!(Category::Keyboard.prerequisite_key(), None);
+        assert_eq!(Category::Keyboard.label_key(), "lithe.settings.tabs.keyboard");
+        assert_eq!(Category::Keyboard.id(), "keyboard");
     }
 
     #[test]

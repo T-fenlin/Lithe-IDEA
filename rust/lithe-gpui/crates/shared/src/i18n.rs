@@ -347,10 +347,6 @@ mod tests {
                 "此分类尚未接入",
             ),
             (
-                "lithe.settings.gpui.prerequisiteKeyboard",
-                "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。",
-            ),
-            (
                 "lithe.settings.gpui.prerequisiteGit",
                 "前置条件：Git 身份（user.name / user.email）的读写接线；Core 的 git.repositorySetup 与 git.configureIdentity 已经就绪。",
             ),

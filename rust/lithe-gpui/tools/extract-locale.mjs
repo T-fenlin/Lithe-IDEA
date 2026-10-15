@@ -345,13 +345,6 @@ const GPUI_ONLY_KEYS = [
       "输出被截断时的告示（`lithe_gpui_run::session` 的 MAX_OUTPUT_LINES）。不写会让人以为服务只输出了这么多——那是最容易被误读成「程序卡住」的假象。",
   },
   {
-    key: "settings.gpui.prerequisiteKeyboard",
-    zh: "前置条件：键位表与快捷键预设（现在只有固定绑定的少数快捷键）。",
-    en: "Requires a keybinding table and presets; today only a few shortcuts are bound with fixed keys.",
-    reason:
-      "「快捷键」页的前置条件（同 pageNotAvailableTitle）。真源那一页的预设下拉要整套 keymap 基础设施（features/keymaps/**），gpui 侧只有少量 KeyBinding::new 的固定绑定。",
-  },
-  {
     key: "settings.gpui.prerequisiteGit",
     zh: "前置条件：Git 身份（user.name / user.email）的读写接线；Core 的 git.repositorySetup 与 git.configureIdentity 已经就绪。",
     en: "Requires wiring Git identity (user.name / user.email); Core already provides git.repositorySetup and git.configureIdentity.",
