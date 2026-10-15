@@ -440,6 +440,7 @@ before handoff.
 | Git graph behavior | `./scripts/verify-git-graph.sh` |
 | Windows boundaries from macOS/Linux | `./scripts/verify-windows-boundaries.sh` |
 | Windows implementation on Windows | `./scripts/build-windows.ps1 -Configuration Release`, then `cargo test --manifest-path windows/tauri/src-tauri/Cargo.toml` |
+| GPUI front end (build, test, run) | `./scripts/build-gpui.ps1 -Action build` (or `-Action test -TestPackage <crate>`, `-Action run`). Do not hand-assemble cargo flags: the script owns the external `CARGO_TARGET_DIR`, the memory recipe, and `LITHE_JDTLS_ROOT`. See `docs/ci-builds.md` “本地编译的统一入口” |
 
 Also run tests for directly affected crates or targets. If the current machine
 cannot run a platform-specific check, state that clearly; do not claim an

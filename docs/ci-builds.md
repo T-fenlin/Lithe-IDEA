@@ -100,6 +100,34 @@ GPUI CI 的每个平台 job 使用两级 Cargo 缓存，均放在 job 内隔离�
 release-gpui 的构建步骤复用同一套缓存键（profile 段为 `release`），并在
 release + LTO  profile 下编译；超时预算见工作流内的 `timeout-minutes`。
 
+### 本地编译的统一入口
+
+本地（非 CI）编译、跑测试、启动统一走 `scripts/build-gpui.ps1`，不要再手工拼
+`cargo` 参数。这个脚本把此前只存在于文档和记忆里的配方固化成一处：
+
+```powershell
+./scripts/build-gpui.ps1 -Action build                          # 编译 debug 产物
+./scripts/build-gpui.ps1 -Action test -TestPackage lithe-gpui-settings
+./scripts/build-gpui.ps1 -Action run -AppArgument . --open-settings   # 编译并启动
+./scripts/build-gpui.ps1 -Action launch                         # 只启动已有产物
+```
+
+脚本固定三件事，都是有依据的取舍而不是默认值：
+
+- **`CARGO_TARGET_DIR` 落在工作区之外**（默认 `<仓库父目录>/lithe-gpui-target`）。
+  工作区被沙盒施加 ACL，位于其中的可执行文件运行时被拒绝一切写入；脚本会拒绝
+  指向工作区内的 target 目录。
+- **`RUST_MIN_STACK=67108864` 与 `-j 2`**：内存紧张时 rustc 会崩成
+  `STATUS_STACK_BUFFER_OVERRUN`，linker 报 `LNK1102`，而崩溃会污染 target 缓存。
+  默认**不改** `CARGO_PROFILE_DEV_DEBUG`（改它会换 profile 指纹、作废已有增量产物）；
+  确实吃紧时加 `-Lean`。
+- **启动时注入 `LITHE_JDTLS_ROOT`**：开发期 exe 在 target 目录下，向上找 12 层也够不到
+  仓库根的 `.artifacts/jdtls`。正式打包后 `LanguageServers/jdtls` 就在 exe 旁边，不需要它。
+
+CI 走的是等价但不同的命令（`--locked`、显式 `--target`、树内 `target/`），见
+`.github/workflows/ci-gpui.yml` 的 “Build the GPUI app binary” 一步；两者不需要一致，
+本地不带 `--locked` 是刻意的。
+
 ### 独立工作树的本地编译
 
 Git worktree 只共享 Git 对象，不共享各自的 `.artifacts` 目录。如果从一个
