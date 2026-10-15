@@ -21,9 +21,53 @@ use serde_json::{Value, json};
 
 const BUILTIN_NAVIGATION: &str = "lsp.builtinNavigation";
 
-const DEFINITION_METHOD: &str = "textDocument/definition";
-
 const JAVA_EXTENSION: &str = "java";
+
+/// 一个 Go-to 目标。
+///
+/// 三个目标共用一个枚举而不是三份平行代码：从「取光标位置」到「落到目标」的每一步都只差
+/// 几个字符串，复制三遍只会让后续的修复（列口径、超时、虚拟文档）漏掉其中两条。
+///
+/// 三个取值各有出处，改任一个都要一起看：`method` 是无 Java 服务时 `lsp.builtinNavigation`
+/// 用的 LSP 方法名，`tag` 进日志，`label_key` 是「没找到」通知里的目标名。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NavigationTarget {
+    Definition,
+    Implementation,
+    TypeDefinition,
+}
+
+impl NavigationTarget {
+    /// 无 Java 服务时退回 `lsp.builtinNavigation` 用的 LSP 方法名。
+    ///
+    /// Core 侧的语义操作名（`definition` / `implementation` / `typeDefinition`）不在这里：
+    /// 发 `lsp.request` 的是 `lithe-gpui-java`，那是它与 Core 之间的契约。
+    pub(crate) const fn method(self) -> &'static str {
+        match self {
+            Self::Definition => "textDocument/definition",
+            Self::Implementation => "textDocument/implementation",
+            Self::TypeDefinition => "textDocument/typeDefinition",
+        }
+    }
+
+    /// 日志与诊断行里的短名。
+    pub(crate) const fn tag(self) -> &'static str {
+        match self {
+            Self::Definition => "definition",
+            Self::Implementation => "implementation",
+            Self::TypeDefinition => "typeDefinition",
+        }
+    }
+
+    /// 「没找到目标」通知里的目标名（i18n key）。
+    pub(crate) const fn label_key(self) -> &'static str {
+        match self {
+            Self::Definition => "lithe.navigation.definition",
+            Self::Implementation => "lithe.navigation.implementation",
+            Self::TypeDefinition => "lithe.navigation.typeDefinition",
+        }
+    }
+}
 
 const MAX_JUMP_ENTRIES: usize = 100;
 
@@ -45,18 +89,26 @@ pub(crate) enum NavTarget {
 
 pub(crate) fn resolve_target(
     java: Option<&JavaLanguageService>,
+    target: NavigationTarget,
     file_path: &str,
     text: &str,
     offset: usize,
 ) -> Result<Option<NavTarget>, String> {
     if let Some(service) = java.filter(|_| is_java_source(file_path)) {
         let (line, utf16_column) = core_position(text, offset);
-        match service.definition(
-            std::path::Path::new(file_path),
-            text,
-            line as u32,
-            utf16_column as u32,
-        ) {
+        let path = std::path::Path::new(file_path);
+        let line = line as u32;
+        let utf16_column = utf16_column as u32;
+        let answer = match target {
+            NavigationTarget::Definition => service.definition(path, text, line, utf16_column),
+            NavigationTarget::Implementation => {
+                service.implementation(path, text, line, utf16_column)
+            }
+            NavigationTarget::TypeDefinition => {
+                service.type_definition(path, text, line, utf16_column)
+            }
+        };
+        match answer {
             Ok(Some(JavaTarget::File {
                 path,
                 line,
@@ -84,11 +136,14 @@ pub(crate) fn resolve_target(
                 }));
             }
             Ok(None) => return Ok(None),
-            Err(reason) => println!("S1_JAVA_UNAVAILABLE reason={reason} fallback=builtin"),
+            Err(reason) => println!(
+                "S1_JAVA_UNAVAILABLE kind={} reason={reason} fallback=builtin",
+                target.tag()
+            ),
         }
     }
 
-    Ok(definition_target(file_path, text, offset)?.map(NavTarget::Local))
+    Ok(builtin_target(target, file_path, text, offset)?.map(NavTarget::Local))
 }
 
 fn is_java_source(file_path: &str) -> bool {
@@ -97,7 +152,12 @@ fn is_java_source(file_path: &str) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case(JAVA_EXTENSION))
 }
 
-pub(crate) fn definition_target(
+/// 没有语言服务时的兜底：Core 的轻量导航只看当前这份正文。
+///
+/// `target` 决定问的是定义、实现还是类型定义 —— Core 侧三条路都认（`builtin_navigation`），
+/// 所以退回兜底不会把「转到实现」悄悄降级成「转到定义」。
+pub(crate) fn builtin_target(
+    target: NavigationTarget,
     file_path: &str,
     text: &str,
     offset: usize,
@@ -107,7 +167,7 @@ pub(crate) fn definition_target(
         "filePath": file_path,
         "text": text,
         "position": { "line": line, "utf16Column": utf16_column },
-        "method": DEFINITION_METHOD,
+        "method": target.method(),
     });
 
     let data = core_json(BUILTIN_NAVIGATION, request).map_err(|error| match error.code() {
@@ -418,7 +478,8 @@ mod tests {
     fn definition_lands_on_the_declaration() {
         let offset = offset_of(SAMPLE, 11, 18);
 
-        let target = definition_target("Hello.java", SAMPLE, offset).expect("Core 调用成功");
+        let target = builtin_target(NavigationTarget::Definition, "Hello.java", SAMPLE, offset)
+            .expect("Core 调用成功");
 
         let target = target.expect("样本里 `add` 有声明，应当有目标");
         assert_eq!(target.line, 2, "目标应是第 3 行（0 基 2）的声明");
@@ -429,7 +490,7 @@ mod tests {
     fn definition_at_a_declaration_returns_itself() {
         let offset = offset_of(SAMPLE, 2, 15);
 
-        let target = definition_target("Hello.java", SAMPLE, offset)
+        let target = builtin_target(NavigationTarget::Definition, "Hello.java", SAMPLE, offset)
             .expect("Core 调用成功")
             .expect("声明自己也是一个目标");
 
@@ -441,9 +502,62 @@ mod tests {
         let offset = offset_of(SAMPLE, 1, 0);
 
         assert_eq!(
-            definition_target("Hello.java", SAMPLE, offset).expect("Core 调用成功"),
+            builtin_target(NavigationTarget::Definition, "Hello.java", SAMPLE, offset)
+                .expect("Core 调用成功"),
             None
         );
+    }
+
+    /// 三个目标各有各的 Core 操作名、LSP 方法与通知文案 —— 混用会让「转到实现」
+    /// 悄悄变成「转到定义」，而那正是这单要修的东西。
+    #[test]
+    fn each_navigation_target_keeps_its_own_core_operation_and_method() {
+        let table = [
+            (
+                NavigationTarget::Definition,
+                "definition",
+                "textDocument/definition",
+                "lithe.navigation.definition",
+            ),
+            (
+                NavigationTarget::Implementation,
+                "implementation",
+                "textDocument/implementation",
+                "lithe.navigation.implementation",
+            ),
+            (
+                NavigationTarget::TypeDefinition,
+                "typeDefinition",
+                "textDocument/typeDefinition",
+                "lithe.navigation.typeDefinition",
+            ),
+        ];
+        for (target, operation, method, label_key) in table {
+            assert_eq!(target.tag(), operation, "诊断行的短名与 Core 操作名不一致");
+            assert_eq!(target.method(), method, "{operation} 的 LSP 方法名不对");
+            assert_eq!(
+                target.label_key(),
+                label_key,
+                "{operation} 的通知文案键不对"
+            );
+        }
+    }
+
+    /// 兜底路径要按目标换 `method`：Core 的 `builtin_navigation` 认实现与类型定义，
+    /// 一律发 `textDocument/definition` 会把两者静默降级成定义。
+    #[test]
+    fn the_builtin_fallback_asks_for_the_same_kind_it_was_given() {
+        let offset = offset_of(SAMPLE, 11, 18);
+        for target in [
+            NavigationTarget::Definition,
+            NavigationTarget::Implementation,
+            NavigationTarget::TypeDefinition,
+        ] {
+            // 断言的是「这条路走得通」：`add` 在样本里有声明，三种口径都该给出当前文件内的位置。
+            let resolved = resolve_target(None, target, "Hello.java", SAMPLE, offset)
+                .unwrap_or_else(|error| panic!("{} 的兜底不该失败：{error}", target.tag()));
+            assert!(resolved.is_some(), "{} 在样本里应当有目标", target.tag());
+        }
     }
 
     #[test]
@@ -458,9 +572,15 @@ mod tests {
     fn without_a_java_service_the_builtin_navigation_still_answers() {
         let offset = offset_of(SAMPLE, 11, 18);
 
-        let target = resolve_target(None, "Hello.java", SAMPLE, offset)
-            .expect("Core 调用成功")
-            .expect("样本里 `add` 有声明");
+        let target = resolve_target(
+            None,
+            NavigationTarget::Definition,
+            "Hello.java",
+            SAMPLE,
+            offset,
+        )
+        .expect("Core 调用成功")
+        .expect("样本里 `add` 有声明");
         let NavTarget::Local(position) = target else {
             panic!("没有 Java 服务时只可能是当前文件内的位置");
         };

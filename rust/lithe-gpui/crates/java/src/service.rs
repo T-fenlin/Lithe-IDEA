@@ -122,6 +122,45 @@ impl JavaLanguageService {
         line: u32,
         utf16_column: u32,
     ) -> Result<Option<JavaTarget>, String> {
+        self.navigate("definition", file_path, text, line, utf16_column)
+    }
+
+    /// 转到实现：与 [`Self::definition`] 同一形态，只是让 JDT LS 走
+    /// `textDocument/implementation`。
+    pub fn implementation(
+        &self,
+        file_path: &Path,
+        text: &str,
+        line: u32,
+        utf16_column: u32,
+    ) -> Result<Option<JavaTarget>, String> {
+        self.navigate("implementation", file_path, text, line, utf16_column)
+    }
+
+    /// 转到类型定义：`textDocument/typeDefinition`。
+    pub fn type_definition(
+        &self,
+        file_path: &Path,
+        text: &str,
+        line: u32,
+        utf16_column: u32,
+    ) -> Result<Option<JavaTarget>, String> {
+        self.navigate("typeDefinition", file_path, text, line, utf16_column)
+    }
+
+    /// 三个 Go-to 目标共用的取数路径。
+    ///
+    /// `operation` 是 Core 的 `LspSemanticOperation` 名字（`definition` /
+    /// `implementation` / `typeDefinition`）：Core 自己把它映射成 LSP 方法、并按服务端声明的
+    /// 能力放行，所以这三者的差别只有这一个字符串，**不要**在宿主里另写三份请求体。
+    fn navigate(
+        &self,
+        operation: &str,
+        file_path: &Path,
+        text: &str,
+        line: u32,
+        utf16_column: u32,
+    ) -> Result<Option<JavaTarget>, String> {
         self.ensure_session()?;
 
         let uri = file_uri(file_path)?;
@@ -143,7 +182,7 @@ impl JavaLanguageService {
         );
 
         let result = session.request(
-            "definition",
+            operation,
             json!({
                 "uri": uri,
                 "position": { "line": line, "utf16Column": utf16_column },
@@ -156,12 +195,13 @@ impl JavaLanguageService {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
+        let tag = navigation_tag(operation);
         let Some(first) = locations.first() else {
-            println!("S1_JAVA_DEFINITION uri={uri} targets=0");
+            println!("S1_JAVA_{tag} uri={uri} targets=0");
             return Ok(None);
         };
 
-        if let Some(target) = self.physical_target(first)? {
+        if let Some(target) = self.physical_target(tag, first)? {
             return Ok(Some(target));
         }
         self.virtual_target(session, first).map(Some)
@@ -625,7 +665,7 @@ impl JavaLanguageService {
             .unwrap_or(false))
     }
 
-    fn physical_target(&self, location: &Value) -> Result<Option<JavaTarget>, String> {
+    fn physical_target(&self, tag: &str, location: &Value) -> Result<Option<JavaTarget>, String> {
         let uri = location
             .get("uri")
             .and_then(Value::as_str)
@@ -641,7 +681,7 @@ impl JavaLanguageService {
             .map_err(|_| format!("无法把 file URI 还原成路径：{uri}"))?;
         let (line, utf16_column) = location_position(location)?;
         println!(
-            "S1_JAVA_DEFINITION target=file path={} line={} col={}",
+            "S1_JAVA_{tag} target=file path={} line={} col={}",
             path.display(),
             line + 1,
             utf16_column + 1
@@ -690,6 +730,18 @@ impl JavaLanguageService {
             line,
             utf16_column,
         })
+    }
+}
+
+/// 诊断行里的动作名，与 Core 的语义操作名一一对应。
+///
+/// 三个 Go-to 共用 [`JavaLanguageService::navigate`]，日志若一律写 `DEFINITION` 就分不出
+/// 「转到实现真的问了 JDT LS」还是「退回定义那条路」。
+fn navigation_tag(operation: &str) -> &'static str {
+    match operation {
+        "implementation" => "IMPLEMENTATION",
+        "typeDefinition" => "TYPE_DEFINITION",
+        _ => "DEFINITION",
     }
 }
 

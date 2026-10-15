@@ -25,6 +25,8 @@ pub enum CommandId {
     OpenSearchEverywhere,
     OpenReplaceInFiles,
     NavigateToDefinition,
+    NavigateToImplementation,
+    NavigateToTypeDefinition,
     OpenFile,
     CloseTab,
     CloseOtherTabs,
@@ -37,7 +39,7 @@ pub enum CommandId {
 }
 
 impl CommandId {
-    pub const ALL: [CommandId; 23] = [
+    pub const ALL: [CommandId; 25] = [
         Self::OpenSettings,
         Self::OpenAppearanceSettings,
         Self::SwitchToLightTheme,
@@ -52,6 +54,8 @@ impl CommandId {
         Self::OpenSearchEverywhere,
         Self::OpenReplaceInFiles,
         Self::NavigateToDefinition,
+        Self::NavigateToImplementation,
+        Self::NavigateToTypeDefinition,
         Self::OpenFile,
         Self::CloseTab,
         Self::CloseOtherTabs,
@@ -79,6 +83,8 @@ impl CommandId {
             Self::OpenSearchEverywhere => "open-search-everywhere",
             Self::OpenReplaceInFiles => "open-replace-in-files",
             Self::NavigateToDefinition => "navigate-to-definition",
+            Self::NavigateToImplementation => "navigate-to-implementation",
+            Self::NavigateToTypeDefinition => "navigate-to-type-definition",
             Self::OpenFile => "open-file",
             Self::CloseTab => "close-tab",
             Self::CloseOtherTabs => "close-other-tabs",
@@ -111,6 +117,8 @@ impl CommandId {
             "open-search-everywhere" => Some(Self::OpenSearchEverywhere),
             "open-replace-in-files" => Some(Self::OpenReplaceInFiles),
             "navigate-to-definition" => Some(Self::NavigateToDefinition),
+            "navigate-to-implementation" => Some(Self::NavigateToImplementation),
+            "navigate-to-type-definition" => Some(Self::NavigateToTypeDefinition),
             "open-file" => Some(Self::OpenFile),
             "close-tab" => Some(Self::CloseTab),
             "close-other-tabs" => Some(Self::CloseOtherTabs),
@@ -143,7 +151,7 @@ const fn str_eq(a: &str, b: &str) -> bool {
 
 /// `ALL` 里的 id 两两不同。
 ///
-/// 配合下面那条长度断言就是完备性证明：`ALL` 有 23 项、id 两两不同、而变体恰好 23 个
+/// 配合下面那条长度断言就是完备性证明：`ALL` 有 25 项、id 两两不同、而变体恰好 25 个
 /// 且各有各的 id，那么 `ALL` 必然覆盖了每一个变体——少一个就必有一个重复顶上来。
 const fn all_ids_are_distinct() -> bool {
     let all = CommandId::ALL;
@@ -162,7 +170,7 @@ const fn all_ids_are_distinct() -> bool {
 }
 
 // 编译期守两件事：变体数（新增变体必须同步改这个数）与 id 不重复。
-const _: () = assert!(CommandId::ALL.len() == 23);
+const _: () = assert!(CommandId::ALL.len() == 25);
 const _: () = assert!(all_ids_are_distinct());
 
 #[cfg(test)]

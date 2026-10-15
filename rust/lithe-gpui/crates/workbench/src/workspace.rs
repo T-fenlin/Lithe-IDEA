@@ -396,6 +396,8 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
             Category::View,
             Some(idea_icon_element(&idea::ARROW_RIGHT_ICON)),
         ),
+        // 本仓 idea 资产里没有这两张图 ⇒ 留空槽，不拿语义不同的图顶替。
+        C::NavigateToImplementation | C::NavigateToTypeDefinition => (Category::View, None),
         C::OpenFile => (Category::View, Some(idea_icon_element(&idea::FOLDER_ICON))),
         C::CloseTab
         | C::CloseOtherTabs
@@ -463,6 +465,14 @@ pub(crate) fn command_action(id: CommandId, flags: ActionFlags) -> CommandAction
         C::NavigateToDefinition => (
             tr("lithe.menu.goToDefinition"),
             tr("lithe.navigation.definition"),
+        ),
+        C::NavigateToImplementation => (
+            tr("lithe.menu.goToImplementation"),
+            tr("lithe.navigation.implementation"),
+        ),
+        C::NavigateToTypeDefinition => (
+            tr("lithe.menu.goToTypeDefinition"),
+            tr("lithe.navigation.typeDefinition"),
         ),
         C::OpenFile => (tr("lithe.outline.openFile"), tr("lithe.menu.file")),
         C::CloseTab => (tr("lithe.menu.closeTab"), tr("lithe.menu.file")),
@@ -2075,6 +2085,8 @@ impl ShellWorkspace {
             | MenuAction::OpenAppearanceSettings
             | MenuAction::ToggleMenuBar
             | MenuAction::GoToDefinition
+            | MenuAction::GoToImplementation
+            | MenuAction::GoToTypeDefinition
             | MenuAction::QuickOpen
             | MenuAction::SearchEverywhere
             | MenuAction::ReplaceInFiles => {
@@ -2642,6 +2654,18 @@ impl ShellWorkspace {
                 let _ = self
                     .editor
                     .update(cx, |pane, cx| pane.navigate_to_definition(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::NavigateToImplementation => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.navigate_to_implementation(window, cx));
+                diagnose_run(id, "applied");
+            }
+            CommandId::NavigateToTypeDefinition => {
+                let _ = self
+                    .editor
+                    .update(cx, |pane, cx| pane.navigate_to_type_definition(window, cx));
                 diagnose_run(id, "applied");
             }
             CommandId::ToggleTerminal => {
@@ -4458,6 +4482,8 @@ mod tests {
             CommandId::OpenSearchEverywhere,
             CommandId::OpenReplaceInFiles,
             CommandId::NavigateToDefinition,
+            CommandId::NavigateToImplementation,
+            CommandId::NavigateToTypeDefinition,
         ] {
             ids.push(other.id());
         }
@@ -4471,7 +4497,7 @@ mod tests {
     fn the_actions_catalog_covers_the_whole_command_table() {
         assert_eq!(
             CommandId::ALL.len(),
-            23,
+            25,
             "宿主命令目录的条数变了要同步改注释与 UI-MAP"
         );
         let ids: Vec<&str> = CommandId::ALL.iter().map(|id| id.id()).collect();
@@ -4492,6 +4518,8 @@ mod tests {
                 "open-search-everywhere",
                 "open-replace-in-files",
                 "navigate-to-definition",
+                "navigate-to-implementation",
+                "navigate-to-type-definition",
                 "open-file",
                 "close-tab",
                 "close-other-tabs",

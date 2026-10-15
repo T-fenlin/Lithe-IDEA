@@ -16,11 +16,15 @@ pub use problems::ProblemsPane;
 
 use gpui::{App, KeyBinding};
 
+// 三个 Go-to 目标（Go 菜单）。只有「转到定义」绑了 `f12`；实现与类型定义今天**不绑键**，
+// 只给菜单入口 —— 与文件生命周期五项同一口径（执行分支在宿主，先不铺键位面）。
 gpui::actions!(
     lithe_editor,
     [
         SaveBuffer,
         NavigateToDefinition,
+        NavigateToImplementation,
+        NavigateToTypeDefinition,
         CloseActiveTab,
         ShowCodeActions
     ]

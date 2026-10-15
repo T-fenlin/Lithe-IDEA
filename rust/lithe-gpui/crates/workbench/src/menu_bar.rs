@@ -370,6 +370,10 @@ pub enum MenuAction {
     ToggleStatusBar,
     OpenAppearanceSettings,
     GoToDefinition,
+    // 另外两个 Go-to 目标：与 `GoToDefinition` 同一条路（`navigate_to_*` + `NavTarget`），
+    // 只有 `keybind_action()` 与 `command_id()` 的取值不同。
+    GoToImplementation,
+    GoToTypeDefinition,
     QuickOpen,
     SearchEverywhere,
     ReplaceInFiles,
@@ -464,6 +468,8 @@ impl MenuAction {
             Self::ToggleStatusBar => "lithe.settings.appearance.showStatusBar",
             Self::OpenAppearanceSettings => "lithe.settings.tabs.appearance",
             Self::GoToDefinition => "lithe.menu.goToDefinition",
+            Self::GoToImplementation => "lithe.menu.goToImplementation",
+            Self::GoToTypeDefinition => "lithe.menu.goToTypeDefinition",
             Self::QuickOpen => "lithe.menu.quickOpen",
             Self::SearchEverywhere => "lithe.menu.globalSearch",
             Self::ReplaceInFiles => "lithe.search.gpui.replaceInFiles",
@@ -557,6 +563,8 @@ impl MenuAction {
             | Self::QuickFix
             | Self::ShowHover
             | Self::GoToDefinition
+            | Self::GoToImplementation
+            | Self::GoToTypeDefinition
             | Self::SaveAs => ctx.has_active_buffer,
 
             // —— 有活动缓冲 **且** 能写回：二进制 / 有损转码的缓冲写不回磁盘 ——
@@ -623,6 +631,9 @@ impl MenuAction {
             Self::ToggleMaven => MenuIcon::Idea(&idea::MAVEN_ICON),
             Self::OpenAppearanceSettings | Self::Preferences => MenuIcon::Idea(&idea::GEAR_ICON),
             Self::GoToDefinition => MenuIcon::Idea(&idea::ARROW_RIGHT_ICON),
+            // 本仓的 idea 资产里没有「转到实现 / 转到类型定义」这两张图 ⇒ 留空槽，
+            // 不拿 `IMPLEMENTED_METHOD_ICON` 之类语义不同的图顶替（见 `MenuIcon` 的口径）。
+            Self::GoToImplementation | Self::GoToTypeDefinition => MenuIcon::Empty,
             Self::QuickOpen => MenuIcon::Idea(&idea::MAGNIFYING_GLASS_ICON),
             Self::SearchEverywhere => MenuIcon::Idea(&idea::GLOBE_HEMISPHERE_WEST_ICON),
             Self::Undo => MenuIcon::Idea(&idea::ARROW_COUNTER_CLOCKWISE_ICON),
@@ -727,6 +738,10 @@ impl MenuAction {
             Self::Save => Box::new(lithe_gpui_editor::SaveBuffer),
             Self::CloseTab => Box::new(lithe_gpui_editor::CloseActiveTab),
             Self::GoToDefinition => Box::new(lithe_gpui_editor::NavigateToDefinition),
+            // 实现 / 类型定义：菜单派发要有个真被登记的 Action，但今天**不绑键** ——
+            // `menu_key()` 因此返回 `None`，菜单上不会画一颗按不出的胶囊。
+            Self::GoToImplementation => Box::new(lithe_gpui_editor::NavigateToImplementation),
+            Self::GoToTypeDefinition => Box::new(lithe_gpui_editor::NavigateToTypeDefinition),
             Self::Preferences => Box::new(lithe_gpui_settings::OpenSettings),
             Self::CommandPalette => Box::new(OpenCommandPalette),
             Self::ToggleMenuBar => Box::new(ToggleMenuBarAction),
@@ -822,6 +837,8 @@ impl MenuAction {
             Self::ToggleStatusBar => Some(CommandId::ToggleStatusBar),
             Self::OpenAppearanceSettings => Some(CommandId::OpenAppearanceSettings),
             Self::GoToDefinition => Some(CommandId::NavigateToDefinition),
+            Self::GoToImplementation => Some(CommandId::NavigateToImplementation),
+            Self::GoToTypeDefinition => Some(CommandId::NavigateToTypeDefinition),
             Self::QuickOpen => Some(CommandId::OpenQuickOpen),
             Self::SearchEverywhere => Some(CommandId::OpenSearchEverywhere),
             Self::ReplaceInFiles => Some(CommandId::OpenReplaceInFiles),
@@ -1018,16 +1035,8 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::GoForward),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::GoToDefinition),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.goToImplementation",
-                missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Empty,
-            },
-            MenuItem::NotWired {
-                label_key: "lithe.menu.goToTypeDefinition",
-                missing: MISSING_LSP_REQUESTS,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::GoToImplementation),
+            MenuItem::Action(MenuAction::GoToTypeDefinition),
             MenuItem::NotWired {
                 label_key: "lithe.menu.goToReferences",
                 missing: MISSING_LSP_REQUESTS,
@@ -2456,6 +2465,18 @@ mod tests {
                 true,
             ),
             (MenuAction::QuickFix, "lithe.menu.quickFix", false),
+            // 转到实现 / 转到类型定义：有真被登记的 Action（菜单派发走得通），
+            // 但出厂**不绑键**，所以 `menu_key()` 是 `None`、菜单上不画胶囊。
+            (
+                MenuAction::GoToImplementation,
+                "lithe.menu.goToImplementation",
+                true,
+            ),
+            (
+                MenuAction::GoToTypeDefinition,
+                "lithe.menu.goToTypeDefinition",
+                true,
+            ),
             (
                 MenuAction::ToggleActivitySidebar,
                 "lithe.menu.toggleActivitySidebar",
@@ -2794,7 +2815,7 @@ mod tests {
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
         );
         assert!(
-            declared.len() >= 23,
+            declared.len() >= 21,
             "占位项突然少了一截（现在 {}）？查一下是不是有人把没能力的项又删掉了",
             declared.len()
         );
@@ -3193,6 +3214,8 @@ mod tests {
             MenuAction::QuickFix,
             MenuAction::ShowHover,
             MenuAction::GoToDefinition,
+            MenuAction::GoToImplementation,
+            MenuAction::GoToTypeDefinition,
             MenuAction::ToggleBreakpoint,
             MenuAction::NextTab,
             MenuAction::PreviousTab,
@@ -3434,7 +3457,7 @@ mod tests {
     /// 期望值（这才是真正的验收口径），这里负责补上「一个变体都不漏」那件事。
     fn assert_row_follows(action: MenuAction, ctx: EditorContext) {
         let expected = match action {
-            // —— 认的是「当前这个缓冲」的十九个 ——
+            // —— 认的是「当前这个缓冲」的二十一个 ——
             MenuAction::SaveAs
             | MenuAction::CloseTab
             | MenuAction::Undo
@@ -3453,7 +3476,9 @@ mod tests {
             | MenuAction::GoToLine
             | MenuAction::QuickFix
             | MenuAction::ShowHover
-            | MenuAction::GoToDefinition => ctx.has_active_buffer,
+            | MenuAction::GoToDefinition
+            | MenuAction::GoToImplementation
+            | MenuAction::GoToTypeDefinition => ctx.has_active_buffer,
 
             // —— 要把字节写回磁盘的那个 ——
             //
@@ -3492,7 +3517,7 @@ mod tests {
             // —— 关掉过的标签页：`reopen_closed_tab` 在 `closed.pop()` 为空时直接返回 ——
             MenuAction::ReopenClosedTab => ctx.has_closed_tabs,
 
-            // —— 其余三十六个：新建/打开、界面开关、全局搜索、窗口、帮助 ——
+            // —— 其余三十四个：新建/打开、界面开关、全局搜索、窗口、帮助 ——
             MenuAction::NewTab
             | MenuAction::NewWindow
             | MenuAction::NewFile

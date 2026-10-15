@@ -11,16 +11,16 @@
 //! gpui 的 `Keymap` 只有 `add_bindings` 与 `clear`，**没有「删某一条」**。所以每次重放都是
 //! 整批重建：
 //!
-//! 1. 快照：把当前全部绑定抄一份，剔除本引擎托管的那 9 条命令的绑定，剩下的记为
+//! 1. 快照：把当前全部绑定抄一份，剔除本引擎托管的那 11 条命令的绑定，剩下的记为
 //!    `baseline_other`；
-//! 2. 重放：`clear_key_bindings()` → `bind_keys(baseline_other + 生效的 9 条)`。
+//! 2. 重放：`clear_key_bindings()` → `bind_keys(baseline_other + 生效的 11 条)`。
 //!
 //! `Keymap::clear()` 连 `binding_indices_by_action_id` 与 `disabled_binding_indices` 一起清
 //! （`gpui-pre-0.3.8/src/keymap.rs:76`），所以整批重建是干净的，不会残留上一次的禁用标记。
 //!
 //! ## 快照点必须在窗口构造之后
 //!
-//! 托管的 9 条里有 6 条（`SaveBuffer`、`NavigateToDefinition`、`ToggleMenuBar`、
+//! 托管的 11 条里有 6 条（`SaveBuffer`、`NavigateToDefinition`、`ToggleMenuBar`、
 //! `OpenCommandPalette`、`OpenQuickOpen`、`OpenReplaceInFiles`）是 `ShellWorkspace::new` 里
 //! 那 6 个 `install_actions` 装的（`workspace.rs:595-600`），**晚于 `main.rs` 的启动段**。
 //! 快照若早于它就会漏掉这 6 条，第一次重放会把保存、命令面板、快速打开这些键位全清掉。
@@ -45,7 +45,7 @@ use crate::menu_bar::MenuAction;
 
 /// 本引擎托管的命令 → 产出它 action 的那个 `MenuAction`。
 ///
-/// ## 为什么是「薄表」：只写 9 对枚举变体，一个 action 类型都不写
+/// ## 为什么是「薄表」：只写枚举变体对，一个 action 类型都不写
 ///
 /// action 类型全仓只有一处，就是 `MenuAction::keybind_action()`。这里再抄一遍
 /// `Box::new(lithe_gpui_editor::SaveBuffer)` 就是第二份，必然漂移。所以本表只记
@@ -80,6 +80,8 @@ pub fn managed_menu_action(command: CommandId) -> Option<MenuAction> {
         CommandId::OpenQuickOpen => MenuAction::QuickOpen,
         CommandId::OpenReplaceInFiles => MenuAction::ReplaceInFiles,
         CommandId::NavigateToDefinition => MenuAction::GoToDefinition,
+        CommandId::NavigateToImplementation => MenuAction::GoToImplementation,
+        CommandId::NavigateToTypeDefinition => MenuAction::GoToTypeDefinition,
         CommandId::ReopenClosedTab => MenuAction::ReopenClosedTab,
         CommandId::ToggleTerminal => MenuAction::ToggleTerminal,
         CommandId::ToggleMenuBar => MenuAction::ToggleMenuBar,
@@ -117,7 +119,7 @@ struct EngineGlobal(KeymapEngine);
 
 impl Global for EngineGlobal {}
 
-/// 把所有绑定抄一份，剔除托管的那 9 条。
+/// 把所有绑定抄一份，剔除本引擎托管的那 11 条命令的绑定。
 fn capture_baseline(cx: &App) -> Vec<KeyBinding> {
     let managed = managed_action_names();
     let keymap = cx.key_bindings();
@@ -324,7 +326,7 @@ mod tests {
 
     /// 托管集合之外的绑定，一条都不能少。
     #[gpui::test]
-    fn bindings_outside_the_managed_nine_survive_a_replay(cx: &mut TestAppContext) {
+    fn bindings_outside_the_managed_commands_survive_a_replay(cx: &mut TestAppContext) {
         cx.update(|cx| {
             install_lithe_ui_keys(cx);
 
@@ -421,7 +423,7 @@ mod tests {
         });
     }
 
-    /// 薄表本身：9 对全部自洽，且第 9 对的例外是被白名单认可的，不是漏登记。
+    /// 薄表本身：每对全部自洽，且 `Preferences` 那对的例外是被白名单认可的，不是漏登记。
     #[test]
     fn the_managed_table_is_consistent_with_command_id() {
         let mut checked = 0;
@@ -450,10 +452,19 @@ mod tests {
 
             assert!(!keybind.name().is_empty(), "{command:?} 的 action 名是空的");
         }
-        assert_eq!(
-            checked,
-            lithe_gpui_settings::DEFAULT_BINDINGS.len(),
-            "薄表必须与 `DEFAULT_BINDINGS` 覆盖同一批命令"
+        // 方向是**单向**的：`DEFAULT_BINDINGS` 里的每一条都必须被托管（否则重放会把它的
+        // 键位当基线漏掉），但托管可以更宽 —— 「转到实现 / 转到类型定义」有真 Action、
+        // 用户可绑键，只是出厂没有默认键位，因此不在默认表里。
+        for row in lithe_gpui_settings::DEFAULT_BINDINGS {
+            assert!(
+                managed_menu_action(row.command).is_some(),
+                "{:?} 有默认键位却没被托管：重放会漏掉它",
+                row.command
+            );
+        }
+        assert!(
+            checked >= lithe_gpui_settings::DEFAULT_BINDINGS.len(),
+            "托管表比默认表还小，说明有命令漏登记了"
         );
     }
 

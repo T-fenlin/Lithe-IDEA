@@ -777,11 +777,11 @@ fn preset_gap(preset: KeymapPreset) -> usize {
     let rows = preset_bindings(preset);
     CommandId::ALL
         .iter()
-        // 分母只数**能绑键**的那 9 条，不是全部 23 条。
+        // 分母只数**能绑键**的那 11 条，不是全部 25 条。
         //
         // 那 14 条没有 gpui `Action`，根本绑不了键，预设永远也不可能覆盖它们——给一个没有
         // action 的命令写预设绑定，写出来也是死的。把它们算进来就是报一堆永远修不了的
-        // 数字（IDEA Classic 22、Eclipse 23），虚高告警；而页面已经在同批行上标了
+        // 数字（IDEA Classic 24、Eclipse 25），虚高告警；而页面已经在同批行上标了
         // 「未接入」，告警再数一遍等于同一件事说两遍。
         .filter(|command| crate::keymap::is_bindable(**command))
         .filter(|command| !rows.iter().any(|row| row.command == **command))

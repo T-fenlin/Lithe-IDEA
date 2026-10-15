@@ -11,8 +11,8 @@ use crate::buffer::{
     resolved_language,
 };
 use crate::navigation::{
-    JumpEntry, JumpHistory, NavTarget, byte_offset, line_character, remap_path, resolve_target,
-    word_range,
+    JumpEntry, JumpHistory, NavTarget, NavigationTarget, byte_offset, line_character, remap_path,
+    resolve_target, word_range,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -88,6 +88,9 @@ struct NavRequest {
     path: PathBuf,
     revision: u64,
     origin: lsp_types::Position,
+    /// 这次跳的是定义 / 实现 / 类型定义：落点后写进 `S1_NAV_JUMP` 的 `kind`，
+    /// 也决定「没找到」通知里报的是哪个目标。
+    target: NavigationTarget,
 }
 
 pub struct TabMenuHostActions {
@@ -1401,13 +1404,38 @@ impl EditorPane {
         cx.notify();
     }
 
+    /// Go ▸ Go to Definition。
     pub fn navigate_to_definition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.navigate_to(NavigationTarget::Definition, window, cx);
+    }
+
+    /// Go ▸ Go to Implementation（`textDocument/implementation`）。
+    pub fn navigate_to_implementation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.navigate_to(NavigationTarget::Implementation, window, cx);
+    }
+
+    /// Go ▸ Go to Type Definition（`textDocument/typeDefinition`）。
+    pub fn navigate_to_type_definition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.navigate_to(NavigationTarget::TypeDefinition, window, cx);
+    }
+
+    /// 三个 Go-to 共用的入口：取光标位置、记一次代次、后台问语言服务，回到前台落点。
+    ///
+    /// 代次（`nav_generation`）是这里唯一的状态机：请求发出后用户可能改了正文、换了标签页或
+    /// 又按了一次别的 Go-to，回来时 `apply_definition` 会拿代次与 revision 复核，过期的结果
+    /// 直接丢掉，不会把人跳到旧位置。
+    fn navigate_to(
+        &mut self,
+        target: NavigationTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(index) = self.active else {
-            println!("S1_NAV_FAILED reason=no-buffer");
+            println!("S1_NAV_FAILED kind={} reason=no-buffer", target.tag());
             return;
         };
         let Some(buffer) = self.buffers.get(index) else {
-            println!("S1_NAV_FAILED reason=no-buffer");
+            println!("S1_NAV_FAILED kind={} reason=no-buffer", target.tag());
             return;
         };
 
@@ -1429,12 +1457,13 @@ impl EditorPane {
             path: path.clone(),
             revision,
             origin,
+            target,
         });
 
         let task = cx.spawn_in(window, async move |pane, cx| {
             let result = cx
                 .background_spawn(async move {
-                    resolve_target(java.as_deref(), &file_path, &text, offset)
+                    resolve_target(java.as_deref(), target, &file_path, &text, offset)
                 })
                 .await;
             let _ = pane.update_in(cx, |pane, window, cx| {
@@ -1451,39 +1480,47 @@ impl EditorPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((origin_path, revision, origin)) = self
+        let Some((origin_path, revision, origin, nav)) = self
             .nav_request
             .as_ref()
             .filter(|request| request.generation == generation)
-            .map(|request| (request.path.clone(), request.revision, request.origin))
+            .map(|request| {
+                (
+                    request.path.clone(),
+                    request.revision,
+                    request.origin,
+                    request.target,
+                )
+            })
         else {
             println!("S1_NAV_FAILED reason=stale");
             return;
         };
+        let tag = nav.tag();
 
         let Some(origin_index) = self
             .buffers
             .iter()
             .position(|buffer| buffer.path == origin_path)
         else {
-            println!("S1_NAV_FAILED reason=buffer-closed");
+            println!("S1_NAV_FAILED kind={tag} reason=buffer-closed");
             return;
         };
         if self.buffers[origin_index].revision != revision {
-            println!("S1_NAV_FAILED reason=content-changed");
+            println!("S1_NAV_FAILED kind={tag} reason=content-changed");
             return;
         }
 
         let target = match result {
             Ok(Some(target)) => target,
             Ok(None) => {
-                println!("S1_NAV_FAILED reason=no-target");
-                self.notify_no_target(cx);
+                println!("S1_NAV_FAILED kind={tag} reason=no-target");
+                self.notify_no_target(nav, cx);
                 return;
             }
             Err(error) => {
-                println!("S1_NAV_FAILED reason={error}");
-                self.notify_no_target(cx);
+                println!("S1_NAV_FAILED kind={tag} reason={error}");
+                self.notify_no_target(nav, cx);
                 return;
             }
         };
@@ -1506,8 +1543,8 @@ impl EditorPane {
                     self.open(&path, window, cx);
                 }
                 let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
-                    println!("S1_NAV_FAILED reason=no-target");
-                    self.notify_no_target(cx);
+                    println!("S1_NAV_FAILED kind={tag} reason=no-target");
+                    self.notify_no_target(nav, cx);
                     return;
                 };
                 let text = self.buffers[index].editor.read(cx).text().to_string();
@@ -1549,7 +1586,7 @@ impl EditorPane {
         self.active = Some(index);
 
         println!(
-            "S1_NAV_JUMP from={}:{} to={}:{} kind=definition via={via} file={}",
+            "S1_NAV_JUMP from={}:{} to={}:{} kind={tag} via={via} file={}",
             origin.line + 1,
             origin.character + 1,
             to.0,
@@ -1746,14 +1783,19 @@ impl EditorPane {
         })
     }
 
-    fn notify_no_target(&self, cx: &mut Context<Self>) {
-        let target = tr("lithe.navigation.definition");
+    /// 「没找到目标」的通知。
+    ///
+    /// 文案与去重键都按目标分：连按三次「转到实现」只该合并成一条，而不该与
+    /// 「转到定义」的那条互相顶掉。
+    fn notify_no_target(&self, nav: NavigationTarget, cx: &mut Context<Self>) {
+        let target = tr(nav.label_key());
         let code = "lithe.navigation.noTargetFound";
+        let key = format!("navigation-no-target-{}", nav.tag());
         if !self.record_notification(
             cx,
             lithe_gpui_notify::Input::new(code, lithe_gpui_notify::Severity::Info)
                 .param("target", target.as_ref())
-                .key("navigation-no-target"),
+                .key(key),
         ) {
             eprintln!("S1_NOTIFICATION action=record state=dropped reason=no_store code={code}");
         }
@@ -4124,6 +4166,16 @@ impl Render for EditorPane {
             .on_action(
                 cx.listener(|pane, _: &crate::NavigateToDefinition, window, cx| {
                     pane.navigate_to_definition(window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|pane, _: &crate::NavigateToImplementation, window, cx| {
+                    pane.navigate_to_implementation(window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|pane, _: &crate::NavigateToTypeDefinition, window, cx| {
+                    pane.navigate_to_type_definition(window, cx);
                 }),
             )
             .on_action(cx.listener(|pane, _: &crate::CloseActiveTab, window, cx| {

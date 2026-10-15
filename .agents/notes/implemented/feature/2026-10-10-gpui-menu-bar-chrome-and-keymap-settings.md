@@ -176,6 +176,7 @@ id 字符串要一次定死。现在改最便宜：这套 id 还没有任何东�
 | 四、五、六、七（快捷键页与预设） | 未开工（决策十已定目录与预设表的落点） |
 | 九 / 十一（四态菜单栏与 AutoHide） | 未开工，且**本轮四档全做**（见决策十一）；`menus::MenuBar::standalone()` 已就位但无调用点，是为 `Above` 预留 |
 | 十二、菜单项动态置灰 | 已落地（`EditorContext` 八字段 + `MenuAction::is_enabled` + `build_menu` 传参 + 穷举守卫测试；库侧仅 `KbdCombo` 加了一个默认关闭的 `disabled` 开关） |
+| 菜单栏 LSP 接线（Go to Implementation / Type Definition） | 已落地（2026-10-15）：两条 `NotWired` 换成 `Action`，走 `EditorPane::navigate_to_*`；`NavigationTarget` 落在 `crates/editor/src/navigation.rs`。Core 一行未改 |
 
 ## 考虑过的备选方案
 
@@ -247,6 +248,12 @@ Windows 前端的 `getEffectiveKeybindings` 是「用户绑定优先，其余取
 - `rust/lithe-gpui/crates/workbench/src/title_bar.rs`
 - `rust/lithe-gpui/crates/workbench/src/workspace.rs`
 - `rust/lithe-gpui/crates/workbench/src/command_palette.rs`
+- `rust/lithe-gpui/crates/editor/src/navigation.rs`
+- `rust/lithe-gpui/crates/editor/src/editor_view.rs`
+- `rust/lithe-gpui/crates/java/src/service.rs`
+- `rust/lithe-gpui/crates/shared/src/commands.rs`
+- `rust/lithe-gpui/crates/settings/src/command_catalog.rs`
+- `rust/lithe-gpui/crates/workbench/src/keymap_engine.rs`
 - `rust/lithe-gpui/crates/shared/src/document.rs`
 - `rust/lithe-gpui/crates/shared/src/lib.rs`
 - `rust/lithe-gpui/crates/editor/src/editor_view.rs`
