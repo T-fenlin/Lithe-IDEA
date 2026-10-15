@@ -1327,6 +1327,60 @@ impl SettingsDialog {
                         None,
                         cx,
                     ),
+                    // 下面三行与视图菜单里的同名开关是**同一个设置**（`schema::Settings` 的
+                    // `minimap` / `line_numbers` / `render_whitespace`）：外壳订阅设置存储后统一
+                    // 推给 `EditorPane::set_*`（`workbench/src/workspace.rs`），所以从设置页翻和
+                    // 从菜单翻走的是同一条链，不会各记一份状态。
+                    settings_row(
+                        "settings-row-editor-minimap",
+                        tr("lithe.settings.editor.showMinimap"),
+                        Some(tr("lithe.settings.editor.showMinimapDescription")),
+                        {
+                            let store = self.store.clone();
+                            Switch::new("settings-editor-minimap")
+                                .checked(settings.minimap)
+                                .on_change(move |checked, _, cx| {
+                                    store.update(cx, |store, cx| store.set_minimap(checked, cx));
+                                })
+                                .into_any_element()
+                        },
+                        None,
+                        cx,
+                    ),
+                    settings_row(
+                        "settings-row-editor-line-numbers",
+                        tr("lithe.settings.editor.lineNumbers"),
+                        Some(tr("lithe.settings.editor.lineNumbersDescription")),
+                        {
+                            let store = self.store.clone();
+                            Switch::new("settings-editor-line-numbers")
+                                .checked(settings.line_numbers)
+                                .on_change(move |checked, _, cx| {
+                                    store.update(cx, |store, cx| store.set_line_numbers(checked, cx));
+                                })
+                                .into_any_element()
+                        },
+                        None,
+                        cx,
+                    ),
+                    settings_row(
+                        "settings-row-editor-render-whitespace",
+                        tr("lithe.settings.editor.renderWhitespace"),
+                        Some(tr("lithe.settings.editor.renderWhitespaceDescription")),
+                        {
+                            let store = self.store.clone();
+                            Switch::new("settings-editor-render-whitespace")
+                                .checked(settings.render_whitespace)
+                                .on_change(move |checked, _, cx| {
+                                    store.update(cx, |store, cx| {
+                                        store.set_render_whitespace(checked, cx)
+                                    });
+                                })
+                                .into_any_element()
+                        },
+                        None,
+                        cx,
+                    ),
                 ],
                 cx,
             )
@@ -3825,6 +3879,36 @@ mod tests {
         assert_eq!(Category::Run.id(), "run");
     }
 
+    /// 编辑器页的三个视图开关（缩略图 / 行号 / 空白字符）用真源里已有的文案键，不是新造的。
+    ///
+    /// 这一条防的是「键写错了没人发现」：`tr()` 缺键时会把键名原样回显，页面上就会出现
+    /// `lithe.settings.editor.showMinimap` 这样的英文串，而单测不读文案是看不见的。
+    #[test]
+    fn the_editor_view_toggles_use_keys_that_exist_in_both_locales() {
+        fn locale(name: &str) -> String {
+            let path = format!("{}/../shared/locales/{}", env!("CARGO_MANIFEST_DIR"), name);
+            std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("读不了 i18n 文件 {path}：{error}"))
+        }
+        fn has_key(source: &str, key: &str) -> bool {
+            source
+                .lines()
+                .any(|line| line.trim_end() == format!("  {key}:").as_str())
+        }
+        let zh = locale("lithe.zh-CN.yml");
+        let en = locale("lithe.en.yml");
+        for key in [
+            "settings.editor.showMinimap",
+            "settings.editor.showMinimapDescription",
+            "settings.editor.lineNumbers",
+            "settings.editor.lineNumbersDescription",
+            "settings.editor.renderWhitespace",
+            "settings.editor.renderWhitespaceDescription",
+        ] {
+            assert!(has_key(&zh, key), "中文档案里没有 {key}");
+            assert!(has_key(&en, key), "英文档案里没有 {key}");
+        }
+    }
     /// 快捷键页 2026-10-15 转正：它**不再**是「未接入」的空态，也不该再挂着前置条件文案。
     ///
     /// 这一条钉两件事：`IMPLEMENTED` 名单里有它（否则设置页会把整页换成 `EmptyState`），
