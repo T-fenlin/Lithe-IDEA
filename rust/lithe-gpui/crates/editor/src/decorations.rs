@@ -19,6 +19,15 @@ use crate::navigation::offset_for_utf16;
 
 pub(crate) const CHANGE_DEBOUNCE: Duration = Duration::from_millis(400);
 
+/// 请求里要覆盖的行数。
+///
+/// 按**换行符个数 + 1** 算，而不是 `lines().count()`：末尾有换行时后者少一行，而 LSP 的 range
+/// 是半开区间，少一行会把最后一行整个漏掉。这个算法只在末尾换行上分叉，也正是最容易被
+/// 「顺手改成 `lines().count()`」重构掉的地方，所以单独留一个函数给它上测试。
+pub(crate) fn line_count(text: &str) -> u32 {
+    text.matches('\n').count() as u32 + 1
+}
+
 pub(crate) struct Fetched {
     pub(crate) hints: Vec<JavaInlayHint>,
     pub(crate) lenses: Vec<JavaCodeLens>,
@@ -40,12 +49,10 @@ pub(crate) async fn fetch(
     }
     let started = Instant::now();
 
-    // 行数按**换行符个数 + 1** 算，而不是 `lines().count()`：末尾有换行时后者少一行，
-    // 而 LSP 的 range 是半开区间，少一行会把最后一行整个漏掉。
-    let line_count = text.matches('\n').count() as u32 + 1;
+    let lines = line_count(&text);
 
     let mut error = None;
-    let hints = match service.inlay_hints(&path, &text, line_count) {
+    let hints = match service.inlay_hints(&path, &text, lines) {
         Ok(hints) => hints,
         Err(reason) => {
             error = Some(reason);
@@ -117,11 +124,10 @@ mod tests {
     /// 行数算法只在末尾换行上分叉，而那正是 LSP 半开区间最容易漏掉最后一行的地方。
     #[test]
     fn the_requested_line_count_never_drops_the_last_line() {
-        let count = |text: &str| text.matches('\n').count() as u32 + 1;
-        assert_eq!(count("a"), 1);
-        assert_eq!(count("a\n"), 2, "末尾换行意味着第 2 行存在（虽然为空）");
-        assert_eq!(count("a\nb"), 2);
-        assert_eq!(count("a\nb\n"), 3);
-        assert_eq!(count(""), 1);
+        assert_eq!(line_count("a"), 1);
+        assert_eq!(line_count("a\n"), 2, "末尾换行意味着第 2 行存在（虽然为空）");
+        assert_eq!(line_count("a\nb"), 2);
+        assert_eq!(line_count("a\nb\n"), 3);
+        assert_eq!(line_count(""), 1);
     }
 }
