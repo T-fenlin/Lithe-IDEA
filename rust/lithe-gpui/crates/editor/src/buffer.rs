@@ -217,6 +217,10 @@ pub(crate) struct Buffer {
     pub(crate) auto_save_task: Option<Task<()>>,
     pub(crate) diagnostics_generation: u64,
     pub(crate) diagnostics_task: Option<Task<()>>,
+    /// 内嵌提示与 Code Lens：与诊断同一条代次/正文复核规矩，但各走各的计数——
+    /// 两者取数节奏不同（诊断要退避重试，注记不需要），共用一个计数会互相误判过期。
+    pub(crate) decorations_generation: u64,
+    pub(crate) decorations_task: Option<Task<()>>,
     pub(crate) _subscriptions: Vec<Subscription>,
 }
 
@@ -243,6 +247,8 @@ impl Buffer {
             auto_save_task: None,
             diagnostics_generation: 0,
             diagnostics_task: None,
+            decorations_generation: 0,
+            decorations_task: None,
             _subscriptions: subscriptions,
         }
     }

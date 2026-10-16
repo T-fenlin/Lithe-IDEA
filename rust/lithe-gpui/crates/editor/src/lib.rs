@@ -1,6 +1,7 @@
 mod buffer;
 mod code_actions;
 mod completion;
+mod decorations;
 mod diagnostics;
 mod editor_view;
 mod go_to_line;

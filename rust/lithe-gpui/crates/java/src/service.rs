@@ -24,6 +24,10 @@ const REFERENCES_TIMEOUT: Duration = Duration::from_secs(60);
 const RENAME_TIMEOUT: Duration = Duration::from_secs(60);
 const FORMATTING_TIMEOUT: Duration = Duration::from_secs(60);
 
+// 内嵌提示与代码镜头：只读、量小，跟悬停一个量级即可，不需要向定义看齐。
+const INLAY_HINT_TIMEOUT: Duration = Duration::from_secs(10);
+const CODE_LENS_TIMEOUT: Duration = Duration::from_secs(10);
+
 const CODE_ACTION_DIAGNOSTIC_BACKOFF_MS: [u64; 2] = [250, 250];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,6 +36,28 @@ pub struct JavaCodeAction {
     pub kind: Option<String>,
     pub edits: Vec<JavaTextEdit>,
     pub other_file_edits: usize,
+}
+
+/// 一个内嵌提示（`textDocument/inlayHint`）：位置 + 要显示的那几个字。
+///
+/// 只留 `label`：Core 归一化里还有 `tooltip` / `paddingLeft` / `paddingRight` / `textEdits` / `data`，
+/// 但组件库的 `InlayHint` 只画 `offset + text`（见 `lithe_ui::editor::decor`），多出的字段今天没有落点，
+/// 带过来只会变成没人读的字段。要用时再在这里加。
+#[derive(Clone, Debug, PartialEq)]
+pub struct JavaInlayHint {
+    pub line: u32,
+    pub utf16_column: u32,
+    pub label: String,
+}
+
+/// 一条 Code Lens（`textDocument/codeLens`）：所在行 + 命令标题。
+///
+/// `data` 是给 `codeLens/resolve` 用的回填句柄，而宿主今天**不发** resolve
+/// （`SemanticRequest` 里没有 code_lens 字段），所以不接。
+#[derive(Clone, Debug, PartialEq)]
+pub struct JavaCodeLens {
+    pub line: u32,
+    pub title: String,
 }
 
 /// `textDocument/rename` 的结果：按文件分的编辑。
@@ -303,6 +329,103 @@ impl JavaLanguageService {
             started.elapsed().as_millis()
         );
         Ok(edits)
+    }
+
+    /// 内嵌提示：`textDocument/inlayHint`。
+    ///
+    /// LSP 要求带 `range`；这里一次要**整篇**（`0:0` 到末行行首之后），因为组件库的提示是整份替换的，
+    /// 分段请求反而要自己拼接与去重。要按可见区请求是以后的事（那时得处理区间边界上的重复）。
+    pub fn inlay_hints(
+        &self,
+        file_path: &Path,
+        text: &str,
+        line_count: u32,
+    ) -> Result<Vec<JavaInlayHint>, String> {
+        self.ensure_session()?;
+        let uri = file_uri(file_path)?;
+        let started = Instant::now();
+
+        let raw = self.with_ready_session(|session| {
+            let (version, changed) = session.sync_document(&uri, "java", text)?;
+            println!(
+                "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+                text.len()
+            );
+            let result = session.request(
+                "inlayHints",
+                json!({
+                    "uri": uri,
+                    "range": {
+                        "start": { "line": 0, "utf16Column": 0 },
+                        "end": { "line": line_count, "utf16Column": 0 },
+                    },
+                }),
+                Instant::now() + INLAY_HINT_TIMEOUT,
+            )?;
+            Ok(result
+                .get("hints")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default())
+        })?;
+
+        let hints: Vec<JavaInlayHint> = raw.iter().filter_map(parse_inlay_hint).collect();
+        println!(
+            "S1_JAVA_INLAY_HINTS uri={uri} raw={} hints={} ms={}",
+            raw.len(),
+            hints.len(),
+            started.elapsed().as_millis()
+        );
+        Ok(hints)
+    }
+
+    /// 代码镜头：`textDocument/codeLens`。
+    ///
+    /// 只要**已经有标题**的那些：`codeLens` 允许服务端先回一个不带 command 的占位、再让客户端发
+    /// `codeLens/resolve` 换标题。宿主今天不发 resolve（见 `JavaCodeLens` 的注释），所以没有标题的条目
+    /// 拿不出可显示的文字，直接跳过并在日志里报数——画一行空白比不画更糟。
+    pub fn code_lenses(
+        &self,
+        file_path: &Path,
+        text: &str,
+    ) -> Result<Vec<JavaCodeLens>, String> {
+        self.ensure_session()?;
+        let uri = file_uri(file_path)?;
+        let started = Instant::now();
+
+        let raw = self.with_ready_session(|session| {
+            let (version, changed) = session.sync_document(&uri, "java", text)?;
+            println!(
+                "S1_JAVA_SYNC uri={uri} version={version} changed={changed} bytes={}",
+                text.len()
+            );
+            let result = session.request(
+                "codeLens",
+                json!({ "uri": uri }),
+                Instant::now() + CODE_LENS_TIMEOUT,
+            )?;
+            Ok(result
+                .get("lenses")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default())
+        })?;
+
+        let mut unresolved = 0usize;
+        let mut lenses = Vec::new();
+        for lens in &raw {
+            match parse_code_lens(lens) {
+                Some(lens) => lenses.push(lens),
+                None => unresolved += 1,
+            }
+        }
+        println!(
+            "S1_JAVA_CODE_LENS uri={uri} raw={} lenses={} unresolved={unresolved} ms={}",
+            raw.len(),
+            lenses.len(),
+            started.elapsed().as_millis()
+        );
+        Ok(lenses)
     }
 
     /// 走到「拿到一个可用会话」这一步。
@@ -1063,6 +1186,41 @@ fn workspace_edits(changes: &Value, file_path: &Path) -> JavaWorkspaceEdits {
         edits,
         other_file_edits,
     }
+}
+
+/// 一条内嵌提示：位置必填，`label` 是字符串（Core 已把片段数组拼成字符串）。
+fn parse_inlay_hint(value: &Value) -> Option<JavaInlayHint> {
+    let position = value.get("position")?;
+    let line = position.get("line").and_then(Value::as_u64)? as u32;
+    let utf16_column = position.get("utf16Column").and_then(Value::as_u64)? as u32;
+    let label = value.get("label").and_then(Value::as_str)?.to_string();
+    if label.is_empty() {
+        return None;
+    }
+    Some(JavaInlayHint {
+        line,
+        utf16_column,
+        label,
+    })
+}
+
+/// 一条 Code Lens：行号来自 `range.start`，标题来自 `command.title`。
+///
+/// 没有 `command`（或没有标题）的返回 `None`：那是等着 `codeLens/resolve` 回填的占位条目，
+/// 而宿主今天不发 resolve，硬画会得到一行没有文字的东西。
+fn parse_code_lens(value: &Value) -> Option<JavaCodeLens> {
+    let line = value
+        .get("range")
+        .and_then(|range| range.get("start"))
+        .and_then(|start| start.get("line"))
+        .and_then(Value::as_u64)? as u32;
+    let title = value
+        .get("command")
+        .and_then(|command| command.get("title"))
+        .and_then(Value::as_str)
+        .filter(|title| !title.is_empty())?
+        .to_string();
+    Some(JavaCodeLens { line, title })
 }
 
 fn is_current_file(key: &str, file_path: &Path) -> bool {
@@ -1972,6 +2130,62 @@ mod tests {
         assert!(
             edit.new_text.contains("import java.util.List;"),
             "这条编辑必须真的插入 import：{edit:?}"
+        );
+    }
+
+    /// 内嵌提示：位置与文本逐字保留。
+    #[test]
+    fn inlay_hints_keep_their_position_and_label() {
+        let hint = parse_inlay_hint(&json!({
+            "position": { "line": 3, "utf16Column": 12 },
+            "label": "count:",
+        }))
+        .expect("合法提示");
+        assert_eq!(hint.line, 3);
+        assert_eq!(hint.utf16_column, 12);
+        assert_eq!(hint.label, "count:");
+    }
+
+    /// 缺位置或文本为空都不是可画的提示：前者没有落点，后者画出来是一块看不见的占位。
+    #[test]
+    fn an_inlay_hint_without_a_position_or_text_is_dropped() {
+        assert!(parse_inlay_hint(&json!({ "label": "x" })).is_none());
+        assert!(
+            parse_inlay_hint(&json!({
+                "position": { "line": 0, "utf16Column": 0 },
+                "label": "",
+            }))
+            .is_none()
+        );
+    }
+
+    /// Code Lens：行号与命令标题都要留下。
+    #[test]
+    fn code_lenses_keep_the_line_and_the_command_title() {
+        let lens = parse_code_lens(&json!({
+            "range": { "start": { "line": 7, "utf16Column": 0 }, "end": { "line": 7, "utf16Column": 4 } },
+            "command": { "title": "3 references", "command": "java.show.references" },
+        }))
+        .expect("有标题");
+        assert_eq!(lens.line, 7);
+        assert_eq!(lens.title, "3 references");
+    }
+
+    /// 等 `codeLens/resolve` 回填的占位条目没有标题，画出来是一行空白，所以要跳过。
+    #[test]
+    fn code_lenses_without_a_title_are_skipped() {
+        assert!(
+            parse_code_lens(&json!({
+                "range": { "start": { "line": 1, "utf16Column": 0 } },
+            }))
+            .is_none()
+        );
+        assert!(
+            parse_code_lens(&json!({
+                "range": { "start": { "line": 1, "utf16Column": 0 } },
+                "command": { "title": "" },
+            }))
+            .is_none()
         );
     }
 }

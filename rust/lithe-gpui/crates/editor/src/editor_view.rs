@@ -247,6 +247,8 @@ pub struct EditorPane {
     nav_task: Option<Task<()>>,
     nav_generation: u64,
     diagnostics_generation: u64,
+    /// 内嵌提示与 Code Lens 的代次；与诊断各算各的（见 `decorations` 模块注释）。
+    decorations_generation: u64,
     java: Option<Arc<JavaLanguageService>>,
     java_task: Option<Task<()>>,
     problems: Entity<crate::problems::ProblemsPane>,
@@ -327,6 +329,7 @@ impl EditorPane {
             nav_task: None,
             nav_generation: 0,
             diagnostics_generation: 0,
+            decorations_generation: 0,
             java: None,
             java_task: None,
             problems: cx.new(|_| crate::problems::ProblemsPane::new()),
@@ -556,6 +559,7 @@ impl EditorPane {
             .collect();
         for index in java_buffers {
             self.schedule_diagnostics(index, Duration::ZERO, cx);
+            self.schedule_decorations(index, Duration::ZERO, cx);
         }
 
         self.java_task = Some(cx.background_spawn(async move {
@@ -565,6 +569,89 @@ impl EditorPane {
                 Err(reason) => println!("S1_JAVA_PREPARE_FAILED reason={reason}"),
             }
         }));
+    }
+
+    /// 取一次内嵌提示与 Code Lens，回来整份替换。
+    ///
+    /// 与诊断同一套守卫：非 Java、不可写、虚拟源码都不发；代次与 revision 双复核，
+    /// 晚到的答案一律丢掉。区别是**没有退避重试**——注记是只读的辅助信息，
+    /// 诊断那套「等两份一样才算稳定」的等待在这里没有对应的收敛问题。
+    fn schedule_decorations(&mut self, index: usize, debounce: Duration, cx: &mut Context<Self>) {
+        let Some(service) = self.java.clone() else {
+            return;
+        };
+        let Some(buffer) = self.buffers.get(index) else {
+            return;
+        };
+        if !buffer.writable
+            || is_virtual_source_path(&buffer.path)
+            || language_for_file(&buffer.name) != Some("java")
+        {
+            return;
+        }
+
+        let path = buffer.path.clone();
+        let revision = buffer.revision;
+        let text = buffer.editor.read(cx).text().to_string();
+
+        let generation = self.decorations_generation.wrapping_add(1);
+        self.decorations_generation = generation;
+        self.buffers[index].decorations_generation = generation;
+
+        let executor = cx.background_executor().clone();
+        let task_path = path.clone();
+        let task = cx.spawn(async move |pane, cx| {
+            let fetched = cx
+                .background_spawn(crate::decorations::fetch(
+                    service,
+                    task_path.clone(),
+                    text,
+                    executor,
+                    debounce,
+                ))
+                .await;
+            let _ = pane.update(cx, |pane, cx| {
+                pane.apply_decorations(generation, revision, task_path, fetched, cx)
+            });
+        });
+        self.buffers[index].decorations_task = Some(task);
+    }
+
+    fn apply_decorations(
+        &mut self,
+        generation: u64,
+        revision: u64,
+        path: PathBuf,
+        fetched: crate::decorations::Fetched,
+        cx: &mut Context<Self>,
+    ) {
+        let file = path.display();
+        let Some(index) = self.buffers.iter().position(|buffer| buffer.path == path) else {
+            println!("S1_EDITOR_DECORATIONS file={file} result=stale reason=buffer-closed");
+            return;
+        };
+        if self.buffers[index].decorations_generation != generation {
+            println!("S1_EDITOR_DECORATIONS file={file} result=stale reason=superseded");
+            return;
+        }
+        if self.buffers[index].revision != revision {
+            println!("S1_EDITOR_DECORATIONS file={file} result=stale reason=content-changed");
+            return;
+        }
+
+        let editor = self.buffers[index].editor.clone();
+        let counts = editor.update(cx, |state, cx| {
+            // 先取正文再改：换算用的就是这份正文，借用得在 `set_*` 之前结束。
+            let text = state.text().to_string();
+            crate::decorations::apply(state, &fetched.hints, &fetched.lenses, &text, cx)
+        });
+        println!(
+            "S1_EDITOR_DECORATIONS file={file} hints={} lenses={} error={:?} ms={} revision={revision}",
+            counts.0,
+            counts.1,
+            fetched.error,
+            fetched.elapsed_ms
+        );
     }
 
     fn schedule_diagnostics(&mut self, index: usize, debounce: Duration, cx: &mut Context<Self>) {
@@ -802,6 +889,7 @@ impl EditorPane {
         if language_for_file(&self.buffers[self.buffers.len() - 1].name) == Some("java") {
             let opened = self.buffers.len() - 1;
             self.schedule_diagnostics(opened, Duration::ZERO, cx);
+            self.schedule_decorations(opened, Duration::ZERO, cx);
         }
         cx.notify();
     }
@@ -1930,6 +2018,7 @@ impl EditorPane {
         self.buffers[index].revision = self.buffers[index].revision.wrapping_add(1);
 
         self.schedule_diagnostics(index, crate::diagnostics::CHANGE_DEBOUNCE, cx);
+        self.schedule_decorations(index, crate::decorations::CHANGE_DEBOUNCE, cx);
 
         if self.auto_save {
             self.schedule_auto_save(index, window, cx);
@@ -1953,7 +2042,11 @@ impl EditorPane {
         }
 
         self.clear_hover(editor, cx);
-        editor.update(cx, |state, cx| state.set_diagnostics(Vec::new(), cx));
+        editor.update(cx, |state, cx| {
+            state.set_diagnostics(Vec::new(), cx);
+            // 注记的偏移与诊断一样会过期：先清掉，免得在旧位置画一排错位的灰字。
+            crate::decorations::clear(state, cx);
+        });
         self.narrow_completion(editor, cx);
         // The find matches depend on the text, so the bar re-scans (debounced like the query).
         if self
