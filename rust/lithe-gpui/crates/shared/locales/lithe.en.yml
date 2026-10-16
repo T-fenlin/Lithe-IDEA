@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 162 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 166 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8696,9 +8696,17 @@ lithe:
   settings.gpui.autoCompletionDescription:
     en: "Shows completion suggestions automatically while typing (the Java language service first, falling back to identifiers in the current file when it is unavailable). Turning this off stops the menu from popping up automatically, including the fallback suggestions."
   settings.gpui.lspOnlyAutoCompletion:
-    en: "This page only wires Auto Completion: the other two settings in the Windows page (parameter hints and semantic highlighting) have no attachable interface in gpui (the upstream editor has no signature-help provider, and semantic highlighting has no Java implementation), while the JDTLS / JDK runtime path belongs to the Project · JDK and Maven page, so no control is drawn here."
+    en: "Parameter hints and semantic highlighting have no attachable interface in gpui (the upstream editor has no signature-help provider, and semantic highlighting has no Java implementation), so this page draws no controls for them."
   settings.gpui.noLanguageServer:
     en: "No usable language service runtime yet (no JDK meeting the requirement was detected on this machine; detection runs again when a Java project is opened)."
+  settings.gpui.javaRuntime:
+    en: "Java Runtime"
+  settings.gpui.javaVersion:
+    en: "Java Version"
+  settings.gpui.javaVersionDescription:
+    en: "The language service (JDTLS) runs on this JDK. Picking Detected automatically uses the JDK found on this machine; a change takes effect at the next language service start, which today means restarting the app."
+  settings.gpui.javaVersionAuto:
+    en: "Detected automatically"
   settings.gpui.runNoProject:
     en: "Open a project to identify runnable configurations."
   settings.gpui.runReadOnlyDescription:

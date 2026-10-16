@@ -579,6 +579,47 @@ fn jdk_entry(jdk: &DetectedJdk) -> String {
     }
 }
 
+/// 「Java 版本」下拉的选项。
+///
+/// 第一项固定是「自动检测」（值＝空串，写回去就是清掉全局覆盖），后面是探测到的每个 JDK。
+/// 值取 `home` 而不是 `executable`：`javaHomePath` 的语义就是 JDK 主目录，语言服务拿它拼
+/// `bin/java`（`java/src/jdtls.rs`），填 java.exe 的路径只会拼出不存在的文件——只认识
+/// `executable`、`home` 为空的候选因此不列进来，列了也是写不进去的值。当前值不在候选里时
+/// 把它插在「自动检测」后面，免得用户别处填的路径在下拉里看不见（与主题下拉同一条规矩）。
+fn java_version_options(
+    candidates: &[DetectedJdk],
+    configured: &str,
+    auto_label: SharedString,
+) -> Vec<(SharedString, SharedString, bool)> {
+    let configured = configured.trim();
+    let mut options = vec![(SharedString::from(""), auto_label, configured.is_empty())];
+    let mut seen = vec![String::new()];
+    for jdk in candidates {
+        let home = jdk.home.trim();
+        if home.is_empty() || seen.iter().any(|value| value == home) {
+            continue;
+        }
+        seen.push(home.to_string());
+        let label = if jdk.version.trim().is_empty() {
+            SharedString::from(home.to_string())
+        } else {
+            SharedString::from(format!("{home} ({})", jdk.version))
+        };
+        options.push((SharedString::from(home.to_string()), label, home == configured));
+    }
+    if !configured.is_empty() && !options.iter().any(|(_, _, checked)| *checked) {
+        options.insert(
+            1,
+            (
+                SharedString::from(configured.to_string()),
+                SharedString::from(configured.to_string()),
+                true,
+            ),
+        );
+    }
+    options
+}
+
 fn maven_entry(maven: &DetectedMaven) -> String {
     if maven.version.is_empty() {
         maven.executable.clone()
@@ -1983,6 +2024,45 @@ impl SettingsDialog {
         );
     }
 
+    /// 「Java 运行环境」的「选择路径」：原生目录选择器 → 直写全局 `javaHomePath` → 立刻重探一次。
+    ///
+    /// 直写而不像「项目」页那样等「保存」：这一行是下拉（选中即生效），同一页里两个控件必须同一
+    /// 时机，否则用户分不清哪个才算数。重探（`project_load`）是为了让下面的「已检测语言服务器」
+    /// 一行马上反映新值——那一行是这一页唯一能回答「选对没有」的地方。
+    fn java_version_pick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some(tr("lithe.settings.gpui.pickPath")),
+        });
+        let store = self.store.clone();
+        cx.spawn_in(window, async move |this, async_cx| {
+            let result = match picked.await {
+                Ok(Ok(result)) => result,
+                Ok(Err(error)) => {
+                    eprintln!("S1_SETTINGS_LSP run=pick state=failed error={error}");
+                    return;
+                }
+                Err(_) => {
+                    eprintln!("S1_SETTINGS_LSP run=pick state=cancelled reason=channel-closed");
+                    return;
+                }
+            };
+            let Some(path) = result.and_then(|paths| paths.into_iter().next()) else {
+                eprintln!("S1_SETTINGS_LSP run=pick state=cancelled");
+                return;
+            };
+            let value = path.to_string_lossy().to_string();
+            println!("S1_SETTINGS_LSP run=pick state=picked path={value}");
+            let _ = async_cx.update(move |_window, cx| {
+                store.update(cx, |store, cx| store.set_java_home_path(value, cx));
+                let _ = this.update(cx, |this, cx| this.project_load(cx));
+            });
+        })
+        .detach();
+    }
+
     fn project_pick(
         &self,
         input: Entity<InputState>,
@@ -2578,8 +2658,49 @@ impl SettingsDialog {
             },
         };
 
+        let configured = settings.java_home_path.trim().to_string();
+        let candidates = environment
+            .map(|environment| environment.jdk.candidates.clone())
+            .unwrap_or_default();
+        let auto_label = tr("lithe.settings.gpui.javaVersionAuto");
+        let options = java_version_options(&candidates, &configured, auto_label.clone());
+        let current_label = options
+            .iter()
+            .find(|(_, _, checked)| *checked)
+            .map(|(_, label, _)| label.clone())
+            .unwrap_or(auto_label);
+        // 下拉只列得出「探测到的」JDK：装在别处（另一个盘、非标准目录）的那个只能用「选择路径」
+        // 指给它。用户的实际场景就是这一条——项目要 1.8，语言服务必须 21，而 21 不在探测范围里。
+        let control = h_stack()
+            .items_center()
+            .gap_2()
+            .child(self.dropdown("settings-lsp-java-version", current_label, options, {
+                let store = self.store.clone();
+                Box::new(move |value, _, cx| {
+                    store.update(cx, |store, cx| store.set_java_home_path(value.to_string(), cx));
+                })
+            }))
+            .child(
+                Button::new("settings-lsp-java-version-pick")
+                    .size(Size::Small)
+                    .variant(ButtonVariant::Ghost)
+                    .label(tr("lithe.settings.gpui.pickPath"))
+                    .on_click(cx.listener(|this, _, window, cx| this.java_version_pick(window, cx))),
+            )
+            .into_any_element();
+        let java_rows: Vec<gpui::AnyElement> = vec![settings_row(
+            "settings-row-lsp-java-version",
+            tr("lithe.settings.gpui.javaVersion"),
+            Some(tr("lithe.settings.gpui.javaVersionDescription")),
+            control,
+            None,
+            cx,
+        )];
+
         vec![
             settings_group(tr("lithe.settings.mac.languageServices"), service_rows, cx)
+                .into_any_element(),
+            settings_group(tr("lithe.settings.gpui.javaRuntime"), java_rows, cx)
                 .into_any_element(),
             settings_group(
                 tr("lithe.settings.mac.detectedServers"),
@@ -4092,6 +4213,58 @@ mod tests {
         assert_eq!(line.text, tr(ToolKind::Jdk.not_found_key()));
         let detail = line.detail.expect("没找到时必须给出已排除清单");
         assert!(detail.contains("已排除"), "{detail}");
+    }
+
+    /// 「Java 版本」下拉：第一项永远是「自动检测」，值取 JDK 主目录，认不出主目录的候选不列。
+    #[test]
+    fn java_version_options_offer_automatic_first_and_a_home_to_write_back() {
+        let jdk = |home: &str, version: &str| DetectedJdk {
+            home: home.to_string(),
+            executable: format!("{home}/bin/java.exe"),
+            version: version.to_string(),
+            meets_language_service: true,
+            source: ToolSource::JavaHome,
+        };
+        let auto = SharedString::from("自动检测");
+
+        // 没配过：只有「自动检测」，且它被选中。
+        let options = java_version_options(&[], "", auto.clone());
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].0, SharedString::from(""));
+        assert!(options[0].2, "空值时选中的必须是自动检测");
+        assert_eq!(options[0].1, auto);
+
+        let candidates = vec![
+            jdk(r"D:\java\jdk-21", "21.0.2"),
+            jdk(r"D:\java\jdk-17", "17.0.9"),
+        ];
+
+        // 配了一个探测到的 JDK：选中它，写回去的值是主目录而不是 java.exe。
+        let options = java_version_options(&candidates, r"D:\java\jdk-17", auto.clone());
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].1, auto);
+        assert!(!options[0].2);
+        assert_eq!(options[1].0, SharedString::from(r"D:\java\jdk-21"));
+        assert_eq!(options[1].1, SharedString::from(r"D:\java\jdk-21 (21.0.2)"));
+        assert!(options[2].2, "配过的那个候选要选中");
+        assert_eq!(options[2].0, SharedString::from(r"D:\java\jdk-17"));
+
+        // 配了一个候选里没有的路径：插在「自动检测」后面，照原样显示，别让它消失。
+        let options = java_version_options(&candidates, r"E:\my-jdk", auto.clone());
+        assert_eq!(options.len(), 4);
+        assert!(options[1].2);
+        assert_eq!(options[1].1, SharedString::from(r"E:\my-jdk"));
+
+        // 只探测到 java.exe、认不出主目录的候选不列：写进 javaHomePath 只会拼出不存在的 bin/java。
+        let options = java_version_options(
+            &[DetectedJdk {
+                home: String::new(),
+                ..jdk(r"D:\x", "21")
+            }],
+            "",
+            auto,
+        );
+        assert_eq!(options.len(), 1, "没有主目录的候选不列进来");
     }
 
     #[test]

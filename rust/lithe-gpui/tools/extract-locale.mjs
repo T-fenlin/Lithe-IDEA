@@ -241,10 +241,10 @@ const GPUI_ONLY_KEYS = [
   },
   {
     key: "settings.gpui.lspOnlyAutoCompletion",
-    zh: "本页只做「自动补全」：真源另两项（参数提示、语义高亮）在 gpui 侧没有可挂载的接口（上游没有签名帮助 provider，语义高亮也没有 Java 侧实现），JDTLS / JDK 运行时路径则归「项目 · JDK 与 Maven」页，所以这里不画控件。",
-    en: "This page only wires Auto Completion: the other two settings in the Windows page (parameter hints and semantic highlighting) have no attachable interface in gpui (the upstream editor has no signature-help provider, and semantic highlighting has no Java implementation), while the JDTLS / JDK runtime path belongs to the Project · JDK and Maven page, so no control is drawn here.",
+    zh: "参数提示、语义高亮两项在 gpui 侧没有可挂载的接口（上游没有签名帮助 provider，语义高亮也没有 Java 侧实现），所以本页不画这两个开关。",
+    en: "Parameter hints and semantic highlighting have no attachable interface in gpui (the upstream editor has no signature-help provider, and semantic highlighting has no Java implementation), so this page draws no controls for them.",
     reason:
-      "「LSP」页里那句「为什么只有一项」的说明。真源那页有三个开关，本侧只有 autoCompletion 有消费方（参数提示：上游 gpui-base-0.6.6 的 Lsp 结构体没有签名帮助接口，全 crate SignatureHelp 零命中；语义高亮：上游 trait 在但 Java 侧零实现、零装载点）；JDTLS 运行时路径输入框真源里没有，且 Windows 已主动退役同类键（settings-normalization.ts:550 + 守卫测试:26-33），JDK 路径已有「项目 · JDK 与 Maven」页这个真生效的入口。按「不画假控件」的口径，缺的那几项要有一句如实说明，否则用户会以为设置丢了。",
+      "「LSP」页里那句「为什么少两个开关」的说明。真源那页有三个开关，本侧只有 autoCompletion 有消费方（参数提示：上游 gpui-base-0.6.6 的 Lsp 结构体没有签名帮助接口，全 crate SignatureHelp 零命中；语义高亮：上游 trait 在但 Java 侧零实现、零装载点）。按「不画假控件」的口径，缺的那两项要有一句如实说明，否则用户会以为设置丢了。2026-10-16 起本页多了「Java 运行环境」一组，原句里「JDTLS / JDK 运行时路径归项目页、这里不画控件」那一半已不成立，一并去掉。",
   },
   {
     key: "settings.gpui.noLanguageServer",
@@ -252,6 +252,34 @@ const GPUI_ONLY_KEYS = [
     en: "No usable language service runtime yet (no JDK meeting the requirement was detected on this machine; detection runs again when a Java project is opened).",
     reason:
       "「LSP」页「已检测语言服务器」那一组的空态。真源那里是一句静态文本，没有空态；本侧把它做成真事实（值来自「项目」页同一次真实探测），所以也需要一句「现在为什么是空的」。数值门槛由 java/src/jdtls.rs:80 的 MINIMUM_JAVA_MAJOR 决定，缺失时那一行会改画 jdkBelowLanguageServiceMinimum。",
+  },
+  {
+    key: "settings.gpui.javaRuntime",
+    zh: "Java 运行环境",
+    en: "Java Runtime",
+    reason:
+      "「LSP」页新增那一组的标题。真源没有这一组：Windows 那页只在「语言服务」下画三个开关，JDK 路径是另一页的输入框。本侧把它提到 LSP 页，是因为「语言服务跑在哪个 JDK 上」直接决定这页所有能力能不能起来（门槛见 java/src/jdtls.rs:80 的 MINIMUM_JAVA_MAJOR），它需要一个自己的标题。",
+  },
+  {
+    key: "settings.gpui.javaVersion",
+    zh: "Java 版本",
+    en: "Java Version",
+    reason:
+      "上面那一组的行标题。真源对应的控件是「项目 · JDK 与 Maven」页的 run.jdkHome 自由文本框；本侧改成下拉，写回同一个全局 settings.java_home_path，所以另起一行标题说明这里选的是「用哪个版本」。",
+  },
+  {
+    key: "settings.gpui.javaVersionDescription",
+    zh: "语言服务（JDTLS）用这个 JDK 运行。选「自动检测」就用本机探测到的 JDK；改完要等下一次语言服务启动才生效，当前实现是重启应用。",
+    en: "The language service (JDTLS) runs on this JDK. Picking Detected automatically uses the JDK found on this machine; a change takes effect at the next language service start, which today means restarting the app.",
+    reason:
+      "那一行的描述，两句都必须写：一是这个值管的是「谁运行语言服务」，不是「项目编译到哪个版本」；二是生效时机。时机与本脚本里 maven.settingsPath 那条记录的 javaHomePath 口径一致（下一次语言服务启动，今天是重启应用），照抄真源或写「立即生效」都会承诺做不到的事。",
+  },
+  {
+    key: "settings.gpui.javaVersionAuto",
+    zh: "自动检测",
+    en: "Detected automatically",
+    reason:
+      "下拉里代表「不覆盖」的那一项（值空串＝清掉全局 javaHomePath）。真源是文本框的占位提示（run.jdkHomeHint：留空则使用自动检测到的 JDK），下拉需要一个可点的名字，所以新增一条。",
   },
   {
     key: "settings.gpui.runNoProject",
