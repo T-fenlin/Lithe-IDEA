@@ -128,6 +128,17 @@ enum State {
     Closed,
 }
 
+/// 一次 Maven 配置推送的结果（Core 的 `lsp.updateMavenConfiguration` 原样转述）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MavenConfigurationUpdate {
+    /// 设置文档变了，JDT LS 因此会重新导入每个 Maven 工程。
+    pub settings_changed: bool,
+    /// 设置没变，但按要求强制刷新了工程。
+    pub projects_reloaded: bool,
+    /// 变化的 profile 已经开始重新应用。
+    pub profiles_updating: bool,
+}
+
 pub struct JavaLanguageService {
     workspace_root: PathBuf,
     state: Mutex<State>,
@@ -154,6 +165,44 @@ impl JavaLanguageService {
             State::Ready(session) => Some(session.session_id().to_string()),
             _ => None,
         }
+    }
+
+    /// 把当前工作区的 Maven 配置推给**已经在跑**的 JDTLS。
+    ///
+    /// `reload_projects` 是「显式重新加载」那一档：即便配置没变也让 JDT LS 重新解析每个
+    /// Maven 工程（IDEA 的「重新加载所有 Maven 项目」）。不重启会话是有意的：JDT LS 重启
+    /// 会复用工作区状态并跳过 pom 没变的工程，旧配置下没解析出来的构件会继续缺着
+    /// （Core 侧 `lsp.updateMavenConfiguration` 的文档就是这么写的）。
+    pub fn update_maven_configuration(
+        &self,
+        reload_projects: bool,
+    ) -> Result<MavenConfigurationUpdate, String> {
+        let session_id = self
+            .lsp_session_id()
+            .ok_or_else(|| "Java 语言服务尚未启动".to_string())?;
+        let context = workspace::maven_context(&self.workspace_root)
+            .ok_or_else(|| "工作区里没有可用的 Maven 工程".to_string())?;
+        let data = core_json(
+            "lsp.updateMavenConfiguration",
+            json!({
+                "sessionId": session_id,
+                "mavenContext": context,
+                "reloadProjects": reload_projects,
+            }),
+        )
+        .map_err(|error| error.to_string())?;
+
+        let read = |key: &str| {
+            data.as_ref()
+                .and_then(|data| data.get(key))
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        };
+        Ok(MavenConfigurationUpdate {
+            settings_changed: read("settingsChanged"),
+            projects_reloaded: read("projectsReloaded"),
+            profiles_updating: read("profilesUpdating"),
+        })
     }
 
     pub fn prepare(&self) -> Result<bool, String> {

@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -160,6 +161,7 @@ pub fn right_tool_window(
     spring: Option<&crate::spring::SpringIndexView>,
     notifications: &Entity<crate::notifications::NotificationPanel>,
     spring_panel: &Entity<crate::spring_panel::SpringPanel>,
+    on_maven_reload: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -177,11 +179,17 @@ pub fn right_tool_window(
         }
         _ => None,
     };
+    // 「重新加载 Maven 项目」只对 Maven 面板有意义：别的视图要的是一个不存在的按钮，
+    // 不如不给（灰色按钮比没有按钮更让人费解）。
+    let reload: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>> = (view
+        == RightToolWindowView::Maven)
+        .then(|| Rc::new(on_maven_reload) as Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>);
+
     v_stack()
         .id("lithe-right-tool-window")
         .aria_label(title.clone())
         .size_full()
-        .child(header(view, title, subtitle, on_close, cx))
+        .child(header(view, title, subtitle, reload, on_close, cx))
         .children(match view {
             RightToolWindowView::Spring => {
                 Some(spring_panel.read(cx).filter_row(cx).into_any_element())
@@ -425,10 +433,12 @@ fn header(
     view: RightToolWindowView,
     title: SharedString,
     subtitle: Option<SharedString>,
+    reload: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
     let close_label = tr("lithe.commandPalette.close");
+    let reload_label = tr("lithe.maven.reloadProjects");
     h_stack()
         .w_full()
         .flex_shrink_0()
@@ -463,6 +473,16 @@ fn header(
                         .child(subtitle)
                 })),
         )
+        .children(reload.map(|handler| {
+            Button::new("right-tool-window-reload-maven")
+                .variant(ButtonVariant::Ghost)
+                .icon_element(idea_icon_mono(&idea::REFRESH_ICON, cx.theme().is_dark()))
+                .tab_stop(false)
+                .size(Size::Small)
+                .tooltip(reload_label.clone())
+                .aria_label(reload_label.clone())
+                .on_click(move |event, window, cx| handler(event, window, cx))
+        }))
         .child(
             Button::new("right-tool-window-close")
                 .variant(ButtonVariant::Ghost)

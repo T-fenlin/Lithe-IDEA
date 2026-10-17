@@ -670,6 +670,10 @@ pub struct ShellWorkspace {
     right_view: RightToolWindowView,
     right_visible: bool,
     maven_project: Option<crate::maven::MavenProjectView>,
+    /// 上一次推给 JDT LS 的 `maven_settings_path`。
+    ///
+    /// 只在它**变了**的时候推一次：设置页改字号之类的无效改动不该触发 Maven 重新导入。
+    maven_settings_pushed: Option<String>,
     spring_index: Option<crate::spring::SpringIndexView>,
     right_scan: RightScanState,
     explorer: Entity<Explorer>,
@@ -1194,6 +1198,13 @@ impl ShellWorkspace {
                 });
                 let current_root = this.root.clone();
                 register_java_toolchain(&current_root, cx);
+                // Maven 设置（settings.xml 路径）改了要立刻告诉在跑的 JDT LS：Core 的
+                // `lsp.updateMavenConfiguration` 就是为这件事准备的，不推的话要重启才生效。
+                let next_maven_settings = settings.maven_settings_path.clone();
+                if this.maven_settings_pushed.as_deref() != Some(next_maven_settings.as_str()) {
+                    this.maven_settings_pushed = Some(next_maven_settings);
+                    this.push_maven_configuration(false, cx);
+                }
                 cx.notify();
             })
         });
@@ -1304,6 +1315,7 @@ impl ShellWorkspace {
             right_view: RightToolWindowView::Maven,
             right_visible: false,
             maven_project: None,
+            maven_settings_pushed: None,
             spring_index: None,
             right_scan: RightScanState::default(),
             explorer,
@@ -1379,6 +1391,11 @@ impl ShellWorkspace {
             .update(cx, |menu, _cx| menu.set_shell(shell_handle));
         set_shell_focus(workspace.focus.clone());
         window.focus(&workspace.focus, cx);
+
+        // 基线：会话启动时已经把当时的 Maven 配置带过去了，这里记下它，
+        // 后面只有「设置页把它改掉」才会再推一次。
+        workspace.maven_settings_pushed = lithe_gpui_settings::try_store(cx)
+            .map(|store| store.read(cx).settings().maven_settings_path.clone());
 
         workspace.restore_session(window, cx);
 
@@ -1827,12 +1844,18 @@ impl ShellWorkspace {
                         });
                     }
                 };
+                let reload_shell = self.self_handle.clone();
                 right_tool_window(
                     self.right_view,
                     self.maven_project.as_ref(),
                     self.spring_index.as_ref(),
                     &self.notification_panel,
                     &self.spring_panel,
+                    move |_, window, cx| {
+                        let _ = reload_shell.update(cx, |shell, cx| {
+                            shell.reload_maven_projects(window, cx)
+                        });
+                    },
                     on_close,
                     cx,
                 )
@@ -3228,6 +3251,42 @@ impl ShellWorkspace {
             Some(kind) => self.bottom_visible && self.bottom_kind == kind,
             None => false,
         }
+    }
+
+    /// 把当前 Maven 配置推给在跑的 JDT LS。
+    ///
+    /// 失败只留诊断 + 一条通知，不弹对话框：自动那一档（设置页改了 settings.xml）是背景行为，
+    /// 用模态框打断人不合适。
+    fn push_maven_configuration(&mut self, reload_projects: bool, cx: &mut Context<Self>) {
+        let Some(service) = self.editor.read(cx).java_service() else {
+            eprintln!("S1_MAVEN push=skipped reason=no-java-service");
+            return;
+        };
+        match service.update_maven_configuration(reload_projects) {
+            Ok(update) => println!(
+                "S1_MAVEN push=ok reloadProjects={reload_projects} settingsChanged={} projectsReloaded={} profilesUpdating={}",
+                update.settings_changed, update.projects_reloaded, update.profiles_updating
+            ),
+            Err(error) => {
+                eprintln!("S1_MAVEN push=failed reloadProjects={reload_projects} error={error}");
+                self.notify(
+                    lithe_gpui_notify::Input::new(
+                        "lithe.maven.reloadFailed",
+                        lithe_gpui_notify::Severity::Error,
+                    )
+                    .key("maven-reload"),
+                    cx,
+                );
+            }
+        }
+    }
+
+    /// Maven 面板表头的「重新加载 Maven 项目」：推配置，然后重扫模块树。
+    fn reload_maven_projects(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        eprintln!("S1_MAVEN reload=requested");
+        self.push_maven_configuration(true, cx);
+        self.schedule_right_view_scan(RightToolWindowView::Maven, true, cx);
+        cx.notify();
     }
 
     fn refresh_problems_if_visible(&mut self, cx: &mut Context<Self>) {
