@@ -110,6 +110,8 @@ pub struct ChangesView {
     confirm_before_discard: bool,
     conflict: Preflight<Vec<SharedString>>,
     on_open: Rc<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static>,
+    /// 「初始化 Git 仓库」那一颗按钮的落点。外壳没装就是一颗灰按钮（回调为 `None`）。
+    on_initialize: Option<Rc<dyn Fn(&mut Window, &mut App) + 'static>>,
 }
 
 impl ChangesView {
@@ -149,7 +151,18 @@ impl ChangesView {
             confirm_before_discard: true,
             conflict: Preflight::new(),
             on_open: Rc::from(on_open),
+            on_initialize: None,
         }
+    }
+
+    /// 装上「初始化 Git 仓库」的落点（Core 的 `git.initialize` 由外壳调）。
+    pub fn set_initialize_host(
+        &mut self,
+        host: Rc<dyn Fn(&mut Window, &mut App) + 'static>,
+        cx: &mut Context<Self>,
+    ) {
+        self.on_initialize = Some(host);
+        cx.notify();
     }
 
     pub fn set_confirm_before_discard(&mut self, enabled: bool, cx: &mut Context<Self>) {
@@ -1219,15 +1232,23 @@ impl ChangesView {
                 ),
                 tr(LOADING_KEY),
                 None,
+                None,
                 cx,
             ),
-            LoadState::Failed(_) => self.centered(None, tr(LOAD_FAILED_KEY), None, cx),
+            LoadState::Failed(_) => self.centered(None, tr(LOAD_FAILED_KEY), None, None, cx),
             LoadState::Ready => {
                 if self.snapshot.repository_root.is_none() {
+                    // 这一颗改成真按钮：外壳装了落点才可点，没装就灰着（只留提示文字）。
+                    let handler = self.on_initialize.clone();
                     return self.centered(
                         None,
                         tr(NOT_REPOSITORY_KEY),
-                        Some((tr(NOT_REPOSITORY_HINT_KEY), tr(INITIALIZE_KEY), false)),
+                        Some((
+                            tr(NOT_REPOSITORY_HINT_KEY),
+                            tr(INITIALIZE_KEY),
+                            handler.is_some(),
+                        )),
+                        handler,
                         cx,
                     );
                 }
@@ -1237,12 +1258,14 @@ impl ChangesView {
                             None,
                             tr(NO_COMMITS_KEY),
                             Some((tr(NO_COMMITS_HINT_KEY), SharedString::default(), true)),
+                            None,
                             cx,
                         );
                     }
                     return self.centered(
                         Some(idea_icon_image(&idea::CHECK_ICON, cx, rems(14. / 16.))),
                         tr(CLEAN_KEY),
+                        None,
                         None,
                         cx,
                     );
@@ -1257,6 +1280,7 @@ impl ChangesView {
         icon: Option<AnyElement>,
         message: SharedString,
         action: Option<(SharedString, SharedString, bool)>,
+        on_action: Option<Rc<dyn Fn(&mut Window, &mut App) + 'static>>,
         cx: &App,
     ) -> AnyElement {
         // 上游 `Empty`/`EmptyHeader`/`EmptyMedia`/`EmptyDescription`/`EmptyContent` 一族
@@ -1274,12 +1298,14 @@ impl ChangesView {
                     .child(hint),
             );
             if !label.is_empty() {
-                content = content.child(
-                    Button::new("changes-empty-action")
-                        .label(label)
-                        .size(Size::Small)
-                        .disabled(!enabled),
-                );
+                let mut button = Button::new("changes-empty-action")
+                    .label(label)
+                    .size(Size::Small)
+                    .disabled(!enabled);
+                if let Some(handler) = on_action {
+                    button = button.on_click(move |_, window, cx| handler(window, cx));
+                }
+                content = content.child(button);
             }
             empty = empty.content(content);
         }

@@ -874,6 +874,22 @@ impl ShellWorkspace {
             move |cx| ChangesView::new(changes_root, on_open, window, cx)
         });
 
+        // Changes 面板「初始化 Git 仓库」的落点：Core 的 `git.initialize` 由外壳调，
+        // 成功后要同时刷新面板与资源树的 Git 标记（两者各有一份状态）。
+        {
+            let shell_for_init = cx.entity().downgrade();
+            changes.update(cx, |view, cx| {
+                view.set_initialize_host(
+                    Rc::new(move |window: &mut Window, cx: &mut App| {
+                        let _ = shell_for_init.update(cx, |shell, cx| {
+                            shell.initialize_git_repository(window, cx)
+                        });
+                    }),
+                    cx,
+                );
+            });
+        }
+
         let terminal = cx.new(|cx| TerminalPane::new(window, cx));
 
         let search = {
@@ -3381,6 +3397,33 @@ impl ShellWorkspace {
         self.push_maven_configuration(true, cx);
         self.schedule_right_view_scan(RightToolWindowView::Maven, true, cx);
         cx.notify();
+    }
+
+    /// Changes 面板那颗「初始化 Git 仓库」：就地 init，成功后刷新面板与资源树的 Git 标记。
+    ///
+    /// 只做初始化：不建首次提交、不碰远端（Core 的 `git.initialize` 也只做这一件事）。
+    fn initialize_git_repository(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let root = self.root.to_string_lossy().to_string();
+        match lithe_gpui_git::initialize(&root) {
+            Ok(_) => {
+                println!("S1_GIT initialize=ok root={root}");
+                self.changes.update(cx, |view, cx| view.refresh(cx));
+                self.explorer
+                    .update(cx, |explorer, cx| explorer.refresh(window, cx));
+                cx.notify();
+            }
+            Err(code) => {
+                eprintln!("S1_GIT initialize=failed root={root} code={code}");
+                self.notify(
+                    lithe_gpui_notify::Input::new(
+                        "lithe.gpui.gitInitFailed",
+                        lithe_gpui_notify::Severity::Error,
+                    )
+                    .key("git-initialize"),
+                    cx,
+                );
+            }
+        }
     }
 
     fn refresh_problems_if_visible(&mut self, cx: &mut Context<Self>) {

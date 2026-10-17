@@ -10,7 +10,8 @@ pub use branch_info::{BranchInfo, BranchSnapshot, TrackingCounts};
 pub use changes::WriteOutcome;
 pub use changes_view::ChangesView;
 pub use identity::{
-    IdentityField, IdentityScope, IdentitySetup, configure_identity, inspect_identity,
+    IdentityField, IdentityScope, IdentitySetup, configure_identity, initialize,
+    inspect_identity,
 };
 pub use log_view::BottomPane;
 pub use remote::{

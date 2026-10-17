@@ -129,6 +129,17 @@ pub fn parse_setup(data: &serde_json::Value) -> IdentitySetup {
     }
 }
 
+/// 把工作区根变成一个 Git 仓库（Core 的 `git.initialize`）。
+///
+/// 只做「就地初始化」这一件事：不建首次提交、不碰远端。失败时把 Core 的错误码原样带回去，
+/// 让调用方去决定提示什么。
+pub fn initialize(root: &str) -> Result<String, String> {
+    match execute_core("git.initialize", serde_json::json!({ "root": root })) {
+        Ok(data) => Ok(data.to_string()),
+        Err(code) => Err(redact(&code, root)),
+    }
+}
+
 pub fn inspect_identity(root: &str, scope: IdentityScope) -> Result<String, String> {
     match execute_core("git.repositorySetup", inspect_request(root, scope)) {
         Ok(data) => Ok(data.to_string()),

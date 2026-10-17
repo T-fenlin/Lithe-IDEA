@@ -766,6 +766,13 @@ const GPUI_ONLY_KEYS = [
       "B3（同上）。给「文件 → 新建窗口 / 关闭窗口 / 退出」。与 B4 的 gpui.newWindowNotWired 同一个根因（规格 §5 第 1 条：多窗口暂缓，菜单栏 / 项目下拉 / 命令面板 / Git 身份宿主那几个 thread_local 单例仍是「一个进程一份」）；这里换成菜单项那一侧的说法，也覆盖「退出 / 关闭窗口」这条窗口生命周期。真源恒可执行，catalog 里没有这句。",
   },
   {
+    key: "gpui.gitInitFailed",
+    zh: "无法初始化 Git 仓库。",
+    en: "Could not initialize the Git repository.",
+    reason:
+      "C 类新增：Changes 面板「初始化 Git 仓库」失败时的通知。真源（旧 Windows 前端）把初始化失败并进通用的 git 错误条，catalog 里没有这句独立文案；GPUI 这边是一次显式按钮动作，失败要说清是哪一步没成。",
+  },
+  {
     key: "gpui.localHistoryEmpty",
     zh: "这个文件还没有本地历史：保存过一次之后才会有第一份。",
     en: "No local history for this file yet. The first snapshot is taken the next time you save.",
