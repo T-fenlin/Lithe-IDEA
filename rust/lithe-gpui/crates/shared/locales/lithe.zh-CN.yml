@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 179 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 180 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8847,6 +8847,8 @@ lithe:
     zh-CN: "尚未接入：缺本地历史存储（没有内容仓库，也就没有可看的历史）。"
   gpui.menuMissing.windowRouting:
     zh-CN: "尚未接入：缺窗口级句柄路由（多窗口与窗口生命周期都还没做）。"
+  gpui.localHistoryEmpty:
+    zh-CN: "这个文件还没有本地历史：保存过一次之后才会有第一份。"
   menu.markdownPreview:
     zh-CN: "Markdown 预览"
   gpui.menuMissing.helpAbout:

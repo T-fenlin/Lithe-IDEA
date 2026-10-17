@@ -299,6 +299,8 @@ pub struct EditorPane {
     sticky_scroll: bool,
     /// Markdown 只读预览是否正开着（只对当前活动的 Markdown 缓冲有意义）。
     markdown_preview: bool,
+    /// 本地历史的缓存根。`None` = 宿主没给，历史功能整体不生效（也就不落任何文件）。
+    local_history_root: Option<PathBuf>,
     go_to_line: Option<GoToLinePrompt>,
     /// 补全：当前这一份、请求的代次（晚到的答案据此丢掉）、以及正在跑的任务。
     completion: Option<Completion>,
@@ -383,6 +385,7 @@ impl EditorPane {
             rainbow_brackets: false,
             sticky_scroll: false,
             markdown_preview: false,
+            local_history_root: None,
             go_to_line: None,
             completion: None,
             completion_generation: Arc::new(AtomicU64::new(0)),
@@ -564,6 +567,65 @@ impl EditorPane {
         if changed {
             cx.notify();
         }
+    }
+
+    /// 装上本地历史的缓存根（宿主在构造时给一次）。
+    ///
+    /// 传进来的是**缓存目录**，不是安装目录：历史仓库是运行期可写状态，写进安装目录会让
+    /// 增量更新失去基线（见 AGENTS.md 的运行时只读边界）。
+    pub fn set_local_history_root(&mut self, root: PathBuf) {
+        println!(
+            "S1_LOCAL_HISTORY root={}",
+            crate::local_history::history_root(&root).display()
+        );
+        self.local_history_root = Some(root);
+    }
+
+    /// 当前活动文件的历史快照，新的在前。
+    pub fn local_history_entries(&self, cx: &App) -> Vec<crate::local_history::Snapshot> {
+        let Some(root) = self.local_history_root.as_deref() else {
+            return Vec::new();
+        };
+        let Some(path) = self
+            .active
+            .and_then(|index| self.buffers.get(index))
+            .and_then(|buffer| buffer.disk_path())
+            .map(Path::to_path_buf)
+        else {
+            return Vec::new();
+        };
+        crate::local_history::list(root, &path)
+    }
+
+    /// 把一个历史快照以只读缓冲打开（uri 用 `lithe-history://…`，不与任何真文件撞键）。
+    pub fn open_local_history_snapshot(
+        &mut self,
+        snapshot: &crate::local_history::Snapshot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(bytes) = crate::local_history::read(snapshot) else {
+            eprintln!(
+                "S1_LOCAL_HISTORY open=failed file={}",
+                snapshot.file.display()
+            );
+            return;
+        };
+        let decoded = crate::buffer::decode_body(&bytes);
+        let source = self
+            .active
+            .and_then(|index| self.buffers.get(index))
+            .map(|buffer| buffer.path.display().to_string())
+            .unwrap_or_default();
+        let uri = format!("lithe-history://{source}@{}", snapshot.taken_at_ms);
+        let display = format!("{source} @ {}", snapshot.taken_at_ms);
+        println!(
+            "S1_LOCAL_HISTORY open=ok file={} bytes={}",
+            snapshot.file.display(),
+            bytes.len()
+        );
+        self.open_virtual(&uri, &display, decoded.text, window, cx);
+        cx.notify();
     }
 
     /// Markdown 只读预览的开关。
@@ -2430,6 +2492,16 @@ impl EditorPane {
             crate::buffer::encode_body(&value, buffer.encoding, buffer.line_ending);
         let encoding = buffer.encoding;
         let line_ending = buffer.line_ending;
+
+        // 本地历史：写之前先把盘上那份**旧内容**存下来（还原的意义就是回到保存前）。
+        // 失败只留诊断，不阻断保存。
+        if let Some(root) = self.local_history_root.clone() {
+            if let Ok(previous) = std::fs::read(&path) {
+                if previous != bytes {
+                    let _ = crate::local_history::record(&root, &path, &previous);
+                }
+            }
+        }
 
         match std::fs::write(&path, &bytes) {
             Ok(()) => {

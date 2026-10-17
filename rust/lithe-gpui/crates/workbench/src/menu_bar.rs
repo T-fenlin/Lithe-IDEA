@@ -111,11 +111,6 @@ pub const MISSING_NEW_PROJECT_SCAFFOLDING: Missing = Missing {
     text_key: "lithe.gpui.menuMissing.newProjectScaffolding",
 };
 
-pub const MISSING_LOCAL_HISTORY: Missing = Missing {
-    id: "local_history",
-    text_key: "lithe.gpui.menuMissing.localHistory",
-};
-
 pub const MISSING_HELP_ABOUT: Missing = Missing {
     id: "help_about",
     text_key: "lithe.gpui.menuMissing.helpAbout",
@@ -140,7 +135,7 @@ pub const MISSING_TERMINAL_SPLIT: Missing = Missing {
 /// 欢迎页，关闭窗口 / 退出接成 `window.remove_window()` / `cx.quit()` —— 三条占位项都变成真
 /// `MenuAction`，两组一条都不剩。文案键 `lithe.gpui.menuMissing.projectLifecycle` /
 /// `.windowRouting` 同样留在真源里未删，理由与上面三条一致。
-pub const MISSING_GROUPS: [Missing; 10] = [
+pub const MISSING_GROUPS: [Missing; 9] = [
     MISSING_EDITOR_FEATURES,
     MISSING_LSP_REQUESTS,
     MISSING_SUBSYSTEM,
@@ -148,7 +143,6 @@ pub const MISSING_GROUPS: [Missing; 10] = [
     MISSING_UPDATER,
     MISSING_CLONE_UI,
     MISSING_NEW_PROJECT_SCAFFOLDING,
-    MISSING_LOCAL_HISTORY,
     MISSING_HELP_ABOUT,
     MISSING_TERMINAL_SPLIT,
 ];
@@ -444,6 +438,8 @@ pub enum MenuAction {
     // Markdown 只读预览：执行分支在 `apply_menu_action`（直接叫编辑器切），没有 Action
     // 可派发，也没有 `CommandId`（不进命令面板）。
     ToggleMarkdownPreview,
+    // 显示本地历史：执行分支在 `apply_menu_action`（弹一个只读列表）。
+    ShowLocalHistory,
 }
 
 /// 一行菜单的图标。
@@ -540,6 +536,7 @@ impl MenuAction {
             Self::CloseWindow => "lithe.menu.closeWindow",
             Self::Quit => "lithe.menu.quit",
             Self::ToggleMarkdownPreview => "lithe.menu.markdownPreview",
+            Self::ShowLocalHistory => "lithe.menu.showLocalHistory",
         }
     }
 
@@ -721,6 +718,8 @@ impl MenuAction {
             | Self::Quit
             // 也没有「预览」那张图。
             | Self::ToggleMarkdownPreview => MenuIcon::Empty,
+            // 本地历史沿用原来占位项那枚「时钟倒转」图。
+            Self::ShowLocalHistory => MenuIcon::Idea(&idea::CLOCK_COUNTER_CLOCKWISE_ICON),
         }
     }
 
@@ -859,7 +858,8 @@ impl MenuAction {
             | Self::CloseFolder
             | Self::CloseWindow
             | Self::Quit
-            | Self::ToggleMarkdownPreview => {
+            | Self::ToggleMarkdownPreview
+            | Self::ShowLocalHistory => {
                 return None;
             }
         })
@@ -946,7 +946,8 @@ impl MenuAction {
             | Self::CloseFolder
             | Self::CloseWindow
             | Self::Quit
-            | Self::ToggleMarkdownPreview => None,
+            | Self::ToggleMarkdownPreview
+            | Self::ShowLocalHistory => None,
         }
     }
 }
@@ -967,11 +968,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::SaveAs),
             MenuItem::Action(MenuAction::SaveAll),
             MenuItem::Action(MenuAction::RevertFile),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.showLocalHistory",
-                missing: MISSING_LOCAL_HISTORY,
-                icon: MenuIcon::Idea(&idea::CLOCK_COUNTER_CLOCKWISE_ICON),
-            },
+            MenuItem::Action(MenuAction::ShowLocalHistory),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::CloseTab),
             MenuItem::Action(MenuAction::CloseWindow),
@@ -2407,6 +2404,7 @@ mod tests {
                 MenuAction::SaveAs,
                 MenuAction::SaveAll,
                 MenuAction::RevertFile,
+                MenuAction::ShowLocalHistory,
                 MenuAction::CloseTab,
                 MenuAction::CloseWindow,
                 MenuAction::CloseOtherTabs,
@@ -2728,7 +2726,7 @@ mod tests {
         // 同一个能力默认只许一个菜单入口。双入口要在白名单里说清理由 ——
         // 「快捷键一览」按 IDEA 的布局在 Tools 和 Help 各有一条，这是上游布局不是重复。
         const TWO_ENTRIES: [MenuAction; 1] = [MenuAction::ShowKeymapSettings];
-        const NON_COMMAND: [MenuAction; 53] = [
+        const NON_COMMAND: [MenuAction; 54] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -2784,6 +2782,7 @@ mod tests {
             MenuAction::CloseWindow,
             MenuAction::Quit,
             MenuAction::ToggleMarkdownPreview,
+            MenuAction::ShowLocalHistory,
         ];
 
         let mut wired: Vec<MenuAction> = Vec::new();
@@ -2862,9 +2861,9 @@ mod tests {
         );
         // 这个下限只防「有人把没能力的项顺手删掉」。2026-10-16 接通转到引用 / 重命名 /
         // 格式化文档三条后从 21 降到 18；C1 接通关闭文件夹 / 关闭窗口 / 退出三条后
-        // 18 → 15；再降就得先解释清楚又接了什么。
+        // 18 → 15；C6 接通「显示本地历史」后 15 → 14；再降就得先解释清楚又接了什么。
         assert!(
-            declared.len() >= 15,
+            declared.len() >= 14,
             "占位项突然少了一截（现在 {}）？查一下是不是有人把没能力的项又删掉了",
             declared.len()
         );
@@ -3039,13 +3038,13 @@ mod tests {
             );
         }
         assert!(
-            texts.len() <= 10,
-            "占位文案有 {} 句，超过了'按能力分组'的上限 10（= MISSING_GROUPS 的组数）",
+            texts.len() <= 9,
+            "占位文案有 {} 句，超过了'按能力分组'的上限 9（= MISSING_GROUPS 的组数）",
             texts.len()
         );
         assert_eq!(
             MISSING_GROUPS.len(),
-            10,
+            9,
             "能力组数变了就必须同步改上面的上界与 `MISSING_GROUPS` 的文档"
         );
     }
@@ -3611,7 +3610,9 @@ mod tests {
             | MenuAction::CloseWindow
             | MenuAction::Quit
             // 预览这一行也不依赖活动缓冲：没有 Markdown 缓冲时点了是 no-op + 诊断。
-            | MenuAction::ToggleMarkdownPreview => true,
+            | MenuAction::ToggleMarkdownPreview
+            // 本地历史同理：没有活动文件时点了是 no-op + 诊断。
+            | MenuAction::ShowLocalHistory => true,
         };
 
         assert_eq!(

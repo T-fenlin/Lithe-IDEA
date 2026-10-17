@@ -6,6 +6,7 @@ mod diagnostics;
 mod editor_view;
 mod go_to_line;
 mod hover;
+pub mod local_history;
 mod navigation;
 mod problems;
 mod symbol_actions;

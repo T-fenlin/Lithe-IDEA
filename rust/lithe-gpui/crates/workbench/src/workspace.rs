@@ -765,6 +765,13 @@ impl ShellWorkspace {
 
         let editor = cx.new(|cx| EditorPane::new(Some(notifications.downgrade()), window, cx));
         editor.update(cx, |pane, cx| pane.prepare_java(root.clone(), cx));
+        // 本地历史的仓库放在**设置文件所在目录**（平台的应用数据目录）下，不写安装目录：
+        // 运行期可写状态写进安装目录会让增量更新失去基线（见 AGENTS.md 的运行时只读边界）。
+        if let Some(dir) = lithe_gpui_settings::settings_file_path()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+        {
+            editor.update(cx, |pane, _| pane.set_local_history_root(dir));
+        }
         let editor_handle = editor.downgrade();
         let shell_for_open = cx.entity().downgrade();
 
@@ -2242,6 +2249,10 @@ impl ShellWorkspace {
                     .update(cx, |pane, cx| pane.format_document(window, cx));
                 diagnose_menu_run(action, "formatDocument");
             }
+            MenuAction::ShowLocalHistory => {
+                diagnose_menu_run(action, "localHistory");
+                self.prompt_local_history(window, cx);
+            }
             MenuAction::ToggleMarkdownPreview => {
                 self.editor
                     .update(cx, |pane, cx| pane.toggle_markdown_preview(cx));
@@ -2311,6 +2322,56 @@ impl ShellWorkspace {
         unregister_project_window(&self.root, window);
         replace_root_with_welcome(window, cx);
         diagnose_menu_run(MenuAction::CloseFolder, "closed");
+    }
+
+    /// File ▸ 显示本地历史：列出当前文件的历史快照，点一条以只读缓冲打开。
+    ///
+    /// 列表里只放「这一份快照」的数据（文件名主干里的 unix 毫秒 + 字节数），不放散文：
+    /// 时间与体积都是数字，不需要翻译，也不会因为语言不同而排序错乱。
+    fn prompt_local_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let entries = self.editor.read(cx).local_history_entries(cx);
+        println!(
+            "S1_LOCAL_HISTORY list count={} file={}",
+            entries.len(),
+            self.editor
+                .read(cx)
+                .active_text_format(cx)
+                .map(|_| "active")
+                .unwrap_or("none")
+        );
+        let title = tr("lithe.menu.showLocalHistory");
+        let empty = entries.is_empty();
+        let editor = self.editor.clone();
+        window.open_dialog(
+            "lithe-local-history",
+            move |id, _window, _cx| {
+                let mut dialog = Dialog::new(id).title(title.clone()).on_close(dismiss_hosted);
+                if empty {
+                    dialog = dialog
+                        .child(div().text_sm().child(tr("lithe.gpui.localHistoryEmpty")));
+                } else {
+                    let mut list = v_stack().gap_1();
+                    for (index, snapshot) in entries.iter().enumerate() {
+                        let label = SharedString::from(snapshot.label());
+                        let snapshot = snapshot.clone();
+                        let editor = editor.clone();
+                        list = list.child(
+                            Button::new(SharedString::from(format!("local-history-{index}")))
+                                .label(label)
+                                .on_click(move |_, window, cx| {
+                                    editor.update(cx, |pane, cx| {
+                                        pane.open_local_history_snapshot(&snapshot, window, cx)
+                                    });
+                                    window.close_dialog(cx);
+                                }),
+                        );
+                    }
+                    dialog = dialog.child(list);
+                }
+                dialog.into_any_element()
+            },
+            cx,
+        );
     }
 
     fn dispatch_editor_action(
