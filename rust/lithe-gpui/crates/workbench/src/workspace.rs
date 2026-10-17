@@ -1144,6 +1144,9 @@ impl ShellWorkspace {
                 pane.set_minimap(initial.minimap, cx);
                 pane.set_line_numbers(initial.line_numbers, cx);
                 pane.set_render_whitespace(initial.render_whitespace, cx);
+                pane.set_indent_guides(initial.indent_guides, cx);
+                pane.set_rainbow_brackets(initial.rainbow_brackets, cx);
+                pane.set_sticky_scroll(initial.sticky_scroll, cx);
             });
             terminal.update(cx, |pane, cx| {
                 pane.set_default_shell(&initial.terminal_default_shell_id, cx);
@@ -1162,6 +1165,9 @@ impl ShellWorkspace {
                     pane.set_minimap(settings.minimap, cx);
                     pane.set_line_numbers(settings.line_numbers, cx);
                     pane.set_render_whitespace(settings.render_whitespace, cx);
+                    pane.set_indent_guides(settings.indent_guides, cx);
+                    pane.set_rainbow_brackets(settings.rainbow_brackets, cx);
+                    pane.set_sticky_scroll(settings.sticky_scroll, cx);
                 });
                 this.terminal.update(cx, |pane, cx| {
                     pane.set_default_shell(&settings.terminal_default_shell_id, cx);

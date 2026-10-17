@@ -584,6 +584,24 @@ impl SettingsStore {
         self.commit_global(cx, next, Effects::None);
     }
 
+    pub fn set_indent_guides(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.indent_guides = enabled;
+        self.commit_global(cx, next, Effects::None);
+    }
+
+    pub fn set_rainbow_brackets(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.rainbow_brackets = enabled;
+        self.commit_global(cx, next, Effects::None);
+    }
+
+    pub fn set_sticky_scroll(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.global.clone();
+        next.sticky_scroll = enabled;
+        self.commit_global(cx, next, Effects::None);
+    }
+
     pub fn set_line_numbers(&mut self, enabled: bool, cx: &mut Context<Self>) {
         let mut next = self.global.clone();
         next.line_numbers = enabled;

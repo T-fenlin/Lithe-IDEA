@@ -286,10 +286,16 @@ pub struct EditorPane {
     closed: Vec<PathBuf>,
     auto_save: bool,
     soft_wrap: bool,
-    /// 三个显示开关的当前档位（设置 store 是唯一真源，这里留一份给新开的缓冲区用）。
+    /// 六个显示开关的当前档位（设置 store 是唯一真源，这里留一份给新开的缓冲区用）。
     minimap: bool,
     line_numbers: bool,
     render_whitespace: bool,
+    /// 缩进参考线：与组件库 `Options::guides` 同义，默认开。
+    indent_guides: bool,
+    /// 括号按嵌套深度着色。
+    rainbow_brackets: bool,
+    /// 包住顶行的块头钉在顶部。
+    sticky_scroll: bool,
     go_to_line: Option<GoToLinePrompt>,
     /// 补全：当前这一份、请求的代次（晚到的答案据此丢掉）、以及正在跑的任务。
     completion: Option<Completion>,
@@ -370,6 +376,9 @@ impl EditorPane {
             minimap: false,
             line_numbers: true,
             render_whitespace: false,
+            indent_guides: true,
+            rainbow_brackets: false,
+            sticky_scroll: false,
             go_to_line: None,
             completion: None,
             completion_generation: Arc::new(AtomicU64::new(0)),
@@ -503,6 +512,51 @@ impl EditorPane {
                 .update(cx, |state, cx| state.set_render_whitespace(enabled, cx));
         }
         println!("S1_EDITOR_RENDER_WHITESPACE enabled={enabled} changed={changed}");
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// 缩进参考线开关：默认开，关掉只少画那几条竖线。
+    pub fn set_indent_guides(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let changed = self.indent_guides != enabled;
+        self.indent_guides = enabled;
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_indent_guides(enabled, cx));
+        }
+        println!("S1_EDITOR_INDENT_GUIDES enabled={enabled} changed={changed}");
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// 彩虹括号开关。
+    pub fn set_rainbow_brackets(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let changed = self.rainbow_brackets != enabled;
+        self.rainbow_brackets = enabled;
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_rainbow_brackets(enabled, cx));
+        }
+        println!("S1_EDITOR_RAINBOW_BRACKETS enabled={enabled} changed={changed}");
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// 粘滞滚动开关。
+    pub fn set_sticky_scroll(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let changed = self.sticky_scroll != enabled;
+        self.sticky_scroll = enabled;
+        for buffer in &self.buffers {
+            buffer
+                .editor
+                .update(cx, |state, cx| state.set_sticky_scroll(enabled, cx));
+        }
+        println!("S1_EDITOR_STICKY_SCROLL enabled={enabled} changed={changed}");
         if changed {
             cx.notify();
         }
@@ -988,6 +1042,11 @@ impl EditorPane {
             self.line_numbers,
             self.render_whitespace,
         );
+        let (indent_guides, rainbow_brackets, sticky_scroll) = (
+            self.indent_guides,
+            self.rainbow_brackets,
+            self.sticky_scroll,
+        );
         cx.new(|cx| {
             let mut state = CodeEditor::new(text, window, cx)
                 .tab_size(tab_size)
@@ -1007,6 +1066,15 @@ impl EditorPane {
             }
             if render_whitespace {
                 state = state.show_whitespace();
+            }
+            if !indent_guides {
+                state = state.hide_indent_guides();
+            }
+            if rainbow_brackets {
+                state = state.rainbow_brackets();
+            }
+            if sticky_scroll {
+                state = state.sticky_scroll();
             }
             state.set_language(language, cx);
             state
@@ -1873,6 +1941,15 @@ impl EditorPane {
                 .read_only();
             if !self.soft_wrap {
                 state = state.soft_wrap(false);
+            }
+            if !self.indent_guides {
+                state = state.hide_indent_guides();
+            }
+            if self.rainbow_brackets {
+                state = state.rainbow_brackets();
+            }
+            if self.sticky_scroll {
+                state = state.sticky_scroll();
             }
             state.set_language(language, cx);
             state

@@ -266,6 +266,18 @@ pub struct Settings {
     #[serde(rename = "renderWhitespace")]
     pub render_whitespace: bool,
 
+    /// 缩进参考线开关。默认开 —— 与组件库 `Options::guides` 的默认值一致。
+    #[serde(rename = "indentGuides")]
+    pub indent_guides: bool,
+
+    /// 括号按嵌套深度着色（真源里的「括号对着色」）。
+    #[serde(rename = "rainbowBrackets")]
+    pub rainbow_brackets: bool,
+
+    /// 粘滞滚动：滚动时把包住顶行的块头钉在顶部。
+    #[serde(rename = "stickyScroll")]
+    pub sticky_scroll: bool,
+
     #[serde(rename = "autoSave")]
     pub auto_save: bool,
 
@@ -323,6 +335,9 @@ impl Default for Settings {
             minimap: false,
             line_numbers: true,
             render_whitespace: false,
+            indent_guides: true,
+            rainbow_brackets: false,
+            sticky_scroll: false,
             auto_save: true,
             ask_where_to_open_projects: true,
             open_folders_in_new_window: true,

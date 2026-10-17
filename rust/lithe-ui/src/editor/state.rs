@@ -518,6 +518,52 @@ impl CodeEditor {
         self.options.minimap
     }
 
+    /// Turns the indent guides on or off while the editor runs.
+    ///
+    /// The guides are on by default ([`Options::guides`]). Turning them off only stops the guide
+    /// columns being painted, so the row table, every offset and the gutter width stay as they were
+    /// — a settings page can flip this without moving the caret.
+    pub fn set_indent_guides(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.options.guides == on {
+            return;
+        }
+        self.options.guides = on;
+        cx.notify();
+    }
+
+    /// Whether a vertical guide is drawn at each indentation level.
+    pub fn indent_guides_enabled(&self) -> bool {
+        self.options.guides
+    }
+
+    /// Colours each bracket by how deep it sits, the way a settings page switches it.
+    pub fn set_rainbow_brackets(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.options.rainbow == on {
+            return;
+        }
+        self.options.rainbow = on;
+        cx.notify();
+    }
+
+    /// Whether brackets are coloured by nesting depth.
+    pub fn rainbow_brackets_enabled(&self) -> bool {
+        self.options.rainbow
+    }
+
+    /// Keeps the lines that open the blocks around the top line pinned above it.
+    pub fn set_sticky_scroll(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.options.sticky == on {
+            return;
+        }
+        self.options.sticky = on;
+        cx.notify();
+    }
+
+    /// Whether the enclosing block headers stay pinned above the top line.
+    pub fn sticky_scroll_enabled(&self) -> bool {
+        self.options.sticky
+    }
+
     /// Turns the rendering of spaces, tabs and line breaks on or off.
     pub fn set_render_whitespace(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.options.whitespace == on {

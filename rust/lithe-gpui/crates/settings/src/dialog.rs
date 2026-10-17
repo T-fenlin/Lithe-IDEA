@@ -1432,6 +1432,60 @@ impl SettingsDialog {
                         cx,
                     ),
                     settings_row(
+                        "settings-row-editor-indent-guides",
+                        tr("lithe.settings.editor.indentGuides"),
+                        Some(tr("lithe.settings.editor.indentGuidesDescription")),
+                        {
+                            let store = self.store.clone();
+                            Switch::new("settings-editor-indent-guides")
+                                .checked(settings.indent_guides)
+                                .on_change(move |checked, _, cx| {
+                                    store.update(cx, |store, cx| {
+                                        store.set_indent_guides(checked, cx)
+                                    });
+                                })
+                                .into_any_element()
+                        },
+                        None,
+                        cx,
+                    ),
+                    settings_row(
+                        "settings-row-editor-rainbow-brackets",
+                        tr("lithe.settings.editor.bracketPairColorization"),
+                        Some(tr("lithe.settings.editor.bracketPairColorizationDescription")),
+                        {
+                            let store = self.store.clone();
+                            Switch::new("settings-editor-rainbow-brackets")
+                                .checked(settings.rainbow_brackets)
+                                .on_change(move |checked, _, cx| {
+                                    store.update(cx, |store, cx| {
+                                        store.set_rainbow_brackets(checked, cx)
+                                    });
+                                })
+                                .into_any_element()
+                        },
+                        None,
+                        cx,
+                    ),
+                    settings_row(
+                        "settings-row-editor-sticky-scroll",
+                        tr("lithe.settings.editor.stickyScroll"),
+                        Some(tr("lithe.settings.editor.stickyScrollDescription")),
+                        {
+                            let store = self.store.clone();
+                            Switch::new("settings-editor-sticky-scroll")
+                                .checked(settings.sticky_scroll)
+                                .on_change(move |checked, _, cx| {
+                                    store.update(cx, |store, cx| {
+                                        store.set_sticky_scroll(checked, cx)
+                                    });
+                                })
+                                .into_any_element()
+                        },
+                        None,
+                        cx,
+                    ),
+                    settings_row(
                         "settings-row-editor-render-whitespace",
                         tr("lithe.settings.editor.renderWhitespace"),
                         Some(tr("lithe.settings.editor.renderWhitespaceDescription")),

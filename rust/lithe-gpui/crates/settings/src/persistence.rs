@@ -204,6 +204,10 @@ mod tests {
             minimap: true,
             line_numbers: false,
             render_whitespace: true,
+            // C2 的三项同样取非默认值（出厂：参考线开 / 彩虹括号关 / 粘滞滚动关）。
+            indent_guides: false,
+            rainbow_brackets: true,
+            sticky_scroll: true,
             auto_save: false,
             font_family: "Inter".to_string(),
             mono_font_family: "JetBrains Mono".to_string(),
