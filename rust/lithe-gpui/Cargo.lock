@@ -4004,6 +4004,7 @@ dependencies = [
 name = "lithe-gpui-editor"
 version = "0.0.1"
 dependencies = [
+ "encoding_rs",
  "gpui-pre",
  "lithe-gpui-java",
  "lithe-gpui-languages",
