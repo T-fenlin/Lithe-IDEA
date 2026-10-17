@@ -27,6 +27,9 @@ serde_json = "1"
 # 口径报给 Core 的（行 0 基、列按 UTF-16 码元）。编辑器内部的列是**字符**列，换算全在
 # `src/navigation.rs`，就用这个类型把两边分清楚。
 lsp-types = { version = "0.97", features = ["proposed"] }
+# 文件编码：GBK / UTF-16 的码表用成熟实现（与浏览器同一份 crate），不自己写。
+# 版本已在 workspace 的 Cargo.lock 里（其他依赖间接引入），不新增下载。
+encoding_rs = "0.8"
 
 [dev-dependencies]
 # 语言注册表是进程级全局：凡是用到 `language_for_file` 的测试都得先注册一次。

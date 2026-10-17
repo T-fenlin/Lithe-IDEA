@@ -3113,12 +3113,30 @@ impl ShellWorkspace {
             JavaServicePhase::Idle => {}
         }
 
+        // 编码与行尾符读真实缓冲区。没有活动文件（或正文只是只读说明）时整两条不画：
+        // 那时候说「UTF-8」是没有根据的，而空胶囊只是个空方块。
+        let mut format_entries: Vec<StatusEntry> = Vec::new();
+        if let Some((encoding, line_ending)) = self.editor.read(cx).active_text_format(cx) {
+            let encoding_editor = self.editor.clone();
+            format_entries.push(
+                StatusEntry::new(SharedString::from(encoding)).on_click(move |_, window, cx| {
+                    encoding_editor.update(cx, |pane, cx| pane.cycle_active_encoding(window, cx));
+                }),
+            );
+            let eol_editor = self.editor.clone();
+            format_entries.push(
+                StatusEntry::new(SharedString::from(line_ending)).on_click(move |_, _, cx| {
+                    eol_editor.update(cx, |pane, cx| pane.toggle_active_line_ending(cx));
+                }),
+            );
+        }
+
+        entries.push(StatusEntry::new(SharedString::from(format!(
+            "{}:{}",
+            cursor.line, cursor.column
+        ))));
+        entries.extend(format_entries);
         entries.extend(vec![
-            StatusEntry::new(SharedString::from(format!(
-                "{}:{}",
-                cursor.line, cursor.column
-            ))),
-            StatusEntry::new(SharedString::from("UTF-8")),
             StatusEntry::new(lithe_gpui_shared::tr_args(
                 "lithe.footer.spaces",
                 &[("count", tab_size.as_str())],

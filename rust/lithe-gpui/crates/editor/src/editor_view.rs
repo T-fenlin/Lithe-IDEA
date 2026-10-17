@@ -562,6 +562,97 @@ impl EditorPane {
         }
     }
 
+    /// 当前活动缓冲区实际使用的编码与行尾符（状态栏两枚胶囊读这个）。
+    ///
+    /// 没有活动缓冲区时返回 `None` —— 状态栏那时也不该说「UTF-8」这种没根据的话。
+    pub fn active_text_format(&self, cx: &App) -> Option<(&'static str, &'static str)> {
+        let buffer = self.buffers.get(self.active?)?;
+        // 只读的说明性正文（打不开 / 二进制 / 超限）不是文件内容，报编码没有意义。
+        if !buffer.is_disk() || !buffer.writable {
+            return None;
+        }
+        let _ = cx;
+        Some((buffer.encoding.id(), buffer.line_ending.id()))
+    }
+
+    /// 状态栏的编码胶囊：轮换到下一档。
+    ///
+    /// 缓冲区干净时顺便按新编码重读一遍文件——「这个文件其实是 GBK」正是想看见的结果；
+    /// 有未保存改动时只改**写回**用的编码，不动正文，免得把人正在改的内容冲掉。
+    pub fn cycle_active_encoding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_ENCODING cycle=false reason=no-active-buffer");
+            return;
+        };
+        let Some(path) = self.buffers[index].disk_path().map(Path::to_path_buf) else {
+            eprintln!("S1_EDITOR_ENCODING cycle=false reason=untitled");
+            return;
+        };
+        let next = self.buffers[index].encoding.next();
+        let dirty = self.buffers[index].is_dirty;
+        self.buffers[index].encoding = next;
+
+        if dirty {
+            println!(
+                "S1_EDITOR_ENCODING file={} encoding={} eol={} reload=false reason=dirty",
+                path.display(),
+                next.id(),
+                self.buffers[index].line_ending.id()
+            );
+        } else {
+            let name = self.buffers[index].name.clone();
+            let body = crate::buffer::read_body(&path, &name);
+            if body.writable {
+                let editor = self.buffers[index].editor.clone();
+                let text = body.text;
+                editor.update(cx, |state, cx| state.set_text(text, cx));
+                let _ = self.last_text.insert(path.clone(), {
+                    editor.read(cx).text().to_string()
+                });
+                self.buffers[index].line_ending = body.line_ending;
+                self.buffers[index].revision = self.buffers[index].revision.wrapping_add(1);
+                println!(
+                    "S1_EDITOR_ENCODING file={} encoding={} eol={} reload=true",
+                    path.display(),
+                    next.id(),
+                    self.buffers[index].line_ending.id()
+                );
+                self.schedule_diagnostics(index, std::time::Duration::ZERO, cx);
+            } else {
+                println!(
+                    "S1_EDITOR_ENCODING file={} encoding={} eol={} reload=false reason=not-writable",
+                    path.display(),
+                    next.id(),
+                    self.buffers[index].line_ending.id()
+                );
+            }
+        }
+        let _ = window;
+        cx.notify();
+    }
+
+    /// 状态栏的行尾符胶囊：LF ⇄ CRLF。正文不动，只改写回时换的那一档。
+    pub fn toggle_active_line_ending(&mut self, cx: &mut Context<Self>) {
+        let Some(index) = self.active else {
+            eprintln!("S1_EDITOR_LINE_ENDING toggle=false reason=no-active-buffer");
+            return;
+        };
+        if !self.buffers[index].is_disk() || !self.buffers[index].writable {
+            println!("S1_EDITOR_LINE_ENDING toggle=false reason=not-editable");
+            return;
+        }
+        let next = self.buffers[index].line_ending.toggled();
+        self.buffers[index].line_ending = next;
+        // 换成 CRLF 之后盘上的字节会变，所以这一下就是一次未保存改动。
+        self.buffers[index].is_dirty = true;
+        println!(
+            "S1_EDITOR_LINE_ENDING file={} eol={}",
+            self.buffers[index].path.display(),
+            next.id()
+        );
+        cx.notify();
+    }
+
     pub fn set_auto_save(&mut self, enabled: bool, cx: &mut Context<Self>) {
         let changed = self.auto_save != enabled;
         self.auto_save = enabled;
@@ -981,6 +1072,8 @@ impl EditorPane {
             .into();
         let body = read_body(&path, &name);
         let writable = body.writable;
+        let encoding = body.encoding;
+        let line_ending = body.line_ending;
         let language = resolved_language(&name);
         let tab_size = self.tab_size;
         let auto_completion = self.auto_completion.load(Ordering::Acquire);
@@ -1013,6 +1106,19 @@ impl EditorPane {
             writable,
             subscriptions,
         ));
+        if let Some(buffer) = self.buffers.last_mut() {
+            buffer.encoding = encoding;
+            buffer.line_ending = line_ending;
+        }
+        println!(
+            "S1_EDITOR_ENCODING file={} encoding={} eol={}",
+            self.buffers
+                .last()
+                .map(|buffer| buffer.path.display().to_string())
+                .unwrap_or_default(),
+            encoding.id(),
+            line_ending.id()
+        );
         self.active = Some(self.buffers.len() - 1);
         self.sync_cursor(cx);
         if language_for_file(&self.buffers[self.buffers.len() - 1].name) == Some("java") {
@@ -1452,7 +1558,12 @@ impl EditorPane {
             return;
         };
         let value = self.buffers[index].editor.read(cx).text().to_string();
-        if let Err(error) = std::fs::write(&path, value.as_bytes()) {
+        let bytes = crate::buffer::encode_body(
+            &value,
+            self.buffers[index].encoding,
+            self.buffers[index].line_ending,
+        );
+        if let Err(error) = std::fs::write(&path, &bytes) {
             eprintln!(
                 "S1_EDITOR_SAVE_AS save=false path={} error={error}",
                 path.display()
@@ -2258,17 +2369,23 @@ impl EditorPane {
         let path = buffer.path.clone();
         let name = buffer.name.clone();
         let value = buffer.editor.read(cx).text().to_string();
+        let bytes =
+            crate::buffer::encode_body(&value, buffer.encoding, buffer.line_ending);
+        let encoding = buffer.encoding;
+        let line_ending = buffer.line_ending;
 
-        match std::fs::write(&path, value.as_bytes()) {
+        match std::fs::write(&path, &bytes) {
             Ok(()) => {
                 if let Some(buffer) = self.buffers.get_mut(index) {
                     buffer.is_dirty = false;
                     buffer.auto_save_task = None;
                 }
                 println!(
-                    "S1_EDITOR_SAVED path={} bytes={}",
+                    "S1_EDITOR_SAVED path={} bytes={} encoding={} eol={}",
                     path.display(),
-                    value.len()
+                    bytes.len(),
+                    encoding.id(),
+                    line_ending.id()
                 );
                 match self.buffer_write_host.as_ref().map(|host| host.clone()) {
                     Some(host) => (host)(&path, cx),
@@ -2521,6 +2638,9 @@ impl EditorPane {
 
         buffer.is_dirty = false;
         buffer.writable = writable;
+        // 重新读一遍就是重新认一遍编码：文件被别人换过编码时状态栏要跟着变。
+        buffer.encoding = body.encoding;
+        buffer.line_ending = body.line_ending;
         buffer.revision = buffer.revision.wrapping_add(1);
         buffer.save_generation = buffer.save_generation.wrapping_add(1);
         buffer.auto_save_task = None;
