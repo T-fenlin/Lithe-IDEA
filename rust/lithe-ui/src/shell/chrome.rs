@@ -147,7 +147,13 @@ fn traffic_lights(
                 .group_hover(group.clone(), |style| {
                     style.text_color(colors.shadow.opacity(0.6))
                 })
-                .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                    window.prevent_default();
+                    // 不拦住冒泡的话，事件会落到外层 drag_region：那里一按就记 pressed，
+                    // 鼠标动一像素就 start_window_move()，窗口被拖起来、click 永远不完成——
+                    // 表现就是三个窗口键怎么点都没反应。
+                    cx.stop_propagation();
+                })
                 .on_click(move |_, window, cx| run(control, on_close.as_ref(), window, cx))
                 .child(glyph)
         }))
@@ -195,7 +201,13 @@ fn caption_buttons(
                 .debug_selector(move || format!("caption-{control:?}"))
                 .window_control_area(area)
                 .hover(|style| style.bg(hover))
-                .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                    window.prevent_default();
+                    // 不拦住冒泡的话，事件会落到外层 drag_region：那里一按就记 pressed，
+                    // 鼠标动一像素就 start_window_move()，窗口被拖起来、click 永远不完成——
+                    // 表现就是三个窗口键怎么点都没反应。
+                    cx.stop_propagation();
+                })
                 .on_click(move |_, window, cx| run(control, on_close.as_ref(), window, cx))
                 .child(
                     Icon::new(icon)
@@ -241,7 +253,13 @@ fn round_buttons(
                         .rounded_full()
                         .bg(colors.chrome_hover)
                         .hover(|style| style.bg(colors.chrome_active))
-                        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                        .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                            window.prevent_default();
+                            // 不拦住冒泡的话，事件会落到外层 drag_region：那里一按就记 pressed，
+                            // 鼠标动一像素就 start_window_move()，窗口被拖起来、click 永远不完成——
+                            // 表现就是三个窗口键怎么点都没反应。
+                            cx.stop_propagation();
+                        })
                         .on_click(move |_, window, cx| run(control, on_close.as_ref(), window, cx))
                         .child(Icon::new(icon).size(IconSize::Xs).color(colors.fg))
                 }),

@@ -4,13 +4,13 @@ use gpui::{
 };
 use lithe_gpui_shared::icons::{idea, idea_icon_image};
 use lithe_gpui_shared::tr;
-use lithe_ui::layout::h_stack;
+use lithe_ui::layout::{h_stack, v_stack};
 // 标题栏整块是组件库的：窗口键、拖拽、双击最大化都要按平台分（macOS 系统红黄绿 /
 // Windows 方角 / Linux 圆钮），本侧不再自己画一份。
 use lithe_ui::shell::TitleBar;
 use lithe_ui::theme::ActiveTheme as _;
 
-use crate::menu_bar::{MenuAction, push_show_run_pane};
+use crate::menu_bar::{MenuAction, MenuBarMode, push_show_run_pane};
 
 const RUN_SLOT_HEIGHT_SPEC: f32 = 30.;
 
@@ -30,24 +30,44 @@ pub fn title_bar(
     project_menu: AnyElement,
     branch_item: AnyElement,
     run: Entity<lithe_gpui_run::RunPane>,
+    mode: MenuBarMode,
     cx: &App,
-) -> impl IntoElement {
+) -> AnyElement {
     // 菜单 / 工程 / 分支这一簇保留原来的字号与前景色：库只画标题栏的底色与边界，
     // 不替子元素定文字样式。
-    let leading = div()
-        .flex()
-        .items_center()
-        .gap_1()
-        .text_sm()
-        .text_color(cx.theme().colors.fg_muted)
-        .child(menu_bar)
-        .child(project_menu)
-        .child(branch_item);
+    let muted = cx.theme().colors.fg_muted;
+    let leading = || {
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .text_sm()
+            .text_color(muted)
+    };
 
-    TitleBar::new("lithe-title-bar")
-        .child(leading)
-        .action(run_controls(run, cx))
-        .action(account_slot())
+    let bar = |leading: gpui::Div| {
+        TitleBar::new("lithe-title-bar")
+            .child(leading)
+            .action(run_controls(run.clone(), cx))
+            .action(account_slot())
+    };
+
+    // Above / AutoHide 两档的菜单**不是标题栏这一行里的东西**（见 menu_bar.rs：前者是
+    // 独立一行、自带下边框；后者是一条只在鼠标压到窗口顶边才浮出的热区）。把它们塞进
+    // 标题栏的 flex 行里，AutoHide 的 w_full 热区会把同行兄弟挤走。所以这两档压在上面。
+    match mode {
+        MenuBarMode::Merged | MenuBarMode::Compact => bar(leading()
+            .child(menu_bar)
+            .child(project_menu)
+            .child(branch_item))
+        .into_any_element(),
+        MenuBarMode::Above | MenuBarMode::AutoHide => v_stack()
+            .w_full()
+            .flex_shrink_0()
+            .child(menu_bar)
+            .child(bar(leading().child(project_menu).child(branch_item)))
+            .into_any_element(),
+    }
 }
 
 fn run_controls(run: Entity<lithe_gpui_run::RunPane>, cx: &App) -> impl IntoElement {

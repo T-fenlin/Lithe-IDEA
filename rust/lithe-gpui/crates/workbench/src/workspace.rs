@@ -3884,12 +3884,14 @@ impl Render for ShellWorkspace {
                     .editor
                     .update(cx, |pane, cx| pane.save_active(window, cx));
             }))
-            // 标题栏由组件库画（含平台相关的窗口键与拖拽），这里只递内容。
+            // 标题栏由组件库画（含平台相关的窗口键与拖拽），这里只递内容。菜单那一段摆在哪
+            // 一层取决于当前档位：Above / AutoHide 是标题栏**上方**的独立一行。
             .child(title_bar(
                 menu.unwrap_or_else(|| div().into_any_element()),
                 project_menu.unwrap_or_else(|| div().into_any_element()),
                 branch_item,
                 self.run.clone(),
+                self.menu_bar.read(cx).mode(),
                 cx,
             ))
             .children((self.projects.len() > 1).then(|| {
