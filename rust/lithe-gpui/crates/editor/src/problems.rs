@@ -18,6 +18,23 @@ use crate::diagnostics::Level;
 
 pub type OpenLocation = Arc<dyn Fn(&Path, u32, u32, &mut Window, &mut App) + 'static>;
 
+/// 一条**构建**诊断（Maven 编译输出归一回来的那种）。
+///
+/// 与语言服务给的诊断分开存：两者的生命周期不同——语言服务随时会重发整份，
+/// 构建结果只在这一次运行结束时出现一次，混在一个列表里会被下一次同步冲掉。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuildProblem {
+    /// 绝对路径（Core 归一后的 `path` 已经是工作区相对路径，调用方补上根）。
+    pub path: PathBuf,
+    /// 一行基。
+    pub line: u32,
+    /// 一列基（Core 不保证给，给不了就当第 0 列）。
+    pub column: Option<u32>,
+    /// `error` / `warning` / `info`，Core 的原样取值。
+    pub severity: String,
+    pub message: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Problem {
     pub(crate) line: u32,
@@ -144,6 +161,46 @@ impl From<&JavaDiagnostic> for Problem {
     }
 }
 
+fn merge_build_problems(
+    files: &mut Vec<ProblemsFile>,
+    entries: &[BuildProblem],
+    root: Option<&Path>,
+) {
+    for entry in entries {
+        let problem = Problem {
+            line: entry.line,
+            utf16_column: entry.column.unwrap_or(0),
+            level: match entry.severity.as_str() {
+                "error" => Level::Error,
+                "warning" => Level::Warning,
+                "info" => Level::Info,
+                _ => Level::Hint,
+            },
+            message: entry.message.clone(),
+            // 来源写 Maven：这一条不是语言服务给的，排查时要看得出来。
+            source: Some("Maven".to_string()),
+            code: None,
+        };
+        match files.iter_mut().find(|file| file.path == entry.path) {
+            Some(file) => file.problems.push(problem),
+            None => {
+                let (name, directory) = display_parts(root, &entry.path);
+                files.push(ProblemsFile {
+                    path: entry.path.clone(),
+                    name,
+                    directory,
+                    problems: vec![problem],
+                });
+            }
+        }
+    }
+    for file in files.iter_mut() {
+        file.problems
+            .sort_by_key(|problem| (problem.line, problem.utf16_column));
+    }
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+}
+
 pub(crate) fn display_parts(root: Option<&Path>, path: &Path) -> (String, String) {
     let name = path
         .file_name()
@@ -173,6 +230,8 @@ pub struct ProblemsPane {
     java: Option<Arc<JavaLanguageService>>,
     root: Option<PathBuf>,
     files: Vec<ProblemsFile>,
+    /// 构建诊断（Maven 输出归一）。与 `files` 合并不覆盖，换一次运行才整体替换。
+    build_problems: Vec<BuildProblem>,
     filter: SeverityFilter,
     collapsed: HashSet<PathBuf>,
     open: Option<OpenLocation>,
@@ -184,6 +243,7 @@ impl ProblemsPane {
             java: None,
             root: None,
             files: Vec::new(),
+            build_problems: Vec::new(),
             filter: SeverityFilter::ALL,
             collapsed: HashSet::new(),
             open: None,
@@ -212,6 +272,8 @@ impl ProblemsPane {
             }
             _ => Vec::new(),
         };
+        let mut files = files;
+        merge_build_problems(&mut files, &self.build_problems, self.root.as_deref());
         let counts = problem_counts(&files);
         self.files = files;
         println!(
@@ -223,6 +285,12 @@ impl ProblemsPane {
             counts.infos,
         );
         cx.notify();
+    }
+
+    /// 换掉整批构建诊断（每一次 Maven 运行结束时调用一次）。
+    pub fn set_build_problems(&mut self, entries: Vec<BuildProblem>, cx: &mut Context<Self>) {
+        self.build_problems = entries;
+        self.refresh(cx);
     }
 
     pub fn counts(&self) -> Counts {

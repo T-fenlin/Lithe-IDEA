@@ -15,7 +15,7 @@ pub use editor_view::{
     BufferWriteHost, CursorPosition, DebugGutterHost, EDITOR_HOST_ELEMENT_ID, EditorPane,
     FIND_BAR_KEY_CONTEXT, GutterBreakpoint, JavaServicePhase, SessionRestore, TabMenuHostActions,
 };
-pub use problems::ProblemsPane;
+pub use problems::{BuildProblem, ProblemsPane};
 
 use gpui::{App, KeyBinding};
 

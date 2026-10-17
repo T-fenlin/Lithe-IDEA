@@ -1088,6 +1088,16 @@ impl EditorPane {
         self.problems.clone()
     }
 
+    /// 用一次 Maven 运行的输出换掉整批构建诊断（Problems 面板里与语言服务那批并存）。
+    pub fn set_build_problems(
+        &mut self,
+        entries: Vec<crate::problems::BuildProblem>,
+        cx: &mut Context<Self>,
+    ) {
+        self.problems
+            .update(cx, |pane, cx| pane.set_build_problems(entries, cx));
+    }
+
     pub fn refresh_problems(&mut self, cx: &mut Context<Self>) {
         self.problems.update(cx, |pane, cx| pane.refresh(cx));
     }

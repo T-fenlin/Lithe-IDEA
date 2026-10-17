@@ -1055,6 +1055,12 @@ impl ShellWorkspace {
                 }
                 cx.notify();
             }
+            // 跑完一次 Maven 之后把输出交给 Core 归一成诊断，进 Problems 面板。
+            // 这是 Maven 那八条命令里 `maven.diagnostics` 的唯一消费口：不接的话构建错误
+            // 只留在进程输出里，得靠人一行行找。
+            if *event == RunPaneEvent::Finished {
+                this.collect_maven_diagnostics(cx);
+            }
         });
 
         {
@@ -3272,6 +3278,45 @@ impl ShellWorkspace {
         }
     }
 
+    /// 这一次运行如果是 Maven，就把输出归一成诊断推给 Problems 面板。
+    ///
+    /// 认 Maven 的口径跟 Core 的运行配置 provider 一致：`maven.module` 与
+    /// `*.maven`（`spring-boot.maven` / `quarkus.maven` / `micronaut.maven`）。
+    fn collect_maven_diagnostics(&mut self, cx: &mut Context<Self>) {
+        let Some((provider, lines)) = self.run.read(cx).last_run_output() else {
+            return;
+        };
+        let is_maven = provider == "maven.module" || provider.ends_with(".maven");
+        if !is_maven {
+            return;
+        }
+        let provider = provider.to_string();
+        let output = lines.join("
+");
+        let root = self.root.clone();
+        let request = serde_json::json!({
+            "root": root.to_string_lossy(),
+            "output": output,
+        });
+        match lithe_gpui_shared::core_json("maven.diagnostics", request) {
+            Ok(data) => {
+                let entries = data
+                    .as_ref()
+                    .map(|data| parse_build_problems(data, &root))
+                    .unwrap_or_default();
+                println!(
+                    "S1_MAVEN diagnostics provider={provider} count={}",
+                    entries.len()
+                );
+                self.editor
+                    .update(cx, |pane, cx| pane.set_build_problems(entries, cx));
+            }
+            Err(error) => {
+                eprintln!("S1_MAVEN diagnostics provider={provider} result=failed error={error}");
+            }
+        }
+    }
+
     /// 把当前 Maven 配置推给在跑的 JDT LS。
     ///
     /// 失败只留诊断 + 一条通知，不弹对话框：自动那一档（设置页改了 settings.xml）是背景行为，
@@ -4411,6 +4456,45 @@ fn java_toolchain_override_from(
     (!trimmed.is_empty()).then(|| lithe_gpui_java::JavaToolchainOverride {
         java_home: PathBuf::from(trimmed),
     })
+}
+
+/// 把 `maven.diagnostics` 的响应变成编辑器那侧的构建诊断。
+///
+/// Core 给的 `path` 是工作区相对路径，编辑器要绝对路径（Problems 面板按绝对路径分组、
+/// 点击时也要拿它去开文件），所以这里补一次根。行号是 Core 的一行基，原样带过去。
+fn parse_build_problems(data: &serde_json::Value, root: &Path) -> Vec<lithe_gpui_editor::BuildProblem> {
+    let Some(issues) = data.get("issues").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    issues
+        .iter()
+        .filter_map(|issue| {
+            let path = issue.get("path").and_then(serde_json::Value::as_str)?;
+            let line = issue
+                .get("line")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(1) as u32;
+            let message = issue
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            Some(lithe_gpui_editor::BuildProblem {
+                path: root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR)),
+                line,
+                column: issue
+                    .get("column")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|column| column as u32),
+                severity: issue
+                    .get("severity")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("error")
+                    .to_string(),
+                message,
+            })
+        })
+        .collect()
 }
 
 fn maven_settings_override_from(paths: &ToolchainPaths) -> Option<PathBuf> {

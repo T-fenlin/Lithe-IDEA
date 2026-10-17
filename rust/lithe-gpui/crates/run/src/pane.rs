@@ -264,6 +264,20 @@ impl RunPane {
         cx.emit(RunPaneEvent::Finished);
     }
 
+    /// 刚跑完（或正在跑）那次运行的 provider 与输出行。
+    ///
+    /// 外壳拿它把 Maven 输出交给 Core 归一成诊断。换配置、清输出之后就返回 `None`：
+    /// 那时候这份输出已经不属于「当前这一屏」了。
+    pub fn last_run_output(&self) -> Option<(&str, Vec<String>)> {
+        let session = self.session.as_ref()?;
+        let provider = self
+            .configurations
+            .iter()
+            .find(|configuration| configuration.id == session.configuration_id)
+            .map(|configuration| configuration.provider.as_str())?;
+        Some((provider, session.output_lines()))
+    }
+
     pub fn clear_output(&mut self, cx: &mut Context<Self>) {
         if let Some(session) = self.session.as_ref() {
             session.clear_output();
