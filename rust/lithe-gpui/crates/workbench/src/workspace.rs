@@ -1845,17 +1845,36 @@ impl ShellWorkspace {
                     }
                 };
                 let reload_shell = self.self_handle.clone();
+                let retry_shell = self.self_handle.clone();
+                let maven_actions = crate::right_tool_window::MavenToolWindowActions {
+                    reload: std::rc::Rc::new(move |_, window, cx| {
+                        let _ = reload_shell.update(cx, |shell, cx| {
+                            shell.reload_maven_projects(window, cx)
+                        });
+                    }),
+                    // 根目录没有 pom.xml 时不给这颗按钮：没有工程可探测，重试只是空转。
+                    retry_profiles: self
+                        .root
+                        .join("pom.xml")
+                        .is_file()
+                        .then(|| {
+                            let handler: std::rc::Rc<
+                                dyn Fn(&gpui::ClickEvent, &mut Window, &mut App),
+                            > = std::rc::Rc::new(move |_, _window, cx: &mut App| {
+                                let _ = retry_shell.update(cx, |shell, cx| {
+                                    shell.retry_maven_profiles(cx)
+                                });
+                            });
+                            handler
+                        }),
+                };
                 right_tool_window(
                     self.right_view,
                     self.maven_project.as_ref(),
                     self.spring_index.as_ref(),
                     &self.notification_panel,
                     &self.spring_panel,
-                    move |_, window, cx| {
-                        let _ = reload_shell.update(cx, |shell, cx| {
-                            shell.reload_maven_projects(window, cx)
-                        });
-                    },
+                    Some(&maven_actions),
                     on_close,
                     cx,
                 )
@@ -3279,6 +3298,36 @@ impl ShellWorkspace {
                 );
             }
         }
+    }
+
+    /// Maven 面板空状态里的「重试」：让 JDT LS 重跑 profile 探测，再推一次配置与重扫。
+    ///
+    /// 顺序是有意的：先重试探测（它会刷新 JDT 自己的 profile 列表），再推配置（把这边的
+    /// 上下文对齐），最后重扫面板把结果画出来。
+    fn retry_maven_profiles(&mut self, cx: &mut Context<Self>) {
+        let Some(service) = self.editor.read(cx).java_service() else {
+            eprintln!("S1_MAVEN retry=skipped reason=no-java-service");
+            return;
+        };
+        match service.retry_maven_profiles() {
+            Ok(()) => {
+                eprintln!("S1_MAVEN retry=ok");
+                self.push_maven_configuration(false, cx);
+            }
+            Err(error) => {
+                eprintln!("S1_MAVEN retry=failed error={error}");
+                self.notify(
+                    lithe_gpui_notify::Input::new(
+                        "lithe.maven.reloadFailed",
+                        lithe_gpui_notify::Severity::Error,
+                    )
+                    .key("maven-retry"),
+                    cx,
+                );
+            }
+        }
+        self.schedule_right_view_scan(RightToolWindowView::Maven, true, cx);
+        cx.notify();
     }
 
     /// Maven 面板表头的「重新加载 Maven 项目」：推配置，然后重扫模块树。

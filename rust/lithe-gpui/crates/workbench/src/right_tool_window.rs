@@ -20,6 +20,16 @@ const TOOL_WINDOW_HEADER_HEIGHT_SPEC: f32 = 30.;
 const TOOL_WINDOW_HEADER_ICON_SPEC: f32 = 13.;
 const TOOL_WINDOW_HEADER_TRAILING_INSET_SPEC: f32 = 7.;
 
+/// Maven 工具窗能做的事。
+///
+/// 两个动作都靠 Core 已有的命令：`reload` 是 `lsp.updateMavenConfiguration`（reloadProjects），
+/// `retry_profiles` 是 `lsp.retryMavenProfiles`。后者只有「根目录真有 pom.xml」时才给——没有
+/// pom 的工程重试 profile 探测是空转。
+pub struct MavenToolWindowActions {
+    pub reload: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>,
+    pub retry_profiles: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RightToolWindowView {
     Notifications,
@@ -161,7 +171,7 @@ pub fn right_tool_window(
     spring: Option<&crate::spring::SpringIndexView>,
     notifications: &Entity<crate::notifications::NotificationPanel>,
     spring_panel: &Entity<crate::spring_panel::SpringPanel>,
-    on_maven_reload: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    maven_actions: Option<&MavenToolWindowActions>,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -179,11 +189,13 @@ pub fn right_tool_window(
         }
         _ => None,
     };
-    // 「重新加载 Maven 项目」只对 Maven 面板有意义：别的视图要的是一个不存在的按钮，
+    // Maven 的两个动作只对 Maven 面板有意义：别的视图要的是一个不存在的按钮，
     // 不如不给（灰色按钮比没有按钮更让人费解）。
-    let reload: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>> = (view
-        == RightToolWindowView::Maven)
-        .then(|| Rc::new(on_maven_reload) as Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>);
+    let actions = (view == RightToolWindowView::Maven)
+        .then_some(maven_actions)
+        .flatten();
+    let reload: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>> =
+        actions.map(|actions| actions.reload.clone());
 
     v_stack()
         .id("lithe-right-tool-window")
@@ -202,7 +214,15 @@ pub fn right_tool_window(
                 spring_content(index, &spring_query, cx)
             }
             (RightToolWindowView::Notifications, _, _) => notifications.clone().into_any_element(),
-            _ => empty_state(view, cx),
+            // 「未检测到 Maven 项目」有两种情况：根目录真的没有 pom，或者 profile 探测失败过
+            // 导致认不出来。前者重试是空转（所以 `retry_profiles` 由外壳按 pom 存在与否给），
+            // 后者正是这一颗按钮在解决的事。
+            (RightToolWindowView::Maven, None, _) => empty_state(
+                view,
+                actions.and_then(|actions| actions.retry_profiles.clone()),
+                cx,
+            ),
+            _ => empty_state(view, None, cx),
         })
         .into_any_element()
 }
@@ -500,7 +520,17 @@ fn header(
         .into_any_element()
 }
 
-fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
+fn empty_state(
+    view: RightToolWindowView,
+    retry: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+    cx: &App,
+) -> AnyElement {
+    let retry_button = retry.map(|handler| {
+        Button::new("right-tool-window-maven-retry")
+            .label(tr("lithe.ui.retry"))
+            .on_click(move |event, window, cx| handler(event, window, cx))
+            .into_any_element()
+    });
     lithe_gpui_shared::empty_state::unavailable(
         Some(view.icon(
             cx,
@@ -508,7 +538,7 @@ fn empty_state(view: RightToolWindowView, cx: &App) -> AnyElement {
         )),
         view.empty_title(),
         None,
-        None,
+        retry_button,
         cx,
     )
 }

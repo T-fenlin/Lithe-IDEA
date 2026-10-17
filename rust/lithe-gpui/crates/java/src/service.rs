@@ -205,6 +205,19 @@ impl JavaLanguageService {
         })
     }
 
+    /// 让 JDT LS 重新跑一次 Maven profile 探测（Core 的 `lsp.retryMavenProfiles`）。
+    ///
+    /// 用在「根目录明明有 pom.xml，可 profile 探测那一步失败过、于是面板认不出工程」这种
+    /// 情形：与其让人去重启语言服务，不如把这一条重试交给 Core 已有的命令。
+    pub fn retry_maven_profiles(&self) -> Result<(), String> {
+        let session_id = self
+            .lsp_session_id()
+            .ok_or_else(|| "Java 语言服务尚未启动".to_string())?;
+        core_json("lsp.retryMavenProfiles", json!({ "sessionId": session_id }))
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     pub fn prepare(&self) -> Result<bool, String> {
         if !self.is_java_workspace()? {
             println!("S1_JAVA_SKIPPED reason=not-a-java-workspace");
