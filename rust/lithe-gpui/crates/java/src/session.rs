@@ -13,7 +13,10 @@ fn execute(request: CoreRequest) -> Result<Option<Value>, String> {
     CoreClient::new().execute(&request).map_err(core_error)
 }
 
-const SHUTDOWN_SETTLE_TIMEOUT: Duration = Duration::from_secs(5);
+/// 会话销毁的总重试预算（后台线程里用，不占 UI 线程）。
+const SHUTDOWN_SETTLE_TIMEOUT: Duration = Duration::from_secs(8);
+/// 销毁重试步进。
+const DESTROY_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SessionTimeouts {
@@ -273,40 +276,48 @@ impl Session {
         outcome
     }
 
+    /// 收尾。两件事必须分开看：
+    ///
+    /// - `lsp.stopServer` 只是**发出** `shutdown`，真正的强杀由 Core 的
+    ///   `shutdown_timeout_milliseconds`（2s）兜底，所以它立刻返回；
+    /// - `lsp.destroyServer` 只接受已经到终态（Stopped/Failed）的会话。
+    ///
+    /// 以前这里在 UI 线程上死等 5 秒再销毁：切换工程/关窗口时卡的就是这一段，而且等到的
+    /// 往往还是"S 秒内没变终态 → 销毁被拒"。等待和销毁都不需要占用 UI 线程，所以整段挪到
+    /// 后台线程，用有界重试代替一次性等待。
     pub(crate) fn shutdown(mut self) {
         let payload = json!({ "sessionId": self.id });
-        if let Err(error) = execute(
+        let started = Instant::now();
+        match execute(
             CoreRequest::command("lsp.stopServer")
                 .with_payload(payload.clone())
                 .with_timeout_millis(20_000),
         ) {
-            println!(
+            Ok(_) => println!(
+                "S1_JAVA_SESSION stop_requested sessionId={} elapsedMs={}",
+                self.id,
+                started.elapsed().as_millis()
+            ),
+            Err(error) => println!(
                 "S1_JAVA_SESSION stop_failed sessionId={} error={}",
                 self.id, error
-            );
+            ),
         }
 
-        let terminal = self
-            .events
-            .wait_terminal(Instant::now() + SHUTDOWN_SETTLE_TIMEOUT);
-        if !terminal {
-            println!(
-                "S1_JAVA_SESSION destroy_skipped sessionId={} reason=not-terminal elapsedMs={}",
-                self.id,
-                SHUTDOWN_SETTLE_TIMEOUT.as_millis()
-            );
-        }
+        // 事件泵只置停止标志：它自己会在下一个 `lsp.waitEvents` 切片（1s）后退出，
+        // 不必再为它等满 5 秒。
+        self.events.request_stop();
 
-        if let Err(error) = core_json("lsp.destroyServer", payload) {
+        let id = self.id.clone();
+        let spawned = std::thread::Builder::new()
+            .name(format!("lithe-java-teardown-{id}"))
+            .spawn(move || teardown_session(id, payload));
+        if let Err(error) = spawned {
             println!(
-                "S1_JAVA_SESSION destroy_failed sessionId={} error={error}",
+                "S1_JAVA_SESSION teardown_unspawned sessionId={} error={error}",
                 self.id
             );
-        } else {
-            println!("S1_JAVA_SESSION stopped sessionId={}", self.id);
         }
-
-        self.pump.stop();
     }
 
     pub(crate) fn latest_diagnostics(&self, uri: &str) -> Vec<JavaDiagnostic> {
@@ -339,6 +350,36 @@ pub(crate) fn wait_events(session_id: &str, timeout: Duration) -> Result<Vec<Val
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default())
+}
+
+/// 等会话落到终态再销毁。Core 的强杀在 2s 后发生，进程退出还要一个监控周期，所以按
+/// 250ms 步进重试：第一次成功即返回，超时只记一行诊断，不阻塞任何人。
+fn teardown_session(id: String, payload: Value) {
+    let started = Instant::now();
+    let deadline = started + SHUTDOWN_SETTLE_TIMEOUT;
+    let mut attempts = 0u32;
+    let mut last_error = String::new();
+    loop {
+        attempts += 1;
+        match core_json("lsp.destroyServer", payload.clone()) {
+            Ok(_) => {
+                println!(
+                    "S1_JAVA_SESSION stopped sessionId={id} attempts={attempts} waitedMs={}",
+                    started.elapsed().as_millis()
+                );
+                return;
+            }
+            Err(error) => last_error = error.to_string(),
+        }
+        if Instant::now() >= deadline {
+            println!(
+                "S1_JAVA_SESSION destroy_unconfirmed sessionId={id} attempts={attempts} elapsedMs={} error={last_error}",
+                started.elapsed().as_millis()
+            );
+            return;
+        }
+        std::thread::sleep(DESTROY_RETRY_INTERVAL);
+    }
 }
 
 fn next_operation_id() -> u64 {
