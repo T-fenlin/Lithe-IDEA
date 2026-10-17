@@ -16,7 +16,8 @@ use crate::navigation::{
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, EntityId, Focusable as _,
+    AnyElement, App, AppContext as _, ClipboardItem, Context, ElementId, Entity, EntityId,
+    Focusable as _,
     InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
     ParentElement as _, Pixels, Point, Render, Role, ScrollWheelEvent, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, WeakEntity, Window, canvas,
@@ -296,6 +297,8 @@ pub struct EditorPane {
     rainbow_brackets: bool,
     /// 包住顶行的块头钉在顶部。
     sticky_scroll: bool,
+    /// Markdown 只读预览是否正开着（只对当前活动的 Markdown 缓冲有意义）。
+    markdown_preview: bool,
     go_to_line: Option<GoToLinePrompt>,
     /// 补全：当前这一份、请求的代次（晚到的答案据此丢掉）、以及正在跑的任务。
     completion: Option<Completion>,
@@ -379,6 +382,7 @@ impl EditorPane {
             indent_guides: true,
             rainbow_brackets: false,
             sticky_scroll: false,
+            markdown_preview: false,
             go_to_line: None,
             completion: None,
             completion_generation: Arc::new(AtomicU64::new(0)),
@@ -560,6 +564,59 @@ impl EditorPane {
         if changed {
             cx.notify();
         }
+    }
+
+    /// Markdown 只读预览的开关。
+    ///
+    /// 打开时正文区换成组件库 `MarkdownRenderer` 的渲染结果，再点一次回到源码。预览只对
+    /// Markdown 缓冲有意义，所以在别的文件上打开直接拒绝（留一条诊断），不改视图。
+    pub fn toggle_markdown_preview(&mut self, cx: &mut Context<Self>) {
+        let enabled = !self.markdown_preview;
+        if enabled {
+            let is_markdown = self
+                .active
+                .and_then(|index| self.buffers.get(index))
+                .is_some_and(|buffer| language_for_file(&buffer.name) == Some("markdown"));
+            if !is_markdown {
+                eprintln!("S1_EDITOR_MARKDOWN_PREVIEW on=false reason=not-markdown");
+                return;
+            }
+        }
+        self.markdown_preview = enabled;
+        println!(
+            "S1_EDITOR_MARKDOWN_PREVIEW on={enabled} file={}",
+            self.active
+                .and_then(|index| self.buffers.get(index))
+                .map(|buffer| buffer.path.display().to_string())
+                .unwrap_or_default()
+        );
+        cx.notify();
+    }
+
+    /// 预览打开且当前是 Markdown 缓冲时，正文区要画的东西。
+    ///
+    /// 读的是缓冲区**当前**的文本（不是盘上的），所以改完不保存也能预览；反过来预览是只读的，
+    /// 所有编辑都要回到源码视图。
+    fn render_markdown_preview(&self, cx: &App) -> Option<AnyElement> {
+        let buffer = self.active.and_then(|index| self.buffers.get(index))?;
+        if language_for_file(&buffer.name) != Some("markdown") {
+            return None;
+        }
+        let text = buffer.editor.read(cx).text().to_string();
+        Some(
+            div()
+                .id("markdown-preview")
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .overflow_y_scroll()
+                .p_6()
+                .child(lithe_ui::documents::MarkdownRenderer::new(
+                    ElementId::Name("markdown-preview-body".into()),
+                    SharedString::from(text),
+                ))
+                .into_any_element(),
+        )
     }
 
     /// 当前活动缓冲区实际使用的编码与行尾符（状态栏两枚胶囊读这个）。
@@ -4586,6 +4643,12 @@ impl EditorPane {
     }
 
     fn render_body(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        // 预览开着就整块换掉正文区：标签、面包屑、状态栏都还在，只是代码区换成渲染结果。
+        if self.markdown_preview {
+            if let Some(preview) = self.render_markdown_preview(cx) {
+                return preview;
+            }
+        }
         let Some(buffer) = self.active.and_then(|index| self.buffers.get(index)) else {
             return Self::render_empty_state(cx);
         };

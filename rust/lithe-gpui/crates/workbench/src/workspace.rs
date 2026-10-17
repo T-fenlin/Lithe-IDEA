@@ -2242,6 +2242,11 @@ impl ShellWorkspace {
                     .update(cx, |pane, cx| pane.format_document(window, cx));
                 diagnose_menu_run(action, "formatDocument");
             }
+            MenuAction::ToggleMarkdownPreview => {
+                self.editor
+                    .update(cx, |pane, cx| pane.toggle_markdown_preview(cx));
+                diagnose_menu_run(action, "markdownPreview");
+            }
             MenuAction::ShowDiagnostics | MenuAction::ShowRunAndDebug => {
                 self.bottom_kind = match action {
                     MenuAction::ShowRunAndDebug => BottomPaneKind::Debug,

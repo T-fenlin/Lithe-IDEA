@@ -441,6 +441,9 @@ pub enum MenuAction {
     CloseFolder,
     CloseWindow,
     Quit,
+    // Markdown 只读预览：执行分支在 `apply_menu_action`（直接叫编辑器切），没有 Action
+    // 可派发，也没有 `CommandId`（不进命令面板）。
+    ToggleMarkdownPreview,
 }
 
 /// 一行菜单的图标。
@@ -536,6 +539,7 @@ impl MenuAction {
             Self::CloseFolder => "lithe.menu.closeFolder",
             Self::CloseWindow => "lithe.menu.closeWindow",
             Self::Quit => "lithe.menu.quit",
+            Self::ToggleMarkdownPreview => "lithe.menu.markdownPreview",
         }
     }
 
@@ -714,7 +718,9 @@ impl MenuAction {
             // 「关闭文件夹 / 关闭窗口 / 退出」三张图我们也没画过，按同一口径留空槽。
             | Self::CloseFolder
             | Self::CloseWindow
-            | Self::Quit => MenuIcon::Empty,
+            | Self::Quit
+            // 也没有「预览」那张图。
+            | Self::ToggleMarkdownPreview => MenuIcon::Empty,
         }
     }
 
@@ -852,7 +858,8 @@ impl MenuAction {
             | Self::RevertFile
             | Self::CloseFolder
             | Self::CloseWindow
-            | Self::Quit => {
+            | Self::Quit
+            | Self::ToggleMarkdownPreview => {
                 return None;
             }
         })
@@ -938,7 +945,8 @@ impl MenuAction {
             // 窗口 / 工程生命周期三条同理：没有 `CommandId`，也不进命令面板。
             | Self::CloseFolder
             | Self::CloseWindow
-            | Self::Quit => None,
+            | Self::Quit
+            | Self::ToggleMarkdownPreview => None,
         }
     }
 }
@@ -1045,6 +1053,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::ToggleWordWrap),
             MenuItem::Action(MenuAction::ToggleLineNumbers),
             MenuItem::Action(MenuAction::ToggleRenderWhitespace),
+            MenuItem::Action(MenuAction::ToggleMarkdownPreview),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::ZoomIn),
             MenuItem::Action(MenuAction::ZoomOut),
@@ -2220,8 +2229,11 @@ mod tests {
     use lithe_ui::theme::Palette;
     use std::collections::BTreeSet;
 
+    // 真源（Windows 前端菜单）的条目数 + 只在本侧存在的条目数。C4 的「Markdown 预览」
+    // 是只在本侧存在的（真源把预览交给 Monaco 自带命令，没有菜单行），所以只加在
+    // `LOCAL_ONLY_ITEMS` 上。
     const SOURCE_MENU_ITEMS: usize = 89;
-    const LOCAL_ONLY_ITEMS: usize = 5;
+    const LOCAL_ONLY_ITEMS: usize = 6;
 
     /// 回归：菜单栏曾经只有「闲置 / 悬停」两态，展开着的那个菜单没有底；补四态时又把
     /// 展开态和悬停态设成了同一个 `hover`，鼠标还压在触发器上就分不清「指着」和「开着」。
@@ -2716,7 +2728,7 @@ mod tests {
         // 同一个能力默认只许一个菜单入口。双入口要在白名单里说清理由 ——
         // 「快捷键一览」按 IDEA 的布局在 Tools 和 Help 各有一条，这是上游布局不是重复。
         const TWO_ENTRIES: [MenuAction; 1] = [MenuAction::ShowKeymapSettings];
-        const NON_COMMAND: [MenuAction; 52] = [
+        const NON_COMMAND: [MenuAction; 53] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -2771,6 +2783,7 @@ mod tests {
             MenuAction::CloseFolder,
             MenuAction::CloseWindow,
             MenuAction::Quit,
+            MenuAction::ToggleMarkdownPreview,
         ];
 
         let mut wired: Vec<MenuAction> = Vec::new();
@@ -3596,7 +3609,9 @@ mod tests {
             // 窗口 / 工程生命周期三条不依赖活动缓冲：关文件夹、关窗口、退出随时可点。
             | MenuAction::CloseFolder
             | MenuAction::CloseWindow
-            | MenuAction::Quit => true,
+            | MenuAction::Quit
+            // 预览这一行也不依赖活动缓冲：没有 Markdown 缓冲时点了是 no-op + 诊断。
+            | MenuAction::ToggleMarkdownPreview => true,
         };
 
         assert_eq!(

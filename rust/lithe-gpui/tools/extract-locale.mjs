@@ -766,6 +766,13 @@ const GPUI_ONLY_KEYS = [
       "B3（同上）。给「文件 → 新建窗口 / 关闭窗口 / 退出」。与 B4 的 gpui.newWindowNotWired 同一个根因（规格 §5 第 1 条：多窗口暂缓，菜单栏 / 项目下拉 / 命令面板 / Git 身份宿主那几个 thread_local 单例仍是「一个进程一份」）；这里换成菜单项那一侧的说法，也覆盖「退出 / 关闭窗口」这条窗口生命周期。真源恒可执行，catalog 里没有这句。",
   },
   {
+    key: "menu.markdownPreview",
+    zh: "Markdown 预览",
+    en: "Markdown Preview",
+    reason:
+      "C4 新增的入口：View → Markdown 预览。真源（Windows 前端）没有这个菜单项 —— 它把 Markdown 交给 Monaco 自带的预览命令，catalog 里没有对应文案；GPUI 侧没有 Monaco，预览由组件库的 MarkdownRenderer 自己画，所以要一条自己的菜单文案。",
+  },
+  {
     key: "gpui.menuMissing.helpAbout",
     zh: "尚未接入：缺帮助 / 关于的落地页（文档站与外链入口都没接）。",
     en: "Not wired yet: there is no help/about surface (the documentation site and external links are not wired).",
