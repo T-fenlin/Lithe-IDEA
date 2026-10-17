@@ -30,7 +30,7 @@ pub mod workspace;
 pub use welcome::{ProjectOpener, WelcomeRow, WelcomeView};
 pub use workspace::{
     OpenDestination, OpenWindowHost, ShellWorkspace, install_open_project_action,
-    left_activity_index, set_open_window_host, set_shell_startup,
+    left_activity_index, register_project_window, set_open_window_host, set_shell_startup,
 };
 
 pub fn install_actions(cx: &mut gpui::App) {

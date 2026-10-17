@@ -8,7 +8,7 @@ use gpui::{
     IntoElement, KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Window, div,
     rems,
 };
-use gpui::{Global, PathPromptOptions, ScrollHandle};
+use gpui::{AnyWindowHandle, Global, PathPromptOptions, ScrollHandle};
 
 use lithe_ui::buttons::Button;
 use lithe_ui::forms::{Checkbox, InputState};
@@ -149,12 +149,20 @@ pub enum OpenDestination {
 
 /// Opens another IDE window for a project root. The composition root (`app`) owns window bounds and
 /// options, so it installs this; the shell only decides *when* a project goes to a new window
-/// (真源 `ProjectOpenPlacement.newWindow`).
-pub type OpenWindowHost = std::sync::Arc<dyn Fn(&Path, &mut Window, &mut App) + 'static>;
+/// (真源 `ProjectOpenPlacement.newWindow`). It returns the new window's handle, because the
+/// 工程根 → 窗口 归属表（下）必须在这一刻登记，否则同一个工程会被开第二次。
+pub type OpenWindowHost =
+    std::sync::Arc<dyn Fn(&Path, &mut Window, &mut App) -> Option<AnyWindowHandle> + 'static>;
 
 thread_local! {
     static OPEN_WINDOW_HOST: std::cell::RefCell<Option<OpenWindowHost>> =
         const { std::cell::RefCell::new(None) };
+    /// 工程根 → 窗口句柄。真源里同一件事分在两处：macOS 是 `ProjectSessionManager` 的窗口-会话
+    /// 归属（`ProjectWindowScope` / `noteWindowBecameKey`），Windows 前端是
+    /// `ProjectWindowRegistry`（`identity` / `claim` / `retain_windows`）。语义只有一条：
+    /// **一个工程只开一个窗口**，再打开同一个工程就把已有窗口抬到前面。
+    static PROJECT_WINDOWS: std::cell::RefCell<Vec<(PathBuf, AnyWindowHandle)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Installed once by the composition root, before the first window opens.
@@ -164,6 +172,76 @@ pub fn set_open_window_host(host: OpenWindowHost) {
 
 pub(crate) fn open_window_host() -> Option<OpenWindowHost> {
     OPEN_WINDOW_HOST.with(|slot| slot.borrow().clone())
+}
+
+/// 首窗口不是经 `OpenWindowHost` 开的，所以组合根在 `open_window` 之后自己登记一次。
+pub fn register_project_window(root: &Path, handle: AnyWindowHandle) {
+    let key = project_window_key(root);
+    PROJECT_WINDOWS.with(|slot| {
+        let mut windows = slot.borrow_mut();
+        // 一个窗口同时只显示一个工程：原地换根（OpenDestination::ThisWindow）之后，
+        // 这个窗口原来那条记录必须跟着换，否则它会替旧工程占着位置。
+        windows.retain(|(path, existing)| *path != key && *existing != handle);
+        windows.push((key, handle));
+    });
+}
+
+/// 工程身份。真源 Windows 前端用 `ProjectWindowRegistry::identity` 做同样的事：同一个目录用不同
+/// 写法（相对路径、`\\?` 前缀、大小写）打开时必须落到同一个窗口上。
+fn project_window_key(root: &Path) -> PathBuf {
+    root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
+}
+
+/// 「打开工程 → 新窗口」这一次到底发生了什么。诊断和测试都按它判读。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProjectWindowRoute {
+    /// 新开了一个窗口。
+    Opened,
+    /// 这个工程已经有一个窗口，抬到了前面，没有再开第二个。
+    Focused,
+    /// 组合根没有装 `OpenWindowHost`（headless / 单测）。
+    NotWired,
+    /// 装了宿主但开窗失败。
+    Failed,
+}
+
+pub(crate) fn route_project_window(
+    target: &Path,
+    window: &mut Window,
+    cx: &mut App,
+) -> ProjectWindowRoute {
+    // 关掉的窗口不会自己从表里消失（真源 `ProjectWindowRegistry::retain_windows`）。
+    let live: Vec<gpui::WindowId> = cx.windows().into_iter().map(|h| h.window_id()).collect();
+    PROJECT_WINDOWS.with(|slot| {
+        slot.borrow_mut()
+            .retain(|(_, handle)| live.contains(&handle.window_id()))
+    });
+
+    let key = project_window_key(target);
+    let existing = PROJECT_WINDOWS.with(|slot| {
+        slot.borrow()
+            .iter()
+            .find(|(path, _)| *path == key)
+            .map(|(_, handle)| *handle)
+    });
+    if let Some(handle) = existing {
+        if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
+            return ProjectWindowRoute::Focused;
+        }
+        // 还在当前窗口集合里却更新失败：按已关闭处理，别再复用它。
+        PROJECT_WINDOWS.with(|slot| slot.borrow_mut().retain(|(path, _)| *path != key));
+    }
+
+    let Some(host) = open_window_host() else {
+        return ProjectWindowRoute::NotWired;
+    };
+    match host(target, window, cx) {
+        Some(handle) => {
+            PROJECT_WINDOWS.with(|slot| slot.borrow_mut().push((key, handle)));
+            ProjectWindowRoute::Opened
+        }
+        None => ProjectWindowRoute::Failed,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3117,15 +3195,26 @@ impl ShellWorkspace {
         cx: &mut Context<Self>,
     ) {
         match decision.destination {
-            OpenDestination::NewWindow => match open_window_host() {
-                Some(host) => {
+            OpenDestination::NewWindow => match route_project_window(&target, window, cx) {
+                ProjectWindowRoute::Opened => {
                     eprintln!(
                         "S1_OPEN_PROJECT destination=new-window state=opened path={}",
                         target.display()
                     );
-                    host(&target, window, cx);
+                    self.record_opened_project(&target, Some(true), cx);
+                    if decision.remember {
+                        self.remember_open_destination(true, cx);
+                    }
                 }
-                None => self.report_new_window_not_wired(cx),
+                ProjectWindowRoute::Focused => eprintln!(
+                    "S1_OPEN_PROJECT destination=new-window state=focused path={}",
+                    target.display()
+                ),
+                ProjectWindowRoute::NotWired => self.report_new_window_not_wired(cx),
+                ProjectWindowRoute::Failed => eprintln!(
+                    "S1_OPEN_PROJECT destination=new-window state=failed path={}",
+                    target.display()
+                ),
             },
             OpenDestination::ThisWindow => {
                 self.rebuild_project_window(target, decision.remember, window, cx)
@@ -3146,19 +3235,31 @@ impl ShellWorkspace {
     /// 自己一份 `ShellWorkspace`。真源里"两个窗口共享同一份会话"记在「按窗口的会话」那一片。
     /// 没有装端口时维持未接线提示（headless / 单测不假装成功）。
     fn open_current_project_in_new_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match open_window_host() {
-            Some(host) => {
-                let root = self.root.clone();
+        let root = self.root.clone();
+        eprintln!(
+            "S1_OPEN_WINDOW source=menu state=requested root={}",
+            root.display()
+        );
+        match route_project_window(&root, window, cx) {
+            ProjectWindowRoute::Opened => {
+                eprintln!("S1_OPEN_WINDOW source=menu state=opened root={}", root.display());
+            }
+            // 真源那一步是 `ensurePrimaryWindowAvailable` + `presentPrimary`：这个工程已经有窗口时
+            // 只把它抬到前面，不再开第二个。
+            ProjectWindowRoute::Focused => {
                 eprintln!(
-                    "S1_OPEN_WINDOW source=menu state=requested root={}",
+                    "S1_OPEN_WINDOW source=menu state=focused existing={}",
                     root.display()
                 );
-                host(&root, window, cx);
             }
-            None => {
+            ProjectWindowRoute::NotWired => {
                 eprintln!(
                     "S1_OPEN_WINDOW source=menu state=not_wired missing=window_handle_routing"
                 );
+                self.notify_new_window_not_wired(cx);
+            }
+            ProjectWindowRoute::Failed => {
+                eprintln!("S1_OPEN_WINDOW source=menu state=failed root={}", root.display());
                 self.notify_new_window_not_wired(cx);
             }
         }
@@ -3192,6 +3293,22 @@ impl ShellWorkspace {
         self.notify_not_wired(missing.text_key, action_id, cx);
     }
 
+    /// 「打开工程」对话框里勾了「记住我的选择」后写回设置。真源字段：
+    /// `openFoldersInNewWindow` / `askWhereToOpenProjects`。
+    fn remember_open_destination(&mut self, open_in_new_window: bool, cx: &mut Context<Self>) {
+        match lithe_gpui_settings::try_store(cx) {
+            Some(store) => {
+                store.update(cx, |store, cx| {
+                    store.remember_project_open_destination(open_in_new_window, cx)
+                });
+                println!(
+                    "S1_OPEN_PROJECT remember=true openFoldersInNewWindow={open_in_new_window} askWhereToOpenProjects=false"
+                );
+            }
+            None => eprintln!("S1_OPEN_PROJECT remember=skipped reason=no_settings_store"),
+        }
+    }
+
     fn rebuild_project_window(
         &mut self,
         target: PathBuf,
@@ -3210,23 +3327,16 @@ impl ShellWorkspace {
             eprintln!("S1_OPEN_PROJECT state=rebuild_failed reason=no_view");
             return;
         };
+        // 原地换根之后，这个窗口从此代表新工程：归属表必须跟着换，否则旧工程还以为自己
+        // 有一个窗口（再打开旧工程就会聚焦到这个已经换了内容的窗口上）。
+        register_project_window(&target, window.window_handle());
 
         let _ = workspace.update(cx, |shell, cx| {
             shell.record_opened_project(&target, Some(false), cx)
         });
 
         if remember {
-            match lithe_gpui_settings::try_store(cx) {
-                Some(store) => {
-                    store.update(cx, |store, cx| {
-                        store.remember_project_open_destination(false, cx)
-                    });
-                    println!(
-                        "S1_OPEN_PROJECT remember=true openFoldersInNewWindow=false askWhereToOpenProjects=false"
-                    );
-                }
-                None => eprintln!("S1_OPEN_PROJECT remember=skipped reason=no_settings_store"),
-            }
+            self.remember_open_destination(false, cx);
         }
         println!(
             "S1_OPEN_PROJECT state=opened path={} from={old_root}",
@@ -3255,12 +3365,14 @@ impl ShellWorkspace {
                 let checkbox_cell = do_not_ask.clone();
                 let checkbox_shell = shell.clone();
                 let click_cell = do_not_ask.clone();
+                let new_window_cell = do_not_ask.clone();
                 let cancel_label = tr("lithe.projectOpen.cancel");
                 let new_window_label = tr("lithe.projectOpen.newWindow");
                 let this_window_label = tr("lithe.projectOpen.thisWindow");
                 let new_window_shell = shell.clone();
                 let this_window_shell = shell.clone();
                 let this_window_target = target.clone();
+                let new_window_target = target.clone();
                 let (cancel_id, new_window_id, this_window_id) = (
                     (id.clone(), "cancel"),
                     (id.clone(), "new-window"),
@@ -3295,11 +3407,22 @@ impl ShellWorkspace {
                     })
                     .action(move |close| {
                         let new_window_shell = new_window_shell.clone();
+                        let new_window_target = new_window_target.clone();
                         Button::new(new_window_id).label(new_window_label).on_click(
                             move |_, window, cx| {
-                                let _ = new_window_shell
-                                    .update(cx, |shell, cx| shell.report_new_window_not_wired(cx));
+                                let remember = new_window_cell.get();
                                 close(window, cx);
+                                let _ = new_window_shell.update(cx, |shell, cx| {
+                                    shell.execute_project_open(
+                                        new_window_target.clone(),
+                                        ProjectOpenDecision {
+                                            destination: OpenDestination::NewWindow,
+                                            remember,
+                                        },
+                                        window,
+                                        cx,
+                                    )
+                                });
                             },
                         )
                     })
@@ -4298,6 +4421,26 @@ mod tests {
 
         assert_eq!(resolve_project_open_destination(true, false, None), None);
         assert_eq!(resolve_project_open_destination(true, true, None), None);
+    }
+
+    #[test]
+    fn project_window_key_normalizes_one_directory_to_one_identity() {
+        // 真源 ProjectWindowRegistry::identity 的同一件事：同一个目录换个写法打开，
+        // 必须落到同一个窗口上，否则「再打开同一个工程」会开出第二个。
+        let root = std::env::temp_dir();
+        let canonical = root.canonicalize().expect("临时目录应当能解析成规范路径");
+        assert_eq!(super::project_window_key(&root), canonical);
+
+        let detour = canonical.join("..").join(
+            canonical
+                .file_name()
+                .expect("临时目录一定带最后一段目录名"),
+        );
+        assert_eq!(super::project_window_key(&detour), canonical);
+
+        // 不存在的路径没有规范形式，退回原样：宁可错开一个键，也不要 panic。
+        let missing = root.join("lithe-project-window-key-does-not-exist");
+        assert_eq!(super::project_window_key(&missing), missing);
     }
 
     #[test]

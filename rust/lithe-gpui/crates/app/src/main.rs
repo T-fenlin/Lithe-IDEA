@@ -711,8 +711,12 @@ fn main() {
                     match opened {
                         Ok(handle) => {
                             eprintln!("S1_OPEN_WINDOW state=opened handle={handle:?}");
+                            Some(handle.into())
                         }
-                        Err(error) => eprintln!("S1_OPEN_WINDOW state=failed error={error}"),
+                        Err(error) => {
+                            eprintln!("S1_OPEN_WINDOW state=failed error={error}");
+                            None
+                        }
                     }
                 },
             ));
@@ -720,6 +724,13 @@ fn main() {
             let (bounds, min_size) = match &plan {
                 LaunchPlan::Welcome(_) => (welcome_window_bounds(cx), WELCOME_WINDOW_SIZE),
                 LaunchPlan::Workspace(_) => (startup_window_bounds(cx), MIN_WINDOW),
+            };
+
+            // 首窗口不是经 `OpenWindowHost` 开的，它的工程归属要在这里登记一次：
+            // 之后再从它里面「打开工程 → 新窗口」时，同一个工程会聚焦到这个窗口而不是开出第二个。
+            let first_window_project = match &plan {
+                LaunchPlan::Workspace(root) => Some(root.clone()),
+                LaunchPlan::Welcome(_) => None,
             };
 
             cx.spawn(async move |cx| {
@@ -731,7 +742,7 @@ fn main() {
                     ..title_bar
                 };
 
-                cx.open_window(window_options, move |window, cx| {
+                let opened = cx.open_window(window_options, move |window, cx| {
                     let workspace_root = match plan {
                         LaunchPlan::Welcome(loaded) => {
                             let content = cx.new(|cx| {
@@ -894,6 +905,9 @@ fn main() {
                     root_entity
                 })
                 .expect("failed to open window");
+                if let Some(root) = first_window_project {
+                    lithe_gpui_workbench::register_project_window(&root, opened.into());
+                }
             })
             .detach();
         });
