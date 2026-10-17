@@ -331,6 +331,41 @@ const GPUI_ONLY_KEYS = [
       "下拉里的第四档（值 compact）。名字对 MenuBarMode::Compact，落点是 compact_bar()：一个汉堡按钮，按下去展开「菜单的菜单」。真源里这一档来自旧的 --compact-menu-bar 开关，没有文案。",
   },
   {
+    key: "gpui.javaServiceStatusStarting",
+    zh: "Java 启动中…",
+    en: "Java starting…",
+    reason:
+      "状态栏那一条：语言服务正在启动。真源没有这个指示（真源把 JDT 状态藏在日志与通知里），而本侧状态栏本来就是「当前状态」的家。加它的原因很直接：用户要能看出到底是不是在启动。",
+  },
+  {
+    key: "gpui.javaServiceStatusReady",
+    zh: "Java 已就绪 · {elapsed}s",
+    en: "Java ready · {elapsed}s",
+    reason:
+      "状态栏那一条：语言服务已就绪，并给出等了多久。{elapsed} 由宿主按秒格式化。",
+  },
+  {
+    key: "gpui.javaServiceStatusFailed",
+    zh: "Java 启动失败",
+    en: "Java failed",
+    reason:
+      "状态栏那一条：语言服务启动失败。失败原因在通知里给，这条只是常驻标记。",
+  },
+  {
+    key: "gpui.javaServiceReady",
+    zh: "Java 语言服务已就绪（用时 {elapsed} 秒）",
+    en: "Java language service is ready ({elapsed}s).",
+    reason:
+      "就绪通知。用户明确要求「完成之后给个通知」：此前只有 S1_JAVA_* 日志，界面上看不出是没启动还是正在启动。",
+  },
+  {
+    key: "gpui.javaServiceFailed",
+    zh: "Java 语言服务启动失败：{reason}",
+    en: "Java language service failed to start: {reason}",
+    reason:
+      "启动失败通知。{reason} 来自 prepare() 的错误（没有 JDK、JDTLS 桥接失败、导入超时等）。",
+  },
+  {
     key: "settings.gpui.runNoProject",
     zh: "打开项目后才能识别可运行配置。",
     en: "Open a project to identify runnable configurations.",

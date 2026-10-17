@@ -237,6 +237,22 @@ struct FindBar {
     _events: Vec<Subscription>,
 }
 
+/// Java 语言服务的启动阶段。
+///
+/// 宿主拿它画状态栏、也拿它决定要不要弹通知：以前只有 `S1_JAVA_*` 日志，
+/// 用户分不清「没启动」和「正在启动」，只能盯着编辑器猜。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JavaServicePhase {
+    /// 还没轮到启动：非 Java 工程，或者宿主没接线。
+    Idle,
+    /// 正在启动（JDT LS 起进程 + 导入工程，几十秒到十几分钟都见过）。
+    Starting,
+    /// 就绪；`elapsed` 是这一段等了多久。
+    Ready { elapsed: Duration },
+    /// 启动失败，带原因。
+    Failed(String),
+}
+
 pub struct EditorPane {
     notifications: Option<WeakEntity<lithe_gpui_notify::Store>>,
     buffers: Vec<Buffer>,
@@ -251,6 +267,11 @@ pub struct EditorPane {
     decorations_generation: u64,
     java: Option<Arc<JavaLanguageService>>,
     java_task: Option<Task<()>>,
+    /// 语言服务的启动阶段（状态栏每个宿主帧读它）。
+    java_phase: JavaServicePhase,
+    /// 阶段变化时通知宿主。用宿主回调而不是 EventEmitter：与这里既有的 `set_open`、
+    /// `TabMenuHostActions` 同一套做法，不引入第二套事件机制。
+    java_phase_host: Option<Rc<dyn Fn(&JavaServicePhase, &mut App)>>,
     problems: Entity<crate::problems::ProblemsPane>,
     workspace_root: Option<PathBuf>,
     tab_menu_actions: Option<TabMenuHostActions>,
@@ -332,6 +353,8 @@ impl EditorPane {
             decorations_generation: 0,
             java: None,
             java_task: None,
+            java_phase: JavaServicePhase::Idle,
+            java_phase_host: None,
             problems: cx.new(|_| crate::problems::ProblemsPane::new()),
             workspace_root: None,
             tab_menu_actions: None,
@@ -554,16 +577,57 @@ impl EditorPane {
         // prepare 成功之后再补一次——否则服务启动前打开的文件永远没有注记与诊断。
         self.rearm_java_features(cx);
 
+        // 阶段先置「启动中」：状态栏立刻能看到，不必等日志。
+        self.set_java_phase(JavaServicePhase::Starting, cx);
+
         // 等待留在后台执行器上（prepare 会阻塞到就绪上限），回来再切回宿主上下文补那一脚。
+        let started = std::time::Instant::now();
         let prepared = cx.background_spawn(async move { service.prepare() });
         self.java_task = Some(cx.spawn(async move |pane, cx| {
-            match prepared.await {
-                Ok(true) => println!("S1_JAVA_PREPARED"),
-                Ok(false) => {}
-                Err(reason) => println!("S1_JAVA_PREPARE_FAILED reason={reason}"),
-            }
-            let _ = pane.update(cx, |pane, cx| pane.rearm_java_features(cx));
+            let phase = match prepared.await {
+                Ok(true) => {
+                    println!("S1_JAVA_PREPARED");
+                    JavaServicePhase::Ready {
+                        elapsed: started.elapsed(),
+                    }
+                }
+                // 不是 Java 工程：不画状态、也不弹通知。
+                Ok(false) => JavaServicePhase::Idle,
+                Err(reason) => {
+                    println!("S1_JAVA_PREPARE_FAILED reason={reason}");
+                    JavaServicePhase::Failed(reason)
+                }
+            };
+            let _ = pane.update(cx, |pane, cx| {
+                let ready = matches!(phase, JavaServicePhase::Ready { .. });
+                pane.set_java_phase(phase, cx);
+                if ready {
+                    // 门禁之后「就绪」不会自己把注记要回来，得有人补这一脚。
+                    pane.rearm_java_features(cx);
+                }
+            });
         }));
+    }
+
+    /// 语言服务的启动阶段。
+    pub fn java_service_phase(&self) -> &JavaServicePhase {
+        &self.java_phase
+    }
+
+    /// 宿主登记阶段变化回调（就绪/失败时弹通知；状态栏那条不需要回调，直接读阶段）。
+    pub fn set_java_phase_host(&mut self, host: Rc<dyn Fn(&JavaServicePhase, &mut App)>) {
+        self.java_phase_host = Some(host);
+    }
+
+    fn set_java_phase(&mut self, phase: JavaServicePhase, cx: &mut Context<Self>) {
+        if self.java_phase == phase {
+            return;
+        }
+        self.java_phase = phase.clone();
+        if let Some(host) = self.java_phase_host.clone() {
+            host(&phase, cx);
+        }
+        cx.notify();
     }
 
     /// 把所有 Java 缓冲区要一遍诊断与注记。门禁之后这件事需要一个明确的触发点：

@@ -46,7 +46,7 @@ use crate::session::{SessionPlan, SessionTracker};
 use crate::status_bar::{StatusEntry, status_bar};
 use crate::title_bar::title_bar;
 use lithe_gpui_editor::{
-    BufferWriteHost, DebugGutterHost, EditorPane, SaveBuffer, TabMenuHostActions,
+    BufferWriteHost, DebugGutterHost, EditorPane, JavaServicePhase, SaveBuffer, TabMenuHostActions,
 };
 use lithe_gpui_explorer::Explorer;
 use lithe_gpui_git::{BottomPane, ChangesView};
@@ -1204,6 +1204,22 @@ impl ShellWorkspace {
         cx.observe(&spring_panel, |_, _, cx| cx.notify()).detach();
 
         let self_handle = cx.weak_entity();
+
+        // 语言服务阶段变化 → 弹一条通知（状态栏读的是同一个阶段，不需要回调）。
+        // 以前只有 S1_JAVA_* 日志在文件里，界面上分不清「没启动」和「正在启动」。
+        {
+            let shell = self_handle.clone();
+            editor.update(cx, |pane, _| {
+                pane.set_java_phase_host(Rc::new(move |phase, cx| {
+                    let Some(shell) = shell.upgrade() else {
+                        return;
+                    };
+                    let phase = phase.clone();
+                    let _ = shell.update(cx, |shell, cx| shell.on_java_phase(phase, cx));
+                }));
+            });
+        }
+
         // The dock wraps the middle column: the editor at its center, a tool
         // window on each side. Its two closures read the shell back, so a panel
         // always draws the view the shell has chosen for it.
@@ -2972,11 +2988,61 @@ impl ShellWorkspace {
         eprintln!("S1_NOTIFICATION action=open readUpToSeq={read_upto}");
     }
 
+    /// 语言服务就绪/失败时弹一条通知。「启动中」不弹：那一条由状态栏常驻显示，
+    /// 每次打开工程都弹一次只会变成噪音。
+    fn on_java_phase(&mut self, phase: JavaServicePhase, cx: &mut Context<Self>) {
+        match phase {
+            JavaServicePhase::Ready { elapsed } => {
+                let elapsed = format!("{:.1}", elapsed.as_secs_f64());
+                self.notify(
+                    lithe_gpui_notify::Input::new(
+                        "lithe.gpui.javaServiceReady",
+                        lithe_gpui_notify::Severity::Info,
+                    )
+                    .param("elapsed", elapsed.as_str())
+                    .key("java-service-phase"),
+                    cx,
+                );
+            }
+            JavaServicePhase::Failed(reason) => {
+                self.notify(
+                    lithe_gpui_notify::Input::new(
+                        "lithe.gpui.javaServiceFailed",
+                        lithe_gpui_notify::Severity::Error,
+                    )
+                    .param("reason", reason.as_str())
+                    .key("java-service-phase"),
+                    cx,
+                );
+            }
+            JavaServicePhase::Starting | JavaServicePhase::Idle => {}
+        }
+    }
+
     fn footer_right(&self, cx: &App) -> Vec<StatusEntry> {
         let cursor = self.editor.read(cx).cursor_position(cx);
         let tab_size = self.editor.read(cx).tab_size().to_string();
 
-        vec![
+        let mut entries: Vec<StatusEntry> = Vec::new();
+        // 语言服务那一档：启动中 / 就绪 / 失败都常驻显示，用户不必去翻日志。
+        match self.editor.read(cx).java_service_phase() {
+            JavaServicePhase::Starting => {
+                entries.push(StatusEntry::new(tr("lithe.gpui.javaServiceStatusStarting")));
+            }
+            JavaServicePhase::Ready { elapsed } => {
+                let elapsed = format!("{:.1}", elapsed.as_secs_f64());
+                entries.push(StatusEntry::new(tr_args(
+                    "lithe.gpui.javaServiceStatusReady",
+                    &[("elapsed", elapsed.as_str())],
+                )));
+            }
+            JavaServicePhase::Failed(_) => {
+                entries.push(StatusEntry::new(tr("lithe.gpui.javaServiceStatusFailed")));
+            }
+            JavaServicePhase::Idle => {}
+        }
+
+        entries.extend(vec![
             StatusEntry::new(SharedString::from(format!(
                 "{}:{}",
                 cursor.line, cursor.column
@@ -2992,7 +3058,8 @@ impl ShellWorkspace {
                 StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::LOCK_OPEN_ICON, cx)
             },
             StatusEntry::new(SharedString::from("")).with_idea_icon(&idea::CHECK_CIRCLE_ICON, cx),
-        ]
+        ]);
+        entries
     }
 
     fn is_activity_active(&self, index: usize) -> bool {
