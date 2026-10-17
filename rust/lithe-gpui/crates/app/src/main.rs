@@ -612,6 +612,11 @@ fn main() {
     let locale = locale_override
         .clone()
         .unwrap_or_else(|| loaded.settings.gpui_locale().to_string());
+    // 菜单栏布局：命令行优先（--menu-bar-mode / 旧的 --compact-menu-bar），没给就用设置页
+    // 持久化的那一档（menuBarMode），再认不出就走 MenuBarMode::DEFAULT。
+    let menu_bar_mode = menu_bar_mode.or_else(|| {
+        lithe_gpui_workbench::menu_bar::MenuBarMode::from_id(&loaded.settings.menu_bar_mode)
+    });
 
     gpui_platform::application()
         .with_assets(assets::LitheAssets)

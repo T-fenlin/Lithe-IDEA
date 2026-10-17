@@ -1219,6 +1219,33 @@ impl SettingsDialog {
             )
             .into_any_element(),
             settings_group(
+                // 「窗口」这一组只有一项：菜单栏那 4 档以前只能靠命令行开关选，真源也没有
+                // 对应的设置页。
+                tr("lithe.settings.appearance.window"),
+                vec![settings_row(
+                    "settings-row-menu-bar-mode",
+                    tr("lithe.settings.gpui.menuBarMode"),
+                    Some(tr("lithe.settings.gpui.menuBarModeDescription")),
+                    self.dropdown(
+                        "settings-menu-bar-mode",
+                        menu_bar_mode_label(&settings.menu_bar_mode),
+                        menu_bar_mode_options(&settings.menu_bar_mode),
+                        {
+                            let store = self.store.clone();
+                            Box::new(move |value, _, cx| {
+                                store.update(cx, |store, cx| {
+                                    store.set_menu_bar_mode(value.to_string(), cx)
+                                });
+                            })
+                        },
+                    ),
+                    None,
+                    cx,
+                )],
+                cx,
+            )
+            .into_any_element(),
+            settings_group(
                 tr("lithe.settings.appearance.typography"),
                 vec![
                     settings_row_with_note(
@@ -3468,6 +3495,29 @@ impl SettingsDialog {
     }
 }
 
+/// 菜单栏布局的 4 档：值就是 `Settings::menu_bar_mode` 里的字面量，标签另配文案 key。
+const MENU_BAR_MODE_ITEMS: [(&str, &str); 4] = [
+    ("merged", "lithe.settings.gpui.menuBarModeMerged"),
+    ("above", "lithe.settings.gpui.menuBarModeAbove"),
+    ("autohide", "lithe.settings.gpui.menuBarModeAutoHide"),
+    ("compact", "lithe.settings.gpui.menuBarModeCompact"),
+];
+
+fn menu_bar_mode_options(current: &str) -> Vec<(SharedString, SharedString, bool)> {
+    MENU_BAR_MODE_ITEMS
+        .into_iter()
+        .map(|(id, key)| (SharedString::from(id), tr(key), id == current))
+        .collect()
+}
+
+fn menu_bar_mode_label(current: &str) -> SharedString {
+    MENU_BAR_MODE_ITEMS
+        .into_iter()
+        .find(|(id, _)| *id == current)
+        .map(|(_, key)| tr(key))
+        .unwrap_or_else(|| tr(MENU_BAR_MODE_ITEMS[0].1))
+}
+
 impl Render for SettingsDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_stack()
@@ -3617,6 +3667,28 @@ fn git_scope_label(scope: IdentityScope) -> SharedString {
 mod tests {
     use super::*;
     use gpui::px;
+
+    /// 4 档都会出现在下拉里，且**恰好一项**被标成当前值；认不出的值（手改设置文件、
+    /// 旧版字段）既不 panic，也不假装有选中项——外壳那边同样会回落 Merged。
+    #[test]
+    fn menu_bar_mode_options_mark_exactly_the_current_one() {
+        assert_eq!(MENU_BAR_MODE_ITEMS.len(), 4);
+        for (id, _) in MENU_BAR_MODE_ITEMS {
+            let options = menu_bar_mode_options(id);
+            assert_eq!(options.len(), 4, "{id} 的下拉项数不对");
+            let checked: Vec<&SharedString> = options
+                .iter()
+                .filter(|(_, _, selected)| *selected)
+                .map(|(value, _, _)| value)
+                .collect();
+            assert_eq!(checked.len(), 1, "{id} 应当恰好一项被选中");
+            assert_eq!(checked[0].as_ref(), id);
+            assert!(!menu_bar_mode_label(id).is_empty(), "{id} 没有文案");
+        }
+
+        assert!(menu_bar_mode_options("pinned").iter().all(|(_, _, on)| !*on));
+        assert!(!menu_bar_mode_label("pinned").is_empty(), "未知档要有兜底文案");
+    }
 
     /// 默认档（Lithe）永远不报覆盖缺口。
     ///

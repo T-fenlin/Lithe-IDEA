@@ -1,6 +1,6 @@
 # 本文件由 lithe-gpui/tools/extract-locale.mjs 自动生成，请勿手工编辑。
 # 真源：crates/shared/locales/source/locale.ts（含 ai-commit.ts 展开）
-# 另有 166 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
+# 另有 173 条 gpui 侧自有 key（settings.gpui.* / editor.gpui.* / appearance.gpui.* / maven.gpui.* / gpui.menuMissing.* / search.gpui.* / welcome.gpui.* 等）真源里没有，由脚本的 GPUI_ONLY_KEYS 提供（含理由）。
 # 重新生成：node lithe-gpui/tools/extract-locale.mjs
 #
 # rust-i18n 4.2 约定：_version: 2（key 在前、locale 在后）。
@@ -8707,6 +8707,20 @@ lithe:
     zh-CN: "语言服务（JDTLS）用这个 JDK 运行。选「自动检测」就用本机探测到的 JDK；改完要等下一次语言服务启动才生效，当前实现是重启应用。"
   settings.gpui.javaVersionAuto:
     zh-CN: "自动检测"
+  settings.appearance.window:
+    zh-CN: "窗口"
+  settings.gpui.menuBarMode:
+    zh-CN: "菜单栏布局"
+  settings.gpui.menuBarModeDescription:
+    zh-CN: "决定菜单栏画在窗口的哪一层：与标题栏合并、抬到标题栏上方、平时隐藏只在鼠标压上来时浮出，或者收成一个菜单按钮。改完立刻生效，不需要重启。"
+  settings.gpui.menuBarModeMerged:
+    zh-CN: "与标题栏合并"
+  settings.gpui.menuBarModeAbove:
+    zh-CN: "标题栏上方独立一行"
+  settings.gpui.menuBarModeAutoHide:
+    zh-CN: "自动隐藏"
+  settings.gpui.menuBarModeCompact:
+    zh-CN: "紧凑菜单按钮"
   settings.gpui.runNoProject:
     zh-CN: "打开项目后才能识别可运行配置。"
   settings.gpui.runReadOnlyDescription:

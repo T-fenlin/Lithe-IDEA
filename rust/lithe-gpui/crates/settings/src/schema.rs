@@ -50,6 +50,12 @@ pub const DEFAULT_AUTO_THEME_DARK: &str = "darcula";
 
 pub const DEFAULT_ICONS: &str = "idea";
 
+/// 菜单栏布局的 4 档。字面量的真源是
+/// `rust/lithe-gpui/crates/workbench/src/menu_bar.rs` 的 `MenuBarMode::id()`；
+/// settings 不能反依赖 workbench，所以这里存同一组字面量，认不出的值两侧都会回落默认。
+pub const MENU_BAR_MODES: [&str; 4] = ["merged", "above", "autohide", "compact"];
+pub const MENU_BAR_MODE_DEFAULT: &str = MENU_BAR_MODES[0];
+
 pub const DEFAULT_MONO_FONT_FAMILY: &str = "JetBrains Mono";
 
 pub fn slugify_theme_id(name: &str) -> String {
@@ -269,6 +275,13 @@ pub struct Settings {
     #[serde(rename = "openFoldersInNewWindow")]
     pub open_folders_in_new_window: bool,
 
+    /// 菜单栏布局（`merged` / `above` / `autohide` / `compact`）。
+    ///
+    /// 真源里没有这个设置项：那 4 档以前只能靠 `--menu-bar-mode` 命令行开关选，改一次要重启。
+    /// 落成持久化设置后，启动优先级仍是「命令行 > 设置 > 默认」。
+    #[serde(rename = "menuBarMode")]
+    pub menu_bar_mode: String,
+
     #[serde(rename = "icons")]
     pub icons: String,
 
@@ -313,6 +326,7 @@ impl Default for Settings {
             auto_save: true,
             ask_where_to_open_projects: true,
             open_folders_in_new_window: true,
+            menu_bar_mode: MENU_BAR_MODE_DEFAULT.to_string(),
             icons: DEFAULT_ICONS.to_string(),
             uninstalled_extensions: Vec::new(),
             keymap: KeymapSettings::default(),
@@ -376,6 +390,12 @@ impl Settings {
         self.maven_java_home_path = self.maven_java_home_path.trim().to_string();
         self.maven_settings_path = self.maven_settings_path.trim().to_string();
         self.maven_local_repository_path = self.maven_local_repository_path.trim().to_string();
+
+        // 认不出的档位回落默认：手改设置文件不该让外壳拿到一个不存在的布局。
+        // 外壳那边读的时候还会再回落一次，这里保证**写回**的值也是干净的。
+        if !MENU_BAR_MODES.contains(&self.menu_bar_mode.as_str()) {
+            self.menu_bar_mode = MENU_BAR_MODE_DEFAULT.to_string();
+        }
 
         if self.icons.trim().is_empty() {
             self.icons = DEFAULT_ICONS.to_string();

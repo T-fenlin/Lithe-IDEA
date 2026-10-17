@@ -624,6 +624,19 @@ impl SettingsStore {
         changed
     }
 
+    /// 菜单栏布局。值域是 `MenuBarMode` 的 4 个 id；写下去之后外壳的观察者会立刻换成那一档
+    /// （`ShellWorkspace` 里 `observe_in(&store, ..)` 那段），不需要重启。
+    pub fn set_menu_bar_mode(&mut self, id: String, cx: &mut Context<Self>) -> bool {
+        let mut next = self.global.clone();
+        next.menu_bar_mode = id;
+        let changed = self.commit_global(cx, next, Effects::None);
+        if changed {
+            self.debounce.mark_flushed();
+            self.write();
+        }
+        changed
+    }
+
     fn commit_global(
         &mut self,
         cx: &mut Context<Self>,

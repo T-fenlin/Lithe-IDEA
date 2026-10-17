@@ -1140,6 +1140,15 @@ impl ShellWorkspace {
                 this.changes.update(cx, |view, cx| {
                     view.set_confirm_before_discard(settings.confirm_before_discard, cx);
                 });
+                // 菜单栏布局是「立刻生效」的那一类：4 档只是摆法，不重启任何服务。
+                // 认不出的值在这里回落默认（写入侧的 Settings::normalize 也会兜一次）。
+                this.menu_bar.update(cx, |bar, cx| {
+                    bar.set_mode(
+                        MenuBarMode::from_id(&settings.menu_bar_mode)
+                            .unwrap_or(MenuBarMode::DEFAULT),
+                        cx,
+                    )
+                });
                 let current_root = this.root.clone();
                 register_java_toolchain(&current_root, cx);
                 cx.notify();

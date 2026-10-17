@@ -210,6 +210,9 @@ mod tests {
             terminal_font_size: 16.0,
             uninstalled_extensions: vec!["lithe.nordTheme".to_string()],
             icons: "pierre".to_string(),
+            // 非默认档（出厂是 merged）：round-trip 与逐键损坏那组测试需要它才覆盖到
+            // menuBarMode 这个键。
+            menu_bar_mode: "compact".to_string(),
             keymap: KeymapSettings {
                 preset: KeymapPreset::Eclipse,
                 overrides: vec![KeyOverride::new(

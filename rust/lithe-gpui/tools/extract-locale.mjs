@@ -282,6 +282,55 @@ const GPUI_ONLY_KEYS = [
       "下拉里代表「不覆盖」的那一项（值空串＝清掉全局 javaHomePath）。真源是文本框的占位提示（run.jdkHomeHint：留空则使用自动检测到的 JDK），下拉需要一个可点的名字，所以新增一条。",
   },
   {
+    key: "settings.appearance.window",
+    zh: "窗口",
+    en: "Window",
+    reason:
+      "「外观」页新增那一组的标题。真源没有「窗口」这一组：那 4 档菜单栏摆法在真源前端只有命令行开关，没有设置项。本侧把「菜单栏布局」落到设置页后需要自己的标题，依据是月牙窗与标题栏同属外观（menu_bar.rs 的 MenuBarMode 注释把 4 档定义成摆法，不涉及行为）。",
+  },
+  {
+    key: "settings.gpui.menuBarMode",
+    zh: "菜单栏布局",
+    en: "Menu Bar Layout",
+    reason:
+      "上面那一组的行标题。真源对应的能力是启动开关 --menu-bar-mode（见 rust/lithe-gpui/crates/app/src/main.rs 的 parse_menu_bar_mode），设置页没有对应项，所以新增一条标题。",
+  },
+  {
+    key: "settings.gpui.menuBarModeDescription",
+    zh: "决定菜单栏画在窗口的哪一层：与标题栏合并、抬到标题栏上方、平时隐藏只在鼠标压上来时浮出，或者收成一个菜单按钮。改完立刻生效，不需要重启。",
+    en: "Chooses where the menu bar is drawn: merged into the title bar, a separate row above it, hidden until the pointer reaches the top edge, or collapsed into a single menu button. Changes apply immediately; no restart is needed.",
+    reason:
+      "那一行的描述。两句都必须写：一是 4 档各自的真实差别（与 MenuBarMode 的文档注释一致，不能只说「样式」），二是生效时机——本侧走 ShellWorkspace 里 observe_in(&store, ..) 那条路立刻换档，与 javaVersion 那种「下次启动才生效」的项必须区分开，否则用户会按错预期。",
+  },
+  {
+    key: "settings.gpui.menuBarModeMerged",
+    zh: "与标题栏合并",
+    en: "Merged into the title bar",
+    reason:
+      "下拉里的第一档（值 merged，也是默认）。名字直接对 MenuBarMode::Merged，真源只有 --menu-bar-mode=merged 这个字面量，没有可显示的文案。",
+  },
+  {
+    key: "settings.gpui.menuBarModeAbove",
+    zh: "标题栏上方独立一行",
+    en: "Separate row above the title bar",
+    reason:
+      "下拉里的第二档（值 above）。名字对 MenuBarMode::Above，落点是 menu_bar.rs 的 above_bar()：独立一行、自带下边框。",
+  },
+  {
+    key: "settings.gpui.menuBarModeAutoHide",
+    zh: "自动隐藏",
+    en: "Auto-hide",
+    reason:
+      "下拉里的第三档（值 autohide）。名字对 MenuBarMode::AutoHide，落点是 autohide_bar()：平时只留一条热区，鼠标压上去才浮出。文案不写「悬停显示」是因为它靠顶部热区触发，写成悬停会让人以为鼠标停在任意位置都会浮出。",
+  },
+  {
+    key: "settings.gpui.menuBarModeCompact",
+    zh: "紧凑菜单按钮",
+    en: "Compact menu button",
+    reason:
+      "下拉里的第四档（值 compact）。名字对 MenuBarMode::Compact，落点是 compact_bar()：一个汉堡按钮，按下去展开「菜单的菜单」。真源里这一档来自旧的 --compact-menu-bar 开关，没有文案。",
+  },
+  {
     key: "settings.gpui.runNoProject",
     zh: "打开项目后才能识别可运行配置。",
     en: "Open a project to identify runnable configurations.",
