@@ -392,11 +392,18 @@ impl RenderOnce for SplitButton {
     }
 }
 
+/// 菜单内容的两种给法：现成的一份，或「要显示时才建」的构造函数。
+type BuildMenu = Rc<dyn Fn(&mut Window, &mut App) -> Menu>;
+
 /// Its children, and a menu that opens at the pointer on a right click.
 #[derive(IntoElement)]
 pub struct ContextMenu {
     id: ElementId,
     menu: Menu,
+    /// 给了它就只在**要显示的那一帧**建菜单：右键按下的那一刻、或 `.manual` 送来新请求
+    /// 的那一帧。关闭期间 `hang` 直接返回 `None`，根本不读菜单，每帧重建纯属浪费——
+    /// 一个十项菜单 = 十个 `Rc<dyn Fn>` 闭包 + 若干 `SharedString`，标签栏还会乘以标签数。
+    build: Option<BuildMenu>,
     request: Option<Option<(u64, Point<Pixels>)>>,
     children: SmallVec<[AnyElement; 2]>,
 }
@@ -406,6 +413,21 @@ impl ContextMenu {
         Self {
             id: id.into(),
             menu,
+            build: None,
+            request: None,
+            children: SmallVec::new(),
+        }
+    }
+
+    /// 菜单在要显示时才建。关闭期间一帧都不建，所以构造函数里可以放心做遍历/取值。
+    pub fn build(
+        id: impl Into<ElementId>,
+        builder: impl Fn(&mut Window, &mut App) -> Menu + 'static,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            menu: Menu::new(),
+            build: Some(Rc::new(builder)),
             request: None,
             children: SmallVec::new(),
         }
@@ -424,18 +446,38 @@ impl ParentElement for ContextMenu {
     }
 }
 
+/// 这一帧要不要建菜单。三个理由之一即可：有请求在等（manual 送来了新号）、菜单正开着
+/// （要照它画行），或者调用方给的是现成菜单（那就克隆，不涉及构建）。
+pub(super) fn menu_is_needed(has_builder: bool, request_pending: bool, open: bool) -> bool {
+    !has_builder || request_pending || open
+}
+
 impl RenderOnce for ContextMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = state(&self.id, window, cx);
-        if let Some(Some((number, at))) = self.request {
-            let asked = window.use_keyed_state((self.id.clone(), "asked"), cx, |_, _| None);
-            if *asked.read(cx) != Some(number) {
-                asked.update(cx, |asked, _| *asked = Some(number));
-                log::info!("context menu {:?}: asked at {at:?}", self.id);
-                Open::show(&state, &self.menu, Spot::At(at), false, cx);
-            }
+        let asked = window.use_keyed_state((self.id.clone(), "asked"), cx, |_, _| None);
+        let request_pending = matches!(
+            self.request,
+            Some(Some((number, _))) if *asked.read(cx) != Some(number)
+        );
+        let open_now = state.read(cx).is_open();
+
+        // 关闭期间不建：hang 在 spot 为空时直接返回 None，菜单根本没被读过。
+        let menu = match &self.build {
+            Some(build) if menu_is_needed(true, request_pending, open_now) => build(window, cx),
+            _ => self.menu.clone(),
+        };
+
+        if let Some(Some((number, at))) = self.request
+            && request_pending
+        {
+            asked.update(cx, |asked, _| *asked = Some(number));
+            log::info!("context menu {:?}: asked at {at:?}", self.id);
+            Open::show(&state, &menu, Spot::At(at), false, cx);
         }
-        let (open, shut, menu) = (state.clone(), state.clone(), self.menu.clone());
+
+        let (open, shut, click_menu, build) =
+            (state.clone(), state.clone(), menu.clone(), self.build.clone());
         div()
             .id(self.id.clone())
             .relative()
@@ -443,6 +485,11 @@ impl RenderOnce for ContextMenu {
                 host.on_mouse_down(MouseButton::Right, move |event, window, cx| {
                     window.prevent_default();
                     log::info!("context menu: at {:?}", event.position);
+                    // 右键这一下才建：平时一帧都不建。
+                    let menu = match &build {
+                        Some(build) => build(window, cx),
+                        None => click_menu.clone(),
+                    };
                     Open::show(&open, &menu, Spot::At(event.position), false, cx);
                 })
             })
@@ -454,7 +501,7 @@ impl RenderOnce for ContextMenu {
             })
             .children(self.children)
             .child(measure_host(state.clone(), false))
-            .children(hang(&self.id, &self.menu, &state, None, window, cx))
+            .children(hang(&self.id, &menu, &state, None, window, cx))
     }
 }
 

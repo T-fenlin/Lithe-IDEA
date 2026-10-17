@@ -4186,16 +4186,23 @@ impl EditorPane {
                 }),
             );
 
-        ContextMenu::new(
-            tab_menu_element_id(&buffer.key),
-            self.tab_menu(index, buffer, cx),
-        )
+        // 菜单只在「要显示」的那一帧才建（右键按下 / 请求开出）。标签栏每帧都渲染，
+        // 每帧给每个标签重建一份十项菜单 = 十来个 Rc 闭包 + 一串 SharedString，纯浪费。
+        let pane = cx.entity();
+        ContextMenu::build(tab_menu_element_id(&buffer.key), move |_window, cx| {
+            pane.update(cx, |pane, cx| pane.tab_menu(index, cx))
+        })
         .child(content.into_any_element())
         .into_any_element()
     }
 
     /// 标签的右键菜单：除了图标（组件库的菜单行只收库内图标名），条目的文案与动作与迁移前一一对应。
-    fn tab_menu(&self, index: usize, buffer: &Buffer, cx: &mut Context<Self>) -> Menu {
+    /// 菜单靠索引现取缓冲：调用方（`ContextMenu::build` 的构造函数）只持有索引，
+    /// 拿不到 `&Buffer`——它要能活在渲染帧之外。
+    fn tab_menu(&self, index: usize, cx: &mut Context<Self>) -> Menu {
+        let Some(buffer) = self.buffers.get(index) else {
+            return Menu::new();
+        };
         let pane: Entity<Self> = cx.entity();
         let anchor = buffer.key.clone();
         let on_disk = buffer

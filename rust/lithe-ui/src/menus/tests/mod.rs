@@ -6,6 +6,7 @@ use gpui::{
 
 mod more;
 
+use super::hosts::menu_is_needed;
 use super::{ContextMenu, DropdownMenu, Menu, MenuItem, OverflowMenu, SearchableMenu};
 use crate::{primitives::FocusScope, theme::Size, theme::Theme};
 
@@ -503,4 +504,14 @@ fn clearing_the_filter_marks_the_first_row_again(cx: &mut TestAppContext) {
     press("backspace", cx);
     press("enter", cx);
     assert_eq!(ran(&view, cx), ["cut"]);
+}
+
+/// 惰性右键菜单的判定：关着且没有请求时**一帧都不建**（每帧的常态就是这个），
+/// 只有「有请求在等」或「正开着」才建。给现成菜单的那条路不受影响，永远克隆。
+#[test]
+fn a_lazy_context_menu_is_only_built_while_it_is_needed() {
+    assert!(!menu_is_needed(true, false, false));
+    assert!(menu_is_needed(true, true, false));
+    assert!(menu_is_needed(true, false, true));
+    assert!(menu_is_needed(false, false, false));
 }
