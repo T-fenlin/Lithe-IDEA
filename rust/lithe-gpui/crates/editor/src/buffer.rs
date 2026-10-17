@@ -24,6 +24,23 @@ pub(crate) fn resolved_language(name: &str) -> Option<&'static lithe_ui::languag
     (!lithe_gpui_shared::languages::is_language_disabled(language.id)).then_some(language)
 }
 
+/// 状态栏「文件类型」那一枚胶囊要写的字。
+///
+/// 认得出的语言用注册表里的展示名（`Java` / `Markdown` / `Kotlin` …）——那是人认得的叫法；
+/// 注册表里还没有的语言（Python / Rust / C# …）退回扩展名本身（`py` / `rs` / `cs`），
+/// 总比什么都不说强。两者都没有（`Makefile` 这种认不出的无扩展名文件）就返回 `None`，
+/// 状态栏那一枚干脆不画。
+///
+/// 这里不看「语言包是否被关掉」：关掉的是高亮，文件类型本身没变。
+pub(crate) fn file_type_label(name: &str) -> Option<SharedString> {
+    if let Some(language) = lithe_ui::language::by_path(name) {
+        return Some(SharedString::from(language.name));
+    }
+    let extension = name.rsplit_once('.')?.1;
+    // 扩展名超过 8 个字符的（`Foo.verylongextension`）不是文件类型，不往状态栏塞。
+    (!extension.is_empty() && extension.len() <= 8).then(|| SharedString::from(extension))
+}
+
 /// 语言 id（宿主的日志、Java 服务的接线判据与"这个文件是什么语言"都用它）。
 pub(crate) fn language_for_file(name: &str) -> Option<&'static str> {
     resolved_language(name).map(|language| language.id)
@@ -634,6 +651,45 @@ mod tests {
 
         assert!(!body.writable, "超限文件不打开，给出的是说明");
         assert!(body.text.contains("MiB"), "应是超限说明：{:?}", body.text);
+    }
+
+    #[test]
+    fn file_type_label_prefers_the_registry_name() {
+        languages();
+        assert_eq!(
+            file_type_label("Hello.java").as_deref(),
+            Some("Java"),
+            "注册表认得 Java，就用展示名"
+        );
+        assert_eq!(file_type_label("README.md").as_deref(), Some("Markdown"));
+        assert_eq!(file_type_label("pom.xml").as_deref(), Some("XML"));
+        assert_eq!(
+            file_type_label("mvnw").as_deref(),
+            Some("Shell"),
+            "无扩展名的脚本靠文件名认"
+        );
+    }
+
+    #[test]
+    fn file_type_label_falls_back_to_the_extension() {
+        languages();
+        // 注册表里还没有这几门语言，退回扩展名。
+        assert_eq!(file_type_label("app.py").as_deref(), Some("py"));
+        assert_eq!(file_type_label("lib.rs").as_deref(), Some("rs"));
+        assert_eq!(file_type_label("Program.cs").as_deref(), Some("cs"));
+        assert_eq!(
+            file_type_label("notes.txt").as_deref(),
+            Some("txt"),
+            "纯文本也报扩展名"
+        );
+    }
+
+    #[test]
+    fn file_type_label_is_none_when_nothing_is_known() {
+        languages();
+        assert_eq!(file_type_label("Makefile").as_deref(), None);
+        assert_eq!(file_type_label("untitled 1").as_deref(), None);
+        assert_eq!(file_type_label("trailing.").as_deref(), None);
     }
 
     #[test]

@@ -694,6 +694,17 @@ impl EditorPane {
         Some((buffer.encoding.id(), buffer.line_ending.id()))
     }
 
+    /// 状态栏的「文件类型」胶囊要写的字（`Java` / `Markdown` / `py` / `rs` …）。
+    ///
+    /// 只有真文件才有类型：无标题缓冲既没有扩展名也没注册表条目，返回 `None`。
+    pub fn active_file_type(&self) -> Option<SharedString> {
+        let buffer = self.active.and_then(|index| self.buffers.get(index))?;
+        if !buffer.is_disk() {
+            return None;
+        }
+        crate::buffer::file_type_label(&buffer.name)
+    }
+
     /// 状态栏的编码胶囊：轮换到下一档。
     ///
     /// 缓冲区干净时顺便按新编码重读一遍文件——「这个文件其实是 GBK」正是想看见的结果；

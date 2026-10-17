@@ -3179,9 +3179,12 @@ impl ShellWorkspace {
             JavaServicePhase::Idle => {}
         }
 
-        // 编码与行尾符读真实缓冲区。没有活动文件（或正文只是只读说明）时整两条不画：
-        // 那时候说「UTF-8」是没有根据的，而空胶囊只是个空方块。
+        // 文件类型 / 编码 / 行尾符三枚胶囊：前一枚读的是文件本身，后两枚读真实缓冲区。
+        // 拿不到就整条不画——那时候说「UTF-8」是没有根据的，而空胶囊只是个空方块。
         let mut format_entries: Vec<StatusEntry> = Vec::new();
+        if let Some(file_type) = self.editor.read(cx).active_file_type() {
+            format_entries.push(StatusEntry::new(file_type));
+        }
         if let Some((encoding, line_ending)) = self.editor.read(cx).active_text_format(cx) {
             let encoding_editor = self.editor.clone();
             format_entries.push(
