@@ -3320,13 +3320,28 @@ impl ShellWorkspace {
             "S1_OPEN_PROJECT destination=this-window path={} state=rebuilding",
             target.display()
         );
+        let started = std::time::Instant::now();
         let old_root = self.root.display().to_string();
         self.search_index.schedule_invalidate(cx);
+        eprintln!(
+            "S1_OPEN_PROJECT phase=search_invalidate ms={}",
+            started.elapsed().as_millis()
+        );
         self.flush_session(true, cx);
+        eprintln!(
+            "S1_OPEN_PROJECT phase=flush_session ms={}",
+            started.elapsed().as_millis()
+        );
         let Some(workspace) = replace_root_with_workspace(&target, window, cx) else {
             eprintln!("S1_OPEN_PROJECT state=rebuild_failed reason=no_view");
             return;
         };
+        // 这一段以前是 14 秒的整体黑箱：换根会**同步**拆掉旧工作区的全部子系统
+        // （编辑器缓冲、资源树、终端、git、改动视图、搜索索引、语言服务），耗时都在这里。
+        eprintln!(
+            "S1_OPEN_PROJECT phase=replace_root ms={}",
+            started.elapsed().as_millis()
+        );
         // 原地换根之后，这个窗口从此代表新工程：归属表必须跟着换，否则旧工程还以为自己
         // 有一个窗口（再打开旧工程就会聚焦到这个已经换了内容的窗口上）。
         register_project_window(&target, window.window_handle());
@@ -3408,7 +3423,10 @@ impl ShellWorkspace {
                     .action(move |close| {
                         let new_window_shell = new_window_shell.clone();
                         let new_window_target = new_window_target.clone();
-                        Button::new(new_window_id).label(new_window_label).on_click(
+                        Button::new(new_window_id)
+                            .primary()
+                            .label(new_window_label)
+                            .on_click(
                             move |_, window, cx| {
                                 let remember = new_window_cell.get();
                                 close(window, cx);
@@ -3430,7 +3448,6 @@ impl ShellWorkspace {
                         let this_window_shell = this_window_shell.clone();
                         let this_window_target = this_window_target.clone();
                         Button::new(this_window_id)
-                            .primary()
                             .label(this_window_label)
                             .on_click(move |_, window, cx| {
                                 let remember = click_cell.get();
