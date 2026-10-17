@@ -111,19 +111,9 @@ pub const MISSING_NEW_PROJECT_SCAFFOLDING: Missing = Missing {
     text_key: "lithe.gpui.menuMissing.newProjectScaffolding",
 };
 
-pub const MISSING_PROJECT_LIFECYCLE: Missing = Missing {
-    id: "project_lifecycle",
-    text_key: "lithe.gpui.menuMissing.projectLifecycle",
-};
-
 pub const MISSING_LOCAL_HISTORY: Missing = Missing {
     id: "local_history",
     text_key: "lithe.gpui.menuMissing.localHistory",
-};
-
-pub const MISSING_WINDOW_ROUTING: Missing = Missing {
-    id: "window_routing",
-    text_key: "lithe.gpui.menuMissing.windowRouting",
 };
 
 pub const MISSING_HELP_ABOUT: Missing = Missing {
@@ -145,7 +135,12 @@ pub const MISSING_TERMINAL_SPLIT: Missing = Missing {
 /// `missing_declarations_are_grouped_by_capability` 判为「声明表虚胖」。对应的文案键
 /// `lithe.gpui.menuMissing.editorEntry` / `.fileLifecycle` / `.shortcutsView` 仍留在真源里
 /// （无人引用，未删），以便同名能力再出现时复用。
-pub const MISSING_GROUPS: [Missing; 12] = [
+///
+/// 同一轮里 `project_lifecycle` 与 `window_routing` 也退场了（C1）：关闭文件夹改成换根回
+/// 欢迎页，关闭窗口 / 退出接成 `window.remove_window()` / `cx.quit()` —— 三条占位项都变成真
+/// `MenuAction`，两组一条都不剩。文案键 `lithe.gpui.menuMissing.projectLifecycle` /
+/// `.windowRouting` 同样留在真源里未删，理由与上面三条一致。
+pub const MISSING_GROUPS: [Missing; 10] = [
     MISSING_EDITOR_FEATURES,
     MISSING_LSP_REQUESTS,
     MISSING_SUBSYSTEM,
@@ -153,9 +148,7 @@ pub const MISSING_GROUPS: [Missing; 12] = [
     MISSING_UPDATER,
     MISSING_CLONE_UI,
     MISSING_NEW_PROJECT_SCAFFOLDING,
-    MISSING_PROJECT_LIFECYCLE,
     MISSING_LOCAL_HISTORY,
-    MISSING_WINDOW_ROUTING,
     MISSING_HELP_ABOUT,
     MISSING_TERMINAL_SPLIT,
 ];
@@ -443,6 +436,11 @@ pub enum MenuAction {
     SaveAs,
     SaveAll,
     RevertFile,
+    // 窗口 / 工程生命周期：执行分支在 `apply_menu_action`（`window.remove_window()` /
+    // `cx.quit()` / 换根回欢迎页），所以没有可派发的 Action，也没有 `CommandId`。
+    CloseFolder,
+    CloseWindow,
+    Quit,
 }
 
 /// 一行菜单的图标。
@@ -534,6 +532,10 @@ impl MenuAction {
             Self::SaveAs => "lithe.menu.saveAs",
             Self::SaveAll => "lithe.menu.saveAll",
             Self::RevertFile => "lithe.menu.revertFile",
+            // 三条沿用 File 菜单里原本挂着的占位项文案键（文字未变，只是不再挂「尚未接入」）。
+            Self::CloseFolder => "lithe.menu.closeFolder",
+            Self::CloseWindow => "lithe.menu.closeWindow",
+            Self::Quit => "lithe.menu.quit",
         }
     }
 
@@ -708,7 +710,11 @@ impl MenuAction {
             | Self::DuplicateLine
             | Self::ToggleMinimap
             | Self::ToggleLineNumbers
-            | Self::ToggleRenderWhitespace => MenuIcon::Empty,
+            | Self::ToggleRenderWhitespace
+            // 「关闭文件夹 / 关闭窗口 / 退出」三张图我们也没画过，按同一口径留空槽。
+            | Self::CloseFolder
+            | Self::CloseWindow
+            | Self::Quit => MenuIcon::Empty,
         }
     }
 
@@ -839,7 +845,14 @@ impl MenuAction {
             Self::PreviousTab => Box::new(PreviousTab),
             // 文件生命周期五个：执行分支都在 `apply_menu_action`（无活动缓冲时 no-op + 诊断，
             // 见裁决 #7），没有可派发的 Action，菜单上也不画键位胶囊。
-            Self::NewTab | Self::NewFile | Self::SaveAs | Self::SaveAll | Self::RevertFile => {
+            Self::NewTab
+            | Self::NewFile
+            | Self::SaveAs
+            | Self::SaveAll
+            | Self::RevertFile
+            | Self::CloseFolder
+            | Self::CloseWindow
+            | Self::Quit => {
                 return None;
             }
         })
@@ -921,7 +934,11 @@ impl MenuAction {
             | Self::NewFile
             | Self::SaveAs
             | Self::SaveAll
-            | Self::RevertFile => None,
+            | Self::RevertFile
+            // 窗口 / 工程生命周期三条同理：没有 `CommandId`，也不进命令面板。
+            | Self::CloseFolder
+            | Self::CloseWindow
+            | Self::Quit => None,
         }
     }
 }
@@ -936,11 +953,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::NewFile),
             MenuItem::Action(MenuAction::OpenFolder),
             MenuItem::Action(MenuAction::OpenFile),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.closeFolder",
-                missing: MISSING_PROJECT_LIFECYCLE,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::CloseFolder),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::Save),
             MenuItem::Action(MenuAction::SaveAs),
@@ -953,11 +966,7 @@ pub static MENUS: &[TopMenu] = &[
             },
             MenuItem::Separator,
             MenuItem::Action(MenuAction::CloseTab),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.closeWindow",
-                missing: MISSING_WINDOW_ROUTING,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::CloseWindow),
             MenuItem::Separator,
             MenuItem::Action(MenuAction::CloseOtherTabs),
             MenuItem::Action(MenuAction::CloseAllTabs),
@@ -965,11 +974,7 @@ pub static MENUS: &[TopMenu] = &[
             MenuItem::Action(MenuAction::CloseTabsToLeft),
             MenuItem::Action(MenuAction::CloseTabsToRight),
             MenuItem::Action(MenuAction::ReopenClosedTab),
-            MenuItem::NotWired {
-                label_key: "lithe.menu.quit",
-                missing: MISSING_WINDOW_ROUTING,
-                icon: MenuIcon::Empty,
-            },
+            MenuItem::Action(MenuAction::Quit),
         ],
     },
     TopMenu {
@@ -2385,17 +2390,20 @@ mod tests {
                 MenuAction::NewFile,
                 MenuAction::OpenFolder,
                 MenuAction::OpenFile,
+                MenuAction::CloseFolder,
                 MenuAction::Save,
                 MenuAction::SaveAs,
                 MenuAction::SaveAll,
                 MenuAction::RevertFile,
                 MenuAction::CloseTab,
+                MenuAction::CloseWindow,
                 MenuAction::CloseOtherTabs,
                 MenuAction::CloseAllTabs,
                 MenuAction::CloseSavedTabs,
                 MenuAction::CloseTabsToLeft,
                 MenuAction::CloseTabsToRight,
                 MenuAction::ReopenClosedTab,
+                MenuAction::Quit,
             ]
         );
     }
@@ -2708,7 +2716,7 @@ mod tests {
         // 同一个能力默认只许一个菜单入口。双入口要在白名单里说清理由 ——
         // 「快捷键一览」按 IDEA 的布局在 Tools 和 Help 各有一条，这是上游布局不是重复。
         const TWO_ENTRIES: [MenuAction; 1] = [MenuAction::ShowKeymapSettings];
-        const NON_COMMAND: [MenuAction; 49] = [
+        const NON_COMMAND: [MenuAction; 52] = [
             MenuAction::OpenFolder,
             MenuAction::NewTerminalTab,
             MenuAction::CloseTerminalTab,
@@ -2759,6 +2767,10 @@ mod tests {
             MenuAction::SaveAs,
             MenuAction::SaveAll,
             MenuAction::RevertFile,
+            // 窗口 / 工程生命周期三条同样由 `apply_menu_action` 执行。
+            MenuAction::CloseFolder,
+            MenuAction::CloseWindow,
+            MenuAction::Quit,
         ];
 
         let mut wired: Vec<MenuAction> = Vec::new();
@@ -2836,9 +2848,10 @@ mod tests {
             SOURCE_MENU_ITEMS + LOCAL_ONLY_ITEMS
         );
         // 这个下限只防「有人把没能力的项顺手删掉」。2026-10-16 接通转到引用 / 重命名 /
-        // 格式化文档三条后从 21 降到 18；再降就得先解释清楚又接了什么。
+        // 格式化文档三条后从 21 降到 18；C1 接通关闭文件夹 / 关闭窗口 / 退出三条后
+        // 18 → 15；再降就得先解释清楚又接了什么。
         assert!(
-            declared.len() >= 18,
+            declared.len() >= 15,
             "占位项突然少了一截（现在 {}）？查一下是不是有人把没能力的项又删掉了",
             declared.len()
         );
@@ -3013,13 +3026,13 @@ mod tests {
             );
         }
         assert!(
-            texts.len() <= 12,
-            "占位文案有 {} 句，超过了'按能力分组'的上限 12（= MISSING_GROUPS 的组数）",
+            texts.len() <= 10,
+            "占位文案有 {} 句，超过了'按能力分组'的上限 10（= MISSING_GROUPS 的组数）",
             texts.len()
         );
         assert_eq!(
             MISSING_GROUPS.len(),
-            12,
+            10,
             "能力组数变了就必须同步改上面的上界与 `MISSING_GROUPS` 的文档"
         );
     }
@@ -3579,7 +3592,11 @@ mod tests {
             | MenuAction::Maximize
             | MenuAction::ToggleFullscreen
             | MenuAction::NewTerminalTab
-            | MenuAction::CloseTerminalTab => true,
+            | MenuAction::CloseTerminalTab
+            // 窗口 / 工程生命周期三条不依赖活动缓冲：关文件夹、关窗口、退出随时可点。
+            | MenuAction::CloseFolder
+            | MenuAction::CloseWindow
+            | MenuAction::Quit => true,
         };
 
         assert_eq!(

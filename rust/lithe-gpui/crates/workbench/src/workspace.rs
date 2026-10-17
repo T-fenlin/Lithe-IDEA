@@ -141,6 +141,36 @@ pub(crate) fn replace_root_with_workspace(
     created
 }
 
+/// File ▸ Close Folder 的落点：把这一窗换回欢迎页。
+///
+/// 与 [`replace_root_with_workspace`] 正好相反：那里把欢迎页换成工作台，这里把工作台换回
+/// 欢迎页。旧工作台的标签、缓冲、dock、终端与语言服务客户端都挂在那个实体上，随根视图一起
+/// 释放；逐个手工关会漏掉其中几条清理路径，所以这里只换根。
+pub(crate) fn replace_root_with_welcome(window: &mut Window, cx: &mut App) {
+    let loaded = lithe_gpui_settings::load_recent_projects();
+    window.replace_root(cx, |window, cx| {
+        let welcome = cx.new(|cx| {
+            crate::welcome::WelcomeView::new(loaded.projects, loaded.path, window, cx)
+        });
+        WindowRoot::new(welcome, window, cx)
+    });
+}
+
+/// 把一个工程根从「工程根 → 窗口」表里摘掉。
+///
+/// 关闭文件夹之后这个窗口已经回到欢迎页。若表里还留着「这个工程属于这个窗口」，下次从欢迎页
+/// 打开同一工程只会把欢迎页抬到前面（`route_project_window` 的 `Focused` 分支），工程永远
+/// 打不开。关窗那一条不必显式摘：死窗口会被同一条路由的存活裁剪顺手清掉，这里摘掉是为了
+/// 不留下一条指向已关窗口的记录。
+fn unregister_project_window(root: &Path, window: &Window) {
+    let key = project_window_key(root);
+    let handle = window.window_handle();
+    PROJECT_WINDOWS.with(|slot| {
+        slot.borrow_mut()
+            .retain(|(path, existing)| *path != key || *existing != handle)
+    });
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpenDestination {
     NewWindow,
@@ -2039,6 +2069,26 @@ impl ShellWorkspace {
                 window.toggle_fullscreen();
                 diagnose_menu_run(action, "applied");
             }
+            // 窗口 / 工程生命周期三条：都换掉整个窗口（关窗、退进程、换根），所以做完直接
+            // 返回——后面那句 `schedule_session_save` + `cx.notify()` 是对着已经不在的窗口。
+            MenuAction::CloseWindow => {
+                self.flush_session(true, cx);
+                unregister_project_window(&self.root, window);
+                diagnose_menu_run(action, "closedWindow");
+                window.remove_window();
+                return;
+            }
+            MenuAction::Quit => {
+                diagnose_menu_run(action, "quit");
+                // 会话由 `cx.on_app_quit` 那条订阅统一落盘（见 `ShellWorkspace::new`），
+                // 这里再写一次只会白写一遍。
+                cx.quit();
+                return;
+            }
+            MenuAction::CloseFolder => {
+                self.close_project(window, cx);
+                return;
+            }
             MenuAction::Undo
             | MenuAction::Redo
             | MenuAction::Cut
@@ -2235,6 +2285,21 @@ impl ShellWorkspace {
         }
         self.schedule_session_save(cx);
         cx.notify();
+    }
+
+    /// File ▸ Close Folder：先落盘会话，再把这一窗换回欢迎页。
+    ///
+    /// 会话必须先落盘：换根之后旧壳连同 `session` 一起没了，等不到关闭时的 `force` 写盘。
+    /// 落盘的目的是下次从欢迎页重新打开这个工程时标签还能回来（与「关窗」的行为一致）。
+    fn close_project(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        println!(
+            "S1_PROJECT_CLOSE state=closing root={}",
+            self.root.display()
+        );
+        self.flush_session(true, cx);
+        unregister_project_window(&self.root, window);
+        replace_root_with_welcome(window, cx);
+        diagnose_menu_run(MenuAction::CloseFolder, "closed");
     }
 
     fn dispatch_editor_action(
