@@ -358,9 +358,9 @@ fn teardown_session(id: String, payload: Value) {
     let started = Instant::now();
     let deadline = started + SHUTDOWN_SETTLE_TIMEOUT;
     let mut attempts = 0u32;
-    let mut last_error = String::new();
     loop {
         attempts += 1;
+        let last = Instant::now() + DESTROY_RETRY_INTERVAL >= deadline;
         match core_json("lsp.destroyServer", payload.clone()) {
             Ok(_) => {
                 println!(
@@ -369,14 +369,15 @@ fn teardown_session(id: String, payload: Value) {
                 );
                 return;
             }
-            Err(error) => last_error = error.to_string(),
-        }
-        if Instant::now() >= deadline {
-            println!(
-                "S1_JAVA_SESSION destroy_unconfirmed sessionId={id} attempts={attempts} elapsedMs={} error={last_error}",
-                started.elapsed().as_millis()
-            );
-            return;
+            // 预算用尽前不打印：重试期间的"未到终态"是正常现象，只记最后一次的真实拒绝原因。
+            Err(_) if !last => {}
+            Err(error) => {
+                println!(
+                    "S1_JAVA_SESSION destroy_unconfirmed sessionId={id} attempts={attempts} elapsedMs={} error={error}",
+                    started.elapsed().as_millis()
+                );
+                return;
+            }
         }
         std::thread::sleep(DESTROY_RETRY_INTERVAL);
     }

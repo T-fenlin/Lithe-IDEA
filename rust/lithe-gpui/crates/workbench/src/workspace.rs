@@ -3875,12 +3875,12 @@ impl Render for ShellWorkspace {
                     .editor
                     .update(cx, |pane, cx| pane.save_active(window, cx));
             }))
+            // 标题栏由组件库画（含平台相关的窗口键与拖拽），这里只递内容。
             .child(title_bar(
                 menu.unwrap_or_else(|| div().into_any_element()),
                 project_menu.unwrap_or_else(|| div().into_any_element()),
                 branch_item,
                 self.run.clone(),
-                window,
                 cx,
             ))
             .children((self.projects.len() > 1).then(|| {
