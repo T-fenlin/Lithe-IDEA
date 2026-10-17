@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lithe_gpui_shared::core_json;
@@ -131,6 +132,10 @@ pub struct JavaLanguageService {
     workspace_root: PathBuf,
     state: Mutex<State>,
     installation: Mutex<Option<(JdtlsInstallation, JavaRuntime)>>,
+    /// 会话是否**此刻**可以接请求。独立于 `state` 的锁：`state` 在 `hover()` 这类方法里
+    /// 会被整段持有（跨越一次 LSP 往返），问「就绪了吗」不能去抢那把锁——
+    /// 以前正是抢锁把十几次悬停排成了十几秒。
+    ready: AtomicBool,
 }
 
 impl JavaLanguageService {
@@ -139,6 +144,7 @@ impl JavaLanguageService {
             workspace_root,
             state: Mutex::new(State::Idle),
             installation: Mutex::new(None),
+            ready: AtomicBool::new(false),
         }
     }
 
@@ -155,8 +161,15 @@ impl JavaLanguageService {
             println!("S1_JAVA_SKIPPED reason=not-a-java-workspace");
             return Ok(false);
         }
-        self.ensure_session()?;
+        self.start_session()?;
         Ok(true)
+    }
+
+    /// 语言服务是否**此刻**能接请求。只读一个原子标志：不启动、不等待、不抢锁。
+    ///
+    /// 功能请求（悬停、注记…）拿它做门禁：没就绪就直接走降级路径，而不是排队等。
+    pub fn is_ready(&self) -> bool {
+        self.ready.load(Ordering::Acquire)
     }
 
     pub fn definition(
@@ -806,6 +819,7 @@ impl JavaLanguageService {
     }
 
     pub fn shutdown(&self) {
+        self.ready.store(false, Ordering::Release);
         let mut state = self
             .state
             .lock()
@@ -817,7 +831,27 @@ impl JavaLanguageService {
         }
     }
 
+    /// 只取**已经存在**的会话：不启动、不等待。
+    ///
+    /// 启动是 [`Self::start_session`]（只有 [`Self::prepare`] 走）的职责。以前这里会
+    /// 顺手启动，于是任何一个功能请求撞上「还没启动」都会在状态锁里等满就绪上限
+    /// （600 秒），期间**其他所有请求都排在锁后面**：实测一次悬停挂了 600 秒、另一次 18 秒，
+    /// 而它们本来都该立刻降级。
     fn ensure_session(&self) -> Result<(), String> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match &*state {
+            State::Ready(_) => Ok(()),
+            State::Failed(reason) => Err(reason.clone()),
+            State::Closed => Err("Java 语言服务已关闭".to_string()),
+            State::Idle => Err("Java 语言服务尚未启动".to_string()),
+        }
+    }
+
+    /// 启动会话。这条路上等满就绪上限是合理的（它在后台执行器上跑），所以只给 prepare 用。
+    fn start_session(&self) -> Result<(), String> {
         let mut state = self
             .state
             .lock()
@@ -833,11 +867,13 @@ impl JavaLanguageService {
         match result {
             Ok(session) => {
                 *state = State::Ready(Box::new(session));
+                self.ready.store(true, Ordering::Release);
                 Ok(())
             }
             Err(reason) => {
                 println!("S1_JAVA_FAILED reason={reason}");
                 *state = State::Failed(reason.clone());
+                self.ready.store(false, Ordering::Release);
                 Err(reason)
             }
         }
@@ -1385,6 +1421,26 @@ fn plain_snippet(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 功能请求**不许**顺手启动语言服务。
+    ///
+    /// 旧实现里每个功能请求都会在拿不到会话时去启动：那条路要在状态锁里等满就绪上限，
+    /// 期间同一把锁上的所有请求（悬停、诊断、注记…）一起排队。实测一次悬停挂了 600 秒、
+    /// 另一次 18 秒。这里断言两件事：立刻失败、且没有把状态推进成已就绪。
+    #[test]
+    fn feature_requests_do_not_start_the_language_service() {
+        let service = JavaLanguageService::new(PathBuf::from("C:/lithe-no-such-workspace"));
+        assert!(!service.is_ready(), "新建的服务不该是就绪的");
+
+        let hover = service.hover(Path::new("Foo.java"), "class Foo {}", 0, 0);
+        assert!(
+            hover.as_ref().is_err_and(|reason| reason.contains("尚未启动")),
+            "未启动时悬停应当立刻报未启动，实际：{hover:?}"
+        );
+        let sync = service.sync_document(Path::new("Foo.java"), "class Foo {}");
+        assert!(sync.is_err_and(|reason| reason.contains("尚未启动")));
+        assert!(!service.is_ready(), "功能请求不该把服务启动起来");
+    }
 
     #[test]
     fn installation_root_skips_a_bin_directory() {

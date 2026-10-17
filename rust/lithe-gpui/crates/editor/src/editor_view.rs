@@ -549,7 +549,26 @@ impl EditorPane {
             }));
         });
 
-        // Java 缓冲区一开就接上了语言服务（见 `open`），这里只补一件事：服务就绪之后把诊断要一遍。
+        // Java 缓冲区一开就接上了语言服务（见 `open`）。这里先要一遍；服务没就绪时那两个
+        // 取数会直接跳过（门禁见 `decorations::fetch` / `diagnostics`），所以下面还要在
+        // prepare 成功之后再补一次——否则服务启动前打开的文件永远没有注记与诊断。
+        self.rearm_java_features(cx);
+
+        // 等待留在后台执行器上（prepare 会阻塞到就绪上限），回来再切回宿主上下文补那一脚。
+        let prepared = cx.background_spawn(async move { service.prepare() });
+        self.java_task = Some(cx.spawn(async move |pane, cx| {
+            match prepared.await {
+                Ok(true) => println!("S1_JAVA_PREPARED"),
+                Ok(false) => {}
+                Err(reason) => println!("S1_JAVA_PREPARE_FAILED reason={reason}"),
+            }
+            let _ = pane.update(cx, |pane, cx| pane.rearm_java_features(cx));
+        }));
+    }
+
+    /// 把所有 Java 缓冲区要一遍诊断与注记。门禁之后这件事需要一个明确的触发点：
+    /// 打开文件时一次、语言服务就绪时一次。
+    fn rearm_java_features(&mut self, cx: &mut Context<Self>) {
         let java_buffers: Vec<usize> = self
             .buffers
             .iter()
@@ -561,14 +580,6 @@ impl EditorPane {
             self.schedule_diagnostics(index, Duration::ZERO, cx);
             self.schedule_decorations(index, Duration::ZERO, cx);
         }
-
-        self.java_task = Some(cx.background_spawn(async move {
-            match service.prepare() {
-                Ok(true) => println!("S1_JAVA_PREPARED"),
-                Ok(false) => {}
-                Err(reason) => println!("S1_JAVA_PREPARE_FAILED reason={reason}"),
-            }
-        }));
     }
 
     /// 取一次内嵌提示与 Code Lens，回来整份替换。

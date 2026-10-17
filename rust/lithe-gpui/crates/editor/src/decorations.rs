@@ -49,6 +49,17 @@ pub(crate) async fn fetch(
     }
     let started = Instant::now();
 
+    // 门禁：服务没就绪就直接交空快照（不是错误）。就绪之后宿主会再安排一次取数
+    // （见 `EditorPane::rearm_java_features`），所以这里不必自己等、更不必排队。
+    if !service.is_ready() {
+        return Fetched {
+            hints: Vec::new(),
+            lenses: Vec::new(),
+            error: None,
+            elapsed_ms: started.elapsed().as_millis(),
+        };
+    }
+
     let lines = line_count(&text);
 
     let mut error = None;

@@ -78,7 +78,12 @@ async fn fetch(
     let file = file_path.display().to_string();
     let started = Instant::now();
 
-    if let Some(service) = java {
+    // 门禁：语言服务没就绪就直接落到内置悬停。以前这里会「顺手问一句」，而那一句在服务
+    // 未启动时会等满就绪上限（600 秒），期间其他请求全排在状态锁后面——实测一次悬停挂了
+    // 600 秒、另一次 18 秒。就绪状态是原子标志，查它不抢锁、不启动、不等待。
+    if let Some(service) = java
+        && service.is_ready()
+    {
         match service.hover(&file_path, &body, line as u32, utf16_column as u32) {
             Ok(Some(hover)) => {
                 let content = shown(Content::of(&hover.contents), word.as_deref());
