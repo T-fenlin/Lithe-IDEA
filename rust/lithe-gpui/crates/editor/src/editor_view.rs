@@ -1088,6 +1088,34 @@ impl EditorPane {
         self.problems.clone()
     }
 
+    /// 给活动缓冲挂上工作区差异标记（内联：新增行标绿、被删的行插在原地）。
+    ///
+    /// 传空数组就是清掉标记。标记只画不写：这不是一个可编辑的「差异套件」，
+    /// 关掉它的方式就是再开一次文件或者传空。
+    pub fn set_diff_sections(
+        &mut self,
+        sections: Vec<crate::diff::DiffSection>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.active else {
+            return;
+        };
+        let hunks: Vec<lithe_ui::editor::DiffHunk> =
+            sections.iter().map(crate::diff::DiffSection::to_hunk).collect();
+        let added: usize = sections.iter().map(|section| section.added).sum();
+        let removed: usize = sections.iter().map(|section| section.removed.len()).sum();
+        println!(
+            "S1_GIT diff_marks file={} sections={} added={} removed={}",
+            self.buffers[index].path.display(),
+            sections.len(),
+            added,
+            removed
+        );
+        self.buffers[index]
+            .editor
+            .update(cx, |state, cx| state.set_diff(hunks, cx));
+    }
+
     /// 用一次 Maven 运行的输出换掉整批构建诊断（Problems 面板里与语言服务那批并存）。
     pub fn set_build_problems(
         &mut self,

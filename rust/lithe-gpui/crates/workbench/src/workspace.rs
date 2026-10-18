@@ -869,6 +869,12 @@ impl ShellWorkspace {
                                 pane.open(&path, window, cx);
                             }
                         });
+                        // 开完（缓冲区已经激活）再挂差异标记：标记是画在**活动的**那个
+                        // 编辑器上的，顺序反过来就挂到上一个文件上了。
+                        let diff_path = path.clone();
+                        let _ = shell_for_open.update(cx, |this, cx| {
+                            this.show_diff_marks(&diff_path, cx);
+                        });
                     },
                 );
             move |cx| ChangesView::new(changes_root, on_open, window, cx)
@@ -3426,6 +3432,40 @@ impl ShellWorkspace {
         }
     }
 
+    /// 从 Changes 面板打开文件时挂上工作区差异（Core 的 `git.diff`，内联标记）。
+    ///
+    /// 只标记、不写文件：`DiffHunk` 是渲染用的行标记，被删的行插在原位置显示。
+    /// 文件不在工作区根下（例如外部打开）或者拿不到 diff，就什么都不做。
+    fn show_diff_marks(&mut self, path: &Path, cx: &mut Context<Self>) {
+        let Some(relative) = path
+            .strip_prefix(&self.root)
+            .ok()
+            .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        else {
+            return;
+        };
+        let request = serde_json::json!({
+            "root": self.root.to_string_lossy(),
+            "pathspecs": [relative],
+        });
+        let rows = match lithe_gpui_shared::core_json("git.diff", request) {
+            Ok(Some(data)) => parse_diff_rows(&data),
+            Ok(None) => Vec::new(),
+            Err(error) => {
+                eprintln!("S1_GIT diff=skipped path={relative} error={error}");
+                return;
+            }
+        };
+        let sections = lithe_gpui_editor::diff::sections(&rows);
+        println!(
+            "S1_GIT diff file={relative} rows={} sections={}",
+            rows.len(),
+            sections.len()
+        );
+        self.editor
+            .update(cx, |pane, cx| pane.set_diff_sections(sections, cx));
+    }
+
     fn refresh_problems_if_visible(&mut self, cx: &mut Context<Self>) {
         if self.bottom_visible && self.bottom_kind == BottomPaneKind::Diagnostics {
             self.editor.update(cx, |pane, cx| pane.refresh_problems(cx));
@@ -4505,6 +4545,33 @@ fn java_toolchain_override_from(
 ///
 /// Core 给的 `path` 是工作区相对路径，编辑器要绝对路径（Problems 面板按绝对路径分组、
 /// 点击时也要拿它去开文件），所以这里补一次根。行号是 Core 的一行基，原样带过去。
+/// 把 `git.diff` 的 `rows` 摊成编辑器那侧的 `DiffRow`。
+fn parse_diff_rows(data: &serde_json::Value) -> Vec<lithe_gpui_editor::diff::DiffRow> {
+    let Some(rows) = data.get("rows").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|row| {
+            let kind = row.get("kind").and_then(serde_json::Value::as_str)?;
+            Some(lithe_gpui_editor::diff::DiffRow {
+                kind: kind.to_string(),
+                old_line: row
+                    .get("oldLine")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|line| line as usize),
+                new_line: row
+                    .get("newLine")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|line| line as usize),
+                left: row
+                    .get("left")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string),
+            })
+        })
+        .collect()
+}
+
 fn parse_build_problems(data: &serde_json::Value, root: &Path) -> Vec<lithe_gpui_editor::BuildProblem> {
     let Some(issues) = data.get("issues").and_then(serde_json::Value::as_array) else {
         return Vec::new();

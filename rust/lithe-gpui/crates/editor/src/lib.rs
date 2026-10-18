@@ -3,6 +3,7 @@ mod code_actions;
 mod completion;
 mod decorations;
 mod diagnostics;
+pub mod diff;
 mod editor_view;
 mod go_to_line;
 mod hover;
