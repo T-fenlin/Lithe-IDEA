@@ -372,6 +372,100 @@ pub struct WriteOutcome {
     pub failure: Option<String>,
 }
 
+/// 一条贮藏（Core `git.stashes` 的一项）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StashEntry {
+    /// `stash@{0}` 这样的引用，apply/pop/drop 要原样回传。
+    pub reference: String,
+    /// Git 记录的消息（`WIP on main: …`）。
+    pub message: String,
+    pub branch: Option<String>,
+    pub date: String,
+}
+
+impl StashEntry {
+    /// 列表里那一行显示什么：消息为空就退回引用本身。
+    pub fn label(&self) -> &str {
+        if self.message.trim().is_empty() {
+            &self.reference
+        } else {
+            &self.message
+        }
+    }
+}
+
+/// 列出现有贮藏（Core 的 `git.stashes`，Git 原生顺序：新的在前）。
+pub fn stashes(root: &str) -> Result<Vec<StashEntry>, String> {
+    let data = execute_core("git.stashes", serde_json::json!({ "root": root }))?;
+    Ok(parse_stashes(&data))
+}
+
+fn parse_stashes(data: &serde_json::Value) -> Vec<StashEntry> {
+    let Some(entries) = data.get("stashes").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let reference = entry
+                .get("reference")
+                .and_then(serde_json::Value::as_str)?
+                .to_string();
+            Some(StashEntry {
+                reference,
+                message: entry
+                    .get("message")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                branch: entry
+                    .get("branch")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string),
+                date: entry
+                    .get("date")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            })
+        })
+        .collect()
+}
+
+/// 把当前工作区的改动收进一条新贮藏（`stashPush`）。
+///
+/// `include_untracked` 对上是「连未跟踪文件一起收」：IDEA 的「贮藏更改」勾的就是它。
+pub fn stash_push(root: &str, message: Option<&str>, include_untracked: bool) -> WriteOutcome {
+    let mut payload = serde_json::json!({ "includeUntracked": include_untracked });
+    if let Some(message) = message.filter(|text| !text.trim().is_empty()) {
+        payload["message"] = serde_json::json!(message);
+    }
+    write("stashPush", root, payload)
+}
+
+/// 应用一条贮藏，**保留**它（`stashApply`）。
+pub fn stash_apply(root: &str, reference: &str) -> WriteOutcome {
+    write(
+        "stashApply",
+        root,
+        serde_json::json!({ "reference": reference }),
+    )
+}
+
+/// 应用并删除（`stashPop`）。
+pub fn stash_pop(root: &str, reference: &str) -> WriteOutcome {
+    write("stashPop", root, serde_json::json!({ "reference": reference }))
+}
+
+/// 只删掉这条贮藏（`stashDrop`）。
+pub fn stash_drop(root: &str, reference: &str) -> WriteOutcome {
+    write(
+        "stashDrop",
+        root,
+        serde_json::json!({ "reference": reference }),
+    )
+}
+
 pub fn write(operation: &str, root: &str, payload: serde_json::Value) -> WriteOutcome {
     let mut request = serde_json::json!({ "root": root, "operation": operation });
     if let (Some(target), Some(extra)) = (request.as_object_mut(), payload.as_object()) {
@@ -478,6 +572,37 @@ pub fn discard(root: &str, paths: &[String]) -> WriteOutcome {
 
 pub fn operation_action(root: &str, operation: &str) -> WriteOutcome {
     write(operation, root, serde_json::json!({}))
+}
+
+#[cfg(test)]
+mod stash_tests {
+    use super::*;
+
+    #[test]
+    fn stashes_parse_in_the_order_git_reports_them() {
+        let data = serde_json::json!({
+            "stashes": [
+                { "reference": "stash@{0}", "message": "WIP on main: 1234 abcd", "branch": "main", "date": "2026-10-18" },
+                { "reference": "stash@{1}", "message": "", "branch": null, "date": "" },
+            ]
+        });
+        let entries = parse_stashes(&data);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].reference, "stash@{0}");
+        assert_eq!(entries[0].label(), "WIP on main: 1234 abcd");
+        assert_eq!(
+            entries[1].label(),
+            "stash@{1}",
+            "消息为空时退回引用本身"
+        );
+        assert_eq!(entries[1].branch, None);
+    }
+
+    #[test]
+    fn a_missing_stash_list_is_empty() {
+        assert!(parse_stashes(&serde_json::json!({})).is_empty());
+        assert!(parse_stashes(&serde_json::json!({ "stashes": [] })).is_empty());
+    }
 }
 
 #[cfg(test)]

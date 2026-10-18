@@ -7,7 +7,9 @@ mod model;
 mod remote;
 
 pub use branch_info::{BranchInfo, BranchSnapshot, TrackingCounts};
-pub use changes::WriteOutcome;
+pub use changes::{
+    StashEntry, WriteOutcome, stash_apply, stash_drop, stash_pop, stash_push, stashes,
+};
 pub use changes_view::ChangesView;
 pub use identity::{
     IdentityField, IdentityScope, IdentitySetup, configure_identity, initialize,

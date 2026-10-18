@@ -25,8 +25,8 @@ use lithe_ui::shell::{WindowRootExt as _, dismiss_hosted};
 
 use crate::CommitChanges;
 use crate::changes::{
-    ChangeRow, ChangesSnapshot, OperationState, commit as write_commit, discard, load,
-    operation_action, stage, stage_all, unstage,
+    ChangeRow, ChangesSnapshot, OperationState, StashEntry, commit as write_commit, discard, load,
+    operation_action, stage, stage_all, stash_apply, stash_drop, stash_push, unstage,
 };
 use crate::log_view::rem_px;
 use crate::model::{ICON_BUTTON_RADIUS, RADIUS_MD, RADIUS_XL};
@@ -61,6 +61,9 @@ const UNSTAGE_ALL_KEY: &str = "lithe.git.unstageAllChanges";
 const TRACKED_FILES_KEY: &str = "lithe.git.trackedFiles";
 const UNTRACKED_FILES_KEY: &str = "lithe.git.untrackedFiles";
 const COMMIT_PLACEHOLDER_KEY: &str = "lithe.git.commitMessagePlaceholder";
+
+/// 贮藏列表最多占多高（pt）：再多就在框里滚，别把下面的文件列表挤掉。
+const STASH_LIST_MAX_HEIGHT_SPEC: f32 = 132.;
 const COMMIT_KEY: &str = "lithe.git.commit";
 const COMMITTING_KEY: &str = "lithe.git.committing";
 const FILES_STAGED_KEY: &str = "lithe.git.filesStaged";
@@ -112,6 +115,8 @@ pub struct ChangesView {
     on_open: Rc<dyn Fn(PathBuf, Option<u32>, &mut Window, &mut App) + 'static>,
     /// 「初始化 Git 仓库」那一颗按钮的落点。外壳没装就是一颗灰按钮（回调为 `None`）。
     on_initialize: Option<Rc<dyn Fn(&mut Window, &mut App) + 'static>>,
+    /// 现有贮藏（Git 原生顺序：新的在前）。与快照一起刷新，不单独维护加载状态。
+    stashes: Vec<StashEntry>,
 }
 
 impl ChangesView {
@@ -152,6 +157,7 @@ impl ChangesView {
             conflict: Preflight::new(),
             on_open: Rc::from(on_open),
             on_initialize: None,
+            stashes: Vec::new(),
         }
     }
 
@@ -185,18 +191,28 @@ impl ChangesView {
         cx.notify();
 
         cx.spawn(async move |this, cx| {
-            let (snapshot, markers) = cx
+            let (snapshot, markers, stashes) = cx
                 .background_spawn(async move {
                     let snapshot = load(&root);
                     let markers = match snapshot.repository_root.as_ref() {
                         Some(repository_root) => remote::conflict_markers(repository_root.as_ref()),
                         None => Ok(Vec::new()),
                     };
-                    (snapshot, markers)
+                    // 贮藏只在有仓库时才问：非仓库目录下 `git.stashes` 必然失败，
+                    // 那一次失败不该变成界面上的一条错误。
+                    let stashes = match snapshot.repository_root.as_ref() {
+                        Some(repository_root) => crate::changes::stashes(repository_root.as_ref())
+                            .unwrap_or_else(|code| {
+                                eprintln!("S1_GIT stashes=failed code={code}");
+                                Vec::new()
+                            }),
+                        None => Vec::new(),
+                    };
+                    (snapshot, markers, stashes)
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {
-                view.apply(serial, snapshot, cx);
+                view.apply(serial, snapshot, stashes, cx);
                 view.conflict.apply(conflict_serial, markers);
                 cx.notify();
             });
@@ -212,7 +228,13 @@ impl ChangesView {
         self.refresh(cx);
     }
 
-    fn apply(&mut self, serial: u64, snapshot: ChangesSnapshot, cx: &mut Context<Self>) {
+    fn apply(
+        &mut self,
+        serial: u64,
+        snapshot: ChangesSnapshot,
+        stashes: Vec<StashEntry>,
+        cx: &mut Context<Self>,
+    ) {
         if serial != self.request_serial {
             return;
         }
@@ -228,7 +250,134 @@ impl ChangesView {
             LoadState::Ready
         };
         self.snapshot = snapshot;
+        self.stashes = stashes;
+        println!("S1_GIT stashes count={}", self.stashes.len());
         cx.notify();
+    }
+
+    /// 把当前改动收进一条新贮藏（未跟踪文件一起收，与 IDEA 的「贮藏更改」一致）。
+    fn stash_current_changes(&mut self, cx: &mut Context<Self>) {
+        let root = self.root.to_string_lossy().to_string();
+        let outcome = stash_push(&root, None, true);
+        match outcome.failure {
+            None => println!("S1_GIT stash=ok root={root}"),
+            Some(code) => eprintln!("S1_GIT stash=failed code={code}"),
+        }
+        self.refresh(cx);
+    }
+
+    /// 应用一条贮藏并删掉它。
+    fn apply_stash(&mut self, reference: String, cx: &mut Context<Self>) {
+        let root = self.root.to_string_lossy().to_string();
+        let outcome = stash_apply(&root, &reference);
+        match outcome.failure {
+            None => println!("S1_GIT stash_apply=ok reference={reference}"),
+            Some(code) => eprintln!("S1_GIT stash_apply=failed code={code}"),
+        }
+        self.refresh(cx);
+    }
+
+    /// 只删掉这条贮藏（不动工作区）。
+    fn drop_stash(&mut self, reference: String, cx: &mut Context<Self>) {
+        let root = self.root.to_string_lossy().to_string();
+        let outcome = stash_drop(&root, &reference);
+        match outcome.failure {
+            None => println!("S1_GIT stash_drop=ok reference={reference}"),
+            Some(code) => eprintln!("S1_GIT stash_drop=failed code={code}"),
+        }
+        self.refresh(cx);
+    }
+
+    /// 贮藏区：一行「贮藏更改」+ 现有的那几条（多了就在框里滚）。
+    ///
+    /// 不做单独的加载状态：贮藏与快照同一次刷新，取不到就是空表（非仓库目录本来就该空）。
+    fn render_stashes(&self, cx: &mut Context<Self>) -> AnyElement {
+        let mut strip = h_stack()
+            .w_full()
+            .flex_shrink_0()
+            .gap_2()
+            .px_2()
+            .py_1()
+            .items_center()
+            .child(
+                Button::new("changes-stash-push")
+                    .label(tr("lithe.git.stashChanges"))
+                    .size(Size::Small)
+                    .on_click(cx.listener(|view, _, _, cx| view.stash_current_changes(cx))),
+            );
+        if !self.stashes.is_empty() {
+            strip = strip.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().colors.fg_muted)
+                    .child(tr_args(
+                        "lithe.git.stashCount",
+                        &[("count", self.stashes.len().to_string().as_str())],
+                    )),
+            );
+        }
+
+        let mut column = v_stack().w_full().flex_shrink_0().child(strip);
+        if !self.stashes.is_empty() {
+            let mut rows = v_stack().w_full().gap_1().px_2().pb_1();
+            for entry in &self.stashes {
+                let reference = entry.reference.clone();
+                rows = rows.child(
+                    h_stack()
+                        .w_full()
+                        .gap_2()
+                        .items_center()
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_xs()
+                                .text_color(cx.theme().colors.fg)
+                                .child(SharedString::from(entry.label().to_string())),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .truncate()
+                                .text_xs()
+                                .text_color(cx.theme().colors.fg_muted)
+                                .child(SharedString::from(entry.reference.clone())),
+                        )
+                        .child({
+                            let reference = reference.clone();
+                            Button::new(SharedString::from(format!(
+                                "changes-stash-apply-{reference}"
+                            )))
+                            .label(tr("lithe.git.applyStash"))
+                            .size(Size::Small)
+                            .on_click(cx.listener(move |view, _, _, cx| {
+                                view.apply_stash(reference.clone(), cx)
+                            }))
+                        })
+                        .child({
+                            let reference = reference.clone();
+                            Button::new(SharedString::from(format!(
+                                "changes-stash-drop-{reference}"
+                            )))
+                            .label(tr("lithe.git.dropStash"))
+                            .size(Size::Small)
+                            .on_click(cx.listener(move |view, _, _, cx| {
+                                view.drop_stash(reference.clone(), cx)
+                            }))
+                        }),
+                );
+            }
+            column = column.child(
+                div()
+                    .id("changes-stash-list")
+                    .w_full()
+                    .max_h(rems(STASH_LIST_MAX_HEIGHT_SPEC / 16.))
+                    .overflow_y_scroll()
+                    .child(rows),
+            );
+        }
+        column.into_any_element()
     }
 
     fn staged_count(&self) -> usize {
@@ -1270,7 +1419,14 @@ impl ChangesView {
                         cx,
                     );
                 }
-                self.render_list(cx)
+                let stash = self.render_stashes(cx);
+                v_stack()
+                    .w_full()
+                    .flex_1()
+                    .min_h_0()
+                    .child(stash)
+                    .child(self.render_list(cx))
+                    .into_any_element()
             }
         }
     }
