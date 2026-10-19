@@ -95,6 +95,9 @@ pub struct RunConfigurationView {
     pub layer: RunLayer,
     pub manifest: Option<String>,
     pub main_class: Option<String>,
+    /// 配置记录的目标源码（工作区相对、`/` 分隔）。Java 项目启动要拿它去问 JDT 要元数据；
+    /// 只有 `extensions.java.source` 存在时才有。
+    pub java_source: Option<String>,
 }
 
 impl RunConfigurationView {
@@ -261,6 +264,12 @@ pub fn parse_generate(data: Option<&Value>) -> Result<RunProjectView, String> {
                 .and_then(|maven| maven.get("mainClass"))
                 .and_then(Value::as_str)
                 .map(str::to_string),
+            java_source: item
+                .get("extensions")
+                .and_then(|extensions| extensions.get("java"))
+                .and_then(|java| java.get("source"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
         });
     }
 
@@ -378,6 +387,46 @@ fn core_error_text(error: &lithe_gpui_shared::CoreError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Java 项目的启动元数据要拿到目标源码路径（`extensions.java.source`）。
+    ///
+    /// 没有它就没法问 JDT 要主类与 classpath，Run 会被 Core 以「缺少启动元数据」拒掉。
+    #[test]
+    fn java_configurations_carry_their_source_path() {
+        let data = serde_json::json!({
+            "generated": { "configurations": [
+                {
+                    "id": "java-main:demo.App",
+                    "name": "App",
+                    "provider": "java.main",
+                    "execution": "application",
+                    "cwd": "module",
+                    "args": [],
+                    "extensions": {
+                        "java": { "source": "module/src/main/java/demo/App.java", "sourceSet": "main" },
+                        "maven": { "module": ".", "mainClass": "demo.App" }
+                    }
+                },
+                {
+                    "id": "npm.script:.:dev",
+                    "name": "dev",
+                    "provider": "npm.script",
+                    "execution": "command",
+                    "cwd": ".",
+                    "args": []
+                }
+            ] }
+        });
+        let view = parse_generate(Some(&data)).expect("配置应能解析");
+        assert_eq!(
+            view.configurations[0].java_source.as_deref(),
+            Some("module/src/main/java/demo/App.java")
+        );
+        assert_eq!(
+            view.configurations[1].java_source, None,
+            "非 Java 配置没有源码路径"
+        );
+    }
 
     fn generate_data() -> Value {
         serde_json::json!({

@@ -33,9 +33,27 @@ struct LaunchOutcome {
     debug_port: Option<u16>,
 }
 
+/// 一次 Java 项目启动所需的运行元数据（宿主从 Java 语言服务取）。
+///
+/// `run` 不依赖 `java` crate（两者都是 workbench 的下游，互相引用会成环），所以这里只放
+/// 一个纯数据的形状 + 一个注入的解析器；真正的三步（resolveMainClass → buildWorkspace →
+/// resolveClasspath）在 `lithe-gpui-java` 里。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JavaLaunchPaths {
+    pub main_class: String,
+    pub class_paths: Vec<String>,
+    pub module_paths: Vec<String>,
+}
+
+/// 按源码路径（工作区相对、`/` 分隔）取 Java 启动元数据。
+pub type JavaLaunchResolver =
+    Arc<dyn Fn(&str) -> Result<JavaLaunchPaths, String> + Send + Sync + 'static>;
+
 pub struct RunPane {
     root: Option<PathBuf>,
     resolve: Option<ToolchainResolver>,
+    /// Java 项目启动元数据的来源。`None` = 宿主没接 Java 语言服务（非 Java 工程）。
+    java_launch: Option<JavaLaunchResolver>,
     configurations: Vec<RunConfigurationView>,
     selected: Option<usize>,
     session: Option<RunSession>,
@@ -55,6 +73,7 @@ impl RunPane {
         Self {
             root: None,
             resolve: None,
+            java_launch: None,
             configurations: Vec::new(),
             selected: None,
             session: None,
@@ -66,6 +85,11 @@ impl RunPane {
             probe: false,
             probe_debug: false,
         }
+    }
+
+    /// 装上 Java 启动元数据的解析器（宿主在构造时给一次）。
+    pub fn set_java_launch_resolver(&mut self, resolver: JavaLaunchResolver) {
+        self.java_launch = Some(resolver);
     }
 
     pub fn set_probe(&mut self, probe: bool, debug: bool) {
@@ -193,13 +217,27 @@ impl RunPane {
         let id = configuration.id.clone();
         let name = configuration.name.clone();
         let debug_port = self.debug_port;
+        let java_launch = self.java_launch.clone();
+        let java_source = configuration.java_source.clone();
         self.launch = Some(cx.spawn(async move |this, cx| {
             let planned = {
                 let task_root = root.clone();
                 let task_id = id.clone();
                 let task_resolve = resolve.clone();
                 cx.background_spawn(async move {
-                    prepare_startup(&task_root, &task_id, debug_port, &task_resolve).map(
+                    // Java 项目要先把运行元数据取回来（主类 + runtime classpath + module path），
+                    // 否则 Core 会以「缺少启动元数据」拒掉这次计划——那不是等待问题，是缺数据。
+                    let launch = match (java_launch.as_ref(), java_source.as_deref()) {
+                        (Some(resolver), Some(source)) => match resolver(source) {
+                            Ok(paths) => Some(paths),
+                            Err(error) => {
+                                eprintln!("S1_RUN_JAVA_LAUNCH source={source} error={error}");
+                                return Err(error);
+                            }
+                        },
+                        _ => None,
+                    };
+                    prepare_startup(&task_root, &task_id, debug_port, &task_resolve, launch).map(
                         |prepared| LaunchOutcome {
                             id: task_id,
                             name,
@@ -357,8 +395,9 @@ fn prepare_startup(
     configuration_id: &str,
     debug_port: Option<u16>,
     resolve: &ToolchainResolver,
+    java_launch: Option<JavaLaunchPaths>,
 ) -> Result<PreparedStart, String> {
-    let plan = launch_plan(root, configuration_id, debug_port)?;
+    let plan = launch_plan(root, configuration_id, debug_port, java_launch)?;
     prepare(root, &plan, resolve)
 }
 
@@ -378,6 +417,7 @@ fn launch_plan(
     root: &Path,
     configuration_id: &str,
     debug_port: Option<u16>,
+    java_launch: Option<JavaLaunchPaths>,
 ) -> Result<serde_json::Value, String> {
     let root_text = root
         .to_str()
@@ -391,6 +431,13 @@ fn launch_plan(
     }
     if let Some(current_file) = current_file_for_probe() {
         request["currentFile"] = serde_json::json!(current_file);
+    }
+    if let Some(launch) = java_launch {
+        request["javaLaunch"] = serde_json::json!({
+            "mainClass": launch.main_class,
+            "classPaths": launch.class_paths,
+            "modulePaths": launch.module_paths,
+        });
     }
 
     let plan = core_json("runConfig.createLaunchPlan", request)

@@ -1062,9 +1062,28 @@ impl ShellWorkspace {
                     _ => None,
                 }
             });
+            // Java 项目启动前的三步（resolveMainClass → buildWorkspace → resolveClasspath）
+            // 由 `lithe-gpui-java` 做；`run` 不依赖它（会成环），所以这里注入一个闭包。
+            // 服务还没建好（非 Java 工程）时闭包如实报错，RunPane 会把原因写进运行面板。
+            let java_for_launch = editor.read(cx).java_service();
+            let java_launch_root = root.clone();
+            let java_launch: lithe_gpui_run::JavaLaunchResolver =
+                Arc::new(move |source: &str| {
+                    let service = java_for_launch
+                        .clone()
+                        .ok_or_else(|| "这个工程没有接 Java 语言服务".to_string())?;
+                    let absolute = java_launch_root.join(source.replace('/', std::path::MAIN_SEPARATOR_STR));
+                    let metadata = service.resolve_launch_metadata(&absolute)?;
+                    Ok(lithe_gpui_run::JavaLaunchPaths {
+                        main_class: metadata.main_class,
+                        class_paths: metadata.class_paths,
+                        module_paths: metadata.module_paths,
+                    })
+                });
             run.update(cx, |pane, cx| {
                 pane.set_probe(run_probe, run_probe_debug);
                 pane.set_workspace(root.clone(), resolve, cx);
+                pane.set_java_launch_resolver(java_launch);
             });
         }
         let run_subscription = cx.subscribe(&run, |this, _pane, event: &RunPaneEvent, cx| {

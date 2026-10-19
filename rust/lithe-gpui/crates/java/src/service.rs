@@ -26,6 +26,13 @@ const RENAME_TIMEOUT: Duration = Duration::from_secs(60);
 const FORMATTING_TIMEOUT: Duration = Duration::from_secs(60);
 
 // 内嵌提示与代码镜头：只读、量小，跟悬停一个量级即可，不需要向定义看齐。
+/// 启动元数据的普通请求（entrypoints / classpath）：与定义同一量级，JDT 首次要建索引。
+const LAUNCH_METADATA_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// 构建：Core 自己的 `java_build_timeout` 就是给大工程留的分钟级预算（40 多个模块的工程
+/// 首次构建 30 秒以上），这里跟它对齐，不能套 60 秒的普通请求期限。
+const LAUNCH_BUILD_TIMEOUT: Duration = Duration::from_secs(300);
+
 const INLAY_HINT_TIMEOUT: Duration = Duration::from_secs(10);
 const CODE_LENS_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -128,6 +135,46 @@ enum State {
     Closed,
 }
 
+/// JDT 确认的 Java 项目启动元数据（交给 Core 的 `javaLaunch`）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JavaLaunchMetadata {
+    /// JDT 报告的类名，模块化项目会带 `module/` 前缀，原样交给 JVM。
+    pub main_class: String,
+    /// runtime classpath。
+    pub class_paths: Vec<String>,
+    /// module-path（模块化项目才有）。
+    pub module_paths: Vec<String>,
+}
+
+/// 从 `javaMainMethods` 的答复里挑第一个可启动的主类。
+///
+/// 一条文件里可以有多个 `main`（重载或多个类），JDT 按源码位置排序返回；启动取第一个
+/// 是确定的：同一份文件每次给的都是同一个答案。挑不到返回 `None`。
+fn pick_main_method(result: &Value) -> Option<(String, Option<String>)> {
+    let method = result.get("methods").and_then(Value::as_array)?.first()?;
+    let main_class = method.get("mainClass").and_then(Value::as_str)?;
+    Some((
+        main_class.to_string(),
+        method
+            .get("projectName")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    ))
+}
+
+fn string_list(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// 一次 Maven 配置推送的结果（Core 的 `lsp.updateMavenConfiguration` 原样转述）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MavenConfigurationUpdate {
@@ -165,6 +212,129 @@ impl JavaLanguageService {
             State::Ready(session) => Some(session.session_id().to_string()),
             _ => None,
         }
+    }
+
+    /// Java 项目启动所需的运行元数据（JDT 确认的主类 + 运行时路径）。
+    ///
+    /// 顺序照 `.agents/notes/implemented/architecture/2026-09-18-java-project-build-and-launch-boundary.md`
+    /// 的裁决：
+    /// 1. `vscode.java.resolveMainClass` 按**精确源码路径**选目标（不是按类名猜）；
+    /// 2. `vscode.java.buildWorkspace` 构建拥有该目标的项目（Core 有构建协调器，会把这次
+    ///    构建排在 Maven profile 应用与更早的构建之后）；
+    /// 3. `vscode.java.resolveClasspath` 取 runtime classpath 与 module-path。
+    ///
+    /// 缺元数据时**不回退到 `exec:java`**：那会把「等待服务」换成一次不确定的错误运行
+    /// （同一条裁决里写明）。所以这里失败就如实返回原因，由调用方提示。
+    pub fn resolve_launch_metadata(
+        &self,
+        source_path: &Path,
+    ) -> Result<JavaLaunchMetadata, String> {
+        // 诊断里报工作区相对路径（人读得懂），实际请求用文件 URI。
+        let absolute = source_path.to_string_lossy().replace('\\', "/");
+        let root = self.workspace_root.to_string_lossy().replace('\\', "/");
+        let root = root.trim_end_matches('/');
+        let source = absolute
+            .strip_prefix(root)
+            .map(|rest| rest.trim_start_matches('/'))
+            .unwrap_or(&absolute)
+            .to_string();
+        let started = Instant::now();
+
+        // 按**文件**问，不按工作区问：`javaEntrypoints` 收的是工作区 URI，工作区根
+        // 不是 JDT 工程时（例如工程在子目录里）它回空数组；而 `javaMainMethods` 收的是
+        // 文件 URI，只要这个文件在某个已导入的工程里就能答出来。
+        let uri = file_uri(source_path)?;
+        let entry = self.with_ready_session(|session| {
+            session.request(
+                "javaMainMethods",
+                json!({ "uri": uri }),
+                Instant::now() + LAUNCH_METADATA_TIMEOUT,
+            )
+        })?;
+        let reported = entry
+            .get("methods")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0);
+        let Some((main_class, project_name)) = pick_main_method(&entry) else {
+            println!("S1_JAVA_LAUNCH main_methods source={source} reported=0");
+            return Err(format!(
+                "Java 语言服务没有为 {source} 报告可启动的主类（文件里没有 main 方法，或它所在的工程还没导入完）"
+            ));
+        };
+        println!("S1_JAVA_LAUNCH main_methods source={source} reported={reported}");
+        println!(
+            "S1_JAVA_LAUNCH entry source={source} mainClass={main_class} project={}",
+            project_name.as_deref().unwrap_or("-")
+        );
+
+        // 构建：即使终态是 WITH_ERROR，只要路径能解析也继续——那正是「先跑起来看看」的场景。
+        // 所以构建失败**不**用 `?` 传出去，只记一行诊断。
+        let build = self.with_ready_session(|session| {
+            session.request(
+                "executeCommand",
+                json!({
+                    "command": "vscode.java.buildWorkspace",
+                    "arguments": [json!({
+                        "mainClass": main_class,
+                        "projectName": project_name,
+                        "isFullBuild": false,
+                    })
+                    .to_string()],
+                }),
+                Instant::now() + LAUNCH_BUILD_TIMEOUT,
+            )
+        });
+        match &build {
+            Ok(result) => println!(
+                "S1_JAVA_LAUNCH build mainClass={main_class} result={}",
+                result
+                    .get("value")
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "null".to_string())
+            ),
+            Err(error) => {
+                // 构建失败不阻断：classpath 往往仍然可解析，真正跑不起来会在 JVM 那一步报出来。
+                eprintln!("S1_JAVA_LAUNCH build mainClass={main_class} error={error}");
+            }
+        }
+
+        let classpath = self.with_ready_session(|session| {
+            let mut arguments = vec![json!(main_class)];
+            if let Some(project_name) = &project_name {
+                arguments.push(json!(project_name));
+            }
+            arguments.push(json!("runtime"));
+            session.request(
+                "executeCommand",
+                json!({
+                    "command": "vscode.java.resolveClasspath",
+                    "arguments": arguments,
+                }),
+                Instant::now() + LAUNCH_METADATA_TIMEOUT,
+            )
+        })?;
+
+        // JDT 的答复是 `[modulePaths, classPaths]`。
+        let paths = classpath.get("value").unwrap_or(&classpath);
+        let module_paths = string_list(paths.get(0));
+        let class_paths = string_list(paths.get(1));
+        if class_paths.is_empty() && module_paths.is_empty() {
+            return Err(format!(
+                "Java 语言服务没有为 {main_class} 解析出运行时路径（项目可能还没构建完）"
+            ));
+        }
+        println!(
+            "S1_JAVA_LAUNCH classpath mainClass={main_class} classPaths={} modulePaths={} ms={}",
+            class_paths.len(),
+            module_paths.len(),
+            started.elapsed().as_millis()
+        );
+        Ok(JavaLaunchMetadata {
+            main_class,
+            class_paths,
+            module_paths,
+        })
     }
 
     /// 把当前工作区的 Maven 配置推给**已经在跑**的 JDTLS。
@@ -1483,6 +1653,51 @@ fn plain_snippet(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 按文件问到的 `main` 方法取第一个，且带出 JDT 的项目名。
+    ///
+    /// 项目名要原样回传给 JDT（`resolveClasspath` 的第二个参数）；丢掉它，多模块工程里
+    /// 解析出来的 classpath 就可能是别的模块的。
+    #[test]
+    fn the_launch_class_comes_from_the_first_main_method() {
+        let result = json!({
+            "methods": [
+                {
+                    "mainClass": "demo.App",
+                    "projectName": "module-a",
+                    "range": { "startLine": 3, "startUtf16Column": 23, "endLine": 3, "endUtf16Column": 27 }
+                },
+                {
+                    "mainClass": "demo.Other",
+                    "projectName": "module-a",
+                    "range": { "startLine": 9, "startUtf16Column": 23, "endLine": 9, "endUtf16Column": 27 }
+                }
+            ]
+        });
+        let picked = pick_main_method(&result).expect("第一个 main 必须被选中");
+        assert_eq!(picked.0, "demo.App", "取按源码位置排在最前的那一个");
+        assert_eq!(picked.1.as_deref(), Some("module-a"));
+    }
+
+    #[test]
+    fn a_file_without_main_methods_reports_none() {
+        assert!(pick_main_method(&json!({ "methods": [] })).is_none());
+        // 答复里连 methods 都没有（老服务或失败答复）也不能 panic。
+        assert!(pick_main_method(&json!({})).is_none());
+    }
+
+    /// JDT 的 classpath 答复是 `[modulePaths, classPaths]`，顺序不能弄反。
+    #[test]
+    fn classpath_lists_are_read_in_module_then_class_order() {
+        let value = json!([["mod/a"], ["lib/b.jar", "lib/c.jar"]]);
+        assert_eq!(string_list(value.get(0)), vec!["mod/a".to_string()]);
+        assert_eq!(
+            string_list(value.get(1)),
+            vec!["lib/b.jar".to_string(), "lib/c.jar".to_string()]
+        );
+        // 缺项就是空表，不是 panic。
+        assert!(string_list(None).is_empty());
+    }
 
     /// 功能请求**不许**顺手启动语言服务。
     ///
