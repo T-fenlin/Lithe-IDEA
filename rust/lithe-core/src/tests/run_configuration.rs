@@ -426,6 +426,20 @@ fn run_configuration_generation_uses_a_maven_project_below_the_workspace() {
         .iter()
         .filter_map(Value::as_str)
         .any(|argument| argument == "-am" || argument == "spring-boot:run"));
+    let reactor_pom = root
+        .join("projects/demo")
+        .join("pom.xml")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        plan["data"]["preLaunchSteps"],
+        serde_json::json!([{
+            "executable": {"toolchain": "project-maven"},
+            "arguments": ["-B", "-ntp", "-P", "dev,qa", "-s", "/local/settings.xml",
+                "-pl", "service", "-am", "-DskipTests", "-f", reactor_pom, "resources:resources"],
+            "workingDirectory": "projects/demo"
+        }])
+    );
 
     fs::create_dir_all(root.join("custom-run")).unwrap();
     fs::write(
@@ -470,6 +484,27 @@ fn run_configuration_generation_uses_a_maven_project_below_the_workspace() {
     assert_eq!(overridden_plan["ok"], true, "{overridden_plan}");
     assert_eq!(overridden_plan["data"]["workingDirectory"], "custom-run");
     assert_eq!(
+        overridden_plan["data"]["preLaunchSteps"][0]["arguments"],
+        serde_json::json!([
+            "-B",
+            "-ntp",
+            "-P",
+            "release",
+            "-pl",
+            "service",
+            "-am",
+            "-f",
+            reactor_pom,
+            "resources:resources"
+        ])
+    );
+    // An overridden application working directory must not move the step's own
+    // Maven wrapper/POM resolution root off the reactor.
+    assert_eq!(
+        overridden_plan["data"]["preLaunchSteps"][0]["workingDirectory"],
+        "projects/demo"
+    );
+    assert_eq!(
         overridden_plan["data"]["arguments"],
         serde_json::json!(["com.example.App"])
     );
@@ -486,6 +521,13 @@ fn run_configuration_generation_uses_a_maven_project_below_the_workspace() {
             "payload": {
                 "root": root,
                 "configurationId": java_main["id"],
+                "mavenContext": {
+                    "version": 1,
+                    "reactorPath": "not-the-owner",
+                    "profiles": [],
+                    "localRepositoryPath": "/local/repository",
+                    "skipTests": false
+                },
                 "javaLaunch": {
                     "mainClass": "com.example.App",
                     "classPaths": ["/workspace/projects/demo/service/target/classes"],
@@ -498,6 +540,24 @@ fn run_configuration_generation_uses_a_maven_project_below_the_workspace() {
     .unwrap();
     assert_eq!(java_plan["ok"], true, "{java_plan}");
     assert_eq!(java_plan["data"]["executable"]["toolchain"], "project-jdk");
+    assert_eq!(
+        java_plan["data"]["preLaunchSteps"][0]["arguments"],
+        serde_json::json!([
+            "-B",
+            "-ntp",
+            "-Dmaven.repo.local=/local/repository",
+            "-pl",
+            "service",
+            "-am",
+            "-f",
+            reactor_pom,
+            "resources:resources"
+        ])
+    );
+    assert_eq!(
+        java_plan["data"]["preLaunchSteps"][0]["workingDirectory"],
+        "projects/demo"
+    );
     assert_eq!(
         java_plan["data"]["arguments"],
         serde_json::json!(["com.example.App"])
@@ -877,6 +937,15 @@ fn run_configuration_generation_disambiguates_same_main_class_across_modules() {
         );
         assert_eq!(plan["data"]["executable"]["toolchain"], "project-jdk");
         assert_eq!(plan["data"]["classpath"], case["classPaths"]);
+        let resource_arguments = plan["data"]["preLaunchSteps"][0]["arguments"]
+            .as_array()
+            .unwrap();
+        assert!(!resource_arguments.iter().any(|argument| argument == "-pl"));
+        assert!(resource_arguments.contains(&serde_json::json!("resources:resources")));
+        assert_eq!(
+            resource_arguments.contains(&serde_json::json!("resources:testResources")),
+            case["sourceSet"] == "test"
+        );
         if !case["modulePaths"].as_array().unwrap().is_empty() {
             assert_eq!(plan["data"]["modulepath"], case["modulePaths"]);
         }
@@ -1029,6 +1098,15 @@ fn maven_test_source_main_uses_the_test_classpath() {
     assert_eq!(
         plan["data"]["classpath"],
         serde_json::json!(["/workspace/target/test-classes"])
+    );
+    assert_eq!(
+        plan["data"]["preLaunchSteps"],
+        serde_json::json!([{
+            "executable": {"toolchain": "project-maven"},
+            "arguments": ["-B", "-ntp", "-f", root.join(".").join("pom.xml"),
+                "resources:resources", "resources:testResources"],
+            "workingDirectory": "."
+        }])
     );
 
     fs::remove_dir_all(root).unwrap();
@@ -2560,6 +2638,59 @@ fn inspection_compares_generated_java_entries_with_jdt() {
     ))
     .unwrap();
     assert_eq!(settings["data"]["diagnostics"], serde_json::json!([]));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn run_configuration_generation_reads_non_utf8_entry_sources() {
+    // GBK-encoded Java source (no BOM) is not valid UTF-8, which is the norm on
+    // Chinese Windows. One such entry must not fail the whole run list: it is
+    // decoded instead, and a genuinely unreadable source only loses its Spring
+    // Boot classification.
+    let root = temporary_root("run-config-gbk-source");
+    let utf8_entry = "src/Utf8Main.java";
+    let gbk_entry = "src/GbkMain.java";
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join(utf8_entry),
+        "public class Utf8Main { public static void main(String[] args) {} }",
+    )
+    .unwrap();
+    // GBK bytes for a Chinese greeting. Any GBK source with non-ASCII bytes is
+    // not valid UTF-8, so a UTF-8-only read rejects it with InvalidData.
+    let gbk_source: &[u8] = b"public class GbkMain { public static void main(String[] args) { System.out.println(\"\xC4\xE3\xBA\xC3\xA3\xAC\xD6\xD0\xCE\xC4\xB2\xE2\xCA\xD4\"); } }";
+    fs::write(root.join(gbk_entry), gbk_source).unwrap();
+
+    let request = serde_json::json!({
+        "id": "generate-gbk",
+        "command": "runConfig.generate",
+        "payload": {
+            "root": root,
+            "paths": [utf8_entry, gbk_entry],
+            "modulePaths": [],
+            "javaEntrypoints": jdt_entrypoints(&[
+                (utf8_entry, "Utf8Main"),
+                (gbk_entry, "GbkMain")
+            ])
+        }
+    });
+    let response: Value = serde_json::from_str(&execute_json(&request.to_string())).unwrap();
+    assert_eq!(response["ok"], true, "{response}");
+    let generated = &response["data"]["generated"];
+    let configurations = generated["configurations"].as_array().unwrap();
+    assert!(
+        configurations
+            .iter()
+            .any(|value| value["id"] == "java-main:Utf8Main"),
+        "{generated}"
+    );
+    assert!(
+        configurations
+            .iter()
+            .any(|value| value["id"] == "java-main:GbkMain"),
+        "{generated}"
+    );
 
     fs::remove_dir_all(root).unwrap();
 }

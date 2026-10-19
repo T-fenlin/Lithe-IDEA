@@ -46,6 +46,24 @@ pub enum CoreCommand {
     AgentInstallCli,
     /// Parses credential-free Agent provider metadata (`agent.parseProviderConfiguration`).
     AgentParseProviderConfiguration,
+    /// Validates and normalizes a declarative plugin manifest (`plugins.declarative.validate`).
+    PluginsDeclarativeValidate,
+    /// Expands a declarative plugin's run template (`plugins.declarative.runPlan`).
+    PluginsDeclarativeRunPlan,
+    /// Lists a declarative plugin's workspace and file tests (`plugins.declarative.discoverTests`).
+    PluginsDeclarativeDiscoverTests,
+    /// Expands a declarative plugin's test template (`plugins.declarative.testPlan`).
+    PluginsDeclarativeTestPlan,
+    /// Expands a declarative plugin's language-server launch (`plugins.declarative.languageServerLaunchPlan`).
+    PluginsDeclarativeLanguageServerLaunchPlan,
+    /// Compares a launch runtime's version output with its requirement (`plugins.declarative.checkRuntimeVersion`).
+    PluginsDeclarativeCheckRuntimeVersion,
+    /// Validates and filters a marketplace index (`plugins.marketplace.validateIndex`).
+    PluginsMarketplaceValidateIndex,
+    /// Resolves a user-entered marketplace source URL (`plugins.marketplace.resolveSource`).
+    PluginsMarketplaceResolveSource,
+    /// Lists a package's permissions and programs before installation (`plugins.marketplace.installReview`).
+    PluginsMarketplaceInstallReview,
     /// Starts a Discourse user API key authorization (`community.discourse.auth.begin`).
     CommunityDiscourseAuthBegin,
     /// Decrypts and verifies a Discourse authorization callback (`community.discourse.auth.complete`).
@@ -102,6 +120,12 @@ pub enum CoreCommand {
     MavenLaunchPlan,
     /// Shortens an oversized Java launch using a JDK argument file when needed.
     ExecutionPlanLaunchCommand,
+    /// Decides how each Lithe-owned process ends (`processLifecycle.resolve`).
+    ProcessLifecycleResolve,
+    /// Classifies a process snapshot into lifecycle items (`processLifecycle.inventory`).
+    ProcessLifecycleInventory,
+    /// Turns a plan and the user's answers into what ends (`processLifecycle.settle`).
+    ProcessLifecycleSettle,
     /// Produces a bounded Maven dependency-tree invocation (`maven.dependencyPlan`).
     MavenDependencyPlan,
     /// Normalizes Maven dependency-tree output (`maven.dependencies`).
@@ -345,6 +369,19 @@ impl CoreCommand {
             "agent.uninstall" => Some(Self::AgentUninstall),
             "agent.installCli" => Some(Self::AgentInstallCli),
             "agent.parseProviderConfiguration" => Some(Self::AgentParseProviderConfiguration),
+            "plugins.declarative.validate" => Some(Self::PluginsDeclarativeValidate),
+            "plugins.declarative.runPlan" => Some(Self::PluginsDeclarativeRunPlan),
+            "plugins.declarative.discoverTests" => Some(Self::PluginsDeclarativeDiscoverTests),
+            "plugins.declarative.testPlan" => Some(Self::PluginsDeclarativeTestPlan),
+            "plugins.declarative.languageServerLaunchPlan" => {
+                Some(Self::PluginsDeclarativeLanguageServerLaunchPlan)
+            }
+            "plugins.declarative.checkRuntimeVersion" => {
+                Some(Self::PluginsDeclarativeCheckRuntimeVersion)
+            }
+            "plugins.marketplace.validateIndex" => Some(Self::PluginsMarketplaceValidateIndex),
+            "plugins.marketplace.resolveSource" => Some(Self::PluginsMarketplaceResolveSource),
+            "plugins.marketplace.installReview" => Some(Self::PluginsMarketplaceInstallReview),
             "community.discourse.auth.begin" => Some(Self::CommunityDiscourseAuthBegin),
             "community.discourse.auth.complete" => Some(Self::CommunityDiscourseAuthComplete),
             "community.discourse.topics" => Some(Self::CommunityDiscourseTopics),
@@ -373,6 +410,9 @@ impl CoreCommand {
             "maven.scan" => Some(Self::MavenScan),
             "maven.launchPlan" => Some(Self::MavenLaunchPlan),
             "execution.planLaunchCommand" => Some(Self::ExecutionPlanLaunchCommand),
+            "processLifecycle.resolve" => Some(Self::ProcessLifecycleResolve),
+            "processLifecycle.inventory" => Some(Self::ProcessLifecycleInventory),
+            "processLifecycle.settle" => Some(Self::ProcessLifecycleSettle),
             "maven.dependencyPlan" => Some(Self::MavenDependencyPlan),
             "maven.dependencies" => Some(Self::MavenDependencies),
             "maven.diagnostics" => Some(Self::MavenDiagnostics),
@@ -539,6 +579,22 @@ mod tests {
         assert!(matches!(
             CoreCommand::parse("execution.planLaunchCommand"),
             Some(CoreCommand::ExecutionPlanLaunchCommand)
+        ));
+    }
+
+    #[test]
+    fn parses_process_lifecycle_command() {
+        assert!(matches!(
+            CoreCommand::parse("processLifecycle.resolve"),
+            Some(CoreCommand::ProcessLifecycleResolve)
+        ));
+        assert!(matches!(
+            CoreCommand::parse("processLifecycle.inventory"),
+            Some(CoreCommand::ProcessLifecycleInventory)
+        ));
+        assert!(matches!(
+            CoreCommand::parse("processLifecycle.settle"),
+            Some(CoreCommand::ProcessLifecycleSettle)
         ));
     }
 

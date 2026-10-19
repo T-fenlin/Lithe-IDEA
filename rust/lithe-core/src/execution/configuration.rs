@@ -1827,8 +1827,8 @@ pub fn create_launch_plan(request: LaunchPlanRequest) -> Result<Value, CoreError
         // single-file source launcher (JEP 330) only exists on JDK 11+, so a
         // JDK 8 project fails to load `File.java` as a class. Reading the source
         // yields the qualified class the JVM will resolve after compilation.
-        let source_text =
-            fs::read_to_string(workspace_root.join(&current_file)).map_err(|error| {
+        let source_text = crate::languages::read_text(&workspace_root.join(&current_file))
+            .map_err(|error| {
                 CoreError::new(
                     ErrorCode::InvalidRequest,
                     "Current Java source could not be read",
@@ -1894,6 +1894,76 @@ pub fn create_launch_plan(request: LaunchPlanRequest) -> Result<Value, CoreError
         }
         arguments.push(json!(java_launch.main_class));
         arguments.extend(program_arguments);
+        // JDT's incremental build is not Maven's resource-processing phase.
+        // Maven owns filtering, custom resource roots and reactor dependencies.
+        let reactor_path = maven["reactorPath"].as_str().unwrap_or(".");
+        let mut context =
+            request
+                .maven_context
+                .clone()
+                .unwrap_or(crate::project::MavenLaunchContextRequest {
+                    version: 1,
+                    reactor_path: reactor_path.to_string(),
+                    profiles: Vec::new(),
+                    settings_path: None,
+                    local_repository_path: None,
+                    skip_tests: false,
+                    maven_executable_path: None,
+                    java_home_path: None,
+                });
+        context.reactor_path = reactor_path.to_string();
+        let mut resource_module = maven["module"].as_str().map(str::to_string);
+        if let Some(module) = resource_module.as_deref().filter(|module| *module != ".") {
+            let reactor_root = workspace_root.join(reactor_path);
+            let declared = crate::project::declared_modules(&reactor_root)?;
+            if !declared
+                .iter()
+                .any(|candidate| candidate.relative_path == module)
+            {
+                // An independently imported child POM is not selectable with -pl.
+                // Let the shared planner validate its own project boundary instead.
+                context.reactor_path = format!("{reactor_path}/{module}");
+                resource_module = None;
+            }
+        }
+        if let Some(profiles) = maven["profiles"]
+            .as_array()
+            .filter(|items| !items.is_empty())
+        {
+            context.profiles = profiles
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect();
+        }
+        if let Some(skip_tests) = maven.get("skipTests").and_then(Value::as_bool) {
+            context.skip_tests = skip_tests;
+        }
+        let reactor_pom = workspace_root.join(&context.reactor_path).join("pom.xml");
+        let mut resource_arguments = vec![
+            "-f".to_string(),
+            reactor_pom.to_string_lossy().into_owned(),
+            "resources:resources".to_string(),
+        ];
+        if config["extensions"]["java"]["sourceSet"] == "test" {
+            resource_arguments.push("resources:testResources".to_string());
+        }
+        let resource_plan = crate::project::launch_plan_with_arguments(
+            request.root.clone(),
+            context,
+            resource_module,
+            resource_arguments,
+            true,
+        )?;
+        pre_launch_steps.push(json!({
+            "executable": resource_plan.executable,
+            "arguments": resource_plan.arguments,
+            // The reactor directory is the step's own resolution root: the host
+            // finds the project's Maven wrapper there even when the application
+            // working directory is overridden, and the absolute `-f` above keeps
+            // the POM anchored.
+            "workingDirectory": resource_plan.working_directory,
+        }));
     } else if is_java_main {
         let source = config["extensions"]["java"]["source"]
             .as_str()
@@ -1927,8 +1997,8 @@ pub fn create_launch_plan(request: LaunchPlanRequest) -> Result<Value, CoreError
         {
             Some(main_class) => main_class.to_string(),
             None => {
-                let source_text =
-                    fs::read_to_string(workspace_root.join(source)).map_err(|error| {
+                let source_text = crate::languages::read_text(&workspace_root.join(source))
+                    .map_err(|error| {
                         CoreError::new(ErrorCode::InvalidRequest, "Java source could not be read")
                             .with_details(error.to_string())
                     })?;
